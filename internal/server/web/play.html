@@ -144,6 +144,73 @@
   .topline .who { color: var(--muted); font-size: .9rem; }
   .topline .who strong { color: var(--ink); font-weight: 700; }
   .inline-btn { display: inline-block; width: auto; padding: .35rem .85rem; font-size: .8rem; }
+
+  /* ---------- Puzzle-correct celebration ---------- */
+  .celebrate {
+    position: fixed; inset: 0; z-index: 9999;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    background: rgba(10, 20, 35, .55);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    overflow: hidden;
+    animation: celebrateFade .25s ease;
+  }
+  .celebrate.gone { animation: celebrateFadeOut .4s ease forwards; }
+  @keyframes celebrateFade    { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes celebrateFadeOut { from { opacity: 1; } to { opacity: 0; } }
+
+  .celebrate .ring {
+    width: 140px; height: 140px; border-radius: 50%;
+    background: radial-gradient(circle at 30% 30%, #7fd17b, var(--success));
+    display: grid; place-items: center;
+    box-shadow: 0 10px 40px rgba(66,154,63,.45), inset 0 -6px 18px rgba(0,0,0,.18);
+    transform: scale(0);
+    animation: celebratePop .55s cubic-bezier(.2,1.6,.4,1) .05s forwards;
+  }
+  @keyframes celebratePop { to { transform: scale(1); } }
+
+  .celebrate .check {
+    width: 86px; height: 86px;
+  }
+  .celebrate .check path {
+    fill: none; stroke: #fff; stroke-width: 9; stroke-linecap: round; stroke-linejoin: round;
+    stroke-dasharray: 80; stroke-dashoffset: 80;
+    animation: celebrateDraw .45s .35s ease-out forwards;
+  }
+  @keyframes celebrateDraw { to { stroke-dashoffset: 0; } }
+
+  .celebrate .head {
+    font-family: var(--font-brand);
+    color: #fff; font-size: clamp(2rem, 7vw, 3rem);
+    margin-top: 1.1rem; letter-spacing: .01em;
+    opacity: 0; animation: celebrateRise .4s .55s ease forwards;
+  }
+  .celebrate .sub {
+    color: rgba(255,255,255,.85); font-weight: 600;
+    margin-top: .25rem; text-align: center;
+    opacity: 0; animation: celebrateRise .4s .75s ease forwards;
+  }
+  @keyframes celebrateRise {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* Confetti: small rectangles that drop from above with a horizontal
+     drift and a random rotation. Driven by CSS custom properties set
+     per-particle from JS. */
+  .celebrate .piece {
+    position: absolute;
+    top: -30px; width: 9px; height: 15px; border-radius: 2px;
+    background: var(--c, #e24080);
+    transform: translate(0, 0) rotate(0);
+    animation: celebrateConfetti 2.2s var(--d, 0ms) cubic-bezier(.25,.75,.45,1) forwards;
+    will-change: transform, opacity;
+  }
+  @keyframes celebrateConfetti {
+    0%   { opacity: 0; transform: translate(0, -40px) rotate(0); }
+    6%   { opacity: 1; }
+    100% { opacity: 0; transform: translate(var(--dx, 0), 110vh) rotate(var(--rot, 360deg)); }
+  }
 </style>
 </head>
 <body>
@@ -310,15 +377,68 @@ function renderSubmitDock() {
     }
     if (r.body.accepted) {
       result.className = 'result ok';
-      result.textContent = r.body.completed ? 'Correct — adventure complete!' : 'Correct!';
+      result.textContent = '';
       input.value = '';
-      setTimeout(refresh, 600);
+      input.blur();
+      celebrate(r.body.completed);
+      // Give the celebration ~1.4s of spotlight before moving on.
+      setTimeout(refresh, 1400);
     } else {
       result.className = 'result err';
       result.textContent = 'Not quite — try again.';
     }
   });
 }
+
+// celebrate renders a full-screen success overlay with a popped ring, a
+// drawn checkmark, and a burst of confetti. The `finished` flag tweaks
+// copy so the final puzzle lands differently from the intermediate ones.
+function celebrate(finished) {
+  const overlay = document.createElement('div');
+  overlay.className = 'celebrate';
+  const ring = document.createElement('div');
+  ring.className = 'ring';
+  ring.innerHTML = '<svg class="check" viewBox="0 0 100 100"><path d="M22 52 l18 18 l38 -38"/></svg>';
+  const head = document.createElement('div');
+  head.className = 'head';
+  head.textContent = finished ? 'Adventure complete!' : 'Correct!';
+  const sub = document.createElement('div');
+  sub.className = 'sub';
+  sub.textContent = finished ? 'Great work — you made it to the end.' : 'Next puzzle coming up…';
+  overlay.append(ring, head, sub);
+
+  // Confetti.
+  const colours = ['#e24080', '#f5c452', '#7fd17b', '#60a5fa', '#a78bfa', '#22d3ee'];
+  const count = finished ? 80 : 48;
+  for (let i = 0; i < count; i++) {
+    const p = document.createElement('div');
+    p.className = 'piece';
+    const dx = (Math.random() * 2 - 1) * 380;
+    const rot = (Math.random() * 1440 - 720);
+    p.style.left = Math.random() * 100 + '%';
+    p.style.setProperty('--c', colours[i % colours.length]);
+    p.style.setProperty('--dx', dx + 'px');
+    p.style.setProperty('--rot', rot + 'deg');
+    p.style.setProperty('--d', (Math.random() * 250) + 'ms');
+    overlay.append(p);
+  }
+  document.body.append(overlay);
+  // Dismiss: short for inter-puzzle, longer when the adventure ends.
+  const total = finished ? 3500 : 1800;
+  setTimeout(() => overlay.classList.add('gone'), total);
+  setTimeout(() => overlay.remove(), total + 500);
+}
+
+// Debug shortcut: Alt+S pops the celebration so you can tweak the visuals
+// without actually solving a puzzle. The Shift key also counts, for
+// keyboards where Alt-combos collide with window/menu shortcuts.
+document.addEventListener('keydown', (e) => {
+  if (!e.altKey) return;
+  if (e.key === 'S' || e.key === 's') {
+    e.preventDefault();
+    celebrate(e.shiftKey);
+  }
+});
 function hideSubmitDock() {
   const dock = document.getElementById('submit-dock');
   if (dock) dock.remove();

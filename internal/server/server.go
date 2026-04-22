@@ -191,10 +191,8 @@ const landingHTML = `<!doctype html>
 </style></head>
 <body><div class="wrap">
   <h1 class="brand">zonventure</h1>
-  <p class="sub">choose a door</p>
-  <a class="btn primary" href="/arrange">I'm an arranger or admin</a>
-  <a class="btn" href="/play">I'm a player</a>
-  <p class="hint">Players usually arrive via a personal magic link — this page is a fallback.</p>
+  <a class="btn primary" href="/arrange">Log in</a>
+  <p class="hint">Players arrive via their personal magic link.</p>
 </div></body></html>`
 
 // servePage returns a handler that writes a single embedded HTML page with
