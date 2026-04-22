@@ -10,6 +10,7 @@ import (
 	"git.sr.ht/~klahr/zv/internal/auth"
 	"git.sr.ht/~klahr/zv/internal/httpx"
 	"git.sr.ht/~klahr/zv/internal/runevents"
+	"git.sr.ht/~klahr/zv/internal/ws"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -70,6 +71,7 @@ func (h *Handlers) RenameTeam(w http.ResponseWriter, r *http.Request) {
 	me, _ := auth.FromContext(r.Context())
 	runevents.Record(r.Context(), h.DB, runID, &teamID, runevents.UserActor(me.ID), runevents.TeamRenamed,
 		map[string]any{"from": oldName, "to": req.Name})
+	h.Hub.Publish(ws.RunTopic(runID), "changed", nil)
 	httpx.JSON(w, http.StatusNoContent, nil)
 }
 
@@ -96,6 +98,7 @@ func (h *Handlers) DeleteTeam(w http.ResponseWriter, r *http.Request) {
 	me, _ := auth.FromContext(r.Context())
 	runevents.Record(r.Context(), h.DB, runID, nil, runevents.UserActor(me.ID), runevents.TeamDeleted,
 		map[string]any{"name": name})
+	h.Hub.Publish(ws.RunTopic(runID), "changed", nil)
 	httpx.JSON(w, http.StatusNoContent, nil)
 }
 
@@ -150,6 +153,7 @@ func (h *Handlers) AddSlot(w http.ResponseWriter, r *http.Request) {
 	me, _ := auth.FromContext(r.Context())
 	runevents.Record(r.Context(), h.DB, runID, &teamID, runevents.UserActor(me.ID),
 		runevents.MemberAdded, map[string]any{"name": req.Name})
+	h.Hub.Publish(ws.RunTopic(runID), "changed", nil)
 	httpx.JSON(w, http.StatusCreated, slotDTO{ID: id, Name: req.Name, Token: token})
 }
 
@@ -187,6 +191,7 @@ func (h *Handlers) RemoveSlot(w http.ResponseWriter, r *http.Request) {
 	me, _ := auth.FromContext(r.Context())
 	runevents.Record(r.Context(), h.DB, runID, &teamID, runevents.UserActor(me.ID),
 		runevents.MemberRemoved, map[string]any{"name": name})
+	h.Hub.Publish(ws.RunTopic(runID), "changed", nil)
 	httpx.JSON(w, http.StatusNoContent, nil)
 }
 
@@ -285,6 +290,7 @@ func (h *Handlers) UnlockTeam(w http.ResponseWriter, r *http.Request) {
 		runevents.Record(r.Context(), h.DB, runID, &teamID, runevents.UserActor(me.ID), runevents.TeamUnlocked,
 			map[string]any{"from_page_index": current, "to_page_index": next, "by_arranger": true})
 	}
+	h.Hub.Publish(ws.RunTopic(runID), "changed", nil)
 	httpx.JSON(w, http.StatusOK, map[string]any{"page_index": next, "completed": next >= len(adv.Pages)})
 }
 

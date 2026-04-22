@@ -7,6 +7,7 @@
 package player
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"math"
@@ -17,12 +18,14 @@ import (
 	"git.sr.ht/~klahr/zv/internal/auth"
 	"git.sr.ht/~klahr/zv/internal/httpx"
 	"git.sr.ht/~klahr/zv/internal/runevents"
+	"git.sr.ht/~klahr/zv/internal/ws"
 )
 
 // Handlers bundles the dependencies the player endpoints need.
 type Handlers struct {
 	DB           *sql.DB
 	Lib          *adventure.Library
+	Hub          *ws.Hub
 	SecureCookie bool
 }
 
@@ -70,9 +73,9 @@ type teamContext struct {
 	CompletedAt      sql.NullString
 }
 
-func loadTeam(r *http.Request, db *sql.DB, slot auth.Slot) (teamContext, error) {
+func loadTeam(ctx context.Context, db *sql.DB, slot auth.Slot) (teamContext, error) {
 	var tc teamContext
-	err := db.QueryRowContext(r.Context(), `
+	err := db.QueryRowContext(ctx, `
 		SELECT t.id, t.name, ar.id, ar.adventure_slug, ar.state,
 		       t.current_page_index, t.completed_at
 		FROM teams t JOIN adventure_runs ar ON ar.id = t.run_id
@@ -82,7 +85,8 @@ func loadTeam(r *http.Request, db *sql.DB, slot auth.Slot) (teamContext, error) 
 	return tc, err
 }
 
-// State is the response body for GET /api/player/state.
+// State is the response body for GET /api/player/state and the "state" WS
+// push kind.
 type State struct {
 	Status         string     `json:"status"` // waiting | running | paused | completed | gated
 	AdventureSlug  string     `json:"adventure_slug,omitempty"`
@@ -109,24 +113,19 @@ type gateDTO struct {
 	Reached bool    `json:"reached"`
 }
 
-// GetState returns the player's current view.
-func (h *Handlers) GetState(w http.ResponseWriter, r *http.Request) {
-	slot, _ := auth.SlotFromContext(r.Context())
-	tc, err := loadTeam(r, h.DB, slot)
+// buildState is the shared state builder used by the HTTP and WS handlers.
+func (h *Handlers) buildState(ctx context.Context, slot auth.Slot) (State, int, string) {
+	tc, err := loadTeam(ctx, h.DB, slot)
 	if errors.Is(err, sql.ErrNoRows) {
-		httpx.Error(w, http.StatusNotFound, "team missing")
-		return
+		return State{}, http.StatusNotFound, "team missing"
 	}
 	if err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "lookup failed")
-		return
+		return State{}, http.StatusInternalServerError, "lookup failed"
 	}
 	adv := h.Lib.Get(tc.AdventureSlug)
 	if adv == nil {
-		httpx.Error(w, http.StatusInternalServerError, "adventure not loaded: "+tc.AdventureSlug)
-		return
+		return State{}, http.StatusInternalServerError, "adventure not loaded: " + tc.AdventureSlug
 	}
-
 	resp := State{
 		AdventureSlug:  adv.Slug,
 		AdventureTitle: adv.Meta.Title,
@@ -134,39 +133,30 @@ func (h *Handlers) GetState(w http.ResponseWriter, r *http.Request) {
 		SlotName:       slot.Name,
 		PageCount:      len(adv.Pages),
 	}
-
 	if tc.CompletedAt.Valid {
 		resp.Status = "completed"
-		httpx.JSON(w, http.StatusOK, resp)
-		return
+		return resp, http.StatusOK, ""
 	}
 	switch tc.RunState {
 	case "scheduled":
 		resp.Status = "waiting"
-		httpx.JSON(w, http.StatusOK, resp)
-		return
+		return resp, http.StatusOK, ""
 	case "paused":
 		resp.Status = "paused"
-		httpx.JSON(w, http.StatusOK, resp)
-		return
+		return resp, http.StatusOK, ""
 	case "completed":
 		resp.Status = "completed"
-		httpx.JSON(w, http.StatusOK, resp)
-		return
+		return resp, http.StatusOK, ""
 	}
-
 	if tc.CurrentPageIndex >= len(adv.Pages) {
 		resp.Status = "completed"
-		httpx.JSON(w, http.StatusOK, resp)
-		return
+		return resp, http.StatusOK, ""
 	}
-
 	page := adv.Pages[tc.CurrentPageIndex]
 	resp.PageIndex = page.Index
 	resp.Title = page.Title
-
 	if page.Location.Gated() {
-		reached, _ := gateReached(r, h.DB, tc.TeamID, page.Location)
+		reached, _ := gateReached(ctx, h.DB, tc.TeamID, page.Location)
 		resp.Gate = &gateDTO{
 			Lat:     page.Location.Lat,
 			Lng:     page.Location.Lng,
@@ -175,11 +165,9 @@ func (h *Handlers) GetState(w http.ResponseWriter, r *http.Request) {
 		}
 		if !reached {
 			resp.Status = "gated"
-			httpx.JSON(w, http.StatusOK, resp)
-			return
+			return resp, http.StatusOK, ""
 		}
 	}
-
 	resp.Status = "running"
 	resp.Prompt = page.Prompt
 	resp.Hint = page.Hint
@@ -190,14 +178,25 @@ func (h *Handlers) GetState(w http.ResponseWriter, r *http.Request) {
 		}
 		resp.Images = imgs
 	}
+	return resp, http.StatusOK, ""
+}
+
+// GetState returns the player's current view.
+func (h *Handlers) GetState(w http.ResponseWriter, r *http.Request) {
+	slot, _ := auth.SlotFromContext(r.Context())
+	resp, status, errMsg := h.buildState(r.Context(), slot)
+	if status != http.StatusOK {
+		httpx.Error(w, status, errMsg)
+		return
+	}
 	httpx.JSON(w, http.StatusOK, resp)
 }
 
 // gateReached checks whether the team's latest location ping places them
 // inside the location's gate radius.
-func gateReached(r *http.Request, db *sql.DB, teamID int64, loc adventure.Location) (bool, error) {
+func gateReached(ctx context.Context, db *sql.DB, teamID int64, loc adventure.Location) (bool, error) {
 	var lat, lng float64
-	err := db.QueryRowContext(r.Context(), `
+	err := db.QueryRowContext(ctx, `
 		SELECT lat, lng FROM location_pings WHERE team_id = ?
 		ORDER BY server_ts DESC LIMIT 1
 	`, teamID).Scan(&lat, &lng)
@@ -233,6 +232,76 @@ type AnswerResponse struct {
 	NextIndex int  `json:"next_index,omitempty"`
 }
 
+// applyAnswer evaluates a submitted answer and persists the consequences.
+// Returns (response, statusCode, errMsg). Also returns the runID so the
+// caller can broadcast to the hub.
+func (h *Handlers) applyAnswer(ctx context.Context, slot auth.Slot, answer string) (AnswerResponse, int64, int, string) {
+	tc, err := loadTeam(ctx, h.DB, slot)
+	if err != nil {
+		return AnswerResponse{}, 0, http.StatusInternalServerError, "lookup failed"
+	}
+	if tc.RunState != "running" {
+		return AnswerResponse{}, tc.RunID, http.StatusConflict, "run is not active"
+	}
+	if tc.CompletedAt.Valid {
+		return AnswerResponse{}, tc.RunID, http.StatusConflict, "team already finished"
+	}
+	adv := h.Lib.Get(tc.AdventureSlug)
+	if adv == nil || tc.CurrentPageIndex >= len(adv.Pages) {
+		return AnswerResponse{}, tc.RunID, http.StatusInternalServerError, "no current page"
+	}
+	page := adv.Pages[tc.CurrentPageIndex]
+	if page.Location.Gated() {
+		reached, err := gateReached(ctx, h.DB, tc.TeamID, page.Location)
+		if err != nil {
+			return AnswerResponse{}, tc.RunID, http.StatusInternalServerError, "gate check failed"
+		}
+		if !reached {
+			return AnswerResponse{}, tc.RunID, http.StatusForbidden, "you must reach the location first"
+		}
+	}
+	accepted := page.CheckAnswer(answer)
+	acceptedInt := 0
+	if accepted {
+		acceptedInt = 1
+	}
+	if _, err := h.DB.ExecContext(ctx, `
+		INSERT INTO answer_attempts(team_id, slot_id, page_index, answer, accepted)
+		VALUES (?, ?, ?, ?, ?)
+	`, tc.TeamID, slot.ID, tc.CurrentPageIndex, answer, acceptedInt); err != nil {
+		return AnswerResponse{}, tc.RunID, http.StatusInternalServerError, "record attempt failed"
+	}
+	teamID := tc.TeamID
+	resp := AnswerResponse{Accepted: accepted}
+	if !accepted {
+		runevents.Record(ctx, h.DB, tc.RunID, &teamID, runevents.SlotActor(slot.ID),
+			runevents.AnswerWrong, map[string]any{"page_index": tc.CurrentPageIndex, "submitted": answer})
+		return resp, tc.RunID, http.StatusOK, ""
+	}
+	runevents.Record(ctx, h.DB, tc.RunID, &teamID, runevents.SlotActor(slot.ID),
+		runevents.AnswerRight, map[string]any{"page_index": tc.CurrentPageIndex})
+	nextIdx := tc.CurrentPageIndex + 1
+	if nextIdx >= len(adv.Pages) {
+		if _, err := h.DB.ExecContext(ctx, `
+			UPDATE teams SET current_page_index = ?, completed_at = datetime('now') WHERE id = ?
+		`, nextIdx, tc.TeamID); err != nil {
+			return AnswerResponse{}, tc.RunID, http.StatusInternalServerError, "save progress failed"
+		}
+		runevents.Record(ctx, h.DB, tc.RunID, &teamID, runevents.SlotActor(slot.ID),
+			runevents.TeamCompleted, nil)
+		resp.Completed = true
+		resp.NextIndex = nextIdx
+		return resp, tc.RunID, http.StatusOK, ""
+	}
+	if _, err := h.DB.ExecContext(ctx, `
+		UPDATE teams SET current_page_index = ? WHERE id = ?
+	`, nextIdx, tc.TeamID); err != nil {
+		return AnswerResponse{}, tc.RunID, http.StatusInternalServerError, "save progress failed"
+	}
+	resp.NextIndex = nextIdx
+	return resp, tc.RunID, http.StatusOK, ""
+}
+
 // SubmitAnswer evaluates a submitted answer for the slot's current page.
 func (h *Handlers) SubmitAnswer(w http.ResponseWriter, r *http.Request) {
 	var req AnswerRequest
@@ -240,86 +309,14 @@ func (h *Handlers) SubmitAnswer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	slot, _ := auth.SlotFromContext(r.Context())
-	tc, err := loadTeam(r, h.DB, slot)
-	if err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "lookup failed")
+	resp, runID, status, errMsg := h.applyAnswer(r.Context(), slot, req.Answer)
+	if status != http.StatusOK {
+		httpx.Error(w, status, errMsg)
 		return
 	}
-	if tc.RunState != "running" {
-		httpx.Error(w, http.StatusConflict, "run is not active")
-		return
+	if runID != 0 {
+		h.Hub.Publish(ws.RunTopic(runID), "changed", nil)
 	}
-	if tc.CompletedAt.Valid {
-		httpx.Error(w, http.StatusConflict, "team already finished")
-		return
-	}
-
-	adv := h.Lib.Get(tc.AdventureSlug)
-	if adv == nil || tc.CurrentPageIndex >= len(adv.Pages) {
-		httpx.Error(w, http.StatusInternalServerError, "no current page")
-		return
-	}
-	page := adv.Pages[tc.CurrentPageIndex]
-
-	if page.Location.Gated() {
-		reached, err := gateReached(r, h.DB, tc.TeamID, page.Location)
-		if err != nil {
-			httpx.Error(w, http.StatusInternalServerError, "gate check failed")
-			return
-		}
-		if !reached {
-			httpx.Error(w, http.StatusForbidden, "you must reach the location first")
-			return
-		}
-	}
-
-	accepted := page.CheckAnswer(req.Answer)
-	acceptedInt := 0
-	if accepted {
-		acceptedInt = 1
-	}
-	if _, err := h.DB.ExecContext(r.Context(), `
-		INSERT INTO answer_attempts(team_id, slot_id, page_index, answer, accepted)
-		VALUES (?, ?, ?, ?, ?)
-	`, tc.TeamID, slot.ID, tc.CurrentPageIndex, req.Answer, acceptedInt); err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "record attempt failed")
-		return
-	}
-
-	teamID := tc.TeamID
-	resp := AnswerResponse{Accepted: accepted}
-	if !accepted {
-		runevents.Record(r.Context(), h.DB, tc.RunID, &teamID, runevents.SlotActor(slot.ID),
-			runevents.AnswerWrong, map[string]any{"page_index": tc.CurrentPageIndex, "submitted": req.Answer})
-		httpx.JSON(w, http.StatusOK, resp)
-		return
-	}
-
-	runevents.Record(r.Context(), h.DB, tc.RunID, &teamID, runevents.SlotActor(slot.ID),
-		runevents.AnswerRight, map[string]any{"page_index": tc.CurrentPageIndex})
-
-	nextIdx := tc.CurrentPageIndex + 1
-	if nextIdx >= len(adv.Pages) {
-		if _, err := h.DB.ExecContext(r.Context(), `
-			UPDATE teams SET current_page_index = ?, completed_at = datetime('now') WHERE id = ?
-		`, nextIdx, tc.TeamID); err != nil {
-			httpx.Error(w, http.StatusInternalServerError, "save progress failed")
-			return
-		}
-		runevents.Record(r.Context(), h.DB, tc.RunID, &teamID, runevents.SlotActor(slot.ID),
-			runevents.TeamCompleted, nil)
-		resp.Completed = true
-		resp.NextIndex = nextIdx
-		httpx.JSON(w, http.StatusOK, resp)
-		return
-	}
-	if _, err := h.DB.ExecContext(r.Context(), `
-		UPDATE teams SET current_page_index = ? WHERE id = ?
-	`, nextIdx, tc.TeamID); err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "save progress failed")
-		return
-	}
-	resp.NextIndex = nextIdx
 	httpx.JSON(w, http.StatusOK, resp)
 }
 
@@ -333,20 +330,12 @@ type LocationRequest struct {
 	ClientTS string   `json:"client_ts,omitempty"`
 }
 
-// PostLocation records a GPS ping for the slot's team.
-func (h *Handlers) PostLocation(w http.ResponseWriter, r *http.Request) {
-	var req LocationRequest
-	if !httpx.DecodeJSON(w, r, &req) {
-		return
-	}
+// recordLocation inserts a ping row. Returns (statusCode, errMsg).
+func (h *Handlers) recordLocation(ctx context.Context, slot auth.Slot, req LocationRequest) (int, string) {
 	if req.Lat < -90 || req.Lat > 90 || req.Lng < -180 || req.Lng > 180 {
-		httpx.Error(w, http.StatusBadRequest, "coordinates out of range")
-		return
+		return http.StatusBadRequest, "coordinates out of range"
 	}
-	slot, _ := auth.SlotFromContext(r.Context())
-	var (
-		acc, speed, heading, cts any
-	)
+	var acc, speed, heading, cts any
 	if req.Accuracy != nil {
 		acc = *req.Accuracy
 	}
@@ -359,12 +348,27 @@ func (h *Handlers) PostLocation(w http.ResponseWriter, r *http.Request) {
 	if req.ClientTS != "" {
 		cts = req.ClientTS
 	}
-	if _, err := h.DB.ExecContext(r.Context(), `
+	if _, err := h.DB.ExecContext(ctx, `
 		INSERT INTO location_pings(slot_id, team_id, run_id, lat, lng, accuracy, speed, heading, client_ts)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, slot.ID, slot.TeamID, slot.RunID, req.Lat, req.Lng, acc, speed, heading, cts); err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "save ping failed")
+		return http.StatusInternalServerError, "save ping failed"
+	}
+	return http.StatusNoContent, ""
+}
+
+// PostLocation records a GPS ping for the slot's team.
+func (h *Handlers) PostLocation(w http.ResponseWriter, r *http.Request) {
+	var req LocationRequest
+	if !httpx.DecodeJSON(w, r, &req) {
 		return
 	}
+	slot, _ := auth.SlotFromContext(r.Context())
+	status, errMsg := h.recordLocation(r.Context(), slot, req)
+	if status >= 400 {
+		httpx.Error(w, status, errMsg)
+		return
+	}
+	h.Hub.Publish(ws.RunTopic(slot.RunID), "changed", nil)
 	httpx.JSON(w, http.StatusNoContent, nil)
 }

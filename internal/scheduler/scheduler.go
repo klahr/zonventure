@@ -11,24 +11,25 @@ import (
 	"time"
 
 	"git.sr.ht/~klahr/zv/internal/runevents"
+	"git.sr.ht/~klahr/zv/internal/ws"
 )
 
 // Start launches the sweep loop in its own goroutine. Stop it by cancelling
-// the supplied context.
-func Start(ctx context.Context, db *sql.DB, interval time.Duration) {
-	go loop(ctx, db, interval)
+// the supplied context. hub may be nil (e.g. in tests).
+func Start(ctx context.Context, db *sql.DB, hub *ws.Hub, interval time.Duration) {
+	go loop(ctx, db, hub, interval)
 }
 
-func loop(ctx context.Context, db *sql.DB, interval time.Duration) {
+func loop(ctx context.Context, db *sql.DB, hub *ws.Hub, interval time.Duration) {
 	t := time.NewTicker(interval)
 	defer t.Stop()
-	tick(ctx, db) // run one pass immediately on startup
+	tick(ctx, db, hub) // run one pass immediately on startup
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			tick(ctx, db)
+			tick(ctx, db, hub)
 		}
 	}
 }
@@ -38,7 +39,7 @@ func loop(ctx context.Context, db *sql.DB, interval time.Duration) {
 // Dates are compared through sqlite's datetime() normaliser, which parses
 // both RFC3339 strings and sqlite's own "YYYY-MM-DD HH:MM:SS" format so we
 // don't have to care what the writer chose.
-func tick(ctx context.Context, db *sql.DB) {
+func tick(ctx context.Context, db *sql.DB, hub *ws.Hub) {
 	rows, err := db.QueryContext(ctx, `
 		SELECT id, COALESCE(created_by_user_id, 0)
 		FROM adventure_runs
@@ -81,6 +82,7 @@ func tick(ctx context.Context, db *sql.DB) {
 		}
 		runevents.Record(ctx, db, d.id, nil, actor, runevents.RunStarted,
 			map[string]any{"auto": true})
+		hub.Publish(ws.RunTopic(d.id), "changed", nil)
 		log.Printf("scheduler: auto-started run #%d", d.id)
 	}
 }

@@ -28,6 +28,7 @@ import (
 	"git.sr.ht/~klahr/zv/internal/auth"
 	"git.sr.ht/~klahr/zv/internal/httpx"
 	"git.sr.ht/~klahr/zv/internal/runevents"
+	"git.sr.ht/~klahr/zv/internal/ws"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -35,6 +36,7 @@ import (
 type Handlers struct {
 	DB  *sql.DB
 	Lib *adventure.Library
+	Hub *ws.Hub
 }
 
 /* ---------------- Shared scoping helpers ---------------- */
@@ -207,6 +209,7 @@ func (h *Handlers) CreateRun(w http.ResponseWriter, r *http.Request) {
 	id, _ := res.LastInsertId()
 	runevents.Record(r.Context(), h.DB, id, nil, runevents.UserActor(me.ID), runevents.RunCreated,
 		map[string]any{"adventure_slug": slug, "max_teams": maxTeams})
+	h.Hub.Publish(ws.RunTopic(id), "changed", nil)
 	httpx.JSON(w, http.StatusCreated, runDTO{
 		ID: id, AdventureSlug: slug, State: "scheduled",
 		ScheduledAt: req.ScheduledAt, OrgID: orgID, CreatedByUserID: me.ID,
@@ -308,6 +311,7 @@ func (h *Handlers) transitionRun(w http.ResponseWriter, r *http.Request, action 
 	me, _ := auth.FromContext(r.Context())
 	kind := map[string]string{"start": runevents.RunStarted, "pause": runevents.RunPaused, "resume": runevents.RunResumed}[action]
 	runevents.Record(r.Context(), h.DB, runID, nil, runevents.UserActor(me.ID), kind, nil)
+	h.Hub.Publish(ws.RunTopic(runID), "changed", nil)
 	httpx.JSON(w, http.StatusNoContent, nil)
 }
 
@@ -383,6 +387,7 @@ func (h *Handlers) UpdateRun(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	h.Hub.Publish(ws.RunTopic(runID), "changed", nil)
 	httpx.JSON(w, http.StatusNoContent, nil)
 }
 
@@ -509,6 +514,7 @@ func (h *Handlers) CreateTeam(w http.ResponseWriter, r *http.Request) {
 	}
 	runevents.Record(r.Context(), h.DB, runID, &teamID, runevents.UserActor(me.ID), runevents.TeamCreated,
 		map[string]any{"name": req.Name, "members": memberNames})
+	h.Hub.Publish(ws.RunTopic(runID), "changed", nil)
 	httpx.JSON(w, http.StatusCreated, teamDTO{ID: teamID, Name: req.Name, Members: members})
 }
 
@@ -523,17 +529,10 @@ type positionDTO struct {
 	PageIndex int     `json:"page_index"`
 }
 
-// ListPositions returns the most recent location ping per team for a run.
-func (h *Handlers) ListPositions(w http.ResponseWriter, r *http.Request) {
-	runID, ok := runIDFrom(r)
-	if !ok {
-		httpx.Error(w, http.StatusBadRequest, "bad run id")
-		return
-	}
-	if _, ok := h.authorizeRun(w, r, runID); !ok {
-		return
-	}
-	rows, err := h.DB.QueryContext(r.Context(), `
+// buildPositions is the query-only helper used by both the HTTP ListPositions
+// handler and the WS push path. Caller does authorisation.
+func (h *Handlers) buildPositions(ctx context.Context, runID int64) ([]positionDTO, error) {
+	rows, err := h.DB.QueryContext(ctx, `
 		SELECT t.id, t.name, t.current_page_index,
 		       COALESCE(p.lat, 0), COALESCE(p.lng, 0), COALESCE(p.server_ts, '')
 		FROM teams t
@@ -548,18 +547,34 @@ func (h *Handlers) ListPositions(w http.ResponseWriter, r *http.Request) {
 		ORDER BY t.name
 	`, runID, runID)
 	if err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "query failed")
-		return
+		return nil, err
 	}
 	defer rows.Close()
 	out := []positionDTO{}
 	for rows.Next() {
 		var d positionDTO
 		if err := rows.Scan(&d.TeamID, &d.TeamName, &d.PageIndex, &d.Lat, &d.Lng, &d.ServerTS); err != nil {
-			httpx.Error(w, http.StatusInternalServerError, "scan failed")
-			return
+			return nil, err
 		}
 		out = append(out, d)
+	}
+	return out, nil
+}
+
+// ListPositions returns the most recent location ping per team for a run.
+func (h *Handlers) ListPositions(w http.ResponseWriter, r *http.Request) {
+	runID, ok := runIDFrom(r)
+	if !ok {
+		httpx.Error(w, http.StatusBadRequest, "bad run id")
+		return
+	}
+	if _, ok := h.authorizeRun(w, r, runID); !ok {
+		return
+	}
+	out, err := h.buildPositions(r.Context(), runID)
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "query failed")
+		return
 	}
 	httpx.JSON(w, http.StatusOK, map[string]any{"positions": out})
 }
@@ -576,25 +591,17 @@ type trackDTO struct {
 	Points   []trackPoint `json:"points"`
 }
 
-// ListTracks returns the full ping history per team for a run.
-func (h *Handlers) ListTracks(w http.ResponseWriter, r *http.Request) {
-	runID, ok := runIDFrom(r)
-	if !ok {
-		httpx.Error(w, http.StatusBadRequest, "bad run id")
-		return
-	}
-	if _, ok := h.authorizeRun(w, r, runID); !ok {
-		return
-	}
-	rows, err := h.DB.QueryContext(r.Context(), `
+// buildTracks is the query-only helper used by ListTracks and the WS push
+// path.
+func (h *Handlers) buildTracks(ctx context.Context, runID int64) ([]trackDTO, error) {
+	rows, err := h.DB.QueryContext(ctx, `
 		SELECT p.team_id, t.name, p.lat, p.lng, p.server_ts
 		FROM location_pings p JOIN teams t ON t.id = p.team_id
 		WHERE p.run_id = ?
 		ORDER BY p.team_id, p.server_ts
 	`, runID)
 	if err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "query failed")
-		return
+		return nil, err
 	}
 	defer rows.Close()
 	byTeam := map[int64]*trackDTO{}
@@ -606,8 +613,7 @@ func (h *Handlers) ListTracks(w http.ResponseWriter, r *http.Request) {
 			p      trackPoint
 		)
 		if err := rows.Scan(&teamID, &name, &p.Lat, &p.Lng, &p.ServerTS); err != nil {
-			httpx.Error(w, http.StatusInternalServerError, "scan failed")
-			return
+			return nil, err
 		}
 		t, ok := byTeam[teamID]
 		if !ok {
@@ -620,6 +626,24 @@ func (h *Handlers) ListTracks(w http.ResponseWriter, r *http.Request) {
 	tracks := make([]trackDTO, 0, len(order))
 	for _, id := range order {
 		tracks = append(tracks, *byTeam[id])
+	}
+	return tracks, nil
+}
+
+// ListTracks returns the full ping history per team for a run.
+func (h *Handlers) ListTracks(w http.ResponseWriter, r *http.Request) {
+	runID, ok := runIDFrom(r)
+	if !ok {
+		httpx.Error(w, http.StatusBadRequest, "bad run id")
+		return
+	}
+	if _, ok := h.authorizeRun(w, r, runID); !ok {
+		return
+	}
+	tracks, err := h.buildTracks(r.Context(), runID)
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "query failed")
+		return
 	}
 	httpx.JSON(w, http.StatusOK, map[string]any{"tracks": tracks})
 }

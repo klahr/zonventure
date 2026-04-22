@@ -821,6 +821,15 @@ async function renderRoute() {
   if (!isAdmin && adminOnly.includes(section))   { nav('#dashboard');     return; }
   if (section === 'members' && !isOrgAdmin)      { nav('#dashboard');     return; }
 
+  // Run-detail is the only view with real-time updates. Entering it opens a
+  // watch on the arrange WebSocket; leaving it releases that watch so the
+  // server stops publishing to this client.
+  if (section === 'runs' && arg) {
+    watchRun(parseInt(arg, 10));
+  } else {
+    unwatchRun();
+  }
+
   try {
     switch (section) {
       case '':
@@ -835,6 +844,67 @@ async function renderRoute() {
     }
   } catch (err) {
     view.replaceChildren(h('p', { class: 'err' }, String(err)));
+  }
+}
+
+/* ========== Arrange subscription stream ========== */
+// arrangeWS is a single long-lived connection that pushes run-detail
+// updates while an arranger has a run open. Mutations still ride HTTP;
+// this socket only receives change notifications so the view stays in
+// sync with player progress, team creates, etc., without polling.
+let arrangeWS = null;
+let arrangeWSBackoff = 500;
+let watchedRunID = 0;
+let arrangePushTimer = null;
+
+function ensureArrangeWS() {
+  if (arrangeWS && (arrangeWS.readyState === 0 || arrangeWS.readyState === 1)) return;
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  arrangeWS = new WebSocket(`${proto}//${location.host}/ws/arrange`);
+  arrangeWS.onopen = () => {
+    arrangeWSBackoff = 500;
+    if (watchedRunID) arrangeWS.send(JSON.stringify({ kind: 'watch_run', data: { run_id: watchedRunID } }));
+  };
+  arrangeWS.onmessage = (ev) => {
+    let msg; try { msg = JSON.parse(ev.data); } catch { return; }
+    if (!msg || !msg.kind) return;
+    // Any server push re-renders the current run-detail view. Debounced so
+    // a burst of changes (eg. multiple position updates from players
+    // pinging at once) collapses into a single re-render.
+    if (msg.kind === 'positions' || msg.kind === 'tracks' ||
+        msg.kind === 'events'   || msg.kind === 'run_detail') {
+      if (arrangePushTimer) clearTimeout(arrangePushTimer);
+      arrangePushTimer = setTimeout(() => {
+        const r = state.route.replace(/^#/, '');
+        const [section, arg] = r.split('/');
+        if (section === 'runs' && arg) {
+          const view = document.getElementById('view');
+          if (view) viewRunDetail(view, parseInt(arg, 10));
+        }
+      }, 300);
+    }
+  };
+  arrangeWS.onclose = () => {
+    const delay = Math.min(arrangeWSBackoff, 10000);
+    arrangeWSBackoff = Math.min(arrangeWSBackoff * 2, 10000);
+    setTimeout(ensureArrangeWS, delay);
+  };
+}
+
+function watchRun(runID) {
+  if (!runID || runID === watchedRunID) { watchedRunID = runID; ensureArrangeWS(); return; }
+  watchedRunID = runID;
+  ensureArrangeWS();
+  if (arrangeWS && arrangeWS.readyState === 1) {
+    arrangeWS.send(JSON.stringify({ kind: 'watch_run', data: { run_id: runID } }));
+  }
+}
+
+function unwatchRun() {
+  if (!watchedRunID) return;
+  watchedRunID = 0;
+  if (arrangeWS && arrangeWS.readyState === 1) {
+    arrangeWS.send(JSON.stringify({ kind: 'unwatch_run' }));
   }
 }
 

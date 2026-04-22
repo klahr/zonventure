@@ -291,7 +291,11 @@ const TEAM_COLORS = ['#e24080', '#7fd17b', '#60a5fa', '#f5c452', '#a78bfa', '#22
 function teamColor(i) { return TEAM_COLORS[i % TEAM_COLORS.length]; }
 
 const LIVE_TOKEN = location.pathname.split('/').pop();
-const POLL_MS = 4000;
+
+// Latest payloads from the server. render() reads from these; the WS
+// onmessage handler writes to them.
+let latestSnapshot = null;
+let latestTracks = [];
 
 function h(tag, attrs = {}, ...children) {
   const e = document.createElement(tag);
@@ -331,17 +335,9 @@ function formatFinishTime(startISO, completedAt) {
   return h ? `${h}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
 }
 
-async function render() {
-  let data;
-  try {
-    const r = await fetch(`/api/public/live/${encodeURIComponent(LIVE_TOKEN)}`, { cache: 'no-store' });
-    if (!r.ok) throw new Error(await r.text());
-    data = await r.json();
-  } catch (e) {
-    document.getElementById('root').replaceChildren(
-      h('div', { class: 'empty-board' }, 'Could not load run: ' + e.message));
-    return;
-  }
+function render() {
+  const data = latestSnapshot;
+  if (!data) return;
 
   const root = document.getElementById('root');
   root.replaceChildren();
@@ -359,7 +355,7 @@ async function render() {
     root.append(buildBoard(data));
   }
   root.append(h('div', { class: 'footer' },
-    `Live · updates every ${POLL_MS / 1000}s · `,
+    'Live · push updates · ',
     data.puzzles?.length
       ? `${data.puzzles.length} puzzle${data.puzzles.length === 1 ? '' : 's'} · `
       : '',
@@ -430,12 +426,9 @@ async function renderLiveMap(inner, hint, data) {
     bounds.extend([p.lat, p.lng]);
   }
 
-  // Team tracks.
-  let tracks = [];
-  try {
-    const res = await fetch(`/api/public/live/${encodeURIComponent(LIVE_TOKEN)}/tracks`, { cache: 'no-store' });
-    if (res.ok) tracks = (await res.json()).tracks || [];
-  } catch { /* ignore — hint shows below */ }
+  // Team tracks come from the most recent {kind:"tracks"} WS frame, which
+  // the server pushes alongside the snapshot whenever show_map is on.
+  const tracks = latestTracks || [];
 
   const teamColourByID = new Map();
   (data.teams || []).forEach((t, i) => teamColourByID.set(t.id, teamColor(i)));
@@ -556,20 +549,46 @@ function renderRow(team, idx, data) {
   return row;
 }
 
-render();
-setInterval(render, POLL_MS);
+// WebSocket: the server pushes {kind:"snapshot"} on every run change and
+// {kind:"tracks"} alongside it when show_map is enabled. No polling.
+let ws = null;
+let wsBackoff = 500;
+function connectWS() {
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  ws = new WebSocket(`${proto}//${location.host}/ws/live/${encodeURIComponent(LIVE_TOKEN)}`);
+  ws.onopen = () => { wsBackoff = 500; };
+  ws.onmessage = (ev) => {
+    let msg; try { msg = JSON.parse(ev.data); } catch { return; }
+    if (!msg || !msg.kind) return;
+    if (msg.kind === 'snapshot') {
+      latestSnapshot = msg.data;
+      render();
+    } else if (msg.kind === 'tracks') {
+      latestTracks = msg.data?.tracks || [];
+      // Only re-render if the map is currently shown — saves a full rebuild
+      // of the leaderboard DOM when only map overlays changed.
+      if (latestSnapshot?.show_map) render();
+    }
+  };
+  ws.onclose = () => {
+    const delay = Math.min(wsBackoff, 10000);
+    wsBackoff = Math.min(wsBackoff * 2, 10000);
+    setTimeout(connectWS, delay);
+  };
+}
 
-// Keep the elapsed clock ticking between polls.
+// Keep the elapsed clock ticking between pushes so long-running races
+// don't look frozen while waiting for the next state change.
 setInterval(() => {
-  const el = document.querySelector('.clock');
-  if (!el || !el.firstChild) return;
-  // Re-run a lightweight clock update only if we have a server_now rendered
-  // in the footer; otherwise skip and wait for the next poll.
-  const footer = document.querySelector('.footer');
-  if (!footer || !footer.textContent.includes('server time')) return;
-  const nowMatch = footer.textContent.match(/server time ([^ ]+)/);
-  if (!nowMatch) return;
+  if (!latestSnapshot) return;
+  const clockEl = document.querySelector('.clock');
+  if (!clockEl) return;
+  const firstLine = formatElapsed(latestSnapshot.started_at);
+  const firstChild = clockEl.firstChild;
+  if (firstChild && firstChild.nodeType === 3) firstChild.nodeValue = firstLine;
 }, 1000);
+
+connectWS();
 </script>
 </body>
 </html>

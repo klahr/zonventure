@@ -7,6 +7,7 @@
 package public
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"net/http"
@@ -14,6 +15,7 @@ import (
 
 	"git.sr.ht/~klahr/zv/internal/adventure"
 	"git.sr.ht/~klahr/zv/internal/httpx"
+	"git.sr.ht/~klahr/zv/internal/ws"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -21,6 +23,7 @@ import (
 type Handlers struct {
 	DB  *sql.DB
 	Lib *adventure.Library
+	Hub *ws.Hub
 }
 
 type puzzleDTO struct {
@@ -45,7 +48,9 @@ type teamDTO struct {
 	Members     []memberDTO `json:"members"`
 }
 
-type liveDTO struct {
+// LiveDTO is the snapshot shape served both by /api/public/live/{token}
+// and pushed as a "snapshot" WS message.
+type LiveDTO struct {
 	RunID          int64       `json:"run_id"`
 	AdventureTitle string      `json:"adventure_title"`
 	AdventureSlug  string      `json:"adventure_slug"`
@@ -60,9 +65,9 @@ type liveDTO struct {
 
 // runByToken resolves a URL token to a run id, returning sql.ErrNoRows if
 // the token is unknown.
-func (h *Handlers) runByToken(r *http.Request, token string) (runID int64, slug, state, startedAt string, showMap int, err error) {
+func (h *Handlers) runByToken(ctx context.Context, token string) (runID int64, slug, state, startedAt string, showMap int, err error) {
 	var started sql.NullString
-	err = h.DB.QueryRowContext(r.Context(), `
+	err = h.DB.QueryRowContext(ctx, `
 		SELECT id, adventure_slug, state, started_at, show_map
 		FROM adventure_runs WHERE live_token = ?
 	`, token).Scan(&runID, &slug, &state, &started, &showMap)
@@ -72,28 +77,20 @@ func (h *Handlers) runByToken(r *http.Request, token string) (runID int64, slug,
 	return
 }
 
-// Live returns the compact snapshot for the public leaderboard.
-func (h *Handlers) Live(w http.ResponseWriter, r *http.Request) {
-	token := chi.URLParam(r, "token")
-	if token == "" {
-		httpx.Error(w, http.StatusBadRequest, "bad live token")
-		return
-	}
-	id, slug, state, startedAt, showMap, err := h.runByToken(r, token)
+// buildLive assembles the full snapshot. Shared between the HTTP handler
+// and the WS push path.
+func (h *Handlers) buildLive(ctx context.Context, token string) (LiveDTO, int64, int, string) {
+	id, slug, state, startedAt, showMap, err := h.runByToken(ctx, token)
 	if errors.Is(err, sql.ErrNoRows) {
-		httpx.Error(w, http.StatusNotFound, "run not found")
-		return
+		return LiveDTO{}, 0, http.StatusNotFound, "run not found"
 	}
 	if err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "lookup failed")
-		return
+		return LiveDTO{}, 0, http.StatusInternalServerError, "lookup failed"
 	}
 	adv := h.Lib.Get(slug)
 	if adv == nil {
-		httpx.Error(w, http.StatusInternalServerError, "adventure not loaded")
-		return
+		return LiveDTO{}, id, http.StatusInternalServerError, "adventure not loaded"
 	}
-
 	puzzles := make([]puzzleDTO, len(adv.Pages))
 	for i, p := range adv.Pages {
 		puzzles[i] = puzzleDTO{
@@ -101,8 +98,7 @@ func (h *Handlers) Live(w http.ResponseWriter, r *http.Request) {
 			Lat: p.Location.Lat, Lng: p.Location.Lng,
 		}
 	}
-
-	rows, err := h.DB.QueryContext(r.Context(), `
+	rows, err := h.DB.QueryContext(ctx, `
 		SELECT t.id, t.name, t.current_page_index, COALESCE(t.completed_at, '')
 		FROM teams t
 		WHERE t.run_id = ?
@@ -118,37 +114,32 @@ func (h *Handlers) Live(w http.ResponseWriter, r *http.Request) {
 		  t.created_at ASC
 	`, id)
 	if err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "query failed")
-		return
+		return LiveDTO{}, id, http.StatusInternalServerError, "query failed"
 	}
 	defer rows.Close()
 	teams := []teamDTO{}
 	for rows.Next() {
 		var t teamDTO
 		if err := rows.Scan(&t.ID, &t.Name, &t.PageIndex, &t.CompletedAt); err != nil {
-			httpx.Error(w, http.StatusInternalServerError, "scan failed")
-			return
+			return LiveDTO{}, id, http.StatusInternalServerError, "scan failed"
 		}
 		t.PageCount = len(adv.Pages)
 		teams = append(teams, t)
 	}
-
 	for i := range teams {
-		mrows, err := h.DB.QueryContext(r.Context(), `
+		mrows, err := h.DB.QueryContext(ctx, `
 			SELECT name FROM player_slots
 			WHERE team_id = ? ORDER BY name COLLATE NOCASE
 		`, teams[i].ID)
 		if err != nil {
-			httpx.Error(w, http.StatusInternalServerError, "members failed")
-			return
+			return LiveDTO{}, id, http.StatusInternalServerError, "members failed"
 		}
 		members := []memberDTO{}
 		for mrows.Next() {
 			var m memberDTO
 			if err := mrows.Scan(&m.Username); err != nil {
 				mrows.Close()
-				httpx.Error(w, http.StatusInternalServerError, "member scan failed")
-				return
+				return LiveDTO{}, id, http.StatusInternalServerError, "member scan failed"
 			}
 			members = append(members, m)
 		}
@@ -156,8 +147,7 @@ func (h *Handlers) Live(w http.ResponseWriter, r *http.Request) {
 		teams[i].Members = members
 		teams[i].Rank = i + 1
 	}
-
-	resp := liveDTO{
+	return LiveDTO{
 		RunID:          id,
 		AdventureTitle: adv.Meta.Title,
 		AdventureSlug:  slug,
@@ -168,6 +158,20 @@ func (h *Handlers) Live(w http.ResponseWriter, r *http.Request) {
 		ShowMap:        showMap != 0,
 		Puzzles:        puzzles,
 		Teams:          teams,
+	}, id, http.StatusOK, ""
+}
+
+// Live returns the compact snapshot for the public leaderboard.
+func (h *Handlers) Live(w http.ResponseWriter, r *http.Request) {
+	token := chi.URLParam(r, "token")
+	if token == "" {
+		httpx.Error(w, http.StatusBadRequest, "bad live token")
+		return
+	}
+	resp, _, status, errMsg := h.buildLive(r.Context(), token)
+	if status != http.StatusOK {
+		httpx.Error(w, status, errMsg)
+		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	httpx.JSON(w, http.StatusOK, resp)
@@ -185,37 +189,23 @@ type trackDTO struct {
 	Points   []trackPoint `json:"points"`
 }
 
-// Tracks returns per-team ping history for the live map. Refuses when the
-// arranger has not enabled show_map on the run.
-func (h *Handlers) Tracks(w http.ResponseWriter, r *http.Request) {
-	token := chi.URLParam(r, "token")
-	if token == "" {
-		httpx.Error(w, http.StatusBadRequest, "bad live token")
-		return
-	}
-	id, _, _, _, showMap, err := h.runByToken(r, token)
-	if errors.Is(err, sql.ErrNoRows) {
-		httpx.Error(w, http.StatusNotFound, "run not found")
-		return
-	}
-	if err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "lookup failed")
-		return
-	}
-	if showMap == 0 {
-		httpx.Error(w, http.StatusForbidden, "map not enabled")
-		return
-	}
+// TracksResponse is the payload for the tracks endpoint and for the
+// "tracks" WS push. Named so the WS handler can reuse it.
+type TracksResponse struct {
+	Tracks []trackDTO `json:"tracks"`
+}
 
-	rows, err := h.DB.QueryContext(r.Context(), `
+// buildTracks fetches per-team ping history for a run. Returns
+// (resp, status, errMsg). Caller is responsible for authorising by token.
+func (h *Handlers) buildTracks(ctx context.Context, runID int64) (TracksResponse, int, string) {
+	rows, err := h.DB.QueryContext(ctx, `
 		SELECT p.team_id, t.name, p.lat, p.lng, p.server_ts
 		FROM location_pings p JOIN teams t ON t.id = p.team_id
 		WHERE p.run_id = ?
 		ORDER BY p.team_id, p.server_ts
-	`, id)
+	`, runID)
 	if err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "query failed")
-		return
+		return TracksResponse{}, http.StatusInternalServerError, "query failed"
 	}
 	defer rows.Close()
 	byTeam := map[int64]*trackDTO{}
@@ -227,8 +217,7 @@ func (h *Handlers) Tracks(w http.ResponseWriter, r *http.Request) {
 			p      trackPoint
 		)
 		if err := rows.Scan(&teamID, &name, &p.Lat, &p.Lng, &p.ServerTS); err != nil {
-			httpx.Error(w, http.StatusInternalServerError, "scan failed")
-			return
+			return TracksResponse{}, http.StatusInternalServerError, "scan failed"
 		}
 		t, ok := byTeam[teamID]
 		if !ok {
@@ -242,6 +231,35 @@ func (h *Handlers) Tracks(w http.ResponseWriter, r *http.Request) {
 	for _, id := range order {
 		tracks = append(tracks, *byTeam[id])
 	}
+	return TracksResponse{Tracks: tracks}, http.StatusOK, ""
+}
+
+// Tracks returns per-team ping history for the live map. Refuses when the
+// arranger has not enabled show_map on the run.
+func (h *Handlers) Tracks(w http.ResponseWriter, r *http.Request) {
+	token := chi.URLParam(r, "token")
+	if token == "" {
+		httpx.Error(w, http.StatusBadRequest, "bad live token")
+		return
+	}
+	id, _, _, _, showMap, err := h.runByToken(r.Context(), token)
+	if errors.Is(err, sql.ErrNoRows) {
+		httpx.Error(w, http.StatusNotFound, "run not found")
+		return
+	}
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "lookup failed")
+		return
+	}
+	if showMap == 0 {
+		httpx.Error(w, http.StatusForbidden, "map not enabled")
+		return
+	}
+	resp, status, errMsg := h.buildTracks(r.Context(), id)
+	if status != http.StatusOK {
+		httpx.Error(w, status, errMsg)
+		return
+	}
 	w.Header().Set("Cache-Control", "no-store")
-	httpx.JSON(w, http.StatusOK, map[string]any{"tracks": tracks})
+	httpx.JSON(w, http.StatusOK, resp)
 }

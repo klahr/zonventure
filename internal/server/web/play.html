@@ -222,10 +222,22 @@ let gpsWatchID = null;
 let pingTimer = null;
 let lastFix = null;
 // A shallow fingerprint of the last rendered state. If the state hasn't
-// changed between polls we skip the re-render so the submit dock's input
+// changed between pushes we skip the re-render so the submit dock's input
 // keeps its value and focus.
 let lastRenderKey = null;
 
+// WebSocket to the server. The server pushes {kind:"state"} frames when
+// anything in this run changes; we push {kind:"location"} and
+// {kind:"answer"} frames back. Reconnects with exponential backoff so a
+// dropped wifi / cellular handover heals itself without user action.
+let ws = null;
+let wsBackoff = 500;
+let wsReconnectTimer = null;
+let submitResultEl = null;
+let submitInputEl = null;
+
+// api is kept only for the one-shot auth probe at page load — every
+// subsequent state change rides the WebSocket.
 async function api(path, opts = {}) {
   const res = await fetch(path, {
     credentials: 'same-origin',
@@ -235,6 +247,42 @@ async function api(path, opts = {}) {
   let body = null;
   if (res.status !== 204) { try { body = await res.json(); } catch {} }
   return { status: res.status, body };
+}
+
+function wsSend(kind, data) {
+  if (!ws || ws.readyState !== 1) return false;
+  try { ws.send(JSON.stringify({ kind, data })); return true; }
+  catch { return false; }
+}
+
+function connectWS() {
+  if (wsReconnectTimer) { clearTimeout(wsReconnectTimer); wsReconnectTimer = null; }
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  ws = new WebSocket(`${proto}//${location.host}/ws/play`);
+  ws.onopen = () => { wsBackoff = 500; };
+  ws.onmessage = (ev) => {
+    let msg; try { msg = JSON.parse(ev.data); } catch { return; }
+    if (!msg || !msg.kind) return;
+    if (msg.kind === 'state') {
+      startGPS();
+      render(msg.data);
+    } else if (msg.kind === 'answer_result') {
+      onAnswerResult(msg.data);
+    } else if (msg.kind === 'answer_error') {
+      if (submitResultEl) {
+        submitResultEl.className = 'result err';
+        submitResultEl.textContent = msg.data?.error || `error ${msg.data?.status || ''}`;
+      }
+    }
+  };
+  ws.onclose = (ev) => {
+    // 1008/1011 = auth / server error; don't spin. 1000 = normal.
+    if (ev.code === 1008) { renderNoSession(); return; }
+    const delay = Math.min(wsBackoff, 10000);
+    wsBackoff = Math.min(wsBackoff * 2, 10000);
+    wsReconnectTimer = setTimeout(connectWS, delay);
+  };
+  ws.onerror = () => { /* handled by onclose */ };
 }
 
 function el(tag, attrs = {}, ...children) {
@@ -270,24 +318,9 @@ function startGPS() {
   if (pingTimer === null) pingTimer = setInterval(sendPing, 15000);
 }
 
-async function sendPing() {
+function sendPing() {
   if (!lastFix) return;
-  await api('/api/player/location', {
-    method: 'POST',
-    body: JSON.stringify({ ...lastFix, client_ts: new Date().toISOString() }),
-  });
-  refresh();
-}
-
-async function refresh() {
-  const s = await api('/api/player/state');
-  if (s.status === 401) { renderNoSession(); return; }
-  if (s.status !== 200) {
-    app.replaceChildren(el('p', { class: 'err' }, s.body?.error || 'error'));
-    return;
-  }
-  startGPS();
-  render(s.body);
+  wsSend('location', { ...lastFix, client_ts: new Date().toISOString() });
 }
 
 function render(s) {
@@ -330,6 +363,8 @@ function render(s) {
     return;
   }
 
+
+
   if (s.title) app.append(el('h3', {}, s.title));
   if (Array.isArray(s.images)) {
     for (const im of s.images) app.append(el('img', { class: 'puzzle-img', src: im.url, alt: '' }));
@@ -365,29 +400,32 @@ function renderSubmitDock() {
   const form = document.createElement('form');
   form.append(input, button, result);
   dock.append(form);
-  form.addEventListener('submit', async (e) => {
+  submitInputEl = input;
+  submitResultEl = result;
+  form.addEventListener('submit', (e) => {
     e.preventDefault();
-    const r = await api('/api/player/answer', {
-      method: 'POST', body: JSON.stringify({ answer: input.value }),
-    });
-    if (r.status !== 200) {
+    if (!wsSend('answer', { answer: input.value })) {
       result.className = 'result err';
-      result.textContent = r.body?.error || `error ${r.status}`;
-      return;
-    }
-    if (r.body.accepted) {
-      result.className = 'result ok';
-      result.textContent = '';
-      input.value = '';
-      input.blur();
-      celebrate(r.body.completed);
-      // Give the celebration ~1.4s of spotlight before moving on.
-      setTimeout(refresh, 1400);
-    } else {
-      result.className = 'result err';
-      result.textContent = 'Not quite — try again.';
+      result.textContent = 'Disconnected — try again in a moment.';
     }
   });
+}
+
+// onAnswerResult handles the server's reply to an {kind:"answer"} push.
+// The state refresh that follows a correct answer arrives as a separate
+// "state" frame (pushed because the hub fires on answer); the celebrate
+// overlay covers the re-render while it plays.
+function onAnswerResult(r) {
+  if (!submitResultEl) return;
+  if (r.accepted) {
+    submitResultEl.className = 'result ok';
+    submitResultEl.textContent = '';
+    if (submitInputEl) { submitInputEl.value = ''; submitInputEl.blur(); }
+    celebrate(r.completed);
+  } else {
+    submitResultEl.className = 'result err';
+    submitResultEl.textContent = 'Not quite — try again.';
+  }
 }
 
 // celebrate renders a full-screen success overlay with a popped ring, a
@@ -444,9 +482,21 @@ function hideSubmitDock() {
   if (dock) dock.remove();
 }
 
-setInterval(() => { if (gpsWatchID !== null) refresh(); }, 5000);
-
-refresh();
+// Bootstrap: a single HTTP probe decides auth (WebSocket upgrade failures
+// can't be distinguished from network errors in the browser) and seeds the
+// initial render. Afterwards the WebSocket takes over entirely.
+async function bootstrap() {
+  const s = await api('/api/player/state');
+  if (s.status === 401) { renderNoSession(); return; }
+  if (s.status !== 200) {
+    app.replaceChildren(el('p', { class: 'err' }, s.body?.error || 'error'));
+    return;
+  }
+  startGPS();
+  render(s.body);
+  connectWS();
+}
+bootstrap();
 </script>
 </body>
 </html>

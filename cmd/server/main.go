@@ -18,6 +18,7 @@ import (
 	"git.sr.ht/~klahr/zv/internal/db"
 	"git.sr.ht/~klahr/zv/internal/scheduler"
 	"git.sr.ht/~klahr/zv/internal/server"
+	"git.sr.ht/~klahr/zv/internal/ws"
 )
 
 func main() {
@@ -54,9 +55,11 @@ func main() {
 	lib := adventure.New(sqlDB)
 	log.Printf("%d adventure(s) in the database", len(lib.List()))
 
+	hub := ws.NewHub()
 	h := server.New(server.Config{
 		DB:           sqlDB,
 		Library:      lib,
+		Hub:          hub,
 		SecureCookie: *secureCookie,
 	})
 
@@ -70,7 +73,7 @@ func main() {
 	defer stop()
 
 	// Sweep for scheduled runs every 15s and auto-start any that are due.
-	scheduler.Start(ctx, sqlDB, 15*time.Second)
+	scheduler.Start(ctx, sqlDB, hub, 15*time.Second)
 
 	go func() {
 		log.Printf("listening on %s", *addr)

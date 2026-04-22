@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -19,6 +20,47 @@ type eventDTO struct {
 	Kind      string          `json:"kind"`
 	Payload   json.RawMessage `json:"payload"`
 	CreatedAt string          `json:"created_at"`
+}
+
+// buildEvents returns up to 500 newest events for a run, optionally
+// filtered to one team.
+func (h *Handlers) buildEvents(ctx context.Context, runID int64, teamFilter *int64) ([]eventDTO, error) {
+	query := `
+		SELECT e.id, e.team_id, COALESCE(t.name, ''), COALESCE(u.username, ''),
+		       e.kind, e.payload, e.created_at
+		FROM run_events e
+		LEFT JOIN teams t ON t.id = e.team_id
+		LEFT JOIN users u ON u.id = e.actor_user_id
+		WHERE e.run_id = ?`
+	args := []any{runID}
+	if teamFilter != nil {
+		query += ` AND e.team_id = ?`
+		args = append(args, *teamFilter)
+	}
+	query += ` ORDER BY e.created_at DESC, e.id DESC LIMIT 500`
+	rows, err := h.DB.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []eventDTO{}
+	for rows.Next() {
+		var (
+			e       eventDTO
+			teamID  sql.NullInt64
+			payload string
+		)
+		if err := rows.Scan(&e.ID, &teamID, &e.TeamName, &e.Actor, &e.Kind, &payload, &e.CreatedAt); err != nil {
+			return nil, err
+		}
+		if teamID.Valid {
+			v := teamID.Int64
+			e.TeamID = &v
+		}
+		e.Payload = json.RawMessage(payload)
+		out = append(out, e)
+	}
+	return out, nil
 }
 
 // ListEvents returns the run's event feed, newest first.
@@ -44,48 +86,19 @@ func (h *Handlers) ListEvents(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusForbidden, "forbidden")
 		return
 	}
-
-	query := `
-		SELECT e.id, e.team_id, COALESCE(t.name, ''), COALESCE(u.username, ''),
-		       e.kind, e.payload, e.created_at
-		FROM run_events e
-		LEFT JOIN teams t ON t.id = e.team_id
-		LEFT JOIN users u ON u.id = e.actor_id
-		WHERE e.run_id = ?`
-	args := []any{runID}
+	var teamFilter *int64
 	if s := r.URL.Query().Get("team_id"); s != "" {
 		tid, err := strconv.ParseInt(s, 10, 64)
 		if err != nil || tid <= 0 {
 			httpx.Error(w, http.StatusBadRequest, "bad team_id")
 			return
 		}
-		query += ` AND e.team_id = ?`
-		args = append(args, tid)
+		teamFilter = &tid
 	}
-	query += ` ORDER BY e.created_at DESC, e.id DESC LIMIT 500`
-	rows, err := h.DB.QueryContext(r.Context(), query, args...)
+	out, err := h.buildEvents(r.Context(), runID, teamFilter)
 	if err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "query failed")
 		return
-	}
-	defer rows.Close()
-	out := []eventDTO{}
-	for rows.Next() {
-		var (
-			e       eventDTO
-			teamID  sql.NullInt64
-			payload string
-		)
-		if err := rows.Scan(&e.ID, &teamID, &e.TeamName, &e.Actor, &e.Kind, &payload, &e.CreatedAt); err != nil {
-			httpx.Error(w, http.StatusInternalServerError, "scan failed")
-			return
-		}
-		if teamID.Valid {
-			v := teamID.Int64
-			e.TeamID = &v
-		}
-		e.Payload = json.RawMessage(payload)
-		out = append(out, e)
 	}
 	httpx.JSON(w, http.StatusOK, map[string]any{"events": out})
 }

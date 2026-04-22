@@ -12,6 +12,7 @@ import (
 	"git.sr.ht/~klahr/zv/internal/auth"
 	"git.sr.ht/~klahr/zv/internal/player"
 	"git.sr.ht/~klahr/zv/internal/public"
+	"git.sr.ht/~klahr/zv/internal/ws"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 )
@@ -23,6 +24,7 @@ var webFS embed.FS
 type Config struct {
 	DB           *sql.DB
 	Library      *adventure.Library
+	Hub          *ws.Hub
 	SecureCookie bool
 }
 
@@ -35,10 +37,15 @@ func New(cfg Config) http.Handler {
 	r.Use(auth.Middleware(cfg.DB))
 	r.Use(auth.SlotMiddleware(cfg.DB))
 
+	hub := cfg.Hub
+	if hub == nil {
+		hub = ws.NewHub()
+	}
+
 	authH := &auth.Handlers{DB: cfg.DB, SecureCookie: cfg.SecureCookie}
-	playerH := &player.Handlers{DB: cfg.DB, Lib: cfg.Library, SecureCookie: cfg.SecureCookie}
-	adminH := &admin.Handlers{DB: cfg.DB, Lib: cfg.Library}
-	publicH := &public.Handlers{DB: cfg.DB, Lib: cfg.Library}
+	playerH := &player.Handlers{DB: cfg.DB, Lib: cfg.Library, Hub: hub, SecureCookie: cfg.SecureCookie}
+	adminH := &admin.Handlers{DB: cfg.DB, Lib: cfg.Library, Hub: hub}
+	publicH := &public.Handlers{DB: cfg.DB, Lib: cfg.Library, Hub: hub}
 
 	r.Get("/api/health", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
@@ -79,6 +86,7 @@ func New(cfg Config) http.Handler {
 	// by an opaque token per run so the URL isn't guessable.
 	r.Get("/api/public/live/{token}", publicH.Live)
 	r.Get("/api/public/live/{token}/tracks", publicH.Tracks)
+	r.Get("/ws/live/{token}", publicH.WSLive)
 
 	// Image serving: permission is decided inside the handler (staff
 	// sessions always pass; slot sessions only when they're on the page).
@@ -97,6 +105,21 @@ func New(cfg Config) http.Handler {
 		r.Post("/answer", playerH.SubmitAnswer)
 		r.Post("/location", playerH.PostLocation)
 		r.Post("/logout", playerH.Logout)
+	})
+
+	// Player WebSocket: replaces the 5s /state poll and 15s /location POST
+	// with a single push-when-changed socket.
+	r.Group(func(r chi.Router) {
+		r.Use(auth.RequireSlot)
+		r.Get("/ws/play", playerH.WSPlay)
+	})
+
+	// Arranger subscription stream: mutations still use the /api/admin
+	// HTTP endpoints above; this socket exists only to push run-detail
+	// updates (positions, tracks, events, run+teams) on change.
+	r.Group(func(r chi.Router) {
+		r.Use(auth.RequireAnyRole(auth.RoleAdmin, auth.RoleOrgAdmin, auth.RoleOrgMember))
+		r.Get("/ws/arrange", adminH.WSArrange)
 	})
 
 	// Admin / org-user surface (staff-authenticated).
