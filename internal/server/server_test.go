@@ -17,8 +17,9 @@ import (
 )
 
 // newTestServer spins up the full HTTP stack against a fresh on-disk SQLite
-// database plus the real demo adventure shipped in the repo.
-func newTestServer(t *testing.T) (*httptest.Server, func()) {
+// database plus the real demo adventure shipped in the repo. Returns an
+// assignment id the seeded arranger can consume to create a run.
+func newTestServer(t *testing.T) (*httptest.Server, int64, func()) {
 	t.Helper()
 	dbPath := filepath.Join(t.TempDir(), "zv.db")
 	sqlDB, err := db.Open(dbPath)
@@ -44,10 +45,13 @@ func newTestServer(t *testing.T) (*httptest.Server, func()) {
 		t.Fatalf("seed arranger: %v", err)
 	}
 	arrID, _ := res.LastInsertId()
-	if _, err := sqlDB.Exec(`INSERT INTO arranger_adventures(arranger_user_id, adventure_slug) VALUES (?, ?)`, arrID, "demo"); err != nil {
+	ar, err := sqlDB.Exec(`INSERT INTO adventure_assignments(arranger_user_id, adventure_slug, max_teams) VALUES (?, ?, ?)`, arrID, "demo", 3)
+	if err != nil {
 		sqlDB.Close()
-		t.Fatalf("grant: %v", err)
+		t.Fatalf("assign: %v", err)
 	}
+	assignmentID, _ := ar.LastInsertId()
+	_ = assignmentID // used below when creating the run
 
 	h := server.New(server.Config{DB: sqlDB, Library: lib})
 	ts := httptest.NewServer(h)
@@ -55,7 +59,7 @@ func newTestServer(t *testing.T) (*httptest.Server, func()) {
 		ts.Close()
 		sqlDB.Close()
 	}
-	return ts, cleanup
+	return ts, assignmentID, cleanup
 }
 
 // client is a tiny helper that keeps cookies across requests and does JSON
@@ -107,7 +111,7 @@ func (c *client) do(method, path string, body any, into any) int {
 }
 
 func TestFullFlow(t *testing.T) {
-	ts, cleanup := newTestServer(t)
+	ts, assignmentID, cleanup := newTestServer(t)
 	defer cleanup()
 
 	// --- Arranger logs in and schedules a run. ---
@@ -131,7 +135,7 @@ func TestFullFlow(t *testing.T) {
 	var run struct {
 		ID int64 `json:"id"`
 	}
-	if s := arr.do("POST", "/api/admin/runs", map[string]string{"adventure_slug": "demo"}, &run); s != 201 {
+	if s := arr.do("POST", "/api/admin/runs", map[string]any{"assignment_id": assignmentID}, &run); s != 201 {
 		t.Fatalf("create run = %d", s)
 	}
 
@@ -291,7 +295,7 @@ func TestFullFlow(t *testing.T) {
 }
 
 func TestAuthRoleSeparation(t *testing.T) {
-	ts, cleanup := newTestServer(t)
+	ts, _, cleanup := newTestServer(t)
 	defer cleanup()
 
 	anon := newClient(t, ts)

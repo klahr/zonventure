@@ -31,24 +31,13 @@ type adventureDTO struct {
 	PageCount   int    `json:"page_count"`
 }
 
-// ListAdventures returns the adventures visible to the caller. Root sees
-// every adventure loaded from disk; an arranger only sees the ones a root
-// has granted them.
+// ListAdventures returns every adventure the server has loaded. This
+// endpoint is used by root (who may assign anything) and by the detail
+// views; arrangers pick what to schedule from their assignments instead.
 func (h *Handlers) ListAdventures(w http.ResponseWriter, r *http.Request) {
-	me, _ := auth.FromContext(r.Context())
-	allowed, err := allowedAdventures(r, h.DB, me)
-	if err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "grant lookup failed")
-		return
-	}
 	advs := h.Lib.List()
 	out := make([]adventureDTO, 0, len(advs))
 	for _, a := range advs {
-		if allowed != nil {
-			if _, ok := allowed[a.Slug]; !ok {
-				continue
-			}
-		}
 		out = append(out, adventureDTO{
 			Slug:        a.Slug,
 			Title:       a.Meta.Title,
@@ -60,35 +49,6 @@ func (h *Handlers) ListAdventures(w http.ResponseWriter, r *http.Request) {
 	httpx.JSON(w, http.StatusOK, map[string]any{"adventures": out})
 }
 
-// allowedAdventures returns the set of adventure slugs the user is allowed
-// to interact with, or nil (meaning "no filter — all adventures") for root.
-func allowedAdventures(r *http.Request, db *sql.DB, u auth.User) (map[string]struct{}, error) {
-	if u.Role == auth.RoleRoot {
-		return nil, nil
-	}
-	rows, err := db.QueryContext(r.Context(), `
-		SELECT adventure_slug FROM arranger_adventures WHERE arranger_user_id = ?
-	`, u.ID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := map[string]struct{}{}
-	for rows.Next() {
-		var s string
-		if err := rows.Scan(&s); err != nil {
-			return nil, err
-		}
-		out[s] = struct{}{}
-	}
-	return out, nil
-}
-
-type createRunRequest struct {
-	AdventureSlug string `json:"adventure_slug"`
-	ScheduledAt   string `json:"scheduled_at,omitempty"`
-}
-
 type runDTO struct {
 	ID             int64  `json:"id"`
 	AdventureSlug  string `json:"adventure_slug"`
@@ -96,49 +56,85 @@ type runDTO struct {
 	ScheduledAt    string `json:"scheduled_at,omitempty"`
 	StartedAt      string `json:"started_at,omitempty"`
 	ArrangerUserID int64  `json:"arranger_user_id"`
+	AssignmentID   int64  `json:"assignment_id"`
+	MaxTeams       int    `json:"max_teams"`
 }
 
-// CreateRun schedules a new run for a known adventure. Arrangers may only
-// schedule adventures they have been granted; root has no restriction.
+type createRunRequest struct {
+	AssignmentID int64  `json:"assignment_id"`
+	ScheduledAt  string `json:"scheduled_at,omitempty"`
+}
+
+// CreateRun consumes one of the caller's unused assignments and schedules a
+// run tied to it. The old semantics (pick any adventure the caller was
+// "granted" unlimited times) are gone — arrangers must have an unused
+// assignment and each assignment produces exactly one run.
 func (h *Handlers) CreateRun(w http.ResponseWriter, r *http.Request) {
 	var req createRunRequest
 	if !httpx.DecodeJSON(w, r, &req) {
 		return
 	}
-	if h.Lib.Get(req.AdventureSlug) == nil {
-		httpx.Error(w, http.StatusBadRequest, "unknown adventure: "+req.AdventureSlug)
+	if req.AssignmentID <= 0 {
+		httpx.Error(w, http.StatusBadRequest, "assignment_id required")
 		return
 	}
 	arr, _ := auth.FromContext(r.Context())
-	allowed, err := allowedAdventures(r, h.DB, arr)
-	if err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "grant lookup failed")
+
+	// Atomically verify: assignment exists, belongs to the caller, and is
+	// not already consumed. The unique index on adventure_runs.assignment_id
+	// also enforces uniqueness at the DB level.
+	var (
+		slug     string
+		owner    int64
+		maxTeams int
+		used     sql.NullInt64
+	)
+	err := h.DB.QueryRowContext(r.Context(), `
+		SELECT aa.adventure_slug, aa.arranger_user_id, aa.max_teams, ar.id
+		FROM adventure_assignments aa
+		LEFT JOIN adventure_runs ar ON ar.assignment_id = aa.id
+		WHERE aa.id = ?
+	`, req.AssignmentID).Scan(&slug, &owner, &maxTeams, &used)
+	if errors.Is(err, sql.ErrNoRows) {
+		httpx.Error(w, http.StatusNotFound, "assignment not found")
 		return
 	}
-	if allowed != nil {
-		if _, ok := allowed[req.AdventureSlug]; !ok {
-			httpx.Error(w, http.StatusForbidden, "you are not permitted to arrange "+req.AdventureSlug)
-			return
-		}
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "lookup failed")
+		return
 	}
+	if owner != arr.ID {
+		httpx.Error(w, http.StatusForbidden, "that assignment is not yours")
+		return
+	}
+	if used.Valid {
+		httpx.Error(w, http.StatusConflict, "assignment already used")
+		return
+	}
+	if h.Lib.Get(slug) == nil {
+		httpx.Error(w, http.StatusInternalServerError, "adventure not loaded: "+slug)
+		return
+	}
+
 	var schedAt any
 	if req.ScheduledAt != "" {
 		schedAt = req.ScheduledAt
 	}
 	res, err := h.DB.ExecContext(r.Context(), `
-		INSERT INTO adventure_runs(adventure_slug, arranger_user_id, state, scheduled_at)
-		VALUES (?, ?, 'scheduled', ?)
-	`, req.AdventureSlug, arr.ID, schedAt)
+		INSERT INTO adventure_runs(adventure_slug, arranger_user_id, state, scheduled_at, assignment_id)
+		VALUES (?, ?, 'scheduled', ?, ?)
+	`, slug, arr.ID, schedAt, req.AssignmentID)
 	if err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "create run failed")
+		httpx.Error(w, http.StatusConflict, "could not create run: "+err.Error())
 		return
 	}
 	id, _ := res.LastInsertId()
 	runevents.Record(r.Context(), h.DB, id, nil, &arr.ID, runevents.RunCreated,
-		map[string]any{"adventure_slug": req.AdventureSlug})
+		map[string]any{"adventure_slug": slug, "max_teams": maxTeams})
 	httpx.JSON(w, http.StatusCreated, runDTO{
-		ID: id, AdventureSlug: req.AdventureSlug, State: "scheduled",
+		ID: id, AdventureSlug: slug, State: "scheduled",
 		ScheduledAt: req.ScheduledAt, ArrangerUserID: arr.ID,
+		AssignmentID: req.AssignmentID, MaxTeams: maxTeams,
 	})
 }
 
@@ -146,9 +142,12 @@ func (h *Handlers) CreateRun(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) ListRuns(w http.ResponseWriter, r *http.Request) {
 	arr, _ := auth.FromContext(r.Context())
 	rows, err := h.DB.QueryContext(r.Context(), `
-		SELECT id, adventure_slug, state,
-		       COALESCE(scheduled_at, ''), COALESCE(started_at, ''), arranger_user_id
-		FROM adventure_runs WHERE arranger_user_id = ? ORDER BY created_at DESC
+		SELECT ar.id, ar.adventure_slug, ar.state,
+		       COALESCE(ar.scheduled_at, ''), COALESCE(ar.started_at, ''), ar.arranger_user_id,
+		       COALESCE(ar.assignment_id, 0), COALESCE(aa.max_teams, 0)
+		FROM adventure_runs ar
+		LEFT JOIN adventure_assignments aa ON aa.id = ar.assignment_id
+		WHERE ar.arranger_user_id = ? ORDER BY ar.created_at DESC
 	`, arr.ID)
 	if err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "list failed")
@@ -158,7 +157,7 @@ func (h *Handlers) ListRuns(w http.ResponseWriter, r *http.Request) {
 	out := []runDTO{}
 	for rows.Next() {
 		var d runDTO
-		if err := rows.Scan(&d.ID, &d.AdventureSlug, &d.State, &d.ScheduledAt, &d.StartedAt, &d.ArrangerUserID); err != nil {
+		if err := rows.Scan(&d.ID, &d.AdventureSlug, &d.State, &d.ScheduledAt, &d.StartedAt, &d.ArrangerUserID, &d.AssignmentID, &d.MaxTeams); err != nil {
 			httpx.Error(w, http.StatusInternalServerError, "scan failed")
 			return
 		}
@@ -288,6 +287,29 @@ func (h *Handlers) CreateTeam(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback()
+
+	// Enforce the assignment's team cap. A run always has an assignment
+	// (arrangers can't create a run without one); max_teams is authoritative.
+	var (
+		maxTeams    int
+		teamsCount  int
+	)
+	err = tx.QueryRowContext(r.Context(), `
+		SELECT COALESCE(aa.max_teams, 0),
+		       (SELECT COUNT(*) FROM teams t WHERE t.run_id = ?)
+		FROM adventure_runs ar
+		LEFT JOIN adventure_assignments aa ON aa.id = ar.assignment_id
+		WHERE ar.id = ?
+	`, runID, runID).Scan(&maxTeams, &teamsCount)
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "cap lookup failed")
+		return
+	}
+	if maxTeams > 0 && teamsCount >= maxTeams {
+		httpx.Error(w, http.StatusConflict,
+			"this run's assignment allows up to "+strconv.Itoa(maxTeams)+" team(s); buy another assignment for more")
+		return
+	}
 
 	res, err := tx.ExecContext(r.Context(), `INSERT INTO teams(run_id, name) VALUES (?, ?)`, runID, req.Name)
 	if err != nil {

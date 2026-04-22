@@ -90,13 +90,16 @@ func New(cfg Config) http.Handler {
 		r.Delete("/users/{userID}", adminH.DeleteUser)
 		r.Post("/users/{userID}/password", adminH.ResetPassword)
 
-		// Root-only sub-surface for managing arrangers and their grants.
+		// Root-only sub-surface for managing arrangers and their assignments.
 		r.Group(func(r chi.Router) {
 			r.Use(auth.RequireRole(auth.RoleRoot))
 			r.Get("/arrangers", adminH.ListArrangers)
-			r.Post("/arrangers/{userID}/grants", adminH.GrantAdventure)
-			r.Delete("/arrangers/{userID}/grants/{slug}", adminH.RevokeAdventure)
+			r.Post("/arrangers/{userID}/assignments", adminH.CreateAssignment)
+			r.Delete("/arrangers/{userID}/assignments/{assignmentID}", adminH.DeleteAssignment)
 		})
+
+		// Arranger-facing: what am I allowed to run, and for how many teams.
+		r.Get("/assignments", adminH.ListMyAssignments)
 	})
 
 	return r

@@ -723,13 +723,19 @@ function renderLogin(err) {
 
 function renderShell() {
   const isRoot = state.me.role === 'root';
-  const items = [
-    ['#dashboard', 'Dashboard', ICONS.dashboard],
-    ['#adventures', 'Adventures', ICONS.map],
-    ['#runs', 'Runs', ICONS.play],
-    ['#players', 'Players', ICONS.user],
-  ];
-  if (isRoot) items.push(['#arrangers', 'Arrangers', ICONS.shield]);
+  // Root is scoped to arranger management — the adventure/run/player flows
+  // belong to arrangers, not the superuser tier.
+  const items = isRoot
+    ? [
+        ['#dashboard', 'Dashboard', ICONS.dashboard],
+        ['#arrangers', 'Arrangers', ICONS.shield],
+      ]
+    : [
+        ['#dashboard', 'Dashboard', ICONS.dashboard],
+        ['#adventures', 'Adventures', ICONS.map],
+        ['#runs', 'Runs', ICONS.play],
+        ['#players', 'Players', ICONS.user],
+      ];
   const active = state.route.split('/')[0];
 
   const nav = h('nav', { class: 'nav' }, items.map(([href, label, svg]) =>
@@ -796,6 +802,18 @@ async function renderRoute() {
   view.replaceChildren(h('p', { class: 'muted' }, 'Loading…'));
   const r = state.route.replace(/^#/, '');
   const [section, arg] = r.split('/');
+  const isRoot = state.me.role === 'root';
+
+  // Routes root isn't allowed to visit bounce to its dashboard.
+  if (isRoot && ['adventures', 'runs', 'players'].includes(section)) {
+    nav('#arrangers');
+    return;
+  }
+  if (!isRoot && section === 'arrangers') {
+    nav('#dashboard');
+    return;
+  }
+
   try {
     switch (section) {
       case '':
@@ -803,9 +821,7 @@ async function renderRoute() {
       case 'adventures': return arg ? await viewAdventureDetail(view, arg) : await viewAdventures(view);
       case 'runs': return arg ? await viewRunDetail(view, arg) : await viewRuns(view);
       case 'players': return await viewPlayers(view);
-      case 'arrangers':
-        if (state.me.role !== 'root') { nav('#dashboard'); return; }
-        return await viewArrangers(view);
+      case 'arrangers': return await viewArrangers(view);
       default: view.replaceChildren(h('p', {}, 'Not found'));
     }
   } catch (err) {
@@ -821,6 +837,11 @@ async function logout() {
 
 /* ========== Dashboard ========== */
 async function viewDashboard(view) {
+  if (state.me.role === 'root') return viewRootDashboard(view);
+  return viewArrangerDashboard(view);
+}
+
+async function viewArrangerDashboard(view) {
   const [runs, advs] = await Promise.all([
     api('/api/admin/runs'), api('/api/admin/adventures'),
   ]);
@@ -829,14 +850,12 @@ async function viewDashboard(view) {
     total: rs.length,
     running: rs.filter(r => r.state === 'running').length,
     scheduled: rs.filter(r => r.state === 'scheduled').length,
-    completed: rs.filter(r => r.state === 'completed').length,
   };
 
   view.replaceChildren(
     h('h1', {}, `Hello, ${state.me.username}`),
-    h('p', { class: 'muted' }, state.me.role === 'root'
-      ? 'You are signed in as root — you can manage arrangers and the adventures each can arrange.'
-      : `You have ${ (advs.body?.adventures || []).length } adventure(s) you are allowed to arrange.`),
+    h('p', { class: 'muted' },
+      `You have ${ (advs.body?.adventures || []).length } adventure(s) you are allowed to arrange.`),
     h('div', { class: 'grid stats' },
       stat('Runs total', counts.total),
       stat('Running now', counts.running),
@@ -849,34 +868,114 @@ async function viewDashboard(view) {
   );
 }
 
+async function viewRootDashboard(view) {
+  const [arrsR, advsR] = await Promise.all([
+    api('/api/admin/arrangers'),
+    api('/api/admin/adventures'),
+  ]);
+  const arrangers = arrsR.body?.arrangers || [];
+  const adventures = advsR.body?.adventures || [];
+
+  const totals = arrangers.reduce((acc, a) => {
+    acc.runsTotal   += a.runs_total || 0;
+    acc.runsRunning += a.runs_running || 0;
+    acc.players     += a.players_total || 0;
+    return acc;
+  }, { runsTotal: 0, runsRunning: 0, players: 0 });
+
+  view.replaceChildren(
+    h('h1', {}, `Hello, ${state.me.username}`),
+    h('p', { class: 'muted' },
+      'Signed in as root — you manage arrangers and the adventures each of them may run.'),
+    h('div', { class: 'grid stats' },
+      stat('Arrangers', arrangers.length),
+      stat('Players', totals.players),
+      stat('Active runs', totals.runsRunning),
+    ),
+    h('div', { class: 'card' },
+      h('div', { class: 'row between' },
+        h('h2', {}, 'Arranger activity'),
+        h('button', { class: 'btn primary small', on: { click: () => nav('#arrangers') } },
+          icon(ICONS.shield), 'Manage arrangers')),
+      arrangers.length === 0
+        ? h('div', { class: 'empty' },
+            h('p', {}, 'No arrangers yet.'),
+            h('button', { class: 'btn primary', on: { click: () => openCreateUser('arranger') } },
+              icon(ICONS.plus), 'Create your first arranger'))
+        : h('table', { class: 'table' },
+          h('thead', {}, h('tr', {},
+            h('th', {}, 'Username'),
+            h('th', {}, 'Adventures'),
+            h('th', { class: 'hide-narrow' }, 'Players'),
+            h('th', {}, 'Runs'),
+            h('th', { class: 'hide-narrow' }, 'Active'))),
+          h('tbody', {}, arrangers.map((a) => h('tr', {},
+            h('td', {}, a.username),
+            h('td', {}, (a.grants || []).length === 0
+              ? h('span', { class: 'muted' }, '—')
+              : (a.grants || []).map((s) => h('span', { class: 'chip', style: 'margin-right:.2rem' }, s))),
+            h('td', { class: 'mono hide-narrow' }, a.players_total || 0),
+            h('td', { class: 'mono' }, a.runs_total || 0),
+            h('td', { class: 'hide-narrow' },
+              (a.runs_running || 0) > 0
+                ? h('span', { class: 'pill success' }, `${a.runs_running} running`)
+                : h('span', { class: 'muted' }, '—')),
+          )))),
+    ),
+    h('p', { class: 'muted', style: 'font-size:.8rem; margin-top:.5rem' },
+      `${adventures.length} adventure${adventures.length === 1 ? '' : 's'} loaded from disk.`),
+  );
+}
+
 function stat(label, value) {
   return h('div', { class: 'stat' },
     h('div', { class: 'label' }, label),
     h('div', { class: 'value' }, value));
 }
 
-/* ========== Adventures ========== */
+/* ========== Adventures ==========
+   For arrangers this is really "your assignments" — each unused assignment
+   is a one-shot licence to run an adventure with a fixed team cap. Used
+   assignments are also shown (with a link to their run) so the arranger can
+   see the full history at a glance. */
 async function viewAdventures(view) {
-  const r = await api('/api/admin/adventures');
-  const advs = r.body?.adventures || [];
+  const r = await api('/api/admin/assignments');
+  const assignments = r.body?.assignments || [];
+  const unused = assignments.filter((a) => !a.run_id);
+  const used = assignments.filter((a) => a.run_id);
+
   view.replaceChildren(
     h('h1', {}, 'Adventures'),
-    h('p', { class: 'muted' }, state.me.role === 'root'
-      ? 'All adventures loaded from disk.'
-      : 'Adventures you have been granted access to.'),
-    advs.length === 0
-      ? h('div', { class: 'empty' }, 'No adventures available.')
-      : h('div', { class: 'grid cols-2' }, advs.map((a) =>
-        h('div', { class: 'card clickable', on: { click: () => nav('#adventures/' + a.slug) } },
+    h('p', { class: 'muted' },
+      `Each assignment lets you schedule the adventure once, with up to the number of teams agreed with the owner.`),
+    unused.length === 0
+      ? h('div', { class: 'empty' },
+          h('p', {}, 'No assignments available right now.'),
+          h('p', { class: 'muted' }, 'Contact the owner to get one.'))
+      : h('div', { class: 'grid cols-2' }, unused.map((a) =>
+        h('div', { class: 'card' },
           h('div', { class: 'row between' },
-            h('h2', {}, a.title),
-            h('span', { class: 'pill accent' }, `${a.page_count} puzzles`)),
-          h('p', { class: 'muted' }, a.description || ''),
-          h('p', { class: 'muted mono' }, a.slug),
+            h('h2', {}, a.adventure_title || a.adventure_slug),
+            h('span', { class: 'pill accent' }, `up to ${a.max_teams} team${a.max_teams === 1 ? '' : 's'}`)),
+          h('p', { class: 'muted mono' }, a.adventure_slug),
           h('div', { class: 'row end' },
-            h('button', { class: 'btn primary small', on: { click: (e) => { e.stopPropagation(); scheduleRun(a.slug); } } },
+            h('button', { class: 'btn small', on: { click: () => nav('#adventures/' + a.adventure_slug) } }, 'Preview'),
+            h('button', { class: 'btn primary small', on: { click: () => scheduleRun(a.id) } },
               icon(ICONS.plus), 'Schedule run')),
         ))),
+    used.length === 0 ? null : h('div', {},
+      h('h3', {}, 'Already used'),
+      h('div', { class: 'card' },
+        h('table', { class: 'table' },
+          h('thead', {}, h('tr', {},
+            h('th', {}, 'Adventure'), h('th', {}, 'Teams cap'), h('th', {}, ''))),
+          h('tbody', {}, used.map((a) => h('tr', {},
+            h('td', {}, a.adventure_title || a.adventure_slug),
+            h('td', { class: 'mono' }, a.max_teams),
+            h('td', { class: 'row end' },
+              h('button', { class: 'btn small', on: { click: () => nav('#runs/' + a.run_id) } }, 'Open run')),
+          )))),
+      )),
   );
 }
 
@@ -889,26 +988,24 @@ async function viewAdventureDetail(view, slug) {
     h('h1', {}, a.title),
     h('p', { class: 'muted' }, a.description || ''),
     h('p', { class: 'muted mono' }, `${a.slug} · ${a.page_count} puzzles${a.author ? ' · ' + a.author : ''}`),
-    h('div', { class: 'row' },
-      h('button', { class: 'btn primary', on: { click: () => scheduleRun(a.slug) } }, icon(ICONS.plus), 'Schedule run'),
-    ),
     h('h2', { style: 'margin-top:1.5rem' }, 'Puzzles'),
     h('div', {}, a.pages.map((p, i) =>
       h('div', { class: 'card' },
         h('div', { class: 'row between' },
           h('strong', {}, `${i + 1}. ${p.title || '(untitled)'}`),
-          p.gate ? h('span', { class: 'pill warning' }, 'gated') : null),
+          p.gated ? h('span', { class: 'pill warning' }, 'gated') : null),
         h('p', { style: 'white-space:pre-wrap' }, p.prompt),
         p.hint ? h('p', { class: 'muted' }, `Hint: ${p.hint}`) : null,
         h('p', { class: 'muted' }, 'Accepted: ', p.accept.map((x) => h('span', { class: 'chip', style: 'margin-right:.25rem' }, x))),
-        p.gate ? h('p', { class: 'muted mono' },
-          `Gate: ${p.gate.lat.toFixed(5)}, ${p.gate.lng.toFixed(5)} · ${p.gate.radius_m} m`) : null,
+        p.location ? h('p', { class: 'muted mono' },
+          `Location: ${p.location.lat.toFixed(5)}, ${p.location.lng.toFixed(5)}`,
+          p.location.radius_m ? ` · gate ${p.location.radius_m} m` : '') : null,
       ))),
   );
 }
 
-async function scheduleRun(slug) {
-  const r = await api('/api/admin/runs', { method: 'POST', body: JSON.stringify({ adventure_slug: slug }) });
+async function scheduleRun(assignmentID) {
+  const r = await api('/api/admin/runs', { method: 'POST', body: JSON.stringify({ assignment_id: assignmentID }) });
   if (r.status === 201) { toastOk(`Run #${r.body.id} scheduled`); nav('#runs/' + r.body.id); }
   else toastErr(r.body?.error || `error ${r.status}`);
 }
@@ -1054,8 +1151,17 @@ async function viewRunDetail(view, runID) {
     h('div', { class: 'grid cols-2' },
       h('div', { class: 'card' },
         h('div', { class: 'row between' },
-          h('h2', {}, 'Teams'),
-          h('button', { class: 'btn primary small', on: { click: () => openTeamModal(run.id, null) } }, icon(ICONS.plus), 'New team')),
+          h('h2', {},
+            'Teams',
+            run.max_teams > 0
+              ? h('span', { class: 'muted', style: 'font-weight:400; margin-left:.4rem; font-size:.85rem' },
+                  `(${teams.length} / ${run.max_teams})`)
+              : null),
+          h('button', {
+            class: 'btn primary small',
+            disabled: run.max_teams > 0 && teams.length >= run.max_teams ? '' : null,
+            on: { click: () => openTeamModal(run.id, null) },
+          }, icon(ICONS.plus), 'New team')),
         teams.length === 0
           ? h('div', { class: 'empty' }, 'No teams yet.')
           : h('table', { class: 'table' },
@@ -1583,47 +1689,82 @@ async function viewArrangers(view) {
     h('div', { class: 'row between' },
       h('h1', {}, 'Arrangers'),
       h('button', { class: 'btn primary', on: { click: () => openCreateUser('arranger') } }, icon(ICONS.plus), 'New arranger')),
-    h('p', { class: 'muted' }, 'Each arranger can only schedule runs of adventures they have been granted.'),
+    h('p', { class: 'muted' },
+      'Each assignment lets an arranger run one adventure with a fixed team cap. Unused assignments can be revoked; used ones are tied to a run.'),
     arrangers.length === 0
       ? h('div', { class: 'empty' }, 'No arrangers yet.')
-      : h('div', { class: 'card' },
-        h('table', { class: 'table' },
-          h('thead', {}, h('tr', {}, h('th', {}, 'Username'), h('th', {}, 'Adventures'), h('th', {}, ''))),
-          h('tbody', {}, arrangers.map((a) => h('tr', {},
-            h('td', {}, a.username),
-            h('td', {},
-              (a.grants || []).map((slug) => h('span', { class: 'chip', style: 'margin-right:.25rem' },
-                slug,
-                h('button', { title: 'Revoke', on: { click: () => revokeGrant(a.id, slug) } }, '×'))),
-              renderGrantPicker(a, adventures)),
-            h('td', {}, h('div', { class: 'row end' },
-              h('button', { class: 'btn small', on: { click: () => openResetPassword(a) } }, icon(ICONS.key), 'Password'),
-              h('button', { class: 'btn small danger', on: { click: () => confirmDeleteUser(a) } }, icon(ICONS.trash), 'Delete'),
-            )),
-          )))),
-      ),
+      : h('div', {}, arrangers.map((a) => renderArrangerCard(a, adventures))),
   );
 }
 
-function renderGrantPicker(arr, allAdventures) {
-  const granted = new Set(arr.grants || []);
-  const remaining = allAdventures.filter((a) => !granted.has(a.slug));
-  if (remaining.length === 0) return null;
-  const sel = h('select', {}, h('option', { value: '' }, '+ grant…'),
-    remaining.map((a) => h('option', { value: a.slug }, a.slug)));
-  sel.addEventListener('change', async () => {
-    const slug = sel.value;
-    if (!slug) return;
-    const r = await api(`/api/admin/arrangers/${arr.id}/grants`, { method: 'POST', body: JSON.stringify({ adventure_slug: slug }) });
-    if (r.status === 204) { toastOk('granted'); renderRoute(); }
-    else toastErr(r.body?.error || `error ${r.status}`);
-  });
-  return h('span', { style: 'display:inline-block; margin-left:.5rem; min-width:140px' }, sel);
+function renderArrangerCard(arr, adventures) {
+  const assignments = arr.assignments || [];
+  const unused = assignments.filter((x) => !x.run_id);
+  const used = assignments.filter((x) => x.run_id);
+
+  const actions = h('div', { class: 'row end' },
+    h('button', { class: 'btn small', on: { click: () => openAssignAdventure(arr, adventures) } },
+      icon(ICONS.plus), 'Assign'),
+    h('button', { class: 'btn small', on: { click: () => openResetPassword(arr) } },
+      icon(ICONS.key), 'Password'),
+    h('button', { class: 'btn small danger', on: { click: () => confirmDeleteUser(arr) } },
+      icon(ICONS.trash), 'Delete'));
+
+  return h('div', { class: 'card' },
+    h('div', { class: 'row between' },
+      h('div', {},
+        h('h2', {}, arr.username),
+        h('p', { class: 'muted', style: 'font-size:.85rem' },
+          `${arr.runs_total || 0} run${arr.runs_total === 1 ? '' : 's'} · `,
+          `${arr.players_total || 0} player${arr.players_total === 1 ? '' : 's'}`,
+          (arr.runs_running || 0) > 0 ? ` · ${arr.runs_running} running` : '')),
+      actions),
+    h('h3', { style: 'margin-top:.75rem' }, `Unused assignments (${unused.length})`),
+    unused.length === 0
+      ? h('p', { class: 'muted', style: 'font-size:.85rem' }, 'None — assign one to let them schedule a run.')
+      : h('div', {}, unused.map((x) => h('span', { class: 'chip', style: 'margin: 0 .35rem .35rem 0' },
+        `${x.adventure_slug} · ${x.max_teams} team${x.max_teams === 1 ? '' : 's'}`,
+        h('button', { title: 'Revoke', on: { click: () => revokeAssignment(arr.id, x.id) } }, '×')))),
+    used.length === 0 ? null : h('div', { style: 'margin-top:.75rem' },
+      h('h3', {}, `Used (${used.length})`),
+      h('div', {}, used.map((x) => h('span', { class: 'chip', style: 'margin: 0 .35rem .35rem 0; opacity:.75; font-style:italic' },
+        `${x.adventure_slug} · run #${x.run_id} · max ${x.max_teams}`)))),
+  );
 }
 
-async function revokeGrant(userID, slug) {
-  const r = await api(`/api/admin/arrangers/${userID}/grants/${encodeURIComponent(slug)}`, { method: 'DELETE' });
-  if (r.status === 204) { toastOk('revoked'); renderRoute(); }
+async function openAssignAdventure(arr, adventures) {
+  if (adventures.length === 0) { toastErr('No adventures loaded'); return; }
+  await modal(`Assign adventure to ${arr.username}`, ({ body, close }) => {
+    const sel = h('select', {}, adventures.map((a) =>
+      h('option', { value: a.slug }, `${a.title} (${a.slug})`)));
+    const count = h('input', { type: 'number', min: 1, step: 1, value: 3, required: true });
+    const form = h('form', {},
+      h('label', { class: 'field' }, h('span', {}, 'Adventure'), sel),
+      h('label', { class: 'field' }, h('span', {}, 'Maximum teams'), count),
+      h('p', { class: 'muted', style: 'font-size:.8rem' },
+        'Each assignment may be used for exactly one run. For more, assign again.'),
+      h('div', { class: 'row end' },
+        h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, 'Cancel'),
+        h('button', { class: 'btn primary', type: 'submit' }, 'Assign')),
+    );
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const maxTeams = parseInt(count.value, 10);
+      if (!(maxTeams > 0)) { toastErr('Max teams must be at least 1'); return; }
+      const r = await api(`/api/admin/arrangers/${arr.id}/assignments`, {
+        method: 'POST',
+        body: JSON.stringify({ adventure_slug: sel.value, max_teams: maxTeams }),
+      });
+      if (r.status === 201) { toastOk('Assignment granted'); close(true); renderRoute(); }
+      else toastErr(r.body?.error || `error ${r.status}`);
+    });
+    body.append(form);
+  });
+}
+
+async function revokeAssignment(arrangerID, assignmentID) {
+  const r = await api(`/api/admin/arrangers/${arrangerID}/assignments/${assignmentID}`, { method: 'DELETE' });
+  if (r.status === 204) { toastOk('Assignment revoked'); renderRoute(); }
   else toastErr(r.body?.error || `error ${r.status}`);
 }
 

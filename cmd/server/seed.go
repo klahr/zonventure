@@ -37,12 +37,30 @@ func seedDemo(ctx context.Context, d *sql.DB, advDir string) error {
 	if err != nil {
 		return err
 	}
-	if _, err := d.Exec(`INSERT OR IGNORE INTO arranger_adventures(arranger_user_id, adventure_slug) VALUES (?, ?)`, arrID, "demo"); err != nil {
+	// --- Reset previous demo runs and assignments so the dataset stays
+	//     deterministic across repeated seed runs. Runs cascade-delete their
+	//     teams/members; assignments are separate. ---
+	if _, err := d.Exec(`DELETE FROM adventure_runs WHERE adventure_slug = ? AND arranger_user_id = ?`, "demo", arrID); err != nil {
+		return err
+	}
+	if _, err := d.Exec(`DELETE FROM adventure_assignments WHERE arranger_user_id = ? AND adventure_slug = ?`, arrID, "demo"); err != nil {
 		return err
 	}
 
-	// --- Reset previous demo runs so the dataset stays deterministic ---
-	if _, err := d.Exec(`DELETE FROM adventure_runs WHERE adventure_slug = ? AND arranger_user_id = ?`, "demo", arrID); err != nil {
+	// --- Give boss one assignment to use and one spare assignment so the
+	//     root UI has something to show. ---
+	assignRes, err := d.Exec(`
+		INSERT INTO adventure_assignments(arranger_user_id, adventure_slug, max_teams)
+		VALUES (?, ?, ?)
+	`, arrID, "demo", 5)
+	if err != nil {
+		return err
+	}
+	assignmentID, _ := assignRes.LastInsertId()
+	if _, err := d.Exec(`
+		INSERT INTO adventure_assignments(arranger_user_id, adventure_slug, max_teams)
+		VALUES (?, ?, ?)
+	`, arrID, "demo", 3); err != nil {
 		return err
 	}
 
@@ -69,9 +87,9 @@ func seedDemo(ctx context.Context, d *sql.DB, advDir string) error {
 	// Backdate started_at ~30 min so the event feed has a natural span.
 	startedAt := time.Now().UTC().Add(-30 * time.Minute).Format(time.RFC3339)
 	res, err := d.Exec(`
-		INSERT INTO adventure_runs(adventure_slug, arranger_user_id, state, started_at, created_at)
-		VALUES (?, ?, 'running', ?, ?)
-	`, "demo", arrID, startedAt, startedAt)
+		INSERT INTO adventure_runs(adventure_slug, arranger_user_id, state, started_at, created_at, assignment_id)
+		VALUES (?, ?, 'running', ?, ?, ?)
+	`, "demo", arrID, startedAt, startedAt, assignmentID)
 	if err != nil {
 		return err
 	}

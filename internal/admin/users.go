@@ -341,10 +341,13 @@ func (h *Handlers) RunDetail(w http.ResponseWriter, r *http.Request) {
 	arr, _ := auth.FromContext(r.Context())
 	var d runDTO
 	err := h.DB.QueryRowContext(r.Context(), `
-		SELECT id, adventure_slug, state,
-		       COALESCE(scheduled_at,''), COALESCE(started_at,''), arranger_user_id
-		FROM adventure_runs WHERE id = ? AND arranger_user_id = ?
-	`, runID, arr.ID).Scan(&d.ID, &d.AdventureSlug, &d.State, &d.ScheduledAt, &d.StartedAt, &d.ArrangerUserID)
+		SELECT ar.id, ar.adventure_slug, ar.state,
+		       COALESCE(ar.scheduled_at,''), COALESCE(ar.started_at,''), ar.arranger_user_id,
+		       COALESCE(ar.assignment_id, 0), COALESCE(aa.max_teams, 0)
+		FROM adventure_runs ar
+		LEFT JOIN adventure_assignments aa ON aa.id = ar.assignment_id
+		WHERE ar.id = ? AND ar.arranger_user_id = ?
+	`, runID, arr.ID).Scan(&d.ID, &d.AdventureSlug, &d.State, &d.ScheduledAt, &d.StartedAt, &d.ArrangerUserID, &d.AssignmentID, &d.MaxTeams)
 	if errors.Is(err, sql.ErrNoRows) {
 		httpx.Error(w, http.StatusNotFound, "run not found")
 		return
