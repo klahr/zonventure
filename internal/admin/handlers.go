@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"git.sr.ht/~klahr/zv/internal/adventure"
 	"git.sr.ht/~klahr/zv/internal/auth"
@@ -118,7 +119,14 @@ func (h *Handlers) CreateRun(w http.ResponseWriter, r *http.Request) {
 
 	var schedAt any
 	if req.ScheduledAt != "" {
-		schedAt = req.ScheduledAt
+		t, perr := parseISO8601(req.ScheduledAt)
+		if perr != nil {
+			httpx.Error(w, http.StatusBadRequest, "invalid scheduled_at: "+perr.Error())
+			return
+		}
+		// Store in sqlite's native format so datetime('scheduled_at') compares
+		// cleanly against datetime('now').
+		schedAt = t.UTC().Format("2006-01-02 15:04:05")
 	}
 	res, err := h.DB.ExecContext(r.Context(), `
 		INSERT INTO adventure_runs(adventure_slug, arranger_user_id, state, scheduled_at, assignment_id)
@@ -223,6 +231,71 @@ func (h *Handlers) transitionRun(w http.ResponseWriter, r *http.Request, action 
 
 // StartRun moves a scheduled run into the running state.
 func (h *Handlers) StartRun(w http.ResponseWriter, r *http.Request) { h.transitionRun(w, r, "start") }
+
+type updateRunRequest struct {
+	// ScheduledAt: pointer so the client can distinguish "not provided" from
+	// "explicitly cleared". Empty string clears the schedule.
+	ScheduledAt *string `json:"scheduled_at,omitempty"`
+}
+
+// UpdateRun amends mutable properties of a scheduled run — currently only
+// scheduled_at. The run must be in the scheduled state; once it starts, the
+// field is meaningless and is rejected to avoid confusion.
+func (h *Handlers) UpdateRun(w http.ResponseWriter, r *http.Request) {
+	runID, ok := runIDFrom(r)
+	if !ok {
+		httpx.Error(w, http.StatusBadRequest, "bad run id")
+		return
+	}
+	arr, _ := auth.FromContext(r.Context())
+	var (
+		state string
+		owner int64
+	)
+	err := h.DB.QueryRowContext(r.Context(),
+		`SELECT state, arranger_user_id FROM adventure_runs WHERE id = ?`, runID).
+		Scan(&state, &owner)
+	if errors.Is(err, sql.ErrNoRows) {
+		httpx.Error(w, http.StatusNotFound, "run not found")
+		return
+	}
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "lookup failed")
+		return
+	}
+	if arr.Role != auth.RoleRoot && owner != arr.ID {
+		httpx.Error(w, http.StatusForbidden, "forbidden")
+		return
+	}
+	if state != "scheduled" {
+		httpx.Error(w, http.StatusConflict, "can only reschedule a run while it is 'scheduled'")
+		return
+	}
+
+	var req updateRunRequest
+	if !httpx.DecodeJSON(w, r, &req) {
+		return
+	}
+	if req.ScheduledAt == nil {
+		httpx.Error(w, http.StatusBadRequest, "nothing to update")
+		return
+	}
+	var schedAt any // nil clears
+	if *req.ScheduledAt != "" {
+		t, perr := parseISO8601(*req.ScheduledAt)
+		if perr != nil {
+			httpx.Error(w, http.StatusBadRequest, "invalid scheduled_at: "+perr.Error())
+			return
+		}
+		schedAt = t.UTC().Format("2006-01-02 15:04:05")
+	}
+	if _, err := h.DB.ExecContext(r.Context(),
+		`UPDATE adventure_runs SET scheduled_at = ? WHERE id = ?`, schedAt, runID); err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "update failed")
+		return
+	}
+	httpx.JSON(w, http.StatusNoContent, nil)
+}
 
 // PauseRun pauses a running run (players see a paused screen and cannot submit).
 func (h *Handlers) PauseRun(w http.ResponseWriter, r *http.Request) { h.transitionRun(w, r, "pause") }
@@ -450,6 +523,23 @@ func runIDFrom(r *http.Request) (int64, bool) {
 		return 0, false
 	}
 	return id, true
+}
+
+// parseISO8601 accepts the ISO-8601 variants browsers emit (Date.toISOString
+// gives fractional seconds; datetime-local inputs often don't).
+func parseISO8601(s string) (time.Time, error) {
+	layouts := []string{
+		time.RFC3339Nano,
+		time.RFC3339,
+		"2006-01-02T15:04:05",
+		"2006-01-02T15:04",
+	}
+	for _, l := range layouts {
+		if t, err := time.Parse(l, s); err == nil {
+			return t, nil
+		}
+	}
+	return time.Time{}, errors.New("need RFC3339 (e.g. 2026-04-22T14:00:00Z)")
 }
 
 type trackPoint struct {

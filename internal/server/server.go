@@ -73,6 +73,7 @@ func New(cfg Config) http.Handler {
 		r.Get("/runs", adminH.ListRuns)
 		r.Post("/runs", adminH.CreateRun)
 		r.Get("/runs/{runID}", adminH.RunDetail)
+		r.Patch("/runs/{runID}", adminH.UpdateRun)
 		r.Post("/runs/{runID}/start", adminH.StartRun)
 		r.Post("/runs/{runID}/pause", adminH.PauseRun)
 		r.Post("/runs/{runID}/resume", adminH.ResumeRun)
@@ -95,6 +96,7 @@ func New(cfg Config) http.Handler {
 			r.Use(auth.RequireRole(auth.RoleRoot))
 			r.Get("/arrangers", adminH.ListArrangers)
 			r.Post("/arrangers/{userID}/assignments", adminH.CreateAssignment)
+			r.Patch("/arrangers/{userID}/assignments/{assignmentID}", adminH.UpdateAssignment)
 			r.Delete("/arrangers/{userID}/assignments/{assignmentID}", adminH.DeleteAssignment)
 		})
 

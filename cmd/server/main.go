@@ -16,6 +16,7 @@ import (
 	"git.sr.ht/~klahr/zv/internal/adventure"
 	"git.sr.ht/~klahr/zv/internal/auth"
 	"git.sr.ht/~klahr/zv/internal/db"
+	"git.sr.ht/~klahr/zv/internal/scheduler"
 	"git.sr.ht/~klahr/zv/internal/server"
 )
 
@@ -79,6 +80,9 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+
+	// Sweep for scheduled runs every 15s and auto-start any that are due.
+	scheduler.Start(ctx, sqlDB, 15*time.Second)
 
 	go func() {
 		log.Printf("listening on %s", *addr)

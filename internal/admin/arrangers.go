@@ -150,6 +150,107 @@ func (h *Handlers) CreateAssignment(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+type updateAssignmentRequest struct {
+	AdventureSlug *string `json:"adventure_slug,omitempty"`
+	MaxTeams      *int    `json:"max_teams,omitempty"`
+}
+
+// UpdateAssignment amends an existing assignment. Rules: the adventure slug
+// can only be changed while the assignment is still unused (otherwise a run
+// is already locked to it); max_teams can be raised freely but cannot be
+// lowered below the number of teams already on the consuming run.
+// Root-only.
+func (h *Handlers) UpdateAssignment(w http.ResponseWriter, r *http.Request) {
+	arrangerID, ok := userIDFrom(r)
+	if !ok {
+		httpx.Error(w, http.StatusBadRequest, "bad user id")
+		return
+	}
+	assignmentID, err := strconv.ParseInt(chi.URLParam(r, "assignmentID"), 10, 64)
+	if err != nil || assignmentID <= 0 {
+		httpx.Error(w, http.StatusBadRequest, "bad assignment id")
+		return
+	}
+	var req updateAssignmentRequest
+	if !httpx.DecodeJSON(w, r, &req) {
+		return
+	}
+	if req.AdventureSlug == nil && req.MaxTeams == nil {
+		httpx.Error(w, http.StatusBadRequest, "nothing to update")
+		return
+	}
+
+	var (
+		owner       int64
+		currentSlug string
+		currentMax  int
+		runID       sql.NullInt64
+	)
+	err = h.DB.QueryRowContext(r.Context(), `
+		SELECT aa.arranger_user_id, aa.adventure_slug, aa.max_teams, ar.id
+		FROM adventure_assignments aa
+		LEFT JOIN adventure_runs ar ON ar.assignment_id = aa.id
+		WHERE aa.id = ?
+	`, assignmentID).Scan(&owner, &currentSlug, &currentMax, &runID)
+	if errors.Is(err, sql.ErrNoRows) {
+		httpx.Error(w, http.StatusNotFound, "assignment not found")
+		return
+	}
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "lookup failed")
+		return
+	}
+	if owner != arrangerID {
+		httpx.Error(w, http.StatusNotFound, "assignment not found")
+		return
+	}
+
+	newSlug := currentSlug
+	if req.AdventureSlug != nil && *req.AdventureSlug != currentSlug {
+		if runID.Valid {
+			httpx.Error(w, http.StatusConflict, "cannot change adventure on a used assignment")
+			return
+		}
+		if h.Lib.Get(*req.AdventureSlug) == nil {
+			httpx.Error(w, http.StatusBadRequest, "unknown adventure")
+			return
+		}
+		newSlug = *req.AdventureSlug
+	}
+
+	newMax := currentMax
+	if req.MaxTeams != nil {
+		if *req.MaxTeams <= 0 {
+			httpx.Error(w, http.StatusBadRequest, "max_teams must be > 0")
+			return
+		}
+		if runID.Valid {
+			var teamCount int
+			if err := h.DB.QueryRowContext(r.Context(),
+				`SELECT COUNT(*) FROM teams WHERE run_id = ?`, runID.Int64).Scan(&teamCount); err != nil {
+				httpx.Error(w, http.StatusInternalServerError, "team count failed")
+				return
+			}
+			if *req.MaxTeams < teamCount {
+				httpx.Error(w, http.StatusConflict,
+					"the consuming run already has "+strconv.Itoa(teamCount)+" team(s); delete teams first")
+				return
+			}
+		}
+		newMax = *req.MaxTeams
+	}
+
+	if _, err := h.DB.ExecContext(r.Context(),
+		`UPDATE adventure_assignments SET adventure_slug = ?, max_teams = ? WHERE id = ?`,
+		newSlug, newMax, assignmentID); err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "update failed")
+		return
+	}
+	httpx.JSON(w, http.StatusOK, assignmentDTO{
+		ID: assignmentID, AdventureSlug: newSlug, MaxTeams: newMax,
+	})
+}
+
 // DeleteAssignment revokes an unused assignment. Consumed assignments can't
 // be deleted — they're tied to a run. Root-only.
 func (h *Handlers) DeleteAssignment(w http.ResponseWriter, r *http.Request) {

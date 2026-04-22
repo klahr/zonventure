@@ -944,7 +944,9 @@ async function viewAdventures(view) {
   const unused = assignments.filter((a) => !a.run_id);
   const used = assignments.filter((a) => a.run_id);
 
-  view.replaceChildren(
+  // Build as an array we can filter — passing a bare null to replaceChildren
+  // makes it render the string "null".
+  const children = [
     h('h1', {}, 'Adventures'),
     h('p', { class: 'muted' },
       `Each assignment lets you schedule the adventure once, with up to the number of teams agreed with the owner.`),
@@ -968,15 +970,17 @@ async function viewAdventures(view) {
       h('div', { class: 'card' },
         h('table', { class: 'table' },
           h('thead', {}, h('tr', {},
-            h('th', {}, 'Adventure'), h('th', {}, 'Teams cap'), h('th', {}, ''))),
-          h('tbody', {}, used.map((a) => h('tr', {},
+            h('th', {}, 'Adventure'), h('th', {}, 'Teams cap'))),
+          h('tbody', {}, used.map((a) => h('tr', {
+              style: 'cursor:pointer',
+              on: { click: () => nav('#runs/' + a.run_id) },
+            },
             h('td', {}, a.adventure_title || a.adventure_slug),
             h('td', { class: 'mono' }, a.max_teams),
-            h('td', { class: 'row end' },
-              h('button', { class: 'btn small', on: { click: () => nav('#runs/' + a.run_id) } }, 'Open run')),
           )))),
       )),
-  );
+  ].filter(Boolean);
+  view.replaceChildren(...children);
 }
 
 async function viewAdventureDetail(view, slug) {
@@ -1005,7 +1009,31 @@ async function viewAdventureDetail(view, slug) {
 }
 
 async function scheduleRun(assignmentID) {
-  const r = await api('/api/admin/runs', { method: 'POST', body: JSON.stringify({ assignment_id: assignmentID }) });
+  const body = await modal('Schedule run', ({ body, close }) => {
+    const when = h('input', { type: 'datetime-local' });
+    const form = h('form', {},
+      h('p', { class: 'muted', style: 'font-size:.85rem; margin-bottom:.5rem' },
+        'The run is created in the scheduled state. You can start it manually later, or pick a local time here to have the server auto-start it.'),
+      h('label', { class: 'field' }, h('span', {}, 'Auto-start at (optional)'), when),
+      h('div', { class: 'row end' },
+        h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, 'Cancel'),
+        h('button', { class: 'btn primary', type: 'submit' }, 'Create run')),
+    );
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const req = { assignment_id: assignmentID };
+      if (when.value) {
+        // datetime-local is parsed as local time; toISOString emits UTC.
+        const d = new Date(when.value);
+        if (Number.isNaN(d.getTime())) { toastErr('Bad date'); return; }
+        req.scheduled_at = d.toISOString();
+      }
+      close(req);
+    });
+    body.append(form);
+  });
+  if (!body) return;
+  const r = await api('/api/admin/runs', { method: 'POST', body: JSON.stringify(body) });
   if (r.status === 201) { toastOk(`Run #${r.body.id} scheduled`); nav('#runs/' + r.body.id); }
   else toastErr(r.body?.error || `error ${r.status}`);
 }
@@ -1027,15 +1055,13 @@ function runsTable(rs) {
       h('th', {}, 'Adventure'),
       h('th', {}, 'State'),
       h('th', { class: 'hide-narrow' }, 'Scheduled'),
-      h('th', { class: 'hide-narrow' }, 'Started'),
-      h('th', {}, ''))),
+      h('th', { class: 'hide-narrow' }, 'Started'))),
     h('tbody', {}, rs.map((r) =>
       h('tr', { style: 'cursor:pointer', on: { click: () => nav('#runs/' + r.id) } },
         h('td', {}, r.adventure_slug),
         h('td', {}, h('span', { class: 'pill ' + pillClassForState(r.state) }, r.state)),
-        h('td', { class: 'hide-narrow' }, r.scheduled_at || '—'),
-        h('td', { class: 'hide-narrow' }, r.started_at || '—'),
-        h('td', { class: 'row end' }, h('button', { class: 'btn small' }, 'Open')),
+        h('td', { class: 'hide-narrow' }, fmtLocal(r.scheduled_at)),
+        h('td', { class: 'hide-narrow' }, fmtLocal(r.started_at)),
       ))),
   );
 }
@@ -1112,7 +1138,10 @@ async function viewRunDetail(view, runID) {
   const events = eventsR.body?.events || [];
 
   const actions = h('div', { class: 'row' });
-  if (run.state === 'scheduled') actions.append(btn('Start', 'primary', () => transition(run.id, 'start')));
+  if (run.state === 'scheduled') {
+    actions.append(btn('Start now', 'primary', () => confirmStart(run)));
+    actions.append(btn('Edit schedule', '', () => openEditSchedule(run)));
+  }
   if (run.state === 'running') actions.append(btn('Pause', '', () => transition(run.id, 'pause')));
   if (run.state === 'paused') actions.append(btn('Resume', 'primary', () => transition(run.id, 'resume')));
 
@@ -1141,7 +1170,11 @@ async function viewRunDetail(view, runID) {
       h('h2', {}, 'Lifecycle'),
       actions,
       h('p', { class: 'muted' },
-        run.started_at ? `Started ${run.started_at}` : 'Not started yet'),
+        run.started_at
+          ? `Started ${fmtLocal(run.started_at)}`
+          : run.scheduled_at
+            ? `Scheduled to auto-start ${fmtLocal(run.scheduled_at)}`
+            : 'Not started yet'),
     ),
     h('div', { class: 'card' },
       h('h2', {}, 'Map'),
@@ -1239,7 +1272,7 @@ function initRunMap(host, adventure, teams, tracks) {
           iconSize: [14, 14],
           iconAnchor: [7, 7],
         }),
-      }).bindPopup(`<strong>${track.team_name}</strong><br><small>${latest.server_ts}</small>`).addTo(map);
+      }).bindPopup(`<strong>${track.team_name}</strong><br><small>${fmtLocal(latest.server_ts)}</small>`).addTo(map);
       for (const ll of latlngs) bounds.extend(ll);
     }
   }
@@ -1304,6 +1337,17 @@ function renderEvent(e, teams) {
   );
 }
 
+// fmtLocal turns a server timestamp (SQLite "YYYY-MM-DD HH:MM:SS" UTC, or an
+// RFC3339 string) into the viewer's local time. Returns '—' for empty input
+// and the raw value when it can't be parsed, so we never show "Invalid Date".
+function fmtLocal(s, opts) {
+  if (!s) return '—';
+  const iso = s.includes('T') ? s : s.replace(' ', 'T') + 'Z';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return s;
+  return d.toLocaleString(undefined, opts || { dateStyle: 'medium', timeStyle: 'short' });
+}
+
 function formatEventTime(s) {
   if (!s) return '';
   // SQLite datetime('now') returns "YYYY-MM-DD HH:MM:SS" in UTC. Let users
@@ -1326,6 +1370,82 @@ async function transition(runID, action) {
   const r = await api(`/api/admin/runs/${runID}/${action}`, { method: 'POST' });
   if (r.status === 204) { toastOk(action + 'ed'); renderRoute(); }
   else toastErr(r.body?.error || `error ${r.status}`);
+}
+
+async function confirmStart(run) {
+  const ok = await modal('Start this run now?', ({ body, close }) => {
+    body.append(
+      h('p', {},
+        `Starting the run opens the first puzzle to all teams. `,
+        run.scheduled_at
+          ? h('span', {},
+              `An auto-start is currently scheduled for `,
+              h('strong', {}, fmtLocal(run.scheduled_at)),
+              `. Starting now will replace that.`)
+          : 'You can pause it later if needed.'),
+      h('div', { class: 'row end', style: 'margin-top:1rem' },
+        h('button', { class: 'btn', on: { click: () => close(false) } }, 'Cancel'),
+        h('button', { class: 'btn primary', on: { click: () => close(true) } }, 'Start run')),
+    );
+  });
+  if (!ok) return;
+  await transition(run.id, 'start');
+}
+
+async function openEditSchedule(run) {
+  // Pre-fill the datetime-local input from the current UTC-stored value.
+  // The input wants "YYYY-MM-DDTHH:MM" in local time; use the Date object to
+  // convert without a chunky date library.
+  let prefill = '';
+  if (run.scheduled_at) {
+    const iso = run.scheduled_at.includes('T') ? run.scheduled_at : run.scheduled_at.replace(' ', 'T') + 'Z';
+    const d = new Date(iso);
+    if (!Number.isNaN(d.getTime())) {
+      const pad = (n) => String(n).padStart(2, '0');
+      prefill = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    }
+  }
+
+  await modal(run.scheduled_at ? 'Change auto-start' : 'Set auto-start', ({ body, close }) => {
+    const when = h('input', { type: 'datetime-local', value: prefill });
+    const form = h('form', {},
+      h('p', { class: 'muted', style: 'font-size:.85rem; margin-bottom:.5rem' },
+        'The server will flip the run to running automatically at the time below. Leave empty and hit Clear to remove the auto-start.'),
+      h('label', { class: 'field' }, h('span', {}, 'Auto-start at'), when),
+      h('div', { class: 'row between', style: 'margin-top:.5rem' },
+        run.scheduled_at
+          ? h('button', { class: 'btn danger', type: 'button', on: { click: async () => {
+              close(null);
+              await patchSchedule(run.id, '');
+            } } }, 'Clear')
+          : h('span', {}),
+        h('div', { class: 'row' },
+          h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, 'Cancel'),
+          h('button', { class: 'btn primary', type: 'submit' }, 'Save'))),
+    );
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (!when.value) { toastErr('Pick a date or use Clear'); return; }
+      const d = new Date(when.value);
+      if (Number.isNaN(d.getTime())) { toastErr('Bad date'); return; }
+      close(null);
+      await patchSchedule(run.id, d.toISOString());
+    });
+    body.append(form);
+  });
+}
+
+async function patchSchedule(runID, iso) {
+  const r = await api(`/api/admin/runs/${runID}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ scheduled_at: iso }),
+  });
+  if (r.status === 204) {
+    toastOk(iso ? 'Schedule updated' : 'Auto-start cleared');
+    renderRoute();
+  } else {
+    toastErr(r.body?.error || `error ${r.status}`);
+  }
 }
 
 async function openTeamDetail(runID, team, adventure) {
@@ -1595,7 +1715,7 @@ function usersTable(users) {
       h('td', {}, u.username),
       h('td', { class: 'hide-narrow' }, h('span', { class: 'pill' }, u.role)),
       h('td', { class: 'mono' }, u.team_count),
-      h('td', { class: 'mono muted hide-narrow' }, u.created_at),
+      h('td', { class: 'muted hide-narrow' }, fmtLocal(u.created_at, { dateStyle: 'medium' })),
       h('td', {}, h('div', { class: 'row end' },
         h('button', { class: 'btn small', title: 'Reset password', on: { click: () => openResetPassword(u) } }, icon(ICONS.key), 'Password'),
         h('button', { class: 'btn small danger', title: 'Delete user', on: { click: () => confirmDeleteUser(u) } }, icon(ICONS.trash), 'Delete'),
@@ -1722,14 +1842,76 @@ function renderArrangerCard(arr, adventures) {
     h('h3', { style: 'margin-top:.75rem' }, `Unused assignments (${unused.length})`),
     unused.length === 0
       ? h('p', { class: 'muted', style: 'font-size:.85rem' }, 'None — assign one to let them schedule a run.')
-      : h('div', {}, unused.map((x) => h('span', { class: 'chip', style: 'margin: 0 .35rem .35rem 0' },
-        `${x.adventure_slug} · ${x.max_teams} team${x.max_teams === 1 ? '' : 's'}`,
-        h('button', { title: 'Revoke', on: { click: () => revokeAssignment(arr.id, x.id) } }, '×')))),
-    used.length === 0 ? null : h('div', { style: 'margin-top:.75rem' },
+      : h('div', {}, unused.map((x) => h('span', {
+          class: 'chip selectable',
+          style: 'margin: 0 .35rem .35rem 0',
+          title: 'Click to edit',
+          on: { click: () => openEditAssignment(arr, x, adventures) },
+        },
+        `${x.adventure_slug} · ${x.max_teams} team${x.max_teams === 1 ? '' : 's'}`))),
+    ...(used.length === 0 ? [] : [h('div', { style: 'margin-top:.75rem' },
       h('h3', {}, `Used (${used.length})`),
-      h('div', {}, used.map((x) => h('span', { class: 'chip', style: 'margin: 0 .35rem .35rem 0; opacity:.75; font-style:italic' },
-        `${x.adventure_slug} · run #${x.run_id} · max ${x.max_teams}`)))),
+      h('div', {}, used.map((x) => h('span', {
+          class: 'chip selectable',
+          style: 'margin: 0 .35rem .35rem 0; opacity:.75; font-style:italic',
+          title: 'Click to edit team cap',
+          on: { click: () => openEditAssignment(arr, x, adventures) },
+        },
+        `${x.adventure_slug} · run #${x.run_id} · max ${x.max_teams}`))))]),
   );
+}
+
+async function openEditAssignment(arr, assignment, adventures) {
+  const used = !!assignment.run_id;
+  await modal(`Edit assignment · ${arr.username}`, ({ body, close }) => {
+    const advSel = h('select', { disabled: used ? '' : null },
+      adventures.map((a) => h('option', {
+        value: a.slug, selected: a.slug === assignment.adventure_slug ? '' : null,
+      }, `${a.title} (${a.slug})`)));
+    const count = h('input', {
+      type: 'number', min: 1, step: 1, value: String(assignment.max_teams), required: true,
+    });
+
+    const form = h('form', {},
+      h('label', { class: 'field' },
+        h('span', {}, used ? 'Adventure (locked — already used)' : 'Adventure'),
+        advSel),
+      h('label', { class: 'field' }, h('span', {}, 'Maximum teams'), count),
+      h('p', { class: 'muted', style: 'font-size:.8rem' },
+        used
+          ? `Linked to run #${assignment.run_id}. You may raise the cap; lowering below the current team count is rejected.`
+          : 'This assignment has not yet been used.'),
+      h('div', { class: 'row between', style: 'margin-top:.5rem' },
+        used
+          ? h('span', {})
+          : h('button', {
+              class: 'btn danger',
+              type: 'button',
+              on: { click: async () => {
+                close(null);
+                await revokeAssignment(arr.id, assignment.id);
+              } },
+            }, icon(ICONS.trash), 'Revoke'),
+        h('div', { class: 'row' },
+          h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, 'Cancel'),
+          h('button', { class: 'btn primary', type: 'submit' }, 'Save'))),
+    );
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const body = {};
+      const newMax = parseInt(count.value, 10);
+      if (!(newMax > 0)) { toastErr('Max teams must be at least 1'); return; }
+      if (newMax !== assignment.max_teams) body.max_teams = newMax;
+      if (!used && advSel.value !== assignment.adventure_slug) body.adventure_slug = advSel.value;
+      if (Object.keys(body).length === 0) { close(null); return; }
+      const r = await api(`/api/admin/arrangers/${arr.id}/assignments/${assignment.id}`, {
+        method: 'PATCH', body: JSON.stringify(body),
+      });
+      if (r.status === 200) { toastOk('Assignment updated'); close(true); renderRoute(); }
+      else toastErr(r.body?.error || `error ${r.status}`);
+    });
+    body.append(form);
+  });
 }
 
 async function openAssignAdventure(arr, adventures) {
