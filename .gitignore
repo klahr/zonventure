@@ -1,0 +1,5 @@
+/zv-server
+/zv.db
+/zv.db-*
+*.test
+/coverage.out

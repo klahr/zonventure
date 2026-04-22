@@ -1,0 +1,10 @@
+title = "Welcome"
+prompt = """
+What word do you say when you meet someone for the first time?
+"""
+accept = ["hello", "hi"]
+
+# Starting point: Kungsträdgården, central Stockholm. No radius = not gated.
+[location]
+lat = 59.3308
+lng = 18.0731
