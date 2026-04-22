@@ -26,18 +26,41 @@ func newTestServer(t *testing.T) (*httptest.Server, int64, func()) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	lib, err := adventure.Load(filepath.Join("..", "..", "adventures"))
+	lib := adventure.New(sqlDB)
+
+	// Seed the demo adventure directly (fine for tests — production uses the
+	// admin editor or the seed-demo flow).
+	advRes, err := sqlDB.Exec(`
+		INSERT INTO adventures(slug, title, description, author) VALUES (?, ?, ?, ?)
+	`, "demo", "Demo: First Steps", "", "zv")
 	if err != nil {
 		sqlDB.Close()
-		t.Fatalf("load adventures: %v", err)
+		t.Fatalf("seed adventure: %v", err)
 	}
-	if lib.Get("demo") == nil {
-		sqlDB.Close()
-		t.Fatalf("demo adventure missing; tests rely on it")
+	advID, _ := advRes.LastInsertId()
+	pages := []struct {
+		title, prompt, accept string
+		lat, lng              float64
+		radius                any
+	}{
+		{"Welcome", "What word do you say when you meet someone for the first time?",
+			`["hello","hi"]`, 59.3308, 18.0731, nil},
+		{"Landmark", "Find the fountain in the central park. What colour are its tiles?",
+			`["blue","azure"]`, 59.3326, 18.0649, 50.0},
+		{"The Finish", `Name the Swedish word for "adventure".`,
+			`["äventyr","aventyr"]`, 59.3252, 18.0708, nil},
+	}
+	for i, p := range pages {
+		if _, err := sqlDB.Exec(`
+			INSERT INTO adventure_pages(adventure_id, idx, title, prompt, hint, accept, lat, lng, radius_m)
+			VALUES (?, ?, ?, ?, '', ?, ?, ?, ?)
+		`, advID, i, p.title, p.prompt, p.accept, p.lat, p.lng, p.radius); err != nil {
+			sqlDB.Close()
+			t.Fatalf("seed page %d: %v", i, err)
+		}
 	}
 
-	// Seed an organization + an org_admin (boss) + one assignment. The test
-	// exercises the arranger flow without depending on CLI flags.
+	// Seed an organization + an org_admin (boss) + one assignment.
 	orgRes, err := sqlDB.Exec(`INSERT INTO organizations(name) VALUES (?)`, "TestOrg")
 	if err != nil {
 		sqlDB.Close()

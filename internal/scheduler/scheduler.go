@@ -40,7 +40,7 @@ func loop(ctx context.Context, db *sql.DB, interval time.Duration) {
 // don't have to care what the writer chose.
 func tick(ctx context.Context, db *sql.DB) {
 	rows, err := db.QueryContext(ctx, `
-		SELECT id, arranger_user_id
+		SELECT id, COALESCE(created_by_user_id, 0)
 		FROM adventure_runs
 		WHERE state = 'scheduled'
 		  AND scheduled_at IS NOT NULL
@@ -75,8 +75,11 @@ func tick(ctx context.Context, db *sql.DB) {
 		if n, _ := res.RowsAffected(); n == 0 {
 			continue // lost the race to a manual start — that's fine
 		}
-		actor := d.actor
-		runevents.Record(ctx, db, d.id, nil, runevents.UserActor(actor), runevents.RunStarted,
+		var actor runevents.Actor
+		if d.actor > 0 {
+			actor = runevents.UserActor(d.actor)
+		}
+		runevents.Record(ctx, db, d.id, nil, actor, runevents.RunStarted,
 			map[string]any{"auto": true})
 		log.Printf("scheduler: auto-started run #%d", d.id)
 	}

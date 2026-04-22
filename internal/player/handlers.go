@@ -11,6 +11,7 @@ import (
 	"errors"
 	"math"
 	"net/http"
+	"strconv"
 
 	"git.sr.ht/~klahr/zv/internal/adventure"
 	"git.sr.ht/~klahr/zv/internal/auth"
@@ -83,17 +84,22 @@ func loadTeam(r *http.Request, db *sql.DB, slot auth.Slot) (teamContext, error) 
 
 // State is the response body for GET /api/player/state.
 type State struct {
-	Status         string   `json:"status"` // waiting | running | paused | completed | gated
-	AdventureSlug  string   `json:"adventure_slug,omitempty"`
-	AdventureTitle string   `json:"adventure_title,omitempty"`
-	TeamName       string   `json:"team_name,omitempty"`
-	SlotName       string   `json:"slot_name,omitempty"`
-	PageIndex      int      `json:"page_index,omitempty"`
-	PageCount      int      `json:"page_count,omitempty"`
-	Title          string   `json:"title,omitempty"`
-	Prompt         string   `json:"prompt,omitempty"`
-	Hint           string   `json:"hint,omitempty"`
-	Gate           *gateDTO `json:"gate,omitempty"`
+	Status         string     `json:"status"` // waiting | running | paused | completed | gated
+	AdventureSlug  string     `json:"adventure_slug,omitempty"`
+	AdventureTitle string     `json:"adventure_title,omitempty"`
+	TeamName       string     `json:"team_name,omitempty"`
+	SlotName       string     `json:"slot_name,omitempty"`
+	PageIndex      int        `json:"page_index,omitempty"`
+	PageCount      int        `json:"page_count,omitempty"`
+	Title          string     `json:"title,omitempty"`
+	Prompt         string     `json:"prompt,omitempty"`
+	Hint           string     `json:"hint,omitempty"`
+	Images         []imageDTO `json:"images,omitempty"`
+	Gate           *gateDTO   `json:"gate,omitempty"`
+}
+
+type imageDTO struct {
+	URL string `json:"url"`
 }
 
 type gateDTO struct {
@@ -177,6 +183,13 @@ func (h *Handlers) GetState(w http.ResponseWriter, r *http.Request) {
 	resp.Status = "running"
 	resp.Prompt = page.Prompt
 	resp.Hint = page.Hint
+	if len(page.Images) > 0 {
+		imgs := make([]imageDTO, 0, len(page.Images))
+		for _, im := range page.Images {
+			imgs = append(imgs, imageDTO{URL: "/adventure-assets/image/" + strconv.FormatInt(im.ID, 10)})
+		}
+		resp.Images = imgs
+	}
 	httpx.JSON(w, http.StatusOK, resp)
 }
 

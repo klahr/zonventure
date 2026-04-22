@@ -44,8 +44,20 @@ func New(cfg Config) http.Handler {
 		w.WriteHeader(http.StatusNoContent)
 	})
 
+	// Root picks the right landing spot based on which session cookie is
+	// present. Without a session we show a tiny landing page with both
+	// entry points so admins can actually reach /arrange.
 	r.Get("/", func(w http.ResponseWriter, req *http.Request) {
-		http.Redirect(w, req, "/play", http.StatusFound)
+		if _, ok := auth.FromContext(req.Context()); ok {
+			http.Redirect(w, req, "/arrange", http.StatusFound)
+			return
+		}
+		if _, ok := auth.SlotFromContext(req.Context()); ok {
+			http.Redirect(w, req, "/play", http.StatusFound)
+			return
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write([]byte(landingHTML))
 	})
 
 	// /play handles three things:
@@ -61,10 +73,16 @@ func New(cfg Config) http.Handler {
 		servePage("web/play.html")(w, req)
 	})
 	r.Get("/arrange", servePage("web/arrange.html"))
-	r.Get("/live/{runID}", servePage("web/live.html"))
+	r.Get("/live/{token}", servePage("web/live.html"))
 
-	// Public, no-auth read-only endpoint for the TV leaderboard.
-	r.Get("/api/public/runs/{runID}/live", publicH.Live)
+	// Public, no-auth read-only endpoints for the TV leaderboard. Keyed
+	// by an opaque token per run so the URL isn't guessable.
+	r.Get("/api/public/live/{token}", publicH.Live)
+	r.Get("/api/public/live/{token}/tracks", publicH.Tracks)
+
+	// Image serving: permission is decided inside the handler (staff
+	// sessions always pass; slot sessions only when they're on the page).
+	r.Get("/adventure-assets/image/{imageID}", adminH.ServeImage)
 
 	// Staff authentication.
 	r.Post("/api/auth/login", authH.Login)
@@ -133,11 +151,51 @@ func New(cfg Config) http.Handler {
 			r.Get("/admins", adminH.ListAdmins)
 			r.Post("/admins", adminH.CreateAdmin)
 			r.Delete("/admins/{userID}", adminH.DeleteAdmin)
+
+			// Adventure editor (DB-backed authoring).
+			r.Get("/adventures/{slug}/edit", adminH.LoadAdventureForEdit)
+			r.Post("/adventures", adminH.CreateAdventure)
+			r.Patch("/adventures/{slug}", adminH.UpdateAdventure)
+			r.Delete("/adventures/{slug}", adminH.DeleteAdventure)
+			r.Post("/adventures/{slug}/pages", adminH.CreatePage)
+			r.Patch("/adventures/{slug}/pages/reorder", adminH.ReorderPages)
+			r.Patch("/pages/{pageID}", adminH.UpdatePage)
+			r.Delete("/pages/{pageID}", adminH.DeletePage)
+			r.Post("/pages/{pageID}/images", adminH.AddPageImage)
+			r.Delete("/images/{imageID}", adminH.DeletePageImage)
 		})
 	})
 
 	return r
 }
+
+// landingHTML is a tiny in-lined page shown at / when no session exists.
+// It exists so admins can reach /arrange without guessing the URL.
+const landingHTML = `<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Zonventure</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Aclonica&family=Open+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root { color-scheme: light dark; --accent:#ad1357; --ink:#1f3349; --bg:#fbfbfd; --muted:#6b7f96; --border:#c6d2e166; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#14202e; --ink:#e7ecf4; --muted:#9db1cc; --accent:#e24080; --border:#3a517266; } }
+  body { font-family:'Open Sans',system-ui,sans-serif; color:var(--ink); background:var(--bg); margin:0; min-height:100vh; display:grid; place-items:center; padding:1rem; }
+  .brand { font-family:'Aclonica',Georgia,serif; color:var(--accent); font-size:2.4rem; text-align:center; margin:0 0 .25rem; }
+  .sub { color:var(--muted); text-align:center; text-transform:uppercase; font-size:.8rem; letter-spacing:.1em; margin:0 0 1.5rem; font-weight:700; }
+  .wrap { width:100%; max-width:360px; }
+  a.btn { display:block; margin:.5rem 0; padding:.85rem 1.2rem; border-radius:32px; text-align:center; font-weight:700; text-decoration:none; border:1px solid var(--border); color:var(--ink); }
+  a.btn.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
+  p.hint { color:var(--muted); font-size:.85rem; text-align:center; margin-top:1rem; }
+</style></head>
+<body><div class="wrap">
+  <h1 class="brand">zonventure</h1>
+  <p class="sub">choose a door</p>
+  <a class="btn primary" href="/arrange">I'm an arranger or admin</a>
+  <a class="btn" href="/play">I'm a player</a>
+  <p class="hint">Players usually arrive via a personal magic link — this page is a fallback.</p>
+</div></body></html>`
 
 // servePage returns a handler that writes a single embedded HTML page with
 // no caching.

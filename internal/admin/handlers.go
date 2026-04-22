@@ -15,7 +15,9 @@ package admin
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
+	"encoding/base64"
 	"errors"
 	"net/http"
 	"strconv"
@@ -110,15 +112,17 @@ func (h *Handlers) ListAdventures(w http.ResponseWriter, r *http.Request) {
 /* ---------------- Runs ---------------- */
 
 type runDTO struct {
-	ID               int64  `json:"id"`
-	AdventureSlug    string `json:"adventure_slug"`
-	State            string `json:"state"`
-	ScheduledAt      string `json:"scheduled_at,omitempty"`
-	StartedAt        string `json:"started_at,omitempty"`
-	OrgID            int64  `json:"org_id"`
-	CreatedByUserID  int64  `json:"created_by_user_id,omitempty"`
-	AssignmentID     int64  `json:"assignment_id"`
-	MaxTeams         int    `json:"max_teams"`
+	ID              int64  `json:"id"`
+	AdventureSlug   string `json:"adventure_slug"`
+	State           string `json:"state"`
+	ScheduledAt     string `json:"scheduled_at,omitempty"`
+	StartedAt       string `json:"started_at,omitempty"`
+	OrgID           int64  `json:"org_id"`
+	CreatedByUserID int64  `json:"created_by_user_id,omitempty"`
+	AssignmentID    int64  `json:"assignment_id"`
+	MaxTeams        int    `json:"max_teams"`
+	LiveToken       string `json:"live_token"`
+	ShowMap         bool   `json:"show_map"`
 }
 
 type createRunRequest struct {
@@ -187,10 +191,15 @@ func (h *Handlers) CreateRun(w http.ResponseWriter, r *http.Request) {
 		schedAt = t.UTC().Format("2006-01-02 15:04:05")
 	}
 
+	liveToken, err := newLiveToken()
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "token gen failed")
+		return
+	}
 	res, err := h.DB.ExecContext(r.Context(), `
-		INSERT INTO adventure_runs(adventure_slug, org_id, created_by_user_id, state, scheduled_at, assignment_id)
-		VALUES (?, ?, ?, 'scheduled', ?, ?)
-	`, slug, orgID, me.ID, schedAt, req.AssignmentID)
+		INSERT INTO adventure_runs(adventure_slug, org_id, created_by_user_id, state, scheduled_at, assignment_id, live_token)
+		VALUES (?, ?, ?, 'scheduled', ?, ?, ?)
+	`, slug, orgID, me.ID, schedAt, req.AssignmentID, liveToken)
 	if err != nil {
 		httpx.Error(w, http.StatusConflict, "could not create run: "+err.Error())
 		return
@@ -202,7 +211,19 @@ func (h *Handlers) CreateRun(w http.ResponseWriter, r *http.Request) {
 		ID: id, AdventureSlug: slug, State: "scheduled",
 		ScheduledAt: req.ScheduledAt, OrgID: orgID, CreatedByUserID: me.ID,
 		AssignmentID: req.AssignmentID, MaxTeams: maxTeams,
+		LiveToken: liveToken,
 	})
+}
+
+// newLiveToken mints the opaque /live/{token} URL segment. 128 bits of
+// entropy rendered URL-safe base64, enough to make guessing hopeless and
+// short enough to fit comfortably in an SMS.
+func newLiveToken() (string, error) {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(b[:]), nil
 }
 
 // ListRuns returns runs visible to the caller: admins see everything,
@@ -213,7 +234,8 @@ func (h *Handlers) ListRuns(w http.ResponseWriter, r *http.Request) {
 		SELECT ar.id, ar.adventure_slug, ar.state,
 		       COALESCE(ar.scheduled_at, ''), COALESCE(ar.started_at, ''),
 		       ar.org_id, COALESCE(ar.created_by_user_id, 0),
-		       COALESCE(ar.assignment_id, 0), COALESCE(aa.max_teams, 0)
+		       COALESCE(ar.assignment_id, 0), COALESCE(aa.max_teams, 0),
+		       ar.live_token, ar.show_map
 		FROM adventure_runs ar
 		LEFT JOIN adventure_assignments aa ON aa.id = ar.assignment_id
 	`
@@ -231,12 +253,17 @@ func (h *Handlers) ListRuns(w http.ResponseWriter, r *http.Request) {
 	defer rows.Close()
 	out := []runDTO{}
 	for rows.Next() {
-		var d runDTO
+		var (
+			d       runDTO
+			showMap int
+		)
 		if err := rows.Scan(&d.ID, &d.AdventureSlug, &d.State, &d.ScheduledAt, &d.StartedAt,
-			&d.OrgID, &d.CreatedByUserID, &d.AssignmentID, &d.MaxTeams); err != nil {
+			&d.OrgID, &d.CreatedByUserID, &d.AssignmentID, &d.MaxTeams,
+			&d.LiveToken, &showMap); err != nil {
 			httpx.Error(w, http.StatusInternalServerError, "scan failed")
 			return
 		}
+		d.ShowMap = showMap != 0
 		out = append(out, d)
 	}
 	httpx.JSON(w, http.StatusOK, map[string]any{"runs": out})
@@ -295,9 +322,12 @@ func (h *Handlers) ResumeRun(w http.ResponseWriter, r *http.Request) { h.transit
 
 type updateRunRequest struct {
 	ScheduledAt *string `json:"scheduled_at,omitempty"`
+	ShowMap     *bool   `json:"show_map,omitempty"`
 }
 
-// UpdateRun amends the schedule on a still-scheduled run.
+// UpdateRun amends mutable run settings. scheduled_at is only editable
+// while the run is still "scheduled"; show_map can be toggled at any
+// time so the arranger can turn the audience map on/off live.
 func (h *Handlers) UpdateRun(w http.ResponseWriter, r *http.Request) {
 	runID, ok := runIDFrom(r)
 	if !ok {
@@ -307,37 +337,51 @@ func (h *Handlers) UpdateRun(w http.ResponseWriter, r *http.Request) {
 	if _, ok := h.authorizeRun(w, r, runID); !ok {
 		return
 	}
-	var state string
-	if err := h.DB.QueryRowContext(r.Context(),
-		`SELECT state FROM adventure_runs WHERE id = ?`, runID).Scan(&state); err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "lookup failed")
-		return
-	}
-	if state != "scheduled" {
-		httpx.Error(w, http.StatusConflict, "can only reschedule a run while it is 'scheduled'")
-		return
-	}
 	var req updateRunRequest
 	if !httpx.DecodeJSON(w, r, &req) {
 		return
 	}
-	if req.ScheduledAt == nil {
+	if req.ScheduledAt == nil && req.ShowMap == nil {
 		httpx.Error(w, http.StatusBadRequest, "nothing to update")
 		return
 	}
-	var schedAt any
-	if *req.ScheduledAt != "" {
-		t, perr := parseISO8601(*req.ScheduledAt)
-		if perr != nil {
-			httpx.Error(w, http.StatusBadRequest, "invalid scheduled_at: "+perr.Error())
+
+	if req.ScheduledAt != nil {
+		var state string
+		if err := h.DB.QueryRowContext(r.Context(),
+			`SELECT state FROM adventure_runs WHERE id = ?`, runID).Scan(&state); err != nil {
+			httpx.Error(w, http.StatusInternalServerError, "lookup failed")
 			return
 		}
-		schedAt = t.UTC().Format("2006-01-02 15:04:05")
+		if state != "scheduled" {
+			httpx.Error(w, http.StatusConflict, "can only reschedule a run while it is 'scheduled'")
+			return
+		}
+		var schedAt any
+		if *req.ScheduledAt != "" {
+			t, perr := parseISO8601(*req.ScheduledAt)
+			if perr != nil {
+				httpx.Error(w, http.StatusBadRequest, "invalid scheduled_at: "+perr.Error())
+				return
+			}
+			schedAt = t.UTC().Format("2006-01-02 15:04:05")
+		}
+		if _, err := h.DB.ExecContext(r.Context(),
+			`UPDATE adventure_runs SET scheduled_at = ? WHERE id = ?`, schedAt, runID); err != nil {
+			httpx.Error(w, http.StatusInternalServerError, "update failed")
+			return
+		}
 	}
-	if _, err := h.DB.ExecContext(r.Context(),
-		`UPDATE adventure_runs SET scheduled_at = ? WHERE id = ?`, schedAt, runID); err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "update failed")
-		return
+	if req.ShowMap != nil {
+		v := 0
+		if *req.ShowMap {
+			v = 1
+		}
+		if _, err := h.DB.ExecContext(r.Context(),
+			`UPDATE adventure_runs SET show_map = ? WHERE id = ?`, v, runID); err != nil {
+			httpx.Error(w, http.StatusInternalServerError, "update failed")
+			return
+		}
 	}
 	httpx.JSON(w, http.StatusNoContent, nil)
 }

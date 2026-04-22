@@ -3,7 +3,6 @@ module git.sr.ht/~klahr/zv
 go 1.26
 
 require (
-	github.com/BurntSushi/toml v1.4.0
 	github.com/go-chi/chi/v5 v5.1.0
 	golang.org/x/crypto v0.27.0
 	modernc.org/sqlite v1.33.1

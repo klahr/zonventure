@@ -35,6 +35,45 @@ CREATE TABLE sessions (
 
 CREATE INDEX idx_sessions_user ON sessions(user_id);
 
+-- Adventures live in the database now (admins author them via the editor).
+CREATE TABLE adventures (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    slug        TEXT NOT NULL UNIQUE,
+    title       TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    author      TEXT NOT NULL DEFAULT '',
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE adventure_pages (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    adventure_id INTEGER NOT NULL REFERENCES adventures(id) ON DELETE CASCADE,
+    idx          INTEGER NOT NULL,
+    title        TEXT NOT NULL DEFAULT '',
+    prompt       TEXT NOT NULL DEFAULT '',
+    hint         TEXT NOT NULL DEFAULT '',
+    accept       TEXT NOT NULL DEFAULT '[]',   -- JSON array of accepted answers
+    lat          REAL NOT NULL DEFAULT 0,
+    lng          REAL NOT NULL DEFAULT 0,
+    radius_m     REAL,                          -- NULL = not gated
+    UNIQUE(adventure_id, idx)
+);
+
+CREATE INDEX idx_pages_adventure ON adventure_pages(adventure_id, idx);
+
+CREATE TABLE adventure_page_images (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    page_id     INTEGER NOT NULL REFERENCES adventure_pages(id) ON DELETE CASCADE,
+    idx         INTEGER NOT NULL,
+    mime_type   TEXT NOT NULL,
+    size_bytes  INTEGER NOT NULL,
+    content     BLOB NOT NULL,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX idx_page_images ON adventure_page_images(page_id, idx);
+
 -- One-shot licences granted by admins to an organization.
 CREATE TABLE adventure_assignments (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -57,7 +96,9 @@ CREATE TABLE adventure_runs (
     paused_at          TEXT,
     completed_at       TEXT,
     created_at         TEXT NOT NULL DEFAULT (datetime('now')),
-    assignment_id      INTEGER REFERENCES adventure_assignments(id)
+    assignment_id      INTEGER REFERENCES adventure_assignments(id),
+    live_token         TEXT NOT NULL UNIQUE,            -- opaque URL segment for /live/{token}
+    show_map           INTEGER NOT NULL DEFAULT 0       -- 0/1; whether the public page shows the real-time map
 );
 
 CREATE INDEX idx_runs_state ON adventure_runs(state);

@@ -1,16 +1,15 @@
 // Package public serves read-only endpoints that do not require a session.
-// These power the TV-friendly live leaderboard (/live/{id}).
+// These power the TV-friendly live leaderboard (/live/{token}).
 //
 // Nothing in this package may leak information that would let a viewer
 // cheat the game: prompts, accept lists and hints are never included —
-// only progress, team names, puzzle titles and movement traces.
+// only progress, team names, puzzle titles and (optionally) movement.
 package public
 
 import (
 	"database/sql"
 	"errors"
 	"net/http"
-	"strconv"
 	"time"
 
 	"git.sr.ht/~klahr/zv/internal/adventure"
@@ -25,9 +24,11 @@ type Handlers struct {
 }
 
 type puzzleDTO struct {
-	Index int    `json:"index"`
-	Title string `json:"title"`
-	Gated bool   `json:"gated"`
+	Index int     `json:"index"`
+	Title string  `json:"title"`
+	Gated bool    `json:"gated"`
+	Lat   float64 `json:"lat"`
+	Lng   float64 `json:"lng"`
 }
 
 type memberDTO struct {
@@ -52,25 +53,33 @@ type liveDTO struct {
 	StartedAt      string      `json:"started_at,omitempty"`
 	ServerNow      string      `json:"server_now"`
 	PageCount      int         `json:"page_count"`
+	ShowMap        bool        `json:"show_map"`
 	Puzzles        []puzzleDTO `json:"puzzles"`
 	Teams          []teamDTO   `json:"teams"`
 }
 
-// Live returns a compact snapshot suitable for a public leaderboard.
+// runByToken resolves a URL token to a run id, returning sql.ErrNoRows if
+// the token is unknown.
+func (h *Handlers) runByToken(r *http.Request, token string) (runID int64, slug, state, startedAt string, showMap int, err error) {
+	var started sql.NullString
+	err = h.DB.QueryRowContext(r.Context(), `
+		SELECT id, adventure_slug, state, started_at, show_map
+		FROM adventure_runs WHERE live_token = ?
+	`, token).Scan(&runID, &slug, &state, &started, &showMap)
+	if started.Valid {
+		startedAt = started.String
+	}
+	return
+}
+
+// Live returns the compact snapshot for the public leaderboard.
 func (h *Handlers) Live(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(chi.URLParam(r, "runID"), 10, 64)
-	if err != nil || id <= 0 {
-		httpx.Error(w, http.StatusBadRequest, "bad run id")
+	token := chi.URLParam(r, "token")
+	if token == "" {
+		httpx.Error(w, http.StatusBadRequest, "bad live token")
 		return
 	}
-	var (
-		slug         string
-		state        string
-		startedAt    sql.NullString
-	)
-	err = h.DB.QueryRowContext(r.Context(), `
-		SELECT adventure_slug, state, started_at FROM adventure_runs WHERE id = ?
-	`, id).Scan(&slug, &state, &startedAt)
+	id, slug, state, startedAt, showMap, err := h.runByToken(r, token)
 	if errors.Is(err, sql.ErrNoRows) {
 		httpx.Error(w, http.StatusNotFound, "run not found")
 		return
@@ -87,17 +96,14 @@ func (h *Handlers) Live(w http.ResponseWriter, r *http.Request) {
 
 	puzzles := make([]puzzleDTO, len(adv.Pages))
 	for i, p := range adv.Pages {
-		puzzles[i] = puzzleDTO{Index: p.Index, Title: p.Title, Gated: p.Location.Gated()}
+		puzzles[i] = puzzleDTO{
+			Index: p.Index, Title: p.Title, Gated: p.Location.Gated(),
+			Lat: p.Location.Lat, Lng: p.Location.Lng,
+		}
 	}
 
-	// Rank: completed teams first (finish order), then those still running by
-	// puzzle progress (higher is better). Among teams on the same page, the
-	// one who got there sooner is ahead — we approximate with team.created_at
-	// plus their latest answer.right event timestamp.
 	rows, err := h.DB.QueryContext(r.Context(), `
-		SELECT t.id, t.name, t.current_page_index, COALESCE(t.completed_at, ''),
-		       (SELECT MAX(created_at) FROM run_events
-		        WHERE run_id = t.run_id AND team_id = t.id AND kind = 'answer.right')
+		SELECT t.id, t.name, t.current_page_index, COALESCE(t.completed_at, '')
 		FROM teams t
 		WHERE t.run_id = ?
 		ORDER BY
@@ -118,11 +124,8 @@ func (h *Handlers) Live(w http.ResponseWriter, r *http.Request) {
 	defer rows.Close()
 	teams := []teamDTO{}
 	for rows.Next() {
-		var (
-			t         teamDTO
-			lastRight sql.NullString // consumed only by the ORDER BY
-		)
-		if err := rows.Scan(&t.ID, &t.Name, &t.PageIndex, &t.CompletedAt, &lastRight); err != nil {
+		var t teamDTO
+		if err := rows.Scan(&t.ID, &t.Name, &t.PageIndex, &t.CompletedAt); err != nil {
 			httpx.Error(w, http.StatusInternalServerError, "scan failed")
 			return
 		}
@@ -130,12 +133,10 @@ func (h *Handlers) Live(w http.ResponseWriter, r *http.Request) {
 		teams = append(teams, t)
 	}
 
-	// Members in a second query per team — cheap for the team sizes we see.
 	for i := range teams {
 		mrows, err := h.DB.QueryContext(r.Context(), `
-			SELECT u.username FROM team_members tm
-			JOIN users u ON u.id = tm.user_id
-			WHERE tm.team_id = ? ORDER BY u.username COLLATE NOCASE
+			SELECT name FROM player_slots
+			WHERE team_id = ? ORDER BY name COLLATE NOCASE
 		`, teams[i].ID)
 		if err != nil {
 			httpx.Error(w, http.StatusInternalServerError, "members failed")
@@ -161,15 +162,86 @@ func (h *Handlers) Live(w http.ResponseWriter, r *http.Request) {
 		AdventureTitle: adv.Meta.Title,
 		AdventureSlug:  slug,
 		State:          state,
-		StartedAt:      startedAt.String,
+		StartedAt:      startedAt,
 		ServerNow:      time.Now().UTC().Format(time.RFC3339),
 		PageCount:      len(adv.Pages),
+		ShowMap:        showMap != 0,
 		Puzzles:        puzzles,
 		Teams:          teams,
 	}
-	// Cache-control: clients should poll, and intermediaries must not cache
-	// user-visible state, so disable caching explicitly.
 	w.Header().Set("Cache-Control", "no-store")
 	httpx.JSON(w, http.StatusOK, resp)
 }
 
+type trackPoint struct {
+	Lat      float64 `json:"lat"`
+	Lng      float64 `json:"lng"`
+	ServerTS string  `json:"server_ts"`
+}
+
+type trackDTO struct {
+	TeamID   int64        `json:"team_id"`
+	TeamName string       `json:"team_name"`
+	Points   []trackPoint `json:"points"`
+}
+
+// Tracks returns per-team ping history for the live map. Refuses when the
+// arranger has not enabled show_map on the run.
+func (h *Handlers) Tracks(w http.ResponseWriter, r *http.Request) {
+	token := chi.URLParam(r, "token")
+	if token == "" {
+		httpx.Error(w, http.StatusBadRequest, "bad live token")
+		return
+	}
+	id, _, _, _, showMap, err := h.runByToken(r, token)
+	if errors.Is(err, sql.ErrNoRows) {
+		httpx.Error(w, http.StatusNotFound, "run not found")
+		return
+	}
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "lookup failed")
+		return
+	}
+	if showMap == 0 {
+		httpx.Error(w, http.StatusForbidden, "map not enabled")
+		return
+	}
+
+	rows, err := h.DB.QueryContext(r.Context(), `
+		SELECT p.team_id, t.name, p.lat, p.lng, p.server_ts
+		FROM location_pings p JOIN teams t ON t.id = p.team_id
+		WHERE p.run_id = ?
+		ORDER BY p.team_id, p.server_ts
+	`, id)
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "query failed")
+		return
+	}
+	defer rows.Close()
+	byTeam := map[int64]*trackDTO{}
+	order := []int64{}
+	for rows.Next() {
+		var (
+			teamID int64
+			name   string
+			p      trackPoint
+		)
+		if err := rows.Scan(&teamID, &name, &p.Lat, &p.Lng, &p.ServerTS); err != nil {
+			httpx.Error(w, http.StatusInternalServerError, "scan failed")
+			return
+		}
+		t, ok := byTeam[teamID]
+		if !ok {
+			t = &trackDTO{TeamID: teamID, TeamName: name}
+			byTeam[teamID] = t
+			order = append(order, teamID)
+		}
+		t.Points = append(t.Points, p)
+	}
+	tracks := make([]trackDTO, 0, len(order))
+	for _, id := range order {
+		tracks = append(tracks, *byTeam[id])
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	httpx.JSON(w, http.StatusOK, map[string]any{"tracks": tracks})
+}

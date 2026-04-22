@@ -24,7 +24,6 @@ func main() {
 	var (
 		addr         = flag.String("addr", ":8080", "listen address")
 		dbPath       = flag.String("db", "zv.db", "sqlite database path")
-		advDir       = flag.String("adventures", "adventures", "adventures directory")
 		secureCookie = flag.Bool("secure-cookie", false, "set Secure flag on session cookies (enable behind TLS)")
 		seedAdmin    = flag.String("seed-admin", "", "if set, create/update a global admin as username:password and exit")
 		seedDemoFlag = flag.Bool("seed-demo", false, "install a full demo dataset and exit")
@@ -45,18 +44,15 @@ func main() {
 		return
 	}
 	if *seedDemoFlag {
-		if err := seedDemo(context.Background(), sqlDB, *advDir); err != nil {
+		if err := seedDemo(context.Background(), sqlDB); err != nil {
 			log.Fatalf("seed demo: %v", err)
 		}
-		log.Printf(`demo data installed. Log in at /arrange as admin/admin (admin), boss/s3cret (org_admin of Demo Arrangers) or jane/jane (org_member). Players: alice..ingrid with password "pw".`)
+		log.Printf(`demo data installed. Log in at /arrange as admin/admin, boss/s3cret (org_admin) or jane/jane (org_member). Players use per-slot magic links — copy them from Runs → Run #1 → Edit team.`)
 		return
 	}
 
-	lib, err := adventure.Load(*advDir)
-	if err != nil {
-		log.Fatalf("load adventures: %v", err)
-	}
-	log.Printf("loaded %d adventure(s) from %s", len(lib.List()), *advDir)
+	lib := adventure.New(sqlDB)
+	log.Printf("%d adventure(s) in the database", len(lib.List()))
 
 	h := server.New(server.Config{
 		DB:           sqlDB,

@@ -51,16 +51,53 @@
     font-family: var(--font-body);
     font-size: 16px; line-height: 1.5;
     color: var(--text); background: var(--bg);
-    margin: 0; padding: 1rem;
+    margin: 0;
+    padding: 1rem 1rem calc(1rem + env(safe-area-inset-bottom) + 130px);
     max-width: 640px; margin-left: auto; margin-right: auto;
     -webkit-font-smoothing: antialiased;
   }
-  h1 {
-    font-family: var(--font-brand); font-weight: 400;
-    color: var(--accent);
-    font-size: 1.8rem; margin: 0 0 .25rem;
+  .puzzle-img {
+    width: 100%; height: auto; display: block;
+    border-radius: var(--radius);
+    border: 1px solid var(--border-soft);
+    margin: .5rem 0;
+    box-shadow: var(--shadow);
   }
-  .subtitle { color: var(--muted); font-size: .85rem; text-transform: uppercase; letter-spacing: .08em; font-weight: 700; margin-bottom: 1rem; }
+  /* Sticky submit bar: always at the bottom of the viewport, same place
+     for every puzzle so the player builds muscle memory. */
+  .submit-dock {
+    position: fixed; left: 0; right: 0; bottom: 0;
+    padding: .75rem 1rem calc(.75rem + env(safe-area-inset-bottom));
+    background: color-mix(in srgb, var(--bg) 90%, transparent);
+    backdrop-filter: blur(8px);
+    border-top: 1px solid var(--border-soft);
+    z-index: 10;
+  }
+  .submit-dock form {
+    max-width: 640px; margin: 0 auto;
+    display: grid; grid-template-columns: 1fr auto; gap: .5rem;
+    align-items: stretch;
+  }
+  .submit-dock input { margin: 0; }
+  .submit-dock button { width: auto; padding: .75rem 1.2rem; }
+  .submit-dock .result { grid-column: 1 / -1; margin: 0; min-height: 1rem; font-size: .9rem; }
+  /* Compact top strip: adventure title + team + progress + status pill in
+     one row. Leaves maximum vertical space for the puzzle itself. */
+  .runbar {
+    display: flex; align-items: baseline; gap: .5rem; flex-wrap: wrap;
+    padding: .25rem 0 .6rem;
+    margin-bottom: .5rem;
+    border-bottom: 1px solid var(--border-soft);
+    font-size: .85rem;
+  }
+  .runbar .title {
+    font-family: var(--font-brand); color: var(--accent);
+    font-size: 1.05rem; line-height: 1; margin-right: .25rem;
+  }
+  .runbar .sep { color: var(--muted); }
+  .runbar .team { color: var(--ink); font-weight: 700; }
+  .runbar .progress { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .runbar .status { margin-left: auto; }
   h2 { font-size: .85rem; margin: 1.2rem 0 .4rem; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
   h3 { font-size: 1.05rem; margin: 0 0 .5rem; color: var(--ink); }
   input {
@@ -110,8 +147,6 @@
 </style>
 </head>
 <body>
-<h1>zonventure</h1>
-<div class="subtitle">player</div>
 <div id="app">loading…</div>
 
 <script>
@@ -119,6 +154,10 @@ const app = document.getElementById('app');
 let gpsWatchID = null;
 let pingTimer = null;
 let lastFix = null;
+// A shallow fingerprint of the last rendered state. If the state hasn't
+// changed between polls we skip the re-render so the submit dock's input
+// keeps its value and focus.
+let lastRenderKey = null;
 
 async function api(path, opts = {}) {
   const res = await fetch(path, {
@@ -143,6 +182,8 @@ function el(tag, attrs = {}, ...children) {
 }
 
 function renderNoSession() {
+  lastRenderKey = null;
+  hideSubmitDock();
   app.replaceChildren(el('div', { class: 'card' },
     el('h3', {}, 'Open your magic link'),
     el('p', { class: 'muted' },
@@ -183,25 +224,34 @@ async function refresh() {
 }
 
 function render(s) {
+  const key = JSON.stringify({
+    status: s.status, pi: s.page_index, pc: s.page_count,
+    t: s.title, p: s.prompt, h: s.hint,
+    img: (s.images || []).map((i) => i.url),
+    gate: s.gate ? s.gate.reached : null,
+    team: s.team_name, adv: s.adventure_title,
+  });
+  if (key === lastRenderKey) return;
+  lastRenderKey = key;
+
   app.replaceChildren();
-  const header = el('div', { class: 'card' },
-    el('div', { class: 'topline' },
-      el('span', { class: 'who' },
-        el('strong', {}, s.slot_name || 'Player'), ' · ',
-        el('span', { class: 'pill' }, s.status)),
-      el('button', { class: 'secondary inline-btn', on: { click: logout } }, 'Log out')),
+  const playing = s.status === 'running' || s.status === 'gated';
+  const bar = el('div', { class: 'runbar' },
+    s.adventure_title ? el('span', { class: 'title' }, s.adventure_title) : null,
+    s.team_name ? el('span', { class: 'team' }, s.team_name) : null,
+    playing
+      ? el('span', { class: 'progress' }, `Puzzle ${s.page_index + 1}/${s.page_count}`)
+      : null,
+    el('span', { class: 'status pill' }, s.status),
   );
-  if (s.adventure_title) header.append(el('p', { class: 'muted' }, `${s.adventure_title} — team ${s.team_name || ''}`));
-  app.append(header);
+  app.append(bar);
 
-  if (s.status === 'waiting') { app.append(el('p', {}, 'Waiting for the adventure to start…')); return; }
-  if (s.status === 'paused')  { app.append(el('p', {}, 'The arranger paused the run. Stand by.')); return; }
-  if (s.status === 'completed'){ app.append(el('p', { class: 'ok' }, 'Adventure complete! 🎉')); return; }
-
-  const progress = `Puzzle ${s.page_index + 1} of ${s.page_count}`;
-  app.append(el('p', { class: 'muted' }, progress));
+  if (s.status === 'waiting')  { hideSubmitDock(); app.append(el('p', {}, 'Waiting for the adventure to start…')); return; }
+  if (s.status === 'paused')   { hideSubmitDock(); app.append(el('p', {}, 'The arranger paused the run. Stand by.')); return; }
+  if (s.status === 'completed'){ hideSubmitDock(); app.append(el('p', { class: 'ok' }, 'Adventure complete! 🎉')); return; }
 
   if (s.status === 'gated') {
+    hideSubmitDock();
     const card = el('div', { class: 'card' },
       el('h2', {}, 'Travel to the location'),
       el('p', {}, `Head within ${s.gate.radius_m} m of (${s.gate.lat.toFixed(5)}, ${s.gate.lng.toFixed(5)}).`),
@@ -213,43 +263,65 @@ function render(s) {
     return;
   }
 
-  if (s.title) app.append(el('h2', {}, s.title));
+  if (s.title) app.append(el('h3', {}, s.title));
+  if (Array.isArray(s.images)) {
+    for (const im of s.images) app.append(el('img', { class: 'puzzle-img', src: im.url, alt: '' }));
+  }
   app.append(el('p', { class: 'prompt' }, s.prompt || ''));
   if (s.hint) app.append(el('p', { class: 'muted' }, `Hint: ${s.hint}`));
 
-  const form = el('form', { class: 'card' },
-    el('input', { name: 'a', placeholder: 'Your answer', autocomplete: 'off', required: '' }),
-    el('button', { type: 'submit' }, 'Submit'));
-  const result = el('p', {});
-  form.append(result);
+  renderSubmitDock();
+}
+
+// renderSubmitDock always renders into the same sticky container at the
+// bottom so the input field and button stay in a fixed spot between
+// puzzles.
+function renderSubmitDock() {
+  let dock = document.getElementById('submit-dock');
+  if (!dock) {
+    dock = document.createElement('div');
+    dock.id = 'submit-dock';
+    dock.className = 'submit-dock';
+    document.body.append(dock);
+  }
+  dock.replaceChildren();
+  const input = document.createElement('input');
+  input.name = 'a';
+  input.placeholder = 'Your answer';
+  input.autocomplete = 'off';
+  input.required = true;
+  const button = document.createElement('button');
+  button.type = 'submit';
+  button.textContent = 'Submit';
+  const result = document.createElement('p');
+  result.className = 'result muted';
+  const form = document.createElement('form');
+  form.append(input, button, result);
+  dock.append(form);
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
-    const fd = new FormData(form);
     const r = await api('/api/player/answer', {
-      method: 'POST', body: JSON.stringify({ answer: fd.get('a') }),
+      method: 'POST', body: JSON.stringify({ answer: input.value }),
     });
     if (r.status !== 200) {
-      result.className = 'err';
+      result.className = 'result err';
       result.textContent = r.body?.error || `error ${r.status}`;
       return;
     }
     if (r.body.accepted) {
-      result.className = 'ok';
+      result.className = 'result ok';
       result.textContent = r.body.completed ? 'Correct — adventure complete!' : 'Correct!';
+      input.value = '';
       setTimeout(refresh, 600);
     } else {
-      result.className = 'err';
+      result.className = 'result err';
       result.textContent = 'Not quite — try again.';
     }
   });
-  app.append(form);
 }
-
-async function logout() {
-  await api('/api/player/logout', { method: 'POST' });
-  if (gpsWatchID !== null) { navigator.geolocation.clearWatch(gpsWatchID); gpsWatchID = null; }
-  if (pingTimer) { clearInterval(pingTimer); pingTimer = null; }
-  renderNoSession();
+function hideSubmitDock() {
+  const dock = document.getElementById('submit-dock');
+  if (dock) dock.remove();
 }
 
 setInterval(() => { if (gpsWatchID !== null) refresh(); }, 5000);

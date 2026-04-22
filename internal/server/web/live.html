@@ -7,6 +7,10 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Aclonica&family=Open+Sans:wght@400;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+  integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+<script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+  integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 <style>
 :root {
   --accent:       #e24080;  /* raspberry lifted for dark bg */
@@ -119,6 +123,49 @@ html, body {
   display: grid; gap: clamp(.5rem, 1vw, 1rem);
   flex: 1;
   align-content: start;
+}
+
+/* Split layout when the run's show_map flag is on. On wide screens the
+   map sits to the right of the leaderboard; below 900px they stack. */
+.split {
+  display: grid; gap: clamp(1rem, 2vw, 2rem);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  flex: 1;
+  align-content: stretch;
+}
+.split > .board { grid-column: 1 / 2; }
+.split > .mapwrap { grid-column: 2 / 3; }
+@media (max-width: 900px) {
+  .split { grid-template-columns: 1fr; }
+  .split > .mapwrap { grid-column: 1; }
+}
+.mapwrap {
+  display: flex; flex-direction: column;
+  border-radius: 18px; overflow: hidden;
+  border: 1px solid rgba(255,255,255,.08);
+  background: rgba(255,255,255,.02);
+  min-height: 420px;
+}
+.mapwrap .mapinner { flex: 1; }
+.mapwrap .maphint {
+  padding: .6rem 1rem; color: var(--muted); font-size: .85rem;
+  text-align: center; border-top: 1px solid rgba(255,255,255,.05);
+}
+.puzzle-marker {
+  width: 28px; height: 28px;
+  background: rgba(0,0,0,.8); color: #fff;
+  border-radius: 50% 50% 50% 0;
+  transform: rotate(-45deg);
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: .8rem;
+  border: 2px solid #fff;
+}
+.puzzle-marker.gated { background: var(--accent); }
+.puzzle-marker > span { transform: rotate(45deg); }
+.team-dot {
+  width: 14px; height: 14px; border-radius: 50%;
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 1px rgba(0,0,0,.25);
 }
 
 .row {
@@ -243,7 +290,7 @@ html, body {
 const TEAM_COLORS = ['#e24080', '#7fd17b', '#60a5fa', '#f5c452', '#a78bfa', '#22d3ee', '#fb7185', '#34d399'];
 function teamColor(i) { return TEAM_COLORS[i % TEAM_COLORS.length]; }
 
-const RUN_ID = Number(location.pathname.split('/').pop());
+const LIVE_TOKEN = location.pathname.split('/').pop();
 const POLL_MS = 4000;
 
 function h(tag, attrs = {}, ...children) {
@@ -287,7 +334,7 @@ function formatFinishTime(startISO, completedAt) {
 async function render() {
   let data;
   try {
-    const r = await fetch(`/api/public/runs/${RUN_ID}/live`, { cache: 'no-store' });
+    const r = await fetch(`/api/public/live/${encodeURIComponent(LIVE_TOKEN)}`, { cache: 'no-store' });
     if (!r.ok) throw new Error(await r.text());
     data = await r.json();
   } catch (e) {
@@ -300,13 +347,121 @@ async function render() {
   root.replaceChildren();
 
   root.append(buildHeader(data));
-  root.append(buildBoard(data));
+  if (data.show_map) {
+    const split = h('div', { class: 'split' });
+    split.append(buildBoard(data));
+    split.append(buildMapSlot());
+    root.append(split);
+    // Initialise / refresh Leaflet AFTER the map container is in the DOM
+    // (else Leaflet sees a 0x0 viewport and loads wrong tiles).
+    renderLiveMap(mapInnerEl, mapHintEl, data);
+  } else {
+    root.append(buildBoard(data));
+  }
   root.append(h('div', { class: 'footer' },
     `Live · updates every ${POLL_MS / 1000}s · `,
     data.puzzles?.length
       ? `${data.puzzles.length} puzzle${data.puzzles.length === 1 ? '' : 's'} · `
       : '',
     `server time ${data.server_now || ''}`));
+}
+
+// buildMapSlot returns a stable <div> for the Leaflet map so the outer
+// render can reparent it on every poll without destroying Leaflet's
+// container. The first call creates it and kicks off the initial render;
+// subsequent calls hand back the same node (already wired up) and we
+// just refresh overlays.
+let mapWrapEl = null;
+let mapInnerEl = null;
+let mapHintEl = null;
+let liveMapInstance = null;
+
+function buildMapSlot() {
+  if (!mapWrapEl) {
+    mapInnerEl = document.createElement('div');
+    mapInnerEl.className = 'mapinner';
+    mapHintEl = document.createElement('div');
+    mapHintEl.className = 'maphint';
+    mapHintEl.textContent = 'Loading map…';
+    mapWrapEl = document.createElement('div');
+    mapWrapEl.className = 'mapwrap';
+    mapWrapEl.append(mapInnerEl, mapHintEl);
+  }
+  return mapWrapEl;
+}
+
+async function renderLiveMap(inner, hint, data) {
+  if (typeof L === 'undefined') {
+    hint.textContent = 'Map library still loading…';
+    setTimeout(() => renderLiveMap(inner, hint, data), 300);
+    return;
+  }
+  // The map wrapper is memoized across polls — initialise Leaflet on it
+  // exactly once. After reparenting into the new split container Leaflet
+  // needs invalidateSize() to recalculate the viewport.
+  if (!liveMapInstance) {
+    liveMapInstance = L.map(inner, { scrollWheelZoom: false }).setView([59.3293, 18.0686], 13);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap contributors',
+      maxZoom: 19,
+    }).addTo(liveMapInstance);
+  }
+  const map = liveMapInstance;
+  map.invalidateSize();
+
+  // Wipe previous overlays.
+  map.eachLayer((layer) => {
+    if (layer instanceof L.Marker || layer instanceof L.Polyline) map.removeLayer(layer);
+  });
+
+  const bounds = L.latLngBounds([]);
+
+  // Puzzle pins.
+  for (const p of (data.puzzles || [])) {
+    if (!p.lat && !p.lng) continue;
+    const m = L.marker([p.lat, p.lng], {
+      icon: L.divIcon({
+        className: '',
+        html: `<div class="puzzle-marker ${p.gated ? 'gated' : ''}"><span>${p.index + 1}</span></div>`,
+        iconSize: [28, 28], iconAnchor: [14, 28],
+      }),
+    }).addTo(map);
+    m.bindPopup(`<strong>${p.index + 1}. ${p.title || 'Puzzle'}</strong>${p.gated ? '<br><em>gated</em>' : ''}`);
+    bounds.extend([p.lat, p.lng]);
+  }
+
+  // Team tracks.
+  let tracks = [];
+  try {
+    const res = await fetch(`/api/public/live/${encodeURIComponent(LIVE_TOKEN)}/tracks`, { cache: 'no-store' });
+    if (res.ok) tracks = (await res.json()).tracks || [];
+  } catch { /* ignore — hint shows below */ }
+
+  const teamColourByID = new Map();
+  (data.teams || []).forEach((t, i) => teamColourByID.set(t.id, teamColor(i)));
+
+  for (const track of tracks) {
+    const colour = teamColourByID.get(track.team_id) || '#e24080';
+    if (!track.points?.length) continue;
+    const latlngs = track.points.map((p) => [p.lat, p.lng]);
+    L.polyline(latlngs, { color: colour, weight: 3, opacity: .85 }).addTo(map);
+    const last = track.points[track.points.length - 1];
+    L.marker([last.lat, last.lng], {
+      icon: L.divIcon({
+        className: '',
+        html: `<div class="team-dot" style="background:${colour}"></div>`,
+        iconSize: [14, 14], iconAnchor: [7, 7],
+      }),
+    }).bindPopup(`<strong>${track.team_name}</strong>`).addTo(map);
+    for (const ll of latlngs) bounds.extend(ll);
+  }
+
+  if (bounds.isValid()) {
+    map.fitBounds(bounds, { padding: [24, 24], maxZoom: 17 });
+  }
+  hint.textContent = tracks.length
+    ? `${tracks.length} team${tracks.length === 1 ? '' : 's'} on the map`
+    : 'Waiting for the first position…';
 }
 
 function buildHeader(data) {

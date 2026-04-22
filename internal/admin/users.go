@@ -82,20 +82,26 @@ func (h *Handlers) RunDetail(w http.ResponseWriter, r *http.Request) {
 	if _, ok := h.authorizeRun(w, r, runID); !ok {
 		return
 	}
-	var d runDTO
+	var (
+		d       runDTO
+		showMap int
+	)
 	if err := h.DB.QueryRowContext(r.Context(), `
 		SELECT ar.id, ar.adventure_slug, ar.state,
 		       COALESCE(ar.scheduled_at,''), COALESCE(ar.started_at,''),
 		       ar.org_id, COALESCE(ar.created_by_user_id, 0),
-		       COALESCE(ar.assignment_id, 0), COALESCE(aa.max_teams, 0)
+		       COALESCE(ar.assignment_id, 0), COALESCE(aa.max_teams, 0),
+		       ar.live_token, ar.show_map
 		FROM adventure_runs ar
 		LEFT JOIN adventure_assignments aa ON aa.id = ar.assignment_id
 		WHERE ar.id = ?
 	`, runID).Scan(&d.ID, &d.AdventureSlug, &d.State, &d.ScheduledAt, &d.StartedAt,
-		&d.OrgID, &d.CreatedByUserID, &d.AssignmentID, &d.MaxTeams); err != nil {
+		&d.OrgID, &d.CreatedByUserID, &d.AssignmentID, &d.MaxTeams,
+		&d.LiveToken, &showMap); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "lookup failed")
 		return
 	}
+	d.ShowMap = showMap != 0
 
 	type slotOut struct {
 		ID          int64  `json:"id"`

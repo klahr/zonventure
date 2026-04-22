@@ -10,38 +10,100 @@ import (
 	"math/rand"
 	"time"
 
-	"git.sr.ht/~klahr/zv/internal/adventure"
 	"git.sr.ht/~klahr/zv/internal/auth"
 	"git.sr.ht/~klahr/zv/internal/runevents"
 )
 
-// seedDemo installs a self-contained dataset:
-//   - a global admin (admin/admin)
-//   - an organization "Demo Arrangers"
-//   - boss (org_admin) and jane (org_member) inside that org
-//   - one used assignment (5 teams) linked to a running demo run
-//   - one spare assignment (3 teams)
-//   - three teams with 3 slots each (9 slots total), backfilled with
-//     realistic Stockholm-centre tracks and an event log.
-func seedDemo(ctx context.Context, d *sql.DB, advDir string) error {
-	lib, err := adventure.Load(advDir)
-	if err != nil {
-		return fmt.Errorf("load adventures: %w", err)
+// demo adventure data — previously in adventures/demo/*.toml, now seeded
+// into the database. Lat/Lng are Stockholm landmarks so the map looks
+// alive when the demo tracks run through them.
+type demoPage struct {
+	Title    string
+	Prompt   string
+	Hint     string
+	Accept   []string
+	Lat, Lng float64
+	Radius   *float64
+}
+
+func demoPages() []demoPage {
+	// A nil *float64 means "not gated"; a non-nil pointer sets the radius.
+	gated := func(r float64) *float64 { return &r }
+	return []demoPage{
+		{
+			Title:  "Welcome",
+			Prompt: "What word do you say when you meet someone for the first time?",
+			Accept: []string{"hello", "hi"},
+			Lat:    59.3308, Lng: 18.0731, // Kungsträdgården
+		},
+		{
+			Title:  "Landmark",
+			Prompt: "Find the fountain in the central park. What colour are its tiles?",
+			Hint:   "Look at the inside of the basin, not the rim.",
+			Accept: []string{"blue", "azure"},
+			Lat:    59.3326, Lng: 18.0649, // Sergels torg
+			Radius: gated(50),
+		},
+		{
+			Title:  "The Finish",
+			Prompt: `Name the Swedish word for "adventure".`,
+			Accept: []string{"äventyr", "aventyr"},
+			Lat:    59.3252, Lng: 18.0708, // Stortorget, Gamla stan
+		},
 	}
-	adv := lib.Get("demo")
-	if adv == nil {
-		return errors.New(`adventure "demo" not found — expected under adventures/demo/`)
+}
+
+// seedDemo installs the full demo dataset: admin, org, users, demo adventure,
+// assignments, a running demo run, teams with slot magic-links, backfilled
+// tracks, and an event log.
+func seedDemo(ctx context.Context, d *sql.DB) error {
+	// Wipe the mutable parts. adventures are re-created from demoPages().
+	for _, stmt := range []string{
+		`DELETE FROM users WHERE role IN ('org_admin','org_member')`,
+		`DELETE FROM organizations`,
+		`DELETE FROM adventure_runs`,
+		`DELETE FROM adventure_assignments`,
+		`DELETE FROM adventures`,
+	} {
+		if _, err := d.Exec(stmt); err != nil {
+			return err
+		}
 	}
 
-	// Wipe the mutable part of the dataset.
-	if _, err := d.Exec(`DELETE FROM users WHERE role IN ('org_admin','org_member')`); err != nil {
+	// Demo adventure in DB.
+	advRes, err := d.Exec(`
+		INSERT INTO adventures(slug, title, description, author)
+		VALUES (?, ?, ?, ?)
+	`, "demo", "Demo: First Steps",
+		"A tiny three-page adventure used as a smoke test.", "zv")
+	if err != nil {
 		return err
 	}
-	if _, err := d.Exec(`DELETE FROM organizations`); err != nil {
-		return err
-	}
-	if _, err := d.Exec(`DELETE FROM adventure_runs`); err != nil {
-		return err
+	advID, _ := advRes.LastInsertId()
+	pages := demoPages()
+	pageIDs := make([]int64, len(pages))
+	for i, p := range pages {
+		accept, _ := json.Marshal(p.Accept)
+		var radius any
+		if p.Radius != nil {
+			radius = *p.Radius
+		}
+		pr, err := d.Exec(`
+			INSERT INTO adventure_pages(adventure_id, idx, title, prompt, hint, accept, lat, lng, radius_m)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`, advID, i, p.Title, p.Prompt, p.Hint, string(accept), p.Lat, p.Lng, radius)
+		if err != nil {
+			return err
+		}
+		pageIDs[i], _ = pr.LastInsertId()
+		// Attach the same placeholder illustration to every puzzle so the
+		// play UI has a visual until the uploader is fixed.
+		if _, err := d.Exec(`
+			INSERT INTO adventure_page_images(page_id, idx, mime_type, size_bytes, content)
+			VALUES (?, 0, 'image/svg+xml', ?, ?)
+		`, pageIDs[i], len(placeholderImage), []byte(placeholderImage)); err != nil {
+			return err
+		}
 	}
 
 	if _, err := upsertUser(d, "admin", "admin", auth.RoleAdmin, nil); err != nil {
@@ -78,10 +140,11 @@ func seedDemo(ctx context.Context, d *sql.DB, advDir string) error {
 	}
 
 	startedAt := time.Now().UTC().Add(-30 * time.Minute).Format(time.RFC3339)
+	liveToken := "demo-live-" + fmt.Sprintf("%x", time.Now().UnixNano())
 	res, err := d.Exec(`
-		INSERT INTO adventure_runs(adventure_slug, org_id, created_by_user_id, state, started_at, created_at, assignment_id)
-		VALUES (?, ?, ?, 'running', ?, ?, ?)
-	`, "demo", orgID, bossID, startedAt, startedAt, assignmentID)
+		INSERT INTO adventure_runs(adventure_slug, org_id, created_by_user_id, state, started_at, created_at, assignment_id, live_token, show_map)
+		VALUES (?, ?, ?, 'running', ?, ?, ?, ?, 1)
+	`, "demo", orgID, bossID, startedAt, startedAt, assignmentID, liveToken)
 	if err != nil {
 		return err
 	}
@@ -129,10 +192,13 @@ func seedDemo(ctx context.Context, d *sql.DB, advDir string) error {
 		runevents.Record(ctx, d, runID, &teamID, runevents.UserActor(bossID), runevents.TeamCreated,
 			map[string]any{"name": plan.Name, "members": plan.Slots})
 
-		if err := seedTrackAndEvents(ctx, d, rng, adv, runID, teamID, slotIDs, plan.PageIdx, plan.Progress); err != nil {
+		if err := seedTrackAndEvents(ctx, d, rng, pages, runID, teamID, slotIDs, plan.PageIdx, plan.Progress); err != nil {
 			return err
 		}
 	}
+	// Ensure the adventures table is really there (avoid unused-var warnings
+	// when future refactors drop pageIDs).
+	_ = pageIDs
 	return nil
 }
 
@@ -167,23 +233,26 @@ func upsertUser(d *sql.DB, username, password, role string, orgID *int64) (int64
 }
 
 // seedTrackAndEvents writes plausible walking pings + answer events for a
-// team, using slot ids as the authors of the pings/events.
+// team, using slot ids as the actors.
 func seedTrackAndEvents(ctx context.Context, d *sql.DB, rng *rand.Rand,
-	adv *adventure.Adventure, runID, teamID int64,
+	pages []demoPage, runID, teamID int64,
 	slotIDs []int64, currentPage int, partialProgress float64) error {
 
-	type leg struct{ from, to adventure.Location }
-	legs := []leg{}
-	for i := 0; i < currentPage && i+1 < len(adv.Pages); i++ {
-		legs = append(legs, leg{adv.Pages[i].Location, adv.Pages[i+1].Location})
+	type leg struct {
+		fromLat, fromLng, toLat, toLng float64
 	}
-	if currentPage+1 < len(adv.Pages) {
-		legs = append(legs, leg{adv.Pages[currentPage].Location, adv.Pages[currentPage+1].Location})
+	legs := []leg{}
+	for i := 0; i < currentPage && i+1 < len(pages); i++ {
+		legs = append(legs, leg{pages[i].Lat, pages[i].Lng, pages[i+1].Lat, pages[i+1].Lng})
+	}
+	if currentPage+1 < len(pages) {
+		legs = append(legs, leg{pages[currentPage].Lat, pages[currentPage].Lng,
+			pages[currentPage+1].Lat, pages[currentPage+1].Lng})
 	}
 	legDists := make([]float64, len(legs))
 	total := 0.0
 	for i, l := range legs {
-		legDists[i] = haversine(l.from.Lat, l.from.Lng, l.to.Lat, l.to.Lng)
+		legDists[i] = haversine(l.fromLat, l.fromLng, l.toLat, l.toLng)
 		if i == len(legs)-1 && partialProgress < 1 {
 			legDists[i] *= partialProgress
 		}
@@ -211,8 +280,8 @@ func seedTrackAndEvents(ctx context.Context, d *sql.DB, rng *rand.Rand,
 		}
 		for s := 0; s <= steps; s++ {
 			t := float64(s) / float64(steps)
-			lat := lerp(l.from.Lat, l.to.Lat, t*progressEnd) + (rng.Float64()-0.5)*0.00008
-			lng := lerp(l.from.Lng, l.to.Lng, t*progressEnd) + (rng.Float64()-0.5)*0.00012
+			lat := lerp(l.fromLat, l.toLat, t*progressEnd) + (rng.Float64()-0.5)*0.00008
+			lng := lerp(l.fromLng, l.toLng, t*progressEnd) + (rng.Float64()-0.5)*0.00012
 			ts := legStart.Add(time.Duration(float64(legDuration) * t))
 			sid := slotIDs[s%len(slotIDs)]
 			if _, err := d.ExecContext(ctx, `
@@ -259,3 +328,37 @@ var wrongGuesses = []string{"hej", "goodbye", "green", "red", "adventure", "fina
 func pickWrongGuess(rng *rand.Rand) string {
 	return wrongGuesses[rng.Intn(len(wrongGuesses))]
 }
+
+// placeholderImage is an SVG treasure-map illustration seeded on every demo
+// puzzle. Brand raspberry dashed trail from a starting dot to an X-mark,
+// compass rose bottom-right, soft mountain silhouette under the horizon.
+// Small enough (~1 KB) to embed without bloating the binary.
+const placeholderImage = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 240" role="img" aria-label="Treasure map">
+  <defs>
+    <linearGradient id="paper" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0" stop-color="#faf3e0"/>
+      <stop offset="1" stop-color="#eeddb7"/>
+    </linearGradient>
+  </defs>
+  <rect width="400" height="240" fill="url(#paper)"/>
+  <path d="M0 240 L60 180 L120 220 L200 160 L260 200 L340 170 L400 210 L400 240 Z"
+        fill="#1f3349" opacity="0.18"/>
+  <g stroke="#ad1357" stroke-width="3" fill="none" stroke-dasharray="7 5" stroke-linecap="round">
+    <path d="M30 205 C 100 140, 160 200, 220 130 S 330 40, 360 35"/>
+  </g>
+  <circle cx="30" cy="205" r="6" fill="#1f3349" stroke="#fff" stroke-width="2"/>
+  <g transform="translate(360 35) rotate(-15)" stroke="#ad1357" stroke-width="5" stroke-linecap="round">
+    <line x1="-11" y1="-11" x2="11" y2="11"/>
+    <line x1="11" y1="-11" x2="-11" y2="11"/>
+  </g>
+  <g transform="translate(340 190)">
+    <circle r="26" fill="#fff" stroke="#1f3349" stroke-width="1.8"/>
+    <polygon points="0,-22 4,0 0,8 -4,0" fill="#ad1357"/>
+    <polygon points="0,22 4,0 0,-8 -4,0" fill="#1f3349"/>
+    <text y="-10" text-anchor="middle" font-family="Open Sans, sans-serif"
+          font-weight="700" font-size="9" fill="#1f3349">N</text>
+  </g>
+</svg>`
+
+// silence the unused errors import in builds where seedDemo is not changed.
+var _ = errors.New

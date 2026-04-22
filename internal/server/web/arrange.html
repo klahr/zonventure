@@ -733,6 +733,7 @@ function renderShell() {
     items = [
       ['#dashboard', 'Dashboard', ICONS.dashboard],
       ['#organizations', 'Organizations', ICONS.shield],
+      ['#library', 'Library', ICONS.map],
       ['#admins', 'Admins', ICONS.user],
     ];
   } else {
@@ -814,7 +815,7 @@ async function renderRoute() {
   const isOrgAdmin = role === 'org_admin';
 
   // Role-based route guards: admins can't visit org-user pages and vice versa.
-  const adminOnly = ['organizations', 'admins'];
+  const adminOnly = ['organizations', 'admins', 'library'];
   const orgUserOnly = ['adventures', 'runs'];
   if (isAdmin && orgUserOnly.includes(section)) { nav('#organizations'); return; }
   if (!isAdmin && adminOnly.includes(section))   { nav('#dashboard');     return; }
@@ -828,6 +829,7 @@ async function renderRoute() {
       case 'runs':         return arg ? await viewRunDetail(view, arg) : await viewRuns(view);
       case 'members':      return await viewMembers(view);
       case 'organizations':return await viewOrganizations(view);
+      case 'library':      return arg ? await viewLibraryEdit(view, arg) : await viewLibrary(view);
       case 'admins':       return await viewAdmins(view);
       default: view.replaceChildren(h('p', {}, 'Not found'));
     }
@@ -1085,10 +1087,11 @@ function pillClassForState(s) {
 const TEAM_COLORS = ['#e24080', '#429a3f', '#2563eb', '#f59e0b', '#7c3aed', '#0891b2', '#be185d', '#16a34a'];
 function teamColor(teamID, i) { return TEAM_COLORS[i % TEAM_COLORS.length]; }
 
-// Public share bar: shows the absolute /live/{id} URL so the arranger can
-// read/copy it and send it to whoever's running the TV screen in the bar.
-function renderShareBar(runID) {
-  const url = `${location.origin}/live/${runID}`;
+// Public share bar: shows the absolute /live/{token} URL (opaque) so the
+// arranger can read/copy it and send it to whoever's running the TV
+// screen.
+function renderShareBar(run) {
+  const url = `${location.origin}/live/${run.live_token}`;
   const urlBox = h('input', {
     readonly: '', value: url,
     style: 'flex:1; min-width:0; background:var(--surface-2); font-family:ui-monospace,SFMono-Regular,monospace; font-size:.9rem; box-shadow:none; border-color:var(--border-soft)',
@@ -1111,16 +1114,38 @@ function renderShareBar(runID) {
     href: url, target: '_blank', rel: 'noopener', class: 'btn small primary',
   }, 'Open ↗');
 
+  // Real-time map toggle — arrangers can enable/disable the audience map
+  // at any time (default off: revealing team positions is effectively
+  // cheating for most puzzle types).
+  const mapToggle = h('input', { type: 'checkbox' });
+  if (run.show_map) mapToggle.checked = true;
+  mapToggle.addEventListener('change', async () => {
+    const r = await api(`/api/admin/runs/${run.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ show_map: mapToggle.checked }),
+    });
+    if (r.status === 204) {
+      toastOk(mapToggle.checked ? 'Map enabled on live view' : 'Map hidden');
+    } else {
+      mapToggle.checked = !mapToggle.checked;
+      toastErr(r.body?.error || `error ${r.status}`);
+    }
+  });
+  const mapLabel = h('label', {
+    style: 'display:inline-flex; align-items:center; gap:.35rem; cursor:pointer; font-size:.85rem; color:var(--muted)',
+  }, mapToggle, 'Show real-time map');
+
   return h('div', { class: 'card', style: 'padding:.85rem 1rem' },
     h('div', { class: 'row', style: 'gap:.75rem; align-items:center; flex-wrap:wrap' },
       h('div', { style: 'min-width:140px' },
         h('div', { style: 'font-size:.7rem; font-weight:800; text-transform:uppercase; letter-spacing:.06em; color:var(--muted)' }, 'Public live view'),
-        h('div', { class: 'muted', style: 'font-size:.85rem' }, 'Share on a TV — no login needed'),
+        h('div', { class: 'muted', style: 'font-size:.85rem' }, 'Share on a TV — token URL, no login needed'),
       ),
       urlBox,
       copyBtn,
       openBtn,
     ),
+    h('div', { style: 'margin-top:.5rem' }, mapLabel),
   );
 }
 
@@ -1171,7 +1196,7 @@ async function viewRunDetail(view, runID) {
       h('span', { class: 'pill ' + pillClassForState(run.state) }, run.state),
     ),
     h('p', { class: 'muted mono' }, run.adventure_slug),
-    renderShareBar(run.id),
+    renderShareBar(run),
     h('div', { class: 'card' },
       h('h2', {}, 'Lifecycle'),
       actions,
@@ -1966,6 +1991,335 @@ async function openAssignAdventure(org, adventures) {
 async function revokeAssignment(orgID, assignmentID) {
   const r = await api(`/api/admin/organizations/${orgID}/assignments/${assignmentID}`, { method: 'DELETE' });
   if (r.status === 204) { toastOk('Assignment revoked'); renderRoute(); }
+  else toastErr(r.body?.error || `error ${r.status}`);
+}
+
+/* ========== Library (admin only) ==========
+   Admins author adventures here: title/body/images/answer/location per
+   puzzle. Content lives in the database, not on disk. */
+
+async function viewLibrary(view) {
+  const r = await api('/api/admin/adventures');
+  const advs = r.body?.adventures || [];
+  view.replaceChildren(
+    h('div', { class: 'row between' },
+      h('h1', {}, 'Library'),
+      h('button', { class: 'btn primary', on: { click: () => openCreateAdventure() } },
+        icon(ICONS.plus), 'New adventure')),
+    h('p', { class: 'muted' },
+      'Adventures you have authored live in the database. Assign them to organizations from the Organizations page.'),
+    advs.length === 0
+      ? h('div', { class: 'empty' },
+          h('p', {}, 'No adventures yet.'),
+          h('button', { class: 'btn primary', on: { click: () => openCreateAdventure() } },
+            icon(ICONS.plus), 'Create your first adventure'))
+      : h('div', { class: 'grid cols-2' }, advs.map((a) =>
+        h('div', {
+          class: 'card clickable',
+          on: { click: () => nav('#library/' + a.slug) },
+        },
+          h('div', { class: 'row between' },
+            h('h2', {}, a.title),
+            h('span', { class: 'pill accent' }, `${a.page_count} puzzles`)),
+          a.description ? h('p', { class: 'muted' }, a.description) : null,
+          h('p', { class: 'muted mono' }, a.slug)))),
+  );
+}
+
+async function openCreateAdventure() {
+  await modal('New adventure', ({ body, close }) => {
+    const slug  = h('input', { required: true, placeholder: 'my-adventure', pattern: '[a-z0-9-]+' });
+    const title = h('input', { required: true });
+    const desc  = h('textarea', { rows: 2 });
+    const author = h('input', {});
+    const form = h('form', {},
+      h('label', { class: 'field' },
+        h('span', {}, 'Slug — lowercase letters, digits, hyphens'), slug),
+      h('label', { class: 'field' }, h('span', {}, 'Title'), title),
+      h('label', { class: 'field' }, h('span', {}, 'Description'), desc),
+      h('label', { class: 'field' }, h('span', {}, 'Author'), author),
+      h('div', { class: 'row end' },
+        h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, 'Cancel'),
+        h('button', { class: 'btn primary', type: 'submit' }, 'Create')));
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const r = await api('/api/admin/adventures', {
+        method: 'POST', body: JSON.stringify({
+          slug: slug.value.trim(), title: title.value.trim(),
+          description: desc.value, author: author.value.trim(),
+        }),
+      });
+      if (r.status === 201) { toastOk('Adventure created'); close(true); nav('#library/' + r.body.slug); }
+      else toastErr(r.body?.error || `error ${r.status}`);
+    });
+    body.append(form);
+  });
+}
+
+async function viewLibraryEdit(view, slug) {
+  const r = await api('/api/admin/adventures/' + encodeURIComponent(slug) + '/edit');
+  if (!r.ok) {
+    view.replaceChildren(h('p', { class: 'err' }, r.body?.error || 'not found'));
+    return;
+  }
+  const adv = r.body;
+  renderLibraryEdit(view, adv);
+}
+
+function renderLibraryEdit(view, adv) {
+  view.replaceChildren(
+    h('button', { class: 'btn ghost small', on: { click: () => nav('#library') } },
+      icon(ICONS.back), 'Back to library'),
+    h('div', { class: 'row between' },
+      h('h1', {}, adv.title),
+      h('div', { class: 'row' },
+        h('button', { class: 'btn', on: { click: () => openEditAdventureMeta(adv) } }, 'Edit title/slug'),
+        h('button', { class: 'btn danger', on: { click: () => confirmDeleteAdventure(adv) } },
+          icon(ICONS.trash), 'Delete'))),
+    h('p', { class: 'muted mono' }, adv.slug, adv.author ? ` · ${adv.author}` : ''),
+    adv.description ? h('p', { class: 'muted' }, adv.description) : null,
+    h('div', { class: 'row between', style: 'margin-top:1rem' },
+      h('h2', {}, `Puzzles (${adv.pages.length})`),
+      h('button', { class: 'btn primary small', on: { click: () => openEditPuzzle(adv, null) } },
+        icon(ICONS.plus), 'New puzzle')),
+    adv.pages.length === 0
+      ? h('div', { class: 'empty' }, 'No puzzles yet.')
+      : h('div', {}, adv.pages.map((p, i) => renderPuzzleCard(adv, p, i))),
+  );
+}
+
+function renderPuzzleCard(adv, page, i) {
+  return h('div', { class: 'card' },
+    h('div', { class: 'row between' },
+      h('h3', {}, `${i + 1}. ${page.title || '(untitled)'}`),
+      h('div', { class: 'row' },
+        page.gated ? h('span', { class: 'pill warning' }, 'gated') : null,
+        h('button', { class: 'btn small', on: { click: () => openEditPuzzle(adv, page) } }, 'Edit'),
+        h('button', { class: 'btn small danger', on: { click: () => confirmDeletePuzzle(adv, page) } }, icon(ICONS.trash)))),
+    h('p', { style: 'white-space:pre-wrap' }, page.prompt),
+    (page.images || []).length === 0
+      ? null
+      : h('div', { class: 'row', style: 'flex-wrap:wrap; gap:.5rem' },
+        page.images.map((im) => h('img', {
+          src: im.url, alt: '',
+          style: 'max-height:120px; border-radius:6px; border:1px solid var(--border-soft)',
+        }))),
+    h('p', { class: 'muted' },
+      'Accepted: ',
+      page.accept.map((a) => h('span', { class: 'chip', style: 'margin-right:.25rem' }, a))),
+    h('p', { class: 'muted mono', style: 'font-size:.8rem' },
+      `${page.lat.toFixed(5)}, ${page.lng.toFixed(5)}`,
+      page.radius_m ? ` · gate ${page.radius_m} m` : ''),
+  );
+}
+
+async function openEditAdventureMeta(adv) {
+  await modal('Edit adventure', ({ body, close }) => {
+    const slug  = h('input', { value: adv.slug, required: true, pattern: '[a-z0-9-]+' });
+    const title = h('input', { value: adv.title, required: true });
+    const desc  = h('textarea', { rows: 2 }, adv.description || '');
+    const author = h('input', { value: adv.author || '' });
+    const form = h('form', {},
+      h('label', { class: 'field' }, h('span', {}, 'Slug'), slug),
+      h('label', { class: 'field' }, h('span', {}, 'Title'), title),
+      h('label', { class: 'field' }, h('span', {}, 'Description'), desc),
+      h('label', { class: 'field' }, h('span', {}, 'Author'), author),
+      h('div', { class: 'row end' },
+        h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, 'Cancel'),
+        h('button', { class: 'btn primary', type: 'submit' }, 'Save')));
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const payload = {};
+      if (slug.value.trim() !== adv.slug) payload.slug = slug.value.trim();
+      if (title.value.trim() !== adv.title) payload.title = title.value.trim();
+      if (desc.value !== (adv.description || '')) payload.description = desc.value;
+      if (author.value.trim() !== (adv.author || '')) payload.author = author.value.trim();
+      if (Object.keys(payload).length === 0) { close(null); return; }
+      const r = await api(`/api/admin/adventures/${encodeURIComponent(adv.slug)}`, {
+        method: 'PATCH', body: JSON.stringify(payload),
+      });
+      if (r.status === 204) {
+        toastOk('Saved');
+        close(true);
+        nav('#library/' + (payload.slug || adv.slug));
+      } else {
+        toastErr(r.body?.error || `error ${r.status}`);
+      }
+    });
+    body.append(form);
+  });
+}
+
+async function confirmDeleteAdventure(adv) {
+  const pw = await promptPassword(`Delete adventure “${adv.title}”?`,
+    'This removes the adventure and all its puzzles. Enter your password to confirm.');
+  if (!pw) return;
+  const r = await api(`/api/admin/adventures/${encodeURIComponent(adv.slug)}`, {
+    method: 'DELETE', headers: { 'X-Confirm-Password': pw },
+  });
+  if (r.status === 204) { toastOk('Deleted'); nav('#library'); }
+  else toastErr(r.body?.error || `error ${r.status}`);
+}
+
+async function openEditPuzzle(adv, page /* or null */) {
+  const creating = !page;
+  await modal(creating ? 'New puzzle' : `Edit puzzle ${page.index + 1}`, ({ body, close }) => {
+    const title   = h('input', { value: page?.title || '' });
+    const prompt  = h('textarea', { rows: 6, required: true }, page?.prompt || '');
+    const hint    = h('input', { value: page?.hint || '' });
+    const accept  = h('input', { required: true,
+      value: (page?.accept || []).join(', '),
+      placeholder: 'hello, hi',
+    });
+    const lat     = h('input', { type: 'number', step: 'any', required: true, value: page ? page.lat : 59.3293 });
+    const lng     = h('input', { type: 'number', step: 'any', required: true, value: page ? page.lng : 18.0686 });
+    const gated   = h('input', { type: 'checkbox' });
+    if (page?.radius_m) gated.checked = true;
+    const radius  = h('input', { type: 'number', step: 'any', value: page?.radius_m || 50 });
+
+    const form = h('form', {},
+      h('label', { class: 'field' }, h('span', {}, 'Title'), title),
+      h('label', { class: 'field' }, h('span', {}, 'Body text'), prompt),
+      h('label', { class: 'field' }, h('span', {}, 'Hint'), hint),
+      h('label', { class: 'field' },
+        h('span', {}, 'Accepted answers (comma-separated)'), accept),
+      h('div', { class: 'grid cols-2' },
+        h('label', { class: 'field' }, h('span', {}, 'Latitude'), lat),
+        h('label', { class: 'field' }, h('span', {}, 'Longitude'), lng)),
+      h('label', { style: 'display:flex; gap:.4rem; align-items:center; margin-bottom:.5rem' },
+        gated, h('span', { style: 'margin:0' }, 'Gated (player must reach location)')),
+      h('label', { class: 'field' }, h('span', {}, 'Gate radius (metres)'), radius),
+      h('div', { class: 'row end', style: 'margin-top:1rem' },
+        h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, 'Cancel'),
+        h('button', { class: 'btn primary', type: 'submit' }, creating ? 'Create' : 'Save')));
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const payload = {
+        title: title.value.trim(),
+        prompt: prompt.value.trim(),
+        hint: hint.value.trim(),
+        accept: accept.value.split(',').map((s) => s.trim()).filter(Boolean),
+        lat: parseFloat(lat.value),
+        lng: parseFloat(lng.value),
+      };
+      if (gated.checked) payload.radius_m = parseFloat(radius.value);
+      if (creating) {
+        const r = await api(`/api/admin/adventures/${encodeURIComponent(adv.slug)}/pages`, {
+          method: 'POST', body: JSON.stringify(payload),
+        });
+        if (r.status !== 201) { toastErr(r.body?.error || `error ${r.status}`); return; }
+        toastOk('Puzzle created');
+        close(true);
+        // Reopen in edit mode so the user can upload images immediately.
+        const fresh = await api(`/api/admin/adventures/${encodeURIComponent(adv.slug)}/edit`);
+        if (fresh.ok) {
+          const np = (fresh.body.pages || []).find((p) => p.id === r.body.id);
+          if (np) { openEditPuzzle(fresh.body, np); return; }
+        }
+        renderRoute();
+        return;
+      }
+      const r = await api(`/api/admin/pages/${page.id}`, {
+        method: 'PATCH', body: JSON.stringify(payload),
+      });
+      if (r.status !== 204) { toastErr(r.body?.error || `error ${r.status}`); return; }
+      toastOk('Puzzle saved');
+      close(true);
+      renderRoute();
+    });
+    body.append(form);
+
+    if (!creating) body.append(renderImageEditor(page, () => { close(true); renderRoute(); }));
+  }, { wide: true });
+}
+
+// renderImageEditor builds the image section of the puzzle-edit modal.
+//
+// Firefox refuses to open the OS picker when the click path goes through
+// certain modal/transformed ancestors — even for a "plain" native input.
+// The workaround is to keep the <input type="file"> itself parked at the
+// top level of <body> (a uniform, untransformed ancestor chain) and
+// drive it from a <label for="..."> inside the modal. The label→input
+// link works no matter where each sits in the DOM, and the input's own
+// click handling is unaffected by its DOM position.
+function renderImageEditor(page, onChange) {
+  const wrap = document.createElement('div');
+  wrap.style.marginTop = '1rem';
+
+  // Unique id so multiple editors in sequence don't collide.
+  const inputID = 'zv-image-input-' + page.id + '-' + Math.random().toString(36).slice(2, 8);
+  const file = document.createElement('input');
+  file.id = inputID;
+  file.type = 'file';
+  file.accept = 'image/*';
+  // Visually hide but keep it in the layout tree at the body level.
+  file.style.position = 'fixed';
+  file.style.left = '-10000px';
+  file.style.top = '0';
+  file.style.width = '1px';
+  file.style.height = '1px';
+  file.style.opacity = '0';
+  file.setAttribute('tabindex', '-1');
+  // Remove the input when the modal closes so we don't leak dozens of
+  // orphaned inputs across edits.
+  document.body.appendChild(file);
+
+  file.addEventListener('change', async () => {
+    if (!file.files?.[0]) return;
+    const fd = new FormData();
+    fd.append('file', file.files[0]);
+    const res = await fetch(`/api/admin/pages/${page.id}/images`, {
+      method: 'POST', body: fd, credentials: 'same-origin',
+    });
+    file.value = '';
+    file.remove();
+    if (res.ok) { toastOk('Image added'); onChange(); }
+    else { const t = await res.text(); toastErr(t || `error ${res.status}`); }
+  });
+
+  // Label linked by `for` — no JS .click(), no nesting.
+  const addBtn = document.createElement('label');
+  addBtn.className = 'btn primary small';
+  addBtn.htmlFor = inputID;
+  addBtn.style.cursor = 'pointer';
+  addBtn.style.display = 'inline-flex';
+  addBtn.append(icon(ICONS.plus));
+  addBtn.append(document.createTextNode(' Add image'));
+
+  wrap.append(h('h3', {}, 'Images'));
+  if ((page.images || []).length === 0) {
+    wrap.append(h('p', { class: 'muted' }, 'No images yet.'));
+  }
+  for (const im of (page.images || [])) {
+    wrap.append(h('div', { style: 'display:flex; gap:.5rem; align-items:center; margin-bottom:.35rem' },
+      h('img', { src: im.url, style: 'max-height:80px; border-radius:6px; border:1px solid var(--border-soft)' }),
+      h('button', {
+        class: 'btn small danger', type: 'button',
+        on: { click: async () => {
+          const rr = await api(`/api/admin/images/${im.id}`, { method: 'DELETE' });
+          if (rr.status === 204) { toastOk('Image removed'); file.remove(); onChange(); }
+          else toastErr(rr.body?.error || `error ${rr.status}`);
+        } },
+      }, icon(ICONS.trash), 'Remove')));
+  }
+  const btnRow = document.createElement('div');
+  btnRow.style.marginTop = '.5rem';
+  btnRow.append(addBtn);
+  wrap.append(btnRow);
+  return wrap;
+}
+
+async function confirmDeletePuzzle(adv, page) {
+  const ok = await modal(`Delete puzzle ${page.index + 1}?`, ({ body, close }) => {
+    body.append(
+      h('p', {}, 'This removes the puzzle and any images attached to it.'),
+      h('div', { class: 'row end' },
+        h('button', { class: 'btn', on: { click: () => close(false) } }, 'Cancel'),
+        h('button', { class: 'btn danger', on: { click: () => close(true) } }, 'Delete')));
+  });
+  if (!ok) return;
+  const r = await api(`/api/admin/pages/${page.id}`, { method: 'DELETE' });
+  if (r.status === 204) { toastOk('Deleted'); renderRoute(); }
   else toastErr(r.body?.error || `error ${r.status}`);
 }
 
