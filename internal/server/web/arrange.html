@@ -103,12 +103,13 @@ p { margin: 0 0 .5rem; }
 /* ---------- App shell ---------- */
 .app {
   display: grid;
-  grid-template-columns: 240px 1fr;
+  grid-template-columns: 240px minmax(0, 1fr);
   grid-template-rows: auto 1fr;
   grid-template-areas:
     "sidebar topbar"
     "sidebar content";
   min-height: 100vh;
+  overflow-x: hidden;
 }
 .topbar {
   grid-area: topbar;
@@ -145,7 +146,10 @@ p { margin: 0 0 .5rem; }
 .sidebar .brand {
   padding: 0 1.5rem 1.5rem;
   font-size: 1.55rem;
-  display: flex; align-items: baseline; gap: .4rem;
+  display: flex; flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+  line-height: 1.1;
 }
 .sidebar .brand small {
   font-family: var(--font-body);
@@ -154,8 +158,28 @@ p { margin: 0 0 .5rem; }
   text-transform: uppercase;
   letter-spacing: .08em;
   font-weight: 700;
+  margin-top: .15rem;
 }
-.nav { display: flex; flex-direction: column; gap: 2px; padding: 0 .75rem; }
+.nav { display: flex; flex-direction: column; gap: 2px; padding: 0 .75rem; flex: 1; }
+.sidebar-footer {
+  margin-top: auto;
+  padding: 1rem .75rem;
+  border-top: 1px solid var(--border-soft);
+  display: flex;
+  flex-direction: column;
+  gap: .4rem;
+}
+.sidebar-footer .btn {
+  width: 100%;
+  justify-content: flex-start;
+  font-weight: 600;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sidebar-footer .btn:hover { color: var(--accent); border-color: transparent; background: var(--surface-2); }
+.sidebar-footer .btn svg { stroke: currentColor; }
 .nav a {
   display: flex; align-items: center; gap: .75rem;
   padding: .6rem .85rem; border-radius: var(--radius-pill);
@@ -171,8 +195,8 @@ p { margin: 0 0 .5rem; }
 .content {
   grid-area: content;
   padding: 1.5rem 2rem 3rem;
-  max-width: 100%;
-  overflow-x: auto;
+  min-width: 0;          /* let the grid track shrink below content's intrinsic width */
+  overflow-x: hidden;    /* defense in depth — page itself never scrolls sideways */
 }
 .content > * + * { margin-top: 1.25rem; }
 
@@ -185,19 +209,21 @@ p { margin: 0 0 .5rem; }
   }
   .sidebar {
     position: fixed; top: 0; left: 0; bottom: 0;
-    width: 260px; z-index: 30;
+    width: 260px; z-index: 1500;
     transform: translateX(-100%);
     transition: transform .2s ease;
     box-shadow: var(--shadow-lg);
   }
   .sidebar.open { transform: translateX(0); }
-  .topbar .brand { display: inline-flex; align-items: center; gap: .5rem; font-weight: 700; }
+  .topbar .brand { display: inline-flex; align-items: baseline; gap: .4rem; font-weight: 700; }
   .btn.menu-btn { display: inline-flex; }
   .content { padding: 1rem; }
+  .topbar .crumb { display: none; }
+  .topbar .user-details { display: none; }
 }
 .backdrop {
   display: none;
-  position: fixed; inset: 0; background: rgba(0,0,0,.35); z-index: 25;
+  position: fixed; inset: 0; background: rgba(0,0,0,.35); z-index: 1400;
 }
 .backdrop.show { display: block; }
 
@@ -231,6 +257,10 @@ p { margin: 0 0 .5rem; }
   border-radius: var(--radius);
   box-shadow: var(--shadow-soft);
   padding: 1.25rem;
+  /* Wide content (mainly tables) becomes a horizontal scroll area inside the
+     card rather than pushing the viewport wider. */
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 .card h2 { margin-top: 0; }
 .card + .card { margin-top: 1rem; }
@@ -240,6 +270,8 @@ p { margin: 0 0 .5rem; }
 .grid { display: grid; gap: 1rem; }
 .grid.cols-3 { grid-template-columns: repeat(3, minmax(0,1fr)); }
 .grid.cols-2 { grid-template-columns: repeat(2, minmax(0,1fr)); }
+/* stats are small enough to stay side-by-side even on very narrow phones */
+.grid.stats { grid-template-columns: repeat(3, minmax(0,1fr)); gap: .5rem; }
 @media (max-width: 820px) {
   .grid.cols-3, .grid.cols-2 { grid-template-columns: 1fr; }
 }
@@ -248,12 +280,25 @@ p { margin: 0 0 .5rem; }
   background: var(--surface);
   border: 1px solid var(--border-soft);
   border-radius: var(--radius);
-  padding: 1.1rem 1.3rem;
+  padding: 1.1rem 1rem;
   box-shadow: var(--shadow-soft);
+  text-align: center;
 }
-.stat .label { color: var(--muted); font-size: .75rem; text-transform: uppercase; letter-spacing: .07em; font-weight: 700; }
-.stat .value { font-size: 2.2rem; font-weight: 700; margin-top: .25rem; color: var(--ink); }
+.stat .label {
+  color: var(--muted);
+  font-size: clamp(.6rem, 1.6vw, .75rem);
+  text-transform: uppercase; letter-spacing: .07em; font-weight: 700;
+  white-space: nowrap;
+}
+.stat .value {
+  font-size: clamp(1.5rem, 6vw, 2.4rem);
+  font-weight: 700; margin-top: .25rem; color: var(--ink);
+  line-height: 1;
+}
 .stat.accent .value { color: var(--accent); }
+@media (max-width: 560px) {
+  .stat { padding: .85rem .5rem; }
+}
 
 /* ---------- Forms ---------- */
 label.field { display: block; margin-bottom: .9rem; }
@@ -296,6 +341,9 @@ textarea { min-height: 80px; resize: vertical; font-family: ui-monospace, monosp
 .table tbody tr:nth-child(odd) { background: color-mix(in srgb, var(--surface-2) 45%, transparent); }
 .table tbody tr:nth-child(odd):hover { background: var(--surface-2); }
 .table td .row { display: flex; gap: .35rem; }
+@media (max-width: 820px) {
+  .table .hide-narrow { display: none; }
+}
 
 /* ---------- Bits ---------- */
 .row { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; }
@@ -337,11 +385,13 @@ textarea { min-height: 80px; resize: vertical; font-family: ui-monospace, monosp
   border: 1px dashed var(--border);
 }
 
-/* ---------- Modal ---------- */
+/* ---------- Modal ----------
+   Leaflet assigns its own layers z-index up to ~1000, so the modal and
+   toasts have to sit clearly above that to stay on top of the run map. */
 .modal-back {
   position: fixed; inset: 0; background: rgba(0,0,0,.45);
   display: flex; align-items: center; justify-content: center;
-  z-index: 50; padding: 1rem;
+  z-index: 2000; padding: 1rem;
 }
 .modal {
   background: var(--surface); border-radius: var(--radius);
@@ -440,7 +490,7 @@ textarea { min-height: 80px; resize: vertical; font-family: ui-monospace, monosp
 
 /* ---------- Toast ---------- */
 .toasts {
-  position: fixed; bottom: 1rem; right: 1rem; z-index: 60;
+  position: fixed; bottom: 1rem; right: 1rem; z-index: 2100;
   display: flex; flex-direction: column; gap: .5rem;
 }
 .toast {
@@ -568,6 +618,31 @@ function toast(msg, kind = '') {
 const toastOk = (m) => toast(m, 'ok');
 const toastErr = (m) => toast(m, 'err');
 
+/* ========== Password-confirm prompt ==========
+   Returns the typed password on success or null if cancelled. Pair this
+   with requests that set X-Confirm-Password. */
+async function promptPassword(title, message) {
+  return modal(title, ({ body, close }) => {
+    const input = h('input', { type: 'password', autocomplete: 'current-password', required: true });
+    const err = h('p', { class: 'err', style: 'display:none' });
+    const form = h('form', {},
+      message ? h('p', { style: 'margin-bottom:.75rem' }, message) : null,
+      h('label', { class: 'field' }, h('span', {}, 'Your password'), input),
+      err,
+      h('div', { class: 'row end' },
+        h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, 'Cancel'),
+        h('button', { class: 'btn danger', type: 'submit' }, 'Confirm')),
+    );
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      if (!input.value) { err.style.display = ''; err.textContent = 'password required'; return; }
+      close(input.value);
+    });
+    body.append(form);
+    setTimeout(() => input.focus(), 20);
+  });
+}
+
 /* ========== Modal ========== */
 function modal(title, bodyFn, opts = {}) {
   return new Promise((resolve) => {
@@ -664,15 +739,22 @@ function renderShell() {
       on: { click: () => { document.querySelector('.sidebar')?.classList.remove('open'); document.querySelector('.backdrop')?.classList.remove('show'); } },
     }, icon(svg), label)));
 
-  const sidebar = h('aside', { class: 'sidebar' },
-    h('div', { class: 'brand' }, 'zonventure', h('small', {}, 'arranger')),
-    nav);
-
+  const isDark = currentTheme() === 'dark';
   const themeBtn = h('button', {
-    class: 'btn ghost',
+    class: 'btn',
     title: 'Toggle theme',
     on: { click: toggleTheme },
-  }, icon(currentTheme() === 'dark' ? ICONS.sun : ICONS.moon));
+  }, icon(isDark ? ICONS.sun : ICONS.moon), isDark ? 'Light mode' : 'Dark mode');
+  const logoutBtn = h('button', {
+    class: 'btn',
+    title: 'Log out',
+    on: { click: logout },
+  }, icon(ICONS.user), `Log out (${state.me.username})`);
+
+  const sidebar = h('aside', { class: 'sidebar' },
+    h('div', { class: 'brand' }, 'zonventure', h('small', {}, 'arranger')),
+    nav,
+    h('div', { class: 'sidebar-footer' }, themeBtn, logoutBtn));
 
   const backdrop = h('div', { class: 'backdrop', on: { click: () => {
     document.querySelector('.sidebar').classList.remove('open');
@@ -692,10 +774,6 @@ function renderShell() {
     h('span', { class: 'brand' }, 'zonventure'),
     h('div', { class: 'crumb' }, currentCrumb()),
     h('div', { class: 'spacer' }),
-    themeBtn,
-    h('div', { class: 'user' },
-      h('strong', {}, state.me.username), ' · ', state.me.role, ' · ',
-      h('button', { class: 'btn ghost small', on: { click: logout } }, 'Log out')),
   );
 
   return h('div', { class: 'app' },
@@ -759,15 +837,13 @@ async function viewDashboard(view) {
     h('p', { class: 'muted' }, state.me.role === 'root'
       ? 'You are signed in as root — you can manage arrangers and the adventures each can arrange.'
       : `You have ${ (advs.body?.adventures || []).length } adventure(s) you are allowed to arrange.`),
-    h('div', { class: 'grid cols-3' },
+    h('div', { class: 'grid stats' },
       stat('Runs total', counts.total),
       stat('Running now', counts.running),
       stat('Scheduled', counts.scheduled),
     ),
     h('div', { class: 'card' },
-      h('div', { class: 'row between' },
-        h('h2', {}, 'Recent runs'),
-        h('button', { class: 'btn primary small', on: { click: () => nav('#runs') } }, 'All runs')),
+      h('h2', {}, 'Recent runs'),
       runsTable(rs.slice(0, 5)),
     ),
   );
@@ -794,7 +870,7 @@ async function viewAdventures(view) {
         h('div', { class: 'card clickable', on: { click: () => nav('#adventures/' + a.slug) } },
           h('div', { class: 'row between' },
             h('h2', {}, a.title),
-            h('span', { class: 'pill accent' }, `${a.page_count} pages`)),
+            h('span', { class: 'pill accent' }, `${a.page_count} puzzles`)),
           h('p', { class: 'muted' }, a.description || ''),
           h('p', { class: 'muted mono' }, a.slug),
           h('div', { class: 'row end' },
@@ -812,11 +888,11 @@ async function viewAdventureDetail(view, slug) {
     h('button', { class: 'btn ghost small', on: { click: () => nav('#adventures') } }, icon(ICONS.back), 'Back'),
     h('h1', {}, a.title),
     h('p', { class: 'muted' }, a.description || ''),
-    h('p', { class: 'muted mono' }, `${a.slug} · ${a.page_count} pages${a.author ? ' · ' + a.author : ''}`),
+    h('p', { class: 'muted mono' }, `${a.slug} · ${a.page_count} puzzles${a.author ? ' · ' + a.author : ''}`),
     h('div', { class: 'row' },
       h('button', { class: 'btn primary', on: { click: () => scheduleRun(a.slug) } }, icon(ICONS.plus), 'Schedule run'),
     ),
-    h('h2', { style: 'margin-top:1.5rem' }, 'Pages'),
+    h('h2', { style: 'margin-top:1.5rem' }, 'Puzzles'),
     h('div', {}, a.pages.map((p, i) =>
       h('div', { class: 'card' },
         h('div', { class: 'row between' },
@@ -851,14 +927,17 @@ function runsTable(rs) {
   if (rs.length === 0) return h('div', { class: 'empty' }, 'No runs yet.');
   return h('table', { class: 'table' },
     h('thead', {}, h('tr', {},
-      h('th', {}, 'ID'), h('th', {}, 'Adventure'), h('th', {}, 'State'), h('th', {}, 'Scheduled'), h('th', {}, 'Started'), h('th', {}, ''))),
+      h('th', {}, 'Adventure'),
+      h('th', {}, 'State'),
+      h('th', { class: 'hide-narrow' }, 'Scheduled'),
+      h('th', { class: 'hide-narrow' }, 'Started'),
+      h('th', {}, ''))),
     h('tbody', {}, rs.map((r) =>
       h('tr', { style: 'cursor:pointer', on: { click: () => nav('#runs/' + r.id) } },
-        h('td', { class: 'mono' }, '#' + r.id),
         h('td', {}, r.adventure_slug),
         h('td', {}, h('span', { class: 'pill ' + pillClassForState(r.state) }, r.state)),
-        h('td', {}, r.scheduled_at || '—'),
-        h('td', {}, r.started_at || '—'),
+        h('td', { class: 'hide-narrow' }, r.scheduled_at || '—'),
+        h('td', { class: 'hide-narrow' }, r.started_at || '—'),
         h('td', { class: 'row end' }, h('button', { class: 'btn small' }, 'Open')),
       ))),
   );
@@ -876,6 +955,45 @@ function pillClassForState(s) {
 
 const TEAM_COLORS = ['#e24080', '#429a3f', '#2563eb', '#f59e0b', '#7c3aed', '#0891b2', '#be185d', '#16a34a'];
 function teamColor(teamID, i) { return TEAM_COLORS[i % TEAM_COLORS.length]; }
+
+// Public share bar: shows the absolute /live/{id} URL so the arranger can
+// read/copy it and send it to whoever's running the TV screen in the bar.
+function renderShareBar(runID) {
+  const url = `${location.origin}/live/${runID}`;
+  const urlBox = h('input', {
+    readonly: '', value: url,
+    style: 'flex:1; min-width:0; background:var(--surface-2); font-family:ui-monospace,SFMono-Regular,monospace; font-size:.9rem; box-shadow:none; border-color:var(--border-soft)',
+    on: { click: (e) => e.target.select() },
+  });
+  const copyBtn = h('button', {
+    class: 'btn small', type: 'button', title: 'Copy link',
+    on: { click: async () => {
+      try {
+        await navigator.clipboard.writeText(url);
+        toastOk('Link copied');
+      } catch {
+        urlBox.select();
+        document.execCommand('copy');
+        toastOk('Link copied');
+      }
+    } },
+  }, 'Copy');
+  const openBtn = h('a', {
+    href: url, target: '_blank', rel: 'noopener', class: 'btn small primary',
+  }, 'Open ↗');
+
+  return h('div', { class: 'card', style: 'padding:.85rem 1rem' },
+    h('div', { class: 'row', style: 'gap:.75rem; align-items:center; flex-wrap:wrap' },
+      h('div', { style: 'min-width:140px' },
+        h('div', { style: 'font-size:.7rem; font-weight:800; text-transform:uppercase; letter-spacing:.06em; color:var(--muted)' }, 'Public live view'),
+        h('div', { class: 'muted', style: 'font-size:.85rem' }, 'Share on a TV — no login needed'),
+      ),
+      urlBox,
+      copyBtn,
+      openBtn,
+    ),
+  );
+}
 
 async function viewRunDetail(view, runID) {
   const [detail, positions, tracksR, adventureR, eventsR] = await Promise.all([
@@ -921,6 +1039,7 @@ async function viewRunDetail(view, runID) {
       h('span', { class: 'pill ' + pillClassForState(run.state) }, run.state),
     ),
     h('p', { class: 'muted mono' }, run.adventure_slug),
+    renderShareBar(run.id),
     h('div', { class: 'card' },
       h('h2', {}, 'Lifecycle'),
       actions,
@@ -940,7 +1059,7 @@ async function viewRunDetail(view, runID) {
         teams.length === 0
           ? h('div', { class: 'empty' }, 'No teams yet.')
           : h('table', { class: 'table' },
-            h('thead', {}, h('tr', {}, h('th', {}, 'Team'), h('th', {}, 'Page'), h('th', {}, 'Members'), h('th', {}, ''))),
+            h('thead', {}, h('tr', {}, h('th', {}, 'Team'), h('th', {}, 'Puzzle'), h('th', {}, 'Members'), h('th', {}, ''))),
             h('tbody', {}, teams.map((t, i) => h('tr', {},
               h('td', {},
                 h('span', { class: 'sw', style: `display:inline-block;width:10px;height:10px;border-radius:999px;margin-right:.4rem;background:${teamColor(t.id, i)}` }),
@@ -1165,16 +1284,13 @@ async function skipPuzzle(team, close) {
 }
 
 async function confirmDeleteTeam(team) {
-  const yes = await modal(`Delete team “${team.name}”?`, ({ body, close }) => {
-    body.append(
-      h('p', {}, `This removes the team and all its progress. Members stay as player accounts.`),
-      h('div', { class: 'row end' },
-        h('button', { class: 'btn', on: { click: () => close(false) } }, 'Cancel'),
-        h('button', { class: 'btn danger', on: { click: () => close(true) } }, 'Delete')),
-    );
+  const pw = await promptPassword(`Delete team “${team.name}”?`,
+    `This removes the team and all its progress. Members stay as player accounts. Enter your password to confirm.`);
+  if (!pw) return;
+  const r = await api(`/api/admin/teams/${team.id}`, {
+    method: 'DELETE',
+    headers: { 'X-Confirm-Password': pw },
   });
-  if (!yes) return;
-  const r = await api(`/api/admin/teams/${team.id}`, { method: 'DELETE' });
   if (r.status === 204) { toastOk('Team deleted'); renderRoute(); }
   else toastErr(r.body?.error || `error ${r.status}`);
 }
@@ -1251,17 +1367,15 @@ async function openTeamModal(runID, existing /* team object or null */) {
     });
 
     const newU = h('input', { placeholder: 'Username', autocomplete: 'off' });
-    const newP = h('input', { type: 'password', placeholder: 'Password', autocomplete: 'new-password' });
     const addMsg = h('span', { class: 'muted', style: 'font-size:.8rem' });
     const addBtn = h('button', { type: 'button', class: 'btn primary small' }, 'Add');
     const submitInline = async () => {
       const username = newU.value.trim();
-      const password = newP.value;
-      if (!username || !password) { addMsg.className = 'err'; addMsg.textContent = 'username & password required'; return; }
+      if (!username) { addMsg.className = 'err'; addMsg.textContent = 'username required'; return; }
       addBtn.disabled = true;
       const rr = await api('/api/admin/users', {
         method: 'POST',
-        body: JSON.stringify({ username, password, role: 'player' }),
+        body: JSON.stringify({ username, role: 'player' }),
       });
       addBtn.disabled = false;
       if (rr.status !== 201) {
@@ -1273,20 +1387,18 @@ async function openTeamModal(runID, existing /* team object or null */) {
       players.push(newPlayer);
       players.sort((a, b) => a.username.localeCompare(b.username));
       selected.add(newPlayer.id);
-      newU.value = ''; newP.value = '';
-      addMsg.className = 'ok'; addMsg.textContent = `Added ${newPlayer.username}`;
+      newU.value = '';
+      addMsg.className = 'ok';
+      addMsg.textContent = `Added ${newPlayer.username} — they pick a password on first login`;
       repaintGrid();
       updateCounter();
       newU.focus();
     };
     addBtn.addEventListener('click', submitInline);
-    // Enter in either field submits the inline form
-    for (const el of [newU, newP]) {
-      el.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); submitInline(); } });
-    }
+    newU.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); submitInline(); } });
 
     inlineForm.append(
-      h('div', { class: 'row' }, newU, newP, addBtn),
+      h('div', { class: 'row' }, newU, addBtn),
       h('div', { style: 'margin-top:.4rem' }, addMsg),
     );
 
@@ -1368,12 +1480,16 @@ async function viewPlayers(view) {
 function usersTable(users) {
   return h('table', { class: 'table' },
     h('thead', {}, h('tr', {},
-      h('th', {}, 'Username'), h('th', {}, 'Role'), h('th', {}, 'Teams'), h('th', {}, 'Created'), h('th', {}, ''))),
+      h('th', {}, 'Username'),
+      h('th', { class: 'hide-narrow' }, 'Role'),
+      h('th', {}, 'Teams'),
+      h('th', { class: 'hide-narrow' }, 'Created'),
+      h('th', {}, ''))),
     h('tbody', {}, users.map((u) => h('tr', {},
       h('td', {}, u.username),
-      h('td', {}, h('span', { class: 'pill' }, u.role)),
+      h('td', { class: 'hide-narrow' }, h('span', { class: 'pill' }, u.role)),
       h('td', { class: 'mono' }, u.team_count),
-      h('td', { class: 'mono muted' }, u.created_at),
+      h('td', { class: 'mono muted hide-narrow' }, u.created_at),
       h('td', {}, h('div', { class: 'row end' },
         h('button', { class: 'btn small', title: 'Reset password', on: { click: () => openResetPassword(u) } }, icon(ICONS.key), 'Password'),
         h('button', { class: 'btn small danger', title: 'Delete user', on: { click: () => confirmDeleteUser(u) } }, icon(ICONS.trash), 'Delete'),
@@ -1382,10 +1498,15 @@ function usersTable(users) {
 }
 
 async function openCreateUser(role) {
-  await modal(role === 'arranger' ? 'New arranger' : 'New player', ({ body, close }) => {
+  const isPlayer = role === 'player';
+  await modal(isPlayer ? 'New player' : 'New arranger', ({ body, close }) => {
     const form = h('form', {},
       h('label', { class: 'field' }, h('span', {}, 'Username'), h('input', { name: 'u', required: true })),
-      h('label', { class: 'field' }, h('span', {}, 'Password'), h('input', { name: 'p', type: 'password', required: true })),
+      isPlayer
+        ? h('p', { class: 'muted', style: 'font-size:.85rem' },
+            'The player sets their own password the first time they log in.')
+        : h('label', { class: 'field' }, h('span', {}, 'Password'),
+            h('input', { name: 'p', type: 'password', required: true })),
       h('div', { class: 'row end' },
         h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, 'Cancel'),
         h('button', { class: 'btn primary', type: 'submit' }, 'Create')),
@@ -1393,9 +1514,9 @@ async function openCreateUser(role) {
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       const fd = new FormData(form);
-      const r = await api('/api/admin/users', { method: 'POST', body: JSON.stringify({
-        username: fd.get('u'), password: fd.get('p'), role,
-      }) });
+      const body = { username: fd.get('u'), role };
+      if (!isPlayer) body.password = fd.get('p');
+      const r = await api('/api/admin/users', { method: 'POST', body: JSON.stringify(body) });
       if (r.status === 201) { toastOk(role + ' created'); close(true); renderRoute(); }
       else toastErr(r.body?.error || `error ${r.status}`);
     });
@@ -1404,7 +1525,23 @@ async function openCreateUser(role) {
 }
 
 async function openResetPassword(user) {
+  const isPlayer = user.role === 'player';
   await modal(`Reset password for ${user.username}`, ({ body, close }) => {
+    if (isPlayer) {
+      body.append(
+        h('p', {},
+          `This clears `, h('strong', {}, user.username),
+          `'s password and logs them out. They will choose a new password the next time they open the player page.`),
+        h('div', { class: 'row end', style: 'margin-top:1rem' },
+          h('button', { class: 'btn', on: { click: () => close(null) } }, 'Cancel'),
+          h('button', { class: 'btn primary', on: { click: async () => {
+            const r = await api(`/api/admin/users/${user.id}/password`, { method: 'POST' });
+            if (r.status === 204) { toastOk('password cleared — player will set a new one'); close(true); }
+            else toastErr(r.body?.error || `error ${r.status}`);
+          } } }, 'Clear password')),
+      );
+      return;
+    }
     const form = h('form', {},
       h('label', { class: 'field' }, h('span', {}, 'New password'), h('input', { name: 'p', type: 'password', required: true })),
       h('div', { class: 'row end' },
@@ -1423,16 +1560,13 @@ async function openResetPassword(user) {
 }
 
 async function confirmDeleteUser(user) {
-  const yes = await modal(`Delete ${user.username}?`, ({ body, close }) => {
-    body.append(
-      h('p', {}, `This permanently removes ${user.username} and unlinks them from any teams.`),
-      h('div', { class: 'row end' },
-        h('button', { class: 'btn', on: { click: () => close(false) } }, 'Cancel'),
-        h('button', { class: 'btn danger', on: { click: () => close(true) } }, 'Delete')),
-    );
+  const pw = await promptPassword(`Delete ${user.username}?`,
+    `This permanently removes ${user.username} and unlinks them from any teams. Enter your password to confirm.`);
+  if (!pw) return;
+  const r = await api(`/api/admin/users/${user.id}`, {
+    method: 'DELETE',
+    headers: { 'X-Confirm-Password': pw },
   });
-  if (!yes) return;
-  const r = await api(`/api/admin/users/${user.id}`, { method: 'DELETE' });
   if (r.status === 204) { toastOk('deleted'); renderRoute(); }
   else toastErr(r.body?.error || `error ${r.status}`);
 }

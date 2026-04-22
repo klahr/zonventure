@@ -135,12 +135,13 @@ func TestFullFlow(t *testing.T) {
 		t.Fatalf("create run = %d", s)
 	}
 
-	// Create the player first, then attach them to a team.
+	// Create the player (no password — they set it on first login), then
+	// attach them to a team.
 	var alicePlayer struct {
 		ID int64 `json:"id"`
 	}
 	if s := arr.do("POST", "/api/admin/users",
-		map[string]string{"username": "alice", "password": "pw-alice", "role": "player"}, &alicePlayer); s != 201 {
+		map[string]any{"username": "alice", "role": "player"}, &alicePlayer); s != 201 {
 		t.Fatalf("create player = %d", s)
 	}
 	var team struct {
@@ -154,10 +155,14 @@ func TestFullFlow(t *testing.T) {
 		t.Fatalf("create team = %d", s)
 	}
 
-	// --- Player logs in and sees "waiting" until arranger starts the run. ---
+	// --- Player first-login flow: login returns 409 password_not_set, then
+	// set-password succeeds and leaves us logged in. ---
 	alice := newClient(t, ts)
-	if s := alice.do("POST", "/api/auth/login", map[string]string{"username": "alice", "password": "pw-alice"}, nil); s != 200 {
-		t.Fatalf("alice login = %d", s)
+	if s := alice.do("POST", "/api/auth/login", map[string]string{"username": "alice", "password": "pw-alice"}, nil); s != 409 {
+		t.Fatalf("first login before set-password = %d, want 409", s)
+	}
+	if s := alice.do("POST", "/api/auth/set-password", map[string]string{"username": "alice", "password": "pw-alice"}, nil); s != 200 {
+		t.Fatalf("set-password = %d", s)
 	}
 	var state struct {
 		Status    string `json:"status"`

@@ -11,11 +11,12 @@ import (
 	"git.sr.ht/~klahr/zv/internal/adventure"
 	"git.sr.ht/~klahr/zv/internal/auth"
 	"git.sr.ht/~klahr/zv/internal/player"
+	"git.sr.ht/~klahr/zv/internal/public"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 )
 
-//go:embed web/play.html web/arrange.html
+//go:embed web/play.html web/arrange.html web/live.html
 var webFS embed.FS
 
 // Config is the bag of knobs New needs.
@@ -37,6 +38,7 @@ func New(cfg Config) http.Handler {
 	authH := &auth.Handlers{DB: cfg.DB, SecureCookie: cfg.SecureCookie}
 	playerH := &player.Handlers{DB: cfg.DB, Lib: cfg.Library}
 	adminH := &admin.Handlers{DB: cfg.DB, Lib: cfg.Library}
+	publicH := &public.Handlers{DB: cfg.DB, Lib: cfg.Library}
 
 	r.Get("/api/health", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
@@ -47,8 +49,13 @@ func New(cfg Config) http.Handler {
 	})
 	r.Get("/play", servePage("web/play.html"))
 	r.Get("/arrange", servePage("web/arrange.html"))
+	r.Get("/live/{runID}", servePage("web/live.html"))
+
+	// Public, no-auth read-only endpoint for the TV leaderboard.
+	r.Get("/api/public/runs/{runID}/live", publicH.Live)
 
 	r.Post("/api/auth/login", authH.Login)
+	r.Post("/api/auth/set-password", authH.SetPassword)
 	r.Post("/api/auth/logout", authH.Logout)
 	r.Get("/api/auth/whoami", authH.Whoami)
 

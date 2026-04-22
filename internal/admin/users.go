@@ -64,6 +64,27 @@ func (h *Handlers) ListUsers(w http.ResponseWriter, r *http.Request) {
 	httpx.JSON(w, http.StatusOK, map[string]any{"users": out})
 }
 
+// confirmHeader is the request header destructive endpoints read the
+// arranger's password from. Kept as a constant so JS and Go stay in sync.
+const confirmHeader = "X-Confirm-Password"
+
+// requirePasswordConfirm checks the X-Confirm-Password header against the
+// caller's stored hash, writes the appropriate error if it doesn't match
+// and returns false. Handlers should return early if this returns false.
+func requirePasswordConfirm(w http.ResponseWriter, r *http.Request, db *sql.DB) bool {
+	me, _ := auth.FromContext(r.Context())
+	pw := r.Header.Get(confirmHeader)
+	if pw == "" {
+		httpx.Error(w, http.StatusUnauthorized, "password confirmation required")
+		return false
+	}
+	if err := auth.VerifyUserPassword(r.Context(), db, me.ID, pw); err != nil {
+		httpx.Error(w, http.StatusUnauthorized, "wrong password")
+		return false
+	}
+	return true
+}
+
 // canManageTarget returns true if `me` is allowed to mutate a user row with
 // the given target role and owner. Hierarchy: root > arranger > player.
 // Arrangers can only manage player accounts they themselves created.
@@ -91,39 +112,50 @@ type createUserRequest struct {
 // players; root may create players or arrangers. Creating another root must
 // be done out-of-band (the -seed-root flag) — the web UI never grants the
 // superuser role.
+//
+// Player accounts are created without a password — the player sets their
+// own when they log in for the first time. Arrangers (and anyone else with
+// a web-create surface) still need an initial password supplied here.
 func (h *Handlers) CreateUser(w http.ResponseWriter, r *http.Request) {
 	var req createUserRequest
 	if !httpx.DecodeJSON(w, r, &req) {
 		return
 	}
 	req.Username = strings.TrimSpace(req.Username)
-	if req.Username == "" || req.Password == "" {
-		httpx.Error(w, http.StatusBadRequest, "username and password required")
+	if req.Username == "" {
+		httpx.Error(w, http.StatusBadRequest, "username required")
 		return
 	}
 	me, _ := auth.FromContext(r.Context())
+	var storedHash any // NULL for players until they set their own
 	switch req.Role {
 	case auth.RolePlayer:
-		// Any admin may create players.
+		// Any admin may create players. Ignore any password supplied — the
+		// player sets their own on first login.
 	case auth.RoleArranger:
 		if me.Role != auth.RoleRoot {
 			httpx.Error(w, http.StatusForbidden, "only root may create arrangers")
 			return
 		}
+		if req.Password == "" {
+			httpx.Error(w, http.StatusBadRequest, "password required for arrangers")
+			return
+		}
+		h, err := auth.HashPassword(req.Password)
+		if err != nil {
+			httpx.Error(w, http.StatusInternalServerError, "hash failed")
+			return
+		}
+		storedHash = h
 	default:
 		httpx.Error(w, http.StatusBadRequest, "role must be 'player' or 'arranger'")
-		return
-	}
-	hash, err := auth.HashPassword(req.Password)
-	if err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "hash failed")
 		return
 	}
 	// Players are owned by the arranger that created them; arrangers created
 	// by root carry the root's id.
 	res, err := h.DB.ExecContext(r.Context(), `
 		INSERT INTO users(username, password_hash, role, created_by_user_id) VALUES (?, ?, ?, ?)
-	`, req.Username, hash, req.Role, me.ID)
+	`, req.Username, storedHash, req.Role, me.ID)
 	if err != nil {
 		httpx.Error(w, http.StatusConflict, "username not available")
 		return
@@ -133,8 +165,13 @@ func (h *Handlers) CreateUser(w http.ResponseWriter, r *http.Request) {
 }
 
 // DeleteUser removes a user if the caller's role dominates the target's,
-// and never allows self-deletion.
+// and never allows self-deletion. Requires the arranger's own password in
+// the X-Confirm-Password header so a stolen session alone can't delete
+// accounts without the password.
 func (h *Handlers) DeleteUser(w http.ResponseWriter, r *http.Request) {
+	if !requirePasswordConfirm(w, r, h.DB) {
+		return
+	}
 	id, ok := userIDFrom(r)
 	if !ok {
 		httpx.Error(w, http.StatusBadRequest, "bad user id")
@@ -174,22 +211,23 @@ type resetPasswordRequest struct {
 	Password string `json:"password"`
 }
 
-// ResetPassword replaces a user's password. No old-password check — admins
-// are trusted with their underlings' credentials. Sessions for the affected
-// user are also invalidated so the old password stops working immediately.
+// ResetPassword resets a user's password. For players the stored hash is
+// cleared so they choose a new one on next login — arrangers never see or
+// set a player's password directly. For arrangers the caller must supply a
+// new password in the request body. Active sessions for the affected user
+// are always invalidated.
 func (h *Handlers) ResetPassword(w http.ResponseWriter, r *http.Request) {
 	id, ok := userIDFrom(r)
 	if !ok {
 		httpx.Error(w, http.StatusBadRequest, "bad user id")
 		return
 	}
+	// Body is optional: only parsed for non-player targets.
 	var req resetPasswordRequest
-	if !httpx.DecodeJSON(w, r, &req) {
-		return
-	}
-	if req.Password == "" {
-		httpx.Error(w, http.StatusBadRequest, "password required")
-		return
+	if r.ContentLength > 0 {
+		if !httpx.DecodeJSON(w, r, &req) {
+			return
+		}
 	}
 	me, _ := auth.FromContext(r.Context())
 	var (
@@ -210,14 +248,29 @@ func (h *Handlers) ResetPassword(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusForbidden, "forbidden")
 		return
 	}
-	hash, err := auth.HashPassword(req.Password)
-	if err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "hash failed")
-		return
-	}
-	if _, err := h.DB.ExecContext(r.Context(), `UPDATE users SET password_hash = ? WHERE id = ?`, hash, id); err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "update failed")
-		return
+
+	if targetRole == auth.RolePlayer {
+		// Clear the password so the player sets a fresh one on first login.
+		if _, err := h.DB.ExecContext(r.Context(),
+			`UPDATE users SET password_hash = NULL WHERE id = ?`, id); err != nil {
+			httpx.Error(w, http.StatusInternalServerError, "update failed")
+			return
+		}
+	} else {
+		if req.Password == "" {
+			httpx.Error(w, http.StatusBadRequest, "password required")
+			return
+		}
+		hash, err := auth.HashPassword(req.Password)
+		if err != nil {
+			httpx.Error(w, http.StatusInternalServerError, "hash failed")
+			return
+		}
+		if _, err := h.DB.ExecContext(r.Context(),
+			`UPDATE users SET password_hash = ? WHERE id = ?`, hash, id); err != nil {
+			httpx.Error(w, http.StatusInternalServerError, "update failed")
+			return
+		}
 	}
 	if _, err := h.DB.ExecContext(r.Context(), `DELETE FROM sessions WHERE user_id = ?`, id); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "session cleanup failed")

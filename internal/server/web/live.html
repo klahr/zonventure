@@ -1,0 +1,420 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Zonventure · live</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Aclonica&family=Open+Sans:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root {
+  --accent:       #e24080;  /* raspberry lifted for dark bg */
+  --accent-2:     #ad1357;
+  --gold:         #f5c452;
+  --silver:       #cbd5e1;
+  --bronze:       #d48a4a;
+  --ink:          #0b1220;
+  --bg-1:         #0b1220;
+  --bg-2:         #182238;
+  --surface:      #131c2e;
+  --surface-2:    #1b2640;
+  --text:         #f1f5f9;
+  --muted:        #94a3b8;
+  --danger:       #f87171;
+  --success:      #34d399;
+  --font-body:    'Open Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --font-brand:   'Aclonica', 'Vollkorn', Georgia, serif;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body {
+  height: 100%;
+  color: var(--text);
+  font-family: var(--font-body);
+  background:
+    radial-gradient(ellipse at 20% -20%, rgba(226,64,128,.18), transparent 55%),
+    radial-gradient(ellipse at 110% 120%, rgba(66,154,63,.15), transparent 55%),
+    linear-gradient(180deg, #0b1220 0%, #101a33 100%);
+  background-attachment: fixed;
+  overflow-x: hidden;
+}
+
+.app {
+  min-height: 100%;
+  display: flex; flex-direction: column;
+  padding: clamp(1rem, 2.5vw, 2.5rem);
+  gap: clamp(1rem, 2vw, 2rem);
+}
+
+/* ---------- Header ---------- */
+.topline {
+  display: grid; grid-template-columns: auto 1fr auto; gap: 1.25rem;
+  align-items: center;
+}
+.brand {
+  font-family: var(--font-brand);
+  font-size: clamp(1.4rem, 2.6vw, 2.2rem);
+  color: var(--accent);
+  line-height: 1;
+}
+.title {
+  text-align: center; line-height: 1;
+}
+.title h1 {
+  font-weight: 800;
+  font-size: clamp(1.6rem, 4vw, 3rem);
+  letter-spacing: -.01em;
+}
+.title .slug {
+  font-size: clamp(.8rem, 1vw, 1rem);
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .25em;
+  margin-top: .35rem;
+  font-weight: 700;
+}
+.clockwrap {
+  display: flex; align-items: center; gap: .75rem;
+  justify-content: flex-end;
+}
+.clock {
+  font-variant-numeric: tabular-nums;
+  font-size: clamp(1.3rem, 2.2vw, 1.9rem);
+  font-weight: 700;
+  letter-spacing: .05em;
+}
+.clock small {
+  display: block; font-size: .55em; font-weight: 600;
+  color: var(--muted); text-transform: uppercase; letter-spacing: .18em;
+}
+.state-pill {
+  display: inline-flex; align-items: center; gap: .4rem;
+  padding: .35rem 1rem; border-radius: 999px;
+  font-size: clamp(.7rem, 1vw, .9rem);
+  font-weight: 800; text-transform: uppercase; letter-spacing: .14em;
+  background: rgba(255,255,255,.08);
+  border: 1px solid rgba(255,255,255,.08);
+}
+.state-pill.running { color: var(--success); background: rgba(52,211,153,.12); border-color: rgba(52,211,153,.25); }
+.state-pill.paused  { color: var(--gold);    background: rgba(245,196,82,.14); border-color: rgba(245,196,82,.3); }
+.state-pill.completed, .state-pill.scheduled { color: var(--muted); }
+.state-pill .dot { width: .6rem; height: .6rem; border-radius: 50%; background: currentColor; }
+.state-pill.running .dot { animation: pulse 1.4s ease-in-out infinite; }
+@keyframes pulse { 0%,100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.5); opacity: .4; } }
+
+.fs-btn {
+  background: rgba(255,255,255,.08);
+  color: var(--text);
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 999px;
+  padding: .5rem .9rem; font: inherit; font-weight: 700;
+  cursor: pointer;
+  display: inline-flex; align-items: center; gap: .4rem;
+}
+.fs-btn:hover { background: rgba(255,255,255,.14); }
+.fs-btn svg { width: 16px; height: 16px; }
+
+/* ---------- Leaderboard ---------- */
+.board {
+  display: grid; gap: clamp(.5rem, 1vw, 1rem);
+  flex: 1;
+  align-content: start;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: clamp(.75rem, 1.5vw, 1.5rem);
+  align-items: center;
+  padding: clamp(.75rem, 1.5vw, 1.4rem) clamp(1rem, 2vw, 2rem);
+  background: linear-gradient(180deg, rgba(255,255,255,.045) 0%, rgba(255,255,255,.02) 100%);
+  border: 1px solid rgba(255,255,255,.07);
+  border-left: 6px solid var(--team-color, var(--accent));
+  border-radius: 18px;
+  box-shadow: 0 4px 20px rgba(0,0,0,.35);
+  transition: transform .5s cubic-bezier(.2,.8,.2,1), background .3s, border-color .3s;
+  will-change: transform;
+}
+.row.rank-1 {
+  border-color: rgba(245,196,82,.35);
+  background: linear-gradient(180deg, rgba(245,196,82,.14) 0%, rgba(245,196,82,.04) 100%);
+  box-shadow: 0 8px 36px rgba(245,196,82,.18), 0 2px 10px rgba(0,0,0,.35);
+}
+.row.rank-2 {
+  border-color: rgba(203,213,225,.35);
+  background: linear-gradient(180deg, rgba(203,213,225,.10) 0%, rgba(203,213,225,.02) 100%);
+}
+.row.rank-3 {
+  border-color: rgba(212,138,74,.35);
+  background: linear-gradient(180deg, rgba(212,138,74,.10) 0%, rgba(212,138,74,.02) 100%);
+}
+.row.finished { outline: 2px solid rgba(52,211,153,.4); }
+.row.new { animation: slideIn .4s ease; }
+@keyframes slideIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+.rank {
+  font-family: var(--font-brand);
+  font-size: clamp(2rem, 4vw, 3.6rem);
+  line-height: 1;
+  width: clamp(3rem, 5vw, 5rem);
+  text-align: center;
+  color: var(--muted);
+}
+.rank-1 .rank { color: var(--gold); text-shadow: 0 0 18px rgba(245,196,82,.35); }
+.rank-2 .rank { color: var(--silver); }
+.rank-3 .rank { color: var(--bronze); }
+.rank-1 .rank::before { content: '🏆 '; font-family: var(--font-body); font-size: .7em; }
+
+.main { display: grid; gap: .35rem; min-width: 0; }
+.team-name {
+  font-size: clamp(1.2rem, 2.2vw, 2rem);
+  font-weight: 800;
+  letter-spacing: -.01em;
+  display: flex; align-items: center; gap: .75rem;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.team-dot {
+  display: inline-block;
+  width: .9em; height: .9em; border-radius: 50%;
+  background: var(--team-color, var(--accent));
+  box-shadow: 0 0 0 3px rgba(255,255,255,.08);
+  flex-shrink: 0;
+}
+.members {
+  color: var(--muted);
+  font-size: clamp(.75rem, 1vw, 1rem);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.progress {
+  display: grid; gap: .4rem; margin-top: .3rem;
+}
+.progress .bar {
+  height: 10px; border-radius: 999px;
+  background: rgba(255,255,255,.08);
+  overflow: hidden;
+}
+.progress .fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--team-color, var(--accent)), var(--accent));
+  border-radius: 999px;
+  transition: width .6s ease;
+}
+.progress .label {
+  display: flex; justify-content: space-between;
+  color: var(--muted);
+  font-size: clamp(.7rem, .95vw, .9rem);
+  font-weight: 600;
+}
+.progress .label strong { color: var(--text); font-weight: 800; }
+
+.stat {
+  text-align: right; min-width: 6ch;
+}
+.stat .value {
+  font-size: clamp(1.4rem, 2.5vw, 2.4rem);
+  font-weight: 800; line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.stat .unit {
+  font-size: clamp(.7rem, .85vw, .85rem);
+  color: var(--muted);
+  text-transform: uppercase; letter-spacing: .12em; font-weight: 700;
+  margin-top: .2rem;
+}
+.stat.finished .value { color: var(--success); font-family: var(--font-brand); font-size: clamp(1.1rem, 1.8vw, 1.6rem); }
+
+.empty-board {
+  text-align: center; padding: 4rem 1rem;
+  color: var(--muted); font-size: 1.2rem;
+}
+
+.footer {
+  color: var(--muted);
+  font-size: clamp(.7rem, .95vw, .9rem);
+  text-align: center;
+  letter-spacing: .1em; text-transform: uppercase; font-weight: 700;
+}
+</style>
+</head>
+<body>
+<div id="root" class="app"><div class="empty-board">Loading…</div></div>
+
+<script>
+const TEAM_COLORS = ['#e24080', '#7fd17b', '#60a5fa', '#f5c452', '#a78bfa', '#22d3ee', '#fb7185', '#34d399'];
+function teamColor(i) { return TEAM_COLORS[i % TEAM_COLORS.length]; }
+
+const RUN_ID = Number(location.pathname.split('/').pop());
+const POLL_MS = 4000;
+
+function h(tag, attrs = {}, ...children) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (v === null || v === undefined || v === false) continue;
+    if (k === 'on') for (const [ev, fn] of Object.entries(v)) e.addEventListener(ev, fn);
+    else if (k === 'class') e.className = v;
+    else if (k === 'html') e.innerHTML = v;
+    else e.setAttribute(k, v);
+  }
+  for (const c of children.flat()) {
+    if (c === null || c === undefined || c === false) continue;
+    e.append(c?.nodeType ? c : document.createTextNode(String(c)));
+  }
+  return e;
+}
+
+const knownTeams = new Set();
+
+function formatElapsed(startISO, nowISO) {
+  if (!startISO) return '—';
+  const start = new Date(startISO);
+  const now = nowISO ? new Date(nowISO) : new Date();
+  const sec = Math.max(0, Math.round((now.getTime() - start.getTime()) / 1000));
+  const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+  const pad = (n) => String(n).padStart(2, '0');
+  return h ? `${h}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
+}
+
+function formatFinishTime(startISO, completedAt) {
+  if (!startISO || !completedAt) return '';
+  const start = new Date(startISO);
+  const end = new Date(completedAt.includes('T') ? completedAt : completedAt.replace(' ', 'T') + 'Z');
+  const sec = Math.max(0, Math.round((end.getTime() - start.getTime()) / 1000));
+  const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+  const pad = (n) => String(n).padStart(2, '0');
+  return h ? `${h}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
+}
+
+async function render() {
+  let data;
+  try {
+    const r = await fetch(`/api/public/runs/${RUN_ID}/live`, { cache: 'no-store' });
+    if (!r.ok) throw new Error(await r.text());
+    data = await r.json();
+  } catch (e) {
+    document.getElementById('root').replaceChildren(
+      h('div', { class: 'empty-board' }, 'Could not load run: ' + e.message));
+    return;
+  }
+
+  const root = document.getElementById('root');
+  root.replaceChildren();
+
+  root.append(buildHeader(data));
+  root.append(buildBoard(data));
+  root.append(h('div', { class: 'footer' },
+    `Live · updates every ${POLL_MS / 1000}s · `,
+    data.puzzles?.length
+      ? `${data.puzzles.length} puzzle${data.puzzles.length === 1 ? '' : 's'} · `
+      : '',
+    `server time ${data.server_now || ''}`));
+}
+
+function buildHeader(data) {
+  const fsBtn = h('button', { class: 'fs-btn', title: 'Fullscreen' },
+    h('span', { html: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 8 4 4 8 4"/><polyline points="16 4 20 4 20 8"/><polyline points="20 16 20 20 16 20"/><polyline points="8 20 4 20 4 16"/></svg>' }),
+    'Fullscreen');
+  fsBtn.addEventListener('click', () => {
+    if (document.fullscreenElement) document.exitFullscreen();
+    else document.documentElement.requestFullscreen();
+  });
+
+  return h('header', { class: 'topline' },
+    h('div', { class: 'brand' }, 'zonventure'),
+    h('div', { class: 'title' },
+      h('h1', {}, data.adventure_title || 'Run'),
+      h('div', { class: 'slug' },
+        h('span', { class: `state-pill ${data.state}` }, h('span', { class: 'dot' }), data.state),
+        ' · ', data.adventure_slug),
+    ),
+    h('div', { class: 'clockwrap' },
+      h('div', { class: 'clock' },
+        formatElapsed(data.started_at, data.server_now),
+        h('small', {}, data.started_at ? 'Elapsed' : 'Not started')),
+      fsBtn,
+    ),
+  );
+}
+
+function buildBoard(data) {
+  const board = h('div', { class: 'board' });
+  if (!data.teams || data.teams.length === 0) {
+    board.append(h('div', { class: 'empty-board' }, 'No teams yet.'));
+    return board;
+  }
+  const seen = new Set();
+  data.teams.forEach((t, i) => {
+    const row = renderRow(t, i, data);
+    seen.add(t.id);
+    if (!knownTeams.has(t.id)) row.classList.add('new');
+    board.append(row);
+  });
+  knownTeams.clear(); seen.forEach((id) => knownTeams.add(id));
+  return board;
+}
+
+function renderRow(team, idx, data) {
+  const colour = teamColor(idx);
+  const pct = data.page_count > 0 ? Math.min(100, Math.round((team.page_index / data.page_count) * 100)) : 0;
+  const finished = !!team.completed_at || (data.page_count > 0 && team.page_index >= data.page_count);
+  const rankCls = team.rank <= 3 ? ` rank-${team.rank}` : '';
+  const row = h('div', {
+    class: `row rank-${team.rank}${rankCls}${finished ? ' finished' : ''}`,
+    style: `--team-color:${colour}`,
+  });
+
+  row.append(h('div', { class: 'rank' }, team.rank));
+
+  const main = h('div', { class: 'main' });
+  main.append(h('div', { class: 'team-name' },
+    h('span', { class: 'team-dot' }),
+    team.name,
+    finished ? h('span', { style: 'color:var(--success); font-size:.6em; font-weight:700; text-transform:uppercase; letter-spacing:.2em' }, 'finished') : null,
+  ));
+  if ((team.members || []).length) {
+    main.append(h('div', { class: 'members' }, team.members.map((m) => m.username).join(' · ')));
+  }
+  const currentPuzzle = data.puzzles?.[team.page_index];
+  main.append(h('div', { class: 'progress' },
+    h('div', { class: 'label' },
+      h('span', {},
+        finished ? 'Complete' : `Puzzle ${team.page_index + 1} of ${data.page_count}`,
+        currentPuzzle && !finished ? h('strong', { style: 'margin-left:.6rem' }, currentPuzzle.title) : null),
+      h('span', {}, `${finished ? 100 : pct}%`),
+    ),
+    h('div', { class: 'bar' },
+      h('div', { class: 'fill', style: `width:${finished ? 100 : pct}%` })),
+  ));
+  row.append(main);
+
+  if (finished) {
+    const t = formatFinishTime(data.started_at, team.completed_at);
+    row.append(h('div', { class: 'stat finished' },
+      h('div', { class: 'value' }, t || 'Done'),
+      h('div', { class: 'unit' }, 'Finish time'),
+    ));
+  } else {
+    row.append(h('div', { class: 'stat' },
+      h('div', { class: 'value' }, `${team.page_index}/${data.page_count}`),
+      h('div', { class: 'unit' }, 'Solved'),
+    ));
+  }
+  return row;
+}
+
+render();
+setInterval(render, POLL_MS);
+
+// Keep the elapsed clock ticking between polls.
+setInterval(() => {
+  const el = document.querySelector('.clock');
+  if (!el || !el.firstChild) return;
+  // Re-run a lightweight clock update only if we have a server_now rendered
+  // in the footer; otherwise skip and wait for the next poll.
+  const footer = document.querySelector('.footer');
+  if (!footer || !footer.textContent.includes('server time')) return;
+  const nowMatch = footer.textContent.match(/server time ([^ ]+)/);
+  if (!nowMatch) return;
+}, 1000);
+</script>
+</body>
+</html>

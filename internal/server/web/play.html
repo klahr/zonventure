@@ -166,12 +166,50 @@ function renderLogin(err) {
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const fd = new FormData(form);
+    const username = fd.get('u');
+    const password = fd.get('p');
     const r = await api('/api/auth/login', {
       method: 'POST',
-      body: JSON.stringify({ username: fd.get('u'), password: fd.get('p') }),
+      body: JSON.stringify({ username, password }),
     });
-    if (r.status === 200) refresh();
-    else renderLogin(r.body?.error || 'login failed');
+    if (r.status === 200) { refresh(); return; }
+    // First-time player: account exists but no password set yet.
+    if (r.status === 409 && r.body?.code === 'password_not_set') {
+      renderFirstPassword(username, password);
+      return;
+    }
+    renderLogin(r.body?.error || 'login failed');
+  });
+  app.append(form);
+}
+
+function renderFirstPassword(username, prefill) {
+  app.replaceChildren();
+  const form = el('form', { class: 'card' },
+    el('h3', {}, 'Welcome — choose your password'),
+    el('p', { class: 'muted' },
+      `You haven't set a password for `, el('strong', {}, username),
+      ` yet. Pick one now; you'll use it next time you log in.`),
+    el('label', {}, 'Password'),
+    el('input', { name: 'p', type: 'password', autocomplete: 'new-password', required: '', value: prefill || '' }),
+    el('label', {}, 'Confirm password'),
+    el('input', { name: 'c', type: 'password', autocomplete: 'new-password', required: '' }),
+    el('button', { type: 'submit' }, 'Set password & play'),
+    el('p', { class: 'muted', style: 'margin-top:.5rem' },
+      el('a', { href: '#', on: { click: (e) => { e.preventDefault(); renderLogin(); } } }, '← back to login')),
+  );
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(form);
+    const p = fd.get('p'), c = fd.get('c');
+    if (p !== c) { form.append(el('p', { class: 'err' }, 'Passwords do not match')); return; }
+    if ((p || '').length < 4) { form.append(el('p', { class: 'err' }, 'Password too short (min 4)')); return; }
+    const r = await api('/api/auth/set-password', {
+      method: 'POST',
+      body: JSON.stringify({ username, password: p }),
+    });
+    if (r.status === 200) { refresh(); return; }
+    form.append(el('p', { class: 'err' }, r.body?.error || `error ${r.status}`));
   });
   app.append(form);
 }

@@ -84,8 +84,12 @@ func (h *Handlers) RenameTeam(w http.ResponseWriter, r *http.Request) {
 }
 
 // DeleteTeam removes a team and its members. Progress for the team (pings,
-// attempts) cascades via the schema.
+// attempts) cascades via the schema. Requires the arranger's password in
+// X-Confirm-Password.
 func (h *Handlers) DeleteTeam(w http.ResponseWriter, r *http.Request) {
+	if !requirePasswordConfirm(w, r, h.DB) {
+		return
+	}
 	teamID, ok := teamIDFrom(r)
 	if !ok {
 		httpx.Error(w, http.StatusBadRequest, "bad team id")

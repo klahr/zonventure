@@ -51,6 +51,16 @@ var userKey = ctxKey{}
 // a generic 401 and never leak whether the username or password was wrong.
 var ErrInvalidCredentials = errors.New("invalid credentials")
 
+// ErrPasswordNotSet is returned by Login when the user exists but has no
+// password yet. Callers should steer the client into the set-password flow
+// rather than treating this as bad credentials.
+var ErrPasswordNotSet = errors.New("password not set")
+
+// ErrPasswordAlreadySet is returned by SetInitialPassword when the user
+// already has a password — they must use Login (or an arranger-driven
+// reset) instead.
+var ErrPasswordAlreadySet = errors.New("password already set")
+
 // HashPassword returns a bcrypt hash suitable for storing in users.password_hash.
 func HashPassword(pw string) (string, error) {
 	b, err := bcrypt.GenerateFromPassword([]byte(pw), bcrypt.DefaultCost)
@@ -60,12 +70,13 @@ func HashPassword(pw string) (string, error) {
 	return string(b), nil
 }
 
-// Login validates credentials and creates a new session row. It returns the
-// opaque session token on success.
+// Login validates credentials and creates a new session row. Returns
+// ErrPasswordNotSet when the user exists but never set a password — the
+// caller should route that user through SetInitialPassword.
 func Login(ctx context.Context, db *sql.DB, username, password string) (User, string, error) {
 	var (
 		u    User
-		hash string
+		hash sql.NullString
 	)
 	err := db.QueryRowContext(ctx, `
 		SELECT id, username, role, password_hash FROM users WHERE username = ?
@@ -76,20 +87,68 @@ func Login(ctx context.Context, db *sql.DB, username, password string) (User, st
 	if err != nil {
 		return User{}, "", err
 	}
-	if err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)); err != nil {
+	if !hash.Valid {
+		return u, "", ErrPasswordNotSet
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(hash.String), []byte(password)); err != nil {
 		return User{}, "", ErrInvalidCredentials
 	}
-	token, err := newToken()
+	token, err := newSession(ctx, db, u.ID)
 	if err != nil {
 		return User{}, "", err
+	}
+	return u, token, nil
+}
+
+// SetInitialPassword assigns a first password to an account that was
+// created without one and immediately creates a session, so the caller can
+// issue the cookie in the same round-trip. Refuses if a password is already
+// set — to change a password, an arranger must reset it first.
+func SetInitialPassword(ctx context.Context, db *sql.DB, username, password string) (User, string, error) {
+	var (
+		u    User
+		hash sql.NullString
+	)
+	err := db.QueryRowContext(ctx, `
+		SELECT id, username, role, password_hash FROM users WHERE username = ?
+	`, username).Scan(&u.ID, &u.Username, &u.Role, &hash)
+	if errors.Is(err, sql.ErrNoRows) {
+		return User{}, "", ErrInvalidCredentials
+	}
+	if err != nil {
+		return User{}, "", err
+	}
+	if hash.Valid {
+		return User{}, "", ErrPasswordAlreadySet
+	}
+	h, err := HashPassword(password)
+	if err != nil {
+		return User{}, "", err
+	}
+	if _, err := db.ExecContext(ctx, `UPDATE users SET password_hash = ? WHERE id = ?`, h, u.ID); err != nil {
+		return User{}, "", err
+	}
+	token, err := newSession(ctx, db, u.ID)
+	if err != nil {
+		return User{}, "", err
+	}
+	return u, token, nil
+}
+
+// newSession mints a random token, persists it against the user, and
+// returns it.
+func newSession(ctx context.Context, db *sql.DB, userID int64) (string, error) {
+	token, err := newToken()
+	if err != nil {
+		return "", err
 	}
 	expires := time.Now().Add(SessionTTL).UTC().Format(time.RFC3339)
 	if _, err := db.ExecContext(ctx, `
 		INSERT INTO sessions(token, user_id, expires_at) VALUES (?, ?, ?)
-	`, token, u.ID, expires); err != nil {
-		return User{}, "", err
+	`, token, userID, expires); err != nil {
+		return "", err
 	}
-	return u, token, nil
+	return token, nil
 }
 
 // Logout deletes the session row for the given token. A missing token is
@@ -100,6 +159,24 @@ func Logout(ctx context.Context, db *sql.DB, token string) error {
 	}
 	_, err := db.ExecContext(ctx, `DELETE FROM sessions WHERE token = ?`, token)
 	return err
+}
+
+// VerifyUserPassword returns nil if the given plaintext password matches
+// the stored hash for the user. Returns ErrInvalidCredentials on mismatch
+// or if the account has no password set (cannot confirm without one).
+func VerifyUserPassword(ctx context.Context, db *sql.DB, userID int64, password string) error {
+	var hash sql.NullString
+	err := db.QueryRowContext(ctx, `SELECT password_hash FROM users WHERE id = ?`, userID).Scan(&hash)
+	if errors.Is(err, sql.ErrNoRows) || !hash.Valid {
+		return ErrInvalidCredentials
+	}
+	if err != nil {
+		return err
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(hash.String), []byte(password)); err != nil {
+		return ErrInvalidCredentials
+	}
+	return nil
 }
 
 // Lookup returns the user backing a session token, or (User{}, false) if the

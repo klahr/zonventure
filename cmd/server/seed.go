@@ -50,6 +50,9 @@ func seedDemo(ctx context.Context, d *sql.DB, advDir string) error {
 	playerNames := []string{
 		"alice", "bob", "celine", "dmitri", "erika", "fredrik", "greta", "henrik", "ingrid",
 	}
+	// Demo players get a stock "pw" password pre-set so the demo is usable
+	// out of the box. In production the arranger creates players without
+	// passwords and the player picks one on first login.
 	playerIDs := map[string]int64{}
 	for _, name := range playerNames {
 		id, err := upsertUser(d, name, "pw", auth.RolePlayer)
