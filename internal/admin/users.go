@@ -5,72 +5,16 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
-	"strings"
 
 	"git.sr.ht/~klahr/zv/internal/auth"
 	"git.sr.ht/~klahr/zv/internal/httpx"
 	"github.com/go-chi/chi/v5"
 )
 
-type userDTO struct {
-	ID        int64  `json:"id"`
-	Username  string `json:"username"`
-	Role      string `json:"role"`
-	CreatedAt string `json:"created_at"`
-	TeamCount int    `json:"team_count"`
-}
+/* ---------------- Confirm-password gating ---------------- */
 
-// ListUsers returns the users the caller is allowed to see. Root sees
-// everyone. Arrangers see only the player accounts they themselves created,
-// so one arranger's players are invisible to another arranger.
-func (h *Handlers) ListUsers(w http.ResponseWriter, r *http.Request) {
-	me, _ := auth.FromContext(r.Context())
-	var (
-		query string
-		args  []any
-	)
-	if me.Role == auth.RoleRoot {
-		query = `
-			SELECT u.id, u.username, u.role, u.created_at,
-			       (SELECT COUNT(*) FROM team_members tm WHERE tm.user_id = u.id)
-			FROM users u
-			ORDER BY u.role, u.username COLLATE NOCASE
-		`
-	} else {
-		query = `
-			SELECT u.id, u.username, u.role, u.created_at,
-			       (SELECT COUNT(*) FROM team_members tm WHERE tm.user_id = u.id)
-			FROM users u
-			WHERE u.role = 'player' AND u.created_by_user_id = ?
-			ORDER BY u.username COLLATE NOCASE
-		`
-		args = []any{me.ID}
-	}
-	rows, err := h.DB.QueryContext(r.Context(), query, args...)
-	if err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "list failed")
-		return
-	}
-	defer rows.Close()
-	out := []userDTO{}
-	for rows.Next() {
-		var u userDTO
-		if err := rows.Scan(&u.ID, &u.Username, &u.Role, &u.CreatedAt, &u.TeamCount); err != nil {
-			httpx.Error(w, http.StatusInternalServerError, "scan failed")
-			return
-		}
-		out = append(out, u)
-	}
-	httpx.JSON(w, http.StatusOK, map[string]any{"users": out})
-}
-
-// confirmHeader is the request header destructive endpoints read the
-// arranger's password from. Kept as a constant so JS and Go stay in sync.
 const confirmHeader = "X-Confirm-Password"
 
-// requirePasswordConfirm checks the X-Confirm-Password header against the
-// caller's stored hash, writes the appropriate error if it doesn't match
-// and returns false. Handlers should return early if this returns false.
 func requirePasswordConfirm(w http.ResponseWriter, r *http.Request, db *sql.DB) bool {
 	me, _ := auth.FromContext(r.Context())
 	pw := r.Header.Get(confirmHeader)
@@ -85,203 +29,10 @@ func requirePasswordConfirm(w http.ResponseWriter, r *http.Request, db *sql.DB) 
 	return true
 }
 
-// canManageTarget returns true if `me` is allowed to mutate a user row with
-// the given target role and owner. Hierarchy: root > arranger > player.
-// Arrangers can only manage player accounts they themselves created.
-func canManageTarget(me auth.User, targetRole string, targetOwner sql.NullInt64) bool {
-	switch me.Role {
-	case auth.RoleRoot:
-		return targetRole != auth.RoleRoot
-	case auth.RoleArranger:
-		if targetRole != auth.RolePlayer {
-			return false
-		}
-		return targetOwner.Valid && targetOwner.Int64 == me.ID
-	default:
-		return false
-	}
-}
+/* ---------------- Adventure & run detail ---------------- */
 
-type createUserRequest struct {
-	Username string `json:"username"`
-	Password string `json:"password"`
-	Role     string `json:"role"`
-}
-
-// CreateUser provisions a new user account. Arrangers may only create
-// players; root may create players or arrangers. Creating another root must
-// be done out-of-band (the -seed-root flag) — the web UI never grants the
-// superuser role.
-//
-// Player accounts are created without a password — the player sets their
-// own when they log in for the first time. Arrangers (and anyone else with
-// a web-create surface) still need an initial password supplied here.
-func (h *Handlers) CreateUser(w http.ResponseWriter, r *http.Request) {
-	var req createUserRequest
-	if !httpx.DecodeJSON(w, r, &req) {
-		return
-	}
-	req.Username = strings.TrimSpace(req.Username)
-	if req.Username == "" {
-		httpx.Error(w, http.StatusBadRequest, "username required")
-		return
-	}
-	me, _ := auth.FromContext(r.Context())
-	var storedHash any // NULL for players until they set their own
-	switch req.Role {
-	case auth.RolePlayer:
-		// Any admin may create players. Ignore any password supplied — the
-		// player sets their own on first login.
-	case auth.RoleArranger:
-		if me.Role != auth.RoleRoot {
-			httpx.Error(w, http.StatusForbidden, "only root may create arrangers")
-			return
-		}
-		if req.Password == "" {
-			httpx.Error(w, http.StatusBadRequest, "password required for arrangers")
-			return
-		}
-		h, err := auth.HashPassword(req.Password)
-		if err != nil {
-			httpx.Error(w, http.StatusInternalServerError, "hash failed")
-			return
-		}
-		storedHash = h
-	default:
-		httpx.Error(w, http.StatusBadRequest, "role must be 'player' or 'arranger'")
-		return
-	}
-	// Players are owned by the arranger that created them; arrangers created
-	// by root carry the root's id.
-	res, err := h.DB.ExecContext(r.Context(), `
-		INSERT INTO users(username, password_hash, role, created_by_user_id) VALUES (?, ?, ?, ?)
-	`, req.Username, storedHash, req.Role, me.ID)
-	if err != nil {
-		httpx.Error(w, http.StatusConflict, "username not available")
-		return
-	}
-	id, _ := res.LastInsertId()
-	httpx.JSON(w, http.StatusCreated, userDTO{ID: id, Username: req.Username, Role: req.Role})
-}
-
-// DeleteUser removes a user if the caller's role dominates the target's,
-// and never allows self-deletion. Requires the arranger's own password in
-// the X-Confirm-Password header so a stolen session alone can't delete
-// accounts without the password.
-func (h *Handlers) DeleteUser(w http.ResponseWriter, r *http.Request) {
-	if !requirePasswordConfirm(w, r, h.DB) {
-		return
-	}
-	id, ok := userIDFrom(r)
-	if !ok {
-		httpx.Error(w, http.StatusBadRequest, "bad user id")
-		return
-	}
-	me, _ := auth.FromContext(r.Context())
-	if me.ID == id {
-		httpx.Error(w, http.StatusConflict, "cannot delete yourself")
-		return
-	}
-	var (
-		targetRole  string
-		targetOwner sql.NullInt64
-	)
-	err := h.DB.QueryRowContext(r.Context(),
-		`SELECT role, created_by_user_id FROM users WHERE id = ?`, id).Scan(&targetRole, &targetOwner)
-	if errors.Is(err, sql.ErrNoRows) {
-		httpx.Error(w, http.StatusNotFound, "user not found")
-		return
-	}
-	if err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "lookup failed")
-		return
-	}
-	if !canManageTarget(me, targetRole, targetOwner) {
-		httpx.Error(w, http.StatusForbidden, "forbidden")
-		return
-	}
-	if _, err := h.DB.ExecContext(r.Context(), `DELETE FROM users WHERE id = ?`, id); err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "delete failed")
-		return
-	}
-	httpx.JSON(w, http.StatusNoContent, nil)
-}
-
-type resetPasswordRequest struct {
-	Password string `json:"password"`
-}
-
-// ResetPassword resets a user's password. For players the stored hash is
-// cleared so they choose a new one on next login — arrangers never see or
-// set a player's password directly. For arrangers the caller must supply a
-// new password in the request body. Active sessions for the affected user
-// are always invalidated.
-func (h *Handlers) ResetPassword(w http.ResponseWriter, r *http.Request) {
-	id, ok := userIDFrom(r)
-	if !ok {
-		httpx.Error(w, http.StatusBadRequest, "bad user id")
-		return
-	}
-	// Body is optional: only parsed for non-player targets.
-	var req resetPasswordRequest
-	if r.ContentLength > 0 {
-		if !httpx.DecodeJSON(w, r, &req) {
-			return
-		}
-	}
-	me, _ := auth.FromContext(r.Context())
-	var (
-		targetRole  string
-		targetOwner sql.NullInt64
-	)
-	err := h.DB.QueryRowContext(r.Context(),
-		`SELECT role, created_by_user_id FROM users WHERE id = ?`, id).Scan(&targetRole, &targetOwner)
-	if errors.Is(err, sql.ErrNoRows) {
-		httpx.Error(w, http.StatusNotFound, "user not found")
-		return
-	}
-	if err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "lookup failed")
-		return
-	}
-	if me.ID != id && !canManageTarget(me, targetRole, targetOwner) {
-		httpx.Error(w, http.StatusForbidden, "forbidden")
-		return
-	}
-
-	if targetRole == auth.RolePlayer {
-		// Clear the password so the player sets a fresh one on first login.
-		if _, err := h.DB.ExecContext(r.Context(),
-			`UPDATE users SET password_hash = NULL WHERE id = ?`, id); err != nil {
-			httpx.Error(w, http.StatusInternalServerError, "update failed")
-			return
-		}
-	} else {
-		if req.Password == "" {
-			httpx.Error(w, http.StatusBadRequest, "password required")
-			return
-		}
-		hash, err := auth.HashPassword(req.Password)
-		if err != nil {
-			httpx.Error(w, http.StatusInternalServerError, "hash failed")
-			return
-		}
-		if _, err := h.DB.ExecContext(r.Context(),
-			`UPDATE users SET password_hash = ? WHERE id = ?`, hash, id); err != nil {
-			httpx.Error(w, http.StatusInternalServerError, "update failed")
-			return
-		}
-	}
-	if _, err := h.DB.ExecContext(r.Context(), `DELETE FROM sessions WHERE user_id = ?`, id); err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "session cleanup failed")
-		return
-	}
-	httpx.JSON(w, http.StatusNoContent, nil)
-}
-
-// AdventureDetail returns the full page list (including accepted answers and
-// GPS gates) for a given adventure — arrangers need this to coach teams or
-// troubleshoot answers.
+// AdventureDetail returns the full page list for an adventure. All
+// authenticated admin-surface users can see it.
 func (h *Handlers) AdventureDetail(w http.ResponseWriter, r *http.Request) {
 	slug := chi.URLParam(r, "slug")
 	adv := h.Lib.Get(slug)
@@ -305,20 +56,11 @@ func (h *Handlers) AdventureDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	pages := make([]pageDTO, len(adv.Pages))
 	for i, p := range adv.Pages {
-		pd := pageDTO{
-			Index:  p.Index,
-			Title:  p.Title,
-			Prompt: p.Prompt,
-			Hint:   p.Hint,
-			Accept: p.Accept,
-			Location: locDTO{
-				Lat:     p.Location.Lat,
-				Lng:     p.Location.Lng,
-				RadiusM: p.Location.RadiusM,
-			},
-			Gated: p.Location.Gated(),
+		pages[i] = pageDTO{
+			Index: p.Index, Title: p.Title, Prompt: p.Prompt, Hint: p.Hint, Accept: p.Accept,
+			Location: locDTO{Lat: p.Location.Lat, Lng: p.Location.Lng, RadiusM: p.Location.RadiusM},
+			Gated:    p.Location.Gated(),
 		}
-		pages[i] = pd
 	}
 	httpx.JSON(w, http.StatusOK, map[string]any{
 		"slug":        adv.Slug,
@@ -330,33 +72,45 @@ func (h *Handlers) AdventureDetail(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// RunDetail returns a run with its teams and members — everything the
-// arranger needs for one run on a single screen.
+// RunDetail returns a run with its teams and slots (players).
 func (h *Handlers) RunDetail(w http.ResponseWriter, r *http.Request) {
 	runID, ok := runIDFrom(r)
 	if !ok {
 		httpx.Error(w, http.StatusBadRequest, "bad run id")
 		return
 	}
-	arr, _ := auth.FromContext(r.Context())
+	if _, ok := h.authorizeRun(w, r, runID); !ok {
+		return
+	}
 	var d runDTO
-	err := h.DB.QueryRowContext(r.Context(), `
+	if err := h.DB.QueryRowContext(r.Context(), `
 		SELECT ar.id, ar.adventure_slug, ar.state,
-		       COALESCE(ar.scheduled_at,''), COALESCE(ar.started_at,''), ar.arranger_user_id,
+		       COALESCE(ar.scheduled_at,''), COALESCE(ar.started_at,''),
+		       ar.org_id, COALESCE(ar.created_by_user_id, 0),
 		       COALESCE(ar.assignment_id, 0), COALESCE(aa.max_teams, 0)
 		FROM adventure_runs ar
 		LEFT JOIN adventure_assignments aa ON aa.id = ar.assignment_id
-		WHERE ar.id = ? AND ar.arranger_user_id = ?
-	`, runID, arr.ID).Scan(&d.ID, &d.AdventureSlug, &d.State, &d.ScheduledAt, &d.StartedAt, &d.ArrangerUserID, &d.AssignmentID, &d.MaxTeams)
-	if errors.Is(err, sql.ErrNoRows) {
-		httpx.Error(w, http.StatusNotFound, "run not found")
-		return
-	}
-	if err != nil {
+		WHERE ar.id = ?
+	`, runID).Scan(&d.ID, &d.AdventureSlug, &d.State, &d.ScheduledAt, &d.StartedAt,
+		&d.OrgID, &d.CreatedByUserID, &d.AssignmentID, &d.MaxTeams); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "lookup failed")
 		return
 	}
 
+	type slotOut struct {
+		ID          int64  `json:"id"`
+		Name        string `json:"name"`
+		Token       string `json:"token"`
+		LastLoginAt string `json:"last_login_at,omitempty"`
+	}
+	type teamOut struct {
+		ID          int64     `json:"id"`
+		Name        string    `json:"name"`
+		PageIndex   int       `json:"page_index"`
+		CompletedAt string    `json:"completed_at,omitempty"`
+		Members     []slotOut `json:"members"`
+	}
+	teams := []teamOut{}
 	rows, err := h.DB.QueryContext(r.Context(), `
 		SELECT t.id, t.name, t.current_page_index, COALESCE(t.completed_at, '')
 		FROM teams t WHERE t.run_id = ? ORDER BY t.name
@@ -366,57 +120,113 @@ func (h *Handlers) RunDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer rows.Close()
-
-	type teamMember struct {
-		ID       int64  `json:"id"`
-		Username string `json:"username"`
-	}
-	type teamWithMembers struct {
-		ID          int64        `json:"id"`
-		Name        string       `json:"name"`
-		PageIndex   int          `json:"page_index"`
-		CompletedAt string       `json:"completed_at,omitempty"`
-		Members     []teamMember `json:"members"`
-	}
-	teams := []teamWithMembers{}
 	for rows.Next() {
-		t := teamWithMembers{Members: []teamMember{}}
+		t := teamOut{Members: []slotOut{}}
 		if err := rows.Scan(&t.ID, &t.Name, &t.PageIndex, &t.CompletedAt); err != nil {
 			httpx.Error(w, http.StatusInternalServerError, "team scan failed")
 			return
 		}
 		teams = append(teams, t)
 	}
-	// Pull members in a second query to keep the scan simple.
 	for i := range teams {
 		mrows, err := h.DB.QueryContext(r.Context(), `
-			SELECT u.id, u.username FROM team_members tm
-			JOIN users u ON u.id = tm.user_id
-			WHERE tm.team_id = ? ORDER BY u.username COLLATE NOCASE
+			SELECT id, name, token, COALESCE(last_login_at, '')
+			FROM player_slots WHERE team_id = ? ORDER BY name COLLATE NOCASE
 		`, teams[i].ID)
 		if err != nil {
 			httpx.Error(w, http.StatusInternalServerError, "members failed")
 			return
 		}
 		for mrows.Next() {
-			var m teamMember
-			if err := mrows.Scan(&m.ID, &m.Username); err != nil {
+			var s slotOut
+			if err := mrows.Scan(&s.ID, &s.Name, &s.Token, &s.LastLoginAt); err != nil {
 				mrows.Close()
 				httpx.Error(w, http.StatusInternalServerError, "member scan failed")
 				return
 			}
-			teams[i].Members = append(teams[i].Members, m)
+			teams[i].Members = append(teams[i].Members, s)
 		}
 		mrows.Close()
 	}
-
 	httpx.JSON(w, http.StatusOK, map[string]any{"run": d, "teams": teams})
 }
 
+// userIDFrom remains for admin/org user URL params (admins list, delete).
 func userIDFrom(r *http.Request) (int64, bool) {
 	id, err := strconv.ParseInt(chi.URLParam(r, "userID"), 10, 64)
 	if err != nil || id <= 0 {
 		return 0, false
 	}
 	return id, true
+}
+
+// ResetPassword clears or replaces a staff user's password. Players don't
+// have passwords any more (they log in with magic-link tokens).
+func (h *Handlers) ResetPassword(w http.ResponseWriter, r *http.Request) {
+	id, ok := userIDFrom(r)
+	if !ok {
+		httpx.Error(w, http.StatusBadRequest, "bad user id")
+		return
+	}
+	var req struct {
+		Password string `json:"password"`
+	}
+	if r.ContentLength > 0 {
+		if !httpx.DecodeJSON(w, r, &req) {
+			return
+		}
+	}
+	me, _ := auth.FromContext(r.Context())
+	var (
+		role    string
+		orgID   sql.NullInt64
+	)
+	err := h.DB.QueryRowContext(r.Context(),
+		`SELECT role, org_id FROM users WHERE id = ?`, id).Scan(&role, &orgID)
+	if errors.Is(err, sql.ErrNoRows) {
+		httpx.Error(w, http.StatusNotFound, "user not found")
+		return
+	}
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "lookup failed")
+		return
+	}
+	switch {
+	case me.Role == auth.RoleAdmin:
+		if role == auth.RoleAdmin && me.ID != id {
+			httpx.Error(w, http.StatusForbidden, "admin-on-admin reset is not supported")
+			return
+		}
+	case me.ID == id:
+		// anyone can reset their own
+	default:
+		// org_admin can reset anyone in their own org (besides admins).
+		if me.OrgID == nil || !orgID.Valid || *me.OrgID != orgID.Int64 {
+			httpx.Error(w, http.StatusForbidden, "forbidden")
+			return
+		}
+		if me.Role != auth.RoleOrgAdmin {
+			httpx.Error(w, http.StatusForbidden, "forbidden")
+			return
+		}
+	}
+	if req.Password == "" {
+		httpx.Error(w, http.StatusBadRequest, "password required")
+		return
+	}
+	hash, err := auth.HashPassword(req.Password)
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "hash failed")
+		return
+	}
+	if _, err := h.DB.ExecContext(r.Context(),
+		`UPDATE users SET password_hash = ? WHERE id = ?`, hash, id); err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "update failed")
+		return
+	}
+	if _, err := h.DB.ExecContext(r.Context(), `DELETE FROM sessions WHERE user_id = ?`, id); err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "session cleanup failed")
+		return
+	}
+	httpx.JSON(w, http.StatusNoContent, nil)
 }

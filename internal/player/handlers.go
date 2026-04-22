@@ -1,10 +1,9 @@
-// Package player implements the endpoints an authenticated player uses to
-// play through an adventure.
+// Package player implements the endpoints a player (slot) uses to play
+// through an adventure.
 //
-// Anti-cheat design: the server never ships a puzzle's prompt or accept
-// list to the client until the player is legitimately on that page. If the
-// page has a GPS gate, the prompt is withheld until the team's last ping is
-// within Gate.Radius metres of the gate centre.
+// A slot authenticates via a magic-link exchange (see /play?t=<token>)
+// which sets the zv_slot cookie. All endpoints in this package require a
+// slot context populated by auth.SlotMiddleware + auth.RequireSlot.
 package player
 
 import (
@@ -21,11 +20,45 @@ import (
 
 // Handlers bundles the dependencies the player endpoints need.
 type Handlers struct {
-	DB  *sql.DB
-	Lib *adventure.Library
+	DB           *sql.DB
+	Lib          *adventure.Library
+	SecureCookie bool
 }
 
-// teamContext is the active (or most recent) team a player is on.
+// MagicLinkLogin exchanges a player_slots.token (delivered to the player
+// via their own message) for a slot session cookie and redirects the
+// browser to /play. Handled at GET /play if the ?t= query parameter is
+// present; if the token is bad we fall through to the ordinary /play
+// page which will tell the player to open their link again.
+func (h *Handlers) MagicLinkLogin(w http.ResponseWriter, r *http.Request) bool {
+	token := r.URL.Query().Get("t")
+	if token == "" {
+		return false
+	}
+	_, session, err := auth.LoginSlotByToken(r.Context(), h.DB, token)
+	if err != nil {
+		// Best-effort: let the /play page render without a session so the UI
+		// can say "open your magic link again" rather than a blank error.
+		return false
+	}
+	auth.SetSlotCookie(w, session, h.SecureCookie)
+	// Strip the query parameter on the way back so refreshing doesn't
+	// re-trigger the token exchange (and doesn't leave the token in the
+	// address bar).
+	http.Redirect(w, r, "/play", http.StatusFound)
+	return true
+}
+
+// Logout clears the slot session.
+func (h *Handlers) Logout(w http.ResponseWriter, r *http.Request) {
+	if c, err := r.Cookie(auth.SlotCookieName); err == nil {
+		_ = auth.LogoutSlot(r.Context(), h.DB, c.Value)
+	}
+	auth.ClearSlotCookie(w, h.SecureCookie)
+	httpx.JSON(w, http.StatusNoContent, nil)
+}
+
+// teamContext is the slot's team/run snapshot used by all the handlers.
 type teamContext struct {
 	TeamID           int64
 	TeamName         string
@@ -36,37 +69,31 @@ type teamContext struct {
 	CompletedAt      sql.NullString
 }
 
-// loadTeam picks the player's best-matching team: prefer running > paused >
-// scheduled > completed, ordered by run created_at desc. Returns sql.ErrNoRows
-// if the player is on no team.
-func loadTeam(r *http.Request, db *sql.DB, userID int64) (teamContext, error) {
+func loadTeam(r *http.Request, db *sql.DB, slot auth.Slot) (teamContext, error) {
 	var tc teamContext
 	err := db.QueryRowContext(r.Context(), `
-		SELECT t.id, t.name, t.run_id, r.adventure_slug, r.state, t.current_page_index, t.completed_at
-		FROM team_members tm
-		JOIN teams t  ON t.id = tm.team_id
-		JOIN adventure_runs r ON r.id = t.run_id
-		WHERE tm.user_id = ?
-		ORDER BY
-			CASE r.state WHEN 'running' THEN 0 WHEN 'paused' THEN 1 WHEN 'scheduled' THEN 2 ELSE 3 END,
-			r.created_at DESC
-		LIMIT 1
-	`, userID).Scan(&tc.TeamID, &tc.TeamName, &tc.RunID, &tc.AdventureSlug, &tc.RunState, &tc.CurrentPageIndex, &tc.CompletedAt)
+		SELECT t.id, t.name, ar.id, ar.adventure_slug, ar.state,
+		       t.current_page_index, t.completed_at
+		FROM teams t JOIN adventure_runs ar ON ar.id = t.run_id
+		WHERE t.id = ?
+	`, slot.TeamID).Scan(&tc.TeamID, &tc.TeamName, &tc.RunID, &tc.AdventureSlug,
+		&tc.RunState, &tc.CurrentPageIndex, &tc.CompletedAt)
 	return tc, err
 }
 
 // State is the response body for GET /api/player/state.
 type State struct {
-	Status        string `json:"status"` // no_team | waiting | running | paused | completed | gated
-	AdventureSlug string `json:"adventure_slug,omitempty"`
-	AdventureTitle string `json:"adventure_title,omitempty"`
-	TeamName      string `json:"team_name,omitempty"`
-	PageIndex     int    `json:"page_index,omitempty"`
-	PageCount     int    `json:"page_count,omitempty"`
-	Title         string `json:"title,omitempty"`
-	Prompt        string `json:"prompt,omitempty"`
-	Hint          string `json:"hint,omitempty"`
-	Gate          *gateDTO `json:"gate,omitempty"`
+	Status         string   `json:"status"` // waiting | running | paused | completed | gated
+	AdventureSlug  string   `json:"adventure_slug,omitempty"`
+	AdventureTitle string   `json:"adventure_title,omitempty"`
+	TeamName       string   `json:"team_name,omitempty"`
+	SlotName       string   `json:"slot_name,omitempty"`
+	PageIndex      int      `json:"page_index,omitempty"`
+	PageCount      int      `json:"page_count,omitempty"`
+	Title          string   `json:"title,omitempty"`
+	Prompt         string   `json:"prompt,omitempty"`
+	Hint           string   `json:"hint,omitempty"`
+	Gate           *gateDTO `json:"gate,omitempty"`
 }
 
 type gateDTO struct {
@@ -78,17 +105,16 @@ type gateDTO struct {
 
 // GetState returns the player's current view.
 func (h *Handlers) GetState(w http.ResponseWriter, r *http.Request) {
-	u, _ := auth.FromContext(r.Context())
-	tc, err := loadTeam(r, h.DB, u.ID)
+	slot, _ := auth.SlotFromContext(r.Context())
+	tc, err := loadTeam(r, h.DB, slot)
 	if errors.Is(err, sql.ErrNoRows) {
-		httpx.JSON(w, http.StatusOK, State{Status: "no_team"})
+		httpx.Error(w, http.StatusNotFound, "team missing")
 		return
 	}
 	if err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "lookup failed")
 		return
 	}
-
 	adv := h.Lib.Get(tc.AdventureSlug)
 	if adv == nil {
 		httpx.Error(w, http.StatusInternalServerError, "adventure not loaded: "+tc.AdventureSlug)
@@ -99,6 +125,7 @@ func (h *Handlers) GetState(w http.ResponseWriter, r *http.Request) {
 		AdventureSlug:  adv.Slug,
 		AdventureTitle: adv.Meta.Title,
 		TeamName:       tc.TeamName,
+		SlotName:       slot.Name,
 		PageCount:      len(adv.Pages),
 	}
 
@@ -154,8 +181,7 @@ func (h *Handlers) GetState(w http.ResponseWriter, r *http.Request) {
 }
 
 // gateReached checks whether the team's latest location ping places them
-// inside the location's gate radius. Caller must already have verified that
-// loc is gated (loc.Gated() == true).
+// inside the location's gate radius.
 func gateReached(r *http.Request, db *sql.DB, teamID int64, loc adventure.Location) (bool, error) {
 	var lat, lng float64
 	err := db.QueryRowContext(r.Context(), `
@@ -171,8 +197,6 @@ func gateReached(r *http.Request, db *sql.DB, teamID int64, loc adventure.Locati
 	return haversineMeters(lat, lng, loc.Lat, loc.Lng) <= *loc.RadiusM, nil
 }
 
-// haversineMeters returns the great-circle distance in metres between two
-// (lat,lng) points. Accurate enough for the distances puzzles care about.
 func haversineMeters(lat1, lng1, lat2, lng2 float64) float64 {
 	const R = 6371000.0
 	toRad := func(d float64) float64 { return d * math.Pi / 180 }
@@ -196,19 +220,14 @@ type AnswerResponse struct {
 	NextIndex int  `json:"next_index,omitempty"`
 }
 
-// SubmitAnswer evaluates a submitted answer for the player's current page.
-// Wrong answers are logged (for cheat analysis) but do not advance the team.
+// SubmitAnswer evaluates a submitted answer for the slot's current page.
 func (h *Handlers) SubmitAnswer(w http.ResponseWriter, r *http.Request) {
 	var req AnswerRequest
 	if !httpx.DecodeJSON(w, r, &req) {
 		return
 	}
-	u, _ := auth.FromContext(r.Context())
-	tc, err := loadTeam(r, h.DB, u.ID)
-	if errors.Is(err, sql.ErrNoRows) {
-		httpx.Error(w, http.StatusForbidden, "no team")
-		return
-	}
+	slot, _ := auth.SlotFromContext(r.Context())
+	tc, err := loadTeam(r, h.DB, slot)
 	if err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "lookup failed")
 		return
@@ -229,8 +248,6 @@ func (h *Handlers) SubmitAnswer(w http.ResponseWriter, r *http.Request) {
 	}
 	page := adv.Pages[tc.CurrentPageIndex]
 
-	// Enforce the gate server-side for submissions too: no answer may be
-	// evaluated until the team is physically on-site.
 	if page.Location.Gated() {
 		reached, err := gateReached(r, h.DB, tc.TeamID, page.Location)
 		if err != nil {
@@ -249,25 +266,24 @@ func (h *Handlers) SubmitAnswer(w http.ResponseWriter, r *http.Request) {
 		acceptedInt = 1
 	}
 	if _, err := h.DB.ExecContext(r.Context(), `
-		INSERT INTO answer_attempts(team_id, user_id, page_index, answer, accepted)
+		INSERT INTO answer_attempts(team_id, slot_id, page_index, answer, accepted)
 		VALUES (?, ?, ?, ?, ?)
-	`, tc.TeamID, u.ID, tc.CurrentPageIndex, req.Answer, acceptedInt); err != nil {
+	`, tc.TeamID, slot.ID, tc.CurrentPageIndex, req.Answer, acceptedInt); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "record attempt failed")
 		return
 	}
 
 	teamID := tc.TeamID
-	userID := u.ID
 	resp := AnswerResponse{Accepted: accepted}
 	if !accepted {
-		runevents.Record(r.Context(), h.DB, tc.RunID, &teamID, &userID, runevents.AnswerWrong,
-			map[string]any{"page_index": tc.CurrentPageIndex, "submitted": req.Answer})
+		runevents.Record(r.Context(), h.DB, tc.RunID, &teamID, runevents.SlotActor(slot.ID),
+			runevents.AnswerWrong, map[string]any{"page_index": tc.CurrentPageIndex, "submitted": req.Answer})
 		httpx.JSON(w, http.StatusOK, resp)
 		return
 	}
 
-	runevents.Record(r.Context(), h.DB, tc.RunID, &teamID, &userID, runevents.AnswerRight,
-		map[string]any{"page_index": tc.CurrentPageIndex})
+	runevents.Record(r.Context(), h.DB, tc.RunID, &teamID, runevents.SlotActor(slot.ID),
+		runevents.AnswerRight, map[string]any{"page_index": tc.CurrentPageIndex})
 
 	nextIdx := tc.CurrentPageIndex + 1
 	if nextIdx >= len(adv.Pages) {
@@ -277,7 +293,8 @@ func (h *Handlers) SubmitAnswer(w http.ResponseWriter, r *http.Request) {
 			httpx.Error(w, http.StatusInternalServerError, "save progress failed")
 			return
 		}
-		runevents.Record(r.Context(), h.DB, tc.RunID, &teamID, &userID, runevents.TeamCompleted, nil)
+		runevents.Record(r.Context(), h.DB, tc.RunID, &teamID, runevents.SlotActor(slot.ID),
+			runevents.TeamCompleted, nil)
 		resp.Completed = true
 		resp.NextIndex = nextIdx
 		httpx.JSON(w, http.StatusOK, resp)
@@ -295,15 +312,15 @@ func (h *Handlers) SubmitAnswer(w http.ResponseWriter, r *http.Request) {
 
 // LocationRequest is the body of POST /api/player/location.
 type LocationRequest struct {
-	Lat       float64  `json:"lat"`
-	Lng       float64  `json:"lng"`
-	Accuracy  *float64 `json:"accuracy,omitempty"`
-	Speed     *float64 `json:"speed,omitempty"`
-	Heading   *float64 `json:"heading,omitempty"`
-	ClientTS  string   `json:"client_ts,omitempty"`
+	Lat      float64  `json:"lat"`
+	Lng      float64  `json:"lng"`
+	Accuracy *float64 `json:"accuracy,omitempty"`
+	Speed    *float64 `json:"speed,omitempty"`
+	Heading  *float64 `json:"heading,omitempty"`
+	ClientTS string   `json:"client_ts,omitempty"`
 }
 
-// PostLocation records a GPS ping for the player's active team.
+// PostLocation records a GPS ping for the slot's team.
 func (h *Handlers) PostLocation(w http.ResponseWriter, r *http.Request) {
 	var req LocationRequest
 	if !httpx.DecodeJSON(w, r, &req) {
@@ -313,22 +330,9 @@ func (h *Handlers) PostLocation(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusBadRequest, "coordinates out of range")
 		return
 	}
-	u, _ := auth.FromContext(r.Context())
-	tc, err := loadTeam(r, h.DB, u.ID)
-	if errors.Is(err, sql.ErrNoRows) {
-		httpx.Error(w, http.StatusForbidden, "no team")
-		return
-	}
-	if err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "lookup failed")
-		return
-	}
-
+	slot, _ := auth.SlotFromContext(r.Context())
 	var (
-		acc     any
-		speed   any
-		heading any
-		cts     any
+		acc, speed, heading, cts any
 	)
 	if req.Accuracy != nil {
 		acc = *req.Accuracy
@@ -343,9 +347,9 @@ func (h *Handlers) PostLocation(w http.ResponseWriter, r *http.Request) {
 		cts = req.ClientTS
 	}
 	if _, err := h.DB.ExecContext(r.Context(), `
-		INSERT INTO location_pings(user_id, team_id, run_id, lat, lng, accuracy, speed, heading, client_ts)
+		INSERT INTO location_pings(slot_id, team_id, run_id, lat, lng, accuracy, speed, heading, client_ts)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, u.ID, tc.TeamID, tc.RunID, req.Lat, req.Lng, acc, speed, heading, cts); err != nil {
+	`, slot.ID, slot.TeamID, slot.RunID, req.Lat, req.Lng, acc, speed, heading, cts); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "save ping failed")
 		return
 	}

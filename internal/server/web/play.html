@@ -63,7 +63,6 @@
   .subtitle { color: var(--muted); font-size: .85rem; text-transform: uppercase; letter-spacing: .08em; font-weight: 700; margin-bottom: 1rem; }
   h2 { font-size: .85rem; margin: 1.2rem 0 .4rem; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
   h3 { font-size: 1.05rem; margin: 0 0 .5rem; color: var(--ink); }
-  label { display: block; font-size: .8rem; font-weight: 700; color: var(--ink); margin-bottom: .3rem; text-transform: uppercase; letter-spacing: .04em; }
   input {
     font: inherit; width: 100%; padding: .75rem .9rem; margin-bottom: .8rem;
     background: var(--surface); color: var(--text);
@@ -86,13 +85,12 @@
     background: var(--surface);
     border: 1px solid var(--border-soft);
     border-radius: var(--radius);
-    padding: 1.25rem;
-    margin: .75rem 0;
+    padding: 1.25rem; margin: .75rem 0;
     box-shadow: var(--shadow);
   }
   .muted { color: var(--muted); }
   .err { color: var(--danger); font-weight: 600; }
-  .ok { color: var(--success); font-weight: 600; }
+  .ok  { color: var(--success); font-weight: 600; }
   .prompt { white-space: pre-wrap; font-size: 1.1rem; line-height: 1.55; color: var(--ink); }
   .pill {
     display: inline-block; padding: .15rem .65rem;
@@ -101,10 +99,6 @@
     color: var(--accent);
     text-transform: uppercase; letter-spacing: .06em;
   }
-  .brand-heading {
-    font-family: var(--font-brand); color: var(--accent);
-    font-size: 2rem; text-align: center; margin: 1.5rem 0 .5rem;
-  }
   .topline {
     display: flex; justify-content: space-between; align-items: baseline;
     padding-bottom: .75rem; margin-bottom: .75rem;
@@ -112,9 +106,7 @@
   }
   .topline .who { color: var(--muted); font-size: .9rem; }
   .topline .who strong { color: var(--ink); font-weight: 700; }
-  .inline-btn {
-    display: inline-block; width: auto; padding: .35rem .85rem; font-size: .8rem;
-  }
+  .inline-btn { display: inline-block; width: auto; padding: .35rem .85rem; font-size: .8rem; }
 </style>
 </head>
 <body>
@@ -126,7 +118,7 @@
 const app = document.getElementById('app');
 let gpsWatchID = null;
 let pingTimer = null;
-let lastFix = null; // {lat, lng, accuracy}
+let lastFix = null;
 
 async function api(path, opts = {}) {
   const res = await fetch(path, {
@@ -135,9 +127,7 @@ async function api(path, opts = {}) {
     ...opts,
   });
   let body = null;
-  if (res.status !== 204) {
-    try { body = await res.json(); } catch {}
-  }
+  if (res.status !== 204) { try { body = await res.json(); } catch {} }
   return { status: res.status, body };
 }
 
@@ -152,84 +142,24 @@ function el(tag, attrs = {}, ...children) {
   return e;
 }
 
-function renderLogin(err) {
-  app.replaceChildren();
-  const form = el('form', { class: 'card' },
-    el('h3', {}, 'Log in to play'),
-    el('label', {}, 'Username'),
-    el('input', { name: 'u', autocomplete: 'username', required: '' }),
-    el('label', {}, 'Password'),
-    el('input', { name: 'p', type: 'password', autocomplete: 'current-password', required: '' }),
-    el('button', { type: 'submit' }, 'Log in'),
-  );
-  if (err) form.append(el('p', { class: 'err' }, err));
-  form.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const fd = new FormData(form);
-    const username = fd.get('u');
-    const password = fd.get('p');
-    const r = await api('/api/auth/login', {
-      method: 'POST',
-      body: JSON.stringify({ username, password }),
-    });
-    if (r.status === 200) { refresh(); return; }
-    // First-time player: account exists but no password set yet.
-    if (r.status === 409 && r.body?.code === 'password_not_set') {
-      renderFirstPassword(username, password);
-      return;
-    }
-    renderLogin(r.body?.error || 'login failed');
-  });
-  app.append(form);
-}
-
-function renderFirstPassword(username, prefill) {
-  app.replaceChildren();
-  const form = el('form', { class: 'card' },
-    el('h3', {}, 'Welcome — choose your password'),
+function renderNoSession() {
+  app.replaceChildren(el('div', { class: 'card' },
+    el('h3', {}, 'Open your magic link'),
     el('p', { class: 'muted' },
-      `You haven't set a password for `, el('strong', {}, username),
-      ` yet. Pick one now; you'll use it next time you log in.`),
-    el('label', {}, 'Password'),
-    el('input', { name: 'p', type: 'password', autocomplete: 'new-password', required: '', value: prefill || '' }),
-    el('label', {}, 'Confirm password'),
-    el('input', { name: 'c', type: 'password', autocomplete: 'new-password', required: '' }),
-    el('button', { type: 'submit' }, 'Set password & play'),
-    el('p', { class: 'muted', style: 'margin-top:.5rem' },
-      el('a', { href: '#', on: { click: (e) => { e.preventDefault(); renderLogin(); } } }, '← back to login')),
-  );
-  form.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const fd = new FormData(form);
-    const p = fd.get('p'), c = fd.get('c');
-    if (p !== c) { form.append(el('p', { class: 'err' }, 'Passwords do not match')); return; }
-    if ((p || '').length < 4) { form.append(el('p', { class: 'err' }, 'Password too short (min 4)')); return; }
-    const r = await api('/api/auth/set-password', {
-      method: 'POST',
-      body: JSON.stringify({ username, password: p }),
-    });
-    if (r.status === 200) { refresh(); return; }
-    form.append(el('p', { class: 'err' }, r.body?.error || `error ${r.status}`));
-  });
-  app.append(form);
+      'Players receive a personal link via message from their arranger. ',
+      'Open it on this device to join the game.')));
 }
 
 function startGPS() {
   if (gpsWatchID !== null || !navigator.geolocation) return;
   gpsWatchID = navigator.geolocation.watchPosition(
     (pos) => {
-      lastFix = {
-        lat: pos.coords.latitude,
-        lng: pos.coords.longitude,
-        accuracy: pos.coords.accuracy,
-      };
+      lastFix = { lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy };
     },
     (err) => { console.warn('gps', err.message); },
     { enableHighAccuracy: true, maximumAge: 10000, timeout: 30000 },
   );
-  if (pingTimer === null) {
-    pingTimer = setInterval(sendPing, 15000);
-  }
+  if (pingTimer === null) pingTimer = setInterval(sendPing, 15000);
 }
 
 async function sendPing() {
@@ -238,50 +168,35 @@ async function sendPing() {
     method: 'POST',
     body: JSON.stringify({ ...lastFix, client_ts: new Date().toISOString() }),
   });
-  refresh(); // cheap: re-render in case the gate just opened
+  refresh();
 }
 
 async function refresh() {
-  const me = await api('/api/auth/whoami');
-  if (me.status !== 200) { renderLogin(); return; }
-  if (me.body.role !== 'player') {
-    app.replaceChildren(el('p', { class: 'err' },
-      `logged in as ${me.body.username} (${me.body.role}), not a player. `),
-      el('a', { href: '/arrange' }, 'Go to arranger view'));
+  const s = await api('/api/player/state');
+  if (s.status === 401) { renderNoSession(); return; }
+  if (s.status !== 200) {
+    app.replaceChildren(el('p', { class: 'err' }, s.body?.error || 'error'));
     return;
   }
   startGPS();
-  const s = await api('/api/player/state');
-  if (s.status !== 200) { app.replaceChildren(el('p', { class: 'err' }, s.body?.error || 'error')); return; }
-  render(me.body, s.body);
+  render(s.body);
 }
 
-function render(user, s) {
+function render(s) {
   app.replaceChildren();
   const header = el('div', { class: 'card' },
     el('div', { class: 'topline' },
-      el('span', { class: 'who' }, el('strong', {}, user.username), ' · ', el('span', { class: 'pill' }, s.status)),
+      el('span', { class: 'who' },
+        el('strong', {}, s.slot_name || 'Player'), ' · ',
+        el('span', { class: 'pill' }, s.status)),
       el('button', { class: 'secondary inline-btn', on: { click: logout } }, 'Log out')),
   );
   if (s.adventure_title) header.append(el('p', { class: 'muted' }, `${s.adventure_title} — team ${s.team_name || ''}`));
   app.append(header);
 
-  if (s.status === 'no_team') {
-    app.append(el('p', { class: 'muted' }, 'You are not on any team yet. Ask the arranger to add you.'));
-    return;
-  }
-  if (s.status === 'waiting') {
-    app.append(el('p', {}, 'Waiting for the adventure to start…'));
-    return;
-  }
-  if (s.status === 'paused') {
-    app.append(el('p', {}, 'The arranger paused the run. Stand by.'));
-    return;
-  }
-  if (s.status === 'completed') {
-    app.append(el('p', { class: 'ok' }, 'Adventure complete! 🎉'));
-    return;
-  }
+  if (s.status === 'waiting') { app.append(el('p', {}, 'Waiting for the adventure to start…')); return; }
+  if (s.status === 'paused')  { app.append(el('p', {}, 'The arranger paused the run. Stand by.')); return; }
+  if (s.status === 'completed'){ app.append(el('p', { class: 'ok' }, 'Adventure complete! 🎉')); return; }
 
   const progress = `Puzzle ${s.page_index + 1} of ${s.page_count}`;
   app.append(el('p', { class: 'muted' }, progress));
@@ -293,8 +208,7 @@ function render(user, s) {
       el('p', { class: 'muted' }, lastFix
         ? `Last fix: ${lastFix.lat.toFixed(5)}, ${lastFix.lng.toFixed(5)} (±${Math.round(lastFix.accuracy)} m)`
         : 'Waiting for a GPS fix…'),
-      el('button', { on: { click: sendPing } }, 'Send location now'),
-    );
+      el('button', { on: { click: sendPing } }, 'Send location now'));
     app.append(card);
     return;
   }
@@ -305,16 +219,14 @@ function render(user, s) {
 
   const form = el('form', { class: 'card' },
     el('input', { name: 'a', placeholder: 'Your answer', autocomplete: 'off', required: '' }),
-    el('button', { type: 'submit' }, 'Submit'),
-  );
+    el('button', { type: 'submit' }, 'Submit'));
   const result = el('p', {});
   form.append(result);
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const fd = new FormData(form);
     const r = await api('/api/player/answer', {
-      method: 'POST',
-      body: JSON.stringify({ answer: fd.get('a') }),
+      method: 'POST', body: JSON.stringify({ answer: fd.get('a') }),
     });
     if (r.status !== 200) {
       result.className = 'err';
@@ -334,13 +246,12 @@ function render(user, s) {
 }
 
 async function logout() {
-  await api('/api/auth/logout', { method: 'POST' });
+  await api('/api/player/logout', { method: 'POST' });
   if (gpsWatchID !== null) { navigator.geolocation.clearWatch(gpsWatchID); gpsWatchID = null; }
   if (pingTimer) { clearInterval(pingTimer); pingTimer = null; }
-  renderLogin();
+  renderNoSession();
 }
 
-// Refresh state every 5 s so e.g. arranger's start/pause is visible quickly.
 setInterval(() => { if (gpsWatchID !== null) refresh(); }, 5000);
 
 refresh();

@@ -36,22 +36,27 @@ func newTestServer(t *testing.T) (*httptest.Server, int64, func()) {
 		t.Fatalf("demo adventure missing; tests rely on it")
 	}
 
-	// Seed an arranger directly so we don't depend on flags, and grant them
-	// access to the demo adventure so the arranger flow can exercise it.
-	hash, _ := auth.HashPassword("s3cret")
-	res, err := sqlDB.Exec(`INSERT INTO users(username, password_hash, role) VALUES (?, ?, 'arranger')`, "boss", hash)
+	// Seed an organization + an org_admin (boss) + one assignment. The test
+	// exercises the arranger flow without depending on CLI flags.
+	orgRes, err := sqlDB.Exec(`INSERT INTO organizations(name) VALUES (?)`, "TestOrg")
 	if err != nil {
+		sqlDB.Close()
+		t.Fatalf("seed org: %v", err)
+	}
+	orgID, _ := orgRes.LastInsertId()
+	hash, _ := auth.HashPassword("s3cret")
+	if _, err := sqlDB.Exec(
+		`INSERT INTO users(username, password_hash, role, org_id) VALUES (?, ?, 'org_admin', ?)`,
+		"boss", hash, orgID); err != nil {
 		sqlDB.Close()
 		t.Fatalf("seed arranger: %v", err)
 	}
-	arrID, _ := res.LastInsertId()
-	ar, err := sqlDB.Exec(`INSERT INTO adventure_assignments(arranger_user_id, adventure_slug, max_teams) VALUES (?, ?, ?)`, arrID, "demo", 3)
+	ar, err := sqlDB.Exec(`INSERT INTO adventure_assignments(org_id, adventure_slug, max_teams) VALUES (?, ?, ?)`, orgID, "demo", 3)
 	if err != nil {
 		sqlDB.Close()
 		t.Fatalf("assign: %v", err)
 	}
 	assignmentID, _ := ar.LastInsertId()
-	_ = assignmentID // used below when creating the run
 
 	h := server.New(server.Config{DB: sqlDB, Library: lib})
 	ts := httptest.NewServer(h)
@@ -139,34 +144,31 @@ func TestFullFlow(t *testing.T) {
 		t.Fatalf("create run = %d", s)
 	}
 
-	// Create the player (no password — they set it on first login), then
-	// attach them to a team.
-	var alicePlayer struct {
-		ID int64 `json:"id"`
-	}
-	if s := arr.do("POST", "/api/admin/users",
-		map[string]any{"username": "alice", "role": "player"}, &alicePlayer); s != 201 {
-		t.Fatalf("create player = %d", s)
-	}
+	// Create a team with one slot — the server mints a magic-link token.
 	var team struct {
-		ID int64 `json:"id"`
+		ID      int64 `json:"id"`
+		Members []struct {
+			ID    int64  `json:"id"`
+			Name  string `json:"name"`
+			Token string `json:"token"`
+		} `json:"members"`
 	}
 	teamReq := map[string]any{
-		"name":             "Team Alpha",
-		"member_user_ids":  []int64{alicePlayer.ID},
+		"name":         "Team Alpha",
+		"member_names": []string{"alice"},
 	}
 	if s := arr.do("POST", "/api/admin/runs/"+itoa(run.ID)+"/teams", teamReq, &team); s != 201 {
 		t.Fatalf("create team = %d", s)
 	}
-
-	// --- Player first-login flow: login returns 409 password_not_set, then
-	// set-password succeeds and leaves us logged in. ---
-	alice := newClient(t, ts)
-	if s := alice.do("POST", "/api/auth/login", map[string]string{"username": "alice", "password": "pw-alice"}, nil); s != 409 {
-		t.Fatalf("first login before set-password = %d, want 409", s)
+	if len(team.Members) != 1 || team.Members[0].Token == "" {
+		t.Fatalf("expected one slot with a token, got %+v", team.Members)
 	}
-	if s := alice.do("POST", "/api/auth/set-password", map[string]string{"username": "alice", "password": "pw-alice"}, nil); s != 200 {
-		t.Fatalf("set-password = %d", s)
+
+	// --- Player logs in by following the magic-link URL. The 302 response
+	//     drops the zv_slot cookie in the jar; subsequent API calls inherit it.
+	alice := newClient(t, ts)
+	if s := alice.do("GET", "/play?t="+team.Members[0].Token, nil, nil); s != 200 {
+		t.Fatalf("magic-link login = %d", s)
 	}
 	var state struct {
 		Status    string `json:"status"`
@@ -306,13 +308,14 @@ func TestAuthRoleSeparation(t *testing.T) {
 		t.Fatalf("anonymous admin = %d, want 401", s)
 	}
 
-	// Arranger cannot use player endpoints.
+	// Arranger has a staff cookie but no slot cookie, so player endpoints
+	// reject with 401 ("open your magic link").
 	arr := newClient(t, ts)
 	if s := arr.do("POST", "/api/auth/login", map[string]string{"username": "boss", "password": "s3cret"}, nil); s != 200 {
 		t.Fatalf("arranger login = %d", s)
 	}
-	if s := arr.do("GET", "/api/player/state", nil, nil); s != 403 {
-		t.Fatalf("arranger on player = %d, want 403", s)
+	if s := arr.do("GET", "/api/player/state", nil, nil); s != 401 {
+		t.Fatalf("arranger on player = %d, want 401", s)
 	}
 }
 

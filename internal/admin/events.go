@@ -11,7 +11,6 @@ import (
 	"git.sr.ht/~klahr/zv/internal/httpx"
 )
 
-// eventDTO is the JSON shape returned by ListEvents.
 type eventDTO struct {
 	ID        int64           `json:"id"`
 	TeamID    *int64          `json:"team_id,omitempty"`
@@ -29,9 +28,9 @@ func (h *Handlers) ListEvents(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusBadRequest, "bad run id")
 		return
 	}
-	arr, _ := auth.FromContext(r.Context())
-	var owner int64
-	err := h.DB.QueryRowContext(r.Context(), `SELECT arranger_user_id FROM adventure_runs WHERE id = ?`, runID).Scan(&owner)
+	var orgID int64
+	err := h.DB.QueryRowContext(r.Context(),
+		`SELECT org_id FROM adventure_runs WHERE id = ?`, runID).Scan(&orgID)
 	if errors.Is(err, sql.ErrNoRows) {
 		httpx.Error(w, http.StatusNotFound, "run not found")
 		return
@@ -40,15 +39,12 @@ func (h *Handlers) ListEvents(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusInternalServerError, "lookup failed")
 		return
 	}
-	if arr.Role != auth.RoleRoot && owner != arr.ID {
+	me, _ := auth.FromContext(r.Context())
+	if !sameOrg(me, orgID) {
 		httpx.Error(w, http.StatusForbidden, "forbidden")
 		return
 	}
 
-	// Optional ?team_id filter — when present, only include events tied to
-	// that team. Note: run-level events (run.created, run.started, …) have
-	// a NULL team_id and so are excluded under the filter, which is the
-	// behaviour a per-team feed wants.
 	query := `
 		SELECT e.id, e.team_id, COALESCE(t.name, ''), COALESCE(u.username, ''),
 		       e.kind, e.payload, e.created_at

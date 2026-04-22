@@ -76,7 +76,7 @@ func tick(ctx context.Context, db *sql.DB) {
 			continue // lost the race to a manual start — that's fine
 		}
 		actor := d.actor
-		runevents.Record(ctx, db, d.id, nil, &actor, runevents.RunStarted,
+		runevents.Record(ctx, db, d.id, nil, runevents.UserActor(actor), runevents.RunStarted,
 			map[string]any{"auto": true})
 		log.Printf("scheduler: auto-started run #%d", d.id)
 	}

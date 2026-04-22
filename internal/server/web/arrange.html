@@ -722,20 +722,27 @@ function renderLogin(err) {
 }
 
 function renderShell() {
-  const isRoot = state.me.role === 'root';
-  // Root is scoped to arranger management — the adventure/run/player flows
-  // belong to arrangers, not the superuser tier.
-  const items = isRoot
-    ? [
-        ['#dashboard', 'Dashboard', ICONS.dashboard],
-        ['#arrangers', 'Arrangers', ICONS.shield],
-      ]
-    : [
-        ['#dashboard', 'Dashboard', ICONS.dashboard],
-        ['#adventures', 'Adventures', ICONS.map],
-        ['#runs', 'Runs', ICONS.play],
-        ['#players', 'Players', ICONS.user],
-      ];
+  const role = state.me.role;
+  const isAdmin = role === 'admin';
+  const isOrgAdmin = role === 'org_admin';
+  // Admin runs the multi-tenant plumbing (organizations, other admins).
+  // Org users play the game: adventures, runs, players. Org admins also
+  // manage their organization's members.
+  let items;
+  if (isAdmin) {
+    items = [
+      ['#dashboard', 'Dashboard', ICONS.dashboard],
+      ['#organizations', 'Organizations', ICONS.shield],
+      ['#admins', 'Admins', ICONS.user],
+    ];
+  } else {
+    items = [
+      ['#dashboard', 'Dashboard', ICONS.dashboard],
+      ['#adventures', 'Adventures', ICONS.map],
+      ['#runs', 'Runs', ICONS.play],
+    ];
+    if (isOrgAdmin) items.push(['#members', 'Members', ICONS.shield]);
+  }
   const active = state.route.split('/')[0];
 
   const nav = h('nav', { class: 'nav' }, items.map(([href, label, svg]) =>
@@ -802,26 +809,26 @@ async function renderRoute() {
   view.replaceChildren(h('p', { class: 'muted' }, 'Loading…'));
   const r = state.route.replace(/^#/, '');
   const [section, arg] = r.split('/');
-  const isRoot = state.me.role === 'root';
+  const role = state.me.role;
+  const isAdmin = role === 'admin';
+  const isOrgAdmin = role === 'org_admin';
 
-  // Routes root isn't allowed to visit bounce to its dashboard.
-  if (isRoot && ['adventures', 'runs', 'players'].includes(section)) {
-    nav('#arrangers');
-    return;
-  }
-  if (!isRoot && section === 'arrangers') {
-    nav('#dashboard');
-    return;
-  }
+  // Role-based route guards: admins can't visit org-user pages and vice versa.
+  const adminOnly = ['organizations', 'admins'];
+  const orgUserOnly = ['adventures', 'runs'];
+  if (isAdmin && orgUserOnly.includes(section)) { nav('#organizations'); return; }
+  if (!isAdmin && adminOnly.includes(section))   { nav('#dashboard');     return; }
+  if (section === 'members' && !isOrgAdmin)      { nav('#dashboard');     return; }
 
   try {
     switch (section) {
       case '':
-      case 'dashboard': return await viewDashboard(view);
-      case 'adventures': return arg ? await viewAdventureDetail(view, arg) : await viewAdventures(view);
-      case 'runs': return arg ? await viewRunDetail(view, arg) : await viewRuns(view);
-      case 'players': return await viewPlayers(view);
-      case 'arrangers': return await viewArrangers(view);
+      case 'dashboard':    return await viewDashboard(view);
+      case 'adventures':   return arg ? await viewAdventureDetail(view, arg) : await viewAdventures(view);
+      case 'runs':         return arg ? await viewRunDetail(view, arg) : await viewRuns(view);
+      case 'members':      return await viewMembers(view);
+      case 'organizations':return await viewOrganizations(view);
+      case 'admins':       return await viewAdmins(view);
       default: view.replaceChildren(h('p', {}, 'Not found'));
     }
   } catch (err) {
@@ -837,7 +844,7 @@ async function logout() {
 
 /* ========== Dashboard ========== */
 async function viewDashboard(view) {
-  if (state.me.role === 'root') return viewRootDashboard(view);
+  if (state.me.role === 'admin') return viewAdminDashboard(view);
   return viewArrangerDashboard(view);
 }
 
@@ -868,57 +875,56 @@ async function viewArrangerDashboard(view) {
   );
 }
 
-async function viewRootDashboard(view) {
-  const [arrsR, advsR] = await Promise.all([
-    api('/api/admin/arrangers'),
+async function viewAdminDashboard(view) {
+  const [orgsR, advsR] = await Promise.all([
+    api('/api/admin/organizations'),
     api('/api/admin/adventures'),
   ]);
-  const arrangers = arrsR.body?.arrangers || [];
+  const orgs = orgsR.body?.organizations || [];
   const adventures = advsR.body?.adventures || [];
 
-  const totals = arrangers.reduce((acc, a) => {
-    acc.runsTotal   += a.runs_total || 0;
-    acc.runsRunning += a.runs_running || 0;
-    acc.players     += a.players_total || 0;
+  const totals = orgs.reduce((acc, o) => {
+    acc.runsTotal   += o.runs_total   || 0;
+    acc.runsRunning += o.runs_running || 0;
+    acc.players     += o.players_total || 0;
+    acc.members     += (o.members || []).length;
     return acc;
-  }, { runsTotal: 0, runsRunning: 0, players: 0 });
+  }, { runsTotal: 0, runsRunning: 0, players: 0, members: 0 });
 
   view.replaceChildren(
     h('h1', {}, `Hello, ${state.me.username}`),
     h('p', { class: 'muted' },
-      'Signed in as root — you manage arrangers and the adventures each of them may run.'),
+      'Signed in as admin — you manage organizations, their assignments, and other admins.'),
     h('div', { class: 'grid stats' },
-      stat('Arrangers', arrangers.length),
-      stat('Players', totals.players),
+      stat('Organizations', orgs.length),
+      stat('Org users', totals.members),
       stat('Active runs', totals.runsRunning),
     ),
     h('div', { class: 'card' },
       h('div', { class: 'row between' },
-        h('h2', {}, 'Arranger activity'),
-        h('button', { class: 'btn primary small', on: { click: () => nav('#arrangers') } },
-          icon(ICONS.shield), 'Manage arrangers')),
-      arrangers.length === 0
+        h('h2', {}, 'Organizations'),
+        h('button', { class: 'btn primary small', on: { click: () => nav('#organizations') } },
+          icon(ICONS.shield), 'Manage')),
+      orgs.length === 0
         ? h('div', { class: 'empty' },
-            h('p', {}, 'No arrangers yet.'),
-            h('button', { class: 'btn primary', on: { click: () => openCreateUser('arranger') } },
-              icon(ICONS.plus), 'Create your first arranger'))
+            h('p', {}, 'No organizations yet.'),
+            h('button', { class: 'btn primary', on: { click: () => openCreateOrg() } },
+              icon(ICONS.plus), 'Create your first organization'))
         : h('table', { class: 'table' },
           h('thead', {}, h('tr', {},
-            h('th', {}, 'Username'),
-            h('th', {}, 'Adventures'),
+            h('th', {}, 'Organization'),
+            h('th', { class: 'hide-narrow' }, 'Users'),
             h('th', { class: 'hide-narrow' }, 'Players'),
             h('th', {}, 'Runs'),
             h('th', { class: 'hide-narrow' }, 'Active'))),
-          h('tbody', {}, arrangers.map((a) => h('tr', {},
-            h('td', {}, a.username),
-            h('td', {}, (a.grants || []).length === 0
-              ? h('span', { class: 'muted' }, '—')
-              : (a.grants || []).map((s) => h('span', { class: 'chip', style: 'margin-right:.2rem' }, s))),
-            h('td', { class: 'mono hide-narrow' }, a.players_total || 0),
-            h('td', { class: 'mono' }, a.runs_total || 0),
+          h('tbody', {}, orgs.map((o) => h('tr', {},
+            h('td', {}, o.name),
+            h('td', { class: 'mono hide-narrow' }, (o.members || []).length),
+            h('td', { class: 'mono hide-narrow' }, o.players_total || 0),
+            h('td', { class: 'mono' }, o.runs_total || 0),
             h('td', { class: 'hide-narrow' },
-              (a.runs_running || 0) > 0
-                ? h('span', { class: 'pill success' }, `${a.runs_running} running`)
+              (o.runs_running || 0) > 0
+                ? h('span', { class: 'pill success' }, `${o.runs_running} running`)
                 : h('span', { class: 'muted' }, '—')),
           )))),
     ),
@@ -1205,7 +1211,7 @@ async function viewRunDetail(view, runID) {
                 h('a', { href: '#', on: { click: (e) => { e.preventDefault(); openTeamDetail(run.id, t, adventure); } } }, t.name),
                 t.completed_at ? h('span', { class: 'pill success', style: 'margin-left:.5rem' }, 'done') : null),
               h('td', { class: 'mono' }, t.page_index),
-              h('td', {}, (t.members || []).map((m) => h('span', { class: 'chip', style: 'margin-right:.25rem' }, m.username))),
+              h('td', {}, (t.members || []).map((m) => h('span', { class: 'chip', style: 'margin-right:.25rem' }, m.name))),
               h('td', {}, h('div', { class: 'row end' },
                 h('button', { class: 'btn small', on: { click: () => openTeamModal(run.id, t) } }, 'Edit'),
                 h('button', { class: 'btn small danger', on: { click: () => confirmDeleteTeam(t) } }, icon(ICONS.trash)))),
@@ -1464,7 +1470,7 @@ async function openTeamDetail(runID, team, adventure) {
         page && !finished ? h('div', {}, h('strong', {}, page.title || '(untitled)')) : null,
       ),
       h('div', {},
-        (team.members || []).map((m) => h('span', { class: 'chip', style: 'margin-right:.25rem' }, m.username)),
+        (team.members || []).map((m) => h('span', { class: 'chip', style: 'margin-right:.25rem' }, m.name)),
       ),
     );
 
@@ -1521,253 +1527,169 @@ async function confirmDeleteTeam(team) {
   else toastErr(r.body?.error || `error ${r.status}`);
 }
 
-async function openTeamModal(runID, existing /* team object or null */) {
-  // Load the player list and the run's current teams so we can show which
-  // players are already on another team in this run (they can't be picked).
-  const [r0, rDetail] = await Promise.all([
-    api('/api/admin/users'),
-    api('/api/admin/runs/' + runID),
-  ]);
-  const players = (r0.body?.users || []).filter((u) => u.role === 'player');
-  const takenBy = new Map(); // userID -> teamName
-  for (const t of (rDetail.body?.teams || [])) {
-    if (existing && t.id === existing.id) continue; // this team's own members are not "taken"
-    for (const m of (t.members || [])) takenBy.set(m.id, t.name);
-  }
-  const selected = new Set();
-  const initial = new Set();
-  if (existing) {
-    for (const m of (existing.members || [])) { selected.add(m.id); initial.add(m.id); }
-  }
+// openTeamModal handles both new-team and edit-team. For a new team the
+// arranger types a team name plus one name per line; each line becomes a
+// slot with its own magic-link token. For an existing team the modal lets
+// the arranger rename, copy each slot's link, rotate a link, remove a
+// slot, or add a new slot inline.
+async function openTeamModal(runID, existing) {
+  if (existing) return openEditTeamModal(runID, existing);
+  return openNewTeamModal(runID);
+}
 
-  const title = existing ? `Edit team · ${existing.name}` : 'New team';
-  await modal(title, ({ body, close }) => {
-    // --- Team name ---
-    const nameInput = h('input', { name: 'name', required: true, autofocus: true, value: existing?.name || '' });
-    const nameField = h('label', { class: 'field' }, h('span', {}, 'Team name'), nameInput);
-
-    // --- Player picker ---
-    const grid = h('div', { class: 'chip-grid' });
-    const repaintGrid = () => {
-      grid.replaceChildren();
-      if (players.length === 0) {
-        grid.append(h('span', { class: 'muted', style: 'padding:.4rem' },
-          'No players yet. Create one below.'));
-        return;
-      }
-      for (const p of players) {
-        const taken = takenBy.get(p.id);
-        let cls = 'chip selectable';
-        if (taken) cls += ' taken';
-        else if (selected.has(p.id)) cls += ' selected';
-        const title = taken
-          ? `Already on team “${taken}” in this run`
-          : `${p.username} (on ${p.team_count} team${p.team_count === 1 ? '' : 's'})`;
-        const chip = h('span', { class: cls, title }, p.username);
-        if (!taken) {
-          chip.addEventListener('click', () => {
-            if (selected.has(p.id)) selected.delete(p.id); else selected.add(p.id);
-            repaintGrid();
-            updateCounter();
-          });
-        }
-        grid.append(chip);
-      }
-    };
-
-    const counter = h('span', { class: 'muted', style: 'font-size:.8rem' });
-    const updateCounter = () => {
-      counter.textContent = selected.size === 0
-        ? 'No members selected'
-        : `${selected.size} member${selected.size === 1 ? '' : 's'} selected`;
-    };
-
-    // --- Inline "new player" form (collapsible) ---
-    const inlineForm = h('div', { class: 'inline-form', style: 'display:none' });
-    const toggleBtn = h('button', { type: 'button', class: 'btn small' },
-      icon(ICONS.plus), 'New player');
-    toggleBtn.addEventListener('click', () => {
-      const open = inlineForm.style.display !== 'none';
-      inlineForm.style.display = open ? 'none' : 'block';
-      if (!open) inlineForm.querySelector('input')?.focus();
+async function openNewTeamModal(runID) {
+  await modal('New team', ({ body, close }) => {
+    const nameInput = h('input', { name: 'name', required: true, autofocus: true });
+    const memberArea = h('textarea', {
+      name: 'members', rows: 5,
+      placeholder: 'alice\nbob\ncharlie',
+      required: true,
     });
-
-    const newU = h('input', { placeholder: 'Username', autocomplete: 'off' });
-    const addMsg = h('span', { class: 'muted', style: 'font-size:.8rem' });
-    const addBtn = h('button', { type: 'button', class: 'btn primary small' }, 'Add');
-    const submitInline = async () => {
-      const username = newU.value.trim();
-      if (!username) { addMsg.className = 'err'; addMsg.textContent = 'username required'; return; }
-      addBtn.disabled = true;
-      const rr = await api('/api/admin/users', {
-        method: 'POST',
-        body: JSON.stringify({ username, role: 'player' }),
-      });
-      addBtn.disabled = false;
-      if (rr.status !== 201) {
-        addMsg.className = 'err';
-        addMsg.textContent = rr.body?.error || `error ${rr.status}`;
-        return;
-      }
-      const newPlayer = { id: rr.body.id, username: rr.body.username, role: 'player', team_count: 0 };
-      players.push(newPlayer);
-      players.sort((a, b) => a.username.localeCompare(b.username));
-      selected.add(newPlayer.id);
-      newU.value = '';
-      addMsg.className = 'ok';
-      addMsg.textContent = `Added ${newPlayer.username} — they pick a password on first login`;
-      repaintGrid();
-      updateCounter();
-      newU.focus();
-    };
-    addBtn.addEventListener('click', submitInline);
-    newU.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); submitInline(); } });
-
-    inlineForm.append(
-      h('div', { class: 'row' }, newU, addBtn),
-      h('div', { style: 'margin-top:.4rem' }, addMsg),
-    );
-
-    // --- Submit ---
-    const submitBtn = h('button', { class: 'btn primary', type: 'submit' }, existing ? 'Save changes' : 'Create team');
-    const cancelBtn = h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, 'Cancel');
-
+    const submitBtn = h('button', { class: 'btn primary', type: 'submit' }, 'Create team');
     const form = h('form', {},
-      nameField,
-      h('div', { class: 'row between', style: 'margin-bottom:.3rem' },
-        h('span', { style: 'font-size:.8rem; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--ink)' }, 'Members'),
-        toggleBtn),
-      grid,
-      inlineForm,
-      h('div', { style: 'margin-top:.5rem' }, counter),
-      h('div', { class: 'row end', style: 'margin-top:1rem' }, cancelBtn, submitBtn),
-    );
+      h('label', { class: 'field' }, h('span', {}, 'Team name'), nameInput),
+      h('label', { class: 'field' },
+        h('span', {}, 'Members — one name per line'),
+        memberArea),
+      h('p', { class: 'muted', style: 'font-size:.8rem' },
+        'Each line becomes a player slot with its own magic-link token. ',
+        'You can copy the per-player link after the team is created.'),
+      h('div', { class: 'row end', style: 'margin-top:1rem' },
+        h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, 'Cancel'),
+        submitBtn));
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
-      if (selected.size === 0) { toastErr('Pick at least one member'); return; }
+      const names = (memberArea.value || '').split('\n')
+        .map((s) => s.trim()).filter(Boolean);
+      if (names.length === 0) { toastErr('Add at least one member'); return; }
       submitBtn.disabled = true;
-      try {
-        if (!existing) {
-          const rr = await api(`/api/admin/runs/${runID}/teams`, {
-            method: 'POST',
-            body: JSON.stringify({ name: nameInput.value.trim(), member_user_ids: [...selected] }),
-          });
-          if (rr.status !== 201) { toastErr(rr.body?.error || `error ${rr.status}`); return; }
-          toastOk('Team created');
-        } else {
-          // Edit path — apply the diff against the existing team.
-          const name = nameInput.value.trim();
-          if (name && name !== existing.name) {
-            const rr = await api(`/api/admin/teams/${existing.id}`, { method: 'PATCH', body: JSON.stringify({ name }) });
-            if (rr.status !== 204) { toastErr(rr.body?.error || 'rename failed'); return; }
-          }
-          for (const id of initial) {
-            if (!selected.has(id)) {
-              const rr = await api(`/api/admin/teams/${existing.id}/members/${id}`, { method: 'DELETE' });
-              if (rr.status !== 204) { toastErr(rr.body?.error || 'remove failed'); return; }
-            }
-          }
-          for (const id of selected) {
-            if (!initial.has(id)) {
-              const rr = await api(`/api/admin/teams/${existing.id}/members`, { method: 'POST', body: JSON.stringify({ user_id: id }) });
-              if (rr.status !== 204) { toastErr(rr.body?.error || 'add failed'); return; }
-            }
-          }
-          toastOk('Team updated');
-        }
-        close(true);
-        renderRoute();
-      } finally {
-        submitBtn.disabled = false;
-      }
+      const rr = await api(`/api/admin/runs/${runID}/teams`, {
+        method: 'POST',
+        body: JSON.stringify({ name: nameInput.value.trim(), member_names: names }),
+      });
+      submitBtn.disabled = false;
+      if (rr.status !== 201) { toastErr(rr.body?.error || `error ${rr.status}`); return; }
+      toastOk('Team created');
+      close(true);
+      renderRoute();
     });
-
-    repaintGrid();
-    updateCounter();
     body.append(form);
-    setTimeout(() => nameInput.focus(), 20);
   }, { wide: true });
 }
 
-/* ========== Players ========== */
-async function viewPlayers(view) {
-  const r = await api('/api/admin/users');
-  const users = (r.body?.users || []).filter((u) => u.role === 'player');
-  view.replaceChildren(
-    h('div', { class: 'row between' },
-      h('h1', {}, 'Players'),
-      h('button', { class: 'btn primary', on: { click: () => openCreateUser('player') } }, icon(ICONS.plus), 'New player')),
-    users.length === 0
-      ? h('div', { class: 'empty' }, 'No players yet.')
-      : h('div', { class: 'card' }, usersTable(users)),
-  );
-}
+async function openEditTeamModal(runID, existing) {
+  // Refresh the team detail so we pick up any changes since the page
+  // rendered — tokens can rotate and we want the latest.
+  const r = await api('/api/admin/runs/' + runID);
+  const run = r.body || {};
+  const freshTeam = (run.teams || []).find((t) => t.id === existing.id) || existing;
 
-function usersTable(users) {
-  return h('table', { class: 'table' },
-    h('thead', {}, h('tr', {},
-      h('th', {}, 'Username'),
-      h('th', { class: 'hide-narrow' }, 'Role'),
-      h('th', {}, 'Teams'),
-      h('th', { class: 'hide-narrow' }, 'Created'),
-      h('th', {}, ''))),
-    h('tbody', {}, users.map((u) => h('tr', {},
-      h('td', {}, u.username),
-      h('td', { class: 'hide-narrow' }, h('span', { class: 'pill' }, u.role)),
-      h('td', { class: 'mono' }, u.team_count),
-      h('td', { class: 'muted hide-narrow' }, fmtLocal(u.created_at, { dateStyle: 'medium' })),
-      h('td', {}, h('div', { class: 'row end' },
-        h('button', { class: 'btn small', title: 'Reset password', on: { click: () => openResetPassword(u) } }, icon(ICONS.key), 'Password'),
-        h('button', { class: 'btn small danger', title: 'Delete user', on: { click: () => confirmDeleteUser(u) } }, icon(ICONS.trash), 'Delete'),
-      )),
-    ))));
-}
-
-async function openCreateUser(role) {
-  const isPlayer = role === 'player';
-  await modal(isPlayer ? 'New player' : 'New arranger', ({ body, close }) => {
-    const form = h('form', {},
-      h('label', { class: 'field' }, h('span', {}, 'Username'), h('input', { name: 'u', required: true })),
-      isPlayer
-        ? h('p', { class: 'muted', style: 'font-size:.85rem' },
-            'The player sets their own password the first time they log in.')
-        : h('label', { class: 'field' }, h('span', {}, 'Password'),
-            h('input', { name: 'p', type: 'password', required: true })),
-      h('div', { class: 'row end' },
-        h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, 'Cancel'),
-        h('button', { class: 'btn primary', type: 'submit' }, 'Create')),
-    );
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const fd = new FormData(form);
-      const body = { username: fd.get('u'), role };
-      if (!isPlayer) body.password = fd.get('p');
-      const r = await api('/api/admin/users', { method: 'POST', body: JSON.stringify(body) });
-      if (r.status === 201) { toastOk(role + ' created'); close(true); renderRoute(); }
-      else toastErr(r.body?.error || `error ${r.status}`);
+  await modal(`Edit team · ${freshTeam.name}`, ({ body, close }) => {
+    const nameInput = h('input', { value: freshTeam.name, required: true });
+    const renameBtn = h('button', { class: 'btn small', type: 'button' }, 'Save name');
+    renameBtn.addEventListener('click', async () => {
+      const name = nameInput.value.trim();
+      if (!name || name === freshTeam.name) return;
+      const rr = await api(`/api/admin/teams/${freshTeam.id}`, {
+        method: 'PATCH', body: JSON.stringify({ name }),
+      });
+      if (rr.status === 204) { toastOk('Renamed'); close(true); renderRoute(); }
+      else toastErr(rr.body?.error || `error ${rr.status}`);
     });
-    body.append(form);
-  });
+
+    const membersWrap = h('div', {});
+    const rebuildMembers = () => {
+      membersWrap.replaceChildren();
+      const rows = (freshTeam.members || []).map((m) => renderSlotRow(freshTeam.id, m, reload));
+      if (rows.length === 0) {
+        membersWrap.append(h('p', { class: 'muted' }, 'No members yet. Add one below.'));
+      } else {
+        membersWrap.append(...rows);
+      }
+    };
+
+    async function reload() {
+      const rr = await api('/api/admin/runs/' + runID);
+      const fresh = (rr.body?.teams || []).find((t) => t.id === freshTeam.id);
+      if (!fresh) { close(true); renderRoute(); return; }
+      freshTeam.members = fresh.members;
+      freshTeam.name = fresh.name;
+      rebuildMembers();
+    }
+
+    // Inline "add slot"
+    const newName = h('input', { placeholder: 'New member name' });
+    const addBtn = h('button', { class: 'btn primary small', type: 'button' }, icon(ICONS.plus), 'Add');
+    const addRow = h('div', { class: 'row', style: 'gap:.4rem; margin-top:.75rem' }, newName, addBtn);
+    addBtn.addEventListener('click', async () => {
+      const name = newName.value.trim();
+      if (!name) return;
+      const rr = await api(`/api/admin/teams/${freshTeam.id}/slots`, {
+        method: 'POST', body: JSON.stringify({ name }),
+      });
+      if (rr.status === 201) {
+        newName.value = '';
+        toastOk('Added ' + rr.body.name);
+        await reload();
+      } else {
+        toastErr(rr.body?.error || `error ${rr.status}`);
+      }
+    });
+    newName.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addBtn.click(); } });
+
+    body.append(
+      h('label', { class: 'field' }, h('span', {}, 'Team name'),
+        h('div', { class: 'row', style: 'gap:.4rem' }, nameInput, renameBtn)),
+      h('h3', { style: 'margin-top:1rem' }, 'Members'),
+      membersWrap,
+      addRow,
+      h('div', { class: 'row end', style: 'margin-top:1rem' },
+        h('button', { class: 'btn', on: { click: () => close(null) } }, 'Close')));
+    rebuildMembers();
+  }, { wide: true });
 }
+
+function renderSlotRow(teamID, slot, reload) {
+  const url = `${location.origin}/play?t=${encodeURIComponent(slot.token)}`;
+  const urlInput = h('input', {
+    readonly: '', value: url,
+    style: 'flex:1; min-width:0; font-family:ui-monospace,monospace; font-size:.8rem; box-shadow:none; border-color:var(--border-soft); margin:0',
+    on: { click: (e) => e.target.select() },
+  });
+  const copyBtn = h('button', { class: 'btn small', type: 'button', title: 'Copy link' }, 'Copy');
+  copyBtn.addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(url); toastOk('Link copied'); }
+    catch { urlInput.select(); document.execCommand('copy'); toastOk('Link copied'); }
+  });
+  const rotateBtn = h('button', { class: 'btn small', type: 'button', title: 'Rotate link' }, '↻');
+  rotateBtn.addEventListener('click', async () => {
+    const rr = await api(`/api/admin/teams/${teamID}/slots/${slot.id}/rotate`, { method: 'POST' });
+    if (rr.status === 200) { toastOk('Link rotated'); reload(); }
+    else toastErr(rr.body?.error || `error ${rr.status}`);
+  });
+  const removeBtn = h('button', { class: 'btn small danger', type: 'button', title: 'Remove slot' }, icon(ICONS.trash));
+  removeBtn.addEventListener('click', async () => {
+    const rr = await api(`/api/admin/teams/${teamID}/slots/${slot.id}`, { method: 'DELETE' });
+    if (rr.status === 204) { toastOk('Removed'); reload(); }
+    else toastErr(rr.body?.error || `error ${rr.status}`);
+  });
+  return h('div', { style: 'margin-bottom:.5rem' },
+    h('div', { class: 'row', style: 'gap:.4rem; align-items:center' },
+      h('strong', { style: 'min-width:8ch' }, slot.name),
+      urlInput, copyBtn, rotateBtn, removeBtn),
+    slot.last_login_at
+      ? h('div', { class: 'muted', style: 'font-size:.75rem; margin-left:.5rem' },
+          `last login ${fmtLocal(slot.last_login_at)}`)
+      : null);
+}
+
+/* ========== Players ========== */
+// Players are per-slot rows on a team now — there is no global Players
+// page. Kept only the password-reset modal since org-admin reset flows
+// (below) still use it.
 
 async function openResetPassword(user) {
-  const isPlayer = user.role === 'player';
   await modal(`Reset password for ${user.username}`, ({ body, close }) => {
-    if (isPlayer) {
-      body.append(
-        h('p', {},
-          `This clears `, h('strong', {}, user.username),
-          `'s password and logs them out. They will choose a new password the next time they open the player page.`),
-        h('div', { class: 'row end', style: 'margin-top:1rem' },
-          h('button', { class: 'btn', on: { click: () => close(null) } }, 'Cancel'),
-          h('button', { class: 'btn primary', on: { click: async () => {
-            const r = await api(`/api/admin/users/${user.id}/password`, { method: 'POST' });
-            if (r.status === 204) { toastOk('password cleared — player will set a new one'); close(true); }
-            else toastErr(r.body?.error || `error ${r.status}`);
-          } } }, 'Clear password')),
-      );
-      return;
-    }
     const form = h('form', {},
       h('label', { class: 'field' }, h('span', {}, 'New password'), h('input', { name: 'p', type: 'password', required: true })),
       h('div', { class: 'row end' },
@@ -1797,73 +1719,177 @@ async function confirmDeleteUser(user) {
   else toastErr(r.body?.error || `error ${r.status}`);
 }
 
-/* ========== Arrangers (root only) ========== */
-async function viewArrangers(view) {
-  const [arrs, advs] = await Promise.all([
-    api('/api/admin/arrangers'),
+/* ========== Organizations (admin only) ========== */
+async function viewOrganizations(view) {
+  const [orgsR, advsR] = await Promise.all([
+    api('/api/admin/organizations'),
     api('/api/admin/adventures'),
   ]);
-  const arrangers = arrs.body?.arrangers || [];
-  const adventures = advs.body?.adventures || [];
+  const orgs = orgsR.body?.organizations || [];
+  const adventures = advsR.body?.adventures || [];
   view.replaceChildren(
     h('div', { class: 'row between' },
-      h('h1', {}, 'Arrangers'),
-      h('button', { class: 'btn primary', on: { click: () => openCreateUser('arranger') } }, icon(ICONS.plus), 'New arranger')),
+      h('h1', {}, 'Organizations'),
+      h('button', { class: 'btn primary', on: { click: () => openCreateOrg() } },
+        icon(ICONS.plus), 'New organization')),
     h('p', { class: 'muted' },
-      'Each assignment lets an arranger run one adventure with a fixed team cap. Unused assignments can be revoked; used ones are tied to a run.'),
-    arrangers.length === 0
-      ? h('div', { class: 'empty' }, 'No arrangers yet.')
-      : h('div', {}, arrangers.map((a) => renderArrangerCard(a, adventures))),
+      'Each organization is a tenant — its users (org_admin, org_member) run the games. Assign adventures to an organization to let them schedule runs.'),
+    orgs.length === 0
+      ? h('div', { class: 'empty' }, 'No organizations yet.')
+      : h('div', {}, orgs.map((o) => renderOrganizationCard(o, adventures))),
   );
 }
 
-function renderArrangerCard(arr, adventures) {
-  const assignments = arr.assignments || [];
+function renderOrganizationCard(org, adventures) {
+  const assignments = org.assignments || [];
   const unused = assignments.filter((x) => !x.run_id);
   const used = assignments.filter((x) => x.run_id);
-
-  const actions = h('div', { class: 'row end' },
-    h('button', { class: 'btn small', on: { click: () => openAssignAdventure(arr, adventures) } },
-      icon(ICONS.plus), 'Assign'),
-    h('button', { class: 'btn small', on: { click: () => openResetPassword(arr) } },
-      icon(ICONS.key), 'Password'),
-    h('button', { class: 'btn small danger', on: { click: () => confirmDeleteUser(arr) } },
-      icon(ICONS.trash), 'Delete'));
+  const members = org.members || [];
 
   return h('div', { class: 'card' },
     h('div', { class: 'row between' },
       h('div', {},
-        h('h2', {}, arr.username),
+        h('h2', {}, org.name),
         h('p', { class: 'muted', style: 'font-size:.85rem' },
-          `${arr.runs_total || 0} run${arr.runs_total === 1 ? '' : 's'} · `,
-          `${arr.players_total || 0} player${arr.players_total === 1 ? '' : 's'}`,
-          (arr.runs_running || 0) > 0 ? ` · ${arr.runs_running} running` : '')),
-      actions),
+          `${members.length} user${members.length === 1 ? '' : 's'} · `,
+          `${org.players_total || 0} player${org.players_total === 1 ? '' : 's'} · `,
+          `${org.runs_total || 0} run${org.runs_total === 1 ? '' : 's'}`,
+          (org.runs_running || 0) > 0 ? ` · ${org.runs_running} running` : '')),
+      h('div', { class: 'row end' },
+        h('button', { class: 'btn small', on: { click: () => openAssignAdventure(org, adventures) } },
+          icon(ICONS.plus), 'Assign'),
+        h('button', { class: 'btn small', on: { click: () => openAddOrgMember(org) } },
+          icon(ICONS.plus), 'Add user'),
+        h('button', { class: 'btn small', on: { click: () => openRenameOrg(org) } },
+          'Rename'),
+        h('button', { class: 'btn small danger', on: { click: () => confirmDeleteOrg(org) } },
+          icon(ICONS.trash)))),
+
+    h('h3', { style: 'margin-top:.75rem' }, `Users (${members.length})`),
+    members.length === 0
+      ? h('p', { class: 'muted', style: 'font-size:.85rem' }, 'No users yet — add one to get started.')
+      : h('div', {}, members.map((m) => h('span', {
+          class: 'chip', style: 'margin: 0 .35rem .35rem 0',
+          title: `${m.role} · click ⓧ to remove`,
+        }, `${m.username} (${m.role === 'org_admin' ? 'admin' : 'member'})`,
+        h('button', { title: 'Remove', on: { click: () => confirmRemoveOrgMember(org, m) } }, '×')))),
+
     h('h3', { style: 'margin-top:.75rem' }, `Unused assignments (${unused.length})`),
     unused.length === 0
-      ? h('p', { class: 'muted', style: 'font-size:.85rem' }, 'None — assign one to let them schedule a run.')
+      ? h('p', { class: 'muted', style: 'font-size:.85rem' }, 'None — assign an adventure to let them schedule a run.')
       : h('div', {}, unused.map((x) => h('span', {
           class: 'chip selectable',
           style: 'margin: 0 .35rem .35rem 0',
           title: 'Click to edit',
-          on: { click: () => openEditAssignment(arr, x, adventures) },
-        },
-        `${x.adventure_slug} · ${x.max_teams} team${x.max_teams === 1 ? '' : 's'}`))),
+          on: { click: () => openEditAssignment(org, x, adventures) },
+        }, `${x.adventure_slug} · ${x.max_teams} team${x.max_teams === 1 ? '' : 's'}`))),
+
     ...(used.length === 0 ? [] : [h('div', { style: 'margin-top:.75rem' },
       h('h3', {}, `Used (${used.length})`),
       h('div', {}, used.map((x) => h('span', {
           class: 'chip selectable',
           style: 'margin: 0 .35rem .35rem 0; opacity:.75; font-style:italic',
           title: 'Click to edit team cap',
-          on: { click: () => openEditAssignment(arr, x, adventures) },
-        },
-        `${x.adventure_slug} · run #${x.run_id} · max ${x.max_teams}`))))]),
+          on: { click: () => openEditAssignment(org, x, adventures) },
+        }, `${x.adventure_slug} · run #${x.run_id} · max ${x.max_teams}`))))]),
   );
 }
 
-async function openEditAssignment(arr, assignment, adventures) {
+async function openCreateOrg() {
+  await modal('New organization', ({ body, close }) => {
+    const form = h('form', {},
+      h('label', { class: 'field' }, h('span', {}, 'Name'),
+        h('input', { name: 'n', required: true, autofocus: true })),
+      h('div', { class: 'row end' },
+        h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, 'Cancel'),
+        h('button', { class: 'btn primary', type: 'submit' }, 'Create')));
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const fd = new FormData(form);
+      const r = await api('/api/admin/organizations', {
+        method: 'POST', body: JSON.stringify({ name: fd.get('n') }),
+      });
+      if (r.status === 201) { toastOk('Organization created'); close(true); renderRoute(); }
+      else toastErr(r.body?.error || `error ${r.status}`);
+    });
+    body.append(form);
+  });
+}
+
+async function openRenameOrg(org) {
+  await modal(`Rename ${org.name}`, ({ body, close }) => {
+    const form = h('form', {},
+      h('label', { class: 'field' }, h('span', {}, 'New name'),
+        h('input', { name: 'n', required: true, value: org.name })),
+      h('div', { class: 'row end' },
+        h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, 'Cancel'),
+        h('button', { class: 'btn primary', type: 'submit' }, 'Save')));
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const fd = new FormData(form);
+      const r = await api(`/api/admin/organizations/${org.id}`, {
+        method: 'PATCH', body: JSON.stringify({ name: fd.get('n') }),
+      });
+      if (r.status === 204) { toastOk('Renamed'); close(true); renderRoute(); }
+      else toastErr(r.body?.error || `error ${r.status}`);
+    });
+    body.append(form);
+  });
+}
+
+async function confirmDeleteOrg(org) {
+  const pw = await promptPassword(`Delete organization “${org.name}”?`,
+    'This deletes every user, player, assignment and run that belongs to the organization. Enter your password to confirm.');
+  if (!pw) return;
+  const r = await api(`/api/admin/organizations/${org.id}`, {
+    method: 'DELETE', headers: { 'X-Confirm-Password': pw },
+  });
+  if (r.status === 204) { toastOk('Organization deleted'); renderRoute(); }
+  else toastErr(r.body?.error || `error ${r.status}`);
+}
+
+async function openAddOrgMember(org) {
+  await modal(`Add user to ${org.name}`, ({ body, close }) => {
+    const form = h('form', {},
+      h('label', { class: 'field' }, h('span', {}, 'Username'),
+        h('input', { name: 'u', required: true, autofocus: true })),
+      h('label', { class: 'field' }, h('span', {}, 'Password'),
+        h('input', { name: 'p', type: 'password', required: true })),
+      h('label', { class: 'field' }, h('span', {}, 'Role'),
+        h('select', { name: 'r' },
+          h('option', { value: 'org_member' }, 'Member'),
+          h('option', { value: 'org_admin' }, 'Admin'))),
+      h('div', { class: 'row end' },
+        h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, 'Cancel'),
+        h('button', { class: 'btn primary', type: 'submit' }, 'Add')));
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const fd = new FormData(form);
+      const r = await api(`/api/admin/organizations/${org.id}/members`, {
+        method: 'POST',
+        body: JSON.stringify({ username: fd.get('u'), password: fd.get('p'), role: fd.get('r') }),
+      });
+      if (r.status === 201) { toastOk('User added'); close(true); renderRoute(); }
+      else toastErr(r.body?.error || `error ${r.status}`);
+    });
+    body.append(form);
+  });
+}
+
+async function confirmRemoveOrgMember(org, member) {
+  const pw = await promptPassword(`Remove ${member.username}?`,
+    `Removes ${member.username} from ${org.name}. Enter your password to confirm.`);
+  if (!pw) return;
+  const r = await api(`/api/admin/organizations/${org.id}/members/${member.id}`, {
+    method: 'DELETE', headers: { 'X-Confirm-Password': pw },
+  });
+  if (r.status === 204) { toastOk('Removed'); renderRoute(); }
+  else toastErr(r.body?.error || `error ${r.status}`);
+}
+
+async function openEditAssignment(org, assignment, adventures) {
   const used = !!assignment.run_id;
-  await modal(`Edit assignment · ${arr.username}`, ({ body, close }) => {
+  await modal(`Edit assignment · ${org.name}`, ({ body, close }) => {
     const advSel = h('select', { disabled: used ? '' : null },
       adventures.map((a) => h('option', {
         value: a.slug, selected: a.slug === assignment.adventure_slug ? '' : null,
@@ -1871,7 +1897,6 @@ async function openEditAssignment(arr, assignment, adventures) {
     const count = h('input', {
       type: 'number', min: 1, step: 1, value: String(assignment.max_teams), required: true,
     });
-
     const form = h('form', {},
       h('label', { class: 'field' },
         h('span', {}, used ? 'Adventure (locked — already used)' : 'Adventure'),
@@ -1885,27 +1910,22 @@ async function openEditAssignment(arr, assignment, adventures) {
         used
           ? h('span', {})
           : h('button', {
-              class: 'btn danger',
-              type: 'button',
-              on: { click: async () => {
-                close(null);
-                await revokeAssignment(arr.id, assignment.id);
-              } },
+              class: 'btn danger', type: 'button',
+              on: { click: async () => { close(null); await revokeAssignment(org.id, assignment.id); } },
             }, icon(ICONS.trash), 'Revoke'),
         h('div', { class: 'row' },
           h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, 'Cancel'),
-          h('button', { class: 'btn primary', type: 'submit' }, 'Save'))),
-    );
+          h('button', { class: 'btn primary', type: 'submit' }, 'Save'))));
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
-      const body = {};
+      const payload = {};
       const newMax = parseInt(count.value, 10);
       if (!(newMax > 0)) { toastErr('Max teams must be at least 1'); return; }
-      if (newMax !== assignment.max_teams) body.max_teams = newMax;
-      if (!used && advSel.value !== assignment.adventure_slug) body.adventure_slug = advSel.value;
-      if (Object.keys(body).length === 0) { close(null); return; }
-      const r = await api(`/api/admin/arrangers/${arr.id}/assignments/${assignment.id}`, {
-        method: 'PATCH', body: JSON.stringify(body),
+      if (newMax !== assignment.max_teams) payload.max_teams = newMax;
+      if (!used && advSel.value !== assignment.adventure_slug) payload.adventure_slug = advSel.value;
+      if (Object.keys(payload).length === 0) { close(null); return; }
+      const r = await api(`/api/admin/organizations/${org.id}/assignments/${assignment.id}`, {
+        method: 'PATCH', body: JSON.stringify(payload),
       });
       if (r.status === 200) { toastOk('Assignment updated'); close(true); renderRoute(); }
       else toastErr(r.body?.error || `error ${r.status}`);
@@ -1914,9 +1934,9 @@ async function openEditAssignment(arr, assignment, adventures) {
   });
 }
 
-async function openAssignAdventure(arr, adventures) {
+async function openAssignAdventure(org, adventures) {
   if (adventures.length === 0) { toastErr('No adventures loaded'); return; }
-  await modal(`Assign adventure to ${arr.username}`, ({ body, close }) => {
+  await modal(`Assign adventure to ${org.name}`, ({ body, close }) => {
     const sel = h('select', {}, adventures.map((a) =>
       h('option', { value: a.slug }, `${a.title} (${a.slug})`)));
     const count = h('input', { type: 'number', min: 1, step: 1, value: 3, required: true });
@@ -1927,13 +1947,12 @@ async function openAssignAdventure(arr, adventures) {
         'Each assignment may be used for exactly one run. For more, assign again.'),
       h('div', { class: 'row end' },
         h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, 'Cancel'),
-        h('button', { class: 'btn primary', type: 'submit' }, 'Assign')),
-    );
+        h('button', { class: 'btn primary', type: 'submit' }, 'Assign')));
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       const maxTeams = parseInt(count.value, 10);
       if (!(maxTeams > 0)) { toastErr('Max teams must be at least 1'); return; }
-      const r = await api(`/api/admin/arrangers/${arr.id}/assignments`, {
+      const r = await api(`/api/admin/organizations/${org.id}/assignments`, {
         method: 'POST',
         body: JSON.stringify({ adventure_slug: sel.value, max_teams: maxTeams }),
       });
@@ -1944,10 +1963,110 @@ async function openAssignAdventure(arr, adventures) {
   });
 }
 
-async function revokeAssignment(arrangerID, assignmentID) {
-  const r = await api(`/api/admin/arrangers/${arrangerID}/assignments/${assignmentID}`, { method: 'DELETE' });
+async function revokeAssignment(orgID, assignmentID) {
+  const r = await api(`/api/admin/organizations/${orgID}/assignments/${assignmentID}`, { method: 'DELETE' });
   if (r.status === 204) { toastOk('Assignment revoked'); renderRoute(); }
   else toastErr(r.body?.error || `error ${r.status}`);
+}
+
+/* ========== Admins (global admin only) ========== */
+async function viewAdmins(view) {
+  const r = await api('/api/admin/admins');
+  const admins = r.body?.admins || [];
+  view.replaceChildren(
+    h('div', { class: 'row between' },
+      h('h1', {}, 'Admins'),
+      h('button', { class: 'btn primary', on: { click: () => openCreateAdmin() } },
+        icon(ICONS.plus), 'New admin')),
+    h('p', { class: 'muted' },
+      'Global admins manage organizations and other admins. The system will refuse to let you delete the last remaining admin.'),
+    admins.length === 0
+      ? h('div', { class: 'empty' }, 'No admins yet.')
+      : h('div', { class: 'card' },
+        h('table', { class: 'table' },
+          h('thead', {}, h('tr', {}, h('th', {}, 'Username'), h('th', {}, ''))),
+          h('tbody', {}, admins.map((a) => h('tr', {},
+            h('td', {}, a.username, state.me.id === a.id ? h('span', { class: 'muted', style: 'margin-left:.35rem' }, '(you)') : null),
+            h('td', {}, h('div', { class: 'row end' },
+              h('button', {
+                class: 'btn small danger',
+                disabled: state.me.username === a.username ? '' : null,
+                on: { click: () => confirmDeleteAdmin(a) },
+              }, icon(ICONS.trash), 'Delete'))),
+          ))))),
+  );
+}
+
+async function openCreateAdmin() {
+  await modal('New admin', ({ body, close }) => {
+    const form = h('form', {},
+      h('label', { class: 'field' }, h('span', {}, 'Username'),
+        h('input', { name: 'u', required: true, autofocus: true })),
+      h('label', { class: 'field' }, h('span', {}, 'Password'),
+        h('input', { name: 'p', type: 'password', required: true })),
+      h('div', { class: 'row end' },
+        h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, 'Cancel'),
+        h('button', { class: 'btn primary', type: 'submit' }, 'Create')));
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const fd = new FormData(form);
+      const r = await api('/api/admin/admins', {
+        method: 'POST',
+        body: JSON.stringify({ username: fd.get('u'), password: fd.get('p') }),
+      });
+      if (r.status === 201) { toastOk('Admin created'); close(true); renderRoute(); }
+      else toastErr(r.body?.error || `error ${r.status}`);
+    });
+    body.append(form);
+  });
+}
+
+async function confirmDeleteAdmin(admin) {
+  const pw = await promptPassword(`Delete admin ${admin.username}?`,
+    'Enter your password to confirm.');
+  if (!pw) return;
+  const r = await api(`/api/admin/admins/${admin.id}`, {
+    method: 'DELETE', headers: { 'X-Confirm-Password': pw },
+  });
+  if (r.status === 204) { toastOk('Admin deleted'); renderRoute(); }
+  else toastErr(r.body?.error || `error ${r.status}`);
+}
+
+/* ========== Members (for org_admin of their own org) ========== */
+async function viewMembers(view) {
+  if (!state.me.org_id) {
+    view.replaceChildren(h('p', { class: 'err' }, 'No organization.'));
+    return;
+  }
+  const r = await api('/api/admin/organizations/' + state.me.org_id);
+  if (!r.ok) {
+    view.replaceChildren(h('p', { class: 'err' }, r.body?.error || 'failed to load'));
+    return;
+  }
+  const org = r.body || { id: state.me.org_id, name: 'Your organization', members: [] };
+  view.replaceChildren(
+    h('div', { class: 'row between' },
+      h('h1', {}, 'Members'),
+      h('button', { class: 'btn primary', on: { click: () => openAddOrgMember(org) } },
+        icon(ICONS.plus), 'Add user')),
+    h('p', { class: 'muted' },
+      `Users in ${org.name}. Admins can invite more users; members run the games.`),
+    (org.members || []).length === 0
+      ? h('div', { class: 'empty' }, 'No other users yet.')
+      : h('div', { class: 'card' },
+        h('table', { class: 'table' },
+          h('thead', {}, h('tr', {}, h('th', {}, 'Username'), h('th', {}, 'Role'), h('th', {}, ''))),
+          h('tbody', {}, (org.members || []).map((m) => h('tr', {},
+            h('td', {}, m.username, state.me.id === m.id ? h('span', { class: 'muted', style: 'margin-left:.35rem' }, '(you)') : null),
+            h('td', {}, h('span', { class: 'pill' }, m.role === 'org_admin' ? 'admin' : 'member')),
+            h('td', {}, h('div', { class: 'row end' },
+              h('button', {
+                class: 'btn small danger',
+                disabled: state.me.id === m.id ? '' : null,
+                on: { click: () => confirmRemoveOrgMember(org, m) },
+              }, icon(ICONS.trash), 'Remove'))),
+          ))))),
+  );
 }
 
 /* ========== Kick off ========== */

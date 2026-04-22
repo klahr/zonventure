@@ -26,17 +26,17 @@ type Config struct {
 	SecureCookie bool
 }
 
-// New builds the HTTP router. It does not call ListenAndServe — the caller
-// owns the server lifecycle.
+// New builds the HTTP router.
 func New(cfg Config) http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Recoverer)
 	r.Use(auth.Middleware(cfg.DB))
+	r.Use(auth.SlotMiddleware(cfg.DB))
 
 	authH := &auth.Handlers{DB: cfg.DB, SecureCookie: cfg.SecureCookie}
-	playerH := &player.Handlers{DB: cfg.DB, Lib: cfg.Library}
+	playerH := &player.Handlers{DB: cfg.DB, Lib: cfg.Library, SecureCookie: cfg.SecureCookie}
 	adminH := &admin.Handlers{DB: cfg.DB, Lib: cfg.Library}
 	publicH := &public.Handlers{DB: cfg.DB, Lib: cfg.Library}
 
@@ -47,29 +47,47 @@ func New(cfg Config) http.Handler {
 	r.Get("/", func(w http.ResponseWriter, req *http.Request) {
 		http.Redirect(w, req, "/play", http.StatusFound)
 	})
-	r.Get("/play", servePage("web/play.html"))
+
+	// /play handles three things:
+	//   - /play?t=<magic> — exchange the magic-link for a slot session and
+	//     redirect back to /play (stripping the token)
+	//   - /play (no query, no session) — renders the play page which will
+	//     say "open your magic link"
+	//   - /play (with session cookie) — the playing UI
+	r.Get("/play", func(w http.ResponseWriter, req *http.Request) {
+		if playerH.MagicLinkLogin(w, req) {
+			return
+		}
+		servePage("web/play.html")(w, req)
+	})
 	r.Get("/arrange", servePage("web/arrange.html"))
 	r.Get("/live/{runID}", servePage("web/live.html"))
 
 	// Public, no-auth read-only endpoint for the TV leaderboard.
 	r.Get("/api/public/runs/{runID}/live", publicH.Live)
 
+	// Staff authentication.
 	r.Post("/api/auth/login", authH.Login)
 	r.Post("/api/auth/set-password", authH.SetPassword)
 	r.Post("/api/auth/logout", authH.Logout)
 	r.Get("/api/auth/whoami", authH.Whoami)
 
+	// Player (slot-authenticated).
 	r.Route("/api/player", func(r chi.Router) {
-		r.Use(auth.RequireRole(auth.RolePlayer))
+		r.Use(auth.RequireSlot)
 		r.Get("/state", playerH.GetState)
 		r.Post("/answer", playerH.SubmitAnswer)
 		r.Post("/location", playerH.PostLocation)
+		r.Post("/logout", playerH.Logout)
 	})
 
+	// Admin / org-user surface (staff-authenticated).
 	r.Route("/api/admin", func(r chi.Router) {
-		r.Use(auth.RequireAnyRole(auth.RoleArranger, auth.RoleRoot))
+		r.Use(auth.RequireAnyRole(auth.RoleAdmin, auth.RoleOrgAdmin, auth.RoleOrgMember))
+
 		r.Get("/adventures", adminH.ListAdventures)
 		r.Get("/adventures/{slug}", adminH.AdventureDetail)
+
 		r.Get("/runs", adminH.ListRuns)
 		r.Post("/runs", adminH.CreateRun)
 		r.Get("/runs/{runID}", adminH.RunDetail)
@@ -81,38 +99,51 @@ func New(cfg Config) http.Handler {
 		r.Get("/runs/{runID}/positions", adminH.ListPositions)
 		r.Get("/runs/{runID}/events", adminH.ListEvents)
 		r.Get("/runs/{runID}/tracks", adminH.ListTracks)
+
 		r.Patch("/teams/{teamID}", adminH.RenameTeam)
 		r.Delete("/teams/{teamID}", adminH.DeleteTeam)
-		r.Post("/teams/{teamID}/members", adminH.AddMember)
-		r.Delete("/teams/{teamID}/members/{userID}", adminH.RemoveMember)
+		r.Post("/teams/{teamID}/slots", adminH.AddSlot)
+		r.Delete("/teams/{teamID}/slots/{slotID}", adminH.RemoveSlot)
+		r.Post("/teams/{teamID}/slots/{slotID}/rotate", adminH.RotateSlotToken)
 		r.Post("/teams/{teamID}/unlock", adminH.UnlockTeam)
-		r.Get("/users", adminH.ListUsers)
-		r.Post("/users", adminH.CreateUser)
-		r.Delete("/users/{userID}", adminH.DeleteUser)
+
+		// Staff password reset (admins & org users).
 		r.Post("/users/{userID}/password", adminH.ResetPassword)
 
-		// Root-only sub-surface for managing arrangers and their assignments.
-		r.Group(func(r chi.Router) {
-			r.Use(auth.RequireRole(auth.RoleRoot))
-			r.Get("/arrangers", adminH.ListArrangers)
-			r.Post("/arrangers/{userID}/assignments", adminH.CreateAssignment)
-			r.Patch("/arrangers/{userID}/assignments/{assignmentID}", adminH.UpdateAssignment)
-			r.Delete("/arrangers/{userID}/assignments/{assignmentID}", adminH.DeleteAssignment)
-		})
-
-		// Arranger-facing: what am I allowed to run, and for how many teams.
+		// Caller's own assignments list.
 		r.Get("/assignments", adminH.ListMyAssignments)
+
+		// Org admin or global admin: manage an organization's members + a
+		// detail endpoint both admins and in-org users can read.
+		r.Get("/organizations/{orgID}", adminH.GetOrganization)
+		r.Post("/organizations/{orgID}/members", adminH.CreateOrgMember)
+		r.Delete("/organizations/{orgID}/members/{userID}", adminH.DeleteOrgMember)
+
+		// Global admin only.
+		r.Group(func(r chi.Router) {
+			r.Use(auth.RequireRole(auth.RoleAdmin))
+			r.Get("/organizations", adminH.ListOrganizations)
+			r.Post("/organizations", adminH.CreateOrganization)
+			r.Patch("/organizations/{orgID}", adminH.UpdateOrganization)
+			r.Delete("/organizations/{orgID}", adminH.DeleteOrganization)
+			r.Post("/organizations/{orgID}/assignments", adminH.CreateAssignment)
+			r.Patch("/organizations/{orgID}/assignments/{assignmentID}", adminH.UpdateAssignment)
+			r.Delete("/organizations/{orgID}/assignments/{assignmentID}", adminH.DeleteAssignment)
+
+			r.Get("/admins", adminH.ListAdmins)
+			r.Post("/admins", adminH.CreateAdmin)
+			r.Delete("/admins/{userID}", adminH.DeleteAdmin)
+		})
 	})
 
 	return r
 }
 
 // servePage returns a handler that writes a single embedded HTML page with
-// no caching — these are dev-grade test pages, not production assets.
+// no caching.
 func servePage(path string) http.HandlerFunc {
 	body, err := webFS.ReadFile(path)
 	if err != nil {
-		// Fail fast at startup: a broken embed pattern is a build-time bug.
 		panic("embed: " + err.Error())
 	}
 	return func(w http.ResponseWriter, _ *http.Request) {

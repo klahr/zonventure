@@ -26,9 +26,8 @@ func main() {
 		dbPath       = flag.String("db", "zv.db", "sqlite database path")
 		advDir       = flag.String("adventures", "adventures", "adventures directory")
 		secureCookie = flag.Bool("secure-cookie", false, "set Secure flag on session cookies (enable behind TLS)")
-		seedArranger = flag.String("seed-arranger", "", "if set, create/update an arranger user as username:password and exit")
-		seedRoot     = flag.String("seed-root", "", "if set, create/update a root user as username:password and exit")
-		seedDemoFlag = flag.Bool("seed-demo", false, "install a full demo dataset (root, arranger, teams, players, pings, events) and exit")
+		seedAdmin    = flag.String("seed-admin", "", "if set, create/update a global admin as username:password and exit")
+		seedDemoFlag = flag.Bool("seed-demo", false, "install a full demo dataset and exit")
 	)
 	flag.Parse()
 
@@ -38,25 +37,18 @@ func main() {
 	}
 	defer sqlDB.Close()
 
-	if *seedArranger != "" {
-		if err := seedUser(sqlDB, *seedArranger, auth.RoleArranger); err != nil {
+	if *seedAdmin != "" {
+		if err := seedAdminUser(sqlDB, *seedAdmin); err != nil {
 			log.Fatalf("seed: %v", err)
 		}
-		log.Printf("arranger user ready")
-		return
-	}
-	if *seedRoot != "" {
-		if err := seedUser(sqlDB, *seedRoot, auth.RoleRoot); err != nil {
-			log.Fatalf("seed: %v", err)
-		}
-		log.Printf("root user ready")
+		log.Printf("admin user ready")
 		return
 	}
 	if *seedDemoFlag {
 		if err := seedDemo(context.Background(), sqlDB, *advDir); err != nil {
 			log.Fatalf("seed demo: %v", err)
 		}
-		log.Printf(`demo data installed. Log in at /arrange as boss/s3cret (arranger) or owner/owner (root). Players: alice..ingrid with password "pw".`)
+		log.Printf(`demo data installed. Log in at /arrange as admin/admin (admin), boss/s3cret (org_admin of Demo Arrangers) or jane/jane (org_member). Players: alice..ingrid with password "pw".`)
 		return
 	}
 
@@ -100,9 +92,9 @@ func main() {
 	}
 }
 
-// seedUser upserts a user from a "username:password" flag value with a
-// fixed role. Intended only for bootstrapping the very first admins.
-func seedUser(d *sql.DB, creds, role string) error {
+// seedAdminUser upserts a global-admin user from a "username:password" flag
+// value. Used to bootstrap the very first admin on a fresh database.
+func seedAdminUser(d *sql.DB, creds string) error {
 	i := strings.IndexByte(creds, ':')
 	if i <= 0 || i == len(creds)-1 {
 		return errors.New(`expected "username:password"`)
@@ -113,8 +105,8 @@ func seedUser(d *sql.DB, creds, role string) error {
 		return err
 	}
 	_, err = d.Exec(`
-		INSERT INTO users(username, password_hash, role) VALUES (?, ?, ?)
-		ON CONFLICT(username) DO UPDATE SET password_hash = excluded.password_hash, role = excluded.role
-	`, username, hash, role)
+		INSERT INTO users(username, password_hash, role, org_id) VALUES (?, ?, 'admin', NULL)
+		ON CONFLICT(username) DO UPDATE SET password_hash = excluded.password_hash, role = 'admin', org_id = NULL
+	`, username, hash)
 	return err
 }

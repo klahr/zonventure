@@ -20,8 +20,14 @@ type loginRequest struct {
 }
 
 type whoamiResponse struct {
+	ID       int64  `json:"id"`
 	Username string `json:"username"`
 	Role     string `json:"role"`
+	OrgID    *int64 `json:"org_id,omitempty"`
+}
+
+func userResponse(u User) whoamiResponse {
+	return whoamiResponse{ID: u.ID, Username: u.Username, Role: u.Role, OrgID: u.OrgID}
 }
 
 // Login validates credentials and sets the session cookie. Players whose
@@ -49,7 +55,7 @@ func (h *Handlers) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	SetCookie(w, token, h.SecureCookie)
-	httpx.JSON(w, http.StatusOK, whoamiResponse{Username: u.Username, Role: u.Role})
+	httpx.JSON(w, http.StatusOK, userResponse(u))
 }
 
 // SetPassword handles the first-time password set for accounts created
@@ -79,7 +85,7 @@ func (h *Handlers) SetPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	SetCookie(w, token, h.SecureCookie)
-	httpx.JSON(w, http.StatusOK, whoamiResponse{Username: u.Username, Role: u.Role})
+	httpx.JSON(w, http.StatusOK, userResponse(u))
 }
 
 // Logout clears the cookie and removes the server-side session row.
@@ -98,5 +104,5 @@ func (h *Handlers) Whoami(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusUnauthorized, "not logged in")
 		return
 	}
-	httpx.JSON(w, http.StatusOK, whoamiResponse{Username: u.Username, Role: u.Role})
+	httpx.JSON(w, http.StatusOK, userResponse(u))
 }

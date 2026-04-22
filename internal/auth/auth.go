@@ -23,22 +23,28 @@ const (
 	// SessionTTL is how long a new session remains valid.
 	SessionTTL = 30 * 24 * time.Hour
 
-	// RolePlayer is the default role for adventure participants.
+	// RolePlayer is the role for adventure participants.
 	RolePlayer = "player"
-	// RoleArranger is the role allowed to manage runs and teams.
-	RoleArranger = "arranger"
-	// RoleRoot is the superuser role: can manage arrangers and the
-	// adventures they are allowed to arrange. Implicitly has every
-	// arranger capability.
-	RoleRoot = "root"
+	// RoleOrgMember is a user belonging to one organization — runs the
+	// games: manages players, schedules runs (consuming assignments),
+	// manages teams, etc.
+	RoleOrgMember = "org_member"
+	// RoleOrgAdmin has every org_member power plus the right to invite and
+	// remove members of their own organization.
+	RoleOrgAdmin = "org_admin"
+	// RoleAdmin is the global tier: creates and manages organizations, mints
+	// assignments, and administers other admins. Belongs to no organization.
+	RoleAdmin = "admin"
 )
 
 // User is the minimal authenticated-user view used by middleware and
-// handlers.
+// handlers. OrgID is nil for admins (they are not scoped to any
+// organization); every other role has exactly one.
 type User struct {
 	ID       int64
 	Username string
 	Role     string
+	OrgID    *int64
 }
 
 // ctxKey is a private type so handler contexts can't collide with other
@@ -75,17 +81,22 @@ func HashPassword(pw string) (string, error) {
 // caller should route that user through SetInitialPassword.
 func Login(ctx context.Context, db *sql.DB, username, password string) (User, string, error) {
 	var (
-		u    User
-		hash sql.NullString
+		u     User
+		hash  sql.NullString
+		orgID sql.NullInt64
 	)
 	err := db.QueryRowContext(ctx, `
-		SELECT id, username, role, password_hash FROM users WHERE username = ?
-	`, username).Scan(&u.ID, &u.Username, &u.Role, &hash)
+		SELECT id, username, role, password_hash, org_id FROM users WHERE username = ?
+	`, username).Scan(&u.ID, &u.Username, &u.Role, &hash, &orgID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return User{}, "", ErrInvalidCredentials
 	}
 	if err != nil {
 		return User{}, "", err
+	}
+	if orgID.Valid {
+		v := orgID.Int64
+		u.OrgID = &v
 	}
 	if !hash.Valid {
 		return u, "", ErrPasswordNotSet
@@ -106,17 +117,22 @@ func Login(ctx context.Context, db *sql.DB, username, password string) (User, st
 // set — to change a password, an arranger must reset it first.
 func SetInitialPassword(ctx context.Context, db *sql.DB, username, password string) (User, string, error) {
 	var (
-		u    User
-		hash sql.NullString
+		u     User
+		hash  sql.NullString
+		orgID sql.NullInt64
 	)
 	err := db.QueryRowContext(ctx, `
-		SELECT id, username, role, password_hash FROM users WHERE username = ?
-	`, username).Scan(&u.ID, &u.Username, &u.Role, &hash)
+		SELECT id, username, role, password_hash, org_id FROM users WHERE username = ?
+	`, username).Scan(&u.ID, &u.Username, &u.Role, &hash, &orgID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return User{}, "", ErrInvalidCredentials
 	}
 	if err != nil {
 		return User{}, "", err
+	}
+	if orgID.Valid {
+		v := orgID.Int64
+		u.OrgID = &v
 	}
 	if hash.Valid {
 		return User{}, "", ErrPasswordAlreadySet
@@ -187,18 +203,23 @@ func Lookup(ctx context.Context, db *sql.DB, token string) (User, bool, error) {
 	}
 	var (
 		u       User
+		orgID   sql.NullInt64
 		expires string
 	)
 	err := db.QueryRowContext(ctx, `
-		SELECT u.id, u.username, u.role, s.expires_at
+		SELECT u.id, u.username, u.role, u.org_id, s.expires_at
 		FROM sessions s JOIN users u ON u.id = s.user_id
 		WHERE s.token = ?
-	`, token).Scan(&u.ID, &u.Username, &u.Role, &expires)
+	`, token).Scan(&u.ID, &u.Username, &u.Role, &orgID, &expires)
 	if errors.Is(err, sql.ErrNoRows) {
 		return User{}, false, nil
 	}
 	if err != nil {
 		return User{}, false, err
+	}
+	if orgID.Valid {
+		v := orgID.Int64
+		u.OrgID = &v
 	}
 	exp, err := time.Parse(time.RFC3339, expires)
 	if err == nil && time.Now().After(exp) {
