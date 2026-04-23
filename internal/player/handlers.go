@@ -13,6 +13,7 @@ import (
 	"math"
 	"net/http"
 	"strconv"
+	"time"
 
 	"git.sr.ht/~klahr/zv/internal/adventure"
 	"git.sr.ht/~klahr/zv/internal/auth"
@@ -20,6 +21,24 @@ import (
 	"git.sr.ht/~klahr/zv/internal/runevents"
 	"git.sr.ht/~klahr/zv/internal/ws"
 )
+
+// parsePlayTime accepts both SQLite's "YYYY-MM-DD HH:MM:SS" (UTC) and
+// RFC3339 strings — the various writers in this codebase use both.
+func parsePlayTime(s string) (time.Time, error) {
+	if s == "" {
+		return time.Time{}, errors.New("empty")
+	}
+	layouts := []string{
+		time.RFC3339Nano, time.RFC3339,
+		"2006-01-02 15:04:05",
+	}
+	for _, l := range layouts {
+		if t, err := time.Parse(l, s); err == nil {
+			return t.UTC(), nil
+		}
+	}
+	return time.Time{}, errors.New("unrecognised time format")
+}
 
 // Handlers bundles the dependencies the player endpoints need.
 type Handlers struct {
@@ -355,6 +374,120 @@ func (h *Handlers) recordLocation(ctx context.Context, slot auth.Slot, req Locat
 		return http.StatusInternalServerError, "save ping failed"
 	}
 	return http.StatusNoContent, ""
+}
+
+// SummaryResponse is the shape returned by GET /api/player/summary.
+// Populated once the team is in a meaningful "done enough" state — i.e.
+// has walked and answered some — and consumed by the completion screen.
+type SummaryResponse struct {
+	TeamName        string  `json:"team_name"`
+	AdventureTitle  string  `json:"adventure_title"`
+	PageCount       int     `json:"page_count"`
+	AnswersRight    int     `json:"answers_right"`
+	AnswersWrong    int     `json:"answers_wrong"`
+	DistanceM       float64 `json:"distance_m"`
+	DurationSeconds int     `json:"duration_seconds"`
+	StartedAt       string  `json:"started_at,omitempty"`
+	CompletedAt     string  `json:"completed_at,omitempty"`
+}
+
+// Summary returns end-of-run stats for the slot's team: right/wrong
+// answers, distance walked, time taken.
+func (h *Handlers) Summary(w http.ResponseWriter, r *http.Request) {
+	slot, _ := auth.SlotFromContext(r.Context())
+
+	var (
+		teamName     string
+		adventureSlug string
+		runStarted   sql.NullString
+		teamDone     sql.NullString
+	)
+	err := h.DB.QueryRowContext(r.Context(), `
+		SELECT t.name, ar.adventure_slug, ar.started_at, t.completed_at
+		FROM teams t JOIN adventure_runs ar ON ar.id = t.run_id
+		WHERE t.id = ?
+	`, slot.TeamID).Scan(&teamName, &adventureSlug, &runStarted, &teamDone)
+	if errors.Is(err, sql.ErrNoRows) {
+		httpx.Error(w, http.StatusNotFound, "team not found")
+		return
+	}
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "lookup failed")
+		return
+	}
+
+	adv := h.Lib.Get(adventureSlug)
+	if adv == nil {
+		httpx.Error(w, http.StatusInternalServerError, "adventure not loaded: "+adventureSlug)
+		return
+	}
+	resp := SummaryResponse{
+		TeamName:       teamName,
+		AdventureTitle: adv.Meta.Title,
+		PageCount:      len(adv.Pages),
+		StartedAt:      runStarted.String,
+		CompletedAt:    teamDone.String,
+	}
+
+	// Right/wrong counts.
+	var right, wrong int
+	if err := h.DB.QueryRowContext(r.Context(), `
+		SELECT
+		  COALESCE(SUM(CASE WHEN accepted = 1 THEN 1 ELSE 0 END), 0),
+		  COALESCE(SUM(CASE WHEN accepted = 0 THEN 1 ELSE 0 END), 0)
+		FROM answer_attempts WHERE team_id = ?
+	`, slot.TeamID).Scan(&right, &wrong); err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "attempts lookup failed")
+		return
+	}
+	resp.AnswersRight = right
+	resp.AnswersWrong = wrong
+
+	// Distance: walk the team's pings in chronological order and sum
+	// haversine deltas. Skipping consecutive duplicates keeps stationary
+	// noise from inflating the number.
+	rows, err := h.DB.QueryContext(r.Context(), `
+		SELECT lat, lng FROM location_pings
+		WHERE team_id = ? ORDER BY server_ts, id
+	`, slot.TeamID)
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "pings lookup failed")
+		return
+	}
+	defer rows.Close()
+	var (
+		hasPrev        bool
+		prevLat, prevLng float64
+		dist           float64
+	)
+	for rows.Next() {
+		var lat, lng float64
+		if err := rows.Scan(&lat, &lng); err != nil {
+			httpx.Error(w, http.StatusInternalServerError, "ping scan failed")
+			return
+		}
+		if hasPrev {
+			dist += haversineMeters(prevLat, prevLng, lat, lng)
+		}
+		prevLat, prevLng = lat, lng
+		hasPrev = true
+	}
+	resp.DistanceM = dist
+
+	// Duration.
+	if resp.StartedAt != "" && resp.CompletedAt != "" {
+		start, sErr := parsePlayTime(resp.StartedAt)
+		end, eErr := parsePlayTime(resp.CompletedAt)
+		if sErr == nil && eErr == nil {
+			secs := int(end.Sub(start).Seconds())
+			if secs < 0 {
+				secs = 0
+			}
+			resp.DurationSeconds = secs
+		}
+	}
+
+	httpx.JSON(w, http.StatusOK, resp)
 }
 
 // PostLocation records a GPS ping for the slot's team.

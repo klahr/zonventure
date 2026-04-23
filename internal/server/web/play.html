@@ -145,6 +145,59 @@
   .topline .who strong { color: var(--ink); font-weight: 700; }
   .inline-btn { display: inline-block; width: auto; padding: .35rem .85rem; font-size: .8rem; }
 
+  /* ---------- Welcome overlay (first time in the adventure) ---------- */
+  .welcome {
+    position: fixed; inset: 0; z-index: 1500;
+    display: grid; place-items: center;
+    padding: 1rem;
+    background:
+      radial-gradient(ellipse at 20% 0%, rgba(226,64,128,.18), transparent 55%),
+      radial-gradient(ellipse at 100% 100%, rgba(66,154,63,.12), transparent 55%),
+      var(--bg);
+    animation: welcomeFade .3s ease;
+  }
+  @keyframes welcomeFade { from { opacity: 0; } to { opacity: 1; } }
+  .welcome .panel {
+    background: var(--surface); border: 1px solid var(--border-soft);
+    border-radius: var(--radius); box-shadow: 0 12px 40px rgba(0,0,0,.25);
+    max-width: 520px; width: 100%; padding: 1.5rem;
+  }
+  .welcome h2 {
+    font-family: var(--font-brand); color: var(--accent);
+    font-size: 1.8rem; line-height: 1.1; margin: 0 0 .25rem;
+  }
+  .welcome .who { color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: .08em; font-size: .75rem; margin-bottom: 1rem; }
+  .welcome ul { padding-left: 1.1rem; margin: 1rem 0; }
+  .welcome li { margin: .35rem 0; }
+  .welcome .cta { margin-top: 1rem; }
+
+  /* ---------- Completion stats ---------- */
+  .summary {
+    background: var(--surface);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 1.25rem; margin-top: 1rem;
+  }
+  .summary h2 {
+    font-family: var(--font-brand); color: var(--accent);
+    font-size: 1.6rem; line-height: 1.1; margin: 0 0 .25rem;
+  }
+  .summary .who { color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: .08em; font-size: .75rem; margin-bottom: .9rem; }
+  .stats-grid {
+    display: grid; grid-template-columns: repeat(2, minmax(0,1fr));
+    gap: .5rem;
+  }
+  .stat {
+    background: var(--surface-2);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius-sm, 8px);
+    padding: .8rem;
+    text-align: center;
+  }
+  .stat .v { font-family: var(--font-brand); color: var(--ink); font-size: 1.4rem; line-height: 1; }
+  .stat .l { color: var(--muted); font-size: .75rem; text-transform: uppercase; letter-spacing: .06em; font-weight: 700; margin-top: .25rem; }
+
   /* ---------- Puzzle-correct celebration ---------- */
   .celebrate {
     position: fixed; inset: 0; z-index: 9999;
@@ -346,9 +399,12 @@ function render(s) {
   );
   app.append(bar);
 
+  // Welcome screen shown once per (adventure, team, slot).
+  maybeShowWelcome(s);
+
   if (s.status === 'waiting')  { hideSubmitDock(); app.append(el('p', {}, 'Waiting for the adventure to start…')); return; }
   if (s.status === 'paused')   { hideSubmitDock(); app.append(el('p', {}, 'The arranger paused the run. Stand by.')); return; }
-  if (s.status === 'completed'){ hideSubmitDock(); app.append(el('p', { class: 'ok' }, 'Adventure complete! 🎉')); return; }
+  if (s.status === 'completed'){ hideSubmitDock(); renderCompleted(s); return; }
 
   if (s.status === 'gated') {
     hideSubmitDock();
@@ -468,15 +524,152 @@ function celebrate(finished) {
 }
 
 // Debug shortcut: Alt+S pops the celebration so you can tweak the visuals
-// without actually solving a puzzle. The Shift key also counts, for
-// keyboards where Alt-combos collide with window/menu shortcuts.
+// without actually solving a puzzle. Alt+W re-shows the welcome overlay,
+// Alt+C renders the completion summary with placeholder numbers.
 document.addEventListener('keydown', (e) => {
   if (!e.altKey) return;
   if (e.key === 'S' || e.key === 's') {
     e.preventDefault();
     celebrate(e.shiftKey);
+    return;
+  }
+  if (e.key === 'W' || e.key === 'w') {
+    e.preventDefault();
+    showWelcomeDialog({
+      team_name: 'Team Alfa',
+      adventure_title: 'Debug preview',
+      page_count: 3,
+    }, { force: true });
+    return;
+  }
+  if (e.key === 'C' || e.key === 'c') {
+    e.preventDefault();
+    showDebugSummary();
   }
 });
+
+// maybeShowWelcome pops the welcome overlay the first time this slot
+// opens this adventure, remembered in localStorage so a refresh doesn't
+// re-show it.
+function maybeShowWelcome(s) {
+  if (!s.adventure_title || !s.team_name || !s.slot_name) return;
+  const key = 'zv_welcome_' + [s.adventure_slug || s.adventure_title, s.team_name, s.slot_name].join('|');
+  if (localStorage.getItem(key) === '1') return;
+  showWelcomeDialog(s, { storageKey: key });
+}
+
+function showWelcomeDialog(s, opts = {}) {
+  // Drop any leftover overlay (Alt+W pressed twice, etc.).
+  document.querySelectorAll('.welcome').forEach((n) => n.remove());
+
+  const dismiss = () => {
+    if (opts.storageKey) localStorage.setItem(opts.storageKey, '1');
+    overlay.remove();
+  };
+
+  const overlay = el('div', { class: 'welcome' });
+  const panel = el('div', { class: 'panel' });
+  panel.append(
+    el('h2', {}, s.adventure_title || 'Adventure'),
+    el('div', { class: 'who' }, `${s.team_name || 'your team'}`),
+    el('p', {},
+      'Your team has ', el('strong', {}, String(s.page_count || '?')),
+      ' puzzles to solve. Good luck!'),
+    el('h3', { style: 'margin-top:.5rem' }, 'A few quick tips'),
+    el('ul', {},
+      el('li', {}, 'Read each puzzle carefully — the answer is usually a short word or phrase.'),
+      el('li', {}, 'Some puzzles only unlock when you reach a specific place. ' +
+        'Your device will show a pin and prompt you to go there.'),
+      el('li', {}, 'The submit button is always in the same spot at the bottom of the screen.'),
+      el('li', {}, 'Whoever in your team has this link installed can type answers — pick one phone and keep it handy.'),
+      el('li', {}, 'Wrong answers don\'t cost you anything — keep trying.')),
+    el('div', { class: 'cta' },
+      el('button', { on: { click: dismiss } }, 'Let\'s go')));
+  overlay.append(panel);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) dismiss(); });
+  document.body.append(overlay);
+}
+
+// renderCompleted replaces the simple "Adventure complete!" line with a
+// richer end-of-run card: team stats, distance, time, right/wrong.
+async function renderCompleted(s) {
+  // A placeholder while /summary loads.
+  const host = el('div', { class: 'summary' });
+  host.append(
+    el('h2', {}, 'Adventure complete! 🎉'),
+    el('div', { class: 'who' }, `${s.team_name || ''} · ${s.adventure_title || ''}`),
+    el('p', { class: 'muted' }, 'Loading your run stats…'));
+  app.append(host);
+
+  let stats = null;
+  try {
+    const r = await api('/api/player/summary');
+    if (r.status === 200) stats = r.body;
+  } catch { /* ignore */ }
+  if (!stats) {
+    host.replaceChildren(
+      el('h2', {}, 'Adventure complete! 🎉'),
+      el('div', { class: 'who' }, `${s.team_name || ''} · ${s.adventure_title || ''}`),
+      el('p', { class: 'muted' }, 'Could not load stats.'));
+    return;
+  }
+  fillSummaryHost(host, stats);
+}
+
+function fillSummaryHost(host, stats) {
+  host.replaceChildren(
+    el('h2', {}, 'Adventure complete! 🎉'),
+    el('div', { class: 'who' }, `${stats.team_name} · ${stats.adventure_title}`),
+    el('div', { class: 'stats-grid' },
+      statBox(formatDistance(stats.distance_m),       'Distance'),
+      statBox(formatDuration(stats.duration_seconds), 'Time'),
+      statBox(`${stats.answers_right}`,               'Correct answers'),
+      statBox(`${stats.answers_wrong}`,               'Misses'),
+    ),
+    stats.page_count
+      ? el('p', { class: 'muted', style: 'font-size:.85rem; margin-top:.75rem' },
+          `Solved all ${stats.page_count} puzzle${stats.page_count === 1 ? '' : 's'}.`)
+      : null,
+  );
+}
+
+function statBox(value, label) {
+  return el('div', { class: 'stat' },
+    el('div', { class: 'v' }, value),
+    el('div', { class: 'l' }, label));
+}
+
+function formatDistance(m) {
+  if (!Number.isFinite(m) || m <= 0) return '—';
+  if (m < 1000) return `${Math.round(m)} m`;
+  return `${(m / 1000).toFixed(m >= 10000 ? 0 : 1)} km`;
+}
+
+function formatDuration(sec) {
+  if (!Number.isFinite(sec) || sec <= 0) return '—';
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = sec % 60;
+  const pad = (n) => String(n).padStart(2, '0');
+  return h ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
+}
+
+// Debug helper bound to Alt+C — renders a summary card with made-up numbers
+// so the visual layout can be iterated on without finishing a run.
+function showDebugSummary() {
+  app.replaceChildren();
+  const host = el('div', { class: 'summary' });
+  app.append(host);
+  fillSummaryHost(host, {
+    team_name: 'Team Alfa',
+    adventure_title: 'Demo: First Steps',
+    page_count: 3,
+    answers_right: 3,
+    answers_wrong: 1,
+    distance_m: 1742,
+    duration_seconds: 48 * 60 + 12,
+  });
+}
 function hideSubmitDock() {
   const dock = document.getElementById('submit-dock');
   if (dock) dock.remove();

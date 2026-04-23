@@ -104,6 +104,7 @@ func New(cfg Config) http.Handler {
 		r.Get("/state", playerH.GetState)
 		r.Post("/answer", playerH.SubmitAnswer)
 		r.Post("/location", playerH.PostLocation)
+		r.Get("/summary", playerH.Summary)
 		r.Post("/logout", playerH.Logout)
 	})
 
