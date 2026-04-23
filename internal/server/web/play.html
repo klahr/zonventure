@@ -265,6 +265,98 @@
     6%   { opacity: 1; }
     100% { opacity: 0; transform: translate(var(--dx, 0), 110vh) rotate(var(--rot, 360deg)); }
   }
+
+  /* ---------- Puzzle-wrong rebuff ----------
+     Shorter and smaller than .celebrate — wrong answers come often, so
+     the feedback is quick (~900ms total) and non-blocking (pointer-events
+     stays off). Same structural idea: tinted backdrop + pop-in disc with
+     a drawn mark, plus a brief horizontal shake to sell the "nope". */
+  .rebuff {
+    position: fixed; inset: 0; z-index: 9999;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    background: rgba(50, 10, 15, .35);
+    backdrop-filter: blur(3px);
+    -webkit-backdrop-filter: blur(3px);
+    pointer-events: none;
+    animation: rebuffFade .15s ease;
+  }
+  .rebuff.gone { animation: rebuffFadeOut .25s ease forwards; }
+  @keyframes rebuffFade    { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes rebuffFadeOut { from { opacity: 1; } to { opacity: 0; } }
+
+  .rebuff .disc {
+    width: 110px; height: 110px; border-radius: 50%;
+    background: radial-gradient(circle at 30% 30%, #ff8787, var(--danger));
+    display: grid; place-items: center;
+    box-shadow: 0 10px 30px rgba(255,82,82,.45), inset 0 -5px 14px rgba(0,0,0,.18);
+    transform: scale(0);
+    animation:
+      rebuffPop   .35s cubic-bezier(.2,1.6,.4,1) .03s forwards,
+      rebuffShake .38s .38s cubic-bezier(.36,.07,.19,.97);
+  }
+  @keyframes rebuffPop { to { transform: scale(1); } }
+  @keyframes rebuffShake {
+    0%, 100% { translate: 0 0; }
+    15%      { translate: -10px 0; }
+    30%      { translate:  10px 0; }
+    45%      { translate:  -7px 0; }
+    60%      { translate:   7px 0; }
+    75%      { translate:  -4px 0; }
+    90%      { translate:   4px 0; }
+  }
+
+  .rebuff .cross {
+    width: 64px; height: 64px;
+  }
+  .rebuff .cross path {
+    fill: none; stroke: #fff; stroke-width: 10; stroke-linecap: round;
+    stroke-dasharray: 70; stroke-dashoffset: 70;
+    animation: rebuffDraw .22s .25s ease-out forwards;
+  }
+  @keyframes rebuffDraw { to { stroke-dashoffset: 0; } }
+
+  .rebuff .head {
+    font-family: var(--font-brand);
+    color: #fff; font-size: clamp(1.4rem, 5vw, 2rem);
+    margin-top: .9rem; letter-spacing: .01em;
+    opacity: 0; animation: celebrateRise .3s .45s ease forwards;
+  }
+
+  /* ---------- Preview mode ---------- */
+  .preview-chrome {
+    position: sticky; top: 0; z-index: 50;
+    display: flex; align-items: center; gap: .5rem; flex-wrap: wrap;
+    padding: .5rem .75rem;
+    margin: 0 0 .75rem;
+    background: color-mix(in srgb, var(--accent) 18%, var(--surface));
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius);
+    font-size: .85rem;
+  }
+  .preview-chrome .sep { color: var(--muted); }
+  .preview-chrome .chip {
+    font: inherit; font-weight: 600;
+    padding: .3rem .7rem; border-radius: 999px;
+    background: var(--surface); color: var(--ink);
+    border: 1px solid var(--border-soft);
+    cursor: pointer; width: auto; box-shadow: none;
+  }
+  .preview-chrome .chip:hover:not(:disabled) { background: var(--surface-2); }
+  .preview-chrome .chip.on { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+  .preview-chrome .chip:disabled { opacity: .4; cursor: default; }
+  .preview-debug {
+    border-left: 4px solid var(--accent);
+    background: color-mix(in srgb, var(--accent) 4%, var(--surface));
+  }
+  .preview-debug code {
+    background: var(--surface-2);
+    padding: .1rem .4rem; border-radius: 4px;
+    font-family: ui-monospace, SFMono-Regular, monospace;
+    font-size: .95em;
+  }
+  .preview-debug .mono {
+    font-family: ui-monospace, SFMono-Regular, monospace; font-size: .9rem;
+  }
 </style>
 </head>
 <body>
@@ -289,6 +381,11 @@ let wsBackoff = 500;
 let wsReconnectTimer = null;
 let submitResultEl = null;
 let submitInputEl = null;
+// previewState is non-null while the page is running in preview mode:
+// no WebSocket, no slot session — just a snapshot of one puzzle. The
+// submit dock switches to local answer matching when `accept` is set
+// (only present when ?debug=1 so the page has the answers).
+let previewState = null;
 
 // api is kept only for the one-shot auth probe at page load — every
 // subsequent state change rides the WebSocket.
@@ -510,7 +607,7 @@ function renderSubmitDock() {
   dock.replaceChildren();
   const input = document.createElement('input');
   input.name = 'a';
-  input.placeholder = 'Your answer';
+  input.placeholder = previewState ? 'Try an answer (preview)' : 'Your answer';
   input.autocomplete = 'off';
   input.required = true;
   const button = document.createElement('button');
@@ -525,11 +622,62 @@ function renderSubmitDock() {
   submitResultEl = result;
   form.addEventListener('submit', (e) => {
     e.preventDefault();
+    if (previewState) { handlePreviewSubmit(input.value); return; }
     if (!wsSend('answer', { answer: input.value })) {
       result.className = 'result err';
       result.textContent = 'Disconnected — try again in a moment.';
     }
   });
+}
+
+// handlePreviewSubmit routes a preview answer through the same
+// onAnswerResult the real player uses — arrangers see the real celebrate
+// overlay on a correct answer (or the finale copy on the last puzzle)
+// and the rebuff animation on a wrong one. With ?debug=1 the accept list
+// is served alongside the puzzle so the match is real; without debug
+// we let any non-empty answer through so the arranger can walk the
+// adventure in order without knowing the answers. After a correct
+// answer we auto-advance to the next puzzle once celebrate finishes,
+// mirroring the WebSocket state push a real player would receive.
+function handlePreviewSubmit(answer) {
+  const needle = (answer || '').trim().toLowerCase();
+  if (!needle) return;
+  const accept = previewState.accept;
+  const accepted = accept
+    ? accept.some((a) => (a || '').trim().toLowerCase() === needle)
+    : true;
+  const completed = accepted && previewState.pageIndex + 1 >= previewState.pageCount;
+  onAnswerResult({ accepted, completed });
+  if (accepted && !completed) {
+    // Wait until the inter-puzzle celebrate overlay has settled (~1.8s)
+    // before swapping the page so the arranger sees the win land.
+    const nextIdx = previewState.pageIndex + 1;
+    setTimeout(() => loadPreviewPage(nextIdx), 1400);
+  }
+}
+
+// loadPreviewPage refetches a different puzzle from the preview endpoint
+// and re-renders in place. Used by the auto-advance after a correct
+// answer; the chrome's Prev/Next buttons still do a full reload because
+// a debug-toggle or slug change needs a fresh bootstrap anyway.
+async function loadPreviewPage(pageIdx) {
+  const qs = new URLSearchParams(location.search);
+  const slug = qs.get('preview');
+  if (!slug) return;
+  const apiQs = new URLSearchParams({ page: String(pageIdx) });
+  if (qs.get('debug') === '1') apiQs.set('debug', '1');
+  const r = await api(`/api/admin/adventures/${encodeURIComponent(slug)}/preview?${apiQs}`);
+  if (r.status !== 200) return;
+  qs.set('page', String(pageIdx));
+  history.replaceState(null, '', '?' + qs.toString());
+  previewState = {
+    accept: r.body.preview_debug?.accept || null,
+    pageIndex: r.body.page_index ?? 0,
+    pageCount: r.body.page_count ?? 0,
+  };
+  lastRenderKey = null; // force render() past its dedupe check
+  render(r.body);
+  renderPreviewChrome(r.body);
 }
 
 // onAnswerResult handles the server's reply to an {kind:"answer"} push.
@@ -538,14 +686,16 @@ function renderSubmitDock() {
 // overlay covers the re-render while it plays.
 function onAnswerResult(r) {
   if (!submitResultEl) return;
+  // Verdict text would be redundant now that celebrate/rebuff carry the
+  // feedback — leave the line blank and let the overlay speak. The
+  // element still exists for network errors ("Disconnected…") below.
+  submitResultEl.className = 'result muted';
+  submitResultEl.textContent = '';
   if (r.accepted) {
-    submitResultEl.className = 'result ok';
-    submitResultEl.textContent = '';
     if (submitInputEl) { submitInputEl.value = ''; submitInputEl.blur(); }
     celebrate(r.completed);
   } else {
-    submitResultEl.className = 'result err';
-    submitResultEl.textContent = 'Not quite — try again.';
+    rebuff();
   }
 }
 
@@ -586,6 +736,28 @@ function celebrate(finished) {
   const total = finished ? 3500 : 1800;
   setTimeout(() => overlay.classList.add('gone'), total);
   setTimeout(() => overlay.remove(), total + 500);
+}
+
+// rebuff is celebrate's mirror for a wrong guess — shorter and smaller
+// so the player isn't punished by a long overlay between tries. pointer
+// events stay off, so the submit dock is usable again the instant the
+// overlay fades.
+function rebuff() {
+  const overlay = document.createElement('div');
+  overlay.className = 'rebuff';
+  const disc = document.createElement('div');
+  disc.className = 'disc';
+  disc.innerHTML = '<svg class="cross" viewBox="0 0 100 100">'
+    + '<path d="M28 28 L72 72"/><path d="M72 28 L28 72"/>'
+    + '</svg>';
+  const head = document.createElement('div');
+  head.className = 'head';
+  head.textContent = 'Not quite';
+  overlay.append(disc, head);
+  document.body.append(overlay);
+  const total = 900;
+  setTimeout(() => overlay.classList.add('gone'), total);
+  setTimeout(() => overlay.remove(), total + 300);
 }
 
 // Debug shortcut: Alt+S pops the celebration so you can tweak the visuals
@@ -743,7 +915,16 @@ function hideSubmitDock() {
 // Bootstrap: a single HTTP probe decides auth (WebSocket upgrade failures
 // can't be distinguished from network errors in the browser) and seeds the
 // initial render. Afterwards the WebSocket takes over entirely.
+//
+// Preview mode (?preview=<slug>&page=<N>[&debug=1]) takes a different
+// path — no slot session, no WebSocket, no GPS pings. An arranger
+// reviews the puzzle rendered exactly as a player would see it.
 async function bootstrap() {
+  const qs = new URLSearchParams(location.search);
+  if (qs.get('preview')) {
+    await bootstrapPreview(qs.get('preview'), parseInt(qs.get('page') || '0', 10), qs.get('debug') === '1');
+    return;
+  }
   const s = await api('/api/player/state');
   if (s.status === 401) { renderNoSession(); return; }
   if (s.status !== 200) {
@@ -754,6 +935,96 @@ async function bootstrap() {
   render(s.body);
   connectWS();
 }
+
+async function bootstrapPreview(slug, pageIdx, debug) {
+  const qs = new URLSearchParams({ page: String(pageIdx) });
+  if (debug) qs.set('debug', '1');
+  const r = await api(`/api/admin/adventures/${encodeURIComponent(slug)}/preview?${qs}`);
+  if (r.status === 401) {
+    app.replaceChildren(el('p', { class: 'err' },
+      'Preview requires an arranger login. Open ',
+      el('a', { href: '/arrange' }, '/arrange'), ' first, then retry.'));
+    return;
+  }
+  if (r.status !== 200) {
+    app.replaceChildren(el('p', { class: 'err' }, r.body?.error || `error ${r.status}`));
+    return;
+  }
+  previewState = {
+    accept: r.body.preview_debug?.accept || null,
+    pageIndex: r.body.page_index ?? 0,
+    pageCount: r.body.page_count ?? 0,
+  };
+  render(r.body);
+  renderPreviewChrome(r.body);
+}
+
+// renderPreviewChrome overlays a top ribbon with adventure-level
+// navigation so the arranger can jump between puzzles, toggle the debug
+// panel, and exit without hunting for tab close. Rebuilt on every
+// render() so the "N of M" stays in sync with the fetched page.
+function renderPreviewChrome(s) {
+  document.getElementById('preview-chrome')?.remove();
+  const qs = new URLSearchParams(location.search);
+  const slug = qs.get('preview');
+  const pageIdx = s.page_index ?? 0;
+  const count = s.page_count ?? 0;
+  const debug = qs.get('debug') === '1';
+  const go = (patch) => {
+    const next = new URLSearchParams(location.search);
+    for (const [k, v] of Object.entries(patch)) {
+      if (v === null) next.delete(k); else next.set(k, String(v));
+    }
+    location.search = '?' + next.toString();
+  };
+  const chrome = el('div', { id: 'preview-chrome', class: 'preview-chrome' },
+    el('strong', {}, 'Preview'),
+    el('span', { class: 'sep' }, '·'),
+    el('span', {}, s.adventure_title || slug),
+    el('span', { class: 'sep' }, '·'),
+    el('span', {}, `Puzzle ${pageIdx + 1}/${count}`),
+    el('span', { style: 'flex:1' }),
+    el('button', { class: 'chip', disabled: pageIdx <= 0 ? '' : null,
+      on: { click: () => go({ page: pageIdx - 1 }) } }, '◀ Prev'),
+    el('button', { class: 'chip', disabled: pageIdx >= count - 1 ? '' : null,
+      on: { click: () => go({ page: pageIdx + 1 }) } }, 'Next ▶'),
+    el('button', { class: 'chip' + (debug ? ' on' : ''),
+      on: { click: () => go({ debug: debug ? null : 1 }) } }, 'Debug'),
+    el('button', { class: 'chip', on: { click: () => window.close() } }, 'Close'),
+  );
+  document.body.prepend(chrome);
+  if (s.preview_debug) renderPreviewDebug(s.preview_debug);
+}
+
+// renderPreviewDebug appends a panel with the author-side fields
+// (accepted answers, gate location, notes) that a player never sees.
+// Attached to #app so it sits underneath the puzzle content and scrolls
+// with it.
+function renderPreviewDebug(d) {
+  // el() doesn't flatten array children — stringifying an array of nodes
+  // would render as "[object HTMLElement],…", so build the chip list
+  // inline and spread it as individual children instead.
+  const accept = d.accept || [];
+  const chipChildren = [];
+  if (!accept.length) {
+    chipChildren.push(el('span', { class: 'muted' }, '(none)'));
+  } else {
+    accept.forEach((a, i) => {
+      chipChildren.push(el('code', {}, a));
+      if (i < accept.length - 1) chipChildren.push(document.createTextNode(', '));
+    });
+  }
+  const panel = el('div', { class: 'card preview-debug' },
+    el('h2', {}, 'Debug — author view'),
+    el('p', {}, el('strong', {}, 'Accepted answers: '), ...chipChildren),
+    el('p', { class: 'mono' },
+      `Location: ${d.lat.toFixed(5)}, ${d.lng.toFixed(5)}`
+      + (d.radius_m ? ` · gate radius ${d.radius_m} m` : ' · not gated')),
+    d.notes ? el('p', { class: 'muted', style: 'white-space:pre-wrap' }, 'Notes: ' + d.notes) : null,
+  );
+  app.append(panel);
+}
+
 bootstrap();
 </script>
 </body>

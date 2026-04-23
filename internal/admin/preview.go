@@ -1,0 +1,117 @@
+package admin
+
+import (
+	"net/http"
+	"strconv"
+
+	"git.sr.ht/~klahr/zv/internal/adventure"
+	"git.sr.ht/~klahr/zv/internal/httpx"
+	"github.com/go-chi/chi/v5"
+)
+
+// previewStateDTO mirrors player.State so play.html's render() path works
+// unchanged on a preview session. Adds `preview: true` plus an optional
+// `preview_debug` block (when ?debug=1) listing the author-side fields
+// the player never sees — accepted answers, gate coordinates, notes.
+type previewStateDTO struct {
+	Status         string            `json:"status"`
+	AdventureSlug  string            `json:"adventure_slug,omitempty"`
+	AdventureTitle string            `json:"adventure_title,omitempty"`
+	TeamName       string            `json:"team_name,omitempty"`
+	PageIndex      int               `json:"page_index"`
+	PageCount      int               `json:"page_count"`
+	Title          string            `json:"title,omitempty"`
+	Prompt         string            `json:"prompt,omitempty"`
+	Hint           string            `json:"hint,omitempty"`
+	Images         []previewImageDTO `json:"images,omitempty"`
+	Colors         *adventure.Colors `json:"colors,omitempty"`
+	Preview        bool              `json:"preview"`
+	Debug          *previewDebugDTO  `json:"preview_debug,omitempty"`
+}
+
+type previewImageDTO struct {
+	URL string `json:"url"`
+}
+
+type previewDebugDTO struct {
+	Accept  []string `json:"accept"`
+	Lat     float64  `json:"lat"`
+	Lng     float64  `json:"lng"`
+	RadiusM *float64 `json:"radius_m,omitempty"`
+	Notes   string   `json:"notes,omitempty"`
+}
+
+// PreviewAdventure returns one puzzle of an adventure in the shape the
+// player page expects, so arrangers can QA an adventure without having
+// to spin up a real run or walk to a gate. The puzzle is selected via
+// ?page=<N> (0-indexed over the enabled pages), defaulting to 0.
+//
+// Gating is intentionally skipped: the preview always renders the
+// prompt even for gated puzzles, so the arranger can read through the
+// content end-to-end. The debug panel (?debug=1) exposes the gate
+// coordinates + radius so they know what a player would need to reach.
+func (h *Handlers) PreviewAdventure(w http.ResponseWriter, r *http.Request) {
+	slug := chi.URLParam(r, "slug")
+	adv, err := h.Lib.GetContext(r.Context(), slug)
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "lookup failed")
+		return
+	}
+	if adv == nil {
+		httpx.Error(w, http.StatusNotFound, "unknown adventure")
+		return
+	}
+	// Mirror the player flow: disabled pages are invisible.
+	pages := make([]adventure.Page, 0, len(adv.Pages))
+	for _, p := range adv.Pages {
+		if !p.Disabled {
+			pages = append(pages, p)
+		}
+	}
+	if len(pages) == 0 {
+		httpx.Error(w, http.StatusBadRequest, "adventure has no enabled puzzles")
+		return
+	}
+	idx := 0
+	if q := r.URL.Query().Get("page"); q != "" {
+		n, err := strconv.Atoi(q)
+		if err != nil || n < 0 || n >= len(pages) {
+			httpx.Error(w, http.StatusBadRequest, "page out of range")
+			return
+		}
+		idx = n
+	}
+	page := pages[idx]
+	out := previewStateDTO{
+		Status:         "running",
+		AdventureSlug:  adv.Slug,
+		AdventureTitle: adv.Meta.Title,
+		PageIndex:      idx,
+		PageCount:      len(pages),
+		Title:          page.Title,
+		Prompt:         page.Prompt,
+		Hint:           page.Hint,
+		Preview:        true,
+	}
+	if !adv.Colors.Empty() {
+		c := adv.Colors
+		out.Colors = &c
+	}
+	if len(page.Images) > 0 {
+		imgs := make([]previewImageDTO, 0, len(page.Images))
+		for _, im := range page.Images {
+			imgs = append(imgs, previewImageDTO{URL: "/adventure-assets/image/" + strconv.FormatInt(im.ID, 10)})
+		}
+		out.Images = imgs
+	}
+	if r.URL.Query().Get("debug") == "1" {
+		out.Debug = &previewDebugDTO{
+			Accept:  page.Accept,
+			Lat:     page.Location.Lat,
+			Lng:     page.Location.Lng,
+			RadiusM: page.Location.RadiusM,
+			Notes:   page.Notes,
+		}
+	}
+	httpx.JSON(w, http.StatusOK, out)
+}

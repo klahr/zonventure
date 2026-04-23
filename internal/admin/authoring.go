@@ -432,11 +432,17 @@ func (h *Handlers) ReorderPages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback()
-	// Bump all idx values out of the unique-constrained space first so we
-	// can reassign without transient collisions.
+	// Park every row at a guaranteed-unique idx well above the reassign
+	// range so the second pass can write 0..N-1 without transient
+	// UNIQUE(adventure_id, idx) collisions. rowid is unique per row, so
+	// the new values can never clash with each other; the 10^9 offset
+	// keeps them disjoint from both the target range and any sane
+	// existing idx (including the negative values a previously crashed
+	// reorder could have left stuck — the old scheme `-idx - 1` would
+	// flip those back into the positive range and re-collide).
 	if _, err := tx.ExecContext(r.Context(),
-		`UPDATE adventure_pages SET idx = -idx - 1 WHERE adventure_id = ?`, advID); err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "prepare failed")
+		`UPDATE adventure_pages SET idx = 1000000000 + rowid WHERE adventure_id = ?`, advID); err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "prepare failed: "+err.Error())
 		return
 	}
 	for i, id := range req.PageIDs {

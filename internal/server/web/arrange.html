@@ -17,6 +17,9 @@
   --accent:        #ad1357;  /* raspberry — brand */
   --accent-hover:  #951048;
   --accent-fg:     #ffffff;
+  /* Falls back to --accent unless an adventure overrides it via
+     applyAdventureColors — mirrors the same default in play.html. */
+  --accent-secondary: #ad1357;
   --ink:           #1f3349;  /* navy — headings */
   --success:       #429a3f;  /* brand green */
   --danger:        #ff5252;
@@ -59,6 +62,7 @@
   --accent:      #e24080;   /* raspberry lifted for dark bg contrast */
   --accent-hover: #ad1357;
   --accent-fg:   #ffffff;
+  --accent-secondary: #e24080;
   --success:     #7fd17b;
   --danger:      #ff7b7b;
   --warning:     #fbbf24;
@@ -73,6 +77,7 @@
     --border: #3a5172; --border-soft: #3a517266;
     --text: #e7ecf4; --muted: #9db1cc; --ink: #e7ecf4;
     --accent: #e24080; --accent-hover: #ad1357; --accent-fg: #ffffff;
+    --accent-secondary: #e24080;
     --success: #7fd17b; --danger: #ff7b7b; --warning: #fbbf24;
     --shadow-soft: 0 1px 4px #00000066, 0 2px 12px #00000077;
     --shadow: 2px 2px 8px #00000073;
@@ -201,7 +206,14 @@ p { margin: 0 0 .5rem; }
 .content > * + * { margin-top: 1.25rem; }
 
 /* Mobile */
-.btn.menu-btn { display: none; }
+.btn.menu-btn {
+  display: none;
+  /* Square icon-only tap target. 44×44 CSS px matches the Apple HIG
+     minimum (and Material's 48dp lands close too), so the control is
+     comfortable on a thumb without looking bulky next to the brand. */
+  width: 44px; height: 44px; padding: 0; line-height: 0;
+}
+.btn.menu-btn svg { width: 26px; height: 26px; stroke-width: 2; }
 @media (max-width: 820px) {
   .app {
     grid-template-columns: 1fr;
@@ -349,6 +361,13 @@ textarea { min-height: 80px; resize: vertical; font-family: ui-monospace, monosp
 .row { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; }
 .row.end { justify-content: flex-end; }
 .row.between { justify-content: space-between; }
+/* Header rows (a card title next to an action button) shouldn't carry
+   the heading's default bottom margin — align-items:center would then
+   nudge the title visually upward relative to the button. Zero it here
+   and give the row itself a small bottom margin so it doesn't jam into
+   the content that follows. */
+.row > h1, .row > h2, .row > h3 { margin: 0; }
+.card > .row.between { margin-bottom: .75rem; }
 .muted { color: var(--muted); }
 .err { color: var(--danger); }
 .ok { color: var(--success); }
@@ -421,32 +440,40 @@ textarea { min-height: 80px; resize: vertical; font-family: ui-monospace, monosp
 .puzzle-editor textarea.pe {
   display: block; width: 100%;
   background: transparent;
-  border: 1px dashed transparent;
+  /* Dashed outline is always visible so it's obvious the field is
+     editable. Focus lifts it to the accent colour + a soft glow. */
+  border: 1px dashed var(--border-soft);
   padding: .35rem .5rem; margin: 0;
   border-radius: 6px;
+  /* Clear the inheritable globals from the form `textarea` block:
+     ui-monospace font, 80px min-height, the inset box-shadow border. */
   font: inherit; color: inherit;
+  min-height: 0;
+  box-shadow: none;
   resize: none; overflow: hidden;
-  transition: border-color 120ms, background 120ms;
-}
-.puzzle-editor textarea.pe:hover {
-  border-color: var(--border-soft);
+  transition: border-color 120ms, background 120ms, box-shadow 120ms;
 }
 .puzzle-editor textarea.pe:focus {
   outline: none;
   border-color: var(--accent);
   background: var(--surface-2);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent);
 }
-.puzzle-editor .pe-title {
-  font-size: 1.15rem; font-weight: 700;
-  color: var(--accent); /* matches play.html's --accent-secondary slot */
+/* The slot-specific rules use `textarea.pe-*` (not `.pe-*`) so they beat
+   `.puzzle-editor textarea.pe`'s `font: inherit` on specificity. */
+.puzzle-editor textarea.pe-title {
+  /* Matches play.html's h3: 1.05rem, brand-secondary tint. Font-family is
+     the body font (inherited via `font: inherit`), not the brand font. */
+  font-size: 1.05rem; font-weight: 700;
+  color: var(--accent-secondary);
   margin: 0 0 .5rem;
 }
-.puzzle-editor .pe-prompt {
+.puzzle-editor textarea.pe-prompt {
+  /* Matches play.html's .prompt. */
   font-size: 1.1rem; line-height: 1.55;
   white-space: pre-wrap; color: var(--ink);
-  min-height: 3rem;
 }
-.puzzle-editor .pe-hint {
+.puzzle-editor textarea.pe-hint {
   color: var(--muted);
 }
 .puzzle-editor .pe-hint-row {
@@ -469,12 +496,16 @@ textarea { min-height: 80px; resize: vertical; font-family: ui-monospace, monosp
   position: absolute; top: .5rem; right: .5rem;
 }
 .puzzle-editor .pe-image-add {
-  display: grid; place-items: center; text-align: center;
-  min-height: 100px; padding: 1rem;
-  border: 2px dashed var(--border);
+  display: flex; align-items: center; justify-content: center; gap: .35rem;
+  padding: .35rem .7rem;
+  border: 1px dashed var(--border);
   border-radius: var(--radius);
   color: var(--muted); cursor: pointer;
+  font-size: .85rem;
   transition: background 120ms, border-color 120ms, color 120ms;
+}
+.puzzle-editor .pe-image-add svg {
+  width: 14px; height: 14px;
 }
 .puzzle-editor .pe-image-add:hover {
   background: var(--surface-2);
@@ -1182,12 +1213,8 @@ async function viewArrangerDashboard(view) {
 }
 
 async function viewAdminDashboard(view) {
-  const [orgsR, advsR] = await Promise.all([
-    api('/api/admin/organizations'),
-    api('/api/admin/adventures'),
-  ]);
+  const orgsR = await api('/api/admin/organizations');
   const orgs = orgsR.body?.organizations || [];
-  const adventures = advsR.body?.adventures || [];
 
   const totals = orgs.reduce((acc, o) => {
     acc.runsTotal   += o.runs_total   || 0;
@@ -1234,8 +1261,6 @@ async function viewAdminDashboard(view) {
                 : h('span', { class: 'muted' }, '—')),
           )))),
     ),
-    h('p', { class: 'muted', style: 'font-size:.8rem; margin-top:.5rem' },
-      `${adventures.length} adventure${adventures.length === 1 ? '' : 's'} loaded from disk.`),
   );
 }
 
@@ -2534,12 +2559,27 @@ async function viewLibraryEdit(view, slug) {
 }
 
 function renderLibraryEdit(view, adv) {
+  // Enabled index differs from adv.pages index once any puzzle is
+  // disabled — the preview endpoint matches the player's view and
+  // skips disabled pages, so we thread the enabled position to each
+  // card's Preview button.
+  let enabledIdx = 0;
+  const cards = adv.pages.map((p, i) => {
+    const previewIdx = p.disabled ? null : enabledIdx;
+    if (!p.disabled) enabledIdx++;
+    return renderPuzzleCard(adv, p, i, previewIdx);
+  });
+  const hasEnabled = enabledIdx > 0;
   view.replaceChildren(
     h('button', { class: 'btn ghost small', on: { click: () => nav('#library') } },
       icon(ICONS.back), 'Back to library'),
     h('div', { class: 'row between' },
       h('h1', {}, adv.title),
       h('div', { class: 'row' },
+        hasEnabled
+          ? h('button', { class: 'btn', title: 'Open the adventure in the player view',
+              on: { click: () => previewAdventure(adv.slug, 0, false) } }, 'Preview')
+          : null,
         h('button', { class: 'btn', on: { click: () => openEditAdventureMeta(adv) } }, 'Edit title/slug'),
         h('button', { class: 'btn danger', on: { click: () => confirmDeleteAdventure(adv) } },
           icon(ICONS.trash), 'Delete'))),
@@ -2554,11 +2594,20 @@ function renderLibraryEdit(view, adv) {
           icon(ICONS.plus), 'New puzzle'))),
     adv.pages.length === 0
       ? h('div', { class: 'empty' }, 'No puzzles yet.')
-      : h('div', {}, adv.pages.map((p, i) => renderPuzzleCard(adv, p, i))),
+      : h('div', {}, cards),
   );
 }
 
-function renderPuzzleCard(adv, page, i) {
+// previewAdventure opens the player view in a new tab pointed at the
+// requested puzzle. `debug` toggles the author-side panel (accepted
+// answers + gate location) that a real player never sees.
+function previewAdventure(slug, pageIdx, debug) {
+  const qs = new URLSearchParams({ preview: slug, page: String(pageIdx) });
+  if (debug) qs.set('debug', '1');
+  window.open('/play?' + qs.toString(), '_blank', 'noopener');
+}
+
+function renderPuzzleCard(adv, page, i, previewIdx) {
   return h('div', {
     class: 'card',
     style: page.disabled ? 'opacity:.6' : '',
@@ -2568,6 +2617,10 @@ function renderPuzzleCard(adv, page, i) {
       h('div', { class: 'row' },
         page.disabled ? h('span', { class: 'pill' }, 'disabled') : null,
         page.gated ? h('span', { class: 'pill warning' }, 'gated') : null,
+        previewIdx != null
+          ? h('button', { class: 'btn small', title: 'Open in the player view with author debug panel',
+              on: { click: () => previewAdventure(adv.slug, previewIdx, true) } }, 'Preview')
+          : null,
         h('button', { class: 'btn small', on: { click: () => openEditPuzzle(adv, page) } }, 'Edit'),
         h('button', { class: 'btn small danger', on: { click: () => confirmDeletePuzzle(adv, page) } }, icon(ICONS.trash)))),
     h('p', { style: 'white-space:pre-wrap' }, page.prompt),
@@ -2629,7 +2682,17 @@ async function openEditAdventureMeta(adv) {
       if (r.status === 204) {
         toastOk('Saved');
         close(true);
-        nav('#library/' + (payload.slug || adv.slug));
+        // If the slug didn't change the hash stays the same, so nav()
+        // wouldn't fire hashchange and viewLibraryEdit wouldn't re-fetch
+        // — any open puzzle-editor preview card would keep applying the
+        // old colour palette until a hard reload. Re-render explicitly
+        // so the cached `adv` object is replaced with the saved state.
+        const nextSlug = payload.slug || adv.slug;
+        if (nextSlug !== adv.slug) {
+          nav('#library/' + nextSlug);
+        } else {
+          renderRoute();
+        }
       } else {
         toastErr(r.body?.error || `error ${r.status}`);
       }
@@ -2662,6 +2725,47 @@ function autosize(el) {
   requestAnimationFrame(resize);
 }
 
+// applyAdventureColors paints the optional per-adventure brand palette
+// onto `el` so its descendants (the puzzle-editor preview card) show the
+// same accents, background and text colour a player would see. Mirrors
+// play.html's applyColors but scoped to an element rather than the
+// document root. `adv` may be null (library puzzle) — in that case the
+// card keeps the editor's defaults.
+function applyAdventureColors(el, adv) {
+  if (!adv) return;
+  if (adv.accent_color) {
+    el.style.setProperty('--accent', adv.accent_color);
+    el.style.setProperty('--accent-fg', readableOn(adv.accent_color));
+  }
+  const sec = adv.accent_secondary_color || adv.accent_color;
+  if (sec) el.style.setProperty('--accent-secondary', sec);
+  if (adv.background_color) {
+    // The preview card uses --surface as its own background, so override
+    // that too — the card should read as the adventure's page colour.
+    el.style.setProperty('--bg', adv.background_color);
+    el.style.setProperty('--surface', adv.background_color);
+  }
+  if (adv.text_color) {
+    el.style.setProperty('--ink', adv.text_color);
+    el.style.setProperty('--text', adv.text_color);
+  }
+}
+
+// readableOn returns black or white — whichever has better contrast on
+// the supplied hex colour. Matches play.html so accent-fg stays legible
+// whatever accent the arranger picked.
+function readableOn(hex) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex);
+  if (!m) return '#ffffff';
+  const n = parseInt(m[1], 16);
+  const srgb = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => {
+    const s = v / 255;
+    return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+  });
+  const L = 0.2126 * srgb[0] + 0.7152 * srgb[1] + 0.0722 * srgb[2];
+  return L > 0.5 ? '#000000' : '#ffffff';
+}
+
 async function openEditPuzzle(adv, page /* or null */) {
   const creating = !page;
   const standalone = !adv; // library puzzle with no adventure context
@@ -2672,9 +2776,13 @@ async function openEditPuzzle(adv, page /* or null */) {
       : `Puzzle ${page.index + 1}`;
   await modal(title, ({ body, close }) => {
     // ---- Preview card: mirrors play.html's puzzle shape ----
+    // None of these are HTML-`required` — an arranger often saves a stub
+    // with nothing but a location (especially via Quick Puzzle) and
+    // fills the text in later. The backend's pageWriteRequest.validate
+    // matches: prompt and accept may be empty, only radius_m is checked.
+    // Marking them required here silently blocks the Save submit.
     const titleInput  = h('textarea', { class: 'pe pe-title', rows: 1, placeholder: 'Puzzle title' });
-    const promptInput = h('textarea', { class: 'pe pe-prompt', rows: 3, required: true,
-                                        placeholder: 'What the player sees…' });
+    const promptInput = h('textarea', { class: 'pe pe-prompt', rows: 3, placeholder: 'What the player sees…' });
     const hintInput   = h('textarea', { class: 'pe pe-hint', rows: 1, placeholder: '(optional hint)' });
     titleInput.value  = page?.title  || '';
     promptInput.value = page?.prompt || '';
@@ -2770,9 +2878,14 @@ async function openEditPuzzle(adv, page /* or null */) {
         hintInput),
       dock,
     );
+    // Paint the adventure's brand colours onto the preview card so the
+    // arranger sees the puzzle with the same palette a player will.
+    // Library puzzles (no adventure context) fall through to the editor
+    // defaults. Mirrors play.html's applyColors but scoped to the card.
+    applyAdventureColors(previewCard, adv);
 
     // ---- Settings panel: fields with no visual player rendering ----
-    const accept = h('input', { required: true,
+    const accept = h('input', {
       value: (page?.accept || []).join(', '),
       placeholder: 'hello, hi',
     });
@@ -2968,6 +3081,9 @@ async function openEditPuzzle(adv, page /* or null */) {
       renderTimeline();
     };
     function wireDrag(pill, p, i) {
+      // HTML5 drag-and-drop for desktop mice. Touch screens never fire
+      // these — the touch listeners below translate a single-finger
+      // horizontal drag into the same dragFrom / drop-hint state.
       pill.addEventListener('dragstart', (e) => {
         dragFrom = i;
         pill.classList.add('drag-ghost');
@@ -3005,6 +3121,84 @@ async function openEditPuzzle(adv, page /* or null */) {
         dragFrom = -1;
         onReorder(from, adjusted);
       });
+
+      // Touch drag for mobile. Touch events "stick" to the touchstart
+      // target, so we can wire the whole drag per-pill and still track
+      // the finger when it moves over a sibling — document.elementFromPoint
+      // gives us the live drop target at each move.
+      //
+      // touchMode cycles through three states:
+      //   null  — finger is down, we haven't decided yet
+      //   drag  — past the threshold and horizontal-dominant, owning the gesture
+      //   skip  — past the threshold but mostly vertical; it's a scroll, stand down
+      let touchStartX = 0, touchStartY = 0, touchMode = null;
+      const dropTargetAt = (clientX, clientY) => {
+        const el = document.elementFromPoint(clientX, clientY);
+        const t = el?.closest('[data-page-pos]');
+        if (!t || t === pill) return null;
+        const idx = parseInt(t.getAttribute('data-page-pos'), 10);
+        if (isNaN(idx) || idx === i) return null;
+        return { el: t, idx };
+      };
+      pill.addEventListener('touchstart', (e) => {
+        if (e.touches.length !== 1) return;
+        touchStartX = e.touches[0].clientX;
+        touchStartY = e.touches[0].clientY;
+        touchMode = null;
+      }, { passive: true });
+      pill.addEventListener('touchmove', (e) => {
+        if (touchMode === 'skip' || e.touches.length !== 1) return;
+        const t = e.touches[0];
+        if (touchMode === null) {
+          const dx = t.clientX - touchStartX;
+          const dy = t.clientY - touchStartY;
+          if (Math.hypot(dx, dy) < 8) return; // below the threshold; still a tap
+          // Vertical-dominant motion is almost certainly an attempt to
+          // scroll the modal — don't hijack it.
+          if (Math.abs(dy) > Math.abs(dx)) { touchMode = 'skip'; return; }
+          touchMode = 'drag';
+          dragFrom = i;
+          pill.classList.add('drag-ghost');
+        }
+        e.preventDefault();
+        clearDropHints();
+        const drop = dropTargetAt(t.clientX, t.clientY);
+        if (!drop) return;
+        const rect = drop.el.getBoundingClientRect();
+        const before = (t.clientX - rect.left) < rect.width / 2;
+        drop.el.classList.add(before ? 'drop-before' : 'drop-after');
+      }, { passive: false });
+      pill.addEventListener('touchend', (e) => {
+        if (touchMode !== 'drag') { touchMode = null; return; }
+        touchMode = null;
+        const last = e.changedTouches[0];
+        let adjusted = -1;
+        if (last) {
+          const drop = dropTargetAt(last.clientX, last.clientY);
+          if (drop) {
+            const rect = drop.el.getBoundingClientRect();
+            const before = (last.clientX - rect.left) < rect.width / 2;
+            const desired = before ? drop.idx : drop.idx + 1;
+            adjusted = i < desired ? desired - 1 : desired;
+          }
+        }
+        clearDropHints();
+        pill.classList.remove('drag-ghost');
+        const from = dragFrom;
+        dragFrom = -1;
+        // Suppress the synthetic click that follows touchend, so the
+        // pill we just released on doesn't also trigger switchTo.
+        e.preventDefault();
+        if (adjusted >= 0) onReorder(from, adjusted);
+      }, { passive: false });
+      pill.addEventListener('touchcancel', () => {
+        if (touchMode === 'drag') {
+          clearDropHints();
+          pill.classList.remove('drag-ghost');
+          dragFrom = -1;
+        }
+        touchMode = null;
+      }, { passive: true });
     }
     renderTimeline();
 

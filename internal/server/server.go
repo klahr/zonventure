@@ -129,6 +129,9 @@ func New(cfg Config) http.Handler {
 
 		r.Get("/adventures", adminH.ListAdventures)
 		r.Get("/adventures/{slug}", adminH.AdventureDetail)
+		// Preview: render any puzzle in the shape /play expects so an
+		// arranger can QA the adventure without a real run.
+		r.Get("/adventures/{slug}/preview", adminH.PreviewAdventure)
 
 		r.Get("/runs", adminH.ListRuns)
 		r.Post("/runs", adminH.CreateRun)
