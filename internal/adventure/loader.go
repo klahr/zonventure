@@ -16,10 +16,11 @@ import (
 
 // Adventure is an in-memory representation ready to be handed to handlers.
 type Adventure struct {
-	ID          int64
-	Slug        string
-	Meta        Meta
-	Pages       []Page
+	ID     int64
+	Slug   string
+	Meta   Meta
+	Colors Colors
+	Pages  []Page
 }
 
 // Meta bundles the adventure's descriptive fields.
@@ -27,6 +28,22 @@ type Meta struct {
 	Title       string
 	Description string
 	Author      string
+}
+
+// Colors is the optional per-adventure brand palette. Any field left at
+// the zero value means "fall back to the default theme". Values are stored
+// as "#rrggbb" strings so they paste straight into CSS.
+type Colors struct {
+	Accent          string `json:"accent,omitempty"`
+	AccentSecondary string `json:"accent_secondary,omitempty"`
+	Background      string `json:"background,omitempty"`
+	Text            string `json:"text,omitempty"`
+}
+
+// Empty reports whether no colours are set — handy for skipping the field
+// entirely in JSON responses.
+func (c Colors) Empty() bool {
+	return c.Accent == "" && c.AccentSecondary == "" && c.Background == "" && c.Text == ""
 }
 
 // Page is one puzzle in an adventure.
@@ -39,6 +56,8 @@ type Page struct {
 	Accept   []string
 	Location Location
 	Images   []Image
+	Disabled bool
+	Notes    string
 }
 
 // Image describes one attached image. Binary content is fetched separately
@@ -85,16 +104,27 @@ func (l *Library) GetContext(ctx context.Context, slug string) (*Adventure, erro
 	if slug == "" {
 		return nil, nil
 	}
-	var adv Adventure
+	var (
+		adv                              Adventure
+		accent, accent2, bg, ink         sql.NullString
+	)
 	err := l.db.QueryRowContext(ctx, `
-		SELECT id, slug, title, description, author
+		SELECT id, slug, title, description, author,
+		       accent_color, accent_secondary_color, background_color, text_color
 		FROM adventures WHERE slug = ?
-	`, slug).Scan(&adv.ID, &adv.Slug, &adv.Meta.Title, &adv.Meta.Description, &adv.Meta.Author)
+	`, slug).Scan(&adv.ID, &adv.Slug, &adv.Meta.Title, &adv.Meta.Description, &adv.Meta.Author,
+		&accent, &accent2, &bg, &ink)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
+	}
+	adv.Colors = Colors{
+		Accent:          accent.String,
+		AccentSecondary: accent2.String,
+		Background:      bg.String,
+		Text:            ink.String,
 	}
 	pages, err := l.loadPages(ctx, adv.ID)
 	if err != nil {
@@ -113,7 +143,8 @@ func (l *Library) List() []*Adventure {
 // ListContext is the context-aware variant of List.
 func (l *Library) ListContext(ctx context.Context) ([]*Adventure, error) {
 	rows, err := l.db.QueryContext(ctx, `
-		SELECT id, slug, title, description, author
+		SELECT id, slug, title, description, author,
+		       accent_color, accent_secondary_color, background_color, text_color
 		FROM adventures ORDER BY slug
 	`)
 	if err != nil {
@@ -123,8 +154,16 @@ func (l *Library) ListContext(ctx context.Context) ([]*Adventure, error) {
 	var out []*Adventure
 	for rows.Next() {
 		a := &Adventure{}
-		if err := rows.Scan(&a.ID, &a.Slug, &a.Meta.Title, &a.Meta.Description, &a.Meta.Author); err != nil {
+		var accent, accent2, bg, ink sql.NullString
+		if err := rows.Scan(&a.ID, &a.Slug, &a.Meta.Title, &a.Meta.Description, &a.Meta.Author,
+			&accent, &accent2, &bg, &ink); err != nil {
 			return nil, err
+		}
+		a.Colors = Colors{
+			Accent:          accent.String,
+			AccentSecondary: accent2.String,
+			Background:      bg.String,
+			Text:            ink.String,
 		}
 		out = append(out, a)
 	}
@@ -141,7 +180,7 @@ func (l *Library) ListContext(ctx context.Context) ([]*Adventure, error) {
 
 func (l *Library) loadPages(ctx context.Context, adventureID int64) ([]Page, error) {
 	rows, err := l.db.QueryContext(ctx, `
-		SELECT id, idx, title, prompt, hint, accept, lat, lng, radius_m
+		SELECT id, idx, title, prompt, hint, accept, lat, lng, radius_m, disabled, notes
 		FROM adventure_pages
 		WHERE adventure_id = ?
 		ORDER BY idx
@@ -156,11 +195,13 @@ func (l *Library) loadPages(ctx context.Context, adventureID int64) ([]Page, err
 			p        Page
 			acceptJS string
 			radius   sql.NullFloat64
+			disabled int
 		)
 		if err := rows.Scan(&p.ID, &p.Index, &p.Title, &p.Prompt, &p.Hint, &acceptJS,
-			&p.Location.Lat, &p.Location.Lng, &radius); err != nil {
+			&p.Location.Lat, &p.Location.Lng, &radius, &disabled, &p.Notes); err != nil {
 			return nil, err
 		}
+		p.Disabled = disabled != 0
 		if acceptJS != "" {
 			_ = json.Unmarshal([]byte(acceptJS), &p.Accept)
 		}

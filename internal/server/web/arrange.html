@@ -402,7 +402,212 @@ textarea { min-height: 80px; resize: vertical; font-family: ui-monospace, monosp
   overflow-y: auto;
 }
 .modal.wide { max-width: 560px; }
+.modal.xwide { max-width: 720px; }
 .modal h2 { margin-top: 0; }
+
+/* ---------- WYSIWYG puzzle editor ----------
+   The preview card mirrors play.html's puzzle layout (title, images,
+   prompt, hint, submit dock) so the arranger sees roughly what the
+   player will see. The inputs look like plain text until hovered or
+   focused, then show a dashed editable affordance. */
+.puzzle-editor {
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 1.25rem;
+  border: 1px solid var(--border-soft);
+  box-shadow: var(--shadow);
+  margin-bottom: 1rem;
+}
+.puzzle-editor textarea.pe {
+  display: block; width: 100%;
+  background: transparent;
+  border: 1px dashed transparent;
+  padding: .35rem .5rem; margin: 0;
+  border-radius: 6px;
+  font: inherit; color: inherit;
+  resize: none; overflow: hidden;
+  transition: border-color 120ms, background 120ms;
+}
+.puzzle-editor textarea.pe:hover {
+  border-color: var(--border-soft);
+}
+.puzzle-editor textarea.pe:focus {
+  outline: none;
+  border-color: var(--accent);
+  background: var(--surface-2);
+}
+.puzzle-editor .pe-title {
+  font-size: 1.15rem; font-weight: 700;
+  color: var(--accent); /* matches play.html's --accent-secondary slot */
+  margin: 0 0 .5rem;
+}
+.puzzle-editor .pe-prompt {
+  font-size: 1.1rem; line-height: 1.55;
+  white-space: pre-wrap; color: var(--ink);
+  min-height: 3rem;
+}
+.puzzle-editor .pe-hint {
+  color: var(--muted);
+}
+.puzzle-editor .pe-hint-row {
+  display: flex; gap: .35rem; align-items: flex-start; margin-top: .5rem;
+}
+.puzzle-editor .pe-hint-row .tag {
+  color: var(--muted); font-weight: 600;
+  padding: .35rem 0; flex-shrink: 0;
+}
+.puzzle-editor .pe-images {
+  display: grid; gap: .5rem; margin: .5rem 0;
+}
+.puzzle-editor .pe-image-wrap { position: relative; }
+.puzzle-editor .pe-image {
+  width: 100%; height: auto; display: block;
+  border-radius: var(--radius);
+  border: 1px solid var(--border-soft);
+}
+.puzzle-editor .pe-image-remove {
+  position: absolute; top: .5rem; right: .5rem;
+}
+.puzzle-editor .pe-image-add {
+  display: grid; place-items: center; text-align: center;
+  min-height: 100px; padding: 1rem;
+  border: 2px dashed var(--border);
+  border-radius: var(--radius);
+  color: var(--muted); cursor: pointer;
+  transition: background 120ms, border-color 120ms, color 120ms;
+}
+.puzzle-editor .pe-image-add:hover {
+  background: var(--surface-2);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.puzzle-editor .pe-image-add.disabled {
+  cursor: not-allowed; opacity: .6;
+}
+.puzzle-editor .pe-image-add.disabled:hover {
+  background: transparent; border-color: var(--border); color: var(--muted);
+}
+/* Non-interactive preview of play.html's sticky submit dock, so the
+   arranger sees where the player will type and how cramped the prompt
+   is relative to the submit row. */
+.puzzle-editor .pe-dock {
+  margin-top: 1rem;
+  padding: .75rem; background: var(--surface-2);
+  border-radius: var(--radius);
+  display: grid; grid-template-columns: 1fr auto; gap: .5rem;
+  opacity: .7;
+}
+.puzzle-editor .pe-dock-label {
+  grid-column: 1 / -1;
+  text-transform: uppercase;
+  font-size: .65rem; font-weight: 700; letter-spacing: .08em;
+  color: var(--muted); margin: 0 0 .25rem;
+}
+.puzzle-editor .pe-dock input,
+.puzzle-editor .pe-dock button {
+  pointer-events: none;
+}
+.puzzle-settings { margin-top: 1rem; }
+.puzzle-settings h3 {
+  font-size: .85rem; margin: 0 0 .6rem;
+  color: var(--muted); font-weight: 700;
+  text-transform: uppercase; letter-spacing: .06em;
+}
+
+/* Location editor embedded in the puzzle-settings panel.
+   The map itself is a Leaflet instance; the radius-drag handle is a
+   divIcon styled to look like a resize grip. */
+.pe-loc-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: .5rem; margin: 0 0 .5rem;
+}
+.pe-map {
+  height: 260px;
+  border-radius: var(--radius);
+  overflow: hidden;
+  border: 1px solid var(--border-soft);
+  margin-bottom: .5rem;
+}
+.pe-loc-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: .5rem;
+}
+.pe-radius-handle {
+  width: 22px; height: 22px;
+  background: #ad1357; color: #fff;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  display: grid; place-items: center;
+  font-size: 12px; font-weight: 800;
+  box-shadow: 0 0 0 1px rgba(0,0,0,.25);
+  cursor: ew-resize;
+}
+
+/* Floating action button for the Puzzles view. Sits above the content
+   in the bottom-right corner so a phone-in-hand admin can tap it
+   without scrolling. */
+.fab {
+  position: fixed;
+  right: calc(1rem + env(safe-area-inset-right));
+  bottom: calc(1rem + env(safe-area-inset-bottom));
+  width: 56px; height: 56px;
+  border-radius: 50%;
+  background: var(--accent); color: var(--accent-fg);
+  border: none; cursor: pointer;
+  box-shadow: 0 8px 24px rgba(0,0,0,.25), 0 2px 8px rgba(0,0,0,.15);
+  display: grid; place-items: center;
+  z-index: 500;
+}
+.fab svg { width: 24px; height: 24px; }
+.fab:hover { background: var(--accent-hover); }
+.fab:disabled { opacity: .6; cursor: wait; }
+
+/* Puzzle timeline: numbered pills at the top of the editor modal so an
+   arranger can jump between puzzles without closing the dialog. The
+   trailing "+" pill creates a new puzzle. */
+.puzzle-timeline {
+  display: flex; gap: .35rem; align-items: center; flex-wrap: wrap;
+  margin: 0 0 1rem;
+  padding-bottom: .75rem;
+  border-bottom: 1px solid var(--border-soft);
+}
+.pt-pill {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 2rem; height: 2rem; padding: 0 .6rem;
+  border-radius: 999px;
+  background: var(--surface-2); color: var(--text);
+  border: 1px solid var(--border-soft);
+  font: inherit; font-weight: 700; font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: border-color 120ms, background 120ms, color 120ms;
+}
+.pt-pill:hover { border-color: var(--accent); }
+.pt-pill.current {
+  background: var(--accent); color: var(--accent-fg);
+  border-color: var(--accent); cursor: default;
+}
+.pt-pill.current:hover { border-color: var(--accent); }
+.pt-plus {
+  color: var(--muted);
+  border-style: dashed;
+}
+.pt-pill.disabled {
+  opacity: .45;
+  text-decoration: line-through;
+  background: transparent;
+  border-style: dashed;
+}
+.pt-pill.current.disabled { opacity: .7; }
+
+/* Dragging feedback: the pill being dragged dims, and the drop target
+   grows a coloured edge on whichever side the cursor is closer to so
+   arrangers see the exact insertion point (same affordance as Slides). */
+.pt-pill[draggable] { cursor: grab; }
+.pt-pill[draggable]:active { cursor: grabbing; }
+.pt-pill.drag-ghost { opacity: .3; }
+.pt-pill.drop-before { box-shadow: inset 3px 0 0 0 var(--accent); }
+.pt-pill.drop-after  { box-shadow: inset -3px 0 0 0 var(--accent); }
 
 /* Selectable chip grid used in the team-create modal. */
 .chip-grid {
@@ -586,6 +791,7 @@ const ICONS = {
   moon: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>',
   menu: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>',
   back: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>',
+  crosshair: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><line x1="12" y1="3" x2="12" y2="7"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="3" y1="12" x2="7" y2="12"/><line x1="17" y1="12" x2="21" y2="12"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/></svg>',
 };
 
 /* ========== Theme ========== */
@@ -647,8 +853,15 @@ async function promptPassword(title, message) {
 function modal(title, bodyFn, opts = {}) {
   return new Promise((resolve) => {
     const host = document.getElementById('modal-host');
-    const close = (value) => { host.replaceChildren(); resolve(value); };
     const body = h('div');
+    // Dispatch a synthetic event before teardown so content hooks (e.g.
+    // the puzzle editor's parked file input) can clean up whether close
+    // is called via Save, Cancel, Esc, or backdrop click.
+    const close = (value) => {
+      body.dispatchEvent(new CustomEvent('modal:close'));
+      host.replaceChildren();
+      resolve(value);
+    };
     const back = h('div', { class: 'modal-back', on: { click: (e) => { if (e.target === back) close(null); } } },
       h('div', { class: 'modal' + (opts.wide ? ' wide' : '') },
         h('h2', {}, title),
@@ -733,7 +946,8 @@ function renderShell() {
     items = [
       ['#dashboard', 'Dashboard', ICONS.dashboard],
       ['#organizations', 'Organizations', ICONS.shield],
-      ['#library', 'Library', ICONS.map],
+      ['#library', 'Adventures', ICONS.map],
+      ['#puzzles', 'Puzzles', ICONS.crosshair],
       ['#admins', 'Admins', ICONS.user],
     ];
   } else {
@@ -815,7 +1029,7 @@ async function renderRoute() {
   const isOrgAdmin = role === 'org_admin';
 
   // Role-based route guards: admins can't visit org-user pages and vice versa.
-  const adminOnly = ['organizations', 'admins', 'library'];
+  const adminOnly = ['organizations', 'admins', 'library', 'puzzles'];
   const orgUserOnly = ['adventures', 'runs'];
   if (isAdmin && orgUserOnly.includes(section)) { nav('#organizations'); return; }
   if (!isAdmin && adminOnly.includes(section))   { nav('#dashboard');     return; }
@@ -839,6 +1053,7 @@ async function renderRoute() {
       case 'members':      return await viewMembers(view);
       case 'organizations':return await viewOrganizations(view);
       case 'library':      return arg ? await viewLibraryEdit(view, arg) : await viewLibrary(view);
+      case 'puzzles':      return arg ? await viewPuzzleEditRoute(view, arg) : await viewPuzzles(view);
       case 'admins':       return await viewAdmins(view);
       default: view.replaceChildren(h('p', {}, 'Not found'));
     }
@@ -2064,6 +2279,121 @@ async function revokeAssignment(orgID, assignmentID) {
   else toastErr(r.body?.error || `error ${r.status}`);
 }
 
+/* ========== Puzzles (admin only) ==========
+   Cross-adventure library of every puzzle in the system. A puzzle with
+   no adventure is a "library" stub — captured quickly (often via the
+   Quick Puzzle FAB + GPS) to be fleshed out or copied into an
+   adventure later. */
+
+async function viewPuzzles(view) {
+  const r = await api('/api/admin/puzzles');
+  const puzzles = r.body?.puzzles || [];
+  const list = puzzles.length === 0
+    ? h('div', { class: 'empty' },
+        h('p', {}, 'No puzzles yet.'),
+        h('button', { class: 'btn primary', on: { click: quickPuzzle } },
+          icon(ICONS.crosshair), 'Capture one at your location'))
+    : h('div', { class: 'grid cols-2' }, puzzles.map(renderPuzzleLibraryCard));
+  view.replaceChildren(
+    h('div', { class: 'row between' },
+      h('h1', {}, 'Puzzles'),
+      h('button', { class: 'btn primary', on: { click: quickPuzzle }, title: 'Capture a puzzle at your current location' },
+        icon(ICONS.crosshair), 'Quick puzzle')),
+    h('p', { class: 'muted' },
+      'The pool of every puzzle in the system. Unassigned ones sit in the Library; the rest list the adventure they belong to. Copy a puzzle into a new adventure from the adventure editor.'),
+    list,
+  );
+  // Floating action button — always reachable on mobile even when
+  // scrolled. Duplicated CSS class (.fab) defined once at the top.
+  view.append(h('button', {
+    class: 'fab',
+    title: 'Quick puzzle',
+    on: { click: quickPuzzle },
+  }, icon(ICONS.crosshair)));
+}
+
+// quickPuzzle captures GPS, creates a stub via POST /api/admin/puzzles,
+// and navigates to the new puzzle's editor. Designed for the
+// "standing somewhere, want to remember this spot" flow — one tap
+// after the page is already loaded.
+async function quickPuzzle(ev) {
+  if (!navigator.geolocation) { toastErr('Geolocation not available on this device'); return; }
+  const btn = ev?.currentTarget;
+  if (btn) btn.disabled = true;
+  navigator.geolocation.getCurrentPosition(async (pos) => {
+    const r = await api('/api/admin/puzzles', {
+      method: 'POST',
+      body: JSON.stringify({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+    });
+    if (btn) btn.disabled = false;
+    if (r.status !== 201) { toastErr(r.body?.error || `error ${r.status}`); return; }
+    toastOk('Puzzle captured');
+    nav('#puzzles/' + r.body.id);
+  }, (err) => {
+    if (btn) btn.disabled = false;
+    toastErr('GPS failed: ' + (err.message || 'unknown'));
+  }, { enableHighAccuracy: true, maximumAge: 10000, timeout: 30000 });
+}
+
+function renderPuzzleLibraryCard(p) {
+  const assignment = p.adventure_slug
+    ? h('span', { class: 'pill accent', title: 'Assigned to adventure' },
+        `${p.adventure_title} · #${(p.adventure_idx ?? 0) + 1}`)
+    : h('span', { class: 'pill' }, 'library');
+  const subtitle = p.notes
+    ? h('p', { class: 'muted', style: 'font-style:italic' }, p.notes)
+    : p.prompt
+      ? h('p', { class: 'muted', style: 'white-space:pre-wrap; overflow:hidden; max-height:3em' }, p.prompt)
+      : h('p', { class: 'muted' }, '(no content yet)');
+  return h('div', {
+    class: 'card clickable' + (p.disabled ? '' : ''),
+    style: p.disabled ? 'opacity:.6' : '',
+    on: { click: () => nav('#puzzles/' + p.id) },
+  },
+    h('div', { class: 'row between' },
+      h('h3', {}, p.title || '(untitled)'),
+      h('div', { class: 'row' },
+        p.disabled ? h('span', { class: 'pill' }, 'disabled') : null,
+        p.gated ? h('span', { class: 'pill warning' }, 'gated') : null,
+        assignment)),
+    subtitle,
+    h('p', { class: 'muted mono', style: 'font-size:.8rem' },
+      `${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}`,
+      p.radius_m ? ` · gate ${p.radius_m} m` : '',
+      p.has_images ? ' · has images' : ''),
+  );
+}
+
+// viewPuzzleEditRoute supports deep-linking #puzzles/<id> straight into
+// the editor. For an attached puzzle we also fetch the parent adventure
+// so the timeline can render the siblings; for a library puzzle we pass
+// adv=null and the editor renders in standalone mode.
+async function viewPuzzleEditRoute(view, pageID) {
+  const r = await api('/api/admin/puzzles/' + encodeURIComponent(pageID));
+  if (r.status !== 200) {
+    view.replaceChildren(h('p', { class: 'err' }, r.body?.error || 'puzzle not found'));
+    return;
+  }
+  const page = r.body;
+  let adv = null;
+  if (page.adventure_slug) {
+    const er = await api('/api/admin/adventures/' + encodeURIComponent(page.adventure_slug) + '/edit');
+    if (er.ok) {
+      adv = er.body;
+      // Use the authoritative copy from the adventure so the editor
+      // and timeline agree on sibling page identities.
+      const fresh = adv.pages.find((pp) => pp.id === page.id);
+      if (fresh) Object.assign(page, fresh);
+    }
+  }
+  view.replaceChildren(
+    h('button', { class: 'btn ghost small', on: { click: () => nav('#puzzles') } },
+      icon(ICONS.back), 'Back to puzzles'),
+    h('p', { class: 'muted' }, 'Opening editor…'),
+  );
+  openEditPuzzle(adv, page);
+}
+
 /* ========== Library (admin only) ==========
    Admins author adventures here: title/body/images/answer/location per
    puzzle. Content lives in the database, not on disk. */
@@ -2096,18 +2426,49 @@ async function viewLibrary(view) {
   );
 }
 
+// colorRow builds a labelled row with a type=color picker, a "use default"
+// reset button, and a live text readout. Empty initial means "use the
+// default theme" — the picker renders greyed so admins see the field is
+// unset. get() returns "" (use default) or "#rrggbb".
+function colorRow(label, initial) {
+  const state = { value: initial || '' };
+  const picker = h('input', { type: 'color', value: initial || '#808080' });
+  const reset  = h('button', { class: 'btn small', type: 'button', title: 'Use default' }, 'Reset');
+  const show   = h('span', { class: 'muted mono', style: 'font-size:.8rem' },
+    initial ? initial : '(default)');
+  const refresh = () => {
+    show.textContent = state.value || '(default)';
+    picker.style.opacity = state.value ? '1' : '.45';
+  };
+  picker.addEventListener('input', () => { state.value = picker.value; refresh(); });
+  reset.addEventListener('click',  () => { state.value = ''; refresh(); });
+  refresh();
+  return {
+    el: h('label', { class: 'field' },
+      h('span', {}, label),
+      h('div', { class: 'row', style: 'gap:.5rem; align-items:center' }, picker, reset, show)),
+    get: () => state.value,
+  };
+}
+
 async function openCreateAdventure() {
   await modal('New adventure', ({ body, close }) => {
     const slug  = h('input', { required: true, placeholder: 'my-adventure', pattern: '[a-z0-9-]+' });
     const title = h('input', { required: true });
     const desc  = h('textarea', { rows: 2 });
     const author = h('input', {});
+    const cAccent    = colorRow('Accent — buttons, progress',      '');
+    const cSecondary = colorRow('Secondary — titles, status pill', '');
+    const cBackground = colorRow('Background',                     '');
+    const cText      = colorRow('Text',                            '');
     const form = h('form', {},
       h('label', { class: 'field' },
         h('span', {}, 'Slug — lowercase letters, digits, hyphens'), slug),
       h('label', { class: 'field' }, h('span', {}, 'Title'), title),
       h('label', { class: 'field' }, h('span', {}, 'Description'), desc),
       h('label', { class: 'field' }, h('span', {}, 'Author'), author),
+      h('h3', { style: 'margin-top:1rem' }, 'Brand colours (optional)'),
+      cAccent.el, cSecondary.el, cBackground.el, cText.el,
       h('div', { class: 'row end' },
         h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, 'Cancel'),
         h('button', { class: 'btn primary', type: 'submit' }, 'Create')));
@@ -2117,6 +2478,10 @@ async function openCreateAdventure() {
         method: 'POST', body: JSON.stringify({
           slug: slug.value.trim(), title: title.value.trim(),
           description: desc.value, author: author.value.trim(),
+          accent_color:           cAccent.get(),
+          accent_secondary_color: cSecondary.get(),
+          background_color:       cBackground.get(),
+          text_color:             cText.get(),
         }),
       });
       if (r.status === 201) { toastOk('Adventure created'); close(true); nav('#library/' + r.body.slug); }
@@ -2150,8 +2515,11 @@ function renderLibraryEdit(view, adv) {
     adv.description ? h('p', { class: 'muted' }, adv.description) : null,
     h('div', { class: 'row between', style: 'margin-top:1rem' },
       h('h2', {}, `Puzzles (${adv.pages.length})`),
-      h('button', { class: 'btn primary small', on: { click: () => openEditPuzzle(adv, null) } },
-        icon(ICONS.plus), 'New puzzle')),
+      h('div', { class: 'row' },
+        h('button', { class: 'btn small', on: { click: () => openLibraryPicker(adv) } },
+          icon(ICONS.map), 'From library'),
+        h('button', { class: 'btn primary small', on: { click: () => openEditPuzzle(adv, null) } },
+          icon(ICONS.plus), 'New puzzle'))),
     adv.pages.length === 0
       ? h('div', { class: 'empty' }, 'No puzzles yet.')
       : h('div', {}, adv.pages.map((p, i) => renderPuzzleCard(adv, p, i))),
@@ -2159,10 +2527,14 @@ function renderLibraryEdit(view, adv) {
 }
 
 function renderPuzzleCard(adv, page, i) {
-  return h('div', { class: 'card' },
+  return h('div', {
+    class: 'card',
+    style: page.disabled ? 'opacity:.6' : '',
+  },
     h('div', { class: 'row between' },
       h('h3', {}, `${i + 1}. ${page.title || '(untitled)'}`),
       h('div', { class: 'row' },
+        page.disabled ? h('span', { class: 'pill' }, 'disabled') : null,
         page.gated ? h('span', { class: 'pill warning' }, 'gated') : null,
         h('button', { class: 'btn small', on: { click: () => openEditPuzzle(adv, page) } }, 'Edit'),
         h('button', { class: 'btn small danger', on: { click: () => confirmDeletePuzzle(adv, page) } }, icon(ICONS.trash)))),
@@ -2189,11 +2561,21 @@ async function openEditAdventureMeta(adv) {
     const title = h('input', { value: adv.title, required: true });
     const desc  = h('textarea', { rows: 2 }, adv.description || '');
     const author = h('input', { value: adv.author || '' });
+    const initialAccent    = adv.accent_color           || '';
+    const initialSecondary = adv.accent_secondary_color || '';
+    const initialBg        = adv.background_color      || '';
+    const initialText      = adv.text_color            || '';
+    const cAccent     = colorRow('Accent — buttons, progress',      initialAccent);
+    const cSecondary  = colorRow('Secondary — titles, status pill', initialSecondary);
+    const cBackground = colorRow('Background',                      initialBg);
+    const cText       = colorRow('Text',                            initialText);
     const form = h('form', {},
       h('label', { class: 'field' }, h('span', {}, 'Slug'), slug),
       h('label', { class: 'field' }, h('span', {}, 'Title'), title),
       h('label', { class: 'field' }, h('span', {}, 'Description'), desc),
       h('label', { class: 'field' }, h('span', {}, 'Author'), author),
+      h('h3', { style: 'margin-top:1rem' }, 'Brand colours'),
+      cAccent.el, cSecondary.el, cBackground.el, cText.el,
       h('div', { class: 'row end' },
         h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, 'Cancel'),
         h('button', { class: 'btn primary', type: 'submit' }, 'Save')));
@@ -2204,6 +2586,10 @@ async function openEditAdventureMeta(adv) {
       if (title.value.trim() !== adv.title) payload.title = title.value.trim();
       if (desc.value !== (adv.description || '')) payload.description = desc.value;
       if (author.value.trim() !== (adv.author || '')) payload.author = author.value.trim();
+      if (cAccent.get()     !== initialAccent)    payload.accent_color           = cAccent.get();
+      if (cSecondary.get()  !== initialSecondary) payload.accent_secondary_color = cSecondary.get();
+      if (cBackground.get() !== initialBg)        payload.background_color       = cBackground.get();
+      if (cText.get()       !== initialText)      payload.text_color             = cText.get();
       if (Object.keys(payload).length === 0) { close(null); return; }
       const r = await api(`/api/admin/adventures/${encodeURIComponent(adv.slug)}`, {
         method: 'PATCH', body: JSON.stringify(payload),
@@ -2231,46 +2617,200 @@ async function confirmDeleteAdventure(adv) {
   else toastErr(r.body?.error || `error ${r.status}`);
 }
 
+// autosize makes a textarea grow to fit its content — used in the
+// WYSIWYG puzzle editor so multi-line prompts render in the preview the
+// same way they'll render in the play view.
+function autosize(el) {
+  const resize = () => {
+    el.style.height = 'auto';
+    el.style.height = el.scrollHeight + 'px';
+  };
+  el.addEventListener('input', resize);
+  // Resize after the element is mounted and has a real scrollHeight.
+  requestAnimationFrame(resize);
+}
+
 async function openEditPuzzle(adv, page /* or null */) {
   const creating = !page;
-  await modal(creating ? 'New puzzle' : `Edit puzzle ${page.index + 1}`, ({ body, close }) => {
-    const title   = h('input', { value: page?.title || '' });
-    const prompt  = h('textarea', { rows: 6, required: true }, page?.prompt || '');
-    const hint    = h('input', { value: page?.hint || '' });
-    const accept  = h('input', { required: true,
+  const standalone = !adv; // library puzzle with no adventure context
+  const title = creating
+    ? 'New puzzle'
+    : standalone
+      ? (page.title ? `Library: ${page.title}` : 'Library puzzle')
+      : `Puzzle ${page.index + 1}`;
+  await modal(title, ({ body, close }) => {
+    // ---- Preview card: mirrors play.html's puzzle shape ----
+    const titleInput  = h('textarea', { class: 'pe pe-title', rows: 1, placeholder: 'Puzzle title' });
+    const promptInput = h('textarea', { class: 'pe pe-prompt', rows: 3, required: true,
+                                        placeholder: 'What the player sees…' });
+    const hintInput   = h('textarea', { class: 'pe pe-hint', rows: 1, placeholder: '(optional hint)' });
+    titleInput.value  = page?.title  || '';
+    promptInput.value = page?.prompt || '';
+    hintInput.value   = page?.hint   || '';
+
+    const imagesHost = h('div', { class: 'pe-images' });
+    const images = page?.images ? [...page.images] : [];
+
+    // File input parked at body level — Firefox won't open the picker if
+    // the click path goes through a transformed modal ancestor. Label→for
+    // binding drives it from the editor without touching that path.
+    const inputID = 'zv-image-input-' + (page?.id || 'new') + '-' + Math.random().toString(36).slice(2, 8);
+    const file = document.createElement('input');
+    file.id = inputID;
+    file.type = 'file';
+    file.accept = 'image/*';
+    Object.assign(file.style, {
+      position: 'fixed', left: '-10000px', top: '0',
+      width: '1px', height: '1px', opacity: '0',
+    });
+    file.setAttribute('tabindex', '-1');
+    document.body.appendChild(file);
+
+    const drawImages = () => {
+      imagesHost.replaceChildren();
+      for (const im of images) {
+        const wrap = h('div', { class: 'pe-image-wrap' });
+        wrap.append(
+          h('img', { class: 'pe-image', src: im.url, alt: '' }),
+          h('button', {
+            class: 'btn small danger pe-image-remove', type: 'button', title: 'Remove',
+            on: { click: async () => {
+              const rr = await api(`/api/admin/images/${im.id}`, { method: 'DELETE' });
+              if (rr.status === 204) {
+                const i = images.indexOf(im);
+                if (i >= 0) images.splice(i, 1);
+                drawImages();
+                toastOk('Image removed');
+              } else {
+                toastErr(rr.body?.error || `error ${rr.status}`);
+              }
+            } },
+          }, icon(ICONS.trash)),
+        );
+        imagesHost.append(wrap);
+      }
+      // Add-image tile: clickable when the page already exists, disabled
+      // placeholder when creating (the upload endpoint needs a page id).
+      if (page) {
+        const addTile = document.createElement('label');
+        addTile.className = 'pe-image-add';
+        addTile.htmlFor = inputID;
+        addTile.append(icon(ICONS.plus));
+        addTile.append(document.createTextNode(' Click to add image'));
+        imagesHost.append(addTile);
+      } else {
+        imagesHost.append(h('div', { class: 'pe-image-add disabled' },
+          icon(ICONS.plus), ' Save the puzzle first, then add images'));
+      }
+    };
+    drawImages();
+
+    file.addEventListener('change', async () => {
+      if (!file.files?.[0]) return;
+      const fd = new FormData();
+      fd.append('file', file.files[0]);
+      const res = await fetch(`/api/admin/pages/${page.id}/images`, {
+        method: 'POST', body: fd, credentials: 'same-origin',
+      });
+      if (res.ok) {
+        const im = await res.json();
+        images.push(im);
+        drawImages();
+        toastOk('Image added');
+      } else {
+        const t = await res.text();
+        toastErr(t || `error ${res.status}`);
+      }
+      file.value = '';
+    });
+
+    const dock = h('div', { class: 'pe-dock' },
+      h('p', { class: 'pe-dock-label' }, 'Player answer bar (preview)'),
+      h('input', { disabled: '', placeholder: 'Your answer' }),
+      h('button', { class: 'btn primary', disabled: '' }, 'Submit'));
+
+    const previewCard = h('div', { class: 'puzzle-editor' },
+      titleInput,
+      imagesHost,
+      promptInput,
+      h('div', { class: 'pe-hint-row' },
+        h('span', { class: 'tag' }, 'Hint:'),
+        hintInput),
+      dock,
+    );
+
+    // ---- Settings panel: fields with no visual player rendering ----
+    const accept = h('input', { required: true,
       value: (page?.accept || []).join(', '),
       placeholder: 'hello, hi',
     });
-    const lat     = h('input', { type: 'number', step: 'any', required: true, value: page ? page.lat : 59.3293 });
-    const lng     = h('input', { type: 'number', step: 'any', required: true, value: page ? page.lng : 18.0686 });
-    const gated   = h('input', { type: 'checkbox' });
-    if (page?.radius_m) gated.checked = true;
-    const radius  = h('input', { type: 'number', step: 'any', value: page?.radius_m || 50 });
+    // For a fresh puzzle, inherit the location from the previous puzzle
+    // in the adventure — adventures are almost always a cluster, so
+    // "start near the last pin" beats "start in central Stockholm".
+    // Standalone edits always come with an existing page, so the
+    // fallback only kicks in for attached-adventure creates.
+    const fallback = (!standalone && adv.pages.length > 0)
+      ? { lat: adv.pages[adv.pages.length - 1].lat, lng: adv.pages[adv.pages.length - 1].lng }
+      : { lat: 59.3293, lng: 18.0686 };
+    const initialLat = page ? page.lat : fallback.lat;
+    const initialLng = page ? page.lng : fallback.lng;
 
-    const form = h('form', {},
-      h('label', { class: 'field' }, h('span', {}, 'Title'), title),
-      h('label', { class: 'field' }, h('span', {}, 'Body text'), prompt),
-      h('label', { class: 'field' }, h('span', {}, 'Hint'), hint),
+    const lat    = h('input', { type: 'number', step: 'any', required: true, value: initialLat });
+    const lng    = h('input', { type: 'number', step: 'any', required: true, value: initialLng });
+    const gated  = h('input', { type: 'checkbox' });
+    if (page?.radius_m) gated.checked = true;
+    const radius = h('input', { type: 'number', step: 'any', min: '1', value: page?.radius_m || 50 });
+    const disabled = h('input', { type: 'checkbox' });
+    if (page?.disabled) disabled.checked = true;
+
+    const notes = h('textarea', { rows: 2,
+      placeholder: 'e.g. "statue at the fountain, check opening hours"',
+    });
+    notes.value = page?.notes || '';
+
+    const gpsBtn = h('button', { class: 'btn small', type: 'button', title: 'Use this device\'s GPS' },
+      icon(ICONS.crosshair), 'Use my location');
+    const mapEl  = h('div', { class: 'pe-map' });
+
+    const settings = h('div', { class: 'puzzle-settings' },
+      h('h3', {}, 'Settings'),
       h('label', { class: 'field' },
-        h('span', {}, 'Accepted answers (comma-separated)'), accept),
-      h('div', { class: 'grid cols-2' },
+        h('span', {}, 'Accepted answers — comma-separated'), accept),
+      h('label', { class: 'field' },
+        h('span', {}, 'Internal notes — not shown to players'), notes),
+      h('h3', {}, 'Location'),
+      h('div', { class: 'pe-loc-head' },
+        h('span', { class: 'muted', style: 'font-size:.85rem' },
+          'Drag the pin, click the map, or press the button'),
+        gpsBtn),
+      mapEl,
+      h('div', { class: 'pe-loc-row' },
         h('label', { class: 'field' }, h('span', {}, 'Latitude'), lat),
         h('label', { class: 'field' }, h('span', {}, 'Longitude'), lng)),
-      h('label', { style: 'display:flex; gap:.4rem; align-items:center; margin-bottom:.5rem' },
-        gated, h('span', { style: 'margin:0' }, 'Gated (player must reach location)')),
+      h('label', { style: 'display:flex; gap:.4rem; align-items:center; margin: .25rem 0 .5rem' },
+        gated, h('span', { style: 'margin:0' }, 'Gated — player must reach location first')),
       h('label', { class: 'field' }, h('span', {}, 'Gate radius (metres)'), radius),
+      h('label', { style: 'display:flex; gap:.4rem; align-items:center; margin: .75rem 0 .25rem' },
+        disabled, h('span', { style: 'margin:0' },
+          'Disabled — players skip this puzzle; the content and gate stay saved')),
+    );
+
+    const form = h('form', {}, previewCard, settings,
       h('div', { class: 'row end', style: 'margin-top:1rem' },
         h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, 'Cancel'),
         h('button', { class: 'btn primary', type: 'submit' }, creating ? 'Create' : 'Save')));
+
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       const payload = {
-        title: title.value.trim(),
-        prompt: prompt.value.trim(),
-        hint: hint.value.trim(),
-        accept: accept.value.split(',').map((s) => s.trim()).filter(Boolean),
-        lat: parseFloat(lat.value),
-        lng: parseFloat(lng.value),
+        title:    titleInput.value.trim(),
+        prompt:   promptInput.value.trim(),
+        hint:     hintInput.value.trim(),
+        notes:    notes.value.trim(),
+        accept:   accept.value.split(',').map((s) => s.trim()).filter(Boolean),
+        lat:      parseFloat(lat.value),
+        lng:      parseFloat(lng.value),
+        disabled: disabled.checked,
       };
       if (gated.checked) payload.radius_m = parseFloat(radius.value);
       if (creating) {
@@ -2279,8 +2819,9 @@ async function openEditPuzzle(adv, page /* or null */) {
         });
         if (r.status !== 201) { toastErr(r.body?.error || `error ${r.status}`); return; }
         toastOk('Puzzle created');
+        file.remove();
         close(true);
-        // Reopen in edit mode so the user can upload images immediately.
+        // Reopen in edit mode so images can be uploaded immediately.
         const fresh = await api(`/api/admin/adventures/${encodeURIComponent(adv.slug)}/edit`);
         if (fresh.ok) {
           const np = (fresh.body.pages || []).find((p) => p.id === r.body.id);
@@ -2294,89 +2835,365 @@ async function openEditPuzzle(adv, page /* or null */) {
       });
       if (r.status !== 204) { toastErr(r.body?.error || `error ${r.status}`); return; }
       toastOk('Puzzle saved');
+      file.remove();
       close(true);
       renderRoute();
     });
-    body.append(form);
 
-    if (!creating) body.append(renderImageEditor(page, () => { close(true); renderRoute(); }));
+    // ---- Puzzle timeline: quick-switch between puzzles in this adventure ----
+    // Dirty-check compares current inputs to the page's starting values so
+    // a stray click doesn't silently lose edits.
+    const isDirty = () => (
+      titleInput.value  !== (page?.title  || '') ||
+      promptInput.value !== (page?.prompt || '') ||
+      hintInput.value   !== (page?.hint   || '') ||
+      notes.value       !== (page?.notes  || '') ||
+      accept.value      !== (page?.accept || []).join(', ') ||
+      parseFloat(lat.value) !== (page ? page.lat : 59.3293) ||
+      parseFloat(lng.value) !== (page ? page.lng : 18.0686) ||
+      gated.checked !== !!page?.radius_m ||
+      (gated.checked && parseFloat(radius.value) !== (page?.radius_m || 50)) ||
+      disabled.checked !== !!page?.disabled
+    );
+    const switchTo = (targetPage) => {
+      if (isDirty() && !confirm('Discard unsaved changes in this puzzle?')) return;
+      file.remove();
+      close(null);
+      openEditPuzzle(adv, targetPage);
+    };
+
+    // Timeline is rebuilt after every drag-reorder so the pills can show
+    // the new order without closing the modal. Standalone library
+    // puzzles have no siblings and no reorder surface, so we skip the
+    // whole strip there — a small "In library" banner replaces it.
+    const timeline = h('div', { class: 'puzzle-timeline' });
+    if (standalone) {
+      timeline.style.display = 'none';
+    }
+    const renderTimeline = () => {
+      if (standalone) return;
+      timeline.replaceChildren();
+      adv.pages.forEach((p, i) => {
+        const current = page && p.id === page.id;
+        const cls = ['pt-pill'];
+        if (current)   cls.push('current');
+        if (p.disabled) cls.push('disabled');
+        const pill = h('button', {
+          class: cls.join(' '),
+          type: 'button',
+          draggable: 'true',
+          title: (p.title || '(untitled)') + (p.disabled ? ' — disabled' : ''),
+          'data-page-id': p.id,
+          'data-page-pos': i,
+          on: { click: () => { if (!current) switchTo(p); } },
+        }, String(i + 1));
+        wireDrag(pill, p, i);
+        timeline.append(pill);
+      });
+      if (creating) {
+        timeline.append(h('span', { class: 'pt-pill current', title: 'This puzzle' }, 'New'));
+      } else {
+        timeline.append(h('button', {
+          class: 'pt-pill pt-plus', type: 'button', title: 'New puzzle',
+          on: { click: () => switchTo(null) },
+        }, '+'));
+      }
+    };
+
+    // wireDrag / onReorder implement a Google-Slides-style reorder:
+    // drag a pill, drop on another, server reorders, we re-render.
+    // We mutate adv.pages locally on success so subsequent operations
+    // (another drag, a save) see the new order immediately.
+    let dragFrom = -1;
+    const clearDropHints = () => {
+      for (const el of timeline.querySelectorAll('.drop-before, .drop-after')) {
+        el.classList.remove('drop-before', 'drop-after');
+      }
+    };
+    const onReorder = async (fromPos, toPos) => {
+      if (fromPos === toPos || toPos < 0 || toPos >= adv.pages.length) return;
+      const next = adv.pages.slice();
+      const [moved] = next.splice(fromPos, 1);
+      next.splice(toPos, 0, moved);
+      const r = await api(`/api/admin/adventures/${encodeURIComponent(adv.slug)}/pages/reorder`, {
+        method: 'PATCH', body: JSON.stringify({ page_ids: next.map((p) => p.id) }),
+      });
+      if (r.status !== 204) { toastErr(r.body?.error || `error ${r.status}`); return; }
+      adv.pages = next.map((p, i) => ({ ...p, index: i }));
+      renderTimeline();
+    };
+    function wireDrag(pill, p, i) {
+      pill.addEventListener('dragstart', (e) => {
+        dragFrom = i;
+        pill.classList.add('drag-ghost');
+        e.dataTransfer.effectAllowed = 'move';
+        // Firefox refuses to initiate the drag unless some data is set.
+        e.dataTransfer.setData('text/plain', String(p.id));
+      });
+      pill.addEventListener('dragend', () => {
+        pill.classList.remove('drag-ghost');
+        clearDropHints();
+      });
+      pill.addEventListener('dragover', (e) => {
+        if (dragFrom < 0 || dragFrom === i) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        const rect = pill.getBoundingClientRect();
+        const before = (e.clientX - rect.left) < rect.width / 2;
+        clearDropHints();
+        pill.classList.add(before ? 'drop-before' : 'drop-after');
+      });
+      pill.addEventListener('dragleave', () => {
+        pill.classList.remove('drop-before', 'drop-after');
+      });
+      pill.addEventListener('drop', (e) => {
+        if (dragFrom < 0) return;
+        e.preventDefault();
+        const rect = pill.getBoundingClientRect();
+        const before = (e.clientX - rect.left) < rect.width / 2;
+        const target = before ? i : i + 1;
+        // Splice semantics: removing fromPos before inserting at target
+        // shifts the target by one when fromPos < target.
+        const adjusted = dragFrom < target ? target - 1 : target;
+        clearDropHints();
+        const from = dragFrom;
+        dragFrom = -1;
+        onReorder(from, adjusted);
+      });
+    }
+    renderTimeline();
+
+    body.append(timeline);
+    // Tiny banner above the preview card: which adventure the puzzle
+    // belongs to, so an author editing a library puzzle never has to
+    // guess where their edits will apply.
+    if (!creating) {
+      const assignLabel = standalone
+        ? h('span', {}, '📚 Library puzzle — not yet in any adventure')
+        : h('span', {}, 'In adventure ',
+            h('strong', {}, adv.title || adv.slug),
+            ', position ', h('strong', {}, String((page.index ?? 0) + 1)));
+      body.append(h('p', { class: 'muted', style: 'margin: .25rem 0 1rem; font-size:.9rem' }, assignLabel));
+    }
+    body.append(form);
+    autosize(titleInput); autosize(promptInput); autosize(hintInput); autosize(notes);
+
+    // Location editor (Leaflet). Wiring lives in renderPuzzleLocationMap
+    // so the pile of marker/circle/handle state doesn't bleed into this
+    // function.
+    const locMap = renderPuzzleLocationMap({
+      mapEl, gpsBtn, lat, lng, gated, radius,
+      initial: { lat: initialLat, lng: initialLng },
+      freshPuzzle: !page,
+    });
+    // Resize the map once it's visible — Leaflet reads the container
+    // size at init and otherwise picks up a 0×0 box.
+    requestAnimationFrame(() => locMap.invalidate());
+
+    // Clean up the parked file input if the modal closes via Cancel/Esc.
+    body.addEventListener('modal:close', () => {
+      file.remove();
+      locMap.destroy();
+    }, { once: true });
   }, { wide: true });
 }
 
-// renderImageEditor builds the image section of the puzzle-edit modal.
+// renderPuzzleLocationMap wires a Leaflet map + marker + (optional)
+// gated-radius circle + drag handle into the puzzle editor. Returns
+// { invalidate, destroy } so the caller can force a resize after mount
+// and tear everything down on close.
 //
-// Firefox refuses to open the OS picker when the click path goes through
-// certain modal/transformed ancestors — even for a "plain" native input.
-// The workaround is to keep the <input type="file"> itself parked at the
-// top level of <body> (a uniform, untransformed ancestor chain) and
-// drive it from a <label for="..."> inside the modal. The label→input
-// link works no matter where each sits in the DOM, and the input's own
-// click handling is unaffected by its DOM position.
-function renderImageEditor(page, onChange) {
-  const wrap = document.createElement('div');
-  wrap.style.marginTop = '1rem';
+// Interactions wired in both directions:
+//   marker drag / map click / GPS button → update lat, lng, circle
+//   lat/lng input edits                  → move marker + circle
+//   gated toggle                         → show/hide circle + handle
+//   radius input edits                   → resize circle + reposition handle
+//   radius handle drag                   → resize circle + update input
+function renderPuzzleLocationMap(args) {
+  const { mapEl, gpsBtn, lat, lng, gated, radius, initial, freshPuzzle } = args;
 
-  // Unique id so multiple editors in sequence don't collide.
-  const inputID = 'zv-image-input-' + page.id + '-' + Math.random().toString(36).slice(2, 8);
-  const file = document.createElement('input');
-  file.id = inputID;
-  file.type = 'file';
-  file.accept = 'image/*';
-  // Visually hide but keep it in the layout tree at the body level.
-  file.style.position = 'fixed';
-  file.style.left = '-10000px';
-  file.style.top = '0';
-  file.style.width = '1px';
-  file.style.height = '1px';
-  file.style.opacity = '0';
-  file.setAttribute('tabindex', '-1');
-  // Remove the input when the modal closes so we don't leak dozens of
-  // orphaned inputs across edits.
-  document.body.appendChild(file);
+  // A new puzzle without a prior sibling starts at a city-level zoom so
+  // the arranger can find themselves; an existing or cloned-from-sibling
+  // puzzle zooms in close to the pin.
+  const startZoom = freshPuzzle && initial.lat === 59.3293 ? 12 : 16;
 
-  file.addEventListener('change', async () => {
-    if (!file.files?.[0]) return;
-    const fd = new FormData();
-    fd.append('file', file.files[0]);
-    const res = await fetch(`/api/admin/pages/${page.id}/images`, {
-      method: 'POST', body: fd, credentials: 'same-origin',
-    });
-    file.value = '';
-    file.remove();
-    if (res.ok) { toastOk('Image added'); onChange(); }
-    else { const t = await res.text(); toastErr(t || `error ${res.status}`); }
+  const map = L.map(mapEl, { scrollWheelZoom: true }).setView([initial.lat, initial.lng], startZoom);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© OpenStreetMap contributors',
+    maxZoom: 19,
+  }).addTo(map);
+
+  const marker = L.marker([initial.lat, initial.lng], { draggable: true }).addTo(map);
+  let circle = null;
+  let handle = null;
+
+  // pushPinToInputs writes the marker's coords back into the form fields.
+  // 6 decimals ≈ 11 cm — more than enough and round-trips cleanly.
+  const pushPinToInputs = () => {
+    const ll = marker.getLatLng();
+    lat.value = ll.lat.toFixed(6);
+    lng.value = ll.lng.toFixed(6);
+  };
+
+  // destination returns the lat/lng that's `metres` away from `center`
+  // at the given bearing (degrees, 0 = north, 90 = east). Used to place
+  // the radius-drag handle directly east of the marker.
+  const destination = (center, metres, bearingDeg) => {
+    const R = 6371000;
+    const brng = bearingDeg * Math.PI / 180;
+    const lat1 = center.lat * Math.PI / 180;
+    const lng1 = center.lng * Math.PI / 180;
+    const dr = metres / R;
+    const lat2 = Math.asin(Math.sin(lat1) * Math.cos(dr) +
+      Math.cos(lat1) * Math.sin(dr) * Math.cos(brng));
+    const lng2 = lng1 + Math.atan2(
+      Math.sin(brng) * Math.sin(dr) * Math.cos(lat1),
+      Math.cos(dr) - Math.sin(lat1) * Math.sin(lat2),
+    );
+    return L.latLng(lat2 * 180 / Math.PI, lng2 * 180 / Math.PI);
+  };
+
+  const updateCircle = () => {
+    const center = marker.getLatLng();
+    if (gated.checked) {
+      const r = Math.max(1, parseFloat(radius.value) || 50);
+      if (!circle) {
+        circle = L.circle(center, {
+          radius: r, color: '#ad1357', weight: 2,
+          fillColor: '#ad1357', fillOpacity: 0.12,
+        }).addTo(map);
+      } else {
+        circle.setLatLng(center);
+        circle.setRadius(r);
+      }
+      const handleLL = destination(center, r, 90);
+      if (!handle) {
+        handle = L.marker(handleLL, {
+          draggable: true,
+          icon: L.divIcon({
+            className: '', // clear Leaflet's default
+            html: '<div class="pe-radius-handle" title="Drag to resize">↔</div>',
+            iconSize: [22, 22], iconAnchor: [11, 11],
+          }),
+        }).addTo(map);
+        handle.on('drag', () => {
+          const d = map.distance(marker.getLatLng(), handle.getLatLng());
+          const meters = Math.max(1, Math.round(d));
+          radius.value = meters;
+          circle.setRadius(meters);
+        });
+      } else {
+        handle.setLatLng(handleLL);
+      }
+    } else {
+      if (circle) { map.removeLayer(circle); circle = null; }
+      if (handle) { map.removeLayer(handle); handle = null; }
+    }
+  };
+
+  marker.on('drag', () => {
+    pushPinToInputs();
+    if (circle) circle.setLatLng(marker.getLatLng());
+    if (handle) {
+      const r = Math.max(1, parseFloat(radius.value) || 50);
+      handle.setLatLng(destination(marker.getLatLng(), r, 90));
+    }
+  });
+  map.on('click', (e) => {
+    marker.setLatLng(e.latlng);
+    pushPinToInputs();
+    updateCircle();
   });
 
-  // Label linked by `for` — no JS .click(), no nesting.
-  const addBtn = document.createElement('label');
-  addBtn.className = 'btn primary small';
-  addBtn.htmlFor = inputID;
-  addBtn.style.cursor = 'pointer';
-  addBtn.style.display = 'inline-flex';
-  addBtn.append(icon(ICONS.plus));
-  addBtn.append(document.createTextNode(' Add image'));
+  const syncFromInputs = () => {
+    const la = parseFloat(lat.value), ln = parseFloat(lng.value);
+    if (!Number.isFinite(la) || !Number.isFinite(ln)) return;
+    marker.setLatLng([la, ln]);
+    updateCircle();
+  };
+  lat.addEventListener('input', syncFromInputs);
+  lng.addEventListener('input', syncFromInputs);
+  gated.addEventListener('change', updateCircle);
+  radius.addEventListener('input', updateCircle);
 
-  wrap.append(h('h3', {}, 'Images'));
-  if ((page.images || []).length === 0) {
-    wrap.append(h('p', { class: 'muted' }, 'No images yet.'));
-  }
-  for (const im of (page.images || [])) {
-    wrap.append(h('div', { style: 'display:flex; gap:.5rem; align-items:center; margin-bottom:.35rem' },
-      h('img', { src: im.url, style: 'max-height:80px; border-radius:6px; border:1px solid var(--border-soft)' }),
-      h('button', {
-        class: 'btn small danger', type: 'button',
-        on: { click: async () => {
-          const rr = await api(`/api/admin/images/${im.id}`, { method: 'DELETE' });
-          if (rr.status === 204) { toastOk('Image removed'); file.remove(); onChange(); }
-          else toastErr(rr.body?.error || `error ${rr.status}`);
-        } },
-      }, icon(ICONS.trash), 'Remove')));
-  }
-  const btnRow = document.createElement('div');
-  btnRow.style.marginTop = '.5rem';
-  btnRow.append(addBtn);
-  wrap.append(btnRow);
-  return wrap;
+  gpsBtn.addEventListener('click', () => {
+    if (!navigator.geolocation) { toastErr('Geolocation not available on this device'); return; }
+    gpsBtn.disabled = true;
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        gpsBtn.disabled = false;
+        const la = pos.coords.latitude, ln = pos.coords.longitude;
+        lat.value = la.toFixed(6);
+        lng.value = ln.toFixed(6);
+        marker.setLatLng([la, ln]);
+        map.setView([la, ln], 17);
+        updateCircle();
+      },
+      (err) => { gpsBtn.disabled = false; toastErr('GPS failed: ' + (err.message || 'unknown')); },
+      { enableHighAccuracy: true, maximumAge: 10000, timeout: 30000 },
+    );
+  });
+
+  updateCircle();
+
+  return {
+    invalidate: () => map.invalidateSize(),
+    destroy:    () => { map.remove(); },
+  };
+}
+
+// openLibraryPicker lets the author attach a puzzle to this adventure
+// by deep-copying one out of the library (which here means every
+// puzzle in the system — the server handles the copy). Library puzzles
+// are offered first; already-assigned puzzles follow so the author can
+// duplicate a puzzle across adventures if they want.
+async function openLibraryPicker(adv) {
+  await modal('Pick a puzzle from the library', async ({ body, close }) => {
+    body.append(h('p', { class: 'muted' }, 'Loading puzzles…'));
+    const r = await api('/api/admin/puzzles');
+    body.replaceChildren();
+    if (!r.ok) { body.append(h('p', { class: 'err' }, r.body?.error || 'load failed')); return; }
+    const puzzles = (r.body?.puzzles || []).slice();
+    // Put library puzzles first so the common case is discoverable at
+    // a glance; attached puzzles follow for copy-across-adventures.
+    puzzles.sort((a, b) => (!!a.adventure_slug) - (!!b.adventure_slug));
+    if (puzzles.length === 0) {
+      body.append(h('p', {}, 'No puzzles in the library yet.'));
+      body.append(h('div', { class: 'row end' },
+        h('button', { class: 'btn', on: { click: () => close(null) } }, 'Close')));
+      return;
+    }
+    const list = h('div', { style: 'display:grid; gap:.5rem; max-height:60vh; overflow-y:auto; padding-right:.25rem' });
+    for (const p of puzzles) {
+      const label = p.adventure_slug
+        ? h('span', { class: 'pill', style: 'margin-left:.5rem' },
+            `in ${p.adventure_title} · #${(p.adventure_idx ?? 0) + 1}`)
+        : h('span', { class: 'pill accent', style: 'margin-left:.5rem' }, 'library');
+      const card = h('div', { class: 'card clickable', style: 'padding:.6rem .9rem; margin:0' },
+        h('div', { class: 'row between' },
+          h('strong', {}, p.title || '(untitled)'),
+          label),
+        p.notes || p.prompt ? h('p', { class: 'muted', style: 'margin:.25rem 0 0; font-size:.85rem; white-space:pre-wrap; overflow:hidden; max-height:2.4em' },
+          p.notes || p.prompt) : null,
+        h('p', { class: 'muted mono', style: 'margin:.25rem 0 0; font-size:.75rem' },
+          `${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}`));
+      card.addEventListener('click', async () => {
+        const rr = await api(`/api/admin/adventures/${encodeURIComponent(adv.slug)}/pages/copy-from/${p.id}`,
+          { method: 'POST' });
+        if (rr.status === 201) {
+          toastOk('Puzzle copied into adventure');
+          close(true);
+          renderRoute();
+        } else {
+          toastErr(rr.body?.error || `error ${rr.status}`);
+        }
+      });
+      list.append(card);
+    }
+    body.append(list);
+    body.append(h('div', { class: 'row end', style: 'margin-top:1rem' },
+      h('button', { class: 'btn', on: { click: () => close(null) } }, 'Cancel')));
+  }, { wide: true });
 }
 
 async function confirmDeletePuzzle(adv, page) {

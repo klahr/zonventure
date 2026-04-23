@@ -62,14 +62,18 @@ func (h *Handlers) AdventureDetail(w http.ResponseWriter, r *http.Request) {
 			Gated:    p.Location.Gated(),
 		}
 	}
-	httpx.JSON(w, http.StatusOK, map[string]any{
+	out := map[string]any{
 		"slug":        adv.Slug,
 		"title":       adv.Meta.Title,
 		"description": adv.Meta.Description,
 		"author":      adv.Meta.Author,
 		"page_count":  len(adv.Pages),
 		"pages":       pages,
-	})
+	}
+	if !adv.Colors.Empty() {
+		out["colors"] = adv.Colors
+	}
+	httpx.JSON(w, http.StatusOK, out)
 }
 
 // RunDetail returns a run with its teams and slots (players).

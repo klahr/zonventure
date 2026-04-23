@@ -60,7 +60,9 @@ func newTestServer(t *testing.T) (*httptest.Server, int64, func()) {
 		}
 	}
 
-	// Seed an organization + an org_admin (boss) + one assignment.
+	// Seed an organization + an org_admin (boss) + a global admin (root)
+	// + one assignment. Two users are cheaper than bcrypt-hashing on
+	// demand inside individual tests.
 	orgRes, err := sqlDB.Exec(`INSERT INTO organizations(name) VALUES (?)`, "TestOrg")
 	if err != nil {
 		sqlDB.Close()
@@ -73,6 +75,13 @@ func newTestServer(t *testing.T) (*httptest.Server, int64, func()) {
 		"boss", hash, orgID); err != nil {
 		sqlDB.Close()
 		t.Fatalf("seed arranger: %v", err)
+	}
+	rootHash, _ := auth.HashPassword("rootpw")
+	if _, err := sqlDB.Exec(
+		`INSERT INTO users(username, password_hash, role, org_id) VALUES (?, ?, 'admin', NULL)`,
+		"root", rootHash); err != nil {
+		sqlDB.Close()
+		t.Fatalf("seed admin: %v", err)
 	}
 	ar, err := sqlDB.Exec(`INSERT INTO adventure_assignments(org_id, adventure_slug, max_teams) VALUES (?, ?, ?)`, orgID, "demo", 3)
 	if err != nil {

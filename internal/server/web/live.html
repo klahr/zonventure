@@ -15,6 +15,7 @@
 :root {
   --accent:       #e24080;  /* raspberry lifted for dark bg */
   --accent-2:     #ad1357;
+  --accent-secondary: #e24080; /* per-adventure brand override; defaults to --accent */
   --gold:         #f5c452;
   --silver:       #cbd5e1;
   --bronze:       #d48a4a;
@@ -58,7 +59,7 @@ html, body {
 .brand {
   font-family: var(--font-brand);
   font-size: clamp(1.4rem, 2.6vw, 2.2rem);
-  color: var(--accent);
+  color: var(--accent-secondary);
   line-height: 1;
 }
 .title {
@@ -290,6 +291,33 @@ html, body {
 const TEAM_COLORS = ['#e24080', '#7fd17b', '#60a5fa', '#f5c452', '#a78bfa', '#22d3ee', '#fb7185', '#34d399'];
 function teamColor(i) { return TEAM_COLORS[i % TEAM_COLORS.length]; }
 
+// applyColors overrides the CSS palette from a per-adventure brand. Same
+// logic as play.html — kept duplicated (~30 lines) rather than extracted
+// into a shared script, because these two pages intentionally have no
+// shared runtime bundle.
+function applyColors(c) {
+  const root = document.documentElement;
+  if (!c) {
+    for (const v of ['--accent', '--accent-secondary', '--bg-1', '--bg-2', '--text', '--ink']) {
+      root.style.removeProperty(v);
+    }
+    document.body && (document.body.style.background = '');
+    return;
+  }
+  if (c.accent) root.style.setProperty('--accent', c.accent); else root.style.removeProperty('--accent');
+  root.style.setProperty('--accent-secondary', c.accent_secondary || c.accent || '');
+  if (!c.accent_secondary && !c.accent) root.style.removeProperty('--accent-secondary');
+  if (c.background) {
+    // live.html paints a multi-layer gradient onto <body>; overriding
+    // --bg-1 alone leaves the accents of the gradient dominant. Replace
+    // the body background entirely for a brand-solid look.
+    document.body.style.background = c.background;
+  } else {
+    document.body.style.background = '';
+  }
+  if (c.text) root.style.setProperty('--text', c.text); else root.style.removeProperty('--text');
+}
+
 const LIVE_TOKEN = location.pathname.split('/').pop();
 
 // Latest payloads from the server. render() reads from these; the WS
@@ -338,6 +366,7 @@ function formatFinishTime(startISO, completedAt) {
 function render() {
   const data = latestSnapshot;
   if (!data) return;
+  applyColors(data.colors);
 
   const root = document.getElementById('root');
   root.replaceChildren();

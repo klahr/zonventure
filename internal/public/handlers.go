@@ -51,16 +51,17 @@ type teamDTO struct {
 // LiveDTO is the snapshot shape served both by /api/public/live/{token}
 // and pushed as a "snapshot" WS message.
 type LiveDTO struct {
-	RunID          int64       `json:"run_id"`
-	AdventureTitle string      `json:"adventure_title"`
-	AdventureSlug  string      `json:"adventure_slug"`
-	State          string      `json:"state"`
-	StartedAt      string      `json:"started_at,omitempty"`
-	ServerNow      string      `json:"server_now"`
-	PageCount      int         `json:"page_count"`
-	ShowMap        bool        `json:"show_map"`
-	Puzzles        []puzzleDTO `json:"puzzles"`
-	Teams          []teamDTO   `json:"teams"`
+	RunID          int64             `json:"run_id"`
+	AdventureTitle string            `json:"adventure_title"`
+	AdventureSlug  string            `json:"adventure_slug"`
+	State          string            `json:"state"`
+	StartedAt      string            `json:"started_at,omitempty"`
+	ServerNow      string            `json:"server_now"`
+	PageCount      int               `json:"page_count"`
+	ShowMap        bool              `json:"show_map"`
+	Puzzles        []puzzleDTO       `json:"puzzles"`
+	Teams          []teamDTO         `json:"teams"`
+	Colors         *adventure.Colors `json:"colors,omitempty"`
 }
 
 // runByToken resolves a URL token to a run id, returning sql.ErrNoRows if
@@ -91,10 +92,19 @@ func (h *Handlers) buildLive(ctx context.Context, token string) (LiveDTO, int64,
 	if adv == nil {
 		return LiveDTO{}, id, http.StatusInternalServerError, "adventure not loaded"
 	}
-	puzzles := make([]puzzleDTO, len(adv.Pages))
-	for i, p := range adv.Pages {
+	// The TV board only shows pages a player will actually encounter, so
+	// disabled pages are hidden entirely. enabledPages preserves the raw
+	// idx order so the index emitted here stays stable across runs.
+	enabled := make([]adventure.Page, 0, len(adv.Pages))
+	for _, p := range adv.Pages {
+		if !p.Disabled {
+			enabled = append(enabled, p)
+		}
+	}
+	puzzles := make([]puzzleDTO, len(enabled))
+	for i, p := range enabled {
 		puzzles[i] = puzzleDTO{
-			Index: p.Index, Title: p.Title, Gated: p.Location.Gated(),
+			Index: i, Title: p.Title, Gated: p.Location.Gated(),
 			Lat: p.Location.Lat, Lng: p.Location.Lng,
 		}
 	}
@@ -119,11 +129,24 @@ func (h *Handlers) buildLive(ctx context.Context, token string) (LiveDTO, int64,
 	defer rows.Close()
 	teams := []teamDTO{}
 	for rows.Next() {
-		var t teamDTO
-		if err := rows.Scan(&t.ID, &t.Name, &t.PageIndex, &t.CompletedAt); err != nil {
+		var (
+			t       teamDTO
+			rawCurr int
+		)
+		if err := rows.Scan(&t.ID, &t.Name, &rawCurr, &t.CompletedAt); err != nil {
 			return LiveDTO{}, id, http.StatusInternalServerError, "scan failed"
 		}
-		t.PageCount = len(adv.Pages)
+		// Convert the stored cursor (raw adventure_pages.idx of the next
+		// page to consider) into a count of enabled pages already solved.
+		for _, p := range enabled {
+			if p.Index < rawCurr {
+				t.PageIndex++
+			}
+		}
+		if t.PageIndex > len(enabled) {
+			t.PageIndex = len(enabled)
+		}
+		t.PageCount = len(enabled)
 		teams = append(teams, t)
 	}
 	for i := range teams {
@@ -147,18 +170,23 @@ func (h *Handlers) buildLive(ctx context.Context, token string) (LiveDTO, int64,
 		teams[i].Members = members
 		teams[i].Rank = i + 1
 	}
-	return LiveDTO{
+	dto := LiveDTO{
 		RunID:          id,
 		AdventureTitle: adv.Meta.Title,
 		AdventureSlug:  slug,
 		State:          state,
 		StartedAt:      startedAt,
 		ServerNow:      time.Now().UTC().Format(time.RFC3339),
-		PageCount:      len(adv.Pages),
+		PageCount:      len(enabled),
 		ShowMap:        showMap != 0,
 		Puzzles:        puzzles,
 		Teams:          teams,
-	}, id, http.StatusOK, ""
+	}
+	if !adv.Colors.Empty() {
+		c := adv.Colors
+		dto.Colors = &c
+	}
+	return dto, id, http.StatusOK, ""
 }
 
 // Live returns the compact snapshot for the public leaderboard.

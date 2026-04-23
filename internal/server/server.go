@@ -183,10 +183,16 @@ func New(cfg Config) http.Handler {
 			r.Delete("/adventures/{slug}", adminH.DeleteAdventure)
 			r.Post("/adventures/{slug}/pages", adminH.CreatePage)
 			r.Patch("/adventures/{slug}/pages/reorder", adminH.ReorderPages)
+			r.Post("/adventures/{slug}/pages/copy-from/{pageID}", adminH.CopyPuzzleToAdventure)
 			r.Patch("/pages/{pageID}", adminH.UpdatePage)
 			r.Delete("/pages/{pageID}", adminH.DeletePage)
 			r.Post("/pages/{pageID}/images", adminH.AddPageImage)
 			r.Delete("/images/{imageID}", adminH.DeletePageImage)
+
+			// Puzzle library: the cross-adventure pool of puzzles.
+			r.Get("/puzzles", adminH.ListPuzzles)
+			r.Post("/puzzles", adminH.CreateLibraryPuzzle)
+			r.Get("/puzzles/{pageID}", adminH.GetPuzzle)
 		})
 	})
 

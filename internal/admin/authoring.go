@@ -27,16 +27,18 @@ import (
 const maxImageBytes = 5 * 1024 * 1024
 
 type pageView struct {
-	ID       int64    `json:"id"`
-	Index    int      `json:"index"`
-	Title    string   `json:"title"`
-	Prompt   string   `json:"prompt"`
-	Hint     string   `json:"hint,omitempty"`
-	Accept   []string `json:"accept"`
-	Lat      float64  `json:"lat"`
-	Lng      float64  `json:"lng"`
-	RadiusM  *float64 `json:"radius_m,omitempty"`
-	Gated    bool     `json:"gated"`
+	ID       int64       `json:"id"`
+	Index    int         `json:"index"`
+	Title    string      `json:"title"`
+	Prompt   string      `json:"prompt"`
+	Hint     string      `json:"hint,omitempty"`
+	Accept   []string    `json:"accept"`
+	Lat      float64     `json:"lat"`
+	Lng      float64     `json:"lng"`
+	RadiusM  *float64    `json:"radius_m,omitempty"`
+	Gated    bool        `json:"gated"`
+	Disabled bool        `json:"disabled"`
+	Notes    string      `json:"notes"`
 	Images   []imageView `json:"images"`
 }
 
@@ -49,12 +51,16 @@ type imageView struct {
 }
 
 type adventureEditDTO struct {
-	ID          int64      `json:"id"`
-	Slug        string     `json:"slug"`
-	Title       string     `json:"title"`
-	Description string     `json:"description"`
-	Author      string     `json:"author"`
-	Pages       []pageView `json:"pages"`
+	ID                   int64      `json:"id"`
+	Slug                 string     `json:"slug"`
+	Title                string     `json:"title"`
+	Description          string     `json:"description"`
+	Author               string     `json:"author"`
+	AccentColor          string     `json:"accent_color"`
+	AccentSecondaryColor string     `json:"accent_secondary_color"`
+	BackgroundColor      string     `json:"background_color"`
+	TextColor            string     `json:"text_color"`
+	Pages                []pageView `json:"pages"`
 }
 
 // LoadAdventureForEdit returns full adventure content (including accept
@@ -74,10 +80,14 @@ func (h *Handlers) LoadAdventureForEdit(w http.ResponseWriter, r *http.Request) 
 }
 
 type createAdventureRequest struct {
-	Slug        string `json:"slug"`
-	Title       string `json:"title"`
-	Description string `json:"description"`
-	Author      string `json:"author"`
+	Slug                 string `json:"slug"`
+	Title                string `json:"title"`
+	Description          string `json:"description"`
+	Author               string `json:"author"`
+	AccentColor          string `json:"accent_color"`
+	AccentSecondaryColor string `json:"accent_secondary_color"`
+	BackgroundColor      string `json:"background_color"`
+	TextColor            string `json:"text_color"`
 }
 
 // CreateAdventure inserts an empty adventure. Admin-only.
@@ -96,9 +106,25 @@ func (h *Handlers) CreateAdventure(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusBadRequest, "slug may only contain a-z 0-9 and hyphens")
 		return
 	}
+	colorFields := []struct{ label, value string }{
+		{"accent_color", req.AccentColor},
+		{"accent_secondary_color", req.AccentSecondaryColor},
+		{"background_color", req.BackgroundColor},
+		{"text_color", req.TextColor},
+	}
+	for _, f := range colorFields {
+		if !validHexColor(f.value) {
+			httpx.Error(w, http.StatusBadRequest, f.label+` must be empty or "#rrggbb"`)
+			return
+		}
+	}
 	res, err := h.DB.ExecContext(r.Context(), `
-		INSERT INTO adventures(slug, title, description, author) VALUES (?, ?, ?, ?)
-	`, req.Slug, req.Title, req.Description, req.Author)
+		INSERT INTO adventures(slug, title, description, author,
+		                       accent_color, accent_secondary_color, background_color, text_color)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+	`, req.Slug, req.Title, req.Description, req.Author,
+		nullIfEmpty(req.AccentColor), nullIfEmpty(req.AccentSecondaryColor),
+		nullIfEmpty(req.BackgroundColor), nullIfEmpty(req.TextColor))
 	if err != nil {
 		httpx.Error(w, http.StatusConflict, "slug already used")
 		return
@@ -110,10 +136,14 @@ func (h *Handlers) CreateAdventure(w http.ResponseWriter, r *http.Request) {
 }
 
 type updateAdventureRequest struct {
-	Title       *string `json:"title,omitempty"`
-	Description *string `json:"description,omitempty"`
-	Author      *string `json:"author,omitempty"`
-	Slug        *string `json:"slug,omitempty"`
+	Title                *string `json:"title,omitempty"`
+	Description          *string `json:"description,omitempty"`
+	Author               *string `json:"author,omitempty"`
+	Slug                 *string `json:"slug,omitempty"`
+	AccentColor          *string `json:"accent_color,omitempty"`
+	AccentSecondaryColor *string `json:"accent_secondary_color,omitempty"`
+	BackgroundColor      *string `json:"background_color,omitempty"`
+	TextColor            *string `json:"text_color,omitempty"`
 }
 
 // UpdateAdventure amends the metadata.
@@ -145,6 +175,29 @@ func (h *Handlers) UpdateAdventure(w http.ResponseWriter, r *http.Request) {
 		}
 		sets = append(sets, "slug = ?")
 		args = append(args, newSlug)
+	}
+	// Colour fields: accept empty string as "clear to default". Pointer
+	// semantics let callers patch one colour at a time without touching
+	// the others.
+	colorPatches := []struct {
+		col string
+		val *string
+	}{
+		{"accent_color", req.AccentColor},
+		{"accent_secondary_color", req.AccentSecondaryColor},
+		{"background_color", req.BackgroundColor},
+		{"text_color", req.TextColor},
+	}
+	for _, p := range colorPatches {
+		if p.val == nil {
+			continue
+		}
+		if !validHexColor(*p.val) {
+			httpx.Error(w, http.StatusBadRequest, p.col+` must be empty or "#rrggbb"`)
+			return
+		}
+		sets = append(sets, p.col+" = ?")
+		args = append(args, nullIfEmpty(*p.val))
 	}
 	if len(sets) == 1 {
 		httpx.Error(w, http.StatusBadRequest, "nothing to update")
@@ -203,22 +256,24 @@ func (h *Handlers) DeleteAdventure(w http.ResponseWriter, r *http.Request) {
 }
 
 type pageWriteRequest struct {
-	Title   string   `json:"title"`
-	Prompt  string   `json:"prompt"`
-	Hint    string   `json:"hint"`
-	Accept  []string `json:"accept"`
-	Lat     float64  `json:"lat"`
-	Lng     float64  `json:"lng"`
-	RadiusM *float64 `json:"radius_m,omitempty"`
+	Title    string   `json:"title"`
+	Prompt   string   `json:"prompt"`
+	Hint     string   `json:"hint"`
+	Notes    string   `json:"notes"`
+	Accept   []string `json:"accept"`
+	Lat      float64  `json:"lat"`
+	Lng      float64  `json:"lng"`
+	RadiusM  *float64 `json:"radius_m,omitempty"`
+	Disabled bool     `json:"disabled"`
 }
 
+// validate checks only the constraints that are ALWAYS required,
+// regardless of whether the puzzle is attached to an adventure yet.
+// Prompt and accept are intentionally *not* required — an author may
+// save a library stub with nothing but a location and fill in the rest
+// later. The run-side code already handles empty-accept gracefully (no
+// answer ever matches).
 func (req pageWriteRequest) validate() error {
-	if strings.TrimSpace(req.Prompt) == "" {
-		return errors.New("prompt required")
-	}
-	if len(req.Accept) == 0 {
-		return errors.New("at least one accepted answer required")
-	}
 	if req.RadiusM != nil && *req.RadiusM <= 0 {
 		return errors.New("radius_m must be > 0")
 	}
@@ -253,10 +308,14 @@ func (h *Handlers) CreatePage(w http.ResponseWriter, r *http.Request) {
 	if req.RadiusM != nil {
 		radius = *req.RadiusM
 	}
+	disabled := 0
+	if req.Disabled {
+		disabled = 1
+	}
 	res, err := h.DB.ExecContext(r.Context(), `
-		INSERT INTO adventure_pages(adventure_id, idx, title, prompt, hint, accept, lat, lng, radius_m)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, advID, nextIdx, req.Title, req.Prompt, req.Hint, string(accept), req.Lat, req.Lng, radius)
+		INSERT INTO adventure_pages(adventure_id, idx, title, prompt, hint, accept, lat, lng, radius_m, disabled, notes)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, advID, nextIdx, req.Title, req.Prompt, req.Hint, string(accept), req.Lat, req.Lng, radius, disabled, req.Notes)
 	if err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "insert failed: "+err.Error())
 		return
@@ -284,11 +343,15 @@ func (h *Handlers) UpdatePage(w http.ResponseWriter, r *http.Request) {
 	if req.RadiusM != nil {
 		radius = *req.RadiusM
 	}
+	disabled := 0
+	if req.Disabled {
+		disabled = 1
+	}
 	res, err := h.DB.ExecContext(r.Context(), `
 		UPDATE adventure_pages
-		SET title = ?, prompt = ?, hint = ?, accept = ?, lat = ?, lng = ?, radius_m = ?
+		SET title = ?, prompt = ?, hint = ?, accept = ?, lat = ?, lng = ?, radius_m = ?, disabled = ?, notes = ?
 		WHERE id = ?
-	`, req.Title, req.Prompt, req.Hint, string(accept), req.Lat, req.Lng, radius, pageID)
+	`, req.Title, req.Prompt, req.Hint, string(accept), req.Lat, req.Lng, radius, disabled, req.Notes, pageID)
 	if err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "update failed: "+err.Error())
 		return
@@ -307,8 +370,10 @@ func (h *Handlers) DeletePage(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	var advID int64
-	var idx int
+	var (
+		advID sql.NullInt64
+		idx   int
+	)
 	if err := h.DB.QueryRowContext(r.Context(),
 		`SELECT adventure_id, idx FROM adventure_pages WHERE id = ?`, pageID).Scan(&advID, &idx); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -329,11 +394,16 @@ func (h *Handlers) DeletePage(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusInternalServerError, "delete failed")
 		return
 	}
-	if _, err := tx.ExecContext(r.Context(),
-		`UPDATE adventure_pages SET idx = idx - 1 WHERE adventure_id = ? AND idx > ?`,
-		advID, idx); err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "renumber failed")
-		return
+	// Library puzzles don't participate in adventure idx compaction —
+	// their idx is ignored entirely (UNIQUE(adventure_id, idx) treats
+	// each NULL as distinct).
+	if advID.Valid {
+		if _, err := tx.ExecContext(r.Context(),
+			`UPDATE adventure_pages SET idx = idx - 1 WHERE adventure_id = ? AND idx > ?`,
+			advID.Int64, idx); err != nil {
+			httpx.Error(w, http.StatusInternalServerError, "renumber failed")
+			return
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "commit failed")
@@ -547,13 +617,21 @@ func adventureIDBySlug(ctx context.Context, db *sql.DB, slug string) (int64, err
 
 func loadAdventureDTO(ctx context.Context, db *sql.DB, slug string) (*adventureEditDTO, error) {
 	a := adventureEditDTO{Pages: []pageView{}}
+	var accent, accent2, bg, ink sql.NullString
 	if err := db.QueryRowContext(ctx, `
-		SELECT id, slug, title, description, author FROM adventures WHERE slug = ?
-	`, slug).Scan(&a.ID, &a.Slug, &a.Title, &a.Description, &a.Author); err != nil {
+		SELECT id, slug, title, description, author,
+		       accent_color, accent_secondary_color, background_color, text_color
+		FROM adventures WHERE slug = ?
+	`, slug).Scan(&a.ID, &a.Slug, &a.Title, &a.Description, &a.Author,
+		&accent, &accent2, &bg, &ink); err != nil {
 		return nil, err
 	}
+	a.AccentColor = accent.String
+	a.AccentSecondaryColor = accent2.String
+	a.BackgroundColor = bg.String
+	a.TextColor = ink.String
 	rows, err := db.QueryContext(ctx, `
-		SELECT id, idx, title, prompt, hint, accept, lat, lng, radius_m
+		SELECT id, idx, title, prompt, hint, accept, lat, lng, radius_m, disabled, notes
 		FROM adventure_pages WHERE adventure_id = ? ORDER BY idx
 	`, a.ID)
 	if err != nil {
@@ -565,11 +643,13 @@ func loadAdventureDTO(ctx context.Context, db *sql.DB, slug string) (*adventureE
 			p        pageView
 			acceptJS string
 			radius   sql.NullFloat64
+			disabled int
 		)
 		if err := rows.Scan(&p.ID, &p.Index, &p.Title, &p.Prompt, &p.Hint, &acceptJS,
-			&p.Lat, &p.Lng, &radius); err != nil {
+			&p.Lat, &p.Lng, &radius, &disabled, &p.Notes); err != nil {
 			return nil, err
 		}
+		p.Disabled = disabled != 0
 		_ = json.Unmarshal([]byte(acceptJS), &p.Accept)
 		if p.Accept == nil {
 			p.Accept = []string{}
@@ -611,6 +691,39 @@ func loadPageImages(ctx context.Context, db *sql.DB, pageID int64) ([]imageView,
 		out = append(out, im)
 	}
 	return out, nil
+}
+
+// validHexColor accepts "" (meaning "use default") or exactly "#rrggbb"
+// (case-insensitive). Rejecting "red"/shorthand/rgba keeps client output
+// deterministic across browsers and makes the field safe to interpolate
+// straight into a CSS variable.
+func validHexColor(s string) bool {
+	if s == "" {
+		return true
+	}
+	if len(s) != 7 || s[0] != '#' {
+		return false
+	}
+	for i := 1; i < 7; i++ {
+		c := s[i]
+		switch {
+		case c >= '0' && c <= '9':
+		case c >= 'a' && c <= 'f':
+		case c >= 'A' && c <= 'F':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// nullIfEmpty turns an empty string into a SQL NULL so the adventures row
+// stores the explicit "use default" sentinel instead of a bogus "".
+func nullIfEmpty(s string) any {
+	if s == "" {
+		return nil
+	}
+	return s
 }
 
 func validSlug(s string) bool {

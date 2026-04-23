@@ -107,18 +107,19 @@ func loadTeam(ctx context.Context, db *sql.DB, slot auth.Slot) (teamContext, err
 // State is the response body for GET /api/player/state and the "state" WS
 // push kind.
 type State struct {
-	Status         string     `json:"status"` // waiting | running | paused | completed | gated
-	AdventureSlug  string     `json:"adventure_slug,omitempty"`
-	AdventureTitle string     `json:"adventure_title,omitempty"`
-	TeamName       string     `json:"team_name,omitempty"`
-	SlotName       string     `json:"slot_name,omitempty"`
-	PageIndex      int        `json:"page_index,omitempty"`
-	PageCount      int        `json:"page_count,omitempty"`
-	Title          string     `json:"title,omitempty"`
-	Prompt         string     `json:"prompt,omitempty"`
-	Hint           string     `json:"hint,omitempty"`
-	Images         []imageDTO `json:"images,omitempty"`
-	Gate           *gateDTO   `json:"gate,omitempty"`
+	Status         string            `json:"status"` // waiting | running | paused | completed | gated
+	AdventureSlug  string            `json:"adventure_slug,omitempty"`
+	AdventureTitle string            `json:"adventure_title,omitempty"`
+	TeamName       string            `json:"team_name,omitempty"`
+	SlotName       string            `json:"slot_name,omitempty"`
+	PageIndex      int               `json:"page_index,omitempty"`
+	PageCount      int               `json:"page_count,omitempty"`
+	Title          string            `json:"title,omitempty"`
+	Prompt         string            `json:"prompt,omitempty"`
+	Hint           string            `json:"hint,omitempty"`
+	Images         []imageDTO        `json:"images,omitempty"`
+	Gate           *gateDTO          `json:"gate,omitempty"`
+	Colors         *adventure.Colors `json:"colors,omitempty"`
 }
 
 type imageDTO struct {
@@ -130,6 +131,38 @@ type gateDTO struct {
 	Lng     float64 `json:"lng"`
 	Radius  float64 `json:"radius_m"`
 	Reached bool    `json:"reached"`
+}
+
+// enabledPages returns just the pages an author has kept active, in
+// their original order. Disabled pages are preserved in the DB but are
+// invisible to players.
+func enabledPages(adv *adventure.Adventure) []adventure.Page {
+	out := make([]adventure.Page, 0, len(adv.Pages))
+	for _, p := range adv.Pages {
+		if !p.Disabled {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// visibleFor returns the first enabled page at or after startIdx (where
+// startIdx is a raw adventure_pages.idx value) plus its position in the
+// enabled slice. The (nil, 0) result means "no more enabled pages —
+// team is done". The pointer returned is borrowed from pages and must
+// not be retained past the caller's use of the slice.
+func visibleFor(pages []adventure.Page, startIdx int) (*adventure.Page, int) {
+	enabledIdx := 0
+	for i := range pages {
+		if pages[i].Disabled {
+			continue
+		}
+		if pages[i].Index >= startIdx {
+			return &pages[i], enabledIdx
+		}
+		enabledIdx++
+	}
+	return nil, 0
 }
 
 // buildState is the shared state builder used by the HTTP and WS handlers.
@@ -150,7 +183,11 @@ func (h *Handlers) buildState(ctx context.Context, slot auth.Slot) (State, int, 
 		AdventureTitle: adv.Meta.Title,
 		TeamName:       tc.TeamName,
 		SlotName:       slot.Name,
-		PageCount:      len(adv.Pages),
+		PageCount:      len(enabledPages(adv)),
+	}
+	if !adv.Colors.Empty() {
+		c := adv.Colors
+		resp.Colors = &c
 	}
 	if tc.CompletedAt.Valid {
 		resp.Status = "completed"
@@ -167,12 +204,12 @@ func (h *Handlers) buildState(ctx context.Context, slot auth.Slot) (State, int, 
 		resp.Status = "completed"
 		return resp, http.StatusOK, ""
 	}
-	if tc.CurrentPageIndex >= len(adv.Pages) {
+	page, enabledIdx := visibleFor(adv.Pages, tc.CurrentPageIndex)
+	if page == nil {
 		resp.Status = "completed"
 		return resp, http.StatusOK, ""
 	}
-	page := adv.Pages[tc.CurrentPageIndex]
-	resp.PageIndex = page.Index
+	resp.PageIndex = enabledIdx
 	resp.Title = page.Title
 	if page.Location.Gated() {
 		reached, _ := gateReached(ctx, h.DB, tc.TeamID, page.Location)
@@ -266,10 +303,16 @@ func (h *Handlers) applyAnswer(ctx context.Context, slot auth.Slot, answer strin
 		return AnswerResponse{}, tc.RunID, http.StatusConflict, "team already finished"
 	}
 	adv := h.Lib.Get(tc.AdventureSlug)
-	if adv == nil || tc.CurrentPageIndex >= len(adv.Pages) {
+	if adv == nil {
 		return AnswerResponse{}, tc.RunID, http.StatusInternalServerError, "no current page"
 	}
-	page := adv.Pages[tc.CurrentPageIndex]
+	// The player is answering the first enabled page at or after their
+	// stored cursor — NOT necessarily adv.Pages[tc.CurrentPageIndex],
+	// because authors may have disabled one or more pages in between.
+	page, _ := visibleFor(adv.Pages, tc.CurrentPageIndex)
+	if page == nil {
+		return AnswerResponse{}, tc.RunID, http.StatusInternalServerError, "no current page"
+	}
 	if page.Location.Gated() {
 		reached, err := gateReached(ctx, h.DB, tc.TeamID, page.Location)
 		if err != nil {
@@ -287,20 +330,23 @@ func (h *Handlers) applyAnswer(ctx context.Context, slot auth.Slot, answer strin
 	if _, err := h.DB.ExecContext(ctx, `
 		INSERT INTO answer_attempts(team_id, slot_id, page_index, answer, accepted)
 		VALUES (?, ?, ?, ?, ?)
-	`, tc.TeamID, slot.ID, tc.CurrentPageIndex, answer, acceptedInt); err != nil {
+	`, tc.TeamID, slot.ID, page.Index, answer, acceptedInt); err != nil {
 		return AnswerResponse{}, tc.RunID, http.StatusInternalServerError, "record attempt failed"
 	}
 	teamID := tc.TeamID
 	resp := AnswerResponse{Accepted: accepted}
 	if !accepted {
 		runevents.Record(ctx, h.DB, tc.RunID, &teamID, runevents.SlotActor(slot.ID),
-			runevents.AnswerWrong, map[string]any{"page_index": tc.CurrentPageIndex, "submitted": answer})
+			runevents.AnswerWrong, map[string]any{"page_index": page.Index, "submitted": answer})
 		return resp, tc.RunID, http.StatusOK, ""
 	}
 	runevents.Record(ctx, h.DB, tc.RunID, &teamID, runevents.SlotActor(slot.ID),
-		runevents.AnswerRight, map[string]any{"page_index": tc.CurrentPageIndex})
-	nextIdx := tc.CurrentPageIndex + 1
-	if nextIdx >= len(adv.Pages) {
+		runevents.AnswerRight, map[string]any{"page_index": page.Index})
+	// Advance past the page the player just solved. The NEXT call to
+	// buildState will re-resolve the new visible page (which will skip
+	// any disabled pages that follow).
+	nextIdx := page.Index + 1
+	if next, _ := visibleFor(adv.Pages, nextIdx); next == nil {
 		if _, err := h.DB.ExecContext(ctx, `
 			UPDATE teams SET current_page_index = ?, completed_at = datetime('now') WHERE id = ?
 		`, nextIdx, tc.TeamID); err != nil {

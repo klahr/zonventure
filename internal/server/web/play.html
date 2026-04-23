@@ -13,6 +13,7 @@
     --accent:        #ad1357;
     --accent-hover:  #951048;
     --accent-fg:     #ffffff;
+    --accent-secondary: #ad1357; /* same as --accent by default; per-adventure brand overrides */
     --ink:           #1f3349;
     --success:       #429a3f;
     --danger:        #ff5252;
@@ -91,7 +92,7 @@
     font-size: .85rem;
   }
   .runbar .title {
-    font-family: var(--font-brand); color: var(--accent);
+    font-family: var(--font-brand); color: var(--accent-secondary);
     font-size: 1.05rem; line-height: 1; margin-right: .25rem;
   }
   .runbar .sep { color: var(--muted); }
@@ -99,7 +100,7 @@
   .runbar .progress { color: var(--muted); font-variant-numeric: tabular-nums; }
   .runbar .status { margin-left: auto; }
   h2 { font-size: .85rem; margin: 1.2rem 0 .4rem; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
-  h3 { font-size: 1.05rem; margin: 0 0 .5rem; color: var(--ink); }
+  h3 { font-size: 1.05rem; margin: 0 0 .5rem; color: var(--accent-secondary); }
   input {
     font: inherit; width: 100%; padding: .75rem .9rem; margin-bottom: .8rem;
     background: var(--surface); color: var(--text);
@@ -132,8 +133,8 @@
   .pill {
     display: inline-block; padding: .15rem .65rem;
     border-radius: 999px; font-size: .7rem; font-weight: 700;
-    background: color-mix(in srgb, var(--accent) 15%, transparent);
-    color: var(--accent);
+    background: color-mix(in srgb, var(--accent-secondary) 15%, transparent);
+    color: var(--accent-secondary);
     text-transform: uppercase; letter-spacing: .06em;
   }
   .topline {
@@ -338,6 +339,69 @@ function connectWS() {
   ws.onerror = () => { /* handled by onclose */ };
 }
 
+// applyColors paints the four optional adventure brand colours onto the
+// document root. Unset fields are cleared so navigating back to an
+// untinted adventure fully restores the defaults. Accent-fg is derived
+// automatically from accent-luminance — saves a fourth admin knob while
+// keeping text legible on either a light or dark accent.
+function applyColors(c) {
+  const root = document.documentElement;
+  if (!c) {
+    for (const v of ['--accent', '--accent-hover', '--accent-fg', '--accent-secondary', '--bg', '--ink', '--text']) {
+      root.style.removeProperty(v);
+    }
+    return;
+  }
+  if (c.accent) {
+    root.style.setProperty('--accent', c.accent);
+    root.style.setProperty('--accent-hover', shade(c.accent, -0.12));
+    root.style.setProperty('--accent-fg', readableOn(c.accent));
+  } else {
+    root.style.removeProperty('--accent');
+    root.style.removeProperty('--accent-hover');
+    root.style.removeProperty('--accent-fg');
+  }
+  root.style.setProperty('--accent-secondary', c.accent_secondary || c.accent || '');
+  if (!c.accent_secondary && !c.accent) root.style.removeProperty('--accent-secondary');
+  if (c.background) root.style.setProperty('--bg', c.background); else root.style.removeProperty('--bg');
+  if (c.text) {
+    root.style.setProperty('--ink', c.text);
+    root.style.setProperty('--text', c.text);
+  } else {
+    root.style.removeProperty('--ink');
+    root.style.removeProperty('--text');
+  }
+}
+
+// shade nudges a hex colour toward black (amount<0) or white (amount>0)
+// so the hover state stays automatically legible regardless of the
+// admin's chosen accent.
+function shade(hex, amount) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex);
+  if (!m) return hex;
+  const n = parseInt(m[1], 16);
+  let r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+  const mix = amount < 0 ? 0 : 255;
+  r = Math.round(r + (mix - r) * Math.abs(amount));
+  g = Math.round(g + (mix - g) * Math.abs(amount));
+  b = Math.round(b + (mix - b) * Math.abs(amount));
+  return '#' + [r, g, b].map((x) => x.toString(16).padStart(2, '0')).join('');
+}
+
+// readableOn returns black or white, whichever has better contrast on
+// the supplied background. Uses the WCAG relative-luminance formula.
+function readableOn(hex) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex);
+  if (!m) return '#ffffff';
+  const n = parseInt(m[1], 16);
+  const srgb = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => {
+    const s = v / 255;
+    return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+  });
+  const L = 0.2126 * srgb[0] + 0.7152 * srgb[1] + 0.0722 * srgb[2];
+  return L > 0.5 ? '#000000' : '#ffffff';
+}
+
 function el(tag, attrs = {}, ...children) {
   const e = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs)) {
@@ -377,6 +441,7 @@ function sendPing() {
 }
 
 function render(s) {
+  applyColors(s.colors);
   const key = JSON.stringify({
     status: s.status, pi: s.page_index, pc: s.page_count,
     t: s.title, p: s.prompt, h: s.hint,
