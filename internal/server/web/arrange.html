@@ -574,14 +574,20 @@ textarea { min-height: 80px; resize: vertical; font-family: ui-monospace, monosp
 }
 .pt-pill {
   display: inline-flex; align-items: center; justify-content: center;
-  min-width: 2rem; height: 2rem; padding: 0 .6rem;
+  min-width: 2rem; max-width: 14rem; height: 2rem; padding: 0 .75rem;
   border-radius: 999px;
   background: var(--surface-2); color: var(--text);
   border: 1px solid var(--border-soft);
   font: inherit; font-weight: 700; font-variant-numeric: tabular-nums;
   cursor: pointer;
+  overflow: hidden;
   transition: border-color 120ms, background 120ms, color 120ms;
 }
+.pt-pill .pt-label {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.pt-pill.untitled .pt-label { font-style: italic; font-weight: 500; color: var(--muted); }
+.pt-pill.current.untitled .pt-label { color: var(--accent-fg); }
 .pt-pill:hover { border-color: var(--accent); }
 .pt-pill.current {
   background: var(--accent); color: var(--accent-fg);
@@ -599,6 +605,15 @@ textarea { min-height: 80px; resize: vertical; font-family: ui-monospace, monosp
   border-style: dashed;
 }
 .pt-pill.current.disabled { opacity: .7; }
+/* Arrow between timeline pills — a pure-decoration sequence hint.
+   pointer-events: none lets drag-over fall through to the pills. */
+.pt-arrow {
+  color: var(--muted);
+  font-size: 1rem;
+  line-height: 1;
+  user-select: none;
+  pointer-events: none;
+}
 
 /* Dragging feedback: the pill being dragged dims, and the drop target
    grows a coloured edge on whichever side the cursor is closer to so
@@ -2312,27 +2327,40 @@ async function viewPuzzles(view) {
   }, icon(ICONS.crosshair)));
 }
 
-// quickPuzzle captures GPS, creates a stub via POST /api/admin/puzzles,
-// and navigates to the new puzzle's editor. Designed for the
+// pendingQuickPuzzleGPS is the in-flight GPS fix kicked off by a
+// quickPuzzle tap. The puzzle itself is created without waiting, so
+// the editor opens immediately; when the fix eventually arrives, the
+// matching editor applies it to the location — unless the author has
+// set it manually in the meantime.
+let pendingQuickPuzzleGPS = null; // { puzzleID, promise } | null
+
+// quickPuzzle creates a stub via POST /api/admin/puzzles and navigates
+// to the new puzzle's editor without waiting on GPS. A location fix is
+// requested in the background and applied by the editor if one arrives
+// before the author sets a location manually. Designed for the
 // "standing somewhere, want to remember this spot" flow — one tap
 // after the page is already loaded.
 async function quickPuzzle(ev) {
-  if (!navigator.geolocation) { toastErr('Geolocation not available on this device'); return; }
   const btn = ev?.currentTarget;
   if (btn) btn.disabled = true;
-  navigator.geolocation.getCurrentPosition(async (pos) => {
-    const r = await api('/api/admin/puzzles', {
-      method: 'POST',
-      body: JSON.stringify({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-    });
-    if (btn) btn.disabled = false;
-    if (r.status !== 201) { toastErr(r.body?.error || `error ${r.status}`); return; }
-    toastOk('Puzzle captured');
-    nav('#puzzles/' + r.body.id);
-  }, (err) => {
-    if (btn) btn.disabled = false;
-    toastErr('GPS failed: ' + (err.message || 'unknown'));
-  }, { enableHighAccuracy: true, maximumAge: 10000, timeout: 30000 });
+  const gpsPromise = navigator.geolocation
+    ? new Promise((resolve) => {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+          () => resolve(null),
+          { enableHighAccuracy: true, maximumAge: 10000, timeout: 30000 },
+        );
+      })
+    : Promise.resolve(null);
+  const r = await api('/api/admin/puzzles', {
+    method: 'POST',
+    body: JSON.stringify({}),
+  });
+  if (btn) btn.disabled = false;
+  if (r.status !== 201) { toastErr(r.body?.error || `error ${r.status}`); return; }
+  toastOk('Puzzle captured');
+  pendingQuickPuzzleGPS = { puzzleID: r.body.id, promise: gpsPromise };
+  nav('#puzzles/' + r.body.id);
 }
 
 function renderPuzzleLibraryCard(p) {
@@ -2752,8 +2780,16 @@ async function openEditPuzzle(adv, page /* or null */) {
     const fallback = (!standalone && adv.pages.length > 0)
       ? { lat: adv.pages[adv.pages.length - 1].lat, lng: adv.pages[adv.pages.length - 1].lng }
       : { lat: 59.3293, lng: 18.0686 };
-    const initialLat = page ? page.lat : fallback.lat;
-    const initialLng = page ? page.lng : fallback.lng;
+    // A quick-puzzle created without GPS lands at (0, 0) on the server;
+    // claim the pending fix (if any) so the editor can apply it when it
+    // arrives, and fall back to the default view in the meantime instead
+    // of opening the map in the Gulf of Guinea.
+    const pendingGPSMatch = pendingQuickPuzzleGPS && page && pendingQuickPuzzleGPS.puzzleID === page.id
+      ? pendingQuickPuzzleGPS : null;
+    if (pendingGPSMatch) pendingQuickPuzzleGPS = null;
+    const waitingForGPS = !!pendingGPSMatch && page.lat === 0 && page.lng === 0;
+    const initialLat = (page && !waitingForGPS) ? page.lat : fallback.lat;
+    const initialLng = (page && !waitingForGPS) ? page.lng : fallback.lng;
 
     const lat    = h('input', { type: 'number', step: 'any', required: true, value: initialLat });
     const lng    = h('input', { type: 'number', step: 'any', required: true, value: initialLng });
@@ -2873,23 +2909,28 @@ async function openEditPuzzle(adv, page /* or null */) {
     const renderTimeline = () => {
       if (standalone) return;
       timeline.replaceChildren();
+      const arrow = () => h('span', { class: 'pt-arrow', 'aria-hidden': 'true' }, '→');
       adv.pages.forEach((p, i) => {
+        if (i > 0) timeline.append(arrow());
         const current = page && p.id === page.id;
+        const titled = !!(p.title && p.title.trim());
         const cls = ['pt-pill'];
-        if (current)   cls.push('current');
+        if (current)    cls.push('current');
         if (p.disabled) cls.push('disabled');
+        if (!titled)    cls.push('untitled');
         const pill = h('button', {
           class: cls.join(' '),
           type: 'button',
           draggable: 'true',
-          title: (p.title || '(untitled)') + (p.disabled ? ' — disabled' : ''),
+          title: (titled ? p.title : `Puzzle ${i + 1} (untitled)`) + (p.disabled ? ' — disabled' : ''),
           'data-page-id': p.id,
           'data-page-pos': i,
           on: { click: () => { if (!current) switchTo(p); } },
-        }, String(i + 1));
+        }, h('span', { class: 'pt-label' }, titled ? p.title : `Puzzle ${i + 1}`));
         wireDrag(pill, p, i);
         timeline.append(pill);
       });
+      if (adv.pages.length > 0) timeline.append(arrow());
       if (creating) {
         timeline.append(h('span', { class: 'pt-pill current', title: 'This puzzle' }, 'New'));
       } else {
@@ -2985,6 +3026,31 @@ async function openEditPuzzle(adv, page /* or null */) {
       mapEl, gpsBtn, lat, lng, gated, radius,
       initial: { lat: initialLat, lng: initialLng },
       freshPuzzle: !page,
+      // When a quick-puzzle GPS fix arrives before the author moves the
+      // pin, silently persist it so bailing out without pressing Save
+      // doesn't lose the location the tap was meant to capture.
+      pendingGPS: pendingGPSMatch ? pendingGPSMatch.promise : null,
+      onAutoLocation: async (coords) => {
+        const r = await api(`/api/admin/pages/${page.id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({
+            title:    titleInput.value.trim(),
+            prompt:   promptInput.value.trim(),
+            hint:     hintInput.value.trim(),
+            notes:    notes.value.trim(),
+            accept:   accept.value.split(',').map((s) => s.trim()).filter(Boolean),
+            lat:      coords.lat,
+            lng:      coords.lng,
+            disabled: disabled.checked,
+            ...(gated.checked ? { radius_m: parseFloat(radius.value) } : {}),
+          }),
+        });
+        if (r.status === 204) {
+          // Keep isDirty honest — the inputs now match the server.
+          page.lat = coords.lat;
+          page.lng = coords.lng;
+        }
+      },
     });
     // Resize the map once it's visible — Leaflet reads the container
     // size at init and otherwise picks up a 0×0 box.
@@ -3136,9 +3202,33 @@ function renderPuzzleLocationMap(args) {
 
   updateCircle();
 
+  // Quick-puzzle's background GPS fix: apply it when it arrives, unless
+  // the author has already set a location (dragged the pin, clicked the
+  // map, typed in a coord, or hit the GPS button). Any of those signal
+  // an intentional placement we shouldn't overwrite.
+  let destroyed = false;
+  if (args.pendingGPS) {
+    let userTouched = false;
+    const markTouched = () => { userTouched = true; };
+    marker.on('dragstart', markTouched);
+    map.on('click', markTouched);
+    lat.addEventListener('input', markTouched);
+    lng.addEventListener('input', markTouched);
+    gpsBtn.addEventListener('click', markTouched);
+    args.pendingGPS.then((coords) => {
+      if (destroyed || userTouched || !coords) return;
+      lat.value = coords.lat.toFixed(6);
+      lng.value = coords.lng.toFixed(6);
+      marker.setLatLng([coords.lat, coords.lng]);
+      map.setView([coords.lat, coords.lng], 17);
+      updateCircle();
+      args.onAutoLocation?.(coords);
+    });
+  }
+
   return {
     invalidate: () => map.invalidateSize(),
-    destroy:    () => { map.remove(); },
+    destroy:    () => { destroyed = true; map.remove(); },
   };
 }
 
