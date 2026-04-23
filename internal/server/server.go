@@ -17,7 +17,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 )
 
-//go:embed web/play.html web/arrange.html web/live.html
+//go:embed web/play.html web/arrange.html web/live.html web/i18n.js
 var webFS embed.FS
 
 // Config is the bag of knobs New needs.
@@ -81,6 +81,9 @@ func New(cfg Config) http.Handler {
 	})
 	r.Get("/arrange", servePage("web/arrange.html"))
 	r.Get("/live/{token}", servePage("web/live.html"))
+
+	// Shared i18n dictionary + helpers, loaded by all three entry points.
+	r.Get("/i18n.js", serveAsset("web/i18n.js", "application/javascript; charset=utf-8"))
 
 	// Public, no-auth read-only endpoints for the TV leaderboard. Keyed
 	// by an opaque token per run so the URL isn't guessable.
@@ -237,6 +240,21 @@ func servePage(path string) http.HandlerFunc {
 	}
 	return func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-store")
+		_, _ = w.Write(body)
+	}
+}
+
+// serveAsset serves an embedded asset with an explicit Content-Type.
+// Used for the shared i18n.js so all three HTML pages can load a single
+// copy instead of duplicating the dictionary per file.
+func serveAsset(path, contentType string) http.HandlerFunc {
+	body, err := webFS.ReadFile(path)
+	if err != nil {
+		panic("embed: " + err.Error())
+	}
+	return func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", contentType)
 		w.Header().Set("Cache-Control", "no-store")
 		_, _ = w.Write(body)
 	}

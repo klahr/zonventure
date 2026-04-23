@@ -11,6 +11,7 @@
   integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
 <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
   integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script src="/i18n.js"></script>
 <style>
 :root {
   --accent:       #e24080;  /* raspberry lifted for dark bg */
@@ -285,9 +286,14 @@ html, body {
 </style>
 </head>
 <body>
-<div id="root" class="app"><div class="empty-board">Loading…</div></div>
+<div id="root" class="app"><div class="empty-board" id="initial-loading">Loading…</div></div>
 
 <script>
+// Localise the initial loading placeholder that's baked into the
+// HTML — the script runs after i18n.js loads, so t() is available.
+const initialLoading = document.getElementById('initial-loading');
+if (initialLoading) initialLoading.textContent = t('Loading…');
+
 const TEAM_COLORS = ['#e24080', '#7fd17b', '#60a5fa', '#f5c452', '#a78bfa', '#22d3ee', '#fb7185', '#34d399'];
 function teamColor(i) { return TEAM_COLORS[i % TEAM_COLORS.length]; }
 
@@ -384,11 +390,13 @@ function render() {
     root.append(buildBoard(data));
   }
   root.append(h('div', { class: 'footer' },
-    'Live · push updates · ',
+    t('Live · push updates · '),
     data.puzzles?.length
-      ? `${data.puzzles.length} puzzle${data.puzzles.length === 1 ? '' : 's'} · `
+      ? (data.puzzles.length === 1
+          ? t('{{n}} puzzle · ', { n: data.puzzles.length })
+          : t('{{n}} puzzles · ', { n: data.puzzles.length }))
       : '',
-    `server time ${data.server_now || ''}`));
+    t('server time {{time}}', { time: data.server_now || '' })));
 }
 
 // buildMapSlot returns a stable <div> for the Leaflet map so the outer
@@ -407,7 +415,7 @@ function buildMapSlot() {
     mapInnerEl.className = 'mapinner';
     mapHintEl = document.createElement('div');
     mapHintEl.className = 'maphint';
-    mapHintEl.textContent = 'Loading map…';
+    mapHintEl.textContent = t('Loading map…');
     mapWrapEl = document.createElement('div');
     mapWrapEl.className = 'mapwrap';
     mapWrapEl.append(mapInnerEl, mapHintEl);
@@ -417,7 +425,7 @@ function buildMapSlot() {
 
 async function renderLiveMap(inner, hint, data) {
   if (typeof L === 'undefined') {
-    hint.textContent = 'Map library still loading…';
+    hint.textContent = t('Map library still loading…');
     setTimeout(() => renderLiveMap(inner, hint, data), 300);
     return;
   }
@@ -451,7 +459,7 @@ async function renderLiveMap(inner, hint, data) {
         iconSize: [28, 28], iconAnchor: [14, 28],
       }),
     }).addTo(map);
-    m.bindPopup(`<strong>${p.index + 1}. ${p.title || 'Puzzle'}</strong>${p.gated ? '<br><em>gated</em>' : ''}`);
+    m.bindPopup(`<strong>${p.index + 1}. ${p.title || t('Puzzle')}</strong>${p.gated ? `<br><em>${t('gated')}</em>` : ''}`);
     bounds.extend([p.lat, p.lng]);
   }
 
@@ -482,14 +490,16 @@ async function renderLiveMap(inner, hint, data) {
     map.fitBounds(bounds, { padding: [24, 24], maxZoom: 17 });
   }
   hint.textContent = tracks.length
-    ? `${tracks.length} team${tracks.length === 1 ? '' : 's'} on the map`
-    : 'Waiting for the first position…';
+    ? (tracks.length === 1
+        ? t('{{n}} team on the map', { n: tracks.length })
+        : t('{{n}} teams on the map', { n: tracks.length }))
+    : t('Waiting for the first position…');
 }
 
 function buildHeader(data) {
-  const fsBtn = h('button', { class: 'fs-btn', title: 'Fullscreen' },
+  const fsBtn = h('button', { class: 'fs-btn', title: t('Fullscreen') },
     h('span', { html: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 8 4 4 8 4"/><polyline points="16 4 20 4 20 8"/><polyline points="20 16 20 20 16 20"/><polyline points="8 20 4 20 4 16"/></svg>' }),
-    'Fullscreen');
+    t('Fullscreen'));
   fsBtn.addEventListener('click', () => {
     if (document.fullscreenElement) document.exitFullscreen();
     else document.documentElement.requestFullscreen();
@@ -498,15 +508,15 @@ function buildHeader(data) {
   return h('header', { class: 'topline' },
     h('div', { class: 'brand' }, 'zonventure'),
     h('div', { class: 'title' },
-      h('h1', {}, data.adventure_title || 'Run'),
+      h('h1', {}, data.adventure_title || t('Run')),
       h('div', { class: 'slug' },
-        h('span', { class: `state-pill ${data.state}` }, h('span', { class: 'dot' }), data.state),
+        h('span', { class: `state-pill ${data.state}` }, h('span', { class: 'dot' }), t(data.state || '')),
         ' · ', data.adventure_slug),
     ),
     h('div', { class: 'clockwrap' },
       h('div', { class: 'clock' },
         formatElapsed(data.started_at, data.server_now),
-        h('small', {}, data.started_at ? 'Elapsed' : 'Not started')),
+        h('small', {}, data.started_at ? t('Elapsed') : t('Not started'))),
       fsBtn,
     ),
   );
@@ -515,7 +525,7 @@ function buildHeader(data) {
 function buildBoard(data) {
   const board = h('div', { class: 'board' });
   if (!data.teams || data.teams.length === 0) {
-    board.append(h('div', { class: 'empty-board' }, 'No teams yet.'));
+    board.append(h('div', { class: 'empty-board' }, t('No teams yet.')));
     return board;
   }
   const seen = new Set();
@@ -545,7 +555,7 @@ function renderRow(team, idx, data) {
   main.append(h('div', { class: 'team-name' },
     h('span', { class: 'team-dot' }),
     team.name,
-    finished ? h('span', { style: 'color:var(--success); font-size:.6em; font-weight:700; text-transform:uppercase; letter-spacing:.2em' }, 'finished') : null,
+    finished ? h('span', { style: 'color:var(--success); font-size:.6em; font-weight:700; text-transform:uppercase; letter-spacing:.2em' }, t('finished')) : null,
   ));
   if ((team.members || []).length) {
     main.append(h('div', { class: 'members' }, team.members.map((m) => m.username).join(' · ')));
@@ -554,7 +564,7 @@ function renderRow(team, idx, data) {
   main.append(h('div', { class: 'progress' },
     h('div', { class: 'label' },
       h('span', {},
-        finished ? 'Complete' : `Puzzle ${team.page_index + 1} of ${data.page_count}`,
+        finished ? t('Complete') : t('Puzzle {{i}} of {{n}}', { i: team.page_index + 1, n: data.page_count }),
         currentPuzzle && !finished ? h('strong', { style: 'margin-left:.6rem' }, currentPuzzle.title) : null),
       h('span', {}, `${finished ? 100 : pct}%`),
     ),
@@ -564,15 +574,15 @@ function renderRow(team, idx, data) {
   row.append(main);
 
   if (finished) {
-    const t = formatFinishTime(data.started_at, team.completed_at);
+    const finishTime = formatFinishTime(data.started_at, team.completed_at);
     row.append(h('div', { class: 'stat finished' },
-      h('div', { class: 'value' }, t || 'Done'),
-      h('div', { class: 'unit' }, 'Finish time'),
+      h('div', { class: 'value' }, finishTime || t('Done')),
+      h('div', { class: 'unit' }, t('Finish time')),
     ));
   } else {
     row.append(h('div', { class: 'stat' },
       h('div', { class: 'value' }, `${team.page_index}/${data.page_count}`),
-      h('div', { class: 'unit' }, 'Solved'),
+      h('div', { class: 'unit' }, t('Solved')),
     ));
   }
   return row;

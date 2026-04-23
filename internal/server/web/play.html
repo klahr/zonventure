@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Aclonica&family=Open+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+<script src="/i18n.js"></script>
 <style>
   :root {
     color-scheme: light dark;
@@ -322,6 +323,37 @@
     opacity: 0; animation: celebrateRise .3s .45s ease forwards;
   }
 
+  /* ---------- Language picker ----------
+     Floats at the top-right corner so it's reachable from every view
+     (no-session card, running puzzle, gated, completed). Compact and
+     unobtrusive; the magic-link flow only needs it once. */
+  .lang-fab {
+    position: fixed;
+    top: calc(.5rem + env(safe-area-inset-top));
+    right: .5rem;
+    z-index: 40;
+  }
+  .lang-fab select {
+    font: inherit; font-size: .85rem; font-weight: 600;
+    color: var(--text);
+    background: color-mix(in srgb, var(--surface) 88%, transparent);
+    border: 1px solid var(--border-soft);
+    border-radius: 999px;
+    padding: .3rem 1.75rem .3rem .75rem;
+    box-shadow: var(--shadow);
+    cursor: pointer;
+    appearance: none;
+    background-image:
+      linear-gradient(45deg, transparent 50%, var(--muted) 50%),
+      linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+    background-position:
+      calc(100% - 12px) 55%,
+      calc(100% - 7px) 55%;
+    background-size: 5px 5px, 5px 5px;
+    background-repeat: no-repeat;
+  }
+  .lang-fab select:hover { border-color: var(--muted); }
+
   /* ---------- Preview mode ---------- */
   .preview-chrome {
     position: sticky; top: 0; z-index: 50;
@@ -360,10 +392,12 @@
 </style>
 </head>
 <body>
-<div id="app">loading…</div>
+<div id="app" data-initial-loading>loading…</div>
 
 <script>
 const app = document.getElementById('app');
+// Localise the baked-in loading placeholder now that t() is available.
+if (app.hasAttribute('data-initial-loading')) app.textContent = t('loading…');
 let gpsWatchID = null;
 let pingTimer = null;
 let lastFix = null;
@@ -422,7 +456,7 @@ function connectWS() {
     } else if (msg.kind === 'answer_error') {
       if (submitResultEl) {
         submitResultEl.className = 'result err';
-        submitResultEl.textContent = msg.data?.error || `error ${msg.data?.status || ''}`;
+        submitResultEl.textContent = msg.data?.error || t('error {{status}}', { status: msg.data?.status || '' });
       }
     }
   };
@@ -514,10 +548,10 @@ function renderNoSession() {
   lastRenderKey = null;
   hideSubmitDock();
   app.replaceChildren(el('div', { class: 'card' },
-    el('h3', {}, 'Open your magic link'),
+    el('h3', {}, t('Open your magic link')),
     el('p', { class: 'muted' },
-      'Players receive a personal link via message from their arranger. ',
-      'Open it on this device to join the game.')));
+      t('Players receive a personal link via message from their arranger. '),
+      t('Open it on this device to join the game.'))));
 }
 
 function startGPS() {
@@ -555,28 +589,30 @@ function render(s) {
     s.adventure_title ? el('span', { class: 'title' }, s.adventure_title) : null,
     s.team_name ? el('span', { class: 'team' }, s.team_name) : null,
     playing
-      ? el('span', { class: 'progress' }, `Puzzle ${s.page_index + 1}/${s.page_count}`)
+      ? el('span', { class: 'progress' }, t('Puzzle {{i}}/{{n}}', { i: s.page_index + 1, n: s.page_count }))
       : null,
-    el('span', { class: 'status pill' }, s.status),
+    el('span', { class: 'status pill' }, t(s.status || '')),
   );
   app.append(bar);
 
   // Welcome screen shown once per (adventure, team, slot).
   maybeShowWelcome(s);
 
-  if (s.status === 'waiting')  { hideSubmitDock(); app.append(el('p', {}, 'Waiting for the adventure to start…')); return; }
-  if (s.status === 'paused')   { hideSubmitDock(); app.append(el('p', {}, 'The arranger paused the run. Stand by.')); return; }
+  if (s.status === 'waiting')  { hideSubmitDock(); app.append(el('p', {}, t('Waiting for the adventure to start…'))); return; }
+  if (s.status === 'paused')   { hideSubmitDock(); app.append(el('p', {}, t('The arranger paused the run. Stand by.'))); return; }
   if (s.status === 'completed'){ hideSubmitDock(); renderCompleted(s); return; }
 
   if (s.status === 'gated') {
     hideSubmitDock();
     const card = el('div', { class: 'card' },
-      el('h2', {}, 'Travel to the location'),
-      el('p', {}, `Head within ${s.gate.radius_m} m of (${s.gate.lat.toFixed(5)}, ${s.gate.lng.toFixed(5)}).`),
+      el('h2', {}, t('Travel to the location')),
+      el('p', {}, t('Head within {{r}} m of ({{lat}}, {{lng}}).',
+        { r: s.gate.radius_m, lat: s.gate.lat.toFixed(5), lng: s.gate.lng.toFixed(5) })),
       el('p', { class: 'muted' }, lastFix
-        ? `Last fix: ${lastFix.lat.toFixed(5)}, ${lastFix.lng.toFixed(5)} (±${Math.round(lastFix.accuracy)} m)`
-        : 'Waiting for a GPS fix…'),
-      el('button', { on: { click: sendPing } }, 'Send location now'));
+        ? t('Last fix: {{lat}}, {{lng}} (±{{acc}} m)',
+            { lat: lastFix.lat.toFixed(5), lng: lastFix.lng.toFixed(5), acc: Math.round(lastFix.accuracy) })
+        : t('Waiting for a GPS fix…')),
+      el('button', { on: { click: sendPing } }, t('Send location now')));
     app.append(card);
     return;
   }
@@ -588,7 +624,7 @@ function render(s) {
     for (const im of s.images) app.append(el('img', { class: 'puzzle-img', src: im.url, alt: '' }));
   }
   app.append(el('p', { class: 'prompt' }, s.prompt || ''));
-  if (s.hint) app.append(el('p', { class: 'muted' }, `Hint: ${s.hint}`));
+  if (s.hint) app.append(el('p', { class: 'muted' }, t('Hint: {{text}}', { text: s.hint })));
 
   renderSubmitDock();
 }
@@ -607,12 +643,12 @@ function renderSubmitDock() {
   dock.replaceChildren();
   const input = document.createElement('input');
   input.name = 'a';
-  input.placeholder = previewState ? 'Try an answer (preview)' : 'Your answer';
+  input.placeholder = previewState ? t('Try an answer (preview)') : t('Your answer');
   input.autocomplete = 'off';
   input.required = true;
   const button = document.createElement('button');
   button.type = 'submit';
-  button.textContent = 'Submit';
+  button.textContent = t('Submit');
   const result = document.createElement('p');
   result.className = 'result muted';
   const form = document.createElement('form');
@@ -625,7 +661,7 @@ function renderSubmitDock() {
     if (previewState) { handlePreviewSubmit(input.value); return; }
     if (!wsSend('answer', { answer: input.value })) {
       result.className = 'result err';
-      result.textContent = 'Disconnected — try again in a moment.';
+      result.textContent = t('Disconnected — try again in a moment.');
     }
   });
 }
@@ -710,10 +746,10 @@ function celebrate(finished) {
   ring.innerHTML = '<svg class="check" viewBox="0 0 100 100"><path d="M22 52 l18 18 l38 -38"/></svg>';
   const head = document.createElement('div');
   head.className = 'head';
-  head.textContent = finished ? 'Adventure complete!' : 'Correct!';
+  head.textContent = finished ? t('Adventure complete!') : t('Correct!');
   const sub = document.createElement('div');
   sub.className = 'sub';
-  sub.textContent = finished ? 'Great work — you made it to the end.' : 'Next puzzle coming up…';
+  sub.textContent = finished ? t('Great work — you made it to the end.') : t('Next puzzle coming up…');
   overlay.append(ring, head, sub);
 
   // Confetti.
@@ -752,7 +788,7 @@ function rebuff() {
     + '</svg>';
   const head = document.createElement('div');
   head.className = 'head';
-  head.textContent = 'Not quite';
+  head.textContent = t('Not quite');
   overlay.append(disc, head);
   document.body.append(overlay);
   const total = 900;
@@ -807,21 +843,20 @@ function showWelcomeDialog(s, opts = {}) {
   const overlay = el('div', { class: 'welcome' });
   const panel = el('div', { class: 'panel' });
   panel.append(
-    el('h2', {}, s.adventure_title || 'Adventure'),
-    el('div', { class: 'who' }, `${s.team_name || 'your team'}`),
+    el('h2', {}, s.adventure_title || t('Adventure')),
+    el('div', { class: 'who' }, `${s.team_name || t('your team')}`),
     el('p', {},
-      'Your team has ', el('strong', {}, String(s.page_count || '?')),
-      ' puzzles to solve. Good luck!'),
-    el('h3', { style: 'margin-top:.5rem' }, 'A few quick tips'),
+      t('Your team has '), el('strong', {}, String(s.page_count || '?')),
+      t(' puzzles to solve. Good luck!')),
+    el('h3', { style: 'margin-top:.5rem' }, t('A few quick tips')),
     el('ul', {},
-      el('li', {}, 'Read each puzzle carefully — the answer is usually a short word or phrase.'),
-      el('li', {}, 'Some puzzles only unlock when you reach a specific place. ' +
-        'Your device will show a pin and prompt you to go there.'),
-      el('li', {}, 'The submit button is always in the same spot at the bottom of the screen.'),
-      el('li', {}, 'Whoever in your team has this link installed can type answers — pick one phone and keep it handy.'),
-      el('li', {}, 'Wrong answers don\'t cost you anything — keep trying.')),
+      el('li', {}, t('Read each puzzle carefully — the answer is usually a short word or phrase.')),
+      el('li', {}, t('Some puzzles only unlock when you reach a specific place. Your device will show a pin and prompt you to go there.')),
+      el('li', {}, t('The submit button is always in the same spot at the bottom of the screen.')),
+      el('li', {}, t('Whoever in your team has this link installed can type answers — pick one phone and keep it handy.')),
+      el('li', {}, t('Wrong answers don\'t cost you anything — keep trying.'))),
     el('div', { class: 'cta' },
-      el('button', { on: { click: dismiss } }, 'Let\'s go')));
+      el('button', { on: { click: dismiss } }, t('Let\'s go'))));
   overlay.append(panel);
   overlay.addEventListener('click', (e) => { if (e.target === overlay) dismiss(); });
   document.body.append(overlay);
@@ -833,9 +868,9 @@ async function renderCompleted(s) {
   // A placeholder while /summary loads.
   const host = el('div', { class: 'summary' });
   host.append(
-    el('h2', {}, 'Adventure complete! 🎉'),
+    el('h2', {}, t('Adventure complete! 🎉')),
     el('div', { class: 'who' }, `${s.team_name || ''} · ${s.adventure_title || ''}`),
-    el('p', { class: 'muted' }, 'Loading your run stats…'));
+    el('p', { class: 'muted' }, t('Loading your run stats…')));
   app.append(host);
 
   let stats = null;
@@ -845,9 +880,9 @@ async function renderCompleted(s) {
   } catch { /* ignore */ }
   if (!stats) {
     host.replaceChildren(
-      el('h2', {}, 'Adventure complete! 🎉'),
+      el('h2', {}, t('Adventure complete! 🎉')),
       el('div', { class: 'who' }, `${s.team_name || ''} · ${s.adventure_title || ''}`),
-      el('p', { class: 'muted' }, 'Could not load stats.'));
+      el('p', { class: 'muted' }, t('Could not load stats.')));
     return;
   }
   fillSummaryHost(host, stats);
@@ -855,17 +890,19 @@ async function renderCompleted(s) {
 
 function fillSummaryHost(host, stats) {
   host.replaceChildren(
-    el('h2', {}, 'Adventure complete! 🎉'),
+    el('h2', {}, t('Adventure complete! 🎉')),
     el('div', { class: 'who' }, `${stats.team_name} · ${stats.adventure_title}`),
     el('div', { class: 'stats-grid' },
-      statBox(formatDistance(stats.distance_m),       'Distance'),
-      statBox(formatDuration(stats.duration_seconds), 'Time'),
-      statBox(`${stats.answers_right}`,               'Correct answers'),
-      statBox(`${stats.answers_wrong}`,               'Misses'),
+      statBox(formatDistance(stats.distance_m),       t('Distance')),
+      statBox(formatDuration(stats.duration_seconds), t('Time')),
+      statBox(`${stats.answers_right}`,               t('Correct answers')),
+      statBox(`${stats.answers_wrong}`,               t('Misses')),
     ),
     stats.page_count
       ? el('p', { class: 'muted', style: 'font-size:.85rem; margin-top:.75rem' },
-          `Solved all ${stats.page_count} puzzle${stats.page_count === 1 ? '' : 's'}.`)
+          stats.page_count === 1
+            ? t('Solved all {{n}} puzzle.', { n: stats.page_count })
+            : t('Solved all {{n}} puzzles.', { n: stats.page_count }))
       : null,
   );
 }
@@ -928,7 +965,7 @@ async function bootstrap() {
   const s = await api('/api/player/state');
   if (s.status === 401) { renderNoSession(); return; }
   if (s.status !== 200) {
-    app.replaceChildren(el('p', { class: 'err' }, s.body?.error || 'error'));
+    app.replaceChildren(el('p', { class: 'err' }, s.body?.error || t('error')));
     return;
   }
   startGPS();
@@ -942,12 +979,12 @@ async function bootstrapPreview(slug, pageIdx, debug) {
   const r = await api(`/api/admin/adventures/${encodeURIComponent(slug)}/preview?${qs}`);
   if (r.status === 401) {
     app.replaceChildren(el('p', { class: 'err' },
-      'Preview requires an arranger login. Open ',
-      el('a', { href: '/arrange' }, '/arrange'), ' first, then retry.'));
+      t('Preview requires an arranger login. Open '),
+      el('a', { href: '/arrange' }, '/arrange'), t(' first, then retry.')));
     return;
   }
   if (r.status !== 200) {
-    app.replaceChildren(el('p', { class: 'err' }, r.body?.error || `error ${r.status}`));
+    app.replaceChildren(el('p', { class: 'err' }, r.body?.error || t('error {{status}}', { status: r.status })));
     return;
   }
   previewState = {
@@ -978,19 +1015,19 @@ function renderPreviewChrome(s) {
     location.search = '?' + next.toString();
   };
   const chrome = el('div', { id: 'preview-chrome', class: 'preview-chrome' },
-    el('strong', {}, 'Preview'),
+    el('strong', {}, t('Preview')),
     el('span', { class: 'sep' }, '·'),
     el('span', {}, s.adventure_title || slug),
     el('span', { class: 'sep' }, '·'),
-    el('span', {}, `Puzzle ${pageIdx + 1}/${count}`),
+    el('span', {}, t('Puzzle {{i}}/{{n}}', { i: pageIdx + 1, n: count })),
     el('span', { style: 'flex:1' }),
     el('button', { class: 'chip', disabled: pageIdx <= 0 ? '' : null,
-      on: { click: () => go({ page: pageIdx - 1 }) } }, '◀ Prev'),
+      on: { click: () => go({ page: pageIdx - 1 }) } }, t('◀ Prev')),
     el('button', { class: 'chip', disabled: pageIdx >= count - 1 ? '' : null,
-      on: { click: () => go({ page: pageIdx + 1 }) } }, 'Next ▶'),
+      on: { click: () => go({ page: pageIdx + 1 }) } }, t('Next ▶')),
     el('button', { class: 'chip' + (debug ? ' on' : ''),
-      on: { click: () => go({ debug: debug ? null : 1 }) } }, 'Debug'),
-    el('button', { class: 'chip', on: { click: () => window.close() } }, 'Close'),
+      on: { click: () => go({ debug: debug ? null : 1 }) } }, t('Debug')),
+    el('button', { class: 'chip', on: { click: () => window.close() } }, t('Close')),
   );
   document.body.prepend(chrome);
   if (s.preview_debug) renderPreviewDebug(s.preview_debug);
@@ -1007,23 +1044,35 @@ function renderPreviewDebug(d) {
   const accept = d.accept || [];
   const chipChildren = [];
   if (!accept.length) {
-    chipChildren.push(el('span', { class: 'muted' }, '(none)'));
+    chipChildren.push(el('span', { class: 'muted' }, t('(none)')));
   } else {
     accept.forEach((a, i) => {
       chipChildren.push(el('code', {}, a));
       if (i < accept.length - 1) chipChildren.push(document.createTextNode(', '));
     });
   }
+  const coords = `${d.lat.toFixed(5)}, ${d.lng.toFixed(5)}`;
+  const locSuffix = d.radius_m
+    ? t(' · gate radius {{r}} m', { r: d.radius_m })
+    : t(' · not gated');
   const panel = el('div', { class: 'card preview-debug' },
-    el('h2', {}, 'Debug — author view'),
-    el('p', {}, el('strong', {}, 'Accepted answers: '), ...chipChildren),
-    el('p', { class: 'mono' },
-      `Location: ${d.lat.toFixed(5)}, ${d.lng.toFixed(5)}`
-      + (d.radius_m ? ` · gate radius ${d.radius_m} m` : ' · not gated')),
-    d.notes ? el('p', { class: 'muted', style: 'white-space:pre-wrap' }, 'Notes: ' + d.notes) : null,
+    el('h2', {}, t('Debug — author view')),
+    el('p', {}, el('strong', {}, t('Accepted answers: ')), ...chipChildren),
+    el('p', { class: 'mono' }, t('Location: {{coords}}', { coords }) + locSuffix),
+    d.notes ? el('p', { class: 'muted', style: 'white-space:pre-wrap' },
+      t('Notes: ') + d.notes) : null,
   );
   app.append(panel);
 }
+
+// Floating language picker. Mounted on <body> so it stays put across
+// app.replaceChildren() renders and is visible from every view state.
+(function mountLangFab() {
+  const fab = document.createElement('div');
+  fab.className = 'lang-fab';
+  fab.append(zvI18n.makeLangPicker({ title: t('Language') }));
+  document.body.append(fab);
+})();
 
 bootstrap();
 </script>

@@ -11,6 +11,7 @@
   integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
 <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
   integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script src="/i18n.js"></script>
 <style>
 /* ---------- Theme (Zonventure palette) ---------- */
 :root {
@@ -185,6 +186,21 @@ p { margin: 0 0 .5rem; }
 }
 .sidebar-footer .btn:hover { color: var(--accent); border-color: transparent; background: var(--surface-2); }
 .sidebar-footer .btn svg { stroke: currentColor; }
+.sidebar-lang {
+  display: flex; align-items: center; gap: .5rem;
+  padding: .25rem .25rem; font-size: .8rem;
+}
+.sidebar-lang > span { text-transform: uppercase; letter-spacing: .06em; font-weight: 700; }
+.zv-lang-picker {
+  font: inherit; color: var(--text);
+  padding: .3rem .5rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  box-shadow: none;
+  cursor: pointer;
+}
+.zv-lang-picker:hover { border-color: var(--muted); }
 .nav a {
   display: flex; align-items: center; gap: .75rem;
   padding: .6rem .85rem; border-radius: var(--radius-pill);
@@ -842,6 +858,10 @@ const ICONS = {
   menu: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>',
   back: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>',
   crosshair: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><line x1="12" y1="3" x2="12" y2="7"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="3" y1="12" x2="7" y2="12"/><line x1="17" y1="12" x2="21" y2="12"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/></svg>',
+  // Jigsaw piece: flat left+bottom, tab bulging up on the top edge,
+  // notch biting in on the right edge. Drawn relative so the cubic
+  // controls land outside the bounding box for a clear tab/notch.
+  puzzle: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4 h5 c0 -3 6 -3 6 0 h5 v5 c-3 0 -3 6 0 6 v5 h-16 z"/></svg>',
 };
 
 /* ========== Theme ========== */
@@ -883,15 +903,15 @@ async function promptPassword(title, message) {
     const err = h('p', { class: 'err', style: 'display:none' });
     const form = h('form', {},
       message ? h('p', { style: 'margin-bottom:.75rem' }, message) : null,
-      h('label', { class: 'field' }, h('span', {}, 'Your password'), input),
+      h('label', { class: 'field' }, h('span', {}, t('Your password')), input),
       err,
       h('div', { class: 'row end' },
-        h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, 'Cancel'),
-        h('button', { class: 'btn danger', type: 'submit' }, 'Confirm')),
+        h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, t('Cancel')),
+        h('button', { class: 'btn danger', type: 'submit' }, t('Confirm'))),
     );
     form.addEventListener('submit', (e) => {
       e.preventDefault();
-      if (!input.value) { err.style.display = ''; err.textContent = 'password required'; return; }
+      if (!input.value) { err.style.display = ''; err.textContent = t('password required'); return; }
       close(input.value);
     });
     body.append(form);
@@ -948,9 +968,9 @@ async function render() {
     root.replaceChildren(h('div', { class: 'login-wrap' },
       h('div', { class: 'login' },
         h('div', { class: 'brand' }, 'zonventure'),
-        h('p', {}, `Logged in as ${state.me.username} (player). This dashboard is for arrangers.`),
-        h('p', {}, h('a', { href: '/play' }, 'Go to the player view →')),
-        h('p', {}, h('button', { class: 'btn', on: { click: logout } }, 'Log out')),
+        h('p', {}, t('Logged in as {{username}} (player). This dashboard is for arrangers.', { username: state.me.username })),
+        h('p', {}, h('a', { href: '/play' }, t('Go to the player view →'))),
+        h('p', {}, h('button', { class: 'btn', on: { click: logout } }, t('Log out'))),
       )));
     return;
   }
@@ -960,16 +980,20 @@ async function render() {
 
 function renderLogin(err) {
   const form = h('form', { class: 'login' },
-    h('div', { class: 'brand' }, 'zonventure', h('small', {}, 'arranger')),
+    h('div', { class: 'brand' }, 'zonventure', h('small', {}, t('arranger'))),
     h('label', { class: 'field' },
-      h('span', {}, 'Username'),
+      h('span', {}, t('Username')),
       h('input', { name: 'u', autocomplete: 'username', required: true })),
     h('label', { class: 'field' },
-      h('span', {}, 'Password'),
+      h('span', {}, t('Password')),
       h('input', { name: 'p', type: 'password', autocomplete: 'current-password', required: true })),
     err ? h('p', { class: 'err' }, err) : null,
     h('div', { class: 'row end', style: 'margin-top:1rem' },
-      h('button', { class: 'btn primary', type: 'submit' }, 'Log in')),
+      h('button', { class: 'btn primary', type: 'submit' }, t('Log in'))),
+    h('div', { class: 'row', style: 'margin-top:1rem; justify-content:flex-end' },
+      h('label', { class: 'muted', style: 'font-size:.8rem; display:flex; align-items:center; gap:.35rem' },
+        t('Language'),
+        zvI18n.makeLangPicker({ className: 'zv-lang-picker' }))),
   );
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -979,7 +1003,7 @@ function renderLogin(err) {
       body: JSON.stringify({ username: fd.get('u'), password: fd.get('p') }),
     });
     if (r.ok) { await refreshMe(); render(); }
-    else document.getElementById('root').replaceChildren(renderLogin(r.body?.error || 'login failed'));
+    else document.getElementById('root').replaceChildren(renderLogin(r.body?.error || t('login failed')));
   });
   return h('div', { class: 'login-wrap' }, form);
 }
@@ -994,19 +1018,19 @@ function renderShell() {
   let items;
   if (isAdmin) {
     items = [
-      ['#dashboard', 'Dashboard', ICONS.dashboard],
-      ['#organizations', 'Organizations', ICONS.shield],
-      ['#library', 'Adventures', ICONS.map],
-      ['#puzzles', 'Puzzles', ICONS.crosshair],
-      ['#admins', 'Admins', ICONS.user],
+      ['#dashboard',     t('Dashboard'),     ICONS.dashboard],
+      ['#organizations', t('Organizations'), ICONS.shield],
+      ['#library',       t('Adventures'),    ICONS.map],
+      ['#puzzles',       t('Puzzles'),       ICONS.puzzle],
+      ['#admins',        t('Admins'),        ICONS.user],
     ];
   } else {
     items = [
-      ['#dashboard', 'Dashboard', ICONS.dashboard],
-      ['#adventures', 'Adventures', ICONS.map],
-      ['#runs', 'Runs', ICONS.play],
+      ['#dashboard',  t('Dashboard'),  ICONS.dashboard],
+      ['#adventures', t('Adventures'), ICONS.map],
+      ['#runs',       t('Runs'),       ICONS.play],
     ];
-    if (isOrgAdmin) items.push(['#members', 'Members', ICONS.shield]);
+    if (isOrgAdmin) items.push(['#members', t('Members'), ICONS.shield]);
   }
   const active = state.route.split('/')[0];
 
@@ -1020,19 +1044,23 @@ function renderShell() {
   const isDark = currentTheme() === 'dark';
   const themeBtn = h('button', {
     class: 'btn',
-    title: 'Toggle theme',
+    title: isDark ? t('Use light theme') : t('Use dark theme'),
     on: { click: toggleTheme },
-  }, icon(isDark ? ICONS.sun : ICONS.moon), isDark ? 'Light mode' : 'Dark mode');
+  }, icon(isDark ? ICONS.sun : ICONS.moon), isDark ? t('Use light theme') : t('Use dark theme'));
   const logoutBtn = h('button', {
     class: 'btn',
-    title: 'Log out',
+    title: t('Log out'),
     on: { click: logout },
-  }, icon(ICONS.user), `Log out (${state.me.username})`);
+  }, icon(ICONS.user), t('Log out ({{username}})', { username: state.me.username }));
+  const langPicker = h('label', { class: 'sidebar-lang', title: t('Language') },
+    h('span', { class: 'muted' }, t('Language')),
+    zvI18n.makeLangPicker({ className: 'zv-lang-picker' }));
 
   const sidebar = h('aside', { class: 'sidebar' },
-    h('div', { class: 'brand' }, 'zonventure', h('small', {}, 'arranger')),
+    h('div', { class: 'brand' }, 'zonventure',
+      h('small', {}, isAdmin ? t('administrator') : t('arranger'))),
     nav,
-    h('div', { class: 'sidebar-footer' }, themeBtn, logoutBtn));
+    h('div', { class: 'sidebar-footer' }, themeBtn, logoutBtn, langPicker));
 
   const backdrop = h('div', { class: 'backdrop', on: { click: () => {
     document.querySelector('.sidebar').classList.remove('open');
@@ -1063,15 +1091,28 @@ function renderShell() {
 function currentCrumb() {
   const parts = state.route.replace(/^#/, '').split('/');
   const section = parts[0] || 'dashboard';
-  const cap = (s) => s ? s[0].toUpperCase() + s.slice(1) : '';
-  if (section === 'runs' && parts[1]) return `Runs / Run #${parts[1]}`;
-  if (section === 'adventures' && parts[1]) return `Adventures / ${parts[1]}`;
-  return cap(section);
+  // Map section slugs to their translated nav label so the top breadcrumb
+  // tracks the sidebar. Falls through to a capitalised raw slug for
+  // anything we don't recognise.
+  const LABELS = {
+    dashboard:     t('Dashboard'),
+    adventures:    t('Adventures'),
+    runs:          t('Runs'),
+    members:       t('Members'),
+    organizations: t('Organizations'),
+    library:       t('Library'),
+    puzzles:       t('Puzzles'),
+    admins:        t('Admins'),
+  };
+  const sectionLabel = LABELS[section] || (section ? section[0].toUpperCase() + section.slice(1) : '');
+  if (section === 'runs' && parts[1]) return t('{{section}} / Run #{{id}}', { section: sectionLabel, id: parts[1] });
+  if (section === 'adventures' && parts[1]) return t('{{section}} / {{slug}}', { section: sectionLabel, slug: parts[1] });
+  return sectionLabel;
 }
 
 async function renderRoute() {
   const view = document.getElementById('view');
-  view.replaceChildren(h('p', { class: 'muted' }, 'Loading…'));
+  view.replaceChildren(h('p', { class: 'muted' }, t('Loading…')));
   const r = state.route.replace(/^#/, '');
   const [section, arg] = r.split('/');
   const role = state.me.role;
@@ -1105,7 +1146,7 @@ async function renderRoute() {
       case 'library':      return arg ? await viewLibraryEdit(view, arg) : await viewLibrary(view);
       case 'puzzles':      return arg ? await viewPuzzleEditRoute(view, arg) : await viewPuzzles(view);
       case 'admins':       return await viewAdmins(view);
-      default: view.replaceChildren(h('p', {}, 'Not found'));
+      default: view.replaceChildren(h('p', {}, t('Not found')));
     }
   } catch (err) {
     view.replaceChildren(h('p', { class: 'err' }, String(err)));
@@ -1197,16 +1238,16 @@ async function viewArrangerDashboard(view) {
   };
 
   view.replaceChildren(
-    h('h1', {}, `Hello, ${state.me.username}`),
+    h('h1', {}, t('Hello, {{username}}', { username: state.me.username })),
     h('p', { class: 'muted' },
-      `You have ${ (advs.body?.adventures || []).length } adventure(s) you are allowed to arrange.`),
+      t('You have {{n}} adventure(s) you are allowed to arrange.', { n: (advs.body?.adventures || []).length })),
     h('div', { class: 'grid stats' },
-      stat('Runs total', counts.total),
-      stat('Running now', counts.running),
-      stat('Scheduled', counts.scheduled),
+      stat(t('Runs total'), counts.total),
+      stat(t('Running now'), counts.running),
+      stat(t('Scheduled'), counts.scheduled),
     ),
     h('div', { class: 'card' },
-      h('h2', {}, 'Recent runs'),
+      h('h2', {}, t('Recent runs')),
       runsTable(rs.slice(0, 5)),
     ),
   );
@@ -1225,31 +1266,31 @@ async function viewAdminDashboard(view) {
   }, { runsTotal: 0, runsRunning: 0, players: 0, members: 0 });
 
   view.replaceChildren(
-    h('h1', {}, `Hello, ${state.me.username}`),
+    h('h1', {}, t('Hello, {{username}}', { username: state.me.username })),
     h('p', { class: 'muted' },
-      'Signed in as admin — you manage organizations, their assignments, and other admins.'),
+      t('Signed in as admin — you manage organizations, their assignments, and other admins.')),
     h('div', { class: 'grid stats' },
-      stat('Organizations', orgs.length),
-      stat('Org users', totals.members),
-      stat('Active runs', totals.runsRunning),
+      stat(t('Organizations'), orgs.length),
+      stat(t('Org users'), totals.members),
+      stat(t('Active runs'), totals.runsRunning),
     ),
     h('div', { class: 'card' },
       h('div', { class: 'row between' },
-        h('h2', {}, 'Organizations'),
+        h('h2', {}, t('Organizations')),
         h('button', { class: 'btn primary small', on: { click: () => nav('#organizations') } },
-          icon(ICONS.shield), 'Manage')),
+          icon(ICONS.shield), t('Manage'))),
       orgs.length === 0
         ? h('div', { class: 'empty' },
-            h('p', {}, 'No organizations yet.'),
+            h('p', {}, t('No organizations yet.')),
             h('button', { class: 'btn primary', on: { click: () => openCreateOrg() } },
-              icon(ICONS.plus), 'Create your first organization'))
+              icon(ICONS.plus), t('Create your first organization')))
         : h('table', { class: 'table' },
           h('thead', {}, h('tr', {},
-            h('th', {}, 'Organization'),
-            h('th', { class: 'hide-narrow' }, 'Users'),
-            h('th', { class: 'hide-narrow' }, 'Players'),
-            h('th', {}, 'Runs'),
-            h('th', { class: 'hide-narrow' }, 'Active'))),
+            h('th', {}, t('Organization')),
+            h('th', { class: 'hide-narrow' }, t('Users')),
+            h('th', { class: 'hide-narrow' }, t('Players')),
+            h('th', {}, t('Runs')),
+            h('th', { class: 'hide-narrow' }, t('Active')))),
           h('tbody', {}, orgs.map((o) => h('tr', {},
             h('td', {}, o.name),
             h('td', { class: 'mono hide-narrow' }, (o.members || []).length),
@@ -1257,11 +1298,20 @@ async function viewAdminDashboard(view) {
             h('td', { class: 'mono' }, o.runs_total || 0),
             h('td', { class: 'hide-narrow' },
               (o.runs_running || 0) > 0
-                ? h('span', { class: 'pill success' }, `${o.runs_running} running`)
+                ? h('span', { class: 'pill success' }, t('{{n}} running', { n: o.runs_running }))
                 : h('span', { class: 'muted' }, '—')),
           )))),
     ),
   );
+  // Floating New-puzzle shortcut — creates a library stub at the
+  // admin's current location (or 0,0 if GPS is denied) and drops them
+  // straight into the editor. Lives on the dashboard so it's the
+  // first thing an admin sees when they sign in.
+  view.append(h('button', {
+    class: 'fab',
+    title: t('New puzzle'),
+    on: { click: quickPuzzle },
+  }, icon(ICONS.puzzle)));
 }
 
 function stat(label, value) {
@@ -1284,30 +1334,32 @@ async function viewAdventures(view) {
   // Build as an array we can filter — passing a bare null to replaceChildren
   // makes it render the string "null".
   const children = [
-    h('h1', {}, 'Adventures'),
+    h('h1', {}, t('Adventures')),
     h('p', { class: 'muted' },
-      `Each assignment lets you schedule the adventure once, with up to the number of teams agreed with the owner.`),
+      t('Each assignment lets you schedule the adventure once, with up to the number of teams agreed with the owner.')),
     unused.length === 0
       ? h('div', { class: 'empty' },
-          h('p', {}, 'No assignments available right now.'),
-          h('p', { class: 'muted' }, 'Contact the owner to get one.'))
+          h('p', {}, t('No assignments available right now.')),
+          h('p', { class: 'muted' }, t('Contact the owner to get one.')))
       : h('div', { class: 'grid cols-2' }, unused.map((a) =>
         h('div', { class: 'card' },
           h('div', { class: 'row between' },
             h('h2', {}, a.adventure_title || a.adventure_slug),
-            h('span', { class: 'pill accent' }, `up to ${a.max_teams} team${a.max_teams === 1 ? '' : 's'}`)),
+            h('span', { class: 'pill accent' }, a.max_teams === 1
+              ? t('up to {{n}} team', { n: a.max_teams })
+              : t('up to {{n}} teams', { n: a.max_teams }))),
           h('p', { class: 'muted mono' }, a.adventure_slug),
           h('div', { class: 'row end' },
-            h('button', { class: 'btn small', on: { click: () => nav('#adventures/' + a.adventure_slug) } }, 'Preview'),
+            h('button', { class: 'btn small', on: { click: () => nav('#adventures/' + a.adventure_slug) } }, t('Preview')),
             h('button', { class: 'btn primary small', on: { click: () => scheduleRun(a.id) } },
-              icon(ICONS.plus), 'Schedule run')),
+              icon(ICONS.plus), t('Schedule run'))),
         ))),
     used.length === 0 ? null : h('div', {},
-      h('h3', {}, 'Already used'),
+      h('h3', {}, t('Already used')),
       h('div', { class: 'card' },
         h('table', { class: 'table' },
           h('thead', {}, h('tr', {},
-            h('th', {}, 'Adventure'), h('th', {}, 'Teams cap'))),
+            h('th', {}, t('Adventure')), h('th', {}, t('Teams cap')))),
           h('tbody', {}, used.map((a) => h('tr', {
               style: 'cursor:pointer',
               on: { click: () => nav('#runs/' + a.run_id) },
@@ -1322,39 +1374,41 @@ async function viewAdventures(view) {
 
 async function viewAdventureDetail(view, slug) {
   const r = await api('/api/admin/adventures/' + encodeURIComponent(slug));
-  if (!r.ok) { view.replaceChildren(h('p', { class: 'err' }, r.body?.error || 'not found')); return; }
+  if (!r.ok) { view.replaceChildren(h('p', { class: 'err' }, r.body?.error || t('not found'))); return; }
   const a = r.body;
   view.replaceChildren(
-    h('button', { class: 'btn ghost small', on: { click: () => nav('#adventures') } }, icon(ICONS.back), 'Back'),
+    h('button', { class: 'btn ghost small', on: { click: () => nav('#adventures') } }, icon(ICONS.back), t('Back')),
     h('h1', {}, a.title),
     h('p', { class: 'muted' }, a.description || ''),
-    h('p', { class: 'muted mono' }, `${a.slug} · ${a.page_count} puzzles${a.author ? ' · ' + a.author : ''}`),
-    h('h2', { style: 'margin-top:1.5rem' }, 'Puzzles'),
+    h('p', { class: 'muted mono' },
+      t('{{slug}} · {{n}} puzzles', { slug: a.slug, n: a.page_count }),
+      a.author ? ' · ' + a.author : ''),
+    h('h2', { style: 'margin-top:1.5rem' }, t('Puzzles')),
     h('div', {}, a.pages.map((p, i) =>
       h('div', { class: 'card' },
         h('div', { class: 'row between' },
-          h('strong', {}, `${i + 1}. ${p.title || '(untitled)'}`),
-          p.gated ? h('span', { class: 'pill warning' }, 'gated') : null),
+          h('strong', {}, `${i + 1}. ${p.title || t('(untitled)')}`),
+          p.gated ? h('span', { class: 'pill warning' }, t('gated')) : null),
         h('p', { style: 'white-space:pre-wrap' }, p.prompt),
-        p.hint ? h('p', { class: 'muted' }, `Hint: ${p.hint}`) : null,
-        h('p', { class: 'muted' }, 'Accepted: ', p.accept.map((x) => h('span', { class: 'chip', style: 'margin-right:.25rem' }, x))),
+        p.hint ? h('p', { class: 'muted' }, t('Hint: {{text}}', { text: p.hint })) : null,
+        h('p', { class: 'muted' }, t('Accepted: '), p.accept.map((x) => h('span', { class: 'chip', style: 'margin-right:.25rem' }, x))),
         p.location ? h('p', { class: 'muted mono' },
-          `Location: ${p.location.lat.toFixed(5)}, ${p.location.lng.toFixed(5)}`,
-          p.location.radius_m ? ` · gate ${p.location.radius_m} m` : '') : null,
+          t('Location: {{coords}}', { coords: `${p.location.lat.toFixed(5)}, ${p.location.lng.toFixed(5)}` }),
+          p.location.radius_m ? t(' · gate {{r}} m', { r: p.location.radius_m }) : '') : null,
       ))),
   );
 }
 
 async function scheduleRun(assignmentID) {
-  const body = await modal('Schedule run', ({ body, close }) => {
+  const body = await modal(t('Schedule run'), ({ body, close }) => {
     const when = h('input', { type: 'datetime-local' });
     const form = h('form', {},
       h('p', { class: 'muted', style: 'font-size:.85rem; margin-bottom:.5rem' },
-        'The run is created in the scheduled state. You can start it manually later, or pick a local time here to have the server auto-start it.'),
-      h('label', { class: 'field' }, h('span', {}, 'Auto-start at (optional)'), when),
+        t('The run is created in the scheduled state. You can start it manually later, or pick a local time here to have the server auto-start it.')),
+      h('label', { class: 'field' }, h('span', {}, t('Auto-start at (optional)')), when),
       h('div', { class: 'row end' },
-        h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, 'Cancel'),
-        h('button', { class: 'btn primary', type: 'submit' }, 'Create run')),
+        h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, t('Cancel')),
+        h('button', { class: 'btn primary', type: 'submit' }, t('Create run'))),
     );
     form.addEventListener('submit', (e) => {
       e.preventDefault();
@@ -1362,7 +1416,7 @@ async function scheduleRun(assignmentID) {
       if (when.value) {
         // datetime-local is parsed as local time; toISOString emits UTC.
         const d = new Date(when.value);
-        if (Number.isNaN(d.getTime())) { toastErr('Bad date'); return; }
+        if (Number.isNaN(d.getTime())) { toastErr(t('Bad date')); return; }
         req.scheduled_at = d.toISOString();
       }
       close(req);
@@ -1371,8 +1425,8 @@ async function scheduleRun(assignmentID) {
   });
   if (!body) return;
   const r = await api('/api/admin/runs', { method: 'POST', body: JSON.stringify(body) });
-  if (r.status === 201) { toastOk(`Run #${r.body.id} scheduled`); nav('#runs/' + r.body.id); }
-  else toastErr(r.body?.error || `error ${r.status}`);
+  if (r.status === 201) { toastOk(t('Run #{{id}} scheduled', { id: r.body.id })); nav('#runs/' + r.body.id); }
+  else toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
 }
 
 /* ========== Runs ========== */
@@ -1380,23 +1434,23 @@ async function viewRuns(view) {
   const r = await api('/api/admin/runs');
   const rs = r.body?.runs || [];
   view.replaceChildren(
-    h('h1', {}, 'Runs'),
+    h('h1', {}, t('Runs')),
     h('div', { class: 'card' }, runsTable(rs)),
   );
 }
 
 function runsTable(rs) {
-  if (rs.length === 0) return h('div', { class: 'empty' }, 'No runs yet.');
+  if (rs.length === 0) return h('div', { class: 'empty' }, t('No runs yet.'));
   return h('table', { class: 'table' },
     h('thead', {}, h('tr', {},
-      h('th', {}, 'Adventure'),
-      h('th', {}, 'State'),
-      h('th', { class: 'hide-narrow' }, 'Scheduled'),
-      h('th', { class: 'hide-narrow' }, 'Started'))),
+      h('th', {}, t('Adventure')),
+      h('th', {}, t('State')),
+      h('th', { class: 'hide-narrow' }, t('Scheduled')),
+      h('th', { class: 'hide-narrow' }, t('Started')))),
     h('tbody', {}, rs.map((r) =>
       h('tr', { style: 'cursor:pointer', on: { click: () => nav('#runs/' + r.id) } },
         h('td', {}, r.adventure_slug),
-        h('td', {}, h('span', { class: 'pill ' + pillClassForState(r.state) }, r.state)),
+        h('td', {}, h('span', { class: 'pill ' + pillClassForState(r.state) }, t(r.state || ''))),
         h('td', { class: 'hide-narrow' }, fmtLocal(r.scheduled_at)),
         h('td', { class: 'hide-narrow' }, fmtLocal(r.started_at)),
       ))),
@@ -1427,21 +1481,21 @@ function renderShareBar(run) {
     on: { click: (e) => e.target.select() },
   });
   const copyBtn = h('button', {
-    class: 'btn small', type: 'button', title: 'Copy link',
+    class: 'btn small', type: 'button', title: t('Copy link'),
     on: { click: async () => {
       try {
         await navigator.clipboard.writeText(url);
-        toastOk('Link copied');
+        toastOk(t('Link copied'));
       } catch {
         urlBox.select();
         document.execCommand('copy');
-        toastOk('Link copied');
+        toastOk(t('Link copied'));
       }
     } },
-  }, 'Copy');
+  }, t('Copy'));
   const openBtn = h('a', {
     href: url, target: '_blank', rel: 'noopener', class: 'btn small primary',
-  }, 'Open ↗');
+  }, t('Open ↗'));
 
   // Real-time map toggle — arrangers can enable/disable the audience map
   // at any time (default off: revealing team positions is effectively
@@ -1454,21 +1508,21 @@ function renderShareBar(run) {
       body: JSON.stringify({ show_map: mapToggle.checked }),
     });
     if (r.status === 204) {
-      toastOk(mapToggle.checked ? 'Map enabled on live view' : 'Map hidden');
+      toastOk(mapToggle.checked ? t('Map enabled on live view') : t('Map hidden'));
     } else {
       mapToggle.checked = !mapToggle.checked;
-      toastErr(r.body?.error || `error ${r.status}`);
+      toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
     }
   });
   const mapLabel = h('label', {
     style: 'display:inline-flex; align-items:center; gap:.35rem; cursor:pointer; font-size:.85rem; color:var(--muted)',
-  }, mapToggle, 'Show real-time map');
+  }, mapToggle, t('Show real-time map'));
 
   return h('div', { class: 'card', style: 'padding:.85rem 1rem' },
     h('div', { class: 'row', style: 'gap:.75rem; align-items:center; flex-wrap:wrap' },
       h('div', { style: 'min-width:140px' },
-        h('div', { style: 'font-size:.7rem; font-weight:800; text-transform:uppercase; letter-spacing:.06em; color:var(--muted)' }, 'Public live view'),
-        h('div', { class: 'muted', style: 'font-size:.85rem' }, 'Share on a TV — token URL, no login needed'),
+        h('div', { style: 'font-size:.7rem; font-weight:800; text-transform:uppercase; letter-spacing:.06em; color:var(--muted)' }, t('Public live view')),
+        h('div', { class: 'muted', style: 'font-size:.85rem' }, t('Share on a TV — token URL, no login needed')),
       ),
       urlBox,
       copyBtn,
@@ -1490,7 +1544,7 @@ async function viewRunDetail(view, runID) {
     })(),
     api('/api/admin/runs/' + runID + '/events'),
   ]);
-  if (!detail.ok) { view.replaceChildren(h('p', { class: 'err' }, detail.body?.error || 'not found')); return; }
+  if (!detail.ok) { view.replaceChildren(h('p', { class: 'err' }, detail.body?.error || t('not found'))); return; }
   const run = detail.body.run;
   const teams = detail.body.teams || [];
   const tracks = tracksR.body?.tracks || [];
@@ -1499,11 +1553,11 @@ async function viewRunDetail(view, runID) {
 
   const actions = h('div', { class: 'row' });
   if (run.state === 'scheduled') {
-    actions.append(btn('Start now', 'primary', () => confirmStart(run)));
-    actions.append(btn('Edit schedule', '', () => openEditSchedule(run)));
+    actions.append(btn(t('Start now'), 'primary', () => confirmStart(run)));
+    actions.append(btn(t('Edit schedule'), '', () => openEditSchedule(run)));
   }
-  if (run.state === 'running') actions.append(btn('Pause', '', () => transition(run.id, 'pause')));
-  if (run.state === 'paused') actions.append(btn('Resume', 'primary', () => transition(run.id, 'resume')));
+  if (run.state === 'running') actions.append(btn(t('Pause'), '', () => transition(run.id, 'pause')));
+  if (run.state === 'paused') actions.append(btn(t('Resume'), 'primary', () => transition(run.id, 'resume')));
 
   // Build team → colour map up-front so legend, trace and dots match.
   const teamIndex = new Map();
@@ -1514,30 +1568,30 @@ async function viewRunDetail(view, runID) {
 
   const mapHost = h('div', { class: 'map-host', id: 'run-map-' + run.id });
   const legend = h('div', { class: 'map-legend' },
-    h('span', {}, h('span', { class: 'sw', style: 'background:var(--accent)' }), 'Gated puzzle'),
-    h('span', {}, h('span', { class: 'sw', style: 'background:var(--ink)' }), 'Puzzle'),
+    h('span', {}, h('span', { class: 'sw', style: 'background:var(--accent)' }), t('Gated puzzle')),
+    h('span', {}, h('span', { class: 'sw', style: 'background:var(--ink)' }), t('Puzzle')),
     ...teamLegend);
 
   view.replaceChildren(
-    h('button', { class: 'btn ghost small', on: { click: () => nav('#runs') } }, icon(ICONS.back), 'Back'),
+    h('button', { class: 'btn ghost small', on: { click: () => nav('#runs') } }, icon(ICONS.back), t('Back')),
     h('div', { class: 'row between' },
-      h('h1', {}, `Run #${run.id}`),
-      h('span', { class: 'pill ' + pillClassForState(run.state) }, run.state),
+      h('h1', {}, t('Run #{{id}}', { id: run.id })),
+      h('span', { class: 'pill ' + pillClassForState(run.state) }, t(run.state || '')),
     ),
     h('p', { class: 'muted mono' }, run.adventure_slug),
     renderShareBar(run),
     h('div', { class: 'card' },
-      h('h2', {}, 'Lifecycle'),
+      h('h2', {}, t('Lifecycle')),
       actions,
       h('p', { class: 'muted' },
         run.started_at
-          ? `Started ${fmtLocal(run.started_at)}`
+          ? t('Started {{when}}', { when: fmtLocal(run.started_at) })
           : run.scheduled_at
-            ? `Scheduled to auto-start ${fmtLocal(run.scheduled_at)}`
-            : 'Not started yet'),
+            ? t('Scheduled to auto-start {{when}}', { when: fmtLocal(run.scheduled_at) })
+            : t('Not started yet')),
     ),
     h('div', { class: 'card' },
-      h('h2', {}, 'Map'),
+      h('h2', {}, t('Map')),
       mapHost,
       legend,
     ),
@@ -1545,7 +1599,7 @@ async function viewRunDetail(view, runID) {
       h('div', { class: 'card' },
         h('div', { class: 'row between' },
           h('h2', {},
-            'Teams',
+            t('Teams'),
             run.max_teams > 0
               ? h('span', { class: 'muted', style: 'font-weight:400; margin-left:.4rem; font-size:.85rem' },
                   `(${teams.length} / ${run.max_teams})`)
@@ -1554,24 +1608,24 @@ async function viewRunDetail(view, runID) {
             class: 'btn primary small',
             disabled: run.max_teams > 0 && teams.length >= run.max_teams ? '' : null,
             on: { click: () => openTeamModal(run.id, null) },
-          }, icon(ICONS.plus), 'New team')),
+          }, icon(ICONS.plus), t('New team'))),
         teams.length === 0
-          ? h('div', { class: 'empty' }, 'No teams yet.')
+          ? h('div', { class: 'empty' }, t('No teams yet.'))
           : h('table', { class: 'table' },
-            h('thead', {}, h('tr', {}, h('th', {}, 'Team'), h('th', {}, 'Puzzle'), h('th', {}, 'Members'), h('th', {}, ''))),
-            h('tbody', {}, teams.map((t, i) => h('tr', {},
+            h('thead', {}, h('tr', {}, h('th', {}, t('Team')), h('th', {}, t('Puzzle')), h('th', {}, t('Members')), h('th', {}, ''))),
+            h('tbody', {}, teams.map((tm, i) => h('tr', {},
               h('td', {},
-                h('span', { class: 'sw', style: `display:inline-block;width:10px;height:10px;border-radius:999px;margin-right:.4rem;background:${teamColor(t.id, i)}` }),
-                h('a', { href: '#', on: { click: (e) => { e.preventDefault(); openTeamDetail(run.id, t, adventure); } } }, t.name),
-                t.completed_at ? h('span', { class: 'pill success', style: 'margin-left:.5rem' }, 'done') : null),
-              h('td', { class: 'mono' }, t.page_index),
-              h('td', {}, (t.members || []).map((m) => h('span', { class: 'chip', style: 'margin-right:.25rem' }, m.name))),
+                h('span', { class: 'sw', style: `display:inline-block;width:10px;height:10px;border-radius:999px;margin-right:.4rem;background:${teamColor(tm.id, i)}` }),
+                h('a', { href: '#', on: { click: (e) => { e.preventDefault(); openTeamDetail(run.id, tm, adventure); } } }, tm.name),
+                tm.completed_at ? h('span', { class: 'pill success', style: 'margin-left:.5rem' }, t('done')) : null),
+              h('td', { class: 'mono' }, tm.page_index),
+              h('td', {}, (tm.members || []).map((m) => h('span', { class: 'chip', style: 'margin-right:.25rem' }, m.name))),
               h('td', {}, h('div', { class: 'row end' },
-                h('button', { class: 'btn small', on: { click: () => openTeamModal(run.id, t) } }, 'Edit'),
-                h('button', { class: 'btn small danger', on: { click: () => confirmDeleteTeam(t) } }, icon(ICONS.trash)))),
+                h('button', { class: 'btn small', on: { click: () => openTeamModal(run.id, tm) } }, t('Edit')),
+                h('button', { class: 'btn small danger', on: { click: () => confirmDeleteTeam(tm) } }, icon(ICONS.trash)))),
             ))))),
       h('div', { class: 'card' },
-        h('h2', {}, 'Event log'),
+        h('h2', {}, t('Event log')),
         renderEventFeed(events, teams)),
     ),
   );
@@ -1585,7 +1639,7 @@ async function viewRunDetail(view, runID) {
 // latest-position dots come from the tracks payload.
 function initRunMap(host, adventure, teams, tracks) {
   if (typeof L === 'undefined') {
-    host.replaceChildren(h('div', { class: 'empty' }, 'Map library is still loading — refresh the page.'));
+    host.replaceChildren(h('div', { class: 'empty' }, t('Map library is still loading — refresh the page.')));
     return;
   }
   const map = L.map(host, { scrollWheelZoom: false }).setView([59.3293, 18.0686], 14);
@@ -1608,8 +1662,10 @@ function initRunMap(host, adventure, teams, tracks) {
       }),
     }).addTo(map);
     marker.bindPopup(
-      `<strong>${p.index + 1}. ${p.title || 'Puzzle'}</strong>` +
-      (p.gated && p.location.radius_m ? `<br><em>Gated — ${p.location.radius_m} m</em>` : '') +
+      `<strong>${p.index + 1}. ${p.title || t('Puzzle')}</strong>` +
+      (p.gated && p.location.radius_m
+        ? `<br><em>${t('Gated — {{r}} m', { r: p.location.radius_m })}</em>`
+        : '') +
       `<br><small>${p.location.lat.toFixed(5)}, ${p.location.lng.toFixed(5)}</small>`
     );
     bounds.extend(ll);
@@ -1644,7 +1700,7 @@ function initRunMap(host, adventure, teams, tracks) {
 
 // renderEventFeed turns the run_events JSON into a readable timeline.
 function renderEventFeed(events, teams) {
-  if (!events.length) return h('div', { class: 'empty' }, 'No activity yet.');
+  if (!events.length) return h('div', { class: 'empty' }, t('No activity yet.'));
   const ul = h('ul', { class: 'feed' });
   for (const e of events) ul.append(renderEvent(e, teams));
   return ul;
@@ -1653,36 +1709,37 @@ function renderEventFeed(events, teams) {
 function renderEvent(e, teams) {
   const p = e.payload || {};
   let badge = 'neutral', symbol = '•', msg, meta;
+  const team = h('strong', {}, e.team_name || '');
   switch (e.kind) {
     case 'run.created':
-      badge = 'brand'; symbol = '+'; msg = h('span', { class: 'msg' }, 'Run created for ', h('strong', {}, p.adventure_slug || '')); break;
-    case 'run.started': badge = 'good'; symbol = '▶'; msg = h('span', { class: 'msg' }, 'Run started'); break;
-    case 'run.paused':  badge = 'neutral'; symbol = '‖'; msg = h('span', { class: 'msg' }, 'Run paused'); break;
-    case 'run.resumed': badge = 'good'; symbol = '▶'; msg = h('span', { class: 'msg' }, 'Run resumed'); break;
+      badge = 'brand'; symbol = '+'; msg = h('span', { class: 'msg' }, t('Run created for '), h('strong', {}, p.adventure_slug || '')); break;
+    case 'run.started': badge = 'good'; symbol = '▶'; msg = h('span', { class: 'msg' }, t('Run started')); break;
+    case 'run.paused':  badge = 'neutral'; symbol = '‖'; msg = h('span', { class: 'msg' }, t('Run paused')); break;
+    case 'run.resumed': badge = 'good'; symbol = '▶'; msg = h('span', { class: 'msg' }, t('Run resumed')); break;
     case 'team.created':
-      badge = 'brand'; symbol = '+'; msg = h('span', { class: 'msg' }, 'Team ', h('strong', {}, e.team_name || p.name || ''), ' created');
-      if ((p.members || []).length) meta = 'with ' + (p.members || []).join(', '); break;
+      badge = 'brand'; symbol = '+'; msg = h('span', { class: 'msg' }, t('Team '), h('strong', {}, e.team_name || p.name || ''), t(' created'));
+      if ((p.members || []).length) meta = t('with {{names}}', { names: (p.members || []).join(', ') }); break;
     case 'team.renamed':
-      badge = 'neutral'; symbol = '✎'; msg = h('span', { class: 'msg' }, 'Renamed ', h('strong', {}, p.from || ''), ' → ', h('strong', {}, p.to || '')); break;
+      badge = 'neutral'; symbol = '✎'; msg = h('span', { class: 'msg' }, t('Renamed '), h('strong', {}, p.from || ''), ' → ', h('strong', {}, p.to || '')); break;
     case 'team.deleted':
-      badge = 'bad'; symbol = '×'; msg = h('span', { class: 'msg' }, 'Team ', h('strong', {}, p.name || ''), ' deleted'); break;
+      badge = 'bad'; symbol = '×'; msg = h('span', { class: 'msg' }, t('Team '), h('strong', {}, p.name || ''), t(' deleted')); break;
     case 'team.member.added':
-      badge = 'good'; symbol = '+'; msg = h('span', { class: 'msg' }, 'Added ', h('strong', {}, p.username || ''), ' to ', h('strong', {}, e.team_name || '')); break;
+      badge = 'good'; symbol = '+'; msg = h('span', { class: 'msg' }, t('Added '), h('strong', {}, p.username || ''), t(' to '), h('strong', {}, e.team_name || '')); break;
     case 'team.member.removed':
-      badge = 'neutral'; symbol = '−'; msg = h('span', { class: 'msg' }, 'Removed ', h('strong', {}, p.username || ''), ' from ', h('strong', {}, e.team_name || '')); break;
+      badge = 'neutral'; symbol = '−'; msg = h('span', { class: 'msg' }, t('Removed '), h('strong', {}, p.username || ''), t(' from '), h('strong', {}, e.team_name || '')); break;
     case 'answer.wrong':
-      badge = 'bad'; symbol = '✗'; msg = h('span', { class: 'msg' }, h('strong', {}, e.team_name || ''), ' wrong on puzzle ', (p.page_index ?? 0) + 1);
-      if (p.submitted) meta = `submitted “${p.submitted}”`; break;
+      badge = 'bad'; symbol = '✗'; msg = h('span', { class: 'msg' }, team, t(' wrong on puzzle {{n}}', { n: (p.page_index ?? 0) + 1 }));
+      if (p.submitted) meta = t('submitted “{{answer}}”', { answer: p.submitted }); break;
     case 'answer.right':
-      badge = 'good'; symbol = '✓'; msg = h('span', { class: 'msg' }, h('strong', {}, e.team_name || ''), ' solved puzzle ', (p.page_index ?? 0) + 1); break;
+      badge = 'good'; symbol = '✓'; msg = h('span', { class: 'msg' }, team, t(' solved puzzle {{n}}', { n: (p.page_index ?? 0) + 1 })); break;
     case 'team.completed':
-      badge = 'good'; symbol = '★'; msg = h('span', { class: 'msg' }, h('strong', {}, e.team_name || ''), ' finished the adventure!'); break;
+      badge = 'good'; symbol = '★'; msg = h('span', { class: 'msg' }, team, t(' finished the adventure!')); break;
     case 'team.unlocked':
       badge = 'brand'; symbol = '⇨'; msg = h('span', { class: 'msg' },
-        h('strong', {}, e.team_name || ''), ' skipped past puzzle ', (p.from_page_index ?? 0) + 1);
-      if (p.by_arranger) meta = 'by arranger'; break;
+        team, t(' skipped past puzzle {{n}}', { n: (p.from_page_index ?? 0) + 1 }));
+      if (p.by_arranger) meta = t('by arranger'); break;
     case 'gate.reached':
-      badge = 'brand'; symbol = '⛳'; msg = h('span', { class: 'msg' }, h('strong', {}, e.team_name || ''), ' reached the puzzle location'); break;
+      badge = 'brand'; symbol = '⛳'; msg = h('span', { class: 'msg' }, team, t(' reached the puzzle location')); break;
     default:
       msg = h('span', { class: 'msg' }, e.kind);
   }
@@ -1690,7 +1747,7 @@ function renderEvent(e, teams) {
     h('span', { class: 'badge ' + badge }, symbol),
     h('div', {},
       msg,
-      e.actor ? h('div', { class: 'meta' }, `by ${e.actor}${meta ? ' · ' + meta : ''}`)
+      e.actor ? h('div', { class: 'meta' }, t('by {{actor}}', { actor: e.actor }) + (meta ? ' · ' + meta : ''))
               : (meta ? h('div', { class: 'meta' }, meta) : null),
     ),
     h('time', { datetime: e.created_at }, formatEventTime(e.created_at)),
@@ -1716,9 +1773,9 @@ function formatEventTime(s) {
   if (Number.isNaN(d.getTime())) return s;
   const now = Date.now();
   const diff = (now - d.getTime()) / 1000;
-  if (diff < 60) return 'just now';
-  if (diff < 3600) return Math.round(diff / 60) + 'm ago';
-  if (diff < 86400) return Math.round(diff / 3600) + 'h ago';
+  if (diff < 60) return t('just now');
+  if (diff < 3600) return t('{{n}}m ago', { n: Math.round(diff / 60) });
+  if (diff < 86400) return t('{{n}}h ago', { n: Math.round(diff / 3600) });
   return d.toLocaleString();
 }
 
@@ -1728,24 +1785,35 @@ function btn(label, cls, fn) {
 
 async function transition(runID, action) {
   const r = await api(`/api/admin/runs/${runID}/${action}`, { method: 'POST' });
-  if (r.status === 204) { toastOk(action + 'ed'); renderRoute(); }
-  else toastErr(r.body?.error || `error ${r.status}`);
+  if (r.status === 204) {
+    // Map each action verb to a localised past-tense confirmation so
+    // toastOk doesn't end up as Swedish "Pause" + English "-ed".
+    const TRANSITION_OK = {
+      start:  t('Started'),
+      pause:  t('Paused'),
+      resume: t('Resumed'),
+    };
+    toastOk(TRANSITION_OK[action] || action);
+    renderRoute();
+  } else {
+    toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+  }
 }
 
 async function confirmStart(run) {
-  const ok = await modal('Start this run now?', ({ body, close }) => {
+  const ok = await modal(t('Start this run now?'), ({ body, close }) => {
     body.append(
       h('p', {},
-        `Starting the run opens the first puzzle to all teams. `,
+        t('Starting the run opens the first puzzle to all teams. '),
         run.scheduled_at
           ? h('span', {},
-              `An auto-start is currently scheduled for `,
+              t('An auto-start is currently scheduled for '),
               h('strong', {}, fmtLocal(run.scheduled_at)),
-              `. Starting now will replace that.`)
-          : 'You can pause it later if needed.'),
+              t('. Starting now will replace that.'))
+          : t('You can pause it later if needed.')),
       h('div', { class: 'row end', style: 'margin-top:1rem' },
-        h('button', { class: 'btn', on: { click: () => close(false) } }, 'Cancel'),
-        h('button', { class: 'btn primary', on: { click: () => close(true) } }, 'Start run')),
+        h('button', { class: 'btn', on: { click: () => close(false) } }, t('Cancel')),
+        h('button', { class: 'btn primary', on: { click: () => close(true) } }, t('Start run'))),
     );
   });
   if (!ok) return;
@@ -1766,28 +1834,28 @@ async function openEditSchedule(run) {
     }
   }
 
-  await modal(run.scheduled_at ? 'Change auto-start' : 'Set auto-start', ({ body, close }) => {
+  await modal(run.scheduled_at ? t('Change auto-start') : t('Set auto-start'), ({ body, close }) => {
     const when = h('input', { type: 'datetime-local', value: prefill });
     const form = h('form', {},
       h('p', { class: 'muted', style: 'font-size:.85rem; margin-bottom:.5rem' },
-        'The server will flip the run to running automatically at the time below. Leave empty and hit Clear to remove the auto-start.'),
-      h('label', { class: 'field' }, h('span', {}, 'Auto-start at'), when),
+        t('The server will flip the run to running automatically at the time below. Leave empty and hit Clear to remove the auto-start.')),
+      h('label', { class: 'field' }, h('span', {}, t('Auto-start at')), when),
       h('div', { class: 'row between', style: 'margin-top:.5rem' },
         run.scheduled_at
           ? h('button', { class: 'btn danger', type: 'button', on: { click: async () => {
               close(null);
               await patchSchedule(run.id, '');
-            } } }, 'Clear')
+            } } }, t('Clear'))
           : h('span', {}),
         h('div', { class: 'row' },
-          h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, 'Cancel'),
-          h('button', { class: 'btn primary', type: 'submit' }, 'Save'))),
+          h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, t('Cancel')),
+          h('button', { class: 'btn primary', type: 'submit' }, t('Save')))),
     );
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
-      if (!when.value) { toastErr('Pick a date or use Clear'); return; }
+      if (!when.value) { toastErr(t('Pick a date or use Clear')); return; }
       const d = new Date(when.value);
-      if (Number.isNaN(d.getTime())) { toastErr('Bad date'); return; }
+      if (Number.isNaN(d.getTime())) { toastErr(t('Bad date')); return; }
       close(null);
       await patchSchedule(run.id, d.toISOString());
     });
@@ -1801,10 +1869,10 @@ async function patchSchedule(runID, iso) {
     body: JSON.stringify({ scheduled_at: iso }),
   });
   if (r.status === 204) {
-    toastOk(iso ? 'Schedule updated' : 'Auto-start cleared');
+    toastOk(iso ? t('Schedule updated') : t('Auto-start cleared'));
     renderRoute();
   } else {
-    toastErr(r.body?.error || `error ${r.status}`);
+    toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
   }
 }
 
@@ -1816,12 +1884,16 @@ async function openTeamDetail(runID, team, adventure) {
   const last = adventure?.pages ? adventure.pages.length : null;
   const finished = team.completed_at || (last !== null && team.page_index >= last);
 
-  await modal(`Team · ${team.name}`, ({ body, close }) => {
+  await modal(t('Team · {{name}}', { name: team.name }), ({ body, close }) => {
     const summary = h('div', { class: 'row between', style: 'margin-bottom:.75rem' },
       h('div', {},
         h('div', { class: 'muted', style: 'font-size:.8rem; text-transform:uppercase; letter-spacing:.05em; font-weight:700' },
-          finished ? 'Finished' : `Puzzle ${team.page_index + 1}${last ? ' of ' + last : ''}`),
-        page && !finished ? h('div', {}, h('strong', {}, page.title || '(untitled)')) : null,
+          finished
+            ? t('Finished')
+            : (last
+                ? t('Puzzle {{i}} of {{n}}', { i: team.page_index + 1, n: last })
+                : t('Puzzle {{i}}', { i: team.page_index + 1 }))),
+        page && !finished ? h('div', {}, h('strong', {}, page.title || t('(untitled)'))) : null,
       ),
       h('div', {},
         (team.members || []).map((m) => h('span', { class: 'chip', style: 'margin-right:.25rem' }, m.name)),
@@ -1831,54 +1903,56 @@ async function openTeamDetail(runID, team, adventure) {
     const actions = h('div', { class: 'row', style: 'margin-bottom:.75rem; flex-wrap:wrap' });
     if (!finished) {
       actions.append(h('button', { class: 'btn primary', on: { click: () => skipPuzzle(team, close) } },
-        icon(ICONS.key), 'Skip this puzzle'));
+        icon(ICONS.key), t('Skip this puzzle')));
     }
     actions.append(h('button', { class: 'btn', on: { click: () => { close(null); openTeamModal(runID, team); } } },
-      'Edit members'));
+      t('Edit members')));
     actions.append(h('button', { class: 'btn danger', on: { click: async () => { close(null); await confirmDeleteTeam(team); } } },
-      icon(ICONS.trash), 'Delete'));
+      icon(ICONS.trash), t('Delete')));
 
     body.append(
       summary,
       actions,
-      h('h3', {}, 'Activity'),
+      h('h3', {}, t('Activity')),
       renderEventFeed(events, [team]),
       h('div', { class: 'row end', style: 'margin-top:1rem' },
-        h('button', { class: 'btn', on: { click: () => close(null) } }, 'Close')),
+        h('button', { class: 'btn', on: { click: () => close(null) } }, t('Close'))),
     );
   }, { wide: true });
 }
 
 async function skipPuzzle(team, close) {
-  const ok = await modal(`Skip puzzle for ${team.name}?`, ({ body, close: c }) => {
+  const ok = await modal(t('Skip puzzle for {{name}}?', { name: team.name }), ({ body, close: c }) => {
     body.append(
-      h('p', {}, `This advances the team past their current puzzle without them submitting the answer. Useful when they're stuck. The action is recorded in the event log.`),
+      h('p', {}, t('This advances the team past their current puzzle without them submitting the answer. Useful when they\'re stuck. The action is recorded in the event log.')),
       h('div', { class: 'row end' },
-        h('button', { class: 'btn', on: { click: () => c(false) } }, 'Cancel'),
-        h('button', { class: 'btn primary', on: { click: () => c(true) } }, 'Skip puzzle')),
+        h('button', { class: 'btn', on: { click: () => c(false) } }, t('Cancel')),
+        h('button', { class: 'btn primary', on: { click: () => c(true) } }, t('Skip puzzle'))),
     );
   });
   if (!ok) return;
   const r = await api(`/api/admin/teams/${team.id}/unlock`, { method: 'POST' });
   if (r.ok) {
-    toastOk(r.body?.completed ? `${team.name} finished` : `${team.name} advanced`);
+    toastOk(r.body?.completed
+      ? t('{{name}} finished', { name: team.name })
+      : t('{{name}} advanced', { name: team.name }));
     close(true);
     renderRoute();
   } else {
-    toastErr(r.body?.error || `error ${r.status}`);
+    toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
   }
 }
 
 async function confirmDeleteTeam(team) {
-  const pw = await promptPassword(`Delete team “${team.name}”?`,
-    `This removes the team and all its progress. Members stay as player accounts. Enter your password to confirm.`);
+  const pw = await promptPassword(t('Delete team “{{name}}”?', { name: team.name }),
+    t('This removes the team and all its progress. Members stay as player accounts. Enter your password to confirm.'));
   if (!pw) return;
   const r = await api(`/api/admin/teams/${team.id}`, {
     method: 'DELETE',
     headers: { 'X-Confirm-Password': pw },
   });
-  if (r.status === 204) { toastOk('Team deleted'); renderRoute(); }
-  else toastErr(r.body?.error || `error ${r.status}`);
+  if (r.status === 204) { toastOk(t('Team deleted')); renderRoute(); }
+  else toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
 }
 
 // openTeamModal handles both new-team and edit-team. For a new team the
@@ -1892,38 +1966,38 @@ async function openTeamModal(runID, existing) {
 }
 
 async function openNewTeamModal(runID) {
-  await modal('New team', ({ body, close }) => {
+  await modal(t('New team'), ({ body, close }) => {
     const nameInput = h('input', { name: 'name', required: true, autofocus: true });
     const memberArea = h('textarea', {
       name: 'members', rows: 5,
       placeholder: 'alice\nbob\ncharlie',
       required: true,
     });
-    const submitBtn = h('button', { class: 'btn primary', type: 'submit' }, 'Create team');
+    const submitBtn = h('button', { class: 'btn primary', type: 'submit' }, t('Create team'));
     const form = h('form', {},
-      h('label', { class: 'field' }, h('span', {}, 'Team name'), nameInput),
+      h('label', { class: 'field' }, h('span', {}, t('Team name')), nameInput),
       h('label', { class: 'field' },
-        h('span', {}, 'Members — one name per line'),
+        h('span', {}, t('Members — one name per line')),
         memberArea),
       h('p', { class: 'muted', style: 'font-size:.8rem' },
-        'Each line becomes a player slot with its own magic-link token. ',
-        'You can copy the per-player link after the team is created.'),
+        t('Each line becomes a player slot with its own magic-link token. '),
+        t('You can copy the per-player link after the team is created.')),
       h('div', { class: 'row end', style: 'margin-top:1rem' },
-        h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, 'Cancel'),
+        h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, t('Cancel')),
         submitBtn));
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       const names = (memberArea.value || '').split('\n')
         .map((s) => s.trim()).filter(Boolean);
-      if (names.length === 0) { toastErr('Add at least one member'); return; }
+      if (names.length === 0) { toastErr(t('Add at least one member')); return; }
       submitBtn.disabled = true;
       const rr = await api(`/api/admin/runs/${runID}/teams`, {
         method: 'POST',
         body: JSON.stringify({ name: nameInput.value.trim(), member_names: names }),
       });
       submitBtn.disabled = false;
-      if (rr.status !== 201) { toastErr(rr.body?.error || `error ${rr.status}`); return; }
-      toastOk('Team created');
+      if (rr.status !== 201) { toastErr(rr.body?.error || t('error {{status}}', { status: rr.status })); return; }
+      toastOk(t('Team created'));
       close(true);
       renderRoute();
     });
@@ -1938,17 +2012,17 @@ async function openEditTeamModal(runID, existing) {
   const run = r.body || {};
   const freshTeam = (run.teams || []).find((t) => t.id === existing.id) || existing;
 
-  await modal(`Edit team · ${freshTeam.name}`, ({ body, close }) => {
+  await modal(t('Edit team · {{name}}', { name: freshTeam.name }), ({ body, close }) => {
     const nameInput = h('input', { value: freshTeam.name, required: true });
-    const renameBtn = h('button', { class: 'btn small', type: 'button' }, 'Save name');
+    const renameBtn = h('button', { class: 'btn small', type: 'button' }, t('Save name'));
     renameBtn.addEventListener('click', async () => {
       const name = nameInput.value.trim();
       if (!name || name === freshTeam.name) return;
       const rr = await api(`/api/admin/teams/${freshTeam.id}`, {
         method: 'PATCH', body: JSON.stringify({ name }),
       });
-      if (rr.status === 204) { toastOk('Renamed'); close(true); renderRoute(); }
-      else toastErr(rr.body?.error || `error ${rr.status}`);
+      if (rr.status === 204) { toastOk(t('Renamed')); close(true); renderRoute(); }
+      else toastErr(rr.body?.error || t('error {{status}}', { status: rr.status }));
     });
 
     const membersWrap = h('div', {});
@@ -1956,7 +2030,7 @@ async function openEditTeamModal(runID, existing) {
       membersWrap.replaceChildren();
       const rows = (freshTeam.members || []).map((m) => renderSlotRow(freshTeam.id, m, reload));
       if (rows.length === 0) {
-        membersWrap.append(h('p', { class: 'muted' }, 'No members yet. Add one below.'));
+        membersWrap.append(h('p', { class: 'muted' }, t('No members yet. Add one below.')));
       } else {
         membersWrap.append(...rows);
       }
@@ -1972,8 +2046,8 @@ async function openEditTeamModal(runID, existing) {
     }
 
     // Inline "add slot"
-    const newName = h('input', { placeholder: 'New member name' });
-    const addBtn = h('button', { class: 'btn primary small', type: 'button' }, icon(ICONS.plus), 'Add');
+    const newName = h('input', { placeholder: t('New member name') });
+    const addBtn = h('button', { class: 'btn primary small', type: 'button' }, icon(ICONS.plus), t('Add'));
     const addRow = h('div', { class: 'row', style: 'gap:.4rem; margin-top:.75rem' }, newName, addBtn);
     addBtn.addEventListener('click', async () => {
       const name = newName.value.trim();
@@ -1983,22 +2057,22 @@ async function openEditTeamModal(runID, existing) {
       });
       if (rr.status === 201) {
         newName.value = '';
-        toastOk('Added ' + rr.body.name);
+        toastOk(t('Added {{name}}', { name: rr.body.name }));
         await reload();
       } else {
-        toastErr(rr.body?.error || `error ${rr.status}`);
+        toastErr(rr.body?.error || t('error {{status}}', { status: rr.status }));
       }
     });
     newName.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addBtn.click(); } });
 
     body.append(
-      h('label', { class: 'field' }, h('span', {}, 'Team name'),
+      h('label', { class: 'field' }, h('span', {}, t('Team name')),
         h('div', { class: 'row', style: 'gap:.4rem' }, nameInput, renameBtn)),
-      h('h3', { style: 'margin-top:1rem' }, 'Members'),
+      h('h3', { style: 'margin-top:1rem' }, t('Members')),
       membersWrap,
       addRow,
       h('div', { class: 'row end', style: 'margin-top:1rem' },
-        h('button', { class: 'btn', on: { click: () => close(null) } }, 'Close')));
+        h('button', { class: 'btn', on: { click: () => close(null) } }, t('Close'))));
     rebuildMembers();
   }, { wide: true });
 }
@@ -2010,22 +2084,22 @@ function renderSlotRow(teamID, slot, reload) {
     style: 'flex:1; min-width:0; font-family:ui-monospace,monospace; font-size:.8rem; box-shadow:none; border-color:var(--border-soft); margin:0',
     on: { click: (e) => e.target.select() },
   });
-  const copyBtn = h('button', { class: 'btn small', type: 'button', title: 'Copy link' }, 'Copy');
+  const copyBtn = h('button', { class: 'btn small', type: 'button', title: t('Copy link') }, t('Copy'));
   copyBtn.addEventListener('click', async () => {
-    try { await navigator.clipboard.writeText(url); toastOk('Link copied'); }
-    catch { urlInput.select(); document.execCommand('copy'); toastOk('Link copied'); }
+    try { await navigator.clipboard.writeText(url); toastOk(t('Link copied')); }
+    catch { urlInput.select(); document.execCommand('copy'); toastOk(t('Link copied')); }
   });
-  const rotateBtn = h('button', { class: 'btn small', type: 'button', title: 'Rotate link' }, '↻');
+  const rotateBtn = h('button', { class: 'btn small', type: 'button', title: t('Rotate link') }, '↻');
   rotateBtn.addEventListener('click', async () => {
     const rr = await api(`/api/admin/teams/${teamID}/slots/${slot.id}/rotate`, { method: 'POST' });
-    if (rr.status === 200) { toastOk('Link rotated'); reload(); }
-    else toastErr(rr.body?.error || `error ${rr.status}`);
+    if (rr.status === 200) { toastOk(t('Link rotated')); reload(); }
+    else toastErr(rr.body?.error || t('error {{status}}', { status: rr.status }));
   });
-  const removeBtn = h('button', { class: 'btn small danger', type: 'button', title: 'Remove slot' }, icon(ICONS.trash));
+  const removeBtn = h('button', { class: 'btn small danger', type: 'button', title: t('Remove slot') }, icon(ICONS.trash));
   removeBtn.addEventListener('click', async () => {
     const rr = await api(`/api/admin/teams/${teamID}/slots/${slot.id}`, { method: 'DELETE' });
-    if (rr.status === 204) { toastOk('Removed'); reload(); }
-    else toastErr(rr.body?.error || `error ${rr.status}`);
+    if (rr.status === 204) { toastOk(t('Removed')); reload(); }
+    else toastErr(rr.body?.error || t('error {{status}}', { status: rr.status }));
   });
   return h('div', { style: 'margin-bottom:.5rem' },
     h('div', { class: 'row', style: 'gap:.4rem; align-items:center' },
@@ -2033,7 +2107,7 @@ function renderSlotRow(teamID, slot, reload) {
       urlInput, copyBtn, rotateBtn, removeBtn),
     slot.last_login_at
       ? h('div', { class: 'muted', style: 'font-size:.75rem; margin-left:.5rem' },
-          `last login ${fmtLocal(slot.last_login_at)}`)
+          t('last login {{when}}', { when: fmtLocal(slot.last_login_at) }))
       : null);
 }
 
@@ -2043,34 +2117,34 @@ function renderSlotRow(teamID, slot, reload) {
 // (below) still use it.
 
 async function openResetPassword(user) {
-  await modal(`Reset password for ${user.username}`, ({ body, close }) => {
+  await modal(t('Reset password for {{username}}', { username: user.username }), ({ body, close }) => {
     const form = h('form', {},
-      h('label', { class: 'field' }, h('span', {}, 'New password'), h('input', { name: 'p', type: 'password', required: true })),
+      h('label', { class: 'field' }, h('span', {}, t('New password')), h('input', { name: 'p', type: 'password', required: true })),
       h('div', { class: 'row end' },
-        h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, 'Cancel'),
-        h('button', { class: 'btn primary', type: 'submit' }, 'Set password')),
+        h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, t('Cancel')),
+        h('button', { class: 'btn primary', type: 'submit' }, t('Set password'))),
     );
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       const fd = new FormData(form);
       const r = await api(`/api/admin/users/${user.id}/password`, { method: 'POST', body: JSON.stringify({ password: fd.get('p') }) });
-      if (r.status === 204) { toastOk('password reset'); close(true); }
-      else toastErr(r.body?.error || `error ${r.status}`);
+      if (r.status === 204) { toastOk(t('password reset')); close(true); }
+      else toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
     });
     body.append(form);
   });
 }
 
 async function confirmDeleteUser(user) {
-  const pw = await promptPassword(`Delete ${user.username}?`,
-    `This permanently removes ${user.username} and unlinks them from any teams. Enter your password to confirm.`);
+  const pw = await promptPassword(t('Delete {{username}}?', { username: user.username }),
+    t('This permanently removes {{username}} and unlinks them from any teams. Enter your password to confirm.', { username: user.username }));
   if (!pw) return;
   const r = await api(`/api/admin/users/${user.id}`, {
     method: 'DELETE',
     headers: { 'X-Confirm-Password': pw },
   });
-  if (r.status === 204) { toastOk('deleted'); renderRoute(); }
-  else toastErr(r.body?.error || `error ${r.status}`);
+  if (r.status === 204) { toastOk(t('deleted')); renderRoute(); }
+  else toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
 }
 
 /* ========== Organizations (admin only) ========== */
@@ -2083,13 +2157,13 @@ async function viewOrganizations(view) {
   const adventures = advsR.body?.adventures || [];
   view.replaceChildren(
     h('div', { class: 'row between' },
-      h('h1', {}, 'Organizations'),
+      h('h1', {}, t('Organizations')),
       h('button', { class: 'btn primary', on: { click: () => openCreateOrg() } },
-        icon(ICONS.plus), 'New organization')),
+        icon(ICONS.plus), t('New organization'))),
     h('p', { class: 'muted' },
-      'Each organization is a tenant — its users (org_admin, org_member) run the games. Assign adventures to an organization to let them schedule runs.'),
+      t('Each organization is a tenant — its users (org_admin, org_member) run the games. Assign adventures to an organization to let them schedule runs.')),
     orgs.length === 0
-      ? h('div', { class: 'empty' }, 'No organizations yet.')
+      ? h('div', { class: 'empty' }, t('No organizations yet.'))
       : h('div', {}, orgs.map((o) => renderOrganizationCard(o, adventures))),
   );
 }
@@ -2100,122 +2174,140 @@ function renderOrganizationCard(org, adventures) {
   const used = assignments.filter((x) => x.run_id);
   const members = org.members || [];
 
+  const usersPart = members.length === 1
+    ? t('{{n}} user', { n: members.length })
+    : t('{{n}} users', { n: members.length });
+  const playersCount = org.players_total || 0;
+  const playersPart = playersCount === 1
+    ? t('{{n}} player', { n: playersCount })
+    : t('{{n}} players', { n: playersCount });
+  const runsCount = org.runs_total || 0;
+  const runsPart = runsCount === 1
+    ? t('{{n}} run', { n: runsCount })
+    : t('{{n}} runs', { n: runsCount });
+
   return h('div', { class: 'card' },
     h('div', { class: 'row between' },
       h('div', {},
         h('h2', {}, org.name),
         h('p', { class: 'muted', style: 'font-size:.85rem' },
-          `${members.length} user${members.length === 1 ? '' : 's'} · `,
-          `${org.players_total || 0} player${org.players_total === 1 ? '' : 's'} · `,
-          `${org.runs_total || 0} run${org.runs_total === 1 ? '' : 's'}`,
-          (org.runs_running || 0) > 0 ? ` · ${org.runs_running} running` : '')),
+          `${usersPart} · ${playersPart} · ${runsPart}`,
+          (org.runs_running || 0) > 0
+            ? t(' · {{n}} running', { n: org.runs_running })
+            : '')),
       h('div', { class: 'row end' },
         h('button', { class: 'btn small', on: { click: () => openAssignAdventure(org, adventures) } },
-          icon(ICONS.plus), 'Assign'),
+          icon(ICONS.plus), t('Assign')),
         h('button', { class: 'btn small', on: { click: () => openAddOrgMember(org) } },
-          icon(ICONS.plus), 'Add user'),
+          icon(ICONS.plus), t('Add user')),
         h('button', { class: 'btn small', on: { click: () => openRenameOrg(org) } },
-          'Rename'),
+          t('Rename')),
         h('button', { class: 'btn small danger', on: { click: () => confirmDeleteOrg(org) } },
           icon(ICONS.trash)))),
 
-    h('h3', { style: 'margin-top:.75rem' }, `Users (${members.length})`),
+    h('h3', { style: 'margin-top:.75rem' }, t('Users ({{n}})', { n: members.length })),
     members.length === 0
-      ? h('p', { class: 'muted', style: 'font-size:.85rem' }, 'No users yet — add one to get started.')
+      ? h('p', { class: 'muted', style: 'font-size:.85rem' }, t('No users yet — add one to get started.'))
       : h('div', {}, members.map((m) => h('span', {
           class: 'chip', style: 'margin: 0 .35rem .35rem 0',
-          title: `${m.role} · click ⓧ to remove`,
-        }, `${m.username} (${m.role === 'org_admin' ? 'admin' : 'member'})`,
-        h('button', { title: 'Remove', on: { click: () => confirmRemoveOrgMember(org, m) } }, '×')))),
+          title: t('{{role}} · click ⓧ to remove', { role: m.role }),
+        }, m.role === 'org_admin'
+            ? t('{{username}} (admin)', { username: m.username })
+            : t('{{username}} (member)', { username: m.username }),
+        h('button', { title: t('Remove'), on: { click: () => confirmRemoveOrgMember(org, m) } }, '×')))),
 
-    h('h3', { style: 'margin-top:.75rem' }, `Unused assignments (${unused.length})`),
+    h('h3', { style: 'margin-top:.75rem' }, t('Unused assignments ({{n}})', { n: unused.length })),
     unused.length === 0
-      ? h('p', { class: 'muted', style: 'font-size:.85rem' }, 'None — assign an adventure to let them schedule a run.')
+      ? h('p', { class: 'muted', style: 'font-size:.85rem' }, t('None — assign an adventure to let them schedule a run.'))
       : h('div', {}, unused.map((x) => h('span', {
           class: 'chip selectable',
           style: 'margin: 0 .35rem .35rem 0',
-          title: 'Click to edit',
+          title: t('Click to edit'),
           on: { click: () => openEditAssignment(org, x, adventures) },
-        }, `${x.adventure_slug} · ${x.max_teams} team${x.max_teams === 1 ? '' : 's'}`))),
+        }, x.max_teams === 1
+            ? t('{{slug}} · {{n}} team', { slug: x.adventure_slug, n: x.max_teams })
+            : t('{{slug}} · {{n}} teams', { slug: x.adventure_slug, n: x.max_teams })))),
 
     ...(used.length === 0 ? [] : [h('div', { style: 'margin-top:.75rem' },
-      h('h3', {}, `Used (${used.length})`),
+      h('h3', {}, t('Used ({{n}})', { n: used.length })),
       h('div', {}, used.map((x) => h('span', {
           class: 'chip selectable',
           style: 'margin: 0 .35rem .35rem 0; opacity:.75; font-style:italic',
-          title: 'Click to edit team cap',
+          title: t('Click to edit team cap'),
           on: { click: () => openEditAssignment(org, x, adventures) },
-        }, `${x.adventure_slug} · run #${x.run_id} · max ${x.max_teams}`))))]),
+        }, t('{{slug}} · run #{{run}} · max {{max}}', {
+          slug: x.adventure_slug, run: x.run_id, max: x.max_teams,
+        })))))]),
   );
 }
 
 async function openCreateOrg() {
-  await modal('New organization', ({ body, close }) => {
+  await modal(t('New organization'), ({ body, close }) => {
     const form = h('form', {},
-      h('label', { class: 'field' }, h('span', {}, 'Name'),
+      h('label', { class: 'field' }, h('span', {}, t('Name')),
         h('input', { name: 'n', required: true, autofocus: true })),
       h('div', { class: 'row end' },
-        h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, 'Cancel'),
-        h('button', { class: 'btn primary', type: 'submit' }, 'Create')));
+        h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, t('Cancel')),
+        h('button', { class: 'btn primary', type: 'submit' }, t('Create'))));
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       const fd = new FormData(form);
       const r = await api('/api/admin/organizations', {
         method: 'POST', body: JSON.stringify({ name: fd.get('n') }),
       });
-      if (r.status === 201) { toastOk('Organization created'); close(true); renderRoute(); }
-      else toastErr(r.body?.error || `error ${r.status}`);
+      if (r.status === 201) { toastOk(t('Organization created')); close(true); renderRoute(); }
+      else toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
     });
     body.append(form);
   });
 }
 
 async function openRenameOrg(org) {
-  await modal(`Rename ${org.name}`, ({ body, close }) => {
+  await modal(t('Rename {{name}}', { name: org.name }), ({ body, close }) => {
     const form = h('form', {},
-      h('label', { class: 'field' }, h('span', {}, 'New name'),
+      h('label', { class: 'field' }, h('span', {}, t('New name')),
         h('input', { name: 'n', required: true, value: org.name })),
       h('div', { class: 'row end' },
-        h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, 'Cancel'),
-        h('button', { class: 'btn primary', type: 'submit' }, 'Save')));
+        h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, t('Cancel')),
+        h('button', { class: 'btn primary', type: 'submit' }, t('Save'))));
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       const fd = new FormData(form);
       const r = await api(`/api/admin/organizations/${org.id}`, {
         method: 'PATCH', body: JSON.stringify({ name: fd.get('n') }),
       });
-      if (r.status === 204) { toastOk('Renamed'); close(true); renderRoute(); }
-      else toastErr(r.body?.error || `error ${r.status}`);
+      if (r.status === 204) { toastOk(t('Renamed')); close(true); renderRoute(); }
+      else toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
     });
     body.append(form);
   });
 }
 
 async function confirmDeleteOrg(org) {
-  const pw = await promptPassword(`Delete organization “${org.name}”?`,
-    'This deletes every user, player, assignment and run that belongs to the organization. Enter your password to confirm.');
+  const pw = await promptPassword(t('Delete organization “{{name}}”?', { name: org.name }),
+    t('This deletes every user, player, assignment and run that belongs to the organization. Enter your password to confirm.'));
   if (!pw) return;
   const r = await api(`/api/admin/organizations/${org.id}`, {
     method: 'DELETE', headers: { 'X-Confirm-Password': pw },
   });
-  if (r.status === 204) { toastOk('Organization deleted'); renderRoute(); }
-  else toastErr(r.body?.error || `error ${r.status}`);
+  if (r.status === 204) { toastOk(t('Organization deleted')); renderRoute(); }
+  else toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
 }
 
 async function openAddOrgMember(org) {
-  await modal(`Add user to ${org.name}`, ({ body, close }) => {
+  await modal(t('Add user to {{name}}', { name: org.name }), ({ body, close }) => {
     const form = h('form', {},
-      h('label', { class: 'field' }, h('span', {}, 'Username'),
+      h('label', { class: 'field' }, h('span', {}, t('Username')),
         h('input', { name: 'u', required: true, autofocus: true })),
-      h('label', { class: 'field' }, h('span', {}, 'Password'),
+      h('label', { class: 'field' }, h('span', {}, t('Password')),
         h('input', { name: 'p', type: 'password', required: true })),
-      h('label', { class: 'field' }, h('span', {}, 'Role'),
+      h('label', { class: 'field' }, h('span', {}, t('Role')),
         h('select', { name: 'r' },
-          h('option', { value: 'org_member' }, 'Member'),
-          h('option', { value: 'org_admin' }, 'Admin'))),
+          h('option', { value: 'org_member' }, t('Member')),
+          h('option', { value: 'org_admin' }, t('Admin')))),
       h('div', { class: 'row end' },
-        h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, 'Cancel'),
-        h('button', { class: 'btn primary', type: 'submit' }, 'Add')));
+        h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, t('Cancel')),
+        h('button', { class: 'btn primary', type: 'submit' }, t('Add'))));
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       const fd = new FormData(form);
@@ -2223,27 +2315,27 @@ async function openAddOrgMember(org) {
         method: 'POST',
         body: JSON.stringify({ username: fd.get('u'), password: fd.get('p'), role: fd.get('r') }),
       });
-      if (r.status === 201) { toastOk('User added'); close(true); renderRoute(); }
-      else toastErr(r.body?.error || `error ${r.status}`);
+      if (r.status === 201) { toastOk(t('User added')); close(true); renderRoute(); }
+      else toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
     });
     body.append(form);
   });
 }
 
 async function confirmRemoveOrgMember(org, member) {
-  const pw = await promptPassword(`Remove ${member.username}?`,
-    `Removes ${member.username} from ${org.name}. Enter your password to confirm.`);
+  const pw = await promptPassword(t('Remove {{username}}?', { username: member.username }),
+    t('Removes {{username}} from {{org}}. Enter your password to confirm.', { username: member.username, org: org.name }));
   if (!pw) return;
   const r = await api(`/api/admin/organizations/${org.id}/members/${member.id}`, {
     method: 'DELETE', headers: { 'X-Confirm-Password': pw },
   });
-  if (r.status === 204) { toastOk('Removed'); renderRoute(); }
-  else toastErr(r.body?.error || `error ${r.status}`);
+  if (r.status === 204) { toastOk(t('Removed')); renderRoute(); }
+  else toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
 }
 
 async function openEditAssignment(org, assignment, adventures) {
   const used = !!assignment.run_id;
-  await modal(`Edit assignment · ${org.name}`, ({ body, close }) => {
+  await modal(t('Edit assignment · {{name}}', { name: org.name }), ({ body, close }) => {
     const advSel = h('select', { disabled: used ? '' : null },
       adventures.map((a) => h('option', {
         value: a.slug, selected: a.slug === assignment.adventure_slug ? '' : null,
@@ -2253,65 +2345,65 @@ async function openEditAssignment(org, assignment, adventures) {
     });
     const form = h('form', {},
       h('label', { class: 'field' },
-        h('span', {}, used ? 'Adventure (locked — already used)' : 'Adventure'),
+        h('span', {}, used ? t('Adventure (locked — already used)') : t('Adventure')),
         advSel),
-      h('label', { class: 'field' }, h('span', {}, 'Maximum teams'), count),
+      h('label', { class: 'field' }, h('span', {}, t('Maximum teams')), count),
       h('p', { class: 'muted', style: 'font-size:.8rem' },
         used
-          ? `Linked to run #${assignment.run_id}. You may raise the cap; lowering below the current team count is rejected.`
-          : 'This assignment has not yet been used.'),
+          ? t('Linked to run #{{id}}. You may raise the cap; lowering below the current team count is rejected.', { id: assignment.run_id })
+          : t('This assignment has not yet been used.')),
       h('div', { class: 'row between', style: 'margin-top:.5rem' },
         used
           ? h('span', {})
           : h('button', {
               class: 'btn danger', type: 'button',
               on: { click: async () => { close(null); await revokeAssignment(org.id, assignment.id); } },
-            }, icon(ICONS.trash), 'Revoke'),
+            }, icon(ICONS.trash), t('Revoke')),
         h('div', { class: 'row' },
-          h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, 'Cancel'),
-          h('button', { class: 'btn primary', type: 'submit' }, 'Save'))));
+          h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, t('Cancel')),
+          h('button', { class: 'btn primary', type: 'submit' }, t('Save')))));
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       const payload = {};
       const newMax = parseInt(count.value, 10);
-      if (!(newMax > 0)) { toastErr('Max teams must be at least 1'); return; }
+      if (!(newMax > 0)) { toastErr(t('Max teams must be at least 1')); return; }
       if (newMax !== assignment.max_teams) payload.max_teams = newMax;
       if (!used && advSel.value !== assignment.adventure_slug) payload.adventure_slug = advSel.value;
       if (Object.keys(payload).length === 0) { close(null); return; }
       const r = await api(`/api/admin/organizations/${org.id}/assignments/${assignment.id}`, {
         method: 'PATCH', body: JSON.stringify(payload),
       });
-      if (r.status === 200) { toastOk('Assignment updated'); close(true); renderRoute(); }
-      else toastErr(r.body?.error || `error ${r.status}`);
+      if (r.status === 200) { toastOk(t('Assignment updated')); close(true); renderRoute(); }
+      else toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
     });
     body.append(form);
   });
 }
 
 async function openAssignAdventure(org, adventures) {
-  if (adventures.length === 0) { toastErr('No adventures loaded'); return; }
-  await modal(`Assign adventure to ${org.name}`, ({ body, close }) => {
+  if (adventures.length === 0) { toastErr(t('No adventures loaded')); return; }
+  await modal(t('Assign adventure to {{name}}', { name: org.name }), ({ body, close }) => {
     const sel = h('select', {}, adventures.map((a) =>
       h('option', { value: a.slug }, `${a.title} (${a.slug})`)));
     const count = h('input', { type: 'number', min: 1, step: 1, value: 3, required: true });
     const form = h('form', {},
-      h('label', { class: 'field' }, h('span', {}, 'Adventure'), sel),
-      h('label', { class: 'field' }, h('span', {}, 'Maximum teams'), count),
+      h('label', { class: 'field' }, h('span', {}, t('Adventure')), sel),
+      h('label', { class: 'field' }, h('span', {}, t('Maximum teams')), count),
       h('p', { class: 'muted', style: 'font-size:.8rem' },
-        'Each assignment may be used for exactly one run. For more, assign again.'),
+        t('Each assignment may be used for exactly one run. For more, assign again.')),
       h('div', { class: 'row end' },
-        h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, 'Cancel'),
-        h('button', { class: 'btn primary', type: 'submit' }, 'Assign')));
+        h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, t('Cancel')),
+        h('button', { class: 'btn primary', type: 'submit' }, t('Assign'))));
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       const maxTeams = parseInt(count.value, 10);
-      if (!(maxTeams > 0)) { toastErr('Max teams must be at least 1'); return; }
+      if (!(maxTeams > 0)) { toastErr(t('Max teams must be at least 1')); return; }
       const r = await api(`/api/admin/organizations/${org.id}/assignments`, {
         method: 'POST',
         body: JSON.stringify({ adventure_slug: sel.value, max_teams: maxTeams }),
       });
-      if (r.status === 201) { toastOk('Assignment granted'); close(true); renderRoute(); }
-      else toastErr(r.body?.error || `error ${r.status}`);
+      if (r.status === 201) { toastOk(t('Assignment granted')); close(true); renderRoute(); }
+      else toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
     });
     body.append(form);
   });
@@ -2319,8 +2411,8 @@ async function openAssignAdventure(org, adventures) {
 
 async function revokeAssignment(orgID, assignmentID) {
   const r = await api(`/api/admin/organizations/${orgID}/assignments/${assignmentID}`, { method: 'DELETE' });
-  if (r.status === 204) { toastOk('Assignment revoked'); renderRoute(); }
-  else toastErr(r.body?.error || `error ${r.status}`);
+  if (r.status === 204) { toastOk(t('Assignment revoked')); renderRoute(); }
+  else toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
 }
 
 /* ========== Puzzles (admin only) ==========
@@ -2334,26 +2426,19 @@ async function viewPuzzles(view) {
   const puzzles = r.body?.puzzles || [];
   const list = puzzles.length === 0
     ? h('div', { class: 'empty' },
-        h('p', {}, 'No puzzles yet.'),
+        h('p', {}, t('No puzzles yet.')),
         h('button', { class: 'btn primary', on: { click: quickPuzzle } },
-          icon(ICONS.crosshair), 'Capture one at your location'))
+          icon(ICONS.puzzle), t('Capture one at your location')))
     : h('div', { class: 'grid cols-2' }, puzzles.map(renderPuzzleLibraryCard));
   view.replaceChildren(
     h('div', { class: 'row between' },
-      h('h1', {}, 'Puzzles'),
-      h('button', { class: 'btn primary', on: { click: quickPuzzle }, title: 'Capture a puzzle at your current location' },
-        icon(ICONS.crosshair), 'Quick puzzle')),
+      h('h1', {}, t('Puzzles')),
+      h('button', { class: 'btn primary', on: { click: quickPuzzle }, title: t('Capture a puzzle at your current location') },
+        icon(ICONS.puzzle), t('New puzzle'))),
     h('p', { class: 'muted' },
-      'The pool of every puzzle in the system. Unassigned ones sit in the Library; the rest list the adventure they belong to. Copy a puzzle into a new adventure from the adventure editor.'),
+      t('The pool of every puzzle in the system. Unassigned ones sit in the Library; the rest list the adventure they belong to. Copy a puzzle into a new adventure from the adventure editor.')),
     list,
   );
-  // Floating action button — always reachable on mobile even when
-  // scrolled. Duplicated CSS class (.fab) defined once at the top.
-  view.append(h('button', {
-    class: 'fab',
-    title: 'Quick puzzle',
-    on: { click: quickPuzzle },
-  }, icon(ICONS.crosshair)));
 }
 
 // pendingQuickPuzzleGPS is the in-flight GPS fix kicked off by a
@@ -2386,38 +2471,38 @@ async function quickPuzzle(ev) {
     body: JSON.stringify({}),
   });
   if (btn) btn.disabled = false;
-  if (r.status !== 201) { toastErr(r.body?.error || `error ${r.status}`); return; }
-  toastOk('Puzzle captured');
+  if (r.status !== 201) { toastErr(r.body?.error || t('error {{status}}', { status: r.status })); return; }
+  toastOk(t('Puzzle captured'));
   pendingQuickPuzzleGPS = { puzzleID: r.body.id, promise: gpsPromise };
   nav('#puzzles/' + r.body.id);
 }
 
 function renderPuzzleLibraryCard(p) {
   const assignment = p.adventure_slug
-    ? h('span', { class: 'pill accent', title: 'Assigned to adventure' },
+    ? h('span', { class: 'pill accent', title: t('Assigned to adventure') },
         `${p.adventure_title} · #${(p.adventure_idx ?? 0) + 1}`)
-    : h('span', { class: 'pill' }, 'library');
+    : h('span', { class: 'pill' }, t('library'));
   const subtitle = p.notes
     ? h('p', { class: 'muted', style: 'font-style:italic' }, p.notes)
     : p.prompt
       ? h('p', { class: 'muted', style: 'white-space:pre-wrap; overflow:hidden; max-height:3em' }, p.prompt)
-      : h('p', { class: 'muted' }, '(no content yet)');
+      : h('p', { class: 'muted' }, t('(no content yet)'));
   return h('div', {
     class: 'card clickable' + (p.disabled ? '' : ''),
     style: p.disabled ? 'opacity:.6' : '',
     on: { click: () => nav('#puzzles/' + p.id) },
   },
     h('div', { class: 'row between' },
-      h('h3', {}, p.title || '(untitled)'),
+      h('h3', {}, p.title || t('(untitled)')),
       h('div', { class: 'row' },
-        p.disabled ? h('span', { class: 'pill' }, 'disabled') : null,
-        p.gated ? h('span', { class: 'pill warning' }, 'gated') : null,
+        p.disabled ? h('span', { class: 'pill' }, t('disabled')) : null,
+        p.gated ? h('span', { class: 'pill warning' }, t('gated')) : null,
         assignment)),
     subtitle,
     h('p', { class: 'muted mono', style: 'font-size:.8rem' },
       `${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}`,
-      p.radius_m ? ` · gate ${p.radius_m} m` : '',
-      p.has_images ? ' · has images' : ''),
+      p.radius_m ? t(' · gate {{r}} m', { r: p.radius_m }) : '',
+      p.has_images ? t(' · has images') : ''),
   );
 }
 
@@ -2425,10 +2510,15 @@ function renderPuzzleLibraryCard(p) {
 // the editor. For an attached puzzle we also fetch the parent adventure
 // so the timeline can render the siblings; for a library puzzle we pass
 // adv=null and the editor renders in standalone mode.
+//
+// The Puzzles library is painted behind the modal so that when the
+// editor closes (Cancel, backdrop click, Esc) the user lands on the
+// list instead of a blank placeholder view.
 async function viewPuzzleEditRoute(view, pageID) {
+  await viewPuzzles(view);
   const r = await api('/api/admin/puzzles/' + encodeURIComponent(pageID));
   if (r.status !== 200) {
-    view.replaceChildren(h('p', { class: 'err' }, r.body?.error || 'puzzle not found'));
+    toastErr(r.body?.error || t('puzzle not found'));
     return;
   }
   const page = r.body;
@@ -2443,11 +2533,6 @@ async function viewPuzzleEditRoute(view, pageID) {
       if (fresh) Object.assign(page, fresh);
     }
   }
-  view.replaceChildren(
-    h('button', { class: 'btn ghost small', on: { click: () => nav('#puzzles') } },
-      icon(ICONS.back), 'Back to puzzles'),
-    h('p', { class: 'muted' }, 'Opening editor…'),
-  );
   openEditPuzzle(adv, page);
 }
 
@@ -2460,16 +2545,16 @@ async function viewLibrary(view) {
   const advs = r.body?.adventures || [];
   view.replaceChildren(
     h('div', { class: 'row between' },
-      h('h1', {}, 'Library'),
+      h('h1', {}, t('Library')),
       h('button', { class: 'btn primary', on: { click: () => openCreateAdventure() } },
-        icon(ICONS.plus), 'New adventure')),
+        icon(ICONS.plus), t('New adventure'))),
     h('p', { class: 'muted' },
-      'Adventures you have authored live in the database. Assign them to organizations from the Organizations page.'),
+      t('Adventures you have authored live in the database. Assign them to organizations from the Organizations page.')),
     advs.length === 0
       ? h('div', { class: 'empty' },
-          h('p', {}, 'No adventures yet.'),
+          h('p', {}, t('No adventures yet.')),
           h('button', { class: 'btn primary', on: { click: () => openCreateAdventure() } },
-            icon(ICONS.plus), 'Create your first adventure'))
+            icon(ICONS.plus), t('Create your first adventure')))
       : h('div', { class: 'grid cols-2' }, advs.map((a) =>
         h('div', {
           class: 'card clickable',
@@ -2477,7 +2562,7 @@ async function viewLibrary(view) {
         },
           h('div', { class: 'row between' },
             h('h2', {}, a.title),
-            h('span', { class: 'pill accent' }, `${a.page_count} puzzles`)),
+            h('span', { class: 'pill accent' }, t('{{n}} puzzles', { n: a.page_count }))),
           a.description ? h('p', { class: 'muted' }, a.description) : null,
           h('p', { class: 'muted mono' }, a.slug)))),
   );
@@ -2490,11 +2575,11 @@ async function viewLibrary(view) {
 function colorRow(label, initial) {
   const state = { value: initial || '' };
   const picker = h('input', { type: 'color', value: initial || '#808080' });
-  const reset  = h('button', { class: 'btn small', type: 'button', title: 'Use default' }, 'Reset');
+  const reset  = h('button', { class: 'btn small', type: 'button', title: t('Use default') }, t('Reset'));
   const show   = h('span', { class: 'muted mono', style: 'font-size:.8rem' },
-    initial ? initial : '(default)');
+    initial ? initial : t('(default)'));
   const refresh = () => {
-    show.textContent = state.value || '(default)';
+    show.textContent = state.value || t('(default)');
     picker.style.opacity = state.value ? '1' : '.45';
   };
   picker.addEventListener('input', () => { state.value = picker.value; refresh(); });
@@ -2509,26 +2594,26 @@ function colorRow(label, initial) {
 }
 
 async function openCreateAdventure() {
-  await modal('New adventure', ({ body, close }) => {
+  await modal(t('New adventure'), ({ body, close }) => {
     const slug  = h('input', { required: true, placeholder: 'my-adventure', pattern: '[a-z0-9-]+' });
     const title = h('input', { required: true });
     const desc  = h('textarea', { rows: 2 });
     const author = h('input', {});
-    const cAccent    = colorRow('Accent — buttons, progress',      '');
-    const cSecondary = colorRow('Secondary — titles, status pill', '');
-    const cBackground = colorRow('Background',                     '');
-    const cText      = colorRow('Text',                            '');
+    const cAccent    = colorRow(t('Accent — buttons, progress'),      '');
+    const cSecondary = colorRow(t('Secondary — titles, status pill'), '');
+    const cBackground = colorRow(t('Background'),                     '');
+    const cText      = colorRow(t('Text'),                            '');
     const form = h('form', {},
       h('label', { class: 'field' },
-        h('span', {}, 'Slug — lowercase letters, digits, hyphens'), slug),
-      h('label', { class: 'field' }, h('span', {}, 'Title'), title),
-      h('label', { class: 'field' }, h('span', {}, 'Description'), desc),
-      h('label', { class: 'field' }, h('span', {}, 'Author'), author),
-      h('h3', { style: 'margin-top:1rem' }, 'Brand colours (optional)'),
+        h('span', {}, t('Slug — lowercase letters, digits, hyphens')), slug),
+      h('label', { class: 'field' }, h('span', {}, t('Title')), title),
+      h('label', { class: 'field' }, h('span', {}, t('Description')), desc),
+      h('label', { class: 'field' }, h('span', {}, t('Author')), author),
+      h('h3', { style: 'margin-top:1rem' }, t('Brand colours (optional)')),
       cAccent.el, cSecondary.el, cBackground.el, cText.el,
       h('div', { class: 'row end' },
-        h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, 'Cancel'),
-        h('button', { class: 'btn primary', type: 'submit' }, 'Create')));
+        h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, t('Cancel')),
+        h('button', { class: 'btn primary', type: 'submit' }, t('Create'))));
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       const r = await api('/api/admin/adventures', {
@@ -2541,8 +2626,8 @@ async function openCreateAdventure() {
           text_color:             cText.get(),
         }),
       });
-      if (r.status === 201) { toastOk('Adventure created'); close(true); nav('#library/' + r.body.slug); }
-      else toastErr(r.body?.error || `error ${r.status}`);
+      if (r.status === 201) { toastOk(t('Adventure created')); close(true); nav('#library/' + r.body.slug); }
+      else toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
     });
     body.append(form);
   });
@@ -2551,7 +2636,7 @@ async function openCreateAdventure() {
 async function viewLibraryEdit(view, slug) {
   const r = await api('/api/admin/adventures/' + encodeURIComponent(slug) + '/edit');
   if (!r.ok) {
-    view.replaceChildren(h('p', { class: 'err' }, r.body?.error || 'not found'));
+    view.replaceChildren(h('p', { class: 'err' }, r.body?.error || t('not found')));
     return;
   }
   const adv = r.body;
@@ -2572,28 +2657,28 @@ function renderLibraryEdit(view, adv) {
   const hasEnabled = enabledIdx > 0;
   view.replaceChildren(
     h('button', { class: 'btn ghost small', on: { click: () => nav('#library') } },
-      icon(ICONS.back), 'Back to library'),
+      icon(ICONS.back), t('Back to library')),
     h('div', { class: 'row between' },
       h('h1', {}, adv.title),
       h('div', { class: 'row' },
         hasEnabled
-          ? h('button', { class: 'btn', title: 'Open the adventure in the player view',
-              on: { click: () => previewAdventure(adv.slug, 0, false) } }, 'Preview')
+          ? h('button', { class: 'btn', title: t('Open the adventure in the player view'),
+              on: { click: () => previewAdventure(adv.slug, 0, false) } }, t('Preview'))
           : null,
-        h('button', { class: 'btn', on: { click: () => openEditAdventureMeta(adv) } }, 'Edit title/slug'),
+        h('button', { class: 'btn', on: { click: () => openEditAdventureMeta(adv) } }, t('Edit title/slug')),
         h('button', { class: 'btn danger', on: { click: () => confirmDeleteAdventure(adv) } },
-          icon(ICONS.trash), 'Delete'))),
+          icon(ICONS.trash), t('Delete')))),
     h('p', { class: 'muted mono' }, adv.slug, adv.author ? ` · ${adv.author}` : ''),
     adv.description ? h('p', { class: 'muted' }, adv.description) : null,
     h('div', { class: 'row between', style: 'margin-top:1rem' },
-      h('h2', {}, `Puzzles (${adv.pages.length})`),
+      h('h2', {}, t('Puzzles ({{n}})', { n: adv.pages.length })),
       h('div', { class: 'row' },
         h('button', { class: 'btn small', on: { click: () => openLibraryPicker(adv) } },
-          icon(ICONS.map), 'From library'),
+          icon(ICONS.map), t('From library')),
         h('button', { class: 'btn primary small', on: { click: () => openEditPuzzle(adv, null) } },
-          icon(ICONS.plus), 'New puzzle'))),
+          icon(ICONS.plus), t('New puzzle')))),
     adv.pages.length === 0
-      ? h('div', { class: 'empty' }, 'No puzzles yet.')
+      ? h('div', { class: 'empty' }, t('No puzzles yet.'))
       : h('div', {}, cards),
   );
 }
@@ -2613,15 +2698,15 @@ function renderPuzzleCard(adv, page, i, previewIdx) {
     style: page.disabled ? 'opacity:.6' : '',
   },
     h('div', { class: 'row between' },
-      h('h3', {}, `${i + 1}. ${page.title || '(untitled)'}`),
+      h('h3', {}, `${i + 1}. ${page.title || t('(untitled)')}`),
       h('div', { class: 'row' },
-        page.disabled ? h('span', { class: 'pill' }, 'disabled') : null,
-        page.gated ? h('span', { class: 'pill warning' }, 'gated') : null,
+        page.disabled ? h('span', { class: 'pill' }, t('disabled')) : null,
+        page.gated ? h('span', { class: 'pill warning' }, t('gated')) : null,
         previewIdx != null
-          ? h('button', { class: 'btn small', title: 'Open in the player view with author debug panel',
-              on: { click: () => previewAdventure(adv.slug, previewIdx, true) } }, 'Preview')
+          ? h('button', { class: 'btn small', title: t('Open in the player view with author debug panel'),
+              on: { click: () => previewAdventure(adv.slug, previewIdx, true) } }, t('Preview'))
           : null,
-        h('button', { class: 'btn small', on: { click: () => openEditPuzzle(adv, page) } }, 'Edit'),
+        h('button', { class: 'btn small', on: { click: () => openEditPuzzle(adv, page) } }, t('Edit')),
         h('button', { class: 'btn small danger', on: { click: () => confirmDeletePuzzle(adv, page) } }, icon(ICONS.trash)))),
     h('p', { style: 'white-space:pre-wrap' }, page.prompt),
     (page.images || []).length === 0
@@ -2632,16 +2717,16 @@ function renderPuzzleCard(adv, page, i, previewIdx) {
           style: 'max-height:120px; border-radius:6px; border:1px solid var(--border-soft)',
         }))),
     h('p', { class: 'muted' },
-      'Accepted: ',
+      t('Accepted: '),
       page.accept.map((a) => h('span', { class: 'chip', style: 'margin-right:.25rem' }, a))),
     h('p', { class: 'muted mono', style: 'font-size:.8rem' },
       `${page.lat.toFixed(5)}, ${page.lng.toFixed(5)}`,
-      page.radius_m ? ` · gate ${page.radius_m} m` : ''),
+      page.radius_m ? t(' · gate {{r}} m', { r: page.radius_m }) : ''),
   );
 }
 
 async function openEditAdventureMeta(adv) {
-  await modal('Edit adventure', ({ body, close }) => {
+  await modal(t('Edit adventure'), ({ body, close }) => {
     const slug  = h('input', { value: adv.slug, required: true, pattern: '[a-z0-9-]+' });
     const title = h('input', { value: adv.title, required: true });
     const desc  = h('textarea', { rows: 2 }, adv.description || '');
@@ -2650,20 +2735,20 @@ async function openEditAdventureMeta(adv) {
     const initialSecondary = adv.accent_secondary_color || '';
     const initialBg        = adv.background_color      || '';
     const initialText      = adv.text_color            || '';
-    const cAccent     = colorRow('Accent — buttons, progress',      initialAccent);
-    const cSecondary  = colorRow('Secondary — titles, status pill', initialSecondary);
-    const cBackground = colorRow('Background',                      initialBg);
-    const cText       = colorRow('Text',                            initialText);
+    const cAccent     = colorRow(t('Accent — buttons, progress'),      initialAccent);
+    const cSecondary  = colorRow(t('Secondary — titles, status pill'), initialSecondary);
+    const cBackground = colorRow(t('Background'),                      initialBg);
+    const cText       = colorRow(t('Text'),                            initialText);
     const form = h('form', {},
-      h('label', { class: 'field' }, h('span', {}, 'Slug'), slug),
-      h('label', { class: 'field' }, h('span', {}, 'Title'), title),
-      h('label', { class: 'field' }, h('span', {}, 'Description'), desc),
-      h('label', { class: 'field' }, h('span', {}, 'Author'), author),
-      h('h3', { style: 'margin-top:1rem' }, 'Brand colours'),
+      h('label', { class: 'field' }, h('span', {}, t('Slug')), slug),
+      h('label', { class: 'field' }, h('span', {}, t('Title')), title),
+      h('label', { class: 'field' }, h('span', {}, t('Description')), desc),
+      h('label', { class: 'field' }, h('span', {}, t('Author')), author),
+      h('h3', { style: 'margin-top:1rem' }, t('Brand colours')),
       cAccent.el, cSecondary.el, cBackground.el, cText.el,
       h('div', { class: 'row end' },
-        h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, 'Cancel'),
-        h('button', { class: 'btn primary', type: 'submit' }, 'Save')));
+        h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, t('Cancel')),
+        h('button', { class: 'btn primary', type: 'submit' }, t('Save'))));
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       const payload = {};
@@ -2680,7 +2765,7 @@ async function openEditAdventureMeta(adv) {
         method: 'PATCH', body: JSON.stringify(payload),
       });
       if (r.status === 204) {
-        toastOk('Saved');
+        toastOk(t('Saved'));
         close(true);
         // If the slug didn't change the hash stays the same, so nav()
         // wouldn't fire hashchange and viewLibraryEdit wouldn't re-fetch
@@ -2694,7 +2779,7 @@ async function openEditAdventureMeta(adv) {
           renderRoute();
         }
       } else {
-        toastErr(r.body?.error || `error ${r.status}`);
+        toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
       }
     });
     body.append(form);
@@ -2702,14 +2787,14 @@ async function openEditAdventureMeta(adv) {
 }
 
 async function confirmDeleteAdventure(adv) {
-  const pw = await promptPassword(`Delete adventure “${adv.title}”?`,
-    'This removes the adventure and all its puzzles. Enter your password to confirm.');
+  const pw = await promptPassword(t('Delete adventure “{{title}}”?', { title: adv.title }),
+    t('This removes the adventure and all its puzzles. Enter your password to confirm.'));
   if (!pw) return;
   const r = await api(`/api/admin/adventures/${encodeURIComponent(adv.slug)}`, {
     method: 'DELETE', headers: { 'X-Confirm-Password': pw },
   });
-  if (r.status === 204) { toastOk('Deleted'); nav('#library'); }
-  else toastErr(r.body?.error || `error ${r.status}`);
+  if (r.status === 204) { toastOk(t('Deleted')); nav('#library'); }
+  else toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
 }
 
 // autosize makes a textarea grow to fit its content — used in the
@@ -2770,10 +2855,10 @@ async function openEditPuzzle(adv, page /* or null */) {
   const creating = !page;
   const standalone = !adv; // library puzzle with no adventure context
   const title = creating
-    ? 'New puzzle'
+    ? t('New puzzle')
     : standalone
-      ? (page.title ? `Library: ${page.title}` : 'Library puzzle')
-      : `Puzzle ${page.index + 1}`;
+      ? (page.title ? t('Library: {{title}}', { title: page.title }) : t('Library puzzle'))
+      : t('Puzzle {{i}}', { i: page.index + 1 });
   await modal(title, ({ body, close }) => {
     // ---- Preview card: mirrors play.html's puzzle shape ----
     // None of these are HTML-`required` — an arranger often saves a stub
@@ -2781,9 +2866,9 @@ async function openEditPuzzle(adv, page /* or null */) {
     // fills the text in later. The backend's pageWriteRequest.validate
     // matches: prompt and accept may be empty, only radius_m is checked.
     // Marking them required here silently blocks the Save submit.
-    const titleInput  = h('textarea', { class: 'pe pe-title', rows: 1, placeholder: 'Puzzle title' });
-    const promptInput = h('textarea', { class: 'pe pe-prompt', rows: 3, placeholder: 'What the player sees…' });
-    const hintInput   = h('textarea', { class: 'pe pe-hint', rows: 1, placeholder: '(optional hint)' });
+    const titleInput  = h('textarea', { class: 'pe pe-title', rows: 1, placeholder: t('Puzzle title') });
+    const promptInput = h('textarea', { class: 'pe pe-prompt', rows: 3, placeholder: t('What the player sees…') });
+    const hintInput   = h('textarea', { class: 'pe pe-hint', rows: 1, placeholder: t('(optional hint)') });
     titleInput.value  = page?.title  || '';
     promptInput.value = page?.prompt || '';
     hintInput.value   = page?.hint   || '';
@@ -2813,16 +2898,16 @@ async function openEditPuzzle(adv, page /* or null */) {
         wrap.append(
           h('img', { class: 'pe-image', src: im.url, alt: '' }),
           h('button', {
-            class: 'btn small danger pe-image-remove', type: 'button', title: 'Remove',
+            class: 'btn small danger pe-image-remove', type: 'button', title: t('Remove'),
             on: { click: async () => {
               const rr = await api(`/api/admin/images/${im.id}`, { method: 'DELETE' });
               if (rr.status === 204) {
                 const i = images.indexOf(im);
                 if (i >= 0) images.splice(i, 1);
                 drawImages();
-                toastOk('Image removed');
+                toastOk(t('Image removed'));
               } else {
-                toastErr(rr.body?.error || `error ${rr.status}`);
+                toastErr(rr.body?.error || t('error {{status}}', { status: rr.status }));
               }
             } },
           }, icon(ICONS.trash)),
@@ -2836,11 +2921,11 @@ async function openEditPuzzle(adv, page /* or null */) {
         addTile.className = 'pe-image-add';
         addTile.htmlFor = inputID;
         addTile.append(icon(ICONS.plus));
-        addTile.append(document.createTextNode(' Click to add image'));
+        addTile.append(document.createTextNode(' ' + t('Click to add image')));
         imagesHost.append(addTile);
       } else {
         imagesHost.append(h('div', { class: 'pe-image-add disabled' },
-          icon(ICONS.plus), ' Save the puzzle first, then add images'));
+          icon(ICONS.plus), ' ' + t('Save the puzzle first, then add images')));
       }
     };
     drawImages();
@@ -2856,25 +2941,25 @@ async function openEditPuzzle(adv, page /* or null */) {
         const im = await res.json();
         images.push(im);
         drawImages();
-        toastOk('Image added');
+        toastOk(t('Image added'));
       } else {
-        const t = await res.text();
-        toastErr(t || `error ${res.status}`);
+        const errTxt = await res.text();
+        toastErr(errTxt || t('error {{status}}', { status: res.status }));
       }
       file.value = '';
     });
 
     const dock = h('div', { class: 'pe-dock' },
-      h('p', { class: 'pe-dock-label' }, 'Player answer bar (preview)'),
-      h('input', { disabled: '', placeholder: 'Your answer' }),
-      h('button', { class: 'btn primary', disabled: '' }, 'Submit'));
+      h('p', { class: 'pe-dock-label' }, t('Player answer bar (preview)')),
+      h('input', { disabled: '', placeholder: t('Your answer') }),
+      h('button', { class: 'btn primary', disabled: '' }, t('Submit')));
 
     const previewCard = h('div', { class: 'puzzle-editor' },
       titleInput,
       imagesHost,
       promptInput,
       h('div', { class: 'pe-hint-row' },
-        h('span', { class: 'tag' }, 'Hint:'),
+        h('span', { class: 'tag' }, t('Hint:')),
         hintInput),
       dock,
     );
@@ -2887,7 +2972,7 @@ async function openEditPuzzle(adv, page /* or null */) {
     // ---- Settings panel: fields with no visual player rendering ----
     const accept = h('input', {
       value: (page?.accept || []).join(', '),
-      placeholder: 'hello, hi',
+      placeholder: t('hello, hi'),
     });
     // For a fresh puzzle, inherit the location from the previous puzzle
     // in the adventure — adventures are almost always a cluster, so
@@ -2917,42 +3002,47 @@ async function openEditPuzzle(adv, page /* or null */) {
     if (page?.disabled) disabled.checked = true;
 
     const notes = h('textarea', { rows: 2,
-      placeholder: 'e.g. "statue at the fountain, check opening hours"',
+      placeholder: t('e.g. "statue at the fountain, check opening hours"'),
     });
     notes.value = page?.notes || '';
 
-    const gpsBtn = h('button', { class: 'btn small', type: 'button', title: 'Use this device\'s GPS' },
-      icon(ICONS.crosshair), 'Use my location');
+    const gpsBtn = h('button', { class: 'btn small', type: 'button', title: t('Use this device\'s GPS') },
+      icon(ICONS.crosshair), t('Use my location'));
     const mapEl  = h('div', { class: 'pe-map' });
 
     const settings = h('div', { class: 'puzzle-settings' },
-      h('h3', {}, 'Settings'),
+      h('h3', {}, t('Settings')),
       h('label', { class: 'field' },
-        h('span', {}, 'Accepted answers — comma-separated'), accept),
+        h('span', {}, t('Accepted answers — comma-separated')), accept),
       h('label', { class: 'field' },
-        h('span', {}, 'Internal notes — not shown to players'), notes),
-      h('h3', {}, 'Location'),
+        h('span', {}, t('Internal notes — not shown to players')), notes),
+      h('h3', {}, t('Location')),
       h('div', { class: 'pe-loc-head' },
         h('span', { class: 'muted', style: 'font-size:.85rem' },
-          'Drag the pin, click the map, or press the button'),
+          t('Drag the pin, click the map, or press the button')),
         gpsBtn),
       mapEl,
       h('div', { class: 'pe-loc-row' },
-        h('label', { class: 'field' }, h('span', {}, 'Latitude'), lat),
-        h('label', { class: 'field' }, h('span', {}, 'Longitude'), lng)),
+        h('label', { class: 'field' }, h('span', {}, t('Latitude')), lat),
+        h('label', { class: 'field' }, h('span', {}, t('Longitude')), lng)),
       h('label', { style: 'display:flex; gap:.4rem; align-items:center; margin: .25rem 0 .5rem' },
-        gated, h('span', { style: 'margin:0' }, 'Gated — player must reach location first')),
-      h('label', { class: 'field' }, h('span', {}, 'Gate radius (metres)'), radius),
+        gated, h('span', { style: 'margin:0' }, t('Gated — player must reach location first'))),
+      h('label', { class: 'field' }, h('span', {}, t('Gate radius (metres)')), radius),
       h('label', { style: 'display:flex; gap:.4rem; align-items:center; margin: .75rem 0 .25rem' },
         disabled, h('span', { style: 'margin:0' },
-          'Disabled — players skip this puzzle; the content and gate stay saved')),
+          t('Disabled — players skip this puzzle; the content and gate stay saved'))),
     );
 
     const form = h('form', {}, previewCard, settings,
       h('div', { class: 'row end', style: 'margin-top:1rem' },
-        h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, 'Cancel'),
-        h('button', { class: 'btn primary', type: 'submit' }, creating ? 'Create' : 'Save')));
+        h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, t('Cancel')),
+        h('button', { class: 'btn primary', type: 'submit' }, creating ? t('Create') : t('Save'))));
 
+    // saved flips true the moment a save (POST or PATCH) succeeds, so
+    // the modal:close cleanup below knows not to delete the server-side
+    // stub on the way out. Any other exit path (Cancel, backdrop, Esc,
+    // timeline switchTo) leaves it false.
+    let saved = false;
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       const payload = {
@@ -2970,8 +3060,9 @@ async function openEditPuzzle(adv, page /* or null */) {
         const r = await api(`/api/admin/adventures/${encodeURIComponent(adv.slug)}/pages`, {
           method: 'POST', body: JSON.stringify(payload),
         });
-        if (r.status !== 201) { toastErr(r.body?.error || `error ${r.status}`); return; }
-        toastOk('Puzzle created');
+        if (r.status !== 201) { toastErr(r.body?.error || t('error {{status}}', { status: r.status })); return; }
+        toastOk(t('Puzzle created'));
+        saved = true;
         file.remove();
         close(true);
         // Reopen in edit mode so images can be uploaded immediately.
@@ -2986,8 +3077,9 @@ async function openEditPuzzle(adv, page /* or null */) {
       const r = await api(`/api/admin/pages/${page.id}`, {
         method: 'PATCH', body: JSON.stringify(payload),
       });
-      if (r.status !== 204) { toastErr(r.body?.error || `error ${r.status}`); return; }
-      toastOk('Puzzle saved');
+      if (r.status !== 204) { toastErr(r.body?.error || t('error {{status}}', { status: r.status })); return; }
+      toastOk(t('Puzzle saved'));
+      saved = true;
       file.remove();
       close(true);
       renderRoute();
@@ -3009,7 +3101,7 @@ async function openEditPuzzle(adv, page /* or null */) {
       disabled.checked !== !!page?.disabled
     );
     const switchTo = (targetPage) => {
-      if (isDirty() && !confirm('Discard unsaved changes in this puzzle?')) return;
+      if (isDirty() && !confirm(t('Discard unsaved changes in this puzzle?'))) return;
       file.remove();
       close(null);
       openEditPuzzle(adv, targetPage);
@@ -3039,20 +3131,20 @@ async function openEditPuzzle(adv, page /* or null */) {
           class: cls.join(' '),
           type: 'button',
           draggable: 'true',
-          title: (titled ? p.title : `Puzzle ${i + 1} (untitled)`) + (p.disabled ? ' — disabled' : ''),
+          title: (titled ? p.title : t('Puzzle {{i}} (untitled)', { i: i + 1 })) + (p.disabled ? t(' — disabled') : ''),
           'data-page-id': p.id,
           'data-page-pos': i,
           on: { click: () => { if (!current) switchTo(p); } },
-        }, h('span', { class: 'pt-label' }, titled ? p.title : `Puzzle ${i + 1}`));
+        }, h('span', { class: 'pt-label' }, titled ? p.title : t('Puzzle {{i}}', { i: i + 1 })));
         wireDrag(pill, p, i);
         timeline.append(pill);
       });
       if (adv.pages.length > 0) timeline.append(arrow());
       if (creating) {
-        timeline.append(h('span', { class: 'pt-pill current', title: 'This puzzle' }, 'New'));
+        timeline.append(h('span', { class: 'pt-pill current', title: t('This puzzle') }, t('New')));
       } else {
         timeline.append(h('button', {
-          class: 'pt-pill pt-plus', type: 'button', title: 'New puzzle',
+          class: 'pt-pill pt-plus', type: 'button', title: t('New puzzle'),
           on: { click: () => switchTo(null) },
         }, '+'));
       }
@@ -3076,7 +3168,7 @@ async function openEditPuzzle(adv, page /* or null */) {
       const r = await api(`/api/admin/adventures/${encodeURIComponent(adv.slug)}/pages/reorder`, {
         method: 'PATCH', body: JSON.stringify({ page_ids: next.map((p) => p.id) }),
       });
-      if (r.status !== 204) { toastErr(r.body?.error || `error ${r.status}`); return; }
+      if (r.status !== 204) { toastErr(r.body?.error || t('error {{status}}', { status: r.status })); return; }
       adv.pages = next.map((p, i) => ({ ...p, index: i }));
       renderTimeline();
     };
@@ -3208,10 +3300,10 @@ async function openEditPuzzle(adv, page /* or null */) {
     // guess where their edits will apply.
     if (!creating) {
       const assignLabel = standalone
-        ? h('span', {}, '📚 Library puzzle — not yet in any adventure')
-        : h('span', {}, 'In adventure ',
+        ? h('span', {}, t('📚 Library puzzle — not yet in any adventure'))
+        : h('span', {}, t('In adventure '),
             h('strong', {}, adv.title || adv.slug),
-            ', position ', h('strong', {}, String((page.index ?? 0) + 1)));
+            t(', position '), h('strong', {}, String((page.index ?? 0) + 1)));
       body.append(h('p', { class: 'muted', style: 'margin: .25rem 0 1rem; font-size:.9rem' }, assignLabel));
     }
     body.append(form);
@@ -3254,10 +3346,42 @@ async function openEditPuzzle(adv, page /* or null */) {
     // size at init and otherwise picks up a 0×0 box.
     requestAnimationFrame(() => locMap.invalidate());
 
-    // Clean up the parked file input if the modal closes via Cancel/Esc.
-    body.addEventListener('modal:close', () => {
+    // Clean up the parked file input + map on close, and — for library
+    // puzzles only — tidy both the server stub and the URL.
+    //
+    //  * Abandoned-stub tidy-up: Quick/New puzzle lands on an empty
+    //    library row; walking away without filling anything in
+    //    deletes it so the library doesn't accumulate blanks.
+    //
+    //  * URL tidy-up: the library deep-link (#puzzles/<id>) stays
+    //    pinned through the modal lifetime. On an unsaved close we
+    //    move back to #puzzles so the URL matches what the user sees;
+    //    otherwise a later reload — e.g. a language switch which
+    //    goes through location.reload() — rehydrates the editor for
+    //    a puzzle the user has already dismissed.
+    //
+    // Adventure puzzles use switchTo to swap between siblings and
+    // live on #library/<slug>; they're skipped here so that flow
+    // keeps working.
+    body.addEventListener('modal:close', async () => {
       file.remove();
       locMap.destroy();
+      if (!page || adv) return;
+      const isEmpty =
+        !titleInput.value.trim() &&
+        !promptInput.value.trim() &&
+        !hintInput.value.trim() &&
+        !notes.value.trim() &&
+        !accept.value.trim() &&
+        (images.length === 0) &&
+        !gated.checked &&
+        !disabled.checked;
+      if (!saved && isEmpty) {
+        await api(`/api/admin/pages/${page.id}`, { method: 'DELETE' });
+      }
+      if (!saved && location.hash === '#puzzles/' + page.id) {
+        nav('#puzzles');
+      }
     }, { once: true });
   }, { wide: true });
 }
@@ -3381,7 +3505,7 @@ function renderPuzzleLocationMap(args) {
   radius.addEventListener('input', updateCircle);
 
   gpsBtn.addEventListener('click', () => {
-    if (!navigator.geolocation) { toastErr('Geolocation not available on this device'); return; }
+    if (!navigator.geolocation) { toastErr(t('Geolocation not available on this device')); return; }
     gpsBtn.disabled = true;
     navigator.geolocation.getCurrentPosition(
       (pos) => {
@@ -3393,7 +3517,7 @@ function renderPuzzleLocationMap(args) {
         map.setView([la, ln], 17);
         updateCircle();
       },
-      (err) => { gpsBtn.disabled = false; toastErr('GPS failed: ' + (err.message || 'unknown')); },
+      (err) => { gpsBtn.disabled = false; toastErr(t('GPS failed: {{msg}}', { msg: err.message || t('unknown') })); },
       { enableHighAccuracy: true, maximumAge: 10000, timeout: 30000 },
     );
   });
@@ -3436,30 +3560,30 @@ function renderPuzzleLocationMap(args) {
 // are offered first; already-assigned puzzles follow so the author can
 // duplicate a puzzle across adventures if they want.
 async function openLibraryPicker(adv) {
-  await modal('Pick a puzzle from the library', async ({ body, close }) => {
-    body.append(h('p', { class: 'muted' }, 'Loading puzzles…'));
+  await modal(t('Pick a puzzle from the library'), async ({ body, close }) => {
+    body.append(h('p', { class: 'muted' }, t('Loading puzzles…')));
     const r = await api('/api/admin/puzzles');
     body.replaceChildren();
-    if (!r.ok) { body.append(h('p', { class: 'err' }, r.body?.error || 'load failed')); return; }
+    if (!r.ok) { body.append(h('p', { class: 'err' }, r.body?.error || t('load failed'))); return; }
     const puzzles = (r.body?.puzzles || []).slice();
     // Put library puzzles first so the common case is discoverable at
     // a glance; attached puzzles follow for copy-across-adventures.
     puzzles.sort((a, b) => (!!a.adventure_slug) - (!!b.adventure_slug));
     if (puzzles.length === 0) {
-      body.append(h('p', {}, 'No puzzles in the library yet.'));
+      body.append(h('p', {}, t('No puzzles in the library yet.')));
       body.append(h('div', { class: 'row end' },
-        h('button', { class: 'btn', on: { click: () => close(null) } }, 'Close')));
+        h('button', { class: 'btn', on: { click: () => close(null) } }, t('Close'))));
       return;
     }
     const list = h('div', { style: 'display:grid; gap:.5rem; max-height:60vh; overflow-y:auto; padding-right:.25rem' });
     for (const p of puzzles) {
       const label = p.adventure_slug
         ? h('span', { class: 'pill', style: 'margin-left:.5rem' },
-            `in ${p.adventure_title} · #${(p.adventure_idx ?? 0) + 1}`)
-        : h('span', { class: 'pill accent', style: 'margin-left:.5rem' }, 'library');
+            t('in {{title}} · #{{n}}', { title: p.adventure_title, n: (p.adventure_idx ?? 0) + 1 }))
+        : h('span', { class: 'pill accent', style: 'margin-left:.5rem' }, t('library'));
       const card = h('div', { class: 'card clickable', style: 'padding:.6rem .9rem; margin:0' },
         h('div', { class: 'row between' },
-          h('strong', {}, p.title || '(untitled)'),
+          h('strong', {}, p.title || t('(untitled)')),
           label),
         p.notes || p.prompt ? h('p', { class: 'muted', style: 'margin:.25rem 0 0; font-size:.85rem; white-space:pre-wrap; overflow:hidden; max-height:2.4em' },
           p.notes || p.prompt) : null,
@@ -3469,33 +3593,33 @@ async function openLibraryPicker(adv) {
         const rr = await api(`/api/admin/adventures/${encodeURIComponent(adv.slug)}/pages/copy-from/${p.id}`,
           { method: 'POST' });
         if (rr.status === 201) {
-          toastOk('Puzzle copied into adventure');
+          toastOk(t('Puzzle copied into adventure'));
           close(true);
           renderRoute();
         } else {
-          toastErr(rr.body?.error || `error ${rr.status}`);
+          toastErr(rr.body?.error || t('error {{status}}', { status: rr.status }));
         }
       });
       list.append(card);
     }
     body.append(list);
     body.append(h('div', { class: 'row end', style: 'margin-top:1rem' },
-      h('button', { class: 'btn', on: { click: () => close(null) } }, 'Cancel')));
+      h('button', { class: 'btn', on: { click: () => close(null) } }, t('Cancel'))));
   }, { wide: true });
 }
 
 async function confirmDeletePuzzle(adv, page) {
-  const ok = await modal(`Delete puzzle ${page.index + 1}?`, ({ body, close }) => {
+  const ok = await modal(t('Delete puzzle {{n}}?', { n: page.index + 1 }), ({ body, close }) => {
     body.append(
-      h('p', {}, 'This removes the puzzle and any images attached to it.'),
+      h('p', {}, t('This removes the puzzle and any images attached to it.')),
       h('div', { class: 'row end' },
-        h('button', { class: 'btn', on: { click: () => close(false) } }, 'Cancel'),
-        h('button', { class: 'btn danger', on: { click: () => close(true) } }, 'Delete')));
+        h('button', { class: 'btn', on: { click: () => close(false) } }, t('Cancel')),
+        h('button', { class: 'btn danger', on: { click: () => close(true) } }, t('Delete'))));
   });
   if (!ok) return;
   const r = await api(`/api/admin/pages/${page.id}`, { method: 'DELETE' });
-  if (r.status === 204) { toastOk('Deleted'); renderRoute(); }
-  else toastErr(r.body?.error || `error ${r.status}`);
+  if (r.status === 204) { toastOk(t('Deleted')); renderRoute(); }
+  else toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
 }
 
 /* ========== Admins (global admin only) ========== */
@@ -3504,38 +3628,38 @@ async function viewAdmins(view) {
   const admins = r.body?.admins || [];
   view.replaceChildren(
     h('div', { class: 'row between' },
-      h('h1', {}, 'Admins'),
+      h('h1', {}, t('Admins')),
       h('button', { class: 'btn primary', on: { click: () => openCreateAdmin() } },
-        icon(ICONS.plus), 'New admin')),
+        icon(ICONS.plus), t('New admin'))),
     h('p', { class: 'muted' },
-      'Global admins manage organizations and other admins. The system will refuse to let you delete the last remaining admin.'),
+      t('Global admins manage organizations and other admins. The system will refuse to let you delete the last remaining admin.')),
     admins.length === 0
-      ? h('div', { class: 'empty' }, 'No admins yet.')
+      ? h('div', { class: 'empty' }, t('No admins yet.'))
       : h('div', { class: 'card' },
         h('table', { class: 'table' },
-          h('thead', {}, h('tr', {}, h('th', {}, 'Username'), h('th', {}, ''))),
+          h('thead', {}, h('tr', {}, h('th', {}, t('Username')), h('th', {}, ''))),
           h('tbody', {}, admins.map((a) => h('tr', {},
-            h('td', {}, a.username, state.me.id === a.id ? h('span', { class: 'muted', style: 'margin-left:.35rem' }, '(you)') : null),
+            h('td', {}, a.username, state.me.id === a.id ? h('span', { class: 'muted', style: 'margin-left:.35rem' }, t('(you)')) : null),
             h('td', {}, h('div', { class: 'row end' },
               h('button', {
                 class: 'btn small danger',
                 disabled: state.me.username === a.username ? '' : null,
                 on: { click: () => confirmDeleteAdmin(a) },
-              }, icon(ICONS.trash), 'Delete'))),
+              }, icon(ICONS.trash), t('Delete')))),
           ))))),
   );
 }
 
 async function openCreateAdmin() {
-  await modal('New admin', ({ body, close }) => {
+  await modal(t('New admin'), ({ body, close }) => {
     const form = h('form', {},
-      h('label', { class: 'field' }, h('span', {}, 'Username'),
+      h('label', { class: 'field' }, h('span', {}, t('Username')),
         h('input', { name: 'u', required: true, autofocus: true })),
-      h('label', { class: 'field' }, h('span', {}, 'Password'),
+      h('label', { class: 'field' }, h('span', {}, t('Password')),
         h('input', { name: 'p', type: 'password', required: true })),
       h('div', { class: 'row end' },
-        h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, 'Cancel'),
-        h('button', { class: 'btn primary', type: 'submit' }, 'Create')));
+        h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, t('Cancel')),
+        h('button', { class: 'btn primary', type: 'submit' }, t('Create'))));
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       const fd = new FormData(form);
@@ -3543,57 +3667,57 @@ async function openCreateAdmin() {
         method: 'POST',
         body: JSON.stringify({ username: fd.get('u'), password: fd.get('p') }),
       });
-      if (r.status === 201) { toastOk('Admin created'); close(true); renderRoute(); }
-      else toastErr(r.body?.error || `error ${r.status}`);
+      if (r.status === 201) { toastOk(t('Admin created')); close(true); renderRoute(); }
+      else toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
     });
     body.append(form);
   });
 }
 
 async function confirmDeleteAdmin(admin) {
-  const pw = await promptPassword(`Delete admin ${admin.username}?`,
-    'Enter your password to confirm.');
+  const pw = await promptPassword(t('Delete admin {{username}}?', { username: admin.username }),
+    t('Enter your password to confirm.'));
   if (!pw) return;
   const r = await api(`/api/admin/admins/${admin.id}`, {
     method: 'DELETE', headers: { 'X-Confirm-Password': pw },
   });
-  if (r.status === 204) { toastOk('Admin deleted'); renderRoute(); }
-  else toastErr(r.body?.error || `error ${r.status}`);
+  if (r.status === 204) { toastOk(t('Admin deleted')); renderRoute(); }
+  else toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
 }
 
 /* ========== Members (for org_admin of their own org) ========== */
 async function viewMembers(view) {
   if (!state.me.org_id) {
-    view.replaceChildren(h('p', { class: 'err' }, 'No organization.'));
+    view.replaceChildren(h('p', { class: 'err' }, t('No organization.')));
     return;
   }
   const r = await api('/api/admin/organizations/' + state.me.org_id);
   if (!r.ok) {
-    view.replaceChildren(h('p', { class: 'err' }, r.body?.error || 'failed to load'));
+    view.replaceChildren(h('p', { class: 'err' }, r.body?.error || t('failed to load')));
     return;
   }
-  const org = r.body || { id: state.me.org_id, name: 'Your organization', members: [] };
+  const org = r.body || { id: state.me.org_id, name: t('Your organization'), members: [] };
   view.replaceChildren(
     h('div', { class: 'row between' },
-      h('h1', {}, 'Members'),
+      h('h1', {}, t('Members')),
       h('button', { class: 'btn primary', on: { click: () => openAddOrgMember(org) } },
-        icon(ICONS.plus), 'Add user')),
+        icon(ICONS.plus), t('Add user'))),
     h('p', { class: 'muted' },
-      `Users in ${org.name}. Admins can invite more users; members run the games.`),
+      t('Users in {{name}}. Admins can invite more users; members run the games.', { name: org.name })),
     (org.members || []).length === 0
-      ? h('div', { class: 'empty' }, 'No other users yet.')
+      ? h('div', { class: 'empty' }, t('No other users yet.'))
       : h('div', { class: 'card' },
         h('table', { class: 'table' },
-          h('thead', {}, h('tr', {}, h('th', {}, 'Username'), h('th', {}, 'Role'), h('th', {}, ''))),
+          h('thead', {}, h('tr', {}, h('th', {}, t('Username')), h('th', {}, t('Role')), h('th', {}, ''))),
           h('tbody', {}, (org.members || []).map((m) => h('tr', {},
-            h('td', {}, m.username, state.me.id === m.id ? h('span', { class: 'muted', style: 'margin-left:.35rem' }, '(you)') : null),
-            h('td', {}, h('span', { class: 'pill' }, m.role === 'org_admin' ? 'admin' : 'member')),
+            h('td', {}, m.username, state.me.id === m.id ? h('span', { class: 'muted', style: 'margin-left:.35rem' }, t('(you)')) : null),
+            h('td', {}, h('span', { class: 'pill' }, m.role === 'org_admin' ? t('admin') : t('member'))),
             h('td', {}, h('div', { class: 'row end' },
               h('button', {
                 class: 'btn small danger',
                 disabled: state.me.id === m.id ? '' : null,
                 on: { click: () => confirmRemoveOrgMember(org, m) },
-              }, icon(ICONS.trash), 'Remove'))),
+              }, icon(ICONS.trash), t('Remove')))),
           ))))),
   );
 }
