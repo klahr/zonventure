@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"strings"
 	"time"
 
 	"git.sr.ht/~klahr/zv/internal/auth"
@@ -51,6 +52,91 @@ func demoPages() []demoPage {
 			Lat:    59.3252, Lng: 18.0708, // Stortorget, Gamla stan
 		},
 	}
+}
+
+// seedArrangerUser upserts an org_admin ("arranger") from a "username:password"
+// flag value, creating the default "Arrangers" organization on first run.
+// Used by `make seed` to bootstrap a working login next to the global admin.
+func seedArrangerUser(d *sql.DB, creds string) error {
+	username, password, err := splitCreds(creds)
+	if err != nil {
+		return err
+	}
+	const orgName = "Arrangers"
+	if _, err := d.Exec(
+		`INSERT INTO organizations(name) VALUES (?) ON CONFLICT(name) DO NOTHING`,
+		orgName); err != nil {
+		return err
+	}
+	var orgID int64
+	if err := d.QueryRow(
+		`SELECT id FROM organizations WHERE name = ?`, orgName).Scan(&orgID); err != nil {
+		return err
+	}
+	_, err = upsertUser(d, username, password, auth.RoleOrgAdmin, &orgID)
+	return err
+}
+
+// splitCreds parses a "username:password" flag value. Empty parts are
+// rejected so the caller doesn't end up with a blank username or an
+// unset password.
+func splitCreds(creds string) (string, string, error) {
+	i := strings.IndexByte(creds, ':')
+	if i <= 0 || i == len(creds)-1 {
+		return "", "", errors.New(`expected "username:password"`)
+	}
+	return creds[:i], creds[i+1:], nil
+}
+
+// seedDemoAdventure upserts the "demo" adventure and its three pages
+// with the placeholder illustration. Idempotent — re-running replaces
+// the pages without touching any runs or assignments that reference the
+// adventure by slug. For the full demo dataset (org, users, run, teams,
+// tracks), use -seed-demo.
+func seedDemoAdventure(d *sql.DB) error {
+	if _, err := d.Exec(`
+		INSERT INTO adventures(slug, title, description, author)
+		VALUES (?, ?, ?, ?)
+		ON CONFLICT(slug) DO UPDATE SET
+			title = excluded.title,
+			description = excluded.description,
+			author = excluded.author,
+			updated_at = datetime('now')
+	`, "demo", "Demo: First Steps",
+		"A tiny three-page adventure used as a smoke test.", "zv"); err != nil {
+		return err
+	}
+	var advID int64
+	if err := d.QueryRow(`SELECT id FROM adventures WHERE slug = ?`, "demo").Scan(&advID); err != nil {
+		return err
+	}
+	// Pages cascade to adventure_page_images, so a clean re-insert keeps
+	// the page set deterministic across repeated seeds.
+	if _, err := d.Exec(`DELETE FROM adventure_pages WHERE adventure_id = ?`, advID); err != nil {
+		return err
+	}
+	for i, p := range demoPages() {
+		accept, _ := json.Marshal(p.Accept)
+		var radius any
+		if p.Radius != nil {
+			radius = *p.Radius
+		}
+		pr, err := d.Exec(`
+			INSERT INTO adventure_pages(adventure_id, idx, title, prompt, hint, accept, lat, lng, radius_m)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`, advID, i, p.Title, p.Prompt, p.Hint, string(accept), p.Lat, p.Lng, radius)
+		if err != nil {
+			return err
+		}
+		pageID, _ := pr.LastInsertId()
+		if _, err := d.Exec(`
+			INSERT INTO adventure_page_images(page_id, idx, mime_type, size_bytes, content)
+			VALUES (?, 0, 'image/svg+xml', ?, ?)
+		`, pageID, len(placeholderImage), []byte(placeholderImage)); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // seedDemo installs the full demo dataset: admin, org, users, demo adventure,

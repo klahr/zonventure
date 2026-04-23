@@ -738,7 +738,10 @@ textarea { min-height: 80px; resize: vertical; font-family: ui-monospace, monosp
 }
 .login .brand {
   font-size: 1.75rem; margin-bottom: 1.5rem;
-  display: flex; align-items: baseline; gap: .5rem;
+  display: flex; flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+  line-height: 1.1;
 }
 .login .brand small {
   font-family: var(--font-body);
@@ -747,6 +750,7 @@ textarea { min-height: 80px; resize: vertical; font-family: ui-monospace, monosp
   text-transform: uppercase;
   letter-spacing: .08em;
   font-weight: 700;
+  margin-top: .15rem;
 }
 </style>
 </head>

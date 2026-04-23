@@ -23,11 +23,13 @@ import (
 
 func main() {
 	var (
-		addr         = flag.String("addr", ":8080", "listen address")
-		dbPath       = flag.String("db", "zv.db", "sqlite database path")
-		secureCookie = flag.Bool("secure-cookie", false, "set Secure flag on session cookies (enable behind TLS)")
-		seedAdmin    = flag.String("seed-admin", "", "if set, create/update a global admin as username:password and exit")
-		seedDemoFlag = flag.Bool("seed-demo", false, "install a full demo dataset and exit")
+		addr              = flag.String("addr", ":8080", "listen address")
+		dbPath            = flag.String("db", "zv.db", "sqlite database path")
+		secureCookie      = flag.Bool("secure-cookie", false, "set Secure flag on session cookies (enable behind TLS)")
+		seedAdmin         = flag.String("seed-admin", "", "if set, create/update a global admin as username:password")
+		seedArranger      = flag.String("seed-arranger", "", "if set, create/update an org_admin arranger as username:password in the default Arrangers org")
+		seedDemoAdvFlag   = flag.Bool("seed-demo-adventure", false, "install the demo adventure (puzzles + placeholder images)")
+		seedDemoFlag      = flag.Bool("seed-demo", false, "install a full demo dataset and exit")
 	)
 	flag.Parse()
 
@@ -37,18 +39,39 @@ func main() {
 	}
 	defer sqlDB.Close()
 
+	// Seeds run in a fixed order (admin → arranger → adventure → full demo)
+	// so `make seed` can combine flags in one invocation. If any seed
+	// flag is set the server exits without starting the listener.
+	seeded := false
 	if *seedAdmin != "" {
 		if err := seedAdminUser(sqlDB, *seedAdmin); err != nil {
-			log.Fatalf("seed: %v", err)
+			log.Fatalf("seed admin: %v", err)
 		}
 		log.Printf("admin user ready")
-		return
+		seeded = true
+	}
+	if *seedArranger != "" {
+		if err := seedArrangerUser(sqlDB, *seedArranger); err != nil {
+			log.Fatalf("seed arranger: %v", err)
+		}
+		log.Printf("arranger ready in org Arrangers")
+		seeded = true
+	}
+	if *seedDemoAdvFlag {
+		if err := seedDemoAdventure(sqlDB); err != nil {
+			log.Fatalf("seed demo adventure: %v", err)
+		}
+		log.Printf("demo adventure ready")
+		seeded = true
 	}
 	if *seedDemoFlag {
 		if err := seedDemo(context.Background(), sqlDB); err != nil {
 			log.Fatalf("seed demo: %v", err)
 		}
 		log.Printf(`demo data installed. Log in at /arrange as admin/admin, boss/s3cret (org_admin) or jane/jane (org_member). Players use per-slot magic links — copy them from Runs → Run #1 → Edit team.`)
+		seeded = true
+	}
+	if seeded {
 		return
 	}
 
