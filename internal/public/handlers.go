@@ -61,6 +61,7 @@ type LiveDTO struct {
 	State          string            `json:"state"`
 	StartedAt      string            `json:"started_at,omitempty"`
 	ScheduledAt    string            `json:"scheduled_at,omitempty"`
+	CompletedAt    string            `json:"completed_at,omitempty"`
 	ServerNow      string            `json:"server_now"`
 	PageCount      int               `json:"page_count"`
 	ShowMap        bool              `json:"show_map"`
@@ -71,17 +72,20 @@ type LiveDTO struct {
 
 // runByToken resolves a URL token to a run id, returning sql.ErrNoRows if
 // the token is unknown.
-func (h *Handlers) runByToken(ctx context.Context, token string) (runID int64, slug, state, startedAt, scheduledAt string, showMap int, err error) {
-	var started, scheduled sql.NullString
+func (h *Handlers) runByToken(ctx context.Context, token string) (runID int64, slug, state, startedAt, scheduledAt, completedAt string, showMap int, err error) {
+	var started, scheduled, completed sql.NullString
 	err = h.DB.QueryRowContext(ctx, `
-		SELECT id, adventure_slug, state, started_at, scheduled_at, show_map
+		SELECT id, adventure_slug, state, started_at, scheduled_at, completed_at, show_map
 		FROM adventure_runs WHERE live_token = ?
-	`, token).Scan(&runID, &slug, &state, &started, &scheduled, &showMap)
+	`, token).Scan(&runID, &slug, &state, &started, &scheduled, &completed, &showMap)
 	if started.Valid {
 		startedAt = started.String
 	}
 	if scheduled.Valid {
 		scheduledAt = scheduled.String
+	}
+	if completed.Valid {
+		completedAt = completed.String
 	}
 	return
 }
@@ -89,7 +93,7 @@ func (h *Handlers) runByToken(ctx context.Context, token string) (runID int64, s
 // buildLive assembles the full snapshot. Shared between the HTTP handler
 // and the WS push path.
 func (h *Handlers) buildLive(ctx context.Context, token string) (LiveDTO, int64, int, string) {
-	id, slug, state, startedAt, scheduledAt, showMap, err := h.runByToken(ctx, token)
+	id, slug, state, startedAt, scheduledAt, completedAt, showMap, err := h.runByToken(ctx, token)
 	if errors.Is(err, sql.ErrNoRows) {
 		return LiveDTO{}, 0, http.StatusNotFound, "run not found"
 	}
@@ -203,6 +207,7 @@ func (h *Handlers) buildLive(ctx context.Context, token string) (LiveDTO, int64,
 		State:          state,
 		StartedAt:      startedAt,
 		ScheduledAt:    scheduledAt,
+		CompletedAt:    completedAt,
 		ServerNow:      time.Now().UTC().Format(time.RFC3339),
 		PageCount:      len(enabled),
 		ShowMap:        showMap != 0,
@@ -303,7 +308,7 @@ func (h *Handlers) Tracks(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusBadRequest, "bad live token")
 		return
 	}
-	id, _, _, _, _, showMap, err := h.runByToken(r.Context(), token)
+	id, _, _, _, _, _, showMap, err := h.runByToken(r.Context(), token)
 	if errors.Is(err, sql.ErrNoRows) {
 		httpx.Error(w, http.StatusNotFound, "run not found")
 		return

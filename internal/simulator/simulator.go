@@ -485,7 +485,9 @@ func (s *Simulator) attemptAnswer(ctx context.Context, r *run, t *simTeam, puzzl
 }
 
 // finishTeam stamps completed_at, emits the usual event, and flags the
-// team so subsequent ticks skip it.
+// team so subsequent ticks skip it. When this finish leaves zero
+// teams still racing, the run itself transitions to 'completed' too,
+// matching the real player flow.
 func (s *Simulator) finishTeam(ctx context.Context, r *run, t *simTeam) {
 	if t.finished {
 		return
@@ -495,6 +497,7 @@ func (s *Simulator) finishTeam(ctx context.Context, r *run, t *simTeam) {
 		`UPDATE teams SET completed_at = datetime('now') WHERE id = ?`, t.id)
 	runevents.Record(ctx, s.db, r.id, &t.id, runevents.Actor{}, runevents.TeamCompleted,
 		map[string]any{"source": "simulator"})
+	_, _ = runevents.MaybeCompleteRun(ctx, s.db, r.id)
 }
 
 // nextPuzzle returns the team's current target — the first enabled

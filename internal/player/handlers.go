@@ -365,6 +365,10 @@ func (h *Handlers) applyAdvance(ctx context.Context, slot auth.Slot) (AnswerResp
 		}
 		runevents.Record(ctx, h.DB, tc.RunID, &teamID, runevents.SlotActor(slot.ID),
 			runevents.TeamCompleted, nil)
+		// If this team was the last one to finish, the run itself
+		// transitions to 'completed' too. Caller pushes the broadcast
+		// after we return (it already does on any answer).
+		_, _ = runevents.MaybeCompleteRun(ctx, h.DB, tc.RunID)
 		resp.Completed = true
 		resp.NextIndex = nextIdx
 		return resp, tc.RunID, http.StatusOK, ""
@@ -502,6 +506,7 @@ func (h *Handlers) applyAnswer(ctx context.Context, slot auth.Slot, answer strin
 		}
 		runevents.Record(ctx, h.DB, tc.RunID, &teamID, runevents.SlotActor(slot.ID),
 			runevents.TeamCompleted, nil)
+		_, _ = runevents.MaybeCompleteRun(ctx, h.DB, tc.RunID)
 		resp.Completed = true
 		resp.NextIndex = nextIdx
 		return resp, tc.RunID, http.StatusOK, ""

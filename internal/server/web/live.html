@@ -792,7 +792,9 @@ async function renderLiveMap(inner, hint, data) {
   const map = liveMapInstance;
   map.invalidateSize();
 
-  const bounds = L.latLngBounds([]);
+  // puzzleBounds is the fall-back fit when no teams have pinged yet —
+  // at that point the puzzle pins are all we've got to orient against.
+  const puzzleBounds = L.latLngBounds([]);
 
   // Puzzle pins are set-once. Reconcile against mapLayers.puzzles so a
   // mid-run adventure edit still surfaces added/removed puzzles, but
@@ -814,7 +816,7 @@ async function renderLiveMap(inner, hint, data) {
       marker.bindPopup(`<strong>${p.index + 1}. ${p.title || t('Puzzle')}</strong>${p.gated ? `<br><em>${t('gated')}</em>` : ''}`);
       mapLayers.puzzles.set(key, marker);
     }
-    bounds.extend([p.lat, p.lng]);
+    puzzleBounds.extend([p.lat, p.lng]);
   }
   for (const [key, marker] of mapLayers.puzzles) {
     if (!seenPuzzleKeys.has(key)) {
@@ -874,7 +876,6 @@ async function renderLiveMap(inner, hint, data) {
     } else {
       tweenMarker(track.team_id, entry.marker, L.latLng(last.lat, last.lng));
     }
-    for (const ll of latlngs) bounds.extend(ll);
   }
   // Drop teams that fell out of the track set (unlikely mid-run, but
   // keeps the cache honest between adventures).
@@ -893,8 +894,51 @@ async function renderLiveMap(inner, hint, data) {
     }
   }
 
-  if (bounds.isValid()) {
-    map.fitBounds(bounds, { padding: [24, 24], maxZoom: 17 });
+  // Choose what the viewport frames: all teams' latest positions when
+  // the spread is tight enough to show everyone, otherwise the top
+  // three so a single wayward team doesn't zoom the board uselessly
+  // far out. Puzzles stay visible on the map layer but don't drive
+  // the fit — their geographic spread can be arbitrary and is less
+  // important than the racing teams.
+  const MAX_SPAN_METERS = 5000;
+  // Rank already baked in by the server (data.teams is sorted),
+  // so we just index into it to find "top 3" team ids.
+  const rankIdx = new Map((data.teams || []).map((t, i) => [t.id, i]));
+  const teamLatLngs = [];
+  for (const track of tracks) {
+    if (!track.points?.length) continue;
+    const last = track.points[track.points.length - 1];
+    teamLatLngs.push({
+      rank: rankIdx.has(track.team_id) ? rankIdx.get(track.team_id) : Infinity,
+      ll: L.latLng(last.lat, last.lng),
+    });
+  }
+  teamLatLngs.sort((a, b) => a.rank - b.rank);
+
+  let fitTarget = null;
+  if (teamLatLngs.length) {
+    const all = L.latLngBounds(teamLatLngs.map((t) => t.ll));
+    const span = all.getNorthEast().distanceTo(all.getSouthWest());
+    if (span <= MAX_SPAN_METERS || teamLatLngs.length <= 3) {
+      fitTarget = all;
+    } else {
+      fitTarget = L.latLngBounds(teamLatLngs.slice(0, 3).map((t) => t.ll));
+    }
+  } else if (puzzleBounds.isValid()) {
+    fitTarget = puzzleBounds;
+  }
+
+  if (fitTarget && fitTarget.isValid()) {
+    // Fast animation duration so the re-fit doesn't feel laggy when
+    // a team's position update drags the viewport — Leaflet's default
+    // (0.25s) already runs inside a longer pan/zoom transition, the
+    // explicit duration here just pins it tight. noMoveStart keeps
+    // other subscribers (marker tweens) from thinking the user
+    // panned manually.
+    map.fitBounds(fitTarget, {
+      padding: [24, 24], maxZoom: 17,
+      animate: true, duration: 0.35, easeLinearity: 0.35, noMoveStart: true,
+    });
   }
   // Hide the hint strip entirely once teams have sent at least one
   // position — the count text was noisy and duplicated the leaderboard.
@@ -920,8 +964,16 @@ function buildHeader(data) {
     ),
     h('div', { class: 'clockwrap' },
       h('div', { class: 'clock' },
-        formatElapsed(data.started_at, data.server_now),
-        h('small', {}, data.started_at ? t('Elapsed') : t('Not started'))),
+        // On a completed run we freeze the clock at finish time — the
+        // elapsed value comes from completed_at instead of the ticking
+        // server_now, and the label flips from "Elapsed" to "Finished"
+        // so the TV viewer knows it's the final number rather than
+        // a stalled stream.
+        formatElapsed(data.started_at, data.state === 'completed' ? data.completed_at : data.server_now),
+        h('small', {},
+          data.state === 'completed' ? t('Finished')
+          : data.started_at ? t('Elapsed')
+          : t('Not started'))),
       h('button', {
         class: 'fs-btn', type: 'button',
         title: t('Fullscreen (f)'),
@@ -1170,14 +1222,18 @@ function connectWS() {
 }
 
 // Keep the elapsed clock ticking between pushes so long-running races
-// don't look frozen while waiting for the next state change.
+// don't look frozen while waiting for the next state change. Skipped
+// once the run has completed — the clock is pinned to completed_at
+// and mutating it on every tick would visibly jitter the digits.
 setInterval(() => {
   if (!latestSnapshot) return;
-  const clockEl = document.querySelector('.clock');
-  if (clockEl) {
-    const firstLine = formatElapsed(latestSnapshot.started_at);
-    const firstChild = clockEl.firstChild;
-    if (firstChild && firstChild.nodeType === 3) firstChild.nodeValue = firstLine;
+  if (latestSnapshot.state !== 'completed') {
+    const clockEl = document.querySelector('.clock');
+    if (clockEl) {
+      const firstLine = formatElapsed(latestSnapshot.started_at);
+      const firstChild = clockEl.firstChild;
+      if (firstChild && firstChild.nodeType === 3) firstChild.nodeValue = firstLine;
+    }
   }
   // Pre-start countdown digit tick — read against a local clock rather
   // than server_now (which only updates on push) so the digits don't

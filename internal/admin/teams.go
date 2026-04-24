@@ -284,6 +284,7 @@ func (h *Handlers) UnlockTeam(w http.ResponseWriter, r *http.Request) {
 			map[string]any{"from_page_index": current, "to_page_index": next, "by_arranger": true})
 		runevents.Record(r.Context(), h.DB, runID, &teamID, runevents.UserActor(me.ID), runevents.TeamCompleted,
 			map[string]any{"by_arranger": true})
+		_, _ = runevents.MaybeCompleteRun(r.Context(), h.DB, runID)
 	} else {
 		if _, err := h.DB.ExecContext(r.Context(),
 			`UPDATE teams SET current_page_index = ? WHERE id = ?`, next, teamID); err != nil {
