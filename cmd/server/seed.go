@@ -21,10 +21,17 @@ import (
 type demoPage struct {
 	Title    string
 	Prompt   string
-	Hint     string
+	Hints    []demoHint
 	Accept   []string
 	Lat, Lng float64
 	Radius   *float64
+}
+
+// demoHint matches the shape of adventure_page_hints rows: a short text
+// revealed after delay_seconds from when the team opened the puzzle.
+type demoHint struct {
+	Text    string
+	DelaySec int
 }
 
 func demoPages() []demoPage {
@@ -40,7 +47,9 @@ func demoPages() []demoPage {
 		{
 			Title:  "Landmark",
 			Prompt: "Find the fountain in the central park. What colour are its tiles?",
-			Hint:   "Look at the inside of the basin, not the rim.",
+			Hints: []demoHint{
+				{Text: "Look at the inside of the basin, not the rim.", DelaySec: 60},
+			},
 			Accept: []string{"blue", "azure"},
 			Lat:    59.3326, Lng: 18.0649, // Sergels torg
 			Radius: gated(50),
@@ -52,6 +61,20 @@ func demoPages() []demoPage {
 			Lat:    59.3252, Lng: 18.0708, // Stortorget, Gamla stan
 		},
 	}
+}
+
+// insertDemoHints writes each page's hints into adventure_page_hints so
+// the demo exercises the hint UI the same way authored content does.
+func insertDemoHints(d *sql.DB, pageID int64, hints []demoHint) error {
+	for i, h := range hints {
+		if _, err := d.Exec(`
+			INSERT INTO adventure_page_hints(page_id, idx, text, delay_seconds)
+			VALUES (?, ?, ?, ?)
+		`, pageID, i, h.Text, h.DelaySec); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // seedArrangerUser upserts an org_admin ("arranger") from a "username:password"
@@ -122,9 +145,9 @@ func seedDemoAdventure(d *sql.DB) error {
 			radius = *p.Radius
 		}
 		pr, err := d.Exec(`
-			INSERT INTO adventure_pages(adventure_id, idx, title, prompt, hint, accept, lat, lng, radius_m)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-		`, advID, i, p.Title, p.Prompt, p.Hint, string(accept), p.Lat, p.Lng, radius)
+			INSERT INTO adventure_pages(adventure_id, idx, title, prompt, accept, lat, lng, radius_m)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		`, advID, i, p.Title, p.Prompt, string(accept), p.Lat, p.Lng, radius)
 		if err != nil {
 			return err
 		}
@@ -133,6 +156,9 @@ func seedDemoAdventure(d *sql.DB) error {
 			INSERT INTO adventure_page_images(page_id, idx, mime_type, size_bytes, content)
 			VALUES (?, 0, 'image/svg+xml', ?, ?)
 		`, pageID, len(placeholderImage), []byte(placeholderImage)); err != nil {
+			return err
+		}
+		if err := insertDemoHints(d, pageID, p.Hints); err != nil {
 			return err
 		}
 	}
@@ -175,9 +201,9 @@ func seedDemo(ctx context.Context, d *sql.DB) error {
 			radius = *p.Radius
 		}
 		pr, err := d.Exec(`
-			INSERT INTO adventure_pages(adventure_id, idx, title, prompt, hint, accept, lat, lng, radius_m)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-		`, advID, i, p.Title, p.Prompt, p.Hint, string(accept), p.Lat, p.Lng, radius)
+			INSERT INTO adventure_pages(adventure_id, idx, title, prompt, accept, lat, lng, radius_m)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		`, advID, i, p.Title, p.Prompt, string(accept), p.Lat, p.Lng, radius)
 		if err != nil {
 			return err
 		}
@@ -188,6 +214,9 @@ func seedDemo(ctx context.Context, d *sql.DB) error {
 			INSERT INTO adventure_page_images(page_id, idx, mime_type, size_bytes, content)
 			VALUES (?, 0, 'image/svg+xml', ?, ?)
 		`, pageIDs[i], len(placeholderImage), []byte(placeholderImage)); err != nil {
+			return err
+		}
+		if err := insertDemoHints(d, pageIDs[i], p.Hints); err != nil {
 			return err
 		}
 	}
