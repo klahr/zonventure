@@ -4040,7 +4040,9 @@ async function openEditAdventureMeta(adv) {
       coverRow, coverFile,
       h('h3', { style: 'margin-top:1rem' }, t('Welcome & completion copy')),
       h('label', { class: 'field' }, h('span', {}, t('Intro — shown on the welcome screen')), intro),
+      h('p', { class: 'muted', style: 'font-size:.8rem; margin:-.35rem 0 .75rem' }, mdSupportedHint()),
       h('label', { class: 'field' }, h('span', {}, t('Outro — shown on the completion screen')), outro),
+      h('p', { class: 'muted', style: 'font-size:.8rem; margin:-.35rem 0 .75rem' }, mdSupportedHint()),
       h('h3', { style: 'margin-top:1rem' }, t('Brand colours')),
       cAccent.el, cSecondary.el, cBackground.el, cText.el,
       h('div', { class: 'row end' },
@@ -4099,6 +4101,13 @@ async function confirmDeleteAdventure(adv) {
 // autosize makes a textarea grow to fit its content — used in the
 // WYSIWYG puzzle editor so multi-line prompts render in the preview the
 // same way they'll render in the play view.
+// mdSupportedHint is the little "Markdown: ..." muted caption shown
+// under arranger text fields that the server renders through goldmark.
+// Consistent wording in every place keeps the hint reliable.
+function mdSupportedHint() {
+  return t('Markdown supported: **bold**, *italics*, [links](https://…), `code`, - bullet lists.');
+}
+
 function autosize(el) {
   const resize = () => {
     el.style.height = 'auto';
@@ -4261,6 +4270,7 @@ async function openEditPuzzle(adv, page /* or null */) {
         h('span', { class: 'tag' }, t('Hint:')),
         hintInput),
       dock,
+      h('p', { class: 'muted', style: 'font-size:.75rem; margin:.5rem 0 0' }, mdSupportedHint()),
     );
     // Paint the adventure's brand colours onto the preview card so the
     // arranger sees the puzzle with the same palette a player will.

@@ -130,7 +130,35 @@
   .muted { color: var(--muted); }
   .err { color: var(--danger); font-weight: 600; }
   .ok  { color: var(--success); font-weight: 600; }
-  .prompt { white-space: pre-wrap; font-size: 1.1rem; line-height: 1.55; color: var(--ink); }
+  /* .prompt holds server-rendered markdown. Goldmark emits <p>
+     wrappers, <ul>, <a>, etc — style them once so every arranger's
+     content picks up the same typography. */
+  .prompt { font-size: 1.1rem; line-height: 1.55; color: var(--ink); }
+  .prompt p, .intro-custom p, .outro-custom p { margin: 0 0 .75rem; }
+  .prompt p:last-child, .intro-custom p:last-child, .outro-custom p:last-child { margin-bottom: 0; }
+  .prompt ul, .prompt ol, .intro-custom ul, .intro-custom ol, .outro-custom ul, .outro-custom ol {
+    padding-left: 1.25rem; margin: .35rem 0 .75rem;
+  }
+  .prompt li, .intro-custom li, .outro-custom li { margin: .2rem 0; }
+  .prompt a, .intro-custom a, .outro-custom a, .hint-md a {
+    color: var(--accent); text-decoration: underline; text-decoration-thickness: 1px;
+  }
+  .prompt a:hover, .intro-custom a:hover, .outro-custom a:hover, .hint-md a:hover {
+    text-decoration-thickness: 2px;
+  }
+  .prompt code, .intro-custom code, .outro-custom code, .hint-md code {
+    background: var(--surface-2); border: 1px solid var(--border-soft);
+    padding: .05em .35em; border-radius: 4px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .9em;
+  }
+  .prompt strong, .intro-custom strong, .outro-custom strong { font-weight: 700; }
+  .prompt em, .intro-custom em, .outro-custom em { font-style: italic; }
+  /* Hint label + inline markdown on the same line — goldmark wraps
+     short spans in a single <p>, so the first <p>'s margin has to
+     collapse to keep the label glued. */
+  .hint-md { color: var(--muted); }
+  .hint-md .hint-label { font-weight: 700; }
+  .hint-md p { display: inline; margin: 0; }
   .pill {
     display: inline-block; padding: .15rem .65rem;
     border-radius: 999px; font-size: .7rem; font-weight: 700;
@@ -172,18 +200,12 @@
   .welcome ul { padding-left: 1.1rem; margin: 1rem 0; }
   .welcome li { margin: .35rem 0; }
   .welcome .cta { margin-top: 1rem; }
-  /* Author-supplied welcome copy. Plain text, but preserve the
-     author's newlines — they're using this like a mini letter to
-     the team, not markdown. */
-  .welcome .intro-custom {
-    white-space: pre-wrap; line-height: 1.55; margin: .5rem 0 .25rem;
-  }
-  /* Completion-screen outro sits below the stats grid. Same
-     whitespace-preserving rule; mildly emphasised so it reads as
-     the author's sign-off rather than debug text. */
+  /* Author-supplied welcome copy (markdown, server-rendered). */
+  .welcome .intro-custom { line-height: 1.55; margin: .5rem 0 .25rem; }
+  /* Completion-screen outro sits below the stats grid. Mildly
+     emphasised so it reads as the author's sign-off, not debug text. */
   .summary .outro-custom {
-    white-space: pre-wrap; line-height: 1.55;
-    margin-top: 1rem;
+    line-height: 1.55; margin-top: 1rem;
     color: var(--ink); font-size: .95rem;
   }
   .welcome .cta button[disabled] {
@@ -606,6 +628,11 @@ function el(tag, attrs = {}, ...children) {
   for (const [k, v] of Object.entries(attrs)) {
     if (k === 'on') for (const [ev, fn] of Object.entries(v)) e.addEventListener(ev, fn);
     else if (k === 'class') e.className = v;
+    // The `html` key takes a pre-rendered HTML string and assigns it
+    // via innerHTML. Only safe because the server renders markdown
+    // through goldmark without WithUnsafe(), so raw <script>/<iframe>
+    // in the author's source is escaped before it ever gets here.
+    else if (k === 'html') e.innerHTML = v;
     else if (v !== null && v !== undefined) e.setAttribute(k, v);
   }
   for (const c of children) e.append(c?.nodeType ? c : document.createTextNode(c ?? ''));
@@ -622,6 +649,24 @@ function renderNoSession() {
       t('Open it on this device to join the game.'))));
 }
 
+// GPS precision thresholds.
+//
+//   MAX_UPLOAD_ACC    — don't send a ping whose ±metres exceed this.
+//     A cell-tower-only reading (often ±500–2000m) tells the server
+//     nothing useful and pollutes the track on the live map.
+//
+//   PREFER_LAST_RATIO — when a new fix is >1.5× worse than the current
+//     one AND the current one is recent, keep the current. Smooths
+//     out the transient bad readings that phones occasionally emit
+//     when they briefly lose or swap satellites.
+//
+//   PREFER_LAST_MAX_AGE_MS — after this long a stale fix is considered
+//     unreliable regardless of its accuracy, so any new reading is
+//     accepted.
+const MAX_UPLOAD_ACC       = 150;
+const PREFER_LAST_RATIO    = 1.5;
+const PREFER_LAST_MAX_AGE_MS = 20_000;
+
 function startGPS() {
   if (!navigator.geolocation) {
     gpsError = t('geolocation not supported on this device');
@@ -632,7 +677,23 @@ function startGPS() {
   gpsWatchID = navigator.geolocation.watchPosition(
     (pos) => {
       gpsError = null;
-      lastFix = { lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy };
+      const next = {
+        lat: pos.coords.latitude,
+        lng: pos.coords.longitude,
+        accuracy: pos.coords.accuracy,
+        ts: Date.now(),
+      };
+      // Prefer-better filter: hold on to an older fix when the new one
+      // is notably worse, unless the old one is stale. Without this a
+      // phone re-acquiring satellites often reports a worse fix first
+      // and then recovers — we don't want to jitter the UI or the
+      // server's track with that bad reading in the middle.
+      if (lastFix && lastFix.accuracy && next.accuracy > lastFix.accuracy * PREFER_LAST_RATIO
+          && (Date.now() - (lastFix.ts || 0)) < PREFER_LAST_MAX_AGE_MS) {
+        return;
+      }
+      lastFix = next;
+      updateGateLock();
     },
     (err) => {
       // PERMISSION_DENIED(1), POSITION_UNAVAILABLE(2), TIMEOUT(3) from the
@@ -647,14 +708,50 @@ function startGPS() {
       lastRenderKey = null;
       console.warn('gps', err.message);
     },
-    { enableHighAccuracy: true, maximumAge: 10000, timeout: 30000 },
+    // maximumAge: 0 forces the freshest reading every call. The default
+    // (or a large value) lets the browser hand back a cached fix —
+    // harmful while the player is actually walking since the server
+    // would think they haven't moved for up to that many seconds.
+    { enableHighAccuracy: true, maximumAge: 0, timeout: 30000 },
   );
   if (pingTimer === null) pingTimer = setInterval(sendPing, 15000);
 }
 
 function sendPing() {
   if (!lastFix) return;
-  wsSend('location', { ...lastFix, client_ts: new Date().toISOString() });
+  // Drop readings too imprecise to be useful for gate checks or map
+  // rendering. The server stores every ping it receives; letting
+  // ±500 m fixes in just adds noise to the track.
+  if (lastFix.accuracy > MAX_UPLOAD_ACC) return;
+  wsSend('location', {
+    lat: lastFix.lat, lng: lastFix.lng, accuracy: lastFix.accuracy,
+    client_ts: new Date().toISOString(),
+  });
+}
+
+// currentGatedButton tracks the "Check location · I'm here" button in
+// the sticky dock so the GPS callback can enable/disable it live as
+// precision changes, without forcing a full re-render.
+let currentGatedButton = null;
+let currentGatedRadius = 0;
+
+// updateGateLock reflects the latest fix onto the gated advance
+// button: disabled with a "waiting for lock" label until the fix is
+// accurate enough relative to the gate's own radius, then enabled.
+// Text-answer gated puzzles don't use this — the server's 403 already
+// handles the "not there yet" case.
+function updateGateLock() {
+  if (!currentGatedButton || !currentGatedRadius) return;
+  const ok = lastFix && lastFix.accuracy <= Math.max(currentGatedRadius, 25);
+  currentGatedButton.disabled = !ok;
+  if (ok) {
+    currentGatedButton.textContent = t("Check location · I'm here");
+  } else if (!lastFix) {
+    currentGatedButton.textContent = t('Waiting for GPS lock…');
+  } else {
+    currentGatedButton.textContent = t('GPS ±{{acc}} m — too imprecise',
+      { acc: Math.round(lastFix.accuracy) });
+  }
 }
 
 function render(s) {
@@ -695,8 +792,17 @@ function render(s) {
   if (Array.isArray(s.images)) {
     for (const im of s.images) app.append(el('img', { class: 'puzzle-img', src: im.url, alt: '' }));
   }
-  app.append(el('p', { class: 'prompt' }, s.prompt || ''));
-  if (s.hint) app.append(el('p', { class: 'muted' }, t('Hint: {{text}}', { text: s.hint })));
+  // Prompt and hint come from the server already rendered to HTML
+  // (goldmark, raw HTML escaped). The .prompt / .hint-md wrappers
+  // carry the typography; nested p/ul/ol inherit the intended look.
+  app.append(el('div', { class: 'prompt', html: s.prompt || '' }));
+  if (s.hint) {
+    const hintWrap = el('div', { class: 'muted hint-md' });
+    hintWrap.append(el('span', { class: 'hint-label' }, t('Hint: ')));
+    const hintHTML = el('span', { html: s.hint });
+    hintWrap.append(hintHTML);
+    app.append(hintWrap);
+  }
 
   // Gated puzzles don't get a separate "walk to location" card — the
   // sticky submit dock at the bottom is the only action surface. For
@@ -721,6 +827,8 @@ function renderSubmitDock(s) {
   }
   dock.replaceChildren();
   submitInputEl = null;
+  currentGatedButton = null;
+  currentGatedRadius = 0;
 
   if (s && s.no_answer) {
     // No-answer puzzles advance with a single button tap instead of a
@@ -737,6 +845,13 @@ function renderSubmitDock(s) {
     wrap.append(button, result);
     dock.append(wrap);
     submitResultEl = result;
+    // Lock the gated advance button until the fix is precise enough
+    // for the server's gate check to produce a meaningful answer.
+    if (gatedUnreached) {
+      currentGatedButton = button;
+      currentGatedRadius = s.gate.radius_m || 0;
+      updateGateLock();
+    }
     button.addEventListener('click', () => {
       if (previewState) {
         // Preview mode: advance locally as if the server said yes,
@@ -753,7 +868,7 @@ function renderSubmitDock(s) {
       // gates, "gated" mode so a 403 triggers the rebuff animation.
       if (gatedUnreached) {
         advanceMode = 'gated';
-        if (lastFix) wsSend('location', { ...lastFix, client_ts: new Date().toISOString() });
+        if (lastFix) sendPing();
       } else {
         advanceMode = 'silent';
       }
@@ -996,7 +1111,7 @@ function showWelcomeDialog(s, opts = {}) {
   // instead of the built-in welcome paragraph + tips list. Newlines
   // are preserved via the CSS pre-wrap on .intro-custom.
   if (s.intro_text && s.intro_text.trim()) {
-    panel.append(el('div', { class: 'intro-custom' }, s.intro_text));
+    panel.append(el('div', { class: 'intro-custom', html: s.intro_text }));
   } else {
     panel.append(
       el('p', {},
@@ -1130,7 +1245,7 @@ function fillSummaryHost(host, stats, s) {
       statBox(`${stats.answers_wrong}`,               t('Misses')),
     ),
     customOutro
-      ? el('div', { class: 'outro-custom' }, s.outro_text)
+      ? el('div', { class: 'outro-custom', html: s.outro_text })
       : (stats.page_count
           ? el('p', { class: 'muted', style: 'font-size:.85rem; margin-top:.75rem' },
               stats.page_count === 1

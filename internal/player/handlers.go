@@ -18,6 +18,7 @@ import (
 	"git.sr.ht/~klahr/zv/internal/adventure"
 	"git.sr.ht/~klahr/zv/internal/auth"
 	"git.sr.ht/~klahr/zv/internal/httpx"
+	"git.sr.ht/~klahr/zv/internal/mdx"
 	"git.sr.ht/~klahr/zv/internal/runevents"
 	"git.sr.ht/~klahr/zv/internal/ws"
 )
@@ -229,14 +230,17 @@ func (h *Handlers) buildState(ctx context.Context, slot auth.Slot) (State, int, 
 	if adv == nil {
 		return State{}, http.StatusInternalServerError, "adventure not loaded: " + tc.AdventureSlug
 	}
+	// Arranger-provided prose (prompt/hint/intro/outro) is stored as raw
+	// markdown; the player client wants sanitised HTML so it can just
+	// innerHTML it. Convert once per state build.
 	resp := State{
 		AdventureSlug:  adv.Slug,
 		AdventureTitle: adv.Meta.Title,
 		TeamName:       tc.TeamName,
 		SlotName:       slot.Name,
 		PageCount:      len(enabledPages(adv)),
-		IntroText:      adv.Meta.IntroText,
-		OutroText:      adv.Meta.OutroText,
+		IntroText:      mdx.Render(adv.Meta.IntroText),
+		OutroText:      mdx.Render(adv.Meta.OutroText),
 	}
 	if !adv.Colors.Empty() {
 		c := adv.Colors
@@ -295,8 +299,8 @@ func (h *Handlers) buildState(ctx context.Context, slot auth.Slot) (State, int, 
 		}
 	}
 	resp.Status = "running"
-	resp.Prompt = page.Prompt
-	resp.Hint = page.Hint
+	resp.Prompt = mdx.Render(page.Prompt)
+	resp.Hint = mdx.Render(page.Hint)
 	if len(page.Images) > 0 {
 		imgs := make([]imageDTO, 0, len(page.Images))
 		for _, im := range page.Images {
