@@ -15,6 +15,7 @@ import (
 	"git.sr.ht/~klahr/zv/internal/auth"
 	"git.sr.ht/~klahr/zv/internal/httpx"
 	"git.sr.ht/~klahr/zv/internal/imageutil"
+	"git.sr.ht/~klahr/zv/internal/mdx"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -34,14 +35,20 @@ type pageView struct {
 	Title    string      `json:"title"`
 	Prompt   string      `json:"prompt"`
 	Hint     string      `json:"hint,omitempty"`
-	Accept   []string    `json:"accept"`
-	Lat      float64     `json:"lat"`
-	Lng      float64     `json:"lng"`
-	RadiusM  *float64    `json:"radius_m,omitempty"`
-	Gated    bool        `json:"gated"`
-	Disabled bool        `json:"disabled"`
-	Notes    string      `json:"notes"`
-	Images   []imageView `json:"images"`
+	// PromptHTML / HintHTML are the goldmark-rendered sibling of the
+	// raw fields above — the same HTML players see. Lets list views
+	// in arrange.html drop in the pre-rendered result instead of
+	// calling /markdown/preview for every card.
+	PromptHTML string      `json:"prompt_html,omitempty"`
+	HintHTML   string      `json:"hint_html,omitempty"`
+	Accept     []string    `json:"accept"`
+	Lat        float64     `json:"lat"`
+	Lng        float64     `json:"lng"`
+	RadiusM    *float64    `json:"radius_m,omitempty"`
+	Gated      bool        `json:"gated"`
+	Disabled   bool        `json:"disabled"`
+	Notes      string      `json:"notes"`
+	Images     []imageView `json:"images"`
 }
 
 type imageView struct {
@@ -831,6 +838,8 @@ func loadAdventureDTO(ctx context.Context, db *sql.DB, slug string) (*adventureE
 			return nil, err
 		}
 		p.Disabled = disabled != 0
+		p.PromptHTML = mdx.Render(p.Prompt)
+		p.HintHTML = mdx.Render(p.Hint)
 		_ = json.Unmarshal([]byte(acceptJS), &p.Accept)
 		if p.Accept == nil {
 			p.Accept = []string{}

@@ -9,6 +9,7 @@ import (
 
 	"git.sr.ht/~klahr/zv/internal/auth"
 	"git.sr.ht/~klahr/zv/internal/httpx"
+	"git.sr.ht/~klahr/zv/internal/mdx"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -31,21 +32,23 @@ import (
 // puzzles ship with zero-values there (and the client can distinguish
 // "assigned to 'demo'" from "in library" by nil/empty slug).
 type libraryPuzzleDTO struct {
-	ID              int64    `json:"id"`
-	Title           string   `json:"title"`
-	Prompt          string   `json:"prompt"`
-	Hint            string   `json:"hint,omitempty"`
-	Notes           string   `json:"notes,omitempty"`
-	Accept          []string `json:"accept"`
-	Lat             float64  `json:"lat"`
-	Lng             float64  `json:"lng"`
-	RadiusM         *float64 `json:"radius_m,omitempty"`
-	Gated           bool     `json:"gated"`
-	Disabled        bool     `json:"disabled"`
-	HasImages       bool     `json:"has_images"`
-	AdventureSlug   string   `json:"adventure_slug,omitempty"`
-	AdventureTitle  string   `json:"adventure_title,omitempty"`
-	AdventureIdx    *int     `json:"adventure_idx,omitempty"`
+	ID             int64    `json:"id"`
+	Title          string   `json:"title"`
+	Prompt         string   `json:"prompt"`
+	Hint           string   `json:"hint,omitempty"`
+	PromptHTML     string   `json:"prompt_html,omitempty"`
+	HintHTML       string   `json:"hint_html,omitempty"`
+	Notes          string   `json:"notes,omitempty"`
+	Accept         []string `json:"accept"`
+	Lat            float64  `json:"lat"`
+	Lng            float64  `json:"lng"`
+	RadiusM        *float64 `json:"radius_m,omitempty"`
+	Gated          bool     `json:"gated"`
+	Disabled       bool     `json:"disabled"`
+	HasImages      bool     `json:"has_images"`
+	AdventureSlug  string   `json:"adventure_slug,omitempty"`
+	AdventureTitle string   `json:"adventure_title,omitempty"`
+	AdventureIdx   *int     `json:"adventure_idx,omitempty"`
 }
 
 // ListPuzzles returns every puzzle in the system (scoped to the
@@ -114,6 +117,10 @@ func (h *Handlers) ListPuzzles(w http.ResponseWriter, r *http.Request) {
 		}
 		p.Disabled = disabled != 0
 		p.HasImages = hasImages != 0
+		// Pre-render markdown so the library grid can drop the HTML
+		// straight in without one /markdown/preview request per card.
+		p.PromptHTML = mdx.Render(p.Prompt)
+		p.HintHTML = mdx.Render(p.Hint)
 		if advID.Valid {
 			i := advIdx
 			p.AdventureIdx = &i
@@ -253,6 +260,8 @@ func (h *Handlers) GetPuzzle(w http.ResponseWriter, r *http.Request) {
 		p.Gated = v > 0
 	}
 	p.Disabled = disabled != 0
+	p.PromptHTML = mdx.Render(p.Prompt)
+	p.HintHTML = mdx.Render(p.Hint)
 	p.AdventureSlug = advSlug.String
 	p.AdventureTitle = advTitle.String
 	imgs, err := loadPageImages(r.Context(), h.DB, pageID)

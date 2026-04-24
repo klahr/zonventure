@@ -3618,8 +3618,8 @@ function renderPuzzleLibraryCard(p) {
     : h('span', { class: 'pill' }, t('library'));
   const subtitle = p.notes
     ? h('p', { class: 'muted', style: 'font-style:italic' }, p.notes)
-    : p.prompt
-      ? h('p', { class: 'muted', style: 'white-space:pre-wrap; overflow:hidden; max-height:3em' }, p.prompt)
+    : p.prompt_html
+      ? h('div', { class: 'md-preview compact muted', style: 'max-height:4.5em; overflow:hidden', html: p.prompt_html })
       : h('p', { class: 'muted' }, t('(no content yet)'));
   return h('div', {
     class: 'card clickable' + (p.disabled ? '' : ''),
@@ -3967,7 +3967,7 @@ function renderPuzzleCard(adv, page, i, previewIdx) {
           : null,
         iconBtn('pencil', t('Edit'), () => openEditPuzzle(adv, page)),
         iconBtn('trash', t('Delete'), () => confirmDeletePuzzle(adv, page), { danger: true }))),
-    h('p', { style: 'white-space:pre-wrap' }, page.prompt),
+    h('div', { class: 'md-preview', html: page.prompt_html || '' }),
     (page.images || []).length === 0
       ? null
       : h('div', { class: 'row', style: 'flex-wrap:wrap; gap:.5rem' },
