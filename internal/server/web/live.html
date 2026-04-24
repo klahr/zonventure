@@ -332,31 +332,21 @@ html, body {
   overflow: hidden;
 }
 .progress .fill {
-  position: relative; overflow: hidden;
   height: 100%;
   background: linear-gradient(90deg, var(--team-color, var(--accent)), var(--accent));
   border-radius: 999px;
-  transition: width .6s ease;
+  /* The bar is re-rendered on every snapshot so a straight CSS
+     transition never triggers (the new node starts at its final width).
+     A keyframe animation that grows from 0 → --pct on mount gives the
+     "bar fills in" feeling whenever progress changes. The cubic-bezier
+     is a fast-out / slow-in curve so the bar races out, then settles
+     on its final length — reads as "landed". */
+  width: var(--pct, 0%);
+  animation: progressGrow .9s cubic-bezier(.2, .8, .2, 1) both;
 }
-/* Animated sheen sweeping across the fill so the board looks alive on
-   the TV display even when nothing has changed in the past few seconds.
-   Finished teams don't get the animation — their bar should look
-   settled rather than still working. */
-.progress .fill::after {
-  content: '';
-  position: absolute; inset: 0;
-  background: linear-gradient(90deg,
-    transparent 0%,
-    rgba(255, 255, 255, .28) 50%,
-    transparent 100%);
-  transform: translateX(-100%);
-  animation: progressSheen 2.4s linear infinite;
-  pointer-events: none;
-}
-.row.finished .progress .fill::after { animation: none; opacity: 0; }
-@keyframes progressSheen {
-  0%   { transform: translateX(-100%); }
-  100% { transform: translateX(100%); }
+@keyframes progressGrow {
+  from { width: 0; }
+  to   { width: var(--pct, 0%); }
 }
 .progress .label {
   display: flex; justify-content: space-between;
@@ -1098,22 +1088,25 @@ function renderRow(team, idx, data) {
       h('span', {}, `${finished ? 100 : pct}%`),
     ),
     h('div', { class: 'bar' },
-      h('div', { class: 'fill', style: `width:${finished ? 100 : pct}%` })),
+      h('div', { class: 'fill', style: `--pct:${finished ? 100 : pct}%` })),
   ));
   row.append(main);
 
   if (finished) {
-    // Rank 1 shows the total duration (start → finish). Everyone
-    // behind shows the gap to the winner as "+MM:SS", so the board
-    // reads like a real race result instead of a wall of total times.
+    // Every finisher shows their own total (start → finish) as the
+    // big value so runs read as comparable times. Below, rank 1 gets
+    // the "Finish time" caption; everyone behind gets the gap to the
+    // winner ("+MM:SS") in that same caption slot — no redundant "Gap"
+    // label, the + sign already says what it is.
     const winner = (data.teams || []).find((x) => x.completed_at);
     const isWinner = winner && winner.id === team.id;
-    const display = isWinner
-      ? formatFinishTime(data.started_at, team.completed_at)
+    const total   = formatFinishTime(data.started_at, team.completed_at);
+    const caption = isWinner
+      ? t('Finish time')
       : formatFinishGap(winner && winner.completed_at, team.completed_at);
     row.append(h('div', { class: 'stat finished' },
-      h('div', { class: 'value' }, display || t('Done')),
-      h('div', { class: 'unit' }, isWinner ? t('Finish time') : t('Gap')),
+      h('div', { class: 'value' }, total || t('Done')),
+      h('div', { class: 'unit' }, caption),
     ));
   } else {
     row.append(h('div', { class: 'stat' },
