@@ -27,6 +27,10 @@ type Config struct {
 	Library      *adventure.Library
 	Hub          *ws.Hub
 	SecureCookie bool
+	// SimulatorEnabled toggles the race simulator. Off in production
+	// so an admin can't flatten a real run by accident; on in dev by
+	// setting ZV_SIMULATOR=1 on the server binary.
+	SimulatorEnabled bool
 }
 
 // New builds the HTTP router.
@@ -43,10 +47,17 @@ func New(cfg Config) http.Handler {
 		hub = ws.NewHub()
 	}
 
-	authH := &auth.Handlers{DB: cfg.DB, SecureCookie: cfg.SecureCookie}
+	authH := &auth.Handlers{
+		DB:           cfg.DB,
+		SecureCookie: cfg.SecureCookie,
+		Features:     auth.Features{SimulatorEnabled: cfg.SimulatorEnabled},
+	}
 	playerH := &player.Handlers{DB: cfg.DB, Lib: cfg.Library, Hub: hub, SecureCookie: cfg.SecureCookie}
+	// Simulator instance always exists (package isn't huge, avoids
+	// null-check scatter); the ROUTES are gated on SimulatorEnabled
+	// below so disabled deployments simply 404 on /api/admin/simulator.
 	sim := simulator.New(cfg.DB, cfg.Library, hub)
-	adminH := &admin.Handlers{DB: cfg.DB, Lib: cfg.Library, Hub: hub, Sim: sim}
+	adminH := &admin.Handlers{DB: cfg.DB, Lib: cfg.Library, Hub: hub, Sim: sim, SimulatorEnabled: cfg.SimulatorEnabled}
 	publicH := &public.Handlers{DB: cfg.DB, Lib: cfg.Library, Hub: hub}
 
 	r.Get("/api/health", func(w http.ResponseWriter, _ *http.Request) {
@@ -248,11 +259,16 @@ func New(cfg Config) http.Handler {
 
 			// Race simulator. Admin-only because it writes runs/teams
 			// on behalf of the first org and can take the DB on a walk.
-			r.Get("/simulator", adminH.SimulatorStatus)
-			r.Post("/simulator/start", adminH.SimulatorStart)
-			r.Post("/simulator/pause", adminH.SimulatorPause)
-			r.Post("/simulator/resume", adminH.SimulatorResume)
-			r.Post("/simulator/reset", adminH.SimulatorReset)
+			// Routes only mount when the operator has explicitly opted
+			// in via the ZV_SIMULATOR env var, so production admins
+			// can't spin up a simulated race by accident.
+			if cfg.SimulatorEnabled {
+				r.Get("/simulator", adminH.SimulatorStatus)
+				r.Post("/simulator/start", adminH.SimulatorStart)
+				r.Post("/simulator/pause", adminH.SimulatorPause)
+				r.Post("/simulator/resume", adminH.SimulatorResume)
+				r.Post("/simulator/reset", adminH.SimulatorReset)
+			}
 		})
 	})
 

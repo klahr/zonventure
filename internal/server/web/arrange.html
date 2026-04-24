@@ -738,26 +738,96 @@ textarea { min-height: 80px; resize: vertical; font-family: ui-monospace, monosp
 .puzzle-editor .pe-image-add.disabled:hover {
   background: transparent; border-color: var(--border); color: var(--muted);
 }
-/* Non-interactive preview of play.html's sticky submit dock, so the
-   arranger sees where the player will type and how cramped the prompt
-   is relative to the submit row. */
-.puzzle-editor .pe-dock {
-  margin-top: 1rem;
-  padding: .75rem; background: var(--surface-2);
-  border-radius: var(--radius);
-  display: grid; grid-template-columns: 1fr auto; gap: .5rem;
-  opacity: .7;
+/* Library sub-nav: tabs across Adventures and Puzzles, shared by both
+   views so you can jump between the two without going through the
+   sidebar. Visually a thin strip sitting under the page heading. */
+.lib-tabs {
+  display: flex; gap: .25rem;
+  border-bottom: 1px solid var(--border-soft);
+  margin: 0 0 1rem;
 }
-.puzzle-editor .pe-dock-label {
-  grid-column: 1 / -1;
-  text-transform: uppercase;
-  font-size: .65rem; font-weight: 700; letter-spacing: .08em;
-  color: var(--muted); margin: 0 0 .25rem;
+.lib-tab {
+  display: inline-block;
+  padding: .5rem .9rem;
+  text-decoration: none;
+  color: var(--muted);
+  font-weight: 700; font-size: .9rem;
+  border-bottom: 2px solid transparent;
+  transition: color .15s, border-color .15s;
 }
-.puzzle-editor .pe-dock input,
-.puzzle-editor .pe-dock button {
-  pointer-events: none;
+.lib-tab:hover { color: var(--text); }
+.lib-tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
 }
+
+/* Split-button pattern: a primary action with a chevron that reveals
+   a small popover of alternate options. Used for "Add puzzle" where
+   the secondary path is "Copy from library…". */
+.split-btn { position: relative; display: inline-flex; }
+.split-btn > .btn.primary { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.split-btn > .split-btn-toggle {
+  border-top-left-radius: 0; border-bottom-left-radius: 0;
+  padding-left: .4rem; padding-right: .4rem;
+  border-left: 1px solid rgba(255,255,255,.2);
+  min-width: 0;
+}
+.split-btn-menu {
+  display: none;
+  position: absolute; top: calc(100% + .25rem); right: 0;
+  background: var(--surface); border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-lg);
+  min-width: 12rem;
+  padding: .25rem; z-index: 50;
+}
+.split-btn-menu.open { display: block; }
+.split-btn-item {
+  display: block; width: 100%; text-align: left;
+  padding: .45rem .65rem;
+  background: transparent; border: none; color: var(--text);
+  font: inherit; cursor: pointer; border-radius: 6px;
+}
+.split-btn-item:hover { background: var(--surface-2); }
+
+/* In-modal tabs: same feel as .lib-tabs but scoped to dialogs so we can
+   break a crowded form (Details / Copy / Branding) into bite-sized
+   panes without a tall scroll. */
+.tab-strip {
+  display: flex; gap: .25rem;
+  border-bottom: 1px solid var(--border-soft);
+  margin: 0 0 1rem;
+}
+.tab-btn {
+  padding: .5rem .9rem;
+  background: transparent; border: none;
+  color: var(--muted);
+  font: inherit; font-weight: 700; font-size: .9rem;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: color .15s, border-color .15s;
+}
+.tab-btn:hover { color: var(--text); }
+.tab-btn.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+.tab-pane { display: none; }
+.tab-pane.active { display: block; }
+
+/* Collapsible share-run card: disclosure chevron follows the open state.
+   list-style:none on <summary> strips the default triangle so we can
+   paint our own that matches the arrange surface colours. */
+.share-bar > summary::-webkit-details-marker { display: none; }
+.share-bar > summary::before {
+  content: '▸';
+  color: var(--muted);
+  font-size: .8rem;
+  transition: transform .15s;
+  display: inline-block;
+}
+.share-bar[open] > summary::before { transform: rotate(90deg); }
+
 .puzzle-settings { margin-top: 1rem; }
 .puzzle-settings h3 {
   font-size: .85rem; margin: 0 0 .6rem;
@@ -1288,10 +1358,14 @@ function renderShell() {
     items = [
       ['#dashboard',     t('Dashboard'),     ICONS.dashboard],
       ['#organizations', t('Organizations'), ICONS.shield],
-      ['#library',       t('Adventures'),    ICONS.map],
-      ['#puzzles',       t('Puzzles'),       ICONS.puzzle],
+      // "Library" is the single entry point for authored content — a
+      // tab strip inside the view splits Adventures and Puzzles. Two
+      // sidebar entries for what's essentially one catalog was noise.
+      ['#library',       t('Library'),       ICONS.map],
       ['#admins',        t('Admins'),        ICONS.user],
-      ['#simulator',     t('Simulator'),     ICONS.play],
+      ...(state.me.features?.simulator_enabled
+        ? [['#simulator', t('Simulator'), ICONS.play]]
+        : []),
       ['#logs',          t('Logs'),          ICONS.terminal],
     ];
   } else {
@@ -2025,7 +2099,6 @@ async function viewAdventureDetail(view, slug) {
           h('strong', {}, `${i + 1}. ${p.title || t('(untitled)')}`),
           p.gated ? h('span', { class: 'pill warning' }, t('gated')) : null),
         h('p', { style: 'white-space:pre-wrap' }, p.prompt),
-        p.hint ? h('p', { class: 'muted' }, t('Hint: {{text}}', { text: p.hint })) : null,
         h('p', { class: 'muted' }, t('Accepted: '), p.accept.map((x) => h('span', { class: 'chip', style: 'margin-right:.25rem' }, x))),
         p.location ? h('p', { class: 'muted mono' },
           t('Location: {{coords}}', { coords: `${p.location.lat.toFixed(5)}, ${p.location.lng.toFixed(5)}` }),
@@ -2452,17 +2525,25 @@ function renderShareBar(run) {
     style: 'display:inline-flex; align-items:center; gap:.35rem; cursor:pointer; font-size:.85rem; color:var(--muted)',
   }, mapToggle, t('Show real-time map'));
 
-  return h('div', { class: 'card', style: 'padding:.85rem 1rem' },
+  // Collapsed by default: the share URL and map toggle are only needed
+  // once per run (at setup), so they're tucked behind a <details> to
+  // cut visual noise on the main run dashboard.
+  const body = h('div', { style: 'margin-top:.75rem' },
     h('div', { class: 'row', style: 'gap:.75rem; align-items:center; flex-wrap:wrap' },
-      h('div', { style: 'min-width:140px' },
-        h('div', { style: 'font-size:.7rem; font-weight:800; text-transform:uppercase; letter-spacing:.06em; color:var(--muted)' }, t('Public live view')),
-        h('div', { class: 'muted', style: 'font-size:.85rem' }, t('Share on a TV — token URL, no login needed')),
-      ),
       urlBox,
       copyBtn,
       openBtn,
     ),
     h('div', { style: 'margin-top:.5rem' }, mapLabel),
+  );
+  const summary = h('summary', {
+    style: 'cursor:pointer; list-style:none; display:flex; align-items:center; gap:.6rem',
+  },
+    h('span', { style: 'font-size:.7rem; font-weight:800; text-transform:uppercase; letter-spacing:.06em; color:var(--muted)' }, t('Public live view')),
+    h('span', { class: 'muted', style: 'font-size:.85rem' }, t('Share on a TV — token URL, no login needed')),
+  );
+  return h('details', { class: 'card share-bar', style: 'padding:.85rem 1rem' },
+    summary, body,
   );
 }
 
@@ -3669,6 +3750,23 @@ async function revokeAssignment(orgID, assignmentID) {
    Quick Puzzle FAB + GPS) to be fleshed out or copied into an
    adventure later. */
 
+// libraryTabs renders the Adventures|Puzzles strip shown at the top of
+// both library sub-views. Clicking a tab navigates; the active tab
+// reflects the current #section so the strip looks identical no
+// matter which deep-link you landed on.
+function libraryTabs(active) {
+  const mk = (href, label, isActive) => {
+    const a = h('a', {
+      href,
+      class: 'lib-tab' + (isActive ? ' active' : ''),
+    }, label);
+    return a;
+  };
+  return h('div', { class: 'lib-tabs' },
+    mk('#library',  t('Adventures'), active === 'library'),
+    mk('#puzzles',  t('Puzzles'),    active === 'puzzles'));
+}
+
 async function viewPuzzles(view) {
   const r = await api('/api/admin/puzzles');
   const puzzles = r.body?.puzzles || [];
@@ -3678,11 +3776,12 @@ async function viewPuzzles(view) {
         h('button', { class: 'btn primary', on: { click: quickPuzzle } },
           icon(ICONS.puzzle), t('Capture one at your location')))
     : h('div', { class: 'grid cols-2' }, puzzles.map(renderPuzzleLibraryCard));
+  // No header button — the floating FAB below is the one action
+  // surface. Two buttons 30 px apart for the same verb was pure
+  // redundancy on mobile, and on desktop the FAB still reads fine.
   view.replaceChildren(
-    h('div', { class: 'row between' },
-      h('h1', {}, t('Puzzles')),
-      h('button', { class: 'btn primary', on: { click: quickPuzzle }, title: t('Capture a puzzle at your current location') },
-        icon(ICONS.puzzle), t('New puzzle'))),
+    h('h1', {}, t('Library')),
+    libraryTabs('puzzles'),
     h('p', { class: 'muted' },
       t('The pool of every puzzle in the system. Unassigned ones sit in the Library; the rest list the adventure they belong to. Copy a puzzle into a new adventure from the adventure editor.')),
     list,
@@ -3796,6 +3895,7 @@ async function viewLibrary(view) {
       h('h1', {}, t('Library')),
       h('button', { class: 'btn primary', on: { click: () => openCreateAdventure() } },
         icon(ICONS.plus), t('New adventure'))),
+    libraryTabs('library'),
     h('p', { class: 'muted' },
       t('Adventures you have authored live in the database. Assign them to organizations from the Organizations page.')),
     advs.length === 0
@@ -3941,11 +4041,11 @@ function renderLibraryEdit(view, adv) {
     state.me.role === 'admin' ? renderAdventureShares(adv) : null,
     h('div', { class: 'row between', style: 'margin-top:1rem' },
       h('h2', {}, t('Puzzles ({{n}})', { n: adv.pages.length })),
-      h('div', { class: 'row' },
-        h('button', { class: 'btn small', on: { click: () => openLibraryPicker(adv) } },
-          icon(ICONS.map), t('From library')),
-        h('button', { class: 'btn primary small', on: { click: () => openEditPuzzle(adv, null) } },
-          icon(ICONS.plus), t('New puzzle')))),
+      // One "Add puzzle" entry point with a menu for the "copy from
+      // library" variant. Two separate buttons read as two separate
+      // features; a single button with a menu reads as one action
+      // with options — same verb, two ways to fill it.
+      addPuzzleButton(adv)),
     adv.pages.length === 0
       ? h('div', { class: 'empty' }, t('No puzzles yet.'))
       : h('div', {}, cards),
@@ -4187,13 +4287,16 @@ async function openEditAdventureMeta(adv) {
           t('Cover picture')),
         coverActions));
 
-    const form = h('form', {},
+    // Three panels, one visible at a time. Tabs group the fields by
+    // the author's mental model (what to call it / what to say /
+    // what it looks like) instead of a single scroll marathon.
+    const paneDetails = h('div', { class: 'tab-pane active' },
       h('label', { class: 'field' }, h('span', {}, t('Slug')), slug),
       h('label', { class: 'field' }, h('span', {}, t('Title')), title),
       h('label', { class: 'field' }, h('span', {}, t('Description')), desc),
       h('label', { class: 'field' }, h('span', {}, t('Author')), author),
-      coverRow, coverFile,
-      h('h3', { style: 'margin-top:1rem' }, t('Welcome & completion copy')),
+      coverRow, coverFile);
+    const paneCopy = h('div', { class: 'tab-pane' },
       h('label', { class: 'field' },
         h('span', {}, t('Intro — shown on the welcome screen')),
         introField.el),
@@ -4201,9 +4304,32 @@ async function openEditAdventureMeta(adv) {
       h('label', { class: 'field' },
         h('span', {}, t('Outro — shown on the completion screen')),
         outroField.el),
-      h('p', { class: 'muted', style: 'font-size:.8rem; margin:.35rem 0 .75rem' }, mdSupportedHint()),
-      h('h3', { style: 'margin-top:1rem' }, t('Brand colours')),
-      cAccent.el, cSecondary.el, cBackground.el, cText.el,
+      h('p', { class: 'muted', style: 'font-size:.8rem; margin:.35rem 0 .75rem' }, mdSupportedHint()));
+    const paneBrand = h('div', { class: 'tab-pane' },
+      cAccent.el, cSecondary.el, cBackground.el, cText.el);
+    const panes = [paneDetails, paneCopy, paneBrand];
+
+    const mkTab = (label, idx) => {
+      const btn = h('button', {
+        class: 'tab-btn' + (idx === 0 ? ' active' : ''),
+        type: 'button',
+      }, label);
+      btn.addEventListener('click', () => {
+        tabBtns.forEach((b, i) => b.classList.toggle('active', i === idx));
+        panes.forEach((p, i) => p.classList.toggle('active', i === idx));
+      });
+      return btn;
+    };
+    const tabBtns = [
+      mkTab(t('Details'),  0),
+      mkTab(t('Copy'),     1),
+      mkTab(t('Branding'), 2),
+    ];
+    const tabStrip = h('div', { class: 'tab-strip' }, ...tabBtns);
+
+    const form = h('form', {},
+      tabStrip,
+      paneDetails, paneCopy, paneBrand,
       h('div', { class: 'row end' },
         h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, t('Cancel')),
         h('button', { class: 'btn primary', type: 'submit' }, t('Save'))));
@@ -4307,14 +4433,23 @@ function buildHintsEditor(initial) {
       configurable: true,
       get: () => field.get(),
     });
+    // text input (not number) so the author can type "2:30" or
+    // "1m30s" without the browser's number-input UI mangling it.
+    // parseHintDelay does the conversion; blur rewrites the field
+    // with the canonical seconds form so saves round-trip cleanly.
     const delay = h('input', {
-      type: 'number', min: '0', step: '1', style: 'width:6rem',
+      type: 'text', style: 'width:6rem',
+      inputmode: 'numeric', autocomplete: 'off',
     });
     delay.value = String(row.delay_seconds || 0);
     const delayLabel = h('span', { class: 'muted', style: 'font-size:.75rem' }, formatHintDelay(row.delay_seconds || 0));
     delay.addEventListener('input', () => {
-      row.delay_seconds = Math.max(0, parseInt(delay.value, 10) || 0);
-      delayLabel.textContent = formatHintDelay(row.delay_seconds);
+      const n = parseHintDelay(delay.value);
+      row.delay_seconds = n;
+      delayLabel.textContent = formatHintDelay(n);
+    });
+    delay.addEventListener('blur', () => {
+      delay.value = String(row.delay_seconds || 0);
     });
     const remove = h('button', { class: 'btn small danger', type: 'button', title: t('Remove hint') },
       icon(ICONS.trash));
@@ -4341,6 +4476,31 @@ function buildHintsEditor(initial) {
     // trailing whitespace but preserving interior markdown.
     get: () => rows.map((r) => ({ text: r.text, delay_seconds: r.delay_seconds })),
   };
+}
+
+// parseHintDelay accepts the shapes authors actually type:
+//   "30"      — bare seconds
+//   "30s"     — seconds with unit
+//   "2m"      — minutes
+//   "1m30s"   — combined
+//   "2:30"    — mm:ss
+// Returns the parsed seconds count, or 0 on anything unrecognised.
+// The label beside the input still shows the canonical "(X m Y s)"
+// so the author gets live feedback that their syntax parsed.
+function parseHintDelay(raw) {
+  const s = (raw || '').trim().toLowerCase();
+  if (!s) return 0;
+  // mm:ss form.
+  const mmss = /^(\d+):(\d{1,2})$/.exec(s);
+  if (mmss) return Math.max(0, parseInt(mmss[1], 10) * 60 + parseInt(mmss[2], 10));
+  // Combined "NmMs" form (either part optional, at least one required).
+  const ms = /^(?:(\d+)m)?(?:(\d+)s)?$/.exec(s);
+  if (ms && (ms[1] || ms[2])) {
+    return Math.max(0, (parseInt(ms[1] || '0', 10) * 60) + parseInt(ms[2] || '0', 10));
+  }
+  // Plain integer (seconds).
+  const n = parseInt(s, 10);
+  return Number.isFinite(n) && n > 0 ? n : 0;
 }
 
 // formatHintDelay converts a seconds count to a "(5m 30s)" caption
@@ -4593,7 +4753,7 @@ async function openEditPuzzle(adv, page /* or null */) {
     // settings panel as an editable list with per-hint unlock delays.
     // hintsController gives the submit handler a single .get() that
     // returns the current list in author order.
-    const hintsController = buildHintsEditor(page?.hints || (page?.hint ? [{ text: page.hint, delay_seconds: 0 }] : []));
+    const hintsController = buildHintsEditor(page?.hints || []);
 
     const imagesHost = h('div', { class: 'pe-images' });
     const images = page?.images ? [...page.images] : [];
@@ -4671,20 +4831,15 @@ async function openEditPuzzle(adv, page /* or null */) {
       file.value = '';
     });
 
-    const dock = h('div', { class: 'pe-dock' },
-      h('p', { class: 'pe-dock-label' }, t('Player answer bar (preview)')),
-      h('input', { disabled: '', placeholder: t('Your answer') }),
-      h('button', { class: 'btn primary', disabled: '' }, t('Submit')));
-
     // The prompt field is itself the preview — click to edit, blur to
-    // see the rendered markdown. Hints live in the settings panel
-    // (behind a button at play time, so putting them here was
-    // misleading about the authored layout).
+    // see the rendered markdown. No fake submit bar: it was visual
+    // noise that didn't reflect the real player dock (which is
+    // sticky-bottom on the phone, not inline). Hints live in the
+    // settings panel (behind a button at play time).
     const previewCard = h('div', { class: 'puzzle-editor' },
       titleInput,
       imagesHost,
       promptField.el,
-      dock,
       h('p', { class: 'muted', style: 'font-size:.75rem; margin:.5rem 0 0' }, mdSupportedHint()),
     );
     // Paint the adventure's brand colours onto the preview card so the
@@ -5280,6 +5435,45 @@ function renderPuzzleLocationMap(args) {
     invalidate: () => map.invalidateSize(),
     destroy:    () => { destroyed = true; map.remove(); },
   };
+}
+
+// addPuzzleButton renders a primary "Add puzzle" button with a small
+// chevron that opens a popover with the "Copy from library…" option.
+// The bulk of the authoring flow is blank-puzzle create, so the
+// primary click does that; the library import is the secondary path.
+function addPuzzleButton(adv) {
+  const wrap = h('div', { class: 'split-btn' });
+  const primary = h('button', { class: 'btn primary small' },
+    icon(ICONS.plus), t('Add puzzle'));
+  primary.addEventListener('click', () => openEditPuzzle(adv, null));
+  const toggle = h('button', {
+    class: 'btn primary small split-btn-toggle',
+    'aria-label': t('More options'),
+    title: t('More options'),
+  }, '▾');
+  const menu = h('div', { class: 'split-btn-menu', role: 'menu' });
+  menu.append(
+    h('button', { class: 'split-btn-item', role: 'menuitem' }, t('Copy from library…')),
+  );
+  const [libItem] = menu.querySelectorAll('.split-btn-item');
+  libItem.addEventListener('click', () => {
+    menu.classList.remove('open');
+    openLibraryPicker(adv);
+  });
+  toggle.addEventListener('click', (e) => {
+    e.stopPropagation();
+    menu.classList.toggle('open');
+  });
+  // Close the menu on outside click / Escape.
+  const onDocClick = (e) => { if (!wrap.contains(e.target)) menu.classList.remove('open'); };
+  const onKey = (e) => { if (e.key === 'Escape') menu.classList.remove('open'); };
+  document.addEventListener('click', onDocClick);
+  document.addEventListener('keydown', onKey);
+  // If the button tree is later removed from the DOM (navigation), drop
+  // the listeners. Using MutationObserver is overkill; just attach a
+  // one-shot cleanup via the view's replaceChildren cycle.
+  wrap.append(primary, toggle, menu);
+  return wrap;
 }
 
 // openLibraryPicker lets the author attach a puzzle to this adventure

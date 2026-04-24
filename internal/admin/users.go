@@ -49,7 +49,6 @@ func (h *Handlers) AdventureDetail(w http.ResponseWriter, r *http.Request) {
 		Index    int      `json:"index"`
 		Title    string   `json:"title"`
 		Prompt   string   `json:"prompt"`
-		Hint     string   `json:"hint,omitempty"`
 		Accept   []string `json:"accept"`
 		Location locDTO   `json:"location"`
 		Gated    bool     `json:"gated"`
@@ -57,7 +56,7 @@ func (h *Handlers) AdventureDetail(w http.ResponseWriter, r *http.Request) {
 	pages := make([]pageDTO, len(adv.Pages))
 	for i, p := range adv.Pages {
 		pages[i] = pageDTO{
-			Index: p.Index, Title: p.Title, Prompt: p.Prompt, Hint: p.Hint, Accept: p.Accept,
+			Index: p.Index, Title: p.Title, Prompt: p.Prompt, Accept: p.Accept,
 			Location: locDTO{Lat: p.Location.Lat, Lng: p.Location.Lng, RadiusM: p.Location.RadiusM},
 			Gated:    p.Location.Gated(),
 		}

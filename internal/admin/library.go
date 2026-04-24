@@ -35,9 +35,7 @@ type libraryPuzzleDTO struct {
 	ID             int64    `json:"id"`
 	Title          string   `json:"title"`
 	Prompt         string   `json:"prompt"`
-	Hint           string   `json:"hint,omitempty"`
 	PromptHTML     string   `json:"prompt_html,omitempty"`
-	HintHTML       string   `json:"hint_html,omitempty"`
 	Notes          string   `json:"notes,omitempty"`
 	Accept         []string `json:"accept"`
 	Lat            float64  `json:"lat"`
@@ -58,7 +56,7 @@ type libraryPuzzleDTO struct {
 func (h *Handlers) ListPuzzles(w http.ResponseWriter, r *http.Request) {
 	me, _ := auth.FromContext(r.Context())
 	query := `
-		SELECT p.id, p.title, p.prompt, p.hint, p.notes, p.accept,
+		SELECT p.id, p.title, p.prompt, p.notes, p.accept,
 		       p.lat, p.lng, p.radius_m, p.disabled,
 		       EXISTS(SELECT 1 FROM adventure_page_images WHERE page_id = p.id),
 		       p.adventure_id, COALESCE(a.slug, ''), COALESCE(a.title, ''), p.idx
@@ -100,7 +98,7 @@ func (h *Handlers) ListPuzzles(w http.ResponseWriter, r *http.Request) {
 			advIdx     int
 			hasImages  int
 		)
-		if err := rows.Scan(&p.ID, &p.Title, &p.Prompt, &p.Hint, &p.Notes, &acceptJS,
+		if err := rows.Scan(&p.ID, &p.Title, &p.Prompt, &p.Notes, &acceptJS,
 			&p.Lat, &p.Lng, &radius, &disabled, &hasImages,
 			&advID, &p.AdventureSlug, &p.AdventureTitle, &advIdx); err != nil {
 			httpx.Error(w, http.StatusInternalServerError, "scan failed: "+err.Error())
@@ -120,7 +118,6 @@ func (h *Handlers) ListPuzzles(w http.ResponseWriter, r *http.Request) {
 		// Pre-render markdown so the library grid can drop the HTML
 		// straight in without one /markdown/preview request per card.
 		p.PromptHTML = mdx.Render(p.Prompt)
-		p.HintHTML = mdx.Render(p.Hint)
 		if advID.Valid {
 			i := advIdx
 			p.AdventureIdx = &i
@@ -139,7 +136,6 @@ func (h *Handlers) ListPuzzles(w http.ResponseWriter, r *http.Request) {
 type createLibraryPuzzleRequest struct {
 	Title   string   `json:"title"`
 	Prompt  string   `json:"prompt"`
-	Hint    string   `json:"hint"`
 	Notes   string   `json:"notes"`
 	Accept  []string `json:"accept"`
 	Lat     float64  `json:"lat"`
@@ -182,10 +178,10 @@ func (h *Handlers) CreateLibraryPuzzle(w http.ResponseWriter, r *http.Request) {
 		orgArg = org.Int64
 	}
 	res, err := h.DB.ExecContext(r.Context(), `
-		INSERT INTO adventure_pages(adventure_id, idx, title, prompt, hint, accept,
+		INSERT INTO adventure_pages(adventure_id, idx, title, prompt, accept,
 		                             lat, lng, radius_m, notes, org_id)
-		VALUES (NULL, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, req.Title, req.Prompt, req.Hint, string(acceptJS), req.Lat, req.Lng, radius, req.Notes, orgArg)
+		VALUES (NULL, 0, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, req.Title, req.Prompt, string(acceptJS), req.Lat, req.Lng, radius, req.Notes, orgArg)
 	if err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "insert failed: "+err.Error())
 		return
@@ -224,13 +220,13 @@ func (h *Handlers) GetPuzzle(w http.ResponseWriter, r *http.Request) {
 		pageOrg  sql.NullInt64
 	)
 	err = h.DB.QueryRowContext(r.Context(), `
-		SELECT p.id, p.idx, p.title, p.prompt, p.hint, p.notes, p.accept,
+		SELECT p.id, p.idx, p.title, p.prompt, p.notes, p.accept,
 		       p.lat, p.lng, p.radius_m, p.disabled,
 		       p.adventure_id, a.slug, a.title, a.org_id, p.org_id
 		FROM adventure_pages p
 		LEFT JOIN adventures a ON a.id = p.adventure_id
 		WHERE p.id = ?
-	`, pageID).Scan(&p.ID, &p.Index, &p.Title, &p.Prompt, &p.Hint, &p.Notes, &acceptJS,
+	`, pageID).Scan(&p.ID, &p.Index, &p.Title, &p.Prompt, &p.Notes, &acceptJS,
 		&p.Lat, &p.Lng, &radius, &disabled, &advID, &advSlug, &advTitle, &advOrg, &pageOrg)
 	if errors.Is(err, sql.ErrNoRows) {
 		httpx.Error(w, http.StatusNotFound, "puzzle not found")
@@ -261,7 +257,6 @@ func (h *Handlers) GetPuzzle(w http.ResponseWriter, r *http.Request) {
 	}
 	p.Disabled = disabled != 0
 	p.PromptHTML = mdx.Render(p.Prompt)
-	p.HintHTML = mdx.Render(p.Hint)
 	p.AdventureSlug = advSlug.String
 	p.AdventureTitle = advTitle.String
 	imgs, err := loadPageImages(r.Context(), h.DB, pageID)
@@ -340,15 +335,15 @@ func (h *Handlers) CopyPuzzleToAdventure(w http.ResponseWriter, r *http.Request)
 
 	// Read the source row.
 	var (
-		title, prompt, hint, notes, accept string
-		lat, lng                           float64
-		radius                             sql.NullFloat64
-		disabled                           int
+		title, prompt, notes, accept string
+		lat, lng                     float64
+		radius                       sql.NullFloat64
+		disabled                     int
 	)
 	if err := tx.QueryRowContext(r.Context(), `
-		SELECT title, prompt, hint, notes, accept, lat, lng, radius_m, disabled
+		SELECT title, prompt, notes, accept, lat, lng, radius_m, disabled
 		FROM adventure_pages WHERE id = ?
-	`, srcID).Scan(&title, &prompt, &hint, &notes, &accept, &lat, &lng, &radius, &disabled); err != nil {
+	`, srcID).Scan(&title, &prompt, &notes, &accept, &lat, &lng, &radius, &disabled); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			httpx.Error(w, http.StatusNotFound, "source puzzle not found")
 			return
@@ -370,10 +365,10 @@ func (h *Handlers) CopyPuzzleToAdventure(w http.ResponseWriter, r *http.Request)
 		radiusArg = radius.Float64
 	}
 	res, err := tx.ExecContext(r.Context(), `
-		INSERT INTO adventure_pages(adventure_id, idx, title, prompt, hint, notes, accept,
+		INSERT INTO adventure_pages(adventure_id, idx, title, prompt, notes, accept,
 		                             lat, lng, radius_m, disabled)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, advID, nextIdx, title, prompt, hint, notes, accept, lat, lng, radiusArg, disabled)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, advID, nextIdx, title, prompt, notes, accept, lat, lng, radiusArg, disabled)
 	if err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "insert copy failed: "+err.Error())
 		return

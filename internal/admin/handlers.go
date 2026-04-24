@@ -39,6 +39,11 @@ type Handlers struct {
 	Lib *adventure.Library
 	Hub *ws.Hub
 	Sim *simulator.Simulator
+	// SimulatorEnabled mirrors the server.Config flag — /whoami uses
+	// it to tell the client whether to show the sidebar entry for the
+	// race simulator. Disabled-by-default because a prod admin
+	// nuking their run with a stray click would be catastrophic.
+	SimulatorEnabled bool
 }
 
 /* ---------------- Shared scoping helpers ---------------- */

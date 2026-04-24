@@ -59,7 +59,6 @@ type Page struct {
 	Index    int
 	Title    string
 	Prompt   string
-	Hint     string // legacy single-hint; new authoring uses Hints.
 	Hints    []Hint
 	Accept   []string
 	Location Location
@@ -199,7 +198,7 @@ func (l *Library) ListContext(ctx context.Context) ([]*Adventure, error) {
 
 func (l *Library) loadPages(ctx context.Context, adventureID int64) ([]Page, error) {
 	rows, err := l.db.QueryContext(ctx, `
-		SELECT id, idx, title, prompt, hint, accept, lat, lng, radius_m, disabled, notes
+		SELECT id, idx, title, prompt, accept, lat, lng, radius_m, disabled, notes
 		FROM adventure_pages
 		WHERE adventure_id = ?
 		ORDER BY idx
@@ -216,7 +215,7 @@ func (l *Library) loadPages(ctx context.Context, adventureID int64) ([]Page, err
 			radius   sql.NullFloat64
 			disabled int
 		)
-		if err := rows.Scan(&p.ID, &p.Index, &p.Title, &p.Prompt, &p.Hint, &acceptJS,
+		if err := rows.Scan(&p.ID, &p.Index, &p.Title, &p.Prompt, &acceptJS,
 			&p.Location.Lat, &p.Location.Lng, &radius, &disabled, &p.Notes); err != nil {
 			return nil, err
 		}

@@ -138,7 +138,6 @@ func TestLibrary_CopyToAdventure(t *testing.T) {
 	if s := admin.do("PATCH", "/api/admin/pages/"+itoa(stub.ID), map[string]any{
 		"title":  "bonus",
 		"prompt": "What year?",
-		"hint":   "",
 		"accept": []string{"1999"},
 		"lat":    59.3,
 		"lng":    18.1,

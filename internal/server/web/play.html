@@ -197,7 +197,7 @@
   .runbar .hint-toggle {
     position: relative;
     width: auto; min-width: 0; padding: .2rem .55rem;
-    margin-left: .4rem;
+    margin-left: auto;
     background: var(--surface); color: var(--muted);
     border: 1px solid var(--border);
     border-radius: 999px; box-shadow: none;
@@ -908,13 +908,15 @@ function render(s) {
   app.replaceChildren();
   const playing = s.status === 'running';
   const hintBtn = playing ? renderHintButton(s) : null;
+  // No status pill on the runbar: the main content already conveys
+  // state — buildWaitingCard for waiting, a paused paragraph, the
+  // completion summary — and during 'running' the pill is just noise.
   const bar = el('div', { class: 'runbar' },
     s.adventure_title ? el('span', { class: 'title' }, s.adventure_title) : null,
     s.team_name ? el('span', { class: 'team' }, s.team_name) : null,
     playing
       ? el('span', { class: 'progress' }, t('Puzzle {{i}}/{{n}}', { i: s.page_index + 1, n: s.page_count }))
       : null,
-    el('span', { class: 'status pill' }, t(s.status || '')),
     hintBtn,
   );
   app.append(bar);
@@ -1362,6 +1364,11 @@ document.addEventListener('keydown', (e) => {
 // re-show it.
 function maybeShowWelcome(s) {
   if (!s.adventure_title || !s.team_name || !s.slot_name) return;
+  // During pre-start we already show a countdown card in the main view.
+  // Stacking the welcome overlay on top would duplicate the same
+  // "waiting" message; defer until the run actually starts so the
+  // intro + Let's go button lands when the player can act on it.
+  if (s.status === 'waiting') return;
   const key = 'zv_welcome_' + [s.adventure_slug || s.adventure_title, s.team_name, s.slot_name].join('|');
   if (localStorage.getItem(key) === '1') return;
   showWelcomeDialog(s, { storageKey: key });
@@ -1376,20 +1383,12 @@ function showWelcomeDialog(s, opts = {}) {
     overlay.remove();
   };
 
-  // Pre-start lock: while the run is scheduled and the clock hasn't
-  // reached scheduled_at, the Let's go button shows a live countdown
-  // and is disabled. Server enforces the lock independently — even if
-  // the client is tampered with, the state endpoint refuses to leak
-  // puzzle content until the scheduler (or the lazy promote in
-  // buildState) flips the run to running.
-  const locked = s.status === 'waiting' && !!s.scheduled_at;
+  // maybeShowWelcome suppresses the overlay during the 'waiting' state,
+  // so by the time we get here the run is live and the CTA can just
+  // dismiss. The pre-start countdown lives on buildWaitingCard instead.
   const cta = document.createElement('button');
-  cta.textContent = locked ? preStartCountdownText(s.scheduled_at, s.server_now) : t("Let's go");
-  if (locked) cta.disabled = true;
-  cta.addEventListener('click', () => {
-    if (cta.disabled) return;
-    dismiss();
-  });
+  cta.textContent = t("Let's go");
+  cta.addEventListener('click', dismiss);
 
   const overlay = el('div', { class: 'welcome' });
   const panel = el('div', { class: 'panel' });
@@ -1416,31 +1415,10 @@ function showWelcomeDialog(s, opts = {}) {
   }
   panel.append(el('div', { class: 'cta' }, cta));
   overlay.append(panel);
-  // While locked, skip the backdrop-dismiss shortcut so players can't
-  // accidentally blow past the countdown. Still allow it after unlock.
   overlay.addEventListener('click', (e) => {
-    if (cta.disabled) return;
     if (e.target === overlay) dismiss();
   });
   document.body.append(overlay);
-
-  // Tick the countdown once per second. Stops itself when the button
-  // unlocks or the overlay is removed.
-  if (locked) {
-    const target = parsePreStartTarget(s.scheduled_at);
-    const tick = () => {
-      if (!overlay.isConnected) return;
-      const now = Date.now();
-      if (now >= target) {
-        cta.disabled = false;
-        cta.textContent = t("Let's go");
-        return;
-      }
-      cta.textContent = preStartCountdownText(s.scheduled_at, null);
-      setTimeout(tick, 1000);
-    };
-    setTimeout(tick, 1000);
-  }
 }
 
 // buildWaitingCard renders the main-content view for a scheduled run.

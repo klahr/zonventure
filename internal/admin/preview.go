@@ -23,7 +23,6 @@ type previewStateDTO struct {
 	PageCount      int               `json:"page_count"`
 	Title          string            `json:"title,omitempty"`
 	Prompt         string            `json:"prompt,omitempty"`
-	Hint           string            `json:"hint,omitempty"`
 	Hints          []previewHintDTO  `json:"hints,omitempty"`
 	Images         []previewImageDTO `json:"images,omitempty"`
 	Colors         *adventure.Colors `json:"colors,omitempty"`
@@ -113,7 +112,6 @@ func (h *Handlers) PreviewAdventure(w http.ResponseWriter, r *http.Request) {
 		// markdown stays in the debug panel (accept/notes) for authors
 		// who need to see it verbatim.
 		Prompt:   mdx.Render(page.Prompt),
-		Hint:     mdx.Render(page.Hint),
 		Accept:   page.Accept,
 		NoAnswer: len(page.Accept) == 0,
 		Preview:  true,

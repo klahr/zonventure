@@ -8,6 +8,7 @@ import (
 	"flag"
 	"log"
 	"net/http"
+	"os"
 	"os/signal"
 	"strings"
 	"syscall"
@@ -82,11 +83,16 @@ func main() {
 	logx.Info("adventure.library.loaded", "count", len(lib.List()))
 
 	hub := ws.NewHub()
+	// The race simulator is gated on ZV_SIMULATOR=1 so a production
+	// admin can't nuke a live run with a stray click. Dev + demo
+	// environments flip it on via the env.
+	simEnabled := os.Getenv("ZV_SIMULATOR") == "1"
 	h := server.New(server.Config{
-		DB:           sqlDB,
-		Library:      lib,
-		Hub:          hub,
-		SecureCookie: *secureCookie,
+		DB:               sqlDB,
+		Library:          lib,
+		Hub:              hub,
+		SecureCookie:     *secureCookie,
+		SimulatorEnabled: simEnabled,
 	})
 
 	srv := &http.Server{

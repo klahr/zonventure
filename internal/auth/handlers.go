@@ -12,6 +12,16 @@ import (
 type Handlers struct {
 	DB           *sql.DB
 	SecureCookie bool // set to true when behind TLS
+	// Features ships in whoami so the client can hide UI surfaces
+	// that aren't wired up on this server (e.g. the simulator).
+	Features Features
+}
+
+// Features is the small bag of server-side flags surfaced via
+// /whoami. Keeping it a named struct so adding another flag later
+// doesn't re-shape the response envelope.
+type Features struct {
+	SimulatorEnabled bool `json:"simulator_enabled"`
 }
 
 type loginRequest struct {
@@ -20,14 +30,18 @@ type loginRequest struct {
 }
 
 type whoamiResponse struct {
-	ID       int64  `json:"id"`
-	Username string `json:"username"`
-	Role     string `json:"role"`
-	OrgID    *int64 `json:"org_id,omitempty"`
+	ID       int64    `json:"id"`
+	Username string   `json:"username"`
+	Role     string   `json:"role"`
+	OrgID    *int64   `json:"org_id,omitempty"`
+	Features Features `json:"features"`
 }
 
-func userResponse(u User) whoamiResponse {
-	return whoamiResponse{ID: u.ID, Username: u.Username, Role: u.Role, OrgID: u.OrgID}
+func (h *Handlers) userResponse(u User) whoamiResponse {
+	return whoamiResponse{
+		ID: u.ID, Username: u.Username, Role: u.Role, OrgID: u.OrgID,
+		Features: h.Features,
+	}
 }
 
 // Login validates credentials and sets the session cookie. Players whose
@@ -55,7 +69,7 @@ func (h *Handlers) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	SetCookie(w, token, h.SecureCookie)
-	httpx.JSON(w, http.StatusOK, userResponse(u))
+	httpx.JSON(w, http.StatusOK, h.userResponse(u))
 }
 
 // SetPassword handles the first-time password set for accounts created
@@ -85,7 +99,7 @@ func (h *Handlers) SetPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	SetCookie(w, token, h.SecureCookie)
-	httpx.JSON(w, http.StatusOK, userResponse(u))
+	httpx.JSON(w, http.StatusOK, h.userResponse(u))
 }
 
 // Logout clears the cookie and removes the server-side session row.
@@ -104,5 +118,5 @@ func (h *Handlers) Whoami(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusUnauthorized, "not logged in")
 		return
 	}
-	httpx.JSON(w, http.StatusOK, userResponse(u))
+	httpx.JSON(w, http.StatusOK, h.userResponse(u))
 }

@@ -52,8 +52,8 @@ func newTestServer(t *testing.T) (*httptest.Server, int64, func()) {
 	}
 	for i, p := range pages {
 		if _, err := sqlDB.Exec(`
-			INSERT INTO adventure_pages(adventure_id, idx, title, prompt, hint, accept, lat, lng, radius_m)
-			VALUES (?, ?, ?, ?, '', ?, ?, ?, ?)
+			INSERT INTO adventure_pages(adventure_id, idx, title, prompt, accept, lat, lng, radius_m)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 		`, advID, i, p.title, p.prompt, p.accept, p.lat, p.lng, p.radius); err != nil {
 			sqlDB.Close()
 			t.Fatalf("seed page %d: %v", i, err)

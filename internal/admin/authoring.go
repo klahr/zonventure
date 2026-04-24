@@ -34,15 +34,10 @@ type pageView struct {
 	Index  int    `json:"index"`
 	Title  string `json:"title"`
 	Prompt string `json:"prompt"`
-	// Hint is the legacy single-hint field; new authoring uses the
-	// Hints slice below. Kept on the DTO so list views don't break
-	// while we migrate the editor, but emitted as an empty string.
-	Hint string `json:"hint,omitempty"`
 	// PromptHTML is the goldmark-rendered sibling of Prompt — the same
 	// HTML players see. Lets list views in arrange.html drop in the
 	// pre-rendered result instead of calling /markdown/preview per card.
 	PromptHTML string      `json:"prompt_html,omitempty"`
-	HintHTML   string      `json:"hint_html,omitempty"`
 	Hints      []hintView  `json:"hints"`
 	Accept     []string    `json:"accept"`
 	Lat        float64     `json:"lat"`
@@ -402,7 +397,6 @@ func (h *Handlers) DeleteAdventure(w http.ResponseWriter, r *http.Request) {
 type pageWriteRequest struct {
 	Title    string     `json:"title"`
 	Prompt   string     `json:"prompt"`
-	Hint     string     `json:"hint"` // legacy; Hints is the authoritative field.
 	Hints    []hintView `json:"hints"`
 	Notes    string     `json:"notes"`
 	Accept   []string   `json:"accept"`
@@ -492,9 +486,9 @@ func (h *Handlers) CreatePage(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback()
 	res, err := tx.ExecContext(r.Context(), `
-		INSERT INTO adventure_pages(adventure_id, idx, title, prompt, hint, accept, lat, lng, radius_m, disabled, notes)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, advID, nextIdx, req.Title, req.Prompt, req.Hint, string(accept), req.Lat, req.Lng, radius, disabled, req.Notes)
+		INSERT INTO adventure_pages(adventure_id, idx, title, prompt, accept, lat, lng, radius_m, disabled, notes)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, advID, nextIdx, req.Title, req.Prompt, string(accept), req.Lat, req.Lng, radius, disabled, req.Notes)
 	if err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "insert failed: "+err.Error())
 		return
@@ -545,9 +539,9 @@ func (h *Handlers) UpdatePage(w http.ResponseWriter, r *http.Request) {
 	defer tx.Rollback()
 	res, err := tx.ExecContext(r.Context(), `
 		UPDATE adventure_pages
-		SET title = ?, prompt = ?, hint = ?, accept = ?, lat = ?, lng = ?, radius_m = ?, disabled = ?, notes = ?
+		SET title = ?, prompt = ?, accept = ?, lat = ?, lng = ?, radius_m = ?, disabled = ?, notes = ?
 		WHERE id = ?
-	`, req.Title, req.Prompt, req.Hint, string(accept), req.Lat, req.Lng, radius, disabled, req.Notes, pageID)
+	`, req.Title, req.Prompt, string(accept), req.Lat, req.Lng, radius, disabled, req.Notes, pageID)
 	if err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "update failed: "+err.Error())
 		return
@@ -884,7 +878,7 @@ func loadAdventureDTO(ctx context.Context, db *sql.DB, slug string) (*adventureE
 		a.AvatarURL = adventureAvatarURL(a.Slug)
 	}
 	rows, err := db.QueryContext(ctx, `
-		SELECT id, idx, title, prompt, hint, accept, lat, lng, radius_m, disabled, notes
+		SELECT id, idx, title, prompt, accept, lat, lng, radius_m, disabled, notes
 		FROM adventure_pages WHERE adventure_id = ? ORDER BY idx
 	`, a.ID)
 	if err != nil {
@@ -898,13 +892,12 @@ func loadAdventureDTO(ctx context.Context, db *sql.DB, slug string) (*adventureE
 			radius   sql.NullFloat64
 			disabled int
 		)
-		if err := rows.Scan(&p.ID, &p.Index, &p.Title, &p.Prompt, &p.Hint, &acceptJS,
+		if err := rows.Scan(&p.ID, &p.Index, &p.Title, &p.Prompt, &acceptJS,
 			&p.Lat, &p.Lng, &radius, &disabled, &p.Notes); err != nil {
 			return nil, err
 		}
 		p.Disabled = disabled != 0
 		p.PromptHTML = mdx.Render(p.Prompt)
-		p.HintHTML = mdx.Render(p.Hint)
 		_ = json.Unmarshal([]byte(acceptJS), &p.Accept)
 		if p.Accept == nil {
 			p.Accept = []string{}
