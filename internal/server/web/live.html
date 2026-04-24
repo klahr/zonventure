@@ -1094,15 +1094,27 @@ function renderRow(team, idx, data) {
         const target = finished ? 100 : pct;
         const prev = lastPct.has(team.id) ? lastPct.get(team.id) : target;
         lastPct.set(team.id, target);
+        // Paint the fill at the PREVIOUS width first so the CSS
+        // transition has a real starting value to animate from. Once
+        // the element is in the DOM (queued via microtask so parent
+        // attachment has completed), force a layout read with
+        // offsetWidth — that commits the initial width — then flip to
+        // the new width. The transition on .progress .fill picks it up.
         const fill = h('div', { class: 'fill', style: `width:${prev}%` });
         if (prev !== target) {
-          // Two rAFs so the initial width style has landed in the
-          // layout tree before we mutate to the target; otherwise the
-          // browser collapses both states into one paint and skips the
-          // transition.
-          requestAnimationFrame(() => requestAnimationFrame(() => {
+          queueMicrotask(() => {
+            // offsetWidth read only makes the browser commit layout
+            // once the element is actually connected.
+            if (!fill.isConnected) {
+              requestAnimationFrame(() => {
+                void fill.offsetWidth;
+                fill.style.width = target + '%';
+              });
+              return;
+            }
+            void fill.offsetWidth;
             fill.style.width = target + '%';
-          }));
+          });
         }
         return fill;
       })()),
