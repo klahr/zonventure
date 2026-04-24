@@ -91,22 +91,51 @@ type adventureDTO struct {
 	Description string `json:"description,omitempty"`
 	Author      string `json:"author,omitempty"`
 	PageCount   int    `json:"page_count"`
+	OrgID       *int64 `json:"org_id,omitempty"`   // nil = admin-owned global catalog
+	MineToEdit  bool   `json:"mine_to_edit"`
 }
 
-// ListAdventures returns every adventure loaded from disk. Callers that
-// want only adventures they can schedule should fetch their assignments
-// instead.
+// ListAdventures returns adventures visible to the caller. Admins see
+// everything; org users see admin-owned (global catalog) + their own.
+// The MineToEdit flag lets the UI split the list into "Editable by me"
+// and "Catalog (buy slots to run)" sections without a second query.
 func (h *Handlers) ListAdventures(w http.ResponseWriter, r *http.Request) {
-	advs := h.Lib.List()
-	out := make([]adventureDTO, 0, len(advs))
-	for _, a := range advs {
-		out = append(out, adventureDTO{
-			Slug:        a.Slug,
-			Title:       a.Meta.Title,
-			Description: a.Meta.Description,
-			Author:      a.Meta.Author,
-			PageCount:   len(a.Pages),
-		})
+	me, _ := auth.FromContext(r.Context())
+
+	query := `
+		SELECT a.slug, a.title, a.description, a.author, a.org_id,
+		       (SELECT COUNT(*) FROM adventure_pages p WHERE p.adventure_id = a.id) AS page_count
+		FROM adventures a
+	`
+	var args []any
+	if !isAdmin(me) {
+		query += ` WHERE a.org_id IS NULL OR a.org_id = ?`
+		args = append(args, *me.OrgID)
+	}
+	query += ` ORDER BY a.slug`
+
+	rows, err := h.DB.QueryContext(r.Context(), query, args...)
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "list failed")
+		return
+	}
+	defer rows.Close()
+	out := []adventureDTO{}
+	for rows.Next() {
+		var (
+			d     adventureDTO
+			orgID sql.NullInt64
+		)
+		if err := rows.Scan(&d.Slug, &d.Title, &d.Description, &d.Author, &orgID, &d.PageCount); err != nil {
+			httpx.Error(w, http.StatusInternalServerError, "scan failed")
+			return
+		}
+		if orgID.Valid {
+			v := orgID.Int64
+			d.OrgID = &v
+		}
+		d.MineToEdit = canEditOwned(me, orgID)
+		out = append(out, d)
 	}
 	httpx.JSON(w, http.StatusOK, map[string]any{"adventures": out})
 }

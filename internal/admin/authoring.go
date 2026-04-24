@@ -64,9 +64,12 @@ type adventureEditDTO struct {
 }
 
 // LoadAdventureForEdit returns full adventure content (including accept
-// lists and locations) for the admin editor.
+// lists and locations) for the authoring UI.
 func (h *Handlers) LoadAdventureForEdit(w http.ResponseWriter, r *http.Request) {
 	slug := chi.URLParam(r, "slug")
+	if _, ok := h.requireEditAdventure(w, r, slug); !ok {
+		return
+	}
 	dto, err := loadAdventureDTO(r.Context(), h.DB, slug)
 	if errors.Is(err, sql.ErrNoRows) {
 		httpx.Error(w, http.StatusNotFound, "unknown adventure")
@@ -118,13 +121,23 @@ func (h *Handlers) CreateAdventure(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	// Ownership: admins create global-catalog rows (org_id NULL); every
+	// other authoring role stamps their own org onto the row.
+	me, _ := auth.FromContext(r.Context())
+	org := callerOrgID(me)
+	var orgArg any
+	if org.Valid {
+		orgArg = org.Int64
+	}
 	res, err := h.DB.ExecContext(r.Context(), `
 		INSERT INTO adventures(slug, title, description, author,
-		                       accent_color, accent_secondary_color, background_color, text_color)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		                       accent_color, accent_secondary_color, background_color, text_color,
+		                       org_id, created_by_user_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, req.Slug, req.Title, req.Description, req.Author,
 		nullIfEmpty(req.AccentColor), nullIfEmpty(req.AccentSecondaryColor),
-		nullIfEmpty(req.BackgroundColor), nullIfEmpty(req.TextColor))
+		nullIfEmpty(req.BackgroundColor), nullIfEmpty(req.TextColor),
+		orgArg, me.ID)
 	if err != nil {
 		httpx.Error(w, http.StatusConflict, "slug already used")
 		return
@@ -133,6 +146,70 @@ func (h *Handlers) CreateAdventure(w http.ResponseWriter, r *http.Request) {
 	httpx.JSON(w, http.StatusCreated, map[string]any{
 		"id": id, "slug": req.Slug, "title": req.Title,
 	})
+}
+
+// adventureOwner looks up the adventure's org_id by slug. Returns
+// sql.ErrNoRows when the slug is unknown.
+func (h *Handlers) adventureOwner(ctx context.Context, slug string) (sql.NullInt64, error) {
+	var org sql.NullInt64
+	err := h.DB.QueryRowContext(ctx, `SELECT org_id FROM adventures WHERE slug = ?`, slug).Scan(&org)
+	return org, err
+}
+
+// requireEditAdventure centralises the load-owner + policy-check step
+// every adventure-mutating endpoint performs. Writes the HTTP error on
+// failure so callers can just early-return.
+func (h *Handlers) requireEditAdventure(w http.ResponseWriter, r *http.Request, slug string) (sql.NullInt64, bool) {
+	org, err := h.adventureOwner(r.Context(), slug)
+	if errors.Is(err, sql.ErrNoRows) {
+		httpx.Error(w, http.StatusNotFound, "unknown adventure")
+		return sql.NullInt64{}, false
+	}
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "lookup failed")
+		return sql.NullInt64{}, false
+	}
+	me, _ := auth.FromContext(r.Context())
+	if !canEditOwned(me, org) {
+		httpx.Error(w, http.StatusForbidden, "forbidden")
+		return sql.NullInt64{}, false
+	}
+	return org, true
+}
+
+// requireEditPage is the page-level analogue of requireEditAdventure.
+// Ownership comes from the attached adventure when there is one;
+// orphan library pages fall back to the page's own org_id column.
+func (h *Handlers) requireEditPage(w http.ResponseWriter, r *http.Request, pageID int64) bool {
+	var (
+		advID   sql.NullInt64
+		pageOrg sql.NullInt64
+		advOrg  sql.NullInt64
+	)
+	err := h.DB.QueryRowContext(r.Context(), `
+		SELECT p.adventure_id, p.org_id, a.org_id
+		FROM adventure_pages p
+		LEFT JOIN adventures a ON a.id = p.adventure_id
+		WHERE p.id = ?
+	`, pageID).Scan(&advID, &pageOrg, &advOrg)
+	if errors.Is(err, sql.ErrNoRows) {
+		httpx.Error(w, http.StatusNotFound, "page not found")
+		return false
+	}
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "lookup failed")
+		return false
+	}
+	owner := pageOrg
+	if advID.Valid {
+		owner = advOrg
+	}
+	me, _ := auth.FromContext(r.Context())
+	if !canEditOwned(me, owner) {
+		httpx.Error(w, http.StatusForbidden, "forbidden")
+		return false
+	}
+	return true
 }
 
 type updateAdventureRequest struct {
@@ -149,6 +226,9 @@ type updateAdventureRequest struct {
 // UpdateAdventure amends the metadata.
 func (h *Handlers) UpdateAdventure(w http.ResponseWriter, r *http.Request) {
 	slug := chi.URLParam(r, "slug")
+	if _, ok := h.requireEditAdventure(w, r, slug); !ok {
+		return
+	}
 	var req updateAdventureRequest
 	if !httpx.DecodeJSON(w, r, &req) {
 		return
@@ -224,6 +304,9 @@ func (h *Handlers) DeleteAdventure(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	slug := chi.URLParam(r, "slug")
+	if _, ok := h.requireEditAdventure(w, r, slug); !ok {
+		return
+	}
 	var count int
 	if err := h.DB.QueryRowContext(r.Context(),
 		`SELECT COUNT(*) FROM adventure_runs WHERE adventure_slug = ?`, slug).Scan(&count); err != nil {
@@ -283,6 +366,9 @@ func (req pageWriteRequest) validate() error {
 // CreatePage appends a new page at the end of the adventure.
 func (h *Handlers) CreatePage(w http.ResponseWriter, r *http.Request) {
 	slug := chi.URLParam(r, "slug")
+	if _, ok := h.requireEditAdventure(w, r, slug); !ok {
+		return
+	}
 	var req pageWriteRequest
 	if !httpx.DecodeJSON(w, r, &req) {
 		return
@@ -330,6 +416,9 @@ func (h *Handlers) UpdatePage(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if !h.requireEditPage(w, r, pageID) {
+		return
+	}
 	var req pageWriteRequest
 	if !httpx.DecodeJSON(w, r, &req) {
 		return
@@ -368,6 +457,9 @@ func (h *Handlers) UpdatePage(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) DeletePage(w http.ResponseWriter, r *http.Request) {
 	pageID, ok := pageIDFromURL(r)
 	if !ok {
+		return
+	}
+	if !h.requireEditPage(w, r, pageID) {
 		return
 	}
 	var (
@@ -415,6 +507,9 @@ func (h *Handlers) DeletePage(w http.ResponseWriter, r *http.Request) {
 // ReorderPages takes a list of page ids in the desired new order.
 func (h *Handlers) ReorderPages(w http.ResponseWriter, r *http.Request) {
 	slug := chi.URLParam(r, "slug")
+	if _, ok := h.requireEditAdventure(w, r, slug); !ok {
+		return
+	}
 	advID, err := adventureIDBySlug(r.Context(), h.DB, slug)
 	if err != nil {
 		httpx.Error(w, http.StatusNotFound, "unknown adventure")
@@ -469,6 +564,9 @@ func (h *Handlers) ReorderPages(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) AddPageImage(w http.ResponseWriter, r *http.Request) {
 	pageID, ok := pageIDFromURL(r)
 	if !ok {
+		return
+	}
+	if !h.requireEditPage(w, r, pageID) {
 		return
 	}
 	if err := r.ParseMultipartForm(maxImageBytes); err != nil {
@@ -527,6 +625,20 @@ func (h *Handlers) DeletePageImage(w http.ResponseWriter, r *http.Request) {
 	imageID, err := strconv.ParseInt(chi.URLParam(r, "imageID"), 10, 64)
 	if err != nil || imageID <= 0 {
 		httpx.Error(w, http.StatusBadRequest, "bad image id")
+		return
+	}
+	// Resolve the owning page so we can run the standard policy check.
+	var pageID int64
+	if err := h.DB.QueryRowContext(r.Context(),
+		`SELECT page_id FROM adventure_page_images WHERE id = ?`, imageID).Scan(&pageID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			httpx.Error(w, http.StatusNotFound, "image not found")
+			return
+		}
+		httpx.Error(w, http.StatusInternalServerError, "lookup failed")
+		return
+	}
+	if !h.requireEditPage(w, r, pageID) {
 		return
 	}
 	res, err := h.DB.ExecContext(r.Context(),

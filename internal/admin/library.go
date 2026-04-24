@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"git.sr.ht/~klahr/zv/internal/auth"
 	"git.sr.ht/~klahr/zv/internal/httpx"
 	"github.com/go-chi/chi/v5"
 )
@@ -47,22 +48,39 @@ type libraryPuzzleDTO struct {
 	AdventureIdx    *int     `json:"adventure_idx,omitempty"`
 }
 
-// ListPuzzles returns every puzzle in the system with a light adventure
-// assignment annotation — used by the library view.
+// ListPuzzles returns every puzzle in the system (scoped to the
+// caller's visibility) with a light adventure assignment annotation.
+// Admins see everything; org users see admin-owned library stubs
+// plus anything owned by their org.
 func (h *Handlers) ListPuzzles(w http.ResponseWriter, r *http.Request) {
-	rows, err := h.DB.QueryContext(r.Context(), `
+	me, _ := auth.FromContext(r.Context())
+	query := `
 		SELECT p.id, p.title, p.prompt, p.hint, p.notes, p.accept,
 		       p.lat, p.lng, p.radius_m, p.disabled,
 		       EXISTS(SELECT 1 FROM adventure_page_images WHERE page_id = p.id),
 		       p.adventure_id, COALESCE(a.slug, ''), COALESCE(a.title, ''), p.idx
 		FROM adventure_pages p
 		LEFT JOIN adventures a ON a.id = p.adventure_id
+	`
+	var args []any
+	if !isAdmin(me) {
+		// Visibility rule: attached pages ride the adventure's org;
+		// orphan pages ride their own org. NULL on either side means
+		// admin-owned (global).
+		query += `
+			WHERE (
+			    (p.adventure_id IS NOT NULL AND (a.org_id IS NULL OR a.org_id = ?))
+			 OR (p.adventure_id IS NULL     AND (p.org_id IS NULL OR p.org_id = ?))
+			)
+		`
+		args = append(args, *me.OrgID, *me.OrgID)
+	}
+	query += `
 		ORDER BY
-		    CASE WHEN p.adventure_id IS NULL THEN 0 ELSE 1 END,  -- library first
-		    a.slug,
-		    p.idx,
-		    p.id DESC
-	`)
+		    CASE WHEN p.adventure_id IS NULL THEN 0 ELSE 1 END,
+		    a.slug, p.idx, p.id DESC
+	`
+	rows, err := h.DB.QueryContext(r.Context(), query, args...)
 	if err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "list failed: "+err.Error())
 		return
@@ -148,12 +166,19 @@ func (h *Handlers) CreateLibraryPuzzle(w http.ResponseWriter, r *http.Request) {
 	}
 	// idx=0 for library rows is fine — the UNIQUE(adventure_id, idx)
 	// constraint treats each NULL adventure_id as distinct, so many
-	// library rows may share idx=0 without conflict.
+	// library rows may share idx=0 without conflict. org_id stamps
+	// ownership: admins create into the global library (NULL), org
+	// users create into their own org's library.
+	me, _ := auth.FromContext(r.Context())
+	orgArg := any(nil)
+	if org := callerOrgID(me); org.Valid {
+		orgArg = org.Int64
+	}
 	res, err := h.DB.ExecContext(r.Context(), `
 		INSERT INTO adventure_pages(adventure_id, idx, title, prompt, hint, accept,
-		                             lat, lng, radius_m, notes)
-		VALUES (NULL, 0, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, req.Title, req.Prompt, req.Hint, string(acceptJS), req.Lat, req.Lng, radius, req.Notes)
+		                             lat, lng, radius_m, notes, org_id)
+		VALUES (NULL, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, req.Title, req.Prompt, req.Hint, string(acceptJS), req.Lat, req.Lng, radius, req.Notes, orgArg)
 	if err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "insert failed: "+err.Error())
 		return
@@ -185,23 +210,37 @@ func (h *Handlers) GetPuzzle(w http.ResponseWriter, r *http.Request) {
 		acceptJS string
 		radius   sql.NullFloat64
 		disabled int
+		advID    sql.NullInt64
 		advSlug  sql.NullString
 		advTitle sql.NullString
+		advOrg   sql.NullInt64
+		pageOrg  sql.NullInt64
 	)
 	err = h.DB.QueryRowContext(r.Context(), `
 		SELECT p.id, p.idx, p.title, p.prompt, p.hint, p.notes, p.accept,
-		       p.lat, p.lng, p.radius_m, p.disabled, a.slug, a.title
+		       p.lat, p.lng, p.radius_m, p.disabled,
+		       p.adventure_id, a.slug, a.title, a.org_id, p.org_id
 		FROM adventure_pages p
 		LEFT JOIN adventures a ON a.id = p.adventure_id
 		WHERE p.id = ?
 	`, pageID).Scan(&p.ID, &p.Index, &p.Title, &p.Prompt, &p.Hint, &p.Notes, &acceptJS,
-		&p.Lat, &p.Lng, &radius, &disabled, &advSlug, &advTitle)
+		&p.Lat, &p.Lng, &radius, &disabled, &advID, &advSlug, &advTitle, &advOrg, &pageOrg)
 	if errors.Is(err, sql.ErrNoRows) {
 		httpx.Error(w, http.StatusNotFound, "puzzle not found")
 		return
 	}
 	if err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "lookup failed: "+err.Error())
+		return
+	}
+	// Visibility check: attached → adventure's org; orphan → page's own.
+	me, _ := auth.FromContext(r.Context())
+	owner := pageOrg
+	if advID.Valid {
+		owner = advOrg
+	}
+	if !canSeeOwned(me, owner) {
+		httpx.Error(w, http.StatusForbidden, "forbidden")
 		return
 	}
 	_ = json.Unmarshal([]byte(acceptJS), &p.Accept)
@@ -229,11 +268,47 @@ func (h *Handlers) GetPuzzle(w http.ResponseWriter, r *http.Request) {
 // images) into the target adventure at the next idx. The source row is
 // untouched — this is how you pull a library puzzle into an adventure,
 // and it also works for duplicating a puzzle across adventures.
+//
+// Permissions: caller must be able to see the source and edit the
+// target. A user can read admin-owned puzzles, so they can copy
+// public-catalog puzzles into their own adventures.
 func (h *Handlers) CopyPuzzleToAdventure(w http.ResponseWriter, r *http.Request) {
 	slug := chi.URLParam(r, "slug")
 	srcID, err := strconv.ParseInt(chi.URLParam(r, "pageID"), 10, 64)
 	if err != nil || srcID <= 0 {
 		httpx.Error(w, http.StatusBadRequest, "bad page id")
+		return
+	}
+	if _, ok := h.requireEditAdventure(w, r, slug); !ok {
+		return
+	}
+	// Check source visibility. Load its owning org (attached → adventure,
+	// orphan → own org_id).
+	var (
+		srcAdvID   sql.NullInt64
+		srcAdvOrg  sql.NullInt64
+		srcPageOrg sql.NullInt64
+	)
+	if err := h.DB.QueryRowContext(r.Context(), `
+		SELECT p.adventure_id, a.org_id, p.org_id
+		FROM adventure_pages p
+		LEFT JOIN adventures a ON a.id = p.adventure_id
+		WHERE p.id = ?
+	`, srcID).Scan(&srcAdvID, &srcAdvOrg, &srcPageOrg); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			httpx.Error(w, http.StatusNotFound, "source puzzle not found")
+			return
+		}
+		httpx.Error(w, http.StatusInternalServerError, "source lookup failed")
+		return
+	}
+	me, _ := auth.FromContext(r.Context())
+	srcOwner := srcPageOrg
+	if srcAdvID.Valid {
+		srcOwner = srcAdvOrg
+	}
+	if !canSeeOwned(me, srcOwner) {
+		httpx.Error(w, http.StatusForbidden, "cannot see that puzzle")
 		return
 	}
 	advID, err := adventureIDBySlug(r.Context(), h.DB, slug)

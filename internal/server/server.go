@@ -167,6 +167,34 @@ func New(cfg Config) http.Handler {
 		r.Post("/organizations/{orgID}/members", adminH.CreateOrgMember)
 		r.Delete("/organizations/{orgID}/members/{userID}", adminH.DeleteOrgMember)
 
+		// Adventure authoring. Available to every authoring tier —
+		// handlers enforce ownership inline (admin edits the global
+		// catalog; org users edit their own org's adventures).
+		r.Get("/adventures/{slug}/edit", adminH.LoadAdventureForEdit)
+		r.Post("/adventures", adminH.CreateAdventure)
+		r.Patch("/adventures/{slug}", adminH.UpdateAdventure)
+		r.Delete("/adventures/{slug}", adminH.DeleteAdventure)
+		r.Post("/adventures/{slug}/pages", adminH.CreatePage)
+		r.Patch("/adventures/{slug}/pages/reorder", adminH.ReorderPages)
+		r.Post("/adventures/{slug}/pages/copy-from/{pageID}", adminH.CopyPuzzleToAdventure)
+		r.Patch("/pages/{pageID}", adminH.UpdatePage)
+		r.Delete("/pages/{pageID}", adminH.DeletePage)
+		r.Post("/pages/{pageID}/images", adminH.AddPageImage)
+		r.Delete("/images/{imageID}", adminH.DeletePageImage)
+
+		// Puzzle library (cross-adventure pool).
+		r.Get("/puzzles", adminH.ListPuzzles)
+		r.Post("/puzzles", adminH.CreateLibraryPuzzle)
+		r.Get("/puzzles/{pageID}", adminH.GetPuzzle)
+
+		// Purchases: arrangers buy team-slot assignments here. The
+		// simulated flow just needs the confirm endpoint; a future
+		// Stripe integration will also hit /confirm from a webhook.
+		r.Post("/purchases", adminH.CreatePurchase)
+		r.Get("/purchases", adminH.ListPurchases)
+		r.Get("/purchases/{purchaseID}", adminH.GetPurchase)
+		r.Post("/purchases/{purchaseID}/confirm", adminH.ConfirmPurchase)
+
 		// Global admin only.
 		r.Group(func(r chi.Router) {
 			r.Use(auth.RequireRole(auth.RoleAdmin))
@@ -181,26 +209,13 @@ func New(cfg Config) http.Handler {
 			r.Get("/admins", adminH.ListAdmins)
 			r.Post("/admins", adminH.CreateAdmin)
 			r.Delete("/admins/{userID}", adminH.DeleteAdmin)
-
-			// Adventure editor (DB-backed authoring).
-			r.Get("/adventures/{slug}/edit", adminH.LoadAdventureForEdit)
-			r.Post("/adventures", adminH.CreateAdventure)
-			r.Patch("/adventures/{slug}", adminH.UpdateAdventure)
-			r.Delete("/adventures/{slug}", adminH.DeleteAdventure)
-			r.Post("/adventures/{slug}/pages", adminH.CreatePage)
-			r.Patch("/adventures/{slug}/pages/reorder", adminH.ReorderPages)
-			r.Post("/adventures/{slug}/pages/copy-from/{pageID}", adminH.CopyPuzzleToAdventure)
-			r.Patch("/pages/{pageID}", adminH.UpdatePage)
-			r.Delete("/pages/{pageID}", adminH.DeletePage)
-			r.Post("/pages/{pageID}/images", adminH.AddPageImage)
-			r.Delete("/images/{imageID}", adminH.DeletePageImage)
-
-			// Puzzle library: the cross-adventure pool of puzzles.
-			r.Get("/puzzles", adminH.ListPuzzles)
-			r.Post("/puzzles", adminH.CreateLibraryPuzzle)
-			r.Get("/puzzles/{pageID}", adminH.GetPuzzle)
 		})
 	})
+
+	// The simulated-checkout HTML page. Lives outside /api/admin so the
+	// arranger's browser lands at a clean URL after clicking "Pay".
+	// With Stripe this becomes a redirect target from Checkout Sessions.
+	r.Get("/purchase/{purchaseID}", adminH.SimulatedCheckoutPage)
 
 	return r
 }

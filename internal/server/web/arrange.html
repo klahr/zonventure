@@ -1028,6 +1028,8 @@ function renderShell() {
     items = [
       ['#dashboard',  t('Dashboard'),  ICONS.dashboard],
       ['#adventures', t('Adventures'), ICONS.map],
+      ['#library',    t('Authoring'),  ICONS.key],
+      ['#puzzles',    t('Puzzles'),    ICONS.puzzle],
       ['#runs',       t('Runs'),       ICONS.play],
     ];
     if (isOrgAdmin) items.push(['#members', t('Members'), ICONS.shield]);
@@ -1120,7 +1122,7 @@ async function renderRoute() {
   const isOrgAdmin = role === 'org_admin';
 
   // Role-based route guards: admins can't visit org-user pages and vice versa.
-  const adminOnly = ['organizations', 'admins', 'library', 'puzzles'];
+  const adminOnly = ['organizations', 'admins'];
   const orgUserOnly = ['adventures', 'runs'];
   if (isAdmin && orgUserOnly.includes(section)) { nav('#organizations'); return; }
   if (!isAdmin && adminOnly.includes(section))   { nav('#dashboard');     return; }
@@ -1145,6 +1147,7 @@ async function renderRoute() {
       case 'organizations':return await viewOrganizations(view);
       case 'library':      return arg ? await viewLibraryEdit(view, arg) : await viewLibrary(view);
       case 'puzzles':      return arg ? await viewPuzzleEditRoute(view, arg) : await viewPuzzles(view);
+      case 'purchases':    return await viewPurchases(view);
       case 'admins':       return await viewAdmins(view);
       default: view.replaceChildren(h('p', {}, t('Not found')));
     }
@@ -1326,10 +1329,18 @@ function stat(label, value) {
    assignments are also shown (with a link to their run) so the arranger can
    see the full history at a glance. */
 async function viewAdventures(view) {
-  const r = await api('/api/admin/assignments');
-  const assignments = r.body?.assignments || [];
+  const [ar, advR] = await Promise.all([
+    api('/api/admin/assignments'),
+    api('/api/admin/adventures'),
+  ]);
+  const assignments = ar.body?.assignments || [];
   const unused = assignments.filter((a) => !a.run_id);
   const used = assignments.filter((a) => a.run_id);
+  const advs = advR.body?.adventures || [];
+  // Catalog = adventures the caller can see but can't edit. These are
+  // the admin-owned "global" ones available for purchase. Owned
+  // adventures (mine_to_edit=true) are managed from the Authoring view.
+  const catalog = advs.filter((a) => !a.mine_to_edit);
 
   // Build as an array we can filter — passing a bare null to replaceChildren
   // makes it render the string "null".
@@ -1368,8 +1379,117 @@ async function viewAdventures(view) {
             h('td', { class: 'mono' }, a.max_teams),
           )))),
       )),
+    // Catalog section: every adventure the caller can see but doesn't
+    // own. Each card offers "Buy team slots" which opens the purchase
+    // modal and, on payment, creates a fresh assignment they can
+    // schedule from.
+    catalog.length === 0 ? null : h('div', { style: 'margin-top:2rem' },
+      h('h3', {}, t('Catalog')),
+      h('p', { class: 'muted' },
+        t('Published adventures you can run. Buy team slots to unlock a new assignment.')),
+      h('div', { class: 'grid cols-2' }, catalog.map((a) =>
+        h('div', { class: 'card' },
+          h('div', { class: 'row between' },
+            h('h2', {}, a.title),
+            h('span', { class: 'pill' }, `${a.page_count} puzzles`)),
+          a.description ? h('p', { class: 'muted' }, a.description) : null,
+          h('p', { class: 'muted mono' }, a.slug),
+          h('div', { class: 'row end' },
+            h('button', { class: 'btn small', on: { click: () => nav('#adventures/' + a.slug) } }, t('Preview')),
+            h('button', { class: 'btn primary small', on: { click: () => openPurchaseModal(a) } },
+              t('Buy team slots'))),
+        )))),
   ].filter(Boolean);
   view.replaceChildren(...children);
+}
+
+// viewPurchases is the post-checkout landing + history view. Simulated
+// checkout redirects here after a successful /confirm; the user sees
+// their new assignment alongside any previous purchases.
+async function viewPurchases(view) {
+  const r = await api('/api/admin/purchases');
+  const purchases = r.body?.purchases || [];
+  const money = (cents, cur) => new Intl.NumberFormat(undefined, {
+    style: 'currency', currency: cur || 'USD',
+  }).format(cents / 100);
+  view.replaceChildren(
+    h('div', { class: 'row between' },
+      h('h1', {}, t('Purchases')),
+      h('button', { class: 'btn', on: { click: () => nav('#adventures') } }, t('Browse catalog'))),
+    h('p', { class: 'muted' },
+      t('Every team-slot purchase. Paid ones produce an assignment you can schedule from the Adventures page.')),
+    purchases.length === 0
+      ? h('div', { class: 'empty' }, t('No purchases yet.'))
+      : h('div', { class: 'card' }, h('table', { class: 'table' },
+        h('thead', {}, h('tr', {},
+          h('th', {}, t('Adventure')),
+          h('th', {}, t('Slots')),
+          h('th', {}, t('Total')),
+          h('th', {}, t('State')),
+          h('th', {}, t('Date')))),
+        h('tbody', {}, purchases.map((p) => h('tr', {},
+          h('td', {}, p.adventure_title || p.adventure_slug),
+          h('td', { class: 'mono' }, p.max_teams),
+          h('td', { class: 'mono' }, money(p.amount_cents, p.currency)),
+          h('td', {}, h('span', {
+            class: 'pill ' + (p.state === 'paid' ? 'success' : p.state === 'pending' ? 'warning' : ''),
+          }, p.state)),
+          h('td', { class: 'muted mono', style: 'font-size:.8rem' }, p.created_at),
+        ))))),
+  );
+}
+
+// openPurchaseModal drives the buy-team-slots flow. The user picks a
+// slot count, sees the total, and confirms. The server creates a
+// pending purchase and returns a checkout_url — we redirect to it
+// (simulated page now, Stripe Checkout later). On success the checkout
+// page navigates the user back to #purchases so they see the fresh
+// assignment.
+async function openPurchaseModal(adv) {
+  // Pricing lives server-side (PricePerSlotCents) but the UI has a
+  // hardcoded mirror so we can show the total before the POST. If the
+  // server price changes this drifts — that's fine for the simulated
+  // flow; Stripe will ship a real catalog later.
+  const PRICE_CENTS = 200;
+  await modal(t('Buy team slots'), ({ body, close }) => {
+    const slots = h('input', { type: 'number', min: '1', max: '100', value: '10', required: true });
+    const totalEl = h('strong', {}, '');
+    const update = () => {
+      const n = Math.max(1, parseInt(slots.value, 10) || 0);
+      totalEl.textContent = new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD' })
+        .format(n * PRICE_CENTS / 100);
+    };
+    slots.addEventListener('input', update);
+    update();
+    const form = h('form', {},
+      h('p', {},
+        t('Each team slot lets one team play "{{title}}".', { title: adv.title || adv.slug })),
+      h('label', { class: 'field' },
+        h('span', {}, t('Team slots')), slots),
+      h('p', { class: 'muted' },
+        t('Total: '), totalEl,
+        ' ',
+        h('span', { class: 'muted', style: 'font-size:.85rem' },
+          t('({{price}} per slot)', { price: '$2.00' }))),
+      h('div', { class: 'row end' },
+        h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, t('Cancel')),
+        h('button', { class: 'btn primary', type: 'submit' }, t('Proceed to payment'))));
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const n = Math.max(1, parseInt(slots.value, 10) || 1);
+      const r = await api('/api/admin/purchases', {
+        method: 'POST',
+        body: JSON.stringify({ adventure_slug: adv.slug, max_teams: n }),
+      });
+      if (r.status !== 201) {
+        toastErr(r.body?.error || `error ${r.status}`);
+        return;
+      }
+      close(true);
+      location.href = r.body.checkout_url;
+    });
+    body.append(form);
+  });
 }
 
 async function viewAdventureDetail(view, slug) {
@@ -1378,7 +1498,10 @@ async function viewAdventureDetail(view, slug) {
   const a = r.body;
   view.replaceChildren(
     h('button', { class: 'btn ghost small', on: { click: () => nav('#adventures') } }, icon(ICONS.back), t('Back')),
-    h('h1', {}, a.title),
+    h('div', { class: 'row between' },
+      h('h1', {}, a.title),
+      h('button', { class: 'btn primary', on: { click: () => openPurchaseModal({ slug: a.slug, title: a.title }) } },
+        t('Buy team slots'))),
     h('p', { class: 'muted' }, a.description || ''),
     h('p', { class: 'muted mono' },
       t('{{slug}} · {{n}} puzzles', { slug: a.slug, n: a.page_count }),

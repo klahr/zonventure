@@ -214,25 +214,72 @@ func TestLibrary_StubRejectsBadCoords(t *testing.T) {
 	}
 }
 
-func TestLibrary_OrgUserForbidden(t *testing.T) {
-	// The library is admin-only. An org_admin must not be able to list
-	// or create library puzzles.
+func TestLibrary_OrgUserCanAuthorOwnPuzzles(t *testing.T) {
+	// Org users can now author their own puzzles and see the admin
+	// global library. This test pins the visibility boundary — org
+	// users can see admin-owned library stubs AND their own, but must
+	// not be able to edit admin-owned stubs.
 	ts, _, cleanup := newTestServer(t)
 	defer cleanup()
+
+	// Admin creates a global-library stub (org_id NULL).
+	root := newClient(t, ts)
+	if s := root.do("POST", "/api/auth/login",
+		map[string]string{"username": "root", "password": "rootpw"}, nil); s != 200 {
+		t.Fatalf("admin login = %d", s)
+	}
+	var adminStub struct {
+		ID int64 `json:"id"`
+	}
+	if s := root.do("POST", "/api/admin/puzzles",
+		map[string]any{"lat": 59, "lng": 18, "title": "admin global"}, &adminStub); s != 201 {
+		t.Fatalf("admin create = %d", s)
+	}
+
+	// Org user creates their own stub, lists, and tries to edit the
+	// admin's.
 	boss := newClient(t, ts)
 	if s := boss.do("POST", "/api/auth/login",
 		map[string]string{"username": "boss", "password": "s3cret"}, nil); s != 200 {
 		t.Fatalf("boss login = %d", s)
 	}
-	// ListPuzzles is behind the /api/admin group which needs one of the
-	// roles — boss IS an org_admin so it's in that group; the library
-	// sub-group uses RequireRole(admin). So these should be 403.
-	if s := boss.do("GET", "/api/admin/puzzles", nil, nil); s == 200 {
-		t.Fatalf("org_admin listed library puzzles — expected forbidden")
+	var bossStub struct {
+		ID int64 `json:"id"`
 	}
 	if s := boss.do("POST", "/api/admin/puzzles",
-		map[string]any{"lat": 0, "lng": 0}, nil); s == 201 {
-		t.Fatalf("org_admin created library puzzle — expected forbidden")
+		map[string]any{"lat": 60, "lng": 19, "title": "boss local"}, &bossStub); s != 201 {
+		t.Fatalf("org user should be able to create library stubs, got %d", s)
+	}
+
+	// Listing must include both.
+	var list struct {
+		Puzzles []struct {
+			ID    int64  `json:"id"`
+			Title string `json:"title"`
+		} `json:"puzzles"`
+	}
+	if s := boss.do("GET", "/api/admin/puzzles", nil, &list); s != 200 {
+		t.Fatalf("list = %d", s)
+	}
+	var sawAdmin, sawBoss bool
+	for _, p := range list.Puzzles {
+		if p.ID == adminStub.ID {
+			sawAdmin = true
+		}
+		if p.ID == bossStub.ID {
+			sawBoss = true
+		}
+	}
+	if !sawAdmin || !sawBoss {
+		t.Fatalf("org user missing visibility: admin=%v boss=%v", sawAdmin, sawBoss)
+	}
+
+	// But the org user MUST NOT be able to edit the admin-owned stub.
+	s := boss.do("PATCH", "/api/admin/pages/"+itoa(adminStub.ID), map[string]any{
+		"title": "hacked", "lat": 0, "lng": 0,
+	}, nil)
+	if s != 403 {
+		t.Fatalf("org user patched admin stub, status=%d (want 403)", s)
 	}
 }
 
