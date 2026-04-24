@@ -335,18 +335,11 @@ html, body {
   height: 100%;
   background: linear-gradient(90deg, var(--team-color, var(--accent)), var(--accent));
   border-radius: 999px;
-  /* The bar is re-rendered on every snapshot so a straight CSS
-     transition never triggers (the new node starts at its final width).
-     A keyframe animation that grows from 0 → --pct on mount gives the
-     "bar fills in" feeling whenever progress changes. The cubic-bezier
-     is a fast-out / slow-in curve so the bar races out, then settles
-     on its final length — reads as "landed". */
-  width: var(--pct, 0%);
-  animation: progressGrow .9s cubic-bezier(.2, .8, .2, 1) both;
-}
-@keyframes progressGrow {
-  from { width: 0; }
-  to   { width: var(--pct, 0%); }
+  /* A straight CSS transition on width. The bar is re-rendered on
+     every snapshot, so to make the transition actually fire (and only
+     when the value changes) renderRow paints the previous pct first,
+     then flips to the new pct on the next frame — see lastPct below. */
+  transition: width .9s cubic-bezier(.2, .8, .2, 1);
 }
 .progress .label {
   display: flex; justify-content: space-between;
@@ -491,6 +484,15 @@ const initialLoading = document.getElementById('initial-loading');
 if (initialLoading) initialLoading.textContent = t('Loading…');
 
 const TEAM_COLORS = ['#e24080', '#7fd17b', '#60a5fa', '#f5c452', '#a78bfa', '#22d3ee', '#fb7185', '#34d399'];
+
+// lastPct remembers the last progress-bar percentage rendered per
+// team id, so on the next snapshot we can paint the fill at the OLD
+// value first and then animate to the NEW one via the CSS transition.
+// Without this the bar would either replay from 0 every tick (if we
+// used keyframes) or snap instantly to the new width (fresh node →
+// no transition). Entries are kept across snapshots; a team id that
+// disappears just leaves a stale entry behind, which is harmless.
+const lastPct = new Map();
 function teamColor(i) { return TEAM_COLORS[i % TEAM_COLORS.length]; }
 
 function teamInitials(name) {
@@ -1088,7 +1090,22 @@ function renderRow(team, idx, data) {
       h('span', {}, `${finished ? 100 : pct}%`),
     ),
     h('div', { class: 'bar' },
-      h('div', { class: 'fill', style: `--pct:${finished ? 100 : pct}%` })),
+      (() => {
+        const target = finished ? 100 : pct;
+        const prev = lastPct.has(team.id) ? lastPct.get(team.id) : target;
+        lastPct.set(team.id, target);
+        const fill = h('div', { class: 'fill', style: `width:${prev}%` });
+        if (prev !== target) {
+          // Two rAFs so the initial width style has landed in the
+          // layout tree before we mutate to the target; otherwise the
+          // browser collapses both states into one paint and skips the
+          // transition.
+          requestAnimationFrame(() => requestAnimationFrame(() => {
+            fill.style.width = target + '%';
+          }));
+        }
+        return fill;
+      })()),
   ));
   row.append(main);
 
