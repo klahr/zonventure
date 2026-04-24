@@ -223,8 +223,13 @@ func (s *Simulator) Start(ctx context.Context, adventureSlug string, teamCount i
 	teams := make([]*simTeam, 0, teamCount)
 	for i := 0; i < teamCount; i++ {
 		name := namedTeam(i)
+		// Generate a token inline so each simulated team satisfies the
+		// teams.token UNIQUE index. Using SQLite's randomblob keeps the
+		// simulator free of extra crypto plumbing and matches the style
+		// of the migration's own backfill.
 		tres, err := s.db.ExecContext(ctx,
-			`INSERT INTO teams(run_id, name) VALUES (?, ?)`, runID, name)
+			`INSERT INTO teams(run_id, name, token) VALUES (?, ?, lower(hex(randomblob(18))))`,
+			runID, name)
 		if err != nil {
 			// Roll back on best-effort — nothing hands out partial state.
 			_, _ = s.db.ExecContext(ctx, `DELETE FROM adventure_runs WHERE id = ?`, runID)
