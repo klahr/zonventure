@@ -172,6 +172,42 @@
   .welcome ul { padding-left: 1.1rem; margin: 1rem 0; }
   .welcome li { margin: .35rem 0; }
   .welcome .cta { margin-top: 1rem; }
+  .welcome .cta button[disabled] {
+    background: var(--surface-2); color: var(--muted);
+    cursor: not-allowed; box-shadow: none;
+    font-variant-numeric: tabular-nums;
+  }
+  .welcome .cta button[disabled]:hover { background: var(--surface-2); }
+
+  /* Pre-start card for the main view (shown once the welcome has been
+     dismissed but the run still isn't running). Same countdown idea as
+     the welcome button — players can't reach the first puzzle until the
+     scheduled time; server enforces this too. */
+  .prestart-card {
+    background: var(--surface);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 2rem 1.25rem;
+    margin: 1.5rem auto;
+    text-align: center;
+    max-width: 420px;
+  }
+  .prestart-card .banner {
+    color: var(--muted); font-weight: 700;
+    text-transform: uppercase; letter-spacing: .12em; font-size: .8rem;
+    margin-bottom: .75rem;
+  }
+  .prestart-card .digits {
+    font-family: var(--font-brand); color: var(--accent);
+    font-size: clamp(2.4rem, 10vw, 3.6rem);
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+  }
+  .prestart-card small {
+    display: block; color: var(--muted); font-size: .8rem;
+    margin-top: .6rem;
+  }
 
   /* ---------- Completion stats ---------- */
   .summary {
@@ -614,7 +650,7 @@ function render(s) {
   // Welcome screen shown once per (adventure, team, slot).
   maybeShowWelcome(s);
 
-  if (s.status === 'waiting')  { hideSubmitDock(); app.append(el('p', {}, t('Waiting for the adventure to start…'))); return; }
+  if (s.status === 'waiting')  { hideSubmitDock(); app.append(buildWaitingCard(s)); return; }
   if (s.status === 'paused')   { hideSubmitDock(); app.append(el('p', {}, t('The arranger paused the run. Stand by.'))); return; }
   if (s.status === 'completed'){ hideSubmitDock(); renderCompleted(s); return; }
 
@@ -912,6 +948,21 @@ function showWelcomeDialog(s, opts = {}) {
     overlay.remove();
   };
 
+  // Pre-start lock: while the run is scheduled and the clock hasn't
+  // reached scheduled_at, the Let's go button shows a live countdown
+  // and is disabled. Server enforces the lock independently — even if
+  // the client is tampered with, the state endpoint refuses to leak
+  // puzzle content until the scheduler (or the lazy promote in
+  // buildState) flips the run to running.
+  const locked = s.status === 'waiting' && !!s.scheduled_at;
+  const cta = document.createElement('button');
+  cta.textContent = locked ? preStartCountdownText(s.scheduled_at, s.server_now) : t("Let's go");
+  if (locked) cta.disabled = true;
+  cta.addEventListener('click', () => {
+    if (cta.disabled) return;
+    dismiss();
+  });
+
   const overlay = el('div', { class: 'welcome' });
   const panel = el('div', { class: 'panel' });
   panel.append(
@@ -927,11 +978,83 @@ function showWelcomeDialog(s, opts = {}) {
       el('li', {}, t('The submit button is always in the same spot at the bottom of the screen.')),
       el('li', {}, t('Whoever in your team has this link installed can type answers — pick one phone and keep it handy.')),
       el('li', {}, t('Wrong answers don\'t cost you anything — keep trying.'))),
-    el('div', { class: 'cta' },
-      el('button', { on: { click: dismiss } }, t('Let\'s go'))));
+    el('div', { class: 'cta' }, cta));
   overlay.append(panel);
-  overlay.addEventListener('click', (e) => { if (e.target === overlay) dismiss(); });
+  // While locked, skip the backdrop-dismiss shortcut so players can't
+  // accidentally blow past the countdown. Still allow it after unlock.
+  overlay.addEventListener('click', (e) => {
+    if (cta.disabled) return;
+    if (e.target === overlay) dismiss();
+  });
   document.body.append(overlay);
+
+  // Tick the countdown once per second. Stops itself when the button
+  // unlocks or the overlay is removed.
+  if (locked) {
+    const target = parsePreStartTarget(s.scheduled_at);
+    const tick = () => {
+      if (!overlay.isConnected) return;
+      const now = Date.now();
+      if (now >= target) {
+        cta.disabled = false;
+        cta.textContent = t("Let's go");
+        return;
+      }
+      cta.textContent = preStartCountdownText(s.scheduled_at, null);
+      setTimeout(tick, 1000);
+    };
+    setTimeout(tick, 1000);
+  }
+}
+
+// buildWaitingCard renders the main-content view for a scheduled run.
+// If we know the start time it ticks down in-place; otherwise it
+// shows the softer "waiting for the arranger" copy.
+function buildWaitingCard(s) {
+  const card = el('div', { class: 'prestart-card' });
+  card.append(el('div', { class: 'banner' }, t('Starting soon')));
+  if (s.scheduled_at) {
+    const digits = el('div', { class: 'digits' },
+      preStartCountdownText(s.scheduled_at, s.server_now));
+    card.append(digits, el('small', {}, t('until the flag drops')));
+    // Self-refreshing countdown — stops when the card leaves the DOM.
+    const target = parsePreStartTarget(s.scheduled_at);
+    const tick = () => {
+      if (!digits.isConnected) return;
+      const now = Date.now();
+      if (now >= target) {
+        digits.textContent = t('any moment…');
+        return;
+      }
+      digits.textContent = preStartCountdownText(s.scheduled_at, null);
+      setTimeout(tick, 1000);
+    };
+    setTimeout(tick, 1000);
+  } else {
+    card.append(el('div', { class: 'digits' }, '—'),
+      el('small', {}, t('waiting for the arranger')));
+  }
+  return card;
+}
+
+function parsePreStartTarget(scheduledISO) {
+  const d = new Date(scheduledISO.includes('T') ? scheduledISO : scheduledISO.replace(' ', 'T') + 'Z');
+  return Number.isNaN(d.getTime()) ? 0 : d.getTime();
+}
+
+function preStartCountdownText(scheduledISO, serverNowISO) {
+  const target = parsePreStartTarget(scheduledISO);
+  const now = serverNowISO ? new Date(serverNowISO).getTime() : Date.now();
+  const sec = Math.round((target - now) / 1000);
+  if (sec <= 0) return t('any moment…');
+  const d = Math.floor(sec / 86400);
+  const h = Math.floor((sec % 86400) / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = sec % 60;
+  const pad = (n) => String(n).padStart(2, '0');
+  if (d > 0) return `${d}d ${pad(h)}:${pad(m)}:${pad(s)}`;
+  if (h > 0) return `${pad(h)}:${pad(m)}:${pad(s)}`;
+  return `${pad(m)}:${pad(s)}`;
 }
 
 // renderCompleted replaces the simple "Adventure complete!" line with a

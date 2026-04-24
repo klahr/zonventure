@@ -88,19 +88,56 @@ type teamContext struct {
 	RunID            int64
 	AdventureSlug    string
 	RunState         string
+	ScheduledAt      sql.NullString
+	StartedAt        sql.NullString
 	CurrentPageIndex int
 	CompletedAt      sql.NullString
+}
+
+// maybePromoteScheduled atomically flips a scheduled run to running
+// when its scheduled_at has arrived. Returns (true, nil) on a
+// successful promotion so the caller can carry on as if the run were
+// already running; a lost race (manual start, concurrent sweep) is
+// returned as (false, nil). The intent is to remove the "player
+// arrived at 00:00 but still waits 15 s for the scheduler" UX hiccup.
+func maybePromoteScheduled(ctx context.Context, db *sql.DB, hub *ws.Hub, runID int64, scheduledAt string) (bool, error) {
+	due, err := parsePlayTime(scheduledAt)
+	if err != nil {
+		return false, nil
+	}
+	if time.Now().UTC().Before(due) {
+		return false, nil
+	}
+	res, err := db.ExecContext(ctx, `
+		UPDATE adventure_runs
+		   SET state = 'running', started_at = datetime('now')
+		 WHERE id = ? AND state = 'scheduled'
+	`, runID)
+	if err != nil {
+		return false, err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return false, nil
+	}
+	runevents.Record(ctx, db, runID, nil, runevents.Actor{}, runevents.RunStarted,
+		map[string]any{"auto": true})
+	if hub != nil {
+		hub.Publish(ws.RunTopic(runID), "changed", nil)
+	}
+	return true, nil
 }
 
 func loadTeam(ctx context.Context, db *sql.DB, slot auth.Slot) (teamContext, error) {
 	var tc teamContext
 	err := db.QueryRowContext(ctx, `
 		SELECT t.id, t.name, ar.id, ar.adventure_slug, ar.state,
+		       ar.scheduled_at, ar.started_at,
 		       t.current_page_index, t.completed_at
 		FROM teams t JOIN adventure_runs ar ON ar.id = t.run_id
 		WHERE t.id = ?
 	`, slot.TeamID).Scan(&tc.TeamID, &tc.TeamName, &tc.RunID, &tc.AdventureSlug,
-		&tc.RunState, &tc.CurrentPageIndex, &tc.CompletedAt)
+		&tc.RunState, &tc.ScheduledAt, &tc.StartedAt,
+		&tc.CurrentPageIndex, &tc.CompletedAt)
 	return tc, err
 }
 
@@ -120,6 +157,10 @@ type State struct {
 	Images         []imageDTO        `json:"images,omitempty"`
 	Gate           *gateDTO          `json:"gate,omitempty"`
 	Colors         *adventure.Colors `json:"colors,omitempty"`
+	// ScheduledAt / ServerNow let the pre-start countdown tick against
+	// the server's clock. ScheduledAt is only set for scheduled runs.
+	ScheduledAt string `json:"scheduled_at,omitempty"`
+	ServerNow   string `json:"server_now,omitempty"`
 	// NoAnswer flags a puzzle whose accept list is empty — the player
 	// advances by tapping a button instead of submitting an answer.
 	// The client uses this to swap the submit dock for a Continue /
@@ -194,13 +235,28 @@ func (h *Handlers) buildState(ctx context.Context, slot auth.Slot) (State, int, 
 		c := adv.Colors
 		resp.Colors = &c
 	}
+	resp.ServerNow = time.Now().UTC().Format(time.RFC3339)
 	if tc.CompletedAt.Valid {
 		resp.Status = "completed"
 		return resp, http.StatusOK, ""
 	}
+	// Lazy auto-start: if a scheduled run's time has arrived, promote
+	// it to running right here so the player view doesn't have to wait
+	// up to 15 s for the scheduler sweep. The write is idempotent via
+	// the WHERE state = 'scheduled' guard — a concurrent sweep or
+	// manual start loses the race cleanly.
+	if tc.RunState == "scheduled" && tc.ScheduledAt.Valid {
+		if started, err := maybePromoteScheduled(ctx, h.DB, h.Hub, tc.RunID, tc.ScheduledAt.String); err == nil && started {
+			tc.RunState = "running"
+			tc.StartedAt = sql.NullString{String: time.Now().UTC().Format(time.RFC3339), Valid: true}
+		}
+	}
 	switch tc.RunState {
 	case "scheduled":
 		resp.Status = "waiting"
+		if tc.ScheduledAt.Valid {
+			resp.ScheduledAt = tc.ScheduledAt.String
+		}
 		return resp, http.StatusOK, ""
 	case "paused":
 		resp.Status = "paused"
@@ -252,6 +308,11 @@ func (h *Handlers) applyAdvance(ctx context.Context, slot auth.Slot) (AnswerResp
 	tc, err := loadTeam(ctx, h.DB, slot)
 	if err != nil {
 		return AnswerResponse{}, 0, http.StatusInternalServerError, "lookup failed"
+	}
+	if tc.RunState == "scheduled" && tc.ScheduledAt.Valid {
+		if started, _ := maybePromoteScheduled(ctx, h.DB, h.Hub, tc.RunID, tc.ScheduledAt.String); started {
+			tc.RunState = "running"
+		}
 	}
 	if tc.RunState != "running" {
 		return AnswerResponse{}, tc.RunID, http.StatusConflict, "run is not active"
@@ -363,6 +424,13 @@ func (h *Handlers) applyAnswer(ctx context.Context, slot auth.Slot, answer strin
 	tc, err := loadTeam(ctx, h.DB, slot)
 	if err != nil {
 		return AnswerResponse{}, 0, http.StatusInternalServerError, "lookup failed"
+	}
+	// Same lazy-promote as buildState — don't make the player wait on
+	// the scheduler sweep if they click at the stroke of 0.
+	if tc.RunState == "scheduled" && tc.ScheduledAt.Valid {
+		if started, _ := maybePromoteScheduled(ctx, h.DB, h.Hub, tc.RunID, tc.ScheduledAt.String); started {
+			tc.RunState = "running"
+		}
 	}
 	if tc.RunState != "running" {
 		return AnswerResponse{}, tc.RunID, http.StatusConflict, "run is not active"

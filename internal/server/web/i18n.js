@@ -684,6 +684,7 @@
       'waiting for the arranger': 'väntar på arrangören',
       'Scheduled for {{when}}': 'Planerad till {{when}}',
       'any moment…': 'när som helst…',
+      'Go!': 'Kör igång!',
       "We're live!": 'Nu kör vi!',
       'Teams are on the move': 'Lagen är igång',
     },

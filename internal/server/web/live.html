@@ -783,7 +783,10 @@ function countdownText(scheduledISO, serverNowISO) {
   const when = new Date(scheduledISO.includes('T') ? scheduledISO : scheduledISO.replace(' ', 'T') + 'Z');
   const now = serverNowISO ? new Date(serverNowISO) : new Date();
   const sec = Math.round((when.getTime() - now.getTime()) / 1000);
-  if (sec <= 0) return t('any moment…');
+  // Flip to a big "Go!" the instant the scheduled time lands. The
+  // actual state transition may lag a moment (scheduler sweep / WS
+  // push), so this gives the TV audience an immediate beat.
+  if (sec <= 0) return t('Go!');
   const d = Math.floor(sec / 86400);
   const h = Math.floor((sec % 86400) / 3600);
   const m = Math.floor((sec % 3600) / 60);
