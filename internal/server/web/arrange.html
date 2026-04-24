@@ -2174,19 +2174,20 @@ async function scheduleRun(source) {
     : { adventure_slug: source.slug };
   const body = await modal(t('New run'), ({ body, close }) => {
     const name = h('input', { placeholder: t('e.g. “Saturday Andersson party”') });
-    // Two primary options, "Start now" first because the common case
-    // is "I bought this because I want to play right now".
-    const modeNow = h('input', { type: 'radio', name: 'mode', value: 'now', checked: true });
+    // A newly created run stays scheduled until the arranger explicitly
+    // hits Start on the run page — auto-starting on create robbed the
+    // arranger of the chance to add teams and share links first.
+    const modeManual = h('input', { type: 'radio', name: 'mode', value: 'manual', checked: true });
     const modeLater = h('input', { type: 'radio', name: 'mode', value: 'later' });
     const when = h('input', { type: 'datetime-local', disabled: '' });
     const refresh = () => { when.disabled = !modeLater.checked; };
-    modeNow.addEventListener('change', refresh);
+    modeManual.addEventListener('change', refresh);
     modeLater.addEventListener('change', refresh);
 
     const form = h('form', {},
       h('label', { class: 'field' }, h('span', {}, t('Name (optional)')), name),
       h('label', { style: 'display:flex; gap:.5rem; align-items:center; margin:.5rem 0' },
-        modeNow, h('span', {}, t('Start now'))),
+        modeManual, h('span', {}, t('Start manually — I\'ll hit Start when we\'re ready'))),
       h('label', { style: 'display:flex; gap:.5rem; align-items:center; margin:.5rem 0' },
         modeLater, h('span', {}, t('Schedule for later'))),
       h('label', { class: 'field' }, h('span', {}, t('Auto-start at')), when),
@@ -2203,7 +2204,7 @@ async function scheduleRun(source) {
         if (Number.isNaN(d.getTime())) { toastErr(t('Bad date')); return; }
         req.scheduled_at = d.toISOString();
       }
-      close({ req, startNow: modeNow.checked });
+      close({ req });
     });
     body.append(form);
   });
@@ -2211,12 +2212,6 @@ async function scheduleRun(source) {
   const r = await api('/api/admin/runs', { method: 'POST', body: JSON.stringify(body.req) });
   if (r.status !== 201) { toastErr(r.body?.error || t('error {{status}}', { status: r.status })); return; }
   const runID = r.body.id;
-  if (body.startNow) {
-    const sr = await api('/api/admin/runs/' + runID + '/start', { method: 'POST' });
-    if (sr.status !== 204 && sr.status !== 200) {
-      toastErr(sr.body?.error || t('error {{status}}', { status: sr.status }));
-    }
-  }
   toastOk(t('Run ready'));
   nav('#runs/' + runID);
 }
@@ -2288,11 +2283,14 @@ async function openNewEventWizard() {
     refreshAssignment();
 
     // ---- 3. When ----
-    const modeNow   = h('input', { type: 'radio', name: 'ev-mode', value: 'now', checked: true });
-    const modeLater = h('input', { type: 'radio', name: 'ev-mode', value: 'later' });
-    const whenInput = h('input', { type: 'datetime-local', disabled: '' });
+    // The default is manual start: the wizard leaves the run in
+    // scheduled state so the arranger can share links and add teams
+    // before tapping Start on the run page.
+    const modeManual = h('input', { type: 'radio', name: 'ev-mode', value: 'manual', checked: true });
+    const modeLater  = h('input', { type: 'radio', name: 'ev-mode', value: 'later' });
+    const whenInput  = h('input', { type: 'datetime-local', disabled: '' });
     const toggleWhen = () => { whenInput.disabled = !modeLater.checked; };
-    modeNow.addEventListener('change', toggleWhen);
+    modeManual.addEventListener('change', toggleWhen);
     modeLater.addEventListener('change', toggleWhen);
     const nameInput = h('input', { placeholder: t('e.g. “Saturday Andersson party”') });
 
@@ -2310,7 +2308,7 @@ async function openNewEventWizard() {
       capacitySection,
       h('h3', {}, t('When')),
       h('label', { style: 'display:flex; gap:.5rem; align-items:center; margin:.25rem 0' },
-        modeNow, h('span', {}, t('Start now'))),
+        modeManual, h('span', {}, t('Start manually — I\'ll hit Start when we\'re ready'))),
       h('label', { style: 'display:flex; gap:.5rem; align-items:center; margin:.25rem 0' },
         modeLater, h('span', {}, t('Schedule for later'))),
       h('label', { class: 'field' }, h('span', {}, t('Auto-start at')), whenInput),
@@ -2366,9 +2364,6 @@ async function openNewEventWizard() {
             method: 'POST',
             body: JSON.stringify({ name: `${tp} ${i}`, member_names: members }),
           });
-        }
-        if (modeNow.checked) {
-          await api('/api/admin/runs/' + runID + '/start', { method: 'POST' });
         }
         toastOk(t('Event ready'));
         close(true);
@@ -6238,10 +6233,7 @@ async function viewMembers(view) {
             h('td', {}, h('span', { class: 'pill' }, m.role === 'org_admin' ? t('admin') : t('member'))),
             h('td', {}, h('div', { class: 'row end' },
               state.me.id === m.id
-                ? h('button', {
-                    class: 'btn icon small', type: 'button', disabled: '',
-                    title: t("You can't remove yourself"), 'aria-label': t("You can't remove yourself"),
-                  }, icon(ICONS.trash))
+                ? null
                 : iconBtn('trash', t('Remove'), () => confirmRemoveOrgMember(org, m), { danger: true }))),
           ))))),
   );
