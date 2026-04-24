@@ -73,14 +73,19 @@ func (h *Handlers) AdventureDetail(w http.ResponseWriter, r *http.Request) {
 	if !adv.Colors.Empty() {
 		out["colors"] = adv.Colors
 	}
-	// Tack on the cover picture URL if one is stored. Lib.Get doesn't
-	// carry the avatar blob, so hit the DB with a tiny probe.
-	var hasAvatar int
+	// Tack on the cover picture URL if one is stored, and the publish
+	// state. Lib.Get doesn't carry either, so hit the DB with a tiny probe.
+	var (
+		hasAvatar int
+		published int
+	)
 	_ = h.DB.QueryRowContext(r.Context(),
-		`SELECT avatar_mime_type IS NOT NULL FROM adventures WHERE slug = ?`, slug).Scan(&hasAvatar)
+		`SELECT avatar_mime_type IS NOT NULL, published FROM adventures WHERE slug = ?`,
+		slug).Scan(&hasAvatar, &published)
 	if hasAvatar != 0 {
 		out["avatar_url"] = adventureAvatarURL(slug)
 	}
+	out["published"] = published != 0
 	httpx.JSON(w, http.StatusOK, out)
 }
 

@@ -94,25 +94,51 @@ type adventureDTO struct {
 	OrgID       *int64 `json:"org_id,omitempty"`   // nil = admin-owned global catalog
 	MineToEdit  bool   `json:"mine_to_edit"`
 	AvatarURL   string `json:"avatar_url,omitempty"`
+	Published   bool   `json:"published"`
+	Shared      bool   `json:"shared"` // visible to caller via a commissioned share
 }
 
 // ListAdventures returns adventures visible to the caller. Admins see
-// everything; org users see admin-owned (global catalog) + their own.
-// The MineToEdit flag lets the UI split the list into "Editable by me"
-// and "Catalog (buy slots to run)" sections without a second query.
+// everything (incl. drafts); org users see their own org's adventures
+// + admin-owned entries that are either (a) published, (b) already
+// held via an assignment, or (c) commissioned to the org via a share.
+// The Store tab filters further to `!mine_to_edit && published`.
 func (h *Handlers) ListAdventures(w http.ResponseWriter, r *http.Request) {
 	me, _ := auth.FromContext(r.Context())
 
+	// `shared` is 1 when the caller reaches the row via an adventure_shares
+	// grant — the UI uses that to flag "commissioned by admin" on the card.
+	// For admins we return 0 uniformly (they reach every row unconditionally).
 	query := `
 		SELECT a.slug, a.title, a.description, a.author, a.org_id,
 		       (SELECT COUNT(*) FROM adventure_pages p WHERE p.adventure_id = a.id) AS page_count,
-		       a.avatar_mime_type IS NOT NULL AS has_avatar
-		FROM adventures a
+		       a.avatar_mime_type IS NOT NULL AS has_avatar,
+		       a.published,
 	`
 	var args []any
-	if !isAdmin(me) {
-		query += ` WHERE a.org_id IS NULL OR a.org_id = ?`
-		args = append(args, *me.OrgID)
+	if isAdmin(me) {
+		query += ` 0 AS shared FROM adventures a`
+	} else {
+		query += `
+		       EXISTS (
+		         SELECT 1 FROM adventure_shares s
+		         WHERE s.adventure_slug = a.slug AND s.org_id = ?
+		       ) AS shared
+		FROM adventures a
+		WHERE (
+		  a.org_id = ?
+		  OR (a.org_id IS NULL AND a.published = 1)
+		  OR EXISTS (
+		    SELECT 1 FROM adventure_assignments aa
+		    WHERE aa.adventure_slug = a.slug AND aa.org_id = ?
+		  )
+		  OR EXISTS (
+		    SELECT 1 FROM adventure_shares s
+		    WHERE s.adventure_slug = a.slug AND s.org_id = ?
+		  )
+		)
+		`
+		args = append(args, *me.OrgID, *me.OrgID, *me.OrgID, *me.OrgID)
 	}
 	query += ` ORDER BY a.slug`
 
@@ -128,8 +154,10 @@ func (h *Handlers) ListAdventures(w http.ResponseWriter, r *http.Request) {
 			d         adventureDTO
 			orgID     sql.NullInt64
 			hasAvatar int
+			published int
+			shared    int
 		)
-		if err := rows.Scan(&d.Slug, &d.Title, &d.Description, &d.Author, &orgID, &d.PageCount, &hasAvatar); err != nil {
+		if err := rows.Scan(&d.Slug, &d.Title, &d.Description, &d.Author, &orgID, &d.PageCount, &hasAvatar, &published, &shared); err != nil {
 			httpx.Error(w, http.StatusInternalServerError, "scan failed")
 			return
 		}
@@ -138,6 +166,8 @@ func (h *Handlers) ListAdventures(w http.ResponseWriter, r *http.Request) {
 			d.OrgID = &v
 		}
 		d.MineToEdit = canEditOwned(me, orgID)
+		d.Published = published != 0
+		d.Shared = shared != 0
 		if hasAvatar != 0 {
 			d.AvatarURL = adventureAvatarURL(d.Slug)
 		}
@@ -164,20 +194,27 @@ type runDTO struct {
 }
 
 type createRunRequest struct {
-	AssignmentID int64  `json:"assignment_id"`
-	ScheduledAt  string `json:"scheduled_at,omitempty"`
-	Name         string `json:"name,omitempty"`
+	AssignmentID  int64  `json:"assignment_id"`
+	AdventureSlug string `json:"adventure_slug,omitempty"`
+	ScheduledAt   string `json:"scheduled_at,omitempty"`
+	Name          string `json:"name,omitempty"`
 }
 
-// CreateRun consumes one of the caller organization's unused assignments
-// and schedules a run tied to it.
+// CreateRun schedules a run in one of two modes:
+//
+//  1. Assignment-backed: the caller holds an unused adventure_assignments
+//     row (from the Store purchase flow). `assignment_id` picks it, and
+//     the assignment is consumed on creation.
+//  2. Share-backed: an admin has commissioned the adventure for the
+//     caller's org via adventure_shares. `adventure_slug` names it, and
+//     no assignment is consumed — runs are effectively unlimited.
+//
+// Share-backed also covers the "org runs an adventure they author" case:
+// if the slug resolves to an adventure owned by the caller's org, run
+// creation is allowed without a share row.
 func (h *Handlers) CreateRun(w http.ResponseWriter, r *http.Request) {
 	var req createRunRequest
 	if !httpx.DecodeJSON(w, r, &req) {
-		return
-	}
-	if req.AssignmentID <= 0 {
-		httpx.Error(w, http.StatusBadRequest, "assignment_id required")
 		return
 	}
 	me, _ := auth.FromContext(r.Context())
@@ -186,35 +223,70 @@ func (h *Handlers) CreateRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate assignment: belongs to caller's org, still unused, slug known.
 	var (
-		slug     string
-		orgID    int64
-		maxTeams int
-		used     sql.NullInt64
+		slug          string
+		maxTeams      int
+		assignmentArg any // nil for share-backed, int64 for assignment-backed
 	)
-	err := h.DB.QueryRowContext(r.Context(), `
-		SELECT aa.adventure_slug, aa.org_id, aa.max_teams, ar.id
-		FROM adventure_assignments aa
-		LEFT JOIN adventure_runs ar ON ar.assignment_id = aa.id
-		WHERE aa.id = ?
-	`, req.AssignmentID).Scan(&slug, &orgID, &maxTeams, &used)
-	if errors.Is(err, sql.ErrNoRows) {
-		httpx.Error(w, http.StatusNotFound, "assignment not found")
+	if req.AssignmentID > 0 {
+		// Validate assignment: belongs to caller's org, still unused, slug known.
+		var (
+			advSlug string
+			orgID   int64
+			used    sql.NullInt64
+		)
+		err := h.DB.QueryRowContext(r.Context(), `
+			SELECT aa.adventure_slug, aa.org_id, aa.max_teams, ar.id
+			FROM adventure_assignments aa
+			LEFT JOIN adventure_runs ar ON ar.assignment_id = aa.id
+			WHERE aa.id = ?
+		`, req.AssignmentID).Scan(&advSlug, &orgID, &maxTeams, &used)
+		if errors.Is(err, sql.ErrNoRows) {
+			httpx.Error(w, http.StatusNotFound, "assignment not found")
+			return
+		}
+		if err != nil {
+			httpx.Error(w, http.StatusInternalServerError, "lookup failed")
+			return
+		}
+		if *me.OrgID != orgID {
+			httpx.Error(w, http.StatusForbidden, "that assignment is not yours")
+			return
+		}
+		if used.Valid {
+			httpx.Error(w, http.StatusConflict, "assignment already used")
+			return
+		}
+		slug = advSlug
+		assignmentArg = req.AssignmentID
+	} else if strings.TrimSpace(req.AdventureSlug) != "" {
+		slug = strings.TrimSpace(req.AdventureSlug)
+		// Confirm the caller has share or ownership access to this slug.
+		var ok int
+		if err := h.DB.QueryRowContext(r.Context(), `
+			SELECT EXISTS (
+			  SELECT 1 FROM adventures a
+			  WHERE a.slug = ? AND (
+			    a.org_id = ?
+			    OR EXISTS (
+			      SELECT 1 FROM adventure_shares s
+			      WHERE s.adventure_slug = a.slug AND s.org_id = ?
+			    )
+			  )
+			)
+		`, slug, *me.OrgID, *me.OrgID).Scan(&ok); err != nil {
+			httpx.Error(w, http.StatusInternalServerError, "lookup failed")
+			return
+		}
+		if ok == 0 {
+			httpx.Error(w, http.StatusForbidden, "no access to that adventure")
+			return
+		}
+	} else {
+		httpx.Error(w, http.StatusBadRequest, "assignment_id or adventure_slug required")
 		return
 	}
-	if err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "lookup failed")
-		return
-	}
-	if *me.OrgID != orgID {
-		httpx.Error(w, http.StatusForbidden, "that assignment is not yours")
-		return
-	}
-	if used.Valid {
-		httpx.Error(w, http.StatusConflict, "assignment already used")
-		return
-	}
+
 	if h.Lib.Get(slug) == nil {
 		httpx.Error(w, http.StatusInternalServerError, "adventure not loaded: "+slug)
 		return
@@ -238,7 +310,7 @@ func (h *Handlers) CreateRun(w http.ResponseWriter, r *http.Request) {
 	res, err := h.DB.ExecContext(r.Context(), `
 		INSERT INTO adventure_runs(adventure_slug, org_id, created_by_user_id, state, scheduled_at, assignment_id, live_token, name)
 		VALUES (?, ?, ?, 'scheduled', ?, ?, ?, ?)
-	`, slug, orgID, me.ID, schedAt, req.AssignmentID, liveToken, strings.TrimSpace(req.Name))
+	`, slug, *me.OrgID, me.ID, schedAt, assignmentArg, liveToken, strings.TrimSpace(req.Name))
 	if err != nil {
 		httpx.Error(w, http.StatusConflict, "could not create run: "+err.Error())
 		return
@@ -249,7 +321,7 @@ func (h *Handlers) CreateRun(w http.ResponseWriter, r *http.Request) {
 	h.Hub.Publish(ws.RunTopic(id), "changed", nil)
 	httpx.JSON(w, http.StatusCreated, runDTO{
 		ID: id, AdventureSlug: slug, State: "scheduled",
-		ScheduledAt: req.ScheduledAt, OrgID: orgID, CreatedByUserID: me.ID,
+		ScheduledAt: req.ScheduledAt, OrgID: *me.OrgID, CreatedByUserID: me.ID,
 		AssignmentID: req.AssignmentID, MaxTeams: maxTeams,
 		LiveToken: liveToken,
 	})

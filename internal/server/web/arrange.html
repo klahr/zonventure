@@ -11,6 +11,9 @@
   integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
 <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
   integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<link rel="stylesheet" href="https://unpkg.com/xterm@5.3.0/css/xterm.css">
+<script defer src="https://unpkg.com/xterm@5.3.0/lib/xterm.js"></script>
+<script defer src="https://unpkg.com/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
 <script src="/i18n.js"></script>
 <style>
 /* ---------- Theme (Zonventure palette) ---------- */
@@ -717,6 +720,29 @@ textarea { min-height: 80px; resize: vertical; font-family: ui-monospace, monosp
   pointer-events: none;
 }
 
+/* Server logs terminal. Fills the remaining height of the content
+   area and gets a subtle inset border so the dark xterm square looks
+   like a mounted console rather than a floating blob. */
+.zv-log-term {
+  height: calc(100vh - 18rem);
+  min-height: 320px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-soft);
+  padding: .35rem;
+  background: #0e1420;
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,.35);
+  overflow: hidden;
+}
+.zv-log-sel {
+  font: inherit; color: var(--text);
+  padding: .3rem .5rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  box-shadow: none; cursor: pointer;
+}
+.zv-log-sel:hover { border-color: var(--muted); }
+
 /* Dragging feedback: the pill being dragged dims, and the drop target
    grows a coloured edge on whichever side the cursor is closer to so
    arrangers see the exact insertion point (same affordance as Slides). */
@@ -949,6 +975,9 @@ const ICONS = {
   // notch biting in on the right edge. Drawn relative so the cubic
   // controls land outside the bounding box for a clear tab/notch.
   puzzle: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4 h5 c0 -3 6 -3 6 0 h5 v5 c-3 0 -3 6 0 6 v5 h-16 z"/></svg>',
+  // Terminal icon for the log viewer: rounded rect with a prompt caret
+  // and a cursor line — compact at 24×24.
+  terminal: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><polyline points="7 10 10 12 7 14"/><line x1="12" y1="15" x2="17" y2="15"/></svg>',
   pencil: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>',
   copy:   '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>',
   eye:    '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>',
@@ -1116,6 +1145,7 @@ function renderShell() {
       ['#library',       t('Adventures'),    ICONS.map],
       ['#puzzles',       t('Puzzles'),       ICONS.puzzle],
       ['#admins',        t('Admins'),        ICONS.user],
+      ['#logs',          t('Logs'),          ICONS.terminal],
     ];
   } else {
     // Order matches the mental model: where I am → what I can run →
@@ -1202,6 +1232,7 @@ function currentCrumb() {
     library:       t('Library'),
     puzzles:       t('Puzzles'),
     admins:        t('Admins'),
+    logs:          t('Logs'),
   };
   const sectionLabel = LABELS[section] || (section ? section[0].toUpperCase() + section.slice(1) : '');
   if (section === 'runs' && parts[1]) return t('{{section}} / Run #{{id}}', { section: sectionLabel, id: parts[1] });
@@ -1220,7 +1251,7 @@ async function renderRoute() {
   const isOrgAdmin = role === 'org_admin';
 
   // Role-based route guards: admins can't visit org-user pages and vice versa.
-  const adminOnly = ['organizations', 'admins'];
+  const adminOnly = ['organizations', 'admins', 'logs'];
   const orgUserOnly = ['adventures', 'runs', 'store'];
   if (isAdmin && orgUserOnly.includes(section)) { nav('#organizations'); return; }
   if (!isAdmin && adminOnly.includes(section))   { nav('#dashboard');     return; }
@@ -1248,6 +1279,7 @@ async function renderRoute() {
       case 'puzzles':      return arg ? await viewPuzzleEditRoute(view, arg) : await viewPuzzles(view);
       case 'purchases':    return await viewPurchases(view);
       case 'admins':       return await viewAdmins(view);
+      case 'logs':         return await viewLogs(view);
       default: view.replaceChildren(h('p', {}, t('Not found')));
     }
   } catch (err) {
@@ -1533,15 +1565,19 @@ async function viewAdventures(view) {
   }
 
   // An adventure shows up on this page only if there's something the
-  // arranger actually does with it — they author it, or they hold at
-  // least one assignment. Everything else lives in the Store.
+  // arranger actually does with it — they author it, they hold at
+  // least one assignment, or an admin has commissioned it for this
+  // org via a share. Everything else lives in the Store.
   const runnable = advs
-    .filter((a) => a.mine_to_edit || byAdv.has(a.slug))
+    .filter((a) => a.mine_to_edit || a.shared || byAdv.has(a.slug))
     .sort((a, b) => {
-      // Mine first, then with unused assignments, then remainder.
+      // Mine first, then with unused assignments, then shared, then remainder.
       const score = (adv) => {
         const bk = byAdv.get(adv.slug) || { unused: [], used: [] };
-        return (adv.mine_to_edit ? 4 : 0) + (bk.unused.length ? 2 : 0) + (bk.used.length ? 1 : 0);
+        return (adv.mine_to_edit ? 8 : 0)
+          + (bk.unused.length ? 4 : 0)
+          + (adv.shared ? 2 : 0)
+          + (bk.used.length ? 1 : 0);
       };
       return score(b) - score(a);
     });
@@ -1560,6 +1596,13 @@ async function viewAdventures(view) {
         class: 'btn primary',
         on: { click: () => pickAndScheduleRun(bucket.unused, adv) },
       }, icon(ICONS.play), t('Schedule run')));
+    } else if (adv.shared || (adv.mine_to_edit && adv.org_id)) {
+      // Commissioned by admin or authored in-house — either way the
+      // org can schedule runs freely, no assignment needed.
+      actions.append(h('button', {
+        class: 'btn primary',
+        on: { click: () => scheduleRun({ slug: adv.slug }) },
+      }, icon(ICONS.play), t('Schedule run')));
     } else if (adv.mine_to_edit) {
       // Own adventure with no unused assignments — offer the buy
       // path inline so "make this runnable" is one step away.
@@ -1574,6 +1617,12 @@ async function viewAdventures(view) {
         ? t('{{n}} puzzle', { n: adv.page_count })
         : t('{{n}} puzzles', { n: adv.page_count })),
       adv.mine_to_edit ? h('span', { class: 'pill accent' }, t('Yours')) : null,
+      adv.mine_to_edit
+        ? (adv.published
+            ? h('span', { class: 'pill success' }, t('Published'))
+            : h('span', { class: 'pill warning' }, t('Draft')))
+        : null,
+      !adv.mine_to_edit && adv.shared ? h('span', { class: 'pill accent' }, t('Shared')) : null,
       bucket.unused.length > 0
         ? h('span', { class: 'pill accent' }, bucket.unused.length === 1
             ? t('{{n}} assignment available', { n: bucket.unused.length })
@@ -1653,7 +1702,7 @@ async function pickAndScheduleRun(unusedAssignments, adv) {
 async function viewStore(view) {
   const r = await api('/api/admin/adventures');
   const advs = r.body?.adventures || [];
-  const catalog = advs.filter((a) => !a.mine_to_edit);
+  const catalog = advs.filter((a) => !a.mine_to_edit && a.published);
 
   view.replaceChildren(
     h('div', { class: 'row between' },
@@ -1836,7 +1885,14 @@ async function viewAdventureDetail(view, slug) {
   );
 }
 
-async function scheduleRun(assignmentID) {
+async function scheduleRun(source) {
+  // `source` is either a number (assignment id — the Store purchase flow)
+  // or an object with `{ slug }` — an admin-commissioned share or the
+  // org's own-authored adventure, both of which skip the assignment and
+  // run free.
+  const baseReq = typeof source === 'number'
+    ? { assignment_id: source }
+    : { adventure_slug: source.slug };
   const body = await modal(t('New run'), ({ body, close }) => {
     const name = h('input', { placeholder: t('e.g. “Saturday Andersson party”') });
     // Two primary options, "Start now" first because the common case
@@ -1861,7 +1917,7 @@ async function scheduleRun(assignmentID) {
     );
     form.addEventListener('submit', (e) => {
       e.preventDefault();
-      const req = { assignment_id: assignmentID, name: name.value.trim() };
+      const req = { ...baseReq, name: name.value.trim() };
       if (modeLater.checked) {
         if (!when.value) { toastErr(t('Pick an auto-start time')); return; }
         const d = new Date(when.value);
@@ -3607,7 +3663,11 @@ async function viewLibrary(view) {
             h('div', { class: 'row', style: 'gap:.75rem; align-items:center; min-width:0' },
               adventureCover(a, 56),
               h('h2', { style: 'margin:0' }, a.title)),
-            h('span', { class: 'pill accent' }, t('{{n}} puzzles', { n: a.page_count }))),
+            h('div', { class: 'row', style: 'gap:.35rem; flex-wrap:wrap' },
+              a.published
+                ? h('span', { class: 'pill success' }, t('Published'))
+                : h('span', { class: 'pill warning' }, t('Draft')),
+              h('span', { class: 'pill accent' }, t('{{n}} puzzles', { n: a.page_count })))),
           a.description ? h('p', { class: 'muted' }, a.description) : null,
           h('p', { class: 'muted mono' }, a.slug)))),
   );
@@ -3706,16 +3766,30 @@ function renderLibraryEdit(view, adv) {
     h('div', { class: 'row between', style: 'gap:.75rem; align-items:flex-start' },
       h('div', { class: 'row', style: 'gap:1rem; align-items:center; min-width:0' },
         adventureCover(adv, 80),
-        h('h1', { style: 'margin:0' }, adv.title)),
+        h('div', { style: 'min-width:0' },
+          h('h1', { style: 'margin:0' }, adv.title),
+          adv.published === false
+            ? h('span', { class: 'pill warning', style: 'margin-top:.35rem' }, t('Draft'))
+            : h('span', { class: 'pill success', style: 'margin-top:.35rem' }, t('Published')))),
       h('div', { class: 'card-actions' },
         hasEnabled
           ? iconBtn('eye',    t('Open the adventure in the player view'),
               () => previewAdventure(adv.slug, 0, false))
           : null,
+        adv.published
+          ? h('button', { class: 'btn small',
+              title: t('Hide from the Store'),
+              on: { click: () => togglePublished(adv, false) } },
+              t('Unpublish'))
+          : h('button', { class: 'btn small primary',
+              title: t('Make available in the Store'),
+              on: { click: () => togglePublished(adv, true) } },
+              t('Publish')),
         iconBtn('pencil', t('Edit title/slug/colours'), () => openEditAdventureMeta(adv)),
         iconBtn('trash',  t('Delete adventure'),        () => confirmDeleteAdventure(adv), { danger: true }))),
     h('p', { class: 'muted mono' }, adv.slug, adv.author ? ` · ${adv.author}` : ''),
     adv.description ? h('p', { class: 'muted' }, adv.description) : null,
+    state.me.role === 'admin' ? renderAdventureShares(adv) : null,
     h('div', { class: 'row between', style: 'margin-top:1rem' },
       h('h2', {}, t('Puzzles ({{n}})', { n: adv.pages.length })),
       h('div', { class: 'row' },
@@ -3727,6 +3801,109 @@ function renderLibraryEdit(view, adv) {
       ? h('div', { class: 'empty' }, t('No puzzles yet.'))
       : h('div', {}, cards),
   );
+}
+
+// togglePublished flips the adventure's published flag and re-renders
+// the library edit view so the pill and CTA label swap. Only Store
+// visibility is affected — owned adventures stay in Adventures either
+// way, so arrangers can iterate on drafts without losing access.
+async function togglePublished(adv, next) {
+  const r = await api(`/api/admin/adventures/${encodeURIComponent(adv.slug)}`, {
+    method: 'PATCH', body: JSON.stringify({ published: next }),
+  });
+  if (r.status === 204) {
+    adv.published = next;
+    toastOk(next ? t('Published') : t('Unpublished'));
+    renderRoute();
+  } else {
+    toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+  }
+}
+
+// renderAdventureShares is the admin-only "commissioned for" section on
+// the library edit page. Each share row is a chip with a remove button;
+// the + button opens an org picker. A share gives the target org a
+// free, uncapped right to run this adventure (no assignment, no cost).
+function renderAdventureShares(adv) {
+  const shares = adv.shares || [];
+  return h('div', { class: 'card', style: 'margin-top:1rem' },
+    h('div', { class: 'row between', style: 'align-items:center' },
+      h('h2', { style: 'margin:0' }, t('Shared with organisations')),
+      h('button', { class: 'btn small primary',
+        on: { click: () => openShareAdventureModal(adv) } },
+        icon(ICONS.plus), t('Share with org'))),
+    h('p', { class: 'muted', style: 'margin:.35rem 0' },
+      t('Give specific organisations free access to this adventure without publishing it to the Store.')),
+    shares.length === 0
+      ? h('p', { class: 'muted' }, t('Not shared with any organisation yet.'))
+      : h('div', { class: 'row', style: 'gap:.4rem; flex-wrap:wrap' },
+          shares.map((s) => h('span', { class: 'chip',
+            style: 'display:inline-flex; align-items:center; gap:.35rem' },
+            s.org_name,
+            h('button', {
+              class: 'btn icon ghost small', type: 'button',
+              title: t('Revoke share'),
+              on: { click: () => revokeShare(adv, s) },
+            }, icon(ICONS.trash))))));
+}
+
+// openShareAdventureModal pops a picker over all orgs that don't
+// already hold a share for this adventure. Uses ListOrganizations
+// (admin-only), which is fine because share management is admin-only
+// anyway.
+async function openShareAdventureModal(adv) {
+  const r = await api('/api/admin/organizations');
+  if (!r.ok) { toastErr(r.body?.error || t('error {{status}}', { status: r.status })); return; }
+  const all = r.body?.organizations || [];
+  const already = new Set((adv.shares || []).map((s) => s.org_id));
+  const candidates = all.filter((o) => !already.has(o.id));
+  if (candidates.length === 0) {
+    toastErr(t('Every organisation already has access.'));
+    return;
+  }
+  const picked = await modal(t('Share with organisation'), ({ body, close }) => {
+    body.append(h('p', { class: 'muted' },
+      t('Pick one. The organisation can schedule runs of this adventure without buying team slots.')));
+    const list = h('div', { class: 'grid', style: 'gap:.35rem' });
+    for (const o of candidates) {
+      list.append(h('button', {
+        class: 'btn',
+        style: 'justify-content:flex-start; text-align:left',
+        on: { click: () => close(o.id) },
+      }, o.name));
+    }
+    body.append(list);
+    body.append(h('div', { class: 'row end', style: 'margin-top:1rem' },
+      h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, t('Cancel'))));
+  });
+  if (!picked) return;
+  const gr = await api(`/api/admin/adventures/${encodeURIComponent(adv.slug)}/shares`, {
+    method: 'POST', body: JSON.stringify({ org_id: picked }),
+  });
+  if (gr.status === 204) {
+    toastOk(t('Shared'));
+    // Reload so the new chip appears with org name + timestamp.
+    renderRoute();
+  } else {
+    toastErr(gr.body?.error || t('error {{status}}', { status: gr.status }));
+  }
+}
+
+async function revokeShare(adv, share) {
+  // Plain confirm: revoking is non-destructive (existing runs keep
+  // working, only future run creation is blocked), so the heavier
+  // promptPassword gate would be noise here.
+  if (!confirm(t('Revoke share with {{org}}? Existing runs keep working; new runs will be blocked.',
+    { org: share.org_name }))) return;
+  const r = await api(`/api/admin/adventures/${encodeURIComponent(adv.slug)}/shares/${share.org_id}`, {
+    method: 'DELETE',
+  });
+  if (r.status === 204) {
+    toastOk(t('Share revoked'));
+    renderRoute();
+  } else {
+    toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+  }
 }
 
 // previewAdventure opens the player view in a new tab pointed at the
@@ -4773,10 +4950,7 @@ async function viewAdmins(view) {
             h('td', {}, a.username, state.me.id === a.id ? h('span', { class: 'muted', style: 'margin-left:.35rem' }, t('(you)')) : null),
             h('td', {}, h('div', { class: 'row end' },
               state.me.username === a.username
-                ? h('button', {
-                    class: 'btn icon small', type: 'button', disabled: '',
-                    title: t("You can't delete yourself"), 'aria-label': t("You can't delete yourself"),
-                  }, icon(ICONS.trash))
+                ? null
                 : iconBtn('trash', t('Delete'), () => confirmDeleteAdmin(a), { danger: true }))),
           ))))),
   );
@@ -4815,6 +4989,222 @@ async function confirmDeleteAdmin(admin) {
   });
   if (r.status === 204) { toastOk(t('Admin deleted')); renderRoute(); }
   else toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+}
+
+/* ========== Server logs (admin only) ==========
+   xterm.js renders the stream, the server hands out each new Entry via
+   /ws/logs, and a small control row lets the admin pick a minimum
+   level + substring filter. Filter is client-side; level change hits
+   the server so dropped entries never enter the ring buffer. */
+async function viewLogs(view) {
+  // xterm may not be ready yet if the defer scripts are still loading —
+  // bail out with a polite retry.
+  if (typeof Terminal === 'undefined') {
+    view.replaceChildren(h('p', { class: 'muted' }, t('Loading terminal…')));
+    setTimeout(() => { if (location.hash.startsWith('#logs')) viewLogs(view); }, 200);
+    return;
+  }
+
+  const levels = ['DEBUG', 'INFO', 'WARN', 'ERROR'];
+  // State shared between the control row and the WS listener.
+  //
+  // buffer keeps every entry the client has seen (snapshot + live),
+  // bounded so long-running sessions don't blow up memory. passes(e)
+  // is the filter+level predicate; repaintAll() clears the terminal
+  // and replays the buffer through passes() — so changing the filter
+  // or the client-level dropdown reapplies retroactively to the lines
+  // already on screen, not just to new incoming entries.
+  const state = {
+    filter: '',
+    minLevel: 'DEBUG',  // client-side floor; the server has its own
+    paused: false,
+    ws: null,
+    lastSeq: 0,
+  };
+  const MAX_BUFFER = 5000;
+  const buffer = [];
+
+  const passes = (e) => {
+    if (levelRank(e.level) < levelRank(state.minLevel)) return false;
+    if (state.filter && !entryMatches(e, state.filter)) return false;
+    return true;
+  };
+  const repaintAll = () => {
+    term.reset();
+    for (const e of buffer) if (passes(e)) writeEntry(term, e);
+  };
+
+  // Controls ----------------------------------------------------------
+  const filterInput = h('input', {
+    type: 'search', placeholder: t('Filter (substring)'),
+    style: 'flex:1; min-width:10rem; box-shadow:none; border-color:var(--border-soft); margin:0',
+  });
+  filterInput.addEventListener('input', () => {
+    state.filter = filterInput.value.toLowerCase();
+    repaintAll();
+  });
+
+  const serverLevelSel = h('select', { class: 'zv-log-sel', title: t('Server log level') });
+  for (const l of levels) {
+    const opt = document.createElement('option');
+    opt.value = l; opt.textContent = l;
+    serverLevelSel.append(opt);
+  }
+  serverLevelSel.addEventListener('change', async () => {
+    const rr = await api('/api/admin/logs/level', {
+      method: 'PUT', body: JSON.stringify({ level: serverLevelSel.value }),
+    });
+    if (!rr.ok) toastErr(rr.body?.error || t('error {{status}}', { status: rr.status }));
+  });
+
+  const clientLevelSel = h('select', { class: 'zv-log-sel', title: t('Client-side minimum level') });
+  for (const l of levels) {
+    const opt = document.createElement('option');
+    opt.value = l; opt.textContent = l;
+    clientLevelSel.append(opt);
+  }
+  clientLevelSel.addEventListener('change', () => {
+    state.minLevel = clientLevelSel.value;
+    repaintAll();
+  });
+
+  const pauseBtn = h('button', { class: 'btn small', type: 'button' }, t('Pause'));
+  pauseBtn.addEventListener('click', () => {
+    state.paused = !state.paused;
+    pauseBtn.textContent = state.paused ? t('Resume') : t('Pause');
+  });
+  const clearBtn = h('button', { class: 'btn small', type: 'button' }, t('Clear'));
+
+  const controls = h('div', { class: 'row', style: 'gap:.5rem; flex-wrap:wrap; margin-bottom:.5rem; align-items:center' },
+    h('span', { class: 'muted', style: 'font-size:.75rem; text-transform:uppercase; letter-spacing:.06em; font-weight:700' },
+      t('Server level')),
+    serverLevelSel,
+    h('span', { class: 'muted', style: 'font-size:.75rem; text-transform:uppercase; letter-spacing:.06em; font-weight:700' },
+      t('Show')),
+    clientLevelSel,
+    filterInput, pauseBtn, clearBtn,
+  );
+
+  // Terminal ---------------------------------------------------------
+  const termHost = h('div', { class: 'zv-log-term' });
+  const term = new Terminal({
+    convertEol: true,
+    scrollback: 5000,
+    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+    fontSize: 13,
+    theme: {
+      background: '#0e1420',
+      foreground: '#d7dee8',
+      cursor: '#1f3349',
+      cursorAccent: '#0e1420',
+    },
+  });
+  // Fit addon may not be loaded if the CDN is down — guard the call.
+  let fit = null;
+  if (typeof FitAddon !== 'undefined' && FitAddon.FitAddon) {
+    fit = new FitAddon.FitAddon();
+    term.loadAddon(fit);
+  }
+
+  clearBtn.addEventListener('click', () => {
+    // Drop the buffer too so the next repaint doesn't resurrect the
+    // cleared output. New live entries will stream in fresh.
+    buffer.length = 0;
+    term.reset();
+  });
+
+  view.replaceChildren(h('h1', {}, t('Logs')), controls, termHost);
+
+  // Mount + size. xterm wants a non-zero container at open.
+  term.open(termHost);
+  requestAnimationFrame(() => { try { fit && fit.fit(); } catch {} });
+  const onResize = () => { try { fit && fit.fit(); } catch {} };
+  window.addEventListener('resize', onResize);
+
+  // ingest appends to the client buffer (bounded), and paints live
+  // when (a) not paused and (b) the entry passes the filter+level
+  // predicate. When the filter changes, repaintAll() replays buffer
+  // through passes() so the already-rendered lines re-align with the
+  // new filter.
+  const ingest = (e) => {
+    buffer.push(e);
+    if (buffer.length > MAX_BUFFER) buffer.splice(0, buffer.length - MAX_BUFFER);
+    state.lastSeq = Math.max(state.lastSeq, e.seq || 0);
+    if (state.paused) return;
+    if (passes(e)) writeEntry(term, e);
+  };
+
+  // Initial snapshot + live stream --------------------------------
+  const initial = await api('/api/admin/logs');
+  const serverLevel = initial.body?.level || 'INFO';
+  serverLevelSel.value = serverLevel;
+  clientLevelSel.value = 'DEBUG';
+  for (const e of (initial.body?.entries || [])) ingest(e);
+
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const sock = new WebSocket(`${proto}//${location.host}/ws/logs`);
+  state.ws = sock;
+  sock.onmessage = (ev) => {
+    let msg; try { msg = JSON.parse(ev.data); } catch { return; }
+    if (!msg || msg.kind !== 'entry') return;
+    const e = msg.data;
+    if (!e) return;
+    ingest(e);
+  };
+
+  // Tear down when the route changes so we don't keep WS open.
+  const cleanup = () => {
+    window.removeEventListener('resize', onResize);
+    try { sock.close(); } catch {}
+    try { term.dispose(); } catch {}
+    window.removeEventListener('hashchange', onHash);
+  };
+  const onHash = () => {
+    if (!location.hash.startsWith('#logs')) cleanup();
+  };
+  window.addEventListener('hashchange', onHash);
+}
+
+function levelRank(level) {
+  return { DEBUG: 0, INFO: 1, WARN: 2, ERROR: 3 }[String(level || 'INFO').toUpperCase()] ?? 1;
+}
+
+function entryMatches(e, needle) {
+  if ((e.msg || '').toLowerCase().includes(needle)) return true;
+  for (const a of (e.attrs || [])) {
+    if (String(a.k || '').toLowerCase().includes(needle)) return true;
+    if (String(a.v ?? '').toLowerCase().includes(needle)) return true;
+  }
+  return false;
+}
+
+// writeEntry paints a single log line in the xterm with ANSI colour
+// escapes driven by the entry's level.
+function writeEntry(term, e) {
+  const R = '\x1b[0m';
+  const dim = '\x1b[2m';
+  const levelColors = {
+    DEBUG: '\x1b[90m',          // gray
+    INFO:  '\x1b[36m',          // cyan
+    WARN:  '\x1b[33m',          // yellow
+    ERROR: '\x1b[1;31m',        // bold red
+  };
+  const lc = levelColors[(e.level || 'INFO').toUpperCase()] || '';
+  const ts = (e.ts || '').replace('T', ' ').replace(/\.\d+/, '').replace('Z', '');
+  let line = `${dim}${ts}${R} ${lc}${String(e.level || 'INFO').padEnd(5)}${R} ${e.msg || ''}`;
+  for (const a of (e.attrs || [])) {
+    line += ` ${dim}${a.k}${R}=${formatAttrValue(a.v)}`;
+  }
+  term.writeln(line);
+}
+
+function formatAttrValue(v) {
+  if (v === null || v === undefined) return '';
+  if (typeof v === 'string') {
+    if (/[\s="]/.test(v)) return JSON.stringify(v);
+    return v;
+  }
+  return String(v);
 }
 
 /* ========== Members (for org_admin of their own org) ========== */

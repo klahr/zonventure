@@ -60,6 +60,27 @@
       'Deleted': 'Borttagen',
       'deleted': 'borttagen',
       'Saved': 'Sparat',
+      'Publish': 'Publicera',
+      'Unpublish': 'Avpublicera',
+      'Published': 'Publicerad',
+      'Unpublished': 'Avpublicerad',
+      'Draft': 'Utkast',
+      'Hide from the Store': 'Dölj från butiken',
+      'Make available in the Store': 'Gör tillgänglig i butiken',
+      'Shared': 'Delat',
+      'Shared with organisations': 'Delat med organisationer',
+      'Give specific organisations free access to this adventure without publishing it to the Store.':
+        'Ge specifika organisationer fri åtkomst till detta äventyr utan att publicera det i butiken.',
+      'Not shared with any organisation yet.': 'Inte delat med någon organisation ännu.',
+      'Share with org': 'Dela med organisation',
+      'Share with organisation': 'Dela med organisation',
+      'Pick one. The organisation can schedule runs of this adventure without buying team slots.':
+        'Välj en. Organisationen kan schemalägga omgångar av detta äventyr utan att köpa lagplatser.',
+      'Revoke share': 'Återkalla delning',
+      'Every organisation already has access.': 'Alla organisationer har redan åtkomst.',
+      'Revoke share with {{org}}? Existing runs keep working; new runs will be blocked.':
+        'Återkalla delning med {{org}}? Pågående omgångar fortsätter, men nya omgångar blockeras.',
+      'Share revoked': 'Delning återkallad',
       'Assign': 'Tilldela',
       'Revoke': 'Återkalla',
       'Manage': 'Hantera',
@@ -678,6 +699,15 @@
       // ---- no-answer puzzles ----
       'Continue': 'Fortsätt',
       "Check location · I'm here": 'Kontrollera plats · Jag är här',
+      // ---- server logs ----
+      // Note: 'Pause' / 'Resume' / 'Clear' / 'Show' are already
+      // translated above for the run lifecycle / modal controls.
+      'Logs': 'Loggar',
+      'Loading terminal…': 'Läser in terminal…',
+      'Filter (substring)': 'Filter (delsträng)',
+      'Server log level': 'Loggnivå på servern',
+      'Client-side minimum level': 'Minsta loggnivå i klienten',
+      'Server level': 'Servernivå',
       // ---- live countdown + start animation ----
       'Starting soon': 'Börjar snart',
       'until the flag drops': 'tills starten',

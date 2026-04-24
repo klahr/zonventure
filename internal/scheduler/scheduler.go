@@ -7,9 +7,9 @@ package scheduler
 import (
 	"context"
 	"database/sql"
-	"log"
 	"time"
 
+	"git.sr.ht/~klahr/zv/internal/logx"
 	"git.sr.ht/~klahr/zv/internal/runevents"
 	"git.sr.ht/~klahr/zv/internal/ws"
 )
@@ -48,7 +48,7 @@ func tick(ctx context.Context, db *sql.DB, hub *ws.Hub) {
 		  AND datetime(scheduled_at) <= datetime('now')
 	`)
 	if err != nil {
-		log.Printf("scheduler: query: %v", err)
+		logx.Error("scheduler.query", "err", err)
 		return
 	}
 	type due struct{ id, actor int64 }
@@ -57,7 +57,7 @@ func tick(ctx context.Context, db *sql.DB, hub *ws.Hub) {
 		var d due
 		if err := rows.Scan(&d.id, &d.actor); err != nil {
 			rows.Close()
-			log.Printf("scheduler: scan: %v", err)
+			logx.Error("scheduler.scan", "err", err)
 			return
 		}
 		runs = append(runs, d)
@@ -70,7 +70,7 @@ func tick(ctx context.Context, db *sql.DB, hub *ws.Hub) {
 			WHERE id = ? AND state = 'scheduled'
 		`, d.id)
 		if err != nil {
-			log.Printf("scheduler: start run %d: %v", d.id, err)
+			logx.Error("scheduler.start", "run_id", d.id, "err", err)
 			continue
 		}
 		if n, _ := res.RowsAffected(); n == 0 {
@@ -83,6 +83,6 @@ func tick(ctx context.Context, db *sql.DB, hub *ws.Hub) {
 		runevents.Record(ctx, db, d.id, nil, actor, runevents.RunStarted,
 			map[string]any{"auto": true})
 		hub.Publish(ws.RunTopic(d.id), "changed", nil)
-		log.Printf("scheduler: auto-started run #%d", d.id)
+		logx.Info("scheduler.auto_started", "run_id", d.id)
 	}
 }

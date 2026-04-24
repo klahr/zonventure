@@ -191,6 +191,9 @@ func New(cfg Config) http.Handler {
 		r.Delete("/adventures/{slug}", adminH.DeleteAdventure)
 		r.Post("/adventures/{slug}/avatar", adminH.SetAdventureAvatar)
 		r.Delete("/adventures/{slug}/avatar", adminH.DeleteAdventureAvatar)
+		r.Get("/adventures/{slug}/shares", adminH.ListAdventureShares)
+		r.Post("/adventures/{slug}/shares", adminH.GrantAdventureShare)
+		r.Delete("/adventures/{slug}/shares/{orgID}", adminH.RevokeAdventureShare)
 		r.Post("/adventures/{slug}/pages", adminH.CreatePage)
 		r.Patch("/adventures/{slug}/pages/reorder", adminH.ReorderPages)
 		r.Post("/adventures/{slug}/pages/copy-from/{pageID}", adminH.CopyPuzzleToAdventure)
@@ -226,7 +229,20 @@ func New(cfg Config) http.Handler {
 			r.Get("/admins", adminH.ListAdmins)
 			r.Post("/admins", adminH.CreateAdmin)
 			r.Delete("/admins/{userID}", adminH.DeleteAdmin)
+
+			// Server logs — stream + level control. Admin-only so org
+			// users can't snoop another org's messages.
+			r.Get("/logs", adminH.ListLogs)
+			r.Get("/logs/level", adminH.LogsLevel)
+			r.Put("/logs/level", adminH.SetLogsLevel)
 		})
+	})
+
+	// Log stream socket. Lives outside the /api/admin route tree so it
+	// can use the WS auth path the other sockets do. Admin-only.
+	r.Group(func(r chi.Router) {
+		r.Use(auth.RequireRole(auth.RoleAdmin))
+		r.Get("/ws/logs", adminH.WSLogs)
 	})
 
 	// The simulated-checkout HTML page. Lives outside /api/admin so the

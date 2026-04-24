@@ -16,6 +16,7 @@ import (
 	"git.sr.ht/~klahr/zv/internal/adventure"
 	"git.sr.ht/~klahr/zv/internal/auth"
 	"git.sr.ht/~klahr/zv/internal/db"
+	"git.sr.ht/~klahr/zv/internal/logx"
 	"git.sr.ht/~klahr/zv/internal/scheduler"
 	"git.sr.ht/~klahr/zv/internal/server"
 	"git.sr.ht/~klahr/zv/internal/ws"
@@ -26,12 +27,14 @@ func main() {
 		addr              = flag.String("addr", ":8080", "listen address")
 		dbPath            = flag.String("db", "zv.db", "sqlite database path")
 		secureCookie      = flag.Bool("secure-cookie", false, "set Secure flag on session cookies (enable behind TLS)")
+		logLevel          = flag.String("log-level", "INFO", "initial log level (DEBUG|INFO|WARN|ERROR)")
 		seedAdmin         = flag.String("seed-admin", "", "if set, create/update a global admin as username:password")
 		seedArranger      = flag.String("seed-arranger", "", "if set, create/update an org_admin arranger as username:password in the default Arrangers org")
 		seedDemoAdvFlag   = flag.Bool("seed-demo-adventure", false, "install the demo adventure (puzzles + placeholder images)")
 		seedDemoFlag      = flag.Bool("seed-demo", false, "install a full demo dataset and exit")
 	)
 	flag.Parse()
+	logx.SetLevel(logx.ParseLevel(*logLevel))
 
 	sqlDB, err := db.Open(*dbPath)
 	if err != nil {
@@ -76,7 +79,7 @@ func main() {
 	}
 
 	lib := adventure.New(sqlDB)
-	log.Printf("%d adventure(s) in the database", len(lib.List()))
+	logx.Info("adventure.library.loaded", "count", len(lib.List()))
 
 	hub := ws.NewHub()
 	h := server.New(server.Config{
@@ -99,18 +102,18 @@ func main() {
 	scheduler.Start(ctx, sqlDB, hub, 15*time.Second)
 
 	go func() {
-		log.Printf("listening on %s", *addr)
+		logx.Info("http.listening", "addr", *addr)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Fatalf("serve: %v", err)
 		}
 	}()
 
 	<-ctx.Done()
-	log.Printf("shutting down")
+	logx.Info("http.shutdown")
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil {
-		log.Printf("shutdown: %v", err)
+		logx.Error("http.shutdown.failed", "err", err)
 	}
 }
 
