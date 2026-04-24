@@ -6,6 +6,7 @@ import (
 
 	"git.sr.ht/~klahr/zv/internal/adventure"
 	"git.sr.ht/~klahr/zv/internal/httpx"
+	"git.sr.ht/~klahr/zv/internal/mdx"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -89,9 +90,13 @@ func (h *Handlers) PreviewAdventure(w http.ResponseWriter, r *http.Request) {
 		PageIndex:      idx,
 		PageCount:      len(pages),
 		Title:          page.Title,
-		Prompt:         page.Prompt,
-		Hint:           page.Hint,
-		Preview:        true,
+		// Match the player flow: run the prose through goldmark on
+		// egress so the preview reads exactly like /play will. The raw
+		// markdown stays in the debug panel (accept/notes) for authors
+		// who need to see it verbatim.
+		Prompt:  mdx.Render(page.Prompt),
+		Hint:    mdx.Render(page.Hint),
+		Preview: true,
 	}
 	if !adv.Colors.Empty() {
 		c := adv.Colors
