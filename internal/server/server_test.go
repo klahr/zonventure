@@ -263,17 +263,21 @@ func TestFullFlow(t *testing.T) {
 		t.Fatalf("right answer rejected")
 	}
 
-	// Before any ping, page 1 is gated: no prompt ships.
+	// Before any ping, page 1 is gated — but the prompt and gate info
+	// are both visible so the team can read the puzzle while they walk
+	// there. Arrival is the prerequisite for answering, not for seeing
+	// the content.
 	state.Prompt = ""
 	state.Gate = nil
 	if s := alice.do("GET", "/api/player/state", nil, &state); s != 200 {
 		t.Fatalf("get state gated = %d", s)
 	}
-	if state.Status != "gated" || state.Prompt != "" || state.Gate == nil || state.Gate.Reached {
-		t.Fatalf("expected gated with no prompt, got %+v", state)
+	if state.Status != "running" || state.Prompt == "" || state.Gate == nil || state.Gate.Reached {
+		t.Fatalf("expected running with prompt and unreached gate, got %+v", state)
 	}
 
-	// Submitting the page-1 answer while still gated is refused.
+	// Submitting the page-1 answer while still gated is refused — the
+	// content being visible doesn't mean the answer counts yet.
 	if s := alice.do("POST", "/api/player/answer", map[string]string{"answer": "blue"}, &answerResp); s != 403 {
 		t.Fatalf("gated answer = %d, want 403", s)
 	}

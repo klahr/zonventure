@@ -437,6 +437,11 @@ if (app.hasAttribute('data-initial-loading')) app.textContent = t('loading…');
 let gpsWatchID = null;
 let pingTimer = null;
 let lastFix = null;
+// When the browser refuses geolocation (denied permission, kill switch,
+// no sensor available), watchPosition's error callback tells us why —
+// we stash the message so the gate card can say "GPS denied" instead
+// of hanging on "waiting for a fix" forever.
+let gpsError = null;
 // A shallow fingerprint of the last rendered state. If the state hasn't
 // changed between pushes we skip the re-render so the submit dock's input
 // keeps its value and focus.
@@ -604,12 +609,30 @@ function renderNoSession() {
 }
 
 function startGPS() {
-  if (gpsWatchID !== null || !navigator.geolocation) return;
+  if (!navigator.geolocation) {
+    gpsError = t('geolocation not supported on this device');
+    lastRenderKey = null; // so the gate card picks up the error on next refresh
+    return;
+  }
+  if (gpsWatchID !== null) return;
   gpsWatchID = navigator.geolocation.watchPosition(
     (pos) => {
+      gpsError = null;
       lastFix = { lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy };
     },
-    (err) => { console.warn('gps', err.message); },
+    (err) => {
+      // PERMISSION_DENIED(1), POSITION_UNAVAILABLE(2), TIMEOUT(3) from the
+      // W3C GeolocationPositionError enum. Show them verbatim to the
+      // player so they know whether to flip the browser toggle, go
+      // outdoors, or wait a moment.
+      const code = err.code;
+      gpsError = code === 1 ? t('permission denied — enable location for this site')
+               : code === 2 ? t('no signal — try moving outdoors')
+               : code === 3 ? t('timed out — retrying')
+               : err.message || 'unknown';
+      lastRenderKey = null;
+      console.warn('gps', err.message);
+    },
     { enableHighAccuracy: true, maximumAge: 10000, timeout: 30000 },
   );
   if (pingTimer === null) pingTimer = setInterval(sendPing, 15000);
@@ -636,7 +659,7 @@ function render(s) {
   lastRenderKey = key;
 
   app.replaceChildren();
-  const playing = s.status === 'running' || s.status === 'gated';
+  const playing = s.status === 'running';
   const bar = el('div', { class: 'runbar' },
     s.adventure_title ? el('span', { class: 'title' }, s.adventure_title) : null,
     s.team_name ? el('span', { class: 'team' }, s.team_name) : null,
@@ -654,36 +677,6 @@ function render(s) {
   if (s.status === 'paused')   { hideSubmitDock(); app.append(el('p', {}, t('The arranger paused the run. Stand by.'))); return; }
   if (s.status === 'completed'){ hideSubmitDock(); renderCompleted(s); return; }
 
-  if (s.status === 'gated') {
-    hideSubmitDock();
-    const cta = s.no_answer
-      // No-answer puzzle: one button that confirms arrival and advances
-      // on success. The server does the gate check; 403 triggers the
-      // rebuff animation, accepted advances with celebrate.
-      ? el('button', { on: { click: () => {
-          advanceMode = 'gated';
-          if (lastFix) wsSend('location', { ...lastFix, client_ts: new Date().toISOString() });
-          if (!wsSend('advance', {})) {
-            advanceMode = 'none';
-            submitResultEl && (submitResultEl.textContent = t('Disconnected — try again in a moment.'));
-          }
-        } } }, t("Check location · I'm here"))
-      : el('button', { on: { click: sendPing } }, t('Send location now'));
-    const card = el('div', { class: 'card' },
-      el('h2', {}, t('Travel to the location')),
-      el('p', {}, t('Head within {{r}} m of ({{lat}}, {{lng}}).',
-        { r: s.gate.radius_m, lat: s.gate.lat.toFixed(5), lng: s.gate.lng.toFixed(5) })),
-      el('p', { class: 'muted' }, lastFix
-        ? t('Last fix: {{lat}}, {{lng}} (±{{acc}} m)',
-            { lat: lastFix.lat.toFixed(5), lng: lastFix.lng.toFixed(5), acc: Math.round(lastFix.accuracy) })
-        : t('Waiting for a GPS fix…')),
-      cta);
-    app.append(card);
-    return;
-  }
-
-
-
   if (s.title) app.append(el('h3', {}, s.title));
   if (Array.isArray(s.images)) {
     for (const im of s.images) app.append(el('img', { class: 'puzzle-img', src: im.url, alt: '' }));
@@ -691,7 +684,40 @@ function render(s) {
   app.append(el('p', { class: 'prompt' }, s.prompt || ''));
   if (s.hint) app.append(el('p', { class: 'muted' }, t('Hint: {{text}}', { text: s.hint })));
 
+  // Gate banner sits under the content when the player hasn't reached
+  // the target yet. The puzzle body stays visible the whole time —
+  // arriving is the "answer" (or a prerequisite for the text answer).
+  if (s.gate && !s.gate.reached) {
+    app.append(buildGateCard(s));
+  }
+
   renderSubmitDock(s);
+}
+
+// buildGateCard renders the walk-to-here block for a gated puzzle that
+// hasn't been reached yet. Shows target coords, target radius, the
+// current GPS fix (or explicit "waiting / denied" copy so the player
+// knows if their phone refused permission), and a "send location"
+// shortcut for cases where the interval hasn't fired yet.
+function buildGateCard(s) {
+  const fixLine = (() => {
+    if (gpsError) {
+      return el('p', { class: 'err' },
+        t('GPS: {{msg}}', { msg: gpsError }));
+    }
+    if (lastFix) {
+      return el('p', { class: 'muted' },
+        t('Last fix: {{lat}}, {{lng}} (±{{acc}} m)',
+          { lat: lastFix.lat.toFixed(5), lng: lastFix.lng.toFixed(5), acc: Math.round(lastFix.accuracy) }));
+    }
+    return el('p', { class: 'muted' }, t('Waiting for a GPS fix…'));
+  })();
+  return el('div', { class: 'card' },
+    el('h2', {}, t('Travel to the location')),
+    el('p', {}, t('Head within {{r}} m of ({{lat}}, {{lng}}).',
+      { r: s.gate.radius_m, lat: s.gate.lat.toFixed(5), lng: s.gate.lng.toFixed(5) })),
+    fixLine,
+    el('button', { class: 'secondary', on: { click: sendPing } }, t('Send location now')));
 }
 
 // renderSubmitDock always renders into the same sticky container at the
@@ -711,10 +737,14 @@ function renderSubmitDock(s) {
   submitInputEl = null;
 
   if (s && s.no_answer) {
-    // Continue-only dock — no input, no submit button. One wide CTA.
+    // No-answer puzzles advance with a single button tap instead of a
+    // typed answer. Gated ones need the team to be within the radius,
+    // so the label flips to "I'm here" and the click also force-pings
+    // the latest GPS fix so the server's gate check sees fresh data.
+    const gatedUnreached = s.gate && !s.gate.reached;
     const button = document.createElement('button');
     button.type = 'button';
-    button.textContent = t('Continue');
+    button.textContent = gatedUnreached ? t("Check location · I'm here") : t('Continue');
     const result = document.createElement('p');
     result.className = 'result muted';
     const wrap = document.createElement('div');
@@ -732,7 +762,15 @@ function renderSubmitDock(s) {
         });
         return;
       }
-      advanceMode = 'silent';
+      // Gated: send the latest fix first so the server's gate check
+      // doesn't race a stale ping cycle. Silent advance mode for clean
+      // gates, "gated" mode so a 403 triggers the rebuff animation.
+      if (gatedUnreached) {
+        advanceMode = 'gated';
+        if (lastFix) wsSend('location', { ...lastFix, client_ts: new Date().toISOString() });
+      } else {
+        advanceMode = 'silent';
+      }
       if (!wsSend('advance', {})) {
         advanceMode = 'none';
         result.className = 'result err';

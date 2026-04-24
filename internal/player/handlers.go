@@ -273,6 +273,11 @@ func (h *Handlers) buildState(ctx context.Context, slot auth.Slot) (State, int, 
 	resp.PageIndex = enabledIdx
 	resp.Title = page.Title
 	resp.NoAnswer = len(page.Accept) == 0
+	// Gate info is attached when the puzzle has one — but we DON'T hide
+	// the content behind it. Reaching the location is a prerequisite for
+	// the answer (or the whole answer, on accept-less puzzles); the prompt,
+	// hint, and images help the team recognise the place when they get
+	// there, and teasing the content before arrival is the intended UX.
 	if page.Location.Gated() {
 		reached, _ := gateReached(ctx, h.DB, tc.TeamID, page.Location)
 		resp.Gate = &gateDTO{
@@ -280,10 +285,6 @@ func (h *Handlers) buildState(ctx context.Context, slot auth.Slot) (State, int, 
 			Lng:     page.Location.Lng,
 			Radius:  *page.Location.RadiusM,
 			Reached: reached,
-		}
-		if !reached {
-			resp.Status = "gated"
-			return resp, http.StatusOK, ""
 		}
 	}
 	resp.Status = "running"
