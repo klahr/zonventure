@@ -126,6 +126,27 @@
       'Waiting for a GPS fix…': 'Väntar på GPS-position…',
       'Send location now': 'Skicka position nu',
       'Hint: {{text}}': 'Tips: {{text}}',
+      // ---- hint system ----
+      'Hints': 'Tips',
+      'Hint': 'Tips',
+      'Hint {{i}}/{{n}}': 'Tips {{i}}/{{n}}',
+      'Tap below to reveal your first hint. Use them sparingly — you can always come back.':
+        'Tryck nedan för att se ditt första tips. Använd dem sparsamt — du kan alltid komma tillbaka.',
+      'Reveal hint': 'Visa tips',
+      'Reveal next hint': 'Visa nästa tips',
+      "The next hint isn't ready yet. Keep trying for a little longer.":
+        'Nästa tips är inte redo ännu. Kämpa på ett tag till.',
+      // ---- hint editor (arrange) ----
+      'Add hint': 'Lägg till tips',
+      'Remove hint': 'Ta bort tips',
+      'Clue in markdown…': 'Ledtråd i markdown…',
+      'No hints yet — add one below for a delayed helper button.':
+        'Inga tips ännu — lägg till ett nedan så dyker en hjälpknapp upp efter en stund.',
+      'Unlock after': 'Lås upp efter',
+      's': 's',
+      '(immediate)': '(direkt)',
+      'Each hint unlocks a configurable number of seconds after the team reaches this puzzle. Players reveal them one at a time with a button.':
+        'Varje tips låses upp ett konfigurerbart antal sekunder efter att laget når detta pussel. Spelare visar dem ett i taget med en knapp.',
       'Disconnected — try again in a moment.':
         'Frånkopplad — försök igen om en stund.',
       'Open your magic link': 'Öppna din magiska länk',

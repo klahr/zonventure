@@ -84,6 +84,18 @@
   .submit-dock input { margin: 0; }
   .submit-dock button { width: auto; padding: .75rem 1.2rem; }
   .submit-dock .result { grid-column: 1 / -1; margin: 0; min-height: 1rem; font-size: .9rem; }
+  /* Solo-button layout for no-answer puzzles (Continue / I'm here).
+     Stretch across the full viewport so the dock reads as a single
+     CTA instead of a small centered pill — same max-width cap as the
+     answer-form so it doesn't run edge-to-edge on a big display. */
+  .submit-dock .dock-single {
+    max-width: 640px; margin: 0 auto;
+    display: flex; flex-direction: column; gap: .35rem;
+  }
+  .submit-dock .dock-single button {
+    width: 100%; padding: .9rem 1.2rem;
+  }
+  .submit-dock .dock-single .result { margin: 0; min-height: 1rem; font-size: .9rem; }
   /* Compact top strip: adventure title + team + progress + status pill in
      one row. Leaves maximum vertical space for the puzzle itself. */
   .runbar {
@@ -1112,6 +1124,7 @@ function renderSubmitDock(s) {
     const result = document.createElement('p');
     result.className = 'result muted';
     const wrap = document.createElement('div');
+    wrap.className = 'dock-single';
     wrap.append(button, result);
     dock.append(wrap);
     submitResultEl = result;
