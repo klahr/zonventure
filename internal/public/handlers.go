@@ -11,7 +11,9 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
+	"sort"
 	"time"
 
 	"git.sr.ht/~klahr/zv/internal/adventure"
@@ -114,34 +116,36 @@ func (h *Handlers) buildLive(ctx context.Context, token string) (LiveDTO, int64,
 			Lat: p.Location.Lat, Lng: p.Location.Lng,
 		}
 	}
+	// Fetch teams without sorting here — the tiebreaker logic (distance
+	// to next puzzle) is cleaner in Go than in SQL. The ordering that
+	// was previously baked into ORDER BY lives in sortTeams below.
 	rows, err := h.DB.QueryContext(ctx, `
 		SELECT t.id, t.name, t.current_page_index, COALESCE(t.completed_at, ''),
-		       t.avatar_mime_type IS NOT NULL AS has_avatar
+		       t.avatar_mime_type IS NOT NULL AS has_avatar,
+		       t.created_at,
+		       COALESCE(
+		         (SELECT MAX(created_at) FROM run_events
+		          WHERE run_id = t.run_id AND team_id = t.id AND kind = 'answer.right'),
+		         t.created_at
+		       ) AS last_progress_at
 		FROM teams t
 		WHERE t.run_id = ?
-		ORDER BY
-		  (CASE WHEN t.completed_at IS NULL THEN 1 ELSE 0 END),
-		  t.completed_at ASC,
-		  t.current_page_index DESC,
-		  COALESCE(
-		    (SELECT MAX(created_at) FROM run_events
-		     WHERE run_id = t.run_id AND team_id = t.id AND kind = 'answer.right'),
-		    t.created_at
-		  ) ASC,
-		  t.created_at ASC
 	`, id)
 	if err != nil {
 		return LiveDTO{}, id, http.StatusInternalServerError, "query failed"
 	}
 	defer rows.Close()
+	rowMeta := map[int64]sortRowForSort{}
 	teams := []teamDTO{}
 	for rows.Next() {
 		var (
-			t         teamDTO
-			rawCurr   int
-			hasAvatar int
+			t              teamDTO
+			rawCurr        int
+			hasAvatar      int
+			createdAt      string
+			lastProgressAt string
 		)
-		if err := rows.Scan(&t.ID, &t.Name, &rawCurr, &t.CompletedAt, &hasAvatar); err != nil {
+		if err := rows.Scan(&t.ID, &t.Name, &rawCurr, &t.CompletedAt, &hasAvatar, &createdAt, &lastProgressAt); err != nil {
 			return LiveDTO{}, id, http.StatusInternalServerError, "scan failed"
 		}
 		if hasAvatar != 0 {
@@ -158,6 +162,7 @@ func (h *Handlers) buildLive(ctx context.Context, token string) (LiveDTO, int64,
 			t.PageIndex = len(enabled)
 		}
 		t.PageCount = len(enabled)
+		rowMeta[t.ID] = sortRowForSort{raw: rawCurr, createdAt: createdAt, lastProgressAt: lastProgressAt}
 		teams = append(teams, t)
 	}
 	for i := range teams {
@@ -179,6 +184,16 @@ func (h *Handlers) buildLive(ctx context.Context, token string) (LiveDTO, int64,
 		}
 		mrows.Close()
 		teams[i].Members = members
+	}
+	// Latest GPS ping per team drives the distance tiebreaker — teams
+	// tied on puzzles solved rank by who's physically closer to their
+	// next puzzle. Missing pings fall back to the temporal tiebreak.
+	latest, err := latestPingsByTeam(ctx, h.DB, id)
+	if err != nil {
+		return LiveDTO{}, id, http.StatusInternalServerError, "ping lookup failed"
+	}
+	sortTeams(teams, rowMeta, latest, enabled)
+	for i := range teams {
 		teams[i].Rank = i + 1
 	}
 	dto := LiveDTO{
@@ -308,4 +323,132 @@ func (h *Handlers) Tracks(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	httpx.JSON(w, http.StatusOK, resp)
+}
+
+// latestPingsByTeam returns each team's most recent GPS ping for a run.
+// Teams without any ping are absent from the result — callers handle
+// that as "distance unknown" and fall back to the temporal tiebreaker.
+func latestPingsByTeam(ctx context.Context, db *sql.DB, runID int64) (map[int64]trackPoint, error) {
+	rows, err := db.QueryContext(ctx, `
+		SELECT p.team_id, p.lat, p.lng, p.server_ts
+		FROM location_pings p
+		JOIN (
+		  SELECT team_id, MAX(server_ts) AS ts
+		  FROM location_pings WHERE run_id = ?
+		  GROUP BY team_id
+		) latest ON latest.team_id = p.team_id AND latest.ts = p.server_ts
+		WHERE p.run_id = ?
+	`, runID, runID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[int64]trackPoint{}
+	for rows.Next() {
+		var (
+			tid int64
+			p   trackPoint
+		)
+		if err := rows.Scan(&tid, &p.Lat, &p.Lng, &p.ServerTS); err != nil {
+			return nil, err
+		}
+		out[tid] = p
+	}
+	return out, nil
+}
+
+// sortRowForSort is the subset of per-team metadata the sort needs.
+// Named separately so buildLive can pass a typed map without leaking
+// the shape all over the package.
+type sortRowForSort struct {
+	raw            int
+	createdAt      string
+	lastProgressAt string
+}
+
+// sortTeams applies the leaderboard ordering rules. Extracted from
+// buildLive because the distance tiebreaker is too awkward for SQL.
+//
+// Sort keys, in order:
+//  1. Finishers first (completed_at NOT NULL), earliest completion wins.
+//  2. Among non-finishers, more puzzles solved wins.
+//  3. Tied on puzzles: closer to the next puzzle wins (Haversine metres).
+//     Teams without a GPS ping are treated as "unknown" and rank below
+//     pinged teams — being on the map is a prerequisite for the tiebreak.
+//  4. Tied on distance (or both unknown): earlier last-right-answer wins
+//     (the old temporal rule is a stable fallback).
+//  5. Final fallback: earlier created_at.
+func sortTeams(teams []teamDTO, rowMeta map[int64]sortRowForSort, pings map[int64]trackPoint, enabled []adventure.Page) {
+	// nextPuzzleIdx returns the index into `enabled` that the team is
+	// currently working on. raw is adventure_pages.idx of the stored
+	// cursor (next page to consider).
+	nextPuzzleIdx := func(raw int) int {
+		for i, p := range enabled {
+			if p.Index >= raw {
+				return i
+			}
+		}
+		return len(enabled)
+	}
+	distanceMeters := func(id int64) (float64, bool) {
+		ping, ok := pings[id]
+		if !ok {
+			return 0, false
+		}
+		meta, ok := rowMeta[id]
+		if !ok {
+			return 0, false
+		}
+		idx := nextPuzzleIdx(meta.raw)
+		if idx >= len(enabled) {
+			return 0, false
+		}
+		p := enabled[idx]
+		return haversineMeters(ping.Lat, ping.Lng, p.Location.Lat, p.Location.Lng), true
+	}
+	sort.SliceStable(teams, func(i, j int) bool {
+		a, b := teams[i], teams[j]
+		// 1. Finished before unfinished.
+		if (a.CompletedAt != "") != (b.CompletedAt != "") {
+			return a.CompletedAt != ""
+		}
+		// Both finished — earliest completion wins.
+		if a.CompletedAt != "" && b.CompletedAt != "" && a.CompletedAt != b.CompletedAt {
+			return a.CompletedAt < b.CompletedAt
+		}
+		// 2. More puzzles solved wins.
+		if a.PageIndex != b.PageIndex {
+			return a.PageIndex > b.PageIndex
+		}
+		// 3. Distance tiebreak — shorter is better; known beats unknown.
+		da, aok := distanceMeters(a.ID)
+		db, bok := distanceMeters(b.ID)
+		if aok != bok {
+			return aok
+		}
+		if aok && bok && da != db {
+			return da < db
+		}
+		// 4. Temporal tiebreak — earlier last-right-answer wins.
+		ma, mb := rowMeta[a.ID], rowMeta[b.ID]
+		if ma.lastProgressAt != mb.lastProgressAt {
+			return ma.lastProgressAt < mb.lastProgressAt
+		}
+		// 5. Creation-order final fallback for full determinism.
+		return ma.createdAt < mb.createdAt
+	})
+}
+
+// haversineMeters returns the great-circle distance between two
+// lat/lng pairs in metres. Accuracy is fine for the sub-kilometre ranges
+// leaderboard tiebreaks care about.
+func haversineMeters(lat1, lng1, lat2, lng2 float64) float64 {
+	const R = 6371000.0 // mean Earth radius in metres
+	rad := math.Pi / 180
+	dLat := (lat2 - lat1) * rad
+	dLng := (lng2 - lng1) * rad
+	a := math.Sin(dLat/2)*math.Sin(dLat/2) +
+		math.Cos(lat1*rad)*math.Cos(lat2*rad)*
+			math.Sin(dLng/2)*math.Sin(dLng/2)
+	return 2 * R * math.Asin(math.Min(1, math.Sqrt(a)))
 }

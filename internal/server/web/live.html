@@ -579,6 +579,11 @@ function render() {
   prevState = data.state || prevState;
 
   const root = document.getElementById('root');
+  // FLIP: snapshot the pre-render position of every team row so we can
+  // animate surviving rows from their old spot to the new one after the
+  // DOM rebuild. Rows that are new or gone are skipped naturally (no
+  // prior rect / no new node).
+  const priorRowRects = captureBoardPositions(root);
   root.replaceChildren();
 
   root.append(buildHeader(data));
@@ -612,7 +617,50 @@ function render() {
   // After the DOM mounts, see if the leaderboard overflows the
   // viewport. If it does, apply the soft bottom fade. Runs in an rAF
   // so the flex/grid tracks have resolved before we measure.
-  requestAnimationFrame(updateBoardOverflow);
+  requestAnimationFrame(() => {
+    updateBoardOverflow();
+    playBoardFlip(root, priorRowRects);
+  });
+}
+
+// captureBoardPositions takes a snapshot of every team row's bounding
+// rect before the DOM is replaced. Keyed by team id (set via the
+// data-team-id attribute each row carries).
+function captureBoardPositions(root) {
+  const out = new Map();
+  const rows = root.querySelectorAll('.row[data-team-id]');
+  for (const r of rows) {
+    out.set(r.getAttribute('data-team-id'), r.getBoundingClientRect());
+  }
+  return out;
+}
+
+// playBoardFlip runs the classic First-Last-Invert-Play pattern: each
+// surviving row starts off translated to its previous position, then
+// transitions back to its natural spot. Rows whose id didn't exist
+// before (new team joined) are left alone — the `.new` CSS already
+// styles them distinctly.
+function playBoardFlip(root, prior) {
+  if (!prior || prior.size === 0) return;
+  const rows = root.querySelectorAll('.row[data-team-id]');
+  for (const row of rows) {
+    const id = row.getAttribute('data-team-id');
+    const before = prior.get(id);
+    if (!before) continue;
+    const after = row.getBoundingClientRect();
+    const dy = before.top - after.top;
+    const dx = before.left - after.left;
+    // Sub-pixel jitter from layout rounding isn't worth animating; gates
+    // the work so unchanged renders don't thrash the compositor.
+    if (Math.abs(dy) < 0.5 && Math.abs(dx) < 0.5) continue;
+    row.style.transition = 'none';
+    row.style.transform = `translate(${dx}px, ${dy}px)`;
+    // Force layout so the starting transform is committed before we
+    // swap the transition back in.
+    row.offsetWidth;
+    row.style.transition = 'transform 600ms cubic-bezier(.2,.8,.2,1)';
+    row.style.transform = '';
+  }
 }
 
 function updateBoardOverflow() {
@@ -653,6 +701,52 @@ function buildMapSlot() {
   return mapWrapEl;
 }
 
+// mapLayers caches the Leaflet overlays across renders so we can
+// update-in-place instead of wiping everything each snapshot. That
+// makes team marker positions animateable (no flicker from
+// remove→add) and stops the puzzle pins from strobing.
+const mapLayers = {
+  puzzles: new Map(),               // puzzle index -> marker
+  teamMarkers: new Map(),           // team_id -> { marker, lastLL }
+  teamPolylines: new Map(),         // team_id -> polyline
+  teamTweens: new Map(),            // team_id -> rAF handle
+};
+
+// tweenMarker glides a team marker from its current position to the
+// new one over ~600ms. The `fitBounds` call underneath triggers its own
+// map pan; that moves the marker's *screen* position for free, while
+// this animation handles the *map* position change.
+function tweenMarker(teamID, marker, target) {
+  const existing = mapLayers.teamTweens.get(teamID);
+  if (existing) cancelAnimationFrame(existing);
+  const start = marker.getLatLng();
+  // Skip tween for microscopic deltas (subpixel GPS jitter) — also a
+  // guard against first-frame positioning since we want the marker to
+  // appear at the authoritative location right away.
+  const dLat = Math.abs(target.lat - start.lat);
+  const dLng = Math.abs(target.lng - start.lng);
+  if (dLat < 1e-7 && dLng < 1e-7) {
+    marker.setLatLng(target);
+    return;
+  }
+  const duration = 600;
+  const t0 = performance.now();
+  const step = (now) => {
+    const u = Math.min(1, (now - t0) / duration);
+    // Cubic ease-in-out keeps the motion calm on a big TV display.
+    const eased = u < 0.5 ? 4*u*u*u : 1 - Math.pow(-2*u + 2, 3) / 2;
+    const lat = start.lat + (target.lat - start.lat) * eased;
+    const lng = start.lng + (target.lng - start.lng) * eased;
+    marker.setLatLng([lat, lng]);
+    if (u < 1) {
+      mapLayers.teamTweens.set(teamID, requestAnimationFrame(step));
+    } else {
+      mapLayers.teamTweens.delete(teamID);
+    }
+  };
+  mapLayers.teamTweens.set(teamID, requestAnimationFrame(step));
+}
+
 async function renderLiveMap(inner, hint, data) {
   if (typeof L === 'undefined') {
     hint.textContent = t('Map library still loading…');
@@ -672,25 +766,35 @@ async function renderLiveMap(inner, hint, data) {
   const map = liveMapInstance;
   map.invalidateSize();
 
-  // Wipe previous overlays.
-  map.eachLayer((layer) => {
-    if (layer instanceof L.Marker || layer instanceof L.Polyline) map.removeLayer(layer);
-  });
-
   const bounds = L.latLngBounds([]);
 
-  // Puzzle pins.
+  // Puzzle pins are set-once. Reconcile against mapLayers.puzzles so a
+  // mid-run adventure edit still surfaces added/removed puzzles, but
+  // already-placed pins don't flicker on every snapshot.
+  const seenPuzzleKeys = new Set();
   for (const p of (data.puzzles || [])) {
     if (!p.lat && !p.lng) continue;
-    const m = L.marker([p.lat, p.lng], {
-      icon: L.divIcon({
-        className: '',
-        html: `<div class="puzzle-marker ${p.gated ? 'gated' : ''}"><span>${p.index + 1}</span></div>`,
-        iconSize: [28, 28], iconAnchor: [14, 28],
-      }),
-    }).addTo(map);
-    m.bindPopup(`<strong>${p.index + 1}. ${p.title || t('Puzzle')}</strong>${p.gated ? `<br><em>${t('gated')}</em>` : ''}`);
+    const key = p.index;
+    seenPuzzleKeys.add(key);
+    let marker = mapLayers.puzzles.get(key);
+    if (!marker) {
+      marker = L.marker([p.lat, p.lng], {
+        icon: L.divIcon({
+          className: '',
+          html: `<div class="puzzle-marker ${p.gated ? 'gated' : ''}"><span>${p.index + 1}</span></div>`,
+          iconSize: [28, 28], iconAnchor: [14, 28],
+        }),
+      }).addTo(map);
+      marker.bindPopup(`<strong>${p.index + 1}. ${p.title || t('Puzzle')}</strong>${p.gated ? `<br><em>${t('gated')}</em>` : ''}`);
+      mapLayers.puzzles.set(key, marker);
+    }
     bounds.extend([p.lat, p.lng]);
+  }
+  for (const [key, marker] of mapLayers.puzzles) {
+    if (!seenPuzzleKeys.has(key)) {
+      map.removeLayer(marker);
+      mapLayers.puzzles.delete(key);
+    }
   }
 
   // Team tracks come from the most recent {kind:"tracks"} WS frame, which
@@ -700,28 +804,67 @@ async function renderLiveMap(inner, hint, data) {
   const teamColourByID = new Map();
   (data.teams || []).forEach((t, i) => teamColourByID.set(t.id, teamColor(i)));
 
+  const seenTeamIDs = new Set();
   for (const track of tracks) {
-    const colour = teamColourByID.get(track.team_id) || '#e24080';
     if (!track.points?.length) continue;
+    const colour = teamColourByID.get(track.team_id) || '#e24080';
     const latlngs = track.points.map((p) => [p.lat, p.lng]);
-    L.polyline(latlngs, { color: colour, weight: 3, opacity: .85 }).addTo(map);
     const last = track.points[track.points.length - 1];
-    const initials = teamInitials(track.team_name);
-    const size = 34;
-    const html = track.avatar_url
-      ? `<div class="team-marker-lv" style="--team-col:${colour}; width:${size}px; height:${size}px;">`
-          + `<img src="${track.avatar_url}" alt="" onerror="this.replaceWith(Object.assign(document.createElement('span'),{textContent:${JSON.stringify(initials)}}))"/>`
-          + `</div>`
-      : `<div class="team-marker-lv no-img" style="--team-col:${colour}; width:${size}px; height:${size}px;">`
-          + `<span>${initials}</span></div>`;
-    L.marker([last.lat, last.lng], {
-      icon: L.divIcon({
-        className: '',
-        html,
-        iconSize: [size, size], iconAnchor: [size / 2, size / 2],
-      }),
-    }).bindPopup(`<strong>${track.team_name}</strong>`).addTo(map);
+    seenTeamIDs.add(track.team_id);
+
+    // Polyline: update in place if we've seen this team before so the
+    // stroke doesn't flash; otherwise create one.
+    let poly = mapLayers.teamPolylines.get(track.team_id);
+    if (!poly) {
+      poly = L.polyline(latlngs, { color: colour, weight: 3, opacity: .85 }).addTo(map);
+      mapLayers.teamPolylines.set(track.team_id, poly);
+    } else {
+      poly.setLatLngs(latlngs);
+      poly.setStyle({ color: colour });
+    }
+
+    // Team marker: on first sight create it at the latest position; on
+    // subsequent renders tween to the new position so movement reads as
+    // movement rather than teleporting.
+    let entry = mapLayers.teamMarkers.get(track.team_id);
+    if (!entry) {
+      const initials = teamInitials(track.team_name);
+      const size = 34;
+      const html = track.avatar_url
+        ? `<div class="team-marker-lv" style="--team-col:${colour}; width:${size}px; height:${size}px;">`
+            + `<img src="${track.avatar_url}" alt="" onerror="this.replaceWith(Object.assign(document.createElement('span'),{textContent:${JSON.stringify(initials)}}))"/>`
+            + `</div>`
+        : `<div class="team-marker-lv no-img" style="--team-col:${colour}; width:${size}px; height:${size}px;">`
+            + `<span>${initials}</span></div>`;
+      const marker = L.marker([last.lat, last.lng], {
+        icon: L.divIcon({
+          className: '',
+          html,
+          iconSize: [size, size], iconAnchor: [size / 2, size / 2],
+        }),
+      }).bindPopup(`<strong>${track.team_name}</strong>`).addTo(map);
+      entry = { marker };
+      mapLayers.teamMarkers.set(track.team_id, entry);
+    } else {
+      tweenMarker(track.team_id, entry.marker, L.latLng(last.lat, last.lng));
+    }
     for (const ll of latlngs) bounds.extend(ll);
+  }
+  // Drop teams that fell out of the track set (unlikely mid-run, but
+  // keeps the cache honest between adventures).
+  for (const [tid, entry] of mapLayers.teamMarkers) {
+    if (!seenTeamIDs.has(tid)) {
+      map.removeLayer(entry.marker);
+      mapLayers.teamMarkers.delete(tid);
+      const t = mapLayers.teamTweens.get(tid);
+      if (t) { cancelAnimationFrame(t); mapLayers.teamTweens.delete(tid); }
+    }
+  }
+  for (const [tid, poly] of mapLayers.teamPolylines) {
+    if (!seenTeamIDs.has(tid)) {
+      map.removeLayer(poly);
+      mapLayers.teamPolylines.delete(tid);
+    }
   }
 
   if (bounds.isValid()) {
@@ -861,6 +1004,7 @@ function renderRow(team, idx, data) {
   const row = h('div', {
     class: `row rank-${team.rank}${rankCls}${finished ? ' finished' : ''}`,
     style: `--team-color:${colour}`,
+    'data-team-id': String(team.id),
   });
 
   row.append(h('div', { class: 'rank' }, team.rank));
