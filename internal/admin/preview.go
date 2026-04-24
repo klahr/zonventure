@@ -27,7 +27,14 @@ type previewStateDTO struct {
 	Images         []previewImageDTO `json:"images,omitempty"`
 	Colors         *adventure.Colors `json:"colors,omitempty"`
 	Preview        bool              `json:"preview"`
-	Debug          *previewDebugDTO  `json:"preview_debug,omitempty"`
+	// Accept is always included (the preview endpoint is admin-only,
+	// so the author already owns this list) so the play-side client
+	// can verify answers even when the debug panel is collapsed.
+	// Without it, previewing-without-debug would treat every answer
+	// as correct.
+	Accept  []string         `json:"accept"`
+	NoAnswer bool            `json:"no_answer,omitempty"`
+	Debug   *previewDebugDTO `json:"preview_debug,omitempty"`
 }
 
 type previewImageDTO struct {
@@ -94,9 +101,11 @@ func (h *Handlers) PreviewAdventure(w http.ResponseWriter, r *http.Request) {
 		// egress so the preview reads exactly like /play will. The raw
 		// markdown stays in the debug panel (accept/notes) for authors
 		// who need to see it verbatim.
-		Prompt:  mdx.Render(page.Prompt),
-		Hint:    mdx.Render(page.Hint),
-		Preview: true,
+		Prompt:   mdx.Render(page.Prompt),
+		Hint:     mdx.Render(page.Hint),
+		Accept:   page.Accept,
+		NoAnswer: len(page.Accept) == 0,
+		Preview:  true,
 	}
 	if !adv.Colors.Empty() {
 		c := adv.Colors

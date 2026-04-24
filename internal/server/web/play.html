@@ -918,10 +918,12 @@ function renderSubmitDock(s) {
 function handlePreviewSubmit(answer) {
   const needle = (answer || '').trim().toLowerCase();
   if (!needle) return;
-  const accept = previewState.accept;
-  const accepted = accept
-    ? accept.some((a) => (a || '').trim().toLowerCase() === needle)
-    : true;
+  // Mirror the real applyAnswer normalisation: trim + lowercase, and
+  // collapse internal whitespace runs so "  HELLO  world" matches
+  // "hello world". Keeps the preview verdict honest.
+  const norm = (s) => (s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  const accept = Array.isArray(previewState.accept) ? previewState.accept : [];
+  const accepted = accept.length > 0 && accept.some((a) => norm(a) === norm(needle));
   const completed = accepted && previewState.pageIndex + 1 >= previewState.pageCount;
   onAnswerResult({ accepted, completed });
   if (accepted && !completed) {
@@ -947,7 +949,11 @@ async function loadPreviewPage(pageIdx) {
   qs.set('page', String(pageIdx));
   history.replaceState(null, '', '?' + qs.toString());
   previewState = {
-    accept: r.body.preview_debug?.accept || null,
+    // Top-level accept ships on every preview response (admin-only
+    // endpoint, so the author already owns the list). Without it the
+    // client-side check defaulted to "always correct", masking real
+    // answer bugs during adventure QA.
+    accept: Array.isArray(r.body.accept) ? r.body.accept : [],
     pageIndex: r.body.page_index ?? 0,
     pageCount: r.body.page_count ?? 0,
   };
@@ -1336,7 +1342,11 @@ async function bootstrapPreview(slug, pageIdx, debug) {
     return;
   }
   previewState = {
-    accept: r.body.preview_debug?.accept || null,
+    // Top-level accept ships on every preview response (admin-only
+    // endpoint, so the author already owns the list). Without it the
+    // client-side check defaulted to "always correct", masking real
+    // answer bugs during adventure QA.
+    accept: Array.isArray(r.body.accept) ? r.body.accept : [],
     pageIndex: r.body.page_index ?? 0,
     pageCount: r.body.page_count ?? 0,
   };
