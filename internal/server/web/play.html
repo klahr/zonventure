@@ -684,40 +684,12 @@ function render(s) {
   app.append(el('p', { class: 'prompt' }, s.prompt || ''));
   if (s.hint) app.append(el('p', { class: 'muted' }, t('Hint: {{text}}', { text: s.hint })));
 
-  // Gate banner sits under the content when the player hasn't reached
-  // the target yet. The puzzle body stays visible the whole time —
-  // arriving is the "answer" (or a prerequisite for the text answer).
-  if (s.gate && !s.gate.reached) {
-    app.append(buildGateCard(s));
-  }
-
+  // Gated puzzles don't get a separate "walk to location" card — the
+  // sticky submit dock at the bottom is the only action surface. For
+  // no-answer gated puzzles the dock already shows "I'm here" instead
+  // of "Continue"; for text-answer puzzles the player just submits and
+  // gets a rebuff if they aren't close enough.
   renderSubmitDock(s);
-}
-
-// buildGateCard renders the walk-to-here block for a gated puzzle that
-// hasn't been reached yet. Shows target coords, target radius, the
-// current GPS fix (or explicit "waiting / denied" copy so the player
-// knows if their phone refused permission), and a "send location"
-// shortcut for cases where the interval hasn't fired yet.
-function buildGateCard(s) {
-  const fixLine = (() => {
-    if (gpsError) {
-      return el('p', { class: 'err' },
-        t('GPS: {{msg}}', { msg: gpsError }));
-    }
-    if (lastFix) {
-      return el('p', { class: 'muted' },
-        t('Last fix: {{lat}}, {{lng}} (±{{acc}} m)',
-          { lat: lastFix.lat.toFixed(5), lng: lastFix.lng.toFixed(5), acc: Math.round(lastFix.accuracy) }));
-    }
-    return el('p', { class: 'muted' }, t('Waiting for a GPS fix…'));
-  })();
-  return el('div', { class: 'card' },
-    el('h2', {}, t('Travel to the location')),
-    el('p', {}, t('Head within {{r}} m of ({{lat}}, {{lng}}).',
-      { r: s.gate.radius_m, lat: s.gate.lat.toFixed(5), lng: s.gate.lng.toFixed(5) })),
-    fixLine,
-    el('button', { class: 'secondary', on: { click: sendPing } }, t('Send location now')));
 }
 
 // renderSubmitDock always renders into the same sticky container at the
