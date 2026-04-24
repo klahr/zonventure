@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Zonventure · play</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Aclonica&family=Open+Sans:wght@400;600;700&display=swap" rel="stylesheet">
@@ -175,6 +176,26 @@
   .hint-md { color: var(--muted); }
   .hint-md .hint-label { font-weight: 700; }
   .hint-md p { display: inline; margin: 0; }
+  /* Multi-hint block: each revealed hint sits in a muted card, and a
+     single pill button below fetches the next one (or counts down
+     until the next unlocks). */
+  .hint-block { margin-top: 1rem; }
+  .hint-revealed {
+    background: var(--surface-2); border: 1px solid var(--border-soft);
+    border-radius: 10px; padding: .65rem .85rem; margin-bottom: .5rem;
+    color: var(--ink);
+  }
+  .hint-revealed .hint-label {
+    color: var(--muted); font-size: .7rem; font-weight: 700;
+    text-transform: uppercase; letter-spacing: .06em; margin-bottom: .25rem;
+  }
+  .hint-revealed .hint-body p { margin: 0 0 .4rem; }
+  .hint-revealed .hint-body p:last-child { margin-bottom: 0; }
+  .hint-reveal {
+    width: 100%;
+    margin-top: .25rem;
+    font-variant-numeric: tabular-nums;
+  }
   .pill {
     display: inline-block; padding: .15rem .65rem;
     border-radius: 999px; font-size: .7rem; font-weight: 700;
@@ -774,7 +795,11 @@ function render(s) {
   applyColors(s.colors);
   const key = JSON.stringify({
     status: s.status, pi: s.page_index, pc: s.page_count,
-    t: s.title, p: s.prompt, h: s.hint,
+    t: s.title, p: s.prompt,
+    // Rev-count controls which hints show; unlock countdowns tick
+    // server-side per snapshot push so re-render is already implied.
+    hnts: (s.hints || []).map((h) => h.unlocks_in_seconds),
+    rev: hintsRevealedFor(s),
     img: (s.images || []).map((i) => i.url),
     gate: s.gate ? s.gate.reached : null,
     team: s.team_name, adv: s.adventure_title,
@@ -784,6 +809,9 @@ function render(s) {
   });
   if (key === lastRenderKey) return;
   lastRenderKey = key;
+  // Anchor for the hint countdown ticker — we use this to decrement
+  // server-supplied unlocks_in_seconds locally between snapshots.
+  hintTickerAnchor = Date.now();
 
   app.replaceChildren();
   const playing = s.status === 'running';
@@ -808,16 +836,16 @@ function render(s) {
   if (Array.isArray(s.images)) {
     for (const im of s.images) app.append(el('img', { class: 'puzzle-img', src: im.url, alt: '' }));
   }
-  // Prompt and hint come from the server already rendered to HTML
-  // (goldmark, raw HTML escaped). The .prompt / .hint-md wrappers
-  // carry the typography; nested p/ul/ol inherit the intended look.
+  // Prompt comes from the server already rendered to HTML (goldmark,
+  // raw HTML escaped). Nested p/ul/ol/etc inherit typography from
+  // the .prompt wrapper.
   app.append(el('div', { class: 'prompt', html: s.prompt || '' }));
-  if (s.hint) {
-    const hintWrap = el('div', { class: 'muted hint-md' });
-    hintWrap.append(el('span', { class: 'hint-label' }, t('Hint: ')));
-    const hintHTML = el('span', { html: s.hint });
-    hintWrap.append(hintHTML);
-    app.append(hintWrap);
+
+  // Hints are revealed one at a time via a button in the sticky dock
+  // area. The reveal count lives in localStorage keyed by slot+page
+  // so a reload doesn't wipe hints the team already earned.
+  if (Array.isArray(s.hints) && s.hints.length > 0) {
+    app.append(renderHintList(s));
   }
 
   // Gated puzzles don't get a separate "walk to location" card — the
@@ -833,6 +861,118 @@ function render(s) {
 // puzzles. When the puzzle has no accept list (state.no_answer) the
 // dock collapses to a single Continue button that tells the server to
 // advance without an answer-match attempt.
+// hintStorageKey scopes the revealed-count to a single player on a
+// single puzzle. Using the magic-link slot cookie isn't feasible from
+// JS (it's HttpOnly), but the combination of slot name + adventure +
+// page index is unique for our use case and stable across reloads.
+function hintStorageKey(s) {
+  return `zv_hints_${s.adventure_slug || ''}_${s.slot_name || ''}_${s.page_index || 0}`;
+}
+
+function hintsRevealedFor(s) {
+  try {
+    const n = parseInt(localStorage.getItem(hintStorageKey(s)) || '0', 10);
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  } catch { return 0; }
+}
+
+function setHintsRevealed(s, n) {
+  try { localStorage.setItem(hintStorageKey(s), String(n)); } catch {}
+}
+
+// renderHintList draws the hints block: any already-revealed hints
+// are shown in full, followed by a single "Reveal hint" button when
+// another one is ready (or a countdown when it isn't yet). All
+// interactions flow through localStorage — there's no server-side
+// "I revealed hint N" state because the reveal is purely a UI gate
+// (the content itself ships on every snapshot).
+function renderHintList(s) {
+  const wrap = el('div', { class: 'hint-block' });
+  const hints = s.hints || [];
+  let revealed = Math.min(hintsRevealedFor(s), hints.length);
+
+  const drawBody = () => {
+    wrap.replaceChildren();
+    // Shown hints — rendered markdown, numbered so a hint of hints is
+    // clear ("this is the second of three") without the author having
+    // to repeat themselves.
+    for (let i = 0; i < revealed; i++) {
+      const h = hints[i];
+      const block = el('div', { class: 'hint-revealed' });
+      block.append(el('div', { class: 'hint-label' },
+        hints.length > 1 ? t('Hint {{i}}/{{n}}', { i: i + 1, n: hints.length }) : t('Hint')));
+      block.append(el('div', { class: 'hint-body', html: h.text_html || '' }));
+      wrap.append(block);
+    }
+
+    // Reveal button for the next hint (if any).
+    if (revealed >= hints.length) return;
+    const next = hints[revealed];
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'secondary hint-reveal';
+    if (next.unlocks_in_seconds > 0) {
+      // Locked: disabled, shows countdown. Refreshed on every 1s tick
+      // below so the digits move without waiting for the next
+      // snapshot push from the server.
+      button.disabled = true;
+      button.textContent = hintUnlockLabel(hints, revealed);
+    } else {
+      button.textContent = hints.length - revealed > 1 || revealed > 0
+        ? t('Reveal next hint')
+        : t('Reveal hint');
+      button.addEventListener('click', () => {
+        revealed += 1;
+        setHintsRevealed(s, revealed);
+        drawBody();
+      });
+    }
+    wrap.append(button);
+  };
+  drawBody();
+
+  // Local ticker: retarget the locked button's label every second
+  // without hitting lastRenderKey (which would wipe the input focus
+  // on every tick). Stops itself once the wrapper leaves the DOM.
+  const tick = () => {
+    if (!wrap.isConnected) return;
+    const btn = wrap.querySelector('button.hint-reveal');
+    if (!btn) return;
+    if (!btn.disabled) return;
+    // Adjust countdowns based on wall-clock since the last snapshot.
+    // Good enough: we don't care about drift to the second over a
+    // 3-minute unlock window.
+    const shown = hints.slice(revealed).map((h) => Math.max(0, h.unlocks_in_seconds - Math.floor((Date.now() - hintTickerAnchor) / 1000)));
+    const firstRemaining = shown[0] ?? 0;
+    if (firstRemaining <= 0) {
+      // Re-render to swap the disabled countdown for an enabled button.
+      drawBody();
+      return;
+    }
+    btn.textContent = hintUnlockLabel(
+      hints.map((h, i) => i < revealed ? h : { ...h, unlocks_in_seconds: shown[i - revealed] }),
+      revealed);
+    setTimeout(tick, 1000);
+  };
+  setTimeout(tick, 1000);
+  return wrap;
+}
+
+// hintTickerAnchor is the wall-clock time of the last state snapshot;
+// we subtract it from Date.now() to decrement the server-supplied
+// unlocks_in_seconds locally so the countdown ticks without waiting
+// for the next WebSocket push. Reset on every render() call.
+let hintTickerAnchor = Date.now();
+
+function hintUnlockLabel(hints, revealedIdx) {
+  const next = hints[revealedIdx];
+  if (!next) return '';
+  const sec = Math.max(0, next.unlocks_in_seconds);
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return t('Next hint in {{m}}:{{s}}', { m, s: String(s).padStart(2, '0') });
+}
+
 function renderSubmitDock(s) {
   let dock = document.getElementById('submit-dock');
   if (!dock) {

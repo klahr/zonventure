@@ -59,12 +59,22 @@ type Page struct {
 	Index    int
 	Title    string
 	Prompt   string
-	Hint     string
+	Hint     string // legacy single-hint; new authoring uses Hints.
+	Hints    []Hint
 	Accept   []string
 	Location Location
 	Images   []Image
 	Disabled bool
 	Notes    string
+}
+
+// Hint is one on-demand clue for a puzzle. DelaySeconds is how long
+// after the team reached the puzzle the hint becomes revealable.
+// Order is authoring-defined via the database idx column (zero-based);
+// the Hints slice on Page preserves that order.
+type Hint struct {
+	Text         string
+	DelaySeconds int
 }
 
 // Image describes one attached image. Binary content is fetched separately
@@ -220,15 +230,44 @@ func (l *Library) loadPages(ctx context.Context, adventureID int64) ([]Page, err
 		}
 		pages = append(pages, p)
 	}
-	// Fill each page's images.
+	// Fill each page's images and hints. Both are per-page satellite
+	// tables — cheap N+1 queries given the typical 3–20 puzzles per
+	// adventure.
 	for i := range pages {
 		imgs, err := l.loadImages(ctx, pages[i].ID)
 		if err != nil {
 			return nil, err
 		}
 		pages[i].Images = imgs
+		hints, err := l.loadHints(ctx, pages[i].ID)
+		if err != nil {
+			return nil, err
+		}
+		pages[i].Hints = hints
 	}
 	return pages, nil
+}
+
+func (l *Library) loadHints(ctx context.Context, pageID int64) ([]Hint, error) {
+	rows, err := l.db.QueryContext(ctx, `
+		SELECT text, delay_seconds
+		FROM adventure_page_hints
+		WHERE page_id = ?
+		ORDER BY idx
+	`, pageID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Hint
+	for rows.Next() {
+		var h Hint
+		if err := rows.Scan(&h.Text, &h.DelaySeconds); err != nil {
+			return nil, err
+		}
+		out = append(out, h)
+	}
+	return out, nil
 }
 
 func (l *Library) loadImages(ctx context.Context, pageID int64) ([]Image, error) {

@@ -30,17 +30,20 @@ import (
 const maxImageBytes = 5 * 1024 * 1024
 
 type pageView struct {
-	ID       int64       `json:"id"`
-	Index    int         `json:"index"`
-	Title    string      `json:"title"`
-	Prompt   string      `json:"prompt"`
-	Hint     string      `json:"hint,omitempty"`
-	// PromptHTML / HintHTML are the goldmark-rendered sibling of the
-	// raw fields above — the same HTML players see. Lets list views
-	// in arrange.html drop in the pre-rendered result instead of
-	// calling /markdown/preview for every card.
+	ID     int64  `json:"id"`
+	Index  int    `json:"index"`
+	Title  string `json:"title"`
+	Prompt string `json:"prompt"`
+	// Hint is the legacy single-hint field; new authoring uses the
+	// Hints slice below. Kept on the DTO so list views don't break
+	// while we migrate the editor, but emitted as an empty string.
+	Hint string `json:"hint,omitempty"`
+	// PromptHTML is the goldmark-rendered sibling of Prompt — the same
+	// HTML players see. Lets list views in arrange.html drop in the
+	// pre-rendered result instead of calling /markdown/preview per card.
 	PromptHTML string      `json:"prompt_html,omitempty"`
 	HintHTML   string      `json:"hint_html,omitempty"`
+	Hints      []hintView  `json:"hints"`
 	Accept     []string    `json:"accept"`
 	Lat        float64     `json:"lat"`
 	Lng        float64     `json:"lng"`
@@ -49,6 +52,14 @@ type pageView struct {
 	Disabled   bool        `json:"disabled"`
 	Notes      string      `json:"notes"`
 	Images     []imageView `json:"images"`
+}
+
+// hintView is a single hint row on the editor side. DelaySeconds is
+// how many seconds after the team reaches this puzzle the hint
+// becomes revealable; 0 means available immediately.
+type hintView struct {
+	Text         string `json:"text"`
+	DelaySeconds int    `json:"delay_seconds"`
 }
 
 type imageView struct {
@@ -389,15 +400,16 @@ func (h *Handlers) DeleteAdventure(w http.ResponseWriter, r *http.Request) {
 }
 
 type pageWriteRequest struct {
-	Title    string   `json:"title"`
-	Prompt   string   `json:"prompt"`
-	Hint     string   `json:"hint"`
-	Notes    string   `json:"notes"`
-	Accept   []string `json:"accept"`
-	Lat      float64  `json:"lat"`
-	Lng      float64  `json:"lng"`
-	RadiusM  *float64 `json:"radius_m,omitempty"`
-	Disabled bool     `json:"disabled"`
+	Title    string     `json:"title"`
+	Prompt   string     `json:"prompt"`
+	Hint     string     `json:"hint"` // legacy; Hints is the authoritative field.
+	Hints    []hintView `json:"hints"`
+	Notes    string     `json:"notes"`
+	Accept   []string   `json:"accept"`
+	Lat      float64    `json:"lat"`
+	Lng      float64    `json:"lng"`
+	RadiusM  *float64   `json:"radius_m,omitempty"`
+	Disabled bool       `json:"disabled"`
 }
 
 // validate checks only the constraints that are ALWAYS required,
@@ -409,6 +421,31 @@ type pageWriteRequest struct {
 func (req pageWriteRequest) validate() error {
 	if req.RadiusM != nil && *req.RadiusM <= 0 {
 		return errors.New("radius_m must be > 0")
+	}
+	for i, h := range req.Hints {
+		if h.DelaySeconds < 0 {
+			return fmt.Errorf("hint %d: delay_seconds must be >= 0", i+1)
+		}
+	}
+	return nil
+}
+
+// replacePageHints clears and rewrites the hints for a single page
+// inside the supplied transaction. Separate helper because both
+// CreatePage and UpdatePage need the same wipe-and-reinsert semantics —
+// partial updates would need stable hint ids, which the authoring UI
+// doesn't currently track.
+func replacePageHints(ctx context.Context, tx *sql.Tx, pageID int64, hints []hintView) error {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM adventure_page_hints WHERE page_id = ?`, pageID); err != nil {
+		return err
+	}
+	for i, h := range hints {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO adventure_page_hints(page_id, idx, text, delay_seconds)
+			VALUES (?, ?, ?, ?)
+		`, pageID, i, h.Text, h.DelaySeconds); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -448,7 +485,13 @@ func (h *Handlers) CreatePage(w http.ResponseWriter, r *http.Request) {
 	if req.Disabled {
 		disabled = 1
 	}
-	res, err := h.DB.ExecContext(r.Context(), `
+	tx, err := h.DB.BeginTx(r.Context(), nil)
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "tx failed")
+		return
+	}
+	defer tx.Rollback()
+	res, err := tx.ExecContext(r.Context(), `
 		INSERT INTO adventure_pages(adventure_id, idx, title, prompt, hint, accept, lat, lng, radius_m, disabled, notes)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, advID, nextIdx, req.Title, req.Prompt, req.Hint, string(accept), req.Lat, req.Lng, radius, disabled, req.Notes)
@@ -457,6 +500,14 @@ func (h *Handlers) CreatePage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id, _ := res.LastInsertId()
+	if err := replacePageHints(r.Context(), tx, id, req.Hints); err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "hints insert failed: "+err.Error())
+		return
+	}
+	if err := tx.Commit(); err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "commit failed: "+err.Error())
+		return
+	}
 	httpx.JSON(w, http.StatusCreated, map[string]any{"id": id, "index": nextIdx})
 }
 
@@ -486,7 +537,13 @@ func (h *Handlers) UpdatePage(w http.ResponseWriter, r *http.Request) {
 	if req.Disabled {
 		disabled = 1
 	}
-	res, err := h.DB.ExecContext(r.Context(), `
+	tx, err := h.DB.BeginTx(r.Context(), nil)
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "tx failed")
+		return
+	}
+	defer tx.Rollback()
+	res, err := tx.ExecContext(r.Context(), `
 		UPDATE adventure_pages
 		SET title = ?, prompt = ?, hint = ?, accept = ?, lat = ?, lng = ?, radius_m = ?, disabled = ?, notes = ?
 		WHERE id = ?
@@ -497,6 +554,14 @@ func (h *Handlers) UpdatePage(w http.ResponseWriter, r *http.Request) {
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
 		httpx.Error(w, http.StatusNotFound, "page not found")
+		return
+	}
+	if err := replacePageHints(r.Context(), tx, pageID, req.Hints); err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "hints update failed: "+err.Error())
+		return
+	}
+	if err := tx.Commit(); err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "commit failed: "+err.Error())
 		return
 	}
 	httpx.JSON(w, http.StatusNoContent, nil)
@@ -858,6 +923,11 @@ func loadAdventureDTO(ctx context.Context, db *sql.DB, slug string) (*adventureE
 			return nil, err
 		}
 		a.Pages[i].Images = imgs
+		hints, err := loadPageHints(ctx, db, a.Pages[i].ID)
+		if err != nil {
+			return nil, err
+		}
+		a.Pages[i].Hints = hints
 	}
 	shares, err := loadAdventureShares(ctx, db, a.Slug)
 	if err != nil {
@@ -909,6 +979,29 @@ func loadPageImages(ctx context.Context, db *sql.DB, pageID int64) ([]imageView,
 		}
 		im.URL = fmt.Sprintf("/adventure-assets/image/%d", im.ID)
 		out = append(out, im)
+	}
+	return out, nil
+}
+
+// loadPageHints returns the author's hint list for a page in display
+// order. Empty slice when the page has no hints, so clients can
+// JSON-encode as [] rather than null and render a safe default.
+func loadPageHints(ctx context.Context, db *sql.DB, pageID int64) ([]hintView, error) {
+	rows, err := db.QueryContext(ctx, `
+		SELECT text, delay_seconds FROM adventure_page_hints
+		WHERE page_id = ? ORDER BY idx
+	`, pageID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []hintView{}
+	for rows.Next() {
+		var hv hintView
+		if err := rows.Scan(&hv.Text, &hv.DelaySeconds); err != nil {
+			return nil, err
+		}
+		out = append(out, hv)
 	}
 	return out, nil
 }

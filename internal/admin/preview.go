@@ -24,6 +24,7 @@ type previewStateDTO struct {
 	Title          string            `json:"title,omitempty"`
 	Prompt         string            `json:"prompt,omitempty"`
 	Hint           string            `json:"hint,omitempty"`
+	Hints          []previewHintDTO  `json:"hints,omitempty"`
 	Images         []previewImageDTO `json:"images,omitempty"`
 	Colors         *adventure.Colors `json:"colors,omitempty"`
 	Preview        bool              `json:"preview"`
@@ -32,9 +33,19 @@ type previewStateDTO struct {
 	// can verify answers even when the debug panel is collapsed.
 	// Without it, previewing-without-debug would treat every answer
 	// as correct.
-	Accept  []string         `json:"accept"`
-	NoAnswer bool            `json:"no_answer,omitempty"`
-	Debug   *previewDebugDTO `json:"preview_debug,omitempty"`
+	Accept   []string         `json:"accept"`
+	NoAnswer bool             `json:"no_answer,omitempty"`
+	Debug    *previewDebugDTO `json:"preview_debug,omitempty"`
+}
+
+// previewHintDTO mirrors player.hintDTO but with "arrival" fixed at
+// preview-load time: unlocks_in_seconds ships as the author's raw
+// delay_seconds so the client's countdown starts from now. That lets
+// the author verify the actual ticking behaviour end-to-end just by
+// reloading the preview page.
+type previewHintDTO struct {
+	TextHTML         string `json:"text_html"`
+	UnlocksInSeconds int    `json:"unlocks_in_seconds"`
 }
 
 type previewImageDTO struct {
@@ -117,6 +128,16 @@ func (h *Handlers) PreviewAdventure(w http.ResponseWriter, r *http.Request) {
 			imgs = append(imgs, previewImageDTO{URL: "/adventure-assets/image/" + strconv.FormatInt(im.ID, 10)})
 		}
 		out.Images = imgs
+	}
+	if len(page.Hints) > 0 {
+		hints := make([]previewHintDTO, 0, len(page.Hints))
+		for _, h := range page.Hints {
+			hints = append(hints, previewHintDTO{
+				TextHTML:         mdx.Render(h.Text),
+				UnlocksInSeconds: h.DelaySeconds,
+			})
+		}
+		out.Hints = hints
 	}
 	if r.URL.Query().Get("debug") == "1" {
 		out.Debug = &previewDebugDTO{

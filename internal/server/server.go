@@ -18,7 +18,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 )
 
-//go:embed web/play.html web/arrange.html web/live.html web/i18n.js
+//go:embed web/play.html web/arrange.html web/live.html web/i18n.js web/favicon.svg
 var webFS embed.FS
 
 // Config is the bag of knobs New needs.
@@ -82,6 +82,11 @@ func New(cfg Config) http.Handler {
 
 	// Shared i18n dictionary + helpers, loaded by all three entry points.
 	r.Get("/i18n.js", serveAsset("web/i18n.js", "application/javascript; charset=utf-8"))
+	// Favicon: single SVG served at both the conventional /favicon.ico
+	// path and the explicit /favicon.svg so old browsers that sniff
+	// the extension don't 404. SVG is tiny, scales for any device.
+	r.Get("/favicon.svg", serveAsset("web/favicon.svg", "image/svg+xml"))
+	r.Get("/favicon.ico", serveAsset("web/favicon.svg", "image/svg+xml"))
 
 	// Public, no-auth read-only endpoints for the TV leaderboard. Keyed
 	// by an opaque token per run so the URL isn't guessable.

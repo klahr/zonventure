@@ -84,15 +84,16 @@ func (h *Handlers) Logout(w http.ResponseWriter, r *http.Request) {
 
 // teamContext is the slot's team/run snapshot used by all the handlers.
 type teamContext struct {
-	TeamID           int64
-	TeamName         string
-	RunID            int64
-	AdventureSlug    string
-	RunState         string
-	ScheduledAt      sql.NullString
-	StartedAt        sql.NullString
-	CurrentPageIndex int
-	CompletedAt      sql.NullString
+	TeamID               int64
+	TeamName             string
+	RunID                int64
+	AdventureSlug        string
+	RunState             string
+	ScheduledAt          sql.NullString
+	StartedAt            sql.NullString
+	CurrentPageIndex     int
+	CurrentPageStartedAt sql.NullString
+	CompletedAt          sql.NullString
 }
 
 // maybePromoteScheduled atomically flips a scheduled run to running
@@ -133,12 +134,12 @@ func loadTeam(ctx context.Context, db *sql.DB, slot auth.Slot) (teamContext, err
 	err := db.QueryRowContext(ctx, `
 		SELECT t.id, t.name, ar.id, ar.adventure_slug, ar.state,
 		       ar.scheduled_at, ar.started_at,
-		       t.current_page_index, t.completed_at
+		       t.current_page_index, t.current_page_started_at, t.completed_at
 		FROM teams t JOIN adventure_runs ar ON ar.id = t.run_id
 		WHERE t.id = ?
 	`, slot.TeamID).Scan(&tc.TeamID, &tc.TeamName, &tc.RunID, &tc.AdventureSlug,
 		&tc.RunState, &tc.ScheduledAt, &tc.StartedAt,
-		&tc.CurrentPageIndex, &tc.CompletedAt)
+		&tc.CurrentPageIndex, &tc.CurrentPageStartedAt, &tc.CompletedAt)
 	return tc, err
 }
 
@@ -154,10 +155,14 @@ type State struct {
 	PageCount      int               `json:"page_count,omitempty"`
 	Title          string            `json:"title,omitempty"`
 	Prompt         string            `json:"prompt,omitempty"`
-	Hint           string            `json:"hint,omitempty"`
-	Images         []imageDTO        `json:"images,omitempty"`
-	Gate           *gateDTO          `json:"gate,omitempty"`
-	Colors         *adventure.Colors `json:"colors,omitempty"`
+	// Hints carries the puzzle's authored hints with their unlock
+	// schedule computed against the team's arrival time on this
+	// puzzle. Empty slice when the puzzle has no hints — the client
+	// hides the reveal button entirely.
+	Hints  []hintDTO         `json:"hints,omitempty"`
+	Images []imageDTO        `json:"images,omitempty"`
+	Gate   *gateDTO          `json:"gate,omitempty"`
+	Colors *adventure.Colors `json:"colors,omitempty"`
 	// ScheduledAt / ServerNow let the pre-start countdown tick against
 	// the server's clock. ScheduledAt is only set for scheduled runs.
 	ScheduledAt string `json:"scheduled_at,omitempty"`
@@ -178,11 +183,67 @@ type imageDTO struct {
 	URL string `json:"url"`
 }
 
+// hintDTO is one hint shipped to the player. TextHTML is the rendered
+// markdown (same pipeline as prompt). UnlocksInSeconds counts down
+// from the server's "now" to the moment this hint becomes revealable;
+// <=0 means the client can show it right now. Order matches the
+// author's sequence — the client reveals them one at a time in that
+// order via a single "Reveal hint" button.
+type hintDTO struct {
+	TextHTML         string `json:"text_html"`
+	UnlocksInSeconds int    `json:"unlocks_in_seconds"`
+}
+
 type gateDTO struct {
 	Lat     float64 `json:"lat"`
 	Lng     float64 `json:"lng"`
 	Radius  float64 `json:"radius_m"`
 	Reached bool    `json:"reached"`
+}
+
+// teamArrival is when the team became eligible for their current
+// puzzle. For a team that's advanced at least once it's the stamped
+// current_page_started_at; for a team still on page 0 we fall back
+// to the run's started_at so page-0 hints unlock on the same clock
+// every player shares. Zero time means "no clock yet" (run is still
+// scheduled) and upstream callers treat every hint as locked.
+func teamArrival(tc teamContext) time.Time {
+	if tc.CurrentPageStartedAt.Valid {
+		if t, err := parsePlayTime(tc.CurrentPageStartedAt.String); err == nil {
+			return t
+		}
+	}
+	if tc.StartedAt.Valid {
+		if t, err := parsePlayTime(tc.StartedAt.String); err == nil {
+			return t
+		}
+	}
+	return time.Time{}
+}
+
+// buildHintDTOs renders + schedules each of a page's hints for the
+// player. Output preserves author order; each entry's
+// UnlocksInSeconds counts down to delay_seconds after the team's
+// arrival. When arrival is the zero time (run not started yet),
+// everything stays locked.
+func buildHintDTOs(hints []adventure.Hint, arrival time.Time) []hintDTO {
+	out := make([]hintDTO, 0, len(hints))
+	now := time.Now().UTC()
+	for _, h := range hints {
+		dto := hintDTO{TextHTML: mdx.Render(h.Text)}
+		if arrival.IsZero() {
+			dto.UnlocksInSeconds = h.DelaySeconds
+		} else {
+			unlockAt := arrival.Add(time.Duration(h.DelaySeconds) * time.Second)
+			remaining := int(unlockAt.Sub(now).Round(time.Second).Seconds())
+			if remaining < 0 {
+				remaining = 0
+			}
+			dto.UnlocksInSeconds = remaining
+		}
+		out = append(out, dto)
+	}
+	return out
 }
 
 // enabledPages returns just the pages an author has kept active, in
@@ -300,7 +361,12 @@ func (h *Handlers) buildState(ctx context.Context, slot auth.Slot) (State, int, 
 	}
 	resp.Status = "running"
 	resp.Prompt = mdx.Render(page.Prompt)
-	resp.Hint = mdx.Render(page.Hint)
+	// Hints: render each markdown body, and compute per-hint unlock
+	// countdown against the team's arrival time on this puzzle.
+	// Falls back to the run's started_at when current_page_started_at
+	// is NULL (team hasn't advanced since run start, so they've been
+	// on page 0 since the whistle).
+	resp.Hints = buildHintDTOs(page.Hints, teamArrival(tc))
 	if len(page.Images) > 0 {
 		imgs := make([]imageDTO, 0, len(page.Images))
 		for _, im := range page.Images {
@@ -359,7 +425,7 @@ func (h *Handlers) applyAdvance(ctx context.Context, slot auth.Slot) (AnswerResp
 	resp := AnswerResponse{Accepted: true}
 	if next, _ := visibleFor(adv.Pages, nextIdx); next == nil {
 		if _, err := h.DB.ExecContext(ctx, `
-			UPDATE teams SET current_page_index = ?, completed_at = datetime('now') WHERE id = ?
+			UPDATE teams SET current_page_index = ?, current_page_started_at = datetime('now'), completed_at = datetime('now') WHERE id = ?
 		`, nextIdx, tc.TeamID); err != nil {
 			return AnswerResponse{}, tc.RunID, http.StatusInternalServerError, "save progress failed"
 		}
@@ -374,7 +440,7 @@ func (h *Handlers) applyAdvance(ctx context.Context, slot auth.Slot) (AnswerResp
 		return resp, tc.RunID, http.StatusOK, ""
 	}
 	if _, err := h.DB.ExecContext(ctx, `
-		UPDATE teams SET current_page_index = ? WHERE id = ?
+		UPDATE teams SET current_page_index = ?, current_page_started_at = datetime('now') WHERE id = ?
 	`, nextIdx, tc.TeamID); err != nil {
 		return AnswerResponse{}, tc.RunID, http.StatusInternalServerError, "save progress failed"
 	}
@@ -500,7 +566,7 @@ func (h *Handlers) applyAnswer(ctx context.Context, slot auth.Slot, answer strin
 	nextIdx := page.Index + 1
 	if next, _ := visibleFor(adv.Pages, nextIdx); next == nil {
 		if _, err := h.DB.ExecContext(ctx, `
-			UPDATE teams SET current_page_index = ?, completed_at = datetime('now') WHERE id = ?
+			UPDATE teams SET current_page_index = ?, current_page_started_at = datetime('now'), completed_at = datetime('now') WHERE id = ?
 		`, nextIdx, tc.TeamID); err != nil {
 			return AnswerResponse{}, tc.RunID, http.StatusInternalServerError, "save progress failed"
 		}
@@ -512,7 +578,7 @@ func (h *Handlers) applyAnswer(ctx context.Context, slot auth.Slot, answer strin
 		return resp, tc.RunID, http.StatusOK, ""
 	}
 	if _, err := h.DB.ExecContext(ctx, `
-		UPDATE teams SET current_page_index = ? WHERE id = ?
+		UPDATE teams SET current_page_index = ?, current_page_started_at = datetime('now') WHERE id = ?
 	`, nextIdx, tc.TeamID); err != nil {
 		return AnswerResponse{}, tc.RunID, http.StatusInternalServerError, "save progress failed"
 	}

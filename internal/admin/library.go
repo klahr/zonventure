@@ -270,6 +270,12 @@ func (h *Handlers) GetPuzzle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p.Images = imgs
+	hints, err := loadPageHints(r.Context(), h.DB, pageID)
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "hints failed: "+err.Error())
+		return
+	}
+	p.Hints = hints
 	httpx.JSON(w, http.StatusOK, p)
 }
 
@@ -382,6 +388,16 @@ func (h *Handlers) CopyPuzzleToAdventure(w http.ResponseWriter, r *http.Request)
 		FROM adventure_page_images WHERE page_id = ?
 	`, newID, srcID); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "image copy failed: "+err.Error())
+		return
+	}
+	// Hints: same INSERT...SELECT pattern. Preserves the author's
+	// idx order and the per-hint delay without touching the source row.
+	if _, err := tx.ExecContext(r.Context(), `
+		INSERT INTO adventure_page_hints(page_id, idx, text, delay_seconds)
+		SELECT ?, idx, text, delay_seconds
+		FROM adventure_page_hints WHERE page_id = ?
+	`, newID, srcID); err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "hints copy failed: "+err.Error())
 		return
 	}
 	if err := tx.Commit(); err != nil {

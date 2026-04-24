@@ -275,7 +275,7 @@ func (h *Handlers) UnlockTeam(w http.ResponseWriter, r *http.Request) {
 	me, _ := auth.FromContext(r.Context())
 	if next >= len(adv.Pages) {
 		if _, err := h.DB.ExecContext(r.Context(),
-			`UPDATE teams SET current_page_index = ?, completed_at = datetime('now') WHERE id = ?`,
+			`UPDATE teams SET current_page_index = ?, current_page_started_at = datetime('now'), completed_at = datetime('now') WHERE id = ?`,
 			next, teamID); err != nil {
 			httpx.Error(w, http.StatusInternalServerError, "update failed")
 			return
@@ -287,7 +287,7 @@ func (h *Handlers) UnlockTeam(w http.ResponseWriter, r *http.Request) {
 		_, _ = runevents.MaybeCompleteRun(r.Context(), h.DB, runID)
 	} else {
 		if _, err := h.DB.ExecContext(r.Context(),
-			`UPDATE teams SET current_page_index = ? WHERE id = ?`, next, teamID); err != nil {
+			`UPDATE teams SET current_page_index = ?, current_page_started_at = datetime('now') WHERE id = ?`, next, teamID); err != nil {
 			httpx.Error(w, http.StatusInternalServerError, "update failed")
 			return
 		}

@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Zonventure · arranger</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Aclonica&family=Open+Sans:wght@400;600;700&display=swap" rel="stylesheet">
@@ -534,6 +535,47 @@ textarea { min-height: 80px; resize: vertical; font-family: ui-monospace, monosp
 .md-preview h2 { font-size: 1.15rem; }
 .md-preview h3 { font-size: 1rem; }
 .md-preview.compact { padding: .4rem .55rem; font-size: .9rem; }
+
+/* Hint-list editor: one row per author-defined hint, stacked. Each
+   row has a small numbered head with the unlock-delay input, a
+   markdown textarea, and the shared md-preview underneath so the
+   rendered output is visible at all times. */
+.hint-rows { display: flex; flex-direction: column; gap: .5rem; margin-bottom: .5rem; }
+.hint-row {
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  padding: .55rem .65rem;
+  background: var(--surface);
+  display: flex; flex-direction: column; gap: .35rem;
+}
+.hint-row textarea {
+  width: 100%; resize: vertical;
+  font: inherit; color: inherit;
+  padding: .4rem .55rem;
+  border: 1px solid var(--border-soft); border-radius: 6px;
+  background: var(--surface-2);
+}
+.hint-row-head {
+  display: flex; align-items: center; gap: .6rem; flex-wrap: wrap;
+}
+.hint-row-num {
+  display: inline-grid; place-items: center;
+  width: 1.6rem; height: 1.6rem; border-radius: 50%;
+  background: var(--accent); color: var(--accent-fg);
+  font-weight: 700; font-size: .85rem;
+  flex-shrink: 0;
+}
+.hint-row-delay {
+  display: inline-flex; align-items: center; gap: .35rem;
+  flex-wrap: wrap;
+}
+.hint-row-delay input {
+  padding: .25rem .4rem;
+  border: 1px solid var(--border-soft); border-radius: 6px;
+  background: var(--surface-2);
+  font: inherit; color: inherit;
+}
+.hint-row-head > button.btn { margin-left: auto; }
 /* GFM tables — goldmark emits plain <table>/<th>/<td>, so give
    the editor pane a matching light-chrome treatment. */
 .md-preview table { width: 100%; border-collapse: collapse; margin: .4rem 0; font-size: .92rem; }
@@ -4143,6 +4185,90 @@ async function confirmDeleteAdventure(adv) {
 // autosize makes a textarea grow to fit its content — used in the
 // WYSIWYG puzzle editor so multi-line prompts render in the preview the
 // same way they'll render in the play view.
+// buildHintsEditor renders an orderable list of hint rows, each with
+// a markdown textarea, a delay-seconds number input, and a remove
+// button. The caller uses controller.get() at submit time to build
+// the payload's hints array. Delay is captured in seconds but shown
+// as mm:ss in a helper beside the input so authors can reason about
+// long unlock windows without mental math.
+function buildHintsEditor(initial) {
+  const rows = [];
+  const list = h('div', { class: 'hint-rows' });
+  const draw = () => {
+    list.replaceChildren();
+    rows.forEach((row, i) => {
+      list.append(renderRow(row, i));
+    });
+    if (rows.length === 0) {
+      list.append(h('p', { class: 'muted', style: 'margin:0 0 .5rem; font-size:.85rem' },
+        t('No hints yet — add one below for a delayed helper button.')));
+    }
+    list.append(addBtn);
+  };
+  const addBtn = h('button', { class: 'btn small', type: 'button', style: 'margin-top:.3rem' },
+    icon(ICONS.plus), t('Add hint'));
+  addBtn.addEventListener('click', () => {
+    rows.push({ text: '', delay_seconds: 0 });
+    draw();
+    // Focus the new textarea so the author can start typing immediately.
+    const tas = list.querySelectorAll('textarea');
+    if (tas.length) tas[tas.length - 1].focus();
+  });
+  function renderRow(row, idx) {
+    const text = h('textarea', { rows: 2, placeholder: t('Clue in markdown…') });
+    text.value = row.text || '';
+    text.addEventListener('input', () => { row.text = text.value; });
+    const delay = h('input', {
+      type: 'number', min: '0', step: '1', style: 'width:6rem',
+    });
+    delay.value = String(row.delay_seconds || 0);
+    const delayLabel = h('span', { class: 'muted', style: 'font-size:.75rem' }, formatHintDelay(row.delay_seconds || 0));
+    delay.addEventListener('input', () => {
+      row.delay_seconds = Math.max(0, parseInt(delay.value, 10) || 0);
+      delayLabel.textContent = formatHintDelay(row.delay_seconds);
+    });
+    const remove = h('button', { class: 'btn small danger', type: 'button', title: t('Remove hint') },
+      icon(ICONS.trash));
+    remove.addEventListener('click', () => {
+      rows.splice(idx, 1);
+      draw();
+    });
+    const preview = attachMdPreview(text, 'compact');
+    return h('div', { class: 'hint-row' },
+      h('div', { class: 'hint-row-head' },
+        h('span', { class: 'hint-row-num' }, String(idx + 1)),
+        h('label', { class: 'hint-row-delay' },
+          h('span', { class: 'muted' }, t('Unlock after')),
+          delay,
+          h('span', { class: 'muted' }, t('s')),
+          delayLabel),
+        remove),
+      text,
+      preview);
+  }
+  rows.push(...(initial || []).map((h) => ({ text: h.text || '', delay_seconds: h.delay_seconds || 0 })));
+  draw();
+  return {
+    el: list,
+    // get returns the authoritative list in author order, trimmed of
+    // trailing whitespace but preserving interior markdown.
+    get: () => rows.map((r) => ({ text: r.text, delay_seconds: r.delay_seconds })),
+  };
+}
+
+// formatHintDelay converts a seconds count to a "(5m 30s)" caption
+// so an input like "330" reads clearly. 0 is surfaced explicitly —
+// the "immediate" label is useful alongside "(5m 30s)" for mental
+// consistency.
+function formatHintDelay(sec) {
+  if (sec <= 0) return t('(immediate)');
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  if (!m) return `(${s}s)`;
+  if (!s) return `(${m}m)`;
+  return `(${m}m ${s}s)`;
+}
+
 // mdSupportedHint is the little "Markdown: ..." muted caption shown
 // under arranger text fields that the server renders through goldmark.
 // Consistent wording in every place keeps the hint reliable.
@@ -4262,10 +4388,13 @@ async function openEditPuzzle(adv, page /* or null */) {
     // Marking them required here silently blocks the Save submit.
     const titleInput  = h('textarea', { class: 'pe pe-title', rows: 1, placeholder: t('Puzzle title') });
     const promptInput = h('textarea', { class: 'pe pe-prompt', rows: 3, placeholder: t('What the player sees…') });
-    const hintInput   = h('textarea', { class: 'pe pe-hint', rows: 1, placeholder: t('(optional hint)') });
     titleInput.value  = page?.title  || '';
     promptInput.value = page?.prompt || '';
-    hintInput.value   = page?.hint   || '';
+    // Hints are no longer a single inline field — they live in the
+    // settings panel as an editable list with per-hint unlock delays.
+    // hintsController gives the submit handler a single .get() that
+    // returns the current list in author order.
+    const hintsController = buildHintsEditor(page?.hints || (page?.hint ? [{ text: page.hint, delay_seconds: 0 }] : []));
 
     const imagesHost = h('div', { class: 'pe-images' });
     const images = page?.images ? [...page.images] : [];
@@ -4348,21 +4477,16 @@ async function openEditPuzzle(adv, page /* or null */) {
       h('input', { disabled: '', placeholder: t('Your answer') }),
       h('button', { class: 'btn primary', disabled: '' }, t('Submit')));
 
-    // Live markdown preview below each rich-text textarea. The server
-    // renders what the player will see, so authors can verify their
-    // `# heading`, `- list`, `**bold**` actually look right without
-    // saving and opening /play.
+    // Live markdown preview below the prompt textarea. Hints live in
+    // the settings panel now — they're behind a button at play time,
+    // so putting them in the preview card was misleading about the
+    // authored layout.
     const promptPreview = attachMdPreview(promptInput);
-    const hintPreview   = attachMdPreview(hintInput, 'compact');
     const previewCard = h('div', { class: 'puzzle-editor' },
       titleInput,
       imagesHost,
       promptInput,
       promptPreview,
-      h('div', { class: 'pe-hint-row' },
-        h('span', { class: 'tag' }, t('Hint:')),
-        hintInput),
-      hintPreview,
       dock,
       h('p', { class: 'muted', style: 'font-size:.75rem; margin:.5rem 0 0' }, mdSupportedHint()),
     );
@@ -4419,6 +4543,10 @@ async function openEditPuzzle(adv, page /* or null */) {
         h('span', {}, t('Accepted answers — comma-separated')), accept),
       h('label', { class: 'field' },
         h('span', {}, t('Internal notes — not shown to players')), notes),
+      h('h3', {}, t('Hints')),
+      h('p', { class: 'muted', style: 'font-size:.8rem; margin:0 0 .5rem' },
+        t('Each hint unlocks a configurable number of seconds after the team reaches this puzzle. Players reveal them one at a time with a button.')),
+      hintsController.el,
       h('h3', {}, t('Location')),
       h('div', { class: 'pe-loc-head' },
         h('span', { class: 'muted', style: 'font-size:.85rem' },
@@ -4451,7 +4579,7 @@ async function openEditPuzzle(adv, page /* or null */) {
       const payload = {
         title:    titleInput.value.trim(),
         prompt:   promptInput.value.trim(),
-        hint:     hintInput.value.trim(),
+        hints:    hintsController.get(),
         notes:    notes.value.trim(),
         accept:   accept.value.split(',').map((s) => s.trim()).filter(Boolean),
         lat:      parseFloat(lat.value),
@@ -4494,7 +4622,7 @@ async function openEditPuzzle(adv, page /* or null */) {
     const isDirty = () => (
       titleInput.value  !== (page?.title  || '') ||
       promptInput.value !== (page?.prompt || '') ||
-      hintInput.value   !== (page?.hint   || '') ||
+      JSON.stringify(hintsController.get()) !== JSON.stringify(page?.hints || []) ||
       notes.value       !== (page?.notes  || '') ||
       accept.value      !== (page?.accept || []).join(', ') ||
       parseFloat(lat.value) !== (page ? page.lat : 59.3293) ||
@@ -4710,7 +4838,7 @@ async function openEditPuzzle(adv, page /* or null */) {
       body.append(h('p', { class: 'muted', style: 'margin: .25rem 0 1rem; font-size:.9rem' }, assignLabel));
     }
     body.append(form);
-    autosize(titleInput); autosize(promptInput); autosize(hintInput); autosize(notes);
+    autosize(titleInput); autosize(promptInput); autosize(notes);
 
     // Location editor (Leaflet). Wiring lives in renderPuzzleLocationMap
     // so the pile of marker/circle/handle state doesn't bleed into this
@@ -4729,7 +4857,7 @@ async function openEditPuzzle(adv, page /* or null */) {
           body: JSON.stringify({
             title:    titleInput.value.trim(),
             prompt:   promptInput.value.trim(),
-            hint:     hintInput.value.trim(),
+            hints:    hintsController.get(),
             notes:    notes.value.trim(),
             accept:   accept.value.split(',').map((s) => s.trim()).filter(Boolean),
             lat:      coords.lat,
@@ -4773,7 +4901,7 @@ async function openEditPuzzle(adv, page /* or null */) {
       const isEmpty =
         !titleInput.value.trim() &&
         !promptInput.value.trim() &&
-        !hintInput.value.trim() &&
+        hintsController.get().length === 0 &&
         !notes.value.trim() &&
         !accept.value.trim() &&
         (images.length === 0) &&
