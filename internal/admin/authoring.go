@@ -58,6 +58,8 @@ type adventureEditDTO struct {
 	Title                string      `json:"title"`
 	Description          string      `json:"description"`
 	Author               string      `json:"author"`
+	IntroText            string      `json:"intro_text"`
+	OutroText            string      `json:"outro_text"`
 	AccentColor          string      `json:"accent_color"`
 	AccentSecondaryColor string      `json:"accent_secondary_color"`
 	BackgroundColor      string      `json:"background_color"`
@@ -100,6 +102,8 @@ type createAdventureRequest struct {
 	Title                string `json:"title"`
 	Description          string `json:"description"`
 	Author               string `json:"author"`
+	IntroText            string `json:"intro_text"`
+	OutroText            string `json:"outro_text"`
 	AccentColor          string `json:"accent_color"`
 	AccentSecondaryColor string `json:"accent_secondary_color"`
 	BackgroundColor      string `json:"background_color"`
@@ -143,11 +147,11 @@ func (h *Handlers) CreateAdventure(w http.ResponseWriter, r *http.Request) {
 		orgArg = org.Int64
 	}
 	res, err := h.DB.ExecContext(r.Context(), `
-		INSERT INTO adventures(slug, title, description, author,
+		INSERT INTO adventures(slug, title, description, author, intro_text, outro_text,
 		                       accent_color, accent_secondary_color, background_color, text_color,
 		                       org_id, created_by_user_id)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, req.Slug, req.Title, req.Description, req.Author,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, req.Slug, req.Title, req.Description, req.Author, req.IntroText, req.OutroText,
 		nullIfEmpty(req.AccentColor), nullIfEmpty(req.AccentSecondaryColor),
 		nullIfEmpty(req.BackgroundColor), nullIfEmpty(req.TextColor),
 		orgArg, me.ID)
@@ -230,6 +234,8 @@ type updateAdventureRequest struct {
 	Description          *string `json:"description,omitempty"`
 	Author               *string `json:"author,omitempty"`
 	Slug                 *string `json:"slug,omitempty"`
+	IntroText            *string `json:"intro_text,omitempty"`
+	OutroText            *string `json:"outro_text,omitempty"`
 	AccentColor          *string `json:"accent_color,omitempty"`
 	AccentSecondaryColor *string `json:"accent_secondary_color,omitempty"`
 	BackgroundColor      *string `json:"background_color,omitempty"`
@@ -260,6 +266,14 @@ func (h *Handlers) UpdateAdventure(w http.ResponseWriter, r *http.Request) {
 	if req.Author != nil {
 		sets = append(sets, "author = ?")
 		args = append(args, *req.Author)
+	}
+	if req.IntroText != nil {
+		sets = append(sets, "intro_text = ?")
+		args = append(args, *req.IntroText)
+	}
+	if req.OutroText != nil {
+		sets = append(sets, "outro_text = ?")
+		args = append(args, *req.OutroText)
 	}
 	if req.Slug != nil {
 		newSlug := strings.TrimSpace(*req.Slug)
@@ -779,12 +793,13 @@ func loadAdventureDTO(ctx context.Context, db *sql.DB, slug string) (*adventureE
 		published                int
 	)
 	if err := db.QueryRowContext(ctx, `
-		SELECT id, slug, title, description, author,
+		SELECT id, slug, title, description, author, intro_text, outro_text,
 		       accent_color, accent_secondary_color, background_color, text_color,
 		       avatar_mime_type IS NOT NULL AS has_avatar,
 		       published
 		FROM adventures WHERE slug = ?
 	`, slug).Scan(&a.ID, &a.Slug, &a.Title, &a.Description, &a.Author,
+		&a.IntroText, &a.OutroText,
 		&accent, &accent2, &bg, &ink, &hasAvatar, &published); err != nil {
 		return nil, err
 	}

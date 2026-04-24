@@ -166,6 +166,11 @@ type State struct {
 	// The client uses this to swap the submit dock for a Continue /
 	// Check-location CTA.
 	NoAnswer bool `json:"no_answer,omitempty"`
+	// IntroText / OutroText are the author's custom copy for the
+	// first-run welcome dialog and the post-completion stats screen.
+	// Empty → client falls back to its built-in default copy.
+	IntroText string `json:"intro_text,omitempty"`
+	OutroText string `json:"outro_text,omitempty"`
 }
 
 type imageDTO struct {
@@ -230,6 +235,8 @@ func (h *Handlers) buildState(ctx context.Context, slot auth.Slot) (State, int, 
 		TeamName:       tc.TeamName,
 		SlotName:       slot.Name,
 		PageCount:      len(enabledPages(adv)),
+		IntroText:      adv.Meta.IntroText,
+		OutroText:      adv.Meta.OutroText,
 	}
 	if !adv.Colors.Empty() {
 		c := adv.Colors

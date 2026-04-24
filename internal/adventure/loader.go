@@ -28,6 +28,13 @@ type Meta struct {
 	Title       string
 	Description string
 	Author      string
+	// IntroText is shown on the first-run welcome overlay when set;
+	// otherwise the default built-in copy applies. Multi-line plain
+	// text — newlines are preserved by the client via white-space.
+	IntroText string
+	// OutroText appears under the stats on the end-of-adventure
+	// completion screen. Same rules as IntroText.
+	OutroText string
 }
 
 // Colors is the optional per-adventure brand palette. Any field left at
@@ -109,10 +116,11 @@ func (l *Library) GetContext(ctx context.Context, slug string) (*Adventure, erro
 		accent, accent2, bg, ink         sql.NullString
 	)
 	err := l.db.QueryRowContext(ctx, `
-		SELECT id, slug, title, description, author,
+		SELECT id, slug, title, description, author, intro_text, outro_text,
 		       accent_color, accent_secondary_color, background_color, text_color
 		FROM adventures WHERE slug = ?
 	`, slug).Scan(&adv.ID, &adv.Slug, &adv.Meta.Title, &adv.Meta.Description, &adv.Meta.Author,
+		&adv.Meta.IntroText, &adv.Meta.OutroText,
 		&accent, &accent2, &bg, &ink)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -143,7 +151,7 @@ func (l *Library) List() []*Adventure {
 // ListContext is the context-aware variant of List.
 func (l *Library) ListContext(ctx context.Context) ([]*Adventure, error) {
 	rows, err := l.db.QueryContext(ctx, `
-		SELECT id, slug, title, description, author,
+		SELECT id, slug, title, description, author, intro_text, outro_text,
 		       accent_color, accent_secondary_color, background_color, text_color
 		FROM adventures ORDER BY slug
 	`)
@@ -156,6 +164,7 @@ func (l *Library) ListContext(ctx context.Context) ([]*Adventure, error) {
 		a := &Adventure{}
 		var accent, accent2, bg, ink sql.NullString
 		if err := rows.Scan(&a.ID, &a.Slug, &a.Meta.Title, &a.Meta.Description, &a.Meta.Author,
+			&a.Meta.IntroText, &a.Meta.OutroText,
 			&accent, &accent2, &bg, &ink); err != nil {
 			return nil, err
 		}

@@ -3958,6 +3958,14 @@ async function openEditAdventureMeta(adv) {
     const title = h('input', { value: adv.title, required: true });
     const desc  = h('textarea', { rows: 2 }, adv.description || '');
     const author = h('input', { value: adv.author || '' });
+    // Custom copy for the first-run welcome dialog and the end-of-run
+    // stats screen. Empty keeps the built-in default copy.
+    const intro = h('textarea', { rows: 5,
+      placeholder: t('Shown on the first-run welcome overlay — leave empty for the default welcome + tips.'),
+    }, adv.intro_text || '');
+    const outro = h('textarea', { rows: 4,
+      placeholder: t('Shown under the stats when the team finishes — leave empty for the default celebratory line.'),
+    }, adv.outro_text || '');
     const initialAccent    = adv.accent_color           || '';
     const initialSecondary = adv.accent_secondary_color || '';
     const initialBg        = adv.background_color      || '';
@@ -4030,6 +4038,9 @@ async function openEditAdventureMeta(adv) {
       h('label', { class: 'field' }, h('span', {}, t('Description')), desc),
       h('label', { class: 'field' }, h('span', {}, t('Author')), author),
       coverRow, coverFile,
+      h('h3', { style: 'margin-top:1rem' }, t('Welcome & completion copy')),
+      h('label', { class: 'field' }, h('span', {}, t('Intro — shown on the welcome screen')), intro),
+      h('label', { class: 'field' }, h('span', {}, t('Outro — shown on the completion screen')), outro),
       h('h3', { style: 'margin-top:1rem' }, t('Brand colours')),
       cAccent.el, cSecondary.el, cBackground.el, cText.el,
       h('div', { class: 'row end' },
@@ -4042,6 +4053,8 @@ async function openEditAdventureMeta(adv) {
       if (title.value.trim() !== adv.title) payload.title = title.value.trim();
       if (desc.value !== (adv.description || '')) payload.description = desc.value;
       if (author.value.trim() !== (adv.author || '')) payload.author = author.value.trim();
+      if (intro.value !== (adv.intro_text || '')) payload.intro_text = intro.value;
+      if (outro.value !== (adv.outro_text || '')) payload.outro_text = outro.value;
       if (cAccent.get()     !== initialAccent)    payload.accent_color           = cAccent.get();
       if (cSecondary.get()  !== initialSecondary) payload.accent_secondary_color = cSecondary.get();
       if (cBackground.get() !== initialBg)        payload.background_color       = cBackground.get();

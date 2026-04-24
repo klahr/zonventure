@@ -172,6 +172,20 @@
   .welcome ul { padding-left: 1.1rem; margin: 1rem 0; }
   .welcome li { margin: .35rem 0; }
   .welcome .cta { margin-top: 1rem; }
+  /* Author-supplied welcome copy. Plain text, but preserve the
+     author's newlines — they're using this like a mini letter to
+     the team, not markdown. */
+  .welcome .intro-custom {
+    white-space: pre-wrap; line-height: 1.55; margin: .5rem 0 .25rem;
+  }
+  /* Completion-screen outro sits below the stats grid. Same
+     whitespace-preserving rule; mildly emphasised so it reads as
+     the author's sign-off rather than debug text. */
+  .summary .outro-custom {
+    white-space: pre-wrap; line-height: 1.55;
+    margin-top: 1rem;
+    color: var(--ink); font-size: .95rem;
+  }
   .welcome .cta button[disabled] {
     background: var(--surface-2); color: var(--muted);
     cursor: not-allowed; box-shadow: none;
@@ -977,18 +991,26 @@ function showWelcomeDialog(s, opts = {}) {
   const panel = el('div', { class: 'panel' });
   panel.append(
     el('h2', {}, s.adventure_title || t('Adventure')),
-    el('div', { class: 'who' }, `${s.team_name || t('your team')}`),
-    el('p', {},
-      t('Your team has '), el('strong', {}, String(s.page_count || '?')),
-      t(' puzzles to solve. Good luck!')),
-    el('h3', { style: 'margin-top:.5rem' }, t('A few quick tips')),
-    el('ul', {},
-      el('li', {}, t('Read each puzzle carefully — the answer is usually a short word or phrase.')),
-      el('li', {}, t('Some puzzles only unlock when you reach a specific place. Your device will show a pin and prompt you to go there.')),
-      el('li', {}, t('The submit button is always in the same spot at the bottom of the screen.')),
-      el('li', {}, t('Whoever in your team has this link installed can type answers — pick one phone and keep it handy.')),
-      el('li', {}, t('Wrong answers don\'t cost you anything — keep trying.'))),
-    el('div', { class: 'cta' }, cta));
+    el('div', { class: 'who' }, `${s.team_name || t('your team')}`));
+  // If the adventure author supplied intro text, use it verbatim
+  // instead of the built-in welcome paragraph + tips list. Newlines
+  // are preserved via the CSS pre-wrap on .intro-custom.
+  if (s.intro_text && s.intro_text.trim()) {
+    panel.append(el('div', { class: 'intro-custom' }, s.intro_text));
+  } else {
+    panel.append(
+      el('p', {},
+        t('Your team has '), el('strong', {}, String(s.page_count || '?')),
+        t(' puzzles to solve. Good luck!')),
+      el('h3', { style: 'margin-top:.5rem' }, t('A few quick tips')),
+      el('ul', {},
+        el('li', {}, t('Read each puzzle carefully — the answer is usually a short word or phrase.')),
+        el('li', {}, t('Some puzzles only unlock when you reach a specific place. Your device will show a pin and prompt you to go there.')),
+        el('li', {}, t('The submit button is always in the same spot at the bottom of the screen.')),
+        el('li', {}, t('Whoever in your team has this link installed can type answers — pick one phone and keep it handy.')),
+        el('li', {}, t('Wrong answers don\'t cost you anything — keep trying.'))));
+  }
+  panel.append(el('div', { class: 'cta' }, cta));
   overlay.append(panel);
   // While locked, skip the backdrop-dismiss shortcut so players can't
   // accidentally blow past the countdown. Still allow it after unlock.
@@ -1090,10 +1112,14 @@ async function renderCompleted(s) {
       el('p', { class: 'muted' }, t('Could not load stats.')));
     return;
   }
-  fillSummaryHost(host, stats);
+  fillSummaryHost(host, stats, s);
 }
 
-function fillSummaryHost(host, stats) {
+function fillSummaryHost(host, stats, s) {
+  // A custom outro replaces the default "Solved all N puzzles" caption
+  // so authors can say something specific — a thank you, a pointer to
+  // the next event, etc. Newlines preserved via .outro-custom CSS.
+  const customOutro = s && s.outro_text && s.outro_text.trim();
   host.replaceChildren(
     el('h2', {}, t('Adventure complete! 🎉')),
     el('div', { class: 'who' }, `${stats.team_name} · ${stats.adventure_title}`),
@@ -1103,12 +1129,14 @@ function fillSummaryHost(host, stats) {
       statBox(`${stats.answers_right}`,               t('Correct answers')),
       statBox(`${stats.answers_wrong}`,               t('Misses')),
     ),
-    stats.page_count
-      ? el('p', { class: 'muted', style: 'font-size:.85rem; margin-top:.75rem' },
-          stats.page_count === 1
-            ? t('Solved all {{n}} puzzle.', { n: stats.page_count })
-            : t('Solved all {{n}} puzzles.', { n: stats.page_count }))
-      : null,
+    customOutro
+      ? el('div', { class: 'outro-custom' }, s.outro_text)
+      : (stats.page_count
+          ? el('p', { class: 'muted', style: 'font-size:.85rem; margin-top:.75rem' },
+              stats.page_count === 1
+                ? t('Solved all {{n}} puzzle.', { n: stats.page_count })
+                : t('Solved all {{n}} puzzles.', { n: stats.page_count }))
+          : null),
   );
 }
 
