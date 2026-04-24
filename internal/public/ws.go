@@ -26,7 +26,7 @@ func (h *Handlers) WSLive(w http.ResponseWriter, r *http.Request) {
 	}
 	// Resolve the token once up front so we can refuse bad tokens without
 	// opening a socket just to close it.
-	runID, _, _, _, showMap, err := h.runByToken(r.Context(), token)
+	runID, _, _, _, _, showMap, err := h.runByToken(r.Context(), token)
 	if err != nil {
 		http.Error(w, "run not found", http.StatusNotFound)
 		return

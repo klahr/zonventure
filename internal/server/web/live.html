@@ -46,10 +46,14 @@ html, body {
 }
 
 .app {
-  min-height: 100%;
+  /* Cap at the viewport so the leaderboard's soft-fade mask can do
+     its thing — without a fixed outer height, flex:1 children grow to
+     fit their content and there's nothing to mask. */
+  height: 100vh;
   display: flex; flex-direction: column;
   padding: clamp(1rem, 2.5vw, 2.5rem);
   gap: clamp(1rem, 2vw, 2rem);
+  overflow: hidden;
 }
 
 /* ---------- Header ---------- */
@@ -125,20 +129,45 @@ html, body {
   display: grid; gap: clamp(.5rem, 1vw, 1rem);
   flex: 1;
   align-content: start;
+  min-height: 0;       /* allow flex track to shrink past content size */
+  overflow: hidden;    /* clip tail rows that don't fit the viewport */
 }
+/* When the board can't fit every row, fade the bottom so the cut-off
+   doesn't look broken. JS toggles .overflow based on scrollHeight. */
+.board.overflow {
+  -webkit-mask-image: linear-gradient(to bottom, black 58%, transparent 100%);
+  mask-image: linear-gradient(to bottom, black 58%, transparent 100%);
+}
+/* Rank 4+ rows are less emphasised — the podium keeps the spotlight.
+   The team-colour left stripe is swapped for a muted gray so only
+   the top three carry the team tint. */
+.row.rank-tail {
+  opacity: .72;
+  padding: clamp(.5rem, 1vw, .95rem) clamp(.85rem, 1.75vw, 1.6rem);
+  border-left-color: rgba(255, 255, 255, .12);
+}
+.row.rank-tail .rank { font-size: clamp(1.3rem, 2.5vw, 2.4rem); }
+.row.rank-tail .team-name { font-size: clamp(.95rem, 1.5vw, 1.4rem); }
+.row.rank-tail .row-avatar { width: clamp(3rem, 5vw, 4.5rem); }
+.row.rank-tail .members { font-size: clamp(.7rem, .9vw, .9rem); }
 
 /* Split layout when the run's show_map flag is on. On wide screens the
    map sits to the right of the leaderboard; below 900px they stack. */
 .split {
   display: grid; gap: clamp(1rem, 2vw, 2rem);
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  /* Cap the split track at the flex space the .app gives it so the
+     map's intrinsic height doesn't push the row past the viewport
+     when the leaderboard has many teams. */
+  grid-template-rows: minmax(0, 1fr);
   flex: 1;
+  min-height: 0;
   align-content: stretch;
 }
 .split > .board { grid-column: 1 / 2; }
 .split > .mapwrap { grid-column: 2 / 3; }
 @media (max-width: 900px) {
-  .split { grid-template-columns: 1fr; }
+  .split { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); }
   .split > .mapwrap { grid-column: 1; }
 }
 .mapwrap {
@@ -146,9 +175,9 @@ html, body {
   border-radius: 18px; overflow: hidden;
   border: 1px solid rgba(255,255,255,.08);
   background: rgba(255,255,255,.02);
-  min-height: 420px;
+  min-height: 0;
 }
-.mapwrap .mapinner { flex: 1; }
+.mapwrap .mapinner { flex: 1; min-height: 0; }
 .mapwrap .maphint {
   padding: .6rem 1rem; color: var(--muted); font-size: .85rem;
   text-align: center; border-top: 1px solid rgba(255,255,255,.05);
@@ -172,7 +201,8 @@ html, body {
 
 .row {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  /* rank | avatar | main content | optional right-side stat */
+  grid-template-columns: auto auto 1fr auto;
   gap: clamp(.75rem, 1.5vw, 1.5rem);
   align-items: center;
   padding: clamp(.75rem, 1.5vw, 1.4rem) clamp(1rem, 2vw, 2rem);
@@ -183,6 +213,25 @@ html, body {
   box-shadow: 0 4px 20px rgba(0,0,0,.35);
   transition: transform .5s cubic-bezier(.2,.8,.2,1), background .3s, border-color .3s;
   will-change: transform;
+}
+/* Avatar cell sits left of the main text block. Fixed-width cell
+   scales with viewport; the avatar inside forces aspect-ratio 1 so
+   it's always a perfect circle (rounded squares are reserved for
+   adventure surfaces). */
+.row-avatar {
+  align-self: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: clamp(4rem, 7vw, 6.5rem);
+}
+.row-avatar > .team-avatar-lv {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1;
+  font-size: clamp(1.4rem, 2.4vw, 2.2rem);
+  border-radius: 50%;
+  border-width: 3px;
 }
 .row.rank-1 {
   border-color: rgba(245,196,82,.35);
@@ -229,6 +278,31 @@ html, body {
   box-shadow: 0 0 0 3px rgba(255,255,255,.08);
   flex-shrink: 0;
 }
+/* Leaderboard team avatar: circular, same size as the old dot's em
+   box so the layout doesn't shift. Coloured border acts as the team's
+   identity swatch even when an uploaded picture fills the inside. */
+.team-avatar-lv {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 2.1em; height: 2.1em; border-radius: 50%;
+  overflow: hidden; flex-shrink: 0;
+  border: 2px solid rgba(255,255,255,.15);
+  color: #fff; font-weight: 800; font-size: .65em;
+  text-transform: uppercase; letter-spacing: .04em;
+  box-shadow: 0 0 0 3px rgba(255,255,255,.06);
+}
+.team-avatar-lv img { width: 100%; height: 100%; object-fit: cover; display: block; }
+/* Map marker counterpart: slightly larger than the leaderboard to
+   stay legible at TV viewing distance. */
+.team-marker-lv {
+  width: 100%; height: 100%; border-radius: 50%;
+  overflow: hidden;
+  border: 3px solid var(--team-col, #e24080);
+  background: var(--team-col, #e24080);
+  box-shadow: 0 0 0 2px #fff, 0 4px 12px rgba(0,0,0,.5);
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; font-weight: 800; font-size: 13px;
+}
+.team-marker-lv img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .members {
   color: var(--muted);
   font-size: clamp(.75rem, 1vw, 1rem);
@@ -277,6 +351,102 @@ html, body {
   color: var(--muted); font-size: 1.2rem;
 }
 
+/* Pre-start card: shown while the run is scheduled/unstarted. Big
+   countdown digits when a start time is set, calmer copy otherwise.
+   Fills the leaderboard slot so the TV has something worth watching
+   before the flag drops. */
+.prestart {
+  flex: 1;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  text-align: center;
+  gap: 1rem;
+  padding: 2rem 1rem;
+}
+.prestart .banner {
+  font-family: var(--font-brand);
+  color: var(--accent-secondary);
+  font-size: clamp(1.2rem, 2.5vw, 2rem);
+  letter-spacing: .08em; text-transform: uppercase;
+}
+.prestart .countdown {
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+  font-size: clamp(3.5rem, 12vw, 10rem);
+  line-height: 1;
+  color: var(--text);
+  letter-spacing: -.02em;
+}
+.prestart .countdown small {
+  display: block;
+  font-size: clamp(.7rem, 1vw, 1rem);
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .22em;
+  margin-top: .6rem;
+}
+.prestart .whenline {
+  font-size: clamp(.9rem, 1.2vw, 1.2rem);
+  color: var(--muted);
+}
+
+/* Start animation: full-screen burst when the run flips from
+   scheduled → running. Similar feel to play.html's celebrate but
+   uses the adventure accent instead of success green. */
+.startfx {
+  position: fixed; inset: 0; z-index: 9999;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  pointer-events: none;
+  background: radial-gradient(ellipse at center, rgba(0,0,0,.35) 0%, rgba(0,0,0,.65) 100%);
+  animation: startFxFade .3s ease;
+}
+.startfx.gone { animation: startFxFadeOut .5s ease forwards; }
+@keyframes startFxFade    { from { opacity: 0 } to { opacity: 1 } }
+@keyframes startFxFadeOut { from { opacity: 1 } to { opacity: 0 } }
+.startfx .ring {
+  width: 200px; height: 200px; border-radius: 50%;
+  background: radial-gradient(circle at 30% 30%, color-mix(in srgb, var(--accent) 80%, #fff), var(--accent));
+  display: grid; place-items: center;
+  color: #fff;
+  font-family: var(--font-brand);
+  font-size: 3rem; line-height: 1;
+  box-shadow: 0 0 0 10px color-mix(in srgb, var(--accent) 30%, transparent),
+              0 14px 50px rgba(0,0,0,.45);
+  transform: scale(0);
+  animation: startFxPop .65s cubic-bezier(.2,1.6,.4,1) .05s forwards;
+}
+@keyframes startFxPop { to { transform: scale(1) } }
+.startfx .head {
+  font-family: var(--font-brand); color: #fff;
+  font-size: clamp(2.2rem, 7vw, 4rem);
+  letter-spacing: .02em;
+  margin-top: 1.2rem;
+  opacity: 0; animation: startFxRise .45s .55s ease forwards;
+}
+.startfx .sub {
+  color: rgba(255,255,255,.85); font-weight: 700;
+  margin-top: .3rem; text-transform: uppercase; letter-spacing: .18em;
+  font-size: clamp(.8rem, 1vw, 1rem);
+  opacity: 0; animation: startFxRise .45s .8s ease forwards;
+}
+@keyframes startFxRise {
+  from { opacity: 0; transform: translateY(10px) }
+  to   { opacity: 1; transform: translateY(0) }
+}
+.startfx .piece {
+  position: absolute; top: -30px;
+  width: 12px; height: 20px; border-radius: 2px;
+  background: var(--c, var(--accent));
+  animation: startFxConfetti 2.6s var(--d, 0ms) cubic-bezier(.25,.75,.45,1) forwards;
+  will-change: transform, opacity;
+}
+@keyframes startFxConfetti {
+  0%   { opacity: 0; transform: translate(0, -50px) rotate(0) }
+  6%   { opacity: 1 }
+  100% { opacity: 0; transform: translate(var(--dx, 0), 110vh) rotate(var(--rot, 360deg)) }
+}
+
 .footer {
   color: var(--muted);
   font-size: clamp(.7rem, .95vw, .9rem);
@@ -296,6 +466,13 @@ if (initialLoading) initialLoading.textContent = t('Loading…');
 
 const TEAM_COLORS = ['#e24080', '#7fd17b', '#60a5fa', '#f5c452', '#a78bfa', '#22d3ee', '#fb7185', '#34d399'];
 function teamColor(i) { return TEAM_COLORS[i % TEAM_COLORS.length]; }
+
+function teamInitials(name) {
+  const parts = (name || '').trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '?';
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
 
 // applyColors overrides the CSS palette from a per-adventure brand. Same
 // logic as play.html — kept duplicated (~30 lines) rather than extracted
@@ -369,16 +546,50 @@ function formatFinishTime(startISO, completedAt) {
   return h ? `${h}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
 }
 
+// mapShown is a client-side override. null → follow the server's
+// show_map flag; true/false → override it (the `m` shortcut flips it).
+let mapShown = null;
+
+function showMapEffective(data) {
+  return mapShown !== null ? mapShown : !!data?.show_map;
+}
+
+// isPreStart reports whether the run is visible on the TV but hasn't
+// begun yet — scheduled (with or without an auto-start time) and
+// nothing yet in started_at.
+function isPreStart(data) {
+  return !data?.started_at && (data?.state === 'scheduled' || data?.state === 'waiting');
+}
+
+// prevState tracks the previous snapshot's state code across renders
+// so we can fire the start animation exactly once when the flag drops.
+let prevState = null;
+
 function render() {
   const data = latestSnapshot;
   if (!data) return;
   applyColors(data.colors);
 
+  // Detect scheduled → running so the start animation fires exactly
+  // once. prevState starts null so a fresh tab that lands on an
+  // already-running board doesn't trigger the burst.
+  if (prevState && prevState !== 'running' && data.state === 'running' && data.started_at) {
+    playStartAnimation();
+  }
+  prevState = data.state || prevState;
+
   const root = document.getElementById('root');
   root.replaceChildren();
 
   root.append(buildHeader(data));
-  if (data.show_map) {
+  if (isPreStart(data)) {
+    root.append(buildPreStart(data));
+    root.append(h('div', { class: 'footer' },
+      t('Live · push updates · '),
+      t('server time {{time}}', { time: data.server_now || '' })));
+    return;
+  }
+  if (showMapEffective(data)) {
     const split = h('div', { class: 'split' });
     split.append(buildBoard(data));
     split.append(buildMapSlot());
@@ -397,7 +608,26 @@ function render() {
           : t('{{n}} puzzles · ', { n: data.puzzles.length }))
       : '',
     t('server time {{time}}', { time: data.server_now || '' })));
+
+  // After the DOM mounts, see if the leaderboard overflows the
+  // viewport. If it does, apply the soft bottom fade. Runs in an rAF
+  // so the flex/grid tracks have resolved before we measure.
+  requestAnimationFrame(updateBoardOverflow);
 }
+
+function updateBoardOverflow() {
+  const board = document.querySelector('.board');
+  if (!board) return;
+  // scrollHeight > clientHeight means the grid contents are taller
+  // than the flex track — any tail row is off-screen and the fade
+  // should kick in.
+  if (board.scrollHeight > board.clientHeight + 1) {
+    board.classList.add('overflow');
+  } else {
+    board.classList.remove('overflow');
+  }
+}
+window.addEventListener('resize', () => requestAnimationFrame(updateBoardOverflow));
 
 // buildMapSlot returns a stable <div> for the Leaflet map so the outer
 // render can reparent it on every poll without destroying Leaflet's
@@ -476,11 +706,19 @@ async function renderLiveMap(inner, hint, data) {
     const latlngs = track.points.map((p) => [p.lat, p.lng]);
     L.polyline(latlngs, { color: colour, weight: 3, opacity: .85 }).addTo(map);
     const last = track.points[track.points.length - 1];
+    const initials = teamInitials(track.team_name);
+    const size = 34;
+    const html = track.avatar_url
+      ? `<div class="team-marker-lv" style="--team-col:${colour}; width:${size}px; height:${size}px;">`
+          + `<img src="${track.avatar_url}" alt="" onerror="this.replaceWith(Object.assign(document.createElement('span'),{textContent:${JSON.stringify(initials)}}))"/>`
+          + `</div>`
+      : `<div class="team-marker-lv no-img" style="--team-col:${colour}; width:${size}px; height:${size}px;">`
+          + `<span>${initials}</span></div>`;
     L.marker([last.lat, last.lng], {
       icon: L.divIcon({
         className: '',
-        html: `<div class="team-dot" style="background:${colour}"></div>`,
-        iconSize: [14, 14], iconAnchor: [7, 7],
+        html,
+        iconSize: [size, size], iconAnchor: [size / 2, size / 2],
       }),
     }).bindPopup(`<strong>${track.team_name}</strong>`).addTo(map);
     for (const ll of latlngs) bounds.extend(ll);
@@ -489,22 +727,20 @@ async function renderLiveMap(inner, hint, data) {
   if (bounds.isValid()) {
     map.fitBounds(bounds, { padding: [24, 24], maxZoom: 17 });
   }
-  hint.textContent = tracks.length
-    ? (tracks.length === 1
-        ? t('{{n}} team on the map', { n: tracks.length })
-        : t('{{n}} teams on the map', { n: tracks.length }))
-    : t('Waiting for the first position…');
+  // Hide the hint strip entirely once teams have sent at least one
+  // position — the count text was noisy and duplicated the leaderboard.
+  // The "waiting for the first position" line stays so a fresh run
+  // doesn't render as a blank map.
+  if (tracks.length) {
+    hint.textContent = '';
+    hint.style.display = 'none';
+  } else {
+    hint.textContent = t('Waiting for the first position…');
+    hint.style.display = '';
+  }
 }
 
 function buildHeader(data) {
-  const fsBtn = h('button', { class: 'fs-btn', title: t('Fullscreen') },
-    h('span', { html: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 8 4 4 8 4"/><polyline points="16 4 20 4 20 8"/><polyline points="20 16 20 20 16 20"/><polyline points="8 20 4 20 4 16"/></svg>' }),
-    t('Fullscreen'));
-  fsBtn.addEventListener('click', () => {
-    if (document.fullscreenElement) document.exitFullscreen();
-    else document.documentElement.requestFullscreen();
-  });
-
   return h('header', { class: 'topline' },
     h('div', { class: 'brand' }, 'zonventure'),
     h('div', { class: 'title' },
@@ -517,9 +753,84 @@ function buildHeader(data) {
       h('div', { class: 'clock' },
         formatElapsed(data.started_at, data.server_now),
         h('small', {}, data.started_at ? t('Elapsed') : t('Not started'))),
-      fsBtn,
     ),
   );
+}
+
+// buildPreStart renders the large countdown card shown before the
+// run starts. When scheduled_at is set we show a live countdown; with
+// no schedule the copy flips to "Waiting for the arranger to start".
+// The clock interval already running at 1 s cadence updates the
+// .countdown .digits text in place so the digits tick smoothly.
+function buildPreStart(data) {
+  const card = h('div', { class: 'prestart' });
+  card.append(h('div', { class: 'banner' }, t('Starting soon')));
+  if (data.scheduled_at) {
+    const digits = h('div', { class: 'digits' }, countdownText(data.scheduled_at, data.server_now));
+    card.append(h('div', { class: 'countdown' }, digits,
+      h('small', {}, t('until the flag drops'))));
+    card.append(h('div', { class: 'whenline' },
+      t('Scheduled for {{when}}', { when: formatScheduled(data.scheduled_at) })));
+  } else {
+    card.append(h('div', { class: 'countdown' },
+      h('div', { class: 'digits' }, '—'),
+      h('small', {}, t('waiting for the arranger'))));
+  }
+  return card;
+}
+
+function countdownText(scheduledISO, serverNowISO) {
+  const when = new Date(scheduledISO.includes('T') ? scheduledISO : scheduledISO.replace(' ', 'T') + 'Z');
+  const now = serverNowISO ? new Date(serverNowISO) : new Date();
+  const sec = Math.round((when.getTime() - now.getTime()) / 1000);
+  if (sec <= 0) return t('any moment…');
+  const d = Math.floor(sec / 86400);
+  const h = Math.floor((sec % 86400) / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = sec % 60;
+  const pad = (n) => String(n).padStart(2, '0');
+  if (d > 0) return `${d}d ${pad(h)}:${pad(m)}:${pad(s)}`;
+  if (h > 0) return `${pad(h)}:${pad(m)}:${pad(s)}`;
+  return `${pad(m)}:${pad(s)}`;
+}
+
+function formatScheduled(iso) {
+  const d = new Date(iso.includes('T') ? iso : iso.replace(' ', 'T') + 'Z');
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleString();
+}
+
+// playStartAnimation drops a full-screen accent burst the moment the
+// run flips from scheduled → running. Mirrors the shape of the
+// player-side celebrate() but themed as "race start" rather than
+// "puzzle correct".
+function playStartAnimation() {
+  const overlay = document.createElement('div');
+  overlay.className = 'startfx';
+  const ring = document.createElement('div');
+  ring.className = 'ring';
+  ring.textContent = 'GO';
+  const head = document.createElement('div');
+  head.className = 'head';
+  head.textContent = t("We're live!");
+  const sub = document.createElement('div');
+  sub.className = 'sub';
+  sub.textContent = t('Teams are on the move');
+  overlay.append(ring, head, sub);
+  const colours = ['#e24080', '#f5c452', '#7fd17b', '#60a5fa', '#a78bfa', '#22d3ee'];
+  for (let i = 0; i < 60; i++) {
+    const p = document.createElement('div');
+    p.className = 'piece';
+    p.style.left = Math.random() * 100 + '%';
+    p.style.setProperty('--c', colours[i % colours.length]);
+    p.style.setProperty('--dx', ((Math.random() * 2 - 1) * 450) + 'px');
+    p.style.setProperty('--rot', (Math.random() * 1440 - 720) + 'deg');
+    p.style.setProperty('--d', (Math.random() * 250) + 'ms');
+    overlay.append(p);
+  }
+  document.body.append(overlay);
+  setTimeout(() => overlay.classList.add('gone'), 3200);
+  setTimeout(() => overlay.remove(), 3800);
 }
 
 function buildBoard(data) {
@@ -543,7 +854,7 @@ function renderRow(team, idx, data) {
   const colour = teamColor(idx);
   const pct = data.page_count > 0 ? Math.min(100, Math.round((team.page_index / data.page_count) * 100)) : 0;
   const finished = !!team.completed_at || (data.page_count > 0 && team.page_index >= data.page_count);
-  const rankCls = team.rank <= 3 ? ` rank-${team.rank}` : '';
+  const rankCls = team.rank <= 3 ? ` rank-${team.rank}` : ' rank-tail';
   const row = h('div', {
     class: `row rank-${team.rank}${rankCls}${finished ? ' finished' : ''}`,
     style: `--team-color:${colour}`,
@@ -551,9 +862,25 @@ function renderRow(team, idx, data) {
 
   row.append(h('div', { class: 'rank' }, team.rank));
 
+  // Avatar is its own row-level cell now so it can stretch to the full
+  // row height (square-ish block on the left). Uploaded picture when
+  // set, otherwise initials on the team colour.
+  const avatarInner = h('span', {
+    class: 'team-avatar-lv',
+    style: `background:${colour}`,
+  }, teamInitials(team.name));
+  if (team.avatar_url) {
+    avatarInner.replaceChildren();
+    const img = document.createElement('img');
+    img.src = team.avatar_url;
+    img.alt = '';
+    img.onerror = () => { avatarInner.textContent = teamInitials(team.name); };
+    avatarInner.append(img);
+  }
+  row.append(h('div', { class: 'row-avatar' }, avatarInner));
+
   const main = h('div', { class: 'main' });
   main.append(h('div', { class: 'team-name' },
-    h('span', { class: 'team-dot' }),
     team.name,
     finished ? h('span', { style: 'color:var(--success); font-size:.6em; font-weight:700; text-transform:uppercase; letter-spacing:.2em' }, t('finished')) : null,
   ));
@@ -621,11 +948,39 @@ function connectWS() {
 setInterval(() => {
   if (!latestSnapshot) return;
   const clockEl = document.querySelector('.clock');
-  if (!clockEl) return;
-  const firstLine = formatElapsed(latestSnapshot.started_at);
-  const firstChild = clockEl.firstChild;
-  if (firstChild && firstChild.nodeType === 3) firstChild.nodeValue = firstLine;
+  if (clockEl) {
+    const firstLine = formatElapsed(latestSnapshot.started_at);
+    const firstChild = clockEl.firstChild;
+    if (firstChild && firstChild.nodeType === 3) firstChild.nodeValue = firstLine;
+  }
+  // Pre-start countdown digit tick — read against a local clock rather
+  // than server_now (which only updates on push) so the digits don't
+  // hop.
+  const digitsEl = document.querySelector('.prestart .countdown .digits');
+  if (digitsEl && latestSnapshot.scheduled_at) {
+    digitsEl.textContent = countdownText(latestSnapshot.scheduled_at, new Date().toISOString());
+  }
 }, 1000);
+
+// Keyboard shortcuts for the TV:
+//   m — toggle the map card (overrides the server show_map setting)
+//   f — toggle browser fullscreen
+// Ignore when focus is in a form field so typing doesn't steal hotkeys
+// (not that there are any inputs on the live view today, but be safe).
+document.addEventListener('keydown', (e) => {
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  const tag = (e.target.tagName || '').toLowerCase();
+  if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+  if (e.key === 'm' || e.key === 'M') {
+    mapShown = !showMapEffective(latestSnapshot);
+    render();
+    e.preventDefault();
+  } else if (e.key === 'f' || e.key === 'F') {
+    if (document.fullscreenElement) document.exitFullscreen();
+    else document.documentElement.requestFullscreen();
+    e.preventDefault();
+  }
+});
 
 connectWS();
 </script>

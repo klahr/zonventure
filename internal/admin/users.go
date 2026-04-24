@@ -73,6 +73,14 @@ func (h *Handlers) AdventureDetail(w http.ResponseWriter, r *http.Request) {
 	if !adv.Colors.Empty() {
 		out["colors"] = adv.Colors
 	}
+	// Tack on the cover picture URL if one is stored. Lib.Get doesn't
+	// carry the avatar blob, so hit the DB with a tiny probe.
+	var hasAvatar int
+	_ = h.DB.QueryRowContext(r.Context(),
+		`SELECT avatar_mime_type IS NOT NULL FROM adventures WHERE slug = ?`, slug).Scan(&hasAvatar)
+	if hasAvatar != 0 {
+		out["avatar_url"] = adventureAvatarURL(slug)
+	}
 	httpx.JSON(w, http.StatusOK, out)
 }
 
@@ -119,11 +127,13 @@ func (h *Handlers) RunDetail(w http.ResponseWriter, r *http.Request) {
 		PageIndex   int       `json:"page_index"`
 		CompletedAt string    `json:"completed_at,omitempty"`
 		Token       string    `json:"token"`
+		AvatarURL   string    `json:"avatar_url,omitempty"`
 		Members     []slotOut `json:"members"`
 	}
 	teams := []teamOut{}
 	rows, err := h.DB.QueryContext(r.Context(), `
-		SELECT t.id, t.name, t.current_page_index, COALESCE(t.completed_at, ''), t.token
+		SELECT t.id, t.name, t.current_page_index, COALESCE(t.completed_at, ''), t.token,
+		       t.avatar_mime_type IS NOT NULL AS has_avatar
 		FROM teams t WHERE t.run_id = ? ORDER BY t.name
 	`, runID)
 	if err != nil {
@@ -133,9 +143,13 @@ func (h *Handlers) RunDetail(w http.ResponseWriter, r *http.Request) {
 	defer rows.Close()
 	for rows.Next() {
 		t := teamOut{Members: []slotOut{}}
-		if err := rows.Scan(&t.ID, &t.Name, &t.PageIndex, &t.CompletedAt, &t.Token); err != nil {
+		var hasAvatar int
+		if err := rows.Scan(&t.ID, &t.Name, &t.PageIndex, &t.CompletedAt, &t.Token, &hasAvatar); err != nil {
 			httpx.Error(w, http.StatusInternalServerError, "team scan failed")
 			return
+		}
+		if hasAvatar != 0 {
+			t.AvatarURL = teamAvatarURL(t.ID)
 		}
 		teams = append(teams, t)
 	}

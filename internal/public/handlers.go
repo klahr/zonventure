@@ -10,6 +10,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -45,6 +46,7 @@ type teamDTO struct {
 	PageCount   int         `json:"page_count"`
 	CompletedAt string      `json:"completed_at,omitempty"`
 	Rank        int         `json:"rank"`
+	AvatarURL   string      `json:"avatar_url,omitempty"`
 	Members     []memberDTO `json:"members"`
 }
 
@@ -56,6 +58,7 @@ type LiveDTO struct {
 	AdventureSlug  string            `json:"adventure_slug"`
 	State          string            `json:"state"`
 	StartedAt      string            `json:"started_at,omitempty"`
+	ScheduledAt    string            `json:"scheduled_at,omitempty"`
 	ServerNow      string            `json:"server_now"`
 	PageCount      int               `json:"page_count"`
 	ShowMap        bool              `json:"show_map"`
@@ -66,14 +69,17 @@ type LiveDTO struct {
 
 // runByToken resolves a URL token to a run id, returning sql.ErrNoRows if
 // the token is unknown.
-func (h *Handlers) runByToken(ctx context.Context, token string) (runID int64, slug, state, startedAt string, showMap int, err error) {
-	var started sql.NullString
+func (h *Handlers) runByToken(ctx context.Context, token string) (runID int64, slug, state, startedAt, scheduledAt string, showMap int, err error) {
+	var started, scheduled sql.NullString
 	err = h.DB.QueryRowContext(ctx, `
-		SELECT id, adventure_slug, state, started_at, show_map
+		SELECT id, adventure_slug, state, started_at, scheduled_at, show_map
 		FROM adventure_runs WHERE live_token = ?
-	`, token).Scan(&runID, &slug, &state, &started, &showMap)
+	`, token).Scan(&runID, &slug, &state, &started, &scheduled, &showMap)
 	if started.Valid {
 		startedAt = started.String
+	}
+	if scheduled.Valid {
+		scheduledAt = scheduled.String
 	}
 	return
 }
@@ -81,7 +87,7 @@ func (h *Handlers) runByToken(ctx context.Context, token string) (runID int64, s
 // buildLive assembles the full snapshot. Shared between the HTTP handler
 // and the WS push path.
 func (h *Handlers) buildLive(ctx context.Context, token string) (LiveDTO, int64, int, string) {
-	id, slug, state, startedAt, showMap, err := h.runByToken(ctx, token)
+	id, slug, state, startedAt, scheduledAt, showMap, err := h.runByToken(ctx, token)
 	if errors.Is(err, sql.ErrNoRows) {
 		return LiveDTO{}, 0, http.StatusNotFound, "run not found"
 	}
@@ -109,7 +115,8 @@ func (h *Handlers) buildLive(ctx context.Context, token string) (LiveDTO, int64,
 		}
 	}
 	rows, err := h.DB.QueryContext(ctx, `
-		SELECT t.id, t.name, t.current_page_index, COALESCE(t.completed_at, '')
+		SELECT t.id, t.name, t.current_page_index, COALESCE(t.completed_at, ''),
+		       t.avatar_mime_type IS NOT NULL AS has_avatar
 		FROM teams t
 		WHERE t.run_id = ?
 		ORDER BY
@@ -130,11 +137,15 @@ func (h *Handlers) buildLive(ctx context.Context, token string) (LiveDTO, int64,
 	teams := []teamDTO{}
 	for rows.Next() {
 		var (
-			t       teamDTO
-			rawCurr int
+			t         teamDTO
+			rawCurr   int
+			hasAvatar int
 		)
-		if err := rows.Scan(&t.ID, &t.Name, &rawCurr, &t.CompletedAt); err != nil {
+		if err := rows.Scan(&t.ID, &t.Name, &rawCurr, &t.CompletedAt, &hasAvatar); err != nil {
 			return LiveDTO{}, id, http.StatusInternalServerError, "scan failed"
+		}
+		if hasAvatar != 0 {
+			t.AvatarURL = fmt.Sprintf("/adventure-assets/team-avatar/%d", t.ID)
 		}
 		// Convert the stored cursor (raw adventure_pages.idx of the next
 		// page to consider) into a count of enabled pages already solved.
@@ -176,6 +187,7 @@ func (h *Handlers) buildLive(ctx context.Context, token string) (LiveDTO, int64,
 		AdventureSlug:  slug,
 		State:          state,
 		StartedAt:      startedAt,
+		ScheduledAt:    scheduledAt,
 		ServerNow:      time.Now().UTC().Format(time.RFC3339),
 		PageCount:      len(enabled),
 		ShowMap:        showMap != 0,
@@ -212,9 +224,10 @@ type trackPoint struct {
 }
 
 type trackDTO struct {
-	TeamID   int64        `json:"team_id"`
-	TeamName string       `json:"team_name"`
-	Points   []trackPoint `json:"points"`
+	TeamID    int64        `json:"team_id"`
+	TeamName  string       `json:"team_name"`
+	AvatarURL string       `json:"avatar_url,omitempty"`
+	Points    []trackPoint `json:"points"`
 }
 
 // TracksResponse is the payload for the tracks endpoint and for the
@@ -227,7 +240,8 @@ type TracksResponse struct {
 // (resp, status, errMsg). Caller is responsible for authorising by token.
 func (h *Handlers) buildTracks(ctx context.Context, runID int64) (TracksResponse, int, string) {
 	rows, err := h.DB.QueryContext(ctx, `
-		SELECT p.team_id, t.name, p.lat, p.lng, p.server_ts
+		SELECT p.team_id, t.name, t.avatar_mime_type IS NOT NULL AS has_avatar,
+		       p.lat, p.lng, p.server_ts
 		FROM location_pings p JOIN teams t ON t.id = p.team_id
 		WHERE p.run_id = ?
 		ORDER BY p.team_id, p.server_ts
@@ -240,16 +254,20 @@ func (h *Handlers) buildTracks(ctx context.Context, runID int64) (TracksResponse
 	order := []int64{}
 	for rows.Next() {
 		var (
-			teamID int64
-			name   string
-			p      trackPoint
+			teamID    int64
+			name      string
+			hasAvatar int
+			p         trackPoint
 		)
-		if err := rows.Scan(&teamID, &name, &p.Lat, &p.Lng, &p.ServerTS); err != nil {
+		if err := rows.Scan(&teamID, &name, &hasAvatar, &p.Lat, &p.Lng, &p.ServerTS); err != nil {
 			return TracksResponse{}, http.StatusInternalServerError, "scan failed"
 		}
 		t, ok := byTeam[teamID]
 		if !ok {
 			t = &trackDTO{TeamID: teamID, TeamName: name}
+			if hasAvatar != 0 {
+				t.AvatarURL = fmt.Sprintf("/adventure-assets/team-avatar/%d", teamID)
+			}
 			byTeam[teamID] = t
 			order = append(order, teamID)
 		}
@@ -270,7 +288,7 @@ func (h *Handlers) Tracks(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusBadRequest, "bad live token")
 		return
 	}
-	id, _, _, _, showMap, err := h.runByToken(r.Context(), token)
+	id, _, _, _, _, showMap, err := h.runByToken(r.Context(), token)
 	if errors.Is(err, sql.ErrNoRows) {
 		httpx.Error(w, http.StatusNotFound, "run not found")
 		return

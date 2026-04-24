@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -60,6 +61,7 @@ type adventureEditDTO struct {
 	AccentSecondaryColor string     `json:"accent_secondary_color"`
 	BackgroundColor      string     `json:"background_color"`
 	TextColor            string     `json:"text_color"`
+	AvatarURL            string     `json:"avatar_url,omitempty"`
 	Pages                []pageView `json:"pages"`
 }
 
@@ -735,19 +737,26 @@ func adventureIDBySlug(ctx context.Context, db *sql.DB, slug string) (int64, err
 
 func loadAdventureDTO(ctx context.Context, db *sql.DB, slug string) (*adventureEditDTO, error) {
 	a := adventureEditDTO{Pages: []pageView{}}
-	var accent, accent2, bg, ink sql.NullString
+	var (
+		accent, accent2, bg, ink sql.NullString
+		hasAvatar                int
+	)
 	if err := db.QueryRowContext(ctx, `
 		SELECT id, slug, title, description, author,
-		       accent_color, accent_secondary_color, background_color, text_color
+		       accent_color, accent_secondary_color, background_color, text_color,
+		       avatar_mime_type IS NOT NULL AS has_avatar
 		FROM adventures WHERE slug = ?
 	`, slug).Scan(&a.ID, &a.Slug, &a.Title, &a.Description, &a.Author,
-		&accent, &accent2, &bg, &ink); err != nil {
+		&accent, &accent2, &bg, &ink, &hasAvatar); err != nil {
 		return nil, err
 	}
 	a.AccentColor = accent.String
 	a.AccentSecondaryColor = accent2.String
 	a.BackgroundColor = bg.String
 	a.TextColor = ink.String
+	if hasAvatar != 0 {
+		a.AvatarURL = adventureAvatarURL(a.Slug)
+	}
 	rows, err := db.QueryContext(ctx, `
 		SELECT id, idx, title, prompt, hint, accept, lat, lng, radius_m, disabled, notes
 		FROM adventure_pages WHERE adventure_id = ? ORDER BY idx
@@ -866,4 +875,114 @@ func pageIDFromURL(r *http.Request) (int64, bool) {
 		return 0, false
 	}
 	return id, true
+}
+
+/* ---------------- Adventure avatar ---------------- */
+
+// adventureAvatarURL is the canonical serve path. Keyed by slug so
+// callers in DTOs don't need the numeric id.
+func adventureAvatarURL(slug string) string {
+	return "/adventure-assets/avatar/" + url.PathEscape(slug)
+}
+
+// SetAdventureAvatar stores the uploaded cover picture inline on the
+// adventures row. Same contract as SetTeamAvatar — multipart `file`
+// field, 5 MB cap, image/* only. Authorised via requireEditAdventure.
+func (h *Handlers) SetAdventureAvatar(w http.ResponseWriter, r *http.Request) {
+	slug := chi.URLParam(r, "slug")
+	if _, ok := h.requireEditAdventure(w, r, slug); !ok {
+		return
+	}
+	if err := r.ParseMultipartForm(maxImageBytes); err != nil {
+		httpx.Error(w, http.StatusBadRequest, "bad multipart form")
+		return
+	}
+	f, hdr, err := r.FormFile("file")
+	if err != nil {
+		httpx.Error(w, http.StatusBadRequest, "file field required")
+		return
+	}
+	defer f.Close()
+	if hdr.Size > maxImageBytes {
+		httpx.Error(w, http.StatusRequestEntityTooLarge, "image too large")
+		return
+	}
+	data, err := io.ReadAll(io.LimitReader(f, maxImageBytes+1))
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "read failed")
+		return
+	}
+	if int64(len(data)) > maxImageBytes {
+		httpx.Error(w, http.StatusRequestEntityTooLarge, "image too large")
+		return
+	}
+	mime := hdr.Header.Get("Content-Type")
+	if !strings.HasPrefix(mime, "image/") {
+		httpx.Error(w, http.StatusBadRequest, "only image uploads are accepted")
+		return
+	}
+	res, err := h.DB.ExecContext(r.Context(), `
+		UPDATE adventures
+		   SET avatar_mime_type = ?, avatar_size_bytes = ?, avatar_content = ?
+		 WHERE slug = ?
+	`, mime, int64(len(data)), data, slug)
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "store failed: "+err.Error())
+		return
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		httpx.Error(w, http.StatusNotFound, "adventure not found")
+		return
+	}
+	httpx.JSON(w, http.StatusOK, map[string]any{
+		"url":  adventureAvatarURL(slug),
+		"mime": mime,
+		"size": int64(len(data)),
+	})
+}
+
+// DeleteAdventureAvatar clears the cover picture so the client falls
+// back to the initials-on-accent tile.
+func (h *Handlers) DeleteAdventureAvatar(w http.ResponseWriter, r *http.Request) {
+	slug := chi.URLParam(r, "slug")
+	if _, ok := h.requireEditAdventure(w, r, slug); !ok {
+		return
+	}
+	if _, err := h.DB.ExecContext(r.Context(), `
+		UPDATE adventures
+		   SET avatar_mime_type = NULL, avatar_size_bytes = NULL, avatar_content = NULL
+		 WHERE slug = ?
+	`, slug); err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "clear failed")
+		return
+	}
+	httpx.JSON(w, http.StatusNoContent, nil)
+}
+
+// ServeAdventureAvatar writes the stored blob. No auth: cover art is
+// safe public read, same reasoning as team avatars — the slug is the
+// identifier that's already in the URL.
+func (h *Handlers) ServeAdventureAvatar(w http.ResponseWriter, r *http.Request) {
+	slug := chi.URLParam(r, "slug")
+	var (
+		mime    sql.NullString
+		size    sql.NullInt64
+		content []byte
+	)
+	err := h.DB.QueryRowContext(r.Context(), `
+		SELECT avatar_mime_type, avatar_size_bytes, avatar_content
+		FROM adventures WHERE slug = ?
+	`, slug).Scan(&mime, &size, &content)
+	if errors.Is(err, sql.ErrNoRows) || !mime.Valid || len(content) == 0 {
+		http.NotFound(w, r)
+		return
+	}
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "lookup failed")
+		return
+	}
+	w.Header().Set("Content-Type", mime.String)
+	w.Header().Set("Content-Length", strconv.FormatInt(size.Int64, 10))
+	w.Header().Set("Cache-Control", "private, max-age=60")
+	_, _ = w.Write(content)
 }

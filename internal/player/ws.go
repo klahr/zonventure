@@ -83,6 +83,20 @@ func (h *Handlers) WSPlay(w http.ResponseWriter, r *http.Request) {
 			if runID != 0 {
 				h.Hub.Publish(ws.RunTopic(runID), "changed", nil)
 			}
+		case "advance":
+			// No-answer advance: the puzzle has an empty accept list so
+			// the client sends this instead of "answer". Server responds
+			// on the same `answer_result` / `answer_error` channels so
+			// the client's existing wiring keeps working.
+			resp, runID, status, errMsg := h.applyAdvance(conn.Context(), slot)
+			if status != http.StatusOK {
+				conn.SendKind("answer_error", map[string]any{"error": errMsg, "status": status})
+				continue
+			}
+			conn.SendKind("answer_result", resp)
+			if runID != 0 {
+				h.Hub.Publish(ws.RunTopic(runID), "changed", nil)
+			}
 		}
 	}
 }

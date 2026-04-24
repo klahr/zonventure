@@ -3,17 +3,27 @@ package public
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 	"html/template"
+	"io"
 	"net/http"
+	"strings"
 
 	"git.sr.ht/~klahr/zv/internal/httpx"
+	"git.sr.ht/~klahr/zv/internal/ws"
 	"github.com/go-chi/chi/v5"
 )
+
+// maxTeamAvatarBytes caps uploads from the share page. Matches the
+// admin-side limit so both entry points behave the same.
+const maxTeamAvatarBytes = 5 * 1024 * 1024
 
 // teamShareView is the data passed to the share-page template.
 type teamShareView struct {
 	TeamName       string
 	AdventureTitle string
+	AvatarURL      string
+	Token          string
 	Members        []teamShareSlot
 }
 
@@ -37,13 +47,17 @@ func (h *Handlers) TeamShare(w http.ResponseWriter, r *http.Request) {
 		view  teamShareView
 		title sql.NullString
 	)
+	var (
+		teamID    int64
+		hasAvatar int
+	)
 	err := h.DB.QueryRowContext(r.Context(), `
-		SELECT t.name, a.title
+		SELECT t.id, t.name, a.title, t.avatar_mime_type IS NOT NULL AS has_avatar
 		FROM teams t
 		JOIN adventure_runs ar ON ar.id = t.run_id
 		LEFT JOIN adventures a ON a.slug = ar.adventure_slug
 		WHERE t.token = ?
-	`, token).Scan(&view.TeamName, &title)
+	`, token).Scan(&teamID, &view.TeamName, &title, &hasAvatar)
 	if errors.Is(err, sql.ErrNoRows) {
 		http.Error(w, "team not found — ask your arranger for a fresh link", http.StatusNotFound)
 		return
@@ -53,6 +67,10 @@ func (h *Handlers) TeamShare(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	view.AdventureTitle = title.String
+	view.Token = token
+	if hasAvatar != 0 {
+		view.AvatarURL = fmt.Sprintf("/adventure-assets/team-avatar/%d", teamID)
+	}
 
 	rows, err := h.DB.QueryContext(r.Context(), `
 		SELECT ps.name, ps.token
@@ -86,6 +104,108 @@ func (h *Handlers) TeamShare(w http.ResponseWriter, r *http.Request) {
 	_ = httpx.Error // keep import useful if we later shift to JSON
 }
 
+// teamByToken resolves a share token to (teamID, runID). Empty/missing
+// tokens return (0, 0, false) with the HTTP error already written.
+// Used by the share page upload/delete handlers — the token IS the
+// authentication so there's no Role guard around them.
+func (h *Handlers) teamByToken(w http.ResponseWriter, r *http.Request, token string) (int64, int64, bool) {
+	if token == "" {
+		httpx.Error(w, http.StatusBadRequest, "bad token")
+		return 0, 0, false
+	}
+	var (
+		teamID int64
+		runID  int64
+	)
+	err := h.DB.QueryRowContext(r.Context(), `
+		SELECT id, run_id FROM teams WHERE token = ?
+	`, token).Scan(&teamID, &runID)
+	if errors.Is(err, sql.ErrNoRows) {
+		httpx.Error(w, http.StatusNotFound, "team not found")
+		return 0, 0, false
+	}
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "lookup failed")
+		return 0, 0, false
+	}
+	return teamID, runID, true
+}
+
+// SetTeamAvatarByToken lets the team itself upload a profile picture
+// via its share URL. Multipart POST with a `file` field. Same size and
+// MIME constraints as the admin-side endpoint.
+func (h *Handlers) SetTeamAvatarByToken(w http.ResponseWriter, r *http.Request) {
+	token := chi.URLParam(r, "token")
+	teamID, runID, ok := h.teamByToken(w, r, token)
+	if !ok {
+		return
+	}
+	if err := r.ParseMultipartForm(maxTeamAvatarBytes); err != nil {
+		httpx.Error(w, http.StatusBadRequest, "bad multipart form")
+		return
+	}
+	f, hdr, err := r.FormFile("file")
+	if err != nil {
+		httpx.Error(w, http.StatusBadRequest, "file field required")
+		return
+	}
+	defer f.Close()
+	if hdr.Size > maxTeamAvatarBytes {
+		httpx.Error(w, http.StatusRequestEntityTooLarge, "image too large")
+		return
+	}
+	data, err := io.ReadAll(io.LimitReader(f, maxTeamAvatarBytes+1))
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "read failed")
+		return
+	}
+	if int64(len(data)) > maxTeamAvatarBytes {
+		httpx.Error(w, http.StatusRequestEntityTooLarge, "image too large")
+		return
+	}
+	mime := hdr.Header.Get("Content-Type")
+	if !strings.HasPrefix(mime, "image/") {
+		httpx.Error(w, http.StatusBadRequest, "only image uploads are accepted")
+		return
+	}
+	if _, err := h.DB.ExecContext(r.Context(), `
+		UPDATE teams
+		   SET avatar_mime_type = ?, avatar_size_bytes = ?, avatar_content = ?
+		 WHERE id = ?
+	`, mime, int64(len(data)), data, teamID); err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "store failed: "+err.Error())
+		return
+	}
+	// Tell any listening run detail / live board that this team's
+	// picture changed so they re-fetch and re-render.
+	h.Hub.Publish(ws.RunTopic(runID), "changed", nil)
+	httpx.JSON(w, http.StatusOK, map[string]any{
+		"url":  fmt.Sprintf("/adventure-assets/team-avatar/%d", teamID),
+		"mime": mime,
+		"size": int64(len(data)),
+	})
+}
+
+// DeleteTeamAvatarByToken clears the team's profile picture via the
+// share URL.
+func (h *Handlers) DeleteTeamAvatarByToken(w http.ResponseWriter, r *http.Request) {
+	token := chi.URLParam(r, "token")
+	teamID, runID, ok := h.teamByToken(w, r, token)
+	if !ok {
+		return
+	}
+	if _, err := h.DB.ExecContext(r.Context(), `
+		UPDATE teams
+		   SET avatar_mime_type = NULL, avatar_size_bytes = NULL, avatar_content = NULL
+		 WHERE id = ?
+	`, teamID); err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "clear failed")
+		return
+	}
+	h.Hub.Publish(ws.RunTopic(runID), "changed", nil)
+	httpx.JSON(w, http.StatusNoContent, nil)
+}
+
 // teamShareTmpl renders a tiny standalone page — no app-wide shell.
 // The target audience is the team captain on a phone, so touch
 // targets are generous and nothing requires JS. Escaping goes through
@@ -115,6 +235,45 @@ body { font-family:'Open Sans',system-ui,sans-serif; color:var(--ink); backgroun
 .slot .go { display:block; color: var(--muted); font-size:.85rem; font-weight:400; margin-top:.2rem; }
 .footer { text-align:center; color: var(--muted); font-size:.75rem; margin-top: 1.5rem; }
 .empty { text-align:center; color: var(--muted); padding: 2rem 0; }
+/* Team photo: big circular target at the top of the page. Tap = file
+   picker. When a photo is set, a small ✕ overlays to remove it. */
+.avatar-wrap { display: flex; justify-content: center; margin: 0 0 .9rem; }
+.avatar-btn {
+  position: relative;
+  width: 96px; height: 96px; border-radius: 50%;
+  background: var(--accent); color: var(--accent-fg);
+  border: 3px solid var(--accent);
+  overflow: hidden;
+  cursor: pointer;
+  display: grid; place-items: center;
+  /* Body font — matches the initials on the arranger/live team avatars
+     so the default rendering is consistent everywhere. */
+  font-family: 'Open Sans', system-ui, sans-serif;
+  font-size: 2rem; font-weight: 800;
+  letter-spacing: .04em; text-transform: uppercase;
+  box-shadow: 0 4px 16px rgba(0,0,0,.18);
+  transition: transform 120ms, box-shadow 120ms;
+  padding: 0;
+}
+.avatar-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 22px rgba(0,0,0,.22); }
+.avatar-btn:active { transform: translateY(1px); }
+.avatar-btn img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.avatar-btn .hint-pill {
+  position: absolute; bottom: -2px; right: -2px;
+  background: var(--surface); color: var(--ink);
+  border: 2px solid var(--accent);
+  border-radius: 999px; padding: .15rem .45rem;
+  font-family: 'Open Sans', sans-serif; font-size: .7rem; font-weight: 700;
+}
+.avatar-remove {
+  display: block; margin: .35rem auto 0;
+  background: none; border: none;
+  color: var(--muted); font: inherit; font-size: .8rem;
+  cursor: pointer; padding: .25rem .5rem;
+}
+.avatar-remove:hover { color: var(--accent); }
+.avatar-remove[hidden] { display: none; }
+.avatar-err { color: #d00; font-size: .85rem; text-align: center; margin: .25rem 0 0; min-height: 1em; }
 </style></head>
 <body>
 <div class="wrap">
@@ -122,6 +281,19 @@ body { font-family:'Open Sans',system-ui,sans-serif; color:var(--ink); backgroun
   <p class="sub">Team</p>
   <p class="team">{{.TeamName}}</p>
   {{if .AdventureTitle}}<p class="adv">{{.AdventureTitle}}</p>{{end}}
+
+  <div class="avatar-wrap">
+    <div style="text-align:center">
+      <button type="button" id="avatar-btn" class="avatar-btn" aria-label="Upload team photo">
+        {{if .AvatarURL}}<img id="avatar-img" src="{{.AvatarURL}}" alt="">{{else}}<span id="avatar-ini"></span>{{end}}
+        <span class="hint-pill">{{if .AvatarURL}}change{{else}}+ photo{{end}}</span>
+      </button>
+      <button type="button" id="avatar-remove" class="avatar-remove"{{if not .AvatarURL}} hidden{{end}}>Remove photo</button>
+      <p id="avatar-err" class="avatar-err"></p>
+    </div>
+    <input type="file" id="avatar-file" accept="image/*" style="display:none">
+  </div>
+
   <p class="hint">Pick your name to open your personal link. Keep it — only you should use it.</p>
   {{if .Members}}
     {{range .Members}}
@@ -135,4 +307,87 @@ body { font-family:'Open Sans',system-ui,sans-serif; color:var(--ink); backgroun
   {{end}}
   <p class="footer">If your name isn't listed, ask the arranger to add you.</p>
 </div>
+
+<script>
+// Tiny inline module — the share page is a standalone template, so no
+// shared JS runtime. Handles the avatar upload + remove against the
+// token-authed endpoints.
+(function () {
+  // html/template's <script> context auto-quotes string values as JS
+  // literals, so pass .Token / .TeamName straight through. printf "%q"
+  // would double-quote and produce strings that still carry the quotes
+  // (then initials(" Alfa") reads "A" instead of "TA").
+  var token = {{.Token}};
+  var teamName = {{.TeamName}};
+  var btn = document.getElementById('avatar-btn');
+  var file = document.getElementById('avatar-file');
+  var removeBtn = document.getElementById('avatar-remove');
+  var errEl = document.getElementById('avatar-err');
+  var iniEl = document.getElementById('avatar-ini');
+  if (iniEl) iniEl.textContent = initials(teamName);
+
+  btn.addEventListener('click', function () { file.click(); });
+  file.addEventListener('change', function () {
+    var f = file.files && file.files[0];
+    if (!f) return;
+    errEl.textContent = '';
+    var fd = new FormData();
+    fd.append('file', f);
+    fetch('/api/public/team/' + encodeURIComponent(token) + '/avatar', {
+      method: 'POST', body: fd, credentials: 'same-origin',
+    }).then(function (res) {
+      if (!res.ok) return res.text().then(function (txt) { throw new Error(txt || ('error ' + res.status)); });
+      return res.json();
+    }).then(function (body) {
+      // Cache-bust so the player + arranger views don't show the old
+      // picture until the 60s cache TTL expires.
+      var url = (body.url || ('/adventure-assets/team-avatar/' + Date.now())) + '?v=' + Date.now();
+      paintPhoto(url);
+      removeBtn.hidden = false;
+    }).catch(function (e) {
+      errEl.textContent = e.message || 'upload failed';
+    }).then(function () { file.value = ''; });
+  });
+  removeBtn.addEventListener('click', function () {
+    errEl.textContent = '';
+    fetch('/api/public/team/' + encodeURIComponent(token) + '/avatar', {
+      method: 'DELETE', credentials: 'same-origin',
+    }).then(function (res) {
+      if (res.status !== 204 && !res.ok) throw new Error('error ' + res.status);
+      paintInitials();
+      removeBtn.hidden = true;
+    }).catch(function (e) { errEl.textContent = e.message || 'remove failed'; });
+  });
+
+  function paintPhoto(url) {
+    btn.innerHTML = '';
+    var img = new Image();
+    img.id = 'avatar-img';
+    img.alt = '';
+    img.src = url;
+    btn.appendChild(img);
+    var pill = document.createElement('span');
+    pill.className = 'hint-pill';
+    pill.textContent = 'change';
+    btn.appendChild(pill);
+  }
+  function paintInitials() {
+    btn.innerHTML = '';
+    var span = document.createElement('span');
+    span.id = 'avatar-ini';
+    span.textContent = initials(teamName);
+    btn.appendChild(span);
+    var pill = document.createElement('span');
+    pill.className = 'hint-pill';
+    pill.textContent = '+ photo';
+    btn.appendChild(pill);
+  }
+  function initials(name) {
+    var parts = (name || '').trim().split(/\s+/).filter(Boolean);
+    if (parts.length === 0) return '?';
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  }
+})();
+</script>
 </body></html>`))

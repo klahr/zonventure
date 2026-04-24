@@ -90,10 +90,22 @@ func New(cfg Config) http.Handler {
 	// Per-team share page — the arranger sends a single /team/{token}
 	// URL to the captain; each member picks their own slot from there.
 	r.Get("/team/{token}", publicH.TeamShare)
+	// Team-token-authed avatar upload/delete so the team can change
+	// their own profile picture from the share page. The token IS the
+	// auth; no staff session required.
+	r.Post("/api/public/team/{token}/avatar", publicH.SetTeamAvatarByToken)
+	r.Delete("/api/public/team/{token}/avatar", publicH.DeleteTeamAvatarByToken)
 
 	// Image serving: permission is decided inside the handler (staff
 	// sessions always pass; slot sessions only when they're on the page).
 	r.Get("/adventure-assets/image/{imageID}", adminH.ServeImage)
+	// Team avatars are intentionally open — they surface on the public
+	// live board and on player views without a staff session. The team
+	// id is opaque enough to be acceptable public read-only data.
+	r.Get("/adventure-assets/team-avatar/{teamID}", adminH.ServeTeamAvatar)
+	// Adventure cover pictures — same public-read rationale: the slug is
+	// already in the URL, no extra sensitive metadata is leaked.
+	r.Get("/adventure-assets/avatar/{slug}", adminH.ServeAdventureAvatar)
 
 	// Staff authentication.
 	r.Post("/api/auth/login", authH.Login)
@@ -151,6 +163,8 @@ func New(cfg Config) http.Handler {
 
 		r.Patch("/teams/{teamID}", adminH.RenameTeam)
 		r.Delete("/teams/{teamID}", adminH.DeleteTeam)
+		r.Post("/teams/{teamID}/avatar", adminH.SetTeamAvatar)
+		r.Delete("/teams/{teamID}/avatar", adminH.DeleteTeamAvatar)
 		r.Post("/teams/{teamID}/slots", adminH.AddSlot)
 		r.Delete("/teams/{teamID}/slots/{slotID}", adminH.RemoveSlot)
 		r.Post("/teams/{teamID}/slots/{slotID}/rotate", adminH.RotateSlotToken)
@@ -175,6 +189,8 @@ func New(cfg Config) http.Handler {
 		r.Post("/adventures", adminH.CreateAdventure)
 		r.Patch("/adventures/{slug}", adminH.UpdateAdventure)
 		r.Delete("/adventures/{slug}", adminH.DeleteAdventure)
+		r.Post("/adventures/{slug}/avatar", adminH.SetAdventureAvatar)
+		r.Delete("/adventures/{slug}/avatar", adminH.DeleteAdventureAvatar)
 		r.Post("/adventures/{slug}/pages", adminH.CreatePage)
 		r.Patch("/adventures/{slug}/pages/reorder", adminH.ReorderPages)
 		r.Post("/adventures/{slug}/pages/copy-from/{pageID}", adminH.CopyPuzzleToAdventure)

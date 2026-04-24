@@ -35,6 +35,7 @@
       'Puzzles': 'Pussel',
       'Members': 'Medlemmar',
       'Admins': 'Administratörer',
+      'Store': 'Butik',
       'Use light theme': 'Använd ljust tema',
       'Use dark theme': 'Använd mörkt tema',
       'Use system theme': 'Använd systemets tema',
@@ -182,6 +183,18 @@
       'Running now': 'Pågår nu',
       'Scheduled': 'Schemalagda',
       'Recent runs': 'Senaste omgångarna',
+      'Getting started': 'Kom igång',
+      'A few clicks to your first adventure.': 'Några klick till ditt första äventyr.',
+      'Pick an adventure — browse the Store or create your own':
+        'Välj ett äventyr — bläddra i butiken eller skapa ett eget',
+      'Have team slots ready — an assignment lets you schedule a run':
+        'Ha lagplatser redo — en tilldelning låter dig schemalägga en omgång',
+      'Schedule a run, add teams, share their links — and start!':
+        'Schemalägg en omgång, lägg till lag, dela länkarna — och kör!',
+      'Schedule': 'Schemalägg',
+      'Go': 'Kör',
+      'Start a new event': 'Starta ett nytt event',
+      'Unused assignments': 'Oanvända tilldelningar',
       'Signed in as admin — you manage organizations, their assignments, and other admins.':
         'Inloggad som administratör — du hanterar organisationer, deras tilldelningar och övriga administratörer.',
       'Org users': 'Organisationsanvändare',
@@ -202,6 +215,24 @@
       '{{section}} / Run #{{id}}': '{{section}} / Omgång #{{id}}',
       '{{section}} / {{slug}}': '{{section}} / {{slug}}',
       // ---- adventures list (arranger) ----
+      'No adventures you can run yet.': 'Inga äventyr du kan köra än.',
+      'Create your own or browse the Store for published adventures.':
+        'Skapa ett eget eller bläddra i butiken efter publicerade äventyr.',
+      'Browse the Store': 'Bläddra i butiken',
+      'Yours': 'Eget',
+      '{{n}} puzzle': '{{n}} pussel',
+      '{{n}} assignment available': '{{n}} tilldelning tillgänglig',
+      '{{n}} assignments available': '{{n}} tilldelningar tillgängliga',
+      '{{n}} run held': '{{n}} omgång bokad',
+      '{{n}} runs held': '{{n}} omgångar bokade',
+      'Pick an assignment': 'Välj en tilldelning',
+      'You hold several assignments for {{title}}. Which one do you want to schedule?':
+        'Du har flera tilldelningar för {{title}}. Vilken vill du schemalägga?',
+      'up to {{n}} teams · purchased {{when}}':
+        'upp till {{n}} lag · köpt {{when}}',
+      // Legacy strings kept only for translators who might still hit
+      // them via old links; the main Adventures page no longer uses
+      // the Assignments block.
       'Each assignment lets you schedule the adventure once, with up to the number of teams agreed with the owner.':
         'Varje tilldelning låter dig schemalägga äventyret en gång, med upp till det antal lag som avtalats med ägaren.',
       'No assignments available right now.': 'Inga tilldelningar tillgängliga just nu.',
@@ -211,6 +242,12 @@
       'Schedule run': 'Schemalägg omgång',
       'Already used': 'Redan använda',
       'Teams cap': 'Lagtak',
+      // ---- store ----
+      'Published adventures from other organisations. Buy team slots to add one to your own Adventures list.':
+        'Publicerade äventyr från andra organisationer. Köp lagplatser för att lägga till ett i din egen Äventyr-lista.',
+      'No published adventures yet.': 'Inga publicerade äventyr än.',
+      '(no description)': '(ingen beskrivning)',
+      'Buy team slots': 'Köp lagplatser',
       // ---- adventure detail ----
       '{{slug}} · {{n}} puzzles': '{{slug}} · {{n}} pussel',
       '(untitled)': '(utan titel)',
@@ -523,6 +560,132 @@
       'just now': 'just nu',
       '{{n}}m ago': '{{n}}m sedan',
       '{{n}}h ago': '{{n}}h sedan',
+      // ---- event/run/team workflow (arranger) ----
+      '—': '—',
+      '(no time set)': '(ingen tid satt)',
+      '{{i}} / {{n}}': '{{i}} / {{n}}',
+      'Hide': 'Dölj',
+      'Show': 'Visa',
+      'When': 'När',
+      'Date': 'Datum',
+      'Total': 'Totalt',
+      'Total: ': 'Totalt: ',
+      'Slots': 'Platser',
+      'Teams': 'Lag',
+      'yours': 'eget',
+      'catalog': 'butik',
+      'No matches.': 'Inga träffar.',
+      'stuck?': 'fast?',
+      'Filter by title, notes or adventure': 'Filtrera på titel, anteckning eller äventyr',
+      'Not scheduled': 'Inte schemalagd',
+      'Auto-start {{when}}': 'Autostart {{when}}',
+      'Pick an adventure': 'Välj ett äventyr',
+      'Pick an auto-start time': 'Välj en autostarttid',
+      'Starts soon': 'Börjar snart',
+      // ---- team dialogs ----
+      'Add teams': 'Lägg till lag',
+      'Add the first team': 'Lägg till första laget',
+      'Team capacity': 'Lagkapacitet',
+      'Team slots': 'Lagplatser',
+      'Team name required': 'Lagnamn krävs',
+      'Team name prefix': 'Lagnamnsprefix',
+      'Player name prefix': 'Spelarnamnsprefix',
+      'Players per team': 'Spelare per lag',
+      'Number of teams': 'Antal lag',
+      'One team': 'Ett lag',
+      'Many teams at once': 'Flera lag samtidigt',
+      'Name (optional)': 'Namn (valfritt)',
+      'Members — one per line, or paste CSV': 'Medlemmar — en per rad, eller klistra in CSV',
+      'Each line becomes a player slot with its own magic-link token.':
+        'Varje rad blir en spelarplats med sin egen magiska länk-token.',
+      'Creates {{t}} teams × {{p}} players = {{n}} magic links.':
+        'Skapar {{t}} lag × {{p}} spelare = {{n}} magiska länkar.',
+      'Teams (optional — add later if you prefer)':
+        'Lag (valfritt — lägg till senare om du vill)',
+      'Created {{n}} teams': 'Skapade {{n}} lag',
+      'Created {{c}}, {{f}} failed': 'Skapade {{c}}, {{f}} misslyckades',
+      'Created {{c}}, {{f}} failed: {{err}}': 'Skapade {{c}}, {{f}} misslyckades: {{err}}',
+      'Could not create any teams': 'Kunde inte skapa några lag',
+      'Edit team': 'Redigera lag',
+      'Delete team': 'Ta bort lag',
+      'Open team page': 'Öppna lagets sida',
+      'Copy team share link': 'Kopiera lagets delningslänk',
+      'Team link copied': 'Laglänk kopierad',
+      'Share with the team': 'Dela med laget',
+      'Send this single link to the captain. Each member taps their own name there to pick up their personal magic link.':
+        'Skicka den här länken till kaptenen. Varje medlem trycker på sitt namn där för att hämta sin personliga magiska länk.',
+      'Copy all as text': 'Kopiera allt som text',
+      'Copied {{n}} links': 'Kopierade {{n}} länkar',
+      'Clipboard blocked — select and copy by hand':
+        'Urklipp blockerat — markera och kopiera manuellt',
+      'Rotate link — invalidates the old one':
+        'Rotera länk — ogiltigförklarar den gamla',
+      'Alt-click to skip the confirmation': 'Alt-klicka för att hoppa över bekräftelsen',
+      // ---- run lifecycle ----
+      'New run': 'Ny omgång',
+      'Rename run': 'Byt namn på omgång',
+      'Run name': 'Omgångens namn',
+      'Run name (optional)': 'Omgångens namn (valfritt)',
+      'Run ready': 'Omgången är klar',
+      'Run creation failed': 'Kunde inte skapa omgång',
+      'Empty resets to "Run #{{id}}".': 'Tomt återställer till "Omgång #{{id}}".',
+      'Reschedule': 'Schemalägg om',
+      'Schedule for later': 'Schemalägg för senare',
+      'Download results': 'Ladda ner resultat',
+      'Download standings': 'Ladda ner ställning',
+      'Download CSV of the current standings': 'Ladda ner CSV med nuvarande ställning',
+      // ---- event wizard ----
+      'Create event': 'Skapa event',
+      'Event ready': 'Eventet är klart',
+      'Create or browse an adventure first': 'Skapa eller bläddra i ett äventyr först',
+      'Assign adventure': 'Tilldela äventyr',
+      'You have an unused assignment for this adventure — no new purchase needed.':
+        'Du har en oanvänd tilldelning för detta äventyr — inget nytt köp behövs.',
+      'Each team slot lets one team play "{{title}}".':
+        'Varje lagplats låter ett lag spela "{{title}}".',
+      // ---- purchases ----
+      'Purchases': 'Köp',
+      'Purchase failed': 'Köpet misslyckades',
+      'Payment failed': 'Betalningen misslyckades',
+      'Payment received — let\'s schedule your run.':
+        'Betalning mottagen — dags att schemalägga din omgång.',
+      'Proceed to payment': 'Fortsätt till betalning',
+      'How many team slots do you need? ($2.00 each, simulated payment.)':
+        'Hur många lagplatser behöver du? ($2,00 styck, simulerad betalning.)',
+      'Browse catalog': 'Bläddra i butiken',
+      'No purchases yet.': 'Inga köp än.',
+      'Every team-slot purchase. Paid ones produce an assignment you can schedule from the Adventures page.':
+        'Alla lagplatsköp. Betalda ger en tilldelning som du kan schemalägga från Äventyr-sidan.',
+      '({{price}} per slot)': '({{price}} per plats)',
+      '{{n}} team slot': '{{n}} lagplats',
+      '{{n}} team slots': '{{n}} lagplatser',
+      // ---- adventure delete / edit meta ----
+      'Delete adventure': 'Ta bort äventyr',
+      'Edit title/slug/colours': 'Redigera titel/slug/färger',
+      'e.g. “Saturday Andersson party”': 't.ex. ”Lördagens Andersson-kalas”',
+      // ---- team avatar ----
+      'Team photo': 'Lagfoto',
+      'Upload photo': 'Ladda upp foto',
+      'Remove photo': 'Ta bort foto',
+      'Team photo updated': 'Lagfotot uppdaterat',
+      'Team photo removed': 'Lagfotot borttaget',
+      // ---- adventure cover ----
+      'Cover picture': 'Omslagsbild',
+      'Upload cover': 'Ladda upp omslag',
+      'Remove cover': 'Ta bort omslag',
+      'Cover updated': 'Omslaget uppdaterat',
+      'Cover removed': 'Omslaget borttaget',
+      // ---- no-answer puzzles ----
+      'Continue': 'Fortsätt',
+      "Check location · I'm here": 'Kontrollera plats · Jag är här',
+      // ---- live countdown + start animation ----
+      'Starting soon': 'Börjar snart',
+      'until the flag drops': 'tills starten',
+      'waiting for the arranger': 'väntar på arrangören',
+      'Scheduled for {{when}}': 'Planerad till {{when}}',
+      'any moment…': 'när som helst…',
+      "We're live!": 'Nu kör vi!',
+      'Teams are on the move': 'Lagen är igång',
     },
   };
 

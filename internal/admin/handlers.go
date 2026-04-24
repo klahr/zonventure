@@ -93,6 +93,7 @@ type adventureDTO struct {
 	PageCount   int    `json:"page_count"`
 	OrgID       *int64 `json:"org_id,omitempty"`   // nil = admin-owned global catalog
 	MineToEdit  bool   `json:"mine_to_edit"`
+	AvatarURL   string `json:"avatar_url,omitempty"`
 }
 
 // ListAdventures returns adventures visible to the caller. Admins see
@@ -104,7 +105,8 @@ func (h *Handlers) ListAdventures(w http.ResponseWriter, r *http.Request) {
 
 	query := `
 		SELECT a.slug, a.title, a.description, a.author, a.org_id,
-		       (SELECT COUNT(*) FROM adventure_pages p WHERE p.adventure_id = a.id) AS page_count
+		       (SELECT COUNT(*) FROM adventure_pages p WHERE p.adventure_id = a.id) AS page_count,
+		       a.avatar_mime_type IS NOT NULL AS has_avatar
 		FROM adventures a
 	`
 	var args []any
@@ -123,10 +125,11 @@ func (h *Handlers) ListAdventures(w http.ResponseWriter, r *http.Request) {
 	out := []adventureDTO{}
 	for rows.Next() {
 		var (
-			d     adventureDTO
-			orgID sql.NullInt64
+			d         adventureDTO
+			orgID     sql.NullInt64
+			hasAvatar int
 		)
-		if err := rows.Scan(&d.Slug, &d.Title, &d.Description, &d.Author, &orgID, &d.PageCount); err != nil {
+		if err := rows.Scan(&d.Slug, &d.Title, &d.Description, &d.Author, &orgID, &d.PageCount, &hasAvatar); err != nil {
 			httpx.Error(w, http.StatusInternalServerError, "scan failed")
 			return
 		}
@@ -135,6 +138,9 @@ func (h *Handlers) ListAdventures(w http.ResponseWriter, r *http.Request) {
 			d.OrgID = &v
 		}
 		d.MineToEdit = canEditOwned(me, orgID)
+		if hasAvatar != 0 {
+			d.AvatarURL = adventureAvatarURL(d.Slug)
+		}
 		out = append(out, d)
 	}
 	httpx.JSON(w, http.StatusOK, map[string]any{"adventures": out})
@@ -631,16 +637,18 @@ type trackPoint struct {
 }
 
 type trackDTO struct {
-	TeamID   int64        `json:"team_id"`
-	TeamName string       `json:"team_name"`
-	Points   []trackPoint `json:"points"`
+	TeamID    int64        `json:"team_id"`
+	TeamName  string       `json:"team_name"`
+	AvatarURL string       `json:"avatar_url,omitempty"`
+	Points    []trackPoint `json:"points"`
 }
 
 // buildTracks is the query-only helper used by ListTracks and the WS push
 // path.
 func (h *Handlers) buildTracks(ctx context.Context, runID int64) ([]trackDTO, error) {
 	rows, err := h.DB.QueryContext(ctx, `
-		SELECT p.team_id, t.name, p.lat, p.lng, p.server_ts
+		SELECT p.team_id, t.name, t.avatar_mime_type IS NOT NULL AS has_avatar,
+		       p.lat, p.lng, p.server_ts
 		FROM location_pings p JOIN teams t ON t.id = p.team_id
 		WHERE p.run_id = ?
 		ORDER BY p.team_id, p.server_ts
@@ -653,16 +661,20 @@ func (h *Handlers) buildTracks(ctx context.Context, runID int64) ([]trackDTO, er
 	order := []int64{}
 	for rows.Next() {
 		var (
-			teamID int64
-			name   string
-			p      trackPoint
+			teamID    int64
+			name      string
+			hasAvatar int
+			p         trackPoint
 		)
-		if err := rows.Scan(&teamID, &name, &p.Lat, &p.Lng, &p.ServerTS); err != nil {
+		if err := rows.Scan(&teamID, &name, &hasAvatar, &p.Lat, &p.Lng, &p.ServerTS); err != nil {
 			return nil, err
 		}
 		t, ok := byTeam[teamID]
 		if !ok {
 			t = &trackDTO{TeamID: teamID, TeamName: name}
+			if hasAvatar != 0 {
+				t.AvatarURL = teamAvatarURL(teamID)
+			}
 			byTeam[teamID] = t
 			order = append(order, teamID)
 		}

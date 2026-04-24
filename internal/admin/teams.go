@@ -3,6 +3,8 @@ package admin
 import (
 	"database/sql"
 	"errors"
+	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -300,4 +302,133 @@ func teamIDFrom(r *http.Request) (int64, bool) {
 		return 0, false
 	}
 	return id, true
+}
+
+/* ---------------- Team avatar ---------------- */
+
+// SetTeamAvatar stores a single uploaded profile picture on the team row.
+// Multipart POST with a `file` field, same contract as page images. Any
+// prior avatar is replaced; the DTO returns the new URL so the client
+// can refresh its cache.
+func (h *Handlers) SetTeamAvatar(w http.ResponseWriter, r *http.Request) {
+	teamID, ok := teamIDFrom(r)
+	if !ok {
+		httpx.Error(w, http.StatusBadRequest, "bad team id")
+		return
+	}
+	if _, _, ok := h.authorizeTeam(w, r, teamID); !ok {
+		return
+	}
+	if err := r.ParseMultipartForm(maxImageBytes); err != nil {
+		httpx.Error(w, http.StatusBadRequest, "bad multipart form")
+		return
+	}
+	f, hdr, err := r.FormFile("file")
+	if err != nil {
+		httpx.Error(w, http.StatusBadRequest, "file field required")
+		return
+	}
+	defer f.Close()
+	if hdr.Size > maxImageBytes {
+		httpx.Error(w, http.StatusRequestEntityTooLarge, "image too large")
+		return
+	}
+	data, err := io.ReadAll(io.LimitReader(f, maxImageBytes+1))
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "read failed")
+		return
+	}
+	if int64(len(data)) > maxImageBytes {
+		httpx.Error(w, http.StatusRequestEntityTooLarge, "image too large")
+		return
+	}
+	mime := hdr.Header.Get("Content-Type")
+	if !strings.HasPrefix(mime, "image/") {
+		httpx.Error(w, http.StatusBadRequest, "only image uploads are accepted")
+		return
+	}
+	if _, err := h.DB.ExecContext(r.Context(), `
+		UPDATE teams
+		   SET avatar_mime_type = ?, avatar_size_bytes = ?, avatar_content = ?
+		 WHERE id = ?
+	`, mime, int64(len(data)), data, teamID); err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "store failed: "+err.Error())
+		return
+	}
+	// Hub push so the run-detail view and any live-board listeners pick
+	// up the new picture without a manual refresh.
+	var runID int64
+	_ = h.DB.QueryRowContext(r.Context(), `SELECT run_id FROM teams WHERE id = ?`, teamID).Scan(&runID)
+	if runID > 0 {
+		h.Hub.Publish(ws.RunTopic(runID), "changed", nil)
+	}
+	httpx.JSON(w, http.StatusOK, map[string]any{
+		"url":  teamAvatarURL(teamID),
+		"mime": mime,
+		"size": int64(len(data)),
+	})
+}
+
+// DeleteTeamAvatar clears the stored avatar so the team falls back to
+// the generated initials rendering on the client.
+func (h *Handlers) DeleteTeamAvatar(w http.ResponseWriter, r *http.Request) {
+	teamID, ok := teamIDFrom(r)
+	if !ok {
+		httpx.Error(w, http.StatusBadRequest, "bad team id")
+		return
+	}
+	runID, _, ok := h.authorizeTeam(w, r, teamID)
+	if !ok {
+		return
+	}
+	if _, err := h.DB.ExecContext(r.Context(), `
+		UPDATE teams
+		   SET avatar_mime_type = NULL, avatar_size_bytes = NULL, avatar_content = NULL
+		 WHERE id = ?
+	`, teamID); err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "clear failed")
+		return
+	}
+	h.Hub.Publish(ws.RunTopic(runID), "changed", nil)
+	httpx.JSON(w, http.StatusNoContent, nil)
+}
+
+// ServeTeamAvatar writes the stored blob to the response. No auth: the
+// picture is meant to surface in the public live board and the player
+// view, neither of which hold a staff session. The team id is opaque
+// enough that this is an acceptable read-only leak — nothing sensitive
+// lives here.
+func (h *Handlers) ServeTeamAvatar(w http.ResponseWriter, r *http.Request) {
+	teamID, err := strconv.ParseInt(chi.URLParam(r, "teamID"), 10, 64)
+	if err != nil || teamID <= 0 {
+		httpx.Error(w, http.StatusBadRequest, "bad team id")
+		return
+	}
+	var (
+		mime    sql.NullString
+		size    sql.NullInt64
+		content []byte
+	)
+	err = h.DB.QueryRowContext(r.Context(), `
+		SELECT avatar_mime_type, avatar_size_bytes, avatar_content FROM teams WHERE id = ?
+	`, teamID).Scan(&mime, &size, &content)
+	if errors.Is(err, sql.ErrNoRows) || !mime.Valid || len(content) == 0 {
+		http.NotFound(w, r)
+		return
+	}
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "lookup failed")
+		return
+	}
+	w.Header().Set("Content-Type", mime.String)
+	w.Header().Set("Content-Length", strconv.FormatInt(size.Int64, 10))
+	w.Header().Set("Cache-Control", "private, max-age=60")
+	_, _ = w.Write(content)
+}
+
+// teamAvatarURL is the canonical path for a team's profile picture.
+// Returns the empty string for teams without one; callers pair that
+// with a client-side initials fallback.
+func teamAvatarURL(teamID int64) string {
+	return fmt.Sprintf("/adventure-assets/team-avatar/%d", teamID)
 }

@@ -150,6 +150,7 @@ type runDetailTeamDTO struct {
 	PageIndex   int                  `json:"page_index"`
 	CompletedAt string               `json:"completed_at,omitempty"`
 	Token       string               `json:"token"`
+	AvatarURL   string               `json:"avatar_url,omitempty"`
 	Members     []runDetailMemberDTO `json:"members"`
 }
 
@@ -186,7 +187,8 @@ func (h *Handlers) buildRunDetail(ctx context.Context, runID int64) (runDetailDT
 
 	teams := []runDetailTeamDTO{}
 	rows, err := h.DB.QueryContext(ctx, `
-		SELECT t.id, t.name, t.current_page_index, COALESCE(t.completed_at, ''), t.token
+		SELECT t.id, t.name, t.current_page_index, COALESCE(t.completed_at, ''), t.token,
+		       t.avatar_mime_type IS NOT NULL AS has_avatar
 		FROM teams t WHERE t.run_id = ? ORDER BY t.name
 	`, runID)
 	if err != nil {
@@ -195,8 +197,12 @@ func (h *Handlers) buildRunDetail(ctx context.Context, runID int64) (runDetailDT
 	defer rows.Close()
 	for rows.Next() {
 		t := runDetailTeamDTO{Members: []runDetailMemberDTO{}}
-		if err := rows.Scan(&t.ID, &t.Name, &t.PageIndex, &t.CompletedAt, &t.Token); err != nil {
+		var hasAvatar int
+		if err := rows.Scan(&t.ID, &t.Name, &t.PageIndex, &t.CompletedAt, &t.Token, &hasAvatar); err != nil {
 			return runDetailDTO{}, err
+		}
+		if hasAvatar != 0 {
+			t.AvatarURL = teamAvatarURL(t.ID)
 		}
 		teams = append(teams, t)
 	}

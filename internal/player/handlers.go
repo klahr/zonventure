@@ -120,6 +120,11 @@ type State struct {
 	Images         []imageDTO        `json:"images,omitempty"`
 	Gate           *gateDTO          `json:"gate,omitempty"`
 	Colors         *adventure.Colors `json:"colors,omitempty"`
+	// NoAnswer flags a puzzle whose accept list is empty — the player
+	// advances by tapping a button instead of submitting an answer.
+	// The client uses this to swap the submit dock for a Continue /
+	// Check-location CTA.
+	NoAnswer bool `json:"no_answer,omitempty"`
 }
 
 type imageDTO struct {
@@ -211,6 +216,7 @@ func (h *Handlers) buildState(ctx context.Context, slot auth.Slot) (State, int, 
 	}
 	resp.PageIndex = enabledIdx
 	resp.Title = page.Title
+	resp.NoAnswer = len(page.Accept) == 0
 	if page.Location.Gated() {
 		reached, _ := gateReached(ctx, h.DB, tc.TeamID, page.Location)
 		resp.Gate = &gateDTO{
@@ -235,6 +241,68 @@ func (h *Handlers) buildState(ctx context.Context, slot auth.Slot) (State, int, 
 		resp.Images = imgs
 	}
 	return resp, http.StatusOK, ""
+}
+
+// applyAdvance is the no-answer counterpart to applyAnswer — it pushes
+// a team past a puzzle that has an empty accept list by tapping a
+// button instead of typing a match. Honours the gate (403 when not
+// reached) so the "Check location" button on gated no-answer puzzles
+// can use the same server path.
+func (h *Handlers) applyAdvance(ctx context.Context, slot auth.Slot) (AnswerResponse, int64, int, string) {
+	tc, err := loadTeam(ctx, h.DB, slot)
+	if err != nil {
+		return AnswerResponse{}, 0, http.StatusInternalServerError, "lookup failed"
+	}
+	if tc.RunState != "running" {
+		return AnswerResponse{}, tc.RunID, http.StatusConflict, "run is not active"
+	}
+	if tc.CompletedAt.Valid {
+		return AnswerResponse{}, tc.RunID, http.StatusConflict, "team already finished"
+	}
+	adv := h.Lib.Get(tc.AdventureSlug)
+	if adv == nil {
+		return AnswerResponse{}, tc.RunID, http.StatusInternalServerError, "no current page"
+	}
+	page, _ := visibleFor(adv.Pages, tc.CurrentPageIndex)
+	if page == nil {
+		return AnswerResponse{}, tc.RunID, http.StatusInternalServerError, "no current page"
+	}
+	if len(page.Accept) != 0 {
+		return AnswerResponse{}, tc.RunID, http.StatusConflict, "this puzzle expects an answer"
+	}
+	if page.Location.Gated() {
+		reached, err := gateReached(ctx, h.DB, tc.TeamID, page.Location)
+		if err != nil {
+			return AnswerResponse{}, tc.RunID, http.StatusInternalServerError, "gate check failed"
+		}
+		if !reached {
+			return AnswerResponse{}, tc.RunID, http.StatusForbidden, "you must reach the location first"
+		}
+	}
+	teamID := tc.TeamID
+	runevents.Record(ctx, h.DB, tc.RunID, &teamID, runevents.SlotActor(slot.ID),
+		runevents.AnswerRight, map[string]any{"page_index": page.Index, "no_answer": true})
+	nextIdx := page.Index + 1
+	resp := AnswerResponse{Accepted: true}
+	if next, _ := visibleFor(adv.Pages, nextIdx); next == nil {
+		if _, err := h.DB.ExecContext(ctx, `
+			UPDATE teams SET current_page_index = ?, completed_at = datetime('now') WHERE id = ?
+		`, nextIdx, tc.TeamID); err != nil {
+			return AnswerResponse{}, tc.RunID, http.StatusInternalServerError, "save progress failed"
+		}
+		runevents.Record(ctx, h.DB, tc.RunID, &teamID, runevents.SlotActor(slot.ID),
+			runevents.TeamCompleted, nil)
+		resp.Completed = true
+		resp.NextIndex = nextIdx
+		return resp, tc.RunID, http.StatusOK, ""
+	}
+	if _, err := h.DB.ExecContext(ctx, `
+		UPDATE teams SET current_page_index = ? WHERE id = ?
+	`, nextIdx, tc.TeamID); err != nil {
+		return AnswerResponse{}, tc.RunID, http.StatusInternalServerError, "save progress failed"
+	}
+	resp.NextIndex = nextIdx
+	return resp, tc.RunID, http.StatusOK, ""
 }
 
 // GetState returns the player's current view.

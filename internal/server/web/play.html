@@ -420,6 +420,14 @@ let submitInputEl = null;
 // submit dock switches to local answer matching when `accept` is set
 // (only present when ?debug=1 so the page has the answers).
 let previewState = null;
+// advanceMode tracks how the most recent "advance" WS message should
+// be handled when the server replies. Set by the Continue / Check-
+// location CTAs; the answer_result and answer_error listeners read it
+// and reset it to 'none'.
+//   'none'   — normal answer flow; animations play on result.
+//   'silent' — plain no-answer continue; animations suppressed.
+//   'gated'  — no-answer gated puzzle; celebrate on pass, rebuff on 403.
+let advanceMode = 'none';
 
 // api is kept only for the one-shot auth probe at page load — every
 // subsequent state change rides the WebSocket.
@@ -454,6 +462,11 @@ function connectWS() {
     } else if (msg.kind === 'answer_result') {
       onAnswerResult(msg.data);
     } else if (msg.kind === 'answer_error') {
+      // Gated "Check location" rejection → play the rebuff so the
+      // player gets the same visceral "not yet" cue as a wrong
+      // answer. The plain-continue error path stays silent.
+      if (advanceMode === 'gated') rebuff();
+      advanceMode = 'none';
       if (submitResultEl) {
         submitResultEl.className = 'result err';
         submitResultEl.textContent = msg.data?.error || t('error {{status}}', { status: msg.data?.status || '' });
@@ -579,6 +592,9 @@ function render(s) {
     img: (s.images || []).map((i) => i.url),
     gate: s.gate ? s.gate.reached : null,
     team: s.team_name, adv: s.adventure_title,
+    // Include no_answer so a puzzle flipping between answer/no-answer
+    // modes rebuilds the submit dock instead of being deduped.
+    na: !!s.no_answer,
   });
   if (key === lastRenderKey) return;
   lastRenderKey = key;
@@ -604,6 +620,19 @@ function render(s) {
 
   if (s.status === 'gated') {
     hideSubmitDock();
+    const cta = s.no_answer
+      // No-answer puzzle: one button that confirms arrival and advances
+      // on success. The server does the gate check; 403 triggers the
+      // rebuff animation, accepted advances with celebrate.
+      ? el('button', { on: { click: () => {
+          advanceMode = 'gated';
+          if (lastFix) wsSend('location', { ...lastFix, client_ts: new Date().toISOString() });
+          if (!wsSend('advance', {})) {
+            advanceMode = 'none';
+            submitResultEl && (submitResultEl.textContent = t('Disconnected — try again in a moment.'));
+          }
+        } } }, t("Check location · I'm here"))
+      : el('button', { on: { click: sendPing } }, t('Send location now'));
     const card = el('div', { class: 'card' },
       el('h2', {}, t('Travel to the location')),
       el('p', {}, t('Head within {{r}} m of ({{lat}}, {{lng}}).',
@@ -612,7 +641,7 @@ function render(s) {
         ? t('Last fix: {{lat}}, {{lng}} (±{{acc}} m)',
             { lat: lastFix.lat.toFixed(5), lng: lastFix.lng.toFixed(5), acc: Math.round(lastFix.accuracy) })
         : t('Waiting for a GPS fix…')),
-      el('button', { on: { click: sendPing } }, t('Send location now')));
+      cta);
     app.append(card);
     return;
   }
@@ -626,13 +655,15 @@ function render(s) {
   app.append(el('p', { class: 'prompt' }, s.prompt || ''));
   if (s.hint) app.append(el('p', { class: 'muted' }, t('Hint: {{text}}', { text: s.hint })));
 
-  renderSubmitDock();
+  renderSubmitDock(s);
 }
 
 // renderSubmitDock always renders into the same sticky container at the
 // bottom so the input field and button stay in a fixed spot between
-// puzzles.
-function renderSubmitDock() {
+// puzzles. When the puzzle has no accept list (state.no_answer) the
+// dock collapses to a single Continue button that tells the server to
+// advance without an answer-match attempt.
+function renderSubmitDock(s) {
   let dock = document.getElementById('submit-dock');
   if (!dock) {
     dock = document.createElement('div');
@@ -641,6 +672,40 @@ function renderSubmitDock() {
     document.body.append(dock);
   }
   dock.replaceChildren();
+  submitInputEl = null;
+
+  if (s && s.no_answer) {
+    // Continue-only dock — no input, no submit button. One wide CTA.
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = t('Continue');
+    const result = document.createElement('p');
+    result.className = 'result muted';
+    const wrap = document.createElement('div');
+    wrap.append(button, result);
+    dock.append(wrap);
+    submitResultEl = result;
+    button.addEventListener('click', () => {
+      if (previewState) {
+        // Preview mode: advance locally as if the server said yes,
+        // without any animations (per the no-answer rule).
+        advanceMode = 'silent';
+        onAnswerResult({
+          accepted: true,
+          completed: previewState.pageIndex + 1 >= previewState.pageCount,
+        });
+        return;
+      }
+      advanceMode = 'silent';
+      if (!wsSend('advance', {})) {
+        advanceMode = 'none';
+        result.className = 'result err';
+        result.textContent = t('Disconnected — try again in a moment.');
+      }
+    });
+    return;
+  }
+
   const input = document.createElement('input');
   input.name = 'a';
   input.placeholder = previewState ? t('Try an answer (preview)') : t('Your answer');
@@ -721,15 +786,22 @@ async function loadPreviewPage(pageIdx) {
 // "state" frame (pushed because the hub fires on answer); the celebrate
 // overlay covers the re-render while it plays.
 function onAnswerResult(r) {
-  if (!submitResultEl) return;
-  // Verdict text would be redundant now that celebrate/rebuff carry the
-  // feedback — leave the line blank and let the overlay speak. The
-  // element still exists for network errors ("Disconnected…") below.
-  submitResultEl.className = 'result muted';
-  submitResultEl.textContent = '';
+  // Consume the advance-mode flag so only the matching result branch
+  // animates (or suppresses).
+  const mode = advanceMode;
+  advanceMode = 'none';
+  if (submitResultEl) {
+    // Verdict text would be redundant now that celebrate/rebuff carry
+    // the feedback — leave the line blank and let the overlay speak.
+    // The element still exists for network errors ("Disconnected…").
+    submitResultEl.className = 'result muted';
+    submitResultEl.textContent = '';
+  }
   if (r.accepted) {
     if (submitInputEl) { submitInputEl.value = ''; submitInputEl.blur(); }
-    celebrate(r.completed);
+    // Plain Continue button on a no-answer puzzle advances silently —
+    // no celebrate, just the state frame that follows.
+    if (mode !== 'silent') celebrate(r.completed);
   } else {
     rebuff();
   }
