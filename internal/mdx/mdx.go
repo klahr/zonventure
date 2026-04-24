@@ -15,6 +15,7 @@ import (
 	"sync"
 
 	"github.com/yuin/goldmark"
+	"github.com/yuin/goldmark/extension"
 )
 
 var (
@@ -34,10 +35,13 @@ func Render(src string) string {
 	}
 	initOnce.Do(func() {
 		// Default renderer: no WithUnsafe(), so inline or block HTML in
-		// the source gets escaped rather than passed through. Extensions
-		// stay off for now — autolinks and tables can be added later
-		// without breaking the API.
-		md = goldmark.New()
+		// the source gets escaped rather than passed through. The Table
+		// extension enables GFM-style pipe tables — "| a | b |" rows
+		// with a "| --- | --- |" separator — which are what most
+		// authors reach for when they think "markdown tables".
+		md = goldmark.New(
+			goldmark.WithExtensions(extension.Table),
+		)
 	})
 	var buf bytes.Buffer
 	if err := md.Convert([]byte(src), &buf); err != nil {

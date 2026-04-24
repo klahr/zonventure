@@ -534,6 +534,14 @@ textarea { min-height: 80px; resize: vertical; font-family: ui-monospace, monosp
 .md-preview h2 { font-size: 1.15rem; }
 .md-preview h3 { font-size: 1rem; }
 .md-preview.compact { padding: .4rem .55rem; font-size: .9rem; }
+/* GFM tables — goldmark emits plain <table>/<th>/<td>, so give
+   the editor pane a matching light-chrome treatment. */
+.md-preview table { width: 100%; border-collapse: collapse; margin: .4rem 0; font-size: .92rem; }
+.md-preview th, .md-preview td {
+  border: 1px solid var(--border-soft);
+  padding: .3rem .5rem; text-align: left;
+}
+.md-preview th { background: var(--surface); font-weight: 700; }
 
 .puzzle-editor {
   background: var(--surface);

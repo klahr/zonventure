@@ -153,6 +153,22 @@
   }
   .prompt strong, .intro-custom strong, .outro-custom strong { font-weight: 700; }
   .prompt em, .intro-custom em, .outro-custom em { font-style: italic; }
+  /* GFM tables — authors use them for rule summaries or gear lists.
+     Full-width on mobile so the columns get their share of a narrow
+     viewport; thin borders match the surrounding card chrome. */
+  .prompt table, .intro-custom table, .outro-custom table {
+    width: 100%; border-collapse: collapse;
+    margin: .5rem 0; font-size: .95rem;
+  }
+  .prompt th, .prompt td,
+  .intro-custom th, .intro-custom td,
+  .outro-custom th, .outro-custom td {
+    border: 1px solid var(--border-soft);
+    padding: .35rem .55rem; text-align: left;
+  }
+  .prompt th, .intro-custom th, .outro-custom th {
+    background: var(--surface-2); font-weight: 700;
+  }
   /* Hint label + inline markdown on the same line — goldmark wraps
      short spans in a single <p>, so the first <p>'s margin has to
      collapse to keep the label glued. */
