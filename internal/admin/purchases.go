@@ -389,7 +389,16 @@ payBtn.addEventListener('click', async () => {
   if (r.ok) {
     result.className = 'ok';
     result.textContent = 'Paid. Taking you back…';
-    setTimeout(() => { location.href = '/arrange#purchases'; }, 800);
+    // Tell the arranger UI to auto-open the schedule dialog on the
+    // newly-minted assignment. Survives the redirect via sessionStorage;
+    // arrange.html clears it on consume so it fires once.
+    try {
+      const body = await r.json();
+      if (body.assignment_id) {
+        sessionStorage.setItem('zv-just-purchased', String(body.assignment_id));
+      }
+    } catch { /* no-op */ }
+    setTimeout(() => { location.href = '/arrange#adventures'; }, 800);
   } else {
     const t = await r.text();
     result.className = 'err';

@@ -253,8 +253,12 @@ func seedDemo(ctx context.Context, d *sql.DB) error {
 
 	rng := rand.New(rand.NewSource(1))
 	for _, plan := range plans {
-		tRes, err := d.Exec(`INSERT INTO teams(run_id, name, current_page_index) VALUES (?, ?, ?)`,
-			runID, plan.Name, plan.PageIdx)
+		teamTok, err := auth.NewSlotToken()
+		if err != nil {
+			return err
+		}
+		tRes, err := d.Exec(`INSERT INTO teams(run_id, name, current_page_index, token) VALUES (?, ?, ?, ?)`,
+			runID, plan.Name, plan.PageIdx, teamTok)
 		if err != nil {
 			return err
 		}

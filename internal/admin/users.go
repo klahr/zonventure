@@ -91,7 +91,7 @@ func (h *Handlers) RunDetail(w http.ResponseWriter, r *http.Request) {
 		showMap int
 	)
 	if err := h.DB.QueryRowContext(r.Context(), `
-		SELECT ar.id, ar.adventure_slug, ar.state,
+		SELECT ar.id, ar.name, ar.adventure_slug, ar.state,
 		       COALESCE(ar.scheduled_at,''), COALESCE(ar.started_at,''),
 		       ar.org_id, COALESCE(ar.created_by_user_id, 0),
 		       COALESCE(ar.assignment_id, 0), COALESCE(aa.max_teams, 0),
@@ -99,7 +99,7 @@ func (h *Handlers) RunDetail(w http.ResponseWriter, r *http.Request) {
 		FROM adventure_runs ar
 		LEFT JOIN adventure_assignments aa ON aa.id = ar.assignment_id
 		WHERE ar.id = ?
-	`, runID).Scan(&d.ID, &d.AdventureSlug, &d.State, &d.ScheduledAt, &d.StartedAt,
+	`, runID).Scan(&d.ID, &d.Name, &d.AdventureSlug, &d.State, &d.ScheduledAt, &d.StartedAt,
 		&d.OrgID, &d.CreatedByUserID, &d.AssignmentID, &d.MaxTeams,
 		&d.LiveToken, &showMap); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "lookup failed")
@@ -118,11 +118,12 @@ func (h *Handlers) RunDetail(w http.ResponseWriter, r *http.Request) {
 		Name        string    `json:"name"`
 		PageIndex   int       `json:"page_index"`
 		CompletedAt string    `json:"completed_at,omitempty"`
+		Token       string    `json:"token"`
 		Members     []slotOut `json:"members"`
 	}
 	teams := []teamOut{}
 	rows, err := h.DB.QueryContext(r.Context(), `
-		SELECT t.id, t.name, t.current_page_index, COALESCE(t.completed_at, '')
+		SELECT t.id, t.name, t.current_page_index, COALESCE(t.completed_at, ''), t.token
 		FROM teams t WHERE t.run_id = ? ORDER BY t.name
 	`, runID)
 	if err != nil {
@@ -132,7 +133,7 @@ func (h *Handlers) RunDetail(w http.ResponseWriter, r *http.Request) {
 	defer rows.Close()
 	for rows.Next() {
 		t := teamOut{Members: []slotOut{}}
-		if err := rows.Scan(&t.ID, &t.Name, &t.PageIndex, &t.CompletedAt); err != nil {
+		if err := rows.Scan(&t.ID, &t.Name, &t.PageIndex, &t.CompletedAt, &t.Token); err != nil {
 			httpx.Error(w, http.StatusInternalServerError, "team scan failed")
 			return
 		}

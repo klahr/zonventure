@@ -276,7 +276,31 @@ p { margin: 0 0 .5rem; }
 .btn.ghost { border-color: transparent; background: transparent; color: var(--muted); padding: .4rem .6rem; }
 .btn.ghost:hover { background: var(--surface-2); color: var(--accent); border-color: transparent; }
 .btn.small { padding: .35rem .75rem; font-size: .8rem; }
+.btn.warning {
+  background: color-mix(in srgb, var(--accent) 14%, var(--surface));
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+  color: var(--accent);
+}
+.btn.warning:hover { background: color-mix(in srgb, var(--accent) 22%, var(--surface)); }
+.lifecycle-btn { font-size: 1rem; padding: .55rem 1.1rem; }
 .btn svg { width: 16px; height: 16px; stroke: currentColor; stroke-width: 1.75; fill: none; }
+/* icon-only variant: square, no text, used in card action rows and
+   anywhere the meaning is obvious from the glyph. Keep the same min
+   hit-target as the normal small button to stay thumb-friendly. */
+.btn.icon {
+  padding: 0;
+  width: 2rem; height: 2rem;
+  display: inline-grid; place-items: center;
+  gap: 0;
+}
+.btn.icon.small { width: 1.8rem; height: 1.8rem; }
+.btn.icon svg { width: 18px; height: 18px; }
+/* Action row in the top-right of a clickable card. Its buttons stop
+   click propagation so they don't trigger the card's own click. */
+.card-actions {
+  display: inline-flex; gap: .35rem;
+  align-items: center;
+}
 
 /* ---------- Cards ---------- */
 .card {
@@ -294,6 +318,37 @@ p { margin: 0 0 .5rem; }
 .card + .card { margin-top: 1rem; }
 .card.clickable { cursor: pointer; transition: transform var(--anim), box-shadow var(--anim); }
 .card.clickable:hover { transform: translateY(-2px) scale(1.015); box-shadow: var(--shadow-lg); }
+/* Primary-tinted CTA card: used for "ready to schedule" assignments.
+   Visually distinct from neutral browse-style cards so the dominant
+   next action is obvious at a glance. */
+.card.card-cta {
+  background: color-mix(in srgb, var(--accent) 7%, var(--surface));
+  border-color: color-mix(in srgb, var(--accent) 30%, var(--border));
+}
+.card.card-cta:hover { border-color: var(--accent); }
+
+/* Sticky top bar on the run-detail view. Keeps Start/Pause/Resume
+   within reach during a live event no matter how far the arranger
+   has scrolled into the teams list or event log. */
+.lifecycle-bar {
+  position: sticky; top: 0; z-index: 50;
+  background: var(--bg);
+  padding: .75rem 0;
+  margin: -.25rem 0 1rem;
+  border-bottom: 1px solid var(--border-soft);
+  display: flex; flex-wrap: wrap; gap: .75rem;
+  justify-content: space-between; align-items: center;
+}
+.lifecycle-bar h1 { margin: 0; font-size: 1.3rem; }
+.lifecycle-left {
+  display: flex; gap: .75rem; align-items: center; flex-wrap: wrap;
+}
+
+/* Stuck team row: amber tint + left border, signal-but-not-alarm. */
+tr.row-stuck {
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  box-shadow: inset 4px 0 0 0 var(--accent);
+}
 
 .grid { display: grid; gap: 1rem; }
 .grid.cols-3 { grid-template-columns: repeat(3, minmax(0,1fr)); }
@@ -844,6 +899,24 @@ const icon = (svg) => {
   s.innerHTML = svg;
   return s.firstElementChild;
 };
+
+// iconBtn is the shared recipe for icon-only action buttons. It stops
+// click propagation so buttons inside a clickable card don't trigger
+// the card's own click handler, and always sets a title/aria-label so
+// screen readers and hover tooltips explain the glyph.
+function iconBtn(iconKey, title, onClick, opts = {}) {
+  const cls = ['btn', 'icon', 'small'];
+  if (opts.danger)  cls.push('danger');
+  if (opts.primary) cls.push('primary');
+  if (opts.ghost)   cls.push('ghost');
+  return h('button', {
+    class: cls.join(' '),
+    type: 'button',
+    title,
+    'aria-label': title,
+    on: { click: (e) => { e.stopPropagation(); onClick(e); } },
+  }, icon(ICONS[iconKey]));
+}
 const ICONS = {
   dashboard: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>',
   map: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21 3 6"/><line x1="9" y1="3" x2="9" y2="18"/><line x1="15" y1="6" x2="15" y2="21"/></svg>',
@@ -862,6 +935,12 @@ const ICONS = {
   // notch biting in on the right edge. Drawn relative so the cubic
   // controls land outside the bounding box for a clear tab/notch.
   puzzle: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4 h5 c0 -3 6 -3 6 0 h5 v5 c-3 0 -3 6 0 6 v5 h-16 z"/></svg>',
+  pencil: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>',
+  copy:   '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>',
+  eye:    '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>',
+  coins:  '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="10" r="6"/><circle cx="16" cy="14" r="6"/><path d="M8 8v4"/><path d="M6 10h4"/></svg>',
+  schedule:'<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><path d="M12 14v4"/><path d="M10 18h4"/></svg>',
+  fastForward: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 19 22 12 13 5 13 19"/><polygon points="2 19 11 12 2 5 2 19"/></svg>',
 };
 
 /* ========== Theme ========== */
@@ -1028,7 +1107,6 @@ function renderShell() {
     items = [
       ['#dashboard',  t('Dashboard'),  ICONS.dashboard],
       ['#adventures', t('Adventures'), ICONS.map],
-      ['#library',    t('Authoring'),  ICONS.key],
       ['#puzzles',    t('Puzzles'),    ICONS.puzzle],
       ['#runs',       t('Runs'),       ICONS.play],
     ];
@@ -1230,28 +1308,109 @@ async function viewDashboard(view) {
 }
 
 async function viewArrangerDashboard(view) {
-  const [runs, advs] = await Promise.all([
-    api('/api/admin/runs'), api('/api/admin/adventures'),
+  const [runsR, advR, assignR] = await Promise.all([
+    api('/api/admin/runs'),
+    api('/api/admin/adventures'),
+    api('/api/admin/assignments'),
   ]);
-  const rs = runs.body?.runs || [];
-  const counts = {
-    total: rs.length,
-    running: rs.filter(r => r.state === 'running').length,
-    scheduled: rs.filter(r => r.state === 'scheduled').length,
-  };
+  const newEventBtn = h('button', { class: 'btn primary', on: { click: () => openNewEventWizard() } },
+    icon(ICONS.plus), t('Start a new event'));
+  const rs = runsR.body?.runs || [];
+  const advs = advR.body?.adventures || [];
+  const assignments = assignR.body?.assignments || [];
+  const mineAdvs    = advs.filter((a) => a.mine_to_edit);
+  const unusedAssigns = assignments.filter((a) => !a.run_id);
+  const runningNow  = rs.filter((r) => r.state === 'running');
+  const scheduled   = rs.filter((r) => r.state === 'scheduled')
+    .sort((a, b) => (a.scheduled_at || '').localeCompare(b.scheduled_at || ''));
+
+  // Setup checklist for first-time arrangers. Hides itself once a run
+  // exists so veterans don't see it.
+  const setup = rs.length === 0
+    ? buildDashboardSetup({ mineAdvs, unusedAssigns })
+    : null;
 
   view.replaceChildren(
-    h('h1', {}, t('Hello, {{username}}', { username: state.me.username })),
-    h('p', { class: 'muted' },
-      t('You have {{n}} adventure(s) you are allowed to arrange.', { n: (advs.body?.adventures || []).length })),
-    h('div', { class: 'grid stats' },
-      stat(t('Runs total'), counts.total),
-      stat(t('Running now'), counts.running),
-      stat(t('Scheduled'), counts.scheduled),
+    h('div', { class: 'row between' },
+      h('h1', {}, t('Hello, {{username}}', { username: state.me.username })),
+      newEventBtn,
     ),
-    h('div', { class: 'card' },
-      h('h2', {}, t('Recent runs')),
-      runsTable(rs.slice(0, 5)),
+    h('div', { class: 'grid stats' },
+      stat(t('Running now'), runningNow.length),
+      stat(t('Scheduled'), scheduled.length),
+      stat(t('Unused assignments'), unusedAssigns.length),
+    ),
+    setup,
+    // During a live event this is what the arranger wants to see first.
+    runningNow.length === 0 ? null : h('div', { class: 'card' },
+      h('h2', {}, t('Running now')),
+      h('div', { class: 'grid cols-2' },
+        runningNow.map((r) => h('div', {
+          class: 'card clickable',
+          on: { click: () => nav('#runs/' + r.id) },
+        },
+          h('div', { class: 'row between' },
+            h('strong', {}, runLabel(r)),
+            h('span', { class: 'pill ' + pillClassForState(r.state) }, t(r.state || ''))),
+          h('p', { class: 'muted mono', style: 'font-size:.75rem; margin:.1rem 0 .3rem' }, r.adventure_slug),
+          h('p', { class: 'muted', style: 'font-size:.85rem; margin:0' },
+            r.started_at ? t('Started {{when}}', { when: fmtLocal(r.started_at) }) : ''))))),
+    // "Starts soon" is actionable — one-click Start on scheduled runs.
+    scheduled.length === 0 ? null : h('div', { class: 'card' },
+      h('h2', {}, t('Starts soon')),
+      h('table', { class: 'table' },
+        h('thead', {}, h('tr', {},
+          h('th', {}, t('Run')),
+          h('th', {}, t('Scheduled')),
+          h('th', {}, ''))),
+        h('tbody', {}, scheduled.slice(0, 10).map((r) => h('tr', {
+            style: 'cursor:pointer',
+            on: { click: () => nav('#runs/' + r.id) },
+          },
+          h('td', {}, runLabel(r)),
+          h('td', {}, fmtLocal(r.scheduled_at) || h('span', { class: 'muted' }, t('(no time set)'))),
+          h('td', { style: 'text-align:right' },
+            iconBtn('play', t('Start now'), () => confirmStart(r), { primary: true })),
+        ))))),
+    // Fallback for users between events.
+    (runningNow.length === 0 && scheduled.length === 0 && rs.length > 0)
+      ? h('div', { class: 'card' },
+          h('h2', {}, t('Recent runs')),
+          runsTable(rs.slice(0, 5)))
+      : null,
+  );
+}
+
+// buildDashboardSetup drops a guided checklist for brand-new arrangers
+// who haven't run anything yet — it meets them where they are and
+// links to the next action.
+function buildDashboardSetup({ mineAdvs, unusedAssigns }) {
+  const stepDone = (done, label, cta, onClick) =>
+    h('li', { style: 'display:flex; align-items:center; gap:.6rem; margin:.35rem 0' },
+      h('span', {
+        style: 'display:inline-grid; place-items:center; width:1.4rem; height:1.4rem; border-radius:50%; background:' +
+          (done ? 'var(--accent)' : 'var(--surface-2)') + '; color:' + (done ? 'var(--accent-fg)' : 'var(--muted)') + '; font-weight:700; font-size:.85rem',
+      }, done ? '✓' : '·'),
+      h('span', { style: done ? 'color:var(--muted); text-decoration:line-through' : '' }, label),
+      !done && cta
+        ? h('button', { class: 'btn small primary', style: 'margin-left:auto', on: { click: onClick } }, cta)
+        : null,
+    );
+  const haveAdvOrAssignment = mineAdvs.length > 0 || unusedAssigns.length > 0;
+  return h('div', { class: 'card', style: 'border:1px dashed var(--accent); background:color-mix(in srgb, var(--accent) 5%, var(--surface))' },
+    h('h2', {}, t('Getting started')),
+    h('p', { class: 'muted' }, t('A few clicks to your first adventure.')),
+    h('ol', { style: 'list-style:none; padding:0; margin:0' },
+      stepDone(haveAdvOrAssignment,
+        t('Pick an adventure — buy slots from the catalog or create your own'),
+        t('Go'), () => nav('#adventures')),
+      stepDone(unusedAssigns.length > 0,
+        t('Have an unused assignment ready to schedule'),
+        t('Go'), () => nav('#adventures')),
+      stepDone(false,
+        t('Schedule a run, add teams, share their links — and start!'),
+        unusedAssigns.length > 0 ? t('Schedule') : null,
+        unusedAssigns.length > 0 ? (() => scheduleRun(unusedAssigns[0].id)) : null),
     ),
   );
 }
@@ -1329,6 +1488,16 @@ function stat(label, value) {
    assignments are also shown (with a link to their run) so the arranger can
    see the full history at a glance. */
 async function viewAdventures(view) {
+  // Post-checkout handoff: if sessionStorage carries a fresh
+  // assignment id, open the scheduler for it right away. Cleared on
+  // consume so refreshes don't reopen the dialog.
+  const justPurchased = sessionStorage.getItem('zv-just-purchased');
+  if (justPurchased) {
+    sessionStorage.removeItem('zv-just-purchased');
+    const id = parseInt(justPurchased, 10);
+    if (id > 0) { toastOk(t('Payment received — let\'s schedule your run.')); scheduleRun(id); }
+  }
+
   const [ar, advR] = await Promise.all([
     api('/api/admin/assignments'),
     api('/api/admin/adventures'),
@@ -1337,33 +1506,62 @@ async function viewAdventures(view) {
   const unused = assignments.filter((a) => !a.run_id);
   const used = assignments.filter((a) => a.run_id);
   const advs = advR.body?.adventures || [];
-  // Catalog = adventures the caller can see but can't edit. These are
-  // the admin-owned "global" ones available for purchase. Owned
-  // adventures (mine_to_edit=true) are managed from the Authoring view.
+  // Split by ownership so the view reads as "what I author" vs "what
+  // I can pay to run". Admins never get here (they have their own
+  // dashboard), so mine_to_edit=true here means org-owned.
+  const mine = advs.filter((a) => a.mine_to_edit);
   const catalog = advs.filter((a) => !a.mine_to_edit);
 
   // Build as an array we can filter — passing a bare null to replaceChildren
   // makes it render the string "null".
   const children = [
-    h('h1', {}, t('Adventures')),
+    h('div', { class: 'row between' },
+      h('h1', {}, t('Adventures')),
+      h('button', { class: 'btn primary', on: { click: () => openCreateAdventure() } },
+        icon(ICONS.plus), t('New adventure'))),
+    // "Yours" — the author-it-yourself section. Clicking a card jumps
+    // to the full editor (#library/{slug}); the route reuses the
+    // admin authoring view but scoped to org-owned rows.
+    mine.length === 0 ? null : h('div', { style: 'margin-bottom:1.5rem' },
+      h('h3', {}, t('Your adventures')),
+      h('div', { class: 'grid cols-2' }, mine.map((a) =>
+        h('div', {
+          class: 'card clickable',
+          on: { click: () => nav('#library/' + a.slug) },
+        },
+          h('div', { class: 'row between' },
+            h('h2', {}, a.title),
+            h('div', { class: 'card-actions' },
+              h('span', { class: 'pill accent' }, `${a.page_count} puzzles`),
+              iconBtn('pencil', t('Edit'), () => nav('#library/' + a.slug)))),
+          a.description ? h('p', { class: 'muted' }, a.description) : null,
+          h('p', { class: 'muted mono' }, a.slug),
+          h('div', { class: 'row end' },
+            iconBtn('coins', t('Buy team slots for this adventure'), () => openPurchaseModal(a), { primary: true })))))),
+    h('h3', {}, t('Your assignments')),
     h('p', { class: 'muted' },
-      t('Each assignment lets you schedule the adventure once, with up to the number of teams agreed with the owner.')),
+      t('Each assignment lets you schedule one run with up to its team cap. Buy more slots from the Catalog below.')),
     unused.length === 0
       ? h('div', { class: 'empty' },
           h('p', {}, t('No assignments available right now.')),
-          h('p', { class: 'muted' }, t('Contact the owner to get one.')))
+          h('p', { class: 'muted' }, t('Buy team slots from the Catalog to unlock one.')))
       : h('div', { class: 'grid cols-2' }, unused.map((a) =>
-        h('div', { class: 'card' },
+        h('div', {
+          class: 'card clickable card-cta',
+          on: { click: () => scheduleRun(a.id) },
+        },
           h('div', { class: 'row between' },
             h('h2', {}, a.adventure_title || a.adventure_slug),
             h('span', { class: 'pill accent' }, a.max_teams === 1
               ? t('up to {{n}} team', { n: a.max_teams })
               : t('up to {{n}} teams', { n: a.max_teams }))),
-          h('p', { class: 'muted mono' }, a.adventure_slug),
-          h('div', { class: 'row end' },
-            h('button', { class: 'btn small', on: { click: () => nav('#adventures/' + a.adventure_slug) } }, t('Preview')),
-            h('button', { class: 'btn primary small', on: { click: () => scheduleRun(a.id) } },
-              icon(ICONS.plus), t('Schedule run'))),
+          h('p', { class: 'muted mono', style: 'font-size:.8rem' }, a.adventure_slug),
+          h('div', { class: 'row end', style: 'margin-top:.5rem' },
+            h('button', {
+              class: 'btn primary',
+              on: { click: (e) => { e.stopPropagation(); scheduleRun(a.id); } },
+            }, icon(ICONS.play), t('Schedule run')),
+          ),
         ))),
     used.length === 0 ? null : h('div', {},
       h('h3', {}, t('Already used')),
@@ -1388,16 +1586,17 @@ async function viewAdventures(view) {
       h('p', { class: 'muted' },
         t('Published adventures you can run. Buy team slots to unlock a new assignment.')),
       h('div', { class: 'grid cols-2' }, catalog.map((a) =>
-        h('div', { class: 'card' },
+        h('div', {
+          class: 'card clickable',
+          on: { click: () => nav('#adventures/' + a.slug) },
+        },
           h('div', { class: 'row between' },
             h('h2', {}, a.title),
-            h('span', { class: 'pill' }, `${a.page_count} puzzles`)),
+            h('div', { class: 'card-actions' },
+              h('span', { class: 'pill' }, `${a.page_count} puzzles`),
+              iconBtn('coins', t('Buy team slots'), () => openPurchaseModal(a), { primary: true }))),
           a.description ? h('p', { class: 'muted' }, a.description) : null,
           h('p', { class: 'muted mono' }, a.slug),
-          h('div', { class: 'row end' },
-            h('button', { class: 'btn small', on: { click: () => nav('#adventures/' + a.slug) } }, t('Preview')),
-            h('button', { class: 'btn primary small', on: { click: () => openPurchaseModal(a) } },
-              t('Buy team slots'))),
         )))),
   ].filter(Boolean);
   view.replaceChildren(...children);
@@ -1523,33 +1722,242 @@ async function viewAdventureDetail(view, slug) {
 }
 
 async function scheduleRun(assignmentID) {
-  const body = await modal(t('Schedule run'), ({ body, close }) => {
-    const when = h('input', { type: 'datetime-local' });
+  const body = await modal(t('New run'), ({ body, close }) => {
+    const name = h('input', { placeholder: t('e.g. “Saturday Andersson party”') });
+    // Two primary options, "Start now" first because the common case
+    // is "I bought this because I want to play right now".
+    const modeNow = h('input', { type: 'radio', name: 'mode', value: 'now', checked: '' });
+    const modeLater = h('input', { type: 'radio', name: 'mode', value: 'later' });
+    const when = h('input', { type: 'datetime-local', disabled: '' });
+    const refresh = () => { when.disabled = !modeLater.checked; };
+    modeNow.addEventListener('change', refresh);
+    modeLater.addEventListener('change', refresh);
+
     const form = h('form', {},
-      h('p', { class: 'muted', style: 'font-size:.85rem; margin-bottom:.5rem' },
-        t('The run is created in the scheduled state. You can start it manually later, or pick a local time here to have the server auto-start it.')),
-      h('label', { class: 'field' }, h('span', {}, t('Auto-start at (optional)')), when),
+      h('label', { class: 'field' }, h('span', {}, t('Name (optional)')), name),
+      h('label', { style: 'display:flex; gap:.5rem; align-items:center; margin:.5rem 0' },
+        modeNow, h('span', {}, t('Start now'))),
+      h('label', { style: 'display:flex; gap:.5rem; align-items:center; margin:.5rem 0' },
+        modeLater, h('span', {}, t('Schedule for later'))),
+      h('label', { class: 'field' }, h('span', {}, t('Auto-start at')), when),
       h('div', { class: 'row end' },
         h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, t('Cancel')),
         h('button', { class: 'btn primary', type: 'submit' }, t('Create run'))),
     );
     form.addEventListener('submit', (e) => {
       e.preventDefault();
-      const req = { assignment_id: assignmentID };
-      if (when.value) {
-        // datetime-local is parsed as local time; toISOString emits UTC.
+      const req = { assignment_id: assignmentID, name: name.value.trim() };
+      if (modeLater.checked) {
+        if (!when.value) { toastErr(t('Pick an auto-start time')); return; }
         const d = new Date(when.value);
         if (Number.isNaN(d.getTime())) { toastErr(t('Bad date')); return; }
         req.scheduled_at = d.toISOString();
       }
-      close(req);
+      close({ req, startNow: modeNow.checked });
     });
     body.append(form);
   });
   if (!body) return;
-  const r = await api('/api/admin/runs', { method: 'POST', body: JSON.stringify(body) });
-  if (r.status === 201) { toastOk(t('Run #{{id}} scheduled', { id: r.body.id })); nav('#runs/' + r.body.id); }
-  else toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+  const r = await api('/api/admin/runs', { method: 'POST', body: JSON.stringify(body.req) });
+  if (r.status !== 201) { toastErr(r.body?.error || t('error {{status}}', { status: r.status })); return; }
+  const runID = r.body.id;
+  if (body.startNow) {
+    const sr = await api('/api/admin/runs/' + runID + '/start', { method: 'POST' });
+    if (sr.status !== 204 && sr.status !== 200) {
+      toastErr(sr.body?.error || t('error {{status}}', { status: sr.status }));
+    }
+  }
+  toastOk(t('Run ready'));
+  nav('#runs/' + runID);
+}
+
+// openNewEventWizard walks the arranger through every decision needed
+// to get from "I want to host" to "here's the run with teams ready".
+// Runs inline (no checkout-page jump) by calling the purchase +
+// confirm endpoints directly from the submit handler. The simulated
+// checkout page still exists for the standalone "Buy team slots"
+// flow on the Adventures catalog, but the wizard bypasses it.
+async function openNewEventWizard() {
+  const [advR, assignR] = await Promise.all([
+    api('/api/admin/adventures'),
+    api('/api/admin/assignments'),
+  ]);
+  const advs = advR.body?.adventures || [];
+  if (advs.length === 0) {
+    toastErr(t('Create or browse an adventure first')); return;
+  }
+  const assignments = (assignR.body?.assignments || []).filter((a) => !a.run_id);
+
+  await modal(t('Start a new event'), ({ body, close }) => {
+    // ---- 1. Adventure picker ----
+    const advPick = h('div', { class: 'chip-grid', style: 'max-height:240px' });
+    let pickedAdv = advs[0];
+    const advChip = (a) => {
+      const chip = h('div', {
+        class: 'chip selectable' + (a.slug === pickedAdv.slug ? ' selected' : ''),
+        style: 'display:flex; flex-direction:column; gap:.1rem; min-width:160px',
+      },
+        h('strong', {}, a.title),
+        h('span', { class: 'muted', style: 'font-size:.75rem' },
+          a.mine_to_edit ? t('yours') : t('catalog')));
+      chip.addEventListener('click', () => {
+        pickedAdv = a;
+        for (const c of advPick.children) c.classList.remove('selected');
+        chip.classList.add('selected');
+        refreshAssignment();
+      });
+      return chip;
+    };
+    advs.forEach((a) => advPick.append(advChip(a)));
+
+    // ---- 2. Capacity: reuse existing assignment or buy ----
+    const buyCount = h('input', { type: 'number', min: '1', max: '100', value: '10' });
+    const capacitySection = h('div', {});
+    const PRICE_CENTS = 200;
+    const refreshAssignment = () => {
+      capacitySection.replaceChildren();
+      const matching = assignments.filter((x) => x.adventure_slug === pickedAdv.slug);
+      if (matching.length > 0) {
+        capacitySection.append(
+          h('p', { class: 'muted' }, t('You have an unused assignment for this adventure — no new purchase needed.')),
+          h('p', {}, h('strong', {}, matching[0].max_teams === 1
+            ? t('{{n}} team slot', { n: matching[0].max_teams })
+            : t('{{n}} team slots', { n: matching[0].max_teams }))));
+      } else {
+        const total = () => ((parseInt(buyCount.value, 10) || 0) * PRICE_CENTS / 100).toFixed(2);
+        const totalEl = h('strong', {}, '$' + total());
+        buyCount.addEventListener('input', () => { totalEl.textContent = '$' + total(); });
+        capacitySection.append(
+          h('p', { class: 'muted' }, t('How many team slots do you need? ($2.00 each, simulated payment.)')),
+          h('div', { class: 'row', style: 'gap:.5rem; align-items:center' },
+            h('label', { class: 'field', style: 'flex:0 0 auto; margin:0' },
+              h('span', {}, t('Team slots')), buyCount),
+            h('p', { style: 'margin:0' }, t('Total: '), totalEl)));
+      }
+    };
+    refreshAssignment();
+
+    // ---- 3. When ----
+    const modeNow   = h('input', { type: 'radio', name: 'ev-mode', value: 'now', checked: '' });
+    const modeLater = h('input', { type: 'radio', name: 'ev-mode', value: 'later' });
+    const whenInput = h('input', { type: 'datetime-local', disabled: '' });
+    const toggleWhen = () => { whenInput.disabled = !modeLater.checked; };
+    modeNow.addEventListener('change', toggleWhen);
+    modeLater.addEventListener('change', toggleWhen);
+    const nameInput = h('input', { placeholder: t('e.g. “Saturday Andersson party”') });
+
+    // ---- 4. Teams ----
+    const teamCount = h('input', { type: 'number', min: '0', max: '50', value: '0' });
+    const playerCount = h('input', { type: 'number', min: '1', max: '20', value: '3' });
+    const teamPrefix   = h('input', { value: 'Team' });
+    const playerPrefix = h('input', { value: 'Player' });
+
+    const submitBtn = h('button', { class: 'btn primary', type: 'submit' }, t('Create event'));
+    const form = h('form', {},
+      h('h3', { style: 'margin-top:0' }, t('Adventure')),
+      advPick,
+      h('h3', {}, t('Team capacity')),
+      capacitySection,
+      h('h3', {}, t('When')),
+      h('label', { style: 'display:flex; gap:.5rem; align-items:center; margin:.25rem 0' },
+        modeNow, h('span', {}, t('Start now'))),
+      h('label', { style: 'display:flex; gap:.5rem; align-items:center; margin:.25rem 0' },
+        modeLater, h('span', {}, t('Schedule for later'))),
+      h('label', { class: 'field' }, h('span', {}, t('Auto-start at')), whenInput),
+      h('label', { class: 'field' }, h('span', {}, t('Run name (optional)')), nameInput),
+      h('h3', {}, t('Teams (optional — add later if you prefer)')),
+      h('div', { class: 'grid cols-2' },
+        h('label', { class: 'field' }, h('span', {}, t('Number of teams')), teamCount),
+        h('label', { class: 'field' }, h('span', {}, t('Players per team')), playerCount)),
+      h('div', { class: 'grid cols-2' },
+        h('label', { class: 'field' }, h('span', {}, t('Team name prefix')), teamPrefix),
+        h('label', { class: 'field' }, h('span', {}, t('Player name prefix')), playerPrefix)),
+      h('div', { class: 'row end', style: 'margin-top:1rem' },
+        h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, t('Cancel')),
+        submitBtn));
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      submitBtn.disabled = true;
+      try {
+        // Resolve or mint an assignment.
+        let assignmentID = null;
+        const matching = assignments.filter((x) => x.adventure_slug === pickedAdv.slug);
+        if (matching.length > 0) {
+          assignmentID = matching[0].id;
+        } else {
+          const n = Math.max(1, parseInt(buyCount.value, 10) || 0);
+          const pr = await api('/api/admin/purchases', {
+            method: 'POST',
+            body: JSON.stringify({ adventure_slug: pickedAdv.slug, max_teams: n }),
+          });
+          if (pr.status !== 201) { toastErr(pr.body?.error || t('Purchase failed')); return; }
+          const cr = await api('/api/admin/purchases/' + pr.body.id + '/confirm', { method: 'POST' });
+          if (cr.status !== 200) { toastErr(cr.body?.error || t('Payment failed')); return; }
+          assignmentID = cr.body.assignment_id;
+        }
+        // Create the run.
+        const runReq = { assignment_id: assignmentID, name: nameInput.value.trim() };
+        if (modeLater.checked) {
+          if (!whenInput.value) { toastErr(t('Pick an auto-start time')); return; }
+          runReq.scheduled_at = new Date(whenInput.value).toISOString();
+        }
+        const rr = await api('/api/admin/runs', { method: 'POST', body: JSON.stringify(runReq) });
+        if (rr.status !== 201) { toastErr(rr.body?.error || t('Run creation failed')); return; }
+        const runID = rr.body.id;
+        // Bulk teams.
+        const T = Math.max(0, parseInt(teamCount.value, 10) || 0);
+        const P = Math.max(1, parseInt(playerCount.value, 10) || 0);
+        const tp = teamPrefix.value.trim() || 'Team';
+        const pp = playerPrefix.value.trim() || 'Player';
+        for (let i = 1; i <= T; i++) {
+          const members = Array.from({ length: P }, (_, j) => `${pp} ${j + 1}`);
+          await api(`/api/admin/runs/${runID}/teams`, {
+            method: 'POST',
+            body: JSON.stringify({ name: `${tp} ${i}`, member_names: members }),
+          });
+        }
+        if (modeNow.checked) {
+          await api('/api/admin/runs/' + runID + '/start', { method: 'POST' });
+        }
+        toastOk(t('Event ready'));
+        close(true);
+        nav('#runs/' + runID);
+      } finally {
+        submitBtn.disabled = false;
+      }
+    });
+    body.append(form);
+  }, { wide: true });
+}
+
+// runLabel renders a run's display name — the human-set name if any,
+// otherwise "Run #id". Used everywhere a run identifier is shown.
+function runLabel(run) {
+  if (!run) return '';
+  return run.name ? run.name : 'Run #' + run.id;
+}
+
+async function openRenameRun(run) {
+  await modal(t('Rename run'), ({ body, close }) => {
+    const input = h('input', { value: run.name || '', autofocus: true, placeholder: t('Run name') });
+    const form = h('form', {},
+      h('label', { class: 'field' }, h('span', {}, t('Run name')), input),
+      h('p', { class: 'muted', style: 'font-size:.85rem' },
+        t('Empty resets to "Run #{{id}}".', { id: run.id })),
+      h('div', { class: 'row end' },
+        h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, t('Cancel')),
+        h('button', { class: 'btn primary', type: 'submit' }, t('Save'))));
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const r = await api(`/api/admin/runs/${run.id}`, {
+        method: 'PATCH', body: JSON.stringify({ name: input.value.trim() }),
+      });
+      if (r.status === 204) { toastOk(t('Renamed')); close(true); renderRoute(); }
+      else toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+    });
+    body.append(form);
+  });
 }
 
 /* ========== Runs ========== */
@@ -1563,16 +1971,21 @@ async function viewRuns(view) {
 }
 
 function runsTable(rs) {
-  if (rs.length === 0) return h('div', { class: 'empty' }, t('No runs yet.'));
+  if (rs.length === 0) return h('div', { class: 'empty' },
+    h('p', {}, t('No runs yet.')),
+    h('button', { class: 'btn primary', on: { click: () => nav('#adventures') } },
+      icon(ICONS.map), t('Pick an adventure')));
   return h('table', { class: 'table' },
     h('thead', {}, h('tr', {},
-      h('th', {}, t('Adventure')),
+      h('th', {}, t('Run')),
+      h('th', { class: 'hide-narrow' }, t('Adventure')),
       h('th', {}, t('State')),
       h('th', { class: 'hide-narrow' }, t('Scheduled')),
       h('th', { class: 'hide-narrow' }, t('Started')))),
     h('tbody', {}, rs.map((r) =>
       h('tr', { style: 'cursor:pointer', on: { click: () => nav('#runs/' + r.id) } },
-        h('td', {}, r.adventure_slug),
+        h('td', {}, h('strong', {}, runLabel(r))),
+        h('td', { class: 'hide-narrow muted mono' }, r.adventure_slug),
         h('td', {}, h('span', { class: 'pill ' + pillClassForState(r.state) }, t(r.state || ''))),
         h('td', { class: 'hide-narrow' }, fmtLocal(r.scheduled_at)),
         h('td', { class: 'hide-narrow' }, fmtLocal(r.started_at)),
@@ -1674,13 +2087,49 @@ async function viewRunDetail(view, runID) {
   const adventure = adventureR?.body || null;
   const events = eventsR.body?.events || [];
 
-  const actions = h('div', { class: 'row' });
+  // Lifecycle action lives at the top — during a live event this is
+  // what the arranger reaches for, so it belongs above everything.
+  const actions = h('div', { class: 'row', style: 'gap:.5rem; flex-wrap:wrap' });
   if (run.state === 'scheduled') {
-    actions.append(btn(t('Start now'), 'primary', () => confirmStart(run)));
-    actions.append(btn(t('Edit schedule'), '', () => openEditSchedule(run)));
+    const start = h('button', { class: 'btn primary lifecycle-btn', on: { click: () => confirmStart(run) } },
+      icon(ICONS.play), t('Start now'));
+    const sched = h('button', { class: 'btn lifecycle-btn', on: { click: () => openEditSchedule(run) } },
+      icon(ICONS.schedule), t('Reschedule'));
+    actions.append(start, sched);
   }
-  if (run.state === 'running') actions.append(btn(t('Pause'), '', () => transition(run.id, 'pause')));
-  if (run.state === 'paused') actions.append(btn(t('Resume'), 'primary', () => transition(run.id, 'resume')));
+  if (run.state === 'running') {
+    const pause = h('button', { class: 'btn lifecycle-btn warning', on: { click: () => transition(run.id, 'pause') } },
+      icon(ICONS.moon), t('Pause'));
+    actions.append(pause);
+  }
+  if (run.state === 'paused') {
+    const resume = h('button', { class: 'btn primary lifecycle-btn', on: { click: () => transition(run.id, 'resume') } },
+      icon(ICONS.play), t('Resume'));
+    actions.append(resume);
+  }
+  // Results export is always available once there are teams — arrangers
+  // often want to grab mid-event standings too, not just post-mortem.
+  if (teams.length > 0) {
+    const finishedN = teams.filter((tm) => tm.completed_at).length;
+    const allDone   = finishedN === teams.length;
+    const csv = h('a', {
+      class: 'btn lifecycle-btn' + (allDone ? ' primary' : ''),
+      href: '/api/admin/runs/' + run.id + '/results.csv',
+      download: `run-${run.id}-results.csv`,
+      title: t('Download CSV of the current standings'),
+    }, icon(ICONS.copy), allDone ? t('Download results') : t('Download standings'));
+    actions.append(csv);
+  }
+
+  // Last-activity-per-team: the newest event timestamp the team was
+  // involved in. Used to highlight teams that look stuck.
+  const lastEventByTeam = new Map();
+  for (const ev of events) {
+    if (!ev.team_id) continue;
+    const prev = lastEventByTeam.get(ev.team_id);
+    if (!prev || (ev.created_at > prev)) lastEventByTeam.set(ev.team_id, ev.created_at);
+  }
+  const STUCK_MS = 10 * 60 * 1000;
 
   // Build team → colour map up-front so legend, trace and dots match.
   const teamIndex = new Map();
@@ -1695,29 +2144,51 @@ async function viewRunDetail(view, runID) {
     h('span', {}, h('span', { class: 'sw', style: 'background:var(--ink)' }), t('Puzzle')),
     ...teamLegend);
 
-  view.replaceChildren(
-    h('button', { class: 'btn ghost small', on: { click: () => nav('#runs') } }, icon(ICONS.back), t('Back')),
-    h('div', { class: 'row between' },
-      h('h1', {}, t('Run #{{id}}', { id: run.id })),
+  // Collapsible map card. Leaflet needs a sized container at init
+  // time, so we only call initRunMap when the body is visible; a
+  // guard keeps it idempotent across toggles.
+  const mapBody = h('div', { style: run.show_map ? '' : 'display:none' }, mapHost, legend);
+  const mapCaret = h('span', { style: 'margin-left:auto; color:var(--muted); font-size:.85rem' },
+    run.show_map ? t('Hide') : t('Show'));
+  const mapHeader = h('div', { class: 'row between', style: 'cursor:pointer; user-select:none' },
+    h('h2', { style: 'margin:0' }, t('Map')), mapCaret);
+  let mapReady = false;
+  const ensureMap = () => {
+    if (!mapReady && adventure) { initRunMap(mapHost, adventure, teams, tracks); mapReady = true; }
+  };
+  mapHeader.addEventListener('click', () => {
+    const nowOpen = mapBody.style.display === 'none';
+    mapBody.style.display = nowOpen ? '' : 'none';
+    mapCaret.textContent  = nowOpen ? t('Hide') : t('Show');
+    if (nowOpen) ensureMap();
+  });
+  const mapCard = h('div', { class: 'card' }, mapHeader, mapBody);
+
+  // Sticky lifecycle bar — pins to the top of the scroll area so big
+  // Start/Pause/Resume stay reachable while scrolling through teams.
+  const titleEl = h('h1', {}, runLabel(run));
+  const renameBtn = iconBtn('pencil', t('Rename run'), () => openRenameRun(run));
+  const lifecycleBar = h('div', { class: 'lifecycle-bar' },
+    h('div', { class: 'lifecycle-left' },
+      h('button', { class: 'btn ghost small', on: { click: () => nav('#runs') } },
+        icon(ICONS.back), t('Runs')),
+      titleEl, renameBtn,
       h('span', { class: 'pill ' + pillClassForState(run.state) }, t(run.state || '')),
-    ),
-    h('p', { class: 'muted mono' }, run.adventure_slug),
-    renderShareBar(run),
-    h('div', { class: 'card' },
-      h('h2', {}, t('Lifecycle')),
-      actions,
-      h('p', { class: 'muted' },
+      h('span', { class: 'muted', style: 'font-size:.85rem' },
         run.started_at
           ? t('Started {{when}}', { when: fmtLocal(run.started_at) })
           : run.scheduled_at
-            ? t('Scheduled to auto-start {{when}}', { when: fmtLocal(run.scheduled_at) })
-            : t('Not started yet')),
+            ? t('Auto-start {{when}}', { when: fmtLocal(run.scheduled_at) })
+            : t('Not scheduled')),
     ),
-    h('div', { class: 'card' },
-      h('h2', {}, t('Map')),
-      mapHost,
-      legend,
-    ),
+    actions,
+  );
+
+  view.replaceChildren(
+    lifecycleBar,
+    h('p', { class: 'muted mono' }, run.adventure_slug),
+    renderShareBar(run),
+    mapCard,
     h('div', { class: 'grid cols-2' },
       h('div', { class: 'card' },
         h('div', { class: 'row between' },
@@ -1733,28 +2204,52 @@ async function viewRunDetail(view, runID) {
             on: { click: () => openTeamModal(run.id, null) },
           }, icon(ICONS.plus), t('New team'))),
         teams.length === 0
-          ? h('div', { class: 'empty' }, t('No teams yet.'))
+          ? h('div', { class: 'empty' },
+              h('p', {}, t('No teams yet.')),
+              h('button', { class: 'btn primary', on: { click: () => openTeamModal(run.id, null) } },
+                icon(ICONS.plus), t('Add the first team')))
           : h('table', { class: 'table' },
-            h('thead', {}, h('tr', {}, h('th', {}, t('Team')), h('th', {}, t('Puzzle')), h('th', {}, t('Members')), h('th', {}, ''))),
-            h('tbody', {}, teams.map((tm, i) => h('tr', {},
-              h('td', {},
-                h('span', { class: 'sw', style: `display:inline-block;width:10px;height:10px;border-radius:999px;margin-right:.4rem;background:${teamColor(tm.id, i)}` }),
-                h('a', { href: '#', on: { click: (e) => { e.preventDefault(); openTeamDetail(run.id, tm, adventure); } } }, tm.name),
-                tm.completed_at ? h('span', { class: 'pill success', style: 'margin-left:.5rem' }, t('done')) : null),
-              h('td', { class: 'mono' }, tm.page_index),
-              h('td', {}, (tm.members || []).map((m) => h('span', { class: 'chip', style: 'margin-right:.25rem' }, m.name))),
-              h('td', {}, h('div', { class: 'row end' },
-                h('button', { class: 'btn small', on: { click: () => openTeamModal(run.id, tm) } }, t('Edit')),
-                h('button', { class: 'btn small danger', on: { click: () => confirmDeleteTeam(tm) } }, icon(ICONS.trash)))),
-            ))))),
+            h('thead', {}, h('tr', {},
+              h('th', {}, t('Team')),
+              h('th', {}, t('Puzzle')),
+              h('th', { class: 'hide-narrow' }, t('Activity')),
+              h('th', {}, ''))),
+            h('tbody', {}, teams.map((tm, i) => {
+              const page = adventure?.pages?.[tm.page_index];
+              const lastEv = lastEventByTeam.get(tm.id);
+              const lastMs = lastEv ? Date.parse(lastEv.includes('T') ? lastEv : lastEv.replace(' ', 'T') + 'Z') : null;
+              const stuck = run.state === 'running' && !tm.completed_at && lastMs != null && (Date.now() - lastMs) > STUCK_MS;
+              return h('tr', { class: stuck ? 'row-stuck' : '' },
+                h('td', {},
+                  h('span', { class: 'sw', style: `display:inline-block;width:10px;height:10px;border-radius:999px;margin-right:.4rem;background:${teamColor(tm.id, i)}` }),
+                  h('a', { href: '#', on: { click: (e) => { e.preventDefault(); openTeamDetail(run.id, tm, adventure); } } }, tm.name),
+                  tm.completed_at ? h('span', { class: 'pill success', style: 'margin-left:.5rem' }, t('done')) : null,
+                  stuck ? h('span', { class: 'pill warning', style: 'margin-left:.5rem' }, t('stuck?')) : null),
+                h('td', {},
+                  h('div', { class: 'mono' },
+                    adventure?.pages
+                      ? t('{{i}} / {{n}}', { i: tm.page_index + 1, n: adventure.pages.length })
+                      : tm.page_index),
+                  page && !tm.completed_at
+                    ? h('div', { class: 'muted', style: 'font-size:.85rem' }, page.title || t('(untitled)'))
+                    : null),
+                h('td', { class: 'hide-narrow muted', style: 'font-size:.85rem' },
+                  lastEv ? fmtLocal(lastEv) : t('—')),
+                h('td', {}, h('div', { class: 'row end' },
+                  iconBtn('pencil', t('Edit team'),   () => openTeamModal(run.id, tm)),
+                  iconBtn('trash',  t('Delete team'), () => confirmDeleteTeam(tm), { danger: true }))),
+              );
+            })))),
       h('div', { class: 'card' },
         h('h2', {}, t('Event log')),
         renderEventFeed(events, teams)),
     ),
   );
 
-  // Leaflet needs its container to already be in the DOM with a known size.
-  if (adventure) initRunMap(mapHost, adventure, teams, tracks);
+  // Initialise Leaflet only when the map card is open (run.show_map
+  // makes it open on arrival; otherwise the click handler triggers
+  // init the first time the user expands it).
+  if (run.show_map) ensureMap();
 }
 
 // initRunMap mounts a Leaflet map inside host. Puzzle pins come from the
@@ -2025,11 +2520,21 @@ async function openTeamDetail(runID, team, adventure) {
 
     const actions = h('div', { class: 'row', style: 'margin-bottom:.75rem; flex-wrap:wrap' });
     if (!finished) {
-      actions.append(h('button', { class: 'btn primary', on: { click: () => skipPuzzle(team, close) } },
-        icon(ICONS.key), t('Skip this puzzle')));
+      // Alt-click skips the confirmation modal — faster when the
+      // arranger is actively unsticking a team mid-event. Normal
+      // click still goes through the confirm so a mis-tap doesn't
+      // silently advance a team.
+      const skipBtn = h('button', {
+        class: 'btn primary',
+        title: t('Alt-click to skip the confirmation'),
+      }, icon(ICONS.fastForward), t('Skip this puzzle'));
+      skipBtn.addEventListener('click', (e) => {
+        if (e.altKey) skipPuzzleNow(team, close); else skipPuzzle(team, close);
+      });
+      actions.append(skipBtn);
     }
     actions.append(h('button', { class: 'btn', on: { click: () => { close(null); openTeamModal(runID, team); } } },
-      t('Edit members')));
+      icon(ICONS.pencil), t('Edit members')));
     actions.append(h('button', { class: 'btn danger', on: { click: async () => { close(null); await confirmDeleteTeam(team); } } },
       icon(ICONS.trash), t('Delete')));
 
@@ -2042,6 +2547,22 @@ async function openTeamDetail(runID, team, adventure) {
         h('button', { class: 'btn', on: { click: () => close(null) } }, t('Close'))),
     );
   }, { wide: true });
+}
+
+// skipPuzzleNow is the alt-click fast path — same server call as
+// skipPuzzle but no confirmation modal, for when the arranger is
+// actively triaging a stuck team mid-event.
+async function skipPuzzleNow(team, close) {
+  const r = await api(`/api/admin/teams/${team.id}/unlock`, { method: 'POST' });
+  if (r.ok) {
+    toastOk(r.body?.completed
+      ? t('{{name}} finished', { name: team.name })
+      : t('{{name}} advanced', { name: team.name }));
+    close(true);
+    renderRoute();
+  } else {
+    toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+  }
 }
 
 async function skipPuzzle(team, close) {
@@ -2089,40 +2610,109 @@ async function openTeamModal(runID, existing) {
 }
 
 async function openNewTeamModal(runID) {
-  await modal(t('New team'), ({ body, close }) => {
-    const nameInput = h('input', { name: 'name', required: true, autofocus: true });
+  await modal(t('Add teams'), ({ body, close }) => {
+    // Two modes share this modal. Default is "single" — fill one team
+    // with specific names. "Bulk" is the tournament-setup shortcut:
+    // "I have 5 teams of 3 players, generate placeholders, we'll
+    // rename later." Names are auto-generated; the magic-link share
+    // page already works with whatever names are there.
+    const modeSingle = h('input', { type: 'radio', name: 'mode', value: 'single', checked: '' });
+    const modeBulk   = h('input', { type: 'radio', name: 'mode', value: 'bulk' });
+    const modeBar = h('div', { style: 'display:flex; gap:1rem; margin-bottom:1rem' },
+      h('label', { style: 'display:flex; gap:.4rem; align-items:center; cursor:pointer' },
+        modeSingle, h('span', {}, t('One team'))),
+      h('label', { style: 'display:flex; gap:.4rem; align-items:center; cursor:pointer' },
+        modeBulk, h('span', {}, t('Many teams at once'))),
+    );
+
+    /* ---- single-team fields ---- */
+    const nameInput = h('input', { name: 'name', autofocus: true });
     const memberArea = h('textarea', {
       name: 'members', rows: 5,
       placeholder: 'alice\nbob\ncharlie',
-      required: true,
     });
-    const submitBtn = h('button', { class: 'btn primary', type: 'submit' }, t('Create team'));
-    const form = h('form', {},
+    const singleFields = h('div', {},
       h('label', { class: 'field' }, h('span', {}, t('Team name')), nameInput),
       h('label', { class: 'field' },
-        h('span', {}, t('Members — one name per line')),
+        h('span', {}, t('Members — one per line, or paste CSV')),
         memberArea),
       h('p', { class: 'muted', style: 'font-size:.8rem' },
-        t('Each line becomes a player slot with its own magic-link token. '),
-        t('You can copy the per-player link after the team is created.')),
+        t('Each line becomes a player slot with its own magic-link token.')));
+
+    /* ---- bulk-team fields ---- */
+    const teamCount   = h('input', { type: 'number', min: '1', max: '50', value: '5' });
+    const playerCount = h('input', { type: 'number', min: '1', max: '20', value: '3' });
+    const teamPrefix   = h('input', { value: 'Team' });
+    const playerPrefix = h('input', { value: 'Player' });
+    const bulkPreview = h('p', { class: 'muted', style: 'font-size:.85rem' });
+    const updatePreview = () => {
+      const T = parseInt(teamCount.value, 10) || 0;
+      const P = parseInt(playerCount.value, 10) || 0;
+      bulkPreview.textContent = t('Creates {{t}} teams × {{p}} players = {{n}} magic links.',
+        { t: T, p: P, n: T * P });
+    };
+    for (const el of [teamCount, playerCount]) el.addEventListener('input', updatePreview);
+    updatePreview();
+    const bulkFields = h('div', { style: 'display:none' },
+      h('div', { class: 'grid cols-2' },
+        h('label', { class: 'field' }, h('span', {}, t('Number of teams')), teamCount),
+        h('label', { class: 'field' }, h('span', {}, t('Players per team')), playerCount)),
+      h('div', { class: 'grid cols-2' },
+        h('label', { class: 'field' }, h('span', {}, t('Team name prefix')), teamPrefix),
+        h('label', { class: 'field' }, h('span', {}, t('Player name prefix')), playerPrefix)),
+      bulkPreview);
+
+    const refreshMode = () => {
+      singleFields.style.display = modeSingle.checked ? '' : 'none';
+      bulkFields.style.display   = modeBulk.checked   ? '' : 'none';
+    };
+    modeSingle.addEventListener('change', refreshMode);
+    modeBulk.addEventListener('change', refreshMode);
+
+    const submitBtn = h('button', { class: 'btn primary', type: 'submit' }, t('Create'));
+    const form = h('form', {}, modeBar, singleFields, bulkFields,
       h('div', { class: 'row end', style: 'margin-top:1rem' },
         h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, t('Cancel')),
         submitBtn));
+
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
-      const names = (memberArea.value || '').split('\n')
-        .map((s) => s.trim()).filter(Boolean);
-      if (names.length === 0) { toastErr(t('Add at least one member')); return; }
       submitBtn.disabled = true;
-      const rr = await api(`/api/admin/runs/${runID}/teams`, {
-        method: 'POST',
-        body: JSON.stringify({ name: nameInput.value.trim(), member_names: names }),
-      });
-      submitBtn.disabled = false;
-      if (rr.status !== 201) { toastErr(rr.body?.error || t('error {{status}}', { status: rr.status })); return; }
-      toastOk(t('Team created'));
-      close(true);
-      renderRoute();
+      try {
+        if (modeSingle.checked) {
+          const names = (memberArea.value || '').split(/[\n,;]+/)
+            .map((s) => s.trim()).filter(Boolean);
+          const tName = nameInput.value.trim();
+          if (!tName) { toastErr(t('Team name required')); return; }
+          if (names.length === 0) { toastErr(t('Add at least one member')); return; }
+          const rr = await api(`/api/admin/runs/${runID}/teams`, {
+            method: 'POST',
+            body: JSON.stringify({ name: tName, member_names: names }),
+          });
+          if (rr.status !== 201) { toastErr(rr.body?.error || t('error {{status}}', { status: rr.status })); return; }
+          toastOk(t('Team created'));
+        } else {
+          const T = Math.max(1, parseInt(teamCount.value, 10) || 0);
+          const P = Math.max(1, parseInt(playerCount.value, 10) || 0);
+          const tp = teamPrefix.value.trim() || 'Team';
+          const pp = playerPrefix.value.trim() || 'Player';
+          let created = 0, failed = 0;
+          for (let i = 1; i <= T; i++) {
+            const members = Array.from({ length: P }, (_, j) => `${pp} ${j + 1}`);
+            const rr = await api(`/api/admin/runs/${runID}/teams`, {
+              method: 'POST',
+              body: JSON.stringify({ name: `${tp} ${i}`, member_names: members }),
+            });
+            if (rr.status === 201) created++; else failed++;
+          }
+          if (failed) toastErr(t('Created {{c}}, {{f}} failed', { c: created, f: failed }));
+          else toastOk(t('Created {{n}} teams', { n: created }));
+        }
+        close(true);
+        renderRoute();
+      } finally {
+        submitBtn.disabled = false;
+      }
     });
     body.append(form);
   }, { wide: true });
@@ -2188,9 +2778,40 @@ async function openEditTeamModal(runID, existing) {
     });
     newName.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addBtn.click(); } });
 
+    // Team-share affordances. The team URL is meant for the captain —
+    // they open it on a phone and every member taps their own name. The
+    // "Copy all" dumps name+URL pairs for paste-into-Slack flows.
+    const teamURL = `${location.origin}/team/${encodeURIComponent(freshTeam.token || '')}`;
+    const teamURLInput = h('input', {
+      readonly: '', value: teamURL,
+      style: 'flex:1; min-width:0; font-family:ui-monospace,monospace; font-size:.8rem; box-shadow:none; border-color:var(--border-soft); margin:0',
+      on: { click: (e) => e.target.select() },
+    });
+    const copyTeamBtn = iconBtn('copy', t('Copy team share link'), async () => {
+      try { await navigator.clipboard.writeText(teamURL); toastOk(t('Team link copied')); }
+      catch { teamURLInput.select(); document.execCommand('copy'); toastOk(t('Team link copied')); }
+    });
+    const openTeamBtn = iconBtn('eye', t('Open team page'), () => window.open(teamURL, '_blank', 'noopener'));
+    const copyAllBtn = h('button', { class: 'btn small', type: 'button' },
+      icon(ICONS.copy), t('Copy all as text'));
+    copyAllBtn.addEventListener('click', async () => {
+      const base = location.origin;
+      const text = (freshTeam.members || [])
+        .map((m) => `${m.name}: ${base}/play?t=${m.token}`)
+        .join('\n');
+      try { await navigator.clipboard.writeText(text); toastOk(t('Copied {{n}} links', { n: freshTeam.members.length })); }
+      catch { toastErr(t('Clipboard blocked — select and copy by hand')); }
+    });
+
     body.append(
       h('label', { class: 'field' }, h('span', {}, t('Team name')),
         h('div', { class: 'row', style: 'gap:.4rem' }, nameInput, renameBtn)),
+      h('h3', { style: 'margin-top:1rem' }, t('Share with the team')),
+      h('p', { class: 'muted', style: 'font-size:.85rem' },
+        t('Send this single link to the captain. Each member taps their own name there to pick up their personal magic link.')),
+      h('div', { class: 'row', style: 'gap:.4rem; align-items:center; margin-bottom:.5rem' },
+        teamURLInput, copyTeamBtn, openTeamBtn),
+      h('div', { class: 'row', style: 'gap:.4rem' }, copyAllBtn),
       h('h3', { style: 'margin-top:1rem' }, t('Members')),
       membersWrap,
       addRow,
@@ -2207,23 +2828,20 @@ function renderSlotRow(teamID, slot, reload) {
     style: 'flex:1; min-width:0; font-family:ui-monospace,monospace; font-size:.8rem; box-shadow:none; border-color:var(--border-soft); margin:0',
     on: { click: (e) => e.target.select() },
   });
-  const copyBtn = h('button', { class: 'btn small', type: 'button', title: t('Copy link') }, t('Copy'));
-  copyBtn.addEventListener('click', async () => {
+  const copyBtn = iconBtn('copy', t('Copy link'), async () => {
     try { await navigator.clipboard.writeText(url); toastOk(t('Link copied')); }
     catch { urlInput.select(); document.execCommand('copy'); toastOk(t('Link copied')); }
   });
-  const rotateBtn = h('button', { class: 'btn small', type: 'button', title: t('Rotate link') }, '↻');
-  rotateBtn.addEventListener('click', async () => {
+  const rotateBtn = iconBtn('key', t('Rotate link — invalidates the old one'), async () => {
     const rr = await api(`/api/admin/teams/${teamID}/slots/${slot.id}/rotate`, { method: 'POST' });
     if (rr.status === 200) { toastOk(t('Link rotated')); reload(); }
     else toastErr(rr.body?.error || t('error {{status}}', { status: rr.status }));
   });
-  const removeBtn = h('button', { class: 'btn small danger', type: 'button', title: t('Remove slot') }, icon(ICONS.trash));
-  removeBtn.addEventListener('click', async () => {
+  const removeBtn = iconBtn('trash', t('Remove slot'), async () => {
     const rr = await api(`/api/admin/teams/${teamID}/slots/${slot.id}`, { method: 'DELETE' });
     if (rr.status === 204) { toastOk(t('Removed')); reload(); }
     else toastErr(rr.body?.error || t('error {{status}}', { status: rr.status }));
-  });
+  }, { danger: true });
   return h('div', { style: 'margin-bottom:.5rem' },
     h('div', { class: 'row', style: 'gap:.4rem; align-items:center' },
       h('strong', { style: 'min-width:8ch' }, slot.name),
@@ -2318,15 +2936,11 @@ function renderOrganizationCard(org, adventures) {
           (org.runs_running || 0) > 0
             ? t(' · {{n}} running', { n: org.runs_running })
             : '')),
-      h('div', { class: 'row end' },
-        h('button', { class: 'btn small', on: { click: () => openAssignAdventure(org, adventures) } },
-          icon(ICONS.plus), t('Assign')),
-        h('button', { class: 'btn small', on: { click: () => openAddOrgMember(org) } },
-          icon(ICONS.plus), t('Add user')),
-        h('button', { class: 'btn small', on: { click: () => openRenameOrg(org) } },
-          t('Rename')),
-        h('button', { class: 'btn small danger', on: { click: () => confirmDeleteOrg(org) } },
-          icon(ICONS.trash)))),
+      h('div', { class: 'card-actions' },
+        iconBtn('key',    t('Assign adventure'),   () => openAssignAdventure(org, adventures)),
+        iconBtn('user',   t('Add user'),           () => openAddOrgMember(org)),
+        iconBtn('pencil', t('Rename'),             () => openRenameOrg(org)),
+        iconBtn('trash',  t('Delete'),             () => confirmDeleteOrg(org), { danger: true }))),
 
     h('h3', { style: 'margin-top:.75rem' }, t('Users ({{n}})', { n: members.length })),
     members.length === 0
@@ -2779,18 +3393,17 @@ function renderLibraryEdit(view, adv) {
   });
   const hasEnabled = enabledIdx > 0;
   view.replaceChildren(
-    h('button', { class: 'btn ghost small', on: { click: () => nav('#library') } },
-      icon(ICONS.back), t('Back to library')),
+    h('button', { class: 'btn ghost small', on: { click: () => nav(state.me.role === 'admin' ? '#library' : '#adventures') } },
+      icon(ICONS.back), t('Back')),
     h('div', { class: 'row between' },
       h('h1', {}, adv.title),
-      h('div', { class: 'row' },
+      h('div', { class: 'card-actions' },
         hasEnabled
-          ? h('button', { class: 'btn', title: t('Open the adventure in the player view'),
-              on: { click: () => previewAdventure(adv.slug, 0, false) } }, t('Preview'))
+          ? iconBtn('eye',    t('Open the adventure in the player view'),
+              () => previewAdventure(adv.slug, 0, false))
           : null,
-        h('button', { class: 'btn', on: { click: () => openEditAdventureMeta(adv) } }, t('Edit title/slug')),
-        h('button', { class: 'btn danger', on: { click: () => confirmDeleteAdventure(adv) } },
-          icon(ICONS.trash), t('Delete')))),
+        iconBtn('pencil', t('Edit title/slug/colours'), () => openEditAdventureMeta(adv)),
+        iconBtn('trash',  t('Delete adventure'),        () => confirmDeleteAdventure(adv), { danger: true }))),
     h('p', { class: 'muted mono' }, adv.slug, adv.author ? ` · ${adv.author}` : ''),
     adv.description ? h('p', { class: 'muted' }, adv.description) : null,
     h('div', { class: 'row between', style: 'margin-top:1rem' },
@@ -2817,20 +3430,21 @@ function previewAdventure(slug, pageIdx, debug) {
 
 function renderPuzzleCard(adv, page, i, previewIdx) {
   return h('div', {
-    class: 'card',
+    class: 'card clickable',
     style: page.disabled ? 'opacity:.6' : '',
+    on: { click: () => openEditPuzzle(adv, page) },
   },
     h('div', { class: 'row between' },
       h('h3', {}, `${i + 1}. ${page.title || t('(untitled)')}`),
-      h('div', { class: 'row' },
+      h('div', { class: 'card-actions' },
         page.disabled ? h('span', { class: 'pill' }, t('disabled')) : null,
         page.gated ? h('span', { class: 'pill warning' }, t('gated')) : null,
         previewIdx != null
-          ? h('button', { class: 'btn small', title: t('Open in the player view with author debug panel'),
-              on: { click: () => previewAdventure(adv.slug, previewIdx, true) } }, t('Preview'))
+          ? iconBtn('eye', t('Open in the player view with author debug panel'),
+              () => previewAdventure(adv.slug, previewIdx, true))
           : null,
-        h('button', { class: 'btn small', on: { click: () => openEditPuzzle(adv, page) } }, t('Edit')),
-        h('button', { class: 'btn small danger', on: { click: () => confirmDeletePuzzle(adv, page) } }, icon(ICONS.trash)))),
+        iconBtn('pencil', t('Edit'), () => openEditPuzzle(adv, page)),
+        iconBtn('trash', t('Delete'), () => confirmDeletePuzzle(adv, page), { danger: true }))),
     h('p', { style: 'white-space:pre-wrap' }, page.prompt),
     (page.images || []).length === 0
       ? null
@@ -2916,7 +3530,7 @@ async function confirmDeleteAdventure(adv) {
   const r = await api(`/api/admin/adventures/${encodeURIComponent(adv.slug)}`, {
     method: 'DELETE', headers: { 'X-Confirm-Password': pw },
   });
-  if (r.status === 204) { toastOk(t('Deleted')); nav('#library'); }
+  if (r.status === 204) { toastOk(t('Deleted')); nav(state.me.role === 'admin' ? '#library' : '#adventures'); }
   else toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
 }
 
@@ -3698,34 +4312,59 @@ async function openLibraryPicker(adv) {
         h('button', { class: 'btn', on: { click: () => close(null) } }, t('Close'))));
       return;
     }
-    const list = h('div', { style: 'display:grid; gap:.5rem; max-height:60vh; overflow-y:auto; padding-right:.25rem' });
-    for (const p of puzzles) {
-      const label = p.adventure_slug
-        ? h('span', { class: 'pill', style: 'margin-left:.5rem' },
-            t('in {{title}} · #{{n}}', { title: p.adventure_title, n: (p.adventure_idx ?? 0) + 1 }))
-        : h('span', { class: 'pill accent', style: 'margin-left:.5rem' }, t('library'));
-      const card = h('div', { class: 'card clickable', style: 'padding:.6rem .9rem; margin:0' },
-        h('div', { class: 'row between' },
-          h('strong', {}, p.title || t('(untitled)')),
-          label),
-        p.notes || p.prompt ? h('p', { class: 'muted', style: 'margin:.25rem 0 0; font-size:.85rem; white-space:pre-wrap; overflow:hidden; max-height:2.4em' },
-          p.notes || p.prompt) : null,
-        h('p', { class: 'muted mono', style: 'margin:.25rem 0 0; font-size:.75rem' },
-          `${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}`));
-      card.addEventListener('click', async () => {
-        const rr = await api(`/api/admin/adventures/${encodeURIComponent(adv.slug)}/pages/copy-from/${p.id}`,
-          { method: 'POST' });
-        if (rr.status === 201) {
-          toastOk(t('Puzzle copied into adventure'));
-          close(true);
-          renderRoute();
-        } else {
-          toastErr(rr.body?.error || t('error {{status}}', { status: rr.status }));
-        }
+    // Filter input — case-insensitive search over title, notes, prompt
+    // and the source adventure's slug. Kept simple: re-renders the
+    // entire list on keystroke, the N is small.
+    const search = h('input', {
+      placeholder: t('Filter by title, notes or adventure'),
+      autofocus: true,
+      style: 'margin-bottom:.75rem',
+    });
+    const list = h('div', { style: 'display:grid; gap:.5rem; max-height:55vh; overflow-y:auto; padding-right:.25rem' });
+
+    const renderList = () => {
+      list.replaceChildren();
+      const q = search.value.trim().toLowerCase();
+      const matches = !q ? puzzles : puzzles.filter((p) => {
+        const hay = [p.title, p.notes, p.prompt, p.adventure_slug, p.adventure_title]
+          .filter(Boolean).join(' ').toLowerCase();
+        return hay.includes(q);
       });
-      list.append(card);
-    }
-    body.append(list);
+      if (matches.length === 0) {
+        list.append(h('p', { class: 'muted' }, t('No matches.')));
+        return;
+      }
+      for (const p of matches) {
+        const label = p.adventure_slug
+          ? h('span', { class: 'pill', style: 'margin-left:.5rem' },
+              t('in {{title}} · #{{n}}', { title: p.adventure_title, n: (p.adventure_idx ?? 0) + 1 }))
+          : h('span', { class: 'pill accent', style: 'margin-left:.5rem' }, t('library'));
+        const card = h('div', { class: 'card clickable', style: 'padding:.6rem .9rem; margin:0' },
+          h('div', { class: 'row between' },
+            h('strong', {}, p.title || t('(untitled)')),
+            label),
+          p.notes || p.prompt ? h('p', { class: 'muted', style: 'margin:.25rem 0 0; font-size:.85rem; white-space:pre-wrap; overflow:hidden; max-height:2.4em' },
+            p.notes || p.prompt) : null,
+          h('p', { class: 'muted mono', style: 'margin:.25rem 0 0; font-size:.75rem' },
+            `${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}`));
+        card.addEventListener('click', async () => {
+          const rr = await api(`/api/admin/adventures/${encodeURIComponent(adv.slug)}/pages/copy-from/${p.id}`,
+            { method: 'POST' });
+          if (rr.status === 201) {
+            toastOk(t('Puzzle copied into adventure'));
+            close(true);
+            renderRoute();
+          } else {
+            toastErr(rr.body?.error || t('error {{status}}', { status: rr.status }));
+          }
+        });
+        list.append(card);
+      }
+    };
+    search.addEventListener('input', renderList);
+    renderList();
+
+    body.append(search, list);
     body.append(h('div', { class: 'row end', style: 'margin-top:1rem' },
       h('button', { class: 'btn', on: { click: () => close(null) } }, t('Cancel'))));
   }, { wide: true });
@@ -3764,11 +4403,12 @@ async function viewAdmins(view) {
           h('tbody', {}, admins.map((a) => h('tr', {},
             h('td', {}, a.username, state.me.id === a.id ? h('span', { class: 'muted', style: 'margin-left:.35rem' }, t('(you)')) : null),
             h('td', {}, h('div', { class: 'row end' },
-              h('button', {
-                class: 'btn small danger',
-                disabled: state.me.username === a.username ? '' : null,
-                on: { click: () => confirmDeleteAdmin(a) },
-              }, icon(ICONS.trash), t('Delete')))),
+              state.me.username === a.username
+                ? h('button', {
+                    class: 'btn icon small', type: 'button', disabled: '',
+                    title: t("You can't delete yourself"), 'aria-label': t("You can't delete yourself"),
+                  }, icon(ICONS.trash))
+                : iconBtn('trash', t('Delete'), () => confirmDeleteAdmin(a), { danger: true }))),
           ))))),
   );
 }
@@ -3836,11 +4476,12 @@ async function viewMembers(view) {
             h('td', {}, m.username, state.me.id === m.id ? h('span', { class: 'muted', style: 'margin-left:.35rem' }, t('(you)')) : null),
             h('td', {}, h('span', { class: 'pill' }, m.role === 'org_admin' ? t('admin') : t('member'))),
             h('td', {}, h('div', { class: 'row end' },
-              h('button', {
-                class: 'btn small danger',
-                disabled: state.me.id === m.id ? '' : null,
-                on: { click: () => confirmRemoveOrgMember(org, m) },
-              }, icon(ICONS.trash), t('Remove')))),
+              state.me.id === m.id
+                ? h('button', {
+                    class: 'btn icon small', type: 'button', disabled: '',
+                    title: t("You can't remove yourself"), 'aria-label': t("You can't remove yourself"),
+                  }, icon(ICONS.trash))
+                : iconBtn('trash', t('Remove'), () => confirmRemoveOrgMember(org, m), { danger: true }))),
           ))))),
   );
 }

@@ -144,6 +144,7 @@ func (h *Handlers) ListAdventures(w http.ResponseWriter, r *http.Request) {
 
 type runDTO struct {
 	ID              int64  `json:"id"`
+	Name            string `json:"name,omitempty"`
 	AdventureSlug   string `json:"adventure_slug"`
 	State           string `json:"state"`
 	ScheduledAt     string `json:"scheduled_at,omitempty"`
@@ -159,6 +160,7 @@ type runDTO struct {
 type createRunRequest struct {
 	AssignmentID int64  `json:"assignment_id"`
 	ScheduledAt  string `json:"scheduled_at,omitempty"`
+	Name         string `json:"name,omitempty"`
 }
 
 // CreateRun consumes one of the caller organization's unused assignments
@@ -228,9 +230,9 @@ func (h *Handlers) CreateRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	res, err := h.DB.ExecContext(r.Context(), `
-		INSERT INTO adventure_runs(adventure_slug, org_id, created_by_user_id, state, scheduled_at, assignment_id, live_token)
-		VALUES (?, ?, ?, 'scheduled', ?, ?, ?)
-	`, slug, orgID, me.ID, schedAt, req.AssignmentID, liveToken)
+		INSERT INTO adventure_runs(adventure_slug, org_id, created_by_user_id, state, scheduled_at, assignment_id, live_token, name)
+		VALUES (?, ?, ?, 'scheduled', ?, ?, ?, ?)
+	`, slug, orgID, me.ID, schedAt, req.AssignmentID, liveToken, strings.TrimSpace(req.Name))
 	if err != nil {
 		httpx.Error(w, http.StatusConflict, "could not create run: "+err.Error())
 		return
@@ -263,7 +265,7 @@ func newLiveToken() (string, error) {
 func (h *Handlers) ListRuns(w http.ResponseWriter, r *http.Request) {
 	me, _ := auth.FromContext(r.Context())
 	query := `
-		SELECT ar.id, ar.adventure_slug, ar.state,
+		SELECT ar.id, ar.name, ar.adventure_slug, ar.state,
 		       COALESCE(ar.scheduled_at, ''), COALESCE(ar.started_at, ''),
 		       ar.org_id, COALESCE(ar.created_by_user_id, 0),
 		       COALESCE(ar.assignment_id, 0), COALESCE(aa.max_teams, 0),
@@ -289,7 +291,7 @@ func (h *Handlers) ListRuns(w http.ResponseWriter, r *http.Request) {
 			d       runDTO
 			showMap int
 		)
-		if err := rows.Scan(&d.ID, &d.AdventureSlug, &d.State, &d.ScheduledAt, &d.StartedAt,
+		if err := rows.Scan(&d.ID, &d.Name, &d.AdventureSlug, &d.State, &d.ScheduledAt, &d.StartedAt,
 			&d.OrgID, &d.CreatedByUserID, &d.AssignmentID, &d.MaxTeams,
 			&d.LiveToken, &showMap); err != nil {
 			httpx.Error(w, http.StatusInternalServerError, "scan failed")
@@ -354,6 +356,7 @@ func (h *Handlers) PauseRun(w http.ResponseWriter, r *http.Request) { h.transiti
 func (h *Handlers) ResumeRun(w http.ResponseWriter, r *http.Request) { h.transitionRun(w, r, "resume") }
 
 type updateRunRequest struct {
+	Name        *string `json:"name,omitempty"`
 	ScheduledAt *string `json:"scheduled_at,omitempty"`
 	ShowMap     *bool   `json:"show_map,omitempty"`
 }
@@ -374,9 +377,16 @@ func (h *Handlers) UpdateRun(w http.ResponseWriter, r *http.Request) {
 	if !httpx.DecodeJSON(w, r, &req) {
 		return
 	}
-	if req.ScheduledAt == nil && req.ShowMap == nil {
+	if req.ScheduledAt == nil && req.ShowMap == nil && req.Name == nil {
 		httpx.Error(w, http.StatusBadRequest, "nothing to update")
 		return
+	}
+	if req.Name != nil {
+		if _, err := h.DB.ExecContext(r.Context(),
+			`UPDATE adventure_runs SET name = ? WHERE id = ?`, strings.TrimSpace(*req.Name), runID); err != nil {
+			httpx.Error(w, http.StatusInternalServerError, "update failed")
+			return
+		}
 	}
 
 	if req.ScheduledAt != nil {
@@ -508,7 +518,13 @@ func (h *Handlers) CreateTeam(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	res, err := tx.ExecContext(r.Context(), `INSERT INTO teams(run_id, name) VALUES (?, ?)`, runID, req.Name)
+	teamTok, err := auth.NewSlotToken()
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "token gen failed")
+		return
+	}
+	res, err := tx.ExecContext(r.Context(),
+		`INSERT INTO teams(run_id, name, token) VALUES (?, ?, ?)`, runID, req.Name, teamTok)
 	if err != nil {
 		httpx.Error(w, http.StatusConflict, "team name already used for this run")
 		return

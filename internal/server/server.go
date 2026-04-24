@@ -51,20 +51,16 @@ func New(cfg Config) http.Handler {
 		w.WriteHeader(http.StatusNoContent)
 	})
 
-	// Root picks the right landing spot based on which session cookie is
-	// present. Without a session we show a tiny landing page with both
-	// entry points so admins can actually reach /arrange.
+	// Root sends visitors straight to the right entry point: players get
+	// /play (their magic link will carry them back here), staff get the
+	// /arrange UI which renders its own login screen when no staff
+	// cookie is present.
 	r.Get("/", func(w http.ResponseWriter, req *http.Request) {
-		if _, ok := auth.FromContext(req.Context()); ok {
-			http.Redirect(w, req, "/arrange", http.StatusFound)
-			return
-		}
 		if _, ok := auth.SlotFromContext(req.Context()); ok {
 			http.Redirect(w, req, "/play", http.StatusFound)
 			return
 		}
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_, _ = w.Write([]byte(landingHTML))
+		http.Redirect(w, req, "/arrange", http.StatusFound)
 	})
 
 	// /play handles three things:
@@ -90,6 +86,10 @@ func New(cfg Config) http.Handler {
 	r.Get("/api/public/live/{token}", publicH.Live)
 	r.Get("/api/public/live/{token}/tracks", publicH.Tracks)
 	r.Get("/ws/live/{token}", publicH.WSLive)
+
+	// Per-team share page — the arranger sends a single /team/{token}
+	// URL to the captain; each member picks their own slot from there.
+	r.Get("/team/{token}", publicH.TeamShare)
 
 	// Image serving: permission is decided inside the handler (staff
 	// sessions always pass; slot sessions only when they're on the page).
@@ -147,6 +147,7 @@ func New(cfg Config) http.Handler {
 		r.Get("/runs/{runID}/positions", adminH.ListPositions)
 		r.Get("/runs/{runID}/events", adminH.ListEvents)
 		r.Get("/runs/{runID}/tracks", adminH.ListTracks)
+		r.Get("/runs/{runID}/results.csv", adminH.ExportRunResults)
 
 		r.Patch("/teams/{teamID}", adminH.RenameTeam)
 		r.Delete("/teams/{teamID}", adminH.DeleteTeam)
@@ -219,32 +220,6 @@ func New(cfg Config) http.Handler {
 
 	return r
 }
-
-// landingHTML is a tiny in-lined page shown at / when no session exists.
-// It exists so admins can reach /arrange without guessing the URL.
-const landingHTML = `<!doctype html>
-<html lang="en"><head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Zonventure</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Aclonica&family=Open+Sans:wght@400;600;700&display=swap" rel="stylesheet">
-<style>
-  :root { color-scheme: light dark; --accent:#ad1357; --ink:#1f3349; --bg:#fbfbfd; --muted:#6b7f96; --border:#c6d2e166; }
-  @media (prefers-color-scheme: dark) { :root { --bg:#14202e; --ink:#e7ecf4; --muted:#9db1cc; --accent:#e24080; --border:#3a517266; } }
-  body { font-family:'Open Sans',system-ui,sans-serif; color:var(--ink); background:var(--bg); margin:0; min-height:100vh; display:grid; place-items:center; padding:1rem; }
-  .brand { font-family:'Aclonica',Georgia,serif; color:var(--accent); font-size:2.4rem; text-align:center; margin:0 0 .25rem; }
-  .sub { color:var(--muted); text-align:center; text-transform:uppercase; font-size:.8rem; letter-spacing:.1em; margin:0 0 1.5rem; font-weight:700; }
-  .wrap { width:100%; max-width:360px; }
-  a.btn { display:block; margin:.5rem 0; padding:.85rem 1.2rem; border-radius:32px; text-align:center; font-weight:700; text-decoration:none; border:1px solid var(--border); color:var(--ink); }
-  a.btn.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
-  p.hint { color:var(--muted); font-size:.85rem; text-align:center; margin-top:1rem; }
-</style></head>
-<body><div class="wrap">
-  <h1 class="brand">zonventure</h1>
-  <a class="btn primary" href="/arrange">Log in</a>
-  <p class="hint">Players arrive via their personal magic link.</p>
-</div></body></html>`
 
 // servePage returns a handler that writes a single embedded HTML page with
 // no caching.
