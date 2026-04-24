@@ -949,7 +949,17 @@ function hintStorageKey(s) {
   return `zv_hints_${s.adventure_slug || ''}_${s.slot_name || ''}_${s.page_index || 0}`;
 }
 
+// previewHintCounts is an in-memory per-page counter used ONLY in
+// preview mode. localStorage would persist the reveal state across
+// preview reloads and surprise authors who expect a clean slate
+// every time they reopen the editor preview. A module-level Map
+// resets automatically on page navigation / reload.
+const previewHintCounts = new Map();
+
 function hintsRevealedFor(s) {
+  if (s && s.preview) {
+    return previewHintCounts.get(s.page_index || 0) || 0;
+  }
   try {
     const n = parseInt(localStorage.getItem(hintStorageKey(s)) || '0', 10);
     return Number.isFinite(n) && n > 0 ? n : 0;
@@ -957,6 +967,10 @@ function hintsRevealedFor(s) {
 }
 
 function setHintsRevealed(s, n) {
+  if (s && s.preview) {
+    previewHintCounts.set(s.page_index || 0, n);
+    return;
+  }
   try { localStorage.setItem(hintStorageKey(s), String(n)); } catch {}
 }
 
