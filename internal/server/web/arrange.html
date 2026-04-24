@@ -503,6 +503,38 @@ textarea { min-height: 80px; resize: vertical; font-family: ui-monospace, monosp
    prompt, hint, submit dock) so the arranger sees roughly what the
    player will see. The inputs look like plain text until hovered or
    focused, then show a dashed editable affordance. */
+/* Markdown preview pane shown under textareas the player's client
+   will render as rich text. Server-rendered via the /markdown/preview
+   endpoint so layout matches the runtime exactly. The pane looks
+   card-like and sits flush against the textarea above. */
+.md-preview {
+  margin-top: -.35rem;
+  padding: .6rem .75rem;
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  background: var(--surface-2);
+  font-size: .95rem; line-height: 1.5;
+  color: var(--ink);
+  min-height: 2.25rem;
+}
+.md-preview p { margin: 0 0 .5rem; }
+.md-preview p:last-child { margin-bottom: 0; }
+.md-preview ul, .md-preview ol { padding-left: 1.2rem; margin: .25rem 0 .5rem; }
+.md-preview li { margin: .15rem 0; }
+.md-preview a { color: var(--accent); }
+.md-preview code {
+  background: var(--surface); border: 1px solid var(--border-soft);
+  padding: .05em .3em; border-radius: 4px;
+  font: .9em ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.md-preview h1, .md-preview h2, .md-preview h3 {
+  margin: .25rem 0 .4rem; line-height: 1.2;
+}
+.md-preview h1 { font-size: 1.35rem; }
+.md-preview h2 { font-size: 1.15rem; }
+.md-preview h3 { font-size: 1rem; }
+.md-preview.compact { padding: .4rem .55rem; font-size: .9rem; }
+
 .puzzle-editor {
   background: var(--surface);
   border-radius: var(--radius);
@@ -4040,9 +4072,11 @@ async function openEditAdventureMeta(adv) {
       coverRow, coverFile,
       h('h3', { style: 'margin-top:1rem' }, t('Welcome & completion copy')),
       h('label', { class: 'field' }, h('span', {}, t('Intro — shown on the welcome screen')), intro),
-      h('p', { class: 'muted', style: 'font-size:.8rem; margin:-.35rem 0 .75rem' }, mdSupportedHint()),
+      attachMdPreview(intro),
+      h('p', { class: 'muted', style: 'font-size:.8rem; margin:.35rem 0 .75rem' }, mdSupportedHint()),
       h('label', { class: 'field' }, h('span', {}, t('Outro — shown on the completion screen')), outro),
-      h('p', { class: 'muted', style: 'font-size:.8rem; margin:-.35rem 0 .75rem' }, mdSupportedHint()),
+      attachMdPreview(outro),
+      h('p', { class: 'muted', style: 'font-size:.8rem; margin:.35rem 0 .75rem' }, mdSupportedHint()),
       h('h3', { style: 'margin-top:1rem' }, t('Brand colours')),
       cAccent.el, cSecondary.el, cBackground.el, cText.el,
       h('div', { class: 'row end' },
@@ -4106,6 +4140,50 @@ async function confirmDeleteAdventure(adv) {
 // Consistent wording in every place keeps the hint reliable.
 function mdSupportedHint() {
   return t('Markdown supported: **bold**, *italics*, [links](https://…), `code`, - bullet lists.');
+}
+
+// attachMdPreview returns a live-updating preview div for a textarea.
+// The server endpoint runs the same goldmark pipeline used at egress,
+// so what the author sees here is exactly what the player will see.
+// The fetch is debounced so the author can type "## a real heading"
+// without the server hearing every keystroke, and the request body
+// is sized-capped indirectly by the textarea's own content length.
+function attachMdPreview(textarea, extraClass) {
+  const preview = h('div', { class: 'md-preview' + (extraClass ? ' ' + extraClass : '') });
+  preview.setAttribute('aria-live', 'polite');
+  // Seed text so the pane isn't empty before the first fetch comes
+  // back or when the textarea is empty — an empty preview with no
+  // explanation reads as broken.
+  const paintEmpty = () => {
+    preview.innerHTML = '';
+    preview.append(h('span', { class: 'muted' }, t('Preview appears here as you type.')));
+  };
+  let timer = null;
+  let inFlight = false;
+  let pending = false;
+  const render = async () => {
+    if (inFlight) { pending = true; return; }
+    const text = textarea.value;
+    if (!text.trim()) { paintEmpty(); return; }
+    inFlight = true;
+    try {
+      const r = await api('/api/admin/markdown/preview', {
+        method: 'POST', body: JSON.stringify({ text }),
+      });
+      if (r.status === 200 && typeof r.body?.html === 'string') {
+        preview.innerHTML = r.body.html;
+      }
+    } catch { /* keep last successful render */ }
+    inFlight = false;
+    if (pending) { pending = false; render(); }
+  };
+  textarea.addEventListener('input', () => {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(render, 200);
+  });
+  // First paint: whatever's already in the textarea.
+  render();
+  return preview;
 }
 
 function autosize(el) {
@@ -4262,13 +4340,21 @@ async function openEditPuzzle(adv, page /* or null */) {
       h('input', { disabled: '', placeholder: t('Your answer') }),
       h('button', { class: 'btn primary', disabled: '' }, t('Submit')));
 
+    // Live markdown preview below each rich-text textarea. The server
+    // renders what the player will see, so authors can verify their
+    // `# heading`, `- list`, `**bold**` actually look right without
+    // saving and opening /play.
+    const promptPreview = attachMdPreview(promptInput);
+    const hintPreview   = attachMdPreview(hintInput, 'compact');
     const previewCard = h('div', { class: 'puzzle-editor' },
       titleInput,
       imagesHost,
       promptInput,
+      promptPreview,
       h('div', { class: 'pe-hint-row' },
         h('span', { class: 'tag' }, t('Hint:')),
         hintInput),
+      hintPreview,
       dock,
       h('p', { class: 'muted', style: 'font-size:.75rem; margin:.5rem 0 0' }, mdSupportedHint()),
     );

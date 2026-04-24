@@ -149,6 +149,9 @@ func New(cfg Config) http.Handler {
 		// Preview: render any puzzle in the shape /play expects so an
 		// arranger can QA the adventure without a real run.
 		r.Get("/adventures/{slug}/preview", adminH.PreviewAdventure)
+		// Live markdown → HTML for the arrange editor's preview panes.
+		// Pure function; no DB access, no org scoping needed.
+		r.Post("/markdown/preview", adminH.PreviewMarkdown)
 
 		r.Get("/runs", adminH.ListRuns)
 		r.Post("/runs", adminH.CreateRun)
