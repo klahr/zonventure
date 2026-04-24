@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"git.sr.ht/~klahr/zv/internal/httpx"
+	"git.sr.ht/~klahr/zv/internal/imageutil"
 	"git.sr.ht/~klahr/zv/internal/ws"
 	"github.com/go-chi/chi/v5"
 )
@@ -168,6 +169,12 @@ func (h *Handlers) SetTeamAvatarByToken(w http.ResponseWriter, r *http.Request) 
 		httpx.Error(w, http.StatusBadRequest, "only image uploads are accepted")
 		return
 	}
+	shrunk, newMIME, err := imageutil.Shrink(data, imageutil.DefaultMaxDim)
+	if err != nil {
+		httpx.Error(w, http.StatusBadRequest, "unreadable image: "+err.Error())
+		return
+	}
+	data, mime = shrunk, newMIME
 	if _, err := h.DB.ExecContext(r.Context(), `
 		UPDATE teams
 		   SET avatar_mime_type = ?, avatar_size_bytes = ?, avatar_content = ?

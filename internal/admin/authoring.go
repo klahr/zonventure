@@ -14,6 +14,7 @@ import (
 
 	"git.sr.ht/~klahr/zv/internal/auth"
 	"git.sr.ht/~klahr/zv/internal/httpx"
+	"git.sr.ht/~klahr/zv/internal/imageutil"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -599,6 +600,15 @@ func (h *Handlers) AddPageImage(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusBadRequest, "only image uploads are accepted")
 		return
 	}
+	// Cap both dimensions to 512 px before storing — the player client
+	// renders images at phone-width so there's no point storing camera
+	// originals; this also keeps the SQLite row small.
+	shrunk, newMIME, err := imageutil.Shrink(data, imageutil.DefaultMaxDim)
+	if err != nil {
+		httpx.Error(w, http.StatusBadRequest, "unreadable image: "+err.Error())
+		return
+	}
+	data, mime = shrunk, newMIME
 
 	var nextIdx int
 	if err := h.DB.QueryRowContext(r.Context(),
@@ -921,6 +931,12 @@ func (h *Handlers) SetAdventureAvatar(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusBadRequest, "only image uploads are accepted")
 		return
 	}
+	shrunk, newMIME, err := imageutil.Shrink(data, imageutil.DefaultMaxDim)
+	if err != nil {
+		httpx.Error(w, http.StatusBadRequest, "unreadable image: "+err.Error())
+		return
+	}
+	data, mime = shrunk, newMIME
 	res, err := h.DB.ExecContext(r.Context(), `
 		UPDATE adventures
 		   SET avatar_mime_type = ?, avatar_size_bytes = ?, avatar_content = ?
