@@ -38,11 +38,11 @@ type previewStateDTO struct {
 	Debug    *previewDebugDTO `json:"preview_debug,omitempty"`
 }
 
-// previewHintDTO mirrors player.hintDTO but with "arrival" fixed at
-// preview-load time: unlocks_in_seconds ships as the author's raw
-// delay_seconds so the client's countdown starts from now. That lets
-// the author verify the actual ticking behaviour end-to-end just by
-// reloading the preview page.
+// previewHintDTO mirrors player.hintDTO. In preview mode the delay
+// gate is deliberately bypassed (unlocks_in_seconds is always 0) —
+// the author's goal here is to read their own hint copy, not to
+// validate the timer itself. If they want to test delay behaviour
+// end-to-end, they do it in a real run.
 type previewHintDTO struct {
 	TextHTML         string `json:"text_html"`
 	UnlocksInSeconds int    `json:"unlocks_in_seconds"`
@@ -134,7 +134,7 @@ func (h *Handlers) PreviewAdventure(w http.ResponseWriter, r *http.Request) {
 		for _, h := range page.Hints {
 			hints = append(hints, previewHintDTO{
 				TextHTML:         mdx.Render(h.Text),
-				UnlocksInSeconds: h.DelaySeconds,
+				UnlocksInSeconds: 0,
 			})
 		}
 		out.Hints = hints

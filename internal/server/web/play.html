@@ -176,25 +176,105 @@
   .hint-md { color: var(--muted); }
   .hint-md .hint-label { font-weight: 700; }
   .hint-md p { display: inline; margin: 0; }
-  /* Multi-hint block: each revealed hint sits in a muted card, and a
-     single pill button below fetches the next one (or counts down
-     until the next unlocks). */
-  .hint-block { margin-top: 1rem; }
+
+  /* Hint toggle: small "?" pill in the runbar, top-right. Badge shows
+     how many hints are ready to reveal but haven't been opened yet,
+     so the player notices when new help becomes available. No
+     countdown is rendered anywhere on the main view — the sheet
+     handles details when they ask for them. */
+  .runbar .hint-toggle {
+    position: relative;
+    width: auto; min-width: 0; padding: .2rem .55rem;
+    margin-left: .4rem;
+    background: var(--surface); color: var(--muted);
+    border: 1px solid var(--border);
+    border-radius: 999px; box-shadow: none;
+    font-weight: 800; font-size: .85rem; line-height: 1;
+    cursor: pointer;
+  }
+  .runbar .hint-toggle:hover { color: var(--accent); border-color: var(--accent); }
+  .hint-toggle-glyph {
+    font-family: var(--font-brand);
+    font-size: 1rem; letter-spacing: 0;
+  }
+  .hint-toggle-badge {
+    display: none;
+    position: absolute;
+    top: -6px; right: -6px;
+    min-width: 18px; height: 18px; padding: 0 5px;
+    border-radius: 999px;
+    background: var(--accent); color: var(--accent-fg);
+    font-size: .65rem; font-weight: 800;
+    display: inline-grid; place-items: center;
+    line-height: 1;
+  }
+  .hint-toggle-badge:empty { display: none; }
+  .hint-toggle-badge.ready { animation: hintBadgePulse 1.4s ease-in-out 2; }
+  @keyframes hintBadgePulse {
+    0%,100% { transform: scale(1); }
+    50%     { transform: scale(1.18); }
+  }
+
+  /* Hint sheet: modal overlay with the revealed hint(s) and a
+     "Reveal next" action when one is ready. */
+  .hint-sheet-back {
+    position: fixed; inset: 0; z-index: 9800;
+    background: rgba(10, 20, 35, .55);
+    backdrop-filter: blur(4px);
+    display: flex; align-items: flex-end; justify-content: center;
+    padding: 1rem;
+    animation: hintSheetFade .2s ease;
+  }
+  @keyframes hintSheetFade { from { opacity: 0; } to { opacity: 1; } }
+  .hint-sheet {
+    background: var(--surface);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius);
+    max-width: 520px; width: 100%;
+    padding: 1.1rem 1.1rem calc(1.1rem + env(safe-area-inset-bottom));
+    box-shadow: var(--shadow);
+    animation: hintSheetRise .24s cubic-bezier(.2,.8,.2,1);
+  }
+  @keyframes hintSheetRise {
+    from { transform: translateY(30px); opacity: 0; }
+    to   { transform: translateY(0);    opacity: 1; }
+  }
+  .hint-sheet-head {
+    display: flex; align-items: center; justify-content: space-between;
+    margin: 0 0 .75rem;
+  }
+  .hint-sheet-head h3 {
+    margin: 0;
+    font-family: var(--font-brand);
+    color: var(--accent-secondary);
+    font-size: 1.25rem;
+  }
+  .hint-sheet-close {
+    width: 32px; height: 32px; padding: 0;
+    border: none; background: transparent;
+    font-size: 1.4rem; line-height: 1;
+    color: var(--muted); cursor: pointer;
+    border-radius: 50%;
+  }
+  .hint-sheet-close:hover { background: var(--surface-2); color: var(--ink); }
+  .hint-sheet-body { max-height: 60vh; overflow-y: auto; }
   .hint-revealed {
     background: var(--surface-2); border: 1px solid var(--border-soft);
     border-radius: 10px; padding: .65rem .85rem; margin-bottom: .5rem;
     color: var(--ink);
   }
+  .hint-revealed:last-child { margin-bottom: 0; }
   .hint-revealed .hint-label {
     color: var(--muted); font-size: .7rem; font-weight: 700;
     text-transform: uppercase; letter-spacing: .06em; margin-bottom: .25rem;
   }
   .hint-revealed .hint-body p { margin: 0 0 .4rem; }
   .hint-revealed .hint-body p:last-child { margin-bottom: 0; }
-  .hint-reveal {
-    width: 100%;
-    margin-top: .25rem;
-    font-variant-numeric: tabular-nums;
+  .hint-sheet-cta { width: 100%; margin-top: .75rem; }
+  .hint-sheet-locked {
+    margin: .75rem 0 0; padding: .6rem .85rem;
+    border-radius: 8px; background: var(--surface-2);
+    text-align: center; font-size: .9rem;
   }
   .pill {
     display: inline-block; padding: .15rem .65rem;
@@ -815,6 +895,7 @@ function render(s) {
 
   app.replaceChildren();
   const playing = s.status === 'running';
+  const hintBtn = playing ? renderHintButton(s) : null;
   const bar = el('div', { class: 'runbar' },
     s.adventure_title ? el('span', { class: 'title' }, s.adventure_title) : null,
     s.team_name ? el('span', { class: 'team' }, s.team_name) : null,
@@ -822,6 +903,7 @@ function render(s) {
       ? el('span', { class: 'progress' }, t('Puzzle {{i}}/{{n}}', { i: s.page_index + 1, n: s.page_count }))
       : null,
     el('span', { class: 'status pill' }, t(s.status || '')),
+    hintBtn,
   );
   app.append(bar);
 
@@ -841,12 +923,10 @@ function render(s) {
   // the .prompt wrapper.
   app.append(el('div', { class: 'prompt', html: s.prompt || '' }));
 
-  // Hints are revealed one at a time via a button in the sticky dock
-  // area. The reveal count lives in localStorage keyed by slot+page
-  // so a reload doesn't wipe hints the team already earned.
-  if (Array.isArray(s.hints) && s.hints.length > 0) {
-    app.append(renderHintList(s));
-  }
+  // Hints sit behind a small "?" affordance (runbar, top-right).
+  // No countdown on the main view — tapping it opens a sheet with
+  // already-revealed hints and a "reveal next" action when the
+  // next one is ready.
 
   // Gated puzzles don't get a separate "walk to location" card — the
   // sticky submit dock at the bottom is the only action surface. For
@@ -880,98 +960,118 @@ function setHintsRevealed(s, n) {
   try { localStorage.setItem(hintStorageKey(s), String(n)); } catch {}
 }
 
-// renderHintList draws the hints block: any already-revealed hints
-// are shown in full, followed by a single "Reveal hint" button when
-// another one is ready (or a countdown when it isn't yet). All
-// interactions flow through localStorage — there's no server-side
-// "I revealed hint N" state because the reveal is purely a UI gate
-// (the content itself ships on every snapshot).
-function renderHintList(s) {
-  const wrap = el('div', { class: 'hint-block' });
+// renderHintButton builds the small "?" affordance shown in the
+// top-right of the puzzle area. Tapping it opens a bottom-sheet
+// listing already-revealed hints and — if a further hint is
+// currently unlocked — a single button to reveal the next one.
+// No countdown appears on the main puzzle view; the button itself
+// is the only hint UI visible until the player asks for help.
+function renderHintButton(s) {
   const hints = s.hints || [];
-  let revealed = Math.min(hintsRevealedFor(s), hints.length);
-
-  const drawBody = () => {
-    wrap.replaceChildren();
-    // Shown hints — rendered markdown, numbered so a hint of hints is
-    // clear ("this is the second of three") without the author having
-    // to repeat themselves.
-    for (let i = 0; i < revealed; i++) {
-      const h = hints[i];
-      const block = el('div', { class: 'hint-revealed' });
-      block.append(el('div', { class: 'hint-label' },
-        hints.length > 1 ? t('Hint {{i}}/{{n}}', { i: i + 1, n: hints.length }) : t('Hint')));
-      block.append(el('div', { class: 'hint-body', html: h.text_html || '' }));
-      wrap.append(block);
+  if (hints.length === 0) return null;
+  const btn = el('button', { class: 'hint-toggle', title: t('Hints'), 'aria-label': t('Hints') });
+  btn.append(el('span', { class: 'hint-toggle-glyph' }, '?'));
+  const badge = el('span', { class: 'hint-toggle-badge' });
+  btn.append(badge);
+  // Refresh the badge on every render + every second to reflect
+  // "how many hints are ready but unrevealed right now". We don't
+  // render the countdown anywhere — only the availability delta.
+  const refreshBadge = () => {
+    const revealed = hintsRevealedFor(s);
+    const elapsed = Math.max(0, Math.floor((Date.now() - hintTickerAnchor) / 1000));
+    let ready = 0;
+    for (let i = revealed; i < hints.length; i++) {
+      if ((hints[i].unlocks_in_seconds || 0) - elapsed <= 0) ready++;
     }
-
-    // Reveal button for the next hint (if any).
-    if (revealed >= hints.length) return;
-    const next = hints[revealed];
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'secondary hint-reveal';
-    if (next.unlocks_in_seconds > 0) {
-      // Locked: disabled, shows countdown. Refreshed on every 1s tick
-      // below so the digits move without waiting for the next
-      // snapshot push from the server.
-      button.disabled = true;
-      button.textContent = hintUnlockLabel(hints, revealed);
+    if (ready > 0) {
+      badge.textContent = String(ready);
+      badge.classList.add('ready');
     } else {
-      button.textContent = hints.length - revealed > 1 || revealed > 0
-        ? t('Reveal next hint')
-        : t('Reveal hint');
-      button.addEventListener('click', () => {
-        revealed += 1;
-        setHintsRevealed(s, revealed);
-        drawBody();
-      });
+      badge.textContent = '';
+      badge.classList.remove('ready');
     }
-    wrap.append(button);
   };
-  drawBody();
-
-  // Local ticker: retarget the locked button's label every second
-  // without hitting lastRenderKey (which would wipe the input focus
-  // on every tick). Stops itself once the wrapper leaves the DOM.
+  refreshBadge();
   const tick = () => {
-    if (!wrap.isConnected) return;
-    const btn = wrap.querySelector('button.hint-reveal');
-    if (!btn) return;
-    if (!btn.disabled) return;
-    // Adjust countdowns based on wall-clock since the last snapshot.
-    // Good enough: we don't care about drift to the second over a
-    // 3-minute unlock window.
-    const shown = hints.slice(revealed).map((h) => Math.max(0, h.unlocks_in_seconds - Math.floor((Date.now() - hintTickerAnchor) / 1000)));
-    const firstRemaining = shown[0] ?? 0;
-    if (firstRemaining <= 0) {
-      // Re-render to swap the disabled countdown for an enabled button.
-      drawBody();
-      return;
-    }
-    btn.textContent = hintUnlockLabel(
-      hints.map((h, i) => i < revealed ? h : { ...h, unlocks_in_seconds: shown[i - revealed] }),
-      revealed);
+    if (!btn.isConnected) return;
+    refreshBadge();
     setTimeout(tick, 1000);
   };
   setTimeout(tick, 1000);
-  return wrap;
+  btn.addEventListener('click', () => openHintSheet(s));
+  return btn;
+}
+
+// openHintSheet mounts a bottom-sheet overlay with the revealed
+// hints and (when a new one is ready) a Reveal button. Dismisses on
+// backdrop click, close button, or Esc. Kept plain DOM to avoid a
+// dependency on a modal library.
+function openHintSheet(s) {
+  document.querySelectorAll('.hint-sheet-back').forEach((n) => n.remove());
+  const hints = s.hints || [];
+  let revealed = Math.min(hintsRevealedFor(s), hints.length);
+
+  const back = el('div', { class: 'hint-sheet-back' });
+  const sheet = el('div', { class: 'hint-sheet' });
+  back.append(sheet);
+  const close = () => { back.remove(); document.removeEventListener('keydown', onKey); };
+  const onKey = (e) => { if (e.key === 'Escape') close(); };
+  document.addEventListener('keydown', onKey);
+  back.addEventListener('click', (e) => { if (e.target === back) close(); });
+
+  const drawBody = () => {
+    sheet.replaceChildren();
+    sheet.append(el('div', { class: 'hint-sheet-head' },
+      el('h3', {}, hints.length > 1 ? t('Hints') : t('Hint')),
+      el('button', { class: 'hint-sheet-close', 'aria-label': t('Close'), on: { click: close } }, '×')));
+
+    const body = el('div', { class: 'hint-sheet-body' });
+    if (revealed === 0) {
+      body.append(el('p', { class: 'muted' },
+        t('Tap below to reveal your first hint. Use them sparingly — you can always come back.')));
+    }
+    for (let i = 0; i < revealed; i++) {
+      const h = hints[i];
+      const card = el('div', { class: 'hint-revealed' });
+      card.append(el('div', { class: 'hint-label' },
+        hints.length > 1 ? t('Hint {{i}}/{{n}}', { i: i + 1, n: hints.length }) : t('Hint')));
+      card.append(el('div', { class: 'hint-body', html: h.text_html || '' }));
+      body.append(card);
+    }
+    sheet.append(body);
+
+    // Footer action: reveal next if available.
+    if (revealed < hints.length) {
+      const next = hints[revealed];
+      const elapsed = Math.max(0, Math.floor((Date.now() - hintTickerAnchor) / 1000));
+      const remaining = Math.max(0, (next.unlocks_in_seconds || 0) - elapsed);
+      if (remaining <= 0) {
+        const cta = el('button', { class: 'hint-sheet-cta' },
+          revealed === 0 ? t('Reveal hint') : t('Reveal next hint'));
+        cta.addEventListener('click', () => {
+          revealed += 1;
+          setHintsRevealed(s, revealed);
+          drawBody();
+        });
+        sheet.append(cta);
+      } else {
+        // Locked: tell the player another one's coming without a loud
+        // countdown. Plain sentence, muted.
+        sheet.append(el('p', { class: 'muted hint-sheet-locked' },
+          t('The next hint isn\'t ready yet. Keep trying for a little longer.')));
+      }
+    }
+  };
+  drawBody();
+  document.body.append(back);
 }
 
 // hintTickerAnchor is the wall-clock time of the last state snapshot;
 // we subtract it from Date.now() to decrement the server-supplied
-// unlocks_in_seconds locally so the countdown ticks without waiting
-// for the next WebSocket push. Reset on every render() call.
+// unlocks_in_seconds locally so downstream computations (badge
+// refresh, sheet button gating) tick without waiting for the next
+// WebSocket push. Reset on every render() call.
 let hintTickerAnchor = Date.now();
-
-function hintUnlockLabel(hints, revealedIdx) {
-  const next = hints[revealedIdx];
-  if (!next) return '';
-  const sec = Math.max(0, next.unlocks_in_seconds);
-  const m = Math.floor(sec / 60);
-  const s = sec % 60;
-  return t('Next hint in {{m}}:{{s}}', { m, s: String(s).padStart(2, '0') });
-}
 
 function renderSubmitDock(s) {
   let dock = document.getElementById('submit-dock');
