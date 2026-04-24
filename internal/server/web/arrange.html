@@ -536,6 +536,70 @@ textarea { min-height: 80px; resize: vertical; font-family: ui-monospace, monosp
 .md-preview h3 { font-size: 1rem; }
 .md-preview.compact { padding: .4rem .55rem; font-size: .9rem; }
 
+/* Click-to-edit markdown field. The view (.md-field-view) and the
+   editor (.md-field-edit) share padding/font so swapping between
+   them doesn't reflow the form. Only one is visible at a time —
+   JS toggles style.display via enterEdit / leaveEdit. */
+.md-field {
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  background: var(--surface-2);
+  min-height: 2.5rem;
+  transition: border-color .15s ease, background-color .15s ease;
+}
+.md-field:hover, .md-field:focus-within {
+  border-color: var(--accent);
+  background: var(--surface);
+}
+.md-field-view {
+  padding: .6rem .75rem;
+  cursor: text;
+  font-size: .95rem; line-height: 1.5;
+  color: var(--ink);
+  min-height: 2.5rem;
+}
+.md-field-view p { margin: 0 0 .5rem; }
+.md-field-view p:last-child { margin-bottom: 0; }
+.md-field-view ul, .md-field-view ol { padding-left: 1.25rem; margin: .25rem 0 .5rem; }
+.md-field-view li { margin: .15rem 0; }
+.md-field-view a { color: var(--accent); }
+.md-field-view code {
+  background: var(--surface); border: 1px solid var(--border-soft);
+  padding: .05em .3em; border-radius: 4px;
+  font: .9em ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.md-field-view h1, .md-field-view h2, .md-field-view h3 {
+  margin: .25rem 0 .4rem; line-height: 1.2;
+}
+.md-field-view h1 { font-size: 1.3rem; }
+.md-field-view h2 { font-size: 1.15rem; }
+.md-field-view h3 { font-size: 1rem; }
+.md-field-view table { width: 100%; border-collapse: collapse; margin: .4rem 0; font-size: .92rem; }
+.md-field-view th, .md-field-view td {
+  border: 1px solid var(--border-soft);
+  padding: .3rem .5rem; text-align: left;
+}
+.md-field-view th { background: var(--surface); font-weight: 700; }
+/* Empty-state affordance: muted italic text invites a click. */
+.md-field-placeholder { color: var(--muted); font-style: italic; }
+/* Pre-wrap flash while the server renders the new content after an
+   edit — preserves the author's newlines so the swap doesn't hop. */
+.md-field-pending { white-space: pre-wrap; }
+.md-field-edit {
+  display: block; width: 100%;
+  padding: .6rem .75rem; margin: 0;
+  border: none; border-radius: 8px;
+  background: transparent;
+  font: inherit; color: inherit;
+  font-size: .95rem; line-height: 1.5;
+  resize: vertical;
+  min-height: 2.5rem; overflow: hidden;
+}
+.md-field-edit:focus { outline: none; }
+.md-field.compact .md-field-view, .md-field.compact .md-field-edit {
+  padding: .4rem .55rem; font-size: .9rem;
+}
+
 /* Hint-list editor: one row per author-defined hint, stacked. Each
    row has a small numbered head with the unlock-delay input, a
    markdown textarea, and the shared md-preview underneath so the
@@ -4041,13 +4105,22 @@ async function openEditAdventureMeta(adv) {
     const desc  = h('textarea', { rows: 2 }, adv.description || '');
     const author = h('input', { value: adv.author || '' });
     // Custom copy for the first-run welcome dialog and the end-of-run
-    // stats screen. Empty keeps the built-in default copy.
-    const intro = h('textarea', { rows: 5,
+    // stats screen. Empty keeps the built-in default copy. Click-to-
+    // edit field so the author sees the rendered markdown as the
+    // default presentation.
+    const introField = markdownField({
+      initial: adv.intro_text || '',
       placeholder: t('Shown on the first-run welcome overlay — leave empty for the default welcome + tips.'),
-    }, adv.intro_text || '');
-    const outro = h('textarea', { rows: 4,
+      rows: 5,
+    });
+    const outroField = markdownField({
+      initial: adv.outro_text || '',
       placeholder: t('Shown under the stats when the team finishes — leave empty for the default celebratory line.'),
-    }, adv.outro_text || '');
+      rows: 4,
+    });
+    // Shims so the existing payload/dirty code keeps reading .value.
+    const intro = { get value() { return introField.get(); } };
+    const outro = { get value() { return outroField.get(); } };
     const initialAccent    = adv.accent_color           || '';
     const initialSecondary = adv.accent_secondary_color || '';
     const initialBg        = adv.background_color      || '';
@@ -4121,11 +4194,13 @@ async function openEditAdventureMeta(adv) {
       h('label', { class: 'field' }, h('span', {}, t('Author')), author),
       coverRow, coverFile,
       h('h3', { style: 'margin-top:1rem' }, t('Welcome & completion copy')),
-      h('label', { class: 'field' }, h('span', {}, t('Intro — shown on the welcome screen')), intro),
-      attachMdPreview(intro),
+      h('label', { class: 'field' },
+        h('span', {}, t('Intro — shown on the welcome screen')),
+        introField.el),
       h('p', { class: 'muted', style: 'font-size:.8rem; margin:.35rem 0 .75rem' }, mdSupportedHint()),
-      h('label', { class: 'field' }, h('span', {}, t('Outro — shown on the completion screen')), outro),
-      attachMdPreview(outro),
+      h('label', { class: 'field' },
+        h('span', {}, t('Outro — shown on the completion screen')),
+        outroField.el),
       h('p', { class: 'muted', style: 'font-size:.8rem; margin:.35rem 0 .75rem' }, mdSupportedHint()),
       h('h3', { style: 'margin-top:1rem' }, t('Brand colours')),
       cAccent.el, cSecondary.el, cBackground.el, cText.el,
@@ -4215,9 +4290,23 @@ function buildHintsEditor(initial) {
     if (tas.length) tas[tas.length - 1].focus();
   });
   function renderRow(row, idx) {
-    const text = h('textarea', { rows: 2, placeholder: t('Clue in markdown…') });
-    text.value = row.text || '';
-    text.addEventListener('input', () => { row.text = text.value; });
+    // Click-to-edit markdown field — single surface that shows the
+    // rendered hint by default and a textarea on focus. Row state
+    // stays in `row.text`; we pull from field.get() on submit/dirty
+    // checks, but also push changes during blur so submit doesn't
+    // have to re-poll every row.
+    const field = markdownField({
+      initial: row.text || '',
+      placeholder: t('Clue in markdown… (click to edit)'),
+      rows: 2,
+      className: 'compact',
+    });
+    // Keep the row's cached text in sync so hintsController.get()
+    // reflects the latest value without needing to walk DOM nodes.
+    Object.defineProperty(row, 'text', {
+      configurable: true,
+      get: () => field.get(),
+    });
     const delay = h('input', {
       type: 'number', min: '0', step: '1', style: 'width:6rem',
     });
@@ -4233,7 +4322,6 @@ function buildHintsEditor(initial) {
       rows.splice(idx, 1);
       draw();
     });
-    const preview = attachMdPreview(text, 'compact');
     return h('div', { class: 'hint-row' },
       h('div', { class: 'hint-row-head' },
         h('span', { class: 'hint-row-num' }, String(idx + 1)),
@@ -4243,8 +4331,7 @@ function buildHintsEditor(initial) {
           h('span', { class: 'muted' }, t('s')),
           delayLabel),
         remove),
-      text,
-      preview);
+      field.el);
   }
   rows.push(...(initial || []).map((h) => ({ text: h.text || '', delay_seconds: h.delay_seconds || 0 })));
   draw();
@@ -4274,6 +4361,106 @@ function formatHintDelay(sec) {
 // Consistent wording in every place keeps the hint reliable.
 function mdSupportedHint() {
   return t('Markdown supported: **bold**, *italics*, [links](https://…), `code`, - bullet lists.');
+}
+
+// markdownField renders a single editable markdown region that shows
+// the rendered HTML by default and swaps to a raw textarea on click
+// (or keyboard focus). Blurring the textarea re-renders via the
+// /markdown/preview endpoint and swaps back. Replaces the earlier
+// textarea + preview-pane pairing — one field instead of two, the
+// author sees what the player will see except while they're actively
+// editing.
+//
+// Returns { el, get, focus }:
+//   el    — the root node to mount in the form.
+//   get() — current raw markdown (whatever's in the textarea).
+//   focus() — enters edit mode programmatically (used for "Add hint",
+//            which benefits from landing the cursor in the new row).
+//
+// opts:
+//   initial     — starting raw markdown.
+//   placeholder — shown when the field is empty and not focused.
+//   rows        — textarea rows when editing (default 3).
+//   className   — extra class on the root (e.g. 'compact' for hint rows).
+//   single      — true for single-line-ish fields (hints, intros); hides
+//                 a subtle "click to edit" affordance when the value
+//                 is empty so the field isn't an empty void.
+function markdownField(opts) {
+  const root = h('div', { class: 'md-field' + (opts.className ? ' ' + opts.className : '') });
+  const view = h('div', { class: 'md-field-view' });
+  const editor = h('textarea', { class: 'md-field-edit', rows: String(opts.rows || 3),
+    placeholder: opts.placeholder || '' });
+  editor.style.display = 'none';
+  editor.value = opts.initial || '';
+  let rendered = ''; // last rendered HTML cache keyed by raw text
+  let renderedFor = null;
+
+  const paintView = async () => {
+    const text = editor.value;
+    if (!text.trim()) {
+      view.replaceChildren(h('span', { class: 'md-field-placeholder' },
+        opts.placeholder || t('Click to write…')));
+      return;
+    }
+    // Fast path: we rendered this exact text already (no edits happened
+    // since blur). Saves an HTTP round-trip on a pure swap.
+    if (renderedFor === text) {
+      view.innerHTML = rendered;
+      return;
+    }
+    // Optimistic: show the raw text (as pre-wrap) for the half-beat
+    // it takes the server to answer, so the swap doesn't flash empty.
+    view.replaceChildren(h('span', { class: 'md-field-pending' }, text));
+    try {
+      const r = await api('/api/admin/markdown/preview', {
+        method: 'POST', body: JSON.stringify({ text }),
+      });
+      if (r.status === 200 && typeof r.body?.html === 'string') {
+        rendered = r.body.html;
+        renderedFor = text;
+        view.innerHTML = rendered;
+      }
+    } catch { /* keep optimistic pre-wrap render */ }
+  };
+
+  const enterEdit = () => {
+    view.style.display = 'none';
+    editor.style.display = '';
+    // Auto-size the textarea to the current content so expanding
+    // doesn't force a manual resize drag.
+    editor.style.height = 'auto';
+    editor.style.height = Math.max(editor.scrollHeight, 24) + 'px';
+    editor.focus();
+    // Place the caret at the end so typing continues naturally.
+    const len = editor.value.length;
+    editor.setSelectionRange(len, len);
+  };
+  const leaveEdit = () => {
+    editor.style.display = 'none';
+    view.style.display = '';
+    paintView();
+  };
+
+  view.addEventListener('click', enterEdit);
+  editor.addEventListener('blur', leaveEdit);
+  // Escape quickly bails to the rendered view — handy when the author
+  // just wanted to read their own markdown.
+  editor.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { e.preventDefault(); leaveEdit(); }
+  });
+  // Keep the textarea sized to content as the author types.
+  editor.addEventListener('input', () => {
+    editor.style.height = 'auto';
+    editor.style.height = Math.max(editor.scrollHeight, 24) + 'px';
+  });
+
+  root.append(view, editor);
+  paintView();
+  return {
+    el: root,
+    get: () => editor.value,
+    focus: enterEdit,
+  };
 }
 
 // attachMdPreview returns a live-updating preview div for a textarea.
@@ -4387,9 +4574,21 @@ async function openEditPuzzle(adv, page /* or null */) {
     // matches: prompt and accept may be empty, only radius_m is checked.
     // Marking them required here silently blocks the Save submit.
     const titleInput  = h('textarea', { class: 'pe pe-title', rows: 1, placeholder: t('Puzzle title') });
-    const promptInput = h('textarea', { class: 'pe pe-prompt', rows: 3, placeholder: t('What the player sees…') });
+    // Prompt uses the click-to-edit markdown field so the author sees
+    // the rendered puzzle text by default and only gets the raw
+    // markdown when they actually want to edit.
+    const promptField = markdownField({
+      initial: page?.prompt || '',
+      placeholder: t('What the player sees… (click to edit, markdown supported)'),
+      rows: 4,
+    });
+    // Shim: keep a property-accessor "input" so existing code that
+    // reads .value and compares against page.prompt keeps working
+    // without a wider rewrite.
+    const promptInput = { get value() { return promptField.get(); } };
     titleInput.value  = page?.title  || '';
-    promptInput.value = page?.prompt || '';
+    // promptField.get() already reflects the initial value; no shim-
+    // assignment needed (and .value is getter-only).
     // Hints are no longer a single inline field — they live in the
     // settings panel as an editable list with per-hint unlock delays.
     // hintsController gives the submit handler a single .get() that
@@ -4477,16 +4676,14 @@ async function openEditPuzzle(adv, page /* or null */) {
       h('input', { disabled: '', placeholder: t('Your answer') }),
       h('button', { class: 'btn primary', disabled: '' }, t('Submit')));
 
-    // Live markdown preview below the prompt textarea. Hints live in
-    // the settings panel now — they're behind a button at play time,
-    // so putting them in the preview card was misleading about the
-    // authored layout.
-    const promptPreview = attachMdPreview(promptInput);
+    // The prompt field is itself the preview — click to edit, blur to
+    // see the rendered markdown. Hints live in the settings panel
+    // (behind a button at play time, so putting them here was
+    // misleading about the authored layout).
     const previewCard = h('div', { class: 'puzzle-editor' },
       titleInput,
       imagesHost,
-      promptInput,
-      promptPreview,
+      promptField.el,
       dock,
       h('p', { class: 'muted', style: 'font-size:.75rem; margin:.5rem 0 0' }, mdSupportedHint()),
     );
@@ -4838,7 +5035,7 @@ async function openEditPuzzle(adv, page /* or null */) {
       body.append(h('p', { class: 'muted', style: 'margin: .25rem 0 1rem; font-size:.9rem' }, assignLabel));
     }
     body.append(form);
-    autosize(titleInput); autosize(promptInput); autosize(notes);
+    autosize(titleInput); autosize(notes);
 
     // Location editor (Leaflet). Wiring lives in renderPuzzleLocationMap
     // so the pile of marker/circle/handle state doesn't bleed into this
