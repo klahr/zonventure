@@ -332,10 +332,31 @@ html, body {
   overflow: hidden;
 }
 .progress .fill {
+  position: relative; overflow: hidden;
   height: 100%;
   background: linear-gradient(90deg, var(--team-color, var(--accent)), var(--accent));
   border-radius: 999px;
   transition: width .6s ease;
+}
+/* Animated sheen sweeping across the fill so the board looks alive on
+   the TV display even when nothing has changed in the past few seconds.
+   Finished teams don't get the animation — their bar should look
+   settled rather than still working. */
+.progress .fill::after {
+  content: '';
+  position: absolute; inset: 0;
+  background: linear-gradient(90deg,
+    transparent 0%,
+    rgba(255, 255, 255, .28) 50%,
+    transparent 100%);
+  transform: translateX(-100%);
+  animation: progressSheen 2.4s linear infinite;
+  pointer-events: none;
+}
+.row.finished .progress .fill::after { animation: none; opacity: 0; }
+@keyframes progressSheen {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
 }
 .progress .label {
   display: flex; justify-content: space-between;
@@ -559,6 +580,19 @@ function formatFinishTime(startISO, completedAt) {
   const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
   const pad = (n) => String(n).padStart(2, '0');
   return h ? `${h}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
+}
+
+// formatFinishGap renders the delta between the winner's finish time
+// and a later finisher's finish time as "+MM:SS" (or "+H:MM:SS" when
+// the gap is an hour or more). Used on the live leaderboard for
+// positions 2+, so viewers see at a glance how close the chase was.
+function formatFinishGap(winnerCompletedAt, completedAt) {
+  if (!winnerCompletedAt || !completedAt) return '';
+  const parse = (v) => new Date(v.includes('T') ? v : v.replace(' ', 'T') + 'Z');
+  const sec = Math.max(0, Math.round((parse(completedAt).getTime() - parse(winnerCompletedAt).getTime()) / 1000));
+  const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+  const pad = (n) => String(n).padStart(2, '0');
+  return h ? `+${h}:${pad(m)}:${pad(s)}` : `+${pad(m)}:${pad(s)}`;
 }
 
 // mapShown is a client-side override. null → follow the server's
@@ -1069,10 +1103,17 @@ function renderRow(team, idx, data) {
   row.append(main);
 
   if (finished) {
-    const finishTime = formatFinishTime(data.started_at, team.completed_at);
+    // Rank 1 shows the total duration (start → finish). Everyone
+    // behind shows the gap to the winner as "+MM:SS", so the board
+    // reads like a real race result instead of a wall of total times.
+    const winner = (data.teams || []).find((x) => x.completed_at);
+    const isWinner = winner && winner.id === team.id;
+    const display = isWinner
+      ? formatFinishTime(data.started_at, team.completed_at)
+      : formatFinishGap(winner && winner.completed_at, team.completed_at);
     row.append(h('div', { class: 'stat finished' },
-      h('div', { class: 'value' }, finishTime || t('Done')),
-      h('div', { class: 'unit' }, t('Finish time')),
+      h('div', { class: 'value' }, display || t('Done')),
+      h('div', { class: 'unit' }, isWinner ? t('Finish time') : t('Gap')),
     ));
   } else {
     row.append(h('div', { class: 'stat' },
