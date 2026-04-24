@@ -97,6 +97,21 @@ html, body {
   display: block; font-size: .55em; font-weight: 600;
   color: var(--muted); text-transform: uppercase; letter-spacing: .18em;
 }
+/* Debug "Shake" button lives in the header corner. Low-key styling
+   so it doesn't distract on a TV display — still a real button so it
+   reads as something the operator can click. */
+.debug-btn {
+  appearance: none; background: transparent;
+  border: 1px solid rgba(255,255,255,.22); color: var(--muted);
+  font: inherit; font-size: .75rem; font-weight: 700;
+  letter-spacing: .12em; text-transform: uppercase;
+  padding: .35rem .75rem; border-radius: 999px; cursor: pointer;
+  transition: background-color .15s ease, color .15s ease, border-color .15s ease;
+}
+.debug-btn:hover, .debug-btn:focus-visible {
+  background: rgba(255,255,255,.08); color: inherit;
+  border-color: rgba(255,255,255,.4); outline: none;
+}
 .state-pill {
   display: inline-flex; align-items: center; gap: .4rem;
   padding: .35rem 1rem; border-radius: 999px;
@@ -896,6 +911,12 @@ function buildHeader(data) {
       h('div', { class: 'clock' },
         formatElapsed(data.started_at, data.server_now),
         h('small', {}, data.started_at ? t('Elapsed') : t('Not started'))),
+      h('button', {
+        class: 'debug-btn', type: 'button',
+        title: t('Shuffle ranks + jitter positions (d)'),
+        'aria-label': t('Debug: shake things up'),
+        on: { click: debugShake },
+      }, t('Shake')),
     ),
   );
 }
@@ -1112,6 +1133,7 @@ setInterval(() => {
 // Keyboard shortcuts for the TV:
 //   m — toggle the map card (overrides the server show_map setting)
 //   f — toggle browser fullscreen
+//   d — debug: shuffle ranks + jitter GPS positions (exercises animations)
 // Ignore when focus is in a form field so typing doesn't steal hotkeys
 // (not that there are any inputs on the live view today, but be safe).
 document.addEventListener('keydown', (e) => {
@@ -1126,8 +1148,59 @@ document.addEventListener('keydown', (e) => {
     if (document.fullscreenElement) document.exitFullscreen();
     else document.documentElement.requestFullscreen();
     e.preventDefault();
+  } else if (e.key === 'd' || e.key === 'D') {
+    debugShake();
+    e.preventDefault();
   }
 });
+
+// debugShake is a client-only preview helper — it mutates the cached
+// snapshot and tracks in place, then re-renders. Lets the operator see
+// the reorder / map-movement animations without waiting for real team
+// progress or GPS pings.
+//
+// Invariants kept intact:
+//  - Team IDs are preserved (otherwise FLIP can't match rows).
+//  - page_count/page_index monotonicity is relaxed — this is a local
+//    visual test, not live data — but nothing here hits the server, so
+//    the next real snapshot overwrites whatever we do here.
+function debugShake() {
+  if (!latestSnapshot?.teams?.length) return;
+  // Shuffle team page_index by a small random delta so the backend-
+  // style ordering changes. Clamp to [0, page_count].
+  const pc = latestSnapshot.page_count || 0;
+  for (const team of latestSnapshot.teams) {
+    if (team.completed_at) continue;
+    const delta = Math.floor(Math.random() * 3) - 1; // -1, 0, +1
+    team.page_index = Math.max(0, Math.min(pc, (team.page_index || 0) + delta));
+  }
+  // Re-rank client-side by the same primary rule (page_index DESC),
+  // with a stable random tiebreaker so we actually see reordering.
+  latestSnapshot.teams.sort((a, b) => {
+    if ((a.completed_at ? 1 : 0) !== (b.completed_at ? 1 : 0)) {
+      return a.completed_at ? -1 : 1;
+    }
+    if (a.page_index !== b.page_index) return b.page_index - a.page_index;
+    return Math.random() - 0.5;
+  });
+  latestSnapshot.teams.forEach((t, i) => { t.rank = i + 1; });
+
+  // Jitter the last ping for each track by ~80–150m so the marker tween
+  // has a visible delta. 1° of lat ≈ 111km, so 0.001° ≈ 111m.
+  if (Array.isArray(latestTracks)) {
+    for (const track of latestTracks) {
+      if (!track.points?.length) continue;
+      const last = track.points[track.points.length - 1];
+      const jitter = () => (Math.random() - 0.5) * 0.0025;
+      track.points[track.points.length - 1] = {
+        ...last,
+        lat: last.lat + jitter(),
+        lng: last.lng + jitter(),
+      };
+    }
+  }
+  render();
+}
 
 connectWS();
 </script>

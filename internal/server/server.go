@@ -12,6 +12,7 @@ import (
 	"git.sr.ht/~klahr/zv/internal/auth"
 	"git.sr.ht/~klahr/zv/internal/player"
 	"git.sr.ht/~klahr/zv/internal/public"
+	"git.sr.ht/~klahr/zv/internal/simulator"
 	"git.sr.ht/~klahr/zv/internal/ws"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -44,7 +45,8 @@ func New(cfg Config) http.Handler {
 
 	authH := &auth.Handlers{DB: cfg.DB, SecureCookie: cfg.SecureCookie}
 	playerH := &player.Handlers{DB: cfg.DB, Lib: cfg.Library, Hub: hub, SecureCookie: cfg.SecureCookie}
-	adminH := &admin.Handlers{DB: cfg.DB, Lib: cfg.Library, Hub: hub}
+	sim := simulator.New(cfg.DB, cfg.Library, hub)
+	adminH := &admin.Handlers{DB: cfg.DB, Lib: cfg.Library, Hub: hub, Sim: sim}
 	publicH := &public.Handlers{DB: cfg.DB, Lib: cfg.Library, Hub: hub}
 
 	r.Get("/api/health", func(w http.ResponseWriter, _ *http.Request) {
@@ -235,6 +237,14 @@ func New(cfg Config) http.Handler {
 			r.Get("/logs", adminH.ListLogs)
 			r.Get("/logs/level", adminH.LogsLevel)
 			r.Put("/logs/level", adminH.SetLogsLevel)
+
+			// Race simulator. Admin-only because it writes runs/teams
+			// on behalf of the first org and can take the DB on a walk.
+			r.Get("/simulator", adminH.SimulatorStatus)
+			r.Post("/simulator/start", adminH.SimulatorStart)
+			r.Post("/simulator/pause", adminH.SimulatorPause)
+			r.Post("/simulator/resume", adminH.SimulatorResume)
+			r.Post("/simulator/reset", adminH.SimulatorReset)
 		})
 	})
 

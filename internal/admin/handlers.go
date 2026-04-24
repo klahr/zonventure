@@ -28,6 +28,7 @@ import (
 	"git.sr.ht/~klahr/zv/internal/auth"
 	"git.sr.ht/~klahr/zv/internal/httpx"
 	"git.sr.ht/~klahr/zv/internal/runevents"
+	"git.sr.ht/~klahr/zv/internal/simulator"
 	"git.sr.ht/~klahr/zv/internal/ws"
 	"github.com/go-chi/chi/v5"
 )
@@ -37,6 +38,7 @@ type Handlers struct {
 	DB  *sql.DB
 	Lib *adventure.Library
 	Hub *ws.Hub
+	Sim *simulator.Simulator
 }
 
 /* ---------------- Shared scoping helpers ---------------- */

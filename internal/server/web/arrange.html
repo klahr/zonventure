@@ -1145,6 +1145,7 @@ function renderShell() {
       ['#library',       t('Adventures'),    ICONS.map],
       ['#puzzles',       t('Puzzles'),       ICONS.puzzle],
       ['#admins',        t('Admins'),        ICONS.user],
+      ['#simulator',     t('Simulator'),     ICONS.play],
       ['#logs',          t('Logs'),          ICONS.terminal],
     ];
   } else {
@@ -1232,6 +1233,7 @@ function currentCrumb() {
     library:       t('Library'),
     puzzles:       t('Puzzles'),
     admins:        t('Admins'),
+    simulator:     t('Simulator'),
     logs:          t('Logs'),
   };
   const sectionLabel = LABELS[section] || (section ? section[0].toUpperCase() + section.slice(1) : '');
@@ -1251,7 +1253,7 @@ async function renderRoute() {
   const isOrgAdmin = role === 'org_admin';
 
   // Role-based route guards: admins can't visit org-user pages and vice versa.
-  const adminOnly = ['organizations', 'admins', 'logs'];
+  const adminOnly = ['organizations', 'admins', 'logs', 'simulator'];
   const orgUserOnly = ['adventures', 'runs', 'store'];
   if (isAdmin && orgUserOnly.includes(section)) { nav('#organizations'); return; }
   if (!isAdmin && adminOnly.includes(section))   { nav('#dashboard');     return; }
@@ -1279,6 +1281,7 @@ async function renderRoute() {
       case 'puzzles':      return arg ? await viewPuzzleEditRoute(view, arg) : await viewPuzzles(view);
       case 'purchases':    return await viewPurchases(view);
       case 'admins':       return await viewAdmins(view);
+      case 'simulator':    return await viewSimulator(view);
       case 'logs':         return await viewLogs(view);
       default: view.replaceChildren(h('p', {}, t('Not found')));
     }
@@ -4989,6 +4992,180 @@ async function confirmDeleteAdmin(admin) {
   });
   if (r.status === 204) { toastOk(t('Admin deleted')); renderRoute(); }
   else toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+}
+
+/* ========== Race simulator (admin only) ==========
+   Drives a fake race inside the server so the live view can be
+   exercised without real players on the ground. The heavy lifting
+   (team movement, answer rolls, pings) happens server-side in the
+   simulator package — this surface is just a control panel:
+   pick an adventure + team count + speed, press Play, watch.
+   Status polls every 1.5s so the state pill stays in sync with the
+   server's own Pause/Resume/Reset. */
+async function viewSimulator(view) {
+  const [statusR, advR] = await Promise.all([
+    api('/api/admin/simulator').catch(() => ({ ok: false, body: null })),
+    api('/api/admin/adventures').catch(() => ({ ok: false, body: null })),
+  ]);
+  const status = statusR.ok ? statusR.body : { stage: 'idle' };
+  const advs = (advR.body?.adventures || [])
+    .filter((a) => a.page_count > 0)
+    .sort((a, b) => a.title.localeCompare(b.title));
+
+  // Controls — the form is visible even while a sim runs so the
+  // operator can read back what they chose, but inputs are disabled
+  // until Reset so you can't mutate a running simulation's config.
+  const picker = h('select', { required: true },
+    advs.length === 0
+      ? h('option', { value: '' }, t('(no adventures)'))
+      : advs.map((a) => h('option', { value: a.slug }, `${a.title} — ${a.page_count} ` + (a.page_count === 1 ? t('puzzle') : t('puzzles')))));
+  if (status.adventure_slug) picker.value = status.adventure_slug;
+
+  const teamInput = h('input', { type: 'number', min: '2', max: '20', value: String(status.team_count || 6) });
+  const speedInput = h('input', { type: 'number', min: '1', max: '50', step: '1', value: String(status.speed_mul || 5) });
+
+  // Stage pill, elapsed readout and live-view link are the three bits
+  // the poll loop patches in place — capture references so we don't
+  // tear the whole view down on every tick.
+  const stagePill = h('span', { class: `pill ${stagePillClass(status.stage)}` }, t(stageLabel(status.stage)));
+  const elapsed = h('span', { class: 'muted mono', style: 'font-size:.85rem' },
+    (status.stage !== 'idle' && status.started_at)
+      ? t('Running for {{t}}', { t: fmtElapsed(status.started_at) })
+      : '');
+  const liveSlot = h('span');
+  const setLiveLink = (token) => {
+    liveSlot.replaceChildren();
+    if (token) {
+      liveSlot.append(h('a', {
+        href: `/live/${encodeURIComponent(token)}`, target: '_blank',
+      }, icon(ICONS.eye), t('Open live view')));
+    }
+  };
+  setLiveLink(status.live_token);
+
+  const startBtn = h('button', {
+    class: 'btn primary', type: 'button',
+    on: { click: () => simulatorAction('start', {
+      adventure_slug: picker.value,
+      team_count: parseInt(teamInput.value, 10) || 6,
+      speed_mul: parseFloat(speedInput.value) || 5,
+    }) },
+  }, icon(ICONS.play), t('Start'));
+  const pauseBtn = h('button', {
+    class: 'btn', type: 'button',
+    on: { click: () => simulatorAction('pause') },
+  }, t('Pause'));
+  const resumeBtn = h('button', {
+    class: 'btn', type: 'button',
+    on: { click: () => simulatorAction('resume') },
+  }, t('Resume'));
+  const resetBtn = h('button', {
+    class: 'btn danger', type: 'button',
+    on: { click: () => simulatorAction('reset') },
+  }, icon(ICONS.trash), t('Reset'));
+
+  // applyStage patches the dynamic bits of the view for a given status
+  // without rebuilding the DOM — survives transient fetch errors and
+  // keeps the user's typing in the number inputs intact.
+  const applyStage = (st) => {
+    const stage = st?.stage || 'idle';
+    stagePill.className = 'pill ' + stagePillClass(stage);
+    stagePill.textContent = t(stageLabel(stage));
+    elapsed.textContent = (stage !== 'idle' && st?.started_at)
+      ? t('Running for {{t}}', { t: fmtElapsed(st.started_at) })
+      : '';
+    setLiveLink(st?.live_token);
+    const idle = stage === 'idle';
+    const paused = stage === 'paused';
+    const running = stage === 'running';
+    [picker, teamInput, speedInput].forEach((el) => { el.disabled = !idle; });
+    startBtn.disabled = !idle;
+    pauseBtn.disabled = !running;
+    resumeBtn.disabled = !paused;
+    resetBtn.disabled = idle;
+  };
+  applyStage(status);
+
+  view.replaceChildren(
+    h('div', { class: 'row between' },
+      h('h1', {}, t('Simulator')),
+      h('div', { class: 'row', style: 'gap:.5rem; align-items:center' },
+        stagePill, elapsed, liveSlot)),
+    h('p', { class: 'muted' },
+      t('Fake a race so you can see the live view animate without recruiting real players. Writes to the same tables as a real run, so every subscriber (map, leaderboard, WS) updates as if players were on the ground.')),
+    h('div', { class: 'card' },
+      h('h2', {}, t('Configuration')),
+      h('label', { class: 'field' }, h('span', {}, t('Adventure')), picker),
+      h('label', { class: 'field' }, h('span', {}, t('Teams (2–20)')), teamInput),
+      h('label', { class: 'field' }, h('span', {}, t('Speed multiplier (1–50)')), speedInput),
+      h('p', { class: 'muted', style: 'font-size:.85rem' },
+        t('Higher speed advances the walk faster without changing the ping cadence, so fast-forwarded runs still look natural.'))),
+    h('div', { class: 'row', style: 'gap:.5rem; flex-wrap:wrap; margin-top:1rem' },
+      startBtn, pauseBtn, resumeBtn, resetBtn),
+  );
+
+  // Poll status only — no full re-render, no toast on blip. A dev
+  // server restart or momentary WS loss shouldn't take the page down
+  // with a NetworkError.
+  if (simulatorPollTimer) clearInterval(simulatorPollTimer);
+  const poll = async () => {
+    if (!location.hash.startsWith('#simulator')) {
+      clearInterval(simulatorPollTimer); simulatorPollTimer = null; return;
+    }
+    try {
+      const r = await api('/api/admin/simulator');
+      if (r.ok) applyStage(r.body);
+    } catch { /* server restart or offline — the next tick will catch up */ }
+  };
+  simulatorPollTimer = setInterval(poll, 1500);
+}
+
+// simulatorAction posts a control command. Re-renders the view on
+// success so inputs snap to whatever state the server is now in.
+async function simulatorAction(kind, body) {
+  let r;
+  try {
+    r = await api('/api/admin/simulator/' + kind, {
+      method: 'POST',
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  } catch {
+    toastErr(t('Network error — is the server running?'));
+    return;
+  }
+  if (!r.ok) {
+    toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+    return;
+  }
+  if (kind === 'start') toastOk(t('Simulation started'));
+  if (kind === 'reset') toastOk(t('Simulation reset'));
+  renderRoute();
+}
+
+let simulatorPollTimer = null;
+
+function stageLabel(stage) {
+  switch (stage) {
+    case 'running': return 'Running';
+    case 'paused':  return 'Paused';
+    default:        return 'Idle';
+  }
+}
+
+function stagePillClass(stage) {
+  switch (stage) {
+    case 'running': return 'success';
+    case 'paused':  return 'warning';
+    default:        return '';
+  }
+}
+
+function fmtElapsed(startISO) {
+  const start = new Date(startISO);
+  const sec = Math.max(0, Math.round((Date.now() - start.getTime()) / 1000));
+  const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+  const pad = (n) => String(n).padStart(2, '0');
+  return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
 }
 
 /* ========== Server logs (admin only) ==========
