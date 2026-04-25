@@ -210,13 +210,15 @@
     color: #fff;
     /* Layered backgrounds: dark gradient overlay on top so text
        contrast is locked in regardless of which photo is chosen,
-       photo in the middle, and a brand-coloured gradient fallback
-       at the bottom for when the photo doesn't load. */
+       photo in the middle (a real event photo from Mindrace
+       Stockholm 2022 — authentic beats stock for a hero), and a
+       brand-coloured gradient fallback at the bottom for when the
+       photo doesn't load. */
     background:
       linear-gradient(135deg,
         rgba(20,32,46,0.78) 0%,
         rgba(173,19,87,0.55) 100%),
-      url('https://images.pexels.com/photos/1271619/pexels-photo-1271619.jpeg?auto=compress&cs=tinysrgb&w=1800') center/cover no-repeat,
+      url('https://cdn.zonventure.com/mindrace/2022/stockholm/P1040422.JPG') center/cover no-repeat,
       linear-gradient(135deg, var(--accent-deep), #14202e);
     display: flex; align-items: center;
     padding: 6rem 0 4rem;
@@ -374,20 +376,30 @@
     padding-bottom: 1px;
   }
   .usecase-link:hover { border-bottom-color: #fff; text-decoration: none; }
+  /* Corporate: woman showing a tablet to a man at a desk —
+     https://www.pexels.com/photo/a-woman-sitting-at-a-desk-showing-tablet-to-a-man-7793727/
+     Frames the buyer (arranger at their desk planning the event)
+     rather than players in the field. */
   .usecase-corporate {
     background-image:
       linear-gradient(rgba(20,32,46,0.15), rgba(20,32,46,0.15)),
-      url('https://images.pexels.com/photos/3184339/pexels-photo-3184339.jpeg?auto=compress&cs=tinysrgb&w=900');
+      url('https://images.pexels.com/photos/7793727/pexels-photo-7793727.jpeg?auto=compress&cs=tinysrgb&w=900');
   }
+  /* Schools / youth: two boys looking at a map —
+     https://www.pexels.com/photo/two-boys-looking-a-map-9292795/
+     On-theme: a map is the universal symbol of the format. */
   .usecase-school {
     background-image:
       linear-gradient(rgba(20,32,46,0.15), rgba(20,32,46,0.15)),
-      url('https://images.pexels.com/photos/8617964/pexels-photo-8617964.jpeg?auto=compress&cs=tinysrgb&w=900');
+      url('https://images.pexels.com/photos/9292795/pexels-photo-9292795.jpeg?auto=compress&cs=tinysrgb&w=900');
   }
+  /* Tourism / city walks: woman walking on street —
+     https://www.pexels.com/photo/woman-walking-on-street-14767732/
+     A solo wanderer reads as the self-guided-tourist persona we want. */
   .usecase-tourism {
     background-image:
       linear-gradient(rgba(20,32,46,0.15), rgba(20,32,46,0.15)),
-      url('https://images.pexels.com/photos/1010657/pexels-photo-1010657.jpeg?auto=compress&cs=tinysrgb&w=900');
+      url('https://images.pexels.com/photos/14767732/pexels-photo-14767732.jpeg?auto=compress&cs=tinysrgb&w=900');
   }
 
   /* ---- "how it works" — three illustrated steps ---- */
