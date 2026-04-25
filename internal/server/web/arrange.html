@@ -7476,6 +7476,11 @@ async function viewWebhooksLog(view, endpointID) {
   const filter = { status: '' };
   let nextBefore = 0;
   let deliveries = [];
+  // Track which delivery rows the user has expanded so a poll-driven
+  // rebuild restores them. Keyed by delivery id (server-assigned, so
+  // stable across refreshes). Lives at view-scope and dies with the
+  // navigation away.
+  const expanded = new Set();
 
   const statusSelect = h('select', { class: 'btn small' },
     h('option', { value: '' },          t('Any status')),
@@ -7526,13 +7531,16 @@ async function viewWebhooksLog(view, endpointID) {
     if (reset) {
       // Build the replacement DOM off-screen, then swap once. For
       // quiet polls this means the visible list stays stable until
-      // the new content is ready — no empty-then-fill flash.
+      // the new content is ready — no empty-then-fill flash. The
+      // `expanded` set is passed through so any row the user had
+      // open before the rebuild reopens with the same payload
+      // visible, no manual re-click required.
       const frag = document.createDocumentFragment();
-      for (const d of incoming) frag.appendChild(renderDeliveryRow(d));
+      for (const d of incoming) frag.appendChild(renderDeliveryRow(d, expanded));
       list.replaceChildren(frag);
       deliveries = incoming.slice();
     } else {
-      for (const d of incoming) list.appendChild(renderDeliveryRow(d));
+      for (const d of incoming) list.appendChild(renderDeliveryRow(d, expanded));
       deliveries = deliveries.concat(incoming);
     }
     nextBefore = r.body?.next_before || 0;
@@ -7593,7 +7601,11 @@ async function viewWebhooksLog(view, endpointID) {
 // expands to show the pretty-printed payload, signature inputs and
 // retry metadata. The card is collapsed by default to keep the log
 // scrollable on small screens.
-function renderDeliveryRow(d) {
+//
+// `expanded` is a Set<deliveryID> shared across rebuilds — when a
+// poll regenerates the list, rows whose id is in the set are
+// rendered already-open so the user's manual expansion survives.
+function renderDeliveryRow(d, expanded) {
   const statusClass = ({ delivered: 'ok', dead: 'err', pending: '' })[d.status] || '';
   const statusChip = h('span',
     { class: 'chip ' + statusClass },
@@ -7631,14 +7643,26 @@ function renderDeliveryRow(d) {
 
   // The expandable detail body — built lazily on first expand so the
   // log can render hundreds of rows without parsing every payload.
-  const detail = h('div', { style: 'display:none; margin-top:.75rem' });
+  // Persistence across rebuilds is handled via the `expanded` set.
+  const isOpen = expanded && expanded.has(d.id);
+  const detail = h('div', { style: 'margin-top:.75rem; display:' + (isOpen ? '' : 'none') });
   let built = false;
-  head.addEventListener('click', () => {
+  const ensureBuilt = () => {
     if (!built) {
       built = true;
       detail.append(...renderDeliveryDetail(d));
     }
-    detail.style.display = detail.style.display === 'none' ? '' : 'none';
+  };
+  if (isOpen) ensureBuilt();
+  head.addEventListener('click', () => {
+    ensureBuilt();
+    if (detail.style.display === 'none') {
+      detail.style.display = '';
+      if (expanded) expanded.add(d.id);
+    } else {
+      detail.style.display = 'none';
+      if (expanded) expanded.delete(d.id);
+    }
   });
 
   return h('div', { class: 'card', style: 'padding:.85rem 1rem' }, head, detail);
