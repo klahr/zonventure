@@ -992,6 +992,290 @@
       '(no events subscribed)': '(inga händelser prenumereras)',
       '(unnamed endpoint)': '(slutpunkt utan namn)',
       'e.g. prod-slack': 't.ex. prod-slack',
+      // ---- manual ----
+      // Nav label intentionally kept as "Manual" in Swedish — the
+      // word is widely understood and matches the operator's brand
+      // preference. Translating to "Handbok" would otherwise also
+      // be valid.
+      'Manual': 'Manual',
+      'Arranger manual': 'Manual för arrangörer',
+      'A pedagogic walk-through of the platform: create an adventure, fill it with puzzles, schedule a run, add teams, and watch them play. Read it once start to finish, or jump to a section from the table of contents.':
+          'En pedagogisk genomgång av plattformen: skapa ett äventyr, fyll det med pussel, schemalägg en omgång, lägg till lag och se dem spela. Läs igenom från början till slut, eller hoppa till ett avsnitt via innehållsförteckningen.',
+      'Contents': 'Innehåll',
+      // section titles
+      'Welcome': 'Välkommen',
+      'First steps': 'Första stegen',
+      'Authoring an adventure': 'Skapa ett äventyr',
+      'Adding puzzles': 'Lägg till pussel',
+      'How the run flow fits together': 'Så hänger flödet ihop',
+      'Buying team-slot assignments': 'Köp lagplatser (uppdrag)',
+      'Creating a run': 'Skapa en omgång',
+      'Adding teams and sharing magic links': 'Lägg till lag och dela magiska länkar',
+      'Running the run': 'Genomför omgången',
+      'Webhooks: outbound integrations': 'Webhooks: utgående integrationer',
+      'Account, data and deletion': 'Konto, data och radering',
+      'Getting help': 'Få hjälp',
+      // welcome
+      'Zonventure ("zv") is a platform for running location-based adventure games — treasure hunts, team-building events, school field trips. As an arranger you author the puzzles, set up a run, and the players walk around with their phones answering them.':
+          'Zonventure ("zv") är en plattform för platsbaserade äventyrsspel — skattjakter, lagevent, skolutflykter. Som arrangör skapar du pusslen, sätter upp en omgång, och spelarna går runt med sina telefoner och svarar på dem.',
+      'Four words to know': 'Fyra ord att kunna',
+      'Adventure': 'Äventyr',
+      'a reusable script. Pages of puzzles in order. Like a book.':
+          'ett återanvändbart manus. Sidor med pussel i ordning. Som en bok.',
+      'Assignment': 'Uppdrag',
+      'a paid licence to run an adventure once for up to N teams. You buy these from the Store.':
+          'en betald licens att köra ett äventyr en gång för upp till N lag. Köps i Butiken.',
+      'one specific playthrough at a specific time. Created from an assignment.':
+          'en specifik genomspelning vid en specifik tidpunkt. Skapas från ett uppdrag.',
+      'a group of players in a run, identified by a team name. Each player gets their own magic-link to log in as part of the team.':
+          'en grupp spelare i en omgång, identifierad med ett lagnamn. Varje spelare får en egen magisk länk för att logga in som del av laget.',
+      'Mental model: an Adventure is a recipe; an Assignment is the right to cook it once; a Run is one specific dinner; a Team is the people sitting at a table.':
+          'Tankebild: ett Äventyr är ett recept; ett Uppdrag är rätten att laga det en gång; en Omgång är en specifik middag; ett Lag är personerna vid bordet.',
+      // first steps
+      'When you sign up, you create an organization. Everyone in your organization shares the same adventures, assignments, and runs.':
+          'När du registrerar dig skapar du en organisation. Alla i din organisation delar samma äventyr, uppdrag och omgångar.',
+      'Verify your email': 'Verifiera din e-post',
+      'After signup we email a verification link. You can log in before clicking it, but money-touching actions (buying assignments, scheduling runs) are blocked until you verify. The dashboard shows a banner with a "Resend" button if it didn\'t arrive.':
+          'Efter registreringen skickar vi en verifieringslänk. Du kan logga in innan du klickar, men åtgärder som rör pengar (köp av uppdrag, schemaläggning av omgångar) blockeras tills du verifierar. Översikten visar en banderoll med en "Skicka igen"-knapp om mejlet inte kom fram.',
+      '[Screenshot: dashboard with the unverified-email banner]':
+          '[Skärmdump: översikt med banderoll om overifierad e-post]',
+      'The dashboard': 'Översikten',
+      'The dashboard is your home: at-a-glance view of upcoming runs, ready-to-schedule assignments, and shortcuts to the things you most often do.':
+          'Översikten är ditt hem: en snabb vy över kommande omgångar, uppdrag redo att schemaläggas och genvägar till det du gör oftast.',
+      '[Screenshot: a populated arranger dashboard]':
+          '[Skärmdump: en ifylld arrangörsöversikt]',
+      // adventure
+      'Adventures live in the Library. You can author your own, or run one from the global catalog (the catalog is curated by the platform admin and always free to use).':
+          'Äventyr finns i Biblioteket. Du kan skapa egna eller köra ett från den globala katalogen (katalogen kureras av plattformsadministratören och är alltid gratis att använda).',
+      'Create an adventure': 'Skapa ett äventyr',
+      'Click "Library" in the sidebar.': 'Klicka på "Bibliotek" i sidomenyn.',
+      'Press "New adventure".': 'Tryck på "Nytt äventyr".',
+      'Give it a title. The slug is auto-derived but editable; once players have started a run with this slug, don\'t change it.':
+          'Ge det en titel. URL-namnet (slug) härleds automatiskt men går att redigera; ändra det inte när spelare har startat en omgång med detta slug.',
+      'Save. You\'re taken to the puzzle editor.':
+          'Spara. Du tas till pusselredigeraren.',
+      '[Screenshot: Library tab with the New adventure button highlighted]':
+          '[Skärmdump: Bibliotek-fliken med knappen Nytt äventyr markerad]',
+      'Adventure metadata': 'Äventyrets metadata',
+      'Beyond title and slug, an adventure can carry:':
+          'Utöver titel och slug kan ett äventyr ha:',
+      'Intro and outro text': 'Intro- och outrotext',
+      'markdown shown to players before the first puzzle and after they finish. Set the tone here ("Welcome to the King\'s Hunt!") and wrap up with congratulations.':
+          'markdown som visas för spelarna före första pusslet och efter att de är klara. Sätt tonen här ("Välkommen till Kungens jakt!") och avsluta med en gratulation.',
+      'Colors': 'Färger',
+      'two accent colours that override the default pink branding for players in this adventure. Useful for white-labelled events.':
+          'två accentfärger som ersätter standardrosa branding för spelarna i detta äventyr. Användbart för white-label-event.',
+      'Avatar': 'Avatar',
+      'an image rendered as the adventure\'s logo on the dashboard, the live view, and the player welcome screen.':
+          'en bild som visas som äventyrets logotyp på översikten, livevyn och spelarnas välkomstskärm.',
+      // puzzles
+      'A puzzle is one page of the adventure. Players see them in order; only after solving the current page do they advance to the next one.':
+          'Ett pussel är en sida i äventyret. Spelarna ser dem i ordning; först efter att de löst aktuell sida går de vidare till nästa.',
+      '[Screenshot: the puzzle editor showing a puzzle in edit mode]':
+          '[Skärmdump: pusselredigeraren med ett pussel i redigeringsläge]',
+      'Title and prompt': 'Titel och uppgiftstext',
+      'The title appears as a heading on the player\'s screen. The prompt is the body — render it with markdown for formatting, links, lists.':
+          'Titeln visas som rubrik på spelarens skärm. Uppgiftstexten är brödtexten — använd markdown för formatering, länkar och listor.',
+      'Tip: keep prompts short. Players read them on a phone, often outdoors.':
+          'Tips: håll uppgiftstexterna korta. Spelarna läser på telefon, ofta utomhus.',
+      'Answer types': 'Svarstyper',
+      'Text answer': 'Textsvar',
+      'list one or more accepted answers. The player\'s typed answer is matched case-insensitively, with whitespace trimmed. Use multiple entries to allow synonyms ("blue", "blå", "blueberry").':
+          'lista ett eller flera accepterade svar. Spelarens svar matchas utan hänsyn till versaler/gemener, mellanslag trimmas. Lägg flera poster för att tillåta synonymer ("blue", "blå", "blåbär").',
+      'No answer': 'Inget svar',
+      'leave the accept list empty. The player sees a "Continue" button instead of an input field. Useful for narrative pages or location-only puzzles.':
+          'lämna listan med accepterade svar tom. Spelaren ser en "Fortsätt"-knapp istället för ett textfält. Bra för berättande sidor eller pussel som bara handlar om plats.',
+      'Hints': 'Ledtrådar',
+      'Each puzzle can carry an ordered list of hints, each with a delay (in seconds) before it becomes revealable. The "Reveal hint" button on the player\'s screen unveils them one at a time.':
+          'Varje pussel kan ha en ordnad lista med ledtrådar, var och en med en fördröjning (i sekunder) innan den kan visas. Knappen "Visa ledtråd" på spelarens skärm avslöjar dem en i taget.',
+      'Delays are measured from when the team arrives at the puzzle, so a stuck team naturally gets help, while a fast team never sees the hints.':
+          'Fördröjningarna mäts från när laget anländer till pusslet, så ett fastlåst lag får naturligt hjälp medan ett snabbt lag aldrig ser ledtrådarna.',
+      'Images': 'Bilder',
+      'Attach up to a few images per puzzle. They render under the prompt. Photos of the location, illustrations, or visual clues. Each image is capped at 5 MB.':
+          'Bifoga några bilder per pussel. De visas under uppgiftstexten. Foton av platsen, illustrationer eller visuella ledtrådar. Varje bild får vara max 5 MB.',
+      'Location gates': 'Platsgrindar',
+      'Optionally pin the puzzle to a GPS location with a radius. Players can read the prompt anywhere, but they can\'t submit the answer until they\'re inside the radius. The map widget in the editor lets you click to place the pin.':
+          'Du kan valfritt knyta pusslet till en GPS-plats med en radie. Spelarna kan läsa uppgiftstexten var som helst men kan inte skicka svar förrän de är inom radien. Kartwidgeten i redigeraren låter dig klicka för att placera nålen.',
+      '[Screenshot: the location-gate map widget]':
+          '[Skärmdump: kartwidgeten för platsgrind]',
+      'GPS accuracy varies. A 50-metre radius is usually a sensible minimum — under that, urban canyons and indoor walls cause false negatives.':
+          'GPS-noggrannheten varierar. 50 meter är oftast ett rimligt minimum — under det orsakar gränder mellan höghus och inomhusväggar felaktiga negativ.',
+      'Reordering and disabling': 'Omordna och inaktivera',
+      'Drag puzzles to reorder. Disable a puzzle to hide it from players without deleting it — useful for swapping seasonal content.':
+          'Dra pusslen för att ändra ordning. Inaktivera ett pussel för att dölja det för spelarna utan att radera det — bra för säsongsväxlingar.',
+      'Preview': 'Förhandsgranska',
+      'The "Preview" button on the adventure detail page renders a sandbox playthrough. No team progress is recorded — it\'s your test rig.':
+          'Knappen "Förhandsgranska" på äventyrets detaljsida öppnar en sandlåda för genomspelning. Ingen lagprogress sparas — det är din testbänk.',
+      // run flow
+      'Before scheduling your first run, take a moment to understand the chain:':
+          'Innan du schemalägger din första omgång, ta en stund att förstå kedjan:',
+      'Adventure  →  Assignment  →  Run  →  Teams  →  Players':
+          'Äventyr  →  Uppdrag  →  Omgång  →  Lag  →  Spelare',
+      'You author or pick an Adventure (free).':
+          'Du skapar eller väljer ett Äventyr (gratis).',
+      'You buy an Assignment for that adventure: pays for up to N teams.':
+          'Du köper ett Uppdrag för det äventyret: betalar för upp till N lag.',
+      'You create a Run from the Assignment: ties it to a specific date/time.':
+          'Du skapar en Omgång från Uppdraget: kopplar det till ett specifikt datum/tid.',
+      'You add Teams to the Run: each team is a group of players.':
+          'Du lägger till Lag i Omgången: varje lag är en grupp spelare.',
+      'You share each Player a magic link: they tap, the run starts, they play.':
+          'Du delar en magisk länk med varje Spelare: de trycker, omgången startar, de spelar.',
+      'One assignment = one run. If you want to run the same adventure twice, buy two assignments.':
+          'Ett uppdrag = en omgång. Om du vill köra samma äventyr två gånger, köp två uppdrag.',
+      // assignments
+      'Click "Store" in the sidebar.': 'Klicka på "Butik" i sidomenyn.',
+      'Pick the adventure you want to run.': 'Välj äventyret du vill köra.',
+      'Choose how many teams will play (1–100).': 'Välj hur många lag som ska spela (1–100).',
+      'Click "Buy". You\'re sent to Stripe Checkout.':
+          'Klicka på "Köp". Du skickas till Stripe Checkout.',
+      'After payment, you\'re sent back to the dashboard with a "Schedule now" prompt on the new assignment.':
+          'Efter betalningen skickas du tillbaka till översikten med en "Schemalägg nu"-uppmaning på det nya uppdraget.',
+      '[Screenshot: the Store with adventure cards]':
+          '[Skärmdump: Butiken med äventyrskort]',
+      'Refunds: if you bought the wrong assignment, contact support. Refunds are admin-only — they touch real money.':
+          'Återbetalningar: om du köpt fel uppdrag, kontakta supporten. Återbetalningar görs endast av administratör — de rör riktiga pengar.',
+      // create run
+      'Click "Runs" in the sidebar, then "Schedule run".':
+          'Klicka på "Omgångar" i sidomenyn, sedan "Schemalägg omgång".',
+      'Pick the assignment you want to use (only unused assignments are listed).':
+          'Välj det uppdrag du vill använda (endast oanvända uppdrag listas).',
+      'Give the run a name (eg. "Office team-build, Friday afternoon"). This is for your benefit; players don\'t see it.':
+          'Ge omgången ett namn (t.ex. "Kontorets lagbygge, fredag eftermiddag"). Det är till för dig själv; spelarna ser det inte.',
+      'Pick a date and time. You can also leave it blank and start the run manually later.':
+          'Välj datum och tid. Du kan också lämna fältet tomt och starta omgången manuellt senare.',
+      'Confirm the no-minors attestation, or pick the COPPA path if you\'re running for under-13s.':
+          'Bekräfta intygande om "inga minderåriga", eller välj COPPA-vägen om du kör för under 13 år.',
+      'Save. The run appears in the Runs list with state "scheduled".':
+          'Spara. Omgången dyker upp i Omgångslistan med status "schemalagd".',
+      '[Screenshot: the schedule-run dialog]':
+          '[Skärmdump: dialogen för att schemalägga en omgång]',
+      'A scheduled run auto-starts the moment its time arrives, even if you\'ve forgotten to click Start. Players who open their magic link at the scheduled minute get going immediately.':
+          'En schemalagd omgång startar automatiskt när tiden infaller, även om du har glömt att klicka på Starta. Spelare som öppnar sin magiska länk vid schemalagd tid kommer igång direkt.',
+      // teams
+      'Adding a team': 'Lägg till ett lag',
+      'Open the run\'s detail page from the Runs list.':
+          'Öppna omgångens detaljsida från Omgångslistan.',
+      'Click "Add team".': 'Klicka på "Lägg till lag".',
+      'Type the team name and the player names (one per line, or paste from a CSV).':
+          'Skriv lagets namn och spelarnas namn (ett per rad, eller klistra in från CSV).',
+      'Save. Each player slot is created with a fresh magic-link token.':
+          'Spara. Varje spelarplats skapas med en ny token för magisk länk.',
+      '[Screenshot: the add-team dialog]':
+          '[Skärmdump: dialogen för att lägga till lag]',
+      'Sharing magic links': 'Dela magiska länkar',
+      'Each player\'s magic link is what they tap to join the run. The run-detail page has a "Team links" panel: copy individual links, copy a CSV of all team members, or copy a single "captain link" per team that the captain forwards to teammates.':
+          'Varje spelares magiska länk är det de trycker på för att gå med i omgången. Detaljsidan har en panel för "Laglänkar": kopiera enskilda länkar, kopiera en CSV med alla lagmedlemmar eller kopiera en "kaptenslänk" per lag som kaptenen skickar vidare till lagkamraterna.',
+      '[Screenshot: the team links panel with copy buttons]':
+          '[Skärmdump: panelen för laglänkar med kopiera-knappar]',
+      'Magic links are sensitive — anyone with the URL can play as that slot. Don\'t paste them into public Slack channels. The dashboard\'s "Rotate token" action mints a new link if one leaks.':
+          'Magiska länkar är känsliga — den som har URL:en kan spela som den platsen. Klistra inte in dem i offentliga Slack-kanaler. Åtgärden "Rotera token" i översikten skapar en ny länk om en läckt.',
+      'Token expiry': 'Tokenens giltighetstid',
+      'Slot tokens expire seven days after the run\'s scheduled time by default. The team-links panel shows "expires in Nd" so you can spot links that need re-sharing.':
+          'Platstokens går ut sju dagar efter omgångens schemalagda tid som standard. Panelen för laglänkar visar "går ut om N dagar" så att du ser vilka länkar som behöver delas på nytt.',
+      // running
+      'Start, pause, resume': 'Starta, pausa, återuppta',
+      'A scheduled run auto-starts at its time, but you can also start it manually from the run-detail page. Pause the run to freeze player progress (lunch break, weather delay), then Resume to continue.':
+          'En schemalagd omgång startar automatiskt vid sin tid, men du kan också starta den manuellt från detaljsidan. Pausa omgången för att frysa spelarnas progress (lunchpaus, väderavbrott), och Återuppta för att fortsätta.',
+      'The activity feed': 'Aktivitetsflödet',
+      'The run-detail page has a live activity feed — answer attempts (right and wrong), team completions, gate reaches, run state changes. Useful for noticing a stuck team in real time.':
+          'Detaljsidan har ett liveflöde — svarsförsök (rätt och fel), färdiga lag, platsgrindar som nås, statusändringar. Bra för att upptäcka ett fastlåst lag i realtid.',
+      '[Screenshot: activity feed during a live run]':
+          '[Skärmdump: aktivitetsflödet under en pågående omgång]',
+      'The live view': 'Livevyn',
+      'Each run has a public-ish "live view" URL — a leaderboard plus optional audience map. Open it on a TV in the lobby; spectators can see team progress without logging in.':
+          'Varje omgång har en (nästan) publik "live"-URL — en topplista plus en valfri publikkarta. Öppna den på en TV i lobbyn; åskådare kan se lagens progress utan att logga in.',
+      'The map is OFF by default for privacy. Toggle it on from the run settings if your players are okay with their position being shown to the audience.':
+          'Kartan är AV som standard för integritetens skull. Slå på den i omgångens inställningar om dina spelare är okej med att deras position visas för publiken.',
+      '[Screenshot: the live view leaderboard with map enabled]':
+          '[Skärmdump: livevyns topplista med karta påslagen]',
+      'Completion': 'Avslut',
+      'When every team finishes, the run automatically transitions to "completed". Players see the outro text and a stats screen (right answers, distance walked, total time). The run row in your dashboard moves to the "completed" section.':
+          'När alla lag är klara övergår omgången automatiskt till "avslutad". Spelarna ser outrotexten och en statistikskärm (rätta svar, gångavstånd, total tid). Omgångens rad i översikten flyttas till sektionen "avslutade".',
+      // webhooks (manual section)
+      'Webhooks let you hook the platform up to your own systems — push events into Slack, trigger a Zapier flow, update a corporate dashboard, send parents a "your kid\'s team finished" SMS. The platform POSTs JSON to an HTTPS URL you control whenever something interesting happens.':
+          'Webhooks låter dig koppla plattformen till dina egna system — skicka händelser till Slack, trigga ett Zapier-flöde, uppdatera en intern dashboard, skicka SMS till föräldrar när deras barns lag är klart. Plattformen POSTar JSON till en HTTPS-URL du kontrollerar när något intressant händer.',
+      'When to use webhooks': 'När du vill använda webhooks',
+      'Show a live leaderboard on a TV in your lobby, branded your way.':
+          'Visa en topplista på en TV i lobbyn, med er egen branding.',
+      'Notify parents (school events) when their child\'s team finishes.':
+          'Meddela föräldrar (skolevent) när deras barns lag är klart.',
+      'Trigger fulfillment in your own ops system when a run completes.':
+          'Trigga utförande i ditt eget system när en omgång är klar.',
+      'Pipe events into your analytics warehouse.':
+          'Mata händelser till ert analyslager.',
+      'The event catalog': 'Händelsekatalogen',
+      'Seven event kinds in v1:': 'Sju händelsetyper i v1:',
+      'a new run was created.': 'en ny omgång skapades.',
+      'a run actually started (manual or auto-promote).':
+          'en omgång faktiskt startade (manuellt eller automatiskt).',
+      'all teams finished.': 'alla lag klara.',
+      'a new team was added to a run.': 'ett nytt lag lades till i en omgång.',
+      'a team finished. Includes their name and run id.':
+          'ett lag är klart. Innehåller namnet och omgångens id.',
+      'an assignment was purchased.': 'ett uppdrag köptes.',
+      'a purchase was refunded.': 'ett köp återbetalades.',
+      'Configure an endpoint': 'Konfigurera en slutpunkt',
+      'Click "Webhooks" in the sidebar.': 'Klicka på "Webhooks" i sidomenyn.',
+      'Click "Add endpoint".': 'Klicka på "Lägg till slutpunkt".',
+      'Click "Add team".': 'Klicka på "Lägg till lag".',
+      'Give it a name, paste your URL, tick the events you want.':
+          'Ge den ett namn, klistra in din URL, kryssa i händelserna du vill ha.',
+      'Save. A secret is shown once — copy it now.':
+          'Spara. En nyckel visas en gång — kopiera den nu.',
+      '[Screenshot: the webhook create dialog with the secret reveal]':
+          '[Skärmdump: dialogen för att skapa webhook med nyckelvisningen]',
+      'Verifying signatures': 'Verifiera signaturer',
+      'Every POST carries an X-Zv-Signature header of the form ':
+          'Varje POST har ett X-Zv-Signature-huvud i formen ',
+      ' — that\'s HMAC-SHA256 of the raw request body, keyed by your secret.':
+          ' — det är HMAC-SHA256 av rå begärankropp, nyckel-låst med din nyckel.',
+      'Verify in your handler before trusting the body:':
+          'Verifiera i din hanterare innan du litar på kroppen:',
+      'Always compare with a constant-time comparator (hmac.Equal in Go, timingSafeEqual in Node, hmac.compare_digest in Python). A naive == leaks bytes via timing.':
+          'Använd alltid en jämförare med konstant tidsåtgång (hmac.Equal i Go, timingSafeEqual i Node, hmac.compare_digest i Python). Ett naivt == läcker bytes via tidsskillnader.',
+      'Send a test': 'Skicka ett test',
+      'Use the "Send test" button on each endpoint to fire a synthetic ':
+          'Använd knappen "Skicka test" på varje slutpunkt för att skicka en syntetisk ',
+      ' delivery. The customer-side handler can verify the signature without waiting for a real lifecycle event.':
+          '-leverans. Hanteraren på kundsidan kan verifiera signaturen utan att vänta på en riktig livscykelhändelse.',
+      '[Screenshot: the Send test button + a delivered toast]':
+          '[Skärmdump: Skicka test-knappen och en leveransbekräftelse]',
+      'Delivery and retry': 'Leverans och nya försök',
+      'A delivery worker drains every 5 seconds. On any non-2xx response or timeout we retry with exponential backoff (1m → 5m → 30m → 2h → 8h → 24h, six attempts). After that the delivery is "dead-lettered" — no further retries.':
+          'En leveransarbetare jobbar var 5:e sekund. Vid alla svar utanför 2xx eller timeout försöker vi igen med exponentiell väntetid (1m → 5m → 30m → 2h → 8h → 24h, sex försök). Därefter "dödbrev"-sätts leveransen — inga fler försök.',
+      'Reply with a 2xx as quickly as you\'ve persisted the event; do the actual work async. The faster you reply, the fewer duplicates we have to enqueue.':
+          'Svara med 2xx så snart du har sparat händelsen; gör det riktiga arbetet asynkront. Ju snabbare du svarar, desto färre dubbletter behöver vi köa.',
+      'Dedupe': 'Avdubblering',
+      'Use the X-Zv-Delivery-Id header (a 32-char hex) as your idempotency key. Duplicate deliveries during retries reuse the same id; insert it into a ':
+          'Använd X-Zv-Delivery-Id-huvudet (32 hex-tecken) som idempotens-nyckel. Återförsök återanvänder samma id; lägg in det i en ',
+      ' table with ON CONFLICT DO NOTHING and skip if it was already there.':
+          '-tabell med ON CONFLICT DO NOTHING och hoppa över om det redan fanns.',
+      'Rotating the secret': 'Rotera nyckeln',
+      'If a secret leaks, click "Rotate secret" on the endpoint. A new secret is minted; the old one stops working immediately. Deploy the new value to your verifier first to avoid a brief gap of failed deliveries.':
+          'Om en nyckel läcker, klicka på "Rotera nyckel" på slutpunkten. En ny nyckel skapas; den gamla slutar fungera direkt. Distribuera det nya värdet till din verifierare först för att undvika ett kort glapp av misslyckade leveranser.',
+      // account
+      'The Settings page has the operational controls for your own account.':
+          'Inställningssidan har de operativa kontrollerna för ditt eget konto.',
+      'Change password': 'Byt lösenord',
+      'Requires the current password. Other sessions are signed out on success.':
+          'Kräver det nuvarande lösenordet. Övriga sessioner loggas ut vid lyckad ändring.',
+      'Change email': 'Byt e-post',
+      'We send a confirmation link to the new address. The change only takes effect when you click it.':
+          'Vi skickar en bekräftelselänk till den nya adressen. Ändringen träder i kraft först när du klickar på den.',
+      'Download my data': 'Ladda ner mina uppgifter',
+      'A single JSON file with your account info plus your organization\'s runs, teams, adventures, assignments and purchases. The GDPR-friendly export.':
+          'En enda JSON-fil med din kontoinformation samt din organisations omgångar, lag, äventyr, uppdrag och köp. Det GDPR-vänliga exportet.',
+      'Delete account': 'Radera konto',
+      'If you\'re the last member, your organization is deleted with you. All runs, teams, adventures, assignments. Cannot be undone.':
+          'Om du är sista medlemmen raderas din organisation med dig. Alla omgångar, lag, äventyr, uppdrag. Kan inte ångras.',
+      // help
+      'If something doesn\'t work as described here, or you\'re unsure how to do something, start with the run\'s activity feed (any errors are logged there for the team that hit them).':
+          'Om något inte fungerar som beskrivet här, eller du är osäker på hur något görs, börja med omgångens aktivitetsflöde (eventuella fel loggas där för laget som råkade ut för dem).',
+      'For platform-level support, contact the operator listed at the bottom of the Privacy page.':
+          'För plattformssupport, kontakta operatören som listas längst ner på Integritetssidan.',
+      'This manual evolves. If you read something that\'s wrong or unclear, tell support — clearer docs help every other arranger after you.':
+          'Den här handboken utvecklas. Om du läser något fel eller otydligt, säg till supporten — tydligare dokumentation hjälper alla andra arrangörer efter dig.',
     },
   };
 

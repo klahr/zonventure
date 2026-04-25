@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"embed"
 	"net/http"
+	"strings"
 	"time"
 
 	"git.sr.ht/~klahr/zv/internal/admin"
@@ -21,7 +22,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 )
 
-//go:embed web/play.html web/arrange.html web/live.html web/i18n.js web/favicon.svg web/privacy.html web/terms.html
+//go:embed web/play.html web/arrange.html web/live.html web/i18n.js web/favicon.svg web/privacy.html web/terms.html web/manual.html web/landing.html web/404.html web/robots.txt web/sitemap.xml
 var webFS embed.FS
 
 // Config is the bag of knobs New needs.
@@ -120,17 +121,32 @@ func New(cfg Config) http.Handler {
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
 	})
 
-	// Root sends visitors straight to the right entry point: players get
-	// /play (their magic link will carry them back here), staff get the
-	// /arrange UI which renders its own login screen when no staff
-	// cookie is present.
+	// Root branches by who's looking:
+	//   - players (slot session)        → /play
+	//   - logged-in staff (user session) → /arrange
+	//   - everyone else                  → marketing landing page
+	//
+	// Returning the landing page (rather than the login screen) for
+	// fresh visitors gives crawlers / AI agents / unauthenticated
+	// humans a real "what is this?" surface before they're asked to
+	// log in. The landing's CTAs send them to /arrange when they
+	// actually want the app.
 	r.Get("/", func(w http.ResponseWriter, req *http.Request) {
 		if _, ok := auth.SlotFromContext(req.Context()); ok {
 			http.Redirect(w, req, "/play", http.StatusFound)
 			return
 		}
-		http.Redirect(w, req, "/arrange", http.StatusFound)
+		if _, ok := auth.FromContext(req.Context()); ok {
+			http.Redirect(w, req, "/arrange", http.StatusFound)
+			return
+		}
+		servePublicPage("web/landing.html", http.StatusOK)(w, req)
 	})
+
+	// Custom 404 with branded chrome and a "back to home / read manual"
+	// fallback. chi serves a plain "404 page not found" otherwise,
+	// which feels broken from a marketing-site perspective.
+	r.NotFound(servePublicPage("web/404.html", http.StatusNotFound))
 
 	// /play handles three things:
 	//   - /play?t=<magic> — exchange the magic-link for a slot session and
@@ -205,6 +221,35 @@ func New(cfg Config) http.Handler {
 	// Legal pages — public, cached at the proxy by Cache-Control.
 	// Both pages are clearly-marked drafts until the operator sets
 	// the ZV_* env vars and a lawyer signs off on the body.
+	// Public arranger manual. Served as plain HTML so AI agents,
+	// search crawlers and curl users can read the content without JS
+	// or auth. The in-app /arrange#manual view is a translated mirror
+	// of the same content for logged-in arrangers.
+	r.Get("/manual", servePublicPage("web/manual.html", http.StatusOK))
+
+	// Crawler hygiene: robots.txt and a small sitemap of public URLs.
+	// {{HOST}} in the sitemap is rewritten with the operator-configured
+	// PublicURL — without it the URLs render origin-relative, which
+	// most crawlers handle but a few (Bing especially) prefer absolute.
+	r.Get("/robots.txt", serveAsset("web/robots.txt", "text/plain; charset=utf-8"))
+	sitemapBody, err := webFS.ReadFile("web/sitemap.xml")
+	if err != nil {
+		panic("embed sitemap: " + err.Error())
+	}
+	r.Get("/sitemap.xml", func(w http.ResponseWriter, req *http.Request) {
+		host := strings.TrimRight(cfg.PublicURL, "/")
+		if host == "" {
+			scheme := "https"
+			if req.TLS == nil && req.Header.Get("X-Forwarded-Proto") != "https" {
+				scheme = "http"
+			}
+			host = scheme + "://" + req.Host
+		}
+		out := strings.ReplaceAll(string(sitemapBody), "{{HOST}}", host)
+		w.Header().Set("Content-Type", "application/xml; charset=utf-8")
+		w.Header().Set("Cache-Control", "public, max-age=3600")
+		_, _ = w.Write([]byte(out))
+	})
 	r.Get("/privacy", func(w http.ResponseWriter, _ *http.Request) {
 		renderLegalPage(w, "privacy.html", cfg.Legal)
 	})
@@ -431,7 +476,8 @@ func New(cfg Config) http.Handler {
 }
 
 // servePage returns a handler that writes a single embedded HTML page with
-// no caching.
+// no caching. Used for the SPA shells (/arrange, /play, /live) where a
+// stale shell after deploy would surface as broken UI.
 func servePage(path string) http.HandlerFunc {
 	body, err := webFS.ReadFile(path)
 	if err != nil {
@@ -440,6 +486,28 @@ func servePage(path string) http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-store")
+		_, _ = w.Write(body)
+	}
+}
+
+// servePublicPage is the cacheable variant for the marketing landing
+// and the public manual — content that's safe to sit behind a CDN /
+// browser cache for a few minutes. status lets the caller pin a
+// non-200 (used by the 404 handler so crawlers see the right code).
+func servePublicPage(path string, status int) http.HandlerFunc {
+	body, err := webFS.ReadFile(path)
+	if err != nil {
+		panic("embed: " + err.Error())
+	}
+	return func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		// 5-minute browser cache + must-revalidate so a content fix
+		// reaches readers within the next page load. "public" lets a
+		// shared cache (CDN, reverse proxy) serve hot copies.
+		w.Header().Set("Cache-Control", "public, max-age=300, must-revalidate")
+		if status != 0 && status != 200 {
+			w.WriteHeader(status)
+		}
 		_, _ = w.Write(body)
 	}
 }

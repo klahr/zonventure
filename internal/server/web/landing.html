@@ -1,0 +1,429 @@
+<!doctype html>
+<!--
+  Marketing landing page. Served at / for unauthenticated visitors;
+  logged-in arrangers / players hit the same / and are redirected to
+  /arrange or /play in the route handler before they ever see this.
+
+  The page is intentionally static — no JS. Search engines, AI
+  crawlers, and reluctant-to-load-JS browsers all read the value
+  proposition immediately.
+-->
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Zonventure — location-based adventure games</title>
+<meta name="description" content="Run location-based adventure games for team-building events, school field trips, family outings and tourism. Author the puzzles, schedule a run, and watch your players walk and solve.">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+
+<!-- Theme-color so mobile browsers tint the URL bar. Light + dark
+     entries match the page's CSS variables. -->
+<meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#14202e" media="(prefers-color-scheme: dark)">
+
+<!-- Open Graph and Twitter Card so previews on Slack, LinkedIn, X
+     show a real title + description instead of bare URL. og:image
+     deliberately omitted until a branded share image exists; a
+     missing image renders as text-only preview, which is fine. -->
+<meta property="og:title" content="Zonventure — location-based adventure games">
+<meta property="og:description" content="Run treasure hunts, team-builds, and field trips your players actually finish.">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Zonventure">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="Zonventure">
+<meta name="twitter:description" content="Run treasure hunts, team-builds, and field trips your players actually finish.">
+
+<!-- JSON-LD: Organization + SoftwareApplication so search engines
+     and AI agents understand what kind of entity this is. -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      "name": "Zonventure",
+      "description": "Platform for running location-based adventure games — treasure hunts, team-building events, school field trips, tourism."
+    },
+    {
+      "@type": "SoftwareApplication",
+      "name": "Zonventure",
+      "applicationCategory": "BusinessApplication",
+      "operatingSystem": "Web",
+      "description": "Author location-based adventure games and run them for teams of players using their phones."
+    }
+  ]
+}
+</script>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Aclonica&family=Open+Sans:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    color-scheme: light dark;
+    --accent: #ad1357;
+    --accent-2: #e24080;
+    --ink: #1f3349;
+    --muted: #6b7f96;
+    --bg: #fbfbfd;
+    --surface: #ffffff;
+    --surface-2: #f3f4f7;
+    --border-soft: #e2e7ef;
+    --shadow: 0 1px 2px rgba(31,51,73,.06), 0 4px 16px rgba(31,51,73,.06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ink: #e7ecf4; --muted: #9db1cc;
+      --bg: #14202e; --surface: #1f3349; --surface-2: #263d56;
+      --border-soft: #2c4361;
+      --accent: #e24080; --accent-2: #ff6aa3;
+      --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.3);
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    font: 16px/1.55 'Open Sans', system-ui, sans-serif;
+    color: var(--ink); background: var(--bg);
+  }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .wrap { max-width: 64rem; margin: 0 auto; padding: 0 1.25rem; }
+
+  /* ---- accessibility plumbing ---- */
+  /* Skip-to-content: invisible until focused, then drops a high-
+     contrast button at the top-left corner. Lets keyboard users
+     jump past the topbar to the main content. */
+  .skip-link {
+    position: absolute; top: -2.5rem; left: .5rem; z-index: 10;
+    padding: .5rem 1rem; border-radius: 8px;
+    background: var(--accent); color: #fff;
+    font-weight: 700; text-decoration: none;
+    transition: top .15s;
+  }
+  .skip-link:focus { top: .5rem; outline: 2px solid #fff; outline-offset: 2px; }
+  /* Visible focus ring on every interactive element for keyboard
+     users (mouse focus stays unstyled via :focus-visible). */
+  a:focus-visible, button:focus-visible, .btn:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+    border-radius: 4px;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+
+  /* ---- top nav ---- */
+  .topbar {
+    position: sticky; top: 0; z-index: 5;
+    background: color-mix(in srgb, var(--bg) 88%, transparent);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--border-soft);
+  }
+  .topbar-row {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 1rem 0;
+  }
+  .brand {
+    font-family: 'Aclonica', Georgia, serif;
+    color: var(--accent); font-size: 1.5rem;
+    text-decoration: none;
+  }
+  .topbar nav { display: flex; gap: 1.5rem; align-items: center; }
+  .topbar nav a {
+    color: var(--muted); text-decoration: none; font-weight: 600;
+    font-size: .92rem;
+  }
+  .topbar nav a:hover { color: var(--accent); }
+  .btn {
+    display: inline-block;
+    padding: .55rem 1.25rem;
+    border-radius: 999px;
+    font-weight: 700; text-decoration: none;
+    border: 1px solid transparent;
+    transition: transform .12s, box-shadow .12s, opacity .12s;
+  }
+  .btn:hover { text-decoration: none; transform: translateY(-1px); }
+  .btn.primary {
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    color: #fff;
+    box-shadow: 0 4px 16px color-mix(in srgb, var(--accent) 35%, transparent);
+  }
+  .btn.primary:hover { opacity: .93; }
+  .btn.ghost {
+    color: var(--ink);
+    border-color: var(--border-soft);
+    background: var(--surface);
+  }
+  .btn.ghost:hover {
+    border-color: var(--accent); color: var(--accent);
+  }
+
+  /* ---- hero ---- */
+  .hero {
+    padding: 5rem 0 4rem;
+    text-align: center;
+  }
+  .hero .tag {
+    display: inline-block;
+    padding: .25rem .85rem;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    color: var(--accent);
+    font-size: .8rem; font-weight: 700;
+    text-transform: uppercase; letter-spacing: .08em;
+    margin-bottom: 1.25rem;
+  }
+  .hero h1 {
+    font-family: 'Aclonica', Georgia, serif;
+    font-size: clamp(2rem, 5vw, 3.4rem);
+    margin: 0 0 1rem;
+    line-height: 1.1;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .hero p.lede {
+    font-size: 1.15rem;
+    color: var(--muted);
+    max-width: 38rem;
+    margin: 0 auto 2rem;
+  }
+  .hero .ctas {
+    display: flex; gap: .75rem; justify-content: center; flex-wrap: wrap;
+  }
+
+  /* ---- "how it works" ---- */
+  .section {
+    padding: 4rem 0;
+    border-top: 1px solid var(--border-soft);
+  }
+  .section h2 {
+    text-align: center;
+    font-family: 'Aclonica', Georgia, serif;
+    font-size: clamp(1.5rem, 3vw, 2.25rem);
+    margin: 0 0 .5rem;
+    color: var(--accent);
+  }
+  .section .sub {
+    text-align: center;
+    color: var(--muted);
+    margin: 0 auto 2.5rem;
+    max-width: 36rem;
+    font-size: 1.02rem;
+  }
+  .grid {
+    display: grid;
+    gap: 1.25rem;
+    grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  }
+  .card {
+    padding: 1.5rem;
+    background: var(--surface);
+    border: 1px solid var(--border-soft);
+    border-radius: 14px;
+    box-shadow: var(--shadow);
+  }
+  .card h3 {
+    margin: .25rem 0 .5rem;
+    font-size: 1.15rem;
+  }
+  .card p { color: var(--muted); margin: 0; font-size: .96rem; }
+  .step-num {
+    display: inline-flex;
+    align-items: center; justify-content: center;
+    width: 2.25rem; height: 2.25rem;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    color: #fff;
+    font-family: 'Aclonica', Georgia, serif;
+    font-size: 1.1rem;
+    margin-bottom: .5rem;
+  }
+  /* Use-case cards: same shape as feature cards but with a top
+     accent strip so the section has visual variety. */
+  .usecase {
+    padding: 1.5rem;
+    background: var(--surface);
+    border: 1px solid var(--border-soft);
+    border-radius: 14px;
+    box-shadow: var(--shadow);
+    border-top: 4px solid var(--accent);
+  }
+  .usecase h3 { margin: .25rem 0 .5rem; font-size: 1.1rem; }
+  .usecase p { color: var(--muted); margin: 0; font-size: .96rem; }
+
+  /* ---- closing CTA ---- */
+  .closing {
+    padding: 4rem 0 5rem;
+    text-align: center;
+    border-top: 1px solid var(--border-soft);
+    background:
+      radial-gradient(circle at 50% 0%,
+        color-mix(in srgb, var(--accent) 14%, transparent),
+        transparent 60%);
+  }
+  .closing h2 {
+    font-family: 'Aclonica', Georgia, serif;
+    font-size: clamp(1.5rem, 3vw, 2.1rem);
+    margin: 0 0 1rem;
+    color: var(--ink);
+  }
+  .closing p {
+    color: var(--muted); max-width: 32rem; margin: 0 auto 1.75rem;
+  }
+
+  /* ---- footer ---- */
+  footer {
+    border-top: 1px solid var(--border-soft);
+    padding: 1.75rem 0 2.25rem;
+    color: var(--muted);
+    font-size: .88rem;
+    text-align: center;
+  }
+  footer a { color: inherit; margin: 0 .5rem; }
+  footer a:hover { color: var(--accent); }
+</style>
+</head>
+<body>
+
+<a class="skip-link" href="#main">Skip to content</a>
+
+<header class="topbar" role="banner">
+  <div class="wrap topbar-row">
+    <a class="brand" href="/" aria-label="Zonventure home">zonventure</a>
+    <nav aria-label="Primary">
+      <a href="/manual">Manual</a>
+      <a href="/privacy">Privacy</a>
+      <a href="/arrange" class="btn primary">Log in</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+
+<section class="hero" aria-labelledby="hero-heading">
+  <div class="wrap">
+    <span class="tag">Adventure platform for organisers</span>
+    <h1 id="hero-heading">Run adventures your players<br>actually finish.</h1>
+    <p class="lede">
+      Treasure hunts for team-building. Field trips for schools.
+      Self-guided adventures for tourists. You author the puzzles
+      and pin them to real locations; your players walk, solve, and
+      see the leaderboard climb.
+    </p>
+    <div class="ctas">
+      <a href="/arrange" class="btn primary">Get started</a>
+      <a href="/manual" class="btn ghost">Read the manual</a>
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="wrap">
+    <h2>How it works</h2>
+    <p class="sub">Three steps from "we should do something fun" to "team five just finished".</p>
+    <div class="grid">
+      <div class="card">
+        <span class="step-num">1</span>
+        <h3>Author the adventure</h3>
+        <p>Build a story of puzzle pages with prompts, hints and optional GPS gates. Use the global catalog if you don't want to author your own.</p>
+      </div>
+      <div class="card">
+        <span class="step-num">2</span>
+        <h3>Schedule a run</h3>
+        <p>Pick a date and time, name the run, set the team count. Each team gets a magic link you share with the players — no app installs.</p>
+      </div>
+      <div class="card">
+        <span class="step-num">3</span>
+        <h3>Watch them play</h3>
+        <p>Live activity feed plus an audience leaderboard for your lobby TV. Webhooks let you pipe events to Slack, Zapier, or your own systems.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="wrap">
+    <h2>Built for the people who run things</h2>
+    <p class="sub">Whoever you are, the platform stays out of your way.</p>
+    <div class="grid">
+      <div class="usecase">
+        <h3>Corporate events</h3>
+        <p>Run a treasure hunt as a team-building offsite. Brand the player view with your colours, watch the live board on the lobby TV, post results in your Slack via webhook.</p>
+      </div>
+      <div class="usecase">
+        <h3>Schools and youth groups</h3>
+        <p>Outdoor learning that gets pupils moving. Optional COPPA-aware age gating. Webhook into your communication tools so parents get a "team finished" notification automatically.</p>
+      </div>
+      <div class="usecase">
+        <h3>Tourism and city walks</h3>
+        <p>Sell self-guided adventures around your city. One-click "buy team slots" via Stripe; players play whenever it suits them; you pocket the difference.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="wrap">
+    <h2>Things you'll appreciate</h2>
+    <p class="sub">The capabilities that make a Saturday-afternoon event run smoothly.</p>
+    <div class="grid">
+      <div class="card">
+        <h3>Markdown puzzles</h3>
+        <p>Format prompts with headings, lists, links and images. Hints unlock on a delay so stuck teams get help, fast teams never see them.</p>
+      </div>
+      <div class="card">
+        <h3>GPS-gated answers</h3>
+        <p>Pin a puzzle to a real location with a radius. Players can read the prompt anywhere, but only submit once they're on site.</p>
+      </div>
+      <div class="card">
+        <h3>Live audience board</h3>
+        <p>Public-ish leaderboard URL for your lobby TV. Optional audience map. Map is OFF by default — privacy stays opt-in.</p>
+      </div>
+      <div class="card">
+        <h3>Magic-link players</h3>
+        <p>No app to install, no account to create. Each player taps their link and they're in. Captain links forward easily.</p>
+      </div>
+      <div class="card">
+        <h3>Stripe-powered billing</h3>
+        <p>Buy assignments by the team-slot. Real receipts, real refund flow. Tax handled automatically when Stripe Tax is enabled.</p>
+      </div>
+      <div class="card">
+        <h3>Webhooks for integrators</h3>
+        <p>Seven event kinds (run/team/purchase lifecycle), HMAC-signed POSTs, exponential backoff retry, idempotency headers. <a href="/manual#webhooks">Webhook docs</a>.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="closing">
+  <div class="wrap">
+    <h2>Ready to run your first adventure?</h2>
+    <p>Sign up for free, browse the global catalog or author your own, buy slots only when you want a real run.</p>
+    <div class="ctas" style="display:flex; gap:.75rem; justify-content:center; flex-wrap:wrap">
+      <a href="/arrange" class="btn primary">Get started</a>
+      <a href="/manual" class="btn ghost">Read the manual</a>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer role="contentinfo">
+  <div class="wrap">
+    <nav aria-label="Footer">
+      <a href="/manual">Manual</a> ·
+      <a href="/privacy">Privacy</a> ·
+      <a href="/terms">Terms</a> ·
+      <a href="/arrange">Log in</a>
+    </nav>
+  </div>
+</footer>
+
+</body></html>

@@ -1,0 +1,21 @@
+# Public surfaces: marketing landing, docs, legal.
+# Everything else is auth-gated, magic-token-gated, or API.
+# Crawling those just produces login-screen 200s + private-data 4xxs.
+
+User-agent: *
+Allow: /$
+Allow: /manual
+Allow: /privacy
+Allow: /terms
+Allow: /favicon.svg
+Allow: /favicon.ico
+Allow: /sitemap.xml
+
+Disallow: /arrange
+Disallow: /play
+Disallow: /live/
+Disallow: /team/
+Disallow: /purchase/
+Disallow: /api/
+Disallow: /adventure-assets/
+Disallow: /ws/
