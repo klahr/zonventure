@@ -105,16 +105,9 @@
     display: flex; align-items: center; justify-content: space-between;
   }
   .brand {
-    /* Logo wordmark — same source as the landing. On the light
-       topbar background we don't need a drop-shadow; the natural
-       contrast carries the mark. */
-    display: inline-flex; align-items: center;
+    font-family: 'Aclonica', Georgia, serif;
+    color: var(--accent); font-size: 1.4rem;
     text-decoration: none;
-  }
-  .brand img {
-    display: block;
-    height: 2rem;
-    width: auto;
   }
   .topbar nav { display: flex; gap: 1rem; align-items: center; }
   .topbar nav a {
@@ -262,9 +255,7 @@
 
 <header class="topbar" role="banner">
   <div class="topbar-inner">
-    <a class="brand" href="/" aria-label="Zonventure home">
-      <img src="https://zonventure.com/img/zonventure.png" alt="Zonventure">
-    </a>
+    <a class="brand" href="/" aria-label="Zonventure home">zonventure</a>
     <nav aria-label="Primary">
       <a href="/manual">Manual</a>
       <a href="/privacy">Privacy</a>
