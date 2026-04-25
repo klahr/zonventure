@@ -1,0 +1,157 @@
+<!doctype html>
+<!--
+  TEMPLATE — NOT LEGAL ADVICE.
+
+  This file is a scaffold. Every section below needs review by a lawyer
+  qualified in your jurisdiction(s) before you publish it. The {{...}}
+  placeholders are filled at request time from the ZV_* env vars
+  (see internal/server/legal.go). Do not ship to paying customers
+  without legal review.
+-->
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Privacy Policy · {{COMPANY_NAME}}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Aclonica&family=Open+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  body { font: 16px/1.55 'Open Sans', system-ui, sans-serif; max-width: 44rem; margin: 0 auto; padding: 2rem 1.25rem 4rem; color:#1f2937; }
+  h1 { font: 700 1.7rem/1.2 'Aclonica', serif; margin: 0 0 .25rem; }
+  h2 { margin: 2rem 0 .35rem; font-size: 1.1rem; }
+  p, ul { margin: .35rem 0; }
+  small.muted { color: #6b7280; }
+  a { color: #ad1357; }
+  .draft-note { background:#fff7e0; border:1px solid #f3d57a; padding:.75rem 1rem; border-radius:8px; font-size:.92rem; }
+  footer { margin-top: 3rem; font-size:.85rem; color:#6b7280; }
+</style>
+</head><body>
+
+<h1>Privacy Policy</h1>
+<small class="muted">Last updated: {{LAST_UPDATED}}</small>
+
+<p class="draft-note">
+  <strong>Draft template.</strong> Have this reviewed by a lawyer before
+  publishing. The wording below covers the technical reality of what
+  the platform stores and processes; tailor the legal framing
+  ({{JURISDICTION}}, GDPR / CCPA / etc.) for your audience.
+</p>
+
+<h2>Who we are</h2>
+<p>
+  This service ("we", "us", "the service") is operated by
+  <strong>{{COMPANY_NAME}}</strong>. Questions about this policy?
+  Email <a href="mailto:{{CONTACT_EMAIL}}">{{CONTACT_EMAIL}}</a>.
+</p>
+
+<h2>What we collect</h2>
+<p>We collect only what's needed to run the adventure platform:</p>
+<ul>
+  <li><strong>Account data</strong> for arrangers: email, organization name,
+      hashed password, IP and user-agent at login. Used for authentication
+      and security audit.</li>
+  <li><strong>Player data</strong>: a slot name (chosen by the arranger),
+      and during a run the player's GPS location and answer text.
+      Used to display progress on the live board and verify location
+      gates.</li>
+  <li><strong>Operational logs</strong>: login successes/failures, IPs,
+      access timestamps. Used to detect abuse and investigate issues.</li>
+  <li><strong>Email-verification and password-reset tokens</strong>,
+      one-shot, expire in 1 hour, deleted on use.</li>
+</ul>
+
+<h2>What we DON'T collect</h2>
+<ul>
+  <li>No analytics or advertising trackers.</li>
+  <li>No payment-card numbers — payment is processed by Stripe;
+      we receive only their non-sensitive event metadata.</li>
+  <li>No location data from arrangers, only from players who opt
+      into geolocation when prompted by the play page.</li>
+</ul>
+
+<h2>How long we keep it</h2>
+<ul>
+  <li>Account data: until you delete the account.</li>
+  <li>Player location pings &amp; answers: deleted with the run, or
+      after the platform's location-retention window
+      ({{LOCATION_RETENTION_DAYS}} days post-run by default), whichever
+      comes first.</li>
+  <li>Audit logs: kept for {{AUDIT_RETENTION_DAYS}} days.</li>
+  <li>Verification / reset tokens: 1 hour or until used.</li>
+</ul>
+
+<h2>Your rights</h2>
+<ul>
+  <li>Access — you can download your data at any time from
+      Settings → "Download my data" (a JSON file).</li>
+  <li>Erasure — Settings → "Delete account" wipes your account and
+      (if you're the last member) your organization. Players can wipe
+      their per-run data via the "Forget me" menu inside /play.</li>
+  <li>Rectification — change your email or password from Settings.</li>
+  <li>Portability — the export is a structured, machine-readable
+      JSON document.</li>
+  <li>Objection / restriction — contact us at
+      <a href="mailto:{{DPO_EMAIL}}">{{DPO_EMAIL}}</a>.</li>
+</ul>
+
+<h2>Sub-processors</h2>
+<p>We use a small set of vendors to run the service. Update this list
+   when you swap any of them out:</p>
+<ul>
+  <li>Hosting / database / storage: <em>[fill in your hosting vendor]</em></li>
+  <li>Transactional email: <em>[fill in your SMTP / email provider]</em></li>
+  <li>Payments (when enabled): Stripe Inc.</li>
+</ul>
+
+<h2>Cookies we use</h2>
+<p>
+  We use only first-party cookies that are strictly necessary for the
+  service to function. No analytics, no advertising, no third-party
+  trackers. Specifically:
+</p>
+<ul>
+  <li><code>zv_session</code> &amp; <code>zv_slot</code> — your login
+      session for the arranger and player surfaces. HttpOnly so client
+      JavaScript can't read them, expires when the session ends.</li>
+  <li><code>zv_csrf</code> — anti-CSRF token used to confirm that
+      mutating requests come from this site. Not HttpOnly because the
+      page's own JS must read it to echo it back.</li>
+</ul>
+<p>
+  Because all three cookies are strictly necessary for a service you
+  explicitly requested (article 5(3) ePrivacy Directive exemption),
+  we don't display a consent banner. We will if and when we ever
+  introduce non-essential cookies; this section will be updated at
+  the same time.
+</p>
+<p>
+  We also use the browser's <code>localStorage</code> for UI
+  preferences (theme, language, "don't show this banner again"
+  dismissals). No personal data, no third parties.
+</p>
+
+<h2>Children</h2>
+<p>
+  This platform is intended for adults. Players are typically adults
+  in arranged team activities; arrangers are responsible for ensuring
+  minors don't participate without parental consent (see Terms).
+</p>
+
+<h2>Changes</h2>
+<p>
+  We'll publish changes to this page and bump the "Last updated"
+  date. Material changes (new sub-processors, expanded data
+  collection) will additionally be emailed to active accounts.
+</p>
+
+<h2>Contact</h2>
+<p>
+  General: <a href="mailto:{{CONTACT_EMAIL}}">{{CONTACT_EMAIL}}</a><br>
+  Data-protection enquiries: <a href="mailto:{{DPO_EMAIL}}">{{DPO_EMAIL}}</a>
+</p>
+
+<footer>
+  <a href="/terms">Terms of Service</a> ·
+  <a href="/arrange">Back to {{COMPANY_NAME}}</a>
+</footer>
+
+</body></html>

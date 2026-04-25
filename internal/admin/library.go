@@ -58,7 +58,7 @@ func (h *Handlers) ListPuzzles(w http.ResponseWriter, r *http.Request) {
 	query := `
 		SELECT p.id, p.title, p.prompt, p.notes, p.accept,
 		       p.lat, p.lng, p.radius_m, p.disabled,
-		       EXISTS(SELECT 1 FROM adventure_page_images WHERE page_id = p.id),
+		       (EXISTS(SELECT 1 FROM adventure_page_images WHERE page_id = p.id))::int,
 		       p.adventure_id, COALESCE(a.slug, ''), COALESCE(a.title, ''), p.idx
 		FROM adventure_pages p
 		LEFT JOIN adventures a ON a.id = p.adventure_id
@@ -70,8 +70,8 @@ func (h *Handlers) ListPuzzles(w http.ResponseWriter, r *http.Request) {
 		// admin-owned (global).
 		query += `
 			WHERE (
-			    (p.adventure_id IS NOT NULL AND (a.org_id IS NULL OR a.org_id = ?))
-			 OR (p.adventure_id IS NULL     AND (p.org_id IS NULL OR p.org_id = ?))
+			    (p.adventure_id IS NOT NULL AND (a.org_id IS NULL OR a.org_id = $1))
+			 OR (p.adventure_id IS NULL     AND (p.org_id IS NULL OR p.org_id = $2))
 			)
 		`
 		args = append(args, *me.OrgID, *me.OrgID)
@@ -177,16 +177,16 @@ func (h *Handlers) CreateLibraryPuzzle(w http.ResponseWriter, r *http.Request) {
 	if org := callerOrgID(me); org.Valid {
 		orgArg = org.Int64
 	}
-	res, err := h.DB.ExecContext(r.Context(), `
+	var id int64
+	if err := h.DB.QueryRowContext(r.Context(), `
 		INSERT INTO adventure_pages(adventure_id, idx, title, prompt, accept,
 		                             lat, lng, radius_m, notes, org_id)
-		VALUES (NULL, 0, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, req.Title, req.Prompt, string(acceptJS), req.Lat, req.Lng, radius, req.Notes, orgArg)
-	if err != nil {
+		VALUES (NULL, 0, $1, $2, $3, $4, $5, $6, $7, $8)
+		RETURNING id
+	`, req.Title, req.Prompt, string(acceptJS), req.Lat, req.Lng, radius, req.Notes, orgArg).Scan(&id); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "insert failed: "+err.Error())
 		return
 	}
-	id, _ := res.LastInsertId()
 	httpx.JSON(w, http.StatusCreated, map[string]any{"id": id})
 }
 
@@ -225,7 +225,7 @@ func (h *Handlers) GetPuzzle(w http.ResponseWriter, r *http.Request) {
 		       p.adventure_id, a.slug, a.title, a.org_id, p.org_id
 		FROM adventure_pages p
 		LEFT JOIN adventures a ON a.id = p.adventure_id
-		WHERE p.id = ?
+		WHERE p.id = $1
 	`, pageID).Scan(&p.ID, &p.Index, &p.Title, &p.Prompt, &p.Notes, &acceptJS,
 		&p.Lat, &p.Lng, &radius, &disabled, &advID, &advSlug, &advTitle, &advOrg, &pageOrg)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -303,7 +303,7 @@ func (h *Handlers) CopyPuzzleToAdventure(w http.ResponseWriter, r *http.Request)
 		SELECT p.adventure_id, a.org_id, p.org_id
 		FROM adventure_pages p
 		LEFT JOIN adventures a ON a.id = p.adventure_id
-		WHERE p.id = ?
+		WHERE p.id = $1
 	`, srcID).Scan(&srcAdvID, &srcAdvOrg, &srcPageOrg); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			httpx.Error(w, http.StatusNotFound, "source puzzle not found")
@@ -342,7 +342,7 @@ func (h *Handlers) CopyPuzzleToAdventure(w http.ResponseWriter, r *http.Request)
 	)
 	if err := tx.QueryRowContext(r.Context(), `
 		SELECT title, prompt, notes, accept, lat, lng, radius_m, disabled
-		FROM adventure_pages WHERE id = ?
+		FROM adventure_pages WHERE id = $1
 	`, srcID).Scan(&title, &prompt, &notes, &accept, &lat, &lng, &radius, &disabled); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			httpx.Error(w, http.StatusNotFound, "source puzzle not found")
@@ -355,7 +355,7 @@ func (h *Handlers) CopyPuzzleToAdventure(w http.ResponseWriter, r *http.Request)
 	// Pick the next idx in the target adventure.
 	var nextIdx int
 	if err := tx.QueryRowContext(r.Context(),
-		`SELECT COALESCE(MAX(idx)+1, 0) FROM adventure_pages WHERE adventure_id = ?`, advID).
+		`SELECT COALESCE(MAX(idx)+1, 0) FROM adventure_pages WHERE adventure_id = $1`, advID).
 		Scan(&nextIdx); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "next idx lookup failed")
 		return
@@ -364,23 +364,23 @@ func (h *Handlers) CopyPuzzleToAdventure(w http.ResponseWriter, r *http.Request)
 	if radius.Valid {
 		radiusArg = radius.Float64
 	}
-	res, err := tx.ExecContext(r.Context(), `
+	var newID int64
+	if err := tx.QueryRowContext(r.Context(), `
 		INSERT INTO adventure_pages(adventure_id, idx, title, prompt, notes, accept,
 		                             lat, lng, radius_m, disabled)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, advID, nextIdx, title, prompt, notes, accept, lat, lng, radiusArg, disabled)
-	if err != nil {
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		RETURNING id
+	`, advID, nextIdx, title, prompt, notes, accept, lat, lng, radiusArg, disabled).Scan(&newID); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "insert copy failed: "+err.Error())
 		return
 	}
-	newID, _ := res.LastInsertId()
 
 	// Copy every image blob verbatim. The images table references the
 	// page, so a straight INSERT ... SELECT does the deep copy.
 	if _, err := tx.ExecContext(r.Context(), `
 		INSERT INTO adventure_page_images(page_id, idx, mime_type, size_bytes, content)
-		SELECT ?, idx, mime_type, size_bytes, content
-		FROM adventure_page_images WHERE page_id = ?
+		SELECT $1, idx, mime_type, size_bytes, content
+		FROM adventure_page_images WHERE page_id = $2
 	`, newID, srcID); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "image copy failed: "+err.Error())
 		return
@@ -389,8 +389,8 @@ func (h *Handlers) CopyPuzzleToAdventure(w http.ResponseWriter, r *http.Request)
 	// idx order and the per-hint delay without touching the source row.
 	if _, err := tx.ExecContext(r.Context(), `
 		INSERT INTO adventure_page_hints(page_id, idx, text, delay_seconds)
-		SELECT ?, idx, text, delay_seconds
-		FROM adventure_page_hints WHERE page_id = ?
+		SELECT $1, idx, text, delay_seconds
+		FROM adventure_page_hints WHERE page_id = $2
 	`, newID, srcID); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "hints copy failed: "+err.Error())
 		return
@@ -401,4 +401,3 @@ func (h *Handlers) CopyPuzzleToAdventure(w http.ResponseWriter, r *http.Request)
 	}
 	httpx.JSON(w, http.StatusCreated, map[string]any{"id": newID, "index": nextIdx})
 }
-

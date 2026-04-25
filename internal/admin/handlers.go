@@ -27,6 +27,7 @@ import (
 	"git.sr.ht/~klahr/zv/internal/adventure"
 	"git.sr.ht/~klahr/zv/internal/auth"
 	"git.sr.ht/~klahr/zv/internal/httpx"
+	"git.sr.ht/~klahr/zv/internal/mailer"
 	"git.sr.ht/~klahr/zv/internal/runevents"
 	"git.sr.ht/~klahr/zv/internal/simulator"
 	"git.sr.ht/~klahr/zv/internal/ws"
@@ -44,6 +45,23 @@ type Handlers struct {
 	// race simulator. Disabled-by-default because a prod admin
 	// nuking their run with a stray click would be catastrophic.
 	SimulatorEnabled bool
+	// Mailer is used by /api/admin/send-test-email and (future) signup
+	// + forgot-password flows. Always non-nil thanks to the server
+	// constructor's LogMailer fallback.
+	Mailer mailer.Mailer
+	// PublicURL is the externally-reachable origin used to build
+	// links in outbound mail (change-email confirmation, etc.). May
+	// be empty in dev — the admin handlers fall back to the request
+	// Host the same way auth.Handlers does.
+	PublicURL string
+	// StripeSecretKey, when set, enables provider=stripe on
+	// CreatePurchase. Empty leaves the simulated provider as the
+	// only option, which is the right default for dev clones.
+	StripeSecretKey string
+	// StripeWebhookSecret authenticates POST /api/webhooks/stripe.
+	// Required to enable Stripe — without it we'd be a payment
+	// processor that accepts arbitrary "the customer paid" requests.
+	StripeWebhookSecret string
 }
 
 /* ---------------- Shared scoping helpers ---------------- */
@@ -65,7 +83,7 @@ func sameOrg(u auth.User, orgID int64) bool {
 // run does not exist.
 func (h *Handlers) runOrg(ctx context.Context, runID int64) (int64, error) {
 	var orgID int64
-	err := h.DB.QueryRowContext(ctx, `SELECT org_id FROM adventure_runs WHERE id = ?`, runID).Scan(&orgID)
+	err := h.DB.QueryRowContext(ctx, `SELECT org_id FROM adventure_runs WHERE id = $1`, runID).Scan(&orgID)
 	return orgID, err
 }
 
@@ -119,7 +137,7 @@ func (h *Handlers) ListAdventures(w http.ResponseWriter, r *http.Request) {
 	query := `
 		SELECT a.slug, a.title, a.description, a.author, a.org_id,
 		       (SELECT COUNT(*) FROM adventure_pages p WHERE p.adventure_id = a.id) AS page_count,
-		       a.avatar_mime_type IS NOT NULL AS has_avatar,
+		       (a.avatar_mime_type IS NOT NULL)::int AS has_avatar,
 		       a.published,
 	`
 	var args []any
@@ -127,21 +145,21 @@ func (h *Handlers) ListAdventures(w http.ResponseWriter, r *http.Request) {
 		query += ` 0 AS shared FROM adventures a`
 	} else {
 		query += `
-		       EXISTS (
+		       (EXISTS (
 		         SELECT 1 FROM adventure_shares s
-		         WHERE s.adventure_slug = a.slug AND s.org_id = ?
-		       ) AS shared
+		         WHERE s.adventure_slug = a.slug AND s.org_id = $1
+		       ))::int AS shared
 		FROM adventures a
 		WHERE (
-		  a.org_id = ?
+		  a.org_id = $2
 		  OR (a.org_id IS NULL AND a.published = 1)
 		  OR EXISTS (
 		    SELECT 1 FROM adventure_assignments aa
-		    WHERE aa.adventure_slug = a.slug AND aa.org_id = ?
+		    WHERE aa.adventure_slug = a.slug AND aa.org_id = $3
 		  )
 		  OR EXISTS (
 		    SELECT 1 FROM adventure_shares s
-		    WHERE s.adventure_slug = a.slug AND s.org_id = ?
+		    WHERE s.adventure_slug = a.slug AND s.org_id = $4
 		  )
 		)
 		`
@@ -205,6 +223,11 @@ type createRunRequest struct {
 	AdventureSlug string `json:"adventure_slug,omitempty"`
 	ScheduledAt   string `json:"scheduled_at,omitempty"`
 	Name          string `json:"name,omitempty"`
+	// AttestNoMinors must be true for the run to be created. The
+	// arranger confirms either "no minors will participate" or "I
+	// have parental consent for any under-13 players". Stored as a
+	// timestamp on the run row so the consent moment is auditable.
+	AttestNoMinors bool `json:"attest_no_minors,omitempty"`
 }
 
 // CreateRun schedules a run in one of two modes:
@@ -229,6 +252,16 @@ func (h *Handlers) CreateRun(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusForbidden, "admins don't schedule runs; do it from within an organization")
 		return
 	}
+	if !me.EmailVerified {
+		// Surface a code so the UI can swap in a "verify your email"
+		// CTA instead of a generic 403 — same shape we use for
+		// "password_not_set" on /login.
+		httpx.JSON(w, http.StatusForbidden, map[string]string{
+			"error": "verify your email before scheduling runs",
+			"code":  "verification_required",
+		})
+		return
+	}
 
 	var (
 		slug          string
@@ -246,7 +279,7 @@ func (h *Handlers) CreateRun(w http.ResponseWriter, r *http.Request) {
 			SELECT aa.adventure_slug, aa.org_id, aa.max_teams, ar.id
 			FROM adventure_assignments aa
 			LEFT JOIN adventure_runs ar ON ar.assignment_id = aa.id
-			WHERE aa.id = ?
+			WHERE aa.id = $1
 		`, req.AssignmentID).Scan(&advSlug, &orgID, &maxTeams, &used)
 		if errors.Is(err, sql.ErrNoRows) {
 			httpx.Error(w, http.StatusNotFound, "assignment not found")
@@ -269,15 +302,15 @@ func (h *Handlers) CreateRun(w http.ResponseWriter, r *http.Request) {
 	} else if strings.TrimSpace(req.AdventureSlug) != "" {
 		slug = strings.TrimSpace(req.AdventureSlug)
 		// Confirm the caller has share or ownership access to this slug.
-		var ok int
+		var ok bool
 		if err := h.DB.QueryRowContext(r.Context(), `
 			SELECT EXISTS (
 			  SELECT 1 FROM adventures a
-			  WHERE a.slug = ? AND (
-			    a.org_id = ?
+			  WHERE a.slug = $1 AND (
+			    a.org_id = $2
 			    OR EXISTS (
 			      SELECT 1 FROM adventure_shares s
-			      WHERE s.adventure_slug = a.slug AND s.org_id = ?
+			      WHERE s.adventure_slug = a.slug AND s.org_id = $3
 			    )
 			  )
 			)
@@ -285,7 +318,7 @@ func (h *Handlers) CreateRun(w http.ResponseWriter, r *http.Request) {
 			httpx.Error(w, http.StatusInternalServerError, "lookup failed")
 			return
 		}
-		if ok == 0 {
+		if !ok {
 			httpx.Error(w, http.StatusForbidden, "no access to that adventure")
 			return
 		}
@@ -296,6 +329,14 @@ func (h *Handlers) CreateRun(w http.ResponseWriter, r *http.Request) {
 
 	if h.Lib.Get(slug) == nil {
 		httpx.Error(w, http.StatusInternalServerError, "adventure not loaded: "+slug)
+		return
+	}
+
+	if !req.AttestNoMinors {
+		httpx.JSON(w, http.StatusBadRequest, map[string]string{
+			"error": "you must confirm there are no under-13 players (or that you have parental consent) before creating a run",
+			"code":  "minor_attestation_required",
+		})
 		return
 	}
 
@@ -314,15 +355,16 @@ func (h *Handlers) CreateRun(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusInternalServerError, "token gen failed")
 		return
 	}
-	res, err := h.DB.ExecContext(r.Context(), `
-		INSERT INTO adventure_runs(adventure_slug, org_id, created_by_user_id, state, scheduled_at, assignment_id, live_token, name)
-		VALUES (?, ?, ?, 'scheduled', ?, ?, ?, ?)
-	`, slug, *me.OrgID, me.ID, schedAt, assignmentArg, liveToken, strings.TrimSpace(req.Name))
+	var id int64
+	err = h.DB.QueryRowContext(r.Context(), `
+		INSERT INTO adventure_runs(adventure_slug, org_id, created_by_user_id, state, scheduled_at, assignment_id, live_token, name, attested_no_minors_at)
+		VALUES ($1, $2, $3, 'scheduled', $4, $5, $6, $7, now_text())
+		RETURNING id
+	`, slug, *me.OrgID, me.ID, schedAt, assignmentArg, liveToken, strings.TrimSpace(req.Name)).Scan(&id)
 	if err != nil {
 		httpx.Error(w, http.StatusConflict, "could not create run: "+err.Error())
 		return
 	}
-	id, _ := res.LastInsertId()
 	runevents.Record(r.Context(), h.DB, id, nil, runevents.UserActor(me.ID), runevents.RunCreated,
 		map[string]any{"adventure_slug": slug, "max_teams": maxTeams})
 	h.Hub.Publish(ws.RunTopic(id), "changed", nil)
@@ -360,7 +402,7 @@ func (h *Handlers) ListRuns(w http.ResponseWriter, r *http.Request) {
 	`
 	var args []any
 	if me.Role != auth.RoleAdmin {
-		query += ` WHERE ar.org_id = ?`
+		query += ` WHERE ar.org_id = $1`
 		args = append(args, *me.OrgID)
 	}
 	query += ` ORDER BY ar.created_at DESC`
@@ -400,18 +442,18 @@ func (h *Handlers) transitionRun(w http.ResponseWriter, r *http.Request, action 
 	}
 	var state string
 	if err := h.DB.QueryRowContext(r.Context(),
-		`SELECT state FROM adventure_runs WHERE id = ?`, runID).Scan(&state); err != nil {
+		`SELECT state FROM adventure_runs WHERE id = $1`, runID).Scan(&state); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "lookup failed")
 		return
 	}
 	var want, update string
 	switch action {
 	case "start":
-		want, update = "scheduled", `UPDATE adventure_runs SET state='running', started_at=datetime('now') WHERE id=?`
+		want, update = "scheduled", `UPDATE adventure_runs SET state='running', started_at=now_text() WHERE id=$1`
 	case "pause":
-		want, update = "running", `UPDATE adventure_runs SET state='paused', paused_at=datetime('now') WHERE id=?`
+		want, update = "running", `UPDATE adventure_runs SET state='paused', paused_at=now_text() WHERE id=$1`
 	case "resume":
-		want, update = "paused", `UPDATE adventure_runs SET state='running' WHERE id=?`
+		want, update = "paused", `UPDATE adventure_runs SET state='running' WHERE id=$1`
 	default:
 		httpx.Error(w, http.StatusBadRequest, "unknown action")
 		return
@@ -468,7 +510,7 @@ func (h *Handlers) UpdateRun(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Name != nil {
 		if _, err := h.DB.ExecContext(r.Context(),
-			`UPDATE adventure_runs SET name = ? WHERE id = ?`, strings.TrimSpace(*req.Name), runID); err != nil {
+			`UPDATE adventure_runs SET name = $1 WHERE id = $2`, strings.TrimSpace(*req.Name), runID); err != nil {
 			httpx.Error(w, http.StatusInternalServerError, "update failed")
 			return
 		}
@@ -477,7 +519,7 @@ func (h *Handlers) UpdateRun(w http.ResponseWriter, r *http.Request) {
 	if req.ScheduledAt != nil {
 		var state string
 		if err := h.DB.QueryRowContext(r.Context(),
-			`SELECT state FROM adventure_runs WHERE id = ?`, runID).Scan(&state); err != nil {
+			`SELECT state FROM adventure_runs WHERE id = $1`, runID).Scan(&state); err != nil {
 			httpx.Error(w, http.StatusInternalServerError, "lookup failed")
 			return
 		}
@@ -495,7 +537,7 @@ func (h *Handlers) UpdateRun(w http.ResponseWriter, r *http.Request) {
 			schedAt = t.UTC().Format("2006-01-02 15:04:05")
 		}
 		if _, err := h.DB.ExecContext(r.Context(),
-			`UPDATE adventure_runs SET scheduled_at = ? WHERE id = ?`, schedAt, runID); err != nil {
+			`UPDATE adventure_runs SET scheduled_at = $1 WHERE id = $2`, schedAt, runID); err != nil {
 			httpx.Error(w, http.StatusInternalServerError, "update failed")
 			return
 		}
@@ -506,7 +548,7 @@ func (h *Handlers) UpdateRun(w http.ResponseWriter, r *http.Request) {
 			v = 1
 		}
 		if _, err := h.DB.ExecContext(r.Context(),
-			`UPDATE adventure_runs SET show_map = ? WHERE id = ?`, v, runID); err != nil {
+			`UPDATE adventure_runs SET show_map = $1 WHERE id = $2`, v, runID); err != nil {
 			httpx.Error(w, http.StatusInternalServerError, "update failed")
 			return
 		}
@@ -522,10 +564,14 @@ type createTeamRequest struct {
 	MemberNames []string `json:"member_names"`
 }
 
+// teamSlotDTO mirrors slotDTO at the team-create response level.
+// ExpiresAt surfaces the magic-link cutoff so the front-end can render
+// "expires in 7 days" without a follow-up fetch.
 type teamSlotDTO struct {
-	ID    int64  `json:"id"`
-	Name  string `json:"name"`
-	Token string `json:"token"`
+	ID        int64  `json:"id"`
+	Name      string `json:"name"`
+	Token     string `json:"token"`
+	ExpiresAt string `json:"expires_at,omitempty"`
 }
 
 type teamDTO struct {
@@ -589,10 +635,10 @@ func (h *Handlers) CreateTeam(w http.ResponseWriter, r *http.Request) {
 	)
 	if err := tx.QueryRowContext(r.Context(), `
 		SELECT COALESCE(aa.max_teams, 0),
-		       (SELECT COUNT(*) FROM teams t WHERE t.run_id = ?)
+		       (SELECT COUNT(*) FROM teams t WHERE t.run_id = $1)
 		FROM adventure_runs ar
 		LEFT JOIN adventure_assignments aa ON aa.id = ar.assignment_id
-		WHERE ar.id = ?
+		WHERE ar.id = $2
 	`, runID, runID).Scan(&maxTeams, &teamsCount); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "cap lookup failed")
 		return
@@ -608,30 +654,30 @@ func (h *Handlers) CreateTeam(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusInternalServerError, "token gen failed")
 		return
 	}
-	res, err := tx.ExecContext(r.Context(),
-		`INSERT INTO teams(run_id, name, token) VALUES (?, ?, ?)`, runID, req.Name, teamTok)
-	if err != nil {
+	var teamID int64
+	if err := tx.QueryRowContext(r.Context(),
+		`INSERT INTO teams(run_id, name, token) VALUES ($1, $2, $3) RETURNING id`,
+		runID, req.Name, teamTok).Scan(&teamID); err != nil {
 		httpx.Error(w, http.StatusConflict, "team name already used for this run")
 		return
 	}
-	teamID, _ := res.LastInsertId()
 
 	members := make([]teamSlotDTO, 0, len(names))
+	expiresAt := auth.DefaultSlotExpiresAt(r.Context(), h.DB, runID)
 	for _, name := range names {
 		token, err := auth.NewSlotToken()
 		if err != nil {
 			httpx.Error(w, http.StatusInternalServerError, "token gen failed")
 			return
 		}
-		sRes, err := tx.ExecContext(r.Context(),
-			`INSERT INTO player_slots(team_id, name, token) VALUES (?, ?, ?)`,
-			teamID, name, token)
-		if err != nil {
+		var slotID int64
+		if err := tx.QueryRowContext(r.Context(),
+			`INSERT INTO player_slots(team_id, name, token, expires_at) VALUES ($1, $2, $3, $4) RETURNING id`,
+			teamID, name, token, expiresAt).Scan(&slotID); err != nil {
 			httpx.Error(w, http.StatusConflict, "could not add "+name+": "+err.Error())
 			return
 		}
-		slotID, _ := sRes.LastInsertId()
-		members = append(members, teamSlotDTO{ID: slotID, Name: name, Token: token})
+		members = append(members, teamSlotDTO{ID: slotID, Name: name, Token: token, ExpiresAt: expiresAt})
 	}
 	if err := tx.Commit(); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "commit failed")
@@ -670,10 +716,10 @@ func (h *Handlers) buildPositions(ctx context.Context, runID int64) ([]positionD
 			SELECT team_id, lat, lng, server_ts
 			FROM location_pings
 			WHERE id IN (
-				SELECT MAX(id) FROM location_pings WHERE run_id = ? GROUP BY team_id
+				SELECT MAX(id) FROM location_pings WHERE run_id = $1 GROUP BY team_id
 			)
 		) p ON p.team_id = t.id
-		WHERE t.run_id = ?
+		WHERE t.run_id = $2
 		ORDER BY t.name
 	`, runID, runID)
 	if err != nil {
@@ -726,10 +772,10 @@ type trackDTO struct {
 // path.
 func (h *Handlers) buildTracks(ctx context.Context, runID int64) ([]trackDTO, error) {
 	rows, err := h.DB.QueryContext(ctx, `
-		SELECT p.team_id, t.name, t.avatar_mime_type IS NOT NULL AS has_avatar,
+		SELECT p.team_id, t.name, (t.avatar_mime_type IS NOT NULL)::int AS has_avatar,
 		       p.lat, p.lng, p.server_ts
 		FROM location_pings p JOIN teams t ON t.id = p.team_id
-		WHERE p.run_id = ?
+		WHERE p.run_id = $1
 		ORDER BY p.team_id, p.server_ts
 	`, runID)
 	if err != nil {

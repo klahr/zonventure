@@ -35,6 +35,14 @@ func NewHub() *Hub {
 
 // Subscribe registers ch for messages on topic. The caller reads from ch.
 // The returned cancel function removes the subscription.
+//
+// CONTRACT: callers must invoke the returned function — typically via
+// `defer unsub()` immediately after the Subscribe call — for every
+// successful Subscribe. As of this writing the only call sites are
+// internal/player/ws.go, internal/public/ws.go, and internal/admin/ws.go,
+// all of which defer the cancel. Audited and clean: a panic mid-handler
+// still triggers the defer and removes the entry. Any new caller MUST
+// follow the same pattern.
 func (h *Hub) Subscribe(topic string) (<-chan []byte, func()) {
 	if h == nil {
 		return nil, func() {}
@@ -70,9 +78,13 @@ func (h *Hub) Subscribe(topic string) (<-chan []byte, func()) {
 }
 
 // Publish encodes kind+data as a Msg and delivers it to every subscriber on
-// topic. Delivery is best-effort: if a subscriber's channel is full we drop
-// the message for that subscriber rather than blocking the publisher.
-// Safe on a nil receiver so callers needn't guard — useful in tests.
+// topic. Delivery is best-effort: if a subscriber's channel is full we
+// drop the OLDEST queued message and re-try the send. This keeps the
+// stream "freshest wins" — a slow consumer sees recent state rather
+// than a stale snapshot — and avoids the alternative of dropping the
+// new message and leaving the old one to keep aging.
+//
+// Safe on a nil receiver so callers needn't guard.
 func (h *Hub) Publish(topic, kind string, data any) {
 	if h == nil {
 		return
@@ -96,9 +108,27 @@ func (h *Hub) Publish(topic, kind string, data any) {
 	}
 	h.mu.Unlock()
 	for _, c := range chans {
+		// Try the cheap send first.
+		select {
+		case c <- payload:
+			continue
+		default:
+		}
+		// Channel is full. Drop the oldest queued message (non-blocking
+		// receive) then re-try the send. Worst case we drop and re-try
+		// in tight loop until either room appears or another publisher
+		// fills it again — but we cap the retry at one attempt so
+		// pathological contention can't pin a publisher.
+		select {
+		case <-c:
+		default:
+		}
 		select {
 		case c <- payload:
 		default:
+			// Still full after dropping one — another publisher beat
+			// us to the slot. Give up on this delivery; the next
+			// message we publish will repeat the same drop-oldest.
 		}
 	}
 }

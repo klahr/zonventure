@@ -23,7 +23,7 @@ func (h *Handlers) authorizeTeam(w http.ResponseWriter, r *http.Request, teamID 
 	err := h.DB.QueryRowContext(r.Context(), `
 		SELECT t.run_id, ar.org_id
 		FROM teams t JOIN adventure_runs ar ON ar.id = t.run_id
-		WHERE t.id = ?
+		WHERE t.id = $1
 	`, teamID).Scan(&runID, &orgID)
 	if errors.Is(err, sql.ErrNoRows) {
 		httpx.Error(w, http.StatusNotFound, "team not found")
@@ -66,8 +66,8 @@ func (h *Handlers) RenameTeam(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var oldName string
-	_ = h.DB.QueryRowContext(r.Context(), `SELECT name FROM teams WHERE id = ?`, teamID).Scan(&oldName)
-	if _, err := h.DB.ExecContext(r.Context(), `UPDATE teams SET name = ? WHERE id = ?`, req.Name, teamID); err != nil {
+	_ = h.DB.QueryRowContext(r.Context(), `SELECT name FROM teams WHERE id = $1`, teamID).Scan(&oldName)
+	if _, err := h.DB.ExecContext(r.Context(), `UPDATE teams SET name = $1 WHERE id = $2`, req.Name, teamID); err != nil {
 		httpx.Error(w, http.StatusConflict, "name already used in this run")
 		return
 	}
@@ -93,8 +93,8 @@ func (h *Handlers) DeleteTeam(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var name string
-	_ = h.DB.QueryRowContext(r.Context(), `SELECT name FROM teams WHERE id = ?`, teamID).Scan(&name)
-	if _, err := h.DB.ExecContext(r.Context(), `DELETE FROM teams WHERE id = ?`, teamID); err != nil {
+	_ = h.DB.QueryRowContext(r.Context(), `SELECT name FROM teams WHERE id = $1`, teamID).Scan(&name)
+	if _, err := h.DB.ExecContext(r.Context(), `DELETE FROM teams WHERE id = $1`, teamID); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "delete failed")
 		return
 	}
@@ -113,11 +113,14 @@ type addSlotRequest struct {
 
 // slotDTO is a single slot as returned to the arranger — includes the
 // magic-link token so the UI can show a "copy link" affordance.
+// ExpiresAt is the magic-link cutoff in our wire format
+// ("YYYY-MM-DD HH:MM:SS" UTC); empty means "never expires".
 type slotDTO struct {
 	ID          int64  `json:"id"`
 	Name        string `json:"name"`
 	Token       string `json:"token"`
 	LastLoginAt string `json:"last_login_at,omitempty"`
+	ExpiresAt   string `json:"expires_at,omitempty"`
 }
 
 // AddSlot creates a new slot on a team with a fresh magic-link token.
@@ -145,19 +148,21 @@ func (h *Handlers) AddSlot(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusInternalServerError, "token gen failed")
 		return
 	}
-	res, err := h.DB.ExecContext(r.Context(),
-		`INSERT INTO player_slots(team_id, name, token) VALUES (?, ?, ?)`,
-		teamID, req.Name, token)
-	if err != nil {
+	expiresAt := auth.DefaultSlotExpiresAt(r.Context(), h.DB, runID)
+	var id int64
+	if err := h.DB.QueryRowContext(r.Context(),
+		`INSERT INTO player_slots(team_id, name, token, expires_at) VALUES ($1, $2, $3, $4) RETURNING id`,
+		teamID, req.Name, token, expiresAt).Scan(&id); err != nil {
 		httpx.Error(w, http.StatusConflict, "name already taken on this team")
 		return
 	}
-	id, _ := res.LastInsertId()
 	me, _ := auth.FromContext(r.Context())
 	runevents.Record(r.Context(), h.DB, runID, &teamID, runevents.UserActor(me.ID),
 		runevents.MemberAdded, map[string]any{"name": req.Name})
 	h.Hub.Publish(ws.RunTopic(runID), "changed", nil)
-	httpx.JSON(w, http.StatusCreated, slotDTO{ID: id, Name: req.Name, Token: token})
+	httpx.JSON(w, http.StatusCreated, slotDTO{
+		ID: id, Name: req.Name, Token: token, ExpiresAt: expiresAt,
+	})
 }
 
 // RemoveSlot deletes a slot.
@@ -178,7 +183,7 @@ func (h *Handlers) RemoveSlot(w http.ResponseWriter, r *http.Request) {
 	}
 	var name string
 	if err := h.DB.QueryRowContext(r.Context(),
-		`SELECT name FROM player_slots WHERE id = ? AND team_id = ?`, slotID, teamID).Scan(&name); err != nil {
+		`SELECT name FROM player_slots WHERE id = $1 AND team_id = $2`, slotID, teamID).Scan(&name); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			httpx.Error(w, http.StatusNotFound, "slot not found")
 			return
@@ -187,7 +192,7 @@ func (h *Handlers) RemoveSlot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, err := h.DB.ExecContext(r.Context(),
-		`DELETE FROM player_slots WHERE id = ? AND team_id = ?`, slotID, teamID); err != nil {
+		`DELETE FROM player_slots WHERE id = $1 AND team_id = $2`, slotID, teamID); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "delete failed")
 		return
 	}
@@ -198,15 +203,18 @@ func (h *Handlers) RemoveSlot(w http.ResponseWriter, r *http.Request) {
 	httpx.JSON(w, http.StatusNoContent, nil)
 }
 
-// RotateSlotToken generates a fresh token for a slot — used when the old
-// link has leaked.
+// RotateSlotToken generates a fresh token for a slot — used when the
+// old link has leaked or expired. The expires_at is reset to the
+// default (run-anchored) so the rotation extends the window in one
+// step instead of forcing a separate "set expiry" call.
 func (h *Handlers) RotateSlotToken(w http.ResponseWriter, r *http.Request) {
 	teamID, ok := teamIDFrom(r)
 	if !ok {
 		httpx.Error(w, http.StatusBadRequest, "bad team id")
 		return
 	}
-	if _, _, ok := h.authorizeTeam(w, r, teamID); !ok {
+	runID, _, ok := h.authorizeTeam(w, r, teamID)
+	if !ok {
 		return
 	}
 	slotID, err := strconv.ParseInt(chi.URLParam(r, "slotID"), 10, 64)
@@ -219,8 +227,10 @@ func (h *Handlers) RotateSlotToken(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusInternalServerError, "token gen failed")
 		return
 	}
+	expiresAt := auth.DefaultSlotExpiresAt(r.Context(), h.DB, runID)
 	res, err := h.DB.ExecContext(r.Context(),
-		`UPDATE player_slots SET token = ? WHERE id = ? AND team_id = ?`, token, slotID, teamID)
+		`UPDATE player_slots SET token = $1, expires_at = $2 WHERE id = $3 AND team_id = $4`,
+		token, expiresAt, slotID, teamID)
 	if err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "update failed")
 		return
@@ -230,8 +240,8 @@ func (h *Handlers) RotateSlotToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Invalidate any existing slot sessions so the old link stops working.
-	_, _ = h.DB.ExecContext(r.Context(), `DELETE FROM slot_sessions WHERE slot_id = ?`, slotID)
-	httpx.JSON(w, http.StatusOK, map[string]any{"token": token})
+	_, _ = h.DB.ExecContext(r.Context(), `DELETE FROM slot_sessions WHERE slot_id = $1`, slotID)
+	httpx.JSON(w, http.StatusOK, map[string]any{"token": token, "expires_at": expiresAt})
 }
 
 // UnlockTeam advances a stuck team past their current puzzle.
@@ -252,7 +262,7 @@ func (h *Handlers) UnlockTeam(w http.ResponseWriter, r *http.Request) {
 	err := h.DB.QueryRowContext(r.Context(), `
 		SELECT ar.adventure_slug, t.current_page_index
 		FROM teams t JOIN adventure_runs ar ON ar.id = t.run_id
-		WHERE t.id = ?
+		WHERE t.id = $1
 	`, teamID).Scan(&slug, &current)
 	if errors.Is(err, sql.ErrNoRows) {
 		httpx.Error(w, http.StatusNotFound, "team not found")
@@ -275,7 +285,7 @@ func (h *Handlers) UnlockTeam(w http.ResponseWriter, r *http.Request) {
 	me, _ := auth.FromContext(r.Context())
 	if next >= len(adv.Pages) {
 		if _, err := h.DB.ExecContext(r.Context(),
-			`UPDATE teams SET current_page_index = ?, current_page_started_at = datetime('now'), completed_at = datetime('now') WHERE id = ?`,
+			`UPDATE teams SET current_page_index = $1, current_page_started_at = now_text(), completed_at = now_text() WHERE id = $2`,
 			next, teamID); err != nil {
 			httpx.Error(w, http.StatusInternalServerError, "update failed")
 			return
@@ -287,7 +297,7 @@ func (h *Handlers) UnlockTeam(w http.ResponseWriter, r *http.Request) {
 		_, _ = runevents.MaybeCompleteRun(r.Context(), h.DB, runID)
 	} else {
 		if _, err := h.DB.ExecContext(r.Context(),
-			`UPDATE teams SET current_page_index = ?, current_page_started_at = datetime('now') WHERE id = ?`, next, teamID); err != nil {
+			`UPDATE teams SET current_page_index = $1, current_page_started_at = now_text() WHERE id = $2`, next, teamID); err != nil {
 			httpx.Error(w, http.StatusInternalServerError, "update failed")
 			return
 		}
@@ -357,8 +367,8 @@ func (h *Handlers) SetTeamAvatar(w http.ResponseWriter, r *http.Request) {
 	data, mime = shrunk, newMIME
 	if _, err := h.DB.ExecContext(r.Context(), `
 		UPDATE teams
-		   SET avatar_mime_type = ?, avatar_size_bytes = ?, avatar_content = ?
-		 WHERE id = ?
+		   SET avatar_mime_type = $1, avatar_size_bytes = $2, avatar_content = $3
+		 WHERE id = $4
 	`, mime, int64(len(data)), data, teamID); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "store failed: "+err.Error())
 		return
@@ -366,7 +376,7 @@ func (h *Handlers) SetTeamAvatar(w http.ResponseWriter, r *http.Request) {
 	// Hub push so the run-detail view and any live-board listeners pick
 	// up the new picture without a manual refresh.
 	var runID int64
-	_ = h.DB.QueryRowContext(r.Context(), `SELECT run_id FROM teams WHERE id = ?`, teamID).Scan(&runID)
+	_ = h.DB.QueryRowContext(r.Context(), `SELECT run_id FROM teams WHERE id = $1`, teamID).Scan(&runID)
 	if runID > 0 {
 		h.Hub.Publish(ws.RunTopic(runID), "changed", nil)
 	}
@@ -392,7 +402,7 @@ func (h *Handlers) DeleteTeamAvatar(w http.ResponseWriter, r *http.Request) {
 	if _, err := h.DB.ExecContext(r.Context(), `
 		UPDATE teams
 		   SET avatar_mime_type = NULL, avatar_size_bytes = NULL, avatar_content = NULL
-		 WHERE id = ?
+		 WHERE id = $1
 	`, teamID); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "clear failed")
 		return
@@ -418,7 +428,7 @@ func (h *Handlers) ServeTeamAvatar(w http.ResponseWriter, r *http.Request) {
 		content []byte
 	)
 	err = h.DB.QueryRowContext(r.Context(), `
-		SELECT avatar_mime_type, avatar_size_bytes, avatar_content FROM teams WHERE id = ?
+		SELECT avatar_mime_type, avatar_size_bytes, avatar_content FROM teams WHERE id = $1
 	`, teamID).Scan(&mime, &size, &content)
 	if errors.Is(err, sql.ErrNoRows) || !mime.Valid || len(content) == 0 {
 		http.NotFound(w, r)

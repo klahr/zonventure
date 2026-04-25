@@ -47,6 +47,19 @@ type Handlers struct {
 	Lib          *adventure.Library
 	Hub          *ws.Hub
 	SecureCookie bool
+	// limiter throttles answer + location attempts per slot. Lazy-init
+	// on first use so tests that construct Handlers directly don't
+	// need to plumb a value through. nil-safe.
+	limiter *playLimiter
+}
+
+// rateLimiter returns the lazily-initialised playLimiter so handlers
+// don't have to nil-check.
+func (h *Handlers) rateLimiter() *playLimiter {
+	if h.limiter == nil {
+		h.limiter = &playLimiter{}
+	}
+	return h.limiter
 }
 
 // MagicLinkLogin exchanges a player_slots.token (delivered to the player
@@ -54,18 +67,36 @@ type Handlers struct {
 // browser to /play. Handled at GET /play if the ?t= query parameter is
 // present; if the token is bad we fall through to the ordinary /play
 // page which will tell the player to open their link again.
+//
+// Both outcomes are audited so an arranger can tell whether a slot link
+// was opened (and from where) — useful both for "did the player follow
+// the link I sent?" and "is someone scraping tokens?".
 func (h *Handlers) MagicLinkLogin(w http.ResponseWriter, r *http.Request) bool {
 	token := r.URL.Query().Get("t")
 	if token == "" {
 		return false
 	}
-	_, session, err := auth.LoginSlotByToken(r.Context(), h.DB, token)
+	ip := auth.ClientIP(r)
+	ua := auth.UserAgent(r)
+	slot, session, err := auth.LoginSlotByToken(r.Context(), h.DB, token)
 	if err != nil {
+		reason := auth.ReasonUnknownToken
+		if errors.Is(err, auth.ErrSlotTokenExpired) {
+			reason = auth.ReasonExpiredToken
+		}
+		auth.Record(r.Context(), h.DB, auth.AuditEvent{
+			Event: auth.EventMagicLink, OK: false, IP: ip, UserAgent: ua,
+			Reason: reason,
+		})
 		// Best-effort: let the /play page render without a session so the UI
 		// can say "open your magic link again" rather than a blank error.
 		return false
 	}
-	auth.SetSlotCookie(w, session, h.SecureCookie)
+	auth.Record(r.Context(), h.DB, auth.AuditEvent{
+		Event: auth.EventMagicLink, OK: true, Username: slot.Name, IP: ip, UserAgent: ua,
+		Reason: auth.ReasonSuccess,
+	})
+	auth.SetSlotCookie(w, session, auth.CookieSecure(r, h.SecureCookie))
 	// Strip the query parameter on the way back so refreshing doesn't
 	// re-trigger the token exchange (and doesn't leave the token in the
 	// address bar).
@@ -78,7 +109,73 @@ func (h *Handlers) Logout(w http.ResponseWriter, r *http.Request) {
 	if c, err := r.Cookie(auth.SlotCookieName); err == nil {
 		_ = auth.LogoutSlot(r.Context(), h.DB, c.Value)
 	}
-	auth.ClearSlotCookie(w, h.SecureCookie)
+	auth.ClearSlotCookie(w, auth.CookieSecure(r, h.SecureCookie))
+	httpx.JSON(w, http.StatusNoContent, nil)
+}
+
+// Forget is the GDPR-style erasure endpoint for a player. Wipes the
+// caller slot's personally-identifiable trail (location pings, answer
+// attempts, slot name, magic-link token) without deleting the slot
+// row itself — keeping the row prevents foreign-key chaos for any
+// teammate still mid-run, and the team's progress stays intact.
+//
+// The slot is effectively dead afterwards: token rotated to an
+// unguessable value with expires_at in the past, name replaced with
+// "(forgotten)", every active session for the slot dropped. The
+// arranger sees an inert row labelled "(forgotten)" in the team
+// listing, which is an honest reflection of what happened.
+func (h *Handlers) Forget(w http.ResponseWriter, r *http.Request) {
+	slot, ok := auth.SlotFromContext(r.Context())
+	if !ok {
+		httpx.Error(w, http.StatusUnauthorized, "open your magic link to log in")
+		return
+	}
+	tx, err := h.DB.BeginTx(r.Context(), nil)
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "begin tx")
+		return
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	if _, err := tx.ExecContext(r.Context(),
+		`DELETE FROM location_pings WHERE slot_id = $1`, slot.ID); err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "wipe pings: "+err.Error())
+		return
+	}
+	if _, err := tx.ExecContext(r.Context(),
+		`DELETE FROM answer_attempts WHERE slot_id = $1`, slot.ID); err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "wipe answers: "+err.Error())
+		return
+	}
+	// New unguessable token + already-expired expires_at so the row
+	// can't be re-logged-into. Name swapped to a literal so the team
+	// listing doesn't keep displaying the player's chosen handle.
+	deadToken, err := auth.NewSlotToken()
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "token gen failed")
+		return
+	}
+	if _, err := tx.ExecContext(r.Context(), `
+		UPDATE player_slots
+		   SET name = '(forgotten)', token = $1, expires_at = '1970-01-01 00:00:00'
+		 WHERE id = $2
+	`, deadToken, slot.ID); err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "wipe slot: "+err.Error())
+		return
+	}
+	if _, err := tx.ExecContext(r.Context(),
+		`DELETE FROM slot_sessions WHERE slot_id = $1`, slot.ID); err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "wipe sessions: "+err.Error())
+		return
+	}
+	if err := tx.Commit(); err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "commit failed")
+		return
+	}
+	auth.ClearSlotCookie(w, auth.CookieSecure(r, h.SecureCookie))
+	// Notify any arranger watching the run so the team list redraws
+	// with the (forgotten) name immediately.
+	h.Hub.Publish(ws.RunTopic(slot.RunID), "changed", nil)
 	httpx.JSON(w, http.StatusNoContent, nil)
 }
 
@@ -112,8 +209,8 @@ func maybePromoteScheduled(ctx context.Context, db *sql.DB, hub *ws.Hub, runID i
 	}
 	res, err := db.ExecContext(ctx, `
 		UPDATE adventure_runs
-		   SET state = 'running', started_at = datetime('now')
-		 WHERE id = ? AND state = 'scheduled'
+		   SET state = 'running', started_at = now_text()
+		 WHERE id = $1 AND state = 'scheduled'
 	`, runID)
 	if err != nil {
 		return false, err
@@ -136,7 +233,7 @@ func loadTeam(ctx context.Context, db *sql.DB, slot auth.Slot) (teamContext, err
 		       ar.scheduled_at, ar.started_at,
 		       t.current_page_index, t.current_page_started_at, t.completed_at
 		FROM teams t JOIN adventure_runs ar ON ar.id = t.run_id
-		WHERE t.id = ?
+		WHERE t.id = $1
 	`, slot.TeamID).Scan(&tc.TeamID, &tc.TeamName, &tc.RunID, &tc.AdventureSlug,
 		&tc.RunState, &tc.ScheduledAt, &tc.StartedAt,
 		&tc.CurrentPageIndex, &tc.CurrentPageStartedAt, &tc.CompletedAt)
@@ -425,7 +522,7 @@ func (h *Handlers) applyAdvance(ctx context.Context, slot auth.Slot) (AnswerResp
 	resp := AnswerResponse{Accepted: true}
 	if next, _ := visibleFor(adv.Pages, nextIdx); next == nil {
 		if _, err := h.DB.ExecContext(ctx, `
-			UPDATE teams SET current_page_index = ?, current_page_started_at = datetime('now'), completed_at = datetime('now') WHERE id = ?
+			UPDATE teams SET current_page_index = $1, current_page_started_at = now_text(), completed_at = now_text() WHERE id = $2
 		`, nextIdx, tc.TeamID); err != nil {
 			return AnswerResponse{}, tc.RunID, http.StatusInternalServerError, "save progress failed"
 		}
@@ -440,7 +537,7 @@ func (h *Handlers) applyAdvance(ctx context.Context, slot auth.Slot) (AnswerResp
 		return resp, tc.RunID, http.StatusOK, ""
 	}
 	if _, err := h.DB.ExecContext(ctx, `
-		UPDATE teams SET current_page_index = ?, current_page_started_at = datetime('now') WHERE id = ?
+		UPDATE teams SET current_page_index = $1, current_page_started_at = now_text() WHERE id = $2
 	`, nextIdx, tc.TeamID); err != nil {
 		return AnswerResponse{}, tc.RunID, http.StatusInternalServerError, "save progress failed"
 	}
@@ -464,7 +561,7 @@ func (h *Handlers) GetState(w http.ResponseWriter, r *http.Request) {
 func gateReached(ctx context.Context, db *sql.DB, teamID int64, loc adventure.Location) (bool, error) {
 	var lat, lng float64
 	err := db.QueryRowContext(ctx, `
-		SELECT lat, lng FROM location_pings WHERE team_id = ?
+		SELECT lat, lng FROM location_pings WHERE team_id = $1
 		ORDER BY server_ts DESC LIMIT 1
 	`, teamID).Scan(&lat, &lng)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -547,7 +644,7 @@ func (h *Handlers) applyAnswer(ctx context.Context, slot auth.Slot, answer strin
 	}
 	if _, err := h.DB.ExecContext(ctx, `
 		INSERT INTO answer_attempts(team_id, slot_id, page_index, answer, accepted)
-		VALUES (?, ?, ?, ?, ?)
+		VALUES ($1, $2, $3, $4, $5)
 	`, tc.TeamID, slot.ID, page.Index, answer, acceptedInt); err != nil {
 		return AnswerResponse{}, tc.RunID, http.StatusInternalServerError, "record attempt failed"
 	}
@@ -566,7 +663,7 @@ func (h *Handlers) applyAnswer(ctx context.Context, slot auth.Slot, answer strin
 	nextIdx := page.Index + 1
 	if next, _ := visibleFor(adv.Pages, nextIdx); next == nil {
 		if _, err := h.DB.ExecContext(ctx, `
-			UPDATE teams SET current_page_index = ?, current_page_started_at = datetime('now'), completed_at = datetime('now') WHERE id = ?
+			UPDATE teams SET current_page_index = $1, current_page_started_at = now_text(), completed_at = now_text() WHERE id = $2
 		`, nextIdx, tc.TeamID); err != nil {
 			return AnswerResponse{}, tc.RunID, http.StatusInternalServerError, "save progress failed"
 		}
@@ -578,7 +675,7 @@ func (h *Handlers) applyAnswer(ctx context.Context, slot auth.Slot, answer strin
 		return resp, tc.RunID, http.StatusOK, ""
 	}
 	if _, err := h.DB.ExecContext(ctx, `
-		UPDATE teams SET current_page_index = ?, current_page_started_at = datetime('now') WHERE id = ?
+		UPDATE teams SET current_page_index = $1, current_page_started_at = now_text() WHERE id = $2
 	`, nextIdx, tc.TeamID); err != nil {
 		return AnswerResponse{}, tc.RunID, http.StatusInternalServerError, "save progress failed"
 	}
@@ -587,12 +684,18 @@ func (h *Handlers) applyAnswer(ctx context.Context, slot auth.Slot, answer strin
 }
 
 // SubmitAnswer evaluates a submitted answer for the slot's current page.
+// Rate-limited per slot so puzzle answers — which are often short
+// dictionary words — can't be brute-forced by a scripted client.
 func (h *Handlers) SubmitAnswer(w http.ResponseWriter, r *http.Request) {
 	var req AnswerRequest
 	if !httpx.DecodeJSON(w, r, &req) {
 		return
 	}
 	slot, _ := auth.SlotFromContext(r.Context())
+	if ok, retry := h.rateLimiter().AllowAnswer(slot.ID); !ok {
+		writeRateLimited(w, retry)
+		return
+	}
 	resp, runID, status, errMsg := h.applyAnswer(r.Context(), slot, req.Answer)
 	if status != http.StatusOK {
 		httpx.Error(w, status, errMsg)
@@ -634,7 +737,7 @@ func (h *Handlers) recordLocation(ctx context.Context, slot auth.Slot, req Locat
 	}
 	if _, err := h.DB.ExecContext(ctx, `
 		INSERT INTO location_pings(slot_id, team_id, run_id, lat, lng, accuracy, speed, heading, client_ts)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 	`, slot.ID, slot.TeamID, slot.RunID, req.Lat, req.Lng, acc, speed, heading, cts); err != nil {
 		return http.StatusInternalServerError, "save ping failed"
 	}
@@ -670,7 +773,7 @@ func (h *Handlers) Summary(w http.ResponseWriter, r *http.Request) {
 	err := h.DB.QueryRowContext(r.Context(), `
 		SELECT t.name, ar.adventure_slug, ar.started_at, t.completed_at
 		FROM teams t JOIN adventure_runs ar ON ar.id = t.run_id
-		WHERE t.id = ?
+		WHERE t.id = $1
 	`, slot.TeamID).Scan(&teamName, &adventureSlug, &runStarted, &teamDone)
 	if errors.Is(err, sql.ErrNoRows) {
 		httpx.Error(w, http.StatusNotFound, "team not found")
@@ -700,7 +803,7 @@ func (h *Handlers) Summary(w http.ResponseWriter, r *http.Request) {
 		SELECT
 		  COALESCE(SUM(CASE WHEN accepted = 1 THEN 1 ELSE 0 END), 0),
 		  COALESCE(SUM(CASE WHEN accepted = 0 THEN 1 ELSE 0 END), 0)
-		FROM answer_attempts WHERE team_id = ?
+		FROM answer_attempts WHERE team_id = $1
 	`, slot.TeamID).Scan(&right, &wrong); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "attempts lookup failed")
 		return
@@ -713,7 +816,7 @@ func (h *Handlers) Summary(w http.ResponseWriter, r *http.Request) {
 	// noise from inflating the number.
 	rows, err := h.DB.QueryContext(r.Context(), `
 		SELECT lat, lng FROM location_pings
-		WHERE team_id = ? ORDER BY server_ts, id
+		WHERE team_id = $1 ORDER BY server_ts, id
 	`, slot.TeamID)
 	if err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "pings lookup failed")
@@ -762,6 +865,10 @@ func (h *Handlers) PostLocation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	slot, _ := auth.SlotFromContext(r.Context())
+	if ok, retry := h.rateLimiter().AllowLocation(slot.ID); !ok {
+		writeRateLimited(w, retry)
+		return
+	}
 	status, errMsg := h.recordLocation(r.Context(), slot, req)
 	if status >= 400 {
 		httpx.Error(w, status, errMsg)
@@ -769,4 +876,16 @@ func (h *Handlers) PostLocation(w http.ResponseWriter, r *http.Request) {
 	}
 	h.Hub.Publish(ws.RunTopic(slot.RunID), "changed", nil)
 	httpx.JSON(w, http.StatusNoContent, nil)
+}
+
+// writeRateLimited writes a 429 with Retry-After. Mirrors the helper
+// in internal/auth so the wire response is consistent across the
+// rate-limited surfaces.
+func writeRateLimited(w http.ResponseWriter, retry time.Duration) {
+	secs := int(retry / time.Second)
+	if secs < 1 {
+		secs = 1
+	}
+	w.Header().Set("Retry-After", strconv.Itoa(secs))
+	httpx.Error(w, http.StatusTooManyRequests, "too many attempts, slow down")
 }

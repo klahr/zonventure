@@ -159,20 +159,21 @@ func (h *Handlers) CreateAdventure(w http.ResponseWriter, r *http.Request) {
 	if org.Valid {
 		orgArg = org.Int64
 	}
-	res, err := h.DB.ExecContext(r.Context(), `
+	var id int64
+	err := h.DB.QueryRowContext(r.Context(), `
 		INSERT INTO adventures(slug, title, description, author, intro_text, outro_text,
 		                       accent_color, accent_secondary_color, background_color, text_color,
 		                       org_id, created_by_user_id)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+		RETURNING id
 	`, req.Slug, req.Title, req.Description, req.Author, req.IntroText, req.OutroText,
 		nullIfEmpty(req.AccentColor), nullIfEmpty(req.AccentSecondaryColor),
 		nullIfEmpty(req.BackgroundColor), nullIfEmpty(req.TextColor),
-		orgArg, me.ID)
+		orgArg, me.ID).Scan(&id)
 	if err != nil {
 		httpx.Error(w, http.StatusConflict, "slug already used")
 		return
 	}
-	id, _ := res.LastInsertId()
 	httpx.JSON(w, http.StatusCreated, map[string]any{
 		"id": id, "slug": req.Slug, "title": req.Title,
 	})
@@ -182,7 +183,7 @@ func (h *Handlers) CreateAdventure(w http.ResponseWriter, r *http.Request) {
 // sql.ErrNoRows when the slug is unknown.
 func (h *Handlers) adventureOwner(ctx context.Context, slug string) (sql.NullInt64, error) {
 	var org sql.NullInt64
-	err := h.DB.QueryRowContext(ctx, `SELECT org_id FROM adventures WHERE slug = ?`, slug).Scan(&org)
+	err := h.DB.QueryRowContext(ctx, `SELECT org_id FROM adventures WHERE slug = $1`, slug).Scan(&org)
 	return org, err
 }
 
@@ -220,7 +221,7 @@ func (h *Handlers) requireEditPage(w http.ResponseWriter, r *http.Request, pageI
 		SELECT p.adventure_id, p.org_id, a.org_id
 		FROM adventure_pages p
 		LEFT JOIN adventures a ON a.id = p.adventure_id
-		WHERE p.id = ?
+		WHERE p.id = $1
 	`, pageID).Scan(&advID, &pageOrg, &advOrg)
 	if errors.Is(err, sql.ErrNoRows) {
 		httpx.Error(w, http.StatusNotFound, "page not found")
@@ -266,7 +267,7 @@ func (h *Handlers) UpdateAdventure(w http.ResponseWriter, r *http.Request) {
 	if !httpx.DecodeJSON(w, r, &req) {
 		return
 	}
-	sets := []string{"updated_at = datetime('now')"}
+	sets := []string{"updated_at = now_text()"}
 	args := []any{}
 	if req.Title != nil {
 		sets = append(sets, "title = ?")
@@ -333,7 +334,7 @@ func (h *Handlers) UpdateAdventure(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	args = append(args, slug)
-	q := fmt.Sprintf(`UPDATE adventures SET %s WHERE slug = ?`, strings.Join(sets, ", "))
+	q := fmt.Sprintf(`UPDATE adventures SET %s WHERE slug = $1`, strings.Join(sets, ", "))
 	res, err := h.DB.ExecContext(r.Context(), q, args...)
 	if err != nil {
 		httpx.Error(w, http.StatusConflict, "update failed: "+err.Error())
@@ -358,7 +359,7 @@ func (h *Handlers) DeleteAdventure(w http.ResponseWriter, r *http.Request) {
 	}
 	var count int
 	if err := h.DB.QueryRowContext(r.Context(),
-		`SELECT COUNT(*) FROM adventure_runs WHERE adventure_slug = ?`, slug).Scan(&count); err != nil {
+		`SELECT COUNT(*) FROM adventure_runs WHERE adventure_slug = $1`, slug).Scan(&count); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "runs lookup failed")
 		return
 	}
@@ -367,7 +368,7 @@ func (h *Handlers) DeleteAdventure(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.DB.QueryRowContext(r.Context(),
-		`SELECT COUNT(*) FROM adventure_assignments WHERE adventure_slug = ?`, slug).Scan(&count); err != nil {
+		`SELECT COUNT(*) FROM adventure_assignments WHERE adventure_slug = $1`, slug).Scan(&count); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "assignments lookup failed")
 		return
 	}
@@ -378,11 +379,11 @@ func (h *Handlers) DeleteAdventure(w http.ResponseWriter, r *http.Request) {
 	// Shares have no FK to adventures.slug (kept loose so slug renames
 	// don't break), so clean them up explicitly on delete.
 	if _, err := h.DB.ExecContext(r.Context(),
-		`DELETE FROM adventure_shares WHERE adventure_slug = ?`, slug); err != nil {
+		`DELETE FROM adventure_shares WHERE adventure_slug = $1`, slug); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "shares cleanup failed")
 		return
 	}
-	res, err := h.DB.ExecContext(r.Context(), `DELETE FROM adventures WHERE slug = ?`, slug)
+	res, err := h.DB.ExecContext(r.Context(), `DELETE FROM adventures WHERE slug = $1`, slug)
 	if err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "delete failed")
 		return
@@ -430,13 +431,13 @@ func (req pageWriteRequest) validate() error {
 // partial updates would need stable hint ids, which the authoring UI
 // doesn't currently track.
 func replacePageHints(ctx context.Context, tx *sql.Tx, pageID int64, hints []hintView) error {
-	if _, err := tx.ExecContext(ctx, `DELETE FROM adventure_page_hints WHERE page_id = ?`, pageID); err != nil {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM adventure_page_hints WHERE page_id = $1`, pageID); err != nil {
 		return err
 	}
 	for i, h := range hints {
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO adventure_page_hints(page_id, idx, text, delay_seconds)
-			VALUES (?, ?, ?, ?)
+			VALUES ($1, $2, $3, $4)
 		`, pageID, i, h.Text, h.DelaySeconds); err != nil {
 			return err
 		}
@@ -465,7 +466,7 @@ func (h *Handlers) CreatePage(w http.ResponseWriter, r *http.Request) {
 	}
 	var nextIdx int
 	if err := h.DB.QueryRowContext(r.Context(),
-		`SELECT COALESCE(MAX(idx)+1, 0) FROM adventure_pages WHERE adventure_id = ?`, advID).
+		`SELECT COALESCE(MAX(idx)+1, 0) FROM adventure_pages WHERE adventure_id = $1`, advID).
 		Scan(&nextIdx); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "next index lookup failed")
 		return
@@ -485,15 +486,16 @@ func (h *Handlers) CreatePage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback()
-	res, err := tx.ExecContext(r.Context(), `
+	var id int64
+	err = tx.QueryRowContext(r.Context(), `
 		INSERT INTO adventure_pages(adventure_id, idx, title, prompt, accept, lat, lng, radius_m, disabled, notes)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, advID, nextIdx, req.Title, req.Prompt, string(accept), req.Lat, req.Lng, radius, disabled, req.Notes)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		RETURNING id
+	`, advID, nextIdx, req.Title, req.Prompt, string(accept), req.Lat, req.Lng, radius, disabled, req.Notes).Scan(&id)
 	if err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "insert failed: "+err.Error())
 		return
 	}
-	id, _ := res.LastInsertId()
 	if err := replacePageHints(r.Context(), tx, id, req.Hints); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "hints insert failed: "+err.Error())
 		return
@@ -539,8 +541,8 @@ func (h *Handlers) UpdatePage(w http.ResponseWriter, r *http.Request) {
 	defer tx.Rollback()
 	res, err := tx.ExecContext(r.Context(), `
 		UPDATE adventure_pages
-		SET title = ?, prompt = ?, accept = ?, lat = ?, lng = ?, radius_m = ?, disabled = ?, notes = ?
-		WHERE id = ?
+		SET title = $1, prompt = $2, accept = $3, lat = $4, lng = $5, radius_m = $6, disabled = $7, notes = $8
+		WHERE id = $9
 	`, req.Title, req.Prompt, string(accept), req.Lat, req.Lng, radius, disabled, req.Notes, pageID)
 	if err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "update failed: "+err.Error())
@@ -576,7 +578,7 @@ func (h *Handlers) DeletePage(w http.ResponseWriter, r *http.Request) {
 		idx   int
 	)
 	if err := h.DB.QueryRowContext(r.Context(),
-		`SELECT adventure_id, idx FROM adventure_pages WHERE id = ?`, pageID).Scan(&advID, &idx); err != nil {
+		`SELECT adventure_id, idx FROM adventure_pages WHERE id = $1`, pageID).Scan(&advID, &idx); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			httpx.Error(w, http.StatusNotFound, "page not found")
 			return
@@ -591,7 +593,7 @@ func (h *Handlers) DeletePage(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback()
 	if _, err := tx.ExecContext(r.Context(),
-		`DELETE FROM adventure_pages WHERE id = ?`, pageID); err != nil {
+		`DELETE FROM adventure_pages WHERE id = $1`, pageID); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "delete failed")
 		return
 	}
@@ -600,7 +602,7 @@ func (h *Handlers) DeletePage(w http.ResponseWriter, r *http.Request) {
 	// each NULL as distinct).
 	if advID.Valid {
 		if _, err := tx.ExecContext(r.Context(),
-			`UPDATE adventure_pages SET idx = idx - 1 WHERE adventure_id = ? AND idx > ?`,
+			`UPDATE adventure_pages SET idx = idx - 1 WHERE adventure_id = $1 AND idx > $2`,
 			advID.Int64, idx); err != nil {
 			httpx.Error(w, http.StatusInternalServerError, "renumber failed")
 			return
@@ -638,20 +640,21 @@ func (h *Handlers) ReorderPages(w http.ResponseWriter, r *http.Request) {
 	defer tx.Rollback()
 	// Park every row at a guaranteed-unique idx well above the reassign
 	// range so the second pass can write 0..N-1 without transient
-	// UNIQUE(adventure_id, idx) collisions. rowid is unique per row, so
-	// the new values can never clash with each other; the 10^9 offset
-	// keeps them disjoint from both the target range and any sane
-	// existing idx (including the negative values a previously crashed
-	// reorder could have left stuck — the old scheme `-idx - 1` would
-	// flip those back into the positive range and re-collide).
+	// UNIQUE(adventure_id, idx) collisions. id is the row's surrogate
+	// key (unique per row), so the new values can never clash with
+	// each other; the 10^9 offset keeps them disjoint from both the
+	// target range and any sane existing idx (including the negative
+	// values a previously crashed reorder could have left stuck — the
+	// old scheme `-idx - 1` would flip those back into the positive
+	// range and re-collide).
 	if _, err := tx.ExecContext(r.Context(),
-		`UPDATE adventure_pages SET idx = 1000000000 + rowid WHERE adventure_id = ?`, advID); err != nil {
+		`UPDATE adventure_pages SET idx = 1000000000 + id WHERE adventure_id = $1`, advID); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "prepare failed: "+err.Error())
 		return
 	}
 	for i, id := range req.PageIDs {
 		res, err := tx.ExecContext(r.Context(),
-			`UPDATE adventure_pages SET idx = ? WHERE id = ? AND adventure_id = ?`,
+			`UPDATE adventure_pages SET idx = $1 WHERE id = $2 AND adventure_id = $3`,
 			i, id, advID)
 		if err != nil {
 			httpx.Error(w, http.StatusInternalServerError, "reorder failed: "+err.Error())
@@ -718,20 +721,20 @@ func (h *Handlers) AddPageImage(w http.ResponseWriter, r *http.Request) {
 
 	var nextIdx int
 	if err := h.DB.QueryRowContext(r.Context(),
-		`SELECT COALESCE(MAX(idx)+1, 0) FROM adventure_page_images WHERE page_id = ?`, pageID).
+		`SELECT COALESCE(MAX(idx)+1, 0) FROM adventure_page_images WHERE page_id = $1`, pageID).
 		Scan(&nextIdx); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "next index lookup failed")
 		return
 	}
-	res, err := h.DB.ExecContext(r.Context(), `
+	var id int64
+	if err := h.DB.QueryRowContext(r.Context(), `
 		INSERT INTO adventure_page_images(page_id, idx, mime_type, size_bytes, content)
-		VALUES (?, ?, ?, ?, ?)
-	`, pageID, nextIdx, mime, int64(len(data)), data)
-	if err != nil {
+		VALUES ($1, $2, $3, $4, $5)
+		RETURNING id
+	`, pageID, nextIdx, mime, int64(len(data)), data).Scan(&id); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "insert failed: "+err.Error())
 		return
 	}
-	id, _ := res.LastInsertId()
 	httpx.JSON(w, http.StatusCreated, imageView{
 		ID: id, Index: nextIdx, MimeType: mime, SizeBytes: int64(len(data)),
 		URL: fmt.Sprintf("/adventure-assets/image/%d", id),
@@ -748,7 +751,7 @@ func (h *Handlers) DeletePageImage(w http.ResponseWriter, r *http.Request) {
 	// Resolve the owning page so we can run the standard policy check.
 	var pageID int64
 	if err := h.DB.QueryRowContext(r.Context(),
-		`SELECT page_id FROM adventure_page_images WHERE id = ?`, imageID).Scan(&pageID); err != nil {
+		`SELECT page_id FROM adventure_page_images WHERE id = $1`, imageID).Scan(&pageID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			httpx.Error(w, http.StatusNotFound, "image not found")
 			return
@@ -760,7 +763,7 @@ func (h *Handlers) DeletePageImage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	res, err := h.DB.ExecContext(r.Context(),
-		`DELETE FROM adventure_page_images WHERE id = ?`, imageID)
+		`DELETE FROM adventure_page_images WHERE id = $1`, imageID)
 	if err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "delete failed")
 		return
@@ -790,7 +793,7 @@ func (h *Handlers) ServeImage(w http.ResponseWriter, r *http.Request) {
 	)
 	if err := h.DB.QueryRowContext(r.Context(), `
 		SELECT page_id, mime_type, size_bytes, content
-		FROM adventure_page_images WHERE id = ?
+		FROM adventure_page_images WHERE id = $1
 	`, imageID).Scan(&pageID, &mime, &size, &content); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			http.Error(w, "not found", http.StatusNotFound)
@@ -825,7 +828,7 @@ func (h *Handlers) canViewPageImage(r *http.Request, pageID int64) bool {
 		idx   int
 	)
 	if err := h.DB.QueryRowContext(r.Context(),
-		`SELECT adventure_id, idx FROM adventure_pages WHERE id = ?`, pageID).Scan(&advID, &idx); err != nil {
+		`SELECT adventure_id, idx FROM adventure_pages WHERE id = $1`, pageID).Scan(&advID, &idx); err != nil {
 		return false
 	}
 	// Match up: slot's team is on a run whose adventure_slug → advID, and
@@ -835,7 +838,7 @@ func (h *Handlers) canViewPageImage(r *http.Request, pageID int64) bool {
 		SELECT COUNT(*) FROM teams t
 		JOIN adventure_runs ar ON ar.id = t.run_id
 		JOIN adventures a ON a.slug = ar.adventure_slug
-		WHERE t.id = ? AND a.id = ? AND t.current_page_index = ?
+		WHERE t.id = $1 AND a.id = $2 AND t.current_page_index = $3
 	`, slot.TeamID, advID, idx).Scan(&onPage)
 	if err != nil {
 		return false
@@ -847,7 +850,7 @@ func (h *Handlers) canViewPageImage(r *http.Request, pageID int64) bool {
 
 func adventureIDBySlug(ctx context.Context, db *sql.DB, slug string) (int64, error) {
 	var id int64
-	err := db.QueryRowContext(ctx, `SELECT id FROM adventures WHERE slug = ?`, slug).Scan(&id)
+	err := db.QueryRowContext(ctx, `SELECT id FROM adventures WHERE slug = $1`, slug).Scan(&id)
 	return id, err
 }
 
@@ -861,9 +864,9 @@ func loadAdventureDTO(ctx context.Context, db *sql.DB, slug string) (*adventureE
 	if err := db.QueryRowContext(ctx, `
 		SELECT id, slug, title, description, author, intro_text, outro_text,
 		       accent_color, accent_secondary_color, background_color, text_color,
-		       avatar_mime_type IS NOT NULL AS has_avatar,
+		       (avatar_mime_type IS NOT NULL)::int AS has_avatar,
 		       published
-		FROM adventures WHERE slug = ?
+		FROM adventures WHERE slug = $1
 	`, slug).Scan(&a.ID, &a.Slug, &a.Title, &a.Description, &a.Author,
 		&a.IntroText, &a.OutroText,
 		&accent, &accent2, &bg, &ink, &hasAvatar, &published); err != nil {
@@ -879,7 +882,7 @@ func loadAdventureDTO(ctx context.Context, db *sql.DB, slug string) (*adventureE
 	}
 	rows, err := db.QueryContext(ctx, `
 		SELECT id, idx, title, prompt, accept, lat, lng, radius_m, disabled, notes
-		FROM adventure_pages WHERE adventure_id = ? ORDER BY idx
+		FROM adventure_pages WHERE adventure_id = $1 ORDER BY idx
 	`, a.ID)
 	if err != nil {
 		return nil, err
@@ -937,8 +940,8 @@ func loadAdventureShares(ctx context.Context, db *sql.DB, slug string) ([]shareV
 		SELECT s.org_id, o.name, s.granted_at
 		FROM adventure_shares s
 		JOIN organizations o ON o.id = s.org_id
-		WHERE s.adventure_slug = ?
-		ORDER BY o.name COLLATE NOCASE
+		WHERE s.adventure_slug = $1
+		ORDER BY LOWER(o.name)
 	`, slug)
 	if err != nil {
 		return nil, err
@@ -958,7 +961,7 @@ func loadAdventureShares(ctx context.Context, db *sql.DB, slug string) ([]shareV
 func loadPageImages(ctx context.Context, db *sql.DB, pageID int64) ([]imageView, error) {
 	rows, err := db.QueryContext(ctx, `
 		SELECT id, idx, mime_type, size_bytes FROM adventure_page_images
-		WHERE page_id = ? ORDER BY idx
+		WHERE page_id = $1 ORDER BY idx
 	`, pageID)
 	if err != nil {
 		return nil, err
@@ -982,7 +985,7 @@ func loadPageImages(ctx context.Context, db *sql.DB, pageID int64) ([]imageView,
 func loadPageHints(ctx context.Context, db *sql.DB, pageID int64) ([]hintView, error) {
 	rows, err := db.QueryContext(ctx, `
 		SELECT text, delay_seconds FROM adventure_page_hints
-		WHERE page_id = ? ORDER BY idx
+		WHERE page_id = $1 ORDER BY idx
 	`, pageID)
 	if err != nil {
 		return nil, err
@@ -1108,8 +1111,8 @@ func (h *Handlers) SetAdventureAvatar(w http.ResponseWriter, r *http.Request) {
 	data, mime = shrunk, newMIME
 	res, err := h.DB.ExecContext(r.Context(), `
 		UPDATE adventures
-		   SET avatar_mime_type = ?, avatar_size_bytes = ?, avatar_content = ?
-		 WHERE slug = ?
+		   SET avatar_mime_type = $1, avatar_size_bytes = $2, avatar_content = $3
+		 WHERE slug = $4
 	`, mime, int64(len(data)), data, slug)
 	if err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "store failed: "+err.Error())
@@ -1136,7 +1139,7 @@ func (h *Handlers) DeleteAdventureAvatar(w http.ResponseWriter, r *http.Request)
 	if _, err := h.DB.ExecContext(r.Context(), `
 		UPDATE adventures
 		   SET avatar_mime_type = NULL, avatar_size_bytes = NULL, avatar_content = NULL
-		 WHERE slug = ?
+		 WHERE slug = $1
 	`, slug); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "clear failed")
 		return
@@ -1156,7 +1159,7 @@ func (h *Handlers) ServeAdventureAvatar(w http.ResponseWriter, r *http.Request) 
 	)
 	err := h.DB.QueryRowContext(r.Context(), `
 		SELECT avatar_mime_type, avatar_size_bytes, avatar_content
-		FROM adventures WHERE slug = ?
+		FROM adventures WHERE slug = $1
 	`, slug).Scan(&mime, &size, &content)
 	if errors.Is(err, sql.ErrNoRows) || !mime.Valid || len(content) == 0 {
 		http.NotFound(w, r)
@@ -1212,7 +1215,7 @@ func (h *Handlers) GrantAdventureShare(w http.ResponseWriter, r *http.Request) {
 	}
 	var orgExists int
 	if err := h.DB.QueryRowContext(r.Context(),
-		`SELECT COUNT(*) FROM organizations WHERE id = ?`, req.OrgID).Scan(&orgExists); err != nil {
+		`SELECT COUNT(*) FROM organizations WHERE id = $1`, req.OrgID).Scan(&orgExists); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "lookup failed")
 		return
 	}
@@ -1223,7 +1226,7 @@ func (h *Handlers) GrantAdventureShare(w http.ResponseWriter, r *http.Request) {
 	me, _ := auth.FromContext(r.Context())
 	if _, err := h.DB.ExecContext(r.Context(), `
 		INSERT INTO adventure_shares(adventure_slug, org_id, granted_by_user_id)
-		VALUES (?, ?, ?)
+		VALUES ($1, $2, $3)
 		ON CONFLICT(adventure_slug, org_id) DO NOTHING
 	`, slug, req.OrgID, me.ID); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "grant failed: "+err.Error())
@@ -1245,7 +1248,7 @@ func (h *Handlers) RevokeAdventureShare(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	if _, err := h.DB.ExecContext(r.Context(),
-		`DELETE FROM adventure_shares WHERE adventure_slug = ? AND org_id = ?`,
+		`DELETE FROM adventure_shares WHERE adventure_slug = $1 AND org_id = $2`,
 		slug, orgID); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "revoke failed")
 		return

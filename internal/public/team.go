@@ -53,11 +53,11 @@ func (h *Handlers) TeamShare(w http.ResponseWriter, r *http.Request) {
 		hasAvatar int
 	)
 	err := h.DB.QueryRowContext(r.Context(), `
-		SELECT t.id, t.name, a.title, t.avatar_mime_type IS NOT NULL AS has_avatar
+		SELECT t.id, t.name, a.title, (t.avatar_mime_type IS NOT NULL)::int AS has_avatar
 		FROM teams t
 		JOIN adventure_runs ar ON ar.id = t.run_id
 		LEFT JOIN adventures a ON a.slug = ar.adventure_slug
-		WHERE t.token = ?
+		WHERE t.token = $1
 	`, token).Scan(&teamID, &view.TeamName, &title, &hasAvatar)
 	if errors.Is(err, sql.ErrNoRows) {
 		http.Error(w, "team not found — ask your arranger for a fresh link", http.StatusNotFound)
@@ -77,8 +77,8 @@ func (h *Handlers) TeamShare(w http.ResponseWriter, r *http.Request) {
 		SELECT ps.name, ps.token
 		FROM player_slots ps
 		JOIN teams t ON t.id = ps.team_id
-		WHERE t.token = ?
-		ORDER BY ps.name COLLATE NOCASE
+		WHERE t.token = $1
+		ORDER BY LOWER(ps.name)
 	`, token)
 	if err != nil {
 		http.Error(w, "lookup failed", http.StatusInternalServerError)
@@ -119,7 +119,7 @@ func (h *Handlers) teamByToken(w http.ResponseWriter, r *http.Request, token str
 		runID  int64
 	)
 	err := h.DB.QueryRowContext(r.Context(), `
-		SELECT id, run_id FROM teams WHERE token = ?
+		SELECT id, run_id FROM teams WHERE token = $1
 	`, token).Scan(&teamID, &runID)
 	if errors.Is(err, sql.ErrNoRows) {
 		httpx.Error(w, http.StatusNotFound, "team not found")
@@ -177,8 +177,8 @@ func (h *Handlers) SetTeamAvatarByToken(w http.ResponseWriter, r *http.Request) 
 	data, mime = shrunk, newMIME
 	if _, err := h.DB.ExecContext(r.Context(), `
 		UPDATE teams
-		   SET avatar_mime_type = ?, avatar_size_bytes = ?, avatar_content = ?
-		 WHERE id = ?
+		   SET avatar_mime_type = $1, avatar_size_bytes = $2, avatar_content = $3
+		 WHERE id = $4
 	`, mime, int64(len(data)), data, teamID); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "store failed: "+err.Error())
 		return
@@ -204,7 +204,7 @@ func (h *Handlers) DeleteTeamAvatarByToken(w http.ResponseWriter, r *http.Reques
 	if _, err := h.DB.ExecContext(r.Context(), `
 		UPDATE teams
 		   SET avatar_mime_type = NULL, avatar_size_bytes = NULL, avatar_content = NULL
-		 WHERE id = ?
+		 WHERE id = $1
 	`, teamID); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "clear failed")
 		return

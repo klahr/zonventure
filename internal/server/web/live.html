@@ -1266,6 +1266,23 @@ document.addEventListener('keydown', (e) => {
 });
 
 connectWS();
+
+// Tiny legal-link strip pinned to the corner. The live view runs on
+// a TV with no real interaction surface, so visibility is enough —
+// any human who needs the policies can pull them up on a phone.
+(function mountLegalFooter() {
+  const f = document.createElement('div');
+  f.style.cssText = 'position:fixed; bottom:.35rem; right:.5rem; font-size:.65rem; color:rgba(255,255,255,.45); z-index:5;';
+  const linkStyle = 'color:inherit; text-decoration:underline;';
+  const a1 = document.createElement('a');
+  a1.href = '/privacy'; a1.target = '_blank'; a1.rel = 'noopener';
+  a1.style.cssText = linkStyle; a1.textContent = 'Privacy';
+  const a2 = document.createElement('a');
+  a2.href = '/terms'; a2.target = '_blank'; a2.rel = 'noopener';
+  a2.style.cssText = linkStyle; a2.textContent = 'Terms';
+  f.append(a1, document.createTextNode(' · '), a2);
+  document.body.append(f);
+})();
 </script>
 </body>
 </html>

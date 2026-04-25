@@ -1,0 +1,11 @@
+# Anything not needed for `go build ./cmd/server` is dead weight in the
+# build context. The binary embeds migrations + web/ via go:embed, so
+# everything inside the source tree that the build doesn't read can go.
+.git
+.gitignore
+.env
+TODO.md
+Dockerfile
+.dockerignore
+compose.yaml
+zv-server

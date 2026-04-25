@@ -3,13 +3,16 @@
 package server
 
 import (
+	"context"
 	"database/sql"
 	"embed"
 	"net/http"
+	"time"
 
 	"git.sr.ht/~klahr/zv/internal/admin"
 	"git.sr.ht/~klahr/zv/internal/adventure"
 	"git.sr.ht/~klahr/zv/internal/auth"
+	"git.sr.ht/~klahr/zv/internal/mailer"
 	"git.sr.ht/~klahr/zv/internal/player"
 	"git.sr.ht/~klahr/zv/internal/public"
 	"git.sr.ht/~klahr/zv/internal/simulator"
@@ -18,7 +21,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 )
 
-//go:embed web/play.html web/arrange.html web/live.html web/i18n.js web/favicon.svg
+//go:embed web/play.html web/arrange.html web/live.html web/i18n.js web/favicon.svg web/privacy.html web/terms.html
 var webFS embed.FS
 
 // Config is the bag of knobs New needs.
@@ -31,6 +34,26 @@ type Config struct {
 	// so an admin can't flatten a real run by accident; on in dev by
 	// setting ZV_SIMULATOR=1 on the server binary.
 	SimulatorEnabled bool
+	// Mailer is the transactional email backend. Optional: when nil
+	// the server installs a LogMailer fallback so email-bound flows
+	// don't crash in tests / dev clones with no SMTP configured.
+	Mailer mailer.Mailer
+	// PublicURL is the externally-reachable origin (no trailing slash)
+	// used to build verification links in outbound mail. When empty
+	// the auth handlers fall back to the request's Host header, which
+	// works for dev but not when running behind a proxy that doesn't
+	// forward Host correctly.
+	PublicURL string
+	// Legal is the operator-supplied content for /privacy and /terms.
+	// Unset fields render "[set ZV_*]" so missing config is obvious
+	// to an operator visiting the page in dev.
+	Legal LegalConfig
+	// StripeSecretKey + StripeWebhookSecret enable provider=stripe on
+	// purchases. Both must be set for Stripe to be considered
+	// available; either being empty leaves the simulated provider as
+	// the only purchase flow.
+	StripeSecretKey     string
+	StripeWebhookSecret string
 }
 
 // New builds the HTTP router.
@@ -39,6 +62,10 @@ func New(cfg Config) http.Handler {
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Recoverer)
+	// EnsureCSRF runs early so the zv_csrf cookie is on every response,
+	// including the static /arrange and /play pages. The HTTP-only
+	// session cookies (zv_session, zv_slot) live alongside it.
+	r.Use(auth.EnsureCSRF(cfg.SecureCookie))
 	r.Use(auth.Middleware(cfg.DB))
 	r.Use(auth.SlotMiddleware(cfg.DB))
 
@@ -51,17 +78,45 @@ func New(cfg Config) http.Handler {
 		DB:           cfg.DB,
 		SecureCookie: cfg.SecureCookie,
 		Features:     auth.Features{SimulatorEnabled: cfg.SimulatorEnabled},
+		Limiter:      auth.NewLoginLimiter(),
+		Mailer:       cfg.Mailer,
+		PublicURL:    cfg.PublicURL,
 	}
 	playerH := &player.Handlers{DB: cfg.DB, Lib: cfg.Library, Hub: hub, SecureCookie: cfg.SecureCookie}
 	// Simulator instance always exists (package isn't huge, avoids
 	// null-check scatter); the ROUTES are gated on SimulatorEnabled
 	// below so disabled deployments simply 404 on /api/admin/simulator.
 	sim := simulator.New(cfg.DB, cfg.Library, hub)
-	adminH := &admin.Handlers{DB: cfg.DB, Lib: cfg.Library, Hub: hub, Sim: sim, SimulatorEnabled: cfg.SimulatorEnabled}
+	mail := cfg.Mailer
+	if mail == nil {
+		mail = mailer.LogMailer{}
+	}
+	adminH := &admin.Handlers{
+		DB: cfg.DB, Lib: cfg.Library, Hub: hub, Sim: sim,
+		SimulatorEnabled:    cfg.SimulatorEnabled,
+		Mailer:              mail,
+		PublicURL:           cfg.PublicURL,
+		StripeSecretKey:     cfg.StripeSecretKey,
+		StripeWebhookSecret: cfg.StripeWebhookSecret,
+	}
 	publicH := &public.Handlers{DB: cfg.DB, Lib: cfg.Library, Hub: hub}
 
-	r.Get("/api/health", func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusNoContent)
+	// Health probe used by load balancers and `depends_on: condition:
+	// service_healthy` in compose. Pings the DB so we report unhealthy
+	// when the connection is down — a stuck-but-listening server would
+	// otherwise keep receiving traffic.
+	r.Get("/api/health", func(w http.ResponseWriter, req *http.Request) {
+		ctx, cancel := context.WithTimeout(req.Context(), time.Second)
+		defer cancel()
+		if err := cfg.DB.PingContext(ctx); err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte(`{"status":"db unavailable"}`))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
 	})
 
 	// Root sends visitors straight to the right entry point: players get
@@ -125,20 +180,64 @@ func New(cfg Config) http.Handler {
 	// already in the URL, no extra sensitive metadata is leaked.
 	r.Get("/adventure-assets/avatar/{slug}", adminH.ServeAdventureAvatar)
 
-	// Staff authentication.
-	r.Post("/api/auth/login", authH.Login)
-	r.Post("/api/auth/set-password", authH.SetPassword)
-	r.Post("/api/auth/logout", authH.Logout)
+	// Staff authentication. CSRF-protected — the user gets a zv_csrf
+	// cookie from the /arrange page GET that hosts the login form, so
+	// the form's POST can echo it back. A cross-origin "log my victim
+	// into my account" attempt has no way to read the cookie value.
+	r.Group(func(r chi.Router) {
+		r.Use(auth.RequireCSRF())
+		r.Post("/api/auth/login", authH.Login)
+		r.Post("/api/auth/signup", authH.Signup)
+		r.Post("/api/auth/set-password", authH.SetPassword)
+		r.Post("/api/auth/logout", authH.Logout)
+		r.Post("/api/auth/resend-verification", authH.ResendVerification)
+		// Forgot/reset are pre-auth: a user who can't log in is
+		// exactly the audience here. Both still need CSRF (the
+		// /arrange page seeds the cookie before the form submits).
+		r.Post("/api/auth/forgot", authH.ForgotPassword)
+		r.Post("/api/auth/reset", authH.ResetPassword)
+	})
 	r.Get("/api/auth/whoami", authH.Whoami)
+	// Email verification clicks land on a GET; not CSRF-relevant.
+	r.Get("/verify", authH.VerifyEmail)
 
-	// Player (slot-authenticated).
+	// Legal pages — public, cached at the proxy by Cache-Control.
+	// Both pages are clearly-marked drafts until the operator sets
+	// the ZV_* env vars and a lawyer signs off on the body.
+	r.Get("/privacy", func(w http.ResponseWriter, _ *http.Request) {
+		renderLegalPage(w, "privacy.html", cfg.Legal)
+	})
+	r.Get("/terms", func(w http.ResponseWriter, _ *http.Request) {
+		renderLegalPage(w, "terms.html", cfg.Legal)
+	})
+
+	// Stripe webhook. Public POST: the auth IS the HMAC signature in
+	// the Stripe-Signature header, verified by the handler. Sits OUTSIDE
+	// the CSRF middleware because Stripe doesn't (and shouldn't) know
+	// our CSRF cookie. Idempotency is handled by processed_webhook_events.
+	r.Post("/api/webhooks/stripe", adminH.StripeWebhook)
+	// Change-email confirmation: public POST (the token IS the auth),
+	// CSRF-protected because the page that calls it is /arrange and
+	// already has the cookie. JSON body: {"token": "..."}.
+	r.Group(func(r chi.Router) {
+		r.Use(auth.RequireCSRF())
+		r.Post("/api/auth/confirm-email-change", adminH.ConfirmEmailChange)
+	})
+
+	// Player (slot-authenticated). Mutations under CSRF; the GET reads
+	// stay open since they're idempotent and can't damage state.
 	r.Route("/api/player", func(r chi.Router) {
 		r.Use(auth.RequireSlot)
+		r.Use(auth.RequireCSRF())
 		r.Get("/state", playerH.GetState)
 		r.Post("/answer", playerH.SubmitAnswer)
 		r.Post("/location", playerH.PostLocation)
 		r.Get("/summary", playerH.Summary)
 		r.Post("/logout", playerH.Logout)
+		// GDPR right-to-erasure: wipes pings + answers + slot name +
+		// session for the caller's slot. The slot row stays so the
+		// team's run keeps working for everyone else.
+		r.Post("/forget", playerH.Forget)
 	})
 
 	// Player WebSocket: replaces the 5s /state poll and 15s /location POST
@@ -156,9 +255,12 @@ func New(cfg Config) http.Handler {
 		r.Get("/ws/arrange", adminH.WSArrange)
 	})
 
-	// Admin / org-user surface (staff-authenticated).
+	// Admin / org-user surface (staff-authenticated). RequireCSRF runs
+	// after RequireAnyRole so the 401 for "no session" still wins
+	// (pre-auth callers don't care about the CSRF distinction).
 	r.Route("/api/admin", func(r chi.Router) {
 		r.Use(auth.RequireAnyRole(auth.RoleAdmin, auth.RoleOrgAdmin, auth.RoleOrgMember))
+		r.Use(auth.RequireCSRF())
 
 		r.Get("/adventures", adminH.ListAdventures)
 		r.Get("/adventures/{slug}", adminH.AdventureDetail)
@@ -236,6 +338,22 @@ func New(cfg Config) http.Handler {
 		r.Get("/purchases/{purchaseID}", adminH.GetPurchase)
 		r.Post("/purchases/{purchaseID}/confirm", adminH.ConfirmPurchase)
 
+		// Auth audit feed. The handler scopes per role: admins see
+		// every event, org_admins see only their org's users, anyone
+		// else gets 403. Mounted here (not inside the admin-only
+		// group below) so org_admins reach it.
+		r.Get("/auth-events", adminH.ListAuthEvents)
+
+		// Account settings — every logged-in staff user can change
+		// their own password / email / delete themselves. No role
+		// gate beyond the surrounding RequireAnyRole.
+		r.Post("/me/password", adminH.ChangeMyPassword)
+		r.Post("/me/email", adminH.ChangeMyEmail)
+		r.Delete("/me", adminH.DeleteMyAccount)
+		// GDPR data export — JSON dump of personal + (when scoped)
+		// org data, served as a downloadable file.
+		r.Get("/me/export", adminH.ExportMyData)
+
 		// Global admin only.
 		r.Group(func(r chi.Router) {
 			r.Use(auth.RequireRole(auth.RoleAdmin))
@@ -250,6 +368,19 @@ func New(cfg Config) http.Handler {
 			r.Get("/admins", adminH.ListAdmins)
 			r.Post("/admins", adminH.CreateAdmin)
 			r.Delete("/admins/{userID}", adminH.DeleteAdmin)
+
+			// Test-email knob: lets the operator verify SMTP config
+			// before customers hit the broken signup flow. Body just
+			// names a recipient — content is fixed server-side so
+			// this can't be repurposed as a spam relay.
+			r.Post("/send-test-email", adminH.SendTestEmail)
+
+			// Refunds touch real money — admin-only. The handler
+			// just calls Stripe; the actual state flip happens via
+			// the charge.refunded webhook so the same code path
+			// works whether the refund originated here or in the
+			// Stripe Dashboard.
+			r.Post("/purchases/{purchaseID}/refund", adminH.RefundPurchase)
 
 			// Server logs — stream + level control. Admin-only so org
 			// users can't snoop another org's messages.

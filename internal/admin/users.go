@@ -79,7 +79,7 @@ func (h *Handlers) AdventureDetail(w http.ResponseWriter, r *http.Request) {
 		published int
 	)
 	_ = h.DB.QueryRowContext(r.Context(),
-		`SELECT avatar_mime_type IS NOT NULL, published FROM adventures WHERE slug = ?`,
+		`SELECT avatar_mime_type IS NOT NULL, published FROM adventures WHERE slug = $1`,
 		slug).Scan(&hasAvatar, &published)
 	if hasAvatar != 0 {
 		out["avatar_url"] = adventureAvatarURL(slug)
@@ -110,7 +110,7 @@ func (h *Handlers) RunDetail(w http.ResponseWriter, r *http.Request) {
 		       ar.live_token, ar.show_map
 		FROM adventure_runs ar
 		LEFT JOIN adventure_assignments aa ON aa.id = ar.assignment_id
-		WHERE ar.id = ?
+		WHERE ar.id = $1
 	`, runID).Scan(&d.ID, &d.Name, &d.AdventureSlug, &d.State, &d.ScheduledAt, &d.StartedAt,
 		&d.OrgID, &d.CreatedByUserID, &d.AssignmentID, &d.MaxTeams,
 		&d.LiveToken, &showMap); err != nil {
@@ -137,8 +137,8 @@ func (h *Handlers) RunDetail(w http.ResponseWriter, r *http.Request) {
 	teams := []teamOut{}
 	rows, err := h.DB.QueryContext(r.Context(), `
 		SELECT t.id, t.name, t.current_page_index, COALESCE(t.completed_at, ''), t.token,
-		       t.avatar_mime_type IS NOT NULL AS has_avatar
-		FROM teams t WHERE t.run_id = ? ORDER BY t.name
+		       (t.avatar_mime_type IS NOT NULL)::int AS has_avatar
+		FROM teams t WHERE t.run_id = $1 ORDER BY t.name
 	`, runID)
 	if err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "teams failed")
@@ -160,7 +160,7 @@ func (h *Handlers) RunDetail(w http.ResponseWriter, r *http.Request) {
 	for i := range teams {
 		mrows, err := h.DB.QueryContext(r.Context(), `
 			SELECT id, name, token, COALESCE(last_login_at, '')
-			FROM player_slots WHERE team_id = ? ORDER BY name COLLATE NOCASE
+			FROM player_slots WHERE team_id = $1 ORDER BY LOWER(name)
 		`, teams[i].ID)
 		if err != nil {
 			httpx.Error(w, http.StatusInternalServerError, "members failed")
@@ -211,7 +211,7 @@ func (h *Handlers) ResetPassword(w http.ResponseWriter, r *http.Request) {
 		orgID   sql.NullInt64
 	)
 	err := h.DB.QueryRowContext(r.Context(),
-		`SELECT role, org_id FROM users WHERE id = ?`, id).Scan(&role, &orgID)
+		`SELECT role, org_id FROM users WHERE id = $1`, id).Scan(&role, &orgID)
 	if errors.Is(err, sql.ErrNoRows) {
 		httpx.Error(w, http.StatusNotFound, "user not found")
 		return
@@ -243,17 +243,21 @@ func (h *Handlers) ResetPassword(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusBadRequest, "password required")
 		return
 	}
+	if err := auth.ValidatePassword(req.Password); err != nil {
+		httpx.Error(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	hash, err := auth.HashPassword(req.Password)
 	if err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "hash failed")
 		return
 	}
 	if _, err := h.DB.ExecContext(r.Context(),
-		`UPDATE users SET password_hash = ? WHERE id = ?`, hash, id); err != nil {
+		`UPDATE users SET password_hash = $1 WHERE id = $2`, hash, id); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "update failed")
 		return
 	}
-	if _, err := h.DB.ExecContext(r.Context(), `DELETE FROM sessions WHERE user_id = ?`, id); err != nil {
+	if _, err := h.DB.ExecContext(r.Context(), `DELETE FROM sessions WHERE user_id = $1`, id); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "session cleanup failed")
 		return
 	}

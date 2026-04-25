@@ -6,10 +6,12 @@ import (
 	"database/sql"
 	"errors"
 	"flag"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -18,26 +20,55 @@ import (
 	"git.sr.ht/~klahr/zv/internal/auth"
 	"git.sr.ht/~klahr/zv/internal/db"
 	"git.sr.ht/~klahr/zv/internal/logx"
+	"git.sr.ht/~klahr/zv/internal/mailer"
+	"git.sr.ht/~klahr/zv/internal/retention"
 	"git.sr.ht/~klahr/zv/internal/scheduler"
 	"git.sr.ht/~klahr/zv/internal/server"
 	"git.sr.ht/~klahr/zv/internal/ws"
 )
 
+// envIntDefault returns the integer value of the named env var, or the
+// fallback when the var is unset or unparseable. Lets us share env-vs-flag
+// configuration logic for retention thresholds the same way ZV_PUBLIC_URL
+// already does.
+func envIntDefault(key string, fallback int) int {
+	if v := os.Getenv(key); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			return n
+		}
+	}
+	return fallback
+}
+
 func main() {
 	var (
 		addr              = flag.String("addr", ":8080", "listen address")
-		dbPath            = flag.String("db", "zv.db", "sqlite database path")
-		secureCookie      = flag.Bool("secure-cookie", false, "set Secure flag on session cookies (enable behind TLS)")
+		dsn               = flag.String("dsn", "", "postgres DSN (libpq URL or key=val); falls back to $DATABASE_URL")
+		secureCookie      = flag.Bool("secure-cookie", false, "force Secure flag on cookies even when the request looks plain HTTP; auto-detects from r.TLS / X-Forwarded-Proto otherwise")
+		publicURL         = flag.String("public-url", os.Getenv("ZV_PUBLIC_URL"), "externally-reachable origin (e.g. https://zv.example) used to build links in outbound emails")
+		sessionTTL        = flag.Duration("session-ttl", auth.SessionTTL, "how long a staff login stays valid (e.g. 24h, 168h, 720h); newly-set sessions only")
 		logLevel          = flag.String("log-level", "INFO", "initial log level (DEBUG|INFO|WARN|ERROR)")
 		seedAdmin         = flag.String("seed-admin", "", "if set, create/update a global admin as username:password")
 		seedArranger      = flag.String("seed-arranger", "", "if set, create/update an org_admin arranger as username:password in the default Arrangers org")
 		seedDemoAdvFlag   = flag.Bool("seed-demo-adventure", false, "install the demo adventure (puzzles + placeholder images)")
 		seedDemoFlag      = flag.Bool("seed-demo", false, "install a full demo dataset and exit")
+		revokeFlag        = flag.String("revoke-sessions", "", `if set, drop staff sessions and exit. Pass a username to scope, or "all" to nuke every session+slot session`)
+		retentionLocation = flag.Int("retention-location-days", envIntDefault("ZV_LOCATION_RETENTION_DAYS", 30), "delete player location pings + answer attempts this many days after the run completes (0 disables)")
+		retentionAudit    = flag.Int("retention-audit-days", envIntDefault("ZV_AUDIT_RETENTION_DAYS", 90), "delete auth_events rows this many days after they were emitted (0 disables)")
+		retentionInterval = flag.Duration("retention-interval", time.Hour, "how often the retention sweeper runs")
 	)
 	flag.Parse()
 	logx.SetLevel(logx.ParseLevel(*logLevel))
+	auth.SetSessionTTL(*sessionTTL)
 
-	sqlDB, err := db.Open(*dbPath)
+	connStr := *dsn
+	if connStr == "" {
+		connStr = os.Getenv("DATABASE_URL")
+	}
+	if connStr == "" {
+		log.Fatalf("no postgres DSN: pass -dsn or set DATABASE_URL")
+	}
+	sqlDB, err := db.Open(connStr)
 	if err != nil {
 		log.Fatalf("open db: %v", err)
 	}
@@ -75,6 +106,14 @@ func main() {
 		log.Printf(`demo data installed. Log in at /arrange as admin/admin, boss/s3cret (org_admin) or jane/jane (org_member). Players use per-slot magic links — copy them from Runs → Run #1 → Edit team.`)
 		seeded = true
 	}
+	if *revokeFlag != "" {
+		n, err := revokeSessions(sqlDB, *revokeFlag)
+		if err != nil {
+			log.Fatalf("revoke sessions: %v", err)
+		}
+		log.Printf("revoked %d session row(s) for target %q", n, *revokeFlag)
+		seeded = true
+	}
 	if seeded {
 		return
 	}
@@ -87,25 +126,61 @@ func main() {
 	// admin can't nuke a live run with a stray click. Dev + demo
 	// environments flip it on via the env.
 	simEnabled := os.Getenv("ZV_SIMULATOR") == "1"
+	mail, err := mailer.FromEnv()
+	if err != nil {
+		log.Fatalf("mailer config: %v", err)
+	}
 	h := server.New(server.Config{
 		DB:               sqlDB,
 		Library:          lib,
 		Hub:              hub,
 		SecureCookie:     *secureCookie,
 		SimulatorEnabled: simEnabled,
+		Mailer:           mail,
+		PublicURL:        *publicURL,
+		Legal: server.LegalConfig{
+			CompanyName:           os.Getenv("ZV_COMPANY_NAME"),
+			ContactEmail:          os.Getenv("ZV_CONTACT_EMAIL"),
+			DPOEmail:              os.Getenv("ZV_DPO_EMAIL"),
+			Jurisdiction:          os.Getenv("ZV_JURISDICTION"),
+			LocationRetentionDays: os.Getenv("ZV_LOCATION_RETENTION_DAYS"),
+			AuditRetentionDays:    os.Getenv("ZV_AUDIT_RETENTION_DAYS"),
+			LastUpdated:           os.Getenv("ZV_LEGAL_LAST_UPDATED"),
+		},
+		StripeSecretKey:     os.Getenv("ZV_STRIPE_SECRET_KEY"),
+		StripeWebhookSecret: os.Getenv("ZV_STRIPE_WEBHOOK_SECRET"),
 	})
 
 	srv := &http.Server{
 		Addr:              *addr,
 		Handler:           h,
+		// Read/write/idle timeouts cap how long the server holds a
+		// connection in any one state, so a misbehaving client (slow
+		// loris-style attack, hung upload, idle-and-forgotten socket)
+		// can't sit on a goroutine indefinitely.
 		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       60 * time.Second,
+		WriteTimeout:      60 * time.Second,
+		IdleTimeout:       120 * time.Second,
+		// 1 MB header cap — well above what any sane client sends,
+		// and rejects oversized/malformed headers at the front door.
+		MaxHeaderBytes: 1 << 20,
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
 	// Sweep for scheduled runs every 15s and auto-start any that are due.
-	scheduler.Start(ctx, sqlDB, hub, 15*time.Second)
+	schedDone := scheduler.Start(ctx, sqlDB, hub, 15*time.Second)
+
+	// Privacy-retention sweeper: prunes location pings + answer attempts
+	// from completed runs and ages out auth_events. Operator-tunable via
+	// flags (or ZV_*_RETENTION_DAYS env vars); 0 disables.
+	retDone := retention.Start(ctx, sqlDB, retention.Config{
+		LocationDays: *retentionLocation,
+		AuditDays:    *retentionAudit,
+		Interval:     *retentionInterval,
+	})
 
 	go func() {
 		logx.Info("http.listening", "addr", *addr)
@@ -120,6 +195,21 @@ func main() {
 	defer cancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		logx.Error("http.shutdown.failed", "err", err)
+	}
+	// Wait for the scheduler tick goroutine to fully exit before
+	// returning, so an in-flight sweep finishes its UPDATE rather than
+	// being cut mid-statement when the process dies. Bounded by the
+	// signal context plus a small grace window: if the scheduler is
+	// somehow stuck we still exit instead of hanging the operator.
+	select {
+	case <-schedDone:
+	case <-time.After(5 * time.Second):
+		logx.Warn("scheduler.shutdown.timeout")
+	}
+	select {
+	case <-retDone:
+	case <-time.After(5 * time.Second):
+		logx.Warn("retention.shutdown.timeout")
 	}
 }
 
@@ -136,8 +226,42 @@ func seedAdminUser(d *sql.DB, creds string) error {
 		return err
 	}
 	_, err = d.Exec(`
-		INSERT INTO users(username, password_hash, role, org_id) VALUES (?, ?, 'admin', NULL)
+		INSERT INTO users(username, password_hash, role, org_id) VALUES ($1, $2, 'admin', NULL)
 		ON CONFLICT(username) DO UPDATE SET password_hash = excluded.password_hash, role = 'admin', org_id = NULL
 	`, username, hash)
 	return err
+}
+
+// revokeSessions clears server-side session rows so cookie holders are
+// forced through the login flow on their next request. target may be a
+// username (drops just that user's staff sessions) or the literal "all"
+// (drops every staff session AND every slot session — the emergency
+// "log everyone out" lever).
+//
+// Returns the total number of rows deleted across both tables. An
+// unknown username yields a non-nil error so the operator notices a
+// typo rather than thinking it succeeded silently.
+func revokeSessions(d *sql.DB, target string) (int64, error) {
+	if target == "all" {
+		var total int64
+		for _, table := range []string{"sessions", "slot_sessions"} {
+			res, err := d.Exec("DELETE FROM " + table)
+			if err != nil {
+				return total, fmt.Errorf("delete %s: %w", table, err)
+			}
+			n, _ := res.RowsAffected()
+			total += n
+		}
+		return total, nil
+	}
+	var userID int64
+	if err := d.QueryRow(`SELECT id FROM users WHERE username = $1`, target).Scan(&userID); err != nil {
+		return 0, fmt.Errorf("user %q not found: %w", target, err)
+	}
+	res, err := d.Exec(`DELETE FROM sessions WHERE user_id = $1`, userID)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	return n, nil
 }

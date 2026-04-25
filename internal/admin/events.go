@@ -31,10 +31,10 @@ func (h *Handlers) buildEvents(ctx context.Context, runID int64, teamFilter *int
 		FROM run_events e
 		LEFT JOIN teams t ON t.id = e.team_id
 		LEFT JOIN users u ON u.id = e.actor_user_id
-		WHERE e.run_id = ?`
+		WHERE e.run_id = $1`
 	args := []any{runID}
 	if teamFilter != nil {
-		query += ` AND e.team_id = ?`
+		query += ` AND e.team_id = $1`
 		args = append(args, *teamFilter)
 	}
 	query += ` ORDER BY e.created_at DESC, e.id DESC LIMIT 500`
@@ -72,7 +72,7 @@ func (h *Handlers) ListEvents(w http.ResponseWriter, r *http.Request) {
 	}
 	var orgID int64
 	err := h.DB.QueryRowContext(r.Context(),
-		`SELECT org_id FROM adventure_runs WHERE id = ?`, runID).Scan(&orgID)
+		`SELECT org_id FROM adventure_runs WHERE id = $1`, runID).Scan(&orgID)
 	if errors.Is(err, sql.ErrNoRows) {
 		httpx.Error(w, http.StatusNotFound, "run not found")
 		return

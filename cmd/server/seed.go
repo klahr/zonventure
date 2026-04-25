@@ -69,7 +69,7 @@ func insertDemoHints(d *sql.DB, pageID int64, hints []demoHint) error {
 	for i, h := range hints {
 		if _, err := d.Exec(`
 			INSERT INTO adventure_page_hints(page_id, idx, text, delay_seconds)
-			VALUES (?, ?, ?, ?)
+			VALUES ($1, $2, $3, $4)
 		`, pageID, i, h.Text, h.DelaySec); err != nil {
 			return err
 		}
@@ -87,13 +87,13 @@ func seedArrangerUser(d *sql.DB, creds string) error {
 	}
 	const orgName = "Arrangers"
 	if _, err := d.Exec(
-		`INSERT INTO organizations(name) VALUES (?) ON CONFLICT(name) DO NOTHING`,
+		`INSERT INTO organizations(name) VALUES ($1) ON CONFLICT(name) DO NOTHING`,
 		orgName); err != nil {
 		return err
 	}
 	var orgID int64
 	if err := d.QueryRow(
-		`SELECT id FROM organizations WHERE name = ?`, orgName).Scan(&orgID); err != nil {
+		`SELECT id FROM organizations WHERE name = $1`, orgName).Scan(&orgID); err != nil {
 		return err
 	}
 	_, err = upsertUser(d, username, password, auth.RoleOrgAdmin, &orgID)
@@ -117,25 +117,23 @@ func splitCreds(creds string) (string, string, error) {
 // adventure by slug. For the full demo dataset (org, users, run, teams,
 // tracks), use -seed-demo.
 func seedDemoAdventure(d *sql.DB) error {
-	if _, err := d.Exec(`
+	var advID int64
+	if err := d.QueryRow(`
 		INSERT INTO adventures(slug, title, description, author)
-		VALUES (?, ?, ?, ?)
+		VALUES ($1, $2, $3, $4)
 		ON CONFLICT(slug) DO UPDATE SET
 			title = excluded.title,
 			description = excluded.description,
 			author = excluded.author,
-			updated_at = datetime('now')
+			updated_at = now_text()
+		RETURNING id
 	`, "demo", "Demo: First Steps",
-		"A tiny three-page adventure used as a smoke test.", "zv"); err != nil {
-		return err
-	}
-	var advID int64
-	if err := d.QueryRow(`SELECT id FROM adventures WHERE slug = ?`, "demo").Scan(&advID); err != nil {
+		"A tiny three-page adventure used as a smoke test.", "zv").Scan(&advID); err != nil {
 		return err
 	}
 	// Pages cascade to adventure_page_images, so a clean re-insert keeps
 	// the page set deterministic across repeated seeds.
-	if _, err := d.Exec(`DELETE FROM adventure_pages WHERE adventure_id = ?`, advID); err != nil {
+	if _, err := d.Exec(`DELETE FROM adventure_pages WHERE adventure_id = $1`, advID); err != nil {
 		return err
 	}
 	for i, p := range demoPages() {
@@ -144,17 +142,17 @@ func seedDemoAdventure(d *sql.DB) error {
 		if p.Radius != nil {
 			radius = *p.Radius
 		}
-		pr, err := d.Exec(`
+		var pageID int64
+		if err := d.QueryRow(`
 			INSERT INTO adventure_pages(adventure_id, idx, title, prompt, accept, lat, lng, radius_m)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-		`, advID, i, p.Title, p.Prompt, string(accept), p.Lat, p.Lng, radius)
-		if err != nil {
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+			RETURNING id
+		`, advID, i, p.Title, p.Prompt, string(accept), p.Lat, p.Lng, radius).Scan(&pageID); err != nil {
 			return err
 		}
-		pageID, _ := pr.LastInsertId()
 		if _, err := d.Exec(`
 			INSERT INTO adventure_page_images(page_id, idx, mime_type, size_bytes, content)
-			VALUES (?, 0, 'image/svg+xml', ?, ?)
+			VALUES ($1, 0, 'image/svg+xml', $2, $3)
 		`, pageID, len(placeholderImage), []byte(placeholderImage)); err != nil {
 			return err
 		}
@@ -183,15 +181,15 @@ func seedDemo(ctx context.Context, d *sql.DB) error {
 	}
 
 	// Demo adventure in DB.
-	advRes, err := d.Exec(`
+	var advID int64
+	if err := d.QueryRow(`
 		INSERT INTO adventures(slug, title, description, author)
-		VALUES (?, ?, ?, ?)
+		VALUES ($1, $2, $3, $4)
+		RETURNING id
 	`, "demo", "Demo: First Steps",
-		"A tiny three-page adventure used as a smoke test.", "zv")
-	if err != nil {
+		"A tiny three-page adventure used as a smoke test.", "zv").Scan(&advID); err != nil {
 		return err
 	}
-	advID, _ := advRes.LastInsertId()
 	pages := demoPages()
 	pageIDs := make([]int64, len(pages))
 	for i, p := range pages {
@@ -200,19 +198,18 @@ func seedDemo(ctx context.Context, d *sql.DB) error {
 		if p.Radius != nil {
 			radius = *p.Radius
 		}
-		pr, err := d.Exec(`
+		if err := d.QueryRow(`
 			INSERT INTO adventure_pages(adventure_id, idx, title, prompt, accept, lat, lng, radius_m)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-		`, advID, i, p.Title, p.Prompt, string(accept), p.Lat, p.Lng, radius)
-		if err != nil {
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+			RETURNING id
+		`, advID, i, p.Title, p.Prompt, string(accept), p.Lat, p.Lng, radius).Scan(&pageIDs[i]); err != nil {
 			return err
 		}
-		pageIDs[i], _ = pr.LastInsertId()
 		// Attach the same placeholder illustration to every puzzle so the
 		// play UI has a visual until the uploader is fixed.
 		if _, err := d.Exec(`
 			INSERT INTO adventure_page_images(page_id, idx, mime_type, size_bytes, content)
-			VALUES (?, 0, 'image/svg+xml', ?, ?)
+			VALUES ($1, 0, 'image/svg+xml', $2, $3)
 		`, pageIDs[i], len(placeholderImage), []byte(placeholderImage)); err != nil {
 			return err
 		}
@@ -225,11 +222,10 @@ func seedDemo(ctx context.Context, d *sql.DB) error {
 		return err
 	}
 
-	orgRes, err := d.Exec(`INSERT INTO organizations(name) VALUES (?)`, "Demo Arrangers")
-	if err != nil {
+	var orgID int64
+	if err := d.QueryRow(`INSERT INTO organizations(name) VALUES ($1) RETURNING id`, "Demo Arrangers").Scan(&orgID); err != nil {
 		return err
 	}
-	orgID, _ := orgRes.LastInsertId()
 
 	bossID, err := upsertUser(d, "boss", "s3cret", auth.RoleOrgAdmin, &orgID)
 	if err != nil {
@@ -239,31 +235,31 @@ func seedDemo(ctx context.Context, d *sql.DB) error {
 		return err
 	}
 
-	assignRes, err := d.Exec(`
+	var assignmentID int64
+	if err := d.QueryRow(`
 		INSERT INTO adventure_assignments(org_id, adventure_slug, max_teams)
-		VALUES (?, ?, ?)
-	`, orgID, "demo", 5)
-	if err != nil {
+		VALUES ($1, $2, $3)
+		RETURNING id
+	`, orgID, "demo", 5).Scan(&assignmentID); err != nil {
 		return err
 	}
-	assignmentID, _ := assignRes.LastInsertId()
 	if _, err := d.Exec(`
 		INSERT INTO adventure_assignments(org_id, adventure_slug, max_teams)
-		VALUES (?, ?, ?)
+		VALUES ($1, $2, $3)
 	`, orgID, "demo", 3); err != nil {
 		return err
 	}
 
 	startedAt := time.Now().UTC().Add(-30 * time.Minute).Format(time.RFC3339)
 	liveToken := "demo-live-" + fmt.Sprintf("%x", time.Now().UnixNano())
-	res, err := d.Exec(`
+	var runID int64
+	if err := d.QueryRow(`
 		INSERT INTO adventure_runs(adventure_slug, org_id, created_by_user_id, state, started_at, created_at, assignment_id, live_token, show_map)
-		VALUES (?, ?, ?, 'running', ?, ?, ?, ?, 1)
-	`, "demo", orgID, bossID, startedAt, startedAt, assignmentID, liveToken)
-	if err != nil {
+		VALUES ($1, $2, $3, 'running', $4, $5, $6, $7, 1)
+		RETURNING id
+	`, "demo", orgID, bossID, startedAt, startedAt, assignmentID, liveToken).Scan(&runID); err != nil {
 		return err
 	}
-	runID, _ := res.LastInsertId()
 	runevents.Record(ctx, d, runID, nil, runevents.UserActor(bossID), runevents.RunCreated,
 		map[string]any{"adventure_slug": "demo"})
 	runevents.Record(ctx, d, runID, nil, runevents.UserActor(bossID), runevents.RunStarted, nil)
@@ -286,12 +282,12 @@ func seedDemo(ctx context.Context, d *sql.DB) error {
 		if err != nil {
 			return err
 		}
-		tRes, err := d.Exec(`INSERT INTO teams(run_id, name, current_page_index, token) VALUES (?, ?, ?, ?)`,
-			runID, plan.Name, plan.PageIdx, teamTok)
-		if err != nil {
+		var teamID int64
+		if err := d.QueryRow(
+			`INSERT INTO teams(run_id, name, current_page_index, token) VALUES ($1, $2, $3, $4) RETURNING id`,
+			runID, plan.Name, plan.PageIdx, teamTok).Scan(&teamID); err != nil {
 			return err
 		}
-		teamID, _ := tRes.LastInsertId()
 
 		slotIDs := make([]int64, 0, len(plan.Slots))
 		for _, name := range plan.Slots {
@@ -299,13 +295,12 @@ func seedDemo(ctx context.Context, d *sql.DB) error {
 			if err != nil {
 				return err
 			}
-			sRes, err := d.Exec(
-				`INSERT INTO player_slots(team_id, name, token) VALUES (?, ?, ?)`,
-				teamID, name, token)
-			if err != nil {
+			var id int64
+			if err := d.QueryRow(
+				`INSERT INTO player_slots(team_id, name, token) VALUES ($1, $2, $3) RETURNING id`,
+				teamID, name, token).Scan(&id); err != nil {
 				return err
 			}
-			id, _ := sRes.LastInsertId()
 			slotIDs = append(slotIDs, id)
 		}
 		runevents.Record(ctx, d, runID, &teamID, runevents.UserActor(bossID), runevents.TeamCreated,
@@ -332,21 +327,16 @@ func upsertUser(d *sql.DB, username, password, role string, orgID *int64) (int64
 	if orgID != nil {
 		orgVal = *orgID
 	}
-	res, err := d.Exec(`
-		INSERT INTO users(username, password_hash, role, org_id) VALUES (?, ?, ?, ?)
+	var id int64
+	if err := d.QueryRow(`
+		INSERT INTO users(username, password_hash, role, org_id) VALUES ($1, $2, $3, $4)
 		ON CONFLICT(username) DO UPDATE SET
 			password_hash = excluded.password_hash,
 			role = excluded.role,
 			org_id = excluded.org_id
-	`, username, hash, role, orgVal)
-	if err != nil {
+		RETURNING id
+	`, username, hash, role, orgVal).Scan(&id); err != nil {
 		return 0, err
-	}
-	id, err := res.LastInsertId()
-	if err != nil || id == 0 {
-		if err := d.QueryRow(`SELECT id FROM users WHERE username = ?`, username).Scan(&id); err != nil {
-			return 0, err
-		}
 	}
 	return id, nil
 }
@@ -405,7 +395,7 @@ func seedTrackAndEvents(ctx context.Context, d *sql.DB, rng *rand.Rand,
 			sid := slotIDs[s%len(slotIDs)]
 			if _, err := d.ExecContext(ctx, `
 				INSERT INTO location_pings(slot_id, team_id, run_id, lat, lng, accuracy, server_ts)
-				VALUES (?, ?, ?, ?, ?, ?, ?)
+				VALUES ($1, $2, $3, $4, $5, $6, $7)
 			`, sid, teamID, runID, lat, lng, 12.0+rng.Float64()*6, ts.Format(time.RFC3339)); err != nil {
 				return err
 			}
@@ -414,13 +404,13 @@ func seedTrackAndEvents(ctx context.Context, d *sql.DB, rng *rand.Rand,
 			payload, _ := json.Marshal(map[string]any{"page_index": li})
 			_, _ = d.ExecContext(ctx, `
 				INSERT INTO run_events(run_id, team_id, actor_slot_id, kind, payload, created_at)
-				VALUES (?, ?, ?, ?, ?, ?)
+				VALUES ($1, $2, $3, $4, $5, $6)
 			`, runID, teamID, slotIDs[0], runevents.AnswerRight, string(payload),
 				legEnd.Add(-2*time.Minute).Format(time.RFC3339))
 			payload, _ = json.Marshal(map[string]any{"page_index": li, "submitted": pickWrongGuess(rng)})
 			_, _ = d.ExecContext(ctx, `
 				INSERT INTO run_events(run_id, team_id, actor_slot_id, kind, payload, created_at)
-				VALUES (?, ?, ?, ?, ?, ?)
+				VALUES ($1, $2, $3, $4, $5, $6)
 			`, runID, teamID, slotIDs[0], runevents.AnswerWrong, string(payload),
 				legEnd.Add(-3*time.Minute).Format(time.RFC3339))
 		}

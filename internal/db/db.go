@@ -7,18 +7,18 @@ import (
 	"sort"
 	"strings"
 
-	_ "modernc.org/sqlite"
+	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
 //go:embed migrations/*.sql
 var migrationsFS embed.FS
 
-// Open opens a SQLite database at the given path with sane defaults (WAL,
-// foreign keys on) and runs any embedded migrations that have not yet been
-// applied.
-func Open(path string) (*sql.DB, error) {
-	dsn := path + "?_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)"
-	d, err := sql.Open("sqlite", dsn)
+// Open opens a Postgres database via pgx's database/sql adapter and runs
+// any embedded migrations that have not yet been applied. The dsn is
+// either a libpq-style URL ("postgres://user:pass@host/db") or the kv
+// form pgx accepts ("host=/var/run/postgresql dbname=zv").
+func Open(dsn string) (*sql.DB, error) {
+	d, err := sql.Open("pgx", dsn)
 	if err != nil {
 		return nil, err
 	}
@@ -36,7 +36,7 @@ func Open(path string) (*sql.DB, error) {
 func migrate(d *sql.DB) error {
 	if _, err := d.Exec(`CREATE TABLE IF NOT EXISTS schema_migrations (
 		name TEXT PRIMARY KEY,
-		applied_at TEXT NOT NULL DEFAULT (datetime('now'))
+		applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
 	)`); err != nil {
 		return err
 	}
@@ -55,7 +55,7 @@ func migrate(d *sql.DB) error {
 
 	for _, name := range names {
 		var applied int
-		if err := d.QueryRow(`SELECT COUNT(*) FROM schema_migrations WHERE name = ?`, name).Scan(&applied); err != nil {
+		if err := d.QueryRow(`SELECT COUNT(*) FROM schema_migrations WHERE name = $1`, name).Scan(&applied); err != nil {
 			return err
 		}
 		if applied > 0 {
@@ -73,7 +73,7 @@ func migrate(d *sql.DB) error {
 			tx.Rollback()
 			return fmt.Errorf("%s: %w", name, err)
 		}
-		if _, err := tx.Exec(`INSERT INTO schema_migrations(name) VALUES (?)`, name); err != nil {
+		if _, err := tx.Exec(`INSERT INTO schema_migrations(name) VALUES ($1)`, name); err != nil {
 			tx.Rollback()
 			return err
 		}

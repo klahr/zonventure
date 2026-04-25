@@ -7,37 +7,33 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
-	"path/filepath"
+	"net/url"
 	"testing"
 
 	"git.sr.ht/~klahr/zv/internal/adventure"
 	"git.sr.ht/~klahr/zv/internal/auth"
-	"git.sr.ht/~klahr/zv/internal/db"
+	"git.sr.ht/~klahr/zv/internal/dbtest"
 	"git.sr.ht/~klahr/zv/internal/server"
 )
 
-// newTestServer spins up the full HTTP stack against a fresh on-disk SQLite
+// newTestServer spins up the full HTTP stack against a per-test Postgres
 // database plus the real demo adventure shipped in the repo. Returns an
 // assignment id the seeded arranger can consume to create a run.
 func newTestServer(t *testing.T) (*httptest.Server, int64, func()) {
 	t.Helper()
-	dbPath := filepath.Join(t.TempDir(), "zv.db")
-	sqlDB, err := db.Open(dbPath)
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
+	sqlDB, dbCleanup := dbtest.Open(t)
 	lib := adventure.New(sqlDB)
 
 	// Seed the demo adventure directly (fine for tests — production uses the
 	// admin editor or the seed-demo flow).
-	advRes, err := sqlDB.Exec(`
-		INSERT INTO adventures(slug, title, description, author) VALUES (?, ?, ?, ?)
-	`, "demo", "Demo: First Steps", "", "zv")
-	if err != nil {
-		sqlDB.Close()
+	var advID int64
+	if err := sqlDB.QueryRow(`
+		INSERT INTO adventures(slug, title, description, author) VALUES ($1, $2, $3, $4)
+		RETURNING id
+	`, "demo", "Demo: First Steps", "", "zv").Scan(&advID); err != nil {
+		dbCleanup()
 		t.Fatalf("seed adventure: %v", err)
 	}
-	advID, _ := advRes.LastInsertId()
 	pages := []struct {
 		title, prompt, accept string
 		lat, lng              float64
@@ -53,9 +49,9 @@ func newTestServer(t *testing.T) (*httptest.Server, int64, func()) {
 	for i, p := range pages {
 		if _, err := sqlDB.Exec(`
 			INSERT INTO adventure_pages(adventure_id, idx, title, prompt, accept, lat, lng, radius_m)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		`, advID, i, p.title, p.prompt, p.accept, p.lat, p.lng, p.radius); err != nil {
-			sqlDB.Close()
+			dbCleanup()
 			t.Fatalf("seed page %d: %v", i, err)
 		}
 	}
@@ -63,38 +59,38 @@ func newTestServer(t *testing.T) (*httptest.Server, int64, func()) {
 	// Seed an organization + an org_admin (boss) + a global admin (root)
 	// + one assignment. Two users are cheaper than bcrypt-hashing on
 	// demand inside individual tests.
-	orgRes, err := sqlDB.Exec(`INSERT INTO organizations(name) VALUES (?)`, "TestOrg")
-	if err != nil {
-		sqlDB.Close()
+	var orgID int64
+	if err := sqlDB.QueryRow(`INSERT INTO organizations(name) VALUES ($1) RETURNING id`, "TestOrg").Scan(&orgID); err != nil {
+		dbCleanup()
 		t.Fatalf("seed org: %v", err)
 	}
-	orgID, _ := orgRes.LastInsertId()
 	hash, _ := auth.HashPassword("s3cret")
 	if _, err := sqlDB.Exec(
-		`INSERT INTO users(username, password_hash, role, org_id) VALUES (?, ?, 'org_admin', ?)`,
+		`INSERT INTO users(username, password_hash, role, org_id) VALUES ($1, $2, 'org_admin', $3)`,
 		"boss", hash, orgID); err != nil {
-		sqlDB.Close()
+		dbCleanup()
 		t.Fatalf("seed arranger: %v", err)
 	}
 	rootHash, _ := auth.HashPassword("rootpw")
 	if _, err := sqlDB.Exec(
-		`INSERT INTO users(username, password_hash, role, org_id) VALUES (?, ?, 'admin', NULL)`,
+		`INSERT INTO users(username, password_hash, role, org_id) VALUES ($1, $2, 'admin', NULL)`,
 		"root", rootHash); err != nil {
-		sqlDB.Close()
+		dbCleanup()
 		t.Fatalf("seed admin: %v", err)
 	}
-	ar, err := sqlDB.Exec(`INSERT INTO adventure_assignments(org_id, adventure_slug, max_teams) VALUES (?, ?, ?)`, orgID, "demo", 3)
-	if err != nil {
-		sqlDB.Close()
+	var assignmentID int64
+	if err := sqlDB.QueryRow(
+		`INSERT INTO adventure_assignments(org_id, adventure_slug, max_teams) VALUES ($1, $2, $3) RETURNING id`,
+		orgID, "demo", 3).Scan(&assignmentID); err != nil {
+		dbCleanup()
 		t.Fatalf("assign: %v", err)
 	}
-	assignmentID, _ := ar.LastInsertId()
 
 	h := server.New(server.Config{DB: sqlDB, Library: lib})
 	ts := httptest.NewServer(h)
 	cleanup := func() {
 		ts.Close()
-		sqlDB.Close()
+		dbCleanup()
 	}
 	return ts, assignmentID, cleanup
 }
@@ -114,7 +110,31 @@ func newClient(t *testing.T, ts *httptest.Server) *client {
 	if err != nil {
 		t.Fatalf("cookiejar: %v", err)
 	}
-	return &client{t: t, c: &http.Client{Jar: jar}, ts: ts}
+	c := &client{t: t, c: &http.Client{Jar: jar}, ts: ts}
+	// Seed the zv_csrf cookie the same way a real browser would: by
+	// loading the entry page first. Subsequent mutating calls echo
+	// the cookie value as X-CSRF-Token so the RequireCSRF middleware
+	// lets them through.
+	if _, err := c.c.Get(ts.URL + "/api/health"); err != nil {
+		t.Fatalf("csrf seed: %v", err)
+	}
+	return c
+}
+
+// csrfCookie returns the current zv_csrf cookie value from the jar, or
+// "" if absent. The jar is keyed by URL host, so we ask via the test
+// server's URL.
+func (c *client) csrfCookie() string {
+	u, err := url.Parse(c.ts.URL)
+	if err != nil {
+		return ""
+	}
+	for _, ck := range c.c.Jar.Cookies(u) {
+		if ck.Name == auth.CSRFCookieName {
+			return ck.Value
+		}
+	}
+	return ""
 }
 
 func (c *client) do(method, path string, body any, into any) int {
@@ -133,6 +153,12 @@ func (c *client) do(method, path string, body any, into any) int {
 	}
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
+	}
+	switch method {
+	case "POST", "PUT", "PATCH", "DELETE":
+		if tok := c.csrfCookie(); tok != "" {
+			req.Header.Set(auth.CSRFHeaderName, tok)
+		}
 	}
 	resp, err := c.c.Do(req)
 	if err != nil {

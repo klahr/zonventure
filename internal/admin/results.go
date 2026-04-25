@@ -34,7 +34,7 @@ func (h *Handlers) ExportRunResults(w http.ResponseWriter, r *http.Request) {
 		startedAt string
 	)
 	if err := h.DB.QueryRowContext(r.Context(),
-		`SELECT adventure_slug, COALESCE(started_at,'') FROM adventure_runs WHERE id = ?`, runID).
+		`SELECT adventure_slug, COALESCE(started_at,'') FROM adventure_runs WHERE id = $1`, runID).
 		Scan(&slug, &startedAt); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "lookup failed")
 		return
@@ -58,7 +58,7 @@ func (h *Handlers) ExportRunResults(w http.ResponseWriter, r *http.Request) {
 	rows, err := h.DB.QueryContext(r.Context(), `
 		SELECT t.id, t.name, t.current_page_index, COALESCE(t.completed_at, '')
 		FROM teams t
-		WHERE t.run_id = ?
+		WHERE t.run_id = $1
 		ORDER BY
 		  (CASE WHEN t.completed_at IS NULL THEN 1 ELSE 0 END),
 		  t.completed_at ASC,
@@ -138,7 +138,7 @@ func (h *Handlers) ExportRunResults(w http.ResponseWriter, r *http.Request) {
 // teamMemberNames returns a comma-joined list of slot names for a team.
 func (h *Handlers) teamMemberNames(ctx context.Context, teamID int64) (string, error) {
 	rows, err := h.DB.QueryContext(ctx,
-		`SELECT name FROM player_slots WHERE team_id = ? ORDER BY name COLLATE NOCASE`, teamID)
+		`SELECT name FROM player_slots WHERE team_id = $1 ORDER BY LOWER(name)`, teamID)
 	if err != nil {
 		return "", err
 	}

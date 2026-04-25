@@ -206,14 +206,14 @@ func (s *Simulator) Start(ctx context.Context, adventureSlug string, teamCount i
 	if err != nil {
 		return State{}, fmt.Errorf("token: %w", err)
 	}
-	res, err := s.db.ExecContext(ctx, `
+	var runID int64
+	if err := s.db.QueryRowContext(ctx, `
 		INSERT INTO adventure_runs(adventure_slug, org_id, created_by_user_id, state, started_at, live_token, name, show_map)
-		VALUES (?, ?, ?, 'running', datetime('now'), ?, ?, 1)
-	`, adventureSlug, orgID, nullIfZero(createdByUserID), liveToken, "Simulated race")
-	if err != nil {
+		VALUES ($1, $2, $3, 'running', now_text(), $4, $5, 1)
+		RETURNING id
+	`, adventureSlug, orgID, nullIfZero(createdByUserID), liveToken, "Simulated race").Scan(&runID); err != nil {
 		return State{}, fmt.Errorf("create run: %w", err)
 	}
-	runID, _ := res.LastInsertId()
 
 	// Scatter team start positions around the first puzzle. ~300 m
 	// spread is small enough to keep the TV map framed, large enough
@@ -223,31 +223,32 @@ func (s *Simulator) Start(ctx context.Context, adventureSlug string, teamCount i
 	teams := make([]*simTeam, 0, teamCount)
 	for i := 0; i < teamCount; i++ {
 		name := namedTeam(i)
-		// Generate a token inline so each simulated team satisfies the
-		// teams.token UNIQUE index. Using SQLite's randomblob keeps the
-		// simulator free of extra crypto plumbing and matches the style
-		// of the migration's own backfill.
-		tres, err := s.db.ExecContext(ctx,
-			`INSERT INTO teams(run_id, name, token) VALUES (?, ?, lower(hex(randomblob(18))))`,
-			runID, name)
+		// Generate the team token in Go to satisfy the teams.token UNIQUE
+		// index — keeps the simulator independent of any DB-side helpers.
+		teamTok, err := newLiveToken()
 		if err != nil {
+			_, _ = s.db.ExecContext(ctx, `DELETE FROM adventure_runs WHERE id = $1`, runID)
+			return State{}, fmt.Errorf("team token: %w", err)
+		}
+		var tid int64
+		if err := s.db.QueryRowContext(ctx,
+			`INSERT INTO teams(run_id, name, token) VALUES ($1, $2, $3) RETURNING id`,
+			runID, name, teamTok).Scan(&tid); err != nil {
 			// Roll back on best-effort — nothing hands out partial state.
-			_, _ = s.db.ExecContext(ctx, `DELETE FROM adventure_runs WHERE id = ?`, runID)
+			_, _ = s.db.ExecContext(ctx, `DELETE FROM adventure_runs WHERE id = $1`, runID)
 			return State{}, fmt.Errorf("create team %q: %w", name, err)
 		}
-		tid, _ := tres.LastInsertId()
 		// location_pings requires slot_id NOT NULL, so give each team a
 		// single placeholder slot. The token is never used by a real
 		// client, but must be unique per the schema.
 		slotTok, _ := newLiveToken()
-		sres, err := s.db.ExecContext(ctx,
-			`INSERT INTO player_slots(team_id, name, token) VALUES (?, ?, ?)`,
-			tid, "simrunner", slotTok)
-		if err != nil {
-			_, _ = s.db.ExecContext(ctx, `DELETE FROM adventure_runs WHERE id = ?`, runID)
+		var sid int64
+		if err := s.db.QueryRowContext(ctx,
+			`INSERT INTO player_slots(team_id, name, token) VALUES ($1, $2, $3) RETURNING id`,
+			tid, "simrunner", slotTok).Scan(&sid); err != nil {
+			_, _ = s.db.ExecContext(ctx, `DELETE FROM adventure_runs WHERE id = $1`, runID)
 			return State{}, fmt.Errorf("create slot: %w", err)
 		}
-		sid, _ := sres.LastInsertId()
 		lat, lng := jitter(startPuzzle.Location.Lat, startPuzzle.Location.Lng, 300, rng)
 		teams = append(teams, &simTeam{
 			id:         tid,
@@ -335,7 +336,7 @@ func (s *Simulator) Reset(ctx context.Context) error {
 		// Fall through — the goroutine sees ctx.Done() on the next
 		// iteration at worst; the cascade delete will take its pings.
 	}
-	if _, err := s.db.ExecContext(ctx, `DELETE FROM adventure_runs WHERE id = ?`, r.id); err != nil {
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM adventure_runs WHERE id = $1`, r.id); err != nil {
 		return fmt.Errorf("delete run: %w", err)
 	}
 	logx.Info("simulator.reset", "run_id", r.id)
@@ -445,7 +446,7 @@ func (s *Simulator) tick(ctx context.Context, r *run) {
 func (s *Simulator) recordPing(ctx context.Context, r *run, t *simTeam) {
 	_, _ = s.db.ExecContext(ctx, `
 		INSERT INTO location_pings(slot_id, team_id, run_id, lat, lng, accuracy, speed)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
 	`, t.slotID, t.id, r.id, t.lat, t.lng, 8.0, t.speedMps)
 }
 
@@ -475,7 +476,7 @@ func (s *Simulator) attemptAnswer(ctx context.Context, r *run, t *simTeam, puzzl
 	}
 	t.rawPageIdx = newCursor
 	_, _ = s.db.ExecContext(ctx,
-		`UPDATE teams SET current_page_index = ? WHERE id = ?`,
+		`UPDATE teams SET current_page_index = $1 WHERE id = $2`,
 		newCursor, t.id)
 	runevents.Record(ctx, s.db, r.id, &t.id, runevents.Actor{}, runevents.AnswerRight,
 		map[string]any{"source": "simulator", "puzzle_idx": puzzle.Index})
@@ -494,7 +495,7 @@ func (s *Simulator) finishTeam(ctx context.Context, r *run, t *simTeam) {
 	}
 	t.finished = true
 	_, _ = s.db.ExecContext(ctx,
-		`UPDATE teams SET completed_at = datetime('now') WHERE id = ?`, t.id)
+		`UPDATE teams SET completed_at = now_text() WHERE id = $1`, t.id)
 	runevents.Record(ctx, s.db, r.id, &t.id, runevents.Actor{}, runevents.TeamCompleted,
 		map[string]any{"source": "simulator"})
 	_, _ = runevents.MaybeCompleteRun(ctx, s.db, r.id)

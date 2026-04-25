@@ -60,7 +60,7 @@ func Record(ctx context.Context, db *sql.DB, runID int64, teamID *int64, actor A
 	}
 	_, _ = db.ExecContext(ctx, `
 		INSERT INTO run_events(run_id, team_id, actor_user_id, actor_slot_id, kind, payload)
-		VALUES (?, ?, ?, ?, ?, ?)
+		VALUES ($1, $2, $3, $4, $5, $6)
 	`, runID, tid, uid, sid, kind, string(b))
 }
 
@@ -86,7 +86,7 @@ func MaybeCompleteRun(ctx context.Context, db *sql.DB, runID int64) (bool, error
 	if err := db.QueryRowContext(ctx, `
 		SELECT COUNT(*),
 		       SUM(CASE WHEN completed_at IS NULL THEN 0 ELSE 1 END)
-		FROM teams WHERE run_id = ?
+		FROM teams WHERE run_id = $1
 	`, runID).Scan(&total, &done); err != nil {
 		return false, err
 	}
@@ -95,8 +95,8 @@ func MaybeCompleteRun(ctx context.Context, db *sql.DB, runID int64) (bool, error
 	}
 	res, err := db.ExecContext(ctx, `
 		UPDATE adventure_runs
-		SET state = 'completed', completed_at = datetime('now')
-		WHERE id = ? AND state IN ('running','paused')
+		SET state = 'completed', completed_at = now_text()
+		WHERE id = $1 AND state IN ('running','paused')
 	`, runID)
 	if err != nil {
 		return false, err

@@ -35,35 +35,84 @@ const (
 // to a slot.
 var ErrSlotTokenUnknown = errors.New("unknown slot token")
 
+// ErrSlotTokenExpired is returned when the magic-link token resolved
+// but its player_slots.expires_at is in the past. Callers translate
+// this into a generic "open your link again" UX and let the arranger
+// rotate.
+var ErrSlotTokenExpired = errors.New("slot token expired")
+
 // slotCtxKey is the context key used to stash the Slot.
 type slotCtxKey struct{}
 
 // LoginSlotByToken exchanges a magic-link (player_slots.token) for a
 // new slot session, returning the session token the caller should set on
-// the client as a cookie.
+// the client as a cookie. Returns ErrSlotTokenExpired when the slot's
+// expires_at is in the past — the row stays in place so the arranger
+// can rotate, but no new sessions are issued from the dead token.
 func LoginSlotByToken(ctx context.Context, db *sql.DB, magic string) (Slot, string, error) {
 	if magic == "" {
 		return Slot{}, "", ErrSlotTokenUnknown
 	}
-	var s Slot
+	var (
+		s         Slot
+		expiresAt sql.NullString
+	)
 	err := db.QueryRowContext(ctx, `
-		SELECT ps.id, ps.name, ps.team_id, t.run_id
+		SELECT ps.id, ps.name, ps.team_id, t.run_id, ps.expires_at
 		FROM player_slots ps
 		JOIN teams t ON t.id = ps.team_id
-		WHERE ps.token = ?
-	`, magic).Scan(&s.ID, &s.Name, &s.TeamID, &s.RunID)
+		WHERE ps.token = $1
+	`, magic).Scan(&s.ID, &s.Name, &s.TeamID, &s.RunID, &expiresAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Slot{}, "", ErrSlotTokenUnknown
 	}
 	if err != nil {
 		return Slot{}, "", err
 	}
+	if expiresAt.Valid && expiresAt.String != "" {
+		if t, perr := parseSlotTimestamp(expiresAt.String); perr == nil && time.Now().After(t) {
+			return Slot{}, "", ErrSlotTokenExpired
+		}
+	}
 	session, err := newSlotSession(ctx, db, s.ID)
 	if err != nil {
 		return Slot{}, "", err
 	}
-	_, _ = db.ExecContext(ctx, `UPDATE player_slots SET last_login_at = datetime('now') WHERE id = ?`, s.ID)
+	_, _ = db.ExecContext(ctx, `UPDATE player_slots SET last_login_at = now_text() WHERE id = $1`, s.ID)
 	return s, session, nil
+}
+
+// parseSlotTimestamp accepts both the wire format we write
+// ("YYYY-MM-DD HH:MM:SS" UTC) and RFC3339 since scheduled_at-based
+// expiries inherit whichever shape the front-end sent us. Returns
+// the parsed time in UTC.
+func parseSlotTimestamp(s string) (time.Time, error) {
+	if t, err := time.Parse("2006-01-02 15:04:05", s); err == nil {
+		return t.UTC(), nil
+	}
+	t, err := time.Parse(time.RFC3339, s)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return t.UTC(), nil
+}
+
+// DefaultSlotExpiresAt computes the default expires_at value for a
+// newly-created slot. Uses the run's scheduled_at + 7 days when the run
+// is scheduled, else now + 30 days. Returned as the wire-format string
+// admin queries pass directly to the INSERT.
+func DefaultSlotExpiresAt(ctx context.Context, db *sql.DB, runID int64) string {
+	const layout = "2006-01-02 15:04:05"
+	var sched sql.NullString
+	if err := db.QueryRowContext(ctx,
+		`SELECT scheduled_at FROM adventure_runs WHERE id = $1`, runID).Scan(&sched); err == nil {
+		if sched.Valid && sched.String != "" {
+			if t, err := parseSlotTimestamp(sched.String); err == nil {
+				return t.Add(7 * 24 * time.Hour).UTC().Format(layout)
+			}
+		}
+	}
+	return time.Now().UTC().Add(30 * 24 * time.Hour).Format(layout)
 }
 
 // LookupSlot returns the slot backing a session token.
@@ -80,7 +129,7 @@ func LookupSlot(ctx context.Context, db *sql.DB, token string) (Slot, bool, erro
 		FROM slot_sessions ss
 		JOIN player_slots ps ON ps.id = ss.slot_id
 		JOIN teams t ON t.id = ps.team_id
-		WHERE ss.token = ?
+		WHERE ss.token = $1
 	`, token).Scan(&s.ID, &s.Name, &s.TeamID, &s.RunID, &expires)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Slot{}, false, nil
@@ -90,7 +139,7 @@ func LookupSlot(ctx context.Context, db *sql.DB, token string) (Slot, bool, erro
 	}
 	exp, err := time.Parse(time.RFC3339, expires)
 	if err == nil && time.Now().After(exp) {
-		_, _ = db.ExecContext(ctx, `DELETE FROM slot_sessions WHERE token = ?`, token)
+		_, _ = db.ExecContext(ctx, `DELETE FROM slot_sessions WHERE token = $1`, token)
 		return Slot{}, false, nil
 	}
 	return s, true, nil
@@ -101,7 +150,7 @@ func LogoutSlot(ctx context.Context, db *sql.DB, token string) error {
 	if token == "" {
 		return nil
 	}
-	_, err := db.ExecContext(ctx, `DELETE FROM slot_sessions WHERE token = ?`, token)
+	_, err := db.ExecContext(ctx, `DELETE FROM slot_sessions WHERE token = $1`, token)
 	return err
 }
 
@@ -194,7 +243,7 @@ func newSlotSession(ctx context.Context, db *sql.DB, slotID int64) (string, erro
 	}
 	expires := time.Now().Add(SlotSessionTTL).UTC().Format(time.RFC3339)
 	if _, err := db.ExecContext(ctx, `
-		INSERT INTO slot_sessions(token, slot_id, expires_at) VALUES (?, ?, ?)
+		INSERT INTO slot_sessions(token, slot_id, expires_at) VALUES ($1, $2, $3)
 	`, token, slotID, expires); err != nil {
 		return "", err
 	}

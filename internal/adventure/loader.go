@@ -127,7 +127,7 @@ func (l *Library) GetContext(ctx context.Context, slug string) (*Adventure, erro
 	err := l.db.QueryRowContext(ctx, `
 		SELECT id, slug, title, description, author, intro_text, outro_text,
 		       accent_color, accent_secondary_color, background_color, text_color
-		FROM adventures WHERE slug = ?
+		FROM adventures WHERE slug = $1
 	`, slug).Scan(&adv.ID, &adv.Slug, &adv.Meta.Title, &adv.Meta.Description, &adv.Meta.Author,
 		&adv.Meta.IntroText, &adv.Meta.OutroText,
 		&accent, &accent2, &bg, &ink)
@@ -200,7 +200,7 @@ func (l *Library) loadPages(ctx context.Context, adventureID int64) ([]Page, err
 	rows, err := l.db.QueryContext(ctx, `
 		SELECT id, idx, title, prompt, accept, lat, lng, radius_m, disabled, notes
 		FROM adventure_pages
-		WHERE adventure_id = ?
+		WHERE adventure_id = $1
 		ORDER BY idx
 	`, adventureID)
 	if err != nil {
@@ -251,7 +251,7 @@ func (l *Library) loadHints(ctx context.Context, pageID int64) ([]Hint, error) {
 	rows, err := l.db.QueryContext(ctx, `
 		SELECT text, delay_seconds
 		FROM adventure_page_hints
-		WHERE page_id = ?
+		WHERE page_id = $1
 		ORDER BY idx
 	`, pageID)
 	if err != nil {
@@ -272,7 +272,7 @@ func (l *Library) loadHints(ctx context.Context, pageID int64) ([]Hint, error) {
 func (l *Library) loadImages(ctx context.Context, pageID int64) ([]Image, error) {
 	rows, err := l.db.QueryContext(ctx, `
 		SELECT id, idx, mime_type, size_bytes
-		FROM adventure_page_images WHERE page_id = ?
+		FROM adventure_page_images WHERE page_id = $1
 		ORDER BY idx
 	`, pageID)
 	if err != nil {

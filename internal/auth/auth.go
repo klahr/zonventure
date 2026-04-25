@@ -20,8 +20,6 @@ import (
 const (
 	// CookieName is the session cookie key.
 	CookieName = "zv_session"
-	// SessionTTL is how long a new session remains valid.
-	SessionTTL = 30 * 24 * time.Hour
 
 	// RolePlayer is the role for adventure participants.
 	RolePlayer = "player"
@@ -37,6 +35,22 @@ const (
 	RoleAdmin = "admin"
 )
 
+// SessionTTL is how long a new staff session remains valid. Default 30
+// days; override with SetSessionTTL at startup (driven by a CLI flag in
+// main). Kept as a package-level var rather than a const so the operator
+// can tighten it without recompiling.
+var SessionTTL = 30 * 24 * time.Hour
+
+// SetSessionTTL sets the staff-session TTL. Idempotent. Values <=0 are
+// ignored — refusing rather than disabling sessions silently is the
+// less-foot-gunny default.
+func SetSessionTTL(d time.Duration) {
+	if d <= 0 {
+		return
+	}
+	SessionTTL = d
+}
+
 // User is the minimal authenticated-user view used by middleware and
 // handlers. OrgID is nil for admins (they are not scoped to any
 // organization); every other role has exactly one.
@@ -45,6 +59,15 @@ type User struct {
 	Username string
 	Role     string
 	OrgID    *int64
+	// EmailVerified is true when the user has either confirmed their
+	// signup email OR was grandfathered (admin-seeded users without
+	// email default to true). Money-touching actions (CreateRun,
+	// CreatePurchase) check this before letting work through.
+	EmailVerified bool
+	// Email is the address tied to this account, or "" for
+	// grandfathered users. Surfaced via /whoami so the UI can show
+	// the verified-or-not banner.
+	Email string
 }
 
 // ctxKey is a private type so handler contexts can't collide with other
@@ -86,8 +109,8 @@ func Login(ctx context.Context, db *sql.DB, username, password string) (User, st
 		orgID sql.NullInt64
 	)
 	err := db.QueryRowContext(ctx, `
-		SELECT id, username, role, password_hash, org_id FROM users WHERE username = ?
-	`, username).Scan(&u.ID, &u.Username, &u.Role, &hash, &orgID)
+		SELECT id, username, role, password_hash, org_id, COALESCE(email,''), (email_verified <> 0) FROM users WHERE username = $1
+	`, username).Scan(&u.ID, &u.Username, &u.Role, &hash, &orgID, &u.Email, &u.EmailVerified)
 	if errors.Is(err, sql.ErrNoRows) {
 		return User{}, "", ErrInvalidCredentials
 	}
@@ -122,8 +145,8 @@ func SetInitialPassword(ctx context.Context, db *sql.DB, username, password stri
 		orgID sql.NullInt64
 	)
 	err := db.QueryRowContext(ctx, `
-		SELECT id, username, role, password_hash, org_id FROM users WHERE username = ?
-	`, username).Scan(&u.ID, &u.Username, &u.Role, &hash, &orgID)
+		SELECT id, username, role, password_hash, org_id, COALESCE(email,''), (email_verified <> 0) FROM users WHERE username = $1
+	`, username).Scan(&u.ID, &u.Username, &u.Role, &hash, &orgID, &u.Email, &u.EmailVerified)
 	if errors.Is(err, sql.ErrNoRows) {
 		return User{}, "", ErrInvalidCredentials
 	}
@@ -141,7 +164,7 @@ func SetInitialPassword(ctx context.Context, db *sql.DB, username, password stri
 	if err != nil {
 		return User{}, "", err
 	}
-	if _, err := db.ExecContext(ctx, `UPDATE users SET password_hash = ? WHERE id = ?`, h, u.ID); err != nil {
+	if _, err := db.ExecContext(ctx, `UPDATE users SET password_hash = $1 WHERE id = $2`, h, u.ID); err != nil {
 		return User{}, "", err
 	}
 	token, err := newSession(ctx, db, u.ID)
@@ -160,7 +183,7 @@ func newSession(ctx context.Context, db *sql.DB, userID int64) (string, error) {
 	}
 	expires := time.Now().Add(SessionTTL).UTC().Format(time.RFC3339)
 	if _, err := db.ExecContext(ctx, `
-		INSERT INTO sessions(token, user_id, expires_at) VALUES (?, ?, ?)
+		INSERT INTO sessions(token, user_id, expires_at) VALUES ($1, $2, $3)
 	`, token, userID, expires); err != nil {
 		return "", err
 	}
@@ -173,7 +196,7 @@ func Logout(ctx context.Context, db *sql.DB, token string) error {
 	if token == "" {
 		return nil
 	}
-	_, err := db.ExecContext(ctx, `DELETE FROM sessions WHERE token = ?`, token)
+	_, err := db.ExecContext(ctx, `DELETE FROM sessions WHERE token = $1`, token)
 	return err
 }
 
@@ -182,7 +205,7 @@ func Logout(ctx context.Context, db *sql.DB, token string) error {
 // or if the account has no password set (cannot confirm without one).
 func VerifyUserPassword(ctx context.Context, db *sql.DB, userID int64, password string) error {
 	var hash sql.NullString
-	err := db.QueryRowContext(ctx, `SELECT password_hash FROM users WHERE id = ?`, userID).Scan(&hash)
+	err := db.QueryRowContext(ctx, `SELECT password_hash FROM users WHERE id = $1`, userID).Scan(&hash)
 	if errors.Is(err, sql.ErrNoRows) || !hash.Valid {
 		return ErrInvalidCredentials
 	}
@@ -207,10 +230,10 @@ func Lookup(ctx context.Context, db *sql.DB, token string) (User, bool, error) {
 		expires string
 	)
 	err := db.QueryRowContext(ctx, `
-		SELECT u.id, u.username, u.role, u.org_id, s.expires_at
+		SELECT u.id, u.username, u.role, u.org_id, COALESCE(u.email,''), (u.email_verified <> 0), s.expires_at
 		FROM sessions s JOIN users u ON u.id = s.user_id
-		WHERE s.token = ?
-	`, token).Scan(&u.ID, &u.Username, &u.Role, &orgID, &expires)
+		WHERE s.token = $1
+	`, token).Scan(&u.ID, &u.Username, &u.Role, &orgID, &u.Email, &u.EmailVerified, &expires)
 	if errors.Is(err, sql.ErrNoRows) {
 		return User{}, false, nil
 	}
@@ -223,7 +246,7 @@ func Lookup(ctx context.Context, db *sql.DB, token string) (User, bool, error) {
 	}
 	exp, err := time.Parse(time.RFC3339, expires)
 	if err == nil && time.Now().After(exp) {
-		_, _ = db.ExecContext(ctx, `DELETE FROM sessions WHERE token = ?`, token)
+		_, _ = db.ExecContext(ctx, `DELETE FROM sessions WHERE token = $1`, token)
 		return User{}, false, nil
 	}
 	return u, true, nil

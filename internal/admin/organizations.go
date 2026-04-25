@@ -52,7 +52,7 @@ func (h *Handlers) ListOrganizations(w http.ResponseWriter, r *http.Request) {
 		       (SELECT COUNT(*) FROM adventure_runs ar WHERE ar.org_id = o.id),
 		       (SELECT COUNT(*) FROM adventure_runs ar WHERE ar.org_id = o.id AND ar.state = 'running')
 		FROM organizations o
-		ORDER BY o.name COLLATE NOCASE
+		ORDER BY LOWER(o.name)
 	`)
 	if err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "list failed")
@@ -103,7 +103,7 @@ func (h *Handlers) GetOrganization(w http.ResponseWriter, r *http.Request) {
 		       (SELECT COUNT(*) FROM users u WHERE u.org_id = o.id AND u.role = 'player'),
 		       (SELECT COUNT(*) FROM adventure_runs ar WHERE ar.org_id = o.id),
 		       (SELECT COUNT(*) FROM adventure_runs ar WHERE ar.org_id = o.id AND ar.state = 'running')
-		FROM organizations o WHERE o.id = ?
+		FROM organizations o WHERE o.id = $1
 	`, id).Scan(&o.ID, &o.Name, &o.CreatedAt, &o.PlayersTotal, &o.RunsTotal, &o.RunsRunning)
 	if errors.Is(err, sql.ErrNoRows) {
 		httpx.Error(w, http.StatusNotFound, "organization not found")
@@ -139,12 +139,11 @@ func (h *Handlers) CreateOrganization(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusBadRequest, "name required")
 		return
 	}
-	res, err := h.DB.ExecContext(r.Context(), `INSERT INTO organizations(name) VALUES (?)`, req.Name)
-	if err != nil {
+	var id int64
+	if err := h.DB.QueryRowContext(r.Context(), `INSERT INTO organizations(name) VALUES ($1) RETURNING id`, req.Name).Scan(&id); err != nil {
 		httpx.Error(w, http.StatusConflict, "name already used")
 		return
 	}
-	id, _ := res.LastInsertId()
 	httpx.JSON(w, http.StatusCreated, organizationDTO{
 		ID: id, Name: req.Name, Members: []orgMemberDTO{}, Assignments: []assignmentDTO{},
 	})
@@ -169,7 +168,7 @@ func (h *Handlers) UpdateOrganization(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, err := h.DB.ExecContext(r.Context(),
-		`UPDATE organizations SET name = ? WHERE id = ?`, strings.TrimSpace(*req.Name), id); err != nil {
+		`UPDATE organizations SET name = $1 WHERE id = $2`, strings.TrimSpace(*req.Name), id); err != nil {
 		httpx.Error(w, http.StatusConflict, "name already used")
 		return
 	}
@@ -186,7 +185,7 @@ func (h *Handlers) DeleteOrganization(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	res, err := h.DB.ExecContext(r.Context(), `DELETE FROM organizations WHERE id = ?`, id)
+	res, err := h.DB.ExecContext(r.Context(), `DELETE FROM organizations WHERE id = $1`, id)
 	if err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "delete failed")
 		return
@@ -240,15 +239,15 @@ func (h *Handlers) CreateOrgMember(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusInternalServerError, "hash failed")
 		return
 	}
-	res, err := h.DB.ExecContext(r.Context(), `
+	var id int64
+	if err := h.DB.QueryRowContext(r.Context(), `
 		INSERT INTO users(username, password_hash, role, org_id, created_by_user_id)
-		VALUES (?, ?, ?, ?, ?)
-	`, req.Username, hash, req.Role, orgID, me.ID)
-	if err != nil {
+		VALUES ($1, $2, $3, $4, $5)
+		RETURNING id
+	`, req.Username, hash, req.Role, orgID, me.ID).Scan(&id); err != nil {
 		httpx.Error(w, http.StatusConflict, "username not available")
 		return
 	}
-	id, _ := res.LastInsertId()
 	httpx.JSON(w, http.StatusCreated, orgMemberDTO{ID: id, Username: req.Username, Role: req.Role})
 }
 
@@ -283,7 +282,7 @@ func (h *Handlers) DeleteOrgMember(w http.ResponseWriter, r *http.Request) {
 		theirOrg sql.NullInt64
 	)
 	err := h.DB.QueryRowContext(r.Context(),
-		`SELECT role, org_id FROM users WHERE id = ?`, userID).Scan(&role, &theirOrg)
+		`SELECT role, org_id FROM users WHERE id = $1`, userID).Scan(&role, &theirOrg)
 	if errors.Is(err, sql.ErrNoRows) {
 		httpx.Error(w, http.StatusNotFound, "user not found")
 		return
@@ -300,7 +299,7 @@ func (h *Handlers) DeleteOrgMember(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusNotFound, "user not in this organization")
 		return
 	}
-	if _, err := h.DB.ExecContext(r.Context(), `DELETE FROM users WHERE id = ?`, userID); err != nil {
+	if _, err := h.DB.ExecContext(r.Context(), `DELETE FROM users WHERE id = $1`, userID); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "delete failed")
 		return
 	}
@@ -333,15 +332,15 @@ func (h *Handlers) CreateAssignment(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusBadRequest, "max_teams must be > 0")
 		return
 	}
-	res, err := h.DB.ExecContext(r.Context(), `
+	var id int64
+	if err := h.DB.QueryRowContext(r.Context(), `
 		INSERT INTO adventure_assignments(org_id, adventure_slug, max_teams)
-		VALUES (?, ?, ?)
-	`, orgID, req.AdventureSlug, req.MaxTeams)
-	if err != nil {
+		VALUES ($1, $2, $3)
+		RETURNING id
+	`, orgID, req.AdventureSlug, req.MaxTeams).Scan(&id); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "assign failed")
 		return
 	}
-	id, _ := res.LastInsertId()
 	httpx.JSON(w, http.StatusCreated, assignmentDTO{
 		ID: id, AdventureSlug: req.AdventureSlug, MaxTeams: req.MaxTeams,
 	})
@@ -381,7 +380,7 @@ func (h *Handlers) UpdateAssignment(w http.ResponseWriter, r *http.Request) {
 		SELECT aa.org_id, aa.adventure_slug, aa.max_teams, ar.id
 		FROM adventure_assignments aa
 		LEFT JOIN adventure_runs ar ON ar.assignment_id = aa.id
-		WHERE aa.id = ?
+		WHERE aa.id = $1
 	`, assignmentID).Scan(&ownerOrg, &currentSlug, &currentMax, &runID)
 	if errors.Is(err, sql.ErrNoRows) || ownerOrg != orgID {
 		httpx.Error(w, http.StatusNotFound, "assignment not found")
@@ -412,7 +411,7 @@ func (h *Handlers) UpdateAssignment(w http.ResponseWriter, r *http.Request) {
 		if runID.Valid {
 			var teamCount int
 			if err := h.DB.QueryRowContext(r.Context(),
-				`SELECT COUNT(*) FROM teams WHERE run_id = ?`, runID.Int64).Scan(&teamCount); err != nil {
+				`SELECT COUNT(*) FROM teams WHERE run_id = $1`, runID.Int64).Scan(&teamCount); err != nil {
 				httpx.Error(w, http.StatusInternalServerError, "team count failed")
 				return
 			}
@@ -425,7 +424,7 @@ func (h *Handlers) UpdateAssignment(w http.ResponseWriter, r *http.Request) {
 		newMax = *req.MaxTeams
 	}
 	if _, err := h.DB.ExecContext(r.Context(),
-		`UPDATE adventure_assignments SET adventure_slug = ?, max_teams = ? WHERE id = ?`,
+		`UPDATE adventure_assignments SET adventure_slug = $1, max_teams = $2 WHERE id = $3`,
 		newSlug, newMax, assignmentID); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "update failed")
 		return
@@ -454,7 +453,7 @@ func (h *Handlers) DeleteAssignment(w http.ResponseWriter, r *http.Request) {
 		SELECT aa.org_id, ar.id
 		FROM adventure_assignments aa
 		LEFT JOIN adventure_runs ar ON ar.assignment_id = aa.id
-		WHERE aa.id = ?
+		WHERE aa.id = $1
 	`, assignmentID).Scan(&ownerOrg, &runID)
 	if errors.Is(err, sql.ErrNoRows) || ownerOrg != orgID {
 		httpx.Error(w, http.StatusNotFound, "assignment not found")
@@ -469,7 +468,7 @@ func (h *Handlers) DeleteAssignment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, err := h.DB.ExecContext(r.Context(),
-		`DELETE FROM adventure_assignments WHERE id = ?`, assignmentID); err != nil {
+		`DELETE FROM adventure_assignments WHERE id = $1`, assignmentID); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "delete failed")
 		return
 	}
@@ -501,7 +500,7 @@ type adminDTO struct {
 // ListAdmins returns every global admin. Admin-only.
 func (h *Handlers) ListAdmins(w http.ResponseWriter, r *http.Request) {
 	rows, err := h.DB.QueryContext(r.Context(), `
-		SELECT id, username FROM users WHERE role = 'admin' ORDER BY username COLLATE NOCASE
+		SELECT id, username FROM users WHERE role = 'admin' ORDER BY userLOWER(name)
 	`)
 	if err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "list failed")
@@ -541,14 +540,14 @@ func (h *Handlers) CreateAdmin(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusInternalServerError, "hash failed")
 		return
 	}
-	res, err := h.DB.ExecContext(r.Context(), `
-		INSERT INTO users(username, password_hash, role) VALUES (?, ?, 'admin')
-	`, req.Username, hash)
-	if err != nil {
+	var id int64
+	if err := h.DB.QueryRowContext(r.Context(), `
+		INSERT INTO users(username, password_hash, role) VALUES ($1, $2, 'admin')
+		RETURNING id
+	`, req.Username, hash).Scan(&id); err != nil {
 		httpx.Error(w, http.StatusConflict, "username not available")
 		return
 	}
-	id, _ := res.LastInsertId()
 	httpx.JSON(w, http.StatusCreated, adminDTO{ID: id, Username: req.Username})
 }
 
@@ -570,7 +569,7 @@ func (h *Handlers) DeleteAdmin(w http.ResponseWriter, r *http.Request) {
 	}
 	var role string
 	err := h.DB.QueryRowContext(r.Context(),
-		`SELECT role FROM users WHERE id = ?`, id).Scan(&role)
+		`SELECT role FROM users WHERE id = $1`, id).Scan(&role)
 	if errors.Is(err, sql.ErrNoRows) {
 		httpx.Error(w, http.StatusNotFound, "user not found")
 		return
@@ -593,7 +592,7 @@ func (h *Handlers) DeleteAdmin(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusConflict, "cannot delete the last admin")
 		return
 	}
-	if _, err := h.DB.ExecContext(r.Context(), `DELETE FROM users WHERE id = ?`, id); err != nil {
+	if _, err := h.DB.ExecContext(r.Context(), `DELETE FROM users WHERE id = $1`, id); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "delete failed")
 		return
 	}
@@ -605,8 +604,8 @@ func (h *Handlers) DeleteAdmin(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) loadOrgMembers(ctx context.Context, o *organizationDTO) error {
 	rows, err := h.DB.QueryContext(ctx, `
 		SELECT id, username, role FROM users
-		WHERE org_id = ? AND role IN ('org_admin','org_member')
-		ORDER BY role, username COLLATE NOCASE
+		WHERE org_id = $1 AND role IN ('org_admin','org_member')
+		ORDER BY role, userLOWER(name)
 	`, o.ID)
 	if err != nil {
 		return err
@@ -636,7 +635,7 @@ func (h *Handlers) listAssignments(ctx context.Context, orgID int64) ([]assignme
 		SELECT aa.id, aa.adventure_slug, aa.max_teams, aa.created_at, ar.id
 		FROM adventure_assignments aa
 		LEFT JOIN adventure_runs ar ON ar.assignment_id = aa.id
-		WHERE aa.org_id = ?
+		WHERE aa.org_id = $1
 		ORDER BY aa.created_at DESC
 	`, orgID)
 	if err != nil {

@@ -60,7 +60,7 @@ func (h *Handlers) WSArrange(w http.ResponseWriter, r *http.Request) {
 		// Verify the caller can read this run before we open a topic subscription.
 		var orgID int64
 		err := h.DB.QueryRowContext(conn.Context(),
-			`SELECT org_id FROM adventure_runs WHERE id = ?`, runID).Scan(&orgID)
+			`SELECT org_id FROM adventure_runs WHERE id = $1`, runID).Scan(&orgID)
 		if errors.Is(err, sql.ErrNoRows) {
 			conn.SendKind("watch_error", map[string]any{"error": "run not found"})
 			return
@@ -159,6 +159,7 @@ type runDetailMemberDTO struct {
 	Name        string `json:"name"`
 	Token       string `json:"token"`
 	LastLoginAt string `json:"last_login_at,omitempty"`
+	ExpiresAt   string `json:"expires_at,omitempty"`
 }
 
 // buildRunDetail assembles the run-with-teams-and-slots payload. The HTTP
@@ -177,7 +178,7 @@ func (h *Handlers) buildRunDetail(ctx context.Context, runID int64) (runDetailDT
 		       ar.live_token, ar.show_map
 		FROM adventure_runs ar
 		LEFT JOIN adventure_assignments aa ON aa.id = ar.assignment_id
-		WHERE ar.id = ?
+		WHERE ar.id = $1
 	`, runID).Scan(&d.ID, &d.Name, &d.AdventureSlug, &d.State, &d.ScheduledAt, &d.StartedAt,
 		&d.OrgID, &d.CreatedByUserID, &d.AssignmentID, &d.MaxTeams,
 		&d.LiveToken, &showMap); err != nil {
@@ -188,8 +189,8 @@ func (h *Handlers) buildRunDetail(ctx context.Context, runID int64) (runDetailDT
 	teams := []runDetailTeamDTO{}
 	rows, err := h.DB.QueryContext(ctx, `
 		SELECT t.id, t.name, t.current_page_index, COALESCE(t.completed_at, ''), t.token,
-		       t.avatar_mime_type IS NOT NULL AS has_avatar
-		FROM teams t WHERE t.run_id = ? ORDER BY t.name
+		       (t.avatar_mime_type IS NOT NULL)::int AS has_avatar
+		FROM teams t WHERE t.run_id = $1 ORDER BY t.name
 	`, runID)
 	if err != nil {
 		return runDetailDTO{}, err
@@ -208,15 +209,15 @@ func (h *Handlers) buildRunDetail(ctx context.Context, runID int64) (runDetailDT
 	}
 	for i := range teams {
 		mrows, err := h.DB.QueryContext(ctx, `
-			SELECT id, name, token, COALESCE(last_login_at, '')
-			FROM player_slots WHERE team_id = ? ORDER BY name COLLATE NOCASE
+			SELECT id, name, token, COALESCE(last_login_at, ''), COALESCE(expires_at, '')
+			FROM player_slots WHERE team_id = $1 ORDER BY LOWER(name)
 		`, teams[i].ID)
 		if err != nil {
 			return runDetailDTO{}, err
 		}
 		for mrows.Next() {
 			var s runDetailMemberDTO
-			if err := mrows.Scan(&s.ID, &s.Name, &s.Token, &s.LastLoginAt); err != nil {
+			if err := mrows.Scan(&s.ID, &s.Name, &s.Token, &s.LastLoginAt, &s.ExpiresAt); err != nil {
 				mrows.Close()
 				return runDetailDTO{}, err
 			}

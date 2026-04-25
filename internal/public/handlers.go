@@ -76,7 +76,7 @@ func (h *Handlers) runByToken(ctx context.Context, token string) (runID int64, s
 	var started, scheduled, completed sql.NullString
 	err = h.DB.QueryRowContext(ctx, `
 		SELECT id, adventure_slug, state, started_at, scheduled_at, completed_at, show_map
-		FROM adventure_runs WHERE live_token = ?
+		FROM adventure_runs WHERE live_token = $1
 	`, token).Scan(&runID, &slug, &state, &started, &scheduled, &completed, &showMap)
 	if started.Valid {
 		startedAt = started.String
@@ -125,7 +125,7 @@ func (h *Handlers) buildLive(ctx context.Context, token string) (LiveDTO, int64,
 	// was previously baked into ORDER BY lives in sortTeams below.
 	rows, err := h.DB.QueryContext(ctx, `
 		SELECT t.id, t.name, t.current_page_index, COALESCE(t.completed_at, ''),
-		       t.avatar_mime_type IS NOT NULL AS has_avatar,
+		       (t.avatar_mime_type IS NOT NULL)::int AS has_avatar,
 		       t.created_at,
 		       COALESCE(
 		         (SELECT MAX(created_at) FROM run_events
@@ -133,7 +133,7 @@ func (h *Handlers) buildLive(ctx context.Context, token string) (LiveDTO, int64,
 		         t.created_at
 		       ) AS last_progress_at
 		FROM teams t
-		WHERE t.run_id = ?
+		WHERE t.run_id = $1
 	`, id)
 	if err != nil {
 		return LiveDTO{}, id, http.StatusInternalServerError, "query failed"
@@ -172,7 +172,7 @@ func (h *Handlers) buildLive(ctx context.Context, token string) (LiveDTO, int64,
 	for i := range teams {
 		mrows, err := h.DB.QueryContext(ctx, `
 			SELECT name FROM player_slots
-			WHERE team_id = ? ORDER BY name COLLATE NOCASE
+			WHERE team_id = $1 ORDER BY LOWER(name)
 		`, teams[i].ID)
 		if err != nil {
 			return LiveDTO{}, id, http.StatusInternalServerError, "members failed"
@@ -260,10 +260,10 @@ type TracksResponse struct {
 // (resp, status, errMsg). Caller is responsible for authorising by token.
 func (h *Handlers) buildTracks(ctx context.Context, runID int64) (TracksResponse, int, string) {
 	rows, err := h.DB.QueryContext(ctx, `
-		SELECT p.team_id, t.name, t.avatar_mime_type IS NOT NULL AS has_avatar,
+		SELECT p.team_id, t.name, (t.avatar_mime_type IS NOT NULL)::int AS has_avatar,
 		       p.lat, p.lng, p.server_ts
 		FROM location_pings p JOIN teams t ON t.id = p.team_id
-		WHERE p.run_id = ?
+		WHERE p.run_id = $1
 		ORDER BY p.team_id, p.server_ts
 	`, runID)
 	if err != nil {
@@ -339,10 +339,10 @@ func latestPingsByTeam(ctx context.Context, db *sql.DB, runID int64) (map[int64]
 		FROM location_pings p
 		JOIN (
 		  SELECT team_id, MAX(server_ts) AS ts
-		  FROM location_pings WHERE run_id = ?
+		  FROM location_pings WHERE run_id = $1
 		  GROUP BY team_id
 		) latest ON latest.team_id = p.team_id AND latest.ts = p.server_ts
-		WHERE p.run_id = ?
+		WHERE p.run_id = $2
 	`, runID, runID)
 	if err != nil {
 		return nil, err

@@ -49,6 +49,7 @@ type purchaseDTO struct {
 	State             string `json:"state"`
 	AssignmentID      *int64 `json:"assignment_id,omitempty"`
 	CheckoutURL       string `json:"checkout_url,omitempty"`
+	InvoiceURL        string `json:"invoice_url,omitempty"`
 	CreatedAt         string `json:"created_at"`
 	PaidAt            string `json:"paid_at,omitempty"`
 }
@@ -68,6 +69,13 @@ func (h *Handlers) CreatePurchase(w http.ResponseWriter, r *http.Request) {
 	me, _ := auth.FromContext(r.Context())
 	if me.OrgID == nil {
 		httpx.Error(w, http.StatusBadRequest, "admins can't purchase — create a free assignment instead")
+		return
+	}
+	if !me.EmailVerified {
+		httpx.JSON(w, http.StatusForbidden, map[string]string{
+			"error": "verify your email before buying assignments",
+			"code":  "verification_required",
+		})
 		return
 	}
 	var req createPurchaseRequest
@@ -95,32 +103,69 @@ func (h *Handlers) CreatePurchase(w http.ResponseWriter, r *http.Request) {
 	}
 	provider := req.Provider
 	if provider == "" {
-		provider = "simulated"
+		// Default to stripe when configured so production deployments
+		// don't accidentally serve the simulated flow; fall back to
+		// simulated otherwise so a fresh dev clone still works.
+		if h.stripeEnabled() {
+			provider = "stripe"
+		} else {
+			provider = "simulated"
+		}
 	}
 	if provider != "simulated" && provider != "stripe" {
 		httpx.Error(w, http.StatusBadRequest, "unsupported provider")
 		return
 	}
+	if provider == "stripe" && !h.stripeEnabled() {
+		httpx.Error(w, http.StatusServiceUnavailable, "stripe is not configured on this server")
+		return
+	}
 	amount := req.MaxTeams * PricePerSlotCents
-	res, err := h.DB.ExecContext(r.Context(), `
+
+	// Look up the adventure title up-front so we can pass a friendly
+	// product name to Stripe Checkout instead of the bare slug.
+	var advTitle string
+	_ = h.DB.QueryRowContext(r.Context(),
+		`SELECT title FROM adventures WHERE slug = $1`, req.AdventureSlug).Scan(&advTitle)
+
+	var id int64
+	if err := h.DB.QueryRowContext(r.Context(), `
 		INSERT INTO purchases(org_id, buyer_user_id, adventure_slug, max_teams,
 		                      amount_cents, currency, provider, state)
-		VALUES (?, ?, ?, ?, ?, 'USD', ?, 'pending')
-	`, *me.OrgID, me.ID, req.AdventureSlug, req.MaxTeams, amount, provider)
-	if err != nil {
+		VALUES ($1, $2, $3, $4, $5, 'USD', $6, 'pending')
+		RETURNING id
+	`, *me.OrgID, me.ID, req.AdventureSlug, req.MaxTeams, amount, provider).Scan(&id); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "insert failed: "+err.Error())
 		return
 	}
-	id, _ := res.LastInsertId()
-	// Return the checkout URL. In simulated mode the browser navigates
-	// to the in-app page; in Stripe mode a future version of this
-	// handler would create a Checkout Session and return its URL.
+
+	// Build the URL the browser navigates to. Simulated mode keeps
+	// pointing at our in-app /purchase/{id} fake checkout; Stripe
+	// mode creates a Checkout Session and uses its hosted URL.
+	checkoutURL := fmt.Sprintf("/purchase/%d", id)
+	if provider == "stripe" {
+		url, sessID, serr := h.createStripeCheckoutSession(r.Context(),
+			id, req.AdventureSlug, advTitle, req.MaxTeams, amount, me.Email)
+		if serr != nil {
+			// Roll back the pending row so we don't leave dangling
+			// pendings every time Stripe is down.
+			_, _ = h.DB.ExecContext(r.Context(), `DELETE FROM purchases WHERE id = $1`, id)
+			httpx.Error(w, http.StatusBadGateway, "stripe checkout failed: "+serr.Error())
+			return
+		}
+		// Stash the session id so the webhook can correlate.
+		_, _ = h.DB.ExecContext(r.Context(),
+			`UPDATE purchases SET provider_session_id = $1 WHERE id = $2`, sessID, id)
+		checkoutURL = url
+	}
+
 	httpx.JSON(w, http.StatusCreated, map[string]any{
 		"id":           id,
 		"amount_cents": amount,
 		"currency":     "USD",
 		"state":        "pending",
-		"checkout_url": fmt.Sprintf("/purchase/%d", id),
+		"provider":     provider,
+		"checkout_url": checkoutURL,
 	})
 }
 
@@ -153,7 +198,7 @@ func (h *Handlers) ConfirmPurchase(w http.ResponseWriter, r *http.Request) {
 	)
 	err = tx.QueryRowContext(r.Context(), `
 		SELECT org_id, adventure_slug, max_teams, state, assignment_id
-		FROM purchases WHERE id = ?
+		FROM purchases WHERE id = $1
 	`, purchaseID).Scan(&orgID, &advSlug, &maxTeams, &state, &existingAssn)
 	if errors.Is(err, sql.ErrNoRows) {
 		httpx.Error(w, http.StatusNotFound, "purchase not found")
@@ -185,19 +230,19 @@ func (h *Handlers) ConfirmPurchase(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	assRes, err := tx.ExecContext(r.Context(), `
+	var assID int64
+	if err := tx.QueryRowContext(r.Context(), `
 		INSERT INTO adventure_assignments(org_id, adventure_slug, max_teams)
-		VALUES (?, ?, ?)
-	`, orgID, advSlug, maxTeams)
-	if err != nil {
+		VALUES ($1, $2, $3)
+		RETURNING id
+	`, orgID, advSlug, maxTeams).Scan(&assID); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "assignment insert failed: "+err.Error())
 		return
 	}
-	assID, _ := assRes.LastInsertId()
 	if _, err := tx.ExecContext(r.Context(), `
 		UPDATE purchases
-		SET state = 'paid', paid_at = datetime('now'), assignment_id = ?
-		WHERE id = ?
+		SET state = 'paid', paid_at = now_text(), assignment_id = $1
+		WHERE id = $2
 	`, assID, purchaseID); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "purchase update failed")
 		return
@@ -219,13 +264,14 @@ func (h *Handlers) ListPurchases(w http.ResponseWriter, r *http.Request) {
 		SELECT p.id, p.org_id, p.adventure_slug, COALESCE(a.title, ''),
 		       p.max_teams, p.amount_cents, p.currency, p.provider,
 		       COALESCE(p.provider_session_id, ''), p.state, p.assignment_id,
-		       p.created_at, COALESCE(p.paid_at, '')
+		       p.created_at, COALESCE(p.paid_at, ''),
+		       COALESCE(p.stripe_invoice_url, '')
 		FROM purchases p
 		LEFT JOIN adventures a ON a.slug = p.adventure_slug
 	`
 	var args []any
 	if !isAdmin(me) {
-		query += ` WHERE p.org_id = ?`
+		query += ` WHERE p.org_id = $1`
 		args = append(args, *me.OrgID)
 	}
 	query += ` ORDER BY p.created_at DESC`
@@ -244,7 +290,7 @@ func (h *Handlers) ListPurchases(w http.ResponseWriter, r *http.Request) {
 		if err := rows.Scan(&d.ID, &d.OrgID, &d.AdventureSlug, &d.AdventureTitle,
 			&d.MaxTeams, &d.AmountCents, &d.Currency, &d.Provider,
 			&d.ProviderSessionID, &d.State, &assignment,
-			&d.CreatedAt, &d.PaidAt); err != nil {
+			&d.CreatedAt, &d.PaidAt, &d.InvoiceURL); err != nil {
 			httpx.Error(w, http.StatusInternalServerError, "scan failed")
 			return
 		}
@@ -274,13 +320,14 @@ func (h *Handlers) GetPurchase(w http.ResponseWriter, r *http.Request) {
 		SELECT p.id, p.org_id, p.adventure_slug, COALESCE(a.title, ''),
 		       p.max_teams, p.amount_cents, p.currency, p.provider,
 		       COALESCE(p.provider_session_id, ''), p.state, p.assignment_id,
-		       p.created_at, COALESCE(p.paid_at, '')
+		       p.created_at, COALESCE(p.paid_at, ''),
+		       COALESCE(p.stripe_invoice_url, '')
 		FROM purchases p
 		LEFT JOIN adventures a ON a.slug = p.adventure_slug
-		WHERE p.id = ?
+		WHERE p.id = $1
 	`, purchaseID).Scan(&d.ID, &d.OrgID, &d.AdventureSlug, &d.AdventureTitle,
 		&d.MaxTeams, &d.AmountCents, &d.Currency, &d.Provider,
-		&d.ProviderSessionID, &d.State, &assignment, &d.CreatedAt, &d.PaidAt)
+		&d.ProviderSessionID, &d.State, &assignment, &d.CreatedAt, &d.PaidAt, &d.InvoiceURL)
 	if errors.Is(err, sql.ErrNoRows) {
 		httpx.Error(w, http.StatusNotFound, "purchase not found")
 		return
@@ -366,6 +413,13 @@ function dollars(cents, currency) {
   return new Intl.NumberFormat(undefined, { style:'currency', currency: currency || 'USD' }).format(cents / 100);
 }
 
+// csrf reads the zv_csrf cookie set by EnsureCSRF and is echoed on
+// POSTs back to /api/admin so the request matches the cookie.
+function csrf() {
+  const m = document.cookie.match(/(?:^|;\s*)zv_csrf=([^;]+)/);
+  return m ? decodeURIComponent(m[1]) : '';
+}
+
 async function load() {
   const r = await fetch('/api/admin/purchases/' + PURCHASE_ID, { credentials: 'same-origin' });
   if (r.status === 401) { location.href = '/arrange'; return; }
@@ -385,6 +439,7 @@ payBtn.addEventListener('click', async () => {
   result.textContent = 'Processing…';
   const r = await fetch('/api/admin/purchases/' + PURCHASE_ID + '/confirm', {
     method: 'POST', credentials: 'same-origin',
+    headers: { 'X-CSRF-Token': csrf() },
   });
   if (r.ok) {
     result.className = 'ok';

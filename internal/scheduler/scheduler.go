@@ -15,9 +15,16 @@ import (
 )
 
 // Start launches the sweep loop in its own goroutine. Stop it by cancelling
-// the supplied context. hub may be nil (e.g. in tests).
-func Start(ctx context.Context, db *sql.DB, hub *ws.Hub, interval time.Duration) {
-	go loop(ctx, db, hub, interval)
+// the supplied context. The returned channel is closed once the loop has
+// fully exited — main.go waits on it during shutdown so the process doesn't
+// race the in-flight tick. hub may be nil (e.g. in tests).
+func Start(ctx context.Context, db *sql.DB, hub *ws.Hub, interval time.Duration) <-chan struct{} {
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		loop(ctx, db, hub, interval)
+	}()
+	return done
 }
 
 func loop(ctx context.Context, db *sql.DB, hub *ws.Hub, interval time.Duration) {
@@ -36,16 +43,16 @@ func loop(ctx context.Context, db *sql.DB, hub *ws.Hub, interval time.Duration) 
 
 // tick finds and promotes all scheduled runs whose time has come.
 //
-// Dates are compared through sqlite's datetime() normaliser, which parses
-// both RFC3339 strings and sqlite's own "YYYY-MM-DD HH:MM:SS" format so we
-// don't have to care what the writer chose.
+// scheduled_at can be either RFC3339 (from the JS Date input) or our own
+// "YYYY-MM-DD HH:MM:SS" wire format; casting through timestamptz parses
+// both so we don't have to care what the writer chose.
 func tick(ctx context.Context, db *sql.DB, hub *ws.Hub) {
 	rows, err := db.QueryContext(ctx, `
 		SELECT id, COALESCE(created_by_user_id, 0)
 		FROM adventure_runs
 		WHERE state = 'scheduled'
 		  AND scheduled_at IS NOT NULL
-		  AND datetime(scheduled_at) <= datetime('now')
+		  AND scheduled_at::timestamptz <= now()
 	`)
 	if err != nil {
 		logx.Error("scheduler.query", "err", err)
@@ -66,8 +73,8 @@ func tick(ctx context.Context, db *sql.DB, hub *ws.Hub) {
 	for _, d := range runs {
 		res, err := db.ExecContext(ctx, `
 			UPDATE adventure_runs
-			SET state = 'running', started_at = datetime('now')
-			WHERE id = ? AND state = 'scheduled'
+			SET state = 'running', started_at = now_text()
+			WHERE id = $1 AND state = 'scheduled'
 		`, d.id)
 		if err != nil {
 			logx.Error("scheduler.start", "run_id", d.id, "err", err)

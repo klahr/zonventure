@@ -1016,6 +1016,92 @@ textarea { min-height: 80px; resize: vertical; font-family: ui-monospace, monosp
 }
 .zv-log-sel:hover { border-color: var(--muted); }
 
+/* Audit table — dense, monospaced timestamp/IP, status pill on
+   success/failure. No fancy treatments; this is a forensics view. */
+.audit-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: .92rem;
+}
+.audit-table thead th {
+  text-align: left;
+  padding: .35rem .55rem;
+  border-bottom: 1px solid var(--border-soft);
+  color: var(--muted);
+  font-weight: 600;
+  font-size: .82rem;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.audit-table tbody td {
+  padding: .45rem .55rem;
+  border-bottom: 1px solid var(--border-soft);
+  vertical-align: top;
+}
+.audit-table .mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: .86rem;
+  color: var(--text);
+  white-space: nowrap;
+}
+.audit-pill {
+  display: inline-block;
+  padding: .05rem .45rem;
+  border-radius: 999px;
+  font-size: .78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.audit-ok   { background: rgba(60, 180, 90, .15); color: #2c8048; }
+.audit-fail { background: rgba(220, 70, 70, .14); color: #b03a3a; }
+
+/* Magic-link expiry badge inside the team-link distribution panel.
+   Sized so it stays readable next to the slot name without pushing
+   the URL field around. */
+.tl-expiry {
+  font-size: .72rem;
+  font-weight: 700;
+  padding: 0 .4rem;
+  border-radius: 999px;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  margin-left: .25rem;
+}
+.tl-expiry.expired { background: rgba(220, 70, 70, .14); color: #b03a3a; }
+.tl-expiry.soon    { background: rgba(220, 160, 60, .15); color: #8a5a1a; }
+
+/* Unverified-email banner sits at the top of every content page until
+   the user clicks the link in their inbox. Amber / muted so it doesn't
+   distract from real errors but is plainly an "act on me" surface. */
+.verify-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin: 0 0 1rem;
+  padding: .55rem .85rem;
+  border-radius: var(--radius-sm);
+  background: rgba(220, 160, 60, .12);
+  border: 1px solid rgba(220, 160, 60, .35);
+  font-size: .92rem;
+}
+.verify-banner strong { color: #8a5a1a; }
+.verify-banner .btn { white-space: nowrap; }
+
+/* Account-settings cards: stacked in one column, comfortable padding,
+   tight enough that the page reads as a list of related actions
+   rather than a wall. The danger card gets a subtle red edge. */
+.settings-card {
+  margin: 0 0 1rem;
+  padding: 1rem 1.25rem;
+}
+.settings-card h2 { margin: 0 0 .75rem; font-size: 1rem; }
+.settings-card .field { margin-bottom: .6rem; }
+.settings-card.danger-card { border-color: rgba(220, 70, 70, .35); }
+.settings-card .ok  { color: #2c8048; }
+.settings-card .err { color: #b03a3a; }
+
 /* Dragging feedback: the pill being dragged dims, and the drop target
    grows a coloured edge on whichever side the cursor is closer to so
    arrangers see the exact insertion point (same affordance as Slides). */
@@ -1176,11 +1262,25 @@ textarea { min-height: 80px; resize: vertical; font-family: ui-monospace, monosp
 
 <script>
 /* ========== API helper ========== */
+// csrfToken reads the zv_csrf cookie set by the server's EnsureCSRF
+// middleware. We echo it back as X-CSRF-Token on every mutating
+// request — the server compares header == cookie. A cross-origin
+// attacker can't read document.cookie for our domain, so they can't
+// forge the header even if the browser would attach our cookies.
+function csrfToken() {
+  const m = document.cookie.match(/(?:^|;\s*)zv_csrf=([^;]+)/);
+  return m ? decodeURIComponent(m[1]) : '';
+}
 async function api(path, opts = {}) {
+  const headers = { ...(opts.body ? { 'Content-Type': 'application/json' } : {}), ...(opts.headers || {}) };
+  const method = (opts.method || 'GET').toUpperCase();
+  if (method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS') {
+    headers['X-CSRF-Token'] = csrfToken();
+  }
   const res = await fetch(path, {
     credentials: 'same-origin',
-    headers: opts.body ? { 'Content-Type': 'application/json' } : {},
     ...opts,
+    headers,
   });
   let body = null;
   if (res.status !== 204) {
@@ -1355,9 +1455,92 @@ async function refreshMe() {
 }
 function nav(hash) { location.hash = hash; }
 
+// maybeShowOnboarding flashes a one-time welcome modal on the first
+// /arrange render after a fresh signup. Dismissal is sticky in
+// localStorage; once it's shown for an account it never reappears
+// unless the user clears site data.
+function maybeShowOnboarding() {
+  if (!state.me || state.me.role === 'admin') return; // admins skip — they don't buy or run.
+  const key = 'zv_onboarded_' + state.me.id;
+  if (localStorage.getItem(key) === '1') return;
+  // Only show once whoami has settled and we have an authenticated user.
+  setTimeout(() => {
+    if (location.hash.startsWith('#reset') || location.hash.startsWith('#change-email')) return;
+    localStorage.setItem(key, '1');
+    showOnboardingModal();
+  }, 200);
+}
+
+async function showOnboardingModal() {
+  await modal(t('Welcome to Zonventure'), ({ body, close }) => {
+    body.append(
+      h('p', { class: 'muted', style: 'margin-top:.25rem' },
+        t('Three steps from here to a live adventure:')),
+      h('ol', { style: 'padding-left:1.25rem; line-height:1.7' },
+        h('li', {}, h('strong', {}, t('Browse adventures')), ' — ',
+          t('the catalog has ready-made adventures, or you can author your own.')),
+        h('li', {}, h('strong', {}, t('Buy team slots')), ' — ',
+          t('one slot per team. Pay once per event.')),
+        h('li', {}, h('strong', {}, t('Schedule a run')), ' — ',
+          t('add teams, share magic links, and start when ready.'))),
+      h('p', { class: 'muted', style: 'font-size:.85rem; margin-top:1rem' },
+        t('You can revisit this from the Settings page anytime.')),
+      h('div', { class: 'row end', style: 'margin-top:1rem; gap:.5rem' },
+        h('button', { class: 'btn', on: { click: () => close(null) } }, t('Skip')),
+        h('button', { class: 'btn primary', on: { click: () => { close(null); nav('#store'); } } },
+          t('Open the store'))));
+  });
+}
+
 async function render() {
   if (!state.me) await refreshMe();
   const root = document.getElementById('root');
+  // Reset-password landing: the email link points at
+  // /arrange#reset?token=ABC. Show the reset card regardless of
+  // login state — the user with the token is exactly the one who
+  // needs to override their password.
+  const resetMatch = location.hash.match(/^#reset\?token=([^&]+)/);
+  if (resetMatch) {
+    root.replaceChildren(renderLogin(null, 'reset', decodeURIComponent(resetMatch[1])));
+    return;
+  }
+  // Change-email confirmation: the email link points at
+  // /arrange#change-email?token=ABC. Consume the token and flash a
+  // toast — same pattern as #verify-ok / #verify-failed.
+  const ceMatch = location.hash.match(/^#change-email\?token=([^&]+)/);
+  if (ceMatch) {
+    const token = decodeURIComponent(ceMatch[1]);
+    history.replaceState(null, '', '#dashboard');
+    state.route = '#dashboard';
+    api('/api/auth/confirm-email-change', {
+      method: 'POST',
+      body: JSON.stringify({ token }),
+    }).then(async (r) => {
+      if (r.status === 200) {
+        await refreshMe();
+        render();
+        setTimeout(() => toastOk(t('Email updated to {{email}}.', { email: r.body?.email || '' })), 50);
+      } else {
+        render();
+        setTimeout(() => toastErr(r.body?.error || t('Could not change email.')), 50);
+      }
+    });
+  }
+  // The /verify endpoint redirects back here with a state hash that
+  // tells the UI which toast to flash. We consume it once and replace
+  // the hash with #dashboard so a refresh doesn't re-flash the same
+  // toast and the audit log doesn't fill with redundant clicks.
+  if (location.hash === '#verify-ok' || location.hash === '#verify-failed') {
+    const ok = location.hash === '#verify-ok';
+    history.replaceState(null, '', '#dashboard');
+    state.route = '#dashboard';
+    setTimeout(() => {
+      if (ok) toastOk(t('Email verified — you can now schedule runs and buy assignments.'));
+      else toastErr(t('Verification link is invalid or has expired. Sign in and tap "Resend email".'));
+      // refreshMe so the banner disappears now that email_verified=true.
+      if (ok) refreshMe().then(render);
+    }, 50);
+  }
   if (!state.me) { root.replaceChildren(renderLogin()); return; }
   if (state.me.role === 'player') {
     root.replaceChildren(h('div', { class: 'login-wrap' },
@@ -1371,9 +1554,19 @@ async function render() {
   }
   root.replaceChildren(renderShell());
   await renderRoute();
+  maybeShowOnboarding();
 }
 
-function renderLogin(err) {
+// renderLogin renders one of the pre-auth screens — login, signup,
+// forgot-password, or reset-password — picked by `mode`. Defaults to
+// login. Sharing one card avoids dragging the user through page
+// navigations during account-flow edge cases.
+function renderLogin(err, mode, extra) {
+  mode = mode || 'login';
+  if (mode === 'signup') return renderSignup(err);
+  if (mode === 'forgot') return renderForgot(err);
+  if (mode === 'reset')  return renderReset(err, extra);
+
   const form = h('form', { class: 'login' },
     h('div', { class: 'brand' }, 'zonventure', h('small', {}, t('arranger'))),
     h('label', { class: 'field' },
@@ -1385,10 +1578,18 @@ function renderLogin(err) {
     err ? h('p', { class: 'err' }, err) : null,
     h('div', { class: 'row end', style: 'margin-top:1rem' },
       h('button', { class: 'btn primary', type: 'submit' }, t('Log in'))),
+    h('p', { class: 'muted', style: 'margin-top:1rem; font-size:.85rem; text-align:center' },
+      h('a', { href: '#', on: { click: (e) => { e.preventDefault();
+        document.getElementById('root').replaceChildren(renderLogin(null, 'forgot')); } } }, t('Forgot password?'))),
+    h('p', { class: 'muted', style: 'margin-top:.5rem; font-size:.85rem; text-align:center' },
+      t('No account yet?'), ' ',
+      h('a', { href: '#', on: { click: (e) => { e.preventDefault();
+        document.getElementById('root').replaceChildren(renderLogin(null, 'signup')); } } }, t('Sign up'))),
     h('div', { class: 'row', style: 'margin-top:1rem; justify-content:flex-end' },
       h('label', { class: 'muted', style: 'font-size:.8rem; display:flex; align-items:center; gap:.35rem' },
         t('Language'),
         zvI18n.makeLangPicker({ className: 'zv-lang-picker' }))),
+    renderLegalFooter(),
   );
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -1399,6 +1600,130 @@ function renderLogin(err) {
     });
     if (r.ok) { await refreshMe(); render(); }
     else document.getElementById('root').replaceChildren(renderLogin(r.body?.error || t('login failed')));
+  });
+  return h('div', { class: 'login-wrap' }, form);
+}
+
+function renderForgot(err, sentTo) {
+  const form = h('form', { class: 'login' },
+    h('div', { class: 'brand' }, 'zonventure', h('small', {}, t('reset password'))),
+    h('p', { class: 'muted', style: 'font-size:.9rem' },
+      t('Enter your email and we\'ll send you a link to set a new password. The link expires in 1 hour.')),
+    h('label', { class: 'field' },
+      h('span', {}, t('Email')),
+      h('input', { name: 'email', type: 'email', autocomplete: 'email', required: true })),
+    err ? h('p', { class: 'err' }, err) : null,
+    sentTo ? h('p', { class: 'ok' }, t('If {{email}} matches an account, a reset link is on its way.', { email: sentTo })) : null,
+    h('div', { class: 'row end', style: 'margin-top:1rem' },
+      h('button', { class: 'btn primary', type: 'submit' }, t('Send reset link'))),
+    h('p', { class: 'muted', style: 'margin-top:1rem; font-size:.85rem; text-align:center' },
+      h('a', { href: '#', on: { click: (e) => { e.preventDefault();
+        document.getElementById('root').replaceChildren(renderLogin(null, 'login')); } } }, t('Back to log in'))),
+  );
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(form);
+    const email = String(fd.get('email') || '').trim();
+    const r = await api('/api/auth/forgot', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    });
+    // 204 is the always-success response from the server. 400 only
+    // fires for malformed addresses (validation failed locally too).
+    if (r.status === 204) {
+      document.getElementById('root').replaceChildren(renderForgot(null, email));
+    } else {
+      document.getElementById('root').replaceChildren(renderForgot(r.body?.error || t('reset failed')));
+    }
+  });
+  return h('div', { class: 'login-wrap' }, form);
+}
+
+// renderReset shows the "choose a new password" form. token is the
+// reset token from the URL fragment; we POST it together with the
+// new password and let the server set the session cookie + return
+// whoami so the user is dropped straight into the dashboard.
+function renderReset(err, token) {
+  if (!token) {
+    return h('div', { class: 'login-wrap' },
+      h('div', { class: 'login' },
+        h('div', { class: 'brand' }, 'zonventure', h('small', {}, t('reset password'))),
+        h('p', { class: 'err' }, t('No reset token in the URL. Check the link you clicked, or request a new one.')),
+        h('p', { class: 'muted', style: 'margin-top:1rem; font-size:.85rem; text-align:center' },
+          h('a', { href: '#', on: { click: (e) => { e.preventDefault();
+            history.replaceState(null, '', '#dashboard');
+            document.getElementById('root').replaceChildren(renderLogin(null, 'forgot')); } } }, t('Request a new link')))));
+  }
+  const form = h('form', { class: 'login' },
+    h('div', { class: 'brand' }, 'zonventure', h('small', {}, t('reset password'))),
+    h('label', { class: 'field' },
+      h('span', {}, t('New password (min 8)')),
+      h('input', { name: 'pw', type: 'password', autocomplete: 'new-password', minlength: 8, required: true })),
+    err ? h('p', { class: 'err' }, err) : null,
+    h('div', { class: 'row end', style: 'margin-top:1rem' },
+      h('button', { class: 'btn primary', type: 'submit' }, t('Set password'))),
+  );
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(form);
+    const r = await api('/api/auth/reset', {
+      method: 'POST',
+      body: JSON.stringify({ token, new_password: fd.get('pw') }),
+    });
+    if (r.status === 200) {
+      // Server already minted a session and dropped the cookie.
+      // Replace the hash so a refresh doesn't re-trigger the reset
+      // form, then drop into the dashboard.
+      history.replaceState(null, '', '#dashboard');
+      state.route = '#dashboard';
+      await refreshMe();
+      render();
+      setTimeout(() => toastOk(t('Password updated. You\'re signed in.')), 50);
+      return;
+    }
+    document.getElementById('root').replaceChildren(renderReset(r.body?.error || t('reset failed'), token));
+  });
+  return h('div', { class: 'login-wrap' }, form);
+}
+
+function renderSignup(err) {
+  const form = h('form', { class: 'login' },
+    h('div', { class: 'brand' }, 'zonventure', h('small', {}, t('create account'))),
+    h('label', { class: 'field' },
+      h('span', {}, t('Email')),
+      h('input', { name: 'email', type: 'email', autocomplete: 'email', required: true })),
+    h('label', { class: 'field' },
+      h('span', {}, t('Organization name')),
+      h('input', { name: 'org_name', autocomplete: 'organization', required: true })),
+    h('label', { class: 'field' },
+      h('span', {}, t('Password (min 8)')),
+      h('input', { name: 'password', type: 'password', autocomplete: 'new-password', minlength: 8, required: true })),
+    err ? h('p', { class: 'err' }, err) : null,
+    h('div', { class: 'row end', style: 'margin-top:1rem' },
+      h('button', { class: 'btn primary', type: 'submit' }, t('Create account'))),
+    h('p', { class: 'muted', style: 'margin-top:1rem; font-size:.85rem; text-align:center' },
+      t('Already registered?'), ' ',
+      h('a', { href: '#', on: { click: (e) => { e.preventDefault();
+        document.getElementById('root').replaceChildren(renderLogin(null, 'login')); } } }, t('Log in'))),
+  );
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(form);
+    const r = await api('/api/auth/signup', {
+      method: 'POST',
+      body: JSON.stringify({
+        email: fd.get('email'), org_name: fd.get('org_name'), password: fd.get('password'),
+      }),
+    });
+    if (r.status === 201) {
+      await refreshMe();
+      // Make sure the post-signup landing flashes the "check your inbox" toast.
+      location.hash = '#dashboard';
+      render();
+      setTimeout(() => toastOk(t('Account created — check {{email}} for a verification link.', { email: fd.get('email') })), 50);
+      return;
+    }
+    document.getElementById('root').replaceChildren(renderSignup(r.body?.error || t('signup failed')));
   });
   return h('div', { class: 'login-wrap' }, form);
 }
@@ -1423,7 +1748,9 @@ function renderShell() {
       ...(state.me.features?.simulator_enabled
         ? [['#simulator', t('Simulator'), ICONS.play]]
         : []),
+      ['#audit',         t('Audit'),         ICONS.shield],
       ['#logs',          t('Logs'),          ICONS.terminal],
+      ['#settings',      t('Settings'),      ICONS.user],
     ];
   } else {
     // Order matches the mental model: where I am → what I can run →
@@ -1436,7 +1763,11 @@ function renderShell() {
       ['#store',      t('Store'),      ICONS.coins],
       ['#runs',       t('Runs'),       ICONS.play],
     ];
-    if (isOrgAdmin) items.push(['#members', t('Members'), ICONS.shield]);
+    if (isOrgAdmin) {
+      items.push(['#members', t('Members'), ICONS.shield]);
+      items.push(['#audit',   t('Audit'),   ICONS.shield]);
+    }
+    items.push(['#settings', t('Settings'), ICONS.user]);
   }
   const active = state.route.split('/')[0];
 
@@ -1466,7 +1797,7 @@ function renderShell() {
     h('div', { class: 'brand' }, 'zonventure',
       h('small', {}, isAdmin ? t('administrator') : t('arranger'))),
     nav,
-    h('div', { class: 'sidebar-footer' }, themeBtn, logoutBtn, langPicker));
+    h('div', { class: 'sidebar-footer' }, themeBtn, logoutBtn, langPicker, renderLegalFooter()));
 
   const backdrop = h('div', { class: 'backdrop', on: { click: () => {
     document.querySelector('.sidebar').classList.remove('open');
@@ -1488,10 +1819,39 @@ function renderShell() {
     h('div', { class: 'spacer' }),
   );
 
+  // Unverified-email banner: shown for users with an email_verified
+  // flag of false. Money-touching actions (CreateRun, CreatePurchase)
+  // 403 with a verification_required code, so this banner gives them
+  // the recovery action up front before they hit the wall.
+  const verifyBanner = (state.me && state.me.email && state.me.email_verified === false)
+    ? renderVerifyBanner(state.me.email)
+    : null;
+
   return h('div', { class: 'app' },
     sidebar, topbar,
-    h('main', { class: 'content', id: 'view' }),
+    h('main', { class: 'content', id: 'view' }, verifyBanner),
     backdrop);
+}
+
+function renderVerifyBanner(email) {
+  const banner = h('div', { class: 'verify-banner' },
+    h('div', {},
+      h('strong', {}, t('Verify your email')),
+      ' — ',
+      h('span', { class: 'muted' },
+        t('We sent a link to {{email}}. Until you click it, runs and purchases are disabled.', { email }))),
+    h('button', {
+      class: 'btn small',
+      on: { click: async (e) => {
+        e.target.disabled = true;
+        const r = await api('/api/auth/resend-verification', { method: 'POST' });
+        e.target.disabled = false;
+        if (r.status === 200) toastOk(t('Verification email re-sent.'));
+        else toastErr(r.body?.error || t('Could not resend; try again later.'));
+      } },
+    }, t('Resend email')),
+  );
+  return banner;
 }
 
 function currentCrumb() {
@@ -1512,6 +1872,8 @@ function currentCrumb() {
     admins:        t('Admins'),
     simulator:     t('Simulator'),
     logs:          t('Logs'),
+    audit:         t('Audit'),
+    settings:      t('Settings'),
   };
   const sectionLabel = LABELS[section] || (section ? section[0].toUpperCase() + section.slice(1) : '');
   if (section === 'runs' && parts[1]) return t('{{section}} / Run #{{id}}', { section: sectionLabel, id: parts[1] });
@@ -1535,6 +1897,10 @@ async function renderRoute() {
   if (isAdmin && orgUserOnly.includes(section)) { nav('#organizations'); return; }
   if (!isAdmin && adminOnly.includes(section))   { nav('#dashboard');     return; }
   if (section === 'members' && !isOrgAdmin)      { nav('#dashboard');     return; }
+  // Audit is open to admin + org_admin only — org_member never sees the
+  // sidebar entry, but a hand-typed URL would otherwise reach the view
+  // shell before the API rejected it.
+  if (section === 'audit' && !isAdmin && !isOrgAdmin) { nav('#dashboard'); return; }
 
   // Run-detail is the only view with real-time updates. Entering it opens a
   // watch on the arrange WebSocket; leaving it releases that watch so the
@@ -1560,6 +1926,8 @@ async function renderRoute() {
       case 'admins':       return await viewAdmins(view);
       case 'simulator':    return await viewSimulator(view);
       case 'logs':         return await viewLogs(view);
+      case 'audit':        return await viewAudit(view);
+      case 'settings':     return await viewSettings(view);
       default: view.replaceChildren(h('p', {}, t('Not found')));
     }
   } catch (err) {
@@ -1992,7 +2360,10 @@ async function viewStore(view) {
     h('p', { class: 'muted' },
       t('Published adventures from other organisations. Buy team slots to add one to your own Adventures list.')),
     catalog.length === 0
-      ? h('div', { class: 'empty' }, t('No published adventures yet.'))
+      ? h('div', { class: 'empty' },
+          h('p', {}, t('No published adventures yet.')),
+          h('p', { class: 'muted', style: 'margin-top:.5rem' },
+            t('Check back soon — operators publish new adventures regularly.')))
       : h('div', { class: 'grid cols-2' }, catalog.map((a) =>
         h('div', {
           class: 'card clickable',
@@ -2060,24 +2431,70 @@ async function viewPurchases(view) {
     h('p', { class: 'muted' },
       t('Every team-slot purchase. Paid ones produce an assignment you can schedule from the Adventures page.')),
     purchases.length === 0
-      ? h('div', { class: 'empty' }, t('No purchases yet.'))
+      ? renderEmptyPurchases()
       : h('div', { class: 'card' }, h('table', { class: 'table' },
         h('thead', {}, h('tr', {},
           h('th', {}, t('Adventure')),
           h('th', {}, t('Slots')),
           h('th', {}, t('Total')),
           h('th', {}, t('State')),
-          h('th', {}, t('Date')))),
+          h('th', {}, t('Date')),
+          h('th', {}, ''))),
         h('tbody', {}, purchases.map((p) => h('tr', {},
           h('td', {}, p.adventure_title || p.adventure_slug),
           h('td', { class: 'mono' }, p.max_teams),
           h('td', { class: 'mono' }, money(p.amount_cents, p.currency)),
           h('td', {}, h('span', {
-            class: 'pill ' + (p.state === 'paid' ? 'success' : p.state === 'pending' ? 'warning' : ''),
+            class: 'pill ' + (p.state === 'paid' ? 'success' : p.state === 'pending' ? 'warning' : p.state === 'refunded' ? 'danger' : ''),
           }, p.state)),
           h('td', { class: 'muted mono', style: 'font-size:.8rem' }, p.created_at),
+          h('td', { class: 'row', style: 'gap:.5rem; flex-wrap:wrap; justify-content:flex-end' },
+            renderPurchaseActions(p)),
         ))))),
   );
+}
+
+// renderPurchaseActions returns per-row links/buttons:
+//   - "Receipt" — Stripe-hosted invoice URL when present (paid only).
+//   - "Refund"  — admin-only, paid Stripe purchases. Hidden for org
+//                 users; they contact us out-of-band.
+function renderPurchaseActions(p) {
+  const out = [];
+  if (p.invoice_url) {
+    out.push(h('a', {
+      href: p.invoice_url, target: '_blank', rel: 'noopener',
+      class: 'btn small ghost',
+    }, t('Receipt')));
+  }
+  if (state.me?.role === 'admin' && p.state === 'paid' && p.provider === 'stripe') {
+    const btn = h('button', { class: 'btn small danger', type: 'button' }, t('Refund'));
+    btn.addEventListener('click', async () => {
+      if (!confirm(t('Refund {{amount}} to the customer? The state flips to "refunded" once Stripe confirms.', {
+        amount: new Intl.NumberFormat(undefined, { style: 'currency', currency: p.currency || 'USD' }).format(p.amount_cents / 100),
+      }))) return;
+      btn.disabled = true;
+      const r = await api('/api/admin/purchases/' + p.id + '/refund', { method: 'POST' });
+      if (r.status === 202) {
+        toastOk(t('Refund initiated. Webhook will flip the state shortly.'));
+        setTimeout(renderRoute, 1500);
+      } else {
+        btn.disabled = false;
+        toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+      }
+    });
+    out.push(btn);
+  }
+  return out;
+}
+
+function renderEmptyPurchases() {
+  return h('div', { class: 'empty' },
+    h('p', {}, t('No purchases yet.')),
+    h('p', { class: 'muted', style: 'margin-top:.5rem' },
+      t('Browse the catalog and buy team slots to start scheduling runs.')),
+    h('div', { style: 'margin-top:.75rem' },
+      h('button', { class: 'btn primary', on: { click: () => nav('#store') } },
+        icon(ICONS.coins), t('Open the store'))));
 }
 
 // openPurchaseModal drives the buy-team-slots flow. The user picks a
@@ -2184,6 +2601,7 @@ async function scheduleRun(source) {
     modeManual.addEventListener('change', refresh);
     modeLater.addEventListener('change', refresh);
 
+    const attest = h('input', { type: 'checkbox', required: true });
     const form = h('form', {},
       h('label', { class: 'field' }, h('span', {}, t('Name (optional)')), name),
       h('label', { style: 'display:flex; gap:.5rem; align-items:center; margin:.5rem 0' },
@@ -2191,13 +2609,17 @@ async function scheduleRun(source) {
       h('label', { style: 'display:flex; gap:.5rem; align-items:center; margin:.5rem 0' },
         modeLater, h('span', {}, t('Schedule for later'))),
       h('label', { class: 'field' }, h('span', {}, t('Auto-start at')), when),
+      h('label', { style: 'display:flex; gap:.5rem; align-items:flex-start; margin:1rem 0 .5rem; font-size:.9rem' },
+        attest,
+        h('span', {}, t('I confirm no participants under 13 will play this adventure, or I have parental consent for any who will.'))),
       h('div', { class: 'row end' },
         h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, t('Cancel')),
         h('button', { class: 'btn primary', type: 'submit' }, t('Create run'))),
     );
     form.addEventListener('submit', (e) => {
       e.preventDefault();
-      const req = { ...baseReq, name: name.value.trim() };
+      if (!attest.checked) { toastErr(t('Please confirm the player-age statement first.')); return; }
+      const req = { ...baseReq, name: name.value.trim(), attest_no_minors: true };
       if (modeLater.checked) {
         if (!when.value) { toastErr(t('Pick an auto-start time')); return; }
         const d = new Date(when.value);
@@ -2301,6 +2723,7 @@ async function openNewEventWizard() {
     const playerPrefix = h('input', { value: 'Player' });
 
     const submitBtn = h('button', { class: 'btn primary', type: 'submit' }, t('Create event'));
+    const attestWiz = h('input', { type: 'checkbox', required: true });
     const form = h('form', {},
       h('h3', { style: 'margin-top:0' }, t('Adventure')),
       advPick,
@@ -2320,12 +2743,17 @@ async function openNewEventWizard() {
       h('div', { class: 'grid cols-2' },
         h('label', { class: 'field' }, h('span', {}, t('Team name prefix')), teamPrefix),
         h('label', { class: 'field' }, h('span', {}, t('Player name prefix')), playerPrefix)),
+      h('h3', {}, t('Player ages')),
+      h('label', { style: 'display:flex; gap:.5rem; align-items:flex-start; margin:.25rem 0; font-size:.9rem' },
+        attestWiz,
+        h('span', {}, t('I confirm no participants under 13 will play this adventure, or I have parental consent for any who will.'))),
       h('div', { class: 'row end', style: 'margin-top:1rem' },
         h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, t('Cancel')),
         submitBtn));
 
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
+      if (!attestWiz.checked) { toastErr(t('Please confirm the player-age statement first.')); return; }
       submitBtn.disabled = true;
       try {
         // Resolve or mint an assignment.
@@ -2345,7 +2773,7 @@ async function openNewEventWizard() {
           assignmentID = cr.body.assignment_id;
         }
         // Create the run.
-        const runReq = { assignment_id: assignmentID, name: nameInput.value.trim() };
+        const runReq = { assignment_id: assignmentID, name: nameInput.value.trim(), attest_no_minors: true };
         if (modeLater.checked) {
           if (!whenInput.value) { toastErr(t('Pick an auto-start time')); return; }
           runReq.scheduled_at = new Date(whenInput.value).toISOString();
@@ -2418,8 +2846,11 @@ async function viewRuns(view) {
 function runsTable(rs) {
   if (rs.length === 0) return h('div', { class: 'empty' },
     h('p', {}, t('No runs yet.')),
-    h('button', { class: 'btn primary', on: { click: () => nav('#adventures') } },
-      icon(ICONS.map), t('Pick an adventure')));
+    h('p', { class: 'muted', style: 'margin-top:.5rem' },
+      t('Pick an adventure to schedule your first run — you can add teams and share player links once it\'s created.')),
+    h('div', { style: 'margin-top:.75rem' },
+      h('button', { class: 'btn primary', on: { click: () => nav('#adventures') } },
+        icon(ICONS.map), t('Pick an adventure'))));
   return h('table', { class: 'table' },
     h('thead', {}, h('tr', {},
       h('th', {}, t('Run')),
@@ -2630,9 +3061,17 @@ function buildTeamLinkRow(tm, i, teamURL, memberURL) {
         try { await navigator.clipboard.writeText(murl); toastOk(t('Link copied')); }
         catch { minput.select(); document.execCommand('copy'); toastOk(t('Link copied')); }
       });
-      return h('div', { class: 'tl-member-row' },
+      // Magic-link expiry hint. Red "expired" when past, muted
+      // "expires in Nd" otherwise. Hidden (no badge) when the slot
+      // has no expiry — that's the legacy "never expires" case for
+      // pre-migration rows.
+      const expiry = renderSlotExpiryHint(m.expires_at, m.last_login_at);
+      return h('div', {
+        class: 'tl-member-row',
+        title: m.last_login_at ? t('Last opened {{when}}', { when: formatAuditTS(m.last_login_at) }) : '',
+      },
         h('span', { class: 'muted tl-member-name' }, m.name || t('(unnamed)')),
-        minput, mcopy);
+        expiry, minput, mcopy);
     }));
   const caretGlyph = h('span', { class: 'tl-caret' }, '▸');
   const toggle = h('button', {
@@ -3554,6 +3993,7 @@ async function openEditTeamModal(runID, existing) {
       fd.append('file', file);
       const res = await fetch(`/api/admin/teams/${freshTeam.id}/avatar`, {
         method: 'POST', body: fd, credentials: 'same-origin',
+        headers: { 'X-CSRF-Token': csrfToken() },
       });
       fileInput.value = '';
       if (res.ok) {
@@ -4231,7 +4671,10 @@ function renderLibraryEdit(view, adv) {
       // with options — same verb, two ways to fill it.
       addPuzzleButton(adv)),
     adv.pages.length === 0
-      ? h('div', { class: 'empty' }, t('No puzzles yet.'))
+      ? h('div', { class: 'empty' },
+          h('p', {}, t('No puzzles yet.')),
+          h('p', { class: 'muted', style: 'margin-top:.5rem' },
+            t('Use "Add puzzle" above to author a new one or copy from the library.')))
       : h('div', {}, cards),
   );
 }
@@ -4447,6 +4890,7 @@ async function openEditAdventureMeta(adv) {
       fd.append('file', f);
       const res = await fetch(`/api/admin/adventures/${encodeURIComponent(adv.slug)}/avatar`, {
         method: 'POST', body: fd, credentials: 'same-origin',
+        headers: { 'X-CSRF-Token': csrfToken() },
       });
       coverFile.value = '';
       if (res.ok) {
@@ -5002,6 +5446,7 @@ async function openEditPuzzle(adv, page /* or null */) {
       fd.append('file', file.files[0]);
       const res = await fetch(`/api/admin/pages/${page.id}/images`, {
         method: 'POST', body: fd, credentials: 'same-origin',
+        headers: { 'X-CSRF-Token': csrfToken() },
       });
       if (res.ok) {
         const im = await res.json();
@@ -6160,6 +6605,282 @@ async function viewLogs(view) {
     if (!location.hash.startsWith('#logs')) cleanup();
   };
   window.addEventListener('hashchange', onHash);
+}
+
+/* ========== Audit log (admin + org_admin) ==========
+   Reads /api/admin/auth-events with a paginated cursor (before_id).
+   Server-side scoping: admins see every row, org_admins see only their
+   org's users. The view stays a plain table — this is a forensics
+   surface, not a dashboard, so density beats prettiness. */
+async function viewAudit(view) {
+  const PAGE = 100;
+  let oldestID = 0; // 0 = no cursor; means "newest page"
+
+  const tbody = h('tbody', {});
+  const moreBtn = h('button', { class: 'btn', on: { click: loadMore } }, t('Load more'));
+  const status = h('span', { class: 'muted' });
+
+  const table = h('table', { class: 'audit-table' },
+    h('thead', {},
+      h('tr', {},
+        h('th', {}, t('Time')),
+        h('th', {}, t('Event')),
+        h('th', {}, t('Result')),
+        h('th', {}, t('User')),
+        h('th', {}, t('IP')),
+        h('th', {}, t('Reason')))),
+    tbody);
+
+  view.replaceChildren(
+    h('h1', {}, t('Audit')),
+    h('p', { class: 'muted' },
+      t('Login, set-password, magic-link and logout events. Newest first.')),
+    table,
+    h('div', { class: 'row', style: 'gap:.75rem; align-items:center; margin-top:.6rem;' }, moreBtn, status),
+  );
+
+  await loadMore();
+
+  async function loadMore() {
+    moreBtn.disabled = true;
+    status.textContent = t('Loading…');
+    try {
+      const qs = new URLSearchParams({ limit: String(PAGE) });
+      if (oldestID > 0) qs.set('before_id', String(oldestID));
+      const r = await api('/api/admin/auth-events?' + qs.toString());
+      const events = r.events || [];
+      for (const e of events) {
+        tbody.appendChild(renderAuditRow(e));
+      }
+      if (events.length > 0) oldestID = events[events.length - 1].id;
+      if (events.length < PAGE) {
+        moreBtn.hidden = true;
+        status.textContent = events.length === 0 && tbody.children.length === 0
+          ? t('No events recorded.')
+          : t('End of log.');
+      } else {
+        status.textContent = '';
+      }
+    } catch (err) {
+      status.textContent = String(err);
+    } finally {
+      moreBtn.disabled = false;
+    }
+  }
+}
+
+function renderAuditRow(e) {
+  const okClass = e.ok ? 'audit-ok' : 'audit-fail';
+  const okLabel = e.ok ? t('ok') : t('fail');
+  const ts = formatAuditTS(e.ts);
+  const username = e.username || (e.user_id ? '#' + e.user_id : '—');
+  return h('tr', { title: e.user_agent || '' },
+    h('td', { class: 'mono' }, ts),
+    h('td', {}, e.event),
+    h('td', {}, h('span', { class: 'audit-pill ' + okClass }, okLabel)),
+    h('td', {}, username),
+    h('td', { class: 'mono' }, e.ip || '—'),
+    h('td', { class: 'muted' }, e.reason || ''));
+}
+
+/* ========== Account settings ==========
+   Three sections (password / email / delete) live on one page so a
+   user finds everything they own under one click. */
+async function viewSettings(view) {
+  const me = state.me || {};
+
+  const pwCard = renderSettingsPasswordCard();
+  const emailCard = renderSettingsEmailCard(me);
+  const dangerCard = renderSettingsDeleteCard();
+
+  const exportCard = renderSettingsExportCard();
+
+  view.replaceChildren(
+    h('h1', {}, t('Settings')),
+    h('p', { class: 'muted' },
+      t('Manage your account. Changes are immediate; deleting your account also removes its data.')),
+    pwCard, emailCard, exportCard, dangerCard,
+  );
+}
+
+// renderLegalFooter is a 2-link strip embedded in the login screen
+// and the sidebar footer. Targets a clean compliance surface — every
+// page where an unauthenticated visitor lands has a route to /privacy
+// and /terms.
+function renderLegalFooter() {
+  return h('div', {
+    style: 'margin-top:1rem; font-size:.75rem; text-align:center; color:var(--muted)',
+  },
+    h('a', { href: '/privacy', target: '_blank', rel: 'noopener', style: 'color:inherit' }, t('Privacy')),
+    ' · ',
+    h('a', { href: '/terms', target: '_blank', rel: 'noopener', style: 'color:inherit' }, t('Terms')),
+  );
+}
+
+function renderSettingsExportCard() {
+  const status = h('p', { class: 'muted', style: 'font-size:.85rem' });
+  // Plain <a download> would also work, but going through fetch lets
+  // us surface 4xx errors as a toast instead of a confusing browser
+  // download of an HTML error page.
+  const dl = h('button', { class: 'btn', type: 'button' }, t('Download my data'));
+  dl.addEventListener('click', async () => {
+    dl.disabled = true; status.className = 'muted'; status.textContent = t('Preparing export…');
+    try {
+      const res = await fetch('/api/admin/me/export', { credentials: 'same-origin' });
+      if (!res.ok) {
+        status.className = 'err';
+        status.textContent = t('error {{status}}', { status: res.status });
+        return;
+      }
+      const blob = await res.blob();
+      const cd = res.headers.get('Content-Disposition') || '';
+      const m = cd.match(/filename="([^"]+)"/);
+      const name = m ? m[1] : 'zv-export.json';
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = name;
+      document.body.append(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+      status.className = 'ok'; status.textContent = t('Downloaded {{name}}.', { name });
+    } catch (e) {
+      status.className = 'err'; status.textContent = String(e);
+    } finally {
+      dl.disabled = false;
+    }
+  });
+  return h('div', { class: 'card settings-card' },
+    h('h2', {}, t('Download my data')),
+    h('p', { class: 'muted', style: 'font-size:.9rem' },
+      t('A single JSON file with your account data plus your organization\'s runs, teams, adventures, assignments and purchases.')),
+    h('div', { class: 'row end' }, dl),
+    status,
+  );
+}
+
+function renderSettingsPasswordCard() {
+  const cur = h('input', { name: 'cur', type: 'password', autocomplete: 'current-password', required: true });
+  const nw  = h('input', { name: 'new', type: 'password', autocomplete: 'new-password', minlength: 8, required: true });
+  const status = h('p', { class: 'muted', style: 'font-size:.85rem' });
+  const form = h('form', { class: 'card settings-card' },
+    h('h2', {}, t('Change password')),
+    h('label', { class: 'field' }, h('span', {}, t('Current password')), cur),
+    h('label', { class: 'field' }, h('span', {}, t('New password (min 8)')), nw),
+    status,
+    h('div', { class: 'row end' },
+      h('button', { class: 'btn primary', type: 'submit' }, t('Update password'))));
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    status.className = 'muted'; status.textContent = t('Saving…');
+    const r = await api('/api/admin/me/password', {
+      method: 'POST',
+      body: JSON.stringify({ current: cur.value, new: nw.value }),
+    });
+    if (r.status === 204) {
+      status.className = 'ok'; status.textContent = t('Password updated. Other sessions were signed out.');
+      cur.value = ''; nw.value = '';
+    } else {
+      status.className = 'err'; status.textContent = r.body?.error || t('error {{status}}', { status: r.status });
+    }
+  });
+  return form;
+}
+
+function renderSettingsEmailCard(me) {
+  const cur = me.email || t('(none — admin-seeded account)');
+  const status = h('p', { class: 'muted', style: 'font-size:.85rem' });
+  const newEmail = h('input', { name: 'new_email', type: 'email', autocomplete: 'email', required: true });
+  const form = h('form', { class: 'card settings-card' },
+    h('h2', {}, t('Change email')),
+    h('p', { class: 'muted', style: 'font-size:.9rem' },
+      t('Current email: {{email}}', { email: cur })),
+    h('p', { class: 'muted', style: 'font-size:.85rem' },
+      t('We send a confirmation link to the new address — your email only changes when you click it.')),
+    h('label', { class: 'field' }, h('span', {}, t('New email')), newEmail),
+    status,
+    h('div', { class: 'row end' },
+      h('button', { class: 'btn primary', type: 'submit' }, t('Send confirmation'))));
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    status.className = 'muted'; status.textContent = t('Sending…');
+    const r = await api('/api/admin/me/email', {
+      method: 'POST',
+      body: JSON.stringify({ new_email: newEmail.value }),
+    });
+    if (r.status === 200) {
+      status.className = 'ok';
+      status.textContent = t('Confirmation link sent to {{email}}.', { email: newEmail.value });
+      newEmail.value = '';
+    } else {
+      status.className = 'err';
+      status.textContent = r.body?.error || t('error {{status}}', { status: r.status });
+    }
+  });
+  return form;
+}
+
+function renderSettingsDeleteCard() {
+  const status = h('p', { class: 'muted', style: 'font-size:.85rem' });
+  const form = h('form', { class: 'card settings-card danger-card' },
+    h('h2', {}, t('Delete account')),
+    h('p', { class: 'muted', style: 'font-size:.9rem' },
+      t('This wipes your account and (if you\'re the last member) your organization, including its runs, teams, adventures and purchases. Cannot be undone.')),
+    status,
+    h('div', { class: 'row end' },
+      h('button', { class: 'btn danger', type: 'submit' }, t('Delete account…'))));
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const pw = await promptPassword(
+      t('Delete account?'),
+      t('Type your password to confirm. This is immediate and unrecoverable.'));
+    if (!pw) return;
+    status.className = 'muted'; status.textContent = t('Deleting…');
+    const r = await api('/api/admin/me', {
+      method: 'DELETE',
+      headers: { 'X-Confirm-Password': pw },
+    });
+    if (r.status === 204) {
+      // Force a clean redirect — refreshing whoami after the delete
+      // would show "not logged in" but the cookie + UI state is
+      // confusing; a hard reload makes the fact final.
+      location.replace('/arrange');
+      return;
+    }
+    status.className = 'err';
+    status.textContent = r.body?.error || t('error {{status}}', { status: r.status });
+  });
+  return form;
+}
+
+// renderSlotExpiryHint returns a small inline badge for the magic-link
+// expiry. Past → "expired" in red. Within 7 days → muted "expires in Nd".
+// More than 7 days out OR null → empty string (no badge), to avoid
+// noise in the common case where the link is healthy.
+function renderSlotExpiryHint(expiresAt, _lastLogin) {
+  if (!expiresAt) return null;
+  const iso = expiresAt.includes('T') ? expiresAt : expiresAt.replace(' ', 'T') + 'Z';
+  const exp = new Date(iso);
+  if (isNaN(exp.getTime())) return null;
+  const ms = exp.getTime() - Date.now();
+  if (ms <= 0) {
+    return h('span', { class: 'tl-expiry expired', title: t('Expired {{when}}', { when: exp.toLocaleString() }) },
+      t('expired'));
+  }
+  const days = Math.ceil(ms / (24 * 3600 * 1000));
+  if (days <= 7) {
+    return h('span', { class: 'tl-expiry soon', title: t('Expires {{when}}', { when: exp.toLocaleString() }) },
+      t('expires in {{n}}d', { n: days }));
+  }
+  return null;
+}
+
+function formatAuditTS(ts) {
+  // Server emits 'YYYY-MM-DD HH:MM:SS' UTC. Render local time so the
+  // operator's clock matches the row.
+  if (!ts) return '';
+  const iso = ts.includes('T') ? ts : ts.replace(' ', 'T') + 'Z';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return ts;
+  return d.toLocaleString();
 }
 
 function levelRank(level) {

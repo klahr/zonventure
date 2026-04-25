@@ -555,6 +555,55 @@
   }
   .lang-fab select:hover { border-color: var(--muted); }
 
+  /* "More" menu — sits left of the language picker, opens a small
+     popover with Sign out + Forget me. Hidden until tapped so the
+     destructive action stays out of the way during play. */
+  .more-fab {
+    position: fixed;
+    top: calc(.5rem + env(safe-area-inset-top));
+    right: 5.5rem;
+    z-index: 40;
+  }
+  .more-fab > button {
+    font: inherit;
+    background: color-mix(in srgb, var(--surface) 88%, transparent);
+    border: 1px solid var(--border-soft);
+    border-radius: 999px;
+    width: 2rem; height: 2rem;
+    padding: 0;
+    cursor: pointer;
+    box-shadow: var(--shadow);
+    color: var(--muted);
+    font-weight: 700;
+    line-height: 1;
+  }
+  .more-fab > button:hover { border-color: var(--muted); color: var(--text); }
+  .more-pop {
+    position: absolute;
+    top: calc(100% + .35rem);
+    right: 0;
+    min-width: 12rem;
+    background: var(--surface);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius-sm);
+    box-shadow: var(--shadow);
+    padding: .35rem;
+    display: flex; flex-direction: column;
+  }
+  .more-pop button {
+    font: inherit;
+    background: transparent;
+    border: none;
+    color: var(--text);
+    text-align: left;
+    padding: .5rem .65rem;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+  }
+  .more-pop button:hover { background: var(--surface-2); }
+  .more-pop .danger { color: #b03a3a; }
+  .more-pop .danger:hover { background: rgba(220,70,70,.1); }
+
   /* ---------- Preview mode ---------- */
   .preview-chrome {
     position: sticky; top: 0; z-index: 50;
@@ -637,11 +686,20 @@ let advanceMode = 'none';
 
 // api is kept only for the one-shot auth probe at page load — every
 // subsequent state change rides the WebSocket.
+function csrfToken() {
+  const m = document.cookie.match(/(?:^|;\s*)zv_csrf=([^;]+)/);
+  return m ? decodeURIComponent(m[1]) : '';
+}
 async function api(path, opts = {}) {
+  const headers = { ...(opts.body ? { 'Content-Type': 'application/json' } : {}), ...(opts.headers || {}) };
+  const method = (opts.method || 'GET').toUpperCase();
+  if (method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS') {
+    headers['X-CSRF-Token'] = csrfToken();
+  }
   const res = await fetch(path, {
     credentials: 'same-origin',
-    headers: opts.body ? { 'Content-Type': 'application/json' } : {},
     ...opts,
+    headers,
   });
   let body = null;
   if (res.status !== 204) { try { body = await res.json(); } catch {} }
@@ -1690,6 +1748,81 @@ function renderPreviewDebug(d) {
   const fab = document.createElement('div');
   fab.className = 'lang-fab';
   fab.append(zvI18n.makeLangPicker({ title: t('Language') }));
+  document.body.append(fab);
+})();
+
+// Small legal-link strip pinned to the bottom of every play page.
+// Compliance surfacing — unauthenticated landing on /play hits these
+// before they exchange a magic link, so they can read the privacy
+// terms before opting into geolocation.
+(function mountLegalFooter() {
+  const f = document.createElement('div');
+  f.style.cssText = 'position:fixed; bottom:calc(.4rem + env(safe-area-inset-bottom)); left:0; right:0; text-align:center; font-size:.7rem; color:var(--muted); z-index:30; pointer-events:none;';
+  const linkStyle = 'color:inherit; text-decoration:underline; pointer-events:auto;';
+  const a1 = document.createElement('a');
+  a1.href = '/privacy'; a1.target = '_blank'; a1.rel = 'noopener';
+  a1.style.cssText = linkStyle; a1.textContent = t('Privacy');
+  const a2 = document.createElement('a');
+  a2.href = '/terms'; a2.target = '_blank'; a2.rel = 'noopener';
+  a2.style.cssText = linkStyle; a2.textContent = t('Terms');
+  f.append(a1, document.createTextNode(' · '), a2);
+  document.body.append(f);
+})();
+
+// "More" menu — sign out + forget me. Lives next to the lang picker
+// so it's reachable from every view. Tap toggles a small popover; tap
+// outside closes it. The destructive action goes through a confirm()
+// because a player accidentally tapping "Forget me" during a run
+// would be catastrophic — slot wiped, link dead, no recovery.
+(function mountMoreFab() {
+  const fab = document.createElement('div');
+  fab.className = 'more-fab';
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.title = t('More');
+  btn.textContent = '⋯';
+  fab.append(btn);
+
+  let pop = null;
+  const close = () => {
+    if (pop) { pop.remove(); pop = null; }
+    document.removeEventListener('click', onOutside, true);
+  };
+  const onOutside = (e) => { if (!fab.contains(e.target)) close(); };
+
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (pop) { close(); return; }
+    pop = document.createElement('div');
+    pop.className = 'more-pop';
+    const out = document.createElement('button');
+    out.type = 'button'; out.textContent = t('Sign out');
+    out.addEventListener('click', async () => {
+      close();
+      await api('/api/player/logout', { method: 'POST' });
+      location.href = '/play';
+    });
+    const forget = document.createElement('button');
+    forget.type = 'button'; forget.className = 'danger';
+    forget.textContent = t('Forget me on this run');
+    forget.addEventListener('click', async () => {
+      close();
+      // Plain confirm() is fine here — play.html doesn't carry a
+      // modal helper and the call is rare enough that pulling one in
+      // would be over-engineering.
+      if (!confirm(t('This wipes your location history and your answers from this run. Other team members keep playing. You\'ll be signed out and the link won\'t work again. Continue?'))) return;
+      const r = await api('/api/player/forget', { method: 'POST' });
+      if (r.status === 204) {
+        location.href = '/play';
+      } else {
+        alert(r.body?.error || t('error {{status}}', { status: r.status }));
+      }
+    });
+    pop.append(out, forget);
+    fab.append(pop);
+    setTimeout(() => document.addEventListener('click', onOutside, true), 0);
+  });
+
   document.body.append(fab);
 })();
 

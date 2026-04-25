@@ -749,6 +749,189 @@
       'Server log level': 'Loggnivå på servern',
       'Client-side minimum level': 'Minsta loggnivå i klienten',
       'Server level': 'Servernivå',
+      // ---- audit log ----
+      'Audit': 'Granskning',
+      'Login, set-password, magic-link and logout events. Newest first.':
+        'Inloggning, lösenordssättning, magisk länk och utloggning. Nyaste först.',
+      'Time': 'Tid',
+      'Event': 'Händelse',
+      'Result': 'Resultat',
+      'User': 'Användare',
+      'IP': 'IP',
+      'Reason': 'Orsak',
+      'ok': 'ok',
+      'fail': 'fel',
+      'Load more': 'Hämta fler',
+      'No events recorded.': 'Inga händelser registrerade.',
+      'End of log.': 'Slut på loggen.',
+      // ---- magic-link expiry ----
+      'expired': 'utgången',
+      'expires in {{n}}d': 'går ut om {{n}}d',
+      'Expired {{when}}': 'Gick ut {{when}}',
+      'Expires {{when}}': 'Går ut {{when}}',
+      'Last opened {{when}}': 'Senast öppnad {{when}}',
+      // ---- signup + email verification ----
+      'No account yet?': 'Inget konto än?',
+      'Sign up': 'Registrera dig',
+      'Already registered?': 'Har du redan ett konto?',
+      'create account': 'skapa konto',
+      'Email': 'E-post',
+      'Organization name': 'Organisationsnamn',
+      'Password (min 8)': 'Lösenord (minst 8)',
+      'Create account': 'Skapa konto',
+      'Account created — check {{email}} for a verification link.':
+        'Konto skapat — kolla {{email}} efter en verifieringslänk.',
+      'signup failed': 'registreringen misslyckades',
+      'Verify your email': 'Verifiera din e-post',
+      'We sent a link to {{email}}. Until you click it, runs and purchases are disabled.':
+        'Vi skickade en länk till {{email}}. Tills du klickar på den är körningar och köp inaktiverade.',
+      'Resend email': 'Skicka igen',
+      'Verification email re-sent.': 'Verifieringsmejl skickat igen.',
+      'Could not resend; try again later.': 'Kunde inte skicka igen; försök senare.',
+      'Email verified — you can now schedule runs and buy assignments.':
+        'E-post verifierad — du kan nu schemalägga körningar och köpa tilldelningar.',
+      'Verification link is invalid or has expired. Sign in and tap "Resend email".':
+        'Verifieringslänken är ogiltig eller har gått ut. Logga in och tryck på "Skicka igen".',
+      // ---- forgot password ----
+      'Forgot password?': 'Glömt lösenord?',
+      'reset password': 'återställ lösenord',
+      'Enter your email and we\'ll send you a link to set a new password. The link expires in 1 hour.':
+        'Skriv in din e-post så skickar vi en länk för att välja ett nytt lösenord. Länken gäller i en timme.',
+      'Send reset link': 'Skicka länk',
+      'If {{email}} matches an account, a reset link is on its way.':
+        'Om {{email}} matchar ett konto är en länk på väg.',
+      'reset failed': 'återställning misslyckades',
+      'Back to log in': 'Tillbaka till inloggning',
+      'No reset token in the URL. Check the link you clicked, or request a new one.':
+        'Ingen återställningstoken i URL:en. Kontrollera länken du klickade, eller begär en ny.',
+      'Request a new link': 'Begär en ny länk',
+      'New password (min 8)': 'Nytt lösenord (minst 8)',
+      'Set password': 'Spara lösenord',
+      'Password updated. You\'re signed in.': 'Lösenord uppdaterat. Du är inloggad.',
+      // ---- account settings ----
+      'Settings': 'Inställningar',
+      'Manage your account. Changes are immediate; deleting your account also removes its data.':
+        'Hantera ditt konto. Ändringar sker direkt; om du raderar kontot tas även dess data bort.',
+      'Change password': 'Byt lösenord',
+      'Current password': 'Nuvarande lösenord',
+      'Update password': 'Uppdatera lösenord',
+      'Saving…': 'Sparar…',
+      'Password updated. Other sessions were signed out.':
+        'Lösenord uppdaterat. Andra sessioner har loggats ut.',
+      'Change email': 'Byt e-post',
+      'Current email: {{email}}': 'Nuvarande e-post: {{email}}',
+      '(none — admin-seeded account)': '(ingen — admin-skapat konto)',
+      'We send a confirmation link to the new address — your email only changes when you click it.':
+        'Vi skickar en bekräftelselänk till den nya adressen — e-posten ändras först när du klickar.',
+      'New email': 'Ny e-post',
+      'Send confirmation': 'Skicka bekräftelse',
+      'Sending…': 'Skickar…',
+      'Confirmation link sent to {{email}}.': 'Bekräftelselänk skickad till {{email}}.',
+      'Email updated to {{email}}.': 'E-post uppdaterad till {{email}}.',
+      'Could not change email.': 'Kunde inte byta e-post.',
+      'Delete account': 'Radera konto',
+      'This wipes your account and (if you\'re the last member) your organization, including its runs, teams, adventures and purchases. Cannot be undone.':
+        'Detta raderar ditt konto och (om du är sista medlemmen) din organisation, inklusive körningar, lag, äventyr och köp. Kan inte ångras.',
+      'Delete account…': 'Radera konto…',
+      'Delete account?': 'Radera konto?',
+      'Type your password to confirm. This is immediate and unrecoverable.':
+        'Skriv ditt lösenord för att bekräfta. Detta sker direkt och kan inte ångras.',
+      'Deleting…': 'Raderar…',
+      // ---- data export ----
+      'Download my data': 'Ladda ner min data',
+      'A single JSON file with your account data plus your organization\'s runs, teams, adventures, assignments and purchases.':
+        'En JSON-fil med din kontodata samt din organisations körningar, lag, äventyr, tilldelningar och köp.',
+      'Preparing export…': 'Förbereder export…',
+      'Downloaded {{name}}.': 'Hämtade {{name}}.',
+      // ---- player forget ----
+      'More': 'Mer',
+      'Sign out': 'Logga ut',
+      'Forget me on this run': 'Glöm mig från denna körning',
+      'Forget me?': 'Glöm mig?',
+      'This wipes your location history and your answers from this run. Other team members keep playing. You\'ll be signed out and the link won\'t work again. Continue?':
+        'Detta raderar din platshistorik och dina svar från denna körning. Övriga lagmedlemmar fortsätter spela. Du loggas ut och länken fungerar inte igen. Fortsätt?',
+      'Forget me': 'Glöm mig',
+      'Cancel': 'Avbryt',
+      // ---- legal ----
+      'Privacy': 'Integritet',
+      'Terms': 'Villkor',
+      // ---- stripe receipts + refunds ----
+      'Receipt': 'Kvitto',
+      'Refund': 'Återbetala',
+      'Refund {{amount}} to the customer? The state flips to "refunded" once Stripe confirms.':
+        'Återbetala {{amount}} till kunden? Statusen ändras till "refunded" när Stripe bekräftar.',
+      'Refund initiated. Webhook will flip the state shortly.':
+        'Återbetalning startad. Webhook uppdaterar statusen strax.',
+      'Browse the catalog and buy team slots to start scheduling runs.':
+        'Bläddra i katalogen och köp lagsplatser för att börja schemalägga körningar.',
+      'Open the store': 'Öppna butiken',
+      // ---- age gate ----
+      'I confirm no participants under 13 will play this adventure, or I have parental consent for any who will.':
+        'Jag bekräftar att inga deltagare under 13 år kommer att spela detta äventyr, eller att jag har föräldrasamtycke för dem som gör det.',
+      'Please confirm the player-age statement first.': 'Bekräfta åldersuttalandet först.',
+      'Player ages': 'Deltagarnas ålder',
+      // ---- onboarding ----
+      'Welcome to Zonventure': 'Välkommen till Zonventure',
+      'Three steps from here to a live adventure:': 'Tre steg till ett äventyr:',
+      'Browse adventures': 'Bläddra äventyr',
+      'the catalog has ready-made adventures, or you can author your own.':
+        'katalogen har färdiga äventyr, eller skapa egna.',
+      'Buy team slots': 'Köp lagsplatser',
+      'one slot per team. Pay once per event.': 'en plats per lag. Betala en gång per event.',
+      'Schedule a run': 'Schemalägg en körning',
+      'add teams, share magic links, and start when ready.':
+        'lägg till lag, dela magiska länkar och starta när du är klar.',
+      'You can revisit this from the Settings page anytime.':
+        'Du kan se detta igen från Inställningar.',
+      'Skip': 'Hoppa över',
+      // ---- empty states ----
+      'Check back soon — operators publish new adventures regularly.':
+        'Kom tillbaka snart — operatörer publicerar nya äventyr regelbundet.',
+      'Pick an adventure to schedule your first run — you can add teams and share player links once it\'s created.':
+        'Välj ett äventyr för att schemalägga din första körning — du kan lägga till lag och dela spelarlänkar när den är skapad.',
+      'Use "Add puzzle" above to author a new one or copy from the library.':
+        'Använd "Lägg till pussel" ovan för att skapa eller kopiera från biblioteket.',
+      // ---- catch-up batch (caught by the i18n completeness test) ----
+      '(unnamed)': '(namnlös)',
+      'Branding': 'Varumärke',
+      'Click to write…': 'Klicka för att skriva…',
+      'Clue in markdown… (click to edit)': 'Ledtråd i markdown… (klicka för att redigera)',
+      'Copied {{n}} captain links': 'Kopierade {{n}} kaptenslänkar',
+      'Copied {{n}} rows': 'Kopierade {{n}} rader',
+      'Copy all (CSV)': 'Kopiera alla (CSV)',
+      'Copy captain link': 'Kopiera kaptenslänk',
+      'Copy captain links': 'Kopiera kaptenslänkar',
+      'Copy from library…': 'Kopiera från biblioteket…',
+      'Details': 'Detaljer',
+      'Distribute links': 'Dela länkar',
+      'Filter {{n}} teams…': 'Filtrera {{n}} lag…',
+      'Fullscreen (f)': 'Helskärm (f)',
+      'GPS ±{{acc}} m — too imprecise': 'GPS ±{{acc}} m — för oprecist',
+      'Intro — shown on the welcome screen': 'Intro — visas på välkomstskärmen',
+      'Markdown supported: **bold**, *italics*, [links](https://…), `code`, - bullet lists.':
+        'Markdown stöds: **fet**, *kursiv*, [länkar](https://…), `kod`, - punktlistor.',
+      'More options': 'Fler alternativ',
+      'Outro — shown on the completion screen': 'Outro — visas när äventyret är klart',
+      'Preview appears here as you type.': 'Förhandsvisning visas här medan du skriver.',
+      'Show 1 player link': 'Visa 1 spelarlänk',
+      'Show {{n}} player links': 'Visa {{n}} spelarlänkar',
+      'Shown on the first-run welcome overlay — leave empty for the default welcome + tips.':
+        'Visas i välkomstöverlägget vid första körningen — lämna tomt för standardvälkomsten.',
+      'Shown under the stats when the team finishes — leave empty for the default celebratory line.':
+        'Visas under statistiken när laget är klart — lämna tomt för standardraden.',
+      'Start manually — I\'ll hit Start when we\'re ready': 'Starta manuellt — jag trycker Start när vi är redo',
+      'Toggle fullscreen': 'Växla helskärm',
+      'Waiting for GPS lock…': 'Väntar på GPS-låsning…',
+      'What the player sees… (click to edit, markdown supported)':
+        'Det här ser spelaren… (klicka för att redigera, markdown stöds)',
+      'geolocation not supported on this device': 'positionsbestämning stöds inte på denna enhet',
+      'no signal — try moving outdoors': 'ingen signal — försök gå utomhus',
+      'permission denied — enable location for this site':
+        'åtkomst nekad — aktivera plats för denna sida',
+      'puzzle': 'pussel',
+      'puzzles': 'pussel',
+      'timed out — retrying': 'tidsgräns nådd — försöker igen',
+      '{{n}} teams — captain + per-player links': '{{n}} lag — kapten + spelarlänkar',
       // ---- live countdown + start animation ----
       'Starting soon': 'Börjar snart',
       'until the flag drops': 'tills starten',

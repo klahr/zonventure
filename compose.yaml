@@ -1,0 +1,56 @@
+# Two-service stack: a pinned Postgres + the zv server. Bring it up with
+# `make up` (or `docker compose up -d`); data lives in the named
+# zv_pg_data volume so `down` doesn't lose it.
+#
+# Override secrets via a sibling .env file (see .env.example). Defaults
+# are fine for local dev but should NOT ship as-is to production.
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-zv}
+      POSTGRES_USER: ${POSTGRES_USER:-zv}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-zv}
+    volumes:
+      - zv_pg_data:/var/lib/postgresql/data
+    # Bind to 127.0.0.1 so the host can run `psql -h 127.0.0.1` and
+    # tests against `ZV_TEST_DSN=postgres://...127.0.0.1...` reach the
+    # same DB without exposing 5432 to the rest of the network.
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-zv} -d ${POSTGRES_DB:-zv}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-zv}:${POSTGRES_PASSWORD:-zv}@db:5432/${POSTGRES_DB:-zv}?sslmode=disable
+      ZV_SMTP_HOST: ${ZV_SMTP_HOST:-}
+      ZV_SMTP_PORT: ${ZV_SMTP_PORT:-587}
+      ZV_SMTP_USER: ${ZV_SMTP_USER:-}
+      ZV_SMTP_PASS: ${ZV_SMTP_PASS:-}
+      ZV_SMTP_FROM: ${ZV_SMTP_FROM:-}
+      ZV_SMTP_TLS:  ${ZV_SMTP_TLS:-starttls}
+      ZV_COMPANY_NAME:           ${ZV_COMPANY_NAME:-}
+      ZV_CONTACT_EMAIL:          ${ZV_CONTACT_EMAIL:-}
+      ZV_DPO_EMAIL:              ${ZV_DPO_EMAIL:-}
+      ZV_JURISDICTION:           ${ZV_JURISDICTION:-}
+      ZV_LEGAL_LAST_UPDATED:     ${ZV_LEGAL_LAST_UPDATED:-}
+      ZV_LOCATION_RETENTION_DAYS: ${ZV_LOCATION_RETENTION_DAYS:-30}
+      ZV_AUDIT_RETENTION_DAYS:    ${ZV_AUDIT_RETENTION_DAYS:-90}
+      ZV_STRIPE_SECRET_KEY:       ${ZV_STRIPE_SECRET_KEY:-}
+      ZV_STRIPE_WEBHOOK_SECRET:   ${ZV_STRIPE_WEBHOOK_SECRET:-}
+    ports:
+      - "8080:8080"
+
+volumes:
+  zv_pg_data:
