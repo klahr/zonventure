@@ -86,7 +86,7 @@ func pruneCompletedRunPings(ctx context.Context, db *sql.DB, days int) {
 		  JOIN adventure_runs ar ON ar.id = lp.run_id
 		  WHERE ar.state = 'completed'
 		    AND ar.completed_at IS NOT NULL
-		    AND ar.completed_at::timestamptz < now() - ($1 || ' days')::interval
+		    AND ar.completed_at::timestamptz < now() - make_interval(days => $1)
 		  LIMIT ` + strconv.Itoa(batchSize) + `
 		)
 	`
@@ -103,7 +103,7 @@ func pruneCompletedRunAnswers(ctx context.Context, db *sql.DB, days int) {
 		  JOIN adventure_runs ar ON ar.id = t.run_id
 		  WHERE ar.state = 'completed'
 		    AND ar.completed_at IS NOT NULL
-		    AND ar.completed_at::timestamptz < now() - ($1 || ' days')::interval
+		    AND ar.completed_at::timestamptz < now() - make_interval(days => $1)
 		  LIMIT ` + strconv.Itoa(batchSize) + `
 		)
 	`
@@ -117,7 +117,7 @@ func pruneAuthEvents(ctx context.Context, db *sql.DB, days int) {
 		DELETE FROM auth_events
 		WHERE id IN (
 		  SELECT id FROM auth_events
-		  WHERE ts::timestamptz < now() - ($1 || ' days')::interval
+		  WHERE ts::timestamptz < now() - make_interval(days => $1)
 		  LIMIT ` + strconv.Itoa(batchSize) + `
 		)
 	`
