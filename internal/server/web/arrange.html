@@ -2017,7 +2017,19 @@ async function renderRoute() {
       case 'simulator':    return await viewSimulator(view);
       case 'logs':         return await viewLogs(view);
       case 'audit':        return await viewAudit(view);
-      case 'webhooks':     return arg === 'log' ? await viewWebhooksLog(view) : await viewWebhooks(view);
+      case 'webhooks': {
+        // Sub-route #webhooks/log/<endpointID> always carries the
+        // endpoint id — the log only ever shows one endpoint's
+        // deliveries (the dropdown was removed, log is reached from
+        // the card it belongs to).
+        if (arg === 'log') {
+          const parts = r.split('/');
+          const endpointID = parts[2] ? parseInt(parts[2], 10) : 0;
+          if (!endpointID) { nav('#webhooks'); return; }
+          return await viewWebhooksLog(view, endpointID);
+        }
+        return await viewWebhooks(view);
+      }
       case 'manual':       return viewManual(view, arg);
       case 'settings':     return await viewSettings(view);
       default: view.replaceChildren(h('p', {}, t('Not found')));
@@ -7179,17 +7191,10 @@ async function viewWebhooks(view) {
     ? endpoints.map((ep) => renderWebhookCard(ep, kinds, () => viewWebhooks(view)))
     : [renderWebhookEmpty(addBtn)];
 
-  const logBtn = h('button', { class: 'btn small', type: 'button',
-    on: { click: () => nav('#webhooks/log') } },
-    icon(ICONS.terminal), t('Delivery log'));
-
   view.replaceChildren(
-    h('div', { class: 'row', style: 'align-items:center; justify-content:space-between; gap:.5rem; flex-wrap:wrap' },
+    h('div', { class: 'row', style: 'align-items:center; justify-content:space-between' },
       h('h1', {}, t('Webhooks')),
-      h('div', { class: 'row', style: 'gap:.5rem; flex-wrap:wrap' },
-        logBtn,
-        endpoints.length ? addBtn : null,
-      ),
+      endpoints.length ? addBtn : null,
     ),
     h('p', { class: 'muted' },
       t('Outbound HTTP callbacks for run / team / purchase lifecycle. Each delivery is signed with HMAC-SHA256; verify the X-Zv-Signature header against your endpoint\'s secret.')),
@@ -7253,6 +7258,10 @@ function renderWebhookCard(ep, kinds, reload) {
       toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
     }
   });
+  const logBtn = h('button', { class: 'btn small', type: 'button',
+    title: t('Inspect this endpoint\'s delivery history') },
+    icon(ICONS.terminal), t('Delivery log'));
+  logBtn.addEventListener('click', () => nav('#webhooks/log/' + ep.id));
   const toggleBtn = h('button', { class: 'btn small', type: 'button' },
     ep.active ? t('Disable') : t('Enable'));
   toggleBtn.addEventListener('click', async () => {
@@ -7298,7 +7307,7 @@ function renderWebhookCard(ep, kinds, reload) {
       ' · ',
       t('Created {{date}}', { date: ep.created_at })),
     h('div', { class: 'row', style: 'gap:.4rem; flex-wrap:wrap; margin-top:.75rem' },
-      testBtn, rotateBtn, toggleBtn),
+      testBtn, logBtn, rotateBtn, toggleBtn),
   );
 }
 
@@ -7421,28 +7430,27 @@ async function openSecretReveal({ secret, title }) {
   });
 }
 
-// viewWebhooksLog renders the delivery audit log: every attempt,
-// status code, raw payload. Used to debug "did Slack get the
-// team.completed I expected?" without tailing server logs. Filters
-// + cursor pagination so even a noisy org stays usable.
-async function viewWebhooksLog(view) {
+// viewWebhooksLog renders one endpoint's delivery audit log: every
+// attempt, status code, raw payload. Used to debug "did Slack get
+// the team.completed I expected?" without tailing server logs.
+// Always scoped to a single endpoint — the page is reached from the
+// "Delivery log" button on each endpoint's card, which carries the
+// id in the URL.
+async function viewWebhooksLog(view, endpointID) {
+  // Look the endpoint up so we can show its name + URL in the page
+  // header. Org scoping is enforced server-side; if the id doesn't
+  // belong to the caller's org we drop them back at the index.
   const endpointsR = await api('/api/admin/webhooks');
-  const endpoints = endpointsR.body?.endpoints || [];
+  const endpoint = (endpointsR.body?.endpoints || []).find((e) => e.id === endpointID);
+  if (!endpoint) { nav('#webhooks'); return; }
 
-  // Local state — reset whenever a filter changes.
-  const filter = { endpoint_id: '', status: '' };
+  const filter = { status: '' };
   let nextBefore = 0;
   let deliveries = [];
 
-  // Filter UI: two <select>s. Refresh button reloads the current
-  // filter set from scratch.
-  const endpointSelect = h('select', { class: 'btn small' },
-    h('option', { value: '' }, t('All endpoints')),
-    ...endpoints.map((ep) =>
-      h('option', { value: String(ep.id) }, ep.name || t('(unnamed endpoint)'))));
   const statusSelect = h('select', { class: 'btn small' },
     h('option', { value: '' },          t('Any status')),
-    h('option', { value: 'pending' },   t('Pending')),
+    h('option', { value: 'pending' },   t('Waiting')),
     h('option', { value: 'delivered' }, t('Delivered')),
     h('option', { value: 'dead' },      t('Dead')),
   );
@@ -7462,9 +7470,9 @@ async function viewWebhooksLog(view) {
     status.textContent = t('Loading…');
     const params = new URLSearchParams();
     params.set('limit', '50');
-    if (filter.endpoint_id) params.set('endpoint_id', filter.endpoint_id);
-    if (filter.status)      params.set('status', filter.status);
-    if (nextBefore)         params.set('before', String(nextBefore));
+    params.set('endpoint_id', String(endpointID));
+    if (filter.status)  params.set('status', filter.status);
+    if (nextBefore)     params.set('before', String(nextBefore));
     const r = await api('/api/admin/webhooks/deliveries?' + params.toString());
     if (!r.ok) {
       status.className = 'err';
@@ -7486,10 +7494,6 @@ async function viewWebhooksLog(view) {
     }
   }
 
-  endpointSelect.addEventListener('change', () => {
-    filter.endpoint_id = endpointSelect.value;
-    fetchPage(true);
-  });
   statusSelect.addEventListener('change', () => {
     filter.status = statusSelect.value;
     fetchPage(true);
@@ -7501,11 +7505,14 @@ async function viewWebhooksLog(view) {
     h('button', { class: 'btn ghost small', type: 'button',
       on: { click: () => nav('#webhooks') } },
       icon(ICONS.back), t('Back to webhooks')),
-    h('h1', { style: 'margin-top:.75rem' }, t('Webhook delivery log')),
+    h('h1', { style: 'margin-top:.75rem' },
+      t('Delivery log: {{name}}', { name: endpoint.name || t('(unnamed endpoint)') })),
+    h('p', { class: 'muted', style: 'font-family:monospace; word-break:break-all; margin:.25rem 0' },
+      endpoint.url),
     h('p', { class: 'muted' },
-      t('Every attempt to deliver an event to one of your endpoints. Click a row to see the raw JSON we POSTed and the verifier-side signature inputs.')),
+      t('Click a row to see the raw JSON we POSTed and the verifier-side signature inputs.')),
     h('div', { class: 'row', style: 'gap:.5rem; flex-wrap:wrap; margin:1rem 0' },
-      endpointSelect, statusSelect, refreshBtn),
+      statusSelect, refreshBtn),
     list,
     loadMoreBtn,
     status,
@@ -7599,16 +7606,17 @@ function renderDeliveryDetail(d) {
 function statusLabel(s) {
   switch (s) {
     case 'delivered': return t('Delivered');
-    case 'pending':   return t('Pending');
+    case 'pending':   return t('Waiting');
     case 'dead':      return t('Dead');
   }
   return s;
 }
+// Strict 2xx vs everything-else colouring per the operator's
+// preference: a green chip means "the customer's endpoint accepted
+// it"; any other code (4xx, 5xx, transport error → 0) means
+// "something needs attention".
 function httpStatusClass(code) {
-  if (code >= 200 && code < 300) return 'ok';
-  if (code >= 400 && code < 500) return '';   // muted
-  if (code >= 500)               return 'err';
-  return '';
+  return (code >= 200 && code < 300) ? 'ok' : 'err';
 }
 
 // confirmDanger is a small destructive-action confirmation modal.

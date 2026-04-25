@@ -995,12 +995,18 @@
       // ---- webhook delivery log ----
       'Delivery log': 'Leveranslogg',
       'Webhook delivery log': 'Webhook-leveranslogg',
+      'Delivery log: {{name}}': 'Leveranslogg: {{name}}',
+      'Inspect this endpoint\'s delivery history':
+          'Inspektera den här slutpunktens leveranshistorik',
+      'Click a row to see the raw JSON we POSTed and the verifier-side signature inputs.':
+          'Klicka på en rad för att se den råa JSON vi skickade och signaturindata för verifieraren.',
       'Back to webhooks': 'Tillbaka till webhooks',
       'Every attempt to deliver an event to one of your endpoints. Click a row to see the raw JSON we POSTed and the verifier-side signature inputs.':
           'Varje försök att leverera en händelse till en av dina slutpunkter. Klicka på en rad för att se den råa JSON vi skickade och signaturindata för verifieraren.',
       'All endpoints': 'Alla slutpunkter',
       'Any status': 'Alla statusar',
       'Pending': 'Väntar',
+      'Waiting': 'Väntar',
       'Delivered': 'Levererad',
       'Dead': 'Misslyckad',
       'Refresh': 'Uppdatera',
