@@ -146,12 +146,19 @@
     display: flex; align-items: center; justify-content: space-between;
   }
   .brand {
-    font-family: 'Aclonica', Georgia, serif;
-    font-size: 1.55rem;
-    color: #fff;
+    /* Logo wordmark — sourced from cdn.zonventure.com. Pinned to a
+       fixed height so it composes nicely with the surrounding nav
+       links regardless of the source PNG's natural dimensions.
+       The drop-shadow gives it the same lift as the hero text and
+       keeps it readable if the photo behind happens to be light. */
+    display: inline-flex; align-items: center;
     text-decoration: none;
-    letter-spacing: .01em;
-    text-shadow: 0 2px 12px rgba(0,0,0,.25);
+  }
+  .brand img {
+    display: block;
+    height: 2.4rem;
+    width: auto;
+    filter: drop-shadow(0 2px 8px rgba(0,0,0,0.35));
   }
   .topbar nav { display: flex; gap: 1.75rem; align-items: center; }
   .topbar nav a {
@@ -513,7 +520,9 @@
 
 <header class="topbar" role="banner">
   <div class="wrap topbar-row">
-    <a class="brand" href="/" aria-label="Zonventure home">zonventure</a>
+    <a class="brand" href="/" aria-label="Zonventure home">
+      <img src="https://zonventure.com/img/zonventure.png" alt="Zonventure">
+    </a>
     <nav aria-label="Primary">
       <a href="/manual">Manual</a>
       <a href="/arrange" class="btn">Log in</a>
