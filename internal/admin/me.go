@@ -223,7 +223,7 @@ func (h *Handlers) DeleteMyAccount(w http.ResponseWriter, r *http.Request) {
 	// Best-effort cookie clear — the session row is already gone
 	// (cascaded with the user row), so the next request will get
 	// "not logged in" anyway.
-	auth.ClearCookie(w, auth.CookieSecure(r, false))
+	auth.ClearCookie(w, auth.CookieSecure(r, h.SecureCookie))
 	httpx.JSON(w, http.StatusNoContent, nil)
 }
 

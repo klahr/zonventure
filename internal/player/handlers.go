@@ -516,30 +516,47 @@ func (h *Handlers) applyAdvance(ctx context.Context, slot auth.Slot) (AnswerResp
 		}
 	}
 	teamID := tc.TeamID
-	runevents.Record(ctx, h.DB, tc.RunID, &teamID, runevents.SlotActor(slot.ID),
+	// Same atomicity argument as applyAnswer: the AnswerRight runevent
+	// and the team UPDATE must commit together, or the activity feed
+	// disagrees with the team's actual page index.
+	tx, err := h.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return AnswerResponse{}, tc.RunID, http.StatusInternalServerError, "begin tx failed"
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	runevents.Record(ctx, tx, tc.RunID, &teamID, runevents.SlotActor(slot.ID),
 		runevents.AnswerRight, map[string]any{"page_index": page.Index, "no_answer": true})
 	nextIdx := page.Index + 1
 	resp := AnswerResponse{Accepted: true}
 	if next, _ := visibleFor(adv.Pages, nextIdx); next == nil {
-		if _, err := h.DB.ExecContext(ctx, `
+		if _, err := tx.ExecContext(ctx, `
 			UPDATE teams SET current_page_index = $1, current_page_started_at = now_text(), completed_at = now_text() WHERE id = $2
 		`, nextIdx, tc.TeamID); err != nil {
 			return AnswerResponse{}, tc.RunID, http.StatusInternalServerError, "save progress failed"
 		}
-		runevents.Record(ctx, h.DB, tc.RunID, &teamID, runevents.SlotActor(slot.ID),
+		runevents.Record(ctx, tx, tc.RunID, &teamID, runevents.SlotActor(slot.ID),
 			runevents.TeamCompleted, nil)
 		// If this team was the last one to finish, the run itself
 		// transitions to 'completed' too. Caller pushes the broadcast
 		// after we return (it already does on any answer).
-		_, _ = runevents.MaybeCompleteRun(ctx, h.DB, tc.RunID)
+		if _, err := runevents.MaybeCompleteRun(ctx, tx, tc.RunID); err != nil {
+			return AnswerResponse{}, tc.RunID, http.StatusInternalServerError, "complete-run check failed"
+		}
+		if err := tx.Commit(); err != nil {
+			return AnswerResponse{}, tc.RunID, http.StatusInternalServerError, "commit failed"
+		}
 		resp.Completed = true
 		resp.NextIndex = nextIdx
 		return resp, tc.RunID, http.StatusOK, ""
 	}
-	if _, err := h.DB.ExecContext(ctx, `
+	if _, err := tx.ExecContext(ctx, `
 		UPDATE teams SET current_page_index = $1, current_page_started_at = now_text() WHERE id = $2
 	`, nextIdx, tc.TeamID); err != nil {
 		return AnswerResponse{}, tc.RunID, http.StatusInternalServerError, "save progress failed"
+	}
+	if err := tx.Commit(); err != nil {
+		return AnswerResponse{}, tc.RunID, http.StatusInternalServerError, "commit failed"
 	}
 	resp.NextIndex = nextIdx
 	return resp, tc.RunID, http.StatusOK, ""
@@ -642,7 +659,20 @@ func (h *Handlers) applyAnswer(ctx context.Context, slot auth.Slot, answer strin
 	if accepted {
 		acceptedInt = 1
 	}
-	if _, err := h.DB.ExecContext(ctx, `
+
+	// Everything that follows mutates state, and the writes must
+	// commit or roll back as a single unit — without the tx a partial
+	// failure can leave (a) an answer_attempts row whose runevent never
+	// landed, or (b) a team that advanced but whose AnswerRight
+	// runevent is missing from the activity feed. Reads above this
+	// point already finished, so the tx only spans the writes.
+	tx, err := h.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return AnswerResponse{}, tc.RunID, http.StatusInternalServerError, "begin tx failed"
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO answer_attempts(team_id, slot_id, page_index, answer, accepted)
 		VALUES ($1, $2, $3, $4, $5)
 	`, tc.TeamID, slot.ID, page.Index, answer, acceptedInt); err != nil {
@@ -651,33 +681,44 @@ func (h *Handlers) applyAnswer(ctx context.Context, slot auth.Slot, answer strin
 	teamID := tc.TeamID
 	resp := AnswerResponse{Accepted: accepted}
 	if !accepted {
-		runevents.Record(ctx, h.DB, tc.RunID, &teamID, runevents.SlotActor(slot.ID),
+		runevents.Record(ctx, tx, tc.RunID, &teamID, runevents.SlotActor(slot.ID),
 			runevents.AnswerWrong, map[string]any{"page_index": page.Index, "submitted": answer})
+		if err := tx.Commit(); err != nil {
+			return AnswerResponse{}, tc.RunID, http.StatusInternalServerError, "commit failed"
+		}
 		return resp, tc.RunID, http.StatusOK, ""
 	}
-	runevents.Record(ctx, h.DB, tc.RunID, &teamID, runevents.SlotActor(slot.ID),
+	runevents.Record(ctx, tx, tc.RunID, &teamID, runevents.SlotActor(slot.ID),
 		runevents.AnswerRight, map[string]any{"page_index": page.Index})
 	// Advance past the page the player just solved. The NEXT call to
 	// buildState will re-resolve the new visible page (which will skip
 	// any disabled pages that follow).
 	nextIdx := page.Index + 1
 	if next, _ := visibleFor(adv.Pages, nextIdx); next == nil {
-		if _, err := h.DB.ExecContext(ctx, `
+		if _, err := tx.ExecContext(ctx, `
 			UPDATE teams SET current_page_index = $1, current_page_started_at = now_text(), completed_at = now_text() WHERE id = $2
 		`, nextIdx, tc.TeamID); err != nil {
 			return AnswerResponse{}, tc.RunID, http.StatusInternalServerError, "save progress failed"
 		}
-		runevents.Record(ctx, h.DB, tc.RunID, &teamID, runevents.SlotActor(slot.ID),
+		runevents.Record(ctx, tx, tc.RunID, &teamID, runevents.SlotActor(slot.ID),
 			runevents.TeamCompleted, nil)
-		_, _ = runevents.MaybeCompleteRun(ctx, h.DB, tc.RunID)
+		if _, err := runevents.MaybeCompleteRun(ctx, tx, tc.RunID); err != nil {
+			return AnswerResponse{}, tc.RunID, http.StatusInternalServerError, "complete-run check failed"
+		}
+		if err := tx.Commit(); err != nil {
+			return AnswerResponse{}, tc.RunID, http.StatusInternalServerError, "commit failed"
+		}
 		resp.Completed = true
 		resp.NextIndex = nextIdx
 		return resp, tc.RunID, http.StatusOK, ""
 	}
-	if _, err := h.DB.ExecContext(ctx, `
+	if _, err := tx.ExecContext(ctx, `
 		UPDATE teams SET current_page_index = $1, current_page_started_at = now_text() WHERE id = $2
 	`, nextIdx, tc.TeamID); err != nil {
 		return AnswerResponse{}, tc.RunID, http.StatusInternalServerError, "save progress failed"
+	}
+	if err := tx.Commit(); err != nil {
+		return AnswerResponse{}, tc.RunID, http.StatusInternalServerError, "commit failed"
 	}
 	resp.NextIndex = nextIdx
 	return resp, tc.RunID, http.StatusOK, ""

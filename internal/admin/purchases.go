@@ -196,9 +196,13 @@ func (h *Handlers) ConfirmPurchase(w http.ResponseWriter, r *http.Request) {
 		state         string
 		existingAssn  sql.NullInt64
 	)
+	// FOR UPDATE serialises overlapping confirms (double-clicked Pay
+	// button, webhook arriving alongside a manual confirm) so two
+	// transactions can't both observe state='pending' and each insert
+	// their own assignment row.
 	err = tx.QueryRowContext(r.Context(), `
 		SELECT org_id, adventure_slug, max_teams, state, assignment_id
-		FROM purchases WHERE id = $1
+		FROM purchases WHERE id = $1 FOR UPDATE
 	`, purchaseID).Scan(&orgID, &advSlug, &maxTeams, &state, &existingAssn)
 	if errors.Is(err, sql.ErrNoRows) {
 		httpx.Error(w, http.StatusNotFound, "purchase not found")
@@ -271,6 +275,10 @@ func (h *Handlers) ListPurchases(w http.ResponseWriter, r *http.Request) {
 	`
 	var args []any
 	if !isAdmin(me) {
+		if !isOrgScoped(me) {
+			httpx.Error(w, http.StatusForbidden, "no org context")
+			return
+		}
 		query += ` WHERE p.org_id = $1`
 		args = append(args, *me.OrgID)
 	}

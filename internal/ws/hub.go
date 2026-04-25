@@ -20,8 +20,9 @@ type Msg struct {
 }
 
 // Hub fans out messages from Publish to all subscribers whose topic matches.
-// Subscribers register a 1-deep buffered channel; a slow consumer silently
-// drops older pokes rather than blocking publishers.
+// Subscribers register a small buffered channel; a slow consumer has its
+// oldest queued message dropped to make room for the newest, so publishers
+// never block. See Publish for the drop-oldest details.
 type Hub struct {
 	mu     sync.Mutex
 	nextID uint64

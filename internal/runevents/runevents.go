@@ -8,6 +8,18 @@ import (
 	"encoding/json"
 )
 
+// Execer is the read+write subset of *sql.DB that Record and
+// MaybeCompleteRun need. Both *sql.DB and *sql.Tx satisfy it, so a
+// caller can pass an open transaction to make telemetry +
+// run-completion checks part of the same atomic unit as the rest of
+// their writes — the typical pattern in player.applyAnswer where
+// answer_attempts INSERT and teams UPDATE must commit together with
+// their runevent rows.
+type Execer interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
 // Event kind strings. Centralised so handlers stay consistent and the
 // frontend can reliably switch on them.
 const (
@@ -42,8 +54,10 @@ func UserActor(id int64) Actor { return Actor{User: &id} }
 func SlotActor(id int64) Actor { return Actor{Slot: &id} }
 
 // Record appends one row. Errors are swallowed — telemetry should never
-// fail a user action.
-func Record(ctx context.Context, db *sql.DB, runID int64, teamID *int64, actor Actor, kind string, payload any) {
+// fail a user action. db may be a *sql.DB or a *sql.Tx; callers that
+// already hold a transaction should pass it so the runevent commits or
+// rolls back with the rest of their writes.
+func Record(ctx context.Context, db Execer, runID int64, teamID *int64, actor Actor, kind string, payload any) {
 	b, err := json.Marshal(payload)
 	if err != nil || payload == nil {
 		b = []byte(`{}`)
@@ -81,7 +95,7 @@ func Record(ctx context.Context, db *sql.DB, runID int64, teamID *int64, actor A
 //   - On a lost race (two callers observing "all done" at the same
 //     instant) the UPDATE's state predicate ensures exactly one
 //     transition fires; the loser returns (false, nil).
-func MaybeCompleteRun(ctx context.Context, db *sql.DB, runID int64) (bool, error) {
+func MaybeCompleteRun(ctx context.Context, db Execer, runID int64) (bool, error) {
 	var total, done int
 	if err := db.QueryRowContext(ctx, `
 		SELECT COUNT(*),

@@ -201,9 +201,14 @@ func (h *Handlers) handleCheckoutCompleted(ctx context.Context, event stripe.Eve
 		state         string
 		existingAssn  sql.NullInt64
 	)
+	// FOR UPDATE serialises against ConfirmPurchase and against a
+	// concurrent redelivery of this same webhook event. Without it the
+	// dedupe in alreadyProcessed/markProcessed leaves a window where
+	// two deliveries can both observe state='pending' and each insert
+	// an assignment row.
 	err = tx.QueryRowContext(ctx, `
 		SELECT org_id, adventure_slug, max_teams, state, assignment_id
-		FROM purchases WHERE id = $1
+		FROM purchases WHERE id = $1 FOR UPDATE
 	`, purchaseID).Scan(&orgID, &advSlug, &maxTeams, &state, &existingAssn)
 	if errors.Is(err, sql.ErrNoRows) {
 		// Purchase row was deleted between checkout creation and

@@ -62,6 +62,10 @@ type Handlers struct {
 	// Required to enable Stripe — without it we'd be a payment
 	// processor that accepts arbitrary "the customer paid" requests.
 	StripeWebhookSecret string
+	// SecureCookie is the operator's force-secure override, mirrored
+	// from server.Config. Cookie-emitting paths in this package pass
+	// it to auth.CookieSecure for parity with the auth/player handlers.
+	SecureCookie bool
 }
 
 /* ---------------- Shared scoping helpers ---------------- */

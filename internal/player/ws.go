@@ -3,6 +3,7 @@ package player
 import (
 	"encoding/json"
 	"net/http"
+	"time"
 
 	"git.sr.ht/~klahr/zv/internal/auth"
 	"git.sr.ht/~klahr/zv/internal/ws"
@@ -36,16 +37,15 @@ func (h *Handlers) WSPlay(w http.ResponseWriter, r *http.Request) {
 
 	// Push-on-change: whenever anything in this run changes, re-read and
 	// send the slot's current view. Coalescing is implicit — the hub's
-	// 1-deep buffered channel drops duplicate pokes that arrive back to back.
+	// drop-oldest send means a burst of pokes collapses to "render once".
+	// The events channel is never closed by the hub (see hub.go), so we
+	// rely on the connection context to break the loop on disconnect.
 	go func() {
 		for {
 			select {
 			case <-conn.Context().Done():
 				return
-			case _, ok := <-events:
-				if !ok {
-					return
-				}
+			case <-events:
 				h.pushState(conn, slot)
 			}
 		}
@@ -53,6 +53,11 @@ func (h *Handlers) WSPlay(w http.ResponseWriter, r *http.Request) {
 
 	// Incoming: location pings and answer submissions. Read until peer goes
 	// away or the writer cancels our context (eg. a send queue overflow).
+	//
+	// Each mutating arm consults the same rate limiter the HTTP wrappers
+	// use — without this gate, a WS client could brute-force short
+	// answers or spam location pings, sidestepping the protection that
+	// SubmitAnswer / PostLocation enforce on the REST surface.
 	for {
 		msg, err := conn.Read()
 		if err != nil {
@@ -64,6 +69,9 @@ func (h *Handlers) WSPlay(w http.ResponseWriter, r *http.Request) {
 			if err := json.Unmarshal(msg.Data, &req); err != nil {
 				continue
 			}
+			if ok, _ := h.rateLimiter().AllowLocation(slot.ID); !ok {
+				continue
+			}
 			status, _ := h.recordLocation(conn.Context(), slot, req)
 			if status >= 400 {
 				continue
@@ -72,6 +80,14 @@ func (h *Handlers) WSPlay(w http.ResponseWriter, r *http.Request) {
 		case "answer":
 			var req AnswerRequest
 			if err := json.Unmarshal(msg.Data, &req); err != nil {
+				continue
+			}
+			if ok, retry := h.rateLimiter().AllowAnswer(slot.ID); !ok {
+				conn.SendKind("answer_error", map[string]any{
+					"error":            "too many attempts, slow down",
+					"status":           http.StatusTooManyRequests,
+					"retry_after_secs": int(retry / time.Second),
+				})
 				continue
 			}
 			resp, runID, status, errMsg := h.applyAnswer(conn.Context(), slot, req.Answer)
@@ -87,7 +103,17 @@ func (h *Handlers) WSPlay(w http.ResponseWriter, r *http.Request) {
 			// No-answer advance: the puzzle has an empty accept list so
 			// the client sends this instead of "answer". Server responds
 			// on the same `answer_result` / `answer_error` channels so
-			// the client's existing wiring keeps working.
+			// the client's existing wiring keeps working. Same answer
+			// bucket — advance is a submission too and we don't want
+			// to leave a free-spam path on no-answer puzzles.
+			if ok, retry := h.rateLimiter().AllowAnswer(slot.ID); !ok {
+				conn.SendKind("answer_error", map[string]any{
+					"error":            "too many attempts, slow down",
+					"status":           http.StatusTooManyRequests,
+					"retry_after_secs": int(retry / time.Second),
+				})
+				continue
+			}
 			resp, runID, status, errMsg := h.applyAdvance(conn.Context(), slot)
 			if status != http.StatusOK {
 				conn.SendKind("answer_error", map[string]any{"error": errMsg, "status": status})

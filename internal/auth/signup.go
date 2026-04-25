@@ -183,7 +183,9 @@ func VerifyEmail(ctx context.Context, db *sql.DB, token string) (User, error) {
 	if purpose != PurposeVerify {
 		return User{}, ErrVerificationUnknown
 	}
-	if t, perr := parseSlotTimestamp(expiresAt); perr == nil && time.Now().After(t) {
+	// Fail closed on parse: a corrupt expires_at value mustn't extend a
+	// token's life. Treat unparseable rows as expired and delete them.
+	if t, perr := parseSlotTimestamp(expiresAt); perr != nil || time.Now().After(t) {
 		_, _ = db.ExecContext(ctx, `DELETE FROM email_verifications WHERE token = $1`, token)
 		return User{}, ErrVerificationExpired
 	}
@@ -259,7 +261,9 @@ func ConsumeForgotPasswordToken(ctx context.Context, db *sql.DB, token, newPassw
 	if purpose != PurposeForgotPassword {
 		return User{}, "", ErrVerificationUnknown
 	}
-	if t, perr := parseSlotTimestamp(expiresAt); perr == nil && time.Now().After(t) {
+	// Fail closed on parse: a corrupt expires_at value mustn't extend a
+	// token's life. Treat unparseable rows as expired and delete them.
+	if t, perr := parseSlotTimestamp(expiresAt); perr != nil || time.Now().After(t) {
 		_, _ = db.ExecContext(ctx, `DELETE FROM email_verifications WHERE token = $1`, token)
 		return User{}, "", ErrVerificationExpired
 	}
@@ -379,7 +383,9 @@ func ConsumeEmailChangeToken(ctx context.Context, db *sql.DB, token string) (Use
 	if purpose != PurposeChangeEmail || !newEmail.Valid || newEmail.String == "" {
 		return User{}, ErrVerificationUnknown
 	}
-	if t, perr := parseSlotTimestamp(expiresAt); perr == nil && time.Now().After(t) {
+	// Fail closed on parse: a corrupt expires_at value mustn't extend a
+	// token's life. Treat unparseable rows as expired and delete them.
+	if t, perr := parseSlotTimestamp(expiresAt); perr != nil || time.Now().After(t) {
 		_, _ = db.ExecContext(ctx, `DELETE FROM email_verifications WHERE token = $1`, token)
 		return User{}, ErrVerificationExpired
 	}

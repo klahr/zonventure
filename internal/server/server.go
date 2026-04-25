@@ -98,6 +98,7 @@ func New(cfg Config) http.Handler {
 		PublicURL:           cfg.PublicURL,
 		StripeSecretKey:     cfg.StripeSecretKey,
 		StripeWebhookSecret: cfg.StripeWebhookSecret,
+		SecureCookie:        cfg.SecureCookie,
 	}
 	publicH := &public.Handlers{DB: cfg.DB, Lib: cfg.Library, Hub: hub}
 
