@@ -24,6 +24,7 @@ import (
 	"git.sr.ht/~klahr/zv/internal/retention"
 	"git.sr.ht/~klahr/zv/internal/scheduler"
 	"git.sr.ht/~klahr/zv/internal/server"
+	"git.sr.ht/~klahr/zv/internal/webhooks"
 	"git.sr.ht/~klahr/zv/internal/ws"
 )
 
@@ -182,6 +183,12 @@ func main() {
 		Interval:     *retentionInterval,
 	})
 
+	// Outbound webhook delivery worker. Drains webhook_deliveries
+	// rows enqueued by the various Publish call sites and POSTs them
+	// to customer endpoints with HMAC signatures + exponential
+	// backoff retry.
+	webhookDone := webhooks.Start(ctx, sqlDB)
+
 	go func() {
 		logx.Info("http.listening", "addr", *addr)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -210,6 +217,15 @@ func main() {
 	case <-retDone:
 	case <-time.After(5 * time.Second):
 		logx.Warn("retention.shutdown.timeout")
+	}
+	// Webhooks worker: a 5s grace beyond the scheduler since an
+	// in-flight POST can take up to the http.Client.Timeout (30s).
+	// Worst case: we drop in-flight deliveries; they remain in
+	// status='pending' and the next process restart picks them up.
+	select {
+	case <-webhookDone:
+	case <-time.After(35 * time.Second):
+		logx.Warn("webhooks.shutdown.timeout")
 	}
 }
 

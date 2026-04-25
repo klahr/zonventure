@@ -30,6 +30,7 @@ import (
 	"git.sr.ht/~klahr/zv/internal/mailer"
 	"git.sr.ht/~klahr/zv/internal/runevents"
 	"git.sr.ht/~klahr/zv/internal/simulator"
+	"git.sr.ht/~klahr/zv/internal/webhooks"
 	"git.sr.ht/~klahr/zv/internal/ws"
 	"github.com/go-chi/chi/v5"
 )
@@ -371,6 +372,22 @@ func (h *Handlers) CreateRun(w http.ResponseWriter, r *http.Request) {
 	}
 	runevents.Record(r.Context(), h.DB, id, nil, runevents.UserActor(me.ID), runevents.RunCreated,
 		map[string]any{"adventure_slug": slug, "max_teams": maxTeams})
+	// run.scheduled fires for every fresh run — even ones with no
+	// scheduled_at, since the canonical state is still "scheduled" on
+	// creation. Customers wiring calendar / kickoff comms branch on
+	// the scheduled_at field being non-empty.
+	advTitle := ""
+	if adv := h.Lib.Get(slug); adv != nil {
+		advTitle = adv.Meta.Title
+	}
+	webhooks.TryPublish(r.Context(), h.DB, *me.OrgID, webhooks.EventRunScheduled, map[string]any{
+		"run_id":          id,
+		"name":            strings.TrimSpace(req.Name),
+		"adventure_slug":  slug,
+		"adventure_title": advTitle,
+		"scheduled_at":    req.ScheduledAt,
+		"max_teams":       maxTeams,
+	})
 	h.Hub.Publish(ws.RunTopic(id), "changed", nil)
 	httpx.JSON(w, http.StatusCreated, runDTO{
 		ID: id, AdventureSlug: slug, State: "scheduled",
@@ -441,7 +458,8 @@ func (h *Handlers) transitionRun(w http.ResponseWriter, r *http.Request, action 
 		httpx.Error(w, http.StatusBadRequest, "bad run id")
 		return
 	}
-	if _, ok := h.authorizeRun(w, r, runID); !ok {
+	orgID, ok := h.authorizeRun(w, r, runID)
+	if !ok {
 		return
 	}
 	var state string
@@ -473,6 +491,29 @@ func (h *Handlers) transitionRun(w http.ResponseWriter, r *http.Request, action 
 	me, _ := auth.FromContext(r.Context())
 	kind := map[string]string{"start": runevents.RunStarted, "pause": runevents.RunPaused, "resume": runevents.RunResumed}[action]
 	runevents.Record(r.Context(), h.DB, runID, nil, runevents.UserActor(me.ID), kind, nil)
+	// Emit the matching webhook so customers can wire kickoff
+	// notifications, lobby-TV banners, etc. Only "start" has a v1
+	// kind today; pause / resume are intra-run lifecycle that
+	// customers haven't asked for.
+	if action == "start" {
+		var (
+			advSlug string
+			runName string
+		)
+		_ = h.DB.QueryRowContext(r.Context(),
+			`SELECT adventure_slug, name FROM adventure_runs WHERE id = $1`, runID).Scan(&advSlug, &runName)
+		advTitle := ""
+		if adv := h.Lib.Get(advSlug); adv != nil {
+			advTitle = adv.Meta.Title
+		}
+		webhooks.TryPublish(r.Context(), h.DB, orgID, webhooks.EventRunStarted, map[string]any{
+			"run_id":          runID,
+			"name":            runName,
+			"adventure_slug":  advSlug,
+			"adventure_title": advTitle,
+			"manual":          true,
+		})
+	}
 	h.Hub.Publish(ws.RunTopic(runID), "changed", nil)
 	httpx.JSON(w, http.StatusNoContent, nil)
 }
@@ -593,7 +634,8 @@ func (h *Handlers) CreateTeam(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusBadRequest, "bad run id")
 		return
 	}
-	if _, ok := h.authorizeRun(w, r, runID); !ok {
+	orgID, ok := h.authorizeRun(w, r, runID)
+	if !ok {
 		return
 	}
 	var req createTeamRequest
@@ -694,6 +736,12 @@ func (h *Handlers) CreateTeam(w http.ResponseWriter, r *http.Request) {
 	}
 	runevents.Record(r.Context(), h.DB, runID, &teamID, runevents.UserActor(me.ID), runevents.TeamCreated,
 		map[string]any{"name": req.Name, "members": memberNames})
+	webhooks.TryPublish(r.Context(), h.DB, orgID, webhooks.EventTeamCreated, map[string]any{
+		"run_id":       runID,
+		"team_id":      teamID,
+		"team_name":    req.Name,
+		"member_count": len(members),
+	})
 	h.Hub.Publish(ws.RunTopic(runID), "changed", nil)
 	httpx.JSON(w, http.StatusCreated, teamDTO{ID: teamID, Name: req.Name, Members: members})
 }

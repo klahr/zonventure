@@ -20,6 +20,7 @@ import (
 	"git.sr.ht/~klahr/zv/internal/httpx"
 	"git.sr.ht/~klahr/zv/internal/mdx"
 	"git.sr.ht/~klahr/zv/internal/runevents"
+	"git.sr.ht/~klahr/zv/internal/webhooks"
 	"git.sr.ht/~klahr/zv/internal/ws"
 )
 
@@ -184,6 +185,7 @@ type teamContext struct {
 	TeamID               int64
 	TeamName             string
 	RunID                int64
+	OrgID                int64
 	AdventureSlug        string
 	RunState             string
 	ScheduledAt          sql.NullString
@@ -191,6 +193,55 @@ type teamContext struct {
 	CurrentPageIndex     int
 	CurrentPageStartedAt sql.NullString
 	CompletedAt          sql.NullString
+}
+
+// publishRunStartedAuto emits run.started for a run that was just
+// auto-promoted (player arrived at the scheduled time). Distinct
+// from the manual-start webhook in admin/handlers.go via the "manual"
+// field on the payload.
+func (h *Handlers) publishRunStartedAuto(ctx context.Context, tc teamContext) {
+	advTitle := ""
+	if adv := h.Lib.Get(tc.AdventureSlug); adv != nil {
+		advTitle = adv.Meta.Title
+	}
+	webhooks.TryPublish(ctx, h.DB, tc.OrgID, webhooks.EventRunStarted, map[string]any{
+		"run_id":          tc.RunID,
+		"adventure_slug":  tc.AdventureSlug,
+		"adventure_title": advTitle,
+		"manual":          false,
+	})
+}
+
+// publishTeamCompleted emits the team.completed webhook after the
+// team's last-page UPDATE has committed. Best-effort: a failed
+// enqueue logs and is dropped (the player has already seen "you're
+// done!").
+func (h *Handlers) publishTeamCompleted(ctx context.Context, tc teamContext) {
+	advTitle := ""
+	if adv := h.Lib.Get(tc.AdventureSlug); adv != nil {
+		advTitle = adv.Meta.Title
+	}
+	webhooks.TryPublish(ctx, h.DB, tc.OrgID, webhooks.EventTeamCompleted, map[string]any{
+		"run_id":          tc.RunID,
+		"team_id":         tc.TeamID,
+		"team_name":       tc.TeamName,
+		"adventure_slug":  tc.AdventureSlug,
+		"adventure_title": advTitle,
+	})
+}
+
+// publishRunCompleted emits run.completed when MaybeCompleteRun
+// transitioned the run. Same best-effort discipline.
+func (h *Handlers) publishRunCompleted(ctx context.Context, tc teamContext) {
+	advTitle := ""
+	if adv := h.Lib.Get(tc.AdventureSlug); adv != nil {
+		advTitle = adv.Meta.Title
+	}
+	webhooks.TryPublish(ctx, h.DB, tc.OrgID, webhooks.EventRunCompleted, map[string]any{
+		"run_id":          tc.RunID,
+		"adventure_slug":  tc.AdventureSlug,
+		"adventure_title": advTitle,
+	})
 }
 
 // maybePromoteScheduled atomically flips a scheduled run to running
@@ -229,12 +280,12 @@ func maybePromoteScheduled(ctx context.Context, db *sql.DB, hub *ws.Hub, runID i
 func loadTeam(ctx context.Context, db *sql.DB, slot auth.Slot) (teamContext, error) {
 	var tc teamContext
 	err := db.QueryRowContext(ctx, `
-		SELECT t.id, t.name, ar.id, ar.adventure_slug, ar.state,
+		SELECT t.id, t.name, ar.id, ar.org_id, ar.adventure_slug, ar.state,
 		       ar.scheduled_at, ar.started_at,
 		       t.current_page_index, t.current_page_started_at, t.completed_at
 		FROM teams t JOIN adventure_runs ar ON ar.id = t.run_id
 		WHERE t.id = $1
-	`, slot.TeamID).Scan(&tc.TeamID, &tc.TeamName, &tc.RunID, &tc.AdventureSlug,
+	`, slot.TeamID).Scan(&tc.TeamID, &tc.TeamName, &tc.RunID, &tc.OrgID, &tc.AdventureSlug,
 		&tc.RunState, &tc.ScheduledAt, &tc.StartedAt,
 		&tc.CurrentPageIndex, &tc.CurrentPageStartedAt, &tc.CompletedAt)
 	return tc, err
@@ -418,6 +469,7 @@ func (h *Handlers) buildState(ctx context.Context, slot auth.Slot) (State, int, 
 		if started, err := maybePromoteScheduled(ctx, h.DB, h.Hub, tc.RunID, tc.ScheduledAt.String); err == nil && started {
 			tc.RunState = "running"
 			tc.StartedAt = sql.NullString{String: time.Now().UTC().Format(time.RFC3339), Valid: true}
+			h.publishRunStartedAuto(ctx, tc)
 		}
 	}
 	switch tc.RunState {
@@ -487,6 +539,7 @@ func (h *Handlers) applyAdvance(ctx context.Context, slot auth.Slot) (AnswerResp
 	if tc.RunState == "scheduled" && tc.ScheduledAt.Valid {
 		if started, _ := maybePromoteScheduled(ctx, h.DB, h.Hub, tc.RunID, tc.ScheduledAt.String); started {
 			tc.RunState = "running"
+			h.publishRunStartedAuto(ctx, tc)
 		}
 	}
 	if tc.RunState != "running" {
@@ -540,11 +593,16 @@ func (h *Handlers) applyAdvance(ctx context.Context, slot auth.Slot) (AnswerResp
 		// If this team was the last one to finish, the run itself
 		// transitions to 'completed' too. Caller pushes the broadcast
 		// after we return (it already does on any answer).
-		if _, err := runevents.MaybeCompleteRun(ctx, tx, tc.RunID); err != nil {
+		runCompleted, err := runevents.MaybeCompleteRun(ctx, tx, tc.RunID)
+		if err != nil {
 			return AnswerResponse{}, tc.RunID, http.StatusInternalServerError, "complete-run check failed"
 		}
 		if err := tx.Commit(); err != nil {
 			return AnswerResponse{}, tc.RunID, http.StatusInternalServerError, "commit failed"
+		}
+		h.publishTeamCompleted(ctx, tc)
+		if runCompleted {
+			h.publishRunCompleted(ctx, tc)
 		}
 		resp.Completed = true
 		resp.NextIndex = nextIdx
@@ -626,6 +684,7 @@ func (h *Handlers) applyAnswer(ctx context.Context, slot auth.Slot, answer strin
 	if tc.RunState == "scheduled" && tc.ScheduledAt.Valid {
 		if started, _ := maybePromoteScheduled(ctx, h.DB, h.Hub, tc.RunID, tc.ScheduledAt.String); started {
 			tc.RunState = "running"
+			h.publishRunStartedAuto(ctx, tc)
 		}
 	}
 	if tc.RunState != "running" {
@@ -702,11 +761,16 @@ func (h *Handlers) applyAnswer(ctx context.Context, slot auth.Slot, answer strin
 		}
 		runevents.Record(ctx, tx, tc.RunID, &teamID, runevents.SlotActor(slot.ID),
 			runevents.TeamCompleted, nil)
-		if _, err := runevents.MaybeCompleteRun(ctx, tx, tc.RunID); err != nil {
+		runCompleted, err := runevents.MaybeCompleteRun(ctx, tx, tc.RunID)
+		if err != nil {
 			return AnswerResponse{}, tc.RunID, http.StatusInternalServerError, "complete-run check failed"
 		}
 		if err := tx.Commit(); err != nil {
 			return AnswerResponse{}, tc.RunID, http.StatusInternalServerError, "commit failed"
+		}
+		h.publishTeamCompleted(ctx, tc)
+		if runCompleted {
+			h.publishRunCompleted(ctx, tc)
 		}
 		resp.Completed = true
 		resp.NextIndex = nextIdx

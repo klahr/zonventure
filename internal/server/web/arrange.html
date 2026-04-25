@@ -1767,6 +1767,11 @@ function renderShell() {
       items.push(['#members', t('Members'), ICONS.shield]);
       items.push(['#audit',   t('Audit'),   ICONS.shield]);
     }
+    // Webhooks: outbound integrations the org configures themselves
+    // (Slack/Zapier/internal dashboards). Available to every org user
+    // — no role gate beyond having an org. The icon is "key" because
+    // the most distinctive thing about the page is the HMAC secret.
+    items.push(['#webhooks', t('Webhooks'), ICONS.key]);
     items.push(['#settings', t('Settings'), ICONS.user]);
   }
   const active = state.route.split('/')[0];
@@ -1873,6 +1878,7 @@ function currentCrumb() {
     simulator:     t('Simulator'),
     logs:          t('Logs'),
     audit:         t('Audit'),
+    webhooks:      t('Webhooks'),
     settings:      t('Settings'),
   };
   const sectionLabel = LABELS[section] || (section ? section[0].toUpperCase() + section.slice(1) : '');
@@ -1893,7 +1899,7 @@ async function renderRoute() {
 
   // Role-based route guards: admins can't visit org-user pages and vice versa.
   const adminOnly = ['organizations', 'admins', 'logs', 'simulator'];
-  const orgUserOnly = ['adventures', 'runs', 'store'];
+  const orgUserOnly = ['adventures', 'runs', 'store', 'webhooks'];
   if (isAdmin && orgUserOnly.includes(section)) { nav('#organizations'); return; }
   if (!isAdmin && adminOnly.includes(section))   { nav('#dashboard');     return; }
   if (section === 'members' && !isOrgAdmin)      { nav('#dashboard');     return; }
@@ -1927,6 +1933,7 @@ async function renderRoute() {
       case 'simulator':    return await viewSimulator(view);
       case 'logs':         return await viewLogs(view);
       case 'audit':        return await viewAudit(view);
+      case 'webhooks':     return await viewWebhooks(view);
       case 'settings':     return await viewSettings(view);
       default: view.replaceChildren(h('p', {}, t('Not found')));
     }
@@ -6744,6 +6751,288 @@ function renderAuditRow(e) {
 /* ========== Account settings ==========
    Three sections (password / email / delete) live on one page so a
    user finds everything they own under one click. */
+/* ========== Webhooks ==========
+   Per-org outbound webhook endpoints. The arranger configures a URL
+   they own (Slack-bot, Zapier hook, internal dashboard), picks which
+   event kinds they want, and the worker fires HMAC-signed POSTs at
+   them as runs/teams/purchases progress. The secret is shown once
+   on create/rotate; thereafter only an 8-char hint is visible.
+*/
+
+async function viewWebhooks(view) {
+  const [endpointsR, kindsR] = await Promise.all([
+    api('/api/admin/webhooks'),
+    api('/api/admin/webhook-event-kinds'),
+  ]);
+  if (!endpointsR.ok) {
+    view.replaceChildren(h('p', { class: 'err' },
+      t('Could not load webhooks ({{status}}).', { status: endpointsR.status })));
+    return;
+  }
+  const endpoints = endpointsR.body?.endpoints || [];
+  const kinds = kindsR.body?.event_kinds || [];
+
+  const addBtn = h('button', { class: 'btn primary', type: 'button' },
+    icon(ICONS.plus), t('Add endpoint'));
+  addBtn.addEventListener('click', async () => {
+    const created = await openWebhookForm({ kinds });
+    if (created) viewWebhooks(view); // reload
+  });
+
+  const cards = endpoints.length
+    ? endpoints.map((ep) => renderWebhookCard(ep, kinds, () => viewWebhooks(view)))
+    : [renderWebhookEmpty(addBtn)];
+
+  view.replaceChildren(
+    h('div', { class: 'row', style: 'align-items:center; justify-content:space-between' },
+      h('h1', {}, t('Webhooks')),
+      endpoints.length ? addBtn : null,
+    ),
+    h('p', { class: 'muted' },
+      t('Outbound HTTP callbacks for run / team / purchase lifecycle. Each delivery is signed with HMAC-SHA256; verify the X-Zv-Signature header against your endpoint\'s secret.')),
+    ...cards,
+  );
+}
+
+function renderWebhookEmpty(addBtn) {
+  return h('div', { class: 'card', style: 'text-align:center; padding:2rem' },
+    h('p', { class: 'muted', style: 'margin-bottom:1rem' },
+      t('No webhook endpoints yet. Add one to receive lifecycle events on a URL you control.')),
+    addBtn,
+  );
+}
+
+function renderWebhookCard(ep, kinds, reload) {
+  const statusBadge = h('span', {
+    class: 'chip ' + (ep.active ? 'ok' : ''),
+    style: ep.active ? '' : 'opacity:.6',
+  }, ep.active ? t('Active') : t('Disabled'));
+
+  const kindChips = (ep.event_kinds || []).map((k) =>
+    h('span', { class: 'chip', style: 'font-family:monospace; font-size:.78rem' }, k));
+
+  const editBtn = iconBtn('pencil', t('Edit'), async () => {
+    const updated = await openWebhookForm({ kinds, existing: ep });
+    if (updated) reload();
+  });
+  const testBtn = h('button', { class: 'btn small', type: 'button', title: t('Send test event') },
+    icon(ICONS.fastForward), t('Send test'));
+  testBtn.addEventListener('click', async () => {
+    if (!ep.active) {
+      toastErr(t('Re-enable the endpoint first.'));
+      return;
+    }
+    testBtn.disabled = true;
+    try {
+      const r = await api(`/api/admin/webhooks/${ep.id}/test`, { method: 'POST' });
+      if (r.status === 202) {
+        toastOk(t('Test queued. Watch your endpoint logs (delivery within ~5s).'));
+      } else {
+        toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+      }
+    } finally {
+      testBtn.disabled = false;
+    }
+  });
+  const rotateBtn = h('button', { class: 'btn small', type: 'button',
+    title: t('Mint a new secret. The old one stops working immediately.') },
+    icon(ICONS.key), t('Rotate secret'));
+  rotateBtn.addEventListener('click', async () => {
+    const ok = await confirmDanger(
+      t('Rotate secret?'),
+      t('This invalidates the current secret immediately. Deploy the new secret to your verifier first if you want zero downtime.'));
+    if (!ok) return;
+    const r = await api(`/api/admin/webhooks/${ep.id}/rotate-secret`, { method: 'POST' });
+    if (r.ok && r.body?.secret) {
+      await openSecretReveal({ secret: r.body.secret, title: t('New webhook secret') });
+      reload();
+    } else {
+      toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+    }
+  });
+  const toggleBtn = h('button', { class: 'btn small', type: 'button' },
+    ep.active ? t('Disable') : t('Enable'));
+  toggleBtn.addEventListener('click', async () => {
+    const r = await api(`/api/admin/webhooks/${ep.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ active: !ep.active }),
+    });
+    if (r.status === 204) {
+      toastOk(ep.active ? t('Endpoint disabled.') : t('Endpoint enabled.'));
+      reload();
+    } else {
+      toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+    }
+  });
+  const deleteBtn = iconBtn('trash', t('Delete endpoint'), async () => {
+    const ok = await confirmDanger(
+      t('Delete endpoint?'),
+      t('This stops all future deliveries to this URL. Past deliveries are removed too. Cannot be undone.'));
+    if (!ok) return;
+    const r = await api(`/api/admin/webhooks/${ep.id}`, { method: 'DELETE' });
+    if (r.status === 204) {
+      toastOk(t('Endpoint deleted.'));
+      reload();
+    } else {
+      toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+    }
+  }, { danger: true });
+
+  return h('div', { class: 'card' },
+    h('div', { class: 'row', style: 'align-items:center; justify-content:space-between; gap:.5rem; flex-wrap:wrap' },
+      h('div', {},
+        h('h2', { style: 'margin:0' }, ep.name || t('(unnamed endpoint)'))),
+      h('div', { class: 'row', style: 'gap:.4rem; flex-wrap:wrap' },
+        statusBadge, editBtn, deleteBtn),
+    ),
+    h('p', { class: 'muted', style: 'margin:.5rem 0; font-family:monospace; word-break:break-all' }, ep.url),
+    kindChips.length
+      ? h('div', { class: 'row', style: 'gap:.3rem; flex-wrap:wrap; margin:.5rem 0' }, ...kindChips)
+      : h('p', { class: 'muted', style: 'font-size:.85rem' }, t('(no events subscribed)')),
+    h('p', { class: 'muted', style: 'font-size:.8rem; margin:.5rem 0' },
+      t('Secret hint: '),
+      h('span', { style: 'font-family:monospace' }, (ep.secret_hint || '') + '…'),
+      ' · ',
+      t('Created {{date}}', { date: ep.created_at })),
+    h('div', { class: 'row', style: 'gap:.4rem; flex-wrap:wrap; margin-top:.75rem' },
+      testBtn, rotateBtn, toggleBtn),
+  );
+}
+
+// openWebhookForm is the shared modal used for both create and edit.
+// Returns truthy on save, null on cancel.
+async function openWebhookForm({ kinds, existing }) {
+  const isEdit = !!existing;
+  return modal(isEdit ? t('Edit webhook') : t('Add webhook'), ({ body, close }) => {
+    const nameInput = h('input', { type: 'text', value: existing?.name || '',
+      placeholder: t('e.g. prod-slack') });
+    const urlInput = h('input', { type: 'url', required: true,
+      value: existing?.url || '', placeholder: 'https://example.com/webhook' });
+
+    const subscribed = new Set(existing?.event_kinds || []);
+    const checks = kinds.map((k) => {
+      const cb = h('input', { type: 'checkbox', value: k, checked: subscribed.has(k) });
+      return h('label', {
+        class: 'row',
+        style: 'gap:.5rem; align-items:center; padding:.25rem 0; cursor:pointer',
+      }, cb, h('code', { style: 'font-size:.85rem' }, k));
+    });
+
+    const err = h('p', { class: 'err', style: 'display:none' });
+    const form = h('form', {},
+      h('label', { class: 'field' }, h('span', {}, t('Name')), nameInput),
+      h('label', { class: 'field' }, h('span', {}, t('Endpoint URL')), urlInput),
+      h('p', { class: 'muted', style: 'font-size:.8rem; margin:.25rem 0 .5rem' },
+        t('Must be https. Localhost is allowed for development.')),
+      h('div', { class: 'field' },
+        h('span', {}, t('Subscribed events')),
+        h('div', {}, ...checks)),
+      err,
+      h('div', { class: 'row end', style: 'gap:.5rem; margin-top:1rem' },
+        h('button', { class: 'btn', type: 'button',
+          on: { click: () => close(null) } }, t('Cancel')),
+        h('button', { class: 'btn primary', type: 'submit' },
+          isEdit ? t('Save') : t('Create')),
+      ));
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const eventKinds = checks
+        .map((label) => label.querySelector('input'))
+        .filter((cb) => cb.checked)
+        .map((cb) => cb.value);
+      if (eventKinds.length === 0) {
+        err.style.display = ''; err.textContent = t('Select at least one event kind.');
+        return;
+      }
+      err.style.display = 'none';
+      if (isEdit) {
+        const patch = {
+          name: nameInput.value,
+          url: urlInput.value,
+          event_kinds: eventKinds,
+        };
+        const r = await api(`/api/admin/webhooks/${existing.id}`, {
+          method: 'PATCH',
+          body: JSON.stringify(patch),
+        });
+        if (r.status === 204) {
+          toastOk(t('Webhook updated.'));
+          close(true);
+        } else {
+          err.style.display = ''; err.textContent = r.body?.error || t('error {{status}}', { status: r.status });
+        }
+      } else {
+        const r = await api('/api/admin/webhooks', {
+          method: 'POST',
+          body: JSON.stringify({
+            name: nameInput.value,
+            url: urlInput.value,
+            event_kinds: eventKinds,
+          }),
+        });
+        if (r.status === 201 && r.body?.secret) {
+          // Successfully created — reveal the secret, then signal
+          // success to the caller so it reloads the list.
+          close(true);
+          await openSecretReveal({ secret: r.body.secret, title: t('Webhook created') });
+        } else {
+          err.style.display = ''; err.textContent = r.body?.error || t('error {{status}}', { status: r.status });
+        }
+      }
+    });
+    body.append(form);
+    setTimeout(() => urlInput.focus(), 20);
+  });
+}
+
+// openSecretReveal shows the secret exactly once with a copy button
+// and a hard "this is the only time" warning. Used after create AND
+// after rotate.
+async function openSecretReveal({ secret, title }) {
+  return modal(title, ({ body, close }) => {
+    const copyBtn = h('button', { class: 'btn', type: 'button' }, icon(ICONS.copy), t('Copy'));
+    copyBtn.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(secret);
+        toastOk(t('Secret copied'));
+      } catch {
+        toastErr(t('Copy failed'));
+      }
+    });
+    body.append(
+      h('p', { style: 'color:var(--accent); font-weight:600' },
+        t('This is the only time the secret will be shown. Store it somewhere safe.')),
+      h('pre', {
+        style: 'background:var(--surface-2); padding:.75rem; border-radius:8px; ' +
+               'font-size:.85rem; word-break:break-all; white-space:pre-wrap; user-select:all',
+      }, secret),
+      h('p', { class: 'muted', style: 'font-size:.8rem' },
+        t('Configure your verifier with this value. Compute HMAC-SHA256 over the raw request body and compare to the X-Zv-Signature header (after stripping the "sha256=" prefix).')),
+      h('div', { class: 'row end', style: 'gap:.5rem; margin-top:1rem' },
+        copyBtn,
+        h('button', { class: 'btn primary', type: 'button',
+          on: { click: () => close(true) } }, t('I\'ve saved it')),
+      ),
+    );
+  });
+}
+
+// confirmDanger is a small destructive-action confirmation modal.
+// Returns true if the user clicked the danger button.
+async function confirmDanger(title, message) {
+  return modal(title, ({ body, close }) => {
+    body.append(
+      h('p', { style: 'margin-bottom:1rem' }, message),
+      h('div', { class: 'row end', style: 'gap:.5rem' },
+        h('button', { class: 'btn', type: 'button',
+          on: { click: () => close(false) } }, t('Cancel')),
+        h('button', { class: 'btn danger', type: 'button',
+          on: { click: () => close(true) } }, t('Confirm')),
+      ));
+  });
+}
+
 async function viewSettings(view) {
   const me = state.me || {};
 

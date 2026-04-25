@@ -355,6 +355,17 @@ func New(cfg Config) http.Handler {
 		// org data, served as a downloadable file.
 		r.Get("/me/export", adminH.ExportMyData)
 
+		// Outbound webhooks: per-org subscription CRUD. Org-scoped
+		// (handlers reject admins without an org). The kinds catalog
+		// is read-only for clients to drive their UI.
+		r.Get("/webhooks", adminH.ListWebhooks)
+		r.Post("/webhooks", adminH.CreateWebhook)
+		r.Patch("/webhooks/{endpointID}", adminH.UpdateWebhook)
+		r.Delete("/webhooks/{endpointID}", adminH.DeleteWebhook)
+		r.Post("/webhooks/{endpointID}/rotate-secret", adminH.RotateWebhookSecret)
+		r.Post("/webhooks/{endpointID}/test", adminH.SendTestWebhook)
+		r.Get("/webhook-event-kinds", adminH.ListWebhookEventKinds)
+
 		// Global admin only.
 		r.Group(func(r chi.Router) {
 			r.Use(auth.RequireRole(auth.RoleAdmin))

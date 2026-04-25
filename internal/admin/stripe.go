@@ -13,6 +13,7 @@ import (
 
 	"git.sr.ht/~klahr/zv/internal/httpx"
 	"git.sr.ht/~klahr/zv/internal/logx"
+	"git.sr.ht/~klahr/zv/internal/webhooks"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/stripe/stripe-go/v82"
@@ -251,6 +252,18 @@ func (h *Handlers) handleCheckoutCompleted(ctx context.Context, event stripe.Eve
 		return err
 	}
 	logx.Info("stripe.purchase.paid", "purchase_id", purchaseID, "assignment_id", assID)
+	// Webhook out: customer-side billing/PO systems that want their
+	// own copy of the paid event. Most won't subscribe (they
+	// reconcile via Stripe directly) but ship for completeness.
+	webhooks.TryPublish(ctx, h.DB, orgID, webhooks.EventPurchasePaid, map[string]any{
+		"purchase_id":     purchaseID,
+		"assignment_id":   assID,
+		"adventure_slug":  advSlug,
+		"max_teams":       maxTeams,
+		"amount_cents":    sess.AmountTotal,
+		"currency":        string(sess.Currency),
+		"stripe_session":  sess.ID,
+	})
 	return nil
 }
 
@@ -323,14 +336,42 @@ func (h *Handlers) handleChargeRefunded(ctx context.Context, event stripe.Event)
 	if err := decodeEvent(event, &charge); err != nil {
 		return fmt.Errorf("decode charge: %w", err)
 	}
-	res, err := h.DB.ExecContext(ctx, `
-		UPDATE purchases SET state = 'refunded' WHERE stripe_charge_id = $1 AND state = 'paid'
+	// Capture the affected rows' org + purchase ids in the same
+	// statement that flips the state — a separate SELECT after the
+	// UPDATE could race with a parallel deletion.
+	rows, err := h.DB.QueryContext(ctx, `
+		UPDATE purchases SET state = 'refunded'
+		 WHERE stripe_charge_id = $1 AND state = 'paid'
+		 RETURNING id, org_id
 	`, charge.ID)
 	if err != nil {
 		return err
 	}
-	if n, _ := res.RowsAffected(); n > 0 {
-		logx.Info("stripe.purchase.refunded", "charge_id", charge.ID, "rows", n)
+	type refundedRow struct {
+		purchaseID int64
+		orgID      int64
+	}
+	var refunded []refundedRow
+	for rows.Next() {
+		var rr refundedRow
+		if err := rows.Scan(&rr.purchaseID, &rr.orgID); err != nil {
+			rows.Close()
+			return err
+		}
+		refunded = append(refunded, rr)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if len(refunded) > 0 {
+		logx.Info("stripe.purchase.refunded", "charge_id", charge.ID, "rows", len(refunded))
+	}
+	for _, rr := range refunded {
+		webhooks.TryPublish(ctx, h.DB, rr.orgID, webhooks.EventPurchaseRefunded, map[string]any{
+			"purchase_id":      rr.purchaseID,
+			"stripe_charge_id": charge.ID,
+		})
 	}
 	return nil
 }

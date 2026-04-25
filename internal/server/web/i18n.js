@@ -941,6 +941,57 @@
       'Go!': 'Kör igång!',
       "We're live!": 'Nu kör vi!',
       'Teams are on the move': 'Lagen är igång',
+      // ---- webhooks ----
+      'Webhooks': 'Webhooks',
+      'Add endpoint': 'Lägg till slutpunkt',
+      'Add webhook': 'Lägg till webhook',
+      'Edit webhook': 'Redigera webhook',
+      'Endpoint URL': 'URL för slutpunkt',
+      'Subscribed events': 'Prenumererade händelser',
+      'Send test': 'Skicka test',
+      'Send test event': 'Skicka testhändelse',
+      'Rotate secret': 'Rotera nyckel',
+      'Rotate secret?': 'Rotera nyckel?',
+      'Disable': 'Inaktivera',
+      'Enable': 'Aktivera',
+      'Disabled': 'Inaktiverad',
+      'Delete endpoint': 'Ta bort slutpunkt',
+      'Delete endpoint?': 'Ta bort slutpunkten?',
+      'Endpoint deleted.': 'Slutpunkten borttagen.',
+      'Endpoint disabled.': 'Slutpunkten inaktiverad.',
+      'Endpoint enabled.': 'Slutpunkten aktiverad.',
+      'Webhook created': 'Webhook skapad',
+      'Webhook updated.': 'Webhook uppdaterad.',
+      'New webhook secret': 'Ny webhook-nyckel',
+      'Secret copied': 'Nyckel kopierad',
+      'Copy failed': 'Kopiering misslyckades',
+      "I've saved it": 'Jag har sparat den',
+      'Secret hint: ': 'Nyckelledtråd: ',
+      'Created {{date}}': 'Skapad {{date}}',
+      'Test queued. Watch your endpoint logs (delivery within ~5s).':
+          'Test köat. Bevaka loggarna på din slutpunkt (levereras inom ~5 s).',
+      'Re-enable the endpoint first.': 'Aktivera slutpunkten först.',
+      'Select at least one event kind.': 'Välj minst en händelsetyp.',
+      'Could not load webhooks ({{status}}).': 'Kunde inte ladda webhooks ({{status}}).',
+      'No webhook endpoints yet. Add one to receive lifecycle events on a URL you control.':
+          'Inga webhook-slutpunkter än. Lägg till en för att ta emot livscykelhändelser på en URL du kontrollerar.',
+      'Outbound HTTP callbacks for run / team / purchase lifecycle. Each delivery is signed with HMAC-SHA256; verify the X-Zv-Signature header against your endpoint\'s secret.':
+          'Utgående HTTP-anrop för omgångar, lag och köphändelser. Varje leverans signeras med HMAC-SHA256; verifiera X-Zv-Signature mot slutpunktens nyckel.',
+      'Must be https. Localhost is allowed for development.':
+          'Måste vara https. Localhost tillåts vid utveckling.',
+      'Mint a new secret. The old one stops working immediately.':
+          'Skapa en ny nyckel. Den gamla slutar fungera direkt.',
+      'This invalidates the current secret immediately. Deploy the new secret to your verifier first if you want zero downtime.':
+          'Detta gör nuvarande nyckel ogiltig direkt. Distribuera den nya nyckeln till din verifierare först om du vill undvika avbrott.',
+      'This is the only time the secret will be shown. Store it somewhere safe.':
+          'Detta är enda gången nyckeln visas. Förvara den säkert.',
+      'This stops all future deliveries to this URL. Past deliveries are removed too. Cannot be undone.':
+          'Detta stoppar alla framtida leveranser till denna URL. Tidigare leveranser tas också bort. Går inte att ångra.',
+      'Configure your verifier with this value. Compute HMAC-SHA256 over the raw request body and compare to the X-Zv-Signature header (after stripping the "sha256=" prefix).':
+          'Konfigurera din verifierare med detta värde. Beräkna HMAC-SHA256 över rå begärankropp och jämför med X-Zv-Signature-huvudet (efter att "sha256="-prefixet tagits bort).',
+      '(no events subscribed)': '(inga händelser prenumereras)',
+      '(unnamed endpoint)': '(slutpunkt utan namn)',
+      'e.g. prod-slack': 't.ex. prod-slack',
     },
   };
 
