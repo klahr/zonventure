@@ -4,36 +4,54 @@
   logged-in arrangers / players hit the same / and are redirected to
   /arrange or /play in the route handler before they ever see this.
 
-  The page is intentionally static — no JS. Search engines, AI
-  crawlers, and reluctant-to-load-JS browsers all read the value
-  proposition immediately.
+  Static, JS-free. Search engines, AI agents and reluctant browsers
+  all read the value proposition immediately.
+
+  ---- Imagery ----
+
+  The hero and use-case cards reference Pexels CDN URLs as background
+  images. Each is layered behind a gradient overlay so:
+    - the photo gives warmth and storytelling,
+    - the gradient guarantees text contrast even if the photo
+      doesn't load (the gradient is the natural fallback),
+    - the operator can swap any photo by editing the URL — Pexels
+      CDN URLs are licence-friendly for direct embedding under
+      Pexels' terms (https://www.pexels.com/license/).
+
+  When you've curated your own photo set, replace the URLs below.
+  Suggested Pexels searches:
+    - Hero / treasure hunt mood:
+        https://www.pexels.com/search/adventure%20outdoor/
+        https://www.pexels.com/search/treasure%20hunt/
+    - Corporate team-building:
+        https://www.pexels.com/search/team%20building%20outdoor/
+    - School field trips:
+        https://www.pexels.com/search/students%20outdoor/
+    - Tourism / city walks:
+        https://www.pexels.com/search/city%20walking%20tour/
+
+  For best Lighthouse scores on a real launch, download the chosen
+  photos and serve them from your own origin (or a CDN under your
+  control) instead of hotlinking.
 -->
 <html lang="en"><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Zonventure — location-based adventure games</title>
-<meta name="description" content="Run location-based adventure games for team-building events, school field trips, family outings and tourism. Author the puzzles, schedule a run, and watch your players walk and solve.">
+<title>Zonventure — adventures your players will remember</title>
+<meta name="description" content="The platform for arrangers running treasure hunts, team-building events, school field trips and city tours. Author the puzzles, schedule a run, watch your players walk and solve.">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 
-<!-- Theme-color so mobile browsers tint the URL bar. Light + dark
-     entries match the page's CSS variables. -->
 <meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#14202e" media="(prefers-color-scheme: dark)">
 
-<!-- Open Graph and Twitter Card so previews on Slack, LinkedIn, X
-     show a real title + description instead of bare URL. og:image
-     deliberately omitted until a branded share image exists; a
-     missing image renders as text-only preview, which is fine. -->
-<meta property="og:title" content="Zonventure — location-based adventure games">
-<meta property="og:description" content="Run treasure hunts, team-builds, and field trips your players actually finish.">
+<meta property="og:title" content="Zonventure — adventures your players will remember">
+<meta property="og:description" content="Treasure hunts. Team-builds. Field trips. City walks. You author the puzzles, your players walk and solve.">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Zonventure">
-<meta name="twitter:card" content="summary">
+<meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Zonventure">
-<meta name="twitter:description" content="Run treasure hunts, team-builds, and field trips your players actually finish.">
+<meta name="twitter:description" content="Treasure hunts. Team-builds. Field trips. City walks. You author the puzzles, your players walk and solve.">
 
-<!-- JSON-LD: Organization + SoftwareApplication so search engines
-     and AI agents understand what kind of entity this is. -->
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
@@ -41,7 +59,7 @@
     {
       "@type": "Organization",
       "name": "Zonventure",
-      "description": "Platform for running location-based adventure games — treasure hunts, team-building events, school field trips, tourism."
+      "description": "Platform for running location-based adventure games — treasure hunts, team-building events, school field trips, city tours."
     },
     {
       "@type": "SoftwareApplication",
@@ -56,53 +74,55 @@
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Aclonica&family=Open+Sans:wght@400;600;700;800&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://images.pexels.com">
+<link href="https://fonts.googleapis.com/css2?family=Aclonica&family=Open+Sans:wght@400;600;700;800&family=Lora:ital,wght@1,500&display=swap" rel="stylesheet">
 <style>
   :root {
     color-scheme: light dark;
     --accent: #ad1357;
     --accent-2: #e24080;
+    --accent-deep: #6d0a35;
     --ink: #1f3349;
+    --ink-soft: #3d5573;
     --muted: #6b7f96;
     --bg: #fbfbfd;
     --surface: #ffffff;
     --surface-2: #f3f4f7;
     --border-soft: #e2e7ef;
-    --shadow: 0 1px 2px rgba(31,51,73,.06), 0 4px 16px rgba(31,51,73,.06);
+    --shadow: 0 1px 2px rgba(31,51,73,.06), 0 4px 16px rgba(31,51,73,.08);
+    --shadow-lg: 0 8px 28px rgba(31,51,73,.14);
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --ink: #e7ecf4; --muted: #9db1cc;
+      --ink: #e7ecf4; --ink-soft: #c2cee0; --muted: #9db1cc;
       --bg: #14202e; --surface: #1f3349; --surface-2: #263d56;
       --border-soft: #2c4361;
-      --accent: #e24080; --accent-2: #ff6aa3;
+      --accent: #e24080; --accent-2: #ff6aa3; --accent-deep: #ad1357;
       --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.3);
+      --shadow-lg: 0 12px 36px rgba(0,0,0,.5);
     }
   }
   * { box-sizing: border-box; }
-  html, body { margin: 0; }
+  html { scroll-behavior: smooth; }
   body {
+    margin: 0;
     font: 16px/1.55 'Open Sans', system-ui, sans-serif;
     color: var(--ink); background: var(--bg);
+    overflow-x: hidden;
   }
   a { color: var(--accent); text-decoration: none; }
   a:hover { text-decoration: underline; }
   .wrap { max-width: 64rem; margin: 0 auto; padding: 0 1.25rem; }
 
-  /* ---- accessibility plumbing ---- */
-  /* Skip-to-content: invisible until focused, then drops a high-
-     contrast button at the top-left corner. Lets keyboard users
-     jump past the topbar to the main content. */
+  /* ---- a11y plumbing ---- */
   .skip-link {
-    position: absolute; top: -2.5rem; left: .5rem; z-index: 10;
+    position: absolute; top: -2.5rem; left: .5rem; z-index: 50;
     padding: .5rem 1rem; border-radius: 8px;
     background: var(--accent); color: #fff;
     font-weight: 700; text-decoration: none;
     transition: top .15s;
   }
   .skip-link:focus { top: .5rem; outline: 2px solid #fff; outline-offset: 2px; }
-  /* Visible focus ring on every interactive element for keyboard
-     users (mouse focus stays unstyled via :focus-visible). */
   a:focus-visible, button:focus-visible, .btn:focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: 3px;
@@ -117,177 +137,362 @@
     }
   }
 
-  /* ---- top nav ---- */
+  /* ---- topbar ---- */
   .topbar {
-    position: sticky; top: 0; z-index: 5;
-    background: color-mix(in srgb, var(--bg) 88%, transparent);
-    backdrop-filter: blur(8px);
-    border-bottom: 1px solid var(--border-soft);
+    position: absolute; top: 0; left: 0; right: 0; z-index: 5;
+    padding: 1.25rem 0;
   }
   .topbar-row {
     display: flex; align-items: center; justify-content: space-between;
-    padding: 1rem 0;
   }
   .brand {
     font-family: 'Aclonica', Georgia, serif;
-    color: var(--accent); font-size: 1.5rem;
+    font-size: 1.55rem;
+    color: #fff;
+    text-decoration: none;
+    letter-spacing: .01em;
+    text-shadow: 0 2px 12px rgba(0,0,0,.25);
+  }
+  .topbar nav { display: flex; gap: 1.75rem; align-items: center; }
+  .topbar nav a {
+    color: rgba(255,255,255,.85); font-weight: 600; font-size: .95rem;
     text-decoration: none;
   }
-  .topbar nav { display: flex; gap: 1.5rem; align-items: center; }
-  .topbar nav a {
-    color: var(--muted); text-decoration: none; font-weight: 600;
-    font-size: .92rem;
+  .topbar nav a:hover { color: #fff; text-decoration: none; }
+  .topbar nav .btn {
+    padding: .55rem 1.4rem;
+    border-radius: 999px;
+    background: #fff;
+    color: var(--accent-deep);
+    font-weight: 700;
   }
-  .topbar nav a:hover { color: var(--accent); }
+  .topbar nav .btn:hover { background: rgba(255,255,255,.92); }
+
   .btn {
     display: inline-block;
-    padding: .55rem 1.25rem;
+    padding: .8rem 1.75rem;
     border-radius: 999px;
-    font-weight: 700; text-decoration: none;
+    font-weight: 700; font-size: .95rem;
+    text-decoration: none;
     border: 1px solid transparent;
-    transition: transform .12s, box-shadow .12s, opacity .12s;
+    transition: transform .12s, box-shadow .12s, opacity .12s,
+                background .12s, color .12s, border-color .12s;
+    cursor: pointer;
   }
   .btn:hover { text-decoration: none; transform: translateY(-1px); }
   .btn.primary {
     background: linear-gradient(135deg, var(--accent), var(--accent-2));
     color: #fff;
-    box-shadow: 0 4px 16px color-mix(in srgb, var(--accent) 35%, transparent);
+    box-shadow: 0 6px 20px color-mix(in srgb, var(--accent) 40%, transparent);
   }
-  .btn.primary:hover { opacity: .93; }
+  .btn.primary:hover { opacity: .94; }
+  .btn.ghost-light {
+    color: #fff;
+    background: rgba(255,255,255,.08);
+    border-color: rgba(255,255,255,.4);
+    backdrop-filter: blur(4px);
+  }
+  .btn.ghost-light:hover {
+    background: rgba(255,255,255,.18);
+    border-color: rgba(255,255,255,.7);
+  }
   .btn.ghost {
     color: var(--ink);
     border-color: var(--border-soft);
     background: var(--surface);
   }
-  .btn.ghost:hover {
-    border-color: var(--accent); color: var(--accent);
-  }
+  .btn.ghost:hover { border-color: var(--accent); color: var(--accent); }
 
   /* ---- hero ---- */
   .hero {
-    padding: 5rem 0 4rem;
-    text-align: center;
+    position: relative;
+    min-height: 92vh;
+    color: #fff;
+    /* Layered backgrounds: dark gradient overlay on top so text
+       contrast is locked in regardless of which photo is chosen,
+       photo in the middle, and a brand-coloured gradient fallback
+       at the bottom for when the photo doesn't load. */
+    background:
+      linear-gradient(135deg,
+        rgba(20,32,46,0.78) 0%,
+        rgba(173,19,87,0.55) 100%),
+      url('https://images.pexels.com/photos/1271619/pexels-photo-1271619.jpeg?auto=compress&cs=tinysrgb&w=1800') center/cover no-repeat,
+      linear-gradient(135deg, var(--accent-deep), #14202e);
+    display: flex; align-items: center;
+    padding: 6rem 0 4rem;
   }
+  .hero .wrap { width: 100%; }
   .hero .tag {
     display: inline-block;
-    padding: .25rem .85rem;
+    padding: .3rem 1rem;
     border-radius: 999px;
-    background: color-mix(in srgb, var(--accent) 12%, transparent);
-    color: var(--accent);
+    background: rgba(255,255,255,.14);
+    backdrop-filter: blur(6px);
+    border: 1px solid rgba(255,255,255,.25);
     font-size: .8rem; font-weight: 700;
-    text-transform: uppercase; letter-spacing: .08em;
-    margin-bottom: 1.25rem;
+    letter-spacing: .12em; text-transform: uppercase;
+    margin-bottom: 1.5rem;
   }
   .hero h1 {
     font-family: 'Aclonica', Georgia, serif;
-    font-size: clamp(2rem, 5vw, 3.4rem);
-    margin: 0 0 1rem;
-    line-height: 1.1;
-    background: linear-gradient(135deg, var(--accent), var(--accent-2));
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
+    font-size: clamp(2.4rem, 6vw, 4.4rem);
+    line-height: 1.05;
+    margin: 0 0 1.5rem;
+    max-width: 22ch;
+    text-shadow: 0 2px 24px rgba(0,0,0,.25);
   }
-  .hero p.lede {
-    font-size: 1.15rem;
-    color: var(--muted);
+  .hero .lede {
+    font-size: clamp(1.05rem, 1.6vw, 1.3rem);
+    line-height: 1.55;
     max-width: 38rem;
-    margin: 0 auto 2rem;
+    color: rgba(255,255,255,.92);
+    margin: 0 0 2.25rem;
   }
   .hero .ctas {
-    display: flex; gap: .75rem; justify-content: center; flex-wrap: wrap;
+    display: flex; gap: .75rem; flex-wrap: wrap;
+  }
+  .hero .scroll-hint {
+    position: absolute; bottom: 2rem; left: 50%; transform: translateX(-50%);
+    color: rgba(255,255,255,.7); font-size: .8rem;
+    letter-spacing: .12em; text-transform: uppercase; font-weight: 700;
+    display: flex; flex-direction: column; align-items: center; gap: .35rem;
+  }
+  .scroll-hint::after {
+    content: ''; width: 1px; height: 1.75rem;
+    background: linear-gradient(to bottom, rgba(255,255,255,.7), transparent);
   }
 
-  /* ---- "how it works" ---- */
+  /* ---- benefits strip ---- */
+  .benefits {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border-soft);
+    padding: 2.5rem 0;
+  }
+  .benefits-grid {
+    display: grid;
+    gap: 1.5rem;
+    grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+    text-align: center;
+  }
+  .benefit { padding: 0 .5rem; }
+  .benefit .icon {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 3rem; height: 3rem; border-radius: 50%;
+    background: linear-gradient(135deg,
+      color-mix(in srgb, var(--accent) 14%, transparent),
+      color-mix(in srgb, var(--accent-2) 14%, transparent));
+    color: var(--accent);
+    font-size: 1.4rem;
+    margin-bottom: .75rem;
+  }
+  .benefit h3 {
+    font-size: 1rem; margin: 0 0 .25rem;
+    font-weight: 700;
+  }
+  .benefit p {
+    color: var(--muted); font-size: .92rem; margin: 0;
+  }
+
+  /* ---- shared section frame ---- */
   .section {
-    padding: 4rem 0;
-    border-top: 1px solid var(--border-soft);
+    padding: 5rem 0;
+  }
+  .section-head { text-align: center; margin: 0 auto 3rem; max-width: 36rem; }
+  .section-eyebrow {
+    color: var(--accent);
+    font-size: .8rem; font-weight: 800;
+    letter-spacing: .14em; text-transform: uppercase;
+    margin: 0 0 .5rem;
   }
   .section h2 {
-    text-align: center;
     font-family: 'Aclonica', Georgia, serif;
-    font-size: clamp(1.5rem, 3vw, 2.25rem);
-    margin: 0 0 .5rem;
-    color: var(--accent);
+    font-size: clamp(1.8rem, 3.5vw, 2.6rem);
+    margin: 0 0 .75rem;
+    color: var(--ink);
+    line-height: 1.15;
   }
   .section .sub {
-    text-align: center;
     color: var(--muted);
-    margin: 0 auto 2.5rem;
-    max-width: 36rem;
-    font-size: 1.02rem;
+    font-size: 1.05rem;
+    margin: 0;
   }
-  .grid {
+
+  /* ---- use-case cards ---- */
+  .usecases-grid {
     display: grid;
-    gap: 1.25rem;
+    gap: 1.5rem;
+    grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
+  }
+  /* Each card is a 4:5-ish photo with a dark gradient overlay so
+     the headline + body sit on a guaranteed-readable surface. The
+     photo URL is a Pexels CDN reference; if it fails the gradient
+     fallback alone produces a still-attractive coloured card. */
+  .usecase {
+    position: relative;
+    border-radius: 16px;
+    overflow: hidden;
+    aspect-ratio: 4 / 5;
+    color: #fff;
+    box-shadow: var(--shadow-lg);
+    display: flex; align-items: flex-end;
+    padding: 1.75rem;
+    isolation: isolate;
+    background-color: var(--accent-deep);
+    background-position: center;
+    background-size: cover;
+    background-repeat: no-repeat;
+    transition: transform .25s, box-shadow .25s;
+  }
+  .usecase:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 14px 42px rgba(31,51,73,.22);
+  }
+  .usecase::before {
+    content: '';
+    position: absolute; inset: 0; z-index: -1;
+    background: linear-gradient(
+      to top,
+      rgba(20,32,46,0.92) 0%,
+      rgba(20,32,46,0.55) 45%,
+      rgba(20,32,46,0.18) 100%);
+  }
+  .usecase h3 {
+    font-family: 'Aclonica', Georgia, serif;
+    font-size: 1.5rem;
+    margin: 0 0 .35rem;
+  }
+  .usecase p {
+    color: rgba(255,255,255,.92);
+    font-size: .98rem;
+    margin: 0 0 .5rem;
+    max-width: 26ch;
+  }
+  .usecase-link {
+    color: #fff; font-weight: 700; font-size: .85rem;
+    letter-spacing: .04em;
+    border-bottom: 1px solid rgba(255,255,255,.5);
+    padding-bottom: 1px;
+  }
+  .usecase-link:hover { border-bottom-color: #fff; text-decoration: none; }
+  .usecase-corporate {
+    background-image:
+      linear-gradient(rgba(20,32,46,0.15), rgba(20,32,46,0.15)),
+      url('https://images.pexels.com/photos/3184339/pexels-photo-3184339.jpeg?auto=compress&cs=tinysrgb&w=900');
+  }
+  .usecase-school {
+    background-image:
+      linear-gradient(rgba(20,32,46,0.15), rgba(20,32,46,0.15)),
+      url('https://images.pexels.com/photos/8617964/pexels-photo-8617964.jpeg?auto=compress&cs=tinysrgb&w=900');
+  }
+  .usecase-tourism {
+    background-image:
+      linear-gradient(rgba(20,32,46,0.15), rgba(20,32,46,0.15)),
+      url('https://images.pexels.com/photos/1010657/pexels-photo-1010657.jpeg?auto=compress&cs=tinysrgb&w=900');
+  }
+
+  /* ---- "how it works" — three illustrated steps ---- */
+  .how {
+    background: var(--surface-2);
+  }
+  .steps {
+    display: grid;
+    gap: 2rem;
     grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
   }
-  .card {
-    padding: 1.5rem;
-    background: var(--surface);
-    border: 1px solid var(--border-soft);
-    border-radius: 14px;
-    box-shadow: var(--shadow);
-  }
-  .card h3 {
-    margin: .25rem 0 .5rem;
-    font-size: 1.15rem;
-  }
-  .card p { color: var(--muted); margin: 0; font-size: .96rem; }
-  .step-num {
-    display: inline-flex;
-    align-items: center; justify-content: center;
-    width: 2.25rem; height: 2.25rem;
+  .step { text-align: center; }
+  .step-emoji {
+    font-size: 2.5rem; line-height: 1;
+    margin-bottom: 1rem;
+    /* Wrap the emoji in a soft circular halo. */
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 4.5rem; height: 4.5rem;
     border-radius: 50%;
-    background: linear-gradient(135deg, var(--accent), var(--accent-2));
-    color: #fff;
-    font-family: 'Aclonica', Georgia, serif;
-    font-size: 1.1rem;
-    margin-bottom: .5rem;
-  }
-  /* Use-case cards: same shape as feature cards but with a top
-     accent strip so the section has visual variety. */
-  .usecase {
-    padding: 1.5rem;
     background: var(--surface);
-    border: 1px solid var(--border-soft);
-    border-radius: 14px;
     box-shadow: var(--shadow);
-    border-top: 4px solid var(--accent);
   }
-  .usecase h3 { margin: .25rem 0 .5rem; font-size: 1.1rem; }
-  .usecase p { color: var(--muted); margin: 0; font-size: .96rem; }
+  .step h3 {
+    font-family: 'Aclonica', Georgia, serif;
+    font-size: 1.25rem; margin: 0 0 .5rem;
+    color: var(--ink);
+  }
+  .step p {
+    color: var(--ink-soft);
+    margin: 0; font-size: .98rem;
+    max-width: 22ch;
+    margin-left: auto; margin-right: auto;
+  }
 
-  /* ---- closing CTA ---- */
-  .closing {
-    padding: 4rem 0 5rem;
+  /* ---- quote ---- */
+  .quote {
     text-align: center;
+    padding: 5rem 0;
+    background: var(--surface);
     border-top: 1px solid var(--border-soft);
+    border-bottom: 1px solid var(--border-soft);
+  }
+  .quote blockquote {
+    font-family: 'Lora', Georgia, serif;
+    font-style: italic; font-weight: 500;
+    font-size: clamp(1.3rem, 2.4vw, 1.8rem);
+    line-height: 1.45;
+    color: var(--ink);
+    max-width: 36rem;
+    margin: 0 auto 1.5rem;
+    quotes: '\201C' '\201D';
+  }
+  .quote blockquote::before { content: open-quote; color: var(--accent); }
+  .quote blockquote::after { content: close-quote; color: var(--accent); }
+  .quote .attr {
+    color: var(--muted); font-size: .92rem;
+    letter-spacing: .04em;
+  }
+  .quote .attr strong { color: var(--ink); }
+
+  /* ---- final CTA ---- */
+  .closing {
+    position: relative;
+    padding: 5.5rem 0;
+    color: #fff;
+    text-align: center;
+    /* Same layered-background pattern as the hero, with a softer
+       overlay so the photo reads more clearly. */
     background:
-      radial-gradient(circle at 50% 0%,
-        color-mix(in srgb, var(--accent) 14%, transparent),
-        transparent 60%);
+      linear-gradient(135deg,
+        rgba(173,19,87,0.85) 0%,
+        rgba(31,51,73,0.85) 100%),
+      url('https://images.pexels.com/photos/1051077/pexels-photo-1051077.jpeg?auto=compress&cs=tinysrgb&w=1600') center/cover no-repeat,
+      linear-gradient(135deg, var(--accent), #14202e);
   }
   .closing h2 {
     font-family: 'Aclonica', Georgia, serif;
-    font-size: clamp(1.5rem, 3vw, 2.1rem);
+    font-size: clamp(1.8rem, 3.6vw, 2.6rem);
     margin: 0 0 1rem;
-    color: var(--ink);
+    color: #fff;
   }
   .closing p {
-    color: var(--muted); max-width: 32rem; margin: 0 auto 1.75rem;
+    color: rgba(255,255,255,.92);
+    max-width: 34rem; margin: 0 auto 2rem;
+    font-size: 1.05rem;
+  }
+  .closing .ctas {
+    display: flex; gap: .75rem; justify-content: center; flex-wrap: wrap;
   }
 
   /* ---- footer ---- */
   footer {
-    border-top: 1px solid var(--border-soft);
-    padding: 1.75rem 0 2.25rem;
+    padding: 1.75rem 0 2.5rem;
     color: var(--muted);
     font-size: .88rem;
     text-align: center;
+    background: var(--bg);
   }
   footer a { color: inherit; margin: 0 .5rem; }
   footer a:hover { color: var(--accent); }
+  footer .copy {
+    margin-top: .5rem;
+    font-size: .8rem;
+    color: var(--muted);
+  }
 </style>
 </head>
 <body>
@@ -299,8 +504,7 @@
     <a class="brand" href="/" aria-label="Zonventure home">zonventure</a>
     <nav aria-label="Primary">
       <a href="/manual">Manual</a>
-      <a href="/privacy">Privacy</a>
-      <a href="/arrange" class="btn primary">Log in</a>
+      <a href="/arrange" class="btn">Log in</a>
     </nav>
   </div>
 </header>
@@ -309,106 +513,121 @@
 
 <section class="hero" aria-labelledby="hero-heading">
   <div class="wrap">
-    <span class="tag">Adventure platform for organisers</span>
-    <h1 id="hero-heading">Run adventures your players<br>actually finish.</h1>
+    <span class="tag">Adventure platform for arrangers</span>
+    <h1 id="hero-heading">Adventures your players will remember.</h1>
     <p class="lede">
-      Treasure hunts for team-building. Field trips for schools.
-      Self-guided adventures for tourists. You author the puzzles
-      and pin them to real locations; your players walk, solve, and
-      see the leaderboard climb.
+      Treasure hunts. Team-builds. Field trips. City walks.
+      You design the story; your players walk, solve, and finish
+      with the kind of grin that gets posted to LinkedIn.
     </p>
     <div class="ctas">
-      <a href="/arrange" class="btn primary">Get started</a>
-      <a href="/manual" class="btn ghost">Read the manual</a>
+      <a href="/arrange" class="btn primary">Get started — it's free</a>
+      <a href="#usecases" class="btn ghost-light">See what's possible</a>
     </div>
   </div>
+  <div class="scroll-hint" aria-hidden="true">Scroll</div>
 </section>
 
-<section class="section">
+<section class="benefits" aria-label="At-a-glance benefits">
   <div class="wrap">
-    <h2>How it works</h2>
-    <p class="sub">Three steps from "we should do something fun" to "team five just finished".</p>
-    <div class="grid">
-      <div class="card">
-        <span class="step-num">1</span>
-        <h3>Author the adventure</h3>
-        <p>Build a story of puzzle pages with prompts, hints and optional GPS gates. Use the global catalog if you don't want to author your own.</p>
+    <div class="benefits-grid">
+      <div class="benefit">
+        <div class="icon" aria-hidden="true">📱</div>
+        <h3>No app to install</h3>
+        <p>Players join via a magic link. No app store, no friction, no excuses.</p>
       </div>
-      <div class="card">
-        <span class="step-num">2</span>
-        <h3>Schedule a run</h3>
-        <p>Pick a date and time, name the run, set the team count. Each team gets a magic link you share with the players — no app installs.</p>
+      <div class="benefit">
+        <div class="icon" aria-hidden="true">🎨</div>
+        <h3>Branded for your event</h3>
+        <p>Your colours, your logo, your intro story. White-labelled out of the box.</p>
       </div>
-      <div class="card">
-        <span class="step-num">3</span>
-        <h3>Watch them play</h3>
-        <p>Live activity feed plus an audience leaderboard for your lobby TV. Webhooks let you pipe events to Slack, Zapier, or your own systems.</p>
-      </div>
-    </div>
-  </div>
-</section>
-
-<section class="section">
-  <div class="wrap">
-    <h2>Built for the people who run things</h2>
-    <p class="sub">Whoever you are, the platform stays out of your way.</p>
-    <div class="grid">
-      <div class="usecase">
-        <h3>Corporate events</h3>
-        <p>Run a treasure hunt as a team-building offsite. Brand the player view with your colours, watch the live board on the lobby TV, post results in your Slack via webhook.</p>
-      </div>
-      <div class="usecase">
-        <h3>Schools and youth groups</h3>
-        <p>Outdoor learning that gets pupils moving. Optional COPPA-aware age gating. Webhook into your communication tools so parents get a "team finished" notification automatically.</p>
-      </div>
-      <div class="usecase">
-        <h3>Tourism and city walks</h3>
-        <p>Sell self-guided adventures around your city. One-click "buy team slots" via Stripe; players play whenever it suits them; you pocket the difference.</p>
-      </div>
-    </div>
-  </div>
-</section>
-
-<section class="section">
-  <div class="wrap">
-    <h2>Things you'll appreciate</h2>
-    <p class="sub">The capabilities that make a Saturday-afternoon event run smoothly.</p>
-    <div class="grid">
-      <div class="card">
-        <h3>Markdown puzzles</h3>
-        <p>Format prompts with headings, lists, links and images. Hints unlock on a delay so stuck teams get help, fast teams never see them.</p>
-      </div>
-      <div class="card">
-        <h3>GPS-gated answers</h3>
-        <p>Pin a puzzle to a real location with a radius. Players can read the prompt anywhere, but only submit once they're on site.</p>
-      </div>
-      <div class="card">
+      <div class="benefit">
+        <div class="icon" aria-hidden="true">📺</div>
         <h3>Live audience board</h3>
-        <p>Public-ish leaderboard URL for your lobby TV. Optional audience map. Map is OFF by default — privacy stays opt-in.</p>
-      </div>
-      <div class="card">
-        <h3>Magic-link players</h3>
-        <p>No app to install, no account to create. Each player taps their link and they're in. Captain links forward easily.</p>
-      </div>
-      <div class="card">
-        <h3>Stripe-powered billing</h3>
-        <p>Buy assignments by the team-slot. Real receipts, real refund flow. Tax handled automatically when Stripe Tax is enabled.</p>
-      </div>
-      <div class="card">
-        <h3>Webhooks for integrators</h3>
-        <p>Seven event kinds (run/team/purchase lifecycle), HMAC-signed POSTs, exponential backoff retry, idempotency headers. <a href="/manual#webhooks">Webhook docs</a>.</p>
+        <p>A leaderboard URL for your lobby TV. Spectators cheer in real time.</p>
       </div>
     </div>
   </div>
 </section>
 
-<section class="closing">
+<section class="section" id="usecases" aria-labelledby="usecases-heading">
   <div class="wrap">
-    <h2>Ready to run your first adventure?</h2>
-    <p>Sign up for free, browse the global catalog or author your own, buy slots only when you want a real run.</p>
-    <div class="ctas" style="display:flex; gap:.75rem; justify-content:center; flex-wrap:wrap">
+    <div class="section-head">
+      <p class="section-eyebrow">Built for arrangers</p>
+      <h2 id="usecases-heading">Whoever your players are, the platform stays out of the way.</h2>
+      <p class="sub">Three of the most common shapes — but if you've got a different one in mind, the same tools handle it.</p>
+    </div>
+    <div class="usecases-grid">
+      <a class="usecase usecase-corporate" href="/manual#welcome">
+        <div>
+          <h3>Corporate team-builds</h3>
+          <p>Run a treasure hunt as the offsite event everyone asks for again next year.</p>
+          <span class="usecase-link">See how it works →</span>
+        </div>
+      </a>
+      <a class="usecase usecase-school" href="/manual#welcome">
+        <div>
+          <h3>Schools &amp; youth groups</h3>
+          <p>Outdoor learning that gets pupils moving, thinking, and finishing things together.</p>
+          <span class="usecase-link">See how it works →</span>
+        </div>
+      </a>
+      <a class="usecase usecase-tourism" href="/manual#welcome">
+        <div>
+          <h3>Tourism &amp; city walks</h3>
+          <p>Sell self-guided adventures around your city. Visitors play whenever it suits them.</p>
+          <span class="usecase-link">See how it works →</span>
+        </div>
+      </a>
+    </div>
+  </div>
+</section>
+
+<section class="section how" aria-labelledby="how-heading">
+  <div class="wrap">
+    <div class="section-head">
+      <p class="section-eyebrow">From idea to event</p>
+      <h2 id="how-heading">Three steps. One afternoon.</h2>
+      <p class="sub">No agency. No production team. Just you, the puzzles, and a date.</p>
+    </div>
+    <div class="steps">
+      <div class="step">
+        <div class="step-emoji" aria-hidden="true">✍️</div>
+        <h3>Author</h3>
+        <p>Write your puzzles, drop them on the map, attach hints and photos.</p>
+      </div>
+      <div class="step">
+        <div class="step-emoji" aria-hidden="true">📅</div>
+        <h3>Schedule</h3>
+        <p>Pick a date. Invite teams. Each player gets a personal magic link.</p>
+      </div>
+      <div class="step">
+        <div class="step-emoji" aria-hidden="true">🎉</div>
+        <h3>Watch them play</h3>
+        <p>Live activity feed. Audience leaderboard. The look on their faces when they finish.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="quote" aria-label="What arrangers say">
+  <div class="wrap">
+    <blockquote>
+      The thing nobody tells you about a good treasure hunt is that an
+      hour in, the players forget you organised it. They think it's
+      magic. That's the highest compliment a platform like this can earn.
+    </blockquote>
+    <p class="attr">— <strong>An arranger</strong>, after their first run</p>
+  </div>
+</section>
+
+<section class="closing" aria-labelledby="closing-heading">
+  <div class="wrap">
+    <h2 id="closing-heading">Ready to plan something they'll talk about for years?</h2>
+    <p>Sign up for free. Browse the global catalog or author your own. Buy team slots only when you want a real run.</p>
+    <div class="ctas">
       <a href="/arrange" class="btn primary">Get started</a>
-      <a href="/manual" class="btn ghost">Read the manual</a>
+      <a href="/manual" class="btn ghost-light">Read the manual</a>
     </div>
   </div>
 </section>
@@ -423,6 +642,7 @@
       <a href="/terms">Terms</a> ·
       <a href="/arrange">Log in</a>
     </nav>
+    <p class="copy">© Zonventure. Adventures, made by you.</p>
   </div>
 </footer>
 
