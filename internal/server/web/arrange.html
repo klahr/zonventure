@@ -474,17 +474,17 @@ textarea { min-height: 80px; resize: vertical; font-family: ui-monospace, monosp
 .chip button:hover { color: var(--danger); }
 /* Semantic chip variants: tinted background + border so a green
    "HTTP 200" or red "HTTP 404" reads at a glance instead of looking
-   neutral. The bare .ok / .err utility classes only set foreground
-   colour, which left status chips visually flat. */
+   neutral. Plain rgba (not color-mix) so older browsers — and any
+   embedding that strips modern CSS — still render the tint. */
 .chip.ok {
-  color: var(--success);
-  background: color-mix(in srgb, var(--success) 14%, var(--surface));
-  border-color: color-mix(in srgb, var(--success) 38%, transparent);
+  color: var(--success) !important;
+  background: rgba(66, 154, 63, 0.16) !important;
+  border-color: rgba(66, 154, 63, 0.45) !important;
 }
 .chip.err {
-  color: var(--danger);
-  background: color-mix(in srgb, var(--danger) 14%, var(--surface));
-  border-color: color-mix(in srgb, var(--danger) 38%, transparent);
+  color: var(--danger) !important;
+  background: rgba(255, 82, 82, 0.18) !important;
+  border-color: rgba(255, 82, 82, 0.5) !important;
 }
 
 .empty {
@@ -7572,15 +7572,23 @@ function renderDeliveryRow(d) {
   const statusChip = h('span',
     { class: 'chip ' + statusClass },
     statusLabel(d.status));
-  // HTTP status code chip: colour-codes 2xx green, 4xx warn, 5xx err,
-  // null muted. A failed delivery often shows non-200 here even if
-  // d.status is still 'pending' (a retry is queued).
-  const httpChip = (d.last_status != null)
-    ? h('span', {
-        class: 'chip ' + httpStatusClass(d.last_status),
-        style: 'font-family:monospace',
-      }, 'HTTP ' + d.last_status)
-    : null;
+  // Outcome chip:
+  //   - last_status set    → show "HTTP <code>", green for 2xx, red otherwise
+  //   - attempts > 0 only  → transport-level failure (DNS, connection
+  //                          refused, timeout) — no HTTP code came back.
+  //                          Show a red "No response" chip so the user
+  //                          isn't left wondering why a failing row
+  //                          looks identical to an un-attempted one.
+  //   - attempts == 0      → never attempted yet; render nothing.
+  let httpChip = null;
+  if (d.last_status != null) {
+    httpChip = h('span', {
+      class: 'chip ' + httpStatusClass(d.last_status),
+      style: 'font-family:monospace',
+    }, 'HTTP ' + d.last_status);
+  } else if (d.attempts > 0) {
+    httpChip = h('span', { class: 'chip err' }, t('No response'));
+  }
   const kindChip = h('span',
     { class: 'chip', style: 'font-family:monospace; font-size:.78rem' },
     d.event_kind);

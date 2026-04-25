@@ -1009,6 +1009,7 @@
       'Waiting': 'Väntar',
       'Delivered': 'Levererad',
       'Dead': 'Misslyckad',
+      'No response': 'Inget svar',
       'Refresh': 'Uppdatera',
       'Could not load deliveries ({{status}}).': 'Kunde inte ladda leveranser ({{status}}).',
       'No deliveries yet. Send a test from the Webhooks page to see one land here.':
