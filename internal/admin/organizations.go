@@ -500,7 +500,7 @@ type adminDTO struct {
 // ListAdmins returns every global admin. Admin-only.
 func (h *Handlers) ListAdmins(w http.ResponseWriter, r *http.Request) {
 	rows, err := h.DB.QueryContext(r.Context(), `
-		SELECT id, username FROM users WHERE role = 'admin' ORDER BY userLOWER(name)
+		SELECT id, username FROM users WHERE role = 'admin' ORDER BY LOWER(username)
 	`)
 	if err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "list failed")
@@ -605,7 +605,7 @@ func (h *Handlers) loadOrgMembers(ctx context.Context, o *organizationDTO) error
 	rows, err := h.DB.QueryContext(ctx, `
 		SELECT id, username, role FROM users
 		WHERE org_id = $1 AND role IN ('org_admin','org_member')
-		ORDER BY role, userLOWER(name)
+		ORDER BY role, LOWER(username)
 	`, o.ID)
 	if err != nil {
 		return err

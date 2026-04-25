@@ -1,5 +1,9 @@
-.PHONY: run seed test test-race vet build tidy clean \
+.PHONY: run seed test test-race vet build restart deploy tidy clean \
         up down logs psql seed-compose
+
+# Default target — `make` alone builds the production binary, ready
+# for a systemctl restart.
+.DEFAULT_GOAL := build
 
 BIN := zv-server
 
@@ -9,6 +13,11 @@ DSN      ?= postgres://zv:zv@127.0.0.1:5432/zv?sslmode=disable
 ADMIN    ?= admin:admin
 ARRANGER ?= boss:s3cret
 
+# Systemd unit name used by `make restart` / `make deploy`. Override
+# per-host if you've named yours differently:
+#   make deploy SERVICE=zonventure
+SERVICE  ?= zonventure-next
+
 # ---- Native (no Docker) targets ------------------------------------------------
 
 run:
@@ -17,8 +26,23 @@ run:
 seed:
 	go run ./cmd/server -dsn '$(DSN)' -seed-admin $(ADMIN) -seed-arranger $(ARRANGER) -seed-demo-adventure
 
+# Production-grade build flags:
+#   -trimpath           strip absolute paths from binary (reproducibility)
+#   -s -w               strip the symbol + DWARF tables (~30 % smaller)
+#   CGO_ENABLED=0       fully static — no glibc dependency at runtime
 build:
-	go build -o $(BIN) ./cmd/server
+	CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o $(BIN) ./cmd/server
+	@ls -lh $(BIN)
+
+# Restart the systemd unit. Separated from `build` so the restart only
+# fires when the build actually succeeded — `make deploy` chains them.
+restart:
+	sudo systemctl restart $(SERVICE)
+	sudo systemctl status $(SERVICE) --no-pager --lines=5
+
+# One-shot: rebuild + restart. The order matters; if build fails the
+# restart never runs and the old binary keeps serving.
+deploy: build restart
 
 test:
 	go test ./...
