@@ -410,6 +410,10 @@ func New(cfg Config) http.Handler {
 		r.Post("/webhooks/{endpointID}/rotate-secret", adminH.RotateWebhookSecret)
 		r.Post("/webhooks/{endpointID}/test", adminH.SendTestWebhook)
 		r.Get("/webhook-event-kinds", adminH.ListWebhookEventKinds)
+		// Delivery log: every attempt, statuses, errors, the raw
+		// payload bytes. Org-scoped via the join to webhook_endpoints
+		// inside the handler.
+		r.Get("/webhooks/deliveries", adminH.ListWebhookDeliveries)
 
 		// Global admin only.
 		r.Group(func(r chi.Router) {

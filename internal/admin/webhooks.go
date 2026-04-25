@@ -324,6 +324,123 @@ func (h *Handlers) ListWebhookEventKinds(w http.ResponseWriter, r *http.Request)
 	httpx.JSON(w, http.StatusOK, map[string]any{"event_kinds": webhooks.AllKinds})
 }
 
+// webhookDeliveryDTO is the wire shape for a row in the deliveries
+// log. Payload is the verbatim JSON we POSTed (the customer-side
+// verifier hashes it; clients pretty-print it for inspection).
+// LastError is omitted when empty so a fresh delivery doesn't carry
+// a noisy `"last_error": ""` field.
+type webhookDeliveryDTO struct {
+	ID            int64   `json:"id"`
+	EndpointID    int64   `json:"endpoint_id"`
+	EndpointName  string  `json:"endpoint_name"`
+	DeliveryUUID  string  `json:"delivery_uuid"`
+	EventKind     string  `json:"event_kind"`
+	Status        string  `json:"status"`
+	Attempts      int     `json:"attempts"`
+	LastStatus    *int    `json:"last_status,omitempty"`
+	LastError     string  `json:"last_error,omitempty"`
+	NextAttemptAt string  `json:"next_attempt_at"`
+	CreatedAt     string  `json:"created_at"`
+	DeliveredAt   string  `json:"delivered_at,omitempty"`
+	Payload       string  `json:"payload"`
+}
+
+// ListWebhookDeliveries returns the org's recent webhook delivery
+// attempts, newest first. Filters: endpoint_id (limit to one
+// endpoint), status (pending|delivered|dead). Cursor pagination via
+// `before=<id>` — the client passes the smallest id from the
+// previous page. Page size capped at 100 to keep payloads reasonable.
+//
+// Org scoping happens via the JOIN to webhook_endpoints, so a caller
+// can never see another org's deliveries even if they guess a
+// delivery id.
+func (h *Handlers) ListWebhookDeliveries(w http.ResponseWriter, r *http.Request) {
+	orgID, ok := orgFromCaller(w, r)
+	if !ok {
+		return
+	}
+	q := r.URL.Query()
+	limit := 50
+	if v := q.Get("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
+			limit = n
+		}
+	}
+	args := []any{orgID}
+	where := []string{"e.org_id = $1"}
+	if v := q.Get("endpoint_id"); v != "" {
+		if n, err := strconv.ParseInt(v, 10, 64); err == nil && n > 0 {
+			args = append(args, n)
+			where = append(where, "d.endpoint_id = $"+strconv.Itoa(len(args)))
+		}
+	}
+	if v := strings.TrimSpace(q.Get("status")); v != "" {
+		switch v {
+		case "pending", "delivered", "dead":
+			args = append(args, v)
+			where = append(where, "d.status = $"+strconv.Itoa(len(args)))
+		}
+	}
+	if v := q.Get("before"); v != "" {
+		if n, err := strconv.ParseInt(v, 10, 64); err == nil && n > 0 {
+			args = append(args, n)
+			where = append(where, "d.id < $"+strconv.Itoa(len(args)))
+		}
+	}
+	// limit is appended last as its own placeholder so the query
+	// plan caches well across paginations of the same query.
+	args = append(args, limit)
+	whereClause := strings.Join(where, " AND ")
+	query := `
+		SELECT d.id, d.endpoint_id, COALESCE(e.name, ''), d.delivery_uuid,
+		       d.event_kind, d.status, d.attempts,
+		       d.last_status, COALESCE(d.last_error, ''),
+		       d.next_attempt_at, d.created_at, COALESCE(d.delivered_at, ''),
+		       d.payload
+		  FROM webhook_deliveries d
+		  JOIN webhook_endpoints e ON e.id = d.endpoint_id
+		 WHERE ` + whereClause + `
+		 ORDER BY d.id DESC
+		 LIMIT $` + strconv.Itoa(len(args))
+	rows, err := h.DB.QueryContext(r.Context(), query, args...)
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "list failed: "+err.Error())
+		return
+	}
+	defer rows.Close()
+	out := []webhookDeliveryDTO{}
+	for rows.Next() {
+		var (
+			d          webhookDeliveryDTO
+			lastStatus sql.NullInt64
+		)
+		if err := rows.Scan(&d.ID, &d.EndpointID, &d.EndpointName, &d.DeliveryUUID,
+			&d.EventKind, &d.Status, &d.Attempts,
+			&lastStatus, &d.LastError,
+			&d.NextAttemptAt, &d.CreatedAt, &d.DeliveredAt,
+			&d.Payload); err != nil {
+			httpx.Error(w, http.StatusInternalServerError, "scan failed")
+			return
+		}
+		if lastStatus.Valid {
+			v := int(lastStatus.Int64)
+			d.LastStatus = &v
+		}
+		out = append(out, d)
+	}
+	// next_before lets the client request the page after this one
+	// without parsing ids itself: it's just the smallest id in this
+	// response. Empty when the page was short (= caller saw all).
+	var nextBefore int64
+	if len(out) == limit {
+		nextBefore = out[len(out)-1].ID
+	}
+	httpx.JSON(w, http.StatusOK, map[string]any{
+		"deliveries":  out,
+		"next_before": nextBefore,
+	})
+}
+
 // SendTestWebhook enqueues one webhook.test delivery against the
 // endpoint, bypassing the subscription filter. The customer sees the
 // payload arrive at their URL the next time the worker drains

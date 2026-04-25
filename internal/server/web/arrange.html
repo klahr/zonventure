@@ -2017,7 +2017,7 @@ async function renderRoute() {
       case 'simulator':    return await viewSimulator(view);
       case 'logs':         return await viewLogs(view);
       case 'audit':        return await viewAudit(view);
-      case 'webhooks':     return await viewWebhooks(view);
+      case 'webhooks':     return arg === 'log' ? await viewWebhooksLog(view) : await viewWebhooks(view);
       case 'manual':       return viewManual(view, arg);
       case 'settings':     return await viewSettings(view);
       default: view.replaceChildren(h('p', {}, t('Not found')));
@@ -7179,10 +7179,17 @@ async function viewWebhooks(view) {
     ? endpoints.map((ep) => renderWebhookCard(ep, kinds, () => viewWebhooks(view)))
     : [renderWebhookEmpty(addBtn)];
 
+  const logBtn = h('button', { class: 'btn small', type: 'button',
+    on: { click: () => nav('#webhooks/log') } },
+    icon(ICONS.terminal), t('Delivery log'));
+
   view.replaceChildren(
-    h('div', { class: 'row', style: 'align-items:center; justify-content:space-between' },
+    h('div', { class: 'row', style: 'align-items:center; justify-content:space-between; gap:.5rem; flex-wrap:wrap' },
       h('h1', {}, t('Webhooks')),
-      endpoints.length ? addBtn : null,
+      h('div', { class: 'row', style: 'gap:.5rem; flex-wrap:wrap' },
+        logBtn,
+        endpoints.length ? addBtn : null,
+      ),
     ),
     h('p', { class: 'muted' },
       t('Outbound HTTP callbacks for run / team / purchase lifecycle. Each delivery is signed with HMAC-SHA256; verify the X-Zv-Signature header against your endpoint\'s secret.')),
@@ -7412,6 +7419,196 @@ async function openSecretReveal({ secret, title }) {
       ),
     );
   });
+}
+
+// viewWebhooksLog renders the delivery audit log: every attempt,
+// status code, raw payload. Used to debug "did Slack get the
+// team.completed I expected?" without tailing server logs. Filters
+// + cursor pagination so even a noisy org stays usable.
+async function viewWebhooksLog(view) {
+  const endpointsR = await api('/api/admin/webhooks');
+  const endpoints = endpointsR.body?.endpoints || [];
+
+  // Local state — reset whenever a filter changes.
+  const filter = { endpoint_id: '', status: '' };
+  let nextBefore = 0;
+  let deliveries = [];
+
+  // Filter UI: two <select>s. Refresh button reloads the current
+  // filter set from scratch.
+  const endpointSelect = h('select', { class: 'btn small' },
+    h('option', { value: '' }, t('All endpoints')),
+    ...endpoints.map((ep) =>
+      h('option', { value: String(ep.id) }, ep.name || t('(unnamed endpoint)'))));
+  const statusSelect = h('select', { class: 'btn small' },
+    h('option', { value: '' },          t('Any status')),
+    h('option', { value: 'pending' },   t('Pending')),
+    h('option', { value: 'delivered' }, t('Delivered')),
+    h('option', { value: 'dead' },      t('Dead')),
+  );
+  const refreshBtn = h('button', { class: 'btn small', type: 'button' },
+    icon(ICONS.crosshair), t('Refresh'));
+
+  const list = h('div', { class: 'webhook-log' });
+  const loadMoreBtn = h('button', { class: 'btn', type: 'button',
+    style: 'display:none; margin-top:1rem' }, t('Load more'));
+  const status = h('p', { class: 'muted' });
+
+  async function fetchPage(reset) {
+    if (reset) {
+      deliveries = []; nextBefore = 0;
+      list.replaceChildren();
+    }
+    status.textContent = t('Loading…');
+    const params = new URLSearchParams();
+    params.set('limit', '50');
+    if (filter.endpoint_id) params.set('endpoint_id', filter.endpoint_id);
+    if (filter.status)      params.set('status', filter.status);
+    if (nextBefore)         params.set('before', String(nextBefore));
+    const r = await api('/api/admin/webhooks/deliveries?' + params.toString());
+    if (!r.ok) {
+      status.className = 'err';
+      status.textContent = t('Could not load deliveries ({{status}}).', { status: r.status });
+      return;
+    }
+    const incoming = r.body?.deliveries || [];
+    deliveries = deliveries.concat(incoming);
+    for (const d of incoming) list.appendChild(renderDeliveryRow(d));
+    nextBefore = r.body?.next_before || 0;
+    if (deliveries.length === 0) {
+      status.className = 'muted';
+      status.textContent = t('No deliveries yet. Send a test from the Webhooks page to see one land here.');
+      loadMoreBtn.style.display = 'none';
+    } else {
+      status.className = 'muted';
+      status.textContent = t('Showing {{n}} delivery row(s).', { n: deliveries.length });
+      loadMoreBtn.style.display = nextBefore > 0 ? '' : 'none';
+    }
+  }
+
+  endpointSelect.addEventListener('change', () => {
+    filter.endpoint_id = endpointSelect.value;
+    fetchPage(true);
+  });
+  statusSelect.addEventListener('change', () => {
+    filter.status = statusSelect.value;
+    fetchPage(true);
+  });
+  refreshBtn.addEventListener('click', () => fetchPage(true));
+  loadMoreBtn.addEventListener('click', () => fetchPage(false));
+
+  view.replaceChildren(
+    h('button', { class: 'btn ghost small', type: 'button',
+      on: { click: () => nav('#webhooks') } },
+      icon(ICONS.back), t('Back to webhooks')),
+    h('h1', { style: 'margin-top:.75rem' }, t('Webhook delivery log')),
+    h('p', { class: 'muted' },
+      t('Every attempt to deliver an event to one of your endpoints. Click a row to see the raw JSON we POSTed and the verifier-side signature inputs.')),
+    h('div', { class: 'row', style: 'gap:.5rem; flex-wrap:wrap; margin:1rem 0' },
+      endpointSelect, statusSelect, refreshBtn),
+    list,
+    loadMoreBtn,
+    status,
+  );
+  fetchPage(true);
+}
+
+// renderDeliveryRow returns one delivery as a clickable card. Click
+// expands to show the pretty-printed payload, signature inputs and
+// retry metadata. The card is collapsed by default to keep the log
+// scrollable on small screens.
+function renderDeliveryRow(d) {
+  const statusClass = ({ delivered: 'ok', dead: 'err', pending: '' })[d.status] || '';
+  const statusChip = h('span',
+    { class: 'chip ' + statusClass },
+    statusLabel(d.status));
+  // HTTP status code chip: colour-codes 2xx green, 4xx warn, 5xx err,
+  // null muted. A failed delivery often shows non-200 here even if
+  // d.status is still 'pending' (a retry is queued).
+  const httpChip = (d.last_status != null)
+    ? h('span', {
+        class: 'chip ' + httpStatusClass(d.last_status),
+        style: 'font-family:monospace',
+      }, 'HTTP ' + d.last_status)
+    : null;
+  const kindChip = h('span',
+    { class: 'chip', style: 'font-family:monospace; font-size:.78rem' },
+    d.event_kind);
+
+  const head = h('div', {
+    class: 'row',
+    style: 'gap:.5rem; align-items:center; flex-wrap:wrap; cursor:pointer',
+  },
+    statusChip, httpChip, kindChip,
+    h('span', { class: 'muted', style: 'font-size:.85rem' }, d.created_at),
+    h('span', { class: 'muted', style: 'font-size:.85rem; flex:1; text-align:right' },
+      d.endpoint_name || t('(unnamed endpoint)')),
+  );
+
+  // The expandable detail body — built lazily on first expand so the
+  // log can render hundreds of rows without parsing every payload.
+  const detail = h('div', { style: 'display:none; margin-top:.75rem' });
+  let built = false;
+  head.addEventListener('click', () => {
+    if (!built) {
+      built = true;
+      detail.append(...renderDeliveryDetail(d));
+    }
+    detail.style.display = detail.style.display === 'none' ? '' : 'none';
+  });
+
+  return h('div', { class: 'card', style: 'padding:.85rem 1rem' }, head, detail);
+}
+
+function renderDeliveryDetail(d) {
+  const out = [];
+
+  // Metadata line: signature inputs the verifier-side handler wants.
+  out.push(h('p', { class: 'muted', style: 'font-size:.82rem; margin:.25rem 0' },
+    h('strong', {}, 'X-Zv-Delivery-Id: '),
+    h('code', {}, d.delivery_uuid),
+  ));
+  out.push(h('p', { class: 'muted', style: 'font-size:.82rem; margin:.25rem 0' },
+    h('strong', {}, t('Attempts: ')),
+    String(d.attempts),
+    d.delivered_at
+      ? h('span', {}, ' · ', h('strong', {}, t('Delivered at: ')), d.delivered_at)
+      : null,
+    d.status === 'pending' && d.next_attempt_at
+      ? h('span', {}, ' · ', h('strong', {}, t('Next attempt: ')), d.next_attempt_at)
+      : null,
+  ));
+  if (d.last_error) {
+    out.push(h('div', { class: 'callout warn',
+      style: 'font-family:monospace; font-size:.82rem; white-space:pre-wrap' },
+      d.last_error));
+  }
+  // Pretty-printed JSON. Falls back to the raw text if the payload
+  // doesn't parse for any reason — defensive, since a corrupted row
+  // shouldn't break the whole log.
+  let pretty = d.payload;
+  try { pretty = JSON.stringify(JSON.parse(d.payload), null, 2); } catch {}
+  out.push(h('pre', {
+    style: 'background:var(--surface-2); padding:.75rem 1rem; border-radius:8px; ' +
+           'overflow-x:auto; font-size:.82rem; line-height:1.5; max-height:32rem; ' +
+           'white-space:pre',
+  }, pretty));
+  return out;
+}
+
+function statusLabel(s) {
+  switch (s) {
+    case 'delivered': return t('Delivered');
+    case 'pending':   return t('Pending');
+    case 'dead':      return t('Dead');
+  }
+  return s;
+}
+function httpStatusClass(code) {
+  if (code >= 200 && code < 300) return 'ok';
+  if (code >= 400 && code < 500) return '';   // muted
+  if (code >= 500)               return 'err';
+  return '';
 }
 
 // confirmDanger is a small destructive-action confirmation modal.

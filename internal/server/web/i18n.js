@@ -992,6 +992,25 @@
       '(no events subscribed)': '(inga händelser prenumereras)',
       '(unnamed endpoint)': '(slutpunkt utan namn)',
       'e.g. prod-slack': 't.ex. prod-slack',
+      // ---- webhook delivery log ----
+      'Delivery log': 'Leveranslogg',
+      'Webhook delivery log': 'Webhook-leveranslogg',
+      'Back to webhooks': 'Tillbaka till webhooks',
+      'Every attempt to deliver an event to one of your endpoints. Click a row to see the raw JSON we POSTed and the verifier-side signature inputs.':
+          'Varje försök att leverera en händelse till en av dina slutpunkter. Klicka på en rad för att se den råa JSON vi skickade och signaturindata för verifieraren.',
+      'All endpoints': 'Alla slutpunkter',
+      'Any status': 'Alla statusar',
+      'Pending': 'Väntar',
+      'Delivered': 'Levererad',
+      'Dead': 'Misslyckad',
+      'Refresh': 'Uppdatera',
+      'Could not load deliveries ({{status}}).': 'Kunde inte ladda leveranser ({{status}}).',
+      'No deliveries yet. Send a test from the Webhooks page to see one land here.':
+          'Inga leveranser än. Skicka ett test från Webhooks-sidan för att se en dyka upp här.',
+      'Showing {{n}} delivery row(s).': 'Visar {{n}} leveransrad(er).',
+      'Attempts: ': 'Försök: ',
+      'Delivered at: ': 'Levererad: ',
+      'Next attempt: ': 'Nästa försök: ',
       // ---- manual ----
       // Nav label intentionally kept as "Manual" in Swedish — the
       // word is widely understood and matches the operator's brand
