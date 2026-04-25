@@ -5349,6 +5349,16 @@ function readableOn(hex) {
 async function openEditPuzzle(adv, page /* or null */) {
   const creating = !page;
   const standalone = !adv; // library puzzle with no adventure context
+  // Persist in-progress new puzzles to localStorage so an accidental
+  // dismiss (Cancel / Esc / backdrop click) doesn't lose typed text.
+  // Only the create-with-adventure flow needs this — existing puzzles
+  // are server-authoritative, and standalone library creates aren't a
+  // current entry point.
+  const draftKey = (creating && adv) ? `zv-newpuzzle-draft:${adv.slug}` : null;
+  let draft = null;
+  if (draftKey) {
+    try { draft = JSON.parse(localStorage.getItem(draftKey) || 'null'); } catch { draft = null; }
+  }
   const title = creating
     ? t('New puzzle')
     : standalone
@@ -5366,7 +5376,7 @@ async function openEditPuzzle(adv, page /* or null */) {
     // the rendered puzzle text by default and only gets the raw
     // markdown when they actually want to edit.
     const promptField = markdownField({
-      initial: page?.prompt || '',
+      initial: draft?.prompt ?? page?.prompt ?? '',
       placeholder: t('What the player sees… (click to edit, markdown supported)'),
       rows: 4,
     });
@@ -5374,14 +5384,14 @@ async function openEditPuzzle(adv, page /* or null */) {
     // reads .value and compares against page.prompt keeps working
     // without a wider rewrite.
     const promptInput = { get value() { return promptField.get(); } };
-    titleInput.value  = page?.title  || '';
+    titleInput.value  = draft?.title ?? page?.title ?? '';
     // promptField.get() already reflects the initial value; no shim-
     // assignment needed (and .value is getter-only).
     // Hints are no longer a single inline field — they live in the
     // settings panel as an editable list with per-hint unlock delays.
     // hintsController gives the submit handler a single .get() that
     // returns the current list in author order.
-    const hintsController = buildHintsEditor(page?.hints || []);
+    const hintsController = buildHintsEditor(draft?.hints ?? page?.hints ?? []);
 
     const imagesHost = h('div', { class: 'pe-images' });
     const images = page?.images ? [...page.images] : [];
@@ -5479,7 +5489,7 @@ async function openEditPuzzle(adv, page /* or null */) {
 
     // ---- Settings panel: fields with no visual player rendering ----
     const accept = h('input', {
-      value: (page?.accept || []).join(', '),
+      value: draft?.accept ?? (page?.accept || []).join(', '),
       placeholder: t('hello, hi'),
     });
     // For a fresh puzzle, inherit the location from the previous puzzle
@@ -5498,21 +5508,25 @@ async function openEditPuzzle(adv, page /* or null */) {
       ? pendingQuickPuzzleGPS : null;
     if (pendingGPSMatch) pendingQuickPuzzleGPS = null;
     const waitingForGPS = !!pendingGPSMatch && page.lat === 0 && page.lng === 0;
-    const initialLat = (page && !waitingForGPS) ? page.lat : fallback.lat;
-    const initialLng = (page && !waitingForGPS) ? page.lng : fallback.lng;
+    const draftLat = draft != null ? parseFloat(draft.lat) : NaN;
+    const draftLng = draft != null ? parseFloat(draft.lng) : NaN;
+    const initialLat = Number.isFinite(draftLat) ? draftLat
+                     : (page && !waitingForGPS) ? page.lat : fallback.lat;
+    const initialLng = Number.isFinite(draftLng) ? draftLng
+                     : (page && !waitingForGPS) ? page.lng : fallback.lng;
 
     const lat    = h('input', { type: 'number', step: 'any', required: true, value: initialLat });
     const lng    = h('input', { type: 'number', step: 'any', required: true, value: initialLng });
     const gated  = h('input', { type: 'checkbox' });
-    if (page?.radius_m) gated.checked = true;
-    const radius = h('input', { type: 'number', step: 'any', min: '1', value: page?.radius_m || 50 });
+    if (draft ? draft.gated : page?.radius_m) gated.checked = true;
+    const radius = h('input', { type: 'number', step: 'any', min: '1', value: draft?.radius ?? page?.radius_m ?? 50 });
     const disabled = h('input', { type: 'checkbox' });
-    if (page?.disabled) disabled.checked = true;
+    if (draft ? draft.disabled : page?.disabled) disabled.checked = true;
 
     const notes = h('textarea', { rows: 2,
       placeholder: t('e.g. "statue at the fountain, check opening hours"'),
     });
-    notes.value = page?.notes || '';
+    notes.value = draft?.notes ?? page?.notes ?? '';
 
     const gpsBtn = h('button', { class: 'btn small', type: 'button', title: t('Use this device\'s GPS') },
       icon(ICONS.crosshair), t('Use my location'));
@@ -5549,6 +5563,40 @@ async function openEditPuzzle(adv, page /* or null */) {
       h('div', { class: 'row end', style: 'margin-top:1rem' },
         h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, t('Cancel')),
         h('button', { class: 'btn primary', type: 'submit' }, creating ? t('Create') : t('Save'))));
+
+    // Draft snapshot helpers — see draftKey above. Bubble listeners
+    // catch typing in titleInput, accept, notes, radius, lat/lng, the
+    // markdown editor's textarea, and the hints rows. Map-driven
+    // lat/lng updates don't fire 'input', so the modal:close handler
+    // below also writes a final snapshot before tearing down.
+    const snapshotDraft = () => ({
+      title:    titleInput.value,
+      prompt:   promptInput.value,
+      hints:    hintsController.get(),
+      notes:    notes.value,
+      accept:   accept.value,
+      lat:      lat.value,
+      lng:      lng.value,
+      gated:    gated.checked,
+      radius:   radius.value,
+      disabled: disabled.checked,
+    });
+    const draftIsEmpty = (d) => (
+      !d.title.trim() && !d.prompt.trim() && d.hints.length === 0 &&
+      !d.notes.trim() && !d.accept.trim() && !d.gated && !d.disabled
+    );
+    const writeDraft = () => {
+      if (!draftKey) return;
+      const d = snapshotDraft();
+      try {
+        if (draftIsEmpty(d)) localStorage.removeItem(draftKey);
+        else localStorage.setItem(draftKey, JSON.stringify(d));
+      } catch { /* quota or disabled — drop silently */ }
+    };
+    if (draftKey) {
+      form.addEventListener('input', writeDraft);
+      form.addEventListener('change', writeDraft);
+    }
 
     // saved flips true the moment a save (POST or PATCH) succeeds, so
     // the modal:close cleanup below knows not to delete the server-side
@@ -5878,6 +5926,16 @@ async function openEditPuzzle(adv, page /* or null */) {
     body.addEventListener('modal:close', async () => {
       file.remove();
       locMap.destroy();
+      // New-puzzle drafts: clear on a successful save, otherwise
+      // capture a final snapshot — this is the path that catches
+      // map-driven lat/lng updates which don't bubble an input event.
+      if (draftKey) {
+        if (saved) {
+          try { localStorage.removeItem(draftKey); } catch { /* ignore */ }
+        } else {
+          writeDraft();
+        }
+      }
       if (!page || adv) return;
       const isEmpty =
         !titleInput.value.trim() &&
