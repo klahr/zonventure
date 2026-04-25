@@ -472,6 +472,20 @@ textarea { min-height: 80px; resize: vertical; font-family: ui-monospace, monosp
   color: var(--muted); font-size: 1rem; line-height: 1;
 }
 .chip button:hover { color: var(--danger); }
+/* Semantic chip variants: tinted background + border so a green
+   "HTTP 200" or red "HTTP 404" reads at a glance instead of looking
+   neutral. The bare .ok / .err utility classes only set foreground
+   colour, which left status chips visually flat. */
+.chip.ok {
+  color: var(--success);
+  background: color-mix(in srgb, var(--success) 14%, var(--surface));
+  border-color: color-mix(in srgb, var(--success) 38%, transparent);
+}
+.chip.err {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 14%, var(--surface));
+  border-color: color-mix(in srgb, var(--danger) 38%, transparent);
+}
 
 .empty {
   text-align: center; padding: 3rem 1rem; color: var(--muted);
@@ -1999,6 +2013,11 @@ async function renderRoute() {
     watchRun(parseInt(arg, 10));
   } else {
     unwatchRun();
+  }
+  // Stop the webhook-log auto-refresh whenever we leave the log
+  // view. viewWebhooksLog itself starts a fresh poll on entry.
+  if (!(section === 'webhooks' && arg === 'log')) {
+    stopWebhookLogPoll();
   }
 
   try {
@@ -7430,6 +7449,16 @@ async function openSecretReveal({ secret, title }) {
   });
 }
 
+// webhookLogPoll keeps a setInterval id while the log view is
+// active so we can refresh the list automatically while the worker
+// is still attempting pending deliveries. Module-level + cleared
+// from renderRoute on every navigation away (mirroring the
+// unwatchRun pattern) so a left-behind interval can't leak.
+let webhookLogPoll = null;
+function stopWebhookLogPoll() {
+  if (webhookLogPoll) { clearInterval(webhookLogPoll); webhookLogPoll = null; }
+}
+
 // viewWebhooksLog renders one endpoint's delivery audit log: every
 // attempt, status code, raw payload. Used to debug "did Slack get
 // the team.completed I expected?" without tailing server logs.
@@ -7517,7 +7546,21 @@ async function viewWebhooksLog(view, endpointID) {
     loadMoreBtn,
     status,
   );
-  fetchPage(true);
+  await fetchPage(true);
+
+  // Auto-refresh while any row is still pending. The worker attempts
+  // every 5s and exponentially backs off after failure; polling at
+  // 4s catches the first success/failure transition without thrashing.
+  // Self-stops once everything has settled (delivered/dead) so an
+  // open log page on a quiet org isn't a constant DB hit.
+  stopWebhookLogPoll();
+  webhookLogPoll = setInterval(() => {
+    if (!deliveries.some((d) => d.status === 'pending')) {
+      stopWebhookLogPoll();
+      return;
+    }
+    fetchPage(true);
+  }, 4000);
 }
 
 // renderDeliveryRow returns one delivery as a clickable card. Click
