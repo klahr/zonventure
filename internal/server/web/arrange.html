@@ -7491,26 +7491,50 @@ async function viewWebhooksLog(view, endpointID) {
     style: 'display:none; margin-top:1rem' }, t('Load more'));
   const status = h('p', { class: 'muted' });
 
-  async function fetchPage(reset) {
-    if (reset) {
+  // fetchPage handles three call shapes:
+  //   - { reset: true,  quiet: false } — user clicked Refresh / changed filter:
+  //     show "Loading…", clear DOM, repopulate.
+  //   - { reset: true,  quiet: true  } — background auto-poll:
+  //     keep existing DOM visible until new data arrives, then swap
+  //     the list atomically. No flicker, no loading text.
+  //   - { reset: false, quiet: false } — "Load more": append next page.
+  async function fetchPage({ reset = false, quiet = false } = {}) {
+    if (reset && !quiet) {
       deliveries = []; nextBefore = 0;
       list.replaceChildren();
+      status.textContent = t('Loading…');
     }
-    status.textContent = t('Loading…');
     const params = new URLSearchParams();
     params.set('limit', '50');
     params.set('endpoint_id', String(endpointID));
-    if (filter.status)  params.set('status', filter.status);
-    if (nextBefore)     params.set('before', String(nextBefore));
+    if (filter.status) params.set('status', filter.status);
+    // Cursor only applies on append-mode loads. A reset (whether
+    // quiet or loud) wants a fresh first page.
+    if (!reset && nextBefore) params.set('before', String(nextBefore));
     const r = await api('/api/admin/webhooks/deliveries?' + params.toString());
     if (!r.ok) {
-      status.className = 'err';
-      status.textContent = t('Could not load deliveries ({{status}}).', { status: r.status });
+      // On a quiet poll we don't want to overwrite the list with an
+      // error if we briefly drop a request — keep what's on screen
+      // and try again next tick. Loud loads do surface the error.
+      if (!quiet) {
+        status.className = 'err';
+        status.textContent = t('Could not load deliveries ({{status}}).', { status: r.status });
+      }
       return;
     }
     const incoming = r.body?.deliveries || [];
-    deliveries = deliveries.concat(incoming);
-    for (const d of incoming) list.appendChild(renderDeliveryRow(d));
+    if (reset) {
+      // Build the replacement DOM off-screen, then swap once. For
+      // quiet polls this means the visible list stays stable until
+      // the new content is ready — no empty-then-fill flash.
+      const frag = document.createDocumentFragment();
+      for (const d of incoming) frag.appendChild(renderDeliveryRow(d));
+      list.replaceChildren(frag);
+      deliveries = incoming.slice();
+    } else {
+      for (const d of incoming) list.appendChild(renderDeliveryRow(d));
+      deliveries = deliveries.concat(incoming);
+    }
     nextBefore = r.body?.next_before || 0;
     if (deliveries.length === 0) {
       status.className = 'muted';
@@ -7525,10 +7549,10 @@ async function viewWebhooksLog(view, endpointID) {
 
   statusSelect.addEventListener('change', () => {
     filter.status = statusSelect.value;
-    fetchPage(true);
+    fetchPage({ reset: true });
   });
-  refreshBtn.addEventListener('click', () => fetchPage(true));
-  loadMoreBtn.addEventListener('click', () => fetchPage(false));
+  refreshBtn.addEventListener('click', () => fetchPage({ reset: true }));
+  loadMoreBtn.addEventListener('click', () => fetchPage({ reset: false }));
 
   view.replaceChildren(
     h('button', { class: 'btn ghost small', type: 'button',
@@ -7546,20 +7570,22 @@ async function viewWebhooksLog(view, endpointID) {
     loadMoreBtn,
     status,
   );
-  await fetchPage(true);
+  await fetchPage({ reset: true });
 
   // Auto-refresh while any row is still pending. The worker attempts
   // every 5s and exponentially backs off after failure; polling at
   // 4s catches the first success/failure transition without thrashing.
   // Self-stops once everything has settled (delivered/dead) so an
-  // open log page on a quiet org isn't a constant DB hit.
+  // open log page on a quiet org isn't a constant DB hit. Uses
+  // quiet=true so the visible list stays put until the new data
+  // arrives — no "list goes empty then fills" flash on every tick.
   stopWebhookLogPoll();
   webhookLogPoll = setInterval(() => {
     if (!deliveries.some((d) => d.status === 'pending')) {
       stopWebhookLogPoll();
       return;
     }
-    fetchPage(true);
+    fetchPage({ reset: true, quiet: true });
   }, 4000);
 }
 
@@ -7585,7 +7611,7 @@ function renderDeliveryRow(d) {
     httpChip = h('span', {
       class: 'chip ' + httpStatusClass(d.last_status),
       style: 'font-family:monospace',
-    }, 'HTTP ' + d.last_status);
+    }, String(d.last_status));
   } else if (d.attempts > 0) {
     httpChip = h('span', { class: 'chip err' }, t('No response'));
   }
