@@ -115,6 +115,7 @@
   }
   * { box-sizing: border-box; }
   html { scroll-behavior: smooth; }
+  html { overflow-x: hidden; }
   body {
     margin: 0;
     font: 16px/1.55 'Open Sans', system-ui, sans-serif;
@@ -155,6 +156,39 @@
   }
   .topbar-row {
     display: flex; align-items: center; justify-content: space-between;
+    gap: .5rem;
+    flex-wrap: nowrap;
+  }
+  /* The hamburger toggle is a hidden checkbox + a label-styled
+     button. A pure-CSS pattern: clicking the label toggles the
+     checkbox; the `:checked` general-sibling selector below shows the
+     mobile menu without a line of JavaScript. */
+  .nav-toggle { position: absolute; opacity: 0; pointer-events: none; }
+  .nav-toggle:focus-visible + .hamburger {
+    outline: 2px solid #fff; outline-offset: 3px; border-radius: 6px;
+  }
+  .hamburger {
+    display: none;
+    width: 2.5rem; height: 2.5rem;
+    flex-direction: column; justify-content: center; align-items: center;
+    gap: .35rem;
+    border-radius: 8px;
+    cursor: pointer;
+    background: rgba(255,255,255,.12);
+  }
+  .hamburger span {
+    display: block;
+    width: 1.4rem; height: 2px;
+    background: #fff;
+    border-radius: 2px;
+    transition: transform .2s, opacity .2s;
+  }
+  .nav-toggle:checked ~ .hamburger span:nth-child(1) {
+    transform: translateY(.45rem) rotate(45deg);
+  }
+  .nav-toggle:checked ~ .hamburger span:nth-child(2) { opacity: 0; }
+  .nav-toggle:checked ~ .hamburger span:nth-child(3) {
+    transform: translateY(-.45rem) rotate(-45deg);
   }
   .brand {
     font-family: 'Aclonica', Georgia, serif;
@@ -164,7 +198,7 @@
     letter-spacing: .01em;
     text-shadow: 0 2px 12px rgba(0,0,0,.25);
   }
-  .topbar nav { display: flex; gap: 1.75rem; align-items: center; }
+  .topbar nav { display: flex; gap: 1.25rem; align-items: center; }
   .topbar nav a {
     color: rgba(255,255,255,.85); font-weight: 600; font-size: .95rem;
     text-decoration: none;
@@ -178,6 +212,13 @@
     font-weight: 700;
   }
   .topbar nav .btn:hover { background: rgba(255,255,255,.92); }
+  /* `.nav-menu` holds the right-side links. On wide screens it's an
+     inline strip alongside the language picker; below 720px it
+     becomes a slide-down panel under the topbar, toggled by the
+     hamburger. */
+  .nav-menu {
+    display: flex; gap: 1.25rem; align-items: center;
+  }
 
   /* Compact, JS-free language switcher. Each link is a real anchor —
      crawlers + curl follow them, the server reads ?lang= and sets a
@@ -206,8 +247,42 @@
     color: var(--accent-deep);
   }
   .lang-picker .flag { font-size: 1rem; line-height: 1; }
-  /* On narrow screens the topbar already wraps; the picker stays
-     visible because it's the smallest item. */
+  /* Narrow-screen rules: hamburger replaces the inline links, lang
+     picker shrinks to flag-only. The 720px breakpoint matches "the
+     point where Manual / Pricing / Log in stop fitting beside the
+     brand and the picker", checked at iPhone 12 (390px) through iPad
+     mini (744px) widths. */
+  @media (max-width: 45rem) {
+    .hamburger { display: flex; }
+    .topbar nav {
+      gap: .5rem;
+    }
+    /* Hide the inline link strip; reveal it when the toggle flips on. */
+    .nav-menu {
+      display: none;
+      position: absolute;
+      top: 100%; left: 0; right: 0;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 0;
+      padding: .5rem 0;
+      background: rgba(15, 22, 36, .96);
+      backdrop-filter: blur(8px);
+      box-shadow: 0 8px 24px rgba(0,0,0,.25);
+    }
+    .nav-toggle:checked ~ nav .nav-menu {
+      display: flex;
+    }
+    .nav-menu a {
+      padding: .85rem 1.25rem;
+      border-bottom: 1px solid rgba(255,255,255,.08);
+    }
+    .nav-menu a:last-child { border-bottom: none; }
+    .nav-menu .btn {
+      margin: .5rem 1.25rem 0;
+      text-align: center;
+    }
+  }
   @media (max-width: 32rem) {
     .lang-picker { margin-right: 0; }
     .lang-picker .lang-link { padding: .25rem .5rem; }
@@ -560,6 +635,14 @@
 <header class="topbar" role="banner">
   <div class="wrap topbar-row">
     <a class="brand" href="/" aria-label="{{BRAND_ARIA}}">zonventure</a>
+    <!-- Pure-CSS mobile menu: a hidden checkbox toggles a sibling
+         general-selector rule that reveals .nav-menu. The label is
+         the visible hamburger, only shown on small screens via the
+         .hamburger media query rule. -->
+    <input type="checkbox" id="nav-toggle" class="nav-toggle" aria-label="{{NAV_TOGGLE_ARIA}}">
+    <label for="nav-toggle" class="hamburger" aria-hidden="true">
+      <span></span><span></span><span></span>
+    </label>
     <nav aria-label="{{NAV_PRIMARY_ARIA}}">
       <div class="lang-picker" role="group" aria-label="{{LANG_ARIA}}">
         <a href="?lang=en" class="lang-link {{EN_ACTIVE}}" {{EN_CURRENT}} hreflang="en">
@@ -569,9 +652,11 @@
           <span class="flag" aria-hidden="true">🇸🇪</span><span class="label">SV</span>
         </a>
       </div>
-      <a href="/manual">{{NAV_MANUAL}}</a>
-      <a href="/pricing">{{NAV_PRICING}}</a>
-      <a href="/arrange" class="btn">{{NAV_LOGIN}}</a>
+      <div class="nav-menu">
+        <a href="/manual">{{NAV_MANUAL}}</a>
+        <a href="/pricing">{{NAV_PRICING}}</a>
+        <a href="/arrange" class="btn">{{NAV_LOGIN}}</a>
+      </div>
     </nav>
   </div>
 </header>

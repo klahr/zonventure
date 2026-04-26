@@ -30,6 +30,7 @@ type landingStrings struct {
 
 	// Topbar navigation.
 	NavPrimaryARIA string
+	NavToggleARIA  string // Aria label for the hamburger toggle on narrow screens.
 	BrandARIA      string
 	NavManual      string
 	NavPricing     string
@@ -110,6 +111,7 @@ var landingLocales = map[string]landingStrings{
 		SchemaAppDesc:  "Author location-based adventure games and run them for teams of players using their phones.",
 
 		NavPrimaryARIA: "Primary",
+		NavToggleARIA:  "Toggle navigation",
 		BrandARIA:      "Zonventure home",
 		NavManual:      "Manual",
 		NavPricing:     "Pricing",
@@ -178,6 +180,7 @@ var landingLocales = map[string]landingStrings{
 		SchemaAppDesc:  "Skapa platsbaserade äventyrsspel och kör dem för lag av spelare med deras telefoner.",
 
 		NavPrimaryARIA: "Huvudnavigering",
+		NavToggleARIA:  "Visa/dölj meny",
 		BrandARIA:      "Zonventure hem",
 		NavManual:      "Manual",
 		NavPricing:     "Priser",
@@ -305,6 +308,7 @@ func renderLandingPage(w http.ResponseWriter, r *http.Request) {
 		{"{{SCHEMA_ORG_DESC}}", s.SchemaOrgDesc},
 		{"{{SCHEMA_APP_DESC}}", s.SchemaAppDesc},
 		{"{{NAV_PRIMARY_ARIA}}", s.NavPrimaryARIA},
+		{"{{NAV_TOGGLE_ARIA}}", s.NavToggleARIA},
 		{"{{BRAND_ARIA}}", s.BrandARIA},
 		{"{{NAV_MANUAL}}", s.NavManual},
 		{"{{NAV_PRICING}}", s.NavPricing},
