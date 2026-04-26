@@ -249,13 +249,14 @@
     font-weight: 700;
   }
   .topbar nav .btn:hover { background: rgba(255,255,255,.92); }
-  /* `.nav-menu` holds the right-side links. On wide screens it's an
-     inline strip alongside the language picker; below 720px it
-     becomes a slide-down panel under the topbar, toggled by the
-     hamburger. */
+  /* `.nav-menu` is the desktop inline link strip in the topbar.
+     `.nav-overlay` is the mobile fullscreen menu — separate element
+     at body level so its stacking context isn't trapped inside the
+     topbar. The mobile media query swaps which is visible. */
   .nav-menu {
     display: flex; gap: 1.25rem; align-items: center;
   }
+  .nav-overlay { display: none; }
 
   /* Compact, JS-free language switcher. Each link is a real anchor —
      crawlers + curl follow them, the server reads ?lang= and sets a
@@ -294,25 +295,22 @@
     .topbar nav {
       gap: .5rem;
     }
-    /* Fullscreen overlay covering the entire viewport. The topbar
-       (z-index: 50) floats on top and shows the X-hamburger so the
-       user has a way to close. Menu content starts below the topbar
-       via padding-top, so the X stays visible against the menu's
-       own dark background. The viewport-fixed positioning relies
-       on no ancestor having a backdrop-filter / transform / filter
-       — that's why .topbar's blur is on a ::before pseudo, not on
-       .topbar directly. Heights use 100dvh on supporting browsers
-       so iOS Safari's address-bar cycling doesn't crop the menu.
+    /* Hide the desktop inline links; the mobile overlay below carries
+       the same set. */
+    .nav-menu { display: none; }
 
-       overflow-y: auto so a very tall menu (or short landscape
-       phone) scrolls inside the panel rather than being clipped. */
-    .nav-menu {
-      display: none;
-      position: fixed;
-      inset: 0;
+    /* Fullscreen overlay covering the entire viewport. Lives at body
+       level (sibling of .topbar) so its stacking context is the root
+       — that puts it BELOW the topbar's z-index 50 and keeps the
+       close-X visible. iOS Safari address-bar cycling: 100dvh keeps
+       the menu pinned to the actually-visible viewport instead of
+       being cropped under the URL bar. */
+    .nav-overlay {
+      display: flex;
       flex-direction: column;
       align-items: stretch;
-      gap: 0;
+      position: fixed;
+      inset: 0;
       padding: calc(var(--topbar-h) + 1rem) 0 2rem;
       background: rgba(15, 22, 36, .98);
       backdrop-filter: blur(12px);
@@ -321,21 +319,36 @@
       z-index: 40;
       min-height: 100vh;
       min-height: 100dvh;
+      /* Hidden by default; the toggle reveals it via `:checked ~`. */
+      visibility: hidden;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity .2s ease, visibility 0s linear .2s;
     }
-    .nav-toggle:checked ~ nav .nav-menu {
-      display: flex;
+    .nav-toggle:checked ~ .nav-overlay {
+      visibility: visible;
+      opacity: 1;
+      pointer-events: auto;
+      transition: opacity .2s ease, visibility 0s linear 0s;
     }
-    .nav-menu a {
+    .nav-overlay a {
+      color: rgba(255,255,255,.85); font-weight: 600;
+      text-decoration: none;
       padding: 1.1rem 1.5rem;
       font-size: 1.15rem;
       border-bottom: 1px solid rgba(255,255,255,.08);
     }
-    .nav-menu a:last-child { border-bottom: none; }
-    .nav-menu .btn {
+    .nav-overlay a:last-child { border-bottom: none; }
+    .nav-overlay a:hover { color: #fff; }
+    .nav-overlay .btn {
       margin: 1.25rem 1.5rem 0;
       padding: .9rem 1.25rem;
+      border-radius: 999px;
+      background: #fff;
+      color: var(--accent-deep);
       text-align: center;
       font-size: 1rem;
+      border-bottom: none;
     }
   }
   @media (max-width: 32rem) {
@@ -687,16 +700,17 @@
 
 <a class="skip-link" href="#main">Skip to content</a>
 
+<!-- Pure-CSS mobile menu, body-level. The checkbox + topbar +
+     overlay are all siblings under <body>; that keeps them in the
+     ROOT stacking context so the topbar (z-index 50) reliably paints
+     above the overlay (z-index 40), and the X-hamburger inside the
+     topbar stays visible and tappable while the menu is open. The
+     `:checked ~ .nav-overlay` selector still works because both the
+     toggle and the overlay are sibling children of <body>. -->
+<input type="checkbox" id="nav-toggle" class="nav-toggle" aria-label="{{NAV_TOGGLE_ARIA}}">
+
 <header class="topbar" role="banner">
   <div class="wrap topbar-row">
-    <!-- Pure-CSS mobile menu: a hidden checkbox toggles a sibling
-         general-selector rule that reveals .nav-menu. The label is
-         the visible hamburger, only shown on small screens via the
-         .hamburger media query rule. Toggle + label sit at the start
-         of the DOM so on mobile the hamburger reads as the first item
-         (top-left). On wide screens .hamburger is `display: none`, so
-         the brand is the leading visible element as before. -->
-    <input type="checkbox" id="nav-toggle" class="nav-toggle" aria-label="{{NAV_TOGGLE_ARIA}}">
     <label for="nav-toggle" class="hamburger" aria-hidden="true">
       <span></span><span></span><span></span>
     </label>
@@ -710,6 +724,9 @@
           <span class="flag" aria-hidden="true">🇸🇪</span><span class="label">SV</span>
         </a>
       </div>
+      <!-- Desktop link strip. Hidden on mobile via media query; the
+           same links appear inside .nav-overlay below for the mobile
+           fullscreen menu. Keep the two copies in sync. -->
       <div class="nav-menu">
         <a href="/manual">{{NAV_MANUAL}}</a>
         <a href="/pricing">{{NAV_PRICING}}</a>
@@ -718,6 +735,16 @@
     </nav>
   </div>
 </header>
+
+<!-- Mobile fullscreen overlay. Sibling of .topbar (NOT nested inside
+     it) so it lives in the root stacking context — the topbar's
+     z-index 50 paints above this overlay's z-index 40, keeping the
+     close-X visible and tappable. Always hidden on wide screens. -->
+<aside class="nav-overlay" aria-label="{{NAV_PRIMARY_ARIA}}">
+  <a href="/manual">{{NAV_MANUAL}}</a>
+  <a href="/pricing">{{NAV_PRICING}}</a>
+  <a href="/arrange" class="btn">{{NAV_LOGIN}}</a>
+</aside>
 
 <main id="main">
 
