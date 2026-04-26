@@ -1454,7 +1454,15 @@
     },
   };
 
-  const LANG_LABEL = { en: 'English', sv: 'Svenska' };
+  // LANG_LABEL is the picker text. Each entry is { flag, name } —
+  // flag is a Regional-Indicator-pair emoji (renders as a country
+  // flag on systems with emoji-flag fonts), name is the language's
+  // own native name. English uses 🇬🇧 because the product is EU-
+  // facing; swap to 🇺🇸 for an Americas launch.
+  const LANG_LABEL = {
+    en: { flag: '🇬🇧', name: 'English' },
+    sv: { flag: '🇸🇪', name: 'Svenska' },
+  };
 
   function available() {
     return Object.keys(DICT);
@@ -1494,16 +1502,19 @@
   function getLang() { return currentLang; }
 
   // makeLangPicker returns a <select> pre-populated with the available
-  // languages. Styling is up to the caller — the sidebar footer adds
-  // the "ghost"-style classes to match its siblings.
+  // languages. Each option renders as "🇬🇧 English" (flag + native
+  // name) so users can spot their language without reading. Styling
+  // is up to the caller — the sidebar footer adds the "ghost"-style
+  // classes to match its siblings.
   function makeLangPicker(opts = {}) {
     const sel = document.createElement('select');
     sel.className = opts.className || 'zv-lang-picker';
     if (opts.title) sel.title = opts.title;
     for (const code of available()) {
+      const label = LANG_LABEL[code];
       const o = document.createElement('option');
       o.value = code;
-      o.textContent = LANG_LABEL[code] || code;
+      o.textContent = label ? label.flag + ' ' + label.name : code;
       if (code === currentLang) o.selected = true;
       sel.append(o);
     }

@@ -153,7 +153,7 @@ func New(cfg Config) http.Handler {
 			http.Redirect(w, req, "/arrange", http.StatusFound)
 			return
 		}
-		servePublicPage("web/landing.html", http.StatusOK)(w, req)
+		renderLandingPage(w, req)
 	})
 
 	// Custom 404 with branded chrome and a "back to home / read manual"

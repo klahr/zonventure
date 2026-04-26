@@ -34,25 +34,33 @@
   photos and serve them from your own origin (or a CDN under your
   control) instead of hotlinking.
 -->
-<html lang="en"><head>
+<html lang="{{LANG_CODE}}"><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Zonventure — adventures your players will remember</title>
-<meta name="description" content="The platform for arrangers running treasure hunts, team-building events, school field trips and city tours. Author the puzzles, schedule an event, watch your players walk and solve.">
+<title>{{TITLE}}</title>
+<meta name="description" content="{{META_DESC}}">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+
+<!-- hreflang tells crawlers about translated variants so each language
+     gets indexed separately. Self-referential x-default points at the
+     unparametered URL which honours the cookie / Accept-Language. -->
+<link rel="alternate" hreflang="en" href="/?lang=en">
+<link rel="alternate" hreflang="sv" href="/?lang=sv">
+<link rel="alternate" hreflang="x-default" href="/">
 
 <meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#14202e" media="(prefers-color-scheme: dark)">
 
-<meta property="og:title" content="Zonventure — adventures your players will remember">
-<meta property="og:description" content="Treasure hunts. Team-builds. Field trips. City walks. You author the puzzles, your players walk and solve.">
+<meta property="og:title" content="{{TITLE}}">
+<meta property="og:description" content="{{OG_DESC}}">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Zonventure">
+<meta property="og:locale" content="{{LANG_CODE}}">
 <meta property="og:url" content="/">
 <meta property="og:image" content="/favicon.svg">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Zonventure">
-<meta name="twitter:description" content="Treasure hunts. Team-builds. Field trips. City walks. You author the puzzles, your players walk and solve.">
+<meta name="twitter:description" content="{{OG_DESC}}">
 <meta name="twitter:image" content="/favicon.svg">
 
 <script type="application/ld+json">
@@ -62,14 +70,14 @@
     {
       "@type": "Organization",
       "name": "Zonventure",
-      "description": "Platform for running location-based adventure games — treasure hunts, team-building events, school field trips, city tours."
+      "description": "{{SCHEMA_ORG_DESC}}"
     },
     {
       "@type": "SoftwareApplication",
       "name": "Zonventure",
       "applicationCategory": "BusinessApplication",
       "operatingSystem": "Web",
-      "description": "Author location-based adventure games and run them for teams of players using their phones."
+      "description": "{{SCHEMA_APP_DESC}}"
     }
   ]
 }
@@ -170,6 +178,41 @@
     font-weight: 700;
   }
   .topbar nav .btn:hover { background: rgba(255,255,255,.92); }
+
+  /* Compact, JS-free language switcher. Each link is a real anchor —
+     crawlers + curl follow them, the server reads ?lang= and sets a
+     cookie so the choice sticks. The active link gets visual weight
+     and aria-current="page" for screen readers. */
+  .lang-picker {
+    display: inline-flex;
+    align-items: center;
+    gap: .35rem;
+    padding: .25rem;
+    background: rgba(255,255,255,.12);
+    border-radius: 999px;
+    margin-right: .5rem;
+  }
+  .lang-picker .lang-link {
+    display: inline-flex; align-items: center; gap: .3rem;
+    padding: .3rem .7rem;
+    border-radius: 999px;
+    font-size: .8rem; font-weight: 600;
+    color: rgba(255,255,255,.85);
+    line-height: 1;
+  }
+  .lang-picker .lang-link:hover { color: #fff; text-decoration: none; }
+  .lang-picker .lang-link.active {
+    background: rgba(255,255,255,.92);
+    color: var(--accent-deep);
+  }
+  .lang-picker .flag { font-size: 1rem; line-height: 1; }
+  /* On narrow screens the topbar already wraps; the picker stays
+     visible because it's the smallest item. */
+  @media (max-width: 32rem) {
+    .lang-picker { margin-right: 0; }
+    .lang-picker .lang-link { padding: .25rem .5rem; }
+    .lang-picker .lang-link .label { display: none; }
+  }
 
   .btn {
     display: inline-block;
@@ -516,11 +559,19 @@
 
 <header class="topbar" role="banner">
   <div class="wrap topbar-row">
-    <a class="brand" href="/" aria-label="Zonventure home">zonventure</a>
-    <nav aria-label="Primary">
-      <a href="/manual">Manual</a>
-      <a href="/pricing">Pricing</a>
-      <a href="/arrange" class="btn">Log in</a>
+    <a class="brand" href="/" aria-label="{{BRAND_ARIA}}">zonventure</a>
+    <nav aria-label="{{NAV_PRIMARY_ARIA}}">
+      <div class="lang-picker" role="group" aria-label="{{LANG_ARIA}}">
+        <a href="?lang=en" class="lang-link {{EN_ACTIVE}}" {{EN_CURRENT}} hreflang="en">
+          <span class="flag" aria-hidden="true">🇬🇧</span><span class="label">EN</span>
+        </a>
+        <a href="?lang=sv" class="lang-link {{SV_ACTIVE}}" {{SV_CURRENT}} hreflang="sv">
+          <span class="flag" aria-hidden="true">🇸🇪</span><span class="label">SV</span>
+        </a>
+      </div>
+      <a href="/manual">{{NAV_MANUAL}}</a>
+      <a href="/pricing">{{NAV_PRICING}}</a>
+      <a href="/arrange" class="btn">{{NAV_LOGIN}}</a>
     </nav>
   </div>
 </header>
@@ -529,38 +580,34 @@
 
 <section class="hero" aria-labelledby="hero-heading">
   <div class="wrap">
-    <span class="tag">Adventure platform for arrangers</span>
-    <h1 id="hero-heading">Adventures your players will remember.</h1>
-    <p class="lede">
-      Treasure hunts. Team-builds. Field trips. City walks.
-      You design the story; your players walk, solve, and finish
-      with the kind of grin that gets posted to LinkedIn.
-    </p>
+    <span class="tag">{{HERO_TAG}}</span>
+    <h1 id="hero-heading">{{HERO_HEADING}}</h1>
+    <p class="lede">{{HERO_LEDE}}</p>
     <div class="ctas">
-      <a href="/arrange" class="btn primary">Get started — it's free</a>
-      <a href="#usecases" class="btn ghost-light">See what's possible</a>
+      <a href="/arrange" class="btn primary">{{CTA_FREE}}</a>
+      <a href="#usecases" class="btn ghost-light">{{CTA_POSSIBLE}}</a>
     </div>
   </div>
-  <div class="scroll-hint" aria-hidden="true">Scroll</div>
+  <div class="scroll-hint" aria-hidden="true">{{SCROLL_HINT}}</div>
 </section>
 
-<section class="benefits" aria-label="At-a-glance benefits">
+<section class="benefits" aria-label="{{BENEFITS_ARIA}}">
   <div class="wrap">
     <div class="benefits-grid">
       <div class="benefit">
         <div class="icon" aria-hidden="true">📱</div>
-        <h3>No app to install</h3>
-        <p>Players join via a magic link. No app store, no friction, no excuses.</p>
+        <h3>{{BENEFIT1_TITLE}}</h3>
+        <p>{{BENEFIT1_BODY}}</p>
       </div>
       <div class="benefit">
         <div class="icon" aria-hidden="true">🎨</div>
-        <h3>Branded for your event</h3>
-        <p>Your colours, your logo, your intro story. White-labelled out of the box.</p>
+        <h3>{{BENEFIT2_TITLE}}</h3>
+        <p>{{BENEFIT2_BODY}}</p>
       </div>
       <div class="benefit">
         <div class="icon" aria-hidden="true">📺</div>
-        <h3>Live audience board</h3>
-        <p>A leaderboard URL for your lobby TV. Spectators cheer in real time.</p>
+        <h3>{{BENEFIT3_TITLE}}</h3>
+        <p>{{BENEFIT3_BODY}}</p>
       </div>
     </div>
   </div>
@@ -569,30 +616,30 @@
 <section class="section" id="usecases" aria-labelledby="usecases-heading">
   <div class="wrap">
     <div class="section-head">
-      <p class="section-eyebrow">Built for arrangers</p>
-      <h2 id="usecases-heading">Whoever your players are, the platform stays out of the way.</h2>
-      <p class="sub">Three of the most common shapes — but if you've got a different one in mind, the same tools handle it.</p>
+      <p class="section-eyebrow">{{USECASES_EYEBROW}}</p>
+      <h2 id="usecases-heading">{{USECASES_HEADING}}</h2>
+      <p class="sub">{{USECASES_SUB}}</p>
     </div>
     <div class="usecases-grid">
       <a class="usecase usecase-corporate" href="/manual#welcome">
         <div>
-          <h3>Corporate team-builds</h3>
-          <p>Event a treasure hunt as the offsite event everyone asks for again next year.</p>
-          <span class="usecase-link">See how it works →</span>
+          <h3>{{USECASE1_TITLE}}</h3>
+          <p>{{USECASE1_BODY}}</p>
+          <span class="usecase-link">{{USECASE_LINK}}</span>
         </div>
       </a>
       <a class="usecase usecase-school" href="/manual#welcome">
         <div>
-          <h3>Schools &amp; youth groups</h3>
-          <p>Outdoor learning that gets pupils moving, thinking, and finishing things together.</p>
-          <span class="usecase-link">See how it works →</span>
+          <h3>{{USECASE2_TITLE}}</h3>
+          <p>{{USECASE2_BODY}}</p>
+          <span class="usecase-link">{{USECASE_LINK}}</span>
         </div>
       </a>
       <a class="usecase usecase-tourism" href="/manual#welcome">
         <div>
-          <h3>Tourism &amp; city walks</h3>
-          <p>Sell self-guided adventures around your city. Visitors play whenever it suits them.</p>
-          <span class="usecase-link">See how it works →</span>
+          <h3>{{USECASE3_TITLE}}</h3>
+          <p>{{USECASE3_BODY}}</p>
+          <span class="usecase-link">{{USECASE_LINK}}</span>
         </div>
       </a>
     </div>
@@ -602,48 +649,44 @@
 <section class="section how" aria-labelledby="how-heading">
   <div class="wrap">
     <div class="section-head">
-      <p class="section-eyebrow">From idea to event</p>
-      <h2 id="how-heading">Three steps. One afternoon.</h2>
-      <p class="sub">No agency. No production team. Just you, the puzzles, and a date.</p>
+      <p class="section-eyebrow">{{HOW_EYEBROW}}</p>
+      <h2 id="how-heading">{{HOW_HEADING}}</h2>
+      <p class="sub">{{HOW_SUB}}</p>
     </div>
     <div class="steps">
       <div class="step">
         <div class="step-emoji" aria-hidden="true">✍️</div>
-        <h3>Author</h3>
-        <p>Write your puzzles, drop them on the map, attach hints and photos.</p>
+        <h3>{{STEP1_TITLE}}</h3>
+        <p>{{STEP1_BODY}}</p>
       </div>
       <div class="step">
         <div class="step-emoji" aria-hidden="true">📅</div>
-        <h3>Schedule</h3>
-        <p>Pick a date. Invite teams. Each player gets a personal magic link.</p>
+        <h3>{{STEP2_TITLE}}</h3>
+        <p>{{STEP2_BODY}}</p>
       </div>
       <div class="step">
         <div class="step-emoji" aria-hidden="true">🎉</div>
-        <h3>Watch them play</h3>
-        <p>Live activity feed. Audience leaderboard. The look on their faces when they finish.</p>
+        <h3>{{STEP3_TITLE}}</h3>
+        <p>{{STEP3_BODY}}</p>
       </div>
     </div>
   </div>
 </section>
 
-<section class="quote" aria-label="What arrangers say">
+<section class="quote" aria-label="{{QUOTE_ARIA}}">
   <div class="wrap">
-    <blockquote>
-      The thing nobody tells you about a good treasure hunt is that an
-      hour in, the players forget you organised it. They think it's
-      magic. That's the highest compliment a platform like this can earn.
-    </blockquote>
-    <p class="attr">— <strong>An arranger</strong>, after their first event</p>
+    <blockquote>{{QUOTE_BODY}}</blockquote>
+    <p class="attr">— <strong>{{QUOTE_ATTR_LABEL}}</strong>{{QUOTE_ATTR_AFTER}}</p>
   </div>
 </section>
 
 <section class="closing" aria-labelledby="closing-heading">
   <div class="wrap">
-    <h2 id="closing-heading">Ready to plan something they'll talk about for years?</h2>
-    <p>Sign up for free. Browse the global catalog or author your own. Buy team slots only when you want a real event.</p>
+    <h2 id="closing-heading">{{CLOSING_HEADING}}</h2>
+    <p>{{CLOSING_BODY}}</p>
     <div class="ctas">
-      <a href="/arrange" class="btn primary">Get started</a>
-      <a href="/manual" class="btn ghost-light">Read the manual</a>
+      <a href="/arrange" class="btn primary">{{CTA_GET_STARTED}}</a>
+      <a href="/manual" class="btn ghost-light">{{CTA_READ_MANUAL}}</a>
     </div>
   </div>
 </section>
@@ -652,14 +695,14 @@
 
 <footer role="contentinfo">
   <div class="wrap">
-    <nav aria-label="Footer">
-      <a href="/manual">Manual</a> ·
-      <a href="/pricing">Pricing</a> ·
-      <a href="/privacy">Privacy</a> ·
-      <a href="/terms">Terms</a> ·
-      <a href="/arrange">Log in</a>
+    <nav aria-label="{{FOOTER_ARIA}}">
+      <a href="/manual">{{NAV_MANUAL}}</a> ·
+      <a href="/pricing">{{NAV_PRICING}}</a> ·
+      <a href="/privacy">{{FOOTER_PRIVACY}}</a> ·
+      <a href="/terms">{{FOOTER_TERMS}}</a> ·
+      <a href="/arrange">{{NAV_LOGIN}}</a>
     </nav>
-    <p class="copy">© Zonventure. Adventures, made by you.</p>
+    <p class="copy">{{FOOTER_COPY}}</p>
   </div>
 </footer>
 
