@@ -90,7 +90,7 @@ func New(cfg Config) http.Handler {
 		DB:            cfg.DB,
 		SecureCookie:  cfg.SecureCookie,
 		Features:      auth.Features{SimulatorEnabled: cfg.SimulatorEnabled},
-		Pricing:       auth.Pricing{SlotCents: admin.PricePerSlotCents, Currency: "USD"},
+		Pricing:       auth.Pricing{SlotCents: admin.PricePerSlotCents, Currency: "EUR"},
 		Limiter:       auth.NewLoginLimiter(),
 		ForgotLimiter: auth.NewLoginLimiter(),
 		Mailer:        cfg.Mailer,

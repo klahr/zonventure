@@ -150,7 +150,7 @@ func TestStripeWebhook_CheckoutCompleted_HappyPath(t *testing.T) {
 		INSERT INTO purchases(org_id, buyer_user_id, adventure_slug, max_teams,
 		                     amount_cents, currency, provider, state)
 		VALUES ($1, (SELECT id FROM users WHERE username = 'boss'), 'demo', 4,
-		        800, 'USD', 'stripe', 'pending')
+		        800, 'EUR', 'stripe', 'pending')
 		RETURNING id
 	`, orgID).Scan(&purchaseID); err != nil {
 		t.Fatalf("seed purchase: %v", err)
@@ -161,7 +161,7 @@ func TestStripeWebhook_CheckoutCompleted_HappyPath(t *testing.T) {
 			"id":           "cs_test_abc",
 			"object":       "checkout.session",
 			"amount_total": 800,
-			"currency":     "usd",
+			"currency":     "eur",
 			"metadata": map[string]string{
 				"zv_purchase_id": fmt.Sprintf("%d", purchaseID),
 			},
@@ -253,7 +253,7 @@ func TestStripeWebhook_ChargeRefunded(t *testing.T) {
 		INSERT INTO purchases(org_id, buyer_user_id, adventure_slug, max_teams,
 		                     amount_cents, currency, provider, state, stripe_charge_id, paid_at)
 		VALUES ($1, (SELECT id FROM users WHERE username = 'boss'), 'demo', 1,
-		        200, 'USD', 'stripe', 'paid', 'ch_test_xyz', now_text())
+		        200, 'EUR', 'stripe', 'paid', 'ch_test_xyz', now_text())
 		RETURNING id
 	`, orgID).Scan(&purchaseID); err != nil {
 		t.Fatalf("seed paid: %v", err)

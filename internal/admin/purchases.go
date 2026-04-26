@@ -134,7 +134,7 @@ func (h *Handlers) CreatePurchase(w http.ResponseWriter, r *http.Request) {
 	if err := h.DB.QueryRowContext(r.Context(), `
 		INSERT INTO purchases(org_id, buyer_user_id, adventure_slug, max_teams,
 		                      amount_cents, currency, provider, state)
-		VALUES ($1, $2, $3, $4, $5, 'USD', $6, 'pending')
+		VALUES ($1, $2, $3, $4, $5, 'EUR', $6, 'pending')
 		RETURNING id
 	`, *me.OrgID, me.ID, req.AdventureSlug, req.MaxTeams, amount, provider).Scan(&id); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "insert failed: "+err.Error())
@@ -169,7 +169,7 @@ func (h *Handlers) CreatePurchase(w http.ResponseWriter, r *http.Request) {
 	httpx.JSON(w, http.StatusCreated, map[string]any{
 		"id":           id,
 		"amount_cents": amount,
-		"currency":     "USD",
+		"currency":     "EUR",
 		"state":        "pending",
 		"provider":     provider,
 		"checkout_url": checkoutURL,
@@ -426,7 +426,7 @@ const cancelBtn = document.getElementById('cancel');
 const result = document.getElementById('result');
 
 function dollars(cents, currency) {
-  return new Intl.NumberFormat(undefined, { style:'currency', currency: currency || 'USD' }).format(cents / 100);
+  return new Intl.NumberFormat(undefined, { style:'currency', currency: currency || 'EUR' }).format(cents / 100);
 }
 
 // csrf reads the zv_csrf cookie set by EnsureCSRF and is echoed on

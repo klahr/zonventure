@@ -59,7 +59,7 @@ func (h *Handlers) createStripeCheckoutSession(ctx context.Context, purchaseID i
 			{
 				Quantity: stripe.Int64(1),
 				PriceData: &stripe.CheckoutSessionLineItemPriceDataParams{
-					Currency:   stripe.String("usd"),
+					Currency:   stripe.String("eur"),
 					UnitAmount: stripe.Int64(int64(amountCents)),
 					ProductData: &stripe.CheckoutSessionLineItemPriceDataProductDataParams{
 						Name: stripe.String(productName),

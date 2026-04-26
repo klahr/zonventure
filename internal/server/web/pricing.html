@@ -6,7 +6,7 @@
 
   Anchors:
     - Pay-as-you-go price per slot is set in code by
-      `internal/admin.PricePerSlotCents` (currently 200 ¢ / $2).
+      `internal/admin.PricePerSlotCents` (currently 200 ¢ / €2).
       Update both this page AND that constant if you change it; the
       `/whoami` endpoint surfaces the constant to the in-app UI so a
       mismatch shows as a UX inconsistency.
@@ -21,14 +21,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Pricing — Zonventure</title>
-<meta name="description" content="Self-hosted free, hosted pay-as-you-go from $2/team slot, or a flat-rate Team plan. No subscription required to try it.">
+<meta name="description" content="Self-hosted free, hosted pay-as-you-go from €2/team slot, or a flat-rate Team plan. No subscription required to try it.">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 
 <meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#14202e" media="(prefers-color-scheme: dark)">
 
 <meta property="og:title" content="Pricing — Zonventure">
-<meta property="og:description" content="Self-hosted free, hosted pay-as-you-go from $2 per team slot. Run real adventures without a subscription.">
+<meta property="og:description" content="Self-hosted free, hosted pay-as-you-go from €2 per team slot. Run real adventures without a subscription.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="/pricing">
 
@@ -347,7 +347,7 @@
       <article class="tier">
         <h2>Hosted Free</h2>
         <p class="lead">Try the hosted product without a credit card.</p>
-        <div class="price">$0<small>/month</small></div>
+        <div class="price">€0<small>/month</small></div>
         <p class="sub">For evaluation + small one-off events.</p>
         <ul>
           <li>1 organisation, 1 arranger seat</li>
@@ -363,7 +363,7 @@
         <span class="badge">Most popular</span>
         <h2>Pay-as-you-go</h2>
         <p class="lead">Pay only when you run a real event.</p>
-        <div class="price">$2<small> / team slot</small></div>
+        <div class="price">€2<small> / team slot</small></div>
         <p class="sub">Charged per event. No monthly fee.</p>
         <ul>
           <li>Unlimited arrangers + adventures</li>
@@ -378,8 +378,8 @@
       <article class="tier">
         <h2>Team</h2>
         <p class="lead">Predictable monthly billing for steady operators.</p>
-        <div class="price">$49<small>/month</small></div>
-        <p class="sub">Includes 30 slots / month — extras at $1.50.</p>
+        <div class="price">€49<small>/month</small></div>
+        <p class="sub">Includes 30 slots / month — extras at €1.50.</p>
         <ul>
           <li>Up to 5 arranger seats</li>
           <li>Unlimited concurrent events</li>
@@ -425,7 +425,7 @@
       <tbody>
         <tr><td>Adventures, authoring, players</td>      <td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td></tr>
         <tr><td>Concurrent events</td>                   <td class="yes">∞</td><td class="no">1</td>  <td class="yes">∞</td><td class="yes">∞</td></tr>
-        <tr><td>Team slots</td>                          <td class="yes">∞</td><td class="no">10/mo</td><td class="yes">$2 ea</td><td class="yes">30 incl.</td></tr>
+        <tr><td>Team slots</td>                          <td class="yes">∞</td><td class="no">10/mo</td><td class="yes">€2 ea</td><td class="yes">30 incl.</td></tr>
         <tr><td>Arranger seats</td>                      <td class="yes">∞</td><td class="no">1</td>  <td class="yes">∞</td><td class="yes">5</td></tr>
         <tr><td>Stripe-hosted invoices</td>              <td class="no">opt-in</td><td class="no">—</td><td class="yes">✓</td><td class="yes">✓</td></tr>
         <tr><td>Webhooks + audit-log API</td>            <td class="yes">✓</td><td class="no">—</td>  <td class="yes">✓</td><td class="yes">✓</td></tr>
