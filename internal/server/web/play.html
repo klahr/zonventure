@@ -535,12 +535,15 @@
     z-index: 40;
   }
   .lang-fab select {
-    font: inherit; font-size: .85rem; font-weight: 600;
+    font: inherit; font-size: .9rem; font-weight: 600;
     color: var(--text);
     background: color-mix(in srgb, var(--surface) 88%, transparent);
     border: 1px solid var(--border-soft);
     border-radius: 999px;
-    padding: .3rem 1.75rem .3rem .75rem;
+    /* Tap target ≥44 px (Apple HIG / WCAG 2.5.5) so cold-weather
+       gloved fingers and one-handed users can reliably hit it. */
+    min-height: 2.75rem;
+    padding: .55rem 1.9rem .55rem .9rem;
     box-shadow: var(--shadow);
     cursor: pointer;
     appearance: none;
@@ -561,7 +564,8 @@
   .more-fab {
     position: fixed;
     top: calc(.5rem + env(safe-area-inset-top));
-    right: 5.5rem;
+    /* Pushed further left to make room for the wider language picker. */
+    right: 6.5rem;
     z-index: 40;
   }
   .more-fab > button {
@@ -569,12 +573,14 @@
     background: color-mix(in srgb, var(--surface) 88%, transparent);
     border: 1px solid var(--border-soft);
     border-radius: 999px;
-    width: 2rem; height: 2rem;
+    /* 44 px tap target — same rationale as the language picker. */
+    width: 2.75rem; height: 2.75rem;
     padding: 0;
     cursor: pointer;
     box-shadow: var(--shadow);
     color: var(--muted);
     font-weight: 700;
+    font-size: 1.1rem;
     line-height: 1;
   }
   .more-fab > button:hover { border-color: var(--muted); color: var(--text); }
@@ -639,6 +645,55 @@
   .preview-debug .mono {
     font-family: ui-monospace, SFMono-Regular, monospace; font-size: .9rem;
   }
+
+  /* ---------- Connection status banner ----------
+     Shown when the WebSocket has been disconnected for >2s. Sits above
+     the submit dock so it's visible while playing without covering the
+     puzzle content. Two shades: warn (reconnecting) and err (gave up).
+     The banner is mounted once on body and toggled via class. */
+  .ws-status {
+    position: fixed;
+    left: 0; right: 0;
+    top: env(safe-area-inset-top);
+    z-index: 4000;
+    padding: .35rem .75rem;
+    text-align: center;
+    font-size: .8rem; font-weight: 700;
+    letter-spacing: .04em;
+    background: var(--surface);
+    color: var(--ink);
+    border-bottom: 1px solid var(--border-soft);
+    transform: translateY(-100%);
+    transition: transform 180ms ease;
+    pointer-events: none;
+  }
+  .ws-status.show { transform: translateY(0); }
+  .ws-status.warn {
+    background: color-mix(in srgb, #f0a000 20%, var(--surface));
+    color: #6b4500;
+  }
+  .ws-status.err {
+    background: color-mix(in srgb, var(--danger) 22%, var(--surface));
+    color: var(--danger);
+  }
+  /* Multi-tab takeover banner: a full-screen interstitial shown when a
+     second tab notices the slot is already active in another tab. */
+  .tab-conflict {
+    position: fixed; inset: 0; z-index: 5000;
+    background: var(--bg);
+    display: grid; place-items: center;
+    padding: 1.5rem;
+  }
+  .tab-conflict .panel {
+    background: var(--surface);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 1.25rem;
+    max-width: 420px; width: 100%;
+    text-align: center;
+  }
+  .tab-conflict h3 { margin: 0 0 .5rem; }
 </style>
 </head>
 <body>
@@ -683,6 +738,17 @@ let previewState = null;
 //   'silent' — plain no-answer continue; animations suppressed.
 //   'gated'  — no-answer gated puzzle; celebrate on pass, rebuff on 403.
 let advanceMode = 'none';
+// Server clock offset, learned from the first state push that carries
+// server_now. The pre-event countdown applies this to Date.now() so a
+// phone with a skewed system clock doesn't tick to 0:00 prematurely.
+let serverOffsetMs = 0;
+// Once we receive at least one state push we treat any later WS close
+// as "session expired" rather than "no session yet" — distinct screens.
+let hadActiveSession = false;
+// The most recent rate-limit-or-gate error from the server. Used by the
+// answer_error path to render a countdown / distinct copy and re-enable
+// the input when the cooldown ends.
+let answerErrorTimer = null;
 
 // api is kept only for the one-shot auth probe at page load — every
 // subsequent state change rides the WebSocket.
@@ -712,39 +778,219 @@ function wsSend(kind, data) {
   catch { return false; }
 }
 
+// Outgoing offline queue. Without this an answer typed during a
+// reconnect window is silently dropped — the player has no way to
+// know whether the server saw it. We FIFO answer/advance frames (cap
+// at 5 — players spamming during dead air shouldn't prefill the
+// limiter), and dedupe locations to "the last fix" since older pings
+// are stale once we reconnect.
+const pendingAnswers = [];
+const PENDING_ANSWERS_MAX = 5;
+let pendingLocation = null;
+
+// Did we lose the WS while typing? Tracked so the "saved while you
+// were offline" toast only fires when the user actually queued
+// something — a clean reconnect with no traffic stays silent.
+let didQueueWhileOffline = false;
+
+function wsSendOrQueue(kind, data) {
+  if (ws && ws.readyState === 1) {
+    return wsSend(kind, data);
+  }
+  if (kind === 'answer' || kind === 'advance') {
+    if (pendingAnswers.length < PENDING_ANSWERS_MAX) {
+      pendingAnswers.push({ kind, data });
+      didQueueWhileOffline = true;
+    }
+    return false;
+  }
+  if (kind === 'location') {
+    pendingLocation = data;
+    return false;
+  }
+  return false;
+}
+
+function flushPending() {
+  if (!ws || ws.readyState !== 1) return;
+  const announce = didQueueWhileOffline;
+  didQueueWhileOffline = false;
+  while (pendingAnswers.length > 0) {
+    const m = pendingAnswers.shift();
+    if (!wsSend(m.kind, m.data)) {
+      // Re-queue and bail — we'll try again on the next onopen.
+      pendingAnswers.unshift(m);
+      didQueueWhileOffline = true;
+      return;
+    }
+  }
+  if (pendingLocation) {
+    if (wsSend('location', pendingLocation)) pendingLocation = null;
+  }
+  if (announce && submitResultEl) {
+    submitResultEl.className = 'result muted';
+    submitResultEl.textContent = t('Reconnected — your last answer was sent.');
+    setTimeout(() => {
+      if (submitResultEl && submitResultEl.textContent === t('Reconnected — your last answer was sent.')) {
+        submitResultEl.textContent = '';
+      }
+    }, 4000);
+  }
+}
+
+// setWSStatus toggles the top-of-screen connection banner. Idempotent —
+// safe to call from open / close / timeout paths without double work.
+//   ''     — hide the banner.
+//   'warn' — "Reconnecting…" while the WS is still backing off.
+//   'err'  — "Disconnected" once we've been offline long enough that
+//            the player likely needs to know.
+let wsStatusEl = null;
+let wsStatusTimer = null;
+function setWSStatus(level, text) {
+  if (!wsStatusEl) {
+    wsStatusEl = document.createElement('div');
+    wsStatusEl.className = 'ws-status';
+    wsStatusEl.setAttribute('role', 'status');
+    wsStatusEl.setAttribute('aria-live', 'polite');
+    document.body.append(wsStatusEl);
+  }
+  wsStatusEl.classList.remove('warn', 'err', 'show');
+  if (!level) return;
+  wsStatusEl.classList.add(level, 'show');
+  wsStatusEl.textContent = text;
+}
+
 function connectWS() {
   if (wsReconnectTimer) { clearTimeout(wsReconnectTimer); wsReconnectTimer = null; }
+  if (wsStatusTimer)    { clearTimeout(wsStatusTimer);    wsStatusTimer    = null; }
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
   ws = new WebSocket(`${proto}//${location.host}/ws/play`);
-  ws.onopen = () => { wsBackoff = 500; };
+  ws.onopen = () => {
+    wsBackoff = 500;
+    setWSStatus('', '');
+    // Replay anything we queued while the socket was down. Order: any
+    // queued answers first (player intent), then the latest location
+    // fix so the gate check can fire fresh.
+    flushPending();
+  };
   ws.onmessage = (ev) => {
     let msg; try { msg = JSON.parse(ev.data); } catch { return; }
     if (!msg || !msg.kind) return;
     if (msg.kind === 'state') {
+      hadActiveSession = true;
+      // Anchor the server clock offset on every state push so a long
+      // pause / drift doesn't accumulate. msg.data.server_now is an
+      // RFC3339 string emitted by the server.
+      if (msg.data && msg.data.server_now) {
+        const sn = new Date(msg.data.server_now).getTime();
+        if (Number.isFinite(sn)) serverOffsetMs = sn - Date.now();
+      }
       startGPS();
       render(msg.data);
     } else if (msg.kind === 'answer_result') {
       onAnswerResult(msg.data);
     } else if (msg.kind === 'answer_error') {
-      // Gated "Check location" rejection → play the rebuff so the
-      // player gets the same visceral "not yet" cue as a wrong
-      // answer. The plain-continue error path stays silent.
-      if (advanceMode === 'gated') rebuff();
-      advanceMode = 'none';
-      if (submitResultEl) {
-        submitResultEl.className = 'result err';
-        submitResultEl.textContent = msg.data?.error || t('error {{status}}', { status: msg.data?.status || '' });
-      }
+      handleAnswerError(msg.data || {});
     }
   };
   ws.onclose = (ev) => {
-    // 1008/1011 = auth / server error; don't spin. 1000 = normal.
-    if (ev.code === 1008) { renderNoSession(); return; }
+    // 1008 = auth: either we never had a session, or it just expired.
+    // The two cases want different copy on the empty screen.
+    if (ev.code === 1008) {
+      setWSStatus('', '');
+      renderNoSession({ expired: hadActiveSession });
+      return;
+    }
     const delay = Math.min(wsBackoff, 10000);
     wsBackoff = Math.min(wsBackoff * 2, 10000);
     wsReconnectTimer = setTimeout(connectWS, delay);
+    // Two tiers of feedback so a brief blip stays invisible but a real
+    // outage doesn't leave the player staring at a stale screen.
+    if (wsStatusTimer) clearTimeout(wsStatusTimer);
+    wsStatusTimer = setTimeout(() => {
+      setWSStatus('warn', t('Reconnecting…'));
+      wsStatusTimer = setTimeout(() => {
+        setWSStatus('err', t('Disconnected — check your connection.'));
+      }, 13000);
+    }, 2000);
   };
   ws.onerror = () => { /* handled by onclose */ };
+}
+
+// handleAnswerError routes the WS answer_error frame onto the right UI.
+// Three shapes worth distinguishing:
+//   - 429 with retry_after_secs → too many attempts; show countdown,
+//     disable submit/continue until cooldown elapses.
+//   - 403 (gate not reached) → play the "rebuff" cue (gated mode only)
+//     plus a distinct "Move closer" line, since the answer wasn't
+//     wrong, the player just isn't there yet.
+//   - everything else → plain error text in the result line.
+function handleAnswerError(d) {
+  const status = d.status || 0;
+  const retry  = Number(d.retry_after_secs) || 0;
+  if (answerErrorTimer) { clearInterval(answerErrorTimer); answerErrorTimer = null; }
+  // Cancel the gated-advance flag *before* deciding whether to rebuff
+  // — only the gated path wants the visual cue on a 403.
+  const wasGated = advanceMode === 'gated';
+  advanceMode = 'none';
+
+  if (status === 429 && retry > 0) {
+    // Disable input/submit while the limiter cools down.
+    let secsLeft = retry;
+    const setText = () => {
+      if (!submitResultEl) return;
+      submitResultEl.className = 'result err';
+      submitResultEl.textContent = secsLeft > 0
+        ? t('Too many attempts. Try again in {{n}}s.', { n: secsLeft })
+        : t('Try again now.');
+    };
+    setSubmitDisabled(true);
+    setText();
+    answerErrorTimer = setInterval(() => {
+      secsLeft -= 1;
+      if (secsLeft <= 0) {
+        clearInterval(answerErrorTimer);
+        answerErrorTimer = null;
+        setSubmitDisabled(false);
+        if (submitResultEl) {
+          submitResultEl.className = 'result muted';
+          submitResultEl.textContent = '';
+        }
+        return;
+      }
+      setText();
+    }, 1000);
+    return;
+  }
+
+  if (status === 403) {
+    // 403 from the server's gate check. The "wrong answer" rebuff would
+    // mislead the player into thinking they typed the wrong word — show
+    // a softer cue + clearer copy instead.
+    if (wasGated) rebuff();
+    if (submitResultEl) {
+      submitResultEl.className = 'result err';
+      submitResultEl.textContent = t("You're not at the location yet — move closer and try again.");
+    }
+    return;
+  }
+
+  // Generic fallback: keep the legacy gated rebuff for parity with the
+  // pre-existing flow when the server gives back something we don't
+  // specifically classify.
+  if (wasGated) rebuff();
+  if (submitResultEl) {
+    submitResultEl.className = 'result err';
+    submitResultEl.textContent = d.error || t('error {{status}}', { status: status || '' });
+  }
+}
+
+function setSubmitDisabled(disabled) {
+  const dock = document.getElementById('submit-dock');
+  if (!dock) return;
+  dock.querySelectorAll('button, input').forEach((el) => {
+    el.disabled = !!disabled;
+  });
 }
 
 // applyColors paints the four optional adventure brand colours onto the
@@ -826,9 +1072,21 @@ function el(tag, attrs = {}, ...children) {
   return e;
 }
 
-function renderNoSession() {
+function renderNoSession(opts) {
+  const expired = !!(opts && opts.expired);
   lastRenderKey = null;
   hideSubmitDock();
+  // Two distinct screens — the "expired" path is reached when a slot
+  // session that *was* active (we received at least one state push) is
+  // closed by the server, almost always because the slot's expiry
+  // passed. The first-time path stays as the soft prompt to open a link.
+  if (expired) {
+    app.replaceChildren(el('div', { class: 'card' },
+      el('h3', {}, t('Your link expired')),
+      el('p', { class: 'muted' },
+        t('Magic links expire after a while. Ask your arranger for a fresh link to get back in — your team\'s progress is safe.'))));
+    return;
+  }
   app.replaceChildren(el('div', { class: 'card' },
     el('h3', {}, t('Open your magic link')),
     el('p', { class: 'muted' },
@@ -854,16 +1112,26 @@ const MAX_UPLOAD_ACC       = 150;
 const PREFER_LAST_RATIO    = 1.5;
 const PREFER_LAST_MAX_AGE_MS = 20_000;
 
+// gpsErrorCode mirrors the W3C GeolocationPositionError enum so the
+// recovery UI can branch on it without re-parsing the human string.
+//   1 — permission denied (user/browser/OS toggle)
+//   2 — position unavailable (no signal)
+//   3 — timeout
+let gpsErrorCode = 0;
+
 function startGPS() {
   if (!navigator.geolocation) {
     gpsError = t('geolocation not supported on this device');
+    gpsErrorCode = 2;
     lastRenderKey = null; // so the gate card picks up the error on next refresh
+    updateGateLock();
     return;
   }
   if (gpsWatchID !== null) return;
   gpsWatchID = navigator.geolocation.watchPosition(
     (pos) => {
       gpsError = null;
+      gpsErrorCode = 0;
       const next = {
         lat: pos.coords.latitude,
         lng: pos.coords.longitude,
@@ -888,11 +1156,13 @@ function startGPS() {
       // player so they know whether to flip the browser toggle, go
       // outdoors, or wait a moment.
       const code = err.code;
+      gpsErrorCode = code || 0;
       gpsError = code === 1 ? t('permission denied — enable location for this site')
                : code === 2 ? t('no signal — try moving outdoors')
                : code === 3 ? t('timed out — retrying')
                : err.message || 'unknown';
       lastRenderKey = null;
+      updateGateLock();
       console.warn('gps', err.message);
     },
     // maximumAge: 0 forces the freshest reading every call. The default
@@ -904,13 +1174,31 @@ function startGPS() {
   if (pingTimer === null) pingTimer = setInterval(sendPing, 15000);
 }
 
+// retryGPS re-arms the watcher after the user taps Retry. Clearing
+// the existing watch ID is important — the browser may have a stuck
+// watcher that won't fire again on its own when permission flipped
+// from denied to granted in a different app/tab.
+function retryGPS() {
+  if (gpsWatchID !== null && navigator.geolocation) {
+    try { navigator.geolocation.clearWatch(gpsWatchID); } catch { /* ignore */ }
+  }
+  gpsWatchID = null;
+  gpsError = null;
+  gpsErrorCode = 0;
+  startGPS();
+  updateGateLock();
+}
+
 function sendPing() {
   if (!lastFix) return;
   // Drop readings too imprecise to be useful for gate checks or map
   // rendering. The server stores every ping it receives; letting
   // ±500 m fixes in just adds noise to the track.
   if (lastFix.accuracy > MAX_UPLOAD_ACC) return;
-  wsSend('location', {
+  // Queue when the WS is down so the next reconnect carries the
+  // freshest fix; older pings dedupe to "last only" since the server
+  // doesn't care about the gap, just the current position.
+  wsSendOrQueue('location', {
     lat: lastFix.lat, lng: lastFix.lng, accuracy: lastFix.accuracy,
     client_ts: new Date().toISOString(),
   });
@@ -921,6 +1209,11 @@ function sendPing() {
 // precision changes, without forcing a full re-render.
 let currentGatedButton = null;
 let currentGatedRadius = 0;
+// currentGpsHelpEl is the optional help/retry surface that sits below
+// the gated submit button. Built by renderSubmitDock and updated
+// reactively here so a permission flip / new fix shows or hides it
+// without forcing a render() pass.
+let currentGpsHelpEl = null;
 
 // updateGateLock reflects the latest fix onto the gated advance
 // button: disabled with a "waiting for lock" label until the fix is
@@ -929,9 +1222,13 @@ let currentGatedRadius = 0;
 // handles the "not there yet" case.
 function updateGateLock() {
   if (!currentGatedButton || !currentGatedRadius) return;
-  const ok = lastFix && lastFix.accuracy <= Math.max(currentGatedRadius, 25);
+  const ok = !gpsErrorCode && lastFix && lastFix.accuracy <= Math.max(currentGatedRadius, 25);
   currentGatedButton.disabled = !ok;
-  if (ok) {
+  if (gpsErrorCode === 1) {
+    // Permission flipped off — say so on the button itself; recovery
+    // hint + retry live in currentGpsHelpEl.
+    currentGatedButton.textContent = t('Location off — see below');
+  } else if (ok) {
     currentGatedButton.textContent = t("Check location · I'm here");
   } else if (!lastFix) {
     currentGatedButton.textContent = t('Waiting for GPS lock…');
@@ -939,6 +1236,39 @@ function updateGateLock() {
     currentGatedButton.textContent = t('GPS ±{{acc}} m — too imprecise',
       { acc: Math.round(lastFix.accuracy) });
   }
+  renderGpsHelp();
+}
+
+function renderGpsHelp() {
+  if (!currentGpsHelpEl) return;
+  currentGpsHelpEl.replaceChildren();
+  // Code 1 = denied. Code 2 = unavailable. Code 3 = timeout. We only
+  // surface a help block when there's something actionable to say —
+  // happy path stays uncluttered.
+  if (!gpsErrorCode) {
+    currentGpsHelpEl.style.display = 'none';
+    return;
+  }
+  currentGpsHelpEl.style.display = '';
+  const hint = (() => {
+    if (gpsErrorCode === 1) {
+      return t('Location is blocked. Open your browser or device settings, allow location for this site, then tap Retry.');
+    }
+    if (gpsErrorCode === 2) {
+      return t('No GPS signal. Move to open sky (away from buildings/trees) and tap Retry — usually clears in 30 seconds.');
+    }
+    return t("GPS hasn't locked yet. Wait a moment and tap Retry, or move outdoors.");
+  })();
+  const retry = document.createElement('button');
+  retry.type = 'button';
+  retry.className = 'secondary';
+  retry.textContent = t('Retry GPS');
+  retry.addEventListener('click', retryGPS);
+  const help = document.createElement('p');
+  help.className = 'muted';
+  help.style.cssText = 'font-size:.85rem; margin:.4rem 0';
+  help.textContent = hint;
+  currentGpsHelpEl.append(help, retry);
 }
 
 function render(s) {
@@ -985,6 +1315,14 @@ function render(s) {
   if (s.status === 'waiting')  { hideSubmitDock(); app.append(buildWaitingCard(s)); return; }
   if (s.status === 'paused')   { hideSubmitDock(); app.append(el('p', {}, t('The arranger paused the event. Stand by.'))); return; }
   if (s.status === 'completed'){ hideSubmitDock(); renderCompleted(s); return; }
+  if (s.status === 'cancelled' || s.status === 'canceled') {
+    hideSubmitDock();
+    app.append(el('div', { class: 'card' },
+      el('h3', {}, t('Event cancelled')),
+      el('p', { class: 'muted' },
+        t('The arranger cancelled this event. Reach out to them for next steps; nothing more to do here.'))));
+    return;
+  }
 
   if (s.title) app.append(el('h3', {}, s.title));
   if (Array.isArray(s.images)) {
@@ -1171,6 +1509,7 @@ function renderSubmitDock(s) {
   submitInputEl = null;
   currentGatedButton = null;
   currentGatedRadius = 0;
+  currentGpsHelpEl = null;
 
   if (s && s.no_answer) {
     // No-answer puzzles advance with a single button tap instead of a
@@ -1183,17 +1522,30 @@ function renderSubmitDock(s) {
     button.textContent = gatedUnreached ? t("Check location · I'm here") : t('Continue');
     const result = document.createElement('p');
     result.className = 'result muted';
+    result.setAttribute('role', 'status');
+    result.setAttribute('aria-live', 'polite');
     const wrap = document.createElement('div');
     wrap.className = 'dock-single';
     wrap.append(button, result);
-    dock.append(wrap);
+    // Empty by default — populated by renderGpsHelp when a permission /
+    // signal error lands. Outside .dock-single so its full-width retry
+    // button doesn't squeeze the result line.
+    const gpsHelp = document.createElement('div');
+    gpsHelp.className = 'gps-help';
+    gpsHelp.style.display = 'none';
+    dock.append(wrap, gpsHelp);
     submitResultEl = result;
+    currentGpsHelpEl = gpsHelp;
     // Lock the gated advance button until the fix is precise enough
     // for the server's gate check to produce a meaningful answer.
     if (gatedUnreached) {
       currentGatedButton = button;
       currentGatedRadius = s.gate.radius_m || 0;
       updateGateLock();
+    } else {
+      // Non-gated continue still benefits from the help surface (the
+      // gated button branch above already calls it).
+      renderGpsHelp();
     }
     button.addEventListener('click', () => {
       if (previewState) {
@@ -1215,10 +1567,13 @@ function renderSubmitDock(s) {
       } else {
         advanceMode = 'silent';
       }
-      if (!wsSend('advance', {})) {
-        advanceMode = 'none';
-        result.className = 'result err';
-        result.textContent = t('Disconnected — try again in a moment.');
+      const sent = wsSendOrQueue('advance', {});
+      if (!sent) {
+        // Queued — let the player know the press registered. The
+        // advance mode stays so the rebuff/celebrate path fires once
+        // the server replies after the reconnect.
+        result.className = 'result muted';
+        result.textContent = t('Offline — will send the moment you reconnect.');
       }
     });
     return;
@@ -1229,11 +1584,20 @@ function renderSubmitDock(s) {
   input.placeholder = previewState ? t('Try an answer (preview)') : t('Your answer');
   input.autocomplete = 'off';
   input.required = true;
+  // Screen-reader users hear the placeholder, but a real label is
+  // strictly correct + survives placeholder localisation if any
+  // assistive tech ever ignores it.
+  input.setAttribute('aria-label', t('Your answer'));
   const button = document.createElement('button');
   button.type = 'submit';
   button.textContent = t('Submit');
   const result = document.createElement('p');
   result.className = 'result muted';
+  // aria-live so the rate-limit countdown / "saved while offline" /
+  // gate rejection lines are announced when they appear, not silently
+  // updated under the user's nose.
+  result.setAttribute('role', 'status');
+  result.setAttribute('aria-live', 'polite');
   const form = document.createElement('form');
   form.append(input, button, result);
   dock.append(form);
@@ -1242,9 +1606,13 @@ function renderSubmitDock(s) {
   form.addEventListener('submit', (e) => {
     e.preventDefault();
     if (previewState) { handlePreviewSubmit(input.value); return; }
-    if (!wsSend('answer', { answer: input.value })) {
-      result.className = 'result err';
-      result.textContent = t('Disconnected — try again in a moment.');
+    if (!wsSendOrQueue('answer', { answer: input.value })) {
+      // Queued — clear the input optimistically so the player can
+      // tell their press landed, and surface a status line so the
+      // disappearing input doesn't read as a silent failure.
+      result.className = 'result muted';
+      result.textContent = t('Offline — will send the moment you reconnect.');
+      input.value = '';
     }
   });
 }
@@ -1490,15 +1858,20 @@ function buildWaitingCard(s) {
       preStartCountdownText(s.scheduled_at, s.server_now));
     card.append(digits, el('small', {}, t('until the flag drops')));
     // Self-refreshing countdown — stops when the card leaves the DOM.
+    // We anchor every tick on the server-side clock so a phone whose
+    // system time is ahead of the server doesn't see "0:00" before the
+    // event actually starts. serverOffsetMs is updated on every state
+    // push (ws.onmessage) so even long pre-event waits stay accurate.
     const target = parsePreStartTarget(s.scheduled_at);
     const tick = () => {
       if (!digits.isConnected) return;
-      const now = Date.now();
+      const now = Date.now() + serverOffsetMs;
       if (now >= target) {
         digits.textContent = t('any moment…');
         return;
       }
-      digits.textContent = preStartCountdownText(s.scheduled_at, null);
+      const fakeServerNow = new Date(now).toISOString();
+      digits.textContent = preStartCountdownText(s.scheduled_at, fakeServerNow);
       setTimeout(tick, 1000);
     };
     setTimeout(tick, 1000);
@@ -1622,6 +1995,73 @@ function hideSubmitDock() {
   if (dock) dock.remove();
 }
 
+// Multi-tab guard. Two browser tabs sharing the same slot cookie can
+// race each other — both burn answer-attempt budget, both ping
+// location, neither knows the other exists. We resolve it by claiming
+// the slot in localStorage with a periodic heartbeat. A second tab
+// detects the active claim, blocks itself, and tells the player to
+// close one of the windows.
+//
+// We don't know the slot id from the cookie (HttpOnly), so the key
+// hashes the URL path — which is "/play" for everyone, fine because a
+// device only has one player session at a time. Coarser than per-slot
+// but does the job.
+const TAB_LOCK_KEY = 'zv_player_active_tab';
+const TAB_LOCK_TIMEOUT_MS = 8000; // claim is stale after this long.
+const TAB_LOCK_HEARTBEAT_MS = 3000;
+const tabId = Math.random().toString(36).slice(2) + Date.now().toString(36);
+let tabLockTimer = null;
+
+function claimTabLock() {
+  try {
+    localStorage.setItem(TAB_LOCK_KEY, JSON.stringify({ id: tabId, ts: Date.now() }));
+  } catch { /* localStorage may be disabled — fall through, no-op */ }
+}
+
+function tabLockHolder() {
+  try {
+    const raw = localStorage.getItem(TAB_LOCK_KEY);
+    if (!raw) return null;
+    const v = JSON.parse(raw);
+    if (!v || typeof v.ts !== 'number') return null;
+    if (Date.now() - v.ts > TAB_LOCK_TIMEOUT_MS) return null;
+    return v;
+  } catch { return null; }
+}
+
+function showTabConflict() {
+  document.querySelectorAll('.tab-conflict').forEach((n) => n.remove());
+  const overlay = el('div', { class: 'tab-conflict' },
+    el('div', { class: 'panel' },
+      el('h3', {}, t('Already open in another tab')),
+      el('p', { class: 'muted' },
+        t("This game is already running in another tab on this device. Close this one and continue there to keep your answers and location in sync.")),
+      el('button', {
+        on: { click: () => {
+          // Force-claim from this tab — useful if the other tab
+          // was closed without releasing cleanly.
+          overlay.remove();
+          startTabHeartbeat();
+          bootstrapAfterClaim();
+        } },
+      }, t('Use this tab instead'))));
+  document.body.append(overlay);
+}
+
+function startTabHeartbeat() {
+  claimTabLock();
+  if (tabLockTimer) clearInterval(tabLockTimer);
+  tabLockTimer = setInterval(claimTabLock, TAB_LOCK_HEARTBEAT_MS);
+  // Releasing on unload lets the *other* tab take over without waiting
+  // out the staleness window.
+  window.addEventListener('pagehide', () => {
+    try {
+      const cur = tabLockHolder();
+      if (cur && cur.id === tabId) localStorage.removeItem(TAB_LOCK_KEY);
+    } catch { /* ignore */ }
+  }, { once: true });
+}
+
 // Bootstrap: a single HTTP probe decides auth (WebSocket upgrade failures
 // can't be distinguished from network errors in the browser) and seeds the
 // initial render. Afterwards the WebSocket takes over entirely.
@@ -1635,12 +2075,27 @@ async function bootstrap() {
     await bootstrapPreview(qs.get('preview'), parseInt(qs.get('page') || '0', 10), qs.get('debug') === '1');
     return;
   }
+  const holder = tabLockHolder();
+  if (holder && holder.id !== tabId) {
+    showTabConflict();
+    return;
+  }
+  startTabHeartbeat();
+  await bootstrapAfterClaim();
+}
+
+async function bootstrapAfterClaim() {
   const s = await api('/api/player/state');
   if (s.status === 401) { renderNoSession(); return; }
   if (s.status !== 200) {
     app.replaceChildren(el('p', { class: 'err' }, s.body?.error || t('error')));
     return;
   }
+  if (s.body && s.body.server_now) {
+    const sn = new Date(s.body.server_now).getTime();
+    if (Number.isFinite(sn)) serverOffsetMs = sn - Date.now();
+  }
+  hadActiveSession = true;
   startGPS();
   render(s.body);
   connectWS();

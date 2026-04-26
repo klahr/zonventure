@@ -19,6 +19,10 @@ type Handlers struct {
 	// Features ships in whoami so the client can hide UI surfaces
 	// that aren't wired up on this server (e.g. the simulator).
 	Features Features
+	// Pricing carries the operator's catalog price per slot, for client
+	// totals. Zero values render as "$0.00" — operator should always set
+	// this; the server's actual charge is enforced separately.
+	Pricing Pricing
 	// Limiter throttles failed login attempts. Optional: nil disables.
 	Limiter *LoginLimiter
 	// Mailer delivers signup verification + future forgot-password
@@ -37,6 +41,15 @@ type Features struct {
 	SimulatorEnabled bool `json:"simulator_enabled"`
 }
 
+// Pricing is the small slice of catalog data the frontend needs to
+// render totals before submitting a purchase. Mirrors what the server
+// will charge so the UI doesn't have to keep its own constant. Surfaced
+// on /whoami so the bootstrap fetch already carries it.
+type Pricing struct {
+	SlotCents int    `json:"slot_cents"`
+	Currency  string `json:"currency"`
+}
+
 type loginRequest struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
@@ -50,6 +63,7 @@ type whoamiResponse struct {
 	Email         string   `json:"email,omitempty"`
 	EmailVerified bool     `json:"email_verified"`
 	Features      Features `json:"features"`
+	Pricing       Pricing  `json:"pricing"`
 }
 
 func (h *Handlers) userResponse(u User) whoamiResponse {
@@ -57,6 +71,7 @@ func (h *Handlers) userResponse(u User) whoamiResponse {
 		ID: u.ID, Username: u.Username, Role: u.Role, OrgID: u.OrgID,
 		Email: u.Email, EmailVerified: u.EmailVerified,
 		Features: h.Features,
+		Pricing:  h.Pricing,
 	}
 }
 

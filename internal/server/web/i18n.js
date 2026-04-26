@@ -149,6 +149,24 @@
         'Varje tips låses upp ett konfigurerbart antal sekunder efter att laget når detta pussel. Spelare visar dem ett i taget med en knapp.',
       'Disconnected — try again in a moment.':
         'Frånkopplad — försök igen om en stund.',
+      'Reconnecting…': 'Återansluter…',
+      'Disconnected — check your connection.':
+        'Frånkopplad — kontrollera din anslutning.',
+      'Too many attempts. Try again in {{n}}s.':
+        'För många försök. Prova igen om {{n}} s.',
+      'Try again now.': 'Prova igen nu.',
+      "You're not at the location yet — move closer and try again.":
+        'Du är inte framme än — flytta dig närmare och försök igen.',
+      'Your link expired': 'Din länk har gått ut',
+      "Magic links expire after a while. Ask your arranger for a fresh link to get back in — your team's progress is safe.":
+        'Magiska länkar går ut efter en tid. Be din arrangör om en ny länk för att komma tillbaka — lagets framsteg finns kvar.',
+      'Event cancelled': 'Eventet avbröts',
+      'The arranger cancelled this event. Reach out to them for next steps; nothing more to do here.':
+        'Arrangören avbröt eventet. Hör av dig till dem för nästa steg; det finns inget mer att göra här.',
+      'Already open in another tab': 'Redan öppen i en annan flik',
+      "This game is already running in another tab on this device. Close this one and continue there to keep your answers and location in sync.":
+        'Spelet körs redan i en annan flik på den här enheten. Stäng den här och fortsätt där så att svar och position hålls synkade.',
+      'Use this tab instead': 'Använd den här fliken istället',
       'Open your magic link': 'Öppna din magiska länk',
       'Players receive a personal link via message from their arranger. ':
         'Spelare får en personlig länk från sin arrangör. ',
@@ -714,6 +732,8 @@
       'Proceed to payment': 'Fortsätt till betalning',
       'How many team slots do you need? ($2.00 each, simulated payment.)':
         'Hur många lagplatser behöver du? ($2,00 styck, simulerad betalning.)',
+      'How many team slots do you need? ({{price}} each, simulated payment.)':
+        'Hur många lagplatser behöver du? ({{price}} styck, simulerad betalning.)',
       'Browse catalog': 'Bläddra i butiken',
       'No purchases yet.': 'Inga köp än.',
       'Every team-slot purchase. Paid ones produce an assignment you can schedule from the Adventures page.':
@@ -787,6 +807,20 @@
         'Vi skickade en länk till {{email}}. Tills du klickar på den är körningar och köp inaktiverade.',
       'Resend email': 'Skicka igen',
       'Verification email re-sent.': 'Verifieringsmejl skickat igen.',
+      'Times are interpreted as your local timezone.':
+        'Tiderna tolkas i din lokala tidszon.',
+      'Times are interpreted as your local timezone ({{tz}}).':
+        'Tiderna tolkas i din lokala tidszon ({{tz}}).',
+      'Run events, manage teams, plus invite/remove users and change billing.':
+        'Kör event, hantera lag, samt bjuda in/ta bort användare och ändra fakturering.',
+      'Run events and manage teams. Cannot invite users or touch billing.':
+        'Kör event och hantera lag. Kan inte bjuda in användare eller röra fakturering.',
+      'Links expire after a fixed window — anyone with the URL can play as that player. Use the per-team rotate-token action if a link leaks; existing players keep playing until they sign out.':
+        'Länkar går ut efter en bestämd tid — vem som helst med URL:en kan spela som den spelaren. Använd "Byt token" per lag om en länk läcker; befintliga spelare fortsätter tills de loggar ut.',
+      "Password updated. You're still signed in here; every other session was kicked.":
+        'Lösenordet är uppdaterat. Du är fortfarande inloggad här; alla andra sessioner blev utloggade.',
+      'Open server logs around this time':
+        'Öppna serverloggar kring denna tid',
       'Could not resend; try again later.': 'Kunde inte skicka igen; försök senare.',
       'Email verified — you can now schedule events and buy assignments.':
         'E-post verifierad — du kan nu schemalägga körningar och köpa tilldelningar.',
@@ -1316,6 +1350,41 @@
           'För plattformssupport, kontakta operatören som listas längst ner på Integritetssidan.',
       'This manual evolves. If you read something that\'s wrong or unclear, tell support — clearer docs help every other arranger after you.':
           'Den här handboken utvecklas. Om du läser något fel eller otydligt, säg till supporten — tydligare dokumentation hjälper alla andra arrangörer efter dig.',
+      // ---- Round 2: connection / GPS / refunds / audit ----
+      'Disconnected — event data may be stale.':
+          'Frånkopplad — eventdatan kan vara inaktuell.',
+      'Disconnected — leaderboard may be stale.':
+          'Frånkopplad — topplistan kan vara inaktuell.',
+      'Reconnecting — live updates paused.':
+          'Återansluter — liveuppdateringar pausade.',
+      'Map unavailable — leaderboard still live.':
+          'Kartan otillgänglig — topplistan är fortfarande live.',
+      'Offline — will send the moment you reconnect.':
+          'Offline — skickas så fort du återansluter.',
+      'Reconnected — your last answer was sent.':
+          'Återansluten — ditt senaste svar har skickats.',
+      "GPS hasn't locked yet. Wait a moment and tap Retry, or move outdoors.":
+          'GPS har inte hittats än. Vänta en stund och tryck Försök igen, eller gå ut.',
+      'Location is blocked. Open your browser or device settings, allow location for this site, then tap Retry.':
+          'Plats är blockerad. Öppna webbläsarens eller enhetens inställningar, tillåt plats för den här webbplatsen, och tryck sedan Försök igen.',
+      'No GPS signal. Move to open sky (away from buildings/trees) and tap Retry — usually clears in 30 seconds.':
+          'Ingen GPS-signal. Gå ut under öppen himmel (bort från byggnader/träd) och tryck Försök igen — brukar lösa sig på 30 sekunder.',
+      'Location off — see below': 'Plats av — se nedan',
+      'Retry GPS': 'Försök igen',
+      'Refund initiated. Confirming with Stripe…':
+          'Återbetalning startad. Bekräftar med Stripe…',
+      'Refund confirmed.': 'Återbetalning bekräftad.',
+      'Refund still processing — check Stripe and refresh in a minute.':
+          'Återbetalning behandlas fortfarande — kolla Stripe och ladda om om en minut.',
+      'Audit event #{{id}}': 'Granskningshändelse #{{id}}',
+      'Show details': 'Visa detaljer',
+      'User-Agent': 'User-Agent',
+      'Minimum 8 characters. Pick something the new user can change later in Settings.':
+          'Minst 8 tecken. Välj något användaren kan byta senare i Inställningar.',
+      'Cannot delete: {{n}} event(s) currently running. Stop them first.':
+          'Kan inte ta bort: {{n}} event pågår just nu. Stoppa dem först.',
+      'You are about to delete: {{members}} user(s), {{assignments}} assignment(s), {{players}} player(s), {{events}} event(s). Cascades immediately and cannot be undone.':
+          'Du håller på att ta bort: {{members}} användare, {{assignments}} uppdrag, {{players}} spelare, {{events}} event. Sker direkt och kan inte ångras.',
     },
   };
 

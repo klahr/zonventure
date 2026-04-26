@@ -79,6 +79,7 @@ func New(cfg Config) http.Handler {
 		DB:           cfg.DB,
 		SecureCookie: cfg.SecureCookie,
 		Features:     auth.Features{SimulatorEnabled: cfg.SimulatorEnabled},
+		Pricing:      auth.Pricing{SlotCents: admin.PricePerSlotCents, Currency: "USD"},
 		Limiter:      auth.NewLoginLimiter(),
 		Mailer:       cfg.Mailer,
 		PublicURL:    cfg.PublicURL,

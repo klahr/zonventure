@@ -458,6 +458,26 @@ html, body {
   text-align: center;
   letter-spacing: .1em; text-transform: uppercase; font-weight: 700;
 }
+
+/* Connection status: a thin stripe across the top of the live view so
+   anyone glancing at the TV knows the leaderboard might be stale.
+   Hidden by default; toggled by setLiveStatus() based on WS state. */
+.ws-status {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  z-index: 4000;
+  padding: .35rem .75rem;
+  text-align: center;
+  font-size: clamp(.75rem, 1vw, .9rem);
+  font-weight: 800;
+  letter-spacing: .08em; text-transform: uppercase;
+  background: rgba(245, 196, 82, .92);
+  color: #1a0f00;
+  transform: translateY(-100%);
+  transition: transform 200ms ease;
+}
+.ws-status.show { transform: translateY(0); }
+.ws-status.err  { background: rgba(255, 95, 95, .94); color: #160000; }
 </style>
 </head>
 <body>
@@ -783,15 +803,28 @@ async function renderLiveMap(inner, hint, data) {
   // The map wrapper is memoized across polls — initialise Leaflet on it
   // exactly once. After reparenting into the new split container Leaflet
   // needs invalidateSize() to recalculate the viewport.
+  //
+  // The Leaflet CDN occasionally fails (network outage, blocked by a
+  // corporate WiFi). Catch the failure and degrade to a clear "map
+  // unavailable" message so the leaderboard half of the view still
+  // works — the audience seeing the TV doesn't have to wonder if
+  // they're staring at a frozen page.
   if (!liveMapInstance) {
-    liveMapInstance = L.map(inner, { scrollWheelZoom: false }).setView([59.3293, 18.0686], 13);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '© OpenStreetMap contributors',
-      maxZoom: 19,
-    }).addTo(liveMapInstance);
+    try {
+      liveMapInstance = L.map(inner, { scrollWheelZoom: false }).setView([59.3293, 18.0686], 13);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap contributors',
+        maxZoom: 19,
+      }).addTo(liveMapInstance);
+    } catch (e) {
+      console.warn('live map init failed', e);
+      hint.textContent = t('Map unavailable — leaderboard still live.');
+      inner.style.display = 'none';
+      return;
+    }
   }
   const map = liveMapInstance;
-  map.invalidateSize();
+  try { map.invalidateSize(); } catch { /* harmless */ }
 
   // puzzleBounds is the fall-back fit when no teams have pinged yet —
   // at that point the puzzle pins are all we've got to orient against.
@@ -1198,10 +1231,33 @@ function renderRow(team, idx, data) {
 // {kind:"tracks"} alongside it when show_map is enabled. No polling.
 let ws = null;
 let wsBackoff = 500;
+
+// Connection-status banner. Mounted lazily; the live view often runs
+// for hours on a TV, so a long network blip needs to be visible at a
+// glance without disturbing the leaderboard layout.
+let liveStatusEl = null;
+let liveStatusTimer = null;
+function setLiveStatus(level, text) {
+  if (!liveStatusEl) {
+    liveStatusEl = document.createElement('div');
+    liveStatusEl.className = 'ws-status';
+    document.body.append(liveStatusEl);
+  }
+  liveStatusEl.classList.remove('err', 'show');
+  if (!level) return;
+  if (level === 'err') liveStatusEl.classList.add('err');
+  liveStatusEl.classList.add('show');
+  liveStatusEl.textContent = text;
+}
+
 function connectWS() {
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
   ws = new WebSocket(`${proto}//${location.host}/ws/live/${encodeURIComponent(LIVE_TOKEN)}`);
-  ws.onopen = () => { wsBackoff = 500; };
+  ws.onopen = () => {
+    wsBackoff = 500;
+    if (liveStatusTimer) { clearTimeout(liveStatusTimer); liveStatusTimer = null; }
+    setLiveStatus('', '');
+  };
   ws.onmessage = (ev) => {
     let msg; try { msg = JSON.parse(ev.data); } catch { return; }
     if (!msg || !msg.kind) return;
@@ -1219,6 +1275,15 @@ function connectWS() {
     const delay = Math.min(wsBackoff, 10000);
     wsBackoff = Math.min(wsBackoff * 2, 10000);
     setTimeout(connectWS, delay);
+    // Tier the feedback: short blips (pings, restarts) shouldn't yank
+    // attention onto a TV banner, but a real outage absolutely should.
+    if (liveStatusTimer) clearTimeout(liveStatusTimer);
+    liveStatusTimer = setTimeout(() => {
+      setLiveStatus('warn', t('Reconnecting…'));
+      liveStatusTimer = setTimeout(() => {
+        setLiveStatus('err', t('Disconnected — leaderboard may be stale.'));
+      }, 13000);
+    }, 2000);
   };
 }
 

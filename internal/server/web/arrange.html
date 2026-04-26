@@ -216,6 +216,13 @@ p { margin: 0 0 .5rem; }
 .nav a.active svg { stroke: var(--accent-fg); }
 .nav svg { width: 18px; height: 18px; stroke: var(--muted); stroke-width: 1.75; fill: none; flex-shrink: 0; }
 .nav a:hover svg { stroke: var(--accent); }
+/* Visible keyboard focus on the sidebar links — :focus-visible avoids
+   the outline showing up on mouse clicks while still helping
+   keyboard-only users orient. */
+.nav a:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--accent) 50%, transparent);
+  outline-offset: 2px;
+}
 
 .content {
   grid-area: content;
@@ -1344,6 +1351,36 @@ textarea { min-height: 80px; resize: vertical; font-family: ui-monospace, monosp
 .manual .toc ol { margin: 0; padding-left: 1.5rem; }
 .manual .toc a { text-decoration: none; }
 .manual .toc a:hover { text-decoration: underline; }
+
+/* Connection status banner for the event-detail subscription. Only
+   shown while watchRun() has an active event; mid-event a stale
+   leaderboard or team list misleads the arranger into making bad
+   calls. Two tiers — warn + err — match the player banner. */
+.ws-status {
+  position: fixed;
+  left: 0; right: 0;
+  top: 0;
+  z-index: 4000;
+  padding: .35rem .75rem;
+  text-align: center;
+  font-size: .8rem; font-weight: 700;
+  letter-spacing: .04em;
+  background: var(--surface);
+  color: var(--ink);
+  border-bottom: 1px solid var(--border-soft);
+  transform: translateY(-100%);
+  transition: transform 180ms ease;
+  pointer-events: none;
+}
+.ws-status.show { transform: translateY(0); }
+.ws-status.warn {
+  background: color-mix(in srgb, #f0a000 22%, var(--surface));
+  color: #6b4500;
+}
+.ws-status.err {
+  background: color-mix(in srgb, var(--danger) 22%, var(--surface));
+  color: var(--danger);
+}
 </style>
 </head>
 <body>
@@ -1869,6 +1906,22 @@ function renderShell() {
       class: active === href ? 'active' : '',
       on: { click: () => { document.querySelector('.sidebar')?.classList.remove('open'); document.querySelector('.backdrop')?.classList.remove('show'); } },
     }, icon(svg), label)));
+  // Arrow-key navigation across the sidebar. We deliberately don't
+  // adopt role="tab" / role="tablist" — these are real anchor links
+  // (each one is a routable URL), and forcing tab semantics would
+  // misrepresent them to screen readers. Just add focus movement so
+  // keyboard-only users don't have to Tab through every entry.
+  nav.addEventListener('keydown', (ev) => {
+    if (ev.key !== 'ArrowDown' && ev.key !== 'ArrowUp') return;
+    const links = Array.from(nav.querySelectorAll('a'));
+    if (links.length === 0) return;
+    const idx = links.indexOf(document.activeElement);
+    const next = ev.key === 'ArrowDown'
+      ? (idx < 0 ? 0 : Math.min(idx + 1, links.length - 1))
+      : (idx <= 0 ? 0 : idx - 1);
+    links[next].focus();
+    ev.preventDefault();
+  });
 
   const isDark = currentTheme() === 'dark';
   const themeBtn = h('button', {
@@ -2058,12 +2111,34 @@ let arrangeWSBackoff = 500;
 let watchedEventID = 0;
 let arrangePushTimer = null;
 
+// Arrange-side connection banner. Only shown while watchedEventID !=
+// 0 — outside event detail the WS is idle and a banner would just be
+// noise. Two tiers (warn/err) match play.html / live.html so the
+// behaviour reads the same across surfaces.
+let arrangeStatusEl = null;
+let arrangeStatusTimer = null;
+function setArrangeStatus(level, text) {
+  if (!arrangeStatusEl) {
+    arrangeStatusEl = document.createElement('div');
+    arrangeStatusEl.className = 'ws-status';
+    arrangeStatusEl.setAttribute('role', 'status');
+    arrangeStatusEl.setAttribute('aria-live', 'polite');
+    document.body.append(arrangeStatusEl);
+  }
+  arrangeStatusEl.classList.remove('warn', 'err', 'show');
+  if (!level) return;
+  arrangeStatusEl.classList.add(level, 'show');
+  arrangeStatusEl.textContent = text;
+}
+
 function ensureArrangeWS() {
   if (arrangeWS && (arrangeWS.readyState === 0 || arrangeWS.readyState === 1)) return;
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
   arrangeWS = new WebSocket(`${proto}//${location.host}/ws/arrange`);
   arrangeWS.onopen = () => {
     arrangeWSBackoff = 500;
+    if (arrangeStatusTimer) { clearTimeout(arrangeStatusTimer); arrangeStatusTimer = null; }
+    setArrangeStatus('', '');
     if (watchedEventID) arrangeWS.send(JSON.stringify({ kind: 'watch_run', data: { event_id: watchedEventID } }));
   };
   arrangeWS.onmessage = (ev) => {
@@ -2089,6 +2164,19 @@ function ensureArrangeWS() {
     const delay = Math.min(arrangeWSBackoff, 10000);
     arrangeWSBackoff = Math.min(arrangeWSBackoff * 2, 10000);
     setTimeout(ensureArrangeWS, delay);
+    // Suppress the banner when the user isn't on an event-detail view —
+    // the WS has nothing useful to say there and the banner would
+    // distract during catalog / settings work.
+    if (arrangeStatusTimer) clearTimeout(arrangeStatusTimer);
+    if (!watchedEventID) { setArrangeStatus('', ''); return; }
+    arrangeStatusTimer = setTimeout(() => {
+      if (!watchedEventID) return;
+      setArrangeStatus('warn', t('Reconnecting — live updates paused.'));
+      arrangeStatusTimer = setTimeout(() => {
+        if (!watchedEventID) return;
+        setArrangeStatus('err', t('Disconnected — event data may be stale.'));
+      }, 13000);
+    }, 2000);
   };
 }
 
@@ -2104,6 +2192,8 @@ function watchRun(runID) {
 function unwatchRun() {
   if (!watchedEventID) return;
   watchedEventID = 0;
+  if (arrangeStatusTimer) { clearTimeout(arrangeStatusTimer); arrangeStatusTimer = null; }
+  setArrangeStatus('', '');
   if (arrangeWS && arrangeWS.readyState === 1) {
     arrangeWS.send(JSON.stringify({ kind: 'unwatch_run' }));
   }
@@ -2601,13 +2691,34 @@ function renderPurchaseActions(p) {
       }))) return;
       btn.disabled = true;
       const r = await api('/api/admin/purchases/' + p.id + '/refund', { method: 'POST' });
-      if (r.status === 202) {
-        toastOk(t('Refund initiated. Webhook will flip the state shortly.'));
-        setTimeout(renderRoute, 1500);
-      } else {
+      if (r.status !== 202) {
         btn.disabled = false;
         toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+        return;
       }
+      toastOk(t('Refund initiated. Confirming with Stripe…'));
+      // The /refund endpoint fires the Stripe API call and returns
+      // immediately; the actual state flip happens when the
+      // charge.refunded webhook lands. Poll the purchase row every 2s
+      // for up to 30s so we can give the operator a clean confirmation
+      // (or a "still pending" warning) without forcing a full page
+      // reload.
+      const deadline = Date.now() + 30_000;
+      const poll = async () => {
+        if (Date.now() > deadline) {
+          toastErr(t('Refund still processing — check Stripe and refresh in a minute.'));
+          renderRoute();
+          return;
+        }
+        const r2 = await api('/api/admin/purchases/' + p.id);
+        if (r2.status === 200 && r2.body?.state === 'refunded') {
+          toastOk(t('Refund confirmed.'));
+          renderRoute();
+          return;
+        }
+        setTimeout(poll, 2000);
+      };
+      setTimeout(poll, 2000);
     });
     out.push(btn);
   }
@@ -2631,18 +2742,19 @@ function renderEmptyPurchases() {
 // page navigates the user back to #purchases so they see the fresh
 // assignment.
 async function openPurchaseModal(adv) {
-  // Pricing lives server-side (PricePerSlotCents) but the UI has a
-  // hardcoded mirror so we can show the total before the POST. If the
-  // server price changes this drifts — that's fine for the simulated
-  // flow; Stripe will ship a real catalog later.
-  const PRICE_CENTS = 200;
+  // Pricing rides on the /whoami response, so the bootstrap fetch
+  // already has the canonical numbers. Falling back to defaults keeps
+  // dev clones with old whoami payloads working.
+  const PRICE_CENTS = (state.me?.pricing?.slot_cents) || 200;
+  const CURRENCY    = (state.me?.pricing?.currency)   || 'USD';
+  const fmtMoney = (cents) => new Intl.NumberFormat(undefined,
+    { style: 'currency', currency: CURRENCY }).format(cents / 100);
   await modal(t('Buy team slots'), ({ body, close }) => {
     const slots = h('input', { type: 'number', min: '1', max: '100', value: '10', required: true });
     const totalEl = h('strong', {}, '');
     const update = () => {
       const n = Math.max(1, parseInt(slots.value, 10) || 0);
-      totalEl.textContent = new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD' })
-        .format(n * PRICE_CENTS / 100);
+      totalEl.textContent = fmtMoney(n * PRICE_CENTS);
     };
     slots.addEventListener('input', update);
     update();
@@ -2655,7 +2767,7 @@ async function openPurchaseModal(adv) {
         t('Total: '), totalEl,
         ' ',
         h('span', { class: 'muted', style: 'font-size:.85rem' },
-          t('({{price}} per slot)', { price: '$2.00' }))),
+          t('({{price}} per slot)', { price: fmtMoney(PRICE_CENTS) }))),
       h('div', { class: 'row end' },
         h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, t('Cancel')),
         h('button', { class: 'btn primary', type: 'submit' }, t('Proceed to payment'))));
@@ -2807,7 +2919,12 @@ async function openNewEventWizard() {
     // ---- 2. Capacity: reuse existing assignment or buy ----
     const buyCount = h('input', { type: 'number', min: '1', max: '100', value: '10' });
     const capacitySection = h('div', {});
-    const PRICE_CENTS = 200;
+    // Pricing rides on whoami; fallback values keep stale dev clones
+    // running. Currency drives Intl formatting so $/€/kr render cleanly.
+    const PRICE_CENTS = (state.me?.pricing?.slot_cents) || 200;
+    const CURRENCY    = (state.me?.pricing?.currency)   || 'USD';
+    const fmtMoney = (cents) => new Intl.NumberFormat(undefined,
+      { style: 'currency', currency: CURRENCY }).format(cents / 100);
     const refreshAssignment = () => {
       capacitySection.replaceChildren();
       const matching = assignments.filter((x) => x.adventure_slug === pickedAdv.slug);
@@ -2818,11 +2935,13 @@ async function openNewEventWizard() {
             ? t('{{n}} team slot', { n: matching[0].max_teams })
             : t('{{n}} team slots', { n: matching[0].max_teams }))));
       } else {
-        const total = () => ((parseInt(buyCount.value, 10) || 0) * PRICE_CENTS / 100).toFixed(2);
-        const totalEl = h('strong', {}, '$' + total());
-        buyCount.addEventListener('input', () => { totalEl.textContent = '$' + total(); });
+        const total = () => fmtMoney((parseInt(buyCount.value, 10) || 0) * PRICE_CENTS);
+        const totalEl = h('strong', {}, total());
+        buyCount.addEventListener('input', () => { totalEl.textContent = total(); });
         capacitySection.append(
-          h('p', { class: 'muted' }, t('How many team slots do you need? ($2.00 each, simulated payment.)')),
+          h('p', { class: 'muted' },
+            t('How many team slots do you need? ({{price}} each, simulated payment.)',
+              { price: fmtMoney(PRICE_CENTS) })),
           h('div', { class: 'row', style: 'gap:.5rem; align-items:center' },
             h('label', { class: 'field', style: 'flex:0 0 auto; margin:0' },
               h('span', {}, t('Team slots')), buyCount),
@@ -2841,6 +2960,17 @@ async function openNewEventWizard() {
     const toggleWhen = () => { whenInput.disabled = !modeLater.checked; };
     modeManual.addEventListener('change', toggleWhen);
     modeLater.addEventListener('change', toggleWhen);
+    // datetime-local has no timezone selector, so a Stockholm arranger
+    // typing "14:00" can't tell if the server stores it as 14:00 local
+    // or 14:00 UTC. Make the user's resolved zone explicit so DST and
+    // remote-server clocks aren't a guessing game.
+    const localTZ = (() => {
+      try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ''; }
+      catch { return ''; }
+    })();
+    const tzHint = h('small', { class: 'muted', style: 'display:block; margin-top:.2rem' },
+      localTZ ? t('Times are interpreted as your local timezone ({{tz}}).', { tz: localTZ })
+              : t('Times are interpreted as your local timezone.'));
     const nameInput = h('input', { placeholder: t('e.g. “Saturday Andersson party”') });
 
     // ---- 4. Teams ----
@@ -2861,7 +2991,7 @@ async function openNewEventWizard() {
         modeManual, h('span', {}, t('Start manually — I\'ll hit Start when we\'re ready'))),
       h('label', { style: 'display:flex; gap:.5rem; align-items:center; margin:.25rem 0' },
         modeLater, h('span', {}, t('Schedule for later'))),
-      h('label', { class: 'field' }, h('span', {}, t('Auto-start at')), whenInput),
+      h('label', { class: 'field' }, h('span', {}, t('Auto-start at')), whenInput, tzHint),
       h('label', { class: 'field' }, h('span', {}, t('Event name (optional)')), nameInput),
       h('h3', {}, t('Teams (optional — add later if you prefer)')),
       h('div', { class: 'grid cols-2' },
@@ -3156,6 +3286,8 @@ function renderTeamLinksPanel(run, teams) {
   const body = h('div', { style: 'margin-top:.75rem' },
     h('div', { class: 'row', style: 'gap:.5rem; align-items:center; flex-wrap:wrap; margin-bottom:.5rem' },
       search, copyCaptainsBtn, copyCSVBtn),
+    h('p', { class: 'muted', style: 'font-size:.78rem; margin:0 0 .55rem' },
+      t('Links expire after a fixed window — anyone with the URL can play as that player. Use the per-team rotate-token action if a link leaks; existing players keep playing until they sign out.')),
     scroll);
 
   const summary = h('summary', {
@@ -4376,8 +4508,24 @@ async function openRenameOrg(org) {
 }
 
 async function confirmDeleteOrg(org) {
+  // The org list already carries counts so we can show the blast
+  // radius up front rather than letting the admin discover the size
+  // of the cascade after pressing delete. Refuse to even prompt when
+  // an event is currently running — that's the case where a misclick
+  // is most catastrophic.
+  const members     = (org.members || []).length;
+  const assignments = (org.assignments || []).length;
+  const players     = org.players_total || 0;
+  const events      = org.events_total || 0;
+  const running     = org.events_running || 0;
+  if (running > 0) {
+    toastErr(t('Cannot delete: {{n}} event(s) currently running. Stop them first.', { n: running }));
+    return;
+  }
+  const summary = t('You are about to delete: {{members}} user(s), {{assignments}} assignment(s), {{players}} player(s), {{events}} event(s). Cascades immediately and cannot be undone.',
+    { members, assignments, players, events });
   const pw = await promptPassword(t('Delete organization “{{name}}”?', { name: org.name }),
-    t('This deletes every user, player, assignment and event that belongs to the organization. Enter your password to confirm.'));
+    summary + ' ' + t('Enter your password to confirm.'));
   if (!pw) return;
   const r = await api(`/api/admin/organizations/${org.id}`, {
     method: 'DELETE', headers: { 'X-Confirm-Password': pw },
@@ -4391,8 +4539,14 @@ async function openAddOrgMember(org) {
     const form = h('form', {},
       h('label', { class: 'field' }, h('span', {}, t('Username')),
         h('input', { name: 'u', required: true, autofocus: true })),
-      h('label', { class: 'field' }, h('span', {}, t('Password')),
-        h('input', { name: 'p', type: 'password', required: true })),
+      h('label', { class: 'field' },
+        h('span', {}, t('Password')),
+        h('input', {
+          name: 'p', type: 'password', autocomplete: 'new-password',
+          minlength: 8, required: true,
+        }),
+        h('small', { class: 'muted', style: 'display:block; margin-top:.2rem' },
+          t('Minimum 8 characters. Pick something the new user can change later in Settings.'))),
       h('label', { class: 'field' }, h('span', {}, t('Role')),
         h('select', { name: 'r' },
           h('option', { value: 'org_member' }, t('Member')),
@@ -6679,6 +6833,18 @@ async function viewLogs(view) {
     type: 'search', placeholder: t('Filter (substring)'),
     style: 'flex:1; min-width:10rem; box-shadow:none; border-color:var(--border-soft); margin:0',
   });
+  // The audit view drops a one-shot HH:MM filter into sessionStorage so
+  // a "view logs around this time" cross-link arrives pre-filtered.
+  // Consume + clear on entry so navigating back here later doesn't
+  // re-apply a stale filter.
+  try {
+    const pf = sessionStorage.getItem('zv_logs_prefilter');
+    if (pf) {
+      sessionStorage.removeItem('zv_logs_prefilter');
+      filterInput.value = pf;
+      state.filter = pf.toLowerCase();
+    }
+  } catch { /* ignore */ }
   filterInput.addEventListener('input', () => {
     state.filter = filterInput.value.toLowerCase();
     repaintAll();
@@ -6872,13 +7038,64 @@ function renderAuditRow(e) {
   const okLabel = e.ok ? t('ok') : t('fail');
   const ts = formatAuditTS(e.ts);
   const username = e.username || (e.user_id ? '#' + e.user_id : '—');
-  return h('tr', { title: e.user_agent || '' },
-    h('td', { class: 'mono' }, ts),
+  // Cross-link to server logs: tapping the timestamp pre-fills the
+  // logs-view filter with a substring drawn from this event's clock
+  // time (HH:MM), so the admin lands on the same window of activity
+  // without manually copy-pasting. Admin-only — org_admins don't see
+  // the logs view at all.
+  const tsCell = h('td', { class: 'mono' }, ts);
+  if (state.me && state.me.role === 'admin') {
+    const m = /T(\d{2}:\d{2})/.exec(e.ts || '');
+    if (m) {
+      tsCell.style.cursor = 'pointer';
+      tsCell.title = t('Open server logs around this time');
+      tsCell.addEventListener('click', () => {
+        try { sessionStorage.setItem('zv_logs_prefilter', m[1]); } catch { /* ignore */ }
+        nav('#logs');
+      });
+    }
+  }
+  // Inline details button — `title` tooltips work on desktop hover but
+  // are completely invisible on touch devices. Replacing the implicit
+  // hover with an explicit affordance gives admins the full UA + reason
+  // + IP without copy-pasting from `view source`.
+  const detailsBtn = h('button', {
+    type: 'button',
+    class: 'btn small ghost',
+    style: 'padding:.15rem .55rem; font-size:.75rem; line-height:1',
+    title: t('Show details'),
+    on: { click: () => showAuditDetailsModal(e) },
+  }, t('Details'));
+  return h('tr', {},
+    tsCell,
     h('td', {}, e.event),
     h('td', {}, h('span', { class: 'audit-pill ' + okClass }, okLabel)),
     h('td', {}, username),
     h('td', { class: 'mono' }, e.ip || '—'),
-    h('td', { class: 'muted' }, e.reason || ''));
+    h('td', { class: 'muted' }, h('div', {
+      class: 'row', style: 'gap:.5rem; align-items:center; justify-content:space-between',
+    }, h('span', {}, e.reason || ''), detailsBtn)));
+}
+
+function showAuditDetailsModal(e) {
+  modal(t('Audit event #{{id}}', { id: e.id }), ({ body, close }) => {
+    const row = (label, val) => h('div', {
+      style: 'display:grid; grid-template-columns:7rem 1fr; gap:.4rem; margin:.25rem 0',
+    },
+      h('span', { class: 'muted', style: 'font-size:.78rem; text-transform:uppercase; letter-spacing:.06em; font-weight:700' }, label),
+      h('span', { class: 'mono', style: 'word-break:break-all' }, val || '—'));
+    body.append(
+      row(t('Time'),       formatAuditTS(e.ts)),
+      row(t('Event'),      e.event),
+      row(t('Result'),     e.ok ? t('ok') : t('fail')),
+      row(t('User'),       e.username || (e.user_id ? '#' + e.user_id : '—')),
+      row(t('IP'),         e.ip || ''),
+      row(t('Reason'),     e.reason || ''),
+      row(t('User-Agent'), e.user_agent || ''),
+      h('div', { class: 'row end', style: 'margin-top:.75rem' },
+        h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, t('Close'))),
+    );
+  });
 }
 
 /* ========== Account settings ==========
@@ -7872,7 +8089,8 @@ function renderSettingsPasswordCard() {
       body: JSON.stringify({ current: cur.value, new: nw.value }),
     });
     if (r.status === 204) {
-      status.className = 'ok'; status.textContent = t('Password updated. Other sessions were signed out.');
+      status.className = 'ok';
+      status.textContent = t('Password updated. You\'re still signed in here; every other session was kicked.');
       cur.value = ''; nw.value = '';
     } else {
       status.className = 'err'; status.textContent = r.body?.error || t('error {{status}}', { status: r.status });
@@ -8040,6 +8258,15 @@ async function viewMembers(view) {
         icon(ICONS.plus), t('Add user'))),
     h('p', { class: 'muted' },
       t('Users in {{name}}. Admins can invite more users; members run the games.', { name: org.name })),
+    h('div', { class: 'card', style: 'background: var(--surface-2); padding: .85rem 1rem; margin-bottom: .9rem; font-size: .85rem' },
+      h('div', { style: 'margin-bottom:.35rem' },
+        h('span', { class: 'pill' }, t('admin')), ' ',
+        h('span', { class: 'muted' },
+          t('Run events, manage teams, plus invite/remove users and change billing.'))),
+      h('div', {},
+        h('span', { class: 'pill' }, t('member')), ' ',
+        h('span', { class: 'muted' },
+          t('Run events and manage teams. Cannot invite users or touch billing.')))),
     (org.members || []).length === 0
       ? h('div', { class: 'empty' }, t('No other users yet.'))
       : h('div', { class: 'card' },
