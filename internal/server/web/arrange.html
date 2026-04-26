@@ -1730,6 +1730,12 @@ const ICONS = {
   // reorderable" affordance (Notion / Trello / Linear all use the
   // same shape).
   grip: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="currentColor"><circle cx="9" cy="6" r="1.5"/><circle cx="15" cy="6" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="18" r="1.5"/><circle cx="15" cy="18" r="1.5"/></svg>',
+  // Office-building silhouette — central tower with shorter wings
+  // flanking it on each side, plus a 4-row window stack. Reads as
+  // "an organisation" at every sidebar size; replaces the old
+  // shield, which was generic-security and didn't differentiate
+  // between the Organizations and Audit entries.
+  building: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/></svg>',
 };
 
 /* ========== Theme ========== */
@@ -2351,7 +2357,7 @@ function renderShell() {
   if (isAdmin) {
     items = [
       ['#dashboard',     t('Dashboard'),     ICONS.dashboard],
-      ['#organizations', t('Organizations'), ICONS.shield],
+      ['#organizations', t('Organizations'), ICONS.building],
       // "Library" is the single entry point for authored content — a
       // tab strip inside the view splits Adventures and Puzzles. Two
       // sidebar entries for what's essentially one catalog was noise.
@@ -2848,7 +2854,7 @@ async function viewAdminDashboard(view) {
       h('div', { class: 'row between' },
         h('h2', {}, t('Organizations')),
         h('button', { class: 'btn primary small', on: { click: () => nav('#organizations') } },
-          icon(ICONS.shield), t('Manage'))),
+          icon(ICONS.building), t('Manage'))),
       orgs.length === 0
         ? h('div', { class: 'empty' },
             h('p', {}, t('No organizations yet.')),
