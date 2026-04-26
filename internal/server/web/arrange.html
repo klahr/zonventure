@@ -1846,29 +1846,19 @@ function renderShell() {
       ['#settings',      t('Settings'),      ICONS.user],
     ];
   } else {
-    // Order matches the mental model: where I am → what I can run →
-    // what I might want to buy → how events are going → (if I can) who
-    // else is in my org. `#puzzles` is admin-only and route-guarded so
-    // it isn't exposed here.
+    // Sidebar lists the daily-operational surfaces only. Adventures
+    // (incl. its Catalog tab — was "Store"), Events, and per-role
+    // surfaces. Configuration, integrations and the manual live one
+    // click in via Settings so the daily nav stays calm.
     items = [
       ['#dashboard',  t('Dashboard'),  ICONS.dashboard],
       ['#adventures', t('Adventures'), ICONS.map],
-      ['#store',      t('Store'),      ICONS.coins],
-      ['#events',       t('Events'),       ICONS.play],
+      ['#events',     t('Events'),     ICONS.play],
     ];
     if (isOrgAdmin) {
       items.push(['#members', t('Members'), ICONS.shield]);
       items.push(['#audit',   t('Audit'),   ICONS.shield]);
     }
-    // Webhooks: outbound integrations the org configures themselves
-    // (Slack/Zapier/internal dashboards). Available to every org user
-    // — no role gate beyond having an org. The icon is "key" because
-    // the most distinctive thing about the page is the HMAC secret.
-    items.push(['#webhooks', t('Webhooks'), ICONS.key]);
-    // Manual: the in-app handbook for arrangers. End of the list so
-    // it's always at the same spot regardless of role-conditional
-    // entries above.
-    items.push(['#manual',   t('Manual'),   ICONS.book]);
     items.push(['#settings', t('Settings'), ICONS.user]);
   }
   const active = state.route.split('/')[0];
@@ -2180,7 +2170,8 @@ async function viewArrangerDashboard(view) {
           h('div', { class: 'row between' },
             h('strong', {}, runLabel(r)),
             h('span', { class: 'pill ' + pillClassForState(r.state) }, t(r.state || ''))),
-          h('p', { class: 'muted mono', style: 'font-size:.75rem; margin:.1rem 0 .3rem' }, r.adventure_slug),
+          h('p', { class: 'muted', style: 'font-size:.8rem; margin:.1rem 0 .3rem' },
+            r.adventure_title || r.adventure_slug),
           h('p', { class: 'muted', style: 'font-size:.85rem; margin:0' },
             r.started_at ? t('Started {{when}}', { when: fmtLocal(r.started_at) }) : ''))))),
     // "Starts soon" is actionable — one-click Start on scheduled events.
@@ -2421,21 +2412,36 @@ async function viewAdventures(view) {
   view.replaceChildren(
     h('div', { class: 'row between' },
       h('h1', {}, t('Adventures')),
-      h('div', { class: 'row' },
-        h('button', { class: 'btn', on: { click: () => nav('#store') } },
-          icon(ICONS.coins), t('Store')),
-        h('button', { class: 'btn primary', on: { click: () => openCreateAdventure() } },
-          icon(ICONS.plus), t('New adventure')))),
+      h('button', { class: 'btn primary', on: { click: () => openCreateAdventure() } },
+        icon(ICONS.plus), t('New adventure'))),
+    renderAdventureTabs('yours'),
     runnable.length === 0
       ? h('div', { class: 'empty' },
           h('p', {}, t('No adventures you can use yet.')),
-          h('p', { class: 'muted' }, t('Create your own or browse the Store for published adventures.')),
+          h('p', { class: 'muted' }, t('Create your own or browse the Catalog for published adventures.')),
           h('div', { class: 'row', style: 'gap:.5rem; justify-content:center; margin-top:.5rem' },
             h('button', { class: 'btn primary', on: { click: () => openCreateAdventure() } },
               icon(ICONS.plus), t('New adventure')),
             h('button', { class: 'btn', on: { click: () => nav('#store') } },
-              icon(ICONS.coins), t('Browse the Store'))))
+              icon(ICONS.coins), t('Browse the Catalog'))))
       : h('div', { class: 'grid cols-2' }, runnable.map(renderCard)),
+  );
+}
+
+// renderAdventureTabs is the shared two-tab strip that sits under the
+// h1 on both viewAdventures (Yours) and viewStore (Catalog) so the
+// arranger can flip between "what I can run now" and "what's on offer"
+// without going back to the sidebar. Reuses the existing .lib-tabs
+// styles from the Library section for visual consistency.
+function renderAdventureTabs(active) {
+  const tab = (id, label, route) => h('a', {
+    class: 'lib-tab' + (active === id ? ' active' : ''),
+    href: route,
+    on: { click: (e) => { e.preventDefault(); nav(route); } },
+  }, label);
+  return h('div', { class: 'lib-tabs', style: 'margin-bottom:1rem' },
+    tab('yours',   t('Yours'),   '#adventures'),
+    tab('catalog', t('Catalog'), '#store'),
   );
 }
 
@@ -2476,10 +2482,8 @@ async function viewStore(view) {
   const catalog = advs.filter((a) => !a.mine_to_edit && a.published);
 
   view.replaceChildren(
-    h('div', { class: 'row between' },
-      h('h1', {}, t('Store')),
-      h('button', { class: 'btn', on: { click: () => nav('#adventures') } },
-        icon(ICONS.back), t('Adventures'))),
+    h('h1', {}, t('Adventures')),
+    renderAdventureTabs('catalog'),
     h('p', { class: 'muted' },
       t('Published adventures from other organisations. Buy team slots to add one to your own Adventures list.')),
     catalog.length === 0
@@ -2959,9 +2963,14 @@ async function openRenameEvent(run) {
 /* ========== Events ========== */
 async function viewRuns(view) {
   const r = await api('/api/admin/events');
-  const rs = r.body?.runs || [];
+  const rs = r.body?.events || [];
   view.replaceChildren(
-    h('h1', {}, t('Events')),
+    h('div', { class: 'row between' },
+      h('h1', {}, t('Events')),
+      // Affordance parity with the dashboard: Schedule from anywhere
+      // events are listed, no detour through Adventures.
+      h('button', { class: 'btn primary', on: { click: () => openNewEventWizard() } },
+        icon(ICONS.plus), t('Schedule event'))),
     h('div', { class: 'card' }, runsTable(rs)),
   );
 }
@@ -2984,7 +2993,15 @@ function runsTable(rs) {
     h('tbody', {}, rs.map((r) =>
       h('tr', { style: 'cursor:pointer', on: { click: () => nav('#events/' + r.id) } },
         h('td', {}, h('strong', {}, runLabel(r))),
-        h('td', { class: 'hide-narrow muted mono' }, r.adventure_slug),
+        // Adventure column shows the human title with the slug as a
+        // small muted second line — readable at a glance, still
+        // unambiguous for the operator who only knows the slug.
+        h('td', { class: 'hide-narrow' },
+          r.adventure_title
+            ? h('div', {},
+                r.adventure_title,
+                h('div', { class: 'muted mono', style: 'font-size:.75rem' }, r.adventure_slug))
+            : h('span', { class: 'muted mono' }, r.adventure_slug)),
         h('td', {}, h('span', { class: 'pill ' + pillClassForState(r.state) }, t(r.state || ''))),
         h('td', { class: 'hide-narrow' }, fmtLocal(r.scheduled_at)),
         h('td', { class: 'hide-narrow' }, fmtLocal(r.started_at)),
@@ -7737,19 +7754,49 @@ async function confirmDanger(title, message) {
 
 async function viewSettings(view) {
   const me = state.me || {};
+  const isOrgUser = !!me.org_id;
 
   const pwCard = renderSettingsPasswordCard();
   const emailCard = renderSettingsEmailCard(me);
   const dangerCard = renderSettingsDeleteCard();
-
   const exportCard = renderSettingsExportCard();
+  // Webhooks + Manual were lifted out of the daily sidebar — most
+  // arrangers don't think about either every visit. Surfaced here as
+  // discoverable cards so they're one click away when needed.
+  const integrationsCard = isOrgUser ? renderSettingsIntegrationsCard() : null;
+  const helpCard = renderSettingsHelpCard();
 
   view.replaceChildren(
     h('h1', {}, t('Settings')),
     h('p', { class: 'muted' },
       t('Manage your account. Changes are immediate; deleting your account also removes its data.')),
-    pwCard, emailCard, exportCard, dangerCard,
+    pwCard, emailCard, exportCard,
+    integrationsCard,
+    helpCard,
+    dangerCard,
   );
+}
+
+function renderSettingsIntegrationsCard() {
+  return h('div', { class: 'card settings-card' },
+    h('h2', {}, t('Integrations')),
+    h('p', { class: 'muted', style: 'font-size:.9rem' },
+      t('Send your event lifecycle into Slack, Zapier, or your own systems via signed HTTP callbacks.')),
+    h('div', { class: 'row end' },
+      h('button', { class: 'btn', type: 'button',
+        on: { click: () => nav('#webhooks') } },
+        icon(ICONS.key), t('Configure webhooks'))));
+}
+
+function renderSettingsHelpCard() {
+  return h('div', { class: 'card settings-card' },
+    h('h2', {}, t('Help')),
+    h('p', { class: 'muted', style: 'font-size:.9rem' },
+      t('Step-by-step walk-through of authoring adventures, scheduling events, adding teams, and integrating.')),
+    h('div', { class: 'row end' },
+      h('button', { class: 'btn', type: 'button',
+        on: { click: () => nav('#manual') } },
+        icon(ICONS.book), t('Open the manual'))));
 }
 
 // renderLegalFooter is a 2-link strip embedded in the login screen

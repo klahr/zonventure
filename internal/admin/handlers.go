@@ -212,6 +212,10 @@ type eventDTO struct {
 	ID              int64  `json:"id"`
 	Name            string `json:"name,omitempty"`
 	AdventureSlug   string `json:"adventure_slug"`
+	// AdventureTitle is the human-friendly name. Joined in via the
+	// list query so the UI doesn't have to round-trip per row to
+	// pick a slug-or-title fallback.
+	AdventureTitle  string `json:"adventure_title,omitempty"`
 	State           string `json:"state"`
 	ScheduledAt     string `json:"scheduled_at,omitempty"`
 	StartedAt       string `json:"started_at,omitempty"`
@@ -413,13 +417,14 @@ func newLiveToken() (string, error) {
 func (h *Handlers) ListEvents(w http.ResponseWriter, r *http.Request) {
 	me, _ := auth.FromContext(r.Context())
 	query := `
-		SELECT ar.id, ar.name, ar.adventure_slug, ar.state,
+		SELECT ar.id, ar.name, ar.adventure_slug, COALESCE(adv.title, ''), ar.state,
 		       COALESCE(ar.scheduled_at, ''), COALESCE(ar.started_at, ''),
 		       ar.org_id, COALESCE(ar.created_by_user_id, 0),
 		       COALESCE(ar.assignment_id, 0), COALESCE(aa.max_teams, 0),
 		       ar.live_token, ar.show_map
 		FROM events ar
 		LEFT JOIN adventure_assignments aa ON aa.id = ar.assignment_id
+		LEFT JOIN adventures adv ON adv.slug = ar.adventure_slug
 	`
 	var args []any
 	if me.Role != auth.RoleAdmin {
@@ -439,7 +444,7 @@ func (h *Handlers) ListEvents(w http.ResponseWriter, r *http.Request) {
 			d       eventDTO
 			showMap int
 		)
-		if err := rows.Scan(&d.ID, &d.Name, &d.AdventureSlug, &d.State, &d.ScheduledAt, &d.StartedAt,
+		if err := rows.Scan(&d.ID, &d.Name, &d.AdventureSlug, &d.AdventureTitle, &d.State, &d.ScheduledAt, &d.StartedAt,
 			&d.OrgID, &d.CreatedByUserID, &d.AssignmentID, &d.MaxTeams,
 			&d.LiveToken, &showMap); err != nil {
 			httpx.Error(w, http.StatusInternalServerError, "scan failed")

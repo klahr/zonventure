@@ -1010,6 +1010,20 @@
       'Delivered': 'Levererad',
       'Dead': 'Misslyckad',
       'No response': 'Inget svar',
+      // ---- adventures tabs + settings cards ----
+      'Yours': 'Dina',
+      'Catalog': 'Katalog',
+      'Browse the Catalog': 'Bläddra i katalogen',
+      'Create your own or browse the Catalog for published adventures.':
+          'Skapa ditt eget eller bläddra i katalogen för publicerade äventyr.',
+      'Integrations': 'Integrationer',
+      'Configure webhooks': 'Konfigurera webhooks',
+      'Send your event lifecycle into Slack, Zapier, or your own systems via signed HTTP callbacks.':
+          'Skicka din eventlivscykel till Slack, Zapier eller egna system via signerade HTTP-anrop.',
+      'Help': 'Hjälp',
+      'Open the manual': 'Öppna manualen',
+      'Step-by-step walk-through of authoring adventures, scheduling events, adding teams, and integrating.':
+          'Steg-för-steg-guide för att skapa äventyr, schemalägga event, lägga till lag och integrera.',
       'Refresh': 'Uppdatera',
       'Could not load deliveries ({{status}}).': 'Kunde inte ladda leveranser ({{status}}).',
       'No deliveries yet. Send a test from the Webhooks page to see one land here.':
