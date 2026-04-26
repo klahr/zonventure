@@ -95,10 +95,10 @@
     align-items: stretch;
   }
   /* When the QR-scan button is present the form gets a third column.
-     Order: [input] [scan] [submit]. The scan button sits between the
-     input and submit so it visually reads as an alternative to
-     typing — same row, same height, brand-pink fill so it stands
-     out as the "fast path". */
+     Order: [input] [submit] [scan]. Typed-answer pair on the left
+     reads as one unit ("type then send"); the brand-pink scan
+     button sits at the far right as the visibly-separate
+     alternative path. */
   .submit-dock form.has-qr { grid-template-columns: 1fr auto auto; }
   .submit-dock input { margin: 0; }
   .submit-dock button { width: auto; padding: .75rem 1.2rem; }
@@ -1727,7 +1727,7 @@ function renderSubmitDock(s) {
   const qrBtn = qrSupported() ? createQrButton(input, result) : null;
   if (qrBtn) {
     form.classList.add('has-qr');
-    form.append(input, qrBtn, button, result);
+    form.append(input, button, qrBtn, result);
   } else {
     form.append(input, button, result);
   }
