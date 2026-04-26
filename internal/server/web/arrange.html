@@ -5277,21 +5277,24 @@ function renderLibraryEdit(view, adv) {
   let dragFrom = -1; // original index, captured at dragstart
   let dragEl = null; // the card being dragged
   const indexOfCard = (card) => Array.from(list.children).indexOf(card);
-  // moveOver places dragEl before/after `target` based on which half
-  // of the target the cursor (clientY) is over. No-op when dragEl is
-  // already in that exact slot, so dragover firing many times stays
-  // cheap.
+  // moveOver swaps dragEl past `target` the moment the cursor enters
+  // any part of target. Direction is inferred from current DOM order:
+  // if dragEl precedes target, the cursor must be moving downward, so
+  // we move dragEl AFTER target; otherwise the user is dragging
+  // upward and dragEl moves BEFORE target. No-op when already in the
+  // desired slot, which keeps dragover (firing many times per second)
+  // cheap and prevents oscillation when the cursor lingers between
+  // two cards.
   //
   // FLIP animation: capture sibling rects pre-mutation, do the DOM
   // splice, then translate each moved sibling back to its old
   // position and animate the transform to 0. The dragged card itself
   // is excluded — it'd fight the browser's drag image, which is
   // already following the cursor.
-  const moveOver = (target, clientY) => {
+  const moveOver = (target) => {
     if (!dragEl || target === dragEl) return;
-    const rect = target.getBoundingClientRect();
-    const before = (clientY - rect.top) < rect.height / 2;
-    const desiredBefore = before ? target : target.nextSibling;
+    const draggedFirst = !!(dragEl.compareDocumentPosition(target) & Node.DOCUMENT_POSITION_FOLLOWING);
+    const desiredBefore = draggedFirst ? target.nextSibling : target;
     if (dragEl.nextSibling === desiredBefore) return; // already in slot
 
     const siblings = Array.from(list.children).filter((el) => el !== dragEl);
@@ -5422,7 +5425,7 @@ function wirePuzzleDrag(card, i, getDragFrom, setDragFrom, moveOver, commit, can
     if (getDragFrom() < 0) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
-    moveOver(card, e.clientY);
+    moveOver(card);
   });
   card.addEventListener('drop', (e) => {
     if (getDragFrom() < 0) return;
@@ -5458,7 +5461,7 @@ function wirePuzzleDrag(card, i, getDragFrom, setDragFrom, moveOver, commit, can
     }
     e.preventDefault();
     const target = targetAt(t.clientX, t.clientY);
-    if (target) moveOver(target, t.clientY);
+    if (target) moveOver(target);
   }, { passive: false });
   handle.addEventListener('touchend', (e) => {
     if (touchMode !== 'drag') { touchMode = null; return; }
