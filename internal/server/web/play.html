@@ -172,21 +172,30 @@
   .submit-dock .dock-single .result { margin: 0; min-height: 1rem; font-size: .9rem; }
   /* Compact top strip: adventure title + team + progress + status pill in
      one row. Leaves maximum vertical space for the puzzle itself. */
+  /* Runbar = compact toolbar at the top of every play state. Holds
+     only the persistent in-event signals: how far through the
+     adventure the player is (progress) and the hint affordance.
+     Adventure title + team name moved into the hamburger drawer
+     because they're set-once context, not in-the-moment info — the
+     player already knows what they joined and which team they're on. */
   .runbar {
-    display: flex; align-items: baseline; gap: .5rem; flex-wrap: wrap;
-    padding: .25rem 0 .6rem;
-    margin-bottom: .5rem;
+    display: flex; align-items: center; justify-content: space-between;
+    gap: .75rem;
+    padding: .5rem 0;
+    margin-bottom: .75rem;
     border-bottom: 1px solid var(--border-soft);
+    min-height: 2.75rem;
+  }
+  .runbar .progress {
+    color: var(--ink); font-weight: 700;
+    font-variant-numeric: tabular-nums;
     font-size: var(--ts-sm);
   }
-  .runbar .title {
-    font-family: var(--font-brand); color: var(--accent-secondary);
-    font-size: 1.05rem; line-height: 1; margin-right: .25rem;
+  .runbar .progress.empty { color: var(--muted); font-weight: 400; }
+  .runbar .actions {
+    display: flex; align-items: center; gap: .5rem;
+    margin-left: auto;
   }
-  .runbar .sep { color: var(--muted); }
-  .runbar .team { color: var(--ink); font-weight: 700; }
-  .runbar .progress { color: var(--muted); font-variant-numeric: tabular-nums; }
-  .runbar .status { margin-left: auto; }
   h2 { font-size: var(--ts-sm); margin: 1.2rem 0 .4rem; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
   h3 { font-size: 1.05rem; margin: 0 0 .5rem; color: var(--accent-secondary); }
   input {
@@ -608,91 +617,109 @@
     opacity: 0; animation: celebrateRise .3s .45s ease forwards;
   }
 
-  /* ---------- Language picker ----------
-     Floats at the top-right corner so it's reachable from every view
-     (no-session card, running puzzle, gated, completed). Compact and
-     unobtrusive; the magic-link flow only needs it once. */
-  .lang-fab {
-    position: fixed;
-    top: calc(.5rem + env(safe-area-inset-top));
-    right: .5rem;
-    z-index: 40;
-  }
-  .lang-fab select {
-    font: inherit; font-size: .9rem; font-weight: 600;
-    color: var(--text);
-    background: color-mix(in srgb, var(--surface) 88%, transparent);
-    border: 1px solid var(--border-soft);
-    border-radius: 999px;
-    /* Tap target ≥44 px (Apple HIG / WCAG 2.5.5) so cold-weather
-       gloved fingers and one-handed users can reliably hit it. */
-    min-height: 2.75rem;
-    padding: .55rem 1.9rem .55rem .9rem;
-    box-shadow: var(--shadow);
-    cursor: pointer;
-    appearance: none;
-    background-image:
-      linear-gradient(45deg, transparent 50%, var(--muted) 50%),
-      linear-gradient(135deg, var(--muted) 50%, transparent 50%);
-    background-position:
-      calc(100% - 12px) 55%,
-      calc(100% - 7px) 55%;
-    background-size: 5px 5px, 5px 5px;
-    background-repeat: no-repeat;
-  }
-  .lang-fab select:hover { border-color: var(--muted); }
-
-  /* "More" menu — sits left of the language picker, opens a small
-     popover with Sign out + Forget me. Hidden until tapped so the
-     destructive action stays out of the way during play. */
-  .more-fab {
-    position: fixed;
-    top: calc(.5rem + env(safe-area-inset-top));
-    /* Pushed further left to make room for the wider language picker. */
-    right: 6.5rem;
-    z-index: 40;
-  }
-  .more-fab > button {
-    font: inherit;
-    background: color-mix(in srgb, var(--surface) 88%, transparent);
-    border: 1px solid var(--border-soft);
-    border-radius: 999px;
-    /* 44 px tap target — same rationale as the language picker. */
-    width: 2.75rem; height: 2.75rem;
-    padding: 0;
-    cursor: pointer;
-    box-shadow: var(--shadow);
-    color: var(--muted);
-    font-weight: 700;
-    font-size: 1.1rem;
-    line-height: 1;
-  }
-  .more-fab > button:hover { border-color: var(--muted); color: var(--text); }
-  .more-pop {
-    position: absolute;
-    top: calc(100% + .35rem);
-    right: 0;
-    min-width: 12rem;
-    background: var(--surface);
-    border: 1px solid var(--border-soft);
-    border-radius: var(--radius-sm);
-    box-shadow: var(--shadow);
-    padding: .35rem;
-    display: flex; flex-direction: column;
-  }
-  .more-pop button {
-    font: inherit;
+  /* ---------- Hamburger menu + drawer ----------
+     Replaces the previous trio of floating buttons (lang picker,
+     "more" popover, legal footer) with a single hamburger that
+     opens a slide-in side panel. Keeps the play surface clean
+     during a session — language, sign out, "forget me", and legal
+     links all live one tap away instead of competing with the
+     puzzle for attention. */
+  .menu-btn {
+    width: 2.5rem; height: 2.5rem;
+    display: inline-flex; align-items: center; justify-content: center;
     background: transparent;
-    border: none;
-    color: var(--text);
-    text-align: left;
-    padding: .5rem .65rem;
-    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-soft);
+    border-radius: 8px;
     cursor: pointer;
+    color: var(--ink);
+    padding: 0;
+    flex: 0 0 auto;
+    box-shadow: none;
+    min-height: 0;
   }
-  .more-pop button:hover { background: var(--surface-2); }
-  .more-pop .danger { color: #b03a3a; }
-  .more-pop .danger:hover { background: rgba(220,70,70,.1); }
+  .menu-btn:hover { background: var(--surface-2); }
+  .menu-btn svg { width: 1.1rem; height: 1.1rem; }
+
+  .menu-drawer {
+    position: fixed; inset: 0; z-index: 200;
+    background: rgba(0,0,0,.4);
+    opacity: 0; pointer-events: none;
+    transition: opacity .2s ease;
+  }
+  .menu-drawer.open { opacity: 1; pointer-events: auto; }
+  .menu-panel {
+    position: absolute; right: 0; top: 0; bottom: 0;
+    width: min(86vw, 22rem);
+    background: var(--surface);
+    display: flex; flex-direction: column;
+    transform: translateX(100%);
+    transition: transform .25s ease;
+    overflow-y: auto;
+    box-shadow: -4px 0 24px rgba(0,0,0,.12);
+  }
+  .menu-drawer.open .menu-panel { transform: translateX(0); }
+  .menu-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: calc(.85rem + env(safe-area-inset-top)) 1rem .85rem;
+    border-bottom: 1px solid var(--border-soft);
+  }
+  .menu-head .menu-title {
+    font-family: var(--font-brand); color: var(--accent-secondary);
+    font-size: 1.05rem; line-height: 1.2;
+    margin: 0; min-width: 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .menu-head .menu-team {
+    font-size: var(--ts-xs); color: var(--muted);
+    margin: .15rem 0 0;
+  }
+  .menu-close {
+    width: 2.25rem; height: 2.25rem;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: transparent; border: 0; color: var(--muted);
+    cursor: pointer; padding: 0;
+    box-shadow: none; min-height: 0;
+    font-size: 1.4rem; line-height: 1;
+  }
+  .menu-close:hover { color: var(--ink); }
+  .menu-section {
+    padding: .75rem 1rem;
+    border-bottom: 1px solid var(--border-soft);
+  }
+  .menu-section:last-of-type { border-bottom: 0; }
+  .menu-section-label {
+    font-size: var(--ts-xs); font-weight: 700;
+    text-transform: uppercase; letter-spacing: .08em;
+    color: var(--muted);
+    margin: 0 0 .5rem;
+  }
+  .menu-row {
+    width: 100%;
+    display: block;
+    text-align: left;
+    background: transparent;
+    color: var(--ink);
+    border: 0;
+    border-radius: var(--radius-sm);
+    padding: .65rem .5rem;
+    font: inherit; font-weight: 600;
+    cursor: pointer;
+    text-decoration: none;
+    box-shadow: none;
+    min-height: 0;
+  }
+  .menu-row:hover { background: var(--surface-2); }
+  .menu-row.danger { color: #b03a3a; }
+  .menu-row.danger:hover { background: rgba(220,70,70,.1); }
+  .menu-foot {
+    margin-top: auto;
+    padding: 1rem;
+    padding-bottom: calc(1rem + env(safe-area-inset-bottom));
+    color: var(--muted);
+    font-size: var(--ts-xs);
+    display: flex; gap: .75rem; justify-content: center;
+  }
+  .menu-foot a { color: inherit; text-decoration: underline; }
 
   /* ---------- Preview mode ---------- */
   .preview-chrome {
@@ -1198,18 +1225,24 @@ function renderNoSession(opts) {
   const expired = !!(opts && opts.expired);
   lastRenderKey = null;
   hideSubmitDock();
+  // Lightweight runbar so the language picker / privacy / terms links
+  // stay one tap away even before a magic link exchange. Empty
+  // progress (no event yet) lets the menu button align right.
+  const bar = el('div', { class: 'runbar' },
+    el('span', { class: 'progress empty' }, ''),
+    el('div', { class: 'actions' }, buildMenuButton(null)));
   // Two distinct screens — the "expired" path is reached when a slot
   // session that *was* active (we received at least one state push) is
   // closed by the server, almost always because the slot's expiry
   // passed. The first-time path stays as the soft prompt to open a link.
   if (expired) {
-    app.replaceChildren(el('div', { class: 'card' },
+    app.replaceChildren(bar, el('div', { class: 'card' },
       el('h3', {}, t('Your link expired')),
       el('p', { class: 'muted' },
         t('Magic links expire after a while. Ask your arranger for a fresh link to get back in — your team\'s progress is safe.'))));
     return;
   }
-  app.replaceChildren(el('div', { class: 'card' },
+  app.replaceChildren(bar, el('div', { class: 'card' },
     el('h3', {}, t('Open your magic link')),
     el('p', { class: 'muted' },
       t('Players receive a personal link via message from their arranger. '),
@@ -1416,17 +1449,17 @@ function render(s) {
   app.replaceChildren();
   const playing = s.status === 'running';
   const hintBtn = playing ? renderHintButton(s) : null;
-  // No status pill on the runbar: the main content already conveys
-  // state — buildWaitingCard for waiting, a paused paragraph, the
-  // completion summary — and during 'running' the pill is just noise.
-  const bar = el('div', { class: 'runbar' },
-    s.adventure_title ? el('span', { class: 'title' }, s.adventure_title) : null,
-    s.team_name ? el('span', { class: 'team' }, s.team_name) : null,
-    playing
-      ? el('span', { class: 'progress' }, t('Puzzle {{i}}/{{n}}', { i: s.page_index + 1, n: s.page_count }))
-      : null,
-    hintBtn,
-  );
+  // Compact runbar: progress on the left, hint + hamburger on the
+  // right. State pill removed (the main content already conveys
+  // state — waiting card, paused paragraph, completion summary).
+  // Title + team moved into the hamburger drawer.
+  const progress = playing
+    ? el('span', { class: 'progress' }, t('Puzzle {{i}}/{{n}}', { i: s.page_index + 1, n: s.page_count }))
+    : el('span', { class: 'progress empty' }, '');
+  const actions = el('div', { class: 'actions' });
+  if (hintBtn) actions.append(hintBtn);
+  actions.append(buildMenuButton(s));
+  const bar = el('div', { class: 'runbar' }, progress, actions);
   app.append(bar);
 
   // Welcome screen shown once per (adventure, team, slot).
@@ -2523,89 +2556,152 @@ function renderPreviewDebug(d) {
   app.append(panel);
 }
 
-// Floating language picker. Mounted on <body> so it stays put across
-// app.replaceChildren() renders and is visible from every view state.
-(function mountLangFab() {
-  const fab = document.createElement('div');
-  fab.className = 'lang-fab';
-  fab.append(zvI18n.makeLangPicker({ title: t('Language') }));
-  document.body.append(fab);
-})();
-
-// Small legal-link strip pinned to the bottom of every play page.
-// Compliance surfacing — unauthenticated landing on /play hits these
-// before they exchange a magic link, so they can read the privacy
-// terms before opting into geolocation.
-(function mountLegalFooter() {
-  const f = document.createElement('div');
-  f.style.cssText = 'position:fixed; bottom:calc(.4rem + env(safe-area-inset-bottom)); left:0; right:0; text-align:center; font-size:.7rem; color:var(--muted); z-index:30; pointer-events:none;';
-  const linkStyle = 'color:inherit; text-decoration:underline; pointer-events:auto;';
-  const a1 = document.createElement('a');
-  a1.href = '/privacy'; a1.target = '_blank'; a1.rel = 'noopener';
-  a1.style.cssText = linkStyle; a1.textContent = t('Privacy');
-  const a2 = document.createElement('a');
-  a2.href = '/terms'; a2.target = '_blank'; a2.rel = 'noopener';
-  a2.style.cssText = linkStyle; a2.textContent = t('Terms');
-  f.append(a1, document.createTextNode(' · '), a2);
-  document.body.append(f);
-})();
-
-// "More" menu — sign out + forget me. Lives next to the lang picker
-// so it's reachable from every view. Tap toggles a small popover; tap
-// outside closes it. The destructive action goes through a confirm()
-// because a player accidentally tapping "Forget me" during an event
-// would be catastrophic — slot wiped, link dead, no recovery.
-(function mountMoreFab() {
-  const fab = document.createElement('div');
-  fab.className = 'more-fab';
+// buildMenuButton returns the small hamburger button placed at the
+// right of the runbar. Clicking it opens a slide-in drawer with
+// adventure context, language picker, sign-out, "forget me", and the
+// privacy / terms links. Replaces three previous floating affordances
+// (lang-fab, more-fab, legal-footer) which all competed for the
+// top-right corner and overlapped the puzzle content on narrow phones.
+function buildMenuButton(s) {
   const btn = document.createElement('button');
   btn.type = 'button';
-  btn.title = t('More');
-  btn.textContent = '⋯';
-  fab.append(btn);
+  btn.className = 'menu-btn';
+  btn.setAttribute('aria-label', t('Menu'));
+  btn.title = t('Menu');
+  btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+    + '<line x1="4" y1="6" x2="20" y2="6"/>'
+    + '<line x1="4" y1="12" x2="20" y2="12"/>'
+    + '<line x1="4" y1="18" x2="20" y2="18"/>'
+    + '</svg>';
+  btn.addEventListener('click', () => openMenuDrawer(s));
+  return btn;
+}
 
-  let pop = null;
-  const close = () => {
-    if (pop) { pop.remove(); pop = null; }
-    document.removeEventListener('click', onOutside, true);
-  };
-  const onOutside = (e) => { if (!fab.contains(e.target)) close(); };
+// openMenuDrawer mounts the slide-in side panel. The drawer is built
+// fresh on each open so the language picker (rendered through
+// zvI18n.makeLangPicker) reflects whichever language is currently
+// active without us having to re-sync state.
+function openMenuDrawer(s) {
+  const drawer = document.createElement('div');
+  drawer.className = 'menu-drawer';
+  const panel = document.createElement('div');
+  panel.className = 'menu-panel';
 
-  btn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    if (pop) { close(); return; }
-    pop = document.createElement('div');
-    pop.className = 'more-pop';
-    const out = document.createElement('button');
-    out.type = 'button'; out.textContent = t('Sign out');
-    out.addEventListener('click', async () => {
-      close();
-      await api('/api/player/logout', { method: 'POST' });
-      location.href = '/play';
-    });
-    const forget = document.createElement('button');
-    forget.type = 'button'; forget.className = 'danger';
-    forget.textContent = t('Forget me on this event');
-    forget.addEventListener('click', async () => {
-      close();
-      // Plain confirm() is fine here — play.html doesn't carry a
-      // modal helper and the call is rare enough that pulling one in
-      // would be over-engineering.
-      if (!confirm(t('This wipes your location history and your answers from this event. Other team members keep playing. You\'ll be signed out and the link won\'t work again. Continue?'))) return;
-      const r = await api('/api/player/forget', { method: 'POST' });
-      if (r.status === 204) {
-        location.href = '/play';
-      } else {
-        alert(r.body?.error || t('error {{status}}', { status: r.status }));
-      }
-    });
-    pop.append(out, forget);
-    fab.append(pop);
-    setTimeout(() => document.addEventListener('click', onOutside, true), 0);
+  const head = document.createElement('div');
+  head.className = 'menu-head';
+  const headText = document.createElement('div');
+  headText.style.cssText = 'min-width:0; flex:1';
+  if (s?.adventure_title) {
+    const h = document.createElement('h2');
+    h.className = 'menu-title';
+    h.textContent = s.adventure_title;
+    headText.append(h);
+  } else {
+    const h = document.createElement('h2');
+    h.className = 'menu-title';
+    h.textContent = 'Zonventure';
+    headText.append(h);
+  }
+  if (s?.team_name) {
+    const team = document.createElement('p');
+    team.className = 'menu-team';
+    team.textContent = s.team_name;
+    headText.append(team);
+  }
+  const closeBtn = document.createElement('button');
+  closeBtn.type = 'button';
+  closeBtn.className = 'menu-close';
+  closeBtn.setAttribute('aria-label', t('Close'));
+  closeBtn.textContent = '×';
+  head.append(headText, closeBtn);
+  panel.append(head);
+
+  // Language picker. The shared zvI18n helper renders a native <select>
+  // with flag + name labels; styling here just gives it a comfortable
+  // tap target inside the drawer row.
+  const langSection = document.createElement('div');
+  langSection.className = 'menu-section';
+  const langLabel = document.createElement('p');
+  langLabel.className = 'menu-section-label';
+  langLabel.textContent = t('Language');
+  const langPicker = zvI18n.makeLangPicker({ title: t('Language') });
+  langPicker.style.cssText = 'width:100%; padding:.6rem .75rem; font:inherit; font-weight:600; border:1px solid var(--border-soft); border-radius:8px; background:var(--surface);';
+  langSection.append(langLabel, langPicker);
+  panel.append(langSection);
+
+  // Account / event actions. Sign-out is the soft option; "forget me"
+  // is destructive (wipes location history + answers + slot session)
+  // and stays behind a confirm() because an accidental tap mid-event
+  // is catastrophic.
+  const acctSection = document.createElement('div');
+  acctSection.className = 'menu-section';
+  const acctLabel = document.createElement('p');
+  acctLabel.className = 'menu-section-label';
+  acctLabel.textContent = t('Account');
+  acctSection.append(acctLabel);
+
+  const signOut = document.createElement('button');
+  signOut.type = 'button';
+  signOut.className = 'menu-row';
+  signOut.textContent = t('Sign out');
+  signOut.addEventListener('click', async () => {
+    close();
+    await api('/api/player/logout', { method: 'POST' });
+    location.href = '/play';
   });
+  acctSection.append(signOut);
 
-  document.body.append(fab);
-})();
+  const forget = document.createElement('button');
+  forget.type = 'button';
+  forget.className = 'menu-row danger';
+  forget.textContent = t('Forget me on this event');
+  forget.addEventListener('click', async () => {
+    close();
+    if (!confirm(t('This wipes your location history and your answers from this event. Other team members keep playing. You\'ll be signed out and the link won\'t work again. Continue?'))) return;
+    const r = await api('/api/player/forget', { method: 'POST' });
+    if (r.status === 204) {
+      location.href = '/play';
+    } else {
+      alert(r.body?.error || t('error {{status}}', { status: r.status }));
+    }
+  });
+  acctSection.append(forget);
+  panel.append(acctSection);
+
+  // Legal footer — pinned to the bottom of the drawer instead of the
+  // viewport, so it doesn't compete with the submit dock for the
+  // safe-area space.
+  const foot = document.createElement('div');
+  foot.className = 'menu-foot';
+  const aPriv = document.createElement('a');
+  aPriv.href = '/privacy'; aPriv.target = '_blank'; aPriv.rel = 'noopener';
+  aPriv.textContent = t('Privacy');
+  const aTerms = document.createElement('a');
+  aTerms.href = '/terms'; aTerms.target = '_blank'; aTerms.rel = 'noopener';
+  aTerms.textContent = t('Terms');
+  foot.append(aPriv, document.createTextNode(' · '), aTerms);
+  panel.append(foot);
+
+  drawer.append(panel);
+  document.body.append(drawer);
+
+  let closed = false;
+  function close() {
+    if (closed) return;
+    closed = true;
+    drawer.classList.remove('open');
+    setTimeout(() => drawer.remove(), 280);
+    document.removeEventListener('keydown', onKey);
+  }
+  function onKey(e) { if (e.key === 'Escape') close(); }
+  drawer.addEventListener('click', (e) => { if (e.target === drawer) close(); });
+  closeBtn.addEventListener('click', close);
+  document.addEventListener('keydown', onKey);
+
+  // Defer the .open toggle so the transition fires (the element needs
+  // to render at translateX(100%) first, then transition to 0).
+  requestAnimationFrame(() => drawer.classList.add('open'));
+}
 
 bootstrap();
 </script>

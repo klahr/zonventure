@@ -902,6 +902,8 @@
       'More': 'Mer',
       'Sign out': 'Logga ut',
       'Forget me on this event': 'Glöm mig från denna körning',
+      'Menu': 'Meny',
+      'Account': 'Konto',
       'Forget me?': 'Glöm mig?',
       'This wipes your location history and your answers from this event. Other team members keep playing. You\'ll be signed out and the link won\'t work again. Continue?':
         'Detta raderar din platshistorik och dina svar från denna körning. Övriga lagmedlemmar fortsätter spela. Du loggas ut och länken fungerar inte igen. Fortsätt?',
