@@ -149,11 +149,26 @@
     }
   }
 
-  /* ---- topbar ---- */
+  /* ---- topbar ----
+     Sticks to the viewport top so the brand + nav follow the user
+     down the page (GitHub pattern). Solid-but-translucent dark
+     background with a backdrop-blur keeps every content surface
+     beneath it (hero photo OR white sections) legible without a
+     scroll-position JS toggle. */
+  :root { --topbar-h: 4.25rem; }
   .topbar {
-    position: absolute; top: 0; left: 0; right: 0; z-index: 5;
+    position: fixed; top: 0; left: 0; right: 0; z-index: 50;
     padding: 1.25rem 0;
+    background: rgba(15, 22, 36, .82);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border-bottom: 1px solid rgba(255,255,255,.08);
+    min-height: var(--topbar-h);
   }
+  /* No body padding compensation: the topbar floats above content
+     (z-index: 50). The hero's existing top padding already keeps the
+     headline below the topbar; sections beneath the hero scroll
+     under the translucent topbar by design. */
   .topbar-row {
     display: flex; align-items: center;
     gap: .75rem;
@@ -261,30 +276,43 @@
     .topbar nav {
       gap: .5rem;
     }
-    /* Hide the inline link strip; reveal it when the toggle flips on. */
+    /* Fullscreen overlay below the fixed topbar. The viewport-fixed
+       positioning means body content keeps its scroll position when
+       the menu is closed (we don't lock body scroll — that needs JS
+       — but the menu fully covers the page so the underlying scroll
+       is invisible while it's open). Top is pinned to the topbar
+       height; bottom: 0 fills to the screen edge. Content is
+       overflow-y: auto so very tall menus scroll inside the panel
+       on small landscape screens. */
     .nav-menu {
       display: none;
-      position: absolute;
-      top: 100%; left: 0; right: 0;
+      position: fixed;
+      top: var(--topbar-h);
+      left: 0; right: 0; bottom: 0;
       flex-direction: column;
       align-items: stretch;
       gap: 0;
-      padding: .5rem 0;
-      background: rgba(15, 22, 36, .96);
-      backdrop-filter: blur(8px);
-      box-shadow: 0 8px 24px rgba(0,0,0,.25);
+      padding: 1.5rem 0 2rem;
+      background: rgba(15, 22, 36, .98);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      overflow-y: auto;
+      z-index: 40;
     }
     .nav-toggle:checked ~ nav .nav-menu {
       display: flex;
     }
     .nav-menu a {
-      padding: .85rem 1.25rem;
+      padding: 1.1rem 1.5rem;
+      font-size: 1.15rem;
       border-bottom: 1px solid rgba(255,255,255,.08);
     }
     .nav-menu a:last-child { border-bottom: none; }
     .nav-menu .btn {
-      margin: .5rem 1.25rem 0;
+      margin: 1.25rem 1.5rem 0;
+      padding: .9rem 1.25rem;
       text-align: center;
+      font-size: 1rem;
     }
   }
   @media (max-width: 32rem) {
