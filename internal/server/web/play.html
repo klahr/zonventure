@@ -95,22 +95,24 @@
     align-items: stretch;
   }
   /* When the QR-scan button is present the form gets a third column.
-     Order: [scan] [input] [submit]. The scan icon is sized smaller
-     than Submit because it's a secondary affordance (tap → scan)
-     while Submit is the primary action for typed answers. */
-  .submit-dock form.has-qr { grid-template-columns: auto 1fr auto; }
+     Order: [input] [scan] [submit]. The scan button sits between the
+     input and submit so it visually reads as an alternative to
+     typing — same row, same height, brand-pink fill so it stands
+     out as the "fast path". */
+  .submit-dock form.has-qr { grid-template-columns: 1fr auto auto; }
   .submit-dock input { margin: 0; }
   .submit-dock button { width: auto; padding: .75rem 1.2rem; }
   .submit-dock .qr-btn {
-    padding: .65rem .85rem;
-    border: 1px solid var(--border-soft);
-    background: var(--surface, #fff);
-    color: var(--ink, inherit);
-    font-size: 1.15rem;
-    line-height: 1;
+    display: inline-flex; align-items: center; justify-content: center;
+    padding: 0 .85rem;
+    border: 0;
+    background: var(--accent);
+    color: #fff;
     border-radius: .5rem;
+    cursor: pointer;
   }
-  .submit-dock .qr-btn:hover { background: var(--surface-2, #f0f0f0); }
+  .submit-dock .qr-btn:hover { opacity: .9; }
+  .submit-dock .qr-btn svg { width: 1.4rem; height: 1.4rem; }
   .submit-dock .result { grid-column: 1 / -1; margin: 0; min-height: 1rem; font-size: .9rem; }
 
   /* Fullscreen QR scanner. Pulled in as an overlay so it can take
@@ -1725,7 +1727,7 @@ function renderSubmitDock(s) {
   const qrBtn = qrSupported() ? createQrButton(input, result) : null;
   if (qrBtn) {
     form.classList.add('has-qr');
-    form.append(qrBtn, input, button, result);
+    form.append(input, qrBtn, button, result);
   } else {
     form.append(input, button, result);
   }
@@ -2156,7 +2158,23 @@ function createQrButton(input, result) {
   btn.className = 'qr-btn';
   btn.setAttribute('aria-label', t('Scan QR code'));
   btn.title = t('Scan QR code');
-  btn.textContent = '📷';
+  // Inline SVG so the icon scales with the button's font-size and
+  // inherits currentColor (white on pink). Three corner finder
+  // patterns + a few inner cells — the universal QR silhouette.
+  btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+    + '<rect x="3" y="3" width="5" height="5" rx="1"/>'
+    + '<rect x="3" y="16" width="5" height="5" rx="1"/>'
+    + '<rect x="16" y="3" width="5" height="5" rx="1"/>'
+    + '<path d="M21 16h-3a2 2 0 0 0-2 2v3"/>'
+    + '<path d="M21 21v.01"/>'
+    + '<path d="M12 7v3a2 2 0 0 1-2 2H7"/>'
+    + '<path d="M3 12h.01"/>'
+    + '<path d="M12 3h.01"/>'
+    + '<path d="M12 16v.01"/>'
+    + '<path d="M16 12h1"/>'
+    + '<path d="M21 12v.01"/>'
+    + '<path d="M12 21v-1"/>'
+    + '</svg>';
   btn.addEventListener('click', async () => {
     btn.disabled = true;
     try {
