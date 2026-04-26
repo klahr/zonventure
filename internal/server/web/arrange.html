@@ -1267,12 +1267,10 @@ textarea { min-height: 80px; resize: vertical; font-family: ui-monospace, monosp
 .pt-pill.drop-after  { box-shadow: inset -3px 0 0 0 var(--accent); }
 
 /* Puzzle list reorder. Each card on the adventure detail page is the
-   drag source; the grip icon at the start is the visual affordance,
-   but draggable=true on the whole card means a slow accidental drag
-   on the card body still reorders rather than scrolling — matches
-   Trello / Notion. drop-before / drop-after paint a horizontal
-   coloured edge so the insertion point is unambiguous (different
-   axis from the .pt-pill rules above, hence the separate selectors). */
+   drag source; the grip icon is the visual affordance. The reorder
+   is "live": as the cursor crosses a sibling's midpoint we splice
+   the dragged card to that DOM position, so the rest of the list
+   visibly reflows around it (no separate drop-hint indicator). */
 .puzzle-card .drag-handle {
   display: inline-flex; align-items: center; justify-content: center;
   width: 1.75rem; height: 1.75rem;
@@ -1286,8 +1284,6 @@ textarea { min-height: 80px; resize: vertical; font-family: ui-monospace, monosp
 .puzzle-card .drag-handle:hover { color: var(--ink); background: var(--surface-2); }
 .puzzle-card[draggable]:active .drag-handle { cursor: grabbing; }
 .puzzle-card.drag-ghost { opacity: .35; }
-.puzzle-card.drop-before { box-shadow: inset 0 3px 0 0 var(--accent); }
-.puzzle-card.drop-after  { box-shadow: inset 0 -3px 0 0 var(--accent); }
 
 /* Selectable chip grid used in the team-create modal. */
 .chip-grid {
@@ -5272,35 +5268,67 @@ function renderLibraryEdit(view, adv) {
   });
   cards.forEach((c) => list.append(c));
 
-  // Drag-and-drop reorder. Mirrors the wireDrag pattern from the
-  // puzzle-editor timeline: HTML5 drag events for desktop mice,
-  // touchstart/touchmove/touchend for phones. dragFrom lives in this
-  // closure so a single in-flight drag is shared across all cards.
-  let dragFrom = -1;
-  const clearDropHints = () => {
-    for (const el of list.querySelectorAll('.drop-before, .drop-after')) {
-      el.classList.remove('drop-before', 'drop-after');
-    }
+  // Drag-and-drop reorder. Live-shuffle: as the cursor crosses a
+  // sibling's vertical midpoint we splice the dragged card to that
+  // position in the DOM. Other cards reflow to fill, giving the
+  // arranger a real preview of the final layout instead of an
+  // abstract "drop hint" line. State is closure-scoped so a single
+  // in-flight drag is shared across all cards.
+  let dragFrom = -1; // original index, captured at dragstart
+  let dragEl = null; // the card being dragged
+  const indexOfCard = (card) => Array.from(list.children).indexOf(card);
+  // moveOver places dragEl before/after `target` based on which half
+  // of the target the cursor (clientY) is over. No-op when dragEl is
+  // already in that exact slot, so dragover firing many times stays
+  // cheap.
+  const moveOver = (target, clientY) => {
+    if (!dragEl || target === dragEl) return;
+    const rect = target.getBoundingClientRect();
+    const before = (clientY - rect.top) < rect.height / 2;
+    const desiredBefore = before ? target : target.nextSibling;
+    if (dragEl.nextSibling === desiredBefore) return; // already in slot
+    list.insertBefore(dragEl, desiredBefore);
   };
-  const onReorder = async (fromPos, toPos) => {
-    if (fromPos === toPos || toPos < 0 || toPos >= adv.pages.length) return;
+  const commitReorder = async () => {
+    if (!dragEl || dragFrom < 0) return;
+    const finalPos = indexOfCard(dragEl);
+    dragEl.classList.remove('drag-ghost');
+    const fromPos = dragFrom;
+    dragFrom = -1;
+    dragEl = null;
+    if (finalPos === fromPos || finalPos < 0) return;
+    // Optimistically reflect the new order on the data side; the
+    // server is told via the reorder endpoint, and we re-render at
+    // the end so the per-card position numbers ("1.", "2.", …)
+    // refresh.
     const next = adv.pages.slice();
     const [moved] = next.splice(fromPos, 1);
-    next.splice(toPos, 0, moved);
+    next.splice(finalPos, 0, moved);
     const r = await api(`/api/admin/adventures/${encodeURIComponent(adv.slug)}/pages/reorder`, {
       method: 'PATCH', body: JSON.stringify({ page_ids: next.map((p) => p.id) }),
     });
     if (r.status !== 204) {
       toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+      // Server rejected — re-render from the unchanged adv.pages so
+      // the DOM snaps back to the authoritative order.
+      renderLibraryEdit(view, adv);
       return;
     }
     adv.pages = next.map((p, i) => ({ ...p, index: i }));
     renderLibraryEdit(view, adv);
   };
-  cards.forEach((card, i) => wirePuzzleDrag(card, adv.pages[i], i, list, () => dragFrom, (v) => { dragFrom = v; }, clearDropHints, onReorder));
+  cards.forEach((card, i) => wirePuzzleDrag(card, i,
+    () => dragFrom, (from, el) => { dragFrom = from; dragEl = el; },
+    moveOver, commitReorder,
+    () => { if (dragEl) { dragEl.classList.remove('drag-ghost'); } dragFrom = -1; dragEl = null; },
+  ));
 
   const hasEnabled = enabledIdx > 0;
-  view.replaceChildren(
+  // .filter(Boolean) drops null/undefined ternary branches. Native
+  // `replaceChildren` coerces non-Node args to strings — without the
+  // filter the literal text "null" leaked in above the puzzle list
+  // for non-admin viewers (the renderAdventureShares branch).
+  view.replaceChildren(...[
     h('button', { class: 'btn ghost small', on: { click: () => nav(state.me.role === 'admin' ? '#library' : '#adventures') } },
       icon(ICONS.back), t('Back')),
     h('div', { class: 'row between', style: 'gap:.75rem; align-items:flex-start' },
@@ -5343,68 +5371,48 @@ function renderLibraryEdit(view, adv) {
           h('p', { class: 'muted', style: 'margin-top:.5rem' },
             t('Use "Add puzzle" above to author a new one or copy from the library.')))
       : list,
-  );
+  ].filter(Boolean));
 }
 
 // wirePuzzleDrag attaches HTML5 + touch drag-and-drop handlers to a
-// puzzle card. Hoisted out of renderLibraryEdit so the handler logic
-// is one block of code, not interleaved with the layout. Mirrors the
-// shape of the puzzle-editor timeline drag (kept compatible so a
-// future refactor could merge them) but applies the visual hints to
-// the card edges (top/bottom) instead of the pill edges (left/right).
-function wirePuzzleDrag(card, page, i, list, getDragFrom, setDragFrom, clearDropHints, onReorder) {
+// puzzle card. The drag is "live": as the cursor crosses a sibling's
+// midpoint, the dragged card is spliced to that position in the DOM
+// and other cards naturally reflow. The original index is captured at
+// dragstart; the final index is read from the DOM at drop time.
+function wirePuzzleDrag(card, i, getDragFrom, setDragFrom, moveOver, commit, cancel) {
   card.addEventListener('dragstart', (e) => {
-    setDragFrom(i);
+    setDragFrom(i, card);
     card.classList.add('drag-ghost');
     e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', String(page.id));
+    // Firefox refuses to initiate the drag unless some payload is set.
+    e.dataTransfer.setData('text/plain', String(i));
   });
   card.addEventListener('dragend', () => {
-    card.classList.remove('drag-ghost');
-    clearDropHints();
+    // Fired even if the drop landed outside the list. If we're still
+    // mid-drag (drop didn't fire), back out cleanly.
+    if (getDragFrom() >= 0) cancel();
   });
   card.addEventListener('dragover', (e) => {
-    const from = getDragFrom();
-    if (from < 0 || from === i) return;
+    if (getDragFrom() < 0) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
-    const rect = card.getBoundingClientRect();
-    const before = (e.clientY - rect.top) < rect.height / 2;
-    clearDropHints();
-    card.classList.add(before ? 'drop-before' : 'drop-after');
-  });
-  card.addEventListener('dragleave', () => {
-    card.classList.remove('drop-before', 'drop-after');
+    moveOver(card, e.clientY);
   });
   card.addEventListener('drop', (e) => {
-    const from = getDragFrom();
-    if (from < 0) return;
+    if (getDragFrom() < 0) return;
     e.preventDefault();
-    const rect = card.getBoundingClientRect();
-    const before = (e.clientY - rect.top) < rect.height / 2;
-    const target = before ? i : i + 1;
-    const adjusted = from < target ? target - 1 : target;
-    clearDropHints();
-    setDragFrom(-1);
-    onReorder(from, adjusted);
+    commit();
   });
 
-  // Touch fallback. Mirrors the timeline's touch implementation but
-  // tracks vertical motion (the cards stack rather than line up).
+  // Touch fallback. Only the grip starts a touch drag; touching the
+  // card body keeps native scrolling.
   let touchStartX = 0, touchStartY = 0, touchMode = null;
-  const dropTargetAt = (clientX, clientY) => {
-    const el = document.elementFromPoint(clientX, clientY);
-    const t = el?.closest('[data-page-pos]');
-    if (!t || t === card) return null;
-    const idx = parseInt(t.getAttribute('data-page-pos'), 10);
-    if (isNaN(idx) || idx === i) return null;
-    return { el: t, idx };
-  };
-  // Only the grip area starts a touch drag — the rest of the card is
-  // for tap-to-edit and scroll. Without this, scrolling the page
-  // through a tall card list would also drag puzzles around.
   const handle = card.querySelector('.drag-handle');
   if (!handle) return;
+  const targetAt = (clientX, clientY) => {
+    const el = document.elementFromPoint(clientX, clientY);
+    return el?.closest('.puzzle-card');
+  };
   handle.addEventListener('touchstart', (e) => {
     if (e.touches.length !== 1) return;
     touchStartX = e.touches[0].clientX;
@@ -5419,44 +5427,21 @@ function wirePuzzleDrag(card, page, i, list, getDragFrom, setDragFrom, clearDrop
       const dy = t.clientY - touchStartY;
       if (Math.hypot(dx, dy) < 8) return;
       touchMode = 'drag';
-      setDragFrom(i);
+      setDragFrom(i, card);
       card.classList.add('drag-ghost');
     }
     e.preventDefault();
-    clearDropHints();
-    const drop = dropTargetAt(t.clientX, t.clientY);
-    if (!drop) return;
-    const rect = drop.el.getBoundingClientRect();
-    const before = (t.clientY - rect.top) < rect.height / 2;
-    drop.el.classList.add(before ? 'drop-before' : 'drop-after');
+    const target = targetAt(t.clientX, t.clientY);
+    if (target) moveOver(target, t.clientY);
   }, { passive: false });
   handle.addEventListener('touchend', (e) => {
     if (touchMode !== 'drag') { touchMode = null; return; }
     touchMode = null;
-    const last = e.changedTouches[0];
-    let adjusted = -1;
-    if (last) {
-      const drop = dropTargetAt(last.clientX, last.clientY);
-      if (drop) {
-        const rect = drop.el.getBoundingClientRect();
-        const before = (last.clientY - rect.top) < rect.height / 2;
-        const desired = before ? drop.idx : drop.idx + 1;
-        adjusted = i < desired ? desired - 1 : desired;
-      }
-    }
-    clearDropHints();
-    card.classList.remove('drag-ghost');
-    const from = getDragFrom();
-    setDragFrom(-1);
     e.preventDefault();
-    if (adjusted >= 0) onReorder(from, adjusted);
+    commit();
   }, { passive: false });
   handle.addEventListener('touchcancel', () => {
-    if (touchMode === 'drag') {
-      clearDropHints();
-      card.classList.remove('drag-ghost');
-      setDragFrom(-1);
-    }
+    if (touchMode === 'drag') cancel();
     touchMode = null;
   }, { passive: true });
 }
