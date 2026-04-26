@@ -45,6 +45,7 @@
       'Cancel': 'Avbryt',
       'Delete': 'Ta bort',
       'Edit': 'Redigera',
+      'Drag to reorder': 'Dra för att ordna om',
       'Back': 'Tillbaka',
       'Close': 'Stäng',
       'Create': 'Skapa',

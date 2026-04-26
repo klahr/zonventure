@@ -1266,6 +1266,29 @@ textarea { min-height: 80px; resize: vertical; font-family: ui-monospace, monosp
 .pt-pill.drop-before { box-shadow: inset 3px 0 0 0 var(--accent); }
 .pt-pill.drop-after  { box-shadow: inset -3px 0 0 0 var(--accent); }
 
+/* Puzzle list reorder. Each card on the adventure detail page is the
+   drag source; the grip icon at the start is the visual affordance,
+   but draggable=true on the whole card means a slow accidental drag
+   on the card body still reorders rather than scrolling — matches
+   Trello / Notion. drop-before / drop-after paint a horizontal
+   coloured edge so the insertion point is unambiguous (different
+   axis from the .pt-pill rules above, hence the separate selectors). */
+.puzzle-card .drag-handle {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 1.75rem; height: 1.75rem;
+  margin-right: .5rem;
+  color: var(--muted);
+  cursor: grab;
+  border-radius: 4px;
+  flex-shrink: 0;
+  touch-action: none; /* let the touch listeners hijack the gesture */
+}
+.puzzle-card .drag-handle:hover { color: var(--ink); background: var(--surface-2); }
+.puzzle-card[draggable]:active .drag-handle { cursor: grabbing; }
+.puzzle-card.drag-ghost { opacity: .35; }
+.puzzle-card.drop-before { box-shadow: inset 0 3px 0 0 var(--accent); }
+.puzzle-card.drop-after  { box-shadow: inset 0 -3px 0 0 var(--accent); }
+
 /* Selectable chip grid used in the team-create modal. */
 .chip-grid {
   display: flex; flex-wrap: wrap; gap: .4rem;
@@ -1634,6 +1657,10 @@ const ICONS = {
   fastForward: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 19 22 12 13 5 13 19"/><polygon points="2 19 11 12 2 5 2 19"/></svg>',
   // Open book — used for the Manual / arranger handbook entry.
   book: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4h6a4 4 0 0 1 4 4v12a3 3 0 0 0-3-3H2z"/><path d="M22 4h-6a4 4 0 0 0-4 4v12a3 3 0 0 1 3-3h7z"/></svg>',
+  // Drag handle — six dots in a 2×3 grid, the universal "this row is
+  // reorderable" affordance (Notion / Trello / Linear all use the
+  // same shape).
+  grip: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="currentColor"><circle cx="9" cy="6" r="1.5"/><circle cx="15" cy="6" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="18" r="1.5"/><circle cx="15" cy="18" r="1.5"/></svg>',
 };
 
 /* ========== Theme ========== */
@@ -5234,11 +5261,44 @@ function renderLibraryEdit(view, adv) {
   // skips disabled pages, so we thread the enabled position to each
   // card's Preview button.
   let enabledIdx = 0;
+  // List container; cards are appended below. Keeping the variable
+  // here lets the drag handlers query it for drop-hint cleanup
+  // without searching the whole DOM.
+  const list = h('div', { class: 'puzzle-list' });
   const cards = adv.pages.map((p, i) => {
     const previewIdx = p.disabled ? null : enabledIdx;
     if (!p.disabled) enabledIdx++;
     return renderPuzzleCard(adv, p, i, previewIdx);
   });
+  cards.forEach((c) => list.append(c));
+
+  // Drag-and-drop reorder. Mirrors the wireDrag pattern from the
+  // puzzle-editor timeline: HTML5 drag events for desktop mice,
+  // touchstart/touchmove/touchend for phones. dragFrom lives in this
+  // closure so a single in-flight drag is shared across all cards.
+  let dragFrom = -1;
+  const clearDropHints = () => {
+    for (const el of list.querySelectorAll('.drop-before, .drop-after')) {
+      el.classList.remove('drop-before', 'drop-after');
+    }
+  };
+  const onReorder = async (fromPos, toPos) => {
+    if (fromPos === toPos || toPos < 0 || toPos >= adv.pages.length) return;
+    const next = adv.pages.slice();
+    const [moved] = next.splice(fromPos, 1);
+    next.splice(toPos, 0, moved);
+    const r = await api(`/api/admin/adventures/${encodeURIComponent(adv.slug)}/pages/reorder`, {
+      method: 'PATCH', body: JSON.stringify({ page_ids: next.map((p) => p.id) }),
+    });
+    if (r.status !== 204) {
+      toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+      return;
+    }
+    adv.pages = next.map((p, i) => ({ ...p, index: i }));
+    renderLibraryEdit(view, adv);
+  };
+  cards.forEach((card, i) => wirePuzzleDrag(card, adv.pages[i], i, list, () => dragFrom, (v) => { dragFrom = v; }, clearDropHints, onReorder));
+
   const hasEnabled = enabledIdx > 0;
   view.replaceChildren(
     h('button', { class: 'btn ghost small', on: { click: () => nav(state.me.role === 'admin' ? '#library' : '#adventures') } },
@@ -5282,8 +5342,123 @@ function renderLibraryEdit(view, adv) {
           h('p', {}, t('No puzzles yet.')),
           h('p', { class: 'muted', style: 'margin-top:.5rem' },
             t('Use "Add puzzle" above to author a new one or copy from the library.')))
-      : h('div', {}, cards),
+      : list,
   );
+}
+
+// wirePuzzleDrag attaches HTML5 + touch drag-and-drop handlers to a
+// puzzle card. Hoisted out of renderLibraryEdit so the handler logic
+// is one block of code, not interleaved with the layout. Mirrors the
+// shape of the puzzle-editor timeline drag (kept compatible so a
+// future refactor could merge them) but applies the visual hints to
+// the card edges (top/bottom) instead of the pill edges (left/right).
+function wirePuzzleDrag(card, page, i, list, getDragFrom, setDragFrom, clearDropHints, onReorder) {
+  card.addEventListener('dragstart', (e) => {
+    setDragFrom(i);
+    card.classList.add('drag-ghost');
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', String(page.id));
+  });
+  card.addEventListener('dragend', () => {
+    card.classList.remove('drag-ghost');
+    clearDropHints();
+  });
+  card.addEventListener('dragover', (e) => {
+    const from = getDragFrom();
+    if (from < 0 || from === i) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    const rect = card.getBoundingClientRect();
+    const before = (e.clientY - rect.top) < rect.height / 2;
+    clearDropHints();
+    card.classList.add(before ? 'drop-before' : 'drop-after');
+  });
+  card.addEventListener('dragleave', () => {
+    card.classList.remove('drop-before', 'drop-after');
+  });
+  card.addEventListener('drop', (e) => {
+    const from = getDragFrom();
+    if (from < 0) return;
+    e.preventDefault();
+    const rect = card.getBoundingClientRect();
+    const before = (e.clientY - rect.top) < rect.height / 2;
+    const target = before ? i : i + 1;
+    const adjusted = from < target ? target - 1 : target;
+    clearDropHints();
+    setDragFrom(-1);
+    onReorder(from, adjusted);
+  });
+
+  // Touch fallback. Mirrors the timeline's touch implementation but
+  // tracks vertical motion (the cards stack rather than line up).
+  let touchStartX = 0, touchStartY = 0, touchMode = null;
+  const dropTargetAt = (clientX, clientY) => {
+    const el = document.elementFromPoint(clientX, clientY);
+    const t = el?.closest('[data-page-pos]');
+    if (!t || t === card) return null;
+    const idx = parseInt(t.getAttribute('data-page-pos'), 10);
+    if (isNaN(idx) || idx === i) return null;
+    return { el: t, idx };
+  };
+  // Only the grip area starts a touch drag — the rest of the card is
+  // for tap-to-edit and scroll. Without this, scrolling the page
+  // through a tall card list would also drag puzzles around.
+  const handle = card.querySelector('.drag-handle');
+  if (!handle) return;
+  handle.addEventListener('touchstart', (e) => {
+    if (e.touches.length !== 1) return;
+    touchStartX = e.touches[0].clientX;
+    touchStartY = e.touches[0].clientY;
+    touchMode = null;
+  }, { passive: true });
+  handle.addEventListener('touchmove', (e) => {
+    if (touchMode === 'skip' || e.touches.length !== 1) return;
+    const t = e.touches[0];
+    if (touchMode === null) {
+      const dx = t.clientX - touchStartX;
+      const dy = t.clientY - touchStartY;
+      if (Math.hypot(dx, dy) < 8) return;
+      touchMode = 'drag';
+      setDragFrom(i);
+      card.classList.add('drag-ghost');
+    }
+    e.preventDefault();
+    clearDropHints();
+    const drop = dropTargetAt(t.clientX, t.clientY);
+    if (!drop) return;
+    const rect = drop.el.getBoundingClientRect();
+    const before = (t.clientY - rect.top) < rect.height / 2;
+    drop.el.classList.add(before ? 'drop-before' : 'drop-after');
+  }, { passive: false });
+  handle.addEventListener('touchend', (e) => {
+    if (touchMode !== 'drag') { touchMode = null; return; }
+    touchMode = null;
+    const last = e.changedTouches[0];
+    let adjusted = -1;
+    if (last) {
+      const drop = dropTargetAt(last.clientX, last.clientY);
+      if (drop) {
+        const rect = drop.el.getBoundingClientRect();
+        const before = (last.clientY - rect.top) < rect.height / 2;
+        const desired = before ? drop.idx : drop.idx + 1;
+        adjusted = i < desired ? desired - 1 : desired;
+      }
+    }
+    clearDropHints();
+    card.classList.remove('drag-ghost');
+    const from = getDragFrom();
+    setDragFrom(-1);
+    e.preventDefault();
+    if (adjusted >= 0) onReorder(from, adjusted);
+  }, { passive: false });
+  handle.addEventListener('touchcancel', () => {
+    if (touchMode === 'drag') {
+      clearDropHints();
+      card.classList.remove('drag-ghost');
+      setDragFrom(-1);
+    }
+    touchMode = null;
+  }, { passive: true });
 }
 
 // togglePublished flips the adventure's published flag and re-renders
@@ -5399,13 +5574,31 @@ function previewAdventure(slug, pageIdx, debug) {
 }
 
 function renderPuzzleCard(adv, page, i, previewIdx) {
+  // Drag handle — a "grip" icon at the top-left of every card. The
+  // whole card is draggable=true so the gesture initiates from
+  // anywhere; the handle is the visual affordance + the touch-only
+  // drag source (touchstart on the rest of the card scrolls). Clicks
+  // on the handle stopPropagation so they don't open the edit modal.
+  const handle = h('span', {
+    class: 'drag-handle',
+    title: t('Drag to reorder'),
+    'aria-label': t('Drag to reorder'),
+    on: { click: (e) => e.stopPropagation() },
+    html: ICONS.grip,
+  });
   return h('div', {
-    class: 'card clickable',
+    class: 'card clickable puzzle-card',
     style: page.disabled ? 'opacity:.6' : '',
+    draggable: 'true',
+    'data-page-id': page.id,
+    'data-page-pos': i,
     on: { click: () => openEditPuzzle(adv, page) },
   },
     h('div', { class: 'row between' },
-      h('h3', {}, `${i + 1}. ${page.title || t('(untitled)')}`),
+      h('div', { class: 'row', style: 'align-items:center; min-width:0; flex:1' },
+        handle,
+        h('h3', { style: 'margin:0; min-width:0' },
+          `${i + 1}. ${page.title || t('(untitled)')}`)),
       h('div', { class: 'card-actions' },
         page.disabled ? h('span', { class: 'pill' }, t('disabled')) : null,
         page.gated ? h('span', { class: 'pill warning' }, t('gated')) : null,
@@ -6313,10 +6506,11 @@ async function openEditPuzzle(adv, page /* or null */) {
       openEditPuzzle(adv, targetPage);
     };
 
-    // Timeline is rebuilt after every drag-reorder so the pills can show
-    // the new order without closing the modal. Standalone library
-    // puzzles have no siblings and no reorder surface, so we skip the
-    // whole strip there — a small "In library" banner replaces it.
+    // Timeline is a click-to-switch strip. Reorder lives on the
+    // adventure-detail page (drag handles on the puzzle cards) — this
+    // strip is for navigating between puzzles in author mode, not for
+    // restructuring the adventure. Standalone library puzzles have no
+    // siblings and no strip — a small "In library" banner replaces it.
     const timeline = h('div', { class: 'puzzle-timeline' });
     if (standalone) {
       timeline.style.display = 'none';
@@ -6336,13 +6530,9 @@ async function openEditPuzzle(adv, page /* or null */) {
         const pill = h('button', {
           class: cls.join(' '),
           type: 'button',
-          draggable: 'true',
           title: (titled ? p.title : t('Puzzle {{i}} (untitled)', { i: i + 1 })) + (p.disabled ? t(' — disabled') : ''),
-          'data-page-id': p.id,
-          'data-page-pos': i,
           on: { click: () => { if (!current) switchTo(p); } },
         }, h('span', { class: 'pt-label' }, titled ? p.title : t('Puzzle {{i}}', { i: i + 1 })));
-        wireDrag(pill, p, i);
         timeline.append(pill);
       });
       if (adv.pages.length > 0) timeline.append(arrow());
@@ -6356,148 +6546,6 @@ async function openEditPuzzle(adv, page /* or null */) {
       }
     };
 
-    // wireDrag / onReorder implement a Google-Slides-style reorder:
-    // drag a pill, drop on another, server reorders, we re-render.
-    // We mutate adv.pages locally on success so subsequent operations
-    // (another drag, a save) see the new order immediately.
-    let dragFrom = -1;
-    const clearDropHints = () => {
-      for (const el of timeline.querySelectorAll('.drop-before, .drop-after')) {
-        el.classList.remove('drop-before', 'drop-after');
-      }
-    };
-    const onReorder = async (fromPos, toPos) => {
-      if (fromPos === toPos || toPos < 0 || toPos >= adv.pages.length) return;
-      const next = adv.pages.slice();
-      const [moved] = next.splice(fromPos, 1);
-      next.splice(toPos, 0, moved);
-      const r = await api(`/api/admin/adventures/${encodeURIComponent(adv.slug)}/pages/reorder`, {
-        method: 'PATCH', body: JSON.stringify({ page_ids: next.map((p) => p.id) }),
-      });
-      if (r.status !== 204) { toastErr(r.body?.error || t('error {{status}}', { status: r.status })); return; }
-      adv.pages = next.map((p, i) => ({ ...p, index: i }));
-      renderTimeline();
-    };
-    function wireDrag(pill, p, i) {
-      // HTML5 drag-and-drop for desktop mice. Touch screens never fire
-      // these — the touch listeners below translate a single-finger
-      // horizontal drag into the same dragFrom / drop-hint state.
-      pill.addEventListener('dragstart', (e) => {
-        dragFrom = i;
-        pill.classList.add('drag-ghost');
-        e.dataTransfer.effectAllowed = 'move';
-        // Firefox refuses to initiate the drag unless some data is set.
-        e.dataTransfer.setData('text/plain', String(p.id));
-      });
-      pill.addEventListener('dragend', () => {
-        pill.classList.remove('drag-ghost');
-        clearDropHints();
-      });
-      pill.addEventListener('dragover', (e) => {
-        if (dragFrom < 0 || dragFrom === i) return;
-        e.preventDefault();
-        e.dataTransfer.dropEffect = 'move';
-        const rect = pill.getBoundingClientRect();
-        const before = (e.clientX - rect.left) < rect.width / 2;
-        clearDropHints();
-        pill.classList.add(before ? 'drop-before' : 'drop-after');
-      });
-      pill.addEventListener('dragleave', () => {
-        pill.classList.remove('drop-before', 'drop-after');
-      });
-      pill.addEventListener('drop', (e) => {
-        if (dragFrom < 0) return;
-        e.preventDefault();
-        const rect = pill.getBoundingClientRect();
-        const before = (e.clientX - rect.left) < rect.width / 2;
-        const target = before ? i : i + 1;
-        // Splice semantics: removing fromPos before inserting at target
-        // shifts the target by one when fromPos < target.
-        const adjusted = dragFrom < target ? target - 1 : target;
-        clearDropHints();
-        const from = dragFrom;
-        dragFrom = -1;
-        onReorder(from, adjusted);
-      });
-
-      // Touch drag for mobile. Touch events "stick" to the touchstart
-      // target, so we can wire the whole drag per-pill and still track
-      // the finger when it moves over a sibling — document.elementFromPoint
-      // gives us the live drop target at each move.
-      //
-      // touchMode cycles through three states:
-      //   null  — finger is down, we haven't decided yet
-      //   drag  — past the threshold and horizontal-dominant, owning the gesture
-      //   skip  — past the threshold but mostly vertical; it's a scroll, stand down
-      let touchStartX = 0, touchStartY = 0, touchMode = null;
-      const dropTargetAt = (clientX, clientY) => {
-        const el = document.elementFromPoint(clientX, clientY);
-        const t = el?.closest('[data-page-pos]');
-        if (!t || t === pill) return null;
-        const idx = parseInt(t.getAttribute('data-page-pos'), 10);
-        if (isNaN(idx) || idx === i) return null;
-        return { el: t, idx };
-      };
-      pill.addEventListener('touchstart', (e) => {
-        if (e.touches.length !== 1) return;
-        touchStartX = e.touches[0].clientX;
-        touchStartY = e.touches[0].clientY;
-        touchMode = null;
-      }, { passive: true });
-      pill.addEventListener('touchmove', (e) => {
-        if (touchMode === 'skip' || e.touches.length !== 1) return;
-        const t = e.touches[0];
-        if (touchMode === null) {
-          const dx = t.clientX - touchStartX;
-          const dy = t.clientY - touchStartY;
-          if (Math.hypot(dx, dy) < 8) return; // below the threshold; still a tap
-          // Vertical-dominant motion is almost certainly an attempt to
-          // scroll the modal — don't hijack it.
-          if (Math.abs(dy) > Math.abs(dx)) { touchMode = 'skip'; return; }
-          touchMode = 'drag';
-          dragFrom = i;
-          pill.classList.add('drag-ghost');
-        }
-        e.preventDefault();
-        clearDropHints();
-        const drop = dropTargetAt(t.clientX, t.clientY);
-        if (!drop) return;
-        const rect = drop.el.getBoundingClientRect();
-        const before = (t.clientX - rect.left) < rect.width / 2;
-        drop.el.classList.add(before ? 'drop-before' : 'drop-after');
-      }, { passive: false });
-      pill.addEventListener('touchend', (e) => {
-        if (touchMode !== 'drag') { touchMode = null; return; }
-        touchMode = null;
-        const last = e.changedTouches[0];
-        let adjusted = -1;
-        if (last) {
-          const drop = dropTargetAt(last.clientX, last.clientY);
-          if (drop) {
-            const rect = drop.el.getBoundingClientRect();
-            const before = (last.clientX - rect.left) < rect.width / 2;
-            const desired = before ? drop.idx : drop.idx + 1;
-            adjusted = i < desired ? desired - 1 : desired;
-          }
-        }
-        clearDropHints();
-        pill.classList.remove('drag-ghost');
-        const from = dragFrom;
-        dragFrom = -1;
-        // Suppress the synthetic click that follows touchend, so the
-        // pill we just released on doesn't also trigger switchTo.
-        e.preventDefault();
-        if (adjusted >= 0) onReorder(from, adjusted);
-      }, { passive: false });
-      pill.addEventListener('touchcancel', () => {
-        if (touchMode === 'drag') {
-          clearDropHints();
-          pill.classList.remove('drag-ghost');
-          dragFrom = -1;
-        }
-        touchMode = null;
-      }, { passive: true });
-    }
     renderTimeline();
 
     body.append(timeline);
