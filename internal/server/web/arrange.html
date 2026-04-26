@@ -3561,12 +3561,12 @@ async function openNewEventWizard() {
 
 // runLabel renders an event's display name — the human-set name if any,
 // otherwise "Event #id". Used everywhere an event identifier is shown.
-function runLabel(run) {
-  if (!run) return '';
+function runLabel(event) {
+  if (!event) return '';
   return event.name ? event.name : 'Event #' + event.id;
 }
 
-async function openRenameEvent(run) {
+async function openRenameEvent(event) {
   await modal(t('Rename event'), ({ body, close }) => {
     const input = h('input', { value: event.name || '', autofocus: true, placeholder: t('Event name') });
     const form = h('form', {},
@@ -3578,7 +3578,7 @@ async function openRenameEvent(run) {
         h('button', { class: 'btn primary', type: 'submit' }, t('Save'))));
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
-      const r = await api(`/api/admin/events/${run.id}`, {
+      const r = await api(`/api/admin/events/${event.id}`, {
         method: 'PATCH', body: JSON.stringify({ name: input.value.trim() }),
       });
       if (r.status === 204) { toastOk(t('Renamed')); close(true); renderRoute(); }
@@ -3871,7 +3871,7 @@ function buildTeamLinkRow(tm, i, teamURL, memberURL) {
 // Public share bar: shows the absolute /live/{token} URL (opaque) so the
 // arranger can read/copy it and send it to whoever's running the TV
 // screen.
-function renderShareBar(run) {
+function renderShareBar(event) {
   const url = `${location.origin}/live/${event.live_token}`;
   const urlBox = h('input', {
     readonly: '', value: url,
@@ -3901,7 +3901,7 @@ function renderShareBar(run) {
   const mapToggle = h('input', { type: 'checkbox' });
   if (event.show_map) mapToggle.checked = true;
   mapToggle.addEventListener('change', async () => {
-    const r = await api(`/api/admin/events/${run.id}`, {
+    const r = await api(`/api/admin/events/${event.id}`, {
       method: 'PATCH',
       body: JSON.stringify({ show_map: mapToggle.checked }),
     });
@@ -3951,7 +3951,7 @@ async function viewRunDetail(view, runID) {
     api('/api/admin/events/' + runID + '/events'),
   ]);
   if (!detail.ok) { view.replaceChildren(h('p', { class: 'err' }, detail.body?.error || t('not found'))); return; }
-  const run = detail.body.event;
+  const event = detail.body.event;
   const teams = detail.body.teams || [];
   const tracks = tracksR.body?.tracks || [];
   const adventure = adventureR?.body || null;
@@ -3961,9 +3961,9 @@ async function viewRunDetail(view, runID) {
   // what the arranger reaches for, so it belongs above everything.
   const actions = h('div', { class: 'row', style: 'gap:.5rem; flex-wrap:wrap' });
   if (event.state === 'scheduled') {
-    const start = h('button', { class: 'btn primary lifecycle-btn', on: { click: () => confirmStart(run) } },
+    const start = h('button', { class: 'btn primary lifecycle-btn', on: { click: () => confirmStart(event) } },
       icon(ICONS.play), t('Start now'));
-    const sched = h('button', { class: 'btn lifecycle-btn', on: { click: () => openEditSchedule(run) } },
+    const sched = h('button', { class: 'btn lifecycle-btn', on: { click: () => openEditSchedule(event) } },
       icon(ICONS.schedule), t('Reschedule'));
     actions.append(start, sched);
   }
@@ -3985,7 +3985,7 @@ async function viewRunDetail(view, runID) {
     const csv = h('a', {
       class: 'btn lifecycle-btn' + (allDone ? ' primary' : ''),
       href: '/api/admin/events/' + event.id + '/results.csv',
-      download: `run-${run.id}-results.csv`,
+      download: `run-${event.id}-results.csv`,
       title: t('Download CSV of the current standings'),
     }, icon(ICONS.copy), allDone ? t('Download results') : t('Download standings'));
     actions.append(csv);
@@ -4036,8 +4036,8 @@ async function viewRunDetail(view, runID) {
 
   // Sticky lifecycle bar — pins to the top of the scroll area so big
   // Start/Pause/Resume stay reachable while scrolling through teams.
-  const titleEl = h('h1', {}, runLabel(run));
-  const renameBtn = iconBtn('pencil', t('Rename event'), () => openRenameEvent(run));
+  const titleEl = h('h1', {}, runLabel(event));
+  const renameBtn = iconBtn('pencil', t('Rename event'), () => openRenameEvent(event));
   const lifecycleBar = h('div', { class: 'lifecycle-bar' },
     h('div', { class: 'lifecycle-left' },
       h('button', { class: 'btn ghost small', on: { click: () => nav('#events') } },
@@ -4057,8 +4057,8 @@ async function viewRunDetail(view, runID) {
   view.replaceChildren(
     lifecycleBar,
     h('p', { class: 'muted mono' }, event.adventure_slug),
-    renderTeamLinksPanel(run, teams),
-    renderShareBar(run),
+    renderTeamLinksPanel(event, teams),
+    renderShareBar(event),
     mapCard,
     h('div', { class: 'grid cols-2' },
       h('div', { class: 'card' },
@@ -4303,7 +4303,7 @@ async function transition(runID, action) {
   }
 }
 
-async function confirmStart(run) {
+async function confirmStart(event) {
   const ok = await modal(t('Start this event now?'), ({ body, close }) => {
     body.append(
       h('p', {},
@@ -4323,7 +4323,7 @@ async function confirmStart(run) {
   await transition(event.id, 'start');
 }
 
-async function openEditSchedule(run) {
+async function openEditSchedule(event) {
   // Pre-fill the datetime-local input from the current UTC-stored value.
   // The input wants "YYYY-MM-DDTHH:MM" in local time; use the Date object to
   // convert without a chunky date library.
