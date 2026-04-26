@@ -38,6 +38,11 @@ body.has-hero { padding-top: 0; }
   background: transparent;
   border-bottom: 1px solid transparent;
   min-height: var(--topbar-h);
+  /* Pin the line-height so the topbar's effective height is identical
+   * regardless of which page's body line-height it inherits from
+   * (manual.html uses 1.6, landing + pricing use 1.55 — the diff
+   * cascaded into a visible height difference before this rule). */
+  line-height: 1.2;
   transition: background .25s ease, border-bottom-color .25s ease;
 }
 .topbar::before {
