@@ -103,7 +103,6 @@ func (h *Handlers) TeamShare(w http.ResponseWriter, r *http.Request) {
 		// Already wrote some bytes most likely; nothing useful to report.
 		_ = err
 	}
-	_ = httpx.Error // keep import useful if we later shift to JSON
 }
 
 // teamByToken resolves a share token to (teamID, eventID). Empty/missing

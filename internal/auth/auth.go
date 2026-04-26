@@ -127,7 +127,7 @@ func Login(ctx context.Context, db *sql.DB, username, password string) (User, st
 	if err := bcrypt.CompareHashAndPassword([]byte(hash.String), []byte(password)); err != nil {
 		return User{}, "", ErrInvalidCredentials
 	}
-	token, err := newSession(ctx, db, u.ID)
+	token, err := newSession(ctx, db, u.ID, "", "")
 	if err != nil {
 		return User{}, "", err
 	}
@@ -167,32 +167,44 @@ func SetInitialPassword(ctx context.Context, db *sql.DB, username, password stri
 	if _, err := db.ExecContext(ctx, `UPDATE users SET password_hash = $1 WHERE id = $2`, h, u.ID); err != nil {
 		return User{}, "", err
 	}
-	token, err := newSession(ctx, db, u.ID)
+	token, err := newSession(ctx, db, u.ID, "", "")
 	if err != nil {
 		return User{}, "", err
 	}
 	return u, token, nil
 }
 
-// newSession mints a random token, persists it against the user, and
-// returns it.
-func newSession(ctx context.Context, db *sql.DB, userID int64) (string, error) {
-	return newSessionWithMeta(ctx, db, userID, "", "")
+// sessionWriter is the narrow interface newSession needs — both
+// *sql.DB and *sql.Tx satisfy it, so Signup (which already runs inside
+// a tx) can mint a session in the same transaction without
+// duplicating the INSERT.
+type sessionWriter interface {
+	ExecContext(ctx context.Context, q string, args ...any) (sql.Result, error)
 }
 
-// newSessionWithMeta is the metadata-aware variant. UA + IP are stored
-// alongside the session so the user can distinguish "Phone Safari from
-// 192.0.2.5" from "Laptop Firefox from a different network" in the
-// settings list. Empty strings are tolerated; older callers that don't
-// know the request context end up with NULL columns.
-func newSessionWithMeta(ctx context.Context, db *sql.DB, userID int64, ua, ip string) (string, error) {
+// txAsExecutor adapts *sql.Tx to sessionWriter. *sql.Tx already has
+// ExecContext, so this is just a typed alias for clarity at call
+// sites.
+type txAsExecutor struct{ tx *sql.Tx }
+
+func (t txAsExecutor) ExecContext(ctx context.Context, q string, args ...any) (sql.Result, error) {
+	return t.tx.ExecContext(ctx, q, args...)
+}
+
+// newSession mints a random session token, persists it against the
+// user, and returns it. UA + IP are stored alongside the session so
+// the settings UI can distinguish "Phone Safari from 192.0.2.5" from
+// other devices; pass empty strings when the call site doesn't know
+// (e.g. inside the signup tx — StampSessionMeta backfills after
+// commit).
+func newSession(ctx context.Context, w sessionWriter, userID int64, ua, ip string) (string, error) {
 	token, err := newToken()
 	if err != nil {
 		return "", err
 	}
 	now := time.Now().UTC().Format(time.RFC3339)
 	expires := time.Now().Add(SessionTTL).UTC().Format(time.RFC3339)
-	if _, err := db.ExecContext(ctx, `
+	if _, err := w.ExecContext(ctx, `
 		INSERT INTO sessions(token, user_id, expires_at, user_agent, ip, last_used_at)
 		VALUES ($1, $2, $3, NULLIF($4,''), NULLIF($5,''), $6)
 	`, token, userID, expires, ua, ip, now); err != nil {

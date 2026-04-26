@@ -108,7 +108,7 @@ func Signup(ctx context.Context, db *sql.DB, email, password, orgName string) (S
 
 	// Issue the staff session inside the same tx so login is "free"
 	// after a successful signup. The cookie is set by the handler.
-	sessionTok, err := newSessionWith(ctx, txAsExecutor{tx}, userID)
+	sessionTok, err := newSession(ctx, txAsExecutor{tx}, userID, "", "")
 	if err != nil {
 		return SignupResult{}, err
 	}
@@ -124,38 +124,6 @@ func Signup(ctx context.Context, db *sql.DB, email, password, orgName string) (S
 		SessionToken:      sessionTok,
 		VerificationToken: verifyTok,
 	}, nil
-}
-
-// txAsExecutor adapts *sql.Tx to the *sql.DB-shaped interface that
-// newSession expects. Lets us reuse the existing session-mint helper
-// inside Signup's transaction without duplicating its logic.
-type txAsExecutor struct{ tx *sql.Tx }
-
-func (t txAsExecutor) ExecContext(ctx context.Context, q string, args ...any) (sql.Result, error) {
-	return t.tx.ExecContext(ctx, q, args...)
-}
-
-// sessionWriter is what newSession requires. It's narrower than *sql.DB
-// so a *sql.Tx (via txAsExecutor) can satisfy it.
-type sessionWriter interface {
-	ExecContext(ctx context.Context, q string, args ...any) (sql.Result, error)
-}
-
-// newSession is in auth.go but takes *sql.DB. Rewriting it to accept
-// the narrower sessionWriter interface lets Signup reuse it inside a tx.
-// Kept here to keep auth.go's diff small.
-func newSessionWith(ctx context.Context, w sessionWriter, userID int64) (string, error) {
-	token, err := newToken()
-	if err != nil {
-		return "", err
-	}
-	expires := time.Now().Add(SessionTTL).UTC().Format(time.RFC3339)
-	if _, err := w.ExecContext(ctx, `
-		INSERT INTO sessions(token, user_id, expires_at) VALUES ($1, $2, $3)
-	`, token, userID, expires); err != nil {
-		return "", err
-	}
-	return token, nil
 }
 
 // VerifyEmail consumes a one-shot verification token: marks the user's
@@ -290,7 +258,7 @@ func ConsumeForgotPasswordToken(ctx context.Context, db *sql.DB, token, newPassw
 		`DELETE FROM email_verifications WHERE token = $1`, token); err != nil {
 		return User{}, "", err
 	}
-	sessionTok, err := newSessionWith(ctx, txAsExecutor{tx}, userID)
+	sessionTok, err := newSession(ctx, txAsExecutor{tx}, userID, "", "")
 	if err != nil {
 		return User{}, "", err
 	}
