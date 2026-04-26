@@ -199,9 +199,18 @@
   /* The hamburger toggle is a hidden checkbox + a label-styled
      button. A pure-CSS pattern: clicking the label toggles the
      checkbox; the `:checked` general-sibling selector below shows the
-     mobile menu without a line of JavaScript. */
-  .nav-toggle { position: absolute; opacity: 0; pointer-events: none; }
-  .nav-toggle:focus-visible + .hamburger {
+     mobile menu without a line of JavaScript.
+     Pinned to viewport (0,0) with position:fixed so that the
+     browser's "scroll the focused element into view" never has to
+     fire — without this, tapping the hamburger from deep in the page
+     would jerk the user back to the top because the input lives at
+     body offset 0 in document flow. */
+  .nav-toggle {
+    position: fixed; top: 0; left: 0;
+    width: 1px; height: 1px;
+    opacity: 0; pointer-events: none;
+  }
+  .nav-toggle:focus-visible ~ .topbar .hamburger {
     outline: 2px solid #fff; outline-offset: 3px; border-radius: 6px;
   }
   .hamburger {
@@ -220,11 +229,15 @@
     border-radius: 2px;
     transition: transform .2s, opacity .2s;
   }
-  .nav-toggle:checked ~ .hamburger span:nth-child(1) {
+  /* Hamburger → X morph. Selector traverses through the topbar
+     because the input is at body level and the hamburger lives
+     inside the topbar — so the simple `+` adjacent-sibling that the
+     standard hamburger pattern uses won't reach. */
+  .nav-toggle:checked ~ .topbar .hamburger span:nth-child(1) {
     transform: translateY(.45rem) rotate(45deg);
   }
-  .nav-toggle:checked ~ .hamburger span:nth-child(2) { opacity: 0; }
-  .nav-toggle:checked ~ .hamburger span:nth-child(3) {
+  .nav-toggle:checked ~ .topbar .hamburger span:nth-child(2) { opacity: 0; }
+  .nav-toggle:checked ~ .topbar .hamburger span:nth-child(3) {
     transform: translateY(-.45rem) rotate(-45deg);
   }
   .brand {
