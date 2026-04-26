@@ -184,6 +184,7 @@ func (h *Handlers) Forget(w http.ResponseWriter, r *http.Request) {
 type teamContext struct {
 	TeamID               int64
 	TeamName             string
+	TeamToken            string // team-share token, exposed to the player so they can show a join QR for teammates
 	EventID                int64
 	OrgID                int64
 	AdventureSlug        string
@@ -278,12 +279,13 @@ func maybePromoteScheduled(ctx context.Context, db *sql.DB, hub *ws.Hub, eventID
 func loadTeam(ctx context.Context, db *sql.DB, slot auth.Slot) (teamContext, error) {
 	var tc teamContext
 	err := db.QueryRowContext(ctx, `
-		SELECT t.id, t.name, ar.id, ar.org_id, ar.adventure_slug, ar.state,
+		SELECT t.id, t.name, t.token, ar.id, ar.org_id, ar.adventure_slug, ar.state,
 		       ar.scheduled_at, ar.started_at,
 		       t.current_page_index, t.current_page_started_at, t.completed_at
 		FROM teams t JOIN events ar ON ar.id = t.event_id
 		WHERE t.id = $1
-	`, slot.TeamID).Scan(&tc.TeamID, &tc.TeamName, &tc.EventID, &tc.OrgID, &tc.AdventureSlug,
+	`, slot.TeamID).Scan(&tc.TeamID, &tc.TeamName, &tc.TeamToken,
+		&tc.EventID, &tc.OrgID, &tc.AdventureSlug,
 		&tc.RunState, &tc.ScheduledAt, &tc.StartedAt,
 		&tc.CurrentPageIndex, &tc.CurrentPageStartedAt, &tc.CompletedAt)
 	return tc, err
@@ -296,6 +298,14 @@ type State struct {
 	AdventureSlug  string            `json:"adventure_slug,omitempty"`
 	AdventureTitle string            `json:"adventure_title,omitempty"`
 	TeamName       string            `json:"team_name,omitempty"`
+	// TeamToken is the team-share token (the public /team/{token}
+	// page where each member picks their own slot). Surfaced to the
+	// player so they can show a join QR to a teammate whose magic
+	// link didn't reach them — the teammate scans, picks their name,
+	// done. Not sensitive on its own: the team-share page reveals
+	// every slot's magic link, so only share it with people who
+	// already belong on this team.
+	TeamToken      string            `json:"team_token,omitempty"`
 	SlotName       string            `json:"slot_name,omitempty"`
 	PageIndex      int               `json:"page_index,omitempty"`
 	PageCount      int               `json:"page_count,omitempty"`
@@ -444,6 +454,7 @@ func (h *Handlers) buildState(ctx context.Context, slot auth.Slot) (State, int, 
 		AdventureSlug:  adv.Slug,
 		AdventureTitle: adv.Meta.Title,
 		TeamName:       tc.TeamName,
+		TeamToken:      tc.TeamToken,
 		SlotName:       slot.Name,
 		PageCount:      len(enabledPages(adv)),
 		IntroText:      mdx.Render(adv.Meta.IntroText),

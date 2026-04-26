@@ -675,14 +675,14 @@
   }
   .menu-drawer.open { opacity: 1; pointer-events: auto; }
   .menu-panel {
-    position: absolute; right: 0; top: 0; bottom: 0;
+    position: absolute; left: 0; top: 0; bottom: 0;
     width: min(86vw, 22rem);
     background: var(--surface);
     display: flex; flex-direction: column;
-    transform: translateX(100%);
+    transform: translateX(-100%);
     transition: transform .25s ease;
     overflow-y: auto;
-    box-shadow: -4px 0 24px rgba(0,0,0,.12);
+    box-shadow: 4px 0 24px rgba(0,0,0,.12);
   }
   .menu-drawer.open .menu-panel { transform: translateX(0); }
   .menu-head {
@@ -745,6 +745,79 @@
     color: var(--muted);
     line-height: 1.35;
   }
+  /* Team-share sheet — fullscreen overlay shown when a player taps
+     "Show team join link". Renders the QR (server-side PNG) plus the
+     URL text + a copy button so teammates can either scan or just
+     read the URL aloud. Same modal shape as the QR scanner so the
+     two affordances feel like a pair. */
+  .team-share {
+    position: fixed; inset: 0; z-index: 100;
+    background: rgba(0,0,0,.72);
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    padding: 1.5rem;
+    color: #fff;
+  }
+  .team-share .panel {
+    background: var(--surface);
+    color: var(--ink);
+    border-radius: var(--radius);
+    padding: 1.25rem;
+    max-width: 22rem; width: 100%;
+    text-align: center;
+    box-shadow: var(--shadow);
+  }
+  .team-share h3 {
+    margin: 0 0 .25rem;
+    font-family: var(--font-brand);
+    color: var(--accent-secondary);
+    font-size: 1.15rem;
+  }
+  .team-share .hint {
+    color: var(--muted);
+    font-size: .85rem;
+    margin: 0 0 1rem;
+  }
+  .team-share .qr {
+    background: #fff;
+    padding: .75rem;
+    border-radius: 12px;
+    border: 1px solid var(--border-soft);
+    display: inline-block;
+    margin-bottom: 1rem;
+  }
+  .team-share .qr img {
+    display: block;
+    width: 200px; height: 200px;
+    image-rendering: pixelated;
+  }
+  .team-share .url {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: .85rem;
+    background: var(--surface-2);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius-sm);
+    padding: .5rem .65rem;
+    margin: 0 0 .75rem;
+    word-break: break-all;
+    text-align: left;
+    color: var(--ink);
+  }
+  .team-share .row {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: .5rem;
+  }
+  .team-share button {
+    width: 100%;
+    box-shadow: none;
+  }
+  .team-share button.secondary {
+    background: var(--surface-2);
+    color: var(--ink);
+    border: 1px solid var(--border-soft);
+  }
+  .team-share button.secondary:hover { background: var(--surface); }
+
   /* Segmented control for the theme picker. Three equal columns:
      Light / Dark / Auto. Active button raises with surface tint and
      a soft shadow so the selection reads instantly without an extra
@@ -2665,6 +2738,57 @@ function renderPreviewDebug(d) {
 // privacy / terms links. Replaces three previous floating affordances
 // (lang-fab, more-fab, legal-footer) which all competed for the
 // top-right corner and overlapped the puzzle content on narrow phones.
+// openTeamShareSheet displays the public /team/{token} URL as a QR
+// code (server-rendered PNG via /qr/team/{token}) plus a Copy button.
+// Used to bring a teammate online whose magic link didn't reach them
+// — they scan the QR, get the team page, pick their slot, play.
+function openTeamShareSheet(token) {
+  const url = location.origin + '/team/' + encodeURIComponent(token);
+  const overlay = document.createElement('div');
+  overlay.className = 'team-share';
+  const panel = document.createElement('div');
+  panel.className = 'panel';
+  const h = document.createElement('h3');
+  h.textContent = t('Team join link');
+  const hint = document.createElement('p');
+  hint.className = 'hint';
+  hint.textContent = t('Scan to join this team. Each teammate picks their own name on the page.');
+  const qrWrap = document.createElement('div');
+  qrWrap.className = 'qr';
+  const img = document.createElement('img');
+  img.src = '/qr/team/' + encodeURIComponent(token);
+  img.alt = t('Team join QR code');
+  qrWrap.append(img);
+  const urlEl = document.createElement('p');
+  urlEl.className = 'url';
+  urlEl.textContent = url;
+  const row = document.createElement('div');
+  row.className = 'row';
+  const copyBtn = document.createElement('button');
+  copyBtn.type = 'button';
+  copyBtn.className = 'secondary';
+  copyBtn.textContent = t('Copy link');
+  copyBtn.addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(url); copyBtn.textContent = t('Copied'); }
+    catch { /* clipboard refused — leave the URL on screen, user can long-press to copy */ }
+  });
+  const closeBtn = document.createElement('button');
+  closeBtn.type = 'button';
+  closeBtn.textContent = t('Close');
+  const close = () => {
+    overlay.remove();
+    document.removeEventListener('keydown', onKey);
+  };
+  const onKey = (e) => { if (e.key === 'Escape') close(); };
+  closeBtn.addEventListener('click', close);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+  document.addEventListener('keydown', onKey);
+  row.append(copyBtn, closeBtn);
+  panel.append(h, hint, qrWrap, urlEl, row);
+  overlay.append(panel);
+  document.body.append(overlay);
+}
+
 function buildMenuButton(s) {
   const btn = document.createElement('button');
   btn.type = 'button';
@@ -2728,7 +2852,13 @@ function openMenuDrawer(s) {
   langLabel.className = 'menu-section-label';
   langLabel.textContent = t('Language');
   const langPicker = zvI18n.makeLangPicker({ title: t('Language') });
-  langPicker.style.cssText = 'width:100%; padding:.6rem .75rem; font:inherit; font-weight:600; border:1px solid var(--border-soft); border-radius:8px; background:var(--surface);';
+  // Explicit color + color-scheme on the <select>: native form
+  // controls don't inherit `color` reliably across browsers, and
+  // without `color-scheme` the dropdown chrome ignores our --ink /
+  // --surface vars and falls back to the OS default — which in light
+  // mode against a dark theme picker rendered the option text
+  // invisibly white-on-white.
+  langPicker.style.cssText = 'width:100%; padding:.6rem .75rem; font:inherit; font-weight:600; border:1px solid var(--border-soft); border-radius:8px; background:var(--surface); color:var(--ink); color-scheme:light dark;';
   langSection.append(langLabel, langPicker);
   panel.append(langSection);
 
@@ -2773,6 +2903,30 @@ function openMenuDrawer(s) {
   repaintTheme();
   themeSection.append(seg);
   panel.append(themeSection);
+
+  // Team share — show a QR + URL of the public team page so a
+  // teammate whose magic link didn't reach them can scan, pick
+  // their slot, and join. Only rendered when we have the team's
+  // share token (real session; preview mode skips it).
+  if (s?.team_token) {
+    const teamSection = document.createElement('div');
+    teamSection.className = 'menu-section';
+    const teamLabel = document.createElement('p');
+    teamLabel.className = 'menu-section-label';
+    teamLabel.textContent = t('Team');
+    teamSection.append(teamLabel);
+    const shareBtn = document.createElement('button');
+    shareBtn.type = 'button';
+    shareBtn.className = 'menu-row';
+    shareBtn.append(document.createTextNode(t('Show team join link')));
+    const shareSub = document.createElement('span');
+    shareSub.className = 'menu-row-sub';
+    shareSub.textContent = t('A QR code for this team\'s join page. A teammate without a magic link can scan it, pick their name, and start playing.');
+    shareBtn.append(shareSub);
+    shareBtn.addEventListener('click', () => { close(); openTeamShareSheet(s.team_token); });
+    teamSection.append(shareBtn);
+    panel.append(teamSection);
+  }
 
   // Account / event actions. "Forget me" is destructive (wipes
   // location history + answers + slot session) and stays behind a

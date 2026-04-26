@@ -907,6 +907,15 @@
       'Light': 'Ljust',
       'Dark': 'Mörkt',
       'Auto': 'Auto',
+      'Team': 'Lag',
+      'Show team join link': 'Visa lagets anslutningslänk',
+      'A QR code for this team\'s join page. A teammate without a magic link can scan it, pick their name, and start playing.':
+        'En QR-kod till lagets anslutningssida. En lagkamrat utan magisk länk kan skanna, välja sitt namn och börja spela.',
+      'Team join link': 'Lagets anslutningslänk',
+      'Scan to join this team. Each teammate picks their own name on the page.':
+        'Skanna för att gå med i laget. Varje lagkamrat väljer sitt eget namn på sidan.',
+      'Team join QR code': 'QR-kod för att gå med i laget',
+      'Copied': 'Kopierad',
       'Permanently deletes your location pings and answer attempts from this event and revokes your link. Use at end of event or for privacy reasons.':
         'Raderar permanent dina positioner och svarsförsök från denna körning och spärrar din länk. Använd efter eventet eller av integritetsskäl.',
       'Menu': 'Meny',
