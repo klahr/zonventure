@@ -42,7 +42,7 @@
 <script defer src="/assets/topbar.js"></script>
 <!-- Apply persisted theme synchronously to dodge a light-on-load
      flash for saved-dark visitors. -->
-<script>try{var t=localStorage.getItem('zv-theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t);}catch(e){}</script>
+<script>(function(){try{var v=localStorage.getItem('zv-theme');if(v==='light'||v==='dark')document.documentElement.setAttribute('data-theme',v);}catch(e){}})();</script>
 
 <style>
   :root {

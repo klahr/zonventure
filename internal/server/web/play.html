@@ -13,7 +13,7 @@
      see a light flash before the styles re-cascade. Mirrors arrange's
      initTheme but as an inline pre-script so it lands before any
      stylesheet renders. Same key (zv-theme) shared across the app. -->
-<script>try{var t=localStorage.getItem('zv-theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t);}catch(e){}</script>
+<script>(function(){try{var v=localStorage.getItem('zv-theme');if(v==='light'||v==='dark')document.documentElement.setAttribute('data-theme',v);}catch(e){}})();</script>
 <style>
   :root {
     color-scheme: light dark;
