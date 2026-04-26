@@ -25,6 +25,14 @@ type Handlers struct {
 	Pricing Pricing
 	// Limiter throttles failed login attempts. Optional: nil disables.
 	Limiter *LoginLimiter
+	// ForgotLimiter is a separate per-IP bucket for /forgot. We keep it
+	// distinct from Limiter so a user who has just tripped the login
+	// per-IP cap (because they forgot their password and tried a few
+	// guesses first) can still reach the password-reset flow. The
+	// per-(ip, email) pair throttle is still enforced inside this
+	// limiter, so an attacker enumerating addresses is still slowed.
+	// Optional: nil disables.
+	ForgotLimiter *LoginLimiter
 	// Mailer delivers signup verification + future forgot-password
 	// emails. Always set in production; tests can leave nil and the
 	// handler skips the send.
@@ -134,6 +142,7 @@ func (h *Handlers) Login(w http.ResponseWriter, r *http.Request) {
 		Event: EventLogin, OK: true, UserID: &u.ID, Username: u.Username, IP: ip, UserAgent: ua,
 		Reason: ReasonSuccess,
 	})
+	StampSessionMeta(r.Context(), h.DB, token, ua, ip)
 	SetCookie(w, token, CookieSecure(r, h.SecureCookie))
 	httpx.JSON(w, http.StatusOK, h.userResponse(u))
 }
@@ -208,6 +217,7 @@ func (h *Handlers) SetPassword(w http.ResponseWriter, r *http.Request) {
 		Event: EventSetPassword, OK: true, UserID: &u.ID, Username: u.Username, IP: ip, UserAgent: ua,
 		Reason: ReasonSuccess,
 	})
+	StampSessionMeta(r.Context(), h.DB, token, ua, ip)
 	SetCookie(w, token, CookieSecure(r, h.SecureCookie))
 	httpx.JSON(w, http.StatusOK, h.userResponse(u))
 }

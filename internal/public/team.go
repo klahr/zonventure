@@ -13,6 +13,7 @@ import (
 	"git.sr.ht/~klahr/zv/internal/imageutil"
 	"git.sr.ht/~klahr/zv/internal/ws"
 	"github.com/go-chi/chi/v5"
+	qrcode "github.com/skip2/go-qrcode"
 )
 
 // maxTeamAvatarBytes caps uploads from the share page. Matches the
@@ -193,6 +194,39 @@ func (h *Handlers) SetTeamAvatarByToken(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
+// TeamShareQR renders the team-share URL as a PNG QR code. The token
+// IS the auth (anyone with the URL can already see the share page
+// itself), so we don't gate access here. Cached for a minute to spare
+// the encoder work when the captain's phone re-fetches the image on
+// rotation / wake.
+func (h *Handlers) TeamShareQR(w http.ResponseWriter, r *http.Request) {
+	token := chi.URLParam(r, "token")
+	if token == "" {
+		http.Error(w, "bad token", http.StatusBadRequest)
+		return
+	}
+	// Build the absolute team-share URL the QR encodes. Honour
+	// X-Forwarded-Proto when present so deployments behind a TLS-
+	// terminating proxy generate https URLs.
+	scheme := "http"
+	if r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
+		scheme = "https"
+	}
+	host := r.Host
+	if h := r.Header.Get("X-Forwarded-Host"); h != "" {
+		host = h
+	}
+	target := scheme + "://" + host + "/team/" + token
+	png, err := qrcode.Encode(target, qrcode.Medium, 360)
+	if err != nil {
+		http.Error(w, "qr encode failed", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "image/png")
+	w.Header().Set("Cache-Control", "public, max-age=60")
+	_, _ = w.Write(png)
+}
+
 // DeleteTeamAvatarByToken clears the team's profile picture via the
 // share URL.
 func (h *Handlers) DeleteTeamAvatarByToken(w http.ResponseWriter, r *http.Request) {
@@ -281,9 +315,72 @@ body { font-family:'Open Sans',system-ui,sans-serif; color:var(--ink); backgroun
 .avatar-remove:hover { color: var(--accent); }
 .avatar-remove[hidden] { display: none; }
 .avatar-err { color: #d00; font-size: .85rem; text-align: center; margin: .25rem 0 0; min-height: 1em; }
+/* Accessibility utilities — skip link + universal focus ring. The
+   share page is a one-shot static template, so styles live inline
+   here rather than the shared arrange/play/live stylesheets. */
+.visually-hidden {
+  position: absolute !important;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.skip-link {
+  position: fixed;
+  top: -40px; left: .5rem;
+  z-index: 10000;
+  padding: .5rem 1rem;
+  background: var(--accent); color: var(--accent-fg);
+  border-radius: 8px;
+  font-weight: 700; text-decoration: none;
+  box-shadow: 0 2px 6px rgba(0,0,0,.15);
+  transition: top 120ms ease;
+}
+.skip-link:focus, .skip-link:focus-visible { top: .5rem; }
+:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--accent) 50%, transparent);
+  outline-offset: 2px;
+}
+/* Single-use warning callout: orange-tinted, prominent above the
+   slots so a captain re-sharing the same magic link to multiple
+   people sees the risk before they tap. */
+.warn {
+  margin: 0 0 1rem;
+  padding: .65rem .8rem;
+  background: color-mix(in srgb, #f0a000 18%, var(--surface));
+  border: 1px solid color-mix(in srgb, #f0a000 50%, transparent);
+  border-radius: 10px;
+  color: var(--ink);
+  font-size: .85rem;
+}
+.warn strong { color: #6b4500; }
+@media (prefers-color-scheme: dark) {
+  .warn { background: color-mix(in srgb, #f0a000 14%, var(--surface)); }
+  .warn strong { color: #ffd58a; }
+}
+/* QR card: collapsed by default to keep the slot list as the
+   primary CTA. Captain expands when they want to share the page
+   in person. */
+.qr-card { margin: 1rem 0 0; border: 1px solid var(--border); border-radius: 14px; padding: .8rem 1rem; background: var(--surface); }
+.qr-card summary { cursor: pointer; font-weight: 700; list-style: none; }
+.qr-card summary::-webkit-details-marker { display: none; }
+.qr-card summary::before { content: '▸'; display: inline-block; margin-right: .35rem; transition: transform .15s ease; color: var(--muted); }
+.qr-card[open] summary::before { transform: rotate(90deg); }
+.qr-card .qr-body { margin-top: .8rem; text-align: center; }
+.qr-card .qr-body img { width: 240px; height: 240px; max-width: 100%; image-rendering: pixelated; background: #fff; padding: .25rem; border-radius: 8px; }
+.qr-card .qr-body p { color: var(--muted); font-size: .85rem; margin: .6rem 0 0; }
+.copy-row { display: flex; gap: .5rem; margin: 0 0 1rem; }
+.copy-row input { flex: 1; min-width: 0; padding: .55rem .7rem; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--ink); font: inherit; font-size: .85rem; }
+.copy-row button { padding: .55rem .9rem; border-radius: 10px; border: 1px solid var(--accent); background: var(--accent); color: var(--accent-fg); font: inherit; font-weight: 700; cursor: pointer; }
+.copy-row button:hover { background: var(--accent-hover); }
+.copy-toast { position: fixed; left: 50%; bottom: 4rem; transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: .55rem .9rem; border-radius: 999px; font-size: .85rem; opacity: 0; transition: opacity .2s ease; pointer-events: none; }
+.copy-toast.show { opacity: 1; }
 </style></head>
 <body>
-<div class="wrap">
+<a class="skip-link" href="#main">Skip to your link</a>
+<main id="main" class="wrap" tabindex="-1" aria-label="Team links">
   <h1 class="brand">zonventure</h1>
   <p class="sub">Team</p>
   <p class="team">{{.TeamName}}</p>
@@ -301,7 +398,14 @@ body { font-family:'Open Sans',system-ui,sans-serif; color:var(--ink); backgroun
     <input type="file" id="avatar-file" accept="image/*" style="display:none">
   </div>
 
-  <p class="hint">Pick your name to open your personal link. Keep it — only you should use it.</p>
+  <p class="warn">
+    <strong>Each link below is for one person only.</strong>
+    Tap your own name; don't share your personal link with teammates — they have their own.
+  </p>
+  <div class="copy-row">
+    <input id="team-url" type="text" readonly aria-label="Team page URL">
+    <button type="button" id="copy-team-url">Copy link</button>
+  </div>
   {{if .Members}}
     {{range .Members}}
       <a class="slot" href="{{.MagicURL}}">
@@ -312,8 +416,19 @@ body { font-family:'Open Sans',system-ui,sans-serif; color:var(--ink); backgroun
   {{else}}
     <p class="empty">No members on this team yet. Ask your arranger to add you.</p>
   {{end}}
+
+  <details class="qr-card">
+    <summary>Show QR code for nearby teammates</summary>
+    <div class="qr-body">
+      <img src="/qr/team/{{.Token}}" alt="QR code linking to this team page" loading="lazy">
+      <p>Anyone who scans this lands on the same page and taps their own name. Don't share this QR with people not on your team.</p>
+    </div>
+  </details>
+
   <p class="footer">If your name isn't listed, ask the arranger to add you.</p>
-</div>
+</main>
+
+<div id="copy-toast" class="copy-toast" role="status" aria-live="polite"></div>
 
 <script>
 // Tiny inline module — the share page is a standalone template, so no
@@ -394,6 +509,31 @@ body { font-family:'Open Sans',system-ui,sans-serif; color:var(--ink); backgroun
     if (parts.length === 0) return '?';
     if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
     return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  }
+
+  // Copy-team-link: prefill the read-only input with the current page
+  // URL and wire the button to the clipboard API. Falls back to
+  // selecting the input on copy failure (older Safari, locked-down
+  // PWAs) so the user can copy by hand.
+  var urlEl = document.getElementById('team-url');
+  var copyBtn = document.getElementById('copy-team-url');
+  var toast = document.getElementById('copy-toast');
+  if (urlEl) urlEl.value = location.href;
+  function flashToast(msg) {
+    if (!toast) return;
+    toast.textContent = msg;
+    toast.classList.add('show');
+    setTimeout(function () { toast.classList.remove('show'); }, 1800);
+  }
+  if (copyBtn && urlEl) {
+    copyBtn.addEventListener('click', function () {
+      var url = urlEl.value;
+      var ok = function () { flashToast('Link copied'); };
+      var fail = function () { urlEl.select(); flashToast('Press ⌘/Ctrl+C to copy'); };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(url).then(ok, fail);
+      } else { fail(); }
+    });
   }
 })();
 </script>

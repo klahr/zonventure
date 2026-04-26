@@ -395,9 +395,21 @@ func ConsumeEmailChangeToken(ctx context.Context, db *sql.DB, token string) (Use
 		return User{}, err
 	}
 	defer tx.Rollback() //nolint:errcheck
-	if _, err := tx.ExecContext(ctx,
-		`UPDATE users SET email = $1, username = $1, email_verified = 1 WHERE id = $2`,
-		newEmail.String, userID); err != nil {
+	// Stash the previous email + timestamp so the user can revert
+	// (within a grace window) if they realise they typed the new
+	// address wrong. The grace period is enforced at revert time, not
+	// here — keeping the revert decision out of the consume path so a
+	// schema-only undo flow stays simple.
+	now := time.Now().UTC().Format(time.RFC3339)
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE users SET
+		  previous_email        = email,
+		  previous_email_set_at = $1,
+		  email                 = $2,
+		  username              = $2,
+		  email_verified        = 1
+		WHERE id = $3
+	`, now, newEmail.String, userID); err != nil {
 		return User{}, err
 	}
 	if _, err := tx.ExecContext(ctx,

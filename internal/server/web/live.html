@@ -2,9 +2,16 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Zonventure · live</title>
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<!-- Public-but-unguessable URL: a leaked /live/{token} should still
+     show *something* sensible if pasted into Slack. Generic copy
+     keeps team data out of social previews. -->
+<meta property="og:title" content="Zonventure · live event">
+<meta property="og:description" content="Live leaderboard for an in-progress Zonventure event.">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Aclonica&family=Open+Sans:wght@400;600;700;800&display=swap" rel="stylesheet">
@@ -30,8 +37,34 @@
   --muted:        #94a3b8;
   --danger:       #f87171;
   --success:      #34d399;
+  --radius:       12px;
+  --radius-sm:    8px;
+  --space-1: .25rem;
+  --space-2: .5rem;
+  --space-3: .75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.75rem;
+  --ts-xs: .75rem;
+  --ts-sm: .85rem;
+  --ts-md: 1rem;
+  --ts-lg: 1.15rem;
+  --tap-target: 2.75rem;
   --font-body:    'Open Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
   --font-brand:   'Aclonica', 'Vollkorn', Georgia, serif;
+}
+.visually-hidden {
+  position: absolute !important;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--accent) 60%, transparent);
+  outline-offset: 2px;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html, body {
@@ -180,7 +213,7 @@ html, body {
 }
 .mapwrap .mapinner { flex: 1; min-height: 0; }
 .mapwrap .maphint {
-  padding: .6rem 1rem; color: var(--muted); font-size: .85rem;
+  padding: .6rem 1rem; color: var(--muted); font-size: var(--ts-sm);
   text-align: center; border-top: 1px solid rgba(255,255,255,.05);
 }
 .puzzle-marker {
@@ -459,6 +492,23 @@ html, body {
   letter-spacing: .1em; text-transform: uppercase; font-weight: 700;
 }
 
+/* Trailing "thanks for watching" line on the post-event TV frame.
+   Slightly faded so the winner's name carries the eye, not this. */
+.prestart .whenline.thanks { margin-top: 1rem; opacity: .65; }
+
+/* Finished-team pill on the leaderboard. Glanceable from across a
+   venue: ✓ + label so the cue isn't color-only (WCAG AA). */
+.team-name .finished-pill {
+  display: inline-flex; align-items: center; gap: .25em;
+  margin-left: .7em;
+  padding: .05em .55em;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--success) 28%, transparent);
+  color: var(--success);
+  font-size: .55em; font-weight: 800;
+  text-transform: uppercase; letter-spacing: .18em;
+}
+
 /* Connection status: a thin stripe across the top of the live view so
    anyone glancing at the TV knows the leaderboard might be stale.
    Hidden by default; toggled by setLiveStatus() based on WS state. */
@@ -481,7 +531,7 @@ html, body {
 </style>
 </head>
 <body>
-<div id="root" class="app"><div class="empty-board" id="initial-loading">Loading…</div></div>
+<main id="root" class="app" aria-label="Live leaderboard"><div class="empty-board" id="initial-loading">Loading…</div></main>
 
 <script>
 // Localise the initial loading placeholder that's baked into the
@@ -640,6 +690,22 @@ function render() {
       t('Live · push updates · '),
       t('server time {{time}}', { time: data.server_now || '' })));
     return;
+  }
+  // After the run has been complete for COMPLETION_DWELL_MS, swap the
+  // leaderboard for a celebration frame so the TV doesn't sit pinned
+  // on the same image indefinitely. The leaderboard stays visible
+  // during the dwell window so audience members arriving late still
+  // see the final standings; press 'b' to bring it back.
+  if (data.state === 'completed' && data.completed_at && !showBoardOverride) {
+    const completedAt = new Date(data.completed_at.includes('T') ? data.completed_at : data.completed_at.replace(' ', 'T') + 'Z').getTime();
+    const dwell = Date.now() - completedAt;
+    if (Number.isFinite(completedAt) && dwell > COMPLETION_DWELL_MS) {
+      root.append(buildCompletionFrame(data));
+      root.append(h('div', { class: 'footer' },
+        t('Event complete · press B to show the leaderboard again · '),
+        t('server time {{time}}', { time: data.server_now || '' })));
+      return;
+    }
   }
   if (showMapEffective(data)) {
     const split = h('div', { class: 'split' });
@@ -1028,6 +1094,54 @@ function toggleFullscreen() {
   else document.documentElement.requestFullscreen();
 }
 
+// COMPLETION_DWELL_MS — how long to keep the leaderboard up after the
+// last team finishes before swapping to the celebration frame. Tuned
+// so a passer-by has plenty of time to see who won, but the TV doesn't
+// freeze on the same image for hours after the venue empties.
+const COMPLETION_DWELL_MS = 5 * 60 * 1000;
+// showBoardOverride lets the operator press 'b' to bring the
+// leaderboard back after the celebration frame has been shown. Set
+// once and respected for the rest of the page's lifetime.
+let showBoardOverride = false;
+
+function buildCompletionFrame(data) {
+  // Sort teams by completion time so the audience sees the final
+  // ranking front and centre, not the live-tick rank carried over
+  // from the running state.
+  const teams = (data.teams || []).slice().sort((a, b) => {
+    const aDone = a.completed_at ? new Date(a.completed_at).getTime() : Infinity;
+    const bDone = b.completed_at ? new Date(b.completed_at).getTime() : Infinity;
+    return aDone - bDone;
+  });
+  const winner = teams[0];
+  const card = h('div', { class: 'prestart' });
+  card.append(h('div', { class: 'banner' }, t('Event complete')));
+  if (data.adventure_title) {
+    card.append(h('div', { class: 'whenline' }, data.adventure_title));
+  }
+  if (winner && winner.completed_at) {
+    const total = formatFinishTime(data.started_at, winner.completed_at);
+    card.append(
+      h('div', { class: 'countdown' },
+        h('div', { class: 'digits' }, winner.name || t('—')),
+        h('small', {}, total
+          ? t('crossed the line in {{time}}', { time: total })
+          : t('finished first'))));
+  } else {
+    card.append(h('div', { class: 'countdown' },
+      h('div', { class: 'digits' }, t('—')),
+      h('small', {}, t('no winner recorded'))));
+  }
+  if (teams.length > 1) {
+    card.append(h('div', { class: 'whenline' },
+      teams.length === 2
+        ? t('1 other team played.')
+        : t('{{n}} other teams played.', { n: teams.length - 1 })));
+  }
+  card.append(h('div', { class: 'whenline thanks' }, t('Thanks for watching.')));
+  return card;
+}
+
 // buildPreStart renders the large countdown card shown before the
 // run starts. When scheduled_at is set we show a live countdown; with
 // no schedule the copy flips to "Waiting for the arranger to start".
@@ -1036,6 +1150,17 @@ function toggleFullscreen() {
 function buildPreStart(data) {
   const card = h('div', { class: 'prestart' });
   card.append(h('div', { class: 'banner' }, t('Starting soon')));
+  // Adventure title + team count framing — gives the audience context
+  // about what they're about to watch even before the run begins, so a
+  // bystander walking past the TV can pick up the event in seconds.
+  const teamCount = (data.teams || []).length;
+  const titleLine = data.adventure_title || data.run_name;
+  if (titleLine) card.append(h('div', { class: 'whenline' }, titleLine));
+  if (teamCount > 0) {
+    card.append(h('div', { class: 'whenline' },
+      teamCount === 1 ? t('1 team ready')
+                      : t('{{n}} teams ready', { n: teamCount })));
+  }
   if (data.scheduled_at) {
     const digits = h('div', { class: 'digits' }, countdownText(data.scheduled_at, data.server_now));
     card.append(h('div', { class: 'countdown' }, digits,
@@ -1043,9 +1168,12 @@ function buildPreStart(data) {
     card.append(h('div', { class: 'whenline' },
       t('Scheduled for {{when}}', { when: formatScheduled(data.scheduled_at) })));
   } else {
+    // No schedule = manual start. Tell the audience the run is queued
+    // and the arranger will trigger it instead of leaving the screen
+    // pinned on a vague "—" forever.
     card.append(h('div', { class: 'countdown' },
-      h('div', { class: 'digits' }, '—'),
-      h('small', {}, t('waiting for the arranger'))));
+      h('div', { class: 'digits' }, t('Ready')),
+      h('small', {}, t("waiting on the arranger's signal"))));
   }
   return card;
 }
@@ -1077,8 +1205,13 @@ function formatScheduled(iso) {
 // playStartAnimation drops a full-screen accent burst the moment the
 // run flips from scheduled → running. Mirrors the shape of the
 // player-side celebrate() but themed as "race start" rather than
-// "puzzle correct".
+// "puzzle correct". Respects prefers-reduced-motion: a user (or a
+// venue's accessibility policy) opted out of motion shouldn't be
+// jumpscared by a full-screen confetti drop on the TV.
 function playStartAnimation() {
+  try {
+    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  } catch { /* matchMedia missing on ancient browsers — fall through. */ }
   const overlay = document.createElement('div');
   overlay.className = 'startfx';
   const ring = document.createElement('div');
@@ -1157,7 +1290,10 @@ function renderRow(team, idx, data) {
   const main = h('div', { class: 'main' });
   main.append(h('div', { class: 'team-name' },
     team.name,
-    finished ? h('span', { style: 'color:var(--success); font-size:.6em; font-weight:700; text-transform:uppercase; letter-spacing:.2em' }, t('finished')) : null,
+    // Glanceable finished badge: ✓ + label, sized so it carries from
+    // across a venue. Color alone is WCAG-failing for color-blind
+    // viewers; the checkmark + word together give a redundant cue.
+    finished ? h('span', { class: 'finished-pill' }, '✓', t('Finished')) : null,
   ));
   if ((team.members || []).length) {
     main.append(h('div', { class: 'members' }, team.members.map((m) => m.username).join(' · ')));
@@ -1308,12 +1444,27 @@ setInterval(() => {
   if (digitsEl && latestSnapshot.scheduled_at) {
     digitsEl.textContent = countdownText(latestSnapshot.scheduled_at, new Date().toISOString());
   }
+  // After completion, the dwell window expires without a new WS push
+  // (nothing more is happening on the server), so the swap to the
+  // celebration frame has to be driven from this tick. Cheap check:
+  // re-render once when the threshold is crossed.
+  if (latestSnapshot.state === 'completed'
+      && latestSnapshot.completed_at
+      && !showBoardOverride
+      && !document.querySelector('.prestart')) {
+    const ca = latestSnapshot.completed_at;
+    const completedAt = new Date(ca.includes('T') ? ca : ca.replace(' ', 'T') + 'Z').getTime();
+    if (Number.isFinite(completedAt) && Date.now() - completedAt > COMPLETION_DWELL_MS) {
+      render();
+    }
+  }
 }, 1000);
 
 // Keyboard shortcuts for the TV:
 //   m — toggle the map card (overrides the server show_map setting)
 //   f — toggle browser fullscreen
-//   d — debug: shuffle ranks + jitter GPS positions (exercises animations)
+//   b — bring the leaderboard back after the post-event celebration
+//       frame has taken over (sticky for the rest of the session)
 // Ignore when focus is in a form field so typing doesn't steal hotkeys
 // (not that there are any inputs on the live view today, but be safe).
 document.addEventListener('keydown', (e) => {
@@ -1326,6 +1477,10 @@ document.addEventListener('keydown', (e) => {
     e.preventDefault();
   } else if (e.key === 'f' || e.key === 'F') {
     toggleFullscreen();
+    e.preventDefault();
+  } else if (e.key === 'b' || e.key === 'B') {
+    showBoardOverride = true;
+    render();
     e.preventDefault();
   }
 });

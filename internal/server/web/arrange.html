@@ -48,10 +48,66 @@
   --radius-sm:     8px;
   --radius-pill:   32px;
 
+  /* Spacing scale — every padding/margin/gap should pick from one of
+     these so the rhythm of the UI stays predictable. Most callers
+     already land near these values; extracting them as tokens means
+     a future "make everything tighter" sweep is one var-edit, not a
+     codebase grep. */
+  --space-1: .25rem;
+  --space-2: .5rem;
+  --space-3: .75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.75rem;
+
+  /* Typography scale. Most existing UI is body / xs / sm / lg, so
+     these four cover the surface without over-fitting. The brand
+     font lives separately on .brand / h1-h2. */
+  --ts-xs: .75rem;
+  --ts-sm: .85rem;
+  --ts-md: 1rem;
+  --ts-lg: 1.15rem;
+
+  /* Minimum tap target. Apple HIG says 44pt; WCAG 2.5.5 says 24px
+     minimum / 44px target. We pick 44 across the board. */
+  --tap-target: 2.75rem;
+
   --font-body:     'Open Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
   --font-brand:    'Aclonica', 'Vollkorn', Georgia, serif;
 
   --anim:          200ms;
+}
+
+/* ============ Accessibility utilities ============ */
+/* visually-hidden hides content from sighted users while keeping it
+   exposed to assistive tech. The standard inert/clip-path technique. */
+.visually-hidden {
+  position: absolute !important;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+/* Skip-to-content link: invisible until focused, then jumps into the
+   top-left so a keyboard user can fly past the sidebar/topbar to the
+   main content in one Tab. */
+.skip-link {
+  position: fixed;
+  top: -40px; left: var(--space-2);
+  z-index: 10000;
+  padding: var(--space-2) var(--space-4);
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-radius: var(--radius-sm);
+  font-weight: 700;
+  text-decoration: none;
+  transition: top 120ms ease;
+}
+.skip-link:focus {
+  top: var(--space-2);
+  outline: 3px solid color-mix(in srgb, var(--accent) 50%, white);
 }
 [data-theme="dark"] {
   --bg:          #14202e;
@@ -136,7 +192,7 @@ p { margin: 0 0 .5rem; }
 .topbar .spacer { flex: 1; }
 .topbar .user {
   display: flex; align-items: center; gap: .6rem;
-  color: var(--muted); font-size: .85rem;
+  color: var(--muted); font-size: var(--ts-sm);
 }
 .topbar .user strong { color: var(--text); font-weight: 700; }
 
@@ -270,6 +326,10 @@ p { margin: 0 0 .5rem; }
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: .45rem;
   font: inherit; font-weight: 700; cursor: pointer; user-select: none;
+  /* min-height ≥ tap target so a button with short text still passes
+     the 44 px touch heuristic. Padding can shrink for .small / .ghost
+     variants without dropping below the floor. */
+  min-height: var(--tap-target);
   padding: .6rem 1.1rem; border-radius: var(--radius-pill);
   border: 1px solid var(--border); background: var(--surface);
   color: var(--text);
@@ -277,6 +337,9 @@ p { margin: 0 0 .5rem; }
 }
 .btn:hover { background: var(--surface-2); border-color: var(--muted); }
 .btn:active { transform: translateY(1px); }
+.btn:disabled, .btn[disabled] {
+  opacity: .55; cursor: not-allowed;
+}
 .btn.primary {
   background: var(--accent); border-color: var(--accent); color: var(--accent-fg);
   box-shadow: var(--shadow-soft);
@@ -286,7 +349,13 @@ p { margin: 0 0 .5rem; }
 .btn.danger:hover { background: var(--danger); color: var(--danger-fg); border-color: var(--danger); }
 .btn.ghost { border-color: transparent; background: transparent; color: var(--muted); padding: .4rem .6rem; }
 .btn.ghost:hover { background: var(--surface-2); color: var(--accent); border-color: transparent; }
-.btn.small { padding: .35rem .75rem; font-size: .8rem; }
+/* .btn.small drops the floor since these are typically inside
+   already-tap-friendly contexts (toolbars, table action columns). The
+   min-width keeps the hit area sane on touch devices regardless. */
+.btn.small {
+  padding: .35rem .75rem; font-size: var(--ts-sm);
+  min-height: 2rem; min-width: 2rem;
+}
 .btn.warning {
   background: color-mix(in srgb, var(--accent) 14%, var(--surface));
   border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
@@ -296,15 +365,16 @@ p { margin: 0 0 .5rem; }
 .lifecycle-btn { font-size: 1rem; padding: .55rem 1.1rem; }
 .btn svg { width: 16px; height: 16px; stroke: currentColor; stroke-width: 1.75; fill: none; }
 /* icon-only variant: square, no text, used in card action rows and
-   anywhere the meaning is obvious from the glyph. Keep the same min
-   hit-target as the normal small button to stay thumb-friendly. */
+   anywhere the meaning is obvious from the glyph. Min-square sized so
+   it stays thumb-friendly even when nested in dense lists. */
 .btn.icon {
   padding: 0;
-  width: 2rem; height: 2rem;
+  width: 2.25rem; height: 2.25rem;
+  min-width: 2.25rem; min-height: 2.25rem;
   display: inline-grid; place-items: center;
   gap: 0;
 }
-.btn.icon.small { width: 1.8rem; height: 1.8rem; }
+.btn.icon.small { width: 2rem; height: 2rem; min-width: 2rem; min-height: 2rem; }
 .btn.icon svg { width: 18px; height: 18px; }
 /* Action row in the top-right of a clickable card. Its buttons stop
    click propagation so they don't trigger the card's own click. */
@@ -427,7 +497,7 @@ textarea { min-height: 80px; resize: vertical; font-family: ui-monospace, monosp
 .table th, .table td { padding: .7rem 1rem; text-align: left; vertical-align: middle; }
 .table th {
   background: var(--surface-2); color: var(--ink);
-  font-weight: 700; font-size: .75rem; text-transform: uppercase; letter-spacing: .06em;
+  font-weight: 700; font-size: var(--ts-xs); text-transform: uppercase; letter-spacing: .06em;
   border-bottom: 1px solid var(--border);
 }
 .table tbody tr + tr td { border-top: 1px solid var(--border-soft); }
@@ -553,7 +623,7 @@ textarea { min-height: 80px; resize: vertical; font-family: ui-monospace, monosp
   margin: .25rem 0 .4rem; line-height: 1.2;
 }
 .md-preview h1 { font-size: 1.35rem; }
-.md-preview h2 { font-size: 1.15rem; }
+.md-preview h2 { font-size: var(--ts-lg); }
 .md-preview h3 { font-size: 1rem; }
 .md-preview.compact { padding: .4rem .55rem; font-size: .9rem; }
 
@@ -562,6 +632,7 @@ textarea { min-height: 80px; resize: vertical; font-family: ui-monospace, monosp
    them doesn't reflow the form. Only one is visible at a time —
    JS toggles style.display via enterEdit / leaveEdit. */
 .md-field {
+  position: relative;
   border: 1px solid var(--border-soft);
   border-radius: 8px;
   background: var(--surface-2);
@@ -579,6 +650,20 @@ textarea { min-height: 80px; resize: vertical; font-family: ui-monospace, monosp
   color: var(--ink);
   min-height: 2.5rem;
 }
+/* Subtle pencil affordance in the corner, visible on hover so authors
+   discover that the rendered markdown is clickable to edit. The icon
+   itself is just a unicode pencil — no dependency, no SVG to localise. */
+.md-field-view::after {
+  content: '✎';
+  position: absolute;
+  top: .35rem; right: .55rem;
+  font-size: var(--ts-sm);
+  color: var(--muted);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .15s ease;
+}
+.md-field:hover .md-field-view::after { opacity: .55; }
 .md-field-view p { margin: 0 0 .5rem; }
 .md-field-view p:last-child { margin-bottom: 0; }
 .md-field-view ul, .md-field-view ol { padding-left: 1.25rem; margin: .25rem 0 .5rem; }
@@ -593,7 +678,7 @@ textarea { min-height: 80px; resize: vertical; font-family: ui-monospace, monosp
   margin: .25rem 0 .4rem; line-height: 1.2;
 }
 .md-field-view h1 { font-size: 1.3rem; }
-.md-field-view h2 { font-size: 1.15rem; }
+.md-field-view h2 { font-size: var(--ts-lg); }
 .md-field-view h3 { font-size: 1rem; }
 .md-field-view table { width: 100%; border-collapse: collapse; margin: .4rem 0; font-size: .92rem; }
 .md-field-view th, .md-field-view td {
@@ -647,7 +732,7 @@ textarea { min-height: 80px; resize: vertical; font-family: ui-monospace, monosp
   display: inline-grid; place-items: center;
   width: 1.6rem; height: 1.6rem; border-radius: 50%;
   background: var(--accent); color: var(--accent-fg);
-  font-weight: 700; font-size: .85rem;
+  font-weight: 700; font-size: var(--ts-sm);
   flex-shrink: 0;
 }
 .hint-row-delay {
@@ -742,7 +827,7 @@ textarea { min-height: 80px; resize: vertical; font-family: ui-monospace, monosp
   border: 1px dashed var(--border);
   border-radius: var(--radius);
   color: var(--muted); cursor: pointer;
-  font-size: .85rem;
+  font-size: var(--ts-sm);
   transition: background 120ms, border-color 120ms, color 120ms;
 }
 .puzzle-editor .pe-image-add svg {
@@ -887,14 +972,14 @@ textarea { min-height: 80px; resize: vertical; font-family: ui-monospace, monosp
   border: 1px solid var(--border-soft); border-radius: 6px;
   box-shadow: none;
 }
-.tl-url-sm { font-size: .75rem; padding: .25rem .45rem; }
+.tl-url-sm { font-size: var(--ts-xs); padding: .25rem .45rem; }
 .tl-toggle {
   flex: 0 0 auto;
   display: inline-flex; align-items: center; gap: .3rem;
   padding: .25rem .55rem;
   font-size: .8rem; font-variant-numeric: tabular-nums;
 }
-.tl-caret { font-size: .75rem; color: var(--muted); }
+.tl-caret { font-size: var(--ts-xs); color: var(--muted); }
 .tl-members { margin: .35rem 0 .1rem 1.2rem; }
 .tl-member-row {
   display: flex; gap: .4rem; align-items: center;
@@ -908,7 +993,7 @@ textarea { min-height: 80px; resize: vertical; font-family: ui-monospace, monosp
 
 .puzzle-settings { margin-top: 1rem; }
 .puzzle-settings h3 {
-  font-size: .85rem; margin: 0 0 .6rem;
+  font-size: var(--ts-sm); margin: 0 0 .6rem;
   color: var(--muted); font-weight: 700;
   text-transform: uppercase; letter-spacing: .06em;
 }
@@ -1123,6 +1208,55 @@ textarea { min-height: 80px; resize: vertical; font-family: ui-monospace, monosp
 .settings-card .ok  { color: #2c8048; }
 .settings-card .err { color: #b03a3a; }
 
+/* Session list rows in the Active Sessions settings card. Visually
+   nested inside the parent card so the list reads as one block, not a
+   bunch of separate cards. */
+.session-row {
+  display: flex; gap: .5rem; align-items: flex-start; justify-content: space-between;
+  padding: .65rem .85rem; margin: .4rem 0;
+  background: var(--surface-2);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm, 8px);
+}
+.session-row-info { min-width: 0; flex: 1; }
+.session-row-name { font-weight: 700; font-size: .9rem; }
+.session-row-meta { color: var(--muted); font-size: .78rem; margin-top: .2rem; }
+.session-row .pill { margin-right: .4rem; }
+
+/* Settings sub-callout: the email-revert "you can undo this" banner.
+   Warm-amber tinted to read as informational, not destructive. */
+.settings-callout-warn {
+  margin: .25rem 0 .75rem;
+  padding: .65rem .85rem;
+  border-radius: var(--radius-sm, 8px);
+  border: 1px solid color-mix(in srgb, var(--warning) 50%, transparent);
+  background: color-mix(in srgb, var(--warning) 18%, var(--surface));
+}
+.settings-callout-warn .meta {
+  color: var(--muted); font-size: .8rem; margin: .25rem 0;
+}
+
+/* Audit-details modal: two-column label/value grid so the long UA
+   string wraps into a single contained area instead of pushing the
+   modal wide. */
+.audit-details {
+  display: grid;
+  grid-template-columns: 7rem 1fr;
+  gap: .4rem .8rem;
+  margin: .25rem 0;
+}
+.audit-details dt {
+  color: var(--muted); font-size: .78rem;
+  text-transform: uppercase; letter-spacing: .06em; font-weight: 700;
+  margin: 0;
+}
+.audit-details dd {
+  margin: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: var(--ts-sm);
+  word-break: break-all;
+}
+
 /* Dragging feedback: the pill being dragged dims, and the drop target
    grows a coloured edge on whichever side the cursor is closer to so
    arrangers see the exact insertion point (same affordance as Slides). */
@@ -1227,8 +1361,8 @@ textarea { min-height: 80px; resize: vertical; font-family: ui-monospace, monosp
 .feed .badge.bad { background: color-mix(in srgb, var(--danger) 22%, transparent); color: var(--danger); }
 .feed .badge.brand { background: color-mix(in srgb, var(--accent) 22%, transparent); color: var(--accent); }
 .feed .msg strong { font-weight: 700; }
-.feed .meta { font-size: .75rem; color: var(--muted); margin-top: .1rem; }
-.feed time { font-size: .75rem; color: var(--muted); white-space: nowrap; }
+.feed .meta { font-size: var(--ts-xs); color: var(--muted); margin-top: .1rem; }
+.feed time { font-size: var(--ts-xs); color: var(--muted); white-space: nowrap; }
 
 /* ---------- Toast ---------- */
 .toasts {
@@ -1305,7 +1439,7 @@ textarea { min-height: 80px; resize: vertical; font-family: ui-monospace, monosp
   padding: .75rem 1rem;
   border-radius: 8px;
   overflow-x: auto;
-  font-size: .85rem;
+  font-size: var(--ts-sm);
   line-height: 1.5;
 }
 /* Screenshot placeholder: a dashed-bordered box that says
@@ -1320,7 +1454,7 @@ textarea { min-height: 80px; resize: vertical; font-family: ui-monospace, monosp
   background: var(--surface-2);
   color: var(--muted);
   text-align: center;
-  font-size: .85rem;
+  font-size: var(--ts-sm);
   font-style: italic;
 }
 .manual .shot::before { content: '🖼  '; font-style: normal; }
@@ -1414,7 +1548,12 @@ async function api(path, opts = {}) {
   if (res.status !== 204) {
     try { body = await res.json(); } catch {}
   }
-  return { status: res.status, ok: res.ok, body };
+  // Expose Retry-After (in seconds) when the server tells us to wait.
+  // Login lockouts and rate-limited paths use it for their countdown
+  // UI; null when the header is absent.
+  const ra = res.headers.get('Retry-After');
+  const retryAfter = ra ? parseInt(ra, 10) || 0 : 0;
+  return { status: res.status, ok: res.ok, body, retryAfter };
 }
 
 /* ========== DOM helper ========== */
@@ -1463,7 +1602,15 @@ const ICONS = {
   map: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21 3 6"/><line x1="9" y1="3" x2="9" y2="18"/><line x1="15" y1="6" x2="15" y2="21"/></svg>',
   play: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>',
   user: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>',
+  // Two-person silhouette for the Members entry — one full figure
+  // plus a partial second person off to the side, distinct from the
+  // single-person `user` glyph at a glance.
+  users: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
   shield: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>',
+  // Gear / settings cog — eight-toothed silhouette plus the centre
+  // hub. Reads at 18×18 in the sidebar without bleeding past the
+  // viewBox.
+  gear: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 0 0-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 0 0-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 0 0-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 0 0-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 0 0 1.066-2.573c-.94-1.543.826-3.31 2.37-2.37 1 .608 2.296.07 2.572-1.065z"/><circle cx="12" cy="12" r="3"/></svg>',
   plus: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>',
   trash: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/></svg>',
   key: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="15" r="4"/><path d="M10.85 12.15 19 4"/><path d="m18 5 2 2"/><path d="m15 8 2 2"/></svg>',
@@ -1511,10 +1658,22 @@ initTheme();
 
 /* ========== Toast ========== */
 function toast(msg, kind = '') {
-  const el = h('div', { class: 'toast ' + kind }, msg);
+  // Errors get role="alert" + aria-live="assertive" so screen readers
+  // interrupt; success/info toasts use role="status" + polite so they
+  // queue behind whatever the user is reading.
+  const isErr = kind === 'err';
+  const el = h('div', {
+    class: 'toast ' + kind,
+    role: isErr ? 'alert' : 'status',
+    'aria-live': isErr ? 'assertive' : 'polite',
+    'aria-atomic': 'true',
+  }, msg);
   document.getElementById('toasts').append(el);
-  setTimeout(() => { el.style.transition = 'opacity .3s'; el.style.opacity = '0'; }, 2500);
-  setTimeout(() => el.remove(), 2900);
+  // Errors hang around longer — by the time you've absorbed an error,
+  // 2.5s has typically elapsed already. Successes stay brief.
+  const dwell = isErr ? 5500 : 2500;
+  setTimeout(() => { el.style.transition = 'opacity .3s'; el.style.opacity = '0'; }, dwell);
+  setTimeout(() => el.remove(), dwell + 400);
 }
 const toastOk = (m) => toast(m, 'ok');
 const toastErr = (m) => toast(m, 'err');
@@ -1545,25 +1704,97 @@ async function promptPassword(title, message) {
 }
 
 /* ========== Modal ========== */
+// Modal counter feeds a unique id so the heading can be aria-labelledby
+// referenced from the dialog. Avoids collisions when multiple modals
+// stack (rare but cheap to support).
+let _modalSeq = 0;
 function modal(title, bodyFn, opts = {}) {
   return new Promise((resolve) => {
     const host = document.getElementById('modal-host');
     const body = h('div');
+    // Stash the element that opened the modal so we can return focus
+    // there on close — keyboard users would otherwise lose their place
+    // and end up at the top of the page.
+    const trigger = (document.activeElement && document.activeElement !== document.body)
+      ? document.activeElement : null;
+    // beforeClose lets the body opt into a dirty-check guard. Returning
+    // false from the hook blocks the close (Save still works because
+    // it bypasses the guard via close(value, { force: true })).
+    let beforeClose = null;
     // Dispatch a synthetic event before teardown so content hooks (e.g.
     // the puzzle editor's parked file input) can clean up whether close
     // is called via Save, Cancel, Esc, or backdrop click.
-    const close = (value) => {
+    const close = (value, options) => {
+      const force = !!(options && options.force);
+      // Form submit / explicit Save always wins; only treat null/undefined
+      // (the cancel/Esc/backdrop signals) as candidates for the guard.
+      const isCancel = value === null || value === undefined;
+      if (isCancel && !force && beforeClose) {
+        try { if (beforeClose() === false) return; } catch { /* fall through to close */ }
+      }
       body.dispatchEvent(new CustomEvent('modal:close'));
+      document.removeEventListener('keydown', onKey);
       host.replaceChildren();
+      // Restore focus to the trigger element so a keyboard user stays
+      // anchored in the same row/button they just acted from.
+      if (trigger && trigger.isConnected) {
+        try { trigger.focus(); } catch { /* element may have been re-rendered out */ }
+      }
       resolve(value);
     };
-    const back = h('div', { class: 'modal-back', on: { click: (e) => { if (e.target === back) close(null); } } },
-      h('div', { class: 'modal' + (opts.wide ? ' wide' : '') },
-        h('h2', {}, title),
+    const titleID = 'modal-title-' + (++_modalSeq);
+    // Tab-trap: keep focus inside the dialog so a screen-reader user
+    // can't accidentally Tab into the page behind. Standard pattern —
+    // intercept Tab when focus is on the first/last focusable child.
+    const onKey = (e) => {
+      if (e.key === 'Escape') { close(null); return; }
+      if (e.key !== 'Tab') return;
+      const focusables = back.querySelectorAll(
+        'a[href], area[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])');
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last  = focusables[focusables.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault(); last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault(); first.focus();
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    const back = h('div', {
+      class: 'modal-back',
+      role: 'presentation',
+      on: { click: (e) => { if (e.target === back) close(null); } },
+    },
+      h('div', {
+        class: 'modal' + (opts.wide ? ' wide' : ''),
+        role: 'dialog',
+        'aria-modal': 'true',
+        'aria-labelledby': titleID,
+        tabindex: '-1',
+      },
+        h('h2', { id: titleID }, title),
         body,
       ));
     host.replaceChildren(back);
-    bodyFn({ body, close });
+    bodyFn({
+      body,
+      close,
+      // setBeforeClose registers a hook that is consulted before the
+      // modal closes via cancel paths. Return false (or trigger the
+      // confirm dialog and return its boolean) to abort the close.
+      setBeforeClose: (fn) => { beforeClose = fn; },
+    });
+    // Move focus into the modal after the body has been populated so
+    // the first interactive element gets it. Falls back to the dialog
+    // container itself if the body is action-free.
+    setTimeout(() => {
+      const dialog = back.querySelector('[role="dialog"]');
+      if (!dialog) return;
+      const firstInput = dialog.querySelector(
+        'input:not([type="hidden"]):not([disabled]), textarea:not([disabled]), select:not([disabled]), button:not([disabled])');
+      (firstInput || dialog).focus();
+    }, 30);
   });
 }
 
@@ -1697,17 +1928,16 @@ function renderLogin(err, mode, extra) {
   if (mode === 'forgot') return renderForgot(err);
   if (mode === 'reset')  return renderReset(err, extra);
 
+  const errEl  = err ? h('p', { class: 'err' }, err) : null;
+  const submit = h('button', { class: 'btn primary', type: 'submit' }, t('Log in'));
+  const usernameEl = h('input', { name: 'u', autocomplete: 'username', required: true });
+  const passwordEl = h('input', { name: 'p', type: 'password', autocomplete: 'current-password', required: true });
   const form = h('form', { class: 'login' },
     h('div', { class: 'brand' }, 'zonventure', h('small', {}, t('arranger'))),
-    h('label', { class: 'field' },
-      h('span', {}, t('Username')),
-      h('input', { name: 'u', autocomplete: 'username', required: true })),
-    h('label', { class: 'field' },
-      h('span', {}, t('Password')),
-      h('input', { name: 'p', type: 'password', autocomplete: 'current-password', required: true })),
-    err ? h('p', { class: 'err' }, err) : null,
-    h('div', { class: 'row end', style: 'margin-top:1rem' },
-      h('button', { class: 'btn primary', type: 'submit' }, t('Log in'))),
+    h('label', { class: 'field' }, h('span', {}, t('Username')), usernameEl),
+    h('label', { class: 'field' }, h('span', {}, t('Password')), passwordEl),
+    errEl,
+    h('div', { class: 'row end', style: 'margin-top:1rem' }, submit),
     h('p', { class: 'muted', style: 'margin-top:1rem; font-size:.85rem; text-align:center' },
       h('a', { href: '#', on: { click: (e) => { e.preventDefault();
         document.getElementById('root').replaceChildren(renderLogin(null, 'forgot')); } } }, t('Forgot password?'))),
@@ -1728,8 +1958,38 @@ function renderLogin(err, mode, extra) {
       method: 'POST',
       body: JSON.stringify({ username: fd.get('u'), password: fd.get('p') }),
     });
-    if (r.ok) { await refreshMe(); render(); }
-    else document.getElementById('root').replaceChildren(renderLogin(r.body?.error || t('login failed')));
+    if (r.ok) { await refreshMe(); render(); return; }
+    // Lockout (429): the server's Retry-After header carries the wait
+    // budget. Render a live-ticking countdown and disable the submit
+    // button until the cooldown elapses, so a user mashing the button
+    // doesn't keep racking up failures and extending the lockout.
+    if (r.status === 429 && r.retryAfter > 0) {
+      let secs = r.retryAfter;
+      const live = h('p', { class: 'err', role: 'status', 'aria-live': 'polite' }, '');
+      const setText = () => { live.textContent = secs > 0
+        ? t('Too many failed attempts. Try again in {{n}}s.', { n: secs })
+        : t('You can try again now.'); };
+      submit.disabled = true;
+      usernameEl.disabled = true;
+      passwordEl.disabled = true;
+      setText();
+      // Inject the ticker after the static err element if present, else
+      // after the form body — replaceChildren on the root would reset
+      // any in-progress timers.
+      (errEl ? errEl.replaceWith(live) : form.insertBefore(live, submit.parentElement));
+      const tick = setInterval(() => {
+        secs -= 1;
+        setText();
+        if (secs <= 0) {
+          clearInterval(tick);
+          submit.disabled = false;
+          usernameEl.disabled = false;
+          passwordEl.disabled = false;
+        }
+      }, 1000);
+      return;
+    }
+    document.getElementById('root').replaceChildren(renderLogin(r.body?.error || t('login failed')));
   });
   return h('div', { class: 'login-wrap' }, form);
 }
@@ -1880,7 +2140,7 @@ function renderShell() {
         : []),
       ['#audit',         t('Audit'),         ICONS.shield],
       ['#logs',          t('Logs'),          ICONS.terminal],
-      ['#settings',      t('Settings'),      ICONS.user],
+      ['#settings',      t('Settings'),      ICONS.gear],
     ];
   } else {
     // Sidebar lists the daily-operational surfaces only. Adventures
@@ -1893,17 +2153,19 @@ function renderShell() {
       ['#events',     t('Events'),     ICONS.play],
     ];
     if (isOrgAdmin) {
-      items.push(['#members', t('Members'), ICONS.shield]);
+      items.push(['#members', t('Members'), ICONS.users]);
       items.push(['#audit',   t('Audit'),   ICONS.shield]);
     }
-    items.push(['#settings', t('Settings'), ICONS.user]);
+    items.push(['#settings', t('Settings'), ICONS.gear]);
   }
   const active = state.route.split('/')[0];
 
-  const nav = h('nav', { class: 'nav' }, items.map(([href, label, svg]) =>
+  const nav = h('nav', { class: 'nav', 'aria-label': t('Primary') },
+    items.map(([href, label, svg]) =>
     h('a', {
       href,
       class: active === href ? 'active' : '',
+      'aria-current': active === href ? 'page' : null,
       on: { click: () => { document.querySelector('.sidebar')?.classList.remove('open'); document.querySelector('.backdrop')?.classList.remove('show'); } },
     }, icon(svg), label)));
   // Arrow-key navigation across the sidebar. We deliberately don't
@@ -1938,7 +2200,10 @@ function renderShell() {
     h('span', { class: 'muted' }, t('Language')),
     zvI18n.makeLangPicker({ className: 'zv-lang-picker' }));
 
-  const sidebar = h('aside', { class: 'sidebar' },
+  const sidebar = h('aside', {
+    class: 'sidebar', id: 'sidebar-nav',
+    'aria-label': t('Sidebar'),
+  },
     h('div', { class: 'brand' }, 'zonventure',
       h('small', {}, isAdmin ? t('administrator') : t('arranger'))),
     nav,
@@ -1951,16 +2216,22 @@ function renderShell() {
 
   const menuBtn = h('button', {
     class: 'btn ghost menu-btn',
+    type: 'button',
+    'aria-label': t('Open navigation menu'),
+    'aria-controls': 'sidebar-nav',
+    'aria-expanded': 'false',
     on: { click: () => {
-      document.querySelector('.sidebar').classList.toggle('open');
-      backdrop.classList.toggle('show');
+      const sb = document.querySelector('.sidebar');
+      const open = sb.classList.toggle('open');
+      backdrop.classList.toggle('show', open);
+      menuBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
     } },
   }, icon(ICONS.menu));
 
-  const topbar = h('header', { class: 'topbar' },
+  const topbar = h('header', { class: 'topbar', role: 'banner' },
     menuBtn,
     h('span', { class: 'brand' }, 'zonventure'),
-    h('div', { class: 'crumb' }, currentCrumb()),
+    h('div', { class: 'crumb', 'aria-live': 'polite' }, currentCrumb()),
     h('div', { class: 'spacer' }),
   );
 
@@ -1972,9 +2243,14 @@ function renderShell() {
     ? renderVerifyBanner(state.me.email)
     : null;
 
+  // Skip-link is the first focusable element on the page so a
+  // keyboard user lands on it before crawling through the sidebar +
+  // topbar. Hidden until focused; jumps focus to <main> on click.
+  const skip = h('a', { class: 'skip-link', href: '#main' }, t('Skip to main content'));
   return h('div', { class: 'app' },
-    sidebar, topbar,
-    h('main', { class: 'content', id: 'view' }, verifyBanner),
+    skip, sidebar, topbar,
+    h('main', { class: 'content', id: 'main', tabindex: '-1' }, verifyBanner,
+      h('div', { id: 'view' })),
     backdrop);
 }
 
@@ -4866,8 +5142,9 @@ function colorRow(label, initial) {
 }
 
 async function openCreateAdventure() {
-  await modal(t('New adventure'), ({ body, close }) => {
+  await modal(t('New adventure'), ({ body, close, setBeforeClose }) => {
     const slug  = h('input', { required: true, placeholder: 'my-adventure', pattern: '[a-z0-9-]+' });
+    const slugHint = h('small', { class: 'muted', style: 'display:block; margin-top:.2rem' }, '');
     const title = h('input', { required: true });
     const desc  = h('textarea', { rows: 2 });
     const author = h('input', {});
@@ -4875,9 +5152,24 @@ async function openCreateAdventure() {
     const cSecondary = colorRow(t('Secondary — titles, status pill'), '');
     const cBackground = colorRow(t('Background'),                     '');
     const cText      = colorRow(t('Text'),                            '');
+    // Live slug validator: keeps the author from discovering at submit
+    // time that "My-Adventure" isn't a legal slug. Echoes a small hint
+    // beside the field as they type.
+    const validateSlug = () => {
+      const v = slug.value;
+      if (!v) { slugHint.textContent = ''; slugHint.className = 'muted'; return; }
+      if (/^[a-z0-9-]+$/.test(v)) {
+        slugHint.textContent = '✓ ' + t('Looks good.');
+        slugHint.className = 'ok';
+      } else {
+        slugHint.textContent = t('Lowercase a–z, digits, and hyphens only.');
+        slugHint.className = 'err';
+      }
+    };
+    slug.addEventListener('input', validateSlug);
     const form = h('form', {},
       h('label', { class: 'field' },
-        h('span', {}, t('Slug — lowercase letters, digits, hyphens')), slug),
+        h('span', {}, t('Slug — lowercase letters, digits, hyphens')), slug, slugHint),
       h('label', { class: 'field' }, h('span', {}, t('Title')), title),
       h('label', { class: 'field' }, h('span', {}, t('Description')), desc),
       h('label', { class: 'field' }, h('span', {}, t('Author')), author),
@@ -4886,6 +5178,16 @@ async function openCreateAdventure() {
       h('div', { class: 'row end' },
         h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, t('Cancel')),
         h('button', { class: 'btn primary', type: 'submit' }, t('Create'))));
+    // Dirty-check guard: backdrop click / Escape would otherwise lose
+    // a half-typed adventure spec. We treat any non-empty input field
+    // as dirty since blank-on-create is the common abandoned state.
+    if (typeof setBeforeClose === 'function') {
+      setBeforeClose(() => {
+        const dirty = !!(slug.value || title.value || desc.value || author.value
+          || cAccent.get() || cSecondary.get() || cBackground.get() || cText.get());
+        return !dirty || confirm(t('Discard this adventure?'));
+      });
+    }
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       const r = await api('/api/admin/adventures', {
@@ -5120,7 +5422,7 @@ function renderPuzzleCard(adv, page, i, previewIdx) {
 }
 
 async function openEditAdventureMeta(adv) {
-  await modal(t('Edit adventure'), ({ body, close }) => {
+  await modal(t('Edit adventure'), ({ body, close, setBeforeClose }) => {
     const slug  = h('input', { value: adv.slug, required: true, pattern: '[a-z0-9-]+' });
     const title = h('input', { value: adv.title, required: true });
     const desc  = h('textarea', { rows: 2 }, adv.description || '');
@@ -5255,6 +5557,24 @@ async function openEditAdventureMeta(adv) {
       h('div', { class: 'row end' },
         h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, t('Cancel')),
         h('button', { class: 'btn primary', type: 'submit' }, t('Save'))));
+    // Dirty check: any field divergent from the loaded adventure spec
+    // counts. Cover image upload/remove already POSTs immediately so
+    // it doesn't participate here — only the form fields matter.
+    const isDirty = () => (
+      slug.value.trim() !== adv.slug
+      || title.value.trim() !== adv.title
+      || desc.value !== (adv.description || '')
+      || author.value.trim() !== (adv.author || '')
+      || intro.value !== (adv.intro_text || '')
+      || outro.value !== (adv.outro_text || '')
+      || cAccent.get()     !== initialAccent
+      || cSecondary.get()  !== initialSecondary
+      || cBackground.get() !== initialBg
+      || cText.get()       !== initialText
+    );
+    if (typeof setBeforeClose === 'function') {
+      setBeforeClose(() => !isDirty() || confirm(t('Discard unsaved changes to this adventure?')));
+    }
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       const payload = {};
@@ -5714,6 +6034,16 @@ async function openEditPuzzle(adv, page /* or null */) {
           h('button', {
             class: 'btn small danger pe-image-remove', type: 'button', title: t('Remove'),
             on: { click: async () => {
+              // Reference check: if the author embedded this image in
+              // the prompt markdown (or anywhere in the textarea), the
+              // delete will leave a broken-image placeholder behind.
+              // Confirm explicitly so the slip is reversible-by-cancel.
+              const promptText = promptInput.value || '';
+              const refByID  = promptText.includes('/image/' + im.id);
+              const refByURL = im.url ? promptText.includes(im.url) : false;
+              if (refByID || refByURL) {
+                if (!confirm(t('This image is embedded in the puzzle prompt. Deleting will leave a broken image where it appears. Continue?'))) return;
+              }
               const rr = await api(`/api/admin/images/${im.id}`, { method: 'DELETE' });
               if (rr.status === 204) {
                 const i = images.indexOf(im);
@@ -5899,6 +6229,17 @@ async function openEditPuzzle(adv, page /* or null */) {
     let saved = false;
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
+      // Mid-event guard: if any team is actively running this adventure,
+      // a save lands on them immediately — usually fine for a typo fix,
+      // sometimes catastrophic for a logic change. Confirm explicitly
+      // (only on edit; brand-new puzzles can't be live yet).
+      if (!creating && (adv.running_event_count || 0) > 0) {
+        const n = adv.running_event_count;
+        const msg = n === 1
+          ? t('1 event is running this adventure right now. Saving will change what those players see — typo fixes are safe; logic changes can confuse them mid-puzzle. Continue?')
+          : t('{{n}} events are running this adventure right now. Saving will change what those players see — typo fixes are safe; logic changes can confuse them mid-puzzle. Continue?', { n });
+        if (!confirm(msg)) return;
+      }
       const payload = {
         title:    titleInput.value.trim(),
         prompt:   promptInput.value.trim(),
@@ -7079,22 +7420,20 @@ function renderAuditRow(e) {
 
 function showAuditDetailsModal(e) {
   modal(t('Audit event #{{id}}', { id: e.id }), ({ body, close }) => {
-    const row = (label, val) => h('div', {
-      style: 'display:grid; grid-template-columns:7rem 1fr; gap:.4rem; margin:.25rem 0',
-    },
-      h('span', { class: 'muted', style: 'font-size:.78rem; text-transform:uppercase; letter-spacing:.06em; font-weight:700' }, label),
-      h('span', { class: 'mono', style: 'word-break:break-all' }, val || '—'));
-    body.append(
-      row(t('Time'),       formatAuditTS(e.ts)),
-      row(t('Event'),      e.event),
-      row(t('Result'),     e.ok ? t('ok') : t('fail')),
-      row(t('User'),       e.username || (e.user_id ? '#' + e.user_id : '—')),
-      row(t('IP'),         e.ip || ''),
-      row(t('Reason'),     e.reason || ''),
-      row(t('User-Agent'), e.user_agent || ''),
+    const dl = h('dl', { class: 'audit-details' });
+    const row = (label, val) => {
+      dl.append(h('dt', {}, label), h('dd', {}, val || '—'));
+    };
+    row(t('Time'),       formatAuditTS(e.ts));
+    row(t('Event'),      e.event);
+    row(t('Result'),     e.ok ? t('ok') : t('fail'));
+    row(t('User'),       e.username || (e.user_id ? '#' + e.user_id : '—'));
+    row(t('IP'),         e.ip || '');
+    row(t('Reason'),     e.reason || '');
+    row(t('User-Agent'), e.user_agent || '');
+    body.append(dl,
       h('div', { class: 'row end', style: 'margin-top:.75rem' },
-        h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, t('Close'))),
-    );
+        h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, t('Close'))));
   });
 }
 
@@ -7977,6 +8316,8 @@ async function viewSettings(view) {
   const emailCard = renderSettingsEmailCard(me);
   const dangerCard = renderSettingsDeleteCard();
   const exportCard = renderSettingsExportCard();
+  const sessionsCard = renderSettingsSessionsCard();
+  const auditCard = renderSettingsAuditCard();
   // Webhooks + Manual were lifted out of the daily sidebar — most
   // arrangers don't think about either every visit. Surfaced here as
   // discoverable cards so they're one click away when needed.
@@ -7987,11 +8328,137 @@ async function viewSettings(view) {
     h('h1', {}, t('Settings')),
     h('p', { class: 'muted' },
       t('Manage your account. Changes are immediate; deleting your account also removes its data.')),
-    pwCard, emailCard, exportCard,
+    pwCard, emailCard,
+    sessionsCard, auditCard,
+    exportCard,
     integrationsCard,
     helpCard,
     dangerCard,
   );
+}
+
+function renderSettingsSessionsCard() {
+  // Active sessions surface — list each session this user is currently
+  // logged into, including one for "this device". Per-row Sign out
+  // calls /api/admin/me/sessions/{id}; "Sign out everywhere else"
+  // wipes all but the current. Mirrors the security UX users have
+  // come to expect from Google / GitHub / etc.
+  const card = h('div', { class: 'card settings-card' });
+  const list = h('div');
+  const status = h('p', { class: 'muted', style: 'font-size:.85rem; margin:.5rem 0 0' });
+  const refresh = async () => {
+    list.replaceChildren(h('p', { class: 'muted', style: 'font-size:.85rem' }, t('Loading…')));
+    const r = await api('/api/admin/me/sessions');
+    if (!r.ok) {
+      list.replaceChildren(h('p', { class: 'err' }, r.body?.error || t('error {{status}}', { status: r.status })));
+      return;
+    }
+    const sessions = r.body?.sessions || [];
+    if (sessions.length === 0) {
+      list.replaceChildren(h('p', { class: 'muted' }, t('No active sessions.')));
+      return;
+    }
+    list.replaceChildren(...sessions.map((s) => h('div', { class: 'session-row' },
+      h('div', { class: 'session-row-info' },
+        h('div', { class: 'session-row-name' },
+          s.current ? h('span', { class: 'pill success' }, t('this device')) : null,
+          s.user_agent ? shortUA(s.user_agent) : t('Unknown device')),
+        h('div', { class: 'session-row-meta' },
+          t('Created {{when}}', { when: formatAuditTS(s.created_at) }),
+          s.ip ? ' · ' + t('from {{ip}}', { ip: s.ip }) : '',
+          s.expires_at ? ' · ' + t('expires {{when}}', { when: formatAuditTS(s.expires_at) }) : '')),
+      s.current
+        ? null
+        : h('button', { class: 'btn small danger', type: 'button',
+            on: { click: async () => {
+              const rr = await api('/api/admin/me/sessions/' + encodeURIComponent(s.id),
+                { method: 'DELETE' });
+              if (rr.status === 204) { toastOk(t('Session signed out')); refresh(); }
+              else toastErr(rr.body?.error || t('error {{status}}', { status: rr.status }));
+            } } },
+            t('Sign out')),
+    )));
+  };
+  const otherBtn = h('button', { class: 'btn', type: 'button' },
+    icon(ICONS.shield), t('Sign out everywhere else'));
+  otherBtn.addEventListener('click', async () => {
+    if (!confirm(t('Sign out of every other browser, phone, and tablet? You\'ll stay signed in here.'))) return;
+    otherBtn.disabled = true;
+    const rr = await api('/api/admin/me/sessions', { method: 'DELETE' });
+    otherBtn.disabled = false;
+    if (rr.status === 204) { toastOk(t('Other sessions signed out')); refresh(); }
+    else toastErr(rr.body?.error || t('error {{status}}', { status: rr.status }));
+  });
+  card.append(
+    h('h2', {}, t('Active sessions')),
+    h('p', { class: 'muted', style: 'font-size:.9rem' },
+      t('Every device you\'re signed into. If something looks unfamiliar, sign that session out.')),
+    list,
+    h('div', { class: 'row end', style: 'margin-top:.75rem' }, otherBtn),
+    status,
+  );
+  refresh();
+  return card;
+}
+
+function renderSettingsAuditCard() {
+  // The user's own auth log. A condensed read-only view of recent
+  // login / set-password / email-change events; full forensics still
+  // live behind the global Audit page (admin-only).
+  const card = h('div', { class: 'card settings-card' });
+  const list = h('div');
+  const refresh = async () => {
+    list.replaceChildren(h('p', { class: 'muted', style: 'font-size:.85rem' }, t('Loading…')));
+    const r = await api('/api/admin/me/audit');
+    if (!r.ok) {
+      list.replaceChildren(h('p', { class: 'err' }, r.body?.error || t('error {{status}}', { status: r.status })));
+      return;
+    }
+    const events = r.body?.events || [];
+    if (events.length === 0) {
+      list.replaceChildren(h('p', { class: 'muted' }, t('No recent activity.')));
+      return;
+    }
+    list.replaceChildren(h('table', { class: 'audit-table' },
+      h('thead', {}, h('tr', {},
+        h('th', {}, t('Time')), h('th', {}, t('Event')),
+        h('th', {}, t('Result')), h('th', {}, t('IP')))),
+      h('tbody', {}, events.map((e) => h('tr', {},
+        h('td', { class: 'mono' }, formatAuditTS(e.ts)),
+        h('td', {}, e.event),
+        h('td', {}, h('span', {
+          class: 'audit-pill ' + (e.ok ? 'audit-ok' : 'audit-fail'),
+        }, e.ok ? t('ok') : t('fail'))),
+        h('td', { class: 'mono' }, e.ip || '—'))))));
+  };
+  card.append(
+    h('h2', {}, t('Recent security activity')),
+    h('p', { class: 'muted', style: 'font-size:.9rem' },
+      t('Your last 25 login, password and email-change events.')),
+    list,
+  );
+  refresh();
+  return card;
+}
+
+// shortUA chops a User-Agent string to something glanceable. Full UA
+// is still in the audit details modal for global admins; in the
+// per-user list we just want "iPhone Safari" or similar.
+function shortUA(ua) {
+  if (!ua) return '';
+  // Quick OS/browser detection — good enough for an at-a-glance label.
+  let os = 'Other';
+  if (/Windows/.test(ua)) os = 'Windows';
+  else if (/Macintosh|Mac OS X/.test(ua)) os = 'macOS';
+  else if (/Android/.test(ua)) os = 'Android';
+  else if (/iPhone|iPad|iOS/.test(ua)) os = 'iOS';
+  else if (/Linux/.test(ua)) os = 'Linux';
+  let browser = 'Browser';
+  if (/Edg\//.test(ua)) browser = 'Edge';
+  else if (/Chrome\//.test(ua)) browser = 'Chrome';
+  else if (/Firefox\//.test(ua)) browser = 'Firefox';
+  else if (/Safari\//.test(ua) && !/Chrome/.test(ua)) browser = 'Safari';
+  return os + ' · ' + browser;
 }
 
 function renderSettingsIntegrationsCard() {
@@ -8103,12 +8570,42 @@ function renderSettingsEmailCard(me) {
   const cur = me.email || t('(none — admin-seeded account)');
   const status = h('p', { class: 'muted', style: 'font-size:.85rem' });
   const newEmail = h('input', { name: 'new_email', type: 'email', autocomplete: 'email', required: true });
+  // Revert banner: filled in by /api/admin/me/email/revert-status if a
+  // recent change is still revertable. Hidden by default so the card
+  // is identical for the common no-pending-revert case.
+  const revertBox = h('div', { hidden: '' });
+  (async () => {
+    const r = await api('/api/admin/me/email/revert-status');
+    if (!r.ok || !r.body?.available) return;
+    revertBox.replaceChildren(
+      h('div', { class: 'settings-callout-warn' },
+        h('div', {},
+          t('Recent change from {{prev}} → {{cur}}.', { prev: r.body.previous_email, cur: cur })),
+        h('div', { class: 'meta' },
+          t('You can revert until {{when}} if you typed the new address wrong.',
+            { when: formatAuditTS(r.body.expires_at) })),
+        h('div', { class: 'row end' },
+          h('button', { class: 'btn small', type: 'button',
+            on: { click: async () => {
+              if (!confirm(t('Revert your email back to {{prev}}?', { prev: r.body.previous_email }))) return;
+              const rr = await api('/api/admin/me/email/revert', { method: 'POST' });
+              if (rr.ok) {
+                toastOk(t('Email reverted to {{email}}.', { email: rr.body?.email || r.body.previous_email }));
+                await refreshMe(); render();
+              } else {
+                toastErr(rr.body?.error || t('error {{status}}', { status: rr.status }));
+              }
+            } } },
+            t('Revert email change'))));
+    revertBox.removeAttribute('hidden');
+  })();
   const form = h('form', { class: 'card settings-card' },
     h('h2', {}, t('Change email')),
     h('p', { class: 'muted', style: 'font-size:.9rem' },
       t('Current email: {{email}}', { email: cur })),
+    revertBox,
     h('p', { class: 'muted', style: 'font-size:.85rem' },
-      t('We send a confirmation link to the new address — your email only changes when you click it.')),
+      t('We send a confirmation link to the new address — your email only changes when you click it. After confirming you have a {{n}}-day window to revert if you typed it wrong.', { n: 7 })),
     h('label', { class: 'field' }, h('span', {}, t('New email')), newEmail),
     status,
     h('div', { class: 'row end' },
@@ -8258,7 +8755,7 @@ async function viewMembers(view) {
         icon(ICONS.plus), t('Add user'))),
     h('p', { class: 'muted' },
       t('Users in {{name}}. Admins can invite more users; members run the games.', { name: org.name })),
-    h('div', { class: 'card', style: 'background: var(--surface-2); padding: .85rem 1rem; margin-bottom: .9rem; font-size: .85rem' },
+    h('div', { class: 'card', style: 'background: var(--surface-2); padding: .85rem 1rem; margin-bottom: .9rem; font-size: var(--ts-sm)' },
       h('div', { style: 'margin-bottom:.35rem' },
         h('span', { class: 'pill' }, t('admin')), ' ',
         h('span', { class: 'muted' },

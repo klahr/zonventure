@@ -40,14 +40,26 @@ func (h *Handlers) ForgotPassword(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ip := ClientIP(r)
-	if ok, retry := h.Limiter.Allow(ip, email); !ok {
+	// We use a SEPARATE limiter from login (h.ForgotLimiter, falling
+	// back to h.Limiter when not wired). Sharing one bucket made the
+	// "I forgot my password and tried twice first" path catastrophic:
+	// the per-IP cap on the shared bucket would then block forgot too,
+	// stranding the user. The dedicated bucket still enforces a tight
+	// per-(ip, email) throttle and a per-IP cap on its own — an
+	// enumerator rotating addresses still hits a wall, just not one
+	// shared with the login surface.
+	limiter := h.ForgotLimiter
+	if limiter == nil {
+		limiter = h.Limiter
+	}
+	if ok, retry := limiter.Allow(ip, email); !ok {
 		writeRateLimited(w, retry)
 		return
 	}
-	// Feed the per-IP bucket regardless of whether the email exists —
-	// we don't want a positive lookup to "reset" the throttle and let
-	// an attacker keep probing.
-	defer h.Limiter.RecordFailure(ip, email)
+	// Feed the bucket regardless of whether the email exists — we don't
+	// want a positive lookup to "reset" the throttle and let an attacker
+	// keep probing.
+	defer limiter.RecordFailure(ip, email)
 
 	var userID int64
 	err := h.DB.QueryRowContext(r.Context(),
@@ -117,6 +129,7 @@ func (h *Handlers) ResetPassword(w http.ResponseWriter, r *http.Request) {
 		Event: EventSetPassword, OK: true, UserID: &u.ID, Username: u.Username,
 		IP: ClientIP(r), UserAgent: UserAgent(r), Reason: ReasonSuccess,
 	})
+	StampSessionMeta(r.Context(), h.DB, sessionTok, UserAgent(r), ClientIP(r))
 	SetCookie(w, sessionTok, CookieSecure(r, h.SecureCookie))
 	httpx.JSON(w, http.StatusOK, h.userResponse(u))
 }

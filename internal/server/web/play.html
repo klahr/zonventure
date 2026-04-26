@@ -28,7 +28,20 @@
     --muted:         #6b7f96;
     --shadow:        0 1px 4px #00000014, 0 2px 8px #00000012;
     --radius:        12px;
+    --radius-sm:     8px;
     --radius-pill:   32px;
+    --space-1: .25rem;
+    --space-2: .5rem;
+    --space-3: .75rem;
+    --space-4: 1rem;
+    --space-5: 1.25rem;
+    --space-6: 1.75rem;
+    --ts-xs: .75rem;
+    --ts-sm: .85rem;
+    --ts-md: 1rem;
+    --ts-lg: 1.15rem;
+    /* 44 px (CSS) tap target — Apple HIG / WCAG 2.5.5. */
+    --tap-target: 2.75rem;
     --font-body:     'Open Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
     --font-brand:    'Aclonica', 'Vollkorn', Georgia, serif;
   }
@@ -103,7 +116,7 @@
     padding: .25rem 0 .6rem;
     margin-bottom: .5rem;
     border-bottom: 1px solid var(--border-soft);
-    font-size: .85rem;
+    font-size: var(--ts-sm);
   }
   .runbar .title {
     font-family: var(--font-brand); color: var(--accent-secondary);
@@ -113,7 +126,7 @@
   .runbar .team { color: var(--ink); font-weight: 700; }
   .runbar .progress { color: var(--muted); font-variant-numeric: tabular-nums; }
   .runbar .status { margin-left: auto; }
-  h2 { font-size: .85rem; margin: 1.2rem 0 .4rem; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
+  h2 { font-size: var(--ts-sm); margin: 1.2rem 0 .4rem; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
   h3 { font-size: 1.05rem; margin: 0 0 .5rem; color: var(--accent-secondary); }
   input {
     font: inherit; width: 100%; padding: .75rem .9rem; margin-bottom: .8rem;
@@ -121,8 +134,18 @@
     border: 1px solid var(--border); border-radius: 8px;
   }
   input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent); }
+  /* Universal :focus-visible ring so keyboard users can always see
+     where focus is sitting. :focus-visible (not :focus) keeps the
+     ring off mouse clicks but on Tab traversal — best-of-both. */
+  :focus-visible {
+    outline: 3px solid color-mix(in srgb, var(--accent) 50%, transparent);
+    outline-offset: 2px;
+  }
   button {
     font: inherit; font-weight: 700; width: 100%;
+    /* Tap target ≥44 px; padding pushes the button height there
+       even when the text is short. */
+    min-height: var(--tap-target);
     padding: .75rem 1.2rem; cursor: pointer;
     background: var(--accent); color: var(--accent-fg);
     border: none; border-radius: var(--radius-pill);
@@ -201,7 +224,7 @@
     background: var(--surface); color: var(--muted);
     border: 1px solid var(--border);
     border-radius: 999px; box-shadow: none;
-    font-weight: 800; font-size: .85rem; line-height: 1;
+    font-weight: 800; font-size: var(--ts-sm); line-height: 1;
     cursor: pointer;
   }
   .runbar .hint-toggle:hover { color: var(--accent); border-color: var(--accent); }
@@ -325,7 +348,7 @@
     font-family: var(--font-brand); color: var(--accent);
     font-size: 1.8rem; line-height: 1.1; margin: 0 0 .25rem;
   }
-  .welcome .who { color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: .08em; font-size: .75rem; margin-bottom: 1rem; }
+  .welcome .who { color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: .08em; font-size: var(--ts-xs); margin-bottom: 1rem; }
   .welcome ul { padding-left: 1.1rem; margin: 1rem 0; }
   .welcome li { margin: .35rem 0; }
   .welcome .cta { margin-top: 1rem; }
@@ -386,7 +409,7 @@
     font-family: var(--font-brand); color: var(--accent);
     font-size: 1.6rem; line-height: 1.1; margin: 0 0 .25rem;
   }
-  .summary .who { color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: .08em; font-size: .75rem; margin-bottom: .9rem; }
+  .summary .who { color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: .08em; font-size: var(--ts-xs); margin-bottom: .9rem; }
   .stats-grid {
     display: grid; grid-template-columns: repeat(2, minmax(0,1fr));
     gap: .5rem;
@@ -399,7 +422,7 @@
     text-align: center;
   }
   .stat .v { font-family: var(--font-brand); color: var(--ink); font-size: 1.4rem; line-height: 1; }
-  .stat .l { color: var(--muted); font-size: .75rem; text-transform: uppercase; letter-spacing: .06em; font-weight: 700; margin-top: .25rem; }
+  .stat .l { color: var(--muted); font-size: var(--ts-xs); text-transform: uppercase; letter-spacing: .06em; font-weight: 700; margin-top: .25rem; }
 
   /* ---------- Puzzle-correct celebration ---------- */
   .celebrate {
@@ -619,7 +642,7 @@
     background: color-mix(in srgb, var(--accent) 18%, var(--surface));
     border: 1px solid var(--border-soft);
     border-radius: var(--radius);
-    font-size: .85rem;
+    font-size: var(--ts-sm);
   }
   .preview-chrome .sep { color: var(--muted); }
   .preview-chrome .chip {
@@ -694,10 +717,48 @@
     text-align: center;
   }
   .tab-conflict h3 { margin: 0 0 .5rem; }
+
+  /* Accessibility utilities (mirrored from arrange.html). */
+  .visually-hidden {
+    position: absolute !important;
+    width: 1px; height: 1px;
+    padding: 0; margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+  .skip-link {
+    position: fixed;
+    top: -40px; left: var(--space-2);
+    z-index: 10000;
+    padding: var(--space-2) var(--space-4);
+    background: var(--accent); color: var(--accent-fg);
+    border-radius: var(--radius-sm);
+    font-weight: 700; text-decoration: none;
+    transition: top 120ms ease;
+    min-height: 0;
+    width: auto;
+    box-shadow: var(--shadow);
+  }
+  .skip-link:focus, .skip-link:focus-visible { top: var(--space-2); }
+
+  /* GPS recovery surface inside the gated submit dock: short copy on
+     why GPS isn't working + a Retry button. Hidden until the
+     watchPosition error callback supplies a message; renderGpsHelp()
+     paints it in place so the dock can grow without forcing a full
+     re-render. */
+  .gps-help { padding: 0 .25rem; }
+  .gps-help p {
+    color: var(--muted); font-size: var(--ts-sm);
+    margin: .4rem 0; line-height: 1.45;
+  }
+  .gps-help button.secondary { margin-top: .15rem; }
 </style>
 </head>
 <body>
-<div id="app" data-initial-loading>loading…</div>
+<a class="skip-link" href="#app">Skip to main content</a>
+<main id="app" data-initial-loading tabindex="-1" aria-label="Player view">loading…</main>
 
 <script>
 const app = document.getElementById('app');
@@ -1265,8 +1326,6 @@ function renderGpsHelp() {
   retry.textContent = t('Retry GPS');
   retry.addEventListener('click', retryGPS);
   const help = document.createElement('p');
-  help.className = 'muted';
-  help.style.cssText = 'font-size:.85rem; margin:.4rem 0';
   help.textContent = hint;
   currentGpsHelpEl.append(help, retry);
 }

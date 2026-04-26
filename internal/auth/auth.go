@@ -177,17 +177,44 @@ func SetInitialPassword(ctx context.Context, db *sql.DB, username, password stri
 // newSession mints a random token, persists it against the user, and
 // returns it.
 func newSession(ctx context.Context, db *sql.DB, userID int64) (string, error) {
+	return newSessionWithMeta(ctx, db, userID, "", "")
+}
+
+// newSessionWithMeta is the metadata-aware variant. UA + IP are stored
+// alongside the session so the user can distinguish "Phone Safari from
+// 192.0.2.5" from "Laptop Firefox from a different network" in the
+// settings list. Empty strings are tolerated; older callers that don't
+// know the request context end up with NULL columns.
+func newSessionWithMeta(ctx context.Context, db *sql.DB, userID int64, ua, ip string) (string, error) {
 	token, err := newToken()
 	if err != nil {
 		return "", err
 	}
+	now := time.Now().UTC().Format(time.RFC3339)
 	expires := time.Now().Add(SessionTTL).UTC().Format(time.RFC3339)
 	if _, err := db.ExecContext(ctx, `
-		INSERT INTO sessions(token, user_id, expires_at) VALUES ($1, $2, $3)
-	`, token, userID, expires); err != nil {
+		INSERT INTO sessions(token, user_id, expires_at, user_agent, ip, last_used_at)
+		VALUES ($1, $2, $3, NULLIF($4,''), NULLIF($5,''), $6)
+	`, token, userID, expires, ua, ip, now); err != nil {
 		return "", err
 	}
 	return token, nil
+}
+
+// StampSessionMeta best-effort writes UA + IP onto an existing
+// session row. Used right after Login / SetInitialPassword / signup
+// to backfill the request-context metadata that the lower-level
+// session creator can't see. Errors are swallowed — these columns
+// are surface state, not auth-critical.
+func StampSessionMeta(ctx context.Context, db *sql.DB, token, ua, ip string) {
+	if token == "" {
+		return
+	}
+	_, _ = db.ExecContext(ctx, `
+		UPDATE sessions
+		   SET user_agent = NULLIF($1,''), ip = NULLIF($2,'')
+		 WHERE token = $3
+	`, ua, ip, token)
 }
 
 // Logout deletes the session row for the given token. A missing token is

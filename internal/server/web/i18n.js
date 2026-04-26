@@ -1385,6 +1385,68 @@
           'Kan inte ta bort: {{n}} event pågår just nu. Stoppa dem först.',
       'You are about to delete: {{members}} user(s), {{assignments}} assignment(s), {{players}} player(s), {{events}} event(s). Cascades immediately and cannot be undone.':
           'Du håller på att ta bort: {{members}} användare, {{assignments}} uppdrag, {{players}} spelare, {{events}} event. Sker direkt och kan inte ångras.',
+      // ---- Round 3: lockout / sessions / audit / revert / TV / authoring ----
+      'Too many failed attempts. Try again in {{n}}s.':
+          'För många misslyckade försök. Prova igen om {{n}} s.',
+      'You can try again now.': 'Du kan prova igen nu.',
+      'Discard this adventure?': 'Kasta detta äventyr?',
+      'Discard unsaved changes to this adventure?':
+          'Kasta osparade ändringar i detta äventyr?',
+      'Looks good.': 'Ser bra ut.',
+      'Lowercase a–z, digits, and hyphens only.':
+          'Endast små bokstäver a–z, siffror och bindestreck.',
+      'This image is embedded in the puzzle prompt. Deleting will leave a broken image where it appears. Continue?':
+          'Bilden är inbäddad i pusseltexten. Tas den bort blir det en trasig bild där den används. Fortsätt?',
+      '1 event is running this adventure right now. Saving will change what those players see — typo fixes are safe; logic changes can confuse them mid-puzzle. Continue?':
+          '1 event kör det här äventyret just nu. När du sparar ändras vad de spelarna ser — stavfel är ofarliga, logikändringar kan förvirra dem mitt i pusslet. Fortsätt?',
+      '{{n}} events are running this adventure right now. Saving will change what those players see — typo fixes are safe; logic changes can confuse them mid-puzzle. Continue?':
+          '{{n}} event kör det här äventyret just nu. När du sparar ändras vad de spelarna ser — stavfel är ofarliga, logikändringar kan förvirra dem mitt i pusslet. Fortsätt?',
+      'Active sessions': 'Aktiva sessioner',
+      "Every device you're signed into. If something looks unfamiliar, sign that session out.":
+          'Alla enheter du är inloggad på. Logga ut sessionen om något ser obekant ut.',
+      'No active sessions.': 'Inga aktiva sessioner.',
+      'this device': 'den här enheten',
+      'Unknown device': 'Okänd enhet',
+      'Created {{when}}': 'Skapad {{when}}',
+      'expires {{when}}': 'går ut {{when}}',
+      'from {{ip}}': 'från {{ip}}',
+      'Session signed out': 'Sessionen utloggad',
+      'Sign out everywhere else': 'Logga ut överallt annars',
+      "Sign out of every other browser, phone, and tablet? You'll stay signed in here.":
+          'Logga ut från alla andra webbläsare, telefoner och surfplattor? Du förblir inloggad här.',
+      'Other sessions signed out': 'Andra sessioner utloggade',
+      'Recent security activity': 'Senaste säkerhetsaktivitet',
+      'Your last 25 login, password and email-change events.':
+          'Dina senaste 25 inloggnings-, lösenords- och e-poständringshändelser.',
+      'No recent activity.': 'Ingen aktivitet nyligen.',
+      'Recent change from {{prev}} → {{cur}}.':
+          'Nyligen ändrad från {{prev}} → {{cur}}.',
+      'You can revert until {{when}} if you typed the new address wrong.':
+          'Du kan ångra fram till {{when}} om du skrev fel adress.',
+      'Revert email change': 'Ångra e-poständring',
+      'Revert your email back to {{prev}}?':
+          'Återställ din e-post till {{prev}}?',
+      'Email reverted to {{email}}.': 'E-post återställd till {{email}}.',
+      'We send a confirmation link to the new address — your email only changes when you click it. After confirming you have a {{n}}-day window to revert if you typed it wrong.':
+          'Vi skickar en bekräftelselänk till den nya adressen — e-posten ändras först när du klickar. Efter bekräftelse har du {{n}} dagars ångerfönster om du skrev fel.',
+      'Event complete': 'Eventet är klart',
+      'Event complete · press B to show the leaderboard again · ':
+          'Eventet klart · tryck B för att visa topplistan igen · ',
+      'Thanks for watching.': 'Tack för att du tittade.',
+      'crossed the line in {{time}}': 'gick i mål på {{time}}',
+      'finished first': 'kom först i mål',
+      'no winner recorded': 'ingen vinnare registrerad',
+      '1 other team played.': '1 annat lag spelade.',
+      '{{n}} other teams played.': '{{n}} andra lag spelade.',
+      'Ready': 'Redo',
+      "waiting on the arranger's signal": 'väntar på arrangörens startsignal',
+      '1 team ready': '1 lag redo',
+      '{{n}} teams ready': '{{n}} lag redo',
+      // ---- Round 4: a11y / standardization ----
+      'Skip to main content': 'Hoppa till huvudinnehåll',
+      'Open navigation menu': 'Öppna navigeringsmenyn',
+      'Primary': 'Huvudnavigering',
+      'Sidebar': 'Sidopanel',
     },
   };
 

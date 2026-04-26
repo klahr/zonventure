@@ -112,3 +112,47 @@ func (h *Handlers) ListAuthEvents(w http.ResponseWriter, r *http.Request) {
 	}
 	httpx.JSON(w, http.StatusOK, map[string]any{"events": out})
 }
+
+// ListMyAuthEvents returns just the caller's own auth_events. Plain
+// users (org_member, not just admins) get to see when their account
+// was logged into, password changed, email changed — basic security
+// transparency that doesn't require a global Audit gate. No
+// pagination; cap at the most recent 25 events to keep the settings
+// card glanceable.
+func (h *Handlers) ListMyAuthEvents(w http.ResponseWriter, r *http.Request) {
+	me, _ := auth.FromContext(r.Context())
+	rows, err := h.DB.QueryContext(r.Context(), `
+		SELECT id, ts, event, ok, user_id,
+		       COALESCE(username,''), COALESCE(ip,''),
+		       COALESCE(user_agent,''), COALESCE(reason,'')
+		FROM auth_events
+		WHERE user_id = $1
+		ORDER BY id DESC
+		LIMIT 25
+	`, me.ID)
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "list failed")
+		return
+	}
+	defer rows.Close()
+	out := []auditEventDTO{}
+	for rows.Next() {
+		var (
+			e      auditEventDTO
+			userID sql.NullInt64
+			ok     int
+		)
+		if err := rows.Scan(&e.ID, &e.TS, &e.Event, &ok, &userID,
+			&e.Username, &e.IP, &e.UserAgent, &e.Reason); err != nil {
+			httpx.Error(w, http.StatusInternalServerError, "scan failed")
+			return
+		}
+		e.OK = ok != 0
+		if userID.Valid {
+			v := userID.Int64
+			e.UserID = &v
+		}
+		out = append(out, e)
+	}
+	httpx.JSON(w, http.StatusOK, map[string]any{"events": out})
+}

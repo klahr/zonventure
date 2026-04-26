@@ -1,16 +1,22 @@
 package admin
 
 import (
+	"context"
+	"crypto/sha256"
+	"database/sql"
+	"encoding/hex"
 	"errors"
 	"net/http"
 	"net/mail"
 	"net/url"
 	"strings"
+	"time"
 
 	"git.sr.ht/~klahr/zv/internal/auth"
 	"git.sr.ht/~klahr/zv/internal/httpx"
 	"git.sr.ht/~klahr/zv/internal/logx"
 	"git.sr.ht/~klahr/zv/internal/mailer"
+	"github.com/go-chi/chi/v5"
 )
 
 // Account-settings handlers. These all live on /api/admin/me/* and
@@ -225,6 +231,229 @@ func (h *Handlers) DeleteMyAccount(w http.ResponseWriter, r *http.Request) {
 	// "not logged in" anyway.
 	auth.ClearCookie(w, auth.CookieSecure(r, h.SecureCookie))
 	httpx.JSON(w, http.StatusNoContent, nil)
+}
+
+// sessionDTO mirrors a row in the sessions table for the settings UI.
+// We never return the raw token — exposing it to JS would let any XSS
+// pivot into a takeover. Instead, an opaque short ID derived from a
+// hash of the token is the public handle, and revocation looks the
+// matching token up server-side. Cheap because there's at most ~10
+// active sessions per user in practice.
+type sessionDTO struct {
+	ID         string `json:"id"`
+	CreatedAt  string `json:"created_at"`
+	ExpiresAt  string `json:"expires_at"`
+	UserAgent  string `json:"user_agent,omitempty"`
+	IP         string `json:"ip,omitempty"`
+	LastUsedAt string `json:"last_used_at,omitempty"`
+	Current    bool   `json:"current"`
+}
+
+func sessionShortID(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(sum[:8])
+}
+
+// ListMySessions returns every active session for the calling user.
+func (h *Handlers) ListMySessions(w http.ResponseWriter, r *http.Request) {
+	me, _ := auth.FromContext(r.Context())
+	curTok := ""
+	if c, err := r.Cookie(auth.CookieName); err == nil {
+		curTok = c.Value
+	}
+	rows, err := h.DB.QueryContext(r.Context(), `
+		SELECT token, created_at, expires_at,
+		       COALESCE(user_agent,''), COALESCE(ip,''), COALESCE(last_used_at,'')
+		FROM sessions
+		WHERE user_id = $1
+		ORDER BY created_at DESC
+	`, me.ID)
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "list failed")
+		return
+	}
+	defer rows.Close()
+	out := []sessionDTO{}
+	for rows.Next() {
+		var (
+			tok string
+			s   sessionDTO
+		)
+		if err := rows.Scan(&tok, &s.CreatedAt, &s.ExpiresAt, &s.UserAgent, &s.IP, &s.LastUsedAt); err != nil {
+			httpx.Error(w, http.StatusInternalServerError, "scan failed")
+			return
+		}
+		s.ID = sessionShortID(tok)
+		s.Current = tok != "" && tok == curTok
+		out = append(out, s)
+	}
+	httpx.JSON(w, http.StatusOK, map[string]any{"sessions": out})
+}
+
+// RevokeMySession deletes a single session by its opaque short ID.
+// Always 204 on success; 404 if no session of the caller's matches the
+// supplied id (so an attacker probing IDs gets nothing useful).
+func (h *Handlers) RevokeMySession(w http.ResponseWriter, r *http.Request) {
+	me, _ := auth.FromContext(r.Context())
+	target := chi.URLParam(r, "token")
+	if target == "" {
+		httpx.Error(w, http.StatusBadRequest, "bad id")
+		return
+	}
+	rows, err := h.DB.QueryContext(r.Context(),
+		`SELECT token FROM sessions WHERE user_id = $1`, me.ID)
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "lookup failed")
+		return
+	}
+	defer rows.Close()
+	var match sql.NullString
+	for rows.Next() {
+		var t string
+		if err := rows.Scan(&t); err != nil {
+			httpx.Error(w, http.StatusInternalServerError, "scan failed")
+			return
+		}
+		if sessionShortID(t) == target {
+			match.String = t
+			match.Valid = true
+			break
+		}
+	}
+	if !match.Valid {
+		httpx.Error(w, http.StatusNotFound, "session not found")
+		return
+	}
+	if _, err := h.DB.ExecContext(r.Context(),
+		`DELETE FROM sessions WHERE token = $1`, match.String); err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "delete failed")
+		return
+	}
+	httpx.JSON(w, http.StatusNoContent, nil)
+}
+
+// RevokeMyOtherSessions deletes every session for the caller except
+// the one carried by the current request. The "log out everywhere
+// else" button.
+func (h *Handlers) RevokeMyOtherSessions(w http.ResponseWriter, r *http.Request) {
+	me, _ := auth.FromContext(r.Context())
+	curTok := ""
+	if c, err := r.Cookie(auth.CookieName); err == nil {
+		curTok = c.Value
+	}
+	if curTok == "" {
+		// Without a current cookie we'd nuke everything, including the
+		// session that's making this request. Refuse.
+		httpx.Error(w, http.StatusBadRequest, "no current session")
+		return
+	}
+	if _, err := h.DB.ExecContext(r.Context(),
+		`DELETE FROM sessions WHERE user_id = $1 AND token <> $2`, me.ID, curTok); err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "delete failed")
+		return
+	}
+	httpx.JSON(w, http.StatusNoContent, nil)
+}
+
+// EmailRevertWindow is how long after a confirmed email change the
+// user can still revert it from settings. Long enough to cover the
+// "I typo'd the new address and didn't notice for a couple of days"
+// case; short enough that a stolen-then-recovered account doesn't
+// give the attacker an open undo window.
+const emailRevertWindowDays = 7
+
+// emailChangeRevertStatus tells the settings UI whether a recent
+// email change is still revertable, what the previous address was,
+// and when the window expires.
+type emailChangeRevertStatus struct {
+	Available     bool   `json:"available"`
+	PreviousEmail string `json:"previous_email,omitempty"`
+	ExpiresAt     string `json:"expires_at,omitempty"`
+}
+
+// MyEmailChangeStatus returns the revertability of the most recent
+// email change for the calling user.
+func (h *Handlers) MyEmailChangeStatus(w http.ResponseWriter, r *http.Request) {
+	me, _ := auth.FromContext(r.Context())
+	prev, setAt, ok := loadPreviousEmail(r.Context(), h.DB, me.ID)
+	if !ok {
+		httpx.JSON(w, http.StatusOK, emailChangeRevertStatus{Available: false})
+		return
+	}
+	expiresAt := setAt.Add(time.Duration(emailRevertWindowDays) * 24 * time.Hour)
+	if time.Now().After(expiresAt) {
+		// Window expired — clear it lazily so the next read is fast.
+		_, _ = h.DB.ExecContext(r.Context(),
+			`UPDATE users SET previous_email = NULL, previous_email_set_at = NULL WHERE id = $1`, me.ID)
+		httpx.JSON(w, http.StatusOK, emailChangeRevertStatus{Available: false})
+		return
+	}
+	httpx.JSON(w, http.StatusOK, emailChangeRevertStatus{
+		Available:     true,
+		PreviousEmail: prev,
+		ExpiresAt:     expiresAt.UTC().Format(time.RFC3339),
+	})
+}
+
+// RevertMyEmailChange flips the email back to the stored previous
+// value if the grace window hasn't expired. Refuses if the previous
+// email is now in use by another account (rare, but possible if
+// someone else signed up with that address in the meantime).
+func (h *Handlers) RevertMyEmailChange(w http.ResponseWriter, r *http.Request) {
+	me, _ := auth.FromContext(r.Context())
+	prev, setAt, ok := loadPreviousEmail(r.Context(), h.DB, me.ID)
+	if !ok {
+		httpx.Error(w, http.StatusNotFound, "no recent email change to revert")
+		return
+	}
+	expiresAt := setAt.Add(time.Duration(emailRevertWindowDays) * 24 * time.Hour)
+	if time.Now().After(expiresAt) {
+		httpx.Error(w, http.StatusGone, "revert window has closed")
+		return
+	}
+	// Refuse if the previous address is no longer free — better to
+	// surface a clear error than leave the user with a half-broken
+	// state.
+	var n int
+	if err := h.DB.QueryRowContext(r.Context(),
+		`SELECT COUNT(*) FROM users WHERE email = $1 AND id <> $2`, prev, me.ID).Scan(&n); err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "lookup failed")
+		return
+	}
+	if n > 0 {
+		httpx.Error(w, http.StatusConflict, "previous email is taken — contact support")
+		return
+	}
+	if _, err := h.DB.ExecContext(r.Context(), `
+		UPDATE users SET
+		  email                 = previous_email,
+		  username              = previous_email,
+		  previous_email        = NULL,
+		  previous_email_set_at = NULL
+		WHERE id = $1
+	`, me.ID); err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "revert failed")
+		return
+	}
+	logx.Info("admin.me.email.reverted", "user_id", me.ID, "to", prev)
+	httpx.JSON(w, http.StatusOK, map[string]string{"email": prev})
+}
+
+func loadPreviousEmail(ctx context.Context, db *sql.DB, userID int64) (string, time.Time, bool) {
+	var (
+		prev  sql.NullString
+		setAt sql.NullString
+	)
+	err := db.QueryRowContext(ctx,
+		`SELECT previous_email, previous_email_set_at FROM users WHERE id = $1`, userID).Scan(&prev, &setAt)
+	if err != nil || !prev.Valid || !setAt.Valid {
+		return "", time.Time{}, false
+	}
+	t, err := time.Parse(time.RFC3339, setAt.String)
+	if err != nil {
+		return "", time.Time{}, false
+	}
+	return prev.String, t, true
 }
 
 // ConfirmEmailChange consumes a change_email token. Public route

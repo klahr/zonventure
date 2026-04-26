@@ -81,6 +81,11 @@ type adventureEditDTO struct {
 	Published            bool        `json:"published"`
 	Shares               []shareView `json:"shares"`
 	Pages                []pageView  `json:"pages"`
+	// RunningEventCount lets the editor warn the author before saving
+	// edits that will land on teams currently mid-event. Counts both
+	// scheduled (about to start) and running events using this slug —
+	// either is "live enough" that a content swap is risky.
+	RunningEventCount int `json:"running_event_count"`
 }
 
 // shareView is one row from adventure_shares expanded with the org name,
@@ -930,6 +935,15 @@ func loadAdventureDTO(ctx context.Context, db *sql.DB, slug string) (*adventureE
 		return nil, err
 	}
 	a.Shares = shares
+	// Count events currently running with this adventure. We treat
+	// 'running' as "any change to a puzzle ships immediately to a real
+	// team" — that's the case worth warning about. Scheduled events
+	// haven't pushed state yet, so we leave them out.
+	if err := db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM events WHERE adventure_slug = $1 AND state = 'running'
+	`, a.Slug).Scan(&a.RunningEventCount); err != nil {
+		return nil, err
+	}
 	return &a, nil
 }
 

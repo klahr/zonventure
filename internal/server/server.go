@@ -76,13 +76,14 @@ func New(cfg Config) http.Handler {
 	}
 
 	authH := &auth.Handlers{
-		DB:           cfg.DB,
-		SecureCookie: cfg.SecureCookie,
-		Features:     auth.Features{SimulatorEnabled: cfg.SimulatorEnabled},
-		Pricing:      auth.Pricing{SlotCents: admin.PricePerSlotCents, Currency: "USD"},
-		Limiter:      auth.NewLoginLimiter(),
-		Mailer:       cfg.Mailer,
-		PublicURL:    cfg.PublicURL,
+		DB:            cfg.DB,
+		SecureCookie:  cfg.SecureCookie,
+		Features:      auth.Features{SimulatorEnabled: cfg.SimulatorEnabled},
+		Pricing:       auth.Pricing{SlotCents: admin.PricePerSlotCents, Currency: "USD"},
+		Limiter:       auth.NewLoginLimiter(),
+		ForgotLimiter: auth.NewLoginLimiter(),
+		Mailer:        cfg.Mailer,
+		PublicURL:     cfg.PublicURL,
 	}
 	playerH := &player.Handlers{DB: cfg.DB, Lib: cfg.Library, Hub: hub, SecureCookie: cfg.SecureCookie}
 	// Simulator instance always exists (package isn't huge, avoids
@@ -162,7 +163,6 @@ func New(cfg Config) http.Handler {
 		servePage("web/play.html")(w, req)
 	})
 	r.Get("/arrange", servePage("web/arrange.html"))
-	r.Get("/live/{token}", servePage("web/live.html"))
 
 	// Shared i18n dictionary + helpers, loaded by all three entry points.
 	r.Get("/i18n.js", serveAsset("web/i18n.js", "application/javascript; charset=utf-8"))
@@ -172,20 +172,25 @@ func New(cfg Config) http.Handler {
 	r.Get("/favicon.svg", serveAsset("web/favicon.svg", "image/svg+xml"))
 	r.Get("/favicon.ico", serveAsset("web/favicon.svg", "image/svg+xml"))
 
-	// Public, no-auth read-only endpoints for the TV leaderboard. Keyed
-	// by an opaque token per run so the URL isn't guessable.
-	r.Get("/api/public/live/{token}", publicH.Live)
-	r.Get("/api/public/live/{token}/tracks", publicH.Tracks)
-	r.Get("/ws/live/{token}", publicH.WSLive)
-
-	// Per-team share page — the arranger sends a single /team/{token}
-	// URL to the captain; each member picks their own slot from there.
-	r.Get("/team/{token}", publicH.TeamShare)
-	// Team-token-authed avatar upload/delete so the team can change
-	// their own profile picture from the share page. The token IS the
-	// auth; no staff session required.
-	r.Post("/api/public/team/{token}/avatar", publicH.SetTeamAvatarByToken)
-	r.Delete("/api/public/team/{token}/avatar", publicH.DeleteTeamAvatarByToken)
+	// Public, no-auth read-only endpoints. Tokens are unguessable but
+	// the routes still hit the database; rate-limit per IP so a script
+	// can't brute-force or DoS them. Caps generously so a real viewer
+	// (with reconnect storms, tab refreshes, etc.) never trips it.
+	publicRL := newPublicLimiter()
+	r.Group(func(r chi.Router) {
+		r.Use(publicRLMiddleware(publicRL))
+		r.Get("/live/{token}", servePage("web/live.html"))
+		r.Get("/api/public/live/{token}", publicH.Live)
+		r.Get("/api/public/live/{token}/tracks", publicH.Tracks)
+		r.Get("/ws/live/{token}", publicH.WSLive)
+		r.Get("/team/{token}", publicH.TeamShare)
+		r.Get("/qr/team/{token}", publicH.TeamShareQR)
+		// Team-token-authed avatar upload/delete so the team can change
+		// their own profile picture from the share page. The token IS the
+		// auth; no staff session required.
+		r.Post("/api/public/team/{token}/avatar", publicH.SetTeamAvatarByToken)
+		r.Delete("/api/public/team/{token}/avatar", publicH.DeleteTeamAvatarByToken)
+	})
 
 	// Image serving: permission is decided inside the handler (staff
 	// sessions always pass; slot sessions only when they're on the page).
@@ -396,10 +401,22 @@ func New(cfg Config) http.Handler {
 		// gate beyond the surrounding RequireAnyRole.
 		r.Post("/me/password", adminH.ChangeMyPassword)
 		r.Post("/me/email", adminH.ChangeMyEmail)
+		// Revertable email change: ConfirmEmailChange stashes the old
+		// address; this endpoint reads the status and reverts within
+		// the grace window.
+		r.Get("/me/email/revert-status", adminH.MyEmailChangeStatus)
+		r.Post("/me/email/revert", adminH.RevertMyEmailChange)
 		r.Delete("/me", adminH.DeleteMyAccount)
 		// GDPR data export — JSON dump of personal + (when scoped)
 		// org data, served as a downloadable file.
 		r.Get("/me/export", adminH.ExportMyData)
+		// Self audit feed — every logged-in user can see their own
+		// recent login / password / email events for transparency.
+		r.Get("/me/audit", adminH.ListMyAuthEvents)
+		// Active sessions: list + per-token revoke + log-out-everywhere.
+		r.Get("/me/sessions", adminH.ListMySessions)
+		r.Delete("/me/sessions/{token}", adminH.RevokeMySession)
+		r.Delete("/me/sessions", adminH.RevokeMyOtherSessions)
 
 		// Outbound webhooks: per-org subscription CRUD. Org-scoped
 		// (handlers reject admins without an org). The kinds catalog

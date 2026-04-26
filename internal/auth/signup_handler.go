@@ -93,6 +93,7 @@ func (h *Handlers) Signup(w http.ResponseWriter, r *http.Request) {
 		logx.Warn("auth.signup.mail_failed", "user_id", res.User.ID, "err", err.Error())
 	}
 
+	StampSessionMeta(r.Context(), h.DB, res.SessionToken, UserAgent(r), ip)
 	SetCookie(w, res.SessionToken, CookieSecure(r, h.SecureCookie))
 	httpx.JSON(w, http.StatusCreated, h.userResponse(res.User))
 }
