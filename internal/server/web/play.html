@@ -1226,11 +1226,13 @@ function renderNoSession(opts) {
   lastRenderKey = null;
   hideSubmitDock();
   // Lightweight runbar so the language picker / privacy / terms links
-  // stay one tap away even before a magic link exchange. Empty
-  // progress (no event yet) lets the menu button align right.
+  // stay one tap away even before a magic link exchange. Same
+  // [☰] [progress] [actions] order as the playing-state runbar so
+  // the hamburger doesn't jump positions between views.
   const bar = el('div', { class: 'runbar' },
+    buildMenuButton(null),
     el('span', { class: 'progress empty' }, ''),
-    el('div', { class: 'actions' }, buildMenuButton(null)));
+    el('div', { class: 'actions' }));
   // Two distinct screens — the "expired" path is reached when a slot
   // session that *was* active (we received at least one state push) is
   // closed by the server, almost always because the slot's expiry
@@ -1449,17 +1451,27 @@ function render(s) {
   app.replaceChildren();
   const playing = s.status === 'running';
   const hintBtn = playing ? renderHintButton(s) : null;
-  // Compact runbar: progress on the left, hint + hamburger on the
-  // right. State pill removed (the main content already conveys
-  // state — waiting card, paused paragraph, completion summary).
-  // Title + team moved into the hamburger drawer.
-  const progress = playing
-    ? el('span', { class: 'progress' }, t('Puzzle {{i}}/{{n}}', { i: s.page_index + 1, n: s.page_count }))
+  // Runbar layout: [☰] [progress] [hint?]. Hamburger on the left
+  // (matches GitHub / Slack mobile patterns); progress in the
+  // middle via flex space-between distribution; hint on the right.
+  // The state pill was removed earlier — main content already
+  // conveys state (waiting card / paused paragraph / completion
+  // summary). Title + team moved into the hamburger drawer.
+  //
+  // Progress guard: page_index / page_count can briefly arrive as
+  // null/undefined during a fresh state push (the server rebuilds
+  // the snapshot after a puzzle reorder, and the field arrives a
+  // tick later than `status: running`). Without this guard the
+  // template substituted "NaN/2" for the missing index.
+  const idx = Number.isFinite(s.page_index) ? s.page_index : null;
+  const total = Number.isFinite(s.page_count) ? s.page_count : null;
+  const showProgress = playing && idx !== null && total !== null && total > 0;
+  const progress = showProgress
+    ? el('span', { class: 'progress' }, t('Puzzle {{i}}/{{n}}', { i: idx + 1, n: total }))
     : el('span', { class: 'progress empty' }, '');
   const actions = el('div', { class: 'actions' });
   if (hintBtn) actions.append(hintBtn);
-  actions.append(buildMenuButton(s));
-  const bar = el('div', { class: 'runbar' }, progress, actions);
+  const bar = el('div', { class: 'runbar' }, buildMenuButton(s), progress, actions);
   app.append(bar);
 
   // Welcome screen shown once per (adventure, team, slot).
