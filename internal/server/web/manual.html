@@ -53,6 +53,9 @@
      same as landing.html / pricing.html. -->
 <link rel="stylesheet" href="/assets/topbar.css">
 <script defer src="/assets/topbar.js"></script>
+<!-- Apply persisted theme synchronously to dodge a light-on-load
+     flash for saved-dark visitors. -->
+<script>try{var t=localStorage.getItem('zv-theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t);}catch(e){}</script>
 <style>
   :root {
     color-scheme: light dark;
@@ -65,8 +68,17 @@
     --border: #c6d2e1;
     --border-soft: #e2e7ef;
   }
+  /* Dark tokens. data-theme="dark" wins (set by topbar toggle +
+     persisted in localStorage); system preference applies only when
+     no explicit choice has been made. */
+  [data-theme="dark"] {
+    --ink: #e7ecf4; --muted: #9db1cc;
+    --bg: #14202e; --surface: #1f3349; --surface-2: #263d56;
+    --border: #3a5172; --border-soft: #2c4361;
+    --accent: #e24080;
+  }
   @media (prefers-color-scheme: dark) {
-    :root {
+    :root:not([data-theme]) {
       --ink: #e7ecf4; --muted: #9db1cc;
       --bg: #14202e; --surface: #1f3349; --surface-2: #263d56;
       --border: #3a5172; --border-soft: #2c4361;

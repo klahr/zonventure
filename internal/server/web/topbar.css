@@ -183,6 +183,26 @@ body.has-hero { padding-top: 0; }
 }
 .lang-picker .flag { font-size: 1rem; line-height: 1; }
 
+/* Theme toggle — tiny round-square button placed by topbar.js right
+ * after the language picker. Three-state cycle (light / dark / auto)
+ * managed via the same `zv-theme` localStorage key the in-app pages
+ * read, so a visitor's choice survives navigating between marketing
+ * pages and the app. */
+.theme-toggle {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 2rem; height: 2rem;
+  margin-left: .25rem;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255,255,255,.12);
+  color: rgba(255,255,255,.85);
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+.theme-toggle:hover { background: rgba(255,255,255,.2); color: #fff; }
+.theme-toggle svg { width: 1.05rem; height: 1.05rem; }
+
 /* Narrow-screen rules: hamburger replaces the inline links, lang
  * picker shrinks to flag-only. 45rem (720px) breakpoint covers
  * iPhone 12 (390px) through iPad mini (744px) widths.

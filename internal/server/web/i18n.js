@@ -902,6 +902,13 @@
       'More': 'Mer',
       'Sign out': 'Logga ut',
       'Forget me on this event': 'Glöm mig från denna körning',
+      'Erase my play data': 'Radera mina speldata',
+      'Theme': 'Tema',
+      'Light': 'Ljust',
+      'Dark': 'Mörkt',
+      'Auto': 'Auto',
+      'Permanently deletes your location pings and answer attempts from this event and revokes your link. Use at end of event or for privacy reasons.':
+        'Raderar permanent dina positioner och svarsförsök från denna körning och spärrar din länk. Använd efter eventet eller av integritetsskäl.',
       'Menu': 'Meny',
       'Account': 'Konto',
       'Forget me?': 'Glöm mig?',
