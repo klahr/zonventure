@@ -1,4 +1,4 @@
-# zv — Zonventure
+# Zonventure
 
 **Adventures your players will remember.** Treasure hunts, team-builds,
 school field trips, city walks: you author the puzzles, schedule an
@@ -6,6 +6,9 @@ event, and watch your players walk and solve from any phone.
 
 A single Go binary plus Postgres. Self-host it for free, or use the
 hosted product at the price of a coffee per team.
+
+> The repository, Go module, and CLI binary are named `zv`. The
+> product is **Zonventure**.
 
 ---
 
@@ -83,15 +86,15 @@ production-readiness scorecard.
 
 ## Licence
 
-zv is licensed under the **GNU Affero General Public License v3.0 or
-later** (`SPDX-License-Identifier: AGPL-3.0-or-later`). See
+Zonventure is licensed under the **GNU Affero General Public License
+v3.0 or later** (`SPDX-License-Identifier: AGPL-3.0-or-later`). See
 [`LICENSE`](LICENSE) for the full text.
 
 Copyright © 2026 Zonventure AB.
 
 The AGPL is a copyleft licence: you can self-host, modify, and
-redistribute zv freely, but if you run a modified version as a
-network-accessible service, you must offer your users the
+redistribute Zonventure freely, but if you run a modified version as
+a network-accessible service, you must offer your users the
 corresponding source. The hosted product at zonventure.com runs the
 same code in this repository.
 

@@ -1,8 +1,8 @@
 # Operations runbook
 
-Day-2 ops for `zv`. Self-host friendly: every recipe assumes a vanilla
-Postgres 14+ install and the `psql` / `pg_dump` client tools. No
-managed-snapshot dependency.
+Day-2 ops for Zonventure. Self-host friendly: every recipe assumes a
+vanilla Postgres 14+ install and the `psql` / `pg_dump` client tools.
+No managed-snapshot dependency.
 
 ## Backups
 

@@ -7506,7 +7506,7 @@ function viewManual(view, anchor) {
 
     /* ---- 1. Welcome ---- */
     sec('welcome', t('Welcome'),
-      p(t('Zonventure ("zv") is a platform for running location-based adventure games — treasure hunts, team-building events, school field trips. As an arranger you author the puzzles, set up an event, and the players walk around with their phones answering them.')),
+      p(t('Zonventure is a platform for running location-based adventure games — treasure hunts, team-building events, school field trips. As an arranger you author the puzzles, set up an event, and the players walk around with their phones answering them.')),
       h('h3', {}, t('Four words to know')),
       ul(
         h('span', {}, h('strong', {}, t('Adventure')),
@@ -8526,7 +8526,7 @@ function renderSettingsExportCard() {
       const blob = await res.blob();
       const cd = res.headers.get('Content-Disposition') || '';
       const m = cd.match(/filename="([^"]+)"/);
-      const name = m ? m[1] : 'zv-export.json';
+      const name = m ? m[1] : 'zonventure-export.json';
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url; a.download = name;
@@ -8607,7 +8607,7 @@ function renderSettingsEmailCard(me) {
                 toastErr(rr.body?.error || t('error {{status}}', { status: rr.status }));
               }
             } } },
-            t('Revert email change'))));
+            t('Revert email change')))));
     revertBox.removeAttribute('hidden');
   })();
   const form = h('form', { class: 'card settings-card' },

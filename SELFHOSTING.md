@@ -1,15 +1,16 @@
-# Self-hosting zv
+# Self-hosting Zonventure
 
-zv ships as a single Go binary plus a Postgres database. There are no
-external runtime services required — Stripe, an SMTP relay, and a
-metrics scraper are all opt-in. A small VPS, a managed Postgres, and a
-domain are enough to put it in front of users.
+Zonventure ships as a single Go binary (`zv`) plus a Postgres database.
+There are no external runtime services required — Stripe, an SMTP
+relay, and a metrics scraper are all opt-in. A small VPS, a managed
+Postgres, and a domain are enough to put it in front of users.
 
-zv is licensed under the **GNU AGPL v3.0 or later** ([`LICENSE`](LICENSE)).
-Self-hosting and modifying are explicitly fine; if you run a *modified*
-version as a network service, the AGPL requires you to offer your
-users the corresponding source. Running the unmodified upstream as a
-service for your own organisation is unaffected.
+Zonventure is licensed under the **GNU AGPL v3.0 or later**
+([`LICENSE`](LICENSE)). Self-hosting and modifying are explicitly
+fine; if you run a *modified* version as a network service, the AGPL
+requires you to offer your users the corresponding source. Running
+the unmodified upstream as a service for your own organisation is
+unaffected.
 
 ---
 
@@ -23,8 +24,9 @@ service for your own organisation is unaffected.
 - **`pg_dump` and `psql`** on the same host as the app if you plan to
   use `zv -backup` / `-restore` (most distros bundle them with the
   Postgres client package).
-- A **public hostname with TLS** for production. zv runs HTTP behind a
-  reverse proxy that terminates TLS — Caddy, nginx, or Traefik all work.
+- A **public hostname with TLS** for production. Zonventure runs HTTP
+  behind a reverse proxy that terminates TLS — Caddy, nginx, or
+  Traefik all work.
 
 ## Build
 
@@ -119,7 +121,7 @@ that speaks SMTP.
 ## Payments (optional)
 
 Self-hosters who only run their own org probably don't need money
-flowing through zv at all — the simulated checkout creates assignments
+flowing through Zonventure at all — the simulated checkout creates assignments
 directly. Skip Stripe entirely.
 
 If you want real charging:
@@ -167,8 +169,8 @@ server {
 }
 ```
 
-zv detects `X-Forwarded-Proto: https` and flips its session cookies to
-`Secure` automatically — no extra flag required.
+Zonventure detects `X-Forwarded-Proto: https` and flips its session
+cookies to `Secure` automatically — no extra flag required.
 
 ## Optional knobs
 
@@ -210,14 +212,14 @@ documented in [`OPERATIONS.md`](./OPERATIONS.md).
 - **"no postgres DSN"** — set `-dsn` or `$DATABASE_URL`.
 - **"password authentication failed"** — wrong creds or the DB user
   doesn't have `LOGIN`. Try `psql "$DATABASE_URL"` to reproduce
-  outside zv.
+  outside Zonventure.
 - **WebSockets disconnect after ~60s** — your reverse proxy is
   closing idle upgrades. Bump `proxy_read_timeout` (nginx) or your
   proxy's equivalent.
 - **Uploads fail at >5 MB** — raise `ZV_MAX_IMAGE_BYTES`.
-- **Verification emails don't arrive** — without `ZV_SMTP_*` set, zv
-  prints them to the log. Inspect with `journalctl -u zv` or your
-  container log.
+- **Verification emails don't arrive** — without `ZV_SMTP_*` set,
+  Zonventure prints them to the log. Inspect with `journalctl -u zv`
+  or your container log.
 
 ## Going to production
 

@@ -1094,8 +1094,8 @@
       'Account, data and deletion': 'Konto, data och radering',
       'Getting help': 'Få hjälp',
       // welcome
-      'Zonventure ("zv") is a platform for running location-based adventure games — treasure hunts, team-building events, school field trips. As an arranger you author the puzzles, set up an event, and the players walk around with their phones answering them.':
-          'Zonventure ("zv") är en plattform för platsbaserade äventyrsspel — skattjakter, lagevent, skolutflykter. Som arrangör skapar du pusslen, sätter upp en event, och spelarna går runt med sina telefoner och svarar på dem.',
+      'Zonventure is a platform for running location-based adventure games — treasure hunts, team-building events, school field trips. As an arranger you author the puzzles, set up an event, and the players walk around with their phones answering them.':
+          'Zonventure är en plattform för platsbaserade äventyrsspel — skattjakter, lagevent, skolutflykter. Som arrangör skapar du pusslen, sätter upp en event, och spelarna går runt med sina telefoner och svarar på dem.',
       'Four words to know': 'Fyra ord att kunna',
       'Adventure': 'Äventyr',
       'a reusable script. Pages of puzzles in order. Like a book.':

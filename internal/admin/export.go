@@ -55,7 +55,7 @@ func (h *Handlers) ExportMyData(w http.ResponseWriter, r *http.Request) {
 	// Headers prompt the browser to download instead of render. The
 	// filename includes the user id and date so multiple exports
 	// don't overwrite each other on the user's disk.
-	filename := fmt.Sprintf("zv-export-user%d-%s.json", me.ID, time.Now().UTC().Format("20060102"))
+	filename := fmt.Sprintf("zonventure-export-user%d-%s.json", me.ID, time.Now().UTC().Format("20060102"))
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
 	enc := json.NewEncoder(w)
