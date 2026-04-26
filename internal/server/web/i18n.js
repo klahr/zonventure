@@ -119,6 +119,12 @@
       'Point the camera at a QR code': 'Rikta kameran mot en QR-kod',
       'Camera permission denied.': 'Kameran nekades åtkomst.',
       'Camera unavailable.': 'Kameran är inte tillgänglig.',
+      'Test scan': 'Testskanna',
+      'Test scan: opens the camera and shows what your QR encodes':
+        'Testskanna: öppnar kameran och visar vad din QR-kod innehåller',
+      'QR contains "{{v}}" — accepted.': 'QR innehåller ”{{v}}” — godkänt.',
+      'QR contains "{{v}}" — not in accept list.':
+        'QR innehåller ”{{v}}” — finns inte i listan över godkända svar.',
       'Try an answer (preview)': 'Pröva ett svar (förhandsvisning)',
       'Waiting for the adventure to start…': 'Väntar på att äventyret ska börja…',
       'The arranger paused the event. Stand by.':

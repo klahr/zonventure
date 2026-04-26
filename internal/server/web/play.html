@@ -2111,8 +2111,38 @@ function formatDuration(sec) {
 // (e.g. an opaque token like "fountain-2026") and stick it at the
 // physical location. No backend change needed; QR is purely an
 // alternate input path on the player UI.
+//
+// Decode path:
+//   1. Native BarcodeDetector if the browser exposes it (Chrome,
+//      Edge, Safari 17+) — zero JS payload, fastest.
+//   2. Vendored jsQR (~130 KB, ~40 KB gzipped) loaded lazily as a
+//      fallback for Firefox / older iOS Safari. Loaded on first
+//      tap so the cost only lands when the player actually uses the
+//      feature.
+// qrSupported is always true now — getUserMedia is the real gate
+// (HTTPS + camera permission). The button is shown unconditionally;
+// failures surface via the in-modal status line.
 function qrSupported() {
-  return typeof window.BarcodeDetector === 'function';
+  return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+}
+
+// loadJsqr returns a promise resolving to the global jsQR function,
+// loading the vendored script once and reusing it on subsequent
+// calls. Resolves immediately if BarcodeDetector is available so
+// callers don't pay the network cost for a fallback they never use.
+let jsqrLoading = null;
+function loadJsqr() {
+  if (typeof window.jsQR === 'function') return Promise.resolve(window.jsQR);
+  if (jsqrLoading) return jsqrLoading;
+  jsqrLoading = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = '/assets/jsqr.js';
+    s.async = true;
+    s.onload = () => resolve(window.jsQR);
+    s.onerror = () => { jsqrLoading = null; reject(new Error('jsqr load failed')); };
+    document.head.append(s);
+  });
+  return jsqrLoading;
 }
 
 // createQrButton builds the small camera-icon button that lives next
@@ -2158,10 +2188,10 @@ function createQrButton(input, result) {
 
 // openQrScanner builds a fullscreen modal showing the rear-camera
 // feed and resolves with the first decoded QR value, or null if the
-// user cancelled / the camera was denied. Uses the native
-// BarcodeDetector API — no JS QR library dependency. Frame sampling
-// runs through requestAnimationFrame so it pauses when the tab
-// backgrounds and never burns CPU on a stationary phone.
+// user cancelled / the camera was denied. Two decode paths — native
+// BarcodeDetector when the browser exposes it, jsQR (vendored) as
+// a canvas-based fallback. Frame sampling runs via
+// requestAnimationFrame so it pauses when the tab backgrounds.
 function openQrScanner() {
   return new Promise((resolve) => {
     const modal = document.createElement('div');
@@ -2192,7 +2222,6 @@ function openQrScanner() {
       resolve(value);
     };
     cancel.addEventListener('click', () => cleanup(null));
-    // Esc / hardware back closes too.
     const onKey = (e) => { if (e.key === 'Escape') cleanup(null); };
     document.addEventListener('keydown', onKey);
     modal.addEventListener('remove', () => document.removeEventListener('keydown', onKey));
@@ -2204,22 +2233,47 @@ function openQrScanner() {
         });
         if (stopped) { stream.getTracks().forEach((tk) => tk.stop()); return; }
         video.srcObject = stream;
-        await video.play().catch(() => { /* autoplay rejection is fine — user tap unblocks */ });
-      } catch (err) {
+        await video.play().catch(() => { /* autoplay rejection is benign */ });
+      } catch {
         status.textContent = t('Camera permission denied.');
         return;
       }
-      const detector = new BarcodeDetector({ formats: ['qr_code'] });
+      // Pick a decode strategy. Native is preferred (cheaper); jsQR is
+      // loaded on demand if it isn't available.
+      const native = (typeof window.BarcodeDetector === 'function')
+        ? new BarcodeDetector({ formats: ['qr_code'] }) : null;
+      let jsqr = null;
+      if (!native) {
+        try { jsqr = await loadJsqr(); }
+        catch { status.textContent = t('Camera unavailable.'); return; }
+      }
+      // jsQR needs a 2D canvas to inspect pixels; native reads the
+      // <video> directly. Allocate the canvas only on the fallback
+      // path so native scans don't pay the GC churn.
+      const canvas = jsqr ? document.createElement('canvas') : null;
+      const ctx = canvas ? canvas.getContext('2d', { willReadFrequently: true }) : null;
       const tick = async () => {
         if (stopped) return;
         if (video.readyState >= 2) {
           try {
-            const codes = await detector.detect(video);
-            if (codes && codes.length > 0) {
-              cleanup(codes[0].rawValue || '');
-              return;
+            if (native) {
+              const codes = await native.detect(video);
+              if (codes && codes.length > 0) {
+                cleanup(codes[0].rawValue || '');
+                return;
+              }
+            } else if (jsqr && video.videoWidth > 0) {
+              canvas.width = video.videoWidth;
+              canvas.height = video.videoHeight;
+              ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+              const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+              const code = jsqr(img.data, img.width, img.height, { inversionAttempts: 'dontInvert' });
+              if (code && code.data) {
+                cleanup(code.data);
+                return;
+              }
             }
-          } catch { /* per-frame failures are noisy and benign */ }
+          } catch { /* per-frame failures are benign */ }
         }
         requestAnimationFrame(tick);
       };

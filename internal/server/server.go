@@ -23,7 +23,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 )
 
-//go:embed web/play.html web/arrange.html web/live.html web/i18n.js web/favicon.svg web/privacy.html web/terms.html web/manual.html web/landing.html web/pricing.html web/topbar.css web/topbar.js web/404.html web/robots.txt web/sitemap.xml
+//go:embed web/play.html web/arrange.html web/live.html web/i18n.js web/favicon.svg web/privacy.html web/terms.html web/manual.html web/landing.html web/pricing.html web/topbar.css web/topbar.js web/jsqr.js web/404.html web/robots.txt web/sitemap.xml
 var webFS embed.FS
 
 // Config is the bag of knobs New needs.
@@ -257,6 +257,12 @@ func New(cfg Config) http.Handler {
 	// Shared topbar CSS + JS, served as long-cached static assets.
 	r.Get("/assets/topbar.css", serveAsset("web/topbar.css", "text/css; charset=utf-8"))
 	r.Get("/assets/topbar.js", serveAsset("web/topbar.js", "application/javascript; charset=utf-8"))
+	// jsQR — vendored fallback QR decoder for browsers that don't
+	// expose the native BarcodeDetector (Firefox today, older
+	// Safari/iOS). Both /play and the puzzle editor in /arrange
+	// load it lazily; the canvas-based decode runs entirely
+	// client-side, no network beyond fetching this asset.
+	r.Get("/assets/jsqr.js", serveAsset("web/jsqr.js", "application/javascript; charset=utf-8"))
 
 	// Crawler hygiene: robots.txt and a small sitemap of public URLs.
 	// {{HOST}} in the sitemap is rewritten with the operator-configured
