@@ -94,9 +94,68 @@
     display: grid; grid-template-columns: 1fr auto; gap: .5rem;
     align-items: stretch;
   }
+  /* When the QR-scan button is present the form gets a third column.
+     Order: [scan] [input] [submit]. The scan icon is sized smaller
+     than Submit because it's a secondary affordance (tap → scan)
+     while Submit is the primary action for typed answers. */
+  .submit-dock form.has-qr { grid-template-columns: auto 1fr auto; }
   .submit-dock input { margin: 0; }
   .submit-dock button { width: auto; padding: .75rem 1.2rem; }
+  .submit-dock .qr-btn {
+    padding: .65rem .85rem;
+    border: 1px solid var(--border-soft);
+    background: var(--surface, #fff);
+    color: var(--ink, inherit);
+    font-size: 1.15rem;
+    line-height: 1;
+    border-radius: .5rem;
+  }
+  .submit-dock .qr-btn:hover { background: var(--surface-2, #f0f0f0); }
   .submit-dock .result { grid-column: 1 / -1; margin: 0; min-height: 1rem; font-size: .9rem; }
+
+  /* Fullscreen QR scanner. Pulled in as an overlay so it can take
+     over the viewport for the camera feed without disturbing the
+     puzzle behind it. The viewfinder frame is purely decorative —
+     BarcodeDetector reads the entire video, not a cropped region —
+     but it gives the player a clear "point the QR here" target. */
+  .qr-modal {
+    position: fixed; inset: 0; z-index: 100;
+    background: #000;
+    display: flex; flex-direction: column;
+    align-items: stretch; justify-content: center;
+  }
+  .qr-modal video {
+    width: 100%; height: 100%;
+    object-fit: cover;
+  }
+  .qr-modal .qr-frame {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    pointer-events: none;
+  }
+  .qr-modal .qr-frame::before {
+    content: '';
+    width: min(70vmin, 320px); height: min(70vmin, 320px);
+    border: 3px solid rgba(255,255,255,.85);
+    border-radius: 16px;
+    box-shadow: 0 0 0 9999px rgba(0,0,0,.45);
+  }
+  .qr-modal .qr-status {
+    position: absolute; left: 0; right: 0; top: calc(env(safe-area-inset-top) + 1rem);
+    text-align: center; color: #fff;
+    font-weight: 600; text-shadow: 0 2px 8px rgba(0,0,0,.6);
+    padding: 0 1rem;
+  }
+  .qr-modal .qr-cancel {
+    position: absolute; left: 50%; transform: translateX(-50%);
+    bottom: calc(env(safe-area-inset-bottom) + 1.25rem);
+    padding: .75rem 1.5rem;
+    background: rgba(255,255,255,.95); color: #111;
+    border: 0; border-radius: 999px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .qr-modal .qr-cancel:hover { background: #fff; }
   /* Solo-button layout for no-answer puzzles (Continue / I'm here).
      Stretch across the full viewport so the dock reads as a single
      CTA instead of a small centered pill — same max-width cap as the
@@ -1658,7 +1717,18 @@ function renderSubmitDock(s) {
   result.setAttribute('role', 'status');
   result.setAttribute('aria-live', 'polite');
   const form = document.createElement('form');
-  form.append(input, button, result);
+  // Optional QR-scan button. Only added when the browser exposes the
+  // BarcodeDetector API (Chrome 83+, Edge, Safari 17+, Android Chrome).
+  // The button submits the decoded text as if it were typed — the
+  // server-side answer matcher then evaluates it against the puzzle's
+  // accept list, so a scan is "an immediate guess".
+  const qrBtn = qrSupported() ? createQrButton(input, result) : null;
+  if (qrBtn) {
+    form.classList.add('has-qr');
+    form.append(qrBtn, input, button, result);
+  } else {
+    form.append(input, button, result);
+  }
   dock.append(form);
   submitInputEl = input;
   submitResultEl = result;
@@ -2031,6 +2101,131 @@ function formatDuration(sec) {
   const s = sec % 60;
   const pad = (n) => String(n).padStart(2, '0');
   return h ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
+}
+
+// QR-scan answer path. Players can tap the camera button next to the
+// answer input to open a fullscreen camera modal; the first decoded
+// QR value is submitted as if it were typed. The server-side answer
+// matcher then evaluates it against the puzzle's accept list — so
+// arrangers print a QR encoding any string that's in the accept list
+// (e.g. an opaque token like "fountain-2026") and stick it at the
+// physical location. No backend change needed; QR is purely an
+// alternate input path on the player UI.
+function qrSupported() {
+  return typeof window.BarcodeDetector === 'function';
+}
+
+// createQrButton builds the small camera-icon button that lives next
+// to the answer input. The submission flow is shared with the typed
+// path — preview mode goes through handlePreviewSubmit, real play
+// goes through wsSendOrQueue('answer', ...) — so a QR scan IS an
+// immediate guess (no extra confirmation step).
+function createQrButton(input, result) {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'qr-btn';
+  btn.setAttribute('aria-label', t('Scan QR code'));
+  btn.title = t('Scan QR code');
+  btn.textContent = '📷';
+  btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    try {
+      const decoded = await openQrScanner();
+      if (!decoded) return; // user cancelled or camera failed
+      // Mirror the typed path: feed the decoded value back through
+      // the same submission as if the player had typed it. Do NOT
+      // mutate input.value before the WS send — submitInputEl is
+      // tracked elsewhere for offline-queue / countdown UI; setting
+      // it here would interfere if the player had something half-
+      // typed when they tapped Scan.
+      if (previewState) {
+        handlePreviewSubmit(decoded);
+        return;
+      }
+      if (!wsSendOrQueue('answer', { answer: decoded })) {
+        result.className = 'result muted';
+        result.textContent = t('Offline — will send the moment you reconnect.');
+      }
+    } catch (err) {
+      result.className = 'result err';
+      result.textContent = t('Camera unavailable.');
+    } finally {
+      btn.disabled = false;
+    }
+  });
+  return btn;
+}
+
+// openQrScanner builds a fullscreen modal showing the rear-camera
+// feed and resolves with the first decoded QR value, or null if the
+// user cancelled / the camera was denied. Uses the native
+// BarcodeDetector API — no JS QR library dependency. Frame sampling
+// runs through requestAnimationFrame so it pauses when the tab
+// backgrounds and never burns CPU on a stationary phone.
+function openQrScanner() {
+  return new Promise((resolve) => {
+    const modal = document.createElement('div');
+    modal.className = 'qr-modal';
+    const video = document.createElement('video');
+    video.setAttribute('playsinline', '');
+    video.muted = true;
+    video.autoplay = true;
+    const frame = document.createElement('div');
+    frame.className = 'qr-frame';
+    const status = document.createElement('p');
+    status.className = 'qr-status';
+    status.textContent = t('Point the camera at a QR code');
+    const cancel = document.createElement('button');
+    cancel.type = 'button';
+    cancel.className = 'qr-cancel';
+    cancel.textContent = t('Cancel');
+    modal.append(video, frame, status, cancel);
+    document.body.append(modal);
+
+    let stream = null;
+    let stopped = false;
+    const cleanup = (value) => {
+      if (stopped) return;
+      stopped = true;
+      if (stream) stream.getTracks().forEach((tk) => tk.stop());
+      modal.remove();
+      resolve(value);
+    };
+    cancel.addEventListener('click', () => cleanup(null));
+    // Esc / hardware back closes too.
+    const onKey = (e) => { if (e.key === 'Escape') cleanup(null); };
+    document.addEventListener('keydown', onKey);
+    modal.addEventListener('remove', () => document.removeEventListener('keydown', onKey));
+
+    (async () => {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: 'environment' } },
+        });
+        if (stopped) { stream.getTracks().forEach((tk) => tk.stop()); return; }
+        video.srcObject = stream;
+        await video.play().catch(() => { /* autoplay rejection is fine — user tap unblocks */ });
+      } catch (err) {
+        status.textContent = t('Camera permission denied.');
+        return;
+      }
+      const detector = new BarcodeDetector({ formats: ['qr_code'] });
+      const tick = async () => {
+        if (stopped) return;
+        if (video.readyState >= 2) {
+          try {
+            const codes = await detector.detect(video);
+            if (codes && codes.length > 0) {
+              cleanup(codes[0].rawValue || '');
+              return;
+            }
+          } catch { /* per-frame failures are noisy and benign */ }
+        }
+        requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    })();
+  });
 }
 
 // Debug helper bound to Alt+C — renders a summary card with made-up numbers
