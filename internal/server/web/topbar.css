@@ -25,6 +25,16 @@
 
 :root { --topbar-h: 4.25rem; }
 
+/* Force border-box on the topbar and its descendants regardless of
+ * whether the host page sets `* { box-sizing }` globally. With
+ * content-box the topbar's min-height stacks on top of its padding,
+ * which on /manual produced a topbar ~40px taller than on landing /
+ * pricing (both of those pages have a global `* { box-sizing }`
+ * rule, /manual didn't). */
+.topbar, .topbar *, .nav-overlay, .nav-overlay * {
+  box-sizing: border-box;
+}
+
 /* Pages without their own dark hero band must push body content down
  * so the sticky topbar doesn't cover the first paragraph. Pages that
  * DO have a hero (landing, pricing) opt out with `body.has-hero` —
