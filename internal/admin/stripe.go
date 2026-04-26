@@ -13,6 +13,7 @@ import (
 
 	"git.sr.ht/~klahr/zv/internal/httpx"
 	"git.sr.ht/~klahr/zv/internal/logx"
+	"git.sr.ht/~klahr/zv/internal/metrics"
 	"git.sr.ht/~klahr/zv/internal/webhooks"
 
 	"github.com/go-chi/chi/v5"
@@ -251,6 +252,7 @@ func (h *Handlers) handleCheckoutCompleted(ctx context.Context, event stripe.Eve
 	if err := tx.Commit(); err != nil {
 		return err
 	}
+	metrics.PurchaseEvents.WithLabelValues("confirmed_stripe").Inc()
 	logx.Info("stripe.purchase.paid", "purchase_id", purchaseID, "assignment_id", assID)
 	// Webhook out: customer-side billing/PO systems that want their
 	// own copy of the paid event. Most won't subscribe (they
@@ -366,6 +368,9 @@ func (h *Handlers) handleChargeRefunded(ctx context.Context, event stripe.Event)
 	}
 	if len(refunded) > 0 {
 		logx.Info("stripe.purchase.refunded", "charge_id", charge.ID, "rows", len(refunded))
+		for range refunded {
+			metrics.PurchaseEvents.WithLabelValues("refunded").Inc()
+		}
 	}
 	for _, rr := range refunded {
 		webhooks.TryPublish(ctx, h.DB, rr.orgID, webhooks.KindPurchaseRefunded, map[string]any{

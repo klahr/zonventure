@@ -2088,6 +2088,14 @@ function renderSignup(err) {
     h('label', { class: 'field' },
       h('span', {}, t('Password (min 8)')),
       h('input', { name: 'password', type: 'password', autocomplete: 'new-password', minlength: 8, required: true })),
+    h('label', { class: 'row', style: 'gap:.5rem; align-items:flex-start; margin-top:.75rem; font-size:.9rem' },
+      h('input', { name: 'terms_accepted', type: 'checkbox', required: true, style: 'margin-top:.2rem' }),
+      h('span', {},
+        t('I agree to the '),
+        h('a', { href: '/terms', target: '_blank', rel: 'noopener' }, t('Terms of Service')),
+        t(' and '),
+        h('a', { href: '/privacy', target: '_blank', rel: 'noopener' }, t('Privacy Policy')),
+        '.')),
     err ? h('p', { class: 'err' }, err) : null,
     h('div', { class: 'row end', style: 'margin-top:1rem' },
       h('button', { class: 'btn primary', type: 'submit' }, t('Create account'))),
@@ -2102,7 +2110,10 @@ function renderSignup(err) {
     const r = await api('/api/auth/signup', {
       method: 'POST',
       body: JSON.stringify({
-        email: fd.get('email'), org_name: fd.get('org_name'), password: fd.get('password'),
+        email: fd.get('email'),
+        org_name: fd.get('org_name'),
+        password: fd.get('password'),
+        terms_accepted: fd.get('terms_accepted') === 'on',
       }),
     });
     if (r.status === 201) {

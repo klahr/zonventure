@@ -10,6 +10,7 @@ import (
 
 	"git.sr.ht/~klahr/zv/internal/auth"
 	"git.sr.ht/~klahr/zv/internal/httpx"
+	"git.sr.ht/~klahr/zv/internal/metrics"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -164,6 +165,7 @@ func (h *Handlers) CreatePurchase(w http.ResponseWriter, r *http.Request) {
 		checkoutURL = url
 	}
 
+	metrics.PurchaseEvents.WithLabelValues("created").Inc()
 	httpx.JSON(w, http.StatusCreated, map[string]any{
 		"id":           id,
 		"amount_cents": amount,
@@ -260,6 +262,7 @@ func (h *Handlers) ConfirmPurchase(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusInternalServerError, "commit failed")
 		return
 	}
+	metrics.PurchaseEvents.WithLabelValues("confirmed_simulated").Inc()
 	httpx.JSON(w, http.StatusOK, map[string]any{
 		"id": purchaseID, "state": "paid", "assignment_id": assID,
 	})

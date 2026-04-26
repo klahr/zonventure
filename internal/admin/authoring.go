@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 
@@ -26,8 +27,20 @@ import (
 // and store the blob alongside the page. Everything is admin-only — the
 // org-side endpoints read adventures through the adventure.Library.
 
-// maxImageBytes is the per-upload size cap. Larger uploads are rejected.
-const maxImageBytes = 5 * 1024 * 1024
+// maxImageBytes is the per-upload size cap. Defaults to 5 MiB; an
+// operator can lower it for a small self-host box (or raise it for a
+// dedicated arranger machine) by setting ZV_MAX_IMAGE_BYTES. Anything
+// non-positive falls back to the default — the gate is "explicit
+// override or sane default", never "no cap".
+var maxImageBytes int64 = func() int64 {
+	const def int64 = 5 * 1024 * 1024
+	if s := os.Getenv("ZV_MAX_IMAGE_BYTES"); s != "" {
+		if n, err := strconv.ParseInt(s, 10, 64); err == nil && n > 0 {
+			return n
+		}
+	}
+	return def
+}()
 
 type pageView struct {
 	ID     int64  `json:"id"`

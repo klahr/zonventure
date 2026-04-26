@@ -799,6 +799,10 @@
       'Organization name': 'Organisationsnamn',
       'Password (min 8)': 'Lösenord (minst 8)',
       'Create account': 'Skapa konto',
+      'I agree to the ': 'Jag godkänner ',
+      'Terms of Service': 'användarvillkoren',
+      ' and ': ' och ',
+      'Privacy Policy': 'integritetspolicyn',
       'Account created — check {{email}} for a verification link.':
         'Konto skapat — kolla {{email}} efter en verifieringslänk.',
       'signup failed': 'registreringen misslyckades',

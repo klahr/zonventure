@@ -101,18 +101,30 @@ func (e Entry) MarshalJSON() ([]byte, error) {
 	return json.Marshal(out)
 }
 
+// Format selects the on-stderr rendering. Text is the developer-friendly
+// single-line shape; JSON is one object per line for log-aggregator
+// ingestion. The UI ring buffer is unaffected — it always serialises
+// through Entry.MarshalJSON.
+type Format int32
+
+const (
+	FormatText Format = iota
+	FormatJSON
+)
+
 // Sink is the mutable shared state — a ring buffer plus a live set of
 // subscribers. The package exports one global sink via the free
 // functions; tests can still construct their own if they need to.
 type Sink struct {
-	mu      sync.RWMutex
-	buf     []Entry
-	max     int
-	seq     uint64
-	level   atomic.Int32
-	subs    map[chan Entry]struct{}
-	subsMu  sync.Mutex
-	writer  *os.File
+	mu     sync.RWMutex
+	buf    []Entry
+	max    int
+	seq    uint64
+	level  atomic.Int32
+	format atomic.Int32 // Format
+	subs   map[chan Entry]struct{}
+	subsMu sync.Mutex
+	writer *os.File
 }
 
 // New returns a sink sized for `max` entries. Writer receives the
@@ -138,6 +150,14 @@ func (s *Sink) SetLevel(l Level) { s.level.Store(int32(l)) }
 // GetLevel reports the current threshold.
 func (s *Sink) GetLevel() Level { return Level(s.level.Load()) }
 
+// SetFormat picks the writer-side rendering. Switching at runtime is
+// safe — every Log call re-reads the field — so an admin endpoint
+// could flip it on the fly without restarting the process.
+func (s *Sink) SetFormat(f Format) { s.format.Store(int32(f)) }
+
+// GetFormat reports the currently selected rendering.
+func (s *Sink) GetFormat() Format { return Format(s.format.Load()) }
+
 // Log emits an entry. Levels below the threshold are dropped before
 // the ring append so the UI only ever sees filtered output.
 func (s *Sink) Log(l Level, msg string, attrs ...any) {
@@ -159,9 +179,16 @@ func (s *Sink) Log(l Level, msg string, attrs ...any) {
 	}
 	s.mu.Unlock()
 	// Mirror to stderr (or wherever writer points) so operators see
-	// logs without opening the UI.
+	// logs without opening the UI. Format is re-read each call so a
+	// runtime flip lands on the very next entry.
 	if s.writer != nil {
-		_, _ = fmt.Fprintln(s.writer, format(e))
+		var line string
+		if Format(s.format.Load()) == FormatJSON {
+			line = formatJSON(e)
+		} else {
+			line = format(e)
+		}
+		_, _ = fmt.Fprintln(s.writer, line)
 	}
 	// Fan out to subscribers. Slow readers drop on purpose — we don't
 	// want one stuck tab to back-pressure the whole process.
@@ -213,7 +240,18 @@ func (s *Sink) Subscribe() (chan Entry, func()) {
 
 // ---- Package-level convenience over a shared sink ----
 
-var Default = New(2000, os.Stderr)
+// Default is the process-wide sink. ZV_LOG_FORMAT picks the renderer
+// at startup ("json" → JSON-per-line, anything else → text). Tests
+// don't pin the env var, so they get the text default.
+var Default = newDefault()
+
+func newDefault() *Sink {
+	s := New(2000, os.Stderr)
+	if strings.EqualFold(os.Getenv("ZV_LOG_FORMAT"), "json") {
+		s.SetFormat(FormatJSON)
+	}
+	return s
+}
 
 // Debug/Info/Warn/Error are the everyday entry points. They funnel to
 // Default; tests or alternative wiring can swap Default or use their
@@ -225,10 +263,12 @@ func Error(msg string, attrs ...any) { Default.Log(LevelError, msg, attrs...) }
 
 // SetLevel / GetLevel / Snapshot / Subscribe are thin shims over
 // Default for call sites that don't hold a sink reference.
-func SetLevel(l Level)                       { Default.SetLevel(l) }
-func GetLevel() Level                        { return Default.GetLevel() }
-func Snapshot(minSeq uint64) []Entry         { return Default.Snapshot(minSeq) }
-func Subscribe() (chan Entry, func())        { return Default.Subscribe() }
+func SetLevel(l Level)                { Default.SetLevel(l) }
+func GetLevel() Level                 { return Default.GetLevel() }
+func SetFormat(f Format)              { Default.SetFormat(f) }
+func GetFormat() Format               { return Default.GetFormat() }
+func Snapshot(minSeq uint64) []Entry  { return Default.Snapshot(minSeq) }
+func Subscribe() (chan Entry, func()) { return Default.Subscribe() }
 
 // pairAttrs folds alternating key/value pairs into AttrKVs.
 // Keys are coerced to strings; odd counts or non-string keys are
@@ -250,6 +290,36 @@ func pairAttrs(raw []any) []AttrKV {
 		out = append(out, AttrKV{Key: k, Value: raw[i+1]})
 	}
 	return out
+}
+
+// formatJSON renders one entry as a single JSON object, suitable for
+// log aggregators (Loki / CloudWatch / Datadog) that key off "level",
+// "msg", and arbitrary fields. Attrs are flattened into the top level
+// so the operator can filter on attr keys directly without a JSONPath
+// dance — collisions with the reserved "ts"/"level"/"msg"/"seq" names
+// are renamed with an "attr." prefix.
+func formatJSON(e Entry) string {
+	out := map[string]any{
+		"ts":    e.TS.Format(time.RFC3339Nano),
+		"level": e.Level.String(),
+		"msg":   e.Msg,
+		"seq":   e.Seq,
+	}
+	for _, a := range e.Attrs {
+		k := a.Key
+		switch k {
+		case "ts", "level", "msg", "seq":
+			k = "attr." + k
+		}
+		out[k] = a.Value
+	}
+	b, err := json.Marshal(out)
+	if err != nil {
+		// Fall back to the text renderer rather than swallow the line —
+		// silent log loss is the worst kind of failure mode.
+		return format(e)
+	}
+	return string(b)
 }
 
 // format is the stderr-side rendering. Single line, easy to grep.

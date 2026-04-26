@@ -21,6 +21,7 @@ import (
 	"git.sr.ht/~klahr/zv/internal/db"
 	"git.sr.ht/~klahr/zv/internal/logx"
 	"git.sr.ht/~klahr/zv/internal/mailer"
+	"git.sr.ht/~klahr/zv/internal/metrics"
 	"git.sr.ht/~klahr/zv/internal/retention"
 	"git.sr.ht/~klahr/zv/internal/scheduler"
 	"git.sr.ht/~klahr/zv/internal/server"
@@ -54,6 +55,8 @@ func main() {
 		seedDemoAdvFlag   = flag.Bool("seed-demo-adventure", false, "install the demo adventure (puzzles + placeholder images)")
 		seedDemoFlag      = flag.Bool("seed-demo", false, "install a full demo dataset and exit")
 		revokeFlag        = flag.String("revoke-sessions", "", `if set, drop staff sessions and exit. Pass a username to scope, or "all" to nuke every session+slot session`)
+		backupFlag        = flag.Bool("backup", false, "stream a pg_dump of the configured database to stdout and exit; redirect to a file (e.g. `zv -backup > zv.sql`)")
+		restoreFlag       = flag.Bool("restore", false, "read a pg_dump from stdin and replay it into the configured database; pair with -backup for round-trips")
 		retentionLocation = flag.Int("retention-location-days", envIntDefault("ZV_LOCATION_RETENTION_DAYS", 30), "delete player location pings + answer attempts this many days after the event completes (0 disables)")
 		retentionAudit    = flag.Int("retention-audit-days", envIntDefault("ZV_AUDIT_RETENTION_DAYS", 90), "delete auth_events rows this many days after they were emitted (0 disables)")
 		retentionInterval = flag.Duration("retention-interval", time.Hour, "how often the retention sweeper runs")
@@ -69,6 +72,23 @@ func main() {
 	if connStr == "" {
 		log.Fatalf("no postgres DSN: pass -dsn or set DATABASE_URL")
 	}
+
+	// Backup / restore run before db.Open so the app's connection pool
+	// and migration logic don't fight with the dump or replay. Both are
+	// terminal — the process exits as soon as the operation finishes.
+	if *backupFlag {
+		if err := runBackup(connStr, os.Stdout); err != nil {
+			log.Fatalf("%v", err)
+		}
+		return
+	}
+	if *restoreFlag {
+		if err := runRestore(connStr, os.Stdin); err != nil {
+			log.Fatalf("%v", err)
+		}
+		return
+	}
+
 	sqlDB, err := db.Open(connStr)
 	if err != nil {
 		log.Fatalf("open db: %v", err)
@@ -170,6 +190,14 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+
+	// Optional metrics listener. Off by default — self-hosters who don't
+	// configure it never expose /metrics, so a misconfigured reverse
+	// proxy can't accidentally surface ops data. Bind to 127.0.0.1
+	// in production unless you front it with auth.
+	if mAddr := os.Getenv("ZV_METRICS_ADDR"); mAddr != "" {
+		go metrics.ServeAddr(ctx, mAddr)
+	}
 
 	// Sweep for scheduled runs every 15s and auto-start any that are due.
 	schedDone := scheduler.Start(ctx, sqlDB, hub, 15*time.Second)

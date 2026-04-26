@@ -16,6 +16,11 @@ type signupRequest struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`
 	OrgName  string `json:"org_name"`
+	// TermsAccepted is the consent gate — the signup form must check
+	// the Terms / Privacy box before submit. Server-side enforcement
+	// keeps a scripted POST honest and gives us a defensible "the user
+	// agreed" answer if a dispute lands later.
+	TermsAccepted bool `json:"terms_accepted"`
 }
 
 // Signup creates a new organization + org_admin user, sends a
@@ -33,6 +38,10 @@ func (h *Handlers) Signup(w http.ResponseWriter, r *http.Request) {
 	}
 	req.Email = strings.TrimSpace(req.Email)
 	req.OrgName = strings.TrimSpace(req.OrgName)
+	if !req.TermsAccepted {
+		httpx.Error(w, http.StatusBadRequest, "you must accept the Terms of Service and Privacy Policy to sign up")
+		return
+	}
 	if _, err := mail.ParseAddress(req.Email); err != nil {
 		httpx.Error(w, http.StatusBadRequest, "email is not a valid address")
 		return

@@ -14,6 +14,7 @@ import (
 	"git.sr.ht/~klahr/zv/internal/adventure"
 	"git.sr.ht/~klahr/zv/internal/auth"
 	"git.sr.ht/~klahr/zv/internal/mailer"
+	"git.sr.ht/~klahr/zv/internal/metrics"
 	"git.sr.ht/~klahr/zv/internal/player"
 	"git.sr.ht/~klahr/zv/internal/public"
 	"git.sr.ht/~klahr/zv/internal/simulator"
@@ -22,7 +23,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 )
 
-//go:embed web/play.html web/arrange.html web/live.html web/i18n.js web/favicon.svg web/privacy.html web/terms.html web/manual.html web/landing.html web/404.html web/robots.txt web/sitemap.xml
+//go:embed web/play.html web/arrange.html web/live.html web/i18n.js web/favicon.svg web/privacy.html web/terms.html web/manual.html web/landing.html web/pricing.html web/404.html web/robots.txt web/sitemap.xml
 var webFS embed.FS
 
 // Config is the bag of knobs New needs.
@@ -63,6 +64,16 @@ func New(cfg Config) http.Handler {
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Recoverer)
+	// Metrics middleware runs early so it records every request,
+	// including those rejected by auth or CSRF below. The collectors
+	// always increment; the /metrics scrape endpoint is only exposed
+	// when ZV_METRICS_ADDR is set (see cmd/server/main.go).
+	r.Use(metrics.HTTPMiddleware(func(req *http.Request) string {
+		if rctx := chi.RouteContext(req.Context()); rctx != nil {
+			return rctx.RoutePattern()
+		}
+		return ""
+	}))
 	// EnsureCSRF runs early so the zv_csrf cookie is on every response,
 	// including the static /arrange and /play pages. The HTTP-only
 	// session cookies (zv_session, zv_slot) live alongside it.
@@ -232,6 +243,7 @@ func New(cfg Config) http.Handler {
 	// or auth. The in-app /arrange#manual view is a translated mirror
 	// of the same content for logged-in arrangers.
 	r.Get("/manual", servePublicPage("web/manual.html", http.StatusOK))
+	r.Get("/pricing", servePublicPage("web/pricing.html", http.StatusOK))
 
 	// Crawler hygiene: robots.txt and a small sitemap of public URLs.
 	// {{HOST}} in the sitemap is rewritten with the operator-configured

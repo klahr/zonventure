@@ -10,6 +10,7 @@ import (
 	"git.sr.ht/~klahr/zv/internal/httpx"
 	"git.sr.ht/~klahr/zv/internal/logx"
 	"git.sr.ht/~klahr/zv/internal/mailer"
+	"git.sr.ht/~klahr/zv/internal/metrics"
 )
 
 // Handlers wraps the dependencies of the auth HTTP endpoints.
@@ -122,6 +123,7 @@ func (h *Handlers) Login(w http.ResponseWriter, r *http.Request) {
 	if errors.Is(err, ErrInvalidCredentials) {
 		locked, retry := h.Limiter.RecordFailure(ip, req.Username)
 		logx.Warn("auth.login.fail", "ip", ip, "username", req.Username, "reason", "invalid_credentials")
+		metrics.AuthLogins.WithLabelValues("fail").Inc()
 		Record(r.Context(), h.DB, AuditEvent{
 			Event: EventLogin, OK: false, Username: req.Username, IP: ip, UserAgent: ua,
 			Reason: ReasonInvalidCreds,
@@ -138,6 +140,7 @@ func (h *Handlers) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.Limiter.RecordSuccess(ip, req.Username)
+	metrics.AuthLogins.WithLabelValues("success").Inc()
 	Record(r.Context(), h.DB, AuditEvent{
 		Event: EventLogin, OK: true, UserID: &u.ID, Username: u.Username, IP: ip, UserAgent: ua,
 		Reason: ReasonSuccess,
