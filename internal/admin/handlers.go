@@ -85,11 +85,21 @@ func sameOrg(u auth.User, orgID int64) bool {
 }
 
 // eventOrg loads the organization id for an event. Returns sql.ErrNoRows if the
-// run does not exist.
+// event does not exist.
 func (h *Handlers) eventOrg(ctx context.Context, eventID int64) (int64, error) {
 	var orgID int64
 	err := h.DB.QueryRowContext(ctx, `SELECT org_id FROM events WHERE id = $1`, eventID).Scan(&orgID)
 	return orgID, err
+}
+
+// adventureTitle returns the human title for slug, or "" when the
+// library doesn't carry it. Used to enrich webhook payloads + audit
+// rows without the same nil-check dance at every call site.
+func (h *Handlers) adventureTitle(slug string) string {
+	if adv := h.Lib.Get(slug); adv != nil {
+		return adv.Meta.Title
+	}
+	return ""
 }
 
 // authorizeEvent writes the appropriate HTTP error and returns false when the
@@ -380,15 +390,11 @@ func (h *Handlers) CreateEvent(w http.ResponseWriter, r *http.Request) {
 	// scheduled_at, since the canonical state is still "scheduled" on
 	// creation. Customers wiring calendar / kickoff comms branch on
 	// the scheduled_at field being non-empty.
-	advTitle := ""
-	if adv := h.Lib.Get(slug); adv != nil {
-		advTitle = adv.Meta.Title
-	}
 	webhooks.TryPublish(r.Context(), h.DB, *me.OrgID, webhooks.KindEventScheduled, map[string]any{
-		"event_id":          id,
+		"event_id":        id,
 		"name":            strings.TrimSpace(req.Name),
 		"adventure_slug":  slug,
-		"adventure_title": advTitle,
+		"adventure_title": h.adventureTitle(slug),
 		"scheduled_at":    req.ScheduledAt,
 		"max_teams":       maxTeams,
 	})
@@ -510,15 +516,11 @@ func (h *Handlers) transitionEvent(w http.ResponseWriter, r *http.Request, actio
 		)
 		_ = h.DB.QueryRowContext(r.Context(),
 			`SELECT adventure_slug, name FROM events WHERE id = $1`, eventID).Scan(&advSlug, &runName)
-		advTitle := ""
-		if adv := h.Lib.Get(advSlug); adv != nil {
-			advTitle = adv.Meta.Title
-		}
 		webhooks.TryPublish(r.Context(), h.DB, orgID, webhooks.KindEventStarted, map[string]any{
-			"event_id":          eventID,
+			"event_id":        eventID,
 			"name":            runName,
 			"adventure_slug":  advSlug,
-			"adventure_title": advTitle,
+			"adventure_title": h.adventureTitle(advSlug),
 			"manual":          true,
 		})
 	}

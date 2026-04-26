@@ -17,6 +17,23 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
+// teamFromRequest is the canonical preamble for every team handler:
+// extract the team id from the URL, authorise the caller, write the
+// HTTP error on either failure. Returns (teamID, eventID, ok). When
+// !ok, the response is already sent; the handler should just return.
+func (h *Handlers) teamFromRequest(w http.ResponseWriter, r *http.Request) (int64, int64, bool) {
+	teamID, ok := teamIDFrom(r)
+	if !ok {
+		httpx.Error(w, http.StatusBadRequest, "bad team id")
+		return 0, 0, false
+	}
+	eventID, _, ok := h.authorizeTeam(w, r, teamID)
+	if !ok {
+		return 0, 0, false
+	}
+	return teamID, eventID, true
+}
+
 // authorizeTeam returns (eventID, orgID, true) when the caller may operate on
 // the team, writing the appropriate error and returning false otherwise.
 func (h *Handlers) authorizeTeam(w http.ResponseWriter, r *http.Request, teamID int64) (eventID, orgID int64, ok bool) {
@@ -47,12 +64,7 @@ type renameTeamRequest struct {
 
 // RenameTeam changes a team's display name.
 func (h *Handlers) RenameTeam(w http.ResponseWriter, r *http.Request) {
-	teamID, ok := teamIDFrom(r)
-	if !ok {
-		httpx.Error(w, http.StatusBadRequest, "bad team id")
-		return
-	}
-	eventID, _, ok := h.authorizeTeam(w, r, teamID)
+	teamID, eventID, ok := h.teamFromRequest(w, r)
 	if !ok {
 		return
 	}
@@ -86,12 +98,7 @@ func (h *Handlers) DeleteTeam(w http.ResponseWriter, r *http.Request) {
 	if !requirePasswordConfirm(w, r, h.DB) {
 		return
 	}
-	teamID, ok := teamIDFrom(r)
-	if !ok {
-		httpx.Error(w, http.StatusBadRequest, "bad team id")
-		return
-	}
-	eventID, _, ok := h.authorizeTeam(w, r, teamID)
+	teamID, eventID, ok := h.teamFromRequest(w, r)
 	if !ok {
 		return
 	}
@@ -130,12 +137,7 @@ type slotDTO struct {
 
 // AddSlot creates a new slot on a team with a fresh magic-link token.
 func (h *Handlers) AddSlot(w http.ResponseWriter, r *http.Request) {
-	teamID, ok := teamIDFrom(r)
-	if !ok {
-		httpx.Error(w, http.StatusBadRequest, "bad team id")
-		return
-	}
-	eventID, _, ok := h.authorizeTeam(w, r, teamID)
+	teamID, eventID, ok := h.teamFromRequest(w, r)
 	if !ok {
 		return
 	}
@@ -172,12 +174,7 @@ func (h *Handlers) AddSlot(w http.ResponseWriter, r *http.Request) {
 
 // RemoveSlot deletes a slot.
 func (h *Handlers) RemoveSlot(w http.ResponseWriter, r *http.Request) {
-	teamID, ok := teamIDFrom(r)
-	if !ok {
-		httpx.Error(w, http.StatusBadRequest, "bad team id")
-		return
-	}
-	eventID, _, ok := h.authorizeTeam(w, r, teamID)
+	teamID, eventID, ok := h.teamFromRequest(w, r)
 	if !ok {
 		return
 	}
@@ -213,12 +210,7 @@ func (h *Handlers) RemoveSlot(w http.ResponseWriter, r *http.Request) {
 // default (run-anchored) so the rotation extends the window in one
 // step instead of forcing a separate "set expiry" call.
 func (h *Handlers) RotateSlotToken(w http.ResponseWriter, r *http.Request) {
-	teamID, ok := teamIDFrom(r)
-	if !ok {
-		httpx.Error(w, http.StatusBadRequest, "bad team id")
-		return
-	}
-	eventID, _, ok := h.authorizeTeam(w, r, teamID)
+	teamID, eventID, ok := h.teamFromRequest(w, r)
 	if !ok {
 		return
 	}
@@ -251,12 +243,7 @@ func (h *Handlers) RotateSlotToken(w http.ResponseWriter, r *http.Request) {
 
 // UnlockTeam advances a stuck team past their current puzzle.
 func (h *Handlers) UnlockTeam(w http.ResponseWriter, r *http.Request) {
-	teamID, ok := teamIDFrom(r)
-	if !ok {
-		httpx.Error(w, http.StatusBadRequest, "bad team id")
-		return
-	}
-	eventID, _, ok := h.authorizeTeam(w, r, teamID)
+	teamID, eventID, ok := h.teamFromRequest(w, r)
 	if !ok {
 		return
 	}
@@ -396,12 +383,7 @@ func (h *Handlers) SetTeamAvatar(w http.ResponseWriter, r *http.Request) {
 // DeleteTeamAvatar clears the stored avatar so the team falls back to
 // the generated initials rendering on the client.
 func (h *Handlers) DeleteTeamAvatar(w http.ResponseWriter, r *http.Request) {
-	teamID, ok := teamIDFrom(r)
-	if !ok {
-		httpx.Error(w, http.StatusBadRequest, "bad team id")
-		return
-	}
-	eventID, _, ok := h.authorizeTeam(w, r, teamID)
+	teamID, eventID, ok := h.teamFromRequest(w, r)
 	if !ok {
 		return
 	}

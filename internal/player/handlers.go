@@ -195,19 +195,25 @@ type teamContext struct {
 	CompletedAt          sql.NullString
 }
 
+// adventureTitle returns the human title for slug, or "" when the
+// library doesn't carry it. Used to enrich webhook payloads without
+// the same nil-check dance at every publish site.
+func (h *Handlers) adventureTitle(slug string) string {
+	if adv := h.Lib.Get(slug); adv != nil {
+		return adv.Meta.Title
+	}
+	return ""
+}
+
 // publishEventStartedAuto emits event.started for an event that was just
 // auto-promoted (player arrived at the scheduled time). Distinct
 // from the manual-start webhook in admin/handlers.go via the "manual"
 // field on the payload.
 func (h *Handlers) publishEventStartedAuto(ctx context.Context, tc teamContext) {
-	advTitle := ""
-	if adv := h.Lib.Get(tc.AdventureSlug); adv != nil {
-		advTitle = adv.Meta.Title
-	}
 	webhooks.TryPublish(ctx, h.DB, tc.OrgID, webhooks.KindEventStarted, map[string]any{
-		"event_id":          tc.EventID,
+		"event_id":        tc.EventID,
 		"adventure_slug":  tc.AdventureSlug,
-		"adventure_title": advTitle,
+		"adventure_title": h.adventureTitle(tc.AdventureSlug),
 		"manual":          false,
 	})
 }
@@ -217,30 +223,22 @@ func (h *Handlers) publishEventStartedAuto(ctx context.Context, tc teamContext) 
 // enqueue logs and is dropped (the player has already seen "you're
 // done!").
 func (h *Handlers) publishTeamCompleted(ctx context.Context, tc teamContext) {
-	advTitle := ""
-	if adv := h.Lib.Get(tc.AdventureSlug); adv != nil {
-		advTitle = adv.Meta.Title
-	}
 	webhooks.TryPublish(ctx, h.DB, tc.OrgID, webhooks.KindTeamCompleted, map[string]any{
-		"event_id":          tc.EventID,
+		"event_id":        tc.EventID,
 		"team_id":         tc.TeamID,
 		"team_name":       tc.TeamName,
 		"adventure_slug":  tc.AdventureSlug,
-		"adventure_title": advTitle,
+		"adventure_title": h.adventureTitle(tc.AdventureSlug),
 	})
 }
 
 // publishEventCompleted emits event.completed when MaybeCompleteEvent
 // transitioned the event. Same best-effort discipline.
 func (h *Handlers) publishEventCompleted(ctx context.Context, tc teamContext) {
-	advTitle := ""
-	if adv := h.Lib.Get(tc.AdventureSlug); adv != nil {
-		advTitle = adv.Meta.Title
-	}
 	webhooks.TryPublish(ctx, h.DB, tc.OrgID, webhooks.KindEventCompleted, map[string]any{
-		"event_id":          tc.EventID,
+		"event_id":        tc.EventID,
 		"adventure_slug":  tc.AdventureSlug,
-		"adventure_title": advTitle,
+		"adventure_title": h.adventureTitle(tc.AdventureSlug),
 	})
 }
 
