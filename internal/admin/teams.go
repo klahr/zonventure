@@ -12,19 +12,19 @@ import (
 	"git.sr.ht/~klahr/zv/internal/auth"
 	"git.sr.ht/~klahr/zv/internal/httpx"
 	"git.sr.ht/~klahr/zv/internal/imageutil"
-	"git.sr.ht/~klahr/zv/internal/runevents"
+	"git.sr.ht/~klahr/zv/internal/activity"
 	"git.sr.ht/~klahr/zv/internal/ws"
 	"github.com/go-chi/chi/v5"
 )
 
-// authorizeTeam returns (runID, orgID, true) when the caller may operate on
+// authorizeTeam returns (eventID, orgID, true) when the caller may operate on
 // the team, writing the appropriate error and returning false otherwise.
-func (h *Handlers) authorizeTeam(w http.ResponseWriter, r *http.Request, teamID int64) (runID, orgID int64, ok bool) {
+func (h *Handlers) authorizeTeam(w http.ResponseWriter, r *http.Request, teamID int64) (eventID, orgID int64, ok bool) {
 	err := h.DB.QueryRowContext(r.Context(), `
-		SELECT t.run_id, ar.org_id
-		FROM teams t JOIN adventure_runs ar ON ar.id = t.run_id
+		SELECT t.event_id, ar.org_id
+		FROM teams t JOIN events ar ON ar.id = t.event_id
 		WHERE t.id = $1
-	`, teamID).Scan(&runID, &orgID)
+	`, teamID).Scan(&eventID, &orgID)
 	if errors.Is(err, sql.ErrNoRows) {
 		httpx.Error(w, http.StatusNotFound, "team not found")
 		return 0, 0, false
@@ -38,7 +38,7 @@ func (h *Handlers) authorizeTeam(w http.ResponseWriter, r *http.Request, teamID 
 		httpx.Error(w, http.StatusForbidden, "forbidden")
 		return 0, 0, false
 	}
-	return runID, orgID, true
+	return eventID, orgID, true
 }
 
 type renameTeamRequest struct {
@@ -52,7 +52,7 @@ func (h *Handlers) RenameTeam(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusBadRequest, "bad team id")
 		return
 	}
-	runID, _, ok := h.authorizeTeam(w, r, teamID)
+	eventID, _, ok := h.authorizeTeam(w, r, teamID)
 	if !ok {
 		return
 	}
@@ -68,13 +68,13 @@ func (h *Handlers) RenameTeam(w http.ResponseWriter, r *http.Request) {
 	var oldName string
 	_ = h.DB.QueryRowContext(r.Context(), `SELECT name FROM teams WHERE id = $1`, teamID).Scan(&oldName)
 	if _, err := h.DB.ExecContext(r.Context(), `UPDATE teams SET name = $1 WHERE id = $2`, req.Name, teamID); err != nil {
-		httpx.Error(w, http.StatusConflict, "name already used in this run")
+		httpx.Error(w, http.StatusConflict, "name already used in this event")
 		return
 	}
 	me, _ := auth.FromContext(r.Context())
-	runevents.Record(r.Context(), h.DB, runID, &teamID, runevents.UserActor(me.ID), runevents.TeamRenamed,
+	activity.Record(r.Context(), h.DB, eventID, &teamID, activity.UserActor(me.ID), activity.TeamRenamed,
 		map[string]any{"from": oldName, "to": req.Name})
-	h.Hub.Publish(ws.RunTopic(runID), "changed", nil)
+	h.Hub.Publish(ws.EventTopic(eventID), "changed", nil)
 	httpx.JSON(w, http.StatusNoContent, nil)
 }
 
@@ -88,7 +88,7 @@ func (h *Handlers) DeleteTeam(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusBadRequest, "bad team id")
 		return
 	}
-	runID, _, ok := h.authorizeTeam(w, r, teamID)
+	eventID, _, ok := h.authorizeTeam(w, r, teamID)
 	if !ok {
 		return
 	}
@@ -99,9 +99,9 @@ func (h *Handlers) DeleteTeam(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	me, _ := auth.FromContext(r.Context())
-	runevents.Record(r.Context(), h.DB, runID, nil, runevents.UserActor(me.ID), runevents.TeamDeleted,
+	activity.Record(r.Context(), h.DB, eventID, nil, activity.UserActor(me.ID), activity.TeamDeleted,
 		map[string]any{"name": name})
-	h.Hub.Publish(ws.RunTopic(runID), "changed", nil)
+	h.Hub.Publish(ws.EventTopic(eventID), "changed", nil)
 	httpx.JSON(w, http.StatusNoContent, nil)
 }
 
@@ -130,7 +130,7 @@ func (h *Handlers) AddSlot(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusBadRequest, "bad team id")
 		return
 	}
-	runID, _, ok := h.authorizeTeam(w, r, teamID)
+	eventID, _, ok := h.authorizeTeam(w, r, teamID)
 	if !ok {
 		return
 	}
@@ -148,7 +148,7 @@ func (h *Handlers) AddSlot(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusInternalServerError, "token gen failed")
 		return
 	}
-	expiresAt := auth.DefaultSlotExpiresAt(r.Context(), h.DB, runID)
+	expiresAt := auth.DefaultSlotExpiresAt(r.Context(), h.DB, eventID)
 	var id int64
 	if err := h.DB.QueryRowContext(r.Context(),
 		`INSERT INTO player_slots(team_id, name, token, expires_at) VALUES ($1, $2, $3, $4) RETURNING id`,
@@ -157,9 +157,9 @@ func (h *Handlers) AddSlot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	me, _ := auth.FromContext(r.Context())
-	runevents.Record(r.Context(), h.DB, runID, &teamID, runevents.UserActor(me.ID),
-		runevents.MemberAdded, map[string]any{"name": req.Name})
-	h.Hub.Publish(ws.RunTopic(runID), "changed", nil)
+	activity.Record(r.Context(), h.DB, eventID, &teamID, activity.UserActor(me.ID),
+		activity.MemberAdded, map[string]any{"name": req.Name})
+	h.Hub.Publish(ws.EventTopic(eventID), "changed", nil)
 	httpx.JSON(w, http.StatusCreated, slotDTO{
 		ID: id, Name: req.Name, Token: token, ExpiresAt: expiresAt,
 	})
@@ -172,7 +172,7 @@ func (h *Handlers) RemoveSlot(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusBadRequest, "bad team id")
 		return
 	}
-	runID, _, ok := h.authorizeTeam(w, r, teamID)
+	eventID, _, ok := h.authorizeTeam(w, r, teamID)
 	if !ok {
 		return
 	}
@@ -197,9 +197,9 @@ func (h *Handlers) RemoveSlot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	me, _ := auth.FromContext(r.Context())
-	runevents.Record(r.Context(), h.DB, runID, &teamID, runevents.UserActor(me.ID),
-		runevents.MemberRemoved, map[string]any{"name": name})
-	h.Hub.Publish(ws.RunTopic(runID), "changed", nil)
+	activity.Record(r.Context(), h.DB, eventID, &teamID, activity.UserActor(me.ID),
+		activity.MemberRemoved, map[string]any{"name": name})
+	h.Hub.Publish(ws.EventTopic(eventID), "changed", nil)
 	httpx.JSON(w, http.StatusNoContent, nil)
 }
 
@@ -213,7 +213,7 @@ func (h *Handlers) RotateSlotToken(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusBadRequest, "bad team id")
 		return
 	}
-	runID, _, ok := h.authorizeTeam(w, r, teamID)
+	eventID, _, ok := h.authorizeTeam(w, r, teamID)
 	if !ok {
 		return
 	}
@@ -227,7 +227,7 @@ func (h *Handlers) RotateSlotToken(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusInternalServerError, "token gen failed")
 		return
 	}
-	expiresAt := auth.DefaultSlotExpiresAt(r.Context(), h.DB, runID)
+	expiresAt := auth.DefaultSlotExpiresAt(r.Context(), h.DB, eventID)
 	res, err := h.DB.ExecContext(r.Context(),
 		`UPDATE player_slots SET token = $1, expires_at = $2 WHERE id = $3 AND team_id = $4`,
 		token, expiresAt, slotID, teamID)
@@ -251,7 +251,7 @@ func (h *Handlers) UnlockTeam(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusBadRequest, "bad team id")
 		return
 	}
-	runID, _, ok := h.authorizeTeam(w, r, teamID)
+	eventID, _, ok := h.authorizeTeam(w, r, teamID)
 	if !ok {
 		return
 	}
@@ -261,7 +261,7 @@ func (h *Handlers) UnlockTeam(w http.ResponseWriter, r *http.Request) {
 	)
 	err := h.DB.QueryRowContext(r.Context(), `
 		SELECT ar.adventure_slug, t.current_page_index
-		FROM teams t JOIN adventure_runs ar ON ar.id = t.run_id
+		FROM teams t JOIN events ar ON ar.id = t.event_id
 		WHERE t.id = $1
 	`, teamID).Scan(&slug, &current)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -290,21 +290,21 @@ func (h *Handlers) UnlockTeam(w http.ResponseWriter, r *http.Request) {
 			httpx.Error(w, http.StatusInternalServerError, "update failed")
 			return
 		}
-		runevents.Record(r.Context(), h.DB, runID, &teamID, runevents.UserActor(me.ID), runevents.TeamUnlocked,
+		activity.Record(r.Context(), h.DB, eventID, &teamID, activity.UserActor(me.ID), activity.TeamUnlocked,
 			map[string]any{"from_page_index": current, "to_page_index": next, "by_arranger": true})
-		runevents.Record(r.Context(), h.DB, runID, &teamID, runevents.UserActor(me.ID), runevents.TeamCompleted,
+		activity.Record(r.Context(), h.DB, eventID, &teamID, activity.UserActor(me.ID), activity.TeamCompleted,
 			map[string]any{"by_arranger": true})
-		_, _ = runevents.MaybeCompleteRun(r.Context(), h.DB, runID)
+		_, _ = activity.MaybeCompleteEvent(r.Context(), h.DB, eventID)
 	} else {
 		if _, err := h.DB.ExecContext(r.Context(),
 			`UPDATE teams SET current_page_index = $1, current_page_started_at = now_text() WHERE id = $2`, next, teamID); err != nil {
 			httpx.Error(w, http.StatusInternalServerError, "update failed")
 			return
 		}
-		runevents.Record(r.Context(), h.DB, runID, &teamID, runevents.UserActor(me.ID), runevents.TeamUnlocked,
+		activity.Record(r.Context(), h.DB, eventID, &teamID, activity.UserActor(me.ID), activity.TeamUnlocked,
 			map[string]any{"from_page_index": current, "to_page_index": next, "by_arranger": true})
 	}
-	h.Hub.Publish(ws.RunTopic(runID), "changed", nil)
+	h.Hub.Publish(ws.EventTopic(eventID), "changed", nil)
 	httpx.JSON(w, http.StatusOK, map[string]any{"page_index": next, "completed": next >= len(adv.Pages)})
 }
 
@@ -373,12 +373,12 @@ func (h *Handlers) SetTeamAvatar(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusInternalServerError, "store failed: "+err.Error())
 		return
 	}
-	// Hub push so the run-detail view and any live-board listeners pick
+	// Hub push so the event-detail view and any live-board listeners pick
 	// up the new picture without a manual refresh.
-	var runID int64
-	_ = h.DB.QueryRowContext(r.Context(), `SELECT run_id FROM teams WHERE id = $1`, teamID).Scan(&runID)
-	if runID > 0 {
-		h.Hub.Publish(ws.RunTopic(runID), "changed", nil)
+	var eventID int64
+	_ = h.DB.QueryRowContext(r.Context(), `SELECT event_id FROM teams WHERE id = $1`, teamID).Scan(&eventID)
+	if eventID > 0 {
+		h.Hub.Publish(ws.EventTopic(eventID), "changed", nil)
 	}
 	httpx.JSON(w, http.StatusOK, map[string]any{
 		"url":  teamAvatarURL(teamID),
@@ -395,7 +395,7 @@ func (h *Handlers) DeleteTeamAvatar(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusBadRequest, "bad team id")
 		return
 	}
-	runID, _, ok := h.authorizeTeam(w, r, teamID)
+	eventID, _, ok := h.authorizeTeam(w, r, teamID)
 	if !ok {
 		return
 	}
@@ -407,7 +407,7 @@ func (h *Handlers) DeleteTeamAvatar(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusInternalServerError, "clear failed")
 		return
 	}
-	h.Hub.Publish(ws.RunTopic(runID), "changed", nil)
+	h.Hub.Publish(ws.EventTopic(eventID), "changed", nil)
 	httpx.JSON(w, http.StatusNoContent, nil)
 }
 

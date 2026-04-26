@@ -14,7 +14,7 @@ import (
 // handlers are thin glue onto the admin REST surface.
 
 // SimulatorStatus returns the current sim stage (idle/running/paused)
-// plus the run id + live token when one is active, so the UI can jump
+// plus the event id + live token when one is active, so the UI can jump
 // straight to the live view for viewing.
 func (h *Handlers) SimulatorStatus(w http.ResponseWriter, r *http.Request) {
 	httpx.JSON(w, http.StatusOK, h.Sim.Status())

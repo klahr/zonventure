@@ -958,7 +958,7 @@ function buildHeader(data) {
   return h('header', { class: 'topline' },
     h('div', { class: 'brand' }, 'zonventure'),
     h('div', { class: 'title' },
-      h('h1', {}, data.adventure_title || t('Run')),
+      h('h1', {}, data.adventure_title || t('Event')),
       h('div', { class: 'slug' },
         h('span', { class: `state-pill ${data.state}` }, h('span', { class: 'dot' }), t(data.state || '')),
         ' · ', data.adventure_slug),

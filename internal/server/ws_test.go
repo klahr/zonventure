@@ -91,10 +91,10 @@ func mustNotRecv(t *testing.T, c *websocket.Conn, d time.Duration) {
 	}
 }
 
-// setupRun seeds a run + one team + one player slot and returns the
+// setupRun seeds an event + one team + one player slot and returns the
 // arranger-authenticated client, the live token, the slot magic token,
-// and the run id. Shared by every WS test that needs a real run.
-func setupRun(t *testing.T, ts *httptest.Server, assignmentID int64) (arranger *client, liveToken, slotToken string, runID int64) {
+// and the event id. Shared by every WS test that needs a real run.
+func setupRun(t *testing.T, ts *httptest.Server, assignmentID int64) (arranger *client, liveToken, slotToken string, eventID int64) {
 	t.Helper()
 	arr := newClient(t, ts)
 	if s := arr.do("POST", "/api/auth/login",
@@ -106,7 +106,7 @@ func setupRun(t *testing.T, ts *httptest.Server, assignmentID int64) (arranger *
 		ID        int64  `json:"id"`
 		LiveToken string `json:"live_token"`
 	}
-	if s := arr.do("POST", "/api/admin/runs",
+	if s := arr.do("POST", "/api/admin/events",
 		map[string]any{"assignment_id": assignmentID}, &run); s != 201 {
 		t.Fatalf("create run = %d", s)
 	}
@@ -117,7 +117,7 @@ func setupRun(t *testing.T, ts *httptest.Server, assignmentID int64) (arranger *
 			Token string `json:"token"`
 		} `json:"members"`
 	}
-	if s := arr.do("POST", "/api/admin/runs/"+itoa(run.ID)+"/teams",
+	if s := arr.do("POST", "/api/admin/events/"+itoa(run.ID)+"/teams",
 		map[string]any{"name": "Team Alpha", "member_names": []string{"alice"}}, &team); s != 201 {
 		t.Fatalf("create team = %d", s)
 	}
@@ -177,8 +177,8 @@ func TestWSPlay_InitialStateBeforeStart(t *testing.T) {
 func TestWSPlay_LocationFrame(t *testing.T) {
 	ts, assignmentID, cleanup := newTestServer(t)
 	defer cleanup()
-	arr, _, slotToken, runID := setupRun(t, ts, assignmentID)
-	if s := arr.do("POST", "/api/admin/runs/"+itoa(runID)+"/start", map[string]string{}, nil); s != 204 {
+	arr, _, slotToken, eventID := setupRun(t, ts, assignmentID)
+	if s := arr.do("POST", "/api/admin/events/"+itoa(eventID)+"/start", map[string]string{}, nil); s != 204 {
 		t.Fatalf("start run = %d", s)
 	}
 	alice := loginPlayer(t, ts, slotToken)
@@ -205,7 +205,7 @@ func TestWSPlay_LocationFrame(t *testing.T) {
 			Lng float64 `json:"lng"`
 		} `json:"positions"`
 	}
-	if s := arr.do("GET", "/api/admin/runs/"+itoa(runID)+"/positions", nil, &pos); s != 200 {
+	if s := arr.do("GET", "/api/admin/events/"+itoa(eventID)+"/positions", nil, &pos); s != 200 {
 		t.Fatalf("positions = %d", s)
 	}
 	if len(pos.Positions) != 1 || pos.Positions[0].Lat == 0 {
@@ -216,8 +216,8 @@ func TestWSPlay_LocationFrame(t *testing.T) {
 func TestWSPlay_AnswerRoundTrip(t *testing.T) {
 	ts, assignmentID, cleanup := newTestServer(t)
 	defer cleanup()
-	arr, _, slotToken, runID := setupRun(t, ts, assignmentID)
-	if s := arr.do("POST", "/api/admin/runs/"+itoa(runID)+"/start", map[string]string{}, nil); s != 204 {
+	arr, _, slotToken, eventID := setupRun(t, ts, assignmentID)
+	if s := arr.do("POST", "/api/admin/events/"+itoa(eventID)+"/start", map[string]string{}, nil); s != 204 {
 		t.Fatalf("start run = %d", s)
 	}
 	alice := loginPlayer(t, ts, slotToken)
@@ -264,7 +264,7 @@ func TestWSPlay_AnswerRoundTrip(t *testing.T) {
 }
 
 func TestWSPlay_AnswerBeforeStart(t *testing.T) {
-	// Submitting an answer while the run is still 'scheduled' must produce
+	// Submitting an answer while the event is still 'scheduled' must produce
 	// an answer_error frame — same semantic as the 409 HTTP response, just
 	// carried in-band over the socket.
 	ts, assignmentID, cleanup := newTestServer(t)
@@ -334,17 +334,17 @@ func TestWSLive_InitialFrames(t *testing.T) {
 }
 
 func TestWSLive_PushedOnMutation(t *testing.T) {
-	// An admin starting the run must propagate to the live subscriber as
+	// An admin starting the event must propagate to the live subscriber as
 	// a fresh snapshot within a very short window.
 	ts, assignmentID, cleanup := newTestServer(t)
 	defer cleanup()
-	arr, liveToken, _, runID := setupRun(t, ts, assignmentID)
+	arr, liveToken, _, eventID := setupRun(t, ts, assignmentID)
 
 	c := dialWS(t, ts, "/ws/live/"+liveToken, nil)
 	defer c.Close(websocket.StatusNormalClosure, "")
 	recvKind(t, c, "snapshot", 2*time.Second) // initial push
 
-	if s := arr.do("POST", "/api/admin/runs/"+itoa(runID)+"/start", map[string]string{}, nil); s != 204 {
+	if s := arr.do("POST", "/api/admin/events/"+itoa(eventID)+"/start", map[string]string{}, nil); s != 204 {
 		t.Fatalf("start run = %d", s)
 	}
 
@@ -374,7 +374,7 @@ func TestWSArrange_Unauthorized(t *testing.T) {
 func TestWSArrange_WatchInitialFrames(t *testing.T) {
 	ts, assignmentID, cleanup := newTestServer(t)
 	defer cleanup()
-	arr, _, _, runID := setupRun(t, ts, assignmentID)
+	arr, _, _, eventID := setupRun(t, ts, assignmentID)
 
 	c := dialWS(t, ts, "/ws/arrange", arr.c)
 	defer c.Close(websocket.StatusNormalClosure, "")
@@ -382,13 +382,13 @@ func TestWSArrange_WatchInitialFrames(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	if err := c.Write(ctx, websocket.MessageText,
-		[]byte(`{"kind":"watch_run","data":{"run_id":`+itoa(runID)+`}}`)); err != nil {
+		[]byte(`{"kind":"watch_event","data":{"event_id":`+itoa(eventID)+`}}`)); err != nil {
 		t.Fatalf("send watch: %v", err)
 	}
 
 	// Watch should produce exactly these four kinds, in any order but all
 	// within a short window.
-	want := map[string]bool{"positions": false, "tracks": false, "events": false, "run_detail": false}
+	want := map[string]bool{"positions": false, "tracks": false, "activity": false, "event_detail": false}
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
 		allSeen := true
@@ -408,7 +408,7 @@ func TestWSArrange_WatchInitialFrames(t *testing.T) {
 	}
 	for kind, seen := range want {
 		if !seen {
-			t.Errorf("missing %q frame after watch_run", kind)
+			t.Errorf("missing %q frame after watch_event", kind)
 		}
 	}
 }
@@ -416,14 +416,14 @@ func TestWSArrange_WatchInitialFrames(t *testing.T) {
 func TestWSArrange_PushedOnMutation(t *testing.T) {
 	ts, assignmentID, cleanup := newTestServer(t)
 	defer cleanup()
-	arr, _, _, runID := setupRun(t, ts, assignmentID)
+	arr, _, _, eventID := setupRun(t, ts, assignmentID)
 
 	c := dialWS(t, ts, "/ws/arrange", arr.c)
 	defer c.Close(websocket.StatusNormalClosure, "")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	if err := c.Write(ctx, websocket.MessageText,
-		[]byte(`{"kind":"watch_run","data":{"run_id":`+itoa(runID)+`}}`)); err != nil {
+		[]byte(`{"kind":"watch_event","data":{"event_id":`+itoa(eventID)+`}}`)); err != nil {
 		cancel()
 		t.Fatalf("send watch: %v", err)
 	}
@@ -433,27 +433,27 @@ func TestWSArrange_PushedOnMutation(t *testing.T) {
 		recvMsg(t, c)
 	}
 
-	// Start the run — the broadcast should re-push run_detail (and the
+	// Start the event — the broadcast should re-push event_detail (and the
 	// other kinds) to the watcher.
-	if s := arr.do("POST", "/api/admin/runs/"+itoa(runID)+"/start", map[string]string{}, nil); s != 204 {
+	if s := arr.do("POST", "/api/admin/events/"+itoa(eventID)+"/start", map[string]string{}, nil); s != 204 {
 		t.Fatalf("start run = %d", s)
 	}
-	m := recvKind(t, c, "run_detail", 2*time.Second)
+	m := recvKind(t, c, "event_detail", 2*time.Second)
 	var rd struct {
-		Run struct {
+		Event struct {
 			State string `json:"state"`
-		} `json:"run"`
+		} `json:"event"`
 	}
 	json.Unmarshal(m.Data, &rd)
-	if rd.Run.State != "running" {
-		t.Fatalf("run_detail.state=%q, want running", rd.Run.State)
+	if rd.Event.State != "running" {
+		t.Fatalf("event_detail.state=%q, want running", rd.Event.State)
 	}
 }
 
 func TestWSArrange_UnwatchStopsPushes(t *testing.T) {
 	ts, assignmentID, cleanup := newTestServer(t)
 	defer cleanup()
-	arr, _, _, runID := setupRun(t, ts, assignmentID)
+	arr, _, _, eventID := setupRun(t, ts, assignmentID)
 
 	c := dialWS(t, ts, "/ws/arrange", arr.c)
 	defer c.Close(websocket.StatusNormalClosure, "")
@@ -461,7 +461,7 @@ func TestWSArrange_UnwatchStopsPushes(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	if err := c.Write(ctx, websocket.MessageText,
-		[]byte(`{"kind":"watch_run","data":{"run_id":`+itoa(runID)+`}}`)); err != nil {
+		[]byte(`{"kind":"watch_event","data":{"event_id":`+itoa(eventID)+`}}`)); err != nil {
 		t.Fatalf("send watch: %v", err)
 	}
 	for i := 0; i < 4; i++ {
@@ -470,18 +470,18 @@ func TestWSArrange_UnwatchStopsPushes(t *testing.T) {
 
 	// Unsubscribe — subsequent mutations must not produce any push.
 	if err := c.Write(ctx, websocket.MessageText,
-		[]byte(`{"kind":"unwatch_run"}`)); err != nil {
+		[]byte(`{"kind":"unwatch_event"}`)); err != nil {
 		t.Fatalf("send unwatch: %v", err)
 	}
 
-	if s := arr.do("POST", "/api/admin/runs/"+itoa(runID)+"/start", map[string]string{}, nil); s != 204 {
+	if s := arr.do("POST", "/api/admin/events/"+itoa(eventID)+"/start", map[string]string{}, nil); s != 204 {
 		t.Fatalf("start run = %d", s)
 	}
 	mustNotRecv(t, c, 300*time.Millisecond)
 }
 
 func TestWSArrange_UnknownRunEmitsError(t *testing.T) {
-	// Watching a run id that doesn't exist must emit watch_error, not
+	// Watching an event id that doesn't exist must emit watch_error, not
 	// silently succeed — same authorization pathway as forbidden runs
 	// (the server checks run existence and org membership together).
 	ts, assignmentID, cleanup := newTestServer(t)
@@ -494,7 +494,7 @@ func TestWSArrange_UnknownRunEmitsError(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	if err := c.Write(ctx, websocket.MessageText,
-		[]byte(`{"kind":"watch_run","data":{"run_id":99999}}`)); err != nil {
+		[]byte(`{"kind":"watch_event","data":{"event_id":99999}}`)); err != nil {
 		t.Fatalf("send watch: %v", err)
 	}
 	m := recvKind(t, c, "watch_error", 2*time.Second)
@@ -508,7 +508,7 @@ func TestWSArrange_UnknownRunEmitsError(t *testing.T) {
 }
 
 func TestWSArrange_SwitchingWatches(t *testing.T) {
-	// Re-issuing watch_run for a different run must stop pushes for the
+	// Re-issuing watch_event for a different run must stop pushes for the
 	// old run and start them for the new one — proves the subscriber
 	// goroutine is torn down and replaced, not leaked.
 	ts, assignmentID, cleanup := newTestServer(t)
@@ -520,8 +520,8 @@ func TestWSArrange_SwitchingWatches(t *testing.T) {
 	// straight through the admin API by logging in as the global admin.
 	// Skipping this over-the-api path — instead we just re-use the demo
 	// setup for a second run by registering another assignment at the DB
-	// layer is out of scope here; so this test works with just the one run
-	// by asserting the unwatch/rewatch pattern on the same run id.
+	// layer is out of scope here; so this test works with just the one event
+	// by asserting the unwatch/rewatch pattern on the same event id.
 	c := dialWS(t, ts, "/ws/arrange", arr.c)
 	defer c.Close(websocket.StatusNormalClosure, "")
 
@@ -529,20 +529,20 @@ func TestWSArrange_SwitchingWatches(t *testing.T) {
 	defer cancel()
 	// First watch: consume initial four frames.
 	if err := c.Write(ctx, websocket.MessageText,
-		[]byte(`{"kind":"watch_run","data":{"run_id":`+itoa(runA)+`}}`)); err != nil {
+		[]byte(`{"kind":"watch_event","data":{"event_id":`+itoa(runA)+`}}`)); err != nil {
 		t.Fatalf("send watch: %v", err)
 	}
 	for i := 0; i < 4; i++ {
 		recvMsg(t, c)
 	}
 
-	// Re-watch the same run: should again produce the four initial frames,
+	// Re-watch the same event: should again produce the four initial frames,
 	// which verifies the handler handles a switched watch without error.
 	if err := c.Write(ctx, websocket.MessageText,
-		[]byte(`{"kind":"watch_run","data":{"run_id":`+itoa(runA)+`}}`)); err != nil {
+		[]byte(`{"kind":"watch_event","data":{"event_id":`+itoa(runA)+`}}`)); err != nil {
 		t.Fatalf("send rewatch: %v", err)
 	}
-	want := map[string]bool{"positions": false, "tracks": false, "events": false, "run_detail": false}
+	want := map[string]bool{"positions": false, "tracks": false, "activity": false, "event_detail": false}
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
 		allSeen := true
@@ -570,7 +570,7 @@ func TestWSArrange_MalformedFramesIgnored(t *testing.T) {
 	// where one bad message kills the whole subscription.
 	ts, assignmentID, cleanup := newTestServer(t)
 	defer cleanup()
-	arr, _, _, runID := setupRun(t, ts, assignmentID)
+	arr, _, _, eventID := setupRun(t, ts, assignmentID)
 
 	c := dialWS(t, ts, "/ws/arrange", arr.c)
 	defer c.Close(websocket.StatusNormalClosure, "")
@@ -587,10 +587,10 @@ func TestWSArrange_MalformedFramesIgnored(t *testing.T) {
 	}
 	// Legit watch request — must still work.
 	if err := c.Write(ctx, websocket.MessageText,
-		[]byte(`{"kind":"watch_run","data":{"run_id":`+itoa(runID)+`}}`)); err != nil {
+		[]byte(`{"kind":"watch_event","data":{"event_id":`+itoa(eventID)+`}}`)); err != nil {
 		t.Fatalf("send watch: %v", err)
 	}
-	recvKind(t, c, "run_detail", 2*time.Second)
+	recvKind(t, c, "event_detail", 2*time.Second)
 }
 
 /* ---------- broadcast propagation (cross-client) ---------- */
@@ -600,8 +600,8 @@ func TestBroadcast_PlayAnswerReachesLive(t *testing.T) {
 	// live subscriber to receive a fresh snapshot.
 	ts, assignmentID, cleanup := newTestServer(t)
 	defer cleanup()
-	arr, liveToken, slotToken, runID := setupRun(t, ts, assignmentID)
-	if s := arr.do("POST", "/api/admin/runs/"+itoa(runID)+"/start", map[string]string{}, nil); s != 204 {
+	arr, liveToken, slotToken, eventID := setupRun(t, ts, assignmentID)
+	if s := arr.do("POST", "/api/admin/events/"+itoa(eventID)+"/start", map[string]string{}, nil); s != 204 {
 		t.Fatalf("start run = %d", s)
 	}
 

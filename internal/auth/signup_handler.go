@@ -20,7 +20,7 @@ type signupRequest struct {
 
 // Signup creates a new organization + org_admin user, sends a
 // verification email, and drops a session cookie so the new arranger
-// is logged in immediately. Money-touching actions (CreateRun,
+// is logged in immediately. Money-touching actions (CreateEvent,
 // CreatePurchase) stay gated until they click the link in the email.
 //
 // Rate-limit-friendly: failed signups (bad input, taken email) feed

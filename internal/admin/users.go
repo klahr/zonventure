@@ -88,18 +88,18 @@ func (h *Handlers) AdventureDetail(w http.ResponseWriter, r *http.Request) {
 	httpx.JSON(w, http.StatusOK, out)
 }
 
-// RunDetail returns a run with its teams and slots (players).
-func (h *Handlers) RunDetail(w http.ResponseWriter, r *http.Request) {
-	runID, ok := runIDFrom(r)
+// EventDetail returns an event with its teams and slots (players).
+func (h *Handlers) EventDetail(w http.ResponseWriter, r *http.Request) {
+	eventID, ok := eventIDFrom(r)
 	if !ok {
-		httpx.Error(w, http.StatusBadRequest, "bad run id")
+		httpx.Error(w, http.StatusBadRequest, "bad event id")
 		return
 	}
-	if _, ok := h.authorizeRun(w, r, runID); !ok {
+	if _, ok := h.authorizeEvent(w, r, eventID); !ok {
 		return
 	}
 	var (
-		d       runDTO
+		d       eventDTO
 		showMap int
 	)
 	if err := h.DB.QueryRowContext(r.Context(), `
@@ -108,10 +108,10 @@ func (h *Handlers) RunDetail(w http.ResponseWriter, r *http.Request) {
 		       ar.org_id, COALESCE(ar.created_by_user_id, 0),
 		       COALESCE(ar.assignment_id, 0), COALESCE(aa.max_teams, 0),
 		       ar.live_token, ar.show_map
-		FROM adventure_runs ar
+		FROM events ar
 		LEFT JOIN adventure_assignments aa ON aa.id = ar.assignment_id
 		WHERE ar.id = $1
-	`, runID).Scan(&d.ID, &d.Name, &d.AdventureSlug, &d.State, &d.ScheduledAt, &d.StartedAt,
+	`, eventID).Scan(&d.ID, &d.Name, &d.AdventureSlug, &d.State, &d.ScheduledAt, &d.StartedAt,
 		&d.OrgID, &d.CreatedByUserID, &d.AssignmentID, &d.MaxTeams,
 		&d.LiveToken, &showMap); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "lookup failed")
@@ -138,8 +138,8 @@ func (h *Handlers) RunDetail(w http.ResponseWriter, r *http.Request) {
 	rows, err := h.DB.QueryContext(r.Context(), `
 		SELECT t.id, t.name, t.current_page_index, COALESCE(t.completed_at, ''), t.token,
 		       (t.avatar_mime_type IS NOT NULL)::int AS has_avatar
-		FROM teams t WHERE t.run_id = $1 ORDER BY t.name
-	`, runID)
+		FROM teams t WHERE t.event_id = $1 ORDER BY t.name
+	`, eventID)
 	if err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "teams failed")
 		return
@@ -177,7 +177,7 @@ func (h *Handlers) RunDetail(w http.ResponseWriter, r *http.Request) {
 		}
 		mrows.Close()
 	}
-	httpx.JSON(w, http.StatusOK, map[string]any{"run": d, "teams": teams})
+	httpx.JSON(w, http.StatusOK, map[string]any{"event": d, "teams": teams})
 }
 
 // userIDFrom remains for admin/org user URL params (admins list, delete).

@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"git.sr.ht/~klahr/zv/internal/auth"
-	"git.sr.ht/~klahr/zv/internal/runevents"
+	"git.sr.ht/~klahr/zv/internal/activity"
 )
 
 // demo adventure data — previously in adventures/demo/*.toml, now seeded
@@ -171,7 +171,7 @@ func seedDemo(ctx context.Context, d *sql.DB) error {
 	for _, stmt := range []string{
 		`DELETE FROM users WHERE role IN ('org_admin','org_member')`,
 		`DELETE FROM organizations`,
-		`DELETE FROM adventure_runs`,
+		`DELETE FROM events`,
 		`DELETE FROM adventure_assignments`,
 		`DELETE FROM adventures`,
 	} {
@@ -252,17 +252,17 @@ func seedDemo(ctx context.Context, d *sql.DB) error {
 
 	startedAt := time.Now().UTC().Add(-30 * time.Minute).Format(time.RFC3339)
 	liveToken := "demo-live-" + fmt.Sprintf("%x", time.Now().UnixNano())
-	var runID int64
+	var eventID int64
 	if err := d.QueryRow(`
-		INSERT INTO adventure_runs(adventure_slug, org_id, created_by_user_id, state, started_at, created_at, assignment_id, live_token, show_map)
+		INSERT INTO events(adventure_slug, org_id, created_by_user_id, state, started_at, created_at, assignment_id, live_token, show_map)
 		VALUES ($1, $2, $3, 'running', $4, $5, $6, $7, 1)
 		RETURNING id
-	`, "demo", orgID, bossID, startedAt, startedAt, assignmentID, liveToken).Scan(&runID); err != nil {
+	`, "demo", orgID, bossID, startedAt, startedAt, assignmentID, liveToken).Scan(&eventID); err != nil {
 		return err
 	}
-	runevents.Record(ctx, d, runID, nil, runevents.UserActor(bossID), runevents.RunCreated,
+	activity.Record(ctx, d, eventID, nil, activity.UserActor(bossID), activity.EventCreated,
 		map[string]any{"adventure_slug": "demo"})
-	runevents.Record(ctx, d, runID, nil, runevents.UserActor(bossID), runevents.RunStarted, nil)
+	activity.Record(ctx, d, eventID, nil, activity.UserActor(bossID), activity.EventStarted, nil)
 
 	type teamPlan struct {
 		Name     string
@@ -284,8 +284,8 @@ func seedDemo(ctx context.Context, d *sql.DB) error {
 		}
 		var teamID int64
 		if err := d.QueryRow(
-			`INSERT INTO teams(run_id, name, current_page_index, token) VALUES ($1, $2, $3, $4) RETURNING id`,
-			runID, plan.Name, plan.PageIdx, teamTok).Scan(&teamID); err != nil {
+			`INSERT INTO teams(event_id, name, current_page_index, token) VALUES ($1, $2, $3, $4) RETURNING id`,
+			eventID, plan.Name, plan.PageIdx, teamTok).Scan(&teamID); err != nil {
 			return err
 		}
 
@@ -303,10 +303,10 @@ func seedDemo(ctx context.Context, d *sql.DB) error {
 			}
 			slotIDs = append(slotIDs, id)
 		}
-		runevents.Record(ctx, d, runID, &teamID, runevents.UserActor(bossID), runevents.TeamCreated,
+		activity.Record(ctx, d, eventID, &teamID, activity.UserActor(bossID), activity.TeamCreated,
 			map[string]any{"name": plan.Name, "members": plan.Slots})
 
-		if err := seedTrackAndEvents(ctx, d, rng, pages, runID, teamID, slotIDs, plan.PageIdx, plan.Progress); err != nil {
+		if err := seedTrackAndEvents(ctx, d, rng, pages, eventID, teamID, slotIDs, plan.PageIdx, plan.Progress); err != nil {
 			return err
 		}
 	}
@@ -344,7 +344,7 @@ func upsertUser(d *sql.DB, username, password, role string, orgID *int64) (int64
 // seedTrackAndEvents writes plausible walking pings + answer events for a
 // team, using slot ids as the actors.
 func seedTrackAndEvents(ctx context.Context, d *sql.DB, rng *rand.Rand,
-	pages []demoPage, runID, teamID int64,
+	pages []demoPage, eventID, teamID int64,
 	slotIDs []int64, currentPage int, partialProgress float64) error {
 
 	type leg struct {
@@ -394,24 +394,24 @@ func seedTrackAndEvents(ctx context.Context, d *sql.DB, rng *rand.Rand,
 			ts := legStart.Add(time.Duration(float64(legDuration) * t))
 			sid := slotIDs[s%len(slotIDs)]
 			if _, err := d.ExecContext(ctx, `
-				INSERT INTO location_pings(slot_id, team_id, run_id, lat, lng, accuracy, server_ts)
+				INSERT INTO location_pings(slot_id, team_id, event_id, lat, lng, accuracy, server_ts)
 				VALUES ($1, $2, $3, $4, $5, $6, $7)
-			`, sid, teamID, runID, lat, lng, 12.0+rng.Float64()*6, ts.Format(time.RFC3339)); err != nil {
+			`, sid, teamID, eventID, lat, lng, 12.0+rng.Float64()*6, ts.Format(time.RFC3339)); err != nil {
 				return err
 			}
 		}
 		if li < currentPage {
 			payload, _ := json.Marshal(map[string]any{"page_index": li})
 			_, _ = d.ExecContext(ctx, `
-				INSERT INTO run_events(run_id, team_id, actor_slot_id, kind, payload, created_at)
+				INSERT INTO event_activity(event_id, team_id, actor_slot_id, kind, payload, created_at)
 				VALUES ($1, $2, $3, $4, $5, $6)
-			`, runID, teamID, slotIDs[0], runevents.AnswerRight, string(payload),
+			`, eventID, teamID, slotIDs[0], activity.AnswerRight, string(payload),
 				legEnd.Add(-2*time.Minute).Format(time.RFC3339))
 			payload, _ = json.Marshal(map[string]any{"page_index": li, "submitted": pickWrongGuess(rng)})
 			_, _ = d.ExecContext(ctx, `
-				INSERT INTO run_events(run_id, team_id, actor_slot_id, kind, payload, created_at)
+				INSERT INTO event_activity(event_id, team_id, actor_slot_id, kind, payload, created_at)
 				VALUES ($1, $2, $3, $4, $5, $6)
-			`, runID, teamID, slotIDs[0], runevents.AnswerWrong, string(payload),
+			`, eventID, teamID, slotIDs[0], activity.AnswerWrong, string(payload),
 				legEnd.Add(-3*time.Minute).Format(time.RFC3339))
 		}
 		legStart = legEnd

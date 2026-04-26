@@ -30,7 +30,7 @@
       'Dashboard': 'Översikt',
       'Organizations': 'Organisationer',
       'Adventures': 'Äventyr',
-      'Runs': 'Omgångar',
+      'Events': 'Event',
       'Library': 'Bibliotek',
       'Puzzles': 'Pussel',
       'Members': 'Medlemmar',
@@ -74,12 +74,12 @@
       'Not shared with any organisation yet.': 'Inte delat med någon organisation ännu.',
       'Share with org': 'Dela med organisation',
       'Share with organisation': 'Dela med organisation',
-      'Pick one. The organisation can schedule runs of this adventure without buying team slots.':
-        'Välj en. Organisationen kan schemalägga omgångar av detta äventyr utan att köpa lagplatser.',
+      'Pick one. The organisation can schedule events of this adventure without buying team slots.':
+        'Välj en. Organisationen kan schemalägga event av detta äventyr utan att köpa lagplatser.',
       'Revoke share': 'Återkalla delning',
       'Every organisation already has access.': 'Alla organisationer har redan åtkomst.',
-      'Revoke share with {{org}}? Existing runs keep working; new runs will be blocked.':
-        'Återkalla delning med {{org}}? Pågående omgångar fortsätter, men nya omgångar blockeras.',
+      'Revoke share with {{org}}? Existing events keep working; new events will be blocked.':
+        'Återkalla delning med {{org}}? Pågående event fortsätter, men nya event blockeras.',
       'Share revoked': 'Delning återkallad',
       'Assign': 'Tilldela',
       'Revoke': 'Återkalla',
@@ -116,8 +116,8 @@
       'Submit': 'Skicka',
       'Try an answer (preview)': 'Pröva ett svar (förhandsvisning)',
       'Waiting for the adventure to start…': 'Väntar på att äventyret ska börja…',
-      'The arranger paused the run. Stand by.':
-        'Arrangören har pausat omgången. Vänta.',
+      'The arranger paused the event. Stand by.':
+        'Arrangören har pausat eventet. Vänta.',
       'Travel to the location': 'Bege dig till platsen',
       'Head within {{r}} m of ({{lat}}, {{lng}}).':
         'Gå inom {{r}} m från ({{lat}}, {{lng}}).',
@@ -180,7 +180,7 @@
         'Bra jobbat — du kom hela vägen i mål.',
       'Not quite': 'Inte riktigt',
       // ---- player summary ----
-      'Loading your run stats…': 'Läser in din statistik…',
+      'Loading your event stats…': 'Läser in din statistik…',
       'Could not load stats.': 'Kunde inte läsa in statistik.',
       'Distance': 'Sträcka',
       'Time': 'Tid',
@@ -194,7 +194,7 @@
       '{{n}} puzzles · ': '{{n}} pussel · ',
       'server time {{time}}': 'servertid {{time}}',
       'Fullscreen': 'Helskärm',
-      'Run': 'Omgång',
+      'Event': 'Event',
       'Elapsed': 'Förflutet',
       'Not started': 'Inte startad',
       'Shake': 'Skaka',
@@ -224,18 +224,18 @@
       'Hello, {{username}}': 'Hej, {{username}}',
       'You have {{n}} adventure(s) you are allowed to arrange.':
         'Du har {{n}} äventyr som du får arrangera.',
-      'Runs total': 'Totalt omgångar',
-      'Running now': 'Pågår nu',
+      'Events total': 'Totalt event',
+      'Live now': 'Pågår nu',
       'Scheduled': 'Schemalagda',
-      'Recent runs': 'Senaste omgångarna',
+      'Recent events': 'Senaste eventen',
       'Getting started': 'Kom igång',
       'A few clicks to your first adventure.': 'Några klick till ditt första äventyr.',
       'Pick an adventure — browse the Store or create your own':
         'Välj ett äventyr — bläddra i butiken eller skapa ett eget',
-      'Have team slots ready — an assignment lets you schedule a run':
-        'Ha lagplatser redo — en tilldelning låter dig schemalägga en omgång',
-      'Schedule a run, add teams, share their links — and start!':
-        'Schemalägg en omgång, lägg till lag, dela länkarna — och kör!',
+      'Have team slots ready — an assignment lets you schedule an event':
+        'Ha lagplatser redo — en tilldelning låter dig schemalägga en event',
+      'Schedule an event, add teams, share their links — and start!':
+        'Schemalägg en event, lägg till lag, dela länkarna — och kör!',
       'Schedule': 'Schemalägg',
       'Go': 'Kör',
       'Start a new event': 'Starta ett nytt event',
@@ -243,7 +243,7 @@
       'Signed in as admin — you manage organizations, their assignments, and other admins.':
         'Inloggad som administratör — du hanterar organisationer, deras tilldelningar och övriga administratörer.',
       'Org users': 'Organisationsanvändare',
-      'Active runs': 'Aktiva omgångar',
+      'Active events': 'Aktiva event',
       'No organizations yet.': 'Inga organisationer än.',
       'Create your first organization': 'Skapa din första organisation',
       'Organization': 'Organisation',
@@ -257,10 +257,10 @@
         'Inloggad som {{username}} (spelare). Den här panelen är för arrangörer.',
       'Go to the player view →': 'Gå till spelarvyn →',
       // ---- crumb ----
-      '{{section}} / Run #{{id}}': '{{section}} / Omgång #{{id}}',
+      '{{section}} / Event #{{id}}': '{{section}} / Event #{{id}}',
       '{{section}} / {{slug}}': '{{section}} / {{slug}}',
       // ---- adventures list (arranger) ----
-      'No adventures you can run yet.': 'Inga äventyr du kan köra än.',
+      'No adventures you can use yet.': 'Inga äventyr du kan köra än.',
       'Create your own or browse the Store for published adventures.':
         'Skapa ett eget eller bläddra i butiken efter publicerade äventyr.',
       'Browse the Store': 'Bläddra i butiken',
@@ -268,8 +268,8 @@
       '{{n}} puzzle': '{{n}} pussel',
       '{{n}} assignment available': '{{n}} tilldelning tillgänglig',
       '{{n}} assignments available': '{{n}} tilldelningar tillgängliga',
-      '{{n}} run held': '{{n}} omgång bokad',
-      '{{n}} runs held': '{{n}} omgångar bokade',
+      '{{n}} event held': '{{n}} event bokad',
+      '{{n}} events held': '{{n}} event bokade',
       'Pick an assignment': 'Välj en tilldelning',
       'You hold several assignments for {{title}}. Which one do you want to schedule?':
         'Du har flera tilldelningar för {{title}}. Vilken vill du schemalägga?',
@@ -284,7 +284,7 @@
       'Contact the owner to get one.': 'Kontakta ägaren för att få en.',
       'up to {{n}} team': 'upp till {{n}} lag',
       'up to {{n}} teams': 'upp till {{n}} lag',
-      'Schedule run': 'Schemalägg omgång',
+      'Schedule event': 'Schemalägg event',
       'Already used': 'Redan använda',
       'Teams cap': 'Lagtak',
       // ---- store ----
@@ -300,12 +300,12 @@
       ' · gate {{r}} m': ' · område {{r}} m',
       // ---- schedule modal ----
       'The run is created in the scheduled state. You can start it manually later, or pick a local time here to have the server auto-start it.':
-        'Omgången skapas i schemalagt läge. Du kan starta den manuellt senare, eller välja en lokal tid här så startar servern den automatiskt.',
+        'Eventet skapas i schemalagt läge. Du kan starta den manuellt senare, eller välja en lokal tid här så startar servern den automatiskt.',
       'Auto-start at (optional)': 'Autostart kl. (valfritt)',
-      'Create run': 'Skapa omgång',
-      'Run #{{id}} scheduled': 'Omgång #{{id}} schemalagd',
+      'Create event': 'Skapa event',
+      'Event #{{id}} scheduled': 'Event #{{id}} schemalagd',
       // ---- runs table ----
-      'No runs yet.': 'Inga omgångar än.',
+      'No events yet.': 'Inga event än.',
       'State': 'Läge',
       'Started': 'Startad',
       // ---- share bar ----
@@ -319,7 +319,7 @@
       'Share on a TV — token URL, no login needed':
         'Visa på tv — token-länk, ingen inloggning behövs',
       // ---- run detail ----
-      'Run #{{id}}': 'Omgång #{{id}}',
+      'Event #{{id}}': 'Event #{{id}}',
       'Lifecycle': 'Livscykel',
       'Started {{when}}': 'Startad {{when}}',
       'Scheduled to auto-start {{when}}': 'Schemalagd att autostarta {{when}}',
@@ -344,31 +344,31 @@
       'Running': 'Kör',
       'Idle': 'Vilande',
       'Start': 'Starta',
-      'Running for {{t}}': 'Kör sedan {{t}}',
+      'Live for {{t}}': 'Kör sedan {{t}}',
       'Open live view': 'Öppna livevy',
-      'Fake a race so you can see the live view animate without recruiting real players. Writes to the same tables as a real run, so every subscriber (map, leaderboard, WS) updates as if players were on the ground.':
-        'Fejka en tävling så att du kan se livevyn animera utan att värva riktiga spelare. Skriver till samma tabeller som en riktig omgång, så alla prenumeranter (karta, topplista, WS) uppdateras som om spelarna var på plats.',
+      'Fake a race so you can see the live view animate without recruiting real players. Writes to the same tables as a real event, so every subscriber (map, leaderboard, WS) updates as if players were on the ground.':
+        'Fejka en tävling så att du kan se livevyn animera utan att värva riktiga spelare. Skriver till samma tabeller som en riktig event, så alla prenumeranter (karta, topplista, WS) uppdateras som om spelarna var på plats.',
       'Configuration': 'Inställningar',
       'Teams (2–20)': 'Lag (2–20)',
       'Speed multiplier (1–50)': 'Hastighetsmultiplikator (1–50)',
-      'Higher speed advances the walk faster without changing the ping cadence, so fast-forwarded runs still look natural.':
-        'Högre hastighet snabbar på vandringen utan att ändra ping-frekvensen, så snabbspolade omgångar ser naturliga ut.',
+      'Higher speed advances the walk faster without changing the ping cadence, so fast-forwarded events still look natural.':
+        'Högre hastighet snabbar på vandringen utan att ändra ping-frekvensen, så snabbspolade event ser naturliga ut.',
       '(no adventures)': '(inga äventyr)',
       'Simulation started': 'Simulering startad',
       'Simulation reset': 'Simulering återställd',
       'Network error — is the server running?': 'Nätverksfel — kör servern?',
-      'Start this run now?': 'Starta omgången nu?',
-      'Starting the run opens the first puzzle to all teams. ':
-        'När omgången startas öppnas det första pusslet för alla lag. ',
+      'Start this event now?': 'Starta eventet nu?',
+      'Starting the event opens the first puzzle to all teams. ':
+        'När eventet startas öppnas det första pusslet för alla lag. ',
       'An auto-start is currently scheduled for ':
         'En autostart är schemalagd till ',
       '. Starting now will replace that.': '. Om du startar nu ersätts den.',
       'You can pause it later if needed.': 'Du kan pausa den senare om det behövs.',
-      'Start run': 'Starta omgång',
+      'Start event': 'Starta event',
       'Change auto-start': 'Ändra autostart',
       'Set auto-start': 'Ställ in autostart',
-      'The server will flip the run to running automatically at the time below. Leave empty and hit Clear to remove the auto-start.':
-        'Servern sätter omgången till pågår automatiskt vid tiden nedan. Lämna tomt och tryck Rensa för att ta bort autostarten.',
+      'The server will flip the event to running automatically at the time below. Leave empty and hit Clear to remove the auto-start.':
+        'Servern sätter eventet till pågår automatiskt vid tiden nedan. Lämna tomt och tryck Rensa för att ta bort autostarten.',
       'Auto-start at': 'Autostart kl.',
       'Clear': 'Rensa',
       'Pick a date or use Clear': 'Välj ett datum eller tryck Rensa',
@@ -421,14 +421,14 @@
       'This permanently removes {{username}} and unlinks them from any teams. Enter your password to confirm.':
         'Det här tar bort {{username}} permanent och kopplar loss dem från alla lag. Ange ditt lösenord för att bekräfta.',
       // ---- organizations ----
-      'Each organization is a tenant — its users (org_admin, org_member) run the games. Assign adventures to an organization to let them schedule runs.':
-        'Varje organisation är en tenant — dess användare (org_admin, org_member) driver spelen. Tilldela äventyr till en organisation så att de kan schemalägga omgångar.',
+      'Each organization is a tenant — its users (org_admin, org_member) operate the games. Assign adventures to an organization to let them schedule events.':
+        'Varje organisation är en tenant — dess användare (org_admin, org_member) driver spelen. Tilldela äventyr till en organisation så att de kan schemalägga event.',
       '{{n}} user': '{{n}} användare',
       '{{n}} users': '{{n}} användare',
       '{{n}} player': '{{n}} spelare',
       '{{n}} players': '{{n}} spelare',
-      '{{n}} run': '{{n}} omgång',
-      '{{n}} runs': '{{n}} omgångar',
+      '{{n}} event': '{{n}} event',
+      '{{n}} events': '{{n}} event',
       'Add user': 'Lägg till användare',
       'Users ({{n}})': 'Användare ({{n}})',
       'No users yet — add one to get started.': 'Inga användare än — lägg till en för att komma igång.',
@@ -436,22 +436,22 @@
       '{{username}} (admin)': '{{username}} (administratör)',
       '{{username}} (member)': '{{username}} (medlem)',
       'Unused assignments ({{n}})': 'Oanvända tilldelningar ({{n}})',
-      'None — assign an adventure to let them schedule a run.':
-        'Inga — tilldela ett äventyr så att de kan schemalägga en omgång.',
+      'None — assign an adventure to let them schedule an event.':
+        'Inga — tilldela ett äventyr så att de kan schemalägga en event.',
       'Click to edit': 'Klicka för att redigera',
       '{{slug}} · {{n}} team': '{{slug}} · {{n}} lag',
       '{{slug}} · {{n}} teams': '{{slug}} · {{n}} lag',
       'Used ({{n}})': 'Använda ({{n}})',
       'Click to edit team cap': 'Klicka för att ändra lagtak',
-      '{{slug}} · run #{{run}} · max {{max}}': '{{slug}} · omgång #{{run}} · max {{max}}',
+      '{{slug}} · event #{{event}} · max {{max}}': '{{slug}} · event #{{run}} · max {{max}}',
       'New organization': 'Ny organisation',
       'Name': 'Namn',
       'Organization created': 'Organisation skapad',
       'Rename {{name}}': 'Byt namn på {{name}}',
       'New name': 'Nytt namn',
       'Delete organization “{{name}}”?': 'Ta bort organisationen ”{{name}}”?',
-      'This deletes every user, player, assignment and run that belongs to the organization. Enter your password to confirm.':
-        'Det raderar alla användare, spelare, tilldelningar och omgångar som tillhör organisationen. Ange ditt lösenord för att bekräfta.',
+      'This deletes every user, player, assignment and event that belongs to the organization. Enter your password to confirm.':
+        'Det raderar alla användare, spelare, tilldelningar och event som tillhör organisationen. Ange ditt lösenord för att bekräfta.',
       'Organization deleted': 'Organisation borttagen',
       'Add user to {{name}}': 'Lägg till användare i {{name}}',
       'Role': 'Roll',
@@ -464,15 +464,15 @@
       'Edit assignment · {{name}}': 'Redigera tilldelning · {{name}}',
       'Adventure (locked — already used)': 'Äventyr (låst — redan använt)',
       'Maximum teams': 'Max antal lag',
-      'Linked to run #{{id}}. You may raise the cap; lowering below the current team count is rejected.':
-        'Kopplad till omgång #{{id}}. Du kan höja taket; lägre än nuvarande antal lag avvisas.',
+      'Linked to event #{{id}}. You may raise the cap; lowering below the current team count is rejected.':
+        'Kopplad till event #{{id}}. Du kan höja taket; lägre än nuvarande antal lag avvisas.',
       'This assignment has not yet been used.': 'Tilldelningen har inte använts än.',
       'Max teams must be at least 1': 'Max antal lag måste vara minst 1',
       'Assignment updated': 'Tilldelning uppdaterad',
       'No adventures loaded': 'Inga äventyr inlästa',
       'Assign adventure to {{name}}': 'Tilldela äventyr till {{name}}',
-      'Each assignment may be used for exactly one run. For more, assign again.':
-        'Varje tilldelning kan användas för exakt en omgång. Tilldela igen för fler.',
+      'Each assignment may be used for exactly one event. For more, assign again.':
+        'Varje tilldelning kan användas för exakt en event. Tilldela igen för fler.',
       'Assignment granted': 'Tilldelning beviljad',
       'Assignment revoked': 'Tilldelning återkallad',
       // ---- puzzles ----
@@ -598,10 +598,10 @@
       'member': 'medlem',
       // ---- event feed ----
       'No activity yet.': 'Ingen aktivitet än.',
-      'Run created for ': 'Omgång skapad för ',
-      'Run started': 'Omgången startade',
-      'Run paused': 'Omgången pausades',
-      'Run resumed': 'Omgången återupptogs',
+      'Event created for ': 'Event skapad för ',
+      'Event started': 'Eventet startade',
+      'Event paused': 'Eventet pausades',
+      'Event resumed': 'Eventet återupptogs',
       'Team ': 'Laget ',
       ' created': ' skapades',
       'with {{names}}': 'med {{names}}',
@@ -684,13 +684,13 @@
         'Rotera länk — ogiltigförklarar den gamla',
       'Alt-click to skip the confirmation': 'Alt-klicka för att hoppa över bekräftelsen',
       // ---- run lifecycle ----
-      'New run': 'Ny omgång',
-      'Rename run': 'Byt namn på omgång',
-      'Run name': 'Omgångens namn',
-      'Run name (optional)': 'Omgångens namn (valfritt)',
-      'Run ready': 'Omgången är klar',
-      'Run creation failed': 'Kunde inte skapa omgång',
-      'Empty resets to "Run #{{id}}".': 'Tomt återställer till "Omgång #{{id}}".',
+      'New event': 'Ny event',
+      'Rename event': 'Byt namn på event',
+      'Event name': 'Eventets namn',
+      'Event name (optional)': 'Eventets namn (valfritt)',
+      'Event ready': 'Eventet är klar',
+      'Event creation failed': 'Kunde inte skapa event',
+      'Empty resets to "Event #{{id}}".': 'Tomt återställer till "Event #{{id}}".',
       'Reschedule': 'Schemalägg om',
       'Schedule for later': 'Schemalägg för senare',
       'Download results': 'Ladda ner resultat',
@@ -709,8 +709,8 @@
       'Purchases': 'Köp',
       'Purchase failed': 'Köpet misslyckades',
       'Payment failed': 'Betalningen misslyckades',
-      'Payment received — let\'s schedule your run.':
-        'Betalning mottagen — dags att schemalägga din omgång.',
+      'Payment received — let\'s schedule your event.':
+        'Betalning mottagen — dags att schemalägga din event.',
       'Proceed to payment': 'Fortsätt till betalning',
       'How many team slots do you need? ($2.00 each, simulated payment.)':
         'Hur många lagplatser behöver du? ($2,00 styck, simulerad betalning.)',
@@ -783,12 +783,12 @@
         'Konto skapat — kolla {{email}} efter en verifieringslänk.',
       'signup failed': 'registreringen misslyckades',
       'Verify your email': 'Verifiera din e-post',
-      'We sent a link to {{email}}. Until you click it, runs and purchases are disabled.':
+      'We sent a link to {{email}}. Until you click it, events and purchases are disabled.':
         'Vi skickade en länk till {{email}}. Tills du klickar på den är körningar och köp inaktiverade.',
       'Resend email': 'Skicka igen',
       'Verification email re-sent.': 'Verifieringsmejl skickat igen.',
       'Could not resend; try again later.': 'Kunde inte skicka igen; försök senare.',
-      'Email verified — you can now schedule runs and buy assignments.':
+      'Email verified — you can now schedule events and buy assignments.':
         'E-post verifierad — du kan nu schemalägga körningar och köpa tilldelningar.',
       'Verification link is invalid or has expired. Sign in and tap "Resend email".':
         'Verifieringslänken är ogiltig eller har gått ut. Logga in och tryck på "Skicka igen".',
@@ -846,9 +846,9 @@
       // ---- player forget ----
       'More': 'Mer',
       'Sign out': 'Logga ut',
-      'Forget me on this run': 'Glöm mig från denna körning',
+      'Forget me on this event': 'Glöm mig från denna körning',
       'Forget me?': 'Glöm mig?',
-      'This wipes your location history and your answers from this run. Other team members keep playing. You\'ll be signed out and the link won\'t work again. Continue?':
+      'This wipes your location history and your answers from this event. Other team members keep playing. You\'ll be signed out and the link won\'t work again. Continue?':
         'Detta raderar din platshistorik och dina svar från denna körning. Övriga lagmedlemmar fortsätter spela. Du loggas ut och länken fungerar inte igen. Fortsätt?',
       'Forget me': 'Glöm mig',
       'Cancel': 'Avbryt',
@@ -862,7 +862,7 @@
         'Återbetala {{amount}} till kunden? Statusen ändras till "refunded" när Stripe bekräftar.',
       'Refund initiated. Webhook will flip the state shortly.':
         'Återbetalning startad. Webhook uppdaterar statusen strax.',
-      'Browse the catalog and buy team slots to start scheduling runs.':
+      'Browse the catalog and buy team slots to start scheduling events.':
         'Bläddra i katalogen och köp lagsplatser för att börja schemalägga körningar.',
       'Open the store': 'Öppna butiken',
       // ---- age gate ----
@@ -878,7 +878,7 @@
         'katalogen har färdiga äventyr, eller skapa egna.',
       'Buy team slots': 'Köp lagsplatser',
       'one slot per team. Pay once per event.': 'en plats per lag. Betala en gång per event.',
-      'Schedule a run': 'Schemalägg en körning',
+      'Schedule an event': 'Schemalägg en körning',
       'add teams, share magic links, and start when ready.':
         'lägg till lag, dela magiska länkar och starta när du är klar.',
       'You can revisit this from the Settings page anytime.':
@@ -887,7 +887,7 @@
       // ---- empty states ----
       'Check back soon — operators publish new adventures regularly.':
         'Kom tillbaka snart — operatörer publicerar nya äventyr regelbundet.',
-      'Pick an adventure to schedule your first run — you can add teams and share player links once it\'s created.':
+      'Pick an adventure to schedule your first event — you can add teams and share player links once it\'s created.':
         'Välj ett äventyr för att schemalägga din första körning — du kan lägga till lag och dela spelarlänkar när den är skapad.',
       'Use "Add puzzle" above to author a new one or copy from the library.':
         'Använd "Lägg till pussel" ovan för att skapa eller kopiera från biblioteket.',
@@ -915,7 +915,7 @@
       'Preview appears here as you type.': 'Förhandsvisning visas här medan du skriver.',
       'Show 1 player link': 'Visa 1 spelarlänk',
       'Show {{n}} player links': 'Visa {{n}} spelarlänkar',
-      'Shown on the first-run welcome overlay — leave empty for the default welcome + tips.':
+      'Shown on the first-event welcome overlay — leave empty for the default welcome + tips.':
         'Visas i välkomstöverlägget vid första körningen — lämna tomt för standardvälkomsten.',
       'Shown under the stats when the team finishes — leave empty for the default celebratory line.':
         'Visas under statistiken när laget är klart — lämna tomt för standardraden.',
@@ -976,7 +976,7 @@
       'No webhook endpoints yet. Add one to receive lifecycle events on a URL you control.':
           'Inga webhook-slutpunkter än. Lägg till en för att ta emot livscykelhändelser på en URL du kontrollerar.',
       'Outbound HTTP callbacks for run / team / purchase lifecycle. Each delivery is signed with HMAC-SHA256; verify the X-Zv-Signature header against your endpoint\'s secret.':
-          'Utgående HTTP-anrop för omgångar, lag och köphändelser. Varje leverans signeras med HMAC-SHA256; verifiera X-Zv-Signature mot slutpunktens nyckel.',
+          'Utgående HTTP-anrop för event, lag och köphändelser. Varje leverans signeras med HMAC-SHA256; verifiera X-Zv-Signature mot slutpunktens nyckel.',
       'Must be https. Localhost is allowed for development.':
           'Måste vara https. Localhost tillåts vid utveckling.',
       'Mint a new secret. The old one stops working immediately.':
@@ -1025,49 +1025,49 @@
       // be valid.
       'Manual': 'Manual',
       'Arranger manual': 'Manual för arrangörer',
-      'A pedagogic walk-through of the platform: create an adventure, fill it with puzzles, schedule a run, add teams, and watch them play. Read it once start to finish, or jump to a section from the table of contents.':
-          'En pedagogisk genomgång av plattformen: skapa ett äventyr, fyll det med pussel, schemalägg en omgång, lägg till lag och se dem spela. Läs igenom från början till slut, eller hoppa till ett avsnitt via innehållsförteckningen.',
+      'A pedagogic walk-through of the platform: create an adventure, fill it with puzzles, schedule an event, add teams, and watch them play. Read it once start to finish, or jump to a section from the table of contents.':
+          'En pedagogisk genevent av plattformen: skapa ett äventyr, fyll det med pussel, schemalägg en event, lägg till lag och se dem spela. Läs igenom från början till slut, eller hoppa till ett avsnitt via innehållsförteckningen.',
       'Contents': 'Innehåll',
       // section titles
       'Welcome': 'Välkommen',
       'First steps': 'Första stegen',
       'Authoring an adventure': 'Skapa ett äventyr',
       'Adding puzzles': 'Lägg till pussel',
-      'How the run flow fits together': 'Så hänger flödet ihop',
+      'How the event flow fits together': 'Så hänger flödet ihop',
       'Buying team-slot assignments': 'Köp lagplatser (uppdrag)',
-      'Creating a run': 'Skapa en omgång',
+      'Creating an event': 'Skapa en event',
       'Adding teams and sharing magic links': 'Lägg till lag och dela magiska länkar',
-      'Running the run': 'Genomför omgången',
+      'Running the event': 'Genomför eventet',
       'Webhooks: outbound integrations': 'Webhooks: utgående integrationer',
       'Account, data and deletion': 'Konto, data och radering',
       'Getting help': 'Få hjälp',
       // welcome
-      'Zonventure ("zv") is a platform for running location-based adventure games — treasure hunts, team-building events, school field trips. As an arranger you author the puzzles, set up a run, and the players walk around with their phones answering them.':
-          'Zonventure ("zv") är en plattform för platsbaserade äventyrsspel — skattjakter, lagevent, skolutflykter. Som arrangör skapar du pusslen, sätter upp en omgång, och spelarna går runt med sina telefoner och svarar på dem.',
+      'Zonventure ("zv") is a platform for running location-based adventure games — treasure hunts, team-building events, school field trips. As an arranger you author the puzzles, set up an event, and the players walk around with their phones answering them.':
+          'Zonventure ("zv") är en plattform för platsbaserade äventyrsspel — skattjakter, lagevent, skolutflykter. Som arrangör skapar du pusslen, sätter upp en event, och spelarna går runt med sina telefoner och svarar på dem.',
       'Four words to know': 'Fyra ord att kunna',
       'Adventure': 'Äventyr',
       'a reusable script. Pages of puzzles in order. Like a book.':
           'ett återanvändbart manus. Sidor med pussel i ordning. Som en bok.',
       'Assignment': 'Uppdrag',
-      'a paid licence to run an adventure once for up to N teams. You buy these from the Store.':
+      'a paid licence to use an adventure for an event once for up to N teams. You buy these from the Store.':
           'en betald licens att köra ett äventyr en gång för upp till N lag. Köps i Butiken.',
       'one specific playthrough at a specific time. Created from an assignment.':
           'en specifik genomspelning vid en specifik tidpunkt. Skapas från ett uppdrag.',
-      'a group of players in a run, identified by a team name. Each player gets their own magic-link to log in as part of the team.':
-          'en grupp spelare i en omgång, identifierad med ett lagnamn. Varje spelare får en egen magisk länk för att logga in som del av laget.',
-      'Mental model: an Adventure is a recipe; an Assignment is the right to cook it once; a Run is one specific dinner; a Team is the people sitting at a table.':
-          'Tankebild: ett Äventyr är ett recept; ett Uppdrag är rätten att laga det en gång; en Omgång är en specifik middag; ett Lag är personerna vid bordet.',
+      'a group of players in an event, identified by a team name. Each player gets their own magic-link to log in as part of the team.':
+          'en grupp spelare i en event, identifierad med ett lagnamn. Varje spelare får en egen magisk länk för att logga in som del av laget.',
+      'Mental model: an Adventure is a recipe; an Assignment is the right to cook it once; a Event is one specific dinner; a Team is the people sitting at a table.':
+          'Tankebild: ett Äventyr är ett recept; ett Uppdrag är rätten att laga det en gång; en Event är en specifik middag; ett Lag är personerna vid bordet.',
       // first steps
       'When you sign up, you create an organization. Everyone in your organization shares the same adventures, assignments, and runs.':
-          'När du registrerar dig skapar du en organisation. Alla i din organisation delar samma äventyr, uppdrag och omgångar.',
+          'När du registrerar dig skapar du en organisation. Alla i din organisation delar samma äventyr, uppdrag och event.',
       'Verify your email': 'Verifiera din e-post',
       'After signup we email a verification link. You can log in before clicking it, but money-touching actions (buying assignments, scheduling runs) are blocked until you verify. The dashboard shows a banner with a "Resend" button if it didn\'t arrive.':
-          'Efter registreringen skickar vi en verifieringslänk. Du kan logga in innan du klickar, men åtgärder som rör pengar (köp av uppdrag, schemaläggning av omgångar) blockeras tills du verifierar. Översikten visar en banderoll med en "Skicka igen"-knapp om mejlet inte kom fram.',
+          'Efter registreringen skickar vi en verifieringslänk. Du kan logga in innan du klickar, men åtgärder som rör pengar (köp av uppdrag, schemaläggning av event) blockeras tills du verifierar. Översikten visar en banderoll med en "Skicka igen"-knapp om mejlet inte kom fram.',
       '[Screenshot: dashboard with the unverified-email banner]':
           '[Skärmdump: översikt med banderoll om overifierad e-post]',
       'The dashboard': 'Översikten',
       'The dashboard is your home: at-a-glance view of upcoming runs, ready-to-schedule assignments, and shortcuts to the things you most often do.':
-          'Översikten är ditt hem: en snabb vy över kommande omgångar, uppdrag redo att schemaläggas och genvägar till det du gör oftast.',
+          'Översikten är ditt hem: en snabb vy över kommande event, uppdrag redo att schemaläggas och genvägar till det du gör oftast.',
       '[Screenshot: a populated arranger dashboard]':
           '[Skärmdump: en ifylld arrangörsöversikt]',
       // adventure
@@ -1076,8 +1076,8 @@
       'Create an adventure': 'Skapa ett äventyr',
       'Click "Library" in the sidebar.': 'Klicka på "Bibliotek" i sidomenyn.',
       'Press "New adventure".': 'Tryck på "Nytt äventyr".',
-      'Give it a title. The slug is auto-derived but editable; once players have started a run with this slug, don\'t change it.':
-          'Ge det en titel. URL-namnet (slug) härleds automatiskt men går att redigera; ändra det inte när spelare har startat en omgång med detta slug.',
+      'Give it a title. The slug is auto-derived but editable; once players have started an event with this slug, don\'t change it.':
+          'Ge det en titel. URL-namnet (slug) härleds automatiskt men går att redigera; ändra det inte när spelare har startat en event med detta slug.',
       'Save. You\'re taken to the puzzle editor.':
           'Spara. Du tas till pusselredigeraren.',
       '[Screenshot: Library tab with the New adventure button highlighted]':
@@ -1133,22 +1133,22 @@
       'The "Preview" button on the adventure detail page renders a sandbox playthrough. No team progress is recorded — it\'s your test rig.':
           'Knappen "Förhandsgranska" på äventyrets detaljsida öppnar en sandlåda för genomspelning. Ingen lagprogress sparas — det är din testbänk.',
       // run flow
-      'Before scheduling your first run, take a moment to understand the chain:':
-          'Innan du schemalägger din första omgång, ta en stund att förstå kedjan:',
-      'Adventure  →  Assignment  →  Run  →  Teams  →  Players':
-          'Äventyr  →  Uppdrag  →  Omgång  →  Lag  →  Spelare',
+      'Before scheduling your first event, take a moment to understand the chain:':
+          'Innan du schemalägger din första event, ta en stund att förstå kedjan:',
+      'Adventure  →  Assignment  →  Event  →  Teams  →  Players':
+          'Äventyr  →  Uppdrag  →  Event  →  Lag  →  Spelare',
       'You author or pick an Adventure (free).':
           'Du skapar eller väljer ett Äventyr (gratis).',
       'You buy an Assignment for that adventure: pays for up to N teams.':
           'Du köper ett Uppdrag för det äventyret: betalar för upp till N lag.',
-      'You create a Run from the Assignment: ties it to a specific date/time.':
-          'Du skapar en Omgång från Uppdraget: kopplar det till ett specifikt datum/tid.',
-      'You add Teams to the Run: each team is a group of players.':
-          'Du lägger till Lag i Omgången: varje lag är en grupp spelare.',
-      'You share each Player a magic link: they tap, the run starts, they play.':
-          'Du delar en magisk länk med varje Spelare: de trycker, omgången startar, de spelar.',
-      'One assignment = one run. If you want to run the same adventure twice, buy two assignments.':
-          'Ett uppdrag = en omgång. Om du vill köra samma äventyr två gånger, köp två uppdrag.',
+      'You create a Event from the Assignment: ties it to a specific date/time.':
+          'Du skapar en Event från Uppdraget: kopplar det till ett specifikt datum/tid.',
+      'You add Teams to the Event: each team is a group of players.':
+          'Du lägger till Lag i Eventet: varje lag är en grupp spelare.',
+      'You share each Player a magic link: they tap, the event starts, they play.':
+          'Du delar en magisk länk med varje Spelare: de trycker, eventet startar, de spelar.',
+      'One assignment = one event. If you want to run the same adventure twice, buy two assignments.':
+          'Ett uppdrag = en event. Om du vill köra samma äventyr två gånger, köp två uppdrag.',
       // assignments
       'Click "Store" in the sidebar.': 'Klicka på "Butik" i sidomenyn.',
       'Pick the adventure you want to run.': 'Välj äventyret du vill köra.',
@@ -1162,26 +1162,26 @@
       'Refunds: if you bought the wrong assignment, contact support. Refunds are admin-only — they touch real money.':
           'Återbetalningar: om du köpt fel uppdrag, kontakta supporten. Återbetalningar görs endast av administratör — de rör riktiga pengar.',
       // create run
-      'Click "Runs" in the sidebar, then "Schedule run".':
-          'Klicka på "Omgångar" i sidomenyn, sedan "Schemalägg omgång".',
+      'Click "Events" in the sidebar, then "Schedule run".':
+          'Klicka på "Event" i sidomenyn, sedan "Schemalägg event".',
       'Pick the assignment you want to use (only unused assignments are listed).':
           'Välj det uppdrag du vill använda (endast oanvända uppdrag listas).',
-      'Give the run a name (eg. "Office team-build, Friday afternoon"). This is for your benefit; players don\'t see it.':
-          'Ge omgången ett namn (t.ex. "Kontorets lagbygge, fredag eftermiddag"). Det är till för dig själv; spelarna ser det inte.',
-      'Pick a date and time. You can also leave it blank and start the run manually later.':
-          'Välj datum och tid. Du kan också lämna fältet tomt och starta omgången manuellt senare.',
+      'Give the event a name (eg. "Office team-build, Friday afternoon"). This is for your benefit; players don\'t see it.':
+          'Ge eventet ett namn (t.ex. "Kontorets lagbygge, fredag eftermiddag"). Det är till för dig själv; spelarna ser det inte.',
+      'Pick a date and time. You can also leave it blank and start the event manually later.':
+          'Välj datum och tid. Du kan också lämna fältet tomt och starta eventet manuellt senare.',
       'Confirm the no-minors attestation, or pick the COPPA path if you\'re running for under-13s.':
           'Bekräfta intygande om "inga minderåriga", eller välj COPPA-vägen om du kör för under 13 år.',
-      'Save. The run appears in the Runs list with state "scheduled".':
-          'Spara. Omgången dyker upp i Omgångslistan med status "schemalagd".',
-      '[Screenshot: the schedule-run dialog]':
-          '[Skärmdump: dialogen för att schemalägga en omgång]',
-      'A scheduled run auto-starts the moment its time arrives, even if you\'ve forgotten to click Start. Players who open their magic link at the scheduled minute get going immediately.':
-          'En schemalagd omgång startar automatiskt när tiden infaller, även om du har glömt att klicka på Starta. Spelare som öppnar sin magiska länk vid schemalagd tid kommer igång direkt.',
+      'Save. The event appears in the Events list with state "scheduled".':
+          'Spara. Eventet dyker upp i Eventslistan med status "schemalagd".',
+      '[Screenshot: the schedule-event dialog]':
+          '[Skärmdump: dialogen för att schemalägga en event]',
+      'A scheduled event auto-starts the moment its time arrives, even if you\'ve forgotten to click Start. Players who open their magic link at the scheduled minute get going immediately.':
+          'En schemalagd event startar automatiskt när tiden infaller, även om du har glömt att klicka på Starta. Spelare som öppnar sin magiska länk vid schemalagd tid kommer igång direkt.',
       // teams
       'Adding a team': 'Lägg till ett lag',
-      'Open the run\'s detail page from the Runs list.':
-          'Öppna omgångens detaljsida från Omgångslistan.',
+      'Open the event\'s detail page from the Events list.':
+          'Öppna eventets detaljsida från Eventslistan.',
       'Click "Add team".': 'Klicka på "Lägg till lag".',
       'Type the team name and the player names (one per line, or paste from a CSV).':
           'Skriv lagets namn och spelarnas namn (ett per rad, eller klistra in från CSV).',
@@ -1190,34 +1190,34 @@
       '[Screenshot: the add-team dialog]':
           '[Skärmdump: dialogen för att lägga till lag]',
       'Sharing magic links': 'Dela magiska länkar',
-      'Each player\'s magic link is what they tap to join the run. The run-detail page has a "Team links" panel: copy individual links, copy a CSV of all team members, or copy a single "captain link" per team that the captain forwards to teammates.':
-          'Varje spelares magiska länk är det de trycker på för att gå med i omgången. Detaljsidan har en panel för "Laglänkar": kopiera enskilda länkar, kopiera en CSV med alla lagmedlemmar eller kopiera en "kaptenslänk" per lag som kaptenen skickar vidare till lagkamraterna.',
+      'Each player\'s magic link is what they tap to join the event. The event-detail page has a "Team links" panel: copy individual links, copy a CSV of all team members, or copy a single "captain link" per team that the captain forwards to teammates.':
+          'Varje spelares magiska länk är det de trycker på för att gå med i eventet. Detaljsidan har en panel för "Laglänkar": kopiera enskilda länkar, kopiera en CSV med alla lagmedlemmar eller kopiera en "kaptenslänk" per lag som kaptenen skickar vidare till lagkamraterna.',
       '[Screenshot: the team links panel with copy buttons]':
           '[Skärmdump: panelen för laglänkar med kopiera-knappar]',
       'Magic links are sensitive — anyone with the URL can play as that slot. Don\'t paste them into public Slack channels. The dashboard\'s "Rotate token" action mints a new link if one leaks.':
           'Magiska länkar är känsliga — den som har URL:en kan spela som den platsen. Klistra inte in dem i offentliga Slack-kanaler. Åtgärden "Rotera token" i översikten skapar en ny länk om en läckt.',
       'Token expiry': 'Tokenens giltighetstid',
-      'Slot tokens expire seven days after the run\'s scheduled time by default. The team-links panel shows "expires in Nd" so you can spot links that need re-sharing.':
-          'Platstokens går ut sju dagar efter omgångens schemalagda tid som standard. Panelen för laglänkar visar "går ut om N dagar" så att du ser vilka länkar som behöver delas på nytt.',
+      'Slot tokens expire seven days after the event\'s scheduled time by default. The team-links panel shows "expires in Nd" so you can spot links that need re-sharing.':
+          'Platstokens går ut sju dagar efter eventets schemalagda tid som standard. Panelen för laglänkar visar "går ut om N dagar" så att du ser vilka länkar som behöver delas på nytt.',
       // running
       'Start, pause, resume': 'Starta, pausa, återuppta',
-      'A scheduled run auto-starts at its time, but you can also start it manually from the run-detail page. Pause the run to freeze player progress (lunch break, weather delay), then Resume to continue.':
-          'En schemalagd omgång startar automatiskt vid sin tid, men du kan också starta den manuellt från detaljsidan. Pausa omgången för att frysa spelarnas progress (lunchpaus, väderavbrott), och Återuppta för att fortsätta.',
+      'A scheduled event auto-starts at its time, but you can also start it manually from the event-detail page. Pause the event to freeze player progress (lunch break, weather delay), then Resume to continue.':
+          'En schemalagd event startar automatiskt vid sin tid, men du kan också starta den manuellt från detaljsidan. Pausa eventet för att frysa spelarnas progress (lunchpaus, väderavbrott), och Återuppta för att fortsätta.',
       'The activity feed': 'Aktivitetsflödet',
-      'The run-detail page has a live activity feed — answer attempts (right and wrong), team completions, gate reaches, run state changes. Useful for noticing a stuck team in real time.':
+      'The event-detail page has a live activity feed — answer attempts (right and wrong), team completions, gate reaches, run state changes. Useful for noticing a stuck team in real time.':
           'Detaljsidan har ett liveflöde — svarsförsök (rätt och fel), färdiga lag, platsgrindar som nås, statusändringar. Bra för att upptäcka ett fastlåst lag i realtid.',
       '[Screenshot: activity feed during a live run]':
-          '[Skärmdump: aktivitetsflödet under en pågående omgång]',
+          '[Skärmdump: aktivitetsflödet under en pågående event]',
       'The live view': 'Livevyn',
       'Each run has a public-ish "live view" URL — a leaderboard plus optional audience map. Open it on a TV in the lobby; spectators can see team progress without logging in.':
-          'Varje omgång har en (nästan) publik "live"-URL — en topplista plus en valfri publikkarta. Öppna den på en TV i lobbyn; åskådare kan se lagens progress utan att logga in.',
-      'The map is OFF by default for privacy. Toggle it on from the run settings if your players are okay with their position being shown to the audience.':
-          'Kartan är AV som standard för integritetens skull. Slå på den i omgångens inställningar om dina spelare är okej med att deras position visas för publiken.',
+          'Varje event har en (nästan) publik "live"-URL — en topplista plus en valfri publikkarta. Öppna den på en TV i lobbyn; åskådare kan se lagens progress utan att logga in.',
+      'The map is OFF by default for privacy. Toggle it on from the event settings if your players are okay with their position being shown to the audience.':
+          'Kartan är AV som standard för integritetens skull. Slå på den i eventets inställningar om dina spelare är okej med att deras position visas för publiken.',
       '[Screenshot: the live view leaderboard with map enabled]':
           '[Skärmdump: livevyns topplista med karta påslagen]',
       'Completion': 'Avslut',
-      'When every team finishes, the run automatically transitions to "completed". Players see the outro text and a stats screen (right answers, distance walked, total time). The run row in your dashboard moves to the "completed" section.':
-          'När alla lag är klara övergår omgången automatiskt till "avslutad". Spelarna ser outrotexten och en statistikskärm (rätta svar, gångavstånd, total tid). Omgångens rad i översikten flyttas till sektionen "avslutade".',
+      'When every team finishes, the event automatically transitions to "completed". Players see the outro text and a stats screen (right answers, distance walked, total time). The event row in your dashboard moves to the "completed" section.':
+          'När alla lag är klara övergår eventet automatiskt till "avslutad". Spelarna ser outrotexten och en statistikskärm (rätta svar, gångavstånd, total tid). Eventets rad i översikten flyttas till sektionen "avslutade".',
       // webhooks (manual section)
       'Webhooks let you hook the platform up to your own systems — push events into Slack, trigger a Zapier flow, update a corporate dashboard, send parents a "your kid\'s team finished" SMS. The platform POSTs JSON to an HTTPS URL you control whenever something interesting happens.':
           'Webhooks låter dig koppla plattformen till dina egna system — skicka händelser till Slack, trigga ett Zapier-flöde, uppdatera en intern dashboard, skicka SMS till föräldrar när deras barns lag är klart. Plattformen POSTar JSON till en HTTPS-URL du kontrollerar när något intressant händer.',
@@ -1226,19 +1226,19 @@
           'Visa en topplista på en TV i lobbyn, med er egen branding.',
       'Notify parents (school events) when their child\'s team finishes.':
           'Meddela föräldrar (skolevent) när deras barns lag är klart.',
-      'Trigger fulfillment in your own ops system when a run completes.':
-          'Trigga utförande i ditt eget system när en omgång är klar.',
+      'Trigger fulfillment in your own ops system when an event completes.':
+          'Trigga utförande i ditt eget system när en event är klar.',
       'Pipe events into your analytics warehouse.':
           'Mata händelser till ert analyslager.',
       'The event catalog': 'Händelsekatalogen',
       'Seven event kinds in v1:': 'Sju händelsetyper i v1:',
-      'a new run was created.': 'en ny omgång skapades.',
-      'a run actually started (manual or auto-promote).':
-          'en omgång faktiskt startade (manuellt eller automatiskt).',
+      'a new event was created.': 'en ny event skapades.',
+      'an event actually started (manual or auto-promote).':
+          'en event faktiskt startade (manuellt eller automatiskt).',
       'all teams finished.': 'alla lag klara.',
-      'a new team was added to a run.': 'ett nytt lag lades till i en omgång.',
-      'a team finished. Includes their name and run id.':
-          'ett lag är klart. Innehåller namnet och omgångens id.',
+      'a new team was added to an event.': 'ett nytt lag lades till i en event.',
+      'a team finished. Includes their name and event id.':
+          'ett lag är klart. Innehåller namnet och eventets id.',
       'an assignment was purchased.': 'ett uppdrag köptes.',
       'a purchase was refunded.': 'ett köp återbetalades.',
       'Configure an endpoint': 'Konfigurera en slutpunkt',
@@ -1291,13 +1291,13 @@
           'Vi skickar en bekräftelselänk till den nya adressen. Ändringen träder i kraft först när du klickar på den.',
       'Download my data': 'Ladda ner mina uppgifter',
       'A single JSON file with your account info plus your organization\'s runs, teams, adventures, assignments and purchases. The GDPR-friendly export.':
-          'En enda JSON-fil med din kontoinformation samt din organisations omgångar, lag, äventyr, uppdrag och köp. Det GDPR-vänliga exportet.',
+          'En enda JSON-fil med din kontoinformation samt din organisations event, lag, äventyr, uppdrag och köp. Det GDPR-vänliga exportet.',
       'Delete account': 'Radera konto',
       'If you\'re the last member, your organization is deleted with you. All runs, teams, adventures, assignments. Cannot be undone.':
-          'Om du är sista medlemmen raderas din organisation med dig. Alla omgångar, lag, äventyr, uppdrag. Kan inte ångras.',
+          'Om du är sista medlemmen raderas din organisation med dig. Alla event, lag, äventyr, uppdrag. Kan inte ångras.',
       // help
-      'If something doesn\'t work as described here, or you\'re unsure how to do something, start with the run\'s activity feed (any errors are logged there for the team that hit them).':
-          'Om något inte fungerar som beskrivet här, eller du är osäker på hur något görs, börja med omgångens aktivitetsflöde (eventuella fel loggas där för laget som råkade ut för dem).',
+      'If something doesn\'t work as described here, or you\'re unsure how to do something, start with the event\'s activity feed (any errors are logged there for the team that hit them).':
+          'Om något inte fungerar som beskrivet här, eller du är osäker på hur något görs, börja med eventets aktivitetsflöde (eventuella fel loggas där för laget som råkade ut för dem).',
       'For platform-level support, contact the operator listed at the bottom of the Privacy page.':
           'För plattformssupport, kontakta operatören som listas längst ner på Integritetssidan.',
       'This manual evolves. If you read something that\'s wrong or unclear, tell support — clearer docs help every other arranger after you.':

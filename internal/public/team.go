@@ -55,7 +55,7 @@ func (h *Handlers) TeamShare(w http.ResponseWriter, r *http.Request) {
 	err := h.DB.QueryRowContext(r.Context(), `
 		SELECT t.id, t.name, a.title, (t.avatar_mime_type IS NOT NULL)::int AS has_avatar
 		FROM teams t
-		JOIN adventure_runs ar ON ar.id = t.run_id
+		JOIN events ar ON ar.id = t.event_id
 		LEFT JOIN adventures a ON a.slug = ar.adventure_slug
 		WHERE t.token = $1
 	`, token).Scan(&teamID, &view.TeamName, &title, &hasAvatar)
@@ -105,7 +105,7 @@ func (h *Handlers) TeamShare(w http.ResponseWriter, r *http.Request) {
 	_ = httpx.Error // keep import useful if we later shift to JSON
 }
 
-// teamByToken resolves a share token to (teamID, runID). Empty/missing
+// teamByToken resolves a share token to (teamID, eventID). Empty/missing
 // tokens return (0, 0, false) with the HTTP error already written.
 // Used by the share page upload/delete handlers — the token IS the
 // authentication so there's no Role guard around them.
@@ -116,11 +116,11 @@ func (h *Handlers) teamByToken(w http.ResponseWriter, r *http.Request, token str
 	}
 	var (
 		teamID int64
-		runID  int64
+		eventID  int64
 	)
 	err := h.DB.QueryRowContext(r.Context(), `
-		SELECT id, run_id FROM teams WHERE token = $1
-	`, token).Scan(&teamID, &runID)
+		SELECT id, event_id FROM teams WHERE token = $1
+	`, token).Scan(&teamID, &eventID)
 	if errors.Is(err, sql.ErrNoRows) {
 		httpx.Error(w, http.StatusNotFound, "team not found")
 		return 0, 0, false
@@ -129,7 +129,7 @@ func (h *Handlers) teamByToken(w http.ResponseWriter, r *http.Request, token str
 		httpx.Error(w, http.StatusInternalServerError, "lookup failed")
 		return 0, 0, false
 	}
-	return teamID, runID, true
+	return teamID, eventID, true
 }
 
 // SetTeamAvatarByToken lets the team itself upload a profile picture
@@ -137,7 +137,7 @@ func (h *Handlers) teamByToken(w http.ResponseWriter, r *http.Request, token str
 // MIME constraints as the admin-side endpoint.
 func (h *Handlers) SetTeamAvatarByToken(w http.ResponseWriter, r *http.Request) {
 	token := chi.URLParam(r, "token")
-	teamID, runID, ok := h.teamByToken(w, r, token)
+	teamID, eventID, ok := h.teamByToken(w, r, token)
 	if !ok {
 		return
 	}
@@ -185,7 +185,7 @@ func (h *Handlers) SetTeamAvatarByToken(w http.ResponseWriter, r *http.Request) 
 	}
 	// Tell any listening run detail / live board that this team's
 	// picture changed so they re-fetch and re-render.
-	h.Hub.Publish(ws.RunTopic(runID), "changed", nil)
+	h.Hub.Publish(ws.EventTopic(eventID), "changed", nil)
 	httpx.JSON(w, http.StatusOK, map[string]any{
 		"url":  fmt.Sprintf("/adventure-assets/team-avatar/%d", teamID),
 		"mime": mime,
@@ -197,7 +197,7 @@ func (h *Handlers) SetTeamAvatarByToken(w http.ResponseWriter, r *http.Request) 
 // share URL.
 func (h *Handlers) DeleteTeamAvatarByToken(w http.ResponseWriter, r *http.Request) {
 	token := chi.URLParam(r, "token")
-	teamID, runID, ok := h.teamByToken(w, r, token)
+	teamID, eventID, ok := h.teamByToken(w, r, token)
 	if !ok {
 		return
 	}
@@ -209,7 +209,7 @@ func (h *Handlers) DeleteTeamAvatarByToken(w http.ResponseWriter, r *http.Reques
 		httpx.Error(w, http.StatusInternalServerError, "clear failed")
 		return
 	}
-	h.Hub.Publish(ws.RunTopic(runID), "changed", nil)
+	h.Hub.Publish(ws.EventTopic(eventID), "changed", nil)
 	httpx.JSON(w, http.StatusNoContent, nil)
 }
 

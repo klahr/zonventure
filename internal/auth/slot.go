@@ -19,7 +19,7 @@ type Slot struct {
 	ID       int64
 	Name     string
 	TeamID   int64
-	RunID    int64
+	EventID    int64
 }
 
 const (
@@ -58,11 +58,11 @@ func LoginSlotByToken(ctx context.Context, db *sql.DB, magic string) (Slot, stri
 		expiresAt sql.NullString
 	)
 	err := db.QueryRowContext(ctx, `
-		SELECT ps.id, ps.name, ps.team_id, t.run_id, ps.expires_at
+		SELECT ps.id, ps.name, ps.team_id, t.event_id, ps.expires_at
 		FROM player_slots ps
 		JOIN teams t ON t.id = ps.team_id
 		WHERE ps.token = $1
-	`, magic).Scan(&s.ID, &s.Name, &s.TeamID, &s.RunID, &expiresAt)
+	`, magic).Scan(&s.ID, &s.Name, &s.TeamID, &s.EventID, &expiresAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Slot{}, "", ErrSlotTokenUnknown
 	}
@@ -98,14 +98,14 @@ func parseSlotTimestamp(s string) (time.Time, error) {
 }
 
 // DefaultSlotExpiresAt computes the default expires_at value for a
-// newly-created slot. Uses the run's scheduled_at + 7 days when the run
+// newly-created slot. Uses the event's scheduled_at + 7 days when the event
 // is scheduled, else now + 30 days. Returned as the wire-format string
 // admin queries pass directly to the INSERT.
-func DefaultSlotExpiresAt(ctx context.Context, db *sql.DB, runID int64) string {
+func DefaultSlotExpiresAt(ctx context.Context, db *sql.DB, eventID int64) string {
 	const layout = "2006-01-02 15:04:05"
 	var sched sql.NullString
 	if err := db.QueryRowContext(ctx,
-		`SELECT scheduled_at FROM adventure_runs WHERE id = $1`, runID).Scan(&sched); err == nil {
+		`SELECT scheduled_at FROM events WHERE id = $1`, eventID).Scan(&sched); err == nil {
 		if sched.Valid && sched.String != "" {
 			if t, err := parseSlotTimestamp(sched.String); err == nil {
 				return t.Add(7 * 24 * time.Hour).UTC().Format(layout)
@@ -125,12 +125,12 @@ func LookupSlot(ctx context.Context, db *sql.DB, token string) (Slot, bool, erro
 		expires string
 	)
 	err := db.QueryRowContext(ctx, `
-		SELECT ps.id, ps.name, ps.team_id, t.run_id, ss.expires_at
+		SELECT ps.id, ps.name, ps.team_id, t.event_id, ss.expires_at
 		FROM slot_sessions ss
 		JOIN player_slots ps ON ps.id = ss.slot_id
 		JOIN teams t ON t.id = ps.team_id
 		WHERE ss.token = $1
-	`, token).Scan(&s.ID, &s.Name, &s.TeamID, &s.RunID, &expires)
+	`, token).Scan(&s.ID, &s.Name, &s.TeamID, &s.EventID, &expires)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Slot{}, false, nil
 	}

@@ -12,20 +12,20 @@ import (
 	"git.sr.ht/~klahr/zv/internal/httpx"
 )
 
-// ExportRunResults writes a CSV of the run's final standings. Columns:
+// ExportEventResults writes a CSV of the event's final standings. Columns:
 // rank, team, members, puzzles_solved, puzzles_total, time. The order
 // and ranking rules mirror the public leaderboard's so a TV shot and
 // the exported file agree.
 //
 // Filename is "run-{id}-results.csv" so the arranger can drop several
 // into a folder without renaming.
-func (h *Handlers) ExportRunResults(w http.ResponseWriter, r *http.Request) {
-	runID, ok := runIDFrom(r)
+func (h *Handlers) ExportEventResults(w http.ResponseWriter, r *http.Request) {
+	eventID, ok := eventIDFrom(r)
 	if !ok {
-		httpx.Error(w, http.StatusBadRequest, "bad run id")
+		httpx.Error(w, http.StatusBadRequest, "bad event id")
 		return
 	}
-	if _, ok := h.authorizeRun(w, r, runID); !ok {
+	if _, ok := h.authorizeEvent(w, r, eventID); !ok {
 		return
 	}
 
@@ -34,7 +34,7 @@ func (h *Handlers) ExportRunResults(w http.ResponseWriter, r *http.Request) {
 		startedAt string
 	)
 	if err := h.DB.QueryRowContext(r.Context(),
-		`SELECT adventure_slug, COALESCE(started_at,'') FROM adventure_runs WHERE id = $1`, runID).
+		`SELECT adventure_slug, COALESCE(started_at,'') FROM events WHERE id = $1`, eventID).
 		Scan(&slug, &startedAt); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "lookup failed")
 		return
@@ -58,18 +58,18 @@ func (h *Handlers) ExportRunResults(w http.ResponseWriter, r *http.Request) {
 	rows, err := h.DB.QueryContext(r.Context(), `
 		SELECT t.id, t.name, t.current_page_index, COALESCE(t.completed_at, '')
 		FROM teams t
-		WHERE t.run_id = $1
+		WHERE t.event_id = $1
 		ORDER BY
 		  (CASE WHEN t.completed_at IS NULL THEN 1 ELSE 0 END),
 		  t.completed_at ASC,
 		  t.current_page_index DESC,
 		  COALESCE(
-		    (SELECT MAX(created_at) FROM run_events
-		     WHERE run_id = t.run_id AND team_id = t.id AND kind = 'answer.right'),
+		    (SELECT MAX(created_at) FROM event_activity
+		     WHERE event_id = t.event_id AND team_id = t.id AND kind = 'answer.right'),
 		    t.created_at
 		  ) ASC,
 		  t.created_at ASC
-	`, runID)
+	`, eventID)
 	if err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "query failed")
 		return
@@ -79,7 +79,7 @@ func (h *Handlers) ExportRunResults(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Disposition",
-		fmt.Sprintf(`attachment; filename="run-%d-results.csv"`, runID))
+		fmt.Sprintf(`attachment; filename="run-%d-results.csv"`, eventID))
 	cw := csv.NewWriter(w)
 	defer cw.Flush()
 	_ = cw.Write([]string{"rank", "team", "members", "puzzles_solved", "puzzles_total", "finished_at", "time"})

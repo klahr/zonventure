@@ -359,7 +359,7 @@ func (h *Handlers) DeleteAdventure(w http.ResponseWriter, r *http.Request) {
 	}
 	var count int
 	if err := h.DB.QueryRowContext(r.Context(),
-		`SELECT COUNT(*) FROM adventure_runs WHERE adventure_slug = $1`, slug).Scan(&count); err != nil {
+		`SELECT COUNT(*) FROM events WHERE adventure_slug = $1`, slug).Scan(&count); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "runs lookup failed")
 		return
 	}
@@ -411,7 +411,7 @@ type pageWriteRequest struct {
 // regardless of whether the puzzle is attached to an adventure yet.
 // Prompt and accept are intentionally *not* required — an author may
 // save a library stub with nothing but a location and fill in the rest
-// later. The run-side code already handles empty-accept gracefully (no
+// later. The event-side code already handles empty-accept gracefully (no
 // answer ever matches).
 func (req pageWriteRequest) validate() error {
 	if req.RadiusM != nil && *req.RadiusM <= 0 {
@@ -831,12 +831,12 @@ func (h *Handlers) canViewPageImage(r *http.Request, pageID int64) bool {
 		`SELECT adventure_id, idx FROM adventure_pages WHERE id = $1`, pageID).Scan(&advID, &idx); err != nil {
 		return false
 	}
-	// Match up: slot's team is on a run whose adventure_slug → advID, and
+	// Match up: slot's team is on an event whose adventure_slug → advID, and
 	// team.current_page_index == idx.
 	var onPage int
 	err := h.DB.QueryRowContext(r.Context(), `
 		SELECT COUNT(*) FROM teams t
-		JOIN adventure_runs ar ON ar.id = t.run_id
+		JOIN events ar ON ar.id = t.event_id
 		JOIN adventures a ON a.slug = ar.adventure_slug
 		WHERE t.id = $1 AND a.id = $2 AND t.current_page_index = $3
 	`, slot.TeamID, advID, idx).Scan(&onPage)
@@ -1236,7 +1236,7 @@ func (h *Handlers) GrantAdventureShare(w http.ResponseWriter, r *http.Request) {
 }
 
 // RevokeAdventureShare removes the share for a given org. Runs already
-// created from the share are unaffected — revoking only stops new runs.
+// created from the share are unaffected — revoking only stops new events.
 func (h *Handlers) RevokeAdventureShare(w http.ResponseWriter, r *http.Request) {
 	slug := chi.URLParam(r, "slug")
 	if _, ok := h.requireEditAdventure(w, r, slug); !ok {

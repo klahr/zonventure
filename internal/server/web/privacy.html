@@ -50,7 +50,7 @@
       hashed password, IP and user-agent at login. Used for authentication
       and security audit.</li>
   <li><strong>Player data</strong>: a slot name (chosen by the arranger),
-      and during a run the player's GPS location and answer text.
+      and during an event the player's GPS location and answer text.
       Used to display progress on the live board and verify location
       gates.</li>
   <li><strong>Operational logs</strong>: login successes/failures, IPs,
@@ -71,9 +71,9 @@
 <h2>How long we keep it</h2>
 <ul>
   <li>Account data: until you delete the account.</li>
-  <li>Player location pings &amp; answers: deleted with the run, or
+  <li>Player location pings &amp; answers: deleted with the event, or
       after the platform's location-retention window
-      ({{LOCATION_RETENTION_DAYS}} days post-run by default), whichever
+      ({{LOCATION_RETENTION_DAYS}} days post-event by default), whichever
       comes first.</li>
   <li>Audit logs: kept for {{AUDIT_RETENTION_DAYS}} days.</li>
   <li>Verification / reset tokens: 1 hour or until used.</li>
@@ -85,7 +85,7 @@
       Settings → "Download my data" (a JSON file).</li>
   <li>Erasure — Settings → "Delete account" wipes your account and
       (if you're the last member) your organization. Players can wipe
-      their per-run data via the "Forget me" menu inside /play.</li>
+      their per-event data via the "Forget me" menu inside /play.</li>
   <li>Rectification — change your email or password from Settings.</li>
   <li>Portability — the export is a structured, machine-readable
       JSON document.</li>

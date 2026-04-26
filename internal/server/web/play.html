@@ -345,7 +345,7 @@
   .welcome .cta button[disabled]:hover { background: var(--surface-2); }
 
   /* Pre-start card for the main view (shown once the welcome has been
-     dismissed but the run still isn't running). Same countdown idea as
+     dismissed but the event still isn't running). Same countdown idea as
      the welcome button — players can't reach the first puzzle until the
      scheduled time; server enforces this too. */
   .prestart-card {
@@ -662,7 +662,7 @@ let gpsError = null;
 let lastRenderKey = null;
 
 // WebSocket to the server. The server pushes {kind:"state"} frames when
-// anything in this run changes; we push {kind:"location"} and
+// anything in this event changes; we push {kind:"location"} and
 // {kind:"answer"} frames back. Reconnects with exponential backoff so a
 // dropped wifi / cellular handover heals itself without user action.
 let ws = null;
@@ -983,7 +983,7 @@ function render(s) {
   maybeShowWelcome(s);
 
   if (s.status === 'waiting')  { hideSubmitDock(); app.append(buildWaitingCard(s)); return; }
-  if (s.status === 'paused')   { hideSubmitDock(); app.append(el('p', {}, t('The arranger paused the run. Stand by.'))); return; }
+  if (s.status === 'paused')   { hideSubmitDock(); app.append(el('p', {}, t('The arranger paused the event. Stand by.'))); return; }
   if (s.status === 'completed'){ hideSubmitDock(); renderCompleted(s); return; }
 
   if (s.title) app.append(el('h3', {}, s.title));
@@ -1424,7 +1424,7 @@ function maybeShowWelcome(s) {
   if (!s.adventure_title || !s.team_name || !s.slot_name) return;
   // During pre-start we already show a countdown card in the main view.
   // Stacking the welcome overlay on top would duplicate the same
-  // "waiting" message; defer until the run actually starts so the
+  // "waiting" message; defer until the event actually starts so the
   // intro + Let's go button lands when the player can act on it.
   if (s.status === 'waiting') return;
   const key = 'zv_welcome_' + [s.adventure_slug || s.adventure_title, s.team_name, s.slot_name].join('|');
@@ -1442,7 +1442,7 @@ function showWelcomeDialog(s, opts = {}) {
   };
 
   // maybeShowWelcome suppresses the overlay during the 'waiting' state,
-  // so by the time we get here the run is live and the CTA can just
+  // so by the time we get here the event is live and the CTA can just
   // dismiss. The pre-start countdown lives on buildWaitingCard instead.
   const cta = document.createElement('button');
   cta.textContent = t("Let's go");
@@ -1537,7 +1537,7 @@ async function renderCompleted(s) {
   host.append(
     el('h2', {}, t('Adventure complete! 🎉')),
     el('div', { class: 'who' }, `${s.team_name || ''} · ${s.adventure_title || ''}`),
-    el('p', { class: 'muted' }, t('Loading your run stats…')));
+    el('p', { class: 'muted' }, t('Loading your event stats…')));
   app.append(host);
 
   let stats = null;
@@ -1602,7 +1602,7 @@ function formatDuration(sec) {
 }
 
 // Debug helper bound to Alt+C — renders a summary card with made-up numbers
-// so the visual layout can be iterated on without finishing a run.
+// so the visual layout can be iterated on without finishing an event.
 function showDebugSummary() {
   app.replaceChildren();
   const host = el('div', { class: 'summary' });
@@ -1772,7 +1772,7 @@ function renderPreviewDebug(d) {
 // "More" menu — sign out + forget me. Lives next to the lang picker
 // so it's reachable from every view. Tap toggles a small popover; tap
 // outside closes it. The destructive action goes through a confirm()
-// because a player accidentally tapping "Forget me" during a run
+// because a player accidentally tapping "Forget me" during an event
 // would be catastrophic — slot wiped, link dead, no recovery.
 (function mountMoreFab() {
   const fab = document.createElement('div');
@@ -1804,13 +1804,13 @@ function renderPreviewDebug(d) {
     });
     const forget = document.createElement('button');
     forget.type = 'button'; forget.className = 'danger';
-    forget.textContent = t('Forget me on this run');
+    forget.textContent = t('Forget me on this event');
     forget.addEventListener('click', async () => {
       close();
       // Plain confirm() is fine here — play.html doesn't carry a
       // modal helper and the call is rare enough that pulling one in
       // would be over-engineering.
-      if (!confirm(t('This wipes your location history and your answers from this run. Other team members keep playing. You\'ll be signed out and the link won\'t work again. Continue?'))) return;
+      if (!confirm(t('This wipes your location history and your answers from this event. Other team members keep playing. You\'ll be signed out and the link won\'t work again. Continue?'))) return;
       const r = await api('/api/player/forget', { method: 'POST' });
       if (r.status === 204) {
         location.href = '/play';

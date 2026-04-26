@@ -54,7 +54,7 @@ func main() {
 		seedDemoAdvFlag   = flag.Bool("seed-demo-adventure", false, "install the demo adventure (puzzles + placeholder images)")
 		seedDemoFlag      = flag.Bool("seed-demo", false, "install a full demo dataset and exit")
 		revokeFlag        = flag.String("revoke-sessions", "", `if set, drop staff sessions and exit. Pass a username to scope, or "all" to nuke every session+slot session`)
-		retentionLocation = flag.Int("retention-location-days", envIntDefault("ZV_LOCATION_RETENTION_DAYS", 30), "delete player location pings + answer attempts this many days after the run completes (0 disables)")
+		retentionLocation = flag.Int("retention-location-days", envIntDefault("ZV_LOCATION_RETENTION_DAYS", 30), "delete player location pings + answer attempts this many days after the event completes (0 disables)")
 		retentionAudit    = flag.Int("retention-audit-days", envIntDefault("ZV_AUDIT_RETENTION_DAYS", 90), "delete auth_events rows this many days after they were emitted (0 disables)")
 		retentionInterval = flag.Duration("retention-interval", time.Hour, "how often the retention sweeper runs")
 	)

@@ -294,7 +294,7 @@ func New(cfg Config) http.Handler {
 	})
 
 	// Arranger subscription stream: mutations still use the /api/admin
-	// HTTP endpoints above; this socket exists only to push run-detail
+	// HTTP endpoints above; this socket exists only to push event-detail
 	// updates (positions, tracks, events, run+teams) on change.
 	r.Group(func(r chi.Router) {
 		r.Use(auth.RequireAnyRole(auth.RoleAdmin, auth.RoleOrgAdmin, auth.RoleOrgMember))
@@ -317,18 +317,18 @@ func New(cfg Config) http.Handler {
 		// Pure function; no DB access, no org scoping needed.
 		r.Post("/markdown/preview", adminH.PreviewMarkdown)
 
-		r.Get("/runs", adminH.ListRuns)
-		r.Post("/runs", adminH.CreateRun)
-		r.Get("/runs/{runID}", adminH.RunDetail)
-		r.Patch("/runs/{runID}", adminH.UpdateRun)
-		r.Post("/runs/{runID}/start", adminH.StartRun)
-		r.Post("/runs/{runID}/pause", adminH.PauseRun)
-		r.Post("/runs/{runID}/resume", adminH.ResumeRun)
-		r.Post("/runs/{runID}/teams", adminH.CreateTeam)
-		r.Get("/runs/{runID}/positions", adminH.ListPositions)
-		r.Get("/runs/{runID}/events", adminH.ListEvents)
-		r.Get("/runs/{runID}/tracks", adminH.ListTracks)
-		r.Get("/runs/{runID}/results.csv", adminH.ExportRunResults)
+		r.Get("/events", adminH.ListEvents)
+		r.Post("/events", adminH.CreateEvent)
+		r.Get("/events/{eventID}", adminH.EventDetail)
+		r.Patch("/events/{eventID}", adminH.UpdateEvent)
+		r.Post("/events/{eventID}/start", adminH.StartEvent)
+		r.Post("/events/{eventID}/pause", adminH.PauseEvent)
+		r.Post("/events/{eventID}/resume", adminH.ResumeEvent)
+		r.Post("/events/{eventID}/teams", adminH.CreateTeam)
+		r.Get("/events/{eventID}/positions", adminH.ListPositions)
+		r.Get("/events/{eventID}/activity", adminH.ListActivity)
+		r.Get("/events/{eventID}/tracks", adminH.ListTracks)
+		r.Get("/events/{eventID}/results.csv", adminH.ExportEventResults)
 
 		r.Patch("/teams/{teamID}", adminH.RenameTeam)
 		r.Delete("/teams/{teamID}", adminH.DeleteTeam)

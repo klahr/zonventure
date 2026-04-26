@@ -28,16 +28,16 @@ func TestTeamShare_CreateTeamMintsToken(t *testing.T) {
 	ts, assignmentID, cleanup := newTestServer(t)
 	defer cleanup()
 
-	arr, _, _, runID := setupRun(t, ts, assignmentID)
+	arr, _, _, eventID := setupRun(t, ts, assignmentID)
 
-	// Read the run detail — the team row should carry a non-empty token.
+	// Read the event detail — the team row should carry a non-empty token.
 	var detail struct {
 		Teams []struct {
 			ID    int64  `json:"id"`
 			Token string `json:"token"`
 		} `json:"teams"`
 	}
-	if s := arr.do("GET", "/api/admin/runs/"+itoa(runID), nil, &detail); s != 200 {
+	if s := arr.do("GET", "/api/admin/events/"+itoa(eventID), nil, &detail); s != 200 {
 		t.Fatalf("run detail = %d", s)
 	}
 	if len(detail.Teams) != 1 {
@@ -55,7 +55,7 @@ func TestTeamShare_PageRendersSlots(t *testing.T) {
 	ts, assignmentID, cleanup := newTestServer(t)
 	defer cleanup()
 
-	arr, _, _, runID := setupRun(t, ts, assignmentID)
+	arr, _, _, eventID := setupRun(t, ts, assignmentID)
 	var detail struct {
 		Teams []struct {
 			Token   string `json:"token"`
@@ -65,7 +65,7 @@ func TestTeamShare_PageRendersSlots(t *testing.T) {
 			} `json:"members"`
 		} `json:"teams"`
 	}
-	if s := arr.do("GET", "/api/admin/runs/"+itoa(runID), nil, &detail); s != 200 {
+	if s := arr.do("GET", "/api/admin/events/"+itoa(eventID), nil, &detail); s != 200 {
 		t.Fatalf("run detail = %d", s)
 	}
 	team := detail.Teams[0]

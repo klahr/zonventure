@@ -35,32 +35,32 @@ import (
 // schema-free change, but customers can only subscribe to kinds they
 // know exist; keep this list authoritative and document additions.
 const (
-	EventRunScheduled    = "run.scheduled"
-	EventRunStarted      = "run.started"
-	EventRunCompleted    = "run.completed"
-	EventTeamCreated     = "team.created"
-	EventTeamCompleted   = "team.completed"
-	EventPurchasePaid    = "purchase.paid"
-	EventPurchaseRefunded = "purchase.refunded"
+	KindEventScheduled    = "event.scheduled"
+	KindEventStarted      = "event.started"
+	KindEventCompleted    = "event.completed"
+	KindTeamCreated     = "team.created"
+	KindTeamCompleted   = "team.completed"
+	KindPurchasePaid    = "purchase.paid"
+	KindPurchaseRefunded = "purchase.refunded"
 
-	// EventWebhookTest is reserved for the manual "Send test" button.
+	// KindWebhookTest is reserved for the manual "Send test" button.
 	// Deliberately NOT in AllKinds — customers can't subscribe to it
 	// (it would just produce unsolicited test deliveries), but the
 	// worker happily delivers it because matching happens at enqueue
 	// and the test-send path bypasses subscription filtering.
-	EventWebhookTest = "webhook.test"
+	KindWebhookTest = "webhook.test"
 )
 
 // AllKinds is the set advertised in the admin UI / API as
 // subscribable. Tests assert this matches the constants above.
 var AllKinds = []string{
-	EventRunScheduled,
-	EventRunStarted,
-	EventRunCompleted,
-	EventTeamCreated,
-	EventTeamCompleted,
-	EventPurchasePaid,
-	EventPurchaseRefunded,
+	KindEventScheduled,
+	KindEventStarted,
+	KindEventCompleted,
+	KindTeamCreated,
+	KindTeamCompleted,
+	KindPurchasePaid,
+	KindPurchaseRefunded,
 }
 
 // KnownKind reports whether kind is in AllKinds. Used by the admin
@@ -78,7 +78,7 @@ func KnownKind(kind string) bool {
 // Execer matches *sql.DB and *sql.Tx so callers that already hold a
 // transaction can include the delivery enqueue in their atomic unit
 // (eg. team.completed should commit together with the team UPDATE
-// that triggered it). Same shape as runevents.Execer.
+// that triggered it). Same shape as activity.Execer.
 type Execer interface {
 	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
 	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
@@ -207,7 +207,7 @@ func newSecret() (string, error) {
 // NewSecret is exported for the admin handler that mints endpoints.
 func NewSecret() (string, error) { return newSecret() }
 
-// SendTest enqueues a single EventWebhookTest delivery against the
+// SendTest enqueues a single KindWebhookTest delivery against the
 // given endpoint, bypassing subscription matching so the customer
 // can verify their handler regardless of which kinds they've
 // subscribed to. The worker will pick it up on its next tick.
@@ -220,7 +220,7 @@ func SendTest(ctx context.Context, db Execer, endpointID int64) error {
 	if err != nil {
 		return fmt.Errorf("webhooks: gen uuid: %w", err)
 	}
-	body, err := buildPayload(uuid, EventWebhookTest, map[string]any{
+	body, err := buildPayload(uuid, KindWebhookTest, map[string]any{
 		"note": "This is a manual test from the zv arrange UI. " +
 			"No real lifecycle event happened. " +
 			"Verify your signature handler against this delivery.",
@@ -232,7 +232,7 @@ func SendTest(ctx context.Context, db Execer, endpointID int64) error {
 		INSERT INTO webhook_deliveries
 		    (endpoint_id, delivery_uuid, event_kind, payload, status)
 		VALUES ($1, $2, $3, $4, 'pending')
-	`, endpointID, uuid, EventWebhookTest, string(body)); err != nil {
+	`, endpointID, uuid, KindWebhookTest, string(body)); err != nil {
 		return fmt.Errorf("webhooks: enqueue test delivery: %w", err)
 	}
 	return nil

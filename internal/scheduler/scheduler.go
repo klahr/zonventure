@@ -1,6 +1,6 @@
 // Package scheduler runs a periodic sweep that auto-starts any adventure
 // run whose scheduled_at time has arrived. The intent is pragmatic: an
-// arranger books a run to flip to "running" at, say, 14:00 on Saturday, and
+// arranger books an event to flip to "running" at, say, 14:00 on Saturday, and
 // the sweep promotes it within the sweep interval of the target time.
 package scheduler
 
@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"git.sr.ht/~klahr/zv/internal/logx"
-	"git.sr.ht/~klahr/zv/internal/runevents"
+	"git.sr.ht/~klahr/zv/internal/activity"
 	"git.sr.ht/~klahr/zv/internal/ws"
 )
 
@@ -49,7 +49,7 @@ func loop(ctx context.Context, db *sql.DB, hub *ws.Hub, interval time.Duration) 
 func tick(ctx context.Context, db *sql.DB, hub *ws.Hub) {
 	rows, err := db.QueryContext(ctx, `
 		SELECT id, COALESCE(created_by_user_id, 0)
-		FROM adventure_runs
+		FROM events
 		WHERE state = 'scheduled'
 		  AND scheduled_at IS NOT NULL
 		  AND scheduled_at::timestamptz <= now()
@@ -72,24 +72,24 @@ func tick(ctx context.Context, db *sql.DB, hub *ws.Hub) {
 	rows.Close()
 	for _, d := range runs {
 		res, err := db.ExecContext(ctx, `
-			UPDATE adventure_runs
+			UPDATE events
 			SET state = 'running', started_at = now_text()
 			WHERE id = $1 AND state = 'scheduled'
 		`, d.id)
 		if err != nil {
-			logx.Error("scheduler.start", "run_id", d.id, "err", err)
+			logx.Error("scheduler.start", "event_id", d.id, "err", err)
 			continue
 		}
 		if n, _ := res.RowsAffected(); n == 0 {
 			continue // lost the race to a manual start — that's fine
 		}
-		var actor runevents.Actor
+		var actor activity.Actor
 		if d.actor > 0 {
-			actor = runevents.UserActor(d.actor)
+			actor = activity.UserActor(d.actor)
 		}
-		runevents.Record(ctx, db, d.id, nil, actor, runevents.RunStarted,
+		activity.Record(ctx, db, d.id, nil, actor, activity.EventStarted,
 			map[string]any{"auto": true})
-		hub.Publish(ws.RunTopic(d.id), "changed", nil)
-		logx.Info("scheduler.auto_started", "run_id", d.id)
+		hub.Publish(ws.EventTopic(d.id), "changed", nil)
+		logx.Info("scheduler.auto_started", "event_id", d.id)
 	}
 }

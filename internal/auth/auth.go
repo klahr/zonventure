@@ -24,7 +24,7 @@ const (
 	// RolePlayer is the role for adventure participants.
 	RolePlayer = "player"
 	// RoleOrgMember is a user belonging to one organization — runs the
-	// games: manages players, schedules runs (consuming assignments),
+	// games: manages players, schedules events (consuming assignments),
 	// manages teams, etc.
 	RoleOrgMember = "org_member"
 	// RoleOrgAdmin has every org_member power plus the right to invite and
@@ -61,7 +61,7 @@ type User struct {
 	OrgID    *int64
 	// EmailVerified is true when the user has either confirmed their
 	// signup email OR was grandfathered (admin-seeded users without
-	// email default to true). Money-touching actions (CreateRun,
+	// email default to true). Money-touching actions (CreateEvent,
 	// CreatePurchase) check this before letting work through.
 	EmailVerified bool
 	// Email is the address tied to this account, or "" for

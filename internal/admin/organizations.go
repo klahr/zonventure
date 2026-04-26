@@ -21,7 +21,7 @@ type assignmentDTO struct {
 	AdventureTitle string `json:"adventure_title,omitempty"`
 	MaxTeams       int    `json:"max_teams"`
 	CreatedAt      string `json:"created_at"`
-	RunID          *int64 `json:"run_id,omitempty"`
+	EventID          *int64 `json:"event_id,omitempty"`
 }
 
 type orgMemberDTO struct {
@@ -37,8 +37,8 @@ type organizationDTO struct {
 	Members      []orgMemberDTO  `json:"members"`
 	Assignments  []assignmentDTO `json:"assignments"`
 	PlayersTotal int             `json:"players_total"`
-	RunsTotal    int             `json:"runs_total"`
-	RunsRunning  int             `json:"runs_running"`
+	EventsTotal    int             `json:"events_total"`
+	EventsRunning  int             `json:"events_running"`
 }
 
 /* ---------------- Admin-only: organizations CRUD ---------------- */
@@ -49,8 +49,8 @@ func (h *Handlers) ListOrganizations(w http.ResponseWriter, r *http.Request) {
 	rows, err := h.DB.QueryContext(r.Context(), `
 		SELECT o.id, o.name, o.created_at,
 		       (SELECT COUNT(*) FROM users u WHERE u.org_id = o.id AND u.role = 'player'),
-		       (SELECT COUNT(*) FROM adventure_runs ar WHERE ar.org_id = o.id),
-		       (SELECT COUNT(*) FROM adventure_runs ar WHERE ar.org_id = o.id AND ar.state = 'running')
+		       (SELECT COUNT(*) FROM events ar WHERE ar.org_id = o.id),
+		       (SELECT COUNT(*) FROM events ar WHERE ar.org_id = o.id AND ar.state = 'running')
 		FROM organizations o
 		ORDER BY LOWER(o.name)
 	`)
@@ -62,7 +62,7 @@ func (h *Handlers) ListOrganizations(w http.ResponseWriter, r *http.Request) {
 	out := []organizationDTO{}
 	for rows.Next() {
 		o := organizationDTO{Members: []orgMemberDTO{}, Assignments: []assignmentDTO{}}
-		if err := rows.Scan(&o.ID, &o.Name, &o.CreatedAt, &o.PlayersTotal, &o.RunsTotal, &o.RunsRunning); err != nil {
+		if err := rows.Scan(&o.ID, &o.Name, &o.CreatedAt, &o.PlayersTotal, &o.EventsTotal, &o.EventsRunning); err != nil {
 			httpx.Error(w, http.StatusInternalServerError, "scan failed")
 			return
 		}
@@ -101,10 +101,10 @@ func (h *Handlers) GetOrganization(w http.ResponseWriter, r *http.Request) {
 	err := h.DB.QueryRowContext(r.Context(), `
 		SELECT o.id, o.name, o.created_at,
 		       (SELECT COUNT(*) FROM users u WHERE u.org_id = o.id AND u.role = 'player'),
-		       (SELECT COUNT(*) FROM adventure_runs ar WHERE ar.org_id = o.id),
-		       (SELECT COUNT(*) FROM adventure_runs ar WHERE ar.org_id = o.id AND ar.state = 'running')
+		       (SELECT COUNT(*) FROM events ar WHERE ar.org_id = o.id),
+		       (SELECT COUNT(*) FROM events ar WHERE ar.org_id = o.id AND ar.state = 'running')
 		FROM organizations o WHERE o.id = $1
-	`, id).Scan(&o.ID, &o.Name, &o.CreatedAt, &o.PlayersTotal, &o.RunsTotal, &o.RunsRunning)
+	`, id).Scan(&o.ID, &o.Name, &o.CreatedAt, &o.PlayersTotal, &o.EventsTotal, &o.EventsRunning)
 	if errors.Is(err, sql.ErrNoRows) {
 		httpx.Error(w, http.StatusNotFound, "organization not found")
 		return
@@ -374,14 +374,14 @@ func (h *Handlers) UpdateAssignment(w http.ResponseWriter, r *http.Request) {
 		ownerOrg    int64
 		currentSlug string
 		currentMax  int
-		runID       sql.NullInt64
+		eventID       sql.NullInt64
 	)
 	err = h.DB.QueryRowContext(r.Context(), `
 		SELECT aa.org_id, aa.adventure_slug, aa.max_teams, ar.id
 		FROM adventure_assignments aa
-		LEFT JOIN adventure_runs ar ON ar.assignment_id = aa.id
+		LEFT JOIN events ar ON ar.assignment_id = aa.id
 		WHERE aa.id = $1
-	`, assignmentID).Scan(&ownerOrg, &currentSlug, &currentMax, &runID)
+	`, assignmentID).Scan(&ownerOrg, &currentSlug, &currentMax, &eventID)
 	if errors.Is(err, sql.ErrNoRows) || ownerOrg != orgID {
 		httpx.Error(w, http.StatusNotFound, "assignment not found")
 		return
@@ -392,7 +392,7 @@ func (h *Handlers) UpdateAssignment(w http.ResponseWriter, r *http.Request) {
 	}
 	newSlug := currentSlug
 	if req.AdventureSlug != nil && *req.AdventureSlug != currentSlug {
-		if runID.Valid {
+		if eventID.Valid {
 			httpx.Error(w, http.StatusConflict, "cannot change adventure on a used assignment")
 			return
 		}
@@ -408,10 +408,10 @@ func (h *Handlers) UpdateAssignment(w http.ResponseWriter, r *http.Request) {
 			httpx.Error(w, http.StatusBadRequest, "max_teams must be > 0")
 			return
 		}
-		if runID.Valid {
+		if eventID.Valid {
 			var teamCount int
 			if err := h.DB.QueryRowContext(r.Context(),
-				`SELECT COUNT(*) FROM teams WHERE run_id = $1`, runID.Int64).Scan(&teamCount); err != nil {
+				`SELECT COUNT(*) FROM teams WHERE event_id = $1`, eventID.Int64).Scan(&teamCount); err != nil {
 				httpx.Error(w, http.StatusInternalServerError, "team count failed")
 				return
 			}
@@ -447,14 +447,14 @@ func (h *Handlers) DeleteAssignment(w http.ResponseWriter, r *http.Request) {
 	}
 	var (
 		ownerOrg int64
-		runID    sql.NullInt64
+		eventID    sql.NullInt64
 	)
 	err = h.DB.QueryRowContext(r.Context(), `
 		SELECT aa.org_id, ar.id
 		FROM adventure_assignments aa
-		LEFT JOIN adventure_runs ar ON ar.assignment_id = aa.id
+		LEFT JOIN events ar ON ar.assignment_id = aa.id
 		WHERE aa.id = $1
-	`, assignmentID).Scan(&ownerOrg, &runID)
+	`, assignmentID).Scan(&ownerOrg, &eventID)
 	if errors.Is(err, sql.ErrNoRows) || ownerOrg != orgID {
 		httpx.Error(w, http.StatusNotFound, "assignment not found")
 		return
@@ -463,8 +463,8 @@ func (h *Handlers) DeleteAssignment(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusInternalServerError, "lookup failed")
 		return
 	}
-	if runID.Valid {
-		httpx.Error(w, http.StatusConflict, "assignment is already in use by a run")
+	if eventID.Valid {
+		httpx.Error(w, http.StatusConflict, "assignment is already in use by an event")
 		return
 	}
 	if _, err := h.DB.ExecContext(r.Context(),
@@ -634,7 +634,7 @@ func (h *Handlers) listAssignments(ctx context.Context, orgID int64) ([]assignme
 	rows, err := h.DB.QueryContext(ctx, `
 		SELECT aa.id, aa.adventure_slug, aa.max_teams, aa.created_at, ar.id
 		FROM adventure_assignments aa
-		LEFT JOIN adventure_runs ar ON ar.assignment_id = aa.id
+		LEFT JOIN events ar ON ar.assignment_id = aa.id
 		WHERE aa.org_id = $1
 		ORDER BY aa.created_at DESC
 	`, orgID)
@@ -646,14 +646,14 @@ func (h *Handlers) listAssignments(ctx context.Context, orgID int64) ([]assignme
 	for rows.Next() {
 		var (
 			as    assignmentDTO
-			runID sql.NullInt64
+			eventID sql.NullInt64
 		)
-		if err := rows.Scan(&as.ID, &as.AdventureSlug, &as.MaxTeams, &as.CreatedAt, &runID); err != nil {
+		if err := rows.Scan(&as.ID, &as.AdventureSlug, &as.MaxTeams, &as.CreatedAt, &eventID); err != nil {
 			return nil, err
 		}
-		if runID.Valid {
-			v := runID.Int64
-			as.RunID = &v
+		if eventID.Valid {
+			v := eventID.Int64
+			as.EventID = &v
 		}
 		if adv := h.Lib.Get(as.AdventureSlug); adv != nil {
 			as.AdventureTitle = adv.Meta.Title

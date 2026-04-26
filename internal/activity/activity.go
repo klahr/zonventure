@@ -1,6 +1,7 @@
-// Package runevents is a tiny helper shared by admin and player handlers
-// for appending rows to the run_events activity feed.
-package runevents
+// Package activity is a tiny helper shared by admin and player handlers
+// for appending rows to the event_activity feed (per-event lifecycle and
+// gameplay log).
+package activity
 
 import (
 	"context"
@@ -9,35 +10,38 @@ import (
 )
 
 // Execer is the read+write subset of *sql.DB that Record and
-// MaybeCompleteRun need. Both *sql.DB and *sql.Tx satisfy it, so a
+// MaybeCompleteEvent need. Both *sql.DB and *sql.Tx satisfy it, so a
 // caller can pass an open transaction to make telemetry +
-// run-completion checks part of the same atomic unit as the rest of
+// event-completion checks part of the same atomic unit as the rest of
 // their writes — the typical pattern in player.applyAnswer where
 // answer_attempts INSERT and teams UPDATE must commit together with
-// their runevent rows.
+// their activity rows.
 type Execer interface {
 	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
 	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 }
 
-// Event kind strings. Centralised so handlers stay consistent and the
-// frontend can reliably switch on them.
+// Activity kind strings. Centralised so handlers stay consistent and
+// the frontend can reliably switch on them. The "Event*" prefix here
+// refers to the top-level scheduled-adventure entity (the Event); not
+// to be confused with webhook *delivery* events, which is a separate
+// concept layered on top.
 const (
-	RunCreated    = "run.created"
-	RunStarted    = "run.started"
-	RunPaused     = "run.paused"
-	RunResumed    = "run.resumed"
-	RunCompleted  = "run.completed"
-	TeamCreated   = "team.created"
-	TeamRenamed   = "team.renamed"
-	TeamDeleted   = "team.deleted"
-	MemberAdded   = "team.member.added"
-	MemberRemoved = "team.member.removed"
-	AnswerWrong   = "answer.wrong"
-	AnswerRight   = "answer.right"
-	TeamCompleted = "team.completed"
-	TeamUnlocked  = "team.unlocked"
-	GateReached   = "gate.reached"
+	EventCreated   = "event.created"
+	EventStarted   = "event.started"
+	EventPaused    = "event.paused"
+	EventResumed   = "event.resumed"
+	EventCompleted = "event.completed"
+	TeamCreated    = "team.created"
+	TeamRenamed    = "team.renamed"
+	TeamDeleted    = "team.deleted"
+	MemberAdded    = "team.member.added"
+	MemberRemoved  = "team.member.removed"
+	AnswerWrong    = "answer.wrong"
+	AnswerRight    = "answer.right"
+	TeamCompleted  = "team.completed"
+	TeamUnlocked   = "team.unlocked"
+	GateReached    = "gate.reached"
 )
 
 // Actor picks which actor column to write. Exactly one of User/Slot should
@@ -55,9 +59,9 @@ func SlotActor(id int64) Actor { return Actor{Slot: &id} }
 
 // Record appends one row. Errors are swallowed — telemetry should never
 // fail a user action. db may be a *sql.DB or a *sql.Tx; callers that
-// already hold a transaction should pass it so the runevent commits or
-// rolls back with the rest of their writes.
-func Record(ctx context.Context, db Execer, runID int64, teamID *int64, actor Actor, kind string, payload any) {
+// already hold a transaction should pass it so the activity row commits
+// or rolls back with the rest of their writes.
+func Record(ctx context.Context, db Execer, eventID int64, teamID *int64, actor Actor, kind string, payload any) {
 	b, err := json.Marshal(payload)
 	if err != nil || payload == nil {
 		b = []byte(`{}`)
@@ -73,51 +77,51 @@ func Record(ctx context.Context, db Execer, runID int64, teamID *int64, actor Ac
 		sid = *actor.Slot
 	}
 	_, _ = db.ExecContext(ctx, `
-		INSERT INTO run_events(run_id, team_id, actor_user_id, actor_slot_id, kind, payload)
+		INSERT INTO event_activity(event_id, team_id, actor_user_id, actor_slot_id, kind, payload)
 		VALUES ($1, $2, $3, $4, $5, $6)
-	`, runID, tid, uid, sid, kind, string(b))
+	`, eventID, tid, uid, sid, kind, string(b))
 }
 
-// MaybeCompleteRun flips adventure_runs.state to 'completed' (stamping
-// completed_at) when every team in the run has its own completed_at
+// MaybeCompleteEvent flips events.state to 'completed' (stamping
+// completed_at) when every team in the event has its own completed_at
 // set. Returns (true, nil) when the transition happened — callers
 // should publish a hub notification in that case so live/arrange
 // subscribers re-render immediately.
 //
 // Semantics:
 //
-//   - A run with zero teams is never auto-completed; an empty run
-//     has nothing to finish and doing so would be surprising.
-//   - Runs in 'scheduled', 'completed', or unknown states are
+//   - An event with zero teams is never auto-completed; an empty
+//     event has nothing to finish and doing so would be surprising.
+//   - Events in 'scheduled', 'completed', or unknown states are
 //     untouched; only 'running' / 'paused' are promoted, so an
 //     arranger who force-unlocks teams during a pause still gets the
 //     expected finish.
 //   - On a lost race (two callers observing "all done" at the same
 //     instant) the UPDATE's state predicate ensures exactly one
 //     transition fires; the loser returns (false, nil).
-func MaybeCompleteRun(ctx context.Context, db Execer, runID int64) (bool, error) {
+func MaybeCompleteEvent(ctx context.Context, db Execer, eventID int64) (bool, error) {
 	var total, done int
 	if err := db.QueryRowContext(ctx, `
 		SELECT COUNT(*),
 		       SUM(CASE WHEN completed_at IS NULL THEN 0 ELSE 1 END)
-		FROM teams WHERE run_id = $1
-	`, runID).Scan(&total, &done); err != nil {
+		FROM teams WHERE event_id = $1
+	`, eventID).Scan(&total, &done); err != nil {
 		return false, err
 	}
 	if total == 0 || done < total {
 		return false, nil
 	}
 	res, err := db.ExecContext(ctx, `
-		UPDATE adventure_runs
+		UPDATE events
 		SET state = 'completed', completed_at = now_text()
 		WHERE id = $1 AND state IN ('running','paused')
-	`, runID)
+	`, eventID)
 	if err != nil {
 		return false, err
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
 		return false, nil
 	}
-	Record(ctx, db, runID, nil, Actor{}, RunCompleted, nil)
+	Record(ctx, db, eventID, nil, Actor{}, EventCompleted, nil)
 	return true, nil
 }

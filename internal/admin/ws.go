@@ -15,13 +15,13 @@ import (
 // WSArrange is the arranger-side subscription stream. Mutations still flow
 // over HTTP because WebSockets don't buy anything for command/response on a
 // desktop admin UI; what this stream does is push the changing parts of a
-// run-detail view (positions, events, tracks, run metadata, teams) so the
+// event-detail view (positions, events, tracks, event metadata, teams) so the
 // arranger sees the same real-time state the live TV does without polling.
 //
 // Protocol:
 //
-//	client → {"kind":"watch_run",  "data":{"run_id": N}}   start watching
-//	client → {"kind":"unwatch_run"}                         stop watching
+//	client → {"kind":"watch_event",  "data":{"event_id": N}}   start watching
+//	client → {"kind":"unwatch_event"}                         stop watching
 //	server → {"kind":"positions", "data":{positions:[…]}}   on change
 //	server → {"kind":"tracks",    "data":{tracks:[…]}}      on change
 //	server → {"kind":"events",    "data":{events:[…]}}      on change
@@ -40,7 +40,7 @@ func (h *Handlers) WSArrange(w http.ResponseWriter, r *http.Request) {
 	}
 	defer conn.Close()
 
-	// Only one watch is active at a time per connection; switching runs
+	// Only one watch is active at a time per connection; switching events
 	// cancels the previous subscriber goroutine.
 	var (
 		mu          sync.Mutex
@@ -56,13 +56,13 @@ func (h *Handlers) WSArrange(w http.ResponseWriter, r *http.Request) {
 	}
 	defer stopWatch()
 
-	startWatch := func(runID int64) {
-		// Verify the caller can read this run before we open a topic subscription.
+	startWatch := func(eventID int64) {
+		// Verify the caller can read this event before we open a topic subscription.
 		var orgID int64
 		err := h.DB.QueryRowContext(conn.Context(),
-			`SELECT org_id FROM adventure_runs WHERE id = $1`, runID).Scan(&orgID)
+			`SELECT org_id FROM events WHERE id = $1`, eventID).Scan(&orgID)
 		if errors.Is(err, sql.ErrNoRows) {
-			conn.SendKind("watch_error", map[string]any{"error": "run not found"})
+			conn.SendKind("watch_error", map[string]any{"error": "event not found"})
 			return
 		}
 		if err != nil {
@@ -76,7 +76,7 @@ func (h *Handlers) WSArrange(w http.ResponseWriter, r *http.Request) {
 
 		stopWatch()
 
-		events, unsub := h.Hub.Subscribe(ws.RunTopic(runID))
+		events, unsub := h.Hub.Subscribe(ws.EventTopic(eventID))
 		wctx, cancel := context.WithCancel(conn.Context())
 		mu.Lock()
 		cancelWatch = func() {
@@ -86,17 +86,17 @@ func (h *Handlers) WSArrange(w http.ResponseWriter, r *http.Request) {
 		mu.Unlock()
 
 		push := func() {
-			if pos, err := h.buildPositions(wctx, runID); err == nil {
+			if pos, err := h.buildPositions(wctx, eventID); err == nil {
 				conn.SendKind("positions", map[string]any{"positions": pos})
 			}
-			if tr, err := h.buildTracks(wctx, runID); err == nil {
+			if tr, err := h.buildTracks(wctx, eventID); err == nil {
 				conn.SendKind("tracks", map[string]any{"tracks": tr})
 			}
-			if ev, err := h.buildEvents(wctx, runID, nil); err == nil {
-				conn.SendKind("events", map[string]any{"events": ev})
+			if ev, err := h.buildActivity(wctx, eventID, nil); err == nil {
+				conn.SendKind("activity", map[string]any{"activity": ev})
 			}
-			if rd, err := h.buildRunDetail(wctx, runID); err == nil {
-				conn.SendKind("run_detail", rd)
+			if rd, err := h.buildEventDetail(wctx, eventID); err == nil {
+				conn.SendKind("event_detail", rd)
 			}
 		}
 
@@ -122,39 +122,39 @@ func (h *Handlers) WSArrange(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		switch msg.Kind {
-		case "watch_run":
+		case "watch_event":
 			var req struct {
-				RunID int64 `json:"run_id"`
+				EventID int64 `json:"event_id"`
 			}
-			if err := json.Unmarshal(msg.Data, &req); err != nil || req.RunID <= 0 {
+			if err := json.Unmarshal(msg.Data, &req); err != nil || req.EventID <= 0 {
 				continue
 			}
-			startWatch(req.RunID)
-		case "unwatch_run":
+			startWatch(req.EventID)
+		case "unwatch_event":
 			stopWatch()
 		}
 	}
 }
 
-// runDetailDTO is the run + teams payload served on watch_run. Mirrors the
-// existing HTTP RunDetail JSON shape so the client can reuse the same
-// rendering code.
-type runDetailDTO struct {
-	Run   runDTO             `json:"run"`
-	Teams []runDetailTeamDTO `json:"teams"`
+// eventDetailDTO is the event + teams payload served on watch_event.
+// Mirrors the existing HTTP EventDetail JSON shape so the client can
+// reuse the same rendering code.
+type eventDetailDTO struct {
+	Event eventDTO             `json:"event"`
+	Teams []eventDetailTeamDTO `json:"teams"`
 }
 
-type runDetailTeamDTO struct {
+type eventDetailTeamDTO struct {
 	ID          int64                `json:"id"`
 	Name        string               `json:"name"`
 	PageIndex   int                  `json:"page_index"`
 	CompletedAt string               `json:"completed_at,omitempty"`
 	Token       string               `json:"token"`
 	AvatarURL   string               `json:"avatar_url,omitempty"`
-	Members     []runDetailMemberDTO `json:"members"`
+	Members     []eventDetailMemberDTO `json:"members"`
 }
 
-type runDetailMemberDTO struct {
+type eventDetailMemberDTO struct {
 	ID          int64  `json:"id"`
 	Name        string `json:"name"`
 	Token       string `json:"token"`
@@ -162,12 +162,12 @@ type runDetailMemberDTO struct {
 	ExpiresAt   string `json:"expires_at,omitempty"`
 }
 
-// buildRunDetail assembles the run-with-teams-and-slots payload. The HTTP
-// RunDetail handler should also call this, but keeping the two code paths
+// buildEventDetail assembles the event-with-teams-and-slots payload. The HTTP
+// EventDetail handler should also call this, but keeping the two code paths
 // side by side for now avoids a larger refactor; the shapes match by design.
-func (h *Handlers) buildRunDetail(ctx context.Context, runID int64) (runDetailDTO, error) {
+func (h *Handlers) buildEventDetail(ctx context.Context, eventID int64) (eventDetailDTO, error) {
 	var (
-		d       runDTO
+		d       eventDTO
 		showMap int
 	)
 	if err := h.DB.QueryRowContext(ctx, `
@@ -176,31 +176,31 @@ func (h *Handlers) buildRunDetail(ctx context.Context, runID int64) (runDetailDT
 		       ar.org_id, COALESCE(ar.created_by_user_id, 0),
 		       COALESCE(ar.assignment_id, 0), COALESCE(aa.max_teams, 0),
 		       ar.live_token, ar.show_map
-		FROM adventure_runs ar
+		FROM events ar
 		LEFT JOIN adventure_assignments aa ON aa.id = ar.assignment_id
 		WHERE ar.id = $1
-	`, runID).Scan(&d.ID, &d.Name, &d.AdventureSlug, &d.State, &d.ScheduledAt, &d.StartedAt,
+	`, eventID).Scan(&d.ID, &d.Name, &d.AdventureSlug, &d.State, &d.ScheduledAt, &d.StartedAt,
 		&d.OrgID, &d.CreatedByUserID, &d.AssignmentID, &d.MaxTeams,
 		&d.LiveToken, &showMap); err != nil {
-		return runDetailDTO{}, err
+		return eventDetailDTO{}, err
 	}
 	d.ShowMap = showMap != 0
 
-	teams := []runDetailTeamDTO{}
+	teams := []eventDetailTeamDTO{}
 	rows, err := h.DB.QueryContext(ctx, `
 		SELECT t.id, t.name, t.current_page_index, COALESCE(t.completed_at, ''), t.token,
 		       (t.avatar_mime_type IS NOT NULL)::int AS has_avatar
-		FROM teams t WHERE t.run_id = $1 ORDER BY t.name
-	`, runID)
+		FROM teams t WHERE t.event_id = $1 ORDER BY t.name
+	`, eventID)
 	if err != nil {
-		return runDetailDTO{}, err
+		return eventDetailDTO{}, err
 	}
 	defer rows.Close()
 	for rows.Next() {
-		t := runDetailTeamDTO{Members: []runDetailMemberDTO{}}
+		t := eventDetailTeamDTO{Members: []eventDetailMemberDTO{}}
 		var hasAvatar int
 		if err := rows.Scan(&t.ID, &t.Name, &t.PageIndex, &t.CompletedAt, &t.Token, &hasAvatar); err != nil {
-			return runDetailDTO{}, err
+			return eventDetailDTO{}, err
 		}
 		if hasAvatar != 0 {
 			t.AvatarURL = teamAvatarURL(t.ID)
@@ -213,17 +213,17 @@ func (h *Handlers) buildRunDetail(ctx context.Context, runID int64) (runDetailDT
 			FROM player_slots WHERE team_id = $1 ORDER BY LOWER(name)
 		`, teams[i].ID)
 		if err != nil {
-			return runDetailDTO{}, err
+			return eventDetailDTO{}, err
 		}
 		for mrows.Next() {
-			var s runDetailMemberDTO
+			var s eventDetailMemberDTO
 			if err := mrows.Scan(&s.ID, &s.Name, &s.Token, &s.LastLoginAt, &s.ExpiresAt); err != nil {
 				mrows.Close()
-				return runDetailDTO{}, err
+				return eventDetailDTO{}, err
 			}
 			teams[i].Members = append(teams[i].Members, s)
 		}
 		mrows.Close()
 	}
-	return runDetailDTO{Run: d, Teams: teams}, nil
+	return eventDetailDTO{Event: d, Teams: teams}, nil
 }

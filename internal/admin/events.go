@@ -12,7 +12,7 @@ import (
 	"git.sr.ht/~klahr/zv/internal/httpx"
 )
 
-type eventDTO struct {
+type activityDTO struct {
 	ID        int64           `json:"id"`
 	TeamID    *int64          `json:"team_id,omitempty"`
 	TeamName  string          `json:"team_name,omitempty"`
@@ -22,17 +22,17 @@ type eventDTO struct {
 	CreatedAt string          `json:"created_at"`
 }
 
-// buildEvents returns up to 500 newest events for a run, optionally
+// buildActivity returns up to 500 newest events for an event, optionally
 // filtered to one team.
-func (h *Handlers) buildEvents(ctx context.Context, runID int64, teamFilter *int64) ([]eventDTO, error) {
+func (h *Handlers) buildActivity(ctx context.Context, eventID int64, teamFilter *int64) ([]activityDTO, error) {
 	query := `
 		SELECT e.id, e.team_id, COALESCE(t.name, ''), COALESCE(u.username, ''),
 		       e.kind, e.payload, e.created_at
-		FROM run_events e
+		FROM event_activity e
 		LEFT JOIN teams t ON t.id = e.team_id
 		LEFT JOIN users u ON u.id = e.actor_user_id
-		WHERE e.run_id = $1`
-	args := []any{runID}
+		WHERE e.event_id = $1`
+	args := []any{eventID}
 	if teamFilter != nil {
 		query += ` AND e.team_id = $1`
 		args = append(args, *teamFilter)
@@ -43,10 +43,10 @@ func (h *Handlers) buildEvents(ctx context.Context, runID int64, teamFilter *int
 		return nil, err
 	}
 	defer rows.Close()
-	out := []eventDTO{}
+	out := []activityDTO{}
 	for rows.Next() {
 		var (
-			e       eventDTO
+			e       activityDTO
 			teamID  sql.NullInt64
 			payload string
 		)
@@ -63,18 +63,18 @@ func (h *Handlers) buildEvents(ctx context.Context, runID int64, teamFilter *int
 	return out, nil
 }
 
-// ListEvents returns the run's event feed, newest first.
-func (h *Handlers) ListEvents(w http.ResponseWriter, r *http.Request) {
-	runID, ok := runIDFrom(r)
+// ListActivity returns the event's event feed, newest first.
+func (h *Handlers) ListActivity(w http.ResponseWriter, r *http.Request) {
+	eventID, ok := eventIDFrom(r)
 	if !ok {
-		httpx.Error(w, http.StatusBadRequest, "bad run id")
+		httpx.Error(w, http.StatusBadRequest, "bad event id")
 		return
 	}
 	var orgID int64
 	err := h.DB.QueryRowContext(r.Context(),
-		`SELECT org_id FROM adventure_runs WHERE id = $1`, runID).Scan(&orgID)
+		`SELECT org_id FROM events WHERE id = $1`, eventID).Scan(&orgID)
 	if errors.Is(err, sql.ErrNoRows) {
-		httpx.Error(w, http.StatusNotFound, "run not found")
+		httpx.Error(w, http.StatusNotFound, "event not found")
 		return
 	}
 	if err != nil {
@@ -95,7 +95,7 @@ func (h *Handlers) ListEvents(w http.ResponseWriter, r *http.Request) {
 		}
 		teamFilter = &tid
 	}
-	out, err := h.buildEvents(r.Context(), runID, teamFilter)
+	out, err := h.buildActivity(r.Context(), eventID, teamFilter)
 	if err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "query failed")
 		return

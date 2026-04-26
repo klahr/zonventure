@@ -85,7 +85,7 @@ func TestHints_RoundTripThroughPatch(t *testing.T) {
 }
 
 func TestHints_PlayerStateComputesUnlockCountdown(t *testing.T) {
-	// Attach hints with increasing delays, start the run, and verify
+	// Attach hints with increasing delays, start the event, and verify
 	// the player state carries unlocks_in_seconds that reflect how
 	// long ago the team "arrived" at the current puzzle (here = run
 	// start).
@@ -112,8 +112,8 @@ func TestHints_PlayerStateComputesUnlockCountdown(t *testing.T) {
 		t.Fatalf("PATCH = %d", s)
 	}
 
-	arr, _, slotToken, runID := setupRun(t, ts, assignmentID)
-	if s := arr.do("POST", "/api/admin/runs/"+itoa(runID)+"/start", map[string]string{}, nil); s != 204 {
+	arr, _, slotToken, eventID := setupRun(t, ts, assignmentID)
+	if s := arr.do("POST", "/api/admin/events/"+itoa(eventID)+"/start", map[string]string{}, nil); s != 204 {
 		t.Fatalf("start = %d", s)
 	}
 	alice := loginPlayer(t, ts, slotToken)

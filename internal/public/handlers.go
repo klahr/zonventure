@@ -55,7 +55,7 @@ type teamDTO struct {
 // LiveDTO is the snapshot shape served both by /api/public/live/{token}
 // and pushed as a "snapshot" WS message.
 type LiveDTO struct {
-	RunID          int64             `json:"run_id"`
+	EventID          int64             `json:"event_id"`
 	AdventureTitle string            `json:"adventure_title"`
 	AdventureSlug  string            `json:"adventure_slug"`
 	State          string            `json:"state"`
@@ -70,14 +70,14 @@ type LiveDTO struct {
 	Colors         *adventure.Colors `json:"colors,omitempty"`
 }
 
-// runByToken resolves a URL token to a run id, returning sql.ErrNoRows if
+// runByToken resolves a URL token to an event id, returning sql.ErrNoRows if
 // the token is unknown.
-func (h *Handlers) runByToken(ctx context.Context, token string) (runID int64, slug, state, startedAt, scheduledAt, completedAt string, showMap int, err error) {
+func (h *Handlers) runByToken(ctx context.Context, token string) (eventID int64, slug, state, startedAt, scheduledAt, completedAt string, showMap int, err error) {
 	var started, scheduled, completed sql.NullString
 	err = h.DB.QueryRowContext(ctx, `
 		SELECT id, adventure_slug, state, started_at, scheduled_at, completed_at, show_map
-		FROM adventure_runs WHERE live_token = $1
-	`, token).Scan(&runID, &slug, &state, &started, &scheduled, &completed, &showMap)
+		FROM events WHERE live_token = $1
+	`, token).Scan(&eventID, &slug, &state, &started, &scheduled, &completed, &showMap)
 	if started.Valid {
 		startedAt = started.String
 	}
@@ -95,7 +95,7 @@ func (h *Handlers) runByToken(ctx context.Context, token string) (runID int64, s
 func (h *Handlers) buildLive(ctx context.Context, token string) (LiveDTO, int64, int, string) {
 	id, slug, state, startedAt, scheduledAt, completedAt, showMap, err := h.runByToken(ctx, token)
 	if errors.Is(err, sql.ErrNoRows) {
-		return LiveDTO{}, 0, http.StatusNotFound, "run not found"
+		return LiveDTO{}, 0, http.StatusNotFound, "event not found"
 	}
 	if err != nil {
 		return LiveDTO{}, 0, http.StatusInternalServerError, "lookup failed"
@@ -128,12 +128,12 @@ func (h *Handlers) buildLive(ctx context.Context, token string) (LiveDTO, int64,
 		       (t.avatar_mime_type IS NOT NULL)::int AS has_avatar,
 		       t.created_at,
 		       COALESCE(
-		         (SELECT MAX(created_at) FROM run_events
-		          WHERE run_id = t.run_id AND team_id = t.id AND kind = 'answer.right'),
+		         (SELECT MAX(created_at) FROM event_activity
+		          WHERE event_id = t.event_id AND team_id = t.id AND kind = 'answer.right'),
 		         t.created_at
 		       ) AS last_progress_at
 		FROM teams t
-		WHERE t.run_id = $1
+		WHERE t.event_id = $1
 	`, id)
 	if err != nil {
 		return LiveDTO{}, id, http.StatusInternalServerError, "query failed"
@@ -201,7 +201,7 @@ func (h *Handlers) buildLive(ctx context.Context, token string) (LiveDTO, int64,
 		teams[i].Rank = i + 1
 	}
 	dto := LiveDTO{
-		RunID:          id,
+		EventID:          id,
 		AdventureTitle: adv.Meta.Title,
 		AdventureSlug:  slug,
 		State:          state,
@@ -256,16 +256,16 @@ type TracksResponse struct {
 	Tracks []trackDTO `json:"tracks"`
 }
 
-// buildTracks fetches per-team ping history for a run. Returns
+// buildTracks fetches per-team ping history for an event. Returns
 // (resp, status, errMsg). Caller is responsible for authorising by token.
-func (h *Handlers) buildTracks(ctx context.Context, runID int64) (TracksResponse, int, string) {
+func (h *Handlers) buildTracks(ctx context.Context, eventID int64) (TracksResponse, int, string) {
 	rows, err := h.DB.QueryContext(ctx, `
 		SELECT p.team_id, t.name, (t.avatar_mime_type IS NOT NULL)::int AS has_avatar,
 		       p.lat, p.lng, p.server_ts
 		FROM location_pings p JOIN teams t ON t.id = p.team_id
-		WHERE p.run_id = $1
+		WHERE p.event_id = $1
 		ORDER BY p.team_id, p.server_ts
-	`, runID)
+	`, eventID)
 	if err != nil {
 		return TracksResponse{}, http.StatusInternalServerError, "query failed"
 	}
@@ -301,7 +301,7 @@ func (h *Handlers) buildTracks(ctx context.Context, runID int64) (TracksResponse
 }
 
 // Tracks returns per-team ping history for the live map. Refuses when the
-// arranger has not enabled show_map on the run.
+// arranger has not enabled show_map on the event.
 func (h *Handlers) Tracks(w http.ResponseWriter, r *http.Request) {
 	token := chi.URLParam(r, "token")
 	if token == "" {
@@ -310,7 +310,7 @@ func (h *Handlers) Tracks(w http.ResponseWriter, r *http.Request) {
 	}
 	id, _, _, _, _, _, showMap, err := h.runByToken(r.Context(), token)
 	if errors.Is(err, sql.ErrNoRows) {
-		httpx.Error(w, http.StatusNotFound, "run not found")
+		httpx.Error(w, http.StatusNotFound, "event not found")
 		return
 	}
 	if err != nil {
@@ -330,20 +330,20 @@ func (h *Handlers) Tracks(w http.ResponseWriter, r *http.Request) {
 	httpx.JSON(w, http.StatusOK, resp)
 }
 
-// latestPingsByTeam returns each team's most recent GPS ping for a run.
+// latestPingsByTeam returns each team's most recent GPS ping for an event.
 // Teams without any ping are absent from the result — callers handle
 // that as "distance unknown" and fall back to the temporal tiebreaker.
-func latestPingsByTeam(ctx context.Context, db *sql.DB, runID int64) (map[int64]trackPoint, error) {
+func latestPingsByTeam(ctx context.Context, db *sql.DB, eventID int64) (map[int64]trackPoint, error) {
 	rows, err := db.QueryContext(ctx, `
 		SELECT p.team_id, p.lat, p.lng, p.server_ts
 		FROM location_pings p
 		JOIN (
 		  SELECT team_id, MAX(server_ts) AS ts
-		  FROM location_pings WHERE run_id = $1
+		  FROM location_pings WHERE event_id = $1
 		  GROUP BY team_id
 		) latest ON latest.team_id = p.team_id AND latest.ts = p.server_ts
-		WHERE p.run_id = $2
-	`, runID, runID)
+		WHERE p.event_id = $2
+	`, eventID, eventID)
 	if err != nil {
 		return nil, err
 	}

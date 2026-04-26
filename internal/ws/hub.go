@@ -1,6 +1,6 @@
 // Package ws carries the WebSocket endpoints and the in-memory pub/sub hub
 // they use. The hub is topic-keyed so broadcasts are scoped to a single run
-// (one topic per run id) and fan out only to the subscribers who asked for
+// (one topic per event id) and fan out only to the subscribers who asked for
 // that topic.
 //
 // Every other zv package only needs Publish — the WS handlers take care of
@@ -23,6 +23,9 @@ type Msg struct {
 // Subscribers register a small buffered channel; a slow consumer has its
 // oldest queued message dropped to make room for the newest, so publishers
 // never block. See Publish for the drop-oldest details.
+//
+// Topics are scoped per Event (one topic per event id) so broadcasts only
+// reach subscribers who care about that event.
 type Hub struct {
 	mu     sync.Mutex
 	nextID uint64
@@ -134,9 +137,10 @@ func (h *Hub) Publish(topic, kind string, data any) {
 	}
 }
 
-// RunTopic is the topic string used for run-scoped broadcasts.
-func RunTopic(runID int64) string {
-	return "run:" + itoa(runID)
+// EventTopic is the topic string used for event-scoped broadcasts.
+// The "event:" prefix matches the rename (was "run:" pre-rebrand).
+func EventTopic(eventID int64) string {
+	return "event:" + itoa(eventID)
 }
 
 func itoa(v int64) string {

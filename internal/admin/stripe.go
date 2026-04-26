@@ -255,7 +255,7 @@ func (h *Handlers) handleCheckoutCompleted(ctx context.Context, event stripe.Eve
 	// Webhook out: customer-side billing/PO systems that want their
 	// own copy of the paid event. Most won't subscribe (they
 	// reconcile via Stripe directly) but ship for completeness.
-	webhooks.TryPublish(ctx, h.DB, orgID, webhooks.EventPurchasePaid, map[string]any{
+	webhooks.TryPublish(ctx, h.DB, orgID, webhooks.KindPurchasePaid, map[string]any{
 		"purchase_id":     purchaseID,
 		"assignment_id":   assID,
 		"adventure_slug":  advSlug,
@@ -368,7 +368,7 @@ func (h *Handlers) handleChargeRefunded(ctx context.Context, event stripe.Event)
 		logx.Info("stripe.purchase.refunded", "charge_id", charge.ID, "rows", len(refunded))
 	}
 	for _, rr := range refunded {
-		webhooks.TryPublish(ctx, h.DB, rr.orgID, webhooks.EventPurchaseRefunded, map[string]any{
+		webhooks.TryPublish(ctx, h.DB, rr.orgID, webhooks.KindPurchaseRefunded, map[string]any{
 			"purchase_id":      rr.purchaseID,
 			"stripe_charge_id": charge.ID,
 		})

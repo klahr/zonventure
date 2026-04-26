@@ -331,7 +331,7 @@ p { margin: 0 0 .5rem; }
 }
 .card.card-cta:hover { border-color: var(--accent); }
 
-/* Sticky top bar on the run-detail view. Keeps Start/Pause/Resume
+/* Sticky top bar on the event-detail view. Keeps Start/Pause/Resume
    within reach during a live event no matter how far the arranger
    has scrolled into the teams list or event log. */
 .lifecycle-bar {
@@ -495,7 +495,7 @@ textarea { min-height: 80px; resize: vertical; font-family: ui-monospace, monosp
 
 /* ---------- Modal ----------
    Leaflet assigns its own layers z-index up to ~1000, so the modal and
-   toasts have to sit clearly above that to stay on top of the run map. */
+   toasts have to sit clearly above that to stay on top of the event map. */
 .modal-back {
   position: fixed; inset: 0; background: rgba(0,0,0,.45);
   display: flex; align-items: center; justify-content: center;
@@ -1574,7 +1574,7 @@ async function showOnboardingModal() {
           t('the catalog has ready-made adventures, or you can author your own.')),
         h('li', {}, h('strong', {}, t('Buy team slots')), ' — ',
           t('one slot per team. Pay once per event.')),
-        h('li', {}, h('strong', {}, t('Schedule a run')), ' — ',
+        h('li', {}, h('strong', {}, t('Schedule an event')), ' — ',
           t('add teams, share magic links, and start when ready.'))),
       h('p', { class: 'muted', style: 'font-size:.85rem; margin-top:1rem' },
         t('You can revisit this from the Settings page anytime.')),
@@ -1628,7 +1628,7 @@ async function render() {
     history.replaceState(null, '', '#dashboard');
     state.route = '#dashboard';
     setTimeout(() => {
-      if (ok) toastOk(t('Email verified — you can now schedule runs and buy assignments.'));
+      if (ok) toastOk(t('Email verified — you can now schedule events and buy assignments.'));
       else toastErr(t('Verification link is invalid or has expired. Sign in and tap "Resend email".'));
       // refreshMe so the banner disappears now that email_verified=true.
       if (ok) refreshMe().then(render);
@@ -1847,14 +1847,14 @@ function renderShell() {
     ];
   } else {
     // Order matches the mental model: where I am → what I can run →
-    // what I might want to buy → how runs are going → (if I can) who
+    // what I might want to buy → how events are going → (if I can) who
     // else is in my org. `#puzzles` is admin-only and route-guarded so
     // it isn't exposed here.
     items = [
       ['#dashboard',  t('Dashboard'),  ICONS.dashboard],
       ['#adventures', t('Adventures'), ICONS.map],
       ['#store',      t('Store'),      ICONS.coins],
-      ['#runs',       t('Runs'),       ICONS.play],
+      ['#events',       t('Events'),       ICONS.play],
     ];
     if (isOrgAdmin) {
       items.push(['#members', t('Members'), ICONS.shield]);
@@ -1941,7 +1941,7 @@ function renderVerifyBanner(email) {
       h('strong', {}, t('Verify your email')),
       ' — ',
       h('span', { class: 'muted' },
-        t('We sent a link to {{email}}. Until you click it, runs and purchases are disabled.', { email }))),
+        t('We sent a link to {{email}}. Until you click it, events and purchases are disabled.', { email }))),
     h('button', {
       class: 'btn small',
       on: { click: async (e) => {
@@ -1966,7 +1966,7 @@ function currentCrumb() {
     dashboard:     t('Dashboard'),
     adventures:    t('Adventures'),
     store:         t('Store'),
-    runs:          t('Runs'),
+    events:         t('Events'),
     members:       t('Members'),
     organizations: t('Organizations'),
     library:       t('Library'),
@@ -1980,7 +1980,7 @@ function currentCrumb() {
     settings:      t('Settings'),
   };
   const sectionLabel = LABELS[section] || (section ? section[0].toUpperCase() + section.slice(1) : '');
-  if (section === 'runs' && parts[1]) return t('{{section}} / Run #{{id}}', { section: sectionLabel, id: parts[1] });
+  if (section === 'events' && parts[1]) return t('{{section}} / Event #{{id}}', { section: sectionLabel, id: parts[1] });
   if (section === 'adventures' && parts[1]) return t('{{section}} / {{slug}}', { section: sectionLabel, slug: parts[1] });
   if (section === 'store' && parts[1]) return t('{{section}} / {{slug}}', { section: sectionLabel, slug: parts[1] });
   return sectionLabel;
@@ -1997,7 +1997,7 @@ async function renderRoute() {
 
   // Role-based route guards: admins can't visit org-user pages and vice versa.
   const adminOnly = ['organizations', 'admins', 'logs', 'simulator'];
-  const orgUserOnly = ['adventures', 'runs', 'store', 'webhooks'];
+  const orgUserOnly = ['adventures', 'events', 'store', 'webhooks'];
   if (isAdmin && orgUserOnly.includes(section)) { nav('#organizations'); return; }
   if (!isAdmin && adminOnly.includes(section))   { nav('#dashboard');     return; }
   if (section === 'members' && !isOrgAdmin)      { nav('#dashboard');     return; }
@@ -2006,10 +2006,10 @@ async function renderRoute() {
   // shell before the API rejected it.
   if (section === 'audit' && !isAdmin && !isOrgAdmin) { nav('#dashboard'); return; }
 
-  // Run-detail is the only view with real-time updates. Entering it opens a
+  // Event-detail is the only view with real-time updates. Entering it opens a
   // watch on the arrange WebSocket; leaving it releases that watch so the
   // server stops publishing to this client.
-  if (section === 'runs' && arg) {
+  if (section === 'events' && arg) {
     watchRun(parseInt(arg, 10));
   } else {
     unwatchRun();
@@ -2026,7 +2026,7 @@ async function renderRoute() {
       case 'dashboard':    return await viewDashboard(view);
       case 'adventures':   return arg ? await viewAdventureDetail(view, arg) : await viewAdventures(view);
       case 'store':        return arg ? await viewStoreDetail(view, arg) : await viewStore(view);
-      case 'runs':         return arg ? await viewRunDetail(view, arg) : await viewRuns(view);
+      case 'events':         return arg ? await viewRunDetail(view, arg) : await viewRuns(view);
       case 'members':      return await viewMembers(view);
       case 'organizations':return await viewOrganizations(view);
       case 'library':      return arg ? await viewLibraryEdit(view, arg) : await viewLibrary(view);
@@ -2059,13 +2059,13 @@ async function renderRoute() {
 }
 
 /* ========== Arrange subscription stream ========== */
-// arrangeWS is a single long-lived connection that pushes run-detail
-// updates while an arranger has a run open. Mutations still ride HTTP;
+// arrangeWS is a single long-lived connection that pushes event-detail
+// updates while an arranger has an event open. Mutations still ride HTTP;
 // this socket only receives change notifications so the view stays in
 // sync with player progress, team creates, etc., without polling.
 let arrangeWS = null;
 let arrangeWSBackoff = 500;
-let watchedRunID = 0;
+let watchedEventID = 0;
 let arrangePushTimer = null;
 
 function ensureArrangeWS() {
@@ -2074,21 +2074,21 @@ function ensureArrangeWS() {
   arrangeWS = new WebSocket(`${proto}//${location.host}/ws/arrange`);
   arrangeWS.onopen = () => {
     arrangeWSBackoff = 500;
-    if (watchedRunID) arrangeWS.send(JSON.stringify({ kind: 'watch_run', data: { run_id: watchedRunID } }));
+    if (watchedEventID) arrangeWS.send(JSON.stringify({ kind: 'watch_run', data: { event_id: watchedEventID } }));
   };
   arrangeWS.onmessage = (ev) => {
     let msg; try { msg = JSON.parse(ev.data); } catch { return; }
     if (!msg || !msg.kind) return;
-    // Any server push re-renders the current run-detail view. Debounced so
+    // Any server push re-renders the current event-detail view. Debounced so
     // a burst of changes (eg. multiple position updates from players
     // pinging at once) collapses into a single re-render.
     if (msg.kind === 'positions' || msg.kind === 'tracks' ||
-        msg.kind === 'events'   || msg.kind === 'run_detail') {
+        msg.kind === 'activity'   || msg.kind === 'event_detail') {
       if (arrangePushTimer) clearTimeout(arrangePushTimer);
       arrangePushTimer = setTimeout(() => {
         const r = state.route.replace(/^#/, '');
         const [section, arg] = r.split('/');
-        if (section === 'runs' && arg) {
+        if (section === 'events' && arg) {
           const view = document.getElementById('view');
           if (view) viewRunDetail(view, parseInt(arg, 10));
         }
@@ -2103,17 +2103,17 @@ function ensureArrangeWS() {
 }
 
 function watchRun(runID) {
-  if (!runID || runID === watchedRunID) { watchedRunID = runID; ensureArrangeWS(); return; }
-  watchedRunID = runID;
+  if (!runID || runID === watchedEventID) { watchedEventID = runID; ensureArrangeWS(); return; }
+  watchedEventID = runID;
   ensureArrangeWS();
   if (arrangeWS && arrangeWS.readyState === 1) {
-    arrangeWS.send(JSON.stringify({ kind: 'watch_run', data: { run_id: runID } }));
+    arrangeWS.send(JSON.stringify({ kind: 'watch_run', data: { event_id: runID } }));
   }
 }
 
 function unwatchRun() {
-  if (!watchedRunID) return;
-  watchedRunID = 0;
+  if (!watchedEventID) return;
+  watchedEventID = 0;
   if (arrangeWS && arrangeWS.readyState === 1) {
     arrangeWS.send(JSON.stringify({ kind: 'unwatch_run' }));
   }
@@ -2132,23 +2132,23 @@ async function viewDashboard(view) {
 }
 
 async function viewArrangerDashboard(view) {
-  const [runsR, advR, assignR] = await Promise.all([
-    api('/api/admin/runs'),
+  const [eventsR, advR, assignR] = await Promise.all([
+    api('/api/admin/events'),
     api('/api/admin/adventures'),
     api('/api/admin/assignments'),
   ]);
   const newEventBtn = h('button', { class: 'btn primary', on: { click: () => openNewEventWizard() } },
     icon(ICONS.plus), t('Start a new event'));
-  const rs = runsR.body?.runs || [];
+  const rs = eventsR.body?.events || [];
   const advs = advR.body?.adventures || [];
   const assignments = assignR.body?.assignments || [];
   const mineAdvs    = advs.filter((a) => a.mine_to_edit);
-  const unusedAssigns = assignments.filter((a) => !a.run_id);
+  const unusedAssigns = assignments.filter((a) => !a.event_id);
   const runningNow  = rs.filter((r) => r.state === 'running');
   const scheduled   = rs.filter((r) => r.state === 'scheduled')
     .sort((a, b) => (a.scheduled_at || '').localeCompare(b.scheduled_at || ''));
 
-  // Setup checklist for first-time arrangers. Hides itself once a run
+  // Setup checklist for first-time arrangers. Hides itself once an event
   // exists so veterans don't see it.
   const setup = rs.length === 0
     ? buildDashboardSetup({ mineAdvs, unusedAssigns })
@@ -2164,18 +2164,18 @@ async function viewArrangerDashboard(view) {
       newEventBtn,
     ),
     h('div', { class: 'grid stats' },
-      stat(t('Running now'), runningNow.length),
+      stat(t('Live now'), runningNow.length),
       stat(t('Scheduled'), scheduled.length),
       stat(t('Unused assignments'), unusedAssigns.length),
     ),
     setup,
     // During a live event this is what the arranger wants to see first.
     runningNow.length === 0 ? null : h('div', { class: 'card' },
-      h('h2', {}, t('Running now')),
+      h('h2', {}, t('Live now')),
       h('div', { class: 'grid cols-2' },
         runningNow.map((r) => h('div', {
           class: 'card clickable',
-          on: { click: () => nav('#runs/' + r.id) },
+          on: { click: () => nav('#events/' + r.id) },
         },
           h('div', { class: 'row between' },
             h('strong', {}, runLabel(r)),
@@ -2183,17 +2183,17 @@ async function viewArrangerDashboard(view) {
           h('p', { class: 'muted mono', style: 'font-size:.75rem; margin:.1rem 0 .3rem' }, r.adventure_slug),
           h('p', { class: 'muted', style: 'font-size:.85rem; margin:0' },
             r.started_at ? t('Started {{when}}', { when: fmtLocal(r.started_at) }) : ''))))),
-    // "Starts soon" is actionable — one-click Start on scheduled runs.
+    // "Starts soon" is actionable — one-click Start on scheduled events.
     scheduled.length === 0 ? null : h('div', { class: 'card' },
       h('h2', {}, t('Starts soon')),
       h('table', { class: 'table' },
         h('thead', {}, h('tr', {},
-          h('th', {}, t('Run')),
+          h('th', {}, t('Event')),
           h('th', {}, t('Scheduled')),
           h('th', {}, ''))),
         h('tbody', {}, scheduled.slice(0, 10).map((r) => h('tr', {
             style: 'cursor:pointer',
-            on: { click: () => nav('#runs/' + r.id) },
+            on: { click: () => nav('#events/' + r.id) },
           },
           h('td', {}, runLabel(r)),
           h('td', {}, fmtLocal(r.scheduled_at) || h('span', { class: 'muted' }, t('(no time set)'))),
@@ -2203,7 +2203,7 @@ async function viewArrangerDashboard(view) {
     // Fallback for users between events.
     (runningNow.length === 0 && scheduled.length === 0 && rs.length > 0)
       ? h('div', { class: 'card' },
-          h('h2', {}, t('Recent runs')),
+          h('h2', {}, t('Recent events')),
           runsTable(rs.slice(0, 5)))
       : null,
   ];
@@ -2211,7 +2211,7 @@ async function viewArrangerDashboard(view) {
 }
 
 // buildDashboardSetup drops a guided checklist for brand-new arrangers
-// who haven't run anything yet — it meets them where they are and
+// who haven't run any events yet — it meets them where they are and
 // links to the next action.
 function buildDashboardSetup({ mineAdvs, unusedAssigns }) {
   const stepDone = (done, label, cta, onClick) =>
@@ -2234,10 +2234,10 @@ function buildDashboardSetup({ mineAdvs, unusedAssigns }) {
         t('Pick an adventure — browse the Store or create your own'),
         t('Go'), () => nav('#store')),
       stepDone(unusedAssigns.length > 0,
-        t('Have team slots ready — an assignment lets you schedule a run'),
+        t('Have team slots ready — an assignment lets you schedule an event'),
         t('Go'), () => nav('#store')),
       stepDone(false,
-        t('Schedule a run, add teams, share their links — and start!'),
+        t('Schedule an event, add teams, share their links — and start!'),
         unusedAssigns.length > 0 ? t('Schedule') : null,
         unusedAssigns.length > 0 ? (() => scheduleRun(unusedAssigns[0].id)) : null),
     ),
@@ -2249,12 +2249,12 @@ async function viewAdminDashboard(view) {
   const orgs = orgsR.body?.organizations || [];
 
   const totals = orgs.reduce((acc, o) => {
-    acc.runsTotal   += o.runs_total   || 0;
-    acc.runsRunning += o.runs_running || 0;
+    acc.eventsTotal   += o.events_total   || 0;
+    acc.eventsRunning += o.events_running || 0;
     acc.players     += o.players_total || 0;
     acc.members     += (o.members || []).length;
     return acc;
-  }, { runsTotal: 0, runsRunning: 0, players: 0, members: 0 });
+  }, { eventsTotal: 0, eventsRunning: 0, players: 0, members: 0 });
 
   view.replaceChildren(
     h('h1', {}, t('Hello, {{username}}', { username: state.me.username })),
@@ -2263,7 +2263,7 @@ async function viewAdminDashboard(view) {
     h('div', { class: 'grid stats' },
       stat(t('Organizations'), orgs.length),
       stat(t('Org users'), totals.members),
-      stat(t('Active runs'), totals.runsRunning),
+      stat(t('Active events'), totals.eventsRunning),
     ),
     h('div', { class: 'card' },
       h('div', { class: 'row between' },
@@ -2280,16 +2280,16 @@ async function viewAdminDashboard(view) {
             h('th', {}, t('Organization')),
             h('th', { class: 'hide-narrow' }, t('Users')),
             h('th', { class: 'hide-narrow' }, t('Players')),
-            h('th', {}, t('Runs')),
+            h('th', {}, t('Events')),
             h('th', { class: 'hide-narrow' }, t('Active')))),
           h('tbody', {}, orgs.map((o) => h('tr', {},
             h('td', {}, o.name),
             h('td', { class: 'mono hide-narrow' }, (o.members || []).length),
             h('td', { class: 'mono hide-narrow' }, o.players_total || 0),
-            h('td', { class: 'mono' }, o.runs_total || 0),
+            h('td', { class: 'mono' }, o.events_total || 0),
             h('td', { class: 'hide-narrow' },
-              (o.runs_running || 0) > 0
-                ? h('span', { class: 'pill success' }, t('{{n}} running', { n: o.runs_running }))
+              (o.events_running || 0) > 0
+                ? h('span', { class: 'pill success' }, t('{{n}} running', { n: o.events_running }))
                 : h('span', { class: 'muted' }, '—')),
           )))),
     ),
@@ -2304,7 +2304,7 @@ function stat(label, value) {
 
 /* ========== Adventures ==========
    For arrangers this is really "your assignments" — each unused assignment
-   is a one-shot licence to run an adventure with a fixed team cap. Used
+   is a one-shot licence to use an adventure for an event with a fixed team cap. Used
    assignments are also shown (with a link to their run) so the arranger can
    see the full history at a glance. */
 async function viewAdventures(view) {
@@ -2315,7 +2315,7 @@ async function viewAdventures(view) {
   if (justPurchased) {
     sessionStorage.removeItem('zv-just-purchased');
     const id = parseInt(justPurchased, 10);
-    if (id > 0) { toastOk(t('Payment received — let\'s schedule your run.')); scheduleRun(id); }
+    if (id > 0) { toastOk(t('Payment received — let\'s schedule your event.')); scheduleRun(id); }
   }
 
   const [ar, advR] = await Promise.all([
@@ -2326,12 +2326,12 @@ async function viewAdventures(view) {
   const advs = advR.body?.adventures || [];
 
   // Bucket assignments per adventure. unused = ready to schedule,
-  // used = already materialised into a run (kept for context badges).
+  // used = already materialised into an event (kept for context badges).
   const byAdv = new Map();
   for (const a of assignments) {
     if (!a.adventure_slug) continue;
     const b = byAdv.get(a.adventure_slug) || { unused: [], used: [] };
-    (a.run_id ? b.used : b.unused).push(a);
+    (a.event_id ? b.used : b.unused).push(a);
     byAdv.set(a.adventure_slug, b);
   }
 
@@ -2366,14 +2366,14 @@ async function viewAdventures(view) {
       actions.append(h('button', {
         class: 'btn primary',
         on: { click: () => pickAndScheduleRun(bucket.unused, adv) },
-      }, icon(ICONS.play), t('Schedule run')));
+      }, icon(ICONS.play), t('Schedule event')));
     } else if (adv.shared || (adv.mine_to_edit && adv.org_id)) {
       // Commissioned by admin or authored in-house — either way the
-      // org can schedule runs freely, no assignment needed.
+      // org can schedule events freely, no assignment needed.
       actions.append(h('button', {
         class: 'btn primary',
         on: { click: () => scheduleRun({ slug: adv.slug }) },
-      }, icon(ICONS.play), t('Schedule run')));
+      }, icon(ICONS.play), t('Schedule event')));
     } else if (adv.mine_to_edit) {
       // Own adventure with no unused assignments — offer the buy
       // path inline so "make this runnable" is one step away.
@@ -2400,8 +2400,8 @@ async function viewAdventures(view) {
             : t('{{n}} assignments available', { n: bucket.unused.length }))
         : bucket.used.length > 0
           ? h('span', { class: 'pill' }, bucket.used.length === 1
-              ? t('{{n}} run held', { n: bucket.used.length })
-              : t('{{n}} runs held', { n: bucket.used.length }))
+              ? t('{{n}} event held', { n: bucket.used.length })
+              : t('{{n}} events held', { n: bucket.used.length }))
           : null,
     ].filter(Boolean);
 
@@ -2428,7 +2428,7 @@ async function viewAdventures(view) {
           icon(ICONS.plus), t('New adventure')))),
     runnable.length === 0
       ? h('div', { class: 'empty' },
-          h('p', {}, t('No adventures you can run yet.')),
+          h('p', {}, t('No adventures you can use yet.')),
           h('p', { class: 'muted' }, t('Create your own or browse the Store for published adventures.')),
           h('div', { class: 'row', style: 'gap:.5rem; justify-content:center; margin-top:.5rem' },
             h('button', { class: 'btn primary', on: { click: () => openCreateAdventure() } },
@@ -2614,7 +2614,7 @@ function renderEmptyPurchases() {
   return h('div', { class: 'empty' },
     h('p', {}, t('No purchases yet.')),
     h('p', { class: 'muted', style: 'margin-top:.5rem' },
-      t('Browse the catalog and buy team slots to start scheduling runs.')),
+      t('Browse the catalog and buy team slots to start scheduling events.')),
     h('div', { style: 'margin-top:.75rem' },
       h('button', { class: 'btn primary', on: { click: () => nav('#store') } },
         icon(ICONS.coins), t('Open the store'))));
@@ -2712,10 +2712,10 @@ async function scheduleRun(source) {
   const baseReq = typeof source === 'number'
     ? { assignment_id: source }
     : { adventure_slug: source.slug };
-  const body = await modal(t('New run'), ({ body, close }) => {
+  const body = await modal(t('New event'), ({ body, close }) => {
     const name = h('input', { placeholder: t('e.g. “Saturday Andersson party”') });
     // A newly created run stays scheduled until the arranger explicitly
-    // hits Start on the run page — auto-starting on create robbed the
+    // hits Start on the event page — auto-starting on create robbed the
     // arranger of the chance to add teams and share links first.
     const modeManual = h('input', { type: 'radio', name: 'mode', value: 'manual', checked: true });
     const modeLater = h('input', { type: 'radio', name: 'mode', value: 'later' });
@@ -2737,7 +2737,7 @@ async function scheduleRun(source) {
         h('span', {}, t('I confirm no participants under 13 will play this adventure, or I have parental consent for any who will.'))),
       h('div', { class: 'row end' },
         h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, t('Cancel')),
-        h('button', { class: 'btn primary', type: 'submit' }, t('Create run'))),
+        h('button', { class: 'btn primary', type: 'submit' }, t('Create event'))),
     );
     form.addEventListener('submit', (e) => {
       e.preventDefault();
@@ -2754,16 +2754,16 @@ async function scheduleRun(source) {
     body.append(form);
   });
   if (!body) return;
-  const r = await api('/api/admin/runs', { method: 'POST', body: JSON.stringify(body.req) });
+  const r = await api('/api/admin/events', { method: 'POST', body: JSON.stringify(body.req) });
   if (r.status !== 201) { toastErr(r.body?.error || t('error {{status}}', { status: r.status })); return; }
   const runID = r.body.id;
-  toastOk(t('Run ready'));
-  nav('#runs/' + runID);
+  toastOk(t('Event ready'));
+  nav('#events/' + runID);
 }
 
 // openNewEventWizard walks the arranger through every decision needed
-// to get from "I want to host" to "here's the run with teams ready".
-// Runs inline (no checkout-page jump) by calling the purchase +
+// to get from "I want to host" to "here's the event with teams ready".
+// Events inline (no checkout-page jump) by calling the purchase +
 // confirm endpoints directly from the submit handler. The simulated
 // checkout page still exists for the standalone "Buy team slots"
 // flow on the Adventures catalog, but the wizard bypasses it.
@@ -2776,7 +2776,7 @@ async function openNewEventWizard() {
   if (advs.length === 0) {
     toastErr(t('Create or browse an adventure first')); return;
   }
-  const assignments = (assignR.body?.assignments || []).filter((a) => !a.run_id);
+  const assignments = (assignR.body?.assignments || []).filter((a) => !a.event_id);
 
   await modal(t('Start a new event'), ({ body, close }) => {
     // ---- 1. Adventure picker ----
@@ -2828,9 +2828,9 @@ async function openNewEventWizard() {
     refreshAssignment();
 
     // ---- 3. When ----
-    // The default is manual start: the wizard leaves the run in
+    // The default is manual start: the wizard leaves the event in
     // scheduled state so the arranger can share links and add teams
-    // before tapping Start on the run page.
+    // before tapping Start on the event page.
     const modeManual = h('input', { type: 'radio', name: 'ev-mode', value: 'manual', checked: true });
     const modeLater  = h('input', { type: 'radio', name: 'ev-mode', value: 'later' });
     const whenInput  = h('input', { type: 'datetime-local', disabled: '' });
@@ -2858,7 +2858,7 @@ async function openNewEventWizard() {
       h('label', { style: 'display:flex; gap:.5rem; align-items:center; margin:.25rem 0' },
         modeLater, h('span', {}, t('Schedule for later'))),
       h('label', { class: 'field' }, h('span', {}, t('Auto-start at')), whenInput),
-      h('label', { class: 'field' }, h('span', {}, t('Run name (optional)')), nameInput),
+      h('label', { class: 'field' }, h('span', {}, t('Event name (optional)')), nameInput),
       h('h3', {}, t('Teams (optional — add later if you prefer)')),
       h('div', { class: 'grid cols-2' },
         h('label', { class: 'field' }, h('span', {}, t('Number of teams')), teamCount),
@@ -2895,14 +2895,14 @@ async function openNewEventWizard() {
           if (cr.status !== 200) { toastErr(cr.body?.error || t('Payment failed')); return; }
           assignmentID = cr.body.assignment_id;
         }
-        // Create the run.
+        // Create the event.
         const runReq = { assignment_id: assignmentID, name: nameInput.value.trim(), attest_no_minors: true };
         if (modeLater.checked) {
           if (!whenInput.value) { toastErr(t('Pick an auto-start time')); return; }
           runReq.scheduled_at = new Date(whenInput.value).toISOString();
         }
-        const rr = await api('/api/admin/runs', { method: 'POST', body: JSON.stringify(runReq) });
-        if (rr.status !== 201) { toastErr(rr.body?.error || t('Run creation failed')); return; }
+        const rr = await api('/api/admin/events', { method: 'POST', body: JSON.stringify(runReq) });
+        if (rr.status !== 201) { toastErr(rr.body?.error || t('Event creation failed')); return; }
         const runID = rr.body.id;
         // Bulk teams.
         const T = Math.max(0, parseInt(teamCount.value, 10) || 0);
@@ -2911,14 +2911,14 @@ async function openNewEventWizard() {
         const pp = playerPrefix.value.trim() || 'Player';
         for (let i = 1; i <= T; i++) {
           const members = Array.from({ length: P }, (_, j) => `${pp} ${j + 1}`);
-          await api(`/api/admin/runs/${runID}/teams`, {
+          await api(`/api/admin/events/${runID}/teams`, {
             method: 'POST',
             body: JSON.stringify({ name: `${tp} ${i}`, member_names: members }),
           });
         }
         toastOk(t('Event ready'));
         close(true);
-        nav('#runs/' + runID);
+        nav('#events/' + runID);
       } finally {
         submitBtn.disabled = false;
       }
@@ -2927,26 +2927,26 @@ async function openNewEventWizard() {
   }, { wide: true });
 }
 
-// runLabel renders a run's display name — the human-set name if any,
-// otherwise "Run #id". Used everywhere a run identifier is shown.
+// runLabel renders an event's display name — the human-set name if any,
+// otherwise "Event #id". Used everywhere an event identifier is shown.
 function runLabel(run) {
   if (!run) return '';
-  return run.name ? run.name : 'Run #' + run.id;
+  return event.name ? event.name : 'Event #' + event.id;
 }
 
-async function openRenameRun(run) {
-  await modal(t('Rename run'), ({ body, close }) => {
-    const input = h('input', { value: run.name || '', autofocus: true, placeholder: t('Run name') });
+async function openRenameEvent(run) {
+  await modal(t('Rename event'), ({ body, close }) => {
+    const input = h('input', { value: event.name || '', autofocus: true, placeholder: t('Event name') });
     const form = h('form', {},
-      h('label', { class: 'field' }, h('span', {}, t('Run name')), input),
+      h('label', { class: 'field' }, h('span', {}, t('Event name')), input),
       h('p', { class: 'muted', style: 'font-size:.85rem' },
-        t('Empty resets to "Run #{{id}}".', { id: run.id })),
+        t('Empty resets to "Event #{{id}}".', { id: event.id })),
       h('div', { class: 'row end' },
         h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, t('Cancel')),
         h('button', { class: 'btn primary', type: 'submit' }, t('Save'))));
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
-      const r = await api(`/api/admin/runs/${run.id}`, {
+      const r = await api(`/api/admin/events/${run.id}`, {
         method: 'PATCH', body: JSON.stringify({ name: input.value.trim() }),
       });
       if (r.status === 204) { toastOk(t('Renamed')); close(true); renderRoute(); }
@@ -2956,33 +2956,33 @@ async function openRenameRun(run) {
   });
 }
 
-/* ========== Runs ========== */
+/* ========== Events ========== */
 async function viewRuns(view) {
-  const r = await api('/api/admin/runs');
+  const r = await api('/api/admin/events');
   const rs = r.body?.runs || [];
   view.replaceChildren(
-    h('h1', {}, t('Runs')),
+    h('h1', {}, t('Events')),
     h('div', { class: 'card' }, runsTable(rs)),
   );
 }
 
 function runsTable(rs) {
   if (rs.length === 0) return h('div', { class: 'empty' },
-    h('p', {}, t('No runs yet.')),
+    h('p', {}, t('No events yet.')),
     h('p', { class: 'muted', style: 'margin-top:.5rem' },
-      t('Pick an adventure to schedule your first run — you can add teams and share player links once it\'s created.')),
+      t('Pick an adventure to schedule your first event — you can add teams and share player links once it\'s created.')),
     h('div', { style: 'margin-top:.75rem' },
       h('button', { class: 'btn primary', on: { click: () => nav('#adventures') } },
         icon(ICONS.map), t('Pick an adventure'))));
   return h('table', { class: 'table' },
     h('thead', {}, h('tr', {},
-      h('th', {}, t('Run')),
+      h('th', {}, t('Event')),
       h('th', { class: 'hide-narrow' }, t('Adventure')),
       h('th', {}, t('State')),
       h('th', { class: 'hide-narrow' }, t('Scheduled')),
       h('th', { class: 'hide-narrow' }, t('Started')))),
     h('tbody', {}, rs.map((r) =>
-      h('tr', { style: 'cursor:pointer', on: { click: () => nav('#runs/' + r.id) } },
+      h('tr', { style: 'cursor:pointer', on: { click: () => nav('#events/' + r.id) } },
         h('td', {}, h('strong', {}, runLabel(r))),
         h('td', { class: 'hide-narrow muted mono' }, r.adventure_slug),
         h('td', {}, h('span', { class: 'pill ' + pillClassForState(r.state) }, t(r.state || ''))),
@@ -3084,12 +3084,12 @@ function adventureCover(adv, size) {
 }
 
 // renderTeamLinksPanel is the "distribute magic links" surface sitting
-// at the top of the run page. An arranger with 100 teams needs to copy
+// at the top of the event page. An arranger with 100 teams needs to copy
 // captain URLs in bulk (paste into a spreadsheet or email merge) and
 // occasionally reach one team's per-player URLs inline. Virtualisation
 // isn't worth it at the scale we've seen (~100 teams × ~5 members =
 // 500 rows); a fixed-height scroller with client-side search keeps the
-// rest of the run page usable.
+// rest of the event page usable.
 function renderTeamLinksPanel(run, teams) {
   if (!teams || teams.length === 0) return null;
   const origin = location.origin;
@@ -3150,7 +3150,7 @@ function renderTeamLinksPanel(run, teams) {
       t('{{n}} teams — captain + per-player links', { n: teams.length })),
   );
   // Open by default for small rosters where the panel doesn't dominate
-  // the viewport; collapsed past that so the rest of the run page is
+  // the viewport; collapsed past that so the rest of the event page is
   // visible without scrolling.
   const openByDefault = teams.length <= 6;
   return h('details', {
@@ -3225,7 +3225,7 @@ function buildTeamLinkRow(tm, i, teamURL, memberURL) {
 // arranger can read/copy it and send it to whoever's running the TV
 // screen.
 function renderShareBar(run) {
-  const url = `${location.origin}/live/${run.live_token}`;
+  const url = `${location.origin}/live/${event.live_token}`;
   const urlBox = h('input', {
     readonly: '', value: url,
     style: 'flex:1; min-width:0; background:var(--surface-2); font-family:ui-monospace,SFMono-Regular,monospace; font-size:.9rem; box-shadow:none; border-color:var(--border-soft)',
@@ -3252,9 +3252,9 @@ function renderShareBar(run) {
   // at any time (default off: revealing team positions is effectively
   // cheating for most puzzle types).
   const mapToggle = h('input', { type: 'checkbox' });
-  if (run.show_map) mapToggle.checked = true;
+  if (event.show_map) mapToggle.checked = true;
   mapToggle.addEventListener('change', async () => {
-    const r = await api(`/api/admin/runs/${run.id}`, {
+    const r = await api(`/api/admin/events/${run.id}`, {
       method: 'PATCH',
       body: JSON.stringify({ show_map: mapToggle.checked }),
     });
@@ -3293,18 +3293,18 @@ function renderShareBar(run) {
 
 async function viewRunDetail(view, runID) {
   const [detail, positions, tracksR, adventureR, eventsR] = await Promise.all([
-    api('/api/admin/runs/' + runID),
-    api('/api/admin/runs/' + runID + '/positions'),
-    api('/api/admin/runs/' + runID + '/tracks'),
+    api('/api/admin/events/' + runID),
+    api('/api/admin/events/' + runID + '/positions'),
+    api('/api/admin/events/' + runID + '/tracks'),
     (async () => {
-      const d = await api('/api/admin/runs/' + runID);
+      const d = await api('/api/admin/events/' + runID);
       if (!d.ok) return null;
-      return api('/api/admin/adventures/' + encodeURIComponent(d.body.run.adventure_slug));
+      return api('/api/admin/adventures/' + encodeURIComponent(d.body.event.adventure_slug));
     })(),
-    api('/api/admin/runs/' + runID + '/events'),
+    api('/api/admin/events/' + runID + '/events'),
   ]);
   if (!detail.ok) { view.replaceChildren(h('p', { class: 'err' }, detail.body?.error || t('not found'))); return; }
-  const run = detail.body.run;
+  const run = detail.body.event;
   const teams = detail.body.teams || [];
   const tracks = tracksR.body?.tracks || [];
   const adventure = adventureR?.body || null;
@@ -3313,20 +3313,20 @@ async function viewRunDetail(view, runID) {
   // Lifecycle action lives at the top — during a live event this is
   // what the arranger reaches for, so it belongs above everything.
   const actions = h('div', { class: 'row', style: 'gap:.5rem; flex-wrap:wrap' });
-  if (run.state === 'scheduled') {
+  if (event.state === 'scheduled') {
     const start = h('button', { class: 'btn primary lifecycle-btn', on: { click: () => confirmStart(run) } },
       icon(ICONS.play), t('Start now'));
     const sched = h('button', { class: 'btn lifecycle-btn', on: { click: () => openEditSchedule(run) } },
       icon(ICONS.schedule), t('Reschedule'));
     actions.append(start, sched);
   }
-  if (run.state === 'running') {
-    const pause = h('button', { class: 'btn lifecycle-btn warning', on: { click: () => transition(run.id, 'pause') } },
+  if (event.state === 'running') {
+    const pause = h('button', { class: 'btn lifecycle-btn warning', on: { click: () => transition(event.id, 'pause') } },
       icon(ICONS.moon), t('Pause'));
     actions.append(pause);
   }
-  if (run.state === 'paused') {
-    const resume = h('button', { class: 'btn primary lifecycle-btn', on: { click: () => transition(run.id, 'resume') } },
+  if (event.state === 'paused') {
+    const resume = h('button', { class: 'btn primary lifecycle-btn', on: { click: () => transition(event.id, 'resume') } },
       icon(ICONS.play), t('Resume'));
     actions.append(resume);
   }
@@ -3337,7 +3337,7 @@ async function viewRunDetail(view, runID) {
     const allDone   = finishedN === teams.length;
     const csv = h('a', {
       class: 'btn lifecycle-btn' + (allDone ? ' primary' : ''),
-      href: '/api/admin/runs/' + run.id + '/results.csv',
+      href: '/api/admin/events/' + event.id + '/results.csv',
       download: `run-${run.id}-results.csv`,
       title: t('Download CSV of the current standings'),
     }, icon(ICONS.copy), allDone ? t('Download results') : t('Download standings'));
@@ -3361,7 +3361,7 @@ async function viewRunDetail(view, runID) {
     h('span', { class: 'sw', style: `background:${teamColor(t.id, i)}` }),
     t.name));
 
-  const mapHost = h('div', { class: 'map-host', id: 'run-map-' + run.id });
+  const mapHost = h('div', { class: 'map-host', id: 'run-map-' + event.id });
   const legend = h('div', { class: 'map-legend' },
     h('span', {}, h('span', { class: 'sw', style: 'background:var(--accent)' }), t('Gated puzzle')),
     h('span', {}, h('span', { class: 'sw', style: 'background:var(--ink)' }), t('Puzzle')),
@@ -3370,9 +3370,9 @@ async function viewRunDetail(view, runID) {
   // Collapsible map card. Leaflet needs a sized container at init
   // time, so we only call initRunMap when the body is visible; a
   // guard keeps it idempotent across toggles.
-  const mapBody = h('div', { style: run.show_map ? '' : 'display:none' }, mapHost, legend);
+  const mapBody = h('div', { style: event.show_map ? '' : 'display:none' }, mapHost, legend);
   const mapCaret = h('span', { style: 'margin-left:auto; color:var(--muted); font-size:.85rem' },
-    run.show_map ? t('Hide') : t('Show'));
+    event.show_map ? t('Hide') : t('Show'));
   const mapHeader = h('div', { class: 'row between', style: 'cursor:pointer; user-select:none' },
     h('h2', { style: 'margin:0' }, t('Map')), mapCaret);
   let mapReady = false;
@@ -3390,18 +3390,18 @@ async function viewRunDetail(view, runID) {
   // Sticky lifecycle bar — pins to the top of the scroll area so big
   // Start/Pause/Resume stay reachable while scrolling through teams.
   const titleEl = h('h1', {}, runLabel(run));
-  const renameBtn = iconBtn('pencil', t('Rename run'), () => openRenameRun(run));
+  const renameBtn = iconBtn('pencil', t('Rename event'), () => openRenameEvent(run));
   const lifecycleBar = h('div', { class: 'lifecycle-bar' },
     h('div', { class: 'lifecycle-left' },
-      h('button', { class: 'btn ghost small', on: { click: () => nav('#runs') } },
-        icon(ICONS.back), t('Runs')),
+      h('button', { class: 'btn ghost small', on: { click: () => nav('#events') } },
+        icon(ICONS.back), t('Events')),
       titleEl, renameBtn,
-      h('span', { class: 'pill ' + pillClassForState(run.state) }, t(run.state || '')),
+      h('span', { class: 'pill ' + pillClassForState(event.state) }, t(event.state || '')),
       h('span', { class: 'muted', style: 'font-size:.85rem' },
-        run.started_at
-          ? t('Started {{when}}', { when: fmtLocal(run.started_at) })
-          : run.scheduled_at
-            ? t('Auto-start {{when}}', { when: fmtLocal(run.scheduled_at) })
+        event.started_at
+          ? t('Started {{when}}', { when: fmtLocal(event.started_at) })
+          : event.scheduled_at
+            ? t('Auto-start {{when}}', { when: fmtLocal(event.scheduled_at) })
             : t('Not scheduled')),
     ),
     actions,
@@ -3409,7 +3409,7 @@ async function viewRunDetail(view, runID) {
 
   view.replaceChildren(
     lifecycleBar,
-    h('p', { class: 'muted mono' }, run.adventure_slug),
+    h('p', { class: 'muted mono' }, event.adventure_slug),
     renderTeamLinksPanel(run, teams),
     renderShareBar(run),
     mapCard,
@@ -3418,19 +3418,19 @@ async function viewRunDetail(view, runID) {
         h('div', { class: 'row between' },
           h('h2', {},
             t('Teams'),
-            run.max_teams > 0
+            event.max_teams > 0
               ? h('span', { class: 'muted', style: 'font-weight:400; margin-left:.4rem; font-size:.85rem' },
-                  `(${teams.length} / ${run.max_teams})`)
+                  `(${teams.length} / ${event.max_teams})`)
               : null),
           h('button', {
             class: 'btn primary small',
-            disabled: run.max_teams > 0 && teams.length >= run.max_teams ? '' : null,
-            on: { click: () => openTeamModal(run.id, null) },
+            disabled: event.max_teams > 0 && teams.length >= event.max_teams ? '' : null,
+            on: { click: () => openTeamModal(event.id, null) },
           }, icon(ICONS.plus), t('New team'))),
         teams.length === 0
           ? h('div', { class: 'empty' },
               h('p', {}, t('No teams yet.')),
-              h('button', { class: 'btn primary', on: { click: () => openTeamModal(run.id, null) } },
+              h('button', { class: 'btn primary', on: { click: () => openTeamModal(event.id, null) } },
                 icon(ICONS.plus), t('Add the first team')))
           : h('table', { class: 'table' },
             h('thead', {}, h('tr', {},
@@ -3442,14 +3442,14 @@ async function viewRunDetail(view, runID) {
               const page = adventure?.pages?.[tm.page_index];
               const lastEv = lastEventByTeam.get(tm.id);
               const lastMs = lastEv ? Date.parse(lastEv.includes('T') ? lastEv : lastEv.replace(' ', 'T') + 'Z') : null;
-              const stuck = run.state === 'running' && !tm.completed_at && lastMs != null && (Date.now() - lastMs) > STUCK_MS;
+              const stuck = event.state === 'running' && !tm.completed_at && lastMs != null && (Date.now() - lastMs) > STUCK_MS;
               return h('tr', { class: stuck ? 'row-stuck' : '' },
                 h('td', {},
                   h('span', {
                     style: 'display:inline-flex; align-items:center; gap:.5rem; vertical-align:middle',
                   },
                     teamAvatar(tm, teamColor(tm.id, i), 26),
-                    h('a', { href: '#', on: { click: (e) => { e.preventDefault(); openTeamDetail(run.id, tm, adventure); } } }, tm.name)),
+                    h('a', { href: '#', on: { click: (e) => { e.preventDefault(); openTeamDetail(event.id, tm, adventure); } } }, tm.name)),
                   tm.completed_at ? h('span', { class: 'pill success', style: 'margin-left:.5rem' }, t('done')) : null,
                   stuck ? h('span', { class: 'pill warning', style: 'margin-left:.5rem' }, t('stuck?')) : null),
                 h('td', {},
@@ -3463,7 +3463,7 @@ async function viewRunDetail(view, runID) {
                 h('td', { class: 'hide-narrow muted', style: 'font-size:.85rem' },
                   lastEv ? fmtLocal(lastEv) : t('—')),
                 h('td', {}, h('div', { class: 'row end' },
-                  iconBtn('pencil', t('Edit team'),   () => openTeamModal(run.id, tm)),
+                  iconBtn('pencil', t('Edit team'),   () => openTeamModal(event.id, tm)),
                   iconBtn('trash',  t('Delete team'), () => confirmDeleteTeam(tm), { danger: true }))),
               );
             })))),
@@ -3473,10 +3473,10 @@ async function viewRunDetail(view, runID) {
     ),
   );
 
-  // Initialise Leaflet only when the map card is open (run.show_map
+  // Initialise Leaflet only when the map card is open (event.show_map
   // makes it open on arrival; otherwise the click handler triggers
   // init the first time the user expands it).
-  if (run.show_map) ensureMap();
+  if (event.show_map) ensureMap();
 }
 
 // initRunMap mounts a Leaflet map inside host. Puzzle pins come from the
@@ -3567,11 +3567,11 @@ function renderEvent(e, teams) {
   let badge = 'neutral', symbol = '•', msg, meta;
   const team = h('strong', {}, e.team_name || '');
   switch (e.kind) {
-    case 'run.created':
-      badge = 'brand'; symbol = '+'; msg = h('span', { class: 'msg' }, t('Run created for '), h('strong', {}, p.adventure_slug || '')); break;
-    case 'run.started': badge = 'good'; symbol = '▶'; msg = h('span', { class: 'msg' }, t('Run started')); break;
-    case 'run.paused':  badge = 'neutral'; symbol = '‖'; msg = h('span', { class: 'msg' }, t('Run paused')); break;
-    case 'run.resumed': badge = 'good'; symbol = '▶'; msg = h('span', { class: 'msg' }, t('Run resumed')); break;
+    case 'event.created':
+      badge = 'brand'; symbol = '+'; msg = h('span', { class: 'msg' }, t('Event created for '), h('strong', {}, p.adventure_slug || '')); break;
+    case 'event.started': badge = 'good'; symbol = '▶'; msg = h('span', { class: 'msg' }, t('Event started')); break;
+    case 'event.paused':  badge = 'neutral'; symbol = '‖'; msg = h('span', { class: 'msg' }, t('Event paused')); break;
+    case 'event.resumed': badge = 'good'; symbol = '▶'; msg = h('span', { class: 'msg' }, t('Event resumed')); break;
     case 'team.created':
       badge = 'brand'; symbol = '+'; msg = h('span', { class: 'msg' }, t('Team '), h('strong', {}, e.team_name || p.name || ''), t(' created'));
       if ((p.members || []).length) meta = t('with {{names}}', { names: (p.members || []).join(', ') }); break;
@@ -3640,7 +3640,7 @@ function btn(label, cls, fn) {
 }
 
 async function transition(runID, action) {
-  const r = await api(`/api/admin/runs/${runID}/${action}`, { method: 'POST' });
+  const r = await api(`/api/admin/events/${runID}/${action}`, { method: 'POST' });
   if (r.status === 204) {
     // Map each action verb to a localised past-tense confirmation so
     // toastOk doesn't end up as Swedish "Pause" + English "-ed".
@@ -3657,23 +3657,23 @@ async function transition(runID, action) {
 }
 
 async function confirmStart(run) {
-  const ok = await modal(t('Start this run now?'), ({ body, close }) => {
+  const ok = await modal(t('Start this event now?'), ({ body, close }) => {
     body.append(
       h('p', {},
-        t('Starting the run opens the first puzzle to all teams. '),
-        run.scheduled_at
+        t('Starting the event opens the first puzzle to all teams. '),
+        event.scheduled_at
           ? h('span', {},
               t('An auto-start is currently scheduled for '),
-              h('strong', {}, fmtLocal(run.scheduled_at)),
+              h('strong', {}, fmtLocal(event.scheduled_at)),
               t('. Starting now will replace that.'))
           : t('You can pause it later if needed.')),
       h('div', { class: 'row end', style: 'margin-top:1rem' },
         h('button', { class: 'btn', on: { click: () => close(false) } }, t('Cancel')),
-        h('button', { class: 'btn primary', on: { click: () => close(true) } }, t('Start run'))),
+        h('button', { class: 'btn primary', on: { click: () => close(true) } }, t('Start event'))),
     );
   });
   if (!ok) return;
-  await transition(run.id, 'start');
+  await transition(event.id, 'start');
 }
 
 async function openEditSchedule(run) {
@@ -3681,8 +3681,8 @@ async function openEditSchedule(run) {
   // The input wants "YYYY-MM-DDTHH:MM" in local time; use the Date object to
   // convert without a chunky date library.
   let prefill = '';
-  if (run.scheduled_at) {
-    const iso = run.scheduled_at.includes('T') ? run.scheduled_at : run.scheduled_at.replace(' ', 'T') + 'Z';
+  if (event.scheduled_at) {
+    const iso = event.scheduled_at.includes('T') ? event.scheduled_at : event.scheduled_at.replace(' ', 'T') + 'Z';
     const d = new Date(iso);
     if (!Number.isNaN(d.getTime())) {
       const pad = (n) => String(n).padStart(2, '0');
@@ -3690,17 +3690,17 @@ async function openEditSchedule(run) {
     }
   }
 
-  await modal(run.scheduled_at ? t('Change auto-start') : t('Set auto-start'), ({ body, close }) => {
+  await modal(event.scheduled_at ? t('Change auto-start') : t('Set auto-start'), ({ body, close }) => {
     const when = h('input', { type: 'datetime-local', value: prefill });
     const form = h('form', {},
       h('p', { class: 'muted', style: 'font-size:.85rem; margin-bottom:.5rem' },
-        t('The server will flip the run to running automatically at the time below. Leave empty and hit Clear to remove the auto-start.')),
+        t('The server will flip the event to running automatically at the time below. Leave empty and hit Clear to remove the auto-start.')),
       h('label', { class: 'field' }, h('span', {}, t('Auto-start at')), when),
       h('div', { class: 'row between', style: 'margin-top:.5rem' },
-        run.scheduled_at
+        event.scheduled_at
           ? h('button', { class: 'btn danger', type: 'button', on: { click: async () => {
               close(null);
-              await patchSchedule(run.id, '');
+              await patchSchedule(event.id, '');
             } } }, t('Clear'))
           : h('span', {}),
         h('div', { class: 'row' },
@@ -3713,14 +3713,14 @@ async function openEditSchedule(run) {
       const d = new Date(when.value);
       if (Number.isNaN(d.getTime())) { toastErr(t('Bad date')); return; }
       close(null);
-      await patchSchedule(run.id, d.toISOString());
+      await patchSchedule(event.id, d.toISOString());
     });
     body.append(form);
   });
 }
 
 async function patchSchedule(runID, iso) {
-  const r = await api(`/api/admin/runs/${runID}`, {
+  const r = await api(`/api/admin/events/${runID}`, {
     method: 'PATCH',
     body: JSON.stringify({ scheduled_at: iso }),
   });
@@ -3734,7 +3734,7 @@ async function patchSchedule(runID, iso) {
 
 async function openTeamDetail(runID, team, adventure) {
   // Fetch events filtered to this team.
-  const evR = await api(`/api/admin/runs/${runID}/events?team_id=${team.id}`);
+  const evR = await api(`/api/admin/events/${runID}/events?team_id=${team.id}`);
   const events = evR.body?.events || [];
   const page = adventure?.pages?.[team.page_index];
   const last = adventure?.pages ? adventure.pages.length : null;
@@ -3848,12 +3848,12 @@ async function openTeamModal(runID, existing) {
 }
 
 async function openNewTeamModal(runID) {
-  // Fetch the run's current teams so bulk-create can skip over names
+  // Fetch the event's current teams so bulk-create can skip over names
   // that already exist. Without this, running bulk twice (or running
   // it with a prefix that happens to collide with an existing team)
   // hits the UNIQUE(run_id, name) constraint on every POST and the
   // arranger sees "Created 0, N failed" with no explanation.
-  const existingR = await api('/api/admin/runs/' + runID);
+  const existingR = await api('/api/admin/events/' + runID);
   const existingNames = new Set(((existingR.body?.teams) || []).map((x) => x.name));
   await modal(t('Add teams'), ({ body, close }) => {
     // Two modes share this modal. Default is "single" — fill one team
@@ -3930,7 +3930,7 @@ async function openNewTeamModal(runID) {
           const tName = nameInput.value.trim();
           if (!tName) { toastErr(t('Team name required')); return; }
           if (names.length === 0) { toastErr(t('Add at least one member')); return; }
-          const rr = await api(`/api/admin/runs/${runID}/teams`, {
+          const rr = await api(`/api/admin/events/${runID}/teams`, {
             method: 'POST',
             body: JSON.stringify({ name: tName, member_names: names }),
           });
@@ -3941,7 +3941,7 @@ async function openNewTeamModal(runID) {
           const P = Math.max(1, parseInt(playerCount.value, 10) || 0);
           const tp = teamPrefix.value.trim() || 'Team';
           const pp = playerPrefix.value.trim() || 'Player';
-          // Skip over names that already exist on this run (previous
+          // Skip over names that already exist on this event (previous
           // bulk attempts, manually-renamed collisions, …) so we don't
           // just fail every POST with a 409.
           let created = 0, failed = 0, lastError = '';
@@ -3954,7 +3954,7 @@ async function openNewTeamModal(runID) {
             } while (existingNames.has(name) && idx < safetyCap);
             if (idx >= safetyCap) break;
             const members = Array.from({ length: P }, (_, j) => `${pp} ${j + 1}`);
-            const rr = await api(`/api/admin/runs/${runID}/teams`, {
+            const rr = await api(`/api/admin/events/${runID}/teams`, {
               method: 'POST',
               body: JSON.stringify({ name, member_names: members }),
             });
@@ -3990,7 +3990,7 @@ async function openNewTeamModal(runID) {
 async function openEditTeamModal(runID, existing) {
   // Refresh the team detail so we pick up any changes since the page
   // rendered — tokens can rotate and we want the latest.
-  const r = await api('/api/admin/runs/' + runID);
+  const r = await api('/api/admin/events/' + runID);
   const run = r.body || {};
   const freshTeam = (run.teams || []).find((t) => t.id === existing.id) || existing;
 
@@ -4019,7 +4019,7 @@ async function openEditTeamModal(runID, existing) {
     };
 
     async function reload() {
-      const rr = await api('/api/admin/runs/' + runID);
+      const rr = await api('/api/admin/events/' + runID);
       const fresh = (rr.body?.teams || []).find((t) => t.id === freshTeam.id);
       if (!fresh) { close(true); renderRoute(); return; }
       freshTeam.members = fresh.members;
@@ -4240,7 +4240,7 @@ async function viewOrganizations(view) {
       h('button', { class: 'btn primary', on: { click: () => openCreateOrg() } },
         icon(ICONS.plus), t('New organization'))),
     h('p', { class: 'muted' },
-      t('Each organization is a tenant — its users (org_admin, org_member) run the games. Assign adventures to an organization to let them schedule runs.')),
+      t('Each organization is a tenant — its users (org_admin, org_member) operate the games. Assign adventures to an organization to let them schedule events.')),
     orgs.length === 0
       ? h('div', { class: 'empty' }, t('No organizations yet.'))
       : h('div', {}, orgs.map((o) => renderOrganizationCard(o, adventures))),
@@ -4249,8 +4249,8 @@ async function viewOrganizations(view) {
 
 function renderOrganizationCard(org, adventures) {
   const assignments = org.assignments || [];
-  const unused = assignments.filter((x) => !x.run_id);
-  const used = assignments.filter((x) => x.run_id);
+  const unused = assignments.filter((x) => !x.event_id);
+  const used = assignments.filter((x) => x.event_id);
   const members = org.members || [];
 
   const usersPart = members.length === 1
@@ -4260,10 +4260,10 @@ function renderOrganizationCard(org, adventures) {
   const playersPart = playersCount === 1
     ? t('{{n}} player', { n: playersCount })
     : t('{{n}} players', { n: playersCount });
-  const runsCount = org.runs_total || 0;
-  const runsPart = runsCount === 1
-    ? t('{{n}} run', { n: runsCount })
-    : t('{{n}} runs', { n: runsCount });
+  const eventsCount = org.events_total || 0;
+  const runsPart = eventsCount === 1
+    ? t('{{n}} event', { n: eventsCount })
+    : t('{{n}} events', { n: eventsCount });
 
   return h('div', { class: 'card' },
     h('div', { class: 'row between' },
@@ -4271,8 +4271,8 @@ function renderOrganizationCard(org, adventures) {
         h('h2', {}, org.name),
         h('p', { class: 'muted', style: 'font-size:.85rem' },
           `${usersPart} · ${playersPart} · ${runsPart}`,
-          (org.runs_running || 0) > 0
-            ? t(' · {{n}} running', { n: org.runs_running })
+          (org.events_running || 0) > 0
+            ? t(' · {{n}} running', { n: org.events_running })
             : '')),
       h('div', { class: 'card-actions' },
         iconBtn('key',    t('Assign adventure'),   () => openAssignAdventure(org, adventures)),
@@ -4293,7 +4293,7 @@ function renderOrganizationCard(org, adventures) {
 
     h('h3', { style: 'margin-top:.75rem' }, t('Unused assignments ({{n}})', { n: unused.length })),
     unused.length === 0
-      ? h('p', { class: 'muted', style: 'font-size:.85rem' }, t('None — assign an adventure to let them schedule a run.'))
+      ? h('p', { class: 'muted', style: 'font-size:.85rem' }, t('None — assign an adventure to let them schedule an event.'))
       : h('div', {}, unused.map((x) => h('span', {
           class: 'chip selectable',
           style: 'margin: 0 .35rem .35rem 0',
@@ -4310,8 +4310,8 @@ function renderOrganizationCard(org, adventures) {
           style: 'margin: 0 .35rem .35rem 0; opacity:.75; font-style:italic',
           title: t('Click to edit team cap'),
           on: { click: () => openEditAssignment(org, x, adventures) },
-        }, t('{{slug}} · run #{{run}} · max {{max}}', {
-          slug: x.adventure_slug, run: x.run_id, max: x.max_teams,
+        }, t('{{slug}} · event #{{event}} · max {{max}}', {
+          slug: x.adventure_slug, run: x.event_id, max: x.max_teams,
         })))))]),
   );
 }
@@ -4360,7 +4360,7 @@ async function openRenameOrg(org) {
 
 async function confirmDeleteOrg(org) {
   const pw = await promptPassword(t('Delete organization “{{name}}”?', { name: org.name }),
-    t('This deletes every user, player, assignment and run that belongs to the organization. Enter your password to confirm.'));
+    t('This deletes every user, player, assignment and event that belongs to the organization. Enter your password to confirm.'));
   if (!pw) return;
   const r = await api(`/api/admin/organizations/${org.id}`, {
     method: 'DELETE', headers: { 'X-Confirm-Password': pw },
@@ -4409,7 +4409,7 @@ async function confirmRemoveOrgMember(org, member) {
 }
 
 async function openEditAssignment(org, assignment, adventures) {
-  const used = !!assignment.run_id;
+  const used = !!assignment.event_id;
   await modal(t('Edit assignment · {{name}}', { name: org.name }), ({ body, close }) => {
     const advSel = h('select', { disabled: used ? '' : null },
       adventures.map((a) => h('option', {
@@ -4425,7 +4425,7 @@ async function openEditAssignment(org, assignment, adventures) {
       h('label', { class: 'field' }, h('span', {}, t('Maximum teams')), count),
       h('p', { class: 'muted', style: 'font-size:.8rem' },
         used
-          ? t('Linked to run #{{id}}. You may raise the cap; lowering below the current team count is rejected.', { id: assignment.run_id })
+          ? t('Linked to event #{{id}}. You may raise the cap; lowering below the current team count is rejected.', { id: assignment.event_id })
           : t('This assignment has not yet been used.')),
       h('div', { class: 'row between', style: 'margin-top:.5rem' },
         used
@@ -4465,7 +4465,7 @@ async function openAssignAdventure(org, adventures) {
       h('label', { class: 'field' }, h('span', {}, t('Adventure')), sel),
       h('label', { class: 'field' }, h('span', {}, t('Maximum teams')), count),
       h('p', { class: 'muted', style: 'font-size:.8rem' },
-        t('Each assignment may be used for exactly one run. For more, assign again.')),
+        t('Each assignment may be used for exactly one event. For more, assign again.')),
       h('div', { class: 'row end' },
         h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, t('Cancel')),
         h('button', { class: 'btn primary', type: 'submit' }, t('Assign'))));
@@ -4862,7 +4862,7 @@ async function openShareAdventureModal(adv) {
   }
   const picked = await modal(t('Share with organisation'), ({ body, close }) => {
     body.append(h('p', { class: 'muted' },
-      t('Pick one. The organisation can schedule runs of this adventure without buying team slots.')));
+      t('Pick one. The organisation can schedule events of this adventure without buying team slots.')));
     const list = h('div', { class: 'grid', style: 'gap:.35rem' });
     for (const o of candidates) {
       list.append(h('button', {
@@ -4892,7 +4892,7 @@ async function revokeShare(adv, share) {
   // Plain confirm: revoking is non-destructive (existing runs keep
   // working, only future run creation is blocked), so the heavier
   // promptPassword gate would be noise here.
-  if (!confirm(t('Revoke share with {{org}}? Existing runs keep working; new runs will be blocked.',
+  if (!confirm(t('Revoke share with {{org}}? Existing events keep working; new events will be blocked.',
     { org: share.org_name }))) return;
   const r = await api(`/api/admin/adventures/${encodeURIComponent(adv.slug)}/shares/${share.org_id}`, {
     method: 'DELETE',
@@ -4954,13 +4954,13 @@ async function openEditAdventureMeta(adv) {
     const title = h('input', { value: adv.title, required: true });
     const desc  = h('textarea', { rows: 2 }, adv.description || '');
     const author = h('input', { value: adv.author || '' });
-    // Custom copy for the first-run welcome dialog and the end-of-run
+    // Custom copy for the first-event welcome dialog and the end-of-run
     // stats screen. Empty keeps the built-in default copy. Click-to-
     // edit field so the author sees the rendered markdown as the
     // default presentation.
     const introField = markdownField({
       initial: adv.intro_text || '',
-      placeholder: t('Shown on the first-run welcome overlay — leave empty for the default welcome + tips.'),
+      placeholder: t('Shown on the first-event welcome overlay — leave empty for the default welcome + tips.'),
       rows: 5,
     });
     const outroField = markdownField({
@@ -6476,7 +6476,7 @@ async function viewSimulator(view) {
   const stagePill = h('span', { class: `pill ${stagePillClass(status.stage)}` }, t(stageLabel(status.stage)));
   const elapsed = h('span', { class: 'muted mono', style: 'font-size:.85rem' },
     (status.stage !== 'idle' && status.started_at)
-      ? t('Running for {{t}}', { t: fmtElapsed(status.started_at) })
+      ? t('Live for {{t}}', { t: fmtElapsed(status.started_at) })
       : '');
   const liveSlot = h('span');
   const setLiveLink = (token) => {
@@ -6518,7 +6518,7 @@ async function viewSimulator(view) {
     stagePill.className = 'pill ' + stagePillClass(stage);
     stagePill.textContent = t(stageLabel(stage));
     elapsed.textContent = (stage !== 'idle' && st?.started_at)
-      ? t('Running for {{t}}', { t: fmtElapsed(st.started_at) })
+      ? t('Live for {{t}}', { t: fmtElapsed(st.started_at) })
       : '';
     setLiveLink(st?.live_token);
     const idle = stage === 'idle';
@@ -6538,14 +6538,14 @@ async function viewSimulator(view) {
       h('div', { class: 'row', style: 'gap:.5rem; align-items:center' },
         stagePill, elapsed, liveSlot)),
     h('p', { class: 'muted' },
-      t('Fake a race so you can see the live view animate without recruiting real players. Writes to the same tables as a real run, so every subscriber (map, leaderboard, WS) updates as if players were on the ground.')),
+      t('Fake a race so you can see the live view animate without recruiting real players. Writes to the same tables as a real event, so every subscriber (map, leaderboard, WS) updates as if players were on the ground.')),
     h('div', { class: 'card' },
       h('h2', {}, t('Configuration')),
       h('label', { class: 'field' }, h('span', {}, t('Adventure')), picker),
       h('label', { class: 'field' }, h('span', {}, t('Teams (2–20)')), teamInput),
       h('label', { class: 'field' }, h('span', {}, t('Speed multiplier (1–50)')), speedInput),
       h('p', { class: 'muted', style: 'font-size:.85rem' },
-        t('Higher speed advances the walk faster without changing the ping cadence, so fast-forwarded runs still look natural.'))),
+        t('Higher speed advances the walk faster without changing the ping cadence, so fast-forwarded events still look natural.'))),
     h('div', { class: 'row', style: 'gap:.5rem; flex-wrap:wrap; margin-top:1rem' },
       startBtn, pauseBtn, resumeBtn, resetBtn),
   );
@@ -6904,11 +6904,11 @@ function viewManual(view, anchor) {
       tocEntry('first-steps', t('First steps')),
       tocEntry('adventure',   t('Authoring an adventure')),
       tocEntry('puzzles',     t('Adding puzzles')),
-      tocEntry('run-flow',    t('How the run flow fits together')),
+      tocEntry('event-flow',    t('How the event flow fits together')),
       tocEntry('assignments', t('Buying team-slot assignments')),
-      tocEntry('create-run',  t('Creating a run')),
+      tocEntry('create-event',  t('Creating an event')),
       tocEntry('teams',       t('Adding teams and sharing magic links')),
-      tocEntry('running',     t('Running the run')),
+      tocEntry('running',     t('Running the event')),
       tocEntry('webhooks',    t('Webhooks: outbound integrations')),
       tocEntry('account',     t('Account, data and deletion')),
       tocEntry('help',        t('Getting help')),
@@ -6917,12 +6917,12 @@ function viewManual(view, anchor) {
   const article = h('article', { class: 'manual' },
     h('h1', {}, t('Arranger manual')),
     h('p', { class: 'muted' },
-      t('A pedagogic walk-through of the platform: create an adventure, fill it with puzzles, schedule a run, add teams, and watch them play. Read it once start to finish, or jump to a section from the table of contents.')),
+      t('A pedagogic walk-through of the platform: create an adventure, fill it with puzzles, schedule an event, add teams, and watch them play. Read it once start to finish, or jump to a section from the table of contents.')),
     toc,
 
     /* ---- 1. Welcome ---- */
     sec('welcome', t('Welcome'),
-      p(t('Zonventure ("zv") is a platform for running location-based adventure games — treasure hunts, team-building events, school field trips. As an arranger you author the puzzles, set up a run, and the players walk around with their phones answering them.')),
+      p(t('Zonventure ("zv") is a platform for running location-based adventure games — treasure hunts, team-building events, school field trips. As an arranger you author the puzzles, set up an event, and the players walk around with their phones answering them.')),
       h('h3', {}, t('Four words to know')),
       ul(
         h('span', {}, h('strong', {}, t('Adventure')),
@@ -6930,15 +6930,15 @@ function viewManual(view, anchor) {
           t('a reusable script. Pages of puzzles in order. Like a book.')),
         h('span', {}, h('strong', {}, t('Assignment')),
           ' — ',
-          t('a paid licence to run an adventure once for up to N teams. You buy these from the Store.')),
-        h('span', {}, h('strong', {}, t('Run')),
+          t('a paid licence to use an adventure for an event once for up to N teams. You buy these from the Store.')),
+        h('span', {}, h('strong', {}, t('Event')),
           ' — ',
           t('one specific playthrough at a specific time. Created from an assignment.')),
         h('span', {}, h('strong', {}, t('Team')),
           ' — ',
-          t('a group of players in a run, identified by a team name. Each player gets their own magic-link to log in as part of the team.')),
+          t('a group of players in an event, identified by a team name. Each player gets their own magic-link to log in as part of the team.')),
       ),
-      callout(t('Mental model: an Adventure is a recipe; an Assignment is the right to cook it once; a Run is one specific dinner; a Team is the people sitting at a table.')),
+      callout(t('Mental model: an Adventure is a recipe; an Assignment is the right to cook it once; a Event is one specific dinner; a Team is the people sitting at a table.')),
     ),
 
     /* ---- 2. First steps ---- */
@@ -6959,7 +6959,7 @@ function viewManual(view, anchor) {
       ol(
         t('Click "Library" in the sidebar.'),
         t('Press "New adventure".'),
-        t('Give it a title. The slug is auto-derived but editable; once players have started a run with this slug, don\'t change it.'),
+        t('Give it a title. The slug is auto-derived but editable; once players have started an event with this slug, don\'t change it.'),
         t('Save. You\'re taken to the puzzle editor.'),
       ),
       shot(t('[Screenshot: Library tab with the New adventure button highlighted]')),
@@ -7009,18 +7009,18 @@ function viewManual(view, anchor) {
       p(t('The "Preview" button on the adventure detail page renders a sandbox playthrough. No team progress is recorded — it\'s your test rig.')),
     ),
 
-    /* ---- 5. Run flow ---- */
-    sec('run-flow', t('How the run flow fits together'),
-      p(t('Before scheduling your first run, take a moment to understand the chain:')),
-      pre(t('Adventure  →  Assignment  →  Run  →  Teams  →  Players')),
+    /* ---- 5. Event flow ---- */
+    sec('event-flow', t('How the event flow fits together'),
+      p(t('Before scheduling your first event, take a moment to understand the chain:')),
+      pre(t('Adventure  →  Assignment  →  Event  →  Teams  →  Players')),
       ul(
         t('You author or pick an Adventure (free).'),
         t('You buy an Assignment for that adventure: pays for up to N teams.'),
-        t('You create a Run from the Assignment: ties it to a specific date/time.'),
-        t('You add Teams to the Run: each team is a group of players.'),
-        t('You share each Player a magic link: they tap, the run starts, they play.'),
+        t('You create a Event from the Assignment: ties it to a specific date/time.'),
+        t('You add Teams to the Event: each team is a group of players.'),
+        t('You share each Player a magic link: they tap, the event starts, they play.'),
       ),
-      callout(t('One assignment = one run. If you want to run the same adventure twice, buy two assignments.')),
+      callout(t('One assignment = one event. If you want to run the same adventure twice, buy two assignments.')),
     ),
 
     /* ---- 6. Assignments ---- */
@@ -7037,50 +7037,50 @@ function viewManual(view, anchor) {
     ),
 
     /* ---- 7. Create run ---- */
-    sec('create-run', t('Creating a run'),
+    sec('create-event', t('Creating an event'),
       ol(
-        t('Click "Runs" in the sidebar, then "Schedule run".'),
+        t('Click "Events" in the sidebar, then "Schedule run".'),
         t('Pick the assignment you want to use (only unused assignments are listed).'),
-        t('Give the run a name (eg. "Office team-build, Friday afternoon"). This is for your benefit; players don\'t see it.'),
-        t('Pick a date and time. You can also leave it blank and start the run manually later.'),
+        t('Give the event a name (eg. "Office team-build, Friday afternoon"). This is for your benefit; players don\'t see it.'),
+        t('Pick a date and time. You can also leave it blank and start the event manually later.'),
         t('Confirm the no-minors attestation, or pick the COPPA path if you\'re running for under-13s.'),
-        t('Save. The run appears in the Runs list with state "scheduled".'),
+        t('Save. The event appears in the Events list with state "scheduled".'),
       ),
-      shot(t('[Screenshot: the schedule-run dialog]')),
-      callout(t('A scheduled run auto-starts the moment its time arrives, even if you\'ve forgotten to click Start. Players who open their magic link at the scheduled minute get going immediately.')),
+      shot(t('[Screenshot: the schedule-event dialog]')),
+      callout(t('A scheduled event auto-starts the moment its time arrives, even if you\'ve forgotten to click Start. Players who open their magic link at the scheduled minute get going immediately.')),
     ),
 
     /* ---- 8. Teams ---- */
     sec('teams', t('Adding teams and sharing magic links'),
       h('h3', {}, t('Adding a team')),
       ol(
-        t('Open the run\'s detail page from the Runs list.'),
+        t('Open the event\'s detail page from the Events list.'),
         t('Click "Add team".'),
         t('Type the team name and the player names (one per line, or paste from a CSV).'),
         t('Save. Each player slot is created with a fresh magic-link token.'),
       ),
       shot(t('[Screenshot: the add-team dialog]')),
       h('h3', {}, t('Sharing magic links')),
-      p(t('Each player\'s magic link is what they tap to join the run. The run-detail page has a "Team links" panel: copy individual links, copy a CSV of all team members, or copy a single "captain link" per team that the captain forwards to teammates.')),
+      p(t('Each player\'s magic link is what they tap to join the event. The event-detail page has a "Team links" panel: copy individual links, copy a CSV of all team members, or copy a single "captain link" per team that the captain forwards to teammates.')),
       shot(t('[Screenshot: the team links panel with copy buttons]')),
       callout(t('Magic links are sensitive — anyone with the URL can play as that slot. Don\'t paste them into public Slack channels. The dashboard\'s "Rotate token" action mints a new link if one leaks.'), 'warn'),
       h('h3', {}, t('Token expiry')),
-      p(t('Slot tokens expire seven days after the run\'s scheduled time by default. The team-links panel shows "expires in Nd" so you can spot links that need re-sharing.')),
+      p(t('Slot tokens expire seven days after the event\'s scheduled time by default. The team-links panel shows "expires in Nd" so you can spot links that need re-sharing.')),
     ),
 
     /* ---- 9. Running ---- */
-    sec('running', t('Running the run'),
+    sec('running', t('Running the event'),
       h('h3', {}, t('Start, pause, resume')),
-      p(t('A scheduled run auto-starts at its time, but you can also start it manually from the run-detail page. Pause the run to freeze player progress (lunch break, weather delay), then Resume to continue.')),
+      p(t('A scheduled event auto-starts at its time, but you can also start it manually from the event-detail page. Pause the event to freeze player progress (lunch break, weather delay), then Resume to continue.')),
       h('h3', {}, t('The activity feed')),
-      p(t('The run-detail page has a live activity feed — answer attempts (right and wrong), team completions, gate reaches, run state changes. Useful for noticing a stuck team in real time.')),
+      p(t('The event-detail page has a live activity feed — answer attempts (right and wrong), team completions, gate reaches, run state changes. Useful for noticing a stuck team in real time.')),
       shot(t('[Screenshot: activity feed during a live run]')),
       h('h3', {}, t('The live view')),
       p(t('Each run has a public-ish "live view" URL — a leaderboard plus optional audience map. Open it on a TV in the lobby; spectators can see team progress without logging in.')),
-      p(t('The map is OFF by default for privacy. Toggle it on from the run settings if your players are okay with their position being shown to the audience.')),
+      p(t('The map is OFF by default for privacy. Toggle it on from the event settings if your players are okay with their position being shown to the audience.')),
       shot(t('[Screenshot: the live view leaderboard with map enabled]')),
       h('h3', {}, t('Completion')),
-      p(t('When every team finishes, the run automatically transitions to "completed". Players see the outro text and a stats screen (right answers, distance walked, total time). The run row in your dashboard moves to the "completed" section.')),
+      p(t('When every team finishes, the event automatically transitions to "completed". Players see the outro text and a stats screen (right answers, distance walked, total time). The event row in your dashboard moves to the "completed" section.')),
     ),
 
     /* ---- 10. Webhooks ---- */
@@ -7090,17 +7090,17 @@ function viewManual(view, anchor) {
       ul(
         t('Show a live leaderboard on a TV in your lobby, branded your way.'),
         t('Notify parents (school events) when their child\'s team finishes.'),
-        t('Trigger fulfillment in your own ops system when a run completes.'),
+        t('Trigger fulfillment in your own ops system when an event completes.'),
         t('Pipe events into your analytics warehouse.'),
       ),
       h('h3', {}, t('The event catalog')),
       p(t('Seven event kinds in v1:')),
       ul(
-        h('span', {}, code('run.scheduled'), ' — ', t('a new run was created.')),
-        h('span', {}, code('run.started'), ' — ',   t('a run actually started (manual or auto-promote).')),
-        h('span', {}, code('run.completed'), ' — ', t('all teams finished.')),
-        h('span', {}, code('team.created'), ' — ',  t('a new team was added to a run.')),
-        h('span', {}, code('team.completed'), ' — ', t('a team finished. Includes their name and run id.')),
+        h('span', {}, code('event.scheduled'), ' — ', t('a new event was created.')),
+        h('span', {}, code('event.started'), ' — ',   t('an event actually started (manual or auto-promote).')),
+        h('span', {}, code('event.completed'), ' — ', t('all teams finished.')),
+        h('span', {}, code('team.created'), ' — ',  t('a new team was added to an event.')),
+        h('span', {}, code('team.completed'), ' — ', t('a team finished. Includes their name and event id.')),
         h('span', {}, code('purchase.paid'), ' — ', t('an assignment was purchased.')),
         h('span', {}, code('purchase.refunded'), ' — ', t('a purchase was refunded.')),
       ),
@@ -7162,7 +7162,7 @@ process(parse_json(body))`),
 
     /* ---- 12. Help ---- */
     sec('help', t('Getting help'),
-      p(t('If something doesn\'t work as described here, or you\'re unsure how to do something, start with the run\'s activity feed (any errors are logged there for the team that hit them).')),
+      p(t('If something doesn\'t work as described here, or you\'re unsure how to do something, start with the event\'s activity feed (any errors are logged there for the team that hit them).')),
       p(t('For platform-level support, contact the operator listed at the bottom of the Privacy page.')),
       callout(t('This manual evolves. If you read something that\'s wrong or unclear, tell support — clearer docs help every other arranger after you.')),
     ),

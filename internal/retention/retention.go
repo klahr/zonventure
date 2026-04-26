@@ -22,7 +22,7 @@ import (
 // "feature disabled" so a misconfigured deployment errs on the side
 // of keeping data rather than nuking it.
 type Config struct {
-	// LocationDays is how long after a run completes we keep its
+	// LocationDays is how long after an event completes we keep its
 	// player location pings + answer attempts. Default 30.
 	LocationDays int
 	// AuditDays is how long auth_events rows stick around from their
@@ -83,7 +83,7 @@ func pruneCompletedRunPings(ctx context.Context, db *sql.DB, days int) {
 		WHERE id IN (
 		  SELECT lp.id
 		  FROM location_pings lp
-		  JOIN adventure_runs ar ON ar.id = lp.run_id
+		  JOIN events ar ON ar.id = lp.event_id
 		  WHERE ar.state = 'completed'
 		    AND ar.completed_at IS NOT NULL
 		    AND ar.completed_at::timestamptz < now() - make_interval(days => $1)
@@ -100,7 +100,7 @@ func pruneCompletedRunAnswers(ctx context.Context, db *sql.DB, days int) {
 		  SELECT aa.id
 		  FROM answer_attempts aa
 		  JOIN teams t ON t.id = aa.team_id
-		  JOIN adventure_runs ar ON ar.id = t.run_id
+		  JOIN events ar ON ar.id = t.event_id
 		  WHERE ar.state = 'completed'
 		    AND ar.completed_at IS NOT NULL
 		    AND ar.completed_at::timestamptz < now() - make_interval(days => $1)

@@ -50,10 +50,10 @@ func mustNotRecv(t *testing.T, ch <-chan []byte, d time.Duration) {
 
 func TestHub_SubscribePublish(t *testing.T) {
 	h := ws.NewHub()
-	ch, unsub := h.Subscribe("run:1")
+	ch, unsub := h.Subscribe("event:1")
 	defer unsub()
 
-	h.Publish("run:1", "changed", map[string]int{"x": 42})
+	h.Publish("event:1", "changed", map[string]int{"x": 42})
 
 	msg := recvTimeout(t, ch, 500*time.Millisecond)
 	kind, raw := decode(t, msg)
@@ -68,10 +68,10 @@ func TestHub_SubscribePublish(t *testing.T) {
 
 func TestHub_PublishNilData(t *testing.T) {
 	h := ws.NewHub()
-	ch, unsub := h.Subscribe("run:1")
+	ch, unsub := h.Subscribe("event:1")
 	defer unsub()
 
-	h.Publish("run:1", "tick", nil)
+	h.Publish("event:1", "tick", nil)
 	kind, raw := decode(t, recvTimeout(t, ch, 500*time.Millisecond))
 	if kind != "tick" {
 		t.Fatalf("kind = %q", kind)
@@ -83,12 +83,12 @@ func TestHub_PublishNilData(t *testing.T) {
 
 func TestHub_TopicIsolation(t *testing.T) {
 	h := ws.NewHub()
-	a, unsubA := h.Subscribe("run:1")
+	a, unsubA := h.Subscribe("event:1")
 	defer unsubA()
 	b, unsubB := h.Subscribe("run:2")
 	defer unsubB()
 
-	h.Publish("run:1", "changed", nil)
+	h.Publish("event:1", "changed", nil)
 	recvTimeout(t, a, 500*time.Millisecond)
 	mustNotRecv(t, b, 50*time.Millisecond)
 
@@ -117,19 +117,19 @@ func TestHub_MultipleSubscribers(t *testing.T) {
 
 func TestHub_UnsubscribeStopsDelivery(t *testing.T) {
 	h := ws.NewHub()
-	ch, unsub := h.Subscribe("run:1")
+	ch, unsub := h.Subscribe("event:1")
 
-	h.Publish("run:1", "a", nil)
+	h.Publish("event:1", "a", nil)
 	recvTimeout(t, ch, 500*time.Millisecond)
 
 	unsub()
-	h.Publish("run:1", "b", nil)
+	h.Publish("event:1", "b", nil)
 	mustNotRecv(t, ch, 100*time.Millisecond)
 }
 
 func TestHub_UnsubscribeIsIdempotent(t *testing.T) {
 	h := ws.NewHub()
-	_, unsub := h.Subscribe("run:1")
+	_, unsub := h.Subscribe("event:1")
 	unsub()
 	unsub() // must not panic
 }
@@ -137,8 +137,8 @@ func TestHub_UnsubscribeIsIdempotent(t *testing.T) {
 func TestHub_NilReceiverSafe(t *testing.T) {
 	var h *ws.Hub // nil
 	// Should not panic.
-	h.Publish("run:1", "x", nil)
-	ch, unsub := h.Subscribe("run:1")
+	h.Publish("event:1", "x", nil)
+	ch, unsub := h.Subscribe("event:1")
 	unsub()
 	if ch != nil {
 		// A nil hub returns a nil channel so the caller can't accidentally
@@ -152,13 +152,13 @@ func TestHub_SlowConsumerDrops(t *testing.T) {
 	// subscriber — the publisher must not block, and the subscriber
 	// should see at most capacity messages.
 	h := ws.NewHub()
-	ch, unsub := h.Subscribe("run:1")
+	ch, unsub := h.Subscribe("event:1")
 	defer unsub()
 
 	done := make(chan struct{})
 	go func() {
 		for i := 0; i < 64; i++ {
-			h.Publish("run:1", "x", i)
+			h.Publish("event:1", "x", i)
 		}
 		close(done)
 	}()
@@ -202,7 +202,7 @@ func TestHub_ConcurrentPublishSubscribe(t *testing.T) {
 				case <-stop:
 					return
 				default:
-					h.Publish("run:1", "x", nil)
+					h.Publish("event:1", "x", nil)
 				}
 			}
 		}()
@@ -217,7 +217,7 @@ func TestHub_ConcurrentPublishSubscribe(t *testing.T) {
 				case <-stop:
 					return
 				default:
-					ch, unsub := h.Subscribe("run:1")
+					ch, unsub := h.Subscribe("event:1")
 					// Drain one (may or may not get anything, that's fine).
 					select {
 					case <-ch:
@@ -234,19 +234,19 @@ func TestHub_ConcurrentPublishSubscribe(t *testing.T) {
 	wg.Wait()
 }
 
-func TestHub_RunTopicFormat(t *testing.T) {
+func TestHub_EventTopicFormat(t *testing.T) {
 	// Stable topic string so external callers don't need to care how it's
 	// built. The test pins it so a refactor can't accidentally change the
 	// wire-compatible key.
 	cases := map[int64]string{
-		0:      "run:0",
-		1:      "run:1",
-		42:     "run:42",
-		999999: "run:999999",
+		0:      "event:0",
+		1:      "event:1",
+		42:     "event:42",
+		999999: "event:999999",
 	}
 	for id, want := range cases {
-		if got := ws.RunTopic(id); got != want {
-			t.Errorf("RunTopic(%d) = %q, want %q", id, got, want)
+		if got := ws.EventTopic(id); got != want {
+			t.Errorf("EventTopic(%d) = %q, want %q", id, got, want)
 		}
 	}
 }

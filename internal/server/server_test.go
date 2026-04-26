@@ -18,7 +18,7 @@ import (
 
 // newTestServer spins up the full HTTP stack against a per-test Postgres
 // database plus the real demo adventure shipped in the repo. Returns an
-// assignment id the seeded arranger can consume to create a run.
+// assignment id the seeded arranger can consume to create an event.
 func newTestServer(t *testing.T) (*httptest.Server, int64, func()) {
 	t.Helper()
 	sqlDB, dbCleanup := dbtest.Open(t)
@@ -177,7 +177,7 @@ func TestFullFlow(t *testing.T) {
 	ts, assignmentID, cleanup := newTestServer(t)
 	defer cleanup()
 
-	// --- Arranger logs in and schedules a run. ---
+	// --- Arranger logs in and schedules an event. ---
 	arr := newClient(t, ts)
 	if s := arr.do("POST", "/api/auth/login", map[string]string{"username": "boss", "password": "s3cret"}, nil); s != 200 {
 		t.Fatalf("arranger login = %d", s)
@@ -198,7 +198,7 @@ func TestFullFlow(t *testing.T) {
 	var run struct {
 		ID int64 `json:"id"`
 	}
-	if s := arr.do("POST", "/api/admin/runs", map[string]any{"assignment_id": assignmentID}, &run); s != 201 {
+	if s := arr.do("POST", "/api/admin/events", map[string]any{"assignment_id": assignmentID}, &run); s != 201 {
 		t.Fatalf("create run = %d", s)
 	}
 
@@ -215,7 +215,7 @@ func TestFullFlow(t *testing.T) {
 		"name":         "Team Alpha",
 		"member_names": []string{"alice"},
 	}
-	if s := arr.do("POST", "/api/admin/runs/"+itoa(run.ID)+"/teams", teamReq, &team); s != 201 {
+	if s := arr.do("POST", "/api/admin/events/"+itoa(run.ID)+"/teams", teamReq, &team); s != 201 {
 		t.Fatalf("create team = %d", s)
 	}
 	if len(team.Members) != 1 || team.Members[0].Token == "" {
@@ -251,8 +251,8 @@ func TestFullFlow(t *testing.T) {
 		t.Fatalf("early answer status = %d, want 409", s)
 	}
 
-	// --- Start the run. ---
-	if s := arr.do("POST", "/api/admin/runs/"+itoa(run.ID)+"/start", map[string]string{}, nil); s != 204 {
+	// --- Start the event. ---
+	if s := arr.do("POST", "/api/admin/events/"+itoa(run.ID)+"/start", map[string]string{}, nil); s != 204 {
 		t.Fatalf("start run = %d", s)
 	}
 
@@ -328,7 +328,7 @@ func TestFullFlow(t *testing.T) {
 		t.Fatalf("page 2 answer = %d accepted=%v", s, answerResp.Accepted)
 	}
 
-	// Final page, correct answer completes the run.
+	// Final page, correct answer completes the event.
 	if s := alice.do("POST", "/api/player/answer", map[string]string{"answer": "äventyr"}, &answerResp); s != 200 || !answerResp.Accepted {
 		t.Fatalf("final answer = %d accepted=%v", s, answerResp.Accepted)
 	}
@@ -347,7 +347,7 @@ func TestFullFlow(t *testing.T) {
 			Lng      float64 `json:"lng"`
 		} `json:"positions"`
 	}
-	if s := arr.do("GET", "/api/admin/runs/"+itoa(run.ID)+"/positions", nil, &pos); s != 200 {
+	if s := arr.do("GET", "/api/admin/events/"+itoa(run.ID)+"/positions", nil, &pos); s != 200 {
 		t.Fatalf("positions = %d", s)
 	}
 	if len(pos.Positions) != 1 || pos.Positions[0].TeamName != "Team Alpha" {

@@ -13,7 +13,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Arranger manual · Zonventure</title>
-<meta name="description" content="A pedagogic walk-through of the Zonventure platform for arrangers: author adventures, fill them with puzzles, schedule runs, add teams, and integrate via webhooks.">
+<meta name="description" content="A pedagogic walk-through of the Zonventure platform for arrangers: author adventures, fill them with puzzles, schedule events, add teams, and integrate via webhooks.">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 
 <!-- Theme-color matches the landing's palette for consistency. -->
@@ -23,12 +23,12 @@
 <!-- Open Graph + Twitter so this URL previews well when arrangers
      paste it into Slack / docs while integrating. -->
 <meta property="og:title" content="Arranger manual — Zonventure">
-<meta property="og:description" content="Step-by-step guide to authoring adventures, scheduling runs, adding teams, and integrating via webhooks.">
+<meta property="og:description" content="Step-by-step guide to authoring adventures, scheduling events, adding teams, and integrating via webhooks.">
 <meta property="og:type" content="article">
 <meta property="og:site_name" content="Zonventure">
 <meta name="twitter:card" content="summary">
 <meta name="twitter:title" content="Arranger manual">
-<meta name="twitter:description" content="Step-by-step guide to authoring adventures, scheduling runs, adding teams, and integrating via webhooks.">
+<meta name="twitter:description" content="Step-by-step guide to authoring adventures, scheduling events, adding teams, and integrating via webhooks.">
 
 <!-- JSON-LD TechArticle: helps AI agents understand this is the
      authoritative documentation, not marketing fluff. -->
@@ -37,7 +37,7 @@
   "@context": "https://schema.org",
   "@type": "TechArticle",
   "headline": "Arranger manual",
-  "description": "Step-by-step guide to authoring adventures, scheduling runs, adding teams, and integrating via webhooks on Zonventure.",
+  "description": "Step-by-step guide to authoring adventures, scheduling events, adding teams, and integrating via webhooks on Zonventure.",
   "proficiencyLevel": "Beginner",
   "audience": {
     "@type": "Audience",
@@ -274,11 +274,11 @@
     <li><a href="#first-steps">First steps</a></li>
     <li><a href="#adventure">Authoring an adventure</a></li>
     <li><a href="#puzzles">Adding puzzles</a></li>
-    <li><a href="#run-flow">How the run flow fits together</a></li>
+    <li><a href="#event-flow">How the event flow fits together</a></li>
     <li><a href="#assignments">Buying team-slot assignments</a></li>
-    <li><a href="#create-run">Creating a run</a></li>
+    <li><a href="#create-event">Creating an event</a></li>
     <li><a href="#teams">Adding teams and sharing magic links</a></li>
-    <li><a href="#running">Running the run</a></li>
+    <li><a href="#running">Running the event</a></li>
     <li><a href="#webhooks">Webhooks: outbound integrations</a></li>
     <li><a href="#account">Account, data and deletion</a></li>
     <li><a href="#help">Getting help</a></li>
@@ -289,21 +289,21 @@
 
 <h1>Arranger manual</h1>
 <p class="updated">Last updated: 2026-04-25</p>
-<p class="lede">A pedagogic walk-through of the platform: create an adventure, fill it with puzzles, schedule a run, add teams, and watch them play. Read it once start to finish, or jump to a section from the table of contents.</p>
+<p class="lede">A pedagogic walk-through of the platform: create an adventure, fill it with puzzles, schedule an event, add teams, and watch them play. Read it once start to finish, or jump to a section from the table of contents.</p>
 
 <section id="welcome">
   <h2>Welcome</h2>
-  <p>Zonventure ("zv") is a platform for running location-based adventure games — treasure hunts, team-building events, school field trips. As an arranger you author the puzzles, set up a run, and the players walk around with their phones answering them.</p>
+  <p>Zonventure ("zv") is a platform for running location-based adventure games — treasure hunts, team-building events, school field trips. As an arranger you author the puzzles, set up an event, and the players walk around with their phones answering them.</p>
 
   <h3>Four words to know</h3>
   <ul>
     <li><strong>Adventure</strong> — a reusable script. Pages of puzzles in order. Like a book.</li>
     <li><strong>Assignment</strong> — a paid licence to run an adventure once for up to N teams. You buy these from the Store.</li>
-    <li><strong>Run</strong> — one specific playthrough at a specific time. Created from an assignment.</li>
-    <li><strong>Team</strong> — a group of players in a run, identified by a team name. Each player gets their own magic-link to log in as part of the team.</li>
+    <li><strong>Event</strong> — one specific playthrough at a specific time. Created from an assignment.</li>
+    <li><strong>Team</strong> — a group of players in an event, identified by a team name. Each player gets their own magic-link to log in as part of the team.</li>
   </ul>
 
-  <div class="callout">Mental model: an Adventure is a recipe; an Assignment is the right to cook it once; a Run is one specific dinner; a Team is the people sitting at a table.</div>
+  <div class="callout">Mental model: an Adventure is a recipe; an Assignment is the right to cook it once; a Event is one specific dinner; a Team is the people sitting at a table.</div>
 </section>
 
 <section id="first-steps">
@@ -311,7 +311,7 @@
   <p>When you sign up, you create an organization. Everyone in your organization shares the same adventures, assignments, and runs.</p>
 
   <h3>Verify your email</h3>
-  <p>After signup we email a verification link. You can log in before clicking it, but money-touching actions (buying assignments, scheduling runs) are blocked until you verify. The dashboard shows a banner with a "Resend" button if it didn't arrive.</p>
+  <p>After signup we email a verification link. You can log in before clicking it, but money-touching actions (buying assignments, scheduling events) are blocked until you verify. The dashboard shows a banner with a "Resend" button if it didn't arrive.</p>
   <div class="shot">[Screenshot: dashboard with the unverified-email banner]</div>
 
   <h3>The dashboard</h3>
@@ -327,7 +327,7 @@
   <ol>
     <li>Click "Library" in the sidebar.</li>
     <li>Press "New adventure".</li>
-    <li>Give it a title. The slug is auto-derived but editable; once players have started a run with this slug, don't change it.</li>
+    <li>Give it a title. The slug is auto-derived but editable; once players have started an event with this slug, don't change it.</li>
     <li>Save. You're taken to the puzzle editor.</li>
   </ol>
   <div class="shot">[Screenshot: Library tab with the New adventure button highlighted]</div>
@@ -375,18 +375,18 @@
   <p>The "Preview" button on the adventure detail page renders a sandbox playthrough. No team progress is recorded — it's your test rig.</p>
 </section>
 
-<section id="run-flow">
-  <h2>How the run flow fits together</h2>
-  <p>Before scheduling your first run, take a moment to understand the chain:</p>
-  <pre>Adventure  →  Assignment  →  Run  →  Teams  →  Players</pre>
+<section id="event-flow">
+  <h2>How the event flow fits together</h2>
+  <p>Before scheduling your first event, take a moment to understand the chain:</p>
+  <pre>Adventure  →  Assignment  →  Event  →  Teams  →  Players</pre>
   <ul>
     <li>You author or pick an Adventure (free).</li>
     <li>You buy an Assignment for that adventure: pays for up to N teams.</li>
-    <li>You create a Run from the Assignment: ties it to a specific date/time.</li>
-    <li>You add Teams to the Run: each team is a group of players.</li>
-    <li>You share each Player a magic link: they tap, the run starts, they play.</li>
+    <li>You create a Event from the Assignment: ties it to a specific date/time.</li>
+    <li>You add Teams to the Event: each team is a group of players.</li>
+    <li>You share each Player a magic link: they tap, the event starts, they play.</li>
   </ul>
-  <div class="callout">One assignment = one run. If you want to run the same adventure twice, buy two assignments.</div>
+  <div class="callout">One assignment = one event. If you want to run the same adventure twice, buy two assignments.</div>
 </section>
 
 <section id="assignments">
@@ -402,17 +402,17 @@
   <div class="callout warn">Refunds: if you bought the wrong assignment, contact support. Refunds are admin-only — they touch real money.</div>
 </section>
 
-<section id="create-run">
-  <h2>Creating a run</h2>
+<section id="create-event">
+  <h2>Creating an event</h2>
   <ol>
-    <li>Click "Runs" in the sidebar, then "Schedule run".</li>
+    <li>Click "Events" in the sidebar, then "Schedule event".</li>
     <li>Pick the assignment you want to use (only unused assignments are listed).</li>
-    <li>Give the run a name (eg. "Office team-build, Friday afternoon"). This is for your benefit; players don't see it.</li>
-    <li>Pick a date and time. You can also leave it blank and start the run manually later.</li>
+    <li>Give the event a name (eg. "Office team-build, Friday afternoon"). This is for your benefit; players don't see it.</li>
+    <li>Pick a date and time. You can also leave it blank and start the event manually later.</li>
     <li>Confirm the no-minors attestation, or pick the COPPA path if you're running for under-13s.</li>
-    <li>Save. The run appears in the Runs list with state "scheduled".</li>
+    <li>Save. The event appears in the Events list with state "scheduled".</li>
   </ol>
-  <div class="shot">[Screenshot: the schedule-run dialog]</div>
+  <div class="shot">[Screenshot: the schedule-event dialog]</div>
   <div class="callout">A scheduled run auto-starts the moment its time arrives, even if you've forgotten to click Start. Players who open their magic link at the scheduled minute get going immediately.</div>
 </section>
 
@@ -421,7 +421,7 @@
 
   <h3>Adding a team</h3>
   <ol>
-    <li>Open the run's detail page from the Runs list.</li>
+    <li>Open the event's detail page from the Events list.</li>
     <li>Click "Add team".</li>
     <li>Type the team name and the player names (one per line, or paste from a CSV).</li>
     <li>Save. Each player slot is created with a fresh magic-link token.</li>
@@ -429,31 +429,31 @@
   <div class="shot">[Screenshot: the add-team dialog]</div>
 
   <h3>Sharing magic links</h3>
-  <p>Each player's magic link is what they tap to join the run. The run-detail page has a "Team links" panel: copy individual links, copy a CSV of all team members, or copy a single "captain link" per team that the captain forwards to teammates.</p>
+  <p>Each player's magic link is what they tap to join the event. The event-detail page has a "Team links" panel: copy individual links, copy a CSV of all team members, or copy a single "captain link" per team that the captain forwards to teammates.</p>
   <div class="shot">[Screenshot: the team links panel with copy buttons]</div>
   <div class="callout warn">Magic links are sensitive — anyone with the URL can play as that slot. Don't paste them into public Slack channels. The dashboard's "Rotate token" action mints a new link if one leaks.</div>
 
   <h3>Token expiry</h3>
-  <p>Slot tokens expire seven days after the run's scheduled time by default. The team-links panel shows "expires in Nd" so you can spot links that need re-sharing.</p>
+  <p>Slot tokens expire seven days after the event's scheduled time by default. The team-links panel shows "expires in Nd" so you can spot links that need re-sharing.</p>
 </section>
 
 <section id="running">
-  <h2>Running the run</h2>
+  <h2>Running the event</h2>
 
   <h3>Start, pause, resume</h3>
-  <p>A scheduled run auto-starts at its time, but you can also start it manually from the run-detail page. Pause the run to freeze player progress (lunch break, weather delay), then Resume to continue.</p>
+  <p>A scheduled run auto-starts at its time, but you can also start it manually from the event-detail page. Pause the event to freeze player progress (lunch break, weather delay), then Resume to continue.</p>
 
   <h3>The activity feed</h3>
-  <p>The run-detail page has a live activity feed — answer attempts (right and wrong), team completions, gate reaches, run state changes. Useful for noticing a stuck team in real time.</p>
+  <p>The event-detail page has a live activity feed — answer attempts (right and wrong), team completions, gate reaches, run state changes. Useful for noticing a stuck team in real time.</p>
   <div class="shot">[Screenshot: activity feed during a live run]</div>
 
   <h3>The live view</h3>
   <p>Each run has a public-ish "live view" URL — a leaderboard plus optional audience map. Open it on a TV in the lobby; spectators can see team progress without logging in.</p>
-  <p>The map is OFF by default for privacy. Toggle it on from the run settings if your players are okay with their position being shown to the audience.</p>
+  <p>The map is OFF by default for privacy. Toggle it on from the event settings if your players are okay with their position being shown to the audience.</p>
   <div class="shot">[Screenshot: the live view leaderboard with map enabled]</div>
 
   <h3>Completion</h3>
-  <p>When every team finishes, the run automatically transitions to "completed". Players see the outro text and a stats screen (right answers, distance walked, total time). The run row in your dashboard moves to the "completed" section.</p>
+  <p>When every team finishes, the event automatically transitions to "completed". Players see the outro text and a stats screen (right answers, distance walked, total time). The event row in your dashboard moves to the "completed" section.</p>
 </section>
 
 <section id="webhooks">
@@ -464,17 +464,17 @@
   <ul>
     <li>Show a live leaderboard on a TV in your lobby, branded your way.</li>
     <li>Notify parents (school events) when their child's team finishes.</li>
-    <li>Trigger fulfillment in your own ops system when a run completes.</li>
+    <li>Trigger fulfillment in your own ops system when an event completes.</li>
     <li>Pipe events into your analytics warehouse.</li>
   </ul>
 
   <h3>The event catalog</h3>
   <p>Seven event kinds in v1:</p>
   <ul>
-    <li><code>run.scheduled</code> — a new run was created.</li>
-    <li><code>run.started</code> — a run actually started (manual or auto-promote).</li>
-    <li><code>run.completed</code> — all teams finished.</li>
-    <li><code>team.created</code> — a new team was added to a run.</li>
+    <li><code>event.scheduled</code> — a new run was created.</li>
+    <li><code>event.started</code> — an event actually started (manual or auto-promote).</li>
+    <li><code>event.completed</code> — all teams finished.</li>
+    <li><code>team.created</code> — a new team was added to an event.</li>
     <li><code>team.completed</code> — a team finished. Includes their name and run id.</li>
     <li><code>purchase.paid</code> — an assignment was purchased.</li>
     <li><code>purchase.refunded</code> — a purchase was refunded.</li>
@@ -529,7 +529,7 @@ process(parse_json(body))</pre>
 
 <section id="help">
   <h2>Getting help</h2>
-  <p>If something doesn't work as described here, or you're unsure how to do something, start with the run's activity feed (any errors are logged there for the team that hit them).</p>
+  <p>If something doesn't work as described here, or you're unsure how to do something, start with the event's activity feed (any errors are logged there for the team that hit them).</p>
   <p>For platform-level support, contact the operator listed at the bottom of the <a href="/privacy">Privacy</a> page.</p>
   <div class="callout">This manual evolves. If you read something that's wrong or unclear, tell support — clearer docs help every other arranger after you.</div>
 </section>

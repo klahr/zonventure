@@ -19,7 +19,7 @@ import (
 //     for them.
 //   - Organization (org_admin / org_member only): org row, owned
 //     adventures, assignments, purchases, runs (with team + slot
-//     summaries; full ping/answer rows are linked by run id but
+//     summaries; full ping/answer rows are linked by event id but
 //     bundled inline so the file is self-contained).
 //
 // Global admins have no org affinity, so they only see the personal
@@ -286,7 +286,7 @@ func loadOrgRuns(ctx context.Context, db *sql.DB, orgID int64, out *exportPayloa
 	rows, err := db.QueryContext(ctx, `
 		SELECT id, name, adventure_slug, state,
 		       COALESCE(started_at,''), COALESCE(completed_at,''), created_at
-		FROM adventure_runs WHERE org_id = $1 ORDER BY id
+		FROM events WHERE org_id = $1 ORDER BY id
 	`, orgID)
 	if err != nil {
 		return err
@@ -315,11 +315,11 @@ func loadOrgRuns(ctx context.Context, db *sql.DB, orgID int64, out *exportPayloa
 	return nil
 }
 
-func loadRunTeams(ctx context.Context, db *sql.DB, runID int64) ([]teamExport, error) {
+func loadRunTeams(ctx context.Context, db *sql.DB, eventID int64) ([]teamExport, error) {
 	rows, err := db.QueryContext(ctx, `
 		SELECT id, name, current_page_index, COALESCE(completed_at,''), created_at
-		FROM teams WHERE run_id = $1 ORDER BY id
-	`, runID)
+		FROM teams WHERE event_id = $1 ORDER BY id
+	`, eventID)
 	if err != nil {
 		return nil, err
 	}

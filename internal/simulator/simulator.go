@@ -1,7 +1,7 @@
 // Package simulator drives a fake race inside the server so an operator
 // can see the live view react to motion, reorders and answers without
 // needing real players on the ground. It writes through the same
-// tables real runs use — location_pings, run_events, teams — so every
+// tables real runs use — location_pings, event_activity, teams — so every
 // subscriber (live WS, leaderboard, map tracks) picks up the activity
 // with no special casing.
 //
@@ -25,7 +25,7 @@ import (
 
 	"git.sr.ht/~klahr/zv/internal/adventure"
 	"git.sr.ht/~klahr/zv/internal/logx"
-	"git.sr.ht/~klahr/zv/internal/runevents"
+	"git.sr.ht/~klahr/zv/internal/activity"
 	"git.sr.ht/~klahr/zv/internal/ws"
 )
 
@@ -60,7 +60,7 @@ var teamNames = []string{
 // endpoint. Intentionally flat so the JSON shape is stable.
 type State struct {
 	Stage         string  `json:"stage"` // "idle" | "running" | "paused"
-	RunID         int64   `json:"run_id,omitempty"`
+	EventID         int64   `json:"event_id,omitempty"`
 	LiveToken     string  `json:"live_token,omitempty"`
 	AdventureSlug string  `json:"adventure_slug,omitempty"`
 	TeamCount     int     `json:"team_count,omitempty"`
@@ -71,7 +71,7 @@ type State struct {
 	StartedAt string `json:"started_at,omitempty"`
 }
 
-// Simulator is the global singleton — one run at a time. Callers hold
+// Simulator is the global singleton — one event at a time. Callers hold
 // a single instance (injected into admin.Handlers).
 type Simulator struct {
 	db  *sql.DB
@@ -139,7 +139,7 @@ func (s *Simulator) Status() State {
 	}
 	return State{
 		Stage:         stage,
-		RunID:         s.current.id,
+		EventID:         s.current.id,
 		LiveToken:     s.current.liveToken,
 		AdventureSlug: s.current.adventureSlug,
 		TeamCount:     len(s.current.teams),
@@ -190,7 +190,7 @@ func (s *Simulator) Start(ctx context.Context, adventureSlug string, teamCount i
 	if len(enabled) == 0 {
 		return State{}, errors.New("adventure has no geolocated puzzles")
 	}
-	// Need an org to anchor the run — picking the first one keeps the
+	// Need an org to anchor the event — picking the first one keeps the
 	// sim a one-click operation. Operators running this multi-tenant
 	// in prod would wire it to their own org; this is a dev tool.
 	var orgID int64
@@ -206,12 +206,12 @@ func (s *Simulator) Start(ctx context.Context, adventureSlug string, teamCount i
 	if err != nil {
 		return State{}, fmt.Errorf("token: %w", err)
 	}
-	var runID int64
+	var eventID int64
 	if err := s.db.QueryRowContext(ctx, `
-		INSERT INTO adventure_runs(adventure_slug, org_id, created_by_user_id, state, started_at, live_token, name, show_map)
+		INSERT INTO events(adventure_slug, org_id, created_by_user_id, state, started_at, live_token, name, show_map)
 		VALUES ($1, $2, $3, 'running', now_text(), $4, $5, 1)
 		RETURNING id
-	`, adventureSlug, orgID, nullIfZero(createdByUserID), liveToken, "Simulated race").Scan(&runID); err != nil {
+	`, adventureSlug, orgID, nullIfZero(createdByUserID), liveToken, "Simulated race").Scan(&eventID); err != nil {
 		return State{}, fmt.Errorf("create run: %w", err)
 	}
 
@@ -227,15 +227,15 @@ func (s *Simulator) Start(ctx context.Context, adventureSlug string, teamCount i
 		// index — keeps the simulator independent of any DB-side helpers.
 		teamTok, err := newLiveToken()
 		if err != nil {
-			_, _ = s.db.ExecContext(ctx, `DELETE FROM adventure_runs WHERE id = $1`, runID)
+			_, _ = s.db.ExecContext(ctx, `DELETE FROM events WHERE id = $1`, eventID)
 			return State{}, fmt.Errorf("team token: %w", err)
 		}
 		var tid int64
 		if err := s.db.QueryRowContext(ctx,
-			`INSERT INTO teams(run_id, name, token) VALUES ($1, $2, $3) RETURNING id`,
-			runID, name, teamTok).Scan(&tid); err != nil {
+			`INSERT INTO teams(event_id, name, token) VALUES ($1, $2, $3) RETURNING id`,
+			eventID, name, teamTok).Scan(&tid); err != nil {
 			// Roll back on best-effort — nothing hands out partial state.
-			_, _ = s.db.ExecContext(ctx, `DELETE FROM adventure_runs WHERE id = $1`, runID)
+			_, _ = s.db.ExecContext(ctx, `DELETE FROM events WHERE id = $1`, eventID)
 			return State{}, fmt.Errorf("create team %q: %w", name, err)
 		}
 		// location_pings requires slot_id NOT NULL, so give each team a
@@ -246,7 +246,7 @@ func (s *Simulator) Start(ctx context.Context, adventureSlug string, teamCount i
 		if err := s.db.QueryRowContext(ctx,
 			`INSERT INTO player_slots(team_id, name, token) VALUES ($1, $2, $3) RETURNING id`,
 			tid, "simrunner", slotTok).Scan(&sid); err != nil {
-			_, _ = s.db.ExecContext(ctx, `DELETE FROM adventure_runs WHERE id = $1`, runID)
+			_, _ = s.db.ExecContext(ctx, `DELETE FROM events WHERE id = $1`, eventID)
 			return State{}, fmt.Errorf("create slot: %w", err)
 		}
 		lat, lng := jitter(startPuzzle.Location.Lat, startPuzzle.Location.Lng, 300, rng)
@@ -263,13 +263,13 @@ func (s *Simulator) Start(ctx context.Context, adventureSlug string, teamCount i
 			speedMps:  0.8 + rng.Float64()*0.8,
 			wrongProb: 0.15 + rng.Float64()*0.15, // 15–30%
 		})
-		runevents.Record(ctx, s.db, runID, &tid, runevents.Actor{}, runevents.TeamCreated,
+		activity.Record(ctx, s.db, eventID, &tid, activity.Actor{}, activity.TeamCreated,
 			map[string]any{"source": "simulator", "name": name})
 	}
 
 	ctxRun, cancel := context.WithCancel(context.Background())
 	r := &run{
-		id:            runID,
+		id:            eventID,
 		liveToken:     liveToken,
 		adventureSlug: adventureSlug,
 		orgID:         orgID,
@@ -285,9 +285,9 @@ func (s *Simulator) Start(ctx context.Context, adventureSlug string, teamCount i
 	go s.loop(ctxRun, r)
 	// Kick the live topic so anyone already watching picks up the
 	// freshly-created run via a snapshot rebuild.
-	s.hub.Publish(ws.RunTopic(runID), "changed", nil)
+	s.hub.Publish(ws.EventTopic(eventID), "changed", nil)
 	logx.Info("simulator.started",
-		"run_id", runID, "adventure", adventureSlug,
+		"event_id", eventID, "adventure", adventureSlug,
 		"teams", teamCount, "speed_mul", speedMul)
 	return s.statusLocked(), nil
 }
@@ -301,7 +301,7 @@ func (s *Simulator) Pause() error {
 		return errors.New("no active simulation")
 	}
 	s.current.paused.Store(true)
-	logx.Info("simulator.paused", "run_id", s.current.id)
+	logx.Info("simulator.paused", "event_id", s.current.id)
 	return nil
 }
 
@@ -313,7 +313,7 @@ func (s *Simulator) Resume() error {
 		return errors.New("no active simulation")
 	}
 	s.current.paused.Store(false)
-	logx.Info("simulator.resumed", "run_id", s.current.id)
+	logx.Info("simulator.resumed", "event_id", s.current.id)
 	return nil
 }
 
@@ -336,10 +336,10 @@ func (s *Simulator) Reset(ctx context.Context) error {
 		// Fall through — the goroutine sees ctx.Done() on the next
 		// iteration at worst; the cascade delete will take its pings.
 	}
-	if _, err := s.db.ExecContext(ctx, `DELETE FROM adventure_runs WHERE id = $1`, r.id); err != nil {
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM events WHERE id = $1`, r.id); err != nil {
 		return fmt.Errorf("delete run: %w", err)
 	}
-	logx.Info("simulator.reset", "run_id", r.id)
+	logx.Info("simulator.reset", "event_id", r.id)
 	return nil
 }
 
@@ -354,7 +354,7 @@ func (s *Simulator) statusLocked() State {
 	}
 	return State{
 		Stage:         stage,
-		RunID:         s.current.id,
+		EventID:         s.current.id,
 		LiveToken:     s.current.liveToken,
 		AdventureSlug: s.current.adventureSlug,
 		TeamCount:     len(s.current.teams),
@@ -414,7 +414,7 @@ func (s *Simulator) tick(ctx context.Context, r *run) {
 			// Arrived: snap to the puzzle and start dwelling.
 			team.lat, team.lng = target.Location.Lat, target.Location.Lng
 			team.dwellLeft = dwellBase + time.Duration(r.rng.Int63n(int64(dwellJitter)))
-			runevents.Record(ctx, s.db, r.id, &team.id, runevents.Actor{}, runevents.GateReached,
+			activity.Record(ctx, s.db, r.id, &team.id, activity.Actor{}, activity.GateReached,
 				map[string]any{"source": "simulator"})
 			s.recordPing(ctx, r, team)
 			continue
@@ -430,13 +430,13 @@ func (s *Simulator) tick(ctx context.Context, r *run) {
 	}
 	// One publish per tick keeps the fanout cost predictable regardless
 	// of team count. Live view receivers re-pull the snapshot once.
-	s.hub.Publish(ws.RunTopic(r.id), "changed", nil)
+	s.hub.Publish(ws.EventTopic(r.id), "changed", nil)
 
 	if allDone {
 		// Every team has finished — pause the loop so we don't churn
 		// with nothing to do. The operator can Reset to start over.
 		r.paused.Store(true)
-		logx.Info("simulator.complete", "run_id", r.id)
+		logx.Info("simulator.complete", "event_id", r.id)
 	}
 }
 
@@ -445,7 +445,7 @@ func (s *Simulator) tick(ctx context.Context, r *run) {
 // run down.
 func (s *Simulator) recordPing(ctx context.Context, r *run, t *simTeam) {
 	_, _ = s.db.ExecContext(ctx, `
-		INSERT INTO location_pings(slot_id, team_id, run_id, lat, lng, accuracy, speed)
+		INSERT INTO location_pings(slot_id, team_id, event_id, lat, lng, accuracy, speed)
 		VALUES ($1, $2, $3, $4, $5, $6, $7)
 	`, t.slotID, t.id, r.id, t.lat, t.lng, 8.0, t.speedMps)
 }
@@ -457,7 +457,7 @@ func (s *Simulator) attemptAnswer(ctx context.Context, r *run, t *simTeam, puzzl
 	wrong := r.rng.Float64() < t.wrongProb
 	if wrong {
 		t.dwellLeft = dwellBase + time.Duration(r.rng.Int63n(int64(dwellJitter)))
-		runevents.Record(ctx, s.db, r.id, &t.id, runevents.Actor{}, runevents.AnswerWrong,
+		activity.Record(ctx, s.db, r.id, &t.id, activity.Actor{}, activity.AnswerWrong,
 			map[string]any{"source": "simulator", "puzzle_idx": puzzle.Index})
 		return
 	}
@@ -478,7 +478,7 @@ func (s *Simulator) attemptAnswer(ctx context.Context, r *run, t *simTeam, puzzl
 	_, _ = s.db.ExecContext(ctx,
 		`UPDATE teams SET current_page_index = $1 WHERE id = $2`,
 		newCursor, t.id)
-	runevents.Record(ctx, s.db, r.id, &t.id, runevents.Actor{}, runevents.AnswerRight,
+	activity.Record(ctx, s.db, r.id, &t.id, activity.Actor{}, activity.AnswerRight,
 		map[string]any{"source": "simulator", "puzzle_idx": puzzle.Index})
 	if next == nil {
 		s.finishTeam(ctx, r, t)
@@ -487,7 +487,7 @@ func (s *Simulator) attemptAnswer(ctx context.Context, r *run, t *simTeam, puzzl
 
 // finishTeam stamps completed_at, emits the usual event, and flags the
 // team so subsequent ticks skip it. When this finish leaves zero
-// teams still racing, the run itself transitions to 'completed' too,
+// teams still racing, the event itself transitions to 'completed' too,
 // matching the real player flow.
 func (s *Simulator) finishTeam(ctx context.Context, r *run, t *simTeam) {
 	if t.finished {
@@ -496,9 +496,9 @@ func (s *Simulator) finishTeam(ctx context.Context, r *run, t *simTeam) {
 	t.finished = true
 	_, _ = s.db.ExecContext(ctx,
 		`UPDATE teams SET completed_at = now_text() WHERE id = $1`, t.id)
-	runevents.Record(ctx, s.db, r.id, &t.id, runevents.Actor{}, runevents.TeamCompleted,
+	activity.Record(ctx, s.db, r.id, &t.id, activity.Actor{}, activity.TeamCompleted,
 		map[string]any{"source": "simulator"})
-	_, _ = runevents.MaybeCompleteRun(ctx, s.db, r.id)
+	_, _ = activity.MaybeCompleteEvent(ctx, s.db, r.id)
 }
 
 // nextPuzzle returns the team's current target — the first enabled

@@ -168,7 +168,7 @@ func TestPurchase_CreateConfirmProducesAssignment(t *testing.T) {
 			ID            int64  `json:"id"`
 			AdventureSlug string `json:"adventure_slug"`
 			MaxTeams      int    `json:"max_teams"`
-			RunID         *int64 `json:"run_id,omitempty"`
+			EventID         *int64 `json:"event_id,omitempty"`
 		} `json:"assignments"`
 	}
 	if s := boss.do("GET", "/api/admin/assignments", nil, &assigns); s != 200 {

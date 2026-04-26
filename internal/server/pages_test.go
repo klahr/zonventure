@@ -95,13 +95,13 @@ func TestPages_DisabledIsSkippedByPlayer(t *testing.T) {
 	}
 
 	// Now the adventure has 2 enabled pages (indices 0 and 2).
-	_, _, slotToken, runID := setupRun(t, ts, assignmentID)
+	_, _, slotToken, eventID := setupRun(t, ts, assignmentID)
 	arr := newClient(t, ts)
 	if s := arr.do("POST", "/api/auth/login",
 		map[string]string{"username": "boss", "password": "s3cret"}, nil); s != 200 {
 		t.Fatalf("arranger login = %d", s)
 	}
-	if s := arr.do("POST", "/api/admin/runs/"+itoa(runID)+"/start", map[string]string{}, nil); s != 204 {
+	if s := arr.do("POST", "/api/admin/events/"+itoa(eventID)+"/start", map[string]string{}, nil); s != 204 {
 		t.Fatalf("start run = %d", s)
 	}
 	alice := loginPlayer(t, ts, slotToken)
@@ -119,7 +119,7 @@ func TestPages_DisabledIsSkippedByPlayer(t *testing.T) {
 		t.Fatalf("page_count = %d, want 2 (demo has 3 pages, one disabled)", st.PageCount)
 	}
 	if st.PageIndex != 0 || st.Status != "running" {
-		t.Fatalf("expected fresh run on page 0, got %+v", st)
+		t.Fatalf("expected fresh event on page 0, got %+v", st)
 	}
 
 	// Solve page 0 — should skip the disabled page and land on the final

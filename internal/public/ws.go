@@ -7,7 +7,7 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
-// WSLive is the TV-leaderboard WebSocket endpoint. The run is identified
+// WSLive is the TV-leaderboard WebSocket endpoint. The event is identified
 // by the same opaque /live/{token} URL segment as the HTTP endpoint, which
 // keeps this connection unauthenticated but unguessable.
 //
@@ -17,7 +17,7 @@ import (
 //	{"kind":"tracks",  "data": TracksResponse}  (only when show_map is on)
 //
 // The client does not need to send anything: the handler pushes on connect
-// and re-pushes whenever the run-scoped hub topic fires.
+// and re-pushes whenever the event-scoped hub topic fires.
 func (h *Handlers) WSLive(w http.ResponseWriter, r *http.Request) {
 	token := chi.URLParam(r, "token")
 	if token == "" {
@@ -26,9 +26,9 @@ func (h *Handlers) WSLive(w http.ResponseWriter, r *http.Request) {
 	}
 	// Resolve the token once up front so we can refuse bad tokens without
 	// opening a socket just to close it.
-	runID, _, _, _, _, _, showMap, err := h.runByToken(r.Context(), token)
+	eventID, _, _, _, _, _, showMap, err := h.runByToken(r.Context(), token)
 	if err != nil {
-		http.Error(w, "run not found", http.StatusNotFound)
+		http.Error(w, "event not found", http.StatusNotFound)
 		return
 	}
 
@@ -38,7 +38,7 @@ func (h *Handlers) WSLive(w http.ResponseWriter, r *http.Request) {
 	}
 	defer conn.Close()
 
-	events, unsub := h.Hub.Subscribe(ws.RunTopic(runID))
+	events, unsub := h.Hub.Subscribe(ws.EventTopic(eventID))
 	defer unsub()
 
 	push := func() {
@@ -49,7 +49,7 @@ func (h *Handlers) WSLive(w http.ResponseWriter, r *http.Request) {
 		// show_map may flip at runtime — read the latest state from the
 		// snapshot rather than the cached initial value.
 		if snap.ShowMap {
-			tracks, tStatus, _ := h.buildTracks(conn.Context(), runID)
+			tracks, tStatus, _ := h.buildTracks(conn.Context(), eventID)
 			if tStatus == http.StatusOK {
 				conn.SendKind("tracks", tracks)
 			}

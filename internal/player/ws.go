@@ -11,7 +11,7 @@ import (
 
 // WSPlay is the player-side WebSocket endpoint. It replaces the 5s state
 // poll and 15s location POST: the server pushes a fresh "state" frame
-// whenever anything in the run changes, and the client pipes its GPS fixes
+// whenever anything in the event changes, and the client pipes its GPS fixes
 // and answer submissions through the same socket.
 //
 // Requires a slot session — the HTTP upgrade is gated by RequireSlot, same
@@ -28,14 +28,14 @@ func (h *Handlers) WSPlay(w http.ResponseWriter, r *http.Request) {
 	}
 	defer conn.Close()
 
-	events, unsub := h.Hub.Subscribe(ws.RunTopic(slot.RunID))
+	events, unsub := h.Hub.Subscribe(ws.EventTopic(slot.EventID))
 	defer unsub()
 
 	// Push the initial state so the client has something to render while it
 	// waits for its first broadcast.
 	h.pushState(conn, slot)
 
-	// Push-on-change: whenever anything in this run changes, re-read and
+	// Push-on-change: whenever anything in this event changes, re-read and
 	// send the slot's current view. Coalescing is implicit — the hub's
 	// drop-oldest send means a burst of pokes collapses to "render once".
 	// The events channel is never closed by the hub (see hub.go), so we
@@ -76,7 +76,7 @@ func (h *Handlers) WSPlay(w http.ResponseWriter, r *http.Request) {
 			if status >= 400 {
 				continue
 			}
-			h.Hub.Publish(ws.RunTopic(slot.RunID), "changed", nil)
+			h.Hub.Publish(ws.EventTopic(slot.EventID), "changed", nil)
 		case "answer":
 			var req AnswerRequest
 			if err := json.Unmarshal(msg.Data, &req); err != nil {
@@ -90,14 +90,14 @@ func (h *Handlers) WSPlay(w http.ResponseWriter, r *http.Request) {
 				})
 				continue
 			}
-			resp, runID, status, errMsg := h.applyAnswer(conn.Context(), slot, req.Answer)
+			resp, eventID, status, errMsg := h.applyAnswer(conn.Context(), slot, req.Answer)
 			if status != http.StatusOK {
 				conn.SendKind("answer_error", map[string]any{"error": errMsg, "status": status})
 				continue
 			}
 			conn.SendKind("answer_result", resp)
-			if runID != 0 {
-				h.Hub.Publish(ws.RunTopic(runID), "changed", nil)
+			if eventID != 0 {
+				h.Hub.Publish(ws.EventTopic(eventID), "changed", nil)
 			}
 		case "advance":
 			// No-answer advance: the puzzle has an empty accept list so
@@ -114,14 +114,14 @@ func (h *Handlers) WSPlay(w http.ResponseWriter, r *http.Request) {
 				})
 				continue
 			}
-			resp, runID, status, errMsg := h.applyAdvance(conn.Context(), slot)
+			resp, eventID, status, errMsg := h.applyAdvance(conn.Context(), slot)
 			if status != http.StatusOK {
 				conn.SendKind("answer_error", map[string]any{"error": errMsg, "status": status})
 				continue
 			}
 			conn.SendKind("answer_result", resp)
-			if runID != 0 {
-				h.Hub.Publish(ws.RunTopic(runID), "changed", nil)
+			if eventID != 0 {
+				h.Hub.Publish(ws.EventTopic(eventID), "changed", nil)
 			}
 		}
 	}
