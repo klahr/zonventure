@@ -1,0 +1,229 @@
+/* Shared topbar / hamburger / mobile-overlay / language-picker CSS.
+ * Linked by landing.html, pricing.html and manual.html so the menu
+ * system is one source of truth. Pages must define `--accent-deep`
+ * (the brand-deep colour used by the picker active state and the
+ * mobile-overlay primary button); other colour values are baked in
+ * because the topbar is intentionally identical regardless of which
+ * page it sits on top of.
+ *
+ * The design constraints encoded below:
+ *  - JS-free fallback: pure-CSS hamburger via a hidden checkbox.
+ *  - The fullscreen mobile overlay is a body-level sibling of the
+ *    topbar, NOT a descendant — so its stacking context is the root
+ *    and the topbar (z-index 50) reliably paints above it (z-index
+ *    40), keeping the close-X visible while the menu is open.
+ *  - `backdrop-filter` lives on a `::before` pseudo-element rather
+ *    than on `.topbar` itself, because any element with that
+ *    property establishes a containing block for fixed-position
+ *    descendants — which would otherwise pin the overlay to the
+ *    topbar's tiny height instead of the viewport.
+ *  - The hidden checkbox is `position: fixed` at viewport (0,0) so
+ *    the browser's "scroll the focused element into view" behaviour
+ *    has nothing to scroll to when the user taps the hamburger
+ *    deep in the page.
+ */
+
+:root { --topbar-h: 4.25rem; }
+
+/* Pages without their own dark hero band must push body content down
+ * so the sticky topbar doesn't cover the first paragraph. Pages that
+ * DO have a hero (landing, pricing) opt out with `body.has-hero` —
+ * their hero handles the topbar overlap via its own padding-top. */
+body { padding-top: var(--topbar-h); }
+body.has-hero { padding-top: 0; }
+
+.topbar {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 50;
+  padding: 1.25rem 0;
+  background: transparent;
+  border-bottom: 1px solid transparent;
+  min-height: var(--topbar-h);
+  transition: background .25s ease, border-bottom-color .25s ease;
+}
+.topbar::before {
+  content: '';
+  position: absolute; inset: 0;
+  background: rgba(15, 22, 36, .82);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  opacity: 0;
+  transition: opacity .25s ease;
+  z-index: -1;
+  pointer-events: none;
+}
+/* Default state = scrolled. The JS in topbar.js adds .at-top while
+ * the page is at scrollY ≤ 4 so the glass background fades away.
+ * Without JS the topbar simply stays solid-translucent — readable
+ * everywhere instead of broken at the top.
+ */
+.topbar:not(.at-top)::before { opacity: 1; }
+.topbar:not(.at-top) { border-bottom-color: rgba(255,255,255,.08); }
+
+.topbar-row {
+  display: flex; align-items: center;
+  gap: .75rem;
+  flex-wrap: nowrap;
+  /* Width + horizontal padding live here so the topbar lays out
+   * correctly even on pages that don't define a .wrap container.
+   * Pages that DO have a .wrap class on the row inherit those values
+   * harmlessly; conflicts are unlikely because both want roughly
+   * the same shape. */
+  max-width: 64rem;
+  margin: 0 auto;
+  padding: 0 1.25rem;
+}
+.topbar nav { margin-left: auto; }
+.topbar nav { display: flex; gap: 1.25rem; align-items: center; }
+.topbar nav a {
+  color: rgba(255,255,255,.85); font-weight: 600; font-size: .95rem;
+  text-decoration: none;
+}
+.topbar nav a:hover { color: #fff; text-decoration: none; }
+.topbar nav .btn {
+  padding: .55rem 1.4rem;
+  border-radius: 999px;
+  background: #fff;
+  color: var(--accent-deep);
+  font-weight: 700;
+  border: 0;
+}
+.topbar nav .btn:hover { background: rgba(255,255,255,.92); }
+
+.brand {
+  font-family: 'Aclonica', Georgia, serif;
+  font-size: 1.55rem;
+  color: #fff;
+  text-decoration: none;
+  letter-spacing: .01em;
+  text-shadow: 0 2px 12px rgba(0,0,0,.25);
+}
+
+/* Hidden toggle. Pinned to viewport (0,0) so focus-into-view does
+ * not jerk the page to the top when the user taps the hamburger.
+ */
+.nav-toggle {
+  position: fixed; top: 0; left: 0;
+  width: 1px; height: 1px;
+  opacity: 0; pointer-events: none;
+}
+.nav-toggle:focus-visible ~ .topbar .hamburger {
+  outline: 2px solid #fff; outline-offset: 3px; border-radius: 6px;
+}
+
+.hamburger {
+  display: none;
+  width: 2.5rem; height: 2.5rem;
+  flex-direction: column; justify-content: center; align-items: center;
+  gap: .35rem;
+  border-radius: 8px;
+  cursor: pointer;
+  background: rgba(255,255,255,.12);
+}
+.hamburger span {
+  display: block;
+  width: 1.4rem; height: 2px;
+  background: #fff;
+  border-radius: 2px;
+  transition: transform .2s, opacity .2s;
+}
+.nav-toggle:checked ~ .topbar .hamburger span:nth-child(1) {
+  transform: translateY(.45rem) rotate(45deg);
+}
+.nav-toggle:checked ~ .topbar .hamburger span:nth-child(2) { opacity: 0; }
+.nav-toggle:checked ~ .topbar .hamburger span:nth-child(3) {
+  transform: translateY(-.45rem) rotate(-45deg);
+}
+
+.nav-menu {
+  display: flex; gap: 1.25rem; align-items: center;
+}
+.nav-overlay { display: none; }
+
+/* Compact, JS-free language switcher. Each link is a real anchor —
+ * crawlers and curl follow them; the server reads ?lang= and sets a
+ * year-long cookie so the choice sticks across pages. The active link
+ * gets visual weight and aria-current="page".
+ */
+.lang-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+  padding: .25rem;
+  background: rgba(255,255,255,.12);
+  border-radius: 999px;
+  margin-right: .5rem;
+}
+.lang-picker .lang-link {
+  display: inline-flex; align-items: center; gap: .3rem;
+  padding: .3rem .7rem;
+  border-radius: 999px;
+  font-size: .8rem; font-weight: 600;
+  color: rgba(255,255,255,.85);
+  line-height: 1;
+}
+.lang-picker .lang-link:hover { color: #fff; text-decoration: none; }
+.lang-picker .lang-link.active {
+  background: rgba(255,255,255,.92);
+  color: var(--accent-deep);
+}
+.lang-picker .flag { font-size: 1rem; line-height: 1; }
+
+/* Narrow-screen rules: hamburger replaces the inline links, lang
+ * picker shrinks to flag-only. 45rem (720px) breakpoint covers
+ * iPhone 12 (390px) through iPad mini (744px) widths.
+ */
+@media (max-width: 45rem) {
+  .hamburger { display: flex; }
+  .topbar nav { gap: .5rem; }
+  .nav-menu { display: none; }
+
+  .nav-overlay {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    position: fixed;
+    inset: 0;
+    padding: calc(var(--topbar-h) + 1rem) 0 2rem;
+    background: rgba(15, 22, 36, .98);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    overflow-y: auto;
+    z-index: 40;
+    min-height: 100vh;
+    min-height: 100dvh;
+    visibility: hidden;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .2s ease, visibility 0s linear .2s;
+  }
+  .nav-toggle:checked ~ .nav-overlay {
+    visibility: visible;
+    opacity: 1;
+    pointer-events: auto;
+    transition: opacity .2s ease, visibility 0s linear 0s;
+  }
+  .nav-overlay a {
+    color: rgba(255,255,255,.85); font-weight: 600;
+    text-decoration: none;
+    padding: 1.1rem 1.5rem;
+    font-size: 1.15rem;
+    border-bottom: 1px solid rgba(255,255,255,.08);
+  }
+  .nav-overlay a:last-child { border-bottom: none; }
+  .nav-overlay a:hover { color: #fff; }
+  .nav-overlay .btn {
+    margin: 1.25rem 1.5rem 0;
+    padding: .9rem 1.25rem;
+    border-radius: 999px;
+    background: #fff;
+    color: var(--accent-deep);
+    text-align: center;
+    font-size: 1rem;
+    border-bottom: none;
+  }
+}
+@media (max-width: 32rem) {
+  .lang-picker { margin-right: 0; }
+  .lang-picker .lang-link { padding: .25rem .5rem; }
+  .lang-picker .lang-link .label { display: none; }
+}

@@ -23,7 +23,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 )
 
-//go:embed web/play.html web/arrange.html web/live.html web/i18n.js web/favicon.svg web/privacy.html web/terms.html web/manual.html web/landing.html web/pricing.html web/404.html web/robots.txt web/sitemap.xml
+//go:embed web/play.html web/arrange.html web/live.html web/i18n.js web/favicon.svg web/privacy.html web/terms.html web/manual.html web/landing.html web/pricing.html web/topbar.css web/topbar.js web/404.html web/robots.txt web/sitemap.xml
 var webFS embed.FS
 
 // Config is the bag of knobs New needs.
@@ -242,8 +242,21 @@ func New(cfg Config) http.Handler {
 	// search crawlers and curl users can read the content without JS
 	// or auth. The in-app /arrange#manual view is a translated mirror
 	// of the same content for logged-in arrangers.
-	r.Get("/manual", servePublicPage("web/manual.html", http.StatusOK))
-	r.Get("/pricing", servePublicPage("web/pricing.html", http.StatusOK))
+	// Manual + pricing are templated through renderTopbarPage so the
+	// shared sticky-topbar / hamburger / language-picker reads the
+	// caller's locale cookie and renders the picker active state
+	// correctly. Page bodies are not (yet) translated for these
+	// routes; only the topbar chrome.
+	r.Get("/manual", func(w http.ResponseWriter, req *http.Request) {
+		renderTopbarPage(w, req, "web/manual.html")
+	})
+	r.Get("/pricing", func(w http.ResponseWriter, req *http.Request) {
+		renderTopbarPage(w, req, "web/pricing.html")
+	})
+
+	// Shared topbar CSS + JS, served as long-cached static assets.
+	r.Get("/assets/topbar.css", serveAsset("web/topbar.css", "text/css; charset=utf-8"))
+	r.Get("/assets/topbar.js", serveAsset("web/topbar.js", "application/javascript; charset=utf-8"))
 
 	// Crawler hygiene: robots.txt and a small sitemap of public URLs.
 	// {{HOST}} in the sitemap is rewritten with the operator-configured

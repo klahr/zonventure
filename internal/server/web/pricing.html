@@ -36,6 +36,11 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Aclonica&family=Open+Sans:wght@400;600;700&display=swap" rel="stylesheet">
 
+<!-- Shared topbar / hamburger / overlay styles + scroll-fade JS,
+     same as landing.html / manual.html. -->
+<link rel="stylesheet" href="/assets/topbar.css">
+<script defer src="/assets/topbar.js"></script>
+
 <style>
   :root {
     color-scheme: light dark;
@@ -83,39 +88,18 @@
     outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 4px;
   }
 
-  /* ---- topbar (dark hero overlay) ---- */
-  header.topbar {
+  /* ---- pricing hero ----
+     Coloured band that sat fused with the old topbar; now its own
+     section sitting under the shared sticky topbar. Padding-top
+     pushes the headline below the fixed topbar. */
+  .pricing-hero {
     background: linear-gradient(160deg, var(--accent-deep) 0%, var(--accent) 75%);
     color: #fff;
-    padding: 1.25rem 0 4.5rem;
-    position: relative;
-  }
-  .topbar-row {
-    display: flex; align-items: center; justify-content: space-between;
-  }
-  .brand {
-    font-family: 'Aclonica', Georgia, serif;
-    font-size: 1.55rem;
-    color: #fff;
-    text-decoration: none;
-    text-shadow: 0 2px 12px rgba(0,0,0,.25);
-  }
-  .topbar nav { display: flex; gap: 1.75rem; align-items: center; }
-  .topbar nav a {
-    color: rgba(255,255,255,.85); font-weight: 600; font-size: .95rem;
-  }
-  .topbar nav a:hover { color: #fff; text-decoration: none; }
-  .topbar nav .btn {
-    padding: .55rem 1.4rem;
-    border-radius: 999px;
-    background: #fff;
-    color: var(--accent-deep);
-    font-weight: 700;
-  }
-
-  .hero-copy {
+    padding: calc(var(--topbar-h) + 2.75rem) 0 4.5rem;
     text-align: center;
-    margin: 2.75rem auto 0;
+  }
+  .hero-copy {
+    margin: 0 auto;
     max-width: 38rem;
   }
   .hero-copy h1 {
@@ -303,25 +287,54 @@
   footer .copy { margin-top: .5rem; font-size: .8rem; }
 </style>
 </head>
-<body>
+<body class="has-hero">
 
 <a class="skip-link" href="#main">Skip to content</a>
 
+<!-- Shared topbar / hamburger / overlay structure. Same DOM contract
+     as landing.html: input + topbar + nav-overlay are siblings under
+     <body>; styles + scroll-fade JS come from /assets/topbar.{css,js}. -->
+<input type="checkbox" id="nav-toggle" class="nav-toggle" aria-label="{{NAV_TOGGLE_ARIA}}">
+
 <header class="topbar" role="banner">
   <div class="wrap topbar-row">
-    <a class="brand" href="/" aria-label="Zonventure home">zonventure</a>
-    <nav aria-label="Primary">
-      <a href="/manual">Manual</a>
-      <a href="/pricing">Pricing</a>
-      <a href="/arrange" class="btn">Log in</a>
+    <label for="nav-toggle" class="hamburger" aria-hidden="true">
+      <span></span><span></span><span></span>
+    </label>
+    <a class="brand" href="/" aria-label="{{BRAND_ARIA}}">zonventure</a>
+    <nav aria-label="{{NAV_PRIMARY_ARIA}}">
+      <div class="lang-picker" role="group" aria-label="{{LANG_ARIA}}">
+        <a href="?lang=en" class="lang-link {{EN_ACTIVE}}" {{EN_CURRENT}} hreflang="en">
+          <span class="flag" aria-hidden="true">🇬🇧</span><span class="label">EN</span>
+        </a>
+        <a href="?lang=sv" class="lang-link {{SV_ACTIVE}}" {{SV_CURRENT}} hreflang="sv">
+          <span class="flag" aria-hidden="true">🇸🇪</span><span class="label">SV</span>
+        </a>
+      </div>
+      <div class="nav-menu">
+        <a href="/manual">{{NAV_MANUAL}}</a>
+        <a href="/pricing">{{NAV_PRICING}}</a>
+        <a href="/arrange" class="btn">{{NAV_LOGIN}}</a>
+      </div>
     </nav>
   </div>
-  <div class="hero-copy">
-    <h1>Pricing built for one event or a thousand.</h1>
-    <p>Self-host for free. Or run on our infrastructure and pay only for the
-       team slots you actually use — no subscription required.</p>
-  </div>
 </header>
+
+<aside class="nav-overlay" aria-label="{{NAV_PRIMARY_ARIA}}">
+  <a href="/manual">{{NAV_MANUAL}}</a>
+  <a href="/pricing">{{NAV_PRICING}}</a>
+  <a href="/arrange" class="btn">{{NAV_LOGIN}}</a>
+</aside>
+
+<section class="pricing-hero">
+  <div class="wrap">
+    <div class="hero-copy">
+      <h1>Pricing built for one event or a thousand.</h1>
+      <p>Self-host for free. Or run on our infrastructure and pay only for the
+         team slots you actually use — no subscription required.</p>
+    </div>
+  </div>
+</section>
 
 <main id="main">
 

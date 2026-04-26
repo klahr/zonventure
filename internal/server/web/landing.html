@@ -87,6 +87,12 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="preconnect" href="https://images.pexels.com">
 <link href="https://fonts.googleapis.com/css2?family=Aclonica&family=Open+Sans:wght@400;600;700;800&family=Lora:ital,wght@1,500&display=swap" rel="stylesheet">
+
+<!-- Shared topbar / hamburger / overlay styles + the scroll-fade JS.
+     Same files are pulled in by /pricing and /manual so the menu
+     system is identical across marketing surfaces. -->
+<link rel="stylesheet" href="/assets/topbar.css">
+<script defer src="/assets/topbar.js"></script>
 <style>
   :root {
     color-scheme: light dark;
@@ -149,226 +155,9 @@
     }
   }
 
-  /* ---- topbar ----
-     Sticks to the viewport top so the brand + nav follow the user
-     down the page (GitHub pattern). Transparent at the top of the
-     page; on scroll the .at-top class drops and a translucent dark
-     background fades in.
-
-     The backdrop-blur lives on a ::before pseudo-element instead of
-     .topbar itself. Reason: any element with `backdrop-filter` (or
-     `transform`, `filter`, `perspective`) becomes a containing block
-     for fixed-positioned descendants — that would otherwise pin the
-     mobile fullscreen menu to the topbar's tiny height instead of
-     the viewport, collapsing it to ~0. */
-  :root { --topbar-h: 4.25rem; }
-  .topbar {
-    position: fixed; top: 0; left: 0; right: 0; z-index: 50;
-    padding: 1.25rem 0;
-    background: transparent;
-    border-bottom: 1px solid transparent;
-    min-height: var(--topbar-h);
-    transition: background .25s ease, border-bottom-color .25s ease;
-  }
-  .topbar::before {
-    content: '';
-    position: absolute; inset: 0;
-    background: rgba(15, 22, 36, .82);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
-    opacity: 0;
-    transition: opacity .25s ease;
-    z-index: -1;
-    pointer-events: none;
-  }
-  /* When the JS scroll listener flips off `.at-top`, the glass-blur
-     pseudo fades in and the bottom hairline border becomes visible.
-     The default state of the topbar (no class) is the scrolled state
-     so a no-JS visitor sees a readable topbar from the first paint. */
-  .topbar:not(.at-top)::before { opacity: 1; }
-  .topbar:not(.at-top) { border-bottom-color: rgba(255,255,255,.08); }
-  .topbar-row {
-    display: flex; align-items: center;
-    gap: .75rem;
-    flex-wrap: nowrap;
-  }
-  /* nav slides to the right edge regardless of how many items sit on
-     the left. Replaces the older `justify-content: space-between`
-     which only worked when the left side had exactly one item. */
-  .topbar nav { margin-left: auto; }
-  /* The hamburger toggle is a hidden checkbox + a label-styled
-     button. A pure-CSS pattern: clicking the label toggles the
-     checkbox; the `:checked` general-sibling selector below shows the
-     mobile menu without a line of JavaScript.
-     Pinned to viewport (0,0) with position:fixed so that the
-     browser's "scroll the focused element into view" never has to
-     fire — without this, tapping the hamburger from deep in the page
-     would jerk the user back to the top because the input lives at
-     body offset 0 in document flow. */
-  .nav-toggle {
-    position: fixed; top: 0; left: 0;
-    width: 1px; height: 1px;
-    opacity: 0; pointer-events: none;
-  }
-  .nav-toggle:focus-visible ~ .topbar .hamburger {
-    outline: 2px solid #fff; outline-offset: 3px; border-radius: 6px;
-  }
-  .hamburger {
-    display: none;
-    width: 2.5rem; height: 2.5rem;
-    flex-direction: column; justify-content: center; align-items: center;
-    gap: .35rem;
-    border-radius: 8px;
-    cursor: pointer;
-    background: rgba(255,255,255,.12);
-  }
-  .hamburger span {
-    display: block;
-    width: 1.4rem; height: 2px;
-    background: #fff;
-    border-radius: 2px;
-    transition: transform .2s, opacity .2s;
-  }
-  /* Hamburger → X morph. Selector traverses through the topbar
-     because the input is at body level and the hamburger lives
-     inside the topbar — so the simple `+` adjacent-sibling that the
-     standard hamburger pattern uses won't reach. */
-  .nav-toggle:checked ~ .topbar .hamburger span:nth-child(1) {
-    transform: translateY(.45rem) rotate(45deg);
-  }
-  .nav-toggle:checked ~ .topbar .hamburger span:nth-child(2) { opacity: 0; }
-  .nav-toggle:checked ~ .topbar .hamburger span:nth-child(3) {
-    transform: translateY(-.45rem) rotate(-45deg);
-  }
-  .brand {
-    font-family: 'Aclonica', Georgia, serif;
-    font-size: 1.55rem;
-    color: #fff;
-    text-decoration: none;
-    letter-spacing: .01em;
-    text-shadow: 0 2px 12px rgba(0,0,0,.25);
-  }
-  .topbar nav { display: flex; gap: 1.25rem; align-items: center; }
-  .topbar nav a {
-    color: rgba(255,255,255,.85); font-weight: 600; font-size: .95rem;
-    text-decoration: none;
-  }
-  .topbar nav a:hover { color: #fff; text-decoration: none; }
-  .topbar nav .btn {
-    padding: .55rem 1.4rem;
-    border-radius: 999px;
-    background: #fff;
-    color: var(--accent-deep);
-    font-weight: 700;
-  }
-  .topbar nav .btn:hover { background: rgba(255,255,255,.92); }
-  /* `.nav-menu` is the desktop inline link strip in the topbar.
-     `.nav-overlay` is the mobile fullscreen menu — separate element
-     at body level so its stacking context isn't trapped inside the
-     topbar. The mobile media query swaps which is visible. */
-  .nav-menu {
-    display: flex; gap: 1.25rem; align-items: center;
-  }
-  .nav-overlay { display: none; }
-
-  /* Compact, JS-free language switcher. Each link is a real anchor —
-     crawlers + curl follow them, the server reads ?lang= and sets a
-     cookie so the choice sticks. The active link gets visual weight
-     and aria-current="page" for screen readers. */
-  .lang-picker {
-    display: inline-flex;
-    align-items: center;
-    gap: .35rem;
-    padding: .25rem;
-    background: rgba(255,255,255,.12);
-    border-radius: 999px;
-    margin-right: .5rem;
-  }
-  .lang-picker .lang-link {
-    display: inline-flex; align-items: center; gap: .3rem;
-    padding: .3rem .7rem;
-    border-radius: 999px;
-    font-size: .8rem; font-weight: 600;
-    color: rgba(255,255,255,.85);
-    line-height: 1;
-  }
-  .lang-picker .lang-link:hover { color: #fff; text-decoration: none; }
-  .lang-picker .lang-link.active {
-    background: rgba(255,255,255,.92);
-    color: var(--accent-deep);
-  }
-  .lang-picker .flag { font-size: 1rem; line-height: 1; }
-  /* Narrow-screen rules: hamburger replaces the inline links, lang
-     picker shrinks to flag-only. The 720px breakpoint matches "the
-     point where Manual / Pricing / Log in stop fitting beside the
-     brand and the picker", checked at iPhone 12 (390px) through iPad
-     mini (744px) widths. */
-  @media (max-width: 45rem) {
-    .hamburger { display: flex; }
-    .topbar nav {
-      gap: .5rem;
-    }
-    /* Hide the desktop inline links; the mobile overlay below carries
-       the same set. */
-    .nav-menu { display: none; }
-
-    /* Fullscreen overlay covering the entire viewport. Lives at body
-       level (sibling of .topbar) so its stacking context is the root
-       — that puts it BELOW the topbar's z-index 50 and keeps the
-       close-X visible. iOS Safari address-bar cycling: 100dvh keeps
-       the menu pinned to the actually-visible viewport instead of
-       being cropped under the URL bar. */
-    .nav-overlay {
-      display: flex;
-      flex-direction: column;
-      align-items: stretch;
-      position: fixed;
-      inset: 0;
-      padding: calc(var(--topbar-h) + 1rem) 0 2rem;
-      background: rgba(15, 22, 36, .98);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
-      overflow-y: auto;
-      z-index: 40;
-      min-height: 100vh;
-      min-height: 100dvh;
-      /* Hidden by default; the toggle reveals it via `:checked ~`. */
-      visibility: hidden;
-      opacity: 0;
-      pointer-events: none;
-      transition: opacity .2s ease, visibility 0s linear .2s;
-    }
-    .nav-toggle:checked ~ .nav-overlay {
-      visibility: visible;
-      opacity: 1;
-      pointer-events: auto;
-      transition: opacity .2s ease, visibility 0s linear 0s;
-    }
-    .nav-overlay a {
-      color: rgba(255,255,255,.85); font-weight: 600;
-      text-decoration: none;
-      padding: 1.1rem 1.5rem;
-      font-size: 1.15rem;
-      border-bottom: 1px solid rgba(255,255,255,.08);
-    }
-    .nav-overlay a:last-child { border-bottom: none; }
-    .nav-overlay a:hover { color: #fff; }
-    .nav-overlay .btn {
-      margin: 1.25rem 1.5rem 0;
-      padding: .9rem 1.25rem;
-      border-radius: 999px;
-      background: #fff;
-      color: var(--accent-deep);
-      text-align: center;
-      font-size: 1rem;
-      border-bottom: none;
-    }
-  }
-  @media (max-width: 32rem) {
-    .lang-picker { margin-right: 0; }
-    .lang-picker .lang-link { padding: .25rem .5rem; }
-    .lang-picker .lang-link .label { display: none; }
-  }
+  /* Shared topbar / hamburger / mobile-overlay / language-picker
+     CSS lives at /assets/topbar.css and is `<link>`-ed below.
+     Page-specific styles continue here. */
 
   .btn {
     display: inline-block;
@@ -709,7 +498,7 @@
   }
 </style>
 </head>
-<body>
+<body class="has-hero">
 
 <a class="skip-link" href="#main">Skip to content</a>
 
@@ -889,21 +678,4 @@
   </div>
 </footer>
 
-<!-- Topbar scroll-fade. Tiny inline script: toggles `.at-top` on the
-     topbar so the CSS can fade the glass background in once the user
-     starts scrolling. Without JS the topbar shows its solid scrolled
-     state always — readable, just not animated. The page content
-     itself is fully rendered server-side so a no-JS / curl / crawler
-     visitor sees everything that matters. -->
-<script>
-  (function () {
-    var bar = document.querySelector('.topbar');
-    if (!bar) return;
-    var update = function () {
-      bar.classList.toggle('at-top', window.scrollY <= 4);
-    };
-    update();
-    window.addEventListener('scroll', update, { passive: true });
-  })();
-</script>
 </body></html>

@@ -286,6 +286,57 @@ func resolveLang(w http.ResponseWriter, r *http.Request) string {
 	return "en"
 }
 
+// topbarSubs returns just the topbar-related substitutions: the
+// strings every page that ships the shared topbar needs (lang code,
+// nav labels, picker active-class flags). Used by `renderTopbarPage`
+// for /manual and /pricing — pages whose body content isn't
+// translated but whose topbar / language-picker still has to honour
+// the caller's locale.
+func topbarSubs(s landingStrings, lang string) [][2]string {
+	return [][2]string{
+		{"{{LANG_CODE}}", s.LangCode},
+		{"{{LANG_ARIA}}", s.LangAriaLabel},
+		{"{{NAV_PRIMARY_ARIA}}", s.NavPrimaryARIA},
+		{"{{NAV_TOGGLE_ARIA}}", s.NavToggleARIA},
+		{"{{BRAND_ARIA}}", s.BrandARIA},
+		{"{{NAV_MANUAL}}", s.NavManual},
+		{"{{NAV_PRICING}}", s.NavPricing},
+		{"{{NAV_LOGIN}}", s.NavLogin},
+		{"{{FOOTER_ARIA}}", s.FooterARIA},
+		{"{{FOOTER_PRIVACY}}", s.FooterPrivacy},
+		{"{{FOOTER_TERMS}}", s.FooterTerms},
+		{"{{FOOTER_COPY}}", s.FooterCopy},
+		{"{{EN_CURRENT}}", ariaCurrentIf(lang == "en")},
+		{"{{SV_CURRENT}}", ariaCurrentIf(lang == "sv")},
+		{"{{EN_ACTIVE}}", activeClassIf(lang == "en")},
+		{"{{SV_ACTIVE}}", activeClassIf(lang == "sv")},
+	}
+}
+
+// renderTopbarPage reads an embedded HTML template, splices in the
+// topbar locale strings, and writes the result. Used for pages whose
+// body is plain English (today: manual, pricing) but whose shared
+// topbar + footer still need to honour the caller's locale and
+// surface the language picker correctly. The page body should
+// reference the topbar/footer keys via {{KEY}} placeholders.
+func renderTopbarPage(w http.ResponseWriter, r *http.Request, name string) {
+	body, err := webFS.ReadFile(name)
+	if err != nil {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	lang := resolveLang(w, r)
+	s := landingLocales[lang]
+	out := string(body)
+	for _, sub := range topbarSubs(s, lang) {
+		out = strings.ReplaceAll(out, sub[0], sub[1])
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Vary", "Cookie, Accept-Language")
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write([]byte(out))
+}
+
 // renderLandingPage substitutes the locale's strings into the embedded
 // landing template and writes the result. Style mirrors renderLegalPage
 // — strings.ReplaceAll over a {{KEY}} placeholder grammar so the

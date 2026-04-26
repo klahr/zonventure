@@ -52,6 +52,40 @@ func TestRenderLandingPage_NoLeftoverPlaceholders(t *testing.T) {
 	}
 }
 
+func TestRenderTopbarPage_NoLeftoverPlaceholders(t *testing.T) {
+	// Pricing + manual pages share the topbar via renderTopbarPage.
+	// Their bodies aren't translated, but the topbar chrome is — verify
+	// no `{{KEY}}` leaks survive after the render for either locale.
+	pages := []string{"web/pricing.html", "web/manual.html"}
+	langs := []string{"en", "sv"}
+	for _, p := range pages {
+		for _, lang := range langs {
+			t.Run(p+"/"+lang, func(t *testing.T) {
+				req := httptest.NewRequest("GET", "/?lang="+lang, nil)
+				rec := httptest.NewRecorder()
+				renderTopbarPage(rec, req, p)
+
+				if rec.Code != http.StatusOK {
+					t.Fatalf("status = %d, want 200", rec.Code)
+				}
+				body := rec.Body.String()
+				if strings.Contains(body, "{{") {
+					idx := strings.Index(body, "{{")
+					end := idx + 50
+					if end > len(body) {
+						end = len(body)
+					}
+					t.Fatalf("leftover placeholder at %d: %q", idx, body[idx:end])
+				}
+				// Active picker class should reflect the request locale.
+				if lang == "sv" && !strings.Contains(body, `class="lang-link active"`) {
+					t.Errorf("expected sv-active class on lang-link")
+				}
+			})
+		}
+	}
+}
+
 func TestResolveLang_Fallbacks(t *testing.T) {
 	cases := []struct {
 		name           string

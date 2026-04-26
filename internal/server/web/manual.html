@@ -48,6 +48,11 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Aclonica&family=Open+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+
+<!-- Shared topbar / hamburger / overlay styles + scroll-fade JS,
+     same as landing.html / pricing.html. -->
+<link rel="stylesheet" href="/assets/topbar.css">
+<script defer src="/assets/topbar.js"></script>
 <style>
   :root {
     color-scheme: light dark;
@@ -95,31 +100,7 @@
       scroll-behavior: auto !important;
     }
   }
-  .topbar {
-    background: var(--surface);
-    border-bottom: 1px solid var(--border-soft);
-    padding: 1rem 1.25rem;
-  }
-  .topbar-inner {
-    max-width: 60rem; margin: 0 auto;
-    display: flex; align-items: center; justify-content: space-between;
-  }
-  .brand {
-    font-family: 'Aclonica', Georgia, serif;
-    color: var(--accent); font-size: 1.4rem;
-    text-decoration: none;
-  }
-  .topbar nav { display: flex; gap: 1rem; align-items: center; }
-  .topbar nav a {
-    color: var(--muted); text-decoration: none; font-weight: 600;
-    font-size: .9rem;
-  }
-  .topbar nav a:hover { color: var(--accent); }
-  .topbar nav .btn {
-    padding: .45rem 1rem; border-radius: 999px;
-    background: var(--accent); color: #fff;
-  }
-  .topbar nav .btn:hover { color: #fff; opacity: .9; }
+  /* Topbar / nav / hamburger CSS comes from /assets/topbar.css. */
   /* Article width pinned by .layout on desktop; on mobile the
      padding is on .layout itself so main can fill the row. */
   h1 {
@@ -253,17 +234,39 @@
 
 <a class="skip-link" href="#main">Skip to content</a>
 
+<!-- Shared topbar / hamburger / overlay structure. Identical DOM
+     contract as landing / pricing; styles in /assets/topbar.css. -->
+<input type="checkbox" id="nav-toggle" class="nav-toggle" aria-label="{{NAV_TOGGLE_ARIA}}">
+
 <header class="topbar" role="banner">
-  <div class="topbar-inner">
-    <a class="brand" href="/" aria-label="Zonventure home">zonventure</a>
-    <nav aria-label="Primary">
-      <a href="/manual">Manual</a>
-      <a href="/privacy">Privacy</a>
-      <a href="/terms">Terms</a>
-      <a href="/arrange" class="btn">Log in</a>
+  <div class="wrap topbar-row">
+    <label for="nav-toggle" class="hamburger" aria-hidden="true">
+      <span></span><span></span><span></span>
+    </label>
+    <a class="brand" href="/" aria-label="{{BRAND_ARIA}}">zonventure</a>
+    <nav aria-label="{{NAV_PRIMARY_ARIA}}">
+      <div class="lang-picker" role="group" aria-label="{{LANG_ARIA}}">
+        <a href="?lang=en" class="lang-link {{EN_ACTIVE}}" {{EN_CURRENT}} hreflang="en">
+          <span class="flag" aria-hidden="true">🇬🇧</span><span class="label">EN</span>
+        </a>
+        <a href="?lang=sv" class="lang-link {{SV_ACTIVE}}" {{SV_CURRENT}} hreflang="sv">
+          <span class="flag" aria-hidden="true">🇸🇪</span><span class="label">SV</span>
+        </a>
+      </div>
+      <div class="nav-menu">
+        <a href="/manual">{{NAV_MANUAL}}</a>
+        <a href="/pricing">{{NAV_PRICING}}</a>
+        <a href="/arrange" class="btn">{{NAV_LOGIN}}</a>
+      </div>
     </nav>
   </div>
 </header>
+
+<aside class="nav-overlay" aria-label="{{NAV_PRIMARY_ARIA}}">
+  <a href="/manual">{{NAV_MANUAL}}</a>
+  <a href="/pricing">{{NAV_PRICING}}</a>
+  <a href="/arrange" class="btn">{{NAV_LOGIN}}</a>
+</aside>
 
 <div class="layout">
 
