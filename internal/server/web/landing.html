@@ -155,10 +155,14 @@
     padding: 1.25rem 0;
   }
   .topbar-row {
-    display: flex; align-items: center; justify-content: space-between;
-    gap: .5rem;
+    display: flex; align-items: center;
+    gap: .75rem;
     flex-wrap: nowrap;
   }
+  /* nav slides to the right edge regardless of how many items sit on
+     the left. Replaces the older `justify-content: space-between`
+     which only worked when the left side had exactly one item. */
+  .topbar nav { margin-left: auto; }
   /* The hamburger toggle is a hidden checkbox + a label-styled
      button. A pure-CSS pattern: clicking the label toggles the
      checkbox; the `:checked` general-sibling selector below shows the
@@ -634,15 +638,18 @@
 
 <header class="topbar" role="banner">
   <div class="wrap topbar-row">
-    <a class="brand" href="/" aria-label="{{BRAND_ARIA}}">zonventure</a>
     <!-- Pure-CSS mobile menu: a hidden checkbox toggles a sibling
          general-selector rule that reveals .nav-menu. The label is
          the visible hamburger, only shown on small screens via the
-         .hamburger media query rule. -->
+         .hamburger media query rule. Toggle + label sit at the start
+         of the DOM so on mobile the hamburger reads as the first item
+         (top-left). On wide screens .hamburger is `display: none`, so
+         the brand is the leading visible element as before. -->
     <input type="checkbox" id="nav-toggle" class="nav-toggle" aria-label="{{NAV_TOGGLE_ARIA}}">
     <label for="nav-toggle" class="hamburger" aria-hidden="true">
       <span></span><span></span><span></span>
     </label>
+    <a class="brand" href="/" aria-label="{{BRAND_ARIA}}">zonventure</a>
     <nav aria-label="{{NAV_PRIMARY_ARIA}}">
       <div class="lang-picker" role="group" aria-label="{{LANG_ARIA}}">
         <a href="?lang=en" class="lang-link {{EN_ACTIVE}}" {{EN_CURRENT}} hreflang="en">
