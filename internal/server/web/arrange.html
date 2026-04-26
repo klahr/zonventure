@@ -5277,13 +5277,15 @@ function renderLibraryEdit(view, adv) {
   let dragFrom = -1; // original index, captured at dragstart
   let dragEl = null; // the card being dragged
   const indexOfCard = (card) => Array.from(list.children).indexOf(card);
-  // moveOver swaps dragEl past `target` when the cursor is inside the
-  // *central* portion of target. The outer 20% on each end is a dead
-  // zone — that buffer is what stops oscillation: after a swap,
-  // dragEl ends up under the cursor, and the cursor has to travel
-  // past 20% of the previous-target's height before a reverse swap
-  // can fire. Pure "swap on any entry" had zero hysteresis and
-  // produced fast back-and-forth flicker at every card boundary.
+  // moveOver swaps dragEl past `target` on cursor entry, with a
+  // post-swap "suppression" zone instead of a fixed dead-zone
+  // fraction. After a swap, dragEl occupies a new spot under the
+  // cursor — to fire another swap, the cursor must first LEAVE
+  // dragEl's new bounding rect entirely. That hysteresis scales with
+  // the dragged card's height (taller card → larger suppression
+  // zone), which is exactly what's needed when puzzle cards have
+  // wildly different heights (a short title-only card vs. a tall
+  // card with images and a long prompt).
   //
   // Direction is inferred from current DOM order: if dragEl precedes
   // target the user is dragging downward, so we move dragEl AFTER
@@ -5294,12 +5296,14 @@ function renderLibraryEdit(view, adv) {
   // position and animate the transform to 0. The dragged card itself
   // is excluded — it'd fight the browser's drag image, which is
   // already following the cursor.
-  const ENTRY_DEAD_ZONE = 0.2; // fraction of target.height ignored at each end
   const moveOver = (target, clientY) => {
     if (!dragEl || target === dragEl) return;
-    const rect = target.getBoundingClientRect();
-    const margin = rect.height * ENTRY_DEAD_ZONE;
-    if (clientY < rect.top + margin || clientY > rect.bottom - margin) return;
+    // Suppression: while the cursor is still inside dragEl's bounds
+    // from a previous swap, refuse to fire another one. The flag
+    // clears the moment the cursor exits dragEl, so the next card
+    // entered will swap as expected.
+    const dragRect = dragEl.getBoundingClientRect();
+    if (clientY >= dragRect.top && clientY <= dragRect.bottom) return;
     const draggedFirst = !!(dragEl.compareDocumentPosition(target) & Node.DOCUMENT_POSITION_FOLLOWING);
     const desiredBefore = draggedFirst ? target.nextSibling : target;
     if (dragEl.nextSibling === desiredBefore) return; // already in slot
