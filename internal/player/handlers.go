@@ -195,7 +195,7 @@ type teamContext struct {
 	CompletedAt          sql.NullString
 }
 
-// publishEventStartedAuto emits run.started for an event that was just
+// publishEventStartedAuto emits event.started for an event that was just
 // auto-promoted (player arrived at the scheduled time). Distinct
 // from the manual-start webhook in admin/handlers.go via the "manual"
 // field on the payload.
@@ -312,7 +312,7 @@ type State struct {
 	Gate   *gateDTO          `json:"gate,omitempty"`
 	Colors *adventure.Colors `json:"colors,omitempty"`
 	// ScheduledAt / ServerNow let the pre-start countdown tick against
-	// the server's clock. ScheduledAt is only set for scheduled runs.
+	// the server's clock. ScheduledAt is only set for scheduled events.
 	ScheduledAt string `json:"scheduled_at,omitempty"`
 	ServerNow   string `json:"server_now,omitempty"`
 	// NoAnswer flags a puzzle whose accept list is empty — the player
@@ -321,7 +321,7 @@ type State struct {
 	// Check-location CTA.
 	NoAnswer bool `json:"no_answer,omitempty"`
 	// IntroText / OutroText are the author's custom copy for the
-	// first-run welcome dialog and the post-completion stats screen.
+	// first-event welcome dialog and the post-completion stats screen.
 	// Empty → client falls back to its built-in default copy.
 	IntroText string `json:"intro_text,omitempty"`
 	OutroText string `json:"outro_text,omitempty"`
@@ -372,7 +372,7 @@ func teamArrival(tc teamContext) time.Time {
 // buildHintDTOs renders + schedules each of a page's hints for the
 // player. Output preserves author order; each entry's
 // UnlocksInSeconds counts down to delay_seconds after the team's
-// arrival. When arrival is the zero time (run not started yet),
+// arrival. When arrival is the zero time (event not started yet),
 // everything stays locked.
 func buildHintDTOs(hints []adventure.Hint, arrival time.Time) []hintDTO {
 	out := make([]hintDTO, 0, len(hints))
@@ -595,7 +595,7 @@ func (h *Handlers) applyAdvance(ctx context.Context, slot auth.Slot) (AnswerResp
 		// after we return (it already does on any answer).
 		runCompleted, err := activity.MaybeCompleteEvent(ctx, tx, tc.EventID)
 		if err != nil {
-			return AnswerResponse{}, tc.EventID, http.StatusInternalServerError, "complete-run check failed"
+			return AnswerResponse{}, tc.EventID, http.StatusInternalServerError, "complete-event check failed"
 		}
 		if err := tx.Commit(); err != nil {
 			return AnswerResponse{}, tc.EventID, http.StatusInternalServerError, "commit failed"
@@ -723,7 +723,7 @@ func (h *Handlers) applyAnswer(ctx context.Context, slot auth.Slot, answer strin
 	// commit or roll back as a single unit — without the tx a partial
 	// failure can leave (a) an answer_attempts row whose runevent never
 	// landed, or (b) a team that advanced but whose AnswerRight
-	// runevent is missing from the activity feed. Reads above this
+	// activity row is missing from the activity feed. Reads above this
 	// point already finished, so the tx only spans the writes.
 	tx, err := h.DB.BeginTx(ctx, nil)
 	if err != nil {
@@ -763,7 +763,7 @@ func (h *Handlers) applyAnswer(ctx context.Context, slot auth.Slot, answer strin
 			activity.TeamCompleted, nil)
 		runCompleted, err := activity.MaybeCompleteEvent(ctx, tx, tc.EventID)
 		if err != nil {
-			return AnswerResponse{}, tc.EventID, http.StatusInternalServerError, "complete-run check failed"
+			return AnswerResponse{}, tc.EventID, http.StatusInternalServerError, "complete-event check failed"
 		}
 		if err := tx.Commit(); err != nil {
 			return AnswerResponse{}, tc.EventID, http.StatusInternalServerError, "commit failed"

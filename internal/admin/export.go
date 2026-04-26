@@ -18,7 +18,7 @@ import (
 //   - Personal (always): user row + active staff sessions + auth_events
 //     for them.
 //   - Organization (org_admin / org_member only): org row, owned
-//     adventures, assignments, purchases, runs (with team + slot
+//     adventures, assignments, purchases, events (with team + slot
 //     summaries; full ping/answer rows are linked by event id but
 //     bundled inline so the file is self-contained).
 //
@@ -74,7 +74,7 @@ type exportPayload struct {
 	Adventures     []adventureExport  `json:"adventures,omitempty"`
 	Assignments    []assignmentExport `json:"assignments,omitempty"`
 	Purchases      []purchaseExport   `json:"purchases,omitempty"`
-	Runs           []runExport        `json:"runs,omitempty"`
+	Events         []eventExport      `json:"events,omitempty"`
 }
 
 type userExport struct {
@@ -135,7 +135,7 @@ type purchaseExport struct {
 	PaidAt         string `json:"paid_at,omitempty"`
 }
 
-type runExport struct {
+type eventExport struct {
 	ID            int64        `json:"id"`
 	Name          string       `json:"name,omitempty"`
 	AdventureSlug string       `json:"adventure_slug"`
@@ -220,7 +220,7 @@ func loadOrgExport(ctx context.Context, db *sql.DB, orgID int64, out *exportPayl
 	if err := loadOrgPurchases(ctx, db, orgID, out); err != nil {
 		return err
 	}
-	return loadOrgRuns(ctx, db, orgID, out)
+	return loadOrgEvents(ctx, db, orgID, out)
 }
 
 func loadOrgAdventures(ctx context.Context, db *sql.DB, orgID int64, out *exportPayload) error {
@@ -282,7 +282,7 @@ func loadOrgPurchases(ctx context.Context, db *sql.DB, orgID int64, out *exportP
 	return rows.Err()
 }
 
-func loadOrgRuns(ctx context.Context, db *sql.DB, orgID int64, out *exportPayload) error {
+func loadOrgEvents(ctx context.Context, db *sql.DB, orgID int64, out *exportPayload) error {
 	rows, err := db.QueryContext(ctx, `
 		SELECT id, name, adventure_slug, state,
 		       COALESCE(started_at,''), COALESCE(completed_at,''), created_at
@@ -292,30 +292,30 @@ func loadOrgRuns(ctx context.Context, db *sql.DB, orgID int64, out *exportPayloa
 		return err
 	}
 	defer rows.Close()
-	var runs []runExport
+	var events []eventExport
 	for rows.Next() {
-		var ru runExport
-		if err := rows.Scan(&ru.ID, &ru.Name, &ru.AdventureSlug, &ru.State,
-			&ru.StartedAt, &ru.CompletedAt, &ru.CreatedAt); err != nil {
+		var ev eventExport
+		if err := rows.Scan(&ev.ID, &ev.Name, &ev.AdventureSlug, &ev.State,
+			&ev.StartedAt, &ev.CompletedAt, &ev.CreatedAt); err != nil {
 			return err
 		}
-		runs = append(runs, ru)
+		events = append(events, ev)
 	}
 	if err := rows.Err(); err != nil {
 		return err
 	}
-	for i := range runs {
-		teams, err := loadRunTeams(ctx, db, runs[i].ID)
+	for i := range events {
+		teams, err := loadEventTeams(ctx, db, events[i].ID)
 		if err != nil {
-			return fmt.Errorf("run %d teams: %w", runs[i].ID, err)
+			return fmt.Errorf("event %d teams: %w", events[i].ID, err)
 		}
-		runs[i].Teams = teams
+		events[i].Teams = teams
 	}
-	out.Runs = runs
+	out.Events = events
 	return nil
 }
 
-func loadRunTeams(ctx context.Context, db *sql.DB, eventID int64) ([]teamExport, error) {
+func loadEventTeams(ctx context.Context, db *sql.DB, eventID int64) ([]teamExport, error) {
 	rows, err := db.QueryContext(ctx, `
 		SELECT id, name, current_page_index, COALESCE(completed_at,''), created_at
 		FROM teams WHERE event_id = $1 ORDER BY id

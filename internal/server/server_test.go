@@ -199,7 +199,7 @@ func TestFullFlow(t *testing.T) {
 		ID int64 `json:"id"`
 	}
 	if s := arr.do("POST", "/api/admin/events", map[string]any{"assignment_id": assignmentID}, &run); s != 201 {
-		t.Fatalf("create run = %d", s)
+		t.Fatalf("create event = %d", s)
 	}
 
 	// Create a team with one slot — the server mints a magic-link token.
@@ -253,7 +253,7 @@ func TestFullFlow(t *testing.T) {
 
 	// --- Start the event. ---
 	if s := arr.do("POST", "/api/admin/events/"+itoa(run.ID)+"/start", map[string]string{}, nil); s != 204 {
-		t.Fatalf("start run = %d", s)
+		t.Fatalf("start event = %d", s)
 	}
 
 	// State should now be running on page 0 with a prompt.

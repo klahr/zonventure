@@ -3694,7 +3694,7 @@ async function openEditSchedule(run) {
     const when = h('input', { type: 'datetime-local', value: prefill });
     const form = h('form', {},
       h('p', { class: 'muted', style: 'font-size:.85rem; margin-bottom:.5rem' },
-        t('The server will flip the event to running automatically at the time below. Leave empty and hit Clear to remove the auto-start.')),
+        t('The server will start the event automatically at the time below. Leave empty and hit Clear to remove the auto-start.')),
       h('label', { class: 'field' }, h('span', {}, t('Auto-start at')), when),
       h('div', { class: 'row between', style: 'margin-top:.5rem' },
         event.scheduled_at
@@ -6943,18 +6943,18 @@ function viewManual(view, anchor) {
 
     /* ---- 2. First steps ---- */
     sec('first-steps', t('First steps'),
-      p(t('When you sign up, you create an organization. Everyone in your organization shares the same adventures, assignments, and runs.')),
+      p(t('When you sign up, you create an organization. Everyone in your organization shares the same adventures, assignments, and events.')),
       h('h3', {}, t('Verify your email')),
-      p(t('After signup we email a verification link. You can log in before clicking it, but money-touching actions (buying assignments, scheduling runs) are blocked until you verify. The dashboard shows a banner with a "Resend" button if it didn\'t arrive.')),
+      p(t('After signup we email a verification link. You can log in before clicking it, but money-touching actions (buying assignments, scheduling events) are blocked until you verify. The dashboard shows a banner with a "Resend" button if it didn\'t arrive.')),
       shot(t('[Screenshot: dashboard with the unverified-email banner]')),
       h('h3', {}, t('The dashboard')),
-      p(t('The dashboard is your home: at-a-glance view of upcoming runs, ready-to-schedule assignments, and shortcuts to the things you most often do.')),
+      p(t('The dashboard is your home: at-a-glance view of upcoming events, ready-to-schedule assignments, and shortcuts to the things you most often do.')),
       shot(t('[Screenshot: a populated arranger dashboard]')),
     ),
 
     /* ---- 3. Authoring an adventure ---- */
     sec('adventure', t('Authoring an adventure'),
-      p(t('Adventures live in the Library. You can author your own, or run one from the global catalog (the catalog is curated by the platform admin and always free to use).')),
+      p(t('Adventures live in the Library. You can author your own, or pick one from the global catalog (the catalog is curated by the platform admin and always free to use).')),
       h('h3', {}, t('Create an adventure')),
       ol(
         t('Click "Library" in the sidebar.'),
@@ -7073,10 +7073,10 @@ function viewManual(view, anchor) {
       h('h3', {}, t('Start, pause, resume')),
       p(t('A scheduled event auto-starts at its time, but you can also start it manually from the event-detail page. Pause the event to freeze player progress (lunch break, weather delay), then Resume to continue.')),
       h('h3', {}, t('The activity feed')),
-      p(t('The event-detail page has a live activity feed — answer attempts (right and wrong), team completions, gate reaches, run state changes. Useful for noticing a stuck team in real time.')),
-      shot(t('[Screenshot: activity feed during a live run]')),
+      p(t('The event-detail page has a live activity feed — answer attempts (right and wrong), team completions, gate reaches, state changes. Useful for noticing a stuck team in real time.')),
+      shot(t('[Screenshot: activity feed during a live event]')),
       h('h3', {}, t('The live view')),
-      p(t('Each run has a public-ish "live view" URL — a leaderboard plus optional audience map. Open it on a TV in the lobby; spectators can see team progress without logging in.')),
+      p(t('Each event has a public-ish "live view" URL — a leaderboard plus optional audience map. Open it on a TV in the lobby; spectators can see team progress without logging in.')),
       p(t('The map is OFF by default for privacy. Toggle it on from the event settings if your players are okay with their position being shown to the audience.')),
       shot(t('[Screenshot: the live view leaderboard with map enabled]')),
       h('h3', {}, t('Completion')),

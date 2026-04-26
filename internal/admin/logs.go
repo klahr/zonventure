@@ -51,7 +51,7 @@ func (h *Handlers) ListLogs(w http.ResponseWriter, r *http.Request) {
 }
 
 // WSLogs streams new log entries in real time. Each push is a single
-// Entry JSON. No per-run topic: there's one global log stream.
+// Entry JSON. No per-event topic: there's one global log stream.
 func (h *Handlers) WSLogs(w http.ResponseWriter, r *http.Request) {
 	conn, err := ws.Accept(w, r)
 	if err != nil {

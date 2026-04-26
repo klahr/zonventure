@@ -17,7 +17,7 @@ import (
 // and ranking rules mirror the public leaderboard's so a TV shot and
 // the exported file agree.
 //
-// Filename is "run-{id}-results.csv" so the arranger can drop several
+// Filename is "event-{id}-results.csv" so the arranger can drop several
 // into a folder without renaming.
 func (h *Handlers) ExportEventResults(w http.ResponseWriter, r *http.Request) {
 	eventID, ok := eventIDFrom(r)

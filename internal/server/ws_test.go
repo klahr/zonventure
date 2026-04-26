@@ -108,7 +108,7 @@ func setupRun(t *testing.T, ts *httptest.Server, assignmentID int64) (arranger *
 	}
 	if s := arr.do("POST", "/api/admin/events",
 		map[string]any{"assignment_id": assignmentID}, &run); s != 201 {
-		t.Fatalf("create run = %d", s)
+		t.Fatalf("create event = %d", s)
 	}
 
 	var team struct {
@@ -179,7 +179,7 @@ func TestWSPlay_LocationFrame(t *testing.T) {
 	defer cleanup()
 	arr, _, slotToken, eventID := setupRun(t, ts, assignmentID)
 	if s := arr.do("POST", "/api/admin/events/"+itoa(eventID)+"/start", map[string]string{}, nil); s != 204 {
-		t.Fatalf("start run = %d", s)
+		t.Fatalf("start event = %d", s)
 	}
 	alice := loginPlayer(t, ts, slotToken)
 
@@ -218,7 +218,7 @@ func TestWSPlay_AnswerRoundTrip(t *testing.T) {
 	defer cleanup()
 	arr, _, slotToken, eventID := setupRun(t, ts, assignmentID)
 	if s := arr.do("POST", "/api/admin/events/"+itoa(eventID)+"/start", map[string]string{}, nil); s != 204 {
-		t.Fatalf("start run = %d", s)
+		t.Fatalf("start event = %d", s)
 	}
 	alice := loginPlayer(t, ts, slotToken)
 
@@ -345,7 +345,7 @@ func TestWSLive_PushedOnMutation(t *testing.T) {
 	recvKind(t, c, "snapshot", 2*time.Second) // initial push
 
 	if s := arr.do("POST", "/api/admin/events/"+itoa(eventID)+"/start", map[string]string{}, nil); s != 204 {
-		t.Fatalf("start run = %d", s)
+		t.Fatalf("start event = %d", s)
 	}
 
 	snap := recvKind(t, c, "snapshot", 2*time.Second)
@@ -436,7 +436,7 @@ func TestWSArrange_PushedOnMutation(t *testing.T) {
 	// Start the event — the broadcast should re-push event_detail (and the
 	// other kinds) to the watcher.
 	if s := arr.do("POST", "/api/admin/events/"+itoa(eventID)+"/start", map[string]string{}, nil); s != 204 {
-		t.Fatalf("start run = %d", s)
+		t.Fatalf("start event = %d", s)
 	}
 	m := recvKind(t, c, "event_detail", 2*time.Second)
 	var rd struct {
@@ -475,12 +475,12 @@ func TestWSArrange_UnwatchStopsPushes(t *testing.T) {
 	}
 
 	if s := arr.do("POST", "/api/admin/events/"+itoa(eventID)+"/start", map[string]string{}, nil); s != 204 {
-		t.Fatalf("start run = %d", s)
+		t.Fatalf("start event = %d", s)
 	}
 	mustNotRecv(t, c, 300*time.Millisecond)
 }
 
-func TestWSArrange_UnknownRunEmitsError(t *testing.T) {
+func TestWSArrange_UnknownEventEmitsError(t *testing.T) {
 	// Watching an event id that doesn't exist must emit watch_error, not
 	// silently succeed — same authorization pathway as forbidden runs
 	// (the server checks run existence and org membership together).
@@ -602,7 +602,7 @@ func TestBroadcast_PlayAnswerReachesLive(t *testing.T) {
 	defer cleanup()
 	arr, liveToken, slotToken, eventID := setupRun(t, ts, assignmentID)
 	if s := arr.do("POST", "/api/admin/events/"+itoa(eventID)+"/start", map[string]string{}, nil); s != 204 {
-		t.Fatalf("start run = %d", s)
+		t.Fatalf("start event = %d", s)
 	}
 
 	live := dialWS(t, ts, "/ws/live/"+liveToken, nil)

@@ -85,14 +85,14 @@ func TestHub_TopicIsolation(t *testing.T) {
 	h := ws.NewHub()
 	a, unsubA := h.Subscribe("event:1")
 	defer unsubA()
-	b, unsubB := h.Subscribe("run:2")
+	b, unsubB := h.Subscribe("event:2")
 	defer unsubB()
 
 	h.Publish("event:1", "changed", nil)
 	recvTimeout(t, a, 500*time.Millisecond)
 	mustNotRecv(t, b, 50*time.Millisecond)
 
-	h.Publish("run:2", "changed", nil)
+	h.Publish("event:2", "changed", nil)
 	recvTimeout(t, b, 500*time.Millisecond)
 	mustNotRecv(t, a, 50*time.Millisecond)
 }
@@ -102,11 +102,11 @@ func TestHub_MultipleSubscribers(t *testing.T) {
 	const n = 4
 	chans := make([]<-chan []byte, n)
 	for i := range chans {
-		c, unsub := h.Subscribe("run:7")
+		c, unsub := h.Subscribe("event:7")
 		defer unsub()
 		chans[i] = c
 	}
-	h.Publish("run:7", "changed", map[string]string{"s": "hi"})
+	h.Publish("event:7", "changed", map[string]string{"s": "hi"})
 	for i, c := range chans {
 		kind, _ := decode(t, recvTimeout(t, c, 500*time.Millisecond))
 		if kind != "changed" {

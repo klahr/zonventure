@@ -102,7 +102,7 @@ func TestPages_DisabledIsSkippedByPlayer(t *testing.T) {
 		t.Fatalf("arranger login = %d", s)
 	}
 	if s := arr.do("POST", "/api/admin/events/"+itoa(eventID)+"/start", map[string]string{}, nil); s != 204 {
-		t.Fatalf("start run = %d", s)
+		t.Fatalf("start event = %d", s)
 	}
 	alice := loginPlayer(t, ts, slotToken)
 

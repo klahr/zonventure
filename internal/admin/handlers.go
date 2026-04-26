@@ -496,6 +496,9 @@ func (h *Handlers) transitionEvent(w http.ResponseWriter, r *http.Request, actio
 	// kind today; pause / resume are intra-event lifecycle that
 	// customers haven't asked for.
 	if action == "start" {
+		// Best-effort: load the slug + name so the webhook payload
+		// carries them. A miss just emits the webhook with empty
+		// strings — better than skipping the publish.
 		var (
 			advSlug string
 			runName string

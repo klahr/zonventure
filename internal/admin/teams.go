@@ -65,6 +65,9 @@ func (h *Handlers) RenameTeam(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusBadRequest, "name required")
 		return
 	}
+	// Best-effort: capture the old name for the audit row. A miss
+	// here just means the audit shows old=""; not worth failing the
+	// rename for.
 	var oldName string
 	_ = h.DB.QueryRowContext(r.Context(), `SELECT name FROM teams WHERE id = $1`, teamID).Scan(&oldName)
 	if _, err := h.DB.ExecContext(r.Context(), `UPDATE teams SET name = $1 WHERE id = $2`, req.Name, teamID); err != nil {
@@ -92,6 +95,8 @@ func (h *Handlers) DeleteTeam(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	// Best-effort: capture the name for the audit row before delete.
+	// If the row's already gone, scan errors and we audit with name="".
 	var name string
 	_ = h.DB.QueryRowContext(r.Context(), `SELECT name FROM teams WHERE id = $1`, teamID).Scan(&name)
 	if _, err := h.DB.ExecContext(r.Context(), `DELETE FROM teams WHERE id = $1`, teamID); err != nil {
@@ -374,7 +379,8 @@ func (h *Handlers) SetTeamAvatar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Hub push so the event-detail view and any live-board listeners pick
-	// up the new picture without a manual refresh.
+	// up the new picture without a manual refresh. Best-effort: a missing
+	// event_id (race with team deletion) just means we skip the broadcast.
 	var eventID int64
 	_ = h.DB.QueryRowContext(r.Context(), `SELECT event_id FROM teams WHERE id = $1`, teamID).Scan(&eventID)
 	if eventID > 0 {

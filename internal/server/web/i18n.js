@@ -367,7 +367,7 @@
       'Start event': 'Starta event',
       'Change auto-start': 'Ändra autostart',
       'Set auto-start': 'Ställ in autostart',
-      'The server will flip the event to running automatically at the time below. Leave empty and hit Clear to remove the auto-start.':
+      'The server will start the event automatically at the time below. Leave empty and hit Clear to remove the auto-start.':
         'Servern sätter eventet till pågår automatiskt vid tiden nedan. Lämna tomt och tryck Rensa för att ta bort autostarten.',
       'Auto-start at': 'Autostart kl.',
       'Clear': 'Rensa',
@@ -1058,20 +1058,20 @@
       'Mental model: an Adventure is a recipe; an Assignment is the right to cook it once; a Event is one specific dinner; a Team is the people sitting at a table.':
           'Tankebild: ett Äventyr är ett recept; ett Uppdrag är rätten att laga det en gång; en Event är en specifik middag; ett Lag är personerna vid bordet.',
       // first steps
-      'When you sign up, you create an organization. Everyone in your organization shares the same adventures, assignments, and runs.':
+      'When you sign up, you create an organization. Everyone in your organization shares the same adventures, assignments, and events.':
           'När du registrerar dig skapar du en organisation. Alla i din organisation delar samma äventyr, uppdrag och event.',
       'Verify your email': 'Verifiera din e-post',
-      'After signup we email a verification link. You can log in before clicking it, but money-touching actions (buying assignments, scheduling runs) are blocked until you verify. The dashboard shows a banner with a "Resend" button if it didn\'t arrive.':
+      'After signup we email a verification link. You can log in before clicking it, but money-touching actions (buying assignments, scheduling events) are blocked until you verify. The dashboard shows a banner with a "Resend" button if it didn\'t arrive.':
           'Efter registreringen skickar vi en verifieringslänk. Du kan logga in innan du klickar, men åtgärder som rör pengar (köp av uppdrag, schemaläggning av event) blockeras tills du verifierar. Översikten visar en banderoll med en "Skicka igen"-knapp om mejlet inte kom fram.',
       '[Screenshot: dashboard with the unverified-email banner]':
           '[Skärmdump: översikt med banderoll om overifierad e-post]',
       'The dashboard': 'Översikten',
-      'The dashboard is your home: at-a-glance view of upcoming runs, ready-to-schedule assignments, and shortcuts to the things you most often do.':
+      'The dashboard is your home: at-a-glance view of upcoming events, ready-to-schedule assignments, and shortcuts to the things you most often do.':
           'Översikten är ditt hem: en snabb vy över kommande event, uppdrag redo att schemaläggas och genvägar till det du gör oftast.',
       '[Screenshot: a populated arranger dashboard]':
           '[Skärmdump: en ifylld arrangörsöversikt]',
       // adventure
-      'Adventures live in the Library. You can author your own, or run one from the global catalog (the catalog is curated by the platform admin and always free to use).':
+      'Adventures live in the Library. You can author your own, or pick one from the global catalog (the catalog is curated by the platform admin and always free to use).':
           'Äventyr finns i Biblioteket. Du kan skapa egna eller köra ett från den globala katalogen (katalogen kureras av plattformsadministratören och är alltid gratis att använda).',
       'Create an adventure': 'Skapa ett äventyr',
       'Click "Library" in the sidebar.': 'Klicka på "Bibliotek" i sidomenyn.',
@@ -1204,12 +1204,12 @@
       'A scheduled event auto-starts at its time, but you can also start it manually from the event-detail page. Pause the event to freeze player progress (lunch break, weather delay), then Resume to continue.':
           'En schemalagd event startar automatiskt vid sin tid, men du kan också starta den manuellt från detaljsidan. Pausa eventet för att frysa spelarnas progress (lunchpaus, väderavbrott), och Återuppta för att fortsätta.',
       'The activity feed': 'Aktivitetsflödet',
-      'The event-detail page has a live activity feed — answer attempts (right and wrong), team completions, gate reaches, run state changes. Useful for noticing a stuck team in real time.':
+      'The event-detail page has a live activity feed — answer attempts (right and wrong), team completions, gate reaches, state changes. Useful for noticing a stuck team in real time.':
           'Detaljsidan har ett liveflöde — svarsförsök (rätt och fel), färdiga lag, platsgrindar som nås, statusändringar. Bra för att upptäcka ett fastlåst lag i realtid.',
-      '[Screenshot: activity feed during a live run]':
+      '[Screenshot: activity feed during a live event]':
           '[Skärmdump: aktivitetsflödet under en pågående event]',
       'The live view': 'Livevyn',
-      'Each run has a public-ish "live view" URL — a leaderboard plus optional audience map. Open it on a TV in the lobby; spectators can see team progress without logging in.':
+      'Each event has a public-ish "live view" URL — a leaderboard plus optional audience map. Open it on a TV in the lobby; spectators can see team progress without logging in.':
           'Varje event har en (nästan) publik "live"-URL — en topplista plus en valfri publikkarta. Öppna den på en TV i lobbyn; åskådare kan se lagens progress utan att logga in.',
       'The map is OFF by default for privacy. Toggle it on from the event settings if your players are okay with their position being shown to the audience.':
           'Kartan är AV som standard för integritetens skull. Slå på den i eventets inställningar om dina spelare är okej med att deras position visas för publiken.',

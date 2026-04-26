@@ -123,7 +123,8 @@ func (h *Handlers) CreatePurchase(w http.ResponseWriter, r *http.Request) {
 	amount := req.MaxTeams * PricePerSlotCents
 
 	// Look up the adventure title up-front so we can pass a friendly
-	// product name to Stripe Checkout instead of the bare slug.
+	// product name to Stripe Checkout instead of the bare slug. Best-
+	// effort: a miss falls through to using the slug itself.
 	var advTitle string
 	_ = h.DB.QueryRowContext(r.Context(),
 		`SELECT title FROM adventures WHERE slug = $1`, req.AdventureSlug).Scan(&advTitle)
@@ -148,12 +149,16 @@ func (h *Handlers) CreatePurchase(w http.ResponseWriter, r *http.Request) {
 			id, req.AdventureSlug, advTitle, req.MaxTeams, amount, me.Email)
 		if serr != nil {
 			// Roll back the pending row so we don't leave dangling
-			// pendings every time Stripe is down.
+			// pendings every time Stripe is down. Best-effort: if
+			// the DELETE itself fails, the user already sees a 502
+			// and the orphan row is cleaned by the next admin sweep.
 			_, _ = h.DB.ExecContext(r.Context(), `DELETE FROM purchases WHERE id = $1`, id)
 			httpx.Error(w, http.StatusBadGateway, "stripe checkout failed: "+serr.Error())
 			return
 		}
-		// Stash the session id so the webhook can correlate.
+		// Stash the session id so the webhook can correlate. Best-
+		// effort: a missing UPDATE means the webhook still finds the
+		// purchase via the metadata.zv_purchase_id round-trip.
 		_, _ = h.DB.ExecContext(r.Context(),
 			`UPDATE purchases SET provider_session_id = $1 WHERE id = $2`, sessID, id)
 		checkoutURL = url

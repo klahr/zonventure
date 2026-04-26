@@ -69,15 +69,15 @@ const batchSize = 5000
 
 func sweep(ctx context.Context, db *sql.DB, cfg Config) {
 	if cfg.LocationDays > 0 {
-		pruneCompletedRunPings(ctx, db, cfg.LocationDays)
-		pruneCompletedRunAnswers(ctx, db, cfg.LocationDays)
+		pruneCompletedEventPings(ctx, db, cfg.LocationDays)
+		pruneCompletedEventAnswers(ctx, db, cfg.LocationDays)
 	}
 	if cfg.AuditDays > 0 {
 		pruneAuthEvents(ctx, db, cfg.AuditDays)
 	}
 }
 
-func pruneCompletedRunPings(ctx context.Context, db *sql.DB, days int) {
+func pruneCompletedEventPings(ctx context.Context, db *sql.DB, days int) {
 	stmt := `
 		DELETE FROM location_pings
 		WHERE id IN (
@@ -93,7 +93,7 @@ func pruneCompletedRunPings(ctx context.Context, db *sql.DB, days int) {
 	runBoundedDelete(ctx, db, "retention.location_pings", stmt, days)
 }
 
-func pruneCompletedRunAnswers(ctx context.Context, db *sql.DB, days int) {
+func pruneCompletedEventAnswers(ctx context.Context, db *sql.DB, days int) {
 	stmt := `
 		DELETE FROM answer_attempts
 		WHERE id IN (

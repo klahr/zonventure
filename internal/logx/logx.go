@@ -2,13 +2,13 @@
 // lines to stderr in a compact format and keeps the last N entries in
 // a ring buffer that the admin UI streams via WebSocket.
 //
-//	2026-04-24T15:23:45Z INFO run.started event_id=12 team_id=4
+//	2026-04-24T15:23:45Z INFO event.started event_id=12 team_id=4
 //
 // Conventions:
 //   - Levels: DEBUG | INFO | WARN | ERROR.
 //   - Msg is a short event label, not a sentence. Details go in attrs.
 //   - Attrs are alternating key/value pairs:
-//       logx.Info("event.started", "event_id", run.ID, "auto", true)
+//       logx.Info("event.started", "event_id", event.ID, "auto", true)
 //   - Uneven attrs are rendered as <bad-attrs> — the emitter is wrong,
 //     not the world, so don't crash.
 package logx

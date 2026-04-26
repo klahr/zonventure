@@ -1,4 +1,4 @@
-// Package webhooks delivers run-lifecycle and billing events to
+// Package webhooks delivers event-lifecycle and billing events to
 // per-org HTTP endpoints that arrangers configure on themselves.
 //
 // The shape mirrors the Stripe contract on purpose: signed POST,
