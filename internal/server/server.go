@@ -479,6 +479,12 @@ func New(cfg Config) http.Handler {
 			r.Post("/admins", adminH.CreateAdmin)
 			r.Delete("/admins/{userID}", adminH.DeleteAdmin)
 
+			// Manual email verification — admin escape hatch when an
+			// arranger never received the self-serve verification mail.
+			// Idempotent + audit-logged in auth_events as
+			// event=email_verify reason=admin_manual.
+			r.Post("/users/{userID}/verify-email", adminH.VerifyMemberEmail)
+
 			// Test-email knob: lets the operator verify SMTP config
 			// before customers hit the broken signup flow. Body just
 			// names a recipient — content is fixed server-side so

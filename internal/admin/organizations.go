@@ -25,9 +25,10 @@ type assignmentDTO struct {
 }
 
 type orgMemberDTO struct {
-	ID       int64  `json:"id"`
-	Username string `json:"username"`
-	Role     string `json:"role"` // org_admin | org_member
+	ID            int64  `json:"id"`
+	Username      string `json:"username"`
+	Role          string `json:"role"` // org_admin | org_member
+	EmailVerified bool   `json:"email_verified"`
 }
 
 type organizationDTO struct {
@@ -603,7 +604,7 @@ func (h *Handlers) DeleteAdmin(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handlers) loadOrgMembers(ctx context.Context, o *organizationDTO) error {
 	rows, err := h.DB.QueryContext(ctx, `
-		SELECT id, username, role FROM users
+		SELECT id, username, role, (email_verified <> 0) FROM users
 		WHERE org_id = $1 AND role IN ('org_admin','org_member')
 		ORDER BY role, LOWER(username)
 	`, o.ID)
@@ -613,7 +614,7 @@ func (h *Handlers) loadOrgMembers(ctx context.Context, o *organizationDTO) error
 	defer rows.Close()
 	for rows.Next() {
 		var m orgMemberDTO
-		if err := rows.Scan(&m.ID, &m.Username, &m.Role); err != nil {
+		if err := rows.Scan(&m.ID, &m.Username, &m.Role, &m.EmailVerified); err != nil {
 			return err
 		}
 		o.Members = append(o.Members, m)

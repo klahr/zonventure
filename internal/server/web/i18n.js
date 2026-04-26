@@ -58,6 +58,12 @@
       'Rename': 'Byt namn',
       'Renamed': 'Namnet ändrat',
       'Removed': 'Borttagen',
+      'verify': 'verifiera',
+      'Manually verify email (use only after confirming the user out-of-band)':
+        'Verifiera e-post manuellt (använd bara efter att du bekräftat användaren utanför systemet)',
+      'Manually verify {{username}}\'s email? Only do this after confirming the user out-of-band — this bypasses the verification mail loop.':
+        'Verifiera {{username}}s e-post manuellt? Gör bara detta efter att du bekräftat användaren utanför systemet — detta hoppar över verifieringsmejlet.',
+      'Email verified': 'E-post verifierad',
       'Deleted': 'Borttagen',
       'deleted': 'borttagen',
       'Saved': 'Sparat',

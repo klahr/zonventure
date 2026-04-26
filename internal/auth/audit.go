@@ -15,6 +15,11 @@ const (
 	EventSetPassword = "set_password"
 	EventLogout      = "logout"
 	EventMagicLink   = "magic_link"
+	// EventEmailVerify covers both self-serve verification (via the
+	// emailed token) and admin-initiated manual verification. The
+	// reason field disambiguates: ReasonSuccess for token redemption,
+	// ReasonAdminManual for the admin override.
+	EventEmailVerify = "email_verify"
 )
 
 // Common reason codes. Free-form strings — these are the canonical
@@ -27,6 +32,7 @@ const (
 	ReasonPasswordAlreadySet = "password_already_set"
 	ReasonExpiredToken      = "expired_token"
 	ReasonUnknownToken      = "unknown_token"
+	ReasonAdminManual       = "admin_manual"
 )
 
 // AuditEvent is the payload of one auth_events row. UserID is optional;

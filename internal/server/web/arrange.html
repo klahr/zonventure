@@ -563,6 +563,23 @@ textarea { min-height: 80px; resize: vertical; font-family: ui-monospace, monosp
   background: rgba(255, 82, 82, 0.18) !important;
   border-color: rgba(255, 82, 82, 0.5) !important;
 }
+/* Unverified org member: amber tint so it stands out at a glance in
+   a long member list, plus an inline "verify" action button. The
+   action looks like a small text link rather than a destructive
+   button (× style above) since manual verification is rare and
+   should require deliberate action. */
+.chip.chip-unverified {
+  background: rgba(255, 196, 87, 0.18);
+  border-color: rgba(255, 196, 87, 0.55);
+}
+.chip .chip-verify {
+  font-size: .7rem; font-weight: 700;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  padding: 0 .25rem;
+}
+.chip .chip-verify:hover { color: var(--accent-deep, var(--accent)); text-decoration: underline; }
 
 .empty {
   text-align: center; padding: 3rem 1rem; color: var(--muted);
@@ -4914,11 +4931,22 @@ function renderOrganizationCard(org, adventures) {
     members.length === 0
       ? h('p', { class: 'muted', style: 'font-size:.85rem' }, t('No users yet — add one to get started.'))
       : h('div', {}, members.map((m) => h('span', {
-          class: 'chip', style: 'margin: 0 .35rem .35rem 0',
+          class: 'chip' + (m.email_verified === false ? ' chip-unverified' : ''),
+          style: 'margin: 0 .35rem .35rem 0',
           title: t('{{role}} · click ⓧ to remove', { role: m.role }),
         }, m.role === 'org_admin'
             ? t('{{username}} (admin)', { username: m.username })
             : t('{{username}} (member)', { username: m.username }),
+        // Manual verify button: shown only when the user hasn't
+        // confirmed their email through the self-serve flow yet. Use
+        // sparingly — it bypasses the deliverability check that
+        // signup verification gives us, so the admin should already
+        // have confirmed identity out-of-band.
+        m.email_verified === false ? h('button', {
+          title: t('Manually verify email (use only after confirming the user out-of-band)'),
+          class: 'chip-verify',
+          on: { click: (e) => { e.stopPropagation(); confirmVerifyMemberEmail(org, m); } },
+        }, t('verify')) : null,
         h('button', { title: t('Remove'), on: { click: () => confirmRemoveOrgMember(org, m) } }, '×')))),
 
     h('h3', { style: 'margin-top:.75rem' }, t('Unused assignments ({{n}})', { n: unused.length })),
@@ -5057,6 +5085,19 @@ async function confirmRemoveOrgMember(org, member) {
     method: 'DELETE', headers: { 'X-Confirm-Password': pw },
   });
   if (r.status === 204) { toastOk(t('Removed')); renderRoute(); }
+  else toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+}
+
+// confirmVerifyMemberEmail bypasses the self-serve email-verification
+// flow on behalf of an arranger who couldn't receive (or never
+// received) their verification mail. Plain confirm() is enough — the
+// action is reversible by simply asking the arranger to log in and
+// re-trigger the verification flow if it turns out to be wrong.
+async function confirmVerifyMemberEmail(org, member) {
+  if (!confirm(t('Manually verify {{username}}\'s email? Only do this after confirming the user out-of-band — this bypasses the verification mail loop.',
+      { username: member.username }))) return;
+  const r = await api(`/api/admin/users/${member.id}/verify-email`, { method: 'POST' });
+  if (r.status === 204) { toastOk(t('Email verified')); renderRoute(); }
   else toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
 }
 
