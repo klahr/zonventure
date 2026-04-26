@@ -5281,13 +5281,39 @@ function renderLibraryEdit(view, adv) {
   // of the target the cursor (clientY) is over. No-op when dragEl is
   // already in that exact slot, so dragover firing many times stays
   // cheap.
+  //
+  // FLIP animation: capture sibling rects pre-mutation, do the DOM
+  // splice, then translate each moved sibling back to its old
+  // position and animate the transform to 0. The dragged card itself
+  // is excluded — it'd fight the browser's drag image, which is
+  // already following the cursor.
   const moveOver = (target, clientY) => {
     if (!dragEl || target === dragEl) return;
     const rect = target.getBoundingClientRect();
     const before = (clientY - rect.top) < rect.height / 2;
     const desiredBefore = before ? target : target.nextSibling;
     if (dragEl.nextSibling === desiredBefore) return; // already in slot
+
+    const siblings = Array.from(list.children).filter((el) => el !== dragEl);
+    const firstRects = new Map();
+    for (const el of siblings) firstRects.set(el, el.getBoundingClientRect());
+
     list.insertBefore(dragEl, desiredBefore);
+
+    for (const el of siblings) {
+      const old = firstRects.get(el);
+      const now = el.getBoundingClientRect();
+      const dy = old.top - now.top;
+      if (dy === 0) continue;
+      el.style.transition = 'none';
+      el.style.transform = `translateY(${dy}px)`;
+      // Force a reflow so the next transition runs from the inverted
+      // start, not from the natural 0 (otherwise the browser folds
+      // the two style mutations into one frame and skips the anim).
+      void el.offsetHeight;
+      el.style.transition = 'transform 0.18s ease';
+      el.style.transform = '';
+    }
   };
   const commitReorder = async () => {
     if (!dragEl || dragFrom < 0) return;
