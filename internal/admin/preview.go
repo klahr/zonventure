@@ -32,7 +32,7 @@ type previewStateDTO struct {
 	// can verify answers even when the debug panel is collapsed.
 	// Without it, previewing-without-debug would treat every answer
 	// as correct.
-	Accept   []string         `json:"accept"`
+	Accept   []adventure.AcceptEntry `json:"accept"`
 	NoAnswer bool             `json:"no_answer,omitempty"`
 	Debug    *previewDebugDTO `json:"preview_debug,omitempty"`
 }
@@ -52,11 +52,11 @@ type previewImageDTO struct {
 }
 
 type previewDebugDTO struct {
-	Accept  []string `json:"accept"`
-	Lat     float64  `json:"lat"`
-	Lng     float64  `json:"lng"`
-	RadiusM *float64 `json:"radius_m,omitempty"`
-	Notes   string   `json:"notes,omitempty"`
+	Accept  []adventure.AcceptEntry `json:"accept"`
+	Lat     float64                 `json:"lat"`
+	Lng     float64                 `json:"lng"`
+	RadiusM *float64                `json:"radius_m,omitempty"`
+	Notes   string                  `json:"notes,omitempty"`
 }
 
 // PreviewAdventure returns one puzzle of an adventure in the shape the

@@ -44,7 +44,7 @@ func TestPages_DisabledRoundTripsThroughEdit(t *testing.T) {
 	if s := admin.do("PATCH", "/api/admin/pages/"+itoa(pageID), map[string]any{
 		"title":    "Landmark",
 		"prompt":   "Find the fountain in the central park. What colour are its tiles?",
-		"accept":   []string{"blue", "azure"},
+		"accept":   acceptLits("blue", "azure"),
 		"lat":      59.3326,
 		"lng":      18.0649,
 		"radius_m": 50.0,
@@ -86,7 +86,7 @@ func TestPages_DisabledIsSkippedByPlayer(t *testing.T) {
 	if s := admin.do("PATCH", "/api/admin/pages/"+itoa(pageID), map[string]any{
 		"title":    "Landmark",
 		"prompt":   "(skipped)",
-		"accept":   []string{"x"},
+		"accept":   acceptLits("x"),
 		"lat":      59.3326,
 		"lng":      18.0649,
 		"disabled": true,

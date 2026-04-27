@@ -11,6 +11,8 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"regexp"
 	"strings"
 )
 
@@ -60,11 +62,23 @@ type Page struct {
 	Title    string
 	Prompt   string
 	Hints    []Hint
-	Accept   []string
+	Accept   []AcceptEntry
 	Location Location
 	Images   []Image
 	Disabled bool
 	Notes    string
+}
+
+// AcceptEntry is one accepted answer for a puzzle. Plain entries
+// (Regex=false) match the player's input literally after the same
+// case/whitespace normalisation applied to both sides — what the
+// arranger types is what the player must type. Regex entries are
+// interpreted as Go RE2 patterns, anchored to the entire normalised
+// input and matched case-insensitively, so an arranger writing
+// `(yes|ja|jo)` doesn't have to remember to wrap it themselves.
+type AcceptEntry struct {
+	Text  string `json:"text"`
+	Regex bool   `json:"regex,omitempty"`
 }
 
 // Hint is one on-demand clue for a puzzle. DelaySeconds is how long
@@ -291,19 +305,53 @@ func (l *Library) loadImages(ctx context.Context, pageID int64) ([]Image, error)
 }
 
 // CheckAnswer reports whether submitted matches any of the page's accepted
-// answers under the normalisation rules: case-insensitive, whitespace
-// trimmed, runs of internal whitespace collapsed to a single space.
+// answers. Both literal and regex entries are matched against the same
+// normalisation of the submitted answer (trimmed, lowercased, runs of
+// whitespace collapsed). Regex entries are wrapped with `\A...\z` so a
+// pattern like `\d{4}` only fires when the entire input is four digits,
+// not when four digits appear anywhere — saves arrangers from having
+// to remember the anchors themselves. ValidateAcceptEntries (called at
+// save time) rejects patterns that don't compile, so the runtime
+// branch here just skips on the rare corruption case rather than
+// crashing the player flow.
 func (p Page) CheckAnswer(submitted string) bool {
 	norm := normalise(submitted)
 	if norm == "" {
 		return false
 	}
 	for _, a := range p.Accept {
-		if normalise(a) == norm {
+		if a.Regex {
+			re, err := regexp.Compile(`(?i)\A(?:` + a.Text + `)\z`)
+			if err != nil {
+				continue
+			}
+			if re.MatchString(norm) {
+				return true
+			}
+			continue
+		}
+		if normalise(a.Text) == norm {
 			return true
 		}
 	}
 	return false
+}
+
+// ValidateAcceptEntries returns the first regex compile error found
+// among the entries, or nil if every regex entry compiles. The save
+// handler calls this so the arranger gets immediate feedback on a bad
+// pattern instead of discovering it via "no answer ever matches" at
+// run time.
+func ValidateAcceptEntries(entries []AcceptEntry) error {
+	for i, a := range entries {
+		if !a.Regex {
+			continue
+		}
+		if _, err := regexp.Compile(`(?i)\A(?:` + a.Text + `)\z`); err != nil {
+			return fmt.Errorf("accept entry %d: invalid regex: %w", i+1, err)
+		}
+	}
+	return nil
 }
 
 func normalise(s string) string {

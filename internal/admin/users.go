@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"git.sr.ht/~klahr/zv/internal/adventure"
 	"git.sr.ht/~klahr/zv/internal/auth"
 	"git.sr.ht/~klahr/zv/internal/httpx"
 	"github.com/go-chi/chi/v5"
@@ -46,12 +47,12 @@ func (h *Handlers) AdventureDetail(w http.ResponseWriter, r *http.Request) {
 		RadiusM *float64 `json:"radius_m,omitempty"`
 	}
 	type pageDTO struct {
-		Index    int      `json:"index"`
-		Title    string   `json:"title"`
-		Prompt   string   `json:"prompt"`
-		Accept   []string `json:"accept"`
-		Location locDTO   `json:"location"`
-		Gated    bool     `json:"gated"`
+		Index    int                     `json:"index"`
+		Title    string                  `json:"title"`
+		Prompt   string                  `json:"prompt"`
+		Accept   []adventure.AcceptEntry `json:"accept"`
+		Location locDTO                  `json:"location"`
+		Gated    bool                    `json:"gated"`
 	}
 	pages := make([]pageDTO, len(adv.Pages))
 	for i, p := range adv.Pages {

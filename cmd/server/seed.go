@@ -11,8 +11,9 @@ import (
 	"strings"
 	"time"
 
-	"git.sr.ht/~klahr/zv/internal/auth"
 	"git.sr.ht/~klahr/zv/internal/activity"
+	"git.sr.ht/~klahr/zv/internal/adventure"
+	"git.sr.ht/~klahr/zv/internal/auth"
 )
 
 // demo adventure data — previously in adventures/demo/*.toml, now seeded
@@ -22,7 +23,7 @@ type demoPage struct {
 	Title    string
 	Prompt   string
 	Hints    []demoHint
-	Accept   []string
+	Accept   []adventure.AcceptEntry
 	Lat, Lng float64
 	Radius   *float64
 }
@@ -37,11 +38,18 @@ type demoHint struct {
 func demoPages() []demoPage {
 	// A nil *float64 means "not gated"; a non-nil pointer sets the radius.
 	gated := func(r float64) *float64 { return &r }
+	lit := func(words ...string) []adventure.AcceptEntry {
+		out := make([]adventure.AcceptEntry, len(words))
+		for i, w := range words {
+			out[i] = adventure.AcceptEntry{Text: w}
+		}
+		return out
+	}
 	return []demoPage{
 		{
 			Title:  "Welcome",
 			Prompt: "What word do you say when you meet someone for the first time?",
-			Accept: []string{"hello", "hi"},
+			Accept: lit("hello", "hi"),
 			Lat:    59.3308, Lng: 18.0731, // Kungsträdgården
 		},
 		{
@@ -50,14 +58,14 @@ func demoPages() []demoPage {
 			Hints: []demoHint{
 				{Text: "Look at the inside of the basin, not the rim.", DelaySec: 60},
 			},
-			Accept: []string{"blue", "azure"},
+			Accept: lit("blue", "azure"),
 			Lat:    59.3326, Lng: 18.0649, // Sergels torg
 			Radius: gated(50),
 		},
 		{
 			Title:  "The Finish",
 			Prompt: `Name the Swedish word for "adventure".`,
-			Accept: []string{"äventyr", "aventyr"},
+			Accept: lit("äventyr", "aventyr"),
 			Lat:    59.3252, Lng: 18.0708, // Stortorget, Gamla stan
 		},
 	}

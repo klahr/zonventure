@@ -869,6 +869,37 @@ textarea { min-height: 80px; resize: vertical; font-family: ui-monospace, monosp
 .puzzle-editor .pe-image-add.disabled:hover {
   background: transparent; border-color: var(--border); color: var(--muted);
 }
+
+/* Accepted-answers list: one row per literal-or-regex entry.
+   The Regex toggle is intentionally inline rather than a separate
+   tab so an arranger can flip a single answer to a pattern without
+   leaving the row. Regex entries get monospaced text + a blue tint
+   so the visual difference between "the player must type Kjell" and
+   "the player must match this pattern" is unmissable while
+   scanning the field. */
+.pe-answers { display: flex; flex-direction: column; gap: .35rem; }
+.pe-answer-row {
+  display: flex; align-items: center; gap: .5rem;
+}
+.pe-answer-row .pe-answer-text { flex: 1 1 0; min-width: 0; }
+.pe-answer-row .pe-answer-text.pe-answer-regex {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  background: color-mix(in srgb, var(--accent) 6%, var(--surface));
+  border-color: color-mix(in srgb, var(--accent) 30%, var(--border));
+}
+.pe-answer-toggle {
+  display: inline-flex; align-items: center; gap: .35rem;
+  font-size: .8rem; color: var(--muted); white-space: nowrap;
+  cursor: pointer; user-select: none;
+}
+.pe-answer-toggle input { width: auto; }
+.pe-answers-wrap > .btn { margin-top: .35rem; }
+/* Regex chip in puzzle-card listings: monospaced + accent border so
+   the prefix `re:` reads as a label and the pattern reads as code. */
+.chip.chip-regex {
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+  background: color-mix(in srgb, var(--accent) 6%, var(--surface));
+}
 /* Library sub-nav: tabs across Adventures and Puzzles, shared by both
    views so you can jump between the two without going through the
    sidebar. Visually a thin strip sitting under the page heading. */
@@ -3359,7 +3390,7 @@ async function viewAdventureDetail(view, slug) {
           h('strong', {}, `${i + 1}. ${p.title || t('(untitled)')}`),
           p.gated ? h('span', { class: 'pill warning' }, t('gated')) : null),
         h('p', { style: 'white-space:pre-wrap' }, p.prompt),
-        h('p', { class: 'muted' }, t('Accepted: '), p.accept.map((x) => h('span', { class: 'chip', style: 'margin-right:.25rem' }, x))),
+        h('p', { class: 'muted' }, t('Accepted: '), (p.accept || []).map(acceptChip)),
         p.location ? h('p', { class: 'muted mono' },
           t('Location: {{coords}}', { coords: `${p.location.lat.toFixed(5)}, ${p.location.lng.toFixed(5)}` }),
           p.location.radius_m ? t(' · gate {{r}} m', { r: p.location.radius_m }) : '') : null,
@@ -5701,10 +5732,11 @@ function renderLibraryEdit(view, adv) {
         title: t('Edit title/slug/colours'),
         on: { click: () => openEditAdventureMeta(adv) } },
         icon(ICONS.pencil), t('Edit')),
-      h('button', { class: 'btn small danger',
+      h('button', { class: 'btn icon small danger',
         title: t('Delete adventure'),
+        'aria-label': t('Delete adventure'),
         on: { click: () => confirmDeleteAdventure(adv) } },
-        icon(ICONS.trash), t('Delete'))),
+        icon(ICONS.trash))),
     state.me.role === 'admin' ? renderAdventureShares(adv) : null,
     h('div', { class: 'row between', style: 'margin-top:1rem' },
       h('h2', {}, t('Puzzles ({{n}})', { n: adv.pages.length })),
@@ -5951,11 +5983,34 @@ function renderPuzzleCard(adv, page, i, previewIdx) {
         }))),
     h('p', { class: 'muted' },
       t('Accepted: '),
-      page.accept.map((a) => h('span', { class: 'chip', style: 'margin-right:.25rem' }, a))),
+      (page.accept || []).map(acceptChip)),
     h('p', { class: 'muted mono', style: 'font-size:.8rem' },
       `${page.lat.toFixed(5)}, ${page.lng.toFixed(5)}`,
       page.radius_m ? t(' · gate {{r}} m', { r: page.radius_m }) : ''),
   );
+}
+
+// acceptChip renders one entry from a page's accept list. Plain
+// entries get a regular pill with the literal text; regex entries get
+// a monospace-flavoured pill prefixed with `re:` so an arranger
+// glancing at the puzzle card can tell at-a-glance that the player
+// must match a pattern, not type the displayed string verbatim.
+function acceptChip(a) {
+  if (!a) return null;
+  if (typeof a === 'string') {
+    // Defensive: if old-shape data ever leaks through (manual DB edit,
+    // half-migrated import) render it as a literal so the page still
+    // works instead of throwing.
+    return h('span', { class: 'chip', style: 'margin-right:.25rem' }, a);
+  }
+  if (a.regex) {
+    return h('span', {
+      class: 'chip chip-regex',
+      style: 'margin-right:.25rem; font-family: ui-monospace, monospace',
+      title: t('Regex pattern (anchored, case-insensitive)'),
+    }, 're: ', a.text);
+  }
+  return h('span', { class: 'chip', style: 'margin-right:.25rem' }, a.text);
 }
 
 async function openEditAdventureMeta(adv) {
@@ -6402,6 +6457,104 @@ function markdownField(opts) {
   };
 }
 
+// matcherNormalise mirrors the server's normalise(): trim, lowercase,
+// runs of whitespace collapsed to a single space. Used by the
+// preview-mode QR scan test and the play-side preview matcher so
+// authors see the same accept/reject decision the server would make.
+function matcherNormalise(s) {
+  return (s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+// checkAcceptMatches reports whether `normInput` (already normalised)
+// matches any entry in the accept list. Plain entries are compared
+// literally after normalising the entry text the same way; regex
+// entries are anchored with ^...$ and matched case-insensitively. Bad
+// regex compiles silently miss — the server's save-time validation is
+// the real check, this is defence in depth.
+function checkAcceptMatches(entries, normInput) {
+  if (!Array.isArray(entries) || normInput === '') return false;
+  for (const a of entries) {
+    if (!a) continue;
+    if (a.regex) {
+      try {
+        if (new RegExp('^(?:' + a.text + ')$', 'i').test(normInput)) return true;
+      } catch { /* malformed pattern — skip */ }
+      continue;
+    }
+    if (matcherNormalise(a.text || '') === normInput) return true;
+  }
+  return false;
+}
+
+// buildAcceptController returns a controller for the editor's
+// "Accepted answers" field. The list is a stack of rows, each with a
+// text input + a "Regex" checkbox + a remove button, plus an "Add
+// answer" button below. The arranger types literal answers in plain
+// rows and toggles Regex per row when they need a pattern; nothing
+// special needed for normal cases.
+function buildAcceptController(initial) {
+  const rows = [];
+  const list = h('div', { class: 'pe-answers' });
+
+  const refreshDOM = () => list.replaceChildren(...rows.map((r) => r.row));
+  const fireChange = () => list.dispatchEvent(new Event('input', { bubbles: true }));
+
+  const addRow = (entry) => {
+    const text = h('input', {
+      class: 'pe-answer-text' + (entry?.regex ? ' pe-answer-regex' : ''),
+      value: entry?.text || '',
+      placeholder: entry?.regex ? t('e.g. (yes|ja|jo)') : t('e.g. Kjell'),
+    });
+    const regexBox = h('input', { type: 'checkbox' });
+    if (entry?.regex) regexBox.checked = true;
+    const remove = h('button', {
+      class: 'btn icon small', type: 'button',
+      title: t('Remove this answer'),
+      'aria-label': t('Remove this answer'),
+    }, '×');
+    const handle = { row: null, text, regexBox };
+    handle.row = h('div', { class: 'pe-answer-row' },
+      text,
+      h('label', { class: 'pe-answer-toggle', title: t('Treat the text above as a regex pattern (anchored, case-insensitive)') },
+        regexBox, h('span', {}, t('Regex'))),
+      remove);
+    regexBox.addEventListener('change', () => {
+      text.classList.toggle('pe-answer-regex', regexBox.checked);
+      text.placeholder = regexBox.checked ? t('e.g. (yes|ja|jo)') : t('e.g. Kjell');
+    });
+    remove.addEventListener('click', () => {
+      const i = rows.indexOf(handle);
+      if (i >= 0) rows.splice(i, 1);
+      refreshDOM();
+      fireChange();
+    });
+    rows.push(handle);
+  };
+
+  (initial || []).forEach((e) => addRow(e));
+  if (rows.length === 0) addRow({ text: '', regex: false });
+  refreshDOM();
+
+  const addBtn = h('button', {
+    class: 'btn small', type: 'button',
+    on: { click: () => {
+      addRow({ text: '', regex: false });
+      refreshDOM();
+      fireChange();
+      rows[rows.length - 1].text.focus();
+    } },
+  }, icon(ICONS.plus), t('Add answer'));
+
+  return {
+    el: h('div', { class: 'pe-answers-wrap' }, list, addBtn),
+    // get() filters out blank rows so saving doesn't persist meaningless
+    // empty entries the arranger created and didn't type into.
+    get: () => rows
+      .map((r) => ({ text: r.text.value.trim(), regex: r.regexBox.checked }))
+      .filter((e) => e.text.length > 0),
+  };
+}
+
 // attachMdPreview returns a live-updating preview div for a textarea.
 // The server endpoint runs the same goldmark pipeline used at egress,
 // so what the author sees here is exactly what the player will see.
@@ -6663,10 +6816,14 @@ async function openEditPuzzle(adv, page /* or null */) {
         on: { click: async () => {
           const decoded = await openQrScanner();
           if (!decoded) return;
-          const norm = (s) => (s || '').trim().toLowerCase().replace(/\s+/g, ' ');
-          const list = (accept.value || '').split(',').map(norm).filter(Boolean);
-          const dec = norm(decoded);
-          if (list.includes(dec)) {
+          // Mirror the server's CheckAnswer: normalise both sides for
+          // literal entries; for regex entries wrap with ^...$ + the i
+          // flag and test. Bad regex compiles silently fail to false
+          // here — the server already rejected them at save time, so
+          // this is a defence-in-depth path.
+          const dec = matcherNormalise(decoded);
+          const matched = checkAcceptMatches(accept.get(), dec);
+          if (matched) {
             toastOk(t('QR contains "{{v}}" — accepted.', { v: decoded }));
           } else {
             toastErr(t('QR contains "{{v}}" — not in accept list.', { v: decoded }));
@@ -6677,10 +6834,15 @@ async function openEditPuzzle(adv, page /* or null */) {
     }
 
     // ---- Settings panel: fields with no visual player rendering ----
-    const accept = h('input', {
-      value: draft?.accept ?? (page?.accept || []).join(', '),
-      placeholder: t('hello, hi'),
-    });
+    // Accept entries are objects { text, regex } now: plain entries
+    // match the player's input literally, regex entries are RE2
+    // patterns that get implicit ^...$ + case-insensitive flag at
+    // match time. The arranger toggles regex per entry instead of
+    // wrapping their answer in special syntax — the comment box for
+    // "what does Kjell match" is now just "Kjell".
+    const initialAccept = Array.isArray(draft?.accept) ? draft.accept
+                        : (Array.isArray(page?.accept) ? page.accept : []);
+    const accept = buildAcceptController(initialAccept);
     // For a fresh puzzle, inherit the location from the previous puzzle
     // in the adventure — adventures are almost always a cluster, so
     // "start near the last pin" beats "start in central Stockholm".
@@ -6724,7 +6886,7 @@ async function openEditPuzzle(adv, page /* or null */) {
     const settings = h('div', { class: 'puzzle-settings' },
       h('h3', {}, t('Settings')),
       h('label', { class: 'field' },
-        h('span', {}, t('Accepted answers — comma-separated')), accept),
+        h('span', {}, t('Accepted answers')), accept.el),
       h('label', { class: 'field' },
         h('span', {}, t('Internal notes — not shown to players')), notes),
       h('h3', {}, t('Hints')),
@@ -6763,7 +6925,7 @@ async function openEditPuzzle(adv, page /* or null */) {
       prompt:   promptInput.value,
       hints:    hintsController.get(),
       notes:    notes.value,
-      accept:   accept.value,
+      accept:   accept.get(),
       lat:      lat.value,
       lng:      lng.value,
       gated:    gated.checked,
@@ -6772,7 +6934,7 @@ async function openEditPuzzle(adv, page /* or null */) {
     });
     const draftIsEmpty = (d) => (
       !d.title.trim() && !d.prompt.trim() && d.hints.length === 0 &&
-      !d.notes.trim() && !d.accept.trim() && !d.gated && !d.disabled
+      !d.notes.trim() && (!Array.isArray(d.accept) || d.accept.length === 0) && !d.gated && !d.disabled
     );
     const writeDraft = () => {
       if (!draftKey) return;
@@ -6810,7 +6972,7 @@ async function openEditPuzzle(adv, page /* or null */) {
         prompt:   promptInput.value.trim(),
         hints:    hintsController.get(),
         notes:    notes.value.trim(),
-        accept:   accept.value.split(',').map((s) => s.trim()).filter(Boolean),
+        accept:   accept.get(),
         lat:      parseFloat(lat.value),
         lng:      parseFloat(lng.value),
         disabled: disabled.checked,
@@ -6853,7 +7015,7 @@ async function openEditPuzzle(adv, page /* or null */) {
       promptInput.value !== (page?.prompt || '') ||
       JSON.stringify(hintsController.get()) !== JSON.stringify(page?.hints || []) ||
       notes.value       !== (page?.notes  || '') ||
-      accept.value      !== (page?.accept || []).join(', ') ||
+      JSON.stringify(accept.get()) !== JSON.stringify(page?.accept || []) ||
       parseFloat(lat.value) !== (page ? page.lat : 59.3293) ||
       parseFloat(lng.value) !== (page ? page.lng : 18.0686) ||
       gated.checked !== !!page?.radius_m ||
@@ -6943,7 +7105,7 @@ async function openEditPuzzle(adv, page /* or null */) {
             prompt:   promptInput.value.trim(),
             hints:    hintsController.get(),
             notes:    notes.value.trim(),
-            accept:   accept.value.split(',').map((s) => s.trim()).filter(Boolean),
+            accept:   accept.get(),
             lat:      coords.lat,
             lng:      coords.lng,
             disabled: disabled.checked,
@@ -6997,7 +7159,7 @@ async function openEditPuzzle(adv, page /* or null */) {
         !promptInput.value.trim() &&
         hintsController.get().length === 0 &&
         !notes.value.trim() &&
-        !accept.value.trim() &&
+        accept.get().length === 0 &&
         (images.length === 0) &&
         !gated.checked &&
         !disabled.checked;

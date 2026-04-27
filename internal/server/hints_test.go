@@ -41,7 +41,7 @@ func TestHints_RoundTripThroughPatch(t *testing.T) {
 	if s := admin.do("PATCH", "/api/admin/pages/"+itoa(pageID), map[string]any{
 		"title":  "Welcome",
 		"prompt": "What word do you say when you meet someone for the first time?",
-		"accept": []string{"hello", "hi"},
+		"accept": acceptLits("hello", "hi"),
 		"lat":    59.3308,
 		"lng":    18.0731,
 		"hints":  hints,
@@ -101,7 +101,7 @@ func TestHints_PlayerStateComputesUnlockCountdown(t *testing.T) {
 	if s := admin.do("PATCH", "/api/admin/pages/"+itoa(pageID), map[string]any{
 		"title":  "Welcome",
 		"prompt": "What word do you say when you meet someone for the first time?",
-		"accept": []string{"hello", "hi"},
+		"accept": acceptLits("hello", "hi"),
 		"lat":    59.3308,
 		"lng":    18.0731,
 		"hints": []map[string]any{
@@ -171,7 +171,7 @@ func TestHints_CopyToAdventurePreservesHints(t *testing.T) {
 	if s := admin.do("PATCH", "/api/admin/pages/"+itoa(stub.ID), map[string]any{
 		"title":  "with hints",
 		"prompt": "year?",
-		"accept": []string{"1999"},
+		"accept": acceptLits("1999"),
 		"lat":    59, "lng": 18,
 		"hints": []map[string]any{
 			{"text": "A", "delay_seconds": 10},

@@ -580,7 +580,16 @@
       'Use this device\'s GPS': 'Använd enhetens GPS',
       'Use my location': 'Använd min plats',
       'Settings': 'Inställningar',
-      'Accepted answers — comma-separated': 'Godkända svar — kommaseparerade',
+      'Accepted answers': 'Godkända svar',
+      'e.g. Kjell': 't.ex. Kjell',
+      'e.g. (yes|ja|jo)': 't.ex. (ja|jo|jepp)',
+      'Remove this answer': 'Ta bort detta svar',
+      'Treat the text above as a regex pattern (anchored, case-insensitive)':
+        'Tolka texten ovan som ett regex-mönster (förankrat, skiftlägesokänsligt)',
+      'Regex': 'Regex',
+      'Add answer': 'Lägg till svar',
+      'Regex pattern (anchored, case-insensitive)':
+        'Regex-mönster (förankrat, skiftlägesokänsligt)',
       'Internal notes — not shown to players': 'Interna anteckningar — visas inte för spelarna',
       'Location': 'Plats',
       'Drag the pin, click the map, or press the button':

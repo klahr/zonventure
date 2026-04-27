@@ -1971,10 +1971,20 @@ function handlePreviewSubmit(answer) {
   if (!needle) return;
   // Mirror the real applyAnswer normalisation: trim + lowercase, and
   // collapse internal whitespace runs so "  HELLO  world" matches
-  // "hello world". Keeps the preview verdict honest.
+  // "hello world". Regex entries are anchored ^...$ + case-insensitive
+  // to match the server's CheckAnswer; bad patterns silently miss
+  // since the server already rejects them at save time.
   const norm = (s) => (s || '').trim().toLowerCase().replace(/\s+/g, ' ');
   const accept = Array.isArray(previewState.accept) ? previewState.accept : [];
-  const accepted = accept.length > 0 && accept.some((a) => norm(a) === norm(needle));
+  const dec = norm(needle);
+  const accepted = accept.length > 0 && accept.some((a) => {
+    if (!a) return false;
+    if (a.regex) {
+      try { return new RegExp('^(?:' + a.text + ')$', 'i').test(dec); }
+      catch { return false; }
+    }
+    return norm(a.text || '') === dec;
+  });
   const completed = accepted && previewState.pageIndex + 1 >= previewState.pageCount;
   onAnswerResult({ accepted, completed });
   if (accepted && !completed) {
@@ -2714,7 +2724,13 @@ function renderPreviewDebug(d) {
     chipChildren.push(el('span', { class: 'muted' }, t('(none)')));
   } else {
     accept.forEach((a, i) => {
-      chipChildren.push(el('code', {}, a));
+      // Regex entries are visually flagged with a `re:` prefix so the
+      // arranger reviewing the debug panel can tell at a glance which
+      // are literal strings and which are patterns (otherwise something
+      // like `(yes|ja)` reads as a literal answer the player must type).
+      const text = (a && typeof a === 'object') ? (a.text || '') : String(a || '');
+      const isRegex = !!(a && typeof a === 'object' && a.regex);
+      chipChildren.push(el('code', {}, isRegex ? 're: ' + text : text));
       if (i < accept.length - 1) chipChildren.push(document.createTextNode(', '));
     });
   }

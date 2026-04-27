@@ -71,7 +71,7 @@ func TestOwnership_OrgUserCannotEditAdminsAdventure(t *testing.T) {
 		t.Fatalf("patch admin adventure = %d, want 403", s)
 	}
 	if s := boss.do("POST", "/api/admin/adventures/demo/pages",
-		map[string]any{"accept": []string{"x"}, "prompt": "x", "lat": 0, "lng": 0}, nil); s != 403 {
+		map[string]any{"accept": acceptLits("x"), "prompt": "x", "lat": 0, "lng": 0}, nil); s != 403 {
 		t.Fatalf("create page on admin adventure = %d, want 403", s)
 	}
 }

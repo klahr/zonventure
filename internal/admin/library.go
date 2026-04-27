@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"git.sr.ht/~klahr/zv/internal/adventure"
 	"git.sr.ht/~klahr/zv/internal/auth"
 	"git.sr.ht/~klahr/zv/internal/httpx"
 	"git.sr.ht/~klahr/zv/internal/mdx"
@@ -248,7 +249,7 @@ func (h *Handlers) GetPuzzle(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = json.Unmarshal([]byte(acceptJS), &p.Accept)
 	if p.Accept == nil {
-		p.Accept = []string{}
+		p.Accept = []adventure.AcceptEntry{}
 	}
 	if radius.Valid {
 		v := radius.Float64

@@ -40,11 +40,11 @@ func newTestServer(t *testing.T) (*httptest.Server, int64, func()) {
 		radius                any
 	}{
 		{"Welcome", "What word do you say when you meet someone for the first time?",
-			`["hello","hi"]`, 59.3308, 18.0731, nil},
+			`[{"text":"hello"},{"text":"hi"}]`, 59.3308, 18.0731, nil},
 		{"Landmark", "Find the fountain in the central park. What colour are its tiles?",
-			`["blue","azure"]`, 59.3326, 18.0649, 50.0},
+			`[{"text":"blue"},{"text":"azure"}]`, 59.3326, 18.0649, 50.0},
 		{"The Finish", `Name the Swedish word for "adventure".`,
-			`["äventyr","aventyr"]`, 59.3252, 18.0708, nil},
+			`[{"text":"äventyr"},{"text":"aventyr"}]`, 59.3252, 18.0708, nil},
 	}
 	for i, p := range pages {
 		if _, err := sqlDB.Exec(`
@@ -379,6 +379,17 @@ func TestAuthRoleSeparation(t *testing.T) {
 	if s := arr.do("GET", "/api/player/state", nil, nil); s != 401 {
 		t.Fatalf("arranger on player = %d, want 401", s)
 	}
+}
+
+// acceptLits builds a literal accept list in the JSON shape the API
+// expects ([{text,regex},...]), so tests don't need to spell out the
+// per-entry struct every call site.
+func acceptLits(words ...string) []map[string]any {
+	out := make([]map[string]any, len(words))
+	for i, w := range words {
+		out[i] = map[string]any{"text": w}
+	}
+	return out
 }
 
 func itoa(i int64) string {

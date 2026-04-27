@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 
+	"git.sr.ht/~klahr/zv/internal/adventure"
 	"git.sr.ht/~klahr/zv/internal/auth"
 	"git.sr.ht/~klahr/zv/internal/httpx"
 	"git.sr.ht/~klahr/zv/internal/imageutil"
@@ -50,16 +51,16 @@ type pageView struct {
 	// PromptHTML is the goldmark-rendered sibling of Prompt — the same
 	// HTML players see. Lets list views in arrange.html drop in the
 	// pre-rendered result instead of calling /markdown/preview per card.
-	PromptHTML string      `json:"prompt_html,omitempty"`
-	Hints      []hintView  `json:"hints"`
-	Accept     []string    `json:"accept"`
-	Lat        float64     `json:"lat"`
-	Lng        float64     `json:"lng"`
-	RadiusM    *float64    `json:"radius_m,omitempty"`
-	Gated      bool        `json:"gated"`
-	Disabled   bool        `json:"disabled"`
-	Notes      string      `json:"notes"`
-	Images     []imageView `json:"images"`
+	PromptHTML string                  `json:"prompt_html,omitempty"`
+	Hints      []hintView              `json:"hints"`
+	Accept     []adventure.AcceptEntry `json:"accept"`
+	Lat        float64                 `json:"lat"`
+	Lng        float64                 `json:"lng"`
+	RadiusM    *float64                `json:"radius_m,omitempty"`
+	Gated      bool                    `json:"gated"`
+	Disabled   bool                    `json:"disabled"`
+	Notes      string                  `json:"notes"`
+	Images     []imageView             `json:"images"`
 }
 
 // hintView is a single hint row on the editor side. DelaySeconds is
@@ -420,15 +421,15 @@ func (h *Handlers) DeleteAdventure(w http.ResponseWriter, r *http.Request) {
 }
 
 type pageWriteRequest struct {
-	Title    string     `json:"title"`
-	Prompt   string     `json:"prompt"`
-	Hints    []hintView `json:"hints"`
-	Notes    string     `json:"notes"`
-	Accept   []string   `json:"accept"`
-	Lat      float64    `json:"lat"`
-	Lng      float64    `json:"lng"`
-	RadiusM  *float64   `json:"radius_m,omitempty"`
-	Disabled bool       `json:"disabled"`
+	Title    string                  `json:"title"`
+	Prompt   string                  `json:"prompt"`
+	Hints    []hintView              `json:"hints"`
+	Notes    string                  `json:"notes"`
+	Accept   []adventure.AcceptEntry `json:"accept"`
+	Lat      float64                 `json:"lat"`
+	Lng      float64                 `json:"lng"`
+	RadiusM  *float64                `json:"radius_m,omitempty"`
+	Disabled bool                    `json:"disabled"`
 }
 
 // validate checks only the constraints that are ALWAYS required,
@@ -445,6 +446,9 @@ func (req pageWriteRequest) validate() error {
 		if h.DelaySeconds < 0 {
 			return fmt.Errorf("hint %d: delay_seconds must be >= 0", i+1)
 		}
+	}
+	if err := adventure.ValidateAcceptEntries(req.Accept); err != nil {
+		return err
 	}
 	return nil
 }
@@ -932,7 +936,7 @@ func loadAdventureDTO(ctx context.Context, db *sql.DB, slug string) (*adventureE
 		p.PromptHTML = mdx.Render(p.Prompt)
 		_ = json.Unmarshal([]byte(acceptJS), &p.Accept)
 		if p.Accept == nil {
-			p.Accept = []string{}
+			p.Accept = []adventure.AcceptEntry{}
 		}
 		if radius.Valid {
 			v := radius.Float64
