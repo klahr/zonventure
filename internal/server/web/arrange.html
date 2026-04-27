@@ -3008,7 +3008,11 @@ async function viewAdventures(view) {
       h('span', { class: 'pill' }, adv.page_count === 1
         ? t('{{n}} puzzle', { n: adv.page_count })
         : t('{{n}} puzzles', { n: adv.page_count })),
-      adv.mine_to_edit ? h('span', { class: 'pill accent' }, t('Yours')) : null,
+      // "Yours" is only meaningful on the global-catalog (admin-owned)
+      // rows where it distinguishes the caller's authored adventures
+      // from other admins'. Org users see only their own org's
+      // adventures here, so the pill would just be noise.
+      adv.mine_to_edit && !adv.org_id ? h('span', { class: 'pill accent' }, t('Yours')) : null,
       // Only the global catalog (org_id IS NULL) actually consults the
       // published flag for cross-org visibility; on org-owned rows it
       // doesn't change anything, so don't display a misleading pill.
