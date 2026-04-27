@@ -210,8 +210,14 @@ func main() {
 		go metrics.ServeAddr(ctx, mAddr)
 	}
 
-	// Sweep for scheduled runs every 15s and auto-start any that are due.
-	schedDone := scheduler.Start(ctx, sqlDB, hub, 15*time.Second)
+	// Sweep for scheduled events every second and auto-start any that
+	// are due. A 1s tick is what makes the player + live-view countdowns
+	// transition from "scheduled" to "running" within a second of
+	// hitting zero — a 15s sweep made the digits sit at "Go!" / 00:00
+	// for an awkward up-to-15-second pause. The query is "SELECT … WHERE
+	// state = 'scheduled' AND scheduled_at <= now()" against an indexed
+	// column, so 60 queries/min on an idle system is trivial DB load.
+	schedDone := scheduler.Start(ctx, sqlDB, hub, time.Second)
 
 	// Privacy-retention sweeper: prunes location pings + answer attempts
 	// from completed runs and ages out auth_events. Operator-tunable via
