@@ -42,7 +42,8 @@ restart:
 
 # One-shot: rebuild + restart. The order matters; if build fails the
 # restart never runs and the old binary keeps serving.
-deploy: build restart
+deploy:
+	docker compose up -d --build
 
 test:
 	go test ./...
