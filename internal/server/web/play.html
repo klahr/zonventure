@@ -440,10 +440,28 @@
     background: var(--surface); border: 1px solid var(--border-soft);
     border-radius: var(--radius); box-shadow: 0 12px 40px rgba(0,0,0,.25);
     max-width: 520px; width: 100%; padding: 1.5rem;
+    position: relative;
   }
+  .welcome .panel-close {
+    position: absolute;
+    top: .5rem; right: .5rem;
+    width: 2rem; height: 2rem;
+    background: transparent;
+    border: 0;
+    border-radius: 999px;
+    padding: 0;
+    font-size: 1.5rem;
+    line-height: 1;
+    color: var(--muted);
+    cursor: pointer;
+    box-shadow: none;
+    min-height: 0;
+  }
+  .welcome .panel-close:hover { background: var(--surface-2); color: var(--ink); }
   .welcome h2 {
     font-family: var(--font-brand); color: var(--accent);
     font-size: 1.8rem; line-height: 1.1; margin: 0 0 .25rem;
+    padding-right: 2rem;
   }
   .welcome .who { color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: .08em; font-size: var(--ts-xs); margin-bottom: 1rem; }
   .welcome ul { padding-left: 1.1rem; margin: 1rem 0; }
@@ -766,7 +784,24 @@
     max-width: 22rem; width: 100%;
     text-align: center;
     box-shadow: var(--shadow);
+    position: relative;
   }
+  .team-share .panel-close {
+    position: absolute;
+    top: .5rem; right: .5rem;
+    width: 2rem; height: 2rem;
+    background: transparent;
+    border: 0;
+    border-radius: 999px;
+    padding: 0;
+    font-size: 1.5rem;
+    line-height: 1;
+    color: var(--muted);
+    cursor: pointer;
+    box-shadow: none;
+    min-height: 0;
+  }
+  .team-share .panel-close:hover { background: var(--surface-2); color: var(--ink); }
   .team-share h3 {
     margin: 0 0 .25rem;
     font-family: var(--font-brand);
@@ -2169,6 +2204,11 @@ function showWelcomeDialog(s, opts = {}) {
   const overlay = el('div', { class: 'welcome' });
   const panel = el('div', { class: 'panel' });
   panel.append(
+    el('button', {
+      class: 'panel-close', type: 'button',
+      'aria-label': t('Close'),
+      on: { click: dismiss },
+    }, '×'),
     el('h2', {}, s.adventure_title || t('Adventure')),
     el('div', { class: 'who' }, `${s.team_name || t('your team')}`));
   // If the adventure author supplied intro text, use it verbatim
@@ -2764,6 +2804,11 @@ function openTeamShareSheet(token) {
   overlay.className = 'team-share';
   const panel = document.createElement('div');
   panel.className = 'panel';
+  const xBtn = document.createElement('button');
+  xBtn.type = 'button';
+  xBtn.className = 'panel-close';
+  xBtn.setAttribute('aria-label', t('Close'));
+  xBtn.textContent = '×';
   const h = document.createElement('h3');
   h.textContent = t('Team join link');
   const hint = document.createElement('p');
@@ -2797,10 +2842,11 @@ function openTeamShareSheet(token) {
   };
   const onKey = (e) => { if (e.key === 'Escape') close(); };
   closeBtn.addEventListener('click', close);
+  xBtn.addEventListener('click', close);
   overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
   document.addEventListener('keydown', onKey);
   row.append(copyBtn, closeBtn);
-  panel.append(h, hint, qrWrap, urlEl, row);
+  panel.append(xBtn, h, hint, qrWrap, urlEl, row);
   overlay.append(panel);
   document.body.append(overlay);
 }

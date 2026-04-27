@@ -625,10 +625,27 @@ textarea { min-height: 80px; resize: vertical; font-family: ui-monospace, monosp
   padding: 1.5rem;
   max-height: calc(100vh - 2rem);
   overflow-y: auto;
+  position: relative;
 }
 .modal.wide { max-width: 560px; }
 .modal.xwide { max-width: 720px; }
-.modal h2 { margin-top: 0; }
+.modal h2 { margin-top: 0; padding-right: 2rem; }
+.modal-close {
+  position: absolute;
+  top: .5rem; right: .5rem;
+  width: 2rem; height: 2rem;
+  background: transparent;
+  border: 0;
+  border-radius: 999px;
+  padding: 0;
+  font-size: 1.5rem;
+  line-height: 1;
+  color: var(--muted);
+  cursor: pointer;
+  box-shadow: none;
+  min-height: 0;
+}
+.modal-close:hover { background: var(--surface-2); color: var(--ink); }
 
 /* ---------- WYSIWYG puzzle editor ----------
    The preview card mirrors play.html's puzzle layout (title, images,
@@ -1368,22 +1385,6 @@ textarea { min-height: 80px; resize: vertical; font-family: ui-monospace, monosp
 }
 .qr-modal .qr-cancel:hover { background: #fff; }
 
-/* "Test scan" button inside the puzzle editor preview card. Flat
-   secondary affordance — small enough to feel like an inline tool,
-   not big enough to compete with the visible Save button. */
-.pe-scan-test {
-  display: inline-flex; align-items: center; gap: .35rem;
-  margin: .5rem 0 0;
-  padding: .35rem .75rem;
-  border: 1px solid var(--border-soft);
-  background: var(--surface-2);
-  color: var(--ink-soft);
-  border-radius: 999px;
-  font-size: .8rem; font-weight: 600;
-  cursor: pointer;
-}
-.pe-scan-test:hover { background: var(--surface); color: var(--ink); }
-
 /* Dragging feedback: the pill being dragged dims, and the drop target
    grows a coloured edge on whichever side the cursor is closer to so
    arrangers see the exact insertion point (same affordance as Slides). */
@@ -2047,6 +2048,12 @@ function modal(title, bodyFn, opts = {}) {
         'aria-labelledby': titleID,
         tabindex: '-1',
       },
+        h('button', {
+          class: 'modal-close',
+          type: 'button',
+          'aria-label': t('Close'),
+          on: { click: () => close(null) },
+        }, '×'),
         h('h2', { id: titleID }, title),
         body,
       ));
@@ -6815,38 +6822,6 @@ async function openEditPuzzle(adv, page /* or null */) {
     // Library puzzles (no adventure context) fall through to the editor
     // defaults. Mirrors play.html's applyColors but scoped to the card.
     applyAdventureColors(previewCard, adv);
-
-    // "Test scan" — open the camera, decode a QR, and tell the
-    // arranger whether the value matches their accept list. The same
-    // scan in real play submits the value as an answer; here it's a
-    // verification step so the arranger can confirm a printed code
-    // resolves to a string they've actually listed before sticking it
-    // on a tree. Appended below; the `accept` input is defined a few
-    // lines further down, but the click handler closes over it via
-    // the var binding (TDZ doesn't trip because the click only fires
-    // after the whole modal is rendered).
-    if (qrSupported()) {
-      const scanTestBtn = h('button', { class: 'pe-scan-test', type: 'button',
-        title: t('Test scan: opens the camera and shows what your QR encodes'),
-        on: { click: async () => {
-          const decoded = await openQrScanner();
-          if (!decoded) return;
-          // Mirror the server's CheckAnswer: normalise both sides for
-          // literal entries; for regex entries wrap with ^...$ + the i
-          // flag and test. Bad regex compiles silently fail to false
-          // here — the server already rejected them at save time, so
-          // this is a defence-in-depth path.
-          const dec = matcherNormalise(decoded);
-          const matched = checkAcceptMatches(accept.get(), dec);
-          if (matched) {
-            toastOk(t('QR contains "{{v}}" — accepted.', { v: decoded }));
-          } else {
-            toastErr(t('QR contains "{{v}}" — not in accept list.', { v: decoded }));
-          }
-        } } },
-        '📷 ', t('Test scan'));
-      previewCard.append(scanTestBtn);
-    }
 
     // ---- Settings panel: fields with no visual player rendering ----
     // Accept entries are objects { text, regex } now: plain entries
