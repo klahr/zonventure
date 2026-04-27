@@ -71,15 +71,18 @@ type State struct {
 	StartedAt string `json:"started_at,omitempty"`
 }
 
-// Simulator is the global singleton — one event at a time. Callers hold
-// a single instance (injected into admin.Handlers).
+// Simulator holds one optional simulated run per organization. Each
+// org gets its own slot — arrangers can preview their adventures in
+// parallel without stepping on each other — but a given org is still
+// limited to a single sim at a time so two staff in the same org can't
+// fight over the controls.
 type Simulator struct {
 	db  *sql.DB
 	lib *adventure.Library
 	hub *ws.Hub
 
 	mu      sync.Mutex
-	current *run
+	current map[int64]*run
 }
 
 // run bundles the per-simulation state. Lives only while a simulation
@@ -122,38 +125,28 @@ type simTeam struct {
 // loop push run-topic updates so live viewers see movement frame by
 // frame.
 func New(db *sql.DB, lib *adventure.Library, hub *ws.Hub) *Simulator {
-	return &Simulator{db: db, lib: lib, hub: hub}
+	return &Simulator{db: db, lib: lib, hub: hub, current: map[int64]*run{}}
 }
 
-// Status is safe to call at any time — returns "idle" when nothing is
-// running, otherwise a snapshot of the active simulation.
-func (s *Simulator) Status() State {
+// Status returns the simulator state for the given org. Idle when no
+// run is active for that org. Safe to call at any time.
+func (s *Simulator) Status(orgID int64) State {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.current == nil {
-		return State{Stage: "idle"}
-	}
-	stage := "running"
-	if s.current.paused.Load() {
-		stage = "paused"
-	}
-	return State{
-		Stage:         stage,
-		EventID:         s.current.id,
-		LiveToken:     s.current.liveToken,
-		AdventureSlug: s.current.adventureSlug,
-		TeamCount:     len(s.current.teams),
-		SpeedMul:      s.current.speedMul,
-		StartedAt:     s.current.startedAt.Format(time.RFC3339),
-	}
+	return s.statusLocked(orgID)
 }
 
-// Start creates a fresh simulated run and begins driving it. Returns an
-// error if one is already active — callers must Reset first.
-func (s *Simulator) Start(ctx context.Context, adventureSlug string, teamCount int, speedMul float64, createdByUserID int64) (State, error) {
+// Start creates a fresh simulated run for the given org and begins
+// driving it. Returns an error if one is already active for this org
+// — callers must Reset that org's run first. orgID must be > 0; the
+// simulator is org-scoped so each tenant runs independently.
+func (s *Simulator) Start(ctx context.Context, orgID int64, adventureSlug string, teamCount int, speedMul float64, createdByUserID int64) (State, error) {
+	if orgID <= 0 {
+		return State{}, errors.New("orgID required")
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.current != nil {
+	if _, ok := s.current[orgID]; ok {
 		return State{}, errors.New("a simulation is already active; reset first")
 	}
 	if teamCount < 2 {
@@ -190,18 +183,6 @@ func (s *Simulator) Start(ctx context.Context, adventureSlug string, teamCount i
 	if len(enabled) == 0 {
 		return State{}, errors.New("adventure has no geolocated puzzles")
 	}
-	// Need an org to anchor the event — picking the first one keeps the
-	// sim a one-click operation. Operators running this multi-tenant
-	// in prod would wire it to their own org; this is a dev tool.
-	var orgID int64
-	if err := s.db.QueryRowContext(ctx,
-		`SELECT id FROM organizations ORDER BY id ASC LIMIT 1`).Scan(&orgID); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return State{}, errors.New("no organizations exist; create one before simulating")
-		}
-		return State{}, fmt.Errorf("lookup org: %w", err)
-	}
-
 	liveToken, err := newLiveToken()
 	if err != nil {
 		return State{}, fmt.Errorf("token: %w", err)
@@ -281,48 +262,50 @@ func (s *Simulator) Start(ctx context.Context, adventureSlug string, teamCount i
 		startedAt:     time.Now().UTC(),
 		rng:           rng,
 	}
-	s.current = r
+	s.current[orgID] = r
 	go s.loop(ctxRun, r)
 	// Kick the live topic so anyone already watching picks up the
 	// freshly-created run via a snapshot rebuild.
 	s.hub.Publish(ws.EventTopic(eventID), "changed", nil)
 	logx.Info("simulator.started",
-		"event_id", eventID, "adventure", adventureSlug,
+		"event_id", eventID, "org_id", orgID, "adventure", adventureSlug,
 		"teams", teamCount, "speed_mul", speedMul)
-	return s.statusLocked(), nil
+	return s.statusLocked(orgID), nil
 }
 
-// Pause freezes the tick loop but keeps all DB state. Safe to call
-// when already paused.
-func (s *Simulator) Pause() error {
+// Pause freezes the tick loop for the given org but keeps all DB
+// state. Safe to call when already paused.
+func (s *Simulator) Pause(orgID int64) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.current == nil {
+	r := s.current[orgID]
+	if r == nil {
 		return errors.New("no active simulation")
 	}
-	s.current.paused.Store(true)
-	logx.Info("simulator.paused", "event_id", s.current.id)
+	r.paused.Store(true)
+	logx.Info("simulator.paused", "event_id", r.id, "org_id", orgID)
 	return nil
 }
 
-// Resume thaws a paused simulation.
-func (s *Simulator) Resume() error {
+// Resume thaws a paused simulation for the given org.
+func (s *Simulator) Resume(orgID int64) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.current == nil {
+	r := s.current[orgID]
+	if r == nil {
 		return errors.New("no active simulation")
 	}
-	s.current.paused.Store(false)
-	logx.Info("simulator.resumed", "event_id", s.current.id)
+	r.paused.Store(false)
+	logx.Info("simulator.resumed", "event_id", r.id, "org_id", orgID)
 	return nil
 }
 
-// Reset stops the tick loop and deletes every DB row the simulator
-// created. Safe to call when idle (no-op).
-func (s *Simulator) Reset(ctx context.Context) error {
+// Reset stops the tick loop for the given org and deletes every DB
+// row the simulator created for it. Safe to call when idle (no-op).
+func (s *Simulator) Reset(ctx context.Context, orgID int64) error {
 	s.mu.Lock()
-	r := s.current
-	s.current = nil
+	r := s.current[orgID]
+	delete(s.current, orgID)
 	s.mu.Unlock()
 	if r == nil {
 		return nil
@@ -339,27 +322,28 @@ func (s *Simulator) Reset(ctx context.Context) error {
 	if _, err := s.db.ExecContext(ctx, `DELETE FROM events WHERE id = $1`, r.id); err != nil {
 		return fmt.Errorf("delete run: %w", err)
 	}
-	logx.Info("simulator.reset", "event_id", r.id)
+	logx.Info("simulator.reset", "event_id", r.id, "org_id", orgID)
 	return nil
 }
 
 // statusLocked is Status's implementation assuming the mutex is held.
-func (s *Simulator) statusLocked() State {
-	if s.current == nil {
+func (s *Simulator) statusLocked(orgID int64) State {
+	r := s.current[orgID]
+	if r == nil {
 		return State{Stage: "idle"}
 	}
 	stage := "running"
-	if s.current.paused.Load() {
+	if r.paused.Load() {
 		stage = "paused"
 	}
 	return State{
 		Stage:         stage,
-		EventID:         s.current.id,
-		LiveToken:     s.current.liveToken,
-		AdventureSlug: s.current.adventureSlug,
-		TeamCount:     len(s.current.teams),
-		SpeedMul:      s.current.speedMul,
-		StartedAt:     s.current.startedAt.Format(time.RFC3339),
+		EventID:       r.id,
+		LiveToken:     r.liveToken,
+		AdventureSlug: r.adventureSlug,
+		TeamCount:     len(r.teams),
+		SpeedMul:      r.speedMul,
+		StartedAt:     r.startedAt.Format(time.RFC3339),
 	}
 }
 

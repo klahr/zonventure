@@ -610,10 +610,19 @@ function h(tag, attrs = {}, ...children) {
 
 const knownTeams = new Set();
 
+// Server timestamps are stored as 'YYYY-MM-DD HH:MM:SS' UTC text
+// (now_text()), with no trailing Z. Without forcing UTC, new Date()
+// parses them as local time and the elapsed clock skews by the
+// browser's UTC offset.
+function parseServerTime(s) {
+  if (!s) return null;
+  return new Date(s.includes('T') ? s : s.replace(' ', 'T') + 'Z');
+}
+
 function formatElapsed(startISO, nowISO) {
   if (!startISO) return '—';
-  const start = new Date(startISO);
-  const now = nowISO ? new Date(nowISO) : new Date();
+  const start = parseServerTime(startISO);
+  const now = nowISO ? parseServerTime(nowISO) : new Date();
   const sec = Math.max(0, Math.round((now.getTime() - start.getTime()) / 1000));
   const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
   const pad = (n) => String(n).padStart(2, '0');
@@ -622,8 +631,8 @@ function formatElapsed(startISO, nowISO) {
 
 function formatFinishTime(startISO, completedAt) {
   if (!startISO || !completedAt) return '';
-  const start = new Date(startISO);
-  const end = new Date(completedAt.includes('T') ? completedAt : completedAt.replace(' ', 'T') + 'Z');
+  const start = parseServerTime(startISO);
+  const end = parseServerTime(completedAt);
   const sec = Math.max(0, Math.round((end.getTime() - start.getTime()) / 1000));
   const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
   const pad = (n) => String(n).padStart(2, '0');
@@ -636,8 +645,7 @@ function formatFinishTime(startISO, completedAt) {
 // positions 2+, so viewers see at a glance how close the chase was.
 function formatFinishGap(winnerCompletedAt, completedAt) {
   if (!winnerCompletedAt || !completedAt) return '';
-  const parse = (v) => new Date(v.includes('T') ? v : v.replace(' ', 'T') + 'Z');
-  const sec = Math.max(0, Math.round((parse(completedAt).getTime() - parse(winnerCompletedAt).getTime()) / 1000));
+  const sec = Math.max(0, Math.round((parseServerTime(completedAt).getTime() - parseServerTime(winnerCompletedAt).getTime()) / 1000));
   const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
   const pad = (n) => String(n).padStart(2, '0');
   return h ? `+${h}:${pad(m)}:${pad(s)}` : `+${pad(m)}:${pad(s)}`;
@@ -1179,8 +1187,8 @@ function buildPreStart(data) {
 }
 
 function countdownText(scheduledISO, serverNowISO) {
-  const when = new Date(scheduledISO.includes('T') ? scheduledISO : scheduledISO.replace(' ', 'T') + 'Z');
-  const now = serverNowISO ? new Date(serverNowISO) : new Date();
+  const when = parseServerTime(scheduledISO);
+  const now = serverNowISO ? parseServerTime(serverNowISO) : new Date();
   const sec = Math.round((when.getTime() - now.getTime()) / 1000);
   // Flip to a big "Go!" the instant the scheduled time lands. The
   // actual state transition may lag a moment (scheduler sweep / WS
@@ -1197,8 +1205,8 @@ function countdownText(scheduledISO, serverNowISO) {
 }
 
 function formatScheduled(iso) {
-  const d = new Date(iso.includes('T') ? iso : iso.replace(' ', 'T') + 'Z');
-  if (Number.isNaN(d.getTime())) return iso;
+  const d = parseServerTime(iso);
+  if (!d || Number.isNaN(d.getTime())) return iso;
   return d.toLocaleString();
 }
 

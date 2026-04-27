@@ -533,19 +533,22 @@ func New(cfg Config) http.Handler {
 			r.Get("/logs/level", adminH.LogsLevel)
 			r.Put("/logs/level", adminH.SetLogsLevel)
 
-			// Race simulator. Admin-only because it writes runs/teams
-			// on behalf of the first org and can take the DB on a walk.
-			// Routes only mount when the operator has explicitly opted
-			// in via the ZV_SIMULATOR env var, so production admins
-			// can't spin up a simulated race by accident.
-			if cfg.SimulatorEnabled {
-				r.Get("/simulator", adminH.SimulatorStatus)
-				r.Post("/simulator/start", adminH.SimulatorStart)
-				r.Post("/simulator/pause", adminH.SimulatorPause)
-				r.Post("/simulator/resume", adminH.SimulatorResume)
-				r.Post("/simulator/reset", adminH.SimulatorReset)
-			}
 		})
+
+		// Race simulator. Open to arrangers (org_admin/org_member) plus
+		// global admins — each call is org-scoped via the caller's
+		// session, so two arrangers in different orgs can run sims in
+		// parallel without colliding. Routes only mount when the
+		// operator has explicitly opted in via ZV_SIMULATOR=1, so
+		// production deployments can't spin up a simulated race by
+		// accident.
+		if cfg.SimulatorEnabled {
+			r.Get("/simulator", adminH.SimulatorStatus)
+			r.Post("/simulator/start", adminH.SimulatorStart)
+			r.Post("/simulator/pause", adminH.SimulatorPause)
+			r.Post("/simulator/resume", adminH.SimulatorResume)
+			r.Post("/simulator/reset", adminH.SimulatorReset)
+		}
 	})
 
 	// Log stream socket. Lives outside the /api/admin route tree so it
