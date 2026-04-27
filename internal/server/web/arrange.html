@@ -403,6 +403,8 @@ p { margin: 0 0 .5rem; }
 }
 .card h2 { margin-top: 0; }
 .card + .card { margin-top: 1rem; }
+.puzzle-list { margin-top: 1.25rem; }
+.puzzle-card .md-preview { margin-bottom: .75rem; }
 .card.clickable { cursor: pointer; transition: transform var(--anim), box-shadow var(--anim); }
 .card.clickable:hover { transform: translateY(-2px) scale(1.015); box-shadow: var(--shadow-lg); }
 /* Primary-tinted CTA card: used for "ready to schedule" assignments.
@@ -5614,34 +5616,46 @@ function renderLibraryEdit(view, adv) {
   view.replaceChildren(...[
     h('button', { class: 'btn ghost small', on: { click: () => nav(state.me.role === 'admin' ? '#library' : '#adventures') } },
       icon(ICONS.back), t('Back')),
-    h('div', { class: 'row between', style: 'gap:.75rem; align-items:flex-start' },
-      h('div', { class: 'row', style: 'gap:1rem; align-items:center; min-width:0' },
-        adventureCover(adv, 80),
-        h('div', { style: 'min-width:0' },
-          h('h1', { style: 'margin:0' }, adv.title),
-          adv.published === false
-            ? h('span', { class: 'pill warning', style: 'margin-top:.35rem' }, t('Draft'))
-            : h('span', { class: 'pill success', style: 'margin-top:.35rem' }, t('Published')))),
-      h('div', { class: 'card-actions' },
-        hasEnabled
-          ? iconBtn('eye',    t('Open the adventure in the player view'),
-              () => previewAdventure(adv.slug, 0, false))
-          : null,
-        adv.published
-          ? h('button', { class: 'btn small',
-              title: t('Hide from the Store'),
-              on: { click: () => togglePublished(adv, false) } },
-              t('Unpublish'))
-          : h('button', { class: 'btn small primary',
-              title: t('Make available in the Store'),
-              on: { click: () => togglePublished(adv, true) } },
-              t('Publish')),
-        iconBtn('pencil', t('Edit title/slug/colours'), () => openEditAdventureMeta(adv)),
-        iconBtn('trash',  t('Delete adventure'),        () => confirmDeleteAdventure(adv), { danger: true }))),
+    // Identity block: cover + title + status pill. Actions used to ride
+    // alongside in a flex row, which on narrow viewports squeezed the
+    // title against the buttons and forced unlabeled icons to carry the
+    // load. Splitting identity from actions makes the "what is this"
+    // read clean and gives each action a real text label below.
+    h('div', { class: 'row', style: 'gap:1rem; align-items:center' },
+      adventureCover(adv, 80),
+      h('div', { style: 'min-width:0' },
+        h('h1', { style: 'margin:0' }, adv.title),
+        adv.published === false
+          ? h('span', { class: 'pill warning', style: 'margin-top:.35rem' }, t('Draft'))
+          : h('span', { class: 'pill success', style: 'margin-top:.35rem' }, t('Published')))),
     h('p', { class: 'muted mono' }, adv.slug, adv.author ? ` · ${adv.author}` : ''),
     adv.description ? h('p', { class: 'muted' }, adv.description) : null,
+    h('div', { class: 'row', style: 'flex-wrap:wrap; gap:.5rem' },
+      hasEnabled
+        ? h('button', { class: 'btn small',
+            title: t('Open the adventure in the player view'),
+            on: { click: () => previewAdventure(adv.slug, 0, false) } },
+            icon(ICONS.eye), t('Preview'))
+        : null,
+      adv.published
+        ? h('button', { class: 'btn small',
+            title: t('Hide from the Store'),
+            on: { click: () => togglePublished(adv, false) } },
+            t('Unpublish'))
+        : h('button', { class: 'btn small primary',
+            title: t('Make available in the Store'),
+            on: { click: () => togglePublished(adv, true) } },
+            t('Publish')),
+      h('button', { class: 'btn small',
+        title: t('Edit title/slug/colours'),
+        on: { click: () => openEditAdventureMeta(adv) } },
+        icon(ICONS.pencil), t('Edit')),
+      h('button', { class: 'btn small danger',
+        title: t('Delete adventure'),
+        on: { click: () => confirmDeleteAdventure(adv) } },
+        icon(ICONS.trash), t('Delete'))),
     state.me.role === 'admin' ? renderAdventureShares(adv) : null,
-    h('div', { class: 'row between' },
+    h('div', { class: 'row between', style: 'margin-top:1rem' },
       h('h2', {}, t('Puzzles ({{n}})', { n: adv.pages.length })),
       // One "Add puzzle" entry point with a menu for the "copy from
       // library" variant. Two separate buttons read as two separate
