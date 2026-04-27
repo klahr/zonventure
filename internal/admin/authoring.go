@@ -287,25 +287,28 @@ func (h *Handlers) UpdateAdventure(w http.ResponseWriter, r *http.Request) {
 	}
 	sets := []string{"updated_at = now_text()"}
 	args := []any{}
+	// Postgres uses `$N` placeholders, not `?`. Each `add` mints the
+	// next index off the current arg count so SET clauses stay in sync
+	// with their values regardless of which optional fields the caller
+	// patched.
+	add := func(col string, val any) {
+		sets = append(sets, fmt.Sprintf("%s = $%d", col, len(args)+1))
+		args = append(args, val)
+	}
 	if req.Title != nil {
-		sets = append(sets, "title = ?")
-		args = append(args, strings.TrimSpace(*req.Title))
+		add("title", strings.TrimSpace(*req.Title))
 	}
 	if req.Description != nil {
-		sets = append(sets, "description = ?")
-		args = append(args, *req.Description)
+		add("description", *req.Description)
 	}
 	if req.Author != nil {
-		sets = append(sets, "author = ?")
-		args = append(args, *req.Author)
+		add("author", *req.Author)
 	}
 	if req.IntroText != nil {
-		sets = append(sets, "intro_text = ?")
-		args = append(args, *req.IntroText)
+		add("intro_text", *req.IntroText)
 	}
 	if req.OutroText != nil {
-		sets = append(sets, "outro_text = ?")
-		args = append(args, *req.OutroText)
+		add("outro_text", *req.OutroText)
 	}
 	if req.Slug != nil {
 		newSlug := strings.TrimSpace(*req.Slug)
@@ -313,8 +316,7 @@ func (h *Handlers) UpdateAdventure(w http.ResponseWriter, r *http.Request) {
 			httpx.Error(w, http.StatusBadRequest, "slug may only contain a-z 0-9 and hyphens")
 			return
 		}
-		sets = append(sets, "slug = ?")
-		args = append(args, newSlug)
+		add("slug", newSlug)
 	}
 	// Colour fields: accept empty string as "clear to default". Pointer
 	// semantics let callers patch one colour at a time without touching
@@ -336,15 +338,13 @@ func (h *Handlers) UpdateAdventure(w http.ResponseWriter, r *http.Request) {
 			httpx.Error(w, http.StatusBadRequest, p.col+` must be empty or "#rrggbb"`)
 			return
 		}
-		sets = append(sets, p.col+" = ?")
-		args = append(args, nullIfEmpty(*p.val))
+		add(p.col, nullIfEmpty(*p.val))
 	}
 	if req.Published != nil {
-		sets = append(sets, "published = ?")
 		if *req.Published {
-			args = append(args, 1)
+			add("published", 1)
 		} else {
-			args = append(args, 0)
+			add("published", 0)
 		}
 	}
 	if len(sets) == 1 {
@@ -352,7 +352,7 @@ func (h *Handlers) UpdateAdventure(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	args = append(args, slug)
-	q := fmt.Sprintf(`UPDATE adventures SET %s WHERE slug = $1`, strings.Join(sets, ", "))
+	q := fmt.Sprintf(`UPDATE adventures SET %s WHERE slug = $%d`, strings.Join(sets, ", "), len(args))
 	res, err := h.DB.ExecContext(r.Context(), q, args...)
 	if err != nil {
 		httpx.Error(w, http.StatusConflict, "update failed: "+err.Error())
