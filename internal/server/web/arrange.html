@@ -1744,6 +1744,9 @@ const ICONS = {
   // shield, which was generic-security and didn't differentiate
   // between the Organizations and Audit entries.
   building: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/></svg>',
+  // globe — used on the publish/unpublish toggle to convey "make this
+  // visible across orgs" rather than the paper-plane "send" metaphor.
+  globe: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><line x1="3" y1="12" x2="21" y2="12"/><path d="M12 3a13.5 13.5 0 0 1 0 18"/><path d="M12 3a13.5 13.5 0 0 0 0 18"/></svg>',
 };
 
 /* ========== Theme ========== */
@@ -2410,7 +2413,7 @@ function renderShell() {
     items = [
       ['#dashboard',  t('Dashboard'),  ICONS.dashboard],
       ['#adventures', t('Adventures'), ICONS.map],
-      ['#events',     t('Events'),     ICONS.play],
+      ['#events',     t('Events'),     ICONS.schedule],
       ['#simulator', t('Simulator'), ICONS.play],
     ];
     if (isOrgAdmin) {
@@ -5671,11 +5674,11 @@ function renderLibraryEdit(view, adv) {
         ? h('button', { class: 'btn small',
             title: t('Hide from the Store'),
             on: { click: () => togglePublished(adv, false) } },
-            t('Unpublish'))
+            icon(ICONS.globe), t('Unpublish'))
         : h('button', { class: 'btn small primary',
             title: t('Make available in the Store'),
             on: { click: () => togglePublished(adv, true) } },
-            t('Publish')),
+            icon(ICONS.globe), t('Publish')),
       h('button', { class: 'btn small',
         title: t('Edit title/slug/colours'),
         on: { click: () => openEditAdventureMeta(adv) } },
