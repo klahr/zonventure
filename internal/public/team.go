@@ -27,6 +27,14 @@ type teamShareView struct {
 	AvatarURL      string
 	Token          string
 	Members        []teamShareSlot
+	// State, ScheduledAt and StartedAt feed the countdown card. State
+	// is the event's lifecycle code; ScheduledAt is the server-side
+	// "YYYY-MM-DD HH:MM:SS" UTC string, StartedAt the same. The inline
+	// JS appends 'Z' before parsing so the browser interprets them as
+	// UTC, then ticks down against Date.now() in local time.
+	State       string
+	ScheduledAt string
+	StartedAt   string
 }
 
 type teamShareSlot struct {
@@ -53,13 +61,19 @@ func (h *Handlers) TeamShare(w http.ResponseWriter, r *http.Request) {
 		teamID    int64
 		hasAvatar int
 	)
+	var (
+		schedAt sql.NullString
+		startAt sql.NullString
+	)
 	err := h.DB.QueryRowContext(r.Context(), `
-		SELECT t.id, t.name, a.title, (t.avatar_mime_type IS NOT NULL)::int AS has_avatar
+		SELECT t.id, t.name, a.title, (t.avatar_mime_type IS NOT NULL)::int AS has_avatar,
+		       ar.state, ar.scheduled_at, ar.started_at
 		FROM teams t
 		JOIN events ar ON ar.id = t.event_id
 		LEFT JOIN adventures a ON a.slug = ar.adventure_slug
 		WHERE t.token = $1
-	`, token).Scan(&teamID, &view.TeamName, &title, &hasAvatar)
+	`, token).Scan(&teamID, &view.TeamName, &title, &hasAvatar,
+		&view.State, &schedAt, &startAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		http.Error(w, "team not found — ask your arranger for a fresh link", http.StatusNotFound)
 		return
@@ -70,6 +84,8 @@ func (h *Handlers) TeamShare(w http.ResponseWriter, r *http.Request) {
 	}
 	view.AdventureTitle = title.String
 	view.Token = token
+	view.ScheduledAt = schedAt.String
+	view.StartedAt = startAt.String
 	if hasAvatar != 0 {
 		view.AvatarURL = fmt.Sprintf("/adventure-assets/team-avatar/%d", teamID)
 	}
@@ -376,6 +392,14 @@ body { font-family:'Open Sans',system-ui,sans-serif; color:var(--ink); backgroun
 .copy-row button:hover { background: var(--accent-hover); }
 .copy-toast { position: fixed; left: 50%; bottom: 4rem; transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: .55rem .9rem; border-radius: 999px; font-size: .85rem; opacity: 0; transition: opacity .2s ease; pointer-events: none; }
 .copy-toast.show { opacity: 1; }
+/* Countdown card. Sits between the warn callout and the slot list so a
+   captain glances it on first load. The digits use a tabular monospace
+   so the layout doesn't shift each second. */
+.cd { margin: 0 0 1rem; padding: .8rem 1rem; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; text-align: center; }
+.cd .cd-label { color: var(--muted); text-transform: uppercase; letter-spacing: .12em; font-size: .7rem; font-weight: 700; margin: 0 0 .3rem; }
+.cd .cd-value { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-variant-numeric: tabular-nums; font-size: 1.6rem; font-weight: 800; color: var(--ink); margin: 0; }
+.cd.live .cd-value { color: var(--accent); }
+.cd .cd-when { color: var(--muted); font-size: .8rem; margin: .25rem 0 0; }
 </style></head>
 <body>
 <a class="skip-link" href="#main">Skip to your link</a>
@@ -401,6 +425,12 @@ body { font-family:'Open Sans',system-ui,sans-serif; color:var(--ink); backgroun
     <strong>Each link below is for one person only.</strong>
     Tap your own name; don't share your personal link with teammates — they have their own.
   </p>
+
+  <div id="cd" class="cd" hidden>
+    <p class="cd-label" id="cd-label">Starts in</p>
+    <p class="cd-value" id="cd-value">—</p>
+    <p class="cd-when" id="cd-when"></p>
+  </div>
   <div class="copy-row">
     <input id="team-url" type="text" readonly aria-label="Team page URL">
     <button type="button" id="copy-team-url">Copy link</button>
@@ -440,6 +470,9 @@ body { font-family:'Open Sans',system-ui,sans-serif; color:var(--ink); backgroun
   // (then initials(" Alfa") reads "A" instead of "TA").
   var token = {{.Token}};
   var teamName = {{.TeamName}};
+  var eventState = {{.State}};
+  var scheduledAt = {{.ScheduledAt}};
+  var startedAt = {{.StartedAt}};
   var btn = document.getElementById('avatar-btn');
   var file = document.getElementById('avatar-file');
   var removeBtn = document.getElementById('avatar-remove');
@@ -533,6 +566,82 @@ body { font-family:'Open Sans',system-ui,sans-serif; color:var(--ink); backgroun
         navigator.clipboard.writeText(url).then(ok, fail);
       } else { fail(); }
     });
+  }
+
+  // Countdown card. Pre-start: ticks down to scheduled_at. Running:
+  // shows "Live now" (no clock work). Completed: shows "Completed".
+  // No event-state info → leave hidden.
+  var cd = document.getElementById('cd');
+  var cdLabel = document.getElementById('cd-label');
+  var cdValue = document.getElementById('cd-value');
+  var cdWhen = document.getElementById('cd-when');
+
+  function parseUTC(s) {
+    if (!s) return null;
+    var iso = s.indexOf('T') >= 0 ? s : s.replace(' ', 'T') + 'Z';
+    var d = new Date(iso);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  function pad(n) { return n < 10 ? '0' + n : '' + n; }
+  function fmtCountdown(sec) {
+    if (sec <= 0) return '00:00';
+    var d = Math.floor(sec / 86400);
+    var h = Math.floor((sec % 86400) / 3600);
+    var m = Math.floor((sec % 3600) / 60);
+    var s = sec % 60;
+    if (d > 0) return d + 'd ' + pad(h) + ':' + pad(m) + ':' + pad(s);
+    if (h > 0) return pad(h) + ':' + pad(m) + ':' + pad(s);
+    return pad(m) + ':' + pad(s);
+  }
+  function fmtClock(d) {
+    return d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short', hour12: false });
+  }
+
+  if (cd) {
+    if (eventState === 'completed') {
+      cd.hidden = false;
+      cdLabel.textContent = 'Race';
+      cdValue.textContent = 'Completed';
+      cdWhen.textContent = '';
+    } else if (eventState === 'running' || eventState === 'paused') {
+      cd.hidden = false;
+      cd.classList.add('live');
+      cdLabel.textContent = eventState === 'paused' ? 'Race' : 'Race';
+      cdValue.textContent = eventState === 'paused' ? 'Paused' : 'Live now';
+      var startD = parseUTC(startedAt);
+      cdWhen.textContent = startD ? 'Started ' + fmtClock(startD) : '';
+    } else {
+      var when = parseUTC(scheduledAt);
+      if (when) {
+        cd.hidden = false;
+        cdLabel.textContent = 'Starts in';
+        cdWhen.textContent = fmtClock(when);
+        var tick = function () {
+          var sec = Math.round((when.getTime() - Date.now()) / 1000);
+          if (sec <= 0) {
+            cd.classList.add('live');
+            cdLabel.textContent = 'Race';
+            cdValue.textContent = 'Starting…';
+            cdWhen.textContent = '';
+            return false;
+          }
+          cdValue.textContent = fmtCountdown(sec);
+          return true;
+        };
+        if (tick()) {
+          var iv = setInterval(function () {
+            if (!tick()) clearInterval(iv);
+          }, 1000);
+        }
+      } else {
+        // No scheduled_at and not yet running — arranger will start it
+        // manually. Show a status line rather than a misleading clock.
+        cd.hidden = false;
+        cdLabel.textContent = 'Race';
+        cdValue.textContent = 'Awaiting start';
+        cdWhen.textContent = '';
+      }
+    }
   }
 })();
 </script>

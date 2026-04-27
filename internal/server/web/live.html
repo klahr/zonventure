@@ -1207,7 +1207,8 @@ function countdownText(scheduledISO, serverNowISO) {
 function formatScheduled(iso) {
   const d = parseServerTime(iso);
   if (!d || Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleString();
+  // 24h clock so the TV never displays ambiguous AM/PM during a race.
+  return d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short', hour12: false });
 }
 
 // playStartAnimation drops a full-screen accent burst the moment the

@@ -4378,12 +4378,14 @@ function renderEvent(e, teams) {
 // fmtLocal turns a server timestamp (SQLite "YYYY-MM-DD HH:MM:SS" UTC, or an
 // RFC3339 string) into the viewer's local time. Returns '—' for empty input
 // and the raw value when it can't be parsed, so we never show "Invalid Date".
+// hour12:false forces a 24h clock regardless of locale; AM/PM is never the
+// right answer in an arranger's ops UI (puzzle queues, sched/start times).
 function fmtLocal(s, opts) {
   if (!s) return '—';
   const iso = s.includes('T') ? s : s.replace(' ', 'T') + 'Z';
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return s;
-  return d.toLocaleString(undefined, opts || { dateStyle: 'medium', timeStyle: 'short' });
+  return d.toLocaleString(undefined, opts || { dateStyle: 'medium', timeStyle: 'short', hour12: false });
 }
 
 function formatEventTime(s) {
@@ -4397,7 +4399,7 @@ function formatEventTime(s) {
   if (diff < 60) return t('just now');
   if (diff < 3600) return t('{{n}}m ago', { n: Math.round(diff / 60) });
   if (diff < 86400) return t('{{n}}h ago', { n: Math.round(diff / 3600) });
-  return d.toLocaleString();
+  return d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short', hour12: false });
 }
 
 function btn(label, cls, fn) {
@@ -9359,12 +9361,12 @@ function renderSlotExpiryHint(expiresAt, _lastLogin) {
   if (isNaN(exp.getTime())) return null;
   const ms = exp.getTime() - Date.now();
   if (ms <= 0) {
-    return h('span', { class: 'tl-expiry expired', title: t('Expired {{when}}', { when: exp.toLocaleString() }) },
+    return h('span', { class: 'tl-expiry expired', title: t('Expired {{when}}', { when: fmtLocal(expiresAt) }) },
       t('expired'));
   }
   const days = Math.ceil(ms / (24 * 3600 * 1000));
   if (days <= 7) {
-    return h('span', { class: 'tl-expiry soon', title: t('Expires {{when}}', { when: exp.toLocaleString() }) },
+    return h('span', { class: 'tl-expiry soon', title: t('Expires {{when}}', { when: fmtLocal(expiresAt) }) },
       t('expires in {{n}}d', { n: days }));
   }
   return null;
@@ -9372,12 +9374,13 @@ function renderSlotExpiryHint(expiresAt, _lastLogin) {
 
 function formatAuditTS(ts) {
   // Server emits 'YYYY-MM-DD HH:MM:SS' UTC. Render local time so the
-  // operator's clock matches the row.
+  // operator's clock matches the row. 24h clock matches the rest of
+  // the app — forensic timestamps shouldn't be ambiguous AM/PM.
   if (!ts) return '';
   const iso = ts.includes('T') ? ts : ts.replace(' ', 'T') + 'Z';
   const d = new Date(iso);
   if (isNaN(d.getTime())) return ts;
-  return d.toLocaleString();
+  return d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'medium', hour12: false });
 }
 
 function levelRank(level) {
