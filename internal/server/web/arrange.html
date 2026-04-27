@@ -7773,7 +7773,7 @@ async function viewAudit(view) {
       const qs = new URLSearchParams({ limit: String(PAGE) });
       if (oldestID > 0) qs.set('before_id', String(oldestID));
       const r = await api('/api/admin/auth-events?' + qs.toString());
-      const events = r.events || [];
+      const events = r.body?.events || [];
       for (const e of events) {
         tbody.appendChild(renderAuditRow(e));
       }
