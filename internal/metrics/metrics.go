@@ -12,7 +12,10 @@
 package metrics
 
 import (
+	"bufio"
 	"context"
+	"errors"
+	"net"
 	"net/http"
 	"time"
 
@@ -108,6 +111,22 @@ func (r *statusRecorder) Write(b []byte) (int, error) {
 		r.wrote = true
 	}
 	return r.ResponseWriter.Write(b)
+}
+
+// Hijack proxies through to the underlying ResponseWriter so WebSocket
+// upgrades work when this middleware is in the chain. Without this,
+// coder/websocket.Accept fails the http.Hijacker assertion and writes
+// 501 Not Implemented for every /ws/* endpoint.
+func (r *statusRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	h, ok := r.ResponseWriter.(http.Hijacker)
+	if !ok {
+		return nil, nil, errors.New("statusRecorder: underlying ResponseWriter is not a Hijacker")
+	}
+	if !r.wrote {
+		r.status = http.StatusSwitchingProtocols
+		r.wrote = true
+	}
+	return h.Hijack()
 }
 
 // HTTPMiddleware records request count + duration for every handler
