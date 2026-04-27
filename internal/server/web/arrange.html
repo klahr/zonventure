@@ -3009,7 +3009,10 @@ async function viewAdventures(view) {
         ? t('{{n}} puzzle', { n: adv.page_count })
         : t('{{n}} puzzles', { n: adv.page_count })),
       adv.mine_to_edit ? h('span', { class: 'pill accent' }, t('Yours')) : null,
-      adv.mine_to_edit
+      // Only the global catalog (org_id IS NULL) actually consults the
+      // published flag for cross-org visibility; on org-owned rows it
+      // doesn't change anything, so don't display a misleading pill.
+      adv.mine_to_edit && !adv.org_id
         ? (adv.published
             ? h('span', { class: 'pill success' }, t('Published'))
             : h('span', { class: 'pill warning' }, t('Draft')))
@@ -5426,9 +5429,11 @@ async function viewLibrary(view) {
               adventureCover(a, 56),
               h('h2', { style: 'margin:0' }, a.title)),
             h('div', { class: 'row', style: 'gap:.35rem; flex-wrap:wrap' },
-              a.published
-                ? h('span', { class: 'pill success' }, t('Published'))
-                : h('span', { class: 'pill warning' }, t('Draft')),
+              !a.org_id
+                ? (a.published
+                    ? h('span', { class: 'pill success' }, t('Published'))
+                    : h('span', { class: 'pill warning' }, t('Draft')))
+                : null,
               h('span', { class: 'pill accent' }, t('{{n}} puzzles', { n: a.page_count })))),
           a.description ? h('p', { class: 'muted' }, a.description) : null,
           h('p', { class: 'muted mono' }, a.slug)))),
@@ -5658,9 +5663,13 @@ function renderLibraryEdit(view, adv) {
       adventureCover(adv, 80),
       h('div', { style: 'min-width:0' },
         h('h1', { style: 'margin:0' }, adv.title),
-        adv.published === false
-          ? h('span', { class: 'pill warning', style: 'margin-top:.35rem' }, t('Draft'))
-          : h('span', { class: 'pill success', style: 'margin-top:.35rem' }, t('Published')))),
+        // Draft / Published only signals something on admin-owned (global
+        // catalog) adventures. For org-owned ones the flag has no
+        // visibility effect, so don't surface a misleading status pill.
+        adv.org_id ? null
+          : (adv.published === false
+              ? h('span', { class: 'pill warning', style: 'margin-top:.35rem' }, t('Draft'))
+              : h('span', { class: 'pill success', style: 'margin-top:.35rem' }, t('Published'))))),
     h('p', { class: 'muted mono' }, adv.slug, adv.author ? ` · ${adv.author}` : ''),
     adv.description ? h('p', { class: 'muted' }, adv.description) : null,
     h('div', { class: 'row', style: 'flex-wrap:wrap; gap:.5rem' },
@@ -5670,7 +5679,12 @@ function renderLibraryEdit(view, adv) {
             on: { click: () => previewAdventure(adv.slug, 0, false) } },
             icon(ICONS.eye), t('Preview'))
         : null,
-      adv.published
+      // Publish/Unpublish toggles cross-org catalog visibility — but
+      // the visibility query only consults `published` for admin-owned
+      // (org_id IS NULL) rows. For org-owned adventures the flag is a
+      // no-op, so hide the affordance instead of advertising an
+      // action that does nothing.
+      !adv.org_id && (adv.published
         ? h('button', { class: 'btn small',
             title: t('Hide from the Store'),
             on: { click: () => togglePublished(adv, false) } },
@@ -5678,7 +5692,7 @@ function renderLibraryEdit(view, adv) {
         : h('button', { class: 'btn small primary',
             title: t('Make available in the Store'),
             on: { click: () => togglePublished(adv, true) } },
-            icon(ICONS.globe), t('Publish')),
+            icon(ICONS.globe), t('Publish'))),
       h('button', { class: 'btn small',
         title: t('Edit title/slug/colours'),
         on: { click: () => openEditAdventureMeta(adv) } },

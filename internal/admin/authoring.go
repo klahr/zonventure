@@ -91,6 +91,12 @@ type adventureEditDTO struct {
 	BackgroundColor      string      `json:"background_color"`
 	TextColor            string      `json:"text_color"`
 	AvatarURL            string      `json:"avatar_url,omitempty"`
+	// OrgID identifies the owner — nil for admin-owned global-catalog
+	// adventures, set for org-owned ones. The publish flag is only
+	// load-bearing for the nil case (it gates cross-org catalog
+	// visibility); the UI uses this to hide the toggle for org-owned
+	// rows where flipping it has no effect.
+	OrgID                *int64      `json:"org_id,omitempty"`
 	Published            bool        `json:"published"`
 	Shares               []shareView `json:"shares"`
 	Pages                []pageView  `json:"pages"`
@@ -878,16 +884,17 @@ func loadAdventureDTO(ctx context.Context, db *sql.DB, slug string) (*adventureE
 		accent, accent2, bg, ink sql.NullString
 		hasAvatar                int
 		published                int
+		orgID                    sql.NullInt64
 	)
 	if err := db.QueryRowContext(ctx, `
 		SELECT id, slug, title, description, author, intro_text, outro_text,
 		       accent_color, accent_secondary_color, background_color, text_color,
 		       (avatar_mime_type IS NOT NULL)::int AS has_avatar,
-		       published
+		       published, org_id
 		FROM adventures WHERE slug = $1
 	`, slug).Scan(&a.ID, &a.Slug, &a.Title, &a.Description, &a.Author,
 		&a.IntroText, &a.OutroText,
-		&accent, &accent2, &bg, &ink, &hasAvatar, &published); err != nil {
+		&accent, &accent2, &bg, &ink, &hasAvatar, &published, &orgID); err != nil {
 		return nil, err
 	}
 	a.AccentColor = accent.String
@@ -895,6 +902,10 @@ func loadAdventureDTO(ctx context.Context, db *sql.DB, slug string) (*adventureE
 	a.BackgroundColor = bg.String
 	a.TextColor = ink.String
 	a.Published = published != 0
+	if orgID.Valid {
+		v := orgID.Int64
+		a.OrgID = &v
+	}
 	if hasAvatar != 0 {
 		a.AvatarURL = adventureAvatarURL(a.Slug)
 	}
