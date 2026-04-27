@@ -2987,14 +2987,14 @@ async function viewAdventures(view) {
       actions.append(h('button', {
         class: 'btn primary',
         on: { click: () => pickAndScheduleRun(bucket.unused, adv) },
-      }, icon(ICONS.play), t('Schedule event')));
+      }, icon(ICONS.schedule), t('Schedule event')));
     } else if (adv.shared || (adv.mine_to_edit && adv.org_id)) {
       // Commissioned by admin or authored in-house — either way the
       // org can schedule events freely, no assignment needed.
       actions.append(h('button', {
         class: 'btn primary',
         on: { click: () => scheduleRun({ slug: adv.slug }) },
-      }, icon(ICONS.play), t('Schedule event')));
+      }, icon(ICONS.schedule), t('Schedule event')));
     } else if (adv.mine_to_edit) {
       // Own adventure with no unused assignments — offer the buy
       // path inline so "make this runnable" is one step away.
