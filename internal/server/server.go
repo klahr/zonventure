@@ -17,6 +17,7 @@ import (
 	"git.sr.ht/~klahr/zv/internal/metrics"
 	"git.sr.ht/~klahr/zv/internal/player"
 	"git.sr.ht/~klahr/zv/internal/public"
+	"git.sr.ht/~klahr/zv/internal/settings"
 	"git.sr.ht/~klahr/zv/internal/simulator"
 	"git.sr.ht/~klahr/zv/internal/ws"
 	"github.com/go-chi/chi/v5"
@@ -153,6 +154,14 @@ func New(cfg Config) http.Handler {
 			http.Redirect(w, req, "/arrange", http.StatusFound)
 			return
 		}
+		// Self-host operators can hide the marketing landing via the
+		// admin Settings page. With the landing off, an unauthenticated
+		// visitor lands directly on /arrange — the login screen is the
+		// front door for a closed deployment.
+		if !settings.LandingEnabled(req.Context(), cfg.DB) {
+			http.Redirect(w, req, "/arrange", http.StatusFound)
+			return
+		}
 		renderLandingPage(w, req)
 	})
 
@@ -255,6 +264,15 @@ func New(cfg Config) http.Handler {
 		renderTopbarPage(w, req, "web/manual.html")
 	})
 	r.Get("/pricing", func(w http.ResponseWriter, req *http.Request) {
+		// The pricing page is part of the public marketing surface.
+		// Self-hosters with the landing off don't sell anything to
+		// random visitors — fall through to the 404 handler so a
+		// crawler hitting an old link gets the same shape as any
+		// other unknown URL.
+		if !settings.LandingEnabled(req.Context(), cfg.DB) {
+			servePublicPage("web/404.html", http.StatusNotFound)(w, req)
+			return
+		}
 		renderTopbarPage(w, req, "web/pricing.html")
 	})
 
@@ -483,12 +501,12 @@ func New(cfg Config) http.Handler {
 			r.Post("/admins", adminH.CreateAdmin)
 			r.Delete("/admins/{userID}", adminH.DeleteAdmin)
 
-			// Operator-tunable runtime settings. Today: public-signup
-			// gate; future: any other "self-host wants to lock this
-			// down" knob. Admin-only because flipping signup off
-			// affects who can ever join the deployment.
+			// Operator-tunable runtime settings. Admin-only because
+			// these knobs affect everyone hitting the deployment —
+			// public signup, the marketing landing, etc.
 			r.Get("/settings", adminH.GetSettings)
 			r.Put("/settings/signup", adminH.SetSignupEnabled)
+			r.Put("/settings/landing", adminH.SetLandingEnabled)
 
 			// Manual email verification — admin escape hatch when an
 			// arranger never received the self-serve verification mail.

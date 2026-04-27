@@ -1454,10 +1454,15 @@
       "Sign out of every other browser, phone, and tablet? You'll stay signed in here.":
           'Logga ut från alla andra webbläsare, telefoner och surfplattor? Du förblir inloggad här.',
       'Other sessions signed out': 'Andra sessioner utloggade',
-      'Public signup': 'Offentlig registrering',
+      'Server settings': 'Serverinställningar',
+      'Knobs that affect the whole deployment. Visible only to global admins.':
+          'Inställningar som påverkar hela installationen. Syns bara för globala administratörer.',
       'Allow public signup': 'Tillåt offentlig registrering',
       'When off, the /arrange "Sign up" link is hidden and the signup endpoint refuses new accounts. Existing arrangers can still log in. Add new arrangers via Organizations → Members.':
           'När av döljs "Registrera dig"-länken på /arrange och registreringsendpointen avvisar nya konton. Befintliga arrangörer kan fortfarande logga in. Lägg till nya arrangörer via Organisationer → Medlemmar.',
+      'Show public landing page': 'Visa offentlig startsida',
+      "When off, unauthenticated visitors to / are sent straight to the login screen and /pricing returns 404. Useful for self-host deployments that don't want a marketing front door.":
+          'När av skickas oinloggade besökare på / direkt till inloggningssidan, och /pricing returnerar 404. Användbart för egenhostade installationer som inte vill ha en marknadsförings­ingång.',
       'Saved.': 'Sparat.',
       'Recent security activity': 'Senaste säkerhetsaktivitet',
       'Your last 25 login, password and email-change events.':

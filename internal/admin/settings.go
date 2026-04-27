@@ -13,27 +13,33 @@ import (
 // returns. Object-shaped (not a flat bool) so adding the next admin
 // toggle later is a field add, not a response-shape break.
 type settingsResponse struct {
-	SignupEnabled bool `json:"signup_enabled"`
+	SignupEnabled  bool `json:"signup_enabled"`
+	LandingEnabled bool `json:"landing_enabled"`
 }
 
 // GetSettings returns the operator-tunable admin settings. Admin-only
 // at the route level. Cheap enough to read fresh per request — single
 // PK lookup against a tiny KV table — so no caching layer.
 func (h *Handlers) GetSettings(w http.ResponseWriter, r *http.Request) {
-	httpx.JSON(w, http.StatusOK, settingsResponse{
-		SignupEnabled: settings.SignupEnabled(r.Context(), h.DB),
-	})
+	httpx.JSON(w, http.StatusOK, h.buildSettingsResponse(r))
 }
 
-type setSignupRequest struct {
+func (h *Handlers) buildSettingsResponse(r *http.Request) settingsResponse {
+	return settingsResponse{
+		SignupEnabled:  settings.SignupEnabled(r.Context(), h.DB),
+		LandingEnabled: settings.LandingEnabled(r.Context(), h.DB),
+	}
+}
+
+type setBoolRequest struct {
 	Enabled bool `json:"enabled"`
 }
 
 // SetSignupEnabled flips the public signup gate. Audit-logged so an
-// operator reviewing the auth_events table can see who turned signup
-// off and when. Admin-only at the route level.
+// operator reviewing the logs can see who turned signup off and when.
+// Admin-only at the route level.
 func (h *Handlers) SetSignupEnabled(w http.ResponseWriter, r *http.Request) {
-	var req setSignupRequest
+	var req setBoolRequest
 	if !httpx.DecodeJSON(w, r, &req) {
 		return
 	}
@@ -43,10 +49,31 @@ func (h *Handlers) SetSignupEnabled(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	me, _ := auth.FromContext(r.Context())
-	state := "disabled"
-	if req.Enabled {
-		state = "enabled"
+	logx.Info("admin.settings.signup", "state", boolState(req.Enabled), "by", me.Username)
+	httpx.JSON(w, http.StatusOK, h.buildSettingsResponse(r))
+}
+
+// SetLandingEnabled flips the marketing-surface gate. When off, the
+// public `/` and `/pricing` routes redirect to /arrange (or 404 for
+// /pricing). Logged-in users are unaffected.
+func (h *Handlers) SetLandingEnabled(w http.ResponseWriter, r *http.Request) {
+	var req setBoolRequest
+	if !httpx.DecodeJSON(w, r, &req) {
+		return
 	}
-	logx.Info("admin.settings.signup", "state", state, "by", me.Username)
-	httpx.JSON(w, http.StatusOK, settingsResponse{SignupEnabled: req.Enabled})
+	if err := settings.SetLandingEnabled(r.Context(), h.DB, req.Enabled); err != nil {
+		logx.Error("admin.settings.landing_set_failed", "err", err.Error())
+		httpx.Error(w, http.StatusInternalServerError, "could not save setting")
+		return
+	}
+	me, _ := auth.FromContext(r.Context())
+	logx.Info("admin.settings.landing", "state", boolState(req.Enabled), "by", me.Username)
+	httpx.JSON(w, http.StatusOK, h.buildSettingsResponse(r))
+}
+
+func boolState(on bool) string {
+	if on {
+		return "enabled"
+	}
+	return "disabled"
 }

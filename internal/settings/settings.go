@@ -15,10 +15,13 @@ import (
 	"strings"
 )
 
-// KeySignupEnabled is the only settings key today. Surfaced as a
-// constant so the migration default, the admin handler, and the auth
-// handler all reference the same string.
-const KeySignupEnabled = "signup_enabled"
+// Setting keys. Surfaced as constants so the migration defaults, the
+// admin handler, and the read sites in auth/server all reference the
+// same strings.
+const (
+	KeySignupEnabled  = "signup_enabled"
+	KeyLandingEnabled = "landing_enabled"
+)
 
 // SignupEnabled reports whether the public /api/auth/signup endpoint
 // is allowed to create new organizations. Defaults to true on any
@@ -36,6 +39,34 @@ func SignupEnabled(ctx context.Context, db *sql.DB) bool {
 // SetSignupEnabled writes the new value, upserting the row so the
 // caller doesn't have to know whether the key already exists.
 func SetSignupEnabled(ctx context.Context, db *sql.DB, on bool) error {
+	return setBool(ctx, db, KeySignupEnabled, on)
+}
+
+// LandingEnabled reports whether the public marketing surfaces
+// (`/` landing page, `/pricing`) are exposed. When off, an
+// unauthenticated visitor lands directly on /arrange and /pricing
+// 404s. Logged-in arrangers and players are unaffected (they're
+// redirected away from `/` either way).
+//
+// Defaults to false on lookup error: the canonical deployment is
+// self-host, where there is no marketing site to expose, so a
+// transient DB hiccup mustn't accidentally surface one. Hosted ops
+// who flipped it on via the admin Settings page see the row hit
+// during a normal request and so don't trip the fallback path.
+func LandingEnabled(ctx context.Context, db *sql.DB) bool {
+	v, err := getString(ctx, db, KeyLandingEnabled)
+	if err != nil {
+		return false
+	}
+	return parseBool(v, false)
+}
+
+// SetLandingEnabled persists the marketing-surface toggle.
+func SetLandingEnabled(ctx context.Context, db *sql.DB, on bool) error {
+	return setBool(ctx, db, KeyLandingEnabled, on)
+}
+
+func setBool(ctx context.Context, db *sql.DB, key string, on bool) error {
 	v := "0"
 	if on {
 		v = "1"
@@ -44,7 +75,7 @@ func SetSignupEnabled(ctx context.Context, db *sql.DB, on bool) error {
 		INSERT INTO settings(key, value, updated_at)
 		VALUES ($1, $2, now_text())
 		ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
-	`, KeySignupEnabled, v)
+	`, key, v)
 	return err
 }
 

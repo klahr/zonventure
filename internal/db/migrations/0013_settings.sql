@@ -12,8 +12,12 @@ CREATE TABLE settings (
     updated_at TEXT NOT NULL DEFAULT now_text()
 );
 
--- Default: open signup, matching the historical behaviour. Self-host
--- operators flip this off from the admin Settings page when they want
--- a closed deployment (e.g. a single-org install with members invited
--- by the org admin).
-INSERT INTO settings(key, value) VALUES ('signup_enabled', '1');
+-- Defaults are tuned for self-host: signup open (so a fresh operator
+-- can register their first arranger account through the UI), but the
+-- marketing landing OFF (a self-host deployment is an app, not a
+-- marketing site — unauthenticated visitors land on /arrange).
+-- Hosted ops flip landing_enabled on via the admin Settings page
+-- after deploying.
+INSERT INTO settings(key, value) VALUES
+    ('signup_enabled',  '1'),
+    ('landing_enabled', '0');

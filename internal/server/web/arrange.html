@@ -8693,19 +8693,67 @@ async function viewSettings(view) {
 }
 
 // renderSettingsServerCard surfaces operator-tunable runtime knobs to
-// the global admin. Today: the public-signup gate. Self-host
-// operators flip it off when they want a closed deployment (single
-// org, members invited only). Hosted ops keep it on so the marketing
-// site's signup CTA continues to work.
+// the global admin. Two toggles today: public signup, and the
+// marketing landing surface. Self-host operators flip both off for a
+// closed deployment (single org, members invited only, app-only
+// front door). Hosted ops keep both on so the marketing site and
+// signup CTA continue to work.
 function renderSettingsServerCard() {
   const card = h('div', { class: 'card settings-card' });
   const status = h('p', { class: 'muted', style: 'font-size:.85rem; margin:.5rem 0 0' });
-  const toggle = h('input', { type: 'checkbox' });
-  const label = h('label', { class: 'row', style: 'gap:.5rem; align-items:center' },
-    toggle,
-    h('span', {}, t('Allow public signup')));
-  const help = h('p', { class: 'muted', style: 'font-size:.85rem' },
-    t('When off, the /arrange "Sign up" link is hidden and the signup endpoint refuses new accounts. Existing arrangers can still log in. Add new arrangers via Organizations → Members.'));
+
+  // Two toggles share the load/save plumbing — same endpoint shape,
+  // different keys. The buildToggle helper isolates the bits that
+  // differ (label, help text, response field, save URL, in-memory
+  // mirror) so adding the next toggle later is a one-call addition.
+  const buildToggle = ({ label, help, field, saveUrl, mirror }) => {
+    const input = h('input', { type: 'checkbox' });
+    const setStatus = (ok, msg) => {
+      status.className = ok ? 'muted' : 'err';
+      status.textContent = msg || '';
+    };
+    input.addEventListener('change', async () => {
+      input.disabled = true;
+      setStatus(true, t('Saving…'));
+      const r = await api(saveUrl, {
+        method: 'PUT',
+        body: JSON.stringify({ enabled: input.checked }),
+      });
+      input.disabled = false;
+      if (!r.ok) {
+        setStatus(false, r.body?.error || t('error {{status}}', { status: r.status }));
+        input.checked = !input.checked;
+        return;
+      }
+      setStatus(true, t('Saved.'));
+      if (mirror) mirror(!!r.body?.[field]);
+    });
+    return {
+      input,
+      row: h('div', { style: 'margin-top:.75rem' },
+        h('label', { class: 'row', style: 'gap:.5rem; align-items:center' },
+          input,
+          h('span', {}, label)),
+        h('p', { class: 'muted', style: 'font-size:.85rem; margin:.25rem 0 0 1.5rem' }, help)),
+      field,
+    };
+  };
+
+  const signup = buildToggle({
+    label: t('Allow public signup'),
+    help: t('When off, the /arrange "Sign up" link is hidden and the signup endpoint refuses new accounts. Existing arrangers can still log in. Add new arrangers via Organizations → Members.'),
+    field: 'signup_enabled',
+    saveUrl: '/api/admin/settings/signup',
+    mirror: (v) => { state.signupEnabled = v; },
+  });
+  const landing = buildToggle({
+    label: t('Show public landing page'),
+    help: t('When off, unauthenticated visitors to / are sent straight to the login screen and /pricing returns 404. Useful for self-host deployments that don\'t want a marketing front door.'),
+    field: 'landing_enabled',
+    saveUrl: '/api/admin/settings/landing',
+    mirror: null,
+  });
+  const toggles = [signup, landing];
 
   const setStatus = (ok, msg) => {
     status.className = ok ? 'muted' : 'err';
@@ -8716,37 +8764,21 @@ function renderSettingsServerCard() {
     const r = await api('/api/admin/settings');
     if (!r.ok) {
       setStatus(false, r.body?.error || t('error {{status}}', { status: r.status }));
-      toggle.disabled = true;
+      toggles.forEach((tg) => { tg.input.disabled = true; });
       return;
     }
-    toggle.checked = !!r.body?.signup_enabled;
-    toggle.disabled = false;
+    toggles.forEach((tg) => {
+      tg.input.checked = !!r.body?.[tg.field];
+      tg.input.disabled = false;
+    });
     setStatus(true, '');
   };
-  toggle.addEventListener('change', async () => {
-    toggle.disabled = true;
-    setStatus(true, t('Saving…'));
-    const r = await api('/api/admin/settings/signup', {
-      method: 'PUT',
-      body: JSON.stringify({ enabled: toggle.checked }),
-    });
-    toggle.disabled = false;
-    if (!r.ok) {
-      setStatus(false, r.body?.error || t('error {{status}}', { status: r.status }));
-      // Roll back the visible state so the checkbox reflects truth.
-      toggle.checked = !toggle.checked;
-      return;
-    }
-    setStatus(true, t('Saved.'));
-    // Keep the in-memory hint in sync so the next pre-auth render
-    // (e.g. logout) reflects the new value without a reload.
-    state.signupEnabled = !!r.body?.signup_enabled;
-  });
 
   card.append(
-    h('h2', {}, t('Public signup')),
-    label,
-    help,
+    h('h2', {}, t('Server settings')),
+    h('p', { class: 'muted', style: 'font-size:.9rem' },
+      t('Knobs that affect the whole deployment. Visible only to global admins.')),
+    ...toggles.map((tg) => tg.row),
     status,
   );
   refresh();
