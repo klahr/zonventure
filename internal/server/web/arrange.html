@@ -288,7 +288,7 @@ p { margin: 0 0 .5rem; }
 
 .content {
   grid-area: content;
-  padding: 2rem 2.5rem 3rem;
+  padding: 1.5rem 2rem 3rem;
   min-width: 0;          /* let the grid track shrink below content's intrinsic width */
   overflow-x: hidden;    /* defense in depth — page itself never scrolls sideways */
 }
@@ -318,7 +318,7 @@ p { margin: 0 0 .5rem; }
   .sidebar.open { transform: translateX(0); }
   .topbar .brand { display: inline-flex; align-items: baseline; gap: .4rem; font-weight: 700; }
   .btn.menu-btn { display: inline-flex; }
-  .content { padding: 1.5rem 2rem 2.5rem; }
+  .content { padding: 1rem; }
   .topbar .crumb { display: none; }
   .topbar .user-details { display: none; }
 }
@@ -5641,7 +5641,7 @@ function renderLibraryEdit(view, adv) {
     h('p', { class: 'muted mono' }, adv.slug, adv.author ? ` · ${adv.author}` : ''),
     adv.description ? h('p', { class: 'muted' }, adv.description) : null,
     state.me.role === 'admin' ? renderAdventureShares(adv) : null,
-    h('div', { class: 'row between', style: 'margin-top:1rem' },
+    h('div', { class: 'row between' },
       h('h2', {}, t('Puzzles ({{n}})', { n: adv.pages.length })),
       // One "Add puzzle" entry point with a menu for the "copy from
       // library" variant. Two separate buttons read as two separate
