@@ -259,12 +259,25 @@ type TracksResponse struct {
 // buildTracks fetches per-team ping history for an event. Returns
 // (resp, status, errMsg). Caller is responsible for authorising by token.
 func (h *Handlers) buildTracks(ctx context.Context, eventID int64) (TracksResponse, int, string) {
+	// Smooth the per-team line by collapsing pings into 10s buckets and
+	// emitting one centroid per bucket. Bucketing is done by truncating
+	// server_ts at the tens-of-seconds digit (server_ts is a fixed-width
+	// 'YYYY-MM-DD HH24:MI:SS' string from now_text()). The centroid is an
+	// inverse-variance weighted mean: pings with smaller `accuracy` (in
+	// metres) dominate, with a 1m floor to bound the weight and a 50m
+	// fallback when accuracy is null.
 	rows, err := h.DB.QueryContext(ctx, `
 		SELECT p.team_id, t.name, (t.avatar_mime_type IS NOT NULL)::int AS has_avatar,
-		       p.lat, p.lng, p.server_ts
+		       SUM(p.lat / power(GREATEST(COALESCE(p.accuracy, 50), 1), 2)) /
+		         SUM(1.0 / power(GREATEST(COALESCE(p.accuracy, 50), 1), 2)) AS lat,
+		       SUM(p.lng / power(GREATEST(COALESCE(p.accuracy, 50), 1), 2)) /
+		         SUM(1.0 / power(GREATEST(COALESCE(p.accuracy, 50), 1), 2)) AS lng,
+		       substring(p.server_ts, 1, 18) || '0' AS server_ts
 		FROM location_pings p JOIN teams t ON t.id = p.team_id
 		WHERE p.event_id = $1
-		ORDER BY p.team_id, p.server_ts
+		GROUP BY p.team_id, t.name, (t.avatar_mime_type IS NOT NULL),
+		         substring(p.server_ts, 1, 18)
+		ORDER BY p.team_id, server_ts
 	`, eventID)
 	if err != nil {
 		return TracksResponse{}, http.StatusInternalServerError, "query failed"
