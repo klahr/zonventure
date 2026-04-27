@@ -1454,6 +1454,11 @@
       "Sign out of every other browser, phone, and tablet? You'll stay signed in here.":
           'Logga ut från alla andra webbläsare, telefoner och surfplattor? Du förblir inloggad här.',
       'Other sessions signed out': 'Andra sessioner utloggade',
+      'Public signup': 'Offentlig registrering',
+      'Allow public signup': 'Tillåt offentlig registrering',
+      'When off, the /arrange "Sign up" link is hidden and the signup endpoint refuses new accounts. Existing arrangers can still log in. Add new arrangers via Organizations → Members.':
+          'När av döljs "Registrera dig"-länken på /arrange och registreringsendpointen avvisar nya konton. Befintliga arrangörer kan fortfarande logga in. Lägg till nya arrangörer via Organisationer → Medlemmar.',
+      'Saved.': 'Sparat.',
       'Recent security activity': 'Senaste säkerhetsaktivitet',
       'Your last 25 login, password and email-change events.':
           'Dina senaste 25 inloggnings-, lösenords- och e-poständringshändelser.',

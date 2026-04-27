@@ -10,6 +10,7 @@ import (
 	"git.sr.ht/~klahr/zv/internal/httpx"
 	"git.sr.ht/~klahr/zv/internal/logx"
 	mailerpkg "git.sr.ht/~klahr/zv/internal/mailer"
+	"git.sr.ht/~klahr/zv/internal/settings"
 )
 
 type signupRequest struct {
@@ -32,6 +33,16 @@ type signupRequest struct {
 // the per-IP bucket of h.Limiter so a script can't enumerate emails
 // or spray the org table at line rate.
 func (h *Handlers) Signup(w http.ResponseWriter, r *http.Request) {
+	// Operator-controlled gate. Read fresh per request — the toggle is
+	// rare-flip + the lookup is one indexed PK fetch, so a per-request
+	// cost is fine and a flip propagates without restarting the app.
+	if !settings.SignupEnabled(r.Context(), h.DB) {
+		httpx.JSON(w, http.StatusForbidden, map[string]string{
+			"error": "signup is disabled on this server",
+			"code":  "signup_disabled",
+		})
+		return
+	}
 	var req signupRequest
 	if !httpx.DecodeJSON(w, r, &req) {
 		return
@@ -105,6 +116,20 @@ func (h *Handlers) Signup(w http.ResponseWriter, r *http.Request) {
 	StampSessionMeta(r.Context(), h.DB, res.SessionToken, UserAgent(r), ip)
 	SetCookie(w, res.SessionToken, CookieSecure(r, h.SecureCookie))
 	httpx.JSON(w, http.StatusCreated, h.userResponse(res.User))
+}
+
+// SignupConfig is the public, no-auth read of operator-controlled
+// pre-auth toggles. Returned from a GET so unauthenticated visitors
+// can call it without a CSRF token; the frontend uses the result to
+// decide whether to surface the "Sign up" link on the login screen.
+//
+// One toggle today; the response shape is an object so adding the
+// next pre-auth flag (e.g. forgot-password disabled) doesn't break
+// older clients.
+func (h *Handlers) SignupConfig(w http.ResponseWriter, r *http.Request) {
+	httpx.JSON(w, http.StatusOK, map[string]any{
+		"enabled": settings.SignupEnabled(r.Context(), h.DB),
+	})
 }
 
 // VerifyEmail consumes a one-shot verification token. GET-style so the

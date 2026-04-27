@@ -232,6 +232,10 @@ func New(cfg Config) http.Handler {
 		r.Post("/api/auth/reset", authH.ResetPassword)
 	})
 	r.Get("/api/auth/whoami", authH.Whoami)
+	// Public signup-config: unauthenticated GET so the login screen
+	// can decide whether to render a "Sign up" link before any user
+	// has a session. CSRF irrelevant — read-only, no cookies needed.
+	r.Get("/api/auth/signup-config", authH.SignupConfig)
 	// Email verification clicks land on a GET; not CSRF-relevant.
 	r.Get("/verify", authH.VerifyEmail)
 
@@ -478,6 +482,13 @@ func New(cfg Config) http.Handler {
 			r.Get("/admins", adminH.ListAdmins)
 			r.Post("/admins", adminH.CreateAdmin)
 			r.Delete("/admins/{userID}", adminH.DeleteAdmin)
+
+			// Operator-tunable runtime settings. Today: public-signup
+			// gate; future: any other "self-host wants to lock this
+			// down" knob. Admin-only because flipping signup off
+			// affects who can ever join the deployment.
+			r.Get("/settings", adminH.GetSettings)
+			r.Put("/settings/signup", adminH.SetSignupEnabled)
 
 			// Manual email verification — admin escape hatch when an
 			// arranger never received the self-serve verification mail.

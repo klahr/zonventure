@@ -4,8 +4,9 @@
 school field trips, city walks: you author the puzzles, schedule an
 event, and watch your players walk and solve from any phone.
 
-A single Go binary plus Postgres. Self-host it for free, or use the
-hosted product at the price of a coffee per team.
+A single Go binary plus Postgres, packaged as a one-command Docker
+Compose stack. Self-host it for free, or use the hosted product at
+the price of a coffee per team.
 
 > The repository, Go module, and CLI binary are named `zv`. The
 > product is **Zonventure**.
@@ -32,28 +33,22 @@ hosted product at the price of a coffee per team.
 ## Quick start
 
 ```sh
-# Build
 git clone https://git.sr.ht/~klahr/zv && cd zv
-go build -o zv ./cmd/server
-
-# Database (uses any reachable Postgres 14+)
-createdb zv
-export DATABASE_URL=postgres:///zv
-
-# First admin + demo content
-./zv -seed-admin admin:hunter2 -seed-demo
-
-# Run it
-./zv -addr :8080
+docker compose up -d
 ```
 
-Open <http://localhost:8080/arrange>, log in as `admin` / `hunter2`,
-change the password, and you're authoring.
+That brings up Postgres + the app, runs migrations, and seeds an
+initial admin. Open <http://localhost:8080/arrange>, log in as
+`admin` / `admin`, change the password, and you're authoring.
+
+Prefer a native binary? `go build -o zv ./cmd/server` still works —
+see [SELFHOSTING.md](SELFHOSTING.md#building-from-source-without-docker).
 
 ## Documentation
 
-- **[SELFHOSTING.md](SELFHOSTING.md)** — full self-host onramp:
-  prereqs, env vars, mailer / Stripe / reverse-proxy recipes, upgrades.
+- **[SELFHOSTING.md](SELFHOSTING.md)** — Docker-first self-host
+  onramp: env vars, TLS / mailer / Stripe / external-Postgres
+  recipes, upgrades. Native-binary build instructions live there too.
 - **[OPERATIONS.md](OPERATIONS.md)** — day-2 ops: backup / restore,
   metrics, log format, retention.
 - **[`/manual`](https://zonventure.com/manual)** — in-app arranger

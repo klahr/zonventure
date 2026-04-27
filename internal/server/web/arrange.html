@@ -2019,7 +2019,24 @@ function modal(title, bodyFn, opts = {}) {
 const state = {
   me: null,                // {username, role}
   route: location.hash || '#dashboard',
+  // Operator-controlled gate; populated lazily via /api/auth/signup-config
+  // before the login screen renders. Default true keeps the historical
+  // shape if the fetch fails — the server still rejects with 403 when
+  // signup is actually disabled, so the UI is just a hint, not the gate.
+  signupEnabled: true,
 };
+
+// Fetch the public signup-config once and cache the result. Called
+// before renderLogin so the "Sign up" link reflects the live setting
+// without a flash of stale UI.
+async function ensureSignupConfig() {
+  try {
+    const r = await api('/api/auth/signup-config');
+    if (r.ok && typeof r.body?.enabled === 'boolean') {
+      state.signupEnabled = r.body.enabled;
+    }
+  } catch (_) { /* leave default */ }
+}
 
 window.addEventListener('hashchange', () => {
   state.route = location.hash || '#dashboard';
@@ -2119,7 +2136,11 @@ async function render() {
       if (ok) refreshMe().then(render);
     }, 50);
   }
-  if (!state.me) { root.replaceChildren(renderLogin()); return; }
+  if (!state.me) {
+    await ensureSignupConfig();
+    root.replaceChildren(renderLogin());
+    return;
+  }
   if (state.me.role === 'player') {
     root.replaceChildren(h('div', { class: 'login-wrap' },
       h('div', { class: 'login' },
@@ -2141,6 +2162,10 @@ async function render() {
 // navigations during account-flow edge cases.
 function renderLogin(err, mode, extra) {
   mode = mode || 'login';
+  // Signup is operator-gated. If the server says it's off, fall back
+  // to plain login — the server would 403 the POST anyway, but a
+  // dead-end "Create account" form is worse UX than just hiding it.
+  if (mode === 'signup' && state.signupEnabled === false) mode = 'login';
   if (mode === 'signup') return renderSignup(err);
   if (mode === 'forgot') return renderForgot(err);
   if (mode === 'reset')  return renderReset(err, extra);
@@ -2158,6 +2183,7 @@ function renderLogin(err, mode, extra) {
     h('p', { class: 'muted', style: 'margin-top:1rem; font-size:.85rem; text-align:center' },
       h('a', { href: '#', on: { click: (e) => { e.preventDefault();
         document.getElementById('root').replaceChildren(renderLogin(null, 'forgot')); } } }, t('Forgot password?'))),
+    state.signupEnabled === false ? null :
     h('p', { class: 'muted', style: 'margin-top:.5rem; font-size:.85rem; text-align:center' },
       t('No account yet?'), ' ',
       h('a', { href: '#', on: { click: (e) => { e.preventDefault();
@@ -8634,6 +8660,7 @@ async function confirmDanger(title, message) {
 async function viewSettings(view) {
   const me = state.me || {};
   const isOrgUser = !!me.org_id;
+  const isAdmin = me.role === 'admin';
 
   const pwCard = renderSettingsPasswordCard();
   const emailCard = renderSettingsEmailCard(me);
@@ -8646,6 +8673,10 @@ async function viewSettings(view) {
   // discoverable cards so they're one click away when needed.
   const integrationsCard = isOrgUser ? renderSettingsIntegrationsCard() : null;
   const helpCard = renderSettingsHelpCard();
+  // Server-wide settings only matter to global admins (the self-host
+  // operator). Hidden for org users so the card doesn't tease a UI
+  // they can't actually drive.
+  const serverCard = isAdmin ? renderSettingsServerCard() : null;
 
   view.replaceChildren(
     h('h1', {}, t('Settings')),
@@ -8655,9 +8686,71 @@ async function viewSettings(view) {
     sessionsCard, auditCard,
     exportCard,
     integrationsCard,
+    serverCard,
     helpCard,
     dangerCard,
   );
+}
+
+// renderSettingsServerCard surfaces operator-tunable runtime knobs to
+// the global admin. Today: the public-signup gate. Self-host
+// operators flip it off when they want a closed deployment (single
+// org, members invited only). Hosted ops keep it on so the marketing
+// site's signup CTA continues to work.
+function renderSettingsServerCard() {
+  const card = h('div', { class: 'card settings-card' });
+  const status = h('p', { class: 'muted', style: 'font-size:.85rem; margin:.5rem 0 0' });
+  const toggle = h('input', { type: 'checkbox' });
+  const label = h('label', { class: 'row', style: 'gap:.5rem; align-items:center' },
+    toggle,
+    h('span', {}, t('Allow public signup')));
+  const help = h('p', { class: 'muted', style: 'font-size:.85rem' },
+    t('When off, the /arrange "Sign up" link is hidden and the signup endpoint refuses new accounts. Existing arrangers can still log in. Add new arrangers via Organizations → Members.'));
+
+  const setStatus = (ok, msg) => {
+    status.className = ok ? 'muted' : 'err';
+    status.textContent = msg || '';
+  };
+  const refresh = async () => {
+    setStatus(true, t('Loading…'));
+    const r = await api('/api/admin/settings');
+    if (!r.ok) {
+      setStatus(false, r.body?.error || t('error {{status}}', { status: r.status }));
+      toggle.disabled = true;
+      return;
+    }
+    toggle.checked = !!r.body?.signup_enabled;
+    toggle.disabled = false;
+    setStatus(true, '');
+  };
+  toggle.addEventListener('change', async () => {
+    toggle.disabled = true;
+    setStatus(true, t('Saving…'));
+    const r = await api('/api/admin/settings/signup', {
+      method: 'PUT',
+      body: JSON.stringify({ enabled: toggle.checked }),
+    });
+    toggle.disabled = false;
+    if (!r.ok) {
+      setStatus(false, r.body?.error || t('error {{status}}', { status: r.status }));
+      // Roll back the visible state so the checkbox reflects truth.
+      toggle.checked = !toggle.checked;
+      return;
+    }
+    setStatus(true, t('Saved.'));
+    // Keep the in-memory hint in sync so the next pre-auth render
+    // (e.g. logout) reflects the new value without a reload.
+    state.signupEnabled = !!r.body?.signup_enabled;
+  });
+
+  card.append(
+    h('h2', {}, t('Public signup')),
+    label,
+    help,
+    status,
+  );
+  refresh();
+  return card;
 }
 
 function renderSettingsSessionsCard() {

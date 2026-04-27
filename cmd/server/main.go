@@ -139,6 +139,17 @@ func main() {
 		return
 	}
 
+	// Optional first-run admin seed driven by an env var. Lets the
+	// canonical Docker setup boot a usable system from `docker compose
+	// up -d` without a follow-up `-seed-admin` command. Idempotent: if
+	// any global admin already exists this is a no-op, so the env var
+	// is safe to leave in compose.yaml across restarts.
+	if v := os.Getenv("ZV_SEED_ADMIN"); v != "" {
+		if err := seedAdminIfMissing(sqlDB, v); err != nil {
+			log.Fatalf("seed admin (env): %v", err)
+		}
+	}
+
 	lib := adventure.New(sqlDB)
 	logx.Info("adventure.library.loaded", "count", len(lib.List()))
 
@@ -255,6 +266,30 @@ func main() {
 	case <-time.After(35 * time.Second):
 		logx.Warn("webhooks.shutdown.timeout")
 	}
+}
+
+// seedAdminIfMissing is the env-var-friendly twin of seedAdminUser:
+// instead of upserting unconditionally, it only creates the admin when
+// no global admin exists yet. Lets ZV_SEED_ADMIN sit in a Docker
+// compose file forever without ever clobbering a real password an
+// operator set after the first login.
+func seedAdminIfMissing(d *sql.DB, creds string) error {
+	var n int
+	if err := d.QueryRow(
+		`SELECT count(*) FROM users WHERE role='admin' AND org_id IS NULL`,
+	).Scan(&n); err != nil {
+		return fmt.Errorf("count admins: %w", err)
+	}
+	if n > 0 {
+		logx.Info("seed-admin.skipped", "reason", "admin exists")
+		return nil
+	}
+	if err := seedAdminUser(d, creds); err != nil {
+		return err
+	}
+	username, _, _ := strings.Cut(creds, ":")
+	logx.Info("seed-admin.created", "username", username)
+	return nil
 }
 
 // seedAdminUser upserts a global-admin user from a "username:password" flag

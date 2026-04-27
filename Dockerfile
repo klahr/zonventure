@@ -8,13 +8,14 @@ RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/server ./cmd/server
 
-# Runtime image. distroless/static is ~2 MB; no shell, no package manager.
-# Pass the Postgres DSN at start time via $DATABASE_URL. The canonical
-# deployment is `docker compose up -d` — see compose.yaml. For one-off
-# runs against an external Postgres:
+# Runtime image. distroless/static is ~2 MB; no shell, no package
+# manager. The canonical self-host path is `docker compose up -d` —
+# see compose.yaml + SELFHOSTING.md. For one-off runs against an
+# external Postgres:
 #
 #   docker run --rm -p 8080:8080 \
 #     -e DATABASE_URL='postgres://zv:zv@host.example/zv?sslmode=disable' \
+#     -e ZV_SEED_ADMIN='admin:hunter2' \
 #     zv:latest
 FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=build /out/server /server

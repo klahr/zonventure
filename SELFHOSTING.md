@@ -1,9 +1,18 @@
 # Self-hosting Zonventure
 
-Zonventure ships as a single Go binary (`zv`) plus a Postgres database.
-There are no external runtime services required — Stripe, an SMTP
-relay, and a metrics scraper are all opt-in. A small VPS, a managed
-Postgres, and a domain are enough to put it in front of users.
+Zonventure self-hosts in **one command** with Docker Compose. The
+repo ships a `Dockerfile` and a `compose.yaml` that bring up Postgres
+and the app together, run schema migrations, and seed an initial
+admin so you can log in immediately.
+
+```sh
+git clone https://git.sr.ht/~klahr/zv && cd zv
+docker compose up -d
+```
+
+That's it. The app is now serving on <http://127.0.0.1:8080>. Log in
+at `/arrange` with **`admin` / `admin`**, change the password
+immediately, and start authoring.
 
 Zonventure is licensed under the **GNU AGPL v3.0 or later**
 ([`LICENSE`](LICENSE)). Self-hosting and modifying are explicitly
@@ -16,127 +25,144 @@ unaffected.
 
 ## Prerequisites
 
-- **Go 1.26 or newer** (build only — runtime needs only the binary).
-- **Postgres 14+** reachable from the app process. Either install
-  locally (`apt install postgresql`, `pacman -S postgresql`,
-  `brew install postgresql@16`), use Docker, or point at a managed
-  Postgres (RDS, Neon, Supabase, Crunchy, …).
-- **`pg_dump` and `psql`** on the same host as the app if you plan to
-  use `zv -backup` / `-restore` (most distros bundle them with the
-  Postgres client package).
-- A **public hostname with TLS** for production. Zonventure runs HTTP
-  behind a reverse proxy that terminates TLS — Caddy, nginx, or
-  Traefik all work.
+- **Docker 24+** with the Compose plugin (`docker compose version`).
+- A **public hostname with TLS** before you put real users on it —
+  Zonventure expects to run behind a reverse proxy (Caddy, nginx,
+  Traefik) that terminates TLS.
 
-## Build
+That's the entire dependency list. No Go toolchain, no Postgres
+client, no system packages — the bundled image is `distroless/static`
+and the bundled database is `postgres:16-alpine`.
 
-```sh
-git clone https://git.sr.ht/~klahr/zv && cd zv
-go build -o zv ./cmd/server
-```
+## What `docker compose up -d` does
 
-Or run straight from source while iterating:
+1. Pulls `postgres:16-alpine` and starts it on a private network with
+   a persistent volume (`zv_pg_data`).
+2. Builds the app image from the local `Dockerfile`
+   (~30 s on first run; cached afterwards).
+3. Starts the app once Postgres reports healthy.
+4. Runs every embedded migration on startup (idempotent).
+5. If `ZV_SEED_ADMIN` is set (default: `admin:admin`) **and** no
+   admin user exists yet, creates one. After that this becomes a
+   no-op so the env var is safe to leave in place.
+6. Binds `127.0.0.1:8080` so a same-host reverse proxy can take it
+   from there.
 
-```sh
-go run ./cmd/server -dsn "$DATABASE_URL"
-```
+Subsequent `docker compose up -d` runs are diff-only — the data
+volume is preserved and the seeded admin is never overwritten.
 
-For a deploy artefact the repo ships a `Dockerfile` and `compose.yaml`
-(uses the same env vars listed below). `make up` brings up Postgres +
-the app together for local dev.
+## Configuration
 
-## Database
-
-Create an empty database and a user. Migrations run automatically on
-`zv` startup, so this is the only manual schema step.
+Everything is environment variables. Defaults live in `compose.yaml`;
+override them with a sibling `.env` file.
 
 ```sh
-sudo -u postgres psql <<'SQL'
-CREATE USER zv WITH PASSWORD 'change-me';
-CREATE DATABASE zv OWNER zv;
-SQL
+cp .env.example .env
+$EDITOR .env
+docker compose up -d
 ```
 
-Connection URL format:
+The full annotated list lives in [`.env.example`](.env.example). The
+short tour:
 
-```
-postgres://zv:change-me@db.example:5432/zv?sslmode=require
-```
-
-`sslmode=require` for any non-localhost link. Local socket auth (no
-password) works too: `postgres:///zv?host=/var/run/postgresql`.
-
-## Required environment
-
-| Var | What | Example |
+| Var | What | Default |
 | --- | --- | --- |
-| `DATABASE_URL` | Postgres DSN; passed to `pgx` | `postgres://zv:…@db/zv` |
-| `ZV_PUBLIC_URL` | Origin used in outbound emails | `https://zv.example.com` |
-| `ZV_COMPANY_NAME` | Your operating entity, surfaced on `/privacy` + `/terms` | `Acme Adventures Ltd.` |
-| `ZV_CONTACT_EMAIL` | Public contact for legal pages | `hello@example.com` |
+| `ZV_SEED_ADMIN` | First-run admin (`user:pass`); ignored once an admin exists | `admin:admin` |
+| `POSTGRES_PASSWORD` | Bundled Postgres password — **change before prod** | `zv` |
+| `ZV_PUBLIC_URL` | Origin used in outbound emails (set to your real https URL) | `http://localhost:8080` |
+| `ZV_BIND_ADDR` | Host interface to bind on; `0.0.0.0` to expose directly | `127.0.0.1` |
+| `ZV_PORT` | Host port for the app | `8080` |
+| `ZV_LOG_FORMAT` | `text` (dev) or `json` (aggregator) | `text` |
+| `ZV_SMTP_*` | SMTP relay for verification + reset mail (optional) | unset |
+| `ZV_COMPANY_NAME` / `ZV_CONTACT_EMAIL` | Surfaced on `/privacy` + `/terms` | unset |
+| `ZV_STRIPE_SECRET_KEY` / `ZV_STRIPE_WEBHOOK_SECRET` | Real payments (optional) | unset |
+| `ZV_LOCATION_RETENTION_DAYS` / `ZV_AUDIT_RETENTION_DAYS` | Privacy sweepers; `0` to disable | `30` / `90` |
 
-## First-run seeding
-
-Create the first global admin (subsequent admins can be added through
-the UI):
-
-```sh
-zv -seed-admin admin:hunter2
-```
-
-Optionally install the demo adventure + sample data:
+After editing `.env`:
 
 ```sh
-zv -seed-demo
+docker compose up -d        # pick up the new env on running containers
 ```
 
-After that, start the server:
+## Pre-flight checklist before going public
+
+The defaults are tuned for "first boot works". Before you point real
+users at the box:
+
+1. **Change the admin password.** Log in as `admin` / `admin`, change
+   it under your account menu. Then either drop `ZV_SEED_ADMIN` from
+   `.env` or set it to your real credentials — either way it becomes
+   a no-op once any admin exists.
+2. **Change `POSTGRES_PASSWORD`.** It's used internally between the
+   two containers, but a stray `docker compose port db 5432` makes it
+   reachable. Pick something long and unique.
+3. **Set `ZV_PUBLIC_URL`** to your real `https://…` origin — it goes
+   into outbound email links.
+4. **Wire `ZV_SMTP_*`** so signup verification + forgot-password
+   actually leave the box. Without it, mail lands in
+   `docker compose logs app`. Postmark, SendGrid, SES (SMTP
+   interface), and Mailgun all work; anything that speaks SMTP does.
+5. **Front the app with TLS.** Caddy is the lowest-friction option:
+
+   ```caddy
+   zv.example.com {
+       reverse_proxy 127.0.0.1:8080
+   }
+   ```
+
+   nginx works too — full snippet at the bottom of this doc.
+6. **Set `ZV_LOG_FORMAT=json`** if you ship logs to an aggregator.
+7. **Schedule a backup.** One line on the host:
+
+   ```sh
+   docker compose exec -T app /server -backup | gzip > /backups/zv-$(date +%F).sql.gz
+   ```
+
+   Drop that into cron or a systemd timer. Off-host the result.
+8. **Optionally bind `ZV_METRICS_ADDR=127.0.0.1:9100`** if you scrape
+   with Prometheus from a sidecar.
+
+## Day-to-day commands
 
 ```sh
-zv -addr :8080
+# Bring the stack up / down. `down` keeps the data volume.
+docker compose up -d
+docker compose down
+
+# Tail logs.
+docker compose logs -f --tail=200
+
+# Drop into psql against the bundled DB.
+docker compose exec db psql -U zv -d zv
+
+# Run any zv subcommand on the running app container.
+docker compose exec -T app /server -seed-demo
+docker compose exec -T app /server -revoke-sessions all
 ```
 
-Then point your reverse proxy at `:8080`, log in at
-`https://zv.example.com/arrange` as `admin` / `hunter2`, change the
-password, and create your first organisation.
+The app binary inside the image is `/server` — pass any of the flags
+documented in `zv -h` (the binary takes the same flags as the native
+build).
 
-## Mailer (optional but recommended)
+## Upgrades
 
-Without an SMTP mailer configured, signup verification + forgot-
-password links land in the server log instead of an inbox. Fine for
-single-operator dev; not fine for end-users.
+```sh
+git pull
+docker compose up -d --build
+```
 
-| Var | What |
-| --- | --- |
-| `ZV_SMTP_HOST` | SMTP server hostname |
-| `ZV_SMTP_PORT` | Defaults to `587` |
-| `ZV_SMTP_TLS` | `starttls` (default) / `tls` / `none` |
-| `ZV_SMTP_USER` | Auth username |
-| `ZV_SMTP_PASS` | Auth password |
-| `ZV_SMTP_FROM` | `From:` address |
+`--build` rebuilds the app image from the new source; the data
+volume is untouched and embedded migrations run on the next start.
+**Always take a backup first** — see the `-backup` recipe above.
 
-Postmark, SendGrid, SES (SMTP interface), Mailgun all work — anything
-that speaks SMTP.
+## Reverse proxy (TLS termination)
 
-## Payments (optional)
+The app speaks plain HTTP and reads `X-Forwarded-Proto: https` to
+flip session cookies to `Secure` automatically. WebSockets need the
+proxy to forward the `Upgrade` + `Connection` headers — required
+for `/ws/play`, `/ws/arrange`, and `/ws/live`.
 
-Self-hosters who only run their own org probably don't need money
-flowing through Zonventure at all — the simulated checkout creates assignments
-directly. Skip Stripe entirely.
-
-If you want real charging:
-
-| Var | What |
-| --- | --- |
-| `ZV_STRIPE_SECRET_KEY` | `sk_live_…` from Stripe dashboard |
-| `ZV_STRIPE_WEBHOOK_SECRET` | `whsec_…` for `/api/webhooks/stripe` |
-
-Both must be set for the live flow to activate. Either being empty
-keeps the simulated provider as the only purchase path.
-
-## Reverse proxy
-
-Caddy is the lowest-friction option:
+**Caddy** (recommended; auto-TLS via Let's Encrypt):
 
 ```caddy
 zv.example.com {
@@ -144,7 +170,7 @@ zv.example.com {
 }
 ```
 
-nginx with TLS terminating in nginx:
+**nginx** (TLS terminating in nginx):
 
 ```nginx
 server {
@@ -169,67 +195,68 @@ server {
 }
 ```
 
-Zonventure detects `X-Forwarded-Proto: https` and flips its session
-cookies to `Secure` automatically — no extra flag required.
+## Pointing at an external Postgres
 
-## Optional knobs
+If you already run a managed Postgres (RDS, Neon, Supabase, Crunchy,
+…) and just want the app container, drop the `db` service entirely
+and override `DATABASE_URL`:
 
-These are nice-to-haves with sensible defaults; you can ignore them
-until you need them.
-
-| Var | Default | What |
-| --- | --- | --- |
-| `ZV_LOG_FORMAT` | `text` | `json` for one-object-per-line stderr |
-| `ZV_METRICS_ADDR` | unset | Bind a Prometheus `/metrics` listener on the given addr (off by default) |
-| `ZV_MAX_IMAGE_BYTES` | `5242880` (5 MiB) | Per-upload size cap |
-| `ZV_LOCATION_RETENTION_DAYS` | `30` | Auto-delete location pings older than this after the event ends; `0` disables |
-| `ZV_AUDIT_RETENTION_DAYS` | `90` | Auto-delete `auth_events` older than this; `0` disables |
-| `ZV_SIMULATOR` | unset | Set `1` to expose the race-simulator admin route (dev / demo only) |
-| `ZV_DPO_EMAIL` | unset | Surfaced on `/privacy` for EU operators with a designated DPO |
-| `ZV_JURISDICTION` | unset | Country / region surfaced on `/privacy` |
-| `ZV_LEGAL_LAST_UPDATED` | unset | Date displayed on `/privacy` + `/terms` |
-
-## Upgrades
-
-```sh
-git pull
-go build -o zv ./cmd/server
-sudo systemctl restart zv
+```yaml
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://user:pass@db.example:5432/zv?sslmode=require
+      ZV_SEED_ADMIN:    admin:hunter2
+      ZV_PUBLIC_URL:    https://zv.example.com
+      # … rest as in compose.yaml
+    ports:
+      - "127.0.0.1:8080:8080"
 ```
 
-Migrations are embedded in the binary and run on startup, so a fresh
-build automatically rolls the schema forward. **Always take a backup
-first** — `zv -backup > pre-upgrade-$(date +%F).sql` is one line and
-saves the next day if something regresses.
-
-## Day-2 ops
-
-Backups, restore, metrics, log format, and retention sweepers are
-documented in [`OPERATIONS.md`](./OPERATIONS.md).
+`sslmode=require` for any non-local link. Migrations still run on
+the app's first connection.
 
 ## Troubleshooting
 
-- **"no postgres DSN"** — set `-dsn` or `$DATABASE_URL`.
-- **"password authentication failed"** — wrong creds or the DB user
-  doesn't have `LOGIN`. Try `psql "$DATABASE_URL"` to reproduce
-  outside Zonventure.
-- **WebSockets disconnect after ~60s** — your reverse proxy is
+- **App restarts in a loop** — `docker compose logs app`. Most likely
+  causes: DATABASE_URL points at an unreachable Postgres, or
+  `ZV_SEED_ADMIN` is malformed (must be `username:password`).
+- **WebSockets disconnect after ~60 s** — your reverse proxy is
   closing idle upgrades. Bump `proxy_read_timeout` (nginx) or your
-  proxy's equivalent.
-- **Uploads fail at >5 MB** — raise `ZV_MAX_IMAGE_BYTES`.
+  proxy's equivalent. Compose's bundled stack is fine.
 - **Verification emails don't arrive** — without `ZV_SMTP_*` set,
-  Zonventure prints them to the log. Inspect with `journalctl -u zv`
-  or your container log.
+  Zonventure prints them to stderr. `docker compose logs app | grep mail`.
+- **"no postgres DSN"** — `DATABASE_URL` not propagated. Confirm with
+  `docker compose exec app env | grep DATABASE_URL`.
+- **Uploads fail at >5 MB** — raise `ZV_MAX_IMAGE_BYTES` (in bytes).
 
-## Going to production
+## Building from source (without Docker)
 
-The minimum bar:
+The Docker path is the supported one. If you'd rather run a native
+binary directly on a host (e.g. for a systemd unit), the binary is a
+single static Go executable with embedded migrations and assets:
 
-1. TLS in front of the app (Caddy / nginx / Traefik).
-2. Mailer configured so signups can verify.
-3. `ZV_PUBLIC_URL` set to the public origin.
-4. `ZV_LOG_FORMAT=json` if you ship logs to an aggregator.
-5. A daily `zv -backup` cron, output stored off-host.
-6. `ZV_METRICS_ADDR=127.0.0.1:9100` if you scrape with Prometheus.
+```sh
+go build -trimpath -ldflags="-s -w" -o zv ./cmd/server
 
-Once those are in place, it's a working SaaS for your own users.
+# Bring your own Postgres 14+ and create a database.
+createdb zv
+export DATABASE_URL=postgres:///zv
+export ZV_SEED_ADMIN=admin:hunter2
+
+./zv -addr :8080
+```
+
+The same env vars listed above apply. Migrations run on startup;
+`ZV_SEED_ADMIN` honours the same "create-if-missing" semantics as in
+the Docker setup. Day-2 ops (backup / restore / metrics / retention)
+are covered in [`OPERATIONS.md`](./OPERATIONS.md).
+
+## Going further
+
+- **[OPERATIONS.md](OPERATIONS.md)** — backup, restore, metrics,
+  logging format, retention sweepers.
+- **[`/manual`](https://zonventure.com/manual)** — in-app arranger
+  manual, also bundled offline at `internal/server/web/manual.html`.

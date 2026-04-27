@@ -1,9 +1,22 @@
-# Two-service stack: a pinned Postgres + the zv server. Bring it up with
-# `make up` (or `docker compose up -d`); data lives in the named
-# zv_pg_data volume so `down` doesn't lose it.
+# Canonical self-host stack: Postgres + the zv server. One command:
 #
-# Override secrets via a sibling .env file (see .env.example). Defaults
-# are fine for local dev but should NOT ship as-is to production.
+#   docker compose up -d
+#
+# brings everything up, runs migrations, seeds an initial admin
+# (admin/admin by default — change immediately), and starts the app on
+# http://localhost:8080. Data persists in the named zv_pg_data volume,
+# so `docker compose down` is safe.
+#
+# Override anything below via a sibling .env file (see .env.example).
+# Defaults are tuned for first-boot ergonomics, NOT production. Before
+# putting this in front of users:
+#
+#   1. Set ZV_SEED_ADMIN to your own credentials (or remove it after
+#      the first login + password change).
+#   2. Set POSTGRES_PASSWORD to something other than "zv".
+#   3. Set ZV_PUBLIC_URL to your real https origin.
+#   4. Wire ZV_SMTP_* so verification mail actually leaves the box.
+#   5. Front the app with TLS (Caddy / nginx / Traefik on :8080).
 
 services:
   db:
@@ -15,11 +28,6 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-zv}
     volumes:
       - zv_pg_data:/var/lib/postgresql/data
-    # Bind to 127.0.0.1 so the host can run `psql -h 127.0.0.1` and
-    # tests against `ZV_TEST_DSN=postgres://...127.0.0.1...` reach the
-    # same DB without exposing 5432 to the rest of the network.
-    ports:
-      - "127.0.0.1:5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-zv} -d ${POSTGRES_DB:-zv}"]
       interval: 5s
@@ -34,12 +42,19 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-zv}:${POSTGRES_PASSWORD:-zv}@db:5432/${POSTGRES_DB:-zv}?sslmode=disable
-      ZV_SMTP_HOST: ${ZV_SMTP_HOST:-}
-      ZV_SMTP_PORT: ${ZV_SMTP_PORT:-587}
-      ZV_SMTP_USER: ${ZV_SMTP_USER:-}
-      ZV_SMTP_PASS: ${ZV_SMTP_PASS:-}
-      ZV_SMTP_FROM: ${ZV_SMTP_FROM:-}
-      ZV_SMTP_TLS:  ${ZV_SMTP_TLS:-starttls}
+      # First-run admin. Idempotent — once an admin exists this is a
+      # no-op, so leaving it in place across restarts is safe.
+      ZV_SEED_ADMIN:    ${ZV_SEED_ADMIN:-admin:admin}
+      ZV_PUBLIC_URL:    ${ZV_PUBLIC_URL:-http://localhost:8080}
+      ZV_LOG_FORMAT:    ${ZV_LOG_FORMAT:-text}
+      # Everything below is optional and pass-through; defaults are
+      # empty strings so the server falls back to its own defaults.
+      ZV_SMTP_HOST:     ${ZV_SMTP_HOST:-}
+      ZV_SMTP_PORT:     ${ZV_SMTP_PORT:-587}
+      ZV_SMTP_USER:     ${ZV_SMTP_USER:-}
+      ZV_SMTP_PASS:     ${ZV_SMTP_PASS:-}
+      ZV_SMTP_FROM:     ${ZV_SMTP_FROM:-}
+      ZV_SMTP_TLS:      ${ZV_SMTP_TLS:-starttls}
       ZV_COMPANY_NAME:           ${ZV_COMPANY_NAME:-}
       ZV_CONTACT_EMAIL:          ${ZV_CONTACT_EMAIL:-}
       ZV_DPO_EMAIL:              ${ZV_DPO_EMAIL:-}
@@ -50,7 +65,7 @@ services:
       ZV_STRIPE_SECRET_KEY:       ${ZV_STRIPE_SECRET_KEY:-}
       ZV_STRIPE_WEBHOOK_SECRET:   ${ZV_STRIPE_WEBHOOK_SECRET:-}
     ports:
-      - "8080:8080"
+      - "${ZV_BIND_ADDR:-127.0.0.1}:${ZV_PORT:-8080}:8080"
 
 volumes:
   zv_pg_data:
