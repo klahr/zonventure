@@ -17,9 +17,6 @@ import (
 type Handlers struct {
 	DB           *sql.DB
 	SecureCookie bool // set to true when behind TLS
-	// Features ships in whoami so the client can hide UI surfaces
-	// that aren't wired up on this server (e.g. the simulator).
-	Features Features
 	// Pricing carries the operator's catalog price per slot, for client
 	// totals. Zero values render as "$0.00" — operator should always set
 	// this; the server's actual charge is enforced separately.
@@ -43,13 +40,6 @@ type Handlers struct {
 	PublicURL string
 }
 
-// Features is the small bag of server-side flags surfaced via
-// /whoami. Keeping it a named struct so adding another flag later
-// doesn't re-shape the response envelope.
-type Features struct {
-	SimulatorEnabled bool `json:"simulator_enabled"`
-}
-
 // Pricing is the small slice of catalog data the frontend needs to
 // render totals before submitting a purchase. Mirrors what the server
 // will charge so the UI doesn't have to keep its own constant. Surfaced
@@ -65,22 +55,20 @@ type loginRequest struct {
 }
 
 type whoamiResponse struct {
-	ID            int64    `json:"id"`
-	Username      string   `json:"username"`
-	Role          string   `json:"role"`
-	OrgID         *int64   `json:"org_id,omitempty"`
-	Email         string   `json:"email,omitempty"`
-	EmailVerified bool     `json:"email_verified"`
-	Features      Features `json:"features"`
-	Pricing       Pricing  `json:"pricing"`
+	ID            int64   `json:"id"`
+	Username      string  `json:"username"`
+	Role          string  `json:"role"`
+	OrgID         *int64  `json:"org_id,omitempty"`
+	Email         string  `json:"email,omitempty"`
+	EmailVerified bool    `json:"email_verified"`
+	Pricing       Pricing `json:"pricing"`
 }
 
 func (h *Handlers) userResponse(u User) whoamiResponse {
 	return whoamiResponse{
 		ID: u.ID, Username: u.Username, Role: u.Role, OrgID: u.OrgID,
 		Email: u.Email, EmailVerified: u.EmailVerified,
-		Features: h.Features,
-		Pricing:  h.Pricing,
+		Pricing: h.Pricing,
 	}
 }
 

@@ -2397,9 +2397,7 @@ function renderShell() {
       // sidebar entries for what's essentially one catalog was noise.
       ['#library',       t('Library'),       ICONS.map],
       ['#admins',        t('Admins'),        ICONS.user],
-      ...(state.me.features?.simulator_enabled
-        ? [['#simulator', t('Simulator'), ICONS.play]]
-        : []),
+      ['#simulator',     t('Simulator'),     ICONS.play],
       ['#audit',         t('Audit'),         ICONS.shield],
       ['#logs',          t('Logs'),          ICONS.terminal],
       ['#settings',      t('Settings'),      ICONS.gear],
@@ -2413,10 +2411,8 @@ function renderShell() {
       ['#dashboard',  t('Dashboard'),  ICONS.dashboard],
       ['#adventures', t('Adventures'), ICONS.map],
       ['#events',     t('Events'),     ICONS.play],
+      ['#simulator', t('Simulator'), ICONS.play],
     ];
-    if (state.me.features?.simulator_enabled) {
-      items.push(['#simulator', t('Simulator'), ICONS.play]);
-    }
     if (isOrgAdmin) {
       items.push(['#members', t('Members'), ICONS.users]);
       items.push(['#audit',   t('Audit'),   ICONS.shield]);
@@ -2580,8 +2576,6 @@ async function renderRoute() {
   const isOrgAdmin = role === 'org_admin';
 
   // Role-based route guards: admins can't visit org-user pages and vice versa.
-  // Simulator is open to both — backend gates on ZV_SIMULATOR=1 and the
-  // sidebar entry only renders when features.simulator_enabled is true.
   const adminOnly = ['organizations', 'admins', 'logs'];
   const orgUserOnly = ['adventures', 'events', 'store', 'webhooks'];
   if (isAdmin && orgUserOnly.includes(section)) { nav('#organizations'); return; }

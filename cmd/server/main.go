@@ -154,22 +154,17 @@ func main() {
 	logx.Info("adventure.library.loaded", "count", len(lib.List()))
 
 	hub := ws.NewHub()
-	// The race simulator is gated on ZV_SIMULATOR=1 so a production
-	// admin can't nuke a live run with a stray click. Dev + demo
-	// environments flip it on via the env.
-	simEnabled := os.Getenv("ZV_SIMULATOR") == "1"
 	mail, err := mailer.FromEnv()
 	if err != nil {
 		log.Fatalf("mailer config: %v", err)
 	}
 	h := server.New(server.Config{
-		DB:               sqlDB,
-		Library:          lib,
-		Hub:              hub,
-		SecureCookie:     *secureCookie,
-		SimulatorEnabled: simEnabled,
-		Mailer:           mail,
-		PublicURL:        *publicURL,
+		DB:           sqlDB,
+		Library:      lib,
+		Hub:          hub,
+		SecureCookie: *secureCookie,
+		Mailer:       mail,
+		PublicURL:    *publicURL,
 		Legal: server.LegalConfig{
 			CompanyName:           os.Getenv("ZV_COMPANY_NAME"),
 			ContactEmail:          os.Getenv("ZV_CONTACT_EMAIL"),

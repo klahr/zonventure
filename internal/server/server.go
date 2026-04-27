@@ -33,10 +33,6 @@ type Config struct {
 	Library      *adventure.Library
 	Hub          *ws.Hub
 	SecureCookie bool
-	// SimulatorEnabled toggles the race simulator. Off in production
-	// so an admin can't flatten a real run by accident; on in dev by
-	// setting ZV_SIMULATOR=1 on the server binary.
-	SimulatorEnabled bool
 	// Mailer is the transactional email backend. Optional: when nil
 	// the server installs a LogMailer fallback so email-bound flows
 	// don't crash in tests / dev clones with no SMTP configured.
@@ -90,7 +86,6 @@ func New(cfg Config) http.Handler {
 	authH := &auth.Handlers{
 		DB:            cfg.DB,
 		SecureCookie:  cfg.SecureCookie,
-		Features:      auth.Features{SimulatorEnabled: cfg.SimulatorEnabled},
 		Pricing:       auth.Pricing{SlotCents: admin.PricePerSlotCents, Currency: "EUR"},
 		Limiter:       auth.NewLoginLimiter(),
 		ForgotLimiter: auth.NewLoginLimiter(),
@@ -98,9 +93,6 @@ func New(cfg Config) http.Handler {
 		PublicURL:     cfg.PublicURL,
 	}
 	playerH := &player.Handlers{DB: cfg.DB, Lib: cfg.Library, Hub: hub, SecureCookie: cfg.SecureCookie}
-	// Simulator instance always exists (package isn't huge, avoids
-	// null-check scatter); the ROUTES are gated on SimulatorEnabled
-	// below so disabled deployments simply 404 on /api/admin/simulator.
 	sim := simulator.New(cfg.DB, cfg.Library, hub)
 	mail := cfg.Mailer
 	if mail == nil {
@@ -108,7 +100,6 @@ func New(cfg Config) http.Handler {
 	}
 	adminH := &admin.Handlers{
 		DB: cfg.DB, Lib: cfg.Library, Hub: hub, Sim: sim,
-		SimulatorEnabled:    cfg.SimulatorEnabled,
 		Mailer:              mail,
 		PublicURL:           cfg.PublicURL,
 		StripeSecretKey:     cfg.StripeSecretKey,
@@ -538,17 +529,12 @@ func New(cfg Config) http.Handler {
 		// Race simulator. Open to arrangers (org_admin/org_member) plus
 		// global admins — each call is org-scoped via the caller's
 		// session, so two arrangers in different orgs can run sims in
-		// parallel without colliding. Routes only mount when the
-		// operator has explicitly opted in via ZV_SIMULATOR=1, so
-		// production deployments can't spin up a simulated race by
-		// accident.
-		if cfg.SimulatorEnabled {
-			r.Get("/simulator", adminH.SimulatorStatus)
-			r.Post("/simulator/start", adminH.SimulatorStart)
-			r.Post("/simulator/pause", adminH.SimulatorPause)
-			r.Post("/simulator/resume", adminH.SimulatorResume)
-			r.Post("/simulator/reset", adminH.SimulatorReset)
-		}
+		// parallel without colliding.
+		r.Get("/simulator", adminH.SimulatorStatus)
+		r.Post("/simulator/start", adminH.SimulatorStart)
+		r.Post("/simulator/pause", adminH.SimulatorPause)
+		r.Post("/simulator/resume", adminH.SimulatorResume)
+		r.Post("/simulator/reset", adminH.SimulatorReset)
 	})
 
 	// Log stream socket. Lives outside the /api/admin route tree so it

@@ -41,11 +41,6 @@ type Handlers struct {
 	Lib *adventure.Library
 	Hub *ws.Hub
 	Sim *simulator.Simulator
-	// SimulatorEnabled mirrors the server.Config flag — /whoami uses
-	// it to tell the client whether to show the sidebar entry for the
-	// race simulator. Disabled-by-default because a prod admin
-	// nuking their event with a stray click would be catastrophic.
-	SimulatorEnabled bool
 	// Mailer is used by /api/admin/send-test-email and (future) signup
 	// + forgot-password flows. Always non-nil thanks to the server
 	// constructor's LogMailer fallback.
