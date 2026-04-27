@@ -5995,7 +5995,6 @@ function renderPuzzleCard(adv, page, i, previewIdx) {
           : null,
         iconBtn('pencil', t('Edit'), () => openEditPuzzle(adv, page)),
         iconBtn('trash', t('Delete'), () => confirmDeletePuzzle(adv, page), { danger: true }))),
-    h('div', { class: 'md-preview', html: page.prompt_html || '' }),
     (page.images || []).length === 0
       ? null
       : h('div', { class: 'row', style: 'flex-wrap:wrap; gap:.5rem' },
@@ -6003,6 +6002,7 @@ function renderPuzzleCard(adv, page, i, previewIdx) {
           src: im.url, alt: '',
           style: 'max-height:120px; border-radius:6px; border:1px solid var(--border-soft)',
         }))),
+    h('div', { class: 'md-preview', html: page.prompt_html || '' }),
     h('p', { class: 'muted' },
       t('Accepted: '),
       (page.accept || []).map(acceptChip)),
