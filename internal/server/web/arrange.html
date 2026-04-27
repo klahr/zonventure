@@ -490,6 +490,21 @@ input:focus, select:focus, textarea:focus {
   outline: none; border-color: var(--accent);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent);
 }
+/* Reset the form-control treatment for checkboxes and radios — the
+   width:100% + padding + box-shadow above makes them stretch across
+   their flex containers and drift away from their labels. Restore
+   native sizing, kill the padding/border/shadow, and pin them so
+   they sit flush against the adjacent label text. flex-shrink:0
+   keeps the box from being squashed when the label wraps. */
+input[type="checkbox"], input[type="radio"] {
+  width: auto; flex: 0 0 auto;
+  padding: 0; background: none; border: none; box-shadow: none;
+  margin: 0; vertical-align: middle;
+}
+input[type="checkbox"]:focus, input[type="radio"]:focus {
+  outline: 2px solid var(--accent); outline-offset: 2px;
+  box-shadow: none;
+}
 textarea { min-height: 80px; resize: vertical; font-family: ui-monospace, monospace; }
 
 /* ---------- Table ---------- */
