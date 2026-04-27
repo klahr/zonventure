@@ -8753,6 +8753,12 @@ function renderSettingsServerCard() {
     saveUrl: '/api/admin/settings/landing',
     mirror: null,
   });
+  // Hint shown under the landing toggle when ZV_LANDING_ENABLED is
+  // pinning the value via env. Inserted after the row's existing help
+  // line so the operator sees both — what the toggle does, and why it
+  // currently isn't taking effect.
+  const landingEnvHint = h('p', { class: 'muted', style: 'font-size:.85rem; margin:.25rem 0 0 1.5rem; font-style: italic' }, '');
+  landing.row.append(landingEnvHint);
   const toggles = [signup, landing];
 
   const setStatus = (ok, msg) => {
@@ -8771,6 +8777,15 @@ function renderSettingsServerCard() {
       tg.input.checked = !!r.body?.[tg.field];
       tg.input.disabled = false;
     });
+    // ZV_LANDING_ENABLED, when set, hard-overrides the DB. Disable the
+    // toggle and surface why so an operator who pinned it via .env
+    // doesn't waste time wondering why their flips don't stick.
+    if (r.body?.landing_pinned_by_env) {
+      landing.input.disabled = true;
+      landingEnvHint.textContent = t('Pinned by ZV_LANDING_ENABLED — unset the env var to use this toggle.');
+    } else {
+      landingEnvHint.textContent = '';
+    }
     setStatus(true, '');
   };
 

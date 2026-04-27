@@ -13,8 +13,9 @@ import (
 // returns. Object-shaped (not a flat bool) so adding the next admin
 // toggle later is a field add, not a response-shape break.
 type settingsResponse struct {
-	SignupEnabled  bool `json:"signup_enabled"`
-	LandingEnabled bool `json:"landing_enabled"`
+	SignupEnabled      bool `json:"signup_enabled"`
+	LandingEnabled     bool `json:"landing_enabled"`
+	LandingPinnedByEnv bool `json:"landing_pinned_by_env"`
 }
 
 // GetSettings returns the operator-tunable admin settings. Admin-only
@@ -26,8 +27,9 @@ func (h *Handlers) GetSettings(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handlers) buildSettingsResponse(r *http.Request) settingsResponse {
 	return settingsResponse{
-		SignupEnabled:  settings.SignupEnabled(r.Context(), h.DB),
-		LandingEnabled: settings.LandingEnabled(r.Context(), h.DB),
+		SignupEnabled:      settings.SignupEnabled(r.Context(), h.DB),
+		LandingEnabled:     settings.LandingEnabled(r.Context(), h.DB),
+		LandingPinnedByEnv: settings.LandingPinnedByEnv(),
 	}
 }
 
