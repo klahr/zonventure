@@ -1439,10 +1439,16 @@ setInterval(() => {
   }
   // Pre-start countdown digit tick — read against a local clock rather
   // than server_now (which only updates on push) so the digits don't
-  // hop.
-  const digitsEl = document.querySelector('.prestart .countdown .digits');
-  if (digitsEl && latestSnapshot.scheduled_at) {
-    digitsEl.textContent = countdownText(latestSnapshot.scheduled_at, new Date().toISOString());
+  // hop. Gate on isPreStart: buildCompletionFrame reuses the .prestart
+  // shell + .countdown .digits selector to display the winner's name,
+  // so without this guard the ticker would overwrite that name with
+  // "Go!" the moment it fired (scheduled_at is in the past for a
+  // completed event).
+  if (isPreStart(latestSnapshot)) {
+    const digitsEl = document.querySelector('.prestart .countdown .digits');
+    if (digitsEl && latestSnapshot.scheduled_at) {
+      digitsEl.textContent = countdownText(latestSnapshot.scheduled_at, new Date().toISOString());
+    }
   }
   // After completion, the dwell window expires without a new WS push
   // (nothing more is happening on the server), so the swap to the
