@@ -275,6 +275,9 @@
       'Go': 'Kör',
       'Start a new event': 'Starta ett nytt event',
       'Unused assignments': 'Oanvända tilldelningar',
+      'Unused': 'Oanvända',
+      'Pinned by ZV_LANDING_ENABLED — unset the env var to use this toggle.':
+        'Låst av ZV_LANDING_ENABLED — ta bort miljövariabeln för att kunna ändra här.',
       'Signed in as admin — you manage organizations, their assignments, and other admins.':
         'Inloggad som administratör — du hanterar organisationer, deras tilldelningar och övriga administratörer.',
       'Org users': 'Organisationsanvändare',

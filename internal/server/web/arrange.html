@@ -2777,14 +2777,14 @@ async function viewArrangerDashboard(view) {
   // sections below are conditionally null (no runs, no scheduled, etc.),
   // so filter before handing off.
   const sections = [
-    h('div', { class: 'row between' },
-      h('h1', {}, t('Hello, {{username}}', { username: state.me.username })),
+    h('div', { class: 'row between', style: 'margin-bottom:1rem' },
+      h('h1', { style: 'margin:0' }, t('Hello, {{username}}', { username: state.me.username })),
       newEventBtn,
     ),
     h('div', { class: 'grid stats' },
       stat(t('Live now'), runningNow.length),
       stat(t('Scheduled'), scheduled.length),
-      stat(t('Unused assignments'), unusedAssigns.length),
+      stat(t('Unused'), unusedAssigns.length),
     ),
     setup,
     // During a live event this is what the arranger wants to see first.
@@ -3633,8 +3633,8 @@ async function viewRuns(view) {
   const r = await api('/api/admin/events');
   const rs = r.body?.events || [];
   view.replaceChildren(
-    h('div', { class: 'row between' },
-      h('h1', {}, t('Events')),
+    h('div', { class: 'row between', style: 'margin-bottom:1rem' },
+      h('h1', { style: 'margin:0' }, t('Events')),
       // Affordance parity with the dashboard: Schedule from anywhere
       // events are listed, no detour through Adventures.
       h('button', { class: 'btn primary', on: { click: () => openNewEventWizard() } },
@@ -9232,8 +9232,8 @@ async function viewMembers(view) {
   }
   const org = r.body || { id: state.me.org_id, name: t('Your organization'), members: [] };
   view.replaceChildren(
-    h('div', { class: 'row between' },
-      h('h1', {}, t('Members')),
+    h('div', { class: 'row between', style: 'margin-bottom:1rem' },
+      h('h1', { style: 'margin:0' }, t('Members')),
       h('button', { class: 'btn primary', on: { click: () => openAddOrgMember(org) } },
         icon(ICONS.plus), t('Add user'))),
     h('p', { class: 'muted' },
