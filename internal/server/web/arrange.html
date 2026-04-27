@@ -2780,7 +2780,7 @@ async function viewArrangerDashboard(view) {
       h('h1', { style: 'margin:0' }, t('Hello, {{username}}', { username: state.me.username })),
       newEventBtn,
     ),
-    h('div', { class: 'grid stats' },
+    h('div', { class: 'grid stats', style: 'margin-bottom:1rem' },
       stat(t('Live now'), runningNow.length),
       stat(t('Scheduled'), scheduled.length),
       stat(t('Unused'), unusedAssigns.length),
