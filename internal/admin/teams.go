@@ -68,6 +68,9 @@ func (h *Handlers) RenameTeam(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if !h.requireEventOp(w, r.Context(), eventID, OpRenameTeam) {
+		return
+	}
 	var req renameTeamRequest
 	if !httpx.DecodeJSON(w, r, &req) {
 		return
@@ -100,6 +103,9 @@ func (h *Handlers) DeleteTeam(w http.ResponseWriter, r *http.Request) {
 	}
 	teamID, eventID, ok := h.teamFromRequest(w, r)
 	if !ok {
+		return
+	}
+	if !h.requireEventOp(w, r.Context(), eventID, OpDeleteTeam) {
 		return
 	}
 	// Best-effort: capture the name for the audit row before delete.
@@ -141,6 +147,9 @@ func (h *Handlers) AddSlot(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if !h.requireEventOp(w, r.Context(), eventID, OpAddSlot) {
+		return
+	}
 	var req addSlotRequest
 	if !httpx.DecodeJSON(w, r, &req) {
 		return
@@ -176,6 +185,9 @@ func (h *Handlers) AddSlot(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) RemoveSlot(w http.ResponseWriter, r *http.Request) {
 	teamID, eventID, ok := h.teamFromRequest(w, r)
 	if !ok {
+		return
+	}
+	if !h.requireEventOp(w, r.Context(), eventID, OpRemoveSlot) {
 		return
 	}
 	slotID, err := strconv.ParseInt(chi.URLParam(r, "slotID"), 10, 64)
@@ -214,6 +226,9 @@ func (h *Handlers) RotateSlotToken(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if !h.requireEventOp(w, r.Context(), eventID, OpRotateSlotToken) {
+		return
+	}
 	slotID, err := strconv.ParseInt(chi.URLParam(r, "slotID"), 10, 64)
 	if err != nil || slotID <= 0 {
 		httpx.Error(w, http.StatusBadRequest, "bad slot id")
@@ -245,6 +260,9 @@ func (h *Handlers) RotateSlotToken(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) UnlockTeam(w http.ResponseWriter, r *http.Request) {
 	teamID, eventID, ok := h.teamFromRequest(w, r)
 	if !ok {
+		return
+	}
+	if !h.requireEventOp(w, r.Context(), eventID, OpUnlockTeam) {
 		return
 	}
 	var (
@@ -323,6 +341,9 @@ func (h *Handlers) SetTeamAvatar(w http.ResponseWriter, r *http.Request) {
 	if _, _, ok := h.authorizeTeam(w, r, teamID); !ok {
 		return
 	}
+	if !h.teamEventOp(w, r.Context(), teamID, OpSetTeamAvatar) {
+		return
+	}
 	if err := r.ParseMultipartForm(maxImageBytes); err != nil {
 		httpx.Error(w, http.StatusBadRequest, "bad multipart form")
 		return
@@ -385,6 +406,9 @@ func (h *Handlers) SetTeamAvatar(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) DeleteTeamAvatar(w http.ResponseWriter, r *http.Request) {
 	teamID, eventID, ok := h.teamFromRequest(w, r)
 	if !ok {
+		return
+	}
+	if !h.requireEventOp(w, r.Context(), eventID, OpSetTeamAvatar) {
 		return
 	}
 	if _, err := h.DB.ExecContext(r.Context(), `

@@ -118,6 +118,7 @@ func (h *Handlers) EventDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	d.ShowMap = showMap != 0
+	d.AllowedOps = allowedOpsForState(d.State)
 
 	type slotOut struct {
 		ID          int64  `json:"id"`

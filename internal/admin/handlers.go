@@ -230,6 +230,12 @@ type eventDTO struct {
 	MaxTeams        int    `json:"max_teams"`
 	LiveToken       string `json:"live_token"`
 	ShowMap         bool   `json:"show_map"`
+	// AllowedOps lists the lifecycle-mutating operations the server
+	// will accept at this event's current state. Populated only on
+	// detail responses so the client can disable affordances that
+	// would otherwise round-trip to a 409. Empty for list responses
+	// where the rendering only needs name/state.
+	AllowedOps []string `json:"allowed_ops,omitempty"`
 }
 
 type createEventRequest struct {
@@ -567,14 +573,7 @@ func (h *Handlers) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if req.ScheduledAt != nil {
-		var state string
-		if err := h.DB.QueryRowContext(r.Context(),
-			`SELECT state FROM events WHERE id = $1`, eventID).Scan(&state); err != nil {
-			httpx.Error(w, http.StatusInternalServerError, "lookup failed")
-			return
-		}
-		if state != "scheduled" {
-			httpx.Error(w, http.StatusConflict, "can only reschedule an event while it is 'scheduled'")
+		if !h.requireEventOp(w, r.Context(), eventID, OpRescheduleEvent) {
 			return
 		}
 		var schedAt any
@@ -641,6 +640,9 @@ func (h *Handlers) CreateTeam(w http.ResponseWriter, r *http.Request) {
 	}
 	orgID, ok := h.authorizeEvent(w, r, eventID)
 	if !ok {
+		return
+	}
+	if !h.requireEventOp(w, r.Context(), eventID, OpCreateTeam) {
 		return
 	}
 	var req createTeamRequest

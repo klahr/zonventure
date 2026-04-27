@@ -804,6 +804,9 @@
       'Load more': 'Hämta fler',
       'No events recorded.': 'Inga händelser registrerade.',
       'End of log.': 'Slut på loggen.',
+      'Event is active.': 'Eventet pågår.',
+      'Event is completed — read-only.': 'Eventet är avslutat — skrivskyddat.',
+      'Read-only.': 'Skrivskyddad.',
       // ---- magic-link expiry ----
       'expired': 'utgången',
       'expires in {{n}}d': 'går ut om {{n}}d',

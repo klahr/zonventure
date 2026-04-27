@@ -3686,6 +3686,15 @@ function pillClassForState(s) {
   }
 }
 
+// canDo mirrors the server-side eventstate matrix: the event payload
+// carries allowed_ops, and the UI hides/disables affordances the
+// server would 409. The server is still the source of truth — this
+// just spares the user a round-trip on cosmetic buttons.
+function canDo(event, op) {
+  if (!event || !Array.isArray(event.allowed_ops)) return true;
+  return event.allowed_ops.includes(op);
+}
+
 const TEAM_COLORS = ['#e24080', '#429a3f', '#2563eb', '#f59e0b', '#7c3aed', '#0891b2', '#be185d', '#16a34a'];
 function teamColor(teamID, i) { return TEAM_COLORS[i % TEAM_COLORS.length]; }
 
@@ -4110,14 +4119,19 @@ async function viewRunDetail(view, runID) {
               : null),
           h('button', {
             class: 'btn primary small',
-            disabled: event.max_teams > 0 && teams.length >= event.max_teams ? '' : null,
+            disabled: !canDo(event, 'create_team') || (event.max_teams > 0 && teams.length >= event.max_teams) ? '' : null,
+            title: !canDo(event, 'create_team')
+              ? (event.state === 'completed' ? t('Event is completed — read-only.') : t('Event is active.'))
+              : null,
             on: { click: () => openTeamModal(event.id, null) },
           }, icon(ICONS.plus), t('New team'))),
         teams.length === 0
           ? h('div', { class: 'empty' },
               h('p', {}, t('No teams yet.')),
-              h('button', { class: 'btn primary', on: { click: () => openTeamModal(event.id, null) } },
-                icon(ICONS.plus), t('Add the first team')))
+              canDo(event, 'create_team')
+                ? h('button', { class: 'btn primary', on: { click: () => openTeamModal(event.id, null) } },
+                    icon(ICONS.plus), t('Add the first team'))
+                : null)
           : h('table', { class: 'table' },
             h('thead', {}, h('tr', {},
               h('th', {}, t('Team')),
@@ -4135,7 +4149,7 @@ async function viewRunDetail(view, runID) {
                     style: 'display:inline-flex; align-items:center; gap:.5rem; vertical-align:middle',
                   },
                     teamAvatar(tm, teamColor(tm.id, i), 26),
-                    h('a', { href: '#', on: { click: (e) => { e.preventDefault(); openTeamDetail(event.id, tm, adventure); } } }, tm.name)),
+                    h('a', { href: '#', on: { click: (e) => { e.preventDefault(); openTeamDetail(event.id, tm, adventure, event); } } }, tm.name)),
                   tm.completed_at ? h('span', { class: 'pill success', style: 'margin-left:.5rem' }, t('done')) : null,
                   stuck ? h('span', { class: 'pill warning', style: 'margin-left:.5rem' }, t('stuck?')) : null),
                 h('td', {},
@@ -4149,8 +4163,10 @@ async function viewRunDetail(view, runID) {
                 h('td', { class: 'hide-narrow muted', style: 'font-size:.85rem' },
                   lastEv ? fmtLocal(lastEv) : t('—')),
                 h('td', {}, h('div', { class: 'row end' },
-                  iconBtn('pencil', t('Edit team'),   () => openTeamModal(event.id, tm)),
-                  iconBtn('trash',  t('Delete team'), () => confirmDeleteTeam(tm), { danger: true }))),
+                  iconBtn('pencil', t('Edit team'),   () => openTeamModal(event.id, tm, event)),
+                  canDo(event, 'delete_team')
+                    ? iconBtn('trash', t('Delete team'), () => confirmDeleteTeam(tm), { danger: true })
+                    : null)),
               );
             })))),
       h('div', { class: 'card' },
@@ -4418,7 +4434,7 @@ async function patchSchedule(runID, iso) {
   }
 }
 
-async function openTeamDetail(runID, team, adventure) {
+async function openTeamDetail(runID, team, adventure, event) {
   // Fetch events filtered to this team.
   const evR = await api(`/api/admin/events/${runID}/events?team_id=${team.id}`);
   const events = evR.body?.events || [];
@@ -4443,7 +4459,7 @@ async function openTeamDetail(runID, team, adventure) {
     );
 
     const actions = h('div', { class: 'row', style: 'margin-bottom:.75rem; flex-wrap:wrap' });
-    if (!finished) {
+    if (!finished && canDo(event, 'unlock_team')) {
       // Alt-click skips the confirmation modal — faster when the
       // arranger is actively unsticking a team mid-event. Normal
       // click still goes through the confirm so a mis-tap doesn't
@@ -4457,10 +4473,12 @@ async function openTeamDetail(runID, team, adventure) {
       });
       actions.append(skipBtn);
     }
-    actions.append(h('button', { class: 'btn', on: { click: () => { close(null); openTeamModal(runID, team); } } },
+    actions.append(h('button', { class: 'btn', on: { click: () => { close(null); openTeamModal(runID, team, event); } } },
       icon(ICONS.pencil), t('Edit members')));
-    actions.append(h('button', { class: 'btn danger', on: { click: async () => { close(null); await confirmDeleteTeam(team); } } },
-      icon(ICONS.trash), t('Delete')));
+    if (canDo(event, 'delete_team')) {
+      actions.append(h('button', { class: 'btn danger', on: { click: async () => { close(null); await confirmDeleteTeam(team); } } },
+        icon(ICONS.trash), t('Delete')));
+    }
 
     body.append(
       summary,
@@ -4528,8 +4546,8 @@ async function confirmDeleteTeam(team) {
 // slot with its own magic-link token. For an existing team the modal lets
 // the arranger rename, copy each slot's link, rotate a link, remove a
 // slot, or add a new slot inline.
-async function openTeamModal(runID, existing) {
-  if (existing) return openEditTeamModal(runID, existing);
+async function openTeamModal(runID, existing, event) {
+  if (existing) return openEditTeamModal(runID, existing, event);
   return openNewTeamModal(runID);
 }
 
@@ -4673,16 +4691,21 @@ async function openNewTeamModal(runID) {
   }, { wide: true });
 }
 
-async function openEditTeamModal(runID, existing) {
+async function openEditTeamModal(runID, existing, event) {
   // Refresh the team detail so we pick up any changes since the page
   // rendered — tokens can rotate and we want the latest.
   const r = await api('/api/admin/events/' + runID);
   const run = r.body || {};
+  if (!event && run.event) event = run.event;
   const freshTeam = (run.teams || []).find((t) => t.id === existing.id) || existing;
 
+  const canRename = canDo(event, 'rename_team');
+  const canAddSlot = canDo(event, 'add_slot');
+  const canAvatar = canDo(event, 'set_team_avatar');
+
   await modal(t('Edit team · {{name}}', { name: freshTeam.name }), ({ body, close }) => {
-    const nameInput = h('input', { value: freshTeam.name, required: true });
-    const renameBtn = h('button', { class: 'btn small', type: 'button' }, t('Save name'));
+    const nameInput = h('input', { value: freshTeam.name, required: true, disabled: !canRename ? '' : null });
+    const renameBtn = h('button', { class: 'btn small', type: 'button', disabled: !canRename ? '' : null }, t('Save name'));
     renameBtn.addEventListener('click', async () => {
       const name = nameInput.value.trim();
       if (!name || name === freshTeam.name) return;
@@ -4696,7 +4719,7 @@ async function openEditTeamModal(runID, existing) {
     const membersWrap = h('div', {});
     const rebuildMembers = () => {
       membersWrap.replaceChildren();
-      const rows = (freshTeam.members || []).map((m) => renderSlotRow(freshTeam.id, m, reload));
+      const rows = (freshTeam.members || []).map((m) => renderSlotRow(freshTeam.id, m, reload, event));
       if (rows.length === 0) {
         membersWrap.append(h('p', { class: 'muted' }, t('No members yet. Add one below.')));
       } else {
@@ -4714,9 +4737,11 @@ async function openEditTeamModal(runID, existing) {
     }
 
     // Inline "add slot"
-    const newName = h('input', { placeholder: t('New member name') });
-    const addBtn = h('button', { class: 'btn primary small', type: 'button' }, icon(ICONS.plus), t('Add'));
-    const addRow = h('div', { class: 'row', style: 'gap:.4rem; margin-top:.75rem' }, newName, addBtn);
+    const newName = h('input', { placeholder: t('New member name'), disabled: !canAddSlot ? '' : null });
+    const addBtn = h('button', { class: 'btn primary small', type: 'button', disabled: !canAddSlot ? '' : null }, icon(ICONS.plus), t('Add'));
+    const addRow = canAddSlot
+      ? h('div', { class: 'row', style: 'gap:.4rem; margin-top:.75rem' }, newName, addBtn)
+      : null;
     addBtn.addEventListener('click', async () => {
       const name = newName.value.trim();
       if (!name) return;
@@ -4820,8 +4845,10 @@ async function openEditTeamModal(runID, existing) {
       }
     });
     const redrawActions = () => {
-      avatarActions.replaceChildren(uploadBtn);
-      if (freshTeam.avatar_url) avatarActions.append(removeBtn);
+      avatarActions.replaceChildren();
+      if (canAvatar) avatarActions.append(uploadBtn);
+      if (canAvatar && freshTeam.avatar_url) avatarActions.append(removeBtn);
+      if (!canAvatar) avatarActions.append(h('span', { class: 'muted', style: 'font-size:.8rem' }, t('Read-only.')));
     };
     redrawActions();
     redrawAvatar();
@@ -4845,7 +4872,7 @@ async function openEditTeamModal(runID, existing) {
   }, { wide: true });
 }
 
-function renderSlotRow(teamID, slot, reload) {
+function renderSlotRow(teamID, slot, reload, event) {
   const url = `${location.origin}/play?t=${encodeURIComponent(slot.token)}`;
   const urlInput = h('input', {
     readonly: '', value: url,
@@ -4856,16 +4883,20 @@ function renderSlotRow(teamID, slot, reload) {
     try { await navigator.clipboard.writeText(url); toastOk(t('Link copied')); }
     catch { urlInput.select(); document.execCommand('copy'); toastOk(t('Link copied')); }
   });
-  const rotateBtn = iconBtn('key', t('Rotate link — invalidates the old one'), async () => {
-    const rr = await api(`/api/admin/teams/${teamID}/slots/${slot.id}/rotate`, { method: 'POST' });
-    if (rr.status === 200) { toastOk(t('Link rotated')); reload(); }
-    else toastErr(rr.body?.error || t('error {{status}}', { status: rr.status }));
-  });
-  const removeBtn = iconBtn('trash', t('Remove slot'), async () => {
-    const rr = await api(`/api/admin/teams/${teamID}/slots/${slot.id}`, { method: 'DELETE' });
-    if (rr.status === 204) { toastOk(t('Removed')); reload(); }
-    else toastErr(rr.body?.error || t('error {{status}}', { status: rr.status }));
-  }, { danger: true });
+  const rotateBtn = canDo(event, 'rotate_slot_token')
+    ? iconBtn('key', t('Rotate link — invalidates the old one'), async () => {
+        const rr = await api(`/api/admin/teams/${teamID}/slots/${slot.id}/rotate`, { method: 'POST' });
+        if (rr.status === 200) { toastOk(t('Link rotated')); reload(); }
+        else toastErr(rr.body?.error || t('error {{status}}', { status: rr.status }));
+      })
+    : null;
+  const removeBtn = canDo(event, 'remove_slot')
+    ? iconBtn('trash', t('Remove slot'), async () => {
+        const rr = await api(`/api/admin/teams/${teamID}/slots/${slot.id}`, { method: 'DELETE' });
+        if (rr.status === 204) { toastOk(t('Removed')); reload(); }
+        else toastErr(rr.body?.error || t('error {{status}}', { status: rr.status }));
+      }, { danger: true })
+    : null;
   return h('div', { style: 'margin-bottom:.5rem' },
     h('div', { class: 'row', style: 'gap:.4rem; align-items:center' },
       h('strong', { style: 'min-width:8ch' }, slot.name),

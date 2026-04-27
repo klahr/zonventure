@@ -185,6 +185,7 @@ func (h *Handlers) buildEventDetail(ctx context.Context, eventID int64) (eventDe
 		return eventDetailDTO{}, err
 	}
 	d.ShowMap = showMap != 0
+	d.AllowedOps = allowedOpsForState(d.State)
 
 	teams := []eventDetailTeamDTO{}
 	rows, err := h.DB.QueryContext(ctx, `
