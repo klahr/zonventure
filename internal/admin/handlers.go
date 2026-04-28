@@ -147,7 +147,9 @@ type adventureDTO struct {
 }
 
 // ListAdventures returns adventures visible to the caller. Admins see
-// everything (incl. drafts); org users see their own org's adventures
+// the global catalog they own (org_id IS NULL), incl. drafts; org-owned
+// arranger content stays out of the admin Library and is reached via
+// the Organizations page. Org users see their own org's adventures
 // + admin-owned entries that are either (a) published, (b) already
 // held via an assignment, or (c) commissioned to the org via a share.
 // The Store tab filters further to `!mine_to_edit && published`.
@@ -156,7 +158,7 @@ func (h *Handlers) ListAdventures(w http.ResponseWriter, r *http.Request) {
 
 	// `shared` is 1 when the caller reaches the row via an adventure_shares
 	// grant — the UI uses that to flag "commissioned by admin" on the card.
-	// For admins we return 0 uniformly (they reach every row unconditionally).
+	// For admins we return 0 uniformly (they only see their own catalog).
 	query := `
 		SELECT a.slug, a.title, a.description, a.author, a.org_id,
 		       (SELECT COUNT(*) FROM adventure_pages p WHERE p.adventure_id = a.id) AS page_count,
@@ -165,7 +167,7 @@ func (h *Handlers) ListAdventures(w http.ResponseWriter, r *http.Request) {
 	`
 	var args []any
 	if isAdmin(me) {
-		query += ` 0 AS shared FROM adventures a`
+		query += ` 0 AS shared FROM adventures a WHERE a.org_id IS NULL`
 	} else {
 		query += `
 		       (EXISTS (
