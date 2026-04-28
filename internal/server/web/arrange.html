@@ -2459,6 +2459,10 @@ function renderLogin(err, mode, extra) {
       method: 'POST',
       body: JSON.stringify({ username: fd.get('u'), password: fd.get('p') }),
     });
+    if (r.ok && r.body?.code === 'totp_required') {
+      document.getElementById('root').replaceChildren(renderTOTPChallenge(r.body.challenge, { mode: 'login' }));
+      return;
+    }
     if (r.ok) { await refreshMe(); render(); return; }
     // Lockout (429): the server's Retry-After header carries the wait
     // budget. Render a live-ticking countdown and disable the submit
@@ -2561,6 +2565,15 @@ function renderReset(err, token) {
       method: 'POST',
       body: JSON.stringify({ token, new_password: fd.get('pw') }),
     });
+    if (r.status === 200 && r.body?.code === 'totp_required') {
+      // Server changed the password but didn't mint a session —
+      // bridge into the TOTP step on the same screen. Strip the
+      // reset token from the URL first so a back-button trip
+      // doesn't re-render this form with a now-consumed token.
+      history.replaceState(null, '', '#dashboard');
+      document.getElementById('root').replaceChildren(renderTOTPChallenge(r.body.challenge, { mode: 'reset' }));
+      return;
+    }
     if (r.status === 200) {
       // Server already minted a session and dropped the cookie.
       // Replace the hash so a refresh doesn't re-trigger the reset
@@ -2573,6 +2586,95 @@ function renderReset(err, token) {
       return;
     }
     document.getElementById('root').replaceChildren(renderReset(r.body?.error || t('reset failed'), token));
+  });
+  return h('div', { class: 'login-wrap' }, form);
+}
+
+// renderTOTPChallenge is the second leg of login when the server
+// returned {code: 'totp_required', challenge: '...'} from either
+// /api/auth/login or /api/auth/reset. Mode is 'login' or 'reset' —
+// only affects the heading copy.
+function renderTOTPChallenge(challenge, opts) {
+  opts = opts || {};
+  const mode = opts.mode || 'login';
+  const codeEl = h('input', {
+    name: 'code', autocomplete: 'one-time-code', inputmode: 'numeric', pattern: '[0-9]*',
+    maxlength: 6, required: true, autofocus: true, placeholder: '123456',
+  });
+  // Recovery-code path is initially hidden; clicking the link
+  // toggles it in alongside (not instead of) the code input. The
+  // server accepts exactly one of code / recovery_code, but the
+  // UI keeping the user on one screen avoids a "wait, where's the
+  // back button?" moment when they go for the recovery flow.
+  const recoveryEl = h('input', {
+    name: 'recovery', autocomplete: 'one-time-code', maxlength: 11, placeholder: 'xxxx-xxxx',
+  });
+  const recoveryRow = h('label', { class: 'field', hidden: '' },
+    h('span', {}, t('Recovery code')), recoveryEl);
+  const status = h('p', { class: 'muted', style: 'font-size:.85rem' });
+  const submit = h('button', { class: 'btn primary', type: 'submit' }, t('Verify'));
+  const heading = mode === 'reset' ? t('verify 2FA · password reset') : t('two-factor');
+  const form = h('form', { class: 'login' },
+    h('div', { class: 'brand' }, 'zonventure', h('small', {}, heading)),
+    h('p', { class: 'muted', style: 'font-size:.9rem' },
+      t('Enter the 6-digit code from your authenticator app.')),
+    h('label', { class: 'field' }, h('span', {}, t('Code')), codeEl),
+    recoveryRow,
+    status,
+    h('div', { class: 'row end', style: 'margin-top:1rem' }, submit),
+    h('p', { class: 'muted', style: 'margin-top:1rem; font-size:.85rem; text-align:center' },
+      h('a', { href: '#', on: { click: (e) => {
+        e.preventDefault();
+        if (recoveryRow.hasAttribute('hidden')) {
+          recoveryRow.removeAttribute('hidden');
+          codeEl.required = false;
+          recoveryEl.required = true;
+          codeEl.value = '';
+          recoveryEl.focus();
+        } else {
+          recoveryRow.setAttribute('hidden', '');
+          codeEl.required = true;
+          recoveryEl.required = false;
+          recoveryEl.value = '';
+          codeEl.focus();
+        }
+      } } }, t('Use a recovery code'))),
+    h('p', { class: 'muted', style: 'margin-top:.5rem; font-size:.85rem; text-align:center' },
+      h('a', { href: '#', on: { click: (e) => {
+        e.preventDefault();
+        document.getElementById('root').replaceChildren(renderLogin(null, 'login'));
+      } } }, t('Back to log in'))),
+  );
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    status.className = 'muted'; status.textContent = t('Verifying…');
+    const body = { challenge };
+    if (recoveryRow.hasAttribute('hidden')) {
+      body.code = codeEl.value.trim();
+    } else {
+      body.recovery_code = recoveryEl.value.trim();
+    }
+    const r = await api('/api/auth/login/totp', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+    if (r.ok) {
+      await refreshMe();
+      render();
+      if (mode === 'reset') {
+        setTimeout(() => toastOk(t('Password updated. You\'re signed in.')), 50);
+      }
+      return;
+    }
+    if (r.status === 429 && r.retryAfter > 0) {
+      status.className = 'err';
+      status.textContent = t('Too many failed attempts. Try again in {{n}}s.', { n: r.retryAfter });
+      submit.disabled = true;
+      setTimeout(() => { submit.disabled = false; }, r.retryAfter * 1000);
+      return;
+    }
+    status.className = 'err';
+    status.textContent = r.body?.error || t('verification failed');
   });
   return h('div', { class: 'login-wrap' }, form);
 }
@@ -9955,6 +10057,7 @@ async function viewSettings(view) {
 
   const pwCard = renderSettingsPasswordCard();
   const emailCard = renderSettingsEmailCard(me);
+  const totpCard = renderSettingsTOTPCard();
   const dangerCard = renderSettingsDeleteCard();
   const exportCard = renderSettingsExportCard();
   const sessionsCard = renderSettingsSessionsCard();
@@ -9976,7 +10079,7 @@ async function viewSettings(view) {
     h('h1', {}, t('Settings')),
     h('p', { class: 'muted' },
       t('Manage your account. Changes are immediate; deleting your account also removes its data.')),
-    pwCard, emailCard,
+    pwCard, emailCard, totpCard,
     sessionsCard, auditCard,
     exportCard,
     integrationsCard,
@@ -10382,6 +10485,189 @@ function renderSettingsPasswordCard() {
     }
   });
   return form;
+}
+
+// renderSettingsTOTPCard is the two-factor authentication panel.
+// Three states the card has to render:
+//   - server has no ZV_TOTP_KEY configured → operator placeholder
+//   - user enrolled            → "TOTP is on", regenerate codes, disable
+//   - user not enrolled        → setup flow (QR + manual secret + confirm)
+//
+// Disable + regenerate codes both require X-Confirm-Password reauth,
+// so they prompt for the current password inline before firing.
+function renderSettingsTOTPCard() {
+  const card = h('div', { class: 'card settings-card' });
+  card.replaceChildren(h('h2', {}, t('Two-factor authentication')),
+    h('p', { class: 'muted', style: 'font-size:.9rem' }, t('Loading…')));
+  const refresh = async () => {
+    const r = await api('/api/admin/me/totp');
+    if (!r.ok) {
+      card.replaceChildren(h('h2', {}, t('Two-factor authentication')),
+        h('p', { class: 'err' }, r.body?.error || t('error {{status}}', { status: r.status })));
+      return;
+    }
+    if (!r.body.server_ready) {
+      card.replaceChildren(h('h2', {}, t('Two-factor authentication')),
+        h('p', { class: 'muted', style: 'font-size:.9rem' },
+          t('TOTP is not configured on this server. Ask your operator to set $ZV_TOTP_KEY (32 bytes base64) to enable enrolment.')));
+      return;
+    }
+    if (r.body.enabled) {
+      card.replaceChildren(...renderTOTPEnabled(refresh, r.body.enrolled_at));
+      return;
+    }
+    card.replaceChildren(...renderTOTPDisabledSetup(refresh));
+  };
+  refresh();
+  return card;
+}
+
+// renderTOTPEnabled is the panel shown when the user is already
+// enrolled. Surfaces "regenerate recovery codes" and "disable",
+// both gated by current-password reauth.
+function renderTOTPEnabled(refresh, enrolledAt) {
+  const status = h('p', { class: 'muted', style: 'font-size:.85rem' });
+  return [
+    h('h2', {}, t('Two-factor authentication')),
+    h('p', { class: 'ok' }, t('TOTP is enabled.')),
+    enrolledAt ? h('p', { class: 'muted', style: 'font-size:.85rem' },
+      t('Enrolled {{when}}', { when: enrolledAt })) : null,
+    status,
+    h('div', { class: 'row', style: 'gap:.5rem; margin-top:.5rem; flex-wrap:wrap' },
+      h('button', { class: 'btn', type: 'button', on: { click: async () => {
+        const pw = prompt(t('Confirm your current password to regenerate recovery codes:'));
+        if (!pw) return;
+        status.className = 'muted'; status.textContent = t('Generating…');
+        const r = await api('/api/admin/me/totp/recovery-codes/regenerate', {
+          method: 'POST', headers: { 'X-Confirm-Password': pw },
+        });
+        if (!r.ok) {
+          status.className = 'err';
+          status.textContent = r.body?.error || t('error {{status}}', { status: r.status });
+          return;
+        }
+        status.className = 'ok';
+        status.textContent = t('New recovery codes generated. Save them now — old codes no longer work.');
+        showRecoveryCodes(r.body?.recovery_codes || []);
+      } } }, t('Regenerate recovery codes')),
+      h('button', { class: 'btn danger', type: 'button', on: { click: async () => {
+        if (!confirm(t('Turn off two-factor authentication for this account?'))) return;
+        const pw = prompt(t('Confirm your current password to disable 2FA:'));
+        if (!pw) return;
+        status.className = 'muted'; status.textContent = t('Disabling…');
+        const r = await api('/api/admin/me/totp/disable', {
+          method: 'POST', headers: { 'X-Confirm-Password': pw },
+        });
+        if (!r.ok) {
+          status.className = 'err';
+          status.textContent = r.body?.error || t('error {{status}}', { status: r.status });
+          return;
+        }
+        toastOk(t('Two-factor authentication disabled.'));
+        await refreshMe();
+        refresh();
+      } } }, t('Disable 2FA')))].filter(Boolean);
+}
+
+// renderTOTPDisabledSetup is the enrol flow: SetupTOTP → display QR
+// + secret → user scans → ConfirmTOTP → display recovery codes.
+function renderTOTPDisabledSetup(refresh) {
+  const status = h('p', { class: 'muted', style: 'font-size:.85rem' });
+  const setupBox = h('div', { hidden: '' });
+  const startBtn = h('button', { class: 'btn primary', type: 'button', on: { click: async () => {
+    startBtn.disabled = true;
+    status.className = 'muted'; status.textContent = t('Generating secret…');
+    const r = await api('/api/admin/me/totp/setup', { method: 'POST' });
+    startBtn.disabled = false;
+    if (!r.ok) {
+      status.className = 'err';
+      status.textContent = r.body?.error || t('error {{status}}', { status: r.status });
+      return;
+    }
+    status.textContent = '';
+    renderSetupConfirmFlow(setupBox, r.body, refresh);
+    setupBox.removeAttribute('hidden');
+    startBtn.hidden = true;
+  } } }, t('Set up 2FA'));
+  return [
+    h('h2', {}, t('Two-factor authentication')),
+    h('p', { class: 'muted', style: 'font-size:.9rem' },
+      t('Add a second factor so a stolen password alone cannot log into your account. Requires an authenticator app like 1Password, Bitwarden, Aegis, Google Authenticator or similar.')),
+    h('div', { class: 'row', style: 'margin-top:.5rem' }, startBtn),
+    status,
+    setupBox,
+  ];
+}
+
+function renderSetupConfirmFlow(box, body, refresh) {
+  const codeEl = h('input', {
+    type: 'text', inputmode: 'numeric', pattern: '[0-9]*',
+    maxlength: 6, required: true, placeholder: '123456', autocomplete: 'one-time-code',
+  });
+  const status = h('p', { class: 'muted', style: 'font-size:.85rem' });
+  const qrImg = body.qr_data_url
+    ? h('img', { src: body.qr_data_url, alt: t('TOTP QR code'),
+        style: 'width:200px; height:200px; image-rendering: pixelated; display:block; margin:0 auto;' })
+    : null;
+  const form = h('form', {},
+    h('p', { class: 'muted', style: 'font-size:.9rem; margin-top:1rem' },
+      t('Scan this QR code in your authenticator app, or enter the secret manually.')),
+    qrImg,
+    h('p', { class: 'muted', style: 'font-size:.85rem; word-break:break-all; user-select:all; margin-top:.5rem' },
+      h('strong', {}, t('Secret:')), ' ', body.secret_base32),
+    h('p', { class: 'muted', style: 'font-size:.9rem; margin-top:1rem' },
+      t('Then enter the 6-digit code your app shows to confirm:')),
+    h('label', { class: 'field' }, h('span', {}, t('Code')), codeEl),
+    status,
+    h('div', { class: 'row end' },
+      h('button', { class: 'btn primary', type: 'submit' }, t('Confirm and enable'))));
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    status.className = 'muted'; status.textContent = t('Confirming…');
+    const r = await api('/api/admin/me/totp/confirm', {
+      method: 'POST', body: JSON.stringify({ code: codeEl.value.trim() }),
+    });
+    if (!r.ok) {
+      status.className = 'err';
+      status.textContent = r.body?.error || t('error {{status}}', { status: r.status });
+      return;
+    }
+    status.textContent = '';
+    showRecoveryCodes(r.body?.recovery_codes || []);
+    await refreshMe();
+    refresh();
+  });
+  box.replaceChildren(form);
+}
+
+// showRecoveryCodes displays the freshly minted codes in a modal-ish
+// callout. The user must explicitly dismiss it after copying — we
+// can't show the codes again later.
+function showRecoveryCodes(codes) {
+  const list = h('ul', { style: 'font-family:monospace; font-size:1.1rem; line-height:1.6; user-select:all; margin:.75rem 0; padding-left:1.5rem' });
+  for (const c of codes) list.appendChild(h('li', {}, c));
+  const blob = new Blob([codes.join('\n') + '\n'], { type: 'text/plain' });
+  const dlURL = URL.createObjectURL(blob);
+  const overlay = h('div', {
+    style: 'position:fixed; inset:0; background:rgba(0,0,0,.55); display:flex; align-items:center; justify-content:center; z-index:9999; padding:1rem;',
+  },
+    h('div', { class: 'card', style: 'max-width:480px; width:100%; max-height:90vh; overflow:auto' },
+      h('h2', {}, t('Save your recovery codes')),
+      h('p', { class: 'muted' },
+        t('Store these somewhere safe. Each code works once if you lose access to your authenticator.')),
+      list,
+      h('div', { class: 'row', style: 'gap:.5rem; flex-wrap:wrap' },
+        h('a', { class: 'btn', href: dlURL, download: 'zonventure-recovery-codes.txt' }, t('Download as .txt')),
+        h('button', { class: 'btn', type: 'button', on: { click: () => {
+          navigator.clipboard?.writeText(codes.join('\n'))
+            .then(() => toastOk(t('Copied.')))
+            .catch(() => toastErr(t('Could not copy.')));
+        } } }, t('Copy to clipboard')),
+        h('button', { class: 'btn primary', type: 'button', on: { click: () => {
+          URL.revokeObjectURL(dlURL);
+          overlay.remove();
+        } } }, t('I saved them')))));
+  document.body.appendChild(overlay);
 }
 
 function renderSettingsEmailCard(me) {

@@ -17,7 +17,7 @@ for self-hosters and operators.
 | 2 | No CI: nothing runs `go test`, `go vet`, `go build` automatically | small–medium | **done** — `.builds.yml` (sourcehut, Postgres-backed) |
 | 3 | No `/api/version` or build-info endpoint | small | **done** — `Makefile` + `Dockerfile` + `.builds.yml` inject `git describe`; runtime/debug fills VCS info |
 | 4 | No event cancellation — only path is delete-team-by-team | medium | **done** — `POST /api/admin/events/:id/cancel` (password-gated), `cancelled` state in schema + retention sweep, UI button on event detail, player + live screens render the new state |
-| 5 | No 2FA for arranger accounts | medium–large | pending |
+| 5 | No 2FA for arranger accounts | medium–large | **done** — opt-in TOTP per user (`ZV_TOTP_KEY` enables; AES-GCM at rest), Settings card with QR + manual secret + 10 single-use recovery codes, password-reset gate, admin factory-reset endpoint, new audit events. Login splits into `VerifyPassword` + `CompleteLogin(factors)` so future Google Sign-in (#18) plugs into the same seam |
 | 6 | No bulk team/player roster import | medium | **done** — `POST /api/admin/events/:id/teams/bulk` with per-row results (partial success); "Paste roster" mode in the new-team modal accepts comma/tab/semicolon/colon-separated lines |
 | 7 | Audit log has no filtering UI | small | **done** — event/result/user/IP filters on `/api/admin/auth-events` + UI |
 | 8 | Image `alt` is hardcoded empty (`arrange.html:4543`) | small | **done** — `alt_text` column on `adventure_page_images`, `PATCH /api/admin/images/:id` (500-char cap), inline alt input in puzzle-edit modal, surfaced through player + preview DTOs and rendered in play.html. Team-avatar `alt=""` deliberately kept (decorative). |

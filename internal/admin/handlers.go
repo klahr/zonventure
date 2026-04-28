@@ -75,6 +75,11 @@ type Handlers struct {
 	// constructor's dbblob fallback. Future S3 / local-FS impls plug
 	// in here without touching this struct.
 	Storage storage.Blobs
+	// TOTPKey is the AES-256-GCM key wrapping users.totp_secret_encrypted.
+	// nil disables the enrol surface (the /me/totp/setup endpoint
+	// surfaces a clear "TOTP not configured on this server" error
+	// instead of generating a secret that could never be redeemed).
+	TOTPKey []byte
 }
 
 /* ---------------- Shared scoping helpers ---------------- */

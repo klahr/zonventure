@@ -20,6 +20,18 @@ const (
 	// reason field disambiguates: ReasonSuccess for token redemption,
 	// ReasonAdminManual for the admin override.
 	EventEmailVerify = "email_verify"
+	// TOTP 2FA lifecycle events. Setup is the first leg of enrolment
+	// (a secret is generated, totp_enabled stays false); Confirm flips
+	// totp_enabled=true after the user verifies the first code.
+	// Disable / AdminReset clear the secret; Verify is one successful
+	// post-password TOTP step; RecoveryCodeUse is one successful
+	// recovery-code redemption (also single-use).
+	EventTOTPSetup           = "totp_setup"
+	EventTOTPConfirm         = "totp_confirm"
+	EventTOTPDisable         = "totp_disable"
+	EventTOTPVerify          = "totp_verify"
+	EventTOTPRecoveryCodeUse = "totp_recovery_code_use"
+	EventTOTPAdminReset      = "totp_admin_reset"
 )
 
 // Common reason codes. Free-form strings — these are the canonical
@@ -33,6 +45,16 @@ const (
 	ReasonExpiredToken      = "expired_token"
 	ReasonUnknownToken      = "unknown_token"
 	ReasonAdminManual       = "admin_manual"
+	// TOTP-specific reasons. Required is set on a login attempt that
+	// short-circuits with a totp_required response (password was OK,
+	// second factor still needs entering). Invalid covers both bad
+	// codes and bad recovery codes; ChallengeExpired is for the
+	// 5-minute TTL elapsing between the password and the code.
+	ReasonTOTPRequired         = "totp_required"
+	ReasonTOTPInvalid          = "totp_invalid"
+	ReasonTOTPChallengeExpired = "totp_challenge_expired"
+	ReasonRecoveryCodeInvalid  = "recovery_code_invalid"
+	ReasonTOTPAdminReset       = "totp_admin_reset"
 )
 
 // AuditEvent is the payload of one auth_events row. UserID is optional;

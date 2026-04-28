@@ -65,6 +65,40 @@ func sweep(ctx context.Context, db *sql.DB, cfg Config) {
 	// not operator-tunable, so it has no Days field on Config — the
 	// timestamp on the row already encodes the deadline.
 	pruneScheduledDeletions(ctx, db)
+	// Expired TOTP challenges. TTL is 5 minutes, set at IssueChallenge
+	// time; ConsumeChallenge deletes on success. This sweep mops up
+	// abandoned attempts so the table stays small.
+	pruneExpiredTOTPChallenges(ctx, db)
+}
+
+func pruneExpiredTOTPChallenges(ctx context.Context, db *sql.DB) {
+	stmt := `
+		DELETE FROM auth_totp_challenges
+		WHERE token IN (
+		  SELECT token FROM auth_totp_challenges
+		  WHERE expires_at::timestamptz < now()
+		  LIMIT ` + strconv.Itoa(batchSize) + `
+		)
+	`
+	total := int64(0)
+	for {
+		if ctx.Err() != nil {
+			return
+		}
+		res, err := db.ExecContext(ctx, stmt)
+		if err != nil {
+			logx.Error("retention.totp_challenges.failed", "err", err.Error())
+			return
+		}
+		n, _ := res.RowsAffected()
+		total += n
+		if n < batchSize {
+			break
+		}
+	}
+	if total > 0 {
+		logx.Info("retention.totp_challenges.pruned", "rows", total)
+	}
 }
 
 // COALESCE picks the correct terminal timestamp: completed_at for

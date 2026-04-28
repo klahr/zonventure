@@ -98,15 +98,20 @@ type resetPasswordRequest struct {
 }
 
 // ResetPassword consumes a one-shot reset token, sets the new password,
-// kills any other live sessions for the user, and drops a fresh session
-// cookie so the user is signed in immediately. Returns whoami on
-// success.
+// kills any other live sessions for the user, and either drops a
+// fresh session cookie (no TOTP) or returns a totp_required
+// challenge token (TOTP enrolled) so the front-end transitions
+// inline into the second-factor step.
+//
+// Either way, the password change has committed by the time this
+// function returns — the user can never end up in a state where
+// the new password is rejected and the old one still works.
 func (h *Handlers) ResetPassword(w http.ResponseWriter, r *http.Request) {
 	var req resetPasswordRequest
 	if !httpx.DecodeJSON(w, r, &req) {
 		return
 	}
-	u, sessionTok, err := ConsumeForgotPasswordToken(r.Context(), h.DB, req.Token, req.NewPassword)
+	u, sessionTok, totpRequired, err := ConsumeForgotPasswordToken(r.Context(), h.DB, req.Token, req.NewPassword)
 	if errors.Is(err, ErrVerificationUnknown) {
 		httpx.Error(w, http.StatusBadRequest, "reset link is invalid")
 		return
@@ -129,6 +134,24 @@ func (h *Handlers) ResetPassword(w http.ResponseWriter, r *http.Request) {
 		Event: EventSetPassword, OK: true, UserID: &u.ID, Username: u.Username,
 		IP: ClientIP(r), UserAgent: UserAgent(r), Reason: ReasonSuccess,
 	})
+	if totpRequired {
+		ip := ClientIP(r)
+		ua := UserAgent(r)
+		tok, err := IssueTOTPChallenge(r.Context(), h.DB, u.ID, "reset", ip, ua)
+		if err != nil {
+			httpx.Error(w, http.StatusInternalServerError, "challenge issue failed")
+			return
+		}
+		Record(r.Context(), h.DB, AuditEvent{
+			Event: EventLogin, OK: false, UserID: &u.ID, Username: u.Username, IP: ip, UserAgent: ua,
+			Reason: ReasonTOTPRequired,
+		})
+		httpx.JSON(w, http.StatusOK, map[string]string{
+			"code":      "totp_required",
+			"challenge": tok,
+		})
+		return
+	}
 	StampSessionMeta(r.Context(), h.DB, sessionTok, UserAgent(r), ClientIP(r))
 	SetCookie(w, sessionTok, CookieSecure(r, h.SecureCookie))
 	httpx.JSON(w, http.StatusOK, h.userResponse(r.Context(), u))

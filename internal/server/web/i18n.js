@@ -1684,6 +1684,66 @@
       'Type your password to confirm. You\'ll lose admin permissions immediately.':
           'Skriv ditt lösenord för att bekräfta. Du förlorar admin-rättigheter direkt.',
       'Ownership transferred.': 'Ägarskap överlåtet.',
+      // ---- Round 14: installed-components panel (carry-over) ----
+      'Installed components': 'Installerade komponenter',
+      'Component': 'Komponent',
+      'Implementation': 'Implementation',
+      'Status': 'Status',
+      'Notes': 'Anteckningar',
+      'No components reported.': 'Inga komponenter rapporterade.',
+      'Pluggable seams the running binary was built with. Read-only — swap an implementation by rebuilding.':
+          'Pluggbara skarvar som binären byggdes med. Skrivskyddat — byt implementation genom att bygga om.',
+      'on': 'på',
+      'off': 'av',
+      // ---- Round 15: 2FA / TOTP ----
+      'Two-factor authentication': 'Tvåfaktorsautentisering',
+      'Two-factor authentication disabled.': 'Tvåfaktorsautentisering inaktiverad.',
+      'TOTP is enabled.': 'TOTP är aktiverat.',
+      'TOTP is not configured on this server. Ask your operator to set $ZV_TOTP_KEY (32 bytes base64) to enable enrolment.':
+          'TOTP är inte konfigurerat på denna server. Be din operatör sätta $ZV_TOTP_KEY (32 byte base64) för att aktivera registrering.',
+      'TOTP QR code': 'TOTP QR-kod',
+      'Enrolled {{when}}': 'Registrerad {{when}}',
+      'Add a second factor so a stolen password alone cannot log into your account. Requires an authenticator app like 1Password, Bitwarden, Aegis, Google Authenticator or similar.':
+          'Lägg till en andra faktor så att ett stulet lösenord ensamt inte räcker för att logga in. Kräver en autentiseringsapp som 1Password, Bitwarden, Aegis, Google Authenticator eller liknande.',
+      'Set up 2FA': 'Aktivera 2FA',
+      'Disable 2FA': 'Inaktivera 2FA',
+      'Disabling…': 'Inaktiverar…',
+      'Generating secret…': 'Genererar hemlighet…',
+      'Generating…': 'Genererar…',
+      'Confirming…': 'Bekräftar…',
+      'Confirm and enable': 'Bekräfta och aktivera',
+      'Scan this QR code in your authenticator app, or enter the secret manually.':
+          'Skanna QR-koden i din autentiseringsapp, eller skriv in hemligheten manuellt.',
+      'Then enter the 6-digit code your app shows to confirm:':
+          'Skriv sedan in den 6-siffriga koden som appen visar för att bekräfta:',
+      'Secret:': 'Hemlighet:',
+      'Code': 'Kod',
+      'Recovery code': 'Reservkod',
+      'Use a recovery code': 'Använd en reservkod',
+      'Regenerate recovery codes': 'Generera nya reservkoder',
+      'Save your recovery codes': 'Spara dina reservkoder',
+      'Store these somewhere safe. Each code works once if you lose access to your authenticator.':
+          'Spara dem på ett säkert ställe. Varje kod fungerar en gång om du förlorar åtkomst till din autentiseringsapp.',
+      'Download as .txt': 'Ladda ner som .txt',
+      'Copy to clipboard': 'Kopiera till urklipp',
+      'Copied.': 'Kopierat.',
+      'Could not copy.': 'Kunde inte kopiera.',
+      'I saved them': 'Jag har sparat dem',
+      'New recovery codes generated. Save them now — old codes no longer work.':
+          'Nya reservkoder genererade. Spara dem nu — gamla koder fungerar inte längre.',
+      'Confirm your current password to disable 2FA:':
+          'Bekräfta ditt nuvarande lösenord för att inaktivera 2FA:',
+      'Confirm your current password to regenerate recovery codes:':
+          'Bekräfta ditt nuvarande lösenord för att generera nya reservkoder:',
+      'Turn off two-factor authentication for this account?':
+          'Vill du stänga av tvåfaktorsautentisering för det här kontot?',
+      'two-factor': 'tvåfaktor',
+      'verify 2FA · password reset': 'verifiera 2FA · lösenordsåterställning',
+      'Enter the 6-digit code from your authenticator app.':
+          'Skriv in den 6-siffriga koden från din autentiseringsapp.',
+      'Verify': 'Verifiera',
+      'Verifying…': 'Verifierar…',
+      'verification failed': 'verifieringen misslyckades',
     },
   };
 

@@ -66,6 +66,39 @@ Emergency revocation: `zv -revoke-sessions all` drops every staff +
 slot session, forcing every user to re-authenticate. Scope to one user
 with `zv -revoke-sessions <username>`.
 
+## Two-factor authentication (TOTP)
+
+Optional, opt-in per user. Requires a server-side secret to wrap each
+user's TOTP secret at rest:
+
+```sh
+# Generate once and store like a database credential — losing this
+# locks every enrolled user out and forces them to re-enrol.
+ZV_TOTP_KEY=$(openssl rand -base64 32) zv
+```
+
+When unset, the enrolment surface is disabled (the Settings card shows
+a placeholder explaining why) and the login flow stays password-only —
+existing users keep working unchanged.
+
+When set, the Settings → Two-factor authentication card lets each user
+register an authenticator app (1Password, Bitwarden, Aegis, Google
+Authenticator, …). Confirmed enrolment also generates ten single-use
+recovery codes; the user must save them at that moment because the
+plaintext is only displayed once.
+
+A user who has lost both the device and the recovery codes can ask
+an admin or org_admin in their org to factory-reset the second factor
+via `POST /api/admin/users/{userID}/totp/disable` (requires the acting
+admin's password in `X-Confirm-Password`). This is audit-loud: rows
+in `auth_events` with `event=totp_admin_reset` carry both the actor
+and the target.
+
+Backups must include the value of `ZV_TOTP_KEY` alongside the database
+dump: a restored database paired with a different key is equivalent to
+losing the key entirely. Treat the key like a database credential —
+keep it in the same secrets store, never in the repo, never in CI logs.
+
 ## Metrics
 
 `/metrics` is **off by default** — set `ZV_METRICS_ADDR` to a listen

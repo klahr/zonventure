@@ -86,7 +86,44 @@ type User struct {
 	// /api/admin/me/cancel-deletion to clear it. Surfaced via
 	// /whoami so the UI can show a banner with the date.
 	ScheduledDeletionAt *time.Time
+	// TOTPEnabled is true when the user has completed TOTP enrolment.
+	// VerifyPassword populates this so the login handler can fork
+	// into the second-factor challenge before any session is minted.
+	// An unfinished enrolment leaves totp_secret_encrypted set with
+	// totp_enabled=false, and the login flow ignores it (else
+	// abandoning enrolment would lock the account).
+	TOTPEnabled bool
 }
+
+// Factor names a single authentication factor that contributed to
+// completing a login. CompleteLogin takes a slice of these so the
+// caller (login handler today, future OIDC handler) can record the
+// path that produced the session, and so policy decisions ("require
+// TOTP regardless of backend") have something concrete to consult.
+type Factor string
+
+const (
+	// FactorPassword is the local username+password challenge.
+	FactorPassword Factor = "password"
+	// FactorTOTP is the RFC 6238 second-factor code.
+	FactorTOTP Factor = "totp"
+	// FactorRecoveryCode is one of the single-use codes generated at
+	// TOTP enrolment, redeemed in lieu of a TOTP code when the user
+	// has lost their authenticator. Distinguished from FactorTOTP so
+	// "logged in via recovery code" is visible in audit.
+	FactorRecoveryCode Factor = "recovery_code"
+	// FactorIdPPrimary is the primary credential when the user logged
+	// in via an external IdP (OIDC / SAML / Google Sign-in). Reserved
+	// for the future plugin work tracked in TODO #18 — no producer
+	// today.
+	FactorIdPPrimary Factor = "idp_primary"
+	// FactorIdPMFA is set alongside FactorIdPPrimary when the IdP
+	// asserted that an MFA step took place (OIDC `amr` includes
+	// "mfa", or the SAML AuthnContext class indicates a multi-factor
+	// authentication method). A future per-user policy can choose
+	// to trust this in lieu of a local TOTP step.
+	FactorIdPMFA Factor = "idp_mfa"
+)
 
 // ctxKey is a private type so handler contexts can't collide with other
 // packages that use string keys.
@@ -117,37 +154,42 @@ func HashPassword(pw string) (string, error) {
 	return string(b), nil
 }
 
-// Login validates credentials and creates a new session row. Returns
-// ErrPasswordNotSet when the user exists but never set a password — the
-// caller should route that user through SetInitialPassword.
+// VerifyPassword checks the username+password credential and returns
+// the resolved User without minting a session. The caller (the login
+// handler) decides whether to immediately CompleteLogin or to fork
+// into the TOTP challenge based on User.TOTPEnabled.
 //
-// The new session's active_org_id is auto-pinned when the user has
-// exactly one org membership (the common case). Multi-org users
-// land with active_org_id NULL so the UI shows the picker on first
-// page load; admins also stay NULL (no org context).
-func Login(ctx context.Context, db *sql.DB, username, password string) (User, string, error) {
+// Returns ErrPasswordNotSet when the user exists but never set a
+// password — the caller should route that user through
+// SetInitialPassword.
+//
+// User.OrgID and User.Role are populated the same way Login used to
+// populate them: the only-membership pin for single-org users, NULL
+// for multi-org and admins (the UI picker takes over).
+func VerifyPassword(ctx context.Context, db *sql.DB, username, password string) (User, error) {
 	var (
 		u    User
 		hash sql.NullString
 	)
 	err := db.QueryRowContext(ctx, `
-		SELECT id, username, is_admin, password_hash, COALESCE(email,''), (email_verified <> 0) FROM users WHERE username = $1
-	`, username).Scan(&u.ID, &u.Username, &u.IsAdmin, &hash, &u.Email, &u.EmailVerified)
+		SELECT id, username, is_admin, password_hash, COALESCE(email,''), (email_verified <> 0), totp_enabled
+		FROM users WHERE username = $1
+	`, username).Scan(&u.ID, &u.Username, &u.IsAdmin, &hash, &u.Email, &u.EmailVerified, &u.TOTPEnabled)
 	if errors.Is(err, sql.ErrNoRows) {
-		return User{}, "", ErrInvalidCredentials
+		return User{}, ErrInvalidCredentials
 	}
 	if err != nil {
-		return User{}, "", err
+		return User{}, err
 	}
 	if !hash.Valid {
-		return u, "", ErrPasswordNotSet
+		return u, ErrPasswordNotSet
 	}
 	if err := bcrypt.CompareHashAndPassword([]byte(hash.String), []byte(password)); err != nil {
-		return User{}, "", ErrInvalidCredentials
+		return User{}, ErrInvalidCredentials
 	}
 	active, role, err := resolveInitialActiveOrg(ctx, db, u.ID)
 	if err != nil {
-		return User{}, "", err
+		return User{}, err
 	}
 	if active.Valid {
 		v := active.Int64
@@ -158,7 +200,45 @@ func Login(ctx context.Context, db *sql.DB, username, password string) (User, st
 	} else {
 		u.Role = role
 	}
-	token, err := newSession(ctx, db, u.ID, "", "", active)
+	return u, nil
+}
+
+// CompleteLogin mints a session row for a user whose authentication
+// has already succeeded, recording the asserted factors that
+// produced it. The login handler calls this after VerifyPassword
+// (and, when TOTP is enrolled, after the TOTP challenge is also
+// consumed). Future OIDC handlers will reuse the same seam,
+// passing FactorIdPPrimary (and FactorIdPMFA if the IdP asserted
+// MFA) instead of FactorPassword.
+//
+// activeOrgID is the same NullInt64 newSession takes — pass the
+// only-membership pin for single-org users, an invalid value for
+// multi-org users (the UI picker fires on first load) and admins.
+//
+// factors is currently observational — it is recorded in audit log
+// entries by the calling handler but not yet persisted on the
+// session row. Reserved for the future per-user "require TOTP
+// regardless of backend" policy.
+func CompleteLogin(ctx context.Context, w sessionWriter, u User, factors []Factor, ua, ip string, activeOrgID sql.NullInt64) (string, error) {
+	_ = factors // reserved for future use; see doc comment.
+	return newSession(ctx, w, u.ID, ua, ip, activeOrgID)
+}
+
+// Login validates credentials and creates a new session row. Thin
+// shim around VerifyPassword + CompleteLogin so existing callers
+// (set-password flow, tests) keep compiling. The login handler now
+// uses the two-step variant directly so it can interpose a TOTP
+// challenge between verification and session minting.
+func Login(ctx context.Context, db *sql.DB, username, password string) (User, string, error) {
+	u, err := VerifyPassword(ctx, db, username, password)
+	if err != nil {
+		return u, "", err
+	}
+	var active sql.NullInt64
+	if u.OrgID != nil {
+		active = sql.NullInt64{Int64: *u.OrgID, Valid: true}
+	}
+	token, err := CompleteLogin(ctx, db, u, []Factor{FactorPassword}, "", "", active)
 	if err != nil {
 		return User{}, "", err
 	}
@@ -353,12 +433,12 @@ func Lookup(ctx context.Context, db *sql.DB, token string) (User, bool, error) {
 	err := db.QueryRowContext(ctx, `
 		SELECT u.id, u.username, u.is_admin, m.role, s.active_org_id,
 		       COALESCE(u.email,''), (u.email_verified <> 0),
-		       u.scheduled_deletion_at, s.expires_at
+		       u.scheduled_deletion_at, u.totp_enabled, s.expires_at
 		FROM sessions s JOIN users u ON u.id = s.user_id
 		LEFT JOIN org_memberships m ON m.user_id = u.id AND m.org_id = s.active_org_id
 		WHERE s.token = $1
 	`, token).Scan(&u.ID, &u.Username, &u.IsAdmin, &membRole, &activeOrgID,
-		&u.Email, &u.EmailVerified, &schedDel, &expires)
+		&u.Email, &u.EmailVerified, &schedDel, &u.TOTPEnabled, &expires)
 	if errors.Is(err, sql.ErrNoRows) {
 		return User{}, false, nil
 	}

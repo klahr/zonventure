@@ -184,6 +184,18 @@ func main() {
 	if err != nil {
 		log.Fatalf("mailer config: %v", err)
 	}
+	// Optional ZV_TOTP_KEY: the AES-256-GCM key wrapping
+	// users.totp_secret_encrypted. When set we surface MFA in the
+	// components panel and accept TOTP enrolments; when missing the
+	// enrol endpoints decline cleanly and the login flow stays
+	// password-only. Lose-the-key recovery: every enrolled user has
+	// to re-enrol, so back the value up alongside DB credentials.
+	var totpKey []byte
+	if k, kerr := auth.LoadTOTPKey(); kerr == nil {
+		totpKey = k
+	} else if !errors.Is(kerr, auth.ErrTOTPKeyMissing) {
+		log.Fatalf("ZV_TOTP_KEY: %v", kerr)
+	}
 	h := server.New(server.Config{
 		DB:           sqlDB,
 		Library:      lib,
@@ -191,7 +203,8 @@ func main() {
 		SecureCookie: *secureCookie,
 		Mailer:       mail,
 		PublicURL:    *publicURL,
-		Components:   describeComponents(mail, os.Getenv("ZV_STRIPE_SECRET_KEY"), os.Getenv("ZV_STRIPE_WEBHOOK_SECRET"), os.Getenv("ZV_METRICS_ADDR")),
+		Components:   describeComponents(mail, os.Getenv("ZV_STRIPE_SECRET_KEY"), os.Getenv("ZV_STRIPE_WEBHOOK_SECRET"), os.Getenv("ZV_METRICS_ADDR"), totpKey != nil),
+		TOTPKey:      totpKey,
 		Legal: server.LegalConfig{
 			CompanyName:           os.Getenv("ZV_COMPANY_NAME"),
 			ContactEmail:          os.Getenv("ZV_CONTACT_EMAIL"),
@@ -308,7 +321,7 @@ func main() {
 // have intended to wire. Add an entry whenever a new seam is
 // introduced (e.g. a payments interface, a blob-storage interface);
 // keep entries pure descriptive — no side effects, no DB calls.
-func describeComponents(m mailer.Mailer, stripeKey, stripeWebhookSecret, metricsAddr string) []components.Component {
+func describeComponents(m mailer.Mailer, stripeKey, stripeWebhookSecret, metricsAddr string, totpEnabled bool) []components.Component {
 	mailerImpl, mailerEnabled, mailerNotes := "log", false, "set $ZV_SMTP_HOST to send real mail"
 	if _, ok := m.(*mailer.SMTPMailer); ok {
 		mailerImpl, mailerEnabled, mailerNotes = "smtp", true, ""
@@ -329,9 +342,20 @@ func describeComponents(m mailer.Mailer, stripeKey, stripeWebhookSecret, metrics
 		{Name: "metrics", Impl: "prometheus", Enabled: metricsEnabled, Notes: metricsNotes},
 		{Name: "storage", Impl: "db-blob", Enabled: true, Notes: "team avatars and page images live in Postgres"},
 		{Name: "auth", Impl: "local-password", Enabled: true},
+		{Name: "mfa", Impl: "totp", Enabled: totpEnabled, Notes: mfaNotes(totpEnabled)},
 		{Name: "webhooks", Impl: "signed-post", Enabled: true},
 		{Name: "roster-importers", Impl: "json, csv", Enabled: true},
 	}
+}
+
+// mfaNotes is the operator-facing hint for the MFA registry row —
+// short, with the env-var name when missing so the fix is obvious
+// from the Settings page.
+func mfaNotes(enabled bool) string {
+	if enabled {
+		return "RFC 6238 TOTP, opt-in per user"
+	}
+	return "set $ZV_TOTP_KEY (32 bytes base64) to enable TOTP enrolment"
 }
 
 // seedAdminIfMissing is the env-var-friendly twin of seedAdminUser:

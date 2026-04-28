@@ -220,16 +220,27 @@ func IssueForgotPasswordToken(ctx context.Context, db *sql.DB, userID int64) (st
 
 // ConsumeForgotPasswordToken validates a reset token and atomically:
 // rewrites password_hash, deletes ALL of the user's existing sessions
-// (kicks any logged-in clients on other devices), deletes the token,
-// and issues a fresh session. The new session token is returned so
-// the caller can drop it as a cookie immediately, completing the
-// reset → logged-in transition in one round-trip.
-func ConsumeForgotPasswordToken(ctx context.Context, db *sql.DB, token, newPassword string) (User, string, error) {
+// (kicks any logged-in clients on other devices), and deletes the
+// token. When the user does NOT have TOTP enabled, also mints a
+// fresh session in the same transaction so the caller can drop a
+// cookie immediately. When the user HAS TOTP enabled, the session
+// is NOT minted — the password change is committed but the caller
+// must steer the user through the TOTP step (typically by issuing
+// an origin='reset' challenge and bouncing through /api/auth/login/totp).
+//
+// Returns:
+//
+//	u             — the freshly-loaded user (Role + OrgID resolved)
+//	sessionToken  — non-empty when no TOTP step is required;
+//	                empty when TOTPRequired is true.
+//	totpRequired  — true when the caller must run the TOTP fork before
+//	                a session can be issued.
+func ConsumeForgotPasswordToken(ctx context.Context, db *sql.DB, token, newPassword string) (User, string, bool, error) {
 	if token == "" {
-		return User{}, "", ErrVerificationUnknown
+		return User{}, "", false, ErrVerificationUnknown
 	}
 	if err := ValidatePassword(newPassword); err != nil {
-		return User{}, "", err
+		return User{}, "", false, err
 	}
 	var (
 		userID    int64
@@ -240,42 +251,51 @@ func ConsumeForgotPasswordToken(ctx context.Context, db *sql.DB, token, newPassw
 		SELECT user_id, purpose, expires_at FROM email_verifications WHERE token = $1
 	`, token).Scan(&userID, &purpose, &expiresAt)
 	if errors.Is(err, sql.ErrNoRows) {
-		return User{}, "", ErrVerificationUnknown
+		return User{}, "", false, ErrVerificationUnknown
 	}
 	if err != nil {
-		return User{}, "", err
+		return User{}, "", false, err
 	}
 	if purpose != PurposeForgotPassword {
-		return User{}, "", ErrVerificationUnknown
+		return User{}, "", false, ErrVerificationUnknown
 	}
 	// Fail closed on parse: a corrupt expires_at value mustn't extend a
 	// token's life. Treat unparseable rows as expired and delete them.
 	if t, perr := parseSlotTimestamp(expiresAt); perr != nil || time.Now().After(t) {
 		_, _ = db.ExecContext(ctx, `DELETE FROM email_verifications WHERE token = $1`, token)
-		return User{}, "", ErrVerificationExpired
+		return User{}, "", false, ErrVerificationExpired
 	}
 
 	hash, err := HashPassword(newPassword)
 	if err != nil {
-		return User{}, "", err
+		return User{}, "", false, err
+	}
+
+	// Read TOTP state up-front so the in-tx session-mint decision
+	// is based on the post-update view (the column itself doesn't
+	// change here, so reading before/after is equivalent).
+	var totpEnabled bool
+	if err := db.QueryRowContext(ctx,
+		`SELECT totp_enabled FROM users WHERE id = $1`, userID).Scan(&totpEnabled); err != nil {
+		return User{}, "", false, err
 	}
 
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
-		return User{}, "", err
+		return User{}, "", false, err
 	}
 	defer tx.Rollback() //nolint:errcheck
 	if _, err := tx.ExecContext(ctx,
 		`UPDATE users SET password_hash = $1 WHERE id = $2`, hash, userID); err != nil {
-		return User{}, "", err
+		return User{}, "", false, err
 	}
 	if _, err := tx.ExecContext(ctx,
 		`DELETE FROM sessions WHERE user_id = $1`, userID); err != nil {
-		return User{}, "", err
+		return User{}, "", false, err
 	}
 	if _, err := tx.ExecContext(ctx,
 		`DELETE FROM email_verifications WHERE token = $1`, token); err != nil {
-		return User{}, "", err
+		return User{}, "", false, err
 	}
 	// Pin the new session to whichever org the user has if it's the
 	// only one — same logic as Login. Multi-org users get NULL and
@@ -287,26 +307,29 @@ func ConsumeForgotPasswordToken(ctx context.Context, db *sql.DB, token, newPassw
 	if err := tx.QueryRowContext(ctx, `
 		SELECT MIN(org_id), COUNT(*) FROM org_memberships WHERE user_id = $1
 	`, userID).Scan(&onlyOrg, &memCnt); err != nil {
-		return User{}, "", err
+		return User{}, "", false, err
 	}
 	var initialActive sql.NullInt64
 	if memCnt == 1 {
 		initialActive = onlyOrg
 	}
-	sessionTok, err := newSession(ctx, txAsExecutor{tx}, userID, "", "", initialActive)
-	if err != nil {
-		return User{}, "", err
+	var sessionTok string
+	if !totpEnabled {
+		sessionTok, err = newSession(ctx, txAsExecutor{tx}, userID, "", "", initialActive)
+		if err != nil {
+			return User{}, "", false, err
+		}
 	}
 	if err := tx.Commit(); err != nil {
-		return User{}, "", err
+		return User{}, "", false, err
 	}
 
 	var u User
 	if err := db.QueryRowContext(ctx, `
-		SELECT id, username, is_admin, COALESCE(email,''), (email_verified <> 0)
+		SELECT id, username, is_admin, COALESCE(email,''), (email_verified <> 0), totp_enabled
 		FROM users WHERE id = $1
-	`, userID).Scan(&u.ID, &u.Username, &u.IsAdmin, &u.Email, &u.EmailVerified); err != nil {
-		return User{}, "", err
+	`, userID).Scan(&u.ID, &u.Username, &u.IsAdmin, &u.Email, &u.EmailVerified, &u.TOTPEnabled); err != nil {
+		return User{}, "", false, err
 	}
 	if initialActive.Valid {
 		v := initialActive.Int64
@@ -322,7 +345,7 @@ func ConsumeForgotPasswordToken(ctx context.Context, db *sql.DB, token, newPassw
 		).Scan(&memRole)
 		u.Role = memRole
 	}
-	return u, sessionTok, nil
+	return u, sessionTok, totpEnabled, nil
 }
 
 // IssueVerificationToken mints a fresh verify-purpose token for an

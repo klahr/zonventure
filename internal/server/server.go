@@ -83,6 +83,11 @@ type Config struct {
 	// defaults. Lets a self-hosted deployment ship its own marketing
 	// copy without forking the binary. Empty = use embedded only.
 	WebOverrideDir string
+	// TOTPKey is the AES-256-GCM key used to encrypt users.totp_secret_encrypted.
+	// cmd/server loads it from ZV_TOTP_KEY at boot via auth.LoadTOTPKey.
+	// nil disables the TOTP enrol surface (the login flow short-circuits
+	// before any decrypt is attempted, so unenrolled users still log in).
+	TOTPKey []byte
 }
 
 // New builds the HTTP router.
@@ -128,6 +133,8 @@ func New(cfg Config) http.Handler {
 		Pricing:       auth.Pricing{SlotCents: admin.PricePerSlotCents, Currency: "EUR"},
 		Limiter:       auth.NewLoginLimiter(),
 		ForgotLimiter: auth.NewLoginLimiter(),
+		TOTPLimiter:   auth.NewLoginLimiter(),
+		TOTPKey:       cfg.TOTPKey,
 		Mailer:        cfg.Mailer,
 		PublicURL:     cfg.PublicURL,
 	}
@@ -150,6 +157,7 @@ func New(cfg Config) http.Handler {
 		SecureCookie:        cfg.SecureCookie,
 		Components:          cfg.Components,
 		Storage:             store,
+		TOTPKey:             cfg.TOTPKey,
 	}
 	publicH := &public.Handlers{DB: cfg.DB, Lib: cfg.Library, Hub: hub, Storage: store}
 
@@ -277,6 +285,10 @@ func New(cfg Config) http.Handler {
 	r.Group(func(r chi.Router) {
 		r.Use(auth.RequireCSRF())
 		r.Post("/api/auth/login", authH.Login)
+		// Second leg of login when the user has TOTP enabled. The
+		// challenge token issued by /api/auth/login is the only way
+		// in; the endpoint mints the session cookie on success.
+		r.Post("/api/auth/login/totp", authH.LoginTOTP)
 		r.Post("/api/auth/signup", authH.Signup)
 		r.Post("/api/auth/set-password", authH.SetPassword)
 		r.Post("/api/auth/logout", authH.Logout)
@@ -459,6 +471,11 @@ func New(cfg Config) http.Handler {
 
 		// Staff password reset (admins & org users).
 		r.Post("/users/{userID}/password", adminH.ResetPassword)
+		// Admin TOTP factory-reset — recovery path for users who lost
+		// both their authenticator and every recovery code. Same
+		// authorization rules as the password reset above; requires
+		// X-Confirm-Password from the acting admin.
+		r.Post("/users/{userID}/totp/disable", adminH.AdminDisableUserTOTP)
 		// Username typeahead for the "Add user to org" modal — admin
 		// / org_admin only. Returns up to 10 prefix matches that
 		// aren't admins and aren't already members of the target org.
@@ -544,6 +561,14 @@ func New(cfg Config) http.Handler {
 		r.Get("/me/sessions", adminH.ListMySessions)
 		r.Delete("/me/sessions/{token}", adminH.RevokeMySession)
 		r.Delete("/me/sessions", adminH.RevokeMyOtherSessions)
+		// TOTP 2FA: status, enrol (setup → confirm), disable, and
+		// recovery-code regenerate. Disable + regenerate require
+		// X-Confirm-Password reauth.
+		r.Get("/me/totp", adminH.TOTPStatus)
+		r.Post("/me/totp/setup", adminH.SetupTOTP)
+		r.Post("/me/totp/confirm", adminH.ConfirmTOTP)
+		r.Post("/me/totp/disable", adminH.DisableTOTP)
+		r.Post("/me/totp/recovery-codes/regenerate", adminH.RegenerateTOTPRecoveryCodes)
 
 		// Outbound webhooks: per-org subscription CRUD. Org-scoped
 		// (handlers reject admins without an org). The kinds catalog

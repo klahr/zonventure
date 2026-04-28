@@ -349,3 +349,77 @@ func (h *Handlers) ResetPassword(w http.ResponseWriter, r *http.Request) {
 	}
 	httpx.JSON(w, http.StatusNoContent, nil)
 }
+
+// AdminDisableUserTOTP factory-resets another user's TOTP enrolment.
+// Used when a user has lost both their authenticator and every
+// recovery code — they have to ask an admin to clear the second
+// factor before they can log in with just the password again.
+//
+// Authorization mirrors ResetPassword exactly:
+//   - global admin can reset any non-admin (and themselves)
+//   - org_admin can reset members of their own active org
+//   - anyone can reset their own
+//
+// Reauth: X-Confirm-Password header. The acting admin's password,
+// not the target's. Audit-loud — both actor and target are recorded.
+func (h *Handlers) AdminDisableUserTOTP(w http.ResponseWriter, r *http.Request) {
+	id, ok := userIDFrom(r)
+	if !ok {
+		httpx.Error(w, http.StatusBadRequest, "bad user id")
+		return
+	}
+	me, _ := auth.FromContext(r.Context())
+	var (
+		targetIsAdmin  bool
+		targetUsername string
+	)
+	err := h.DB.QueryRowContext(r.Context(),
+		`SELECT is_admin, username FROM users WHERE id = $1`, id).Scan(&targetIsAdmin, &targetUsername)
+	if errors.Is(err, sql.ErrNoRows) {
+		httpx.Error(w, http.StatusNotFound, "user not found")
+		return
+	}
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "lookup failed")
+		return
+	}
+	switch {
+	case me.IsAdmin:
+		if targetIsAdmin && me.ID != id {
+			httpx.Error(w, http.StatusForbidden, "admin-on-admin reset is not supported")
+			return
+		}
+	case me.ID == id:
+		// Self-disable already lives at /me/totp/disable; reaching this
+		// endpoint for self is fine, just unusual. Allow it.
+	default:
+		if me.OrgID == nil || me.Role != auth.RoleOrgAdmin {
+			httpx.Error(w, http.StatusForbidden, "forbidden")
+			return
+		}
+		var found int
+		mErr := h.DB.QueryRowContext(r.Context(),
+			`SELECT 1 FROM org_memberships WHERE user_id = $1 AND org_id = $2`,
+			id, *me.OrgID).Scan(&found)
+		if errors.Is(mErr, sql.ErrNoRows) {
+			httpx.Error(w, http.StatusForbidden, "forbidden")
+			return
+		}
+		if mErr != nil {
+			httpx.Error(w, http.StatusInternalServerError, "lookup failed")
+			return
+		}
+	}
+	if !requirePasswordConfirm(w, r, h.DB) {
+		return
+	}
+	if err := auth.DisableTOTP(r.Context(), h.DB, id); err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "disable failed")
+		return
+	}
+	auth.Record(r.Context(), h.DB, auth.AuditEvent{
+		Event: auth.EventTOTPAdminReset, OK: true, UserID: &me.ID, Username: targetUsername,
+		IP: auth.ClientIP(r), UserAgent: auth.UserAgent(r), Reason: auth.ReasonTOTPAdminReset,
+	})
+	httpx.JSON(w, http.StatusNoContent, nil)
+}

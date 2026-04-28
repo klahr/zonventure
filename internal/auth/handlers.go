@@ -32,6 +32,18 @@ type Handlers struct {
 	// limiter, so an attacker enumerating addresses is still slowed.
 	// Optional: nil disables.
 	ForgotLimiter *LoginLimiter
+	// TOTPLimiter throttles per-(ip, challenge-token) brute force on
+	// the /api/auth/login/totp endpoint. The 6-digit TOTP space is
+	// 10^6, trivially enumerable without a rate limit. Sibling of
+	// Limiter rather than a shared bucket so TOTP misses don't lock
+	// out password attempts and vice versa. Optional: nil disables.
+	TOTPLimiter *LoginLimiter
+	// TOTPKey is the AES-GCM key used to wrap users.totp_secret_encrypted.
+	// Loaded once at boot via auth.LoadTOTPKey. Nil disables the TOTP
+	// surface entirely (enrol endpoints 500 with a clear error,
+	// existing enrolments behave as if disabled — the login flow
+	// short-circuits before any decrypt is attempted).
+	TOTPKey []byte
 	// Mailer delivers signup verification + future forgot-password
 	// emails. Always set in production; tests can leave nil and the
 	// handler skips the send.
@@ -130,7 +142,7 @@ func (h *Handlers) Login(w http.ResponseWriter, r *http.Request) {
 		writeRateLimited(w, retry)
 		return
 	}
-	u, token, err := Login(r.Context(), h.DB, req.Username, req.Password)
+	u, err := VerifyPassword(r.Context(), h.DB, req.Username, req.Password)
 	if errors.Is(err, ErrPasswordNotSet) {
 		Record(r.Context(), h.DB, AuditEvent{
 			Event: EventLogin, OK: false, Username: req.Username, IP: ip, UserAgent: ua,
@@ -161,13 +173,44 @@ func (h *Handlers) Login(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusInternalServerError, "login failed")
 		return
 	}
+	// Password OK. Clear the failed-attempts counter for the pair so
+	// a user who got their TOTP wrong a few times before getting it
+	// right doesn't stay locked on the password leg.
 	h.Limiter.RecordSuccess(ip, req.Username)
+	// TOTP fork — short-circuit before minting a session.
+	if u.TOTPEnabled {
+		tok, err := IssueTOTPChallenge(r.Context(), h.DB, u.ID, "login", ip, ua)
+		if err != nil {
+			httpx.Error(w, http.StatusInternalServerError, "challenge issue failed")
+			return
+		}
+		Record(r.Context(), h.DB, AuditEvent{
+			Event: EventLogin, OK: false, UserID: &u.ID, Username: u.Username, IP: ip, UserAgent: ua,
+			Reason: ReasonTOTPRequired,
+		})
+		// 200 (not 401) so the JS layer doesn't double up with its
+		// global 401-handler that bounces to the login page —
+		// "totp_required" is a continuation, not a rejection.
+		httpx.JSON(w, http.StatusOK, map[string]string{
+			"code":      "totp_required",
+			"challenge": tok,
+		})
+		return
+	}
+	var active sql.NullInt64
+	if u.OrgID != nil {
+		active = sql.NullInt64{Int64: *u.OrgID, Valid: true}
+	}
+	token, err := CompleteLogin(r.Context(), h.DB, u, []Factor{FactorPassword}, ua, ip, active)
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "session create failed")
+		return
+	}
 	metrics.AuthLogins.WithLabelValues("success").Inc()
 	Record(r.Context(), h.DB, AuditEvent{
 		Event: EventLogin, OK: true, UserID: &u.ID, Username: u.Username, IP: ip, UserAgent: ua,
 		Reason: ReasonSuccess,
 	})
-	StampSessionMeta(r.Context(), h.DB, token, ua, ip)
 	SetCookie(w, token, CookieSecure(r, h.SecureCookie))
 	httpx.JSON(w, http.StatusOK, h.userResponse(r.Context(), u))
 }
