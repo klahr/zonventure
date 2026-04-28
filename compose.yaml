@@ -67,6 +67,7 @@ services:
       ZV_AUDIT_RETENTION_DAYS:    ${ZV_AUDIT_RETENTION_DAYS:-90}
       ZV_STRIPE_SECRET_KEY:       ${ZV_STRIPE_SECRET_KEY:-}
       ZV_STRIPE_WEBHOOK_SECRET:   ${ZV_STRIPE_WEBHOOK_SECRET:-}
+      ZV_TOTP_KEY:                ${ZV_TOTP_KEY:-}
     ports:
       - "${ZV_BIND_ADDR:-127.0.0.1}:${ZV_PORT:-8080}:8080"
 
