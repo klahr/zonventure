@@ -19,14 +19,14 @@ for self-hosters and operators.
 | 4 | No event cancellation — only path is delete-team-by-team | medium | pending |
 | 5 | No 2FA for arranger accounts | medium–large | pending |
 | 6 | No bulk team/player roster import | medium | pending |
-| 7 | Audit log has no filtering UI | small | pending |
+| 7 | Audit log has no filtering UI | small | **done** — event/result/user/IP filters on `/api/admin/auth-events` + UI |
 | 8 | Image `alt` is hardcoded empty (`arrange.html:4543`) | small | pending; WCAG 2.1 AA gap, needs schema column + authoring UI + render in play.html / live.html |
 
 ## Simplifications
 
 | # | Item | Size | Status |
 | - | - | - | - |
-| 9  | `internal/admin/simulator.go` is a pure passthrough over `internal/simulator/simulator.go` | small | pending |
+| 9  | `internal/admin/simulator.go` is a pure passthrough over `internal/simulator/simulator.go` | small | **done** — typed sentinels (`ErrAlreadyActive`, `ErrNoActive`) + `callerOrgIDOrFail` shortcut; brittle string-equality error check gone |
 | 10 | `scheduler` + `retention` reimplement the same ticker shell | small | **done** — extracted `internal/periodic` |
 | 11 | Six near-identical token generators across auth / admin / simulator | small | **done** — extracted `internal/tokenx`; six call sites collapsed to one-line wrappers |
 | 12 | `db.go` doesn't tune the connection pool | small | **done** — `db.Opts` + `-db-max-open-conns` / `-db-max-idle-conns` flags + `ZV_DB_MAX_*_CONNS` env |

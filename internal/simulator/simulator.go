@@ -38,6 +38,15 @@ const tickInterval = 750 * time.Millisecond
 // considered "at" a puzzle and starts thinking about the answer.
 const arrivalRadiusM = 15.0
 
+// Sentinel errors so HTTP handlers can map status codes via errors.Is
+// instead of string-comparing the .Error() text. The literal text is
+// part of the user-facing payload, so don't reword without bumping
+// callers that match on it.
+var (
+	ErrAlreadyActive = errors.New("a simulation is already active; reset first")
+	ErrNoActive      = errors.New("no active simulation")
+)
+
 // dwellBase and dwellJitter control how long a team pauses at a puzzle
 // before submitting an answer. Each arrival picks a dwell in
 // [dwellBase, dwellBase+dwellJitter).
@@ -146,7 +155,7 @@ func (s *Simulator) Start(ctx context.Context, orgID int64, adventureSlug string
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, ok := s.current[orgID]; ok {
-		return State{}, errors.New("a simulation is already active; reset first")
+		return State{}, ErrAlreadyActive
 	}
 	if teamCount < 2 {
 		teamCount = 2
@@ -279,7 +288,7 @@ func (s *Simulator) Pause(orgID int64) error {
 	defer s.mu.Unlock()
 	r := s.current[orgID]
 	if r == nil {
-		return errors.New("no active simulation")
+		return ErrNoActive
 	}
 	r.paused.Store(true)
 	logx.Info("simulator.paused", "event_id", r.id, "org_id", orgID)
@@ -292,7 +301,7 @@ func (s *Simulator) Resume(orgID int64) error {
 	defer s.mu.Unlock()
 	r := s.current[orgID]
 	if r == nil {
-		return errors.New("no active simulation")
+		return ErrNoActive
 	}
 	r.paused.Store(false)
 	logx.Info("simulator.resumed", "event_id", r.id, "org_id", orgID)

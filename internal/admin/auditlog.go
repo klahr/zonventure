@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"git.sr.ht/~klahr/zv/internal/auth"
 	"git.sr.ht/~klahr/zv/internal/httpx"
@@ -80,6 +81,25 @@ func (h *Handlers) ListAuthEvents(w http.ResponseWriter, r *http.Request) {
 	}
 	if beforeID > 0 {
 		add("e.id < $"+strconv.Itoa(idx), beforeID)
+		idx++
+	}
+	// Optional filters. Bind through $-placeholders so anything in the
+	// query string lands as a SQL value, never as SQL.
+	if ev := strings.TrimSpace(r.URL.Query().Get("event")); ev != "" {
+		add("e.event = $"+strconv.Itoa(idx), ev)
+		idx++
+	}
+	if okq := r.URL.Query().Get("ok"); okq == "1" || okq == "true" {
+		add("e.ok = 1")
+	} else if okq == "0" || okq == "false" {
+		add("e.ok = 0")
+	}
+	if u := strings.TrimSpace(r.URL.Query().Get("username")); u != "" {
+		add("e.username ILIKE $"+strconv.Itoa(idx), "%"+u+"%")
+		idx++
+	}
+	if ip := strings.TrimSpace(r.URL.Query().Get("ip")); ip != "" {
+		add("e.ip ILIKE $"+strconv.Itoa(idx), "%"+ip+"%")
 		idx++
 	}
 	query += where + " ORDER BY e.id DESC LIMIT $" + strconv.Itoa(idx)

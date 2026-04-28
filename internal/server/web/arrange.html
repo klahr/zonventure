@@ -8442,6 +8442,33 @@ async function viewAudit(view) {
   const moreBtn = h('button', { class: 'btn', on: { click: loadMore } }, t('Load more'));
   const status = h('span', { class: 'muted' });
 
+  // Filter inputs. The event-kind options match the constants in
+  // internal/auth/audit.go — admins only land here when investigating
+  // a specific incident, so a fixed list is more honest than typing.
+  const eventSel = h('select', { class: 'select' },
+    h('option', { value: '' }, t('All events')),
+    h('option', { value: 'login' }, t('login')),
+    h('option', { value: 'logout' }, t('logout')),
+    h('option', { value: 'set_password' }, t('set_password')),
+    h('option', { value: 'magic_link' }, t('magic_link')),
+    h('option', { value: 'email_verify' }, t('email_verify')));
+  const okSel = h('select', { class: 'select' },
+    h('option', { value: '' }, t('OK or fail')),
+    h('option', { value: '1' }, t('OK only')),
+    h('option', { value: '0' }, t('Fail only')));
+  const userInp = h('input', { type: 'text', placeholder: t('substring'), style: 'min-width:8rem' });
+  const ipInp   = h('input', { type: 'text', placeholder: t('substring'), style: 'min-width:8rem' });
+  const applyBtn = h('button', { class: 'btn primary small' }, t('Apply'));
+  const clearBtn = h('button', { class: 'btn small' }, t('Clear'));
+
+  const filters = h('div', { class: 'card', style: 'margin:.5rem 0' },
+    h('div', { class: 'row', style: 'gap:.5rem; flex-wrap:wrap; align-items:flex-end' },
+      h('label', { class: 'field' }, h('span', {}, t('Event')), eventSel),
+      h('label', { class: 'field' }, h('span', {}, t('Result')), okSel),
+      h('label', { class: 'field' }, h('span', {}, t('User')), userInp),
+      h('label', { class: 'field' }, h('span', {}, t('IP')), ipInp),
+      h('div', { class: 'row', style: 'gap:.4rem' }, applyBtn, clearBtn)));
+
   const table = h('table', { class: 'audit-table' },
     h('thead', {},
       h('tr', {},
@@ -8457,9 +8484,27 @@ async function viewAudit(view) {
     h('h1', {}, t('Audit')),
     h('p', { class: 'muted' },
       t('Login, set-password, magic-link and logout events. Newest first.')),
+    filters,
     table,
     h('div', { class: 'row', style: 'gap:.75rem; align-items:center; margin-top:.6rem;' }, moreBtn, status),
   );
+
+  function reload() {
+    oldestID = 0;
+    tbody.replaceChildren();
+    moreBtn.hidden = false;
+    loadMore();
+  }
+  applyBtn.addEventListener('click', reload);
+  clearBtn.addEventListener('click', () => {
+    eventSel.value = ''; okSel.value = ''; userInp.value = ''; ipInp.value = '';
+    reload();
+  });
+  // Pressing Enter inside a filter input applies — saves a click in
+  // the common case where the admin is typing a username and hits ↵.
+  for (const el of [userInp, ipInp]) {
+    el.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); reload(); } });
+  }
 
   await loadMore();
 
@@ -8469,6 +8514,10 @@ async function viewAudit(view) {
     try {
       const qs = new URLSearchParams({ limit: String(PAGE) });
       if (oldestID > 0) qs.set('before_id', String(oldestID));
+      if (eventSel.value) qs.set('event', eventSel.value);
+      if (okSel.value)    qs.set('ok', okSel.value);
+      if (userInp.value.trim()) qs.set('username', userInp.value.trim());
+      if (ipInp.value.trim())   qs.set('ip', ipInp.value.trim());
       const r = await api('/api/admin/auth-events?' + qs.toString());
       const events = r.body?.events || [];
       for (const e of events) {
@@ -8478,13 +8527,13 @@ async function viewAudit(view) {
       if (events.length < PAGE) {
         moreBtn.hidden = true;
         status.textContent = events.length === 0 && tbody.children.length === 0
-          ? t('No events recorded.')
+          ? t('No events match.')
           : t('End of log.');
       } else {
         status.textContent = '';
       }
     } catch (err) {
-      status.textContent = String(err);
+      status.textContent = t('Something went wrong: {{err}}', { err: String(err) });
     } finally {
       moreBtn.disabled = false;
     }

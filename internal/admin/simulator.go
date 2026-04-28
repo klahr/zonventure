@@ -7,15 +7,16 @@ import (
 
 	"git.sr.ht/~klahr/zv/internal/auth"
 	"git.sr.ht/~klahr/zv/internal/httpx"
+	"git.sr.ht/~klahr/zv/internal/simulator"
 )
 
 /* ---------------- Race simulator control surface ---------------- */
 //
-// These endpoints start, pause, resume and tear down a fake race
-// inside the server. The simulator is org-scoped: each tenant has
-// its own slot so arrangers can preview their adventures in parallel
-// without colliding. Global admins (no org binding) target the first
-// org in the system — the simulator is a dev/demo tool for them.
+// Thin HTTP wrappers over internal/simulator. Each handler resolves the
+// caller's org slot and forwards. The simulator is org-scoped: each
+// tenant has its own slot so arrangers can preview their adventures in
+// parallel without colliding. Global admins (no org binding) target the
+// first org in the system — the simulator is a dev/demo tool for them.
 
 // callerOrgID resolves the org slot the caller's simulator request
 // targets. Org-bound users get their own org. A global admin has no
@@ -37,13 +38,24 @@ func (h *Handlers) callerOrgID(r *http.Request) (int64, error) {
 	return orgID, nil
 }
 
+// callerOrgIDOrFail is the boilerplate shortcut every sim handler
+// opens with: resolve the org slot, or write a 400 and stop. The bool
+// is "continue" — false means we already responded.
+func (h *Handlers) callerOrgIDOrFail(w http.ResponseWriter, r *http.Request) (int64, bool) {
+	orgID, err := h.callerOrgID(r)
+	if err != nil {
+		httpx.Error(w, http.StatusBadRequest, err.Error())
+		return 0, false
+	}
+	return orgID, true
+}
+
 // SimulatorStatus returns the sim stage for the caller's org
 // (idle/running/paused), plus the event id + live token when one is
 // active so the UI can jump straight to the live view.
 func (h *Handlers) SimulatorStatus(w http.ResponseWriter, r *http.Request) {
-	orgID, err := h.callerOrgID(r)
-	if err != nil {
-		httpx.Error(w, http.StatusBadRequest, err.Error())
+	orgID, ok := h.callerOrgIDOrFail(w, r)
+	if !ok {
 		return
 	}
 	httpx.JSON(w, http.StatusOK, h.Sim.Status(orgID))
@@ -67,16 +79,18 @@ func (h *Handlers) SimulatorStart(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusBadRequest, "adventure_slug required")
 		return
 	}
-	orgID, err := h.callerOrgID(r)
-	if err != nil {
-		httpx.Error(w, http.StatusBadRequest, err.Error())
+	orgID, ok := h.callerOrgIDOrFail(w, r)
+	if !ok {
 		return
 	}
 	me, _ := auth.FromContext(r.Context())
 	state, err := h.Sim.Start(r.Context(), orgID, req.AdventureSlug, req.TeamCount, req.SpeedMul, me.ID)
 	if err != nil {
-		// Treat "already active" as a 409 so the UI can offer a Reset.
-		if err.Error() == "a simulation is already active; reset first" {
+		// "Already active" is a state collision; the UI offers a Reset
+		// in response to a 409. Everything else is a 400 — bad input,
+		// missing puzzles, or DB hiccup the caller has no special
+		// recovery for.
+		if errors.Is(err, simulator.ErrAlreadyActive) {
 			httpx.Error(w, http.StatusConflict, err.Error())
 			return
 		}
@@ -88,9 +102,8 @@ func (h *Handlers) SimulatorStart(w http.ResponseWriter, r *http.Request) {
 
 // SimulatorPause freezes the caller's sim tick loop. Idempotent.
 func (h *Handlers) SimulatorPause(w http.ResponseWriter, r *http.Request) {
-	orgID, err := h.callerOrgID(r)
-	if err != nil {
-		httpx.Error(w, http.StatusBadRequest, err.Error())
+	orgID, ok := h.callerOrgIDOrFail(w, r)
+	if !ok {
 		return
 	}
 	if err := h.Sim.Pause(orgID); err != nil {
@@ -102,9 +115,8 @@ func (h *Handlers) SimulatorPause(w http.ResponseWriter, r *http.Request) {
 
 // SimulatorResume thaws the caller's paused sim. Idempotent.
 func (h *Handlers) SimulatorResume(w http.ResponseWriter, r *http.Request) {
-	orgID, err := h.callerOrgID(r)
-	if err != nil {
-		httpx.Error(w, http.StatusBadRequest, err.Error())
+	orgID, ok := h.callerOrgIDOrFail(w, r)
+	if !ok {
 		return
 	}
 	if err := h.Sim.Resume(orgID); err != nil {
@@ -118,9 +130,8 @@ func (h *Handlers) SimulatorResume(w http.ResponseWriter, r *http.Request) {
 // the sim created in their org. Idempotent — resetting from idle is
 // a no-op.
 func (h *Handlers) SimulatorReset(w http.ResponseWriter, r *http.Request) {
-	orgID, err := h.callerOrgID(r)
-	if err != nil {
-		httpx.Error(w, http.StatusBadRequest, err.Error())
+	orgID, ok := h.callerOrgIDOrFail(w, r)
+	if !ok {
 		return
 	}
 	if err := h.Sim.Reset(r.Context(), orgID); err != nil {
