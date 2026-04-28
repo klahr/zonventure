@@ -1,0 +1,18 @@
+# Drop-in extension for compose.yaml that mounts a sibling zv-landing
+# checkout as the marketing override surface — replaces the embedded
+# brand-neutral landing/pricing with whatever zv-landing ships.
+#
+# To enable:
+#   1. Clone zv-landing alongside this repo.
+#   2. cp compose.override.example.yaml compose.override.yaml
+#   3. docker compose up -d   (Compose auto-merges *.override.yaml)
+#
+# Edit compose.override.yaml — not this example — so future
+# `git pull`s don't clobber local tweaks.
+
+services:
+  app:
+    environment:
+      ZV_WEB_OVERRIDE_DIR: /var/zv/web-override
+    volumes:
+      - ../zv-landing:/var/zv/web-override:ro

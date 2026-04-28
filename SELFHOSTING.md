@@ -208,17 +208,20 @@ down).
 
 ### Wiring it up
 
-In `compose.yaml` (or `.env`) — mount the dir read-only, point the
-env var at the mount path. With `zv-landing` cloned next to `zv`:
+The repo ships a ready-to-use Compose extension. With `zv-landing`
+cloned next to `zv`:
 
-```yaml
-services:
-  app:
-    environment:
-      ZV_WEB_OVERRIDE_DIR: /var/zv/web-override
-    volumes:
-      - ../zv-landing:/var/zv/web-override:ro
+```sh
+cp compose.override.example.yaml compose.override.yaml
+docker compose up -d
 ```
+
+Compose auto-merges `compose.override.yaml` on top of `compose.yaml`,
+adding `ZV_WEB_OVERRIDE_DIR` to the `app` env and mounting
+`../zv-landing` read-only at `/var/zv/web-override`. Edit
+`compose.override.yaml` (not the example) if your override dir lives
+elsewhere — `git pull` leaves the example in place but won't
+overwrite the activated copy.
 
 Overrides are loaded at startup and cached for the process lifetime
 — restart the container after editing files in the override dir.
