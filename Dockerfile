@@ -6,7 +6,12 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/server ./cmd/server
+# git is needed for `git describe`; the golang image already ships it.
+# When the build context lacks a .git directory (e.g. `docker build`
+# from a tarball), fall back to "dev" so the build still succeeds —
+# runtime/debug.ReadBuildInfo gets vcs.* from the Go toolchain.
+RUN VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo dev) && \
+    CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version=$VERSION" -o /out/server ./cmd/server
 
 # Runtime image. distroless/static is ~2 MB; no shell, no package
 # manager. The canonical self-host path is `docker compose up -d` —

@@ -6,7 +6,10 @@ import (
 	"context"
 	"database/sql"
 	"embed"
+	"encoding/json"
 	"net/http"
+	"runtime"
+	"runtime/debug"
 	"strings"
 	"time"
 
@@ -53,6 +56,13 @@ type Config struct {
 	// the only purchase flow.
 	StripeSecretKey     string
 	StripeWebhookSecret string
+	// Version is the human-readable build identifier surfaced on
+	// /api/version. cmd/server injects it via -ldflags at build time;
+	// when empty, /api/version reports "dev". The VCS revision and
+	// build time come from runtime/debug.ReadBuildInfo so an operator
+	// upgrading via `docker compose up -d --build` can confirm exactly
+	// which commit is serving, even without a tagged version string.
+	Version string
 }
 
 // New builds the HTTP router.
@@ -124,6 +134,17 @@ func New(cfg Config) http.Handler {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
+	})
+
+	// Build info, computed once at startup (debug.ReadBuildInfo is
+	// stable for the lifetime of the process). Lets operators confirm
+	// which build is serving after an upgrade — `curl /api/version`
+	// returns the tagged version, VCS revision, and commit time.
+	verResp := buildVersion(cfg.Version)
+	r.Get("/api/version", func(w http.ResponseWriter, req *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "no-store")
+		_ = json.NewEncoder(w).Encode(verResp)
 	})
 
 	// Root branches by who's looking:
@@ -617,4 +638,47 @@ func serveAsset(path, contentType string) http.HandlerFunc {
 		w.Header().Set("Cache-Control", "no-store")
 		_, _ = w.Write(body)
 	}
+}
+
+// versionResp is the /api/version payload. Stable shape so monitoring
+// scripts can pin to specific fields; new fields are additive only.
+type versionResp struct {
+	Version   string `json:"version"`
+	Commit    string `json:"commit,omitempty"`
+	Time      string `json:"time,omitempty"`
+	Modified  bool   `json:"modified,omitempty"`
+	Go        string `json:"go,omitempty"`
+	OS        string `json:"os,omitempty"`
+	Arch      string `json:"arch,omitempty"`
+}
+
+// buildVersion assembles the response for /api/version. The version
+// string comes from the caller (typically -ldflags="-X main.version=…");
+// commit / build time / dirty flag come from runtime/debug.ReadBuildInfo
+// which the Go toolchain populates automatically when building inside a
+// VCS checkout. -trimpath does not strip these settings; -buildvcs=false
+// would, so we don't pass it.
+func buildVersion(version string) versionResp {
+	if version == "" {
+		version = "dev"
+	}
+	resp := versionResp{
+		Version: version,
+		Go:      runtime.Version(),
+		OS:      runtime.GOOS,
+		Arch:    runtime.GOARCH,
+	}
+	if bi, ok := debug.ReadBuildInfo(); ok {
+		for _, s := range bi.Settings {
+			switch s.Key {
+			case "vcs.revision":
+				resp.Commit = s.Value
+			case "vcs.time":
+				resp.Time = s.Value
+			case "vcs.modified":
+				resp.Modified = s.Value == "true"
+			}
+		}
+	}
+	return resp
 }

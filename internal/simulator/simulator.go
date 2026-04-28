@@ -12,9 +12,7 @@ package simulator
 
 import (
 	"context"
-	"crypto/rand"
 	"database/sql"
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"math"
@@ -23,9 +21,10 @@ import (
 	"sync/atomic"
 	"time"
 
+	"git.sr.ht/~klahr/zv/internal/activity"
 	"git.sr.ht/~klahr/zv/internal/adventure"
 	"git.sr.ht/~klahr/zv/internal/logx"
-	"git.sr.ht/~klahr/zv/internal/activity"
+	"git.sr.ht/~klahr/zv/internal/tokenx"
 	"git.sr.ht/~klahr/zv/internal/ws"
 )
 
@@ -579,10 +578,4 @@ func nullIfZero(id int64) any {
 	return id
 }
 
-func newLiveToken() (string, error) {
-	var b [16]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		return "", err
-	}
-	return base64.RawURLEncoding.EncodeToString(b[:]), nil
-}
+func newLiveToken() (string, error) { return tokenx.New(16) }

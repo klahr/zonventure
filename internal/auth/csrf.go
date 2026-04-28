@@ -1,13 +1,12 @@
 package auth
 
 import (
-	"crypto/rand"
 	"crypto/subtle"
-	"encoding/base64"
 	"net/http"
 
 	"git.sr.ht/~klahr/zv/internal/httpx"
 	"git.sr.ht/~klahr/zv/internal/logx"
+	"git.sr.ht/~klahr/zv/internal/tokenx"
 )
 
 // CSRF protection — double-submit cookie pattern.
@@ -110,10 +109,4 @@ func isSafeMethod(m string) bool {
 // shape as the slot magic-link tokens. 192 bits of entropy is overkill
 // for CSRF but matches the rest of the auth code so there's one less
 // "why is this different" question for a future reader.
-func newCSRFToken() (string, error) {
-	var b [24]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		return "", err
-	}
-	return base64.RawURLEncoding.EncodeToString(b[:]), nil
-}
+func newCSRFToken() (string, error) { return tokenx.New(24) }

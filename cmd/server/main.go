@@ -29,6 +29,13 @@ import (
 	"git.sr.ht/~klahr/zv/internal/ws"
 )
 
+// version is the build identifier surfaced on /api/version. Default
+// "dev"; production builds override it via
+//   go build -ldflags="-X main.version=$(git describe --always --dirty)"
+// The accompanying commit / build time / dirty flag come from
+// runtime/debug.ReadBuildInfo and don't need ldflags.
+var version = "dev"
+
 // envIntDefault returns the integer value of the named env var, or the
 // fallback when the var is unset or unparseable. Lets us share env-vs-flag
 // configuration logic for retention thresholds the same way ZV_PUBLIC_URL
@@ -73,6 +80,8 @@ func main() {
 		retentionLocation = flag.Int("retention-location-days", envIntDefault("ZV_LOCATION_RETENTION_DAYS", 30), "delete player location pings + answer attempts this many days after the event completes (0 disables)")
 		retentionAudit    = flag.Int("retention-audit-days", envIntDefault("ZV_AUDIT_RETENTION_DAYS", 90), "delete auth_events rows this many days after they were emitted (0 disables)")
 		retentionInterval = flag.Duration("retention-interval", time.Hour, "how often the retention sweeper runs")
+		dbMaxOpenConns    = flag.Int("db-max-open-conns", envIntDefault("ZV_DB_MAX_OPEN_CONNS", 0), "Postgres pool: max open connections (0 = default 25). Bound by the cluster's max_connections")
+		dbMaxIdleConns    = flag.Int("db-max-idle-conns", envIntDefault("ZV_DB_MAX_IDLE_CONNS", 0), "Postgres pool: max idle connections kept warm (0 = default 5)")
 	)
 	flag.Parse()
 	logx.SetLevel(logx.ParseLevel(*logLevel))
@@ -102,7 +111,10 @@ func main() {
 		return
 	}
 
-	sqlDB, err := db.Open(connStr)
+	sqlDB, err := db.OpenWithOpts(connStr, db.Opts{
+		MaxOpenConns: *dbMaxOpenConns,
+		MaxIdleConns: *dbMaxIdleConns,
+	})
 	if err != nil {
 		log.Fatalf("open db: %v", err)
 	}
@@ -192,6 +204,7 @@ func main() {
 		},
 		StripeSecretKey:     os.Getenv("ZV_STRIPE_SECRET_KEY"),
 		StripeWebhookSecret: os.Getenv("ZV_STRIPE_WEBHOOK_SECRET"),
+		Version:             version,
 	})
 
 	srv := &http.Server{

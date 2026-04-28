@@ -81,6 +81,7 @@ short tour:
 | `ZV_LEGAL_LAST_UPDATED` | "Last updated" date (YYYY-MM-DD) on the legal pages | today |
 | `ZV_STRIPE_SECRET_KEY` / `ZV_STRIPE_WEBHOOK_SECRET` | Real payments + Customer Portal (optional) | unset |
 | `ZV_LOCATION_RETENTION_DAYS` / `ZV_AUDIT_RETENTION_DAYS` | Privacy sweepers; `0` to disable | `30` / `90` |
+| `ZV_DB_MAX_OPEN_CONNS` / `ZV_DB_MAX_IDLE_CONNS` | Postgres pool sizing; bump for managed clusters with high `max_connections` | `25` / `5` |
 
 After editing `.env`:
 
@@ -158,6 +159,18 @@ docker compose up -d --build
 `--build` rebuilds the app image from the new source; the data
 volume is untouched and embedded migrations run on the next start.
 **Always take a backup first** — see the `-backup` recipe above.
+
+After the restart, `curl http://127.0.0.1:8080/api/version` confirms
+which build is serving:
+
+```json
+{"version":"v0.4.2-3-gabc1234","commit":"abc1234…","time":"2026-04-28T10:14:02Z","go":"go1.26","os":"linux","arch":"amd64"}
+```
+
+`version` is `git describe --tags --always --dirty` baked in at build
+time; `commit` and `time` come from the Go toolchain's VCS info.
+Untagged checkouts report `dev`. Pair with `/api/health` for a
+liveness + identity probe in your monitoring.
 
 ## Reverse proxy (TLS termination)
 

@@ -2,13 +2,13 @@ package auth
 
 import (
 	"context"
-	"crypto/rand"
 	"database/sql"
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"strings"
 	"time"
+
+	"git.sr.ht/~klahr/zv/internal/tokenx"
 )
 
 // VerificationTTL is how long a "verify your email" token stays valid
@@ -435,10 +435,4 @@ func issueOneShotToken(ctx context.Context, db *sql.DB, userID int64, purpose st
 	return tok, nil
 }
 
-func newVerificationToken() (string, error) {
-	var b [24]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		return "", err
-	}
-	return base64.RawURLEncoding.EncodeToString(b[:]), nil
-}
+func newVerificationToken() (string, error) { return tokenx.New(24) }

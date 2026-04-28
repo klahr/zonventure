@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"git.sr.ht/~klahr/zv/internal/logx"
+	"git.sr.ht/~klahr/zv/internal/periodic"
 )
 
 // Config controls thresholds + cadence. Zero values are treated as
@@ -35,29 +36,14 @@ type Config struct {
 
 // Start launches the sweep loop and returns a channel closed when the
 // goroutine exits. Mirror of scheduler.Start so main can wait on
-// shutdown the same way.
+// shutdown the same way; both packages share the periodic shell.
 func Start(ctx context.Context, db *sql.DB, cfg Config) <-chan struct{} {
 	if cfg.Interval <= 0 {
 		cfg.Interval = time.Hour
 	}
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		t := time.NewTicker(cfg.Interval)
-		defer t.Stop()
-		// Run an initial sweep at startup so a long-restarted server
-		// catches up immediately rather than waiting an hour.
+	return periodic.Start(ctx, cfg.Interval, func(ctx context.Context) {
 		sweep(ctx, db, cfg)
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-t.C:
-				sweep(ctx, db, cfg)
-			}
-		}
-	}()
-	return done
+	})
 }
 
 // sweep runs one pass of all configured retention deletes. Each

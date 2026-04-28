@@ -15,21 +15,20 @@ package admin
 
 import (
 	"context"
-	"crypto/rand"
 	"database/sql"
-	"encoding/base64"
 	"errors"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
+	"git.sr.ht/~klahr/zv/internal/activity"
 	"git.sr.ht/~klahr/zv/internal/adventure"
 	"git.sr.ht/~klahr/zv/internal/auth"
 	"git.sr.ht/~klahr/zv/internal/httpx"
 	"git.sr.ht/~klahr/zv/internal/mailer"
-	"git.sr.ht/~klahr/zv/internal/activity"
 	"git.sr.ht/~klahr/zv/internal/simulator"
+	"git.sr.ht/~klahr/zv/internal/tokenx"
 	"git.sr.ht/~klahr/zv/internal/webhooks"
 	"git.sr.ht/~klahr/zv/internal/ws"
 	"github.com/go-chi/chi/v5"
@@ -411,13 +410,7 @@ func (h *Handlers) CreateEvent(w http.ResponseWriter, r *http.Request) {
 // newLiveToken mints the opaque /live/{token} URL segment. 128 bits of
 // entropy rendered URL-safe base64, enough to make guessing hopeless and
 // short enough to fit comfortably in an SMS.
-func newLiveToken() (string, error) {
-	var b [16]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		return "", err
-	}
-	return base64.RawURLEncoding.EncodeToString(b[:]), nil
-}
+func newLiveToken() (string, error) { return tokenx.New(16) }
 
 // ListEvents returns events visible to the caller: admins see everything,
 // org users see their own org.

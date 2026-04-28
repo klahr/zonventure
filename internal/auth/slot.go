@@ -2,14 +2,13 @@ package auth
 
 import (
 	"context"
-	"crypto/rand"
 	"database/sql"
-	"encoding/base64"
 	"errors"
 	"net/http"
 	"time"
 
 	"git.sr.ht/~klahr/zv/internal/httpx"
+	"git.sr.ht/~klahr/zv/internal/tokenx"
 )
 
 // Slot identifies a player's team slot. It's attached to the request
@@ -228,13 +227,9 @@ func ClearSlotCookie(w http.ResponseWriter, secure bool) {
 
 // NewSlotToken returns a new, unguessable magic-link token for a slot.
 // Exported so admin code can generate tokens when creating slots.
-func NewSlotToken() (string, error) {
-	var b [18]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		return "", err
-	}
-	return base64.RawURLEncoding.EncodeToString(b[:]), nil
-}
+// 18 bytes = 144 bits — short enough to keep magic-link URLs human-
+// scannable, long enough that brute-forcing one is hopeless.
+func NewSlotToken() (string, error) { return tokenx.New(18) }
 
 func newSlotSession(ctx context.Context, db *sql.DB, slotID int64) (string, error) {
 	token, err := newToken()

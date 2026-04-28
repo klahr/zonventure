@@ -9,8 +9,9 @@ import (
 	"database/sql"
 	"time"
 
-	"git.sr.ht/~klahr/zv/internal/logx"
 	"git.sr.ht/~klahr/zv/internal/activity"
+	"git.sr.ht/~klahr/zv/internal/logx"
+	"git.sr.ht/~klahr/zv/internal/periodic"
 	"git.sr.ht/~klahr/zv/internal/ws"
 )
 
@@ -19,26 +20,9 @@ import (
 // fully exited — main.go waits on it during shutdown so the process doesn't
 // race the in-flight tick. hub may be nil (e.g. in tests).
 func Start(ctx context.Context, db *sql.DB, hub *ws.Hub, interval time.Duration) <-chan struct{} {
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		loop(ctx, db, hub, interval)
-	}()
-	return done
-}
-
-func loop(ctx context.Context, db *sql.DB, hub *ws.Hub, interval time.Duration) {
-	t := time.NewTicker(interval)
-	defer t.Stop()
-	tick(ctx, db, hub) // run one pass immediately on startup
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-t.C:
-			tick(ctx, db, hub)
-		}
-	}
+	return periodic.Start(ctx, interval, func(ctx context.Context) {
+		tick(ctx, db, hub)
+	})
 }
 
 // tick finds and promotes all scheduled runs whose time has come.

@@ -7,12 +7,12 @@ package auth
 
 import (
 	"context"
-	"crypto/rand"
 	"database/sql"
-	"encoding/base64"
 	"errors"
 	"net/http"
 	"time"
+
+	"git.sr.ht/~klahr/zv/internal/tokenx"
 
 	"golang.org/x/crypto/bcrypt"
 )
@@ -341,10 +341,7 @@ func FromContext(ctx context.Context) (User, bool) {
 	return u, ok
 }
 
-func newToken() (string, error) {
-	var b [32]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		return "", err
-	}
-	return base64.RawURLEncoding.EncodeToString(b[:]), nil
-}
+// newToken returns a 256-bit random session token. Centralised in
+// tokenx; the wrapper keeps the call sites (newSession, newSlotSession)
+// readable without leaking the byte count into auth's body.
+func newToken() (string, error) { return tokenx.New(32) }
