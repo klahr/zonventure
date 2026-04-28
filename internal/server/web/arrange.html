@@ -2552,7 +2552,6 @@ function renderShell() {
       // sidebar entries for what's essentially one catalog was noise.
       ['#library',       t('Library'),       ICONS.map],
       ['#admins',        t('Admins'),        ICONS.user],
-      ['#purchases',     t('Purchases'),     ICONS.coins],
       ['#simulator',     t('Simulator'),     ICONS.play],
       ['#audit',         t('Audit'),         ICONS.shield],
       ['#logs',          t('Logs'),          ICONS.terminal],
@@ -5463,12 +5462,22 @@ async function confirmDeleteUser(user) {
 
 /* ========== Organizations (admin only) ========== */
 async function viewOrganizations(view) {
-  const [orgsR, advsR] = await Promise.all([
+  const [orgsR, advsR, purR] = await Promise.all([
     api('/api/admin/organizations'),
     api('/api/admin/adventures'),
+    api('/api/admin/purchases'),
   ]);
   const orgs = orgsR.body?.organizations || [];
   const adventures = advsR.body?.adventures || [];
+  // Admin gets every purchase; bucket by org_id so each card can render
+  // only the rows for its own tenant. Server already orders by created_at
+  // DESC, so the per-org slice stays newest-first without re-sorting.
+  const purchasesByOrg = new Map();
+  for (const p of (purR.body?.purchases || [])) {
+    const list = purchasesByOrg.get(p.org_id) || [];
+    list.push(p);
+    purchasesByOrg.set(p.org_id, list);
+  }
   view.replaceChildren(
     h('div', { class: 'row between' },
       h('h1', {}, t('Organizations')),
@@ -5478,15 +5487,17 @@ async function viewOrganizations(view) {
       t('Each organization is a tenant — its users (org_admin, org_member) operate the games. Assign adventures to an organization to let them schedule events.')),
     orgs.length === 0
       ? h('div', { class: 'empty' }, t('No organizations yet.'))
-      : h('div', {}, orgs.map((o) => renderOrganizationCard(o, adventures))),
+      : h('div', {}, orgs.map((o) =>
+          renderOrganizationCard(o, adventures, purchasesByOrg.get(o.id) || []))),
   );
 }
 
-function renderOrganizationCard(org, adventures) {
+function renderOrganizationCard(org, adventures, purchases) {
   const assignments = org.assignments || [];
   const unused = assignments.filter((x) => !x.event_id);
   const used = assignments.filter((x) => x.event_id);
   const members = org.members || [];
+  purchases = purchases || [];
 
   const usersPart = members.length === 1
     ? t('{{n}} user', { n: members.length })
@@ -5559,6 +5570,35 @@ function renderOrganizationCard(org, adventures) {
         }, t('{{slug}} · event #{{event}} · max {{max}}', {
           slug: x.adventure_slug, run: x.event_id, max: x.max_teams,
         })))))]),
+
+    h('h3', { style: 'margin-top:.75rem' }, t('Purchases ({{n}})', { n: purchases.length })),
+    purchases.length === 0
+      ? h('p', { class: 'muted', style: 'font-size:.85rem' }, t('No purchases.'))
+      : h('table', { class: 'table', style: 'margin-top:.25rem' },
+          h('thead', {}, h('tr', {},
+            h('th', {}, t('Adventure')),
+            h('th', {}, t('Slots')),
+            h('th', {}, t('Total')),
+            h('th', {}, t('State')),
+            h('th', {}, t('Date')),
+            h('th', {}, ''))),
+          h('tbody', {}, purchases.map((p) => {
+            const total = new Intl.NumberFormat(undefined, {
+              style: 'currency', currency: p.currency || 'EUR',
+            }).format(p.amount_cents / 100);
+            return h('tr', {},
+              h('td', {}, p.adventure_title || p.adventure_slug),
+              h('td', { class: 'mono' }, p.max_teams),
+              h('td', { class: 'mono' }, total),
+              h('td', {}, h('span', {
+                class: 'pill ' + (p.state === 'paid' ? 'success'
+                  : p.state === 'pending' ? 'warning'
+                  : p.state === 'refunded' ? 'danger' : ''),
+              }, stateGlyph(p.state) + p.state)),
+              h('td', { class: 'muted mono', style: 'font-size:.8rem' }, p.created_at),
+              h('td', { class: 'row', style: 'gap:.5rem; flex-wrap:wrap; justify-content:flex-end' },
+                renderPurchaseActions(p)));
+          }))),
   );
 }
 
