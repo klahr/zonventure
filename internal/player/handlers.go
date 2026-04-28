@@ -345,6 +345,7 @@ type State struct {
 
 type imageDTO struct {
 	URL string `json:"url"`
+	Alt string `json:"alt,omitempty"`
 }
 
 // hintDTO is one hint shipped to the player. TextHTML is the rendered
@@ -551,7 +552,10 @@ func (h *Handlers) buildState(ctx context.Context, slot auth.Slot) (State, int, 
 	if len(page.Images) > 0 {
 		imgs := make([]imageDTO, 0, len(page.Images))
 		for _, im := range page.Images {
-			imgs = append(imgs, imageDTO{URL: "/adventure-assets/image/" + strconv.FormatInt(im.ID, 10)})
+			imgs = append(imgs, imageDTO{
+				URL: "/adventure-assets/image/" + strconv.FormatInt(im.ID, 10),
+				Alt: im.AltText,
+			})
 		}
 		resp.Images = imgs
 	}

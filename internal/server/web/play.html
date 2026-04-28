@@ -1909,7 +1909,9 @@ function render(s) {
 
   if (s.title) app.append(el('h3', {}, s.title));
   if (Array.isArray(s.images)) {
-    for (const im of s.images) app.append(el('img', { class: 'puzzle-img', src: im.url, alt: '' }));
+    // im.alt is the author's text alternative; empty string keeps
+    // decorative semantics (screen readers skip the <img>).
+    for (const im of s.images) app.append(el('img', { class: 'puzzle-img', src: im.url, alt: im.alt || '' }));
   }
   // Prompt comes from the server already rendered to HTML (goldmark,
   // raw HTML escaped). Nested p/ul/ol/etc inherit typography from

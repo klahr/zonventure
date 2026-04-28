@@ -734,6 +734,17 @@
       'Number of teams': 'Antal lag',
       'One team': 'Ett lag',
       'Many teams at once': 'Flera lag samtidigt',
+      'Paste roster': 'Klistra in laguppställning',
+      'Roster — one team per line': 'Laguppställning — ett lag per rad',
+      'First column is the team name; remaining columns become player slots. Comma, tab, semicolon and colon are all accepted as separators.':
+        'Första kolumnen är lagnamnet; övriga kolumner blir spelarplatser. Kommatecken, tab, semikolon och kolon godtas alla som avgränsare.',
+      '{{t}} teams · {{p}} player slots': '{{t}} lag · {{p}} spelarplatser',
+      'Add at least one team line': 'Lägg till minst en lagrad',
+      '“{{name}}” has no players': '”{{name}}” saknar spelare',
+      // ---- image alt text (authoring) ----
+      'Alt text': 'Alt-text',
+      'Alt text — describe for screen readers': 'Alt-text — beskriv för skärmläsare',
+      'Alt text saved': 'Alt-text sparad',
       'Name (optional)': 'Namn (valfritt)',
       'Members — one per line, or paste CSV': 'Medlemmar — en per rad, eller klistra in CSV',
       'Each line becomes a player slot with its own magic-link token.':

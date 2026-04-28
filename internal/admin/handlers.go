@@ -806,6 +806,178 @@ func (h *Handlers) CreateTeam(w http.ResponseWriter, r *http.Request) {
 	httpx.JSON(w, http.StatusCreated, teamDTO{ID: teamID, Name: req.Name, Members: members})
 }
 
+type bulkCreateTeamsRequest struct {
+	Teams []createTeamRequest `json:"teams"`
+}
+
+type bulkTeamResultDTO struct {
+	// Index points back at the request's teams[] slot so the UI can
+	// highlight the offending paste line. -1 for entries the server
+	// dropped during input normalisation (shouldn't happen with the
+	// current code; reserved for future per-row preflight checks).
+	Index int           `json:"index"`
+	Name  string        `json:"name"`
+	Team  *teamDTO      `json:"team,omitempty"`
+	Error string        `json:"error,omitempty"`
+}
+
+// BulkCreateTeams ingests a roster — multiple teams with their member
+// lists in one round-trip — and reports per-team success/failure so the
+// arranger sees exactly which paste rows worked. Each team is created
+// in its own transaction (a duplicate name in row 5 doesn't roll back
+// rows 1-4); the assignment cap is rechecked between teams so a roster
+// that exceeds the purchased slot count partially succeeds and the
+// arranger can buy more.
+//
+// Returns 200 OK with a results array even when individual teams fail
+// — partial success is the common case, and a 4xx would force the UI
+// to lose the per-row detail. A 4xx is reserved for malformed JSON or
+// caller-not-allowed-on-this-event.
+func (h *Handlers) BulkCreateTeams(w http.ResponseWriter, r *http.Request) {
+	eventID, ok := eventIDFrom(r)
+	if !ok {
+		httpx.Error(w, http.StatusBadRequest, "bad event id")
+		return
+	}
+	orgID, ok := h.authorizeEvent(w, r, eventID)
+	if !ok {
+		return
+	}
+	if !h.requireEventOp(w, r.Context(), eventID, OpCreateTeam) {
+		return
+	}
+	var req bulkCreateTeamsRequest
+	if !httpx.DecodeJSON(w, r, &req) {
+		return
+	}
+	if len(req.Teams) == 0 {
+		httpx.Error(w, http.StatusBadRequest, "no teams in request")
+		return
+	}
+	// Hard cap the batch size so a single request can't tie up the
+	// server: 200 teams × ~10 members each is comfortably more than
+	// any real tournament.
+	const maxBatch = 200
+	if len(req.Teams) > maxBatch {
+		httpx.Error(w, http.StatusBadRequest, "too many teams in one request")
+		return
+	}
+
+	results := make([]bulkTeamResultDTO, 0, len(req.Teams))
+	createdCount := 0
+	for i, t := range req.Teams {
+		t.Name = strings.TrimSpace(t.Name)
+		res := bulkTeamResultDTO{Index: i, Name: t.Name}
+		team, err := h.createOneTeam(r.Context(), eventID, orgID, t)
+		if err != nil {
+			res.Error = err.Error()
+		} else {
+			res.Team = team
+			createdCount++
+		}
+		results = append(results, res)
+	}
+	if createdCount > 0 {
+		h.Hub.Publish(ws.EventTopic(eventID), "changed", nil)
+	}
+	httpx.JSON(w, http.StatusOK, map[string]any{
+		"results": results,
+		"created": createdCount,
+		"failed":  len(results) - createdCount,
+	})
+}
+
+// createOneTeam runs the same insert-team-and-slots pipeline as the
+// single CreateTeam handler, but as a callable that returns
+// (team, err) so BulkCreateTeams can iterate without re-implementing
+// any of the validation / cap-checking / activity-log glue. The cap
+// check happens inside the transaction so concurrent writers can't
+// both squeeze past it.
+func (h *Handlers) createOneTeam(ctx context.Context, eventID, orgID int64, req createTeamRequest) (*teamDTO, error) {
+	if req.Name == "" {
+		return nil, errors.New("team name required")
+	}
+	seen := map[string]struct{}{}
+	names := make([]string, 0, len(req.MemberNames))
+	for _, n := range req.MemberNames {
+		n = strings.TrimSpace(n)
+		if n == "" {
+			continue
+		}
+		if _, dup := seen[strings.ToLower(n)]; dup {
+			return nil, errors.New("duplicate member name: " + n)
+		}
+		seen[strings.ToLower(n)] = struct{}{}
+		names = append(names, n)
+	}
+	if len(names) == 0 {
+		return nil, errors.New("at least one member required")
+	}
+	tx, err := h.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, errors.New("tx failed")
+	}
+	defer tx.Rollback()
+	var (
+		maxTeams   int
+		teamsCount int
+	)
+	if err := tx.QueryRowContext(ctx, `
+		SELECT COALESCE(aa.max_teams, 0),
+		       (SELECT COUNT(*) FROM teams t WHERE t.event_id = $1)
+		FROM events ar
+		LEFT JOIN adventure_assignments aa ON aa.id = ar.assignment_id
+		WHERE ar.id = $2
+	`, eventID, eventID).Scan(&maxTeams, &teamsCount); err != nil {
+		return nil, errors.New("cap lookup failed")
+	}
+	if maxTeams > 0 && teamsCount >= maxTeams {
+		return nil, errors.New("event is at its team cap; buy another assignment to continue")
+	}
+	teamTok, err := auth.NewSlotToken()
+	if err != nil {
+		return nil, errors.New("token gen failed")
+	}
+	var teamID int64
+	if err := tx.QueryRowContext(ctx,
+		`INSERT INTO teams(event_id, name, token) VALUES ($1, $2, $3) RETURNING id`,
+		eventID, req.Name, teamTok).Scan(&teamID); err != nil {
+		return nil, errors.New("team name already used for this event")
+	}
+	members := make([]teamSlotDTO, 0, len(names))
+	expiresAt := auth.DefaultSlotExpiresAt(ctx, h.DB, eventID)
+	for _, name := range names {
+		token, err := auth.NewSlotToken()
+		if err != nil {
+			return nil, errors.New("token gen failed")
+		}
+		var slotID int64
+		if err := tx.QueryRowContext(ctx,
+			`INSERT INTO player_slots(team_id, name, token, expires_at) VALUES ($1, $2, $3, $4) RETURNING id`,
+			teamID, name, token, expiresAt).Scan(&slotID); err != nil {
+			return nil, errors.New("could not add " + name + ": " + err.Error())
+		}
+		members = append(members, teamSlotDTO{ID: slotID, Name: name, Token: token, ExpiresAt: expiresAt})
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, errors.New("commit failed")
+	}
+	me, _ := auth.FromContext(ctx)
+	memberNames := make([]string, 0, len(members))
+	for _, m := range members {
+		memberNames = append(memberNames, m.Name)
+	}
+	activity.Record(ctx, h.DB, eventID, &teamID, activity.UserActor(me.ID), activity.TeamCreated,
+		map[string]any{"name": req.Name, "members": memberNames})
+	webhooks.TryPublish(ctx, h.DB, orgID, webhooks.KindTeamCreated, map[string]any{
+		"event_id":     eventID,
+		"team_id":      teamID,
+		"team_name":    req.Name,
+		"member_count": len(members),
+	})
+	return &teamDTO{ID: teamID, Name: req.Name, Members: members}, nil
+}
+
 /* ---------------- Positions & Tracks ---------------- */
 
 type positionDTO struct {

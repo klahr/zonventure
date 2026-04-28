@@ -49,6 +49,7 @@ type previewHintDTO struct {
 
 type previewImageDTO struct {
 	URL string `json:"url"`
+	Alt string `json:"alt,omitempty"`
 }
 
 type previewDebugDTO struct {
@@ -123,7 +124,10 @@ func (h *Handlers) PreviewAdventure(w http.ResponseWriter, r *http.Request) {
 	if len(page.Images) > 0 {
 		imgs := make([]previewImageDTO, 0, len(page.Images))
 		for _, im := range page.Images {
-			imgs = append(imgs, previewImageDTO{URL: "/adventure-assets/image/" + strconv.FormatInt(im.ID, 10)})
+			imgs = append(imgs, previewImageDTO{
+				URL: "/adventure-assets/image/" + strconv.FormatInt(im.ID, 10),
+				Alt: im.AltText,
+			})
 		}
 		out.Images = imgs
 	}

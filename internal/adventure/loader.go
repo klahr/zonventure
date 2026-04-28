@@ -98,6 +98,11 @@ type Image struct {
 	Index     int
 	MimeType  string
 	SizeBytes int64
+	// AltText is the author-provided text alternative. Empty means the
+	// image is decorative and should render with alt="" so screen
+	// readers skip it; non-empty values become the alt attribute
+	// verbatim — no markdown, no HTML.
+	AltText string
 }
 
 // Location carries a puzzle's GPS coordinates. If RadiusM is set the
@@ -285,7 +290,7 @@ func (l *Library) loadHints(ctx context.Context, pageID int64) ([]Hint, error) {
 
 func (l *Library) loadImages(ctx context.Context, pageID int64) ([]Image, error) {
 	rows, err := l.db.QueryContext(ctx, `
-		SELECT id, idx, mime_type, size_bytes
+		SELECT id, idx, mime_type, size_bytes, COALESCE(alt_text, '')
 		FROM adventure_page_images WHERE page_id = $1
 		ORDER BY idx
 	`, pageID)
@@ -296,7 +301,7 @@ func (l *Library) loadImages(ctx context.Context, pageID int64) ([]Image, error)
 	var out []Image
 	for rows.Next() {
 		var im Image
-		if err := rows.Scan(&im.ID, &im.Index, &im.MimeType, &im.SizeBytes); err != nil {
+		if err := rows.Scan(&im.ID, &im.Index, &im.MimeType, &im.SizeBytes, &im.AltText); err != nil {
 			return nil, err
 		}
 		out = append(out, im)

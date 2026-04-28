@@ -1,0 +1,11 @@
+-- Per-image alt text for adventure_page_images. WCAG 2.1 AA requires
+-- every meaningful image to have a non-empty text alternative; we
+-- store it inline on the row so it travels with the image through
+-- exports / clones (library.go duplicate-page already SELECTs and
+-- re-INSERTs every column on the source row).
+--
+-- Default '' so existing rows backfill cleanly. Authors who don't set
+-- an alt produce a decorative-image semantically equivalent to the
+-- prior hardcoded alt="" — the change is purely additive: nothing
+-- regresses, anything filled in is a strict accessibility win.
+ALTER TABLE adventure_page_images ADD COLUMN alt_text TEXT NOT NULL DEFAULT '';

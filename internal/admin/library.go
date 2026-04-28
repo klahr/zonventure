@@ -379,8 +379,8 @@ func (h *Handlers) CopyPuzzleToAdventure(w http.ResponseWriter, r *http.Request)
 	// Copy every image blob verbatim. The images table references the
 	// page, so a straight INSERT ... SELECT does the deep copy.
 	if _, err := tx.ExecContext(r.Context(), `
-		INSERT INTO adventure_page_images(page_id, idx, mime_type, size_bytes, content)
-		SELECT $1, idx, mime_type, size_bytes, content
+		INSERT INTO adventure_page_images(page_id, idx, mime_type, size_bytes, content, alt_text)
+		SELECT $1, idx, mime_type, size_bytes, content, alt_text
 		FROM adventure_page_images WHERE page_id = $2
 	`, newID, srcID); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "image copy failed: "+err.Error())

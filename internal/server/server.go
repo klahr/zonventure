@@ -402,6 +402,7 @@ func New(cfg Config) http.Handler {
 		r.Post("/events/{eventID}/resume", adminH.ResumeEvent)
 		r.Post("/events/{eventID}/cancel", adminH.CancelEvent)
 		r.Post("/events/{eventID}/teams", adminH.CreateTeam)
+		r.Post("/events/{eventID}/teams/bulk", adminH.BulkCreateTeams)
 		r.Get("/events/{eventID}/positions", adminH.ListPositions)
 		r.Get("/events/{eventID}/activity", adminH.ListActivity)
 		r.Get("/events/{eventID}/tracks", adminH.ListTracks)
@@ -449,6 +450,7 @@ func New(cfg Config) http.Handler {
 		r.Patch("/pages/{pageID}", adminH.UpdatePage)
 		r.Delete("/pages/{pageID}", adminH.DeletePage)
 		r.Post("/pages/{pageID}/images", adminH.AddPageImage)
+		r.Patch("/images/{imageID}", adminH.UpdatePageImage)
 		r.Delete("/images/{imageID}", adminH.DeletePageImage)
 
 		// Puzzle library (cross-adventure pool).

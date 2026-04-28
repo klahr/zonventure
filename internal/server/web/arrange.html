@@ -881,6 +881,12 @@ textarea { min-height: 80px; resize: vertical; font-family: ui-monospace, monosp
 .puzzle-editor .pe-image-remove {
   position: absolute; top: .5rem; right: .5rem;
 }
+.puzzle-editor .pe-image-alt {
+  width: 100%; margin-top: .35rem; padding: .35rem .55rem;
+  font-size: .85rem; box-sizing: border-box;
+  border: 1px solid var(--border-soft); border-radius: var(--radius);
+  background: var(--surface);
+}
 .puzzle-editor .pe-image-add {
   display: flex; align-items: center; justify-content: center; gap: .35rem;
   padding: .35rem .7rem;
@@ -4985,11 +4991,14 @@ async function openNewTeamModal(runID) {
     // page already works with whatever names are there.
     const modeSingle = h('input', { type: 'radio', name: 'mode', value: 'single', checked: true });
     const modeBulk   = h('input', { type: 'radio', name: 'mode', value: 'bulk' });
-    const modeBar = h('div', { style: 'display:flex; gap:1rem; margin-bottom:1rem' },
+    const modeRoster = h('input', { type: 'radio', name: 'mode', value: 'roster' });
+    const modeBar = h('div', { style: 'display:flex; gap:1rem; margin-bottom:1rem; flex-wrap:wrap' },
       h('label', { style: 'display:flex; gap:.4rem; align-items:center; cursor:pointer' },
         modeSingle, h('span', {}, t('One team'))),
       h('label', { style: 'display:flex; gap:.4rem; align-items:center; cursor:pointer' },
         modeBulk, h('span', {}, t('Many teams at once'))),
+      h('label', { style: 'display:flex; gap:.4rem; align-items:center; cursor:pointer' },
+        modeRoster, h('span', {}, t('Paste roster'))),
     );
 
     /* ---- single-team fields ---- */
@@ -5029,22 +5038,68 @@ async function openNewTeamModal(runID) {
         h('label', { class: 'field' }, h('span', {}, t('Player name prefix')), playerPrefix)),
       bulkPreview);
 
+    /* ---- roster-paste fields ---- */
+    // One row per team. The first cell is the team name, everything
+    // after it is a player name. Accepts comma, semicolon, tab, or
+    // colon as the team-name separator so spreadsheet copy-paste
+    // (typically tab) and "Team: alice, bob" both parse.
+    const rosterArea = h('textarea', {
+      rows: 8,
+      // Untranslated example — names are placeholders so locale doesn't
+      // change the shape, and the i18n completeness test treats embedded
+      // newlines as a single hard-to-match key.
+      placeholder: 'Alpha, alice, bob, carol\nBeta, dave, ezra\nGamma: fiona, gina, henry',
+    });
+    const rosterPreview = h('p', { class: 'muted', style: 'font-size:.85rem; min-height:1em' });
+    const parseRoster = (text) => {
+      const out = [];
+      for (const raw of (text || '').split(/\r?\n/)) {
+        const line = raw.trim();
+        if (!line) continue;
+        // Split on the first cell separator. After that the rest of
+        // the cells are member names — themselves split on the same
+        // set so "Alpha, alice, bob" and "Alpha\talice\tbob" both work.
+        const parts = line.split(/[\t,;:]+/).map((s) => s.trim()).filter(Boolean);
+        if (parts.length === 0) continue;
+        const [name, ...members] = parts;
+        out.push({ name, member_names: members });
+      }
+      return out;
+    };
+    const updateRosterPreview = () => {
+      const parsed = parseRoster(rosterArea.value);
+      const players = parsed.reduce((n, t) => n + t.member_names.length, 0);
+      rosterPreview.textContent = parsed.length === 0
+        ? ''
+        : t('{{t}} teams · {{p}} player slots', { t: parsed.length, p: players });
+    };
+    rosterArea.addEventListener('input', updateRosterPreview);
+    const rosterFields = h('div', { style: 'display:none' },
+      h('label', { class: 'field' },
+        h('span', {}, t('Roster — one team per line')),
+        rosterArea),
+      h('p', { class: 'muted', style: 'font-size:.8rem; margin-top:.25rem' },
+        t('First column is the team name; remaining columns become player slots. Comma, tab, semicolon and colon are all accepted as separators.')),
+      rosterPreview);
+
     const refreshMode = () => {
       singleFields.style.display = modeSingle.checked ? '' : 'none';
       bulkFields.style.display   = modeBulk.checked   ? '' : 'none';
+      rosterFields.style.display = modeRoster.checked ? '' : 'none';
     };
     modeSingle.addEventListener('change', refreshMode);
     modeBulk.addEventListener('change', refreshMode);
+    modeRoster.addEventListener('change', refreshMode);
 
     const submitBtn = h('button', { class: 'btn primary', type: 'submit' }, t('Create'));
-    const form = h('form', {}, modeBar, singleFields, bulkFields,
+    const form = h('form', {}, modeBar, singleFields, bulkFields, rosterFields,
       h('div', { class: 'row end', style: 'margin-top:1rem' },
         h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, t('Cancel')),
         submitBtn));
 
     if (typeof setBeforeClose === 'function') {
       setBeforeClose(() => {
-        const dirty = !!(nameInput.value.trim() || memberArea.value.trim());
+        const dirty = !!(nameInput.value.trim() || memberArea.value.trim() || rosterArea.value.trim());
         return !dirty || confirm(t('Discard the team(s) you were adding?'));
       });
     }
@@ -5053,7 +5108,38 @@ async function openNewTeamModal(runID) {
       e.preventDefault();
       submitBtn.disabled = true;
       try {
-        if (modeSingle.checked) {
+        if (modeRoster.checked) {
+          const teams = parseRoster(rosterArea.value);
+          if (teams.length === 0) {
+            toastErr(t('Add at least one team line'));
+            return;
+          }
+          for (const tm of teams) {
+            if (tm.member_names.length === 0) {
+              toastErr(t('“{{name}}” has no players', { name: tm.name }));
+              return;
+            }
+          }
+          const rr = await api(`/api/admin/events/${runID}/teams/bulk`, {
+            method: 'POST',
+            body: JSON.stringify({ teams }),
+          });
+          if (rr.status !== 200) {
+            toastErr(rr.body?.error || t('error {{status}}', { status: rr.status }));
+            return;
+          }
+          const created = rr.body?.created || 0;
+          const failed  = rr.body?.failed  || 0;
+          if (failed === 0) {
+            toastOk(t('Created {{n}} teams', { n: created }));
+          } else {
+            // Surface the first error so the arranger has a thread to
+            // pull on; the response carries per-row detail too if they
+            // need to dig deeper.
+            const firstErr = (rr.body?.results || []).find((r) => r.error)?.error || '';
+            toastErr(t('Created {{c}}, {{f}} failed: {{err}}', { c: created, f: failed, err: firstErr }));
+          }
+        } else if (modeSingle.checked) {
           const names = (memberArea.value || '').split(/[\n,;]+/)
             .map((s) => s.trim()).filter(Boolean);
           const tName = nameInput.value.trim();
@@ -6421,8 +6507,10 @@ function renderPuzzleCard(adv, page, i, previewIdx) {
       ? null
       : h('div', { class: 'row', style: 'flex-wrap:wrap; gap:.5rem' },
         page.images.map((im) => h('img', {
-          src: im.url, alt: '',
-          style: 'max-height:120px; border-radius:6px; border:1px solid var(--border-soft)',
+          src: im.url, alt: im.alt_text || '',
+          title: im.alt_text || '',
+          style: 'max-height:120px; border-radius:6px; border:1px solid var(--border-soft)'
+            + (im.alt_text ? '' : '; outline:2px solid var(--warning, #d97706); outline-offset:-2px'),
         }))),
     h('div', { class: 'md-preview', html: page.prompt_html || '' }),
     h('p', { class: 'muted' },
@@ -7163,8 +7251,36 @@ async function openEditPuzzle(adv, page /* or null */) {
       imagesHost.replaceChildren();
       for (const im of images) {
         const wrap = h('div', { class: 'pe-image-wrap' });
+        // Per-image alt-text input. Saves on blur via PATCH; the
+        // server caps at 500 chars but we keep maxlength as a UX hint.
+        // Empty alt = decorative image — that's a valid choice, so we
+        // don't force a value, just nudge with the placeholder.
+        const altInput = h('input', {
+          type: 'text',
+          class: 'pe-image-alt',
+          value: im.alt_text || '',
+          maxlength: 500,
+          placeholder: t('Alt text — describe for screen readers'),
+          'aria-label': t('Alt text'),
+        });
+        altInput.addEventListener('blur', async () => {
+          const next = altInput.value.trim();
+          if (next === (im.alt_text || '')) return;
+          const rr = await api(`/api/admin/images/${im.id}`, {
+            method: 'PATCH',
+            body: JSON.stringify({ alt_text: next }),
+          });
+          if (rr.status === 204) {
+            im.alt_text = next;
+            toastOk(t('Alt text saved'));
+          } else {
+            toastErr(rr.body?.error || t('error {{status}}', { status: rr.status }));
+            altInput.value = im.alt_text || '';
+          }
+        });
         wrap.append(
-          h('img', { class: 'pe-image', src: im.url, alt: '' }),
+          h('img', { class: 'pe-image', src: im.url, alt: im.alt_text || '' }),
+          altInput,
           h('button', {
             class: 'btn small danger pe-image-remove', type: 'button', title: t('Remove'),
             on: { click: async () => {
