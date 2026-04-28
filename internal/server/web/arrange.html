@@ -3093,7 +3093,7 @@ async function viewAdminDashboard(view) {
     h('h1', {}, t('Hello, {{username}}', { username: state.me.username })),
     h('p', { class: 'muted' },
       t('Signed in as admin — you manage organizations, their assignments, and other admins.')),
-    h('div', { class: 'grid stats' },
+    h('div', { class: 'grid stats', style: 'margin-bottom:1rem' },
       stat(t('Organizations'), orgs.length),
       stat(t('Org users'), totals.members),
       stat(t('Active events'), totals.eventsRunning),
