@@ -2190,14 +2190,15 @@ function nav(hash) { location.hash = hash; }
 // localStorage; once it's shown for an account it never reappears
 // unless the user clears site data.
 function maybeShowOnboarding() {
-  if (!state.me || state.me.role === 'admin') return; // admins skip — they don't buy or run.
+  if (!state.me) return;
   const key = 'zv_onboarded_' + state.me.id;
   if (localStorage.getItem(key) === '1') return;
   // Only show once whoami has settled and we have an authenticated user.
   setTimeout(() => {
     if (location.hash.startsWith('#reset') || location.hash.startsWith('#change-email')) return;
     localStorage.setItem(key, '1');
-    showOnboardingModal();
+    if (state.me.role === 'admin') showAdminOnboardingModal();
+    else                           showOnboardingModal();
   }, 200);
 }
 
@@ -2219,6 +2220,27 @@ async function showOnboardingModal() {
         h('button', { class: 'btn', on: { click: () => close(null) } }, t('Skip')),
         h('button', { class: 'btn primary', on: { click: () => { close(null); nav('#store'); } } },
           t('Open the store'))));
+  });
+}
+
+async function showAdminOnboardingModal() {
+  await modal(t('Welcome to Zonventure'), ({ body, close }) => {
+    body.append(
+      h('p', { class: 'muted', style: 'margin-top:.25rem' },
+        t('Admin shortcut — three steps to a working deployment:')),
+      h('ol', { style: 'padding-left:1.25rem; line-height:1.7' },
+        h('li', {}, h('strong', {}, t('Create an organization')), ' — ',
+          t('one tenant per customer. They run their own events.')),
+        h('li', {}, h('strong', {}, t('Add a user to it')), ' — ',
+          t('an org_admin can invite team members and run events.')),
+        h('li', {}, h('strong', {}, t('Stock the library')), ' — ',
+          t('author adventures or commission existing ones to an org.'))),
+      h('p', { class: 'muted', style: 'font-size:.85rem; margin-top:1rem' },
+        t('The dashboard checklist tracks these steps until the first event runs.')),
+      h('div', { class: 'row end', style: 'margin-top:1rem; gap:.5rem' },
+        h('button', { class: 'btn', on: { click: () => close(null) } }, t('Skip')),
+        h('button', { class: 'btn primary', on: { click: () => { close(null); nav('#organizations'); } } },
+          t('Manage organizations'))));
   });
 }
 
@@ -2801,7 +2823,11 @@ async function renderRoute() {
       default: view.replaceChildren(h('p', {}, t('Not found')));
     }
   } catch (err) {
-    view.replaceChildren(h('p', { class: 'err' }, String(err)));
+    // The err.message is whatever JS or fetch produced — usually
+    // English ("Failed to fetch"), but at least the leading label is
+    // localised. Better than a bare untranslated string.
+    view.replaceChildren(h('p', { class: 'err' },
+      t('Something went wrong: {{err}}', { err: String(err) })));
   }
 }
 
@@ -3034,8 +3060,12 @@ function buildDashboardSetup({ mineAdvs, unusedAssigns }) {
 }
 
 async function viewAdminDashboard(view) {
-  const orgsR = await api('/api/admin/organizations');
+  const [orgsR, advsR] = await Promise.all([
+    api('/api/admin/organizations'),
+    api('/api/admin/adventures'),
+  ]);
   const orgs = orgsR.body?.organizations || [];
+  const advs = advsR.body?.adventures || [];
 
   const totals = orgs.reduce((acc, o) => {
     acc.eventsTotal   += o.events_total   || 0;
@@ -3045,7 +3075,15 @@ async function viewAdminDashboard(view) {
     return acc;
   }, { eventsTotal: 0, eventsRunning: 0, players: 0, members: 0 });
 
-  view.replaceChildren(
+  // Once any org has held an event the operator is past bootstrap;
+  // hiding the checklist keeps the long-term dashboard calm. While
+  // events_total is zero we keep showing it (with checks ticked off
+  // as the operator works through the steps).
+  const setup = totals.eventsTotal === 0
+    ? buildAdminDashboardSetup({ orgs, advs })
+    : null;
+
+  const sections = [
     h('h1', {}, t('Hello, {{username}}', { username: state.me.username })),
     h('p', { class: 'muted' },
       t('Signed in as admin — you manage organizations, their assignments, and other admins.')),
@@ -3054,6 +3092,7 @@ async function viewAdminDashboard(view) {
       stat(t('Org users'), totals.members),
       stat(t('Active events'), totals.eventsRunning),
     ),
+    setup,
     h('div', { class: 'card' },
       h('div', { class: 'row between' },
         h('h2', {}, t('Organizations')),
@@ -3081,6 +3120,49 @@ async function viewAdminDashboard(view) {
                 ? h('span', { class: 'pill success' }, t('{{n}} running', { n: o.events_running }))
                 : h('span', { class: 'muted' }, '—')),
           )))),
+    ),
+  ];
+  view.replaceChildren(...sections.filter(Boolean));
+}
+
+// buildAdminDashboardSetup mirrors buildDashboardSetup for the admin
+// role: it lists the bootstrap steps a fresh deployment needs (an org,
+// a user inside it, and at least one adventure to run). The card hides
+// itself once any org holds an event — at that point the operator is
+// past first-day setup.
+function buildAdminDashboardSetup({ orgs, advs }) {
+  const stepDone = (done, label, cta, onClick) =>
+    h('li', { style: 'display:flex; align-items:center; gap:.6rem; margin:.35rem 0' },
+      h('span', {
+        style: 'display:inline-grid; place-items:center; width:1.4rem; height:1.4rem; border-radius:50%; background:' +
+          (done ? 'var(--accent)' : 'var(--surface-2)') + '; color:' + (done ? 'var(--accent-fg)' : 'var(--muted)') + '; font-weight:700; font-size:.85rem',
+      }, done ? '✓' : '·'),
+      h('span', { style: done ? 'color:var(--muted); text-decoration:line-through' : '' }, label),
+      !done && cta
+        ? h('button', { class: 'btn small primary', style: 'margin-left:auto', on: { click: onClick } }, cta)
+        : null,
+    );
+  const haveOrg = orgs.length > 0;
+  const haveOrgUser = orgs.some((o) => (o.members || []).length > 0);
+  // Global-catalog adventures (org_id IS NULL) are the ones an admin
+  // can publish or commission to any org. Org-owned adventures don't
+  // count for this step — they're authored by org users for their own
+  // events, not stocked by the admin.
+  const haveCatalog = advs.some((a) => !a.org_id);
+  return h('div', { class: 'card', style: 'border:1px dashed var(--accent); background:color-mix(in srgb, var(--accent) 5%, var(--surface))' },
+    h('h2', {}, t('Getting started')),
+    h('p', { class: 'muted' }, t('Three steps to a working deployment.')),
+    h('ol', { style: 'list-style:none; padding:0; margin:0' },
+      stepDone(haveOrg,
+        t('Create an organization — one tenant per customer'),
+        t('Create'), () => openCreateOrg()),
+      stepDone(haveOrgUser,
+        t('Add a user to it — at least one org_admin can run events'),
+        haveOrg ? t('Manage') : null,
+        haveOrg ? (() => nav('#organizations')) : null),
+      stepDone(haveCatalog,
+        t('Stock the library — author an adventure or import the samples'),
+        t('New adventure'), () => openCreateAdventure()),
     ),
   );
 }
@@ -3519,7 +3601,7 @@ async function openPurchaseModal(adv) {
         body: JSON.stringify({ adventure_slug: adv.slug, max_teams: n }),
       });
       if (r.status !== 201) {
-        toastErr(r.body?.error || `error ${r.status}`);
+        toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
         return;
       }
       close(true);
@@ -4658,7 +4740,9 @@ async function transition(runID, action) {
       pause:  t('Paused'),
       resume: t('Resumed'),
     };
-    toastOk(TRANSITION_OK[action] || action);
+    // Falling back to t('Done') keeps the toast in the user's locale
+    // even if a future endpoint adds a transition we haven't mapped.
+    toastOk(TRANSITION_OK[action] || t('Done'));
     renderRoute();
   } else {
     toastErr(r.body?.error || t('error {{status}}', { status: r.status }));

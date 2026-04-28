@@ -290,6 +290,30 @@
       'Active': 'Aktiva',
       '{{n}} running': '{{n}} pågår',
       ' · {{n}} running': ' · {{n}} pågår',
+      // ---- arrange dashboard: admin quick-start ----
+      'Three steps to a working deployment.': 'Tre steg till en driftklar installation.',
+      'Create an organization — one tenant per customer':
+        'Skapa en organisation — en hyresgäst per kund',
+      'Add a user to it — at least one org_admin can run events':
+        'Lägg till en användare — minst en org_admin behövs för att köra event',
+      'Stock the library — author an adventure or import the samples':
+        'Fyll biblioteket — skapa ett äventyr eller importera exempelpaketet',
+      'New adventure': 'Nytt äventyr',
+      'Admin shortcut — three steps to a working deployment:':
+        'Adminväg — tre steg till en driftklar installation:',
+      'Create an organization': 'Skapa en organisation',
+      'one tenant per customer. They run their own events.':
+        'en hyresgäst per kund. De kör sina egna event.',
+      'Add a user to it': 'Lägg till en användare',
+      'an org_admin can invite team members and run events.':
+        'en org_admin kan bjuda in lagmedlemmar och köra event.',
+      'Stock the library': 'Fyll biblioteket',
+      'author adventures or commission existing ones to an org.':
+        'skapa äventyr eller delegera befintliga till en organisation.',
+      'The dashboard checklist tracks these steps until the first event runs.':
+        'Översiktens checklista följer stegen tills det första eventet körs.',
+      'Manage organizations': 'Hantera organisationer',
+      'Something went wrong: {{err}}': 'Något gick fel: {{err}}',
       // ---- arrange: player-role fallback ----
       'Logged in as {{username}} (player). This dashboard is for arrangers.':
         'Inloggad som {{username}} (spelare). Den här panelen är för arrangörer.',
