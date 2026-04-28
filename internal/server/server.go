@@ -459,6 +459,10 @@ func New(cfg Config) http.Handler {
 
 		// Staff password reset (admins & org users).
 		r.Post("/users/{userID}/password", adminH.ResetPassword)
+		// Username typeahead for the "Add user to org" modal — admin
+		// / org_admin only. Returns up to 10 prefix matches that
+		// aren't admins and aren't already members of the target org.
+		r.Get("/users/search", adminH.SearchUsers)
 
 		// Caller's own assignments list.
 		r.Get("/assignments", adminH.ListMyAssignments)

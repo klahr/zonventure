@@ -525,11 +525,13 @@
         'Det raderar alla användare, spelare, tilldelningar och event som tillhör organisationen. Ange ditt lösenord för att bekräfta.',
       'Organization deleted': 'Organisation borttagen',
       'Add user to {{name}}': 'Lägg till användare i {{name}}',
-      'Existing user? Type their username and leave the password blank — they keep their current credentials. New user? Set an initial password.':
-        'Befintlig användare? Skriv användarnamnet och lämna lösenordet tomt — de behåller sina nuvarande inloggningsuppgifter. Ny användare? Sätt ett startlösenord.',
-      'Password (new users only)': 'Lösenord (endast för nya användare)',
-      'Leave blank to add an existing user. Minimum 8 characters when set.':
-        'Lämna tomt för att lägga till en befintlig användare. Minst 8 tecken när ett anges.',
+      'Adding existing user — they keep their current password.':
+        'Lägger till befintlig användare — de behåller sitt nuvarande lösenord.',
+      'Will create a new account — set an initial password below.':
+        'Kommer att skapa ett nytt konto — sätt ett startlösenord nedan.',
+      'Set a password for the new account, or pick an existing user from the suggestions.':
+        'Sätt ett lösenord för det nya kontot, eller välj en befintlig användare från förslagen.',
+      'Minimum 8 characters.': 'Minst 8 tecken.',
       'Role': 'Roll',
       'Member': 'Medlem',
       'Admin': 'Administratör',

@@ -5,12 +5,89 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"git.sr.ht/~klahr/zv/internal/adventure"
 	"git.sr.ht/~klahr/zv/internal/auth"
 	"git.sr.ht/~klahr/zv/internal/httpx"
 	"github.com/go-chi/chi/v5"
 )
+
+/* ---------------- User typeahead search ---------------- */
+
+type userSearchMatch struct {
+	ID       int64  `json:"id"`
+	Username string `json:"username"`
+}
+
+// SearchUsers powers the typeahead in the "Add user to org" modal.
+// Returns up to 10 username matches for a prefix query, excluding
+// global admins (they don't fit the per-org role model) and
+// optionally users who are already members of a target org. Auth:
+// admin or org_admin, mirroring CreateOrgMember's envelope.
+//
+// Username is a CITEXT column so LIKE is case-insensitive without
+// extra ILIKE / LOWER() decoration. The pattern is ESCAPE-quoted so
+// a query like "10%_off" doesn't accidentally turn into a wildcard
+// fishing expedition.
+func (h *Handlers) SearchUsers(w http.ResponseWriter, r *http.Request) {
+	me, _ := auth.FromContext(r.Context())
+	if me.Role != auth.RoleAdmin && me.Role != auth.RoleOrgAdmin {
+		httpx.Error(w, http.StatusForbidden, "forbidden")
+		return
+	}
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	// Minimum length 2 — nudges callers toward intentional lookups
+	// rather than slow-typing a wildcard scan of the user table.
+	if len(q) < 2 {
+		httpx.JSON(w, http.StatusOK, map[string]any{"users": []userSearchMatch{}})
+		return
+	}
+	escape := strings.NewReplacer(`\`, `\\`, "%", `\%`, "_", `\_`)
+	pattern := escape.Replace(q) + "%"
+
+	var orgID int64
+	if v := r.URL.Query().Get("org_id"); v != "" {
+		orgID, _ = strconv.ParseInt(v, 10, 64)
+	}
+
+	var (
+		rows *sql.Rows
+		err  error
+	)
+	if orgID > 0 {
+		rows, err = h.DB.QueryContext(r.Context(), `
+			SELECT u.id, u.username FROM users u
+			WHERE u.is_admin = FALSE
+			  AND u.username LIKE $1 ESCAPE '\'
+			  AND NOT EXISTS (
+			    SELECT 1 FROM org_memberships m WHERE m.user_id = u.id AND m.org_id = $2
+			  )
+			ORDER BY LOWER(u.username) LIMIT 10
+		`, pattern, orgID)
+	} else {
+		rows, err = h.DB.QueryContext(r.Context(), `
+			SELECT id, username FROM users
+			WHERE is_admin = FALSE AND username LIKE $1 ESCAPE '\'
+			ORDER BY LOWER(username) LIMIT 10
+		`, pattern)
+	}
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "search failed")
+		return
+	}
+	defer rows.Close()
+	out := []userSearchMatch{}
+	for rows.Next() {
+		var u userSearchMatch
+		if err := rows.Scan(&u.ID, &u.Username); err != nil {
+			httpx.Error(w, http.StatusInternalServerError, "scan failed")
+			return
+		}
+		out = append(out, u)
+	}
+	httpx.JSON(w, http.StatusOK, map[string]any{"users": out})
+}
 
 /* ---------------- Confirm-password gating ---------------- */
 

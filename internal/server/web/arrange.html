@@ -5769,38 +5769,202 @@ async function confirmDeleteOrg(org) {
 
 async function openAddOrgMember(org) {
   await modal(t('Add user to {{name}}', { name: org.name }), ({ body, close }) => {
+    // pickedUser tracks the operator-confirmed identity from the
+    // suggestion list. Set when a suggestion row is clicked; cleared
+    // by any keystroke that diverges from it. While set, the form is
+    // in "add existing user" mode (password hidden, password not
+    // required); when null and the username field has text, mode is
+    // "create new account" (password required).
+    let pickedUser = null;
+    let searchTimer = null;
+    let searchInFlight = null;
+    let lastQuery = '';
+    // Last-known matches from the typeahead. Mirrored as a JS array
+    // so blur / submit can promote a typed-but-not-clicked username
+    // to a pickedUser without re-rendering.
+    let suggestions = [];
+
+    const usernameEl = h('input', {
+      name: 'u', autofocus: true, required: true,
+      autocomplete: 'off', spellcheck: 'false',
+      'aria-autocomplete': 'list',
+    });
+    const suggList = h('ul', {
+      class: 'add-user-suggestions',
+      role: 'listbox',
+      style: 'list-style:none; padding:.25rem; margin:.25rem 0 0; border:1px solid var(--border-soft); border-radius:8px; max-height:14rem; overflow-y:auto; background:var(--surface); display:none',
+    });
+    const passwordEl = h('input', {
+      name: 'p', type: 'password', autocomplete: 'new-password', minlength: 8,
+    });
+    const passwordRow = h('label', { class: 'field' },
+      h('span', {}, t('Password')),
+      passwordEl,
+      h('small', { class: 'muted', style: 'display:block; margin-top:.2rem' },
+        t('Minimum 8 characters.')));
+    const roleEl = h('select', { name: 'r' },
+      h('option', { value: 'org_member' }, t('Member')),
+      h('option', { value: 'org_admin' }, t('Admin')));
+    const status = h('p', {
+      class: 'muted',
+      style: 'font-size:.85rem; min-height:1.2em; margin:.5rem 0 0',
+      'aria-live': 'polite',
+    });
+
+    const setMode = () => {
+      if (pickedUser) {
+        passwordRow.style.display = 'none';
+        passwordEl.required = false;
+        status.textContent = t('Adding existing user — they keep their current password.');
+        status.className = 'ok';
+      } else if (usernameEl.value.trim()) {
+        passwordRow.style.display = '';
+        passwordEl.required = true;
+        status.textContent = t('Will create a new account — set an initial password below.');
+        status.className = 'muted';
+      } else {
+        passwordRow.style.display = '';
+        passwordEl.required = false;
+        status.textContent = '';
+        status.className = 'muted';
+      }
+    };
+
+    const closeList = () => { suggList.style.display = 'none'; };
+
+    const renderSuggestions = (users) => {
+      suggestions = users;
+      if (users.length === 0) { closeList(); return; }
+      suggList.replaceChildren(...users.map((u) => {
+        const li = h('li', {
+          role: 'option',
+          tabindex: '-1',
+          style: 'padding:.45rem .65rem; cursor:pointer; border-radius:4px',
+          on: {
+            // mousedown beats click — blur on the input fires before
+            // a click would, and we'd race-close the list. Mousedown
+            // fires first and lets us prevent the blur entirely.
+            mousedown: (e) => {
+              e.preventDefault();
+              pickedUser = u;
+              usernameEl.value = u.username;
+              closeList();
+              setMode();
+            },
+          },
+        }, u.username);
+        li.addEventListener('mouseenter', () => { li.style.background = 'var(--surface-2)'; });
+        li.addEventListener('mouseleave', () => { li.style.background = ''; });
+        return li;
+      }));
+      suggList.style.display = '';
+    };
+
+    const search = async () => {
+      const q = usernameEl.value.trim();
+      if (q.length < 2) { suggestions = []; closeList(); return; }
+      if (q === lastQuery) return;
+      lastQuery = q;
+      const r = await api(
+        `/api/admin/users/search?q=${encodeURIComponent(q)}&org_id=${org.id}`,
+      );
+      // The user may have typed more characters since this fetch
+      // started — drop the result if it's stale.
+      if (q !== usernameEl.value.trim()) return;
+      if (r.status !== 200) return;
+      renderSuggestions(r.body?.users || []);
+    };
+
+    // flushPendingSearch fires any debounced search NOW and waits.
+    // Used by blur + submit so we never act on a known-stale
+    // suggestion list — e.g. user types "alice" then immediately
+    // tabs away within the 200ms debounce.
+    const flushPendingSearch = async () => {
+      if (searchTimer) {
+        clearTimeout(searchTimer);
+        searchTimer = null;
+      }
+      if (searchInFlight) await searchInFlight;
+      const q = usernameEl.value.trim();
+      if (q.length >= 2 && q !== lastQuery) {
+        searchInFlight = search();
+        await searchInFlight;
+        searchInFlight = null;
+      }
+    };
+
+    // tryAutoPick promotes the typed username to pickedUser when it
+    // exactly matches one of the current suggestions. CITEXT makes
+    // the lookup case-insensitive on the backend, so we compare the
+    // same way here and snap the input to the canonical case so
+    // e.g. "ALICE" displays as "alice" once locked in.
+    const tryAutoPick = () => {
+      if (pickedUser) return;
+      const q = usernameEl.value.trim().toLowerCase();
+      if (!q) return;
+      const match = suggestions.find((u) => u.username.toLowerCase() === q);
+      if (match) {
+        pickedUser = match;
+        usernameEl.value = match.username;
+        setMode();
+      }
+    };
+
+    usernameEl.addEventListener('input', () => {
+      // Any keystroke invalidates the locked-in existing-user pick.
+      pickedUser = null;
+      setMode();
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(search, 200);
+    });
+    usernameEl.addEventListener('focus', () => {
+      if (suggList.children.length > 0 && usernameEl.value.trim().length >= 2) {
+        suggList.style.display = '';
+      }
+    });
+    usernameEl.addEventListener('blur', async () => {
+      // Defer so a click on a suggestion (mousedown handler above)
+      // gets to run before the list disappears.
+      setTimeout(closeList, 100);
+      // If the typed text matches an existing user, treat it as if
+      // the operator picked it from the list — saves them an extra
+      // click in the common "I know the username already" case.
+      await flushPendingSearch();
+      tryAutoPick();
+    });
+
+    setMode();
+
     const form = h('form', {},
-      h('p', { class: 'muted', style: 'font-size:.85rem; margin: 0 0 .75rem' },
-        t('Existing user? Type their username and leave the password blank — they keep their current credentials. New user? Set an initial password.')),
       h('label', { class: 'field' }, h('span', {}, t('Username')),
-        h('input', { name: 'u', required: true, autofocus: true })),
-      h('label', { class: 'field' },
-        h('span', {}, t('Password (new users only)')),
-        h('input', {
-          name: 'p', type: 'password', autocomplete: 'new-password',
-          minlength: 8,
-        }),
-        h('small', { class: 'muted', style: 'display:block; margin-top:.2rem' },
-          t('Leave blank to add an existing user. Minimum 8 characters when set.'))),
-      h('label', { class: 'field' }, h('span', {}, t('Role')),
-        h('select', { name: 'r' },
-          h('option', { value: 'org_member' }, t('Member')),
-          h('option', { value: 'org_admin' }, t('Admin')))),
+        usernameEl,
+        suggList),
+      status,
+      passwordRow,
+      h('label', { class: 'field' }, h('span', {}, t('Role')), roleEl),
       h('div', { class: 'row end' },
         h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, t('Cancel')),
         h('button', { class: 'btn primary', type: 'submit' }, t('Add'))));
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
-      const fd = new FormData(form);
-      const username = String(fd.get('u') || '').trim();
-      const password = String(fd.get('p') || '');
-      const role = String(fd.get('r') || 'org_member');
-      // Only send password when the operator actually typed one — the
-      // backend treats a blank password as "add existing user" and a
-      // non-blank password as "create new user". Not posting the field
-      // at all keeps the JSON shape unambiguous.
-      const payload = { username, role };
-      if (password) payload.password = password;
+      const username = usernameEl.value.trim();
+      if (!username) return;
+      // If the operator typed a username matching an existing user
+      // and hit Enter without ever clicking a suggestion, promote
+      // it now so they don't get a confusing "set a password" error.
+      if (!pickedUser) {
+        await flushPendingSearch();
+        tryAutoPick();
+      }
+      const role = roleEl.value;
+      const payload = { username: usernameEl.value.trim(), role };
+      if (!pickedUser) {
+        if (!passwordEl.value) {
+          toastErr(t('Set a password for the new account, or pick an existing user from the suggestions.'));
+          return;
+        }
+        payload.password = passwordEl.value;
+      }
       const r = await api(`/api/admin/organizations/${org.id}/members`, {
         method: 'POST',
         body: JSON.stringify(payload),
