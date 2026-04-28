@@ -4059,7 +4059,7 @@ async function viewRunDetail(view, runID) {
       if (!d.ok) return null;
       return api('/api/admin/adventures/' + encodeURIComponent(d.body.event.adventure_slug));
     })(),
-    api('/api/admin/events/' + runID + '/events'),
+    api('/api/admin/events/' + runID + '/activity'),
   ]);
   if (!detail.ok) { view.replaceChildren(h('p', { class: 'err' }, detail.body?.error || t('not found'))); return; }
   const event = detail.body.event;
@@ -4501,7 +4501,7 @@ async function patchSchedule(runID, iso) {
 
 async function openTeamDetail(runID, team, adventure, event) {
   // Fetch events filtered to this team.
-  const evR = await api(`/api/admin/events/${runID}/events?team_id=${team.id}`);
+  const evR = await api(`/api/admin/events/${runID}/activity?team_id=${team.id}`);
   const events = evR.body?.events || [];
   const page = adventure?.pages?.[team.page_index];
   const last = adventure?.pages ? adventure.pages.length : null;
