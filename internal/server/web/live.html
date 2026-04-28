@@ -142,6 +142,8 @@ html, body {
 .state-pill.running { color: var(--success); background: rgba(52,211,153,.12); border-color: rgba(52,211,153,.25); }
 .state-pill.paused  { color: var(--gold);    background: rgba(245,196,82,.14); border-color: rgba(245,196,82,.3); }
 .state-pill.completed, .state-pill.scheduled { color: var(--muted); }
+.state-pill.cancelled { color: var(--danger, #f47171); background: rgba(244,113,113,.12); border-color: rgba(244,113,113,.3); }
+.cancelled-banner { padding: 1rem 1.4rem; text-align: center; font-size: 1.4rem; }
 .state-pill .dot { width: .6rem; height: .6rem; border-radius: 50%; background: currentColor; }
 .state-pill.running .dot { animation: pulse 1.4s ease-in-out infinite; }
 @keyframes pulse { 0%,100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.5); opacity: .4; } }
@@ -699,6 +701,19 @@ function render() {
       t('server time {{time}}', { time: data.server_now || '' })));
     return;
   }
+  // A cancelled event freezes the leaderboard in place — useful so an
+  // audience that arrived after the announcement still sees what was
+  // going on — and prepends a clear banner so it's not mistaken for a
+  // running board. No timeline / puzzle markers; just the stop sign.
+  if (data.state === 'cancelled') {
+    root.append(h('div', { class: 'cancelled-banner' },
+      h('span', { class: 'state-pill cancelled' }, '✕ ' + t('cancelled'))));
+    root.append(buildBoard(data));
+    root.append(h('div', { class: 'footer' },
+      t('Event cancelled by the arranger · '),
+      t('server time {{time}}', { time: data.server_now || '' })));
+    return;
+  }
   // After the run has been complete for COMPLETION_DWELL_MS, swap the
   // leaderboard for a celebration frame so the TV doesn't sit pinned
   // on the same image indefinitely. The leaderboard stays visible
@@ -1075,6 +1090,7 @@ function buildHeader(data) {
           (data.state === 'running' ? '▶ '
             : data.state === 'paused'    ? '⏸ '
             : data.state === 'completed' ? '✓ '
+            : data.state === 'cancelled' ? '✕ '
             : data.state === 'scheduled' ? '⏰ '
             : ''),
           t(data.state || '')),

@@ -16,7 +16,7 @@ for self-hosters and operators.
 | 1 | This `TODO.md` referenced from `README.md:80` didn't exist | small | **done** |
 | 2 | No CI: nothing runs `go test`, `go vet`, `go build` automatically | small–medium | **done** — `.builds.yml` (sourcehut, Postgres-backed) |
 | 3 | No `/api/version` or build-info endpoint | small | **done** — `Makefile` + `Dockerfile` + `.builds.yml` inject `git describe`; runtime/debug fills VCS info |
-| 4 | No event cancellation — only path is delete-team-by-team | medium | pending |
+| 4 | No event cancellation — only path is delete-team-by-team | medium | **done** — `POST /api/admin/events/:id/cancel` (password-gated), `cancelled` state in schema + retention sweep, UI button on event detail, player + live screens render the new state |
 | 5 | No 2FA for arranger accounts | medium–large | pending |
 | 6 | No bulk team/player roster import | medium | pending |
 | 7 | Audit log has no filtering UI | small | **done** — event/result/user/IP filters on `/api/admin/auth-events` + UI |

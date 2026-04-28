@@ -180,6 +180,15 @@
       'Event cancelled': 'Eventet avbröts',
       'The arranger cancelled this event. Reach out to them for next steps; nothing more to do here.':
         'Arrangören avbröt eventet. Hör av dig till dem för nästa steg; det finns inget mer att göra här.',
+      // ---- event cancellation (arrange + live) ----
+      'Cancel event': 'Avbryt eventet',
+      'Cancel event?': 'Avbryt eventet?',
+      'Event cancelled by the arranger · ': 'Eventet avbröts av arrangören · ',
+      'cancelled': 'avbrutet',
+      'The event will be marked cancelled and never start. Teams already invited keep their links but get a "cancelled" screen if they open the app. Enter your password to confirm.':
+        'Eventet markeras som avbrutet och startar aldrig. Lag som redan blivit inbjudna behåller sina länkar men får en "avbrutet"-skärm om de öppnar appen. Ange ditt lösenord för att bekräfta.',
+      'The event ends now. Live pings stop, the leaderboard freezes, and teams get a "cancelled" screen on their next refresh. Enter your password to confirm.':
+        'Eventet avslutas nu. Live-positioner upphör, topplistan fryses och lagen får en "avbrutet"-skärm vid nästa uppdatering. Ange ditt lösenord för att bekräfta.',
       'Already open in another tab': 'Redan öppen i en annan flik',
       "This game is already running in another tab on this device. Close this one and continue there to keep your answers and location in sync.":
         'Spelet körs redan i en annan flik på den här enheten. Stäng den här och fortsätt där så att svar och position hålls synkade.',

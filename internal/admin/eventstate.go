@@ -52,6 +52,9 @@ var allOps = []eventOp{
 //               and show_map happen via UpdateEvent which doesn't
 //               consult this matrix; everything that would mutate the
 //               leaderboard or team roster is blocked.
+//   cancelled — terminal & read-only. Same posture as completed; kept
+//               distinct so the UI and the activity log can show a
+//               truthful label instead of pretending the event finished.
 func allowedForState(state string, op eventOp) bool {
 	switch state {
 	case "scheduled":
@@ -66,7 +69,7 @@ func allowedForState(state string, op eventOp) bool {
 			OpAddSlot, OpRotateSlotToken, OpUnlockTeam:
 			return true
 		}
-	case "completed":
+	case "completed", "cancelled":
 		return false
 	}
 	return false
@@ -94,6 +97,8 @@ func reasonForState(state string) string {
 		return "event_active"
 	case "completed":
 		return "event_completed"
+	case "cancelled":
+		return "event_cancelled"
 	}
 	return "event_invalid_state"
 }

@@ -531,6 +531,66 @@ func (h *Handlers) PauseEvent(w http.ResponseWriter, r *http.Request) { h.transi
 // ResumeEvent resumes a paused run.
 func (h *Handlers) ResumeEvent(w http.ResponseWriter, r *http.Request) { h.transitionEvent(w, r, "resume") }
 
+// CancelEvent terminates an event before it has finished. Allowed
+// from scheduled / running / paused; rejected from completed or
+// already-cancelled. Password-gated because it discards everything
+// in flight (live pings, leaderboard, etc.) without any rollback —
+// the same protection delete-org and delete-team-member use.
+//
+// Doesn't go through transitionEvent because that helper assumes a
+// single source state and skips the password check; cancellation
+// works from three states and needs the gate.
+func (h *Handlers) CancelEvent(w http.ResponseWriter, r *http.Request) {
+	eventID, ok := eventIDFrom(r)
+	if !ok {
+		httpx.Error(w, http.StatusBadRequest, "bad event id")
+		return
+	}
+	if _, ok := h.authorizeEvent(w, r, eventID); !ok {
+		return
+	}
+	if !requirePasswordConfirm(w, r, h.DB) {
+		return
+	}
+	var state string
+	if err := h.DB.QueryRowContext(r.Context(),
+		`SELECT state FROM events WHERE id = $1`, eventID).Scan(&state); err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "lookup failed")
+		return
+	}
+	switch state {
+	case "scheduled", "running", "paused":
+		// allowed
+	case "completed":
+		httpx.JSON(w, http.StatusConflict, map[string]any{
+			"error":  "event already completed",
+			"reason": "event_completed",
+			"state":  state,
+		})
+		return
+	case "cancelled":
+		httpx.JSON(w, http.StatusConflict, map[string]any{
+			"error":  "event already cancelled",
+			"reason": "event_cancelled",
+			"state":  state,
+		})
+		return
+	default:
+		httpx.Error(w, http.StatusConflict, "cannot cancel an event in state "+state)
+		return
+	}
+	if _, err := h.DB.ExecContext(r.Context(),
+		`UPDATE events SET state='cancelled', cancelled_at=now_text() WHERE id=$1`,
+		eventID); err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "update failed")
+		return
+	}
+	me, _ := auth.FromContext(r.Context())
+	activity.Record(r.Context(), h.DB, eventID, nil, activity.UserActor(me.ID), activity.EventCancelled, nil)
+	h.Hub.Publish(ws.EventTopic(eventID), "changed", nil)
+	httpx.JSON(w, http.StatusNoContent, nil)
+}
+
 type updateEventRequest struct {
 	Name        *string `json:"name,omitempty"`
 	ScheduledAt *string `json:"scheduled_at,omitempty"`

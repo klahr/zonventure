@@ -67,6 +67,12 @@ func sweep(ctx context.Context, db *sql.DB, cfg Config) {
 	pruneScheduledDeletions(ctx, db)
 }
 
+// COALESCE picks the correct terminal timestamp: completed_at for
+// finished events, cancelled_at for ones the arranger killed early.
+// The privacy argument is the same in either case — once the event
+// is over, raw location pings shouldn't linger past the configured
+// window. Active states have NULL on both columns so they're skipped
+// implicitly.
 func pruneCompletedEventPings(ctx context.Context, db *sql.DB, days int) {
 	stmt := `
 		DELETE FROM location_pings
@@ -74,9 +80,9 @@ func pruneCompletedEventPings(ctx context.Context, db *sql.DB, days int) {
 		  SELECT lp.id
 		  FROM location_pings lp
 		  JOIN events ar ON ar.id = lp.event_id
-		  WHERE ar.state = 'completed'
-		    AND ar.completed_at IS NOT NULL
-		    AND ar.completed_at::timestamptz < now() - make_interval(days => $1)
+		  WHERE ar.state IN ('completed','cancelled')
+		    AND COALESCE(ar.completed_at, ar.cancelled_at) IS NOT NULL
+		    AND COALESCE(ar.completed_at, ar.cancelled_at)::timestamptz < now() - make_interval(days => $1)
 		  LIMIT ` + strconv.Itoa(batchSize) + `
 		)
 	`
@@ -91,9 +97,9 @@ func pruneCompletedEventAnswers(ctx context.Context, db *sql.DB, days int) {
 		  FROM answer_attempts aa
 		  JOIN teams t ON t.id = aa.team_id
 		  JOIN events ar ON ar.id = t.event_id
-		  WHERE ar.state = 'completed'
-		    AND ar.completed_at IS NOT NULL
-		    AND ar.completed_at::timestamptz < now() - make_interval(days => $1)
+		  WHERE ar.state IN ('completed','cancelled')
+		    AND COALESCE(ar.completed_at, ar.cancelled_at) IS NOT NULL
+		    AND COALESCE(ar.completed_at, ar.cancelled_at)::timestamptz < now() - make_interval(days => $1)
 		  LIMIT ` + strconv.Itoa(batchSize) + `
 		)
 	`

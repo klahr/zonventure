@@ -400,6 +400,7 @@ func New(cfg Config) http.Handler {
 		r.Post("/events/{eventID}/start", adminH.StartEvent)
 		r.Post("/events/{eventID}/pause", adminH.PauseEvent)
 		r.Post("/events/{eventID}/resume", adminH.ResumeEvent)
+		r.Post("/events/{eventID}/cancel", adminH.CancelEvent)
 		r.Post("/events/{eventID}/teams", adminH.CreateTeam)
 		r.Get("/events/{eventID}/positions", adminH.ListPositions)
 		r.Get("/events/{eventID}/activity", adminH.ListActivity)

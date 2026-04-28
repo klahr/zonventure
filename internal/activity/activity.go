@@ -32,6 +32,7 @@ const (
 	EventPaused    = "event.paused"
 	EventResumed   = "event.resumed"
 	EventCompleted = "event.completed"
+	EventCancelled = "event.cancelled"
 	TeamCreated    = "team.created"
 	TeamRenamed    = "team.renamed"
 	TeamDeleted    = "team.deleted"

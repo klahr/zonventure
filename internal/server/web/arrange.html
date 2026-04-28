@@ -4027,6 +4027,7 @@ function pillClassForState(s) {
     case 'scheduled': return 'accent';
     case 'paused': return 'warning';
     case 'completed': return 'success';
+    case 'cancelled': return 'danger';
     default: return '';
   }
 }
@@ -4040,6 +4041,7 @@ const STATE_GLYPHS = {
   scheduled: '⏰',
   paused:    '⏸',
   completed: '✓',
+  cancelled: '✕',
   paid:      '✓',
   pending:   '↻',
   refunded:  '↩',
@@ -4405,6 +4407,15 @@ async function viewRunDetail(view, runID) {
       icon(ICONS.play), t('Resume'));
     actions.append(resume);
   }
+  // Cancel is the escape hatch for an event that needs to end before
+  // it has finished — equipment broke, weather, the venue dropped out.
+  // Allowed from scheduled / running / paused; the server gates with
+  // a password confirm because cancellation discards in-flight state.
+  if (event.state === 'scheduled' || event.state === 'running' || event.state === 'paused') {
+    const cancel = h('button', { class: 'btn danger lifecycle-btn', on: { click: () => confirmCancel(event) } },
+      icon(ICONS.trash), t('Cancel event'));
+    actions.append(cancel);
+  }
   // Results export is always available once there are teams — arrangers
   // often want to grab mid-event standings too, not just post-mortem.
   if (teams.length > 0) {
@@ -4661,6 +4672,7 @@ function renderEvent(e, teams) {
     case 'event.started': badge = 'good'; symbol = '▶'; msg = h('span', { class: 'msg' }, t('Event started')); break;
     case 'event.paused':  badge = 'neutral'; symbol = '‖'; msg = h('span', { class: 'msg' }, t('Event paused')); break;
     case 'event.resumed': badge = 'good'; symbol = '▶'; msg = h('span', { class: 'msg' }, t('Event resumed')); break;
+    case 'event.cancelled': badge = 'bad'; symbol = '✕'; msg = h('span', { class: 'msg' }, t('Event cancelled')); break;
     case 'team.created':
       badge = 'brand'; symbol = '+'; msg = h('span', { class: 'msg' }, t('Team '), h('strong', {}, e.team_name || p.name || ''), t(' created'));
       if ((p.members || []).length) meta = t('with {{names}}', { names: (p.members || []).join(', ') }); break;
@@ -4767,6 +4779,21 @@ async function confirmStart(event) {
   });
   if (!ok) return;
   await transition(event.id, 'start');
+}
+
+async function confirmCancel(event) {
+  const pw = await promptPassword(
+    t('Cancel event?'),
+    event.state === 'scheduled'
+      ? t('The event will be marked cancelled and never start. Teams already invited keep their links but get a "cancelled" screen if they open the app. Enter your password to confirm.')
+      : t('The event ends now. Live pings stop, the leaderboard freezes, and teams get a "cancelled" screen on their next refresh. Enter your password to confirm.'));
+  if (!pw) return;
+  const r = await api(`/api/admin/events/${event.id}/cancel`, {
+    method: 'POST',
+    headers: { 'X-Confirm-Password': pw },
+  });
+  if (r.status === 204) { toastOk(t('Event cancelled')); renderRoute(); }
+  else toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
 }
 
 async function openEditSchedule(event) {

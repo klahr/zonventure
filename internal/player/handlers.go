@@ -296,7 +296,7 @@ func loadTeam(ctx context.Context, db *sql.DB, slot auth.Slot) (teamContext, err
 // State is the response body for GET /api/player/state and the "state" WS
 // push kind.
 type State struct {
-	Status         string            `json:"status"` // waiting | running | paused | completed | gated
+	Status         string            `json:"status"` // waiting | running | paused | completed | cancelled | gated
 	AdventureSlug  string            `json:"adventure_slug,omitempty"`
 	AdventureTitle string            `json:"adventure_title,omitempty"`
 	TeamName       string            `json:"team_name,omitempty"`
@@ -501,6 +501,13 @@ func (h *Handlers) buildState(ctx context.Context, slot auth.Slot) (State, int, 
 		return resp, http.StatusOK, ""
 	case "completed":
 		resp.Status = "completed"
+		return resp, http.StatusOK, ""
+	case "cancelled":
+		// Distinguished from "completed" so the client can show an
+		// honest "event cancelled" screen instead of pretending it
+		// finished. Mutating endpoints already 409 because RunState
+		// isn't "running"; this only changes what the GET returns.
+		resp.Status = "cancelled"
 		return resp, http.StatusOK, ""
 	}
 	page, enabledIdx := visibleFor(adv.Pages, tc.CurrentPageIndex)
