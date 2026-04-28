@@ -16,7 +16,10 @@ import (
 	"git.sr.ht/~klahr/zv/internal/admin"
 	"git.sr.ht/~klahr/zv/internal/adventure"
 	"git.sr.ht/~klahr/zv/internal/auth"
+	"git.sr.ht/~klahr/zv/internal/components"
 	"git.sr.ht/~klahr/zv/internal/mailer"
+	"git.sr.ht/~klahr/zv/internal/storage"
+	"git.sr.ht/~klahr/zv/internal/storage/dbblob"
 	"git.sr.ht/~klahr/zv/internal/metrics"
 	"git.sr.ht/~klahr/zv/internal/player"
 	"git.sr.ht/~klahr/zv/internal/public"
@@ -63,6 +66,18 @@ type Config struct {
 	// upgrading via `docker compose up -d --build` can confirm exactly
 	// which commit is serving, even without a tagged version string.
 	Version string
+	// Components is the snapshot of pluggable seams wired in at
+	// startup. cmd/server builds the slice from its own knowledge of
+	// what got configured (Mailer impl, Stripe enabled, metrics
+	// listener address, etc.); the admin-only /api/admin/components
+	// endpoint just echoes it. nil/empty is fine — the endpoint
+	// returns an empty list rather than 500ing.
+	Components []components.Component
+	// Storage owns the binary asset side of the app (team avatars,
+	// adventure cover art today). Optional: when nil the server
+	// installs a dbblob.New(DB) fallback so the legacy inline-column
+	// behaviour stays the default.
+	Storage storage.Blobs
 }
 
 // New builds the HTTP router.
@@ -108,6 +123,10 @@ func New(cfg Config) http.Handler {
 	if mail == nil {
 		mail = mailer.LogMailer{}
 	}
+	store := cfg.Storage
+	if store == nil {
+		store = dbblob.New(cfg.DB)
+	}
 	adminH := &admin.Handlers{
 		DB: cfg.DB, Lib: cfg.Library, Hub: hub, Sim: sim,
 		Mailer:              mail,
@@ -115,8 +134,10 @@ func New(cfg Config) http.Handler {
 		StripeSecretKey:     cfg.StripeSecretKey,
 		StripeWebhookSecret: cfg.StripeWebhookSecret,
 		SecureCookie:        cfg.SecureCookie,
+		Components:          cfg.Components,
+		Storage:             store,
 	}
-	publicH := &public.Handlers{DB: cfg.DB, Lib: cfg.Library, Hub: hub}
+	publicH := &public.Handlers{DB: cfg.DB, Lib: cfg.Library, Hub: hub, Storage: store}
 
 	// Health probe used by load balancers and `depends_on: condition:
 	// service_healthy` in compose. Pings the DB so we report unhealthy
@@ -537,6 +558,12 @@ func New(cfg Config) http.Handler {
 			r.Get("/settings", adminH.GetSettings)
 			r.Put("/settings/signup", adminH.SetSignupEnabled)
 			r.Put("/settings/landing", adminH.SetLandingEnabled)
+
+			// Read-only "what's wired in?" panel — surfaces the
+			// build's pluggable seams (mailer/payments/etc.) and
+			// whether each is enabled in this deployment. Drives the
+			// Settings → Installed components card.
+			r.Get("/components", adminH.ListComponents)
 
 			// Manual email verification — admin escape hatch when an
 			// arranger never received the self-serve verification mail.

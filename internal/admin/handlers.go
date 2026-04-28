@@ -25,9 +25,12 @@ import (
 	"git.sr.ht/~klahr/zv/internal/activity"
 	"git.sr.ht/~klahr/zv/internal/adventure"
 	"git.sr.ht/~klahr/zv/internal/auth"
+	"git.sr.ht/~klahr/zv/internal/components"
 	"git.sr.ht/~klahr/zv/internal/httpx"
 	"git.sr.ht/~klahr/zv/internal/mailer"
+	"git.sr.ht/~klahr/zv/internal/roster"
 	"git.sr.ht/~klahr/zv/internal/simulator"
+	"git.sr.ht/~klahr/zv/internal/storage"
 	"git.sr.ht/~klahr/zv/internal/tokenx"
 	"git.sr.ht/~klahr/zv/internal/webhooks"
 	"git.sr.ht/~klahr/zv/internal/ws"
@@ -61,6 +64,17 @@ type Handlers struct {
 	// from server.Config. Cookie-emitting paths in this package pass
 	// it to auth.CookieSecure for parity with the auth/player handlers.
 	SecureCookie bool
+	// Components is the read-only list of pluggable seams the
+	// running binary wired in (mailer impl, payments impl, etc.).
+	// Built once in cmd/server/main.go, surfaced via the admin-only
+	// /api/admin/components endpoint that drives the Settings →
+	// Installed components panel.
+	Components []components.Component
+	// Storage owns the binary asset side of the app (team avatars,
+	// adventure cover art today). Always non-nil thanks to the server
+	// constructor's dbblob fallback. Future S3 / local-FS impls plug
+	// in here without touching this struct.
+	Storage storage.Blobs
 }
 
 /* ---------------- Shared scoping helpers ---------------- */
@@ -806,10 +820,6 @@ func (h *Handlers) CreateTeam(w http.ResponseWriter, r *http.Request) {
 	httpx.JSON(w, http.StatusCreated, teamDTO{ID: teamID, Name: req.Name, Members: members})
 }
 
-type bulkCreateTeamsRequest struct {
-	Teams []createTeamRequest `json:"teams"`
-}
-
 type bulkTeamResultDTO struct {
 	// Index points back at the request's teams[] slot so the UI can
 	// highlight the offending paste line. -1 for entries the server
@@ -829,9 +839,15 @@ type bulkTeamResultDTO struct {
 // that exceeds the purchased slot count partially succeeds and the
 // arranger can buy more.
 //
+// The wire format is selected by Content-Type via roster.Pick:
+// application/json (the canonical UI shape) or text/csv (one team per
+// row, first cell = team name, remaining cells = member names). New
+// formats slot in next to internal/roster/csv.go without touching this
+// handler.
+//
 // Returns 200 OK with a results array even when individual teams fail
 // — partial success is the common case, and a 4xx would force the UI
-// to lose the per-row detail. A 4xx is reserved for malformed JSON or
+// to lose the per-row detail. A 4xx is reserved for malformed input or
 // caller-not-allowed-on-this-event.
 func (h *Handlers) BulkCreateTeams(w http.ResponseWriter, r *http.Request) {
 	eventID, ok := eventIDFrom(r)
@@ -846,11 +862,18 @@ func (h *Handlers) BulkCreateTeams(w http.ResponseWriter, r *http.Request) {
 	if !h.requireEventOp(w, r.Context(), eventID, OpCreateTeam) {
 		return
 	}
-	var req bulkCreateTeamsRequest
-	if !httpx.DecodeJSON(w, r, &req) {
+	imp, err := roster.Pick(r.Header.Get("Content-Type"))
+	if err != nil {
+		httpx.Error(w, http.StatusUnsupportedMediaType, err.Error())
 		return
 	}
-	if len(req.Teams) == 0 {
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+	teams, err := imp.Parse(r.Body)
+	if err != nil {
+		httpx.Error(w, http.StatusBadRequest, "parse failed: "+err.Error())
+		return
+	}
+	if len(teams) == 0 {
 		httpx.Error(w, http.StatusBadRequest, "no teams in request")
 		return
 	}
@@ -858,17 +881,20 @@ func (h *Handlers) BulkCreateTeams(w http.ResponseWriter, r *http.Request) {
 	// server: 200 teams × ~10 members each is comfortably more than
 	// any real tournament.
 	const maxBatch = 200
-	if len(req.Teams) > maxBatch {
+	if len(teams) > maxBatch {
 		httpx.Error(w, http.StatusBadRequest, "too many teams in one request")
 		return
 	}
 
-	results := make([]bulkTeamResultDTO, 0, len(req.Teams))
+	results := make([]bulkTeamResultDTO, 0, len(teams))
 	createdCount := 0
-	for i, t := range req.Teams {
+	for i, t := range teams {
 		t.Name = strings.TrimSpace(t.Name)
 		res := bulkTeamResultDTO{Index: i, Name: t.Name}
-		team, err := h.createOneTeam(r.Context(), eventID, orgID, t)
+		team, err := h.createOneTeam(r.Context(), eventID, orgID, createTeamRequest{
+			Name:        t.Name,
+			MemberNames: t.MemberNames,
+		})
 		if err != nil {
 			res.Error = err.Error()
 		} else {

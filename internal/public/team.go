@@ -11,6 +11,7 @@ import (
 
 	"git.sr.ht/~klahr/zv/internal/httpx"
 	"git.sr.ht/~klahr/zv/internal/imageutil"
+	"git.sr.ht/~klahr/zv/internal/storage"
 	"git.sr.ht/~klahr/zv/internal/ws"
 	"github.com/go-chi/chi/v5"
 	qrcode "github.com/skip2/go-qrcode"
@@ -191,11 +192,13 @@ func (h *Handlers) SetTeamAvatarByToken(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	data, mime = shrunk, newMIME
-	if _, err := h.DB.ExecContext(r.Context(), `
-		UPDATE teams
-		   SET avatar_mime_type = $1, avatar_size_bytes = $2, avatar_content = $3
-		 WHERE id = $4
-	`, mime, int64(len(data)), data, teamID); err != nil {
+	if err := h.Storage.PutTeamAvatar(r.Context(), teamID, data, mime); err != nil {
+		// teamByToken already proved the row exists; an ErrNotFound
+		// here means the team was deleted mid-upload — surface as 404.
+		if errors.Is(err, storage.ErrNotFound) {
+			httpx.Error(w, http.StatusNotFound, "team not found")
+			return
+		}
 		httpx.Error(w, http.StatusInternalServerError, "store failed: "+err.Error())
 		return
 	}
@@ -250,11 +253,7 @@ func (h *Handlers) DeleteTeamAvatarByToken(w http.ResponseWriter, r *http.Reques
 	if !ok {
 		return
 	}
-	if _, err := h.DB.ExecContext(r.Context(), `
-		UPDATE teams
-		   SET avatar_mime_type = NULL, avatar_size_bytes = NULL, avatar_content = NULL
-		 WHERE id = $1
-	`, teamID); err != nil {
+	if err := h.Storage.DeleteTeamAvatar(r.Context(), teamID); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "clear failed")
 		return
 	}

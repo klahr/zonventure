@@ -235,6 +235,84 @@ services:
 `sslmode=require` for any non-local link. Migrations still run on
 the app's first connection.
 
+## SMTP recipes
+
+The four providers most operators land on (Amazon SES, Postmark,
+SendGrid, Mailgun) all expose SMTP submission, so the bundled
+`SMTPMailer` — selected automatically when `ZV_SMTP_HOST` is non-empty
+— talks to any of them with no extra binary or build-tag flag. Pick
+the recipe that matches your provider; everything else (verification
+mail, password reset, change-email confirmation) just works.
+
+`ZV_SMTP_FROM` has to be a verified sender on the provider's side
+otherwise the first message hard-bounces; the rest of the variables
+match the credentials the provider issues you.
+
+### Amazon SES
+
+```env
+ZV_SMTP_HOST=email-smtp.us-east-1.amazonaws.com   # pick your SES region
+ZV_SMTP_PORT=587
+ZV_SMTP_USER=AKIA…SMTP                            # SMTP username from SES → SMTP Settings
+ZV_SMTP_PASS=…                                    # paired SMTP password
+ZV_SMTP_FROM=Zonventure <noreply@example.com>     # must be a verified identity
+ZV_SMTP_TLS=starttls
+```
+
+Generate the SMTP credentials in the SES console under "SMTP
+Settings"; they are *not* the same as your AWS access key. Stay
+inside the sandbox until you've requested production access.
+
+### Postmark
+
+```env
+ZV_SMTP_HOST=smtp.postmarkapp.com
+ZV_SMTP_PORT=587
+ZV_SMTP_USER=…   # server token (used as both username and password)
+ZV_SMTP_PASS=…   # same server token
+ZV_SMTP_FROM=Zonventure <noreply@example.com>
+ZV_SMTP_TLS=starttls
+```
+
+Postmark uses the **same** server token for SMTP user and password.
+Tag traffic to the right "Server" by issuing a dedicated token rather
+than reusing one across deployments.
+
+### SendGrid
+
+```env
+ZV_SMTP_HOST=smtp.sendgrid.net
+ZV_SMTP_PORT=587
+ZV_SMTP_USER=apikey                               # literal string, not your SG username
+ZV_SMTP_PASS=SG.…                                 # API key with "Mail Send" scope
+ZV_SMTP_FROM=Zonventure <noreply@example.com>     # must match a verified Sender Identity
+ZV_SMTP_TLS=starttls
+```
+
+The username is the literal word `apikey`; the password is the API
+key value. Verifying your sending domain (rather than a single
+address) gets you DKIM and lower spam scores.
+
+### Mailgun
+
+```env
+ZV_SMTP_HOST=smtp.mailgun.org                     # smtp.eu.mailgun.org for the EU region
+ZV_SMTP_PORT=587
+ZV_SMTP_USER=postmaster@mg.example.com            # your Mailgun sending domain
+ZV_SMTP_PASS=…                                    # the SMTP password from the domain page
+ZV_SMTP_FROM=Zonventure <noreply@mg.example.com>
+ZV_SMTP_TLS=starttls
+```
+
+The default `mg.<your-domain>` subdomain is what Mailgun creates;
+set up DKIM and SPF records in your DNS the same day you start
+sending.
+
+If you'd rather use a provider's HTTP API (per-message tracking IDs,
+IAM-rotated credentials for SES, server-side templates) the
+`mailer.Mailer` interface in `internal/mailer/` is the seam to plug
+into — see [`TODO.md`](TODO.md) item 15.
+
 ## Troubleshooting
 
 - **App restarts in a loop** — `docker compose logs app`. Most likely

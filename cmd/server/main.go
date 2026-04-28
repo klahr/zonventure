@@ -18,6 +18,7 @@ import (
 
 	"git.sr.ht/~klahr/zv/internal/adventure"
 	"git.sr.ht/~klahr/zv/internal/auth"
+	"git.sr.ht/~klahr/zv/internal/components"
 	"git.sr.ht/~klahr/zv/internal/db"
 	"git.sr.ht/~klahr/zv/internal/logx"
 	"git.sr.ht/~klahr/zv/internal/mailer"
@@ -190,6 +191,7 @@ func main() {
 		SecureCookie: *secureCookie,
 		Mailer:       mail,
 		PublicURL:    *publicURL,
+		Components:   describeComponents(mail, os.Getenv("ZV_STRIPE_SECRET_KEY"), os.Getenv("ZV_STRIPE_WEBHOOK_SECRET"), os.Getenv("ZV_METRICS_ADDR")),
 		Legal: server.LegalConfig{
 			CompanyName:           os.Getenv("ZV_COMPANY_NAME"),
 			ContactEmail:          os.Getenv("ZV_CONTACT_EMAIL"),
@@ -295,6 +297,39 @@ func main() {
 	case <-webhookDone:
 	case <-time.After(35 * time.Second):
 		logx.Warn("webhooks.shutdown.timeout")
+	}
+}
+
+// describeComponents builds the snapshot of pluggable seams the
+// admin "Installed components" panel renders. The values come from
+// the same configuration mailer.FromEnv etc. read, so the panel
+// reflects what actually got wired — not what the operator might
+// have intended to wire. Add an entry whenever a new seam is
+// introduced (e.g. a payments interface, a blob-storage interface);
+// keep entries pure descriptive — no side effects, no DB calls.
+func describeComponents(m mailer.Mailer, stripeKey, stripeWebhookSecret, metricsAddr string) []components.Component {
+	mailerImpl, mailerEnabled, mailerNotes := "log", false, "set $ZV_SMTP_HOST to send real mail"
+	if _, ok := m.(*mailer.SMTPMailer); ok {
+		mailerImpl, mailerEnabled, mailerNotes = "smtp", true, ""
+	}
+	stripeOK := stripeKey != "" && stripeWebhookSecret != ""
+	paymentsImpl, paymentsEnabled, paymentsNotes := "simulated", true, "set $ZV_STRIPE_SECRET_KEY and $ZV_STRIPE_WEBHOOK_SECRET to enable Stripe"
+	if stripeOK {
+		paymentsImpl, paymentsEnabled, paymentsNotes = "stripe", true, ""
+	}
+	metricsEnabled := metricsAddr != ""
+	metricsNotes := "set $ZV_METRICS_ADDR to expose /metrics"
+	if metricsEnabled {
+		metricsNotes = "exposed at " + metricsAddr
+	}
+	return []components.Component{
+		{Name: "mailer", Impl: mailerImpl, Enabled: mailerEnabled, Notes: mailerNotes},
+		{Name: "payments", Impl: paymentsImpl, Enabled: paymentsEnabled, Notes: paymentsNotes},
+		{Name: "metrics", Impl: "prometheus", Enabled: metricsEnabled, Notes: metricsNotes},
+		{Name: "storage", Impl: "db-blob", Enabled: true, Notes: "team avatars and page images live in Postgres"},
+		{Name: "auth", Impl: "local-password", Enabled: true},
+		{Name: "webhooks", Impl: "signed-post", Enabled: true},
+		{Name: "roster-importers", Impl: "json, csv", Enabled: true},
 	}
 }
 

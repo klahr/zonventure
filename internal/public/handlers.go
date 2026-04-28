@@ -18,6 +18,7 @@ import (
 
 	"git.sr.ht/~klahr/zv/internal/adventure"
 	"git.sr.ht/~klahr/zv/internal/httpx"
+	"git.sr.ht/~klahr/zv/internal/storage"
 	"git.sr.ht/~klahr/zv/internal/ws"
 	"github.com/go-chi/chi/v5"
 )
@@ -27,6 +28,10 @@ type Handlers struct {
 	DB  *sql.DB
 	Lib *adventure.Library
 	Hub *ws.Hub
+	// Storage backs the token-authed team-avatar upload/delete on the
+	// share page. Always non-nil: server.New defaults to dbblob when
+	// nothing else is wired.
+	Storage storage.Blobs
 }
 
 type puzzleDTO struct {

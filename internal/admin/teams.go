@@ -13,6 +13,7 @@ import (
 	"git.sr.ht/~klahr/zv/internal/httpx"
 	"git.sr.ht/~klahr/zv/internal/imageutil"
 	"git.sr.ht/~klahr/zv/internal/activity"
+	"git.sr.ht/~klahr/zv/internal/storage"
 	"git.sr.ht/~klahr/zv/internal/ws"
 	"github.com/go-chi/chi/v5"
 )
@@ -378,11 +379,13 @@ func (h *Handlers) SetTeamAvatar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	data, mime = shrunk, newMIME
-	if _, err := h.DB.ExecContext(r.Context(), `
-		UPDATE teams
-		   SET avatar_mime_type = $1, avatar_size_bytes = $2, avatar_content = $3
-		 WHERE id = $4
-	`, mime, int64(len(data)), data, teamID); err != nil {
+	if err := h.Storage.PutTeamAvatar(r.Context(), teamID, data, mime); err != nil {
+		// Pre-flight authorizeTeam already proved the team exists, so
+		// ErrNotFound here means a delete-team race; surface as 404.
+		if errors.Is(err, storage.ErrNotFound) {
+			httpx.Error(w, http.StatusNotFound, "team not found")
+			return
+		}
 		httpx.Error(w, http.StatusInternalServerError, "store failed: "+err.Error())
 		return
 	}
@@ -411,11 +414,7 @@ func (h *Handlers) DeleteTeamAvatar(w http.ResponseWriter, r *http.Request) {
 	if !h.requireEventOp(w, r.Context(), eventID, OpSetTeamAvatar) {
 		return
 	}
-	if _, err := h.DB.ExecContext(r.Context(), `
-		UPDATE teams
-		   SET avatar_mime_type = NULL, avatar_size_bytes = NULL, avatar_content = NULL
-		 WHERE id = $1
-	`, teamID); err != nil {
+	if err := h.Storage.DeleteTeamAvatar(r.Context(), teamID); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "clear failed")
 		return
 	}
@@ -434,15 +433,8 @@ func (h *Handlers) ServeTeamAvatar(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusBadRequest, "bad team id")
 		return
 	}
-	var (
-		mime    sql.NullString
-		size    sql.NullInt64
-		content []byte
-	)
-	err = h.DB.QueryRowContext(r.Context(), `
-		SELECT avatar_mime_type, avatar_size_bytes, avatar_content FROM teams WHERE id = $1
-	`, teamID).Scan(&mime, &size, &content)
-	if errors.Is(err, sql.ErrNoRows) || !mime.Valid || len(content) == 0 {
+	content, mime, err := h.Storage.GetTeamAvatar(r.Context(), teamID)
+	if errors.Is(err, storage.ErrNotFound) {
 		http.NotFound(w, r)
 		return
 	}
@@ -450,8 +442,8 @@ func (h *Handlers) ServeTeamAvatar(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusInternalServerError, "lookup failed")
 		return
 	}
-	w.Header().Set("Content-Type", mime.String)
-	w.Header().Set("Content-Length", strconv.FormatInt(size.Int64, 10))
+	w.Header().Set("Content-Type", mime)
+	w.Header().Set("Content-Length", strconv.Itoa(len(content)))
 	w.Header().Set("Cache-Control", "private, max-age=60")
 	_, _ = w.Write(content)
 }

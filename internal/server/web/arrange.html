@@ -9657,6 +9657,9 @@ async function viewSettings(view) {
   // operator). Hidden for org users so the card doesn't tease a UI
   // they can't actually drive.
   const serverCard = isAdmin ? renderSettingsServerCard() : null;
+  // Installed-components panel is read-only operator info — same
+  // admin-only audience as the server-settings card.
+  const componentsCard = isAdmin ? renderSettingsComponentsCard() : null;
 
   view.replaceChildren(...[
     h('h1', {}, t('Settings')),
@@ -9667,6 +9670,7 @@ async function viewSettings(view) {
     exportCard,
     integrationsCard,
     serverCard,
+    componentsCard,
     helpCard,
     dangerCard,
   ].filter(Boolean));
@@ -9774,6 +9778,52 @@ function renderSettingsServerCard() {
     h('p', { class: 'muted', style: 'font-size:.9rem' },
       t('Knobs that affect the whole deployment. Visible only to global admins.')),
     ...toggles.map((tg) => tg.row),
+    status,
+  );
+  refresh();
+  return card;
+}
+
+// renderSettingsComponentsCard surfaces what's wired into the running
+// binary — mailer, payments, metrics, etc. — and whether each seam is
+// enabled in this deployment. Read-only on purpose: swapping a seam
+// means rebuilding the binary, so the GUI describes what's installed,
+// it doesn't configure it. Admin-only.
+function renderSettingsComponentsCard() {
+  const card = h('div', { class: 'card settings-card' });
+  const list = h('div');
+  const status = h('p', { class: 'muted', style: 'font-size:.85rem; margin:.5rem 0 0' });
+  const refresh = async () => {
+    list.replaceChildren(h('p', { class: 'muted', style: 'font-size:.85rem' }, t('Loading…')));
+    const r = await api('/api/admin/components');
+    if (!r.ok) {
+      list.replaceChildren(h('p', { class: 'err' }, r.body?.error || t('error {{status}}', { status: r.status })));
+      return;
+    }
+    const items = r.body?.components || [];
+    if (items.length === 0) {
+      list.replaceChildren(h('p', { class: 'muted' }, t('No components reported.')));
+      return;
+    }
+    list.replaceChildren(h('table', { class: 'audit-table' },
+      h('thead', {}, h('tr', {},
+        h('th', {}, t('Component')),
+        h('th', {}, t('Implementation')),
+        h('th', {}, t('Status')),
+        h('th', {}, t('Notes')))),
+      h('tbody', {}, items.map((c) => h('tr', {},
+        h('td', { class: 'mono' }, c.name),
+        h('td', { class: 'mono' }, c.impl),
+        h('td', {}, h('span', {
+          class: 'pill ' + (c.enabled ? 'success' : ''),
+        }, c.enabled ? t('on') : t('off'))),
+        h('td', { class: 'muted', style: 'font-size:.85rem' }, c.notes || ''))))));
+  };
+  card.append(
+    h('h2', {}, t('Installed components')),
+    h('p', { class: 'muted', style: 'font-size:.9rem' },
+      t('Pluggable seams the running binary was built with. Read-only — swap an implementation by rebuilding.')),
+    list,
     status,
   );
   refresh();

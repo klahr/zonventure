@@ -32,6 +32,27 @@ for self-hosters and operators.
 | 12 | `db.go` doesn't tune the connection pool | small | **done** — `db.Opts` + `-db-max-open-conns` / `-db-max-idle-conns` flags + `ZV_DB_MAX_*_CONNS` env |
 | 13 | `internal/admin/authoring.go` is 1299 lines mixing four concerns | medium | **done** — split into `authoring.go` (adventure CRUD, types, helpers, 541), `pages.go` (page CRUD + reorder, 363), `images.go` (upload + serve + alt edit, 262), `avatars.go` (cover art, 131), `shares.go` (commission to org, 116) |
 
+## Plugin / extensibility candidates
+
+Functionality that's optional, vendor-flavoured, or replaceable, and
+is a natural fit for an interface + drop-in implementations. The
+direction is "thin core, named seams" — every entry below is sized as
+"add a second concrete implementation behind a Go interface", not "build
+a generic plugin runtime". Tackle one at a time.
+
+| # | Item | Size | Status |
+| - | - | - | - |
+| 14 | Roster import: file-format plugins via `roster.Importer` (`internal/roster/`); Content-Type dispatch in `BulkCreateTeams` | medium | **partial** — interface + JSON + CSV shipped; follow-ups: `.xlsx` upload, IOF Interface XML 3.0 (orienteering organisers), vCard 4.0 groups |
+| 15 | Mailer recipes for Amazon SES / Postmark / SendGrid / Mailgun — all four expose SMTP submission so the bundled `SMTPMailer` already covers them; only docs were missing | small | **done** — `SELFHOSTING.md` "SMTP recipes" section. A native HTTP-API mailer behind a build tag (per-message tracking IDs, SES IAM auth) remains a future option but isn't load-bearing for the auth/verification mail volumes the product sends today |
+| 16 | Payment provider abstraction — extract `payments.Provider`, make Stripe one impl, allow self-host to ship without the Stripe SDK at all (Mollie / Paddle / Adyen as future impls) | medium | pending |
+| 17 | Image / avatar storage abstraction — `teams.avatar_content` and `adventure_page_images.content` are DB blobs today; pluggable backends for local FS / S3 / R2 / GCS keep the binary thin and the DB small | medium | **partial** — `storage.Blobs` interface (`internal/storage/`) + `dbblob` impl shipped; team avatars + adventure cover art now go through the seam end-to-end (admin + public/share-page paths). Remaining: `adventure_page_images.content` (more complex shape — multi-row-per-entity with `alt_text` / `idx` metadata), and the actual non-DB impls (`-tags=storage_fs`, `-tags=storage_s3`) |
+| 18 | Auth backends — OIDC / SAML / GitHub / Google / passkeys alongside the current username/password; magic-link slot flow stays core | medium–large per backend | pending |
+| 19 | Metrics exporter alternates — OTLP and StatsD alongside the Prometheus collectors in `internal/metrics` | small | pending |
+| 20 | Webhook formatter plugins — pre-shaped Slack / Discord / MS Teams / Zapier deliveries on top of the generic signed-POST in `internal/webhooks`, so customers don't have to write a translator service | small per integration | pending |
+| 21 | i18n language packs — loadable bundles instead of strings baked into `i18n.js`; lets translators contribute without a JS rebuild | medium | pending |
+| 22 | SCIM 2.0 provisioning endpoint (RFC 7643/7644) — inbound user/group sync for corporate team-build and school-IT customers; lands rosters straight from Workday / Okta / Azure AD / Google Workspace | large | pending |
+| 23 | Installed-components panel — `internal/components.Component` registry, admin-only `GET /api/admin/components`, "Installed components" card on the Settings page (admin role) showing seam → impl → on/off → notes | small | **done** — `cmd/server` builds the snapshot from configured env (`describeComponents`); read-only, no runtime swapping |
+
 ## What was checked and is fine
 
 - Refunds are wired (`stripe.go:304` `RefundPurchase` + `handleChargeRefunded` + `KindPurchaseRefunded`).
