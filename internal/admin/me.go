@@ -164,12 +164,22 @@ func buildChangeEmailLink(publicURL string, r *http.Request, token string) strin
 	return base + "/arrange#change-email?" + q.Encode()
 }
 
-// DeleteMyAccount removes the calling user. When this leaves an
-// organization with zero remaining users, the organization (and its
-// runs / teams / adventures / purchases — all on cascade) is removed
-// in the same transaction, matching the user's "delete my account"
-// expectation. Refused for the last global admin so the system can't
-// be left rudderless.
+// AccountDeletionGracePeriod is how long after a user requests
+// account deletion before the retention sweeper actually runs the
+// cascade. Long enough to recover from a misclick, short enough to
+// not leave abandoned data sitting around indefinitely.
+const AccountDeletionGracePeriod = 7 * 24 * time.Hour
+
+// DeleteMyAccount marks the calling user for deletion in
+// AccountDeletionGracePeriod. The retention sweeper runs the actual
+// cascade once the timestamp passes; until then the user can call
+// /api/admin/me/cancel-deletion to clear it. Refused for the last
+// global admin so the system can't be left rudderless.
+//
+// Returns 202 Accepted with the scheduled timestamp so the client UI
+// can render a confirmation. Sessions are dropped immediately — the
+// user can log back in to cancel, but a stolen cookie shouldn't be
+// able to pivot during the grace window.
 func (h *Handlers) DeleteMyAccount(w http.ResponseWriter, r *http.Request) {
 	me, _ := auth.FromContext(r.Context())
 	if !requirePasswordConfirm(w, r, h.DB) {
@@ -190,46 +200,41 @@ func (h *Handlers) DeleteMyAccount(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	tx, err := h.DB.BeginTx(r.Context(), nil)
-	if err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "begin tx")
+	scheduled := time.Now().Add(AccountDeletionGracePeriod)
+	if _, err := h.DB.ExecContext(r.Context(),
+		`UPDATE users SET scheduled_deletion_at = $1 WHERE id = $2`,
+		scheduled, me.ID); err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "schedule deletion failed: "+err.Error())
 		return
 	}
-	defer tx.Rollback() //nolint:errcheck
-
-	if _, err := tx.ExecContext(r.Context(),
-		`DELETE FROM users WHERE id = $1`, me.ID); err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "delete failed: "+err.Error())
-		return
+	// Drop every session so a cookie that's already in the wild can't
+	// keep using the account through the grace window. The user can
+	// log back in to cancel — that's fine, login still works.
+	if _, err := h.DB.ExecContext(r.Context(),
+		`DELETE FROM sessions WHERE user_id = $1`, me.ID); err != nil {
+		logx.Warn("admin.me.delete.session_clear_failed", "user_id", me.ID, "err", err.Error())
 	}
-	// Auto-delete the org if this user was its last member. The FK
-	// cascade rolls everything (runs, teams, assignments, adventures
-	// scoped to the org) along with it.
-	if me.OrgID != nil {
-		var remaining int
-		if err := tx.QueryRowContext(r.Context(),
-			`SELECT COUNT(*) FROM users WHERE org_id = $1`, *me.OrgID).Scan(&remaining); err != nil {
-			httpx.Error(w, http.StatusInternalServerError, "org member count failed")
-			return
-		}
-		if remaining == 0 {
-			if _, err := tx.ExecContext(r.Context(),
-				`DELETE FROM organizations WHERE id = $1`, *me.OrgID); err != nil {
-				httpx.Error(w, http.StatusInternalServerError, "org cascade failed: "+err.Error())
-				return
-			}
-			logx.Info("admin.me.delete.org_collapsed", "org_id", *me.OrgID)
-		}
-	}
-	if err := tx.Commit(); err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "commit failed")
-		return
-	}
-	logx.Info("admin.me.deleted", "user_id", me.ID, "username", me.Username)
-	// Best-effort cookie clear — the session row is already gone
-	// (cascaded with the user row), so the next request will get
-	// "not logged in" anyway.
+	logx.Info("admin.me.delete.scheduled",
+		"user_id", me.ID, "username", me.Username,
+		"scheduled_for", scheduled.UTC().Format(time.RFC3339))
 	auth.ClearCookie(w, auth.CookieSecure(r, h.SecureCookie))
+	httpx.JSON(w, http.StatusAccepted, map[string]string{
+		"scheduled_deletion_at": scheduled.UTC().Format(time.RFC3339),
+	})
+}
+
+// CancelMyDeletion clears scheduled_deletion_at on the calling user.
+// Idempotent — calling it on an account that wasn't scheduled is a
+// 204, not an error, so the UI can show the affordance unconditionally
+// without worrying about race conditions.
+func (h *Handlers) CancelMyDeletion(w http.ResponseWriter, r *http.Request) {
+	me, _ := auth.FromContext(r.Context())
+	if _, err := h.DB.ExecContext(r.Context(),
+		`UPDATE users SET scheduled_deletion_at = NULL WHERE id = $1`, me.ID); err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "cancel failed: "+err.Error())
+		return
+	}
+	logx.Info("admin.me.delete.cancelled", "user_id", me.ID, "username", me.Username)
 	httpx.JSON(w, http.StatusNoContent, nil)
 }
 

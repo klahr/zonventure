@@ -569,8 +569,6 @@
       '(optional hint)': '(valfritt tips)',
       'Image removed': 'Bild borttagen',
       'Click to add image': 'Klicka för att lägga till bild',
-      'Save the puzzle first, then add images':
-        'Spara pusslet först, lägg sedan till bilder',
       'Image added': 'Bild tillagd',
       'Player answer bar (preview)': 'Spelarens svarsrad (förhandsvisning)',
       'Hint:': 'Ledtråd:',
@@ -956,7 +954,6 @@
       // ---- age gate ----
       'I confirm no participants under 13 will play this adventure, or I have parental consent for any who will.':
         'Jag bekräftar att inga deltagare under 13 år kommer att spela detta äventyr, eller att jag har föräldrasamtycke för dem som gör det.',
-      'Please confirm the player-age statement first.': 'Bekräfta åldersuttalandet först.',
       'Player ages': 'Deltagarnas ålder',
       // ---- onboarding ----
       'Welcome to Zonventure': 'Välkommen till Zonventure',
@@ -1511,6 +1508,108 @@
       'Open navigation menu': 'Öppna navigeringsmenyn',
       'Primary': 'Huvudnavigering',
       'Sidebar': 'Sidopanel',
+      // ---- Round 5: dirty-check guards on more modals ----
+      'Discard this draft? You can come back to it from the same adventure.':
+          'Kasta detta utkast? Du kan komma tillbaka till det från samma äventyr.',
+      'Discard unsaved changes to this puzzle?':
+          'Kasta osparade ändringar i detta pussel?',
+      'Discard unsaved changes to this webhook?':
+          'Kasta osparade ändringar i denna webhook?',
+      'Discard this webhook?': 'Kasta denna webhook?',
+      'Discard the team(s) you were adding?':
+          'Kasta laget/lagen du höll på att lägga till?',
+      // ---- Round 6: account-deletion grace period ----
+      'Account deletion scheduled': 'Kontoborttagning schemalagd',
+      'Your account will be permanently deleted on {{when}}. You can cancel any time before then.':
+          'Ditt konto raderas permanent {{when}}. Du kan avbryta när som helst innan dess.',
+      'Cancel deletion': 'Avbryt borttagning',
+      'Account-deletion cancelled.': 'Kontoborttagning avbruten.',
+      'Could not cancel — try again.': 'Det gick inte att avbryta — försök igen.',
+      'Schedules your account for deletion in 7 days. You can cancel any time before then by logging back in. After the grace period, your account and (if you\'re the last member) your organization — runs, teams, adventures, purchases — are permanently removed.':
+          'Schemalägger ditt konto för borttagning om 7 dagar. Du kan avbryta när som helst innan dess genom att logga in igen. Efter perioden tas ditt konto och (om du är sista medlemmen) din organisation — event, lag, äventyr, köp — bort permanent.',
+      'Schedule deletion…': 'Schemalägg borttagning…',
+      'Schedule account deletion?': 'Schemalägg kontoborttagning?',
+      'Type your password to confirm. You\'ll be logged out and have 7 days to log back in and cancel.':
+          'Skriv ditt lösenord för att bekräfta. Du loggas ut och har 7 dagar på dig att logga in och avbryta.',
+      'Scheduling…': 'Schemalägger…',
+      // ---- Round 7: puzzle-editor autosave ----
+      'Saving…': 'Sparar…',
+      'Saved just now': 'Sparat just nu',
+      'Saved {{n}}s ago': 'Sparat för {{n}} s sedan',
+      'Saved {{n}}m ago': 'Sparat för {{n}} min sedan',
+      'Save failed — retry': 'Sparning misslyckades — försök igen',
+      // ---- Round 8: geolocation consent preamble ----
+      'Use your location?': 'Använda din position?',
+      'This game uses GPS to check that you reach each puzzle\'s location and to show your team\'s position to the arranger.':
+          'Spelet använder GPS för att verifiera att du når varje pussels plats och för att visa lagets position för arrangören.',
+      'Your latitude / longitude is sent while the event runs.':
+          'Din latitud / longitud skickas medan eventet pågår.',
+      'It\'s deleted automatically after the event (within 30 days).':
+          'Den raderas automatiskt efter eventet (inom 30 dagar).',
+      'It\'s never sold or shared with third parties.':
+          'Den säljs eller delas aldrig med tredje part.',
+      'You can change your mind any time. See ':
+          'Du kan ändra dig när som helst. Se ',
+      'privacy policy': 'integritetspolicyn',
+      'Not now': 'Inte nu',
+      'Use my location': 'Använd min position',
+      // ---- Round 9: pre-event copy ----
+      'The event hasn\'t started yet. The arranger will start it when everyone\'s here.':
+          'Eventet har inte börjat än. Arrangören startar det när alla är på plats.',
+      // ---- Round 10: GDPR export → deletion ----
+      'Want to delete your account too? →': 'Vill du även ta bort kontot? →',
+      // ---- Round 11: server-synced hint reveals ----
+      'Couldn\'t reveal — tap to retry': 'Kunde inte avslöja — tryck för att försöka igen',
+      // ---- Round 12: team-removed mid-event card ----
+      'Team removed': 'Lag borttaget',
+      'The arranger removed your team. Ask them to add you back if this was a mistake.':
+          'Arrangören tog bort ditt lag. Be dem lägga till dig igen om det var ett misstag.',
+      'Rotate {{slot}}\'s link mid-event? The current device will be signed out and need the new link to keep playing.':
+          'Rotera {{slot}}s länk mitt under eventet? Nuvarande enhet loggas ut och behöver den nya länken för att fortsätta.',
+      'Remove {{slot}} mid-event? Their link stops working immediately and any answers they\'ve already submitted stay with the team.':
+          'Ta bort {{slot}} mitt under eventet? Länken slutar fungera direkt och svar de redan skickat in stannar hos laget.',
+      'Stuck? Tap the ? for a hint.': 'Fastnat? Tryck på ? för en ledtråd.',
+      'Stuck? There\'s another hint ready.': 'Fastnat? Det finns en till ledtråd redo.',
+      'Browse store': 'Bläddra i butiken',
+      'Images attach to a saved puzzle — finish the basics, click Create, then come back to upload.':
+          'Bilder kopplas till ett sparat pussel — fyll i grunderna, klicka på Skapa, kom sedan tillbaka för att ladda upp.',
+      'just now': 'just nu',
+      '{{n}}s ago': 'för {{n}} s sedan',
+      '{{n}}m ago': 'för {{n}} min sedan',
+      'GPS · {{age}} · ±{{acc}} m': 'GPS · {{age}} · ±{{acc}} m',
+      'You picked {{teams}} teams but only {{cap}} slots are available. Lower the team count or buy more slots.':
+          'Du valde {{teams}} lag men bara {{cap}} platser är tillgängliga. Sänk antalet lag eller köp fler platser.',
+      'Please confirm the player-age statement to continue.':
+          'Bekräfta åldersintyget för att fortsätta.',
+      'Run a fake race against an adventure to preview pacing, team layouts and the live view.':
+          'Kör ett påhittat race mot ett äventyr för att förhandsgranska tempo, lagupplägg och livevyn.',
+      'No adventures with puzzles yet': 'Inga äventyr med pussel än',
+      'You need at least one adventure with one or more puzzles before the simulator can do anything. Create one or browse the catalog.':
+          'Du behöver minst ett äventyr med ett eller flera pussel innan simulatorn kan göra något. Skapa ett eller bläddra i katalogen.',
+      'Pinpoint — risky outdoors; phone GPS is rarely better than ±10 m.':
+          'Punkt — riskabelt utomhus; telefon-GPS är sällan bättre än ±10 m.',
+      'Tight — about a building entrance.': 'Tätt — ungefär en husingång.',
+      'Snug — about a basketball court.': 'Knappt — ungefär en basketplan.',
+      'Generous — about half a soccer pitch.':
+          'Rymligt — ungefär halva fotbollsplanen.',
+      'Wide — about a city block.': 'Brett — ungefär ett kvarter.',
+      'Huge — a small park.': 'Enormt — en mindre park.',
+      'Create adventure': 'Skapa äventyr',
+      'rename': 'byt namn',
+      'Choose your name:': 'Välj ditt namn:',
+      'Downloaded team-links.csv — open it in your sharing app.':
+          'Laddade ner team-links.csv — öppna den i din delningsapp.',
+      // ---- Round 13: transfer of ownership ----
+      'Transfer ownership…': 'Överlåt ägarskap…',
+      'Transfer ownership of {{name}}': 'Överlåt ägarskap av {{name}}',
+      'The chosen user becomes an admin and you become a regular member. Both changes happen in one step.':
+          'Användaren du väljer blir admin och du blir vanlig medlem. Båda ändringarna sker i ett steg.',
+      'Promote to admin': 'Befordra till admin',
+      'Transfer ownership': 'Överlåt ägarskap',
+      'Confirm transfer': 'Bekräfta överlåtelse',
+      'Type your password to confirm. You\'ll lose admin permissions immediately.':
+          'Skriv ditt lösenord för att bekräfta. Du förlorar admin-rättigheter direkt.',
+      'Ownership transferred.': 'Ägarskap överlåtet.',
     },
   };
 

@@ -128,7 +128,15 @@ func (h *Handlers) WSPlay(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) pushState(conn *ws.Conn, slot auth.Slot) {
-	resp, status, _ := h.buildState(conn.Context(), slot)
+	resp, status, msg := h.buildState(conn.Context(), slot)
+	if status == http.StatusNotFound {
+		// Team gone (arranger deleted it mid-event). Tell the client
+		// explicitly so it can render the "your team was removed"
+		// card instead of falling through to the generic "open your
+		// magic link" empty state.
+		conn.SendKind("removed", map[string]any{"reason": msg})
+		return
+	}
 	if status != http.StatusOK {
 		return
 	}

@@ -68,6 +68,12 @@ type User struct {
 	// grandfathered users. Surfaced via /whoami so the UI can show
 	// the verified-or-not banner.
 	Email string
+	// ScheduledDeletionAt is non-nil when the user has requested
+	// account deletion. The retention sweeper hard-deletes once this
+	// timestamp passes; until then the user can call
+	// /api/admin/me/cancel-deletion to clear it. Surfaced via
+	// /whoami so the UI can show a banner with the date.
+	ScheduledDeletionAt *time.Time
 }
 
 // ctxKey is a private type so handler contexts can't collide with other
@@ -268,11 +274,13 @@ func Lookup(ctx context.Context, db *sql.DB, token string) (User, bool, error) {
 		orgID   sql.NullInt64
 		expires string
 	)
+	var schedDel sql.NullTime
 	err := db.QueryRowContext(ctx, `
-		SELECT u.id, u.username, u.role, u.org_id, COALESCE(u.email,''), (u.email_verified <> 0), s.expires_at
+		SELECT u.id, u.username, u.role, u.org_id, COALESCE(u.email,''), (u.email_verified <> 0),
+		       u.scheduled_deletion_at, s.expires_at
 		FROM sessions s JOIN users u ON u.id = s.user_id
 		WHERE s.token = $1
-	`, token).Scan(&u.ID, &u.Username, &u.Role, &orgID, &u.Email, &u.EmailVerified, &expires)
+	`, token).Scan(&u.ID, &u.Username, &u.Role, &orgID, &u.Email, &u.EmailVerified, &schedDel, &expires)
 	if errors.Is(err, sql.ErrNoRows) {
 		return User{}, false, nil
 	}
@@ -282,6 +290,10 @@ func Lookup(ctx context.Context, db *sql.DB, token string) (User, bool, error) {
 	if orgID.Valid {
 		v := orgID.Int64
 		u.OrgID = &v
+	}
+	if schedDel.Valid {
+		t := schedDel.Time
+		u.ScheduledDeletionAt = &t
 	}
 	exp, err := time.Parse(time.RFC3339, expires)
 	if err == nil && time.Now().After(exp) {

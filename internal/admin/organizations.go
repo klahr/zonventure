@@ -10,6 +10,7 @@ import (
 
 	"git.sr.ht/~klahr/zv/internal/auth"
 	"git.sr.ht/~klahr/zv/internal/httpx"
+	"git.sr.ht/~klahr/zv/internal/logx"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -304,6 +305,95 @@ func (h *Handlers) DeleteOrgMember(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusInternalServerError, "delete failed")
 		return
 	}
+	httpx.JSON(w, http.StatusNoContent, nil)
+}
+
+/* ---------------- Transfer of ownership ---------------- */
+
+type transferOwnershipRequest struct {
+	ToUserID int64 `json:"to_user_id"`
+}
+
+// TransferOwnership atomically promotes a target member to org_admin
+// and demotes the calling org_admin to org_member. The endpoint
+// exists so the previously-impossible "I'm the only admin and want
+// to step down" path becomes a single confirmed click instead of a
+// careful sequence (promote-then-demote) that fails open if the user
+// gets distracted between calls.
+//
+// Caller must already be an org_admin of this org. Target must be a
+// member of the same org and a different user. Wrapped in a single
+// transaction so a partial failure can never leave the org with two
+// admins or zero admins.
+func (h *Handlers) TransferOwnership(w http.ResponseWriter, r *http.Request) {
+	if !requirePasswordConfirm(w, r, h.DB) {
+		return
+	}
+	orgID, ok := orgIDFromURL(r)
+	if !ok {
+		return
+	}
+	me, _ := auth.FromContext(r.Context())
+	if me.Role != auth.RoleOrgAdmin || me.OrgID == nil || *me.OrgID != orgID {
+		httpx.Error(w, http.StatusForbidden, "only an org admin can transfer ownership")
+		return
+	}
+	var req transferOwnershipRequest
+	if !httpx.DecodeJSON(w, r, &req) {
+		return
+	}
+	if req.ToUserID == me.ID {
+		httpx.Error(w, http.StatusBadRequest, "cannot transfer ownership to yourself")
+		return
+	}
+	// Verify the target is in this org. We check role + org in one
+	// SELECT so a concurrent role change can't slip past the guard
+	// between read and write.
+	var (
+		targetRole string
+		targetOrg  sql.NullInt64
+	)
+	if err := h.DB.QueryRowContext(r.Context(),
+		`SELECT role, org_id FROM users WHERE id = $1`, req.ToUserID).Scan(&targetRole, &targetOrg); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			httpx.Error(w, http.StatusNotFound, "target user not found")
+			return
+		}
+		httpx.Error(w, http.StatusInternalServerError, "lookup failed")
+		return
+	}
+	if !targetOrg.Valid || targetOrg.Int64 != orgID {
+		httpx.Error(w, http.StatusNotFound, "target user is not in this organization")
+		return
+	}
+	if targetRole != auth.RoleOrgAdmin && targetRole != auth.RoleOrgMember {
+		httpx.Error(w, http.StatusBadRequest, "target is not an org member")
+		return
+	}
+	tx, err := h.DB.BeginTx(r.Context(), nil)
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "begin tx")
+		return
+	}
+	defer tx.Rollback() //nolint:errcheck
+	if _, err := tx.ExecContext(r.Context(),
+		`UPDATE users SET role = $1 WHERE id = $2 AND org_id = $3`,
+		auth.RoleOrgAdmin, req.ToUserID, orgID); err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "promote failed: "+err.Error())
+		return
+	}
+	if _, err := tx.ExecContext(r.Context(),
+		`UPDATE users SET role = $1 WHERE id = $2 AND org_id = $3`,
+		auth.RoleOrgMember, me.ID, orgID); err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "demote failed: "+err.Error())
+		return
+	}
+	if err := tx.Commit(); err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "commit failed")
+		return
+	}
+	logx.Info("admin.org.ownership_transferred",
+		"org_id", orgID, "from_user_id", me.ID, "to_user_id", req.ToUserID)
 	httpx.JSON(w, http.StatusNoContent, nil)
 }
 

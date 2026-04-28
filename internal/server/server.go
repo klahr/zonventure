@@ -328,6 +328,11 @@ func New(cfg Config) http.Handler {
 		r.Get("/state", playerH.GetState)
 		r.Post("/answer", playerH.SubmitAnswer)
 		r.Post("/location", playerH.PostLocation)
+		r.Post("/hint", playerH.RevealHint)
+		// Player-driven slot rename — the arranger's pre-set name is
+		// often a placeholder ("Player 3"). Letting the player put
+		// their own name on the leaderboard improves engagement.
+		r.Post("/me/name", playerH.RenameMyself)
 		r.Get("/summary", playerH.Summary)
 		r.Post("/logout", playerH.Logout)
 		// GDPR right-to-erasure: wipes pings + answers + slot name +
@@ -400,6 +405,9 @@ func New(cfg Config) http.Handler {
 		r.Get("/organizations/{orgID}", adminH.GetOrganization)
 		r.Post("/organizations/{orgID}/members", adminH.CreateOrgMember)
 		r.Delete("/organizations/{orgID}/members/{userID}", adminH.DeleteOrgMember)
+		// Atomic ownership transfer — promotes a member to org_admin
+		// and demotes the calling org_admin to org_member in one tx.
+		r.Post("/organizations/{orgID}/transfer-ownership", adminH.TransferOwnership)
 
 		// Adventure authoring. Available to every authoring tier —
 		// handlers enforce ownership inline (admin edits the global
@@ -451,6 +459,9 @@ func New(cfg Config) http.Handler {
 		r.Get("/me/email/revert-status", adminH.MyEmailChangeStatus)
 		r.Post("/me/email/revert", adminH.RevertMyEmailChange)
 		r.Delete("/me", adminH.DeleteMyAccount)
+		// Account deletion is soft — DeleteMyAccount sets a 7-day
+		// timer; this endpoint clears it before the sweeper runs.
+		r.Post("/me/cancel-deletion", adminH.CancelMyDeletion)
 		// GDPR data export — JSON dump of personal + (when scoped)
 		// org data, served as a downloadable file.
 		r.Get("/me/export", adminH.ExportMyData)

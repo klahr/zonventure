@@ -75,6 +75,10 @@ func sweep(ctx context.Context, db *sql.DB, cfg Config) {
 	if cfg.AuditDays > 0 {
 		pruneAuthEvents(ctx, db, cfg.AuditDays)
 	}
+	// User-deletion grace period is fixed (7 days, set in admin.me),
+	// not operator-tunable, so it has no Days field on Config — the
+	// timestamp on the row already encodes the deadline.
+	pruneScheduledDeletions(ctx, db)
 }
 
 func pruneCompletedEventPings(ctx context.Context, db *sql.DB, days int) {
@@ -108,6 +112,80 @@ func pruneCompletedEventAnswers(ctx context.Context, db *sql.DB, days int) {
 		)
 	`
 	runBoundedDelete(ctx, db, "retention.answer_attempts", stmt, days)
+}
+
+// pruneScheduledDeletions hard-deletes users whose grace window has
+// passed. Each user is processed in its own transaction so a single
+// org-cascade error doesn't poison the rest of the batch. The
+// org-collapse logic mirrors the synchronous pre-grace-period flow
+// (drop the org if its last user is leaving).
+func pruneScheduledDeletions(ctx context.Context, db *sql.DB) {
+	rows, err := db.QueryContext(ctx, `
+		SELECT id, username, org_id
+		FROM users
+		WHERE scheduled_deletion_at IS NOT NULL
+		  AND scheduled_deletion_at <= now()
+		LIMIT `+strconv.Itoa(batchSize))
+	if err != nil {
+		logx.Error("retention.users.query_failed", "err", err.Error())
+		return
+	}
+	type doomed struct {
+		id       int64
+		username string
+		orgID    sql.NullInt64
+	}
+	var batch []doomed
+	for rows.Next() {
+		var d doomed
+		if err := rows.Scan(&d.id, &d.username, &d.orgID); err != nil {
+			logx.Error("retention.users.scan_failed", "err", err.Error())
+			rows.Close()
+			return
+		}
+		batch = append(batch, d)
+	}
+	rows.Close()
+	for _, d := range batch {
+		if ctx.Err() != nil {
+			return
+		}
+		hardDeleteUser(ctx, db, d.id, d.username, d.orgID)
+	}
+}
+
+func hardDeleteUser(ctx context.Context, db *sql.DB, userID int64, username string, orgID sql.NullInt64) {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		logx.Error("retention.users.tx_begin_failed", "user_id", userID, "err", err.Error())
+		return
+	}
+	defer tx.Rollback() //nolint:errcheck
+	if _, err := tx.ExecContext(ctx, `DELETE FROM users WHERE id = $1`, userID); err != nil {
+		logx.Error("retention.users.delete_failed", "user_id", userID, "err", err.Error())
+		return
+	}
+	if orgID.Valid {
+		var remaining int
+		if err := tx.QueryRowContext(ctx,
+			`SELECT COUNT(*) FROM users WHERE org_id = $1`, orgID.Int64).Scan(&remaining); err != nil {
+			logx.Error("retention.users.org_count_failed", "user_id", userID, "err", err.Error())
+			return
+		}
+		if remaining == 0 {
+			if _, err := tx.ExecContext(ctx,
+				`DELETE FROM organizations WHERE id = $1`, orgID.Int64); err != nil {
+				logx.Error("retention.users.org_cascade_failed", "user_id", userID, "err", err.Error())
+				return
+			}
+			logx.Info("retention.users.org_collapsed", "org_id", orgID.Int64)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		logx.Error("retention.users.commit_failed", "user_id", userID, "err", err.Error())
+		return
+	}
+	logx.Info("retention.users.deleted", "user_id", userID, "username", username)
 }
 
 func pruneAuthEvents(ctx context.Context, db *sql.DB, days int) {

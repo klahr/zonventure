@@ -1067,7 +1067,17 @@ function buildHeader(data) {
     h('div', { class: 'title' },
       h('h1', {}, data.adventure_title || t('Event')),
       h('div', { class: 'slug' },
-        h('span', { class: `state-pill ${data.state}` }, h('span', { class: 'dot' }), t(data.state || '')),
+        h('span', { class: `state-pill ${data.state}` },
+          h('span', { class: 'dot' }),
+          // Glyph alongside the colour-coded dot so a colourblind
+          // viewer (or a TV with a faulty colour calibration) still
+          // gets a non-colour cue for the event state.
+          (data.state === 'running' ? '▶ '
+            : data.state === 'paused'    ? '⏸ '
+            : data.state === 'completed' ? '✓ '
+            : data.state === 'scheduled' ? '⏰ '
+            : ''),
+          t(data.state || '')),
         ' · ', data.adventure_slug),
     ),
     h('div', { class: 'clockwrap' },

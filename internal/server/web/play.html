@@ -30,7 +30,10 @@
     --border:        #c6d2e1;
     --border-soft:   #c6d2e166;
     --text:          var(--ink);
-    --muted:         #6b7f96;
+    /* Bumped from #6b7f96 to a darker shade so muted text still
+       hits AA contrast under bright outdoor light, where glare
+       effectively lifts the page background a step. */
+    --muted:         #4f6478;
     --shadow:        0 1px 4px #00000014, 0 2px 8px #00000012;
     --radius:        12px;
     --radius-sm:     8px;
@@ -95,7 +98,13 @@
     font-size: 16px; line-height: 1.5;
     color: var(--text); background: var(--bg);
     margin: 0;
-    padding: 1rem 1rem calc(1rem + env(safe-area-inset-bottom) + 130px);
+    /* Bottom padding reserves space for the sticky submit dock + the
+       device's safe-area inset (notched phones). --dock-height is
+       updated from JS after every renderSubmitDock so a tall gated
+       dock (button + GPS freshness + help block) doesn't bury image
+       content behind itself. Falls back to 144px so a no-JS render
+       still has a sane reserve. */
+    padding: 1rem 1rem calc(1rem + env(safe-area-inset-bottom) + var(--dock-height, 144px));
     max-width: 640px; margin-left: auto; margin-right: auto;
     -webkit-font-smoothing: antialiased;
   }
@@ -341,10 +350,21 @@
     line-height: 1;
   }
   .hint-toggle-badge:empty { display: none; }
-  .hint-toggle-badge.ready { animation: hintBadgePulse 1.4s ease-in-out 2; }
+  /* Slow looped pulse on the badge while a hint is ready and unread.
+     Earlier this stopped after 2 cycles; that meant a player who
+     looked away the moment the hint unlocked never noticed. The
+     animation is gentle enough (5% scale, 3s cycle) that it's not
+     distracting once you've seen it. */
+  .hint-toggle-badge.ready { animation: hintBadgePulse 3s ease-in-out infinite; }
   @keyframes hintBadgePulse {
     0%,100% { transform: scale(1); }
-    50%     { transform: scale(1.18); }
+    50%     { transform: scale(1.12); }
+  }
+  /* Honour Reduce Motion: a never-stopping pulse violates that
+     setting unless we still it. Keep it visible (still drawing
+     attention via colour + count) but stop the animation. */
+  @media (prefers-reduced-motion: reduce) {
+    .hint-toggle-badge.ready { animation: none; }
   }
 
   /* Hint sheet: modal overlay with the revealed hint(s) and a
@@ -464,6 +484,12 @@
     padding-right: 2rem;
   }
   .welcome .who { color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: .08em; font-size: var(--ts-xs); margin-bottom: 1rem; }
+  .welcome .who-slot { color: var(--ink); }
+  .welcome .who-rename {
+    background: transparent; border: 0; padding: 0 .15rem;
+    color: var(--accent); font: inherit; text-transform: none;
+    letter-spacing: 0; cursor: pointer; text-decoration: underline;
+  }
   .welcome ul { padding-left: 1.1rem; margin: 1rem 0; }
   .welcome li { margin: .35rem 0; }
   .welcome .cta { margin-top: 1rem; }
@@ -506,6 +532,13 @@
     font-size: clamp(2.4rem, 10vw, 3.6rem);
     font-variant-numeric: tabular-nums;
     line-height: 1;
+  }
+  /* When there's no scheduled time, "Ready" stands in for the
+     countdown digits — same prominence, but in the muted/ink
+     palette so the player reads it as a state label rather than a
+     ticking clock. */
+  .prestart-card .digits.soft {
+    color: var(--text); font-size: clamp(1.6rem, 6vw, 2.4rem);
   }
   .prestart-card small {
     display: block; color: var(--muted); font-size: .8rem;
@@ -660,6 +693,14 @@
     color: #fff; font-size: clamp(1.4rem, 5vw, 2rem);
     margin-top: .9rem; letter-spacing: .01em;
     opacity: 0; animation: celebrateRise .3s .45s ease forwards;
+  }
+  /* Wrong-answer guidance subtitle. Lives below the head; smaller
+     and softer so it reads as advice, not as the verdict itself. */
+  .rebuff .sub {
+    color: #fff; opacity: 0;
+    font-size: var(--ts-sm); margin-top: .35rem;
+    text-shadow: 0 1px 2px rgba(0,0,0,.45);
+    animation: celebrateRise .3s .6s ease forwards;
   }
 
   /* ---------- Hamburger menu + drawer ----------
@@ -1014,6 +1055,32 @@
     margin: .4rem 0; line-height: 1.45;
   }
   .gps-help button.secondary { margin-top: .15rem; }
+  /* Geolocation consent preamble — a fixed-position card shown the
+     first time we'd ask the browser for GPS, so the player sees the
+     explanation before the system permission prompt fires. */
+  .geo-consent-back {
+    position: fixed; inset: 0;
+    background: rgba(0, 0, 0, .35);
+    display: flex; align-items: flex-end; justify-content: center;
+    z-index: 100;
+    padding: 1rem;
+  }
+  .geo-consent-card {
+    background: var(--surface); color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 1.25rem;
+    max-width: 28rem; width: 100%;
+    margin-bottom: env(safe-area-inset-bottom);
+  }
+  .geo-consent-card h2 { margin: 0 0 .5rem; font-size: 1.1rem; }
+  .geo-consent-card p { margin: .35rem 0; font-size: var(--ts-sm); line-height: 1.5; }
+  .geo-consent-card ul { margin: .4rem 0 .6rem 1.2rem; font-size: var(--ts-sm); }
+  .geo-consent-card .row {
+    display: flex; gap: .5rem; margin-top: .9rem; justify-content: flex-end;
+  }
+  .geo-consent-card .row button { padding: .55rem 1rem; }
 </style>
 </head>
 <body>
@@ -1212,6 +1279,18 @@ function connectWS() {
       onAnswerResult(msg.data);
     } else if (msg.kind === 'answer_error') {
       handleAnswerError(msg.data || {});
+    } else if (msg.kind === 'removed') {
+      // Arranger deleted this team mid-event. Stop polling, kill the
+      // submit dock, and render an explanatory card so the player
+      // doesn't loop on a generic "open your magic link" prompt.
+      if (gpsWatchID !== null && navigator.geolocation) {
+        try { navigator.geolocation.clearWatch(gpsWatchID); } catch { /* ignore */ }
+        gpsWatchID = null;
+      }
+      if (pingTimer !== null) { clearInterval(pingTimer); pingTimer = null; }
+      hideSubmitDock();
+      try { ws.close(); } catch { /* ignore */ }
+      app.replaceChildren(buildTeamRemovedCard());
     }
   };
   ws.onclose = (ev) => {
@@ -1261,9 +1340,9 @@ function handleAnswerError(d) {
     const setText = () => {
       if (!submitResultEl) return;
       submitResultEl.className = 'result err';
-      submitResultEl.textContent = secsLeft > 0
+      submitResultEl.textContent = (secsLeft > 0 ? '⏳ ' : '✓ ') + (secsLeft > 0
         ? t('Too many attempts. Try again in {{n}}s.', { n: secsLeft })
-        : t('Try again now.');
+        : t('Try again now.'));
     };
     setSubmitDisabled(true);
     setText();
@@ -1291,7 +1370,7 @@ function handleAnswerError(d) {
     if (wasGated) rebuff();
     if (submitResultEl) {
       submitResultEl.className = 'result err';
-      submitResultEl.textContent = t("You're not at the location yet — move closer and try again.");
+      submitResultEl.textContent = '📍 ' + t("You're not at the location yet — move closer and try again.");
     }
     return;
   }
@@ -1302,7 +1381,7 @@ function handleAnswerError(d) {
   if (wasGated) rebuff();
   if (submitResultEl) {
     submitResultEl.className = 'result err';
-    submitResultEl.textContent = d.error || t('error {{status}}', { status: status || '' });
+    submitResultEl.textContent = '⚠ ' + (d.error || t('error {{status}}', { status: status || '' }));
   }
 }
 
@@ -1475,6 +1554,85 @@ const PREFER_LAST_MAX_AGE_MS = 20_000;
 //   3 — timeout
 let gpsErrorCode = 0;
 
+// Geolocation consent preamble. Shows a card explaining what we
+// collect and why before the browser's permission prompt fires —
+// without it the OS prompt is cold and many players reflex-deny.
+// The choice persists in localStorage so a reload doesn't re-prompt.
+//   - 'granted'  → startGPS proceeds as today
+//   - 'declined' → startGPS is a no-op; the GPS-help dock surfaces a
+//                   "permission denied" recovery path with a button
+//                   that clears the local choice and re-shows this
+//   - unset      → show this card and gate startGPS on the answer
+const GEO_CONSENT_KEY = 'zv-geo-consent';
+
+function geoConsentStatus() {
+  try { return localStorage.getItem(GEO_CONSENT_KEY) || 'unset'; }
+  catch { return 'unset'; }
+}
+
+function clearGeoConsent() {
+  try { localStorage.removeItem(GEO_CONSENT_KEY); } catch { /* ignore */ }
+}
+
+let geoConsentHost = null;
+function showGeoConsent() {
+  return new Promise((resolve) => {
+    // Reuse a single host element so a rapid re-call doesn't stack
+    // multiple cards on top of each other.
+    if (geoConsentHost && geoConsentHost.isConnected) return;
+    const back = document.createElement('div');
+    back.className = 'geo-consent-back';
+    geoConsentHost = back;
+    const settle = (choice) => {
+      try { localStorage.setItem(GEO_CONSENT_KEY, choice); } catch { /* ignore */ }
+      back.remove();
+      geoConsentHost = null;
+      resolve(choice);
+    };
+    const card = document.createElement('div');
+    card.className = 'geo-consent-card';
+    card.setAttribute('role', 'dialog');
+    card.setAttribute('aria-modal', 'true');
+    card.innerHTML = '';
+    const h2 = document.createElement('h2');
+    h2.textContent = t('Use your location?');
+    const lead = document.createElement('p');
+    lead.textContent = t('This game uses GPS to check that you reach each puzzle\'s location and to show your team\'s position to the arranger.');
+    const ul = document.createElement('ul');
+    [
+      t('Your latitude / longitude is sent while the event runs.'),
+      t('It\'s deleted automatically after the event (within 30 days).'),
+      t('It\'s never sold or shared with third parties.'),
+    ].forEach((line) => {
+      const li = document.createElement('li');
+      li.textContent = line;
+      ul.append(li);
+    });
+    const note = document.createElement('p');
+    const noteSpan = document.createElement('span');
+    noteSpan.textContent = t('You can change your mind any time. See ');
+    const link = document.createElement('a');
+    link.href = '/privacy'; link.target = '_blank'; link.rel = 'noopener';
+    link.textContent = t('privacy policy');
+    note.append(noteSpan, link, document.createTextNode('.'));
+    const row = document.createElement('div');
+    row.className = 'row';
+    const decline = document.createElement('button');
+    decline.type = 'button'; decline.className = 'secondary';
+    decline.textContent = t('Not now');
+    decline.addEventListener('click', () => settle('declined'));
+    const allow = document.createElement('button');
+    allow.type = 'button';
+    allow.textContent = t('Use my location');
+    allow.addEventListener('click', () => settle('granted'));
+    row.append(decline, allow);
+    card.append(h2, lead, ul, note, row);
+    back.append(card);
+    document.body.append(back);
+    setTimeout(() => allow.focus(), 30);
+  });
+}
+
 function startGPS() {
   if (!navigator.geolocation) {
     gpsError = t('geolocation not supported on this device');
@@ -1484,6 +1642,30 @@ function startGPS() {
     return;
   }
   if (gpsWatchID !== null) return;
+  // Consent gate: hold the watchPosition call until we have an
+  // explicit yes. A 'declined' surfaces the same error path as a
+  // browser-level denial (gpsErrorCode = 1) so the recovery dock copy
+  // and Retry button keep working without a second branch.
+  const status = geoConsentStatus();
+  if (status === 'declined') {
+    gpsErrorCode = 1;
+    gpsError = t('permission denied — enable location for this site');
+    lastRenderKey = null;
+    updateGateLock();
+    return;
+  }
+  if (status !== 'granted') {
+    showGeoConsent().then((choice) => {
+      if (choice === 'granted') startGPS();
+      else {
+        gpsErrorCode = 1;
+        gpsError = t('permission denied — enable location for this site');
+        lastRenderKey = null;
+        updateGateLock();
+      }
+    });
+    return;
+  }
   gpsWatchID = navigator.geolocation.watchPosition(
     (pos) => {
       gpsError = null;
@@ -1534,10 +1716,16 @@ function startGPS() {
 // the existing watch ID is important — the browser may have a stuck
 // watcher that won't fire again on its own when permission flipped
 // from denied to granted in a different app/tab.
+//
+// Tapping Retry is also the user's way to undo a prior "Not now" on
+// the consent preamble — clear the stored 'declined' so startGPS
+// shows the card again instead of immediately dropping into the
+// denied-recovery state.
 function retryGPS() {
   if (gpsWatchID !== null && navigator.geolocation) {
     try { navigator.geolocation.clearWatch(gpsWatchID); } catch { /* ignore */ }
   }
+  if (geoConsentStatus() === 'declined') clearGeoConsent();
   gpsWatchID = null;
   gpsError = null;
   gpsErrorCode = 0;
@@ -1570,6 +1758,30 @@ let currentGatedRadius = 0;
 // reactively here so a permission flip / new fix shows or hides it
 // without forcing a render() pass.
 let currentGpsHelpEl = null;
+// currentGpsFreshnessEl is the small "GPS · 3s ago / ±15m" line
+// shown on gated puzzles. Lets a stuck player diagnose why the gate
+// isn't unlocking (stale fix, wide accuracy) without a separate tap.
+let currentGpsFreshnessEl = null;
+
+// renderGpsFreshness ticks the staleness label. Called on every fix
+// update AND once per second by the per-dock ticker so "3s ago"
+// keeps counting up while the player isn't moving.
+function renderGpsFreshness() {
+  if (!currentGpsFreshnessEl) return;
+  if (gpsErrorCode || !lastFix) {
+    currentGpsFreshnessEl.textContent = '';
+    return;
+  }
+  const ageSec = Math.max(0, Math.round((Date.now() - (lastFix.ts || 0)) / 1000));
+  const acc = Math.round(lastFix.accuracy);
+  const ageLabel = ageSec < 5
+    ? t('just now')
+    : ageSec < 60
+      ? t('{{n}}s ago', { n: ageSec })
+      : t('{{n}}m ago', { n: Math.round(ageSec / 60) });
+  currentGpsFreshnessEl.textContent = t('GPS · {{age}} · ±{{acc}} m',
+    { age: ageLabel, acc });
+}
 
 // updateGateLock reflects the latest fix onto the gated advance
 // button: disabled with a "waiting for lock" label until the fix is
@@ -1592,6 +1804,7 @@ function updateGateLock() {
     currentGatedButton.textContent = t('GPS ±{{acc}} m — too imprecise',
       { acc: Math.round(lastFix.accuracy) });
   }
+  renderGpsFreshness();
   renderGpsHelp();
 }
 
@@ -1625,7 +1838,13 @@ function renderGpsHelp() {
   currentGpsHelpEl.append(help, retry);
 }
 
+// lastState mirrors the most recent snapshot we rendered. Read only
+// after render() has run at least once. Used by handlers that fire
+// outside the render path (rebuff guidance copy, etc.) and would
+// otherwise have to take state by argument from many callers.
+let lastState = null;
 function render(s) {
+  lastState = s;
   applyColors(s.colors);
   const key = JSON.stringify({
     status: s.status, pi: s.page_index, pc: s.page_count,
@@ -1677,7 +1896,7 @@ function render(s) {
   maybeShowWelcome(s);
 
   if (s.status === 'waiting')  { hideSubmitDock(); app.append(buildWaitingCard(s)); return; }
-  if (s.status === 'paused')   { hideSubmitDock(); app.append(el('p', {}, t('The arranger paused the event. Stand by.'))); return; }
+  if (s.status === 'paused')   { hideSubmitDock(); app.append(buildPausedCard()); return; }
   if (s.status === 'completed'){ hideSubmitDock(); renderCompleted(s); return; }
   if (s.status === 'cancelled' || s.status === 'canceled') {
     hideSubmitDock();
@@ -1715,29 +1934,27 @@ function render(s) {
 // puzzles. When the puzzle has no accept list (state.no_answer) the
 // dock collapses to a single Continue button that tells the server to
 // advance without an answer-match attempt.
-// hintStorageKey scopes the revealed-count to a single player on a
-// single puzzle. Using the magic-link slot cookie isn't feasible from
-// JS (it's HttpOnly), but the combination of slot name + adventure +
-// page index is unique for our use case and stable across reloads.
-function hintStorageKey(s) {
-  return `zv_hints_${s.adventure_slug || ''}_${s.slot_name || ''}_${s.page_index || 0}`;
-}
-
 // previewHintCounts is an in-memory per-page counter used ONLY in
-// preview mode. localStorage would persist the reveal state across
-// preview reloads and surprise authors who expect a clean slate
-// every time they reopen the editor preview. A module-level Map
-// resets automatically on page navigation / reload.
+// preview mode. The live game persists reveals server-side via
+// /api/play/hint; a module-level Map keeps the preview's clean-slate
+// behaviour without touching localStorage.
 const previewHintCounts = new Map();
+
+// localHintCount mirrors the server's count between WS pushes so a
+// reveal click immediately repaints the sheet rather than waiting
+// for the next state push. Keyed by page_index because pages can
+// change underneath us when a team-mate finishes a puzzle.
+const localHintCount = new Map();
 
 function hintsRevealedFor(s) {
   if (s && s.preview) {
     return previewHintCounts.get(s.page_index || 0) || 0;
   }
-  try {
-    const n = parseInt(localStorage.getItem(hintStorageKey(s)) || '0', 10);
-    return Number.isFinite(n) && n > 0 ? n : 0;
-  } catch { return 0; }
+  const local = localHintCount.get(s.page_index || 0);
+  const server = s.hints_revealed || 0;
+  // Keep whichever is higher: server is authoritative post-WS-push,
+  // but a just-clicked Reveal might not yet have pulled state back.
+  return Math.max(local || 0, server);
 }
 
 function setHintsRevealed(s, n) {
@@ -1745,7 +1962,26 @@ function setHintsRevealed(s, n) {
     previewHintCounts.set(s.page_index || 0, n);
     return;
   }
-  try { localStorage.setItem(hintStorageKey(s), String(n)); } catch {}
+  localHintCount.set(s.page_index || 0, n);
+}
+
+// revealNextHint POSTs to the server and updates the local mirror.
+// Returns the new count (or null on failure so the caller can keep
+// the sheet open with the previous state intact).
+async function revealNextHint(s, hintIndex) {
+  if (s && s.preview) {
+    const next = (previewHintCounts.get(s.page_index || 0) || 0) + 1;
+    previewHintCounts.set(s.page_index || 0, next);
+    return next;
+  }
+  const r = await api('/api/player/hint', {
+    method: 'POST', body: JSON.stringify({ hint_index: hintIndex }),
+  });
+  if (r.status === 200 && typeof r.body?.hints_revealed === 'number') {
+    setHintsRevealed(s, r.body.hints_revealed);
+    return r.body.hints_revealed;
+  }
+  return null;
 }
 
 // renderHintButton builds the small "?" affordance shown in the
@@ -1836,9 +2072,19 @@ function openHintSheet(s) {
       if (remaining <= 0) {
         const cta = el('button', { class: 'hint-sheet-cta' },
           revealed === 0 ? t('Reveal hint') : t('Reveal next hint'));
-        cta.addEventListener('click', () => {
-          revealed += 1;
-          setHintsRevealed(s, revealed);
+        cta.addEventListener('click', async () => {
+          const targetIndex = revealed;
+          cta.disabled = true;
+          const n = await revealNextHint(s, targetIndex);
+          cta.disabled = false;
+          if (n === null) {
+            // Server refused (event paused mid-reveal, etc.). Surface
+            // a soft hint without aborting the sheet — the next state
+            // push or a retry will recover.
+            cta.textContent = t('Couldn\'t reveal — tap to retry');
+            return;
+          }
+          revealed = n;
           drawBody();
         });
         sheet.append(cta);
@@ -1891,6 +2137,26 @@ function renderSubmitDock(s) {
     const wrap = document.createElement('div');
     wrap.className = 'dock-single';
     wrap.append(button, result);
+    // GPS freshness indicator — only meaningful when the puzzle is
+    // gated, where staleness directly explains why the gate isn't
+    // unlocking. A small line under the button refreshes every
+    // second via a self-stopping ticker.
+    if (gatedUnreached) {
+      const fresh = document.createElement('p');
+      fresh.className = 'result muted';
+      fresh.style.fontSize = '.75rem';
+      fresh.style.margin = '.15rem 0 0';
+      wrap.append(fresh);
+      currentGpsFreshnessEl = fresh;
+      const tick = () => {
+        if (!fresh.isConnected) return;
+        renderGpsFreshness();
+        setTimeout(tick, 1000);
+      };
+      tick();
+    } else {
+      currentGpsFreshnessEl = null;
+    }
     // Empty by default — populated by renderGpsHelp when a permission /
     // signal error lands. Outside .dock-single so its full-width retry
     // button doesn't squeeze the result line.
@@ -1990,7 +2256,15 @@ function renderSubmitDock(s) {
       input.value = '';
     }
   });
+  // Push the dock's measured height into the body padding reserve.
+  // RAF defers the read until after layout settles so a freshly-
+  // mounted dock isn't measured as 0×0.
+  requestAnimationFrame(updateDockHeightVar);
 }
+
+// One-shot listener: orientation changes / browser-chrome auto-hide
+// resize the viewport without re-rendering the dock, so re-measure.
+window.addEventListener('resize', () => requestAnimationFrame(updateDockHeightVar));
 
 // handlePreviewSubmit routes a preview answer through the same
 // onAnswerResult the real player uses — arrangers see the real celebrate
@@ -2080,8 +2354,34 @@ function onAnswerResult(r) {
     // no celebrate, just the state frame that follows.
     if (mode !== 'silent') celebrate(r.completed);
   } else {
-    rebuff();
+    // Wrong-answer guidance: nudge toward a hint when one is unlocked
+    // but not yet revealed. Avoids "Not quite" being the only feedback
+    // a stuck team gets.
+    rebuff(wrongAnswerGuidance(lastState));
+    // Return focus to the input + select all so the player can
+    // immediately retype without a tap. Mobile keyboards re-open
+    // automatically on focus, which is the desired flow.
+    if (submitInputEl) {
+      submitInputEl.focus();
+      try { submitInputEl.select(); } catch { /* element type may not support */ }
+    }
   }
+}
+
+// wrongAnswerGuidance returns a short hint-toward-hint message when
+// the puzzle has unrevealed unlocked hints, or '' otherwise. The
+// rebuff overlay subtitles itself with whichever string this returns.
+function wrongAnswerGuidance(s) {
+  if (!s || !Array.isArray(s.hints) || s.hints.length === 0) return '';
+  const revealed = hintsRevealedFor(s);
+  if (revealed >= s.hints.length) return '';
+  const elapsed = Math.max(0, Math.floor((Date.now() - hintTickerAnchor) / 1000));
+  const next = s.hints[revealed];
+  const remaining = Math.max(0, (next.unlocks_in_seconds || 0) - elapsed);
+  if (remaining > 0) return '';
+  return revealed === 0
+    ? t('Stuck? Tap the ? for a hint.')
+    : t('Stuck? There\'s another hint ready.');
 }
 
 // celebrate renders a full-screen success overlay with a popped ring, a
@@ -2090,8 +2390,17 @@ function onAnswerResult(r) {
 function celebrate(finished) {
   const overlay = document.createElement('div');
   overlay.className = 'celebrate';
+  // Screen-reader path: head + sub are already on screen, but without
+  // role/aria-live the overlay's celebratory animation is silent for
+  // a non-sighted player. role="status" with polite live region
+  // queues "Correct! Next puzzle coming up…" after whatever the
+  // reader was already saying.
+  overlay.setAttribute('role', 'status');
+  overlay.setAttribute('aria-live', 'polite');
+  overlay.setAttribute('aria-atomic', 'true');
   const ring = document.createElement('div');
   ring.className = 'ring';
+  ring.setAttribute('aria-hidden', 'true');
   ring.innerHTML = '<svg class="check" viewBox="0 0 100 100"><path d="M22 52 l18 18 l38 -38"/></svg>';
   const head = document.createElement('div');
   head.className = 'head';
@@ -2127,11 +2436,15 @@ function celebrate(finished) {
 // so the player isn't punished by a long overlay between tries. pointer
 // events stay off, so the submit dock is usable again the instant the
 // overlay fades.
-function rebuff() {
+function rebuff(guidance) {
   const overlay = document.createElement('div');
   overlay.className = 'rebuff';
+  overlay.setAttribute('role', 'status');
+  overlay.setAttribute('aria-live', 'polite');
+  overlay.setAttribute('aria-atomic', 'true');
   const disc = document.createElement('div');
   disc.className = 'disc';
+  disc.setAttribute('aria-hidden', 'true');
   disc.innerHTML = '<svg class="cross" viewBox="0 0 100 100">'
     + '<path d="M28 28 L72 72"/><path d="M72 28 L28 72"/>'
     + '</svg>';
@@ -2139,6 +2452,12 @@ function rebuff() {
   head.className = 'head';
   head.textContent = t('Not quite');
   overlay.append(disc, head);
+  if (guidance) {
+    const sub = document.createElement('div');
+    sub.className = 'sub';
+    sub.textContent = guidance;
+    overlay.append(sub);
+  }
   document.body.append(overlay);
   const total = 900;
   setTimeout(() => overlay.classList.add('gone'), total);
@@ -2203,6 +2522,45 @@ function showWelcomeDialog(s, opts = {}) {
 
   const overlay = el('div', { class: 'welcome' });
   const panel = el('div', { class: 'panel' });
+  // First-join name override: arrangers often pre-set generic
+  // placeholder names ("Player 3"). The welcome dialog is the
+  // natural place to let the player introduce themselves before
+  // they start playing. Renames flow through /api/player/me/name
+  // and Hub-publish so team-mates and the arranger console see the
+  // new name on the next state push.
+  const whoLine = el('div', { class: 'who' });
+  const renderWho = (slotName) => {
+    whoLine.replaceChildren();
+    const team = s.team_name || t('your team');
+    const slot = slotName || s.slot_name || '';
+    if (slot) {
+      whoLine.append(
+        document.createTextNode(team + ' · '),
+        el('span', { class: 'who-slot' }, slot),
+        document.createTextNode(' '),
+        (() => {
+          const renameBtn = document.createElement('button');
+          renameBtn.type = 'button';
+          renameBtn.className = 'who-rename';
+          renameBtn.textContent = t('rename');
+          renameBtn.addEventListener('click', async () => {
+            const next = (prompt(t('Choose your name:'), slot) || '').trim();
+            if (!next || next === slot) return;
+            const r = await api('/api/player/me/name', {
+              method: 'POST', body: JSON.stringify({ name: next }),
+            });
+            if (r.status === 200 && r.body?.name) {
+              s.slot_name = r.body.name;
+              renderWho(r.body.name);
+            }
+          });
+          return renameBtn;
+        })());
+    } else {
+      whoLine.textContent = team;
+    }
+  };
+  renderWho();
   panel.append(
     el('button', {
       class: 'panel-close', type: 'button',
@@ -2210,7 +2568,7 @@ function showWelcomeDialog(s, opts = {}) {
       on: { click: dismiss },
     }, '×'),
     el('h2', {}, s.adventure_title || t('Adventure')),
-    el('div', { class: 'who' }, `${s.team_name || t('your team')}`));
+    whoLine);
   // If the adventure author supplied intro text, use it verbatim
   // instead of the built-in welcome paragraph + tips list. Newlines
   // are preserved via the CSS pre-wrap on .intro-custom.
@@ -2235,6 +2593,34 @@ function showWelcomeDialog(s, opts = {}) {
     if (e.target === overlay) dismiss();
   });
   document.body.append(overlay);
+}
+
+// buildPausedCard distinguishes a mid-event pause from the pre-start
+// waiting state. The waiting card carries a countdown / "Ready"
+// label in the accent colour; pause uses a warning-toned glyph + a
+// different headline so a player glancing at the screen doesn't
+// confuse "we haven't started yet" with "we paused 3 minutes in".
+function buildPausedCard() {
+  const card = el('div', { class: 'prestart-card paused' });
+  card.append(
+    el('div', { class: 'banner' }, t('Paused')),
+    el('div', { class: 'digits soft', style: 'color:var(--gold,#c98a14)' }, '⏸'),
+    el('small', {}, t('The arranger paused the event. Stand by.')));
+  return card;
+}
+
+// buildTeamRemovedCard is shown when the server pushes a "removed"
+// frame — the team this slot belongs to was deleted mid-event by
+// the arranger. Distinct from the slot-expired and event-cancelled
+// cards because the recovery path is different: there's no link to
+// retry, the player has to ask the arranger to be re-added.
+function buildTeamRemovedCard() {
+  const card = el('div', { class: 'prestart-card' });
+  card.append(
+    el('div', { class: 'banner' }, t('Team removed')),
+    el('div', { class: 'digits soft' }, '⊘'),
+    el('small', {}, t('The arranger removed your team. Ask them to add you back if this was a mistake.')));
+  return card;
 }
 
 // buildWaitingCard renders the main-content view for a scheduled run.
@@ -2266,8 +2652,12 @@ function buildWaitingCard(s) {
     };
     setTimeout(tick, 1000);
   } else {
-    card.append(el('div', { class: 'digits' }, '—'),
-      el('small', {}, t('waiting for the arranger')));
+    // No scheduled_at means the arranger left the start time blank
+    // and will press Start when everyone's gathered. The em-dash
+    // placeholder is replaced with explanatory copy so the player
+    // doesn't read the empty digits as "something is broken".
+    card.append(el('div', { class: 'digits soft' }, t('Ready')),
+      el('small', {}, t('The event hasn\'t started yet. The arranger will start it when everyone\'s here.')));
   }
   return card;
 }
@@ -2351,8 +2741,19 @@ function statBox(value, label) {
 
 function formatDistance(m) {
   if (!Number.isFinite(m) || m <= 0) return '—';
-  if (m < 1000) return `${Math.round(m)} m`;
-  return `${(m / 1000).toFixed(m >= 10000 ? 0 : 1)} km`;
+  // Locale-aware decimal separator: a Swedish player sees "1,2 km",
+  // an English one sees "1.2 km". The unit suffix stays explicit
+  // because km / m abbreviations are consistent across the locales
+  // we ship.
+  if (m < 1000) {
+    return new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 })
+      .format(Math.round(m)) + ' m';
+  }
+  const km = m / 1000;
+  const digits = m >= 10000 ? 0 : 1;
+  return new Intl.NumberFormat(undefined, {
+    minimumFractionDigits: digits, maximumFractionDigits: digits,
+  }).format(km) + ' km';
 }
 
 function formatDuration(sec) {
@@ -2578,6 +2979,20 @@ function showDebugSummary() {
 function hideSubmitDock() {
   const dock = document.getElementById('submit-dock');
   if (dock) dock.remove();
+  document.documentElement.style.removeProperty('--dock-height');
+}
+
+// updateDockHeightVar measures the rendered dock and pushes its
+// height into a CSS custom property. The body's bottom padding reads
+// that property so a tall gated dock (button + GPS freshness + help
+// block) doesn't bury images behind itself.
+function updateDockHeightVar() {
+  const dock = document.getElementById('submit-dock');
+  if (!dock) return;
+  const h = dock.getBoundingClientRect().height;
+  if (h > 0) {
+    document.documentElement.style.setProperty('--dock-height', Math.ceil(h) + 'px');
+  }
 }
 
 // Multi-tab guard. Two browser tabs sharing the same slot cookie can

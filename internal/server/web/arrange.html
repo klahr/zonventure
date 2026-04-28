@@ -707,8 +707,10 @@ textarea { min-height: 80px; resize: vertical; font-family: ui-monospace, monosp
   color: var(--ink);
   min-height: 2.5rem;
 }
-/* Subtle pencil affordance in the corner, visible on hover so authors
-   discover that the rendered markdown is clickable to edit. The icon
+/* Pencil affordance in the corner so authors discover that the
+   rendered markdown is clickable to edit. Always faintly visible
+   (touch devices have no hover state) and brightens on hover/focus
+   for the same discoverability cue mouse users expect. The icon
    itself is just a unicode pencil — no dependency, no SVG to localise. */
 .md-field-view::after {
   content: '✎';
@@ -716,11 +718,12 @@ textarea { min-height: 80px; resize: vertical; font-family: ui-monospace, monosp
   top: .35rem; right: .55rem;
   font-size: var(--ts-sm);
   color: var(--muted);
-  opacity: 0;
+  opacity: .35;
   pointer-events: none;
   transition: opacity .15s ease;
 }
-.md-field:hover .md-field-view::after { opacity: .55; }
+.md-field:hover .md-field-view::after,
+.md-field:focus-within .md-field-view::after { opacity: .8; }
 .md-field-view p { margin: 0 0 .5rem; }
 .md-field-view p:last-child { margin-bottom: 0; }
 .md-field-view ul, .md-field-view ol { padding-left: 1.25rem; margin: .25rem 0 .5rem; }
@@ -1282,6 +1285,23 @@ textarea { min-height: 80px; resize: vertical; font-family: ui-monospace, monosp
 }
 .verify-banner strong { color: #8a5a1a; }
 .verify-banner .btn { white-space: nowrap; }
+/* Deletion-pending banner uses the same shape as the verify banner
+   but a red palette so the urgency is unambiguous. Shown until the
+   user cancels deletion or the grace window expires. */
+.delete-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin: 0 0 1rem;
+  padding: .55rem .85rem;
+  border-radius: var(--radius-sm);
+  background: rgba(220, 70, 70, .12);
+  border: 1px solid rgba(220, 70, 70, .4);
+  font-size: .92rem;
+}
+.delete-banner strong { color: #a02a2a; }
+.delete-banner .btn { white-space: nowrap; }
 
 /* Account-settings cards: stacked in one column, comfortable padding,
    tight enough that the page reads as a list of related actions
@@ -1829,9 +1849,12 @@ function toast(msg, kind = '') {
     'aria-atomic': 'true',
   }, msg);
   document.getElementById('toasts').append(el);
-  // Errors hang around longer — by the time you've absorbed an error,
-  // 2.5s has typically elapsed already. Successes stay brief.
-  const dwell = isErr ? 5500 : 2500;
+  // Errors hang around longer; successes scale with message length so
+  // a short "Saved" still feels brisk while a 60-character "Email
+  // verified — you can now schedule events…" actually has time to be
+  // read before fading.
+  const okDwell = (typeof msg === 'string' && msg.length > 40) ? 5000 : 3500;
+  const dwell = isErr ? 5500 : okDwell;
   setTimeout(() => { el.style.transition = 'opacity .3s'; el.style.opacity = '0'; }, dwell);
   setTimeout(() => el.remove(), dwell + 400);
 }
@@ -2501,6 +2524,7 @@ function renderShell() {
       // sidebar entries for what's essentially one catalog was noise.
       ['#library',       t('Library'),       ICONS.map],
       ['#admins',        t('Admins'),        ICONS.user],
+      ['#purchases',     t('Purchases'),     ICONS.coins],
       ['#simulator',     t('Simulator'),     ICONS.play],
       ['#audit',         t('Audit'),         ICONS.shield],
       ['#logs',          t('Logs'),          ICONS.terminal],
@@ -2515,6 +2539,7 @@ function renderShell() {
       ['#dashboard',  t('Dashboard'),  ICONS.dashboard],
       ['#adventures', t('Adventures'), ICONS.map],
       ['#events',     t('Events'),     ICONS.schedule],
+      ['#purchases',  t('Purchases'),  ICONS.coins],
       ['#simulator', t('Simulator'), ICONS.play],
     ];
     if (isOrgAdmin) {
@@ -2608,13 +2633,20 @@ function renderShell() {
     ? renderVerifyBanner(state.me.email)
     : null;
 
+  // Deletion-pending banner: outranks the verify banner because it
+  // affects the entire account. Shown whenever scheduled_deletion_at
+  // is on /whoami; the cancel button clears the timestamp.
+  const deleteBanner = (state.me && state.me.scheduled_deletion_at)
+    ? renderDeletionBanner(state.me.scheduled_deletion_at)
+    : null;
+
   // Skip-link is the first focusable element on the page so a
   // keyboard user lands on it before crawling through the sidebar +
   // topbar. Hidden until focused; jumps focus to <main> on click.
   const skip = h('a', { class: 'skip-link', href: '#main' }, t('Skip to main content'));
   return h('div', { class: 'app' },
     skip, sidebar, topbar,
-    h('main', { class: 'content', id: 'main', tabindex: '-1' }, verifyBanner,
+    h('main', { class: 'content', id: 'main', tabindex: '-1' }, deleteBanner, verifyBanner,
       h('div', { id: 'view' })),
     backdrop);
 }
@@ -2636,6 +2668,37 @@ function renderVerifyBanner(email) {
         else toastErr(r.body?.error || t('Could not resend; try again later.'));
       } },
     }, t('Resend email')),
+  );
+  return banner;
+}
+
+// renderDeletionBanner renders a persistent red banner whenever the
+// caller's account is in the 7-day grace window. Cancel clears
+// scheduled_deletion_at and refreshes /whoami so the banner removes
+// itself without a reload.
+function renderDeletionBanner(scheduledISO) {
+  const when = fmtLocal(scheduledISO);
+  const banner = h('div', { class: 'delete-banner' },
+    h('div', {},
+      h('strong', {}, t('Account deletion scheduled')),
+      ' — ',
+      h('span', { class: 'muted' },
+        t('Your account will be permanently deleted on {{when}}. You can cancel any time before then.', { when }))),
+    h('button', {
+      class: 'btn small',
+      on: { click: async (e) => {
+        e.target.disabled = true;
+        const r = await api('/api/admin/me/cancel-deletion', { method: 'POST' });
+        e.target.disabled = false;
+        if (r.status === 204) {
+          toastOk(t('Account-deletion cancelled.'));
+          await refreshMe();
+          render();
+        } else {
+          toastErr(r.body?.error || t('Could not cancel — try again.'));
+        }
+      } },
+    }, t('Cancel deletion')),
   );
   return banner;
 }
@@ -2900,7 +2963,7 @@ async function viewArrangerDashboard(view) {
         },
           h('div', { class: 'row between' },
             h('strong', {}, runLabel(r)),
-            h('span', { class: 'pill ' + pillClassForState(r.state) }, t(r.state || ''))),
+            h('span', { class: 'pill ' + pillClassForState(r.state) }, stateGlyph(r.state) + t(r.state || ''))),
           h('p', { class: 'muted', style: 'font-size:.8rem; margin:.1rem 0 .3rem' },
             r.adventure_title || r.adventure_slug),
           h('p', { class: 'muted', style: 'font-size:.85rem; margin:0' },
@@ -2954,10 +3017,14 @@ function buildDashboardSetup({ mineAdvs, unusedAssigns }) {
     h('ol', { style: 'list-style:none; padding:0; margin:0' },
       stepDone(haveAdvOrAssignment,
         t('Pick an adventure — browse the Store or create your own'),
-        t('Go'), () => nav('#store')),
+        // Most first-time arrangers want to make their own adventure;
+        // the wording leaves browsing as a secondary path (one click
+        // away in the sidebar). The CTA jumps straight into the
+        // create-adventure modal so the next click is productive.
+        t('Create'), () => openCreateAdventure()),
       stepDone(unusedAssigns.length > 0,
         t('Have team slots ready — an assignment lets you schedule an event'),
-        t('Go'), () => nav('#store')),
+        t('Browse store'), () => nav('#store')),
       stepDone(false,
         t('Schedule an event, add teams, share their links — and start!'),
         unusedAssigns.length > 0 ? t('Schedule') : null,
@@ -3119,8 +3186,8 @@ async function viewAdventures(view) {
       // doesn't change anything, so don't display a misleading pill.
       adv.mine_to_edit && !adv.org_id
         ? (adv.published
-            ? h('span', { class: 'pill success' }, t('Published'))
-            : h('span', { class: 'pill warning' }, t('Draft')))
+            ? h('span', { class: 'pill success' }, '✓ ' + t('Published'))
+            : h('span', { class: 'pill warning' }, '✎ ' + t('Draft')))
         : null,
       !adv.mine_to_edit && adv.shared ? h('span', { class: 'pill accent' }, t('Shared')) : null,
       bucket.unused.length > 0
@@ -3311,7 +3378,7 @@ async function viewPurchases(view) {
           h('td', { class: 'mono' }, money(p.amount_cents, p.currency)),
           h('td', {}, h('span', {
             class: 'pill ' + (p.state === 'paid' ? 'success' : p.state === 'pending' ? 'warning' : p.state === 'refunded' ? 'danger' : ''),
-          }, p.state)),
+          }, stateGlyph(p.state) + p.state)),
           h('td', { class: 'muted mono', style: 'font-size:.8rem' }, p.created_at),
           h('td', { class: 'row', style: 'gap:.5rem; flex-wrap:wrap; justify-content:flex-end' },
             renderPurchaseActions(p)),
@@ -3489,6 +3556,9 @@ async function scheduleRun(source) {
     modeLater.addEventListener('change', refresh);
 
     const attest = h('input', { type: 'checkbox', required: true });
+    const attestErr = h('p', { class: 'err',
+      style: 'display:none; font-size:.85rem; margin:.15rem 0 .5rem 1.6rem' },
+      t('Please confirm the player-age statement to continue.'));
     const form = h('form', {},
       h('label', { class: 'field' }, h('span', {}, t('Name (optional)')), name),
       h('label', { style: 'display:flex; gap:.5rem; align-items:center; margin:.5rem 0' },
@@ -3496,16 +3566,27 @@ async function scheduleRun(source) {
       h('label', { style: 'display:flex; gap:.5rem; align-items:center; margin:.5rem 0' },
         modeLater, h('span', {}, t('Schedule for later'))),
       h('label', { class: 'field' }, h('span', {}, t('Auto-start at')), when),
-      h('label', { style: 'display:flex; gap:.5rem; align-items:flex-start; margin:1rem 0 .5rem; font-size:.9rem' },
+      h('label', { style: 'display:flex; gap:.5rem; align-items:flex-start; margin:1rem 0 .25rem; font-size:.9rem' },
         attest,
         h('span', {}, t('I confirm no participants under 13 will play this adventure, or I have parental consent for any who will.'))),
+      // Inline error replaces the easy-to-miss toast — sits right
+      // under the checkbox so the user's eye lands on it on the next
+      // submit attempt.
+      attestErr,
       h('div', { class: 'row end' },
         h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, t('Cancel')),
         h('button', { class: 'btn primary', type: 'submit' }, t('Create event'))),
     );
+    attest.addEventListener('change', () => {
+      if (attest.checked) attestErr.style.display = 'none';
+    });
     form.addEventListener('submit', (e) => {
       e.preventDefault();
-      if (!attest.checked) { toastErr(t('Please confirm the player-age statement first.')); return; }
+      if (!attest.checked) {
+        attestErr.style.display = '';
+        attest.focus();
+        return;
+      }
       const req = { ...baseReq, name: name.value.trim(), attest_no_minors: true };
       if (modeLater.checked) {
         if (!when.value) { toastErr(t('Pick an auto-start time')); return; }
@@ -3559,6 +3640,7 @@ async function openNewEventWizard() {
         for (const c of advPick.children) c.classList.remove('selected');
         chip.classList.add('selected');
         refreshAssignment();
+        refreshCapWarn();
       });
       return chip;
     };
@@ -3626,9 +3708,36 @@ async function openNewEventWizard() {
     const playerCount = h('input', { type: 'number', min: '1', max: '20', value: '3' });
     const teamPrefix   = h('input', { value: 'Team' });
     const playerPrefix = h('input', { value: 'Player' });
+    // Pre-flight: warn when the requested team count exceeds the
+    // capacity available — saves a server 4xx after the user spent
+    // a step on the team-prefix details. Auto-clears when the user
+    // either drops the count or picks an adventure with more slots.
+    const capWarn = h('p', { class: 'err', style: 'display:none; font-size:.85rem; margin:.25rem 0 0' });
+    const refreshCapWarn = () => {
+      const requested = Math.max(0, parseInt(teamCount.value, 10) || 0);
+      // Reusable assignment cap is the assignment's own max_teams; a
+      // fresh purchase uses buyCount, which drives both the slot
+      // count and the price total.
+      const matching = assignments.filter((x) => x.adventure_slug === pickedAdv.slug);
+      const cap = matching.length > 0
+        ? matching[0].max_teams
+        : Math.max(0, parseInt(buyCount.value, 10) || 0);
+      if (requested > cap) {
+        capWarn.textContent = t('You picked {{teams}} teams but only {{cap}} slots are available. Lower the team count or buy more slots.',
+          { teams: requested, cap });
+        capWarn.style.display = '';
+      } else {
+        capWarn.style.display = 'none';
+      }
+    };
+    teamCount.addEventListener('input', refreshCapWarn);
+    buyCount.addEventListener('input', refreshCapWarn);
 
     const submitBtn = h('button', { class: 'btn primary', type: 'submit' }, t('Create event'));
     const attestWiz = h('input', { type: 'checkbox', required: true });
+    const attestWizErr = h('p', { class: 'err',
+      style: 'display:none; font-size:.85rem; margin:.15rem 0 .5rem 1.6rem' },
+      t('Please confirm the player-age statement to continue.'));
     const form = h('form', {},
       h('h3', { style: 'margin-top:0' }, t('Adventure')),
       advPick,
@@ -3648,17 +3757,35 @@ async function openNewEventWizard() {
       h('div', { class: 'grid cols-2' },
         h('label', { class: 'field' }, h('span', {}, t('Team name prefix')), teamPrefix),
         h('label', { class: 'field' }, h('span', {}, t('Player name prefix')), playerPrefix)),
+      capWarn,
       h('h3', {}, t('Player ages')),
       h('label', { style: 'display:flex; gap:.5rem; align-items:flex-start; margin:.25rem 0; font-size:.9rem' },
         attestWiz,
         h('span', {}, t('I confirm no participants under 13 will play this adventure, or I have parental consent for any who will.'))),
+      attestWizErr,
       h('div', { class: 'row end', style: 'margin-top:1rem' },
         h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, t('Cancel')),
         submitBtn));
 
+    attestWiz.addEventListener('change', () => {
+      if (attestWiz.checked) attestWizErr.style.display = 'none';
+    });
+
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
-      if (!attestWiz.checked) { toastErr(t('Please confirm the player-age statement first.')); return; }
+      if (!attestWiz.checked) {
+        attestWizErr.style.display = '';
+        attestWiz.focus();
+        return;
+      }
+      // Re-run the capacity check at submit time too — covers the
+      // "user fixed the field then bumped it back up before clicking
+      // Create" path that an input-listener-only check would miss.
+      refreshCapWarn();
+      if (capWarn.style.display !== 'none') {
+        toastErr(capWarn.textContent);
+        return;
+      }
       submitBtn.disabled = true;
       try {
         // Resolve or mint an assignment.
@@ -3780,7 +3907,7 @@ function runsTable(rs) {
                 r.adventure_title,
                 h('div', { class: 'muted mono', style: 'font-size:.75rem' }, r.adventure_slug))
             : h('span', { class: 'muted mono' }, r.adventure_slug)),
-        h('td', {}, h('span', { class: 'pill ' + pillClassForState(r.state) }, t(r.state || ''))),
+        h('td', {}, h('span', { class: 'pill ' + pillClassForState(r.state) }, stateGlyph(r.state) + t(r.state || ''))),
         h('td', { class: 'hide-narrow' }, fmtLocal(r.scheduled_at)),
         h('td', { class: 'hide-narrow' }, fmtLocal(r.started_at)),
       ))),
@@ -3795,6 +3922,23 @@ function pillClassForState(s) {
     case 'completed': return 'success';
     default: return '';
   }
+}
+
+// stateGlyph returns a unicode prefix for a state pill so colourblind
+// users have a non-colour cue. Returned with a trailing space so the
+// callsite can concatenate unconditionally; unmapped states fall
+// through to '' (no glyph, label-only pill).
+const STATE_GLYPHS = {
+  running:   '▶',
+  scheduled: '⏰',
+  paused:    '⏸',
+  completed: '✓',
+  paid:      '✓',
+  pending:   '↻',
+  refunded:  '↩',
+};
+function stateGlyph(s) {
+  return STATE_GLYPHS[s] ? STATE_GLYPHS[s] + ' ' : '';
 }
 
 // canDo mirrors the server-side eventstate matrix: the event payload
@@ -3922,8 +4066,26 @@ function renderTeamLinksPanel(run, teams) {
       for (const m of (tm.members || [])) rows.push([tm.name, m.name || '', memberURL(m)]);
     }
     const csv = rows.map((r) => r.map(csvEscape).join(',')).join('\n');
-    try { await navigator.clipboard.writeText(csv); toastOk(t('Copied {{n}} rows', { n: rows.length - 1 })); }
-    catch { toastErr(t('Clipboard blocked — select and copy by hand')); }
+    try {
+      await navigator.clipboard.writeText(csv);
+      toastOk(t('Copied {{n}} rows', { n: rows.length - 1 }));
+      return;
+    } catch { /* fall through to download */ }
+    // Mobile Safari and locked-down enterprise browsers refuse the
+    // async clipboard write. Trigger a download as a CSV file so the
+    // arranger isn't stuck — they can re-share it via whatever
+    // sharing surface the OS gives them next.
+    try {
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = 'team-links.csv';
+      document.body.append(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+      toastOk(t('Downloaded team-links.csv — open it in your sharing app.'));
+    } catch {
+      toastErr(t('Clipboard blocked — select and copy by hand'));
+    }
   });
 
   const scroll = h('div', { class: 'tl-scroll' });
@@ -4202,7 +4364,7 @@ async function viewRunDetail(view, runID) {
       h('button', { class: 'btn ghost small', on: { click: () => nav('#events') } },
         icon(ICONS.back), t('Events')),
       titleEl, renameBtn,
-      h('span', { class: 'pill ' + pillClassForState(event.state) }, t(event.state || '')),
+      h('span', { class: 'pill ' + pillClassForState(event.state) }, stateGlyph(event.state) + t(event.state || '')),
       h('span', { class: 'muted', style: 'font-size:.85rem' },
         event.started_at
           ? t('Started {{when}}', { when: fmtLocal(event.started_at) })
@@ -4261,8 +4423,8 @@ async function viewRunDetail(view, runID) {
                   },
                     teamAvatar(tm, teamColor(tm.id, i), 26),
                     h('a', { href: '#', on: { click: (e) => { e.preventDefault(); openTeamDetail(event.id, tm, adventure, event); } } }, tm.name)),
-                  tm.completed_at ? h('span', { class: 'pill success', style: 'margin-left:.5rem' }, t('done')) : null,
-                  stuck ? h('span', { class: 'pill warning', style: 'margin-left:.5rem' }, t('stuck?')) : null),
+                  tm.completed_at ? h('span', { class: 'pill success', style: 'margin-left:.5rem' }, '✓ ' + t('done')) : null,
+                  stuck ? h('span', { class: 'pill warning', style: 'margin-left:.5rem' }, '⚠ ' + t('stuck?')) : null),
                 h('td', {},
                   h('div', { class: 'mono' },
                     adventure?.pages
@@ -4679,7 +4841,7 @@ async function openNewTeamModal(runID) {
   // arranger sees "Created 0, N failed" with no explanation.
   const existingR = await api('/api/admin/events/' + runID);
   const existingNames = new Set(((existingR.body?.teams) || []).map((x) => x.name));
-  await modal(t('Add teams'), ({ body, close }) => {
+  await modal(t('Add teams'), ({ body, close, setBeforeClose }) => {
     // Two modes share this modal. Default is "single" — fill one team
     // with specific names. "Bulk" is the tournament-setup shortcut:
     // "I have 5 teams of 3 players, generate placeholders, we'll
@@ -4743,6 +4905,13 @@ async function openNewTeamModal(runID) {
       h('div', { class: 'row end', style: 'margin-top:1rem' },
         h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, t('Cancel')),
         submitBtn));
+
+    if (typeof setBeforeClose === 'function') {
+      setBeforeClose(() => {
+        const dirty = !!(nameInput.value.trim() || memberArea.value.trim());
+        return !dirty || confirm(t('Discard the team(s) you were adding?'));
+      });
+    }
 
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -5003,8 +5172,14 @@ function renderSlotRow(teamID, slot, reload, event) {
     try { await navigator.clipboard.writeText(url); toastOk(t('Link copied')); }
     catch { urlInput.select(); document.execCommand('copy'); toastOk(t('Link copied')); }
   });
+  // Mid-event guard: rotating or removing a slot kicks the player off
+  // their current link with no second chance, so during a live event
+  // we double-check. Pre-event/scheduled changes get the old click-to-
+  // act behaviour because the arranger is still setting up.
+  const liveEvent = event && (event.state === 'running' || event.state === 'paused');
   const rotateBtn = canDo(event, 'rotate_slot_token')
     ? iconBtn('key', t('Rotate link — invalidates the old one'), async () => {
+        if (liveEvent && !confirm(t('Rotate {{slot}}\'s link mid-event? The current device will be signed out and need the new link to keep playing.', { slot: slot.name }))) return;
         const rr = await api(`/api/admin/teams/${teamID}/slots/${slot.id}/rotate`, { method: 'POST' });
         if (rr.status === 200) { toastOk(t('Link rotated')); reload(); }
         else toastErr(rr.body?.error || t('error {{status}}', { status: rr.status }));
@@ -5012,6 +5187,7 @@ function renderSlotRow(teamID, slot, reload, event) {
     : null;
   const removeBtn = canDo(event, 'remove_slot')
     ? iconBtn('trash', t('Remove slot'), async () => {
+        if (liveEvent && !confirm(t('Remove {{slot}} mid-event? Their link stops working immediately and any answers they\'ve already submitted stay with the team.', { slot: slot.name }))) return;
         const rr = await api(`/api/admin/teams/${teamID}/slots/${slot.id}`, { method: 'DELETE' });
         if (rr.status === 204) { toastOk(t('Removed')); reload(); }
         else toastErr(rr.body?.error || t('error {{status}}', { status: rr.status }));
@@ -5262,6 +5438,59 @@ async function openAddOrgMember(org) {
       });
       if (r.status === 201) { toastOk(t('User added')); close(true); renderRoute(); }
       else toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+    });
+    body.append(form);
+  });
+}
+
+// openTransferOwnership lets the calling org_admin hand the org over
+// to another member in one click — promotes the picked target to
+// org_admin and demotes the caller to org_member atomically. Useful
+// when a sole admin wants to step down without leaving the org
+// admin-less, and when an admin wants to quit the team and have
+// someone else take over the billing seat.
+async function openTransferOwnership(org) {
+  const others = (org.members || []).filter((m) => m.id !== state.me.id);
+  if (others.length === 0) return;
+  await modal(t('Transfer ownership of {{name}}', { name: org.name }), ({ body, close }) => {
+    const select = h('select', { name: 'to', required: true });
+    others.forEach((m) => {
+      const label = m.username + (m.role === 'org_admin' ? ' (' + t('admin') + ')' : '');
+      select.append(h('option', { value: String(m.id) }, label));
+    });
+    const form = h('form', {},
+      h('p', { class: 'muted', style: 'font-size:.9rem' },
+        t('The chosen user becomes an admin and you become a regular member. Both changes happen in one step.')),
+      h('label', { class: 'field' },
+        h('span', {}, t('Promote to admin')), select),
+      h('div', { class: 'row end', style: 'gap:.5rem; margin-top:1rem' },
+        h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, t('Cancel')),
+        h('button', { class: 'btn primary', type: 'submit' }, t('Transfer ownership'))),
+    );
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const toID = parseInt(select.value, 10);
+      if (!Number.isFinite(toID)) return;
+      // Password confirm reuses the existing prompt — same friction
+      // bar as account deletion, which transfer is comparable to in
+      // blast radius (caller permanently loses admin powers).
+      const pw = await promptPassword(
+        t('Confirm transfer'),
+        t('Type your password to confirm. You\'ll lose admin permissions immediately.'));
+      if (!pw) return;
+      const r = await api(`/api/admin/organizations/${org.id}/transfer-ownership`, {
+        method: 'POST',
+        headers: { 'X-Confirm-Password': pw },
+        body: JSON.stringify({ to_user_id: toID }),
+      });
+      if (r.status === 204) {
+        toastOk(t('Ownership transferred.'));
+        close(true);
+        await refreshMe();
+        renderRoute();
+      } else {
+        toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+      }
     });
     body.append(form);
   });
@@ -5545,8 +5774,8 @@ async function viewLibrary(view) {
             h('div', { class: 'row', style: 'gap:.35rem; flex-wrap:wrap' },
               !a.org_id
                 ? (a.published
-                    ? h('span', { class: 'pill success' }, t('Published'))
-                    : h('span', { class: 'pill warning' }, t('Draft')))
+                    ? h('span', { class: 'pill success' }, '✓ ' + t('Published'))
+                    : h('span', { class: 'pill warning' }, '✎ ' + t('Draft')))
                 : null,
               h('span', { class: 'pill accent' }, t('{{n}} puzzles', { n: a.page_count })))),
           a.description ? h('p', { class: 'muted' }, a.description) : null,
@@ -5782,8 +6011,8 @@ function renderLibraryEdit(view, adv) {
         // visibility effect, so don't surface a misleading status pill.
         adv.org_id ? null
           : (adv.published === false
-              ? h('span', { class: 'pill warning', style: 'margin-top:.35rem' }, t('Draft'))
-              : h('span', { class: 'pill success', style: 'margin-top:.35rem' }, t('Published'))))),
+              ? h('span', { class: 'pill warning', style: 'margin-top:.35rem' }, '✎ ' + t('Draft'))
+              : h('span', { class: 'pill success', style: 'margin-top:.35rem' }, '✓ ' + t('Published'))))),
     h('p', { class: 'muted mono' }, adv.slug, adv.author ? ` · ${adv.author}` : ''),
     adv.description ? h('p', { class: 'muted' }, adv.description) : null,
     h('div', { class: 'row', style: 'flex-wrap:wrap; gap:.5rem' },
@@ -6747,7 +6976,7 @@ async function openEditPuzzle(adv, page /* or null */) {
     : standalone
       ? (page.title ? t('Library: {{title}}', { title: page.title }) : t('Library puzzle'))
       : t('Puzzle {{i}}', { i: page.index + 1 });
-  await modal(title, ({ body, close }) => {
+  await modal(title, ({ body, close, setBeforeClose }) => {
     // ---- Preview card: mirrors play.html's puzzle shape ----
     // None of these are HTML-`required` — an arranger often saves a stub
     // with nothing but a location (especially via Quick Puzzle) and
@@ -6838,7 +7067,7 @@ async function openEditPuzzle(adv, page /* or null */) {
         imagesHost.append(addTile);
       } else {
         imagesHost.append(h('div', { class: 'pe-image-add disabled' },
-          icon(ICONS.plus), ' ' + t('Save the puzzle first, then add images')));
+          icon(ICONS.plus), ' ' + t('Images attach to a saved puzzle — finish the basics, click Create, then come back to upload.')));
       }
     };
     drawImages();
@@ -6918,6 +7147,25 @@ async function openEditPuzzle(adv, page /* or null */) {
     const gated  = h('input', { type: 'checkbox' });
     if (draft ? draft.gated : page?.radius_m) gated.checked = true;
     const radius = h('input', { type: 'number', step: 'any', min: '1', value: draft?.radius ?? page?.radius_m ?? 50 });
+    // Spatial-context hint that updates as the author types so a
+    // "50 m" gate reads as "about half a soccer pitch" rather than
+    // a number you have to imagine in metres. Phone GPS accuracy
+    // outdoors is roughly 5-15 m, so anything below ~10 is risky.
+    const radiusHint = h('small', { class: 'muted', style: 'display:block; margin-top:.2rem' }, '');
+    const refreshRadiusHint = () => {
+      const r = parseFloat(radius.value);
+      if (!Number.isFinite(r) || r <= 0) { radiusHint.textContent = ''; return; }
+      const desc =
+        r < 10  ? t('Pinpoint — risky outdoors; phone GPS is rarely better than ±10 m.')
+      : r < 25  ? t('Tight — about a building entrance.')
+      : r < 50  ? t('Snug — about a basketball court.')
+      : r < 100 ? t('Generous — about half a soccer pitch.')
+      : r < 250 ? t('Wide — about a city block.')
+      :           t('Huge — a small park.');
+      radiusHint.textContent = desc;
+    };
+    radius.addEventListener('input', refreshRadiusHint);
+    refreshRadiusHint();
     const disabled = h('input', { type: 'checkbox' });
     if (draft ? draft.disabled : page?.disabled) disabled.checked = true;
 
@@ -6951,14 +7199,21 @@ async function openEditPuzzle(adv, page /* or null */) {
         h('label', { class: 'field' }, h('span', {}, t('Longitude')), lng)),
       h('label', { style: 'display:flex; gap:.4rem; align-items:center; margin: .25rem 0 .5rem' },
         gated, h('span', { style: 'margin:0' }, t('Gated — player must reach location first'))),
-      h('label', { class: 'field' }, h('span', {}, t('Gate radius (metres)')), radius),
+      h('label', { class: 'field' }, h('span', {}, t('Gate radius (metres)')), radius, radiusHint),
       h('label', { style: 'display:flex; gap:.4rem; align-items:center; margin: .75rem 0 .25rem' },
         disabled, h('span', { style: 'margin:0' },
           t('Disabled — players skip this puzzle; the content and gate stay saved'))),
     );
 
+    // Autosave indicator. Empty until the first save; thereafter
+    // shows "Saving…" / "Saved · {{ago}}" / "Save failed — retry".
+    // Only edits drive the indicator — creating still goes through
+    // the explicit Create button so we don't materialise stubs the
+    // author was still drafting.
+    const saveBadge = h('span', { class: 'pe-save-badge muted', style: 'font-size:.85rem; align-self:center; margin-right:auto' });
     const form = h('form', {}, previewCard, settings,
-      h('div', { class: 'row end', style: 'margin-top:1rem' },
+      h('div', { class: 'row end', style: 'margin-top:1rem; gap:.6rem; align-items:center' },
+        saveBadge,
         h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, t('Cancel')),
         h('button', { class: 'btn primary', type: 'submit' }, creating ? t('Create') : t('Save'))));
 
@@ -6995,6 +7250,16 @@ async function openEditPuzzle(adv, page /* or null */) {
       form.addEventListener('input', writeDraft);
       form.addEventListener('change', writeDraft);
     }
+
+    // Dirty-check guard: comparing JSON snapshots is cheap (the editor's
+    // form state is small) and avoids field-by-field equality. New
+    // puzzles still keep their localStorage draft on dismissal, so the
+    // confirm copy nudges in that direction; existing puzzles lose
+    // changes on dismissal, so the warning is firmer. The reference
+    // snapshot moves forward after each successful autosave (see
+    // lastSavedSnapshot below) so an autosaved-clean modal closes
+    // silently.
+    const initialSnapshot = JSON.stringify(snapshotDraft());
 
     // saved flips true the moment a save (POST or PATCH) succeeds, so
     // the modal:close cleanup below knows not to delete the server-side
@@ -7049,10 +7314,105 @@ async function openEditPuzzle(adv, page /* or null */) {
       if (r.status !== 204) { toastErr(r.body?.error || t('error {{status}}', { status: r.status })); return; }
       toastOk(t('Puzzle saved'));
       saved = true;
+      lastSavedSnapshot = JSON.stringify(snapshotDraft());
       file.remove();
       close(true);
       renderRoute();
     });
+
+    // ---- Autosave (edit mode only) ----
+    // Debounced PATCH every 1.5s after the last keystroke. Skipped
+    // when the adventure is currently running on any event — those
+    // saves silently change what live players see, so they require
+    // the explicit "Continue?" confirm in the manual submit handler.
+    // Skipped when there's nothing to save (snapshot match) or when
+    // gated puzzles have an empty radius (would 400 the PATCH).
+    let lastSavedSnapshot = initialSnapshot;
+    if (typeof setBeforeClose === 'function') {
+      setBeforeClose(() => {
+        if (JSON.stringify(snapshotDraft()) === lastSavedSnapshot) return true;
+        const msg = creating
+          ? t('Discard this draft? You can come back to it from the same adventure.')
+          : t('Discard unsaved changes to this puzzle?');
+        return confirm(msg);
+      });
+    }
+    let saveState = 'idle';
+    let savedAt = 0;
+    const setBadge = (state, text) => {
+      saveBadge.className = 'pe-save-badge ' + (
+        state === 'saving' ? 'muted' :
+        state === 'saved'  ? 'ok' :
+        state === 'failed' ? 'err' : 'muted');
+      saveBadge.textContent = text;
+    };
+    const renderBadge = () => {
+      if (saveState === 'saving') { setBadge('saving', t('Saving…')); return; }
+      if (saveState === 'failed') { setBadge('failed', t('Save failed — retry')); return; }
+      if (saveState !== 'saved')  { setBadge('idle', ''); return; }
+      const sec = Math.max(0, Math.round((Date.now() - savedAt) / 1000));
+      const label = sec < 5
+        ? t('Saved just now')
+        : sec < 60
+          ? t('Saved {{n}}s ago', { n: sec })
+          : t('Saved {{n}}m ago', { n: Math.round(sec / 60) });
+      setBadge('saved', label);
+    };
+    let saveTimer = 0;
+    const autosave = async () => {
+      if (creating || !page) return;
+      if ((adv.running_event_count || 0) > 0) return;
+      const snap = snapshotDraft();
+      if (gated.checked && (!radius.value || isNaN(parseFloat(radius.value)))) return;
+      if (isNaN(parseFloat(snap.lat)) || isNaN(parseFloat(snap.lng))) return;
+      const snapJSON = JSON.stringify(snap);
+      if (snapJSON === lastSavedSnapshot) return;
+      saveState = 'saving'; renderBadge();
+      const payload = {
+        title: snap.title.trim(),
+        prompt: snap.prompt.trim(),
+        hints: snap.hints,
+        notes: snap.notes.trim(),
+        accept: snap.accept,
+        lat: parseFloat(snap.lat),
+        lng: parseFloat(snap.lng),
+        disabled: snap.disabled,
+      };
+      if (snap.gated) payload.radius_m = parseFloat(snap.radius);
+      const r = await api(`/api/admin/pages/${page.id}`, {
+        method: 'PATCH', body: JSON.stringify(payload),
+      });
+      if (r.status === 204) {
+        lastSavedSnapshot = snapJSON;
+        savedAt = Date.now();
+        saveState = 'saved';
+        saved = true;
+      } else {
+        saveState = 'failed';
+      }
+      renderBadge();
+    };
+    const scheduleAutosave = () => {
+      if (creating) return;
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(autosave, 1500);
+    };
+    if (!creating && page) {
+      form.addEventListener('input', scheduleAutosave);
+      form.addEventListener('change', scheduleAutosave);
+      // Click-to-retry on a failed save lets the author force a
+      // re-PATCH without typing.
+      saveBadge.addEventListener('click', () => {
+        if (saveState === 'failed') autosave();
+      });
+      saveBadge.style.cursor = 'pointer';
+      // Refresh the "n seconds ago" label every 10s.
+      const tick = setInterval(() => { if (saveState === 'saved') renderBadge(); }, 10_000);
+      body.addEventListener('modal:close', () => {
+        clearInterval(tick);
+        clearTimeout(saveTimer);
+      });
+    }
 
     // ---- Puzzle timeline: quick-switch between puzzles in this adventure ----
     // Dirty-check compares current inputs to the page's starting values so
@@ -7598,6 +7958,25 @@ async function viewSimulator(view) {
   const advs = (advR.body?.adventures || [])
     .filter((a) => a.page_count > 0)
     .sort((a, b) => a.title.localeCompare(b.title));
+
+  // Empty state: the simulator needs at least one adventure with
+  // puzzles. Without that, every input is disabled and the page
+  // reads as broken. Replace the form with an explainer + CTAs
+  // that take the operator to where they need to go.
+  if (advs.length === 0) {
+    view.replaceChildren(
+      h('h1', {}, t('Simulator')),
+      h('p', { class: 'muted' },
+        t('Run a fake race against an adventure to preview pacing, team layouts and the live view.')),
+      h('div', { class: 'card', style: 'border:1px dashed var(--border); padding:1.25rem' },
+        h('h2', {}, t('No adventures with puzzles yet')),
+        h('p', { class: 'muted' },
+          t('You need at least one adventure with one or more puzzles before the simulator can do anything. Create one or browse the catalog.')),
+        h('div', { class: 'row', style: 'gap:.5rem; margin-top:.75rem' },
+          h('button', { class: 'btn primary', on: { click: () => openCreateAdventure() } }, t('Create adventure')),
+          h('button', { class: 'btn', on: { click: () => nav('#adventures') } }, t('Browse adventures')))));
+    return;
+  }
 
   // Controls — the form is visible even while a sim runs so the
   // operator can read back what they chose, but inputs are disabled
@@ -8536,7 +8915,7 @@ function renderWebhookCard(ep, kinds, reload) {
 // Returns truthy on save, null on cancel.
 async function openWebhookForm({ kinds, existing }) {
   const isEdit = !!existing;
-  return modal(isEdit ? t('Edit webhook') : t('Add webhook'), ({ body, close }) => {
+  return modal(isEdit ? t('Edit webhook') : t('Add webhook'), ({ body, close, setBeforeClose }) => {
     const nameInput = h('input', { type: 'text', value: existing?.name || '',
       placeholder: t('e.g. prod-slack') });
     const urlInput = h('input', { type: 'url', required: true,
@@ -8567,6 +8946,19 @@ async function openWebhookForm({ kinds, existing }) {
         h('button', { class: 'btn primary', type: 'submit' },
           isEdit ? t('Save') : t('Create')),
       ));
+
+    const snapshot = () => JSON.stringify({
+      name: nameInput.value,
+      url: urlInput.value,
+      kinds: checks.map((label) => label.querySelector('input').checked),
+    });
+    const initial = snapshot();
+    if (typeof setBeforeClose === 'function') {
+      setBeforeClose(() => snapshot() === initial
+        || confirm(isEdit
+          ? t('Discard unsaved changes to this webhook?')
+          : t('Discard this webhook?')));
+    }
 
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -8833,12 +9225,19 @@ function renderDeliveryRow(d, expanded) {
     { class: 'chip', style: 'font-family:monospace; font-size:.78rem' },
     d.event_kind);
 
+  // Render the delivery age as a localized relative string ("5m ago",
+  // "2h ago"). Hover/long-press surfaces the absolute local timestamp
+  // for the operator who needs forensic detail. Plain UTC-like server
+  // string is what was here before — readable but slow to parse.
   const head = h('div', {
     class: 'row',
     style: 'gap:.5rem; align-items:center; flex-wrap:wrap; cursor:pointer',
   },
     statusChip, httpChip, kindChip,
-    h('span', { class: 'muted', style: 'font-size:.85rem' }, d.created_at),
+    h('span', {
+      class: 'muted', style: 'font-size:.85rem',
+      title: fmtLocal(d.created_at) || d.created_at,
+    }, formatEventTime(d.created_at)),
     h('span', { class: 'muted', style: 'font-size:.85rem; flex:1; text-align:right' },
       d.endpoint_name || t('(unnamed endpoint)')),
   );
@@ -9264,7 +9663,21 @@ function renderSettingsExportCard() {
       a.href = url; a.download = name;
       document.body.append(a); a.click(); a.remove();
       URL.revokeObjectURL(url);
-      status.className = 'ok'; status.textContent = t('Downloaded {{name}}.', { name });
+      status.className = 'ok';
+      status.replaceChildren(
+        document.createTextNode(t('Downloaded {{name}}.', { name }) + ' '),
+        // Right-to-erasure follow-up: now that they have their data,
+        // remind them deletion is one click away. Anchored scroll
+        // jumps to the danger card at the bottom of the page.
+        h('a', {
+          href: '#settings/delete', style: 'color:inherit; text-decoration:underline',
+          on: { click: (e) => {
+            e.preventDefault();
+            const card = document.getElementById('settings-delete');
+            if (card) card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          } },
+        }, t('Want to delete your account too? →')),
+      );
     } catch (e) {
       status.className = 'err'; status.textContent = String(e);
     } finally {
@@ -9374,28 +9787,28 @@ function renderSettingsEmailCard(me) {
 
 function renderSettingsDeleteCard() {
   const status = h('p', { class: 'muted', style: 'font-size:.85rem' });
-  const form = h('form', { class: 'card settings-card danger-card' },
+  const form = h('form', { class: 'card settings-card danger-card', id: 'settings-delete' },
     h('h2', {}, t('Delete account')),
     h('p', { class: 'muted', style: 'font-size:.9rem' },
-      t('This wipes your account and (if you\'re the last member) your organization, including its runs, teams, adventures and purchases. Cannot be undone.')),
+      t('Schedules your account for deletion in 7 days. You can cancel any time before then by logging back in. After the grace period, your account and (if you\'re the last member) your organization — runs, teams, adventures, purchases — are permanently removed.')),
     status,
     h('div', { class: 'row end' },
-      h('button', { class: 'btn danger', type: 'submit' }, t('Delete account…'))));
+      h('button', { class: 'btn danger', type: 'submit' }, t('Schedule deletion…'))));
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const pw = await promptPassword(
-      t('Delete account?'),
-      t('Type your password to confirm. This is immediate and unrecoverable.'));
+      t('Schedule account deletion?'),
+      t('Type your password to confirm. You\'ll be logged out and have 7 days to log back in and cancel.'));
     if (!pw) return;
-    status.className = 'muted'; status.textContent = t('Deleting…');
+    status.className = 'muted'; status.textContent = t('Scheduling…');
     const r = await api('/api/admin/me', {
       method: 'DELETE',
       headers: { 'X-Confirm-Password': pw },
     });
-    if (r.status === 204) {
-      // Force a clean redirect — refreshing whoami after the delete
-      // would show "not logged in" but the cookie + UI state is
-      // confusing; a hard reload makes the fact final.
+    // Server returns 202 with the scheduled_deletion_at timestamp.
+    // Sessions are dropped server-side, so refreshing /whoami would
+    // 401 — redirect to the landing/login screen instead.
+    if (r.status === 202) {
       location.replace('/arrange');
       return;
     }
@@ -9492,11 +9905,24 @@ async function viewMembers(view) {
     return;
   }
   const org = r.body || { id: state.me.org_id, name: t('Your organization'), members: [] };
+  // Transfer-ownership is org_admin-only and only useful when the
+  // org has at least one other user to transfer TO. Hide it
+  // otherwise so the affordance doesn't tease an action that would
+  // refuse on submit.
+  const meIsOrgAdmin = state.me.role === 'org_admin';
+  const others = (org.members || []).filter((m) => m.id !== state.me.id);
+  const transferBtn = meIsOrgAdmin && others.length > 0
+    ? h('button', { class: 'btn',
+        on: { click: () => openTransferOwnership(org) } },
+        t('Transfer ownership…'))
+    : null;
   view.replaceChildren(
     h('div', { class: 'row between', style: 'margin-bottom:1rem' },
       h('h1', { style: 'margin:0' }, t('Members')),
-      h('button', { class: 'btn primary', on: { click: () => openAddOrgMember(org) } },
-        icon(ICONS.plus), t('Add user'))),
+      h('div', { class: 'row', style: 'gap:.5rem' },
+        transferBtn,
+        h('button', { class: 'btn primary', on: { click: () => openAddOrgMember(org) } },
+          icon(ICONS.plus), t('Add user')))),
     h('p', { class: 'muted' },
       t('Users in {{name}}. Admins can invite more users; members run the games.', { name: org.name })),
     h('div', { class: 'card', style: 'background: var(--surface-2); padding: .85rem 1rem; margin-bottom: .9rem; font-size: var(--ts-sm)' },

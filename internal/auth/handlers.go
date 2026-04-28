@@ -55,21 +55,29 @@ type loginRequest struct {
 }
 
 type whoamiResponse struct {
-	ID            int64   `json:"id"`
-	Username      string  `json:"username"`
-	Role          string  `json:"role"`
-	OrgID         *int64  `json:"org_id,omitempty"`
-	Email         string  `json:"email,omitempty"`
-	EmailVerified bool    `json:"email_verified"`
-	Pricing       Pricing `json:"pricing"`
+	ID                  int64   `json:"id"`
+	Username            string  `json:"username"`
+	Role                string  `json:"role"`
+	OrgID               *int64  `json:"org_id,omitempty"`
+	Email               string  `json:"email,omitempty"`
+	EmailVerified       bool    `json:"email_verified"`
+	Pricing             Pricing `json:"pricing"`
+	// ScheduledDeletionAt is RFC3339 when the user has requested
+	// account deletion; absent otherwise. The UI shows a banner with
+	// the date and a "Cancel deletion" affordance whenever this is set.
+	ScheduledDeletionAt string `json:"scheduled_deletion_at,omitempty"`
 }
 
 func (h *Handlers) userResponse(u User) whoamiResponse {
-	return whoamiResponse{
+	resp := whoamiResponse{
 		ID: u.ID, Username: u.Username, Role: u.Role, OrgID: u.OrgID,
 		Email: u.Email, EmailVerified: u.EmailVerified,
 		Pricing: h.Pricing,
 	}
+	if u.ScheduledDeletionAt != nil {
+		resp.ScheduledDeletionAt = u.ScheduledDeletionAt.UTC().Format(time.RFC3339)
+	}
+	return resp
 }
 
 // Login validates credentials and sets the session cookie. Players whose

@@ -13,7 +13,9 @@ import (
 	"math"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"git.sr.ht/~klahr/zv/internal/adventure"
 	"git.sr.ht/~klahr/zv/internal/auth"
@@ -316,6 +318,12 @@ type State struct {
 	// puzzle. Empty slice when the puzzle has no hints — the client
 	// hides the reveal button entirely.
 	Hints  []hintDTO         `json:"hints,omitempty"`
+	// HintsRevealed is the team-shared count of hints already
+	// uncovered on the current puzzle. Sourced from team_hint_reveals
+	// so a device switch / storage clear / team-mate's reveal all
+	// land on the same number. omitempty drops the zero so existing
+	// clients on older versions ignore it cleanly.
+	HintsRevealed int               `json:"hints_revealed,omitempty"`
 	Images []imageDTO        `json:"images,omitempty"`
 	Gate   *gateDTO          `json:"gate,omitempty"`
 	Colors *adventure.Colors `json:"colors,omitempty"`
@@ -525,6 +533,14 @@ func (h *Handlers) buildState(ctx context.Context, slot auth.Slot) (State, int, 
 	// is NULL (team hasn't advanced since run start, so they've been
 	// on page 0 since the whistle).
 	resp.Hints = buildHintDTOs(page.Hints, teamArrival(tc))
+	if len(page.Hints) > 0 {
+		var n int
+		if err := h.DB.QueryRowContext(ctx,
+			`SELECT COUNT(*) FROM team_hint_reveals WHERE team_id = $1 AND page_id = $2`,
+			tc.TeamID, page.ID).Scan(&n); err == nil {
+			resp.HintsRevealed = n
+		}
+	}
 	if len(page.Images) > 0 {
 		imgs := make([]imageDTO, 0, len(page.Images))
 		for _, im := range page.Images {
@@ -990,6 +1006,129 @@ func (h *Handlers) PostLocation(w http.ResponseWriter, r *http.Request) {
 	}
 	h.Hub.Publish(ws.EventTopic(slot.EventID), "changed", nil)
 	httpx.JSON(w, http.StatusNoContent, nil)
+}
+
+// RenameRequest is the body of POST /api/player/me/name — lets a
+// player override the slot name the arranger picked. Useful when the
+// arranger pre-named slots generically ("Player 3") and the
+// player wants to introduce themselves properly. Idempotent: empty
+// or unchanged names short-circuit without a write.
+type RenameRequest struct {
+	Name string `json:"name"`
+}
+
+// RenameMyself updates the calling slot's name. Server enforces the
+// same length cap the arranger flow uses. Hub-publishes so the
+// arranger console + team-mates' screens pick up the new name on
+// the next state push.
+func (h *Handlers) RenameMyself(w http.ResponseWriter, r *http.Request) {
+	var req RenameRequest
+	if !httpx.DecodeJSON(w, r, &req) {
+		return
+	}
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		httpx.Error(w, http.StatusBadRequest, "name required")
+		return
+	}
+	if utf8.RuneCountInString(name) > 64 {
+		httpx.Error(w, http.StatusBadRequest, "name too long (64 chars max)")
+		return
+	}
+	slot, _ := auth.SlotFromContext(r.Context())
+	if _, err := h.DB.ExecContext(r.Context(),
+		`UPDATE slots SET name = $1 WHERE id = $2`, name, slot.ID); err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "rename failed")
+		return
+	}
+	h.Hub.Publish(ws.EventTopic(slot.EventID), "changed", nil)
+	httpx.JSON(w, http.StatusOK, map[string]string{"name": name})
+}
+
+// HintRequest is the body of POST /api/play/hint. The page is implicit
+// (it's the team's current page); the index is the next sequential
+// hint the client wants to reveal. Sequential because the UI shows
+// hints in author order — skipping ahead would let a player "spend"
+// a later hint without ever seeing the earlier scaffolding.
+type HintRequest struct {
+	HintIndex int `json:"hint_index"`
+}
+
+// HintResponse mirrors the relevant slice of buildState — the client
+// only needs the new revealed count to repaint the sheet without
+// waiting for the WS state push to land.
+type HintResponse struct {
+	HintsRevealed int `json:"hints_revealed"`
+}
+
+// RevealHint records that the team has revealed one more hint on the
+// current puzzle. Idempotent on (team, page, hint) so a double-tap
+// doesn't 4xx; sequential — the request must name the next hint, so a
+// client can't skip past locked hints. Publishes to the event topic
+// so team-mates' WS connections pull a refreshed state with the new
+// HintsRevealed count.
+func (h *Handlers) RevealHint(w http.ResponseWriter, r *http.Request) {
+	var req HintRequest
+	if !httpx.DecodeJSON(w, r, &req) {
+		return
+	}
+	slot, _ := auth.SlotFromContext(r.Context())
+	tc, err := loadTeam(r.Context(), h.DB, slot)
+	if errors.Is(err, sql.ErrNoRows) {
+		httpx.Error(w, http.StatusNotFound, "team missing")
+		return
+	}
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "lookup failed")
+		return
+	}
+	if tc.RunState != "running" {
+		httpx.Error(w, http.StatusConflict, "event is not running")
+		return
+	}
+	adv := h.Lib.Get(tc.AdventureSlug)
+	if adv == nil {
+		httpx.Error(w, http.StatusInternalServerError, "adventure not loaded")
+		return
+	}
+	page, _ := visibleFor(adv.Pages, tc.CurrentPageIndex)
+	if page == nil {
+		httpx.Error(w, http.StatusConflict, "no current puzzle")
+		return
+	}
+	if req.HintIndex < 0 || req.HintIndex >= len(page.Hints) {
+		httpx.Error(w, http.StatusBadRequest, "hint_index out of range")
+		return
+	}
+	// Sequential check: the next reveal must be the row after the
+	// highest one already stored. This rejects out-of-order requests
+	// from a stale tab without making the API order-tolerant.
+	var revealed int
+	if err := h.DB.QueryRowContext(r.Context(),
+		`SELECT COUNT(*) FROM team_hint_reveals WHERE team_id = $1 AND page_id = $2`,
+		tc.TeamID, page.ID).Scan(&revealed); err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "count failed")
+		return
+	}
+	if req.HintIndex != revealed {
+		// Already revealed (or skipping ahead). Idempotent: return the
+		// authoritative count so the client can resync without an
+		// error UI.
+		httpx.JSON(w, http.StatusOK, HintResponse{HintsRevealed: revealed})
+		return
+	}
+	if _, err := h.DB.ExecContext(r.Context(),
+		`INSERT INTO team_hint_reveals(team_id, page_id, hint_index)
+		 VALUES ($1, $2, $3)
+		 ON CONFLICT (team_id, page_id, hint_index) DO NOTHING`,
+		tc.TeamID, page.ID, req.HintIndex); err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "insert failed: "+err.Error())
+		return
+	}
+	// Push so other team-mates' WS state refreshes immediately with
+	// the new revealed count. Same shape as SubmitAnswer.
+	h.Hub.Publish(ws.EventTopic(tc.EventID), "changed", nil)
+	httpx.JSON(w, http.StatusOK, HintResponse{HintsRevealed: revealed + 1})
 }
 
 // writeRateLimited writes a 429 with Retry-After. Mirrors the helper
