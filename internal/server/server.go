@@ -78,10 +78,24 @@ type Config struct {
 	// installs a dbblob.New(DB) fallback so the legacy inline-column
 	// behaviour stays the default.
 	Storage storage.Blobs
+	// WebOverrideDir, when set, points at a directory of HTML
+	// templates + a landing-locales.json that shadow the embedded
+	// defaults. Lets a self-hosted deployment ship its own marketing
+	// copy without forking the binary. Empty = use embedded only.
+	WebOverrideDir string
 }
 
 // New builds the HTTP router.
 func New(cfg Config) http.Handler {
+	// Apply on-disk template overrides, if configured. Done before any
+	// servePage/servePublicPage call below so the closure they capture
+	// reflects the override-aware bytes. Errors here are surfaced as
+	// startup panics — if the operator pointed us at a bad dir we'd
+	// rather fail loudly than serve embedded copy and let them think
+	// the override is in effect.
+	if err := loadOverrides(cfg.WebOverrideDir); err != nil {
+		panic("web overrides: " + err.Error())
+	}
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
@@ -324,7 +338,7 @@ func New(cfg Config) http.Handler {
 	// PublicURL — without it the URLs render origin-relative, which
 	// most crawlers handle but a few (Bing especially) prefer absolute.
 	r.Get("/robots.txt", serveAsset("web/robots.txt", "text/plain; charset=utf-8"))
-	sitemapBody, err := webFS.ReadFile("web/sitemap.xml")
+	sitemapBody, err := readWebFile("web/sitemap.xml")
 	if err != nil {
 		panic("embed sitemap: " + err.Error())
 	}
@@ -622,7 +636,7 @@ func New(cfg Config) http.Handler {
 // no caching. Used for the SPA shells (/arrange, /play, /live) where a
 // stale shell after deploy would surface as broken UI.
 func servePage(path string) http.HandlerFunc {
-	body, err := webFS.ReadFile(path)
+	body, err := readWebFile(path)
 	if err != nil {
 		panic("embed: " + err.Error())
 	}
@@ -638,7 +652,7 @@ func servePage(path string) http.HandlerFunc {
 // browser cache for a few minutes. status lets the caller pin a
 // non-200 (used by the 404 handler so crawlers see the right code).
 func servePublicPage(path string, status int) http.HandlerFunc {
-	body, err := webFS.ReadFile(path)
+	body, err := readWebFile(path)
 	if err != nil {
 		panic("embed: " + err.Error())
 	}
@@ -659,7 +673,7 @@ func servePublicPage(path string, status int) http.HandlerFunc {
 // Used for the shared i18n.js so all three HTML pages can load a single
 // copy instead of duplicating the dictionary per file.
 func serveAsset(path, contentType string) http.HandlerFunc {
-	body, err := webFS.ReadFile(path)
+	body, err := readWebFile(path)
 	if err != nil {
 		panic("embed: " + err.Error())
 	}

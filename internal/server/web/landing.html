@@ -7,32 +7,13 @@
   Static, JS-free. Search engines, AI agents and reluctant browsers
   all read the value proposition immediately.
 
-  ---- Imagery ----
-
-  The hero and use-case cards reference Pexels CDN URLs as background
-  images. Each is layered behind a gradient overlay so:
-    - the photo gives warmth and storytelling,
-    - the gradient guarantees text contrast even if the photo
-      doesn't load (the gradient is the natural fallback),
-    - the operator can swap any photo by editing the URL — Pexels
-      CDN URLs are licence-friendly for direct embedding under
-      Pexels' terms (https://www.pexels.com/license/).
-
-  When you've curated your own photo set, replace the URLs below.
-  Suggested Pexels searches:
-    - Hero / treasure hunt mood:
-        https://www.pexels.com/search/adventure%20outdoor/
-        https://www.pexels.com/search/treasure%20hunt/
-    - Corporate team-building:
-        https://www.pexels.com/search/team%20building%20outdoor/
-    - School field trips:
-        https://www.pexels.com/search/students%20outdoor/
-    - Tourism / city walks:
-        https://www.pexels.com/search/city%20walking%20tour/
-
-  For best Lighthouse scores on a real launch, download the chosen
-  photos and serve them from your own origin (or a CDN under your
-  control) instead of hotlinking.
+  This is the brand-neutral default shipped with the OSS binary —
+  hero, benefits, closing CTA, footer. A self-hosted deployment that
+  wants a richer marketing surface (use-case cards, testimonial band,
+  mood photos, multi-segment positioning) can drop a custom landing
+  template + landing-locales.json into ZV_WEB_OVERRIDE_DIR and the
+  embedded version is shadowed at request time. See SELFHOSTING.md
+  for the override layout.
 -->
 <html lang="{{LANG_CODE}}"><head>
 <meta charset="utf-8">
@@ -58,7 +39,7 @@
 <meta property="og:locale" content="{{LANG_CODE}}">
 <meta property="og:url" content="/">
 <meta property="og:image" content="/favicon.svg">
-<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:card" content="summary">
 <meta name="twitter:title" content="Zonventure">
 <meta name="twitter:description" content="{{OG_DESC}}">
 <meta name="twitter:image" content="/favicon.svg">
@@ -85,8 +66,7 @@
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="preconnect" href="https://images.pexels.com">
-<link href="https://fonts.googleapis.com/css2?family=Aclonica&family=Open+Sans:wght@400;600;700;800&family=Lora:ital,wght@1,500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Aclonica&family=Open+Sans:wght@400;600;700;800&display=swap" rel="stylesheet">
 
 <!-- Shared topbar / hamburger / overlay styles + the scroll-fade JS.
      Same files are pulled in by /pricing and /manual so the menu
@@ -111,18 +91,13 @@
     --surface-2: #f3f4f7;
     --border-soft: #e2e7ef;
     --shadow: 0 1px 2px rgba(31,51,73,.06), 0 4px 16px rgba(31,51,73,.08);
-    --shadow-lg: 0 8px 28px rgba(31,51,73,.14);
   }
-  /* Dark tokens. data-theme="dark" wins (set by topbar toggle +
-     persisted in localStorage); system preference applies only when
-     no explicit choice has been made. */
   [data-theme="dark"] {
     --ink: #e7ecf4; --ink-soft: #c2cee0; --muted: #9db1cc;
     --bg: #14202e; --surface: #1f3349; --surface-2: #263d56;
     --border-soft: #2c4361;
     --accent: #e24080; --accent-2: #ff6aa3; --accent-deep: #ad1357;
     --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.3);
-    --shadow-lg: 0 12px 36px rgba(0,0,0,.5);
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme]) {
@@ -131,12 +106,10 @@
       --border-soft: #2c4361;
       --accent: #e24080; --accent-2: #ff6aa3; --accent-deep: #ad1357;
       --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.3);
-      --shadow-lg: 0 12px 36px rgba(0,0,0,.5);
     }
   }
   * { box-sizing: border-box; }
-  html { scroll-behavior: smooth; }
-  html { overflow-x: hidden; }
+  html { scroll-behavior: smooth; overflow-x: hidden; }
   body {
     margin: 0;
     font: 16px/1.55 'Open Sans', system-ui, sans-serif;
@@ -147,7 +120,6 @@
   a:hover { text-decoration: underline; }
   .wrap { max-width: 64rem; margin: 0 auto; padding: 0 1.25rem; }
 
-  /* ---- a11y plumbing ---- */
   .skip-link {
     position: absolute; top: -2.5rem; left: .5rem; z-index: 50;
     padding: .5rem 1rem; border-radius: 8px;
@@ -169,10 +141,6 @@
       scroll-behavior: auto !important;
     }
   }
-
-  /* Shared topbar / hamburger / mobile-overlay / language-picker
-     CSS lives at /assets/topbar.css and is `<link>`-ed below.
-     Page-specific styles continue here. */
 
   .btn {
     display: inline-block;
@@ -209,33 +177,19 @@
   }
   .btn.ghost:hover { border-color: var(--accent); color: var(--accent); }
 
-  /* ---- hero ---- */
+  /* Hero band — flat brand-color gradient, no external imagery. A
+     deployment that wants a hero photo can ship a custom landing.html
+     via ZV_WEB_OVERRIDE_DIR. */
   .hero {
-    position: relative;
-    min-height: 92vh;
     color: #fff;
-    /* Layered backgrounds: dark gradient overlay on top so text
-       contrast is locked in regardless of which photo is chosen,
-       photo in the middle (a real event photo from Mindrace
-       Stockholm 2022 — authentic beats stock for a hero), and a
-       brand-coloured gradient fallback at the bottom for when the
-       photo doesn't load. */
-    background:
-      linear-gradient(135deg,
-        rgba(20,32,46,0.78) 0%,
-        rgba(173,19,87,0.55) 100%),
-      url('https://cdn.zonventure.com/mindrace/2022/stockholm/P1040422.JPG') center/cover no-repeat,
-      linear-gradient(135deg, var(--accent-deep), #14202e);
-    display: flex; align-items: center;
-    padding: 6rem 0 4rem;
+    background: linear-gradient(135deg, var(--accent-deep), #14202e);
+    padding: 5rem 0 4.5rem;
   }
-  .hero .wrap { width: 100%; }
   .hero .tag {
     display: inline-block;
     padding: .3rem 1rem;
     border-radius: 999px;
     background: rgba(255,255,255,.14);
-    backdrop-filter: blur(6px);
     border: 1px solid rgba(255,255,255,.25);
     font-size: .8rem; font-weight: 700;
     letter-spacing: .12em; text-transform: uppercase;
@@ -243,38 +197,26 @@
   }
   .hero h1 {
     font-family: 'Aclonica', Georgia, serif;
-    font-size: clamp(2.4rem, 6vw, 4.4rem);
-    line-height: 1.05;
-    margin: 0 0 1.5rem;
+    font-size: clamp(2rem, 5vw, 3.4rem);
+    line-height: 1.1;
+    margin: 0 0 1.25rem;
     max-width: 22ch;
-    text-shadow: 0 2px 24px rgba(0,0,0,.25);
   }
   .hero .lede {
-    font-size: clamp(1.05rem, 1.6vw, 1.3rem);
+    font-size: clamp(1.05rem, 1.5vw, 1.2rem);
     line-height: 1.55;
     max-width: 38rem;
     color: rgba(255,255,255,.92);
-    margin: 0 0 2.25rem;
+    margin: 0 0 2rem;
   }
   .hero .ctas {
     display: flex; gap: .75rem; flex-wrap: wrap;
   }
-  .hero .scroll-hint {
-    position: absolute; bottom: 2rem; left: 50%; transform: translateX(-50%);
-    color: rgba(255,255,255,.7); font-size: .8rem;
-    letter-spacing: .12em; text-transform: uppercase; font-weight: 700;
-    display: flex; flex-direction: column; align-items: center; gap: .35rem;
-  }
-  .scroll-hint::after {
-    content: ''; width: 1px; height: 1.75rem;
-    background: linear-gradient(to bottom, rgba(255,255,255,.7), transparent);
-  }
 
-  /* ---- benefits strip ---- */
   .benefits {
     background: var(--surface);
     border-bottom: 1px solid var(--border-soft);
-    padding: 2.5rem 0;
+    padding: 3rem 0;
   }
   .benefits-grid {
     display: grid;
@@ -301,202 +243,27 @@
     color: var(--muted); font-size: .92rem; margin: 0;
   }
 
-  /* ---- shared section frame ---- */
-  .section {
-    padding: 5rem 0;
-  }
-  .section-head { text-align: center; margin: 0 auto 3rem; max-width: 36rem; }
-  .section-eyebrow {
-    color: var(--accent);
-    font-size: .8rem; font-weight: 800;
-    letter-spacing: .14em; text-transform: uppercase;
-    margin: 0 0 .5rem;
-  }
-  .section h2 {
-    font-family: 'Aclonica', Georgia, serif;
-    font-size: clamp(1.8rem, 3.5vw, 2.6rem);
-    margin: 0 0 .75rem;
-    color: var(--ink);
-    line-height: 1.15;
-  }
-  .section .sub {
-    color: var(--muted);
-    font-size: 1.05rem;
-    margin: 0;
-  }
-
-  /* ---- use-case cards ---- */
-  .usecases-grid {
-    display: grid;
-    gap: 1.5rem;
-    grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
-  }
-  /* Each card is a 4:5-ish photo with a dark gradient overlay so
-     the headline + body sit on a guaranteed-readable surface. The
-     photo URL is a Pexels CDN reference; if it fails the gradient
-     fallback alone produces a still-attractive coloured card. */
-  .usecase {
-    position: relative;
-    border-radius: 16px;
-    overflow: hidden;
-    aspect-ratio: 4 / 5;
-    color: #fff;
-    box-shadow: var(--shadow-lg);
-    display: flex; align-items: flex-end;
-    padding: 1.75rem;
-    isolation: isolate;
-    background-color: var(--accent-deep);
-    background-position: center;
-    background-size: cover;
-    background-repeat: no-repeat;
-    transition: transform .25s, box-shadow .25s;
-  }
-  .usecase:hover {
-    transform: translateY(-4px);
-    box-shadow: 0 14px 42px rgba(31,51,73,.22);
-  }
-  .usecase::before {
-    content: '';
-    position: absolute; inset: 0; z-index: -1;
-    background: linear-gradient(
-      to top,
-      rgba(20,32,46,0.92) 0%,
-      rgba(20,32,46,0.55) 45%,
-      rgba(20,32,46,0.18) 100%);
-  }
-  .usecase h3 {
-    font-family: 'Aclonica', Georgia, serif;
-    font-size: 1.5rem;
-    margin: 0 0 .35rem;
-  }
-  .usecase p {
-    color: rgba(255,255,255,.92);
-    font-size: .98rem;
-    margin: 0 0 .5rem;
-    max-width: 26ch;
-  }
-  .usecase-link {
-    color: #fff; font-weight: 700; font-size: .85rem;
-    letter-spacing: .04em;
-    border-bottom: 1px solid rgba(255,255,255,.5);
-    padding-bottom: 1px;
-  }
-  .usecase-link:hover { border-bottom-color: #fff; text-decoration: none; }
-  /* Corporate: woman showing a tablet to a man at a desk —
-     https://www.pexels.com/photo/a-woman-sitting-at-a-desk-showing-tablet-to-a-man-7793727/
-     Frames the buyer (arranger at their desk planning the event)
-     rather than players in the field. */
-  .usecase-corporate {
-    background-image:
-      linear-gradient(rgba(20,32,46,0.15), rgba(20,32,46,0.15)),
-      url('https://images.pexels.com/photos/7793727/pexels-photo-7793727.jpeg?auto=compress&cs=tinysrgb&w=900');
-  }
-  /* Schools / youth: two boys looking at a map —
-     https://www.pexels.com/photo/two-boys-looking-a-map-9292795/
-     On-theme: a map is the universal symbol of the format. */
-  .usecase-school {
-    background-image:
-      linear-gradient(rgba(20,32,46,0.15), rgba(20,32,46,0.15)),
-      url('https://images.pexels.com/photos/9292795/pexels-photo-9292795.jpeg?auto=compress&cs=tinysrgb&w=900');
-  }
-  /* Tourism / city walks: woman walking on street —
-     https://www.pexels.com/photo/woman-walking-on-street-14767732/
-     A solo wanderer reads as the self-guided-tourist persona we want. */
-  .usecase-tourism {
-    background-image:
-      linear-gradient(rgba(20,32,46,0.15), rgba(20,32,46,0.15)),
-      url('https://images.pexels.com/photos/14767732/pexels-photo-14767732.jpeg?auto=compress&cs=tinysrgb&w=900');
-  }
-
-  /* ---- "how it works" — three illustrated steps ---- */
-  .how {
-    background: var(--surface-2);
-  }
-  .steps {
-    display: grid;
-    gap: 2rem;
-    grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
-  }
-  .step { text-align: center; }
-  .step-emoji {
-    font-size: 2.5rem; line-height: 1;
-    margin-bottom: 1rem;
-    /* Wrap the emoji in a soft circular halo. */
-    display: inline-flex; align-items: center; justify-content: center;
-    width: 4.5rem; height: 4.5rem;
-    border-radius: 50%;
-    background: var(--surface);
-    box-shadow: var(--shadow);
-  }
-  .step h3 {
-    font-family: 'Aclonica', Georgia, serif;
-    font-size: 1.25rem; margin: 0 0 .5rem;
-    color: var(--ink);
-  }
-  .step p {
-    color: var(--ink-soft);
-    margin: 0; font-size: .98rem;
-    max-width: 22ch;
-    margin-left: auto; margin-right: auto;
-  }
-
-  /* ---- quote ---- */
-  .quote {
-    text-align: center;
-    padding: 5rem 0;
-    background: var(--surface);
-    border-top: 1px solid var(--border-soft);
-    border-bottom: 1px solid var(--border-soft);
-  }
-  .quote blockquote {
-    font-family: 'Lora', Georgia, serif;
-    font-style: italic; font-weight: 500;
-    font-size: clamp(1.3rem, 2.4vw, 1.8rem);
-    line-height: 1.45;
-    color: var(--ink);
-    max-width: 36rem;
-    margin: 0 auto 1.5rem;
-    quotes: '\201C' '\201D';
-  }
-  .quote blockquote::before { content: open-quote; color: var(--accent); }
-  .quote blockquote::after { content: close-quote; color: var(--accent); }
-  .quote .attr {
-    color: var(--muted); font-size: .92rem;
-    letter-spacing: .04em;
-  }
-  .quote .attr strong { color: var(--ink); }
-
-  /* ---- final CTA ---- */
   .closing {
-    position: relative;
-    padding: 5.5rem 0;
+    padding: 4rem 0;
     color: #fff;
     text-align: center;
-    /* Same layered-background pattern as the hero, with a softer
-       overlay so the photo reads more clearly. */
-    background:
-      linear-gradient(135deg,
-        rgba(173,19,87,0.85) 0%,
-        rgba(31,51,73,0.85) 100%),
-      url('https://images.pexels.com/photos/1051077/pexels-photo-1051077.jpeg?auto=compress&cs=tinysrgb&w=1600') center/cover no-repeat,
-      linear-gradient(135deg, var(--accent), #14202e);
+    background: linear-gradient(135deg, var(--accent), var(--accent-deep));
   }
   .closing h2 {
     font-family: 'Aclonica', Georgia, serif;
-    font-size: clamp(1.8rem, 3.6vw, 2.6rem);
-    margin: 0 0 1rem;
+    font-size: clamp(1.6rem, 3vw, 2.2rem);
+    margin: 0 0 .75rem;
     color: #fff;
   }
   .closing p {
     color: rgba(255,255,255,.92);
-    max-width: 34rem; margin: 0 auto 2rem;
-    font-size: 1.05rem;
+    max-width: 34rem; margin: 0 auto 1.75rem;
+    font-size: 1.02rem;
   }
   .closing .ctas {
     display: flex; gap: .75rem; justify-content: center; flex-wrap: wrap;
   }
 
-  /* ---- footer ---- */
   footer {
     padding: 1.75rem 0 2.5rem;
     color: var(--muted);
@@ -517,13 +284,8 @@
 
 <a class="skip-link" href="#main">Skip to content</a>
 
-<!-- Pure-CSS mobile menu, body-level. The checkbox + topbar +
-     overlay are all siblings under <body>; that keeps them in the
-     ROOT stacking context so the topbar (z-index 50) reliably paints
-     above the overlay (z-index 40), and the X-hamburger inside the
-     topbar stays visible and tappable while the menu is open. The
-     `:checked ~ .nav-overlay` selector still works because both the
-     toggle and the overlay are sibling children of <body>. -->
+<!-- Pure-CSS mobile menu, body-level. Same structure as the other
+     marketing pages so topbar.css / topbar.js work unchanged. -->
 <input type="checkbox" id="nav-toggle" class="nav-toggle" aria-label="{{NAV_TOGGLE_ARIA}}">
 
 <header class="topbar" role="banner">
@@ -541,9 +303,6 @@
           <span class="flag" aria-hidden="true">🇸🇪</span><span class="label">SV</span>
         </a>
       </div>
-      <!-- Desktop link strip. Hidden on mobile via media query; the
-           same links appear inside .nav-overlay below for the mobile
-           fullscreen menu. Keep the two copies in sync. -->
       <div class="nav-menu">
         <a href="/manual">{{NAV_MANUAL}}</a>
         <a href="/pricing">{{NAV_PRICING}}</a>
@@ -553,10 +312,6 @@
   </div>
 </header>
 
-<!-- Mobile fullscreen overlay. Sibling of .topbar (NOT nested inside
-     it) so it lives in the root stacking context — the topbar's
-     z-index 50 paints above this overlay's z-index 40, keeping the
-     close-X visible and tappable. Always hidden on wide screens. -->
 <aside class="nav-overlay" aria-label="{{NAV_PRIMARY_ARIA}}">
   <a href="/manual">{{NAV_MANUAL}}</a>
   <a href="/pricing">{{NAV_PRICING}}</a>
@@ -572,10 +327,9 @@
     <p class="lede">{{HERO_LEDE}}</p>
     <div class="ctas">
       <a href="/arrange" class="btn primary">{{CTA_FREE}}</a>
-      <a href="#usecases" class="btn ghost-light">{{CTA_POSSIBLE}}</a>
+      <a href="/manual" class="btn ghost-light">{{CTA_READ_MANUAL}}</a>
     </div>
   </div>
-  <div class="scroll-hint" aria-hidden="true">{{SCROLL_HINT}}</div>
 </section>
 
 <section class="benefits" aria-label="{{BENEFITS_ARIA}}">
@@ -597,73 +351,6 @@
         <p>{{BENEFIT3_BODY}}</p>
       </div>
     </div>
-  </div>
-</section>
-
-<section class="section" id="usecases" aria-labelledby="usecases-heading">
-  <div class="wrap">
-    <div class="section-head">
-      <p class="section-eyebrow">{{USECASES_EYEBROW}}</p>
-      <h2 id="usecases-heading">{{USECASES_HEADING}}</h2>
-      <p class="sub">{{USECASES_SUB}}</p>
-    </div>
-    <div class="usecases-grid">
-      <a class="usecase usecase-corporate" href="/manual#welcome">
-        <div>
-          <h3>{{USECASE1_TITLE}}</h3>
-          <p>{{USECASE1_BODY}}</p>
-          <span class="usecase-link">{{USECASE_LINK}}</span>
-        </div>
-      </a>
-      <a class="usecase usecase-school" href="/manual#welcome">
-        <div>
-          <h3>{{USECASE2_TITLE}}</h3>
-          <p>{{USECASE2_BODY}}</p>
-          <span class="usecase-link">{{USECASE_LINK}}</span>
-        </div>
-      </a>
-      <a class="usecase usecase-tourism" href="/manual#welcome">
-        <div>
-          <h3>{{USECASE3_TITLE}}</h3>
-          <p>{{USECASE3_BODY}}</p>
-          <span class="usecase-link">{{USECASE_LINK}}</span>
-        </div>
-      </a>
-    </div>
-  </div>
-</section>
-
-<section class="section how" aria-labelledby="how-heading">
-  <div class="wrap">
-    <div class="section-head">
-      <p class="section-eyebrow">{{HOW_EYEBROW}}</p>
-      <h2 id="how-heading">{{HOW_HEADING}}</h2>
-      <p class="sub">{{HOW_SUB}}</p>
-    </div>
-    <div class="steps">
-      <div class="step">
-        <div class="step-emoji" aria-hidden="true">✍️</div>
-        <h3>{{STEP1_TITLE}}</h3>
-        <p>{{STEP1_BODY}}</p>
-      </div>
-      <div class="step">
-        <div class="step-emoji" aria-hidden="true">📅</div>
-        <h3>{{STEP2_TITLE}}</h3>
-        <p>{{STEP2_BODY}}</p>
-      </div>
-      <div class="step">
-        <div class="step-emoji" aria-hidden="true">🎉</div>
-        <h3>{{STEP3_TITLE}}</h3>
-        <p>{{STEP3_BODY}}</p>
-      </div>
-    </div>
-  </div>
-</section>
-
-<section class="quote" aria-label="{{QUOTE_ARIA}}">
-  <div class="wrap">
-    <blockquote>{{QUOTE_BODY}}</blockquote>
-    <p class="attr">— <strong>{{QUOTE_ATTR_LABEL}}</strong>{{QUOTE_ATTR_AFTER}}</p>
   </div>
 </section>
 

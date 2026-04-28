@@ -807,6 +807,8 @@
         'Hur många lagplatser behöver du? ({{price}} styck, simulerad betalning.)',
       'Browse catalog': 'Bläddra i butiken',
       'No purchases yet.': 'Inga köp än.',
+      'No purchases.': 'Inga köp.',
+      'Purchases ({{n}})': 'Köp ({{n}})',
       'Every team-slot purchase. Paid ones produce an assignment you can schedule from the Adventures page.':
         'Alla lagplatsköp. Betalda ger en tilldelning som du kan schemalägga från Äventyr-sidan.',
       '({{price}} per slot)': '({{price}} per plats)',

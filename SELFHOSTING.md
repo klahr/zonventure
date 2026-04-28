@@ -82,6 +82,7 @@ short tour:
 | `ZV_STRIPE_SECRET_KEY` / `ZV_STRIPE_WEBHOOK_SECRET` | Real payments + Customer Portal (optional) | unset |
 | `ZV_LOCATION_RETENTION_DAYS` / `ZV_AUDIT_RETENTION_DAYS` | Privacy sweepers; `0` to disable | `30` / `90` |
 | `ZV_DB_MAX_OPEN_CONNS` / `ZV_DB_MAX_IDLE_CONNS` | Postgres pool sizing; bump for managed clusters with high `max_connections` | `25` / `5` |
+| `ZV_WEB_OVERRIDE_DIR` | Path to a directory of HTML / JSON files that shadow the embedded marketing pages — see [Custom landing page](#custom-landing-page) | unset (use embedded) |
 
 After editing `.env`:
 
@@ -148,6 +149,79 @@ docker compose exec -T app /server -revoke-sessions all
 The app binary inside the image is `/server` — pass any of the flags
 documented in `zv -h` (the binary takes the same flags as the native
 build).
+
+## Custom landing page
+
+The bundled `/` is brand-neutral by design — a slim hero, three
+feature blurbs, a closing CTA. Operators who want a richer marketing
+surface (use-case cards, testimonials, custom photos, multi-segment
+positioning) point `ZV_WEB_OVERRIDE_DIR` at a directory of override
+files; matching filenames there shadow the embedded defaults at
+request time, no rebuild required.
+
+The marketing landing used on the hosted Zonventure service lives
+in a sibling repo, [`zv-landing`](../zv-landing) — clone it
+alongside this checkout and point `ZV_WEB_OVERRIDE_DIR` at it. Use
+it as-is, fork it for your own deployment, or roll your own from
+scratch.
+
+### Layout
+
+```
+/etc/zonventure/web-override/
+├── landing.html              # full template — placeholders intact
+├── pricing.html              # optional, same {{KEY}} grammar
+├── privacy.html              # optional
+├── terms.html                # optional
+├── manual.html               # optional
+├── 404.html                  # optional
+├── sitemap.xml               # optional, may use {{HOST}}
+├── robots.txt                # optional
+└── landing-locales.json      # optional, per-field locale overrides
+```
+
+Filenames mirror the user-facing routes — drop `landing.html` to
+shadow `/`, drop `pricing.html` to shadow `/pricing`, and so on. Any
+file you don't supply falls back to the embedded default.
+
+### Per-field locale overrides
+
+`landing-locales.json` lets you change individual strings without
+shipping a custom `landing.html`. Field names match the
+`landingStrings` struct in `internal/server/landing.go`:
+
+```json
+{
+  "en": {
+    "HeroHeading": "Real-world quests for real teams",
+    "HeroLede": "…"
+  },
+  "sv": {
+    "HeroHeading": "…"
+  }
+}
+```
+
+Missing fields keep the embedded default; unknown languages or struct
+fields log a warning and are skipped (a typo doesn't take the service
+down).
+
+### Wiring it up
+
+In `compose.yaml` (or `.env`) — mount the dir read-only, point the
+env var at the mount path. With `zv-landing` cloned next to `zv`:
+
+```yaml
+services:
+  app:
+    environment:
+      ZV_WEB_OVERRIDE_DIR: /var/zv/web-override
+    volumes:
+      - ../zv-landing:/var/zv/web-override:ro
+```
+
+Overrides are loaded at startup and cached for the process lifetime
+— restart the container after editing files in the override dir.
 
 ## Upgrades
 

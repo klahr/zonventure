@@ -69,7 +69,7 @@ func (c LegalConfig) defaulted() LegalConfig {
 // attributes (mailto:), and a static brochure page doesn't need
 // per-request data flow that warrants the extra ceremony.
 func renderLegalPage(w http.ResponseWriter, name string, cfg LegalConfig) {
-	body, err := webFS.ReadFile("web/" + name)
+	body, err := readWebFile("web/" + name)
 	if err != nil {
 		http.Error(w, "not found", http.StatusNotFound)
 		return

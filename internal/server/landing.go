@@ -99,16 +99,27 @@ type landingStrings struct {
 // language by appending a fresh entry — the placeholder substitution
 // is by struct field, so a new entry without all fields fails the
 // compile.
+//
+// These are the brand-neutral defaults shipped with the OSS binary.
+// A self-hosted deployment that wants different copy (richer
+// marketing, multi-segment positioning, custom testimonials) can
+// shadow per-field via landing-locales.json under
+// ZV_WEB_OVERRIDE_DIR — see internal/server/overrides.go.
+//
+// Fields the embedded landing.html doesn't reference (Usecase*, How*,
+// Quote*, ScrollHint, CTAPossible) are intentionally left empty: an
+// override-shipped richer template can fill them in via the JSON,
+// but a stock binary doesn't need filler text it never displays.
 var landingLocales = map[string]landingStrings{
 	"en": {
 		LangCode:      "en",
 		LangAriaLabel: "Language",
 
-		Title:          "Zonventure — adventures your players will remember",
-		MetaDesc:       "The platform for arrangers running treasure hunts, team-building events, school field trips and city tours. Author the puzzles, schedule an event, watch your players walk and solve.",
-		OGDesc:         "Treasure hunts. Team-builds. Field trips. City walks. You author the puzzles, your players walk and solve.",
-		SchemaOrgDesc:  "Platform for running location-based adventure games — treasure hunts, team-building events, school field trips, city tours.",
-		SchemaAppDesc:  "Author location-based adventure games and run them for teams of players using their phones.",
+		Title:         "Zonventure",
+		MetaDesc:      "Zonventure is a self-hostable platform for running location-based adventure games. Author puzzles, schedule events, run a live experience for teams of players.",
+		OGDesc:        "Self-hostable platform for location-based adventure games. Author puzzles, schedule events, run a live experience for teams.",
+		SchemaOrgDesc: "Self-hostable platform for location-based adventure games.",
+		SchemaAppDesc: "Author location-based adventure games and run them for teams of players using their phones.",
 
 		NavPrimaryARIA: "Primary",
 		NavToggleARIA:  "Toggle navigation",
@@ -117,67 +128,39 @@ var landingLocales = map[string]landingStrings{
 		NavPricing:     "Pricing",
 		NavLogin:       "Log in",
 
-		HeroTag:     "Adventure platform for arrangers",
-		HeroHeading: "Adventures your players will remember.",
-		HeroLede:    "Treasure hunts. Team-builds. Field trips. City walks. You design the story; your players walk, solve, and finish with the kind of grin that gets posted to LinkedIn.",
-		CTAFree:     "Get started — it's free",
-		CTAPossible: "See what's possible",
-		ScrollHint:  "Scroll",
+		HeroTag:     "Open source · Self-hosted",
+		HeroHeading: "Location-based adventure games.",
+		HeroLede:    "Author puzzles, schedule events, run a live experience for teams of players. Players join via a magic link — no app to install, works on any phone.",
+		CTAFree:     "Get started",
 
-		BenefitsARIA:  "At-a-glance benefits",
+		BenefitsARIA:  "Features",
 		Benefit1Title: "No app to install",
-		Benefit1Body:  "Players join via a magic link. No app store, no friction, no excuses.",
-		Benefit2Title: "Branded for your event",
-		Benefit2Body:  "Your colours, your logo, your intro story. White-labelled out of the box.",
+		Benefit1Body:  "Players join via a magic link. Works on any phone with a browser.",
+		Benefit2Title: "Branded per adventure",
+		Benefit2Body:  "Per-adventure colours and intro story. White-labelled out of the box.",
 		Benefit3Title: "Live audience board",
-		Benefit3Body:  "A leaderboard URL for your lobby TV. Spectators cheer in real time.",
+		Benefit3Body:  "Leaderboard URL for a lobby TV so spectators can follow in real time.",
 
-		UsecasesEyebrow: "Built for arrangers",
-		UsecasesHeading: "Whoever your players are, the platform stays out of the way.",
-		UsecasesSub:     "Three of the most common shapes — but if you've got a different one in mind, the same tools handle it.",
-		Usecase1Title:   "Corporate team-builds",
-		Usecase1Body:    "Stage a treasure hunt as the offsite event everyone asks for again next year.",
-		Usecase2Title:   "Schools &amp; youth groups",
-		Usecase2Body:    "Outdoor learning that gets pupils moving, thinking, and finishing things together.",
-		Usecase3Title:   "Tourism &amp; city walks",
-		Usecase3Body:    "Sell self-guided adventures around your city. Visitors play whenever it suits them.",
-		UsecaseLink:     "See how it works →",
-
-		HowEyebrow: "From idea to event",
-		HowHeading: "Three steps. One afternoon.",
-		HowSub:     "No agency. No production team. Just you, the puzzles, and a date.",
-		Step1Title: "Author",
-		Step1Body:  "Write your puzzles, drop them on the map, attach hints and photos.",
-		Step2Title: "Schedule",
-		Step2Body:  "Pick a date. Invite teams. Each player gets a personal magic link.",
-		Step3Title: "Watch them play",
-		Step3Body:  "Live activity feed. Audience leaderboard. The look on their faces when they finish.",
-
-		QuoteARIA:      "What arrangers say",
-		QuoteBody:      "The thing nobody tells you about a good treasure hunt is that an hour in, the players forget you organised it. They think it&#39;s magic. That&#39;s the highest compliment a platform like this can earn.",
-		QuoteAttrLabel: "An arranger",
-		QuoteAttrAfter: ", after their first event",
-
-		ClosingHeading: "Ready to plan something they&#39;ll talk about for years?",
-		ClosingBody:    "Sign up for free. Browse the global catalog or author your own. Buy team slots only when you want a real event.",
-		CTAGetStarted:  "Get started",
+		ClosingHeading: "Run your first event.",
+		ClosingBody:    "Sign in or create an account to start authoring puzzles and scheduling events.",
+		CTAGetStarted:  "Sign in",
 		CTAReadManual:  "Read the manual",
 
 		FooterARIA:    "Footer",
 		FooterPrivacy: "Privacy",
 		FooterTerms:   "Terms",
-		FooterCopy:    "© Zonventure. Adventures, made by you.",
+		FooterCopy:    "Zonventure — open source adventure platform.",
 	},
 
 	"sv": {
 		LangCode:      "sv",
 		LangAriaLabel: "Språk",
 
-		Title:          "Zonventure — äventyr dina spelare aldrig glömmer",
-		MetaDesc:       "Plattformen för arrangörer som kör skattjakter, lagevent, skolutflykter och stadsvandringar. Skapa pussel, schemalägg ett event och se dina spelare gå och lösa.",
-		OGDesc:         "Skattjakter. Lagevent. Skolutflykter. Stadsvandringar. Du skapar pusslen — dina spelare går och löser.",
-		SchemaOrgDesc:  "Plattform för platsbaserade äventyrsspel — skattjakter, lagevent, skolutflykter, stadsvandringar.",
-		SchemaAppDesc:  "Skapa platsbaserade äventyrsspel och kör dem för lag av spelare med deras telefoner.",
+		Title:         "Zonventure",
+		MetaDesc:      "Zonventure är en självhostad plattform för platsbaserade äventyrsspel. Skapa pussel, schemalägg event och kör en live-upplevelse för lag av spelare.",
+		OGDesc:        "Självhostad plattform för platsbaserade äventyrsspel. Skapa pussel, schemalägg event, kör en live-upplevelse.",
+		SchemaOrgDesc: "Självhostad plattform för platsbaserade äventyrsspel.",
+		SchemaAppDesc: "Skapa platsbaserade äventyrsspel och kör dem för lag av spelare med deras telefoner.",
 
 		NavPrimaryARIA: "Huvudnavigering",
 		NavToggleARIA:  "Visa/dölj meny",
@@ -186,56 +169,28 @@ var landingLocales = map[string]landingStrings{
 		NavPricing:     "Priser",
 		NavLogin:       "Logga in",
 
-		HeroTag:     "Äventyrsplattform för arrangörer",
-		HeroHeading: "Äventyr som spelarna minns.",
-		HeroLede:    "Skattjakter. Lagevent. Skolutflykter. Stadsvandringar. Du formar berättelsen; dina spelare går, löser och avslutar med ett leende värt en LinkedIn-post.",
-		CTAFree:     "Kom igång — det är gratis",
-		CTAPossible: "Se vad som är möjligt",
-		ScrollHint:  "Skrolla",
+		HeroTag:     "Öppen källkod · Självhostad",
+		HeroHeading: "Platsbaserade äventyrsspel.",
+		HeroLede:    "Skapa pussel, schemalägg event, kör en live-upplevelse för lag av spelare. Spelarna ansluter via en magisk länk — ingen app att installera, fungerar i valfri mobil.",
+		CTAFree:     "Kom igång",
 
-		BenefitsARIA:  "Snabba fördelar",
+		BenefitsARIA:  "Funktioner",
 		Benefit1Title: "Ingen app att installera",
-		Benefit1Body:  "Spelarna ansluter via en magisk länk. Ingen app store, ingen friktion, inga ursäkter.",
-		Benefit2Title: "Anpassat efter ditt event",
-		Benefit2Body:  "Era färger, er logotyp, er intro-berättelse. Helt white-label från start.",
+		Benefit1Body:  "Spelarna ansluter via en magisk länk. Fungerar i valfri telefon med webbläsare.",
+		Benefit2Title: "Anpassat per äventyr",
+		Benefit2Body:  "Egna färger och intro-berättelse per äventyr. White-label från start.",
 		Benefit3Title: "Livetavla för publiken",
-		Benefit3Body:  "En topplistelänk för lobbyns TV. Publiken hejar i realtid.",
+		Benefit3Body:  "Topplistelänk för en lobby-TV så publiken kan följa i realtid.",
 
-		UsecasesEyebrow: "Byggd för arrangörer",
-		UsecasesHeading: "Oavsett vilka spelarna är håller plattformen sig ur vägen.",
-		UsecasesSub:     "Tre av de vanligaste formaten — men har du något annat i åtanke fungerar samma verktyg.",
-		Usecase1Title:   "Företagsevent",
-		Usecase1Body:    "Arrangera en skattjakt som blir det offsite-event alla vill göra om nästa år.",
-		Usecase2Title:   "Skolor &amp; ungdomsgrupper",
-		Usecase2Body:    "Utomhuspedagogik som får eleverna att röra sig, tänka och slutföra något tillsammans.",
-		Usecase3Title:   "Turism &amp; stadsvandringar",
-		Usecase3Body:    "Sälj självgående äventyr i staden. Besökarna spelar när det passar dem.",
-		UsecaseLink:     "Så funkar det →",
-
-		HowEyebrow: "Från idé till event",
-		HowHeading: "Tre steg. En eftermiddag.",
-		HowSub:     "Ingen byrå. Inget produktionsteam. Bara du, pusslen och ett datum.",
-		Step1Title: "Skapa",
-		Step1Body:  "Skriv dina pussel, placera dem på kartan, lägg till ledtrådar och bilder.",
-		Step2Title: "Schemalägg",
-		Step2Body:  "Välj ett datum. Bjud in lag. Varje spelare får en personlig magisk länk.",
-		Step3Title: "Se dem spela",
-		Step3Body:  "Liveflöde. Topplista för publiken. Och uttrycket i deras ansikten när de är klara.",
-
-		QuoteARIA:      "Vad arrangörer säger",
-		QuoteBody:      "Det ingen säger om en bra skattjakt är att efter en timme har spelarna glömt att du arrangerat den. De tror det är magi. Det är det finaste betyget en plattform kan få.",
-		QuoteAttrLabel: "En arrangör",
-		QuoteAttrAfter: ", efter sitt första event",
-
-		ClosingHeading: "Redo att planera något de pratar om i flera år?",
-		ClosingBody:    "Skapa konto gratis. Bläddra i den globala katalogen eller skapa egna äventyr. Köp bara lagplatser när du faktiskt ska köra event.",
-		CTAGetStarted:  "Kom igång",
+		ClosingHeading: "Kör ditt första event.",
+		ClosingBody:    "Logga in eller skapa ett konto för att börja skapa pussel och schemalägga event.",
+		CTAGetStarted:  "Logga in",
 		CTAReadManual:  "Läs manualen",
 
 		FooterARIA:    "Sidfot",
 		FooterPrivacy: "Integritet",
 		FooterTerms:   "Villkor",
-		FooterCopy:    "© Zonventure. Äventyr — skapade av dig.",
+		FooterCopy:    "Zonventure — öppen källkods äventyrsplattform.",
 	},
 }
 
@@ -320,7 +275,7 @@ func topbarSubs(s landingStrings, lang string) [][2]string {
 // surface the language picker correctly. The page body should
 // reference the topbar/footer keys via {{KEY}} placeholders.
 func renderTopbarPage(w http.ResponseWriter, r *http.Request, name string) {
-	body, err := webFS.ReadFile(name)
+	body, err := readWebFile(name)
 	if err != nil {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
@@ -342,7 +297,7 @@ func renderTopbarPage(w http.ResponseWriter, r *http.Request, name string) {
 // — strings.ReplaceAll over a {{KEY}} placeholder grammar so the
 // template stays a normal HTML file an editor can syntax-highlight.
 func renderLandingPage(w http.ResponseWriter, r *http.Request) {
-	body, err := webFS.ReadFile("web/landing.html")
+	body, err := readWebFile("web/landing.html")
 	if err != nil {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
