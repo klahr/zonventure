@@ -50,7 +50,7 @@ type organizationDTO struct {
 func (h *Handlers) ListOrganizations(w http.ResponseWriter, r *http.Request) {
 	rows, err := h.DB.QueryContext(r.Context(), `
 		SELECT o.id, o.name, o.created_at,
-		       (SELECT COUNT(*) FROM users u WHERE u.org_id = o.id AND u.role = 'player'),
+		       0 AS players_total,
 		       (SELECT COUNT(*) FROM events ar WHERE ar.org_id = o.id),
 		       (SELECT COUNT(*) FROM events ar WHERE ar.org_id = o.id AND ar.state = 'running')
 		FROM organizations o
@@ -102,7 +102,7 @@ func (h *Handlers) GetOrganization(w http.ResponseWriter, r *http.Request) {
 	o.Assignments = []assignmentDTO{}
 	err := h.DB.QueryRowContext(r.Context(), `
 		SELECT o.id, o.name, o.created_at,
-		       (SELECT COUNT(*) FROM users u WHERE u.org_id = o.id AND u.role = 'player'),
+		       0 AS players_total,
 		       (SELECT COUNT(*) FROM events ar WHERE ar.org_id = o.id),
 		       (SELECT COUNT(*) FROM events ar WHERE ar.org_id = o.id AND ar.state = 'running')
 		FROM organizations o WHERE o.id = $1
@@ -211,6 +211,19 @@ type createOrgMemberRequest struct {
 // or org_member. Callable by global admin, or by an org_admin of the same
 // organization. The user's initial password is set here (the seed admin
 // flow is out-of-band for admins, but these are ordinary org accounts).
+// CreateOrgMember adds a user to this organisation. Two flows behind
+// one endpoint:
+//
+//   - Username doesn't exist yet → create the user (legacy path) AND
+//     insert the org_memberships row. Password is required.
+//   - Username exists → only insert the org_memberships row (the user
+//     is already onboarded; this just grants an additional org). Any
+//     password supplied in the request is ignored — we don't want
+//     admins accidentally resetting someone's credentials by clicking
+//     "Add to org".
+//
+// Refuses to add admins (Role == admin) — admins are global and have
+// no memberships. Returns 409 if the user is already a member.
 func (h *Handlers) CreateOrgMember(w http.ResponseWriter, r *http.Request) {
 	orgID, ok := orgIDFromURL(r)
 	if !ok {
@@ -228,12 +241,56 @@ func (h *Handlers) CreateOrgMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.Username = strings.TrimSpace(req.Username)
-	if req.Username == "" || req.Password == "" {
-		httpx.Error(w, http.StatusBadRequest, "username and password required")
+	if req.Username == "" {
+		httpx.Error(w, http.StatusBadRequest, "username required")
 		return
 	}
 	if req.Role != auth.RoleOrgAdmin && req.Role != auth.RoleOrgMember {
 		httpx.Error(w, http.StatusBadRequest, "role must be 'org_admin' or 'org_member'")
+		return
+	}
+
+	// Resolve the user — nil row → new-user flow, populated row →
+	// add-existing-user-to-org flow.
+	var (
+		existingID      int64
+		existingIsAdmin bool
+	)
+	lookupErr := h.DB.QueryRowContext(r.Context(),
+		`SELECT id, is_admin FROM users WHERE username = $1`, req.Username,
+	).Scan(&existingID, &existingIsAdmin)
+	if lookupErr != nil && !errors.Is(lookupErr, sql.ErrNoRows) {
+		httpx.Error(w, http.StatusInternalServerError, "lookup failed")
+		return
+	}
+	if lookupErr == nil {
+		if existingIsAdmin {
+			httpx.Error(w, http.StatusBadRequest, "admins are not org members")
+			return
+		}
+		// Insert only the membership row — no password reset, no
+		// account changes. Conflict on (user_id, org_id) means
+		// already a member of this org.
+		res, err := h.DB.ExecContext(r.Context(), `
+			INSERT INTO org_memberships(user_id, org_id, role) VALUES ($1, $2, $3)
+			ON CONFLICT (user_id, org_id) DO NOTHING
+		`, existingID, orgID, req.Role)
+		if err != nil {
+			httpx.Error(w, http.StatusInternalServerError, "membership insert failed")
+			return
+		}
+		if n, _ := res.RowsAffected(); n == 0 {
+			httpx.Error(w, http.StatusConflict, "user is already a member of this organization")
+			return
+		}
+		httpx.JSON(w, http.StatusCreated, orgMemberDTO{ID: existingID, Username: req.Username, Role: req.Role})
+		return
+	}
+
+	// New-user flow. Password is required since we're creating the
+	// account from scratch.
+	if req.Password == "" {
+		httpx.Error(w, http.StatusBadRequest, "password required for new users")
 		return
 	}
 	hash, err := auth.HashPassword(req.Password)
@@ -241,13 +298,29 @@ func (h *Handlers) CreateOrgMember(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusInternalServerError, "hash failed")
 		return
 	}
+	tx, err := h.DB.BeginTx(r.Context(), nil)
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "begin tx failed")
+		return
+	}
+	defer tx.Rollback() //nolint:errcheck
 	var id int64
-	if err := h.DB.QueryRowContext(r.Context(), `
-		INSERT INTO users(username, password_hash, role, org_id, created_by_user_id)
-		VALUES ($1, $2, $3, $4, $5)
+	if err := tx.QueryRowContext(r.Context(), `
+		INSERT INTO users(username, password_hash, created_by_user_id)
+		VALUES ($1, $2, $3)
 		RETURNING id
-	`, req.Username, hash, req.Role, orgID, me.ID).Scan(&id); err != nil {
+	`, req.Username, hash, me.ID).Scan(&id); err != nil {
 		httpx.Error(w, http.StatusConflict, "username not available")
+		return
+	}
+	if _, err := tx.ExecContext(r.Context(), `
+		INSERT INTO org_memberships(user_id, org_id, role) VALUES ($1, $2, $3)
+	`, id, orgID, req.Role); err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "membership insert failed")
+		return
+	}
+	if err := tx.Commit(); err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "commit failed")
 		return
 	}
 	httpx.JSON(w, http.StatusCreated, orgMemberDTO{ID: id, Username: req.Username, Role: req.Role})
@@ -255,6 +328,15 @@ func (h *Handlers) CreateOrgMember(w http.ResponseWriter, r *http.Request) {
 
 // DeleteOrgMember removes an org user. Global admin, or an org_admin of the
 // same org. The caller can't delete themselves.
+// DeleteOrgMember removes a user from this organisation. Two flows:
+//
+//   - User is in this org and at least one other → drop just the
+//     org_memberships row. Keep the user account, their other
+//     memberships, sessions, etc. Sessions whose active_org_id was
+//     the removed org get reset to NULL so the user picks again on
+//     next page load.
+//   - User is in this org only → hard-delete the user account
+//     (legacy behaviour). Cascades through FKs as before.
 func (h *Handlers) DeleteOrgMember(w http.ResponseWriter, r *http.Request) {
 	if !requirePasswordConfirm(w, r, h.DB) {
 		return
@@ -279,12 +361,11 @@ func (h *Handlers) DeleteOrgMember(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	var (
-		role   string
-		theirOrg sql.NullInt64
-	)
+	// Confirm the user exists, isn't an admin, and actually has a
+	// membership row in this org.
+	var isAdmin bool
 	err := h.DB.QueryRowContext(r.Context(),
-		`SELECT role, org_id FROM users WHERE id = $1`, userID).Scan(&role, &theirOrg)
+		`SELECT is_admin FROM users WHERE id = $1`, userID).Scan(&isAdmin)
 	if errors.Is(err, sql.ErrNoRows) {
 		httpx.Error(w, http.StatusNotFound, "user not found")
 		return
@@ -293,16 +374,64 @@ func (h *Handlers) DeleteOrgMember(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusInternalServerError, "lookup failed")
 		return
 	}
-	if role != auth.RoleOrgAdmin && role != auth.RoleOrgMember {
+	if isAdmin {
 		httpx.Error(w, http.StatusBadRequest, "not an org member")
 		return
 	}
-	if !theirOrg.Valid || theirOrg.Int64 != orgID {
-		httpx.Error(w, http.StatusNotFound, "user not in this organization")
+	var memberOf int
+	if err := h.DB.QueryRowContext(r.Context(),
+		`SELECT COUNT(*) FROM org_memberships WHERE user_id = $1`, userID,
+	).Scan(&memberOf); err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "membership count failed")
 		return
 	}
-	if _, err := h.DB.ExecContext(r.Context(), `DELETE FROM users WHERE id = $1`, userID); err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "delete failed")
+	var hasHere int
+	if err := h.DB.QueryRowContext(r.Context(),
+		`SELECT 1 FROM org_memberships WHERE user_id = $1 AND org_id = $2`, userID, orgID,
+	).Scan(&hasHere); errors.Is(err, sql.ErrNoRows) {
+		httpx.Error(w, http.StatusNotFound, "user not in this organization")
+		return
+	} else if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "lookup failed")
+		return
+	}
+
+	if memberOf <= 1 {
+		// Last (or only) membership — preserve legacy hard-delete so
+		// the user doesn't end up as a member-of-nothing ghost.
+		if _, err := h.DB.ExecContext(r.Context(), `DELETE FROM users WHERE id = $1`, userID); err != nil {
+			httpx.Error(w, http.StatusInternalServerError, "delete failed")
+			return
+		}
+		httpx.JSON(w, http.StatusNoContent, nil)
+		return
+	}
+
+	// Multi-org user — surgical remove. Wrap in a tx so the
+	// membership drop and active-session reset commit together.
+	tx, err := h.DB.BeginTx(r.Context(), nil)
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "begin tx failed")
+		return
+	}
+	defer tx.Rollback() //nolint:errcheck
+	if _, err := tx.ExecContext(r.Context(),
+		`DELETE FROM org_memberships WHERE user_id = $1 AND org_id = $2`, userID, orgID,
+	); err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "membership delete failed")
+		return
+	}
+	// Force any session whose active_org was the removed org to
+	// re-pick. NULL active_org_id triggers the picker on next page
+	// load.
+	if _, err := tx.ExecContext(r.Context(), `
+		UPDATE sessions SET active_org_id = NULL WHERE user_id = $1 AND active_org_id = $2
+	`, userID, orgID); err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "session reset failed")
+		return
+	}
+	if err := tx.Commit(); err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "commit failed")
 		return
 	}
 	httpx.JSON(w, http.StatusNoContent, nil)
@@ -346,28 +475,19 @@ func (h *Handlers) TransferOwnership(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusBadRequest, "cannot transfer ownership to yourself")
 		return
 	}
-	// Verify the target is in this org. We check role + org in one
-	// SELECT so a concurrent role change can't slip past the guard
-	// between read and write.
-	var (
-		targetRole string
-		targetOrg  sql.NullInt64
-	)
+	// Verify the target has a membership in this org. The role
+	// column is guaranteed to be 'org_admin' or 'org_member' by the
+	// table CHECK, so we don't need to read it — existence alone is
+	// the precondition for ownership transfer.
+	var found int
 	if err := h.DB.QueryRowContext(r.Context(),
-		`SELECT role, org_id FROM users WHERE id = $1`, req.ToUserID).Scan(&targetRole, &targetOrg); err != nil {
+		`SELECT 1 FROM org_memberships WHERE user_id = $1 AND org_id = $2`,
+		req.ToUserID, orgID).Scan(&found); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			httpx.Error(w, http.StatusNotFound, "target user not found")
+			httpx.Error(w, http.StatusNotFound, "target user is not in this organization")
 			return
 		}
 		httpx.Error(w, http.StatusInternalServerError, "lookup failed")
-		return
-	}
-	if !targetOrg.Valid || targetOrg.Int64 != orgID {
-		httpx.Error(w, http.StatusNotFound, "target user is not in this organization")
-		return
-	}
-	if targetRole != auth.RoleOrgAdmin && targetRole != auth.RoleOrgMember {
-		httpx.Error(w, http.StatusBadRequest, "target is not an org member")
 		return
 	}
 	tx, err := h.DB.BeginTx(r.Context(), nil)
@@ -377,13 +497,13 @@ func (h *Handlers) TransferOwnership(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback() //nolint:errcheck
 	if _, err := tx.ExecContext(r.Context(),
-		`UPDATE users SET role = $1 WHERE id = $2 AND org_id = $3`,
+		`UPDATE org_memberships SET role = $1 WHERE user_id = $2 AND org_id = $3`,
 		auth.RoleOrgAdmin, req.ToUserID, orgID); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "promote failed: "+err.Error())
 		return
 	}
 	if _, err := tx.ExecContext(r.Context(),
-		`UPDATE users SET role = $1 WHERE id = $2 AND org_id = $3`,
+		`UPDATE org_memberships SET role = $1 WHERE user_id = $2 AND org_id = $3`,
 		auth.RoleOrgMember, me.ID, orgID); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "demote failed: "+err.Error())
 		return
@@ -591,7 +711,7 @@ type adminDTO struct {
 // ListAdmins returns every global admin. Admin-only.
 func (h *Handlers) ListAdmins(w http.ResponseWriter, r *http.Request) {
 	rows, err := h.DB.QueryContext(r.Context(), `
-		SELECT id, username FROM users WHERE role = 'admin' ORDER BY LOWER(username)
+		SELECT id, username FROM users WHERE is_admin = TRUE ORDER BY LOWER(username)
 	`)
 	if err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "list failed")
@@ -633,7 +753,7 @@ func (h *Handlers) CreateAdmin(w http.ResponseWriter, r *http.Request) {
 	}
 	var id int64
 	if err := h.DB.QueryRowContext(r.Context(), `
-		INSERT INTO users(username, password_hash, role) VALUES ($1, $2, 'admin')
+		INSERT INTO users(username, password_hash, is_admin) VALUES ($1, $2, TRUE)
 		RETURNING id
 	`, req.Username, hash).Scan(&id); err != nil {
 		httpx.Error(w, http.StatusConflict, "username not available")
@@ -658,9 +778,9 @@ func (h *Handlers) DeleteAdmin(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusConflict, "cannot delete yourself")
 		return
 	}
-	var role string
+	var isAdmin bool
 	err := h.DB.QueryRowContext(r.Context(),
-		`SELECT role FROM users WHERE id = $1`, id).Scan(&role)
+		`SELECT is_admin FROM users WHERE id = $1`, id).Scan(&isAdmin)
 	if errors.Is(err, sql.ErrNoRows) {
 		httpx.Error(w, http.StatusNotFound, "user not found")
 		return
@@ -669,13 +789,13 @@ func (h *Handlers) DeleteAdmin(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusInternalServerError, "lookup failed")
 		return
 	}
-	if role != auth.RoleAdmin {
+	if !isAdmin {
 		httpx.Error(w, http.StatusBadRequest, "not an admin")
 		return
 	}
 	var remaining int
 	if err := h.DB.QueryRowContext(r.Context(),
-		`SELECT COUNT(*) FROM users WHERE role = 'admin'`).Scan(&remaining); err != nil {
+		`SELECT COUNT(*) FROM users WHERE is_admin = TRUE`).Scan(&remaining); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "count failed")
 		return
 	}
@@ -693,10 +813,14 @@ func (h *Handlers) DeleteAdmin(w http.ResponseWriter, r *http.Request) {
 /* ---------------- Internal loaders ---------------- */
 
 func (h *Handlers) loadOrgMembers(ctx context.Context, o *organizationDTO) error {
+	// A member is anyone with an org_memberships row for this org.
+	// The role shown is the per-membership role (a user can be
+	// admin here and member elsewhere).
 	rows, err := h.DB.QueryContext(ctx, `
-		SELECT id, username, role, (email_verified <> 0) FROM users
-		WHERE org_id = $1 AND role IN ('org_admin','org_member')
-		ORDER BY role, LOWER(username)
+		SELECT u.id, u.username, m.role, (u.email_verified <> 0)
+		FROM org_memberships m JOIN users u ON u.id = m.user_id
+		WHERE m.org_id = $1
+		ORDER BY m.role, LOWER(u.username)
 	`, o.ID)
 	if err != nil {
 		return err

@@ -75,8 +75,9 @@ func (h *Handlers) ListAuthEvents(w http.ResponseWriter, r *http.Request) {
 		args = append(args, vals...)
 	}
 	if me.Role == auth.RoleOrgAdmin && me.OrgID != nil {
-		// Org-scoped view: join through users to the caller's org.
-		add("e.user_id IS NOT NULL AND EXISTS (SELECT 1 FROM users u WHERE u.id = e.user_id AND u.org_id = $"+strconv.Itoa(idx)+")", *me.OrgID)
+		// Org-scoped view: caller sees only events for users who
+		// have a membership in the caller's currently-active org.
+		add("e.user_id IS NOT NULL AND EXISTS (SELECT 1 FROM org_memberships m WHERE m.user_id = e.user_id AND m.org_id = $"+strconv.Itoa(idx)+")", *me.OrgID)
 		idx++
 	}
 	if beforeID > 0 {

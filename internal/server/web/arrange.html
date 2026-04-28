@@ -2191,6 +2191,91 @@ async function refreshMe() {
 }
 function nav(hash) { location.hash = hash; }
 
+// switchOrgAndRender pins a new active organisation server-side, then
+// tears down the websocket subscription (its filter is per-org), pulls
+// a fresh whoami, and re-renders the route. Used by both the post-
+// login picker modal and the sidebar org switcher.
+async function switchOrgAndRender(orgID) {
+  const r = await api('/api/auth/switch-org', {
+    method: 'POST',
+    body: JSON.stringify({ org_id: orgID }),
+  });
+  if (!r.ok) {
+    toastErr(r.body?.error || t('Could not switch organization.'));
+    return;
+  }
+  if (typeof arrangeWS !== 'undefined' && arrangeWS) {
+    try { arrangeWS.close(); } catch (e) {}
+    arrangeWS = null;
+  }
+  await refreshMe();
+  render();
+}
+
+// renderOrgPicker is the full-screen card shown before any view
+// paints when a user belongs to several orgs and the session has no
+// active selection — fresh login by a multi-org user, or the result
+// of an admin removing them from their previously-active org.
+function renderOrgPicker() {
+  const memberships = (state.me && state.me.memberships) || [];
+  const card = h('div', { class: 'login' },
+    h('div', { class: 'brand' }, 'zonventure',
+      h('small', {}, t('select organization'))),
+    h('p', { class: 'muted' },
+      t('You belong to {{n}} organisations. Pick which one to act as — you can switch from the menu later.', { n: memberships.length })),
+    h('div', { style: 'display:flex; flex-direction:column; gap:.5rem; margin-top:1rem' },
+      memberships.map((m) => h('button', {
+        class: 'btn ghost',
+        type: 'button',
+        style: 'display:flex; justify-content:space-between; align-items:center',
+        on: { click: () => switchOrgAndRender(m.org_id) },
+      }, h('strong', {}, m.org_name),
+         h('span', { class: 'muted', style: 'margin-left:.5rem; font-size:.85rem' },
+           m.role === 'org_admin' ? t('admin') : t('member'))))),
+    h('div', { class: 'row end', style: 'margin-top:1rem' },
+      h('button', {
+        class: 'btn small',
+        type: 'button',
+        on: { click: async () => {
+          await api('/api/auth/logout', { method: 'POST' });
+          state.me = null;
+          render();
+        } },
+      }, t('Log out'))),
+  );
+  return h('div', { class: 'login-wrap' }, card);
+}
+
+// renderOrgSwitcher renders the sidebar dropdown that lets a multi-org
+// user flip between their organisations mid-session. Returns null for
+// single-org users (and admins, who have no memberships) — the menu
+// stays uncluttered for the common case.
+function renderOrgSwitcher() {
+  const memberships = (state.me && state.me.memberships) || [];
+  if (memberships.length <= 1) return null;
+  const sel = h('select', {
+    class: 'sidebar-orgswitch',
+    'aria-label': t('Active organization'),
+  }, memberships.map((m) => h('option', {
+    value: String(m.org_id),
+  }, m.org_name + (m.role === 'org_admin' ? ' · ' + t('admin') : ''))));
+  // Set the active option via the select's value property — passing
+  // `selected: ''` to h() would set option.selected to '' (coerced
+  // to false), so no option ends up selected and the browser falls
+  // back to showing the first one. Switching would then "revert"
+  // visually after every re-render.
+  if (state.me.org_id != null) sel.value = String(state.me.org_id);
+  sel.addEventListener('change', async () => {
+    const newID = parseInt(sel.value, 10);
+    if (!Number.isFinite(newID) || newID === state.me.org_id) return;
+    await switchOrgAndRender(newID);
+  });
+  return h('div', { style: 'padding:0 .75rem .5rem' },
+    h('label', { class: 'muted', style: 'font-size:.75rem; display:block; margin-bottom:.25rem' },
+      t('Organization')),
+    sel);
+}
+
 // maybeShowOnboarding flashes a one-time welcome modal on the first
 // /arrange render after a fresh signup. Dismissal is sticky in
 // localStorage; once it's shown for an account it never reappears
@@ -2302,6 +2387,16 @@ async function render() {
   if (!state.me) {
     await ensureSignupConfig();
     root.replaceChildren(renderLogin());
+    return;
+  }
+  // Multi-org user with no active selection — show the picker before
+  // any role-specific view paints. Single-org users and admins skip
+  // straight through. The session's active_org_id stays NULL until
+  // they pick; the API will hand back an empty org_id on whoami until
+  // then, so this branch is what gates the rest of the UI.
+  if (state.me.role !== 'admin' && !state.me.org_id &&
+      state.me.memberships && state.me.memberships.length > 1) {
+    root.replaceChildren(renderOrgPicker());
     return;
   }
   if (state.me.role === 'player') {
@@ -2623,6 +2718,7 @@ function renderShell() {
   },
     h('div', { class: 'brand' }, 'zonventure',
       h('small', {}, isAdmin ? t('administrator') : t('arranger'))),
+    renderOrgSwitcher(),
     nav,
     h('div', { class: 'sidebar-footer' }, themeBtn, logoutBtn, langPicker, renderLegalFooter()));
 
@@ -5674,16 +5770,18 @@ async function confirmDeleteOrg(org) {
 async function openAddOrgMember(org) {
   await modal(t('Add user to {{name}}', { name: org.name }), ({ body, close }) => {
     const form = h('form', {},
+      h('p', { class: 'muted', style: 'font-size:.85rem; margin: 0 0 .75rem' },
+        t('Existing user? Type their username and leave the password blank — they keep their current credentials. New user? Set an initial password.')),
       h('label', { class: 'field' }, h('span', {}, t('Username')),
         h('input', { name: 'u', required: true, autofocus: true })),
       h('label', { class: 'field' },
-        h('span', {}, t('Password')),
+        h('span', {}, t('Password (new users only)')),
         h('input', {
           name: 'p', type: 'password', autocomplete: 'new-password',
-          minlength: 8, required: true,
+          minlength: 8,
         }),
         h('small', { class: 'muted', style: 'display:block; margin-top:.2rem' },
-          t('Minimum 8 characters. Pick something the new user can change later in Settings.'))),
+          t('Leave blank to add an existing user. Minimum 8 characters when set.'))),
       h('label', { class: 'field' }, h('span', {}, t('Role')),
         h('select', { name: 'r' },
           h('option', { value: 'org_member' }, t('Member')),
@@ -5694,9 +5792,18 @@ async function openAddOrgMember(org) {
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       const fd = new FormData(form);
+      const username = String(fd.get('u') || '').trim();
+      const password = String(fd.get('p') || '');
+      const role = String(fd.get('r') || 'org_member');
+      // Only send password when the operator actually typed one — the
+      // backend treats a blank password as "add existing user" and a
+      // non-blank password as "create new user". Not posting the field
+      // at all keeps the JSON shape unambiguous.
+      const payload = { username, role };
+      if (password) payload.password = password;
       const r = await api(`/api/admin/organizations/${org.id}/members`, {
         method: 'POST',
-        body: JSON.stringify({ username: fd.get('u'), password: fd.get('p'), role: fd.get('r') }),
+        body: JSON.stringify(payload),
       });
       if (r.status === 201) { toastOk(t('User added')); close(true); renderRoute(); }
       else toastErr(r.body?.error || t('error {{status}}', { status: r.status }));

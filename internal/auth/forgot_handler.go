@@ -131,7 +131,7 @@ func (h *Handlers) ResetPassword(w http.ResponseWriter, r *http.Request) {
 	})
 	StampSessionMeta(r.Context(), h.DB, sessionTok, UserAgent(r), ClientIP(r))
 	SetCookie(w, sessionTok, CookieSecure(r, h.SecureCookie))
-	httpx.JSON(w, http.StatusOK, h.userResponse(u))
+	httpx.JSON(w, http.StatusOK, h.userResponse(r.Context(), u))
 }
 
 // sendResetEmail builds the reset link and ships the canned message.

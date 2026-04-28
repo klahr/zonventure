@@ -87,11 +87,20 @@ func Signup(ctx context.Context, db *sql.DB, email, password, orgName string) (S
 
 	var userID int64
 	if err := tx.QueryRowContext(ctx, `
-		INSERT INTO users(username, email, password_hash, role, org_id, email_verified)
-		VALUES ($1, $2, $3, 'org_admin', $4, 0)
+		INSERT INTO users(username, email, password_hash, email_verified)
+		VALUES ($1, $2, $3, 0)
 		RETURNING id
-	`, email, email, hash, orgID).Scan(&userID); err != nil {
+	`, email, email, hash).Scan(&userID); err != nil {
 		return SignupResult{}, fmt.Errorf("%w: %v", ErrSignupEmailTaken, err)
+	}
+
+	// Self-signup always creates an org_admin membership in the
+	// just-minted org — the user is the only person in there, so
+	// they get the keys.
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO org_memberships(user_id, org_id, role) VALUES ($1, $2, 'org_admin')
+	`, userID, orgID); err != nil {
+		return SignupResult{}, err
 	}
 
 	verifyTok, err := newVerificationToken()
@@ -108,7 +117,9 @@ func Signup(ctx context.Context, db *sql.DB, email, password, orgName string) (S
 
 	// Issue the staff session inside the same tx so login is "free"
 	// after a successful signup. The cookie is set by the handler.
-	sessionTok, err := newSession(ctx, txAsExecutor{tx}, userID, "", "")
+	// active_org_id is the just-created org — signup always lands the
+	// caller into their new org, no picker needed.
+	sessionTok, err := newSession(ctx, txAsExecutor{tx}, userID, "", "", sql.NullInt64{Int64: orgID, Valid: true})
 	if err != nil {
 		return SignupResult{}, err
 	}
@@ -118,7 +129,7 @@ func Signup(ctx context.Context, db *sql.DB, email, password, orgName string) (S
 	}
 	return SignupResult{
 		User: User{
-			ID: userID, Username: email, Role: "org_admin",
+			ID: userID, Username: email, IsAdmin: false, Role: RoleOrgAdmin,
 			OrgID: &orgID, Email: email, EmailVerified: false,
 		},
 		SessionToken:      sessionTok,
@@ -173,20 +184,28 @@ func VerifyEmail(ctx context.Context, db *sql.DB, token string) (User, error) {
 	if err := tx.Commit(); err != nil {
 		return User{}, err
 	}
-	// Reload the user — caller may want to refresh whoami.
-	var (
-		u     User
-		orgID sql.NullInt64
-	)
+	// Reload the user — caller may want to refresh whoami. Role +
+	// OrgID are derived from is_admin and the only-membership-pin
+	// (same logic as Login post-credentials).
+	var u User
 	if err := db.QueryRowContext(ctx, `
-		SELECT id, username, role, org_id, COALESCE(email,''), (email_verified <> 0)
+		SELECT id, username, is_admin, COALESCE(email,''), (email_verified <> 0)
 		FROM users WHERE id = $1
-	`, userID).Scan(&u.ID, &u.Username, &u.Role, &orgID, &u.Email, &u.EmailVerified); err != nil {
+	`, userID).Scan(&u.ID, &u.Username, &u.IsAdmin, &u.Email, &u.EmailVerified); err != nil {
 		return User{}, err
 	}
-	if orgID.Valid {
-		v := orgID.Int64
+	active, role, err := resolveInitialActiveOrg(ctx, db, u.ID)
+	if err != nil {
+		return User{}, err
+	}
+	if active.Valid {
+		v := active.Int64
 		u.OrgID = &v
+	}
+	if u.IsAdmin {
+		u.Role = RoleAdmin
+	} else {
+		u.Role = role
 	}
 	return u, nil
 }
@@ -258,7 +277,23 @@ func ConsumeForgotPasswordToken(ctx context.Context, db *sql.DB, token, newPassw
 		`DELETE FROM email_verifications WHERE token = $1`, token); err != nil {
 		return User{}, "", err
 	}
-	sessionTok, err := newSession(ctx, txAsExecutor{tx}, userID, "", "")
+	// Pin the new session to whichever org the user has if it's the
+	// only one — same logic as Login. Multi-org users get NULL and
+	// land on the picker after the reset.
+	var (
+		onlyOrg sql.NullInt64
+		memCnt  int
+	)
+	if err := tx.QueryRowContext(ctx, `
+		SELECT MIN(org_id), COUNT(*) FROM org_memberships WHERE user_id = $1
+	`, userID).Scan(&onlyOrg, &memCnt); err != nil {
+		return User{}, "", err
+	}
+	var initialActive sql.NullInt64
+	if memCnt == 1 {
+		initialActive = onlyOrg
+	}
+	sessionTok, err := newSession(ctx, txAsExecutor{tx}, userID, "", "", initialActive)
 	if err != nil {
 		return User{}, "", err
 	}
@@ -266,19 +301,26 @@ func ConsumeForgotPasswordToken(ctx context.Context, db *sql.DB, token, newPassw
 		return User{}, "", err
 	}
 
-	var (
-		u     User
-		orgID sql.NullInt64
-	)
+	var u User
 	if err := db.QueryRowContext(ctx, `
-		SELECT id, username, role, org_id, COALESCE(email,''), (email_verified <> 0)
+		SELECT id, username, is_admin, COALESCE(email,''), (email_verified <> 0)
 		FROM users WHERE id = $1
-	`, userID).Scan(&u.ID, &u.Username, &u.Role, &orgID, &u.Email, &u.EmailVerified); err != nil {
+	`, userID).Scan(&u.ID, &u.Username, &u.IsAdmin, &u.Email, &u.EmailVerified); err != nil {
 		return User{}, "", err
 	}
-	if orgID.Valid {
-		v := orgID.Int64
+	if initialActive.Valid {
+		v := initialActive.Int64
 		u.OrgID = &v
+	}
+	if u.IsAdmin {
+		u.Role = RoleAdmin
+	} else if memCnt == 1 {
+		// Single membership — fetch its role for the User struct.
+		var memRole string
+		_ = db.QueryRowContext(ctx,
+			`SELECT role FROM org_memberships WHERE user_id = $1`, userID,
+		).Scan(&memRole)
+		u.Role = memRole
 	}
 	return u, sessionTok, nil
 }

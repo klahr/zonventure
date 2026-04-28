@@ -208,12 +208,9 @@ func (h *Handlers) ResetPassword(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	me, _ := auth.FromContext(r.Context())
-	var (
-		role    string
-		orgID   sql.NullInt64
-	)
+	var targetIsAdmin bool
 	err := h.DB.QueryRowContext(r.Context(),
-		`SELECT role, org_id FROM users WHERE id = $1`, id).Scan(&role, &orgID)
+		`SELECT is_admin FROM users WHERE id = $1`, id).Scan(&targetIsAdmin)
 	if errors.Is(err, sql.ErrNoRows) {
 		httpx.Error(w, http.StatusNotFound, "user not found")
 		return
@@ -223,21 +220,31 @@ func (h *Handlers) ResetPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch {
-	case me.Role == auth.RoleAdmin:
-		if role == auth.RoleAdmin && me.ID != id {
+	case me.IsAdmin:
+		if targetIsAdmin && me.ID != id {
 			httpx.Error(w, http.StatusForbidden, "admin-on-admin reset is not supported")
 			return
 		}
 	case me.ID == id:
 		// anyone can reset their own
 	default:
-		// org_admin can reset anyone in their own org (besides admins).
-		if me.OrgID == nil || !orgID.Valid || *me.OrgID != orgID.Int64 {
+		// org_admin can reset anyone in their own active org (besides
+		// admins). Caller must have an active org and be org_admin in
+		// it; target must be a member of that same org.
+		if me.OrgID == nil || me.Role != auth.RoleOrgAdmin {
 			httpx.Error(w, http.StatusForbidden, "forbidden")
 			return
 		}
-		if me.Role != auth.RoleOrgAdmin {
+		var found int
+		mErr := h.DB.QueryRowContext(r.Context(),
+			`SELECT 1 FROM org_memberships WHERE user_id = $1 AND org_id = $2`,
+			id, *me.OrgID).Scan(&found)
+		if errors.Is(mErr, sql.ErrNoRows) {
 			httpx.Error(w, http.StatusForbidden, "forbidden")
+			return
+		}
+		if mErr != nil {
+			httpx.Error(w, http.StatusInternalServerError, "lookup failed")
 			return
 		}
 	}

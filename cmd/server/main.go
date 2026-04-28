@@ -342,7 +342,7 @@ func describeComponents(m mailer.Mailer, stripeKey, stripeWebhookSecret, metrics
 func seedAdminIfMissing(d *sql.DB, creds string) error {
 	var n int
 	if err := d.QueryRow(
-		`SELECT count(*) FROM users WHERE role='admin' AND org_id IS NULL`,
+		`SELECT count(*) FROM users WHERE is_admin = TRUE`,
 	).Scan(&n); err != nil {
 		return fmt.Errorf("count admins: %w", err)
 	}
@@ -371,8 +371,8 @@ func seedAdminUser(d *sql.DB, creds string) error {
 		return err
 	}
 	_, err = d.Exec(`
-		INSERT INTO users(username, password_hash, role, org_id) VALUES ($1, $2, 'admin', NULL)
-		ON CONFLICT(username) DO UPDATE SET password_hash = excluded.password_hash, role = 'admin', org_id = NULL
+		INSERT INTO users(username, password_hash, is_admin) VALUES ($1, $2, TRUE)
+		ON CONFLICT(username) DO UPDATE SET password_hash = excluded.password_hash, is_admin = TRUE
 	`, username, hash)
 	return err
 }

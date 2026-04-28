@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"net/http"
@@ -54,28 +55,53 @@ type loginRequest struct {
 	Password string `json:"password"`
 }
 
+type membershipDTO struct {
+	OrgID   int64  `json:"org_id"`
+	OrgName string `json:"org_name"`
+	Role    string `json:"role"`
+}
+
 type whoamiResponse struct {
-	ID                  int64   `json:"id"`
-	Username            string  `json:"username"`
-	Role                string  `json:"role"`
-	OrgID               *int64  `json:"org_id,omitempty"`
-	Email               string  `json:"email,omitempty"`
-	EmailVerified       bool    `json:"email_verified"`
-	Pricing             Pricing `json:"pricing"`
+	ID            int64           `json:"id"`
+	Username      string          `json:"username"`
+	Role          string          `json:"role"`
+	OrgID         *int64          `json:"org_id,omitempty"`
+	Email         string          `json:"email,omitempty"`
+	EmailVerified bool            `json:"email_verified"`
+	Pricing       Pricing         `json:"pricing"`
+	// Memberships is the user's full org list with the role they
+	// hold in each. Drives the login picker (count > 1) and the
+	// hamburger org switcher. Empty for admins.
+	Memberships []membershipDTO `json:"memberships"`
 	// ScheduledDeletionAt is RFC3339 when the user has requested
 	// account deletion; absent otherwise. The UI shows a banner with
 	// the date and a "Cancel deletion" affordance whenever this is set.
 	ScheduledDeletionAt string `json:"scheduled_deletion_at,omitempty"`
 }
 
-func (h *Handlers) userResponse(u User) whoamiResponse {
+func (h *Handlers) userResponse(ctx context.Context, u User) whoamiResponse {
 	resp := whoamiResponse{
 		ID: u.ID, Username: u.Username, Role: u.Role, OrgID: u.OrgID,
 		Email: u.Email, EmailVerified: u.EmailVerified,
-		Pricing: h.Pricing,
+		Pricing:     h.Pricing,
+		Memberships: []membershipDTO{},
 	}
 	if u.ScheduledDeletionAt != nil {
 		resp.ScheduledDeletionAt = u.ScheduledDeletionAt.UTC().Format(time.RFC3339)
+	}
+	// Admins (Role == RoleAdmin) have no memberships — skip the
+	// query rather than running a guaranteed-empty SELECT every
+	// whoami fetch.
+	if u.Role != RoleAdmin {
+		mems, err := ListMemberships(ctx, h.DB, u.ID)
+		if err == nil {
+			resp.Memberships = make([]membershipDTO, 0, len(mems))
+			for _, m := range mems {
+				resp.Memberships = append(resp.Memberships, membershipDTO{
+					OrgID: m.OrgID, OrgName: m.OrgName, Role: m.Role,
+				})
+			}
+		}
 	}
 	return resp
 }
@@ -143,7 +169,7 @@ func (h *Handlers) Login(w http.ResponseWriter, r *http.Request) {
 	})
 	StampSessionMeta(r.Context(), h.DB, token, ua, ip)
 	SetCookie(w, token, CookieSecure(r, h.SecureCookie))
-	httpx.JSON(w, http.StatusOK, h.userResponse(u))
+	httpx.JSON(w, http.StatusOK, h.userResponse(r.Context(), u))
 }
 
 // writeRateLimited writes a 429 with a generic body and an integer
@@ -218,7 +244,7 @@ func (h *Handlers) SetPassword(w http.ResponseWriter, r *http.Request) {
 	})
 	StampSessionMeta(r.Context(), h.DB, token, ua, ip)
 	SetCookie(w, token, CookieSecure(r, h.SecureCookie))
-	httpx.JSON(w, http.StatusOK, h.userResponse(u))
+	httpx.JSON(w, http.StatusOK, h.userResponse(r.Context(), u))
 }
 
 // Logout clears the cookie and removes the server-side session row.
@@ -245,5 +271,45 @@ func (h *Handlers) Whoami(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusUnauthorized, "not logged in")
 		return
 	}
-	httpx.JSON(w, http.StatusOK, h.userResponse(u))
+	httpx.JSON(w, http.StatusOK, h.userResponse(r.Context(), u))
+}
+
+type switchOrgRequest struct {
+	OrgID int64 `json:"org_id"`
+}
+
+// SwitchOrg pins the calling session's active organisation. The body
+// names an org the user has a membership in; otherwise 403. Used by
+// both the login-time picker modal (when a user belongs to several
+// orgs) and the hamburger switcher mid-session. The cookie itself is
+// unchanged — only sessions.active_org_id moves, so other tabs of
+// the same browser also flip on their next page load.
+func (h *Handlers) SwitchOrg(w http.ResponseWriter, r *http.Request) {
+	u, ok := FromContext(r.Context())
+	if !ok {
+		httpx.Error(w, http.StatusUnauthorized, "login required")
+		return
+	}
+	var req switchOrgRequest
+	if !httpx.DecodeJSON(w, r, &req) {
+		return
+	}
+	if req.OrgID <= 0 {
+		httpx.Error(w, http.StatusBadRequest, "org_id required")
+		return
+	}
+	c, err := r.Cookie(CookieName)
+	if err != nil || c.Value == "" {
+		httpx.Error(w, http.StatusUnauthorized, "no session")
+		return
+	}
+	if err := SwitchActiveOrg(r.Context(), h.DB, u.ID, req.OrgID, c.Value); err != nil {
+		if errors.Is(err, ErrNotAMember) {
+			httpx.Error(w, http.StatusForbidden, "not a member of that organization")
+			return
+		}
+		httpx.Error(w, http.StatusInternalServerError, "switch failed")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }

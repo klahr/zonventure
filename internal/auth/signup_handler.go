@@ -115,7 +115,7 @@ func (h *Handlers) Signup(w http.ResponseWriter, r *http.Request) {
 
 	StampSessionMeta(r.Context(), h.DB, res.SessionToken, UserAgent(r), ip)
 	SetCookie(w, res.SessionToken, CookieSecure(r, h.SecureCookie))
-	httpx.JSON(w, http.StatusCreated, h.userResponse(res.User))
+	httpx.JSON(w, http.StatusCreated, h.userResponse(r.Context(), res.User))
 }
 
 // SignupConfig is the public, no-auth read of operator-controlled

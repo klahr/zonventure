@@ -177,7 +177,7 @@ func seedDemoAdventure(d *sql.DB) error {
 func seedDemo(ctx context.Context, d *sql.DB) error {
 	// Wipe the mutable parts. adventures are re-created from demoPages().
 	for _, stmt := range []string{
-		`DELETE FROM users WHERE role IN ('org_admin','org_member')`,
+		`DELETE FROM users WHERE is_admin = FALSE`,
 		`DELETE FROM organizations`,
 		`DELETE FROM events`,
 		`DELETE FROM adventure_assignments`,
@@ -324,27 +324,33 @@ func seedDemo(ctx context.Context, d *sql.DB) error {
 	return nil
 }
 
-// upsertUser inserts or updates a staff user by username. Pass orgID=nil
-// for admins.
+// upsertUser inserts or updates a staff user by username. Pass
+// role=auth.RoleAdmin and orgID=nil for global admins; pass
+// role=auth.RoleOrgAdmin / auth.RoleOrgMember and orgID for arrangers
+// (creates / updates the matching org_memberships row).
 func upsertUser(d *sql.DB, username, password, role string, orgID *int64) (int64, error) {
 	hash, err := auth.HashPassword(password)
 	if err != nil {
 		return 0, err
 	}
-	var orgVal any
-	if orgID != nil {
-		orgVal = *orgID
-	}
+	isAdmin := role == auth.RoleAdmin
 	var id int64
 	if err := d.QueryRow(`
-		INSERT INTO users(username, password_hash, role, org_id) VALUES ($1, $2, $3, $4)
+		INSERT INTO users(username, password_hash, is_admin) VALUES ($1, $2, $3)
 		ON CONFLICT(username) DO UPDATE SET
 			password_hash = excluded.password_hash,
-			role = excluded.role,
-			org_id = excluded.org_id
+			is_admin = excluded.is_admin
 		RETURNING id
-	`, username, hash, role, orgVal).Scan(&id); err != nil {
+	`, username, hash, isAdmin).Scan(&id); err != nil {
 		return 0, err
+	}
+	if !isAdmin && orgID != nil {
+		if _, err := d.Exec(`
+			INSERT INTO org_memberships(user_id, org_id, role) VALUES ($1, $2, $3)
+			ON CONFLICT(user_id, org_id) DO UPDATE SET role = excluded.role
+		`, id, *orgID, role); err != nil {
+			return 0, err
+		}
 	}
 	return id, nil
 }

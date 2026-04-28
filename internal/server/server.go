@@ -286,6 +286,11 @@ func New(cfg Config) http.Handler {
 		// /arrange page seeds the cookie before the form submits).
 		r.Post("/api/auth/forgot", authH.ForgotPassword)
 		r.Post("/api/auth/reset", authH.ResetPassword)
+		// Switch the calling session's active org. Caller must already
+		// be authenticated AND a member of the target org — handler
+		// returns 403 if not. CSRF-protected because it mutates the
+		// authoritative session-state row.
+		r.Post("/api/auth/switch-org", authH.SwitchOrg)
 	})
 	r.Get("/api/auth/whoami", authH.Whoami)
 	// Public signup-config: unauthenticated GET so the login screen

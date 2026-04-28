@@ -52,11 +52,23 @@ func SetSessionTTL(d time.Duration) {
 }
 
 // User is the minimal authenticated-user view used by middleware and
-// handlers. OrgID is nil for admins (they are not scoped to any
-// organization); every other role has exactly one.
+// handlers. OrgID is the *active* organisation for this request — not
+// the user's primary or only org, but whichever one the session has
+// pinned via sessions.active_org_id. Admins have nil OrgID (no org
+// context). Multi-org arrangers have nil OrgID only when they
+// haven't picked yet (the org-picker modal fires in that case);
+// otherwise it carries whichever org they're currently acting as.
+//
+// Role is derived: 'admin' when IsAdmin is true, otherwise the
+// org_memberships.role for the active org (empty when a multi-org
+// arranger hasn't picked yet). Most handlers compare Role against
+// the Role* constants; new code can also test IsAdmin directly to
+// distinguish "global admin" from "org user with admin role in some
+// org" without reaching for the membership table.
 type User struct {
 	ID       int64
 	Username string
+	IsAdmin  bool
 	Role     string
 	OrgID    *int64
 	// EmailVerified is true when the user has either confirmed their
@@ -108,24 +120,24 @@ func HashPassword(pw string) (string, error) {
 // Login validates credentials and creates a new session row. Returns
 // ErrPasswordNotSet when the user exists but never set a password — the
 // caller should route that user through SetInitialPassword.
+//
+// The new session's active_org_id is auto-pinned when the user has
+// exactly one org membership (the common case). Multi-org users
+// land with active_org_id NULL so the UI shows the picker on first
+// page load; admins also stay NULL (no org context).
 func Login(ctx context.Context, db *sql.DB, username, password string) (User, string, error) {
 	var (
-		u     User
-		hash  sql.NullString
-		orgID sql.NullInt64
+		u    User
+		hash sql.NullString
 	)
 	err := db.QueryRowContext(ctx, `
-		SELECT id, username, role, password_hash, org_id, COALESCE(email,''), (email_verified <> 0) FROM users WHERE username = $1
-	`, username).Scan(&u.ID, &u.Username, &u.Role, &hash, &orgID, &u.Email, &u.EmailVerified)
+		SELECT id, username, is_admin, password_hash, COALESCE(email,''), (email_verified <> 0) FROM users WHERE username = $1
+	`, username).Scan(&u.ID, &u.Username, &u.IsAdmin, &hash, &u.Email, &u.EmailVerified)
 	if errors.Is(err, sql.ErrNoRows) {
 		return User{}, "", ErrInvalidCredentials
 	}
 	if err != nil {
 		return User{}, "", err
-	}
-	if orgID.Valid {
-		v := orgID.Int64
-		u.OrgID = &v
 	}
 	if !hash.Valid {
 		return u, "", ErrPasswordNotSet
@@ -133,7 +145,20 @@ func Login(ctx context.Context, db *sql.DB, username, password string) (User, st
 	if err := bcrypt.CompareHashAndPassword([]byte(hash.String), []byte(password)); err != nil {
 		return User{}, "", ErrInvalidCredentials
 	}
-	token, err := newSession(ctx, db, u.ID, "", "")
+	active, role, err := resolveInitialActiveOrg(ctx, db, u.ID)
+	if err != nil {
+		return User{}, "", err
+	}
+	if active.Valid {
+		v := active.Int64
+		u.OrgID = &v
+	}
+	if u.IsAdmin {
+		u.Role = RoleAdmin
+	} else {
+		u.Role = role
+	}
+	token, err := newSession(ctx, db, u.ID, "", "", active)
 	if err != nil {
 		return User{}, "", err
 	}
@@ -146,22 +171,17 @@ func Login(ctx context.Context, db *sql.DB, username, password string) (User, st
 // set — to change a password, an arranger must reset it first.
 func SetInitialPassword(ctx context.Context, db *sql.DB, username, password string) (User, string, error) {
 	var (
-		u     User
-		hash  sql.NullString
-		orgID sql.NullInt64
+		u    User
+		hash sql.NullString
 	)
 	err := db.QueryRowContext(ctx, `
-		SELECT id, username, role, password_hash, org_id, COALESCE(email,''), (email_verified <> 0) FROM users WHERE username = $1
-	`, username).Scan(&u.ID, &u.Username, &u.Role, &hash, &orgID, &u.Email, &u.EmailVerified)
+		SELECT id, username, is_admin, password_hash, COALESCE(email,''), (email_verified <> 0) FROM users WHERE username = $1
+	`, username).Scan(&u.ID, &u.Username, &u.IsAdmin, &hash, &u.Email, &u.EmailVerified)
 	if errors.Is(err, sql.ErrNoRows) {
 		return User{}, "", ErrInvalidCredentials
 	}
 	if err != nil {
 		return User{}, "", err
-	}
-	if orgID.Valid {
-		v := orgID.Int64
-		u.OrgID = &v
 	}
 	if hash.Valid {
 		return User{}, "", ErrPasswordAlreadySet
@@ -173,7 +193,20 @@ func SetInitialPassword(ctx context.Context, db *sql.DB, username, password stri
 	if _, err := db.ExecContext(ctx, `UPDATE users SET password_hash = $1 WHERE id = $2`, h, u.ID); err != nil {
 		return User{}, "", err
 	}
-	token, err := newSession(ctx, db, u.ID, "", "")
+	active, role, err := resolveInitialActiveOrg(ctx, db, u.ID)
+	if err != nil {
+		return User{}, "", err
+	}
+	if active.Valid {
+		v := active.Int64
+		u.OrgID = &v
+	}
+	if u.IsAdmin {
+		u.Role = RoleAdmin
+	} else {
+		u.Role = role
+	}
+	token, err := newSession(ctx, db, u.ID, "", "", active)
 	if err != nil {
 		return User{}, "", err
 	}
@@ -203,7 +236,13 @@ func (t txAsExecutor) ExecContext(ctx context.Context, q string, args ...any) (s
 // other devices; pass empty strings when the call site doesn't know
 // (e.g. inside the signup tx — StampSessionMeta backfills after
 // commit).
-func newSession(ctx context.Context, w sessionWriter, userID int64, ua, ip string) (string, error) {
+//
+// activeOrgID seeds sessions.active_org_id. Pass a NullInt64 with
+// Valid=false for admins (no org context) and for multi-org users
+// who haven't picked yet — Lookup returns User.OrgID = nil, the UI
+// catches that and shows the picker. For single-org users, pin it
+// to the only membership so the user lands directly in their org.
+func newSession(ctx context.Context, w sessionWriter, userID int64, ua, ip string, activeOrgID sql.NullInt64) (string, error) {
 	token, err := newToken()
 	if err != nil {
 		return "", err
@@ -211,12 +250,40 @@ func newSession(ctx context.Context, w sessionWriter, userID int64, ua, ip strin
 	now := time.Now().UTC().Format(time.RFC3339)
 	expires := time.Now().Add(SessionTTL).UTC().Format(time.RFC3339)
 	if _, err := w.ExecContext(ctx, `
-		INSERT INTO sessions(token, user_id, expires_at, user_agent, ip, last_used_at)
-		VALUES ($1, $2, $3, NULLIF($4,''), NULLIF($5,''), $6)
-	`, token, userID, expires, ua, ip, now); err != nil {
+		INSERT INTO sessions(token, user_id, expires_at, user_agent, ip, last_used_at, active_org_id)
+		VALUES ($1, $2, $3, NULLIF($4,''), NULLIF($5,''), $6, $7)
+	`, token, userID, expires, ua, ip, now, activeOrgID); err != nil {
 		return "", err
 	}
 	return token, nil
+}
+
+// resolveInitialActiveOrg picks the active_org_id to seed onto a
+// freshly-minted session and the role to populate User.Role with.
+// Single membership → (that org, that role). Multi-membership →
+// (null, "") so the UI fires its picker. Admin or no memberships at
+// all → also (null, ""); the caller decides whether IsAdmin maps to
+// Role="admin" instead.
+//
+// One round-trip: COUNT decides whether to use the MIN values. With
+// COUNT==1, MIN(org_id)/MIN(role) come from the only row; with any
+// other count we discard them.
+func resolveInitialActiveOrg(ctx context.Context, db *sql.DB, userID int64) (sql.NullInt64, string, error) {
+	var (
+		only sql.NullInt64
+		role sql.NullString
+		cnt  int
+	)
+	err := db.QueryRowContext(ctx, `
+		SELECT MIN(org_id), MIN(role), COUNT(*) FROM org_memberships WHERE user_id = $1
+	`, userID).Scan(&only, &role, &cnt)
+	if err != nil {
+		return sql.NullInt64{}, "", err
+	}
+	if cnt == 1 {
+		return only, role.String, nil
+	}
+	return sql.NullInt64{}, "", nil
 }
 
 // StampSessionMeta best-effort writes UA + IP onto an existing
@@ -265,31 +332,47 @@ func VerifyUserPassword(ctx context.Context, db *sql.DB, userID int64, password 
 
 // Lookup returns the user backing a session token, or (User{}, false) if the
 // token is unknown or expired.
+//
+// User.OrgID reflects the *session's* active_org_id, not any legacy
+// user-level pin (the column was dropped in Phase 4). Role is
+// derived: 'admin' when u.is_admin is set; else the active org's
+// membership role; else "" (multi-org user who hasn't picked yet —
+// the UI catches the empty Role + populated Memberships and shows
+// the picker before any view paints).
 func Lookup(ctx context.Context, db *sql.DB, token string) (User, bool, error) {
 	if token == "" {
 		return User{}, false, nil
 	}
 	var (
-		u       User
-		orgID   sql.NullInt64
-		expires string
+		u           User
+		activeOrgID sql.NullInt64
+		membRole    sql.NullString
+		expires     string
 	)
 	var schedDel sql.NullTime
 	err := db.QueryRowContext(ctx, `
-		SELECT u.id, u.username, u.role, u.org_id, COALESCE(u.email,''), (u.email_verified <> 0),
+		SELECT u.id, u.username, u.is_admin, m.role, s.active_org_id,
+		       COALESCE(u.email,''), (u.email_verified <> 0),
 		       u.scheduled_deletion_at, s.expires_at
 		FROM sessions s JOIN users u ON u.id = s.user_id
+		LEFT JOIN org_memberships m ON m.user_id = u.id AND m.org_id = s.active_org_id
 		WHERE s.token = $1
-	`, token).Scan(&u.ID, &u.Username, &u.Role, &orgID, &u.Email, &u.EmailVerified, &schedDel, &expires)
+	`, token).Scan(&u.ID, &u.Username, &u.IsAdmin, &membRole, &activeOrgID,
+		&u.Email, &u.EmailVerified, &schedDel, &expires)
 	if errors.Is(err, sql.ErrNoRows) {
 		return User{}, false, nil
 	}
 	if err != nil {
 		return User{}, false, err
 	}
-	if orgID.Valid {
-		v := orgID.Int64
+	if activeOrgID.Valid {
+		v := activeOrgID.Int64
 		u.OrgID = &v
+	}
+	if u.IsAdmin {
+		u.Role = RoleAdmin
+	} else if membRole.Valid {
+		u.Role = membRole.String
 	}
 	if schedDel.Valid {
 		t := schedDel.Time
@@ -345,3 +428,66 @@ func FromContext(ctx context.Context) (User, bool) {
 // tokenx; the wrapper keeps the call sites (newSession, newSlotSession)
 // readable without leaking the byte count into auth's body.
 func newToken() (string, error) { return tokenx.New(32) }
+
+// Membership is one row in a user's org-membership list — the
+// organisation's id + name + the user's role inside it. Joined
+// against `organizations` so callers don't have to re-query for
+// the display name.
+type Membership struct {
+	OrgID   int64
+	OrgName string
+	Role    string
+}
+
+// ListMemberships returns every (org, role) the user belongs to,
+// ordered by org name. Empty slice for admins (admin is a global
+// role with no membership rows). Used to populate the login-time
+// org picker and the hamburger switcher.
+func ListMemberships(ctx context.Context, db *sql.DB, userID int64) ([]Membership, error) {
+	rows, err := db.QueryContext(ctx, `
+		SELECT m.org_id, o.name, m.role
+		FROM org_memberships m
+		JOIN organizations o ON o.id = m.org_id
+		WHERE m.user_id = $1
+		ORDER BY LOWER(o.name)
+	`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []Membership{}
+	for rows.Next() {
+		var m Membership
+		if err := rows.Scan(&m.OrgID, &m.OrgName, &m.Role); err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}
+
+// SwitchActiveOrg pins the session's active_org_id, validating that
+// the user is actually a member of the target org first. Returns
+// ErrNotAMember if not. The token resolves to the calling session;
+// admins should never call this (they have no org context to pin).
+func SwitchActiveOrg(ctx context.Context, db *sql.DB, userID, orgID int64, sessionToken string) error {
+	var exists int
+	err := db.QueryRowContext(ctx, `
+		SELECT 1 FROM org_memberships WHERE user_id = $1 AND org_id = $2
+	`, userID, orgID).Scan(&exists)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrNotAMember
+	}
+	if err != nil {
+		return err
+	}
+	_, err = db.ExecContext(ctx, `
+		UPDATE sessions SET active_org_id = $1 WHERE token = $2 AND user_id = $3
+	`, orgID, sessionToken, userID)
+	return err
+}
+
+// ErrNotAMember is returned by SwitchActiveOrg when the caller tries
+// to pin a session to an org they don't belong to. Surfaced as a 403
+// by the handler.
+var ErrNotAMember = errors.New("not a member of that organization")

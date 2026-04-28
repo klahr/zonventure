@@ -189,7 +189,7 @@ func (h *Handlers) DeleteMyAccount(w http.ResponseWriter, r *http.Request) {
 	if me.Role == auth.RoleAdmin {
 		var others int
 		if err := h.DB.QueryRowContext(r.Context(),
-			`SELECT COUNT(*) FROM users WHERE role = 'admin' AND id <> $1`, me.ID).Scan(&others); err != nil {
+			`SELECT COUNT(*) FROM users WHERE is_admin = TRUE AND id <> $1`, me.ID).Scan(&others); err != nil {
 			httpx.Error(w, http.StatusInternalServerError, "lookup failed")
 			return
 		}
