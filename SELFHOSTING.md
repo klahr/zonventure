@@ -79,7 +79,7 @@ short tour:
 | `ZV_HOSTING_PROVIDER` / `ZV_EMAIL_PROVIDER` | Sub-processor names listed in `/privacy` | unset (page shows `[set ZV_…]`) |
 | `ZV_LEGAL_REVIEWED` | Set to `1` after a lawyer signs off — strips the yellow "draft template" banners | unset (banners visible) |
 | `ZV_LEGAL_LAST_UPDATED` | "Last updated" date (YYYY-MM-DD) on the legal pages | today |
-| `ZV_STRIPE_SECRET_KEY` / `ZV_STRIPE_WEBHOOK_SECRET` | Real payments (optional) | unset |
+| `ZV_STRIPE_SECRET_KEY` / `ZV_STRIPE_WEBHOOK_SECRET` | Real payments + Customer Portal (optional) | unset |
 | `ZV_LOCATION_RETENTION_DAYS` / `ZV_AUDIT_RETENTION_DAYS` | Privacy sweepers; `0` to disable | `30` / `90` |
 
 After editing `.env`:
@@ -257,6 +257,35 @@ The same env vars listed above apply. Migrations run on startup;
 `ZV_SEED_ADMIN` honours the same "create-if-missing" semantics as in
 the Docker setup. Day-2 ops (backup / restore / metrics / retention)
 are covered in [`OPERATIONS.md`](./OPERATIONS.md).
+
+### systemd
+
+A ready-to-edit unit lives at
+[`deploy/systemd/zv.service`](deploy/systemd/zv.service) — drop it in
+once you have the binary at `/usr/local/bin/zv`:
+
+```sh
+# 1. dedicated system user (no shell, no home)
+useradd --system --no-create-home --shell /usr/sbin/nologin zv
+
+# 2. env file (DATABASE_URL + ZV_* secrets) — root-owned, group-readable
+install -d -m 0750 -o root -g zv /etc/zv
+$EDITOR /etc/zv/zv.env
+chmod 0640 /etc/zv/zv.env
+chown root:zv /etc/zv/zv.env
+
+# 3. install + enable
+install -m 0644 deploy/systemd/zv.service /etc/systemd/system/zv.service
+systemctl daemon-reload
+systemctl enable --now zv
+journalctl -u zv -f
+```
+
+The unit runs the binary under the `zv` user with hardened sandboxing
+(`NoNewPrivileges`, `ProtectSystem=strict`, restricted syscall filter)
+and restarts on crash with backoff. Bind on `127.0.0.1:8080` (the
+default) and front it with the same Caddy/nginx config from the
+section above.
 
 ## Going further
 

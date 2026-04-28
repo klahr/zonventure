@@ -3356,10 +3356,35 @@ async function viewPurchases(view) {
   const money = (cents, cur) => new Intl.NumberFormat(undefined, {
     style: 'currency', currency: cur || 'EUR',
   }).format(cents / 100);
+  // Show the Stripe Customer Portal button only when the org has at
+  // least one completed Stripe purchase — that's the gate the server
+  // enforces (no stripe_customer_id → 409). Hiding it for orgs in
+  // the simulated-payment flow keeps a non-functional button off
+  // their screen.
+  const hasStripePaid = purchases.some((p) => p.state === 'paid' && p.provider === 'stripe');
+  const portalBtn = hasStripePaid
+    ? h('button', {
+        class: 'btn',
+        on: { click: async (e) => {
+          e.target.disabled = true;
+          const pr = await api('/api/admin/me/portal-session', { method: 'POST' });
+          e.target.disabled = false;
+          if (pr.status === 200 && pr.body?.url) {
+            // Redirect via location.href so the back button returns
+            // here from the Stripe-hosted portal.
+            location.href = pr.body.url;
+            return;
+          }
+          toastErr(pr.body?.error || t('Could not open billing portal — try again.'));
+        } },
+      }, t('Update payment method'))
+    : null;
   view.replaceChildren(
     h('div', { class: 'row between' },
       h('h1', {}, t('Purchases')),
-      h('button', { class: 'btn', on: { click: () => nav('#adventures') } }, t('Browse catalog'))),
+      h('div', { class: 'row', style: 'gap:.5rem; flex-wrap:wrap' },
+        portalBtn,
+        h('button', { class: 'btn', on: { click: () => nav('#adventures') } }, t('Browse catalog')))),
     h('p', { class: 'muted' },
       t('Every team-slot purchase. Paid ones produce an assignment you can schedule from the Adventures page.')),
     purchases.length === 0

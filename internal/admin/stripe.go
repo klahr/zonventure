@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"git.sr.ht/~klahr/zv/internal/auth"
 	"git.sr.ht/~klahr/zv/internal/httpx"
 	"git.sr.ht/~klahr/zv/internal/logx"
 	"git.sr.ht/~klahr/zv/internal/metrics"
@@ -18,6 +19,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/stripe/stripe-go/v82"
+	portalsession "github.com/stripe/stripe-go/v82/billingportal/session"
 	"github.com/stripe/stripe-go/v82/checkout/session"
 	"github.com/stripe/stripe-go/v82/refund"
 	"github.com/stripe/stripe-go/v82/webhook"
@@ -36,7 +38,7 @@ func (h *Handlers) stripeEnabled() bool {
 // metadata carries our purchase id so the webhook can find the row,
 // and success/cancel both bounce back to /arrange.
 func (h *Handlers) createStripeCheckoutSession(ctx context.Context, purchaseID int64,
-	advSlug, advTitle string, maxTeams, amountCents int, customerEmail string,
+	advSlug, advTitle string, maxTeams, amountCents int, customerEmail, existingCustomerID string,
 ) (string, string, error) {
 	stripe.Key = h.StripeSecretKey
 
@@ -78,7 +80,14 @@ func (h *Handlers) createStripeCheckoutSession(ctx context.Context, purchaseID i
 		// it back from webhook payloads.
 	}
 	params.AddMetadata("zv_purchase_id", fmt.Sprintf("%d", purchaseID))
-	if customerEmail != "" {
+	// Reuse the org's existing Stripe customer record when we have
+	// one — that way invoices, saved cards, and subscriptions all
+	// roll up to the same customer over time. Stripe rejects
+	// CustomerEmail alongside Customer, so the email-only path is
+	// only for the first-ever purchase.
+	if existingCustomerID != "" {
+		params.Customer = stripe.String(existingCustomerID)
+	} else if customerEmail != "" {
 		params.CustomerEmail = stripe.String(customerEmail)
 	}
 	// Auto-collect tax via Stripe Tax — once the operator's account is
@@ -249,6 +258,21 @@ func (h *Handlers) handleCheckoutCompleted(ctx context.Context, event stripe.Eve
 	if err := updatePurchaseStripeMetadata(ctx, tx, purchaseID, sess); err != nil {
 		return err
 	}
+	// Capture the Stripe customer ID on the org so subsequent
+	// "Update payment method" / portal-session calls have something
+	// to target. Only fill in when the column is currently NULL —
+	// once an org is linked, we don't repoint it under them via a
+	// later checkout. Subsequent purchases by the same org will
+	// already reuse that customer record on Stripe's side anyway.
+	if sess.Customer != nil && sess.Customer.ID != "" {
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE organizations
+			   SET stripe_customer_id = $1
+			 WHERE id = $2 AND stripe_customer_id IS NULL
+		`, sess.Customer.ID, orgID); err != nil {
+			return fmt.Errorf("org customer link: %w", err)
+		}
+	}
 	if err := tx.Commit(); err != nil {
 		return err
 	}
@@ -379,6 +403,54 @@ func (h *Handlers) handleChargeRefunded(ctx context.Context, event stripe.Event)
 		})
 	}
 	return nil
+}
+
+// CreatePortalSession mints a Stripe Customer Portal session for the
+// caller's org and returns the hosted URL. The portal lets paying
+// customers update their payment method, view past invoices, and
+// (where Stripe is configured) cancel subscriptions — all on
+// Stripe-hosted UI we don't have to build or maintain.
+//
+// 409 with code "no_customer" when the org has never completed a
+// real Stripe checkout, since there's nothing to portal into yet.
+// 503 when Stripe isn't configured at all (self-host without keys).
+func (h *Handlers) CreatePortalSession(w http.ResponseWriter, r *http.Request) {
+	if !h.stripeEnabled() {
+		httpx.Error(w, http.StatusServiceUnavailable, "stripe not configured")
+		return
+	}
+	me, _ := auth.FromContext(r.Context())
+	if me.OrgID == nil {
+		httpx.Error(w, http.StatusForbidden, "no organization")
+		return
+	}
+	var customer sql.NullString
+	if err := h.DB.QueryRowContext(r.Context(),
+		`SELECT stripe_customer_id FROM organizations WHERE id = $1`,
+		*me.OrgID).Scan(&customer); err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "lookup failed")
+		return
+	}
+	if !customer.Valid || customer.String == "" {
+		httpx.Error(w, http.StatusConflict, "no_customer")
+		return
+	}
+	publicURL := strings.TrimRight(h.PublicURL, "/")
+	if publicURL == "" {
+		httpx.Error(w, http.StatusInternalServerError, "PublicURL is not configured")
+		return
+	}
+	stripe.Key = h.StripeSecretKey
+	sess, err := portalsession.New(&stripe.BillingPortalSessionParams{
+		Customer:  stripe.String(customer.String),
+		ReturnURL: stripe.String(publicURL + "/arrange#purchases"),
+	})
+	if err != nil {
+		logx.Error("stripe.portal.new_failed", "org_id", *me.OrgID, "err", err.Error())
+		httpx.Error(w, http.StatusBadGateway, "portal session failed")
+		return
+	}
+	httpx.JSON(w, http.StatusOK, map[string]string{"url": sess.URL})
 }
 
 // updatePurchaseStripeMetadata stamps the charge id + invoice URL onto

@@ -462,6 +462,10 @@ func New(cfg Config) http.Handler {
 		// Account deletion is soft — DeleteMyAccount sets a 7-day
 		// timer; this endpoint clears it before the sweeper runs.
 		r.Post("/me/cancel-deletion", adminH.CancelMyDeletion)
+		// Stripe Customer Portal: hosted UI for the org's payment
+		// method, invoices, and cancellations. Returns a one-shot
+		// session URL the client redirects to.
+		r.Post("/me/portal-session", adminH.CreatePortalSession)
 		// GDPR data export — JSON dump of personal + (when scoped)
 		// org data, served as a downloadable file.
 		r.Get("/me/export", adminH.ExportMyData)

@@ -1599,6 +1599,9 @@
       'Choose your name:': 'Välj ditt namn:',
       'Downloaded team-links.csv — open it in your sharing app.':
           'Laddade ner team-links.csv — öppna den i din delningsapp.',
+      'Update payment method': 'Uppdatera betalmetod',
+      'Could not open billing portal — try again.':
+          'Kunde inte öppna betalningsportalen — försök igen.',
       // ---- Round 13: transfer of ownership ----
       'Transfer ownership…': 'Överlåt ägarskap…',
       'Transfer ownership of {{name}}': 'Överlåt ägarskap av {{name}}',

@@ -146,8 +146,17 @@ func (h *Handlers) CreatePurchase(w http.ResponseWriter, r *http.Request) {
 	// mode creates a Checkout Session and uses its hosted URL.
 	checkoutURL := fmt.Sprintf("/purchase/%d", id)
 	if provider == "stripe" {
+		// Look up the org's Stripe customer ID (set by an earlier
+		// completed checkout) so this session attaches to the same
+		// customer record. Empty for first-ever purchases — the
+		// webhook will capture it on completion.
+		var existingCustomerID sql.NullString
+		_ = h.DB.QueryRowContext(r.Context(),
+			`SELECT stripe_customer_id FROM organizations WHERE id = $1`,
+			*me.OrgID).Scan(&existingCustomerID)
 		url, sessID, serr := h.createStripeCheckoutSession(r.Context(),
-			id, req.AdventureSlug, advTitle, req.MaxTeams, amount, me.Email)
+			id, req.AdventureSlug, advTitle, req.MaxTeams, amount, me.Email,
+			existingCustomerID.String)
 		if serr != nil {
 			// Roll back the pending row so we don't leave dangling
 			// pendings every time Stripe is down. Best-effort: if
