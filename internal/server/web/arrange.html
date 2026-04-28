@@ -2609,7 +2609,7 @@ function renderTOTPChallenge(challenge, opts) {
   const recoveryEl = h('input', {
     name: 'recovery', autocomplete: 'one-time-code', maxlength: 11, placeholder: 'xxxx-xxxx',
   });
-  const recoveryRow = h('label', { class: 'field', hidden: '' },
+  const recoveryRow = h('label', { class: 'field', hidden: true },
     h('span', {}, t('Recovery code')), recoveryEl);
   const status = h('p', { class: 'muted', style: 'font-size:.85rem' });
   const submit = h('button', { class: 'btn primary', type: 'submit' }, t('Verify'));
@@ -10573,7 +10573,7 @@ function renderTOTPEnabled(refresh, enrolledAt) {
 // + secret → user scans → ConfirmTOTP → display recovery codes.
 function renderTOTPDisabledSetup(refresh) {
   const status = h('p', { class: 'muted', style: 'font-size:.85rem' });
-  const setupBox = h('div', { hidden: '' });
+  const setupBox = h('div', { hidden: true });
   const startBtn = h('button', { class: 'btn primary', type: 'button', on: { click: async () => {
     startBtn.disabled = true;
     status.className = 'muted'; status.textContent = t('Generating secret…');
@@ -10677,7 +10677,7 @@ function renderSettingsEmailCard(me) {
   // Revert banner: filled in by /api/admin/me/email/revert-status if a
   // recent change is still revertable. Hidden by default so the card
   // is identical for the common no-pending-revert case.
-  const revertBox = h('div', { hidden: '' });
+  const revertBox = h('div', { hidden: true });
   (async () => {
     const r = await api('/api/admin/me/email/revert-status');
     if (!r.ok || !r.body?.available) return;
