@@ -1983,6 +1983,24 @@ async function promptPassword(title, message) {
 // referenced from the dialog. Avoids collisions when multiple modals
 // stack (rare but cheap to support).
 let _modalSeq = 0;
+// _modalStack tracks every open modal (innermost last) so the global
+// popstate handler can route browser-back to "close the topmost modal"
+// instead of leaving the page. _modalSuppressPop counts pending
+// programmatic history.back() calls fired by close() — one back per
+// pushed entry — so the resulting popstate doesn't recursively close
+// another modal underneath. The flag is a counter rather than a bool
+// because chained close()+open() patterns (Edit → switch to a different
+// modal) can stack two history.back() calls before any popstate fires.
+const _modalStack = [];
+let _modalSuppressPop = 0;
+window.addEventListener('popstate', () => {
+  if (_modalSuppressPop > 0) {
+    _modalSuppressPop--;
+    return;
+  }
+  if (_modalStack.length === 0) return;
+  _modalStack[_modalStack.length - 1].closeFromPop();
+});
 function modal(title, bodyFn, opts = {}) {
   return new Promise((resolve) => {
     const host = document.getElementById('modal-host');
@@ -1996,19 +2014,42 @@ function modal(title, bodyFn, opts = {}) {
     // false from the hook blocks the close (Save still works because
     // it bypasses the guard via close(value, { force: true })).
     let beforeClose = null;
+    let removed = false;
+    const titleID = 'modal-title-' + (++_modalSeq);
     // Dispatch a synthetic event before teardown so content hooks (e.g.
     // the puzzle editor's parked file input) can clean up whether close
-    // is called via Save, Cancel, Esc, or backdrop click.
+    // is called via Save, Cancel, Esc, backdrop click, or browser back.
     const close = (value, options) => {
       const force = !!(options && options.force);
+      const fromPop = !!(options && options.fromPop);
       // Form submit / explicit Save always wins; only treat null/undefined
       // (the cancel/Esc/backdrop signals) as candidates for the guard.
       const isCancel = value === null || value === undefined;
       if (isCancel && !force && beforeClose) {
-        try { if (beforeClose() === false) return; } catch { /* fall through to close */ }
+        try {
+          if (beforeClose() === false) {
+            // Dirty-check refused. If the gesture was the browser's
+            // back button, re-push so the URL/back stack still maps to
+            // "this modal is open". Otherwise just stay open.
+            if (fromPop) {
+              history.pushState({ zvModal: titleID }, '');
+            }
+            return;
+          }
+        } catch { /* fall through to close */ }
       }
+      if (removed) return; // idempotent: a button handler may call close twice.
+      removed = true;
       body.dispatchEvent(new CustomEvent('modal:close'));
       document.removeEventListener('keydown', onKey);
+      const idx = _modalStack.indexOf(handle);
+      if (idx >= 0) _modalStack.splice(idx, 1);
+      // Pop the history entry pushed on open. Skip when the close was
+      // triggered by popstate itself (the entry is already gone).
+      if (!fromPop) {
+        _modalSuppressPop++;
+        history.back();
+      }
       host.replaceChildren();
       // Restore focus to the trigger element so a keyboard user stays
       // anchored in the same row/button they just acted from.
@@ -2017,7 +2058,9 @@ function modal(title, bodyFn, opts = {}) {
       }
       resolve(value);
     };
-    const titleID = 'modal-title-' + (++_modalSeq);
+    const handle = {
+      closeFromPop: () => close(null, { force: false, fromPop: true }),
+    };
     // Tab-trap: keep focus inside the dialog so a screen-reader user
     // can't accidentally Tab into the page behind. Standard pattern —
     // intercept Tab when focus is on the first/last focusable child.
@@ -2036,6 +2079,11 @@ function modal(title, bodyFn, opts = {}) {
       }
     };
     document.addEventListener('keydown', onKey);
+    // Push a history entry so the browser back button maps to "close
+    // modal" rather than "leave the page". The URL doesn't change —
+    // this is purely a marker on the back stack.
+    _modalStack.push(handle);
+    history.pushState({ zvModal: titleID }, '');
     const back = h('div', {
       class: 'modal-back',
       role: 'presentation',
@@ -4218,7 +4266,14 @@ async function viewRunDetail(view, runID) {
                 h('td', {},
                   h('div', { class: 'mono' },
                     adventure?.pages
-                      ? t('{{i}} / {{n}}', { i: tm.page_index + 1, n: adventure.pages.length })
+                      // Cap the numerator: a finished team has page_index
+                      // == pages.length, so the naive +1 prints "8 / 7".
+                      // The "done" pill on the name cell already conveys
+                      // completion — keep this column at "n / n".
+                      ? t('{{i}} / {{n}}', {
+                          i: Math.min(tm.page_index + 1, adventure.pages.length),
+                          n: adventure.pages.length,
+                        })
                       : tm.page_index),
                   page && !tm.completed_at
                     ? h('div', { class: 'muted', style: 'font-size:.85rem' }, page.title || t('(untitled)'))
