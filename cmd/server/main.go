@@ -42,6 +42,19 @@ func envIntDefault(key string, fallback int) int {
 	return fallback
 }
 
+// envTruthy reads a boolean-flavoured env var. Anything in the standard
+// "yes/true/on" set (case-insensitive, trimmed) flips it on; everything
+// else — empty, "0", "false", garbage — stays off. Matches the
+// docker-compose / systemd convention where ZV_FLAG=1 is the obvious
+// way to switch a behaviour on.
+func envTruthy(key string) bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(key))) {
+	case "1", "true", "yes", "on":
+		return true
+	}
+	return false
+}
+
 func main() {
 	var (
 		addr              = flag.String("addr", ":8080", "listen address")
@@ -173,6 +186,9 @@ func main() {
 			LocationRetentionDays: os.Getenv("ZV_LOCATION_RETENTION_DAYS"),
 			AuditRetentionDays:    os.Getenv("ZV_AUDIT_RETENTION_DAYS"),
 			LastUpdated:           os.Getenv("ZV_LEGAL_LAST_UPDATED"),
+			HostingProvider:       os.Getenv("ZV_HOSTING_PROVIDER"),
+			EmailProvider:         os.Getenv("ZV_EMAIL_PROVIDER"),
+			Reviewed:              envTruthy("ZV_LEGAL_REVIEWED"),
 		},
 		StripeSecretKey:     os.Getenv("ZV_STRIPE_SECRET_KEY"),
 		StripeWebhookSecret: os.Getenv("ZV_STRIPE_WEBHOOK_SECRET"),

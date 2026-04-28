@@ -75,6 +75,10 @@ short tour:
 | `ZV_LOG_FORMAT` | `text` (dev) or `json` (aggregator) | `text` |
 | `ZV_SMTP_*` | SMTP relay for verification + reset mail (optional) | unset |
 | `ZV_COMPANY_NAME` / `ZV_CONTACT_EMAIL` | Surfaced on `/privacy` + `/terms` | unset |
+| `ZV_DPO_EMAIL` / `ZV_JURISDICTION` | Data-protection contact + governing law on `/privacy` + `/terms` | unset (DPO falls back to contact) |
+| `ZV_HOSTING_PROVIDER` / `ZV_EMAIL_PROVIDER` | Sub-processor names listed in `/privacy` | unset (page shows `[set ZV_…]`) |
+| `ZV_LEGAL_REVIEWED` | Set to `1` after a lawyer signs off — strips the yellow "draft template" banners | unset (banners visible) |
+| `ZV_LEGAL_LAST_UPDATED` | "Last updated" date (YYYY-MM-DD) on the legal pages | today |
 | `ZV_STRIPE_SECRET_KEY` / `ZV_STRIPE_WEBHOOK_SECRET` | Real payments (optional) | unset |
 | `ZV_LOCATION_RETENTION_DAYS` / `ZV_AUDIT_RETENTION_DAYS` | Privacy sweepers; `0` to disable | `30` / `90` |
 
