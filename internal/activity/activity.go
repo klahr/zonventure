@@ -124,5 +124,52 @@ func MaybeCompleteEvent(ctx context.Context, db Execer, eventID int64) (bool, er
 		return false, nil
 	}
 	Record(ctx, db, eventID, nil, Actor{}, EventCompleted, nil)
+	// Best-effort slot-session sweep — see ExpireEventSlotSessions.
+	// A failure here does not unwind the state transition: the event
+	// is genuinely complete, we just kept some now-useless cookies
+	// alive a bit longer. The next cron sweep / app restart cleans
+	// them up.
+	_ = ExpireEventSlotSessions(ctx, db, eventID)
 	return true, nil
+}
+
+// ExpireEventSlotSessions invalidates every active player session
+// associated with the given event and stamps the magic-link tokens
+// expired so they can't be re-used to mint new sessions. Called
+// when the event reaches a terminal state (completed or cancelled).
+//
+// Two layers, both required:
+//
+//   - DELETE FROM slot_sessions kicks any browser tab that's
+//     currently holding a zv_slot cookie — their next request
+//     dereferences to nothing and the middleware returns 401.
+//
+//   - UPDATE player_slots SET expires_at = now() poisons the
+//     magic-link itself, so a player who closes the tab and
+//     re-clicks tomorrow can't re-login with the same token. The
+//     row stays in place — arrangers still need to see who played
+//     for the audit trail; we only kill its login affordance.
+//
+// Slots that already had an earlier expires_at keep theirs; we only
+// stamp the unset / future ones. That preserves any "this magic
+// link expired three days ago" arranger-visible reason instead of
+// flattening it to "expired at event-end".
+func ExpireEventSlotSessions(ctx context.Context, db Execer, eventID int64) error {
+	if _, err := db.ExecContext(ctx, `
+		DELETE FROM slot_sessions
+		WHERE slot_id IN (
+			SELECT ps.id FROM player_slots ps
+			JOIN teams t ON t.id = ps.team_id
+			WHERE t.event_id = $1
+		)
+	`, eventID); err != nil {
+		return err
+	}
+	_, err := db.ExecContext(ctx, `
+		UPDATE player_slots
+		SET expires_at = now_text()
+		WHERE team_id IN (SELECT id FROM teams WHERE event_id = $1)
+		  AND (expires_at IS NULL OR expires_at = '' OR expires_at > now_text())
+	`, eventID)
+	return err
 }

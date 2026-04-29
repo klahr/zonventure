@@ -2876,27 +2876,32 @@ function preStartCountdownText(scheduledISO, serverNowISO) {
 // renderCompleted replaces the simple "Adventure complete!" line with a
 // richer end-of-run card: team stats, distance, time, right/wrong.
 async function renderCompleted(s) {
-  // A placeholder while /summary loads.
   const host = el('div', { class: 'summary' });
-  host.append(
-    el('h2', {}, t('Adventure complete! 🎉')),
-    el('div', { class: 'who' }, `${s.team_name || ''} · ${s.adventure_title || ''}`),
-    el('p', { class: 'muted' }, t('Loading your event stats…')));
+  // Paint the full layout immediately with em-dash placeholders so
+  // the card lands stable behind the celebrate fade-out. The /summary
+  // fetch resolves a moment later and we patch the stat values in
+  // place. No "Loading your event stats…" intermediate state, no
+  // second layout shift, and on a network failure the card stays
+  // dignified — the celebration is still the point; the numbers
+  // are a bonus.
+  const placeholderStats = {
+    team_name:        s.team_name || '',
+    adventure_title:  s.adventure_title || '',
+    distance_m:       NaN, // → formatDistance returns '—'
+    duration_seconds: NaN, // → formatDuration returns '—'
+    answers_right:    '—',
+    answers_wrong:    '—',
+    page_count:       0,   // → suppresses the "Solved all N…" caption
+  };
+  fillSummaryHost(host, placeholderStats, s);
   app.append(host);
 
   let stats = null;
   try {
     const r = await api('/api/player/summary');
     if (r.status === 200) stats = r.body;
-  } catch { /* ignore */ }
-  if (!stats) {
-    host.replaceChildren(
-      el('h2', {}, t('Adventure complete! 🎉')),
-      el('div', { class: 'who' }, `${s.team_name || ''} · ${s.adventure_title || ''}`),
-      el('p', { class: 'muted' }, t('Could not load stats.')));
-    return;
-  }
-  fillSummaryHost(host, stats, s);
+  } catch { /* ignore — keep placeholders */ }
+  if (stats) fillSummaryHost(host, stats, s);
 }
 
 function fillSummaryHost(host, stats, s) {
@@ -2904,8 +2909,15 @@ function fillSummaryHost(host, stats, s) {
   // so authors can say something specific — a thank you, a pointer to
   // the next event, etc. Newlines preserved via .outro-custom CSS.
   const customOutro = s && s.outro_text && s.outro_text.trim();
+  // The share button is only meaningful once the real stats arrive
+  // — gating on a numeric answers_right keeps it hidden during the
+  // em-dash placeholder pass. Hide entirely when neither share nor
+  // clipboard APIs exist; we don't want a button that never works.
+  const hasRealStats = typeof stats.answers_right === 'number';
+  const canShare = !!(navigator.share || navigator.clipboard?.writeText);
+  const shareBtn = (hasRealStats && canShare) ? buildShareButton(stats, s) : null;
   host.replaceChildren(
-    el('h2', {}, t('Adventure complete! 🎉')),
+    el('h2', {}, t('Adventure complete!'), ' 🎉'),
     el('div', { class: 'who' }, `${stats.team_name} · ${stats.adventure_title}`),
     el('div', { class: 'stats-grid' },
       statBox(formatDistance(stats.distance_m),       t('Distance')),
@@ -2913,6 +2925,7 @@ function fillSummaryHost(host, stats, s) {
       statBox(`${stats.answers_right}`,               t('Correct answers')),
       statBox(`${stats.answers_wrong}`,               t('Misses')),
     ),
+    shareBtn,
     customOutro
       ? el('div', { class: 'outro-custom', html: s.outro_text })
       : (stats.page_count
@@ -2922,6 +2935,66 @@ function fillSummaryHost(host, stats, s) {
                 : t('Solved all {{n}} puzzles.', { n: stats.page_count }))
           : null),
   );
+}
+
+// Compose a multi-line share text from the player's stats. Lines are
+// separate so a paste into Slack or iMessage reads top-down with the
+// headline as the first line — share-target previews on most apps
+// quote only the first line, which is exactly the brag we want.
+function shareResultText(stats, s) {
+  const title = (s && s.adventure_title) || t('Adventure complete!');
+  const lines = [t('I finished {{title}}!', { title })];
+  if (typeof stats.answers_right === 'number' && stats.page_count) {
+    lines.push(t('Solved {{n}} of {{m}} puzzles', { n: stats.answers_right, m: stats.page_count }));
+  }
+  if (Number.isFinite(stats.duration_seconds) && stats.duration_seconds > 0) {
+    lines.push(t('Time: {{t}}', { t: formatDuration(stats.duration_seconds) }));
+  }
+  if (Number.isFinite(stats.distance_m) && stats.distance_m > 0) {
+    lines.push(t('Distance: {{d}}', { d: formatDistance(stats.distance_m) }));
+  }
+  return { title, text: lines.join('\n') };
+}
+
+function buildShareButton(stats, s) {
+  const btn = el('button', { class: 'btn primary',
+    style: 'margin-top:1rem; width:100%' }, t('Share result'));
+  btn.addEventListener('click', async () => {
+    const { title, text } = shareResultText(stats, s);
+    // Native share sheet first — best UX on mobile (one tap to any
+    // installed app). AbortError just means the user dismissed the
+    // sheet, which we treat as a successful no-op rather than
+    // falling through to clipboard.
+    if (navigator.share) {
+      try { await navigator.share({ title, text }); return; }
+      catch (e) {
+        if (e && e.name === 'AbortError') return;
+        // Fall through on real errors (Permission, NotAllowed, …).
+      }
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      try {
+        await navigator.clipboard.writeText(text);
+        flashBtnLabel(btn, t('Copied!'));
+        return;
+      } catch { /* fall through */ }
+    }
+    flashBtnLabel(btn, t('Sharing not available'));
+  });
+  return btn;
+}
+
+// flashBtnLabel temporarily swaps a button's text so the click feedback
+// is visible without toasting (play.html doesn't have a toast surface).
+// Restores after 1.8s, which is long enough to read on a phone.
+function flashBtnLabel(btn, msg) {
+  if (!btn.dataset.origLabel) btn.dataset.origLabel = btn.textContent;
+  btn.textContent = msg;
+  btn.disabled = true;
+  setTimeout(() => {
+    btn.textContent = btn.dataset.origLabel;
+    btn.disabled = false;
+  }, 1800);
 }
 
 function statBox(value, label) {
@@ -3593,6 +3666,41 @@ function openMenuDrawer(s) {
     shareBtn.append(shareSub);
     shareBtn.addEventListener('click', () => { close(); openTeamShareSheet(s.team_token); });
     teamSection.append(shareBtn);
+
+    // Player-driven team rename. Same prompt() pattern the slot
+    // rename uses on the welcome screen — minimal UI surface and the
+    // same "any member can do it" model. The server enforces the
+    // UNIQUE(event_id, name) constraint; on conflict we surface
+    // "name already used" inline rather than silently swallowing.
+    const renameBtn = document.createElement('button');
+    renameBtn.type = 'button';
+    renameBtn.className = 'menu-row';
+    renameBtn.append(document.createTextNode(t('Rename team')));
+    const renameSub = document.createElement('span');
+    renameSub.className = 'menu-row-sub';
+    renameSub.textContent = t('Pick a name everyone on your team agrees on. Updates immediately for the arranger and your team-mates.');
+    renameBtn.append(renameSub);
+    renameBtn.addEventListener('click', async () => {
+      const current = s.team_name || '';
+      const next = (prompt(t('New team name:'), current) || '').trim();
+      if (!next || next === current) return;
+      const r = await api('/api/player/team/name', {
+        method: 'POST', body: JSON.stringify({ name: next }),
+      });
+      if (r.status === 200 && r.body?.name) {
+        s.team_name = r.body.name;
+        // Re-open the drawer so the section heading + welcome card
+        // both reflect the new name on next paint. Cheap; the panel
+        // is rebuilt on every open anyway.
+        close();
+        openMenuDrawer(s);
+      } else if (r.status === 409) {
+        alert(t('That name is already taken in this event. Try another.'));
+      } else {
+        alert(r.body?.error || t('Could not rename — try again.'));
+      }
+    });
+    teamSection.append(renameBtn);
     panel.append(teamSection);
   }
 

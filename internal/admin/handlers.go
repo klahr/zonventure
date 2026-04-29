@@ -606,6 +606,10 @@ func (h *Handlers) CancelEvent(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusInternalServerError, "update failed")
 		return
 	}
+	// Symmetrical to MaybeCompleteEvent: a cancelled event should
+	// stop accepting player traffic immediately. Best-effort —
+	// failure here doesn't unwind the cancellation.
+	_ = activity.ExpireEventSlotSessions(r.Context(), h.DB, eventID)
 	me, _ := auth.FromContext(r.Context())
 	activity.Record(r.Context(), h.DB, eventID, nil, activity.UserActor(me.ID), activity.EventCancelled, nil)
 	h.Hub.Publish(ws.EventTopic(eventID), "changed", nil)

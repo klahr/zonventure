@@ -22,6 +22,27 @@
      inline copy just gets the data-theme attribute on <html> in time
      for the first paint. Same key (zv-theme) shared across the app. -->
 <script>(function(){try{var v=localStorage.getItem('zv-theme');if(v==='light'||v==='dark')document.documentElement.setAttribute('data-theme',v);}catch(e){}})();</script>
+<!-- Unsupported-browser bail-out. Pure ES5 so even IE11 / older
+     Android WebView builds run it cleanly; if any required API is
+     missing we replace the document with a plain banner before the
+     modern-syntax bundle below has a chance to throw a silent
+     SyntaxError. fetch + WebSocket + Promise + Object.assign cover
+     ~every API the rest of the page actually leans on. -->
+<script>(function(){
+  var ok = typeof fetch === 'function' &&
+           typeof WebSocket !== 'undefined' &&
+           typeof Promise !== 'undefined' &&
+           typeof Object.assign === 'function';
+  if (ok) return;
+  document.documentElement.innerHTML =
+    '<head><meta charset="utf-8"><title>Unsupported browser</title>' +
+    '<style>body{font-family:system-ui,-apple-system,sans-serif;max-width:34rem;margin:5rem auto;padding:0 1.25rem;line-height:1.55;color:#222;background:#fff}h1{margin:0 0 .5rem;font-size:1.4rem}p{margin:0 0 1rem}code{background:#f3f3f3;padding:.05rem .35rem;border-radius:4px}</style>' +
+    '</head><body>' +
+    '<h1>Browser not supported</h1>' +
+    '<p>Zonventure Studio needs a current version of <strong>Chrome</strong>, <strong>Firefox</strong>, <strong>Safari</strong>, or <strong>Edge</strong>.</p>' +
+    '<p>Please update your browser and reload this page. If your device is managed by IT, ask them to push a recent build.</p>' +
+    '</body>';
+})();</script>
 <style>
 /* ---------- Theme (Zonventure palette) ---------- */
 :root {
@@ -3054,6 +3075,7 @@ function currentCrumb() {
     organizations: t('Organizations'),
     library:       t('Library'),
     puzzles:       t('Puzzles'),
+    purchases:     t('Purchases'),
     admins:        t('Admins'),
     simulator:     t('Simulator'),
     logs:          t('Logs'),
@@ -3063,9 +3085,20 @@ function currentCrumb() {
     settings:      t('Settings'),
   };
   const sectionLabel = LABELS[section] || (section ? section[0].toUpperCase() + section.slice(1) : '');
+  // Deep-link suffixes — without these, navigating directly to
+  // /arrange#library/42 leaves the breadcrumb reading "Library" with
+  // no signal that the user is on a detail page. The {section}
+  // label still tracks the sidebar, the suffix tells them where in
+  // it they are.
   if (section === 'events' && parts[1]) return t('{{section}} / Event #{{id}}', { section: sectionLabel, id: parts[1] });
   if (section === 'adventures' && parts[1]) return t('{{section}} / {{slug}}', { section: sectionLabel, slug: parts[1] });
   if (section === 'store' && parts[1]) return t('{{section}} / {{slug}}', { section: sectionLabel, slug: parts[1] });
+  if (section === 'library' && parts[1]) return t('{{section}} / Puzzle #{{id}}', { section: sectionLabel, id: parts[1] });
+  if (section === 'puzzles' && parts[1]) return t('{{section}} / Puzzle #{{id}}', { section: sectionLabel, id: parts[1] });
+  if (section === 'webhooks' && parts[1] === 'log' && parts[2]) {
+    return t('{{section}} / Log #{{id}}', { section: sectionLabel, id: parts[2] });
+  }
+  if (section === 'manual' && parts[1]) return t('{{section}} / {{anchor}}', { section: sectionLabel, anchor: parts[1] });
   return sectionLabel;
 }
 

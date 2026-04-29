@@ -411,6 +411,12 @@ func New(cfg Config) http.Handler {
 		// often a placeholder ("Player 3"). Letting the player put
 		// their own name on the leaderboard improves engagement.
 		r.Post("/me/name", playerH.RenameMyself)
+		// Player-driven team rename — the arranger's "Team 3"
+		// placeholder is a common pre-event setup and the team
+		// itself agrees on the real name as a group. Any team
+		// member can update; UNIQUE(event_id, name) prevents
+		// collisions across teams.
+		r.Post("/team/name", playerH.RenameMyTeam)
 		r.Get("/summary", playerH.Summary)
 		r.Post("/logout", playerH.Logout)
 		// GDPR right-to-erasure: wipes pings + answers + slot name +

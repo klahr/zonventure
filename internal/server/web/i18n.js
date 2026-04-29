@@ -218,7 +218,6 @@
       // ---- celebrate + rebuff ----
       'Correct!': 'Rätt!',
       'Adventure complete!': 'Äventyret klart!',
-      'Adventure complete! 🎉': 'Äventyret klart! 🎉',
       'Next puzzle coming up…': 'Nästa pussel…',
       'Great work — you made it to the end.':
         'Bra jobbat — du kom hela vägen i mål.',
@@ -232,6 +231,13 @@
       'Misses': 'Missar',
       'Solved all {{n}} puzzle.': 'Löste alla {{n}} pussel.',
       'Solved all {{n}} puzzles.': 'Löste alla {{n}} pussel.',
+      'Share result': 'Dela resultat',
+      'Sharing not available': 'Delning är inte tillgänglig',
+      'Copied!': 'Kopierat!',
+      'I finished {{title}}!': 'Jag klarade {{title}}!',
+      'Solved {{n}} of {{m}} puzzles': 'Löste {{n}} av {{m}} pussel',
+      'Time: {{t}}': 'Tid: {{t}}',
+      'Distance: {{d}}': 'Sträcka: {{d}}',
       // ---- live (TV) ----
       'Live · push updates · ': 'Direktsändning · push-uppdateringar · ',
       '{{n}} puzzle · ': '{{n}} pussel · ',
@@ -330,6 +336,9 @@
       // ---- crumb ----
       '{{section}} / Event #{{id}}': '{{section}} / Event #{{id}}',
       '{{section}} / {{slug}}': '{{section}} / {{slug}}',
+      '{{section}} / Puzzle #{{id}}': '{{section}} / Pussel #{{id}}',
+      '{{section}} / Log #{{id}}': '{{section}} / Logg #{{id}}',
+      '{{section}} / {{anchor}}': '{{section}} / {{anchor}}',
       // ---- adventures list (arranger) ----
       'No adventures you can use yet.': 'Inga äventyr du kan köra än.',
       'Create your own or browse the Store for published adventures.':
@@ -1018,6 +1027,14 @@
         'Detta raderar din platshistorik och dina svar från denna körning. Övriga lagmedlemmar fortsätter spela. Du loggas ut och länken fungerar inte igen. Fortsätt?',
       'Forget me': 'Glöm mig',
       'Cancel': 'Avbryt',
+      // ---- player team rename (drawer) ----
+      'Rename team': 'Byt lagnamn',
+      'Pick a name everyone on your team agrees on. Updates immediately for the arranger and your team-mates.':
+        'Välj ett namn som alla i laget är överens om. Uppdateras direkt för arrangören och dina lagkamrater.',
+      'New team name:': 'Nytt lagnamn:',
+      'That name is already taken in this event. Try another.':
+        'Det namnet är redan upptaget i den här händelsen. Välj ett annat.',
+      'Could not rename — try again.': 'Kunde inte byta namn — försök igen.',
       // ---- privacy & feedback drawer ----
       'Privacy & feedback': 'Integritet & återkoppling',
       'Share location': 'Dela plats',

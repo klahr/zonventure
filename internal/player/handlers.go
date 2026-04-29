@@ -1074,6 +1074,45 @@ func (h *Handlers) RenameMyself(w http.ResponseWriter, r *http.Request) {
 	httpx.JSON(w, http.StatusOK, map[string]string{"name": name})
 }
 
+// RenameMyTeam updates the calling slot's *team* name. Any team
+// member can rename — the arranger's pre-set name ("Team 1") is
+// often a placeholder and the team itself usually agrees on the
+// real name as a group. There's no "first-renamer-wins" lock:
+// teams that bicker over the name will figure it out at the table,
+// not via the API. Same length cap as the arranger flow.
+//
+// Conflict handling mirrors the admin RenameTeam: the
+// UNIQUE(event_id, name) constraint is the gate, and a clash
+// surfaces as 409 with copy the UI can show inline.
+func (h *Handlers) RenameMyTeam(w http.ResponseWriter, r *http.Request) {
+	var req RenameRequest
+	if !httpx.DecodeJSON(w, r, &req) {
+		return
+	}
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		httpx.Error(w, http.StatusBadRequest, "name required")
+		return
+	}
+	if utf8.RuneCountInString(name) > 64 {
+		httpx.Error(w, http.StatusBadRequest, "name too long (64 chars max)")
+		return
+	}
+	slot, _ := auth.SlotFromContext(r.Context())
+	if _, err := h.DB.ExecContext(r.Context(),
+		`UPDATE teams SET name = $1 WHERE id = $2`, name, slot.TeamID); err != nil {
+		// UNIQUE(event_id, name) is the only constraint that can
+		// realistically fire here. Any other DB error reads as 409
+		// from the player's perspective ("can't use that name") —
+		// the alternative is a generic 500 that the UI can't
+		// recover from gracefully.
+		httpx.Error(w, http.StatusConflict, "name already used in this event")
+		return
+	}
+	h.Hub.Publish(ws.EventTopic(slot.EventID), "changed", nil)
+	httpx.JSON(w, http.StatusOK, map[string]string{"name": name})
+}
+
 // HintRequest is the body of POST /api/play/hint. The page is implicit
 // (it's the team's current page); the index is the next sequential
 // hint the client wants to reveal. Sequential because the UI shows
