@@ -13,8 +13,6 @@ import (
 	"time"
 
 	"git.sr.ht/~klahr/zv/internal/tokenx"
-
-	"golang.org/x/crypto/bcrypt"
 )
 
 const (
@@ -145,13 +143,11 @@ var ErrPasswordNotSet = errors.New("password not set")
 // reset) instead.
 var ErrPasswordAlreadySet = errors.New("password already set")
 
-// HashPassword returns a bcrypt hash suitable for storing in users.password_hash.
+// HashPassword returns an Argon2id PHC string suitable for storing
+// in users.password_hash. Legacy bcrypt rows still verify (see
+// verifySecret) and lazy-upgrade to this format on next login.
 func HashPassword(pw string) (string, error) {
-	b, err := bcrypt.GenerateFromPassword([]byte(pw), bcrypt.DefaultCost)
-	if err != nil {
-		return "", err
-	}
-	return string(b), nil
+	return hashSecret(pw)
 }
 
 // VerifyPassword checks the username+password credential and returns
@@ -184,8 +180,22 @@ func VerifyPassword(ctx context.Context, db *sql.DB, username, password string) 
 	if !hash.Valid {
 		return u, ErrPasswordNotSet
 	}
-	if err := bcrypt.CompareHashAndPassword([]byte(hash.String), []byte(password)); err != nil {
+	ok, needsRehash, vErr := verifySecret(hash.String, password)
+	if vErr != nil {
+		return User{}, vErr
+	}
+	if !ok {
 		return User{}, ErrInvalidCredentials
+	}
+	if needsRehash {
+		// Best-effort: a write failure here doesn't block the login —
+		// the user is authenticated either way and will get rehashed
+		// next time. Worst case we keep the legacy bcrypt row another
+		// session; we never accept a weaker hash than what's already
+		// on disk.
+		if newHash, hErr := HashPassword(password); hErr == nil {
+			_, _ = db.ExecContext(ctx, `UPDATE users SET password_hash = $1 WHERE id = $2`, newHash, u.ID)
+		}
 	}
 	active, role, err := resolveInitialActiveOrg(ctx, db, u.ID)
 	if err != nil {
@@ -404,8 +414,17 @@ func VerifyUserPassword(ctx context.Context, db *sql.DB, userID int64, password 
 	if err != nil {
 		return err
 	}
-	if err := bcrypt.CompareHashAndPassword([]byte(hash.String), []byte(password)); err != nil {
+	ok, needsRehash, vErr := verifySecret(hash.String, password)
+	if vErr != nil {
+		return vErr
+	}
+	if !ok {
 		return ErrInvalidCredentials
+	}
+	if needsRehash {
+		if newHash, hErr := HashPassword(password); hErr == nil {
+			_, _ = db.ExecContext(ctx, `UPDATE users SET password_hash = $1 WHERE id = $2`, newHash, userID)
+		}
 	}
 	return nil
 }

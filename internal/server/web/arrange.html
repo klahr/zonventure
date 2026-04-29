@@ -1914,6 +1914,9 @@ const ICONS = {
   // globe — used on the publish/unpublish toggle to convey "make this
   // visible across orgs" rather than the paper-plane "send" metaphor.
   globe: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><line x1="3" y1="12" x2="21" y2="12"/><path d="M12 3a13.5 13.5 0 0 1 0 18"/><path d="M12 3a13.5 13.5 0 0 0 0 18"/></svg>',
+  // Exit / log-out: open doorframe on the left, arrow leaving through
+  // it on the right. Reads as "sign out" without needing the label.
+  exit: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>',
 };
 
 /* ========== Theme ========== */
@@ -2285,6 +2288,17 @@ async function refreshMe() {
 }
 function nav(hash) { location.hash = hash; }
 
+// Called on every successful login. The hash sticks across logout —
+// if a user was on #settings before signing out (or restarting their
+// session), the form swaps in but the URL still says #settings, so
+// the post-login render would land them there instead of the
+// dashboard. replaceState avoids firing hashchange (we re-render
+// explicitly anyway).
+function resetRouteToDashboard() {
+  history.replaceState(null, '', '#dashboard');
+  state.route = '#dashboard';
+}
+
 // switchOrgAndRender pins a new active organisation server-side, then
 // tears down the websocket subscription (its filter is per-org), pulls
 // a fresh whoami, and re-renders the route. Used by both the post-
@@ -2557,7 +2571,7 @@ function renderLogin(err, mode, extra) {
       document.getElementById('root').replaceChildren(renderTOTPChallenge(r.body.challenge, { mode: 'login' }));
       return;
     }
-    if (r.ok) { await refreshMe(); render(); return; }
+    if (r.ok) { await refreshMe(); resetRouteToDashboard(); render(); return; }
     // Lockout (429): the server's Retry-After header carries the wait
     // budget. Render a live-ticking countdown and disable the submit
     // button until the cooldown elapses, so a user mashing the button
@@ -2755,6 +2769,7 @@ function renderTOTPChallenge(challenge, opts) {
     });
     if (r.ok) {
       await refreshMe();
+      resetRouteToDashboard();
       render();
       if (mode === 'reset') {
         setTimeout(() => toastOk(t('Password updated. You\'re signed in.')), 50);
@@ -2905,7 +2920,7 @@ function renderShell() {
     class: 'btn',
     title: t('Log out'),
     on: { click: logout },
-  }, icon(ICONS.user), t('Log out ({{username}})', { username: state.me.username }));
+  }, icon(ICONS.exit), t('Log out ({{username}})', { username: state.me.username }));
   const langPicker = h('label', { class: 'sidebar-lang', title: t('Language') },
     h('span', { class: 'muted' }, t('Language')),
     zvI18n.makeLangPicker({ className: 'zv-lang-picker' }));

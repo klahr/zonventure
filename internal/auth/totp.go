@@ -17,7 +17,6 @@ import (
 	"git.sr.ht/~klahr/zv/internal/tokenx"
 
 	"github.com/pquerna/otp/totp"
-	"golang.org/x/crypto/bcrypt"
 )
 
 // TOTP 2FA implementation. The user-visible flow is:
@@ -186,7 +185,7 @@ func EnrolStart(ctx context.Context, db *sql.DB, key []byte, userID int64, accou
 // EnrolConfirm verifies the first TOTP code against the pending
 // secret stored by EnrolStart, flips totp_enabled=true, and mints a
 // set of single-use recovery codes. The plaintext codes are returned
-// once for the caller to display — only their bcrypt hashes are
+// once for the caller to display — only their Argon2id hashes are
 // retained.
 func EnrolConfirm(ctx context.Context, db *sql.DB, key []byte, userID int64, code string) ([]string, error) {
 	secret, enabled, err := loadTOTPSecret(ctx, db, key, userID)
@@ -407,14 +406,16 @@ func loadTOTPSecret(ctx context.Context, db *sql.DB, key []byte, userID int64) (
 	return secret, enabled, nil
 }
 
-// consumeRecoveryCode finds an unused row whose bcrypt hash matches
-// the supplied plaintext code, marks it used_at=now, and returns
-// nil. Returns ErrRecoveryCodeInvalid for any miss.
+// consumeRecoveryCode finds an unused row whose hash matches the
+// supplied plaintext code, marks it used_at=now, and returns nil.
+// Returns ErrRecoveryCodeInvalid for any miss.
 //
-// We have to bcrypt-compare every unused row in the worst case —
-// there are ten of them, so this is acceptable. The alternative
-// would be a fast hash, which weakens the DB-leak posture for no
-// real performance gain at this scale.
+// We have to verify every unused row in the worst case — there are
+// ten of them, so the per-attempt cost (a slow hash by design) is
+// acceptable. Goes through verifySecret so legacy bcrypt rows from
+// before the Argon2id migration still redeem; those rows are
+// single-use anyway, so there is no rehash-on-success path here —
+// the matching row is marked used_at and never read again.
 func consumeRecoveryCode(ctx context.Context, db *sql.DB, userID int64, plaintext string) error {
 	plaintext = canonicaliseRecoveryCode(plaintext)
 	rows, err := db.QueryContext(ctx,
@@ -431,7 +432,11 @@ func consumeRecoveryCode(ctx context.Context, db *sql.DB, userID int64, plaintex
 		if err := rows.Scan(&id, &hash); err != nil {
 			return err
 		}
-		if bcrypt.CompareHashAndPassword([]byte(hash), []byte(plaintext)) == nil {
+		ok, _, vErr := verifySecret(hash, plaintext)
+		if vErr != nil {
+			return vErr
+		}
+		if ok {
 			rows.Close()
 			if _, err := db.ExecContext(ctx,
 				`UPDATE user_recovery_codes SET used_at = now_text() WHERE id = $1 AND used_at IS NULL`, id); err != nil {
@@ -445,7 +450,7 @@ func consumeRecoveryCode(ctx context.Context, db *sql.DB, userID int64, plaintex
 
 // generateRecoveryCodes mints totpRecoveryCodeCount codes formatted
 // as XXXX-XXXX (lowercase, 8 alphanumeric chars + a dash) and their
-// bcrypt hashes. Returns plaintext + hashes in matching order.
+// Argon2id PHC hashes. Returns plaintext + hashes in matching order.
 func generateRecoveryCodes() ([]string, []string, error) {
 	codes := make([]string, totpRecoveryCodeCount)
 	hashes := make([]string, totpRecoveryCodeCount)
@@ -458,11 +463,11 @@ func generateRecoveryCodes() ([]string, []string, error) {
 		// Hash the canonical form so the input case at redemption
 		// time doesn't matter — operators reading codes off paper
 		// often fumble a character's case.
-		h, err := bcrypt.GenerateFromPassword([]byte(canonicaliseRecoveryCode(codes[i])), bcrypt.DefaultCost)
+		h, err := hashSecret(canonicaliseRecoveryCode(codes[i]))
 		if err != nil {
 			return nil, nil, err
 		}
-		hashes[i] = string(h)
+		hashes[i] = h
 	}
 	return codes, hashes, nil
 }
@@ -480,7 +485,7 @@ func randomRecoveryCodeChars(n int) (string, error) {
 	return string(out), nil
 }
 
-// canonicaliseRecoveryCode normalises user input before bcrypt
+// canonicaliseRecoveryCode normalises user input before hash
 // comparison: lowercase + strip dashes/spaces. The displayed form
 // includes the dash for readability; an authenticator-app-fumbled
 // "ABCD EFGH" still matches the stored hash for "abcdefgh".
