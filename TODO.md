@@ -42,7 +42,7 @@ a generic plugin runtime". Tackle one at a time.
 
 | # | Item | Size | Status |
 | - | - | - | - |
-| 14 | Roster import: file-format plugins via `roster.Importer` (`internal/roster/`); Content-Type dispatch in `BulkCreateTeams` | medium | **partial** — interface + JSON + CSV shipped; follow-ups: `.xlsx` upload, IOF Interface XML 3.0 (orienteering organisers), vCard 4.0 groups |
+| 14 | Roster import: file-format plugins via `teamimport.Importer` (`internal/teamimport/`); MIME + extension dispatch in `ImportTeams` handler | medium | **done** — interface + Registry + four importers (CSV, xlsx, ODS, IOF XML 3.0), each in its own subpackage so operators can subset; preview-then-confirm flow re-uses `/teams/bulk`; user-facing docs in `manual.html` link to RFC 4180, ECMA-376, OpenDocument 1.3, IOF datastandard-v3. vCard 4.0 dropped — no team-grouping shape in the spec |
 | 15 | Mailer recipes for Amazon SES / Postmark / SendGrid / Mailgun — all four expose SMTP submission so the bundled `SMTPMailer` already covers them; only docs were missing | small | **done** — `SELFHOSTING.md` "SMTP recipes" section. A native HTTP-API mailer behind a build tag (per-message tracking IDs, SES IAM auth) remains a future option but isn't load-bearing for the auth/verification mail volumes the product sends today |
 | 16 | Payment provider abstraction — extract `payments.Provider`, make Stripe one impl, allow self-host to ship without the Stripe SDK at all (Mollie / Paddle / Adyen as future impls) | medium | pending |
 | 17 | Image / avatar storage abstraction — `teams.avatar_content` and `adventure_page_images.content` are DB blobs today; pluggable backends for local FS / S3 / R2 / GCS keep the binary thin and the DB small | medium | **partial** — `storage.Blobs` interface (`internal/storage/`) + `dbblob` impl shipped; team avatars + adventure cover art now go through the seam end-to-end (admin + public/share-page paths). Remaining: `adventure_page_images.content` (more complex shape — multi-row-per-entity with `alt_text` / `idx` metadata), and the actual non-DB impls (`-tags=storage_fs`, `-tags=storage_s3`) |
@@ -52,6 +52,21 @@ a generic plugin runtime". Tackle one at a time.
 | 21 | i18n language packs — loadable bundles instead of strings baked into `i18n.js`; lets translators contribute without a JS rebuild | medium | pending |
 | 22 | SCIM 2.0 provisioning endpoint (RFC 7643/7644) — inbound user/group sync for corporate team-build and school-IT customers; lands rosters straight from Workday / Okta / Azure AD / Google Workspace | large | pending |
 | 23 | Installed-components panel — `internal/components.Component` registry, admin-only `GET /api/admin/components`, "Installed components" card on the Settings page (admin role) showing seam → impl → on/off → notes | small | **done** — `cmd/server` builds the snapshot from configured env (`describeComponents`); read-only, no runtime swapping |
+
+## Product themes
+
+Strategic gaps surfaced from a "what do users actually want?" review.
+Each theme expands into several concrete tickets when picked up; kept
+at theme level here so the directional choice ("coordination or
+memory next?") stays visible above the implementation noise.
+
+| # | Theme | Audience | Size | Status |
+| - | - | - | - | - |
+| 24 | In-event team coordination — chat / pings / "I'm here, where are you?" channel for split groups. Today there's no in-app channel between team-mates; the moment a team disperses 50 m apart they go silent and use SMS, which fragments the experience and pulls them out of the app | Player | medium | pending |
+| 25 | Post-event memory — track replay, team-photo upload at puzzle locations, shareable highlight reel. The share-result button is the start; the full loop ("here's our team's day, in one page") is what converts one-off players into people who book again with their friends | Player | medium–large | pending |
+| 26 | Puzzle analytics — per-puzzle stall time, hint-reveal rate, completion histograms surfaced to arrangers ("puzzle 4 stalls 70% of teams"). Today they have raw audit logs and have to eyeball patterns; without this they can't iterate on adventure design | Creator | medium | pending |
+| 27 | Template / shared puzzle library — fight the cold-start problem of "I just bought this product, now I owe my customer 12 puzzles by Saturday". A starter pack of public adventures or a remixable cross-org puzzle pool is what gets a new customer to first-event-shipped | Creator | medium–large | pending |
+| 28 | Post-event report — puzzle-level pacing + optional player survey + revenue tally on a single page sent to the arranger when the event completes. Both audiences benefit at once: arrangers know what to fix, players have somewhere to say it was great or that hint #3 was bad. Unblocks the data #26 / #27 build on | Both | medium | pending |
 
 ## What was checked and is fine
 

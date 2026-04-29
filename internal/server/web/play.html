@@ -2957,16 +2957,27 @@ function shareResultText(stats, s) {
 }
 
 function buildShareButton(stats, s) {
+  // Recap URL when the server has minted one (post-completion).
+  // Falls back to text-only share when the token is missing — old
+  // teams from before the recap feature shipped, or events still
+  // running; the share is degraded but the button still works.
+  const recapURL = stats.recap_token
+    ? location.origin + '/recap/' + encodeURIComponent(stats.recap_token)
+    : '';
+  const label = recapURL ? t('Share recap') : t('Share result');
   const btn = el('button', { class: 'btn primary',
-    style: 'margin-top:1rem; width:100%' }, t('Share result'));
+    style: 'margin-top:1rem; width:100%' }, label);
   btn.addEventListener('click', async () => {
     const { title, text } = shareResultText(stats, s);
+    const payload = recapURL
+      ? { title, text, url: recapURL }
+      : { title, text };
     // Native share sheet first — best UX on mobile (one tap to any
     // installed app). AbortError just means the user dismissed the
     // sheet, which we treat as a successful no-op rather than
     // falling through to clipboard.
     if (navigator.share) {
-      try { await navigator.share({ title, text }); return; }
+      try { await navigator.share(payload); return; }
       catch (e) {
         if (e && e.name === 'AbortError') return;
         // Fall through on real errors (Permission, NotAllowed, …).
@@ -2974,7 +2985,10 @@ function buildShareButton(stats, s) {
     }
     if (navigator.clipboard && navigator.clipboard.writeText) {
       try {
-        await navigator.clipboard.writeText(text);
+        // Clipboard fallback: the URL is the most useful single
+        // string for pasting into chat. When there's no recap
+        // URL, fall back to the multi-line stats summary.
+        await navigator.clipboard.writeText(recapURL || text);
         flashBtnLabel(btn, t('Copied!'));
         return;
       } catch { /* fall through */ }

@@ -1082,6 +1082,19 @@
         'Platsdelning är pausad. Öppna menyn för att dela igen.',
       'On': 'På',
       'Off': 'Av',
+      // ---- recap (post-event share page) ----
+      'Share this recap': 'Dela detta recap',
+      'Share recap': 'Dela recap',
+      'Play': 'Spela',
+      'Replay': 'Spela om',
+      'Recap link is missing — check the URL.': 'Recap-länken saknas — kontrollera URL:en.',
+      "This recap isn't available yet. Recaps appear once the event finishes.":
+        'Detta recap är inte tillgängligt än. Recap visas när eventet är klart.',
+      "Couldn't load this recap right now. Try again in a minute.":
+        'Kunde inte ladda detta recap just nu. Försök igen om en minut.',
+      "Couldn't reach the server. Check your connection and reload.":
+        'Kunde inte nå servern. Kontrollera din anslutning och ladda om.',
+      'not reached': 'ej nådd',
       // ---- legal ----
       'Privacy': 'Integritet',
       'Terms': 'Villkor',
@@ -1819,6 +1832,22 @@
       'Verify': 'Verifiera',
       'Verifying…': 'Verifierar…',
       'verification failed': 'verifieringen misslyckades',
+      // 'Secret' is the manual-entry label next to the TOTP secret
+      // string when scanning the QR isn't an option. 'Copy secret'
+      // is the tooltip on the copy-to-clipboard button beside it.
+      'Secret': 'Hemlighet',
+      'Copy secret': 'Kopiera hemlighet',
+      // 'Digit {{n}}' is the per-box aria-label for the 6 OTP
+      // digit inputs ("Digit 1", "Digit 2", …); screen readers
+      // read it on focus. 'Enter all 6 digits.' is the inline
+      // form-error when the user submits with fewer than 6.
+      'Digit {{n}}': 'Siffra {{n}}',
+      'Enter all 6 digits.': 'Ange alla 6 siffrorna.',
+      // 'studio' is the small caption under the brand wordmark on
+      // the login + signup cards. Brand element — kept lowercase
+      // and identical in Swedish, the language switch only flips
+      // surrounding copy.
+      'studio': 'studio',
     },
   };
 

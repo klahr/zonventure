@@ -793,10 +793,19 @@ func (h *Handlers) CreateTeam(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusInternalServerError, "token gen failed")
 		return
 	}
+	// recap_token is minted at team-create rather than at event-end
+	// so the URL is stable from day zero. The /recap/{token} route
+	// gates on event.state, so the URL existing before completion
+	// just 404s; no leak.
+	recapTok, err := auth.NewSlotToken()
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "token gen failed")
+		return
+	}
 	var teamID int64
 	if err := tx.QueryRowContext(r.Context(),
-		`INSERT INTO teams(event_id, name, token) VALUES ($1, $2, $3) RETURNING id`,
-		eventID, req.Name, teamTok).Scan(&teamID); err != nil {
+		`INSERT INTO teams(event_id, name, token, recap_token) VALUES ($1, $2, $3, $4) RETURNING id`,
+		eventID, req.Name, teamTok, recapTok).Scan(&teamID); err != nil {
 		httpx.Error(w, http.StatusConflict, "team name already used for this event")
 		return
 	}
@@ -983,10 +992,14 @@ func (h *Handlers) createOneTeam(ctx context.Context, eventID, orgID int64, req 
 	if err != nil {
 		return nil, errors.New("token gen failed")
 	}
+	recapTok, err := auth.NewSlotToken()
+	if err != nil {
+		return nil, errors.New("token gen failed")
+	}
 	var teamID int64
 	if err := tx.QueryRowContext(ctx,
-		`INSERT INTO teams(event_id, name, token) VALUES ($1, $2, $3) RETURNING id`,
-		eventID, req.Name, teamTok).Scan(&teamID); err != nil {
+		`INSERT INTO teams(event_id, name, token, recap_token) VALUES ($1, $2, $3, $4) RETURNING id`,
+		eventID, req.Name, teamTok, recapTok).Scan(&teamID); err != nil {
 		return nil, errors.New("team name already used for this event")
 	}
 	members := make([]teamSlotDTO, 0, len(names))

@@ -1,0 +1,528 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Zonventure · recap</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<!-- Public-by-token. The recap is shared into chat apps and social
+     networks, so the OG card stays generic — team data is rendered
+     client-side and absent from the static body. -->
+<meta property="og:title" content="Zonventure · event recap">
+<meta property="og:description" content="A team's adventure recap on Zonventure.">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary">
+<!-- Robots noindex on the page itself too. The HTTP handler also
+     emits X-Robots-Tag on the JSON, but the meta tag covers
+     crawlers that fetch HTML without setting Accept correctly. -->
+<meta name="robots" content="noindex, nofollow">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Aclonica&family=Open+Sans:wght@400;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+  integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+<script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+  integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script src="/i18n.js"></script>
+<style>
+:root {
+  --accent:       #ad1357;
+  --accent-fg:    #ffffff;
+  --ink:          #0b1220;
+  --muted:        #5a6378;
+  --bg:           #fafbfc;
+  --surface:      #ffffff;
+  --surface-2:    #f0f2f6;
+  --border:       #d8dde6;
+  --border-soft:  #e8eaf0;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ink:         #e6ebf5;
+    --muted:       #8b94a8;
+    --bg:          #0b1220;
+    --surface:     #131c2e;
+    --surface-2:   #1b2640;
+    --border:      #2a3550;
+    --border-soft: #1f2940;
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  font-family: 'Open Sans', system-ui, -apple-system, sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+  line-height: 1.5;
+  min-height: 100vh;
+}
+.wrap { max-width: 48rem; margin: 0 auto; padding: 1.5rem 1.25rem 3rem; }
+.brand {
+  display: flex; align-items: baseline; gap: .35rem;
+  font-family: 'Aclonica', sans-serif; font-size: 1.1rem;
+  color: var(--accent); margin-bottom: 1rem;
+}
+.brand small {
+  font-family: 'Open Sans', sans-serif; font-size: .7rem;
+  color: var(--muted); font-weight: 600; text-transform: lowercase;
+}
+.head h1 {
+  margin: 0 0 .25rem; font-size: 1.6rem; line-height: 1.2;
+}
+.head .who {
+  color: var(--muted); font-size: .95rem; margin-bottom: 1rem;
+}
+.outro {
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+  border-radius: 12px; padding: 1rem 1.15rem; margin: 1rem 0 1.25rem;
+  white-space: pre-wrap;
+}
+.stats {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: .55rem;
+  margin: 0 0 1.25rem;
+}
+@media (min-width: 28rem) {
+  .stats { grid-template-columns: repeat(4, 1fr); }
+}
+.stat {
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  padding: .75rem .85rem;
+  text-align: center;
+}
+.stat .v {
+  font-size: 1.35rem; font-weight: 700; color: var(--accent);
+  line-height: 1.1;
+}
+.stat .l {
+  font-size: .75rem; color: var(--muted); text-transform: uppercase;
+  letter-spacing: .04em; margin-top: .15rem;
+}
+#map {
+  width: 100%;
+  height: 24rem;
+  border-radius: 12px;
+  border: 1px solid var(--border-soft);
+  background: var(--surface-2);
+}
+/* Playback controls — sit directly under the map so the scrubber
+   feels like part of the viewport rather than a detached widget. */
+.playback {
+  display: flex; align-items: center; gap: .65rem;
+  margin-top: .65rem;
+  padding: .5rem .65rem;
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+}
+.playback button.pp {
+  width: 2.2rem; height: 2.2rem; padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--accent); color: var(--accent-fg);
+  font-weight: 700; cursor: pointer; flex: 0 0 auto;
+}
+.playback button.pp:disabled { opacity: .55; cursor: not-allowed; }
+.playback input[type=range] {
+  flex: 1 1 auto; min-width: 0; accent-color: var(--accent);
+}
+.playback .clock {
+  font-variant-numeric: tabular-nums;
+  font-size: .85rem; color: var(--muted); flex: 0 0 auto;
+}
+.actions {
+  display: flex; gap: .5rem; flex-wrap: wrap;
+  margin: 1rem 0 0;
+}
+.btn {
+  appearance: none; -webkit-appearance: none;
+  font: inherit; font-weight: 700;
+  padding: .55rem 1rem; border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface); color: var(--ink);
+  cursor: pointer;
+}
+.btn.primary {
+  background: var(--accent); color: var(--accent-fg);
+  border-color: var(--accent);
+}
+.btn:disabled { opacity: .55; cursor: not-allowed; }
+.empty, .err {
+  text-align: center;
+  padding: 3rem 1rem;
+  color: var(--muted);
+}
+.err { color: #c0392b; }
+.foot {
+  margin-top: 2.5rem; padding-top: 1rem;
+  border-top: 1px solid var(--border-soft);
+  font-size: .8rem; color: var(--muted); text-align: center;
+}
+.foot a { color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="wrap" id="wrap">
+  <div class="brand">zonventure<small>recap</small></div>
+  <div id="root">
+    <p class="empty" id="loading">Loading…</p>
+  </div>
+  <div class="foot">
+    <a href="/">zonventure.studio</a>
+  </div>
+</div>
+
+<script>
+/* Recap page — fetches the JSON document the public Recap handler
+   serves, then renders stats + a Leaflet track. The page is
+   read-only; no WebSocket, no slot session, no submit dock.
+   Animation + scrubber land in a follow-up; this pass paints the
+   static layout. */
+
+// Read the share token out of the URL. The route is /recap/{token}
+// so a single split() gets us the value without pulling in a router.
+function recapToken() {
+  const parts = location.pathname.split('/').filter(Boolean);
+  return parts[parts.length - 1] || '';
+}
+
+const root = document.getElementById('root');
+const t = (s, vars) => zvI18n.t(s, vars);
+
+function formatDistance(m) {
+  if (!Number.isFinite(m) || m <= 0) return '—';
+  if (m < 1000) {
+    return new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 })
+      .format(Math.round(m)) + ' m';
+  }
+  const km = m / 1000;
+  const digits = m >= 10000 ? 0 : 1;
+  return new Intl.NumberFormat(undefined, {
+    minimumFractionDigits: digits, maximumFractionDigits: digits,
+  }).format(km) + ' km';
+}
+function formatDuration(sec) {
+  if (!Number.isFinite(sec) || sec <= 0) return '—';
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = sec % 60;
+  const pad = (n) => String(n).padStart(2, '0');
+  return h ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
+}
+
+function el(tag, attrs, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (k === 'class') e.className = v;
+    else if (k === 'on') for (const [ev, fn] of Object.entries(v)) e.addEventListener(ev, fn);
+    else if (v != null) e.setAttribute(k, v);
+  }
+  for (const c of kids) {
+    if (c == null) continue;
+    e.append(c.nodeType ? c : document.createTextNode(String(c)));
+  }
+  return e;
+}
+
+function applyColors(c) {
+  if (!c) return;
+  const r = document.documentElement.style;
+  if (c.accent) r.setProperty('--accent', c.accent);
+}
+
+async function load() {
+  const tok = recapToken();
+  if (!tok) {
+    root.replaceChildren(el('p', { class: 'err' }, t('Recap link is missing — check the URL.')));
+    return;
+  }
+  let data;
+  try {
+    const r = await fetch('/api/public/recap/' + encodeURIComponent(tok), { credentials: 'omit' });
+    if (r.status === 404) {
+      // Same shape whether the token is unknown or the event isn't
+      // finished yet — server hides the distinction on purpose.
+      root.replaceChildren(el('p', { class: 'empty' },
+        t('This recap isn\'t available yet. Recaps appear once the event finishes.')));
+      return;
+    }
+    if (!r.ok) {
+      root.replaceChildren(el('p', { class: 'err' },
+        t('Couldn\'t load this recap right now. Try again in a minute.')));
+      return;
+    }
+    data = await r.json();
+  } catch (e) {
+    root.replaceChildren(el('p', { class: 'err' },
+      t('Couldn\'t reach the server. Check your connection and reload.')));
+    return;
+  }
+  render(data);
+}
+
+function statBox(value, label) {
+  return el('div', { class: 'stat' },
+    el('div', { class: 'v' }, value),
+    el('div', { class: 'l' }, label));
+}
+
+function render(d) {
+  applyColors(d.colors);
+  root.replaceChildren();
+
+  const head = el('div', { class: 'head' },
+    el('h1', {}, d.adventure_title || t('Adventure')),
+    el('div', { class: 'who' },
+      [d.team_name, d.completed_at ? new Date(d.completed_at.replace(' ', 'T') + 'Z').toLocaleString() : '']
+        .filter(Boolean).join(' · ')));
+  root.append(head);
+
+  if (d.outro_text && d.outro_text.trim()) {
+    root.append(el('div', { class: 'outro' }, d.outro_text));
+  }
+
+  root.append(el('div', { class: 'stats' },
+    statBox(formatDuration(d.duration_seconds), t('Time')),
+    statBox(formatDistance(d.distance_m),       t('Distance')),
+    statBox(String(d.answers_right ?? '—'),     t('Correct answers')),
+    statBox(String(d.answers_wrong ?? '—'),     t('Misses'))));
+
+  const mapHost = el('div', { id: 'map' });
+  root.append(mapHost);
+  // Leaflet may not be ready yet on a slow network — defer one
+  // frame so the script tag has a chance to evaluate.
+  setTimeout(() => mountMap(mapHost, d), 0);
+
+  // Share button. Native share where available, clipboard fallback
+  // otherwise. The share text leads with team + adventure so a
+  // chat-app preview makes sense.
+  if (navigator.share || navigator.clipboard?.writeText) {
+    const url = location.href;
+    const title = d.adventure_title || 'Zonventure';
+    const text = (d.team_name ? d.team_name + ' — ' : '') + title;
+    const shareBtn = el('button', { class: 'btn primary' }, t('Share this recap'));
+    shareBtn.addEventListener('click', async () => {
+      if (navigator.share) {
+        try { await navigator.share({ title, text, url }); return; }
+        catch (e) { if (e?.name === 'AbortError') return; }
+      }
+      if (navigator.clipboard?.writeText) {
+        try {
+          await navigator.clipboard.writeText(url);
+          shareBtn.textContent = t('Copied!');
+          shareBtn.disabled = true;
+          setTimeout(() => {
+            shareBtn.textContent = t('Share this recap');
+            shareBtn.disabled = false;
+          }, 1800);
+          return;
+        } catch {}
+      }
+      shareBtn.textContent = t('Sharing not available');
+      shareBtn.disabled = true;
+    });
+    root.append(el('div', { class: 'actions' }, shareBtn));
+  }
+}
+
+function mountMap(host, d) {
+  if (typeof L === 'undefined') {
+    setTimeout(() => mountMap(host, d), 100);
+    return;
+  }
+  const map = L.map(host, { scrollWheelZoom: false });
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+  }).addTo(map);
+
+  const accent = getComputedStyle(document.documentElement)
+    .getPropertyValue('--accent').trim() || '#ad1357';
+
+  const points = (d.track || []).map((p) => [p.lat, p.lng]);
+  if (points.length >= 2) {
+    L.polyline(points, { color: accent, weight: 4, opacity: 0.85 }).addTo(map);
+  }
+  // Puzzle pins. Solved puzzles get a filled circle; unsolved
+  // (relevant for cancelled events) get a hollow ring so the team
+  // can see how far they got.
+  for (const p of (d.puzzles || [])) {
+    if (!Number.isFinite(p.lat) || !Number.isFinite(p.lng)) continue;
+    if (p.lat === 0 && p.lng === 0) continue; // un-set location
+    const solved = !!p.solved_at;
+    L.circleMarker([p.lat, p.lng], {
+      radius: 7,
+      color: accent,
+      weight: 2,
+      fillColor: solved ? accent : 'transparent',
+      fillOpacity: solved ? 1 : 0,
+    }).bindTooltip((p.title || ('#' + (p.index + 1))) + (solved ? '' : ' (' + t('not reached') + ')'))
+      .addTo(map);
+  }
+
+  // Fit bounds: prefer the track, fall back to puzzle pins, finally
+  // a Stockholm-default so the map never lands on the ocean.
+  const allPoints = points.slice();
+  for (const p of (d.puzzles || [])) {
+    if (Number.isFinite(p.lat) && Number.isFinite(p.lng) && !(p.lat === 0 && p.lng === 0)) {
+      allPoints.push([p.lat, p.lng]);
+    }
+  }
+  if (allPoints.length > 0) {
+    map.fitBounds(L.latLngBounds(allPoints), { padding: [24, 24] });
+  } else {
+    map.setView([59.3293, 18.0686], 13);
+  }
+
+  mountPlayback(host, map, d, accent);
+}
+
+// parseTs accepts the wire formats the server emits:
+//   "YYYY-MM-DD HH:MM:SS"  (UTC, space-separated)
+//   "2026-04-29T12:34:56Z" (RFC3339)
+// Returns epoch ms; 0 on parse failure so callers can detect bad
+// timestamps without an explicit error path.
+function parseTs(s) {
+  if (!s) return 0;
+  const iso = s.includes('T') ? s : s.replace(' ', 'T') + 'Z';
+  const t = Date.parse(iso);
+  return Number.isFinite(t) ? t : 0;
+}
+
+// mountPlayback inserts the play/pause + scrubber + clock controls
+// directly under the map and animates a marker along the track at
+// 60× real-time. Auto-plays on first paint; reaching the end
+// flips the button to "Replay" so a second viewing is one tap
+// away. No-ops when there's no track or no measurable duration —
+// a /forget'd team's recap still shows stats + puzzle pins.
+const PLAYBACK_SPEED = 60; // real-time-seconds per playback-second
+
+function mountPlayback(mapHost, map, d, accent) {
+  const points = (d.track || []).slice();
+  if (points.length < 2) return;
+  const t0 = parseTs(points[0].ts);
+  const tN = parseTs(points[points.length - 1].ts);
+  const totalMs = Math.max(0, tN - t0);
+  if (totalMs <= 0) return;
+
+  const marker = L.circleMarker([points[0].lat, points[0].lng], {
+    radius: 9,
+    color: '#ffffff',
+    weight: 2,
+    fillColor: accent,
+    fillOpacity: 1,
+  }).addTo(map);
+
+  // Trail layer — the polyline of *covered* track from start to
+  // playhead. Drawn over the full track so the part already
+  // walked stands out. Updated every frame as the playhead moves.
+  const trail = L.polyline([[points[0].lat, points[0].lng]], {
+    color: accent, weight: 6, opacity: 1,
+  }).addTo(map);
+
+  const playBtn = el('button', { class: 'pp', type: 'button',
+    'aria-label': t('Pause') }, '❚❚');
+  const slider = el('input', { type: 'range', min: '0',
+    max: String(totalMs), value: '0', step: '1' });
+  const clock = el('span', { class: 'clock' }, formatDuration(0));
+  const controls = el('div', { class: 'playback' }, playBtn, slider, clock);
+  mapHost.parentNode.insertBefore(controls, mapHost.nextSibling);
+
+  // positionAt walks the track linearly until it finds the segment
+  // containing the target offset, then linearly interpolates lat/lng.
+  // Tracks in this product run hundreds of points at most, so a
+  // linear scan beats binary-search bookkeeping for code clarity.
+  function positionAt(ms) {
+    const target = t0 + ms;
+    let lastIdx = 0;
+    for (let i = 1; i < points.length; i++) {
+      const a = parseTs(points[i - 1].ts);
+      const b = parseTs(points[i].ts);
+      if (target <= b) {
+        const span = Math.max(1, b - a);
+        const f = Math.max(0, Math.min(1, (target - a) / span));
+        const lat = points[i - 1].lat + (points[i].lat - points[i - 1].lat) * f;
+        const lng = points[i - 1].lng + (points[i].lng - points[i - 1].lng) * f;
+        return { lat, lng, idx: i - 1 };
+      }
+      lastIdx = i;
+    }
+    return { lat: points[lastIdx].lat, lng: points[lastIdx].lng, idx: lastIdx };
+  }
+
+  let playheadMs = 0;
+  let lastFrameAt = 0;
+  let playing = true;
+  let rafId = 0;
+
+  function rebuildTrail(uptoIdx, head) {
+    const pts = [];
+    for (let i = 0; i <= uptoIdx; i++) pts.push([points[i].lat, points[i].lng]);
+    pts.push([head.lat, head.lng]);
+    trail.setLatLngs(pts);
+  }
+
+  function setPlayhead(ms, fromSlider) {
+    playheadMs = Math.max(0, Math.min(totalMs, ms));
+    if (!fromSlider) slider.value = String(playheadMs);
+    const head = positionAt(playheadMs);
+    marker.setLatLng([head.lat, head.lng]);
+    rebuildTrail(head.idx, head);
+    clock.textContent = formatDuration(Math.floor(playheadMs / 1000));
+  }
+
+  function tick(now) {
+    if (!playing) { rafId = 0; return; }
+    if (lastFrameAt) {
+      const dt = (now - lastFrameAt) * PLAYBACK_SPEED;
+      setPlayhead(playheadMs + dt, false);
+    }
+    lastFrameAt = now;
+    if (playheadMs >= totalMs) {
+      playing = false;
+      playBtn.textContent = '↻';
+      playBtn.setAttribute('aria-label', t('Replay'));
+      rafId = 0;
+      return;
+    }
+    rafId = requestAnimationFrame(tick);
+  }
+
+  playBtn.addEventListener('click', () => {
+    if (!playing && playheadMs >= totalMs) {
+      // Replay: rewind, then start.
+      setPlayhead(0, false);
+    }
+    playing = !playing;
+    if (playing) {
+      playBtn.textContent = '❚❚';
+      playBtn.setAttribute('aria-label', t('Pause'));
+      lastFrameAt = 0;
+      rafId = requestAnimationFrame(tick);
+    } else {
+      playBtn.textContent = '▶';
+      playBtn.setAttribute('aria-label', t('Play'));
+    }
+  });
+
+  slider.addEventListener('input', () => {
+    setPlayhead(parseFloat(slider.value), true);
+    // Resume auto-tick from the new position without skipping
+    // forward by one frame's worth of accumulated delta.
+    lastFrameAt = 0;
+  });
+
+  // Auto-play on first paint — the page is shown specifically to
+  // watch the team's day, paused-at-start would be a stale
+  // skeumorphism from desktop video players.
+  rafId = requestAnimationFrame(tick);
+}
+
+load();
+</script>
+</body>
+</html>

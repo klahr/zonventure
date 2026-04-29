@@ -916,6 +916,12 @@ type SummaryResponse struct {
 	DurationSeconds int     `json:"duration_seconds"`
 	StartedAt       string  `json:"started_at,omitempty"`
 	CompletedAt     string  `json:"completed_at,omitempty"`
+	// RecapToken is the public-by-token slug for /recap/{token}.
+	// Only emitted once the event has reached a terminal state —
+	// the recap page itself enforces the same gate, but omitting
+	// the token mid-event keeps the in-app share button hidden so
+	// players don't paste a link that 404s.
+	RecapToken string `json:"recap_token,omitempty"`
 }
 
 // Summary returns end-of-run stats for the slot's team: right/wrong
@@ -924,16 +930,20 @@ func (h *Handlers) Summary(w http.ResponseWriter, r *http.Request) {
 	slot, _ := auth.SlotFromContext(r.Context())
 
 	var (
-		teamName     string
+		teamName      string
 		adventureSlug string
-		runStarted   sql.NullString
-		teamDone     sql.NullString
+		runStarted    sql.NullString
+		teamDone      sql.NullString
+		runState      string
+		recapTok      string
 	)
 	err := h.DB.QueryRowContext(r.Context(), `
-		SELECT t.name, ar.adventure_slug, ar.started_at, t.completed_at
+		SELECT t.name, ar.adventure_slug, ar.started_at, t.completed_at,
+		       ar.state, COALESCE(t.recap_token, '')
 		FROM teams t JOIN events ar ON ar.id = t.event_id
 		WHERE t.id = $1
-	`, slot.TeamID).Scan(&teamName, &adventureSlug, &runStarted, &teamDone)
+	`, slot.TeamID).Scan(&teamName, &adventureSlug, &runStarted, &teamDone,
+		&runState, &recapTok)
 	if errors.Is(err, sql.ErrNoRows) {
 		httpx.Error(w, http.StatusNotFound, "team not found")
 		return
@@ -954,6 +964,14 @@ func (h *Handlers) Summary(w http.ResponseWriter, r *http.Request) {
 		PageCount:      len(adv.Pages),
 		StartedAt:      runStarted.String,
 		CompletedAt:    teamDone.String,
+	}
+	// Surface the recap token only when the event has actually
+	// reached a terminal state — the public /recap/{token} route
+	// also enforces this, but withholding the token in the
+	// summary keeps the in-app share button hidden mid-event so
+	// no one pastes a link that immediately 404s.
+	if recapTok != "" && (runState == "completed" || runState == "cancelled") {
+		resp.RecapToken = recapTok
 	}
 
 	// Right/wrong counts.

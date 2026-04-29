@@ -35,7 +35,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 )
 
-//go:embed web/play.html web/arrange.html web/live.html web/i18n.js web/favicon.svg web/privacy.html web/terms.html web/manual.html web/landing.html web/pricing.html web/topbar.css web/topbar.js web/jsqr.js web/404.html web/robots.txt web/sitemap.xml
+//go:embed web/play.html web/arrange.html web/live.html web/recap.html web/i18n.js web/favicon.svg web/privacy.html web/terms.html web/manual.html web/landing.html web/pricing.html web/topbar.css web/topbar.js web/jsqr.js web/404.html web/robots.txt web/sitemap.xml
 var webFS embed.FS
 
 // Config is the bag of knobs New needs.
@@ -284,6 +284,12 @@ func New(cfg Config) http.Handler {
 		r.Get("/ws/live/{token}", publicH.WSLive)
 		r.Get("/team/{token}", publicH.TeamShare)
 		r.Get("/qr/team/{token}", publicH.TeamShareQR)
+		// Post-event recap. Two halves: the SPA shell at /recap/{token}
+		// and the JSON it fetches on load. Both gate on event state
+		// in the handler — a token from a still-running event 404s
+		// here, so a leaked URL doesn't expose live position data.
+		r.Get("/recap/{token}", servePublicPage("web/recap.html", http.StatusOK))
+		r.Get("/api/public/recap/{token}", publicH.Recap)
 		// Team-token-authed avatar upload/delete so the team can change
 		// their own profile picture from the share page. The token IS the
 		// auth; no staff session required.
