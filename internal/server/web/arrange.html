@@ -2433,7 +2433,7 @@ function renderLogin(err, mode, extra) {
   const usernameEl = h('input', { name: 'u', autocomplete: 'username', required: true });
   const passwordEl = h('input', { name: 'p', type: 'password', autocomplete: 'current-password', required: true });
   const form = h('form', { class: 'login' },
-    h('div', { class: 'brand' }, 'zonventure', h('small', {}, t('arranger'))),
+    h('div', { class: 'brand' }, 'zonventure', h('small', {}, t('studio'))),
     h('label', { class: 'field' }, h('span', {}, t('Username')), usernameEl),
     h('label', { class: 'field' }, h('span', {}, t('Password')), passwordEl),
     errEl,
@@ -2819,7 +2819,7 @@ function renderShell() {
     'aria-label': t('Sidebar'),
   },
     h('div', { class: 'brand' }, 'zonventure',
-      h('small', {}, isAdmin ? t('administrator') : t('arranger'))),
+      h('small', {}, t('studio'))),
     renderOrgSwitcher(),
     nav,
     h('div', { class: 'sidebar-footer' }, themeBtn, logoutBtn, langPicker, renderLegalFooter()));
