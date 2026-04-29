@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Zonventure · arranger</title>
+<title>Zonventure Studio | Arranger</title>
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -890,45 +890,60 @@ textarea { min-height: 80px; resize: vertical; font-family: ui-monospace, monosp
   color: var(--muted); font-weight: 600;
   padding: .35rem 0; flex-shrink: 0;
 }
-.puzzle-editor .pe-images {
+/* Image strip — shared between the puzzle prompt's images block
+   and the per-hint images block. Originally scoped to
+   .puzzle-editor; unscoped here so the same DOM shape lights up
+   identically wherever it's mounted (the hint editor lives under
+   .puzzle-settings, not .puzzle-editor, so it would otherwise
+   render unstyled). */
+.pe-images {
   display: grid; gap: .5rem; margin: .5rem 0;
 }
-.puzzle-editor .pe-image-wrap { position: relative; }
-.puzzle-editor .pe-image {
+.pe-image-wrap { position: relative; }
+.pe-image {
   width: 100%; height: auto; display: block;
   border-radius: var(--radius);
   border: 1px solid var(--border-soft);
 }
-.puzzle-editor .pe-image-remove {
+.pe-image-remove {
   position: absolute; top: .5rem; right: .5rem;
 }
-.puzzle-editor .pe-image-alt {
+.pe-image-alt {
   width: 100%; margin-top: .35rem; padding: .35rem .55rem;
   font-size: .85rem; box-sizing: border-box;
   border: 1px solid var(--border-soft); border-radius: var(--radius);
   background: var(--surface);
 }
-.puzzle-editor .pe-image-add {
+/* Add-image tile. Used by both the puzzle prompt's image strip
+   (rendered as a <label htmlFor=...>) and the per-hint image strip
+   (rendered as a <button>) — selector is unscoped so both surfaces
+   pick it up. The font/background/appearance resets cancel the
+   UA's default button chrome so the <button> variant lines up
+   pixel-for-pixel with the <label> variant. */
+.pe-image-add {
   display: flex; align-items: center; justify-content: center; gap: .35rem;
   padding: .35rem .7rem;
   border: 1px dashed var(--border);
   border-radius: var(--radius);
   color: var(--muted); cursor: pointer;
-  font-size: var(--ts-sm);
+  font: inherit; font-size: var(--ts-sm);
+  background: transparent;
+  appearance: none;
+  -webkit-appearance: none;
   transition: background 120ms, border-color 120ms, color 120ms;
 }
-.puzzle-editor .pe-image-add svg {
+.pe-image-add svg {
   width: 14px; height: 14px;
 }
-.puzzle-editor .pe-image-add:hover {
+.pe-image-add:hover {
   background: var(--surface-2);
   border-color: var(--accent);
   color: var(--accent);
 }
-.puzzle-editor .pe-image-add.disabled {
+.pe-image-add.disabled {
   cursor: not-allowed; opacity: .6;
 }
-.puzzle-editor .pe-image-add.disabled:hover {
+.pe-image-add.disabled:hover {
   background: transparent; border-color: var(--border); color: var(--muted);
 }
 
