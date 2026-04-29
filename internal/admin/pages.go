@@ -84,21 +84,84 @@ func (req pageWriteRequest) validate() error {
 	return nil
 }
 
-// replacePageHints clears and rewrites the hints for a single page
-// inside the supplied transaction. Separate helper because both
-// CreatePage and UpdatePage need the same wipe-and-reinsert semantics —
-// partial updates would need stable hint ids, which the authoring UI
-// doesn't currently track.
-func replacePageHints(ctx context.Context, tx *sql.Tx, pageID int64, hints []hintView) error {
-	if _, err := tx.ExecContext(ctx, `DELETE FROM adventure_page_hints WHERE page_id = $1`, pageID); err != nil {
+// upsertPageHints diffs the incoming hint list against the page's
+// existing rows and applies the minimum DML to converge: known IDs
+// get an UPDATE, new rows (no ID supplied) get an INSERT, and any
+// stored ID not in the incoming list is DELETEd — cascading its
+// attached adventure_page_hint_images rows along with it.
+//
+// Stable hint IDs are the whole reason for this dance: a wipe-and-
+// reinsert would orphan every image on every save, which makes
+// per-hint image attachments useless. The server is the only place
+// that mints hint IDs; the authoring UI echoes them back unchanged.
+//
+// The two-pass idx parking (1 000 000 000 + id, then 0..N-1) avoids
+// transient UNIQUE(page_id, idx) collisions when an author reorders
+// rows that already exist — the same trick the page-reorder
+// endpoint uses for the same reason.
+func upsertPageHints(ctx context.Context, tx *sql.Tx, pageID int64, hints []hintView) error {
+	existing := map[int64]bool{}
+	rows, err := tx.QueryContext(ctx, `SELECT id FROM adventure_page_hints WHERE page_id = $1`, pageID)
+	if err != nil {
 		return err
 	}
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return err
+		}
+		existing[id] = true
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	rows.Close()
+
+	// Park every existing row well above the reassign range so the
+	// pass below can write 0..N-1 without colliding. id is unique per
+	// row, so the parked values are guaranteed disjoint from each
+	// other and from any sane idx (including the target range).
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE adventure_page_hints SET idx = 1000000000 + id WHERE page_id = $1`, pageID); err != nil {
+		return err
+	}
+
+	keep := map[int64]bool{}
 	for i, h := range hints {
+		if h.ID != nil && existing[*h.ID] {
+			if _, err := tx.ExecContext(ctx, `
+				UPDATE adventure_page_hints
+				SET idx = $1, text = $2, delay_seconds = $3
+				WHERE id = $4 AND page_id = $5
+			`, i, h.Text, h.DelaySeconds, *h.ID, pageID); err != nil {
+				return err
+			}
+			keep[*h.ID] = true
+			continue
+		}
+		// Either no ID was supplied (new hint) or the ID came from a
+		// stale tab editing a hint we've since removed. Either way:
+		// insert a fresh row. We deliberately don't error on a stale
+		// ID — the author's text + delay are still valid content; the
+		// only consequence is that any attempt to PATCH /hint-images/
+		// against the dropped ID has already 404'd.
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO adventure_page_hints(page_id, idx, text, delay_seconds)
 			VALUES ($1, $2, $3, $4)
 		`, pageID, i, h.Text, h.DelaySeconds); err != nil {
 			return err
+		}
+	}
+	// Drop any existing row the author removed from the editor list.
+	// CASCADE on adventure_page_hint_images.hint_id sweeps the blobs.
+	for id := range existing {
+		if !keep[id] {
+			if _, err := tx.ExecContext(ctx,
+				`DELETE FROM adventure_page_hints WHERE id = $1 AND page_id = $2`, id, pageID); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -155,7 +218,7 @@ func (h *Handlers) CreatePage(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusInternalServerError, "insert failed: "+err.Error())
 		return
 	}
-	if err := replacePageHints(r.Context(), tx, id, req.Hints); err != nil {
+	if err := upsertPageHints(r.Context(), tx, id, req.Hints); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "hints insert failed: "+err.Error())
 		return
 	}
@@ -211,7 +274,7 @@ func (h *Handlers) UpdatePage(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusNotFound, "page not found")
 		return
 	}
-	if err := replacePageHints(r.Context(), tx, pageID, req.Hints); err != nil {
+	if err := upsertPageHints(r.Context(), tx, pageID, req.Hints); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "hints update failed: "+err.Error())
 		return
 	}
@@ -334,9 +397,13 @@ func (h *Handlers) ReorderPages(w http.ResponseWriter, r *http.Request) {
 // loadPageHints returns the author's hint list for a page in display
 // order. Empty slice when the page has no hints, so clients can
 // JSON-encode as [] rather than null and render a safe default.
+//
+// Each hint carries its ID (so the editor can echo it back on save)
+// and its attached images (so the editor's per-hint image strip
+// renders without an extra round-trip).
 func loadPageHints(ctx context.Context, db *sql.DB, pageID int64) ([]hintView, error) {
 	rows, err := db.QueryContext(ctx, `
-		SELECT text, delay_seconds FROM adventure_page_hints
+		SELECT id, text, delay_seconds FROM adventure_page_hints
 		WHERE page_id = $1 ORDER BY idx
 	`, pageID)
 	if err != nil {
@@ -345,11 +412,25 @@ func loadPageHints(ctx context.Context, db *sql.DB, pageID int64) ([]hintView, e
 	defer rows.Close()
 	out := []hintView{}
 	for rows.Next() {
-		var hv hintView
-		if err := rows.Scan(&hv.Text, &hv.DelaySeconds); err != nil {
+		var (
+			id int64
+			hv hintView
+		)
+		if err := rows.Scan(&id, &hv.Text, &hv.DelaySeconds); err != nil {
 			return nil, err
 		}
+		hv.ID = &id
 		out = append(out, hv)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	for i := range out {
+		imgs, err := loadHintImages(ctx, db, *out[i].ID)
+		if err != nil {
+			return nil, err
+		}
+		out[i].Images = imgs
 	}
 	return out, nil
 }

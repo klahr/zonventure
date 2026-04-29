@@ -354,9 +354,17 @@ type imageDTO struct {
 // <=0 means the client can show it right now. Order matches the
 // author's sequence — the client reveals them one at a time in that
 // order via a single "Reveal hint" button.
+//
+// Images carries the per-hint attachments. The URLs point at the
+// reveal-gated /adventure-assets/hint-image route — even if the
+// client somehow tries to fetch one for an unrevealed hint, the
+// server 403s. The client's own renderer hides images for hints the
+// player hasn't revealed yet, so the URLs only become live once the
+// hint card paints.
 type hintDTO struct {
-	TextHTML         string `json:"text_html"`
-	UnlocksInSeconds int    `json:"unlocks_in_seconds"`
+	TextHTML         string     `json:"text_html"`
+	UnlocksInSeconds int        `json:"unlocks_in_seconds"`
+	Images           []imageDTO `json:"images,omitempty"`
 }
 
 type gateDTO struct {
@@ -405,6 +413,16 @@ func buildHintDTOs(hints []adventure.Hint, arrival time.Time) []hintDTO {
 				remaining = 0
 			}
 			dto.UnlocksInSeconds = remaining
+		}
+		if len(h.Images) > 0 {
+			imgs := make([]imageDTO, 0, len(h.Images))
+			for _, im := range h.Images {
+				imgs = append(imgs, imageDTO{
+					URL: "/adventure-assets/hint-image/" + strconv.FormatInt(im.ID, 10),
+					Alt: im.AltText,
+				})
+			}
+			dto.Images = imgs
 		}
 		out = append(out, dto)
 	}

@@ -270,6 +270,11 @@ func New(cfg Config) http.Handler {
 	// Image serving: permission is decided inside the handler (staff
 	// sessions always pass; slot sessions only when they're on the page).
 	r.Get("/adventure-assets/image/{imageID}", adminH.ServeImage)
+	// Hint images: same shape, stricter visibility (player must have
+	// revealed the owning hint, not merely be on the page). The
+	// handler enforces it; this route is intentionally separate from
+	// /adventure-assets/image/ so the rules don't get conflated.
+	r.Get("/adventure-assets/hint-image/{imageID}", adminH.ServeHintImage)
 	// Team avatars are intentionally open — they surface on the public
 	// live board and on player views without a staff session. The team
 	// id is opaque enough to be acceptable public read-only data.
@@ -513,6 +518,13 @@ func New(cfg Config) http.Handler {
 		r.Post("/pages/{pageID}/images", adminH.AddPageImage)
 		r.Patch("/images/{imageID}", adminH.UpdatePageImage)
 		r.Delete("/images/{imageID}", adminH.DeletePageImage)
+		// Per-hint image attachments. Hint images are addressed by
+		// their own image id under /hint-images/ so the puzzle-image
+		// patch/delete routes don't have to disambiguate which kind
+		// they're acting on.
+		r.Post("/hints/{hintID}/images", adminH.AddHintImage)
+		r.Patch("/hint-images/{imageID}", adminH.UpdateHintImage)
+		r.Delete("/hint-images/{imageID}", adminH.DeleteHintImage)
 
 		// Puzzle library (cross-adventure pool).
 		r.Get("/puzzles", adminH.ListPuzzles)

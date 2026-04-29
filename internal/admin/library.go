@@ -386,15 +386,62 @@ func (h *Handlers) CopyPuzzleToAdventure(w http.ResponseWriter, r *http.Request)
 		httpx.Error(w, http.StatusInternalServerError, "image copy failed: "+err.Error())
 		return
 	}
-	// Hints: same INSERT...SELECT pattern. Preserves the author's
-	// idx order and the per-hint delay without touching the source row.
-	if _, err := tx.ExecContext(r.Context(), `
-		INSERT INTO adventure_page_hints(page_id, idx, text, delay_seconds)
-		SELECT $1, idx, text, delay_seconds
-		FROM adventure_page_hints WHERE page_id = $2
-	`, newID, srcID); err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "hints copy failed: "+err.Error())
+	// Hints + per-hint images: insert each source hint into the new
+	// page with RETURNING, then copy its images blob-for-blob into
+	// the new hint. INSERT...SELECT works for the hint row itself,
+	// but we need the freshly-minted destination hint id paired with
+	// the source hint id to remap the images FK, so we walk the rows
+	// in Go. N is small (≤10 hints in practice) and this whole tx
+	// already touches the same connection — the extra round-trips
+	// are noise next to the blob copy itself.
+	srcHints, err := tx.QueryContext(r.Context(), `
+		SELECT id, idx, text, delay_seconds FROM adventure_page_hints
+		WHERE page_id = $1 ORDER BY idx
+	`, srcID)
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "hints read failed: "+err.Error())
 		return
+	}
+	type srcHintRow struct {
+		id           int64
+		idx          int
+		text         string
+		delaySeconds int
+	}
+	var hintRows []srcHintRow
+	for srcHints.Next() {
+		var row srcHintRow
+		if err := srcHints.Scan(&row.id, &row.idx, &row.text, &row.delaySeconds); err != nil {
+			srcHints.Close()
+			httpx.Error(w, http.StatusInternalServerError, "hints read failed: "+err.Error())
+			return
+		}
+		hintRows = append(hintRows, row)
+	}
+	if err := srcHints.Err(); err != nil {
+		srcHints.Close()
+		httpx.Error(w, http.StatusInternalServerError, "hints read failed: "+err.Error())
+		return
+	}
+	srcHints.Close()
+	for _, row := range hintRows {
+		var newHintID int64
+		if err := tx.QueryRowContext(r.Context(), `
+			INSERT INTO adventure_page_hints(page_id, idx, text, delay_seconds)
+			VALUES ($1, $2, $3, $4)
+			RETURNING id
+		`, newID, row.idx, row.text, row.delaySeconds).Scan(&newHintID); err != nil {
+			httpx.Error(w, http.StatusInternalServerError, "hint copy failed: "+err.Error())
+			return
+		}
+		if _, err := tx.ExecContext(r.Context(), `
+			INSERT INTO adventure_page_hint_images(hint_id, idx, mime_type, size_bytes, content, alt_text)
+			SELECT $1, idx, mime_type, size_bytes, content, alt_text
+			FROM adventure_page_hint_images WHERE hint_id = $2
+		`, newHintID, row.id); err != nil {
+			httpx.Error(w, http.StatusInternalServerError, "hint image copy failed: "+err.Error())
+			return
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "commit failed: "+err.Error())

@@ -1644,6 +1644,8 @@
       'Browse store': 'Bläddra i butiken',
       'Images attach to a saved puzzle — finish the basics, click Create, then come back to upload.':
           'Bilder kopplas till ett sparat pussel — fyll i grunderna, klicka på Skapa, kom sedan tillbaka för att ladda upp.',
+      'Save the puzzle to attach images to this hint.':
+          'Spara pusslet för att koppla bilder till den här ledtråden.',
       'just now': 'just nu',
       '{{n}}s ago': 'för {{n}} s sedan',
       '{{n}}m ago': 'för {{n}} min sedan',

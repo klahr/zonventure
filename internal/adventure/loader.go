@@ -85,9 +85,16 @@ type AcceptEntry struct {
 // after the team reached the puzzle the hint becomes revealable.
 // Order is authoring-defined via the database idx column (zero-based);
 // the Hints slice on Page preserves that order.
+//
+// Images are attached to a specific hint and only travel to a player
+// after they reveal it — see ServeHintImage's visibility check. Empty
+// for hints with nothing attached, so the player DTO can drop the
+// field entirely (omitempty).
 type Hint struct {
+	ID           int64
 	Text         string
 	DelaySeconds int
+	Images       []Image
 }
 
 // Image describes one attached image. Binary content is fetched separately
@@ -268,7 +275,7 @@ func (l *Library) loadPages(ctx context.Context, adventureID int64) ([]Page, err
 
 func (l *Library) loadHints(ctx context.Context, pageID int64) ([]Hint, error) {
 	rows, err := l.db.QueryContext(ctx, `
-		SELECT text, delay_seconds
+		SELECT id, text, delay_seconds
 		FROM adventure_page_hints
 		WHERE page_id = $1
 		ORDER BY idx
@@ -280,10 +287,44 @@ func (l *Library) loadHints(ctx context.Context, pageID int64) ([]Hint, error) {
 	var out []Hint
 	for rows.Next() {
 		var h Hint
-		if err := rows.Scan(&h.Text, &h.DelaySeconds); err != nil {
+		if err := rows.Scan(&h.ID, &h.Text, &h.DelaySeconds); err != nil {
 			return nil, err
 		}
 		out = append(out, h)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	// Attach images per hint. The N is small (≤10 hints per page in
+	// practice) so the per-hint follow-up query is cheaper than a
+	// JOIN-and-group dance.
+	for i := range out {
+		imgs, err := l.loadHintImages(ctx, out[i].ID)
+		if err != nil {
+			return nil, err
+		}
+		out[i].Images = imgs
+	}
+	return out, nil
+}
+
+func (l *Library) loadHintImages(ctx context.Context, hintID int64) ([]Image, error) {
+	rows, err := l.db.QueryContext(ctx, `
+		SELECT id, idx, mime_type, size_bytes, COALESCE(alt_text, '')
+		FROM adventure_page_hint_images WHERE hint_id = $1
+		ORDER BY idx
+	`, hintID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Image
+	for rows.Next() {
+		var im Image
+		if err := rows.Scan(&im.ID, &im.Index, &im.MimeType, &im.SizeBytes, &im.AltText); err != nil {
+			return nil, err
+		}
+		out = append(out, im)
 	}
 	return out, nil
 }

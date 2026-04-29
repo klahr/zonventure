@@ -422,6 +422,15 @@
   }
   .hint-revealed .hint-body p { margin: 0 0 .4rem; }
   .hint-revealed .hint-body p:last-child { margin-bottom: 0; }
+  .hint-revealed .hint-images {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: .4rem; margin-top: .55rem;
+  }
+  .hint-revealed .hint-images img {
+    width: 100%; height: auto; border-radius: 8px;
+    border: 1px solid var(--border-soft);
+    background: var(--surface);
+  }
   .hint-sheet-cta { width: 100%; margin-top: .75rem; }
   .hint-sheet-locked {
     margin: .75rem 0 0; padding: .6rem .85rem;
@@ -2062,6 +2071,16 @@ function openHintSheet(s) {
       card.append(el('div', { class: 'hint-label' },
         hints.length > 1 ? t('Hint {{i}}/{{n}}', { i: i + 1, n: hints.length }) : t('Hint')));
       card.append(el('div', { class: 'hint-body', html: h.text_html || '' }));
+      // Per-hint images, only painted on revealed cards. The serve
+      // route also enforces the reveal gate server-side, so a player
+      // who hand-rolls the URL still gets a 403 on locked hints.
+      if (h.images && h.images.length) {
+        const grid = el('div', { class: 'hint-images' });
+        for (const im of h.images) {
+          grid.append(el('img', { src: im.url, alt: im.alt || '' }));
+        }
+        card.append(grid);
+      }
       body.append(card);
     }
     sheet.append(body);

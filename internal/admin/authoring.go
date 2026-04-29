@@ -63,9 +63,22 @@ type pageView struct {
 // hintView is a single hint row on the editor side. DelaySeconds is
 // how many seconds after the team reaches this puzzle the hint
 // becomes revealable; 0 means available immediately.
+//
+// ID round-trips with the editor: present on read, echoed back by the
+// client on update so the upsert in pages.go can match existing rows
+// and preserve their attached images. Omitting ID on a write is the
+// signal that this row is new and the server should INSERT.
+//
+// Images is read-only — the wire shape is shared with the puzzle
+// image flow so the front-end can render the per-hint image strip
+// from the same DTO. Image uploads / edits / deletes go through the
+// dedicated /api/admin/hints/{hintID}/images endpoints; the field is
+// ignored on the way in.
 type hintView struct {
-	Text         string `json:"text"`
-	DelaySeconds int    `json:"delay_seconds"`
+	ID           *int64      `json:"id,omitempty"`
+	Text         string      `json:"text"`
+	DelaySeconds int         `json:"delay_seconds"`
+	Images       []imageView `json:"images,omitempty"`
 }
 
 type imageView struct {

@@ -42,9 +42,17 @@ type previewStateDTO struct {
 // the author's goal here is to read their own hint copy, not to
 // validate the timer itself. If they want to test delay behaviour
 // end-to-end, they do it in a real run.
+//
+// Images is the same shape as player.hintDTO.Images so play.html's
+// hint-sheet renderer paints unchanged in preview. The server-side
+// reveal-gate doesn't apply in preview (the route is admin-only),
+// but the URL still points at /adventure-assets/hint-image/{id} so
+// any author who copies a preview link gets a working image — staff
+// sessions are always allowed by canViewHintImage.
 type previewHintDTO struct {
-	TextHTML         string `json:"text_html"`
-	UnlocksInSeconds int    `json:"unlocks_in_seconds"`
+	TextHTML         string            `json:"text_html"`
+	UnlocksInSeconds int               `json:"unlocks_in_seconds"`
+	Images           []previewImageDTO `json:"images,omitempty"`
 }
 
 type previewImageDTO struct {
@@ -134,10 +142,21 @@ func (h *Handlers) PreviewAdventure(w http.ResponseWriter, r *http.Request) {
 	if len(page.Hints) > 0 {
 		hints := make([]previewHintDTO, 0, len(page.Hints))
 		for _, h := range page.Hints {
-			hints = append(hints, previewHintDTO{
+			ph := previewHintDTO{
 				TextHTML:         mdx.Render(h.Text),
 				UnlocksInSeconds: 0,
-			})
+			}
+			if len(h.Images) > 0 {
+				imgs := make([]previewImageDTO, 0, len(h.Images))
+				for _, im := range h.Images {
+					imgs = append(imgs, previewImageDTO{
+						URL: "/adventure-assets/hint-image/" + strconv.FormatInt(im.ID, 10),
+						Alt: im.AltText,
+					})
+				}
+				ph.Images = imgs
+			}
+			hints = append(hints, ph)
 		}
 		out.Hints = hints
 	}

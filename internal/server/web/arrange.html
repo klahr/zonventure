@@ -7277,14 +7277,60 @@ async function confirmDeleteAdventure(adv) {
 // WYSIWYG puzzle editor so multi-line prompts render in the preview the
 // same way they'll render in the play view.
 // buildHintsEditor renders an orderable list of hint rows, each with
-// a markdown textarea, a delay-seconds number input, and a remove
-// button. The caller uses controller.get() at submit time to build
+// a markdown textarea, a delay-seconds number input, a remove
+// button, and a per-hint image strip mirroring the puzzle .pe-images
+// block. The caller uses controller.get() at submit time to build
 // the payload's hints array. Delay is captured in seconds but shown
 // as mm:ss in a helper beside the input so authors can reason about
 // long unlock windows without mental math.
+//
+// Image attachments require a stable hint id (the upload endpoint is
+// /api/admin/hints/{hintID}/images), so a brand-new row whose id is
+// still null shows a disabled placeholder until the puzzle is saved.
+// On reopen, the hint comes back with an id and the upload tile lights
+// up. Same UX shape as puzzle images on a not-yet-created page.
 function buildHintsEditor(initial) {
   const rows = [];
   const list = h('div', { class: 'hint-rows' });
+  // One shared file input parked at body level — a hidden picker per
+  // row would force us to track and clean up per-row DOM nodes on
+  // every redraw. The pendingRow handle tells the change listener
+  // which hint to attach the upload to.
+  let pendingRow = null;
+  const fileInput = document.createElement('input');
+  fileInput.type = 'file';
+  fileInput.accept = 'image/*';
+  Object.assign(fileInput.style, {
+    position: 'fixed', left: '-10000px', top: '0',
+    width: '1px', height: '1px', opacity: '0',
+  });
+  fileInput.setAttribute('tabindex', '-1');
+  document.body.appendChild(fileInput);
+  fileInput.addEventListener('change', async () => {
+    const target = pendingRow;
+    pendingRow = null;
+    if (!target || !target.id || !fileInput.files?.[0]) {
+      fileInput.value = '';
+      return;
+    }
+    const fd = new FormData();
+    fd.append('file', fileInput.files[0]);
+    const res = await fetch(`/api/admin/hints/${target.id}/images`, {
+      method: 'POST', body: fd, credentials: 'same-origin',
+      headers: { 'X-CSRF-Token': csrfToken() },
+    });
+    if (res.ok) {
+      const im = await res.json();
+      target.images.push(im);
+      draw();
+      toastOk(t('Image added'));
+    } else {
+      const errTxt = await res.text();
+      toastErr(errTxt || t('error {{status}}', { status: res.status }));
+    }
+    fileInput.value = '';
+  });
+
   const draw = () => {
     list.replaceChildren();
     rows.forEach((row, i) => {
@@ -7299,7 +7345,7 @@ function buildHintsEditor(initial) {
   const addBtn = h('button', { class: 'btn small', type: 'button', style: 'margin-top:.3rem' },
     icon(ICONS.plus), t('Add hint'));
   addBtn.addEventListener('click', () => {
-    rows.push({ text: '', delay_seconds: 0 });
+    rows.push({ id: null, text: '', delay_seconds: 0, images: [] });
     draw();
     // Focus the new textarea so the author can start typing immediately.
     const tas = list.querySelectorAll('textarea');
@@ -7347,6 +7393,69 @@ function buildHintsEditor(initial) {
       rows.splice(idx, 1);
       draw();
     });
+
+    // Per-hint image strip. Same DOM shape as the puzzle .pe-images
+    // block so the existing CSS applies; only the upload/edit/delete
+    // URLs differ. For new rows (id null), the strip is replaced by
+    // a disabled placeholder — the upload endpoint requires a hint id
+    // and we can't mint one until the puzzle saves.
+    const imagesHost = h('div', { class: 'pe-images' });
+    if (row.id) {
+      for (const im of row.images) {
+        const wrap = h('div', { class: 'pe-image-wrap' });
+        const altInput = h('input', {
+          type: 'text',
+          class: 'pe-image-alt',
+          value: im.alt_text || '',
+          maxlength: 500,
+          placeholder: t('Alt text — describe for screen readers'),
+          'aria-label': t('Alt text'),
+        });
+        altInput.addEventListener('blur', async () => {
+          const next = altInput.value.trim();
+          if (next === (im.alt_text || '')) return;
+          const rr = await api(`/api/admin/hint-images/${im.id}`, {
+            method: 'PATCH',
+            body: JSON.stringify({ alt_text: next }),
+          });
+          if (rr.status === 204) {
+            im.alt_text = next;
+            toastOk(t('Alt text saved'));
+          } else {
+            toastErr(rr.body?.error || t('error {{status}}', { status: rr.status }));
+            altInput.value = im.alt_text || '';
+          }
+        });
+        wrap.append(
+          h('img', { class: 'pe-image', src: im.url, alt: im.alt_text || '' }),
+          altInput,
+          h('button', {
+            class: 'btn small danger pe-image-remove', type: 'button', title: t('Remove'),
+            on: { click: async () => {
+              const rr = await api(`/api/admin/hint-images/${im.id}`, { method: 'DELETE' });
+              if (rr.status === 204) {
+                const i = row.images.indexOf(im);
+                if (i >= 0) row.images.splice(i, 1);
+                draw();
+                toastOk(t('Image removed'));
+              } else {
+                toastErr(rr.body?.error || t('error {{status}}', { status: rr.status }));
+              }
+            } },
+          }, icon(ICONS.trash)),
+        );
+        imagesHost.append(wrap);
+      }
+      const addTile = h('button', {
+        class: 'pe-image-add', type: 'button',
+        on: { click: () => { pendingRow = row; fileInput.click(); } },
+      }, icon(ICONS.plus), ' ' + t('Click to add image'));
+      imagesHost.append(addTile);
+    } else {
+      imagesHost.append(h('div', { class: 'pe-image-add disabled' },
+        icon(ICONS.plus), ' ' + t('Save the puzzle to attach images to this hint.')));
+    }
+
     return h('div', { class: 'hint-row' },
       h('div', { class: 'hint-row-head' },
         h('span', { class: 'hint-row-num' }, String(idx + 1)),
@@ -7356,15 +7465,24 @@ function buildHintsEditor(initial) {
           h('span', { class: 'muted' }, t('s')),
           delayLabel),
         remove),
-      field.el);
+      field.el,
+      imagesHost);
   }
-  rows.push(...(initial || []).map((h) => ({ text: h.text || '', delay_seconds: h.delay_seconds || 0 })));
+  rows.push(...(initial || []).map((h) => ({
+    id: h.id ?? null,
+    text: h.text || '',
+    delay_seconds: h.delay_seconds || 0,
+    images: h.images ? [...h.images] : [],
+  })));
   draw();
   return {
     el: list,
-    // get returns the authoritative list in author order, trimmed of
-    // trailing whitespace but preserving interior markdown.
-    get: () => rows.map((r) => ({ text: r.text, delay_seconds: r.delay_seconds })),
+    // get returns the authoritative list in author order, including
+    // hint ids so the server-side upsert can match existing rows and
+    // preserve their attached images. Images themselves are not in
+    // the payload — they're managed by the dedicated /hints/.../images
+    // endpoints.
+    get: () => rows.map((r) => ({ id: r.id ?? undefined, text: r.text, delay_seconds: r.delay_seconds })),
   };
 }
 
