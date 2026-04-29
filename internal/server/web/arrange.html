@@ -7569,9 +7569,19 @@ function buildHintsEditor(initial) {
   // row would force us to track and clean up per-row DOM nodes on
   // every redraw. The pendingRow handle tells the change listener
   // which hint to attach the upload to.
+  //
+  // The add tile is rendered as a <label htmlFor={inputID}>, same
+  // as the puzzle .pe-image-add tile, so the click goes through
+  // native label-driven input activation rather than programmatic
+  // .click(). Programmatic click works in Chrome/Firefox but
+  // sometimes silently fails in Safari when the click bubbles
+  // through a transformed modal ancestor. Native htmlFor sidesteps
+  // that whole class of bug.
   let pendingRow = null;
+  const fileInputID = 'zv-hint-img-' + Math.random().toString(36).slice(2, 8);
   const fileInput = document.createElement('input');
   fileInput.type = 'file';
+  fileInput.id = fileInputID;
   fileInput.accept = 'image/*';
   Object.assign(fileInput.style, {
     position: 'fixed', left: '-10000px', top: '0',
@@ -7719,10 +7729,16 @@ function buildHintsEditor(initial) {
         );
         imagesHost.append(wrap);
       }
-      const addTile = h('button', {
-        class: 'pe-image-add', type: 'button',
-        on: { click: () => { pendingRow = row; fileInput.click(); } },
-      }, icon(ICONS.plus), ' ' + t('Click to add image'));
+      // <label htmlFor> mirrors the puzzle pattern — the browser
+      // opens the picker for us. The click handler runs first
+      // (synchronously) so pendingRow is set before the input's
+      // change event fires.
+      const addTile = document.createElement('label');
+      addTile.className = 'pe-image-add';
+      addTile.htmlFor = fileInputID;
+      addTile.addEventListener('click', () => { pendingRow = row; });
+      addTile.append(icon(ICONS.plus));
+      addTile.append(document.createTextNode(' ' + t('Click to add image')));
       imagesHost.append(addTile);
     } else {
       imagesHost.append(h('div', { class: 'pe-image-add disabled' },
