@@ -25,6 +25,11 @@ import (
 	"git.sr.ht/~klahr/zv/internal/public"
 	"git.sr.ht/~klahr/zv/internal/settings"
 	"git.sr.ht/~klahr/zv/internal/simulator"
+	"git.sr.ht/~klahr/zv/internal/teamimport"
+	teamimportcsv "git.sr.ht/~klahr/zv/internal/teamimport/csv"
+	teamimportiofxml "git.sr.ht/~klahr/zv/internal/teamimport/iofxml"
+	teamimportods "git.sr.ht/~klahr/zv/internal/teamimport/ods"
+	teamimportxlsx "git.sr.ht/~klahr/zv/internal/teamimport/xlsx"
 	"git.sr.ht/~klahr/zv/internal/ws"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -88,6 +93,12 @@ type Config struct {
 	// nil disables the TOTP enrol surface (the login flow short-circuits
 	// before any decrypt is attempted, so unenrolled users still log in).
 	TOTPKey []byte
+	// TeamImporters is the registry of team-roster file-format
+	// parsers. nil means "use the bundled default set" (CSV, ODS,
+	// xlsx, IOF XML); set explicitly to subset, swap implementations,
+	// or pass an empty registry to disable the import surface
+	// entirely (the endpoint will then return 503 on every upload).
+	TeamImporters *teamimport.Registry
 }
 
 // New builds the HTTP router.
@@ -148,6 +159,18 @@ func New(cfg Config) http.Handler {
 	if store == nil {
 		store = dbblob.New(cfg.DB)
 	}
+	importers := cfg.TeamImporters
+	if importers == nil {
+		// Bundled default set. Each format is a separate subpackage
+		// so an operator who wants to drop one (e.g. skip excelize
+		// to shave the dep) can construct their own registry and
+		// pass it via Config — the routes don't need to change.
+		importers = teamimport.New()
+		importers.Register(teamimportcsv.New())
+		importers.Register(teamimportods.New())
+		importers.Register(teamimportxlsx.New())
+		importers.Register(teamimportiofxml.New())
+	}
 	adminH := &admin.Handlers{
 		DB: cfg.DB, Lib: cfg.Library, Hub: hub, Sim: sim,
 		Mailer:              mail,
@@ -158,6 +181,7 @@ func New(cfg Config) http.Handler {
 		Components:          cfg.Components,
 		Storage:             store,
 		TOTPKey:             cfg.TOTPKey,
+		TeamImporters:       importers,
 	}
 	publicH := &public.Handlers{DB: cfg.DB, Lib: cfg.Library, Hub: hub, Storage: store}
 
@@ -466,6 +490,10 @@ func New(cfg Config) http.Handler {
 		r.Post("/events/{eventID}/cancel", adminH.CancelEvent)
 		r.Post("/events/{eventID}/teams", adminH.CreateTeam)
 		r.Post("/events/{eventID}/teams/bulk", adminH.BulkCreateTeams)
+		// Team-roster file import — multipart upload, returns a
+		// parsed preview the client then submits to /teams/bulk
+		// after the arranger inspects it.
+		r.Post("/events/{eventID}/teams/import", adminH.ImportTeams)
 		r.Get("/events/{eventID}/positions", adminH.ListPositions)
 		r.Get("/events/{eventID}/activity", adminH.ListActivity)
 		r.Get("/events/{eventID}/tracks", adminH.ListTracks)

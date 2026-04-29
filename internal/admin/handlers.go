@@ -31,6 +31,7 @@ import (
 	"git.sr.ht/~klahr/zv/internal/roster"
 	"git.sr.ht/~klahr/zv/internal/simulator"
 	"git.sr.ht/~klahr/zv/internal/storage"
+	"git.sr.ht/~klahr/zv/internal/teamimport"
 	"git.sr.ht/~klahr/zv/internal/tokenx"
 	"git.sr.ht/~klahr/zv/internal/webhooks"
 	"git.sr.ht/~klahr/zv/internal/ws"
@@ -80,6 +81,13 @@ type Handlers struct {
 	// surfaces a clear "TOTP not configured on this server" error
 	// instead of generating a secret that could never be redeemed).
 	TOTPKey []byte
+	// TeamImporters is the set of file-format parsers wired into
+	// /events/{id}/teams/import. Constructed and populated by
+	// cmd/server/main.go (the per-format subpackages register
+	// themselves there) so an operator can leave excelize / etc.
+	// out of their build by simply not Register()-ing them. Nil is
+	// fine — the import endpoint then 415s every upload.
+	TeamImporters *teamimport.Registry
 }
 
 /* ---------------- Shared scoping helpers ---------------- */

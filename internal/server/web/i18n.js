@@ -771,6 +771,41 @@
       '{{t}} teams · {{p}} player slots': '{{t}} lag · {{p}} spelarplatser',
       'Add at least one team line': 'Lägg till minst en lagrad',
       '“{{name}}” has no players': '”{{name}}” saknar spelare',
+      // ---- file-import flow ----
+      'Upload file': 'Ladda upp fil',
+      'Importing a roster from a file': 'Importera laguppställning från fil',
+      'The "Add teams" dialog has an "Upload file" mode for the common case where you already have a roster in a spreadsheet or registration system. Pick the file, see the parsed preview, then click Create. The first column is always treated as the team name; every column after it becomes a player slot.':
+        'Dialogrutan "Lägg till lag" har ett läge "Ladda upp fil" för det vanliga fallet där du redan har en laguppställning i ett kalkylark eller anmälningssystem. Välj filen, granska den tolkade förhandsgranskningen och klicka på Skapa. Första kolumnen tolkas alltid som lagnamn; övriga kolumner blir spelarplatser.',
+      'Four formats are supported, each handled by an independent parser so you can ignore the ones you don\'t use:':
+        'Fyra format stöds, vart och ett hanterat av en oberoende parser så du kan ignorera de du inte använder:',
+      'CSV (.csv)': 'CSV (.csv)',
+      'comma-separated, UTF-8. The lingua franca of every spreadsheet and event-registration platform. Informally specified by ':
+        'kommaseparerad, UTF-8. Det universella formatet för alla kalkylark och anmälningssystem. Informellt specificerad av ',
+      'Excel (.xlsx)': 'Excel (.xlsx)',
+      'what Excel, Google Sheets, Numbers, and LibreOffice Calc all save as by default. Formally ':
+        'vad Excel, Google Sheets, Numbers och LibreOffice Calc alla sparar som standard. Formellt ',
+      'OpenDocument Spreadsheet (.ods)': 'OpenDocument-kalkylark (.ods)',
+      "LibreOffice Calc's native format. ":
+        'LibreOffice Calcs ursprungsformat. ',
+      'IOF XML (.xml)': 'IOF XML (.xml)',
+      'the orienteering data standard. Eventor and most country-level orienteering registration platforms export EntryList and StartList documents in this shape. Schemas at ':
+        'orienteringens datastandard. Eventor och de flesta nationella orienteringsanmälningssystem exporterar EntryList- och StartList-dokument i den här formen. Scheman på ',
+      'A first-row header is auto-detected when the first cell reads "Team", "Team name", "Name", "Lag", or "Lagnamn" — so you can export from Excel without first stripping your column titles.':
+        'En rubrikrad upptäcks automatiskt när första cellen är "Team", "Team name", "Name", "Lag" eller "Lagnamn" — så du kan exportera från Excel utan att först ta bort kolumnrubrikerna.',
+      "If you'd rather paste than upload, the dialog also has a \"Paste roster\" mode that takes the same shape as a CSV but as free-form text (separators are comma, tab, semicolon, or colon). Copying a selection from Excel or Google Sheets pastes as tab-separated text, which lands cleanly in this mode.":
+        'Om du hellre klistrar in än laddar upp har dialogrutan även ett läge "Klistra in laguppställning" som tar samma form som en CSV men som fritext (avgränsare är komma, tab, semikolon eller kolon). En markering kopierad från Excel eller Google Sheets klistras in som tab-separerad text, vilket landar rent i det läget.',
+      'Roster file': 'Lagfil',
+      'Supported: CSV, Excel (.xlsx), OpenDocument (.ods), IOF XML. First column is the team name; the rest become player slots.':
+        'Stöds: CSV, Excel (.xlsx), OpenDocument (.ods), IOF XML. Första kolumnen är lagnamnet; övriga blir spelarplatser.',
+      'Reading file…': 'Läser filen…',
+      'Recognised as {{fmt}}: {{t}} teams · {{p}} player slots — {{names}}':
+        'Identifierad som {{fmt}}: {{t}} lag · {{p}} spelarplatser — {{names}}',
+      '{{head}}, +{{n}} more': '{{head}}, +{{n}} till',
+      'Pick a file with at least one team first':
+        'Välj först en fil med minst ett lag',
+      'Imported {{n}} teams': 'Importerade {{n}} lag',
+      'Imported {{c}}, {{f}} failed: {{err}}':
+        'Importerade {{c}}, {{f}} misslyckades: {{err}}',
       // ---- image alt text (authoring) ----
       'Alt text': 'Alt-text',
       'Alt text — describe for screen readers': 'Alt-text — beskriv för skärmläsare',

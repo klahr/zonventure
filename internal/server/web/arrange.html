@@ -5349,6 +5349,7 @@ async function openNewTeamModal(runID) {
     const modeSingle = h('input', { type: 'radio', name: 'mode', value: 'single', checked: true });
     const modeBulk   = h('input', { type: 'radio', name: 'mode', value: 'bulk' });
     const modeRoster = h('input', { type: 'radio', name: 'mode', value: 'roster' });
+    const modeImport = h('input', { type: 'radio', name: 'mode', value: 'import' });
     const modeBar = h('div', { style: 'display:flex; gap:1rem; margin-bottom:1rem; flex-wrap:wrap' },
       h('label', { style: 'display:flex; gap:.4rem; align-items:center; cursor:pointer' },
         modeSingle, h('span', {}, t('One team'))),
@@ -5356,6 +5357,8 @@ async function openNewTeamModal(runID) {
         modeBulk, h('span', {}, t('Many teams at once'))),
       h('label', { style: 'display:flex; gap:.4rem; align-items:center; cursor:pointer' },
         modeRoster, h('span', {}, t('Paste roster'))),
+      h('label', { style: 'display:flex; gap:.4rem; align-items:center; cursor:pointer' },
+        modeImport, h('span', {}, t('Upload file'))),
     );
 
     /* ---- single-team fields ---- */
@@ -5498,24 +5501,86 @@ async function openNewTeamModal(runID) {
         t('First column is the team name; remaining columns become player slots. Comma, tab, semicolon and colon are all accepted as separators.')),
       rosterPreview);
 
+    /* ---- file-import fields ---- */
+    // The picker accepts the formats the server-side registry
+    // supports today. The accept attribute is advisory — the
+    // server still resolves by content + extension and 415s
+    // anything it can't parse — so an exporter that writes a
+    // weird MIME still gets through if its extension matches.
+    const importFile = h('input', {
+      type: 'file',
+      accept: '.csv,.ods,.xlsx,.xml',
+      style: 'width:100%',
+    });
+    const importStatus = h('p', { class: 'muted', style: 'font-size:.85rem; min-height:1em; margin:.4rem 0 0' });
+    // importParsed holds the {teams: [...]} payload the server
+    // returns from /import. Submit-time we forward it verbatim to
+    // /teams/bulk — same shape the existing endpoint already
+    // accepts, no second validation pass needed here.
+    let importParsed = null;
+    importFile.addEventListener('change', async () => {
+      importParsed = null;
+      if (!importFile.files?.[0]) {
+        importStatus.textContent = '';
+        importStatus.className = 'muted';
+        return;
+      }
+      importStatus.textContent = t('Reading file…');
+      importStatus.className = 'muted';
+      const fd = new FormData();
+      fd.append('file', importFile.files[0]);
+      const res = await fetch(`/api/admin/events/${runID}/teams/import`, {
+        method: 'POST', body: fd, credentials: 'same-origin',
+        headers: { 'X-CSRF-Token': csrfToken() },
+      });
+      if (!res.ok) {
+        const errTxt = (await res.text()).trim();
+        importStatus.textContent = errTxt || t('error {{status}}', { status: res.status });
+        importStatus.className = 'err';
+        return;
+      }
+      const body = await res.json();
+      importParsed = body;
+      const teams = body.teams || [];
+      const players = teams.reduce((n, tm) => n + (tm.member_names || []).length, 0);
+      const head = (teams.slice(0, 3).map((tm) => tm.name)).join(', ');
+      const tail = teams.length > 3
+        ? t('{{head}}, +{{n}} more', { head, n: teams.length - 3 })
+        : head;
+      importStatus.textContent = t('Recognised as {{fmt}}: {{t}} teams · {{p}} player slots — {{names}}',
+        { fmt: body.format, t: teams.length, p: players, names: tail });
+      importStatus.className = 'muted';
+    });
+    const importFields = h('div', { style: 'display:none' },
+      h('label', { class: 'field' },
+        h('span', {}, t('Roster file')),
+        importFile),
+      h('p', { class: 'muted', style: 'font-size:.8rem; margin:.25rem 0 0' },
+        t('Supported: CSV, Excel (.xlsx), OpenDocument (.ods), IOF XML. First column is the team name; the rest become player slots.')),
+      importStatus);
+
     const refreshMode = () => {
       singleFields.style.display = modeSingle.checked ? '' : 'none';
       bulkFields.style.display   = modeBulk.checked   ? '' : 'none';
       rosterFields.style.display = modeRoster.checked ? '' : 'none';
+      importFields.style.display = modeImport.checked ? '' : 'none';
     };
     modeSingle.addEventListener('change', refreshMode);
     modeBulk.addEventListener('change', refreshMode);
     modeRoster.addEventListener('change', refreshMode);
+    modeImport.addEventListener('change', refreshMode);
 
     const submitBtn = h('button', { class: 'btn primary', type: 'submit' }, t('Create'));
-    const form = h('form', {}, modeBar, singleFields, bulkFields, rosterFields,
+    const form = h('form', {}, modeBar, singleFields, bulkFields, rosterFields, importFields,
       h('div', { class: 'row end', style: 'margin-top:1rem' },
         h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, t('Cancel')),
         submitBtn));
 
     if (typeof setBeforeClose === 'function') {
       setBeforeClose(() => {
-        const dirty = !!(nameInput.value.trim() || memberArea.value.trim() || rosterArea.value.trim());
+        const dirty = !!(nameInput.value.trim() || memberArea.value.trim()
+          || rosterArea.value.trim()
+          || (importParsed && importParsed.teams && importParsed.teams.length));
         return !dirty || confirm(t('Discard the team(s) you were adding?'));
       });
     }
@@ -5524,7 +5589,32 @@ async function openNewTeamModal(runID) {
       e.preventDefault();
       submitBtn.disabled = true;
       try {
-        if (modeRoster.checked) {
+        if (modeImport.checked) {
+          // The user uploaded a file and saw a preview; submit
+          // forwards the parsed teams to the existing /teams/bulk
+          // endpoint so file-imported and pasted rosters land
+          // through the same DB writer + audit path.
+          if (!importParsed || !importParsed.teams || !importParsed.teams.length) {
+            toastErr(t('Pick a file with at least one team first'));
+            return;
+          }
+          const rr = await api(`/api/admin/events/${runID}/teams/bulk`, {
+            method: 'POST',
+            body: JSON.stringify({ teams: importParsed.teams }),
+          });
+          if (rr.status !== 200) {
+            toastErr(rr.body?.error || t('error {{status}}', { status: rr.status }));
+            return;
+          }
+          const created = rr.body?.created || 0;
+          const failed  = rr.body?.failed  || 0;
+          if (failed === 0) {
+            toastOk(t('Imported {{n}} teams', { n: created }));
+          } else {
+            const firstErr = (rr.body?.results || []).find((r) => r.error)?.error || '';
+            toastErr(t('Imported {{c}}, {{f}} failed: {{err}}', { c: created, f: failed, err: firstErr }));
+          }
+        } else if (modeRoster.checked) {
           const teams = parseRoster(rosterArea.value);
           if (teams.length === 0) {
             toastErr(t('Add at least one team line'));
@@ -9718,6 +9808,37 @@ function viewManual(view, anchor) {
         t('Save. Each player slot is created with a fresh magic-link token.'),
       ),
       shot(t('[Screenshot: the add-team dialog]')),
+      h('h3', {}, t('Importing a roster from a file')),
+      p(t('The "Add teams" dialog has an "Upload file" mode for the common case where you already have a roster in a spreadsheet or registration system. Pick the file, see the parsed preview, then click Create. The first column is always treated as the team name; every column after it becomes a player slot.')),
+      p(t('Four formats are supported, each handled by an independent parser so you can ignore the ones you don\'t use:')),
+      ul(
+        h('span', {},
+          h('strong', {}, t('CSV (.csv)')),
+          ' — ', t('comma-separated, UTF-8. The lingua franca of every spreadsheet and event-registration platform. Informally specified by '),
+          h('a', { href: 'https://datatracker.ietf.org/doc/html/rfc4180', target: '_blank', rel: 'noopener' }, 'RFC 4180'),
+          '.'),
+        h('span', {},
+          h('strong', {}, t('Excel (.xlsx)')),
+          ' — ', t('what Excel, Google Sheets, Numbers, and LibreOffice Calc all save as by default. Formally '),
+          h('a', { href: 'https://ecma-international.org/publications-and-standards/standards/ecma-376/', target: '_blank', rel: 'noopener' }, 'ECMA-376'),
+          ' / ',
+          h('a', { href: 'https://www.iso.org/standard/71691.html', target: '_blank', rel: 'noopener' }, 'ISO/IEC 29500'),
+          '.'),
+        h('span', {},
+          h('strong', {}, t('OpenDocument Spreadsheet (.ods)')),
+          ' — ', t('LibreOffice Calc\'s native format. '),
+          h('a', { href: 'https://docs.oasis-open.org/office/OpenDocument/v1.3/os/OpenDocument-v1.3-os.html', target: '_blank', rel: 'noopener' }, 'OpenDocument 1.3'),
+          ' / ',
+          h('a', { href: 'https://www.iso.org/standard/66363.html', target: '_blank', rel: 'noopener' }, 'ISO/IEC 26300'),
+          '.'),
+        h('span', {},
+          h('strong', {}, t('IOF XML (.xml)')),
+          ' — ', t('the orienteering data standard. Eventor and most country-level orienteering registration platforms export EntryList and StartList documents in this shape. Schemas at '),
+          h('a', { href: 'https://github.com/international-orienteering-federation/datastandard-v3', target: '_blank', rel: 'noopener' }, 'datastandard-v3'),
+          '.'),
+      ),
+      p(t('A first-row header is auto-detected when the first cell reads "Team", "Team name", "Name", "Lag", or "Lagnamn" — so you can export from Excel without first stripping your column titles.')),
+      p(t('If you\'d rather paste than upload, the dialog also has a "Paste roster" mode that takes the same shape as a CSV but as free-form text (separators are comma, tab, semicolon, or colon). Copying a selection from Excel or Google Sheets pastes as tab-separated text, which lands cleanly in this mode.')),
       h('h3', {}, t('Sharing magic links')),
       p(t('Each player\'s magic link is what they tap to join the event. The event-detail page has a "Team links" panel: copy individual links, copy a CSV of all team members, or copy a single "captain link" per team that the captain forwards to teammates.')),
       shot(t('[Screenshot: the team links panel with copy buttons]')),
