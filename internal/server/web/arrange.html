@@ -4920,7 +4920,15 @@ async function viewRunDetail(view, runID) {
                     teamAvatar(tm, teamColor(tm.id, i), 26),
                     h('a', { href: '#', on: { click: (e) => { e.preventDefault(); openTeamDetail(event.id, tm, adventure, event); } } }, tm.name)),
                   tm.completed_at ? h('span', { class: 'pill success', style: 'margin-left:.5rem' }, '✓ ' + t('done')) : null,
-                  stuck ? h('span', { class: 'pill warning', style: 'margin-left:.5rem' }, '⚠ ' + t('stuck?')) : null),
+                  stuck ? h('span', { class: 'pill warning', style: 'margin-left:.5rem' }, '⚠ ' + t('stuck?')) : null,
+                  // Captain email under the name. Mailto: opens the
+                  // arranger's mail app pre-filled. Hidden on
+                  // empty so the cell stays compact for teams
+                  // without a contact set.
+                  tm.email
+                    ? h('div', { class: 'muted', style: 'font-size:.78rem; margin-top:.15rem; padding-left:2.1rem' },
+                        h('a', { href: 'mailto:' + tm.email, style: 'color:inherit; text-decoration:none' }, tm.email))
+                    : null),
                 h('td', {},
                   h('div', { class: 'mono' },
                     adventure?.pages
@@ -5420,6 +5428,16 @@ async function openNewTeamModal(runID) {
     memberArea.addEventListener('input', () => checkMembers(false));
     memberArea.addEventListener('blur',  () => checkMembers(true));
 
+    // Optional captain-contact email. Stays purely arranger-side
+    // (the team-share page never surfaces it); used for ops
+    // contact and the post-event recap drop in the future. The
+    // server validates shape; UI just gives an email-typed input
+    // so mobile keyboards swap to the @ layout.
+    const emailInputSingle = h('input', {
+      type: 'email',
+      placeholder: 'captain@example.org',
+      autocomplete: 'off',
+    });
     const singleFields = h('div', {},
       h('label', { class: 'field' }, h('span', {}, t('Team name')), nameInput),
       nameHint,
@@ -5428,7 +5446,12 @@ async function openNewTeamModal(runID) {
         memberArea),
       memberHint,
       h('p', { class: 'muted', style: 'font-size:.8rem' },
-        t('Each line becomes a player slot with its own magic-link token.')));
+        t('Each line becomes a player slot with its own magic-link token.')),
+      h('label', { class: 'field' },
+        h('span', {}, t('Captain email (optional)')),
+        emailInputSingle),
+      h('p', { class: 'muted', style: 'font-size:.8rem; margin-top:-.25rem' },
+        t('Used by the arranger only — never shown on the team\'s share page.')));
 
     /* ---- bulk-team fields ---- */
     const teamCount   = h('input', { type: 'number', min: '1', max: '50', value: '5' });
@@ -5683,9 +5706,10 @@ async function openNewTeamModal(runID) {
             memberArea.focus();
             return;
           }
+          const tEmail = (emailInputSingle.value || '').trim();
           const rr = await api(`/api/admin/events/${runID}/teams`, {
             method: 'POST',
-            body: JSON.stringify({ name: tName, member_names: names }),
+            body: JSON.stringify({ name: tName, member_names: names, email: tEmail }),
           });
           if (rr.status !== 201) { toastErr(rr.body?.error || t('error {{status}}', { status: rr.status })); return; }
           toastOk(t('Team created'));
@@ -5754,14 +5778,29 @@ async function openEditTeamModal(runID, existing, event) {
 
   await modal(t('Edit team · {{name}}', { name: freshTeam.name }), ({ body, close }) => {
     const nameInput = h('input', { value: freshTeam.name, required: true, disabled: !canRename ? '' : null });
-    const renameBtn = h('button', { class: 'btn small', type: 'button', disabled: !canRename ? '' : null }, t('Save name'));
-    renameBtn.addEventListener('click', async () => {
+    // Captain contact email — arranger-side metadata, never shown
+    // on the player share page. Optional; clearing the field saves
+    // an empty string. Same permission gate as rename since both
+    // are team-metadata edits.
+    const emailInput = h('input', {
+      type: 'email',
+      value: freshTeam.email || '',
+      placeholder: 'captain@example.org',
+      autocomplete: 'off',
+      disabled: !canRename ? '' : null,
+    });
+    const saveBtn = h('button', { class: 'btn small', type: 'button', disabled: !canRename ? '' : null }, t('Save'));
+    saveBtn.addEventListener('click', async () => {
       const name = nameInput.value.trim();
-      if (!name || name === freshTeam.name) return;
+      const email = emailInput.value.trim();
+      const body = {};
+      if (name && name !== freshTeam.name) body.name = name;
+      if (email !== (freshTeam.email || '')) body.email = email;
+      if (Object.keys(body).length === 0) { close(false); return; }
       const rr = await api(`/api/admin/teams/${freshTeam.id}`, {
-        method: 'PATCH', body: JSON.stringify({ name }),
+        method: 'PATCH', body: JSON.stringify(body),
       });
-      if (rr.status === 204) { toastOk(t('Renamed')); close(true); renderRoute(); }
+      if (rr.status === 204) { toastOk(t('Saved')); close(true); renderRoute(); }
       else toastErr(rr.body?.error || t('error {{status}}', { status: rr.status }));
     });
 
@@ -5903,8 +5942,12 @@ async function openEditTeamModal(runID, existing, event) {
     redrawAvatar();
 
     body.append(
-      h('label', { class: 'field' }, h('span', {}, t('Team name')),
-        h('div', { class: 'row', style: 'gap:.4rem' }, nameInput, renameBtn)),
+      h('label', { class: 'field' }, h('span', {}, t('Team name')), nameInput),
+      h('label', { class: 'field' },
+        h('span', {}, t('Captain email (optional)')), emailInput),
+      h('p', { class: 'muted', style: 'font-size:.8rem; margin-top:-.25rem' },
+        t('Used by the arranger only — never shown on the team\'s share page.')),
+      h('div', { class: 'row end', style: 'margin: .5rem 0 1rem' }, saveBtn),
       avatarHost, fileInput,
       h('h3', { style: 'margin-top:1rem' }, t('Share with the team')),
       h('p', { class: 'muted', style: 'font-size:.85rem' },

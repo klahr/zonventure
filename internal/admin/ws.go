@@ -147,6 +147,9 @@ type eventDetailDTO struct {
 type eventDetailTeamDTO struct {
 	ID          int64                `json:"id"`
 	Name        string               `json:"name"`
+	// Email is the captain-contact address — arranger-side only,
+	// never echoed onto the public team-share page.
+	Email       string               `json:"email,omitempty"`
 	PageIndex   int                  `json:"page_index"`
 	CompletedAt string               `json:"completed_at,omitempty"`
 	Token       string               `json:"token"`
@@ -189,7 +192,8 @@ func (h *Handlers) buildEventDetail(ctx context.Context, eventID int64) (eventDe
 
 	teams := []eventDetailTeamDTO{}
 	rows, err := h.DB.QueryContext(ctx, `
-		SELECT t.id, t.name, t.current_page_index, COALESCE(t.completed_at, ''), t.token,
+		SELECT t.id, t.name, COALESCE(t.email, ''),
+		       t.current_page_index, COALESCE(t.completed_at, ''), t.token,
 		       (t.avatar_mime_type IS NOT NULL)::int AS has_avatar
 		FROM teams t WHERE t.event_id = $1 ORDER BY t.name
 	`, eventID)
@@ -200,7 +204,7 @@ func (h *Handlers) buildEventDetail(ctx context.Context, eventID int64) (eventDe
 	for rows.Next() {
 		t := eventDetailTeamDTO{Members: []eventDetailMemberDTO{}}
 		var hasAvatar int
-		if err := rows.Scan(&t.ID, &t.Name, &t.PageIndex, &t.CompletedAt, &t.Token, &hasAvatar); err != nil {
+		if err := rows.Scan(&t.ID, &t.Name, &t.Email, &t.PageIndex, &t.CompletedAt, &t.Token, &hasAvatar); err != nil {
 			return eventDetailDTO{}, err
 		}
 		if hasAvatar != 0 {

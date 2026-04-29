@@ -18,6 +18,7 @@ import (
 	"database/sql"
 	"errors"
 	"net/http"
+	"net/mail"
 	"strconv"
 	"strings"
 	"time"
@@ -694,9 +695,33 @@ func (h *Handlers) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 
 /* ---------------- Teams (create is here; edit/delete in teams.go) ---------------- */
 
+// normaliseTeamEmail trims, lower-cases, and validates an optional
+// team contact email. Empty input is fine (the field defaults to
+// '' in the schema). Non-empty input must parse via net/mail and
+// be ≤ 320 chars (the RFC 5321 ceiling). Returns the cleaned form
+// or an error suitable for a 400 response.
+func normaliseTeamEmail(raw string) (string, error) {
+	s := strings.TrimSpace(raw)
+	if s == "" {
+		return "", nil
+	}
+	if len(s) > 320 {
+		return "", errors.New("email is too long (max 320 chars)")
+	}
+	if _, err := mail.ParseAddress(s); err != nil {
+		return "", errors.New("email is not a valid address")
+	}
+	return strings.ToLower(s), nil
+}
+
 type createTeamRequest struct {
 	Name        string   `json:"name"`
 	MemberNames []string `json:"member_names"`
+	// Email is optional arranger-side metadata: who to ping when
+	// the team's running late, where the recap URL goes when the
+	// event completes. Empty by default; the player-side share
+	// page never surfaces it.
+	Email string `json:"email,omitempty"`
 }
 
 // teamSlotDTO mirrors slotDTO at the team-create response level.
@@ -712,6 +737,11 @@ type teamSlotDTO struct {
 type teamDTO struct {
 	ID      int64         `json:"id"`
 	Name    string        `json:"name"`
+	// Email is the optional captain-contact address arrangers
+	// fill in for ops use. omitempty so old code paths that
+	// don't yet read this field don't see a "" they have to
+	// special-case.
+	Email   string        `json:"email,omitempty"`
 	Members []teamSlotDTO `json:"members"`
 }
 
@@ -738,6 +768,11 @@ func (h *Handlers) CreateTeam(w http.ResponseWriter, r *http.Request) {
 	req.Name = strings.TrimSpace(req.Name)
 	if req.Name == "" {
 		httpx.Error(w, http.StatusBadRequest, "team name required")
+		return
+	}
+	email, err := normaliseTeamEmail(req.Email)
+	if err != nil {
+		httpx.Error(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	// De-duplicate and trim member names.
@@ -804,8 +839,9 @@ func (h *Handlers) CreateTeam(w http.ResponseWriter, r *http.Request) {
 	}
 	var teamID int64
 	if err := tx.QueryRowContext(r.Context(),
-		`INSERT INTO teams(event_id, name, token, recap_token) VALUES ($1, $2, $3, $4) RETURNING id`,
-		eventID, req.Name, teamTok, recapTok).Scan(&teamID); err != nil {
+		`INSERT INTO teams(event_id, name, token, recap_token, email)
+		 VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+		eventID, req.Name, teamTok, recapTok, email).Scan(&teamID); err != nil {
 		httpx.Error(w, http.StatusConflict, "team name already used for this event")
 		return
 	}
@@ -845,7 +881,7 @@ func (h *Handlers) CreateTeam(w http.ResponseWriter, r *http.Request) {
 		"member_count": len(members),
 	})
 	h.Hub.Publish(ws.EventTopic(eventID), "changed", nil)
-	httpx.JSON(w, http.StatusCreated, teamDTO{ID: teamID, Name: req.Name, Members: members})
+	httpx.JSON(w, http.StatusCreated, teamDTO{ID: teamID, Name: req.Name, Email: email, Members: members})
 }
 
 type bulkTeamResultDTO struct {

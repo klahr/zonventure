@@ -747,6 +747,9 @@
       'Starts soon': 'Börjar snart',
       // ---- team dialogs ----
       'Add teams': 'Lägg till lag',
+      'Captain email (optional)': 'Kaptenens e-post (valfritt)',
+      "Used by the arranger only — never shown on the team's share page.":
+        'Används endast av arrangören — visas aldrig på lagets delningssida.',
       'Add the first team': 'Lägg till första laget',
       'Team capacity': 'Lagkapacitet',
       'Team slots': 'Lagplatser',

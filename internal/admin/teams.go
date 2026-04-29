@@ -59,12 +59,25 @@ func (h *Handlers) authorizeTeam(w http.ResponseWriter, r *http.Request, teamID 
 	return eventID, orgID, true
 }
 
-type renameTeamRequest struct {
-	Name string `json:"name"`
+// updateTeamRequest accepts partial edits — any field set to a
+// non-nil pointer is applied; nil pointers leave the column
+// untouched. Pointer-on-string is the canonical Go shape for
+// "field omitted vs explicitly empty"; an empty *Email pointer
+// means "clear the email", a nil *Email means "don't touch".
+//
+// Renamed from renameTeamRequest now that the endpoint covers
+// more than just the name. The route path stays — this is still
+// PATCH /api/admin/teams/{id}.
+type updateTeamRequest struct {
+	Name  *string `json:"name,omitempty"`
+	Email *string `json:"email,omitempty"`
 }
 
-// RenameTeam changes a team's display name.
-func (h *Handlers) RenameTeam(w http.ResponseWriter, r *http.Request) {
+// UpdateTeam applies a partial edit (name, email). Permission
+// gates on OpRenameTeam — same operation envelope as the
+// historical rename, since email is purely arranger-side
+// metadata and players can't see it on the share page.
+func (h *Handlers) UpdateTeam(w http.ResponseWriter, r *http.Request) {
 	teamID, eventID, ok := h.teamFromRequest(w, r)
 	if !ok {
 		return
@@ -72,27 +85,80 @@ func (h *Handlers) RenameTeam(w http.ResponseWriter, r *http.Request) {
 	if !h.requireEventOp(w, r.Context(), eventID, OpRenameTeam) {
 		return
 	}
-	var req renameTeamRequest
+	var req updateTeamRequest
 	if !httpx.DecodeJSON(w, r, &req) {
 		return
 	}
-	req.Name = strings.TrimSpace(req.Name)
-	if req.Name == "" {
-		httpx.Error(w, http.StatusBadRequest, "name required")
+	if req.Name == nil && req.Email == nil {
+		httpx.Error(w, http.StatusBadRequest, "no fields to update")
 		return
 	}
-	// Best-effort: capture the old name for the audit row. A miss
-	// here just means the audit shows old=""; not worth failing the
-	// rename for.
-	var oldName string
-	_ = h.DB.QueryRowContext(r.Context(), `SELECT name FROM teams WHERE id = $1`, teamID).Scan(&oldName)
-	if _, err := h.DB.ExecContext(r.Context(), `UPDATE teams SET name = $1 WHERE id = $2`, req.Name, teamID); err != nil {
+	var (
+		newName  string
+		setName  bool
+		newEmail string
+		setEmail bool
+	)
+	if req.Name != nil {
+		newName = strings.TrimSpace(*req.Name)
+		if newName == "" {
+			httpx.Error(w, http.StatusBadRequest, "name required")
+			return
+		}
+		setName = true
+	}
+	if req.Email != nil {
+		em, err := normaliseTeamEmail(*req.Email)
+		if err != nil {
+			httpx.Error(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		newEmail = em
+		setEmail = true
+	}
+	// Capture the old row best-effort so the audit entry has both
+	// before and after — a miss leaves the from-fields blank rather
+	// than failing the update. Same posture as the previous
+	// rename-only handler.
+	var oldName, oldEmail string
+	_ = h.DB.QueryRowContext(r.Context(),
+		`SELECT name, COALESCE(email, '') FROM teams WHERE id = $1`,
+		teamID,
+	).Scan(&oldName, &oldEmail)
+
+	// Build the SET clause from whichever fields were supplied.
+	// Two columns at most — a tiny manual builder beats pulling in
+	// a query-builder dep for a single endpoint.
+	sets := []string{}
+	args := []any{}
+	if setName {
+		sets = append(sets, "name = $"+strconv.Itoa(len(args)+1))
+		args = append(args, newName)
+	}
+	if setEmail {
+		sets = append(sets, "email = $"+strconv.Itoa(len(args)+1))
+		args = append(args, newEmail)
+	}
+	args = append(args, teamID)
+	q := "UPDATE teams SET " + strings.Join(sets, ", ") +
+		" WHERE id = $" + strconv.Itoa(len(args))
+	if _, err := h.DB.ExecContext(r.Context(), q, args...); err != nil {
+		// UNIQUE(event_id, name) is the realistic failure mode.
+		// Other DB errors read as conflict from the player flow's
+		// perspective — the previous handler made the same call.
 		httpx.Error(w, http.StatusConflict, "name already used in this event")
 		return
 	}
+
 	me, _ := auth.FromContext(r.Context())
-	activity.Record(r.Context(), h.DB, eventID, &teamID, activity.UserActor(me.ID), activity.TeamRenamed,
-		map[string]any{"from": oldName, "to": req.Name})
+	if setName && newName != oldName {
+		activity.Record(r.Context(), h.DB, eventID, &teamID, activity.UserActor(me.ID), activity.TeamRenamed,
+			map[string]any{"from": oldName, "to": newName})
+	}
+	// Email-only edits don't have a dedicated activity kind today;
+	// the rename-event covers the operation envelope ("the team
+	// metadata changed"). A separate kind can land cleanly later
+	// without re-shaping this handler.
 	h.Hub.Publish(ws.EventTopic(eventID), "changed", nil)
 	httpx.JSON(w, http.StatusNoContent, nil)
 }

@@ -505,7 +505,7 @@ func New(cfg Config) http.Handler {
 		r.Get("/events/{eventID}/tracks", adminH.ListTracks)
 		r.Get("/events/{eventID}/results.csv", adminH.ExportEventResults)
 
-		r.Patch("/teams/{teamID}", adminH.RenameTeam)
+		r.Patch("/teams/{teamID}", adminH.UpdateTeam)
 		r.Delete("/teams/{teamID}", adminH.DeleteTeam)
 		r.Post("/teams/{teamID}/avatar", adminH.SetTeamAvatar)
 		r.Delete("/teams/{teamID}/avatar", adminH.DeleteTeamAvatar)
