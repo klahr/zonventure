@@ -4122,6 +4122,17 @@ async function openNewEventWizard() {
     const tzHint = h('small', { class: 'muted', style: 'display:block; margin-top:.2rem' },
       localTZ ? t('Times are interpreted as your local timezone ({{tz}}).', { tz: localTZ })
               : t('Times are interpreted as your local timezone.'));
+    // Inline error for the auto-start time. Shown when the arranger
+    // submits with "Schedule for later" selected but no time picked,
+    // and on input as a self-clearing affordance.
+    const whenErr = h('p', { class: 'err',
+      style: 'display:none; margin:.15rem 0 0; font-size:.8rem' },
+      t('Pick an auto-start time, or switch back to Start manually.'));
+    whenInput.addEventListener('input', () => {
+      if (whenInput.value) whenErr.style.display = 'none';
+    });
+    modeManual.addEventListener('change', () => { whenErr.style.display = 'none'; });
+
     const nameInput = h('input', { placeholder: t('e.g. “Saturday Andersson party”') });
 
     // ---- 4. Teams ----
@@ -4170,6 +4181,7 @@ async function openNewEventWizard() {
       h('label', { style: 'display:flex; gap:.5rem; align-items:center; margin:.25rem 0' },
         modeLater, h('span', {}, t('Schedule for later'))),
       h('label', { class: 'field' }, h('span', {}, t('Auto-start at')), whenInput, tzHint),
+      whenErr,
       h('label', { class: 'field' }, h('span', {}, t('Event name (optional)')), nameInput),
       h('h3', {}, t('Teams (optional — add later if you prefer)')),
       h('div', { class: 'grid cols-2' },
@@ -4228,7 +4240,11 @@ async function openNewEventWizard() {
         // Create the event.
         const runReq = { assignment_id: assignmentID, name: nameInput.value.trim(), attest_no_minors: true };
         if (modeLater.checked) {
-          if (!whenInput.value) { toastErr(t('Pick an auto-start time')); return; }
+          if (!whenInput.value) {
+            whenErr.style.display = '';
+            whenInput.focus();
+            return;
+          }
           runReq.scheduled_at = new Date(whenInput.value).toISOString();
         }
         const rr = await api('/api/admin/events', { method: 'POST', body: JSON.stringify(runReq) });
@@ -5311,15 +5327,55 @@ async function openNewTeamModal(runID) {
 
     /* ---- single-team fields ---- */
     const nameInput = h('input', { name: 'name', autofocus: true });
+    // Inline validation: blur surfaces "required", live input flags
+    // collisions against existingNames before the server has to.
+    // Catches the "I just made a team called Alpha, why is the second
+    // one failing?" loop without waiting for the 409.
+    const nameHint = h('p', { class: 'err',
+      style: 'display:none; margin:.15rem 0 0; font-size:.8rem' });
+    const checkName = (force) => {
+      const v = nameInput.value.trim();
+      if (!v) {
+        if (force) { nameHint.textContent = t('Team name required.'); nameHint.style.display = ''; }
+        else nameHint.style.display = 'none';
+        return;
+      }
+      if (existingNames.has(v)) {
+        nameHint.textContent = t('A team named "{{name}}" already exists in this event.', { name: v });
+        nameHint.style.display = '';
+      } else {
+        nameHint.style.display = 'none';
+      }
+    };
+    nameInput.addEventListener('input', () => checkName(false));
+    nameInput.addEventListener('blur',  () => checkName(true));
+
     const memberArea = h('textarea', {
       name: 'members', rows: 5,
       placeholder: 'alice\nbob\ncharlie',
     });
+    const memberHint = h('p', { class: 'err',
+      style: 'display:none; margin:.15rem 0 0; font-size:.8rem' });
+    const checkMembers = (force) => {
+      const names = (memberArea.value || '').split(/[\n,;]+/)
+        .map((s) => s.trim()).filter(Boolean);
+      if (names.length === 0 && force) {
+        memberHint.textContent = t('Add at least one member — each line becomes a player slot.');
+        memberHint.style.display = '';
+      } else {
+        memberHint.style.display = 'none';
+      }
+    };
+    memberArea.addEventListener('input', () => checkMembers(false));
+    memberArea.addEventListener('blur',  () => checkMembers(true));
+
     const singleFields = h('div', {},
       h('label', { class: 'field' }, h('span', {}, t('Team name')), nameInput),
+      nameHint,
       h('label', { class: 'field' },
         h('span', {}, t('Members — one per line, or paste CSV')),
         memberArea),
+      memberHint,
       h('p', { class: 'muted', style: 'font-size:.8rem' },
         t('Each line becomes a player slot with its own magic-link token.')));
 
@@ -5374,12 +5430,31 @@ async function openNewTeamModal(runID) {
       }
       return out;
     };
+    // Live preview doubles as live validation: empty rows just show
+    // an empty preview (the placeholder explains the format), but a
+    // row missing player names switches the preview to an error tone
+    // so the arranger fixes it before submit instead of bouncing off
+    // a toast. parsed[].member_names.length is what the bulk endpoint
+    // would reject anyway.
     const updateRosterPreview = () => {
       const parsed = parseRoster(rosterArea.value);
       const players = parsed.reduce((n, t) => n + t.member_names.length, 0);
-      rosterPreview.textContent = parsed.length === 0
-        ? ''
-        : t('{{t}} teams · {{p}} player slots', { t: parsed.length, p: players });
+      const offender = parsed.find((tm) => tm.member_names.length === 0);
+      if (offender) {
+        rosterPreview.textContent = t('"{{name}}" has no player names — add at least one after the team name.',
+          { name: offender.name });
+        rosterPreview.className = 'err';
+        rosterPreview.style.cssText = 'font-size:.85rem; min-height:1em';
+      } else if (parsed.length === 0) {
+        rosterPreview.textContent = '';
+        rosterPreview.className = 'muted';
+        rosterPreview.style.cssText = 'font-size:.85rem; min-height:1em';
+      } else {
+        rosterPreview.textContent = t('{{t}} teams · {{p}} player slots',
+          { t: parsed.length, p: players });
+        rosterPreview.className = 'muted';
+        rosterPreview.style.cssText = 'font-size:.85rem; min-height:1em';
+      }
     };
     rosterArea.addEventListener('input', updateRosterPreview);
     const rosterFields = h('div', { style: 'display:none' },
@@ -5451,8 +5526,25 @@ async function openNewTeamModal(runID) {
           const names = (memberArea.value || '').split(/[\n,;]+/)
             .map((s) => s.trim()).filter(Boolean);
           const tName = nameInput.value.trim();
-          if (!tName) { toastErr(t('Team name required')); return; }
-          if (names.length === 0) { toastErr(t('Add at least one member')); return; }
+          // Force-show the inline hints so a tap-without-typing lands
+          // on the offending field directly. Toast on the same misses
+          // so users with the modal scrolled past the inputs still
+          // get a top-level signal.
+          if (!tName) {
+            checkName(true);
+            nameInput.focus();
+            return;
+          }
+          if (existingNames.has(tName)) {
+            checkName(false);
+            nameInput.focus();
+            return;
+          }
+          if (names.length === 0) {
+            checkMembers(true);
+            memberArea.focus();
+            return;
+          }
           const rr = await api(`/api/admin/events/${runID}/teams`, {
             method: 'POST',
             body: JSON.stringify({ name: tName, member_names: names }),
@@ -8844,9 +8936,18 @@ async function confirmDeleteAdmin(admin) {
    Status polls every 1.5s so the state pill stays in sync with the
    server's own Pause/Resume/Reset. */
 async function viewSimulator(view) {
+  // Initial load deliberately doesn't swallow fetch failures: a
+  // network error here would otherwise paint the empty-adventures
+  // state below ("you have no adventures with puzzles") which is
+  // indistinguishable from a real empty list and silently hides
+  // prod incidents from operators. Letting the rejection propagate
+  // hands it to renderRoute()'s try/catch, which shows
+  // "Something went wrong: <err>" — same fail-loud convention as
+  // every other view. The 1.5s poll below still swallows by
+  // design; that's a single tick's blip, not a load failure.
   const [statusR, advR] = await Promise.all([
-    api('/api/admin/simulator').catch(() => ({ ok: false, body: null })),
-    api('/api/admin/adventures').catch(() => ({ ok: false, body: null })),
+    api('/api/admin/simulator'),
+    api('/api/admin/adventures'),
   ]);
   const status = statusR.ok ? statusR.body : { stage: 'idle' };
   const advs = (advR.body?.adventures || [])

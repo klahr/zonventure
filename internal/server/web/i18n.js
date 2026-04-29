@@ -733,6 +733,8 @@
       'Auto-start {{when}}': 'Autostart {{when}}',
       'Pick an adventure': 'Välj ett äventyr',
       'Pick an auto-start time': 'Välj en autostarttid',
+      'Pick an auto-start time, or switch back to Start manually.':
+        'Välj en autostarttid, eller växla tillbaka till Starta manuellt.',
       'Starts soon': 'Börjar snart',
       // ---- team dialogs ----
       'Add teams': 'Lägg till lag',
@@ -740,6 +742,13 @@
       'Team capacity': 'Lagkapacitet',
       'Team slots': 'Lagplatser',
       'Team name required': 'Lagnamn krävs',
+      'Team name required.': 'Lagnamn krävs.',
+      'A team named "{{name}}" already exists in this event.':
+        'Ett lag med namnet "{{name}}" finns redan i den här händelsen.',
+      'Add at least one member — each line becomes a player slot.':
+        'Lägg till minst en medlem — varje rad blir en spelarplats.',
+      '"{{name}}" has no player names — add at least one after the team name.':
+        '"{{name}}" saknar spelarnamn — lägg till minst ett efter lagnamnet.',
       'Team name prefix': 'Lagnamnsprefix',
       'Player name prefix': 'Spelarnamnsprefix',
       'Players per team': 'Spelare per lag',
@@ -1009,6 +1018,18 @@
         'Detta raderar din platshistorik och dina svar från denna körning. Övriga lagmedlemmar fortsätter spela. Du loggas ut och länken fungerar inte igen. Fortsätt?',
       'Forget me': 'Glöm mig',
       'Cancel': 'Avbryt',
+      // ---- privacy & feedback drawer ----
+      'Privacy & feedback': 'Integritet & återkoppling',
+      'Share location': 'Dela plats',
+      'Off pauses your GPS pings. Gated puzzles need this on to detect arrival.':
+        'Av pausar dina GPS-signaler. Pusslen med plats behöver detta påslaget för att märka när du kommer fram.',
+      'Sound & vibration': 'Ljud & vibration',
+      'Plays a short tone and pulse on a correct answer or a revealed hint.':
+        'Spelar en kort ton och vibration vid rätt svar eller avslöjad ledtråd.',
+      'Location is paused. Open the menu to share again.':
+        'Platsdelning är pausad. Öppna menyn för att dela igen.',
+      'On': 'På',
+      'Off': 'Av',
       // ---- legal ----
       'Privacy': 'Integritet',
       'Terms': 'Villkor',

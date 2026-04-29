@@ -1142,6 +1142,92 @@ let serverOffsetMs = 0;
 // Once we receive at least one state push we treat any later WS close
 // as "session expired" rather than "no session yet" — distinct screens.
 let hadActiveSession = false;
+
+/* ========== Player preferences (per-device, localStorage-backed) ==========
+ *
+ * Two opt-out switches surfaced in the hamburger drawer:
+ *
+ *   zv-loc-paused  — when '1', the GPS watcher and ping timer are
+ *                    stopped. The player can re-enable from the menu;
+ *                    we don't re-prompt the browser since we never
+ *                    revoked its permission, only stopped using it.
+ *                    Default off — the gate-detect flow assumes
+ *                    location is on, but GDPR requires we let the
+ *                    player turn it off mid-event.
+ *
+ *   zv-sound       — when '0', cue tones + haptic vibrate are
+ *                    suppressed on correct-answer and hint-reveal.
+ *                    Default on — silent UX reads as broken on a
+ *                    phone, and people in quiet contexts are exactly
+ *                    who'd reach for the toggle anyway.
+ *
+ * try/catch wraps every localStorage read/write because Safari in
+ * private mode throws on setItem; we'd rather fall back to the
+ * default than panic the page.
+ */
+function prefLocationPaused() {
+  try { return localStorage.getItem('zv-loc-paused') === '1'; } catch { return false; }
+}
+function setLocationPausedPref(v) {
+  try { localStorage.setItem('zv-loc-paused', v ? '1' : '0'); } catch {}
+}
+function prefSoundEnabled() {
+  try { return localStorage.getItem('zv-sound') !== '0'; } catch { return true; }
+}
+function setSoundEnabledPref(v) {
+  try { localStorage.setItem('zv-sound', v ? '1' : '0'); } catch {}
+}
+
+// Lazily-constructed AudioContext shared by every cue. Browsers
+// require a user-gesture-induced resume() before the first audible
+// frame; we call resume() on every fetch so a context that started
+// suspended (Safari) lights up the moment the player taps anything.
+let zvAudioCtx = null;
+function audioCtx() {
+  const Ctor = window.AudioContext || window.webkitAudioContext;
+  if (!Ctor) return null;
+  if (!zvAudioCtx) zvAudioCtx = new Ctor();
+  if (zvAudioCtx.state === 'suspended') {
+    try { zvAudioCtx.resume(); } catch { /* ignore — next gesture */ }
+  }
+  return zvAudioCtx;
+}
+function playTone(freq, durationMs, peak) {
+  const ctx = audioCtx();
+  if (!ctx) return;
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = 'sine';
+  osc.frequency.value = freq;
+  // 10ms attack + exponential decay so the tone lands cleanly without
+  // a click (instant gain ramp from 0 produces an audible pop).
+  const now = ctx.currentTime;
+  gain.gain.setValueAtTime(0, now);
+  gain.gain.linearRampToValueAtTime(peak, now + 0.01);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + durationMs / 1000);
+  osc.connect(gain).connect(ctx.destination);
+  osc.start(now);
+  osc.stop(now + durationMs / 1000 + 0.05);
+}
+function playCorrectCue() {
+  if (!prefSoundEnabled()) return;
+  // Two-tone perfect fifth — short fanfare, lands as "right" rather
+  // than "ding" without leaning on a sample asset.
+  playTone(660, 140, 0.16);
+  setTimeout(() => playTone(990, 200, 0.16), 110);
+  if (navigator.vibrate) {
+    try { navigator.vibrate(60); } catch { /* unsupported on iOS */ }
+  }
+}
+function playHintCue() {
+  if (!prefSoundEnabled()) return;
+  // Single soft tone — the hint reveal is a smaller event than a
+  // correct answer, so the cue is shorter and quieter.
+  playTone(620, 90, 0.12);
+  if (navigator.vibrate) {
+    try { navigator.vibrate(20); } catch { /* unsupported on iOS */ }
+  }
+}
 // The most recent rate-limit-or-gate error from the server. Used by the
 // answer_error path to render a countdown / distinct copy and re-enable
 // the input when the cooldown ends.
@@ -1650,6 +1736,17 @@ function startGPS() {
     updateGateLock();
     return;
   }
+  // Player has paused location reporting from the menu drawer. The
+  // gate-locked card picks up gpsErrorCode 4 and shows a "paused"
+  // message instead of "no signal" — distinct copy so the player
+  // doesn't think the browser failed.
+  if (prefLocationPaused()) {
+    gpsError = t('Location is paused. Open the menu to share again.');
+    gpsErrorCode = 4;
+    lastRenderKey = null;
+    updateGateLock();
+    return;
+  }
   if (gpsWatchID !== null) return;
   // Consent gate: hold the watchPosition call until we have an
   // explicit yes. A 'declined' surfaces the same error path as a
@@ -1742,6 +1839,37 @@ function retryGPS() {
   updateGateLock();
 }
 
+// applyLocationPause flips the persisted preference and tears down
+// the GPS watcher + ping loop (or restarts them) to match. The
+// browser-level permission grant is preserved either way: pausing
+// here is the player saying "stop using my location for this
+// session", not "revoke consent". Un-pausing therefore doesn't
+// re-prompt — it just calls startGPS, which finds the consent on
+// record and re-arms watchPosition.
+function applyLocationPause(paused) {
+  setLocationPausedPref(paused);
+  if (paused) {
+    if (gpsWatchID !== null && navigator.geolocation) {
+      try { navigator.geolocation.clearWatch(gpsWatchID); } catch { /* ignore */ }
+    }
+    gpsWatchID = null;
+    if (pingTimer !== null) {
+      clearInterval(pingTimer);
+      pingTimer = null;
+    }
+    lastFix = null;
+    gpsError = t('Location is paused. Open the menu to share again.');
+    gpsErrorCode = 4;
+  } else {
+    gpsError = null;
+    gpsErrorCode = 0;
+    startGPS();
+  }
+  lastRenderKey = null;
+  if (lastState) render(lastState);
+  updateGateLock();
+}
+
 function sendPing() {
   if (!lastFix) return;
   // Drop readings too imprecise to be useful for gate checks or map
@@ -1828,6 +1956,15 @@ function renderGpsHelp() {
     return;
   }
   currentGpsHelpEl.style.display = '';
+  // Code 4 is the player-initiated pause (drawer toggle). Distinct
+  // copy + no Retry button because the fix is in the menu, not in
+  // the browser permission stack.
+  if (gpsErrorCode === 4) {
+    const help = document.createElement('p');
+    help.textContent = t('Location is paused. Open the menu to share again.');
+    currentGpsHelpEl.append(help);
+    return;
+  }
   const hint = (() => {
     if (gpsErrorCode === 1) {
       return t('Location is blocked. Open your browser or device settings, allow location for this site, then tap Retry.');
@@ -1990,6 +2127,10 @@ async function revealNextHint(s, hintIndex) {
   });
   if (r.status === 200 && typeof r.body?.hints_revealed === 'number') {
     setHintsRevealed(s, r.body.hints_revealed);
+    // Subtle cue to confirm the reveal landed — same toggle as the
+    // celebrate fanfare, quieter so a hint doesn't compete with the
+    // reveal-card content the player is about to read.
+    playHintCue();
     return r.body.hints_revealed;
   }
   return null;
@@ -2287,6 +2428,31 @@ function renderSubmitDock(s) {
 // resize the viewport without re-rendering the dock, so re-measure.
 window.addEventListener('resize', () => requestAnimationFrame(updateDockHeightVar));
 
+// Orientation change forces a full re-render. The state-keyed
+// dedupe in render() correctly suppresses redundant repaints on
+// every WebSocket push, but it also suppresses an explicit
+// re-render after rotation (the state didn't change — only the
+// viewport did). Without this, a player who rotates mid-puzzle
+// keeps the layout that was baked at the previous orientation
+// until the next server push lands. Clear lastRenderKey and
+// re-paint with whatever state we last received.
+//
+// requestAnimationFrame defers one frame so the browser's viewport
+// + CSS env(safe-area-inset-*) update lands before render measures
+// against it. Both event names are wired because Safari < 16.4
+// only fires the legacy `orientationchange` while modern browsers
+// expose `screen.orientation.change`; calling render twice is a
+// cheap no-op past the second tick (lastRenderKey rebuilds).
+function reflowAfterOrientationChange() {
+  if (!lastState) return;
+  lastRenderKey = '';
+  requestAnimationFrame(() => render(lastState));
+}
+window.addEventListener('orientationchange', reflowAfterOrientationChange);
+if (window.screen?.orientation?.addEventListener) {
+  screen.orientation.addEventListener('change', reflowAfterOrientationChange);
+}
+
 // handlePreviewSubmit routes a preview answer through the same
 // onAnswerResult the real player uses — arrangers see the real celebrate
 // overlay on a correct answer (or the finale copy on the last puzzle)
@@ -2409,6 +2575,10 @@ function wrongAnswerGuidance(s) {
 // drawn checkmark, and a burst of confetti. The `finished` flag tweaks
 // copy so the final puzzle lands differently from the intermediate ones.
 function celebrate(finished) {
+  // Audio + haptic cue lands at overlay-mount so the tone reaches
+  // the player's ear during the pop animation, not after it. Gated
+  // on the "Sound & vibration" preference; silent otherwise.
+  playCorrectCue();
   const overlay = document.createElement('div');
   overlay.className = 'celebrate';
   // Screen-reader path: head + sub are already on screen, but without
@@ -3425,6 +3595,75 @@ function openMenuDrawer(s) {
     teamSection.append(shareBtn);
     panel.append(teamSection);
   }
+
+  // Privacy & feedback toggles — the player-side opt-out switches.
+  // Both flip a localStorage flag and re-apply the corresponding
+  // runtime state immediately (clear/restart the GPS watcher; mute
+  // future cues). Persistence is per-device on purpose: a player
+  // who wants quiet at one venue and sound at another shouldn't
+  // sync that preference across team-mates.
+  const privSection = document.createElement('div');
+  privSection.className = 'menu-section';
+  const privLabel = document.createElement('p');
+  privLabel.className = 'menu-section-label';
+  privLabel.textContent = t('Privacy & feedback');
+  privSection.append(privLabel);
+
+  const makeToggleRow = (label, sub, getter, onChange) => {
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'menu-row';
+    const main = document.createElement('div');
+    main.style.cssText = 'flex:1; min-width:0';
+    const labelLine = document.createElement('div');
+    labelLine.style.cssText = 'display:flex; align-items:center; justify-content:space-between; gap:.5rem';
+    const labelText = document.createElement('span');
+    labelText.textContent = label;
+    const state = document.createElement('span');
+    state.style.cssText = 'flex:0 0 auto; font-weight:700; font-size:.8rem; padding:.1rem .55rem; border-radius:999px; border:1px solid var(--border-soft);';
+    const repaint = () => {
+      const on = getter();
+      state.textContent = on ? t('On') : t('Off');
+      state.style.background = on ? 'var(--accent)' : 'var(--surface-2)';
+      state.style.color       = on ? 'var(--accent-fg)' : 'var(--muted)';
+    };
+    repaint();
+    labelLine.append(labelText, state);
+    main.append(labelLine);
+    if (sub) {
+      const subEl = document.createElement('span');
+      subEl.className = 'menu-row-sub';
+      subEl.textContent = sub;
+      main.append(subEl);
+    }
+    row.append(main);
+    row.addEventListener('click', () => {
+      onChange(!getter());
+      repaint();
+    });
+    return row;
+  };
+
+  privSection.append(makeToggleRow(
+    t('Share location'),
+    t('Off pauses your GPS pings. Gated puzzles need this on to detect arrival.'),
+    () => !prefLocationPaused(),
+    (on) => applyLocationPause(!on),
+  ));
+  privSection.append(makeToggleRow(
+    t('Sound & vibration'),
+    t('Plays a short tone and pulse on a correct answer or a revealed hint.'),
+    prefSoundEnabled,
+    (on) => {
+      setSoundEnabledPref(on);
+      // Warm the audio context on the same gesture as the toggle so
+      // the next correct-answer cue lands on a context that's
+      // already running. Safari otherwise stays suspended until the
+      // *next* user tap.
+      if (on) audioCtx();
+    },
+  ));
+  panel.append(privSection);
 
   // Account / event actions. "Forget me" is destructive (wipes
   // location history + answers + slot session) and stays behind a
