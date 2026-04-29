@@ -1688,6 +1688,29 @@ textarea { min-height: 80px; resize: vertical; font-family: ui-monospace, monosp
   background: color-mix(in srgb, var(--danger) 22%, var(--surface));
   color: var(--danger);
 }
+
+/* ---------- OTP digit boxes ---------- */
+/* Six-segment grouped input for TOTP codes. Each box is a separate
+   <input maxlength=1> so caret behaviour matches user expectation
+   (typing advances, Backspace retreats), and a paste-anywhere path
+   distributes digits across boxes. */
+.otp-row {
+  display: flex; gap: .5rem; justify-content: center;
+  margin: .25rem 0;
+}
+.otp-box {
+  width: 2.75rem; height: 3.25rem;
+  padding: 0;
+  text-align: center;
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 1.5rem; font-weight: 600;
+  letter-spacing: 0;
+  flex: 0 0 auto;
+}
+@media (max-width: 420px) {
+  .otp-row { gap: .35rem; }
+  .otp-box { width: 2.25rem; height: 2.75rem; font-size: 1.25rem; }
+}
 </style>
 </head>
 <body>
@@ -1770,6 +1793,77 @@ function iconBtn(iconKey, title, onClick, opts = {}) {
     on: { click: (e) => { e.stopPropagation(); onClick(e); } },
   }, icon(ICONS[iconKey]));
 }
+
+// makeOTPBoxes builds a row of six grouped 1-digit inputs for TOTP code
+// entry. Returns { node, getValue, focus, clear, boxes }.
+//
+// Behaviour:
+//   - typing a digit auto-advances to the next box
+//   - Backspace on an empty box jumps back and clears the prior digit
+//   - ←/→ arrows move between boxes
+//   - paste in any box distributes digits forward (junk stripped)
+//   - autofill / IME paths that deliver multi-char input events are
+//     also fanned out across the remaining boxes
+//   - onComplete fires once all six boxes hold a digit
+function makeOTPBoxes(opts) {
+  opts = opts || {};
+  const onComplete = opts.onComplete || (() => {});
+  const autofocus = opts.autofocus === true;
+  const boxes = [];
+  for (let i = 0; i < 6; i++) {
+    boxes.push(h('input', {
+      type: 'text', inputmode: 'numeric', pattern: '[0-9]*',
+      maxlength: 1,
+      autocomplete: i === 0 ? 'one-time-code' : 'off',
+      'aria-label': t('Digit {{n}}', { n: i + 1 }),
+      class: 'otp-box',
+      ...(autofocus && i === 0 ? { autofocus: '' } : {}),
+    }));
+  }
+  const getValue = () => boxes.map((b) => b.value).join('');
+  const fillFrom = (s, startIdx) => {
+    const digits = (s || '').replace(/\D/g, '').slice(0, 6 - startIdx);
+    for (let i = 0; i < digits.length; i++) boxes[startIdx + i].value = digits[i];
+    const landing = Math.min(startIdx + digits.length, boxes.length - 1);
+    boxes[landing].focus();
+    if (boxes[landing].value) boxes[landing].select();
+    if (getValue().length === 6) onComplete(getValue());
+  };
+  for (let i = 0; i < boxes.length; i++) {
+    const b = boxes[i];
+    b.addEventListener('input', () => {
+      const v = b.value;
+      if (v.length > 1) { b.value = ''; fillFrom(v, i); return; }
+      if (!/^\d$/.test(v)) { b.value = ''; return; }
+      if (i < boxes.length - 1) boxes[i + 1].focus();
+      if (getValue().length === 6) onComplete(getValue());
+    });
+    b.addEventListener('keydown', (e) => {
+      if (e.key === 'Backspace' && !b.value && i > 0) {
+        boxes[i - 1].focus(); boxes[i - 1].value = ''; e.preventDefault();
+      } else if (e.key === 'ArrowLeft' && i > 0) {
+        boxes[i - 1].focus(); e.preventDefault();
+      } else if (e.key === 'ArrowRight' && i < boxes.length - 1) {
+        boxes[i + 1].focus(); e.preventDefault();
+      }
+    });
+    b.addEventListener('paste', (e) => {
+      const data = (e.clipboardData || window.clipboardData)?.getData('text') || '';
+      if (!data) return;
+      e.preventDefault();
+      fillFrom(data, i);
+    });
+    b.addEventListener('focus', () => b.select());
+  }
+  return {
+    node: h('div', { class: 'otp-row' }, ...boxes),
+    boxes,
+    getValue,
+    focus: () => boxes[0].focus(),
+    clear: () => { for (const b of boxes) b.value = ''; boxes[0].focus(); },
+  };
+}
+
 const ICONS = {
   dashboard: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>',
   map: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21 3 6"/><line x1="9" y1="3" x2="9" y2="18"/><line x1="15" y1="6" x2="15" y2="21"/></svg>',
@@ -2258,7 +2352,7 @@ function renderOrgSwitcher() {
     'aria-label': t('Active organization'),
   }, memberships.map((m) => h('option', {
     value: String(m.org_id),
-  }, m.org_name + (m.role === 'org_admin' ? ' · ' + t('admin') : ''))));
+  }, m.org_name)));
   // Set the active option via the select's value property — passing
   // `selected: ''` to h() would set option.selected to '' (coerced
   // to false), so no option ends up selected and the browser falls
@@ -2597,10 +2691,8 @@ function renderReset(err, token) {
 function renderTOTPChallenge(challenge, opts) {
   opts = opts || {};
   const mode = opts.mode || 'login';
-  const codeEl = h('input', {
-    name: 'code', autocomplete: 'one-time-code', inputmode: 'numeric', pattern: '[0-9]*',
-    maxlength: 6, required: true, autofocus: true, placeholder: '123456',
-  });
+  const submit = h('button', { class: 'btn primary', type: 'submit' }, t('Verify'));
+  const otp = makeOTPBoxes({ autofocus: true, onComplete: () => submit.focus() });
   // Recovery-code path is initially hidden; clicking the link
   // toggles it in alongside (not instead of) the code input. The
   // server accepts exactly one of code / recovery_code, but the
@@ -2612,13 +2704,12 @@ function renderTOTPChallenge(challenge, opts) {
   const recoveryRow = h('label', { class: 'field', hidden: true },
     h('span', {}, t('Recovery code')), recoveryEl);
   const status = h('p', { class: 'muted', style: 'font-size:.85rem' });
-  const submit = h('button', { class: 'btn primary', type: 'submit' }, t('Verify'));
   const heading = mode === 'reset' ? t('verify 2FA · password reset') : t('two-factor');
   const form = h('form', { class: 'login' },
     h('div', { class: 'brand' }, 'zonventure', h('small', {}, heading)),
     h('p', { class: 'muted', style: 'font-size:.9rem' },
       t('Enter the 6-digit code from your authenticator app.')),
-    h('label', { class: 'field' }, h('span', {}, t('Code')), codeEl),
+    otp.node,
     recoveryRow,
     status,
     h('div', { class: 'row end', style: 'margin-top:1rem' }, submit),
@@ -2627,16 +2718,14 @@ function renderTOTPChallenge(challenge, opts) {
         e.preventDefault();
         if (recoveryRow.hasAttribute('hidden')) {
           recoveryRow.removeAttribute('hidden');
-          codeEl.required = false;
           recoveryEl.required = true;
-          codeEl.value = '';
+          otp.clear();
           recoveryEl.focus();
         } else {
           recoveryRow.setAttribute('hidden', '');
-          codeEl.required = true;
           recoveryEl.required = false;
           recoveryEl.value = '';
-          codeEl.focus();
+          otp.focus();
         }
       } } }, t('Use a recovery code'))),
     h('p', { class: 'muted', style: 'margin-top:.5rem; font-size:.85rem; text-align:center' },
@@ -2647,13 +2736,19 @@ function renderTOTPChallenge(challenge, opts) {
   );
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
-    status.className = 'muted'; status.textContent = t('Verifying…');
     const body = { challenge };
     if (recoveryRow.hasAttribute('hidden')) {
-      body.code = codeEl.value.trim();
+      const code = otp.getValue();
+      if (code.length !== 6) {
+        status.className = 'err';
+        status.textContent = t('Enter all 6 digits.');
+        return;
+      }
+      body.code = code;
     } else {
       body.recovery_code = recoveryEl.value.trim();
     }
+    status.className = 'muted'; status.textContent = t('Verifying…');
     const r = await api('/api/auth/login/totp', {
       method: 'POST',
       body: JSON.stringify(body),
@@ -2675,6 +2770,7 @@ function renderTOTPChallenge(challenge, opts) {
     }
     status.className = 'err';
     status.textContent = r.body?.error || t('verification failed');
+    if (recoveryRow.hasAttribute('hidden')) otp.clear();
   });
   return h('div', { class: 'login-wrap' }, form);
 }
@@ -10600,36 +10696,60 @@ function renderTOTPDisabledSetup(refresh) {
 }
 
 function renderSetupConfirmFlow(box, body, refresh) {
-  const codeEl = h('input', {
-    type: 'text', inputmode: 'numeric', pattern: '[0-9]*',
-    maxlength: 6, required: true, placeholder: '123456', autocomplete: 'one-time-code',
-  });
+  const submitBtn = h('button', { class: 'btn primary', type: 'submit' }, t('Confirm and enable'));
+  const otp = makeOTPBoxes({ onComplete: () => submitBtn.focus() });
   const status = h('p', { class: 'muted', style: 'font-size:.85rem' });
   const qrImg = body.qr_data_url
     ? h('img', { src: body.qr_data_url, alt: t('TOTP QR code'),
         style: 'width:200px; height:200px; image-rendering: pixelated; display:block; margin:0 auto;' })
     : null;
+  const secretInput = h('input', {
+    readonly: '', value: body.secret_base32,
+    style: 'flex:1; min-width:0; background:var(--surface-2); font-family:ui-monospace,SFMono-Regular,monospace; font-size:.9rem; box-shadow:none; border-color:var(--border-soft)',
+    on: { click: (e) => e.target.select() },
+  });
+  const copySecretBtn = h('button', {
+    class: 'btn small', type: 'button', title: t('Copy secret'),
+    on: { click: async () => {
+      try {
+        await navigator.clipboard.writeText(body.secret_base32);
+        toastOk(t('Secret copied'));
+      } catch {
+        secretInput.select();
+        document.execCommand('copy');
+        toastOk(t('Secret copied'));
+      }
+    } },
+  }, t('Copy'));
   const form = h('form', {},
     h('p', { class: 'muted', style: 'font-size:.9rem; margin-top:1rem' },
       t('Scan this QR code in your authenticator app, or enter the secret manually.')),
     qrImg,
-    h('p', { class: 'muted', style: 'font-size:.85rem; word-break:break-all; user-select:all; margin-top:.5rem' },
-      h('strong', {}, t('Secret:')), ' ', body.secret_base32),
+    h('label', { class: 'field', style: 'margin-top:.5rem' },
+      h('span', {}, t('Secret')),
+      h('div', { class: 'row', style: 'gap:.5rem; align-items:center' },
+        secretInput, copySecretBtn)),
     h('p', { class: 'muted', style: 'font-size:.9rem; margin-top:1rem' },
       t('Then enter the 6-digit code your app shows to confirm:')),
-    h('label', { class: 'field' }, h('span', {}, t('Code')), codeEl),
+    otp.node,
     status,
-    h('div', { class: 'row end' },
-      h('button', { class: 'btn primary', type: 'submit' }, t('Confirm and enable'))));
+    h('div', { class: 'row end' }, submitBtn));
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
+    const code = otp.getValue();
+    if (code.length !== 6) {
+      status.className = 'err';
+      status.textContent = t('Enter all 6 digits.');
+      return;
+    }
     status.className = 'muted'; status.textContent = t('Confirming…');
     const r = await api('/api/admin/me/totp/confirm', {
-      method: 'POST', body: JSON.stringify({ code: codeEl.value.trim() }),
+      method: 'POST', body: JSON.stringify({ code }),
     });
     if (!r.ok) {
       status.className = 'err';
       status.textContent = r.body?.error || t('error {{status}}', { status: r.status });
+      otp.clear();
       return;
     }
     status.textContent = '';
