@@ -7772,6 +7772,26 @@ function buildHintsEditor(initial) {
     // the payload — they're managed by the dedicated /hints/.../images
     // endpoints.
     get: () => rows.map((r) => ({ id: r.id ?? undefined, text: r.text, delay_seconds: r.delay_seconds })),
+    // refresh adopts server-assigned IDs + image arrays into the
+    // in-memory rows after a successful save. Without this, a hint
+    // the author just typed has row.id=null forever — the disabled
+    // "Save the puzzle to attach images to this hint" placeholder
+    // sticks around instead of flipping to the active upload tile.
+    //
+    // Match by position (idx in author order) — the upsert on the
+    // server side runs the same ordering, so position-based adoption
+    // is exact for the no-reorder common case. A reorder mid-save
+    // is rare; if it happens the worst outcome is one redraw with a
+    // stale id mapping that the next autosave reconciles.
+    refresh: (serverHints) => {
+      const fresh = serverHints || [];
+      for (let i = 0; i < rows.length && i < fresh.length; i++) {
+        const sh = fresh[i] || {};
+        if (rows[i].id == null && sh.id != null) rows[i].id = sh.id;
+        rows[i].images = sh.images ? [...sh.images] : (rows[i].images || []);
+      }
+      draw();
+    },
   };
 }
 
@@ -8570,6 +8590,24 @@ async function openEditPuzzle(adv, page /* or null */) {
         savedAt = Date.now();
         saveState = 'saved';
         saved = true;
+        // Adopt server-assigned hint IDs into the in-memory rows
+        // so newly-typed hints flip from the disabled "Save the
+        // puzzle to attach images" placeholder to the active
+        // upload tile without a modal close+reopen. Skip the GET
+        // when every hint already has an id — common case after
+        // the first autosave, no need to re-fetch.
+        if (hintsController.get().some((h) => h.id == null)) {
+          const fresh = await api(`/api/admin/adventures/${encodeURIComponent(adv.slug)}/edit`);
+          if (fresh.ok) {
+            const np = (fresh.body.pages || []).find((p) => p.id === page.id);
+            if (np) {
+              hintsController.refresh(np.hints || []);
+              // Update lastSavedSnapshot to reflect the new IDs so
+              // the next autosave doesn't fire on the id-only diff.
+              lastSavedSnapshot = JSON.stringify(snapshotDraft());
+            }
+          }
+        }
       } else {
         saveState = 'failed';
       }
