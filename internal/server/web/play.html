@@ -3690,6 +3690,34 @@ function openFullscreenMap(opts) {
     } else if (pts.length > 1) {
       map.fitBounds(L.latLngBounds(pts), { padding: [40, 40] });
     }
+    // Drop a "you are here" marker if the browser hands one over.
+    // Mirrors arrange.html's openFullscreenMap so the two surfaces
+    // behave the same when an arranger crosses between editor and
+    // preview. Distinct blue keeps it visually separable from the
+    // brand-accent puzzle pins. Errors (denied, no sensor) are
+    // silently swallowed; the map is still useful without it.
+    if ('geolocation' in navigator) {
+      navigator.geolocation.getCurrentPosition((pos) => {
+        if (removed) return;
+        const { latitude, longitude, accuracy } = pos.coords;
+        L.circleMarker([latitude, longitude], {
+          radius: 6,
+          color: '#fff',
+          weight: 2,
+          fillColor: '#1976d2',
+          fillOpacity: 1,
+        }).addTo(map).bindTooltip(t('You are here'));
+        if (accuracy && accuracy > 0) {
+          L.circle([latitude, longitude], {
+            radius: accuracy,
+            color: '#1976d2',
+            weight: 1,
+            fillOpacity: .1,
+          }).addTo(map);
+        }
+      }, () => { /* denied or no fix — silent */ },
+        { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 });
+    }
     // Leaflet measures its container at init; the overlay is freshly
     // mounted so the size is correct, but invalidateSize after the
     // browser commits the layout is the standard belt-and-braces call
