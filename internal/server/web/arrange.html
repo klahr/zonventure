@@ -2607,6 +2607,11 @@ const state = {
   // badge in that state). Refreshed on tab open + on demand via the
   // Check now button.
   systemUpdate: null,
+  // Running build's version string, fetched from the public
+  // /api/version endpoint so non-admins (who can't see the
+  // system-update snapshot) still get a version line in the sidebar
+  // footer. null = not fetched yet, '' = fetch failed.
+  serverVersion: null,
 };
 
 // loadSystemUpdate fetches the changelog snapshot and caches it on
@@ -2634,6 +2639,20 @@ async function loadSystemUpdate() {
 // the null / missing-field paths funnelled through one place.
 function systemUpdateAvailable() {
   return !!state.systemUpdate?.update_available;
+}
+
+// loadServerVersion fetches /api/version (the public build-info
+// endpoint) so the sidebar footer can show "v0.1.4" to every user.
+// Admins additionally get the changelog snapshot via loadSystemUpdate
+// for the "update available" affordance, but that endpoint is
+// admin-gated and so can't power the always-on version line.
+async function loadServerVersion() {
+  try {
+    const r = await api('/api/version');
+    state.serverVersion = (r.ok && r.body?.version) ? r.body.version : '';
+  } catch (_) {
+    state.serverVersion = '';
+  }
 }
 
 // Fetch the public signup-config once and cache the result. Called
@@ -2824,6 +2843,11 @@ async function render() {
   // after for a cold-start. Silently bails for non-admins.
   if (state.me?.role === 'admin' && state.systemUpdate === null) {
     loadSystemUpdate().then(() => render());
+  }
+  // Sidebar version line. Public endpoint, fetched once per session
+  // for any signed-in user.
+  if (state.me && state.serverVersion === null) {
+    loadServerVersion().then(() => render());
   }
   const root = document.getElementById('root');
   // Reset-password landing: the email link points at
@@ -3314,7 +3338,7 @@ function renderShell() {
       h('small', {}, t('studio'))),
     renderOrgSwitcher(),
     nav,
-    h('div', { class: 'sidebar-footer' }, themeBtn, logoutBtn, langPicker, renderLegalFooter()));
+    h('div', { class: 'sidebar-footer' }, themeBtn, logoutBtn, langPicker, renderSidebarVersion(), renderLegalFooter()));
 
   const backdrop = h('div', { class: 'backdrop', on: { click: () => {
     document.querySelector('.sidebar').classList.remove('open');
@@ -12301,6 +12325,39 @@ function renderSettingsHelpCard() {
       h('button', { class: 'btn', type: 'button',
         on: { click: () => nav('#manual') } },
         icon(ICONS.book), t('Open the manual'))));
+}
+
+// renderSidebarVersion shows the running build's version in the
+// sidebar footer. Admins additionally get an "Update to <new>" button
+// when the cached changelog snapshot has a newer release — clicking
+// jumps to Settings → Software update. Returns null while the
+// /api/version fetch is in flight so we don't flash a "v" prefix
+// with no value.
+function renderSidebarVersion() {
+  const v = state.serverVersion;
+  if (!v) return null;
+  const isAdmin = state.me?.role === 'admin';
+  const updateAvailable = isAdmin && systemUpdateAvailable();
+  const latest = state.systemUpdate?.latest;
+  const children = [
+    h('span', { class: 'mono' }, 'v' + v),
+  ];
+  if (updateAvailable && latest) {
+    children.push(h('button', {
+      class: 'btn small accent',
+      type: 'button',
+      title: t('Software update available'),
+      on: { click: () => {
+        document.querySelector('.sidebar')?.classList.remove('open');
+        document.querySelector('.backdrop')?.classList.remove('show');
+        nav('#settings/software-update');
+      } },
+    }, t('Update to v{{v}}', { v: latest })));
+  }
+  return h('div', {
+    class: 'sidebar-version',
+    style: 'margin-top:.75rem; display:flex; flex-direction:column; gap:.4rem; align-items:center; font-size:.75rem; color:var(--muted)',
+  }, ...children);
 }
 
 // renderLegalFooter is a 2-link strip embedded in the login screen

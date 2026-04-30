@@ -1327,6 +1327,7 @@
         'Öppna navigeringsmenyn (programuppdatering tillgänglig)',
       'Up to date': 'Uppdaterad',
       'Update available': 'Uppdatering tillgänglig',
+      'Update to v{{v}}': 'Uppdatera till v{{v}}',
       'Could not check': 'Kunde inte kontrollera',
       'Development build': 'Utvecklingsversion',
       'Current': 'Aktuell',
