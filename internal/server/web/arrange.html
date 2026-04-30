@@ -10170,7 +10170,9 @@ async function mountSimulatorPanel(host, advSlug) {
     liveSlot.replaceChildren();
     if (token) {
       liveSlot.append(h('a', {
-        href: `/live/${encodeURIComponent(token)}`, target: '_blank',
+        href: `/live/${encodeURIComponent(token)}`,
+        target: '_blank', rel: 'noopener',
+        class: 'btn primary small',
       }, icon(ICONS.eye), t('Open live view')));
     }
   };
