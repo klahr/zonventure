@@ -4866,6 +4866,10 @@ function runsTable(rs) {
         icon(ICONS.map), t('Pick an adventure'))));
   return h('table', { class: 'table' },
     h('thead', {}, h('tr', {},
+      // Cover column has no header text — the icon itself identifies
+      // the adventure. Width-pinned so the column doesn't shift as
+      // the cover loads or falls back to initials.
+      h('th', { style: 'width:48px' }, ''),
       h('th', {}, t('Event')),
       h('th', { class: 'hide-narrow' }, t('Adventure')),
       h('th', {}, t('State')),
@@ -4873,6 +4877,10 @@ function runsTable(rs) {
       h('th', { class: 'hide-narrow' }, t('Started')))),
     h('tbody', {}, rs.map((r) =>
       h('tr', { style: 'cursor:pointer', on: { click: () => nav('#events/' + r.id) } },
+        h('td', { style: 'width:48px' }, adventureCover({
+          title:      r.adventure_title || r.adventure_slug,
+          avatar_url: r.adventure_avatar_url,
+        }, 32)),
         h('td', {}, h('strong', {}, runLabel(r))),
         // Adventure column shows the human title with the slug as a
         // small muted second line — readable at a glance, still

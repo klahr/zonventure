@@ -219,8 +219,14 @@ func (h *Handlers) AdventureDetail(w http.ResponseWriter, r *http.Request) {
 		orgID     sql.NullInt64
 		runningN  int
 	)
+	// Postgres returns `IS NOT NULL` as a boolean; the previous query
+	// scanned it straight into a Go *int and silently failed (the
+	// outer `_ =` discarded the driver error), so hasAvatar stayed at
+	// 0 and the cover URL was never emitted on event-detail strips
+	// even when the adventure had an avatar uploaded. ::int matches
+	// the cast already used in ListAdventures.
 	_ = h.DB.QueryRowContext(r.Context(), `
-		SELECT avatar_mime_type IS NOT NULL, published, org_id,
+		SELECT (avatar_mime_type IS NOT NULL)::int, published, org_id,
 		       (SELECT COUNT(*) FROM events WHERE adventure_slug = $1 AND state = 'running')
 		FROM adventures WHERE slug = $1
 	`, slug).Scan(&hasAvatar, &published, &orgID, &runningN)

@@ -250,6 +250,12 @@ type eventDTO struct {
 	// list query so the UI doesn't have to round-trip per row to
 	// pick a slug-or-title fallback.
 	AdventureTitle  string `json:"adventure_title,omitempty"`
+	// AdventureAvatarURL is set when the adventure has cover art
+	// uploaded, so the events list can render the same icon used on
+	// the Adventures cards next to each row without a follow-up
+	// fetch per event. Empty means the client should fall back to
+	// the initials tile.
+	AdventureAvatarURL string `json:"adventure_avatar_url,omitempty"`
 	State           string `json:"state"`
 	ScheduledAt     string `json:"scheduled_at,omitempty"`
 	StartedAt       string `json:"started_at,omitempty"`
@@ -451,7 +457,8 @@ func (h *Handlers) ListEvents(w http.ResponseWriter, r *http.Request) {
 		       COALESCE(ar.scheduled_at, ''), COALESCE(ar.started_at, ''),
 		       ar.org_id, COALESCE(ar.created_by_user_id, 0),
 		       COALESCE(ar.assignment_id, 0), COALESCE(aa.max_teams, 0),
-		       ar.live_token, ar.show_map
+		       ar.live_token, ar.show_map,
+		       COALESCE((adv.avatar_mime_type IS NOT NULL)::int, 0) AS has_avatar
 		FROM events ar
 		LEFT JOIN adventure_assignments aa ON aa.id = ar.assignment_id
 		LEFT JOIN adventures adv ON adv.slug = ar.adventure_slug
@@ -471,16 +478,20 @@ func (h *Handlers) ListEvents(w http.ResponseWriter, r *http.Request) {
 	out := []eventDTO{}
 	for rows.Next() {
 		var (
-			d       eventDTO
-			showMap int
+			d         eventDTO
+			showMap   int
+			hasAvatar int
 		)
 		if err := rows.Scan(&d.ID, &d.Name, &d.AdventureSlug, &d.AdventureTitle, &d.State, &d.ScheduledAt, &d.StartedAt,
 			&d.OrgID, &d.CreatedByUserID, &d.AssignmentID, &d.MaxTeams,
-			&d.LiveToken, &showMap); err != nil {
+			&d.LiveToken, &showMap, &hasAvatar); err != nil {
 			httpx.Error(w, http.StatusInternalServerError, "scan failed")
 			return
 		}
 		d.ShowMap = showMap != 0
+		if hasAvatar != 0 {
+			d.AdventureAvatarURL = adventureAvatarURL(d.AdventureSlug)
+		}
 		out = append(out, d)
 	}
 	httpx.JSON(w, http.StatusOK, map[string]any{"events": out})
