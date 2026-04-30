@@ -10189,14 +10189,14 @@ async function mountSimulatorPanel(host, advSlug) {
       adventure_slug: advSlug,
       team_count: parseInt(teamInput.value, 10) || 6,
       speed_mul: parseFloat(speedInput.value) || 5,
-    }) },
+    }, host, advSlug) },
   }, icon(ICONS.play), t('Start'));
   const pauseBtn = h('button', { class: 'btn', type: 'button',
-    on: { click: () => simulatorAction('pause') } }, t('Pause'));
+    on: { click: () => simulatorAction('pause', null, host, advSlug) } }, t('Pause'));
   const resumeBtn = h('button', { class: 'btn', type: 'button',
-    on: { click: () => simulatorAction('resume') } }, t('Resume'));
+    on: { click: () => simulatorAction('resume', null, host, advSlug) } }, t('Resume'));
   const resetBtn = h('button', { class: 'btn danger', type: 'button',
-    on: { click: () => simulatorAction('reset') } },
+    on: { click: () => simulatorAction('reset', null, host, advSlug) } },
     icon(ICONS.trash), t('Reset'));
 
   // applyStage patches the dynamic bits of the view for a given
@@ -10265,9 +10265,10 @@ function schedulePoll(host, advSlug, prevStatus, applyStage) {
   }, 1500);
 }
 
-// simulatorAction posts a control command. Re-renders the view on
-// success so inputs snap to whatever state the server is now in.
-async function simulatorAction(kind, body) {
+// simulatorAction posts a control command. Re-mounts only the
+// simulator panel on success so inputs snap to the new server state
+// without touching the rest of the page (which would reset scroll).
+async function simulatorAction(kind, body, host, advSlug) {
   let r;
   try {
     r = await api('/api/admin/simulator/' + kind, {
@@ -10284,7 +10285,11 @@ async function simulatorAction(kind, body) {
   }
   if (kind === 'start') toastOk(t('Simulation started'));
   if (kind === 'reset') toastOk(t('Simulation reset'));
-  renderRoute();
+  if (host && document.contains(host)) {
+    mountSimulatorPanel(host, advSlug);
+  } else {
+    renderRoute();
+  }
 }
 
 let simulatorPollTimer = null;
