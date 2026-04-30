@@ -593,13 +593,6 @@ p { margin: 0 0 .5rem; }
    users who weren't even on a phone. The 40-px square is small
    enough to fit on any reasonable screen. */
 
-/* Quick-stats row reuses the .adv-stats grid styling but slightly
-   wider on the event-detail surface so 4 tiles fit on desktop. */
-.event-stats { grid-template-columns: repeat(3, 1fr); }
-@media (min-width: 720px) {
-  .event-stats { grid-template-columns: repeat(4, 1fr); }
-}
-
 /* Post-event results card — finishing order, recap links per row,
    "didn't finish" teams below. Uses an <ol> so screen readers
    announce the placement. */
@@ -5306,7 +5299,7 @@ function renderEventQuickStats(event, teams) {
         t('starts in')));
     }
   }
-  return h('div', { class: 'adv-stats event-stats' }, ...tiles);
+  return h('div', { class: 'adv-stats' }, ...tiles);
 }
 
 // fmtElapsedShort renders a duration as "Hh Mm" or "Mm Ss" — short
