@@ -114,6 +114,11 @@
       ' · gate radius {{r}} m': ' · områdesradie {{r}} m',
       ' · not gated': ' · inget område',
       'Notes: ': 'Anteckningar: ',
+      'Open map': 'Öppna karta',
+      'Puzzle location': 'Pusselplats',
+      "Open this puzzle's location on the map":
+        'Öppna pusslets plats på kartan',
+      'Map library failed to load.': 'Kartbiblioteket kunde inte läsas in.',
       'Preview requires an arranger login. Open ':
         'Förhandsvisning kräver arrangörsinloggning. Öppna ',
       ' first, then retry.': ' först och försök sedan igen.',

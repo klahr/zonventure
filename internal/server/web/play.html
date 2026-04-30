@@ -1003,6 +1003,57 @@
     max-width: 36ch;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
+  /* Inline link-styled <button> for the coord cell: neutralises the
+     global accent-pill button rule so the click target reads as a
+     link inside the strip rather than a chunky pink CTA. */
+  .preview-debug button.linklike {
+    font: inherit; font-size: inherit;
+    background: transparent; color: inherit;
+    border: 0; padding: 0; margin: 0;
+    cursor: pointer; box-shadow: none; min-height: 0; width: auto;
+    text-decoration: underline; text-decoration-thickness: 1px;
+    text-underline-offset: 2px;
+  }
+  .preview-debug button.linklike:hover {
+    background: transparent; color: var(--accent);
+  }
+
+  /* Fullscreen map overlay — opened from the debug-strip coord link
+     in preview mode. Mirrors arrange.html's .fsmap-* shape so the two
+     surfaces feel identical; Leaflet loads on demand the first time
+     this overlay opens (see ensureLeaflet) so players never pay the
+     download cost. */
+  .fsmap-back {
+    position: fixed; inset: 0; background: rgba(0,0,0,.55);
+    display: flex; flex-direction: column;
+    z-index: 2000;
+  }
+  .fsmap-chrome {
+    display: flex; align-items: center; gap: .75rem;
+    padding: .5rem .75rem;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border-soft);
+    flex: 0 0 auto;
+  }
+  .fsmap-title {
+    flex: 1 1 auto; min-width: 0;
+    font-weight: 700;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .fsmap-close {
+    width: 2rem; height: 2rem;
+    background: transparent; border: 0; border-radius: 999px;
+    padding: 0; font-size: 1.5rem; line-height: 1;
+    color: var(--muted); cursor: pointer; box-shadow: none;
+    min-height: 0; flex: 0 0 auto;
+  }
+  .fsmap-close:hover { background: var(--surface-2); color: var(--ink); }
+  /* min-height:0 lets the flex child shrink so Leaflet sees a definite
+     height — without it the map refuses to render below the chrome. */
+  .fsmap-host { flex: 1 1 auto; min-height: 0; }
+  .fsmap-host .empty {
+    padding: 2rem; text-align: center; color: var(--muted);
+  }
 
   /* ---------- Connection status banner ----------
      Shown when the WebSocket has been disconnected for >2s. Sits above
@@ -3501,8 +3552,24 @@ function renderPreviewDebug(d, anchor) {
   const locSuffix = d.radius_m
     ? t(' · gate radius {{r}} m', { r: d.radius_m })
     : t(' · not gated');
-  const locCell = el('span', { class: 'cell mono' },
-    t('Location: {{coords}}', { coords }) + locSuffix);
+  // Coord cell is a link-styled button that opens the same fullscreen
+  // map overlay arrange.html uses for "Open map" — saves the arranger
+  // from copy-pasting coords into a separate tool to confirm a gate
+  // sits where they meant.
+  const locCell = el('button', {
+    class: 'cell mono linklike',
+    type: 'button',
+    'aria-label': t('Open this puzzle\'s location on the map'),
+    on: { click: () => openFullscreenMap({
+      title: t('Puzzle location'),
+      pins: [{
+        lat: d.lat,
+        lng: d.lng,
+        gated: !!d.radius_m,
+        radiusM: d.radius_m || 0,
+      }],
+    }) },
+  }, t('Location: {{coords}}', { coords }) + locSuffix);
   const cells = [acceptCell, locCell];
   if (d.notes) {
     cells.push(el('span', { class: 'cell notes muted', title: d.notes },
@@ -3510,6 +3577,129 @@ function renderPreviewDebug(d, anchor) {
   }
   const panel = el('div', { id: 'preview-debug', class: 'preview-debug' }, ...cells);
   anchor.after(panel);
+}
+
+// ensureLeaflet pulls Leaflet's CSS + JS from unpkg the first time
+// any caller asks for it, and returns a cached promise on subsequent
+// calls so multiple open-map clicks don't duplicate-load. Lazy on
+// purpose: 99% of play.html visits are real players who never need
+// a map — we don't want to ship ~150 KB of mapping code to every
+// phone just so the arranger preview can open a coord overlay.
+let leafletReady = null;
+function ensureLeaflet() {
+  if (leafletReady) return leafletReady;
+  leafletReady = new Promise((resolve, reject) => {
+    const css = document.createElement('link');
+    css.rel = 'stylesheet';
+    css.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+    css.integrity = 'sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=';
+    css.crossOrigin = '';
+    document.head.append(css);
+    const js = document.createElement('script');
+    js.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+    js.integrity = 'sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=';
+    js.crossOrigin = '';
+    js.onload = () => resolve();
+    js.onerror = () => reject(new Error('leaflet load failed'));
+    document.head.append(js);
+  });
+  return leafletReady;
+}
+
+// openFullscreenMap drops a chromeless overlay with a Leaflet map
+// covering the viewport. Mirrors arrange.html's same-named helper so
+// the two surfaces feel identical when an arranger crosses between
+// "edit puzzle" and "preview puzzle". Single pin centres at zoom 17;
+// many pins auto-fit to bounds.
+//
+// opts: { title?, pins?, accent? }
+//   pins[]: { lat, lng, label?, gated?, radiusM? }
+//     gated:   fills the marker (matches the run-detail legend).
+//     radiusM: draws a translucent gate circle around the pin.
+function openFullscreenMap(opts) {
+  const { title, pins, accent } = opts || {};
+  const list = Array.isArray(pins) ? pins : [];
+  let removed = false;
+  let map = null;
+  const close = () => {
+    if (removed) return;
+    removed = true;
+    document.removeEventListener('keydown', onKey);
+    try { if (map) map.remove(); } catch { /* leaflet teardown is best-effort */ }
+    back.remove();
+  };
+  const onKey = (e) => { if (e.key === 'Escape') close(); };
+  const mapEl = el('div', { class: 'fsmap-host' });
+  const back = el('div', {
+    class: 'fsmap-back',
+    role: 'dialog',
+    'aria-modal': 'true',
+    on: { click: (e) => { if (e.target === back) close(); } },
+  },
+    el('div', { class: 'fsmap-chrome' },
+      el('div', { class: 'fsmap-title' }, title || ''),
+      el('button', {
+        class: 'fsmap-close',
+        type: 'button',
+        'aria-label': t('Close'),
+        on: { click: close },
+      }, '×')),
+    mapEl,
+  );
+  document.body.append(back);
+  document.addEventListener('keydown', onKey);
+  // Loading placeholder for the first-call Leaflet fetch; subsequent
+  // opens resolve synchronously from the cached promise so this
+  // flashes too briefly to notice.
+  mapEl.replaceChildren(el('div', { class: 'empty' },
+    t('Loading map…')));
+  ensureLeaflet().then(() => {
+    if (removed) return;
+    mapEl.replaceChildren();
+    map = L.map(mapEl).setView([59.3293, 18.0686], 13);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap contributors',
+      maxZoom: 19,
+    }).addTo(map);
+    const fillColour = accent ||
+      getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() ||
+      '#ad1357';
+    const pts = [];
+    for (const pin of list) {
+      if (!pin || (!pin.lat && !pin.lng)) continue;
+      const m = L.circleMarker([pin.lat, pin.lng], {
+        radius: 9,
+        color: fillColour,
+        weight: 2,
+        fillColor: pin.gated ? fillColour : 'transparent',
+        fillOpacity: pin.gated ? 1 : 0,
+      }).addTo(map);
+      if (pin.label) m.bindTooltip(pin.label);
+      if (pin.radiusM > 0) {
+        L.circle([pin.lat, pin.lng], {
+          radius: pin.radiusM,
+          color: fillColour,
+          weight: 1,
+          fillOpacity: .12,
+        }).addTo(map);
+      }
+      pts.push([pin.lat, pin.lng]);
+    }
+    if (pts.length === 1) {
+      map.setView(pts[0], 17);
+    } else if (pts.length > 1) {
+      map.fitBounds(L.latLngBounds(pts), { padding: [40, 40] });
+    }
+    // Leaflet measures its container at init; the overlay is freshly
+    // mounted so the size is correct, but invalidateSize after the
+    // browser commits the layout is the standard belt-and-braces call
+    // for map-in-flex setups.
+    setTimeout(() => { try { map.invalidateSize(); } catch { /* torn down */ } }, 30);
+  }).catch(() => {
+    if (removed) return;
+    mapEl.replaceChildren(el('div', { class: 'empty' },
+      t('Map library failed to load.')));
+  });
 }
 
 // buildMenuButton returns the small hamburger button placed at the
