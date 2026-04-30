@@ -1056,6 +1056,9 @@
       'Forget me on this event': 'Glöm mig från denna körning',
       'Erase my play data': 'Radera mina speldata',
       'Theme': 'Tema',
+      'Appearance': 'Utseende',
+      'Theme and language preferences for this account.':
+        'Tema- och språkinställningar för det här kontot.',
       'Light': 'Ljust',
       'Dark': 'Mörkt',
       'Auto': 'Auto',

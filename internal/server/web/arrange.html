@@ -273,11 +273,6 @@ p { margin: 0 0 .5rem; }
 }
 .sidebar-footer .btn:hover { color: var(--accent); border-color: transparent; background: var(--surface-2); }
 .sidebar-footer .btn svg { stroke: currentColor; }
-.sidebar-lang {
-  display: flex; align-items: center; gap: .5rem;
-  padding: .25rem .25rem; font-size: .8rem;
-}
-.sidebar-lang > span { text-transform: uppercase; letter-spacing: .06em; font-weight: 700; }
 .zv-lang-picker {
   font: inherit; color: var(--text);
   padding: .3rem .5rem;
@@ -3315,20 +3310,11 @@ function renderShell() {
     ev.preventDefault();
   });
 
-  const isDark = currentTheme() === 'dark';
-  const themeBtn = h('button', {
-    class: 'btn',
-    title: isDark ? t('Use light theme') : t('Use dark theme'),
-    on: { click: toggleTheme },
-  }, icon(isDark ? ICONS.sun : ICONS.moon), isDark ? t('Use light theme') : t('Use dark theme'));
   const logoutBtn = h('button', {
     class: 'btn',
     title: t('Log out'),
     on: { click: logout },
   }, icon(ICONS.exit), t('Log out ({{username}})', { username: state.me.username }));
-  const langPicker = h('label', { class: 'sidebar-lang', title: t('Language') },
-    h('span', { class: 'muted' }, t('Language')),
-    zvI18n.makeLangPicker({ className: 'zv-lang-picker' }));
 
   const sidebar = h('aside', {
     class: 'sidebar', id: 'sidebar-nav',
@@ -3338,7 +3324,7 @@ function renderShell() {
       h('small', {}, t('studio'))),
     renderOrgSwitcher(),
     nav,
-    h('div', { class: 'sidebar-footer' }, themeBtn, logoutBtn, langPicker, renderSidebarVersion(), renderLegalFooter()));
+    h('div', { class: 'sidebar-footer' }, logoutBtn, renderSidebarVersion(), renderLegalFooter()));
 
   const backdrop = h('div', { class: 'backdrop', on: { click: () => {
     document.querySelector('.sidebar').classList.remove('open');
@@ -11832,6 +11818,7 @@ function renderSettingsGeneral(view) {
     h('h1', {}, t('General')),
     h('p', { class: 'muted' },
       t('Manage your account. Changes are immediate; deleting your account also removes its data.')),
+    renderSettingsAppearanceCard(),
     renderSettingsPasswordCard(),
     renderSettingsEmailCard(me),
     renderSettingsTOTPCard(),
@@ -12325,6 +12312,31 @@ function renderSettingsHelpCard() {
       h('button', { class: 'btn', type: 'button',
         on: { click: () => nav('#manual') } },
         icon(ICONS.book), t('Open the manual'))));
+}
+
+// renderSettingsAppearanceCard groups theme + language — preferences
+// that previously lived in the sidebar footer. Toggling theme calls
+// render() which rebuilds this card with the flipped icon/label;
+// changing language calls setLang() which reloads the page.
+function renderSettingsAppearanceCard() {
+  const isDark = currentTheme() === 'dark';
+  const themeBtn = h('button', {
+    class: 'btn',
+    type: 'button',
+    title: isDark ? t('Use light theme') : t('Use dark theme'),
+    on: { click: toggleTheme },
+  }, icon(isDark ? ICONS.sun : ICONS.moon),
+     isDark ? t('Use light theme') : t('Use dark theme'));
+  return h('div', { class: 'card settings-card' },
+    h('h2', {}, t('Appearance')),
+    h('p', { class: 'muted', style: 'font-size:.9rem' },
+      t('Theme and language preferences for this account.')),
+    h('div', { class: 'row', style: 'gap:1rem; align-items:center; margin-top:.75rem; flex-wrap:wrap' },
+      h('span', { style: 'min-width:7rem' }, t('Theme')),
+      themeBtn),
+    h('div', { class: 'row', style: 'gap:1rem; align-items:center; margin-top:.5rem; flex-wrap:wrap' },
+      h('span', { style: 'min-width:7rem' }, t('Language')),
+      zvI18n.makeLangPicker({ className: 'zv-lang-picker' })));
 }
 
 // renderSidebarVersion shows the running build's version in the
