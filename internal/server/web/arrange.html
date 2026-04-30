@@ -2016,6 +2016,60 @@ async function api(path, opts = {}) {
   return { status: res.status, ok: res.ok, body, retryAfter };
 }
 
+// downscaleImage caps an uploaded image's longer side at maxDim and
+// re-encodes it as JPEG before it goes on the wire. The server caps
+// stored images at 512 px anyway (internal/imageutil) — sending the
+// raw camera file (often 10+ MB) is wasted upload bandwidth that
+// hurts the most on mobile uplinks. A modest client-side cap at
+// 1600 px leaves the server's higher-quality CatmullRom downscale to
+// do the final reduction without the mobile user waiting on a
+// multi-megabyte upload first.
+//
+// Falls back to the original file on anything unexpected (animated
+// formats, SVG, decode failure, browser without canvas/toBlob) — the
+// server-side shrink + size cap is the safety net.
+async function downscaleImage(file, maxDim = 1600, quality = 0.85) {
+  if (!file || !file.type || !file.type.startsWith('image/')) return file;
+  // GIF would lose animation; SVG is vector and doesn't benefit.
+  if (file.type === 'image/gif' || file.type === 'image/svg+xml') return file;
+  if (typeof createImageBitmap !== 'function') return file;
+  let bitmap;
+  try {
+    bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
+  } catch {
+    return file;
+  }
+  try {
+    const w = bitmap.width;
+    const h = bitmap.height;
+    const longer = Math.max(w, h);
+    if (longer <= maxDim) return file;
+    const scale = maxDim / longer;
+    const dw = Math.max(1, Math.round(w * scale));
+    const dh = Math.max(1, Math.round(h * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = dw;
+    canvas.height = dh;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return file;
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(bitmap, 0, 0, dw, dh);
+    const blob = await new Promise((resolve) =>
+      canvas.toBlob(resolve, 'image/jpeg', quality));
+    if (!blob || blob.size >= file.size) return file;
+    const baseName = (file.name || 'image').replace(/\.[^.]+$/, '');
+    return new File([blob], baseName + '.jpg', {
+      type: 'image/jpeg',
+      lastModified: Date.now(),
+    });
+  } catch {
+    return file;
+  } finally {
+    bitmap.close?.();
+  }
+}
+
 /* ========== DOM helper ========== */
 function h(tag, attrs = {}, ...children) {
   const e = document.createElement(tag);
@@ -6894,8 +6948,9 @@ async function openEditTeamModal(runID, existing, event) {
     fileInput.addEventListener('change', async () => {
       const file = fileInput.files?.[0];
       if (!file) return;
+      const shrunk = await downscaleImage(file);
       const fd = new FormData();
-      fd.append('file', file);
+      fd.append('file', shrunk);
       const res = await fetch(`/api/admin/teams/${freshTeam.id}/avatar`, {
         method: 'POST', body: fd, credentials: 'same-origin',
         headers: { 'X-CSRF-Token': csrfToken() },
@@ -8337,8 +8392,9 @@ async function openEditAdventureMeta(adv) {
     coverFile.addEventListener('change', async () => {
       const f = coverFile.files?.[0];
       if (!f) return;
+      const shrunk = await downscaleImage(f);
       const fd = new FormData();
-      fd.append('file', f);
+      fd.append('file', shrunk);
       const res = await fetch(`/api/admin/adventures/${encodeURIComponent(adv.slug)}/avatar`, {
         method: 'POST', body: fd, credentials: 'same-origin',
         headers: { 'X-CSRF-Token': csrfToken() },
@@ -8530,8 +8586,9 @@ function buildHintsEditor(initial) {
       fileInput.value = '';
       return;
     }
+    const shrunk = await downscaleImage(fileInput.files[0]);
     const fd = new FormData();
-    fd.append('file', fileInput.files[0]);
+    fd.append('file', shrunk);
     const res = await fetch(`/api/admin/hints/${target.id}/images`, {
       method: 'POST', body: fd, credentials: 'same-origin',
       headers: { 'X-CSRF-Token': csrfToken() },
@@ -9216,8 +9273,9 @@ async function openEditPuzzle(adv, page /* or null */) {
 
     file.addEventListener('change', async () => {
       if (!file.files?.[0]) return;
+      const shrunk = await downscaleImage(file.files[0]);
       const fd = new FormData();
-      fd.append('file', file.files[0]);
+      fd.append('file', shrunk);
       const res = await fetch(`/api/admin/pages/${page.id}/images`, {
         method: 'POST', body: fd, credentials: 'same-origin',
         headers: { 'X-CSRF-Token': csrfToken() },
