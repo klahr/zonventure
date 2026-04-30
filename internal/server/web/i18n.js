@@ -1346,12 +1346,8 @@
       'Detects new releases of Zonventure and shows what changed. Upgrading the deployment is still a shell-level operation — instructions per deployment style are below.':
         'Detekterar nya versioner av Zonventure och visar vad som har ändrats. Att uppgradera distributionen är fortfarande ett skalkommando — anvisningar per distributionstyp finns nedan.',
       'How to upgrade': 'Så uppgraderar du',
-      'Pick the path that matches how this server was installed.':
-        'Välj sättet som motsvarar hur denna server installerades.',
-      'Docker Compose': 'Docker Compose',
-      'From source': 'Från källkod',
-      'Migrations run automatically on startup. Back up Postgres first if you\'re crossing a major version.':
-        'Migreringar körs automatiskt vid uppstart. Säkerhetskopiera Postgres först om du går över en huvudversion.',
+      'Fetches the newest release tag, checks it out, and rebuilds the Docker image. Migrations run automatically on startup. Back up Postgres first if you\'re crossing a major version.':
+        'Hämtar den senaste utgåvetaggen, checkar ut den och bygger om Docker-imagen. Migreringar körs automatiskt vid uppstart. Säkerhetskopiera Postgres först om du går över en huvudversion.',
       'just now': 'just nu',
       '{{n}} minute(s) ago': '{{n}} minut(er) sedan',
       '{{n}} hour(s) ago': '{{n}} timme/timmar sedan',

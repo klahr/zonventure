@@ -11,6 +11,35 @@ The repository, Go module, and CLI binary are named `zv`; the product is
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-05-01
+
+### Added
+
+- **Sidebar version line.** Every signed-in user now sees the running
+  build's version in the sidebar footer (fetched once per session from
+  the public `/api/version`).
+- **One-click upgrade affordance.** Admins with a newer release
+  available now get an "Update to v\<latest\>" button under the version
+  line that jumps straight to Settings → Software update.
+- **`make upgrade` target.** One command that fetches tags, checks out
+  the newest release, and rebuilds the Docker image at that commit —
+  replacing the three-line recipe operators were copy-pasting. The
+  in-app upgrade card and `SELFHOSTING.md` lead with this; the
+  underlying `git`/`docker` commands are kept as the equivalent.
+
+### Changed
+
+- **Plain-language copy on the Software update page.** The lede now
+  says "Checks once a day whether a newer version of Zonventure is
+  available" instead of "Compares the running binary against the
+  upstream CHANGELOG.md" — same behaviour, less jargon for non-technical
+  admins.
+- **Brand naming clarified.** "Zonventure" is the platform; "Zonventure
+  Studio" is the arranger tool (used only in the `/arrange` `<title>`,
+  the browser-unsupported message, and the welcome modal); "Zonventure
+  AB" is the legal entity. Player-facing pages, marketing surfaces,
+  emails, and the TOTP issuer label all use plain "Zonventure".
+
 ## [0.1.4] - 2026-04-30
 
 ### Fixed
@@ -96,6 +125,7 @@ First tagged release.
   pg_dump-portable backup / restore.
 
 [Unreleased]: https://git.sr.ht/~klahr/zv/log/master
+[0.1.5]: https://git.sr.ht/~klahr/zv/refs/0.1.5
 [0.1.4]: https://git.sr.ht/~klahr/zv/refs/0.1.4
 [0.1.3]: https://git.sr.ht/~klahr/zv/refs/0.1.3
 [0.1.2]: https://git.sr.ht/~klahr/zv/refs/0.1.2

@@ -229,17 +229,24 @@ Overrides are loaded at startup and cached for the process lifetime
 
 ## Upgrades
 
-Take a backup first (see the `-backup` recipe above), then paste:
+Take a backup first (see the `-backup` recipe above), then:
+
+```sh
+make upgrade
+```
+
+That fetches release tags, checks out the newest one, and rebuilds the
+`app` image at that commit so `/api/version` stamps a clean version
+string. The data volume is untouched and embedded migrations run on
+next start.
+
+Equivalent without `make`:
 
 ```sh
 git fetch --tags
 git checkout "$(git tag --sort=-v:refname | head -1)"
 docker compose up -d --build
 ```
-
-That checks out the newest release tag and rebuilds the `app` image
-at that commit, so `/api/version` stamps a clean version string. The
-data volume is untouched and embedded migrations run on next start.
 
 ## Reverse proxy (TLS termination)
 

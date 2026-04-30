@@ -12165,9 +12165,9 @@ function renderUpgradeInstructionsCard() {
   card.append(
     h('h2', {}, t('How to upgrade')),
     h('pre', { class: 'mono', style: 'background:var(--surface-2); padding:.5rem .75rem; border-radius:var(--radius); overflow-x:auto' },
-      'git fetch --tags\ngit checkout "$(git tag --sort=-v:refname | head -1)"\ndocker compose up -d --build'),
+      'make upgrade'),
     h('p', { class: 'muted', style: 'font-size:.85rem; margin:.5rem 0 0' },
-      t('Migrations run automatically on startup. Back up Postgres first if you\'re crossing a major version.')),
+      t('Fetches the newest release tag, checks it out, and rebuilds the Docker image. Migrations run automatically on startup. Back up Postgres first if you\'re crossing a major version.')),
   );
   return card;
 }

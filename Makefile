@@ -1,5 +1,5 @@
 .PHONY: run seed test test-race vet build restart deploy tag tidy clean \
-        up down logs psql seed-compose
+        up down logs psql seed-compose upgrade
 
 # Default target — `make` alone builds the production binary, ready
 # for a systemctl restart.
@@ -119,3 +119,16 @@ psql:
 # Run the seeds inside a one-shot container so the db service is reused.
 seed-compose:
 	docker compose run --rm app -seed-admin $(ADMIN) -seed-arranger $(ARRANGER) -seed-demo-adventure
+
+# Upgrade an existing Docker Compose deployment to the latest released
+# tag. Take a Postgres backup first — see the -backup recipe in
+# SELFHOSTING.md. Bails early if there's no tag to check out yet.
+upgrade:
+	git fetch --tags
+	@LATEST=$$(git tag --sort=-v:refname | head -1) && \
+	if [ -z "$$LATEST" ]; then \
+		echo "No release tags found — nothing to upgrade to."; exit 1; \
+	fi && \
+	echo "Upgrading to $$LATEST" && \
+	git checkout "$$LATEST"
+	docker compose up -d --build
