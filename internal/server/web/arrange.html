@@ -4404,23 +4404,24 @@ function buildAdventurePuzzleCard(p, i) {
   const card = h('div', { class: 'card adv-pz-card' },
     h('div', { class: 'adv-pz-head' }, ...headerBits));
 
-  // Prompt — render the server-supplied HTML rather than the raw
-  // markdown source so links / bold / lists actually appear.
-  if (p.prompt_html) {
-    card.append(h('div', { class: 'adv-pz-prompt md-preview', html: p.prompt_html }));
-  } else if (p.prompt) {
-    card.append(h('p', { style: 'white-space:pre-wrap' }, p.prompt));
-  }
-
-  // Inline images. The /adventure-assets/image/{id} route gates on
-  // staff session OR slot-on-current-page; admin/arranger viewers
-  // always pass.
+  // Inline images come before the prompt so the overview card mirrors
+  // the player and editor layouts (title → images → text). The
+  // /adventure-assets/image/{id} route gates on staff session OR
+  // slot-on-current-page; admin/arranger viewers always pass.
   if (p.images && p.images.length) {
     const grid = h('div', { class: 'adv-pz-images' });
     for (const im of p.images) {
       grid.append(h('img', { src: im.url, alt: im.alt_text || '' }));
     }
     card.append(grid);
+  }
+
+  // Prompt — render the server-supplied HTML rather than the raw
+  // markdown source so links / bold / lists actually appear.
+  if (p.prompt_html) {
+    card.append(h('div', { class: 'adv-pz-prompt md-preview', html: p.prompt_html }));
+  } else if (p.prompt) {
+    card.append(h('p', { style: 'white-space:pre-wrap' }, p.prompt));
   }
 
   // Hints — surfaced on this read-only view because they're a real
