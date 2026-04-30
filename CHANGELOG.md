@@ -11,6 +11,21 @@ The repository, Go module, and CLI binary are named `zv`; the product is
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-04-30
+
+### Added
+
+- **In-app update detection.** Admins see a new **Settings → Software
+  update** page that compares the running binary against the
+  upstream `CHANGELOG.md`, shows the changes since the running
+  version, and offers a **Check now** button. A small dot on the
+  hamburger menu and the Settings entry surfaces the badge when an
+  update is available. The check runs daily in the background; the
+  fetch URL is configurable via `ZV_CHANGELOG_URL`.
+- **`make tag BUMP=...`** helper for bumping the version and
+  creating an annotated tag locally based on the latest existing
+  tag. Prints the push command rather than pushing for you.
+
 ## [0.1.0] - 2026-04-30
 
 First tagged release.
@@ -34,4 +49,5 @@ First tagged release.
   pg_dump-portable backup / restore.
 
 [Unreleased]: https://git.sr.ht/~klahr/zv/log/master
-[0.1.0]: https://git.sr.ht/~klahr/zv/refs/v0.1.0
+[0.1.1]: https://git.sr.ht/~klahr/zv/refs/0.1.1
+[0.1.0]: https://git.sr.ht/~klahr/zv/refs/0.1.0
