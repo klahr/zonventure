@@ -543,11 +543,14 @@ p { margin: 0 0 .5rem; }
 .adv-pz-title { font-size: 1.05rem; }
 .adv-pz-prompt { line-height: 1.55; margin: 0 0 .5rem; }
 /* auto-fit with a 1fr max meant a single image inflated its column
-   to the whole card width; capping at 280px keeps thumbnails legible
-   on wide displays while still letting several pack across one row. */
+   to the whole card width; the cap keeps thumbnails legible on wide
+   displays while still letting several pack across one row. 360px
+   lets a single image fill a typical phone screen (~320–360 px of
+   card content area on a 390 px viewport) without leaving an empty
+   gutter on the right. */
 .adv-pz-images {
   display: grid; gap: .4rem;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 280px));
+  grid-template-columns: repeat(auto-fit, minmax(140px, 360px));
   margin: .5rem 0;
 }
 .adv-pz-images img {
