@@ -2794,7 +2794,7 @@ function maybeShowOnboarding() {
 }
 
 async function showOnboardingModal() {
-  await modal(t('Welcome to Zonventure'), ({ body, close }) => {
+  await modal(t('Welcome to Zonventure Studio'), ({ body, close }) => {
     body.append(
       h('p', { class: 'muted', style: 'margin-top:.25rem' },
         t('Three steps from here to a live adventure:')),
@@ -2815,7 +2815,7 @@ async function showOnboardingModal() {
 }
 
 async function showAdminOnboardingModal() {
-  await modal(t('Welcome to Zonventure'), ({ body, close }) => {
+  await modal(t('Welcome to Zonventure Studio'), ({ body, close }) => {
     body.append(
       h('p', { class: 'muted', style: 'margin-top:.25rem' },
         t('Admin shortcut — three steps to a working deployment:')),
@@ -12096,7 +12096,7 @@ async function viewSettingsSoftwareUpdate(view) {
         h('h2', { style: 'margin:0' }, t('Software update')),
         h('span', { class: 'pill ' + pillCls }, pillTxt)),
       h('p', { class: 'muted', style: 'margin:.25rem 0 0' },
-        t('Compares the running binary against the upstream CHANGELOG.md. The check runs daily in the background; click Check now to refetch immediately.')),
+        t('Checks once a day whether a newer version of Zonventure is available. Click Check now to look immediately.')),
       versionRow,
       h('div', { class: 'row', style: 'gap:.5rem; align-items:center; flex-wrap:wrap' },
         checkBtn,

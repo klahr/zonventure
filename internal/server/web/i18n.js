@@ -1173,7 +1173,7 @@
         'Jag bekräftar att inga deltagare under 13 år kommer att spela detta äventyr, eller att jag har föräldrasamtycke för dem som gör det.',
       'Player ages': 'Deltagarnas ålder',
       // ---- onboarding ----
-      'Welcome to Zonventure': 'Välkommen till Zonventure',
+      'Welcome to Zonventure Studio': 'Välkommen till Zonventure Studio',
       'Three steps from here to a live adventure:': 'Tre steg till ett äventyr:',
       'Browse adventures': 'Bläddra äventyr',
       'the catalog has ready-made adventures, or you can author your own.':
@@ -1337,8 +1337,8 @@
       'Checking…': 'Kontrollerar…',
       'Checked {{when}}': 'Kontrollerad {{when}}',
       'Not checked yet.': 'Ännu inte kontrollerad.',
-      'Compares the running binary against the upstream CHANGELOG.md. The check runs daily in the background; click Check now to refetch immediately.':
-        'Jämför den körande binären mot uppströms CHANGELOG.md. Kontrollen körs dagligen i bakgrunden; klicka på Kontrollera nu för att hämta direkt.',
+      'Checks once a day whether a newer version of Zonventure is available. Click Check now to look immediately.':
+        'Kontrollerar en gång om dagen om en nyare version av Zonventure finns tillgänglig. Klicka på Kontrollera nu för att leta direkt.',
       'Last error: {{err}}': 'Senaste fel: {{err}}',
       'This binary reports a version past the last tagged release. Update prompts are suppressed because we can\'t tell whether the upstream changelog covers commits this build already includes.':
         'Den här binären rapporterar en version efter senaste taggade utgåva. Uppdateringsuppmaningar visas inte eftersom vi inte kan avgöra om uppströms changelog täcker commits som versionen redan har.',
