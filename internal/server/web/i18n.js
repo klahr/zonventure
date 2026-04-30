@@ -869,7 +869,7 @@
       'Each team slot lets one team play "{{title}}".':
         'Varje lagplats låter ett lag spela "{{title}}".',
       // ---- purchases ----
-      'Purchases': 'Köp',
+      'Purchases': 'Köphistorik',
       'Purchase failed': 'Köpet misslyckades',
       'Payment failed': 'Betalningen misslyckades',
       'Payment received — let\'s schedule your event.':
