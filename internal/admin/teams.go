@@ -82,15 +82,27 @@ func (h *Handlers) UpdateTeam(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !h.requireEventOp(w, r.Context(), eventID, OpRenameTeam) {
-		return
-	}
 	var req updateTeamRequest
 	if !httpx.DecodeJSON(w, r, &req) {
 		return
 	}
 	if req.Name == nil && req.Email == nil {
 		httpx.Error(w, http.StatusBadRequest, "no fields to update")
+		return
+	}
+	// Pick the op that matches what's being touched. Name → rename
+	// gate (locked once the event hits a terminal state). Email-only
+	// → the more permissive metadata gate so an arranger can fill
+	// in the captain's address after the event finished and still
+	// kick off the recap email. When BOTH fields are set, the
+	// stricter rename gate wins — sending a name change post-
+	// completion would be unexpected, so the request 409s the way
+	// it always has.
+	op := OpEditTeamEmail
+	if req.Name != nil {
+		op = OpRenameTeam
+	}
+	if !h.requireEventOp(w, r.Context(), eventID, op) {
 		return
 	}
 	var (

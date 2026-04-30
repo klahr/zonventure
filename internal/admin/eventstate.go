@@ -25,6 +25,14 @@ const (
 	OpRemoveSlot      eventOp = "remove_slot"
 	OpRotateSlotToken eventOp = "rotate_slot_token"
 	OpUnlockTeam      eventOp = "unlock_team"
+	// OpEditTeamEmail is the captain-contact email edit. Distinct
+	// from OpRenameTeam because email is purely arranger-side
+	// metadata (never surfaced on the player share page) and an
+	// arranger frequently needs to fill it in after the event has
+	// completed — to send the recap link, follow up about a lost
+	// item, etc. Allowed in every state including completed and
+	// cancelled.
+	OpEditTeamEmail eventOp = "edit_team_email"
 )
 
 // allOps is the canonical list — used to render allowed_ops on the
@@ -39,6 +47,7 @@ var allOps = []eventOp{
 	OpRemoveSlot,
 	OpRotateSlotToken,
 	OpUnlockTeam,
+	OpEditTeamEmail,
 }
 
 // allowedForState is the single source of truth for what's editable
@@ -56,6 +65,13 @@ var allOps = []eventOp{
 //               distinct so the UI and the activity log can show a
 //               truthful label instead of pretending the event finished.
 func allowedForState(state string, op eventOp) bool {
+	// OpEditTeamEmail is the lone exception to the "terminal states
+	// are read-only" rule — see the const doc-comment. Email is
+	// arranger-only metadata; permitting late edits doesn't affect
+	// any player-facing surface or audit-able outcome.
+	if op == OpEditTeamEmail {
+		return true
+	}
 	switch state {
 	case "scheduled":
 		switch op {

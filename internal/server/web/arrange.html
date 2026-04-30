@@ -5773,6 +5773,13 @@ async function openEditTeamModal(runID, existing, event) {
   const freshTeam = (run.teams || []).find((t) => t.id === existing.id) || existing;
 
   const canRename = canDo(event, 'rename_team');
+  // Email edit is permitted in every event state, including
+  // completed/cancelled — it's pure arranger metadata that never
+  // surfaces on a player page, and the recap-link follow-up is
+  // exactly the case an arranger fills it in late for. Falls back
+  // to canRename when the event-detail response predates the
+  // edit_team_email op (older backends).
+  const canEditEmail = canDo(event, 'edit_team_email') || canRename;
   const canAddSlot = canDo(event, 'add_slot');
   const canAvatar = canDo(event, 'set_team_avatar');
 
@@ -5780,16 +5787,20 @@ async function openEditTeamModal(runID, existing, event) {
     const nameInput = h('input', { value: freshTeam.name, required: true, disabled: !canRename ? '' : null });
     // Captain contact email — arranger-side metadata, never shown
     // on the player share page. Optional; clearing the field saves
-    // an empty string. Same permission gate as rename since both
-    // are team-metadata edits.
+    // an empty string.
     const emailInput = h('input', {
       type: 'email',
       value: freshTeam.email || '',
       placeholder: 'captain@example.org',
       autocomplete: 'off',
-      disabled: !canRename ? '' : null,
+      disabled: !canEditEmail ? '' : null,
     });
-    const saveBtn = h('button', { class: 'btn small', type: 'button', disabled: !canRename ? '' : null }, t('Save'));
+    // Save is enabled whenever EITHER editable field is open. With
+    // canRename=false the save still works for an email-only edit;
+    // with both off there's nothing actionable so the button stays
+    // disabled.
+    const saveBtn = h('button', { class: 'btn small', type: 'button',
+      disabled: (!canRename && !canEditEmail) ? '' : null }, t('Save'));
     saveBtn.addEventListener('click', async () => {
       const name = nameInput.value.trim();
       const email = emailInput.value.trim();
