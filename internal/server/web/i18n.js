@@ -442,6 +442,10 @@
       '(no adventures)': '(inga äventyr)',
       'Simulation started': 'Simulering startad',
       'Simulation reset': 'Simulering återställd',
+      'Could not load simulator state.': 'Kunde inte läsa in simuleringsstatus.',
+      'Open simulator': 'Öppna simulator',
+      'A simulation is already running on another adventure in this organisation. Reset it from there before starting one here.':
+        'En simulering pågår redan på ett annat äventyr i denna organisation. Återställ den därifrån innan du startar en här.',
       'Network error — is the server running?': 'Nätverksfel — kör servern?',
       'Start this event now?': 'Starta eventet nu?',
       'Starting the event opens the first puzzle to all teams. ':

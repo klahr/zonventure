@@ -3123,7 +3123,6 @@ function renderShell() {
       // tab strip inside the view splits Adventures and Puzzles. Two
       // sidebar entries for what's essentially one catalog was noise.
       ['#library',       t('Library'),       ICONS.map],
-      ['#simulator',     t('Simulator'),     ICONS.play],
       ['#logs',          t('Logs'),          ICONS.terminal],
       ['#settings',      t('Settings'),      ICONS.gear],
     ];
@@ -3137,7 +3136,6 @@ function renderShell() {
       ['#dashboard',  t('Dashboard'),  ICONS.dashboard],
       ['#adventures', t('Adventures'), ICONS.map],
       ['#events',     t('Events'),     ICONS.schedule],
-      ['#simulator', t('Simulator'), ICONS.play],
     ];
     items.push(['#settings', t('Settings'), ICONS.gear]);
   }
@@ -3389,6 +3387,10 @@ async function renderRoute() {
       case 'admins':       nav('#settings/admins'); return;
       case 'audit':        nav('#settings/audit'); return;
       case 'purchases':    nav('#settings/purchases'); return;
+      // Simulator moved onto each adventure's detail page; old
+      // bookmarks land on the adventures list since we no longer
+      // know which adventure they wanted to simulate.
+      case 'simulator':    nav('#adventures'); return;
       case 'webhooks': {
         if (arg === 'log') {
           const parts = r.split('/');
@@ -3402,7 +3404,6 @@ async function renderRoute() {
       case 'organizations':return await viewOrganizations(view);
       case 'library':      return arg ? await viewLibraryEdit(view, arg) : await viewLibrary(view);
       case 'puzzles':      return arg ? await viewPuzzleEditRoute(view, arg) : await viewPuzzles(view);
-      case 'simulator':    return await viewSimulator(view);
       case 'logs':         return await viewLogs(view);
       case 'manual':       return viewManual(view, arg);
       case 'settings':     return await viewSettings(view, arg);
@@ -4320,15 +4321,26 @@ async function viewAdventureDetail(view, slug) {
   // ---- Puzzle cards ----
   const puzzleCards = enabled.map((p, i) => renderPuzzleCard(p, i, { mode: 'detail' }));
 
-  view.replaceChildren(
+  // ---- Simulator card ----
+  // Only meaningful once there's at least one enabled puzzle to walk
+  // through; without that, every Start press would fail server-side
+  // anyway. Hidden from catalog viewers (mine_to_edit / shared check)
+  // so a browser of someone else's adventure doesn't see controls
+  // they can't (and shouldn't) drive against an org-mate's run.
+  const canSimulate = enabled.length > 0 && (a.mine_to_edit || a.shared);
+  const simHost = canSimulate ? h('div', { class: 'card' }) : null;
+  if (simHost) mountSimulatorPanel(simHost, a.slug);
+
+  view.replaceChildren(...[
     h('button', { class: 'btn ghost small', on: { click: () => nav('#adventures') } }, icon(ICONS.back), t('Back')),
     hero,
     stats,
     story,
     mapCard,
+    simHost,
     h('h2', { style: 'margin-top:1.5rem' }, t('Puzzles')),
     h('div', { class: 'adv-puzzles' }, ...puzzleCards),
-  );
+  ].filter(Boolean));
 
   // Mount the map after the DOM lands so Leaflet has a sized
   // container — same trick the run-detail map uses.
@@ -10097,60 +10109,58 @@ async function confirmDeleteAdmin(admin) {
    pick an adventure + team count + speed, press Play, watch.
    Status polls every 1.5s so the state pill stays in sync with the
    server's own Pause/Resume/Reset. */
-async function viewSimulator(view) {
-  // Initial load deliberately doesn't swallow fetch failures: a
-  // network error here would otherwise paint the empty-adventures
-  // state below ("you have no adventures with puzzles") which is
-  // indistinguishable from a real empty list and silently hides
-  // prod incidents from operators. Letting the rejection propagate
-  // hands it to renderRoute()'s try/catch, which shows
-  // "Something went wrong: <err>" — same fail-loud convention as
-  // every other view. The 1.5s poll below still swallows by
-  // design; that's a single tick's blip, not a load failure.
-  const [statusR, advR] = await Promise.all([
-    api('/api/admin/simulator'),
-    api('/api/admin/adventures'),
-  ]);
-  const status = statusR.ok ? statusR.body : { stage: 'idle' };
-  const advs = (advR.body?.adventures || [])
-    .filter((a) => a.page_count > 0)
-    .sort((a, b) => a.title.localeCompare(b.title));
+// mountSimulatorPanel renders the per-adventure simulator surface
+// into `host`. The simulator state is org-scoped server-side (only
+// one sim active per org at a time), so when an org-mate has a sim
+// running on a different adventure we render a redirect notice with
+// a link to that adventure's detail page rather than a contradictory
+// second control set. Polling stops automatically when `host` is
+// removed from the DOM (route change / re-render), so callers don't
+// need to manage a teardown hook.
+async function mountSimulatorPanel(host, advSlug) {
+  const r = await api('/api/admin/simulator');
+  if (!r.ok) {
+    host.replaceChildren(h('p', { class: 'err' },
+      r.body?.error || t('Could not load simulator state.')));
+    return;
+  }
+  const status = r.body || { stage: 'idle' };
+  const busyElsewhere = status.stage !== 'idle'
+    && status.adventure_slug
+    && status.adventure_slug !== advSlug;
 
-  // Empty state: the simulator needs at least one adventure with
-  // puzzles. Without that, every input is disabled and the page
-  // reads as broken. Replace the form with an explainer + CTAs
-  // that take the operator to where they need to go.
-  if (advs.length === 0) {
-    view.replaceChildren(
-      h('h1', {}, t('Simulator')),
+  if (busyElsewhere) {
+    // Look up the running adventure's title so the redirect link
+    // reads as "open <other adventure>" rather than a slug.
+    const advR = await api('/api/admin/adventures');
+    const advs = advR.body?.adventures || [];
+    const other = advs.find((a) => a.slug === status.adventure_slug);
+    const otherTitle = other?.title || status.adventure_slug;
+    host.replaceChildren(
+      h('div', { class: 'row between' },
+        h('h2', { style: 'margin:0' }, t('Simulator')),
+        h('span', { class: `pill ${stagePillClass(status.stage)}` },
+          t(stageLabel(status.stage)))),
       h('p', { class: 'muted' },
-        t('Run a fake race against an adventure to preview pacing, team layouts and the live view.')),
-      h('div', { class: 'card', style: 'border:1px dashed var(--border); padding:1.25rem' },
-        h('h2', {}, t('No adventures with puzzles yet')),
-        h('p', { class: 'muted' },
-          t('You need at least one adventure with one or more puzzles before the simulator can do anything. Create one or browse the catalog.')),
-        h('div', { class: 'row', style: 'gap:.5rem; margin-top:.75rem' },
-          h('button', { class: 'btn primary', on: { click: () => openCreateAdventure() } }, t('Create adventure')),
-          h('button', { class: 'btn', on: { click: () => nav('#adventures') } }, t('Browse adventures')))));
+        t('A simulation is already running on another adventure in this organisation. Reset it from there before starting one here.')),
+      h('div', { class: 'row', style: 'gap:.5rem; align-items:center' },
+        h('strong', { style: 'flex:1; min-width:0' }, otherTitle),
+        h('a', {
+          href: '#adventures/' + encodeURIComponent(status.adventure_slug),
+          class: 'btn',
+          on: { click: (e) => {
+            e.preventDefault();
+            nav('#adventures/' + encodeURIComponent(status.adventure_slug));
+          } },
+        }, t('Open simulator'))),
+    );
+    schedulePoll(host, advSlug, status);
     return;
   }
 
-  // Controls — the form is visible even while a sim runs so the
-  // operator can read back what they chose, but inputs are disabled
-  // until Reset so you can't mutate a running simulation's config.
-  const picker = h('select', { required: true },
-    advs.length === 0
-      ? h('option', { value: '' }, t('(no adventures)'))
-      : advs.map((a) => h('option', { value: a.slug }, `${a.title} — ${a.page_count} ` + (a.page_count === 1 ? t('puzzle') : t('puzzles')))));
-  if (status.adventure_slug) picker.value = status.adventure_slug;
-
-  const teamInput = h('input', { type: 'number', min: '2', max: '20', value: String(status.team_count || 6) });
-  const speedInput = h('input', { type: 'number', min: '1', max: '50', step: '1', value: String(status.speed_mul || 5) });
-
-  // Stage pill, elapsed readout and live-view link are the three bits
-  // the poll loop patches in place — capture references so we don't
-  // tear the whole view down on every tick.
-  const stagePill = h('span', { class: `pill ${stagePillClass(status.stage)}` }, t(stageLabel(status.stage)));
+  // On-this-adventure (or idle) path: full controls.
+  const stagePill = h('span', { class: `pill ${stagePillClass(status.stage)}` },
+    t(stageLabel(status.stage)));
   const elapsed = h('span', { class: 'muted mono', style: 'font-size:.85rem' },
     (status.stage !== 'idle' && status.started_at)
       ? t('Live for {{t}}', { t: fmtElapsed(status.started_at) })
@@ -10166,30 +10176,30 @@ async function viewSimulator(view) {
   };
   setLiveLink(status.live_token);
 
+  const teamInput = h('input', { type: 'number', min: '2', max: '20',
+    value: String(status.team_count || 6) });
+  const speedInput = h('input', { type: 'number', min: '1', max: '50', step: '1',
+    value: String(status.speed_mul || 5) });
+
   const startBtn = h('button', {
     class: 'btn primary', type: 'button',
     on: { click: () => simulatorAction('start', {
-      adventure_slug: picker.value,
+      adventure_slug: advSlug,
       team_count: parseInt(teamInput.value, 10) || 6,
       speed_mul: parseFloat(speedInput.value) || 5,
     }) },
   }, icon(ICONS.play), t('Start'));
-  const pauseBtn = h('button', {
-    class: 'btn', type: 'button',
-    on: { click: () => simulatorAction('pause') },
-  }, t('Pause'));
-  const resumeBtn = h('button', {
-    class: 'btn', type: 'button',
-    on: { click: () => simulatorAction('resume') },
-  }, t('Resume'));
-  const resetBtn = h('button', {
-    class: 'btn danger', type: 'button',
-    on: { click: () => simulatorAction('reset') },
-  }, icon(ICONS.trash), t('Reset'));
+  const pauseBtn = h('button', { class: 'btn', type: 'button',
+    on: { click: () => simulatorAction('pause') } }, t('Pause'));
+  const resumeBtn = h('button', { class: 'btn', type: 'button',
+    on: { click: () => simulatorAction('resume') } }, t('Resume'));
+  const resetBtn = h('button', { class: 'btn danger', type: 'button',
+    on: { click: () => simulatorAction('reset') } },
+    icon(ICONS.trash), t('Reset'));
 
-  // applyStage patches the dynamic bits of the view for a given status
-  // without rebuilding the DOM — survives transient fetch errors and
-  // keeps the user's typing in the number inputs intact.
+  // applyStage patches the dynamic bits of the view for a given
+  // status without rebuilding the DOM — survives transient fetch
+  // errors and keeps the user's typing in the number inputs intact.
   const applyStage = (st) => {
     const stage = st?.stage || 'idle';
     stagePill.className = 'pill ' + stagePillClass(stage);
@@ -10201,7 +10211,7 @@ async function viewSimulator(view) {
     const idle = stage === 'idle';
     const paused = stage === 'paused';
     const running = stage === 'running';
-    [picker, teamInput, speedInput].forEach((el) => { el.disabled = !idle; });
+    [teamInput, speedInput].forEach((el) => { el.disabled = !idle; });
     startBtn.disabled = !idle;
     pauseBtn.disabled = !running;
     resumeBtn.disabled = !paused;
@@ -10209,38 +10219,49 @@ async function viewSimulator(view) {
   };
   applyStage(status);
 
-  view.replaceChildren(
+  host.replaceChildren(
     h('div', { class: 'row between' },
-      h('h1', {}, t('Simulator')),
+      h('h2', { style: 'margin:0' }, t('Simulator')),
       h('div', { class: 'row', style: 'gap:.5rem; align-items:center' },
         stagePill, elapsed, liveSlot)),
     h('p', { class: 'muted' },
       t('Fake a race so you can see the live view animate without recruiting real players. Writes to the same tables as a real event, so every subscriber (map, leaderboard, WS) updates as if players were on the ground.')),
-    h('div', { class: 'card' },
-      h('h2', {}, t('Configuration')),
-      h('label', { class: 'field' }, h('span', {}, t('Adventure')), picker),
+    h('div', { style: 'display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:.75rem' },
       h('label', { class: 'field' }, h('span', {}, t('Teams (2–20)')), teamInput),
-      h('label', { class: 'field' }, h('span', {}, t('Speed multiplier (1–50)')), speedInput),
-      h('p', { class: 'muted', style: 'font-size:.85rem' },
-        t('Higher speed advances the walk faster without changing the ping cadence, so fast-forwarded events still look natural.'))),
-    h('div', { class: 'row', style: 'gap:.5rem; flex-wrap:wrap; margin-top:1rem' },
+      h('label', { class: 'field' }, h('span', {}, t('Speed multiplier (1–50)')), speedInput)),
+    h('p', { class: 'muted', style: 'font-size:.85rem' },
+      t('Higher speed advances the walk faster without changing the ping cadence, so fast-forwarded events still look natural.')),
+    h('div', { class: 'row', style: 'gap:.5rem; flex-wrap:wrap; margin-top:.5rem' },
       startBtn, pauseBtn, resumeBtn, resetBtn),
   );
+  schedulePoll(host, advSlug, status, applyStage);
+}
 
-  // Poll status only — no full re-render, no toast on blip. A dev
-  // server restart or momentary WS loss shouldn't take the page down
-  // with a NetworkError.
+// schedulePoll runs the 1.5s simulator-status loop scoped to a single
+// host element. Stops on three triggers: the host gets removed from
+// the DOM (route change), the running adventure flips (we re-mount
+// to switch between busy-elsewhere and full-controls layouts), or
+// the stage transitions to/from idle (same reason).
+function schedulePoll(host, advSlug, prevStatus, applyStage) {
   if (simulatorPollTimer) clearInterval(simulatorPollTimer);
-  const poll = async () => {
-    if (!location.hash.startsWith('#simulator')) {
+  simulatorPollTimer = setInterval(async () => {
+    if (!document.contains(host)) {
       clearInterval(simulatorPollTimer); simulatorPollTimer = null; return;
     }
     try {
       const r = await api('/api/admin/simulator');
-      if (r.ok) applyStage(r.body);
-    } catch { /* server restart or offline — the next tick will catch up */ }
-  };
-  simulatorPollTimer = setInterval(poll, 1500);
+      if (!r.ok) return;
+      const next = r.body || { stage: 'idle' };
+      const stageChanged = (next.stage || 'idle') !== (prevStatus.stage || 'idle');
+      const advChanged = (next.adventure_slug || '') !== (prevStatus.adventure_slug || '');
+      if (stageChanged || advChanged) {
+        clearInterval(simulatorPollTimer); simulatorPollTimer = null;
+        mountSimulatorPanel(host, advSlug);
+        return;
+      }
+      if (applyStage) applyStage(next);
+    } catch { /* server restart or offline — next tick will catch up */ }
+  }, 1500);
 }
 
 // simulatorAction posts a control command. Re-renders the view on
