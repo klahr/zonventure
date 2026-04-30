@@ -1,7 +1,11 @@
 # Anything not needed for `go build ./cmd/server` is dead weight in the
 # build context. The binary embeds migrations + web/ via go:embed, so
 # everything inside the source tree that the build doesn't read can go.
-.git
+#
+# .git is intentionally NOT excluded — the Dockerfile runs `git describe`
+# at build time to stamp the binary's version (-X main.version=...). Without
+# .git the build silently falls back to "dev" and the in-app Software update
+# page reports a development build even on a clean tagged checkout.
 .gitignore
 .env
 TODO.md

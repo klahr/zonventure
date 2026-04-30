@@ -11,6 +11,19 @@ The repository, Go module, and CLI binary are named `zv`; the product is
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-04-30
+
+### Fixed
+
+- **Docker build no longer stamps every binary as `dev`.** The build
+  context's `.dockerignore` was excluding `.git`, so the in-container
+  `git describe --tags --always --dirty` couldn't see any history and
+  fell back to `echo dev`. Tagged Docker builds now report their real
+  version via `/api/version`, and the Settings → Software update page
+  no longer flags every Docker-built binary as a development build.
+  Affects every operator on the Docker Compose path; binary builds via
+  `make build` were unaffected.
+
 ## [0.1.1] - 2026-04-30
 
 ### Added
@@ -49,5 +62,6 @@ First tagged release.
   pg_dump-portable backup / restore.
 
 [Unreleased]: https://git.sr.ht/~klahr/zv/log/master
+[0.1.2]: https://git.sr.ht/~klahr/zv/refs/0.1.2
 [0.1.1]: https://git.sr.ht/~klahr/zv/refs/0.1.1
 [0.1.0]: https://git.sr.ht/~klahr/zv/refs/0.1.0
