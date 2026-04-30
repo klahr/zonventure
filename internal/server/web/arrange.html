@@ -4322,7 +4322,7 @@ async function viewAdventureDetail(view, slug) {
     mapHost);
 
   // ---- Puzzle cards ----
-  const puzzleCards = enabled.map((p, i) => buildAdventurePuzzleCard(p, i));
+  const puzzleCards = enabled.map((p, i) => renderPuzzleCard(p, i, { mode: 'detail' }));
 
   view.replaceChildren(
     h('button', { class: 'btn ghost small', on: { click: () => nav('#adventures') } }, icon(ICONS.back), t('Back')),
@@ -4387,45 +4387,101 @@ function formatHintDelayBrief(sec) {
   return t('after {{m}}m {{s}}s', { m, s });
 }
 
-// buildAdventurePuzzleCard renders one puzzle in the new
-// adventure-detail view: prompt as rendered HTML, attached
-// images, hints with their delays, and accepted answers behind
-// a per-card "Show answers" toggle so a shared/catalog view
-// doesn't surface spoilers by default.
-function buildAdventurePuzzleCard(p, i) {
-  const headerBits = [
+// renderPuzzleCard renders one puzzle as a card. Used by both the
+// read-only adventure detail page (mode 'detail') and the adventure
+// editor (mode 'edit') — the body (title row, images, prompt, hints,
+// location, accept reveal) is identical; the mode flag toggles the
+// chrome around it. Edit adds the drag handle, the whole-card click-
+// to-edit, the disabled-state styling, and the per-card action
+// buttons (preview, edit, delete); detail leaves all of that off.
+//
+// Data shape: the detail endpoint nests location under p.location;
+// the edit endpoint flattens it into top-level p.lat/p.lng. The
+// helper accepts either — read-side normalisation beats forcing both
+// callers through a transformer.
+//
+// opts:
+//   mode:        'edit' | 'detail'   (default 'detail')
+//   adv:         adventure object — required by 'edit' for the
+//                preview / open-edit / delete callbacks
+//   previewIdx:  position among enabled pages (optional, 'edit' only)
+function renderPuzzleCard(p, i, opts) {
+  opts = opts || {};
+  const mode = opts.mode || 'detail';
+  const isEdit = mode === 'edit';
+  const adv = opts.adv;
+  const previewIdx = opts.previewIdx;
+
+  const loc = p.location || p;
+  const lat = loc.lat || 0;
+  const lng = loc.lng || 0;
+  const radiusM = loc.radius_m || 0;
+
+  // ---- Header: index badge + title (left), pills + actions (right). ----
+  const headLeft = h('div', { class: 'row', style: 'align-items:center; min-width:0; flex:1' });
+  if (isEdit) {
+    headLeft.append(h('span', {
+      class: 'drag-handle',
+      title: t('Drag to reorder'),
+      'aria-label': t('Drag to reorder'),
+      on: { click: (e) => e.stopPropagation() },
+      html: ICONS.grip,
+    }));
+  }
+  headLeft.append(
     h('span', { class: 'adv-pz-num' }, String(i + 1)),
-    h('strong', { class: 'adv-pz-title' }, p.title || t('(untitled)')),
-  ];
-  if (p.gated) headerBits.push(h('span', { class: 'pill warning' }, t('gated')));
+    h('strong', { class: 'adv-pz-title' }, p.title || t('(untitled)')));
 
-  const card = h('div', { class: 'card adv-pz-card' },
-    h('div', { class: 'adv-pz-head' }, ...headerBits));
+  const headRight = h('div', { class: 'card-actions' });
+  if (isEdit && p.disabled) headRight.append(h('span', { class: 'pill' }, t('disabled')));
+  if (p.gated) headRight.append(h('span', { class: 'pill warning' }, t('gated')));
+  if (isEdit) {
+    if (previewIdx != null) {
+      headRight.append(iconBtn('eye', t('Open in the player view with author debug panel'),
+        () => previewAdventure(adv.slug, previewIdx, true)));
+    }
+    headRight.append(iconBtn('pencil', t('Edit'), () => openEditPuzzle(adv, p)));
+    headRight.append(iconBtn('trash', t('Delete'), () => confirmDeletePuzzle(adv, p), { danger: true }));
+  }
 
-  // Inline images come before the prompt so the overview card mirrors
-  // the player and editor layouts (title → images → text). The
+  const card = h('div', {
+    class: 'card adv-pz-card' + (isEdit ? ' clickable puzzle-card' : ''),
+    style: (isEdit && p.disabled) ? 'opacity:.6' : '',
+    ...(isEdit ? {
+      draggable: 'true',
+      'data-page-id': p.id,
+      'data-page-pos': i,
+      on: { click: () => openEditPuzzle(adv, p) },
+    } : {}),
+  }, h('div', { class: 'adv-pz-head row between' }, headLeft, headRight));
+
+  // ---- Images — before the prompt so the card mirrors the player
+  // and editor layouts (title → images → text). The
   // /adventure-assets/image/{id} route gates on staff session OR
-  // slot-on-current-page; admin/arranger viewers always pass.
+  // slot-on-current-page; admin/arranger viewers always pass. ----
   if (p.images && p.images.length) {
     const grid = h('div', { class: 'adv-pz-images' });
     for (const im of p.images) {
-      grid.append(h('img', { src: im.url, alt: im.alt_text || '' }));
+      grid.append(h('img', {
+        src: im.url, alt: im.alt_text || '',
+        title: im.alt_text || '',
+      }));
     }
     card.append(grid);
   }
 
-  // Prompt — render the server-supplied HTML rather than the raw
-  // markdown source so links / bold / lists actually appear.
+  // ---- Prompt — render the server-supplied HTML so markdown
+  // formatting (links, lists, emphasis) shows; fall back to the raw
+  // text only if html wasn't provided. ----
   if (p.prompt_html) {
     card.append(h('div', { class: 'adv-pz-prompt md-preview', html: p.prompt_html }));
   } else if (p.prompt) {
     card.append(h('p', { style: 'white-space:pre-wrap' }, p.prompt));
   }
 
-  // Hints — surfaced on this read-only view because they're a real
-  // part of the adventure shape an author wants to review. Same
-  // markdown-rendered text the player gets, plus the delay caption
-  // so authors can see the unlock cadence at a glance.
+  // ---- Hints disclosure — collapsed by default (the edit/preview
+  // surfaces are where authors actually edit them; this is a
+  // glanceable list). ----
   if (p.hints && p.hints.length) {
     const hintsList = h('div', { class: 'adv-pz-hints' });
     p.hints.forEach((hint, hi) => {
@@ -4445,46 +4501,56 @@ function buildAdventurePuzzleCard(p, i) {
     });
     card.append(
       h('details', { class: 'adv-pz-disclosure' },
-        h('summary', {}, t('Hints ({{n}})', { n: p.hints.length })),
+        h('summary', {
+          // Edit mode wraps the card in a click-to-edit handler;
+          // toggling the disclosure summary would otherwise also
+          // open the editor.
+          on: isEdit ? { click: (e) => e.stopPropagation() } : {},
+        }, t('Hints ({{n}})', { n: p.hints.length })),
         hintsList));
   }
 
-  // Location — opens the in-app fullscreen map overlay rather than
-  // bouncing the user out to OpenStreetMap. The label keeps the gate
-  // radius visible so authors don't have to open the map just to
-  // confirm a number they set during authoring.
-  if (p.location && (p.location.lat || p.location.lng)) {
-    const gateSuffix = p.location.radius_m
-      ? t(' · gate {{r}} m', { r: p.location.radius_m })
-      : '';
+  // ---- Location — opens the in-app fullscreen map overlay rather
+  // than bouncing the user out to OpenStreetMap. The label keeps
+  // the gate radius visible so authors don't have to open the map
+  // just to confirm a number they set during authoring. In edit
+  // mode the click stopPropagations so a tap on the button doesn't
+  // also open the puzzle editor. ----
+  if (lat || lng) {
+    const gateSuffix = radiusM ? t(' · gate {{r}} m', { r: radiusM }) : '';
     card.append(h('button', {
       class: 'btn small ghost',
       type: 'button',
       style: 'margin-top:.5rem',
-      on: { click: () => openFullscreenMap({
-        title: p.title || t('Location'),
-        pins: [{
-          lat:     p.location.lat,
-          lng:     p.location.lng,
-          label:   p.title || '',
-          gated:   p.gated,
-          radiusM: p.location.radius_m || 0,
-        }],
-      }) },
+      on: { click: (e) => {
+        if (isEdit) e.stopPropagation();
+        openFullscreenMap({
+          title: p.title || t('Location'),
+          pins: [{
+            lat, lng,
+            label: p.title || '',
+            gated: p.gated,
+            radiusM,
+          }],
+        });
+      } },
     }, icon(ICONS.map), t('Open map'), gateSuffix));
+  } else if (isEdit) {
+    card.append(h('p', { class: 'muted', style: 'font-size:.8rem; margin-top:.5rem' },
+      t('(no location)')));
   }
 
-  // Accepted answers — hidden behind a toggle so a co-arranger or
-  // shared-org viewer doesn't see the answer key by accident. The
-  // toggle is per-puzzle (not page-wide) because authors usually
-  // want to spot-check one row at a time.
+  // ---- Accepted answers — hidden behind a click-to-reveal toggle
+  // so a co-arranger or catalog browser doesn't get the answer key
+  // by accident. ----
   if (p.accept && p.accept.length > 0) {
     const reveal = h('button', { class: 'btn small ghost', type: 'button',
       style: 'margin-top:.5rem' },
       icon(ICONS.eye), t('Show answers'));
     const answers = h('p', { class: 'muted', style: 'display:none; margin:.4rem 0 0' },
       ...p.accept.map(acceptChip));
-    reveal.addEventListener('click', () => {
+    reveal.addEventListener('click', (e) => {
+      if (isEdit) e.stopPropagation();
       const open = answers.style.display === 'none';
       answers.style.display = open ? '' : 'none';
       reveal.replaceChildren(icon(ICONS.eye), open ? t('Hide answers') : t('Show answers'));
@@ -7830,7 +7896,7 @@ function renderLibraryEdit(view, adv) {
   const cards = adv.pages.map((p, i) => {
     const previewIdx = p.disabled ? null : enabledIdx;
     if (!p.disabled) enabledIdx++;
-    return renderPuzzleCard(adv, p, i, previewIdx);
+    return renderPuzzleCard(p, i, { mode: 'edit', adv, previewIdx });
   });
   cards.forEach((c) => list.append(c));
 
@@ -8177,106 +8243,6 @@ function previewAdventure(slug, pageIdx, debug) {
   const qs = new URLSearchParams({ preview: slug, page: String(pageIdx) });
   if (debug) qs.set('debug', '1');
   window.open('/play?' + qs.toString(), '_blank', 'noopener');
-}
-
-function renderPuzzleCard(adv, page, i, previewIdx) {
-  // Drag handle — a "grip" icon at the top-left of every card. The
-  // whole card is draggable=true so the gesture initiates from
-  // anywhere; the handle is the visual affordance + the touch-only
-  // drag source (touchstart on the rest of the card scrolls). Clicks
-  // on the handle stopPropagation so they don't open the edit modal.
-  const handle = h('span', {
-    class: 'drag-handle',
-    title: t('Drag to reorder'),
-    'aria-label': t('Drag to reorder'),
-    on: { click: (e) => e.stopPropagation() },
-    html: ICONS.grip,
-  });
-  return h('div', {
-    class: 'card clickable puzzle-card',
-    style: page.disabled ? 'opacity:.6' : '',
-    draggable: 'true',
-    'data-page-id': page.id,
-    'data-page-pos': i,
-    on: { click: () => openEditPuzzle(adv, page) },
-  },
-    h('div', { class: 'row between' },
-      h('div', { class: 'row', style: 'align-items:center; min-width:0; flex:1' },
-        handle,
-        h('h3', { style: 'margin:0; min-width:0' },
-          `${i + 1}. ${page.title || t('(untitled)')}`)),
-      h('div', { class: 'card-actions' },
-        page.disabled ? h('span', { class: 'pill' }, t('disabled')) : null,
-        page.gated ? h('span', { class: 'pill warning' }, t('gated')) : null,
-        previewIdx != null
-          ? iconBtn('eye', t('Open in the player view with author debug panel'),
-              () => previewAdventure(adv.slug, previewIdx, true))
-          : null,
-        iconBtn('pencil', t('Edit'), () => openEditPuzzle(adv, page)),
-        iconBtn('trash', t('Delete'), () => confirmDeletePuzzle(adv, page), { danger: true }))),
-    (page.images || []).length === 0
-      ? null
-      : h('div', { class: 'row', style: 'flex-wrap:wrap; gap:.5rem' },
-        page.images.map((im) => h('img', {
-          src: im.url, alt: im.alt_text || '',
-          title: im.alt_text || '',
-          style: 'max-height:120px; border-radius:6px; border:1px solid var(--border-soft)'
-            + (im.alt_text ? '' : '; outline:2px solid var(--warning, #d97706); outline-offset:-2px'),
-        }))),
-    h('div', { class: 'md-preview', html: page.prompt_html || '' }),
-    // Accepted answers — hidden by default with a click-to-reveal
-    // toggle. Author can see them in one tap; shoulder-surfers and
-    // co-arrangers casually browsing the library don't get the
-    // answer key in their face. The toggle's click handler
-    // stopPropagations so it doesn't open the puzzle editor (the
-    // whole card is clickable for that).
-    (page.accept || []).length === 0
-      ? null
-      : (() => {
-        const reveal = h('button', {
-          class: 'btn small ghost',
-          type: 'button',
-          style: 'margin-top:.5rem',
-          on: { click: (e) => {
-            e.stopPropagation();
-            const open = answers.style.display === 'none';
-            answers.style.display = open ? '' : 'none';
-            reveal.replaceChildren(icon(ICONS.eye), open ? t('Hide answers') : t('Show answers'));
-          } },
-        }, icon(ICONS.eye), t('Show answers'));
-        const answers = h('p', { class: 'muted', style: 'display:none; margin:.4rem 0 0' },
-          ...page.accept.map(acceptChip));
-        return h('div', {}, reveal, answers);
-      })(),
-    // Location — same Open-map button the adventure detail page uses,
-    // so authors don't have to mentally translate raw coords. The
-    // whole card is clickable to open the editor, so the button
-    // stopPropagations on click; a tap on it just opens the map.
-    // Falls back to a muted "(no location)" line when the puzzle has
-    // never had a fix written, instead of showing 0.00000, 0.00000.
-    (page.lat || page.lng)
-      ? h('button', {
-          class: 'btn small ghost',
-          type: 'button',
-          style: 'margin-top:.5rem',
-          on: { click: (e) => {
-            e.stopPropagation();
-            openFullscreenMap({
-              title: page.title || t('Location'),
-              pins: [{
-                lat: page.lat,
-                lng: page.lng,
-                label: page.title || '',
-                gated: page.gated,
-                radiusM: page.radius_m || 0,
-              }],
-            });
-          } },
-        }, icon(ICONS.map), t('Open map'),
-          page.radius_m ? t(' · gate {{r}} m', { r: page.radius_m }) : '')
-      : h('p', { class: 'muted', style: 'font-size:.8rem; margin-top:.5rem' },
-          t('(no location)')),
-  );
 }
 
 // acceptChip renders one entry from a page's accept list. Plain
