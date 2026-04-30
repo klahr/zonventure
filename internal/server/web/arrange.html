@@ -10137,17 +10137,17 @@ async function mountSimulatorPanel(host, advSlug) {
     const other = advs.find((a) => a.slug === status.adventure_slug);
     const otherTitle = other?.title || status.adventure_slug;
     host.replaceChildren(
-      h('div', { class: 'row between' },
+      h('div', { class: 'row between', style: 'gap:.5rem' },
         h('h2', { style: 'margin:0' }, t('Simulator')),
         h('span', { class: `pill ${stagePillClass(status.stage)}` },
           t(stageLabel(status.stage)))),
-      h('p', { class: 'muted' },
-        t('A simulation is already running on another adventure in this organisation. Reset it from there before starting one here.')),
+      h('p', { class: 'muted', style: 'margin:.25rem 0 .5rem' },
+        t('A simulation is already running on another adventure. Reset it from there to start one here.')),
       h('div', { class: 'row', style: 'gap:.5rem; align-items:center' },
         h('strong', { style: 'flex:1; min-width:0' }, otherTitle),
         h('a', {
           href: '#adventures/' + encodeURIComponent(status.adventure_slug),
-          class: 'btn',
+          class: 'btn small',
           on: { click: (e) => {
             e.preventDefault();
             nav('#adventures/' + encodeURIComponent(status.adventure_slug));
@@ -10220,18 +10220,17 @@ async function mountSimulatorPanel(host, advSlug) {
   applyStage(status);
 
   host.replaceChildren(
-    h('div', { class: 'row between' },
+    h('div', { class: 'row between', style: 'gap:.5rem' },
       h('h2', { style: 'margin:0' }, t('Simulator')),
       h('div', { class: 'row', style: 'gap:.5rem; align-items:center' },
         stagePill, elapsed, liveSlot)),
-    h('p', { class: 'muted' },
-      t('Fake a race so you can see the live view animate without recruiting real players. Writes to the same tables as a real event, so every subscriber (map, leaderboard, WS) updates as if players were on the ground.')),
-    h('div', { style: 'display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:.75rem' },
-      h('label', { class: 'field' }, h('span', {}, t('Teams (2–20)')), teamInput),
-      h('label', { class: 'field' }, h('span', {}, t('Speed multiplier (1–50)')), speedInput)),
-    h('p', { class: 'muted', style: 'font-size:.85rem' },
-      t('Higher speed advances the walk faster without changing the ping cadence, so fast-forwarded events still look natural.')),
-    h('div', { class: 'row', style: 'gap:.5rem; flex-wrap:wrap; margin-top:.5rem' },
+    h('p', { class: 'muted', style: 'margin:.25rem 0 .75rem' },
+      t('Preview pacing and the live view with pretend teams — no real players needed.')),
+    h('div', { class: 'row', style: 'gap:.75rem; flex-wrap:wrap; align-items:flex-end' },
+      h('label', { class: 'field', style: 'flex:1 1 8rem; margin:0' },
+        h('span', {}, t('Teams (2–20)')), teamInput),
+      h('label', { class: 'field', style: 'flex:1 1 12rem; margin:0' },
+        h('span', {}, t('Speed multiplier (1–50)')), speedInput),
       startBtn, pauseBtn, resumeBtn, resetBtn),
   );
   schedulePoll(host, advSlug, status, applyStage);

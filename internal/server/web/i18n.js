@@ -444,8 +444,10 @@
       'Simulation reset': 'Simulering återställd',
       'Could not load simulator state.': 'Kunde inte läsa in simuleringsstatus.',
       'Open simulator': 'Öppna simulator',
-      'A simulation is already running on another adventure in this organisation. Reset it from there before starting one here.':
-        'En simulering pågår redan på ett annat äventyr i denna organisation. Återställ den därifrån innan du startar en här.',
+      'A simulation is already running on another adventure. Reset it from there to start one here.':
+        'En simulering pågår redan på ett annat äventyr. Återställ den därifrån för att starta en här.',
+      'Preview pacing and the live view with pretend teams — no real players needed.':
+        'Förhandsvisa tempo och livevyn med låtsaslag — inga riktiga spelare behövs.',
       'Network error — is the server running?': 'Nätverksfel — kör servern?',
       'Start this event now?': 'Starta eventet nu?',
       'Starting the event opens the first puzzle to all teams. ':
