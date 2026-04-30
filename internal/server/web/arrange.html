@@ -8055,9 +8055,30 @@ function renderPuzzleCard(adv, page, i, previewIdx) {
             + (im.alt_text ? '' : '; outline:2px solid var(--warning, #d97706); outline-offset:-2px'),
         }))),
     h('div', { class: 'md-preview', html: page.prompt_html || '' }),
-    h('p', { class: 'muted' },
-      t('Accepted: '),
-      (page.accept || []).map(acceptChip)),
+    // Accepted answers — hidden by default with a click-to-reveal
+    // toggle. Author can see them in one tap; shoulder-surfers and
+    // co-arrangers casually browsing the library don't get the
+    // answer key in their face. The toggle's click handler
+    // stopPropagations so it doesn't open the puzzle editor (the
+    // whole card is clickable for that).
+    (page.accept || []).length === 0
+      ? null
+      : (() => {
+        const reveal = h('button', {
+          class: 'btn small ghost',
+          type: 'button',
+          style: 'margin-top:.5rem',
+          on: { click: (e) => {
+            e.stopPropagation();
+            const open = answers.style.display === 'none';
+            answers.style.display = open ? '' : 'none';
+            reveal.replaceChildren(icon(ICONS.eye), open ? t('Hide answers') : t('Show answers'));
+          } },
+        }, icon(ICONS.eye), t('Show answers'));
+        const answers = h('p', { class: 'muted', style: 'display:none; margin:.4rem 0 0' },
+          ...page.accept.map(acceptChip));
+        return h('div', {}, reveal, answers);
+      })(),
     h('p', { class: 'muted mono', style: 'font-size:.8rem' },
       `${page.lat.toFixed(5)}, ${page.lng.toFixed(5)}`,
       page.radius_m ? t(' · gate {{r}} m', { r: page.radius_m }) : ''),
