@@ -3817,12 +3817,10 @@ async function viewAdventures(view) {
   const renderCard = (adv) => {
     const bucket = byAdv.get(adv.slug) || { unused: [], used: [] };
     const actions = h('div', { class: 'row', style: 'gap:.5rem; flex-wrap:wrap; margin-top:.75rem' });
-    if (adv.mine_to_edit) {
-      actions.append(h('button', {
-        class: 'btn',
-        on: { click: () => nav('#library/' + adv.slug) },
-      }, icon(ICONS.pencil), t('Edit')));
-    }
+    // Edit lives on the adventure detail page now — clicking the title
+    // is the path in. Keeps this listing focused on "what to run" so
+    // a glance separates schedulable adventures from ones that need a
+    // purchase first, without an extra primary action competing.
     if (bucket.unused.length > 0) {
       actions.append(h('button', {
         class: 'btn primary',
