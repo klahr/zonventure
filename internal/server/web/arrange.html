@@ -9016,8 +9016,13 @@ function applyAdventureColors(el, adv) {
   if (adv.background_color) {
     // The preview card uses --surface as its own background, so override
     // that too — the card should read as the adventure's page colour.
+    // --surface-2 is the markdown-field background inside the card; it
+    // also collapses onto the brand bg so the puzzle text body shares
+    // the page colour rather than a contrasting "input box" tint that
+    // a player will never see.
     el.style.setProperty('--bg', adv.background_color);
     el.style.setProperty('--surface', adv.background_color);
+    el.style.setProperty('--surface-2', adv.background_color);
   }
   if (adv.text_color) {
     el.style.setProperty('--ink', adv.text_color);
