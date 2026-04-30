@@ -859,6 +859,40 @@ textarea { min-height: 80px; resize: vertical; font-family: ui-monospace, monosp
 }
 .modal-close:hover { background: var(--surface-2); color: var(--ink); }
 
+/* Fullscreen map overlay — opened from any "show this on a map" link
+   (puzzle card today, future: team track replay, route preview, etc.).
+   Shares the .modal-back z-index tier so it stacks above the rest of
+   the page but stays under toasts. The chrome bar is fixed-height so
+   the map host can claim everything below it via flex:1 1 auto. */
+.fsmap-back {
+  position: fixed; inset: 0; background: rgba(0,0,0,.55);
+  display: flex; flex-direction: column;
+  z-index: 2000;
+}
+.fsmap-chrome {
+  display: flex; align-items: center; gap: .75rem;
+  padding: .5rem .75rem;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border-soft);
+  flex: 0 0 auto;
+}
+.fsmap-title {
+  flex: 1 1 auto; min-width: 0;
+  font-weight: 700;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.fsmap-close {
+  width: 2rem; height: 2rem;
+  background: transparent; border: 0; border-radius: 999px;
+  padding: 0; font-size: 1.5rem; line-height: 1;
+  color: var(--muted); cursor: pointer; box-shadow: none;
+  min-height: 0; flex: 0 0 auto;
+}
+.fsmap-close:hover { background: var(--surface-2); color: var(--ink); }
+/* min-height:0 lets the flex child shrink so Leaflet sees a definite
+   height — without it the map refuses to render below the chrome. */
+.fsmap-host { flex: 1 1 auto; min-height: 0; }
+
 /* ---------- WYSIWYG puzzle editor ----------
    The preview card mirrors play.html's puzzle layout (title, images,
    prompt, hint, submit dock) so the arranger sees roughly what the
@@ -4413,19 +4447,29 @@ function buildAdventurePuzzleCard(p, i) {
         hintsList));
   }
 
-  // Location — link out instead of a raw lat/lng line. OpenStreetMap
-  // is the cross-platform safe bet; geo: URIs only work on mobile
-  // and Apple Maps fights us on desktop.
+  // Location — opens the in-app fullscreen map overlay rather than
+  // bouncing the user out to OpenStreetMap. The label keeps the gate
+  // radius visible so authors don't have to open the map just to
+  // confirm a number they set during authoring.
   if (p.location && (p.location.lat || p.location.lng)) {
-    const lat = p.location.lat;
-    const lng = p.location.lng;
-    const href = `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lng}#map=17/${lat}/${lng}`;
-    card.append(h('p', { class: 'muted', style: 'font-size:.85rem; margin:.5rem 0 0' },
-      icon(ICONS.crosshair),
-      ' ',
-      h('a', { href, target: '_blank', rel: 'noopener' },
-        t('Open in map · {{coords}}', { coords: `${lat.toFixed(5)}, ${lng.toFixed(5)}` })),
-      p.location.radius_m ? h('span', {}, t(' · gate {{r}} m', { r: p.location.radius_m })) : null));
+    const gateSuffix = p.location.radius_m
+      ? t(' · gate {{r}} m', { r: p.location.radius_m })
+      : '';
+    card.append(h('button', {
+      class: 'btn small ghost',
+      type: 'button',
+      style: 'margin-top:.5rem',
+      on: { click: () => openFullscreenMap({
+        title: p.title || t('Location'),
+        pins: [{
+          lat:     p.location.lat,
+          lng:     p.location.lng,
+          label:   p.title || '',
+          gated:   p.gated,
+          radiusM: p.location.radius_m || 0,
+        }],
+      }) },
+    }, icon(ICONS.map), t('Open map'), gateSuffix));
   }
 
   // Accepted answers — hidden behind a toggle so a co-arranger or
@@ -4447,6 +4491,99 @@ function buildAdventurePuzzleCard(p, i) {
   }
 
   return card;
+}
+
+// openFullscreenMap drops a chromeless overlay with a Leaflet map
+// covering the viewport. Generic enough to reuse anywhere we want
+// "show this on a map" — the puzzle card link uses it today; future
+// callers (track replay, share preview, etc.) pass their own pins.
+//
+// opts: { title?, pins?, accent? }
+//   pins[]: { lat, lng, label?, gated?, radiusM? }
+//     gated:   fills the marker (matches the run-detail legend).
+//     radiusM: draws a translucent gate circle around the pin.
+//
+// One pin centres at zoom 17; many auto-fit to bounds.
+function openFullscreenMap(opts) {
+  return new Promise((resolve) => {
+    const { title, pins, accent } = opts || {};
+    const list = Array.isArray(pins) ? pins : [];
+    const host = document.getElementById('modal-host');
+    let removed = false;
+    let map = null;
+    const close = () => {
+      if (removed) return;
+      removed = true;
+      document.removeEventListener('keydown', onKey);
+      try { if (map) map.remove(); } catch { /* leaflet teardown is best-effort */ }
+      host.replaceChildren();
+      resolve();
+    };
+    const onKey = (e) => { if (e.key === 'Escape') close(); };
+    document.addEventListener('keydown', onKey);
+    const mapEl = h('div', { class: 'fsmap-host' });
+    const back = h('div', {
+      class: 'fsmap-back',
+      role: 'dialog',
+      'aria-modal': 'true',
+      on: { click: (e) => { if (e.target === back) close(); } },
+    },
+      h('div', { class: 'fsmap-chrome' },
+        h('div', { class: 'fsmap-title' }, title || ''),
+        h('button', {
+          class: 'fsmap-close',
+          type: 'button',
+          'aria-label': t('Close'),
+          on: { click: close },
+        }, '×')),
+      mapEl,
+    );
+    host.replaceChildren(back);
+    if (typeof L === 'undefined') {
+      mapEl.replaceChildren(h('div', { class: 'empty', style: 'padding:2rem' },
+        t('Map library is still loading — refresh the page.')));
+      return;
+    }
+    map = L.map(mapEl).setView([59.3293, 18.0686], 13);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap contributors',
+      maxZoom: 19,
+    }).addTo(map);
+    const fillColour = accent ||
+      getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() ||
+      '#ad1357';
+    const pts = [];
+    for (const pin of list) {
+      if (!pin || (!pin.lat && !pin.lng)) continue;
+      const m = L.circleMarker([pin.lat, pin.lng], {
+        radius: 9,
+        color: fillColour,
+        weight: 2,
+        fillColor: pin.gated ? fillColour : 'transparent',
+        fillOpacity: pin.gated ? 1 : 0,
+      }).addTo(map);
+      if (pin.label) m.bindTooltip(pin.label);
+      if (pin.radiusM > 0) {
+        L.circle([pin.lat, pin.lng], {
+          radius: pin.radiusM,
+          color: fillColour,
+          weight: 1,
+          fillOpacity: .12,
+        }).addTo(map);
+      }
+      pts.push([pin.lat, pin.lng]);
+    }
+    if (pts.length === 1) {
+      map.setView(pts[0], 17);
+    } else if (pts.length > 1) {
+      map.fitBounds(L.latLngBounds(pts), { padding: [40, 40] });
+    }
+    // Leaflet measures its container at init; the overlay is freshly
+    // mounted so the size is correct, but invalidateSize after the
+    // browser commits the layout is the standard belt-and-braces call
+    // for map-in-flex setups.
+    setTimeout(() => { try { map.invalidateSize(); } catch { /* torn down */ } }, 30);
+  });
 }
 
 // mountAdventureMap drops a Leaflet preview showing every puzzle
