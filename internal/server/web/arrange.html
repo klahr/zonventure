@@ -587,12 +587,11 @@ p { margin: 0 0 .5rem; }
   font-weight: 700;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-@media (max-width: 540px) {
-  /* On phones the avatar gets dropped to keep the strip a single
-     readable line; cover art still shows on the adventure-detail
-     view that the link leads to. */
-  .event-adv-strip > :first-child { display: none; }
-}
+/* The cover stays at 40px on all viewports — it was previously
+   hidden under 540px to "save space", but that triggered on
+   laptop devtools-open layouts too, so the icon went missing for
+   users who weren't even on a phone. The 40-px square is small
+   enough to fit on any reasonable screen. */
 
 /* Quick-stats row reuses the .adv-stats grid styling but slightly
    wider on the event-detail surface so 4 tiles fit on desktop. */
@@ -3844,11 +3843,24 @@ async function viewAdventures(view) {
           : null,
     ].filter(Boolean);
 
+    // Title links to the read-only adventure detail page. Edit is
+    // a dedicated button for owners — separating "look at it" from
+    // "edit it" lets the editor hide spoiler-prone answer chips
+    // behind a toggle while the author still gets one-click access
+    // to their own editor surface.
+    const titleLink = h('a', {
+      href: '#adventures/' + encodeURIComponent(adv.slug),
+      style: 'color:inherit; text-decoration:none',
+      on: { click: (e) => {
+        e.preventDefault();
+        nav('#adventures/' + encodeURIComponent(adv.slug));
+      } },
+    }, adv.title);
     return h('div', { class: 'card' },
       h('div', { class: 'row between', style: 'align-items:flex-start; gap:.75rem' },
         h('div', { class: 'row', style: 'gap:.75rem; align-items:center; min-width:0' },
           adventureCover(adv, 56),
-          h('h2', { style: 'margin:0' }, adv.title)),
+          h('h2', { style: 'margin:0' }, titleLink)),
         h('div', { class: 'row', style: 'gap:.35rem; flex-wrap:wrap' }, ...tags)),
       adv.description ? h('p', { class: 'muted', style: 'margin-top:.35rem' }, adv.description) : null,
       h('p', { class: 'muted mono', style: 'font-size:.8rem; margin:0' },
@@ -5368,23 +5380,30 @@ function renderEventResultsCard(event, teams) {
 }
 
 async function viewRunDetail(view, runID) {
-  const [detail, positions, tracksR, adventureR, eventsR] = await Promise.all([
+  // Fetch event/positions/tracks/activity in parallel; the adventure
+  // depends on event.adventure_slug from detail, so it kicks off in
+  // a second await once detail is in. The previous shape duplicated
+  // the events fetch inside the Promise.all to avoid this dependency
+  // — that was a wasted round-trip and silently dropped the
+  // adventure on any HTTP-level error from the inner second call.
+  const [detail, positions, tracksR, eventsR] = await Promise.all([
     api('/api/admin/events/' + runID),
     api('/api/admin/events/' + runID + '/positions'),
     api('/api/admin/events/' + runID + '/tracks'),
-    (async () => {
-      const d = await api('/api/admin/events/' + runID);
-      if (!d.ok) return null;
-      return api('/api/admin/adventures/' + encodeURIComponent(d.body.event.adventure_slug));
-    })(),
     api('/api/admin/events/' + runID + '/activity'),
   ]);
   if (!detail.ok) { view.replaceChildren(h('p', { class: 'err' }, detail.body?.error || t('not found'))); return; }
   const event = detail.body.event;
   const teams = detail.body.teams || [];
   const tracks = tracksR.body?.tracks || [];
-  const adventure = adventureR?.body || null;
   const events = eventsR.body?.events || [];
+
+  // Adventure: read after detail so we know the slug. ok-check
+  // before unwrapping body — older paths blindly read `adventureR.body`
+  // which on a 4xx is the error envelope (no title / no avatar_url),
+  // explaining the "no icon" reports.
+  const adventureR = await api('/api/admin/adventures/' + encodeURIComponent(event.adventure_slug));
+  const adventure = adventureR.ok ? adventureR.body : null;
 
   // Lifecycle action lives at the top — during a live event this is
   // what the arranger reaches for, so it belongs above everything.
