@@ -1321,6 +1321,41 @@
       'Integrations': 'Integrationer',
       'General': 'Allmänt',
       'System': 'System',
+      'Software update': 'Programuppdatering',
+      'Software update available': 'Programuppdatering tillgänglig',
+      'Open navigation menu (software update available)':
+        'Öppna navigeringsmenyn (programuppdatering tillgänglig)',
+      'Up to date': 'Uppdaterad',
+      'Update available': 'Uppdatering tillgänglig',
+      'Could not check': 'Kunde inte kontrollera',
+      'Development build': 'Utvecklingsversion',
+      'Current': 'Aktuell',
+      'Latest': 'Senaste',
+      'unknown': 'okänd',
+      'Check now': 'Kontrollera nu',
+      'Checking…': 'Kontrollerar…',
+      'Checked {{when}}': 'Kontrollerad {{when}}',
+      'Not checked yet.': 'Ännu inte kontrollerad.',
+      'Compares the running binary against the upstream CHANGELOG.md. The check runs daily in the background; click Check now to refetch immediately.':
+        'Jämför den körande binären mot uppströms CHANGELOG.md. Kontrollen körs dagligen i bakgrunden; klicka på Kontrollera nu för att hämta direkt.',
+      'Last error: {{err}}': 'Senaste fel: {{err}}',
+      'This binary reports a version past the last tagged release. Update prompts are suppressed because we can\'t tell whether the upstream changelog covers commits this build already includes.':
+        'Den här binären rapporterar en version efter senaste taggade utgåva. Uppdateringsuppmaningar visas inte eftersom vi inte kan avgöra om uppströms changelog täcker commits som versionen redan har.',
+      'Changes since {{v}}': 'Ändringar sedan {{v}}',
+      'Detects new releases of Zonventure and shows what changed. Upgrading the deployment is still a shell-level operation — instructions per deployment style are below.':
+        'Detekterar nya versioner av Zonventure och visar vad som har ändrats. Att uppgradera distributionen är fortfarande ett skalkommando — anvisningar per distributionstyp finns nedan.',
+      'How to upgrade': 'Så uppgraderar du',
+      'Pick the path that matches how this server was installed.':
+        'Välj sättet som motsvarar hur denna server installerades.',
+      'Docker Compose': 'Docker Compose',
+      'From source': 'Från källkod',
+      'Migrations run automatically on startup. Back up Postgres first if you\'re crossing a major version.':
+        'Migreringar körs automatiskt vid uppstart. Säkerhetskopiera Postgres först om du går över en huvudversion.',
+      'just now': 'just nu',
+      '{{n}} minute(s) ago': '{{n}} minut(er) sedan',
+      '{{n}} hour(s) ago': '{{n}} timme/timmar sedan',
+      '{{n}} day(s) ago': '{{n}} dag(ar) sedan',
+      '{{n}} week(s) ago': '{{n}} vecka/veckor sedan',
       'Admin only.': 'Endast administratör.',
       'Server-wide settings and the components wired into the running build. Read by every visitor; changes are immediate.':
         'Servergemensamma inställningar och komponenter som ingår i den körande versionen. Synliga för alla besökare; ändringar gäller direkt.',

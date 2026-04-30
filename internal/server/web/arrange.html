@@ -322,8 +322,27 @@ p { margin: 0 0 .5rem; }
      minimum (and Material's 48dp lands close too), so the control is
      comfortable on a thumb without looking bulky next to the brand. */
   width: 44px; height: 44px; padding: 0; line-height: 0;
+  position: relative;
 }
 .btn.menu-btn svg { width: 26px; height: 26px; stroke-width: 2; }
+
+/* Update-available indicator. Single rule reused on the hamburger
+   button and on the Settings sidebar link — small accent-coloured
+   dot tucked into the upper-right corner of the host element. The
+   host needs `position: relative` (the menu-btn rule above sets
+   it; the .nav anchors get it via the .has-update class).
+   Aria-hidden lives in the markup; CSS just paints it. */
+.has-update { position: relative; }
+.has-update::after {
+  content: "";
+  position: absolute;
+  top: 6px; right: 6px;
+  width: 9px; height: 9px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px var(--surface);
+  pointer-events: none;
+}
 @media (max-width: 820px) {
   .app {
     grid-template-columns: 1fr;
@@ -2583,7 +2602,39 @@ const state = {
   // shape if the fetch fails — the server still rejects with 403 when
   // signup is actually disabled, so the UI is just a hint, not the gate.
   signupEnabled: true,
+  // Cached system-update snapshot. Populated for admins after login;
+  // null means "haven't checked yet" (the UI just doesn't show a
+  // badge in that state). Refreshed on tab open + on demand via the
+  // Check now button.
+  systemUpdate: null,
 };
+
+// loadSystemUpdate fetches the changelog snapshot and caches it on
+// state. Admin-only — the endpoint 403s for everyone else, so we
+// just don't call it. Errors are silent: a missing badge is better
+// than a console-spamming retry loop in deployments where the
+// upstream URL is unreachable. Always sets state.systemUpdate to a
+// non-null object after the first attempt so render() doesn't
+// re-fire the cold-start fetch on every paint.
+async function loadSystemUpdate() {
+  if (state.me?.role !== 'admin') {
+    state.systemUpdate = {};
+    return;
+  }
+  try {
+    const r = await api('/api/admin/system-update');
+    state.systemUpdate = (r.ok && r.body) ? r.body : {};
+  } catch (_) {
+    state.systemUpdate = {};
+  }
+}
+
+// systemUpdateAvailable is the single source of truth the rest of
+// the UI consults to decide whether to draw the update badge. Keeps
+// the null / missing-field paths funnelled through one place.
+function systemUpdateAvailable() {
+  return !!state.systemUpdate?.update_available;
+}
 
 // Fetch the public signup-config once and cache the result. Called
 // before renderLogin so the "Sign up" link reflects the live setting
@@ -2668,6 +2719,7 @@ function renderOrgPicker() {
         on: { click: async () => {
           await api('/api/auth/logout', { method: 'POST' });
           state.me = null;
+          state.systemUpdate = null;
           render();
         } },
       }, t('Log out'))),
@@ -2766,6 +2818,13 @@ async function showAdminOnboardingModal() {
 
 async function render() {
   if (!state.me) await refreshMe();
+  // Kick off the changelog fetch the first time an admin lands —
+  // populates the hamburger / Settings badges before the next paint
+  // if the cached server snapshot is already populated, or shortly
+  // after for a cold-start. Silently bails for non-admins.
+  if (state.me?.role === 'admin' && state.systemUpdate === null) {
+    loadSystemUpdate().then(() => render());
+  }
   const root = document.getElementById('root');
   // Reset-password landing: the email link points at
   // /arrange#reset?token=ABC. Show the reset card regardless of
@@ -3198,14 +3257,23 @@ function renderShell() {
   }
   const active = state.route.split('/')[0];
 
+  const updateAvailable = systemUpdateAvailable();
   const nav = h('nav', { class: 'nav', 'aria-label': t('Primary') },
-    items.map(([href, label, svg]) =>
-    h('a', {
-      href,
-      class: active === href ? 'active' : '',
-      'aria-current': active === href ? 'page' : null,
-      on: { click: () => { document.querySelector('.sidebar')?.classList.remove('open'); document.querySelector('.backdrop')?.classList.remove('show'); } },
-    }, icon(svg), label)));
+    items.map(([href, label, svg]) => {
+      // Settings is the only entry that can carry the update badge —
+      // the surface itself lives behind a Settings tab. Keeping the
+      // dot out of the unrelated nav links avoids visual confusion.
+      const showBadge = updateAvailable && href === '#settings';
+      const cls = [active === href ? 'active' : '', showBadge ? 'has-update' : '']
+        .filter(Boolean).join(' ');
+      return h('a', {
+        href,
+        class: cls || null,
+        'aria-current': active === href ? 'page' : null,
+        title: showBadge ? t('Software update available') : null,
+        on: { click: () => { document.querySelector('.sidebar')?.classList.remove('open'); document.querySelector('.backdrop')?.classList.remove('show'); } },
+      }, icon(svg), label);
+    }));
   // Arrow-key navigation across the sidebar. We deliberately don't
   // adopt role="tab" / role="tablist" — these are real anchor links
   // (each one is a routable URL), and forcing tab semantics would
@@ -3254,9 +3322,11 @@ function renderShell() {
   } } });
 
   const menuBtn = h('button', {
-    class: 'btn ghost menu-btn',
+    class: 'btn ghost menu-btn' + (updateAvailable ? ' has-update' : ''),
     type: 'button',
-    'aria-label': t('Open navigation menu'),
+    'aria-label': updateAvailable
+      ? t('Open navigation menu (software update available)')
+      : t('Open navigation menu'),
     'aria-controls': 'sidebar-nav',
     'aria-expanded': 'false',
     on: { click: () => {
@@ -3576,6 +3646,7 @@ function unwatchRun() {
 async function logout() {
   await api('/api/auth/logout', { method: 'POST' });
   state.me = null;
+  state.systemUpdate = null;
   render();
 }
 
@@ -11690,6 +11761,11 @@ async function viewSettings(view, tab) {
     { id: 'audit',        label: t('Audit'),        visible: isOrgAdmin || isAdmin },
     { id: 'purchases',    label: t('Purchases'),    visible: isOrgUser },
     { id: 'system',       label: t('System'),       visible: isAdmin },
+    // Software update is admin-only and carries a badge dot when
+    // the cached snapshot says a newer release is available, so the
+    // operator finds the page even without remembering it exists.
+    { id: 'software-update', label: t('Software update'), visible: isAdmin,
+      badge: systemUpdateAvailable() },
     { id: 'integrations', label: t('Integrations'), visible: isOrgUser },
   ].filter((tb) => tb.visible);
 
@@ -11700,7 +11776,7 @@ async function viewSettings(view, tab) {
 
   const tabStrip = h('div', { class: 'lib-tabs', style: 'margin-bottom:1rem' },
     tabs.map((tb) => h('a', {
-      class: 'lib-tab' + (tb.id === tab ? ' active' : ''),
+      class: 'lib-tab' + (tb.id === tab ? ' active' : '') + (tb.badge ? ' has-update' : ''),
       href: '#settings/' + tb.id,
       on: { click: (e) => { e.preventDefault(); nav('#settings/' + tb.id); } },
     }, tb.label)));
@@ -11719,6 +11795,7 @@ async function viewSettings(view, tab) {
     case 'purchases':    return await viewPurchases(body);
     case 'integrations': return await viewWebhooks(body);
     case 'system':       return renderSettingsSystem(body);
+    case 'software-update': return await viewSettingsSoftwareUpdate(body);
   }
 }
 
@@ -11743,10 +11820,10 @@ function renderSettingsGeneral(view) {
 }
 
 // renderSettingsSystem houses the operator-tunable knobs: server-wide
-// signup / landing-page toggles plus the components panel. Future
-// software-update surface lands here too. Admin-only — the tab strip
-// already hides this entry from non-admins, but the role guard stays
-// for the URL-typing edge case.
+// signup / landing-page toggles plus the components panel. The
+// software-update surface lives in a sibling tab next to this one.
+// Admin-only — the tab strip already hides this entry from
+// non-admins, but the role guard stays for the URL-typing edge case.
 function renderSettingsSystem(view) {
   if (state.me?.role !== 'admin') {
     view.replaceChildren(h('p', { class: 'err' }, t('Admin only.')));
@@ -11913,6 +11990,188 @@ function renderSettingsComponentsCard() {
   );
   refresh();
   return card;
+}
+
+// viewSettingsSoftwareUpdate paints the Settings → Software update
+// tab. Pulls the cached snapshot from state.systemUpdate (populated
+// at app start by loadSystemUpdate) and refreshes it on entry so an
+// admin opening the tab always gets up-to-date info even if the
+// background poll hasn't fired this hour. Surfaces the running and
+// latest versions, the changelog sections newer than the running
+// binary, and the per-deployment upgrade snippets — the actual
+// upgrade is the operator's job; this page exists to tell them
+// there's work to do, not to do the work for them.
+async function viewSettingsSoftwareUpdate(view) {
+  if (state.me?.role !== 'admin') {
+    view.replaceChildren(h('p', { class: 'err' }, t('Admin only.')));
+    return;
+  }
+  // Refresh from the cache endpoint on entry. CheckNow (POST) is
+  // wired to its own button below; the GET on entry just means a
+  // fresh page paints fresh data even when a background poll has
+  // landed since the user last loaded the app.
+  await loadSystemUpdate();
+  paint();
+
+  function paint() {
+    const s = state.systemUpdate || {};
+    const isDev = !!s.is_dev_build;
+    const updateAvailable = !!s.update_available;
+    // Treat "no snapshot at all" as "couldn't check" — the only way
+    // to land here without a checked_at is a transport failure on
+    // /api/admin/system-update itself (the service always populates
+    // CheckedAt even when the upstream fetch failed).
+    const couldNotCheck = (!!s.fetch_error && !s.latest) || !s.checked_at;
+
+    let pillCls = '';
+    let pillTxt = t('Up to date');
+    if (isDev) { pillCls = 'warning'; pillTxt = t('Development build'); }
+    else if (updateAvailable) { pillCls = 'accent'; pillTxt = t('Update available'); }
+    else if (couldNotCheck) { pillCls = 'warning'; pillTxt = t('Could not check'); }
+
+    const checkedAt = s.checked_at
+      ? t('Checked {{when}}', { when: relativeTime(s.checked_at) })
+      : t('Not checked yet.');
+
+    const checkBtn = h('button', {
+      class: 'btn small', type: 'button',
+    }, t('Check now'));
+    const checkStatus = h('span', { class: 'muted', style: 'font-size:.85rem; margin-left:.5rem' });
+    checkBtn.addEventListener('click', async () => {
+      checkBtn.disabled = true;
+      checkStatus.textContent = t('Checking…');
+      const r = await api('/api/admin/system-update/check', { method: 'POST' });
+      checkBtn.disabled = false;
+      checkStatus.textContent = '';
+      if (r.ok) {
+        state.systemUpdate = r.body || {};
+        // Re-paint the rest of the app too — the hamburger / nav
+        // badge state may have just flipped.
+        paint();
+        renderShellChrome();
+      } else {
+        checkStatus.textContent = r.body?.error || t('error {{status}}', { status: r.status });
+      }
+    });
+
+    const versionRow = h('div', {
+      class: 'row',
+      style: 'gap:1.5rem; align-items:baseline; flex-wrap:wrap; margin:.75rem 0 .5rem',
+    },
+      h('div', {},
+        h('span', { class: 'muted', style: 'font-size:.75rem; text-transform:uppercase; letter-spacing:.06em' }, t('Current')),
+        h('div', { class: 'mono', style: 'font-size:1.1rem' }, s.current_raw || t('unknown'))),
+      h('div', {},
+        h('span', { class: 'muted', style: 'font-size:.75rem; text-transform:uppercase; letter-spacing:.06em' }, t('Latest')),
+        h('div', { class: 'mono', style: 'font-size:1.1rem' },
+          s.latest ? (s.latest + (s.latest_date ? '  (' + s.latest_date + ')' : ''))
+                   : t('unknown'))));
+
+    const headerCard = h('div', { class: 'card settings-card' },
+      h('div', { class: 'row between', style: 'gap:.5rem; align-items:center; flex-wrap:wrap' },
+        h('h2', { style: 'margin:0' }, t('Software update')),
+        h('span', { class: 'pill ' + pillCls }, pillTxt)),
+      h('p', { class: 'muted', style: 'margin:.25rem 0 0' },
+        t('Compares the running binary against the upstream CHANGELOG.md. The check runs daily in the background; click Check now to refetch immediately.')),
+      versionRow,
+      h('div', { class: 'row', style: 'gap:.5rem; align-items:center; flex-wrap:wrap' },
+        checkBtn,
+        h('span', { class: 'muted', style: 'font-size:.85rem' }, checkedAt),
+        checkStatus));
+
+    if (s.fetch_error) {
+      headerCard.append(h('p', { class: 'muted', style: 'margin:.5rem 0 0; font-size:.85rem' },
+        t('Last error: {{err}}', { err: s.fetch_error })));
+    }
+
+    const cards = [headerCard];
+
+    if (isDev) {
+      cards.push(h('div', { class: 'card settings-card' },
+        h('h2', {}, t('Development build')),
+        h('p', { class: 'muted' },
+          t('This binary reports a version past the last tagged release. Update prompts are suppressed because we can\'t tell whether the upstream changelog covers commits this build already includes.'))));
+    } else if (updateAvailable && Array.isArray(s.sections) && s.sections.length) {
+      const notesCard = h('div', { class: 'card settings-card' },
+        h('h2', {}, t('Changes since {{v}}', { v: s.current || s.current_raw || '' })));
+      s.sections.forEach((sec) => {
+        notesCard.append(
+          h('div', { class: 'row', style: 'gap:.5rem; align-items:baseline; margin:1rem 0 .25rem' },
+            h('strong', { class: 'mono', style: 'font-size:1.05rem' }, sec.version),
+            sec.date ? h('span', { class: 'muted', style: 'font-size:.85rem' }, sec.date) : null),
+          h('div', { class: 'md-preview', html: sec.notes_html || '' }),
+        );
+      });
+      cards.push(notesCard);
+    }
+
+    cards.push(renderUpgradeInstructionsCard());
+
+    view.replaceChildren(
+      h('h1', {}, t('Software update')),
+      h('p', { class: 'muted' },
+        t('Detects new releases of Zonventure and shows what changed. Upgrading the deployment is still a shell-level operation — instructions per deployment style are below.')),
+      ...cards,
+    );
+  }
+}
+
+// renderShellChrome rebuilds the sidebar + topbar so a fresh
+// systemUpdate snapshot flips the hamburger / Settings badge
+// without re-routing the whole view. Cheap because renderShell()
+// is already idempotent on state.
+function renderShellChrome() {
+  // Re-running render() rebuilds the entire shell, but it also
+  // re-renders the current view which would discard transient form
+  // state in other tabs. Limit to the shell parts that depend on
+  // systemUpdate by re-painting the sidebar nav + menu button.
+  // The cheap path is just to call render() — every settings
+  // surface refetches from the server on mount, so nothing valuable
+  // is lost.
+  render();
+}
+
+// renderUpgradeInstructionsCard produces a small static cheat sheet
+// the operator can refer to when an update is available. Generic
+// across deployment types — the page itself doesn't try to detect
+// which one is in use, since heuristics there are unreliable and
+// the snippets are short enough to skim.
+function renderUpgradeInstructionsCard() {
+  const card = h('div', { class: 'card settings-card' });
+  card.append(
+    h('h2', {}, t('How to upgrade')),
+    h('p', { class: 'muted' },
+      t('Pick the path that matches how this server was installed.')),
+    h('h3', { style: 'margin:.75rem 0 .25rem' }, t('Docker Compose')),
+    h('pre', { class: 'mono', style: 'background:var(--surface-2); padding:.5rem .75rem; border-radius:var(--radius); overflow-x:auto' },
+      'docker compose pull\ndocker compose up -d'),
+    h('h3', { style: 'margin:.75rem 0 .25rem' }, t('From source')),
+    h('pre', { class: 'mono', style: 'background:var(--surface-2); padding:.5rem .75rem; border-radius:var(--radius); overflow-x:auto' },
+      'git pull\ngo build -trimpath -ldflags="-s -w" -o zv ./cmd/server\n# then restart however your service manager runs zv'),
+    h('p', { class: 'muted', style: 'font-size:.85rem; margin:.5rem 0 0' },
+      t('Migrations run automatically on startup. Back up Postgres first if you\'re crossing a major version.')),
+  );
+  return card;
+}
+
+// relativeTime formats an ISO-8601 timestamp as "5 minutes ago" /
+// "yesterday" / "2 weeks ago". Single-purpose helper used by the
+// software-update card; doesn't try to handle every grammar case
+// (Swedish singular vs. plural is folded into one phrase per range).
+function relativeTime(iso) {
+  const t0 = new Date(iso).getTime();
+  if (Number.isNaN(t0)) return iso;
+  const sec = Math.max(0, Math.round((Date.now() - t0) / 1000));
+  if (sec < 60)        return t('just now');
+  const min = Math.round(sec / 60);
+  if (min < 60)        return t('{{n}} minute(s) ago', { n: min });
+  const hr = Math.round(min / 60);
+  if (hr < 24)         return t('{{n}} hour(s) ago', { n: hr });
+  const days = Math.round(hr / 24);
+  if (days < 14)       return t('{{n}} day(s) ago', { n: days });
+  const weeks = Math.round(days / 7);
+  if (weeks < 8)       return t('{{n}} week(s) ago', { n: weeks });
+  return new Date(iso).toLocaleDateString();
 }
 
 function renderSettingsSessionsCard() {

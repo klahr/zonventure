@@ -221,6 +221,7 @@ func main() {
 		StripeWebhookSecret: os.Getenv("ZV_STRIPE_WEBHOOK_SECRET"),
 		Version:             version,
 		WebOverrideDir:      os.Getenv("ZV_WEB_OVERRIDE_DIR"),
+		ChangelogURL:        os.Getenv("ZV_CHANGELOG_URL"),
 	})
 
 	srv := &http.Server{

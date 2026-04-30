@@ -34,6 +34,7 @@ import (
 	"git.sr.ht/~klahr/zv/internal/storage"
 	"git.sr.ht/~klahr/zv/internal/teamimport"
 	"git.sr.ht/~klahr/zv/internal/tokenx"
+	"git.sr.ht/~klahr/zv/internal/updates"
 	"git.sr.ht/~klahr/zv/internal/webhooks"
 	"git.sr.ht/~klahr/zv/internal/ws"
 	"github.com/go-chi/chi/v5"
@@ -89,6 +90,12 @@ type Handlers struct {
 	// out of their build by simply not Register()-ing them. Nil is
 	// fine — the import endpoint then 415s every upload.
 	TeamImporters *teamimport.Registry
+	// Updates polls the upstream CHANGELOG.md and answers the
+	// admin-only system-update endpoint. Nil disables the surface
+	// (the handler just returns "not configured"); the server
+	// constructor wires a real one based on cfg.Version +
+	// cfg.ChangelogURL.
+	Updates *updates.Service
 }
 
 /* ---------------- Shared scoping helpers ---------------- */

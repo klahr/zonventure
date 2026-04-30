@@ -30,6 +30,7 @@ import (
 	teamimportiofxml "git.sr.ht/~klahr/zv/internal/teamimport/iofxml"
 	teamimportods "git.sr.ht/~klahr/zv/internal/teamimport/ods"
 	teamimportxlsx "git.sr.ht/~klahr/zv/internal/teamimport/xlsx"
+	"git.sr.ht/~klahr/zv/internal/updates"
 	"git.sr.ht/~klahr/zv/internal/ws"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -99,6 +100,17 @@ type Config struct {
 	// or pass an empty registry to disable the import surface
 	// entirely (the endpoint will then return 503 on every upload).
 	TeamImporters *teamimport.Registry
+	// ChangelogURL is the URL the update checker polls to detect
+	// newer releases. Empty falls back to updates.DefaultChangelogURL
+	// (the upstream sourcehut repo's CHANGELOG.md). Set explicitly to
+	// pin a fork or to disable the surface in air-gapped deployments
+	// (the URL "off" is treated as "no checking" — see Updates.Service).
+	ChangelogURL string
+	// UpdateContext bounds the lifetime of the changelog-polling
+	// goroutine. Pass the same context the rest of the binary uses
+	// for cancellation; nil falls back to context.Background() (the
+	// loop runs until the process exits).
+	UpdateContext context.Context
 }
 
 // New builds the HTTP router.
@@ -171,6 +183,16 @@ func New(cfg Config) http.Handler {
 		importers.Register(teamimportxlsx.New())
 		importers.Register(teamimportiofxml.New())
 	}
+	updateCtx := cfg.UpdateContext
+	if updateCtx == nil {
+		updateCtx = context.Background()
+	}
+	updateSvc := updates.NewService(updates.Config{
+		Version:      cfg.Version,
+		ChangelogURL: cfg.ChangelogURL,
+	})
+	updateSvc.Start(updateCtx)
+
 	adminH := &admin.Handlers{
 		DB: cfg.DB, Lib: cfg.Library, Hub: hub, Sim: sim,
 		Mailer:              mail,
@@ -182,6 +204,7 @@ func New(cfg Config) http.Handler {
 		Storage:             store,
 		TOTPKey:             cfg.TOTPKey,
 		TeamImporters:       importers,
+		Updates:             updateSvc,
 	}
 	publicH := &public.Handlers{DB: cfg.DB, Lib: cfg.Library, Hub: hub, Storage: store}
 
@@ -664,6 +687,14 @@ func New(cfg Config) http.Handler {
 			// whether each is enabled in this deployment. Drives the
 			// Settings → Installed components card.
 			r.Get("/components", adminH.ListComponents)
+
+			// Software-update surface: cached snapshot of the upstream
+			// CHANGELOG.md plus an on-demand "check now" trigger. The
+			// background poll runs every 24h regardless of the GET; the
+			// POST exists so an operator clicking Check now in the UI
+			// gets a fresh answer in one round trip.
+			r.Get("/system-update", adminH.SystemUpdate)
+			r.Post("/system-update/check", adminH.SystemUpdateCheck)
 
 			// Manual email verification — admin escape hatch when an
 			// arranger never received the self-serve verification mail.
