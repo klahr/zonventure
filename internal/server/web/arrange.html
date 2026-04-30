@@ -3123,7 +3123,6 @@ function renderShell() {
       // tab strip inside the view splits Adventures and Puzzles. Two
       // sidebar entries for what's essentially one catalog was noise.
       ['#library',       t('Library'),       ICONS.map],
-      ['#admins',        t('Admins'),        ICONS.user],
       ['#simulator',     t('Simulator'),     ICONS.play],
       ['#logs',          t('Logs'),          ICONS.terminal],
       ['#settings',      t('Settings'),      ICONS.gear],
@@ -3381,12 +3380,13 @@ async function renderRoute() {
       case 'adventures':   return arg ? await viewAdventureDetail(view, arg) : await viewAdventures(view);
       case 'store':        return arg ? await viewStoreDetail(view, arg) : await viewStore(view);
       case 'events':         return arg ? await viewRunDetail(view, arg) : await viewRuns(view);
-      // Members / Audit / Purchases / Webhooks were lifted into the
-      // Settings hub as tabs; old links / bookmarks / inline calls
-      // keep working by redirecting to the new tabbed location. The
-      // webhook log sub-route stays a real route since it's a deeper
-      // surface than the integrations list.
+      // Members / Admins / Audit / Purchases / Webhooks were lifted
+      // into the Settings hub as tabs; old links / bookmarks /
+      // inline calls keep working by redirecting to the new tabbed
+      // location. The webhook log sub-route stays a real route since
+      // it's a deeper surface than the integrations list.
       case 'members':      nav('#settings/members'); return;
+      case 'admins':       nav('#settings/admins'); return;
       case 'audit':        nav('#settings/audit'); return;
       case 'purchases':    nav('#settings/purchases'); return;
       case 'webhooks': {
@@ -3402,7 +3402,6 @@ async function renderRoute() {
       case 'organizations':return await viewOrganizations(view);
       case 'library':      return arg ? await viewLibraryEdit(view, arg) : await viewLibrary(view);
       case 'puzzles':      return arg ? await viewPuzzleEditRoute(view, arg) : await viewPuzzles(view);
-      case 'admins':       return await viewAdmins(view);
       case 'simulator':    return await viewSimulator(view);
       case 'logs':         return await viewLogs(view);
       case 'manual':       return viewManual(view, arg);
@@ -11591,6 +11590,11 @@ async function viewSettings(view, tab) {
   const tabs = [
     { id: 'general',      label: t('General'),      visible: true },
     { id: 'members',      label: t('Members'),      visible: isOrgAdmin },
+    // Admins is the platform-admin equivalent of Members — same UI
+    // shape (user list + add/remove), different audience. Mutually
+    // exclusive with Members because a standalone admin isn't in an
+    // org and an org_admin can't see global admins.
+    { id: 'admins',       label: t('Admins'),       visible: isAdmin },
     // Audit is an investigation surface — same audience as Members
     // (org_admin sees their org's auth events; standalone admin sees
     // platform-wide). Sits next to Members so the "people +
@@ -11622,6 +11626,7 @@ async function viewSettings(view, tab) {
   switch (tab) {
     case 'general':      return renderSettingsGeneral(body);
     case 'members':      return await viewMembers(body);
+    case 'admins':       return await viewAdmins(body);
     case 'audit':        return await viewAudit(body);
     case 'purchases':    return await viewPurchases(body);
     case 'integrations': return await viewWebhooks(body);
