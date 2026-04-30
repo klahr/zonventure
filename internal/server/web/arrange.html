@@ -8248,9 +8248,34 @@ function renderPuzzleCard(adv, page, i, previewIdx) {
           ...page.accept.map(acceptChip));
         return h('div', {}, reveal, answers);
       })(),
-    h('p', { class: 'muted mono', style: 'font-size:.8rem' },
-      `${page.lat.toFixed(5)}, ${page.lng.toFixed(5)}`,
-      page.radius_m ? t(' · gate {{r}} m', { r: page.radius_m }) : ''),
+    // Location — same Open-map button the adventure detail page uses,
+    // so authors don't have to mentally translate raw coords. The
+    // whole card is clickable to open the editor, so the button
+    // stopPropagations on click; a tap on it just opens the map.
+    // Falls back to a muted "(no location)" line when the puzzle has
+    // never had a fix written, instead of showing 0.00000, 0.00000.
+    (page.lat || page.lng)
+      ? h('button', {
+          class: 'btn small ghost',
+          type: 'button',
+          style: 'margin-top:.5rem',
+          on: { click: (e) => {
+            e.stopPropagation();
+            openFullscreenMap({
+              title: page.title || t('Location'),
+              pins: [{
+                lat: page.lat,
+                lng: page.lng,
+                label: page.title || '',
+                gated: page.gated,
+                radiusM: page.radius_m || 0,
+              }],
+            });
+          } },
+        }, icon(ICONS.map), t('Open map'),
+          page.radius_m ? t(' · gate {{r}} m', { r: page.radius_m }) : '')
+      : h('p', { class: 'muted', style: 'font-size:.8rem; margin-top:.5rem' },
+          t('(no location)')),
   );
 }
 

@@ -117,6 +117,7 @@
       'Open map': 'Öppna karta',
       'Puzzle location': 'Pusselplats',
       'You are here': 'Du är här',
+      '(no location)': '(ingen plats)',
       "Open this puzzle's location on the map":
         'Öppna pusslets plats på kartan',
       'Map library failed to load.': 'Kartbiblioteket kunde inte läsas in.',
