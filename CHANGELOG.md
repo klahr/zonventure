@@ -11,6 +11,19 @@ The repository, Go module, and CLI binary are named `zv`; the product is
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-04-30
+
+### Fixed
+
+- **Docker build no longer stamps every binary as `-dirty`.** The 0.1.2
+  fix re-included `.git` in the build context, but `.dockerignore` still
+  strips other tracked files (`Dockerfile`, `compose.yaml`, `.gitignore`,
+  `TODO.md`, `.dockerignore`), and `git describe --dirty` saw them as
+  deleted inside the container. The build now runs `git checkout -- .`
+  to restore those files before describing, so a clean tagged checkout
+  produces a clean version string. Affects every operator on the Docker
+  Compose path.
+
 ## [0.1.2] - 2026-04-30
 
 ### Fixed
@@ -62,6 +75,7 @@ First tagged release.
   pg_dump-portable backup / restore.
 
 [Unreleased]: https://git.sr.ht/~klahr/zv/log/master
+[0.1.3]: https://git.sr.ht/~klahr/zv/refs/0.1.3
 [0.1.2]: https://git.sr.ht/~klahr/zv/refs/0.1.2
 [0.1.1]: https://git.sr.ht/~klahr/zv/refs/0.1.1
 [0.1.0]: https://git.sr.ht/~klahr/zv/refs/0.1.0
