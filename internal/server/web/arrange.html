@@ -424,6 +424,12 @@ p { margin: 0 0 .5rem; }
 }
 .card h2 { margin-top: 0; }
 .card + .card { margin-top: 1rem; }
+/* Mirror card-to-card spacing when a .grid wrapper follows a card —
+   the event-detail layout puts the Teams + Event-log cards inside a
+   .grid.cols-2 right below the share bar / map card, so without
+   this rule the grid (and its first card) is flush against the
+   element above it. */
+.card + .grid { margin-top: 1rem; }
 .puzzle-list { margin-top: 1.25rem; }
 .puzzle-card .md-preview { margin-top: .75rem; margin-bottom: .75rem; }
 .card.clickable { cursor: pointer; transition: transform var(--anim), box-shadow var(--anim); }
@@ -436,6 +442,199 @@ p { margin: 0 0 .5rem; }
   border-color: color-mix(in srgb, var(--accent) 30%, var(--border));
 }
 .card.card-cta:hover { border-color: var(--accent); }
+
+/* ---------- Adventure detail page ---------- */
+/* Hero strip: cover (left), title + meta + pills (mid), CTA stack
+   (right). flex-wraps cleanly to a stacked layout on phones rather
+   than crushing the cover/title row at narrow widths. */
+.adv-hero {
+  display: flex; flex-wrap: wrap; gap: 1rem;
+  align-items: center; margin: .75rem 0 1.25rem;
+  padding: 1rem 1.25rem; border-radius: var(--radius);
+  background: var(--surface); border: 1px solid var(--border-soft);
+}
+.adv-hero-left { flex: 0 0 auto; }
+.adv-hero-mid { flex: 1 1 16rem; min-width: 0; }
+.adv-hero-mid h1 { line-height: 1.15; margin: 0; word-wrap: break-word; }
+.adv-hero-meta {
+  display: flex; flex-wrap: wrap; gap: .35rem .75rem;
+  font-size: .9rem; margin-top: .15rem;
+}
+.adv-hero-pills {
+  display: flex; flex-wrap: wrap; gap: .35rem;
+  margin-top: .55rem;
+}
+.adv-hero-cta { flex: 0 0 auto; }
+@media (max-width: 540px) {
+  /* On phones the CTA stack drops below — full-width buttons read
+     better than truncated/wrapping rows of icon+text. */
+  .adv-hero-cta { width: 100%; }
+  .adv-hero-cta .row { width: 100%; }
+  .adv-hero-cta .btn { flex: 1 1 auto; }
+}
+
+/* Quick stats row — 3 tiles by default, collapses to 2 on phones.
+   Each tile is a small card with a big number + uppercase label. */
+.adv-stats {
+  display: grid; gap: .55rem;
+  grid-template-columns: repeat(3, 1fr);
+  margin: 0 0 1rem;
+}
+@media (max-width: 540px) {
+  .adv-stats { grid-template-columns: repeat(2, 1fr); }
+}
+.adv-stat {
+  background: var(--surface); border: 1px solid var(--border-soft);
+  border-radius: var(--radius); padding: .65rem .85rem;
+  text-align: center;
+}
+.adv-stat-v {
+  font-size: 1.4rem; font-weight: 700; color: var(--accent);
+  line-height: 1.1;
+}
+.adv-stat-l {
+  font-size: .72rem; color: var(--muted); text-transform: uppercase;
+  letter-spacing: .05em; margin-top: .15rem;
+}
+
+/* Description + intro + outro block. Quiet typography — these are
+   author copy, not page chrome. */
+.adv-story { margin: 0 0 1.25rem; }
+.adv-story .adv-desc {
+  font-size: 1.05rem; line-height: 1.55; color: var(--ink);
+  margin: 0 0 1rem;
+}
+.adv-story .adv-section-h {
+  font-size: .8rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .06em; color: var(--muted);
+  margin: 1rem 0 .35rem;
+}
+.adv-story .adv-prose {
+  white-space: pre-wrap; line-height: 1.55;
+  background: var(--surface-2); border-radius: var(--radius);
+  padding: .75rem 1rem; border: 1px solid var(--border-soft);
+}
+
+/* Adventure-wide map. Sized so the OSM tiles don't dominate the
+   page on a desktop but still convey shape on a phone. */
+.adv-map-host {
+  width: 100%; height: 18rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--border-soft);
+  background: var(--surface-2);
+}
+
+/* Puzzle cards block. Stacked, with a stronger gap than the page's
+   default card+card so each puzzle reads as a discrete unit. */
+.adv-puzzles { display: flex; flex-direction: column; gap: 1rem; }
+.adv-pz-card { padding: 1rem 1.15rem; }
+.adv-pz-head {
+  display: flex; align-items: center; gap: .55rem; flex-wrap: wrap;
+  margin: 0 0 .5rem;
+}
+.adv-pz-num {
+  display: inline-grid; place-items: center;
+  width: 1.6rem; height: 1.6rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 14%, var(--surface));
+  color: var(--accent); font-weight: 700; font-size: .85rem;
+  flex: 0 0 auto;
+}
+.adv-pz-title { font-size: 1.05rem; }
+.adv-pz-prompt { line-height: 1.55; margin: 0 0 .5rem; }
+.adv-pz-images {
+  display: grid; gap: .4rem;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  margin: .5rem 0;
+}
+.adv-pz-images img {
+  width: 100%; height: auto; display: block;
+  border-radius: 8px; border: 1px solid var(--border-soft);
+}
+.adv-pz-hints { display: flex; flex-direction: column; gap: .55rem; margin-top: .5rem; }
+.adv-pz-hint {
+  background: var(--surface-2); border: 1px solid var(--border-soft);
+  border-radius: var(--radius); padding: .55rem .75rem;
+}
+.adv-pz-hint-head {
+  font-size: .72rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .04em; margin-bottom: .25rem;
+}
+.adv-pz-hint-body p:first-child { margin-top: 0; }
+.adv-pz-hint-body p:last-child  { margin-bottom: 0; }
+.adv-pz-disclosure {
+  margin-top: .65rem;
+  border-top: 1px solid var(--border-soft); padding-top: .65rem;
+}
+.adv-pz-disclosure summary {
+  cursor: pointer; font-size: .85rem; font-weight: 600;
+  color: var(--muted);
+}
+.adv-pz-disclosure summary:hover { color: var(--accent); }
+
+/* ---------- Event detail page ---------- */
+/* Adventure summary strip — sits below the lifecycle bar so the
+   arranger always sees which adventure they're running, with a
+   one-tap link to the adventure detail page for the full content. */
+.event-adv-strip {
+  display: flex; align-items: center; gap: .75rem;
+  padding: .55rem .75rem; margin: 0 0 .75rem;
+  background: var(--surface); border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+}
+.event-adv-meta { flex: 1 1 auto; min-width: 0; }
+.event-adv-title {
+  font-weight: 700;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+@media (max-width: 540px) {
+  /* On phones the avatar gets dropped to keep the strip a single
+     readable line; cover art still shows on the adventure-detail
+     view that the link leads to. */
+  .event-adv-strip > :first-child { display: none; }
+}
+
+/* Quick-stats row reuses the .adv-stats grid styling but slightly
+   wider on the event-detail surface so 4 tiles fit on desktop. */
+.event-stats { grid-template-columns: repeat(3, 1fr); }
+@media (min-width: 720px) {
+  .event-stats { grid-template-columns: repeat(4, 1fr); }
+}
+
+/* Post-event results card — finishing order, recap links per row,
+   "didn't finish" teams below. Uses an <ol> so screen readers
+   announce the placement. */
+.results-card .results-list {
+  list-style: none; padding: 0; margin: 0;
+}
+.results-card .results-list li {
+  display: flex; align-items: center; gap: .55rem;
+  padding: .4rem 0;
+  border-bottom: 1px solid var(--border-soft);
+}
+.results-card .results-list li:last-child { border-bottom: 0; }
+.results-card .results-rank {
+  flex: 0 0 auto;
+  font-weight: 700; color: var(--accent);
+  min-width: 2.25rem;
+}
+.results-card .results-name { flex: 0 1 auto; }
+.results-card .results-recap {
+  margin-left: auto; flex: 0 0 auto;
+  font-size: .85rem; font-weight: 600;
+  display: inline-flex; align-items: center; gap: .25rem;
+}
+.results-card .results-dnf .results-name { color: var(--muted); }
+
+/* Event log scroll cap — the activity feed can run very long on a
+   completed event; capping at 50vh prevents it from pushing the
+   teams card off-screen on mobile. The card-level overflow:auto
+   from .card already handles horizontal; this is the vertical
+   complement. */
+.event-log-body {
+  max-height: 50vh;
+  overflow-y: auto;
+}
 
 /* Sticky top bar on the event-detail view. Keeps Start/Pause/Resume
    within reach during a live event no matter how far the arranger
@@ -3977,31 +4176,311 @@ async function viewAdventureDetail(view, slug) {
   const r = await api('/api/admin/adventures/' + encodeURIComponent(slug));
   if (!r.ok) { view.replaceChildren(h('p', { class: 'err' }, r.body?.error || t('not found'))); return; }
   const a = r.body;
+  const pages = a.pages || [];
+
+  // ---- Hero: cover + title + status pills + CTAs ----
+  const pills = [];
+  if (a.mine_to_edit) {
+    pills.push(h('span', { class: 'pill' }, t('Yours to edit')));
+  }
+  if (a.org_id == null) {
+    pills.push(h('span', { class: 'pill' + (a.published ? ' success' : ' warning') },
+      a.published ? t('Published in catalog') : t('Draft')));
+  }
+  if ((a.running_event_count || 0) > 0) {
+    pills.push(h('span', { class: 'pill warning' },
+      a.running_event_count === 1
+        ? t('1 event running now')
+        : t('{{n}} events running now', { n: a.running_event_count })));
+  }
+  const ctas = h('div', { class: 'row', style: 'gap:.5rem; flex-wrap:wrap' });
+  if (a.mine_to_edit) {
+    ctas.append(h('button', {
+      class: 'btn primary',
+      on: { click: () => nav('#library/' + encodeURIComponent(a.slug)) },
+    }, icon(ICONS.pencil), t('Edit')));
+  } else {
+    ctas.append(h('button', {
+      class: 'btn primary',
+      on: { click: () => openPurchaseModal({ slug: a.slug, title: a.title }) },
+    }, icon(ICONS.coins), t('Buy team slots')));
+  }
+  // Preview opens the player view in a new tab — handy for both
+  // catalog browsers and authors checking their own work without
+  // losing this page's scroll position.
+  ctas.append(h('a', {
+    class: 'btn',
+    href: '/arrange/preview/' + encodeURIComponent(a.slug) + '?page=0',
+    target: '_blank', rel: 'noopener',
+    on: { click: (e) => {
+      e.preventDefault();
+      // The /preview route lives under the same path the player uses,
+      // hidden behind admin auth. We open it via the existing modal
+      // helper if present; falling back to a new tab keeps it
+      // reachable from this page even when the helper is missing.
+      const url = `/play?preview=${encodeURIComponent(a.slug)}`;
+      window.open(url, '_blank', 'noopener');
+    } },
+  }, icon(ICONS.eye), t('Preview as player')));
+
+  const hero = h('section', { class: 'adv-hero' },
+    h('div', { class: 'adv-hero-left' }, adventureCover(a, 96)),
+    h('div', { class: 'adv-hero-mid' },
+      h('h1', { style: 'margin:0' }, a.title),
+      h('div', { class: 'adv-hero-meta muted' },
+        a.author ? h('span', {}, a.author) : null,
+        h('span', { class: 'mono', style: 'opacity:.65' }, a.slug),
+      ),
+      pills.length ? h('div', { class: 'adv-hero-pills' }, ...pills) : null,
+    ),
+    h('div', { class: 'adv-hero-cta' }, ctas),
+  );
+
+  // ---- Quick stats: puzzle count, gated count, max extent ----
+  const enabled = pages.filter((p) => !p.disabled);
+  const gatedCount = enabled.filter((p) => p.gated).length;
+  // Max distance between any two pins — the rough "how big is this
+  // adventure on the ground" number. O(n^2) is fine for the adventure
+  // sizes this product targets (rarely past 20 puzzles).
+  let maxKm = 0;
+  for (let i = 0; i < enabled.length; i++) {
+    const a1 = enabled[i].location;
+    if (!a1 || (!a1.lat && !a1.lng)) continue;
+    for (let j = i + 1; j < enabled.length; j++) {
+      const b1 = enabled[j].location;
+      if (!b1 || (!b1.lat && !b1.lng)) continue;
+      const d = haversineKm(a1.lat, a1.lng, b1.lat, b1.lng);
+      if (d > maxKm) maxKm = d;
+    }
+  }
+  const stats = h('div', { class: 'adv-stats' },
+    statBlock(String(enabled.length), enabled.length === 1 ? t('puzzle') : t('puzzles')),
+    statBlock(String(gatedCount), gatedCount === 1 ? t('gated stop') : t('gated stops')),
+    maxKm > 0 ? statBlock(formatKm(maxKm), t('extent')) : null,
+  );
+
+  // ---- Description / intro / outro ----
+  const story = h('section', { class: 'adv-story' });
+  if (a.description) story.append(h('p', { class: 'adv-desc' }, a.description));
+  if (a.intro_text && a.intro_text.trim()) {
+    story.append(
+      h('h3', { class: 'adv-section-h' }, t('Intro shown to players')),
+      h('div', { class: 'adv-prose' }, a.intro_text));
+  }
+  if (a.outro_text && a.outro_text.trim()) {
+    story.append(
+      h('h3', { class: 'adv-section-h' }, t('Outro on completion')),
+      h('div', { class: 'adv-prose' }, a.outro_text));
+  }
+
+  // ---- Adventure-wide map ----
+  const mapHost = h('div', { class: 'adv-map-host', id: 'adv-map-' + a.slug });
+  const mapCard = h('div', { class: 'card' },
+    h('h2', { style: 'margin:0 0 .5rem' }, t('Map')),
+    h('p', { class: 'muted', style: 'font-size:.85rem; margin:0 0 .5rem' },
+      t('All puzzle locations. Click a pin to jump to that puzzle.')),
+    mapHost);
+
+  // ---- Puzzle cards ----
+  const puzzleCards = enabled.map((p, i) => buildAdventurePuzzleCard(p, i));
+
   view.replaceChildren(
     h('button', { class: 'btn ghost small', on: { click: () => nav('#adventures') } }, icon(ICONS.back), t('Back')),
-    h('div', { class: 'row between', style: 'align-items:flex-start; gap:.75rem' },
-      h('div', { class: 'row', style: 'gap:.9rem; align-items:center; min-width:0' },
-        adventureCover(a, 80),
-        h('h1', { style: 'margin:0' }, a.title)),
-      h('button', { class: 'btn primary', on: { click: () => openPurchaseModal({ slug: a.slug, title: a.title }) } },
-        t('Buy team slots'))),
-    h('p', { class: 'muted' }, a.description || ''),
-    h('p', { class: 'muted mono' },
-      t('{{slug}} · {{n}} puzzles', { slug: a.slug, n: a.page_count }),
-      a.author ? ' · ' + a.author : ''),
+    hero,
+    stats,
+    story,
+    mapCard,
     h('h2', { style: 'margin-top:1.5rem' }, t('Puzzles')),
-    h('div', {}, a.pages.map((p, i) =>
-      h('div', { class: 'card' },
-        h('div', { class: 'row between' },
-          h('strong', {}, `${i + 1}. ${p.title || t('(untitled)')}`),
-          p.gated ? h('span', { class: 'pill warning' }, t('gated')) : null),
-        h('p', { style: 'white-space:pre-wrap' }, p.prompt),
-        h('p', { class: 'muted' }, t('Accepted: '), (p.accept || []).map(acceptChip)),
-        p.location ? h('p', { class: 'muted mono' },
-          t('Location: {{coords}}', { coords: `${p.location.lat.toFixed(5)}, ${p.location.lng.toFixed(5)}` }),
-          p.location.radius_m ? t(' · gate {{r}} m', { r: p.location.radius_m }) : '') : null,
-      ))),
+    h('div', { class: 'adv-puzzles' }, ...puzzleCards),
   );
+
+  // Mount the map after the DOM lands so Leaflet has a sized
+  // container — same trick the run-detail map uses.
+  setTimeout(() => mountAdventureMap(mapHost, enabled, a.colors), 0);
+}
+
+// statBlock is a small bordered tile rendering a value + label.
+// Used in the adventure-detail quick-stats row; layout is handled
+// by .adv-stats grid.
+function statBlock(value, label) {
+  return h('div', { class: 'adv-stat' },
+    h('div', { class: 'adv-stat-v' }, value),
+    h('div', { class: 'adv-stat-l' }, label));
+}
+
+// haversineKm returns the great-circle distance between two
+// lat/lng points in kilometres. Used for the adventure "extent"
+// stat so authors can see the rough geographic spread of their
+// puzzles without doing the math themselves.
+function haversineKm(lat1, lng1, lat2, lng2) {
+  const R = 6371; // km
+  const rad = Math.PI / 180;
+  const dLat = (lat2 - lat1) * rad;
+  const dLng = (lng2 - lng1) * rad;
+  const a = Math.sin(dLat / 2) ** 2 +
+            Math.cos(lat1 * rad) * Math.cos(lat2 * rad) *
+            Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function formatKm(km) {
+  if (km < 1) {
+    return new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 })
+      .format(Math.round(km * 1000)) + ' m';
+  }
+  const digits = km >= 10 ? 0 : 1;
+  return new Intl.NumberFormat(undefined, {
+    minimumFractionDigits: digits, maximumFractionDigits: digits,
+  }).format(km) + ' km';
+}
+
+// formatHintDelayBrief renders an unlock-delay as human copy for
+// the adventure-detail card. Uses parseHintDelay's reverse — the
+// editor already has formatHintDelay for the same shape, but the
+// card wants "after 2m" rather than "(2m)" so we don't share.
+function formatHintDelayBrief(sec) {
+  if (sec <= 0) return t('immediate');
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  if (!m) return t('after {{s}}s', { s });
+  if (!s) return t('after {{m}}m', { m });
+  return t('after {{m}}m {{s}}s', { m, s });
+}
+
+// buildAdventurePuzzleCard renders one puzzle in the new
+// adventure-detail view: prompt as rendered HTML, attached
+// images, hints with their delays, and accepted answers behind
+// a per-card "Show answers" toggle so a shared/catalog view
+// doesn't surface spoilers by default.
+function buildAdventurePuzzleCard(p, i) {
+  const headerBits = [
+    h('span', { class: 'adv-pz-num' }, String(i + 1)),
+    h('strong', { class: 'adv-pz-title' }, p.title || t('(untitled)')),
+  ];
+  if (p.gated) headerBits.push(h('span', { class: 'pill warning' }, t('gated')));
+
+  const card = h('div', { class: 'card adv-pz-card' },
+    h('div', { class: 'adv-pz-head' }, ...headerBits));
+
+  // Prompt — render the server-supplied HTML rather than the raw
+  // markdown source so links / bold / lists actually appear.
+  if (p.prompt_html) {
+    card.append(h('div', { class: 'adv-pz-prompt md-preview', html: p.prompt_html }));
+  } else if (p.prompt) {
+    card.append(h('p', { style: 'white-space:pre-wrap' }, p.prompt));
+  }
+
+  // Inline images. The /adventure-assets/image/{id} route gates on
+  // staff session OR slot-on-current-page; admin/arranger viewers
+  // always pass.
+  if (p.images && p.images.length) {
+    const grid = h('div', { class: 'adv-pz-images' });
+    for (const im of p.images) {
+      grid.append(h('img', { src: im.url, alt: im.alt_text || '' }));
+    }
+    card.append(grid);
+  }
+
+  // Hints — surfaced on this read-only view because they're a real
+  // part of the adventure shape an author wants to review. Same
+  // markdown-rendered text the player gets, plus the delay caption
+  // so authors can see the unlock cadence at a glance.
+  if (p.hints && p.hints.length) {
+    const hintsList = h('div', { class: 'adv-pz-hints' });
+    p.hints.forEach((hint, hi) => {
+      const row = h('div', { class: 'adv-pz-hint' },
+        h('div', { class: 'adv-pz-hint-head muted' },
+          t('Hint {{i}}', { i: hi + 1 }), ' · ', formatHintDelayBrief(hint.delay_seconds || 0)),
+        h('div', { class: 'adv-pz-hint-body md-preview', html: hint.text_html || '' }),
+      );
+      if (hint.images && hint.images.length) {
+        const hg = h('div', { class: 'adv-pz-images' });
+        for (const im of hint.images) {
+          hg.append(h('img', { src: im.url, alt: im.alt_text || '' }));
+        }
+        row.append(hg);
+      }
+      hintsList.append(row);
+    });
+    card.append(
+      h('details', { class: 'adv-pz-disclosure' },
+        h('summary', {}, t('Hints ({{n}})', { n: p.hints.length })),
+        hintsList));
+  }
+
+  // Location — link out instead of a raw lat/lng line. OpenStreetMap
+  // is the cross-platform safe bet; geo: URIs only work on mobile
+  // and Apple Maps fights us on desktop.
+  if (p.location && (p.location.lat || p.location.lng)) {
+    const lat = p.location.lat;
+    const lng = p.location.lng;
+    const href = `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lng}#map=17/${lat}/${lng}`;
+    card.append(h('p', { class: 'muted', style: 'font-size:.85rem; margin:.5rem 0 0' },
+      icon(ICONS.crosshair),
+      ' ',
+      h('a', { href, target: '_blank', rel: 'noopener' },
+        t('Open in map · {{coords}}', { coords: `${lat.toFixed(5)}, ${lng.toFixed(5)}` })),
+      p.location.radius_m ? h('span', {}, t(' · gate {{r}} m', { r: p.location.radius_m })) : null));
+  }
+
+  // Accepted answers — hidden behind a toggle so a co-arranger or
+  // shared-org viewer doesn't see the answer key by accident. The
+  // toggle is per-puzzle (not page-wide) because authors usually
+  // want to spot-check one row at a time.
+  if (p.accept && p.accept.length > 0) {
+    const reveal = h('button', { class: 'btn small ghost', type: 'button',
+      style: 'margin-top:.5rem' },
+      icon(ICONS.eye), t('Show answers'));
+    const answers = h('p', { class: 'muted', style: 'display:none; margin:.4rem 0 0' },
+      ...p.accept.map(acceptChip));
+    reveal.addEventListener('click', () => {
+      const open = answers.style.display === 'none';
+      answers.style.display = open ? '' : 'none';
+      reveal.replaceChildren(icon(ICONS.eye), open ? t('Hide answers') : t('Show answers'));
+    });
+    card.append(reveal, answers);
+  }
+
+  return card;
+}
+
+// mountAdventureMap drops a Leaflet preview showing every puzzle
+// pin. Gated puzzles get the accent fill (matches the run-detail
+// legend); regular puzzles get a hollow ring. Auto-fits bounds
+// when there's at least one location, falls back to Stockholm
+// otherwise so the map never lands on the ocean.
+function mountAdventureMap(host, pages, colors) {
+  if (typeof L === 'undefined') {
+    host.replaceChildren(h('div', { class: 'empty' },
+      t('Map library is still loading — refresh the page.')));
+    return;
+  }
+  const map = L.map(host, { scrollWheelZoom: false }).setView([59.3293, 18.0686], 13);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© OpenStreetMap contributors',
+    maxZoom: 19,
+  }).addTo(map);
+  const accent = (colors && colors.accent) ||
+    getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() ||
+    '#ad1357';
+  const pts = [];
+  pages.forEach((p, i) => {
+    if (!p.location) return;
+    if (!p.location.lat && !p.location.lng) return;
+    const m = L.circleMarker([p.location.lat, p.location.lng], {
+      radius: 9,
+      color: accent,
+      weight: 2,
+      fillColor: p.gated ? accent : 'transparent',
+      fillOpacity: p.gated ? 1 : 0,
+    });
+    m.bindTooltip(`${i + 1}. ` + (p.title || t('(untitled)')));
+    m.addTo(map);
+    pts.push([p.location.lat, p.location.lng]);
+  });
+  if (pts.length > 0) {
+    map.fitBounds(L.latLngBounds(pts), { padding: [24, 24] });
+  }
 }
 
 async function scheduleRun(source) {
@@ -4746,6 +5225,148 @@ function renderShareBar(event) {
   );
 }
 
+// renderEventAdventureStrip is the compact adventure summary that
+// sits below the lifecycle bar on the event-detail view: cover +
+// title + puzzle count + a "View adventure →" link to the read-only
+// detail page (where the full prompt list, hints, and map preview
+// live). Replaces the earlier muted-slug-only line which named the
+// adventure but conveyed nothing else.
+function renderEventAdventureStrip(adventure, event) {
+  if (!adventure) {
+    // Fallback when /api/admin/adventures/{slug} is unreachable —
+    // surface what we can from event so the strip doesn't blank.
+    return h('div', { class: 'event-adv-strip muted mono' }, event.adventure_slug);
+  }
+  return h('div', { class: 'event-adv-strip' },
+    adventureCover(adventure, 40),
+    h('div', { class: 'event-adv-meta' },
+      h('div', { class: 'event-adv-title' }, adventure.title || event.adventure_slug),
+      h('div', { class: 'muted', style: 'font-size:.8rem' },
+        t('{{n}} puzzles', { n: adventure.page_count || (adventure.pages || []).length }),
+        adventure.author ? ' · ' + adventure.author : '')),
+    h('a', {
+      class: 'btn small ghost',
+      href: '#adventures/' + encodeURIComponent(event.adventure_slug),
+    }, t('View adventure'), ' →'));
+}
+
+// renderEventQuickStats packs the three numbers an arranger glances
+// at most often: how many teams have finished, how many slots have
+// actually been claimed (i.e. tapped their magic-link at least
+// once), and elapsed runtime / scheduled-in countdown.
+function renderEventQuickStats(event, teams) {
+  const total = teams.length;
+  const done = teams.filter((tm) => tm.completed_at).length;
+  let claimed = 0, slots = 0;
+  for (const tm of teams) {
+    for (const m of (tm.members || [])) {
+      slots++;
+      if (m.last_login_at) claimed++;
+    }
+  }
+  const tiles = [
+    statBlock(`${done}/${total || 1}`, total === 1 ? t('team done') : t('teams done')),
+    statBlock(`${claimed}/${slots || 0}`, t('slots claimed')),
+  ];
+  // Time tile: elapsed for running/paused/completed, "starts in" for
+  // scheduled, blank for cancelled. fmtElapsed prints "1h 12m".
+  if (event.started_at) {
+    const startMs = Date.parse(event.started_at.includes('T')
+      ? event.started_at : event.started_at.replace(' ', 'T') + 'Z');
+    if (Number.isFinite(startMs)) {
+      const elapsedSec = Math.max(0, Math.floor((Date.now() - startMs) / 1000));
+      tiles.push(statBlock(fmtElapsedShort(elapsedSec), t('elapsed')));
+    }
+  } else if (event.scheduled_at) {
+    const sMs = Date.parse(event.scheduled_at.includes('T')
+      ? event.scheduled_at : event.scheduled_at.replace(' ', 'T') + 'Z');
+    if (Number.isFinite(sMs)) {
+      const remaining = Math.max(0, Math.floor((sMs - Date.now()) / 1000));
+      tiles.push(statBlock(remaining > 0 ? fmtElapsedShort(remaining) : t('now'),
+        t('starts in')));
+    }
+  }
+  return h('div', { class: 'adv-stats event-stats' }, ...tiles);
+}
+
+// fmtElapsedShort renders a duration as "Hh Mm" or "Mm Ss" — short
+// enough to fit in a stat tile without truncation. Independent of
+// formatDuration (which renders HH:MM:SS) because the stat tiles
+// want the unit suffix for readability at a glance.
+function fmtElapsedShort(sec) {
+  if (sec <= 0) return '0m';
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = sec % 60;
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m`;
+  return `${s}s`;
+}
+
+// renderEventResultsCard is the post-event summary that surfaces
+// once the event hits a terminal state. Lists teams in finishing
+// order (or "didn't finish" at the bottom), a recap link per team,
+// and a copy-all button so the arranger can paste the recap URLs
+// into a follow-up email. Only emitted when event.state is
+// completed/cancelled.
+function renderEventResultsCard(event, teams) {
+  if (event.state !== 'completed' && event.state !== 'cancelled') return null;
+  const finished = teams.filter((tm) => tm.completed_at)
+    .slice()
+    .sort((a, b) => (a.completed_at || '').localeCompare(b.completed_at || ''));
+  const unfinished = teams.filter((tm) => !tm.completed_at)
+    .slice()
+    .sort((a, b) => b.page_index - a.page_index);
+  const recapURL = (tok) => `${location.origin}/recap/${encodeURIComponent(tok)}`;
+
+  const list = h('ol', { class: 'results-list' });
+  finished.forEach((tm, i) => {
+    const li = h('li', {},
+      h('span', { class: 'results-rank' }, '#' + (i + 1)),
+      h('strong', { class: 'results-name' }, tm.name),
+      h('span', { class: 'muted', style: 'font-size:.8rem' },
+        ' · ', t('finished {{when}}', { when: fmtLocal(tm.completed_at) })));
+    if (tm.recap_token) {
+      li.append(' ',
+        h('a', { class: 'results-recap', href: recapURL(tm.recap_token), target: '_blank', rel: 'noopener' },
+          icon(ICONS.eye), t('Recap')));
+    }
+    list.append(li);
+  });
+  unfinished.forEach((tm) => {
+    list.append(h('li', { class: 'results-dnf' },
+      h('span', { class: 'results-rank muted' }, '—'),
+      h('strong', { class: 'results-name' }, tm.name),
+      h('span', { class: 'muted', style: 'font-size:.8rem' },
+        ' · ', t('reached puzzle {{i}}', { i: tm.page_index + 1 }))));
+  });
+
+  const copyAllBtn = h('button', { class: 'btn small', type: 'button' },
+    icon(ICONS.copy), t('Copy recap links'));
+  copyAllBtn.addEventListener('click', async () => {
+    const lines = teams
+      .filter((tm) => tm.recap_token)
+      .map((tm) => `${tm.name}\t${recapURL(tm.recap_token)}`);
+    if (lines.length === 0) {
+      toastErr(t('No recap links to copy'));
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(lines.join('\n'));
+      toastOk(t('Copied {{n}} recap links', { n: lines.length }));
+    } catch {
+      toastErr(t('Could not copy.'));
+    }
+  });
+
+  return h('div', { class: 'card results-card' },
+    h('div', { class: 'row between', style: 'margin-bottom:.5rem' },
+      h('h2', { style: 'margin:0' },
+        event.state === 'cancelled' ? t('Final standings (cancelled)') : t('Results')),
+      copyAllBtn),
+    list);
+}
+
 async function viewRunDetail(view, runID) {
   const [detail, positions, tracksR, adventureR, eventsR] = await Promise.all([
     api('/api/admin/events/' + runID),
@@ -4831,14 +5452,18 @@ async function viewRunDetail(view, runID) {
     h('span', {}, h('span', { class: 'sw', style: 'background:var(--ink)' }), t('Puzzle')),
     ...teamLegend);
 
-  // Collapsible map card. Leaflet needs a sized container at init
-  // time, so we only call initRunMap when the body is visible; a
-  // guard keeps it idempotent across toggles.
-  const mapBody = h('div', { style: event.show_map ? '' : 'display:none' }, mapHost, legend);
+  // Collapsible operational map card. Independent of event.show_map —
+  // that flag only gates the *public* live view's audience map. The
+  // arranger's operational map should default open during running /
+  // paused events (where it's most useful), collapsed otherwise.
+  // Leaflet needs a sized container at init, so initRunMap runs
+  // lazily when the body first becomes visible.
+  const opMapOpen = event.state === 'running' || event.state === 'paused';
+  const mapBody = h('div', { style: opMapOpen ? '' : 'display:none' }, mapHost, legend);
   const mapCaret = h('span', { style: 'margin-left:auto; color:var(--muted); font-size:.85rem' },
-    event.show_map ? t('Hide') : t('Show'));
+    opMapOpen ? t('Hide') : t('Show'));
   const mapHeader = h('div', { class: 'row between', style: 'cursor:pointer; user-select:none' },
-    h('h2', { style: 'margin:0' }, t('Map')), mapCaret);
+    h('h2', { style: 'margin:0' }, t('Operational map')), mapCaret);
   let mapReady = false;
   const ensureMap = () => {
     if (!mapReady && adventure) { initRunMap(mapHost, adventure, teams, tracks); mapReady = true; }
@@ -4871,98 +5496,183 @@ async function viewRunDetail(view, runID) {
     actions,
   );
 
-  view.replaceChildren(
+  // Teams card with search + filter chips + pending-slot indicator.
+  // Wrapped in a closure so search/filter changes re-render only the
+  // table body without rebuilding the whole event-detail page.
+  const teamsTableHost = h('div');
+  let teamsFilter = 'all';
+  let teamsQuery = '';
+  const teamsRender = () => {
+    const filtered = teams.filter((tm) => {
+      const lastEv = lastEventByTeam.get(tm.id);
+      const lastMs = lastEv ? Date.parse(lastEv.includes('T') ? lastEv : lastEv.replace(' ', 'T') + 'Z') : null;
+      const stuck = event.state === 'running' && !tm.completed_at && lastMs != null && (Date.now() - lastMs) > STUCK_MS;
+      // "Unstarted" — no slot has logged in yet. Distinct from
+      // "stuck", which is "logged in but inactive for 10 min+".
+      const claimed = (tm.members || []).some((m) => m.last_login_at);
+      const matchFilter = (
+        teamsFilter === 'all' ||
+        (teamsFilter === 'done' && tm.completed_at) ||
+        (teamsFilter === 'stuck' && stuck) ||
+        (teamsFilter === 'unstarted' && !claimed)
+      );
+      if (!matchFilter) return false;
+      if (!teamsQuery) return true;
+      const q = teamsQuery.toLowerCase();
+      return tm.name.toLowerCase().includes(q) ||
+        (tm.email || '').toLowerCase().includes(q);
+    });
+    teamsTableHost.replaceChildren();
+    if (filtered.length === 0) {
+      teamsTableHost.append(h('div', { class: 'empty' },
+        h('p', { class: 'muted' },
+          teams.length === 0
+            ? t('No teams yet.')
+            : t('No teams match this filter.')),
+        teams.length === 0 && canDo(event, 'create_team')
+          ? h('button', { class: 'btn primary', on: { click: () => openTeamModal(event.id, null) } },
+              icon(ICONS.plus), t('Add the first team'))
+          : null));
+      return;
+    }
+    teamsTableHost.append(h('table', { class: 'table' },
+      h('thead', {}, h('tr', {},
+        h('th', {}, t('Team')),
+        h('th', {}, t('Puzzle')),
+        h('th', { class: 'hide-narrow' }, t('Activity')),
+        h('th', {}, ''))),
+      h('tbody', {}, filtered.map((tm) => {
+        const i = teamIndex.get(tm.id) ?? 0;
+        const page = adventure?.pages?.[tm.page_index];
+        const lastEv = lastEventByTeam.get(tm.id);
+        const lastMs = lastEv ? Date.parse(lastEv.includes('T') ? lastEv : lastEv.replace(' ', 'T') + 'Z') : null;
+        const stuck = event.state === 'running' && !tm.completed_at && lastMs != null && (Date.now() - lastMs) > STUCK_MS;
+        // Per-team claimed-slot count — surfaces "3/4 claimed" when
+        // not every player has tapped their magic link yet. Hidden
+        // when every slot is either claimed or the team is done
+        // (the data is no longer actionable).
+        const slotsTotal   = (tm.members || []).length;
+        const slotsClaimed = (tm.members || []).filter((m) => m.last_login_at).length;
+        const showClaimed  = slotsTotal > 0 && slotsClaimed < slotsTotal && !tm.completed_at;
+        return h('tr', { class: stuck ? 'row-stuck' : '' },
+          h('td', {},
+            h('span', {
+              style: 'display:inline-flex; align-items:center; gap:.5rem; vertical-align:middle',
+            },
+              teamAvatar(tm, teamColor(tm.id, i), 26),
+              h('a', { href: '#', on: { click: (e) => { e.preventDefault(); openTeamDetail(event.id, tm, adventure, event); } } }, tm.name)),
+            tm.completed_at ? h('span', { class: 'pill success', style: 'margin-left:.5rem' }, '✓ ' + t('done')) : null,
+            stuck ? h('span', { class: 'pill warning', style: 'margin-left:.5rem' }, '⚠ ' + t('stuck?')) : null,
+            showClaimed
+              ? h('span', { class: 'pill', style: 'margin-left:.5rem; font-size:.7rem' },
+                  t('{{n}}/{{m}} claimed', { n: slotsClaimed, m: slotsTotal }))
+              : null,
+            tm.email
+              ? h('div', { class: 'muted', style: 'font-size:.78rem; margin-top:.15rem; padding-left:2.1rem' },
+                  h('a', { href: 'mailto:' + tm.email, style: 'color:inherit; text-decoration:none' }, tm.email))
+              : null),
+          h('td', {},
+            h('div', { class: 'mono' },
+              adventure?.pages
+                ? t('{{i}} / {{n}}', {
+                    i: Math.min(tm.page_index + 1, adventure.pages.length),
+                    n: adventure.pages.length,
+                  })
+                : tm.page_index),
+            page && !tm.completed_at
+              ? h('div', { class: 'muted', style: 'font-size:.85rem' }, page.title || t('(untitled)'))
+              : null),
+          h('td', { class: 'hide-narrow muted', style: 'font-size:.85rem' },
+            lastEv ? fmtLocal(lastEv) : t('—')),
+          h('td', {}, h('div', { class: 'row end' },
+            iconBtn('pencil', t('Edit team'),   () => openTeamModal(event.id, tm, event)),
+            canDo(event, 'delete_team')
+              ? iconBtn('trash', t('Delete team'), () => confirmDeleteTeam(tm), { danger: true })
+              : null)),
+        );
+      }))));
+  };
+  // Search input + filter chips. Only wired when there's at least one
+  // team — empty-state has its own CTA and no filter would do anything.
+  const searchInput = h('input', {
+    type: 'search', placeholder: t('Search by name or email'),
+    style: 'flex:1; min-width:8rem; max-width:18rem',
+  });
+  searchInput.addEventListener('input', () => {
+    teamsQuery = searchInput.value.trim();
+    teamsRender();
+  });
+  const chipDef = [
+    { key: 'all',       label: t('All') },
+    { key: 'done',      label: t('Done') },
+    { key: 'stuck',     label: t('Stuck') },
+    { key: 'unstarted', label: t('Unstarted') },
+  ];
+  const chipBar = h('div', { class: 'row', style: 'gap:.25rem; flex-wrap:wrap' });
+  chipDef.forEach((c) => {
+    const btn = h('button', {
+      class: 'btn small' + (teamsFilter === c.key ? ' primary' : ' ghost'),
+      type: 'button',
+    }, c.label);
+    btn.addEventListener('click', () => {
+      teamsFilter = c.key;
+      // Re-render the chip bar to flip the active style.
+      for (const child of chipBar.children) {
+        const k = child.dataset.k;
+        child.className = 'btn small' + (k === teamsFilter ? ' primary' : ' ghost');
+      }
+      teamsRender();
+    });
+    btn.dataset.k = c.key;
+    chipBar.append(btn);
+  });
+
+  const teamsCard = h('div', { class: 'card' },
+    h('div', { class: 'row between', style: 'flex-wrap:wrap; gap:.5rem' },
+      h('h2', { style: 'margin:0' },
+        t('Teams'),
+        event.max_teams > 0
+          ? h('span', { class: 'muted', style: 'font-weight:400; margin-left:.4rem; font-size:.85rem' },
+              `(${teams.length} / ${event.max_teams})`)
+          : null),
+      h('button', {
+        class: 'btn primary small',
+        disabled: !canDo(event, 'create_team') || (event.max_teams > 0 && teams.length >= event.max_teams) ? '' : null,
+        title: !canDo(event, 'create_team')
+          ? (event.state === 'completed' ? t('Event is completed — read-only.') : t('Event is active.'))
+          : null,
+        on: { click: () => openTeamModal(event.id, null) },
+      }, icon(ICONS.plus), t('New team'))),
+    teams.length > 0
+      ? h('div', { class: 'row', style: 'gap:.5rem; align-items:center; flex-wrap:wrap; margin:.5rem 0 .75rem' },
+          searchInput, chipBar)
+      : null,
+    teamsTableHost);
+  teamsRender();
+
+  // Event log — capped at 50vh on mobile so it doesn't dominate
+  // the page below the teams table. The .event-log-body wrapper
+  // owns the scroll so the heading and any future toolbar stay
+  // pinned above.
+  const eventLogCard = h('div', { class: 'card' },
+    h('h2', { style: 'margin:0 0 .5rem' }, t('Event log')),
+    h('div', { class: 'event-log-body' }, renderEventFeed(events, teams)));
+
+  view.replaceChildren(...[
     lifecycleBar,
-    h('p', { class: 'muted mono' }, event.adventure_slug),
+    renderEventAdventureStrip(adventure, event),
+    renderEventQuickStats(event, teams),
+    renderEventResultsCard(event, teams),
     renderTeamLinksPanel(event, teams),
     renderShareBar(event),
     mapCard,
-    h('div', { class: 'grid cols-2' },
-      h('div', { class: 'card' },
-        h('div', { class: 'row between' },
-          h('h2', {},
-            t('Teams'),
-            event.max_teams > 0
-              ? h('span', { class: 'muted', style: 'font-weight:400; margin-left:.4rem; font-size:.85rem' },
-                  `(${teams.length} / ${event.max_teams})`)
-              : null),
-          h('button', {
-            class: 'btn primary small',
-            disabled: !canDo(event, 'create_team') || (event.max_teams > 0 && teams.length >= event.max_teams) ? '' : null,
-            title: !canDo(event, 'create_team')
-              ? (event.state === 'completed' ? t('Event is completed — read-only.') : t('Event is active.'))
-              : null,
-            on: { click: () => openTeamModal(event.id, null) },
-          }, icon(ICONS.plus), t('New team'))),
-        teams.length === 0
-          ? h('div', { class: 'empty' },
-              h('p', {}, t('No teams yet.')),
-              canDo(event, 'create_team')
-                ? h('button', { class: 'btn primary', on: { click: () => openTeamModal(event.id, null) } },
-                    icon(ICONS.plus), t('Add the first team'))
-                : null)
-          : h('table', { class: 'table' },
-            h('thead', {}, h('tr', {},
-              h('th', {}, t('Team')),
-              h('th', {}, t('Puzzle')),
-              h('th', { class: 'hide-narrow' }, t('Activity')),
-              h('th', {}, ''))),
-            h('tbody', {}, teams.map((tm, i) => {
-              const page = adventure?.pages?.[tm.page_index];
-              const lastEv = lastEventByTeam.get(tm.id);
-              const lastMs = lastEv ? Date.parse(lastEv.includes('T') ? lastEv : lastEv.replace(' ', 'T') + 'Z') : null;
-              const stuck = event.state === 'running' && !tm.completed_at && lastMs != null && (Date.now() - lastMs) > STUCK_MS;
-              return h('tr', { class: stuck ? 'row-stuck' : '' },
-                h('td', {},
-                  h('span', {
-                    style: 'display:inline-flex; align-items:center; gap:.5rem; vertical-align:middle',
-                  },
-                    teamAvatar(tm, teamColor(tm.id, i), 26),
-                    h('a', { href: '#', on: { click: (e) => { e.preventDefault(); openTeamDetail(event.id, tm, adventure, event); } } }, tm.name)),
-                  tm.completed_at ? h('span', { class: 'pill success', style: 'margin-left:.5rem' }, '✓ ' + t('done')) : null,
-                  stuck ? h('span', { class: 'pill warning', style: 'margin-left:.5rem' }, '⚠ ' + t('stuck?')) : null,
-                  // Captain email under the name. Mailto: opens the
-                  // arranger's mail app pre-filled. Hidden on
-                  // empty so the cell stays compact for teams
-                  // without a contact set.
-                  tm.email
-                    ? h('div', { class: 'muted', style: 'font-size:.78rem; margin-top:.15rem; padding-left:2.1rem' },
-                        h('a', { href: 'mailto:' + tm.email, style: 'color:inherit; text-decoration:none' }, tm.email))
-                    : null),
-                h('td', {},
-                  h('div', { class: 'mono' },
-                    adventure?.pages
-                      // Cap the numerator: a finished team has page_index
-                      // == pages.length, so the naive +1 prints "8 / 7".
-                      // The "done" pill on the name cell already conveys
-                      // completion — keep this column at "n / n".
-                      ? t('{{i}} / {{n}}', {
-                          i: Math.min(tm.page_index + 1, adventure.pages.length),
-                          n: adventure.pages.length,
-                        })
-                      : tm.page_index),
-                  page && !tm.completed_at
-                    ? h('div', { class: 'muted', style: 'font-size:.85rem' }, page.title || t('(untitled)'))
-                    : null),
-                h('td', { class: 'hide-narrow muted', style: 'font-size:.85rem' },
-                  lastEv ? fmtLocal(lastEv) : t('—')),
-                h('td', {}, h('div', { class: 'row end' },
-                  iconBtn('pencil', t('Edit team'),   () => openTeamModal(event.id, tm, event)),
-                  canDo(event, 'delete_team')
-                    ? iconBtn('trash', t('Delete team'), () => confirmDeleteTeam(tm), { danger: true })
-                    : null)),
-              );
-            })))),
-      h('div', { class: 'card' },
-        h('h2', {}, t('Event log')),
-        renderEventFeed(events, teams)),
-    ),
-  );
+    h('div', { class: 'grid cols-2' }, teamsCard, eventLogCard),
+  ].filter(Boolean));
 
-  // Initialise Leaflet only when the map card is open (event.show_map
-  // makes it open on arrival; otherwise the click handler triggers
-  // init the first time the user expands it).
-  if (event.show_map) ensureMap();
+  // Initialise Leaflet now if the operational map is open on arrival
+  // (running/paused). Otherwise the click handler runs init the
+  // first time the arranger expands it.
+  if (opMapOpen) ensureMap();
 }
 
 // initRunMap mounts a Leaflet map inside host. Puzzle pins come from the
@@ -5952,7 +6662,11 @@ async function openEditTeamModal(runID, existing, event) {
     redrawActions();
     redrawAvatar();
 
-    body.append(
+    // Filter null/undefined before append — plain Element.append
+    // stringifies non-Node values, so an unfilled addRow (canAddSlot
+    // false on completed events) would otherwise render the literal
+    // text "null" at the bottom of the modal.
+    body.append(...[
       h('label', { class: 'field' }, h('span', {}, t('Team name')), nameInput),
       h('label', { class: 'field' },
         h('span', {}, t('Captain email (optional)')), emailInput),
@@ -5970,7 +6684,8 @@ async function openEditTeamModal(runID, existing, event) {
       membersWrap,
       addRow,
       h('div', { class: 'row end', style: 'margin-top:1rem' },
-        h('button', { class: 'btn', on: { click: () => close(null) } }, t('Close'))));
+        h('button', { class: 'btn', on: { click: () => close(null) } }, t('Close'))),
+    ].filter(Boolean));
     rebuildMembers();
   }, { wide: true });
 }

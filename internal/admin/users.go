@@ -10,6 +10,7 @@ import (
 	"git.sr.ht/~klahr/zv/internal/adventure"
 	"git.sr.ht/~klahr/zv/internal/auth"
 	"git.sr.ht/~klahr/zv/internal/httpx"
+	"git.sr.ht/~klahr/zv/internal/mdx"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -110,7 +111,16 @@ func requirePasswordConfirm(w http.ResponseWriter, r *http.Request, db *sql.DB) 
 /* ---------------- Adventure & run detail ---------------- */
 
 // AdventureDetail returns the full page list for an adventure. All
-// authenticated admin-surface users can see it.
+// authenticated admin-surface users can see it. Powers both the
+// catalog "view this adventure" page and the in-event adventure
+// summary strip — so it carries everything the new layout needs:
+// intro/outro copy, per-page prompt_html / images / hints,
+// permission flags (mine_to_edit), and running_event_count.
+//
+// Field shape is a map[string]any rather than a typed struct
+// because the frontend already keys off literal strings; a future
+// pass can collapse this to a typed adventureDetailDTO when we
+// settle on a stable surface.
 func (h *Handlers) AdventureDetail(w http.ResponseWriter, r *http.Request) {
 	slug := chi.URLParam(r, "slug")
 	adv := h.Lib.Get(slug)
@@ -123,20 +133,67 @@ func (h *Handlers) AdventureDetail(w http.ResponseWriter, r *http.Request) {
 		Lng     float64  `json:"lng"`
 		RadiusM *float64 `json:"radius_m,omitempty"`
 	}
+	type imageDTO struct {
+		ID       int64  `json:"id"`
+		URL      string `json:"url"`
+		AltText  string `json:"alt_text,omitempty"`
+	}
+	// Hint shape mirrors the player's hintDTO: TextHTML for inline
+	// rendering, DelaySeconds so the new card can show "(unlocks
+	// after 2m)" caps. Images per hint travel under the same
+	// /adventure-assets/hint-image visibility gate; staff sessions
+	// always pass, so the catalog viewer sees them straight away.
+	type hintDTO struct {
+		TextHTML     string     `json:"text_html"`
+		DelaySeconds int        `json:"delay_seconds"`
+		Images       []imageDTO `json:"images,omitempty"`
+	}
 	type pageDTO struct {
-		Index    int                     `json:"index"`
-		Title    string                  `json:"title"`
-		Prompt   string                  `json:"prompt"`
-		Accept   []adventure.AcceptEntry `json:"accept"`
-		Location locDTO                  `json:"location"`
-		Gated    bool                    `json:"gated"`
+		Index      int                     `json:"index"`
+		Title      string                  `json:"title"`
+		Prompt     string                  `json:"prompt"`
+		PromptHTML string                  `json:"prompt_html,omitempty"`
+		Accept     []adventure.AcceptEntry `json:"accept"`
+		Location   locDTO                  `json:"location"`
+		Gated      bool                    `json:"gated"`
+		Images     []imageDTO              `json:"images,omitempty"`
+		Hints      []hintDTO               `json:"hints,omitempty"`
+		Disabled   bool                    `json:"disabled,omitempty"`
 	}
 	pages := make([]pageDTO, len(adv.Pages))
 	for i, p := range adv.Pages {
+		imgs := make([]imageDTO, 0, len(p.Images))
+		for _, im := range p.Images {
+			imgs = append(imgs, imageDTO{
+				ID: im.ID, AltText: im.AltText,
+				URL: "/adventure-assets/image/" + strconv.FormatInt(im.ID, 10),
+			})
+		}
+		hints := make([]hintDTO, 0, len(p.Hints))
+		for _, hint := range p.Hints {
+			himgs := make([]imageDTO, 0, len(hint.Images))
+			for _, im := range hint.Images {
+				himgs = append(himgs, imageDTO{
+					ID: im.ID, AltText: im.AltText,
+					URL: "/adventure-assets/hint-image/" + strconv.FormatInt(im.ID, 10),
+				})
+			}
+			hints = append(hints, hintDTO{
+				TextHTML:     mdx.Render(hint.Text),
+				DelaySeconds: hint.DelaySeconds,
+				Images:       himgs,
+			})
+		}
 		pages[i] = pageDTO{
-			Index: p.Index, Title: p.Title, Prompt: p.Prompt, Accept: p.Accept,
-			Location: locDTO{Lat: p.Location.Lat, Lng: p.Location.Lng, RadiusM: p.Location.RadiusM},
-			Gated:    p.Location.Gated(),
+			Index: p.Index, Title: p.Title,
+			Prompt:     p.Prompt,
+			PromptHTML: mdx.Render(p.Prompt),
+			Accept:     p.Accept,
+			Location:   locDTO{Lat: p.Location.Lat, Lng: p.Location.Lng, RadiusM: p.Location.RadiusM},
+			Gated:      p.Location.Gated(),
+			Images:     imgs,
+			Hints:      hints,
+			Disabled:   p.Disabled,
 		}
 	}
 	out := map[string]any{
@@ -144,25 +201,44 @@ func (h *Handlers) AdventureDetail(w http.ResponseWriter, r *http.Request) {
 		"title":       adv.Meta.Title,
 		"description": adv.Meta.Description,
 		"author":      adv.Meta.Author,
+		"intro_text":  adv.Meta.IntroText,
+		"outro_text":  adv.Meta.OutroText,
 		"page_count":  len(adv.Pages),
 		"pages":       pages,
 	}
 	if !adv.Colors.Empty() {
 		out["colors"] = adv.Colors
 	}
-	// Tack on the cover picture URL if one is stored, and the publish
-	// state. Lib.Get doesn't carry either, so hit the DB with a tiny probe.
+	// One-shot DB probe for adventure-level metadata Lib.Get doesn't
+	// carry: cover-image presence, publish state, owning org, and the
+	// number of currently-running events using this adventure (drives
+	// the "Running on N events" pill on the new hero).
 	var (
 		hasAvatar int
 		published int
+		orgID     sql.NullInt64
+		runningN  int
 	)
-	_ = h.DB.QueryRowContext(r.Context(),
-		`SELECT avatar_mime_type IS NOT NULL, published FROM adventures WHERE slug = $1`,
-		slug).Scan(&hasAvatar, &published)
+	_ = h.DB.QueryRowContext(r.Context(), `
+		SELECT avatar_mime_type IS NOT NULL, published, org_id,
+		       (SELECT COUNT(*) FROM events WHERE adventure_slug = $1 AND state = 'running')
+		FROM adventures WHERE slug = $1
+	`, slug).Scan(&hasAvatar, &published, &orgID, &runningN)
 	if hasAvatar != 0 {
 		out["avatar_url"] = adventureAvatarURL(slug)
 	}
 	out["published"] = published != 0
+	out["running_event_count"] = runningN
+	if orgID.Valid {
+		v := orgID.Int64
+		out["org_id"] = v
+	}
+	// mine_to_edit is the canonical flag the UI keys off for
+	// "show Edit, hide Buy" decisions. Computed against the caller's
+	// auth context, same shape as ListAdventures so the two surfaces
+	// agree.
+	me, _ := auth.FromContext(r.Context())
+	out["mine_to_edit"] = canEditOwned(me, orgID)
 	httpx.JSON(w, http.StatusOK, out)
 }
 
@@ -207,15 +283,23 @@ func (h *Handlers) EventDetail(w http.ResponseWriter, r *http.Request) {
 	type teamOut struct {
 		ID          int64     `json:"id"`
 		Name        string    `json:"name"`
+		Email       string    `json:"email,omitempty"`
 		PageIndex   int       `json:"page_index"`
 		CompletedAt string    `json:"completed_at,omitempty"`
 		Token       string    `json:"token"`
+		// RecapToken is the public /recap/{token} URL — emitted on
+		// every detail fetch so the post-completion results card can
+		// link directly without a follow-up round-trip. The /recap
+		// route gates on event state, so a leak mid-event 404s.
+		RecapToken  string    `json:"recap_token,omitempty"`
 		AvatarURL   string    `json:"avatar_url,omitempty"`
 		Members     []slotOut `json:"members"`
 	}
 	teams := []teamOut{}
 	rows, err := h.DB.QueryContext(r.Context(), `
-		SELECT t.id, t.name, t.current_page_index, COALESCE(t.completed_at, ''), t.token,
+		SELECT t.id, t.name, COALESCE(t.email, ''),
+		       t.current_page_index, COALESCE(t.completed_at, ''),
+		       t.token, COALESCE(t.recap_token, ''),
 		       (t.avatar_mime_type IS NOT NULL)::int AS has_avatar
 		FROM teams t WHERE t.event_id = $1 ORDER BY t.name
 	`, eventID)
@@ -227,7 +311,7 @@ func (h *Handlers) EventDetail(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		t := teamOut{Members: []slotOut{}}
 		var hasAvatar int
-		if err := rows.Scan(&t.ID, &t.Name, &t.PageIndex, &t.CompletedAt, &t.Token, &hasAvatar); err != nil {
+		if err := rows.Scan(&t.ID, &t.Name, &t.Email, &t.PageIndex, &t.CompletedAt, &t.Token, &t.RecapToken, &hasAvatar); err != nil {
 			httpx.Error(w, http.StatusInternalServerError, "team scan failed")
 			return
 		}
