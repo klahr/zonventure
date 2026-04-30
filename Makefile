@@ -1,4 +1,4 @@
-.PHONY: run seed test test-race vet build restart deploy tidy clean \
+.PHONY: run seed test test-race vet build restart deploy tag tidy clean \
         up down logs psql seed-compose
 
 # Default target — `make` alone builds the production binary, ready
@@ -63,6 +63,39 @@ vet:
 
 tidy:
 	go mod tidy
+
+# Bump the version and create an annotated tag. CHANGELOG.md is the
+# human's job — move [Unreleased] entries under a new [X.Y.Z] -
+# YYYY-MM-DD heading and commit BEFORE running this so the tag
+# points at the commit where master's CHANGELOG.md announces the
+# version (the in-app update checker fetches it from there).
+#
+#   make tag BUMP=major  # 0.1.0 -> 1.0.0
+#   make tag BUMP=minor  # 0.1.0 -> 0.2.0
+#   make tag BUMP=patch  # 0.1.0 -> 0.1.1
+#
+# Tag is local-only; push with the command the target prints.
+BUMP ?=
+tag:
+	@if [ -z "$(BUMP)" ]; then \
+		echo "Usage: make tag BUMP=major|minor|patch"; \
+		echo "Current version: $$(git describe --tags --abbrev=0 2>/dev/null || echo 0.0.0)"; \
+		exit 1; \
+	fi
+	@VERSION=$$(git describe --tags --abbrev=0 2>/dev/null || echo 0.0.0) && \
+	MAJOR=$$(echo "$$VERSION" | cut -d. -f1) && \
+	MINOR=$$(echo "$$VERSION" | cut -d. -f2) && \
+	PATCH=$$(echo "$$VERSION" | cut -d. -f3) && \
+	case "$(BUMP)" in \
+		major) MAJOR=$$((MAJOR + 1)); MINOR=0; PATCH=0 ;; \
+		minor) MINOR=$$((MINOR + 1)); PATCH=0 ;; \
+		patch) PATCH=$$((PATCH + 1)) ;; \
+		*) echo "Error: BUMP must be major, minor, or patch"; exit 1 ;; \
+	esac && \
+	NEW="$$MAJOR.$$MINOR.$$PATCH" && \
+	git tag -a "$$NEW" -m "Release $$NEW" && \
+	echo "$$VERSION -> $$NEW" && \
+	echo "Push with: git push origin master $$NEW"
 
 clean:
 	rm -f $(BIN)
