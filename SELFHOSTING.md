@@ -427,34 +427,41 @@ The same env vars listed above apply. Migrations run on startup;
 the Docker setup. Day-2 ops (backup / restore / metrics / retention)
 are covered in [`OPERATIONS.md`](./OPERATIONS.md).
 
-### systemd
+### systemd (sketch)
 
-A ready-to-edit unit lives at
-[`deploy/systemd/zv.service`](deploy/systemd/zv.service) — drop it in
-once you have the binary at `/usr/local/bin/zv`:
+If you want to run under systemd, write your own unit — the binary is
+a plain long-running process and doesn't need anything special. A
+minimal sketch:
 
-```sh
-# 1. dedicated system user (no shell, no home)
-useradd --system --no-create-home --shell /usr/sbin/nologin zv
+```ini
+[Unit]
+Description=Zonventure server
+After=network-online.target postgresql.service
+Wants=network-online.target
 
-# 2. env file (DATABASE_URL + ZV_* secrets) — root-owned, group-readable
-install -d -m 0750 -o root -g zv /etc/zv
-$EDITOR /etc/zv/zv.env
-chmod 0640 /etc/zv/zv.env
-chown root:zv /etc/zv/zv.env
+[Service]
+Type=simple
+User=zv
+Group=zv
+ExecStart=/usr/local/bin/zv
+EnvironmentFile=/etc/zv/zv.env
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
 
-# 3. install + enable
-install -m 0644 deploy/systemd/zv.service /etc/systemd/system/zv.service
-systemctl daemon-reload
-systemctl enable --now zv
-journalctl -u zv -f
+[Install]
+WantedBy=multi-user.target
 ```
 
-The unit runs the binary under the `zv` user with hardened sandboxing
-(`NoNewPrivileges`, `ProtectSystem=strict`, restricted syscall filter)
-and restarts on crash with backoff. Bind on `127.0.0.1:8080` (the
-default) and front it with the same Caddy/nginx config from the
-section above.
+Create a dedicated `zv` system user, drop your `DATABASE_URL` and
+`ZV_*` secrets into a root-owned, group-readable `/etc/zv/zv.env`,
+install the binary at `/usr/local/bin/zv`, then `systemctl
+daemon-reload && systemctl enable --now zv`. Bind on
+`127.0.0.1:8080` (the default) and front it with the Caddy or nginx
+config from the section above.
 
 ## Going further
 
