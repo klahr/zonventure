@@ -12140,14 +12140,8 @@ function renderUpgradeInstructionsCard() {
   const card = h('div', { class: 'card settings-card' });
   card.append(
     h('h2', {}, t('How to upgrade')),
-    h('p', { class: 'muted' },
-      t('Pick the path that matches how this server was installed.')),
-    h('h3', { style: 'margin:.75rem 0 .25rem' }, t('Docker Compose')),
     h('pre', { class: 'mono', style: 'background:var(--surface-2); padding:.5rem .75rem; border-radius:var(--radius); overflow-x:auto' },
-      'docker compose pull\ndocker compose up -d'),
-    h('h3', { style: 'margin:.75rem 0 .25rem' }, t('From source')),
-    h('pre', { class: 'mono', style: 'background:var(--surface-2); padding:.5rem .75rem; border-radius:var(--radius); overflow-x:auto' },
-      'git pull\ngo build -trimpath -ldflags="-s -w" -o zv ./cmd/server\n# then restart however your service manager runs zv'),
+      'git fetch --tags\ngit checkout "$(git tag --sort=-v:refname | head -1)"\ndocker compose up -d --build'),
     h('p', { class: 'muted', style: 'font-size:.85rem; margin:.5rem 0 0' },
       t('Migrations run automatically on startup. Back up Postgres first if you\'re crossing a major version.')),
   );

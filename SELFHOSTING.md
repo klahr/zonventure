@@ -229,26 +229,17 @@ Overrides are loaded at startup and cached for the process lifetime
 
 ## Upgrades
 
+Take a backup first (see the `-backup` recipe above), then paste:
+
 ```sh
-git pull
+git fetch --tags
+git checkout "$(git tag --sort=-v:refname | head -1)"
 docker compose up -d --build
 ```
 
-`--build` rebuilds the app image from the new source; the data
-volume is untouched and embedded migrations run on the next start.
-**Always take a backup first** — see the `-backup` recipe above.
-
-After the restart, `curl http://127.0.0.1:8080/api/version` confirms
-which build is serving:
-
-```json
-{"version":"v0.4.2-3-gabc1234","commit":"abc1234…","time":"2026-04-28T10:14:02Z","go":"go1.26","os":"linux","arch":"amd64"}
-```
-
-`version` is `git describe --tags --always --dirty` baked in at build
-time; `commit` and `time` come from the Go toolchain's VCS info.
-Untagged checkouts report `dev`. Pair with `/api/health` for a
-liveness + identity probe in your monitoring.
+That checks out the newest release tag and rebuilds the `app` image
+at that commit, so `/api/version` stamps a clean version string. The
+data volume is untouched and embedded migrations run on next start.
 
 ## Reverse proxy (TLS termination)
 

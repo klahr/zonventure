@@ -11,6 +11,27 @@ The repository, Go module, and CLI binary are named `zv`; the product is
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-04-30
+
+### Fixed
+
+- **2FA login was broken.** The TOTP challenge form sent an empty
+  `recovery_code` instead of the typed TOTP code: the DOM helper's
+  `h({ hidden: '' })` coerced the empty string to `false` when assigning
+  to the boolean `hidden` property, so the recovery-code input was
+  visible from the start and the form's `hasAttribute('hidden')` check
+  picked the recovery branch with an empty payload. Anyone who enrolled
+  in 2FA in 0.1.0–0.1.3 was effectively locked out. The same latent bug
+  affected the TOTP-enrolment QR panel and the email-change revert
+  banner; both now hide their initial state correctly.
+- **In-app upgrade instructions matched no real upgrade path.** The
+  Settings → Software update card showed `docker compose pull && docker
+  compose up -d`, neither of which actually upgrades the locally-built
+  `app` image. The card and `SELFHOSTING.md` now show one recipe that
+  fetches tags, checks out the latest release, and rebuilds with
+  `docker compose up -d --build` — producing a clean version stamp in
+  `/api/version`.
+
 ## [0.1.3] - 2026-04-30
 
 ### Fixed
@@ -75,6 +96,7 @@ First tagged release.
   pg_dump-portable backup / restore.
 
 [Unreleased]: https://git.sr.ht/~klahr/zv/log/master
+[0.1.4]: https://git.sr.ht/~klahr/zv/refs/0.1.4
 [0.1.3]: https://git.sr.ht/~klahr/zv/refs/0.1.3
 [0.1.2]: https://git.sr.ht/~klahr/zv/refs/0.1.2
 [0.1.1]: https://git.sr.ht/~klahr/zv/refs/0.1.1
