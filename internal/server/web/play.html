@@ -943,37 +943,44 @@
   }
   .menu-foot a { color: inherit; text-decoration: underline; }
 
-  /* ---------- Preview mode ---------- */
+  /* ---------- Preview mode ----------
+     Slim sticky ribbon for arrangers QA-ing an adventure. The chips
+     defeat the global 44 px tap-target on <button>: this surface is
+     desktop/admin-side, so a tighter chip keeps the strip a thin
+     one-row band that doesn't crowd the puzzle below. */
   .preview-chrome {
     position: sticky; top: 0; z-index: 50;
-    display: flex; align-items: center; gap: .5rem; flex-wrap: wrap;
-    padding: .5rem .75rem;
-    margin: 0 0 .75rem;
+    display: flex; align-items: center; gap: .35rem; flex-wrap: wrap;
+    padding: .3rem .55rem;
+    margin: 0 0 .35rem;
     background: color-mix(in srgb, var(--accent) 18%, var(--surface));
     border: 1px solid var(--border-soft);
-    border-radius: var(--radius);
-    font-size: var(--ts-sm);
+    border-radius: var(--radius-sm);
+    font-size: var(--ts-xs);
   }
   .preview-chrome .sep { color: var(--muted); }
   .preview-chrome .chip {
-    font: inherit; font-weight: 600;
-    padding: .3rem .7rem; border-radius: 999px;
+    font: inherit; font-weight: 600; font-size: var(--ts-xs);
+    padding: .15rem .55rem; border-radius: 999px;
     background: var(--surface); color: var(--ink);
     border: 1px solid var(--border-soft);
     cursor: pointer; width: auto; box-shadow: none;
+    min-height: 0;
   }
   .preview-chrome .chip:hover:not(:disabled) { background: var(--surface-2); }
   .preview-chrome .chip.on { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
   .preview-chrome .chip:disabled { opacity: .4; cursor: default; }
   /* Slim single-row debug strip: dense list of author-side fields
      (accepted answers, gate, notes) shown only in `?debug=1` preview.
-     Wraps to multiple lines if a field overflows, but the common
-     case fits on one row so the puzzle stays the focus. */
+     Sits directly under the preview-chrome at body level so the two
+     read as a paired arranger ribbon rather than two disconnected
+     bands. Wraps to multiple lines if a field overflows, but the
+     common case fits on one row so the puzzle stays the focus. */
   .preview-debug {
     display: flex; flex-wrap: wrap; align-items: baseline;
     gap: .25rem .9rem;
-    padding: .35rem .65rem;
-    margin: .5rem 0;
+    padding: .3rem .65rem;
+    margin: 0 0 .5rem;
     border-radius: var(--radius-sm);
     border-left: 3px solid var(--accent);
     background: color-mix(in srgb, var(--accent) 4%, var(--surface));
@@ -3435,6 +3442,7 @@ async function bootstrapPreview(slug, pageIdx, debug) {
 // render() so the "N of M" stays in sync with the fetched page.
 function renderPreviewChrome(s) {
   document.getElementById('preview-chrome')?.remove();
+  document.getElementById('preview-debug')?.remove();
   const qs = new URLSearchParams(location.search);
   const slug = qs.get('preview');
   const pageIdx = s.page_index ?? 0;
@@ -3463,15 +3471,16 @@ function renderPreviewChrome(s) {
     el('button', { class: 'chip', on: { click: () => window.close() } }, t('Close')),
   );
   document.body.prepend(chrome);
-  if (s.preview_debug) renderPreviewDebug(s.preview_debug);
+  if (s.preview_debug) renderPreviewDebug(s.preview_debug, chrome);
 }
 
-// renderPreviewDebug appends a single-row strip with the author-side
+// renderPreviewDebug builds a single-row strip with the author-side
 // fields (accepted answers, gate location, notes) that a player never
-// sees. Attached to #app so it sits underneath the puzzle content and
-// scrolls with it. Long notes truncate with ellipsis (full text in the
-// title attribute) so the strip stays a one-liner in the common case.
-function renderPreviewDebug(d) {
+// sees, and inserts it directly after the preview-chrome ribbon so
+// the two read as one paired arranger header. Long notes truncate
+// with ellipsis (full text in the title attribute) so the strip stays
+// a one-liner in the common case.
+function renderPreviewDebug(d, anchor) {
   // Accepted answers as inline chips. Regex entries are flagged with a
   // `re:` prefix so a literal-looking answer like `(yes|ja)` doesn't
   // read as a string the player must type verbatim.
@@ -3499,8 +3508,8 @@ function renderPreviewDebug(d) {
     cells.push(el('span', { class: 'cell notes muted', title: d.notes },
       t('Notes: ') + d.notes));
   }
-  const panel = el('div', { class: 'preview-debug' }, ...cells);
-  app.append(panel);
+  const panel = el('div', { id: 'preview-debug', class: 'preview-debug' }, ...cells);
+  anchor.after(panel);
 }
 
 // buildMenuButton returns the small hamburger button placed at the
