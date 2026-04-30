@@ -965,18 +965,36 @@
   .preview-chrome .chip:hover:not(:disabled) { background: var(--surface-2); }
   .preview-chrome .chip.on { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
   .preview-chrome .chip:disabled { opacity: .4; cursor: default; }
+  /* Slim single-row debug strip: dense list of author-side fields
+     (accepted answers, gate, notes) shown only in `?debug=1` preview.
+     Wraps to multiple lines if a field overflows, but the common
+     case fits on one row so the puzzle stays the focus. */
   .preview-debug {
-    border-left: 4px solid var(--accent);
+    display: flex; flex-wrap: wrap; align-items: baseline;
+    gap: .25rem .9rem;
+    padding: .35rem .65rem;
+    margin: .5rem 0;
+    border-radius: var(--radius-sm);
+    border-left: 3px solid var(--accent);
     background: color-mix(in srgb, var(--accent) 4%, var(--surface));
+    font-size: var(--ts-xs); line-height: 1.5;
+  }
+  .preview-debug .cell {
+    display: inline-flex; align-items: baseline; gap: .3rem;
+    min-width: 0;
   }
   .preview-debug code {
     background: var(--surface-2);
-    padding: .1rem .4rem; border-radius: 4px;
+    padding: .05rem .35rem; border-radius: 4px;
     font-family: ui-monospace, SFMono-Regular, monospace;
     font-size: .95em;
   }
   .preview-debug .mono {
-    font-family: ui-monospace, SFMono-Regular, monospace; font-size: .9rem;
+    font-family: ui-monospace, SFMono-Regular, monospace;
+  }
+  .preview-debug .notes {
+    max-width: 36ch;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
 
   /* ---------- Connection status banner ----------
@@ -3448,41 +3466,40 @@ function renderPreviewChrome(s) {
   if (s.preview_debug) renderPreviewDebug(s.preview_debug);
 }
 
-// renderPreviewDebug appends a panel with the author-side fields
-// (accepted answers, gate location, notes) that a player never sees.
-// Attached to #app so it sits underneath the puzzle content and scrolls
-// with it.
+// renderPreviewDebug appends a single-row strip with the author-side
+// fields (accepted answers, gate location, notes) that a player never
+// sees. Attached to #app so it sits underneath the puzzle content and
+// scrolls with it. Long notes truncate with ellipsis (full text in the
+// title attribute) so the strip stays a one-liner in the common case.
 function renderPreviewDebug(d) {
-  // el() doesn't flatten array children — stringifying an array of nodes
-  // would render as "[object HTMLElement],…", so build the chip list
-  // inline and spread it as individual children instead.
+  // Accepted answers as inline chips. Regex entries are flagged with a
+  // `re:` prefix so a literal-looking answer like `(yes|ja)` doesn't
+  // read as a string the player must type verbatim.
   const accept = d.accept || [];
-  const chipChildren = [];
+  const acceptCell = el('span', { class: 'cell' },
+    el('strong', {}, t('Accepted answers: ')));
   if (!accept.length) {
-    chipChildren.push(el('span', { class: 'muted' }, t('(none)')));
+    acceptCell.append(el('span', { class: 'muted' }, t('(none)')));
   } else {
     accept.forEach((a, i) => {
-      // Regex entries are visually flagged with a `re:` prefix so the
-      // arranger reviewing the debug panel can tell at a glance which
-      // are literal strings and which are patterns (otherwise something
-      // like `(yes|ja)` reads as a literal answer the player must type).
       const text = (a && typeof a === 'object') ? (a.text || '') : String(a || '');
       const isRegex = !!(a && typeof a === 'object' && a.regex);
-      chipChildren.push(el('code', {}, isRegex ? 're: ' + text : text));
-      if (i < accept.length - 1) chipChildren.push(document.createTextNode(', '));
+      acceptCell.append(el('code', {}, isRegex ? 're: ' + text : text));
+      if (i < accept.length - 1) acceptCell.append(document.createTextNode(' '));
     });
   }
   const coords = `${d.lat.toFixed(5)}, ${d.lng.toFixed(5)}`;
   const locSuffix = d.radius_m
     ? t(' · gate radius {{r}} m', { r: d.radius_m })
     : t(' · not gated');
-  const panel = el('div', { class: 'card preview-debug' },
-    el('h2', {}, t('Debug — author view')),
-    el('p', {}, el('strong', {}, t('Accepted answers: ')), ...chipChildren),
-    el('p', { class: 'mono' }, t('Location: {{coords}}', { coords }) + locSuffix),
-    d.notes ? el('p', { class: 'muted', style: 'white-space:pre-wrap' },
-      t('Notes: ') + d.notes) : null,
-  );
+  const locCell = el('span', { class: 'cell mono' },
+    t('Location: {{coords}}', { coords }) + locSuffix);
+  const cells = [acceptCell, locCell];
+  if (d.notes) {
+    cells.push(el('span', { class: 'cell notes muted', title: d.notes },
+      t('Notes: ') + d.notes));
+  }
+  const panel = el('div', { class: 'preview-debug' }, ...cells);
   app.append(panel);
 }
 

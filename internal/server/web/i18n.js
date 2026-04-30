@@ -108,7 +108,6 @@
       '◀ Prev': '◀ Föregående',
       'Next ▶': 'Nästa ▶',
       'Debug': 'Felsökning',
-      'Debug — author view': 'Felsökning — författarvy',
       'Accepted answers: ': 'Godkända svar: ',
       '(none)': '(inga)',
       'Location: {{coords}}': 'Plats: {{coords}}',
