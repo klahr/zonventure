@@ -1488,37 +1488,41 @@ function setSubmitDisabled(disabled) {
   });
 }
 
-// applyColors paints the four optional adventure brand colours onto the
-// document root. Unset fields are cleared so navigating back to an
-// untinted adventure fully restores the defaults. Accent-fg is derived
-// automatically from accent-luminance — saves a fourth admin knob while
-// keeping text legible on either a light or dark accent.
+// applyColors paints the adventure brand accents onto the puzzle scope
+// only — never the document root — so the hamburger drawer, language
+// picker, theme controls and other app chrome keep the default
+// Zonventure palette regardless of how an organiser brands their
+// adventure. Accent-fg is derived automatically from accent-luminance
+// so admins don't have to pick a legible foreground by hand.
+//
+// Two scopes carry the override: #app (the puzzle column) and
+// #submit-dock (the position:fixed answer bar that lives on <body>,
+// outside #app, but is still part of the puzzle interaction). The
+// dock is only present on running puzzles, so applyColors no-ops it
+// when missing; renderSubmitDock re-applies the cached colours to a
+// freshly-created dock.
+let brandColors = null;
 function applyColors(c) {
-  const root = document.documentElement;
-  if (!c) {
-    for (const v of ['--accent', '--accent-hover', '--accent-fg', '--accent-secondary', '--bg', '--ink', '--text']) {
-      root.style.removeProperty(v);
-    }
-    return;
-  }
-  if (c.accent) {
-    root.style.setProperty('--accent', c.accent);
-    root.style.setProperty('--accent-hover', shade(c.accent, -0.12));
-    root.style.setProperty('--accent-fg', readableOn(c.accent));
+  brandColors = c || null;
+  applyBrandToScope(document.getElementById('app'));
+  applyBrandToScope(document.getElementById('submit-dock'));
+}
+function applyBrandToScope(el) {
+  if (!el) return;
+  const c = brandColors;
+  if (c && c.accent) {
+    el.style.setProperty('--accent', c.accent);
+    el.style.setProperty('--accent-hover', shade(c.accent, -0.12));
+    el.style.setProperty('--accent-fg', readableOn(c.accent));
   } else {
-    root.style.removeProperty('--accent');
-    root.style.removeProperty('--accent-hover');
-    root.style.removeProperty('--accent-fg');
+    el.style.removeProperty('--accent');
+    el.style.removeProperty('--accent-hover');
+    el.style.removeProperty('--accent-fg');
   }
-  root.style.setProperty('--accent-secondary', c.accent_secondary || c.accent || '');
-  if (!c.accent_secondary && !c.accent) root.style.removeProperty('--accent-secondary');
-  if (c.background) root.style.setProperty('--bg', c.background); else root.style.removeProperty('--bg');
-  if (c.text) {
-    root.style.setProperty('--ink', c.text);
-    root.style.setProperty('--text', c.text);
+  if (c && (c.accent_secondary || c.accent)) {
+    el.style.setProperty('--accent-secondary', c.accent_secondary || c.accent);
   } else {
-    root.style.removeProperty('--ink');
-    root.style.removeProperty('--text');
+    el.style.removeProperty('--accent-secondary');
   }
 }
 
@@ -2276,6 +2280,7 @@ function renderSubmitDock(s) {
     dock.id = 'submit-dock';
     dock.className = 'submit-dock';
     document.body.append(dock);
+    applyBrandToScope(dock);
   }
   dock.replaceChildren();
   submitInputEl = null;
