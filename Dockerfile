@@ -10,7 +10,13 @@ COPY . .
 # When the build context lacks a .git directory (e.g. `docker build`
 # from a tarball), fall back to "dev" so the build still succeeds —
 # runtime/debug.ReadBuildInfo gets vcs.* from the Go toolchain.
-RUN VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo dev) && \
+#
+# `git checkout -- .` restores tracked files that .dockerignore stripped
+# from the build context (Dockerfile, compose.yaml, etc.) so git no
+# longer sees them as deleted and `--dirty` doesn't fire on a clean
+# tagged checkout. Errors are swallowed for the no-.git tarball case.
+RUN git checkout -- . 2>/dev/null; \
+    VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo dev) && \
     CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version=$VERSION" -o /out/server ./cmd/server
 
 # Runtime image. distroless/static is ~2 MB; no shell, no package
