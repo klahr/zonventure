@@ -1313,6 +1313,12 @@
       'Create your own or browse the Catalog for published adventures.':
           'Skapa ditt eget eller bläddra i katalogen för publicerade äventyr.',
       'Integrations': 'Integrationer',
+      'General': 'Allmänt',
+      'System': 'System',
+      'Admin only.': 'Endast administratör.',
+      'Server-wide settings and the components wired into the running build. Read by every visitor; changes are immediate.':
+        'Servergemensamma inställningar och komponenter som ingår i den körande versionen. Synliga för alla besökare; ändringar gäller direkt.',
+      'Manage your account.': 'Hantera ditt konto.',
       'Configure webhooks': 'Konfigurera webhooks',
       'Send your event lifecycle into Slack, Zapier, or your own systems via signed HTTP callbacks.':
           'Skicka din eventlivscykel till Slack, Zapier eller egna system via signerade HTTP-anrop.',

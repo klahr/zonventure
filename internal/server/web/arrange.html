@@ -3132,17 +3132,16 @@ function renderShell() {
   } else {
     // Sidebar lists the daily-operational surfaces only. Adventures
     // (incl. its Catalog tab — was "Store"), Events, and per-role
-    // surfaces. Configuration, integrations and the manual live one
-    // click in via Settings so the daily nav stays calm.
+    // surfaces. Member admin, billing history, integrations and the
+    // manual all live as tabs inside Settings so the daily nav stays
+    // calm.
     items = [
       ['#dashboard',  t('Dashboard'),  ICONS.dashboard],
       ['#adventures', t('Adventures'), ICONS.map],
       ['#events',     t('Events'),     ICONS.schedule],
-      ['#purchases',  t('Purchases'),  ICONS.coins],
       ['#simulator', t('Simulator'), ICONS.play],
     ];
     if (isOrgAdmin) {
-      items.push(['#members', t('Members'), ICONS.users]);
       items.push(['#audit',   t('Audit'),   ICONS.shield]);
     }
     items.push(['#settings', t('Settings'), ICONS.gear]);
@@ -3386,30 +3385,32 @@ async function renderRoute() {
       case 'adventures':   return arg ? await viewAdventureDetail(view, arg) : await viewAdventures(view);
       case 'store':        return arg ? await viewStoreDetail(view, arg) : await viewStore(view);
       case 'events':         return arg ? await viewRunDetail(view, arg) : await viewRuns(view);
-      case 'members':      return await viewMembers(view);
+      // Members / Purchases / Webhooks were lifted into the Settings
+      // hub as tabs; old links / bookmarks / inline calls keep working
+      // by redirecting to the new tabbed location. The webhook log
+      // sub-route stays a real route since it's a deeper surface than
+      // the integrations list.
+      case 'members':      nav('#settings/members'); return;
+      case 'purchases':    nav('#settings/purchases'); return;
+      case 'webhooks': {
+        if (arg === 'log') {
+          const parts = r.split('/');
+          const endpointID = parts[2] ? parseInt(parts[2], 10) : 0;
+          if (!endpointID) { nav('#settings/integrations'); return; }
+          return await viewWebhooksLog(view, endpointID);
+        }
+        nav('#settings/integrations');
+        return;
+      }
       case 'organizations':return await viewOrganizations(view);
       case 'library':      return arg ? await viewLibraryEdit(view, arg) : await viewLibrary(view);
       case 'puzzles':      return arg ? await viewPuzzleEditRoute(view, arg) : await viewPuzzles(view);
-      case 'purchases':    return await viewPurchases(view);
       case 'admins':       return await viewAdmins(view);
       case 'simulator':    return await viewSimulator(view);
       case 'logs':         return await viewLogs(view);
       case 'audit':        return await viewAudit(view);
-      case 'webhooks': {
-        // Sub-route #webhooks/log/<endpointID> always carries the
-        // endpoint id — the log only ever shows one endpoint's
-        // deliveries (the dropdown was removed, log is reached from
-        // the card it belongs to).
-        if (arg === 'log') {
-          const parts = r.split('/');
-          const endpointID = parts[2] ? parseInt(parts[2], 10) : 0;
-          if (!endpointID) { nav('#webhooks'); return; }
-          return await viewWebhooksLog(view, endpointID);
-        }
-        return await viewWebhooks(view);
-      }
       case 'manual':       return viewManual(view, arg);
-      case 'settings':     return await viewSettings(view);
+      case 'settings':     return await viewSettings(view, arg);
       default: view.replaceChildren(h('p', {}, t('Not found')));
     }
   } catch (err) {
@@ -11577,44 +11578,92 @@ async function confirmDanger(title, message) {
   });
 }
 
-async function viewSettings(view) {
+// viewSettings is the tabbed Settings hub. The five tabs cover
+// concerns that previously lived as separate sidebar entries
+// (Members, Purchases, Webhooks-as-Integrations) plus the personal
+// account cards (General) and admin-only operator knobs (System).
+// Each tab fills the inner `body` element with replaceChildren,
+// so the existing reload-via-renderRoute pattern in the body
+// handlers (member add, webhook add, purchase refund, …) keeps
+// working without modification.
+async function viewSettings(view, tab) {
   const me = state.me || {};
   const isOrgUser = !!me.org_id;
+  const isOrgAdmin = me.role === 'org_admin';
   const isAdmin = me.role === 'admin';
 
-  const pwCard = renderSettingsPasswordCard();
-  const emailCard = renderSettingsEmailCard(me);
-  const totpCard = renderSettingsTOTPCard();
-  const dangerCard = renderSettingsDeleteCard();
-  const exportCard = renderSettingsExportCard();
-  const sessionsCard = renderSettingsSessionsCard();
-  const auditCard = renderSettingsAuditCard();
-  // Webhooks + Manual were lifted out of the daily sidebar — most
-  // arrangers don't think about either every visit. Surfaced here as
-  // discoverable cards so they're one click away when needed.
-  const integrationsCard = isOrgUser ? renderSettingsIntegrationsCard() : null;
-  const helpCard = renderSettingsHelpCard();
-  // Server-wide settings only matter to global admins (the self-host
-  // operator). Hidden for org users so the card doesn't tease a UI
-  // they can't actually drive.
-  const serverCard = isAdmin ? renderSettingsServerCard() : null;
-  // Installed-components panel is read-only operator info — same
-  // admin-only audience as the server-settings card.
-  const componentsCard = isAdmin ? renderSettingsComponentsCard() : null;
+  const tabs = [
+    { id: 'general',      label: t('General'),      visible: true },
+    { id: 'members',      label: t('Members'),      visible: isOrgAdmin },
+    { id: 'purchases',    label: t('Purchases'),    visible: isOrgUser },
+    { id: 'system',       label: t('System'),       visible: isAdmin },
+    { id: 'integrations', label: t('Integrations'), visible: isOrgUser },
+  ].filter((tb) => tb.visible);
 
-  view.replaceChildren(...[
-    h('h1', {}, t('Settings')),
+  // Fall through to General if the URL asks for a tab the current
+  // user can't see — direct-link followers shouldn't get a wedged
+  // empty page just because their role doesn't match.
+  if (!tab || !tabs.find((tb) => tb.id === tab)) tab = 'general';
+
+  const tabStrip = h('div', { class: 'lib-tabs', style: 'margin-bottom:1rem' },
+    tabs.map((tb) => h('a', {
+      class: 'lib-tab' + (tb.id === tab ? ' active' : ''),
+      href: '#settings/' + tb.id,
+      on: { click: (e) => { e.preventDefault(); nav('#settings/' + tb.id); } },
+    }, tb.label)));
+
+  // Each tab fills `body` directly with replaceChildren — keeps the
+  // existing handlers' "reload by re-running my own view fn" pattern
+  // intact, and the strip above stays untouched.
+  const body = h('div');
+  view.replaceChildren(tabStrip, body);
+
+  switch (tab) {
+    case 'general':      return renderSettingsGeneral(body);
+    case 'members':      return await viewMembers(body);
+    case 'purchases':    return await viewPurchases(body);
+    case 'integrations': return await viewWebhooks(body);
+    case 'system':       return renderSettingsSystem(body);
+  }
+}
+
+// renderSettingsGeneral collects the personal-account cards (password,
+// email, TOTP, sessions, audit, export, help, account deletion) — the
+// surfaces every authenticated user sees regardless of role.
+function renderSettingsGeneral(view) {
+  const me = state.me || {};
+  view.replaceChildren(
+    h('h1', {}, t('General')),
     h('p', { class: 'muted' },
       t('Manage your account. Changes are immediate; deleting your account also removes its data.')),
-    pwCard, emailCard, totpCard,
-    sessionsCard, auditCard,
-    exportCard,
-    integrationsCard,
-    serverCard,
-    componentsCard,
-    helpCard,
-    dangerCard,
-  ].filter(Boolean));
+    renderSettingsPasswordCard(),
+    renderSettingsEmailCard(me),
+    renderSettingsTOTPCard(),
+    renderSettingsSessionsCard(),
+    renderSettingsAuditCard(),
+    renderSettingsExportCard(),
+    renderSettingsHelpCard(),
+    renderSettingsDeleteCard(),
+  );
+}
+
+// renderSettingsSystem houses the operator-tunable knobs: server-wide
+// signup / landing-page toggles plus the components panel. Future
+// software-update surface lands here too. Admin-only — the tab strip
+// already hides this entry from non-admins, but the role guard stays
+// for the URL-typing edge case.
+function renderSettingsSystem(view) {
+  if (state.me?.role !== 'admin') {
+    view.replaceChildren(h('p', { class: 'err' }, t('Admin only.')));
+    return;
+  }
+  view.replaceChildren(
+    h('h1', {}, t('System')),
+    h('p', { class: 'muted' },
+      t('Server-wide settings and the components wired into the running build. Read by every visitor; changes are immediate.')),
+    renderSettingsServerCard(),
+    renderSettingsComponentsCard(),
+  );
 }
 
 // renderSettingsServerCard surfaces operator-tunable runtime knobs to
@@ -11893,17 +11942,6 @@ function shortUA(ua) {
   else if (/Firefox\//.test(ua)) browser = 'Firefox';
   else if (/Safari\//.test(ua) && !/Chrome/.test(ua)) browser = 'Safari';
   return os + ' · ' + browser;
-}
-
-function renderSettingsIntegrationsCard() {
-  return h('div', { class: 'card settings-card' },
-    h('h2', {}, t('Integrations')),
-    h('p', { class: 'muted', style: 'font-size:.9rem' },
-      t('Send your event lifecycle into Slack, Zapier, or your own systems via signed HTTP callbacks.')),
-    h('div', { class: 'row end' },
-      h('button', { class: 'btn', type: 'button',
-        on: { click: () => nav('#webhooks') } },
-        icon(ICONS.key), t('Configure webhooks'))));
 }
 
 function renderSettingsHelpCard() {
