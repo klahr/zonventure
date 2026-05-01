@@ -17,10 +17,12 @@ import (
 	"bytes"
 	"encoding/xml"
 	"errors"
+	"html"
 	"image"
 	"image/png"
 	"io"
 	"math"
+	"regexp"
 	"strings"
 
 	"github.com/srwiley/oksvg"
@@ -64,6 +66,13 @@ func RasterizeSVG(data []byte, dim int) ([]byte, string, error) {
 	if !foundSVG {
 		return nil, "", errors.New("not an svg document")
 	}
+	// Inline-style → attribute pre-pass. Adobe Illustrator (and most
+	// vector tools) write gradient stop colours and shape fills as
+	// `style="stop-color:#xxx"` rather than `stop-color="#xxx"`, but
+	// oksvg only reads the attribute form. Without this pass every
+	// gradient stop is treated as colour-less and the logo renders
+	// as a flat black silhouette. See expandStyleAttrs for the rules.
+	data = expandStyleAttrs(data)
 	icon, err := oksvg.ReadIconStream(bytes.NewReader(data))
 	if err != nil {
 		return nil, "", err
@@ -98,4 +107,78 @@ func RasterizeSVG(data []byte, dim int) ([]byte, string, error) {
 		return nil, "", err
 	}
 	return buf.Bytes(), "image/png", nil
+}
+
+// elementOpenRe matches an element's opening tag (`<tag attrs>` or
+// `<tag attrs/>`). Tag names allow an optional namespace prefix
+// (`<ns:tag>`); attribute payload is anything up to the closing `>`.
+// Doesn't match comments, processing instructions, or closing tags
+// because those don't begin with `<` followed by a word character.
+var elementOpenRe = regexp.MustCompile(`<(\w+(?::\w+)?)([^>]*)>`)
+
+// attrRe pulls one `name="value"` pair out of the attribute payload
+// captured by elementOpenRe. Names accept the `xml:foo` / `xlink:bar`
+// shapes that show up on root-level SVG attributes.
+var attrRe = regexp.MustCompile(`\s+([\w-]+(?::[\w-]+)?)\s*=\s*"([^"]*)"`)
+
+// expandStyleAttrs walks every element opening tag in the SVG and,
+// for any element carrying a `style="prop:val;prop:val"` attribute,
+// emits each `prop`/`val` pair as a separate attribute *if no
+// attribute with that name is already present*. The original style
+// attribute stays — the transform is purely additive so an SVG that
+// already had attribute-form colours behaves identically.
+//
+// Why regex over an XML round-trip: encoding/xml tends to mangle
+// namespace prefixes and reorder attributes when re-emitting, which
+// confuses oksvg's parser. Pinning the rewrite to the targeted bytes
+// keeps the rest of the document byte-for-byte identical.
+//
+// Edge cases: attribute values containing `>` would break the regex,
+// but real-world SVGs don't put `>` in attribute strings (it would
+// have to be `&gt;`-encoded anyway). Attribute values containing
+// `;` are fine — split happens on the style payload, never on the
+// surrounding XML.
+func expandStyleAttrs(data []byte) []byte {
+	return elementOpenRe.ReplaceAllFunc(data, func(match []byte) []byte {
+		m := elementOpenRe.FindSubmatch(match)
+		attrPayload := string(m[2])
+		var styleVal string
+		existing := map[string]bool{}
+		for _, am := range attrRe.FindAllStringSubmatch(attrPayload, -1) {
+			existing[am[1]] = true
+			if am[1] == "style" {
+				styleVal = am[2]
+			}
+		}
+		if styleVal == "" {
+			return match
+		}
+		var addons strings.Builder
+		for _, part := range strings.Split(styleVal, ";") {
+			kv := strings.SplitN(part, ":", 2)
+			if len(kv) != 2 {
+				continue
+			}
+			k := strings.TrimSpace(kv[0])
+			v := strings.TrimSpace(kv[1])
+			if k == "" || existing[k] {
+				continue
+			}
+			addons.WriteString(` `)
+			addons.WriteString(k)
+			addons.WriteString(`="`)
+			addons.WriteString(html.EscapeString(v))
+			addons.WriteString(`"`)
+			existing[k] = true
+		}
+		if addons.Len() == 0 {
+			return match
+		}
+		s := string(match)
+		// Insert before the trailing `/>` (self-close) or `>` (open).
+		if strings.HasSuffix(s, "/>") {
+			return []byte(s[:len(s)-2] + addons.String() + "/>")
+		}
+		return []byte(s[:len(s)-1] + addons.String() + ">")
+	})
 }

@@ -77,3 +77,39 @@ func TestRasterizeSVG_BadDim(t *testing.T) {
 		t.Fatalf("dim=0 should error")
 	}
 }
+
+// Mirrors the Adobe Illustrator export shape: gradient stop colours
+// live in a `style="stop-color:#xxx"` attribute rather than a
+// `stop-color="#xxx"` attribute. oksvg's parser only reads the
+// attribute form, so without the inline-style → attribute pre-pass
+// the gradient renders transparent and the document collapses to a
+// black silhouette. Asserting that the centre carries the gradient's
+// red colour pins the pre-pass behaviour.
+func TestRasterizeSVG_IllustratorStyleAttrStops(t *testing.T) {
+	src := `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+		<radialGradient id="g" cx="50" cy="50" r="50" gradientUnits="userSpaceOnUse">
+			<stop offset="0" style="stop-color:#e10016"/>
+			<stop offset="1" style="stop-color:#e10016"/>
+		</radialGradient>
+		<rect width="100" height="100" fill="url(#g)"/>
+	</svg>`
+	out, _, err := imageutil.RasterizeSVG([]byte(src), 64)
+	if err != nil {
+		t.Fatalf("RasterizeSVG: %v", err)
+	}
+	img, err := png.Decode(bytes.NewReader(out))
+	if err != nil {
+		t.Fatalf("decode PNG: %v", err)
+	}
+	r, g, b, a := img.At(32, 32).RGBA()
+	if a == 0 {
+		t.Fatalf("centre transparent — gradient didn't render")
+	}
+	// Red dominates: r >> g and r >> b. Use the 16-bit values from
+	// RGBA() and demand a meaningful margin so any near-black mis-
+	// render trips the test.
+	if r < 0x8000 || g > 0x4000 || b > 0x4000 {
+		t.Fatalf("centre pixel not red — got rgba(%d, %d, %d, %d). The Illustrator stop-color-in-style fix regressed.",
+			r>>8, g>>8, b>>8, a>>8)
+	}
+}
