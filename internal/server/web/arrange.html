@@ -3675,7 +3675,12 @@ function ensureArrangeWS() {
     arrangeWSBackoff = 500;
     if (arrangeStatusTimer) { clearTimeout(arrangeStatusTimer); arrangeStatusTimer = null; }
     setArrangeStatus('', '');
-    if (watchedEventID) arrangeWS.send(JSON.stringify({ kind: 'watch_run', data: { event_id: watchedEventID } }));
+    // Server-side message kinds were renamed from "*_run" to
+    // "*_event" in migration 0009 — the client lagged behind, so
+    // every watch_run frame was silently dropped by the server's
+    // unknown-kind default arm and the event-detail page never
+    // got live updates. Send the right kind name now.
+    if (watchedEventID) arrangeWS.send(JSON.stringify({ kind: 'watch_event', data: { event_id: watchedEventID } }));
   };
   arrangeWS.onmessage = (ev) => {
     let msg; try { msg = JSON.parse(ev.data); } catch { return; }
@@ -3721,7 +3726,7 @@ function watchRun(runID) {
   watchedEventID = runID;
   ensureArrangeWS();
   if (arrangeWS && arrangeWS.readyState === 1) {
-    arrangeWS.send(JSON.stringify({ kind: 'watch_run', data: { event_id: runID } }));
+    arrangeWS.send(JSON.stringify({ kind: 'watch_event', data: { event_id: runID } }));
   }
 }
 
@@ -3731,7 +3736,7 @@ function unwatchRun() {
   if (arrangeStatusTimer) { clearTimeout(arrangeStatusTimer); arrangeStatusTimer = null; }
   setArrangeStatus('', '');
   if (arrangeWS && arrangeWS.readyState === 1) {
-    arrangeWS.send(JSON.stringify({ kind: 'unwatch_run' }));
+    arrangeWS.send(JSON.stringify({ kind: 'unwatch_event' }));
   }
 }
 

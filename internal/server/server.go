@@ -826,31 +826,39 @@ func New(cfg Config) http.Handler {
 // continue to work):
 //
 //   - default-src 'self' — same-origin only, no implicit allow.
-//   - script-src 'self' 'unsafe-inline' — every page has at least
-//     one inline <script> block (login form handlers, page-load
-//     theme application). Tightening to nonces is a real refactor;
-//     leaving this as a known-loose-but-bounded surface for now.
+//   - script-src 'self' 'unsafe-inline' https://unpkg.com —
+//     every page has at least one inline <script> block (login
+//     form handlers, page-load theme application). The maps on
+//     /play, /arrange, /live, /recap pull Leaflet from unpkg
+//     at runtime; whitelisting the host (rather than 'self'-
+//     hosting the JS file) keeps the embed footprint small.
+//     Tightening to nonces is a real refactor; leaving this as
+//     a known-loose-but-bounded surface for now.
 //   - style-src 'self' 'unsafe-inline' https://fonts.googleapis.com
-//     — Google Fonts stylesheet + inline `style="..."` from the
-//     existing JSX-shaped DOM helpers.
-//   - img-src 'self' data: https: — data: for the QR generator,
-//     https: so adventure assets / map tiles work.
+//     https://unpkg.com — Google Fonts stylesheet + inline
+//     `style="..."` from the existing DOM helpers + Leaflet's
+//     CSS from the same unpkg URL.
+//   - img-src 'self' data: blob: https: — data: for QR / canvas
+//     downscale, blob: for QR-decoder + audio clips, https: so
+//     adventure assets / map tiles (OpenStreetMap) work.
 //   - font-src 'self' https://fonts.gstatic.com — Google Fonts
 //     binary fonts.
 //   - connect-src 'self' wss: ws: — XHR / fetch / WebSocket all
 //     same-origin; wss/ws because the WebSocket scheme isn't
 //     covered by 'self' alone in older browsers.
+//   - media-src 'self' blob: — audio attachments are blob URLs.
 //   - frame-ancestors 'none' — blocks the clickjacking surface on
 //     /team/{token}, /recap/{token}, /play, /arrange.
 //   - object-src 'none' — no Flash / Java / legacy plugin embed.
 //   - base-uri 'self' — pin <base> so a stored-XSS can't redirect
 //     relative URLs.
 const baselineCSP = "default-src 'self'; " +
-	"script-src 'self' 'unsafe-inline'; " +
-	"style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
-	"img-src 'self' data: https:; " +
+	"script-src 'self' 'unsafe-inline' https://unpkg.com; " +
+	"style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://unpkg.com; " +
+	"img-src 'self' data: blob: https:; " +
 	"font-src 'self' https://fonts.gstatic.com; " +
 	"connect-src 'self' wss: ws:; " +
+	"media-src 'self' blob:; " +
 	"frame-ancestors 'none'; " +
 	"object-src 'none'; " +
 	"base-uri 'self'"
