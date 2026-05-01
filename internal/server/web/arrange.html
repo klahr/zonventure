@@ -3798,6 +3798,19 @@ let arrangeWSBackoff = 500;
 let watchedEventID = 0;
 let arrangePushTimer = null;
 
+// arrangeUIState preserves transient view state for the event-detail
+// page across WS-triggered re-renders. viewRunDetail rebuilds the DOM
+// from scratch on every push, so without this any cards the arranger
+// expanded (or collapsed away from the default) snap back on the next
+// position update — jarring during a live event when pushes arrive
+// every few seconds. Keys are scoped by event/team ID so the state
+// doesn't bleed between different events.
+const arrangeUIState = {
+  mapOpen: new Map(),            // event_id -> bool (overrides state-based default)
+  teamLinksPanelOpen: new Map(), // event_id -> bool (overrides roster-size default)
+  teamLinkRowOpen: new Set(),    // team_id; presence = expanded
+};
+
 // Arrange-side connection banner. Only shown while watchedEventID !=
 // 0 — outside event detail the WS is idle and a banner would just be
 // noise. Two tiers (warn/err) match play.html / live.html so the
@@ -5781,13 +5794,19 @@ function renderTeamLinksPanel(run, teams) {
   );
   // Open by default for small rosters where the panel doesn't dominate
   // the viewport; collapsed past that so the rest of the event page is
-  // visible without scrolling.
-  const openByDefault = teams.length <= 6;
-  return h('details', {
+  // visible without scrolling. Once the arranger has toggled it, the
+  // chosen state sticks across WS-triggered re-renders via arrangeUIState.
+  const stored = arrangeUIState.teamLinksPanelOpen.get(run.id);
+  const openByDefault = stored ?? (teams.length <= 6);
+  const panel = h('details', {
     class: 'card share-bar team-links',
     style: 'padding:.85rem 1rem',
     open: openByDefault ? true : null,
   }, summary, body);
+  panel.addEventListener('toggle', () => {
+    arrangeUIState.teamLinksPanelOpen.set(run.id, panel.open);
+  });
+  return panel;
 }
 
 function buildTeamLinkRow(tm, i, teamURL, memberURL) {
@@ -5802,7 +5821,10 @@ function buildTeamLinkRow(tm, i, teamURL, memberURL) {
     catch { urlInput.select(); document.execCommand('copy'); toastOk(t('Link copied')); }
   });
   const members = tm.members || [];
-  const memBody = h('div', { class: 'tl-members', style: 'display:none' },
+  // Persist per-team expansion across WS re-renders. Default collapsed;
+  // membership in arrangeUIState.teamLinkRowOpen flips it open.
+  const rowOpen = arrangeUIState.teamLinkRowOpen.has(tm.id);
+  const memBody = h('div', { class: 'tl-members', style: rowOpen ? '' : 'display:none' },
     members.map((m) => {
       const murl = memberURL(m);
       const minput = h('input', {
@@ -5826,7 +5848,7 @@ function buildTeamLinkRow(tm, i, teamURL, memberURL) {
         h('span', { class: 'muted tl-member-name' }, m.name || t('(unnamed)')),
         expiry, minput, mcopy);
     }));
-  const caretGlyph = h('span', { class: 'tl-caret' }, '▸');
+  const caretGlyph = h('span', { class: 'tl-caret' }, rowOpen ? '▾' : '▸');
   const toggle = h('button', {
     type: 'button',
     class: 'btn small ghost tl-toggle',
@@ -5838,6 +5860,8 @@ function buildTeamLinkRow(tm, i, teamURL, memberURL) {
     const open = memBody.style.display === 'none';
     memBody.style.display = open ? '' : 'none';
     caretGlyph.textContent = open ? '▾' : '▸';
+    if (open) arrangeUIState.teamLinkRowOpen.add(tm.id);
+    else arrangeUIState.teamLinkRowOpen.delete(tm.id);
   });
   const sw = h('span', {
     class: 'sw tl-sw',
@@ -6192,18 +6216,21 @@ async function viewRunDetail(view, runID) {
     h('span', {}, h('span', { class: 'sw', style: 'background:var(--ink)' }), t('Puzzle')),
     ...teamLegend);
 
-  // Collapsible operational map card. Independent of event.show_map —
+  // Collapsible area map card. Independent of event.show_map —
   // that flag only gates the *public* live view's audience map. The
-  // arranger's operational map should default open during running /
-  // paused events (where it's most useful), collapsed otherwise.
+  // arranger's area map defaults open during running / paused events
+  // (where it's most useful), collapsed otherwise. arrangeUIState.mapOpen
+  // overrides that default once the arranger has clicked the header,
+  // so WS pushes don't refold their choice on the next re-render.
   // Leaflet needs a sized container at init, so initRunMap runs
   // lazily when the body first becomes visible.
-  const opMapOpen = event.state === 'running' || event.state === 'paused';
+  const opMapDefault = event.state === 'running' || event.state === 'paused';
+  const opMapOpen = arrangeUIState.mapOpen.get(event.id) ?? opMapDefault;
   const mapBody = h('div', { style: opMapOpen ? '' : 'display:none' }, mapHost, legend);
   const mapCaret = h('span', { style: 'margin-left:auto; color:var(--muted); font-size:.85rem' },
     opMapOpen ? t('Hide') : t('Show'));
   const mapHeader = h('div', { class: 'row between', style: 'cursor:pointer; user-select:none' },
-    h('h2', { style: 'margin:0' }, t('Operational map')), mapCaret);
+    h('h2', { style: 'margin:0' }, t('Area map')), mapCaret);
   let mapReady = false;
   const ensureMap = () => {
     if (!mapReady && adventure) { initRunMap(mapHost, adventure, teams, tracks); mapReady = true; }
@@ -6212,6 +6239,7 @@ async function viewRunDetail(view, runID) {
     const nowOpen = mapBody.style.display === 'none';
     mapBody.style.display = nowOpen ? '' : 'none';
     mapCaret.textContent  = nowOpen ? t('Hide') : t('Show');
+    arrangeUIState.mapOpen.set(event.id, nowOpen);
     if (nowOpen) ensureMap();
   });
   const mapCard = h('div', { class: 'card' }, mapHeader, mapBody);
@@ -6420,7 +6448,7 @@ async function viewRunDetail(view, runID) {
     h('div', { class: 'grid cols-2' }, teamsCard, eventLogCard),
   ].filter(Boolean));
 
-  // Initialise Leaflet now if the operational map is open on arrival
+  // Initialise Leaflet now if the area map is open on arrival
   // (running/paused). Otherwise the click handler runs init the
   // first time the arranger expands it.
   if (opMapOpen) ensureMap();

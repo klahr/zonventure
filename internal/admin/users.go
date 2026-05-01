@@ -372,6 +372,7 @@ func (h *Handlers) EventDetail(w http.ResponseWriter, r *http.Request) {
 		}
 		mrows.Close()
 	}
+	d.TeamsCount = len(teams)
 	httpx.JSON(w, http.StatusOK, map[string]any{"event": d, "teams": teams})
 }
 

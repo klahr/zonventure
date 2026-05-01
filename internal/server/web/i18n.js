@@ -1262,7 +1262,7 @@
       'starts in': 'startar om',
       'now': 'nu',
       '{{n}}/{{m}} claimed': '{{n}}/{{m}} hämtade',
-      'Operational map': 'Driftskarta',
+      'Area map': 'Områdeskarta',
       'Search by name or email': 'Sök på namn eller e-post',
       'All': 'Alla',
       'Stuck': 'Fastnat',

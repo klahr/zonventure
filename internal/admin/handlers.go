@@ -284,6 +284,12 @@ type eventDTO struct {
 	MaxTeams        int    `json:"max_teams"`
 	LiveToken       string `json:"live_token"`
 	ShowMap         bool   `json:"show_map"`
+	// TeamsCount is the number of teams attached to the event. The
+	// arrange UI gates the "Start now" affordance on this so a
+	// scheduled event with zero teams gets a concrete error instead
+	// of a vague server reject. Populated on list and detail; the
+	// create response leaves it at 0 since a fresh event has no teams.
+	TeamsCount      int    `json:"teams_count"`
 	// AllowedOps lists the lifecycle-mutating operations the server
 	// will accept at this event's current state. Populated only on
 	// detail responses so the client can disable affordances that
@@ -483,7 +489,8 @@ func (h *Handlers) ListEvents(w http.ResponseWriter, r *http.Request) {
 		       ar.org_id, COALESCE(ar.created_by_user_id, 0),
 		       COALESCE(ar.assignment_id, 0), COALESCE(aa.max_teams, 0),
 		       ar.live_token, ar.show_map,
-		       COALESCE((adv.avatar_mime_type IS NOT NULL)::int, 0) AS has_avatar
+		       COALESCE((adv.avatar_mime_type IS NOT NULL)::int, 0) AS has_avatar,
+		       (SELECT COUNT(*) FROM teams WHERE event_id = ar.id) AS teams_count
 		FROM events ar
 		LEFT JOIN adventure_assignments aa ON aa.id = ar.assignment_id
 		LEFT JOIN adventures adv ON adv.slug = ar.adventure_slug
@@ -509,7 +516,7 @@ func (h *Handlers) ListEvents(w http.ResponseWriter, r *http.Request) {
 		)
 		if err := rows.Scan(&d.ID, &d.Name, &d.AdventureSlug, &d.AdventureTitle, &d.State, &d.ScheduledAt, &d.StartedAt,
 			&d.OrgID, &d.CreatedByUserID, &d.AssignmentID, &d.MaxTeams,
-			&d.LiveToken, &showMap, &hasAvatar); err != nil {
+			&d.LiveToken, &showMap, &hasAvatar, &d.TeamsCount); err != nil {
 			httpx.Error(w, http.StatusInternalServerError, "scan failed")
 			return
 		}

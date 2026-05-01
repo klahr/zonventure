@@ -242,5 +242,6 @@ func (h *Handlers) buildEventDetail(ctx context.Context, eventID int64) (eventDe
 		}
 		mrows.Close()
 	}
+	d.TeamsCount = len(teams)
 	return eventDetailDTO{Event: d, Teams: teams}, nil
 }
