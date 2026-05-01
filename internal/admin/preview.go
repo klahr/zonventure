@@ -34,7 +34,20 @@ type previewStateDTO struct {
 	// as correct.
 	Accept   []adventure.AcceptEntry `json:"accept"`
 	NoAnswer bool             `json:"no_answer,omitempty"`
+	Gate     *gatePreviewDTO  `json:"gate,omitempty"`
 	Debug    *previewDebugDTO `json:"preview_debug,omitempty"`
+}
+
+// gatePreviewDTO mirrors player.gateDTO so the player render() path
+// treats a preview state the same as a real session for purposes of
+// rendering the gated submit dock. `reached` is always false in
+// preview — the arranger drives the local gate check via the debug
+// strip's "Set test location" affordance instead.
+type gatePreviewDTO struct {
+	Lat     float64 `json:"lat"`
+	Lng     float64 `json:"lng"`
+	RadiusM float64 `json:"radius_m"`
+	Reached bool    `json:"reached"`
 }
 
 // previewHintDTO mirrors player.hintDTO. In preview mode the delay
@@ -159,6 +172,20 @@ func (h *Handlers) PreviewAdventure(w http.ResponseWriter, r *http.Request) {
 			hints = append(hints, ph)
 		}
 		out.Hints = hints
+	}
+	// Gate echoes the page's geofence so the player dock renders the
+	// "I'm here" button in preview when the puzzle is no-answer gated.
+	// Always reached=false: in preview the arranger drives the gate
+	// check locally (debug-strip "Set test location") rather than
+	// hitting the server, so the dock starts in the same state a real
+	// player would see on arrival.
+	if page.Location.RadiusM != nil && *page.Location.RadiusM > 0 {
+		out.Gate = &gatePreviewDTO{
+			Lat:     page.Location.Lat,
+			Lng:     page.Location.Lng,
+			RadiusM: *page.Location.RadiusM,
+			Reached: false,
+		}
 	}
 	if r.URL.Query().Get("debug") == "1" {
 		out.Debug = &previewDebugDTO{

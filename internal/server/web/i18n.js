@@ -120,6 +120,19 @@
       '(no location)': '(ingen plats)',
       "Open this puzzle's location on the map":
         'Öppna pusslets plats på kartan',
+      'Open the gate map and set a test location':
+        'Öppna områdeskartan och välj en testposition',
+      'Set test location': 'Välj testposition',
+      'Set a test location to continue':
+        'Välj en testposition för att fortsätta',
+      'Test position': 'Testposition',
+      'Test position: ': 'Testposition: ',
+      'Use this position': 'Använd den här positionen',
+      'Clear': 'Rensa',
+      'Tap the map to drop a test position. Inside the circle counts as on-site.':
+        'Tryck på kartan för att placera en testposition. Innanför cirkeln räknas som på plats.',
+      'inside · {{d}} m': 'innanför · {{d}} m',
+      'outside · {{d}} m': 'utanför · {{d}} m',
       'Map library failed to load.': 'Kartbiblioteket kunde inte läsas in.',
       'Preview requires an arranger login. Open ':
         'Förhandsvisning kräver arrangörsinloggning. Öppna ',

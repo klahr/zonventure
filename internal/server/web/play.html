@@ -460,6 +460,18 @@
     color: var(--accent-secondary);
     text-transform: uppercase; letter-spacing: .06em;
   }
+  /* Inside-/outside-radius pills used by the preview-debug "Test
+     position" cell. Green = the local gate check would pass; amber
+     = it would rebuff. Reuses --ok / --warn surface tokens so the
+     hue tracks the active theme. */
+  .pill.ok {
+    background: color-mix(in srgb, #2e7d32 18%, transparent);
+    color: #2e7d32;
+  }
+  .pill.warn {
+    background: color-mix(in srgb, #c77700 18%, transparent);
+    color: #c77700;
+  }
   .topline {
     display: flex; justify-content: space-between; align-items: baseline;
     padding-bottom: .75rem; margin-bottom: .75rem;
@@ -1064,6 +1076,39 @@
     min-height: 0; flex: 0 0 auto;
   }
   .fsmap-close:hover { background: var(--surface-2); color: var(--ink); }
+  /* Pick-mode buttons sit between the title and the close X. Reuse the
+     base button look (theme-aware) but keep them compact so the chrome
+     stays a single row on phones. */
+  .fsmap-use, .fsmap-clear {
+    flex: 0 0 auto;
+    padding: .35rem .75rem;
+    font-size: .85rem;
+  }
+  .fsmap-clear {
+    background: transparent;
+    color: var(--muted);
+    border: 1px solid var(--border-soft);
+    box-shadow: none;
+  }
+  .fsmap-use[disabled] { opacity: .5; cursor: not-allowed; }
+  /* Floating hint banner above the map in pick mode — tells the
+     arranger what clicking does so the affordance is discoverable. */
+  .fsmap-hint {
+    position: absolute;
+    left: 50%; transform: translateX(-50%);
+    top: calc(env(safe-area-inset-top) + 3.25rem);
+    background: var(--surface);
+    color: var(--ink);
+    border: 1px solid var(--border-soft);
+    border-radius: 999px;
+    padding: .35rem .85rem;
+    font-size: .8rem;
+    box-shadow: 0 2px 8px rgba(0,0,0,.15);
+    z-index: 2001;
+    pointer-events: none;
+    max-width: calc(100% - 2rem);
+    text-align: center;
+  }
   /* min-height:0 lets the flex child shrink so Leaflet sees a definite
      height — without it the map refuses to render below the chrome. */
   .fsmap-host { flex: 1 1 auto; min-height: 0; }
@@ -1219,6 +1264,13 @@ let submitInputEl = null;
 // submit dock switches to local answer matching when `accept` is set
 // (only present when ?debug=1 so the page has the answers).
 let previewState = null;
+// previewSpoofedFix is a fake GPS position the arranger picks from the
+// debug-strip "Set test location" button. Only meaningful in preview
+// mode; persists across loadPreviewPage so the arranger can flow
+// through a gated adventure once they've planted themselves on the
+// map. Shape mirrors lastFix's {lat, lng}; accuracy is implied 0
+// since the user clicked a point.
+let previewSpoofedFix = null;
 // advanceMode tracks how the most recent "advance" WS message should
 // be handled when the server replies. Set by the Continue / Check-
 // location CTAs; the answer_result and answer_error listeners read it
@@ -2031,6 +2083,21 @@ function applyLocationPause(paused) {
   updateGateLock();
 }
 
+// haversineMeters returns the great-circle distance between two
+// lat/lng pairs in metres. Matches the server's gate check
+// (internal/player/handlers.go) so a preview-mode spoof verdict
+// agrees with what a real player at the same coords would see.
+function haversineMeters(lat1, lng1, lat2, lng2) {
+  const R = 6371000;
+  const toRad = (d) => d * Math.PI / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a = Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+    Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(a)));
+}
+
 function sendPing() {
   if (!lastFix) return;
   // Drop readings too imprecise to be useful for gate checks or map
@@ -2088,6 +2155,16 @@ function renderGpsFreshness() {
 // handles the "not there yet" case.
 function updateGateLock() {
   if (!currentGatedButton || !currentGatedRadius) return;
+  // In preview, a spoofed fix from the debug-strip map satisfies the
+  // lock with implicit zero accuracy — the arranger placed the point
+  // by hand, so it's by definition "as precise as the gate needs".
+  if (previewState && previewSpoofedFix) {
+    currentGatedButton.disabled = false;
+    currentGatedButton.textContent = t("Check location · I'm here");
+    renderGpsFreshness();
+    renderGpsHelp();
+    return;
+  }
   const ok = !gpsErrorCode && lastFix && lastFix.accuracy <= Math.max(currentGatedRadius, 25);
   currentGatedButton.disabled = !ok;
   if (gpsErrorCode === 1) {
@@ -2096,6 +2173,12 @@ function updateGateLock() {
     currentGatedButton.textContent = t('Location off — see below');
   } else if (ok) {
     currentGatedButton.textContent = t("Check location · I'm here");
+  } else if (previewState) {
+    // Preview without a spoofed fix and without a real GPS fix: the
+    // dock would otherwise sit at "Waiting for GPS lock…" forever
+    // since the preview path doesn't have a real device fix in many
+    // cases. Tell the arranger what the affordance is.
+    currentGatedButton.textContent = t('Set a test location to continue');
   } else if (!lastFix) {
     currentGatedButton.textContent = t('Waiting for GPS lock…');
   } else {
@@ -2562,7 +2645,33 @@ function renderSubmitDock(s) {
     }
     button.addEventListener('click', () => {
       if (previewState) {
-        // Preview mode: advance locally as if the server said yes,
+        // Preview mode: gated puzzles run a local distance check against
+        // either the spoofed test position (debug strip's "Set test
+        // location") or, lacking that, the browser's real fix — so the
+        // arranger can verify the radius works without travelling. A
+        // miss rebuffs (same animation a real 403 would trigger);
+        // ungated continues advance silently.
+        if (gatedUnreached) {
+          const gate = lastState && lastState.gate;
+          const fix = previewSpoofedFix || lastFix;
+          if (!fix || !gate || typeof gate.lat !== 'number') {
+            advanceMode = 'gated';
+            onAnswerResult({ accepted: false, completed: false });
+            return;
+          }
+          const distM = haversineMeters(fix.lat, fix.lng, gate.lat, gate.lng);
+          const within = distM <= (gate.radius_m || 0);
+          advanceMode = 'gated';
+          onAnswerResult({
+            accepted: within,
+            completed: within && previewState.pageIndex + 1 >= previewState.pageCount,
+          });
+          if (within && previewState.pageIndex + 1 < previewState.pageCount) {
+            setTimeout(() => loadPreviewPage(previewState.pageIndex + 1), 1400);
+          }
+          return;
+        }
+        // Ungated continue: advance locally as if the server said yes,
         // without any animations (per the no-answer rule).
         advanceMode = 'silent';
         onAnswerResult({
@@ -3698,6 +3807,20 @@ function renderPreviewChrome(s) {
   if (s.preview_debug) renderPreviewDebug(s.preview_debug, chrome);
 }
 
+// refreshPreviewSpoofUI re-runs render() + renderPreviewChrome with
+// the most recent state snapshot so a spoof set/clear from the debug
+// strip propagates everywhere that depends on it: the gated submit
+// button's enabled state (updateGateLock), the freshness label, and
+// the debug strip's own "Test position" cell. Used by the onPick /
+// onClear / Clear handlers — they couldn't just call render() alone
+// because the debug strip is owned by renderPreviewChrome.
+function refreshPreviewSpoofUI() {
+  if (!previewState || !lastState) return;
+  lastRenderKey = null;
+  render(lastState);
+  renderPreviewChrome(lastState);
+}
+
 // renderPreviewDebug builds a single-row strip with the author-side
 // fields (accepted answers, gate location, notes) that a player never
 // sees, and inserts it directly after the preview-chrome ribbon so
@@ -3722,28 +3845,90 @@ function renderPreviewDebug(d, anchor) {
     });
   }
   const coords = `${d.lat.toFixed(5)}, ${d.lng.toFixed(5)}`;
-  const locSuffix = d.radius_m
+  const isGated = !!d.radius_m;
+  const locSuffix = isGated
     ? t(' · gate radius {{r}} m', { r: d.radius_m })
     : t(' · not gated');
   // Coord cell is a link-styled button that opens the same fullscreen
   // map overlay arrange.html uses for "Open map" — saves the arranger
   // from copy-pasting coords into a separate tool to confirm a gate
-  // sits where they meant.
+  // sits where they meant. For gated puzzles the map opens in pick
+  // mode so the arranger can drop a "test position" the local gate
+  // check honours, letting them verify the radius without travelling.
+  const openMap = () => openFullscreenMap({
+    title: isGated ? t('Set test location') : t('Puzzle location'),
+    pins: [{
+      lat: d.lat,
+      lng: d.lng,
+      gated: isGated,
+      radiusM: d.radius_m || 0,
+    }],
+    pick: isGated ? {
+      initial: previewSpoofedFix
+        ? { lat: previewSpoofedFix.lat, lng: previewSpoofedFix.lng }
+        : null,
+      hint: t('Tap the map to drop a test position. Inside the circle counts as on-site.'),
+      onPick: (loc) => {
+        previewSpoofedFix = {
+          lat: loc.lat,
+          lng: loc.lng,
+          accuracy: 0,
+          ts: Date.now(),
+        };
+        refreshPreviewSpoofUI();
+      },
+      onClear: previewSpoofedFix ? () => {
+        previewSpoofedFix = null;
+        refreshPreviewSpoofUI();
+      } : null,
+    } : null,
+  });
   const locCell = el('button', {
     class: 'cell mono linklike',
     type: 'button',
-    'aria-label': t('Open this puzzle\'s location on the map'),
-    on: { click: () => openFullscreenMap({
-      title: t('Puzzle location'),
-      pins: [{
-        lat: d.lat,
-        lng: d.lng,
-        gated: !!d.radius_m,
-        radiusM: d.radius_m || 0,
-      }],
-    }) },
+    'aria-label': isGated
+      ? t('Open the gate map and set a test location')
+      : t('Open this puzzle\'s location on the map'),
+    on: { click: openMap },
   }, t('Location: {{coords}}', { coords }) + locSuffix);
   const cells = [acceptCell, locCell];
+  // Surface the current spoof inline so the arranger knows what
+  // "I'm here" will evaluate against, with an explicit clear shortcut
+  // — they're often iterating "inside the radius / outside the radius"
+  // back-to-back to verify the gate.
+  if (isGated && previewSpoofedFix) {
+    const distM = haversineMeters(
+      previewSpoofedFix.lat, previewSpoofedFix.lng, d.lat, d.lng);
+    const inside = distM <= d.radius_m;
+    const spoofCoords = `${previewSpoofedFix.lat.toFixed(5)}, ${previewSpoofedFix.lng.toFixed(5)}`;
+    const cell = el('span', { class: 'cell' },
+      el('strong', {}, t('Test position: ')),
+      el('code', {}, spoofCoords),
+      document.createTextNode(' '),
+      el('span', { class: inside ? 'pill ok' : 'pill warn' },
+        inside
+          ? t('inside · {{d}} m', { d: Math.round(distM) })
+          : t('outside · {{d}} m', { d: Math.round(distM) })),
+      document.createTextNode(' '),
+      el('button', {
+        class: 'linklike',
+        type: 'button',
+        on: { click: () => {
+          previewSpoofedFix = null;
+          refreshPreviewSpoofUI();
+        } },
+      }, t('Clear')),
+    );
+    cells.push(cell);
+  } else if (isGated) {
+    // No spoof yet: a one-tap shortcut so the arranger doesn't have to
+    // decode that the coord cell secretly opens in pick mode.
+    cells.push(el('button', {
+      class: 'cell linklike',
+      type: 'button',
+      on: { click: openMap },
+    }, t('Set test location')));
+  }
   if (d.notes) {
     cells.push(el('span', { class: 'cell notes muted', title: d.notes },
       t('Notes: ') + d.notes));
@@ -3785,15 +3970,24 @@ function ensureLeaflet() {
 // "edit puzzle" and "preview puzzle". Single pin centres at zoom 17;
 // many pins auto-fit to bounds.
 //
-// opts: { title?, pins?, accent? }
+// opts: { title?, pins?, accent?, pick? }
 //   pins[]: { lat, lng, label?, gated?, radiusM? }
 //     gated:   fills the marker (matches the run-detail legend).
 //     radiusM: draws a translucent gate circle around the pin.
+//   pick: { initial?: {lat,lng}, hint?: string, onPick(loc), onClear? }
+//     When set, clicking the map drops a draggable "test position"
+//     marker and the chrome gains "Use this position" / "Clear" /
+//     "Cancel" buttons. Used by the preview-debug GPS spoof so an
+//     arranger can verify gated puzzles without travelling.
 function openFullscreenMap(opts) {
-  const { title, pins, accent } = opts || {};
+  const { title, pins, accent, pick } = opts || {};
   const list = Array.isArray(pins) ? pins : [];
   let removed = false;
   let map = null;
+  let pickMarker = null;
+  let pickPos = pick && pick.initial
+    ? { lat: pick.initial.lat, lng: pick.initial.lng }
+    : null;
   const close = () => {
     if (removed) return;
     removed = true;
@@ -3803,22 +3997,51 @@ function openFullscreenMap(opts) {
   };
   const onKey = (e) => { if (e.key === 'Escape') close(); };
   const mapEl = el('div', { class: 'fsmap-host' });
+  const chromeChildren = [
+    el('div', { class: 'fsmap-title' }, title || ''),
+  ];
+  let useBtn = null;
+  if (pick && typeof pick.onPick === 'function') {
+    useBtn = el('button', {
+      class: 'fsmap-use',
+      type: 'button',
+      disabled: pickPos ? null : true,
+      on: { click: () => {
+        if (!pickPos) return;
+        try { pick.onPick({ lat: pickPos.lat, lng: pickPos.lng }); }
+        finally { close(); }
+      } },
+    }, t('Use this position'));
+    chromeChildren.push(useBtn);
+    if (typeof pick.onClear === 'function') {
+      chromeChildren.push(el('button', {
+        class: 'fsmap-clear',
+        type: 'button',
+        on: { click: () => {
+          try { pick.onClear(); }
+          finally { close(); }
+        } },
+      }, t('Clear')));
+    }
+  }
+  chromeChildren.push(el('button', {
+    class: 'fsmap-close',
+    type: 'button',
+    'aria-label': t('Close'),
+    on: { click: close },
+  }, '×'));
   const back = el('div', {
     class: 'fsmap-back',
     role: 'dialog',
     'aria-modal': 'true',
     on: { click: (e) => { if (e.target === back) close(); } },
   },
-    el('div', { class: 'fsmap-chrome' },
-      el('div', { class: 'fsmap-title' }, title || ''),
-      el('button', {
-        class: 'fsmap-close',
-        type: 'button',
-        'aria-label': t('Close'),
-        on: { click: close },
-      }, '×')),
+    el('div', { class: 'fsmap-chrome' }, ...chromeChildren),
     mapEl,
   );
+  if (pick && pick.hint) {
+    back.append(el('div', { class: 'fsmap-hint' }, pick.hint));
+  }
   document.body.append(back);
   document.addEventListener('keydown', onKey);
   // Loading placeholder for the first-call Leaflet fetch; subsequent
@@ -3862,6 +4085,31 @@ function openFullscreenMap(opts) {
       map.setView(pts[0], 17);
     } else if (pts.length > 1) {
       map.fitBounds(L.latLngBounds(pts), { padding: [40, 40] });
+    }
+    // Pick mode: click-to-place a draggable "test position" marker.
+    // Distinct green so it can't be confused with the brand-accent
+    // puzzle pins or the blue "you are here" marker. The Use button
+    // in the chrome enables once a point is set; dragging updates it
+    // in place without a fresh click.
+    if (pick && typeof pick.onPick === 'function') {
+      const pickColour = '#2e7d32';
+      const placePickMarker = (latlng) => {
+        if (pickMarker) {
+          pickMarker.setLatLng(latlng);
+        } else {
+          pickMarker = L.circleMarker(latlng, {
+            radius: 8,
+            color: '#fff',
+            weight: 2,
+            fillColor: pickColour,
+            fillOpacity: 1,
+          }).addTo(map).bindTooltip(t('Test position'));
+        }
+        pickPos = { lat: latlng.lat, lng: latlng.lng };
+        if (useBtn) useBtn.disabled = false;
+      };
+      if (pickPos) placePickMarker(L.latLng(pickPos.lat, pickPos.lng));
+      map.on('click', (e) => placePickMarker(e.latlng));
     }
     // Drop a "you are here" marker if the browser hands one over.
     // Mirrors arrange.html's openFullscreenMap so the two surfaces
