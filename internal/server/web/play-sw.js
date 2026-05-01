@@ -104,6 +104,16 @@ self.addEventListener('fetch', (ev) => {
     ev.respondWith(cacheFirst(req, ASSET_CACHE));
     return;
   }
+  // Org brand logo — same cache-first treatment as adventure
+  // assets so an offline reload still paints the brand strip.
+  // The bytes are bound to a numeric org id so the URL is stable
+  // across re-uploads (the cache-bust on upload is handled at the
+  // arranger console layer, separate from the player's offline
+  // store).
+  if (url.pathname.startsWith('/org-logo/')) {
+    ev.respondWith(cacheFirst(req, ASSET_CACHE));
+    return;
+  }
   if (url.pathname === '/play' || url.pathname === '/i18n.js' || url.pathname === '/favicon.svg') {
     ev.respondWith(networkFirst(req, SHELL_CACHE));
     return;

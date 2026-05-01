@@ -1759,6 +1759,18 @@ textarea { min-height: 80px; resize: vertical; font-family: ui-monospace, monosp
 .puzzle-card .drag-handle:hover { color: var(--ink); background: var(--surface-2); }
 .puzzle-card[draggable]:active .drag-handle { cursor: grabbing; }
 .puzzle-card.drag-ghost { opacity: .35; }
+/* Brief pulse applied to a freshly-duplicated puzzle card so the
+   author can see where their click landed without scanning the
+   whole list. Outline-only so the layout doesn't shift. */
+.puzzle-card.puzzle-duplicated {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  animation: puzzle-pulse 1.4s ease-out;
+}
+@keyframes puzzle-pulse {
+  0%   { outline-color: var(--accent); }
+  100% { outline-color: transparent; }
+}
 
 /* Selectable chip grid used in the team-create modal. */
 .chip-grid {
@@ -4223,23 +4235,83 @@ async function viewAdventures(view) {
     );
   };
 
+  // Templates: admin-owned starter content org users can duplicate
+  // into their own org instead of authoring from scratch. The most
+  // load-bearing surface for activation — a non-technical buyer who
+  // sees an empty Adventures tab on first login often bounces; one
+  // visible "Use this template" button turns the empty state into a
+  // 30-second-to-runnable path.
+  const templates = advs.filter((a) => a.is_template);
+  const templatesBlock = templates.length === 0 ? null : h('div', {},
+    h('h2', { style: 'margin:1.25rem 0 .25rem' }, t('Start from a template')),
+    h('p', { class: 'muted', style: 'margin:0 0 .75rem' },
+      t('Pick a starter, customise the puzzles for your venue, and you\'re ready to schedule an event.')),
+    h('div', { class: 'grid cols-2' }, templates.map((tpl) => h('div', { class: 'card' },
+      h('div', { class: 'row between', style: 'align-items:flex-start; gap:.75rem' },
+        h('div', { class: 'row', style: 'gap:.75rem; align-items:center; min-width:0' },
+          adventureCover(tpl, 56),
+          h('h3', { style: 'margin:0' }, tpl.title)),
+        h('span', { class: 'pill accent' }, t('Template'))),
+      tpl.description
+        ? h('p', { class: 'muted', style: 'margin:.35rem 0 0' }, tpl.description)
+        : null,
+      h('p', { class: 'muted mono', style: 'font-size:.8rem; margin:0' },
+        tpl.page_count === 1
+          ? t('{{n}} puzzle', { n: tpl.page_count })
+          : t('{{n}} puzzles', { n: tpl.page_count }),
+        tpl.author ? ' · ' + tpl.author : ''),
+      h('div', { class: 'row end', style: 'margin-top:.5rem' },
+        h('button', {
+          class: 'btn primary',
+          on: { click: () => duplicateAdventureFromTemplate(tpl) },
+        }, icon(ICONS.plus), t('Use this template'))),
+    ))),
+  );
+
   view.replaceChildren(
     h('div', { class: 'row between' },
       h('h1', {}, t('Adventures')),
       h('button', { class: 'btn primary', on: { click: () => openCreateAdventure() } },
         icon(ICONS.plus), t('New adventure'))),
     renderAdventureTabs('yours'),
+    templatesBlock,
     runnable.length === 0
       ? h('div', { class: 'empty' },
           h('p', {}, t('No adventures you can use yet.')),
-          h('p', { class: 'muted' }, t('Create your own or browse the Catalog for published adventures.')),
+          h('p', { class: 'muted' }, templates.length > 0
+            ? t('Pick a template above, or create your own from scratch.')
+            : t('Create your own or browse the Catalog for published adventures.')),
           h('div', { class: 'row', style: 'gap:.5rem; justify-content:center; margin-top:.5rem' },
             h('button', { class: 'btn primary', on: { click: () => openCreateAdventure() } },
               icon(ICONS.plus), t('New adventure')),
             h('button', { class: 'btn', on: { click: () => nav('#store') } },
               icon(ICONS.coins), t('Browse the Catalog'))))
-      : h('div', { class: 'grid cols-2' }, runnable.map(renderCard)),
+      : h('div', {},
+          templates.length > 0
+            ? h('h2', { style: 'margin:1.25rem 0 .25rem' }, t('Yours'))
+            : null,
+          h('div', { class: 'grid cols-2' }, runnable.map(renderCard))),
   );
+}
+
+// duplicateAdventureFromTemplate clones the source adventure into
+// the caller's org and navigates straight to its detail page so the
+// arranger can start customising. The org_admin role is enforced
+// server-side; failures (403, 409 on slug clash) surface as toasts
+// rather than blocking the page. The empty-state moment is the
+// load-bearing one — a stuck customer here is the highest-impact
+// activation drop in the funnel.
+async function duplicateAdventureFromTemplate(tpl) {
+  const r = await api(`/api/admin/adventures/${encodeURIComponent(tpl.slug)}/duplicate`, {
+    method: 'POST',
+    body: JSON.stringify({}),
+  });
+  if (r.status === 201 && r.body?.slug) {
+    toastOk(t('Template copied — start customising your puzzles.'));
+    nav('#adventures/' + encodeURIComponent(r.body.slug));
+    return;
+  }
+  toastErr(r.body?.error || t('Could not duplicate the template.'));
 }
 
 // renderAdventureTabs is the shared two-tab strip that sits under the
@@ -4778,6 +4850,11 @@ function renderPuzzleCard(p, i, opts) {
         () => previewAdventure(adv.slug, previewIdx, true)));
     }
     headRight.append(iconBtn('pencil', t('Edit'), () => openEditPuzzle(adv, p)));
+    // Google-Slides-style "Duplicate puzzle" — author crafts one
+    // good landmark/trivia/photo puzzle, then makes four more like
+    // it without retyping every field. The clone lands directly
+    // after the source so the editor stays in flow.
+    headRight.append(iconBtn('copy', t('Duplicate'), () => duplicatePuzzle(adv, p)));
     headRight.append(iconBtn('trash', t('Delete'), () => confirmDeletePuzzle(adv, p), { danger: true }));
   }
 
@@ -6043,6 +6120,19 @@ async function viewRunDetail(view, runID) {
     }, icon(ICONS.copy), t('Download calendar invite'));
     actions.append(ics);
   }
+  // Proactive bulk-send: iterate the event's teams and mail each
+  // their slot links + the .ics. Surfaced once at least one team
+  // has a contact email so the button isn't a dead-end on events
+  // where the arranger always plans to hand out links manually.
+  const teamsWithEmail = teams.filter((tm) => tm.email && tm.email.trim()).length;
+  if (teamsWithEmail > 0) {
+    actions.append(h('button', {
+      class: 'btn lifecycle-btn',
+      type: 'button',
+      title: t('Email each team their join links + calendar invite'),
+      on: { click: () => sendEventInvitations(event, teamsWithEmail) },
+    }, icon(ICONS.copy), t('Send invitations ({{n}})', { n: teamsWithEmail })));
+  }
 
   // Last-activity-per-team: the newest event timestamp the team was
   // involved in. Used to highlight teams that look stuck.
@@ -6200,6 +6290,15 @@ async function viewRunDetail(view, runID) {
           h('td', { class: 'hide-narrow muted', style: 'font-size:.85rem' },
             lastEv ? fmtLocal(lastEv) : t('—')),
           h('td', {}, h('div', { class: 'row end' },
+            // Resend invitation: only meaningful when the team has
+            // a contact email AND the event is mailer-reachable
+            // (any state where players might still need their links).
+            // Existing tokens are sent verbatim — no re-mint, so an
+            // accidental click can't kick a teammate out mid-game.
+            tm.email && tm.email.trim()
+              ? iconBtn('copy', t('Resend invitation email'),
+                  (e) => resendTeamInvitation(tm, e.target.closest('button')))
+              : null,
             iconBtn('pencil', t('Edit team'),   () => openTeamModal(event.id, tm, event)),
             canDo(event, 'delete_team')
               ? iconBtn('trash', t('Delete team'), () => confirmDeleteTeam(tm), { danger: true })
@@ -6526,6 +6625,70 @@ async function confirmPause(event) {
   });
   if (!ok) return;
   await transition(event.id, 'pause');
+}
+
+// sendEventInvitations confirms with the arranger, then POSTs to
+// the bulk-send endpoint and reports the per-team result. Confirm
+// step intentionally explicit — kicking off N emails is a real-
+// world action with quotas and recipient-side noise; the arranger
+// should consciously commit. Reports {sent, skipped, failed}
+// rather than just "ok" so a partial outcome is visible.
+async function sendEventInvitations(event, teamsWithEmailCount) {
+  const ok = await modal(t('Send invitations to teams?'), ({ body, close }) => {
+    body.append(
+      h('p', {},
+        teamsWithEmailCount === 1
+          ? t('One team will receive an email with their player links + a calendar invite.')
+          : t('{{n}} teams will receive an email with their player links + a calendar invite.', { n: teamsWithEmailCount })),
+      h('p', { class: 'muted', style: 'font-size:.9rem' },
+        t('Each link is single-use: opening it claims that player\'s slot. Teams without a contact email are skipped.')),
+      h('div', { class: 'row end' },
+        h('button', { class: 'btn', on: { click: () => close(false) } }, t('Cancel')),
+        h('button', { class: 'btn primary', on: { click: () => close(true) } }, t('Send invitations'))));
+  });
+  if (!ok) return;
+  const r = await api(`/api/admin/events/${event.id}/invitations/send`, {
+    method: 'POST',
+    body: JSON.stringify({}),
+  });
+  if (!r.ok) {
+    toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+    return;
+  }
+  const sent = r.body?.sent || 0;
+  const skipped = r.body?.skipped_no_email || 0;
+  const failed = r.body?.failed || 0;
+  if (failed > 0) {
+    toastErr(t('Sent {{sent}}, failed {{failed}}, skipped {{skipped}}',
+      { sent, failed, skipped }));
+  } else if (skipped > 0) {
+    toastOk(t('Sent {{sent}} (skipped {{skipped}} without email)',
+      { sent, skipped }));
+  } else {
+    toastOk(t('Sent {{sent}} invitation(s)', { sent }));
+  }
+}
+
+// resendTeamInvitation re-sends one team's invitation email
+// (existing slot tokens, no re-mint). Used when a single team
+// loses their original message mid-event. Brief disabled state
+// on the button after click prevents an accidental double-tap
+// from spamming the team's inbox; the underlying server is
+// idempotent enough to handle it but the UX is cleaner.
+async function resendTeamInvitation(team, btn) {
+  if (btn) {
+    btn.disabled = true;
+    setTimeout(() => { if (btn) btn.disabled = false; }, 4000);
+  }
+  const r = await api(`/api/admin/teams/${team.id}/invitations/send`, {
+    method: 'POST',
+    body: JSON.stringify({}),
+  });
+  if (r.ok) {
+    toastOk(t('Invitation re-sent to {{email}}', { email: team.email }));
+    return;
+  }
+  toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
 }
 
 async function confirmCancel(event) {
@@ -10747,6 +10910,34 @@ async function openLibraryPicker(adv) {
     body.append(h('div', { class: 'row end', style: 'margin-top:1rem' },
       h('button', { class: 'btn', on: { click: () => close(null) } }, t('Cancel'))));
   }, { wide: true });
+}
+
+// duplicatePuzzle clones one puzzle in place and reloads the editor
+// so the new card appears immediately. Brief highlight pulse on the
+// new card to point the author at it; without that the duplicate
+// can disappear into a long scrollable list.
+async function duplicatePuzzle(adv, page) {
+  const r = await api(`/api/admin/pages/${page.id}/duplicate`, {
+    method: 'POST',
+    body: JSON.stringify({}),
+  });
+  if (r.status !== 201 || !r.body?.id) {
+    toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+    return;
+  }
+  const newID = r.body.id;
+  await renderRoute();
+  // After the re-render the new card carries data-page-id; locate
+  // it, scroll into view, and pulse a brief outline so the author
+  // immediately sees where the duplicate landed.
+  requestAnimationFrame(() => {
+    const el = document.querySelector(`[data-page-id="${newID}"]`);
+    if (!el) return;
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    el.classList.add('puzzle-duplicated');
+    setTimeout(() => el.classList.remove('puzzle-duplicated'), 1400);
+  });
+  toastOk(t('Puzzle duplicated'));
 }
 
 async function confirmDeletePuzzle(adv, page) {

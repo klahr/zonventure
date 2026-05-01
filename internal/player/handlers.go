@@ -11,6 +11,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math"
 	"net/http"
 	"strconv"
@@ -208,6 +209,8 @@ type teamContext struct {
 	TeamToken            string // team-share token, exposed to the player so they can show a join QR for teammates
 	EventID                int64
 	OrgID                int64
+	OrgName              string
+	OrgHasLogo           bool // true when the owning org has uploaded a brand logo
 	AdventureSlug        string
 	RunState             string
 	ScheduledAt          sql.NullString
@@ -299,16 +302,23 @@ func maybePromoteScheduled(ctx context.Context, db *sql.DB, hub *ws.Hub, eventID
 
 func loadTeam(ctx context.Context, db *sql.DB, slot auth.Slot) (teamContext, error) {
 	var tc teamContext
+	var hasLogo int
 	err := db.QueryRowContext(ctx, `
 		SELECT t.id, t.name, t.token, ar.id, ar.org_id, ar.adventure_slug, ar.state,
 		       ar.scheduled_at, ar.started_at,
-		       t.current_page_index, t.current_page_started_at, t.completed_at
-		FROM teams t JOIN events ar ON ar.id = t.event_id
+		       t.current_page_index, t.current_page_started_at, t.completed_at,
+		       o.name,
+		       (o.logo_content IS NOT NULL AND length(o.logo_content) > 0)::int
+		FROM teams t
+		JOIN events ar ON ar.id = t.event_id
+		JOIN organizations o ON o.id = ar.org_id
 		WHERE t.id = $1
 	`, slot.TeamID).Scan(&tc.TeamID, &tc.TeamName, &tc.TeamToken,
 		&tc.EventID, &tc.OrgID, &tc.AdventureSlug,
 		&tc.RunState, &tc.ScheduledAt, &tc.StartedAt,
-		&tc.CurrentPageIndex, &tc.CurrentPageStartedAt, &tc.CompletedAt)
+		&tc.CurrentPageIndex, &tc.CurrentPageStartedAt, &tc.CompletedAt,
+		&tc.OrgName, &hasLogo)
+	tc.OrgHasLogo = hasLogo != 0
 	return tc, err
 }
 
@@ -361,6 +371,17 @@ type State struct {
 	// Empty → client falls back to its built-in default copy.
 	IntroText string `json:"intro_text,omitempty"`
 	OutroText string `json:"outro_text,omitempty"`
+	// OrgLogoURL is the public path to the operator's brand logo
+	// when the owning organisation has uploaded one. Surfaced so
+	// the play page can show "powered by Acme" instead of the
+	// generic Zonventure mark — the small UX win that makes a
+	// corporate event feel native to the customer's brand. Empty
+	// string drops the surface entirely; the client falls back to
+	// the bare adventure title.
+	OrgLogoURL string `json:"org_logo_url,omitempty"`
+	// OrgName is the human label paired with the logo (used as
+	// alt-text and as a fallback when the image fails to load).
+	OrgName string `json:"org_name,omitempty"`
 }
 
 type imageDTO struct {
@@ -537,6 +558,13 @@ func (h *Handlers) buildState(ctx context.Context, slot auth.Slot) (State, int, 
 		PageCount:      len(enabledPages(adv)),
 		IntroText:      mdx.Render(adv.Meta.IntroText),
 		OutroText:      mdx.Render(adv.Meta.OutroText),
+		OrgName:        tc.OrgName,
+	}
+	// Logo URL: only set when the owning org has actually uploaded
+	// one. Players running an event for an unbranded org just see
+	// the adventure title without a brand strip.
+	if tc.OrgHasLogo {
+		resp.OrgLogoURL = fmt.Sprintf("/org-logo/%d", tc.OrgID)
 	}
 	if !adv.Colors.Empty() {
 		c := adv.Colors
@@ -811,6 +839,12 @@ func (h *Handlers) Manifest(w http.ResponseWriter, r *http.Request) {
 				urls = append(urls, "/adventure-assets/hint-audio/"+strconv.FormatInt(au.ID, 10))
 			}
 		}
+	}
+	// Org logo joins the manifest when the operator has uploaded
+	// one — keeps the play page's brand strip alive on offline
+	// reloads. Same cache-first policy as adventure assets.
+	if tc.OrgHasLogo {
+		urls = append(urls, fmt.Sprintf("/org-logo/%d", tc.OrgID))
 	}
 	httpx.JSON(w, http.StatusOK, AssetManifest{AdventureSlug: tc.AdventureSlug, URLs: urls})
 }

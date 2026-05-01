@@ -20,12 +20,20 @@ func (LogMailer) Send(_ context.Context, m Message) error {
 	if m.Text == "" && m.HTML == "" {
 		return ErrEmptyBody
 	}
+	attNames := make([]string, 0, len(m.Attachments))
+	attBytes := 0
+	for _, a := range m.Attachments {
+		attNames = append(attNames, a.Filename)
+		attBytes += len(a.Bytes)
+	}
 	logx.Info("mail.send",
 		"to", m.To,
 		"subject", m.Subject,
 		"text_len", len(m.Text),
 		"html_len", len(m.HTML),
 		"reply_to", m.ReplyTo,
+		"attachments", attNames,
+		"attachments_bytes", attBytes,
 	)
 	// A second entry at DEBUG carries the full body so devs can
 	// hand-copy verification links from the log when no real SMTP is

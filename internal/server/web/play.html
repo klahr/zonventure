@@ -221,6 +221,35 @@
      Adventure title + team name moved into the hamburger drawer
      because they're set-once context, not in-the-moment info — the
      player already knows what they joined and which team they're on. */
+  /* Brand strip — sits above the runbar when the owning org has a
+     logo. Subtle so it reads as chrome, not content; the org's
+     logo is the protagonist on the left, "powered by Zonventure"
+     fades on the right. Hidden when both org_logo_url and org_name
+     are empty (the orgless / preview-without-org case). */
+  .brand-strip {
+    display: flex; align-items: center; gap: .5rem;
+    padding: .35rem .15rem;
+    margin: 0 0 .25rem;
+    border-bottom: 1px solid var(--border-soft);
+    min-height: 1.85rem;
+  }
+  .brand-strip-logo {
+    max-height: 22px;
+    max-width: 140px;
+    object-fit: contain;
+    display: block;
+  }
+  .brand-strip-name {
+    font-weight: 700;
+    font-size: .85rem;
+    color: var(--ink);
+  }
+  .brand-strip-powered {
+    font-size: .65rem;
+    text-transform: uppercase;
+    letter-spacing: .07em;
+    color: var(--muted);
+  }
   .runbar {
     display: flex; align-items: center; justify-content: space-between;
     gap: .75rem;
@@ -2240,6 +2269,29 @@ function renderGpsHelp() {
   currentGpsHelpEl.append(help, retry);
 }
 
+// renderBrandStrip returns the small "powered by Acme" mark shown
+// above the runbar, or null when neither a logo nor an org name is
+// available. The strip is intentionally subtle — corporate buyers
+// like the implicit endorsement, but the puzzle content is what
+// players are here for.
+function renderBrandStrip(s) {
+  const logo = s && s.org_logo_url ? s.org_logo_url : '';
+  const name = s && s.org_name ? s.org_name.trim() : '';
+  if (!logo && !name) return null;
+  const left = logo
+    ? el('img', {
+        class: 'brand-strip-logo',
+        src: logo,
+        alt: name || t('Organization logo'),
+      })
+    : el('span', { class: 'brand-strip-name' }, name);
+  return el('div', { class: 'brand-strip' },
+    left,
+    el('span', { class: 'brand-strip-spacer', style: 'flex:1' }),
+    el('span', { class: 'brand-strip-powered' }, t('powered by Zonventure')),
+  );
+}
+
 // lastState mirrors the most recent snapshot we rendered. Read only
 // after render() has run at least once. Used by handlers that fire
 // outside the render path (rebuff guidance copy, etc.) and would
@@ -2262,6 +2314,10 @@ function render(s) {
     // Include no_answer so a puzzle flipping between answer/no-answer
     // modes rebuilds the submit dock instead of being deduped.
     na: !!s.no_answer,
+    // Brand strip is part of the rendered chrome — re-render when
+    // either the logo URL or the org name changes (e.g. an admin
+    // uploads a new logo mid-event).
+    olu: s.org_logo_url || '', oan: s.org_name || '',
   });
   if (key === lastRenderKey) return;
   lastRenderKey = key;
@@ -2270,6 +2326,14 @@ function render(s) {
   hintTickerAnchor = Date.now();
 
   app.replaceChildren();
+  // Brand strip — when the operator has uploaded a logo for the
+  // owning org, paint it above the runbar so participants in a
+  // corporate event see "powered by Acme" rather than the generic
+  // Zonventure mark. Subtle styling on purpose: the strip should
+  // read as a brand chrome, not compete with the puzzle content.
+  // Falls back to the org name as text when only that's available.
+  const brand = renderBrandStrip(s);
+  if (brand) app.append(brand);
   const playing = s.status === 'running';
   const hintBtn = playing ? renderHintButton(s) : null;
   // Runbar layout: [☰] [progress] [hint?]. Hamburger on the left

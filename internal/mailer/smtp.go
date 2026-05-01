@@ -158,9 +158,21 @@ func extractAddr(from string) string {
 	return from
 }
 
-// buildRFC5322 assembles the message bytes to feed to DATA. Builds a
-// multipart/alternative when both Text and HTML are present, a single
-// text/plain or text/html part otherwise.
+// buildRFC5322 assembles the message bytes to feed to DATA.
+//
+// The output structure depends on what the message carries:
+//
+//   - text only        → single text/plain part
+//   - HTML only        → single text/html part
+//   - text + HTML      → multipart/alternative (text first, HTML second)
+//   - any + attachment → multipart/mixed wrapping the body part(s)
+//                        described above, plus one base64 attachment
+//                        part per Message.Attachments entry.
+//
+// The nested multipart/alternative inside multipart/mixed is the
+// shape every major mail client (Gmail, Outlook, Apple Mail) reads
+// without a fight. Putting the alternative *outside* the mixed (or
+// no mixed at all) hides attachments on Outlook in particular.
 func buildRFC5322(msg Message, from string) ([]byte, error) {
 	var b bytes.Buffer
 	hdr := func(k, v string) {
@@ -176,11 +188,60 @@ func buildRFC5322(msg Message, from string) ([]byte, error) {
 	hdr("Message-ID", newMessageID(from))
 	hdr("MIME-Version", "1.0")
 
+	body := buildBody(msg)
+	if len(msg.Attachments) == 0 {
+		// No attachments: emit the body inline with whatever the
+		// body builder picked.
+		hdr("Content-Type", body.contentType)
+		b.WriteString("\r\n")
+		b.Write(body.payload)
+		return b.Bytes(), nil
+	}
+	// One or more attachments: wrap in multipart/mixed.
+	mixed := "zvmix-" + randHex(12)
+	hdr("Content-Type", `multipart/mixed; boundary="`+mixed+`"`)
+	b.WriteString("\r\n")
+	fmt.Fprintf(&b, "--%s\r\n", mixed)
+	fmt.Fprintf(&b, "Content-Type: %s\r\n\r\n", body.contentType)
+	b.Write(body.payload)
+	b.WriteString("\r\n")
+	for _, att := range msg.Attachments {
+		ct := strings.TrimSpace(att.ContentType)
+		if ct == "" {
+			ct = "application/octet-stream"
+		}
+		fname := strings.TrimSpace(att.Filename)
+		if fname == "" {
+			fname = "attachment"
+		}
+		fmt.Fprintf(&b, "--%s\r\n", mixed)
+		fmt.Fprintf(&b, "Content-Type: %s; name=%q\r\n", ct, fname)
+		b.WriteString("Content-Transfer-Encoding: base64\r\n")
+		fmt.Fprintf(&b, "Content-Disposition: attachment; filename=%q\r\n\r\n", fname)
+		b.WriteString(base64Wrap(att.Bytes))
+		b.WriteString("\r\n")
+	}
+	fmt.Fprintf(&b, "--%s--\r\n", mixed)
+	return b.Bytes(), nil
+}
+
+// bodyPart is the typed-payload pair for the message body — keeps
+// buildBody returning enough information that the wrapping code can
+// emit the right Content-Type header without re-deriving it.
+type bodyPart struct {
+	contentType string
+	payload     []byte
+}
+
+// buildBody renders the textual body the same way the original
+// switch did, but as a value rather than appended directly to the
+// outer buffer — so the multipart/mixed wrapper can splice the
+// result in as one section.
+func buildBody(msg Message) bodyPart {
 	switch {
 	case msg.Text != "" && msg.HTML != "":
-		boundary := "zv-" + randHex(12)
-		hdr("Content-Type", `multipart/alternative; boundary="`+boundary+`"`)
-		b.WriteString("\r\n")
+		boundary := "zvalt-" + randHex(12)
+		var b bytes.Buffer
 		fmt.Fprintf(&b, "--%s\r\n", boundary)
 		b.WriteString("Content-Type: text/plain; charset=\"UTF-8\"\r\n\r\n")
 		b.WriteString(msg.Text)
@@ -190,16 +251,46 @@ func buildRFC5322(msg Message, from string) ([]byte, error) {
 		b.WriteString(msg.HTML)
 		b.WriteString("\r\n")
 		fmt.Fprintf(&b, "--%s--\r\n", boundary)
+		return bodyPart{
+			contentType: `multipart/alternative; boundary="` + boundary + `"`,
+			payload:     b.Bytes(),
+		}
 	case msg.HTML != "":
-		hdr("Content-Type", `text/html; charset="UTF-8"`)
-		b.WriteString("\r\n")
-		b.WriteString(msg.HTML)
+		return bodyPart{
+			contentType: `text/html; charset="UTF-8"`,
+			payload:     []byte(msg.HTML),
+		}
 	default:
-		hdr("Content-Type", `text/plain; charset="UTF-8"`)
-		b.WriteString("\r\n")
-		b.WriteString(msg.Text)
+		return bodyPart{
+			contentType: `text/plain; charset="UTF-8"`,
+			payload:     []byte(msg.Text),
+		}
 	}
-	return b.Bytes(), nil
+}
+
+// base64Wrap encodes bytes with standard base64 and inserts CRLF
+// every 76 columns — RFC 2045 § 6.8 mandates a max line length of
+// 76 octets for base64. Strict mail servers (Postfix in some
+// configurations, exchange) reject longer lines.
+func base64Wrap(b []byte) string {
+	enc := base64.StdEncoding.EncodeToString(b)
+	const wrap = 76
+	if len(enc) <= wrap {
+		return enc
+	}
+	var out strings.Builder
+	out.Grow(len(enc) + (len(enc)/wrap)*2)
+	for i := 0; i < len(enc); i += wrap {
+		end := i + wrap
+		if end > len(enc) {
+			end = len(enc)
+		}
+		out.WriteString(enc[i:end])
+		if end < len(enc) {
+			out.WriteString("\r\n")
+		}
+	}
+	return out.String()
 }
 
 // encodeSubject MIME-encodes the subject if it contains any non-ASCII

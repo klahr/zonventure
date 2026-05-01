@@ -165,6 +165,11 @@ type adventureDTO struct {
 	AvatarURL   string `json:"avatar_url,omitempty"`
 	Published   bool   `json:"published"`
 	Shared      bool   `json:"shared"` // visible to caller via a commissioned share
+	// IsTemplate flags admin-owned starter content. The UI surfaces
+	// these as a distinct "Templates" section above the catalog so
+	// arrangers see them on first login. Always false for org-owned
+	// rows — only admins promote a row to template status.
+	IsTemplate bool `json:"is_template,omitempty"`
 }
 
 // ListAdventures returns adventures visible to the caller. Admins see
@@ -184,12 +189,17 @@ func (h *Handlers) ListAdventures(w http.ResponseWriter, r *http.Request) {
 		SELECT a.slug, a.title, a.description, a.author, a.org_id,
 		       (SELECT COUNT(*) FROM adventure_pages p WHERE p.adventure_id = a.id) AS page_count,
 		       (a.avatar_mime_type IS NOT NULL)::int AS has_avatar,
-		       a.published,
+		       a.published, a.is_template,
 	`
 	var args []any
 	if isAdmin(me) {
 		query += ` 0 AS shared FROM adventures a WHERE a.org_id IS NULL`
 	} else {
+		// Templates (a.is_template = 1) are always visible to org
+		// users regardless of publish state: they're starter content
+		// the arranger duplicates rather than browses-and-buys, so
+		// holding them behind the publish gate would just hide the
+		// activation lever.
 		query += `
 		       (EXISTS (
 		         SELECT 1 FROM adventure_shares s
@@ -198,7 +208,7 @@ func (h *Handlers) ListAdventures(w http.ResponseWriter, r *http.Request) {
 		FROM adventures a
 		WHERE (
 		  a.org_id = $2
-		  OR (a.org_id IS NULL AND a.published = 1)
+		  OR (a.org_id IS NULL AND (a.published = 1 OR a.is_template = 1))
 		  OR EXISTS (
 		    SELECT 1 FROM adventure_assignments aa
 		    WHERE aa.adventure_slug = a.slug AND aa.org_id = $3
@@ -222,16 +232,18 @@ func (h *Handlers) ListAdventures(w http.ResponseWriter, r *http.Request) {
 	out := []adventureDTO{}
 	for rows.Next() {
 		var (
-			d         adventureDTO
-			orgID     sql.NullInt64
-			hasAvatar int
-			published int
-			shared    int
+			d          adventureDTO
+			orgID      sql.NullInt64
+			hasAvatar  int
+			published  int
+			isTemplate int
+			shared     int
 		)
-		if err := rows.Scan(&d.Slug, &d.Title, &d.Description, &d.Author, &orgID, &d.PageCount, &hasAvatar, &published, &shared); err != nil {
+		if err := rows.Scan(&d.Slug, &d.Title, &d.Description, &d.Author, &orgID, &d.PageCount, &hasAvatar, &published, &isTemplate, &shared); err != nil {
 			httpx.Error(w, http.StatusInternalServerError, "scan failed")
 			return
 		}
+		d.IsTemplate = isTemplate != 0
 		if orgID.Valid {
 			v := orgID.Int64
 			d.OrgID = &v

@@ -1,10 +1,12 @@
 package admin
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 
 	"git.sr.ht/~klahr/zv/internal/adventure"
+	"git.sr.ht/~klahr/zv/internal/auth"
 	"git.sr.ht/~klahr/zv/internal/httpx"
 	"git.sr.ht/~klahr/zv/internal/mdx"
 	"github.com/go-chi/chi/v5"
@@ -36,6 +38,13 @@ type previewStateDTO struct {
 	NoAnswer bool             `json:"no_answer,omitempty"`
 	Gate     *gatePreviewDTO  `json:"gate,omitempty"`
 	Debug    *previewDebugDTO `json:"preview_debug,omitempty"`
+	// OrgLogoURL + OrgName mirror the player.State fields so the
+	// preview's brand strip matches what real participants see. The
+	// preview uses the caller's active org rather than the
+	// adventure's owning org — for admin-owned global adventures the
+	// caller's org is what gets stamped on a real run anyway.
+	OrgLogoURL string `json:"org_logo_url,omitempty"`
+	OrgName    string `json:"org_name,omitempty"`
 }
 
 // gatePreviewDTO mirrors player.gateDTO so the player render() path
@@ -172,6 +181,25 @@ func (h *Handlers) PreviewAdventure(w http.ResponseWriter, r *http.Request) {
 			hints = append(hints, ph)
 		}
 		out.Hints = hints
+	}
+	// Mirror the play-page brand strip in preview. Pulled off the
+	// caller's active org so an arranger previewing a global-catalog
+	// (admin-owned) adventure still sees their own brand mark — same
+	// thing that would happen on a real run their org schedules.
+	if me, ok := auth.FromContext(r.Context()); ok && me.OrgID != nil {
+		var (
+			orgName string
+			hasLogo int
+		)
+		if err := h.DB.QueryRowContext(r.Context(), `
+			SELECT name, (logo_content IS NOT NULL AND length(logo_content) > 0)::int
+			FROM organizations WHERE id = $1
+		`, *me.OrgID).Scan(&orgName, &hasLogo); err == nil {
+			out.OrgName = orgName
+			if hasLogo != 0 {
+				out.OrgLogoURL = fmt.Sprintf("/org-logo/%d", *me.OrgID)
+			}
+		}
 	}
 	// Gate echoes the page's geofence so the player dock renders the
 	// "I'm here" button in preview when the puzzle is no-answer gated.

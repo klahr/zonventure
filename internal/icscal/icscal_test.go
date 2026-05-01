@@ -1,4 +1,4 @@
-package admin
+package icscal
 
 import (
 	"bytes"
@@ -9,10 +9,10 @@ import (
 	"git.sr.ht/~klahr/zv/internal/adventure"
 )
 
-// ----- writeICS structural shape ------------------------------------
+// ----- Write structural shape -------------------------------------
 
-func TestWriteICS_HappyPath(t *testing.T) {
-	e := icsEvent{
+func TestWrite_HappyPath(t *testing.T) {
+	e := Event{
 		UID:            "event-42@zv.example.com",
 		GeneratedAt:    time.Date(2026, 5, 1, 9, 0, 0, 0, time.UTC),
 		SequenceN:      0,
@@ -28,8 +28,8 @@ func TestWriteICS_HappyPath(t *testing.T) {
 		Status:         "CONFIRMED",
 	}
 	var buf bytes.Buffer
-	if err := writeICS(&buf, e); err != nil {
-		t.Fatalf("writeICS: %v", err)
+	if err := Write(&buf, e); err != nil {
+		t.Fatalf("Write: %v", err)
 	}
 	out := buf.String()
 
@@ -58,9 +58,8 @@ func TestWriteICS_HappyPath(t *testing.T) {
 	}
 }
 
-func TestWriteICS_OrganizerOptional(t *testing.T) {
-	// No organizer email → no ORGANIZER line.
-	e := icsEvent{
+func TestWrite_OrganizerOptional(t *testing.T) {
+	e := Event{
 		UID:         "event-1@zv",
 		GeneratedAt: time.Now().UTC(),
 		StartAt:     time.Now().UTC(),
@@ -68,7 +67,7 @@ func TestWriteICS_OrganizerOptional(t *testing.T) {
 		Title:       "test",
 	}
 	var buf bytes.Buffer
-	if err := writeICS(&buf, e); err != nil {
+	if err := Write(&buf, e); err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(buf.String(), "ORGANIZER") {
@@ -76,9 +75,28 @@ func TestWriteICS_OrganizerOptional(t *testing.T) {
 	}
 }
 
-// ----- escape rules ------------------------------------------------
+// ----- Bytes returns a sensible byte slice ------------------------
 
-func TestICSEscape(t *testing.T) {
+func TestBytes(t *testing.T) {
+	e := Event{
+		UID:         "event-1@zv",
+		GeneratedAt: time.Now().UTC(),
+		StartAt:     time.Now().UTC(),
+		EndAt:       time.Now().UTC().Add(time.Hour),
+		Title:       "test",
+	}
+	out, err := Bytes(e)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.HasPrefix(out, []byte("BEGIN:VCALENDAR\r\n")) {
+		t.Errorf("Bytes output should start with BEGIN:VCALENDAR; first 32 = %q", out[:min(32, len(out))])
+	}
+}
+
+// ----- escape rules -----------------------------------------------
+
+func TestEscape(t *testing.T) {
 	cases := []struct {
 		in   string
 		want string
@@ -92,18 +110,15 @@ func TestICSEscape(t *testing.T) {
 		{"all of: ; , \\ \n once", `all of: \; \, \\ \n once`},
 	}
 	for _, c := range cases {
-		got := icsEscape(c.in)
+		got := Escape(c.in)
 		if got != c.want {
-			t.Errorf("icsEscape(%q) = %q, want %q", c.in, got, c.want)
+			t.Errorf("Escape(%q) = %q, want %q", c.in, got, c.want)
 		}
 	}
 }
 
-func TestICSEscapeAppliedToProperties(t *testing.T) {
-	// A title with reserved characters should appear escaped in the
-	// SUMMARY property — otherwise calendar apps will choke on the
-	// raw semicolon as a parameter separator.
-	e := icsEvent{
+func TestEscapeAppliedToProperties(t *testing.T) {
+	e := Event{
 		UID:         "event-1@zv",
 		GeneratedAt: time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC),
 		StartAt:     time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC),
@@ -111,7 +126,7 @@ func TestICSEscapeAppliedToProperties(t *testing.T) {
 		Title:       "Hunt; with, special\nchars\\",
 	}
 	var buf bytes.Buffer
-	if err := writeICS(&buf, e); err != nil {
+	if err := Write(&buf, e); err != nil {
 		t.Fatal(err)
 	}
 	out := buf.String()
@@ -120,27 +135,23 @@ func TestICSEscapeAppliedToProperties(t *testing.T) {
 	}
 }
 
-// ----- line folding ------------------------------------------------
+// ----- line folding -----------------------------------------------
 
-func TestICSLineFolding(t *testing.T) {
-	// Build a line longer than 75 octets and ensure it gets folded.
+func TestLineFolding(t *testing.T) {
 	long := "DESCRIPTION:" + strings.Repeat("x", 200)
 	var b strings.Builder
-	icsLine(&b, long)
+	line(&b, long)
 	out := b.String()
 
-	// Every physical line must be <= 75 octets. (The continuation
-	// lines themselves include their leading space in the count.)
-	for _, line := range splitCRLF(out) {
-		if line == "" {
+	for _, s := range strings.Split(out, "\r\n") {
+		if s == "" {
 			continue
 		}
-		if len(line) > 75 {
-			t.Errorf("line exceeds 75 octets (%d): %q", len(line), line)
+		if len(s) > 75 {
+			t.Errorf("line exceeds 75 octets (%d): %q", len(s), s)
 		}
 	}
-	// Continuation lines must start with a single space.
-	lines := splitCRLF(out)
+	lines := strings.Split(out, "\r\n")
 	for i := 1; i < len(lines); i++ {
 		if lines[i] == "" {
 			continue
@@ -149,8 +160,6 @@ func TestICSLineFolding(t *testing.T) {
 			t.Errorf("continuation line %d does not start with space: %q", i, lines[i])
 		}
 	}
-	// Reassembled (drop the leading space on continuations) must
-	// equal the original input.
 	reassembled := lines[0]
 	for i := 1; i < len(lines); i++ {
 		if lines[i] == "" {
@@ -163,27 +172,25 @@ func TestICSLineFolding(t *testing.T) {
 	}
 }
 
-func TestICSLineFoldingShortLine(t *testing.T) {
-	// Lines <= 75 octets must NOT be folded.
+func TestLineFoldingShortLine(t *testing.T) {
 	short := "UID:event-42@zv"
 	var b strings.Builder
-	icsLine(&b, short)
-	out := b.String()
-	if out != short+"\r\n" {
-		t.Errorf("short line was folded: %q", out)
+	line(&b, short)
+	if b.String() != short+"\r\n" {
+		t.Errorf("short line was folded: %q", b.String())
 	}
 }
 
-// ----- pickICSStart prefers most authoritative time ----------------
+// ----- PickStart / pickLocation -----------------------------------
 
-func TestPickICSStart(t *testing.T) {
+func TestPickStart(t *testing.T) {
 	cases := []struct {
 		name   string
 		state  string
 		sched  string
 		start  string
 		wantOK bool
-		wantH  int // hour, sanity-only
+		wantH  int
 	}{
 		{"running uses started_at", "running", "2026-05-01 09:00:00", "2026-05-01 10:00:00", true, 10},
 		{"completed uses started_at", "completed", "2026-05-01 09:00:00", "2026-05-01 10:00:00", true, 10},
@@ -193,7 +200,7 @@ func TestPickICSStart(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			got, ok := pickICSStart(c.state, c.sched, c.start)
+			got, ok := PickStart(c.state, c.sched, c.start)
 			if ok != c.wantOK {
 				t.Fatalf("ok=%v want %v", ok, c.wantOK)
 			}
@@ -204,39 +211,37 @@ func TestPickICSStart(t *testing.T) {
 	}
 }
 
-// ----- pickICSLocation -----
-
-func TestPickICSLocation(t *testing.T) {
+func TestPickLocation(t *testing.T) {
 	adv := &adventure.Adventure{Pages: []adventure.Page{
-		{Disabled: true, Location: adventure.Location{Lat: 1, Lng: 2}}, // skipped
-		{Location: adventure.Location{Lat: 0, Lng: 0}},                 // skipped (zero)
+		{Disabled: true, Location: adventure.Location{Lat: 1, Lng: 2}},
+		{Location: adventure.Location{Lat: 0, Lng: 0}},
 		{Location: adventure.Location{Lat: 59.32931, Lng: 18.06869}},
 	}}
-	got := pickICSLocation(adv)
+	got := pickLocation(adv)
 	want := "59.32931, 18.06869"
 	if got != want {
-		t.Errorf("pickICSLocation = %q, want %q", got, want)
+		t.Errorf("pickLocation = %q, want %q", got, want)
 	}
-
-	// Empty / no-location adventure → empty string (caller drops the
-	// LOCATION property entirely).
-	if got := pickICSLocation(&adventure.Adventure{}); got != "" {
+	if got := pickLocation(&adventure.Adventure{}); got != "" {
 		t.Errorf("empty adventure should yield empty location, got %q", got)
 	}
-	if got := pickICSLocation(nil); got != "" {
+	if got := pickLocation(nil); got != "" {
 		t.Errorf("nil adventure should yield empty location, got %q", got)
 	}
 }
 
-// ----- helpers ----
-
-func splitCRLF(s string) []string {
-	return strings.Split(s, "\r\n")
-}
+// ----- helpers -----
 
 func mustContain(t *testing.T, haystack, needle string) {
 	t.Helper()
 	if !strings.Contains(haystack, needle) {
 		t.Errorf("missing %q in:\n%s", needle, haystack)
 	}
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }

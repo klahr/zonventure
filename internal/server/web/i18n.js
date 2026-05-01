@@ -55,6 +55,38 @@
       'Logo removed': 'Logotyp borttagen',
       'Shown on the event-recap PDF. PNG, JPEG, or WebP — max 5 MB. Transparency is flattened to white on render.':
         'Visas på event-rapporten (PDF). PNG, JPEG eller WebP — max 5 MB. Transparens fylls med vitt vid rendering.',
+      'Start from a template': 'Börja från en mall',
+      'Pick a starter, customise the puzzles for your venue, and you\'re ready to schedule an event.':
+        'Välj en startmall, anpassa pusslen för din plats, och du är redo att schemalägga ett event.',
+      'Template': 'Mall',
+      'Use this template': 'Använd denna mall',
+      'Pick a template above, or create your own from scratch.':
+        'Välj en mall ovan, eller skapa ett eget äventyr från grunden.',
+      'Template copied — start customising your puzzles.':
+        'Mall kopierad — börja anpassa dina pussel.',
+      'Could not duplicate the template.': 'Kunde inte kopiera mallen.',
+      'Duplicate': 'Duplicera',
+      'Puzzle duplicated': 'Pussel duplicerat',
+      'Send invitations ({{n}})': 'Skicka inbjudningar ({{n}})',
+      'Email each team their join links + calendar invite':
+        'Mejla varje lag deras anslutningslänkar + kalenderinbjudan',
+      'Send invitations to teams?': 'Skicka inbjudningar till lagen?',
+      'One team will receive an email with their player links + a calendar invite.':
+        'Ett lag kommer att få ett mejl med sina spelarlänkar + en kalenderinbjudan.',
+      '{{n}} teams will receive an email with their player links + a calendar invite.':
+        '{{n}} lag kommer att få ett mejl med sina spelarlänkar + en kalenderinbjudan.',
+      'Each link is single-use: opening it claims that player\'s slot. Teams without a contact email are skipped.':
+        'Varje länk är engångsanvändning: att öppna den binder spelarplatsen. Lag utan kontaktmejl hoppas över.',
+      'Send invitations': 'Skicka inbjudningar',
+      'Sent {{sent}}, failed {{failed}}, skipped {{skipped}}':
+        'Skickade {{sent}}, misslyckades {{failed}}, hoppade över {{skipped}}',
+      'Sent {{sent}} (skipped {{skipped}} without email)':
+        'Skickade {{sent}} (hoppade över {{skipped}} utan mejl)',
+      'Sent {{sent}} invitation(s)': 'Skickade {{sent}} inbjudan(ar)',
+      'Resend invitation email': 'Skicka inbjudan igen',
+      'Invitation re-sent to {{email}}': 'Inbjudan skickad igen till {{email}}',
+      'Organization logo': 'Organisationslogotyp',
+      'powered by Zonventure': 'drivs av Zonventure',
       // ---- nav ----
       'Dashboard': 'Översikt',
       'Organizations': 'Organisationer',

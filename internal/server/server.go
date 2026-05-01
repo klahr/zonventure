@@ -610,6 +610,13 @@ func New(cfg Config) http.Handler {
 		// iCalendar invite — arrangers download once and forward to
 		// participants so the event lands on everyone's calendar.
 		r.Get("/events/{eventID}/invite.ics", adminH.ExportEventInviteICS)
+		// Send-invitations: proactive variant of the recover-link
+		// flow. Iterates teams with non-empty contact emails and
+		// mails each one their own slot links + the .ics. Same
+		// authorize-event gate as the export endpoints — Facilitators
+		// (org_member) can invoke it; this is "running the game",
+		// not authoring.
+		r.Post("/events/{eventID}/invitations/send", adminH.SendEventInvitations)
 
 		r.Patch("/teams/{teamID}", adminH.UpdateTeam)
 		r.Delete("/teams/{teamID}", adminH.DeleteTeam)
@@ -619,6 +626,12 @@ func New(cfg Config) http.Handler {
 		r.Delete("/teams/{teamID}/slots/{slotID}", adminH.RemoveSlot)
 		r.Post("/teams/{teamID}/slots/{slotID}/rotate", adminH.RotateSlotToken)
 		r.Post("/teams/{teamID}/unlock", adminH.UnlockTeam)
+		// Per-team resend of the invitation email. Re-uses the team's
+		// existing slot tokens (no re-mint), so opening already-
+		// claimed sessions stays valid. Players who lost their session
+		// state should hit the public lost-magic-link recovery path
+		// instead — that's the explicit re-mint flow.
+		r.Post("/teams/{teamID}/invitations/send", adminH.SendTeamInvitation)
 
 		// Staff password reset (admins & org users).
 		r.Post("/users/{userID}/password", adminH.ResetPassword)
@@ -653,6 +666,11 @@ func New(cfg Config) http.Handler {
 		r.Delete("/adventures/{slug}", adminH.DeleteAdventure)
 		r.Post("/adventures/{slug}/avatar", adminH.SetAdventureAvatar)
 		r.Delete("/adventures/{slug}/avatar", adminH.DeleteAdventureAvatar)
+		// Clone a globally-visible adventure (catalog row or template)
+		// into the caller's org. Authoring-tier action: org_admin or
+		// admin only. See internal/admin/duplicate.go for the
+		// transactional copy logic.
+		r.Post("/adventures/{slug}/duplicate", adminH.DuplicateAdventure)
 		r.Get("/adventures/{slug}/shares", adminH.ListAdventureShares)
 		r.Post("/adventures/{slug}/shares", adminH.GrantAdventureShare)
 		r.Delete("/adventures/{slug}/shares/{orgID}", adminH.RevokeAdventureShare)
@@ -661,6 +679,11 @@ func New(cfg Config) http.Handler {
 		r.Post("/adventures/{slug}/pages/copy-from/{pageID}", adminH.CopyPuzzleToAdventure)
 		r.Patch("/pages/{pageID}", adminH.UpdatePage)
 		r.Delete("/pages/{pageID}", adminH.DeletePage)
+		// Duplicate one puzzle in place — Google Slides shape. The
+		// new row lands at sourceIdx + 1 with the rest of the
+		// adventure shifted down. Auth via requireEditPage so the
+		// org_member tightening carries through.
+		r.Post("/pages/{pageID}/duplicate", adminH.DuplicatePage)
 		r.Post("/pages/{pageID}/images", adminH.AddPageImage)
 		r.Patch("/images/{imageID}", adminH.UpdatePageImage)
 		r.Delete("/images/{imageID}", adminH.DeletePageImage)
