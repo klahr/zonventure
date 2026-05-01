@@ -68,6 +68,7 @@
       'Duplicate': 'Duplicera',
       'Puzzle duplicated': 'Pussel duplicerat',
       'Send invitations ({{n}})': 'Skicka inbjudningar ({{n}})',
+      'Email invitations ({{n}})': 'Mejla inbjudningar ({{n}})',
       'Email each team their join links + calendar invite':
         'Mejla varje lag deras anslutningslänkar + kalenderinbjudan',
       'Send invitations to teams?': 'Skicka inbjudningar till lagen?',
@@ -84,6 +85,17 @@
         'Skickade {{sent}} (hoppade över {{skipped}} utan mejl)',
       'Sent {{sent}} invitation(s)': 'Skickade {{sent}} inbjudan(ar)',
       'Resend invitation email': 'Skicka inbjudan igen',
+      'Email invitation to {{email}}': 'Mejla inbjudan till {{email}}',
+      'Email invitation to {{team}}?': 'Mejla inbjudan till {{team}}?',
+      'We\'ll send one email to ': 'Vi skickar ett mejl till ',
+      ' containing this team\'s join link(s) and a calendar invite (.ics) participants can drop into their calendar.':
+        ' med detta lags anslutningslänk(ar) och en kalenderinbjudan (.ics) som deltagarna kan lägga in i sin kalender.',
+      '1 player magic-link': '1 spelarlänk',
+      '{{n}} player magic-links': '{{n}} spelarlänkar',
+      '1 calendar invite (.ics)': '1 kalenderinbjudan (.ics)',
+      'Existing links keep working — this re-sends the same tokens, it does not invalidate any active sessions.':
+        'Befintliga länkar fortsätter fungera — detta skickar om samma tokens och avbryter inga aktiva sessioner.',
+      'Send email': 'Skicka mejl',
       'Invitation re-sent to {{email}}': 'Inbjudan skickad igen till {{email}}',
       'Organization logo': 'Organisationslogotyp',
       'powered by Zonventure': 'drivs av Zonventure',

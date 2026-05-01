@@ -1253,7 +1253,22 @@ textarea { min-height: 80px; resize: vertical; font-family: ui-monospace, monosp
   display: flex; gap: .25rem;
   border-bottom: 1px solid var(--border-soft);
   margin: 0 0 1rem;
+  /* Phones routinely run out of width on tab strips with 4+ entries
+     (Adventures / Catalog / Templates / etc.). Allowing horizontal
+     scroll instead of wrapping keeps every tab a single row, with
+     the active one easy to flick to. nowrap on the children
+     prevents accidental wrapping on narrow viewports; the
+     -webkit-overflow-scrolling kicks in momentum scrolling on
+     iOS Safari which otherwise feels stuck. */
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  /* Hide the scrollbar to match the chrome of slack-style tab
+     strips — we still scroll, but the bar itself is invisible
+     unless the user is actively dragging. */
+  scrollbar-width: none;
 }
+.lib-tabs::-webkit-scrollbar { display: none; }
 .lib-tab {
   display: inline-block;
   padding: .5rem .9rem;
@@ -1262,6 +1277,11 @@ textarea { min-height: 80px; resize: vertical; font-family: ui-monospace, monosp
   font-weight: 700; font-size: .9rem;
   border-bottom: 2px solid transparent;
   transition: color .15s, border-color .15s;
+  /* Without explicit no-shrink the tab labels would compress on
+     narrow viewports until the scrollbar never engages — every
+     label squeezes into ellipsis territory instead. */
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 .lib-tab:hover { color: var(--text); }
 .lib-tab.active {
@@ -1305,7 +1325,16 @@ textarea { min-height: 80px; resize: vertical; font-family: ui-monospace, monosp
   display: flex; gap: .25rem;
   border-bottom: 1px solid var(--border-soft);
   margin: 0 0 1rem;
+  /* Same horizontal-scroll treatment as .lib-tabs — modals on
+     phones run out of width even faster than the top-level page,
+     and a wrapping tab strip with 5 entries breaks the dialog
+     layout. */
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
 }
+.tab-strip::-webkit-scrollbar { display: none; }
 .tab-btn {
   padding: .5rem .9rem;
   background: transparent; border: none;
@@ -1314,6 +1343,8 @@ textarea { min-height: 80px; resize: vertical; font-family: ui-monospace, monosp
   border-bottom: 2px solid transparent;
   cursor: pointer;
   transition: color .15s, border-color .15s;
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 .tab-btn:hover { color: var(--text); }
 .tab-btn.active {
@@ -2317,6 +2348,10 @@ const ICONS = {
   // viewBox.
   gear: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 0 0-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 0 0-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 0 0-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 0 0-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 0 0 1.066-2.573c-.94-1.543.826-3.31 2.37-2.37 1 .608 2.296.07 2.572-1.065z"/><circle cx="12" cy="12" r="3"/></svg>',
   plus: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>',
+  // Envelope — used for the invitation send / resend buttons so
+  // they read as "this sends an email" rather than "this copies
+  // something". Stroke-only to match the rest of the icon set.
+  mail: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><polyline points="3 7 12 13 21 7"/></svg>',
   // Chevron up / down used for hint reorder buttons. Stroke-only
   // matches the existing icon set; sized via the .btn.small wrapper.
   chevronUp:   '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 15 12 9 18 15"/></svg>',
@@ -6131,7 +6166,7 @@ async function viewRunDetail(view, runID) {
       type: 'button',
       title: t('Email each team their join links + calendar invite'),
       on: { click: () => sendEventInvitations(event, teamsWithEmail) },
-    }, icon(ICONS.copy), t('Send invitations ({{n}})', { n: teamsWithEmail })));
+    }, icon(ICONS.mail), t('Email invitations ({{n}})', { n: teamsWithEmail })));
   }
 
   // Last-activity-per-team: the newest event timestamp the team was
@@ -6290,13 +6325,15 @@ async function viewRunDetail(view, runID) {
           h('td', { class: 'hide-narrow muted', style: 'font-size:.85rem' },
             lastEv ? fmtLocal(lastEv) : t('—')),
           h('td', {}, h('div', { class: 'row end' },
-            // Resend invitation: only meaningful when the team has
-            // a contact email AND the event is mailer-reachable
-            // (any state where players might still need their links).
-            // Existing tokens are sent verbatim — no re-mint, so an
+            // Email the team their join links + calendar invite.
+            // Only meaningful when the team has a contact email;
+            // existing tokens are sent verbatim (no re-mint), so an
             // accidental click can't kick a teammate out mid-game.
+            // Confirm dialog spells out who and what before the
+            // mail goes out so a stray tap doesn't surprise the
+            // recipient.
             tm.email && tm.email.trim()
-              ? iconBtn('copy', t('Resend invitation email'),
+              ? iconBtn('mail', t('Email invitation to {{email}}', { email: tm.email }),
                   (e) => resendTeamInvitation(tm, e.target.closest('button')))
               : null,
             iconBtn('pencil', t('Edit team'),   () => openTeamModal(event.id, tm, event)),
@@ -6669,13 +6706,34 @@ async function sendEventInvitations(event, teamsWithEmailCount) {
   }
 }
 
-// resendTeamInvitation re-sends one team's invitation email
-// (existing slot tokens, no re-mint). Used when a single team
-// loses their original message mid-event. Brief disabled state
-// on the button after click prevents an accidental double-tap
-// from spamming the team's inbox; the underlying server is
-// idempotent enough to handle it but the UX is cleaner.
+// resendTeamInvitation pops a confirm dialog spelling out who
+// will receive the email and what's in it (player magic-links +
+// the .ics calendar invite), then sends. Existing slot tokens
+// are sent verbatim — no re-mint, so an accidental confirm can't
+// kick a teammate out mid-game; if a player has lost their
+// session entirely they should hit the public lost-magic-link
+// recovery flow instead.
 async function resendTeamInvitation(team, btn) {
+  const slotsCount = (team.members || []).length;
+  const ok = await modal(t('Email invitation to {{team}}?', { team: team.name }),
+    ({ body, close }) => {
+      body.append(
+        h('p', {},
+          t('We\'ll send one email to '),
+          h('strong', {}, team.email || ''),
+          t(' containing this team\'s join link(s) and a calendar invite (.ics) participants can drop into their calendar.')),
+        h('ul', { class: 'muted', style: 'margin:.25rem 0 .5rem 1.25rem; padding:0; font-size:.85rem' },
+          h('li', {}, slotsCount === 1
+            ? t('1 player magic-link')
+            : t('{{n}} player magic-links', { n: slotsCount })),
+          h('li', {}, t('1 calendar invite (.ics)'))),
+        h('p', { class: 'muted', style: 'font-size:.8rem' },
+          t('Existing links keep working — this re-sends the same tokens, it does not invalidate any active sessions.')),
+        h('div', { class: 'row end' },
+          h('button', { class: 'btn', on: { click: () => close(false) } }, t('Cancel')),
+          h('button', { class: 'btn primary', on: { click: () => close(true) } }, t('Send email'))));
+    });
+  if (!ok) return;
   if (btn) {
     btn.disabled = true;
     setTimeout(() => { if (btn) btn.disabled = false; }, 4000);
