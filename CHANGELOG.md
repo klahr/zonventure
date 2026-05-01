@@ -11,6 +11,20 @@ The repository, Go module, and CLI binary are named `zv`; the product is
 
 ## [Unreleased]
 
+### Changed
+
+- **Server error messages are now localized.** The client `api()`
+  helper auto-translates `body.error` through the i18n table — every
+  call site that already shows `r.body?.error` in a toast or result
+  line now surfaces the Swedish translation when one exists, no
+  per-site changes needed. The translation table grew by ~80 entries
+  covering the player + arranger surfaces (auth, signup, TOTP,
+  asset uploads, gameplay errors, validation messages, common
+  arranger CRUD errors). Pure-internal 500s like `"begin tx"` and
+  `"lookup failed"` stay English on purpose — the operator reading
+  logs is the audience there. WS `answer_error` frames also run
+  through `t()` for consistency.
+
 ### Added
 
 - **Offline-tolerant play.** The player UI now caches the adventure's

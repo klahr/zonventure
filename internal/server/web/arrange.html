@@ -2049,6 +2049,15 @@ async function api(path, opts = {}) {
   if (res.status !== 204) {
     try { body = await res.json(); } catch {}
   }
+  // Translate the server's error message through the i18n table so
+  // toasts surface in the user's language without each call site
+  // having to remember to wrap. t() falls through to the English
+  // string when no translation exists, so this is a no-op for
+  // strings we haven't localised yet — never breaks an existing
+  // surface, just upgrades it.
+  if (body && typeof body.error === 'string') {
+    body.error = t(body.error);
+  }
   // Expose Retry-After (in seconds) when the server tells us to wait.
   // Login lockouts and rate-limited paths use it for their countdown
   // UI; null when the header is absent.
