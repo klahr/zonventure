@@ -8,11 +8,16 @@ import (
 	"bytes"
 	"errors"
 	"image"
-	// Register JPEG and PNG decoders in image.Decode. GIF is less
-	// common for puzzle content and its blobs tend to be small
-	// already; skipping keeps the import graph tight.
+	// Register JPEG, PNG, and WebP decoders in image.Decode. GIF is
+	// less common for puzzle content and its blobs tend to be small
+	// already; skipping keeps the import graph tight. WebP comes
+	// from golang.org/x/image (already in go.mod for the resampler)
+	// — without this blank import the decoder isn't registered, so
+	// uploads with Content-Type: image/webp fail with "unknown
+	// format" even though the MIME guard accepts them.
 	"image/jpeg"
-	_ "image/png"
+	"image/png"
+	_ "golang.org/x/image/webp"
 
 	"golang.org/x/image/draw"
 )
@@ -48,18 +53,57 @@ const DefaultMaxDim = 512
 // it replaces saved a tiny amount of CPU but exposed the polyglot
 // surface; not worth keeping.
 func Shrink(data []byte, maxDim int) ([]byte, string, error) {
+	dst, err := decodeAndResize(data, maxDim)
+	if err != nil {
+		return nil, "", err
+	}
+	var buf bytes.Buffer
+	if err := jpeg.Encode(&buf, dst, &jpeg.Options{Quality: 85}); err != nil {
+		return nil, "", err
+	}
+	return buf.Bytes(), "image/jpeg", nil
+}
+
+// ShrinkPNG is the alpha-preserving variant of Shrink: same decode +
+// resize + re-encode pipeline, but encodes to PNG so transparency
+// survives the round-trip. JPEG would composite alpha-zero pixels
+// against the RGBA zero value (black), which logos with transparent
+// backgrounds upload with — see the help copy on the org-logo and
+// adventure-cover surfaces. The polyglot defence is unchanged: the
+// re-encode itself is the security boundary, not the format choice.
+//
+// Used by NormalizeUpload for the logo / cover paths. Photo-side
+// callers (puzzle images, team avatars) stay on the JPEG path
+// because their inputs rarely carry alpha and JPEG's smaller
+// blobs matter when they're served per-puzzle.
+func ShrinkPNG(data []byte, maxDim int) ([]byte, string, error) {
+	dst, err := decodeAndResize(data, maxDim)
+	if err != nil {
+		return nil, "", err
+	}
+	var buf bytes.Buffer
+	enc := png.Encoder{CompressionLevel: png.DefaultCompression}
+	if err := enc.Encode(&buf, dst); err != nil {
+		return nil, "", err
+	}
+	return buf.Bytes(), "image/png", nil
+}
+
+// decodeAndResize is the shared front half of Shrink / ShrinkPNG.
+// Returns an *image.RGBA capped at maxDim on the longer side with
+// aspect ratio preserved.
+func decodeAndResize(data []byte, maxDim int) (*image.RGBA, error) {
 	if maxDim <= 0 {
-		return nil, "", errors.New("maxDim must be > 0")
+		return nil, errors.New("maxDim must be > 0")
 	}
 	img, _, err := image.Decode(bytes.NewReader(data))
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 	b := img.Bounds()
 	srcW, srcH := b.Dx(), b.Dy()
 	dstW, dstH := srcW, srcH
 	if srcW > maxDim || srcH > maxDim {
-		// Preserve aspect ratio — cap the longer side at maxDim.
 		dstW, dstH = maxDim, maxDim
 		if srcW >= srcH {
 			dstH = maxDim * srcH / srcW
@@ -75,10 +119,5 @@ func Shrink(data []byte, maxDim int) ([]byte, string, error) {
 	}
 	dst := image.NewRGBA(image.Rect(0, 0, dstW, dstH))
 	draw.CatmullRom.Scale(dst, dst.Bounds(), img, b, draw.Over, nil)
-
-	var buf bytes.Buffer
-	if err := jpeg.Encode(&buf, dst, &jpeg.Options{Quality: 85}); err != nil {
-		return nil, "", err
-	}
-	return buf.Bytes(), "image/jpeg", nil
+	return dst, nil
 }

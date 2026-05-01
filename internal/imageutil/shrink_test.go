@@ -47,6 +47,48 @@ func decode(t *testing.T, data []byte) (w, h int) {
 	return cfg.Width, cfg.Height
 }
 
+// makeTransparentPNG produces an RGBA image where the centre pixel
+// has alpha=255 (opaque red) and the corner pixel has alpha=0
+// (transparent). Encoded as PNG so the alpha channel survives on
+// disk. Used to pin ShrinkPNG's alpha-preservation contract — if a
+// future refactor flattens to JPEG by accident, the corner pixel's
+// alpha drops to 255 and this test trips.
+func makeTransparentPNG(t *testing.T, w, h int) []byte {
+	t.Helper()
+	img := image.NewRGBA(image.Rect(0, 0, w, h))
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			img.Set(x, y, color.RGBA{R: 200, G: 20, B: 80, A: 255})
+		}
+	}
+	// Punch the top-left corner transparent.
+	img.Set(0, 0, color.RGBA{})
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+	return buf.Bytes()
+}
+
+func TestShrinkPNG_PreservesAlpha(t *testing.T) {
+	src := makeTransparentPNG(t, 200, 200)
+	out, mime, err := imageutil.ShrinkPNG(src, 512)
+	if err != nil {
+		t.Fatalf("ShrinkPNG: %v", err)
+	}
+	if mime != "image/png" {
+		t.Fatalf("mime = %q, want image/png", mime)
+	}
+	img, err := png.Decode(bytes.NewReader(out))
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	_, _, _, a := img.At(0, 0).RGBA()
+	if a != 0 {
+		t.Fatalf("top-left alpha = %d, want 0 — transparency was flattened", a>>8)
+	}
+}
+
 func TestShrink_LargerThanCap_ResizesAndReencodes(t *testing.T) {
 	src := makeImage(t, 2000, 1500, "png")
 	out, mime, err := imageutil.Shrink(src, 512)

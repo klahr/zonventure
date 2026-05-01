@@ -124,7 +124,10 @@ func NormalizeUpload(data []byte, mime string, maxDim int) ([]byte, string, erro
 	case "image/svg+xml":
 		return RasterizeSVG(data, maxDim)
 	case "image/png", "image/jpeg", "image/jpg", "image/webp":
-		return Shrink(data, maxDim)
+		// PNG-output variant so transparency survives — logo / cover
+		// uploads commonly carry alpha, and the JPEG path composites
+		// transparent pixels against black.
+		return ShrinkPNG(data, maxDim)
 	}
 	return nil, "", ErrUnsupportedMIME
 }
