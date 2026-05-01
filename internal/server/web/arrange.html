@@ -4384,7 +4384,11 @@ async function viewAdventures(view) {
     ))),
   );
 
-  view.replaceChildren(
+  // replaceChildren coerces null arguments to the literal string
+  // "null" (unlike h(), which skips them), so the templatesBlock
+  // null-when-no-templates case has to be filtered out before the
+  // spread or the page renders "null" as a text node above the grid.
+  const sections = [
     h('div', { class: 'row between' },
       h('h1', {}, t('Adventures')),
       h('button', { class: 'btn primary', on: { click: () => openCreateAdventure() } },
@@ -4407,7 +4411,8 @@ async function viewAdventures(view) {
             ? h('h2', { style: 'margin:1.25rem 0 .25rem' }, t('Yours'))
             : null,
           h('div', { class: 'grid cols-2' }, runnable.map(renderCard))),
-  );
+  ];
+  view.replaceChildren(...sections.filter(Boolean));
 }
 
 // duplicateAdventureFromTemplate clones the source adventure into
