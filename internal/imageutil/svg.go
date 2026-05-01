@@ -109,6 +109,31 @@ func RasterizeSVG(data []byte, dim int) ([]byte, string, error) {
 	return buf.Bytes(), "image/png", nil
 }
 
+// NormalizeUpload turns whatever an upload handler received into a
+// canonical bitmap + MIME pair. SVG goes through RasterizeSVG (the
+// render itself is the security boundary — `<script>` and friends
+// never reach the bitmap); PNG/JPEG/WebP go through Shrink (which
+// re-encodes to JPEG to defang polyglot uploads). Anything else
+// returns ErrUnsupportedMIME so the caller can produce a tidy 400.
+//
+// Centralised here so every upload handler — org logo, adventure
+// cover, future ones — agrees on the accepted set without each
+// reimplementing the same switch.
+func NormalizeUpload(data []byte, mime string, maxDim int) ([]byte, string, error) {
+	switch strings.ToLower(strings.TrimSpace(mime)) {
+	case "image/svg+xml":
+		return RasterizeSVG(data, maxDim)
+	case "image/png", "image/jpeg", "image/jpg", "image/webp":
+		return Shrink(data, maxDim)
+	}
+	return nil, "", ErrUnsupportedMIME
+}
+
+// ErrUnsupportedMIME is returned by NormalizeUpload when the
+// supplied MIME isn't on the accepted list. Callers wrap this in
+// a 400 with a human-readable message naming the accepted set.
+var ErrUnsupportedMIME = errors.New("unsupported image type")
+
 // elementOpenRe matches an element's opening tag (`<tag attrs>` or
 // `<tag attrs/>`). Tag names allow an optional namespace prefix
 // (`<ns:tag>`); attribute payload is anything up to the closing `>`.

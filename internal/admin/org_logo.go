@@ -59,33 +59,18 @@ func (h *Handlers) SetOrgLogo(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusRequestEntityTooLarge, "image too large")
 		return
 	}
-	mime := strings.ToLower(strings.TrimSpace(hdr.Header.Get("Content-Type")))
-	// SVG is rasterised on upload (oksvg → 512×512 PNG). The render
-	// is the security boundary: oksvg only walks drawing-primitive
-	// elements, so `<script>` / `<foreignObject>` / event-handler
-	// attributes never reach the resulting bitmap. PNG/JPEG/WebP go
-	// through Shrink (re-encoded as JPEG) for the same polyglot
-	// defence imageutil documents. BMP/TIFF/etc. stay out of scope.
-	switch mime {
-	case "image/svg+xml":
-		raster, newMIME, rerr := imageutil.RasterizeSVG(data, imageutil.DefaultMaxDim)
-		if rerr != nil {
-			httpx.Error(w, http.StatusBadRequest, "unreadable svg: "+rerr.Error())
-			return
-		}
-		data, mime = raster, newMIME
-	case "image/png", "image/jpeg", "image/jpg", "image/webp":
-		shrunk, newMIME, serr := imageutil.Shrink(data, imageutil.DefaultMaxDim)
-		if serr != nil {
-			httpx.Error(w, http.StatusBadRequest, "unreadable image: "+serr.Error())
-			return
-		}
-		data, mime = shrunk, newMIME
-	default:
+	mime := hdr.Header.Get("Content-Type")
+	normalized, newMIME, err := imageutil.NormalizeUpload(data, mime, imageutil.DefaultMaxDim)
+	if errors.Is(err, imageutil.ErrUnsupportedMIME) {
 		httpx.Error(w, http.StatusBadRequest,
 			"only PNG, JPEG, WebP, or SVG logos are accepted")
 		return
 	}
+	if err != nil {
+		httpx.Error(w, http.StatusBadRequest, "unreadable image: "+err.Error())
+		return
+	}
+	data, mime = normalized, newMIME
 	if err := h.Storage.PutOrgLogo(r.Context(), orgID, data, mime); err != nil {
 		if errors.Is(err, storage.ErrNotFound) {
 			httpx.Error(w, http.StatusNotFound, "organisation not found")

@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
-	"strings"
 
 	"git.sr.ht/~klahr/zv/internal/httpx"
 	"git.sr.ht/~klahr/zv/internal/imageutil"
@@ -54,16 +53,17 @@ func (h *Handlers) SetAdventureAvatar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	mime := hdr.Header.Get("Content-Type")
-	if !strings.HasPrefix(mime, "image/") {
-		httpx.Error(w, http.StatusBadRequest, "only image uploads are accepted")
+	normalized, newMIME, err := imageutil.NormalizeUpload(data, mime, imageutil.DefaultMaxDim)
+	if errors.Is(err, imageutil.ErrUnsupportedMIME) {
+		httpx.Error(w, http.StatusBadRequest,
+			"only PNG, JPEG, WebP, or SVG covers are accepted")
 		return
 	}
-	shrunk, newMIME, err := imageutil.Shrink(data, imageutil.DefaultMaxDim)
 	if err != nil {
 		httpx.Error(w, http.StatusBadRequest, "unreadable image: "+err.Error())
 		return
 	}
-	data, mime = shrunk, newMIME
+	data, mime = normalized, newMIME
 	if err := h.Storage.PutAdventureAvatar(r.Context(), slug, data, mime); err != nil {
 		if errors.Is(err, storage.ErrNotFound) {
 			httpx.Error(w, http.StatusNotFound, "adventure not found")
