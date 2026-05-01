@@ -2,6 +2,7 @@ image: archlinux
 packages:
   - go
   - postgresql
+  - nodejs
 sources:
   - https://git.sr.ht/~klahr/zv
 environment:
@@ -27,6 +28,13 @@ tasks:
   - test: |
       cd zv
       go test -race ./...
+  - test-js: |
+      # Node's built-in test runner (Node 18+) — no Jest, no
+      # package.json. Currently scoped to the offline-action queue
+      # in play-queue.js; new browser-side modules add their own
+      # *.test.js next to the source.
+      cd zv/internal/server/web
+      node --test play-queue.test.js
   - build: |
       cd zv
       VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo dev)

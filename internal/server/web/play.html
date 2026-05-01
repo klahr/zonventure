@@ -9,6 +9,13 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Aclonica&family=Open+Sans:wght@400;600;700&display=swap" rel="stylesheet">
 <script src="/i18n.js"></script>
+<!-- play-queue.js exposes the offline-action queue as top-level
+     globals (pendingAnswers, clientActionId, persistPendingActions,
+     loadPendingActions). Loaded before the inline play-page script
+     so the helpers are in scope when the IIFE runs. Lives in its
+     own file so node --test can unit-test it in isolation; see
+     play-queue.test.js. -->
+<script src="/play-queue.js"></script>
 <!-- Apply persisted theme synchronously so a saved-dark user doesn't
      see a light flash before the styles re-cascade. Mirrors arrange's
      initTheme but as an inline pre-script so it lands before any
@@ -1352,57 +1359,12 @@ function wsSend(kind, data) {
   catch { return false; }
 }
 
-// Outgoing offline queue. Without this an answer typed during a
-// reconnect window is silently dropped — the player has no way to
-// know whether the server saw it. We FIFO answer/advance frames (cap
-// at 5 — players spamming during dead air shouldn't prefill the
-// limiter), and dedupe locations to "the last fix" since older pings
-// are stale once we reconnect.
-//
-// Persisted to localStorage so an app reload (closed tab, browser
-// refresh, swipe-up dismiss) doesn't lose queued actions. Each entry
-// carries a stable client_action_id (UUID at submit time) — when the
-// queue eventually flushes, the server's dedup table replays the
-// cached response if the action already landed before our reconnect.
-const pendingAnswers = [];
-const PENDING_ANSWERS_MAX = 5;
-const PENDING_QUEUE_KEY = 'zv-play-pending-v1';
+// pendingAnswers, PENDING_ANSWERS_MAX, clientActionId,
+// persistPendingActions, loadPendingActions are loaded from
+// /play-queue.js before this script runs — see <script> tag at the
+// top of the page. pendingLocation is the only piece that stays
+// inline because it isn't part of the persisted queue.
 let pendingLocation = null;
-
-// clientActionId generates a stable idempotency key per user-issued
-// action. The server's player_action_dedup table replays the cached
-// response when the same id arrives twice (post-reconnect retry of
-// a queued submit). crypto.randomUUID is shipped on every modern
-// browser; the fallback covers older devices that still play.
-function clientActionId() {
-  if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
-  return 'a-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
-}
-
-function persistPendingActions() {
-  try {
-    if (pendingAnswers.length === 0) {
-      localStorage.removeItem(PENDING_QUEUE_KEY);
-    } else {
-      localStorage.setItem(PENDING_QUEUE_KEY, JSON.stringify(pendingAnswers));
-    }
-  } catch (_) { /* private mode / storage full — best effort */ }
-}
-
-function loadPendingActions() {
-  try {
-    const raw = localStorage.getItem(PENDING_QUEUE_KEY);
-    if (!raw) return;
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return;
-    for (const m of parsed.slice(0, PENDING_ANSWERS_MAX)) {
-      if (m && (m.kind === 'answer' || m.kind === 'advance') && m.data) {
-        pendingAnswers.push(m);
-      }
-    }
-    if (pendingAnswers.length > 0) didQueueWhileOffline = true;
-  } catch (_) { /* malformed — ignore */ }
-}
 
 // Did we lose the WS while typing? Tracked so the "saved while you
 // were offline" toast only fires when the user actually queued
@@ -1412,8 +1374,10 @@ let didQueueWhileOffline = false;
 // Re-hydrate any actions queued by a previous session — a tab
 // reload, swipe-up dismiss, or app crash leaves the localStorage
 // queue intact, and the next bootstrap should pick those up so
-// they flush on reconnect like nothing happened.
-loadPendingActions();
+// they flush on reconnect like nothing happened. The returned
+// flag drives the "saved while you were offline" toast on the
+// next reconnect.
+if (loadPendingActions()) didQueueWhileOffline = true;
 
 function wsSendOrQueue(kind, data) {
   // Mutating actions get a stable idempotency key so a queued+

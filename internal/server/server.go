@@ -36,7 +36,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 )
 
-//go:embed web/play.html web/play-sw.js web/arrange.html web/live.html web/recap.html web/i18n.js web/favicon.svg web/privacy.html web/terms.html web/manual.html web/landing.html web/pricing.html web/topbar.css web/topbar.js web/jsqr.js web/404.html web/robots.txt web/sitemap.xml
+//go:embed web/play.html web/play-sw.js web/play-queue.js web/arrange.html web/live.html web/recap.html web/i18n.js web/favicon.svg web/privacy.html web/terms.html web/manual.html web/landing.html web/pricing.html web/topbar.css web/topbar.js web/jsqr.js web/404.html web/robots.txt web/sitemap.xml
 var webFS embed.FS
 
 // Config is the bag of knobs New needs.
@@ -285,6 +285,12 @@ func New(cfg Config) http.Handler {
 		servePage("web/play.html")(w, req)
 	})
 	r.Get("/arrange", servePage("web/arrange.html"))
+
+	// Player-side offline action queue. Loaded by play.html before
+	// the inline IIFE so its helpers are in scope as globals.
+	// Tested in isolation by play-queue.test.js (Node's built-in
+	// test runner). Same path-based asset-style serve as i18n.js.
+	r.Get("/play-queue.js", serveAsset("web/play-queue.js", "application/javascript; charset=utf-8"))
 
 	// Player-side service worker. Served at the site root so its
 	// scope is the whole origin — that's what lets it intercept

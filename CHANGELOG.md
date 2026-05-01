@@ -11,6 +11,33 @@ The repository, Go module, and CLI binary are named `zv`; the product is
 
 ## [Unreleased]
 
+### Tests
+
+- **Client-side offline-queue unit tests.** Extracted the player's
+  offline action queue from `play.html` into `play-queue.js` so
+  it can be unit-tested in isolation; `play-queue.test.js` runs
+  under Node's built-in test runner (`node --test`) — no Jest, no
+  Vitest, no `package.json`. 12 cases cover `clientActionId`
+  uniqueness + crypto/fallback paths, the localStorage round-trip,
+  cap enforcement under hand-edited storage, malformed-JSON
+  tolerance, and quota-exceeded `setItem` failures. CI gains a
+  `nodejs` package + a `test-js` task in `.builds.yml`.
+- **Regression coverage for the 0.1.6 server work.** Ten new
+  Postgres-backed integration tests pin the recent fixes:
+  - `TestRevealHint_RejectsBeforeUnlockTime` / `_AllowsAtZeroDelay`
+    cover the new server-side hint-timer 403, including the
+    `Retry-After` header the offline replay queue depends on.
+  - `TestSubmitAnswer_ReplaysCachedResponseOnRetry` and the hint
+    counterpart pin the dedup contract — same `client_action_id`
+    replays the cached body, a fresh id runs against current state.
+  - `TestAudio_PageUploadRoundTrip`, `_PageRejectsNonAudioMime`,
+    `_PageVisibleAcrossPagesInSameAdventure`, `_HintGatedByReveal`
+    cover the new audio handlers + the puzzle/hint visibility split
+    introduced when we relaxed `canViewPageImage` for prefetch.
+  - `TestManifest_IncludesAllAdventureAssets` / `_RequiresSlot`
+    cover the new `/api/player/manifest` endpoint.
+  Tests skip without `ZV_TEST_DSN`, run on CI.
+
 ### Changed
 
 - **Server error messages are now localized.** The client `api()`
