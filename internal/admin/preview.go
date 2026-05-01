@@ -27,6 +27,12 @@ type previewStateDTO struct {
 	Prompt         string            `json:"prompt,omitempty"`
 	Hints          []previewHintDTO  `json:"hints,omitempty"`
 	Images         []previewImageDTO `json:"images,omitempty"`
+	// Audio mirrors player.State.Audio so play.html's audio
+	// renderer (which only fires when s.audio is an array) paints
+	// in preview just like a live run. Without this, audio attached
+	// to a puzzle is invisible everywhere except the editor's own
+	// per-clip strip — uploaded but unreachable.
+	Audio          []previewAudioDTO `json:"audio,omitempty"`
 	Colors         *adventure.Colors `json:"colors,omitempty"`
 	Preview        bool              `json:"preview"`
 	// Accept is always included (the preview endpoint is admin-only,
@@ -75,11 +81,23 @@ type previewHintDTO struct {
 	TextHTML         string            `json:"text_html"`
 	UnlocksInSeconds int               `json:"unlocks_in_seconds"`
 	Images           []previewImageDTO `json:"images,omitempty"`
+	Audio            []previewAudioDTO `json:"audio,omitempty"`
 }
 
 type previewImageDTO struct {
 	URL string `json:"url"`
 	Alt string `json:"alt,omitempty"`
+}
+
+// previewAudioDTO mirrors player.audioDTO so play.html's audio
+// renderer treats a preview clip the same as a live one. URL points
+// at the same /adventure-assets/audio/{id} (or /hint-audio/{id})
+// endpoint a real player would hit — preview is admin-only, so the
+// reveal-gate the live route enforces is moot here.
+type previewAudioDTO struct {
+	URL         string `json:"url"`
+	MimeType    string `json:"mime_type"`
+	Description string `json:"description,omitempty"`
 }
 
 type previewDebugDTO struct {
@@ -161,6 +179,17 @@ func (h *Handlers) PreviewAdventure(w http.ResponseWriter, r *http.Request) {
 		}
 		out.Images = imgs
 	}
+	if len(page.Audio) > 0 {
+		audio := make([]previewAudioDTO, 0, len(page.Audio))
+		for _, a := range page.Audio {
+			audio = append(audio, previewAudioDTO{
+				URL:         "/adventure-assets/audio/" + strconv.FormatInt(a.ID, 10),
+				MimeType:    a.MimeType,
+				Description: a.Description,
+			})
+		}
+		out.Audio = audio
+	}
 	if len(page.Hints) > 0 {
 		hints := make([]previewHintDTO, 0, len(page.Hints))
 		for _, h := range page.Hints {
@@ -177,6 +206,17 @@ func (h *Handlers) PreviewAdventure(w http.ResponseWriter, r *http.Request) {
 					})
 				}
 				ph.Images = imgs
+			}
+			if len(h.Audio) > 0 {
+				audio := make([]previewAudioDTO, 0, len(h.Audio))
+				for _, a := range h.Audio {
+					audio = append(audio, previewAudioDTO{
+						URL:         "/adventure-assets/hint-audio/" + strconv.FormatInt(a.ID, 10),
+						MimeType:    a.MimeType,
+						Description: a.Description,
+					})
+				}
+				ph.Audio = audio
 			}
 			hints = append(hints, ph)
 		}
