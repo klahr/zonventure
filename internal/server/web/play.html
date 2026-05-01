@@ -133,7 +133,13 @@
   }
   .submit-dock .qr-btn:hover { opacity: .9; }
   .submit-dock .qr-btn svg { width: 1.4rem; height: 1.4rem; }
+  /* Reserves a line below the input row for "wrong, try again" /
+     "saved" feedback. Hidden when empty so the dock's visible
+     padding stays symmetric with its top — without the :empty
+     guard the row reads as ~1.5rem of extra space below the
+     buttons because the grid gap above it is always present. */
   .submit-dock .result { grid-column: 1 / -1; margin: 0; min-height: 1rem; font-size: .9rem; }
+  .submit-dock .result:empty { min-height: 0; display: none; }
 
   /* Fullscreen QR scanner. Pulled in as an overlay so it can take
      over the viewport for the camera feed without disturbing the
@@ -190,6 +196,7 @@
     width: 100%; padding: .9rem 1.2rem;
   }
   .submit-dock .dock-single .result { margin: 0; min-height: 1rem; font-size: .9rem; }
+  .submit-dock .dock-single .result:empty { min-height: 0; display: none; }
   /* Compact top strip: adventure title + team + progress + status pill in
      one row. Leaves maximum vertical space for the puzzle itself. */
   /* Runbar = compact toolbar at the top of every play state. Holds
