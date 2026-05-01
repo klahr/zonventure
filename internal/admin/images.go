@@ -206,8 +206,15 @@ func (h *Handlers) ServeImage(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(content)
 }
 
-// canViewPageImage allows any staff user and players whose team is
-// currently on the page owning the image.
+// canViewPageImage allows any staff user and any player whose team
+// is in an event for the same adventure as the page. The previous
+// rule pinned visibility to the team's CURRENT page only — that
+// blocked proactive offline asset prefetch (the player can't cache
+// puzzle 5's image while they're on puzzle 1) without a real
+// security upside, since any team member sees every page in author
+// order eventually. The reveal-gated path for hint assets still
+// uses the stricter canViewHintImage check; that one matters
+// because hints are a game mechanic, not just per-page progress.
 func (h *Handlers) canViewPageImage(r *http.Request, pageID int64) bool {
 	if u, ok := auth.FromContext(r.Context()); ok {
 		_ = u
@@ -217,27 +224,22 @@ func (h *Handlers) canViewPageImage(r *http.Request, pageID int64) bool {
 	if !ok {
 		return false
 	}
-	var (
-		advID int64
-		idx   int
-	)
+	var advID int64
 	if err := h.DB.QueryRowContext(r.Context(),
-		`SELECT adventure_id, idx FROM adventure_pages WHERE id = $1`, pageID).Scan(&advID, &idx); err != nil {
+		`SELECT adventure_id FROM adventure_pages WHERE id = $1`, pageID).Scan(&advID); err != nil {
 		return false
 	}
-	// Match up: slot's team is on an event whose adventure_slug → advID, and
-	// team.current_page_index == idx.
-	var onPage int
+	var inAdventure int
 	err := h.DB.QueryRowContext(r.Context(), `
 		SELECT COUNT(*) FROM teams t
 		JOIN events ar ON ar.id = t.event_id
 		JOIN adventures a ON a.slug = ar.adventure_slug
-		WHERE t.id = $1 AND a.id = $2 AND t.current_page_index = $3
-	`, slot.TeamID, advID, idx).Scan(&onPage)
+		WHERE t.id = $1 AND a.id = $2
+	`, slot.TeamID, advID).Scan(&inAdventure)
 	if err != nil {
 		return false
 	}
-	return onPage > 0
+	return inAdventure > 0
 }
 
 func loadPageImages(ctx context.Context, db *sql.DB, pageID int64) ([]imageView, error) {

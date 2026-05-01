@@ -1352,16 +1352,70 @@ function wsSend(kind, data) {
 // at 5 — players spamming during dead air shouldn't prefill the
 // limiter), and dedupe locations to "the last fix" since older pings
 // are stale once we reconnect.
+//
+// Persisted to localStorage so an app reload (closed tab, browser
+// refresh, swipe-up dismiss) doesn't lose queued actions. Each entry
+// carries a stable client_action_id (UUID at submit time) — when the
+// queue eventually flushes, the server's dedup table replays the
+// cached response if the action already landed before our reconnect.
 const pendingAnswers = [];
 const PENDING_ANSWERS_MAX = 5;
+const PENDING_QUEUE_KEY = 'zv-play-pending-v1';
 let pendingLocation = null;
+
+// clientActionId generates a stable idempotency key per user-issued
+// action. The server's player_action_dedup table replays the cached
+// response when the same id arrives twice (post-reconnect retry of
+// a queued submit). crypto.randomUUID is shipped on every modern
+// browser; the fallback covers older devices that still play.
+function clientActionId() {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+  return 'a-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
+}
+
+function persistPendingActions() {
+  try {
+    if (pendingAnswers.length === 0) {
+      localStorage.removeItem(PENDING_QUEUE_KEY);
+    } else {
+      localStorage.setItem(PENDING_QUEUE_KEY, JSON.stringify(pendingAnswers));
+    }
+  } catch (_) { /* private mode / storage full — best effort */ }
+}
+
+function loadPendingActions() {
+  try {
+    const raw = localStorage.getItem(PENDING_QUEUE_KEY);
+    if (!raw) return;
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return;
+    for (const m of parsed.slice(0, PENDING_ANSWERS_MAX)) {
+      if (m && (m.kind === 'answer' || m.kind === 'advance') && m.data) {
+        pendingAnswers.push(m);
+      }
+    }
+    if (pendingAnswers.length > 0) didQueueWhileOffline = true;
+  } catch (_) { /* malformed — ignore */ }
+}
 
 // Did we lose the WS while typing? Tracked so the "saved while you
 // were offline" toast only fires when the user actually queued
 // something — a clean reconnect with no traffic stays silent.
 let didQueueWhileOffline = false;
 
+// Re-hydrate any actions queued by a previous session — a tab
+// reload, swipe-up dismiss, or app crash leaves the localStorage
+// queue intact, and the next bootstrap should pick those up so
+// they flush on reconnect like nothing happened.
+loadPendingActions();
+
 function wsSendOrQueue(kind, data) {
+  // Mutating actions get a stable idempotency key so a queued+
+  // replayed submit doesn't double-fire on the server. The same id
+  // travels with both the live attempt and any later retry.
+  if (kind === 'answer' || kind === 'advance') {
+    if (data && !data.client_action_id) data.client_action_id = clientActionId();
+  }
   if (ws && ws.readyState === 1) {
     return wsSend(kind, data);
   }
@@ -1369,6 +1423,7 @@ function wsSendOrQueue(kind, data) {
     if (pendingAnswers.length < PENDING_ANSWERS_MAX) {
       pendingAnswers.push({ kind, data });
       didQueueWhileOffline = true;
+      persistPendingActions();
     }
     return false;
   }
@@ -1389,8 +1444,10 @@ function flushPending() {
       // Re-queue and bail — we'll try again on the next onopen.
       pendingAnswers.unshift(m);
       didQueueWhileOffline = true;
+      persistPendingActions();
       return;
     }
+    persistPendingActions();
   }
   if (pendingLocation) {
     if (wsSend('location', pendingLocation)) pendingLocation = null;
@@ -2229,8 +2286,12 @@ async function revealNextHint(s, hintIndex) {
     previewHintCounts.set(s.page_index || 0, next);
     return next;
   }
+  // Idempotency: if the request fails mid-flight and the user
+  // taps again, the same client_action_id lets the server replay
+  // the original response instead of double-counting.
   const r = await api('/api/player/hint', {
-    method: 'POST', body: JSON.stringify({ hint_index: hintIndex }),
+    method: 'POST',
+    body: JSON.stringify({ hint_index: hintIndex, client_action_id: clientActionId() }),
   });
   if (r.status === 200 && typeof r.body?.hints_revealed === 'number') {
     setHintsRevealed(s, r.body.hints_revealed);
@@ -3500,6 +3561,39 @@ async function bootstrapAfterClaim() {
   startGPS();
   render(s.body);
   connectWS();
+  // Fire-and-forget: register the service worker and ask it to
+  // prefetch the team's adventure assets so they're cached for
+  // offline play (dead spots, woods, patchy 4G). The SW handles
+  // failures silently — a 403 on a reveal-gated hint asset just
+  // means we'll re-fetch when the hint reveals.
+  registerOfflineCache().catch(() => {});
+}
+
+// registerOfflineCache installs the player-side service worker and
+// pushes the asset manifest for cache.addAll. Safe to call multiple
+// times — subsequent registrations are no-ops in the browser. Bails
+// silently when SWs aren't supported (older browsers, file://, etc.)
+// so the play UX never depends on this succeeding.
+async function registerOfflineCache() {
+  if (!('serviceWorker' in navigator)) return;
+  try {
+    const reg = await navigator.serviceWorker.register('/play-sw.js', { scope: '/' });
+    // Wait for the active SW so postMessage actually reaches a
+    // controller. New registrations need an `activated` controller
+    // before message-driven prefetch will do anything.
+    if (!navigator.serviceWorker.controller) {
+      await new Promise((resolve) => {
+        const t = setTimeout(resolve, 2000);
+        navigator.serviceWorker.addEventListener('controllerchange', () => {
+          clearTimeout(t); resolve();
+        }, { once: true });
+      });
+    }
+    const m = await api('/api/player/manifest');
+    if (m.status !== 200 || !m.body?.urls) return;
+    const sw = navigator.serviceWorker.controller || reg.active;
+    if (sw) sw.postMessage({ type: 'prefetch', urls: m.body.urls });
+  } catch (_) { /* offline already, or SW disallowed — ignore */ }
 }
 
 async function bootstrapPreview(slug, pageIdx, debug) {

@@ -9,6 +9,7 @@ package player
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"math"
 	"net/http"
@@ -719,6 +720,66 @@ func (h *Handlers) GetState(w http.ResponseWriter, r *http.Request) {
 	httpx.JSON(w, http.StatusOK, resp)
 }
 
+// AssetManifest is the body of GET /api/player/manifest. The service
+// worker on the player's device cache.addAll()s these URLs on team
+// join so the assets are available offline. Hint assets ARE included
+// even though the per-hint serve route is reveal-gated — the SW
+// silently skips the 403s during prefetch and re-tries on cache miss
+// once a hint is revealed (at which point the request succeeds and
+// gets cached for the rest of the offline window).
+type AssetManifest struct {
+	AdventureSlug string   `json:"adventure_slug"`
+	URLs          []string `json:"urls"`
+}
+
+// Manifest returns every puzzle/hint image+audio URL for the slot's
+// adventure. The slot's team must be in a still-alive event;
+// otherwise we don't ship URLs (the team has nothing to play).
+//
+// Visibility: each URL still goes through its own visibility gate at
+// fetch time (canViewPageImage / canViewHintImage). The manifest
+// itself doesn't bypass any check — it's just a list of URLs that
+// MIGHT serve, so a misbehaving SW can't use it to peek at content
+// it shouldn't see.
+func (h *Handlers) Manifest(w http.ResponseWriter, r *http.Request) {
+	slot, _ := auth.SlotFromContext(r.Context())
+	tc, err := loadTeam(r.Context(), h.DB, slot)
+	if errors.Is(err, sql.ErrNoRows) {
+		httpx.Error(w, http.StatusNotFound, "team missing")
+		return
+	}
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "lookup failed")
+		return
+	}
+	adv := h.Lib.Get(tc.AdventureSlug)
+	if adv == nil {
+		httpx.Error(w, http.StatusInternalServerError, "adventure not loaded")
+		return
+	}
+	urls := make([]string, 0, 32)
+	for _, p := range adv.Pages {
+		if p.Disabled {
+			continue
+		}
+		for _, im := range p.Images {
+			urls = append(urls, "/adventure-assets/image/"+strconv.FormatInt(im.ID, 10))
+		}
+		for _, au := range p.Audio {
+			urls = append(urls, "/adventure-assets/audio/"+strconv.FormatInt(au.ID, 10))
+		}
+		for _, hint := range p.Hints {
+			for _, im := range hint.Images {
+				urls = append(urls, "/adventure-assets/hint-image/"+strconv.FormatInt(im.ID, 10))
+			}
+			for _, au := range hint.Audio {
+				urls = append(urls, "/adventure-assets/hint-audio/"+strconv.FormatInt(au.ID, 10))
+			}
+		}
+	}
+	httpx.JSON(w, http.StatusOK, AssetManifest{AdventureSlug: tc.AdventureSlug, URLs: urls})
+}
+
 // gateReached checks whether the team's latest location ping places them
 // inside the location's gate radius.
 func gateReached(ctx context.Context, db *sql.DB, teamID int64, loc adventure.Location) (bool, error) {
@@ -748,8 +809,16 @@ func haversineMeters(lat1, lng1, lat2, lng2 float64) float64 {
 }
 
 // AnswerRequest is the body of POST /api/player/answer.
+//
+// ClientActionID is an optional idempotency key the client generates
+// per typed answer attempt. The offline replay queue retries failed
+// requests with the same key — the server caches the original
+// response keyed by (slot, action_id) and replays it instead of
+// double-running applyAnswer. Older clients omit the field; the
+// server falls back to non-idempotent behaviour, same as before.
 type AnswerRequest struct {
-	Answer string `json:"answer"`
+	Answer         string `json:"answer"`
+	ClientActionID string `json:"client_action_id,omitempty"`
 }
 
 // AnswerResponse is the reply.
@@ -757,6 +826,13 @@ type AnswerResponse struct {
 	Accepted  bool `json:"accepted"`
 	Completed bool `json:"completed"`
 	NextIndex int  `json:"next_index,omitempty"`
+}
+
+// AdvanceRequest is the body of the WS "advance" frame on no-answer
+// puzzles. Only carries the optional idempotency key — there's no
+// answer to validate, just a "tap to continue" signal.
+type AdvanceRequest struct {
+	ClientActionID string `json:"client_action_id,omitempty"`
 }
 
 // applyAnswer evaluates a submitted answer and persists the consequences.
@@ -879,12 +955,29 @@ func (h *Handlers) applyAnswer(ctx context.Context, slot auth.Slot, answer strin
 // SubmitAnswer evaluates a submitted answer for the slot's current page.
 // Rate-limited per slot so puzzle answers — which are often short
 // dictionary words — can't be brute-forced by a scripted client.
+//
+// When the client supplies a client_action_id, a successful (2xx)
+// response is cached and replayed verbatim on retry — the offline
+// queue replays actions on reconnect, and we don't want the server
+// re-running applyAnswer (which would log a second answer_attempts
+// row and try to advance from now-stale state). Errors are NOT
+// cached so a transient "rate limited" or "run not active" doesn't
+// stick across retries.
 func (h *Handlers) SubmitAnswer(w http.ResponseWriter, r *http.Request) {
 	var req AnswerRequest
 	if !httpx.DecodeJSON(w, r, &req) {
 		return
 	}
 	slot, _ := auth.SlotFromContext(r.Context())
+	actionID := validClientActionID(req.ClientActionID)
+
+	// Cache lookup before rate-limit + applyAnswer: a replay shouldn't
+	// pay the limiter token nor re-evaluate the answer.
+	if cached, found, err := lookupCachedAction(r.Context(), h.DB, slot.ID, actionID); err == nil && found {
+		writeCached(w, cached)
+		return
+	}
+
 	if ok, retry := h.rateLimiter().AllowAnswer(slot.ID); !ok {
 		writeRateLimited(w, retry)
 		return
@@ -894,10 +987,24 @@ func (h *Handlers) SubmitAnswer(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, status, errMsg)
 		return
 	}
+	body, _ := json.Marshal(resp)
+	recordAction(r.Context(), h.DB, slot.ID, actionID, status, body)
 	if eventID != 0 {
 		h.Hub.Publish(ws.EventTopic(eventID), "changed", nil)
 	}
-	httpx.JSON(w, http.StatusOK, resp)
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(status)
+	_, _ = w.Write(body)
+}
+
+// writeCached replays a previously-recorded response. Content-Type
+// is fixed to JSON because that's what every cached endpoint emits;
+// this helper would need a stored content-type if we ever started
+// caching non-JSON responses.
+func writeCached(w http.ResponseWriter, c cachedAction) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(c.Status)
+	_, _ = w.Write(c.Body)
 }
 
 // LocationRequest is the body of POST /api/player/location.
@@ -1171,7 +1278,8 @@ func (h *Handlers) RenameMyTeam(w http.ResponseWriter, r *http.Request) {
 // hints in author order — skipping ahead would let a player "spend"
 // a later hint without ever seeing the earlier scaffolding.
 type HintRequest struct {
-	HintIndex int `json:"hint_index"`
+	HintIndex      int    `json:"hint_index"`
+	ClientActionID string `json:"client_action_id,omitempty"`
 }
 
 // HintResponse mirrors the relevant slice of buildState — the client
@@ -1187,12 +1295,27 @@ type HintResponse struct {
 // client can't skip past locked hints. Publishes to the event topic
 // so team-mates' WS connections pull a refreshed state with the new
 // HintsRevealed count.
+//
+// Server-side timer validation: `now - team.current_page_started_at >=
+// hint.delay_seconds`. The client already gates its UI on
+// UnlocksInSeconds=0, but a misclocked or malicious client could POST
+// early. The 403 here is the load-bearing check.
+//
+// client_action_id: optional idempotency key. The (team, page, hint)
+// upsert + sequential gate already make repeat calls safe, so the
+// dedup is mostly a courtesy that lets retries return the cached
+// success body verbatim instead of re-doing the count + insert dance.
 func (h *Handlers) RevealHint(w http.ResponseWriter, r *http.Request) {
 	var req HintRequest
 	if !httpx.DecodeJSON(w, r, &req) {
 		return
 	}
 	slot, _ := auth.SlotFromContext(r.Context())
+	actionID := validClientActionID(req.ClientActionID)
+	if cached, found, err := lookupCachedAction(r.Context(), h.DB, slot.ID, actionID); err == nil && found {
+		writeCached(w, cached)
+		return
+	}
 	tc, err := loadTeam(r.Context(), h.DB, slot)
 	if errors.Is(err, sql.ErrNoRows) {
 		httpx.Error(w, http.StatusNotFound, "team missing")
@@ -1220,6 +1343,29 @@ func (h *Handlers) RevealHint(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusBadRequest, "hint_index out of range")
 		return
 	}
+	// Server-side timer gate. arrival is the moment the team reached
+	// this puzzle (current_page_started_at, with a sensible page-0
+	// fallback to event start). If the team has no arrival yet, the
+	// run is degenerate and we refuse — the client shouldn't be able
+	// to reach this point under normal flow.
+	arrival := teamArrival(tc)
+	if arrival.IsZero() {
+		httpx.Error(w, http.StatusForbidden, "team has not started this puzzle yet")
+		return
+	}
+	delay := time.Duration(page.Hints[req.HintIndex].DelaySeconds) * time.Second
+	if elapsed := time.Since(arrival); elapsed < delay {
+		// Tell the client how long they have to wait. The offline
+		// replay queue uses Retry-After to back off and re-fire;
+		// the same hint reveal will succeed once the timer's up.
+		retry := int(math.Ceil((delay - elapsed).Seconds()))
+		if retry < 1 {
+			retry = 1
+		}
+		w.Header().Set("Retry-After", strconv.Itoa(retry))
+		httpx.Error(w, http.StatusForbidden, "hint not yet unlocked")
+		return
+	}
 	// Sequential check: the next reveal must be the row after the
 	// highest one already stored. This rejects out-of-order requests
 	// from a stale tab without making the API order-tolerant.
@@ -1233,8 +1379,13 @@ func (h *Handlers) RevealHint(w http.ResponseWriter, r *http.Request) {
 	if req.HintIndex != revealed {
 		// Already revealed (or skipping ahead). Idempotent: return the
 		// authoritative count so the client can resync without an
-		// error UI.
-		httpx.JSON(w, http.StatusOK, HintResponse{HintsRevealed: revealed})
+		// error UI. Cache so a retry of the same action_id replays the
+		// same body without another count query.
+		body, _ := json.Marshal(HintResponse{HintsRevealed: revealed})
+		recordAction(r.Context(), h.DB, slot.ID, actionID, http.StatusOK, body)
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(body)
 		return
 	}
 	if _, err := h.DB.ExecContext(r.Context(),
@@ -1248,7 +1399,11 @@ func (h *Handlers) RevealHint(w http.ResponseWriter, r *http.Request) {
 	// Push so other team-mates' WS state refreshes immediately with
 	// the new revealed count. Same shape as SubmitAnswer.
 	h.Hub.Publish(ws.EventTopic(tc.EventID), "changed", nil)
-	httpx.JSON(w, http.StatusOK, HintResponse{HintsRevealed: revealed + 1})
+	body, _ := json.Marshal(HintResponse{HintsRevealed: revealed + 1})
+	recordAction(r.Context(), h.DB, slot.ID, actionID, http.StatusOK, body)
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(body)
 }
 
 // writeRateLimited writes a 429 with Retry-After. Mirrors the helper

@@ -82,6 +82,20 @@ func (h *Handlers) WSPlay(w http.ResponseWriter, r *http.Request) {
 			if err := json.Unmarshal(msg.Data, &req); err != nil {
 				continue
 			}
+			actionID := validClientActionID(req.ClientActionID)
+			// Idempotent replay of a prior successful submit. The WS
+			// connection may have died mid-response and the client
+			// retried with the same id; we replay the cached body as
+			// an answer_result frame so the client's wiring is the
+			// same as a fresh success. Errors aren't cached, so a
+			// cache hit always means status=200.
+			if cached, found, err := lookupCachedAction(conn.Context(), h.DB, slot.ID, actionID); err == nil && found {
+				var resp AnswerResponse
+				if json.Unmarshal(cached.Body, &resp) == nil {
+					conn.SendKind("answer_result", resp)
+				}
+				continue
+			}
 			if ok, retry := h.rateLimiter().AllowAnswer(slot.ID); !ok {
 				conn.SendKind("answer_error", map[string]any{
 					"error":            "too many attempts, slow down",
@@ -95,6 +109,8 @@ func (h *Handlers) WSPlay(w http.ResponseWriter, r *http.Request) {
 				conn.SendKind("answer_error", map[string]any{"error": errMsg, "status": status})
 				continue
 			}
+			body, _ := json.Marshal(resp)
+			recordAction(conn.Context(), h.DB, slot.ID, actionID, status, body)
 			conn.SendKind("answer_result", resp)
 			if eventID != 0 {
 				h.Hub.Publish(ws.EventTopic(eventID), "changed", nil)
@@ -106,6 +122,20 @@ func (h *Handlers) WSPlay(w http.ResponseWriter, r *http.Request) {
 			// the client's existing wiring keeps working. Same answer
 			// bucket — advance is a submission too and we don't want
 			// to leave a free-spam path on no-answer puzzles.
+			//
+			// Same idempotency dance as "answer": the message body
+			// carries an optional client_action_id, and a retry of the
+			// same id replays the cached AnswerResponse.
+			var req AdvanceRequest
+			_ = json.Unmarshal(msg.Data, &req) // tolerate empty body
+			actionID := validClientActionID(req.ClientActionID)
+			if cached, found, err := lookupCachedAction(conn.Context(), h.DB, slot.ID, actionID); err == nil && found {
+				var resp AnswerResponse
+				if json.Unmarshal(cached.Body, &resp) == nil {
+					conn.SendKind("answer_result", resp)
+				}
+				continue
+			}
 			if ok, retry := h.rateLimiter().AllowAnswer(slot.ID); !ok {
 				conn.SendKind("answer_error", map[string]any{
 					"error":            "too many attempts, slow down",
@@ -119,6 +149,8 @@ func (h *Handlers) WSPlay(w http.ResponseWriter, r *http.Request) {
 				conn.SendKind("answer_error", map[string]any{"error": errMsg, "status": status})
 				continue
 			}
+			body, _ := json.Marshal(resp)
+			recordAction(conn.Context(), h.DB, slot.ID, actionID, status, body)
 			conn.SendKind("answer_result", resp)
 			if eventID != 0 {
 				h.Hub.Publish(ws.EventTopic(eventID), "changed", nil)

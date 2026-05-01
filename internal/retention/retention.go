@@ -69,6 +69,43 @@ func sweep(ctx context.Context, db *sql.DB, cfg Config) {
 	// time; ConsumeChallenge deletes on success. This sweep mops up
 	// abandoned attempts so the table stays small.
 	pruneExpiredTOTPChallenges(ctx, db)
+	// Player-action dedup keys: the offline replay queue replays
+	// within minutes of reconnecting, so anything older than a week
+	// is past any plausible retry. The slot-cascade also clears
+	// rows when a slot rotates between events, so this sweep is
+	// just for the long-tail.
+	prunePlayerActionDedup(ctx, db)
+}
+
+func prunePlayerActionDedup(ctx context.Context, db *sql.DB) {
+	stmt := `
+		DELETE FROM player_action_dedup
+		WHERE created_at < now() - make_interval(days => 7)
+		AND ctid IN (
+		  SELECT ctid FROM player_action_dedup
+		  WHERE created_at < now() - make_interval(days => 7)
+		  LIMIT ` + strconv.Itoa(batchSize) + `
+		)
+	`
+	total := int64(0)
+	for {
+		if ctx.Err() != nil {
+			return
+		}
+		res, err := db.ExecContext(ctx, stmt)
+		if err != nil {
+			logx.Error("retention.player_action_dedup.failed", "err", err.Error())
+			return
+		}
+		n, _ := res.RowsAffected()
+		total += n
+		if n < batchSize {
+			break
+		}
+	}
+	if total > 0 {
+		logx.Info("retention.player_action_dedup.pruned", "rows", total)
+	}
 }
 
 func pruneExpiredTOTPChallenges(ctx context.Context, db *sql.DB) {

@@ -13,6 +13,24 @@ The repository, Go module, and CLI binary are named `zv`; the product is
 
 ### Added
 
+- **Offline-tolerant play.** The player UI now caches the adventure's
+  images + audio up-front (service worker + new
+  `GET /api/player/manifest`), persists queued answer/advance actions
+  to localStorage so a reload doesn't lose them, and tags every
+  mutating action with a stable `client_action_id`. The server's new
+  `player_action_dedup` table replays the cached response on a retry
+  with the same id — so a queued submit that flushes after a
+  reconnect doesn't double-process even if the original landed
+  before the connection died. Visibility for puzzle assets relaxed
+  to "any team member of this adventure" (down from "team is on
+  this exact page") so the SW can prefetch all puzzles up-front;
+  hint assets stay reveal-gated.
+- **Server-side hint timer validation.** `RevealHint` now checks
+  `now - team.current_page_started_at >= hint.delay_seconds` and
+  returns 403 with `Retry-After` if the hint isn't unlocked yet.
+  Closes a pre-existing gap where the client gated the reveal
+  button on `unlocks_in_seconds` but the server never re-checked,
+  so a misclocked or malicious client could POST early.
 - **Audio attachments on puzzles and hints.** Arrangers can now upload
   audio (`.mp3`, `.m4a`, `.ogg`, `.wav`, anything `audio/*`) alongside
   images on a puzzle or a hint. Players see a native HTML5 `<audio

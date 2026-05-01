@@ -36,7 +36,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 )
 
-//go:embed web/play.html web/arrange.html web/live.html web/recap.html web/i18n.js web/favicon.svg web/privacy.html web/terms.html web/manual.html web/landing.html web/pricing.html web/topbar.css web/topbar.js web/jsqr.js web/404.html web/robots.txt web/sitemap.xml
+//go:embed web/play.html web/play-sw.js web/arrange.html web/live.html web/recap.html web/i18n.js web/favicon.svg web/privacy.html web/terms.html web/manual.html web/landing.html web/pricing.html web/topbar.css web/topbar.js web/jsqr.js web/404.html web/robots.txt web/sitemap.xml
 var webFS embed.FS
 
 // Config is the bag of knobs New needs.
@@ -286,6 +286,23 @@ func New(cfg Config) http.Handler {
 	})
 	r.Get("/arrange", servePage("web/arrange.html"))
 
+	// Player-side service worker. Served at the site root so its
+	// scope is the whole origin — that's what lets it intercept
+	// /adventure-assets/* requests for offline asset playback. The
+	// browser refetches the SW on every page load (no-cache below),
+	// so a deploy reaches users without a hard refresh.
+	r.Get("/play-sw.js", func(w http.ResponseWriter, req *http.Request) {
+		w.Header().Set("Service-Worker-Allowed", "/")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
+		body, err := readWebFile("web/play-sw.js")
+		if err != nil {
+			http.Error(w, "embed", http.StatusInternalServerError)
+			return
+		}
+		_, _ = w.Write(body)
+	})
+
 	// Shared i18n dictionary + helpers, loaded by all three entry points.
 	r.Get("/i18n.js", serveAsset("web/i18n.js", "application/javascript; charset=utf-8"))
 	// Favicon: single SVG served at both the conventional /favicon.ico
@@ -462,6 +479,11 @@ func New(cfg Config) http.Handler {
 		r.Use(auth.RequireSlot)
 		r.Use(auth.RequireCSRF())
 		r.Get("/state", playerH.GetState)
+		// Asset manifest powers the player-side service-worker prefetch
+		// for offline play: the SW cache.addAll()s these URLs on team
+		// join so puzzles render even in a dead spot. Each URL is
+		// still visibility-gated at fetch time.
+		r.Get("/manifest", playerH.Manifest)
 		r.Post("/answer", playerH.SubmitAnswer)
 		r.Post("/location", playerH.PostLocation)
 		r.Post("/hint", playerH.RevealHint)
