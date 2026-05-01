@@ -123,6 +123,11 @@ seed-compose:
 # Upgrade an existing Docker Compose deployment to the latest released
 # tag. Take a Postgres backup first — see the -backup recipe in
 # SELFHOSTING.md. Bails early if there's no tag to check out yet.
+#
+# We check out the tag (detached HEAD) just long enough for the build
+# to stamp `main.version` from `git describe`, then switch back to
+# master so the working tree is in a familiar state for the next
+# session. The running container keeps the version it was built with.
 upgrade:
 	git fetch --tags
 	@LATEST=$$(git tag --sort=-v:refname | head -1) && \
@@ -132,3 +137,4 @@ upgrade:
 	echo "Upgrading to $$LATEST" && \
 	git checkout "$$LATEST"
 	docker compose up -d --build
+	git checkout master

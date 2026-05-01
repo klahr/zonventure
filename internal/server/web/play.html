@@ -431,6 +431,15 @@
     border: 1px solid var(--border-soft);
     background: var(--surface);
   }
+  .puzzle-audio, .hint-audio {
+    margin-top: .55rem;
+  }
+  .puzzle-audio audio, .hint-audio audio {
+    width: 100%;
+  }
+  .puzzle-audio-desc, .hint-audio-desc {
+    margin: .25rem 0 0; font-size: .85rem;
+  }
   .hint-sheet-cta { width: 100%; margin-top: .75rem; }
   .hint-sheet-locked {
     margin: .75rem 0 0; padding: .6rem .85rem;
@@ -2080,6 +2089,7 @@ function render(s) {
     hnts: (s.hints || []).map((h) => h.unlocks_in_seconds),
     rev: hintsRevealedFor(s),
     img: (s.images || []).map((i) => i.url),
+    aud: (s.audio || []).map((a) => a.url),
     gate: s.gate ? s.gate.reached : null,
     team: s.team_name, adv: s.adventure_title,
     // Include no_answer so a puzzle flipping between answer/no-answer
@@ -2138,6 +2148,23 @@ function render(s) {
     // im.alt is the author's text alternative; empty string keeps
     // decorative semantics (screen readers skip the <img>).
     for (const im of s.images) app.append(el('img', { class: 'puzzle-img', src: im.url, alt: im.alt || '' }));
+  }
+  if (Array.isArray(s.audio)) {
+    // Native <audio controls> — no autoplay (browsers block silent
+    // autoplay on mobile anyway, and surprising audio is hostile UX).
+    // The author's description, when present, surfaces as a small
+    // caption below the player so users who can't hear still get
+    // context.
+    for (const au of s.audio) {
+      const wrap = el('div', { class: 'puzzle-audio' });
+      const a = el('audio', { controls: true, preload: 'metadata' });
+      const src = el('source', { src: au.url });
+      if (au.mime_type) src.type = au.mime_type;
+      a.append(src);
+      wrap.append(a);
+      if (au.description) wrap.append(el('p', { class: 'puzzle-audio-desc muted' }, au.description));
+      app.append(wrap);
+    }
   }
   // Prompt comes from the server already rendered to HTML (goldmark,
   // raw HTML escaped). Nested p/ul/ol/etc inherit typography from
@@ -2301,6 +2328,21 @@ function openHintSheet(s) {
           grid.append(el('img', { src: im.url, alt: im.alt || '' }));
         }
         card.append(grid);
+      }
+      // Per-hint audio: same reveal gate as the images. Native
+      // <audio controls>; the description (when present) renders
+      // under the player as a transcript fallback.
+      if (h.audio && h.audio.length) {
+        for (const au of h.audio) {
+          const wrap = el('div', { class: 'hint-audio' });
+          const a = el('audio', { controls: true, preload: 'metadata' });
+          const src = el('source', { src: au.url });
+          if (au.mime_type) src.type = au.mime_type;
+          a.append(src);
+          wrap.append(a);
+          if (au.description) wrap.append(el('p', { class: 'hint-audio-desc muted' }, au.description));
+          card.append(wrap);
+        }
       }
       body.append(card);
     }

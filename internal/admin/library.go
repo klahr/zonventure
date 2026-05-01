@@ -386,6 +386,15 @@ func (h *Handlers) CopyPuzzleToAdventure(w http.ResponseWriter, r *http.Request)
 		httpx.Error(w, http.StatusInternalServerError, "image copy failed: "+err.Error())
 		return
 	}
+	// Same blob-for-blob copy for audio attachments.
+	if _, err := tx.ExecContext(r.Context(), `
+		INSERT INTO adventure_page_audio(page_id, idx, mime_type, size_bytes, content, description)
+		SELECT $1, idx, mime_type, size_bytes, content, description
+		FROM adventure_page_audio WHERE page_id = $2
+	`, newID, srcID); err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "audio copy failed: "+err.Error())
+		return
+	}
 	// Hints + per-hint images: insert each source hint into the new
 	// page with RETURNING, then copy its images blob-for-blob into
 	// the new hint. INSERT...SELECT works for the hint row itself,
@@ -440,6 +449,14 @@ func (h *Handlers) CopyPuzzleToAdventure(w http.ResponseWriter, r *http.Request)
 			FROM adventure_page_hint_images WHERE hint_id = $2
 		`, newHintID, row.id); err != nil {
 			httpx.Error(w, http.StatusInternalServerError, "hint image copy failed: "+err.Error())
+			return
+		}
+		if _, err := tx.ExecContext(r.Context(), `
+			INSERT INTO adventure_page_hint_audio(hint_id, idx, mime_type, size_bytes, content, description)
+			SELECT $1, idx, mime_type, size_bytes, content, description
+			FROM adventure_page_hint_audio WHERE hint_id = $2
+		`, newHintID, row.id); err != nil {
+			httpx.Error(w, http.StatusInternalServerError, "hint audio copy failed: "+err.Error())
 			return
 		}
 	}

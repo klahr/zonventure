@@ -11,6 +11,25 @@ The repository, Go module, and CLI binary are named `zv`; the product is
 
 ## [Unreleased]
 
+### Added
+
+- **Audio attachments on puzzles and hints.** Arrangers can now upload
+  audio (`.mp3`, `.m4a`, `.ogg`, `.wav`, anything `audio/*`) alongside
+  images on a puzzle or a hint. Players see a native HTML5 `<audio
+  controls>` element; the page-level audio is visible to any team on
+  the puzzle, hint audio is reveal-gated like hint images. Each clip
+  carries an optional `description` field for a transcript / summary
+  fallback. New routes: `POST /api/admin/pages/{id}/audio`,
+  `PATCH/DELETE /api/admin/audio/{id}`, plus the `hints/.../audio`
+  + `hint-audio/{id}` mirrors. Size cap defaults to 15 MiB
+  (`ZV_MAX_AUDIO_BYTES` overrides). Page-clone copies audio rows
+  blob-for-blob, same as images.
+- **"Add media" replaces "Add image"** in the puzzle and hint editors.
+  Single picker accepts `image/*,audio/*` and routes the upload to the
+  matching endpoint by MIME — the existing image flow stays
+  unchanged, audio takes a new code path that skips client-side
+  downscaling.
+
 ## [0.1.5] - 2026-05-01
 
 ### Added

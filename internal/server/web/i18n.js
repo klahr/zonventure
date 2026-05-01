@@ -636,6 +636,16 @@
       'Image removed': 'Bild borttagen',
       'Click to add image': 'Klicka för att lägga till bild',
       'Image added': 'Bild tillagd',
+      'Click to add media': 'Klicka för att lägga till media',
+      'Media attaches to a saved puzzle — finish the basics, click Create, then come back to upload.':
+        'Media kopplas till ett sparat pussel — fyll i grunderna, klicka på Skapa, och kom sedan tillbaka för att ladda upp.',
+      'Save the puzzle to attach media to this hint.':
+        'Spara pusslet för att koppla media till denna ledtråd.',
+      'Audio added': 'Ljud tillagt',
+      'Audio removed': 'Ljud borttaget',
+      'Description / transcript (optional)':
+        'Beskrivning / transkription (valfritt)',
+      'Description saved': 'Beskrivning sparad',
       'Player answer bar (preview)': 'Spelarens svarsrad (förhandsvisning)',
       'Hint:': 'Ledtråd:',
       'hello, hi': 'hej, tjena',
@@ -1829,10 +1839,6 @@
       'Stuck? Tap the ? for a hint.': 'Fastnat? Tryck på ? för en ledtråd.',
       'Stuck? There\'s another hint ready.': 'Fastnat? Det finns en till ledtråd redo.',
       'Browse store': 'Bläddra i butiken',
-      'Images attach to a saved puzzle — finish the basics, click Create, then come back to upload.':
-          'Bilder kopplas till ett sparat pussel — fyll i grunderna, klicka på Skapa, kom sedan tillbaka för att ladda upp.',
-      'Save the puzzle to attach images to this hint.':
-          'Spara pusslet för att koppla bilder till den här ledtråden.',
       'just now': 'just nu',
       '{{n}}s ago': 'för {{n}} s sedan',
       '{{n}}m ago': 'för {{n}} min sedan',

@@ -431,6 +431,11 @@ func loadPageHints(ctx context.Context, db *sql.DB, pageID int64) ([]hintView, e
 			return nil, err
 		}
 		out[i].Images = imgs
+		audio, err := loadHintAudio(ctx, db, *out[i].ID)
+		if err != nil {
+			return nil, err
+		}
+		out[i].Audio = audio
 	}
 	return out, nil
 }

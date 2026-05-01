@@ -1192,6 +1192,30 @@ textarea { min-height: 80px; resize: vertical; font-family: ui-monospace, monosp
   background: transparent; border-color: var(--border); color: var(--muted);
 }
 
+/* Audio strip — one row per attached clip. Native <audio controls>
+   spans the available width and the description textarea sits
+   beneath it as a transcript fallback for non-hearing users. The
+   delete button anchors top-right just like .pe-image-remove. */
+.pe-audio { display: flex; flex-direction: column; gap: .5rem; margin: .5rem 0; }
+.pe-audio-wrap {
+  position: relative;
+  padding: .5rem .55rem .55rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.pe-audio-wrap audio { width: 100%; }
+.pe-audio-desc {
+  width: 100%; margin-top: .35rem; padding: .35rem .55rem;
+  font: inherit; font-size: .85rem; box-sizing: border-box;
+  border: 1px solid var(--border-soft); border-radius: var(--radius);
+  background: var(--surface);
+  resize: vertical;
+}
+.pe-audio-remove {
+  position: absolute; top: .5rem; right: .5rem;
+}
+
 /* Accepted-answers list: one row per literal-or-regex entry.
    The Regex toggle is intentionally inline rather than a separate
    tab so an arranger can flip a single answer to a pattern without
@@ -8652,11 +8676,11 @@ function buildHintsEditor(initial) {
   // through a transformed modal ancestor. Native htmlFor sidesteps
   // that whole class of bug.
   let pendingRow = null;
-  const fileInputID = 'zv-hint-img-' + Math.random().toString(36).slice(2, 8);
+  const fileInputID = 'zv-hint-media-' + Math.random().toString(36).slice(2, 8);
   const fileInput = document.createElement('input');
   fileInput.type = 'file';
   fileInput.id = fileInputID;
-  fileInput.accept = 'image/*';
+  fileInput.accept = 'image/*,audio/*';
   Object.assign(fileInput.style, {
     position: 'fixed', left: '-10000px', top: '0',
     width: '1px', height: '1px', opacity: '0',
@@ -8666,25 +8690,44 @@ function buildHintsEditor(initial) {
   fileInput.addEventListener('change', async () => {
     const target = pendingRow;
     pendingRow = null;
-    if (!target || !target.id || !fileInput.files?.[0]) {
+    const picked = fileInput.files?.[0];
+    if (!target || !target.id || !picked) {
       fileInput.value = '';
       return;
     }
-    const shrunk = await downscaleImage(fileInput.files[0]);
+    const isAudio = (picked.type || '').startsWith('audio/');
     const fd = new FormData();
-    fd.append('file', shrunk);
-    const res = await fetch(`/api/admin/hints/${target.id}/images`, {
-      method: 'POST', body: fd, credentials: 'same-origin',
-      headers: { 'X-CSRF-Token': csrfToken() },
-    });
-    if (res.ok) {
-      const im = await res.json();
-      target.images.push(im);
-      draw();
-      toastOk(t('Image added'));
+    if (isAudio) {
+      fd.append('file', picked);
+      const res = await fetch(`/api/admin/hints/${target.id}/audio`, {
+        method: 'POST', body: fd, credentials: 'same-origin',
+        headers: { 'X-CSRF-Token': csrfToken() },
+      });
+      if (res.ok) {
+        const au = await res.json();
+        target.audio.push(au);
+        draw();
+        toastOk(t('Audio added'));
+      } else {
+        const errTxt = await res.text();
+        toastErr(errTxt || t('error {{status}}', { status: res.status }));
+      }
     } else {
-      const errTxt = await res.text();
-      toastErr(errTxt || t('error {{status}}', { status: res.status }));
+      const shrunk = await downscaleImage(picked);
+      fd.append('file', shrunk);
+      const res = await fetch(`/api/admin/hints/${target.id}/images`, {
+        method: 'POST', body: fd, credentials: 'same-origin',
+        headers: { 'X-CSRF-Token': csrfToken() },
+      });
+      if (res.ok) {
+        const im = await res.json();
+        target.images.push(im);
+        draw();
+        toastOk(t('Image added'));
+      } else {
+        const errTxt = await res.text();
+        toastErr(errTxt || t('error {{status}}', { status: res.status }));
+      }
     }
     fileInput.value = '';
   });
@@ -8703,7 +8746,7 @@ function buildHintsEditor(initial) {
   const addBtn = h('button', { class: 'btn small', type: 'button', style: 'margin-top:.3rem' },
     icon(ICONS.plus), t('Add hint'));
   addBtn.addEventListener('click', () => {
-    rows.push({ id: null, text: '', delay_seconds: 0, images: [] });
+    rows.push({ id: null, text: '', delay_seconds: 0, images: [], audio: [] });
     draw();
     // Focus the new textarea so the author can start typing immediately.
     const tas = list.querySelectorAll('textarea');
@@ -8813,11 +8856,66 @@ function buildHintsEditor(initial) {
       addTile.htmlFor = fileInputID;
       addTile.addEventListener('click', () => { pendingRow = row; });
       addTile.append(icon(ICONS.plus));
-      addTile.append(document.createTextNode(' ' + t('Click to add image')));
+      addTile.append(document.createTextNode(' ' + t('Click to add media')));
       imagesHost.append(addTile);
     } else {
       imagesHost.append(h('div', { class: 'pe-image-add disabled' },
-        icon(ICONS.plus), ' ' + t('Save the puzzle to attach images to this hint.')));
+        icon(ICONS.plus), ' ' + t('Save the puzzle to attach media to this hint.')));
+    }
+
+    // Per-hint audio strip — one <audio controls> + description per
+    // clip. Same shape as the puzzle-level audio editor block.
+    const audioHost = h('div', { class: 'pe-audio' });
+    if (row.id) {
+      for (const au of row.audio) {
+        const wrap = h('div', { class: 'pe-audio-wrap' });
+        const player = h('audio', { controls: true, preload: 'metadata' });
+        const src = h('source', { src: au.url });
+        if (au.mime_type) src.type = au.mime_type;
+        player.append(src);
+        const descInput = h('textarea', {
+          class: 'pe-audio-desc',
+          rows: 2,
+          maxlength: 2000,
+          placeholder: t('Description / transcript (optional)'),
+          'aria-label': t('Description'),
+        });
+        descInput.value = au.description || '';
+        descInput.addEventListener('blur', async () => {
+          const next = descInput.value.trim();
+          if (next === (au.description || '')) return;
+          const rr = await api(`/api/admin/hint-audio/${au.id}`, {
+            method: 'PATCH',
+            body: JSON.stringify({ description: next }),
+          });
+          if (rr.status === 204) {
+            au.description = next;
+            toastOk(t('Description saved'));
+          } else {
+            toastErr(rr.body?.error || t('error {{status}}', { status: rr.status }));
+            descInput.value = au.description || '';
+          }
+        });
+        wrap.append(
+          player,
+          descInput,
+          h('button', {
+            class: 'btn small danger pe-audio-remove', type: 'button', title: t('Remove'),
+            on: { click: async () => {
+              const rr = await api(`/api/admin/hint-audio/${au.id}`, { method: 'DELETE' });
+              if (rr.status === 204) {
+                const i = row.audio.indexOf(au);
+                if (i >= 0) row.audio.splice(i, 1);
+                draw();
+                toastOk(t('Audio removed'));
+              } else {
+                toastErr(rr.body?.error || t('error {{status}}', { status: rr.status }));
+              }
+            } },
+          }, icon(ICONS.trash)),
+        );
+        audioHost.append(wrap);
+      }
     }
 
     return h('div', { class: 'hint-row' },
@@ -8830,13 +8928,15 @@ function buildHintsEditor(initial) {
           delayLabel),
         remove),
       field.el,
-      imagesHost);
+      imagesHost,
+      audioHost);
   }
   rows.push(...(initial || []).map((h) => ({
     id: h.id ?? null,
     text: h.text || '',
     delay_seconds: h.delay_seconds || 0,
     images: h.images ? [...h.images] : [],
+    audio: h.audio ? [...h.audio] : [],
   })));
   draw();
   return {
@@ -8864,6 +8964,7 @@ function buildHintsEditor(initial) {
         const sh = fresh[i] || {};
         if (rows[i].id == null && sh.id != null) rows[i].id = sh.id;
         rows[i].images = sh.images ? [...sh.images] : (rows[i].images || []);
+        rows[i].audio = sh.audio ? [...sh.audio] : (rows[i].audio || []);
       }
       draw();
     },
@@ -9261,16 +9362,21 @@ async function openEditPuzzle(adv, page /* or null */) {
     const hintsController = buildHintsEditor(draft?.hints ?? page?.hints ?? []);
 
     const imagesHost = h('div', { class: 'pe-images' });
+    const audioHost = h('div', { class: 'pe-audio' });
     const images = page?.images ? [...page.images] : [];
+    const audios = page?.audio ? [...page.audio] : [];
 
     // File input parked at body level — Firefox won't open the picker if
     // the click path goes through a transformed modal ancestor. Label→for
     // binding drives it from the editor without touching that path.
-    const inputID = 'zv-image-input-' + (page?.id || 'new') + '-' + Math.random().toString(36).slice(2, 8);
+    // Accept widened to image+audio so the same "Add media" tile picks
+    // either; the change handler branches on MIME to route to the right
+    // upload endpoint.
+    const inputID = 'zv-media-input-' + (page?.id || 'new') + '-' + Math.random().toString(36).slice(2, 8);
     const file = document.createElement('input');
     file.id = inputID;
     file.type = 'file';
-    file.accept = 'image/*';
+    file.accept = 'image/*,audio/*';
     Object.assign(file.style, {
       position: 'fixed', left: '-10000px', top: '0',
       width: '1px', height: '1px', opacity: '0',
@@ -9339,39 +9445,120 @@ async function openEditPuzzle(adv, page /* or null */) {
         );
         imagesHost.append(wrap);
       }
-      // Add-image tile: clickable when the page already exists, disabled
+      // Add-media tile: clickable when the page already exists, disabled
       // placeholder when creating (the upload endpoint needs a page id).
+      // Accepts both image and audio uploads — the picker's accept
+      // attribute filters to image/*,audio/* and the change handler
+      // routes to the correct endpoint by MIME.
       if (page) {
         const addTile = document.createElement('label');
         addTile.className = 'pe-image-add';
         addTile.htmlFor = inputID;
         addTile.append(icon(ICONS.plus));
-        addTile.append(document.createTextNode(' ' + t('Click to add image')));
+        addTile.append(document.createTextNode(' ' + t('Click to add media')));
         imagesHost.append(addTile);
       } else {
         imagesHost.append(h('div', { class: 'pe-image-add disabled' },
-          icon(ICONS.plus), ' ' + t('Images attach to a saved puzzle — finish the basics, click Create, then come back to upload.')));
+          icon(ICONS.plus), ' ' + t('Media attaches to a saved puzzle — finish the basics, click Create, then come back to upload.')));
       }
     };
     drawImages();
 
+    const drawAudios = () => {
+      audioHost.replaceChildren();
+      for (const au of audios) {
+        const wrap = h('div', { class: 'pe-audio-wrap' });
+        const player = h('audio', { controls: true, preload: 'metadata' });
+        const src = h('source', { src: au.url });
+        if (au.mime_type) src.type = au.mime_type;
+        player.append(src);
+        // Description input — author's text fallback. Saves on blur.
+        const descInput = h('textarea', {
+          class: 'pe-audio-desc',
+          rows: 2,
+          maxlength: 2000,
+          placeholder: t('Description / transcript (optional)'),
+          'aria-label': t('Description'),
+        });
+        descInput.value = au.description || '';
+        descInput.addEventListener('blur', async () => {
+          const next = descInput.value.trim();
+          if (next === (au.description || '')) return;
+          const rr = await api(`/api/admin/audio/${au.id}`, {
+            method: 'PATCH',
+            body: JSON.stringify({ description: next }),
+          });
+          if (rr.status === 204) {
+            au.description = next;
+            toastOk(t('Description saved'));
+          } else {
+            toastErr(rr.body?.error || t('error {{status}}', { status: rr.status }));
+            descInput.value = au.description || '';
+          }
+        });
+        wrap.append(
+          player,
+          descInput,
+          h('button', {
+            class: 'btn small danger pe-audio-remove', type: 'button', title: t('Remove'),
+            on: { click: async () => {
+              const rr = await api(`/api/admin/audio/${au.id}`, { method: 'DELETE' });
+              if (rr.status === 204) {
+                const i = audios.indexOf(au);
+                if (i >= 0) audios.splice(i, 1);
+                drawAudios();
+                toastOk(t('Audio removed'));
+              } else {
+                toastErr(rr.body?.error || t('error {{status}}', { status: rr.status }));
+              }
+            } },
+          }, icon(ICONS.trash)),
+        );
+        audioHost.append(wrap);
+      }
+    };
+    drawAudios();
+
     file.addEventListener('change', async () => {
-      if (!file.files?.[0]) return;
-      const shrunk = await downscaleImage(file.files[0]);
+      const picked = file.files?.[0];
+      if (!picked) return;
+      const isAudio = (picked.type || '').startsWith('audio/');
       const fd = new FormData();
-      fd.append('file', shrunk);
-      const res = await fetch(`/api/admin/pages/${page.id}/images`, {
-        method: 'POST', body: fd, credentials: 'same-origin',
-        headers: { 'X-CSRF-Token': csrfToken() },
-      });
-      if (res.ok) {
-        const im = await res.json();
-        images.push(im);
-        drawImages();
-        toastOk(t('Image added'));
+      if (isAudio) {
+        // Audio is uploaded verbatim — the server stores the blob and
+        // the player's <audio controls> picks the decoder via MIME.
+        fd.append('file', picked);
+        const res = await fetch(`/api/admin/pages/${page.id}/audio`, {
+          method: 'POST', body: fd, credentials: 'same-origin',
+          headers: { 'X-CSRF-Token': csrfToken() },
+        });
+        if (res.ok) {
+          const au = await res.json();
+          audios.push(au);
+          drawAudios();
+          toastOk(t('Audio added'));
+        } else {
+          const errTxt = await res.text();
+          toastErr(errTxt || t('error {{status}}', { status: res.status }));
+        }
       } else {
-        const errTxt = await res.text();
-        toastErr(errTxt || t('error {{status}}', { status: res.status }));
+        // Default to the image flow for anything else — downscale on
+        // the client (saves Postgres rowsize) and POST to /images.
+        const shrunk = await downscaleImage(picked);
+        fd.append('file', shrunk);
+        const res = await fetch(`/api/admin/pages/${page.id}/images`, {
+          method: 'POST', body: fd, credentials: 'same-origin',
+          headers: { 'X-CSRF-Token': csrfToken() },
+        });
+        if (res.ok) {
+          const im = await res.json();
+          images.push(im);
+          drawImages();
+          toastOk(t('Image added'));
+        } else {
+          const errTxt = await res.text();
+          toastErr(errTxt || t('error {{status}}', { status: res.status }));
+        }
       }
       file.value = '';
     });
@@ -9384,6 +9571,7 @@ async function openEditPuzzle(adv, page /* or null */) {
     const previewCard = h('div', { class: 'puzzle-editor' },
       titleInput,
       imagesHost,
+      audioHost,
       promptField.el,
       h('p', { class: 'muted', style: 'font-size:.75rem; margin:.5rem 0 0' }, mdSupportedHint()),
     );
@@ -9870,6 +10058,7 @@ async function openEditPuzzle(adv, page /* or null */) {
         !notes.value.trim() &&
         accept.get().length === 0 &&
         (images.length === 0) &&
+        (audios.length === 0) &&
         !gated.checked &&
         !disabled.checked;
       if (!saved && isEmpty) {

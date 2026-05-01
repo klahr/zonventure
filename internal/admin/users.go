@@ -138,6 +138,12 @@ func (h *Handlers) AdventureDetail(w http.ResponseWriter, r *http.Request) {
 		URL      string `json:"url"`
 		AltText  string `json:"alt_text,omitempty"`
 	}
+	type audioDTO struct {
+		ID          int64  `json:"id"`
+		URL         string `json:"url"`
+		MimeType    string `json:"mime_type,omitempty"`
+		Description string `json:"description,omitempty"`
+	}
 	// Hint shape mirrors the player's hintDTO: TextHTML for inline
 	// rendering, DelaySeconds so the new card can show "(unlocks
 	// after 2m)" caps. Images per hint travel under the same
@@ -147,6 +153,7 @@ func (h *Handlers) AdventureDetail(w http.ResponseWriter, r *http.Request) {
 		TextHTML     string     `json:"text_html"`
 		DelaySeconds int        `json:"delay_seconds"`
 		Images       []imageDTO `json:"images,omitempty"`
+		Audio        []audioDTO `json:"audio,omitempty"`
 	}
 	type pageDTO struct {
 		Index      int                     `json:"index"`
@@ -157,6 +164,7 @@ func (h *Handlers) AdventureDetail(w http.ResponseWriter, r *http.Request) {
 		Location   locDTO                  `json:"location"`
 		Gated      bool                    `json:"gated"`
 		Images     []imageDTO              `json:"images,omitempty"`
+		Audio      []audioDTO              `json:"audio,omitempty"`
 		Hints      []hintDTO               `json:"hints,omitempty"`
 		Disabled   bool                    `json:"disabled,omitempty"`
 	}
@@ -169,6 +177,13 @@ func (h *Handlers) AdventureDetail(w http.ResponseWriter, r *http.Request) {
 				URL: "/adventure-assets/image/" + strconv.FormatInt(im.ID, 10),
 			})
 		}
+		audio := make([]audioDTO, 0, len(p.Audio))
+		for _, a := range p.Audio {
+			audio = append(audio, audioDTO{
+				ID: a.ID, MimeType: a.MimeType, Description: a.Description,
+				URL: "/adventure-assets/audio/" + strconv.FormatInt(a.ID, 10),
+			})
+		}
 		hints := make([]hintDTO, 0, len(p.Hints))
 		for _, hint := range p.Hints {
 			himgs := make([]imageDTO, 0, len(hint.Images))
@@ -178,10 +193,18 @@ func (h *Handlers) AdventureDetail(w http.ResponseWriter, r *http.Request) {
 					URL: "/adventure-assets/hint-image/" + strconv.FormatInt(im.ID, 10),
 				})
 			}
+			haudio := make([]audioDTO, 0, len(hint.Audio))
+			for _, a := range hint.Audio {
+				haudio = append(haudio, audioDTO{
+					ID: a.ID, MimeType: a.MimeType, Description: a.Description,
+					URL: "/adventure-assets/hint-audio/" + strconv.FormatInt(a.ID, 10),
+				})
+			}
 			hints = append(hints, hintDTO{
 				TextHTML:     mdx.Render(hint.Text),
 				DelaySeconds: hint.DelaySeconds,
 				Images:       himgs,
+				Audio:        haudio,
 			})
 		}
 		pages[i] = pageDTO{
@@ -192,6 +215,7 @@ func (h *Handlers) AdventureDetail(w http.ResponseWriter, r *http.Request) {
 			Location:   locDTO{Lat: p.Location.Lat, Lng: p.Location.Lng, RadiusM: p.Location.RadiusM},
 			Gated:      p.Location.Gated(),
 			Images:     imgs,
+			Audio:      audio,
 			Hints:      hints,
 			Disabled:   p.Disabled,
 		}

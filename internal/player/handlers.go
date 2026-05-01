@@ -325,6 +325,7 @@ type State struct {
 	// clients on older versions ignore it cleanly.
 	HintsRevealed int               `json:"hints_revealed,omitempty"`
 	Images []imageDTO        `json:"images,omitempty"`
+	Audio  []audioDTO        `json:"audio,omitempty"`
 	Gate   *gateDTO          `json:"gate,omitempty"`
 	Colors *adventure.Colors `json:"colors,omitempty"`
 	// ScheduledAt / ServerNow let the pre-start countdown tick against
@@ -348,6 +349,16 @@ type imageDTO struct {
 	Alt string `json:"alt,omitempty"`
 }
 
+// audioDTO is one attached audio clip's wire shape. URL points at the
+// gated audio-serving endpoint (page-bound for puzzle audio,
+// reveal-bound for hint audio); MIME tells the browser which decoder
+// to use; description is the optional transcript fallback.
+type audioDTO struct {
+	URL         string `json:"url"`
+	MimeType    string `json:"mime_type,omitempty"`
+	Description string `json:"description,omitempty"`
+}
+
 // hintDTO is one hint shipped to the player. TextHTML is the rendered
 // markdown (same pipeline as prompt). UnlocksInSeconds counts down
 // from the server's "now" to the moment this hint becomes revealable;
@@ -365,6 +376,7 @@ type hintDTO struct {
 	TextHTML         string     `json:"text_html"`
 	UnlocksInSeconds int        `json:"unlocks_in_seconds"`
 	Images           []imageDTO `json:"images,omitempty"`
+	Audio            []audioDTO `json:"audio,omitempty"`
 }
 
 type gateDTO struct {
@@ -423,6 +435,17 @@ func buildHintDTOs(hints []adventure.Hint, arrival time.Time) []hintDTO {
 				})
 			}
 			dto.Images = imgs
+		}
+		if len(h.Audio) > 0 {
+			audio := make([]audioDTO, 0, len(h.Audio))
+			for _, a := range h.Audio {
+				audio = append(audio, audioDTO{
+					URL:         "/adventure-assets/hint-audio/" + strconv.FormatInt(a.ID, 10),
+					MimeType:    a.MimeType,
+					Description: a.Description,
+				})
+			}
+			dto.Audio = audio
 		}
 		out = append(out, dto)
 	}
@@ -576,6 +599,17 @@ func (h *Handlers) buildState(ctx context.Context, slot auth.Slot) (State, int, 
 			})
 		}
 		resp.Images = imgs
+	}
+	if len(page.Audio) > 0 {
+		audio := make([]audioDTO, 0, len(page.Audio))
+		for _, a := range page.Audio {
+			audio = append(audio, audioDTO{
+				URL:         "/adventure-assets/audio/" + strconv.FormatInt(a.ID, 10),
+				MimeType:    a.MimeType,
+				Description: a.Description,
+			})
+		}
+		resp.Audio = audio
 	}
 	return resp, http.StatusOK, ""
 }

@@ -328,6 +328,11 @@ func New(cfg Config) http.Handler {
 	// handler enforces it; this route is intentionally separate from
 	// /adventure-assets/image/ so the rules don't get conflated.
 	r.Get("/adventure-assets/hint-image/{imageID}", adminH.ServeHintImage)
+	// Audio attachments: page-level audio mirrors page-image visibility
+	// (any team on the page sees it); hint audio mirrors hint-image's
+	// reveal-gated rule. Same handlers, audio binary served verbatim.
+	r.Get("/adventure-assets/audio/{audioID}", adminH.ServeAudio)
+	r.Get("/adventure-assets/hint-audio/{audioID}", adminH.ServeHintAudio)
 	// Team avatars are intentionally open — they surface on the public
 	// live board and on player views without a staff session. The team
 	// id is opaque enough to be acceptable public read-only data.
@@ -588,6 +593,15 @@ func New(cfg Config) http.Handler {
 		r.Post("/hints/{hintID}/images", adminH.AddHintImage)
 		r.Patch("/hint-images/{imageID}", adminH.UpdateHintImage)
 		r.Delete("/hint-images/{imageID}", adminH.DeleteHintImage)
+		// Audio attachments — same shape as the image routes. PATCH
+		// only carries `description` (the WCAG transcript fallback);
+		// the blob itself is replaced by delete + re-upload.
+		r.Post("/pages/{pageID}/audio", adminH.AddPageAudio)
+		r.Patch("/audio/{audioID}", adminH.UpdatePageAudio)
+		r.Delete("/audio/{audioID}", adminH.DeletePageAudio)
+		r.Post("/hints/{hintID}/audio", adminH.AddHintAudio)
+		r.Patch("/hint-audio/{audioID}", adminH.UpdateHintAudio)
+		r.Delete("/hint-audio/{audioID}", adminH.DeleteHintAudio)
 
 		// Puzzle library (cross-adventure pool).
 		r.Get("/puzzles", adminH.ListPuzzles)

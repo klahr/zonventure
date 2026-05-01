@@ -65,6 +65,7 @@ type Page struct {
 	Accept   []AcceptEntry
 	Location Location
 	Images   []Image
+	Audio    []Audio
 	Disabled bool
 	Notes    string
 }
@@ -95,6 +96,7 @@ type Hint struct {
 	Text         string
 	DelaySeconds int
 	Images       []Image
+	Audio        []Audio
 }
 
 // Image describes one attached image. Binary content is fetched separately
@@ -110,6 +112,22 @@ type Image struct {
 	// readers skip it; non-empty values become the alt attribute
 	// verbatim — no markdown, no HTML.
 	AltText string
+}
+
+// Audio describes one attached audio clip. Same metadata-only shape
+// as Image — the blob streams from the audio-serving endpoint and the
+// player renders a native <audio controls> element.
+//
+// Description is the author-provided transcript or summary. Empty
+// means the audio is decorative or self-explanatory; non-empty values
+// can be surfaced near the player as a fallback for users who can't
+// hear it.
+type Audio struct {
+	ID          int64
+	Index       int
+	MimeType    string
+	SizeBytes   int64
+	Description string
 }
 
 // Location carries a puzzle's GPS coordinates. If RadiusM is set the
@@ -264,6 +282,11 @@ func (l *Library) loadPages(ctx context.Context, adventureID int64) ([]Page, err
 			return nil, err
 		}
 		pages[i].Images = imgs
+		audio, err := l.loadAudio(ctx, pages[i].ID)
+		if err != nil {
+			return nil, err
+		}
+		pages[i].Audio = audio
 		hints, err := l.loadHints(ctx, pages[i].ID)
 		if err != nil {
 			return nil, err
@@ -304,6 +327,11 @@ func (l *Library) loadHints(ctx context.Context, pageID int64) ([]Hint, error) {
 			return nil, err
 		}
 		out[i].Images = imgs
+		audio, err := l.loadHintAudio(ctx, out[i].ID)
+		if err != nil {
+			return nil, err
+		}
+		out[i].Audio = audio
 	}
 	return out, nil
 }
@@ -346,6 +374,48 @@ func (l *Library) loadImages(ctx context.Context, pageID int64) ([]Image, error)
 			return nil, err
 		}
 		out = append(out, im)
+	}
+	return out, nil
+}
+
+func (l *Library) loadAudio(ctx context.Context, pageID int64) ([]Audio, error) {
+	rows, err := l.db.QueryContext(ctx, `
+		SELECT id, idx, mime_type, size_bytes, COALESCE(description, '')
+		FROM adventure_page_audio WHERE page_id = $1
+		ORDER BY idx
+	`, pageID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Audio
+	for rows.Next() {
+		var a Audio
+		if err := rows.Scan(&a.ID, &a.Index, &a.MimeType, &a.SizeBytes, &a.Description); err != nil {
+			return nil, err
+		}
+		out = append(out, a)
+	}
+	return out, nil
+}
+
+func (l *Library) loadHintAudio(ctx context.Context, hintID int64) ([]Audio, error) {
+	rows, err := l.db.QueryContext(ctx, `
+		SELECT id, idx, mime_type, size_bytes, COALESCE(description, '')
+		FROM adventure_page_hint_audio WHERE hint_id = $1
+		ORDER BY idx
+	`, hintID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Audio
+	for rows.Next() {
+		var a Audio
+		if err := rows.Scan(&a.ID, &a.Index, &a.MimeType, &a.SizeBytes, &a.Description); err != nil {
+			return nil, err
+		}
+		out = append(out, a)
 	}
 	return out, nil
 }

@@ -58,6 +58,7 @@ type pageView struct {
 	Disabled   bool                    `json:"disabled"`
 	Notes      string                  `json:"notes"`
 	Images     []imageView             `json:"images"`
+	Audio      []audioView             `json:"audio"`
 }
 
 // hintView is a single hint row on the editor side. DelaySeconds is
@@ -79,6 +80,7 @@ type hintView struct {
 	Text         string      `json:"text"`
 	DelaySeconds int         `json:"delay_seconds"`
 	Images       []imageView `json:"images,omitempty"`
+	Audio        []audioView `json:"audio,omitempty"`
 }
 
 type imageView struct {
@@ -88,6 +90,19 @@ type imageView struct {
 	SizeBytes int64  `json:"size_bytes"`
 	URL       string `json:"url"`
 	AltText   string `json:"alt_text"`
+}
+
+// audioView is the wire shape for one attached audio clip on a puzzle
+// or hint. Mirrors imageView but carries `description` (a transcript
+// hint / summary) instead of an alt text — the column name reflects
+// the WCAG fallback expected for audio.
+type audioView struct {
+	ID          int64  `json:"id"`
+	Index       int    `json:"index"`
+	MimeType    string `json:"mime_type"`
+	SizeBytes   int64  `json:"size_bytes"`
+	URL         string `json:"url"`
+	Description string `json:"description"`
 }
 
 type adventureEditDTO struct {
@@ -470,6 +485,7 @@ func loadAdventureDTO(ctx context.Context, db *sql.DB, slug string) (*adventureE
 			p.Gated = v > 0
 		}
 		p.Images = []imageView{}
+		p.Audio = []audioView{}
 		a.Pages = append(a.Pages, p)
 	}
 	for i := range a.Pages {
@@ -478,6 +494,11 @@ func loadAdventureDTO(ctx context.Context, db *sql.DB, slug string) (*adventureE
 			return nil, err
 		}
 		a.Pages[i].Images = imgs
+		audio, err := loadPageAudio(ctx, db, a.Pages[i].ID)
+		if err != nil {
+			return nil, err
+		}
+		a.Pages[i].Audio = audio
 		hints, err := loadPageHints(ctx, db, a.Pages[i].ID)
 		if err != nil {
 			return nil, err
