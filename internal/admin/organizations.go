@@ -38,14 +38,19 @@ type orgMemberDTO struct {
 }
 
 type organizationDTO struct {
-	ID           int64           `json:"id"`
-	Name         string          `json:"name"`
-	CreatedAt    string          `json:"created_at"`
-	Members      []orgMemberDTO  `json:"members"`
-	Assignments  []assignmentDTO `json:"assignments"`
-	PlayersTotal int             `json:"players_total"`
-	EventsTotal    int             `json:"events_total"`
-	EventsRunning  int             `json:"events_running"`
+	ID            int64           `json:"id"`
+	Name          string          `json:"name"`
+	CreatedAt     string          `json:"created_at"`
+	Members       []orgMemberDTO  `json:"members"`
+	Assignments   []assignmentDTO `json:"assignments"`
+	PlayersTotal  int             `json:"players_total"`
+	EventsTotal   int             `json:"events_total"`
+	EventsRunning int             `json:"events_running"`
+	// HasLogo is true when the org has a brand logo uploaded. The
+	// frontend uses it to decide whether to render the preview vs
+	// an upload placeholder, without speculatively GETting the
+	// asset. Bytes themselves come from /org-logo/{id} when needed.
+	HasLogo bool `json:"has_logo"`
 }
 
 /* ---------------- Admin-only: organizations CRUD ---------------- */
@@ -57,7 +62,8 @@ func (h *Handlers) ListOrganizations(w http.ResponseWriter, r *http.Request) {
 		SELECT o.id, o.name, o.created_at,
 		       0 AS players_total,
 		       (SELECT COUNT(*) FROM events ar WHERE ar.org_id = o.id),
-		       (SELECT COUNT(*) FROM events ar WHERE ar.org_id = o.id AND ar.state = 'running')
+		       (SELECT COUNT(*) FROM events ar WHERE ar.org_id = o.id AND ar.state = 'running'),
+		       (o.logo_content IS NOT NULL AND length(o.logo_content) > 0) AS has_logo
 		FROM organizations o
 		ORDER BY LOWER(o.name)
 	`)
@@ -69,7 +75,7 @@ func (h *Handlers) ListOrganizations(w http.ResponseWriter, r *http.Request) {
 	out := []organizationDTO{}
 	for rows.Next() {
 		o := organizationDTO{Members: []orgMemberDTO{}, Assignments: []assignmentDTO{}}
-		if err := rows.Scan(&o.ID, &o.Name, &o.CreatedAt, &o.PlayersTotal, &o.EventsTotal, &o.EventsRunning); err != nil {
+		if err := rows.Scan(&o.ID, &o.Name, &o.CreatedAt, &o.PlayersTotal, &o.EventsTotal, &o.EventsRunning, &o.HasLogo); err != nil {
 			httpx.Error(w, http.StatusInternalServerError, "scan failed")
 			return
 		}
@@ -109,9 +115,10 @@ func (h *Handlers) GetOrganization(w http.ResponseWriter, r *http.Request) {
 		SELECT o.id, o.name, o.created_at,
 		       0 AS players_total,
 		       (SELECT COUNT(*) FROM events ar WHERE ar.org_id = o.id),
-		       (SELECT COUNT(*) FROM events ar WHERE ar.org_id = o.id AND ar.state = 'running')
+		       (SELECT COUNT(*) FROM events ar WHERE ar.org_id = o.id AND ar.state = 'running'),
+		       (o.logo_content IS NOT NULL AND length(o.logo_content) > 0) AS has_logo
 		FROM organizations o WHERE o.id = $1
-	`, id).Scan(&o.ID, &o.Name, &o.CreatedAt, &o.PlayersTotal, &o.EventsTotal, &o.EventsRunning)
+	`, id).Scan(&o.ID, &o.Name, &o.CreatedAt, &o.PlayersTotal, &o.EventsTotal, &o.EventsRunning, &o.HasLogo)
 	if errors.Is(err, sql.ErrNoRows) {
 		httpx.Error(w, http.StatusNotFound, "organization not found")
 		return

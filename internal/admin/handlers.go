@@ -236,7 +236,7 @@ func (h *Handlers) ListAdventures(w http.ResponseWriter, r *http.Request) {
 			v := orgID.Int64
 			d.OrgID = &v
 		}
-		d.MineToEdit = canEditOwned(me, orgID)
+		d.MineToEdit = canAuthor(me, orgID)
 		d.Published = published != 0
 		d.Shared = shared != 0
 		if hasAvatar != 0 {

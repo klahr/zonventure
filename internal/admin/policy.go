@@ -15,20 +15,50 @@ import (
  *
  *   owner = NULL   → admin-owned (global catalog / global library).
  *                    Visible to everyone; editable only by admins.
- *   owner = org X  → org-owned. Visible + editable to users of org X.
- *                    Admins can always edit as a last-resort override.
+ *   owner = org X  → org-owned. Visible to every user of org X.
+ *                    Authoring (write) requires admin or org_admin in
+ *                    that org — see canAuthor below. org_member sees
+ *                    the row but can't edit puzzle content; they can
+ *                    still run events, manage teams, and intervene
+ *                    live. The split exists so a corporate customer
+ *                    can hand "operate the day-of event" to an intern
+ *                    without granting them rights to rewrite puzzle
+ *                    copy or republish the adventure.
  *
  * Helpers are kept tiny and colocated with the role constants so that
- * future tweaks (eg. public-sharing flag, org-admin vs org-member
- * distinction) land in one place.
+ * future tweaks (eg. public-sharing flag, per-event facilitator
+ * grants) land in one place.
  */
 
 // isAdmin reports whether the caller is a global admin.
 func isAdmin(u auth.User) bool { return u.Role == auth.RoleAdmin }
 
-// canEditOwned returns true when the caller can modify a resource
-// whose ownership is expressed as a nullable org_id. NULL ownership
-// means "admin-owned, global" so only admins can mutate those.
+// canAuthor returns true when the caller may modify authored content
+// (adventures, pages, hints, accept-lists, puzzle media). Admins
+// always pass; org-bound users pass only when they are org_admin in
+// the owning org. org_member is intentionally rejected — they can
+// see and use the adventure to run events, but not rewrite its
+// content.
+//
+// NULL ownership means "admin-owned, global catalog" so only admins
+// can mutate those rows regardless of the caller's org role.
+func canAuthor(u auth.User, ownerOrg sql.NullInt64) bool {
+	if isAdmin(u) {
+		return true
+	}
+	if !ownerOrg.Valid {
+		return false
+	}
+	if u.Role != auth.RoleOrgAdmin {
+		return false
+	}
+	return u.OrgID != nil && *u.OrgID == ownerOrg.Int64
+}
+
+// canEditOwned is the legacy "any org member can edit" gate kept for
+// flows where the read/write distinction collapses (still used by
+// some non-authoring helpers). New authoring code should call
+// canAuthor instead.
 func canEditOwned(u auth.User, ownerOrg sql.NullInt64) bool {
 	if isAdmin(u) {
 		return true

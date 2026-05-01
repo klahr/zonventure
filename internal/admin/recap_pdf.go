@@ -11,8 +11,12 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"bytes"
+	"errors"
+
 	"git.sr.ht/~klahr/zv/internal/httpx"
 	"git.sr.ht/~klahr/zv/internal/logx"
+	"git.sr.ht/~klahr/zv/internal/storage"
 
 	"github.com/go-pdf/fpdf"
 )
@@ -73,6 +77,13 @@ type recapPDFData struct {
 	PageCount   int // enabled puzzle count
 	Teams       []recapPDFTeam
 	GeneratedAt time.Time
+	// LogoBytes + LogoMIME, when present, are the operator's brand
+	// mark embedded on the cover page in place of the text-only
+	// org-name strip. PNG/JPEG only — see admin/org_logo.go for the
+	// upload-side restrictions. Nil = no logo configured, fall back
+	// to text.
+	LogoBytes []byte
+	LogoMIME  string
 }
 
 type recapPDFTeam struct {
@@ -161,6 +172,16 @@ func (h *Handlers) collectRecapPDFData(ctx context.Context, eventID, orgID int64
 		return d, fmt.Errorf("teams: %w", err)
 	}
 	defer rows.Close()
+
+	// Optional logo bytes. Best-effort: a missing or unreadable logo
+	// just means the cover renders with the text-only header. We
+	// don't fail the whole report over a flaky asset read.
+	if logoBytes, logoMime, err := h.Storage.GetOrgLogo(ctx, orgID); err == nil {
+		d.LogoBytes = logoBytes
+		d.LogoMIME = logoMime
+	} else if !errors.Is(err, storage.ErrNotFound) {
+		logx.Warn("admin.recap_pdf.logo", "org", orgID, "err", err.Error())
+	}
 
 	rank := 0
 	for rows.Next() {
@@ -259,12 +280,50 @@ func writeRecapPDF(w io.Writer, d recapPDFData) error {
 	pdf.SetFillColor(accentR, accentG, accentB)
 	pdf.Rect(0, 0, pageW, brandStripH, "F")
 
-	// Cover header.
-	pdf.SetY(20)
-	pdf.SetFont("Helvetica", "B", 10)
-	pdf.SetTextColor(120, 120, 120)
-	pdf.CellFormat(usableW, 5, strings.ToUpper(safeText(d.OrgName)), "", 1, "L", false, 0, "")
-	pdf.Ln(2)
+	// Cover header. When the org has uploaded a logo, render it in
+	// place of the uppercase text strip; the org name still appears
+	// implicitly via the brand mark, and the adventure title carries
+	// the rest of the identity. Logo bytes are JPEG (re-encoded by
+	// imageutil.Shrink at upload time), so fpdf reads them with
+	// ImageType "JPG"; failures degrade to the text fallback rather
+	// than aborting the report.
+	pdf.SetY(18)
+	logoRendered := false
+	if len(d.LogoBytes) > 0 {
+		const logoH = 14.0       // mm; bounded so it never overwhelms the page
+		const logoMaxW = 70.0
+		opts := fpdf.ImageOptions{ImageType: "JPG", ReadDpi: false}
+		// RegisterImageOptionsReader hands fpdf the bytes once,
+		// keyed by name. The caller can then call ImageOptions
+		// repeatedly without re-decoding.
+		const logoName = "org-logo"
+		pdf.RegisterImageOptionsReader(logoName, opts, bytes.NewReader(d.LogoBytes))
+		// Auto-fit: pass 0 for width, fpdf scales to keep the height.
+		// Then check the rendered width and re-render at logoMaxW
+		// if it overshot — fpdf doesn't expose pre-render dims so
+		// the simplest path is "render, look at GetX, decide".
+		pdf.ImageOptions(logoName, marginX, pdf.GetY(), 0, logoH, false, opts, 0, "")
+		// pdf.GetImageInfo lets us check actual dimensions for
+		// width-cap enforcement so a wide wordmark doesn't bleed
+		// into the page margin on the right.
+		if info := pdf.GetImageInfo(logoName); info != nil {
+			renderedW := logoH * info.Width() / info.Height()
+			if renderedW > logoMaxW {
+				// Wide wordmark — re-render at the width cap, with
+				// height auto so the aspect stays right.
+				pdf.SetXY(marginX, pdf.GetY())
+				pdf.ImageOptions(logoName, marginX, pdf.GetY(), logoMaxW, 0, false, opts, 0, "")
+			}
+		}
+		pdf.SetY(pdf.GetY() + logoH + 4)
+		logoRendered = true
+	}
+	if !logoRendered {
+		pdf.SetFont("Helvetica", "B", 10)
+		pdf.SetTextColor(120, 120, 120)
+		pdf.CellFormat(usableW, 5, strings.ToUpper(safeText(d.OrgName)), "", 1, "L", false, 0, "")
+		pdf.Ln(2)
+	}
 	pdf.SetFont("Helvetica", "B", 22)
 	pdf.SetTextColor(40, 40, 40)
 	pdf.MultiCell(usableW, 8.5, safeText(d.AdventureTitle), "", "L", false)

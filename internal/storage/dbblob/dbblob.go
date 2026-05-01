@@ -109,3 +109,46 @@ func (s *Store) DeleteAdventureAvatar(ctx context.Context, slug string) error {
 	`, slug)
 	return err
 }
+
+func (s *Store) PutOrgLogo(ctx context.Context, orgID int64, content []byte, mimeType string) error {
+	res, err := s.DB.ExecContext(ctx, `
+		UPDATE organizations
+		   SET logo_mime_type = $1, logo_size_bytes = $2, logo_content = $3
+		 WHERE id = $4
+	`, mimeType, int64(len(content)), content, orgID)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return storage.ErrNotFound
+	}
+	return nil
+}
+
+func (s *Store) GetOrgLogo(ctx context.Context, orgID int64) ([]byte, string, error) {
+	var (
+		mime    sql.NullString
+		size    sql.NullInt64
+		content []byte
+	)
+	err := s.DB.QueryRowContext(ctx, `
+		SELECT logo_mime_type, logo_size_bytes, logo_content
+		FROM organizations WHERE id = $1
+	`, orgID).Scan(&mime, &size, &content)
+	if errors.Is(err, sql.ErrNoRows) || !mime.Valid || len(content) == 0 {
+		return nil, "", storage.ErrNotFound
+	}
+	if err != nil {
+		return nil, "", err
+	}
+	return content, mime.String, nil
+}
+
+func (s *Store) DeleteOrgLogo(ctx context.Context, orgID int64) error {
+	_, err := s.DB.ExecContext(ctx, `
+		UPDATE organizations
+		   SET logo_mime_type = NULL, logo_size_bytes = NULL, logo_content = NULL
+		 WHERE id = $1
+	`, orgID)
+	return err
+}

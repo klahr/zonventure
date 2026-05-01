@@ -39,4 +39,8 @@ type Blobs interface {
 	PutAdventureAvatar(ctx context.Context, slug string, content []byte, mimeType string) error
 	GetAdventureAvatar(ctx context.Context, slug string) (content []byte, mimeType string, err error)
 	DeleteAdventureAvatar(ctx context.Context, slug string) error
+
+	PutOrgLogo(ctx context.Context, orgID int64, content []byte, mimeType string) error
+	GetOrgLogo(ctx context.Context, orgID int64) (content []byte, mimeType string, err error)
+	DeleteOrgLogo(ctx context.Context, orgID int64) error
 }

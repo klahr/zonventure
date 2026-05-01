@@ -44,7 +44,7 @@ func (h *Handlers) requireEditPage(w http.ResponseWriter, r *http.Request, pageI
 		owner = advOrg
 	}
 	me, _ := auth.FromContext(r.Context())
-	if !canEditOwned(me, owner) {
+	if !canAuthor(me, owner) {
 		httpx.Error(w, http.StatusForbidden, "forbidden")
 		return false
 	}

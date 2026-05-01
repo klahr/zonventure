@@ -2,11 +2,32 @@ package admin
 
 import (
 	"bytes"
+	"image"
+	"image/color"
+	"image/jpeg"
 	"os"
 	"strings"
 	"testing"
 	"time"
 )
+
+// mintTinyJPEG returns a small valid JPEG byte slice for tests that
+// exercise the org-logo embed path. fpdf needs something it can
+// actually decode — a stub of magic bytes alone wouldn't survive.
+func mintTinyJPEG(t *testing.T) []byte {
+	t.Helper()
+	img := image.NewRGBA(image.Rect(0, 0, 32, 16))
+	for y := 0; y < 16; y++ {
+		for x := 0; x < 32; x++ {
+			img.Set(x, y, color.RGBA{R: uint8(x * 8), G: uint8(y * 16), B: 64, A: 255})
+		}
+	}
+	var buf bytes.Buffer
+	if err := jpeg.Encode(&buf, img, &jpeg.Options{Quality: 80}); err != nil {
+		t.Fatalf("jpeg encode: %v", err)
+	}
+	return buf.Bytes()
+}
 
 // pdfMagic is the four-byte signature every valid PDF 1.x stream
 // starts with. Used as a cheap "did the renderer actually produce a
@@ -93,6 +114,41 @@ func TestWriteRecapPDF_LongNamesAndUnicode(t *testing.T) {
 	}
 	if !strings.HasPrefix(buf.String(), pdfMagic) {
 		t.Fatalf("not a PDF")
+	}
+}
+
+func TestWriteRecapPDF_WithLogo(t *testing.T) {
+	d := recapPDFData{
+		OrgName:        "Acme Corp",
+		AdventureTitle: "Stockholm Old Town",
+		EventStartedAt: time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC),
+		EventEndedAt:   time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC),
+		Accent:         "#1976d2",
+		PageCount:      5,
+		GeneratedAt:    time.Now(),
+		LogoBytes:      mintTinyJPEG(t),
+		LogoMIME:       "image/jpeg",
+		Teams: []recapPDFTeam{
+			{Rank: 1, Name: "Alpha", Members: "Alice, Bob", Solved: 5, Elapsed: 90 * time.Minute},
+		},
+	}
+	var buf bytes.Buffer
+	if err := writeRecapPDF(&buf, d); err != nil {
+		t.Fatalf("writeRecapPDF: %v", err)
+	}
+	if !strings.HasPrefix(buf.String(), pdfMagic) {
+		t.Fatalf("output is not a PDF")
+	}
+	// PDFs that embed an image are noticeably larger than text-only
+	// reports — a sanity check that the logo actually made it in.
+	// Without the logo the same fixture renders ~2.4 KB; with the
+	// 32×16 JPEG embedded we expect at least 3 KB.
+	if buf.Len() < 3000 {
+		t.Errorf("logo path PDF suspiciously small (%d bytes); logo may have been dropped", buf.Len())
+	}
+	if path := os.Getenv("ZV_TEST_RECAP_PDF_LOGO_OUT"); path != "" {
+		_ = os.WriteFile(path, buf.Bytes(), 0o644)
+		t.Logf("wrote logo-variant PDF to %s (%d bytes)", path, buf.Len())
 	}
 }
 

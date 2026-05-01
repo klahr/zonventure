@@ -2834,7 +2834,7 @@ function renderOrgPicker() {
         on: { click: () => switchOrgAndRender(m.org_id) },
       }, h('strong', {}, m.org_name),
          h('span', { class: 'muted', style: 'margin-left:.5rem; font-size:.85rem' },
-           m.role === 'org_admin' ? t('admin') : t('member'))))),
+           m.role === 'org_admin' ? t('admin') : t('facilitator'))))),
     h('div', { class: 'row end', style: 'margin-top:1rem' },
       h('button', {
         class: 'btn small',
@@ -6030,6 +6030,19 @@ async function viewRunDetail(view, runID) {
     }, icon(ICONS.copy), t('Download CSV'));
     actions.append(csv);
   }
+  // Calendar invite — useful before AND during scheduling, so we
+  // surface it whenever the event has a scheduled / started time.
+  // Forwards the .ics to participants so the event drops into their
+  // Google / Outlook calendar like any other meeting.
+  if (event.scheduled_at || event.started_at) {
+    const ics = h('a', {
+      class: 'btn lifecycle-btn',
+      href: '/api/admin/events/' + event.id + '/invite.ics',
+      download: `event-${event.id}-invite.ics`,
+      title: t('Download a calendar invite (.ics) you can forward to participants'),
+    }, icon(ICONS.copy), t('Download calendar invite'));
+    actions.append(ics);
+  }
 
   // Last-activity-per-team: the newest event timestamp the team was
   // involved in. Used to highlight teams that look stuck.
@@ -7431,12 +7444,103 @@ async function viewOrganizations(view) {
       h('button', { class: 'btn primary', on: { click: () => openCreateOrg() } },
         icon(ICONS.plus), t('New organization'))),
     h('p', { class: 'muted' },
-      t('Each organization is a tenant — its users (org_admin, org_member) operate the games. Assign adventures to an organization to let them schedule events.')),
+      t('Each organization is a tenant — its admins author adventures and manage members; its facilitators run events and manage teams. Assign adventures to an organization to let them schedule events.')),
     orgs.length === 0
       ? h('div', { class: 'empty' }, t('No organizations yet.'))
       : h('div', {}, orgs.map((o) =>
           renderOrganizationCard(o, adventures, purchasesByOrg.get(o.id) || []))),
   );
+}
+
+// renderOrgLogoBlock builds the per-org brand-logo affordance:
+// preview thumbnail (or placeholder), upload, remove. Admin-only —
+// the parent card is already gated on the global-admin route.
+//
+// On upload success we mutate `org.has_logo` and rebuild the block
+// in place so the operator sees the new image immediately, without
+// a full Organizations-tab refetch. Cache-bust via a `?v=<ts>` query
+// so the browser drops any stale copy of the previous logo.
+function renderOrgLogoBlock(org) {
+  const wrap = h('div', {
+    class: 'org-logo-row',
+    style: 'display:flex; align-items:center; gap:.85rem; margin:.5rem 0 .25rem; padding:.6rem .85rem; background:var(--surface-2); border-radius:8px',
+  });
+  let cacheBust = Date.now();
+  const fileInput = h('input', {
+    type: 'file',
+    accept: 'image/png,image/jpeg,image/webp',
+    style: 'display:none',
+  });
+  const preview = h('div', {
+    style: 'width:64px; height:42px; display:flex; align-items:center; justify-content:center; background:var(--surface); border:1px solid var(--border-soft); border-radius:6px; overflow:hidden; flex:0 0 auto',
+  });
+  const actions = h('div', { class: 'row', style: 'gap:.4rem; flex-wrap:wrap; flex:1 1 auto' });
+  const draw = () => {
+    preview.replaceChildren();
+    if (org.has_logo) {
+      preview.append(h('img', {
+        src: '/org-logo/' + org.id + '?v=' + cacheBust,
+        alt: t('{{name}} logo', { name: org.name }),
+        style: 'max-width:100%; max-height:100%; object-fit:contain',
+      }));
+    } else {
+      preview.append(h('span', { class: 'muted', style: 'font-size:.7rem; text-align:center' }, t('No logo')));
+    }
+    actions.replaceChildren();
+    actions.append(
+      h('span', { class: 'muted', style: 'font-size:.75rem; text-transform:uppercase; letter-spacing:.06em; font-weight:700' },
+        t('Brand logo')),
+      h('p', { class: 'muted', style: 'margin:0; font-size:.8rem' },
+        t('Shown on the event-recap PDF. PNG, JPEG, or WebP — max 5 MB. Transparency is flattened to white on render.')),
+      h('div', { class: 'row', style: 'gap:.4rem' },
+        (() => {
+          const b = h('button', { class: 'btn small', type: 'button' },
+            icon(ICONS.plus), org.has_logo ? t('Replace logo') : t('Upload logo'));
+          b.addEventListener('click', () => fileInput.click());
+          return b;
+        })(),
+        org.has_logo ? (() => {
+          const b = h('button', { class: 'btn small danger', type: 'button' },
+            icon(ICONS.trash), t('Remove'));
+          b.addEventListener('click', async () => {
+            const r = await api(`/api/admin/organizations/${org.id}/logo`, { method: 'DELETE' });
+            if (r.status === 204) {
+              org.has_logo = false;
+              cacheBust = Date.now();
+              toastOk(t('Logo removed'));
+              draw();
+            } else {
+              toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+            }
+          });
+          return b;
+        })() : null,
+      ),
+    );
+  };
+  fileInput.addEventListener('change', async () => {
+    const file = fileInput.files?.[0];
+    if (!file) return;
+    const fd = new FormData();
+    fd.append('file', file);
+    const res = await fetch(`/api/admin/organizations/${org.id}/logo`, {
+      method: 'POST', body: fd, credentials: 'same-origin',
+      headers: { 'X-CSRF-Token': csrfToken() },
+    });
+    fileInput.value = '';
+    if (res.ok) {
+      org.has_logo = true;
+      cacheBust = Date.now();
+      toastOk(t('Logo updated'));
+      draw();
+    } else {
+      const txt = await res.text().catch(() => '');
+      toastErr(txt || t('error {{status}}', { status: res.status }));
+    }
+  });
+  wrap.append(preview, actions, fileInput);
+  draw();
+  return wrap;
 }
 
 function renderOrganizationCard(org, adventures, purchases) {
@@ -7473,6 +7577,11 @@ function renderOrganizationCard(org, adventures, purchases) {
         iconBtn('pencil', t('Rename'),             () => openRenameOrg(org)),
         iconBtn('trash',  t('Delete'),             () => confirmDeleteOrg(org), { danger: true }))),
 
+    // Brand logo row — surfaced on the recap PDF cover (and, in the
+    // future, the play / arrange chrome). PNG/JPEG/WebP only;
+    // re-encoded server-side so a polyglot upload can't survive.
+    renderOrgLogoBlock(org),
+
     h('h3', { style: 'margin-top:.75rem' }, t('Users ({{n}})', { n: members.length })),
     members.length === 0
       ? h('p', { class: 'muted', style: 'font-size:.85rem' }, t('No users yet — add one to get started.'))
@@ -7482,7 +7591,7 @@ function renderOrganizationCard(org, adventures, purchases) {
           title: t('{{role}} · click ⓧ to remove', { role: m.role }),
         }, m.role === 'org_admin'
             ? t('{{username}} (admin)', { username: m.username })
-            : t('{{username}} (member)', { username: m.username }),
+            : t('{{username}} (facilitator)', { username: m.username }),
         // Manual verify button: shown only when the user hasn't
         // confirmed their email through the self-serve flow yet. Use
         // sparingly — it bypasses the deliverability check that
@@ -7653,8 +7762,11 @@ async function openAddOrgMember(org) {
       passwordEl,
       h('small', { class: 'muted', style: 'display:block; margin-top:.2rem' },
         t('Minimum 8 characters.')));
+    // Role labels: "Facilitator" surfaces what org_member can
+    // actually do (run events, manage teams, no authoring). The wire
+    // value stays org_member so the API + DB are unchanged.
     const roleEl = h('select', { name: 'r' },
-      h('option', { value: 'org_member' }, t('Member')),
+      h('option', { value: 'org_member' }, t('Facilitator')),
       h('option', { value: 'org_admin' }, t('Admin')));
     const status = h('p', {
       class: 'muted',

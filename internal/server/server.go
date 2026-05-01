@@ -386,6 +386,11 @@ func New(cfg Config) http.Handler {
 	// Adventure cover pictures — same public-read rationale: the slug is
 	// already in the URL, no extra sensitive metadata is leaked.
 	r.Get("/adventure-assets/avatar/{slug}", adminH.ServeAdventureAvatar)
+	// Org brand logo — public-read for the same reasons; companies put
+	// their logo on their website, it's not sensitive material. Path
+	// is short ("/org-logo/{id}") so the bytes embed cleanly into the
+	// recap PDF and any future server-rendered surfaces.
+	r.Get("/org-logo/{orgID}", adminH.ServeOrgLogo)
 
 	// Staff authentication. CSRF-protected — the user gets a zv_csrf
 	// cookie from the /arrange page GET that hosts the login form, so
@@ -602,6 +607,9 @@ func New(cfg Config) http.Handler {
 		// Mounted alongside the CSV so the same authorize-event check
 		// gates both.
 		r.Get("/events/{eventID}/recap.pdf", adminH.ExportEventRecapPDF)
+		// iCalendar invite — arrangers download once and forward to
+		// participants so the event lands on everyone's calendar.
+		r.Get("/events/{eventID}/invite.ics", adminH.ExportEventInviteICS)
 
 		r.Patch("/teams/{teamID}", adminH.UpdateTeam)
 		r.Delete("/teams/{teamID}", adminH.DeleteTeam)
@@ -751,6 +759,11 @@ func New(cfg Config) http.Handler {
 			r.Post("/organizations", adminH.CreateOrganization)
 			r.Patch("/organizations/{orgID}", adminH.UpdateOrganization)
 			r.Delete("/organizations/{orgID}", adminH.DeleteOrganization)
+			// Brand logo upload — surfaced on the recap PDF cover and
+			// (later) on the play / arrange chrome. PNG/JPEG/WebP only,
+			// re-encoded by imageutil.Shrink.
+			r.Post("/organizations/{orgID}/logo", adminH.SetOrgLogo)
+			r.Delete("/organizations/{orgID}/logo", adminH.DeleteOrgLogo)
 			r.Post("/organizations/{orgID}/assignments", adminH.CreateAssignment)
 			r.Patch("/organizations/{orgID}/assignments/{assignmentID}", adminH.UpdateAssignment)
 			r.Delete("/organizations/{orgID}/assignments/{assignmentID}", adminH.DeleteAssignment)

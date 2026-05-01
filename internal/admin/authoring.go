@@ -252,7 +252,7 @@ func (h *Handlers) requireEditAdventure(w http.ResponseWriter, r *http.Request, 
 		return sql.NullInt64{}, false
 	}
 	me, _ := auth.FromContext(r.Context())
-	if !canEditOwned(me, org) {
+	if !canAuthor(me, org) {
 		httpx.Error(w, http.StatusForbidden, "forbidden")
 		return sql.NullInt64{}, false
 	}

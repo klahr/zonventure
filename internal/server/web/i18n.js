@@ -43,6 +43,18 @@
       'Download a branded PDF report you can share with stakeholders':
         'Ladda ner en varumärkesanpassad PDF-rapport som du kan dela med intressenter',
       'Download CSV': 'Ladda ner CSV',
+      'Download calendar invite': 'Ladda ner kalenderinbjudan',
+      'Download a calendar invite (.ics) you can forward to participants':
+        'Ladda ner en kalenderinbjudan (.ics) som du kan vidarebefordra till deltagarna',
+      'Brand logo': 'Varumärkeslogotyp',
+      'Upload logo': 'Ladda upp logotyp',
+      'Replace logo': 'Byt logotyp',
+      'No logo': 'Ingen logotyp',
+      '{{name}} logo': '{{name}}s logotyp',
+      'Logo updated': 'Logotyp uppdaterad',
+      'Logo removed': 'Logotyp borttagen',
+      'Shown on the event-recap PDF. PNG, JPEG, or WebP — max 5 MB. Transparency is flattened to white on render.':
+        'Visas på event-rapporten (PDF). PNG, JPEG eller WebP — max 5 MB. Transparens fylls med vitt vid rendering.',
       // ---- nav ----
       'Dashboard': 'Översikt',
       'Organizations': 'Organisationer',
@@ -584,8 +596,8 @@
       'This permanently removes {{username}} and unlinks them from any teams. Enter your password to confirm.':
         'Det här tar bort {{username}} permanent och kopplar loss dem från alla lag. Ange ditt lösenord för att bekräfta.',
       // ---- organizations ----
-      'Each organization is a tenant — its users (org_admin, org_member) operate the games. Assign adventures to an organization to let them schedule events.':
-        'Varje organisation är en tenant — dess användare (org_admin, org_member) driver spelen. Tilldela äventyr till en organisation så att de kan schemalägga event.',
+      'Each organization is a tenant — its admins author adventures and manage members; its facilitators run events and manage teams. Assign adventures to an organization to let them schedule events.':
+        'Varje organisation är en tenant — dess administratörer skapar äventyr och hanterar medlemmar; dess facilitatorer driver event och hanterar lag. Tilldela äventyr till en organisation så att de kan schemalägga event.',
       '{{n}} user': '{{n}} användare',
       '{{n}} users': '{{n}} användare',
       '{{n}} player': '{{n}} spelare',
@@ -598,6 +610,7 @@
       '{{role}} · click ⓧ to remove': '{{role}} · klicka på ⓧ för att ta bort',
       '{{username}} (admin)': '{{username}} (administratör)',
       '{{username}} (member)': '{{username}} (medlem)',
+      '{{username}} (facilitator)': '{{username}} (facilitator)',
       'Unused assignments ({{n}})': 'Oanvända tilldelningar ({{n}})',
       'None — assign an adventure to let them schedule an event.':
         'Inga — tilldela ett äventyr så att de kan schemalägga en event.',
@@ -626,6 +639,7 @@
       'Minimum 8 characters.': 'Minst 8 tecken.',
       'Role': 'Roll',
       'Member': 'Medlem',
+      'Facilitator': 'Facilitator',
       'Admin': 'Administratör',
       'User added': 'Användare tillagd',
       'Active organization': 'Aktiv organisation',
@@ -788,6 +802,7 @@
       'No other users yet.': 'Inga andra användare än.',
       'admin': 'administratör',
       'member': 'medlem',
+      'facilitator': 'facilitator',
       // ---- event feed ----
       'No activity yet.': 'Ingen aktivitet än.',
       'Event created for ': 'Event skapad för ',

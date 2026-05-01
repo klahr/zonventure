@@ -266,9 +266,11 @@ func (h *Handlers) AdventureDetail(w http.ResponseWriter, r *http.Request) {
 	// mine_to_edit is the canonical flag the UI keys off for
 	// "show Edit, hide Buy" decisions. Computed against the caller's
 	// auth context, same shape as ListAdventures so the two surfaces
-	// agree.
+	// agree. Tracks canAuthor so org_member sees the row but doesn't
+	// see edit affordances — the role can still run events that use
+	// the adventure, just not modify the puzzle content.
 	me, _ := auth.FromContext(r.Context())
-	out["mine_to_edit"] = canEditOwned(me, orgID)
+	out["mine_to_edit"] = canAuthor(me, orgID)
 	httpx.JSON(w, http.StatusOK, out)
 }
 
