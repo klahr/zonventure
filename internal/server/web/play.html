@@ -16,14 +16,15 @@
      own file so node --test can unit-test it in isolation; see
      play-queue.test.js. -->
 <script src="/play-queue.js"></script>
-<!-- Apply persisted theme synchronously so a saved-dark user doesn't
-     see a light flash before the styles re-cascade. Mirrors arrange's
-     initTheme but as an inline pre-script so it lands before any
-     stylesheet renders. Same key (zv-theme) shared across the app. -->
-<script>(function(){try{var v=localStorage.getItem('zv-theme');if(v==='light'||v==='dark')document.documentElement.setAttribute('data-theme',v);}catch(e){}})();</script>
+<!-- Light theme is forced for the play surface — outdoor sunlight
+     readability and predictable QR-scanning contrast both win against
+     the small comfort-at-night use case, and matching across devices
+     keeps a captain on a phone seeing the same screen as a teammate
+     on a tablet. arrange.html keeps its theme picker since arrangers
+     work from a console, not in the field. -->
 <style>
   :root {
-    color-scheme: light dark;
+    color-scheme: light;
     --accent:        #ad1357;
     --accent-hover:  #951048;
     --accent-fg:     #ffffff;
@@ -60,45 +61,6 @@
     --font-body:     'Open Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
     --font-brand:    'Aclonica', 'Vollkorn', Georgia, serif;
   }
-  /* Theme tokens — same shape as arrange.html. Default (light)
-     lives on :root above. An explicit override lands as
-     data-theme="light"|"dark" on <html> (set by the menu toggle and
-     persisted to localStorage). System dark preference applies only
-     when the user hasn't set an explicit theme — so a player who
-     wanted dark at home keeps it after stepping outside, and a
-     player who wanted light keeps light even at night. */
-  [data-theme="dark"] {
-    --bg:          #14202e;
-    --surface:     #1f3349;
-    --surface-2:   #263d56;
-    --border:      #3a5172;
-    --border-soft: #3a517266;
-    --text:        #e7ecf4;
-    --ink:         #e7ecf4;
-    --muted:       #9db1cc;
-    --accent:      #e24080;
-    --accent-hover:#ad1357;
-    --success:     #7fd17b;
-    --danger:      #ff7b7b;
-    --shadow:      0 1px 4px #00000066, 0 2px 12px #00000077;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root:not([data-theme]) {
-      --bg:          #14202e;
-      --surface:     #1f3349;
-      --surface-2:   #263d56;
-      --border:      #3a5172;
-      --border-soft: #3a517266;
-      --text:        #e7ecf4;
-      --ink:         #e7ecf4;
-      --muted:       #9db1cc;
-      --accent:      #e24080;
-      --accent-hover:#ad1357;
-      --success:     #7fd17b;
-      --danger:      #ff7b7b;
-      --shadow:      0 1px 4px #00000066, 0 2px 12px #00000077;
-    }
-  }
   * { box-sizing: border-box; }
   body {
     font-family: var(--font-body);
@@ -127,7 +89,12 @@
   .submit-dock {
     position: fixed; left: 0; right: 0; bottom: 0;
     padding: .75rem 1rem calc(.75rem + env(safe-area-inset-bottom));
-    background: color-mix(in srgb, var(--bg) 90%, transparent);
+    /* When the adventure brand sets --submit-bg, the dock paints with
+       that solid colour and the buttons inside use the same value as
+       their text fill (see .submit-dock button below) — text reads as
+       the dock "punching through" each button. Falls back to the
+       blurred translucent panel for unbranded adventures. */
+    background: var(--submit-bg, color-mix(in srgb, var(--bg) 90%, transparent));
     backdrop-filter: blur(8px);
     border-top: 1px solid var(--border-soft);
     z-index: 10;
@@ -144,13 +111,23 @@
      alternative path. */
   .submit-dock form.has-qr { grid-template-columns: 1fr auto auto; }
   .submit-dock input { margin: 0; }
-  .submit-dock button { width: auto; padding: .75rem 1.2rem; }
+  .submit-dock button {
+    width: auto; padding: .75rem 1.2rem;
+    /* Brand override: when the adventure paints the dock with a
+       custom colour, mirror it onto the button text so the label
+       reads as the dock "punching through" the button face. The
+       fallback keeps the default white-on-accent contrast. */
+    color: var(--submit-bg, var(--accent-fg));
+  }
   .submit-dock .qr-btn {
     display: inline-flex; align-items: center; justify-content: center;
     padding: 0 .85rem;
     border: 0;
     background: var(--accent);
-    color: #fff;
+    /* Same brand override as the submit button — the QR icon's stroke
+       inherits this colour, so a custom dock paint flows into both
+       buttons consistently. */
+    color: var(--submit-bg, #fff);
     border-radius: .5rem;
     cursor: pointer;
   }
@@ -222,10 +199,10 @@
      because they're set-once context, not in-the-moment info — the
      player already knows what they joined and which team they're on. */
   /* Brand strip — sits above the runbar when the owning org has a
-     logo. Subtle so it reads as chrome, not content; the org's
-     logo is the protagonist on the left, "powered by Zonventure"
-     fades on the right. Hidden when both org_logo_url and org_name
-     are empty (the orgless / preview-without-org case). */
+     logo (or name). Subtle so it reads as chrome, not content.
+     Hidden when both org_logo_url and org_name are empty (the
+     orgless / preview-without-org case) so an unbranded play page
+     stays clean rather than carrying a generic platform mark. */
   .brand-strip {
     display: flex; align-items: center; gap: .5rem;
     padding: .35rem .15rem;
@@ -243,12 +220,6 @@
     font-weight: 700;
     font-size: .85rem;
     color: var(--ink);
-  }
-  .brand-strip-powered {
-    font-size: .65rem;
-    text-transform: uppercase;
-    letter-spacing: .07em;
-    color: var(--muted);
   }
   .runbar {
     display: flex; align-items: center; justify-content: space-between;
@@ -1698,6 +1669,28 @@ function setSubmitDisabled(disabled) {
 let brandColors = null;
 function applyColors(c) {
   brandColors = c || null;
+  // Document-level brand pieces. The page body and the global text
+  // colour ride on the document root rather than per-scope so the
+  // surrounding chrome (brand strip, runbar) inherits the colour
+  // alongside the puzzle column. Mirrors the live.html shape so the
+  // same colour drives both surfaces.
+  const root = document.documentElement;
+  if (c && c.background) {
+    root.style.setProperty('--bg', c.background);
+    root.style.setProperty('--surface', c.background);
+    root.style.setProperty('--surface-2', c.background);
+  } else {
+    root.style.removeProperty('--bg');
+    root.style.removeProperty('--surface');
+    root.style.removeProperty('--surface-2');
+  }
+  if (c && c.text) {
+    root.style.setProperty('--text', c.text);
+    root.style.setProperty('--ink', c.text);
+  } else {
+    root.style.removeProperty('--text');
+    root.style.removeProperty('--ink');
+  }
   applyBrandToScope(document.getElementById('app'));
   applyBrandToScope(document.getElementById('submit-dock'));
 }
@@ -1717,6 +1710,16 @@ function applyBrandToScope(el) {
     el.style.setProperty('--accent-secondary', c.accent_secondary || c.accent);
   } else {
     el.style.removeProperty('--accent-secondary');
+  }
+  // Submit-dock brand fill. Painted on every brandable scope rather
+  // than only the dock so the dock CSS can rely on the cascade —
+  // applyBrandToScope runs against #app too because the dock is
+  // briefly absent on non-running puzzle states and we still want
+  // the var to be readable from inline previews / future affordances.
+  if (c && c.submit_bg) {
+    el.style.setProperty('--submit-bg', c.submit_bg);
+  } else {
+    el.style.removeProperty('--submit-bg');
   }
 }
 
@@ -1747,33 +1750,6 @@ function readableOn(hex) {
   });
   const L = 0.2126 * srgb[0] + 0.7152 * srgb[1] + 0.0722 * srgb[2];
   return L > 0.5 ? '#000000' : '#ffffff';
-}
-
-/* Theme: system default unless the player has explicitly picked one.
-   Same `data-theme` attribute pattern as arrange.html so localStorage
-   keys (`zv-theme`) round-trip across the two apps; opening the same
-   browser to /arrange and /play uses the same persisted choice. */
-(function initTheme() {
-  try {
-    const saved = localStorage.getItem('zv-theme');
-    if (saved === 'light' || saved === 'dark') {
-      document.documentElement.setAttribute('data-theme', saved);
-    }
-  } catch { /* private mode — ignore, defaults still apply */ }
-})();
-function currentTheme() {
-  const attr = document.documentElement.getAttribute('data-theme');
-  if (attr) return attr;
-  return matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-}
-function setTheme(value) {
-  if (value === 'system') {
-    document.documentElement.removeAttribute('data-theme');
-    try { localStorage.removeItem('zv-theme'); } catch {}
-  } else {
-    document.documentElement.setAttribute('data-theme', value);
-    try { localStorage.setItem('zv-theme', value); } catch {}
-  }
 }
 
 function el(tag, attrs = {}, ...children) {
@@ -2269,26 +2245,36 @@ function renderGpsHelp() {
   currentGpsHelpEl.append(help, retry);
 }
 
-// renderBrandStrip returns the small "powered by Acme" mark shown
-// above the runbar, or null when neither a logo nor an org name is
-// available. The strip is intentionally subtle — corporate buyers
-// like the implicit endorsement, but the puzzle content is what
-// players are here for.
+// renderBrandStrip paints the owning org's identity above the runbar.
+// When both a logo and a name are set, the logo anchors the left and
+// the name pins to the right — corporate buyers asked for the textual
+// brand to stay visible alongside the mark, not get hidden by it.
+// When only one is set we fall back to a single-piece strip (logo OR
+// name on the left). Returns null when neither is available so an
+// unbranded play page stays clean.
 function renderBrandStrip(s) {
   const logo = s && s.org_logo_url ? s.org_logo_url : '';
   const name = s && s.org_name ? s.org_name.trim() : '';
   if (!logo && !name) return null;
-  const left = logo
-    ? el('img', {
+  if (logo && name) {
+    return el('div', { class: 'brand-strip' },
+      el('img', {
         class: 'brand-strip-logo',
         src: logo,
-        alt: name || t('Organization logo'),
-      })
-    : el('span', { class: 'brand-strip-name' }, name);
+        alt: name,
+      }),
+      el('span', { class: 'brand-strip-spacer', style: 'flex:1' }),
+      el('span', { class: 'brand-strip-name' }, name),
+    );
+  }
   return el('div', { class: 'brand-strip' },
-    left,
-    el('span', { class: 'brand-strip-spacer', style: 'flex:1' }),
-    el('span', { class: 'brand-strip-powered' }, t('powered by Zonventure')),
+    logo
+      ? el('img', {
+          class: 'brand-strip-logo',
+          src: logo,
+          alt: t('Organization logo'),
+        })
+      : el('span', { class: 'brand-strip-name' }, name),
   );
 }
 
@@ -4347,51 +4333,9 @@ function openMenuDrawer(s) {
   // --surface vars and falls back to the OS default — which in light
   // mode against a dark theme picker rendered the option text
   // invisibly white-on-white.
-  langPicker.style.cssText = 'width:100%; padding:.6rem .75rem; font:inherit; font-weight:600; border:1px solid var(--border-soft); border-radius:8px; background:var(--surface); color:var(--ink); color-scheme:light dark;';
+  langPicker.style.cssText = 'width:100%; padding:.6rem .75rem; font:inherit; font-weight:600; border:1px solid var(--border-soft); border-radius:8px; background:var(--surface); color:var(--ink); color-scheme:light;';
   langSection.append(langLabel, langPicker);
   panel.append(langSection);
-
-  // Theme picker. Three options — Light / Dark / Auto — using the
-  // shared `data-theme` attribute pattern. "Auto" clears the
-  // attribute so the OS preference takes over again. The active
-  // button repaints in place when tapped; the drawer doesn't close
-  // so the player can verify the visual change before dismissing.
-  const themeSection = document.createElement('div');
-  themeSection.className = 'menu-section';
-  const themeLabel = document.createElement('p');
-  themeLabel.className = 'menu-section-label';
-  themeLabel.textContent = t('Theme');
-  themeSection.append(themeLabel);
-  const seg = document.createElement('div');
-  seg.className = 'menu-seg';
-  const themeButtons = {};
-  const repaintTheme = () => {
-    let saved = null;
-    try { saved = localStorage.getItem('zv-theme'); } catch {}
-    const sel = (saved === 'light' || saved === 'dark') ? saved : 'system';
-    for (const [v, b] of Object.entries(themeButtons)) {
-      const active = v === sel;
-      b.classList.toggle('active', active);
-      b.setAttribute('aria-pressed', active ? 'true' : 'false');
-    }
-  };
-  const makeThemeBtn = (value, label) => {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.className = 'menu-seg-btn';
-    b.textContent = label;
-    themeButtons[value] = b;
-    b.addEventListener('click', () => { setTheme(value); repaintTheme(); });
-    return b;
-  };
-  seg.append(
-    makeThemeBtn('light', t('Light')),
-    makeThemeBtn('dark', t('Dark')),
-    makeThemeBtn('system', t('Auto')),
-  );
-  repaintTheme();
-  themeSection.append(seg);
-  panel.append(themeSection);
 
   // Team share — show a QR + URL of the public team page so a
   // teammate whose magic link didn't reach them can scan, pick

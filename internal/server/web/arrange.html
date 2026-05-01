@@ -2874,14 +2874,31 @@ function renderOrgPicker() {
     h('p', { class: 'muted' },
       t('You belong to {{n}} organisations. Pick which one to act as — you can switch from the menu later.', { n: memberships.length })),
     h('div', { style: 'display:flex; flex-direction:column; gap:.5rem; margin-top:1rem' },
-      memberships.map((m) => h('button', {
-        class: 'btn ghost',
-        type: 'button',
-        style: 'display:flex; justify-content:space-between; align-items:center',
-        on: { click: () => switchOrgAndRender(m.org_id) },
-      }, h('strong', {}, m.org_name),
-         h('span', { class: 'muted', style: 'margin-left:.5rem; font-size:.85rem' },
-           m.role === 'org_admin' ? t('admin') : t('race director'))))),
+      memberships.map((m) => {
+        // Logo when available — recognising a brand mark is faster
+        // than scanning org names for an arranger who works across
+        // several tenants. Falls back to a muted initial so the
+        // layout doesn't shift between orgs with and without logos.
+        const mark = m.org_logo_url
+          ? h('img', {
+              src: m.org_logo_url,
+              alt: '',
+              style: 'width:1.75rem; height:1.75rem; border-radius:.35rem; object-fit:cover; flex:0 0 auto; background:var(--surface-2)',
+            })
+          : h('span', {
+              style: 'width:1.75rem; height:1.75rem; border-radius:.35rem; flex:0 0 auto; display:inline-grid; place-items:center; background:var(--surface-2); color:var(--muted); font-weight:700; font-size:.85rem',
+              'aria-hidden': 'true',
+            }, (m.org_name || '?').trim().charAt(0).toUpperCase());
+        return h('button', {
+          class: 'btn ghost',
+          type: 'button',
+          style: 'display:flex; align-items:center; gap:.6rem; text-align:left',
+          on: { click: () => switchOrgAndRender(m.org_id) },
+        }, mark,
+           h('strong', { style: 'flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap' }, m.org_name),
+           h('span', { class: 'muted', style: 'font-size:.85rem; flex:0 0 auto' },
+             m.role === 'org_admin' ? t('admin') : t('race director')));
+      })),
     h('div', { class: 'row end', style: 'margin-top:1rem' },
       h('button', {
         class: 'btn small',
@@ -8588,6 +8605,7 @@ async function openCreateAdventure() {
     const cSecondary = colorRow(t('Secondary — titles, status pill'), '');
     const cBackground = colorRow(t('Background'),                     '');
     const cText      = colorRow(t('Text'),                            '');
+    const cSubmitBg  = colorRow(t('Submit dock — answer bar at the bottom'), '');
     // Live slug validator: keeps the author from discovering at submit
     // time that "My-Adventure" isn't a legal slug. Echoes a small hint
     // beside the field as they type.
@@ -8610,7 +8628,7 @@ async function openCreateAdventure() {
       h('label', { class: 'field' }, h('span', {}, t('Description')), desc),
       h('label', { class: 'field' }, h('span', {}, t('Author')), author),
       h('h3', { style: 'margin-top:1rem' }, t('Brand colours (optional)')),
-      cAccent.el, cSecondary.el, cBackground.el, cText.el,
+      cAccent.el, cSecondary.el, cBackground.el, cText.el, cSubmitBg.el,
       h('div', { class: 'row end' },
         h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, t('Cancel')),
         h('button', { class: 'btn primary', type: 'submit' }, t('Create'))));
@@ -8620,7 +8638,7 @@ async function openCreateAdventure() {
     if (typeof setBeforeClose === 'function') {
       setBeforeClose(() => {
         const dirty = !!(slug.value || title.value || desc.value || author.value
-          || cAccent.get() || cSecondary.get() || cBackground.get() || cText.get());
+          || cAccent.get() || cSecondary.get() || cBackground.get() || cText.get() || cSubmitBg.get());
         return !dirty || confirm(t('Discard this adventure?'));
       });
     }
@@ -8634,6 +8652,7 @@ async function openCreateAdventure() {
           accent_secondary_color: cSecondary.get(),
           background_color:       cBackground.get(),
           text_color:             cText.get(),
+          submit_bg_color:        cSubmitBg.get(),
         }),
       });
       if (r.status === 201) { toastOk(t('Adventure created')); close(true); nav('#library/' + r.body.slug); }
@@ -9065,10 +9084,12 @@ async function openEditAdventureMeta(adv) {
     const initialSecondary = adv.accent_secondary_color || '';
     const initialBg        = adv.background_color      || '';
     const initialText      = adv.text_color            || '';
+    const initialSubmitBg  = adv.submit_bg_color       || '';
     const cAccent     = colorRow(t('Accent — buttons, progress'),      initialAccent);
     const cSecondary  = colorRow(t('Secondary — titles, status pill'), initialSecondary);
     const cBackground = colorRow(t('Background'),                      initialBg);
     const cText       = colorRow(t('Text'),                            initialText);
+    const cSubmitBg   = colorRow(t('Submit dock — answer bar at the bottom'), initialSubmitBg);
 
     // Cover picture — uploaded inline against the adventure row. The
     // preview is rebuilt on upload/remove so the arranger sees the
@@ -9148,7 +9169,7 @@ async function openEditAdventureMeta(adv) {
         outroField.el),
       h('p', { class: 'muted', style: 'font-size:.8rem; margin:.35rem 0 .75rem' }, mdSupportedHint()));
     const paneBrand = h('div', { class: 'tab-pane' },
-      cAccent.el, cSecondary.el, cBackground.el, cText.el);
+      cAccent.el, cSecondary.el, cBackground.el, cText.el, cSubmitBg.el);
     const panes = [paneDetails, paneCopy, paneBrand];
 
     const mkTab = (label, idx) => {
@@ -9206,6 +9227,7 @@ async function openEditAdventureMeta(adv) {
       if (cSecondary.get()  !== initialSecondary) payload.accent_secondary_color = cSecondary.get();
       if (cBackground.get() !== initialBg)        payload.background_color       = cBackground.get();
       if (cText.get()       !== initialText)      payload.text_color             = cText.get();
+      if (cSubmitBg.get()   !== initialSubmitBg)  payload.submit_bg_color        = cSubmitBg.get();
       if (Object.keys(payload).length === 0) { close(null); return; }
       const r = await api(`/api/admin/adventures/${encodeURIComponent(adv.slug)}`, {
         method: 'PATCH', body: JSON.stringify(payload),
@@ -9928,6 +9950,13 @@ function applyAdventureColors(el, adv) {
   if (adv.text_color) {
     el.style.setProperty('--ink', adv.text_color);
     el.style.setProperty('--text', adv.text_color);
+  }
+  // The submit-dock's brand colour doesn't have a meaningful target
+  // inside the editor preview card (no sticky answer bar there), but
+  // expose it as a CSS var anyway so a future preview affordance can
+  // pick it up without revisiting this function.
+  if (adv.submit_bg_color) {
+    el.style.setProperty('--submit-bg', adv.submit_bg_color);
   }
 }
 

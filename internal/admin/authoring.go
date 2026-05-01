@@ -117,6 +117,7 @@ type adventureEditDTO struct {
 	AccentSecondaryColor string      `json:"accent_secondary_color"`
 	BackgroundColor      string      `json:"background_color"`
 	TextColor            string      `json:"text_color"`
+	SubmitBgColor        string      `json:"submit_bg_color"`
 	AvatarURL            string      `json:"avatar_url,omitempty"`
 	// OrgID identifies the owner — nil for admin-owned global-catalog
 	// adventures, set for org-owned ones. The publish flag is only
@@ -172,6 +173,7 @@ type createAdventureRequest struct {
 	AccentSecondaryColor string `json:"accent_secondary_color"`
 	BackgroundColor      string `json:"background_color"`
 	TextColor            string `json:"text_color"`
+	SubmitBgColor        string `json:"submit_bg_color"`
 }
 
 // CreateAdventure inserts an empty adventure. Admin-only.
@@ -195,6 +197,7 @@ func (h *Handlers) CreateAdventure(w http.ResponseWriter, r *http.Request) {
 		{"accent_secondary_color", req.AccentSecondaryColor},
 		{"background_color", req.BackgroundColor},
 		{"text_color", req.TextColor},
+		{"submit_bg_color", req.SubmitBgColor},
 	}
 	for _, f := range colorFields {
 		if !validHexColor(f.value) {
@@ -213,13 +216,13 @@ func (h *Handlers) CreateAdventure(w http.ResponseWriter, r *http.Request) {
 	var id int64
 	err := h.DB.QueryRowContext(r.Context(), `
 		INSERT INTO adventures(slug, title, description, author, intro_text, outro_text,
-		                       accent_color, accent_secondary_color, background_color, text_color,
+		                       accent_color, accent_secondary_color, background_color, text_color, submit_bg_color,
 		                       org_id, created_by_user_id)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 		RETURNING id
 	`, req.Slug, req.Title, req.Description, req.Author, req.IntroText, req.OutroText,
 		nullIfEmpty(req.AccentColor), nullIfEmpty(req.AccentSecondaryColor),
-		nullIfEmpty(req.BackgroundColor), nullIfEmpty(req.TextColor),
+		nullIfEmpty(req.BackgroundColor), nullIfEmpty(req.TextColor), nullIfEmpty(req.SubmitBgColor),
 		orgArg, me.ID).Scan(&id)
 	if err != nil {
 		httpx.Error(w, http.StatusConflict, "slug already used")
@@ -270,6 +273,7 @@ type updateAdventureRequest struct {
 	AccentSecondaryColor *string `json:"accent_secondary_color,omitempty"`
 	BackgroundColor      *string `json:"background_color,omitempty"`
 	TextColor            *string `json:"text_color,omitempty"`
+	SubmitBgColor        *string `json:"submit_bg_color,omitempty"`
 	Published            *bool   `json:"published,omitempty"`
 }
 
@@ -327,6 +331,7 @@ func (h *Handlers) UpdateAdventure(w http.ResponseWriter, r *http.Request) {
 		{"accent_secondary_color", req.AccentSecondaryColor},
 		{"background_color", req.BackgroundColor},
 		{"text_color", req.TextColor},
+		{"submit_bg_color", req.SubmitBgColor},
 	}
 	for _, p := range colorPatches {
 		if p.val == nil {
@@ -426,26 +431,27 @@ func adventureIDBySlug(ctx context.Context, db *sql.DB, slug string) (int64, err
 func loadAdventureDTO(ctx context.Context, db *sql.DB, slug string) (*adventureEditDTO, error) {
 	a := adventureEditDTO{Pages: []pageView{}, Shares: []shareView{}}
 	var (
-		accent, accent2, bg, ink sql.NullString
-		hasAvatar                int
-		published                int
-		orgID                    sql.NullInt64
+		accent, accent2, bg, ink, submitBG sql.NullString
+		hasAvatar                          int
+		published                          int
+		orgID                              sql.NullInt64
 	)
 	if err := db.QueryRowContext(ctx, `
 		SELECT id, slug, title, description, author, intro_text, outro_text,
-		       accent_color, accent_secondary_color, background_color, text_color,
+		       accent_color, accent_secondary_color, background_color, text_color, submit_bg_color,
 		       (avatar_mime_type IS NOT NULL)::int AS has_avatar,
 		       published, org_id
 		FROM adventures WHERE slug = $1
 	`, slug).Scan(&a.ID, &a.Slug, &a.Title, &a.Description, &a.Author,
 		&a.IntroText, &a.OutroText,
-		&accent, &accent2, &bg, &ink, &hasAvatar, &published, &orgID); err != nil {
+		&accent, &accent2, &bg, &ink, &submitBG, &hasAvatar, &published, &orgID); err != nil {
 		return nil, err
 	}
 	a.AccentColor = accent.String
 	a.AccentSecondaryColor = accent2.String
 	a.BackgroundColor = bg.String
 	a.TextColor = ink.String
+	a.SubmitBgColor = submitBG.String
 	a.Published = published != 0
 	if orgID.Valid {
 		v := orgID.Int64

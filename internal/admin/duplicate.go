@@ -169,12 +169,12 @@ func (h *Handlers) cloneAdventure(ctx context.Context, sourceSlug, newSlug strin
 	err = tx.QueryRowContext(ctx, `
 		INSERT INTO adventures(
 			slug, title, description, author, intro_text, outro_text,
-			accent_color, accent_secondary_color, background_color, text_color,
+			accent_color, accent_secondary_color, background_color, text_color, submit_bg_color,
 			org_id, created_by_user_id, published, is_template,
 			avatar_mime_type, avatar_size_bytes, avatar_content)
 		SELECT
 			$1, $2, description, author, intro_text, outro_text,
-			accent_color, accent_secondary_color, background_color, text_color,
+			accent_color, accent_secondary_color, background_color, text_color, submit_bg_color,
 			$3, $4, 0, 0,
 			avatar_mime_type, avatar_size_bytes, avatar_content
 		FROM adventures WHERE id = $5

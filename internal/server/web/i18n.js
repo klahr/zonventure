@@ -98,7 +98,6 @@
       'Send email': 'Skicka mejl',
       'Invitation re-sent to {{email}}': 'Inbjudan skickad igen till {{email}}',
       'Organization logo': 'Organisationslogotyp',
-      'powered by Zonventure': 'drivs av Zonventure',
       // ---- nav ----
       'Dashboard': 'Översikt',
       'Organizations': 'Organisationer',
@@ -736,6 +735,7 @@
       'Secondary — titles, status pill': 'Sekundär — rubriker, statusmärke',
       'Background': 'Bakgrund',
       'Text': 'Text',
+      'Submit dock — answer bar at the bottom': 'Svarspanel — svarsfältet längst ner',
       'Slug — lowercase letters, digits, hyphens': 'Slug — små bokstäver, siffror, bindestreck',
       'Title': 'Titel',
       'Description': 'Beskrivning',

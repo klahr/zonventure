@@ -606,6 +606,12 @@ type Membership struct {
 	OrgID   int64
 	OrgName string
 	Role    string
+	// HasLogo is true when the organisation has an uploaded logo on
+	// `organizations.logo_mime_type`. Surfaced on /whoami so the
+	// org-picker can render the brand mark next to the name —
+	// recognising a logo is faster than reading three similar org
+	// names for a multi-tenant arranger.
+	HasLogo bool
 }
 
 // ListMemberships returns every (org, role) the user belongs to,
@@ -614,7 +620,8 @@ type Membership struct {
 // org picker and the hamburger switcher.
 func ListMemberships(ctx context.Context, db *sql.DB, userID int64) ([]Membership, error) {
 	rows, err := db.QueryContext(ctx, `
-		SELECT m.org_id, o.name, m.role
+		SELECT m.org_id, o.name, m.role,
+		       (o.logo_mime_type IS NOT NULL)::int AS has_logo
 		FROM org_memberships m
 		JOIN organizations o ON o.id = m.org_id
 		WHERE m.user_id = $1
@@ -626,10 +633,14 @@ func ListMemberships(ctx context.Context, db *sql.DB, userID int64) ([]Membershi
 	defer rows.Close()
 	out := []Membership{}
 	for rows.Next() {
-		var m Membership
-		if err := rows.Scan(&m.OrgID, &m.OrgName, &m.Role); err != nil {
+		var (
+			m       Membership
+			hasLogo int
+		)
+		if err := rows.Scan(&m.OrgID, &m.OrgName, &m.Role, &hasLogo); err != nil {
 			return nil, err
 		}
+		m.HasLogo = hasLogo != 0
 		out = append(out, m)
 	}
 	return out, rows.Err()

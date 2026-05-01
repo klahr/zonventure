@@ -68,6 +68,20 @@ services:
       ZV_STRIPE_SECRET_KEY:       ${ZV_STRIPE_SECRET_KEY:-}
       ZV_STRIPE_WEBHOOK_SECRET:   ${ZV_STRIPE_WEBHOOK_SECRET:-}
       ZV_TOTP_KEY:                ${ZV_TOTP_KEY:-}
+      # Single sign-on (OpenID Connect, e.g. Google Workspace). All
+      # blank by default → SSO endpoints 404 and the login UI hides
+      # the button. See SELFHOSTING.md → "Single sign-on" for the
+      # Google Cloud Console walkthrough; ZV_OIDC_ENABLED=1 plus the
+      # five required values turns it on.
+      ZV_OIDC_ENABLED:            ${ZV_OIDC_ENABLED:-}
+      ZV_OIDC_ISSUER:             ${ZV_OIDC_ISSUER:-}
+      ZV_OIDC_CLIENT_ID:          ${ZV_OIDC_CLIENT_ID:-}
+      ZV_OIDC_CLIENT_SECRET:      ${ZV_OIDC_CLIENT_SECRET:-}
+      ZV_OIDC_HOSTED_DOMAIN:      ${ZV_OIDC_HOSTED_DOMAIN:-}
+      ZV_OIDC_REDIRECT_URL:       ${ZV_OIDC_REDIRECT_URL:-}
+      ZV_OIDC_ORG_NAME:           ${ZV_OIDC_ORG_NAME:-}
+      ZV_OIDC_BUTTON_LABEL:       ${ZV_OIDC_BUTTON_LABEL:-}
+      ZV_OIDC_PROVIDER_NAME:      ${ZV_OIDC_PROVIDER_NAME:-}
     ports:
       - "${ZV_BIND_ADDR:-127.0.0.1}:${ZV_PORT:-8080}:8080"
 

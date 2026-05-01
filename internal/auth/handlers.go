@@ -75,6 +75,11 @@ type membershipDTO struct {
 	OrgID   int64  `json:"org_id"`
 	OrgName string `json:"org_name"`
 	Role    string `json:"role"`
+	// OrgLogoURL is the canonical /org-logo/{id} path when the
+	// organisation has an uploaded logo, empty otherwise. Stable URL
+	// is fine to bake on the client (the byte-serving handler is
+	// public-read and keyed by id, not name).
+	OrgLogoURL string `json:"org_logo_url,omitempty"`
 }
 
 type whoamiResponse struct {
@@ -121,9 +126,13 @@ func (h *Handlers) userResponse(ctx context.Context, u User) whoamiResponse {
 		if err == nil {
 			resp.Memberships = make([]membershipDTO, 0, len(mems))
 			for _, m := range mems {
-				resp.Memberships = append(resp.Memberships, membershipDTO{
+				dto := membershipDTO{
 					OrgID: m.OrgID, OrgName: m.OrgName, Role: m.Role,
-				})
+				}
+				if m.HasLogo {
+					dto.OrgLogoURL = "/org-logo/" + strconv.FormatInt(m.OrgID, 10)
+				}
+				resp.Memberships = append(resp.Memberships, dto)
 			}
 		}
 	}

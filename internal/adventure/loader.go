@@ -47,12 +47,19 @@ type Colors struct {
 	AccentSecondary string `json:"accent_secondary,omitempty"`
 	Background      string `json:"background,omitempty"`
 	Text            string `json:"text,omitempty"`
+	// SubmitBackground paints the sticky answer dock at the bottom of
+	// /play. Independent of Background so a brand can keep a neutral
+	// page body and still have a contrasting brand panel hosting the
+	// submit / scan buttons. The play UI also reuses this value as
+	// the buttons' text colour, producing the "punched-through"
+	// effect the customisation copy describes.
+	SubmitBackground string `json:"submit_bg,omitempty"`
 }
 
 // Empty reports whether no colours are set — handy for skipping the field
 // entirely in JSON responses.
 func (c Colors) Empty() bool {
-	return c.Accent == "" && c.AccentSecondary == "" && c.Background == "" && c.Text == ""
+	return c.Accent == "" && c.AccentSecondary == "" && c.Background == "" && c.Text == "" && c.SubmitBackground == ""
 }
 
 // Page is one puzzle in an adventure.
@@ -165,16 +172,16 @@ func (l *Library) GetContext(ctx context.Context, slug string) (*Adventure, erro
 		return nil, nil
 	}
 	var (
-		adv                              Adventure
-		accent, accent2, bg, ink         sql.NullString
+		adv                                  Adventure
+		accent, accent2, bg, ink, submitBG   sql.NullString
 	)
 	err := l.db.QueryRowContext(ctx, `
 		SELECT id, slug, title, description, author, intro_text, outro_text,
-		       accent_color, accent_secondary_color, background_color, text_color
+		       accent_color, accent_secondary_color, background_color, text_color, submit_bg_color
 		FROM adventures WHERE slug = $1
 	`, slug).Scan(&adv.ID, &adv.Slug, &adv.Meta.Title, &adv.Meta.Description, &adv.Meta.Author,
 		&adv.Meta.IntroText, &adv.Meta.OutroText,
-		&accent, &accent2, &bg, &ink)
+		&accent, &accent2, &bg, &ink, &submitBG)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -182,10 +189,11 @@ func (l *Library) GetContext(ctx context.Context, slug string) (*Adventure, erro
 		return nil, err
 	}
 	adv.Colors = Colors{
-		Accent:          accent.String,
-		AccentSecondary: accent2.String,
-		Background:      bg.String,
-		Text:            ink.String,
+		Accent:           accent.String,
+		AccentSecondary:  accent2.String,
+		Background:       bg.String,
+		Text:             ink.String,
+		SubmitBackground: submitBG.String,
 	}
 	pages, err := l.loadPages(ctx, adv.ID)
 	if err != nil {
@@ -205,7 +213,7 @@ func (l *Library) List() []*Adventure {
 func (l *Library) ListContext(ctx context.Context) ([]*Adventure, error) {
 	rows, err := l.db.QueryContext(ctx, `
 		SELECT id, slug, title, description, author, intro_text, outro_text,
-		       accent_color, accent_secondary_color, background_color, text_color
+		       accent_color, accent_secondary_color, background_color, text_color, submit_bg_color
 		FROM adventures ORDER BY slug
 	`)
 	if err != nil {
@@ -215,17 +223,18 @@ func (l *Library) ListContext(ctx context.Context) ([]*Adventure, error) {
 	var out []*Adventure
 	for rows.Next() {
 		a := &Adventure{}
-		var accent, accent2, bg, ink sql.NullString
+		var accent, accent2, bg, ink, submitBG sql.NullString
 		if err := rows.Scan(&a.ID, &a.Slug, &a.Meta.Title, &a.Meta.Description, &a.Meta.Author,
 			&a.Meta.IntroText, &a.Meta.OutroText,
-			&accent, &accent2, &bg, &ink); err != nil {
+			&accent, &accent2, &bg, &ink, &submitBG); err != nil {
 			return nil, err
 		}
 		a.Colors = Colors{
-			Accent:          accent.String,
-			AccentSecondary: accent2.String,
-			Background:      bg.String,
-			Text:            ink.String,
+			Accent:           accent.String,
+			AccentSecondary:  accent2.String,
+			Background:       bg.String,
+			Text:             ink.String,
+			SubmitBackground: submitBG.String,
 		}
 		out = append(out, a)
 	}

@@ -1,0 +1,11 @@
+-- Per-adventure submit-dock background colour. Independent of the
+-- existing background_color (which paints the body / live-display
+-- backdrop) so the sticky answer bar at the bottom of /play can carry
+-- a contrasting brand panel — e.g. white body with a brand-accent
+-- dock that the submit button "punches through" via a same-coloured
+-- text fill.
+--
+-- NULL means "use the default theme dock background"; non-NULL is a
+-- "#rrggbb" string (the same wire format every other colour column
+-- on this table uses).
+ALTER TABLE adventures ADD COLUMN submit_bg_color TEXT;
