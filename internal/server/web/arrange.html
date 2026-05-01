@@ -234,8 +234,11 @@ p { margin: 0 0 .5rem; }
 }
 .topbar-org img {
   width: 1.5rem; height: 1.5rem; border-radius: .35rem;
-  object-fit: cover; flex: 0 0 auto;
-  background: var(--surface-2);
+  /* contain + no fill so transparent logos read against the topbar
+     surface rather than a placeholder tile; the topbar paints var
+     (--surface) as its own background, so a transparent logo lands
+     on that same colour without a coloured well behind it. */
+  object-fit: contain; flex: 0 0 auto;
 }
 .topbar-org .topbar-org-name {
   font-weight: 600; color: var(--text);
@@ -2901,11 +2904,15 @@ function renderOrgPicker() {
         // than scanning org names for an arranger who works across
         // several tenants. Falls back to a muted initial so the
         // layout doesn't shift between orgs with and without logos.
+        // Logo: contain (preserves whole mark, no crop) and no
+        // background fill so a transparent logo reads against the
+        // login card surface. The initials fallback keeps the muted
+        // tile because a single letter alone needs the contrast.
         const mark = m.org_logo_url
           ? h('img', {
               src: m.org_logo_url,
               alt: '',
-              style: 'width:1.75rem; height:1.75rem; border-radius:.35rem; object-fit:cover; flex:0 0 auto; background:var(--surface-2)',
+              style: 'width:1.75rem; height:1.75rem; object-fit:contain; flex:0 0 auto',
             })
           : h('span', {
               style: 'width:1.75rem; height:1.75rem; border-radius:.35rem; flex:0 0 auto; display:inline-grid; place-items:center; background:var(--surface-2); color:var(--muted); font-weight:700; font-size:.85rem',
@@ -5761,17 +5768,39 @@ function adventureCover(adv, size) {
   const colour = adv?.accent_color || 'var(--accent)';
   const fg = '#fff';
   const radius = Math.max(6, Math.round(px * 0.18));
+  // When an avatar is present we skip the accent-tinted background
+  // and the rim chrome (border + shadow) so transparent areas of the
+  // uploaded logo read against the surrounding surface — the user
+  // expectation is "the logo is the icon", not "the logo is on a
+  // brand-coloured tile". The initials fallback still gets the
+  // accent fill because a one-letter glyph alone needs the contrast.
+  const hasAvatar = !!adv?.avatar_url;
+  const tileChrome = hasAvatar
+    ? 'background:transparent; color:inherit;'
+    : `background:${colour}; color:${fg}; border:1px solid rgba(0,0,0,.08); box-shadow:0 1px 3px rgba(0,0,0,.12);`;
   const wrap = h('span', {
     class: 'adv-cover',
-    style: `display:inline-flex; align-items:center; justify-content:center; width:${px}px; height:${px}px; border-radius:${radius}px; overflow:hidden; background:${colour}; color:${fg}; font-weight:800; font-size:${Math.max(11, Math.round(px * 0.34))}px; flex:0 0 ${px}px; letter-spacing:.04em; text-transform:uppercase; border:1px solid rgba(0,0,0,.08); box-shadow:0 1px 3px rgba(0,0,0,.12);`,
+    style: `display:inline-flex; align-items:center; justify-content:center; width:${px}px; height:${px}px; border-radius:${radius}px; overflow:hidden; ${tileChrome} font-weight:800; font-size:${Math.max(11, Math.round(px * 0.34))}px; flex:0 0 ${px}px; letter-spacing:.04em; text-transform:uppercase;`,
     'aria-label': adv?.title || '',
   });
-  if (adv?.avatar_url) {
+  if (hasAvatar) {
     const img = document.createElement('img');
     img.src = adv.avatar_url;
     img.alt = adv.title || '';
-    img.style.cssText = 'width:100%; height:100%; object-fit:cover; display:block;';
-    img.onerror = () => { img.remove(); wrap.textContent = adventureInitials(adv.title); };
+    // contain (not cover) preserves the whole logo even on non-square
+    // marks; transparency now matters, so cropping a logo to fill the
+    // tile would amputate part of the brand the user uploaded.
+    img.style.cssText = 'width:100%; height:100%; object-fit:contain; display:block;';
+    img.onerror = () => {
+      img.remove();
+      // Fallback to initials → repaint the tile chrome so the letter
+      // lands on the accent fill it needs for contrast.
+      wrap.style.background = colour;
+      wrap.style.color = fg;
+      wrap.style.border = '1px solid rgba(0,0,0,.08)';
+      wrap.style.boxShadow = '0 1px 3px rgba(0,0,0,.12)';
+      wrap.textContent = adventureInitials(adv.title);
+    };
     wrap.append(img);
   } else {
     wrap.textContent = adventureInitials(adv?.title);
