@@ -61,12 +61,14 @@ func TestAudio_PageUploadRoundTrip(t *testing.T) {
 	}
 }
 
-// TestAudio_PageRejectsNonAudioMime is the load-bearing security pin
-// on the upload handler: an attacker who finds the route must not be
-// able to stash arbitrary blobs (HTML, JS, executables) under the
-// audio table and serve them via /adventure-assets/audio/{id}. The
-// MIME-prefix check is the gate.
-func TestAudio_PageRejectsNonAudioMime(t *testing.T) {
+// TestAudio_PageRejectsNonAudioBytes is the load-bearing security
+// pin on the upload handler. The check sniffs the actual bytes
+// (http.DetectContentType) rather than the client-supplied header,
+// so an attacker can't stash arbitrary blobs (HTML, JS, executables)
+// under a forged "audio/mpeg" header. We exercise that by uploading
+// HTML bytes WITH `audio/mpeg` Content-Type — header is friendly,
+// bytes betray it, server still rejects.
+func TestAudio_PageRejectsNonAudioBytes(t *testing.T) {
 	ts, _, cleanup := newTestServer(t)
 	defer cleanup()
 	admin := newClient(t, ts)
@@ -76,20 +78,22 @@ func TestAudio_PageRejectsNonAudioMime(t *testing.T) {
 	}
 	pageID := demoPageID(t, admin)
 
+	// HTML / JS / generic-binary blobs that lie about being audio.
 	cases := []struct {
-		mime string
+		name  string
+		bytes []byte
 	}{
-		{"image/png"},
-		{"text/html"},
-		{"application/javascript"},
-		{"application/octet-stream"},
+		{"html", []byte("<!doctype html><html><body>hi</body></html>")},
+		{"js", []byte("alert('xss');\n")},
+		{"png", []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}},
 	}
 	for _, tc := range cases {
+		// Lying header: claim audio/mpeg.
 		status, _ := uploadFile(t, admin,
 			"/api/admin/pages/"+itoa(pageID)+"/audio",
-			"x", tc.mime, fakeMP3)
+			"x", "audio/mpeg", tc.bytes)
 		if status != http.StatusBadRequest {
-			t.Errorf("upload mime=%q = %d, want 400", tc.mime, status)
+			t.Errorf("upload bytes=%s with audio/mpeg header = %d, want 400 (server should sniff bytes)", tc.name, status)
 		}
 	}
 }

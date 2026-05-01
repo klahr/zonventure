@@ -52,10 +52,24 @@ type patchWebhookRequest struct {
 }
 
 // validateWebhookURL rejects anything that isn't a fully-qualified
-// https URL — customer endpoints in production must be TLS-protected
-// since the payload carries event data they paid for. http:// is
-// allowed only when the host is a loopback name, since dev clones
-// hit local listeners during integration testing.
+// validateWebhookURL gates customer-supplied webhook destinations.
+// Two layers:
+//
+//  1. Scheme: https in production, http only for loopback names so dev
+//     clones can target a local listener.
+//  2. Address: the resolved IP must not be private, loopback, link-
+//     local, multicast, or one of the cloud metadata services. The
+//     gate runs at registration time AND every delivery (see
+//     internal/webhooks/delivery.go) — registration alone is not
+//     enough because DNS can resolve to different IPs over time
+//     (DNS rebinding, pointer-record flip after a cron). Only
+//     loopback hosts ("localhost", "127.x.x.x", "::1") are
+//     intentionally exempt: they're how dev hits a local sink.
+//
+// Without this, a customer can register https://169.254.169.254/ and
+// the worker happily POSTs at the AWS metadata endpoint with their
+// signed payload — a textbook SSRF pivot from a customer-supplied
+// string into the cloud-host's secret store.
 func validateWebhookURL(raw string) (string, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
@@ -66,18 +80,30 @@ func validateWebhookURL(raw string) (string, error) {
 		return "", errors.New("invalid url")
 	}
 	host := u.Hostname()
+	if host == "" {
+		return "", errors.New("url must have a host")
+	}
+	loopback := host == "localhost" || host == "127.0.0.1" || host == "::1" ||
+		strings.HasPrefix(host, "127.")
 	switch u.Scheme {
 	case "https":
 		// fine
 	case "http":
-		if host != "localhost" && host != "127.0.0.1" && host != "::1" {
+		if !loopback {
 			return "", errors.New("http urls are only allowed for localhost — use https in production")
 		}
 	default:
 		return "", errors.New("url must be http(s)")
 	}
-	if host == "" {
-		return "", errors.New("url must have a host")
+	// Skip the IP-address gate for loopback dev URLs. For everything
+	// else, resolve and reject if any answer is non-public. The
+	// resolver lives in internal/webhooks/ so the delivery worker
+	// can reuse it (defending against DNS rebinding between
+	// registration and dispatch).
+	if !loopback {
+		if err := webhooks.ValidateHost(host); err != nil {
+			return "", err
+		}
 	}
 	return u.String(), nil
 }

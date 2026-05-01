@@ -3,6 +3,8 @@ package server
 import (
 	"net/http"
 	"strings"
+
+	"git.sr.ht/~klahr/zv/internal/auth"
 )
 
 // langCookie is the name of the persisted language preference. Set on
@@ -212,6 +214,12 @@ func resolveLang(w http.ResponseWriter, r *http.Request) string {
 				MaxAge:   60 * 60 * 24 * 365, // one year
 				HttpOnly: false,              // intentionally readable by JS so in-app picker can sync
 				SameSite: http.SameSiteLaxMode,
+				// Secure when the request itself was TLS / proxy-
+				// forwarded HTTPS. The cookie holds only a locale code
+				// (no auth, no sensitive data), so this is hardening
+				// rather than load-bearing — but standard practice on
+				// any cookie when the connection is already secure.
+				Secure: auth.CookieSecure(r, false),
 			})
 			return q
 		}

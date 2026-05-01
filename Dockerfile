@@ -28,6 +28,12 @@ RUN git checkout -- . 2>/dev/null; \
 #     -e DATABASE_URL='postgres://zv:zv@host.example/zv?sslmode=disable' \
 #     -e ZV_SEED_ADMIN='admin:hunter2' \
 #     zv:latest
+#
+# Backups: the CLI flow is the only supported path —
+#   docker compose exec -T app /server -backup > zv.sql
+# (or against the postgres container directly with pg_dump). No
+# in-app endpoint and intentionally no postgres-client tools in
+# this image; that keeps the runtime tiny + no-shell.
 FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=build /out/server /server
 USER nonroot:nonroot

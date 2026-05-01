@@ -165,6 +165,13 @@ func (h *Handlers) ConfirmTOTP(w http.ResponseWriter, r *http.Request) {
 // DisableTOTP clears the user's TOTP enrolment + recovery codes.
 // Requires X-Confirm-Password reauth (so a stolen session can't pivot
 // into removing the second factor).
+//
+// Disabling TOTP is a security-state DOWNGRADE: any other live
+// staff session for this user was previously protected by 2FA, and
+// the user almost certainly wants those forced to re-auth at the
+// new (weaker) factor level. Same shape as ChangeMyPassword —
+// preserve the current request's cookie so the actor doesn't
+// accidentally log themselves out, drop everything else.
 func (h *Handlers) DisableTOTP(w http.ResponseWriter, r *http.Request) {
 	me, _ := auth.FromContext(r.Context())
 	if !requirePasswordConfirm(w, r, h.DB) {
@@ -173,6 +180,18 @@ func (h *Handlers) DisableTOTP(w http.ResponseWriter, r *http.Request) {
 	if err := auth.DisableTOTP(r.Context(), h.DB, me.ID); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "disable failed")
 		return
+	}
+	// Drop every other session for this user. Best-effort: if the
+	// current cookie is missing for some reason, bail out and
+	// drop EVERY session including the caller's — better to log
+	// them out and force a fresh login than leave a stale-2FA
+	// session anywhere.
+	if c, err := r.Cookie(auth.CookieName); err == nil && c.Value != "" {
+		_, _ = h.DB.ExecContext(r.Context(),
+			`DELETE FROM sessions WHERE user_id = $1 AND token <> $2`, me.ID, c.Value)
+	} else {
+		_, _ = h.DB.ExecContext(r.Context(),
+			`DELETE FROM sessions WHERE user_id = $1`, me.ID)
 	}
 	auth.Record(r.Context(), h.DB, auth.AuditEvent{
 		Event: auth.EventTOTPDisable, OK: true, UserID: &me.ID, Username: me.Username,

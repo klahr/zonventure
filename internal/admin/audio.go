@@ -67,25 +67,34 @@ func (h *Handlers) AddPageAudio(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusRequestEntityTooLarge, "audio too large")
 		return
 	}
-	mime := hdr.Header.Get("Content-Type")
+	// Server-side MIME sniff. Trusting the client's Content-Type
+	// header alone lets an attacker stash arbitrary blobs (HTML,
+	// JS) under a forged "audio/mpeg" header — images get
+	// re-encoded by imageutil.Shrink so a polyglot dies, but audio
+	// is stored verbatim, so the gate has to live here.
+	// http.DetectContentType reads the first 512 bytes; we then
+	// require an audio/* prefix on the SNIFFED type, ignoring the
+	// client header entirely for the security decision.
+	mime := http.DetectContentType(data)
 	if !strings.HasPrefix(mime, "audio/") {
 		httpx.Error(w, http.StatusBadRequest, "only audio uploads are accepted")
 		return
 	}
 
-	var nextIdx int
-	if err := h.DB.QueryRowContext(r.Context(),
-		`SELECT COALESCE(MAX(idx)+1, 0) FROM adventure_page_audio WHERE page_id = $1`, pageID).
-		Scan(&nextIdx); err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "next index lookup failed")
-		return
-	}
-	var id int64
+	// Atomic next-idx + INSERT in a single statement so two concurrent
+	// uploads to the same page can't both compute the same idx and
+	// produce ambiguous ordering. Postgres serialises the SELECT
+	// inside an INSERT, so the second writer's MAX(idx) sees the
+	// first one's row.
+	var (
+		id      int64
+		nextIdx int
+	)
 	if err := h.DB.QueryRowContext(r.Context(), `
 		INSERT INTO adventure_page_audio(page_id, idx, mime_type, size_bytes, content)
-		VALUES ($1, $2, $3, $4, $5)
-		RETURNING id
-	`, pageID, nextIdx, mime, int64(len(data)), data).Scan(&id); err != nil {
+		SELECT $1, COALESCE(MAX(idx)+1, 0), $2, $3, $4 FROM adventure_page_audio WHERE page_id = $1
+		RETURNING id, idx
+	`, pageID, mime, int64(len(data)), data).Scan(&id, &nextIdx); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "insert failed: "+err.Error())
 		return
 	}
@@ -213,6 +222,9 @@ func (h *Handlers) ServeAudio(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Length", strconv.FormatInt(size, 10))
 	w.Header().Set("Accept-Ranges", "bytes")
 	w.Header().Set("Cache-Control", "private, max-age=300")
+	// nosniff is set globally by the securityHeaders middleware in
+	// internal/server/server.go — no per-route override needed
+	// here (was redundant before the middleware existed).
 	_, _ = w.Write(content)
 }
 
@@ -273,25 +285,30 @@ func (h *Handlers) AddHintAudio(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusRequestEntityTooLarge, "audio too large")
 		return
 	}
-	mime := hdr.Header.Get("Content-Type")
+	// Server-side MIME sniff. Trusting the client's Content-Type
+	// header alone lets an attacker stash arbitrary blobs (HTML,
+	// JS) under a forged "audio/mpeg" header — images get
+	// re-encoded by imageutil.Shrink so a polyglot dies, but audio
+	// is stored verbatim, so the gate has to live here.
+	// http.DetectContentType reads the first 512 bytes; we then
+	// require an audio/* prefix on the SNIFFED type, ignoring the
+	// client header entirely for the security decision.
+	mime := http.DetectContentType(data)
 	if !strings.HasPrefix(mime, "audio/") {
 		httpx.Error(w, http.StatusBadRequest, "only audio uploads are accepted")
 		return
 	}
 
-	var nextIdx int
-	if err := h.DB.QueryRowContext(r.Context(),
-		`SELECT COALESCE(MAX(idx)+1, 0) FROM adventure_page_hint_audio WHERE hint_id = $1`, hintID).
-		Scan(&nextIdx); err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "next index lookup failed")
-		return
-	}
-	var id int64
+	// Atomic next-idx + INSERT — see AddPageAudio for rationale.
+	var (
+		id      int64
+		nextIdx int
+	)
 	if err := h.DB.QueryRowContext(r.Context(), `
 		INSERT INTO adventure_page_hint_audio(hint_id, idx, mime_type, size_bytes, content)
-		VALUES ($1, $2, $3, $4, $5)
-		RETURNING id
-	`, hintID, nextIdx, mime, int64(len(data)), data).Scan(&id); err != nil {
+		SELECT $1, COALESCE(MAX(idx)+1, 0), $2, $3, $4 FROM adventure_page_hint_audio WHERE hint_id = $1
+		RETURNING id, idx
+	`, hintID, mime, int64(len(data)), data).Scan(&id, &nextIdx); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "insert failed: "+err.Error())
 		return
 	}
@@ -408,6 +425,9 @@ func (h *Handlers) ServeHintAudio(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Length", strconv.FormatInt(size, 10))
 	w.Header().Set("Accept-Ranges", "bytes")
 	w.Header().Set("Cache-Control", "private, max-age=300")
+	// nosniff is set globally by the securityHeaders middleware in
+	// internal/server/server.go — no per-route override needed
+	// here (was redundant before the middleware existed).
 	_, _ = w.Write(content)
 }
 

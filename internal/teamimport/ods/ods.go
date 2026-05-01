@@ -86,6 +86,13 @@ type odsCell struct {
 	Texts         []string `xml:"p"`
 }
 
+// maxDecompressedBytes caps the decompressed size of content.xml
+// so a zip-bomb (a 1 MB archive that expands to 50 GB) can't OOM
+// the import worker. Real-world ODS rosters are kilobytes; 50 MB
+// is comfortable headroom for hand-typed sheets and well below any
+// plausible memory exhaustion threshold.
+const maxDecompressedBytes = 50 << 20 // 50 MiB
+
 func (impl) Parse(r io.Reader) ([]teamimport.Team, error) {
 	// archive/zip needs a ReaderAt + size, so buffer the whole
 	// upload first. ODS rosters are tiny — a 5 MiB cap upstream in
@@ -108,12 +115,48 @@ func (impl) Parse(r io.Reader) ([]teamimport.Team, error) {
 	if content == nil {
 		return nil, errors.New("teamimport/ods: no content.xml in archive")
 	}
+	// Pre-flight bomb check: a content.xml whose declared
+	// uncompressed size already exceeds the cap is rejected before
+	// we open the decompression stream. The size in the central
+	// directory IS attacker-controlled (zip metadata can lie about
+	// the contents), but a writer that announces a 60 GB decompressed
+	// size is unambiguously malicious; a writer that announces a
+	// reasonable size and then streams more bytes hits the
+	// LimitReader gate below.
+	if content.UncompressedSize64 > maxDecompressedBytes {
+		return nil, errors.New("teamimport/ods: content.xml decompressed size exceeds limit (refusing zip-bomb)")
+	}
 	rc, err := content.Open()
 	if err != nil {
 		return nil, err
 	}
 	defer rc.Close()
-	return parseContent(rc)
+	// LimitReader+1 lets us distinguish "exactly at the limit" from
+	// "over the limit" — io.Copy(io.Discard, lr) reads until EOF or
+	// the cap. The +1 is so a stream that fills up exactly to the
+	// cap can be read but anything past it is rejected.
+	limited := io.LimitReader(rc, maxDecompressedBytes+1)
+	return parseContent(&limitTrip{r: limited, limit: maxDecompressedBytes})
+}
+
+// limitTrip wraps an io.Reader and returns a "decompressed size
+// exceeds limit" error if the underlying reader yields more than
+// `limit` bytes total. Differs from a plain io.LimitReader (which
+// just returns EOF at the cap) — we want the parser to see an
+// explicit error, not a truncated input it might happily accept.
+type limitTrip struct {
+	r        io.Reader
+	limit    int64
+	consumed int64
+}
+
+func (lt *limitTrip) Read(p []byte) (int, error) {
+	n, err := lt.r.Read(p)
+	lt.consumed += int64(n)
+	if lt.consumed > lt.limit {
+		return n, errors.New("teamimport/ods: decompressed size exceeded limit (refusing zip-bomb)")
+	}
+	return n, err
 }
 
 // parseContent walks content.xml as a stream — easier on memory
@@ -253,11 +296,13 @@ func shapeRows(rows [][]string) []teamimport.Team {
 		if name == "" {
 			continue
 		}
+		// CSV-injection defang — see teamimport.SanitizeCellValue.
+		name = teamimport.SanitizeCellValue(name)
 		members := make([]string, 0, len(row)-1)
 		for _, m := range row[1:] {
 			m = strings.TrimSpace(m)
 			if m != "" {
-				members = append(members, m)
+				members = append(members, teamimport.SanitizeCellValue(m))
 			}
 		}
 		out = append(out, teamimport.Team{Name: name, MemberNames: members})

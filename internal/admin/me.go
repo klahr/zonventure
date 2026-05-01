@@ -59,7 +59,8 @@ func (h *Handlers) ChangeMyPassword(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback() //nolint:errcheck
 	if _, err := tx.ExecContext(r.Context(),
-		`UPDATE users SET password_hash = $1 WHERE id = $2`, hash, me.ID); err != nil {
+		`UPDATE users SET password_hash = $1, password_is_default = 0 WHERE id = $2`,
+		hash, me.ID); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "update failed")
 		return
 	}
@@ -147,19 +148,11 @@ func (h *Handlers) ChangeMyEmail(w http.ResponseWriter, r *http.Request) {
 	httpx.JSON(w, http.StatusOK, map[string]string{"status": "sent", "to": newEmail})
 }
 
-func buildChangeEmailLink(publicURL string, r *http.Request, token string) string {
+// buildChangeEmailLink builds the email-change confirmation URL
+// using only the configured publicURL. Request headers are not
+// consulted; see buildResetLink for rationale.
+func buildChangeEmailLink(publicURL string, _ *http.Request, token string) string {
 	base := strings.TrimRight(publicURL, "/")
-	if base == "" {
-		scheme := "http"
-		if r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
-			scheme = "https"
-		}
-		host := r.Host
-		if h := r.Header.Get("X-Forwarded-Host"); h != "" {
-			host = h
-		}
-		base = scheme + "://" + host
-	}
 	q := url.Values{"token": []string{token}}
 	return base + "/arrange#change-email?" + q.Encode()
 }

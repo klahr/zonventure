@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"git.sr.ht/~klahr/zv/internal/httpx"
+	"git.sr.ht/~klahr/zv/internal/teamimport"
 )
 
 // ExportEventResults writes a CSV of the event's final standings. Columns:
@@ -123,10 +124,18 @@ func (h *Handlers) ExportEventResults(w http.ResponseWriter, r *http.Request) {
 				elapsed = d.String()
 			}
 		}
+		// CSV-injection defang on the WAY OUT. Team names + member
+		// names typed via the admin UI bypass the importer's defang
+		// (which only covers file-uploaded rosters), so an
+		// arranger-typed `=PWN()` would round-trip into Excel
+		// here and execute on download. SanitizeCellValue prefixes
+		// `=` / `+` / `-` / `@` / tab / `|` cells with a single
+		// quote — Excel renders the literal text instead of
+		// evaluating. Same OWASP-shaped helper used at import.
 		_ = cw.Write([]string{
 			strconv.Itoa(rank),
-			name,
-			members,
+			teamimport.SanitizeCellValue(name),
+			teamimport.SanitizeCellValue(members),
 			strconv.Itoa(solved),
 			strconv.Itoa(enabledCount),
 			completedAt,

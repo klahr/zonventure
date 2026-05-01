@@ -450,6 +450,47 @@
         'Förhandsvisa tempo och livevyn med låtsaslag — inga riktiga spelare behövs.',
       'Network error — is the server running?': 'Nätverksfel — kör servern?',
       'Start this event now?': 'Starta eventet nu?',
+      'Add at least one team first': 'Lägg till minst ett lag först',
+      'add at least one team before starting the event':
+        'lägg till minst ett lag innan eventet startas',
+      'Save while {{n}} event(s) are live?': 'Spara medan {{n}} event pågår?',
+      '{{n}} event(s) are running this adventure right now. Saving lands on those players immediately.':
+        '{{n}} event spelar det här äventyret just nu. När du sparar når ändringarna spelarna direkt.',
+      'Typo / wording fix: safe — players see the new copy on their next state push.':
+        'Stavfel / formulering: säkert — spelarna ser den nya texten vid nästa uppdatering.',
+      'Logic change (accept list, gate, hint timing): players in mid-puzzle may suddenly fail or be re-locked. Wait until the event ends if you can.':
+        'Logikändring (accept-lista, plats-grind, ledtrådstider): spelare som är mitt i ett pussel kan plötsligt misslyckas eller låsas igen. Vänta tills eventet är slut om du kan.',
+      'Disabled / reorder: players will skip ahead or be sent back. Avoid mid-event.':
+        'Inaktivera / omordna: spelarna hoppar fram eller skickas tillbaka. Undvik mitt under ett event.',
+      'Save anyway': 'Spara ändå',
+      'Move up': 'Flytta upp',
+      'Move down': 'Flytta ner',
+      'Remove member with active events?': 'Ta bort medlem med aktiva event?',
+      '{{username}} created {{n}} active event(s) in {{org}}.':
+        '{{username}} har skapat {{n}} aktiva event i {{org}}.',
+      'Those events will keep running but lose their original creator from the audit trail. Consider cancelling or finishing them first, or transferring ownership of the org to a different admin who can manage them after removal.':
+        'Eventen fortsätter köra men tappar sin ursprungliga skapare från revisionsloggen. Överväg att avbryta eller avsluta dem först, eller överlåt ägarskapet av organisationen till en annan administratör som kan hantera dem efter borttagning.',
+      'Remove anyway': 'Ta bort ändå',
+      'Pause this event?': 'Pausa eventet?',
+      "Every team will see a 'paused — stand by' card on their next state push. Hint countdowns freeze and answer submissions are refused until you resume.":
+        'Varje lag ser ett ”pausat — vänta” -kort vid nästa uppdatering. Ledtrådsnedräkningar fryses och svar avvisas tills du återupptar.',
+      'Default password in use.': 'Standardlösenord används.',
+      'This account is still using the seeded admin password. Change it now — anyone reaching this URL can log in as you until you do.':
+        'Det här kontot använder fortfarande det förinställda admin-lösenordet. Byt det nu — vem som helst som når den här URL:en kan logga in som du tills du gjort det.',
+      'Change password →': 'Byt lösenord →',
+      "Lost your link? Enter the email your arranger gave with the team — we'll send a fresh link.":
+        'Tappat länken? Skriv in mejladressen din arrangör angav för laget — vi skickar en ny.',
+      'your.email@example.com': 'din.adress@exempel.se',
+      'Email me a fresh link': 'Mejla mig en ny länk',
+      'Sending…': 'Skickar…',
+      "If that email matched any team, a fresh link is on its way. Check your inbox.":
+        'Om mejladressen matchade något lag är en ny länk på väg. Titta i inkorgen.',
+      'Location is blocked for this site.': 'Plats är blockerat för den här webbplatsen.',
+      "Most phones: open Settings → Privacy → Location → your browser → While Using. Then come back and reload this page. If you can't change the setting, ask your arranger to unlock this puzzle for your team — they can advance you manually from their dashboard.":
+        'På de flesta telefoner: öppna Inställningar → Integritet → Plats → din webbläsare → Vid användning. Återvänd sedan hit och ladda om sidan. Om du inte kan ändra inställningen, be din arrangör låsa upp pusslet för ditt lag — de kan föra er framåt manuellt från sin dashboard.',
+      'OK': 'OK',
+      'This event has no teams yet. A team is the unit that actually plays the adventure — without one, there\'s nothing for the first puzzle to open to.':
+        'Det här eventet har inga lag ännu. Ett lag är enheten som faktiskt spelar äventyret — utan något lag finns det ingen som det första pusslet kan öppnas för.',
       'Starting the event opens the first puzzle to all teams. ':
         'När eventet startas öppnas det första pusslet för alla lag. ',
       'An auto-start is currently scheduled for ':

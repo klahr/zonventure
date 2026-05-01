@@ -211,19 +211,13 @@ func (h *Handlers) sendVerificationEmail(r *http.Request, to, token string) erro
 	})
 }
 
-func buildVerifyLink(publicURL string, r *http.Request, token string) string {
+// buildVerifyLink builds the email-verification URL using only the
+// configured publicURL. Request headers like X-Forwarded-Host are
+// not consulted — see buildResetLink for the rationale (an attacker
+// behind a reverse proxy could otherwise inject a phishing host
+// into the outbound email body).
+func buildVerifyLink(publicURL string, _ *http.Request, token string) string {
 	base := strings.TrimRight(publicURL, "/")
-	if base == "" {
-		scheme := "http"
-		if r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
-			scheme = "https"
-		}
-		host := r.Host
-		if h := r.Header.Get("X-Forwarded-Host"); h != "" {
-			host = h
-		}
-		base = scheme + "://" + host
-	}
 	q := url.Values{"token": []string{token}}
 	return base + "/verify?" + q.Encode()
 }

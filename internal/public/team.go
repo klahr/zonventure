@@ -223,18 +223,21 @@ func (h *Handlers) TeamShareQR(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad token", http.StatusBadRequest)
 		return
 	}
-	// Build the absolute team-share URL the QR encodes. Honour
-	// X-Forwarded-Proto when present so deployments behind a TLS-
-	// terminating proxy generate https URLs.
-	scheme := "http"
-	if r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
-		scheme = "https"
+	// Build the absolute team-share URL the QR encodes. Read only
+	// from h.PublicURL — request headers like X-Forwarded-Host
+	// could otherwise be poisoned by a hostile reverse proxy and
+	// the printed QR would point arrangers + players at a phishing
+	// origin. No request-host fallback: a QR pointing at "localhost"
+	// or whatever the operator's machine name happens to be is
+	// useless to anyone scanning it on a different device, and the
+	// 503 here pushes the operator to set ZV_PUBLIC_URL before the
+	// QR is printed and handed out. Same posture as buildResetLink.
+	base := strings.TrimRight(h.PublicURL, "/")
+	if base == "" {
+		http.Error(w, "operator must set ZV_PUBLIC_URL before generating share QR codes", http.StatusServiceUnavailable)
+		return
 	}
-	host := r.Host
-	if h := r.Header.Get("X-Forwarded-Host"); h != "" {
-		host = h
-	}
-	target := scheme + "://" + host + "/team/" + token
+	target := base + "/team/" + token
 	png, err := qrcode.Encode(target, qrcode.Medium, 360)
 	if err != nil {
 		http.Error(w, "qr encode failed", http.StatusInternalServerError)

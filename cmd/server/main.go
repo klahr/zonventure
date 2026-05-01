@@ -385,6 +385,12 @@ func seedAdminIfMissing(d *sql.DB, creds string) error {
 
 // seedAdminUser upserts a global-admin user from a "username:password" flag
 // value. Used to bootstrap the very first admin on a fresh database.
+//
+// Stamps password_is_default=1 when the seeded password is one of the
+// well-known docs/defaults ("admin", "rootpw"). Login + whoami surface
+// the flag to the UI as a loud banner so an operator who skipped the
+// "change me immediately" step in SELFHOSTING.md doesn't expose a
+// takeover-trivial admin to the public internet.
 func seedAdminUser(d *sql.DB, creds string) error {
 	i := strings.IndexByte(creds, ':')
 	if i <= 0 || i == len(creds)-1 {
@@ -395,10 +401,18 @@ func seedAdminUser(d *sql.DB, creds string) error {
 	if err != nil {
 		return err
 	}
+	isDefault := 0
+	if password == "admin" || password == "rootpw" {
+		isDefault = 1
+	}
 	_, err = d.Exec(`
-		INSERT INTO users(username, password_hash, is_admin) VALUES ($1, $2, TRUE)
-		ON CONFLICT(username) DO UPDATE SET password_hash = excluded.password_hash, is_admin = TRUE
-	`, username, hash)
+		INSERT INTO users(username, password_hash, is_admin, password_is_default)
+		VALUES ($1, $2, TRUE, $3)
+		ON CONFLICT(username) DO UPDATE SET
+		  password_hash = excluded.password_hash,
+		  is_admin = TRUE,
+		  password_is_default = excluded.password_is_default
+	`, username, hash, isDefault)
 	return err
 }
 

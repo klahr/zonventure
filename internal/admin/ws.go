@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"git.sr.ht/~klahr/zv/internal/auth"
+	"git.sr.ht/~klahr/zv/internal/logx"
 	"git.sr.ht/~klahr/zv/internal/ws"
 )
 
@@ -132,6 +133,12 @@ func (h *Handlers) WSArrange(w http.ResponseWriter, r *http.Request) {
 			startWatch(req.EventID)
 		case "unwatch_event":
 			stopWatch()
+		default:
+			// Unknown frame — ignore but log at debug. No rate-
+			// limiter here because admin sessions are already
+			// strongly authenticated; this is purely for
+			// observability if a misconfigured client floods.
+			logx.Debug("admin.ws.unknown_kind", "kind", msg.Kind)
 		}
 	}
 }

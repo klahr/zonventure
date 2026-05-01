@@ -30,6 +30,11 @@ type orgMemberDTO struct {
 	Username      string `json:"username"`
 	Role          string `json:"role"` // org_admin | org_member
 	EmailVerified bool   `json:"email_verified"`
+	// ActiveEventsOwned is the count of non-terminal events
+	// (scheduled / running / paused) this member created in this org.
+	// Surfaced so the remove-member UI can warn that destroying the
+	// member orphans their owned events. 0 means "safe to remove".
+	ActiveEventsOwned int `json:"active_events_owned"`
 }
 
 type organizationDTO struct {
@@ -815,9 +820,16 @@ func (h *Handlers) DeleteAdmin(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) loadOrgMembers(ctx context.Context, o *organizationDTO) error {
 	// A member is anyone with an org_memberships row for this org.
 	// The role shown is the per-membership role (a user can be
-	// admin here and member elsewhere).
+	// admin here and member elsewhere). The active-events count is
+	// scoped to events created by this user IN THIS ORG and still
+	// in a non-terminal state — used by the UI to warn before
+	// removing a member who would otherwise orphan live events.
 	rows, err := h.DB.QueryContext(ctx, `
-		SELECT u.id, u.username, m.role, (u.email_verified <> 0)
+		SELECT u.id, u.username, m.role, (u.email_verified <> 0),
+		       (SELECT COUNT(*) FROM events e
+		          WHERE e.org_id = $1
+		            AND e.created_by_user_id = u.id
+		            AND e.state IN ('scheduled', 'running', 'paused'))
 		FROM org_memberships m JOIN users u ON u.id = m.user_id
 		WHERE m.org_id = $1
 		ORDER BY m.role, LOWER(u.username)
@@ -828,7 +840,7 @@ func (h *Handlers) loadOrgMembers(ctx context.Context, o *organizationDTO) error
 	defer rows.Close()
 	for rows.Next() {
 		var m orgMemberDTO
-		if err := rows.Scan(&m.ID, &m.Username, &m.Role, &m.EmailVerified); err != nil {
+		if err := rows.Scan(&m.ID, &m.Username, &m.Role, &m.EmailVerified, &m.ActiveEventsOwned); err != nil {
 			return err
 		}
 		o.Members = append(o.Members, m)

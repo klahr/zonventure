@@ -32,6 +32,11 @@ type Handlers struct {
 	// share page. Always non-nil: server.New defaults to dbblob when
 	// nothing else is wired.
 	Storage storage.Blobs
+	// PublicURL is the externally-reachable origin used when
+	// building absolute URLs for printed/shared assets (the team
+	// QR code, principally). Forwarded-host headers are NOT
+	// consulted — see buildResetLink for the security rationale.
+	PublicURL string
 }
 
 type puzzleDTO struct {

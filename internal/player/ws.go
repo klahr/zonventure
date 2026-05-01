@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"git.sr.ht/~klahr/zv/internal/auth"
+	"git.sr.ht/~klahr/zv/internal/logx"
 	"git.sr.ht/~klahr/zv/internal/ws"
 )
 
@@ -155,6 +156,16 @@ func (h *Handlers) WSPlay(w http.ResponseWriter, r *http.Request) {
 			if eventID != 0 {
 				h.Hub.Publish(ws.EventTopic(eventID), "changed", nil)
 			}
+		default:
+			// Unknown frame. Don't tear down the connection — a
+			// future client could send a kind we don't yet
+			// understand and the right behaviour is to ignore it
+			// gracefully — but burn an answer-rate-limit token so
+			// a misbehaving (or malicious) client can't spam junk
+			// frames cost-free. Logged at debug for the operator
+			// to spot pattern abuse.
+			h.rateLimiter().AllowAnswer(slot.ID)
+			logx.Debug("player.ws.unknown_kind", "slot", slot.ID, "kind", msg.Kind)
 		}
 	}
 }

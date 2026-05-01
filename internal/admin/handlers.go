@@ -418,6 +418,12 @@ func (h *Handlers) CreateEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var id int64
+	// show_map is intentionally left to its column default (0 = off).
+	// The /live/{token} page is shareable — competing teams who get
+	// the URL would otherwise see opponents' real-time positions, a
+	// reconnaissance edge in any race-format adventure. Arrangers
+	// who want a closed-room spectator screen flip it on per-event
+	// from the dashboard. DO NOT add show_map=1 to this INSERT.
 	err = h.DB.QueryRowContext(r.Context(), `
 		INSERT INTO events(adventure_slug, org_id, created_by_user_id, state, scheduled_at, assignment_id, live_token, name, attested_no_minors_at)
 		VALUES ($1, $2, $3, 'scheduled', $4, $5, $6, $7, now_text())
@@ -536,6 +542,24 @@ func (h *Handlers) transitionEvent(w http.ResponseWriter, r *http.Request, actio
 	if state != want {
 		httpx.Error(w, http.StatusConflict, "cannot "+action+" an event in state "+state)
 		return
+	}
+	// Empty-event guard: starting a 'scheduled' event with zero teams
+	// produces a degenerate run state — there's no team to advance,
+	// no live board to populate, and the arranger almost certainly
+	// meant to add a team first. The arrange UI catches this in
+	// confirmStart, but a stale cache or scripted client would
+	// otherwise slip through.
+	if action == "start" {
+		var teamCount int
+		if err := h.DB.QueryRowContext(r.Context(),
+			`SELECT COUNT(*) FROM teams WHERE event_id = $1`, eventID).Scan(&teamCount); err != nil {
+			httpx.Error(w, http.StatusInternalServerError, "team count failed")
+			return
+		}
+		if teamCount == 0 {
+			httpx.Error(w, http.StatusConflict, "add at least one team before starting the event")
+			return
+		}
 	}
 	if _, err := h.DB.ExecContext(r.Context(), update, eventID); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "update failed")

@@ -89,14 +89,22 @@ type whoamiResponse struct {
 	// account deletion; absent otherwise. The UI shows a banner with
 	// the date and a "Cancel deletion" affordance whenever this is set.
 	ScheduledDeletionAt string `json:"scheduled_deletion_at,omitempty"`
+	// PasswordIsDefault flags accounts that still hold the seeded
+	// admin/admin or root/rootpw credentials. The UI renders a
+	// red "change your password now" banner — leaving the seeded
+	// password on a publicly-reachable box is a takeover, and
+	// self-host operators who skim the docs need a louder nudge
+	// than a footnote in SELFHOSTING.md.
+	PasswordIsDefault bool `json:"password_is_default,omitempty"`
 }
 
 func (h *Handlers) userResponse(ctx context.Context, u User) whoamiResponse {
 	resp := whoamiResponse{
 		ID: u.ID, Username: u.Username, Role: u.Role, OrgID: u.OrgID,
 		Email: u.Email, EmailVerified: u.EmailVerified,
-		Pricing:     h.Pricing,
-		Memberships: []membershipDTO{},
+		Pricing:           h.Pricing,
+		Memberships:       []membershipDTO{},
+		PasswordIsDefault: u.PasswordIsDefault,
 	}
 	if u.ScheduledDeletionAt != nil {
 		resp.ScheduledDeletionAt = u.ScheduledDeletionAt.UTC().Format(time.RFC3339)

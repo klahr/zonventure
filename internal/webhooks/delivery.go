@@ -6,7 +6,10 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 
 	"git.sr.ht/~klahr/zv/internal/logx"
@@ -80,7 +83,21 @@ func Start(ctx context.Context, db *sql.DB) <-chan struct{} {
 // and swallowed — a transient DB failure shouldn't stop the worker.
 func (w *Worker) Run(ctx context.Context) {
 	if w.Client == nil {
-		w.Client = &http.Client{Timeout: 30 * time.Second}
+		// CheckRedirect refusing follows is the load-bearing piece
+		// here: without it, a customer-supplied URL that 302s to
+		// http://169.254.169.254/ (or any other internal host) would
+		// silently pivot the worker into the cloud metadata API
+		// even though the registered host validated cleanly. Returning
+		// ErrUseLastResponse stops the redirect chain at the first
+		// 3xx and returns that response untouched — same shape as
+		// "we got a non-2xx", so the existing retry/backoff logic
+		// just records it as a delivery failure.
+		w.Client = &http.Client{
+			Timeout: 30 * time.Second,
+			CheckRedirect: func(*http.Request, []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
+		}
 	}
 	if w.PollInterval == 0 {
 		w.PollInterval = 5 * time.Second
@@ -250,10 +267,36 @@ func nullableStatus(status int) any {
 	return status
 }
 
+// maxResponseBodyBytes caps how much of the customer endpoint's
+// response we read. We don't actually use the body — we only care
+// about the status code — but Go's http stack keeps the connection
+// open until the body is drained or closed. A misbehaving (or
+// malicious) endpoint can stream gigabytes or trickle slowly,
+// monopolising a worker for the full Timeout window. Capping the
+// drain to a small number bounds the per-delivery cost.
+const maxResponseBodyBytes = 64 << 10 // 64 KiB
+
 // send POSTs body to url with the signature + metadata headers.
 // Returns the HTTP status (or 0 on transport error) and any error.
-func (w *Worker) send(ctx context.Context, url, secret, kind, deliveryUUID string, body []byte) (int, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+//
+// SSRF re-check: webhooks.ValidateHost runs at delivery time too,
+// even though the URL was validated at registration. DNS can flip
+// between then and now (rebinding attacks deliberately do this), so
+// re-resolving and re-checking is the load-bearing piece.
+func (w *Worker) send(ctx context.Context, target, secret, kind, deliveryUUID string, body []byte) (int, error) {
+	parsed, err := url.Parse(target)
+	if err != nil {
+		return 0, fmt.Errorf("invalid stored url: %w", err)
+	}
+	host := parsed.Hostname()
+	loopback := host == "localhost" || host == "127.0.0.1" || host == "::1" ||
+		strings.HasPrefix(host, "127.")
+	if !loopback {
+		if err := ValidateHost(host); err != nil {
+			return 0, fmt.Errorf("ssrf gate: %w", err)
+		}
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, target, bytes.NewReader(body))
 	if err != nil {
 		return 0, err
 	}
@@ -267,5 +310,9 @@ func (w *Worker) send(ctx context.Context, url, secret, kind, deliveryUUID strin
 		return 0, err
 	}
 	defer resp.Body.Close()
+	// Drain a small bounded portion of the body so the connection
+	// can be reused / closed cleanly. io.Discard sinks the bytes;
+	// the LimitReader caps the work even on a streaming endpoint.
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, maxResponseBodyBytes))
 	return resp.StatusCode, nil
 }

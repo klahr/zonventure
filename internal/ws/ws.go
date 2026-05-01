@@ -10,10 +10,18 @@ import (
 )
 
 // Accept upgrades the request and returns a Conn plus a context that is
-// cancelled when the peer closes the connection. The default origin check
-// (same-origin only) applies — all three zv clients are served from the
-// same origin as the WebSocket endpoints, so there's no cross-origin use
-// case to allow.
+// cancelled when the peer closes the connection.
+//
+// SECURITY: passing nil AcceptOptions invokes the coder/websocket
+// default Origin check, which rejects upgrades whose Origin host
+// doesn't match the request host. That's the load-bearing CSRF
+// equivalent for WebSocket — a same-site XSS bypass is the only
+// remaining vector. DO NOT pass `OriginPatterns: []string{"*"}` or
+// `InsecureSkipVerify: true` here; both /ws/play, /ws/arrange,
+// /ws/live, /ws/logs are served from the same origin as the app
+// they're upgrading from, so there's no cross-origin use case to
+// allow. A future test should pin this — see TestWSPlay_ tests
+// for the existing coverage shape.
 func Accept(w http.ResponseWriter, r *http.Request) (*Conn, error) {
 	c, err := websocket.Accept(w, r, nil)
 	if err != nil {

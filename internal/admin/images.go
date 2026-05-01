@@ -65,19 +65,20 @@ func (h *Handlers) AddPageImage(w http.ResponseWriter, r *http.Request) {
 	}
 	data, mime = shrunk, newMIME
 
-	var nextIdx int
-	if err := h.DB.QueryRowContext(r.Context(),
-		`SELECT COALESCE(MAX(idx)+1, 0) FROM adventure_page_images WHERE page_id = $1`, pageID).
-		Scan(&nextIdx); err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "next index lookup failed")
-		return
-	}
-	var id int64
+	// Atomic next-idx + INSERT in a single statement so two
+	// concurrent uploads to the same page can't both compute the
+	// same idx and produce ambiguous ordering. Postgres serialises
+	// the SELECT inside an INSERT, so the second writer's MAX(idx)
+	// sees the first one's row.
+	var (
+		id      int64
+		nextIdx int
+	)
 	if err := h.DB.QueryRowContext(r.Context(), `
 		INSERT INTO adventure_page_images(page_id, idx, mime_type, size_bytes, content)
-		VALUES ($1, $2, $3, $4, $5)
-		RETURNING id
-	`, pageID, nextIdx, mime, int64(len(data)), data).Scan(&id); err != nil {
+		SELECT $1, COALESCE(MAX(idx)+1, 0), $2, $3, $4 FROM adventure_page_images WHERE page_id = $1
+		RETURNING id, idx
+	`, pageID, mime, int64(len(data)), data).Scan(&id, &nextIdx); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "insert failed: "+err.Error())
 		return
 	}
@@ -337,19 +338,16 @@ func (h *Handlers) AddHintImage(w http.ResponseWriter, r *http.Request) {
 	}
 	data, mime = shrunk, newMIME
 
-	var nextIdx int
-	if err := h.DB.QueryRowContext(r.Context(),
-		`SELECT COALESCE(MAX(idx)+1, 0) FROM adventure_page_hint_images WHERE hint_id = $1`, hintID).
-		Scan(&nextIdx); err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "next index lookup failed")
-		return
-	}
-	var id int64
+	// Atomic next-idx + INSERT — see AddPageImage for rationale.
+	var (
+		id      int64
+		nextIdx int
+	)
 	if err := h.DB.QueryRowContext(r.Context(), `
 		INSERT INTO adventure_page_hint_images(hint_id, idx, mime_type, size_bytes, content)
-		VALUES ($1, $2, $3, $4, $5)
-		RETURNING id
-	`, hintID, nextIdx, mime, int64(len(data)), data).Scan(&id); err != nil {
+		SELECT $1, COALESCE(MAX(idx)+1, 0), $2, $3, $4 FROM adventure_page_hint_images WHERE hint_id = $1
+		RETURNING id, idx
+	`, hintID, mime, int64(len(data)), data).Scan(&id, &nextIdx); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "insert failed: "+err.Error())
 		return
 	}

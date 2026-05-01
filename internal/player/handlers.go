@@ -21,6 +21,7 @@ import (
 	"git.sr.ht/~klahr/zv/internal/adventure"
 	"git.sr.ht/~klahr/zv/internal/auth"
 	"git.sr.ht/~klahr/zv/internal/httpx"
+	mailerpkg "git.sr.ht/~klahr/zv/internal/mailer"
 	"git.sr.ht/~klahr/zv/internal/mdx"
 	"git.sr.ht/~klahr/zv/internal/activity"
 	"git.sr.ht/~klahr/zv/internal/webhooks"
@@ -51,6 +52,12 @@ type Handlers struct {
 	Lib          *adventure.Library
 	Hub          *ws.Hub
 	SecureCookie bool
+	// Mailer + PublicURL power the lost-magic-link recovery flow:
+	// the player enters their team's contact email, server mints a
+	// fresh single-use token and emails the new link. nil mailer
+	// falls back to LogMailer so dev still sees the URL in stderr.
+	Mailer    mailerpkg.Mailer
+	PublicURL string
 	// limiter throttles answer + location attempts per slot. Lazy-init
 	// on first use so tests that construct Handlers directly don't
 	// need to plumb a value through. nil-safe.
@@ -82,6 +89,17 @@ func (h *Handlers) MagicLinkLogin(w http.ResponseWriter, r *http.Request) bool {
 	}
 	ip := auth.ClientIP(r)
 	ua := auth.UserAgent(r)
+	// Per-IP rate limit on the exchange itself. Legitimate users open
+	// the link once; abuse cases (script probing tokens, runaway
+	// retry loop) burn the budget fast. Cheaper than letting every
+	// miss hit the DB + audit log.
+	if ok, _ := h.rateLimiter().AllowMagicLink(ip); !ok {
+		auth.Record(r.Context(), h.DB, auth.AuditEvent{
+			Event: auth.EventMagicLink, OK: false, IP: ip, UserAgent: ua,
+			Reason: auth.ReasonRateLimited,
+		})
+		return false
+	}
 	slot, session, err := auth.LoginSlotByToken(r.Context(), h.DB, token)
 	if err != nil {
 		reason := auth.ReasonUnknownToken
@@ -412,11 +430,20 @@ func teamArrival(tc teamContext) time.Time {
 // UnlocksInSeconds counts down to delay_seconds after the team's
 // arrival. When arrival is the zero time (event not started yet),
 // everything stays locked.
-func buildHintDTOs(hints []adventure.Hint, arrival time.Time) []hintDTO {
+//
+// hintsRevealed gates the rendered TEXT body: only hints with idx
+// < hintsRevealed get TextHTML in the DTO. The unlock countdown
+// still ships for every hint so the client can show "reveal in N
+// seconds" without leaking the body. Without this gate, a curious
+// player could read every locked hint by opening devtools.
+func buildHintDTOs(hints []adventure.Hint, arrival time.Time, hintsRevealed int) []hintDTO {
 	out := make([]hintDTO, 0, len(hints))
 	now := time.Now().UTC()
-	for _, h := range hints {
-		dto := hintDTO{TextHTML: mdx.Render(h.Text)}
+	for i, h := range hints {
+		dto := hintDTO{}
+		if i < hintsRevealed {
+			dto.TextHTML = mdx.Render(h.Text)
+		}
 		if arrival.IsZero() {
 			dto.UnlocksInSeconds = h.DelaySeconds
 		} else {
@@ -582,7 +609,14 @@ func (h *Handlers) buildState(ctx context.Context, slot auth.Slot) (State, int, 
 	// Falls back to the event's started_at when current_page_started_at
 	// is NULL (team hasn't advanced since run start, so they've been
 	// on page 0 since the whistle).
-	resp.Hints = buildHintDTOs(page.Hints, teamArrival(tc))
+	//
+	// HintsRevealed is read FIRST so buildHintDTOs can gate the
+	// rendered hint TEXT to "already revealed" — without that, a
+	// player opening devtools could read every hint body off the
+	// state DTO without ever tapping reveal, defeating the whole
+	// timed-hint mechanic. The unlocks_in_seconds countdown stays
+	// in the DTO so the client can show the "reveal in N seconds"
+	// timer; the text is what's hidden until the player taps.
 	if len(page.Hints) > 0 {
 		var n int
 		if err := h.DB.QueryRowContext(ctx,
@@ -591,6 +625,7 @@ func (h *Handlers) buildState(ctx context.Context, slot auth.Slot) (State, int, 
 			resp.HintsRevealed = n
 		}
 	}
+	resp.Hints = buildHintDTOs(page.Hints, teamArrival(tc), resp.HintsRevealed)
 	if len(page.Images) > 0 {
 		imgs := make([]imageDTO, 0, len(page.Images))
 		for _, im := range page.Images {
@@ -1017,10 +1052,43 @@ type LocationRequest struct {
 	ClientTS string   `json:"client_ts,omitempty"`
 }
 
+// maxPlausibleSpeedMS caps the implied speed (distance / elapsed)
+// between two consecutive pings for the same team. 60 m/s is ~216
+// km/h — comfortably above any realistic foot/bike/bus/train speed
+// for a city-wide adventure, low enough to catch the obvious
+// teleport cheat where a player POSTs "I'm at the gate" coordinates
+// from across town. Real GPS jitter (a 50 m hop in 5 s) clears the
+// bar; "I was 1 km away 5 s ago" doesn't.
+const maxPlausibleSpeedMS = 60.0
+
+// minLookbackForSpeedSec is the lower bound on elapsed time before
+// we even compute implied speed. Below this, the speed math is
+// dominated by GPS sample jitter (two pings ~half a second apart
+// with 30m accuracy each can imply 60 m/s of "movement" that's
+// just sensor noise). Don't reject below this floor.
+const minLookbackForSpeedSec = 5.0
+
+// maxLookbackForSpeedSec is the upper bound on elapsed time. A
+// long backgrounded app comes back with a fresh fix anywhere on
+// the map; we don't want to reject the player's first ping after
+// they reopened the tab. Beyond this gap the comparison is moot.
+const maxLookbackForSpeedSec = 120.0
+
 // recordLocation inserts a ping row. Returns (statusCode, errMsg).
+//
+// Plausibility check: the gateReached test treats the latest ping
+// as gospel — without a sanity gate, a player still at the start
+// could just POST "I'm at the gate" coordinates and walk through
+// every gated puzzle from a chair. We compare against the most
+// recent ping on the same team and reject anything that implies
+// a teleport above maxPlausibleSpeedMS. Rejections leave the prior
+// ping in place so the next legitimate ping has a stable anchor.
 func (h *Handlers) recordLocation(ctx context.Context, slot auth.Slot, req LocationRequest) (int, string) {
 	if req.Lat < -90 || req.Lat > 90 || req.Lng < -180 || req.Lng > 180 {
 		return http.StatusBadRequest, "coordinates out of range"
+	}
+	if !plausibleNextPing(ctx, h.DB, slot.TeamID, req.Lat, req.Lng) {
+		return http.StatusForbidden, "implausible position jump"
 	}
 	var acc, speed, heading, cts any
 	if req.Accuracy != nil {
@@ -1042,6 +1110,41 @@ func (h *Handlers) recordLocation(ctx context.Context, slot auth.Slot, req Locat
 		return http.StatusInternalServerError, "save ping failed"
 	}
 	return http.StatusNoContent, ""
+}
+
+// plausibleNextPing returns true when the proposed (lat, lng) is
+// reachable from the team's most recent ping at no more than
+// maxPlausibleSpeedMS, OR when there's no prior ping to compare
+// against / the gap is outside the lookback window. Errors and
+// missing-row cases default to "plausible" — this is a cheating
+// gate, not a hard correctness gate, so failing open is the right
+// posture if the DB read flakes.
+func plausibleNextPing(ctx context.Context, db *sql.DB, teamID int64, lat, lng float64) bool {
+	var (
+		lastLat, lastLng float64
+		serverTS         string
+	)
+	err := db.QueryRowContext(ctx, `
+		SELECT lat, lng, server_ts FROM location_pings
+		WHERE team_id = $1
+		ORDER BY server_ts DESC
+		LIMIT 1
+	`, teamID).Scan(&lastLat, &lastLng, &serverTS)
+	if err != nil {
+		// No prior ping (or DB hiccup) — let it through. The first
+		// ping has nothing to anchor against.
+		return true
+	}
+	prev, err := parsePlayTime(serverTS)
+	if err != nil {
+		return true
+	}
+	elapsed := time.Since(prev).Seconds()
+	if elapsed < minLookbackForSpeedSec || elapsed > maxLookbackForSpeedSec {
+		return true
+	}
+	d := haversineMeters(lat, lng, lastLat, lastLng)
+	return d/elapsed <= maxPlausibleSpeedMS
 }
 
 // SummaryResponse is the shape returned by GET /api/player/summary.
@@ -1287,6 +1390,14 @@ type HintRequest struct {
 // waiting for the WS state push to land.
 type HintResponse struct {
 	HintsRevealed int `json:"hints_revealed"`
+	// RevealedText is the rendered HTML body of the hint that was
+	// just unlocked. The state DTO doesn't ship hint text for
+	// unrevealed hints (so devtools can't peek), so a fresh reveal
+	// has to deliver the body via the response itself — otherwise
+	// the player would see an empty hint card until the next WS
+	// state push lands. Empty when the call was a no-op replay
+	// (hint already revealed).
+	RevealedText string `json:"revealed_text,omitempty"`
 }
 
 // RevealHint records that the team has revealed one more hint on the
@@ -1399,7 +1510,16 @@ func (h *Handlers) RevealHint(w http.ResponseWriter, r *http.Request) {
 	// Push so other team-mates' WS state refreshes immediately with
 	// the new revealed count. Same shape as SubmitAnswer.
 	h.Hub.Publish(ws.EventTopic(tc.EventID), "changed", nil)
-	body, _ := json.Marshal(HintResponse{HintsRevealed: revealed + 1})
+	// Ship the just-revealed hint's rendered body alongside the
+	// count so the player who tapped sees the text instantly. The
+	// state DTO no longer ships text for unrevealed hints, so this
+	// response is the bridge from "tap" to "render" — otherwise
+	// the card would flash empty until the next WS state push.
+	revealedText := mdx.Render(page.Hints[req.HintIndex].Text)
+	body, _ := json.Marshal(HintResponse{
+		HintsRevealed: revealed + 1,
+		RevealedText:  revealedText,
+	})
 	recordAction(r.Context(), h.DB, slot.ID, actionID, http.StatusOK, body)
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(http.StatusOK)

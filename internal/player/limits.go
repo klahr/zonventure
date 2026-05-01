@@ -26,12 +26,25 @@ type playLimiter struct {
 	answers   sync.Map // key: slotID → []time.Time (recent attempts, oldest first)
 	answersMu sync.Mutex
 	locations sync.Map // key: slotID → time.Time (last ping)
+	// magic-link exchange is keyed by IP — there's no slot yet at
+	// the point of validation, that's the whole point. Same
+	// rolling-window shape as Answer; protects the audit log + DB
+	// lookup from a script pummeling /play?t=<random>.
+	magic   sync.Map // key: IP string → []time.Time
+	magicMu sync.Mutex
 }
 
 const (
 	AnswerBurst         = 6
 	AnswerWindow        = time.Minute
 	LocationMinInterval = 5 * time.Second
+	// MagicLinkBurst caps unique magic-link exchanges from one IP.
+	// Legitimate users open a link once or twice; a brute-force
+	// script burns the budget in seconds. Window is generous so a
+	// shared NAT (school, café) doesn't lock the whole subnet out
+	// after a few legitimate plays.
+	MagicLinkBurst  = 20
+	MagicLinkWindow = time.Minute
 )
 
 // AllowAnswer returns (ok, retryAfter). ok=false means the slot has
@@ -70,6 +83,46 @@ func (l *playLimiter) AllowAnswer(slotID int64) (bool, time.Duration) {
 	}
 	pruned = append(pruned, now)
 	l.answers.Store(slotID, pruned)
+	return true, 0
+}
+
+// AllowMagicLink rate-limits /play?t=<token> exchanges by IP. Same
+// rolling-window shape as AllowAnswer but keyed by client IP since
+// the magic-link exchange runs before any slot session exists. The
+// 144-bit tokens are cryptographically infeasible to brute-force,
+// but the gate stops a misbehaving client (or an attacker probing)
+// from burning the audit log + DB lookup on every miss.
+func (l *playLimiter) AllowMagicLink(ip string) (bool, time.Duration) {
+	if l == nil || ip == "" {
+		return true, 0
+	}
+	now := time.Now()
+
+	l.magicMu.Lock()
+	defer l.magicMu.Unlock()
+
+	var hits []time.Time
+	if v, ok := l.magic.Load(ip); ok {
+		hits = v.([]time.Time)
+	}
+	cutoff := now.Add(-MagicLinkWindow)
+	pruned := hits[:0]
+	for _, t := range hits {
+		if t.After(cutoff) {
+			pruned = append(pruned, t)
+		}
+	}
+	if len(pruned) >= MagicLinkBurst {
+		oldest := pruned[0]
+		retry := MagicLinkWindow - now.Sub(oldest)
+		if retry < time.Second {
+			retry = time.Second
+		}
+		l.magic.Store(ip, pruned)
+		return false, retry.Round(time.Second)
+	}
+	pruned = append(pruned, now)
+	l.magic.Store(ip, pruned)
 	return true, 0
 }
 

@@ -54,6 +54,14 @@ func (impl) MIMETypes() []string {
 	}
 }
 
+// maxDecompressedBytes caps excelize's unzip step so a zip-bomb
+// (a 1 MB archive that expands to 50 GB) can't OOM the worker.
+// excelize.Options.UnzipSizeLimit gates the total decompressed
+// payload across all parts in the archive; setting it ~50 MB is
+// far above any plausible roster sheet (kilobytes in practice)
+// while well under any memory-exhaustion threshold.
+const maxDecompressedBytes = 50 << 20 // 50 MiB
+
 func (impl) Parse(r io.Reader) ([]teamimport.Team, error) {
 	// excelize wants an io.Reader for OpenReader, not a path —
 	// buffer the upload so it can seek-via-bytes if needed. The
@@ -63,7 +71,9 @@ func (impl) Parse(r io.Reader) ([]teamimport.Team, error) {
 	if err != nil {
 		return nil, err
 	}
-	f, err := excelize.OpenReader(bytes.NewReader(data))
+	f, err := excelize.OpenReader(bytes.NewReader(data), excelize.Options{
+		UnzipSizeLimit: maxDecompressedBytes,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -108,11 +118,13 @@ func shapeRows(rows [][]string) []teamimport.Team {
 		if name == "" {
 			continue
 		}
+		// CSV-injection defang — see teamimport.SanitizeCellValue.
+		name = teamimport.SanitizeCellValue(name)
 		members := make([]string, 0, len(row)-1)
 		for _, m := range row[1:] {
 			m = strings.TrimSpace(m)
 			if m != "" {
-				members = append(members, m)
+				members = append(members, teamimport.SanitizeCellValue(m))
 			}
 		}
 		out = append(out, teamimport.Team{Name: name, MemberNames: members})

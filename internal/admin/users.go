@@ -453,7 +453,8 @@ func (h *Handlers) ResetPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, err := h.DB.ExecContext(r.Context(),
-		`UPDATE users SET password_hash = $1 WHERE id = $2`, hash, id); err != nil {
+		`UPDATE users SET password_hash = $1, password_is_default = 0 WHERE id = $2`,
+		hash, id); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "update failed")
 		return
 	}
@@ -531,6 +532,15 @@ func (h *Handlers) AdminDisableUserTOTP(w http.ResponseWriter, r *http.Request) 
 		httpx.Error(w, http.StatusInternalServerError, "disable failed")
 		return
 	}
+	// Admin-driven TOTP reset is the "user lost their phone" recovery
+	// flow. Force the affected user's other sessions out so any
+	// leftover authenticated browser is required to re-auth — at the
+	// new (weaker) factor level, which is exactly the right posture
+	// after a lost-device reset. Unlike the user-driven path, there's
+	// no "current session for that user" to preserve from this admin
+	// caller's request, so drop everything.
+	_, _ = h.DB.ExecContext(r.Context(),
+		`DELETE FROM sessions WHERE user_id = $1`, id)
 	auth.Record(r.Context(), h.DB, auth.AuditEvent{
 		Event: auth.EventTOTPAdminReset, OK: true, UserID: &me.ID, Username: targetUsername,
 		IP: auth.ClientIP(r), UserAgent: auth.UserAgent(r), Reason: auth.ReasonTOTPAdminReset,

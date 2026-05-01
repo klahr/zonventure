@@ -46,8 +46,16 @@ type slotCtxKey struct{}
 // LoginSlotByToken exchanges a magic-link (player_slots.token) for a
 // new slot session, returning the session token the caller should set on
 // the client as a cookie. Returns ErrSlotTokenExpired when the slot's
-// expires_at is in the past — the row stays in place so the arranger
-// can rotate, but no new sessions are issued from the dead token.
+// expires_at is in the past or claimed_at is non-null — the row stays
+// in place so the arranger can rotate, but no new sessions are issued
+// from a dead or already-claimed token.
+//
+// Single-use: claimed_at is NULL on a fresh slot and gets stamped on
+// the first successful exchange. Subsequent exchanges of the same
+// token return ErrSlotTokenExpired so a leaked link can't mint
+// parallel sessions on multiple devices. Players who legitimately
+// need a new device after the token's been claimed go through the
+// lost-link recovery flow to mint a fresh token.
 func LoginSlotByToken(ctx context.Context, db *sql.DB, magic string) (Slot, string, error) {
 	if magic == "" {
 		return Slot{}, "", ErrSlotTokenUnknown
@@ -55,13 +63,14 @@ func LoginSlotByToken(ctx context.Context, db *sql.DB, magic string) (Slot, stri
 	var (
 		s         Slot
 		expiresAt sql.NullString
+		claimedAt sql.NullString
 	)
 	err := db.QueryRowContext(ctx, `
-		SELECT ps.id, ps.name, ps.team_id, t.event_id, ps.expires_at
+		SELECT ps.id, ps.name, ps.team_id, t.event_id, ps.expires_at, ps.claimed_at
 		FROM player_slots ps
 		JOIN teams t ON t.id = ps.team_id
 		WHERE ps.token = $1
-	`, magic).Scan(&s.ID, &s.Name, &s.TeamID, &s.EventID, &expiresAt)
+	`, magic).Scan(&s.ID, &s.Name, &s.TeamID, &s.EventID, &expiresAt, &claimedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Slot{}, "", ErrSlotTokenUnknown
 	}
@@ -73,11 +82,21 @@ func LoginSlotByToken(ctx context.Context, db *sql.DB, magic string) (Slot, stri
 			return Slot{}, "", ErrSlotTokenExpired
 		}
 	}
+	if claimedAt.Valid && claimedAt.String != "" {
+		// Token already exchanged once — refuse the second claim.
+		// The original session's cookie still works; this gate is
+		// only on minting fresh sessions from the same token.
+		return Slot{}, "", ErrSlotTokenExpired
+	}
 	session, err := newSlotSession(ctx, db, s.ID)
 	if err != nil {
 		return Slot{}, "", err
 	}
-	_, _ = db.ExecContext(ctx, `UPDATE player_slots SET last_login_at = now_text() WHERE id = $1`, s.ID)
+	// Stamp claimed_at + last_login_at atomically. The claim is what
+	// makes the token single-use; last_login_at is informational so
+	// the arranger can see when the player actually came online.
+	_, _ = db.ExecContext(ctx,
+		`UPDATE player_slots SET last_login_at = now_text(), claimed_at = now_text() WHERE id = $1`, s.ID)
 	return s, session, nil
 }
 

@@ -178,19 +178,17 @@ func (h *Handlers) sendResetEmail(r *http.Request, to, token string) error {
 	})
 }
 
-func buildResetLink(publicURL string, r *http.Request, token string) string {
+// buildResetLink returns the password-reset URL the email body
+// embeds. Reads only `publicURL` (from ZV_PUBLIC_URL) — request
+// headers like X-Forwarded-Host are intentionally NOT consulted,
+// so an attacker behind any reverse proxy can't inject a phishing
+// host into the reset email body. When publicURL is unset, returns
+// an origin-relative URL; the caller's Send call should fail closed
+// because a relative URL in an email body is useless to the
+// recipient anyway, and that pushes the operator to set the
+// env var rather than ship a broken email.
+func buildResetLink(publicURL string, _ *http.Request, token string) string {
 	base := strings.TrimRight(publicURL, "/")
-	if base == "" {
-		scheme := "http"
-		if r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
-			scheme = "https"
-		}
-		host := r.Host
-		if h := r.Header.Get("X-Forwarded-Host"); h != "" {
-			host = h
-		}
-		base = scheme + "://" + host
-	}
 	q := url.Values{"token": []string{token}}
 	// Fragment-delivery: token after #, never sent to servers in
 	// Referer headers when the reset page navigates elsewhere.

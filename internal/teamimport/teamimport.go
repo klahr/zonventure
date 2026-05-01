@@ -39,6 +39,33 @@ type Team struct {
 	MemberNames []string `json:"member_names"`
 }
 
+// SanitizeCellValue defangs a single string against CSV-injection.
+// A cell whose first non-whitespace character is one of `=`, `+`,
+// `-`, `@`, `\t`, `\r`, `|` is treated as a formula by Excel /
+// Sheets / Numbers when re-exported via the clipboard or
+// downloaded as CSV — and our team names round-trip through
+// arranger CSV exports / leaderboard copy-paste flows. Prefix
+// such cells with a single quote so the resulting SQL row
+// preserves the original characters but Excel renders them as
+// text instead of evaluating.
+//
+// Applies once at import time. Empty / safe values pass through
+// unchanged so a normal "Alpha, alice, bob" row stays exactly as
+// the operator typed it. The single-quote prefix is the OWASP-
+// recommended mitigation: it doesn't change the visible content
+// in spreadsheet clients but disables formula evaluation.
+func SanitizeCellValue(s string) string {
+	trimmed := strings.TrimLeft(s, " \t")
+	if trimmed == "" {
+		return s
+	}
+	switch trimmed[0] {
+	case '=', '+', '-', '@', '\t', '\r', '|':
+		return "'" + s
+	}
+	return s
+}
+
 // Importer is the contract every format implements. It's small on
 // purpose: callers only need to identify (Name + Extensions +
 // MIMETypes) and parse. There is no "validate" or "preview" step —

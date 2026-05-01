@@ -28,6 +28,25 @@ type LegalConfig struct {
 	Reviewed bool
 }
 
+// missingRequired returns the env-var names whose values are empty.
+// CompanyName, ContactEmail, and Jurisdiction are load-bearing: a
+// page that says "controlled by [set ZV_COMPANY_NAME]" or doesn't
+// name a venue for disputes is worse than no page at all. DPO email
+// falls back to ContactEmail so it's not on the required list.
+func (c LegalConfig) missingRequired() []string {
+	var missing []string
+	if strings.TrimSpace(c.CompanyName) == "" {
+		missing = append(missing, "ZV_COMPANY_NAME")
+	}
+	if strings.TrimSpace(c.ContactEmail) == "" {
+		missing = append(missing, "ZV_CONTACT_EMAIL")
+	}
+	if strings.TrimSpace(c.Jurisdiction) == "" {
+		missing = append(missing, "ZV_JURISDICTION")
+	}
+	return missing
+}
+
 func (c LegalConfig) defaulted() LegalConfig {
 	d := c
 	if d.CompanyName == "" {
@@ -68,7 +87,20 @@ func (c LegalConfig) defaulted() LegalConfig {
 // every single placeholder including the ones already inside HTML
 // attributes (mailto:), and a static brochure page doesn't need
 // per-request data flow that warrants the extra ceremony.
+//
+// Refuses to render when the operator-supplied identity (company name,
+// contact email, jurisdiction) is missing — shipping a page with
+// "[set ZV_COMPANY_NAME]" visible to real users is worse than 503ing
+// the route until the operator finishes the configuration. The
+// 503 body lists the missing keys so the operator knows what to set.
 func renderLegalPage(w http.ResponseWriter, name string, cfg LegalConfig) {
+	if missing := cfg.missingRequired(); len(missing) > 0 {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-store")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte("This page is not yet configured. The operator must set the following environment variables before /privacy and /terms become available:\n\n  " + strings.Join(missing, "\n  ") + "\n\nSee SELFHOSTING.md for guidance on each value.\n"))
+		return
+	}
 	body, err := readWebFile("web/" + name)
 	if err != nil {
 		http.Error(w, "not found", http.StatusNotFound)

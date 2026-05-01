@@ -1,0 +1,16 @@
+-- Make magic-link tokens single-use. claimed_at marks the moment a
+-- given player_slots.token was first exchanged for a session via
+-- LoginSlotByToken. Subsequent exchanges of the same token are
+-- rejected — a leaked link can mint at most one session, not an
+-- unbounded fleet of parallel logins.
+--
+-- The COOKIE that exchange minted stays valid until the slot session
+-- itself expires; this column only blocks fresh token exchanges, not
+-- ongoing play. Players who need a new device after the token's been
+-- claimed can request a fresh magic link via the lost-link recovery
+-- flow (separate work item).
+--
+-- NULL = never claimed. Existing rows backfill cleanly to NULL so a
+-- mid-event upgrade doesn't lock anyone out — the very first
+-- exchange after the upgrade just stamps the column.
+ALTER TABLE player_slots ADD COLUMN claimed_at TEXT NULL;

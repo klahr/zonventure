@@ -85,19 +85,29 @@ func TestShrink_PortraitAspect(t *testing.T) {
 	}
 }
 
-func TestShrink_AlreadySmall_PassesThrough(t *testing.T) {
-	// Below the cap: we should get the original bytes back unchanged.
-	// Re-encoding loses quality for no benefit.
+func TestShrink_AlreadySmall_StillReencodes(t *testing.T) {
+	// Below the cap: we re-encode anyway. The previous "skip re-
+	// encode for small inputs" optimisation exposed a polyglot
+	// surface — bytes that are both a valid PNG and a valid HTML
+	// document would ship verbatim with image/png Content-Type.
+	// Re-encoding strips any sibling-document tail; the cost is a
+	// few ms per upload + a tiny quality loss, which is fine for
+	// puzzle assets at phone resolution.
 	src := makeImage(t, 300, 200, "png")
 	out, mime, err := imageutil.Shrink(src, 512)
 	if err != nil {
 		t.Fatalf("shrink: %v", err)
 	}
-	if !bytes.Equal(src, out) {
-		t.Errorf("small image was re-encoded instead of passed through")
+	if bytes.Equal(src, out) {
+		t.Errorf("small image was passed through verbatim — polyglot surface left open")
 	}
-	if mime != "image/png" {
-		t.Errorf("mime = %q, want image/png (detected from original)", mime)
+	if mime != "image/jpeg" {
+		t.Errorf("mime = %q, want image/jpeg (re-encoded)", mime)
+	}
+	// Confirm dimensions are preserved (not shrunk because already small).
+	w, h := decode(t, out)
+	if w != 300 || h != 200 {
+		t.Errorf("dimensions changed: got %dx%d, want 300x200", w, h)
 	}
 }
 

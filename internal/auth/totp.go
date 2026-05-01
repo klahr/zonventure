@@ -502,12 +502,16 @@ func canonicaliseRecoveryCode(s string) string {
 // resolution VerifyPassword does.
 func loadUserByID(ctx context.Context, db *sql.DB, userID int64) (User, error) {
 	var u User
+	var pwIsDefault int
 	if err := db.QueryRowContext(ctx, `
-		SELECT id, username, is_admin, COALESCE(email,''), (email_verified <> 0), totp_enabled
+		SELECT id, username, is_admin, COALESCE(email,''), (email_verified <> 0),
+		       totp_enabled, password_is_default
 		FROM users WHERE id = $1
-	`, userID).Scan(&u.ID, &u.Username, &u.IsAdmin, &u.Email, &u.EmailVerified, &u.TOTPEnabled); err != nil {
+	`, userID).Scan(&u.ID, &u.Username, &u.IsAdmin, &u.Email, &u.EmailVerified,
+		&u.TOTPEnabled, &pwIsDefault); err != nil {
 		return User{}, err
 	}
+	u.PasswordIsDefault = pwIsDefault != 0
 	active, role, err := resolveInitialActiveOrg(ctx, db, u.ID)
 	if err != nil {
 		return User{}, err

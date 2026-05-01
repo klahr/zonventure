@@ -1731,14 +1731,58 @@ function renderNoSession(opts) {
     app.replaceChildren(bar, el('div', { class: 'card' },
       el('h3', {}, t('Your link expired')),
       el('p', { class: 'muted' },
-        t('Magic links expire after a while. Ask your arranger for a fresh link to get back in — your team\'s progress is safe.'))));
+        t('Magic links expire after a while. Ask your arranger for a fresh link to get back in — your team\'s progress is safe.')),
+      buildRecoverLinkForm()));
     return;
   }
   app.replaceChildren(bar, el('div', { class: 'card' },
     el('h3', {}, t('Open your magic link')),
     el('p', { class: 'muted' },
       t('Players receive a personal link via message from their arranger. '),
-      t('Open it on this device to join the game.'))));
+      t('Open it on this device to join the game.')),
+    buildRecoverLinkForm()));
+}
+
+// buildRecoverLinkForm renders the "I lost my link" form at the
+// bottom of the no-session screens. The arranger optionally set a
+// team contact email; entering it here triggers the server to mint
+// a fresh magic link and email it. Always-204 anti-enumeration
+// shape on the server side, so the success copy is the same
+// whether or not the email matched any team — pinning that here
+// in the UI so a future copy edit doesn't accidentally leak the
+// match status through a divergent message.
+function buildRecoverLinkForm() {
+  const wrap = el('div', { style: 'margin-top:1.25rem; padding-top:1rem; border-top: 1px solid var(--border-soft)' });
+  wrap.append(el('p', { class: 'muted' },
+    t("Lost your link? Enter the email your arranger gave with the team — we'll send a fresh link.")));
+  const input = el('input', {
+    type: 'email', placeholder: t('your.email@example.com'),
+    autocomplete: 'email', required: 'required',
+    style: 'flex:1',
+  });
+  const btn = el('button', { class: 'btn primary', type: 'submit' }, t('Email me a fresh link'));
+  const status = el('p', { class: 'muted', style: 'margin-top:.5rem' });
+  const form = el('form', { style: 'display:flex; gap:.5rem; flex-wrap:wrap; align-items:center' },
+    input, btn, status);
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    btn.disabled = true; status.textContent = t('Sending…');
+    const r = await api('/api/player/recover-link', {
+      method: 'POST',
+      body: JSON.stringify({ email: input.value.trim() }),
+    });
+    btn.disabled = false;
+    if (r.status === 204) {
+      // Identical message regardless of match — see the handler
+      // doc comment for why.
+      status.textContent = t("If that email matched any team, a fresh link is on its way. Check your inbox.");
+      input.value = '';
+    } else {
+      status.textContent = r.body?.error || t('error');
+    }
+  });
+  wrap.append(form);
+  return wrap;
 }
 
 // GPS precision thresholds.
@@ -2082,10 +2126,22 @@ function renderGpsHelp() {
     currentGpsHelpEl.append(help);
     return;
   }
+  // Permission-denied is a different recovery shape from "no signal":
+  // Retry can't help (browsers don't re-prompt after a denial), so
+  // the message has to spell out the OS/browser setting and offer
+  // the arranger-override fallback.
+  if (gpsErrorCode === 1) {
+    const help = document.createElement('p');
+    help.textContent = t('Location is blocked for this site.');
+    const detail = document.createElement('p');
+    detail.style.fontSize = '.85rem';
+    detail.style.margin = '.35rem 0 0';
+    detail.style.color = 'var(--muted)';
+    detail.textContent = t("Most phones: open Settings → Privacy → Location → your browser → While Using. Then come back and reload this page. If you can't change the setting, ask your arranger to unlock this puzzle for your team — they can advance you manually from their dashboard.");
+    currentGpsHelpEl.append(help, detail);
+    return;
+  }
   const hint = (() => {
-    if (gpsErrorCode === 1) {
-      return t('Location is blocked. Open your browser or device settings, allow location for this site, then tap Retry.');
-    }
     if (gpsErrorCode === 2) {
       return t('No GPS signal. Move to open sky (away from buildings/trees) and tap Retry — usually clears in 30 seconds.');
     }
@@ -2266,6 +2322,16 @@ async function revealNextHint(s, hintIndex) {
   });
   if (r.status === 200 && typeof r.body?.hints_revealed === 'number') {
     setHintsRevealed(s, r.body.hints_revealed);
+    // Stash the freshly-revealed body locally so the hint sheet
+    // re-renders with text immediately. The state DTO doesn't ship
+    // text_html for hints below the reveal threshold, so without
+    // this merge the card would flash empty until the next WS
+    // state push lands. Server will ship the same body via state
+    // shortly after; the merge is a redundant-but-fast warmup.
+    if (r.body.revealed_text && Array.isArray(s?.hints)) {
+      const target = s.hints[hintIndex];
+      if (target) target.text_html = r.body.revealed_text;
+    }
     // Subtle cue to confirm the reveal landed — same toggle as the
     // celebrate fanfare, quieter so a hint doesn't compete with the
     // reveal-card content the player is about to read.

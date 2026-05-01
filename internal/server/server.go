@@ -128,6 +128,17 @@ func New(cfg Config) http.Handler {
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Recoverer)
+	// Baseline security headers on every response. Tight by default —
+	// the app loads fonts from Google's CDN (the embedded HTML pages
+	// reference fonts.googleapis.com / fonts.gstatic.com) and a few
+	// inline styles + scripts; the CSP allows those explicitly. No
+	// remote scripts, no remote XHR / fetch — every JS asset and
+	// API endpoint is same-origin. frame-ancestors 'none' blocks
+	// clickjacking by refusing to be iframed; X-Frame-Options is
+	// the legacy fallback for older browsers. Referrer-Policy
+	// strict-origin keeps team-share / recap / live tokens out of
+	// the Referer header on outbound link clicks.
+	r.Use(securityHeaders)
 	// Metrics middleware runs early so it records every request,
 	// including those rejected by auth or CSRF below. The collectors
 	// always increment; the /metrics scrape endpoint is only exposed
@@ -161,12 +172,18 @@ func New(cfg Config) http.Handler {
 		Mailer:        cfg.Mailer,
 		PublicURL:     cfg.PublicURL,
 	}
-	playerH := &player.Handlers{DB: cfg.DB, Lib: cfg.Library, Hub: hub, SecureCookie: cfg.SecureCookie}
+	playerH := &player.Handlers{
+		DB: cfg.DB, Lib: cfg.Library, Hub: hub, SecureCookie: cfg.SecureCookie,
+		PublicURL: cfg.PublicURL,
+		// Mailer is wired below the LogMailer fallback so dev/test
+		// see the recovered link in stderr instead of failing closed.
+	}
 	sim := simulator.New(cfg.DB, cfg.Library, hub)
 	mail := cfg.Mailer
 	if mail == nil {
 		mail = mailer.LogMailer{}
 	}
+	playerH.Mailer = mail
 	store := cfg.Storage
 	if store == nil {
 		store = dbblob.New(cfg.DB)
@@ -206,7 +223,7 @@ func New(cfg Config) http.Handler {
 		TeamImporters:       importers,
 		Updates:             updateSvc,
 	}
-	publicH := &public.Handlers{DB: cfg.DB, Lib: cfg.Library, Hub: hub, Storage: store}
+	publicH := &public.Handlers{DB: cfg.DB, Lib: cfg.Library, Hub: hub, Storage: store, PublicURL: cfg.PublicURL}
 
 	// Health probe used by load balancers and `depends_on: condition:
 	// service_healthy` in compose. Pings the DB so we report unhealthy
@@ -384,6 +401,11 @@ func New(cfg Config) http.Handler {
 		// /arrange page seeds the cookie before the form submits).
 		r.Post("/api/auth/forgot", authH.ForgotPassword)
 		r.Post("/api/auth/reset", authH.ResetPassword)
+		// Lost-magic-link recovery: pre-auth player flow that
+		// re-mints magic-link tokens for any team whose contact
+		// email matches the supplied address. Same CSRF + always-
+		// 204 anti-enumeration shape as /api/auth/forgot.
+		r.Post("/api/player/recover-link", playerH.RecoverLink)
 		// Switch the calling session's active org. Caller must already
 		// be authenticated AND a member of the target org — handler
 		// returns 403 if not. CSRF-protected because it mutates the
@@ -794,6 +816,61 @@ func New(cfg Config) http.Handler {
 // servePage returns a handler that writes a single embedded HTML page with
 // no caching. Used for the SPA shells (/arrange, /play, /live) where a
 // stale shell after deploy would surface as broken UI.
+// securityHeaders is the global middleware that sets the baseline
+// CSP + X-Frame-Options + Referrer-Policy + nosniff on every
+// response. Wrapping the entire router (rather than per-route)
+// keeps the policy consistent — a future contributor adding a
+// new endpoint inherits the headers automatically.
+//
+// CSP design notes (kept minimal so the embedded HTML pages
+// continue to work):
+//
+//   - default-src 'self' — same-origin only, no implicit allow.
+//   - script-src 'self' 'unsafe-inline' — every page has at least
+//     one inline <script> block (login form handlers, page-load
+//     theme application). Tightening to nonces is a real refactor;
+//     leaving this as a known-loose-but-bounded surface for now.
+//   - style-src 'self' 'unsafe-inline' https://fonts.googleapis.com
+//     — Google Fonts stylesheet + inline `style="..."` from the
+//     existing JSX-shaped DOM helpers.
+//   - img-src 'self' data: https: — data: for the QR generator,
+//     https: so adventure assets / map tiles work.
+//   - font-src 'self' https://fonts.gstatic.com — Google Fonts
+//     binary fonts.
+//   - connect-src 'self' wss: ws: — XHR / fetch / WebSocket all
+//     same-origin; wss/ws because the WebSocket scheme isn't
+//     covered by 'self' alone in older browsers.
+//   - frame-ancestors 'none' — blocks the clickjacking surface on
+//     /team/{token}, /recap/{token}, /play, /arrange.
+//   - object-src 'none' — no Flash / Java / legacy plugin embed.
+//   - base-uri 'self' — pin <base> so a stored-XSS can't redirect
+//     relative URLs.
+const baselineCSP = "default-src 'self'; " +
+	"script-src 'self' 'unsafe-inline'; " +
+	"style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
+	"img-src 'self' data: https:; " +
+	"font-src 'self' https://fonts.gstatic.com; " +
+	"connect-src 'self' wss: ws:; " +
+	"frame-ancestors 'none'; " +
+	"object-src 'none'; " +
+	"base-uri 'self'"
+
+func securityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("Content-Security-Policy", baselineCSP)
+		h.Set("X-Frame-Options", "DENY")
+		h.Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		// nosniff applies to every response. We already set it
+		// individually on a few specific endpoints (/adventure-
+		// assets/audio/*) where MIME confusion is the highest
+		// risk; the baseline keeps the rest of the surface
+		// covered.
+		h.Set("X-Content-Type-Options", "nosniff")
+		next.ServeHTTP(w, r)
+	})
+}
+
 func servePage(path string) http.HandlerFunc {
 	body, err := readWebFile(path)
 	if err != nil {

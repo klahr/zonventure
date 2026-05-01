@@ -286,7 +286,8 @@ func ConsumeForgotPasswordToken(ctx context.Context, db *sql.DB, token, newPassw
 	}
 	defer tx.Rollback() //nolint:errcheck
 	if _, err := tx.ExecContext(ctx,
-		`UPDATE users SET password_hash = $1 WHERE id = $2`, hash, userID); err != nil {
+		`UPDATE users SET password_hash = $1, password_is_default = 0 WHERE id = $2`,
+		hash, userID); err != nil {
 		return User{}, "", false, err
 	}
 	if _, err := tx.ExecContext(ctx,

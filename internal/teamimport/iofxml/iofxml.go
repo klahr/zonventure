@@ -82,7 +82,10 @@ func (t teamContainer) members() []string {
 	out := make([]string, 0, len(rows))
 	for _, p := range rows {
 		if name := p.fullName(); name != "" {
-			out = append(out, name)
+			// CSV-injection defang on the round-trip path — same
+			// rationale as the other importers; see
+			// teamimport.SanitizeCellValue.
+			out = append(out, teamimport.SanitizeCellValue(name))
 		}
 	}
 	return out
@@ -142,7 +145,7 @@ func (impl) Parse(r io.Reader) ([]teamimport.Team, error) {
 			continue
 		}
 		out = append(out, teamimport.Team{
-			Name:        name,
+			Name:        teamimport.SanitizeCellValue(name),
 			MemberNames: tc.members(),
 		})
 	}

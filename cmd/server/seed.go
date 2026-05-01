@@ -334,14 +334,26 @@ func upsertUser(d *sql.DB, username, password, role string, orgID *int64) (int64
 		return 0, err
 	}
 	isAdmin := role == auth.RoleAdmin
+	// Mark accounts seeded with well-known default passwords so the
+	// in-app banner fires until the operator changes them. Demo flow
+	// values come from internal docs / SELFHOSTING.md examples;
+	// keeping them in one list here means a future "let's add a
+	// 'guest' demo user" only needs one new entry.
+	isDefault := 0
+	switch password {
+	case "admin", "rootpw", "s3cret", "jane":
+		isDefault = 1
+	}
 	var id int64
 	if err := d.QueryRow(`
-		INSERT INTO users(username, password_hash, is_admin) VALUES ($1, $2, $3)
+		INSERT INTO users(username, password_hash, is_admin, password_is_default)
+		VALUES ($1, $2, $3, $4)
 		ON CONFLICT(username) DO UPDATE SET
 			password_hash = excluded.password_hash,
-			is_admin = excluded.is_admin
+			is_admin = excluded.is_admin,
+			password_is_default = excluded.password_is_default
 		RETURNING id
-	`, username, hash, isAdmin).Scan(&id); err != nil {
+	`, username, hash, isAdmin, isDefault).Scan(&id); err != nil {
 		return 0, err
 	}
 	if !isAdmin && orgID != nil {

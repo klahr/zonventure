@@ -1,6 +1,7 @@
 package server
 
 import (
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -48,22 +49,26 @@ func TestRenderLegalPage_PrivacySubstitutesPlaceholders(t *testing.T) {
 	}
 }
 
-// Defaults backfill the loud "[set ZV_*]" markers when the operator
-// hasn't configured the legal env vars, so an unconfigured deployment
-// is visibly broken rather than quietly serving placeholder text.
-func TestRenderLegalPage_DefaultsAreVisible(t *testing.T) {
+// An unconfigured operator (no ZV_COMPANY_NAME / ZV_CONTACT_EMAIL /
+// ZV_JURISDICTION) used to see placeholder text on /privacy and
+// /terms — bad optics for a real customer who hits those URLs. The
+// new behaviour 503s with a list of missing env vars so the page
+// is conspicuously not yet ready, and the operator gets concrete
+// guidance about what to set.
+func TestRenderLegalPage_RefusesWhenUnconfigured(t *testing.T) {
 	rr := httptest.NewRecorder()
 	renderLegalPage(rr, "privacy.html", LegalConfig{})
-
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503", rr.Code)
+	}
 	body := rr.Body.String()
 	for _, want := range []string{
-		"[set ZV_COMPANY_NAME]",
-		"[set ZV_CONTACT_EMAIL]",
-		"[set ZV_HOSTING_PROVIDER]",
-		"[set ZV_EMAIL_PROVIDER]",
+		"ZV_COMPANY_NAME",
+		"ZV_CONTACT_EMAIL",
+		"ZV_JURISDICTION",
 	} {
 		if !strings.Contains(body, want) {
-			t.Errorf("default marker %q missing from rendered body", want)
+			t.Errorf("503 body missing env-var hint %q", want)
 		}
 	}
 }
@@ -74,7 +79,13 @@ func TestRenderLegalPage_DefaultsAreVisible(t *testing.T) {
 func TestRenderLegalPage_DraftBannerByDefault(t *testing.T) {
 	for _, name := range []string{"privacy.html", "terms.html"} {
 		rr := httptest.NewRecorder()
-		renderLegalPage(rr, name, LegalConfig{CompanyName: "Acme"})
+		// Required identity fields supplied; Reviewed left false so
+		// the draft banner SHOULD remain in the output.
+		renderLegalPage(rr, name, LegalConfig{
+			CompanyName:  "Acme",
+			ContactEmail: "ops@example.com",
+			Jurisdiction: "Stockholm, Sweden",
+		})
 		if !strings.Contains(rr.Body.String(), `class="draft-note"`) {
 			t.Errorf("%s: expected draft-note paragraph in default render", name)
 		}
@@ -88,8 +99,10 @@ func TestRenderLegalPage_ReviewedStripsDraftBanners(t *testing.T) {
 	for _, name := range []string{"privacy.html", "terms.html"} {
 		rr := httptest.NewRecorder()
 		renderLegalPage(rr, name, LegalConfig{
-			CompanyName: "Acme",
-			Reviewed:    true,
+			CompanyName:  "Acme",
+			ContactEmail: "ops@example.com",
+			Jurisdiction: "Stockholm, Sweden",
+			Reviewed:     true,
 		})
 		body := rr.Body.String()
 		if strings.Contains(body, `class="draft-note"`) {
@@ -106,7 +119,11 @@ func TestRenderLegalPage_ReviewedStripsDraftBanners(t *testing.T) {
 // at customer time.
 func TestRenderLegalPage_TermsCarriesEUClauses(t *testing.T) {
 	rr := httptest.NewRecorder()
-	renderLegalPage(rr, "terms.html", LegalConfig{CompanyName: "Acme"})
+	renderLegalPage(rr, "terms.html", LegalConfig{
+		CompanyName:  "Acme",
+		ContactEmail: "ops@example.com",
+		Jurisdiction: "Stockholm, Sweden",
+	})
 	body := rr.Body.String()
 	for _, want := range []string{
 		"Digital Services Act",

@@ -33,6 +33,25 @@ const (
 	RoleAdmin = "admin"
 )
 
+// SessionInactivityTTL is the rolling cap on how long a staff
+// session can sit idle before it has to re-auth. A leaked cookie
+// otherwise stays valid for the full SessionTTL (default 30d) even
+// if the legitimate user never came back; this gate lets the user's
+// actual usage pattern set the upper bound on the leak window.
+//
+// Bumped on every Lookup call (with a 60s coalescing throttle to
+// avoid DB write per request); checked alongside expires_at — a
+// session must satisfy BOTH "expires_at > now" and "last_used_at
+// > now - InactivityTTL" to be valid.
+var SessionInactivityTTL = 7 * 24 * time.Hour
+
+// sessionLastUsedBumpInterval is the minimum gap between two writes
+// to last_used_at for the same session. Without this, every API
+// call writes — fine for low traffic but multiplies DB load on a
+// busy session. 60s buys a comfortable inactivity-detection
+// window without flooding writes.
+const sessionLastUsedBumpInterval = 60 * time.Second
+
 // SessionTTL is how long a new staff session remains valid. Default 30
 // days; override with SetSessionTTL at startup (driven by a CLI flag in
 // main). Kept as a package-level var rather than a const so the operator
@@ -91,6 +110,13 @@ type User struct {
 	// totp_enabled=false, and the login flow ignores it (else
 	// abandoning enrolment would lock the account).
 	TOTPEnabled bool
+	// PasswordIsDefault is true when this user still holds the seeded
+	// default password (admin/admin or root/rootpw). The whoami
+	// response surfaces it so the UI can render a "change your
+	// password now" banner — leaving the seeded password in place on
+	// a publicly-reachable box is a takeover. Cleared in every
+	// password-update path.
+	PasswordIsDefault bool
 }
 
 // Factor names a single authentication factor that contributed to
@@ -167,10 +193,14 @@ func VerifyPassword(ctx context.Context, db *sql.DB, username, password string) 
 		u    User
 		hash sql.NullString
 	)
+	var pwIsDefault int
 	err := db.QueryRowContext(ctx, `
-		SELECT id, username, is_admin, password_hash, COALESCE(email,''), (email_verified <> 0), totp_enabled
+		SELECT id, username, is_admin, password_hash, COALESCE(email,''),
+		       (email_verified <> 0), totp_enabled, password_is_default
 		FROM users WHERE username = $1
-	`, username).Scan(&u.ID, &u.Username, &u.IsAdmin, &hash, &u.Email, &u.EmailVerified, &u.TOTPEnabled)
+	`, username).Scan(&u.ID, &u.Username, &u.IsAdmin, &hash, &u.Email,
+		&u.EmailVerified, &u.TOTPEnabled, &pwIsDefault)
+	u.PasswordIsDefault = pwIsDefault != 0
 	if errors.Is(err, sql.ErrNoRows) {
 		return User{}, ErrInvalidCredentials
 	}
@@ -280,7 +310,12 @@ func SetInitialPassword(ctx context.Context, db *sql.DB, username, password stri
 	if err != nil {
 		return User{}, "", err
 	}
-	if _, err := db.ExecContext(ctx, `UPDATE users SET password_hash = $1 WHERE id = $2`, h, u.ID); err != nil {
+	// Clear password_is_default — this is the user setting a real
+	// password for the first time, so the "you're still on the seeded
+	// default" banner is no longer relevant.
+	if _, err := db.ExecContext(ctx,
+		`UPDATE users SET password_hash = $1, password_is_default = 0 WHERE id = $2`,
+		h, u.ID); err != nil {
 		return User{}, "", err
 	}
 	active, role, err := resolveInitialActiveOrg(ctx, db, u.ID)
@@ -449,15 +484,20 @@ func Lookup(ctx context.Context, db *sql.DB, token string) (User, bool, error) {
 		expires     string
 	)
 	var schedDel sql.NullTime
+	var pwIsDefault int
+	var lastUsedRaw sql.NullString
 	err := db.QueryRowContext(ctx, `
 		SELECT u.id, u.username, u.is_admin, m.role, s.active_org_id,
 		       COALESCE(u.email,''), (u.email_verified <> 0),
-		       u.scheduled_deletion_at, u.totp_enabled, s.expires_at
+		       u.scheduled_deletion_at, u.totp_enabled, u.password_is_default,
+		       s.expires_at, s.last_used_at
 		FROM sessions s JOIN users u ON u.id = s.user_id
 		LEFT JOIN org_memberships m ON m.user_id = u.id AND m.org_id = s.active_org_id
 		WHERE s.token = $1
 	`, token).Scan(&u.ID, &u.Username, &u.IsAdmin, &membRole, &activeOrgID,
-		&u.Email, &u.EmailVerified, &schedDel, &u.TOTPEnabled, &expires)
+		&u.Email, &u.EmailVerified, &schedDel, &u.TOTPEnabled, &pwIsDefault,
+		&expires, &lastUsedRaw)
+	u.PasswordIsDefault = pwIsDefault != 0
 	if errors.Is(err, sql.ErrNoRows) {
 		return User{}, false, nil
 	}
@@ -477,10 +517,40 @@ func Lookup(ctx context.Context, db *sql.DB, token string) (User, bool, error) {
 		t := schedDel.Time
 		u.ScheduledDeletionAt = &t
 	}
+	now := time.Now()
 	exp, err := time.Parse(time.RFC3339, expires)
-	if err == nil && time.Now().After(exp) {
+	if err == nil && now.After(exp) {
 		_, _ = db.ExecContext(ctx, `DELETE FROM sessions WHERE token = $1`, token)
 		return User{}, false, nil
+	}
+	// Parse the TEXT timestamp written by now_text() ("YYYY-MM-DD
+	// HH:MM:SS" UTC). last_used_at can be NULL on a session created
+	// before this column was populated (column was added in 0010);
+	// treat NULL the same way as "just bumped" — the next bump will
+	// stamp it, which is safe because the absolute SessionTTL still
+	// caps the leak window.
+	var lastUsedAt time.Time
+	var haveLastUsed bool
+	if lastUsedRaw.Valid {
+		if t, perr := time.Parse("2006-01-02 15:04:05", lastUsedRaw.String); perr == nil {
+			lastUsedAt = t.UTC()
+			haveLastUsed = true
+		}
+	}
+	// Inactivity cap. A session whose last_used_at is more than
+	// SessionInactivityTTL old re-auths regardless of expires_at:
+	// a stolen cookie that the legitimate user hasn't refreshed in
+	// a week has run out the rolling window.
+	if haveLastUsed && now.Sub(lastUsedAt) > SessionInactivityTTL {
+		_, _ = db.ExecContext(ctx, `DELETE FROM sessions WHERE token = $1`, token)
+		return User{}, false, nil
+	}
+	// Bump last_used_at, but throttle: at most one write per minute
+	// per session keeps the per-request DB cost negligible while
+	// still getting near-real-time inactivity detection.
+	if !haveLastUsed || now.Sub(lastUsedAt) > sessionLastUsedBumpInterval {
+		_, _ = db.ExecContext(ctx,
+			`UPDATE sessions SET last_used_at = now_text() WHERE token = $1`, token)
 	}
 	return u, true, nil
 }

@@ -1614,6 +1614,22 @@ textarea { min-height: 80px; resize: vertical; font-family: ui-monospace, monosp
 .delete-banner strong { color: #a02a2a; }
 .delete-banner .btn { white-space: nowrap; }
 
+/* Default-password banner: same red palette as .delete-banner so
+   the visual rhyme reads as "this is an account-integrity issue,
+   handle it now". The link inside inherits the banner colour and
+   carries an underline so it reads as the call-to-action. */
+.banner.err {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: .5rem;
+  margin: 0 0 1rem;
+  padding: .55rem .85rem;
+  border-radius: var(--radius-sm);
+  background: rgba(220, 70, 70, .12);
+  border: 1px solid rgba(220, 70, 70, .4);
+  font-size: .92rem;
+}
+.banner.err strong { color: #a02a2a; }
+.banner.err a { color: inherit; }
+
 /* Account-settings cards: stacked in one column, comfortable padding,
    tight enough that the page reads as a list of related actions
    rather than a wall. The danger card gets a subtle red edge. */
@@ -2247,6 +2263,10 @@ const ICONS = {
   // viewBox.
   gear: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 0 0-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 0 0-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 0 0-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 0 0-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 0 0 1.066-2.573c-.94-1.543.826-3.31 2.37-2.37 1 .608 2.296.07 2.572-1.065z"/><circle cx="12" cy="12" r="3"/></svg>',
   plus: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>',
+  // Chevron up / down used for hint reorder buttons. Stroke-only
+  // matches the existing icon set; sized via the .btn.small wrapper.
+  chevronUp:   '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 15 12 9 18 15"/></svg>',
+  chevronDown: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>',
   trash: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/></svg>',
   key: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="15" r="4"/><path d="M10.85 12.15 19 4"/><path d="m18 5 2 2"/><path d="m15 8 2 2"/></svg>',
   sun: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>',
@@ -3402,15 +3422,44 @@ function renderShell() {
     ? renderDeletionBanner(state.me.scheduled_deletion_at)
     : null;
 
+  // Default-credentials banner: shown when the user is still on the
+  // seeded admin/admin (or root/rootpw) password. Loud red because
+  // a publicly-reachable box with the default password is one
+  // curl-from-anywhere away from total takeover. Cleared the moment
+  // the user changes their password through any of the password-
+  // update paths, server-side (see UPDATE users SET ... password_is
+  // _default = 0).
+  const defaultPwBanner = (state.me && state.me.password_is_default)
+    ? renderDefaultPasswordBanner()
+    : null;
+
   // Skip-link is the first focusable element on the page so a
   // keyboard user lands on it before crawling through the sidebar +
   // topbar. Hidden until focused; jumps focus to <main> on click.
   const skip = h('a', { class: 'skip-link', href: '#main' }, t('Skip to main content'));
   return h('div', { class: 'app' },
     skip, sidebar, topbar,
-    h('main', { class: 'content', id: 'main', tabindex: '-1' }, deleteBanner, verifyBanner,
+    h('main', { class: 'content', id: 'main', tabindex: '-1' }, defaultPwBanner, deleteBanner, verifyBanner,
       h('div', { id: 'view' })),
     backdrop);
+}
+
+// renderDefaultPasswordBanner is the loud "you're on admin/admin"
+// alert. Clicking it routes to Settings → General where the password
+// card lets the user change it. Sticky red so it's impossible to
+// miss; only renders when /api/auth/whoami says password_is_default
+// (so a fresh seed shows it; any password change clears it).
+function renderDefaultPasswordBanner() {
+  return h('div', { class: 'banner err', role: 'alert' },
+    h('strong', {}, t('Default password in use.')),
+    ' ',
+    h('span', {}, t('This account is still using the seeded admin password. Change it now — anyone reaching this URL can log in as you until you do.')),
+    ' ',
+    h('a', {
+      href: '#settings',
+      style: 'text-decoration: underline; font-weight: 700',
+      on: { click: (e) => { e.preventDefault(); nav('#settings'); } },
+    }, t('Change password →')));
 }
 
 function renderVerifyBanner(email) {
@@ -5830,7 +5879,7 @@ async function viewRunDetail(view, runID) {
     actions.append(start, sched);
   }
   if (event.state === 'running') {
-    const pause = h('button', { class: 'btn lifecycle-btn warning', on: { click: () => transition(event.id, 'pause') } },
+    const pause = h('button', { class: 'btn lifecycle-btn warning', on: { click: () => confirmPause(event) } },
       icon(ICONS.moon), t('Pause'));
     actions.append(pause);
   }
@@ -6291,6 +6340,24 @@ async function transition(runID, action) {
 }
 
 async function confirmStart(event) {
+  // Empty-event guard: starting with zero teams is always a mistake
+  // (the server returns a generic 4xx that lands as a vague toast),
+  // so we catch it here with concrete copy and a path to the team
+  // editor instead. event.teams_count is populated on every detail
+  // load; treat missing as zero so a stale event payload is also
+  // safely caught.
+  const teamCount = Number(event?.teams_count ?? event?.teams?.length ?? 0);
+  if (teamCount === 0) {
+    await modal(t('Add at least one team first'), ({ body, close }) => {
+      body.append(
+        h('p', {},
+          t('This event has no teams yet. A team is the unit that actually plays the adventure — without one, there\'s nothing for the first puzzle to open to.')),
+        h('div', { class: 'row end', style: 'margin-top:1rem' },
+          h('button', { class: 'btn primary', on: { click: () => close(true) } }, t('OK'))),
+      );
+    });
+    return;
+  }
   const ok = await modal(t('Start this event now?'), ({ body, close }) => {
     body.append(
       h('p', {},
@@ -6308,6 +6375,24 @@ async function confirmStart(event) {
   });
   if (!ok) return;
   await transition(event.id, 'start');
+}
+
+async function confirmPause(event) {
+  // Pause was previously a one-tap action — easy to misclick on a
+  // mobile dashboard. The confirmation is light (no password) but
+  // the modal makes the player-side effect clear: pause shows a
+  // distinct "paused, stand by" card on every team's screen, and
+  // freezes hint timers + answer attempts until resume.
+  const ok = await modal(t('Pause this event?'), ({ body, close }) => {
+    body.append(
+      h('p', {},
+        t("Every team will see a 'paused — stand by' card on their next state push. Hint countdowns freeze and answer submissions are refused until you resume.")),
+      h('div', { class: 'row end', style: 'margin-top:1rem; gap:.5rem' },
+        h('button', { class: 'btn', on: { click: () => close(false) } }, t('Cancel')),
+        h('button', { class: 'btn primary', on: { click: () => close(true) } }, t('Pause'))));
+  });
+  if (!ok) return;
+  await transition(event.id, 'pause');
 }
 
 async function confirmCancel(event) {
@@ -7676,6 +7761,28 @@ async function openTransferOwnership(org) {
 }
 
 async function confirmRemoveOrgMember(org, member) {
+  // Owned-events warning: removing a member who created scheduled
+  // / running / paused events orphans those — the events remain
+  // in the org's list (the FK is created_by_user_id but its
+  // ownership was cosmetic), but the audit trail loses the
+  // creator and the original owner can't manage them anymore.
+  // Surface the count so the operator can transfer ownership or
+  // cancel events first.
+  const owned = Number(member.active_events_owned || 0);
+  if (owned > 0) {
+    const proceed = await modal(t('Remove member with active events?'), ({ body, close }) => {
+      body.append(
+        h('p', {},
+          t('{{username}} created {{n}} active event(s) in {{org}}.',
+            { username: member.username, n: owned, org: org.name })),
+        h('p', { class: 'muted', style: 'font-size:.9rem' },
+          t('Those events will keep running but lose their original creator from the audit trail. Consider cancelling or finishing them first, or transferring ownership of the org to a different admin who can manage them after removal.')),
+        h('div', { class: 'row end', style: 'margin-top:1rem; gap:.5rem' },
+          h('button', { class: 'btn', on: { click: () => close(false) } }, t('Cancel')),
+          h('button', { class: 'btn danger', on: { click: () => close(true) } }, t('Remove anyway'))));
+    });
+    if (!proceed) return;
+  }
   const pw = await promptPassword(t('Remove {{username}}?', { username: member.username }),
     t('Removes {{username}} from {{org}}. Enter your password to confirm.', { username: member.username, org: org.name }));
   if (!pw) return;
@@ -8797,6 +8904,39 @@ function buildHintsEditor(initial) {
     delay.addEventListener('blur', () => {
       delay.value = String(row.delay_seconds || 0);
     });
+    // Up / down arrows for reordering. Drag-and-drop on the puzzle
+    // list works for desktop but fails on mobile and adds non-trivial
+    // FLIP-animation code that doesn't carry over cleanly to a list
+    // inside a modal. Two button taps are slower per move but
+    // discoverable, accessible, and work the same everywhere. The
+    // hint id is preserved on swap (the splice uses object refs)
+    // so attached images / audio survive the reorder.
+    const moveUp = h('button', {
+      class: 'btn small ghost', type: 'button', title: t('Move up'),
+      'aria-label': t('Move up'),
+      // Visually disable rather than removing so the grid layout
+      // stays stable across rows. The handler also bails on idx=0.
+      disabled: idx === 0 ? '' : null,
+    }, icon(ICONS.chevronUp));
+    moveUp.addEventListener('click', () => {
+      if (idx === 0) return;
+      const tmp = rows[idx - 1];
+      rows[idx - 1] = rows[idx];
+      rows[idx] = tmp;
+      draw();
+    });
+    const moveDown = h('button', {
+      class: 'btn small ghost', type: 'button', title: t('Move down'),
+      'aria-label': t('Move down'),
+      disabled: idx === rows.length - 1 ? '' : null,
+    }, icon(ICONS.chevronDown));
+    moveDown.addEventListener('click', () => {
+      if (idx === rows.length - 1) return;
+      const tmp = rows[idx + 1];
+      rows[idx + 1] = rows[idx];
+      rows[idx] = tmp;
+      draw();
+    });
     const remove = h('button', { class: 'btn small danger', type: 'button', title: t('Remove hint') },
       icon(ICONS.trash));
     remove.addEventListener('click', () => {
@@ -8935,7 +9075,7 @@ function buildHintsEditor(initial) {
           delay,
           h('span', { class: 'muted' }, t('s')),
           delayLabel),
-        remove),
+        moveUp, moveDown, remove),
       field.el,
       imagesHost,
       audioHost);
@@ -9751,14 +9891,25 @@ async function openEditPuzzle(adv, page /* or null */) {
       e.preventDefault();
       // Mid-event guard: if any team is actively running this adventure,
       // a save lands on them immediately — usually fine for a typo fix,
-      // sometimes catastrophic for a logic change. Confirm explicitly
-      // (only on edit; brand-new puzzles can't be live yet).
+      // sometimes catastrophic for a logic change. Use the styled
+      // modal instead of native confirm() so the choice is between two
+      // clearly-labelled buttons rather than the generic OK/Cancel
+      // (and so mobile users get a readable, full-width body).
       if (!creating && (adv.running_event_count || 0) > 0) {
         const n = adv.running_event_count;
-        const msg = n === 1
-          ? t('1 event is running this adventure right now. Saving will change what those players see — typo fixes are safe; logic changes can confuse them mid-puzzle. Continue?')
-          : t('{{n}} events are running this adventure right now. Saving will change what those players see — typo fixes are safe; logic changes can confuse them mid-puzzle. Continue?', { n });
-        if (!confirm(msg)) return;
+        const ok = await modal(t('Save while {{n}} event(s) are live?', { n }), ({ body, close }) => {
+          body.append(
+            h('p', {},
+              t('{{n}} event(s) are running this adventure right now. Saving lands on those players immediately.', { n })),
+            h('ul', { style: 'margin:.5rem 0 0 1rem; padding-left:1rem; color:var(--muted); font-size:.9rem' },
+              h('li', {}, t('Typo / wording fix: safe — players see the new copy on their next state push.')),
+              h('li', {}, t('Logic change (accept list, gate, hint timing): players in mid-puzzle may suddenly fail or be re-locked. Wait until the event ends if you can.')),
+              h('li', {}, t('Disabled / reorder: players will skip ahead or be sent back. Avoid mid-event.'))),
+            h('div', { class: 'row end', style: 'margin-top:1rem; gap:.5rem' },
+              h('button', { class: 'btn', on: { click: () => close(false) } }, t('Cancel')),
+              h('button', { class: 'btn primary', on: { click: () => close(true) } }, t('Save anyway'))));
+        });
+        if (!ok) return;
       }
       const payload = {
         title:    titleInput.value.trim(),

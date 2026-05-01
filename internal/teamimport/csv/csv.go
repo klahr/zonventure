@@ -101,11 +101,17 @@ func parseRows(rows [][]string) []teamimport.Team {
 		if name == "" {
 			continue
 		}
+		// CSV-injection defang: names + member names round-trip through
+		// arranger CSV exports / clipboard flows; a leading =/+/-/@ is
+		// a formula in Excel/Sheets/Numbers when the spreadsheet sniffs
+		// the cell. Prefix with ' so the value renders as text. See
+		// teamimport.SanitizeCellValue for the OWASP-shaped helper.
+		name = teamimport.SanitizeCellValue(name)
 		members := make([]string, 0, len(row)-1)
 		for _, m := range row[1:] {
 			m = strings.TrimSpace(m)
 			if m != "" {
-				members = append(members, m)
+				members = append(members, teamimport.SanitizeCellValue(m))
 			}
 		}
 		out = append(out, teamimport.Team{Name: name, MemberNames: members})

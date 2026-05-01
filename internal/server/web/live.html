@@ -987,13 +987,20 @@ async function renderLiveMap(inner, hint, data) {
             + `</div>`
         : `<div class="team-marker-lv no-img" style="--team-col:${colour}; width:${size}px; height:${size}px;">`
             + `<span>${initials}</span></div>`;
+      // Privacy: the marker shows team initials only — never the full
+      // team_name in a popup. The live page is shareable and often
+       // projected at a public venue; pairing precise GPS coordinates
+      // with a child's name (school events sometimes use first names
+      // as team names) lets a passerby pinpoint and identify a real
+      // person on screen. Arrangers who need full names + positions
+      // have the staff /api/admin/positions view, which is gated.
       const marker = L.marker([last.lat, last.lng], {
         icon: L.divIcon({
           className: '',
           html,
           iconSize: [size, size], iconAnchor: [size / 2, size / 2],
         }),
-      }).bindPopup(`<strong>${track.team_name}</strong>`).addTo(map);
+      }).addTo(map);
       entry = { marker };
       mapLayers.teamMarkers.set(track.team_id, entry);
     } else {
