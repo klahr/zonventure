@@ -165,7 +165,7 @@ func TestDuplicateAdventure_HappyPath(t *testing.T) {
 }
 
 // TestDuplicateAdventure_OrgMemberRejected confirms canAuthor gates
-// the destination side: a Facilitator (org_member) can run events
+// the destination side: a Race director (org_member) can run events
 // but cannot create authored rows by duplication. If this test
 // regresses, the role-tightening shipped earlier has been quietly
 // undone.

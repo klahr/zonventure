@@ -2881,7 +2881,7 @@ function renderOrgPicker() {
         on: { click: () => switchOrgAndRender(m.org_id) },
       }, h('strong', {}, m.org_name),
          h('span', { class: 'muted', style: 'margin-left:.5rem; font-size:.85rem' },
-           m.role === 'org_admin' ? t('admin') : t('facilitator'))))),
+           m.role === 'org_admin' ? t('admin') : t('race director'))))),
     h('div', { class: 'row end', style: 'margin-top:1rem' },
       h('button', {
         class: 'btn small',
@@ -7665,7 +7665,7 @@ async function viewOrganizations(view) {
       h('button', { class: 'btn primary', on: { click: () => openCreateOrg() } },
         icon(ICONS.plus), t('New organization'))),
     h('p', { class: 'muted' },
-      t('Each organization is a tenant — its admins author adventures and manage members; its facilitators run events and manage teams. Assign adventures to an organization to let them schedule events.')),
+      t('Each organization is a tenant — its admins author adventures and manage members; its race directors run events and manage teams. Assign adventures to an organization to let them schedule events.')),
     orgs.length === 0
       ? h('div', { class: 'empty' }, t('No organizations yet.'))
       : h('div', {}, orgs.map((o) =>
@@ -7812,7 +7812,7 @@ function renderOrganizationCard(org, adventures, purchases) {
           title: t('{{role}} · click ⓧ to remove', { role: m.role }),
         }, m.role === 'org_admin'
             ? t('{{username}} (admin)', { username: m.username })
-            : t('{{username}} (facilitator)', { username: m.username }),
+            : t('{{username}} (race director)', { username: m.username }),
         // Manual verify button: shown only when the user hasn't
         // confirmed their email through the self-serve flow yet. Use
         // sparingly — it bypasses the deliverability check that
@@ -7983,11 +7983,13 @@ async function openAddOrgMember(org) {
       passwordEl,
       h('small', { class: 'muted', style: 'display:block; margin-top:.2rem' },
         t('Minimum 8 characters.')));
-    // Role labels: "Facilitator" surfaces what org_member can
-    // actually do (run events, manage teams, no authoring). The wire
+    // Role labels: "Race director" matches what org_member actually
+    // does (runs events, manages teams, no authoring) and anchors
+    // Zonventure to the orienteering / adventure-event format
+    // rather than generic SaaS workshop-host language. The wire
     // value stays org_member so the API + DB are unchanged.
     const roleEl = h('select', { name: 'r' },
-      h('option', { value: 'org_member' }, t('Facilitator')),
+      h('option', { value: 'org_member' }, t('Race director')),
       h('option', { value: 'org_admin' }, t('Admin')));
     const status = h('p', {
       class: 'muted',
@@ -13708,14 +13710,14 @@ async function viewMembers(view) {
         h('button', { class: 'btn primary', on: { click: () => openAddOrgMember(org) } },
           icon(ICONS.plus), t('Add user')))),
     h('p', { class: 'muted' },
-      t('Users in {{name}}. Admins can invite more users; facilitators run the games.', { name: org.name })),
+      t('Users in {{name}}. Admins can invite more users; race directors run the games.', { name: org.name })),
     h('div', { class: 'card', style: 'background: var(--surface-2); padding: .85rem 1rem; margin-bottom: .9rem; font-size: var(--ts-sm)' },
       h('div', { style: 'margin-bottom:.35rem' },
         h('span', { class: 'pill' }, t('admin')), ' ',
         h('span', { class: 'muted' },
           t('Run events, manage teams, plus invite/remove users and change billing.'))),
       h('div', {},
-        h('span', { class: 'pill' }, t('facilitator')), ' ',
+        h('span', { class: 'pill' }, t('race director')), ' ',
         h('span', { class: 'muted' },
           t('Run events and manage teams. Cannot invite users or touch billing.')))),
     (org.members || []).length === 0
@@ -13725,7 +13727,7 @@ async function viewMembers(view) {
           h('thead', {}, h('tr', {}, h('th', {}, t('Username')), h('th', {}, t('Role')), h('th', {}, ''))),
           h('tbody', {}, (org.members || []).map((m) => h('tr', {},
             h('td', {}, m.username, state.me.id === m.id ? h('span', { class: 'muted', style: 'margin-left:.35rem' }, t('(you)')) : null),
-            h('td', {}, h('span', { class: 'pill' }, m.role === 'org_admin' ? t('admin') : t('facilitator'))),
+            h('td', {}, h('span', { class: 'pill' }, m.role === 'org_admin' ? t('admin') : t('race director'))),
             h('td', {}, h('div', { class: 'row end' },
               state.me.id === m.id
                 ? null

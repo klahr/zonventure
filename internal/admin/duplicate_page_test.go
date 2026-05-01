@@ -153,7 +153,7 @@ func TestDuplicatePage_HappyPath(t *testing.T) {
 }
 
 // TestDuplicatePage_OrgMemberRejected — the role-tightening from
-// the canAuthor split must reject Facilitators here too. If this
+// the canAuthor split must reject Race directors here too. If this
 // regresses, the page-edit gate has been quietly loosened.
 func TestDuplicatePage_OrgMemberRejected(t *testing.T) {
 	db, cleanup := dbtest.Open(t)

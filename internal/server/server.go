@@ -613,7 +613,7 @@ func New(cfg Config) http.Handler {
 		// Send-invitations: proactive variant of the recover-link
 		// flow. Iterates teams with non-empty contact emails and
 		// mails each one their own slot links + the .ics. Same
-		// authorize-event gate as the export endpoints — Facilitators
+		// authorize-event gate as the export endpoints — Race directors
 		// (org_member) can invoke it; this is "running the game",
 		// not authoring.
 		r.Post("/events/{eventID}/invitations/send", adminH.SendEventInvitations)

@@ -26,7 +26,7 @@ import (
  *                    copy or republish the adventure.
  *
  * Helpers are kept tiny and colocated with the role constants so that
- * future tweaks (eg. public-sharing flag, per-event facilitator
+ * future tweaks (eg. public-sharing flag, per-event race-director
  * grants) land in one place.
  */
 

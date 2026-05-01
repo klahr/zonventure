@@ -21,7 +21,7 @@ import (
 //
 // Authorisation: authorizeEvent — org_admin and org_member of the
 // owning org both pass. Sending invites is a "running the game"
-// action (Facilitators do this on the day), not authoring, so the
+// action (Race directors do this on the day), not authoring, so the
 // canAuthor split deliberately does not apply.
 //
 // Response shape:
@@ -148,8 +148,8 @@ func (h *Handlers) SendEventInvitations(w http.ResponseWriter, r *http.Request) 
 }
 
 // SendTeamInvitation is the per-team variant: resend exactly one
-// team's email. The action a Facilitator reaches for when one team
-// lost their original message and pings the arranger mid-event.
+// team's email. The action a Race director reaches for when one
+// team lost their original message and pings the arranger mid-event.
 //
 // Existing tokens are sent verbatim — no re-mint. If a player has
 // already claimed their slot and lost their browser session,

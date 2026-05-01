@@ -640,8 +640,8 @@
       'This permanently removes {{username}} and unlinks them from any teams. Enter your password to confirm.':
         'Det här tar bort {{username}} permanent och kopplar loss dem från alla lag. Ange ditt lösenord för att bekräfta.',
       // ---- organizations ----
-      'Each organization is a tenant — its admins author adventures and manage members; its facilitators run events and manage teams. Assign adventures to an organization to let them schedule events.':
-        'Varje organisation är en tenant — dess administratörer skapar äventyr och hanterar medlemmar; dess facilitatorer driver event och hanterar lag. Tilldela äventyr till en organisation så att de kan schemalägga event.',
+      'Each organization is a tenant — its admins author adventures and manage members; its race directors run events and manage teams. Assign adventures to an organization to let them schedule events.':
+        'Varje organisation är en tenant — dess administratörer skapar äventyr och hanterar medlemmar; dess tävlingsledare driver event och hanterar lag. Tilldela äventyr till en organisation så att de kan schemalägga event.',
       '{{n}} user': '{{n}} användare',
       '{{n}} users': '{{n}} användare',
       '{{n}} player': '{{n}} spelare',
@@ -654,7 +654,7 @@
       '{{role}} · click ⓧ to remove': '{{role}} · klicka på ⓧ för att ta bort',
       '{{username}} (admin)': '{{username}} (administratör)',
       '{{username}} (member)': '{{username}} (medlem)',
-      '{{username}} (facilitator)': '{{username}} (facilitator)',
+      '{{username}} (race director)': '{{username}} (tävlingsledare)',
       'Unused assignments ({{n}})': 'Oanvända tilldelningar ({{n}})',
       'None — assign an adventure to let them schedule an event.':
         'Inga — tilldela ett äventyr så att de kan schemalägga en event.',
@@ -683,7 +683,7 @@
       'Minimum 8 characters.': 'Minst 8 tecken.',
       'Role': 'Roll',
       'Member': 'Medlem',
-      'Facilitator': 'Facilitator',
+      'Race director': 'Tävlingsledare',
       'Admin': 'Administratör',
       'User added': 'Användare tillagd',
       'Active organization': 'Aktiv organisation',
@@ -841,12 +841,12 @@
       // ---- members (org admin) ----
       'No organization.': 'Ingen organisation.',
       'Your organization': 'Din organisation',
-      'Users in {{name}}. Admins can invite more users; facilitators run the games.':
-        'Användare i {{name}}. Administratörer kan bjuda in fler användare; facilitatorer driver spelen.',
+      'Users in {{name}}. Admins can invite more users; race directors run the games.':
+        'Användare i {{name}}. Administratörer kan bjuda in fler användare; tävlingsledare driver spelen.',
       'No other users yet.': 'Inga andra användare än.',
       'admin': 'administratör',
       'member': 'medlem',
-      'facilitator': 'facilitator',
+      'race director': 'tävlingsledare',
       // ---- event feed ----
       'No activity yet.': 'Ingen aktivitet än.',
       'Event created for ': 'Event skapad för ',
