@@ -13708,14 +13708,14 @@ async function viewMembers(view) {
         h('button', { class: 'btn primary', on: { click: () => openAddOrgMember(org) } },
           icon(ICONS.plus), t('Add user')))),
     h('p', { class: 'muted' },
-      t('Users in {{name}}. Admins can invite more users; members run the games.', { name: org.name })),
+      t('Users in {{name}}. Admins can invite more users; facilitators run the games.', { name: org.name })),
     h('div', { class: 'card', style: 'background: var(--surface-2); padding: .85rem 1rem; margin-bottom: .9rem; font-size: var(--ts-sm)' },
       h('div', { style: 'margin-bottom:.35rem' },
         h('span', { class: 'pill' }, t('admin')), ' ',
         h('span', { class: 'muted' },
           t('Run events, manage teams, plus invite/remove users and change billing.'))),
       h('div', {},
-        h('span', { class: 'pill' }, t('member')), ' ',
+        h('span', { class: 'pill' }, t('facilitator')), ' ',
         h('span', { class: 'muted' },
           t('Run events and manage teams. Cannot invite users or touch billing.')))),
     (org.members || []).length === 0
@@ -13725,7 +13725,7 @@ async function viewMembers(view) {
           h('thead', {}, h('tr', {}, h('th', {}, t('Username')), h('th', {}, t('Role')), h('th', {}, ''))),
           h('tbody', {}, (org.members || []).map((m) => h('tr', {},
             h('td', {}, m.username, state.me.id === m.id ? h('span', { class: 'muted', style: 'margin-left:.35rem' }, t('(you)')) : null),
-            h('td', {}, h('span', { class: 'pill' }, m.role === 'org_admin' ? t('admin') : t('member'))),
+            h('td', {}, h('span', { class: 'pill' }, m.role === 'org_admin' ? t('admin') : t('facilitator'))),
             h('td', {}, h('div', { class: 'row end' },
               state.me.id === m.id
                 ? null

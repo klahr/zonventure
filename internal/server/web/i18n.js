@@ -841,8 +841,8 @@
       // ---- members (org admin) ----
       'No organization.': 'Ingen organisation.',
       'Your organization': 'Din organisation',
-      'Users in {{name}}. Admins can invite more users; members run the games.':
-        'Användare i {{name}}. Administratörer kan bjuda in fler användare; medlemmar driver spelen.',
+      'Users in {{name}}. Admins can invite more users; facilitators run the games.':
+        'Användare i {{name}}. Administratörer kan bjuda in fler användare; facilitatorer driver spelen.',
       'No other users yet.': 'Inga andra användare än.',
       'admin': 'administratör',
       'member': 'medlem',
