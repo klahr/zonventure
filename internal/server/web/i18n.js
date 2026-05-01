@@ -53,8 +53,8 @@
       '{{name}} logo': '{{name}}s logotyp',
       'Logo updated': 'Logotyp uppdaterad',
       'Logo removed': 'Logotyp borttagen',
-      'Shown on the event-recap PDF. PNG, JPEG, or WebP — max 5 MB. Transparency is flattened to white on render.':
-        'Visas på event-rapporten (PDF). PNG, JPEG eller WebP — max 5 MB. Transparens fylls med vitt vid rendering.',
+      'Shown on the event-recap PDF. PNG, JPEG, WebP, or SVG — max 5 MB. SVGs are rasterised to PNG on upload; transparency is flattened to white on render.':
+        'Visas på event-rapporten (PDF). PNG, JPEG, WebP eller SVG — max 5 MB. SVG-filer rastreras till PNG vid uppladdning; transparens fylls med vitt vid rendering.',
       'Start from a template': 'Börja från en mall',
       'Pick a starter, customise the puzzles for your venue, and you\'re ready to schedule an event.':
         'Välj en startmall, anpassa pusslen för din plats, och du är redo att schemalägga ett event.',

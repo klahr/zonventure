@@ -59,24 +59,33 @@ func (h *Handlers) SetOrgLogo(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusRequestEntityTooLarge, "image too large")
 		return
 	}
-	mime := hdr.Header.Get("Content-Type")
-	switch strings.ToLower(strings.TrimSpace(mime)) {
+	mime := strings.ToLower(strings.TrimSpace(hdr.Header.Get("Content-Type")))
+	// SVG is rasterised on upload (oksvg → 512×512 PNG). The render
+	// is the security boundary: oksvg only walks drawing-primitive
+	// elements, so `<script>` / `<foreignObject>` / event-handler
+	// attributes never reach the resulting bitmap. PNG/JPEG/WebP go
+	// through Shrink (re-encoded as JPEG) for the same polyglot
+	// defence imageutil documents. BMP/TIFF/etc. stay out of scope.
+	switch mime {
+	case "image/svg+xml":
+		raster, newMIME, rerr := imageutil.RasterizeSVG(data, imageutil.DefaultMaxDim)
+		if rerr != nil {
+			httpx.Error(w, http.StatusBadRequest, "unreadable svg: "+rerr.Error())
+			return
+		}
+		data, mime = raster, newMIME
 	case "image/png", "image/jpeg", "image/jpg", "image/webp":
-		// accepted
+		shrunk, newMIME, serr := imageutil.Shrink(data, imageutil.DefaultMaxDim)
+		if serr != nil {
+			httpx.Error(w, http.StatusBadRequest, "unreadable image: "+serr.Error())
+			return
+		}
+		data, mime = shrunk, newMIME
 	default:
-		// Other image types (SVG, BMP, TIFF…) are out of scope for
-		// the logo path — SVG carries XSS risk, the rest cause more
-		// renderer pain than they're worth.
 		httpx.Error(w, http.StatusBadRequest,
-			"only PNG, JPEG, or WebP logos are accepted")
+			"only PNG, JPEG, WebP, or SVG logos are accepted")
 		return
 	}
-	shrunk, newMIME, err := imageutil.Shrink(data, imageutil.DefaultMaxDim)
-	if err != nil {
-		httpx.Error(w, http.StatusBadRequest, "unreadable image: "+err.Error())
-		return
-	}
-	data, mime = shrunk, newMIME
 	if err := h.Storage.PutOrgLogo(r.Context(), orgID, data, mime); err != nil {
 		if errors.Is(err, storage.ErrNotFound) {
 			httpx.Error(w, http.StatusNotFound, "organisation not found")

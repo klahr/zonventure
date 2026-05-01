@@ -222,6 +222,28 @@ p { margin: 0 0 .5rem; }
   color: var(--muted); font-size: var(--ts-sm);
 }
 .topbar .user strong { color: var(--text); font-weight: 700; }
+/* Active-org pill at the top-right of the topbar — gives a single-org
+   arranger a constant reminder of which tenant they're acting as
+   (the sidebar org-switcher is multi-org-only and doesn't render
+   for them). Logo + name pair compresses to logo-only on narrow
+   viewports where the topbar real estate is scarce. */
+.topbar-org {
+  display: inline-flex; align-items: center; gap: .5rem;
+  color: var(--muted); font-size: var(--ts-sm);
+  max-width: 16rem; min-width: 0;
+}
+.topbar-org img {
+  width: 1.5rem; height: 1.5rem; border-radius: .35rem;
+  object-fit: cover; flex: 0 0 auto;
+  background: var(--surface-2);
+}
+.topbar-org .topbar-org-name {
+  font-weight: 600; color: var(--text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+@media (max-width: 700px) {
+  .topbar-org .topbar-org-name { display: none; }
+}
 
 .sidebar {
   grid-area: sidebar;
@@ -2914,6 +2936,34 @@ function renderOrgPicker() {
   return h('div', { class: 'login-wrap' }, card);
 }
 
+// renderTopbarOrg pins the active org's logo + name to the right of
+// the topbar. Returns null for admins (no org context) and for users
+// whose session has no active org pinned yet (the post-login picker
+// hasn't run). Read-only — actual switching still lives in the
+// sidebar dropdown for multi-org users; this surface is identity,
+// not navigation.
+function renderTopbarOrg() {
+  if (!state.me || state.me.role === 'admin') return null;
+  const orgID = state.me.org_id;
+  if (orgID == null) return null;
+  const memberships = state.me.memberships || [];
+  const active = memberships.find((m) => m.org_id === orgID);
+  if (!active) return null;
+  const children = [];
+  if (active.org_logo_url) {
+    children.push(h('img', {
+      src: active.org_logo_url,
+      alt: '',
+      'aria-hidden': 'true',
+    }));
+  }
+  children.push(h('span', { class: 'topbar-org-name' }, active.org_name));
+  return h('div', {
+    class: 'topbar-org',
+    title: active.org_name,
+  }, ...children);
+}
+
 // renderOrgSwitcher renders the sidebar dropdown that lets a multi-org
 // user flip between their organisations mid-session. Returns null for
 // single-org users (and admins, who have no memberships) — the menu
@@ -3573,6 +3623,7 @@ function renderShell() {
     h('span', { class: 'brand' }, 'zonventure'),
     h('div', { class: 'crumb', 'aria-live': 'polite' }, currentCrumb()),
     h('div', { class: 'spacer' }),
+    renderTopbarOrg(),
   );
 
   // Unverified-email banner: shown for users with an email_verified
@@ -7734,7 +7785,7 @@ function renderOrgLogoBlock(org) {
   let cacheBust = Date.now();
   const fileInput = h('input', {
     type: 'file',
-    accept: 'image/png,image/jpeg,image/webp',
+    accept: 'image/png,image/jpeg,image/webp,image/svg+xml',
     style: 'display:none',
   });
   const preview = h('div', {
@@ -7757,7 +7808,7 @@ function renderOrgLogoBlock(org) {
       h('span', { class: 'muted', style: 'font-size:.75rem; text-transform:uppercase; letter-spacing:.06em; font-weight:700' },
         t('Brand logo')),
       h('p', { class: 'muted', style: 'margin:0; font-size:.8rem' },
-        t('Shown on the event-recap PDF. PNG, JPEG, or WebP — max 5 MB. Transparency is flattened to white on render.')),
+        t('Shown on the event-recap PDF. PNG, JPEG, WebP, or SVG — max 5 MB. SVGs are rasterised to PNG on upload; transparency is flattened to white on render.')),
       h('div', { class: 'row', style: 'gap:.4rem' },
         (() => {
           const b = h('button', { class: 'btn small', type: 'button' },
