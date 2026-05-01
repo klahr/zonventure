@@ -94,6 +94,11 @@ type Config struct {
 	// nil disables the TOTP enrol surface (the login flow short-circuits
 	// before any decrypt is attempted, so unenrolled users still log in).
 	TOTPKey []byte
+	// OIDC is the configured single-sign-on client, built once at boot
+	// via auth.NewOIDC. nil disables SSO — /auth/oidc/* endpoints 404
+	// and the login UI hides the SSO button. Required env vars on
+	// ZV_OIDC_ENABLED=1 are validated in NewOIDC, not here.
+	OIDC *auth.OIDC
 	// TeamImporters is the registry of team-roster file-format
 	// parsers. nil means "use the bundled default set" (CSV, ODS,
 	// xlsx, IOF XML); set explicitly to subset, swap implementations,
@@ -171,6 +176,7 @@ func New(cfg Config) http.Handler {
 		TOTPKey:       cfg.TOTPKey,
 		Mailer:        cfg.Mailer,
 		PublicURL:     cfg.PublicURL,
+		OIDC:          cfg.OIDC,
 	}
 	playerH := &player.Handlers{
 		DB: cfg.DB, Lib: cfg.Library, Hub: hub, SecureCookie: cfg.SecureCookie,
@@ -420,6 +426,15 @@ func New(cfg Config) http.Handler {
 	// Email verification clicks land on a GET; not CSRF-relevant.
 	r.Get("/verify", authH.VerifyEmail)
 
+	// Single-sign-on (OIDC) flow. Both endpoints are GET because the
+	// IdP redirects back via top-level navigation — there's no JS
+	// fetch in the loop. CSRF for /login is bound by the state cookie
+	// pinning the redirect to the issuing browser; CSRF for /callback
+	// is the same state check, validated against what came back on
+	// the URL. Routes 404 cleanly when SSO is not configured.
+	r.Get("/auth/oidc/login", authH.OIDCLogin)
+	r.Get("/auth/oidc/callback", authH.OIDCCallback)
+
 	// Legal pages — public, cached at the proxy by Cache-Control.
 	// Both pages are clearly-marked drafts until the operator sets
 	// the ZV_* env vars and a lawyer signs off on the body.
@@ -582,6 +597,11 @@ func New(cfg Config) http.Handler {
 		r.Get("/events/{eventID}/activity", adminH.ListActivity)
 		r.Get("/events/{eventID}/tracks", adminH.ListTracks)
 		r.Get("/events/{eventID}/results.csv", adminH.ExportEventResults)
+		// Branded recap PDF — same data, different shape: a polished
+		// post-event artifact arrangers can hand to their stakeholders.
+		// Mounted alongside the CSV so the same authorize-event check
+		// gates both.
+		r.Get("/events/{eventID}/recap.pdf", adminH.ExportEventRecapPDF)
 
 		r.Patch("/teams/{teamID}", adminH.UpdateTeam)
 		r.Delete("/teams/{teamID}", adminH.DeleteTeam)

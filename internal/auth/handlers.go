@@ -51,6 +51,10 @@ type Handlers struct {
 	// PublicURL is the externally-reachable origin (no trailing slash)
 	// used to build links in outbound mail. e.g. "https://zv.example".
 	PublicURL string
+	// OIDC is the configured single-sign-on client. nil disables SSO
+	// entirely — the /auth/oidc/* endpoints 404 and the login UI
+	// hides the SSO button. Built once at boot via auth.NewOIDC.
+	OIDC *OIDC
 }
 
 // Pricing is the small slice of catalog data the frontend needs to
@@ -148,6 +152,24 @@ func (h *Handlers) Login(w http.ResponseWriter, r *http.Request) {
 			Reason: ReasonRateLimited,
 		})
 		writeRateLimited(w, retry)
+		return
+	}
+	// SSO-only enforcement: when the username/email is in the
+	// configured SSO domain, reject the password attempt and steer
+	// the client to the SSO entry point. Avoids a workspace-managed
+	// user falling back to a stale local password after IT enabled
+	// SSO. Non-domain users (e.g. external collaborators invited as
+	// arrangers) keep the password flow.
+	if h.OIDC.MatchesHostedDomain(req.Username) {
+		Record(r.Context(), h.DB, AuditEvent{
+			Event: EventLogin, OK: false, Username: req.Username, IP: ip, UserAgent: ua,
+			Reason: "sso_required",
+		})
+		httpx.JSON(w, http.StatusConflict, map[string]string{
+			"error":     "single sign-on required for this account",
+			"code":      "sso_required",
+			"login_url": "/auth/oidc/login",
+		})
 		return
 	}
 	u, err := VerifyPassword(r.Context(), h.DB, req.Username, req.Password)

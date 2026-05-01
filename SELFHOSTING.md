@@ -81,6 +81,9 @@ short tour:
 | `ZV_LEGAL_LAST_UPDATED` | "Last updated" date (YYYY-MM-DD) on the legal pages | today |
 | `ZV_STRIPE_SECRET_KEY` / `ZV_STRIPE_WEBHOOK_SECRET` | Real payments + Customer Portal (optional) | unset |
 | `ZV_TOTP_KEY` | 32-byte base64 key wrapping each user's TOTP secret at rest. Set to enable opt-in 2FA. **Treat like a database password** — losing it forces every enrolled user to re-enrol | unset |
+| `ZV_OIDC_ENABLED` | `1` enables single sign-on (see [Single sign-on (Google Workspace)](#single-sign-on-google-workspace)) | unset |
+| `ZV_OIDC_ISSUER` / `ZV_OIDC_CLIENT_ID` / `ZV_OIDC_CLIENT_SECRET` / `ZV_OIDC_HOSTED_DOMAIN` / `ZV_OIDC_REDIRECT_URL` | OIDC client config; required when SSO is enabled | unset |
+| `ZV_OIDC_ORG_NAME` | Organisation that JIT-provisioned SSO users join. Defaults to `ZV_OIDC_HOSTED_DOMAIN` | unset |
 | `ZV_LOCATION_RETENTION_DAYS` / `ZV_AUDIT_RETENTION_DAYS` | Privacy sweepers; `0` to disable | `30` / `90` |
 | `ZV_DB_MAX_OPEN_CONNS` / `ZV_DB_MAX_IDLE_CONNS` | Postgres pool sizing; bump for managed clusters with high `max_connections` | `25` / `5` |
 | `ZV_WEB_OVERRIDE_DIR` | Path to a directory of HTML / JSON files that shadow the embedded marketing pages — see [Custom landing page](#custom-landing-page) | unset (use embedded) |
@@ -388,6 +391,97 @@ If you'd rather use a provider's HTTP API (per-message tracking IDs,
 IAM-rotated credentials for SES, server-side templates) the
 `mailer.Mailer` interface in `internal/mailer/` is the seam to plug
 into — see [`TODO.md`](TODO.md) item 15.
+
+## Single sign-on (Google Workspace)
+
+For corporate deployments that want to retire local passwords and
+have IT manage arranger access alongside the rest of their Google
+Workspace, Zonventure speaks OpenID Connect with Google as the
+identity provider. One workspace per Zonventure instance — when SSO
+is enabled, this instance only accepts arrangers from the configured
+`ZV_OIDC_HOSTED_DOMAIN` via SSO. (Non-domain arrangers — e.g. an
+external collaborator invited by email — keep the password flow.)
+
+### One-time Google Cloud Console setup
+
+1. Open `https://console.cloud.google.com/` signed in with a
+   Workspace admin account.
+2. Pick or create a project for "Zonventure SSO".
+3. Configure the OAuth consent screen → **Internal** (only members of
+   your Workspace can sign in).
+4. Credentials → Create credentials → OAuth client ID → Web application.
+5. Authorised redirect URI: `https://<your-zv-host>/auth/oidc/callback`.
+   No trailing slash. Must exactly match `ZV_OIDC_REDIRECT_URL`.
+6. Save. Copy the **Client ID** and **Client secret** — you'll set
+   them in `.env` next.
+
+### Zonventure configuration
+
+Add the following to `.env` and `docker compose up -d`:
+
+```sh
+ZV_OIDC_ENABLED=1
+ZV_OIDC_ISSUER=https://accounts.google.com
+ZV_OIDC_CLIENT_ID=<from Google Cloud Console>
+ZV_OIDC_CLIENT_SECRET=<from Google Cloud Console>
+ZV_OIDC_HOSTED_DOMAIN=example.com           # your Workspace primary domain
+ZV_OIDC_REDIRECT_URL=https://zv.example.com/auth/oidc/callback
+ZV_OIDC_ORG_NAME=Acme Corp                  # optional; defaults to the hosted domain
+```
+
+The app validates the config at boot. Missing or malformed values
+abort startup with a clear error — no half-broken sign-in surface.
+
+### What changes for users
+
+- The login screen renders a **"Sign in with Google"** button above
+  the username/password fields.
+- Arrangers whose email is in the configured Workspace domain **must**
+  use SSO. If they type their email into the password field, the
+  server returns a 409 and the front-end bounces them to the IdP.
+- The first arranger to sign in via SSO becomes `org_admin` of the
+  configured org (auto-created on first use). Subsequent SSO
+  arrangers join the same org as `org_member`.
+- TOTP is **skipped** after a successful SSO sign-in — Google
+  Workspace already enforces 2FA at the IdP, and adding a second
+  prompt locally is friction without a security benefit.
+- Audit logs record `auth_method='oidc'` (or `oidc_idp_error`,
+  `oidc_state_mismatch`, etc.) so the admin Audit tab shows whether a
+  session came in via SSO or via a local password.
+
+### Verifying the flow
+
+1. Open an incognito window at `https://<your-zv-host>/arrange`.
+2. Click **Sign in with Google**.
+3. Pick a Workspace account in the configured domain.
+4. You should land on `/arrange` already signed in. The Audit tab
+   shows the new `login` row with reason `oidc_success`.
+5. As a negative check, try signing in from a Google account
+   *outside* the Workspace — Google's account picker should refuse
+   it; if you bypass that, the Zonventure callback rejects on the
+   `hd` claim mismatch and lands on `/arrange#sso-error=domain_not_allowed`.
+
+### Troubleshooting
+
+- **`ZV_OIDC_*: oidc: ZV_OIDC_ENABLED=1 but missing …` at boot** —
+  fill in the listed env vars; they're required only when SSO is on.
+- **Discovery fails at boot** — the host can't reach
+  `https://accounts.google.com/.well-known/openid-configuration`. Check
+  egress firewall / proxy.
+- **`/arrange#sso-error=state_mismatch`** — the user's browser sent a
+  different / stale state cookie back. Usually a browser-extension
+  cookie wipe, or two tabs racing through sign-in. Have the user
+  retry in a single tab.
+- **`/arrange#sso-error=domain_not_allowed`** — the IdP returned an
+  `hd` claim that doesn't match `ZV_OIDC_HOSTED_DOMAIN`. Confirm both
+  the env value and that the user is in the right Workspace.
+
+### Disabling SSO
+
+Set `ZV_OIDC_ENABLED=0` (or unset) and restart. The SSO endpoints
+404 and the sign-in button disappears. Existing user rows stay
+linked (the `oidc_provider`/`oidc_subject` columns are preserved);
+re-enabling SSO later picks up where it left off.
 
 ## Troubleshooting
 

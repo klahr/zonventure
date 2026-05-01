@@ -196,6 +196,30 @@ func main() {
 	} else if !errors.Is(kerr, auth.ErrTOTPKeyMissing) {
 		log.Fatalf("ZV_TOTP_KEY: %v", kerr)
 	}
+	// Optional ZV_OIDC_*: when ZV_OIDC_ENABLED=1 we attempt OpenID
+	// Connect discovery against the configured issuer at boot. Failure
+	// here is fatal so a misconfigured env file fails loudly instead of
+	// presenting a half-broken sign-in flow to the first user. Disabled
+	// (the default) leaves SSO endpoints 404'd and the login UI hides
+	// the SSO button.
+	oidcCfg := auth.OIDCConfig{
+		Enabled:      envTruthy("ZV_OIDC_ENABLED"),
+		Issuer:       os.Getenv("ZV_OIDC_ISSUER"),
+		ClientID:     os.Getenv("ZV_OIDC_CLIENT_ID"),
+		ClientSecret: os.Getenv("ZV_OIDC_CLIENT_SECRET"),
+		HostedDomain: os.Getenv("ZV_OIDC_HOSTED_DOMAIN"),
+		RedirectURL:  os.Getenv("ZV_OIDC_REDIRECT_URL"),
+		OrgName:      os.Getenv("ZV_OIDC_ORG_NAME"),
+		ButtonLabel:  os.Getenv("ZV_OIDC_BUTTON_LABEL"),
+		ProviderName: os.Getenv("ZV_OIDC_PROVIDER_NAME"),
+	}
+	oidcClient, err := auth.NewOIDC(context.Background(), oidcCfg)
+	if err != nil {
+		log.Fatalf("ZV_OIDC_*: %v", err)
+	}
+	if oidcClient.Enabled() {
+		logx.Info("auth.oidc.ready", "issuer", oidcCfg.Issuer, "hosted_domain", oidcCfg.HostedDomain)
+	}
 	h := server.New(server.Config{
 		DB:           sqlDB,
 		Library:      lib,
@@ -222,6 +246,7 @@ func main() {
 		Version:             version,
 		WebOverrideDir:      os.Getenv("ZV_WEB_OVERRIDE_DIR"),
 		ChangelogURL:        os.Getenv("ZV_CHANGELOG_URL"),
+		OIDC:                oidcClient,
 	})
 
 	srv := &http.Server{

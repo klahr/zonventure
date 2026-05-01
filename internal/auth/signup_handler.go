@@ -121,15 +121,25 @@ func (h *Handlers) Signup(w http.ResponseWriter, r *http.Request) {
 // SignupConfig is the public, no-auth read of operator-controlled
 // pre-auth toggles. Returned from a GET so unauthenticated visitors
 // can call it without a CSRF token; the frontend uses the result to
-// decide whether to surface the "Sign up" link on the login screen.
+// decide whether to surface the "Sign up" link, the SSO button, etc.
+// on the login screen.
 //
-// One toggle today; the response shape is an object so adding the
-// next pre-auth flag (e.g. forgot-password disabled) doesn't break
-// older clients.
+// Adding a new pre-auth flag (e.g. forgot-password disabled) is
+// backwards-compatible — older clients that don't read the new key
+// just continue using the previous default.
 func (h *Handlers) SignupConfig(w http.ResponseWriter, r *http.Request) {
-	httpx.JSON(w, http.StatusOK, map[string]any{
+	resp := map[string]any{
 		"enabled": settings.SignupEnabled(r.Context(), h.DB),
-	})
+	}
+	if h.OIDC.Enabled() {
+		resp["sso"] = map[string]any{
+			"enabled":       true,
+			"button_label":  h.OIDC.ButtonLabel(),
+			"hosted_domain": h.OIDC.HostedDomain(),
+			"login_url":     "/auth/oidc/login",
+		}
+	}
+	httpx.JSON(w, http.StatusOK, resp)
 }
 
 // VerifyEmail consumes a one-shot verification token. GET-style so the

@@ -26,6 +26,23 @@
       'login failed': 'inloggningen misslyckades',
       'Log out ({{username}})': 'Logga ut ({{username}})',
       'Log out': 'Logga ut',
+      'Sign in with Google': 'Logga in med Google',
+      'For @{{domain}} accounts.': 'För @{{domain}}-konton.',
+      'or sign in with password': 'eller logga in med lösenord',
+      'That account is not part of the configured workspace.':
+        'Det kontot tillhör inte den konfigurerade arbetsytan.',
+      'Your identity provider didn’t mark your email as verified.':
+        'Din identitetsleverantör har inte markerat din e-post som verifierad.',
+      'The sign-in provider declined the request. Try again, or contact your admin.':
+        'Inloggningsleverantören avvisade begäran. Försök igen eller kontakta din admin.',
+      'Sign-in took too long and the session expired. Try again.':
+        'Inloggningen tog för lång tid och sessionen löpte ut. Försök igen.',
+      'Single sign-on failed ({{code}}). Try again, or contact your admin.':
+        'Enkel inloggning misslyckades ({{code}}). Försök igen eller kontakta din admin.',
+      'Download report (PDF)': 'Ladda ner rapport (PDF)',
+      'Download a branded PDF report you can share with stakeholders':
+        'Ladda ner en varumärkesanpassad PDF-rapport som du kan dela med intressenter',
+      'Download CSV': 'Ladda ner CSV',
       // ---- nav ----
       'Dashboard': 'Översikt',
       'Organizations': 'Organisationer',

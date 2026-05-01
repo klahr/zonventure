@@ -1,0 +1,258 @@
+package admin
+
+import (
+	"bytes"
+	"os"
+	"strings"
+	"testing"
+	"time"
+)
+
+// pdfMagic is the four-byte signature every valid PDF 1.x stream
+// starts with. Used as a cheap "did the renderer actually produce a
+// PDF?" sanity check in the writeRecapPDF tests.
+const pdfMagic = "%PDF-"
+
+func TestWriteRecapPDF_HappyPath(t *testing.T) {
+	d := recapPDFData{
+		OrgName:        "Acme Corp",
+		AdventureTitle: "Stockholm Old Town",
+		AdventureSlug:  "stockholm-old-town",
+		EventID:        42,
+		EventStartedAt: time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC),
+		EventEndedAt:   time.Date(2026, 5, 1, 12, 30, 0, 0, time.UTC),
+		Accent:         "#ad1357",
+		PageCount:      10,
+		GeneratedAt:    time.Date(2026, 5, 1, 13, 0, 0, 0, time.UTC),
+		Teams: []recapPDFTeam{
+			{Rank: 1, Name: "Alpha", Members: "Alice, Bob", Solved: 10, CompletedAt: "2026-05-01 11:45:00", Elapsed: 1*time.Hour + 45*time.Minute},
+			{Rank: 2, Name: "Beta", Members: "Carol, Dave", Solved: 9, CompletedAt: "", Elapsed: 0},
+			{Rank: 3, Name: "Gamma", Members: "Eve", Solved: 5, CompletedAt: "", Elapsed: 0},
+		},
+	}
+	var buf bytes.Buffer
+	if err := writeRecapPDF(&buf, d); err != nil {
+		t.Fatalf("writeRecapPDF: %v", err)
+	}
+	if !strings.HasPrefix(buf.String(), pdfMagic) {
+		t.Errorf("output does not start with PDF magic; first bytes = %q", buf.String()[:min(8, buf.Len())])
+	}
+	if buf.Len() < 1024 {
+		t.Errorf("PDF suspiciously small (%d bytes) — render likely incomplete", buf.Len())
+	}
+	// Optional debug: when ZV_TEST_RECAP_PDF_OUT is set, dump the
+	// rendered PDF to that path so the developer can open it in a
+	// reader to confirm the visual layout looks right. The test
+	// still passes either way; missing env = no side effect.
+	if path := os.Getenv("ZV_TEST_RECAP_PDF_OUT"); path != "" {
+		if err := os.WriteFile(path, buf.Bytes(), 0o644); err != nil {
+			t.Logf("could not write %s: %v", path, err)
+		} else {
+			t.Logf("wrote sample PDF to %s (%d bytes)", path, buf.Len())
+		}
+	}
+}
+
+func TestWriteRecapPDF_EmptyTeams(t *testing.T) {
+	d := recapPDFData{
+		OrgName:        "Acme Corp",
+		AdventureTitle: "Empty event",
+		EventStartedAt: time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC),
+		PageCount:      5,
+		GeneratedAt:    time.Now(),
+	}
+	var buf bytes.Buffer
+	if err := writeRecapPDF(&buf, d); err != nil {
+		t.Fatalf("empty-teams render: %v", err)
+	}
+	if !strings.HasPrefix(buf.String(), pdfMagic) {
+		t.Fatalf("not a PDF")
+	}
+}
+
+func TestWriteRecapPDF_LongNamesAndUnicode(t *testing.T) {
+	d := recapPDFData{
+		OrgName:        "Företaget AB", // Swedish chars
+		AdventureTitle: "En väldigt lång äventyrstitel som testar radbrytning",
+		EventStartedAt: time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC),
+		PageCount:      3,
+		GeneratedAt:    time.Now(),
+		Teams: []recapPDFTeam{
+			{
+				Rank:    1,
+				Name:    "Lag med ett rejält långt namn som garanterat överskrider kolumnbredden",
+				Members: "Ångström, Östergård, Müller, García, Sørensen",
+				Solved:  3,
+				Elapsed: 47 * time.Minute,
+			},
+		},
+	}
+	var buf bytes.Buffer
+	if err := writeRecapPDF(&buf, d); err != nil {
+		t.Fatalf("unicode render: %v", err)
+	}
+	if !strings.HasPrefix(buf.String(), pdfMagic) {
+		t.Fatalf("not a PDF")
+	}
+}
+
+func TestWriteRecapPDF_NoStartTime(t *testing.T) {
+	// Event that hasn't started yet — the cover-page date line should
+	// just render empty rather than blowing up on a zero time.
+	d := recapPDFData{
+		OrgName:        "Acme Corp",
+		AdventureTitle: "Scheduled event",
+		PageCount:      3,
+		GeneratedAt:    time.Now(),
+	}
+	var buf bytes.Buffer
+	if err := writeRecapPDF(&buf, d); err != nil {
+		t.Fatalf("no-start render: %v", err)
+	}
+}
+
+func TestHexToRGB(t *testing.T) {
+	cases := []struct {
+		in       string
+		want     [3]int
+		fallback bool
+	}{
+		{"#ad1357", [3]int{0xad, 0x13, 0x57}, false},
+		{"ad1357", [3]int{0xad, 0x13, 0x57}, false},
+		{"0xad1357", [3]int{0xad, 0x13, 0x57}, false},
+		{"#AD1357", [3]int{0xad, 0x13, 0x57}, false},
+		{"", [3]int{1, 2, 3}, true},
+		{"nope", [3]int{1, 2, 3}, true},
+		{"#abcd", [3]int{1, 2, 3}, true},     // wrong length
+		{"#zzzzzz", [3]int{1, 2, 3}, true},   // invalid hex
+		{"#abcdefg", [3]int{1, 2, 3}, true},  // too long
+	}
+	for _, c := range cases {
+		r, g, b := hexToRGB(c.in, 1, 2, 3)
+		if c.fallback {
+			if r != 1 || g != 2 || b != 3 {
+				t.Errorf("hexToRGB(%q) should fall back, got (%d,%d,%d)", c.in, r, g, b)
+			}
+			continue
+		}
+		if r != c.want[0] || g != c.want[1] || b != c.want[2] {
+			t.Errorf("hexToRGB(%q) = (%d,%d,%d), want (%d,%d,%d)",
+				c.in, r, g, b, c.want[0], c.want[1], c.want[2])
+		}
+	}
+}
+
+func TestTruncateText(t *testing.T) {
+	cases := []struct {
+		in   string
+		max  int
+		want string
+	}{
+		{"hello", 10, "hello"},
+		{"hello", 5, "hello"},
+		{"hello world", 5, "hell…"},
+		{"Ångström team", 6, "Ångst…"}, // rune-counted, not byte-counted
+		{"x", 0, ""},
+		{"", 5, ""},
+	}
+	for _, c := range cases {
+		got := truncateText(c.in, c.max)
+		if got != c.want {
+			t.Errorf("truncateText(%q, %d) = %q, want %q", c.in, c.max, got, c.want)
+		}
+	}
+}
+
+func TestFormatHMS(t *testing.T) {
+	cases := []struct {
+		in   time.Duration
+		want string
+	}{
+		{0, "—"},
+		{-5 * time.Second, "—"},
+		{47 * time.Second, "47s"},
+		{12*time.Minute + 4*time.Second, "12m 04s"},
+		{1*time.Hour + 23*time.Minute, "1h 23m"},
+		{2 * time.Hour, "2h 00m"},
+	}
+	for _, c := range cases {
+		got := formatHMS(c.in)
+		if got != c.want {
+			t.Errorf("formatHMS(%v) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+func TestRecapDateLine(t *testing.T) {
+	zero := time.Time{}
+	may1 := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
+	may1evening := time.Date(2026, 5, 1, 22, 0, 0, 0, time.UTC)
+	may3 := time.Date(2026, 5, 3, 10, 0, 0, 0, time.UTC)
+	jan1nextYear := time.Date(2027, 1, 1, 10, 0, 0, 0, time.UTC)
+
+	cases := []struct {
+		name string
+		d    recapPDFData
+		want string
+	}{
+		{"no start", recapPDFData{}, ""},
+		{"start only", recapPDFData{EventStartedAt: may1}, "May 1, 2026"},
+		{"same day", recapPDFData{EventStartedAt: may1, EventEndedAt: may1evening}, "May 1, 2026"},
+		{"same year", recapPDFData{EventStartedAt: may1, EventEndedAt: may3}, "May 1 – May 3, 2026"},
+		{"cross year", recapPDFData{EventStartedAt: may1, EventEndedAt: jan1nextYear}, "May 1, 2026 – January 1, 2027"},
+		{"end zero falls back to start only", recapPDFData{EventStartedAt: may1, EventEndedAt: zero}, "May 1, 2026"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := recapDateLine(c.d)
+			if got != c.want {
+				t.Errorf("recapDateLine = %q, want %q", got, c.want)
+			}
+		})
+	}
+}
+
+func TestParseRecapTimestamp(t *testing.T) {
+	cases := []struct {
+		in    string
+		ok    bool
+		check func(t time.Time) bool
+	}{
+		{"", false, nil},
+		{"   ", false, nil},
+		{"2026-05-01 10:30:00", true, func(tm time.Time) bool {
+			return tm.Year() == 2026 && tm.Month() == 5 && tm.Day() == 1 && tm.Hour() == 10
+		}},
+		{"2026-05-01T10:30:00Z", true, func(tm time.Time) bool {
+			return tm.Year() == 2026 && tm.Hour() == 10
+		}},
+		{"not-a-time", false, nil},
+	}
+	for _, c := range cases {
+		tm, ok := parseRecapTimestamp(c.in)
+		if ok != c.ok {
+			t.Errorf("parseRecapTimestamp(%q) ok = %v, want %v", c.in, ok, c.ok)
+			continue
+		}
+		if ok && c.check != nil && !c.check(tm) {
+			t.Errorf("parseRecapTimestamp(%q) parsed wrong: %v", c.in, tm)
+		}
+	}
+}
+
+func TestSafeText(t *testing.T) {
+	in := "Lag · with “fancy” quotes — and an ellipsis…"
+	want := `Lag - with "fancy" quotes - and an ellipsis...`
+	if got := safeText(in); got != want {
+		t.Errorf("safeText = %q, want %q", got, want)
+	}
+}
+
+// min — Go 1.21+ has it builtin; this lets the test file build on
+// older toolchains as well.
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}

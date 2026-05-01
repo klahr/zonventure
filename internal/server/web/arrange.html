@@ -1902,6 +1902,48 @@ textarea { min-height: 80px; resize: vertical; font-family: ui-monospace, monosp
   font-weight: 700;
   margin-top: .15rem;
 }
+/* SSO block on the login form. Sits above the username/password
+   fields when the operator has configured OIDC. The button is a
+   plain anchor so the browser handles the top-level navigation
+   to the IdP without any JS — keeps the flow working even if the
+   bootstrap script has a bug. */
+.sso-block {
+  display: flex;
+  flex-direction: column;
+  gap: .35rem;
+  margin-bottom: 1rem;
+}
+.sso-btn {
+  text-align: center;
+  text-decoration: none;
+}
+.sso-hint {
+  margin: 0;
+  font-size: .8rem;
+  text-align: center;
+}
+.sso-divider {
+  position: relative;
+  margin: .5rem 0 .25rem;
+  text-align: center;
+}
+.sso-divider::before {
+  content: '';
+  position: absolute;
+  top: 50%; left: 0; right: 0;
+  border-top: 1px solid var(--border-soft);
+  z-index: 0;
+}
+.sso-divider-label {
+  position: relative;
+  background: var(--surface);
+  padding: 0 .65rem;
+  color: var(--muted);
+  font-size: .75rem;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  z-index: 1;
+}
 
 /* ---- Manual / arranger handbook ----
    Reading-optimised typography: narrower measure, larger line-height,
@@ -2650,6 +2692,13 @@ const state = {
   // shape if the fetch fails — the server still rejects with 403 when
   // signup is actually disabled, so the UI is just a hint, not the gate.
   signupEnabled: true,
+  // SSO config from /api/auth/signup-config. null = not fetched yet
+  // (treated as "no SSO"); object with .enabled, .button_label,
+  // .hosted_domain, .login_url when the operator has configured
+  // OIDC. The login screen reads this to render the "Sign in with
+  // Google" button and to surface a domain hint on the username
+  // field.
+  sso: null,
   // Cached system-update snapshot. Populated for admins after login;
   // null means "haven't checked yet" (the UI just doesn't show a
   // badge in that state). Refreshed on tab open + on demand via the
@@ -2711,6 +2760,13 @@ async function ensureSignupConfig() {
     const r = await api('/api/auth/signup-config');
     if (r.ok && typeof r.body?.enabled === 'boolean') {
       state.signupEnabled = r.body.enabled;
+    }
+    if (r.ok && r.body?.sso?.enabled) {
+      state.sso = {
+        buttonLabel: r.body.sso.button_label || t('Sign in with Google'),
+        hostedDomain: r.body.sso.hosted_domain || '',
+        loginUrl: r.body.sso.login_url || '/auth/oidc/login',
+      };
     }
   } catch (_) { /* leave default */ }
 }
@@ -2929,6 +2985,27 @@ async function render() {
       }
     });
   }
+  // The OIDC callback redirects back here with #sso-error=<code> on
+  // failure paths the audit log already captured (state mismatch,
+  // domain mismatch, IdP refusal, etc.). We map the code to a
+  // human-readable toast, then strip the hash so a refresh doesn't
+  // re-flash. Specific failure reasons stay generic in the user-
+  // facing copy — the audit row carries the detail.
+  const ssoErrMatch = location.hash.match(/^#sso-error=([a-z_]+)$/);
+  if (ssoErrMatch) {
+    history.replaceState(null, '', '#dashboard');
+    state.route = '#dashboard';
+    const code = ssoErrMatch[1];
+    setTimeout(() => {
+      const map = {
+        domain_not_allowed: t('That account is not part of the configured workspace.'),
+        email_unverified:   t('Your identity provider didn’t mark your email as verified.'),
+        idp_error:          t('The sign-in provider declined the request. Try again, or contact your admin.'),
+        session_expired:    t('Sign-in took too long and the session expired. Try again.'),
+      };
+      toastErr(map[code] || t('Single sign-on failed ({{code}}). Try again, or contact your admin.', { code }));
+    }, 50);
+  }
   // The /verify endpoint redirects back here with a state hash that
   // tells the UI which toast to flash. We consume it once and replace
   // the hash with #dashboard so a refresh doesn't re-flash the same
@@ -2992,8 +3069,28 @@ function renderLogin(err, mode, extra) {
   const submit = h('button', { class: 'btn primary', type: 'submit' }, t('Log in'));
   const usernameEl = h('input', { name: 'u', autocomplete: 'username', required: true });
   const passwordEl = h('input', { name: 'p', type: 'password', autocomplete: 'current-password', required: true });
+  // SSO button rendered above the username/password block when the
+  // operator has configured OIDC. Same brand-accent styling as the
+  // primary submit so it reads as the recommended option for
+  // workspace users; the "or sign in with password" divider below it
+  // makes the password fallback discoverable for non-domain users
+  // (e.g. external collaborators who were invited as arrangers).
+  const ssoBlock = state.sso ? h('div', { class: 'sso-block' },
+    h('a', {
+      class: 'btn primary sso-btn',
+      href: state.sso.loginUrl,
+      role: 'button',
+    }, state.sso.buttonLabel),
+    state.sso.hostedDomain
+      ? h('p', { class: 'muted sso-hint' },
+          t('For @{{domain}} accounts.', { domain: state.sso.hostedDomain }))
+      : null,
+    h('div', { class: 'sso-divider' },
+      h('span', { class: 'sso-divider-label' }, t('or sign in with password'))),
+  ) : null;
   const form = h('form', { class: 'login' },
     h('div', { class: 'brand' }, 'zonventure', h('small', {}, t('studio'))),
+    ssoBlock,
     h('label', { class: 'field' }, h('span', {}, t('Username')), usernameEl),
     h('label', { class: 'field' }, h('span', {}, t('Password')), passwordEl),
     errEl,
@@ -3021,6 +3118,13 @@ function renderLogin(err, mode, extra) {
     });
     if (r.ok && r.body?.code === 'totp_required') {
       document.getElementById('root').replaceChildren(renderTOTPChallenge(r.body.challenge, { mode: 'login' }));
+      return;
+    }
+    // 409 sso_required: the entered email is in the workspace's
+    // SSO domain. Bounce straight to the IdP — the user can finish
+    // signing in with the same browser session, no re-typing.
+    if (r.status === 409 && r.body?.code === 'sso_required' && r.body?.login_url) {
+      location.href = r.body.login_url;
       return;
     }
     if (r.ok) { await refreshMe(); resetRouteToDashboard(); render(); return; }
@@ -5904,15 +6008,26 @@ async function viewRunDetail(view, runID) {
   }
   // Results export is always available once there are teams — arrangers
   // often want to grab mid-event standings too, not just post-mortem.
+  // The PDF is the polished artifact for stakeholders (HR boss, the
+  // participating team's Slack); the CSV is the spreadsheet drilldown
+  // for finance / further analysis. Both off the same data so a
+  // stakeholder cross-checking won't see disagreement.
   if (teams.length > 0) {
     const finishedN = teams.filter((tm) => tm.completed_at).length;
     const allDone   = finishedN === teams.length;
-    const csv = h('a', {
+    const pdf = h('a', {
       class: 'btn lifecycle-btn' + (allDone ? ' primary' : ''),
+      href: '/api/admin/events/' + event.id + '/recap.pdf',
+      download: `event-${event.id}-recap.pdf`,
+      title: t('Download a branded PDF report you can share with stakeholders'),
+    }, icon(ICONS.copy), allDone ? t('Download report (PDF)') : t('Download report (PDF)'));
+    actions.append(pdf);
+    const csv = h('a', {
+      class: 'btn lifecycle-btn',
       href: '/api/admin/events/' + event.id + '/results.csv',
       download: `run-${event.id}-results.csv`,
       title: t('Download CSV of the current standings'),
-    }, icon(ICONS.copy), allDone ? t('Download results') : t('Download standings'));
+    }, icon(ICONS.copy), t('Download CSV'));
     actions.append(csv);
   }
 
