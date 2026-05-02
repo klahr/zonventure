@@ -400,25 +400,21 @@
   .puzzle-block.entered > * {
     opacity: 0;
     transform: translateY(-8px);
-    filter: blur(4px);
-    animation: puzzleChildEnter 280ms cubic-bezier(.2,.8,.2,1) both;
+    animation: puzzleChildEnter 1000ms cubic-bezier(.2,.8,.2,1) both;
   }
-  /* Staggered delays. ~95ms per step is short enough to feel
-     fluid (not slow), long enough to read as sequential. After
-     the 5th child the delay caps so a long puzzle (many images)
-     doesn't produce a noticeable backlog. */
-  .puzzle-block.entered > :nth-child(1) { animation-delay:   0ms; }
-  .puzzle-block.entered > :nth-child(2) { animation-delay:  95ms; }
-  .puzzle-block.entered > :nth-child(3) { animation-delay: 190ms; }
-  .puzzle-block.entered > :nth-child(4) { animation-delay: 285ms; }
-  .puzzle-block.entered > :nth-child(5) { animation-delay: 380ms; }
-  .puzzle-block.entered > :nth-child(n+6) { animation-delay: 475ms; }
-  /* Each element starts a touch blurred + slightly above target,
-     then sharpens and settles. Blur is a one-shot during the
-     280ms entrance — no battery cost beyond the transition. */
+  /* Staggered delays. 250ms per step gives each element its own
+     beat under the 1s per-element animation. After the 5th child
+     the delay caps so a long puzzle (many images) doesn't drag
+     the prompt out indefinitely. */
+  .puzzle-block.entered > :nth-child(1) { animation-delay:    0ms; }
+  .puzzle-block.entered > :nth-child(2) { animation-delay:  250ms; }
+  .puzzle-block.entered > :nth-child(3) { animation-delay:  500ms; }
+  .puzzle-block.entered > :nth-child(4) { animation-delay:  750ms; }
+  .puzzle-block.entered > :nth-child(5) { animation-delay: 1000ms; }
+  .puzzle-block.entered > :nth-child(n+6) { animation-delay: 1250ms; }
   @keyframes puzzleChildEnter {
-    from { opacity: 0; transform: translateY(-8px); filter: blur(4px); }
-    to   { opacity: 1; transform: translateY(0);    filter: blur(0);   }
+    from { opacity: 0; transform: translateY(-8px); }
+    to   { opacity: 1; transform: translateY(0);    }
   }
 
   /* ---------- Event-start ceremony ----------
