@@ -899,7 +899,7 @@
       "Used by the arranger only — never shown on the team's share page.":
         'Används endast av arrangören — visas aldrig på lagets delningssida.',
       'Add the first team': 'Lägg till första laget',
-      'Team capacity': 'Lagkapacitet',
+      'Capacity': 'Kapacitet',
       'Team slots': 'Lagplatser',
       'Team name required': 'Lagnamn krävs',
       'Team name required.': 'Lagnamn krävs.',
@@ -1540,7 +1540,7 @@
       'Authoring an adventure': 'Skapa ett äventyr',
       'Adding puzzles': 'Lägg till pussel',
       'How the event flow fits together': 'Så hänger flödet ihop',
-      'Buying team-slot assignments': 'Köp lagplatser (uppdrag)',
+      'Buying player-slot assignments': 'Köp spelarplatser (uppdrag)',
       'Creating an event': 'Skapa en event',
       'Adding teams and sharing magic links': 'Lägg till lag och dela magiska länkar',
       'Running the event': 'Genomför eventet',
@@ -1658,9 +1658,12 @@
       // assignments
       'Click "Store" in the sidebar.': 'Klicka på "Butik" i sidomenyn.',
       'Pick the adventure you want to run.': 'Välj äventyret du vill köra.',
-      'Choose how many teams will play (1–100).': 'Välj hur många lag som ska spela (1–100).',
-      'Click "Buy". You\'re sent to Stripe Checkout.':
-          'Klicka på "Köp". Du skickas till Stripe Checkout.',
+      'An assignment licences one event for up to N player slots — across however many teams you want to form. Pricing is per-player: the first 15 in any event are free, and each additional player is €5.':
+          'Ett uppdrag licensierar en event med upp till N spelarplatser — fördelat på hur många lag du vill skapa. Priset är per spelare: de första 15 i varje event är gratis, varje ytterligare spelare kostar 5 €.',
+      'Choose how many players will join (1–500). Buys at or below 15 are free and skip the checkout step entirely.':
+          'Välj hur många spelare som ansluter (1–500). Köp på 15 eller färre är gratis och hoppar över betalningssteget helt.',
+      'Click "Continue". Paid buys go to Stripe Checkout; free buys land you straight on the new assignment.':
+          'Klicka på "Fortsätt". Betalda köp går till Stripe Checkout; gratisköp landar dig direkt på det nya uppdraget.',
       'After payment, you\'re sent back to the dashboard with a "Schedule now" prompt on the new assignment.':
           'Efter betalningen skickas du tillbaka till översikten med en "Schemalägg nu"-uppmaning på det nya uppdraget.',
       '[Screenshot: the Store with adventure cards]':
@@ -1668,7 +1671,7 @@
       'Refunds: if you bought the wrong assignment, contact support. Refunds are admin-only — they touch real money.':
           'Återbetalningar: om du köpt fel uppdrag, kontakta supporten. Återbetalningar görs endast av administratör — de rör riktiga pengar.',
       // create run
-      'Click "Events" in the sidebar, then "Schedule run".':
+      'Click "Events" in the sidebar, then "Schedule event".':
           'Klicka på "Event" i sidomenyn, sedan "Schemalägg event".',
       'Pick the assignment you want to use (only unused assignments are listed).':
           'Välj det uppdrag du vill använda (endast oanvända uppdrag listas).',
@@ -2168,7 +2171,7 @@
       'cannot see that puzzle': 'kan inte se det pusslet',
       'admins are not org members': 'administratörer är inte organisationsmedlemmar',
       "admins can't purchase — create a free assignment instead": 'administratörer kan inte köpa — skapa en gratis tilldelning istället',
-      "admins don't schedule runs; do it from within an organization": 'administratörer schemalägger inte körningar — gör det från en organisation',
+      "admins don't schedule events; do it from within an organization": 'administratörer schemalägger inte event — gör det från en organisation',
       'admin-on-admin reset is not supported': 'admin-på-admin-återställning stöds inte',
       'assignment already used': 'tilldelningen är redan använd',
       'assignment is already in use by an event': 'tilldelningen används redan av ett event',

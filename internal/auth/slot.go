@@ -11,7 +11,8 @@ import (
 	"git.sr.ht/~klahr/zv/internal/tokenx"
 )
 
-// Slot identifies a player's team slot. It's attached to the request
+// Slot identifies a player's seat on a team (one row in player_slots).
+// It's attached to the request
 // context by SlotMiddleware and is the "who is this player" value that
 // player endpoints use.
 type Slot struct {

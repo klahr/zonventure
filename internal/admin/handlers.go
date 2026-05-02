@@ -337,7 +337,7 @@ func (h *Handlers) CreateEvent(w http.ResponseWriter, r *http.Request) {
 	}
 	me, _ := auth.FromContext(r.Context())
 	if !isOrgScoped(me) {
-		httpx.Error(w, http.StatusForbidden, "admins don't schedule runs; do it from within an organization")
+		httpx.Error(w, http.StatusForbidden, "admins don't schedule events; do it from within an organization")
 		return
 	}
 	if !me.EmailVerified {

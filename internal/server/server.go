@@ -713,7 +713,7 @@ func New(cfg Config) http.Handler {
 		r.Post("/puzzles", adminH.CreateLibraryPuzzle)
 		r.Get("/puzzles/{pageID}", adminH.GetPuzzle)
 
-		// Purchases: arrangers buy team-slot assignments here. The
+		// Purchases: arrangers buy player-slot assignments here. The
 		// simulated flow just needs the confirm endpoint; a future
 		// Stripe integration will also hit /confirm from a webhook.
 		r.Post("/purchases", adminH.CreatePurchase)

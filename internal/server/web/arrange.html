@@ -4684,24 +4684,34 @@ function renderEmptyPurchases() {
         icon(ICONS.coins), t('Open the store'))));
 }
 
-// openPurchaseModal drives the buy-team-slots flow. The user picks a
-// slot count, sees the total, and confirms. The server creates a
-// pending purchase and returns a checkout_url — we redirect to it
-// (simulated page now, Stripe Checkout later). On success the checkout
-// page navigates the user back to #purchases so they see the fresh
-// assignment.
-async function openPurchaseModal(adv) {
-  // Pricing rides on the /whoami response, so the bootstrap fetch
-  // already has the canonical numbers. Falling back to defaults keeps
-  // dev clones with old whoami payloads working.
+// pricingHelpers reads the canonical per-player price + free-tier
+// threshold off /whoami and bundles the formatters every modal that
+// shows a total needs. Falling back to defaults keeps stale dev
+// clones with old whoami payloads working. PRICE_CENTS / FREE are
+// returned alongside fmtMoney / chargeable so callers can format
+// the headline copy ("first {{n}} free, then {{price}} per player")
+// without unpacking the same numbers themselves.
+function pricingHelpers() {
   const PRICE_CENTS = (state.me?.pricing?.player_cents) || 500;
   const FREE        = (state.me?.pricing?.free_players_per_event) ?? 15;
   const CURRENCY    = (state.me?.pricing?.currency) || 'EUR';
   const fmtMoney = (cents) => new Intl.NumberFormat(undefined,
     { style: 'currency', currency: CURRENCY }).format(cents / 100);
-  // chargeable(n) is what the buyer actually pays — first FREE slots
-  // are free, the rest are PRICE_CENTS each.
+  // chargeable(n) is what the buyer actually pays — first FREE
+  // slots are free, the rest are PRICE_CENTS each.
   const chargeable = (n) => Math.max(0, n - FREE) * PRICE_CENTS;
+  return { PRICE_CENTS, FREE, CURRENCY, fmtMoney, chargeable };
+}
+
+// openPurchaseModal drives the buy-player-slots flow. The user picks a
+// player count, sees the total (with the free-tier deduction applied),
+// and confirms. The server creates a pending purchase and returns a
+// checkout_url — we redirect to it
+// (simulated page now, Stripe Checkout later). On success the checkout
+// page navigates the user back to #purchases so they see the fresh
+// assignment.
+async function openPurchaseModal(adv) {
+  const { PRICE_CENTS, FREE, fmtMoney, chargeable } = pricingHelpers();
   await modal(t('Buy player slots'), ({ body, close }) => {
     const players = h('input', { type: 'number', min: '1', max: '500', value: '30', required: true });
     const totalEl = h('strong', {}, '');
@@ -5391,14 +5401,7 @@ async function openNewEventWizard() {
     // ---- 2. Capacity: reuse existing assignment or buy ----
     const buyCount = h('input', { type: 'number', min: '1', max: '500', value: '30' });
     const capacitySection = h('div', {});
-    // Pricing rides on whoami; fallback values keep stale dev clones
-    // running. Currency drives Intl formatting so $/€/kr render cleanly.
-    const PRICE_CENTS = (state.me?.pricing?.player_cents) || 500;
-    const FREE        = (state.me?.pricing?.free_players_per_event) ?? 15;
-    const CURRENCY    = (state.me?.pricing?.currency) || 'EUR';
-    const fmtMoney = (cents) => new Intl.NumberFormat(undefined,
-      { style: 'currency', currency: CURRENCY }).format(cents / 100);
-    const chargeable = (n) => Math.max(0, n - FREE) * PRICE_CENTS;
+    const { PRICE_CENTS, FREE, fmtMoney, chargeable } = pricingHelpers();
     const refreshAssignment = () => {
       capacitySection.replaceChildren();
       const matching = assignments.filter((x) => x.adventure_slug === pickedAdv.slug);
@@ -5500,7 +5503,7 @@ async function openNewEventWizard() {
     const form = h('form', {},
       h('h3', { style: 'margin-top:0' }, t('Adventure')),
       advPick,
-      h('h3', {}, t('Team capacity')),
+      h('h3', {}, t('Capacity')),
       capacitySection,
       h('h3', {}, t('When')),
       h('label', { style: 'display:flex; gap:.5rem; align-items:center; margin:.25rem 0' },
@@ -11864,7 +11867,7 @@ function viewManual(view, anchor) {
       tocEntry('adventure',   t('Authoring an adventure')),
       tocEntry('puzzles',     t('Adding puzzles')),
       tocEntry('event-flow',    t('How the event flow fits together')),
-      tocEntry('assignments', t('Buying team-slot assignments')),
+      tocEntry('assignments', t('Buying player-slot assignments')),
       tocEntry('create-event',  t('Creating an event')),
       tocEntry('teams',       t('Adding teams and sharing magic links')),
       tocEntry('running',     t('Running the event')),
@@ -11983,12 +11986,13 @@ function viewManual(view, anchor) {
     ),
 
     /* ---- 6. Assignments ---- */
-    sec('assignments', t('Buying team-slot assignments'),
+    sec('assignments', t('Buying player-slot assignments'),
+      p(t('An assignment licences one event for up to N player slots — across however many teams you want to form. Pricing is per-player: the first 15 in any event are free, and each additional player is €5.')),
       ol(
         t('Click "Store" in the sidebar.'),
         t('Pick the adventure you want to run.'),
-        t('Choose how many teams will play (1–100).'),
-        t('Click "Buy". You\'re sent to Stripe Checkout.'),
+        t('Choose how many players will join (1–500). Buys at or below 15 are free and skip the checkout step entirely.'),
+        t('Click "Continue". Paid buys go to Stripe Checkout; free buys land you straight on the new assignment.'),
         t('After payment, you\'re sent back to the dashboard with a "Schedule now" prompt on the new assignment.'),
       ),
       shot(t('[Screenshot: the Store with adventure cards]')),
@@ -11998,7 +12002,7 @@ function viewManual(view, anchor) {
     /* ---- 7. Create run ---- */
     sec('create-event', t('Creating an event'),
       ol(
-        t('Click "Events" in the sidebar, then "Schedule run".'),
+        t('Click "Events" in the sidebar, then "Schedule event".'),
         t('Pick the assignment you want to use (only unused assignments are listed).'),
         t('Give the event a name (eg. "Office team-build, Friday afternoon"). This is for your benefit; players don\'t see it.'),
         t('Pick a date and time. You can also leave it blank and start the event manually later.'),
