@@ -4131,7 +4131,11 @@ async function viewAdminDashboard(view) {
             h('th', {}, t('Events')),
             h('th', { class: 'hide-narrow' }, t('Active')))),
           h('tbody', {}, orgs.map((o) => h('tr', {},
-            h('td', {}, o.name),
+            h('td', {}, h('span', {
+              style: 'display:inline-flex; align-items:center; gap:.55rem; min-width:0',
+            }, orgIcon(o, 24), h('span', {
+              style: 'overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0',
+            }, o.name))),
             h('td', { class: 'mono hide-narrow' }, (o.members || []).length),
             h('td', { class: 'mono hide-narrow' }, o.players_total || 0),
             h('td', { class: 'mono' }, o.events_total || 0),
@@ -5745,6 +5749,30 @@ function teamAvatar(team, colour, size) {
     wrap.textContent = teamInitials(team?.name);
   }
   return wrap;
+}
+
+// orgIcon renders the organisation's brand mark as a small inline
+// element — uploaded logo when available (transparent, no fill, so
+// the surrounding row colour shows through any alpha), otherwise a
+// muted tile with the org's initial. Used in admin tables and
+// anywhere else an org appears in a list — kept compact so it fits
+// in a table row without forcing the line height up.
+function orgIcon(org, size) {
+  const px = size || 24;
+  const radius = Math.max(4, Math.round(px * 0.2));
+  if (org && org.has_logo) {
+    return h('img', {
+      src: '/org-logo/' + org.id,
+      alt: '',
+      'aria-hidden': 'true',
+      style: `width:${px}px; height:${px}px; border-radius:${radius}px; object-fit:contain; flex:0 0 auto`,
+    });
+  }
+  const letter = ((org && org.name) || '?').trim().charAt(0).toUpperCase() || '?';
+  return h('span', {
+    style: `width:${px}px; height:${px}px; border-radius:${radius}px; display:inline-grid; place-items:center; background:var(--surface-2); color:var(--muted); font-weight:700; font-size:${Math.max(10, Math.round(px * 0.5))}px; flex:0 0 auto`,
+    'aria-hidden': 'true',
+  }, letter);
 }
 
 // adventureInitials pulls up to two upper-case letters from the title
