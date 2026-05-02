@@ -384,24 +384,41 @@
   }
 
   /* ---------- Puzzle entrance ----------
-     One-shot fade + 8px slide on every NEW puzzle (a real
-     page_index change, not every state push). When a covering
-     overlay is active at render time — celebrate, welcome, or
-     start ceremony — the block is held at .pre-enter (opacity 0)
-     and the entrance is triggered as the overlay finishes
-     fading. That way the entrance animation never plays behind
-     a cover, and the player sees the new puzzle ease in exactly
-     as the previous moment clears. */
+     Each direct child of the puzzle block animates in on its own
+     with a staggered delay so the elements appear sequentially:
+     title, then image(s), then audio, then prompt. Each element
+     starts a few pixels above its target and descends into place
+     while fading in — a "settling down" gesture rather than a
+     rising one.
+     The block-level .pre-enter state hides everything while a
+     covering overlay (celebrate / welcome / start) is up;
+     resolvePendingEntrance() promotes to .entered when the
+     cover lifts and the staggered children animate in then. */
   .puzzle-block.pre-enter {
     opacity: 0;
-    transform: translateY(8px);
   }
-  .puzzle-block.entered {
-    animation: puzzleEnter 280ms cubic-bezier(.2,.8,.2,1) both;
+  .puzzle-block.entered > * {
+    opacity: 0;
+    transform: translateY(-8px);
+    filter: blur(4px);
+    animation: puzzleChildEnter 280ms cubic-bezier(.2,.8,.2,1) both;
   }
-  @keyframes puzzleEnter {
-    from { opacity: 0; transform: translateY(8px); }
-    to   { opacity: 1; transform: translateY(0);   }
+  /* Staggered delays. ~95ms per step is short enough to feel
+     fluid (not slow), long enough to read as sequential. After
+     the 5th child the delay caps so a long puzzle (many images)
+     doesn't produce a noticeable backlog. */
+  .puzzle-block.entered > :nth-child(1) { animation-delay:   0ms; }
+  .puzzle-block.entered > :nth-child(2) { animation-delay:  95ms; }
+  .puzzle-block.entered > :nth-child(3) { animation-delay: 190ms; }
+  .puzzle-block.entered > :nth-child(4) { animation-delay: 285ms; }
+  .puzzle-block.entered > :nth-child(5) { animation-delay: 380ms; }
+  .puzzle-block.entered > :nth-child(n+6) { animation-delay: 475ms; }
+  /* Each element starts a touch blurred + slightly above target,
+     then sharpens and settles. Blur is a one-shot during the
+     280ms entrance — no battery cost beyond the transition. */
+  @keyframes puzzleChildEnter {
+    from { opacity: 0; transform: translateY(-8px); filter: blur(4px); }
+    to   { opacity: 1; transform: translateY(0);    filter: blur(0);   }
   }
 
   /* ---------- Event-start ceremony ----------
@@ -449,7 +466,7 @@
     to { opacity: 0; visibility: hidden; }
   }
   @media (prefers-reduced-motion: reduce) {
-    .puzzle-block.entered,
+    .puzzle-block.entered > *,
     .puzzle-block.pre-enter,
     .start-overlay,
     .start-overlay h1,
