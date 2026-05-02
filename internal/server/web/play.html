@@ -8,6 +8,9 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Aclonica&family=Open+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+<!-- Shared fullscreen-map overlay styles, identical across player +
+     arranger surfaces. Pick-mode extras stay inline below. -->
+<link rel="stylesheet" href="/assets/fsmap.css">
 <script src="/i18n.js"></script>
 <!-- play-queue.js exposes the offline-action queue as top-level
      globals (pendingAnswers, clientActionId, persistPendingActions,
@@ -1135,36 +1138,15 @@
     background: transparent; color: var(--accent);
   }
 
-  /* Fullscreen map overlay — opened from the debug-strip coord link
-     in preview mode. Mirrors arrange.html's .fsmap-* shape so the two
-     surfaces feel identical; Leaflet loads on demand the first time
-     this overlay opens (see ensureLeaflet) so players never pay the
-     download cost. */
-  .fsmap-back {
-    position: fixed; inset: 0; background: rgba(0,0,0,.55);
-    display: flex; flex-direction: column;
-    z-index: 2000;
-  }
-  .fsmap-chrome {
-    display: flex; align-items: center; gap: .75rem;
-    padding: .5rem .75rem;
-    background: var(--surface);
-    border-bottom: 1px solid var(--border-soft);
-    flex: 0 0 auto;
-  }
-  .fsmap-title {
-    flex: 1 1 auto; min-width: 0;
-    font-weight: 700;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  }
-  .fsmap-close {
-    width: 2rem; height: 2rem;
-    background: transparent; border: 0; border-radius: 999px;
-    padding: 0; font-size: 1.5rem; line-height: 1;
-    color: var(--muted); cursor: pointer; box-shadow: none;
-    min-height: 0; flex: 0 0 auto;
-  }
-  .fsmap-close:hover { background: var(--surface-2); color: var(--ink); }
+  /* Fullscreen map overlay (.fsmap-back / .fsmap-chrome / .fsmap-title /
+     .fsmap-close / .fsmap-host) lives in shared /assets/fsmap.css —
+     pulled in via <link> at the top of this page so both surfaces stay
+     in lockstep. Leaflet itself loads on demand the first time this
+     overlay opens (see ensureLeaflet) so players never pay the
+     download cost.
+     The pick-mode extras below (.fsmap-use, .fsmap-clear, .fsmap-hint)
+     are play.html-specific — interactive position-spoof affordances
+     used during preview debug only — and stay inline. */
   /* Pick-mode buttons sit between the title and the close X. Reuse the
      base button look (theme-aware) but keep them compact so the chrome
      stays a single row on phones. */
@@ -1198,13 +1180,6 @@
     max-width: calc(100% - 2rem);
     text-align: center;
   }
-  /* min-height:0 lets the flex child shrink so Leaflet sees a definite
-     height — without it the map refuses to render below the chrome. */
-  .fsmap-host { flex: 1 1 auto; min-height: 0; }
-  .fsmap-host .empty {
-    padding: 2rem; text-align: center; color: var(--muted);
-  }
-
   /* ---------- Connection status banner ----------
      Shown when the WebSocket has been disconnected for >2s. Sits above
      the submit dock so it's visible while playing without covering the

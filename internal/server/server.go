@@ -36,7 +36,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 )
 
-//go:embed web/play.html web/play-sw.js web/play-queue.js web/arrange.html web/live.html web/recap.html web/i18n.js web/favicon.svg web/privacy.html web/terms.html web/manual.html web/landing.html web/pricing.html web/topbar.css web/topbar.js web/jsqr.js web/404.html web/robots.txt web/sitemap.xml
+//go:embed web/play.html web/play-sw.js web/play-queue.js web/arrange.html web/live.html web/recap.html web/i18n.js web/favicon.svg web/privacy.html web/terms.html web/manual.html web/landing.html web/pricing.html web/topbar.css web/topbar.js web/fsmap.css web/jsqr.js web/404.html web/robots.txt web/sitemap.xml
 var webFS embed.FS
 
 // Config is the bag of knobs New needs.
@@ -475,6 +475,11 @@ func New(cfg Config) http.Handler {
 	// Shared topbar CSS + JS, served as long-cached static assets.
 	r.Get("/assets/topbar.css", serveAsset("web/topbar.css", "text/css; charset=utf-8"))
 	r.Get("/assets/topbar.js", serveAsset("web/topbar.js", "application/javascript; charset=utf-8"))
+	// Shared fullscreen-map overlay CSS — used by both the player
+	// preview-debug coord overlay and the arranger's "show on map"
+	// links. Same theme tokens, same DOM contract; the JS that
+	// drives each surface still lives inline in its own page.
+	r.Get("/assets/fsmap.css", serveAsset("web/fsmap.css", "text/css; charset=utf-8"))
 	// jsQR — vendored fallback QR decoder for browsers that don't
 	// expose the native BarcodeDetector (Firefox today, older
 	// Safari/iOS). Both /play and the puzzle editor in /arrange
