@@ -296,6 +296,7 @@
     <li><a href="#running">Running the event</a></li>
     <li><a href="#webhooks">Webhooks: outbound integrations</a></li>
     <li><a href="#account">Account, data and deletion</a></li>
+    <li><a href="#self-hosting">Self-hosting</a></li>
     <li><a href="#help">Getting help</a></li>
   </ol>
 </nav>
@@ -303,7 +304,7 @@
 <main id="main">
 
 <h1>Arranger manual</h1>
-<p class="updated">Last updated: 2026-04-25</p>
+<p class="updated">Last updated: 2026-05-02</p>
 <p class="lede">A pedagogic walk-through of the platform: create an adventure, fill it with puzzles, schedule an event, add teams, and watch them play. Read it once start to finish, or jump to a section from the table of contents.</p>
 
 <section id="welcome">
@@ -554,6 +555,47 @@ process(parse_json(body))</pre>
     <li><strong>Download my data</strong> — A single JSON file with your account info plus your organization's runs, teams, adventures, assignments and purchases. The GDPR-friendly export.</li>
     <li><strong>Delete account</strong> — If you're the last member, your organization is deleted with you. All runs, teams, adventures, assignments. Cannot be undone.</li>
   </ul>
+</section>
+
+<section id="self-hosting">
+  <h2>Self-hosting</h2>
+  <p>Zonventure is open source. You can run your own instance — for an internal company tool, a school, a venue, or just to keep player data inside your own infrastructure. The full operator guide lives in <a href="https://git.sr.ht/~klahr/zv/tree/master/item/SELFHOSTING.md" rel="noopener">SELFHOSTING.md</a> in the source tree; this section is the orientation.</p>
+
+  <h3>Quick start</h3>
+  <p>The canonical path is Docker Compose:</p>
+  <pre><code>git clone https://git.sr.ht/~klahr/zv
+cd zv
+cp .env.example .env       # edit the marked values before going live
+docker compose up -d</code></pre>
+  <p>That brings up Postgres + the app, runs migrations, seeds an initial <code>admin / admin</code> account, and listens on <code>http://localhost:8080</code>. Change the seeded password through the UI on first login. Front the app with TLS (Caddy / nginx / Traefik) before pointing real users at it.</p>
+
+  <h3>What's the same as the hosted product</h3>
+  <ul>
+    <li>The arranger surface, the play surface, the live audience display — same code, same shapes, same UX.</li>
+    <li>Adventures, assignments, events, teams, magic links, recap PDF.</li>
+    <li>Webhooks for outbound integration.</li>
+    <li>Email verification + password reset (if SMTP is configured).</li>
+  </ul>
+
+  <h3>What's different on self-host</h3>
+  <ul>
+    <li><strong>No Stripe by default.</strong> Without <code>ZV_STRIPE_SECRET_KEY</code> set, the Store's checkout flow creates assignments directly — you get the licence without paying, because the operator is you. Wire Stripe in if you want to resell to other organisations on your instance.</li>
+    <li><strong>No SSO by default.</strong> Username + password is the front door. Set <code>ZV_OIDC_*</code> to enable Google Workspace (or any OIDC provider) sign-in for your domain. The login page picks up the SSO button automatically.</li>
+    <li><strong>You're the global admin.</strong> The seeded admin account sees every org, every adventure, every event on the instance. Treat it like a root password — store it in the same place you keep <code>POSTGRES_PASSWORD</code>.</li>
+    <li><strong>Backups are your job.</strong> All durable state lives in the <code>zv_pg_data</code> volume — adventures, events, uploaded images and audio, recap tokens. <code>docker compose down -v</code> wipes everything. SELFHOSTING.md has a tested <code>pg_dump</code>-based backup recipe.</li>
+    <li><strong>The marketing landing page is off by default.</strong> An unauthenticated visitor lands directly on the login screen. Flip it on via the admin Settings page if you want a public "what is this?" page.</li>
+  </ul>
+
+  <h3>Configuration knobs</h3>
+  <p>Everything is environment-variable driven through the <code>.env</code> file next to <code>compose.yaml</code>. The <code>.env.example</code> in the repo is annotated and grouped by feature: database, mail, OIDC, Stripe, TOTP, legal pages, retention windows. Most defaults are tuned for first-boot ergonomics, not production — read the comments before you put it in front of users.</p>
+
+  <h3>Updating</h3>
+  <p>Releases are tagged. Pull the new tag, rebuild the image, and migrations run automatically on next start:</p>
+  <pre><code>git fetch --tags
+make upgrade               # checks out the latest tag, rebuilds, restarts</code></pre>
+  <p>Take a Postgres backup before any upgrade. Migrations are forward-only — there is no automated downgrade path.</p>
+
+  <div class="callout">Self-hosting is supported but not white-glove. SELFHOSTING.md tracks every operator-facing detail (env vars, TLS, OIDC walkthrough with Google Cloud Console steps, retention policies, Stripe setup). If the manual contradicts the operator guide, the operator guide wins.</div>
 </section>
 
 <section id="help">
