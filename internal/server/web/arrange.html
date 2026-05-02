@@ -3117,7 +3117,7 @@ async function showOnboardingModal() {
         t('You can revisit this from the Settings page anytime.')),
       h('div', { class: 'row end', style: 'margin-top:1rem; gap:.5rem' },
         h('button', { class: 'btn', on: { click: () => close(null) } }, t('Skip')),
-        h('button', { class: 'btn primary', on: { click: () => { close(null); nav('#store'); } } },
+        h('button', { class: 'btn primary', on: { click: () => { close(null); nav('#catalog'); } } },
           t('Open the store'))));
   });
 }
@@ -3667,7 +3667,7 @@ function renderShell() {
     ];
   } else {
     // Sidebar lists the daily-operational surfaces only. Adventures
-    // (incl. its Catalog tab — was "Store"), Events, and per-role
+    // (incl. its Catalog tab), Events, and per-role
     // surfaces. Member admin, audit log, billing history,
     // integrations and the manual all live as tabs inside Settings
     // so the daily nav stays calm.
@@ -3875,7 +3875,10 @@ function currentCrumb() {
   const LABELS = {
     dashboard:     t('Dashboard'),
     adventures:    t('Adventures'),
-    store:         t('Store'),
+    // Both prefixes resolve to viewCatalog (see the route table); the
+    // label is the same in either case.
+    catalog:       t('Catalog'),
+    store:         t('Catalog'),
     events:         t('Events'),
     members:       t('Members'),
     organizations: t('Organizations'),
@@ -3947,7 +3950,11 @@ async function renderRoute() {
       case '':
       case 'dashboard':    return await viewDashboard(view);
       case 'adventures':   return arg ? await viewAdventureDetail(view, arg) : await viewAdventures(view);
-      case 'store':        return arg ? await viewStoreDetail(view, arg) : await viewStore(view);
+      // 'store' alias keeps old bookmarks / inline links working
+      // after the rename to 'catalog'. Same handlers; the URL just
+      // happens to resolve via either prefix.
+      case 'catalog':
+      case 'store':        return arg ? await viewCatalogDetail(view, arg) : await viewCatalog(view);
       case 'events':         return arg ? await viewRunDetail(view, arg) : await viewRuns(view);
       // Members / Admins / Audit / Purchases / Webhooks were lifted
       // into the Settings hub as tabs; old links / bookmarks /
@@ -4219,7 +4226,7 @@ function buildDashboardSetup({ mineAdvs, unusedAssigns }) {
     h('p', { class: 'muted' }, t('A few clicks to your first adventure.')),
     h('ol', { style: 'list-style:none; padding:0; margin:0' },
       stepDone(haveAdvOrAssignment,
-        t('Pick an adventure — browse the Store or create your own'),
+        t('Pick an adventure — browse the Catalog or create your own'),
         // Most first-time arrangers want to make their own adventure;
         // the wording leaves browsing as a secondary path (one click
         // away in the sidebar). The CTA jumps straight into the
@@ -4227,7 +4234,7 @@ function buildDashboardSetup({ mineAdvs, unusedAssigns }) {
         t('Create'), () => openCreateAdventure()),
       stepDone(unusedAssigns.length > 0,
         t('Have player slots ready — an assignment lets you schedule an event'),
-        t('Browse store'), () => nav('#store')),
+        t('Browse the Catalog'), () => nav('#catalog')),
       stepDone(false,
         t('Schedule an event, add teams, share their links — and start!'),
         unusedAssigns.length > 0 ? t('Schedule') : null,
@@ -4388,7 +4395,7 @@ async function viewAdventures(view) {
   // An adventure shows up on this page only if there's something the
   // arranger actually does with it — they author it, they hold at
   // least one assignment, or an admin has commissioned it for this
-  // org via a share. Everything else lives in the Store.
+  // org via a share. Everything else lives in the Catalog.
   const runnable = advs
     .filter((a) => a.mine_to_edit || a.shared || byAdv.has(a.slug))
     .sort((a, b) => {
@@ -4410,21 +4417,32 @@ async function viewAdventures(view) {
     // is the path in. Keeps this listing focused on "what to run" so
     // a glance separates schedulable adventures from ones that need a
     // purchase first, without an extra primary action competing.
+    // Schedule routing under the unified pay-at-event model:
+    //   - Has an unused assignment → use it (pre-paid licence).
+    //   - Commissioned via share → free, schedule with the slug.
+    //   - Otherwise (own org content, forked or self-authored) → go
+    //     through the purchase flow first, which mints an
+    //     assignment (free for ≤15 players, Stripe for more), and
+    //     auto-schedules the event using that assignment.
     if (bucket.unused.length > 0) {
       actions.append(h('button', {
         class: 'btn primary',
         on: { click: () => pickAndScheduleRun(bucket.unused, adv) },
       }, icon(ICONS.schedule), t('Schedule event')));
-    } else if (adv.shared || (adv.mine_to_edit && adv.org_id)) {
-      // Commissioned by admin or authored in-house — either way the
-      // org can schedule events freely, no assignment needed.
+    } else if (adv.shared) {
       actions.append(h('button', {
         class: 'btn primary',
         on: { click: () => scheduleRun({ slug: adv.slug }) },
       }, icon(ICONS.schedule), t('Schedule event')));
+    } else if (adv.mine_to_edit && adv.org_id) {
+      // Own org content — schedule via the buy-then-create path.
+      actions.append(h('button', {
+        class: 'btn primary',
+        on: { click: () => openPurchaseModal(adv) },
+      }, icon(ICONS.schedule), t('Schedule event')));
     } else if (adv.mine_to_edit) {
-      // Own adventure with no unused assignments — offer the buy
-      // path inline so "make this runnable" is one step away.
+      // Admin-authored global catalog row from this admin's seat —
+      // the buy flow stays for the legacy assignment surface.
       actions.append(h('button', {
         class: 'btn',
         on: { click: () => openPurchaseModal(adv) },
@@ -4486,92 +4504,27 @@ async function viewAdventures(view) {
     );
   };
 
-  // Templates: admin-owned starter content org users can duplicate
-  // into their own org instead of authoring from scratch. The most
-  // load-bearing surface for activation — a non-technical buyer who
-  // sees an empty Adventures tab on first login often bounces; one
-  // visible "Use this template" button turns the empty state into a
-  // 30-second-to-runnable path.
-  const templates = advs.filter((a) => a.is_template);
-  const templatesBlock = templates.length === 0 ? null : h('div', {},
-    h('h2', { style: 'margin:1.25rem 0 .25rem' }, t('Start from a template')),
-    h('p', { class: 'muted', style: 'margin:0 0 .75rem' },
-      t('Pick a starter, customise the puzzles for your venue, and you\'re ready to schedule an event.')),
-    h('div', { class: 'grid cols-2' }, templates.map((tpl) => h('div', { class: 'card' },
-      h('div', { class: 'row between', style: 'align-items:flex-start; gap:.75rem' },
-        h('div', { class: 'row', style: 'gap:.75rem; align-items:center; min-width:0' },
-          adventureCover(tpl, 56),
-          h('h3', { style: 'margin:0' }, tpl.title)),
-        h('span', { class: 'pill accent' }, t('Template'))),
-      tpl.description
-        ? h('p', { class: 'muted', style: 'margin:.35rem 0 0' }, tpl.description)
-        : null,
-      h('p', { class: 'muted mono', style: 'font-size:.8rem; margin:0' },
-        tpl.page_count === 1
-          ? t('{{n}} puzzle', { n: tpl.page_count })
-          : t('{{n}} puzzles', { n: tpl.page_count }),
-        tpl.author ? ' · ' + tpl.author : ''),
-      h('div', { class: 'row end', style: 'margin-top:.5rem' },
-        h('button', {
-          class: 'btn primary',
-          on: { click: () => duplicateAdventureFromTemplate(tpl) },
-        }, icon(ICONS.plus), t('Use this template'))),
-    ))),
-  );
-
-  // replaceChildren coerces null arguments to the literal string
-  // "null" (unlike h(), which skips them), so the templatesBlock
-  // null-when-no-templates case has to be filtered out before the
-  // spread or the page renders "null" as a text node above the grid.
-  const sections = [
+  view.replaceChildren(
     h('div', { class: 'row between' },
       h('h1', {}, t('Adventures')),
       h('button', { class: 'btn primary', on: { click: () => openCreateAdventure() } },
         icon(ICONS.plus), t('New adventure'))),
     renderAdventureTabs('yours'),
-    templatesBlock,
     runnable.length === 0
       ? h('div', { class: 'empty' },
           h('p', {}, t('No adventures you can use yet.')),
-          h('p', { class: 'muted' }, templates.length > 0
-            ? t('Pick a template above, or create your own from scratch.')
-            : t('Create your own or browse the Catalog for published adventures.')),
+          h('p', { class: 'muted' }, t('Create your own or browse the Catalog for published adventures.')),
           h('div', { class: 'row', style: 'gap:.5rem; justify-content:center; margin-top:.5rem' },
             h('button', { class: 'btn primary', on: { click: () => openCreateAdventure() } },
               icon(ICONS.plus), t('New adventure')),
-            h('button', { class: 'btn', on: { click: () => nav('#store') } },
+            h('button', { class: 'btn', on: { click: () => nav('#catalog') } },
               icon(ICONS.coins), t('Browse the Catalog'))))
-      : h('div', {},
-          templates.length > 0
-            ? h('h2', { style: 'margin:1.25rem 0 .25rem' }, t('Yours'))
-            : null,
-          h('div', { class: 'grid cols-2' }, runnable.map(renderCard))),
-  ];
-  view.replaceChildren(...sections.filter(Boolean));
-}
-
-// duplicateAdventureFromTemplate clones the source adventure into
-// the caller's org and navigates straight to its detail page so the
-// arranger can start customising. The org_admin role is enforced
-// server-side; failures (403, 409 on slug clash) surface as toasts
-// rather than blocking the page. The empty-state moment is the
-// load-bearing one — a stuck customer here is the highest-impact
-// activation drop in the funnel.
-async function duplicateAdventureFromTemplate(tpl) {
-  const r = await api(`/api/admin/adventures/${encodeURIComponent(tpl.slug)}/duplicate`, {
-    method: 'POST',
-    body: JSON.stringify({}),
-  });
-  if (r.status === 201 && r.body?.slug) {
-    toastOk(t('Template copied — start customising your puzzles.'));
-    nav('#adventures/' + encodeURIComponent(r.body.slug));
-    return;
-  }
-  toastErr(r.body?.error || t('Could not duplicate the template.'));
+      : h('div', { class: 'grid cols-2' }, runnable.map(renderCard)),
+  );
 }
 
 // renderAdventureTabs is the shared two-tab strip that sits under the
-// h1 on both viewAdventures (Yours) and viewStore (Catalog) so the
+// h1 on both viewAdventures (Yours) and viewCatalog (Catalog) so the
 // arranger can flip between "what I can run now" and "what's on offer"
 // without going back to the sidebar. Reuses the existing .lib-tabs
 // styles from the Library section for visual consistency.
@@ -4583,7 +4536,7 @@ function renderAdventureTabs(active) {
   }, label);
   return h('div', { class: 'lib-tabs', style: 'margin-bottom:1rem' },
     tab('yours',   t('Yours'),   '#adventures'),
-    tab('catalog', t('Catalog'), '#store'),
+    tab('catalog', t('Catalog'), '#catalog'),
   );
 }
 
@@ -4613,12 +4566,12 @@ async function pickAndScheduleRun(unusedAssignments, adv) {
   if (pick) scheduleRun(pick);
 }
 
-// ========== Store ==========
+// ========== Catalog ==========
 // Discovery surface for adventures the arranger doesn't author. The
 // read-about-and-buy counterpart to Adventures (which is "what can I
 // actually run right now"). Buying slots here creates an assignment
 // which then promotes the adventure onto the Adventures page.
-async function viewStore(view) {
+async function viewCatalog(view) {
   const r = await api('/api/admin/adventures');
   const advs = r.body?.adventures || [];
   const catalog = advs.filter((a) => !a.mine_to_edit && a.published);
@@ -4636,52 +4589,290 @@ async function viewStore(view) {
       : h('div', { class: 'grid cols-2' }, catalog.map((a) =>
         h('div', {
           class: 'card clickable',
-          on: { click: () => nav('#store/' + a.slug) },
+          on: { click: () => nav('#catalog/' + a.slug) },
         },
           h('div', { class: 'row between', style: 'align-items:flex-start; gap:.75rem' },
             h('div', { class: 'row', style: 'gap:.75rem; align-items:center; min-width:0' },
               adventureCover(a, 56),
               h('h2', { style: 'margin:0' }, a.title)),
-            h('span', { class: 'pill' }, a.page_count === 1
-              ? t('{{n}} puzzle', { n: a.page_count })
-              : t('{{n}} puzzles', { n: a.page_count }))),
+            h('div', { class: 'row', style: 'gap:.35rem; flex-wrap:wrap; justify-content:flex-end' },
+              a.language
+                ? h('span', {
+                    class: 'pill',
+                    style: 'letter-spacing:.05em',
+                    title: t('Adventure content language'),
+                  },
+                    zvI18n.flagFor(a.language) ? zvI18n.flagFor(a.language) + ' ' : '',
+                    h('span', { style: 'text-transform:uppercase' }, a.language))
+                : null,
+              h('span', { class: 'pill' }, a.page_count === 1
+                ? t('{{n}} puzzle', { n: a.page_count })
+                : t('{{n}} puzzles', { n: a.page_count })))),
           a.description ? h('p', { class: 'muted', style: 'margin-top:.35rem' }, a.description) : null,
           h('p', { class: 'muted mono', style: 'font-size:.8rem' },
             a.slug + (a.author ? ' · ' + a.author : '')),
           h('div', { class: 'row end', style: 'margin-top:.5rem' },
             h('button', {
               class: 'btn primary',
-              on: { click: (e) => { e.stopPropagation(); openPurchaseModal(a); } },
-            }, icon(ICONS.coins), t('Buy player slots')))))),
+              on: { click: (e) => { e.stopPropagation(); useAdventureFromCatalog(a); } },
+            }, icon(ICONS.plus), t('Use this adventure')))))),
   );
 }
 
-// viewStoreDetail is the Store's read-about page — description, author,
-// puzzle count, and a Buy CTA. Deliberately does NOT list individual
-// puzzles: the backend returns author content (including accept lists)
-// on this endpoint, and the Store is meant to tease the adventure, not
-// spoil it.
-async function viewStoreDetail(view, slug) {
+// viewCatalogDetail is the Catalog's read-about page — the surface an
+// arranger uses to decide whether an adventure fits their event.
+// Aggregates the per-puzzle data the backend returns into decision-
+// relevant facts (geographic flexibility, media mix, hint timing,
+// estimated playtime) without rendering individual puzzles — the
+// Catalog should help an arranger judge the shape of the adventure,
+// not spoil the content they haven't paid for yet.
+// useAdventureFromCatalog forks a Catalog adventure into the caller's
+// org via the existing duplicate endpoint and navigates to the new
+// adventure's detail page. Universal entry point — every Catalog
+// adventure goes through this path now (the as_is/template
+// distinction was retired alongside the move to per-event billing).
+// Server enforces org_admin via canAuthor; org_members trying this
+// path get a tidy 403 toast.
+async function useAdventureFromCatalog(adv) {
+  const r = await api(`/api/admin/adventures/${encodeURIComponent(adv.slug)}/duplicate`, {
+    method: 'POST',
+    body: JSON.stringify({}),
+  });
+  if (r.status === 201 && r.body?.slug) {
+    toastOk(t('Added to your Adventures — customise as much or as little as you want, then schedule.'));
+    nav('#adventures/' + encodeURIComponent(r.body.slug));
+    return;
+  }
+  toastErr(r.body?.error || t('Could not add the adventure to your org.'));
+}
+
+async function viewCatalogDetail(view, slug) {
   const r = await api('/api/admin/adventures/' + encodeURIComponent(slug));
   if (!r.ok) { view.replaceChildren(h('p', { class: 'err' }, r.body?.error || t('not found'))); return; }
   const a = r.body;
-  view.replaceChildren(
-    h('button', { class: 'btn ghost small', on: { click: () => nav('#store') } },
-      icon(ICONS.back), t('Store')),
-    h('div', { class: 'row between', style: 'margin-top:.5rem; align-items:flex-start; gap:.75rem' },
+  const pages = (a.pages || []).filter((p) => !p.disabled);
+  const facts = computeAdventureFacts(pages);
+
+  // ── Hero card: cover, title, slug+author meta, big Buy CTA, blurb.
+  const hero = h('div', { class: 'card' },
+    h('div', { class: 'row between', style: 'align-items:flex-start; gap:1rem; flex-wrap:wrap' },
       h('div', { class: 'row', style: 'gap:1rem; align-items:center; min-width:0' },
         adventureCover(a, 96),
-        h('h1', { style: 'margin:0' }, a.title)),
-      h('button', { class: 'btn primary',
-        on: { click: () => openPurchaseModal({ slug: a.slug, title: a.title }) } },
-        icon(ICONS.coins), t('Buy player slots'))),
-    h('p', { class: 'muted mono' },
-      t('{{slug}} · {{n}} puzzles', { slug: a.slug, n: a.page_count }),
-      a.author ? ' · ' + a.author : ''),
+        h('div', { style: 'min-width:0' },
+          h('h1', { style: 'margin:0 0 .15rem' }, a.title),
+          h('p', { class: 'muted mono', style: 'margin:0; font-size:.85rem' },
+            a.slug + (a.author ? ' · ' + a.author : '')))),
+      h('div', { class: 'row', style: 'gap:.5rem; flex-wrap:wrap' },
+        // Preview lands on /play in spoiler-free mode for buyers and
+        // share-holders, full-fidelity for authors. Catalog browsers
+        // who haven't bought see a 403 from the preview endpoint —
+        // matches the policy we just locked in on the server.
+        h('a', {
+          class: 'btn',
+          href: '/play?preview=' + encodeURIComponent(a.slug) + '&page=0',
+          target: '_blank',
+          rel: 'noopener',
+        }, icon(ICONS.eye), t('Preview')),
+        h('button', {
+          class: 'btn primary',
+          on: { click: () => useAdventureFromCatalog(a) },
+        }, icon(ICONS.plus), t('Use this adventure')))),
     a.description
-      ? h('p', { style: 'white-space:pre-wrap; margin-top:1rem' }, a.description)
-      : h('p', { class: 'muted' }, t('(no description)')),
+      ? h('p', { style: 'white-space:pre-wrap; margin:.85rem 0 0' }, a.description)
+      : h('p', { class: 'muted', style: 'margin:.85rem 0 0' }, t('(no description)')),
   );
+
+  // ── At a glance: a tile grid of decision-relevant facts. Each tile
+  //    has a short label + one-line value, all derived from the puzzle
+  //    data so the page reflects reality (no separate metadata to drift).
+  const glance = (label, value) => h('div', {
+    class: 'glance-tile',
+    style: 'padding:.7rem .85rem; background:var(--surface-2); border-radius:8px; min-width:0',
+  },
+    h('p', { class: 'muted', style: 'margin:0; font-size:.7rem; text-transform:uppercase; letter-spacing:.07em; font-weight:700' }, label),
+    h('p', { style: 'margin:.2rem 0 0; font-weight:600; font-size:.95rem; overflow:hidden; text-overflow:ellipsis' }, value),
+  );
+  const glanceGrid = h('div', { class: 'card' },
+    h('h2', { style: 'margin:0 0 .55rem' }, t('At a glance')),
+    h('div', {
+      style: 'display:grid; grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); gap:.5rem',
+    },
+      glance(t('Puzzles'), pages.length === 1
+        ? t('{{n}} puzzle', { n: pages.length })
+        : t('{{n}} puzzles', { n: pages.length })),
+      glance(t('Estimated playtime'), facts.playtime),
+      glance(t('Location'), facts.geo.shortLabel),
+      glance(t('Media'), facts.mediaLabel),
+      glance(t('Hints'), facts.hintsLabel),
+      a.language
+        ? glance(t('Language'),
+            (zvI18n.flagFor(a.language) ? zvI18n.flagFor(a.language) + ' ' : '') + a.language.toUpperCase())
+        : null,
+      a.author ? glance(t('Author'), a.author) : null,
+    ),
+  );
+
+  // ── Where to play: longer prose + a mini-map for location-bound
+  //    adventures. The map is built lazily — we ensureLeaflet() only
+  //    when there's actually a bbox to render.
+  const whereCard = h('div', { class: 'card' },
+    h('h2', { style: 'margin:0 0 .35rem' }, t('Where to play')),
+    h('p', { style: 'margin:0 0 .5rem' }, facts.geo.blurb),
+  );
+  if (facts.geo.bbox) {
+    const mapHost = h('div', {
+      style: 'height:240px; border-radius:8px; overflow:hidden; border:1px solid var(--border-soft)',
+    });
+    whereCard.append(mapHost);
+    // Lazy Leaflet load matches how the run-detail map is wired —
+    // first paint of the Catalog detail page shouldn't pay the Leaflet
+    // download cost just for the bbox tile.
+    ensureLeaflet().then(() => {
+      const map = L.map(mapHost, { zoomControl: true, attributionControl: false }).fitBounds([
+        [facts.geo.bbox.minLat, facts.geo.bbox.minLng],
+        [facts.geo.bbox.maxLat, facts.geo.bbox.maxLng],
+      ], { padding: [20, 20] });
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 18, attribution: '© OpenStreetMap',
+      }).addTo(map);
+      // Faint marker cluster — shows shape without giving away
+      // every gate's exact coordinates as a precise pin.
+      for (const p of facts.geo.points) {
+        L.circleMarker([p.lat, p.lng], {
+          radius: 6, weight: 0, fillColor: 'var(--accent)', fillOpacity: 0.7,
+        }).addTo(map);
+      }
+    }).catch(() => { /* offline / blocked — silent fallback to text-only */ });
+  }
+
+  // ── What players need: phone-side requirements, derived from the
+  //    puzzle mix. Players don't sign up to find out they needed
+  //    headphones halfway through.
+  const needs = [];
+  needs.push(h('li', {}, t('A smartphone with a modern browser (Safari, Chrome, Firefox).')));
+  if (facts.geo.kind !== 'anywhere') {
+    needs.push(h('li', {}, t('GPS / location services enabled — some puzzles only unlock when the team reaches a specific spot.')));
+  }
+  if (facts.audioPages > 0) {
+    needs.push(h('li', {}, t('Audio output — {{n}} puzzle(s) include audio clips. Headphones recommended in noisy venues.', { n: facts.audioPages })));
+  }
+  if (facts.imagePages > 0) {
+    needs.push(h('li', {}, t('Bandwidth for image downloads — {{n}} puzzle(s) include images.', { n: facts.imagePages })));
+  }
+  const needsCard = h('div', { class: 'card' },
+    h('h2', { style: 'margin:0 0 .35rem' }, t('What players need')),
+    h('ul', { style: 'margin:0; padding-left:1.2rem' }, ...needs),
+  );
+
+  view.replaceChildren(
+    h('button', { class: 'btn ghost small', on: { click: () => nav('#catalog') } },
+      icon(ICONS.back), t('Catalog')),
+    hero,
+    glanceGrid,
+    whereCard,
+    needsCard,
+  );
+}
+
+// computeAdventureFacts derives the decision-relevant aggregates the
+// Catalog detail page surfaces. Pure function over the page array so it
+// can be unit-tested in isolation if a future regression appears.
+//   - geo.kind: 'anywhere' | 'spot' | 'area' | 'tour' | 'mixed'
+//   - geo.bbox: lat/lng bounds of all gated pages, null when none gated
+//   - geo.points: gate coordinates for the mini-map (gated pages only)
+//   - playtime: rough text estimate based on page count + hint delays
+//   - mediaLabel / hintsLabel: short pill copy for the at-a-glance grid
+function computeAdventureFacts(pages) {
+  const gated = pages.filter((p) => p.gated);
+  const audioPages = pages.filter((p) => (p.audio || []).length > 0).length;
+  const imagePages = pages.filter((p) => (p.images || []).length > 0).length;
+  const hints = pages.flatMap((p) => p.hints || []);
+  const timedHints = hints.filter((hh) => (hh.delay_seconds || 0) > 0).length;
+
+  // Playtime: assume ~5 minutes per puzzle as a baseline, plus a
+  // few extra minutes for image-heavy or audio-heavy ones (players
+  // pause to look / listen). Round to a 5-minute bucket so the
+  // estimate doesn't pretend to be precise.
+  const baseMin = pages.length * 5;
+  const mediaBoost = (audioPages + imagePages) * 1;
+  const lowMin = Math.max(15, Math.round((baseMin + mediaBoost) * 0.8 / 5) * 5);
+  const highMin = Math.max(lowMin + 10, Math.round((baseMin + mediaBoost) * 1.4 / 5) * 5);
+  const playtime = lowMin === highMin
+    ? t('{{m}} min', { m: lowMin })
+    : t('{{lo}}–{{hi}} min', { lo: lowMin, hi: highMin });
+
+  let geo;
+  if (gated.length === 0) {
+    geo = {
+      kind: 'anywhere',
+      shortLabel: t('Anywhere'),
+      blurb: t('No GPS gates — players answer text, image, and audio puzzles wherever you choose to host the event. Adapt prompts to your venue and run it indoors, outdoors, or fully online.'),
+      bbox: null,
+      points: [],
+    };
+  } else {
+    let minLat = Infinity, maxLat = -Infinity, minLng = Infinity, maxLng = -Infinity;
+    const points = [];
+    for (const p of gated) {
+      const { lat, lng } = p.location || {};
+      if (typeof lat !== 'number' || typeof lng !== 'number') continue;
+      minLat = Math.min(minLat, lat); maxLat = Math.max(maxLat, lat);
+      minLng = Math.min(minLng, lng); maxLng = Math.max(maxLng, lng);
+      points.push({ lat, lng });
+    }
+    const spanKm = haversineKm(minLat, minLng, maxLat, maxLng);
+    const mixed = gated.length < pages.length;
+    let kind, shortLabel, blurb;
+    if (spanKm < 0.4) {
+      kind = 'spot';
+      shortLabel = t('Single venue');
+      blurb = t('All gated puzzles cluster within a ~{{m}} m area — runs as a single-venue event (one park, one campus, one café crawl).', { m: Math.max(50, Math.round(spanKm * 1000)) });
+    } else if (spanKm < 5) {
+      kind = 'area';
+      shortLabel = t('Specific area (~{{km}} km)', { km: spanKm.toFixed(1) });
+      blurb = t('Gated puzzles span ~{{km}} km — fits a campus, neighbourhood, or city quarter. Bound to this geography unless you re-author the locations.', { km: spanKm.toFixed(1) });
+    } else {
+      kind = 'tour';
+      shortLabel = t('Multi-stop tour (~{{km}} km)', { km: Math.round(spanKm) });
+      blurb = t('Gated puzzles span ~{{km}} km — a city- or region-wide tour. Plan transport for the team between stops.', { km: Math.round(spanKm) });
+    }
+    if (mixed) {
+      blurb += ' ' + t('{{n}} puzzle(s) are NOT gated and could be re-themed for any venue.', { n: pages.length - gated.length });
+    }
+    geo = {
+      kind, shortLabel, blurb,
+      bbox: isFinite(minLat) ? { minLat, maxLat, minLng, maxLng } : null,
+      points,
+    };
+  }
+
+  const mediaParts = [];
+  if (imagePages > 0) mediaParts.push(t('{{n}} with images', { n: imagePages }));
+  if (audioPages > 0) mediaParts.push(t('{{n}} with audio', { n: audioPages }));
+  const mediaLabel = mediaParts.length === 0 ? t('Text-only') : mediaParts.join(' · ');
+
+  let hintsLabel;
+  if (hints.length === 0) hintsLabel = t('No hints');
+  else if (timedHints === 0) hintsLabel = t('{{n}} hints, all immediate', { n: hints.length });
+  else if (timedHints === hints.length) hintsLabel = t('{{n}} hints, all timed', { n: hints.length });
+  else hintsLabel = t('{{n}} hints ({{m}} timed)', { n: hints.length, m: timedHints });
+
+  return { geo, audioPages, imagePages, mediaLabel, hintsLabel, playtime };
+}
+
+// haversineKm returns great-circle distance in km between two
+// lat/lng pairs. Used here to characterise the geographic span of
+// gated puzzles; mathx-quality precision isn't needed (we round to
+// fairly coarse buckets in the Catalog copy).
+function haversineKm(aLat, aLng, bLat, bLng) {
+  if (!isFinite(aLat) || !isFinite(bLat)) return 0;
+  const R = 6371;
+  const toRad = (d) => d * Math.PI / 180;
+  const dLat = toRad(bLat - aLat);
+  const dLng = toRad(bLng - aLng);
+  const x = Math.sin(dLat / 2) ** 2
+    + Math.cos(toRad(aLat)) * Math.cos(toRad(bLat)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(x));
 }
 
 // viewPurchases is the post-checkout landing + history view. Simulated
@@ -4808,7 +4999,7 @@ function renderEmptyPurchases() {
     h('p', { class: 'muted', style: 'margin-top:.5rem' },
       t('Browse the catalog and buy player slots to start scheduling events.')),
     h('div', { style: 'margin-top:.75rem' },
-      h('button', { class: 'btn primary', on: { click: () => nav('#store') } },
+      h('button', { class: 'btn primary', on: { click: () => nav('#catalog') } },
         icon(ICONS.coins), t('Open the store'))));
 }
 
@@ -4903,6 +5094,15 @@ async function viewAdventureDetail(view, slug) {
   if (a.org_id == null) {
     pills.push(h('span', { class: 'pill' + (a.published ? ' success' : ' warning') },
       a.published ? t('Published in catalog') : t('Draft')));
+  }
+  if (a.language) {
+    pills.push(h('span', {
+      class: 'pill',
+      style: 'letter-spacing:.05em',
+      title: t('Adventure content language'),
+    },
+      zvI18n.flagFor(a.language) ? zvI18n.flagFor(a.language) + ' ' : '',
+      h('span', { style: 'text-transform:uppercase' }, a.language)));
   }
   if ((a.running_event_count || 0) > 0) {
     pills.push(h('span', { class: 'pill warning' },
@@ -5416,7 +5616,7 @@ function mountAdventureMap(host, pages, colors) {
 }
 
 async function scheduleRun(source) {
-  // `source` is either a number (assignment id — the Store purchase flow)
+  // `source` is either a number (assignment id — the Catalog purchase flow)
   // or an object with `{ slug }` — an admin-commissioned share or the
   // org's own-authored adventure, both of which skip the assignment and
   // run free.
@@ -6246,7 +6446,13 @@ function renderEventAdventureStrip(adventure, event) {
       h('div', { class: 'event-adv-title' }, adventure.title || event.adventure_slug),
       h('div', { class: 'muted', style: 'font-size:.8rem' },
         t('{{n}} puzzles', { n: adventure.page_count || (adventure.pages || []).length }),
-        adventure.author ? ' · ' + adventure.author : '')),
+        adventure.author ? ' · ' + adventure.author : '',
+        adventure.language ? ' · ' : null,
+        adventure.language
+          ? h('span', { style: 'letter-spacing:.04em' },
+              zvI18n.flagFor(adventure.language) ? zvI18n.flagFor(adventure.language) + ' ' : '',
+              h('span', { style: 'text-transform:uppercase' }, adventure.language))
+          : null)),
     h('a', {
       class: 'btn small ghost',
       href: '#adventures/' + encodeURIComponent(event.adventure_slug),
@@ -9086,11 +9292,11 @@ function renderLibraryEdit(view, adv) {
       // action that does nothing.
       !adv.org_id && (adv.published
         ? h('button', { class: 'btn small',
-            title: t('Hide from the Store'),
+            title: t('Hide from the Catalog'),
             on: { click: () => togglePublished(adv, false) } },
             icon(ICONS.globe), t('Unpublish'))
         : h('button', { class: 'btn small primary',
-            title: t('Make available in the Store'),
+            title: t('Make available in the Catalog'),
             on: { click: () => togglePublished(adv, true) } },
             icon(ICONS.globe), t('Publish'))),
       h('button', { class: 'btn small',
@@ -9192,7 +9398,7 @@ function wirePuzzleDrag(card, i, getDragFrom, setDragFrom, moveOver, commit, can
 }
 
 // togglePublished flips the adventure's published flag and re-renders
-// the library edit view so the pill and CTA label swap. Only Store
+// the library edit view so the pill and CTA label swap. Only Catalog
 // visibility is affected — owned adventures stay in Adventures either
 // way, so arrangers can iterate on drafts without losing access.
 async function togglePublished(adv, next) {
@@ -9221,7 +9427,7 @@ function renderAdventureShares(adv) {
         on: { click: () => openShareAdventureModal(adv) } },
         icon(ICONS.plus), t('Share with org'))),
     h('p', { class: 'muted', style: 'margin:.35rem 0' },
-      t('Give specific organisations free access to this adventure without publishing it to the Store.')),
+      t('Give specific organisations free access to this adventure without publishing it to the Catalog.')),
     shares.length === 0
       ? h('p', { class: 'muted' }, t('Not shared with any organisation yet.'))
       : h('div', { class: 'row', style: 'gap:.4rem; flex-wrap:wrap' },
@@ -9422,11 +9628,34 @@ async function openEditAdventureMeta(adv) {
     // Three panels, one visible at a time. Tabs group the fields by
     // the author's mental model (what to call it / what to say /
     // what it looks like) instead of a single scroll marathon.
+    // Language tag. BCP 47 free-form input — common cases (en, sv,
+    // de, fr, …) are immediate, but a Klingon adventure shouldn't
+    // be blocked by an enum. A small datalist suggests the
+    // common locales without locking the field down.
+    const initialLanguage = adv.language || 'en';
+    const langInput = h('input', {
+      value: initialLanguage,
+      list: 'zv-lang-suggestions',
+      maxlength: 32,
+      placeholder: 'en',
+      style: 'max-width:12rem',
+    });
+    const langDatalist = h('datalist', { id: 'zv-lang-suggestions' },
+      ['en', 'sv', 'no', 'da', 'fi', 'de', 'fr', 'es', 'pt', 'pt-BR', 'it', 'nl', 'pl', 'ja', 'zh-Hant', 'zh-Hans'].map((c) => h('option', { value: c })),
+    );
+    const langRow = h('label', { class: 'field' },
+      h('span', {}, t('Language')),
+      h('div', { class: 'row', style: 'gap:.5rem; align-items:center' },
+        langInput, langDatalist),
+      h('p', { class: 'muted', style: 'margin:.2rem 0 0; font-size:.8rem' },
+        t('BCP 47 tag — surfaced on the Catalog so buyers can spot adventures in their language.')));
+
     const paneDetails = h('div', { class: 'tab-pane active' },
       h('label', { class: 'field' }, h('span', {}, t('Slug')), slug),
       h('label', { class: 'field' }, h('span', {}, t('Title')), title),
       h('label', { class: 'field' }, h('span', {}, t('Description')), desc),
       h('label', { class: 'field' }, h('span', {}, t('Author')), author),
+      langRow,
       coverRow, coverFile);
     const paneCopy = h('div', { class: 'tab-pane' },
       h('label', { class: 'field' },
@@ -9497,6 +9726,7 @@ async function openEditAdventureMeta(adv) {
       if (cBackground.get() !== initialBg)        payload.background_color       = cBackground.get();
       if (cText.get()       !== initialText)      payload.text_color             = cText.get();
       if (cSubmitBg.get()   !== initialSubmitBg)  payload.submit_bg_color        = cSubmitBg.get();
+      if (langInput.value.trim() !== initialLanguage) payload.language          = langInput.value.trim();
       if (Object.keys(payload).length === 0) { close(null); return; }
       const r = await api(`/api/admin/adventures/${encodeURIComponent(adv.slug)}`, {
         method: 'PATCH', body: JSON.stringify(payload),
@@ -12044,7 +12274,7 @@ function viewManual(view, anchor) {
           t('a reusable script. Pages of puzzles in order. Like a book.')),
         h('span', {}, h('strong', {}, t('Assignment')),
           ' — ',
-          t('a paid licence to use an adventure for an event once for up to N teams. You buy these from the Store.')),
+          t('a paid licence to use an adventure for an event once for up to N teams. You buy these from the Catalog.')),
         h('span', {}, h('strong', {}, t('Event')),
           ' — ',
           t('one specific playthrough at a specific time. Created from an assignment.')),
@@ -12141,13 +12371,13 @@ function viewManual(view, anchor) {
     sec('assignments', t('Buying player-slot assignments'),
       p(t('An assignment licences one event for up to N player slots — across however many teams you want to form. Pricing is per-player: the first 15 in any event are free, and each additional player is €5.')),
       ol(
-        t('Click "Store" in the sidebar.'),
+        t('Click "Catalog" in the sidebar.'),
         t('Pick the adventure you want to run.'),
         t('Choose how many players will join (1–500). Buys at or below 15 are free and skip the checkout step entirely.'),
         t('Click "Continue". Paid buys go to Stripe Checkout; free buys land you straight on the new assignment.'),
         t('After payment, you\'re sent back to the dashboard with a "Schedule now" prompt on the new assignment.'),
       ),
-      shot(t('[Screenshot: the Store with adventure cards]')),
+      shot(t('[Screenshot: the Catalog with adventure cards]')),
       callout(t('Refunds: if you bought the wrong assignment, contact support. Refunds are admin-only — they touch real money.'), 'warn'),
     ),
 

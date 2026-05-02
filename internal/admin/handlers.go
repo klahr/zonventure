@@ -165,11 +165,10 @@ type adventureDTO struct {
 	AvatarURL   string `json:"avatar_url,omitempty"`
 	Published   bool   `json:"published"`
 	Shared      bool   `json:"shared"` // visible to caller via a commissioned share
-	// IsTemplate flags admin-owned starter content. The UI surfaces
-	// these as a distinct "Templates" section above the catalog so
-	// arrangers see them on first login. Always false for org-owned
-	// rows — only admins promote a row to template status.
-	IsTemplate bool `json:"is_template,omitempty"`
+	// Language of the puzzle content (BCP 47). Surfaced on the
+	// Catalog so a buyer can filter / spot adventures matching the
+	// language they intend to run in. Independent of the UI locale.
+	Language string `json:"language"`
 }
 
 // ListAdventures returns adventures visible to the caller. Admins see
@@ -178,7 +177,7 @@ type adventureDTO struct {
 // the Organizations page. Org users see their own org's adventures
 // + admin-owned entries that are either (a) published, (b) already
 // held via an assignment, or (c) commissioned to the org via a share.
-// The Store tab filters further to `!mine_to_edit && published`.
+// The Catalog tab filters further to `!mine_to_edit && published`.
 func (h *Handlers) ListAdventures(w http.ResponseWriter, r *http.Request) {
 	me, _ := auth.FromContext(r.Context())
 
@@ -189,17 +188,12 @@ func (h *Handlers) ListAdventures(w http.ResponseWriter, r *http.Request) {
 		SELECT a.slug, a.title, a.description, a.author, a.org_id,
 		       (SELECT COUNT(*) FROM adventure_pages p WHERE p.adventure_id = a.id) AS page_count,
 		       (a.avatar_mime_type IS NOT NULL)::int AS has_avatar,
-		       a.published, a.is_template,
+		       a.published, a.language,
 	`
 	var args []any
 	if isAdmin(me) {
 		query += ` 0 AS shared FROM adventures a WHERE a.org_id IS NULL`
 	} else {
-		// Templates (a.is_template = 1) are always visible to org
-		// users regardless of publish state: they're starter content
-		// the arranger duplicates rather than browses-and-buys, so
-		// holding them behind the publish gate would just hide the
-		// activation lever.
 		query += `
 		       (EXISTS (
 		         SELECT 1 FROM adventure_shares s
@@ -208,7 +202,7 @@ func (h *Handlers) ListAdventures(w http.ResponseWriter, r *http.Request) {
 		FROM adventures a
 		WHERE (
 		  a.org_id = $2
-		  OR (a.org_id IS NULL AND (a.published = 1 OR a.is_template = 1))
+		  OR (a.org_id IS NULL AND a.published = 1)
 		  OR EXISTS (
 		    SELECT 1 FROM adventure_assignments aa
 		    WHERE aa.adventure_slug = a.slug AND aa.org_id = $3
@@ -232,18 +226,16 @@ func (h *Handlers) ListAdventures(w http.ResponseWriter, r *http.Request) {
 	out := []adventureDTO{}
 	for rows.Next() {
 		var (
-			d          adventureDTO
-			orgID      sql.NullInt64
-			hasAvatar  int
-			published  int
-			isTemplate int
-			shared     int
+			d         adventureDTO
+			orgID     sql.NullInt64
+			hasAvatar int
+			published int
+			shared    int
 		)
-		if err := rows.Scan(&d.Slug, &d.Title, &d.Description, &d.Author, &orgID, &d.PageCount, &hasAvatar, &published, &isTemplate, &shared); err != nil {
+		if err := rows.Scan(&d.Slug, &d.Title, &d.Description, &d.Author, &orgID, &d.PageCount, &hasAvatar, &published, &d.Language, &shared); err != nil {
 			httpx.Error(w, http.StatusInternalServerError, "scan failed")
 			return
 		}
-		d.IsTemplate = isTemplate != 0
 		if orgID.Valid {
 			v := orgID.Int64
 			d.OrgID = &v
@@ -318,18 +310,25 @@ type createEventRequest struct {
 	AttestNoMinors bool `json:"attest_no_minors,omitempty"`
 }
 
+
 // CreateEvent schedules an event in one of two modes:
 //
 //  1. Assignment-backed: the caller holds an unused adventure_assignments
-//     row (from the Store purchase flow). `assignment_id` picks it, and
-//     the assignment is consumed on creation.
+//     row (from the per-event purchase flow). `assignment_id` picks it,
+//     and the assignment is consumed on creation. The same path covers
+//     legacy assignments minted before pay-at-schedule and the new
+//     "buy then schedule" path the schedule modal walks through for
+//     org-owned content.
 //  2. Share-backed: an admin has commissioned the adventure for the
 //     caller's org via adventure_shares. `adventure_slug` names it, and
 //     no assignment is consumed — runs are effectively unlimited.
 //
-// Share-backed also covers the "org runs an adventure they author" case:
-// if the slug resolves to an adventure owned by the caller's org, run
-// creation is allowed without a share row.
+// Org-owned content (self-authored or forked from the Catalog) does
+// NOT get a free fast-path here any more — the schedule modal mints
+// an assignment via /api/admin/purchases first, free or paid, and
+// then loops back to this endpoint with `assignment_id`. The
+// uniform per-player meter is the entire point: a forked adventure
+// runs through identical billing to a self-authored one.
 func (h *Handlers) CreateEvent(w http.ResponseWriter, r *http.Request) {
 	var req createEventRequest
 	if !httpx.DecodeJSON(w, r, &req) {
@@ -389,25 +388,46 @@ func (h *Handlers) CreateEvent(w http.ResponseWriter, r *http.Request) {
 		assignmentArg = req.AssignmentID
 	} else if strings.TrimSpace(req.AdventureSlug) != "" {
 		slug = strings.TrimSpace(req.AdventureSlug)
-		// Confirm the caller has share or ownership access to this slug.
-		var ok bool
+		// Slug-only path is share-only: an admin has commissioned this
+		// adventure for the caller's org, so per-event billing is
+		// already handled out-of-band via the bilateral deal. Org-
+		// owned content (self-authored or forked) does NOT match here
+		// — its events flow through /api/admin/purchases first to mint
+		// a billed assignment, and then come back through the
+		// assignment-backed branch above. The 409 below tells the
+		// frontend to start that flow rather than retrying.
+		var hasShare bool
 		if err := h.DB.QueryRowContext(r.Context(), `
 			SELECT EXISTS (
-			  SELECT 1 FROM adventures a
-			  WHERE a.slug = $1 AND (
-			    a.org_id = $2
-			    OR EXISTS (
-			      SELECT 1 FROM adventure_shares s
-			      WHERE s.adventure_slug = a.slug AND s.org_id = $3
-			    )
-			  )
+			  SELECT 1 FROM adventure_shares s
+			  WHERE s.adventure_slug = $1 AND s.org_id = $2
 			)
-		`, slug, *me.OrgID, *me.OrgID).Scan(&ok); err != nil {
+		`, slug, *me.OrgID).Scan(&hasShare); err != nil {
 			httpx.Error(w, http.StatusInternalServerError, "lookup failed")
 			return
 		}
-		if !ok {
-			httpx.Error(w, http.StatusForbidden, "no access to that adventure")
+		if !hasShare {
+			// Confirm the org can at least see the adventure; if so,
+			// signal "buy first"; otherwise, plain 403.
+			var advOrg sql.NullInt64
+			if err := h.DB.QueryRowContext(r.Context(),
+				`SELECT org_id FROM adventures WHERE slug = $1`, slug).Scan(&advOrg); err != nil {
+				if errors.Is(err, sql.ErrNoRows) {
+					httpx.Error(w, http.StatusNotFound, "unknown adventure")
+					return
+				}
+				httpx.Error(w, http.StatusInternalServerError, "lookup failed")
+				return
+			}
+			ownsIt := advOrg.Valid && *me.OrgID == advOrg.Int64
+			if !ownsIt && advOrg.Valid {
+				httpx.Error(w, http.StatusForbidden, "no access to that adventure")
+				return
+			}
+			httpx.JSON(w, http.StatusConflict, map[string]string{
+				"error": "buy a player-slot assignment for this adventure first",
+				"code":  "assignment_required",
+			})
 			return
 		}
 	} else {

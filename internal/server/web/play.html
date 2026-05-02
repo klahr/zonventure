@@ -2845,6 +2845,37 @@ function renderSubmitDock(s) {
   currentGatedRadius = 0;
   currentGpsHelpEl = null;
 
+  // Spoiler-free preview (buyer / share-holder): the server stripped
+  // the accept list, so a typed-answer dock would either always reject
+  // or always accept — both misleading. Replace it with a single
+  // "Next puzzle" button that walks the arranger through the prompts
+  // without any answer mechanic. No-answer puzzles render their usual
+  // Continue button via the branch below — those don't have an accept
+  // list to begin with, so spoiler-free doesn't change them.
+  if (previewState && previewState.spoilerFree && !(s && s.no_answer)) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = previewState.pageIndex + 1 >= previewState.pageCount
+      ? t('Finish preview')
+      : t('Next puzzle');
+    const result = document.createElement('p');
+    result.className = 'result muted';
+    const wrap = document.createElement('div');
+    wrap.className = 'dock-single';
+    wrap.append(button, result);
+    dock.append(wrap);
+    submitResultEl = result;
+    button.addEventListener('click', () => {
+      const nextIdx = previewState.pageIndex + 1;
+      if (nextIdx >= previewState.pageCount) {
+        renderCompletion({ adventure_title: s?.adventure_title || '', completed: true });
+        return;
+      }
+      loadPreviewPage(nextIdx);
+    });
+    return;
+  }
+
   if (s && s.no_answer) {
     // No-answer puzzles advance with a single button tap instead of a
     // typed answer. Gated ones need the team to be within the radius,
@@ -3094,11 +3125,13 @@ async function loadPreviewPage(pageIdx) {
   qs.set('page', String(pageIdx));
   history.replaceState(null, '', '?' + qs.toString());
   previewState = {
-    // Top-level accept ships on every preview response (admin-only
-    // endpoint, so the author already owns the list). Without it the
-    // client-side check defaulted to "always correct", masking real
-    // answer bugs during adventure QA.
+    // Authors get an accept list; buyers / share-holders get a
+    // spoiler-free walkthrough where accept is omitted server-side.
+    // The submit dock branches on spoilerFree to swap the typed
+    // answer dock for a "Next puzzle" walkthrough — see
+    // renderSubmitDock's spoiler-free guard.
     accept: Array.isArray(r.body.accept) ? r.body.accept : [],
+    spoilerFree: !!r.body.spoiler_free,
     pageIndex: r.body.page_index ?? 0,
     pageCount: r.body.page_count ?? 0,
   };
@@ -4024,11 +4057,13 @@ async function bootstrapPreview(slug, pageIdx, debug) {
     return;
   }
   previewState = {
-    // Top-level accept ships on every preview response (admin-only
-    // endpoint, so the author already owns the list). Without it the
-    // client-side check defaulted to "always correct", masking real
-    // answer bugs during adventure QA.
+    // Authors get an accept list; buyers / share-holders get a
+    // spoiler-free walkthrough where accept is omitted server-side.
+    // The submit dock branches on spoilerFree to swap the typed
+    // answer dock for a "Next puzzle" walkthrough — see
+    // renderSubmitDock's spoiler-free guard.
     accept: Array.isArray(r.body.accept) ? r.body.accept : [],
+    spoilerFree: !!r.body.spoiler_free,
     pageIndex: r.body.page_index ?? 0,
     pageCount: r.body.page_count ?? 0,
   };

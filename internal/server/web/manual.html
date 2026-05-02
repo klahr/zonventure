@@ -314,7 +314,7 @@
   <h3>Four words to know</h3>
   <ul>
     <li><strong>Adventure</strong> — a reusable script. Pages of puzzles in order. Like a book.</li>
-    <li><strong>Assignment</strong> — a paid licence to run an adventure once for up to N teams. You buy these from the Store.</li>
+    <li><strong>Assignment</strong> — a paid licence to run an adventure once for up to N teams. You buy these from the Catalog.</li>
     <li><strong>Event</strong> — one specific playthrough at a specific time. Created from an assignment.</li>
     <li><strong>Team</strong> — a group of players in an event, identified by a team name. Each player gets their own magic-link to log in as part of the team.</li>
   </ul>
@@ -409,13 +409,13 @@
   <h2>Buying player-slot assignments</h2>
   <p>An assignment licences one event for up to N player slots — across however many teams you want to form. Pricing is per-player: the first 15 in any event are free, and each additional player is €5.</p>
   <ol>
-    <li>Click "Store" in the sidebar.</li>
+    <li>Click "Catalog" in the sidebar.</li>
     <li>Pick the adventure you want to run.</li>
     <li>Choose how many players will join (1–500). Buys at or below 15 are free and skip the checkout step entirely.</li>
     <li>Click "Continue". Paid buys go to Stripe Checkout; free buys land you straight on the new assignment.</li>
     <li>After payment, you're sent back to the dashboard with a "Schedule now" prompt on the new assignment.</li>
   </ol>
-  <div class="shot">[Screenshot: the Store with adventure cards]</div>
+  <div class="shot">[Screenshot: the Catalog with adventure cards]</div>
   <div class="callout warn">Refunds: if you bought the wrong assignment, contact support. Refunds are admin-only — they touch real money.</div>
 </section>
 
@@ -579,7 +579,7 @@ docker compose up -d</code></pre>
 
   <h3>What's different on self-host</h3>
   <ul>
-    <li><strong>No Stripe by default.</strong> Without <code>ZV_STRIPE_SECRET_KEY</code> set, the Store's checkout flow creates assignments directly — you get the licence without paying, because the operator is you. Wire Stripe in if you want to resell to other organisations on your instance.</li>
+    <li><strong>No Stripe by default.</strong> Without <code>ZV_STRIPE_SECRET_KEY</code> set, the Catalog's checkout flow creates assignments directly — you get the licence without paying, because the operator is you. Wire Stripe in if you want to resell to other organisations on your instance.</li>
     <li><strong>No SSO by default.</strong> Username + password is the front door. Set <code>ZV_OIDC_*</code> to enable Google Workspace (or any OIDC provider) sign-in for your domain. The login page picks up the SSO button automatically.</li>
     <li><strong>You're the global admin.</strong> The seeded admin account sees every org, every adventure, every event on the instance. Treat it like a root password — store it in the same place you keep <code>POSTGRES_PASSWORD</code>.</li>
     <li><strong>Backups are your job.</strong> All durable state lives in the <code>zv_pg_data</code> volume — adventures, events, uploaded images and audio, recap tokens. <code>docker compose down -v</code> wipes everything. SELFHOSTING.md has a tested <code>pg_dump</code>-based backup recipe.</li>

@@ -1,0 +1,14 @@
+-- Per-adventure content language. Surfaced on the Catalog so a
+-- buyer browsing in their working language can spot adventures
+-- they can use (or use as a starting point for translation).
+-- Independent of the UI language — the chrome around the
+-- adventure stays in the user's preferred locale; this column
+-- describes the puzzle prompts / hints the author wrote.
+--
+-- BCP 47 language tag. We keep the column free-form so authors
+-- can write in tlh / la / oc / any minority code without an
+-- enum migration first; the UI normalises common cases (en, sv,
+-- de, fr, es, …) and falls back to displaying the raw tag.
+-- Default 'en' so existing rows pick up a sensible value
+-- without having to backfill every adventure manually.
+ALTER TABLE adventures ADD COLUMN language TEXT NOT NULL DEFAULT 'en';

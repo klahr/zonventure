@@ -117,6 +117,9 @@ type adventureEditDTO struct {
 	BackgroundColor      string      `json:"background_color"`
 	TextColor            string      `json:"text_color"`
 	SubmitBgColor        string      `json:"submit_bg_color"`
+	// Language is the BCP 47 tag of the puzzle content (e.g. "en",
+	// "sv"). Defaults to "en" via the schema's column default.
+	Language             string      `json:"language"`
 	AvatarURL            string      `json:"avatar_url,omitempty"`
 	// OrgID identifies the owner — nil for admin-owned global-catalog
 	// adventures, set for org-owned ones. The publish flag is only
@@ -173,6 +176,34 @@ type createAdventureRequest struct {
 	BackgroundColor      string `json:"background_color"`
 	TextColor            string `json:"text_color"`
 	SubmitBgColor        string `json:"submit_bg_color"`
+	Language             string `json:"language,omitempty"` // empty defaults to "en" via column default
+}
+
+// validLanguageTag accepts a permissive subset of BCP 47: a primary
+// language subtag (2–3 letters) optionally followed by region or
+// script subtags joined with `-`. Examples: "en", "sv", "pt-BR",
+// "zh-Hant". We don't enforce the IANA registry — authors writing
+// in tlh / oc / minority codes shouldn't be blocked by an
+// out-of-date allowlist, and the value is rendered as-is on the
+// Catalog so a typo is visible to the author who set it.
+func validLanguageTag(s string) bool {
+	if s == "" {
+		return false
+	}
+	if len(s) > 32 {
+		return false
+	}
+	for i, ch := range s {
+		switch {
+		case ch >= 'a' && ch <= 'z':
+		case ch >= 'A' && ch <= 'Z':
+		case ch >= '0' && ch <= '9':
+		case ch == '-' && i > 0 && i < len(s)-1:
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // CreateAdventure inserts an empty adventure. Admin-only.
@@ -204,6 +235,15 @@ func (h *Handlers) CreateAdventure(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	language := strings.TrimSpace(req.Language)
+	if language == "" {
+		language = "en"
+	}
+	if !validLanguageTag(language) {
+		httpx.Error(w, http.StatusBadRequest,
+			`language must be a BCP 47 tag (e.g. "en", "sv", "pt-BR")`)
+		return
+	}
 	// Ownership: admins create global-catalog rows (org_id NULL); every
 	// other authoring role stamps their own org onto the row.
 	me, _ := auth.FromContext(r.Context())
@@ -216,12 +256,14 @@ func (h *Handlers) CreateAdventure(w http.ResponseWriter, r *http.Request) {
 	err := h.DB.QueryRowContext(r.Context(), `
 		INSERT INTO adventures(slug, title, description, author, intro_text, outro_text,
 		                       accent_color, accent_secondary_color, background_color, text_color, submit_bg_color,
+		                       language,
 		                       org_id, created_by_user_id)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 		RETURNING id
 	`, req.Slug, req.Title, req.Description, req.Author, req.IntroText, req.OutroText,
 		nullIfEmpty(req.AccentColor), nullIfEmpty(req.AccentSecondaryColor),
 		nullIfEmpty(req.BackgroundColor), nullIfEmpty(req.TextColor), nullIfEmpty(req.SubmitBgColor),
+		language,
 		orgArg, me.ID).Scan(&id)
 	if err != nil {
 		httpx.Error(w, http.StatusConflict, "slug already used")
@@ -273,6 +315,7 @@ type updateAdventureRequest struct {
 	BackgroundColor      *string `json:"background_color,omitempty"`
 	TextColor            *string `json:"text_color,omitempty"`
 	SubmitBgColor        *string `json:"submit_bg_color,omitempty"`
+	Language             *string `json:"language,omitempty"`
 	Published            *bool   `json:"published,omitempty"`
 }
 
@@ -341,6 +384,15 @@ func (h *Handlers) UpdateAdventure(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		add(p.col, nullIfEmpty(*p.val))
+	}
+	if req.Language != nil {
+		lang := strings.TrimSpace(*req.Language)
+		if !validLanguageTag(lang) {
+			httpx.Error(w, http.StatusBadRequest,
+				`language must be a BCP 47 tag (e.g. "en", "sv", "pt-BR")`)
+			return
+		}
+		add("language", lang)
 	}
 	if req.Published != nil {
 		if *req.Published {
@@ -438,12 +490,13 @@ func loadAdventureDTO(ctx context.Context, db *sql.DB, slug string) (*adventureE
 	if err := db.QueryRowContext(ctx, `
 		SELECT id, slug, title, description, author, intro_text, outro_text,
 		       accent_color, accent_secondary_color, background_color, text_color, submit_bg_color,
+		       language,
 		       (avatar_mime_type IS NOT NULL)::int AS has_avatar,
 		       published, org_id
 		FROM adventures WHERE slug = $1
 	`, slug).Scan(&a.ID, &a.Slug, &a.Title, &a.Description, &a.Author,
 		&a.IntroText, &a.OutroText,
-		&accent, &accent2, &bg, &ink, &submitBG, &hasAvatar, &published, &orgID); err != nil {
+		&accent, &accent2, &bg, &ink, &submitBG, &a.Language, &hasAvatar, &published, &orgID); err != nil {
 		return nil, err
 	}
 	a.AccentColor = accent.String

@@ -29,19 +29,15 @@ import (
 //     creates a new authored row, which org_member is not allowed
 //     to do (canAuthor on the *destination*).
 //   - Caller must canSeeOwned the source — i.e., either it's a
-//     global catalog row (admin-owned, including templates) or
-//     it's owned by the caller's own org. Cross-org cloning is
-//     deliberately rejected.
+//     global catalog row (admin-owned and published) or it's owned
+//     by the caller's own org. Cross-org cloning is deliberately
+//     rejected.
 //
 // The cloned slug defaults to "<source>-<random6>" so duplicating
 // is idempotent without retry probes; the arranger renames via the
 // existing slug-edit flow if they want a friendlier value. Title
 // defaults to the source's title with " (copy)" appended unless the
 // caller provided their own.
-//
-// Used by the "Use this template" button on the Adventures tab —
-// the empty-state activation lever for non-technical buyers who
-// can't (or don't want to) author from scratch.
 func (h *Handlers) DuplicateAdventure(w http.ResponseWriter, r *http.Request) {
 	sourceSlug := chi.URLParam(r, "slug")
 	if sourceSlug == "" {
@@ -164,18 +160,24 @@ func (h *Handlers) cloneAdventure(ctx context.Context, sourceSlug, newSlug strin
 	//   - org_id = caller's org
 	//   - created_by_user_id = caller
 	//   - published = 0 (always start unpublished)
-	//   - is_template = 0 (clones are never templates)
 	var newAdvID int64
+	// `forked_from_slug` records the source slug so the billing rule
+	// at event-creation time can distinguish original org content
+	// (free) from Catalog forks (billable when Stripe is wired). The
+	// reference is frozen at fork time — if the source is later
+	// renamed or deleted, this column stays put.
 	err = tx.QueryRowContext(ctx, `
 		INSERT INTO adventures(
 			slug, title, description, author, intro_text, outro_text,
 			accent_color, accent_secondary_color, background_color, text_color, submit_bg_color,
-			org_id, created_by_user_id, published, is_template,
+			org_id, created_by_user_id, published, language,
+			forked_from_slug,
 			avatar_mime_type, avatar_size_bytes, avatar_content)
 		SELECT
 			$1, $2, description, author, intro_text, outro_text,
 			accent_color, accent_secondary_color, background_color, text_color, submit_bg_color,
-			$3, $4, 0, 0,
+			$3, $4, 0, language,
+			slug,
 			avatar_mime_type, avatar_size_bytes, avatar_content
 		FROM adventures WHERE id = $5
 		RETURNING id

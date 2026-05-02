@@ -44,12 +44,14 @@ func TestDuplicateAdventure_HappyPath(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Admin-owned template with one page + one hint to verify the
-	// cascade is wired.
+	// Admin-owned published catalog row with one page + one hint to
+	// verify the cascade is wired. Published so the org_admin caller
+	// is allowed to see it (the duplicate endpoint enforces
+	// canSeeOwned on the source).
 	var advID int64
 	if err := db.QueryRow(`
-		INSERT INTO adventures(slug, title, author, is_template, published)
-		VALUES ('starter', 'Starter Tour', 'Zonventure', 1, 0)
+		INSERT INTO adventures(slug, title, author, published)
+		VALUES ('starter', 'Starter Tour', 'Zonventure', 1)
 		RETURNING id
 	`).Scan(&advID); err != nil {
 		t.Fatal(err)
@@ -100,18 +102,16 @@ func TestDuplicateAdventure_HappyPath(t *testing.T) {
 		t.Errorf("expected slug prefix starter-, got %q", resp.Slug)
 	}
 
-	// New adventure exists in the caller's org, is unpublished, is
-	// not itself a template, and carries the source's title with
-	// "(copy)" appended.
+	// New adventure exists in the caller's org, is unpublished, and
+	// carries the source's title with "(copy)" appended.
 	var (
-		gotOrg     int64
+		gotOrg       int64
 		gotPublished int
-		gotTemplate  int
-		gotTitle    string
+		gotTitle     string
 	)
 	if err := db.QueryRow(`
-		SELECT org_id, published, is_template, title FROM adventures WHERE slug = $1
-	`, resp.Slug).Scan(&gotOrg, &gotPublished, &gotTemplate, &gotTitle); err != nil {
+		SELECT org_id, published, title FROM adventures WHERE slug = $1
+	`, resp.Slug).Scan(&gotOrg, &gotPublished, &gotTitle); err != nil {
 		t.Fatalf("loaded clone: %v", err)
 	}
 	if gotOrg != orgID {
@@ -119,9 +119,6 @@ func TestDuplicateAdventure_HappyPath(t *testing.T) {
 	}
 	if gotPublished != 0 {
 		t.Errorf("clone published = %d, want 0", gotPublished)
-	}
-	if gotTemplate != 0 {
-		t.Errorf("clone is_template = %d, want 0 (clones are never templates)", gotTemplate)
 	}
 	if gotTitle != "Starter Tour (copy)" {
 		t.Errorf("clone title = %q, want %q", gotTitle, "Starter Tour (copy)")
@@ -190,8 +187,8 @@ func TestDuplicateAdventure_OrgMemberRejected(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := db.Exec(`
-		INSERT INTO adventures(slug, title, author, is_template, published)
-		VALUES ('starter', 'Starter Tour', 'Zonventure', 1, 0)
+		INSERT INTO adventures(slug, title, author, published)
+		VALUES ('starter', 'Starter Tour', 'Zonventure', 1)
 	`); err != nil {
 		t.Fatal(err)
 	}
@@ -242,8 +239,8 @@ func TestDuplicateAdventure_CrossOrgPrivateRejected(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := db.Exec(`
-		INSERT INTO adventures(slug, title, author, is_template, published, org_id)
-		VALUES ('private-b', 'B Private', '', 0, 0, $1)
+		INSERT INTO adventures(slug, title, author, published, org_id)
+		VALUES ('private-b', 'B Private', '', 0, $1)
 	`, orgB); err != nil {
 		t.Fatal(err)
 	}

@@ -55,16 +55,6 @@
       'Logo removed': 'Logotyp borttagen',
       'Shown on the event-recap PDF. PNG, JPEG, WebP, or SVG — max 5 MB. SVGs are rasterised to PNG on upload; transparency is flattened to white on render.':
         'Visas på event-rapporten (PDF). PNG, JPEG, WebP eller SVG — max 5 MB. SVG-filer rastreras till PNG vid uppladdning; transparens fylls med vitt vid rendering.',
-      'Start from a template': 'Börja från en mall',
-      'Pick a starter, customise the puzzles for your venue, and you\'re ready to schedule an event.':
-        'Välj en startmall, anpassa pusslen för din plats, och du är redo att schemalägga ett event.',
-      'Template': 'Mall',
-      'Use this template': 'Använd denna mall',
-      'Pick a template above, or create your own from scratch.':
-        'Välj en mall ovan, eller skapa ett eget äventyr från grunden.',
-      'Template copied — start customising your puzzles.':
-        'Mall kopierad — börja anpassa dina pussel.',
-      'Could not duplicate the template.': 'Kunde inte kopiera mallen.',
       'Duplicate': 'Duplicera',
       'Puzzle duplicated': 'Pussel duplicerat',
       'Send invitations ({{n}})': 'Skicka inbjudningar ({{n}})',
@@ -107,7 +97,6 @@
       'Puzzles': 'Pussel',
       'Members': 'Medlemmar',
       'Admins': 'Administratörer',
-      'Store': 'Butik',
       'Use light theme': 'Använd ljust tema',
       'Use dark theme': 'Använd mörkt tema',
       'Use system theme': 'Använd systemets tema',
@@ -144,12 +133,12 @@
       'Published': 'Publicerad',
       'Unpublished': 'Avpublicerad',
       'Draft': 'Utkast',
-      'Hide from the Store': 'Dölj från butiken',
-      'Make available in the Store': 'Gör tillgänglig i butiken',
+      'Hide from the Catalog': 'Dölj från katalogen',
+      'Make available in the Catalog': 'Gör tillgänglig i katalogen',
       'Shared': 'Delat',
       'Shared with organisations': 'Delat med organisationer',
-      'Give specific organisations free access to this adventure without publishing it to the Store.':
-        'Ge specifika organisationer fri åtkomst till detta äventyr utan att publicera det i butiken.',
+      'Give specific organisations free access to this adventure without publishing it to the Catalog.':
+        'Ge specifika organisationer fri åtkomst till detta äventyr utan att publicera det i katalogen.',
       'Not shared with any organisation yet.': 'Inte delat med någon organisation ännu.',
       'Share with org': 'Dela med organisation',
       'Share with organisation': 'Dela med organisation',
@@ -370,8 +359,8 @@
       'Recent events': 'Senaste eventen',
       'Getting started': 'Kom igång',
       'A few clicks to your first adventure.': 'Några klick till ditt första äventyr.',
-      'Pick an adventure — browse the Store or create your own':
-        'Välj ett äventyr — bläddra i butiken eller skapa ett eget',
+      'Pick an adventure — browse the Catalog or create your own':
+        'Välj ett äventyr — bläddra i katalogen eller skapa ett eget',
       'Have player slots ready — an assignment lets you schedule an event':
         'Ha spelarplatser redo — en tilldelning låter dig schemalägga en event',
       'Schedule an event, add teams, share their links — and start!':
@@ -429,9 +418,6 @@
       '{{section}} / {{anchor}}': '{{section}} / {{anchor}}',
       // ---- adventures list (arranger) ----
       'No adventures you can use yet.': 'Inga äventyr du kan köra än.',
-      'Create your own or browse the Store for published adventures.':
-        'Skapa ett eget eller bläddra i butiken efter publicerade äventyr.',
-      'Browse the Store': 'Bläddra i butiken',
       'Yours': 'Eget',
       '{{n}} puzzle': '{{n}} pussel',
       '{{n}} assignment available': '{{n}} tilldelning tillgänglig',
@@ -1481,6 +1467,70 @@
       'Yours': 'Dina',
       'Catalog': 'Katalog',
       'Browse the Catalog': 'Bläddra i katalogen',
+      // ---- store detail (per-adventure shop page) ----
+      'At a glance': 'Översikt',
+      'Estimated playtime': 'Uppskattad speltid',
+      'Media': 'Media',
+      'Where to play': 'Var ni spelar',
+      'What players need': 'Vad spelarna behöver',
+      'Anywhere': 'Var som helst',
+      'Single venue': 'Enskild plats',
+      'Specific area (~{{km}} km)': 'Specifikt område (~{{km}} km)',
+      'Multi-stop tour (~{{km}} km)': 'Rundtur i flera steg (~{{km}} km)',
+      'Text-only': 'Endast text',
+      '{{n}} with images': '{{n}} med bilder',
+      '{{n}} with audio': '{{n}} med ljud',
+      'No hints': 'Inga ledtrådar',
+      '{{n}} hints, all immediate': '{{n}} ledtrådar, alla direkt tillgängliga',
+      '{{n}} hints, all timed': '{{n}} ledtrådar, alla tidsstyrda',
+      '{{n}} hints ({{m}} timed)': '{{n}} ledtrådar ({{m}} tidsstyrda)',
+      '{{m}} min': '{{m}} min',
+      '{{lo}}–{{hi}} min': '{{lo}}–{{hi}} min',
+      'No GPS gates — players answer text, image, and audio puzzles wherever you choose to host the event. Adapt prompts to your venue and run it indoors, outdoors, or fully online.':
+        'Inga GPS-portar — spelarna löser text-, bild- och ljudpussel där ni väljer att hålla eventet. Anpassa frågorna till er plats och kör inomhus, utomhus eller helt online.',
+      'All gated puzzles cluster within a ~{{m}} m area — runs as a single-venue event (one park, one campus, one café crawl).':
+        'Alla GPS-pussel ligger inom ~{{m}} m — körs som ett event på en plats (en park, ett campus, en cafétur).',
+      'Gated puzzles span ~{{km}} km — fits a campus, neighbourhood, or city quarter. Bound to this geography unless you re-author the locations.':
+        'GPS-pusslen spänner över ~{{km}} km — passar ett campus, kvarter eller stadsdel. Bundet till denna geografi om ni inte redigerar platserna.',
+      'Gated puzzles span ~{{km}} km — a city- or region-wide tour. Plan transport for the team between stops.':
+        'GPS-pusslen spänner över ~{{km}} km — en rundtur över staden eller regionen. Planera transport mellan stoppen.',
+      '{{n}} puzzle(s) are NOT gated and could be re-themed for any venue.':
+        '{{n}} pussel är INTE GPS-bundna och kan anpassas till valfri plats.',
+      'A smartphone with a modern browser (Safari, Chrome, Firefox).':
+        'En smartphone med en modern webbläsare (Safari, Chrome, Firefox).',
+      'GPS / location services enabled — some puzzles only unlock when the team reaches a specific spot.':
+        'GPS / platstjänster aktiverade — vissa pussel låses upp först när laget når en specifik plats.',
+      'Audio output — {{n}} puzzle(s) include audio clips. Headphones recommended in noisy venues.':
+        'Ljud — {{n}} pussel innehåller ljudklipp. Hörlurar rekommenderas i bullriga miljöer.',
+      'Bandwidth for image downloads — {{n}} puzzle(s) include images.':
+        'Bandbredd för bildnedladdningar — {{n}} pussel innehåller bilder.',
+      'Next puzzle': 'Nästa pussel',
+      'Finish preview': 'Avsluta förhandsvisning',
+      // ---- reuse_mode: template vs license-to-run ----
+      'Reuse mode': 'Användningsläge',
+      'Run as-is': 'Kör som det är',
+      'Use as template': 'Använd som mall',
+      'Template': 'Mall',
+      'Use this template': 'Använd denna mall',
+      'Fork & customise': 'Forka & anpassa',
+      'How to use': 'Hur den används',
+      'Buyers pay per player and run your adventure verbatim. Best for venue-agnostic content (text, image, narrative).':
+        'Köpare betalar per spelare och kör ditt äventyr som det är. Bäst för platsoberoende innehåll (text, bild, berättelse).',
+      'Buyers fork your adventure into their own org and customise it (locations, prompts, gates). Best when the structure is reusable but the content is venue-specific.':
+        'Köpare forkar ditt äventyr till sin egen organisation och anpassar det (platser, frågor, GPS-portar). Bäst när strukturen är återanvändbar men innehållet är platsspecifikt.',
+      'Fork this adventure into your org and customise it for your venue.':
+        'Forka detta äventyr till din organisation och anpassa det för din plats.',
+      'Forked into your org — start customising the locations and prompts.':
+        'Forkat till din organisation — börja anpassa platser och frågor.',
+      'Could not fork the template.': 'Kunde inte forka mallen.',
+      'BCP 47 tag — surfaced on the Catalog so buyers can spot adventures in their language.':
+        'BCP 47-tagg — visas i Katalogen så att köpare kan hitta äventyr på sitt språk.',
+      'Adventure content language': 'Äventyrets innehållsspråk',
+      'Use this adventure': 'Använd detta äventyr',
+      'Added to your Adventures — customise as much or as little as you want, then schedule.':
+        'Tillagt i Mina äventyr — anpassa så mycket eller lite du vill, schemalägg sedan.',
+      'Could not add the adventure to your org.':
+        'Kunde inte lägga till äventyret i din organisation.',
       'Create your own or browse the Catalog for published adventures.':
           'Skapa ditt eget eller bläddra i katalogen för publicerade äventyr.',
       'Integrations': 'Integrationer',
@@ -1568,8 +1618,8 @@
       'a reusable script. Pages of puzzles in order. Like a book.':
           'ett återanvändbart manus. Sidor med pussel i ordning. Som en bok.',
       'Assignment': 'Uppdrag',
-      'a paid licence to use an adventure for an event once for up to N teams. You buy these from the Store.':
-          'en betald licens att köra ett äventyr en gång för upp till N lag. Köps i Butiken.',
+      'a paid licence to use an adventure for an event once for up to N teams. You buy these from the Catalog.':
+          'en betald licens att köra ett äventyr en gång för upp till N lag. Köps från Katalogen.',
       'one specific playthrough at a specific time. Created from an assignment.':
           'en specifik genomspelning vid en specifik tidpunkt. Skapas från ett uppdrag.',
       'a group of players in an event, identified by a team name. Each player gets their own magic-link to log in as part of the team.':
@@ -1669,7 +1719,7 @@
       'One assignment = one event. If you want to run the same adventure twice, buy two assignments.':
           'Ett uppdrag = en event. Om du vill köra samma äventyr två gånger, köp två uppdrag.',
       // assignments
-      'Click "Store" in the sidebar.': 'Klicka på "Butik" i sidomenyn.',
+      'Click "Catalog" in the sidebar.': 'Klicka på "Katalog" i sidomenyn.',
       'Pick the adventure you want to run.': 'Välj äventyret du vill köra.',
       'An assignment licences one event for up to N player slots — across however many teams you want to form. Pricing is per-player: the first 15 in any event are free, and each additional player is €5.':
           'Ett uppdrag licensierar en event med upp till N spelarplatser — fördelat på hur många lag du vill skapa. Priset är per spelare: de första 15 i varje event är gratis, varje ytterligare spelare kostar 5 €.',
@@ -1679,8 +1729,8 @@
           'Klicka på "Fortsätt". Betalda köp går till Stripe Checkout; gratisköp landar dig direkt på det nya uppdraget.',
       'After payment, you\'re sent back to the dashboard with a "Schedule now" prompt on the new assignment.':
           'Efter betalningen skickas du tillbaka till översikten med en "Schemalägg nu"-uppmaning på det nya uppdraget.',
-      '[Screenshot: the Store with adventure cards]':
-          '[Skärmdump: Butiken med äventyrskort]',
+      '[Screenshot: the Catalog with adventure cards]':
+          '[Skärmdump: Katalogen med äventyrskort]',
       'Refunds: if you bought the wrong assignment, contact support. Refunds are admin-only — they touch real money.':
           'Återbetalningar: om du köpt fel uppdrag, kontakta supporten. Återbetalningar görs endast av administratör — de rör riktiga pengar.',
       // create run
@@ -2235,15 +2285,66 @@
     },
   };
 
-  // LANG_LABEL is the picker text. Each entry is { flag, name } —
-  // flag is a Regional-Indicator-pair emoji (renders as a country
-  // flag on systems with emoji-flag fonts), name is the language's
-  // own native name. English uses 🇬🇧 because the product is EU-
-  // facing; swap to 🇺🇸 for an Americas launch.
+  // LANG_LABEL maps BCP 47 codes to a { flag, name } pair. Used by
+  // two surfaces:
+  //   1. makeLangPicker — the UI locale switcher. Only renders
+  //      options for codes in `available()` (the keys of DICT, ie
+  //      the languages we've translated the chrome into).
+  //   2. flagFor — adventure-content language pills on the Catalog,
+  //      Adventure detail, and Event detail. Authors can pick any
+  //      BCP 47 tag for their puzzle content; we want a recognisable
+  //      flag for the common ones, with a graceful empty-string
+  //      fallback for tags we don't have an entry for.
+  //
+  // English uses 🇬🇧 because the product is EU-facing; swap to 🇺🇸 for
+  // an Americas launch.
+  //
+  // The flag is a Regional-Indicator-pair emoji that renders as a
+  // country flag on systems with emoji-flag fonts (every modern OS
+  // except Windows pre-11; Windows users see the bare letters,
+  // which is acceptable as a degradation — the language code is
+  // also visible alongside).
   const LANG_LABEL = {
-    en: { flag: '🇬🇧', name: 'English' },
-    sv: { flag: '🇸🇪', name: 'Svenska' },
+    en:        { flag: '🇬🇧', name: 'English' },
+    sv:        { flag: '🇸🇪', name: 'Svenska' },
+    no:        { flag: '🇳🇴', name: 'Norsk' },
+    nb:        { flag: '🇳🇴', name: 'Norsk bokmål' },
+    nn:        { flag: '🇳🇴', name: 'Nynorsk' },
+    da:        { flag: '🇩🇰', name: 'Dansk' },
+    fi:        { flag: '🇫🇮', name: 'Suomi' },
+    is:        { flag: '🇮🇸', name: 'Íslenska' },
+    de:        { flag: '🇩🇪', name: 'Deutsch' },
+    fr:        { flag: '🇫🇷', name: 'Français' },
+    es:        { flag: '🇪🇸', name: 'Español' },
+    pt:        { flag: '🇵🇹', name: 'Português' },
+    'pt-br':   { flag: '🇧🇷', name: 'Português (Brasil)' },
+    it:        { flag: '🇮🇹', name: 'Italiano' },
+    nl:        { flag: '🇳🇱', name: 'Nederlands' },
+    pl:        { flag: '🇵🇱', name: 'Polski' },
+    cs:        { flag: '🇨🇿', name: 'Čeština' },
+    et:        { flag: '🇪🇪', name: 'Eesti' },
+    lv:        { flag: '🇱🇻', name: 'Latviešu' },
+    lt:        { flag: '🇱🇹', name: 'Lietuvių' },
+    ja:        { flag: '🇯🇵', name: '日本語' },
+    ko:        { flag: '🇰🇷', name: '한국어' },
+    'zh-hans': { flag: '🇨🇳', name: '简体中文' },
+    'zh-hant': { flag: '🇹🇼', name: '繁體中文' },
+    zh:        { flag: '🇨🇳', name: '中文' },
   };
+
+  // flagFor returns the flag emoji for an adventure's BCP 47 tag,
+  // or '' when we don't recognise it. Tries the full lowercased tag
+  // first ("pt-BR" → "pt-br" → 🇧🇷), then falls back to the primary
+  // subtag ("en-US" → "en" → 🇬🇧). Authors writing in tlh / la / oc
+  // get an empty flag and only the bare code.
+  function flagFor(code) {
+    if (!code) return '';
+    const c = String(code).trim().toLowerCase();
+    if (LANG_LABEL[c] && LANG_LABEL[c].flag) return LANG_LABEL[c].flag;
+    const primary = c.split('-')[0];
+    if (LANG_LABEL[primary] && LANG_LABEL[primary].flag) return LANG_LABEL[primary].flag;
+    return '';
+  }
 
   function available() {
     return Object.keys(DICT);
@@ -2303,7 +2404,7 @@
     return sel;
   }
 
-  window.zvI18n = { t, setLang, getLang, available, makeLangPicker };
+  window.zvI18n = { t, setLang, getLang, available, makeLangPicker, flagFor };
   // Shorthand so call sites read cleanly: t('Save')
   window.t = t;
 })();

@@ -1,6 +1,9 @@
 package admin
 
 import (
+	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -35,12 +38,18 @@ type previewStateDTO struct {
 	Audio          []previewAudioDTO `json:"audio,omitempty"`
 	Colors         *adventure.Colors `json:"colors,omitempty"`
 	Preview        bool              `json:"preview"`
-	// Accept is always included (the preview endpoint is admin-only,
-	// so the author already owns this list) so the play-side client
-	// can verify answers even when the debug panel is collapsed.
-	// Without it, previewing-without-debug would treat every answer
-	// as correct.
-	Accept   []adventure.AcceptEntry `json:"accept"`
+	// SpoilerFree marks a buyer / share-holder preview where the
+	// accept list and notes have been stripped out. The play-side
+	// reads this to swap the answer dock for a "Next puzzle"
+	// walkthrough button — typing an answer would be useless when
+	// there's no client-side accept list to validate against, and
+	// silently treating every input as correct would be misleading.
+	SpoilerFree bool `json:"spoiler_free,omitempty"`
+	// Accept is the accepted-answer list authors test against in
+	// preview. Stripped for spoiler-free previews — buyers who walk
+	// through an adventure they bought shouldn't be handed the
+	// answer key alongside the prompt.
+	Accept   []adventure.AcceptEntry `json:"accept,omitempty"`
 	NoAnswer bool             `json:"no_answer,omitempty"`
 	Gate     *gatePreviewDTO  `json:"gate,omitempty"`
 	Debug    *previewDebugDTO `json:"preview_debug,omitempty"`
@@ -128,6 +137,24 @@ func (h *Handlers) PreviewAdventure(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusNotFound, "unknown adventure")
 		return
 	}
+	// Access tiers — author / buyer / share-holder / nothing.
+	// Authors get the full preview (accept list, debug panel) for
+	// QA; buyers and share-holders get a spoiler-free walkthrough
+	// (no accept list, no debug); anyone else 403s. This closes the
+	// content-leak path where a curious arranger from any org could
+	// previously hit /preview on a published adventure and read off
+	// every accepted answer in a loop.
+	access, accessErr := h.previewAccess(r.Context(), slug)
+	if accessErr != nil {
+		httpx.Error(w, http.StatusInternalServerError, "access lookup failed")
+		return
+	}
+	if access == previewAccessNone {
+		httpx.Error(w, http.StatusForbidden,
+			"preview not available — authors get full preview, buyers and share-holders get a spoiler-free walkthrough")
+		return
+	}
+	spoilerFree := access != previewAccessAuthor
 	// Mirror the player flow: disabled pages are invisible.
 	pages := make([]adventure.Page, 0, len(adv.Pages))
 	for _, p := range adv.Pages {
@@ -160,10 +187,15 @@ func (h *Handlers) PreviewAdventure(w http.ResponseWriter, r *http.Request) {
 		// egress so the preview reads exactly like /play will. The raw
 		// markdown stays in the debug panel (accept/notes) for authors
 		// who need to see it verbatim.
-		Prompt:   mdx.Render(page.Prompt),
-		Accept:   page.Accept,
-		NoAnswer: len(page.Accept) == 0,
-		Preview:  true,
+		Prompt:      mdx.Render(page.Prompt),
+		NoAnswer:    len(page.Accept) == 0,
+		Preview:     true,
+		SpoilerFree: spoilerFree,
+	}
+	// Authors get the accept list for type-and-check QA; buyers
+	// don't (the field omits via `omitempty` when nil).
+	if !spoilerFree {
+		out.Accept = page.Accept
 	}
 	if !adv.Colors.Empty() {
 		c := adv.Colors
@@ -255,7 +287,11 @@ func (h *Handlers) PreviewAdventure(w http.ResponseWriter, r *http.Request) {
 			Reached: false,
 		}
 	}
-	if r.URL.Query().Get("debug") == "1" {
+	// Debug panel is author-only — exposes the accept list, raw
+	// gate coords, and the author's private notes. Hidden in
+	// spoiler-free previews even when ?debug=1 is present, so a
+	// buyer can't toggle their way to the answer key.
+	if !spoilerFree && r.URL.Query().Get("debug") == "1" {
 		out.Debug = &previewDebugDTO{
 			Accept:  page.Accept,
 			Lat:     page.Location.Lat,
@@ -265,4 +301,73 @@ func (h *Handlers) PreviewAdventure(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	httpx.JSON(w, http.StatusOK, out)
+}
+
+// previewAccessLevel is the answer to "what kind of preview can
+// this caller see for this adventure" — picked once at the top of
+// PreviewAdventure and used to gate the response shape.
+type previewAccessLevel int
+
+const (
+	// previewAccessNone — caller has no relationship to the adventure.
+	// Returns 403 from PreviewAdventure.
+	previewAccessNone previewAccessLevel = iota
+	// previewAccessAuthor — caller can edit the adventure (owning-org
+	// author or global admin via canAuthor). Full preview, accept
+	// list included, debug panel honoured.
+	previewAccessAuthor
+	// previewAccessLicensed — caller's org holds an assignment for or
+	// share of the adventure but doesn't own it. Spoiler-free preview:
+	// no accept list, no debug, no answer dock — just the prompt,
+	// hints, media, and gate coordinates so they can plan their
+	// event without being handed the answer key.
+	previewAccessLicensed
+)
+
+// previewAccess looks up which preview level the calling session is
+// entitled to for the given adventure slug. Order matters: an author
+// who *also* holds an assignment (e.g. an admin who bought slots in
+// a different org's adventure) gets author-level preview because
+// canAuthor passes — strictly more useful than the buyer flavour.
+func (h *Handlers) previewAccess(ctx context.Context, slug string) (previewAccessLevel, error) {
+	me, _ := auth.FromContext(ctx)
+	var orgID sql.NullInt64
+	err := h.DB.QueryRowContext(ctx,
+		`SELECT org_id FROM adventures WHERE slug = $1`, slug).Scan(&orgID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return previewAccessNone, nil
+	}
+	if err != nil {
+		return previewAccessNone, err
+	}
+	if canAuthor(me, orgID) {
+		return previewAccessAuthor, nil
+	}
+	// Below this line we need an org context to look up assignments
+	// and shares — admins fall through canAuthor above, so anyone
+	// without an OrgID here is a non-admin without org membership
+	// (shouldn't happen via the routed surface, but bail safely).
+	if me.OrgID == nil {
+		return previewAccessNone, nil
+	}
+	var n int
+	if err := h.DB.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM adventure_assignments
+		WHERE adventure_slug = $1 AND org_id = $2
+	`, slug, *me.OrgID).Scan(&n); err != nil {
+		return previewAccessNone, err
+	}
+	if n > 0 {
+		return previewAccessLicensed, nil
+	}
+	if err := h.DB.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM adventure_shares
+		WHERE adventure_slug = $1 AND org_id = $2
+	`, slug, *me.OrgID).Scan(&n); err != nil {
+		return previewAccessNone, err
+	}
+	if n > 0 {
+		return previewAccessLicensed, nil
+	}
+	return previewAccessNone, nil
 }

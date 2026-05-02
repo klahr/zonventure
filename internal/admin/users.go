@@ -242,6 +242,7 @@ func (h *Handlers) AdventureDetail(w http.ResponseWriter, r *http.Request) {
 		published int
 		orgID     sql.NullInt64
 		runningN  int
+		language  string
 	)
 	// Postgres returns `IS NOT NULL` as a boolean; the previous query
 	// scanned it straight into a Go *int and silently failed (the
@@ -250,15 +251,16 @@ func (h *Handlers) AdventureDetail(w http.ResponseWriter, r *http.Request) {
 	// even when the adventure had an avatar uploaded. ::int matches
 	// the cast already used in ListAdventures.
 	_ = h.DB.QueryRowContext(r.Context(), `
-		SELECT (avatar_mime_type IS NOT NULL)::int, published, org_id,
+		SELECT (avatar_mime_type IS NOT NULL)::int, published, org_id, language,
 		       (SELECT COUNT(*) FROM events WHERE adventure_slug = $1 AND state = 'running')
 		FROM adventures WHERE slug = $1
-	`, slug).Scan(&hasAvatar, &published, &orgID, &runningN)
+	`, slug).Scan(&hasAvatar, &published, &orgID, &language, &runningN)
 	if hasAvatar != 0 {
 		out["avatar_url"] = adventureAvatarURL(slug)
 	}
 	out["published"] = published != 0
 	out["running_event_count"] = runningN
+	out["language"] = language
 	if orgID.Valid {
 		v := orgID.Int64
 		out["org_id"] = v

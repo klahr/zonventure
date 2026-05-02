@@ -75,7 +75,6 @@ func main() {
 		seedArranger      = flag.String("seed-arranger", "", "if set, create/update an org_admin arranger as username:password in the default Arrangers org")
 		seedDemoAdvFlag   = flag.Bool("seed-demo-adventure", false, "install the demo adventure (puzzles + placeholder images)")
 		seedDemoFlag      = flag.Bool("seed-demo", false, "install a full demo dataset and exit")
-		seedTemplatesFlag = flag.Bool("seed-templates", false, "install the bundled starter adventure templates (idempotent: re-running replaces them in place)")
 		revokeFlag        = flag.String("revoke-sessions", "", `if set, drop staff sessions and exit. Pass a username to scope, or "all" to nuke every session+slot session`)
 		backupFlag        = flag.Bool("backup", false, "stream a pg_dump of the configured database to stdout and exit; redirect to a file (e.g. `zv -backup > zv.sql`)")
 		restoreFlag       = flag.Bool("restore", false, "read a pg_dump from stdin and replay it into the configured database; pair with -backup for round-trips")
@@ -145,13 +144,6 @@ func main() {
 			log.Fatalf("seed demo adventure: %v", err)
 		}
 		log.Printf("demo adventure ready")
-		seeded = true
-	}
-	if *seedTemplatesFlag {
-		if err := seedStarterTemplates(sqlDB); err != nil {
-			log.Fatalf("seed templates: %v", err)
-		}
-		log.Printf("starter templates ready — visible on the Adventures tab as a 'Start from a template' section")
 		seeded = true
 	}
 	if *seedDemoFlag {
