@@ -364,21 +364,104 @@
     line-height: 1;
   }
   .hint-toggle-badge:empty { display: none; }
-  /* Slow looped pulse on the badge while a hint is ready and unread.
-     Earlier this stopped after 2 cycles; that meant a player who
-     looked away the moment the hint unlocked never noticed. The
-     animation is gentle enough (5% scale, 3s cycle) that it's not
-     distracting once you've seen it. */
-  .hint-toggle-badge.ready { animation: hintBadgePulse 3s ease-in-out infinite; }
-  @keyframes hintBadgePulse {
-    0%,100% { transform: scale(1); }
-    50%     { transform: scale(1.12); }
+  /* One-shot pulse the moment a new hint becomes ready. Fired by
+     adding `.just-ready` from JS when the ready count first goes up,
+     then removed on `animationend`. Replaces an earlier infinite
+     pulse: the player runs this for hours outdoors on one charge,
+     so a 3-second-cycle animation looping the entire time hints
+     are unlocked is real power draw. The badge stays visually
+     prominent via colour + count after the pulse ends. */
+  .hint-toggle-badge.just-ready {
+    animation: hintBadgePulseOnce 600ms cubic-bezier(.2,.8,.2,1);
   }
-  /* Honour Reduce Motion: a never-stopping pulse violates that
-     setting unless we still it. Keep it visible (still drawing
-     attention via colour + count) but stop the animation. */
+  @keyframes hintBadgePulseOnce {
+    0%   { transform: scale(1); }
+    50%  { transform: scale(1.18); }
+    100% { transform: scale(1); }
+  }
   @media (prefers-reduced-motion: reduce) {
-    .hint-toggle-badge.ready { animation: none; }
+    .hint-toggle-badge.just-ready { animation: none; }
+  }
+
+  /* ---------- Puzzle entrance ----------
+     One-shot fade + 8px slide on every NEW puzzle (a real
+     page_index change, not every state push). When a covering
+     overlay is active at render time — celebrate, welcome, or
+     start ceremony — the block is held at .pre-enter (opacity 0)
+     and the entrance is triggered as the overlay finishes
+     fading. That way the entrance animation never plays behind
+     a cover, and the player sees the new puzzle ease in exactly
+     as the previous moment clears. */
+  .puzzle-block.pre-enter {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  .puzzle-block.entered {
+    animation: puzzleEnter 280ms cubic-bezier(.2,.8,.2,1) both;
+  }
+  @keyframes puzzleEnter {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0);   }
+  }
+
+  /* ---------- Event-start ceremony ----------
+     ~1.2s overlay shown once when status flips from waiting to
+     running and there's no welcome overlay coming up. Adventure
+     title fades in over a thin progress bar that fills, then
+     the whole overlay fades out and the first puzzle's
+     entrance plays into view. Skipped in preview mode. */
+  .start-overlay {
+    position: fixed; inset: 0; z-index: 9700;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    background: var(--bg);
+    text-align: center;
+    padding: 2rem;
+    animation: startOverlayFadeOut 280ms ease 1000ms forwards;
+  }
+  .start-overlay h1 {
+    font-family: var(--font-brand);
+    font-size: clamp(1.6rem, 6vw, 2.4rem);
+    margin: 0 0 1.2rem;
+    color: var(--accent);
+    opacity: 0; transform: translateY(8px);
+    animation: startOverlayTitleIn 380ms cubic-bezier(.2,.8,.2,1) 80ms forwards;
+  }
+  .start-overlay .start-bar {
+    width: clamp(180px, 50vw, 340px);
+    height: 3px;
+    background: var(--surface-2);
+    border-radius: 999px;
+    overflow: hidden;
+  }
+  .start-overlay .start-bar > i {
+    display: block; height: 100%; width: 0;
+    background: var(--accent);
+    animation: startBarFill 700ms cubic-bezier(.2,.8,.2,1) 200ms forwards;
+  }
+  @keyframes startOverlayTitleIn {
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes startBarFill {
+    to { width: 100%; }
+  }
+  @keyframes startOverlayFadeOut {
+    to { opacity: 0; visibility: hidden; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .puzzle-block.entered,
+    .puzzle-block.pre-enter,
+    .start-overlay,
+    .start-overlay h1,
+    .start-overlay .start-bar > i {
+      animation: none !important;
+      opacity: 1 !important;
+      transform: none !important;
+    }
+    /* Skip the start-overlay entirely under reduce-motion: there's
+       no graceful way to render a "ceremony" frozen, and the
+       puzzle is already visible underneath. */
+    .start-overlay { display: none; }
   }
 
   /* Hint sheet: modal overlay with the revealed hint(s) and a
@@ -1293,6 +1376,27 @@ let serverOffsetMs = 0;
 // Once we receive at least one state push we treat any later WS close
 // as "session expired" rather than "no session yet" — distinct screens.
 let hadActiveSession = false;
+// Animation choreography state.
+//
+//   lastEnteredPageIndex — the page index that has already played its
+//     entrance. We compare against s.page_index to decide whether the
+//     freshly-rendered puzzle block should animate. Same value → skip
+//     (a hint countdown re-render shouldn't replay the entrance).
+//   pendingEntrance      — non-null when render() built a puzzle block
+//     while a covering overlay (celebrate / welcome / start-overlay)
+//     was active. The block sits at .pre-enter (opacity 0) until that
+//     overlay finishes fading; resolvePendingEntrance() then promotes
+//     it to .entered so the entrance plays into view as the cover
+//     lifts. {block, pageIndex}.
+//   lastStatus           — previous render's s.status. Used to detect
+//     waiting → running (the start-beat trigger).
+//   startBeatShown       — fired the start-beat ceremony already this
+//     session; never replay (e.g. on a tab refocus that re-pushes
+//     state).
+let lastEnteredPageIndex = null;
+let pendingEntrance = null;
+let lastStatus = null;
+let startBeatShown = false;
 
 /* ========== Player preferences (per-device, localStorage-backed) ==========
  *
@@ -2352,8 +2456,27 @@ function render(s) {
   const bar = el('div', { class: 'runbar' }, buildMenuButton(s), progress, actions);
   app.append(bar);
 
-  // Welcome screen shown once per (adventure, team, slot).
+  // Welcome screen shown once per (adventure, team, slot). Runs
+  // before the start-beat check so we can defer to it when both
+  // would fire on the same waiting → running transition.
   maybeShowWelcome(s);
+
+  // Event-start ceremony: a brief "Starting…" beat the very first
+  // time status flips from waiting to running. Skipped in preview
+  // (no waiting state ever lands there) and skipped when the
+  // welcome overlay is up — welcome is the more substantial
+  // ceremony, no need to stack.
+  if (
+    !startBeatShown
+    && lastStatus === 'waiting'
+    && s.status === 'running'
+    && !s.preview
+    && !document.querySelector('.welcome')
+  ) {
+    startBeatShown = true;
+    showStartBeat(s);
+  }
+  lastStatus = s.status;
 
   if (s.status === 'waiting')  { hideSubmitDock(); app.append(buildWaitingCard(s)); return; }
   if (s.status === 'paused')   { hideSubmitDock(); app.append(buildPausedCard()); return; }
@@ -2367,11 +2490,17 @@ function render(s) {
     return;
   }
 
-  if (s.title) app.append(el('h3', {}, s.title));
+  // Wrap the puzzle's body in one block so the entrance animation
+  // moves the whole unit together (title, images, audio, prompt).
+  // Animating each element separately would stagger and feel busy
+  // on a small screen; one cohesive fade + slide reads as a clean
+  // page turn.
+  const block = el('div', { class: 'puzzle-block' });
+  if (s.title) block.append(el('h3', {}, s.title));
   if (Array.isArray(s.images)) {
     // im.alt is the author's text alternative; empty string keeps
     // decorative semantics (screen readers skip the <img>).
-    for (const im of s.images) app.append(el('img', { class: 'puzzle-img', src: im.url, alt: im.alt || '' }));
+    for (const im of s.images) block.append(el('img', { class: 'puzzle-img', src: im.url, alt: im.alt || '' }));
   }
   if (Array.isArray(s.audio)) {
     // Native <audio controls> — no autoplay (browsers block silent
@@ -2387,13 +2516,15 @@ function render(s) {
       a.append(src);
       wrap.append(a);
       if (au.description) wrap.append(el('p', { class: 'puzzle-audio-desc muted' }, au.description));
-      app.append(wrap);
+      block.append(wrap);
     }
   }
   // Prompt comes from the server already rendered to HTML (goldmark,
   // raw HTML escaped). Nested p/ul/ol/etc inherit typography from
   // the .prompt wrapper.
-  app.append(el('div', { class: 'prompt', html: s.prompt || '' }));
+  block.append(el('div', { class: 'prompt', html: s.prompt || '' }));
+  app.append(block);
+  applyPuzzleEntrance(block, s);
 
   // Hints sit behind a small "?" affordance (runbar, top-right).
   // No countdown on the main view — tapping it opens a sheet with
@@ -2406,6 +2537,87 @@ function render(s) {
   // of "Continue"; for text-answer puzzles the player just submits and
   // gets a rebuff if they aren't close enough.
   renderSubmitDock(s);
+}
+
+// applyPuzzleEntrance triggers the one-shot fade+slide on a freshly
+// built puzzle block. Two important rules:
+//
+//   1. Only on a real page-index change. Hint-countdown re-renders,
+//      pause/resume, and other in-puzzle state pushes leave the
+//      block sitting where it is — replaying the entrance every
+//      time would feel jittery.
+//   2. Hold behind any covering overlay. If celebrate, welcome, or
+//      the start-beat is up at render time, the block is held at
+//      .pre-enter (opacity 0) and queued. resolvePendingEntrance()
+//      promotes it to .entered the moment the overlay clears, so
+//      the entrance plays into view instead of invisibly behind.
+function applyPuzzleEntrance(block, s) {
+  if (!block || !Number.isFinite(s.page_index)) return;
+  if (lastEnteredPageIndex === s.page_index) return;
+  if (anyCoveringOverlay()) {
+    block.classList.add('pre-enter');
+    pendingEntrance = { block, pageIndex: s.page_index };
+    return;
+  }
+  block.classList.add('entered');
+  lastEnteredPageIndex = s.page_index;
+}
+
+// anyCoveringOverlay returns true while a fullscreen "cover" is
+// drawing on top of the puzzle area. Used to decide whether the
+// fresh puzzle should defer its entrance animation. .celebrate.gone
+// is excluded because that selector is added during the overlay's
+// fade-out — by the time it shows up, the cover is on its way out
+// and the entrance can run alongside it.
+function anyCoveringOverlay() {
+  return !!document.querySelector('.celebrate:not(.gone), .welcome, .start-overlay');
+}
+
+// resolvePendingEntrance is called from the cleanup path of every
+// covering overlay (celebrate dismiss timeout, welcome's Let's-go
+// click, start-overlay's removal). If a puzzle block is queued, we
+// promote it to .entered so the entrance animation plays as the
+// cover finishes lifting.
+function resolvePendingEntrance() {
+  if (!pendingEntrance) return;
+  const { block, pageIndex } = pendingEntrance;
+  pendingEntrance = null;
+  if (!block.isConnected) return;
+  block.classList.remove('pre-enter');
+  // Force a reflow so the browser registers the .pre-enter starting
+  // state before .entered's keyframe runs. Without this, removing
+  // and adding classes in the same frame may collapse to no animation.
+  void block.offsetWidth;
+  block.classList.add('entered');
+  lastEnteredPageIndex = pageIndex;
+}
+
+// showStartBeat paints the ~1.2s "Starting…" overlay that runs
+// once per session at event start. The CSS handles all the timing
+// (title fade, bar fill, overlay fade-out); JS just mounts and
+// removes. resolvePendingEntrance fires after the overlay is gone
+// so puzzle 1's entrance plays into view as the cover lifts.
+function showStartBeat(s) {
+  // Defensive: never stack two.
+  document.querySelectorAll('.start-overlay').forEach((n) => n.remove());
+  const overlay = document.createElement('div');
+  overlay.className = 'start-overlay';
+  overlay.setAttribute('role', 'status');
+  overlay.setAttribute('aria-live', 'polite');
+  const head = document.createElement('h1');
+  head.textContent = s.adventure_title || t('Starting…');
+  const bar = document.createElement('div');
+  bar.className = 'start-bar';
+  bar.append(document.createElement('i'));
+  overlay.append(head, bar);
+  document.body.append(overlay);
+  // CSS keyframe schedule: title 0.08–0.46s, bar 0.20–0.90s,
+  // overlay fade-out starts at 1.0s and runs 0.28s. Total ~1.28s;
+  // remove just after the fade-out completes.
+  setTimeout(() => {
+    overlay.remove();
+    resolvePendingEntrance();
+  }, 1300);
 }
 
 // renderSubmitDock always renders into the same sticky container at the
@@ -2497,6 +2709,14 @@ function renderHintButton(s) {
   // Refresh the badge on every render + every second to reflect
   // "how many hints are ready but unrevealed right now". We don't
   // render the countdown anywhere — only the availability delta.
+  //
+  // Battery: a previous version pulsed the badge in an infinite
+  // 3-second loop while a hint was unread. Players run this for
+  // hours outdoors on a single charge, so we replaced the loop
+  // with a one-shot pulse fired the moment the ready count first
+  // increases. The badge stays prominent via colour + count after
+  // the pulse ends.
+  let prevReady = 0;
   const refreshBadge = () => {
     const revealed = hintsRevealedFor(s);
     const elapsed = Math.max(0, Math.floor((Date.now() - hintTickerAnchor) / 1000));
@@ -2506,11 +2726,18 @@ function renderHintButton(s) {
     }
     if (ready > 0) {
       badge.textContent = String(ready);
-      badge.classList.add('ready');
     } else {
       badge.textContent = '';
-      badge.classList.remove('ready');
     }
+    if (ready > prevReady) {
+      // Restart the one-shot animation by removing then re-adding
+      // the class with a forced reflow between. Without this the
+      // browser collapses identical class lists into no animation.
+      badge.classList.remove('just-ready');
+      void badge.offsetWidth;
+      badge.classList.add('just-ready');
+    }
+    prevReady = ready;
   };
   refreshBadge();
   const tick = () => {
@@ -3007,7 +3234,12 @@ function celebrate(finished) {
   // Dismiss: short for inter-puzzle, longer when the adventure ends.
   const total = finished ? 3500 : 1800;
   setTimeout(() => overlay.classList.add('gone'), total);
-  setTimeout(() => overlay.remove(), total + 500);
+  // Promote any queued puzzle-block entrance the moment the overlay
+  // is removed so the new puzzle eases in as the cover lifts.
+  setTimeout(() => {
+    overlay.remove();
+    resolvePendingEntrance();
+  }, total + 500);
 }
 
 // rebuff is celebrate's mirror for a wrong guess — shorter and smaller
@@ -3089,6 +3321,10 @@ function showWelcomeDialog(s, opts = {}) {
   const dismiss = () => {
     if (opts.storageKey) localStorage.setItem(opts.storageKey, '1');
     overlay.remove();
+    // If render() rendered puzzle 1 underneath while welcome was up,
+    // its block was held at .pre-enter — promote it now so it eases
+    // into view as welcome clears.
+    resolvePendingEntrance();
   };
 
   // maybeShowWelcome suppresses the overlay during the 'waiting' state,

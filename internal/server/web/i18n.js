@@ -1387,6 +1387,7 @@
       '{{n}} teams — captain + per-player links': '{{n}} lag — kapten + spelarlänkar',
       // ---- live countdown + start animation ----
       'Starting soon': 'Börjar snart',
+      'Starting…': 'Startar…',
       'until the flag drops': 'tills starten',
       'waiting for the arranger': 'väntar på arrangören',
       'Scheduled for {{when}}': 'Planerad till {{when}}',
