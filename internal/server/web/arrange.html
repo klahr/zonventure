@@ -3992,7 +3992,7 @@ async function viewArrangerDashboard(view) {
   // so filter before handing off.
   const sections = [
     h('div', { class: 'row between', style: 'margin-bottom:1rem' },
-      h('h1', { style: 'margin:0' }, t('Hello, {{username}}', { username: state.me.username })),
+      h('h1', { style: 'margin:0' }, t('Dashboard')),
       newEventBtn,
     ),
     h('div', { class: 'grid stats', style: 'margin-bottom:1rem' },
@@ -4106,9 +4106,7 @@ async function viewAdminDashboard(view) {
     : null;
 
   const sections = [
-    h('h1', {}, t('Hello, {{username}}', { username: state.me.username })),
-    h('p', { class: 'muted' },
-      t('Signed in as admin — you manage organizations, their assignments, and other admins.')),
+    h('h1', {}, t('Dashboard')),
     h('div', { class: 'grid stats', style: 'margin-bottom:1rem' },
       stat(t('Organizations'), orgs.length),
       stat(t('Org users'), totals.members),

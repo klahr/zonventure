@@ -362,7 +362,6 @@
       'completed': 'slutförd',
       'waiting': 'väntar',
       // ---- arrange dashboard ----
-      'Hello, {{username}}': 'Hej, {{username}}',
       'You have {{n}} adventure(s) you are allowed to arrange.':
         'Du har {{n}} äventyr som du får arrangera.',
       'Events total': 'Totalt event',
@@ -384,8 +383,6 @@
       'Unused': 'Oanvända',
       'Pinned by ZV_LANDING_ENABLED — unset the env var to use this toggle.':
         'Låst av ZV_LANDING_ENABLED — ta bort miljövariabeln för att kunna ändra här.',
-      'Signed in as admin — you manage organizations, their assignments, and other admins.':
-        'Inloggad som administratör — du hanterar organisationer, deras tilldelningar och övriga administratörer.',
       'Org users': 'Organisationsanvändare',
       'Active events': 'Aktiva event',
       'No organizations yet.': 'Inga organisationer än.',
