@@ -80,8 +80,8 @@ func newTestServer(t *testing.T) (*httptest.Server, int64, func()) {
 	}
 	var assignmentID int64
 	if err := sqlDB.QueryRow(
-		`INSERT INTO adventure_assignments(org_id, adventure_slug, max_teams) VALUES ($1, $2, $3) RETURNING id`,
-		orgID, "demo", 3).Scan(&assignmentID); err != nil {
+		`INSERT INTO adventure_assignments(org_id, adventure_slug, max_players) VALUES ($1, $2, $3) RETURNING id`,
+		orgID, "demo", 20).Scan(&assignmentID); err != nil {
 		dbCleanup()
 		t.Fatalf("assign: %v", err)
 	}

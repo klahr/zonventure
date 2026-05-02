@@ -61,9 +61,14 @@ type Handlers struct {
 // render totals before submitting a purchase. Mirrors what the server
 // will charge so the UI doesn't have to keep its own constant. Surfaced
 // on /whoami so the bootstrap fetch already carries it.
+//
+// FreePlayersPerEvent is subtracted from the player count before
+// multiplying by PlayerCents — the buyer sees "first N free, then €X
+// per player" without doing arithmetic in their head.
 type Pricing struct {
-	SlotCents int    `json:"slot_cents"`
-	Currency  string `json:"currency"`
+	PlayerCents         int    `json:"player_cents"`
+	FreePlayersPerEvent int    `json:"free_players_per_event"`
+	Currency            string `json:"currency"`
 }
 
 type loginRequest struct {

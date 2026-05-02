@@ -281,7 +281,10 @@ type eventDTO struct {
 	OrgID           int64  `json:"org_id"`
 	CreatedByUserID int64  `json:"created_by_user_id,omitempty"`
 	AssignmentID    int64  `json:"assignment_id"`
-	MaxTeams        int    `json:"max_teams"`
+	// MaxPlayers is the assignment's player-slot cap (0 for share-
+	// backed events that have no per-event cap). The team-creation
+	// gate enforces sum(player_slots in event) ≤ MaxPlayers.
+	MaxPlayers      int    `json:"max_players"`
 	LiveToken       string `json:"live_token"`
 	ShowMap         bool   `json:"show_map"`
 	// TeamsCount is the number of teams attached to the event. The
@@ -290,6 +293,11 @@ type eventDTO struct {
 	// of a vague server reject. Populated on list and detail; the
 	// create response leaves it at 0 since a fresh event has no teams.
 	TeamsCount      int    `json:"teams_count"`
+	// PlayerSlotsCount is the number of player slots already created
+	// across every team in this event. The arrange UI displays it as
+	// "(N/M players)" alongside the team list and uses it client-side
+	// to gate the Add-team button before round-tripping to the server.
+	PlayerSlotsCount int   `json:"player_slots_count"`
 	// AllowedOps lists the lifecycle-mutating operations the server
 	// will accept at this event's current state. Populated only on
 	// detail responses so the client can disable affordances that
@@ -345,7 +353,7 @@ func (h *Handlers) CreateEvent(w http.ResponseWriter, r *http.Request) {
 
 	var (
 		slug          string
-		maxTeams      int
+		maxPlayers    int
 		assignmentArg any // nil for share-backed, int64 for assignment-backed
 	)
 	if req.AssignmentID > 0 {
@@ -356,11 +364,11 @@ func (h *Handlers) CreateEvent(w http.ResponseWriter, r *http.Request) {
 			used    sql.NullInt64
 		)
 		err := h.DB.QueryRowContext(r.Context(), `
-			SELECT aa.adventure_slug, aa.org_id, aa.max_teams, ar.id
+			SELECT aa.adventure_slug, aa.org_id, aa.max_players, ar.id
 			FROM adventure_assignments aa
 			LEFT JOIN events ar ON ar.assignment_id = aa.id
 			WHERE aa.id = $1
-		`, req.AssignmentID).Scan(&advSlug, &orgID, &maxTeams, &used)
+		`, req.AssignmentID).Scan(&advSlug, &orgID, &maxPlayers, &used)
 		if errors.Is(err, sql.ErrNoRows) {
 			httpx.Error(w, http.StatusNotFound, "assignment not found")
 			return
@@ -452,7 +460,7 @@ func (h *Handlers) CreateEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	activity.Record(r.Context(), h.DB, id, nil, activity.UserActor(me.ID), activity.EventCreated,
-		map[string]any{"adventure_slug": slug, "max_teams": maxTeams})
+		map[string]any{"adventure_slug": slug, "max_players": maxPlayers})
 	// event.scheduled fires for every fresh event — even ones with no
 	// scheduled_at, since the canonical state is still "scheduled" on
 	// creation. Customers wiring calendar / kickoff comms branch on
@@ -463,13 +471,13 @@ func (h *Handlers) CreateEvent(w http.ResponseWriter, r *http.Request) {
 		"adventure_slug":  slug,
 		"adventure_title": h.adventureTitle(slug),
 		"scheduled_at":    req.ScheduledAt,
-		"max_teams":       maxTeams,
+		"max_players":     maxPlayers,
 	})
 	h.Hub.Publish(ws.EventTopic(id), "changed", nil)
 	httpx.JSON(w, http.StatusCreated, eventDTO{
 		ID: id, AdventureSlug: slug, State: "scheduled",
 		ScheduledAt: req.ScheduledAt, OrgID: *me.OrgID, CreatedByUserID: me.ID,
-		AssignmentID: req.AssignmentID, MaxTeams: maxTeams,
+		AssignmentID: req.AssignmentID, MaxPlayers: maxPlayers,
 		LiveToken: liveToken,
 	})
 }
@@ -487,10 +495,13 @@ func (h *Handlers) ListEvents(w http.ResponseWriter, r *http.Request) {
 		SELECT ar.id, ar.name, ar.adventure_slug, COALESCE(adv.title, ''), ar.state,
 		       COALESCE(ar.scheduled_at, ''), COALESCE(ar.started_at, ''),
 		       ar.org_id, COALESCE(ar.created_by_user_id, 0),
-		       COALESCE(ar.assignment_id, 0), COALESCE(aa.max_teams, 0),
+		       COALESCE(ar.assignment_id, 0), COALESCE(aa.max_players, 0),
 		       ar.live_token, ar.show_map,
 		       COALESCE((adv.avatar_mime_type IS NOT NULL)::int, 0) AS has_avatar,
-		       (SELECT COUNT(*) FROM teams WHERE event_id = ar.id) AS teams_count
+		       (SELECT COUNT(*) FROM teams WHERE event_id = ar.id) AS teams_count,
+		       (SELECT COUNT(*) FROM player_slots ps
+		         JOIN teams t ON t.id = ps.team_id
+		        WHERE t.event_id = ar.id) AS player_slots_count
 		FROM events ar
 		LEFT JOIN adventure_assignments aa ON aa.id = ar.assignment_id
 		LEFT JOIN adventures adv ON adv.slug = ar.adventure_slug
@@ -515,8 +526,8 @@ func (h *Handlers) ListEvents(w http.ResponseWriter, r *http.Request) {
 			hasAvatar int
 		)
 		if err := rows.Scan(&d.ID, &d.Name, &d.AdventureSlug, &d.AdventureTitle, &d.State, &d.ScheduledAt, &d.StartedAt,
-			&d.OrgID, &d.CreatedByUserID, &d.AssignmentID, &d.MaxTeams,
-			&d.LiveToken, &showMap, &hasAvatar, &d.TeamsCount); err != nil {
+			&d.OrgID, &d.CreatedByUserID, &d.AssignmentID, &d.MaxPlayers,
+			&d.LiveToken, &showMap, &hasAvatar, &d.TeamsCount, &d.PlayerSlotsCount); err != nil {
 			httpx.Error(w, http.StatusInternalServerError, "scan failed")
 			return
 		}
@@ -863,24 +874,30 @@ func (h *Handlers) CreateTeam(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback()
 
-	// Enforce the assignment's team cap.
+	// Enforce the assignment's player-slot cap. Existing slots in
+	// the event + the slots this team would add must not exceed
+	// max_players. Share-backed events have max_players=0 and skip
+	// the gate entirely (effectively unlimited).
 	var (
-		maxTeams   int
-		teamsCount int
+		maxPlayers       int
+		playerSlotsCount int
 	)
 	if err := tx.QueryRowContext(r.Context(), `
-		SELECT COALESCE(aa.max_teams, 0),
-		       (SELECT COUNT(*) FROM teams t WHERE t.event_id = $1)
+		SELECT COALESCE(aa.max_players, 0),
+		       (SELECT COUNT(*) FROM player_slots ps
+		         JOIN teams t ON t.id = ps.team_id
+		        WHERE t.event_id = $1)
 		FROM events ar
 		LEFT JOIN adventure_assignments aa ON aa.id = ar.assignment_id
 		WHERE ar.id = $2
-	`, eventID, eventID).Scan(&maxTeams, &teamsCount); err != nil {
+	`, eventID, eventID).Scan(&maxPlayers, &playerSlotsCount); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "cap lookup failed")
 		return
 	}
-	if maxTeams > 0 && teamsCount >= maxTeams {
+	if maxPlayers > 0 && playerSlotsCount+len(names) > maxPlayers {
 		httpx.Error(w, http.StatusConflict,
-			"this event's assignment allows up to "+strconv.Itoa(maxTeams)+" team(s); buy another assignment for more")
+			"this event's assignment allows up to "+strconv.Itoa(maxPlayers)+
+				" player slot(s); buy another assignment for more")
 		return
 	}
 
@@ -1070,20 +1087,22 @@ func (h *Handlers) createOneTeam(ctx context.Context, eventID, orgID int64, req 
 	}
 	defer tx.Rollback()
 	var (
-		maxTeams   int
-		teamsCount int
+		maxPlayers       int
+		playerSlotsCount int
 	)
 	if err := tx.QueryRowContext(ctx, `
-		SELECT COALESCE(aa.max_teams, 0),
-		       (SELECT COUNT(*) FROM teams t WHERE t.event_id = $1)
+		SELECT COALESCE(aa.max_players, 0),
+		       (SELECT COUNT(*) FROM player_slots ps
+		         JOIN teams t ON t.id = ps.team_id
+		        WHERE t.event_id = $1)
 		FROM events ar
 		LEFT JOIN adventure_assignments aa ON aa.id = ar.assignment_id
 		WHERE ar.id = $2
-	`, eventID, eventID).Scan(&maxTeams, &teamsCount); err != nil {
+	`, eventID, eventID).Scan(&maxPlayers, &playerSlotsCount); err != nil {
 		return nil, errors.New("cap lookup failed")
 	}
-	if maxTeams > 0 && teamsCount >= maxTeams {
-		return nil, errors.New("event is at its team cap; buy another assignment to continue")
+	if maxPlayers > 0 && playerSlotsCount+len(names) > maxPlayers {
+		return nil, errors.New("event is at its player-slot cap; buy another assignment to continue")
 	}
 	teamTok, err := auth.NewSlotToken()
 	if err != nil {

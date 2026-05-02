@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -16,33 +17,49 @@ import (
 
 /* ---------------- Purchases ----------------
  *
- * Arrangers buy team-slot assignments here. The flow is deliberately
- * Stripe-shaped — it's three endpoints:
+ * Arrangers buy player-slot assignments here. Each assignment lets
+ * one event run with up to N player slots across however many teams
+ * the arranger wants to form. The flow is deliberately Stripe-shaped:
  *
  *   POST /api/admin/purchases               → create pending (returns checkout_url)
  *   GET  /purchase/{id}                     → simulated checkout HTML
  *   POST /api/admin/purchases/{id}/confirm  → mark paid, create assignment
  *
- * The simulated provider confirms via an in-app click-through; a real
- * Stripe integration points Checkout at /purchase/{id}, which would in
- * turn redirect to a Checkout Session, with the webhook eventually
- * calling the same /confirm endpoint.
+ * Free tier: when the buyer asks for ≤ FreePlayersPerEvent slots the
+ * computed amount is zero. Stripe rejects $0 Checkout Sessions, so we
+ * short-circuit: the purchase + assignment are created and marked
+ * paid in one transaction with provider="free", and the response
+ * carries the assignment_id directly so the UI skips the redirect.
  *
  * The persisted row holds provider + provider_session_id so mixed
- * provider histories can coexist once live payments ship.
+ * provider histories (free / simulated / stripe) coexist cleanly.
  */
 
-// PricePerSlotCents is the hardcoded price. Living as a constant makes
-// the eventual Stripe migration a single find-and-replace: swap for a
-// Stripe Price ID + a server-side catalog row.
-const PricePerSlotCents = 200
+// PricePerPlayerCents is what each chargeable player slot costs. The
+// first FreePlayersPerEvent slots in any event are free, regardless of
+// how often the buyer comes back.
+const (
+	PricePerPlayerCents = 500
+	FreePlayersPerEvent = 15
+)
+
+// purchaseAmountCents computes the chargeable total for a buy of N
+// player slots: the first FreePlayersPerEvent are free, the rest cost
+// PricePerPlayerCents each. Returns 0 for any N ≤ FreePlayersPerEvent.
+func purchaseAmountCents(maxPlayers int) int {
+	chargeable := maxPlayers - FreePlayersPerEvent
+	if chargeable <= 0 {
+		return 0
+	}
+	return chargeable * PricePerPlayerCents
+}
 
 type purchaseDTO struct {
 	ID                int64  `json:"id"`
 	OrgID             int64  `json:"org_id"`
 	AdventureSlug     string `json:"adventure_slug"`
 	AdventureTitle    string `json:"adventure_title,omitempty"`
-	MaxTeams          int    `json:"max_teams"`
+	MaxPlayers        int    `json:"max_players"`
 	AmountCents       int    `json:"amount_cents"`
 	Currency          string `json:"currency"`
 	Provider          string `json:"provider"`
@@ -57,9 +74,10 @@ type purchaseDTO struct {
 
 type createPurchaseRequest struct {
 	AdventureSlug string `json:"adventure_slug"`
-	MaxTeams      int    `json:"max_teams"`
+	MaxPlayers    int    `json:"max_players"`
 	// Provider lets callers opt into a specific flow. Empty defaults
-	// to "simulated"; "stripe" is reserved for the live integration.
+	// to "stripe" if configured, "simulated" otherwise. A computed
+	// amount of zero forces "free" regardless of caller preference.
 	Provider string `json:"provider,omitempty"`
 }
 
@@ -83,8 +101,8 @@ func (h *Handlers) CreatePurchase(w http.ResponseWriter, r *http.Request) {
 	if !httpx.DecodeJSON(w, r, &req) {
 		return
 	}
-	if req.MaxTeams <= 0 || req.MaxTeams > 100 {
-		httpx.Error(w, http.StatusBadRequest, "max_teams must be 1–100")
+	if req.MaxPlayers <= 0 || req.MaxPlayers > 500 {
+		httpx.Error(w, http.StatusBadRequest, "max_players must be 1–500")
 		return
 	}
 	// Source adventure must exist + be visible to the buyer (either
@@ -102,18 +120,24 @@ func (h *Handlers) CreatePurchase(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusForbidden, "that adventure is not available to your org")
 		return
 	}
+	amount := purchaseAmountCents(req.MaxPlayers)
+
 	provider := req.Provider
-	if provider == "" {
-		// Default to stripe when configured so production deployments
-		// don't accidentally serve the simulated flow; fall back to
-		// simulated otherwise so a fresh dev clone still works.
-		if h.stripeEnabled() {
+	switch provider {
+	case "":
+		// Free buys skip Stripe regardless of how the operator is
+		// configured — Stripe rejects $0 Checkout Sessions. Otherwise
+		// default to stripe when wired, simulated as the dev fallback.
+		if amount == 0 {
+			provider = "free"
+		} else if h.stripeEnabled() {
 			provider = "stripe"
 		} else {
 			provider = "simulated"
 		}
-	}
-	if provider != "simulated" && provider != "stripe" {
+	case "free", "simulated", "stripe":
+		// Caller-specified. Validated below.
+	default:
 		httpx.Error(w, http.StatusBadRequest, "unsupported provider")
 		return
 	}
@@ -121,7 +145,15 @@ func (h *Handlers) CreatePurchase(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusServiceUnavailable, "stripe is not configured on this server")
 		return
 	}
-	amount := req.MaxTeams * PricePerSlotCents
+	if provider == "free" && amount > 0 {
+		httpx.Error(w, http.StatusBadRequest, "free provider requires amount=0")
+		return
+	}
+	if provider != "free" && amount == 0 {
+		// A non-free provider for a $0 buy would just bounce off
+		// Stripe / sit pending forever. Coerce to free.
+		provider = "free"
+	}
 
 	// Look up the adventure title up-front so we can pass a friendly
 	// product name to Stripe Checkout instead of the bare slug. Best-
@@ -130,13 +162,35 @@ func (h *Handlers) CreatePurchase(w http.ResponseWriter, r *http.Request) {
 	_ = h.DB.QueryRowContext(r.Context(),
 		`SELECT title FROM adventures WHERE slug = $1`, req.AdventureSlug).Scan(&advTitle)
 
+	// Free path: skip Stripe entirely. Insert purchase + assignment
+	// + flip to paid in one transaction so the response can carry
+	// the assignment id directly and the UI doesn't redirect.
+	if provider == "free" {
+		assID, purchaseID, ferr := h.createFreePurchase(r.Context(), *me.OrgID, me.ID, req.AdventureSlug, req.MaxPlayers)
+		if ferr != nil {
+			httpx.Error(w, http.StatusInternalServerError, "free purchase failed: "+ferr.Error())
+			return
+		}
+		metrics.PurchaseEvents.WithLabelValues("created_free").Inc()
+		metrics.PurchaseEvents.WithLabelValues("confirmed_free").Inc()
+		httpx.JSON(w, http.StatusCreated, map[string]any{
+			"id":            purchaseID,
+			"amount_cents":  0,
+			"currency":      "EUR",
+			"state":         "paid",
+			"provider":      "free",
+			"assignment_id": assID,
+		})
+		return
+	}
+
 	var id int64
 	if err := h.DB.QueryRowContext(r.Context(), `
-		INSERT INTO purchases(org_id, buyer_user_id, adventure_slug, max_teams,
+		INSERT INTO purchases(org_id, buyer_user_id, adventure_slug, max_players,
 		                      amount_cents, currency, provider, state)
 		VALUES ($1, $2, $3, $4, $5, 'EUR', $6, 'pending')
 		RETURNING id
-	`, *me.OrgID, me.ID, req.AdventureSlug, req.MaxTeams, amount, provider).Scan(&id); err != nil {
+	`, *me.OrgID, me.ID, req.AdventureSlug, req.MaxPlayers, amount, provider).Scan(&id); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "insert failed: "+err.Error())
 		return
 	}
@@ -155,7 +209,7 @@ func (h *Handlers) CreatePurchase(w http.ResponseWriter, r *http.Request) {
 			`SELECT stripe_customer_id FROM organizations WHERE id = $1`,
 			*me.OrgID).Scan(&existingCustomerID)
 		url, sessID, serr := h.createStripeCheckoutSession(r.Context(),
-			id, req.AdventureSlug, advTitle, req.MaxTeams, amount, me.Email,
+			id, req.AdventureSlug, advTitle, req.MaxPlayers, amount, me.Email,
 			existingCustomerID.String)
 		if serr != nil {
 			// Roll back the pending row so we don't leave dangling
@@ -185,6 +239,35 @@ func (h *Handlers) CreatePurchase(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// createFreePurchase inserts a purchase + assignment in one tx for the
+// free-tier short-circuit. State is set to paid immediately; the
+// assignment id is returned so the response carries it directly.
+func (h *Handlers) createFreePurchase(ctx context.Context, orgID, buyerUserID int64, advSlug string, maxPlayers int) (assignmentID, purchaseID int64, err error) {
+	tx, err := h.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, 0, err
+	}
+	defer tx.Rollback() //nolint:errcheck
+	if err := tx.QueryRowContext(ctx, `
+		INSERT INTO adventure_assignments(org_id, adventure_slug, max_players)
+		VALUES ($1, $2, $3) RETURNING id
+	`, orgID, advSlug, maxPlayers).Scan(&assignmentID); err != nil {
+		return 0, 0, fmt.Errorf("assignment insert: %w", err)
+	}
+	if err := tx.QueryRowContext(ctx, `
+		INSERT INTO purchases(org_id, buyer_user_id, adventure_slug, max_players,
+		                      amount_cents, currency, provider, state, paid_at, assignment_id)
+		VALUES ($1, $2, $3, $4, 0, 'EUR', 'free', 'paid', now_text(), $5)
+		RETURNING id
+	`, orgID, buyerUserID, advSlug, maxPlayers, assignmentID).Scan(&purchaseID); err != nil {
+		return 0, 0, fmt.Errorf("purchase insert: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, 0, err
+	}
+	return assignmentID, purchaseID, nil
+}
+
 // ConfirmPurchase marks a purchase paid and creates the assignment. In
 // the simulated flow the user clicks "Pay" on the checkout page, which
 // POSTs here with the session cookie. For Stripe, this same endpoint
@@ -208,7 +291,7 @@ func (h *Handlers) ConfirmPurchase(w http.ResponseWriter, r *http.Request) {
 	var (
 		orgID         int64
 		advSlug       string
-		maxTeams      int
+		maxPlayers    int
 		state         string
 		existingAssn  sql.NullInt64
 	)
@@ -217,9 +300,9 @@ func (h *Handlers) ConfirmPurchase(w http.ResponseWriter, r *http.Request) {
 	// transactions can't both observe state='pending' and each insert
 	// their own assignment row.
 	err = tx.QueryRowContext(r.Context(), `
-		SELECT org_id, adventure_slug, max_teams, state, assignment_id
+		SELECT org_id, adventure_slug, max_players, state, assignment_id
 		FROM purchases WHERE id = $1 FOR UPDATE
-	`, purchaseID).Scan(&orgID, &advSlug, &maxTeams, &state, &existingAssn)
+	`, purchaseID).Scan(&orgID, &advSlug, &maxPlayers, &state, &existingAssn)
 	if errors.Is(err, sql.ErrNoRows) {
 		httpx.Error(w, http.StatusNotFound, "purchase not found")
 		return
@@ -252,10 +335,10 @@ func (h *Handlers) ConfirmPurchase(w http.ResponseWriter, r *http.Request) {
 
 	var assID int64
 	if err := tx.QueryRowContext(r.Context(), `
-		INSERT INTO adventure_assignments(org_id, adventure_slug, max_teams)
+		INSERT INTO adventure_assignments(org_id, adventure_slug, max_players)
 		VALUES ($1, $2, $3)
 		RETURNING id
-	`, orgID, advSlug, maxTeams).Scan(&assID); err != nil {
+	`, orgID, advSlug, maxPlayers).Scan(&assID); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "assignment insert failed: "+err.Error())
 		return
 	}
@@ -283,7 +366,7 @@ func (h *Handlers) ListPurchases(w http.ResponseWriter, r *http.Request) {
 	me, _ := auth.FromContext(r.Context())
 	query := `
 		SELECT p.id, p.org_id, p.adventure_slug, COALESCE(a.title, ''),
-		       p.max_teams, p.amount_cents, p.currency, p.provider,
+		       p.max_players, p.amount_cents, p.currency, p.provider,
 		       COALESCE(p.provider_session_id, ''), p.state, p.assignment_id,
 		       p.created_at, COALESCE(p.paid_at, ''),
 		       COALESCE(p.stripe_invoice_url, '')
@@ -313,7 +396,7 @@ func (h *Handlers) ListPurchases(w http.ResponseWriter, r *http.Request) {
 			assignment sql.NullInt64
 		)
 		if err := rows.Scan(&d.ID, &d.OrgID, &d.AdventureSlug, &d.AdventureTitle,
-			&d.MaxTeams, &d.AmountCents, &d.Currency, &d.Provider,
+			&d.MaxPlayers, &d.AmountCents, &d.Currency, &d.Provider,
 			&d.ProviderSessionID, &d.State, &assignment,
 			&d.CreatedAt, &d.PaidAt, &d.InvoiceURL); err != nil {
 			httpx.Error(w, http.StatusInternalServerError, "scan failed")
@@ -343,7 +426,7 @@ func (h *Handlers) GetPurchase(w http.ResponseWriter, r *http.Request) {
 	)
 	err = h.DB.QueryRowContext(r.Context(), `
 		SELECT p.id, p.org_id, p.adventure_slug, COALESCE(a.title, ''),
-		       p.max_teams, p.amount_cents, p.currency, p.provider,
+		       p.max_players, p.amount_cents, p.currency, p.provider,
 		       COALESCE(p.provider_session_id, ''), p.state, p.assignment_id,
 		       p.created_at, COALESCE(p.paid_at, ''),
 		       COALESCE(p.stripe_invoice_url, '')
@@ -351,7 +434,7 @@ func (h *Handlers) GetPurchase(w http.ResponseWriter, r *http.Request) {
 		LEFT JOIN adventures a ON a.slug = p.adventure_slug
 		WHERE p.id = $1
 	`, purchaseID).Scan(&d.ID, &d.OrgID, &d.AdventureSlug, &d.AdventureTitle,
-		&d.MaxTeams, &d.AmountCents, &d.Currency, &d.Provider,
+		&d.MaxPlayers, &d.AmountCents, &d.Currency, &d.Provider,
 		&d.ProviderSessionID, &d.State, &assignment, &d.CreatedAt, &d.PaidAt, &d.InvoiceURL)
 	if errors.Is(err, sql.ErrNoRows) {
 		httpx.Error(w, http.StatusNotFound, "purchase not found")
@@ -452,7 +535,7 @@ async function load() {
   const p = await r.json();
   cart.innerHTML =
     '<dt>Adventure</dt><dd>' + (p.adventure_title || p.adventure_slug) + '</dd>' +
-    '<dt>Team slots</dt><dd>' + p.max_teams + '</dd>' +
+    '<dt>Player slots</dt><dd>' + p.max_players + '</dd>' +
     '<dt>Total</dt><dd>' + dollars(p.amount_cents, p.currency) + '</dd>' +
     '<dt>Status</dt><dd>' + p.state + '</dd>';
   if (p.state === 'paid') { payBtn.disabled = true; payBtn.textContent = 'Already paid'; }

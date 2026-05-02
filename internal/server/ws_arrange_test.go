@@ -22,7 +22,7 @@ func seedEventInOrg(t *testing.T, db *sql.DB, orgID int64) int64 {
 	t.Helper()
 	var assID int64
 	if err := db.QueryRow(
-		`INSERT INTO adventure_assignments(org_id, adventure_slug, max_teams) VALUES ($1, 'demo', 2) RETURNING id`,
+		`INSERT INTO adventure_assignments(org_id, adventure_slug, max_players) VALUES ($1, 'demo', 20) RETURNING id`,
 		orgID,
 	).Scan(&assID); err != nil {
 		t.Fatalf("seed assignment: %v", err)

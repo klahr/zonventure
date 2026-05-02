@@ -153,8 +153,8 @@
       'Not shared with any organisation yet.': 'Inte delat med någon organisation ännu.',
       'Share with org': 'Dela med organisation',
       'Share with organisation': 'Dela med organisation',
-      'Pick one. The organisation can schedule events of this adventure without buying team slots.':
-        'Välj en. Organisationen kan schemalägga event av detta äventyr utan att köpa lagplatser.',
+      'Pick one. The organisation can schedule events of this adventure without buying player slots.':
+        'Välj en. Organisationen kan schemalägga event av detta äventyr utan att köpa spelarplatser.',
       'Revoke share': 'Återkalla delning',
       'Every organisation already has access.': 'Alla organisationer har redan åtkomst.',
       'Revoke share with {{org}}? Existing events keep working; new events will be blocked.':
@@ -373,8 +373,8 @@
       'A few clicks to your first adventure.': 'Några klick till ditt första äventyr.',
       'Pick an adventure — browse the Store or create your own':
         'Välj ett äventyr — bläddra i butiken eller skapa ett eget',
-      'Have team slots ready — an assignment lets you schedule an event':
-        'Ha lagplatser redo — en tilldelning låter dig schemalägga en event',
+      'Have player slots ready — an assignment lets you schedule an event':
+        'Ha spelarplatser redo — en tilldelning låter dig schemalägga en event',
       'Schedule an event, add teams, share their links — and start!':
         'Schemalägg en event, lägg till lag, dela länkarna — och kör!',
       'Schedule': 'Schemalägg',
@@ -459,11 +459,11 @@
       'Already used': 'Redan använda',
       'Teams cap': 'Lagtak',
       // ---- store ----
-      'Published adventures from other organisations. Buy team slots to add one to your own Adventures list.':
-        'Publicerade äventyr från andra organisationer. Köp lagplatser för att lägga till ett i din egen Äventyr-lista.',
+      'Published adventures from other organisations. Buy player slots to add one to your own Adventures list.':
+        'Publicerade äventyr från andra organisationer. Köp spelarplatser för att lägga till ett i din egen Äventyr-lista.',
       'No published adventures yet.': 'Inga publicerade äventyr än.',
       '(no description)': '(ingen beskrivning)',
-      'Buy team slots': 'Köp lagplatser',
+      'Buy player slots': 'Köp spelarplatser',
       // ---- adventure detail ----
       '{{slug}} · {{n}} puzzles': '{{slug}} · {{n}} pussel',
       '(untitled)': '(utan titel)',
@@ -695,11 +695,7 @@
         'Tar bort {{username}} från {{org}}. Ange ditt lösenord för att bekräfta.',
       'Edit assignment · {{name}}': 'Redigera tilldelning · {{name}}',
       'Adventure (locked — already used)': 'Äventyr (låst — redan använt)',
-      'Maximum teams': 'Max antal lag',
-      'Linked to event #{{id}}. You may raise the cap; lowering below the current team count is rejected.':
-        'Kopplad till event #{{id}}. Du kan höja taket; lägre än nuvarande antal lag avvisas.',
       'This assignment has not yet been used.': 'Tilldelningen har inte använts än.',
-      'Max teams must be at least 1': 'Max antal lag måste vara minst 1',
       'Assignment updated': 'Tilldelning uppdaterad',
       'No adventures loaded': 'Inga äventyr inlästa',
       'Assign adventure to {{name}}': 'Tilldela äventyr till {{name}}',
@@ -1012,28 +1008,41 @@
       'Assign adventure': 'Tilldela äventyr',
       'You have an unused assignment for this adventure — no new purchase needed.':
         'Du har en oanvänd tilldelning för detta äventyr — inget nytt köp behövs.',
-      'Each team slot lets one team play "{{title}}".':
-        'Varje lagplats låter ett lag spela "{{title}}".',
+      'How many players will join "{{title}}"?':
+        'Hur många spelare ansluter till "{{title}}"?',
       // ---- purchases ----
       'Purchases': 'Köphistorik',
       'Purchase failed': 'Köpet misslyckades',
       'Payment failed': 'Betalningen misslyckades',
       'Payment received — let\'s schedule your event.':
         'Betalning mottagen — dags att schemalägga din event.',
-      'Proceed to payment': 'Fortsätt till betalning',
-      'How many team slots do you need? ($2.00 each, simulated payment.)':
-        'Hur många lagplatser behöver du? ($2,00 styck, simulerad betalning.)',
-      'How many team slots do you need? ({{price}} each, simulated payment.)':
-        'Hur många lagplatser behöver du? ({{price}} styck, simulerad betalning.)',
+      'Continue': 'Fortsätt',
+      'How many players will join? (first {{n}} free, then {{price}} per player.)':
+        'Hur många spelare ansluter? (första {{n}} gratis, sedan {{price}} per spelare.)',
+      '(first {{n}} free, then {{price}} per player)':
+        '(första {{n}} gratis, sedan {{price}} per spelare)',
+      'Players': 'Spelare',
       'Browse catalog': 'Bläddra i butiken',
       'No purchases yet.': 'Inga köp än.',
       'No purchases.': 'Inga köp.',
       'Purchases ({{n}})': 'Köp ({{n}})',
-      'Every team-slot purchase. Paid ones produce an assignment you can schedule from the Adventures page.':
-        'Alla lagplatsköp. Betalda ger en tilldelning som du kan schemalägga från Äventyr-sidan.',
-      '({{price}} per slot)': '({{price}} per plats)',
-      '{{n}} team slot': '{{n}} lagplats',
-      '{{n}} team slots': '{{n}} lagplatser',
+      'Every player-slot purchase. Paid ones produce an assignment you can schedule from the Adventures page.':
+        'Alla spelarplatsköp. Betalda ger en tilldelning som du kan schemalägga från Äventyr-sidan.',
+      '{{n}} player slot': '{{n}} spelarplats',
+      '{{n}} player slots': '{{n}} spelarplatser',
+      '{{slug}} · {{n}} player': '{{slug}} · {{n}} spelare',
+      '{{slug}} · {{n}} players': '{{slug}} · {{n}} spelare',
+      'up to {{n}} players · purchased {{when}}':
+        'upp till {{n}} spelare · köpta {{when}}',
+      '({{slots}} / {{max}} players · {{teams}} teams)':
+        '({{slots}} / {{max}} spelare · {{teams}} lag)',
+      'You picked {{players}} players but only {{cap}} slots are available. Lower the team count or buy more slots.':
+        'Du valde {{players}} spelare men bara {{cap}} platser finns tillgängliga. Sänk lagantalet eller köp fler platser.',
+      'Maximum players': 'Max spelare',
+      'Max players must be at least 1': 'Max spelare måste vara minst 1',
+      'Linked to event #{{id}}. You may raise the cap; lowering below the current player-slot count is rejected.':
+        'Kopplat till event #{{id}}. Du kan höja taket; att sänka under nuvarande antal spelarplatser nekas.',
+      'Click to edit player cap': 'Klicka för att redigera spelartak',
       // ---- adventure delete / edit meta ----
       'Delete adventure': 'Ta bort äventyr',
       'Edit title/slug/colours': 'Redigera titel/slug/färger',
@@ -1308,8 +1317,8 @@
         'Återbetala {{amount}} till kunden? Statusen ändras till "refunded" när Stripe bekräftar.',
       'Refund initiated. Webhook will flip the state shortly.':
         'Återbetalning startad. Webhook uppdaterar statusen strax.',
-      'Browse the catalog and buy team slots to start scheduling events.':
-        'Bläddra i katalogen och köp lagsplatser för att börja schemalägga körningar.',
+      'Browse the catalog and buy player slots to start scheduling events.':
+        'Bläddra i katalogen och köp spelarplatser för att börja schemalägga körningar.',
       'Open the store': 'Öppna butiken',
       // ---- age gate ----
       'I confirm no participants under 13 will play this adventure, or I have parental consent for any who will.':
@@ -1321,7 +1330,6 @@
       'Browse adventures': 'Bläddra äventyr',
       'the catalog has ready-made adventures, or you can author your own.':
         'katalogen har färdiga äventyr, eller skapa egna.',
-      'Buy team slots': 'Köp lagsplatser',
       'one slot per team. Pay once per event.': 'en plats per lag. Betala en gång per event.',
       'Schedule an event': 'Schemalägg en körning',
       'add teams, share magic links, and start when ready.':

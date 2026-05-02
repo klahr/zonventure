@@ -306,8 +306,8 @@ func TestServeHintImage_VisibilityRevealGate(t *testing.T) {
 	}
 	var assignmentID int64
 	if err := db.QueryRow(`
-		INSERT INTO adventure_assignments(org_id, adventure_slug, max_teams)
-		VALUES ($1, 'demo', 3) RETURNING id
+		INSERT INTO adventure_assignments(org_id, adventure_slug, max_players)
+		VALUES ($1, 'demo', 20) RETURNING id
 	`, orgID).Scan(&assignmentID); err != nil {
 		t.Fatalf("seed assignment: %v", err)
 	}

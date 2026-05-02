@@ -147,10 +147,10 @@ func TestStripeWebhook_CheckoutCompleted_HappyPath(t *testing.T) {
 	}
 	var purchaseID int64
 	if err := db.QueryRow(`
-		INSERT INTO purchases(org_id, buyer_user_id, adventure_slug, max_teams,
+		INSERT INTO purchases(org_id, buyer_user_id, adventure_slug, max_players,
 		                     amount_cents, currency, provider, state)
-		VALUES ($1, (SELECT id FROM users WHERE username = 'boss'), 'demo', 4,
-		        800, 'EUR', 'stripe', 'pending')
+		VALUES ($1, (SELECT id FROM users WHERE username = 'boss'), 'demo', 20,
+		        2500, 'EUR', 'stripe', 'pending')
 		RETURNING id
 	`, orgID).Scan(&purchaseID); err != nil {
 		t.Fatalf("seed purchase: %v", err)
@@ -250,10 +250,10 @@ func TestStripeWebhook_ChargeRefunded(t *testing.T) {
 	}
 	var purchaseID int64
 	if err := db.QueryRow(`
-		INSERT INTO purchases(org_id, buyer_user_id, adventure_slug, max_teams,
+		INSERT INTO purchases(org_id, buyer_user_id, adventure_slug, max_players,
 		                     amount_cents, currency, provider, state, stripe_charge_id, paid_at)
-		VALUES ($1, (SELECT id FROM users WHERE username = 'boss'), 'demo', 1,
-		        200, 'EUR', 'stripe', 'paid', 'ch_test_xyz', now_text())
+		VALUES ($1, (SELECT id FROM users WHERE username = 'boss'), 'demo', 16,
+		        500, 'EUR', 'stripe', 'paid', 'ch_test_xyz', now_text())
 		RETURNING id
 	`, orgID).Scan(&purchaseID); err != nil {
 		t.Fatalf("seed paid: %v", err)

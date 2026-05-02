@@ -20,7 +20,7 @@ type assignmentDTO struct {
 	ID             int64  `json:"id"`
 	AdventureSlug  string `json:"adventure_slug"`
 	AdventureTitle string `json:"adventure_title,omitempty"`
-	MaxTeams       int    `json:"max_teams"`
+	MaxPlayers     int    `json:"max_players"`
 	CreatedAt      string `json:"created_at"`
 	EventID          *int64 `json:"event_id,omitempty"`
 }
@@ -533,7 +533,7 @@ func (h *Handlers) TransferOwnership(w http.ResponseWriter, r *http.Request) {
 
 type createAssignmentRequest struct {
 	AdventureSlug string `json:"adventure_slug"`
-	MaxTeams      int    `json:"max_teams"`
+	MaxPlayers    int    `json:"max_players"`
 }
 
 // CreateAssignment grants the organization one more single-use licence.
@@ -551,27 +551,27 @@ func (h *Handlers) CreateAssignment(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusBadRequest, "unknown adventure")
 		return
 	}
-	if req.MaxTeams <= 0 {
-		httpx.Error(w, http.StatusBadRequest, "max_teams must be > 0")
+	if req.MaxPlayers <= 0 {
+		httpx.Error(w, http.StatusBadRequest, "max_players must be > 0")
 		return
 	}
 	var id int64
 	if err := h.DB.QueryRowContext(r.Context(), `
-		INSERT INTO adventure_assignments(org_id, adventure_slug, max_teams)
+		INSERT INTO adventure_assignments(org_id, adventure_slug, max_players)
 		VALUES ($1, $2, $3)
 		RETURNING id
-	`, orgID, req.AdventureSlug, req.MaxTeams).Scan(&id); err != nil {
+	`, orgID, req.AdventureSlug, req.MaxPlayers).Scan(&id); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "assign failed")
 		return
 	}
 	httpx.JSON(w, http.StatusCreated, assignmentDTO{
-		ID: id, AdventureSlug: req.AdventureSlug, MaxTeams: req.MaxTeams,
+		ID: id, AdventureSlug: req.AdventureSlug, MaxPlayers: req.MaxPlayers,
 	})
 }
 
 type updateAssignmentRequest struct {
 	AdventureSlug *string `json:"adventure_slug,omitempty"`
-	MaxTeams      *int    `json:"max_teams,omitempty"`
+	MaxPlayers    *int    `json:"max_players,omitempty"`
 }
 
 // UpdateAssignment amends an organization's assignment. Admin-only.
@@ -589,7 +589,7 @@ func (h *Handlers) UpdateAssignment(w http.ResponseWriter, r *http.Request) {
 	if !httpx.DecodeJSON(w, r, &req) {
 		return
 	}
-	if req.AdventureSlug == nil && req.MaxTeams == nil {
+	if req.AdventureSlug == nil && req.MaxPlayers == nil {
 		httpx.Error(w, http.StatusBadRequest, "nothing to update")
 		return
 	}
@@ -600,7 +600,7 @@ func (h *Handlers) UpdateAssignment(w http.ResponseWriter, r *http.Request) {
 		eventID       sql.NullInt64
 	)
 	err = h.DB.QueryRowContext(r.Context(), `
-		SELECT aa.org_id, aa.adventure_slug, aa.max_teams, ar.id
+		SELECT aa.org_id, aa.adventure_slug, aa.max_players, ar.id
 		FROM adventure_assignments aa
 		LEFT JOIN events ar ON ar.assignment_id = aa.id
 		WHERE aa.id = $1
@@ -626,34 +626,37 @@ func (h *Handlers) UpdateAssignment(w http.ResponseWriter, r *http.Request) {
 		newSlug = *req.AdventureSlug
 	}
 	newMax := currentMax
-	if req.MaxTeams != nil {
-		if *req.MaxTeams <= 0 {
-			httpx.Error(w, http.StatusBadRequest, "max_teams must be > 0")
+	if req.MaxPlayers != nil {
+		if *req.MaxPlayers <= 0 {
+			httpx.Error(w, http.StatusBadRequest, "max_players must be > 0")
 			return
 		}
 		if eventID.Valid {
-			var teamCount int
-			if err := h.DB.QueryRowContext(r.Context(),
-				`SELECT COUNT(*) FROM teams WHERE event_id = $1`, eventID.Int64).Scan(&teamCount); err != nil {
-				httpx.Error(w, http.StatusInternalServerError, "team count failed")
+			var slotCount int
+			if err := h.DB.QueryRowContext(r.Context(), `
+				SELECT COUNT(*) FROM player_slots ps
+				 JOIN teams t ON t.id = ps.team_id
+				WHERE t.event_id = $1
+			`, eventID.Int64).Scan(&slotCount); err != nil {
+				httpx.Error(w, http.StatusInternalServerError, "slot count failed")
 				return
 			}
-			if *req.MaxTeams < teamCount {
+			if *req.MaxPlayers < slotCount {
 				httpx.Error(w, http.StatusConflict,
-					"the consuming run already has "+strconv.Itoa(teamCount)+" team(s); delete teams first")
+					"the consuming event already has "+strconv.Itoa(slotCount)+" player slot(s); delete teams first")
 				return
 			}
 		}
-		newMax = *req.MaxTeams
+		newMax = *req.MaxPlayers
 	}
 	if _, err := h.DB.ExecContext(r.Context(),
-		`UPDATE adventure_assignments SET adventure_slug = $1, max_teams = $2 WHERE id = $3`,
+		`UPDATE adventure_assignments SET adventure_slug = $1, max_players = $2 WHERE id = $3`,
 		newSlug, newMax, assignmentID); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "update failed")
 		return
 	}
 	httpx.JSON(w, http.StatusOK, assignmentDTO{
-		ID: assignmentID, AdventureSlug: newSlug, MaxTeams: newMax,
+		ID: assignmentID, AdventureSlug: newSlug, MaxPlayers: newMax,
 	})
 }
 
@@ -866,7 +869,7 @@ func (h *Handlers) loadOrgAssignments(ctx context.Context, o *organizationDTO) e
 
 func (h *Handlers) listAssignments(ctx context.Context, orgID int64) ([]assignmentDTO, error) {
 	rows, err := h.DB.QueryContext(ctx, `
-		SELECT aa.id, aa.adventure_slug, aa.max_teams, aa.created_at, ar.id
+		SELECT aa.id, aa.adventure_slug, aa.max_players, aa.created_at, ar.id
 		FROM adventure_assignments aa
 		LEFT JOIN events ar ON ar.assignment_id = aa.id
 		WHERE aa.org_id = $1
@@ -882,7 +885,7 @@ func (h *Handlers) listAssignments(ctx context.Context, orgID int64) ([]assignme
 			as    assignmentDTO
 			eventID sql.NullInt64
 		)
-		if err := rows.Scan(&as.ID, &as.AdventureSlug, &as.MaxTeams, &as.CreatedAt, &eventID); err != nil {
+		if err := rows.Scan(&as.ID, &as.AdventureSlug, &as.MaxPlayers, &as.CreatedAt, &eventID); err != nil {
 			return nil, err
 		}
 		if eventID.Valid {

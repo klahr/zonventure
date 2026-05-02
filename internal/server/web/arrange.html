@@ -3026,7 +3026,7 @@ async function showOnboardingModal() {
       h('ol', { style: 'padding-left:1.25rem; line-height:1.7' },
         h('li', {}, h('strong', {}, t('Browse adventures')), ' — ',
           t('the catalog has ready-made adventures, or you can author your own.')),
-        h('li', {}, h('strong', {}, t('Buy team slots')), ' — ',
+        h('li', {}, h('strong', {}, t('Buy player slots')), ' — ',
           t('one slot per team. Pay once per event.')),
         h('li', {}, h('strong', {}, t('Schedule an event')), ' — ',
           t('add teams, share magic links, and start when ready.'))),
@@ -4100,7 +4100,7 @@ function buildDashboardSetup({ mineAdvs, unusedAssigns }) {
         // create-adventure modal so the next click is productive.
         t('Create'), () => openCreateAdventure()),
       stepDone(unusedAssigns.length > 0,
-        t('Have team slots ready — an assignment lets you schedule an event'),
+        t('Have player slots ready — an assignment lets you schedule an event'),
         t('Browse store'), () => nav('#store')),
       stepDone(false,
         t('Schedule an event, add teams, share their links — and start!'),
@@ -4300,7 +4300,7 @@ async function viewAdventures(view) {
       actions.append(h('button', {
         class: 'btn',
         on: { click: () => openPurchaseModal(adv) },
-      }, icon(ICONS.coins), t('Buy team slots')));
+      }, icon(ICONS.coins), t('Buy player slots')));
     }
 
     const tags = [
@@ -4475,8 +4475,8 @@ async function pickAndScheduleRun(unusedAssignments, adv) {
         class: 'btn',
         style: 'justify-content:flex-start; text-align:left',
         on: { click: () => close(a.id) },
-      }, t('up to {{n}} teams · purchased {{when}}',
-        { n: a.max_teams, when: fmtLocal(a.created_at) })));
+      }, t('up to {{n}} players · purchased {{when}}',
+        { n: a.max_players, when: fmtLocal(a.created_at) })));
     }
     body.append(list);
     body.append(h('div', { class: 'row end', style: 'margin-top:1rem' },
@@ -4499,7 +4499,7 @@ async function viewStore(view) {
     h('h1', {}, t('Adventures')),
     renderAdventureTabs('catalog'),
     h('p', { class: 'muted' },
-      t('Published adventures from other organisations. Buy team slots to add one to your own Adventures list.')),
+      t('Published adventures from other organisations. Buy player slots to add one to your own Adventures list.')),
     catalog.length === 0
       ? h('div', { class: 'empty' },
           h('p', {}, t('No published adventures yet.')),
@@ -4524,7 +4524,7 @@ async function viewStore(view) {
             h('button', {
               class: 'btn primary',
               on: { click: (e) => { e.stopPropagation(); openPurchaseModal(a); } },
-            }, icon(ICONS.coins), t('Buy team slots')))))),
+            }, icon(ICONS.coins), t('Buy player slots')))))),
   );
 }
 
@@ -4546,7 +4546,7 @@ async function viewStoreDetail(view, slug) {
         h('h1', { style: 'margin:0' }, a.title)),
       h('button', { class: 'btn primary',
         on: { click: () => openPurchaseModal({ slug: a.slug, title: a.title }) } },
-        icon(ICONS.coins), t('Buy team slots'))),
+        icon(ICONS.coins), t('Buy player slots'))),
     h('p', { class: 'muted mono' },
       t('{{slug}} · {{n}} puzzles', { slug: a.slug, n: a.page_count }),
       a.author ? ' · ' + a.author : ''),
@@ -4595,7 +4595,7 @@ async function viewPurchases(view) {
         portalBtn,
         h('button', { class: 'btn', on: { click: () => nav('#adventures') } }, t('Browse catalog')))),
     h('p', { class: 'muted' },
-      t('Every team-slot purchase. Paid ones produce an assignment you can schedule from the Adventures page.')),
+      t('Every player-slot purchase. Paid ones produce an assignment you can schedule from the Adventures page.')),
     purchases.length === 0
       ? renderEmptyPurchases()
       : h('div', { class: 'card' }, h('table', { class: 'table' },
@@ -4608,7 +4608,7 @@ async function viewPurchases(view) {
           h('th', {}, ''))),
         h('tbody', {}, purchases.map((p) => h('tr', {},
           h('td', {}, p.adventure_title || p.adventure_slug),
-          h('td', { class: 'mono' }, p.max_teams),
+          h('td', { class: 'mono' }, p.max_players),
           h('td', { class: 'mono' }, money(p.amount_cents, p.currency)),
           h('td', {}, h('span', {
             class: 'pill ' + (p.state === 'paid' ? 'success' : p.state === 'pending' ? 'warning' : p.state === 'refunded' ? 'danger' : ''),
@@ -4678,7 +4678,7 @@ function renderEmptyPurchases() {
   return h('div', { class: 'empty' },
     h('p', {}, t('No purchases yet.')),
     h('p', { class: 'muted', style: 'margin-top:.5rem' },
-      t('Browse the catalog and buy team slots to start scheduling events.')),
+      t('Browse the catalog and buy player slots to start scheduling events.')),
     h('div', { style: 'margin-top:.75rem' },
       h('button', { class: 'btn primary', on: { click: () => nav('#store') } },
         icon(ICONS.coins), t('Open the store'))));
@@ -4694,44 +4694,57 @@ async function openPurchaseModal(adv) {
   // Pricing rides on the /whoami response, so the bootstrap fetch
   // already has the canonical numbers. Falling back to defaults keeps
   // dev clones with old whoami payloads working.
-  const PRICE_CENTS = (state.me?.pricing?.slot_cents) || 200;
-  const CURRENCY    = (state.me?.pricing?.currency)   || 'EUR';
+  const PRICE_CENTS = (state.me?.pricing?.player_cents) || 500;
+  const FREE        = (state.me?.pricing?.free_players_per_event) ?? 15;
+  const CURRENCY    = (state.me?.pricing?.currency) || 'EUR';
   const fmtMoney = (cents) => new Intl.NumberFormat(undefined,
     { style: 'currency', currency: CURRENCY }).format(cents / 100);
-  await modal(t('Buy team slots'), ({ body, close }) => {
-    const slots = h('input', { type: 'number', min: '1', max: '100', value: '10', required: true });
+  // chargeable(n) is what the buyer actually pays — first FREE slots
+  // are free, the rest are PRICE_CENTS each.
+  const chargeable = (n) => Math.max(0, n - FREE) * PRICE_CENTS;
+  await modal(t('Buy player slots'), ({ body, close }) => {
+    const players = h('input', { type: 'number', min: '1', max: '500', value: '30', required: true });
     const totalEl = h('strong', {}, '');
     const update = () => {
-      const n = Math.max(1, parseInt(slots.value, 10) || 0);
-      totalEl.textContent = fmtMoney(n * PRICE_CENTS);
+      const n = Math.max(1, parseInt(players.value, 10) || 0);
+      totalEl.textContent = fmtMoney(chargeable(n));
     };
-    slots.addEventListener('input', update);
+    players.addEventListener('input', update);
     update();
     const form = h('form', {},
       h('p', {},
-        t('Each team slot lets one team play "{{title}}".', { title: adv.title || adv.slug })),
+        t('How many players will join "{{title}}"?', { title: adv.title || adv.slug })),
       h('label', { class: 'field' },
-        h('span', {}, t('Team slots')), slots),
+        h('span', {}, t('Players')), players),
       h('p', { class: 'muted' },
         t('Total: '), totalEl,
         ' ',
         h('span', { class: 'muted', style: 'font-size:.85rem' },
-          t('({{price}} per slot)', { price: fmtMoney(PRICE_CENTS) }))),
+          t('(first {{n}} free, then {{price}} per player)',
+            { n: FREE, price: fmtMoney(PRICE_CENTS) }))),
       h('div', { class: 'row end' },
         h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, t('Cancel')),
-        h('button', { class: 'btn primary', type: 'submit' }, t('Proceed to payment'))));
+        h('button', { class: 'btn primary', type: 'submit' }, t('Continue'))));
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
-      const n = Math.max(1, parseInt(slots.value, 10) || 1);
+      const n = Math.max(1, parseInt(players.value, 10) || 1);
       const r = await api('/api/admin/purchases', {
         method: 'POST',
-        body: JSON.stringify({ adventure_slug: adv.slug, max_teams: n }),
+        body: JSON.stringify({ adventure_slug: adv.slug, max_players: n }),
       });
       if (r.status !== 201) {
         toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
         return;
       }
       close(true);
+      // Free buys come back already paid with an assignment id —
+      // skip the checkout redirect and bounce straight to the
+      // adventures list so the user lands on the new assignment.
+      if (r.body.state === 'paid' && r.body.assignment_id) {
+        try { sessionStorage.setItem('zv-just-purchased', String(r.body.assignment_id)); } catch { /* no-op */ }
+        location.href = '/arrange#adventures';
+        return;
+      }
       location.href = r.body.checkout_url;
     });
     body.append(form);
@@ -4769,7 +4782,7 @@ async function viewAdventureDetail(view, slug) {
     ctas.append(h('button', {
       class: 'btn primary',
       on: { click: () => openPurchaseModal({ slug: a.slug, title: a.title }) },
-    }, icon(ICONS.coins), t('Buy team slots')));
+    }, icon(ICONS.coins), t('Buy player slots')));
   }
   // Preview opens the player view in a new tab — handy for both
   // catalog browsers and authors checking their own work without
@@ -5339,7 +5352,7 @@ async function scheduleRun(source) {
 // to get from "I want to host" to "here's the event with teams ready".
 // Events inline (no checkout-page jump) by calling the purchase +
 // confirm endpoints directly from the submit handler. The simulated
-// checkout page still exists for the standalone "Buy team slots"
+// checkout page still exists for the standalone "Buy player slots"
 // flow on the Adventures catalog, but the wizard bypasses it.
 async function openNewEventWizard() {
   const [advR, assignR] = await Promise.all([
@@ -5376,34 +5389,36 @@ async function openNewEventWizard() {
     advs.forEach((a) => advPick.append(advChip(a)));
 
     // ---- 2. Capacity: reuse existing assignment or buy ----
-    const buyCount = h('input', { type: 'number', min: '1', max: '100', value: '10' });
+    const buyCount = h('input', { type: 'number', min: '1', max: '500', value: '30' });
     const capacitySection = h('div', {});
     // Pricing rides on whoami; fallback values keep stale dev clones
     // running. Currency drives Intl formatting so $/€/kr render cleanly.
-    const PRICE_CENTS = (state.me?.pricing?.slot_cents) || 200;
-    const CURRENCY    = (state.me?.pricing?.currency)   || 'EUR';
+    const PRICE_CENTS = (state.me?.pricing?.player_cents) || 500;
+    const FREE        = (state.me?.pricing?.free_players_per_event) ?? 15;
+    const CURRENCY    = (state.me?.pricing?.currency) || 'EUR';
     const fmtMoney = (cents) => new Intl.NumberFormat(undefined,
       { style: 'currency', currency: CURRENCY }).format(cents / 100);
+    const chargeable = (n) => Math.max(0, n - FREE) * PRICE_CENTS;
     const refreshAssignment = () => {
       capacitySection.replaceChildren();
       const matching = assignments.filter((x) => x.adventure_slug === pickedAdv.slug);
       if (matching.length > 0) {
         capacitySection.append(
           h('p', { class: 'muted' }, t('You have an unused assignment for this adventure — no new purchase needed.')),
-          h('p', {}, h('strong', {}, matching[0].max_teams === 1
-            ? t('{{n}} team slot', { n: matching[0].max_teams })
-            : t('{{n}} team slots', { n: matching[0].max_teams }))));
+          h('p', {}, h('strong', {}, matching[0].max_players === 1
+            ? t('{{n}} player slot', { n: matching[0].max_players })
+            : t('{{n}} player slots', { n: matching[0].max_players }))));
       } else {
-        const total = () => fmtMoney((parseInt(buyCount.value, 10) || 0) * PRICE_CENTS);
+        const total = () => fmtMoney(chargeable(parseInt(buyCount.value, 10) || 0));
         const totalEl = h('strong', {}, total());
         buyCount.addEventListener('input', () => { totalEl.textContent = total(); });
         capacitySection.append(
           h('p', { class: 'muted' },
-            t('How many team slots do you need? ({{price}} each, simulated payment.)',
-              { price: fmtMoney(PRICE_CENTS) })),
+            t('How many players will join? (first {{n}} free, then {{price}} per player.)',
+              { n: FREE, price: fmtMoney(PRICE_CENTS) })),
           h('div', { class: 'row', style: 'gap:.5rem; align-items:center' },
             h('label', { class: 'field', style: 'flex:0 0 auto; margin:0' },
-              h('span', {}, t('Team slots')), buyCount),
+              h('span', {}, t('Players')), buyCount),
             h('p', { style: 'margin:0' }, t('Total: '), totalEl)));
       }
     };
@@ -5454,23 +5469,27 @@ async function openNewEventWizard() {
     // either drops the count or picks an adventure with more slots.
     const capWarn = h('p', { class: 'err', style: 'display:none; font-size:.85rem; margin:.25rem 0 0' });
     const refreshCapWarn = () => {
-      const requested = Math.max(0, parseInt(teamCount.value, 10) || 0);
-      // Reusable assignment cap is the assignment's own max_teams; a
-      // fresh purchase uses buyCount, which drives both the slot
-      // count and the price total.
+      // Capacity is metered in player slots. Compare requested
+      // total players (teamCount × playerCount) against the
+      // assignment cap (max_players) — either the existing
+      // assignment's cap, or buyCount when a fresh purchase is
+      // about to be minted.
+      const reqTeams   = Math.max(0, parseInt(teamCount.value, 10) || 0);
+      const reqPlayers = reqTeams * Math.max(1, parseInt(playerCount.value, 10) || 0);
       const matching = assignments.filter((x) => x.adventure_slug === pickedAdv.slug);
       const cap = matching.length > 0
-        ? matching[0].max_teams
+        ? matching[0].max_players
         : Math.max(0, parseInt(buyCount.value, 10) || 0);
-      if (requested > cap) {
-        capWarn.textContent = t('You picked {{teams}} teams but only {{cap}} slots are available. Lower the team count or buy more slots.',
-          { teams: requested, cap });
+      if (reqPlayers > cap) {
+        capWarn.textContent = t('You picked {{players}} players but only {{cap}} slots are available. Lower the team count or buy more slots.',
+          { players: reqPlayers, cap });
         capWarn.style.display = '';
       } else {
         capWarn.style.display = 'none';
       }
     };
     teamCount.addEventListener('input', refreshCapWarn);
+    playerCount.addEventListener('input', refreshCapWarn);
     buyCount.addEventListener('input', refreshCapWarn);
 
     const submitBtn = h('button', { class: 'btn primary', type: 'submit' }, t('Create event'));
@@ -5538,12 +5557,19 @@ async function openNewEventWizard() {
           const n = Math.max(1, parseInt(buyCount.value, 10) || 0);
           const pr = await api('/api/admin/purchases', {
             method: 'POST',
-            body: JSON.stringify({ adventure_slug: pickedAdv.slug, max_teams: n }),
+            body: JSON.stringify({ adventure_slug: pickedAdv.slug, max_players: n }),
           });
           if (pr.status !== 201) { toastErr(pr.body?.error || t('Purchase failed')); return; }
-          const cr = await api('/api/admin/purchases/' + pr.body.id + '/confirm', { method: 'POST' });
-          if (cr.status !== 200) { toastErr(cr.body?.error || t('Payment failed')); return; }
-          assignmentID = cr.body.assignment_id;
+          // Free buys come back already paid with assignment_id;
+          // skip the confirm round-trip entirely. Paid buys via
+          // the simulated provider still need /confirm.
+          if (pr.body.state === 'paid' && pr.body.assignment_id) {
+            assignmentID = pr.body.assignment_id;
+          } else {
+            const cr = await api('/api/admin/purchases/' + pr.body.id + '/confirm', { method: 'POST' });
+            if (cr.status !== 200) { toastErr(cr.body?.error || t('Payment failed')); return; }
+            assignmentID = cr.body.assignment_id;
+          }
         }
         // Create the event.
         const runReq = { assignment_id: assignmentID, name: nameInput.value.trim(), attest_no_minors: true };
@@ -6512,13 +6538,16 @@ async function viewRunDetail(view, runID) {
     h('div', { class: 'row between', style: 'flex-wrap:wrap; gap:.5rem' },
       h('h2', { style: 'margin:0' },
         t('Teams'),
-        event.max_teams > 0
+        event.max_players > 0
           ? h('span', { class: 'muted', style: 'font-weight:400; margin-left:.4rem; font-size:.85rem' },
-              `(${teams.length} / ${event.max_teams})`)
+              t('({{slots}} / {{max}} players · {{teams}} teams)',
+                { slots: event.player_slots_count || 0, max: event.max_players, teams: teams.length }))
           : null),
       h('button', {
         class: 'btn primary small',
-        disabled: !canDo(event, 'create_team') || (event.max_teams > 0 && teams.length >= event.max_teams) ? '' : null,
+        disabled: !canDo(event, 'create_team')
+          || (event.max_players > 0 && (event.player_slots_count || 0) >= event.max_players)
+          ? '' : null,
         title: !canDo(event, 'create_team')
           ? (event.state === 'completed' ? t('Event is completed — read-only.') : t('Event is active.'))
           : null,
@@ -7963,19 +7992,19 @@ function renderOrganizationCard(org, adventures, purchases) {
           style: 'margin: 0 .35rem .35rem 0',
           title: t('Click to edit'),
           on: { click: () => openEditAssignment(org, x, adventures) },
-        }, x.max_teams === 1
-            ? t('{{slug}} · {{n}} team', { slug: x.adventure_slug, n: x.max_teams })
-            : t('{{slug}} · {{n}} teams', { slug: x.adventure_slug, n: x.max_teams })))),
+        }, x.max_players === 1
+            ? t('{{slug}} · {{n}} player', { slug: x.adventure_slug, n: x.max_players })
+            : t('{{slug}} · {{n}} players', { slug: x.adventure_slug, n: x.max_players })))),
 
     ...(used.length === 0 ? [] : [h('div', { style: 'margin-top:.75rem' },
       h('h3', {}, t('Used ({{n}})', { n: used.length })),
       h('div', {}, used.map((x) => h('span', {
           class: 'chip selectable',
           style: 'margin: 0 .35rem .35rem 0; opacity:.75; font-style:italic',
-          title: t('Click to edit team cap'),
+          title: t('Click to edit player cap'),
           on: { click: () => openEditAssignment(org, x, adventures) },
         }, t('{{slug}} · event #{{event}} · max {{max}}', {
-          slug: x.adventure_slug, run: x.event_id, max: x.max_teams,
+          slug: x.adventure_slug, run: x.event_id, max: x.max_players,
         })))))]),
 
     h('h3', { style: 'margin-top:.75rem' }, t('Purchases ({{n}})', { n: purchases.length })),
@@ -7995,7 +8024,7 @@ function renderOrganizationCard(org, adventures, purchases) {
             }).format(p.amount_cents / 100);
             return h('tr', {},
               h('td', {}, p.adventure_title || p.adventure_slug),
-              h('td', { class: 'mono' }, p.max_teams),
+              h('td', { class: 'mono' }, p.max_players),
               h('td', { class: 'mono' }, total),
               h('td', {}, h('span', {
                 class: 'pill ' + (p.state === 'paid' ? 'success'
@@ -8399,16 +8428,16 @@ async function openEditAssignment(org, assignment, adventures) {
         value: a.slug, selected: a.slug === assignment.adventure_slug ? '' : null,
       }, `${a.title} (${a.slug})`)));
     const count = h('input', {
-      type: 'number', min: 1, step: 1, value: String(assignment.max_teams), required: true,
+      type: 'number', min: 1, step: 1, value: String(assignment.max_players), required: true,
     });
     const form = h('form', {},
       h('label', { class: 'field' },
         h('span', {}, used ? t('Adventure (locked — already used)') : t('Adventure')),
         advSel),
-      h('label', { class: 'field' }, h('span', {}, t('Maximum teams')), count),
+      h('label', { class: 'field' }, h('span', {}, t('Maximum players')), count),
       h('p', { class: 'muted', style: 'font-size:.8rem' },
         used
-          ? t('Linked to event #{{id}}. You may raise the cap; lowering below the current team count is rejected.', { id: assignment.event_id })
+          ? t('Linked to event #{{id}}. You may raise the cap; lowering below the current player-slot count is rejected.', { id: assignment.event_id })
           : t('This assignment has not yet been used.')),
       h('div', { class: 'row between', style: 'margin-top:.5rem' },
         used
@@ -8424,8 +8453,8 @@ async function openEditAssignment(org, assignment, adventures) {
       e.preventDefault();
       const payload = {};
       const newMax = parseInt(count.value, 10);
-      if (!(newMax > 0)) { toastErr(t('Max teams must be at least 1')); return; }
-      if (newMax !== assignment.max_teams) payload.max_teams = newMax;
+      if (!(newMax > 0)) { toastErr(t('Max players must be at least 1')); return; }
+      if (newMax !== assignment.max_players) payload.max_players = newMax;
       if (!used && advSel.value !== assignment.adventure_slug) payload.adventure_slug = advSel.value;
       if (Object.keys(payload).length === 0) { close(null); return; }
       const r = await api(`/api/admin/organizations/${org.id}/assignments/${assignment.id}`, {
@@ -8443,10 +8472,10 @@ async function openAssignAdventure(org, adventures) {
   await modal(t('Assign adventure to {{name}}', { name: org.name }), ({ body, close }) => {
     const sel = h('select', {}, adventures.map((a) =>
       h('option', { value: a.slug }, `${a.title} (${a.slug})`)));
-    const count = h('input', { type: 'number', min: 1, step: 1, value: 3, required: true });
+    const count = h('input', { type: 'number', min: 1, step: 1, value: 20, required: true });
     const form = h('form', {},
       h('label', { class: 'field' }, h('span', {}, t('Adventure')), sel),
-      h('label', { class: 'field' }, h('span', {}, t('Maximum teams')), count),
+      h('label', { class: 'field' }, h('span', {}, t('Maximum players')), count),
       h('p', { class: 'muted', style: 'font-size:.8rem' },
         t('Each assignment may be used for exactly one event. For more, assign again.')),
       h('div', { class: 'row end' },
@@ -8454,11 +8483,11 @@ async function openAssignAdventure(org, adventures) {
         h('button', { class: 'btn primary', type: 'submit' }, t('Assign'))));
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
-      const maxTeams = parseInt(count.value, 10);
-      if (!(maxTeams > 0)) { toastErr(t('Max teams must be at least 1')); return; }
+      const maxPlayers = parseInt(count.value, 10);
+      if (!(maxPlayers > 0)) { toastErr(t('Max players must be at least 1')); return; }
       const r = await api(`/api/admin/organizations/${org.id}/assignments`, {
         method: 'POST',
-        body: JSON.stringify({ adventure_slug: sel.value, max_teams: maxTeams }),
+        body: JSON.stringify({ adventure_slug: sel.value, max_players: maxPlayers }),
       });
       if (r.status === 201) { toastOk(t('Assignment granted')); close(true); renderRoute(); }
       else toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
@@ -9067,7 +9096,7 @@ async function openShareAdventureModal(adv) {
   }
   const picked = await modal(t('Share with organisation'), ({ body, close }) => {
     body.append(h('p', { class: 'muted' },
-      t('Pick one. The organisation can schedule events of this adventure without buying team slots.')));
+      t('Pick one. The organisation can schedule events of this adventure without buying player slots.')));
     const list = h('div', { class: 'grid', style: 'gap:.35rem' });
     for (const o of candidates) {
       list.append(h('button', {

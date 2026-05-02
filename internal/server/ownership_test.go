@@ -135,12 +135,13 @@ func TestPurchase_CreateConfirmProducesAssignment(t *testing.T) {
 		State       string `json:"state"`
 		CheckoutURL string `json:"checkout_url"`
 	}
+	// 20 players: 15 free + 5 chargeable @ 500c = 2500c, simulated path.
 	if s := boss.do("POST", "/api/admin/purchases",
-		map[string]any{"adventure_slug": "demo", "max_teams": 5}, &created); s != 201 {
+		map[string]any{"adventure_slug": "demo", "max_players": 20}, &created); s != 201 {
 		t.Fatalf("create purchase = %d", s)
 	}
-	if created.AmountCents != 5*200 {
-		t.Errorf("amount = %d cents, want %d", created.AmountCents, 5*200)
+	if created.AmountCents != 5*500 {
+		t.Errorf("amount = %d cents, want %d", created.AmountCents, 5*500)
 	}
 	if created.State != "pending" {
 		t.Errorf("state = %q, want pending", created.State)
@@ -167,7 +168,7 @@ func TestPurchase_CreateConfirmProducesAssignment(t *testing.T) {
 		Assignments []struct {
 			ID            int64  `json:"id"`
 			AdventureSlug string `json:"adventure_slug"`
-			MaxTeams      int    `json:"max_teams"`
+			MaxPlayers    int    `json:"max_players"`
 			EventID         *int64 `json:"event_id,omitempty"`
 		} `json:"assignments"`
 	}
@@ -178,7 +179,7 @@ func TestPurchase_CreateConfirmProducesAssignment(t *testing.T) {
 	for _, a := range assigns.Assignments {
 		if a.ID == confirmed.AssignmentID {
 			hit = true
-			if a.AdventureSlug != "demo" || a.MaxTeams != 5 {
+			if a.AdventureSlug != "demo" || a.MaxPlayers != 20 {
 				t.Errorf("assignment fields wrong: %+v", a)
 			}
 		}
@@ -199,8 +200,9 @@ func TestPurchase_ConfirmIsIdempotent(t *testing.T) {
 	var created struct {
 		ID int64 `json:"id"`
 	}
+	// 20 players forces the simulated /confirm path; ≤15 short-circuits to free.
 	if s := boss.do("POST", "/api/admin/purchases",
-		map[string]any{"adventure_slug": "demo", "max_teams": 2}, &created); s != 201 {
+		map[string]any{"adventure_slug": "demo", "max_players": 20}, &created); s != 201 {
 		t.Fatalf("create = %d", s)
 	}
 	// First confirm.
@@ -236,11 +238,11 @@ func TestPurchase_RejectsHugeOrZeroSlotCount(t *testing.T) {
 		map[string]string{"username": "boss", "password": "s3cret"}, nil); s != 200 {
 		t.Fatalf("boss login = %d", s)
 	}
-	for _, n := range []int{0, -3, 101, 10000} {
+	for _, n := range []int{0, -3, 501, 10000} {
 		s := boss.do("POST", "/api/admin/purchases",
-			map[string]any{"adventure_slug": "demo", "max_teams": n}, nil)
+			map[string]any{"adventure_slug": "demo", "max_players": n}, nil)
 		if s != 400 {
-			t.Errorf("max_teams=%d got %d, want 400", n, s)
+			t.Errorf("max_players=%d got %d, want 400", n, s)
 		}
 	}
 }
@@ -256,7 +258,7 @@ func TestPurchase_AdminCannotBuy(t *testing.T) {
 		t.Fatalf("admin login = %d", s)
 	}
 	if s := root.do("POST", "/api/admin/purchases",
-		map[string]any{"adventure_slug": "demo", "max_teams": 1}, nil); s != 400 {
+		map[string]any{"adventure_slug": "demo", "max_players": 20}, nil); s != 400 {
 		t.Fatalf("admin buy status = %d, want 400", s)
 	}
 }

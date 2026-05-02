@@ -188,14 +188,18 @@ func (h *Handlers) buildEventDetail(ctx context.Context, eventID int64) (eventDe
 		SELECT ar.id, ar.name, ar.adventure_slug, ar.state,
 		       COALESCE(ar.scheduled_at,''), COALESCE(ar.started_at,''),
 		       ar.org_id, COALESCE(ar.created_by_user_id, 0),
-		       COALESCE(ar.assignment_id, 0), COALESCE(aa.max_teams, 0),
-		       ar.live_token, ar.show_map
+		       COALESCE(ar.assignment_id, 0), COALESCE(aa.max_players, 0),
+		       ar.live_token, ar.show_map,
+		       (SELECT COUNT(*) FROM teams WHERE event_id = ar.id) AS teams_count,
+		       (SELECT COUNT(*) FROM player_slots ps
+		         JOIN teams t ON t.id = ps.team_id
+		        WHERE t.event_id = ar.id) AS player_slots_count
 		FROM events ar
 		LEFT JOIN adventure_assignments aa ON aa.id = ar.assignment_id
 		WHERE ar.id = $1
 	`, eventID).Scan(&d.ID, &d.Name, &d.AdventureSlug, &d.State, &d.ScheduledAt, &d.StartedAt,
-		&d.OrgID, &d.CreatedByUserID, &d.AssignmentID, &d.MaxTeams,
-		&d.LiveToken, &showMap); err != nil {
+		&d.OrgID, &d.CreatedByUserID, &d.AssignmentID, &d.MaxPlayers,
+		&d.LiveToken, &showMap, &d.TeamsCount, &d.PlayerSlotsCount); err != nil {
 		return eventDetailDTO{}, err
 	}
 	d.ShowMap = showMap != 0

@@ -103,15 +103,16 @@ func TestCreatePurchase_Simulated(t *testing.T) {
 		Provider    string `json:"provider"`
 		CheckoutURL string `json:"checkout_url"`
 	}
-	body := map[string]any{"adventure_slug": "demo", "max_teams": 3}
+	// 20 players: 15 free + 5 chargeable @ 500c each = 2500c.
+	body := map[string]any{"adventure_slug": "demo", "max_players": 20}
 	if s := c.do("POST", "/api/admin/purchases", body, &resp); s != 201 {
 		t.Fatalf("create purchase = %d", s)
 	}
 	if resp.ID == 0 {
 		t.Fatalf("expected purchase id, got %+v", resp)
 	}
-	if resp.AmountCents != 3*200 {
-		t.Fatalf("amount_cents = %d, want 600", resp.AmountCents)
+	if resp.AmountCents != 5*500 {
+		t.Fatalf("amount_cents = %d, want 2500", resp.AmountCents)
 	}
 	if resp.Provider != "simulated" {
 		t.Fatalf("provider = %q, want simulated (no Stripe creds set)", resp.Provider)
@@ -121,6 +122,43 @@ func TestCreatePurchase_Simulated(t *testing.T) {
 	}
 	if resp.CheckoutURL == "" {
 		t.Fatalf("missing checkout_url")
+	}
+}
+
+// TestCreatePurchase_FreeTier asserts that buys at or below the free
+// threshold skip Stripe, mark paid immediately, and return the
+// assignment id directly.
+func TestCreatePurchase_FreeTier(t *testing.T) {
+	ts, _, _, cleanup := seedPurchaseStack(t, server.Config{})
+	defer cleanup()
+
+	c := newClient(t, ts)
+	if s := c.do("POST", "/api/auth/login", map[string]string{"username": "boss", "password": "s3cret"}, nil); s != 200 {
+		t.Fatalf("login = %d", s)
+	}
+
+	var resp struct {
+		ID           int64  `json:"id"`
+		AmountCents  int    `json:"amount_cents"`
+		State        string `json:"state"`
+		Provider     string `json:"provider"`
+		AssignmentID int64  `json:"assignment_id"`
+	}
+	body := map[string]any{"adventure_slug": "demo", "max_players": 10}
+	if s := c.do("POST", "/api/admin/purchases", body, &resp); s != 201 {
+		t.Fatalf("create free purchase = %d", s)
+	}
+	if resp.AmountCents != 0 {
+		t.Fatalf("amount_cents = %d, want 0", resp.AmountCents)
+	}
+	if resp.Provider != "free" {
+		t.Fatalf("provider = %q, want free", resp.Provider)
+	}
+	if resp.State != "paid" {
+		t.Fatalf("state = %q, want paid", resp.State)
+	}
+	if resp.AssignmentID == 0 {
+		t.Fatalf("expected assignment_id on free response")
 	}
 }
 
@@ -139,7 +177,7 @@ func TestCreatePurchase_RequiresEmailVerified(t *testing.T) {
 	if s := c.do("POST", "/api/auth/login", map[string]string{"username": "boss", "password": "s3cret"}, nil); s != 200 {
 		t.Fatalf("login = %d", s)
 	}
-	body := map[string]any{"adventure_slug": "demo", "max_teams": 1}
+	body := map[string]any{"adventure_slug": "demo", "max_players": 1}
 	if s := c.do("POST", "/api/admin/purchases", body, nil); s != 403 {
 		t.Fatalf("unverified create = %d, want 403", s)
 	}
@@ -159,11 +197,11 @@ func TestCreatePurchase_RejectsBadInput(t *testing.T) {
 		body map[string]any
 		want int
 	}{
-		{"zero teams", map[string]any{"adventure_slug": "demo", "max_teams": 0}, 400},
-		{"too many", map[string]any{"adventure_slug": "demo", "max_teams": 101}, 400},
-		{"unknown adventure", map[string]any{"adventure_slug": "nope", "max_teams": 1}, 404},
-		{"unsupported provider", map[string]any{"adventure_slug": "demo", "max_teams": 1, "provider": "paypal"}, 400},
-		{"stripe without creds", map[string]any{"adventure_slug": "demo", "max_teams": 1, "provider": "stripe"}, 503},
+		{"zero players", map[string]any{"adventure_slug": "demo", "max_players": 0}, 400},
+		{"too many", map[string]any{"adventure_slug": "demo", "max_players": 501}, 400},
+		{"unknown adventure", map[string]any{"adventure_slug": "nope", "max_players": 20}, 404},
+		{"unsupported provider", map[string]any{"adventure_slug": "demo", "max_players": 20, "provider": "paypal"}, 400},
+		{"stripe without creds", map[string]any{"adventure_slug": "demo", "max_players": 20, "provider": "stripe"}, 503},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -186,7 +224,9 @@ func TestConfirmPurchase_SimulatedFlow(t *testing.T) {
 	var created struct {
 		ID int64 `json:"id"`
 	}
-	body := map[string]any{"adventure_slug": "demo", "max_teams": 2}
+	// 20 players triggers the simulated /confirm path; ≤15 would
+	// short-circuit to the free path with no checkout step.
+	body := map[string]any{"adventure_slug": "demo", "max_players": 20}
 	if s := c.do("POST", "/api/admin/purchases", body, &created); s != 201 {
 		t.Fatalf("create = %d", s)
 	}
@@ -255,7 +295,9 @@ func TestConfirmPurchase_CrossOrgForbidden(t *testing.T) {
 	var created struct {
 		ID int64 `json:"id"`
 	}
-	body := map[string]any{"adventure_slug": "demo", "max_teams": 1}
+	// 20 players forces the simulated/non-free path so a /confirm
+	// call is required (free buys are auto-paid at create time).
+	body := map[string]any{"adventure_slug": "demo", "max_players": 20}
 	if s := boss.do("POST", "/api/admin/purchases", body, &created); s != 201 {
 		t.Fatalf("create = %d", s)
 	}

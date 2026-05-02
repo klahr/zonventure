@@ -352,16 +352,16 @@ func seedDemo(ctx context.Context, d *sql.DB) error {
 
 	var assignmentID int64
 	if err := d.QueryRow(`
-		INSERT INTO adventure_assignments(org_id, adventure_slug, max_teams)
+		INSERT INTO adventure_assignments(org_id, adventure_slug, max_players)
 		VALUES ($1, $2, $3)
 		RETURNING id
-	`, orgID, "demo", 5).Scan(&assignmentID); err != nil {
+	`, orgID, "demo", 25).Scan(&assignmentID); err != nil {
 		return err
 	}
 	if _, err := d.Exec(`
-		INSERT INTO adventure_assignments(org_id, adventure_slug, max_teams)
+		INSERT INTO adventure_assignments(org_id, adventure_slug, max_players)
 		VALUES ($1, $2, $3)
-	`, orgID, "demo", 3); err != nil {
+	`, orgID, "demo", 15); err != nil {
 		return err
 	}
 

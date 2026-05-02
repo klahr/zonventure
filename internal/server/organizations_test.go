@@ -188,7 +188,7 @@ func TestOrganizations_DeleteCascadesMembersAndAssignments(t *testing.T) {
 		t.Fatalf("seed member: %v", err)
 	}
 	if _, err := db.Exec(
-		`INSERT INTO adventure_assignments(org_id, adventure_slug, max_teams) VALUES ($1, 'demo', 1)`,
+		`INSERT INTO adventure_assignments(org_id, adventure_slug, max_players) VALUES ($1, 'demo', 5)`,
 		orgID,
 	); err != nil {
 		t.Fatalf("seed assignment: %v", err)

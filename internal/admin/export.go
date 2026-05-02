@@ -119,14 +119,14 @@ type adventureExport struct {
 type assignmentExport struct {
 	ID             int64  `json:"id"`
 	AdventureSlug  string `json:"adventure_slug"`
-	MaxTeams       int    `json:"max_teams"`
+	MaxPlayers     int    `json:"max_players"`
 	CreatedAt      string `json:"created_at"`
 }
 
 type purchaseExport struct {
 	ID             int64  `json:"id"`
 	AdventureSlug  string `json:"adventure_slug"`
-	MaxTeams       int    `json:"max_teams"`
+	MaxPlayers     int    `json:"max_players"`
 	AmountCents    int    `json:"amount_cents"`
 	Currency       string `json:"currency"`
 	State          string `json:"state"`
@@ -244,7 +244,7 @@ func loadOrgAdventures(ctx context.Context, db *sql.DB, orgID int64, out *export
 
 func loadOrgAssignments(ctx context.Context, db *sql.DB, orgID int64, out *exportPayload) error {
 	rows, err := db.QueryContext(ctx, `
-		SELECT id, adventure_slug, max_teams, created_at
+		SELECT id, adventure_slug, max_players, created_at
 		FROM adventure_assignments WHERE org_id = $1 ORDER BY id
 	`, orgID)
 	if err != nil {
@@ -253,7 +253,7 @@ func loadOrgAssignments(ctx context.Context, db *sql.DB, orgID int64, out *expor
 	defer rows.Close()
 	for rows.Next() {
 		var a assignmentExport
-		if err := rows.Scan(&a.ID, &a.AdventureSlug, &a.MaxTeams, &a.CreatedAt); err != nil {
+		if err := rows.Scan(&a.ID, &a.AdventureSlug, &a.MaxPlayers, &a.CreatedAt); err != nil {
 			return err
 		}
 		out.Assignments = append(out.Assignments, a)
@@ -263,7 +263,7 @@ func loadOrgAssignments(ctx context.Context, db *sql.DB, orgID int64, out *expor
 
 func loadOrgPurchases(ctx context.Context, db *sql.DB, orgID int64, out *exportPayload) error {
 	rows, err := db.QueryContext(ctx, `
-		SELECT id, adventure_slug, max_teams, amount_cents, currency, state, provider,
+		SELECT id, adventure_slug, max_players, amount_cents, currency, state, provider,
 		       created_at, COALESCE(paid_at, '')
 		FROM purchases WHERE org_id = $1 ORDER BY id
 	`, orgID)
@@ -273,7 +273,7 @@ func loadOrgPurchases(ctx context.Context, db *sql.DB, orgID int64, out *exportP
 	defer rows.Close()
 	for rows.Next() {
 		var p purchaseExport
-		if err := rows.Scan(&p.ID, &p.AdventureSlug, &p.MaxTeams, &p.AmountCents,
+		if err := rows.Scan(&p.ID, &p.AdventureSlug, &p.MaxPlayers, &p.AmountCents,
 			&p.Currency, &p.State, &p.Provider, &p.CreatedAt, &p.PaidAt); err != nil {
 			return err
 		}

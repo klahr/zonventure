@@ -38,7 +38,7 @@ func (h *Handlers) stripeEnabled() bool {
 // metadata carries our purchase id so the webhook can find the row,
 // and success/cancel both bounce back to /arrange.
 func (h *Handlers) createStripeCheckoutSession(ctx context.Context, purchaseID int64,
-	advSlug, advTitle string, maxTeams, amountCents int, customerEmail, existingCustomerID string,
+	advSlug, advTitle string, maxPlayers, amountCents int, customerEmail, existingCustomerID string,
 ) (string, string, error) {
 	stripe.Key = h.StripeSecretKey
 
@@ -53,7 +53,7 @@ func (h *Handlers) createStripeCheckoutSession(ctx context.Context, purchaseID i
 	if productName == "" {
 		productName = advSlug
 	}
-	productName = fmt.Sprintf("%s — %d team slot(s)", productName, maxTeams)
+	productName = fmt.Sprintf("%s — %d player slot(s)", productName, maxPlayers)
 
 	params := &stripe.CheckoutSessionParams{
 		Mode: stripe.String(string(stripe.CheckoutSessionModePayment)),
@@ -94,6 +94,22 @@ func (h *Handlers) createStripeCheckoutSession(ctx context.Context, purchaseID i
 	// configured, this single boolean covers VAT/GST/sales tax for
 	// every checkout. No-op when Stripe Tax is off.
 	params.AutomaticTax = &stripe.CheckoutSessionAutomaticTaxParams{
+		Enabled: stripe.Bool(true),
+	}
+	// Company buyers (Swedish AB / EU GmbH / UK Ltd) need the org's
+	// VAT/tax id and a billing address on the invoice for it to be
+	// deductible. Stripe Tax computes the rate; tax-id collection puts
+	// the customer's number on the hosted invoice; billing-address
+	// "required" means we get a complete bill-to block. InvoiceCreation
+	// turns the one-time payment into a proper PDF invoice rather than
+	// a bare receipt — the URL lands on the purchase row via
+	// updatePurchaseStripeMetadata.
+	params.BillingAddressCollection = stripe.String(
+		string(stripe.CheckoutSessionBillingAddressCollectionRequired))
+	params.TaxIDCollection = &stripe.CheckoutSessionTaxIDCollectionParams{
+		Enabled: stripe.Bool(true),
+	}
+	params.InvoiceCreation = &stripe.CheckoutSessionInvoiceCreationParams{
 		Enabled: stripe.Bool(true),
 	}
 
@@ -208,7 +224,7 @@ func (h *Handlers) handleCheckoutCompleted(ctx context.Context, event stripe.Eve
 	var (
 		orgID         int64
 		advSlug       string
-		maxTeams      int
+		maxPlayers    int
 		state         string
 		existingAssn  sql.NullInt64
 	)
@@ -218,9 +234,9 @@ func (h *Handlers) handleCheckoutCompleted(ctx context.Context, event stripe.Eve
 	// two deliveries can both observe state='pending' and each insert
 	// an assignment row.
 	err = tx.QueryRowContext(ctx, `
-		SELECT org_id, adventure_slug, max_teams, state, assignment_id
+		SELECT org_id, adventure_slug, max_players, state, assignment_id
 		FROM purchases WHERE id = $1 FOR UPDATE
-	`, purchaseID).Scan(&orgID, &advSlug, &maxTeams, &state, &existingAssn)
+	`, purchaseID).Scan(&orgID, &advSlug, &maxPlayers, &state, &existingAssn)
 	if errors.Is(err, sql.ErrNoRows) {
 		// Purchase row was deleted between checkout creation and
 		// payment success. Nothing to fulfil.
@@ -242,9 +258,9 @@ func (h *Handlers) handleCheckoutCompleted(ctx context.Context, event stripe.Eve
 
 	var assID int64
 	if err := tx.QueryRowContext(ctx, `
-		INSERT INTO adventure_assignments(org_id, adventure_slug, max_teams)
+		INSERT INTO adventure_assignments(org_id, adventure_slug, max_players)
 		VALUES ($1, $2, $3) RETURNING id
-	`, orgID, advSlug, maxTeams).Scan(&assID); err != nil {
+	`, orgID, advSlug, maxPlayers).Scan(&assID); err != nil {
 		return fmt.Errorf("assignment insert: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx, `
@@ -285,7 +301,7 @@ func (h *Handlers) handleCheckoutCompleted(ctx context.Context, event stripe.Eve
 		"purchase_id":     purchaseID,
 		"assignment_id":   assID,
 		"adventure_slug":  advSlug,
-		"max_teams":       maxTeams,
+		"max_players":     maxPlayers,
 		"amount_cents":    sess.AmountTotal,
 		"currency":        string(sess.Currency),
 		"stripe_session":  sess.ID,

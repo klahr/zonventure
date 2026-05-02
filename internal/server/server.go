@@ -169,7 +169,11 @@ func New(cfg Config) http.Handler {
 	authH := &auth.Handlers{
 		DB:            cfg.DB,
 		SecureCookie:  cfg.SecureCookie,
-		Pricing:       auth.Pricing{SlotCents: admin.PricePerSlotCents, Currency: "EUR"},
+		Pricing: auth.Pricing{
+			PlayerCents:         admin.PricePerPlayerCents,
+			FreePlayersPerEvent: admin.FreePlayersPerEvent,
+			Currency:            "EUR",
+		},
 		Limiter:       auth.NewLoginLimiter(),
 		ForgotLimiter: auth.NewLoginLimiter(),
 		TOTPLimiter:   auth.NewLoginLimiter(),
