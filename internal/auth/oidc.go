@@ -150,6 +150,21 @@ func (o *OIDC) HostedDomain() string {
 	return o.cfg.HostedDomain
 }
 
+// ProviderName is the human / logging-friendly identifier for the
+// IdP this client talks to ("google", "microsoft", …). Surfaced on
+// the public signup-config so the login screen can pick provider-
+// specific button styling (Google's official Material design vs.
+// a generic SSO button). Defaults to "google".
+func (o *OIDC) ProviderName() string {
+	if o == nil {
+		return ""
+	}
+	if o.cfg.ProviderName != "" {
+		return o.cfg.ProviderName
+	}
+	return "google"
+}
+
 // matchesHostedDomain returns true if the given email's domain
 // matches the configured hosted domain (case-insensitive). Used by
 // the password-login path to redirect SSO-bound users away from

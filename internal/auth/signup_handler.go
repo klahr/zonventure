@@ -137,6 +137,13 @@ func (h *Handlers) SignupConfig(w http.ResponseWriter, r *http.Request) {
 			"button_label":  h.OIDC.ButtonLabel(),
 			"hosted_domain": h.OIDC.HostedDomain(),
 			"login_url":     "/auth/oidc/login",
+			// provider_name lets the login screen decide whether to
+			// render Google's official Material button styling
+			// (per developers.google.com/identity/branding-guidelines)
+			// or a generic SSO button. "google" is the default; a
+			// future Microsoft Entra integration would surface as a
+			// different value here.
+			"provider_name": h.OIDC.ProviderName(),
 		}
 	}
 	httpx.JSON(w, http.StatusOK, resp)

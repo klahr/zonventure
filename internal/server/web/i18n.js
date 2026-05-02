@@ -681,6 +681,22 @@
       'Member': 'Medlem',
       'Race director': 'Tävlingsledare',
       'Admin': 'Administratör',
+      'Global admin': 'Global administratör',
+      'Organisation admin': 'Organisationsadministratör',
+      'Player': 'Spelare',
+      'Acting as ': 'Agerar som ',
+      'You can manage every organisation, adventure, and event on this instance. Treat this like a root password.':
+        'Du kan hantera alla organisationer, äventyr och event på den här instansen. Behandla detta som ett root-lösenord.',
+      'You can manage members, purchases, branding, and settings for your organisation. Run events too.':
+        'Du kan hantera medlemmar, köp, varumärke och inställningar för din organisation. Du kan även köra event.',
+      'You can author adventures and run events in your organisation. Member management is reserved for admins.':
+        'Du kan skapa äventyr och köra event i din organisation. Medlemshantering är reserverat för administratörer.',
+      'You play events as a team member. The arranger console is read-only for you.':
+        'Du spelar event som lagmedlem. Arrangörskonsolen är skrivskyddad för dig.',
+      'Your identity on this instance, the sign-in security on top of it, and the data export / deletion controls.':
+        'Din identitet på den här instansen, inloggningssäkerheten ovanpå den, samt kontroller för dataexport och radering.',
+      'Appearance and quick links to help. For password, email, sessions, and account deletion, see the Account tab.':
+        'Utseende och snabblänkar till hjälp. För lösenord, e-post, sessioner och kontoborttagning, se fliken Konto.',
       'User added': 'Användare tillagd',
       'Active organization': 'Aktiv organisation',
       'select organization': 'välj organisation',

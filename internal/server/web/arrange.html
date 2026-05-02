@@ -7,7 +7,7 @@
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Aclonica&family=Open+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Aclonica&family=Open+Sans:wght@400;600;700&family=Roboto:wght@500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
   integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
 <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
@@ -1984,6 +1984,113 @@ textarea { min-height: 80px; resize: vertical; font-family: ui-monospace, monosp
   z-index: 1;
 }
 
+/* Google's official "Sign in with Google" button. CSS lifted
+   verbatim from developers.google.com/identity/branding-guidelines
+   — any local restyling would break the brand recognition users
+   learn across the web (and arguably the brand-guidelines license
+   terms). Only painted when the OIDC provider is Google; non-Google
+   IdPs use the generic .sso-btn above so the Google mark isn't
+   misapplied to a different provider. */
+.gsi-material-button {
+  -moz-user-select: none;
+  -webkit-user-select: none;
+  -ms-user-select: none;
+  -webkit-appearance: none;
+  background-color: WHITE;
+  background-image: none;
+  border: 1px solid #747775;
+  -webkit-border-radius: 20px;
+  border-radius: 20px;
+  -webkit-box-sizing: border-box;
+  box-sizing: border-box;
+  color: #1f1f1f;
+  cursor: pointer;
+  font-family: 'Roboto', arial, sans-serif;
+  font-size: 14px;
+  height: 40px;
+  letter-spacing: 0.25px;
+  outline: none;
+  overflow: hidden;
+  padding: 0 12px;
+  position: relative;
+  text-align: center;
+  -webkit-transition: background-color .218s, border-color .218s, box-shadow .218s;
+  transition: background-color .218s, border-color .218s, box-shadow .218s;
+  vertical-align: middle;
+  white-space: nowrap;
+  width: auto;
+  max-width: 400px;
+  min-width: min-content;
+}
+.gsi-material-button .gsi-material-button-icon {
+  height: 20px;
+  margin-right: 12px;
+  min-width: 20px;
+  width: 20px;
+}
+.gsi-material-button .gsi-material-button-content-wrapper {
+  -webkit-align-items: center;
+  align-items: center;
+  display: flex;
+  -webkit-flex-direction: row;
+  flex-direction: row;
+  -webkit-flex-wrap: nowrap;
+  flex-wrap: nowrap;
+  height: 100%;
+  justify-content: space-between;
+  position: relative;
+  width: 100%;
+}
+.gsi-material-button .gsi-material-button-contents {
+  -webkit-flex-grow: 1;
+  flex-grow: 1;
+  font-family: 'Roboto', arial, sans-serif;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: top;
+}
+.gsi-material-button .gsi-material-button-state {
+  -webkit-transition: opacity .218s;
+  transition: opacity .218s;
+  bottom: 0;
+  left: 0;
+  opacity: 0;
+  position: absolute;
+  right: 0;
+  top: 0;
+}
+.gsi-material-button:disabled {
+  cursor: default;
+  background-color: #ffffff61;
+  border-color: #1f1f1f1f;
+}
+.gsi-material-button:disabled .gsi-material-button-contents {
+  opacity: 38%;
+}
+.gsi-material-button:disabled .gsi-material-button-icon {
+  opacity: 38%;
+}
+.gsi-material-button:not(:disabled):active .gsi-material-button-state,
+.gsi-material-button:not(:disabled):focus .gsi-material-button-state {
+  background-color: #303030;
+  opacity: 12%;
+}
+.gsi-material-button:not(:disabled):hover {
+  -webkit-box-shadow: 0 1px 2px 0 rgba(60, 64, 67, .30), 0 1px 3px 1px rgba(60, 64, 67, .15);
+  box-shadow: 0 1px 2px 0 rgba(60, 64, 67, .30), 0 1px 3px 1px rgba(60, 64, 67, .15);
+}
+.gsi-material-button:not(:disabled):hover .gsi-material-button-state {
+  background-color: #303030;
+  opacity: 8%;
+}
+/* On the login card the SSO button spans the form width so it
+   visually pairs with the primary "Log in" submit below the
+   divider. Google's max-width:400px guard is still in force —
+   when the card itself is narrower than 400px, the button
+   matches the card; on wider layouts it caps at 400px. */
+.sso-block .gsi-material-button { width: 100%; }
+
 /* ---- Manual / arranger handbook ----
    Reading-optimised typography: narrower measure, larger line-height,
    spacious headings. The layout flows top-to-bottom (no TOC sidebar)
@@ -2809,6 +2916,11 @@ async function ensureSignupConfig() {
         buttonLabel: r.body.sso.button_label || t('Sign in with Google'),
         hostedDomain: r.body.sso.hosted_domain || '',
         loginUrl: r.body.sso.login_url || '/auth/oidc/login',
+        // provider_name drives whether we paint Google's official
+        // Material button (per Google's branding guidelines) or a
+        // generic SSO button — non-Google IdPs shouldn't carry the
+        // Google logo.
+        providerName: r.body.sso.provider_name || 'google',
       };
     }
   } catch (_) { /* leave default */ }
@@ -3158,7 +3270,16 @@ function renderLogin(err, mode, extra) {
   if (mode === 'reset')  return renderReset(err, extra);
 
   const errEl  = err ? h('p', { class: 'err' }, err) : null;
-  const submit = h('button', { class: 'btn primary', type: 'submit' }, t('Log in'));
+  // Full-width submit so it visually pairs with the Google SSO
+  // button above (which is also stretched to the card width via the
+  // .sso-block override below). Without the explicit width the
+  // primary button shrinks to its ~80px label and reads as a
+  // secondary action next to the wider SSO mark.
+  const submit = h('button', {
+    class: 'btn primary',
+    type: 'submit',
+    style: 'width:100%',
+  }, t('Log in'));
   const usernameEl = h('input', { name: 'u', autocomplete: 'username', required: true });
   const passwordEl = h('input', { name: 'p', type: 'password', autocomplete: 'current-password', required: true });
   // SSO button rendered above the username/password block when the
@@ -3167,12 +3288,50 @@ function renderLogin(err, mode, extra) {
   // workspace users; the "or sign in with password" divider below it
   // makes the password fallback discoverable for non-domain users
   // (e.g. external collaborators who were invited as arrangers).
+  // Google's official Material button. Markup matches the spec on
+  // developers.google.com/identity/branding-guidelines verbatim —
+  // <button> wrapping a state overlay, content-wrapper with icon,
+  // visible label span, and a duplicate hidden label span (Google
+  // emits this in their generator, kept for compatibility with
+  // their accessibility scaffolding even though `aria-label`
+  // already covers screen readers). Click navigates the top frame
+  // to the IdP login URL — same effect as the previous <a> anchor.
+  const renderGoogleSSOButton = (href, label) => {
+    const wrap = document.createElement('button');
+    wrap.type = 'button';
+    wrap.className = 'gsi-material-button';
+    wrap.setAttribute('aria-label', label);
+    wrap.addEventListener('click', () => { location.href = href; });
+    wrap.innerHTML = '\
+      <div class="gsi-material-button-state"></div>\
+      <div class="gsi-material-button-content-wrapper">\
+        <div class="gsi-material-button-icon">\
+          <svg version="1.1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" xmlns:xlink="http://www.w3.org/1999/xlink" style="display:block">\
+            <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"></path>\
+            <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"></path>\
+            <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"></path>\
+            <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"></path>\
+            <path fill="none" d="M0 0h48v48H0z"></path>\
+          </svg>\
+        </div>\
+        <span class="gsi-material-button-contents"></span>\
+        <span style="display: none;"></span>\
+      </div>';
+    // Set both label slots via textContent (not innerHTML) so a
+    // translated string with HTML-special characters can't break
+    // the markup. Two slots match Google's generator output.
+    wrap.querySelectorAll('.gsi-material-button-contents, [style*="display: none"]')
+      .forEach((node) => { node.textContent = label; });
+    return wrap;
+  };
   const ssoBlock = state.sso ? h('div', { class: 'sso-block' },
-    h('a', {
-      class: 'btn primary sso-btn',
-      href: state.sso.loginUrl,
-      role: 'button',
-    }, state.sso.buttonLabel),
+    state.sso.providerName === 'google'
+      ? renderGoogleSSOButton(state.sso.loginUrl, state.sso.buttonLabel)
+      : h('a', {
+          class: 'btn primary sso-btn',
+          href: state.sso.loginUrl,
+          role: 'button',
+        }, state.sso.buttonLabel),
     state.sso.hostedDomain
       ? h('p', { class: 'muted sso-hint' },
           t('For @{{domain}} accounts.', { domain: state.sso.hostedDomain }))
@@ -3186,7 +3345,7 @@ function renderLogin(err, mode, extra) {
     h('label', { class: 'field' }, h('span', {}, t('Username')), usernameEl),
     h('label', { class: 'field' }, h('span', {}, t('Password')), passwordEl),
     errEl,
-    h('div', { class: 'row end', style: 'margin-top:1rem' }, submit),
+    h('div', { style: 'margin-top:1rem' }, submit),
     h('p', { class: 'muted', style: 'margin-top:1rem; font-size:.85rem; text-align:center' },
       h('a', { href: '#', on: { click: (e) => { e.preventDefault();
         document.getElementById('root').replaceChildren(renderLogin(null, 'forgot')); } } }, t('Forgot password?'))),
@@ -3195,10 +3354,6 @@ function renderLogin(err, mode, extra) {
       t('No account yet?'), ' ',
       h('a', { href: '#', on: { click: (e) => { e.preventDefault();
         document.getElementById('root').replaceChildren(renderLogin(null, 'signup')); } } }, t('Sign up'))),
-    h('div', { class: 'row', style: 'margin-top:1rem; justify-content:flex-end' },
-      h('label', { class: 'muted', style: 'font-size:.8rem; display:flex; align-items:center; gap:.35rem' },
-        t('Language'),
-        zvI18n.makeLangPicker({ className: 'zv-lang-picker' }))),
     renderLegalFooter(),
   );
   form.addEventListener('submit', async (e) => {
@@ -12762,6 +12917,10 @@ async function viewSettings(view, tab) {
 
   const tabs = [
     { id: 'general',      label: t('General'),      visible: true },
+    // Account is the identity / security / data hub: who you are,
+    // your password / 2FA, the sessions you've opened, an export of
+    // your data, and the delete-my-account button. Always visible.
+    { id: 'account',      label: t('Account'),      visible: true },
     { id: 'members',      label: t('Members'),      visible: isOrgAdmin },
     // Admins is the platform-admin equivalent of Members — same UI
     // shape (user list + add/remove), different audience. Mutually
@@ -12803,6 +12962,7 @@ async function viewSettings(view, tab) {
 
   switch (tab) {
     case 'general':      return renderSettingsGeneral(body);
+    case 'account':      return renderSettingsAccount(body);
     case 'members':      return await viewMembers(body);
     case 'admins':       return await viewAdmins(body);
     case 'audit':        return await viewAudit(body);
@@ -12817,20 +12977,84 @@ async function viewSettings(view, tab) {
 // email, TOTP, sessions, audit, export, help, account deletion) — the
 // surfaces every authenticated user sees regardless of role.
 function renderSettingsGeneral(view) {
-  const me = state.me || {};
+  // General is now scoped to UI preferences + where to get help.
+  // Account-management cards (password, email, 2FA, sessions, audit,
+  // export, delete) moved to the dedicated Account tab so a user
+  // looking for "change my password" goes to the obviously-named
+  // place, not a kitchen-sink "General" page.
   view.replaceChildren(
     h('h1', {}, t('General')),
     h('p', { class: 'muted' },
-      t('Manage your account. Changes are immediate; deleting your account also removes its data.')),
+      t('Appearance and quick links to help. For password, email, sessions, and account deletion, see the Account tab.')),
     renderSettingsAppearanceCard(),
+    renderSettingsHelpCard(),
+  );
+}
+
+// renderSettingsAccount paints the identity / security / data cards.
+// Available to every authenticated user — the cards themselves
+// gate on whether they're applicable (e.g. the email card no-ops
+// for admin-seeded accounts with no email set).
+function renderSettingsAccount(view) {
+  const me = state.me || {};
+  view.replaceChildren(
+    h('h1', {}, t('Account')),
+    h('p', { class: 'muted' },
+      t('Your identity on this instance, the sign-in security on top of it, and the data export / deletion controls.')),
+    renderSettingsRoleCard(),
     renderSettingsPasswordCard(),
     renderSettingsEmailCard(me),
     renderSettingsTOTPCard(),
     renderSettingsSessionsCard(),
     renderSettingsAuditCard(),
     renderSettingsExportCard(),
-    renderSettingsHelpCard(),
     renderSettingsDeleteCard(),
+  );
+}
+
+// renderSettingsRoleCard tells the user which role they hold —
+// global admin, org admin, or race director — plus which org they're
+// acting as when relevant. Pre-existed only as branching logic in
+// the rest of the UI (which tabs show, which buttons appear); now
+// it's an explicit "you are X" surface so a user doesn't have to
+// reverse-engineer their role by reading the tab strip.
+function renderSettingsRoleCard() {
+  const me = state.me || {};
+  const role = me.role;
+  const memberships = me.memberships || [];
+  const active = memberships.find((m) => m.org_id === me.org_id);
+  let label, blurb;
+  if (role === 'admin') {
+    label = t('Global admin');
+    blurb = t('You can manage every organisation, adventure, and event on this instance. Treat this like a root password.');
+  } else if (role === 'org_admin') {
+    label = t('Organisation admin');
+    blurb = t('You can manage members, purchases, branding, and settings for your organisation. Run events too.');
+  } else if (role === 'org_member') {
+    label = t('Race director');
+    blurb = t('You can author adventures and run events in your organisation. Member management is reserved for admins.');
+  } else {
+    label = t('Player');
+    blurb = t('You play events as a team member. The arranger console is read-only for you.');
+  }
+  // Identity row: username + email so the card doubles as a
+  // "who am I logged in as" answer alongside the role.
+  const identity = h('p', { class: 'muted', style: 'margin:0; font-size:.9rem' },
+    me.username || '?',
+    me.email ? ' · ' : null,
+    me.email ? h('span', {}, me.email) : null,
+  );
+  const orgRow = active
+    ? h('p', { style: 'margin:.4rem 0 0; display:flex; align-items:center; gap:.55rem' },
+        orgIcon(active, 22),
+        h('span', {}, t('Acting as '),
+          h('strong', {}, active.org_name)))
+    : null;
+  return h('section', { class: 'card' },
+    h('h2', { style: 'margin:0 0 .25rem' }, label),
+    h('p', { class: 'muted', style: 'margin:0 0 .5rem' }, blurb),
+    identity,
+    orgRow,
   );
 }
 
