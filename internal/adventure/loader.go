@@ -274,7 +274,11 @@ func (l *Library) loadPages(ctx context.Context, adventureID int64) ([]Page, err
 		}
 		p.Disabled = disabled != 0
 		if acceptJS != "" {
-			_ = json.Unmarshal([]byte(acceptJS), &p.Accept)
+			parsed, perr := ParseAcceptJSON([]byte(acceptJS))
+			if perr != nil {
+				return nil, fmt.Errorf("page %d: bad accept JSON: %w", p.ID, perr)
+			}
+			p.Accept = parsed
 		}
 		if radius.Valid {
 			v := radius.Float64
@@ -460,6 +464,38 @@ func (p Page) CheckAnswer(submitted string) bool {
 		}
 	}
 	return false
+}
+
+// ParseAcceptJSON decodes the `accept` column into AcceptEntry slices,
+// tolerant of both the modern object shape and the legacy string-array
+// shape used before the regex flag shipped (commit "Add regex
+// answers"). Old rows look like `["foo","bar"]`; new rows look like
+// `[{"text":"foo"},{"text":"bar","regex":true}]`. Without this
+// fallback, an old row would silently fail to unmarshal into
+// []AcceptEntry and the puzzle would reject every answer.
+//
+// Empty input (nil or `[]`) returns a nil slice and no error so
+// callers don't have to special-case it.
+func ParseAcceptJSON(b []byte) ([]AcceptEntry, error) {
+	if len(b) == 0 {
+		return nil, nil
+	}
+	var entries []AcceptEntry
+	if err := json.Unmarshal(b, &entries); err == nil {
+		return entries, nil
+	}
+	// Legacy fallback: try a string array. We don't lose data here —
+	// strings are literal answers; the arranger never had a way to
+	// mark them as regex back then.
+	var strs []string
+	if err := json.Unmarshal(b, &strs); err != nil {
+		return nil, err
+	}
+	entries = make([]AcceptEntry, len(strs))
+	for i, s := range strs {
+		entries[i] = AcceptEntry{Text: s}
+	}
+	return entries, nil
 }
 
 // ValidateAcceptEntries returns the first regex compile error found

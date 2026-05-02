@@ -105,7 +105,15 @@ func (h *Handlers) ListPuzzles(w http.ResponseWriter, r *http.Request) {
 			httpx.Error(w, http.StatusInternalServerError, "scan failed: "+err.Error())
 			return
 		}
-		_ = json.Unmarshal([]byte(acceptJS), &p.Accept)
+		// The listing DTO uses []string (regex flag isn't surfaced on
+		// the card view). Parse via the tolerant helper so both legacy
+		// and modern shapes load, then flatten to text-only.
+		if parsed, perr := adventure.ParseAcceptJSON([]byte(acceptJS)); perr == nil {
+			p.Accept = make([]string, len(parsed))
+			for i, e := range parsed {
+				p.Accept[i] = e.Text
+			}
+		}
 		if p.Accept == nil {
 			p.Accept = []string{}
 		}
@@ -247,7 +255,12 @@ func (h *Handlers) GetPuzzle(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusForbidden, "forbidden")
 		return
 	}
-	_ = json.Unmarshal([]byte(acceptJS), &p.Accept)
+	// Tolerate legacy `[]string` accept rows (pre "Add regex answers"
+	// commit) so a re-opened old puzzle keeps its answers in the
+	// editor instead of looking blank.
+	if parsed, perr := adventure.ParseAcceptJSON([]byte(acceptJS)); perr == nil {
+		p.Accept = parsed
+	}
 	if p.Accept == nil {
 		p.Accept = []adventure.AcceptEntry{}
 	}

@@ -3,7 +3,6 @@ package admin
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -481,7 +480,13 @@ func loadAdventureDTO(ctx context.Context, db *sql.DB, slug string) (*adventureE
 		}
 		p.Disabled = disabled != 0
 		p.PromptHTML = mdx.Render(p.Prompt)
-		_ = json.Unmarshal([]byte(acceptJS), &p.Accept)
+		// Use the tolerant parser so legacy string-array rows
+		// (pre "Add regex answers" commit) don't silently load as
+		// empty — they'd otherwise reject every player answer.
+		parsed, perr := adventure.ParseAcceptJSON([]byte(acceptJS))
+		if perr == nil {
+			p.Accept = parsed
+		}
 		if p.Accept == nil {
 			p.Accept = []adventure.AcceptEntry{}
 		}
