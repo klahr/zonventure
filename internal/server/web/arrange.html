@@ -3955,7 +3955,14 @@ async function renderRoute() {
       // happens to resolve via either prefix.
       case 'catalog':
       case 'store':        return arg ? await viewCatalogDetail(view, arg) : await viewCatalog(view);
-      case 'events':         return arg ? await viewRunDetail(view, arg) : await viewRuns(view);
+      case 'events': {
+        if (!arg) return await viewRuns(view);
+        // /events/{id}/control is the live "race control" cockpit;
+        // /events/{id} is the setup + wrap-up detail page.
+        const parts = r.split('/');
+        if (parts[2] === 'control') return await viewEventControl(view, parseInt(arg, 10));
+        return await viewRunDetail(view, parseInt(arg, 10));
+      }
       // Members / Admins / Audit / Purchases / Webhooks were lifted
       // into the Settings hub as tabs; old links / bookmarks /
       // inline calls keep working by redirecting to the new tabbed
@@ -4017,6 +4024,11 @@ const arrangeUIState = {
   mapOpen: new Map(),            // event_id -> bool (overrides state-based default)
   teamLinksPanelOpen: new Map(), // event_id -> bool (overrides roster-size default)
   teamLinkRowOpen: new Set(),    // team_id; presence = expanded
+  // Race-control team filter — multi-select set of team IDs scoped per
+  // event. Empty set = "all teams". Survives WS-driven re-renders so a
+  // race director who's narrowed focus to two teams doesn't see the
+  // selection wiped every time a position update lands.
+  controlFilter: new Map(),      // event_id -> Set<team_id>
 };
 
 // Arrange-side connection banner. Only shown while watchedEventID !=
@@ -4065,10 +4077,16 @@ function ensureArrangeWS() {
       if (arrangePushTimer) clearTimeout(arrangePushTimer);
       arrangePushTimer = setTimeout(() => {
         const r = state.route.replace(/^#/, '');
-        const [section, arg] = r.split('/');
+        const parts = r.split('/');
+        const [section, arg] = parts;
         if (section === 'events' && arg) {
           const view = document.getElementById('view');
-          if (view) viewRunDetail(view, parseInt(arg, 10));
+          if (!view) return;
+          // Race control gets the same WS pushes as the setup
+          // detail page; both views are live, only the layout
+          // and density differ.
+          if (parts[2] === 'control') viewEventControl(view, parseInt(arg, 10));
+          else viewRunDetail(view, parseInt(arg, 10));
         }
       }, 300);
     }
@@ -6617,6 +6635,18 @@ async function viewRunDetail(view, runID) {
   // Lifecycle action lives at the top — during a live event this is
   // what the arranger reaches for, so it belongs above everything.
   const actions = h('div', { class: 'row', style: 'gap:.5rem; flex-wrap:wrap' });
+  // Race control is the live cockpit. Surface it as primary while
+  // the event is running/paused (where the arranger should be looking
+  // at it), as a secondary affordance otherwise. Hidden on cancelled
+  // events — there's nothing live to show.
+  if (event.state !== 'cancelled') {
+    const live = event.state === 'running' || event.state === 'paused';
+    actions.append(h('button', {
+      class: 'btn lifecycle-btn' + (live ? ' primary' : ''),
+      on: { click: () => nav('#events/' + event.id + '/control') },
+      title: t('Live cockpit: leaderboard, map, and activity feed updating in real time'),
+    }, icon(ICONS.eye), t('Race control')));
+  }
   if (event.state === 'scheduled') {
     const start = h('button', { class: 'btn primary lifecycle-btn', on: { click: () => confirmStart(event) } },
       icon(ICONS.play), t('Start now'));
@@ -6956,6 +6986,302 @@ async function viewRunDetail(view, runID) {
   // (running/paused). Otherwise the click handler runs init the
   // first time the arranger expands it.
   if (opMapOpen) ensureMap();
+}
+
+// viewEventControl is the live "race control" cockpit — a verbose,
+// realtime alternative to the public /live page. The route is
+// `events/{id}/control`; arrangeWS pushes drive auto re-renders the
+// same way they do on the setup detail page.
+//
+// Composition (all live, all filterable):
+//   - Sticky header with elapsed timer + state pill + lifecycle controls
+//   - Team filter bar (multi-select chips)
+//   - Stats tiles (teams done / slots claimed / elapsed)
+//   - Map (filtered to selected teams)
+//   - Leaderboard table (filtered) + activity feed (filtered) side-by-side
+//   - Lobby-TV share at the bottom
+async function viewEventControl(view, runID) {
+  const [detail, tracksR, eventsR] = await Promise.all([
+    api('/api/admin/events/' + runID),
+    api('/api/admin/events/' + runID + '/tracks'),
+    api('/api/admin/events/' + runID + '/activity'),
+  ]);
+  if (!detail.ok) {
+    view.replaceChildren(h('p', { class: 'err' }, detail.body?.error || t('not found')));
+    return;
+  }
+  const event = detail.body.event;
+  const teams = detail.body.teams || [];
+  const tracks = tracksR.body?.tracks || [];
+  const events = eventsR.body?.events || [];
+
+  const advR = await api('/api/admin/adventures/' + encodeURIComponent(event.adventure_slug));
+  const adventure = advR.ok ? advR.body : null;
+
+  // Filter state, scoped per event. Mutated in place so chip clicks
+  // immediately reflect on the next render() pass without re-fetching.
+  let filterSet = arrangeUIState.controlFilter.get(event.id);
+  if (!filterSet) {
+    filterSet = new Set();
+    arrangeUIState.controlFilter.set(event.id, filterSet);
+  }
+  // Drop stale team IDs (a team was deleted between renders) so the
+  // chip bar doesn't render dead entries.
+  for (const id of [...filterSet]) {
+    if (!teams.some((tm) => tm.id === id)) filterSet.delete(id);
+  }
+  const showAll = filterSet.size === 0;
+  const teamMatches = (tm) => showAll || filterSet.has(tm.id);
+
+  // Team -> colour map shared by leaderboard, map traces and chips.
+  const teamIndex = new Map();
+  teams.forEach((tm, i) => teamIndex.set(tm.id, i));
+
+  // === Header ===
+  const back = h('button', {
+    class: 'btn ghost small',
+    on: { click: () => nav('#events/' + event.id) },
+  }, icon(ICONS.back), t('Back to event'));
+
+  // Elapsed clamps to completed_at / cancelled_at when set so the
+  // counter freezes on a finished event.
+  const parseTS = (ts) => Date.parse(ts.includes('T') ? ts : ts.replace(' ', 'T') + 'Z');
+  const elapsedSeconds = () => {
+    if (!event.started_at) return 0;
+    const startMs = parseTS(event.started_at);
+    if (!Number.isFinite(startMs)) return 0;
+    let endMs = Date.now();
+    for (const ts of [event.completed_at, event.cancelled_at].filter(Boolean)) {
+      const ms = parseTS(ts);
+      if (Number.isFinite(ms) && ms < endMs) endMs = ms;
+    }
+    return Math.max(0, Math.floor((endMs - startMs) / 1000));
+  };
+  const elapsedEl = h('span', { class: 'mono', style: 'font-weight:700' },
+    fmtElapsedShort(elapsedSeconds()));
+  // The elapsed counter ticks every second locally so the arranger
+  // sees movement between server pushes (which can be several
+  // seconds apart). Cleared when the view tears down.
+  if (window._zvControlTick) clearInterval(window._zvControlTick);
+  window._zvControlTick = setInterval(() => {
+    if (!elapsedEl.isConnected) { clearInterval(window._zvControlTick); return; }
+    elapsedEl.textContent = fmtElapsedShort(elapsedSeconds());
+  }, 1000);
+
+  const lifecycleActions = h('div', { class: 'row', style: 'gap:.5rem; flex-wrap:wrap' });
+  if (event.state === 'running') {
+    lifecycleActions.append(h('button', {
+      class: 'btn warning small',
+      on: { click: () => confirmPause(event) },
+    }, icon(ICONS.moon), t('Pause')));
+  }
+  if (event.state === 'paused') {
+    lifecycleActions.append(h('button', {
+      class: 'btn primary small',
+      on: { click: () => transition(event.id, 'resume') },
+    }, icon(ICONS.play), t('Resume')));
+  }
+  if (event.state === 'running' || event.state === 'paused' || event.state === 'scheduled') {
+    lifecycleActions.append(h('button', {
+      class: 'btn danger small',
+      on: { click: () => confirmCancel(event) },
+    }, icon(ICONS.trash), t('Cancel event')));
+  }
+  // Lobby-TV share — copies the public /live URL to the clipboard so
+  // the arranger can paste it on the venue's TV.
+  const liveURL = location.origin + '/live/' + encodeURIComponent(event.live_token || '');
+  lifecycleActions.append(h('button', {
+    class: 'btn ghost small',
+    title: liveURL,
+    on: { click: async () => {
+      try {
+        await navigator.clipboard.writeText(liveURL);
+        toastOk(t('Lobby-TV link copied'));
+      } catch {
+        toastErr(t('Copy failed — paste from the address bar manually.'));
+      }
+    } },
+  }, icon(ICONS.copy), t('Copy lobby-TV link')));
+
+  const header = h('div', { class: 'lifecycle-bar' },
+    h('div', { class: 'lifecycle-left' },
+      back,
+      h('h1', { style: 'margin:0; font-size:1.4rem' }, runLabel(event)),
+      h('span', { class: 'pill ' + pillClassForState(event.state) },
+        stateGlyph(event.state) + t(event.state || '')),
+      h('span', { class: 'muted', style: 'font-size:.85rem' },
+        event.started_at ? t('elapsed') + ' ' : t('—')),
+      elapsedEl,
+    ),
+    lifecycleActions,
+  );
+
+  // === Team filter chips ===
+  // Click "All" to clear the filter; click a team chip to toggle it.
+  // The selected set persists across re-renders so a WS-triggered
+  // refresh doesn't blow away the arranger's narrowed focus.
+  const toggleTeam = (id) => {
+    if (filterSet.has(id)) filterSet.delete(id);
+    else filterSet.add(id);
+    renderControlBody();
+  };
+  const clearFilter = () => { filterSet.clear(); renderControlBody(); };
+
+  const filterChip = (label, active, onClick, swatch) => {
+    const chip = h('button', {
+      class: 'btn small' + (active ? ' primary' : ' ghost'),
+      type: 'button',
+      style: 'gap:.4rem',
+      on: { click: onClick },
+    });
+    if (swatch) chip.append(h('span', { class: 'sw', style: `background:${swatch}` }));
+    chip.append(h('span', {}, label));
+    return chip;
+  };
+  const filterBar = h('div', {
+    class: 'card',
+    style: 'padding:.6rem .75rem; display:flex; align-items:center; gap:.4rem; flex-wrap:wrap',
+  });
+  const buildFilterBar = () => {
+    filterBar.replaceChildren(
+      h('span', { class: 'muted', style: 'font-size:.85rem; margin-right:.25rem' },
+        t('Show:')),
+      filterChip(t('All teams'), showAll, clearFilter),
+      ...teams.map((tm) => {
+        const i = teamIndex.get(tm.id) ?? 0;
+        return filterChip(tm.name, filterSet.has(tm.id), () => toggleTeam(tm.id),
+          teamColor(tm.id, i));
+      }),
+    );
+  };
+
+  // === Stats tiles ===
+  const statsHost = h('div', { class: 'adv-stats' });
+  const buildStats = () => {
+    const visible = teams.filter(teamMatches);
+    const total = visible.length;
+    const done = visible.filter((tm) => tm.completed_at).length;
+    let claimed = 0, slots = 0;
+    for (const tm of visible) {
+      for (const m of (tm.members || [])) {
+        slots++;
+        if (m.last_login_at) claimed++;
+      }
+    }
+    statsHost.replaceChildren(
+      statBlock(`${done}/${total || 0}`, total === 1 ? t('team done') : t('teams done')),
+      statBlock(`${claimed}/${slots || 0}`, t('slots claimed')),
+      statBlock(fmtElapsedShort(elapsedSeconds()), t('elapsed')),
+    );
+  };
+
+  // === Leaderboard ===
+  // Sorted by completion (finished first by completion time, then
+  // unfinished by furthest page, then by team name as tiebreaker).
+  const lbHost = h('div', { class: 'card' });
+  const lastEventByTeam = new Map();
+  for (const ev of events) {
+    if (!ev.team_id) continue;
+    const prev = lastEventByTeam.get(ev.team_id);
+    if (!prev || (ev.created_at > prev)) lastEventByTeam.set(ev.team_id, ev.created_at);
+  }
+  const buildLeaderboard = () => {
+    const visible = teams.filter(teamMatches).slice().sort((a, b) => {
+      const aDone = !!a.completed_at, bDone = !!b.completed_at;
+      if (aDone !== bDone) return aDone ? -1 : 1;
+      if (aDone && bDone) return (a.completed_at || '').localeCompare(b.completed_at || '');
+      if (a.page_index !== b.page_index) return b.page_index - a.page_index;
+      return a.name.localeCompare(b.name);
+    });
+    lbHost.replaceChildren(
+      h('h2', { style: 'margin:0 0 .5rem' }, t('Leaderboard')),
+      visible.length === 0
+        ? h('p', { class: 'muted', style: 'margin:0' }, t('No teams match the current filter.'))
+        : h('table', { class: 'table' },
+            h('thead', {}, h('tr', {},
+              h('th', {}, '#'),
+              h('th', {}, t('Team')),
+              h('th', {}, t('Puzzle')),
+              h('th', { class: 'hide-narrow' }, t('Last activity')))),
+            h('tbody', {}, visible.map((tm, rank) => {
+              const i = teamIndex.get(tm.id) ?? 0;
+              const lastEv = lastEventByTeam.get(tm.id);
+              return h('tr', {},
+                h('td', { class: 'mono' }, '#' + (rank + 1)),
+                h('td', {},
+                  h('span', { style: 'display:inline-flex; align-items:center; gap:.5rem' },
+                    h('span', { class: 'sw', style: `background:${teamColor(tm.id, i)}` }),
+                    tm.name),
+                  tm.completed_at
+                    ? h('span', { class: 'pill success', style: 'margin-left:.4rem' }, '✓ ' + t('done'))
+                    : null),
+                h('td', { class: 'mono' },
+                  adventure?.pages
+                    ? t('{{i}} / {{n}}', {
+                        i: Math.min(tm.page_index + 1, adventure.pages.length),
+                        n: adventure.pages.length,
+                      })
+                    : tm.page_index),
+                h('td', { class: 'hide-narrow muted', style: 'font-size:.85rem' },
+                  lastEv ? fmtLocal(lastEv) : t('—')),
+              );
+            })))
+    );
+  };
+
+  // === Activity feed (filtered) ===
+  const feedHost = h('div', { class: 'card' });
+  const buildFeed = () => {
+    const visibleEvents = events.filter((ev) => {
+      if (!showAll && ev.team_id && !filterSet.has(ev.team_id)) return false;
+      // Drop noisy lifecycle rows from the feed — race control wants
+      // the "what's happening to teams right now" stream, not setup
+      // history. The setup-detail page's Event log keeps the full
+      // record for after-action review.
+      if (ev.kind === 'event_created' || ev.kind === 'team_created' ||
+          ev.kind === 'event_started' || ev.kind === 'event_paused' ||
+          ev.kind === 'event_resumed') return false;
+      return true;
+    });
+    feedHost.replaceChildren(
+      h('h2', { style: 'margin:0 0 .5rem' }, t('Activity')),
+      visibleEvents.length === 0
+        ? h('p', { class: 'muted', style: 'margin:0' }, t('No activity yet.'))
+        : h('div', { class: 'event-log-body' }, renderEventFeed(visibleEvents, teams)),
+    );
+  };
+
+  // === Map ===
+  const mapHost = h('div', { class: 'map-host', id: 'control-map-' + event.id,
+    style: 'min-height:340px' });
+  const mapCard = h('div', { class: 'card' },
+    h('h2', { style: 'margin:0 0 .5rem' }, t('Map')),
+    mapHost);
+  const buildMap = () => {
+    if (!adventure) return;
+    const visibleTeams = teams.filter(teamMatches);
+    const visibleIDs = new Set(visibleTeams.map((tm) => tm.id));
+    const visibleTracks = tracks.filter((tr) => visibleIDs.has(tr.team_id));
+    initRunMap(mapHost, adventure, visibleTeams, visibleTracks);
+  };
+
+  // === Compose + render ===
+  const body = h('div', { class: 'grid', style: 'gap:1rem' });
+  const renderControlBody = () => {
+    buildFilterBar();
+    buildStats();
+    buildLeaderboard();
+    buildFeed();
+    buildMap();
+  };
+  body.append(
+    statsHost,
+    h('div', { class: 'grid cols-2', style: 'gap:1rem' }, lbHost, feedHost),
+    mapCard,
+  );
+
+  view.replaceChildren(header, filterBar, body);
+  renderControlBody();
 }
 
 // initRunMap mounts a Leaflet map inside host. Puzzle pins come from the

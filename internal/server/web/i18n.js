@@ -350,6 +350,21 @@
       'scheduled': 'schemalagd',
       'completed': 'slutförd',
       'waiting': 'väntar',
+      // ---- race control (live cockpit) ----
+      'Race control': 'Tävlingsledning',
+      'Live cockpit: leaderboard, map, and activity feed updating in real time':
+        'Live-vy: topplista, karta och aktivitetsflöde uppdateras i realtid',
+      'Back to event': 'Tillbaka till eventet',
+      'Copy lobby-TV link': 'Kopiera lobby-tv-länk',
+      'Lobby-TV link copied': 'Lobby-tv-länk kopierad',
+      'Copy failed — paste from the address bar manually.':
+        'Kopiering misslyckades — klistra in från adressfältet manuellt.',
+      'Show:': 'Visa:',
+      'All teams': 'Alla lag',
+      'Leaderboard': 'Topplista',
+      'Last activity': 'Senaste aktivitet',
+      'No teams match the current filter.':
+        'Inga lag matchar det aktuella filtret.',
       // ---- arrange dashboard ----
       'You have {{n}} adventure(s) you are allowed to arrange.':
         'Du har {{n}} äventyr som du får arrangera.',
