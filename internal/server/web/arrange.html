@@ -4230,7 +4230,7 @@ async function viewArrangerDashboard(view) {
               h('p', { class: 'muted', style: 'font-size:.8rem; margin:.1rem 0 .3rem' },
                 r.adventure_title || r.adventure_slug),
               h('p', { class: 'muted', style: 'font-size:.85rem; margin:0' },
-                r.started_at ? t('Started {{when}}', { when: fmtLocal(r.started_at) }) : '')))))),
+                r.started_at ? t('Started {{when}}', { when: fmtLocal(r.started_at) }) : ''))))))),
     // "Starts soon" is actionable — one-click Start on scheduled events.
     scheduled.length === 0 ? null : h('div', { class: 'card' },
       h('h2', {}, t('Starts soon')),
