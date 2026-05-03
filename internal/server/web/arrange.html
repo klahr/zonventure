@@ -8754,6 +8754,7 @@ function renderOrgLogoBlock(org) {
     style: 'display:flex; align-items:center; gap:.85rem; margin:.5rem 0 .25rem; padding:.6rem .85rem; background:var(--surface-2); border-radius:8px',
   });
   let cacheBust = Date.now();
+  let uploading = false;
   const fileInput = h('input', {
     type: 'file',
     accept: 'image/png,image/jpeg,image/webp,image/svg+xml',
@@ -8782,15 +8783,18 @@ function renderOrgLogoBlock(org) {
         t('Shown on the event-recap PDF. PNG, JPEG, WebP, or SVG — max 5 MB. SVGs are rasterised to PNG on upload; transparency is flattened to white on render.')),
       h('div', { class: 'row', style: 'gap:.4rem' },
         (() => {
-          const b = h('button', { class: 'btn small', type: 'button' },
-            icon(ICONS.plus), org.has_logo ? t('Replace logo') : t('Upload logo'));
-          b.addEventListener('click', () => fileInput.click());
+          const label = uploading
+            ? t('Uploading…')
+            : (org.has_logo ? t('Replace logo') : t('Upload logo'));
+          const b = h('button', { class: 'btn small', type: 'button', disabled: uploading || null },
+            uploading ? null : icon(ICONS.plus), label);
+          if (!uploading) b.addEventListener('click', () => fileInput.click());
           return b;
         })(),
         org.has_logo ? (() => {
-          const b = h('button', { class: 'btn small danger', type: 'button' },
+          const b = h('button', { class: 'btn small danger', type: 'button', disabled: uploading || null },
             icon(ICONS.trash), t('Remove'));
-          b.addEventListener('click', async () => {
+          if (!uploading) b.addEventListener('click', async () => {
             const r = await api(`/api/admin/organizations/${org.id}/logo`, { method: 'DELETE' });
             if (r.status === 204) {
               org.has_logo = false;
@@ -8811,11 +8815,18 @@ function renderOrgLogoBlock(org) {
     if (!file) return;
     const fd = new FormData();
     fd.append('file', file);
-    const res = await fetch(`/api/admin/organizations/${org.id}/logo`, {
-      method: 'POST', body: fd, credentials: 'same-origin',
-      headers: { 'X-CSRF-Token': csrfToken() },
-    });
-    fileInput.value = '';
+    uploading = true;
+    draw();
+    let res;
+    try {
+      res = await fetch(`/api/admin/organizations/${org.id}/logo`, {
+        method: 'POST', body: fd, credentials: 'same-origin',
+        headers: { 'X-CSRF-Token': csrfToken() },
+      });
+    } finally {
+      uploading = false;
+      fileInput.value = '';
+    }
     if (res.ok) {
       org.has_logo = true;
       cacheBust = Date.now();
@@ -8824,6 +8835,7 @@ function renderOrgLogoBlock(org) {
     } else {
       const txt = await res.text().catch(() => '');
       toastErr(txt || t('error {{status}}', { status: res.status }));
+      draw();
     }
   });
   wrap.append(preview, actions, fileInput);
@@ -14492,9 +14504,12 @@ function renderSettingsPasswordCard() {
       body: JSON.stringify({ current: cur.value, new: nw.value }),
     });
     if (r.status === 204) {
-      status.className = 'ok';
-      status.textContent = t('Password updated. You\'re still signed in here; every other session was kicked.');
       cur.value = ''; nw.value = '';
+      // Pull the fresh whoami so password_is_default flips off and the
+      // default-credentials banner clears on the next paint.
+      await refreshMe();
+      render();
+      setTimeout(() => toastOk(t('Password updated. You\'re still signed in here; every other session was kicked.')), 50);
     } else {
       status.className = 'err'; status.textContent = r.body?.error || t('error {{status}}', { status: r.status });
     }

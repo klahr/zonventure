@@ -53,6 +53,7 @@
       '{{name}} logo': '{{name}}s logotyp',
       'Logo updated': 'Logotyp uppdaterad',
       'Logo removed': 'Logotyp borttagen',
+      'Uploading…': 'Laddar upp…',
       'Shown on the event-recap PDF. PNG, JPEG, WebP, or SVG — max 5 MB. SVGs are rasterised to PNG on upload; transparency is flattened to white on render.':
         'Visas på event-rapporten (PDF). PNG, JPEG, WebP eller SVG — max 5 MB. SVG-filer rastreras till PNG vid uppladdning; transparens fylls med vitt vid rendering.',
       'Duplicate': 'Duplicera',
