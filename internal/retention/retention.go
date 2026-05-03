@@ -179,12 +179,13 @@ func pruneCompletedEventAnswers(ctx context.Context, db *sql.DB, days int) {
 
 // pruneScheduledDeletions hard-deletes users whose grace window has
 // passed. Each user is processed in its own transaction so a single
-// org-cascade error doesn't poison the rest of the batch. The
-// org-collapse logic mirrors the synchronous pre-grace-period flow
-// (drop the org if its last user is leaving).
+// org-cascade error doesn't poison the rest of the batch. After
+// deleting a user we collapse any org they were the last member of —
+// org_memberships cascades the membership rows away on user delete,
+// so we read them up front to know which orgs to re-check.
 func pruneScheduledDeletions(ctx context.Context, db *sql.DB) {
 	rows, err := db.QueryContext(ctx, `
-		SELECT id, username, org_id
+		SELECT id, username
 		FROM users
 		WHERE scheduled_deletion_at IS NOT NULL
 		  AND scheduled_deletion_at <= now()
@@ -196,12 +197,11 @@ func pruneScheduledDeletions(ctx context.Context, db *sql.DB) {
 	type doomed struct {
 		id       int64
 		username string
-		orgID    sql.NullInt64
 	}
 	var batch []doomed
 	for rows.Next() {
 		var d doomed
-		if err := rows.Scan(&d.id, &d.username, &d.orgID); err != nil {
+		if err := rows.Scan(&d.id, &d.username); err != nil {
 			logx.Error("retention.users.scan_failed", "err", err.Error())
 			rows.Close()
 			return
@@ -213,35 +213,52 @@ func pruneScheduledDeletions(ctx context.Context, db *sql.DB) {
 		if ctx.Err() != nil {
 			return
 		}
-		hardDeleteUser(ctx, db, d.id, d.username, d.orgID)
+		hardDeleteUser(ctx, db, d.id, d.username)
 	}
 }
 
-func hardDeleteUser(ctx context.Context, db *sql.DB, userID int64, username string, orgID sql.NullInt64) {
+func hardDeleteUser(ctx context.Context, db *sql.DB, userID int64, username string) {
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		logx.Error("retention.users.tx_begin_failed", "user_id", userID, "err", err.Error())
 		return
 	}
 	defer tx.Rollback() //nolint:errcheck
+	orgRows, err := tx.QueryContext(ctx,
+		`SELECT org_id FROM org_memberships WHERE user_id = $1`, userID)
+	if err != nil {
+		logx.Error("retention.users.org_lookup_failed", "user_id", userID, "err", err.Error())
+		return
+	}
+	var orgIDs []int64
+	for orgRows.Next() {
+		var id int64
+		if err := orgRows.Scan(&id); err != nil {
+			logx.Error("retention.users.org_scan_failed", "user_id", userID, "err", err.Error())
+			orgRows.Close()
+			return
+		}
+		orgIDs = append(orgIDs, id)
+	}
+	orgRows.Close()
 	if _, err := tx.ExecContext(ctx, `DELETE FROM users WHERE id = $1`, userID); err != nil {
 		logx.Error("retention.users.delete_failed", "user_id", userID, "err", err.Error())
 		return
 	}
-	if orgID.Valid {
+	for _, orgID := range orgIDs {
 		var remaining int
 		if err := tx.QueryRowContext(ctx,
-			`SELECT COUNT(*) FROM users WHERE org_id = $1`, orgID.Int64).Scan(&remaining); err != nil {
+			`SELECT COUNT(*) FROM org_memberships WHERE org_id = $1`, orgID).Scan(&remaining); err != nil {
 			logx.Error("retention.users.org_count_failed", "user_id", userID, "err", err.Error())
 			return
 		}
 		if remaining == 0 {
 			if _, err := tx.ExecContext(ctx,
-				`DELETE FROM organizations WHERE id = $1`, orgID.Int64); err != nil {
+				`DELETE FROM organizations WHERE id = $1`, orgID); err != nil {
 				logx.Error("retention.users.org_cascade_failed", "user_id", userID, "err", err.Error())
 				return
 			}
-			logx.Info("retention.users.org_collapsed", "org_id", orgID.Int64)
+			logx.Info("retention.users.org_collapsed", "org_id", orgID)
 		}
 	}
 	if err := tx.Commit(); err != nil {
