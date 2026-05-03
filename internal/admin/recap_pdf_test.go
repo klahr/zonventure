@@ -304,6 +304,43 @@ func TestSafeText(t *testing.T) {
 	}
 }
 
+// Regression test for the unstarted-event recap: when no team has
+// completed a run, the "Longest run" stat falls back to a dash. The
+// initial implementation passed a UTF-8 em dash directly, which the
+// fpdf core fonts (Latin-1) interpreted byte-by-byte and rendered as
+// "â€”" mojibake. Same shape applied to the multi-day en-dash in
+// recapDateLine. Both call sites must now go through safeText, so the
+// emitted PDF stream contains no UTF-8 em-dash sequence (e2 80 94).
+func TestWriteRecapPDF_NoMojibakeOnDashes(t *testing.T) {
+	multiDay := recapPDFData{
+		OrgName:        "Acme",
+		AdventureTitle: "T",
+		AdventureSlug:  "t",
+		EventID:        1,
+		EventStartedAt: time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC),
+		EventEndedAt:   time.Date(2026, 5, 3, 12, 0, 0, 0, time.UTC),
+		Accent:         "#ad1357",
+		PageCount:      3,
+		GeneratedAt:    time.Date(2026, 5, 3, 13, 0, 0, 0, time.UTC),
+		// No completed teams → longest == 0 → the "—" fallback fires.
+		Teams: []recapPDFTeam{
+			{Rank: 1, Name: "Alpha", Members: "Alice", Solved: 1, Elapsed: 0},
+		},
+	}
+	var buf bytes.Buffer
+	if err := writeRecapPDF(&buf, multiDay); err != nil {
+		t.Fatalf("writeRecapPDF: %v", err)
+	}
+	utf8EmDash := []byte{0xe2, 0x80, 0x94}
+	utf8EnDash := []byte{0xe2, 0x80, 0x93}
+	if bytes.Contains(buf.Bytes(), utf8EmDash) {
+		t.Errorf("PDF stream contains raw UTF-8 em-dash bytes (mojibake risk)")
+	}
+	if bytes.Contains(buf.Bytes(), utf8EnDash) {
+		t.Errorf("PDF stream contains raw UTF-8 en-dash bytes (mojibake risk)")
+	}
+}
+
 // min — Go 1.21+ has it builtin; this lets the test file build on
 // older toolchains as well.
 func min(a, b int) int {

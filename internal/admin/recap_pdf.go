@@ -329,7 +329,7 @@ func writeRecapPDF(w io.Writer, d recapPDFData) error {
 	pdf.MultiCell(usableW, 8.5, safeText(d.AdventureTitle), "", "L", false)
 	pdf.SetFont("Helvetica", "", 11)
 	pdf.SetTextColor(120, 120, 120)
-	pdf.CellFormat(usableW, 6, recapDateLine(d), "", 1, "L", false, 0, "")
+	pdf.CellFormat(usableW, 6, safeText(recapDateLine(d)), "", 1, "L", false, 0, "")
 	pdf.Ln(6)
 
 	// Stats grid: 4 boxes summarising the event.
@@ -358,11 +358,11 @@ func writeRecapPDF(w io.Writer, d recapPDFData) error {
 		pdf.SetXY(x, statY+3)
 		pdf.SetFont("Helvetica", "B", 16)
 		pdf.SetTextColor(accentR, accentG, accentB)
-		pdf.CellFormat(statW, 8, value, "", 0, "C", false, 0, "")
+		pdf.CellFormat(statW, 8, safeText(value), "", 0, "C", false, 0, "")
 		pdf.SetXY(x, statY+13)
 		pdf.SetFont("Helvetica", "", 9)
 		pdf.SetTextColor(120, 120, 120)
-		pdf.CellFormat(statW, 6, label, "", 0, "C", false, 0, "")
+		pdf.CellFormat(statW, 6, safeText(label), "", 0, "C", false, 0, "")
 	}
 	stat(0, "Teams", strconv.Itoa(teamsCount))
 	stat(1, "Completed", fmt.Sprintf("%d / %d", completedCount, teamsCount))
