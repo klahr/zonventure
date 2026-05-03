@@ -6249,6 +6249,17 @@ function stateGlyph(s) {
   return STATE_GLYPHS[s] ? STATE_GLYPHS[s] + ' ' : '';
 }
 
+// eventStateLabel maps an event to its user-facing state label. The
+// state machine treats "no scheduled_at, waiting for arranger to
+// hit Start" the same as "scheduled in 5 minutes" — both live in
+// the 'scheduled' row state — but the pill shouldn't promise a
+// schedule that doesn't exist. Manual-start events read as 'manual'
+// so the pill tracks the muted "Not scheduled" copy beside it.
+function eventStateLabel(event) {
+  if (event && event.state === 'scheduled' && !event.scheduled_at) return 'manual';
+  return event ? (event.state || '') : '';
+}
+
 // canDo mirrors the server-side eventstate matrix: the event payload
 // carries allowed_ops, and the UI hides/disables affordances the
 // server would 409. The server is still the source of truth — this
@@ -6923,7 +6934,8 @@ async function viewRunDetail(view, runID) {
       h('button', { class: 'btn ghost small', on: { click: () => nav('#events') } },
         icon(ICONS.back), t('Events')),
       titleEl, renameBtn,
-      h('span', { class: 'pill ' + pillClassForState(event.state) }, stateGlyph(event.state) + t(event.state || '')),
+      h('span', { class: 'pill ' + pillClassForState(event.state) },
+        stateGlyph(eventStateLabel(event)) + t(eventStateLabel(event))),
       h('span', { class: 'muted', style: 'font-size:.85rem' },
         event.started_at
           ? t('Started {{when}}', { when: fmtLocal(event.started_at) })
@@ -7250,7 +7262,7 @@ async function viewEventControl(view, runID) {
       back,
       h('h1', { style: 'margin:0; font-size:1.4rem' }, runLabel(event)),
       h('span', { class: 'pill ' + pillClassForState(event.state) },
-        stateGlyph(event.state) + t(event.state || '')),
+        stateGlyph(eventStateLabel(event)) + t(eventStateLabel(event))),
       h('span', { class: 'muted', style: 'font-size:.85rem' },
         event.started_at ? t('elapsed') + ' ' : t('—')),
       elapsedEl,

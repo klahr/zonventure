@@ -355,6 +355,7 @@
       'running': 'pågår',
       'paused': 'pausad',
       'scheduled': 'schemalagd',
+      'manual': 'manuell',
       'completed': 'slutförd',
       // ---- purchase states ----
       'paid':     'betald',
