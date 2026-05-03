@@ -4937,11 +4937,10 @@ async function viewPurchases(view) {
   const money = (cents, cur) => new Intl.NumberFormat(undefined, {
     style: 'currency', currency: cur || 'EUR',
   }).format(cents / 100);
-  // Show the Stripe Customer Portal button only when the org has at
-  // least one completed Stripe purchase — that's the gate the server
-  // enforces (no stripe_customer_id → 409). Hiding it for orgs in
-  // the simulated-payment flow keeps a non-functional button off
-  // their screen.
+  const isAdmin = state.me?.role === 'admin';
+
+  // Stripe Customer Portal button — only when the org has at least
+  // one completed Stripe purchase (server enforces no_customer otherwise).
   const hasStripePaid = purchases.some((p) => p.state === 'paid' && p.provider === 'stripe');
   const portalBtn = hasStripePaid
     ? h('button', {
@@ -4951,8 +4950,6 @@ async function viewPurchases(view) {
           const pr = await api('/api/admin/me/portal-session', { method: 'POST' });
           e.target.disabled = false;
           if (pr.status === 200 && pr.body?.url) {
-            // Redirect via location.href so the back button returns
-            // here from the Stripe-hosted portal.
             location.href = pr.body.url;
             return;
           }
@@ -4960,36 +4957,127 @@ async function viewPurchases(view) {
         } },
       }, t('Update payment method'))
     : null;
-  view.replaceChildren(
-    h('div', { class: 'row between' },
-      h('h1', {}, t('Purchases')),
-      h('div', { class: 'row', style: 'gap:.5rem; flex-wrap:wrap' },
-        portalBtn,
-        h('button', { class: 'btn', on: { click: () => nav('#adventures') } }, t('Browse catalog')))),
-    h('p', { class: 'muted' },
-      t('Every player-slot purchase. Paid ones produce an assignment you can schedule from the Adventures page.')),
-    purchases.length === 0
-      ? renderEmptyPurchases()
-      : h('div', { class: 'card' }, h('table', { class: 'table' },
+
+  // Filter state — admins get the provider chips + a "to bill" focus
+  // chip for invoice rows that haven't been marked billed yet. Org
+  // users see the same flat list as before.
+  const FILTERS = isAdmin
+    ? [
+        { key: 'all',      label: t('All') },
+        { key: 'tobill',   label: t('To bill') },
+        { key: 'invoice',  label: t('Invoice') },
+        { key: 'stripe',   label: t('Stripe') },
+        { key: 'free',     label: t('Free') },
+      ]
+    : null;
+  let activeFilter = isAdmin ? 'tobill' : 'all';
+  const matchesFilter = (p) => {
+    switch (activeFilter) {
+      case 'tobill':  return p.provider === 'invoice' && p.state === 'paid' && !p.billed_at;
+      case 'invoice': return p.provider === 'invoice';
+      case 'stripe':  return p.provider === 'stripe';
+      case 'free':    return p.provider === 'free';
+      default:        return true;
+    }
+  };
+
+  const tableHost = h('div');
+  const summaryHost = h('div');
+  const renderTable = () => {
+    const filtered = purchases.filter(matchesFilter);
+    // Summary row — only meaningful on the admin view, where filters
+    // narrow the set down to "what do I act on?".
+    if (isAdmin) {
+      const total = filtered.reduce((acc, p) => acc + (p.amount_cents || 0), 0);
+      const orgs = new Set(filtered.map((p) => p.org_id));
+      summaryHost.replaceChildren(
+        filtered.length === 0
+          ? h('p', { class: 'muted', style: 'margin:.25rem 0 0' },
+              t('Nothing matches this filter.'))
+          : h('p', { class: 'muted', style: 'margin:.25rem 0 .5rem' },
+              t('{{n}} purchase(s) · {{total}} across {{orgs}} org(s)',
+                { n: filtered.length, total: money(total, 'EUR'), orgs: orgs.size })),
+      );
+    } else {
+      summaryHost.replaceChildren();
+    }
+
+    if (filtered.length === 0) {
+      tableHost.replaceChildren(renderEmptyPurchases());
+      return;
+    }
+    tableHost.replaceChildren(
+      h('div', { class: 'card' }, h('table', { class: 'table' },
         h('thead', {}, h('tr', {},
           h('th', {}, t('Adventure')),
+          isAdmin ? h('th', {}, t('Org')) : null,
           h('th', {}, t('Slots')),
           h('th', {}, t('Total')),
           h('th', {}, t('State')),
           h('th', {}, t('Date')),
           h('th', {}, ''))),
-        h('tbody', {}, purchases.map((p) => h('tr', {},
+        h('tbody', {}, filtered.map((p) => h('tr', {
+          class: p.provider === 'invoice' && !p.billed_at ? 'row-stuck' : '',
+        },
           h('td', {}, p.adventure_title || p.adventure_slug),
+          isAdmin ? h('td', { class: 'mono', style: 'font-size:.85rem' }, '#' + p.org_id) : null,
           h('td', { class: 'mono' }, p.max_players),
           h('td', { class: 'mono' }, money(p.amount_cents, p.currency)),
-          h('td', {}, h('span', {
-            class: 'pill ' + (p.state === 'paid' ? 'success' : p.state === 'pending' ? 'warning' : p.state === 'refunded' ? 'danger' : ''),
-          }, stateGlyph(p.state) + p.state)),
+          h('td', {},
+            h('span', {
+              class: 'pill ' + (p.state === 'paid' ? 'success' : p.state === 'pending' ? 'warning' : p.state === 'refunded' ? 'danger' : ''),
+            }, stateGlyph(p.state) + p.state),
+            p.provider === 'invoice'
+              ? h('span', { class: 'pill', style: 'margin-left:.35rem; font-size:.7rem' }, t('invoice'))
+              : null,
+            p.provider === 'invoice' && p.billed_at
+              ? h('span', { class: 'pill success', style: 'margin-left:.35rem; font-size:.7rem' }, t('billed'))
+              : null),
           h('td', { class: 'muted mono', style: 'font-size:.8rem' }, p.created_at),
           h('td', { class: 'row', style: 'gap:.5rem; flex-wrap:wrap; justify-content:flex-end' },
             renderPurchaseActions(p)),
         ))))),
-  );
+    );
+  };
+
+  // Filter chip bar (admin only).
+  let chipBar = null;
+  if (isAdmin) {
+    chipBar = h('div', { class: 'row', style: 'gap:.25rem; flex-wrap:wrap; margin:.5rem 0' });
+    FILTERS.forEach((f) => {
+      const btn = h('button', {
+        class: 'btn small' + (activeFilter === f.key ? ' primary' : ' ghost'),
+        type: 'button',
+        on: { click: () => {
+          activeFilter = f.key;
+          for (const child of chipBar.children) {
+            const k = child.dataset.k;
+            child.className = 'btn small' + (k === activeFilter ? ' primary' : ' ghost');
+          }
+          renderTable();
+        } },
+      }, f.label);
+      btn.dataset.k = f.key;
+      chipBar.append(btn);
+    });
+  }
+
+  view.replaceChildren(...[
+    h('div', { class: 'row between' },
+      h('h1', {}, t('Purchases')),
+      h('div', { class: 'row', style: 'gap:.5rem; flex-wrap:wrap' },
+        portalBtn,
+        h('button', { class: 'btn', on: { click: () => nav('#adventures') } }, t('Browse catalog')))),
+    isAdmin
+      ? h('p', { class: 'muted' },
+          t('Every purchase across all orgs. Off-platform invoices show under "To bill" until you mark them billed.'))
+      : h('p', { class: 'muted' },
+          t('Every player-slot purchase. Paid ones produce an assignment you can schedule from the Adventures page.')),
+    chipBar,
+    summaryHost,
+    purchases.length === 0 ? renderEmptyPurchases() : tableHost,
+  ].filter(Boolean));
+  if (purchases.length > 0) renderTable();
 }
 
 // renderPurchaseActions returns per-row links/buttons:
@@ -5003,6 +5091,29 @@ function renderPurchaseActions(p) {
       href: p.invoice_url, target: '_blank', rel: 'noopener',
       class: 'btn small ghost',
     }, t('Receipt')));
+  }
+  // Admin-only "Mark billed" toggle for off-platform invoice purchases.
+  // Once you've sent the actual invoice from outside the platform,
+  // click this so the row drops out of the "To bill" focus filter.
+  if (state.me?.role === 'admin' && p.provider === 'invoice' && p.state === 'paid') {
+    const label = p.billed_at ? t('Unmark billed') : t('Mark billed');
+    const btn = h('button', { class: 'btn small', type: 'button' }, label);
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      const next = !p.billed_at;
+      const r = await api('/api/admin/purchases/' + p.id + '/billed', {
+        method: 'POST',
+        body: JSON.stringify({ billed: next }),
+      });
+      if (r.status === 200) {
+        toastOk(next ? t('Marked billed') : t('Marked unbilled'));
+        renderRoute();
+      } else {
+        btn.disabled = false;
+        toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+      }
+    });
+    out.push(btn);
   }
   if (state.me?.role === 'admin' && p.state === 'paid' && p.provider === 'stripe') {
     const btn = h('button', { class: 'btn small danger', type: 'button' }, t('Refund'));
@@ -5082,8 +5193,40 @@ function pricingHelpers() {
 // (simulated page now, Stripe Checkout later). On success the checkout
 // page navigates the user back to #purchases so they see the fresh
 // assignment.
+// activeOrgIsTrusted reports whether the caller's currently-active org
+// has been flagged trusted by a global admin. Trusted orgs see the
+// "Add to invoice" alternative on the buy-player-slots modal.
+function activeOrgIsTrusted() {
+  const orgID = state.me?.org_id;
+  if (!orgID) return false;
+  const m = (state.me?.memberships || []).find((x) => x.org_id === orgID);
+  return !!(m && m.trusted);
+}
+
 async function openPurchaseModal(adv) {
   const { PRICE_CENTS, FREE, fmtMoney, chargeable } = pricingHelpers();
+  const trusted = activeOrgIsTrusted();
+  // submit() ships a {provider} the server can route. Stripe / simulated
+  // both come back with a checkout_url to redirect to; free + invoice
+  // come back already paid with an assignment_id.
+  const submit = async (provider, n) => {
+    const body = { adventure_slug: adv.slug, max_players: n };
+    if (provider) body.provider = provider;
+    const r = await api('/api/admin/purchases', {
+      method: 'POST', body: JSON.stringify(body),
+    });
+    if (r.status !== 201) {
+      toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+      return;
+    }
+    if (r.body.state === 'paid' && r.body.assignment_id) {
+      try { sessionStorage.setItem('zv-just-purchased', String(r.body.assignment_id)); } catch { /* no-op */ }
+      if (r.body.provider === 'invoice') toastOk(t('Player slots added to your next invoice'));
+      location.href = '/arrange#adventures';
+      return;
+    }
+    location.href = r.body.checkout_url;
+  };
   await modal(t('Buy player slots'), ({ body, close }) => {
     const players = h('input', { type: 'number', min: '1', max: '500', value: '30', required: true });
     const totalEl = h('strong', {}, '');
@@ -5093,6 +5236,17 @@ async function openPurchaseModal(adv) {
     };
     players.addEventListener('input', update);
     update();
+    const payNowBtn = h('button', { class: 'btn primary', type: 'submit' }, t('Continue'));
+    const invoiceBtn = trusted
+      ? h('button', { class: 'btn', type: 'button',
+          title: t('Skip Stripe — your finance team will get an invoice from us.'),
+          on: { click: async () => {
+            const n = Math.max(1, parseInt(players.value, 10) || 1);
+            close(true);
+            await submit('invoice', n);
+          } } },
+          t('Add to invoice'))
+      : null;
     const form = h('form', {},
       h('p', {},
         t('How many players will join "{{title}}"?', { title: adv.title || adv.slug })),
@@ -5104,30 +5258,15 @@ async function openPurchaseModal(adv) {
         h('span', { class: 'muted', style: 'font-size:.85rem' },
           t('(first {{n}} free, then {{price}} per player)',
             { n: FREE, price: fmtMoney(PRICE_CENTS) }))),
-      h('div', { class: 'row end' },
+      h('div', { class: 'row end', style: 'gap:.5rem; flex-wrap:wrap' },
         h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, t('Cancel')),
-        h('button', { class: 'btn primary', type: 'submit' }, t('Continue'))));
+        invoiceBtn,
+        payNowBtn));
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       const n = Math.max(1, parseInt(players.value, 10) || 1);
-      const r = await api('/api/admin/purchases', {
-        method: 'POST',
-        body: JSON.stringify({ adventure_slug: adv.slug, max_players: n }),
-      });
-      if (r.status !== 201) {
-        toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
-        return;
-      }
       close(true);
-      // Free buys come back already paid with an assignment id —
-      // skip the checkout redirect and bounce straight to the
-      // adventures list so the user lands on the new assignment.
-      if (r.body.state === 'paid' && r.body.assignment_id) {
-        try { sessionStorage.setItem('zv-just-purchased', String(r.body.assignment_id)); } catch { /* no-op */ }
-        location.href = '/arrange#adventures';
-        return;
-      }
-      location.href = r.body.checkout_url;
+      await submit(null, n);
     });
     body.append(form);
   });
@@ -8731,6 +8870,20 @@ function renderOrganizationCard(org, adventures, purchases) {
     // re-encoded server-side so a polyglot upload can't survive.
     renderOrgLogoBlock(org),
 
+    // Trusted toggle — gives the org an "Add to invoice" option on
+    // the buy-player-slots modal. Off-platform invoice generation; the
+    // platform just tags the resulting purchase row with
+    // provider='invoice' for the operator to reconcile.
+    h('div', { class: 'row', style: 'gap:.5rem; align-items:center; margin:.5rem 0' },
+      h('span', { class: org.trusted ? 'pill success' : 'pill' },
+        org.trusted ? t('Invoice billing on') : t('Invoice billing off')),
+      h('button', {
+        class: 'btn small ghost',
+        on: { click: () => toggleOrgTrusted(org) },
+      }, org.trusted ? t('Disable invoice billing') : t('Enable invoice billing')),
+      h('span', { class: 'muted', style: 'font-size:.8rem' },
+        t('Lets the org add player slots to an invoice instead of paying via Stripe.'))),
+
     h('h3', { style: 'margin-top:.75rem' }, t('Users ({{n}})', { n: members.length })),
     members.length === 0
       ? h('p', { class: 'muted', style: 'font-size:.85rem' }, t('No users yet — add one to get started.'))
@@ -8847,6 +9000,20 @@ async function openRenameOrg(org) {
     });
     body.append(form);
   });
+}
+
+async function toggleOrgTrusted(org) {
+  const next = !org.trusted;
+  const r = await api(`/api/admin/organizations/${org.id}/trusted`, {
+    method: 'POST',
+    body: JSON.stringify({ trusted: next }),
+  });
+  if (r.status === 200) {
+    toastOk(next ? t('Invoice billing enabled') : t('Invoice billing disabled'));
+    renderRoute();
+  } else {
+    toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+  }
 }
 
 async function confirmDeleteOrg(org) {

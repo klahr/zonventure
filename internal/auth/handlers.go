@@ -85,6 +85,10 @@ type membershipDTO struct {
 	// is fine to bake on the client (the byte-serving handler is
 	// public-read and keyed by id, not name).
 	OrgLogoURL string `json:"org_logo_url,omitempty"`
+	// Trusted = the org is allowed to buy player slots on invoice
+	// instead of paying upfront via Stripe. Drives the "Add to
+	// invoice" affordance in the buy-player-slots modal.
+	Trusted bool `json:"trusted,omitempty"`
 }
 
 type whoamiResponse struct {
@@ -133,6 +137,7 @@ func (h *Handlers) userResponse(ctx context.Context, u User) whoamiResponse {
 			for _, m := range mems {
 				dto := membershipDTO{
 					OrgID: m.OrgID, OrgName: m.OrgName, Role: m.Role,
+					Trusted: m.Trusted,
 				}
 				if m.HasLogo {
 					dto.OrgLogoURL = "/org-logo/" + strconv.FormatInt(m.OrgID, 10)

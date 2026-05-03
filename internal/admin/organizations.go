@@ -51,6 +51,11 @@ type organizationDTO struct {
 	// an upload placeholder, without speculatively GETting the
 	// asset. Bytes themselves come from /org-logo/{id} when needed.
 	HasLogo bool `json:"has_logo"`
+	// Trusted = the org is allowed to buy player slots on invoice
+	// instead of paying upfront via Stripe. Toggled by global admins
+	// only. Surfaced here so the admin org-detail panel can show
+	// the current state and a toggle button.
+	Trusted bool `json:"trusted"`
 }
 
 /* ---------------- Admin-only: organizations CRUD ---------------- */
@@ -63,7 +68,8 @@ func (h *Handlers) ListOrganizations(w http.ResponseWriter, r *http.Request) {
 		       0 AS players_total,
 		       (SELECT COUNT(*) FROM events ar WHERE ar.org_id = o.id),
 		       (SELECT COUNT(*) FROM events ar WHERE ar.org_id = o.id AND ar.state = 'running'),
-		       (o.logo_content IS NOT NULL AND length(o.logo_content) > 0) AS has_logo
+		       (o.logo_content IS NOT NULL AND length(o.logo_content) > 0) AS has_logo,
+		       (o.trusted <> 0) AS trusted
 		FROM organizations o
 		ORDER BY LOWER(o.name)
 	`)
@@ -75,7 +81,7 @@ func (h *Handlers) ListOrganizations(w http.ResponseWriter, r *http.Request) {
 	out := []organizationDTO{}
 	for rows.Next() {
 		o := organizationDTO{Members: []orgMemberDTO{}, Assignments: []assignmentDTO{}}
-		if err := rows.Scan(&o.ID, &o.Name, &o.CreatedAt, &o.PlayersTotal, &o.EventsTotal, &o.EventsRunning, &o.HasLogo); err != nil {
+		if err := rows.Scan(&o.ID, &o.Name, &o.CreatedAt, &o.PlayersTotal, &o.EventsTotal, &o.EventsRunning, &o.HasLogo, &o.Trusted); err != nil {
 			httpx.Error(w, http.StatusInternalServerError, "scan failed")
 			return
 		}
@@ -116,9 +122,10 @@ func (h *Handlers) GetOrganization(w http.ResponseWriter, r *http.Request) {
 		       0 AS players_total,
 		       (SELECT COUNT(*) FROM events ar WHERE ar.org_id = o.id),
 		       (SELECT COUNT(*) FROM events ar WHERE ar.org_id = o.id AND ar.state = 'running'),
-		       (o.logo_content IS NOT NULL AND length(o.logo_content) > 0) AS has_logo
+		       (o.logo_content IS NOT NULL AND length(o.logo_content) > 0) AS has_logo,
+		       (o.trusted <> 0) AS trusted
 		FROM organizations o WHERE o.id = $1
-	`, id).Scan(&o.ID, &o.Name, &o.CreatedAt, &o.PlayersTotal, &o.EventsTotal, &o.EventsRunning, &o.HasLogo)
+	`, id).Scan(&o.ID, &o.Name, &o.CreatedAt, &o.PlayersTotal, &o.EventsTotal, &o.EventsRunning, &o.HasLogo, &o.Trusted)
 	if errors.Is(err, sql.ErrNoRows) {
 		httpx.Error(w, http.StatusNotFound, "organization not found")
 		return
@@ -187,6 +194,37 @@ func (h *Handlers) UpdateOrganization(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.JSON(w, http.StatusNoContent, nil)
+}
+
+// SetOrgTrusted toggles the trusted flag. Trusted orgs see an "Add to
+// invoice" option in the buy-player-slots modal; the off-platform
+// invoice generation lives outside the platform. Admin-only.
+func (h *Handlers) SetOrgTrusted(w http.ResponseWriter, r *http.Request) {
+	id, ok := orgIDFromURL(r)
+	if !ok {
+		return
+	}
+	var req struct {
+		Trusted bool `json:"trusted"`
+	}
+	if !httpx.DecodeJSON(w, r, &req) {
+		return
+	}
+	v := 0
+	if req.Trusted {
+		v = 1
+	}
+	res, err := h.DB.ExecContext(r.Context(),
+		`UPDATE organizations SET trusted = $1 WHERE id = $2`, v, id)
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "update failed")
+		return
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		httpx.Error(w, http.StatusNotFound, "organization not found")
+		return
+	}
+	httpx.JSON(w, http.StatusOK, map[string]any{"trusted": req.Trusted})
 }
 
 // DeleteOrganization deletes an organization (and everything it cascades to:

@@ -70,6 +70,11 @@ type purchaseDTO struct {
 	InvoiceURL        string `json:"invoice_url,omitempty"`
 	CreatedAt         string `json:"created_at"`
 	PaidAt            string `json:"paid_at,omitempty"`
+	// BilledAt is set by the operator (admin) after sending the real
+	// off-platform invoice. Only meaningful for provider="invoice"
+	// rows; on Stripe / free / simulated rows the column stays NULL
+	// because there's nothing for an admin to bill afterwards.
+	BilledAt          string `json:"billed_at,omitempty"`
 }
 
 type createPurchaseRequest struct {
@@ -135,7 +140,7 @@ func (h *Handlers) CreatePurchase(w http.ResponseWriter, r *http.Request) {
 		} else {
 			provider = "simulated"
 		}
-	case "free", "simulated", "stripe":
+	case "free", "simulated", "stripe", "invoice":
 		// Caller-specified. Validated below.
 	default:
 		httpx.Error(w, http.StatusBadRequest, "unsupported provider")
@@ -148,6 +153,19 @@ func (h *Handlers) CreatePurchase(w http.ResponseWriter, r *http.Request) {
 	if provider == "free" && amount > 0 {
 		httpx.Error(w, http.StatusBadRequest, "free provider requires amount=0")
 		return
+	}
+	if provider == "invoice" {
+		// Off-platform invoice billing requires the org to be marked
+		// trusted by a global admin. Anyone else trying to ride this
+		// path (eg. a hand-crafted POST) gets the same 403 they'd
+		// expect for any other admin-gated affordance.
+		var trusted bool
+		if err := h.DB.QueryRowContext(r.Context(),
+			`SELECT trusted <> 0 FROM organizations WHERE id = $1`,
+			*me.OrgID).Scan(&trusted); err != nil || !trusted {
+			httpx.Error(w, http.StatusForbidden, "invoice billing is not enabled for this organization")
+			return
+		}
 	}
 	if provider != "free" && amount == 0 {
 		// A non-free provider for a $0 buy would just bounce off
@@ -162,23 +180,27 @@ func (h *Handlers) CreatePurchase(w http.ResponseWriter, r *http.Request) {
 	_ = h.DB.QueryRowContext(r.Context(),
 		`SELECT title FROM adventures WHERE slug = $1`, req.AdventureSlug).Scan(&advTitle)
 
-	// Free path: skip Stripe entirely. Insert purchase + assignment
-	// + flip to paid in one transaction so the response can carry
-	// the assignment id directly and the UI doesn't redirect.
-	if provider == "free" {
-		assID, purchaseID, ferr := h.createFreePurchase(r.Context(), *me.OrgID, me.ID, req.AdventureSlug, req.MaxPlayers)
+	// Free + invoice both skip Stripe entirely: insert the purchase +
+	// assignment + flip to paid in one transaction so the response
+	// can carry the assignment id directly and the UI doesn't
+	// redirect. Invoice preserves the actual amount on the row so the
+	// operator can pull "WHERE provider='invoice' AND state='paid'"
+	// to find what to bill the org for off-platform.
+	if provider == "free" || provider == "invoice" {
+		assID, purchaseID, ferr := h.createOffPlatformPurchase(
+			r.Context(), *me.OrgID, me.ID, req.AdventureSlug, req.MaxPlayers, amount, provider)
 		if ferr != nil {
-			httpx.Error(w, http.StatusInternalServerError, "free purchase failed: "+ferr.Error())
+			httpx.Error(w, http.StatusInternalServerError, provider+" purchase failed: "+ferr.Error())
 			return
 		}
-		metrics.PurchaseEvents.WithLabelValues("created_free").Inc()
-		metrics.PurchaseEvents.WithLabelValues("confirmed_free").Inc()
+		metrics.PurchaseEvents.WithLabelValues("created_" + provider).Inc()
+		metrics.PurchaseEvents.WithLabelValues("confirmed_" + provider).Inc()
 		httpx.JSON(w, http.StatusCreated, map[string]any{
 			"id":            purchaseID,
-			"amount_cents":  0,
+			"amount_cents":  amount,
 			"currency":      "EUR",
 			"state":         "paid",
-			"provider":      "free",
+			"provider":      provider,
 			"assignment_id": assID,
 		})
 		return
@@ -239,10 +261,13 @@ func (h *Handlers) CreatePurchase(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// createFreePurchase inserts a purchase + assignment in one tx for the
-// free-tier short-circuit. State is set to paid immediately; the
-// assignment id is returned so the response carries it directly.
-func (h *Handlers) createFreePurchase(ctx context.Context, orgID, buyerUserID int64, advSlug string, maxPlayers int) (assignmentID, purchaseID int64, err error) {
+// createOffPlatformPurchase inserts a purchase + assignment in one tx
+// for the free-tier and invoice short-circuits. State is set to paid
+// immediately; the assignment id is returned so the response carries
+// it directly. amountCents is preserved on the row (zero for free,
+// the chargeable amount for invoice) so the operator's "what do we
+// invoice next?" query is a simple WHERE provider='invoice'.
+func (h *Handlers) createOffPlatformPurchase(ctx context.Context, orgID, buyerUserID int64, advSlug string, maxPlayers, amountCents int, provider string) (assignmentID, purchaseID int64, err error) {
 	tx, err := h.DB.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, 0, err
@@ -257,9 +282,9 @@ func (h *Handlers) createFreePurchase(ctx context.Context, orgID, buyerUserID in
 	if err := tx.QueryRowContext(ctx, `
 		INSERT INTO purchases(org_id, buyer_user_id, adventure_slug, max_players,
 		                      amount_cents, currency, provider, state, paid_at, assignment_id)
-		VALUES ($1, $2, $3, $4, 0, 'EUR', 'free', 'paid', now_text(), $5)
+		VALUES ($1, $2, $3, $4, $5, 'EUR', $6, 'paid', now_text(), $7)
 		RETURNING id
-	`, orgID, buyerUserID, advSlug, maxPlayers, assignmentID).Scan(&purchaseID); err != nil {
+	`, orgID, buyerUserID, advSlug, maxPlayers, amountCents, provider, assignmentID).Scan(&purchaseID); err != nil {
 		return 0, 0, fmt.Errorf("purchase insert: %w", err)
 	}
 	if err := tx.Commit(); err != nil {
@@ -360,6 +385,57 @@ func (h *Handlers) ConfirmPurchase(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// SetPurchaseBilled flips the billed_at flag on a purchase row.
+// Admin-only and only meaningful for provider="invoice" rows — the
+// operator clicks "Mark billed" after sending the real off-platform
+// invoice, and the purchase drops out of the "to bill" filter on the
+// admin Purchases page.
+//
+// Body: {billed: true|false}. true stamps now_text(); false clears
+// the column. Idempotent on repeat clicks.
+func (h *Handlers) SetPurchaseBilled(w http.ResponseWriter, r *http.Request) {
+	purchaseID, err := strconv.ParseInt(chi.URLParam(r, "purchaseID"), 10, 64)
+	if err != nil || purchaseID <= 0 {
+		httpx.Error(w, http.StatusBadRequest, "bad purchase id")
+		return
+	}
+	var req struct {
+		Billed bool `json:"billed"`
+	}
+	if !httpx.DecodeJSON(w, r, &req) {
+		return
+	}
+	var provider string
+	if err := h.DB.QueryRowContext(r.Context(),
+		`SELECT provider FROM purchases WHERE id = $1`, purchaseID).Scan(&provider); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			httpx.Error(w, http.StatusNotFound, "purchase not found")
+			return
+		}
+		httpx.Error(w, http.StatusInternalServerError, "lookup failed")
+		return
+	}
+	if provider != "invoice" {
+		httpx.Error(w, http.StatusBadRequest,
+			"only invoice purchases can be marked billed")
+		return
+	}
+	var stmt string
+	if req.Billed {
+		stmt = `UPDATE purchases SET billed_at = now_text() WHERE id = $1`
+	} else {
+		stmt = `UPDATE purchases SET billed_at = NULL WHERE id = $1`
+	}
+	if _, err := h.DB.ExecContext(r.Context(), stmt, purchaseID); err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "update failed")
+		return
+	}
+	var billedAt sql.NullString
+	_ = h.DB.QueryRowContext(r.Context(),
+		`SELECT billed_at FROM purchases WHERE id = $1`, purchaseID).Scan(&billedAt)
+	httpx.JSON(w, http.StatusOK, map[string]any{"billed_at": billedAt.String})
+}
+
 // ListPurchases returns every purchase visible to the caller — admins
 // see all, org users see their own.
 func (h *Handlers) ListPurchases(w http.ResponseWriter, r *http.Request) {
@@ -369,7 +445,8 @@ func (h *Handlers) ListPurchases(w http.ResponseWriter, r *http.Request) {
 		       p.max_players, p.amount_cents, p.currency, p.provider,
 		       COALESCE(p.provider_session_id, ''), p.state, p.assignment_id,
 		       p.created_at, COALESCE(p.paid_at, ''),
-		       COALESCE(p.stripe_invoice_url, '')
+		       COALESCE(p.stripe_invoice_url, ''),
+		       COALESCE(p.billed_at, '')
 		FROM purchases p
 		LEFT JOIN adventures a ON a.slug = p.adventure_slug
 	`
@@ -398,7 +475,7 @@ func (h *Handlers) ListPurchases(w http.ResponseWriter, r *http.Request) {
 		if err := rows.Scan(&d.ID, &d.OrgID, &d.AdventureSlug, &d.AdventureTitle,
 			&d.MaxPlayers, &d.AmountCents, &d.Currency, &d.Provider,
 			&d.ProviderSessionID, &d.State, &assignment,
-			&d.CreatedAt, &d.PaidAt, &d.InvoiceURL); err != nil {
+			&d.CreatedAt, &d.PaidAt, &d.InvoiceURL, &d.BilledAt); err != nil {
 			httpx.Error(w, http.StatusInternalServerError, "scan failed")
 			return
 		}
@@ -429,13 +506,14 @@ func (h *Handlers) GetPurchase(w http.ResponseWriter, r *http.Request) {
 		       p.max_players, p.amount_cents, p.currency, p.provider,
 		       COALESCE(p.provider_session_id, ''), p.state, p.assignment_id,
 		       p.created_at, COALESCE(p.paid_at, ''),
-		       COALESCE(p.stripe_invoice_url, '')
+		       COALESCE(p.stripe_invoice_url, ''),
+		       COALESCE(p.billed_at, '')
 		FROM purchases p
 		LEFT JOIN adventures a ON a.slug = p.adventure_slug
 		WHERE p.id = $1
 	`, purchaseID).Scan(&d.ID, &d.OrgID, &d.AdventureSlug, &d.AdventureTitle,
 		&d.MaxPlayers, &d.AmountCents, &d.Currency, &d.Provider,
-		&d.ProviderSessionID, &d.State, &assignment, &d.CreatedAt, &d.PaidAt, &d.InvoiceURL)
+		&d.ProviderSessionID, &d.State, &assignment, &d.CreatedAt, &d.PaidAt, &d.InvoiceURL, &d.BilledAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		httpx.Error(w, http.StatusNotFound, "purchase not found")
 		return

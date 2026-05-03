@@ -612,6 +612,10 @@ type Membership struct {
 	// recognising a logo is faster than reading three similar org
 	// names for a multi-tenant arranger.
 	HasLogo bool
+	// Trusted is set by global admins on orgs with off-platform
+	// invoice billing. Surfaced on /whoami so the buy modal can
+	// show "Add to invoice" alongside "Pay now".
+	Trusted bool
 }
 
 // ListMemberships returns every (org, role) the user belongs to,
@@ -621,7 +625,8 @@ type Membership struct {
 func ListMemberships(ctx context.Context, db *sql.DB, userID int64) ([]Membership, error) {
 	rows, err := db.QueryContext(ctx, `
 		SELECT m.org_id, o.name, m.role,
-		       (o.logo_mime_type IS NOT NULL)::int AS has_logo
+		       (o.logo_mime_type IS NOT NULL)::int AS has_logo,
+		       o.trusted
 		FROM org_memberships m
 		JOIN organizations o ON o.id = m.org_id
 		WHERE m.user_id = $1
@@ -636,11 +641,13 @@ func ListMemberships(ctx context.Context, db *sql.DB, userID int64) ([]Membershi
 		var (
 			m       Membership
 			hasLogo int
+			trusted int
 		)
-		if err := rows.Scan(&m.OrgID, &m.OrgName, &m.Role, &hasLogo); err != nil {
+		if err := rows.Scan(&m.OrgID, &m.OrgName, &m.Role, &hasLogo, &trusted); err != nil {
 			return nil, err
 		}
 		m.HasLogo = hasLogo != 0
+		m.Trusted = trusted != 0
 		out = append(out, m)
 	}
 	return out, rows.Err()

@@ -795,6 +795,7 @@ func New(cfg Config) http.Handler {
 			r.Get("/organizations", adminH.ListOrganizations)
 			r.Post("/organizations", adminH.CreateOrganization)
 			r.Patch("/organizations/{orgID}", adminH.UpdateOrganization)
+			r.Post("/organizations/{orgID}/trusted", adminH.SetOrgTrusted)
 			r.Delete("/organizations/{orgID}", adminH.DeleteOrganization)
 			// Brand logo upload — surfaced on the recap PDF cover and
 			// (later) on the play / arrange chrome. PNG/JPEG/WebP only,
@@ -848,6 +849,11 @@ func New(cfg Config) http.Handler {
 			// works whether the refund originated here or in the
 			// Stripe Dashboard.
 			r.Post("/purchases/{purchaseID}/refund", adminH.RefundPurchase)
+			// Off-platform invoice tracking — admin marks an invoice
+			// purchase as billed once the real invoice has been sent.
+			// The Purchases page's "to bill" filter ignores billed
+			// rows so the same row doesn't keep nagging.
+			r.Post("/purchases/{purchaseID}/billed", adminH.SetPurchaseBilled)
 
 			// Server logs — stream + level control. Admin-only so org
 			// users can't snoop another org's messages.

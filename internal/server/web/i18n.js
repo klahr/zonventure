@@ -350,6 +350,37 @@
       'scheduled': 'schemalagd',
       'completed': 'slutförd',
       'waiting': 'väntar',
+      // ---- admin Purchases page (financial workflow) ----
+      'To bill': 'Att fakturera',
+      'Invoice': 'Faktura',
+      'Stripe': 'Stripe',
+      'Free': 'Gratis',
+      'Org': 'Organisation',
+      'invoice': 'faktura',
+      'billed': 'fakturerad',
+      'Mark billed':   'Markera som fakturerad',
+      'Unmark billed': 'Avmarkera som fakturerad',
+      'Marked billed':   'Markerad som fakturerad',
+      'Marked unbilled': 'Avmarkerad som fakturerad',
+      'Nothing matches this filter.': 'Inget matchar filtret.',
+      '{{n}} purchase(s) · {{total}} across {{orgs}} org(s)':
+        '{{n}} köp · {{total}} totalt · {{orgs}} organisation(er)',
+      'Every purchase across all orgs. Off-platform invoices show under "To bill" until you mark them billed.':
+        'Alla köp i alla organisationer. Externa fakturor visas under "Att fakturera" tills du markerar dem som fakturerade.',
+      // ---- invoice billing (trusted orgs) ----
+      'Add to invoice': 'Lägg på faktura',
+      'Skip Stripe — your finance team will get an invoice from us.':
+        'Hoppa över Stripe — er ekonomiavdelning får en faktura från oss.',
+      'Player slots added to your next invoice':
+        'Spelarplatser tillagda på er nästa faktura',
+      'Invoice billing on':  'Fakturering aktiverad',
+      'Invoice billing off': 'Fakturering inaktiverad',
+      'Enable invoice billing':  'Aktivera fakturering',
+      'Disable invoice billing': 'Inaktivera fakturering',
+      'Invoice billing enabled':  'Fakturering aktiverad',
+      'Invoice billing disabled': 'Fakturering inaktiverad',
+      'Lets the org add player slots to an invoice instead of paying via Stripe.':
+        'Låter organisationen lägga spelarplatser på faktura istället för att betala via Stripe.',
       // ---- team withdraw / unwithdraw ----
       'Mark withdrawn': 'Markera som tillbakadragen',
       'Mark returned':  'Markera som tillbaka',
