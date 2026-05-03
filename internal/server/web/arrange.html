@@ -6028,7 +6028,7 @@ function openFullscreenMap(opts) {
         t('Map library is still loading — refresh the page.')));
       return;
     }
-    map = L.map(mapEl).setView([59.3293, 18.0686], 13);
+    map = L.map(mapEl).setView([58.1820, 13.9554], 13);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '© OpenStreetMap contributors',
       maxZoom: 19,
@@ -6110,7 +6110,7 @@ function mountAdventureMap(host, pages, colors) {
       t('Map library is still loading — refresh the page.')));
     return;
   }
-  const map = L.map(host, { scrollWheelZoom: false }).setView([59.3293, 18.0686], 13);
+  const map = L.map(host, { scrollWheelZoom: false }).setView([58.1820, 13.9554], 13);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '© OpenStreetMap contributors',
     maxZoom: 19,
@@ -7903,7 +7903,7 @@ function initRunMap(host, adventure, teams, tracks) {
     host.replaceChildren(h('div', { class: 'empty' }, t('Map library is still loading — refresh the page.')));
     return null;
   }
-  const map = L.map(host, { scrollWheelZoom: false }).setView([59.3293, 18.0686], 14);
+  const map = L.map(host, { scrollWheelZoom: false }).setView([58.1820, 13.9554], 14);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '© OpenStreetMap contributors',
     maxZoom: 19,
@@ -11786,7 +11786,7 @@ async function openEditPuzzle(adv, page /* or null */) {
     // fallback only kicks in for attached-adventure creates.
     const fallback = (!standalone && adv.pages.length > 0)
       ? { lat: adv.pages[adv.pages.length - 1].lat, lng: adv.pages[adv.pages.length - 1].lng }
-      : { lat: 59.3293, lng: 18.0686 };
+      : { lat: 58.1820, lng: 13.9554 };
     // A quick-puzzle created without GPS lands at (0, 0) on the server;
     // claim the pending fix (if any) so the editor can apply it when it
     // arrives, and fall back to the default view in the meantime instead
@@ -12112,8 +12112,8 @@ async function openEditPuzzle(adv, page /* or null */) {
       JSON.stringify(hintsController.get()) !== JSON.stringify(page?.hints || []) ||
       notes.value       !== (page?.notes  || '') ||
       JSON.stringify(accept.get()) !== JSON.stringify(page?.accept || []) ||
-      parseFloat(lat.value) !== (page ? page.lat : 59.3293) ||
-      parseFloat(lng.value) !== (page ? page.lng : 18.0686) ||
+      parseFloat(lat.value) !== (page ? page.lat : 58.1820) ||
+      parseFloat(lng.value) !== (page ? page.lng : 13.9554) ||
       gated.checked !== !!page?.radius_m ||
       (gated.checked && parseFloat(radius.value) !== (page?.radius_m || 50)) ||
       disabled.checked !== !!page?.disabled
@@ -12287,7 +12287,7 @@ function renderPuzzleLocationMap(args) {
   // A new puzzle without a prior sibling starts at a city-level zoom so
   // the arranger can find themselves; an existing or cloned-from-sibling
   // puzzle zooms in close to the pin.
-  const startZoom = freshPuzzle && initial.lat === 59.3293 ? 12 : 16;
+  const startZoom = freshPuzzle && initial.lat === 58.1820 ? 12 : 16;
 
   const map = L.map(mapEl, { scrollWheelZoom: true }).setView([initial.lat, initial.lng], startZoom);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
