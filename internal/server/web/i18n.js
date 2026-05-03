@@ -515,6 +515,20 @@
       'No published adventures yet.': 'Inga publicerade äventyr än.',
       '(no description)': '(ingen beskrivning)',
       'Buy player slots': 'Köp spelarplatser',
+      'Buy more slots': 'Köp fler platser',
+      'Add more player slots to this event': 'Lägg till fler spelarplatser i detta event',
+      'Additional players': 'Ytterligare spelare',
+      '{{n}} more slots added': '{{n}} fler platser tillagda',
+      'this event': 'detta event',
+      '"{{title}}" currently has {{n}} player slots. How many more do you want?':
+        '"{{title}}" har {{n}} spelarplatser just nu. Hur många fler vill du köpa?',
+      '({{price}} per added player)': '({{price}} per extra spelare)',
+      '(first {{n}} in this event are free, then {{price}} per player)':
+        '(de första {{n}} i detta event är gratis, sedan {{price}} per spelare)',
+      'cannot top up a completed or cancelled event':
+        'kan inte fylla på ett avslutat eller avbrutet event',
+      'assignment is not yours': 'tilldelningen tillhör inte dig',
+      'assignment not found': 'tilldelning hittades inte',
       // ---- adventure detail ----
       '{{slug}} · {{n}} puzzles': '{{slug}} · {{n}} pussel',
       '(untitled)': '(utan titel)',

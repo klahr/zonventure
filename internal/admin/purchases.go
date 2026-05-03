@@ -44,14 +44,31 @@ const (
 )
 
 // purchaseAmountCents computes the chargeable total for a buy of N
-// player slots: the first FreePlayersPerEvent are free, the rest cost
-// PricePerPlayerCents each. Returns 0 for any N ≤ FreePlayersPerEvent.
-func purchaseAmountCents(maxPlayers int) int {
-	chargeable := maxPlayers - FreePlayersPerEvent
-	if chargeable <= 0 {
-		return 0
-	}
+// player slots layered on top of an existing total of `previousTotal`
+// slots in the same event. The first FreePlayersPerEvent slots in any
+// given event are free regardless of how the buyer reached them, so a
+// top-up that stays inside the free band costs zero, a top-up that
+// crosses the free band charges only the slots above it, and a top-up
+// fully above the band charges per-slot. Pass previousTotal=0 for
+// first-time purchases.
+func purchaseAmountCents(previousTotal, addedPlayers int) int {
+	chargeable := chargeableSlots(previousTotal, addedPlayers)
 	return chargeable * PricePerPlayerCents
+}
+
+// chargeableSlots is the player-slot count actually billed for a buy
+// of `addedPlayers` layered on top of `previousTotal`. Splits "first
+// FreePlayersPerEvent free in this event" across the existing total
+// and the addition: existing slots that were inside the free band
+// stay free even after a top-up bumps the total above the band.
+func chargeableSlots(previousTotal, addedPlayers int) int {
+	above := func(n int) int {
+		if n <= FreePlayersPerEvent {
+			return 0
+		}
+		return n - FreePlayersPerEvent
+	}
+	return above(previousTotal+addedPlayers) - above(previousTotal)
 }
 
 type purchaseDTO struct {
@@ -66,6 +83,12 @@ type purchaseDTO struct {
 	ProviderSessionID string `json:"provider_session_id,omitempty"`
 	State             string `json:"state"`
 	AssignmentID      *int64 `json:"assignment_id,omitempty"`
+	// TopUpAssignmentID is set when the purchase tops up an existing
+	// assignment's cap rather than creating a fresh one. Populated
+	// from creation through the lifecycle so the listing UI can
+	// distinguish a "new event slots" buy from an "added slots to
+	// event #N" buy.
+	TopUpAssignmentID *int64 `json:"top_up_assignment_id,omitempty"`
 	CheckoutURL       string `json:"checkout_url,omitempty"`
 	InvoiceURL        string `json:"invoice_url,omitempty"`
 	CreatedAt         string `json:"created_at"`
@@ -84,6 +107,12 @@ type createPurchaseRequest struct {
 	// to "stripe" if configured, "simulated" otherwise. A computed
 	// amount of zero forces "free" regardless of caller preference.
 	Provider string `json:"provider,omitempty"`
+	// TopUpAssignmentID, when set, makes this purchase a top-up of an
+	// existing assignment's cap rather than a fresh assignment. The
+	// adventure_slug is ignored if it disagrees with the assignment's
+	// own slug (the server uses the assignment's slug authoritatively
+	// so the UI can stay terse and just send the assignment id).
+	TopUpAssignmentID *int64 `json:"top_up_assignment_id,omitempty"`
 }
 
 // CreatePurchase registers a pending purchase and returns its checkout
@@ -110,6 +139,47 @@ func (h *Handlers) CreatePurchase(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusBadRequest, "max_players must be 1–500")
 		return
 	}
+	// Top-up branch: derive the adventure slug + previous total from
+	// the target assignment, refusing if the assignment is missing,
+	// not owned by the caller's org, or attached to a terminal-state
+	// event. The eventual UPDATE happens at confirm/webhook time;
+	// here we just validate and resolve the per-event pricing inputs.
+	previousTotal := 0
+	var topUpID *int64
+	if req.TopUpAssignmentID != nil && *req.TopUpAssignmentID > 0 {
+		var (
+			assnOrg     int64
+			assnSlug    string
+			assnMax     int
+			eventID     sql.NullInt64
+			eventState  sql.NullString
+		)
+		err := h.DB.QueryRowContext(r.Context(), `
+			SELECT aa.org_id, aa.adventure_slug, aa.max_players, ar.id, ar.state
+			FROM adventure_assignments aa
+			LEFT JOIN events ar ON ar.assignment_id = aa.id
+			WHERE aa.id = $1
+		`, *req.TopUpAssignmentID).Scan(&assnOrg, &assnSlug, &assnMax, &eventID, &eventState)
+		if errors.Is(err, sql.ErrNoRows) {
+			httpx.Error(w, http.StatusNotFound, "assignment not found")
+			return
+		}
+		if err != nil {
+			httpx.Error(w, http.StatusInternalServerError, "assignment lookup failed")
+			return
+		}
+		if assnOrg != *me.OrgID {
+			httpx.Error(w, http.StatusForbidden, "assignment is not yours")
+			return
+		}
+		if eventState.Valid && (eventState.String == "completed" || eventState.String == "cancelled") {
+			httpx.Error(w, http.StatusConflict, "cannot top up a completed or cancelled event")
+			return
+		}
+		req.AdventureSlug = assnSlug // canonical — ignore any client value
+		previousTotal = assnMax
+		topUpID = req.TopUpAssignmentID
+	}
 	// Source adventure must exist + be visible to the buyer (either
 	// their own or the global catalog).
 	advOrg, err := h.adventureOwner(r.Context(), req.AdventureSlug)
@@ -125,7 +195,7 @@ func (h *Handlers) CreatePurchase(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusForbidden, "that adventure is not available to your org")
 		return
 	}
-	amount := purchaseAmountCents(req.MaxPlayers)
+	amount := purchaseAmountCents(previousTotal, req.MaxPlayers)
 
 	provider := req.Provider
 	switch provider {
@@ -188,7 +258,7 @@ func (h *Handlers) CreatePurchase(w http.ResponseWriter, r *http.Request) {
 	// to find what to bill the org for off-platform.
 	if provider == "free" || provider == "invoice" {
 		assID, purchaseID, ferr := h.createOffPlatformPurchase(
-			r.Context(), *me.OrgID, me.ID, req.AdventureSlug, req.MaxPlayers, amount, provider)
+			r.Context(), *me.OrgID, me.ID, req.AdventureSlug, req.MaxPlayers, amount, provider, topUpID)
 		if ferr != nil {
 			httpx.Error(w, http.StatusInternalServerError, provider+" purchase failed: "+ferr.Error())
 			return
@@ -207,12 +277,16 @@ func (h *Handlers) CreatePurchase(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var id int64
+	var topUpArg any
+	if topUpID != nil {
+		topUpArg = *topUpID
+	}
 	if err := h.DB.QueryRowContext(r.Context(), `
 		INSERT INTO purchases(org_id, buyer_user_id, adventure_slug, max_players,
-		                      amount_cents, currency, provider, state)
-		VALUES ($1, $2, $3, $4, $5, 'EUR', $6, 'pending')
+		                      amount_cents, currency, provider, state, top_up_assignment_id)
+		VALUES ($1, $2, $3, $4, $5, 'EUR', $6, 'pending', $7)
 		RETURNING id
-	`, *me.OrgID, me.ID, req.AdventureSlug, req.MaxPlayers, amount, provider).Scan(&id); err != nil {
+	`, *me.OrgID, me.ID, req.AdventureSlug, req.MaxPlayers, amount, provider, topUpArg).Scan(&id); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "insert failed: "+err.Error())
 		return
 	}
@@ -267,24 +341,49 @@ func (h *Handlers) CreatePurchase(w http.ResponseWriter, r *http.Request) {
 // it directly. amountCents is preserved on the row (zero for free,
 // the chargeable amount for invoice) so the operator's "what do we
 // invoice next?" query is a simple WHERE provider='invoice'.
-func (h *Handlers) createOffPlatformPurchase(ctx context.Context, orgID, buyerUserID int64, advSlug string, maxPlayers, amountCents int, provider string) (assignmentID, purchaseID int64, err error) {
+//
+// When topUpID is non-nil, the assignment isn't created — instead its
+// max_players is bumped by `addedPlayers` and the topped-up id is
+// returned. The purchases row records both top_up_assignment_id (the
+// historical "this was a top-up" marker) and assignment_id (the
+// fulfilled assignment, here equal to the top-up target so the
+// listing UI can link to it the same way as a fresh-assignment buy).
+func (h *Handlers) createOffPlatformPurchase(ctx context.Context, orgID, buyerUserID int64, advSlug string, addedPlayers, amountCents int, provider string, topUpID *int64) (assignmentID, purchaseID int64, err error) {
 	tx, err := h.DB.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, 0, err
 	}
 	defer tx.Rollback() //nolint:errcheck
-	if err := tx.QueryRowContext(ctx, `
-		INSERT INTO adventure_assignments(org_id, adventure_slug, max_players)
-		VALUES ($1, $2, $3) RETURNING id
-	`, orgID, advSlug, maxPlayers).Scan(&assignmentID); err != nil {
-		return 0, 0, fmt.Errorf("assignment insert: %w", err)
+	var topUpArg any
+	if topUpID != nil {
+		topUpArg = *topUpID
+		// FOR UPDATE pins the row across the bump so a concurrent
+		// top-up can't interleave (each would read the same pre-bump
+		// max_players and double-count the addition).
+		if err := tx.QueryRowContext(ctx,
+			`SELECT id FROM adventure_assignments WHERE id = $1 AND org_id = $2 FOR UPDATE`,
+			*topUpID, orgID).Scan(&assignmentID); err != nil {
+			return 0, 0, fmt.Errorf("top-up lookup: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE adventure_assignments SET max_players = max_players + $1 WHERE id = $2`,
+			addedPlayers, assignmentID); err != nil {
+			return 0, 0, fmt.Errorf("top-up bump: %w", err)
+		}
+	} else {
+		if err := tx.QueryRowContext(ctx, `
+			INSERT INTO adventure_assignments(org_id, adventure_slug, max_players)
+			VALUES ($1, $2, $3) RETURNING id
+		`, orgID, advSlug, addedPlayers).Scan(&assignmentID); err != nil {
+			return 0, 0, fmt.Errorf("assignment insert: %w", err)
+		}
 	}
 	if err := tx.QueryRowContext(ctx, `
 		INSERT INTO purchases(org_id, buyer_user_id, adventure_slug, max_players,
-		                      amount_cents, currency, provider, state, paid_at, assignment_id)
-		VALUES ($1, $2, $3, $4, $5, 'EUR', $6, 'paid', now_text(), $7)
+		                      amount_cents, currency, provider, state, paid_at, assignment_id, top_up_assignment_id)
+		VALUES ($1, $2, $3, $4, $5, 'EUR', $6, 'paid', now_text(), $7, $8)
 		RETURNING id
-	`, orgID, buyerUserID, advSlug, maxPlayers, amountCents, provider, assignmentID).Scan(&purchaseID); err != nil {
+	`, orgID, buyerUserID, advSlug, addedPlayers, amountCents, provider, assignmentID, topUpArg).Scan(&purchaseID); err != nil {
 		return 0, 0, fmt.Errorf("purchase insert: %w", err)
 	}
 	if err := tx.Commit(); err != nil {
@@ -319,15 +418,16 @@ func (h *Handlers) ConfirmPurchase(w http.ResponseWriter, r *http.Request) {
 		maxPlayers    int
 		state         string
 		existingAssn  sql.NullInt64
+		topUpID       sql.NullInt64
 	)
 	// FOR UPDATE serialises overlapping confirms (double-clicked Pay
 	// button, webhook arriving alongside a manual confirm) so two
 	// transactions can't both observe state='pending' and each insert
 	// their own assignment row.
 	err = tx.QueryRowContext(r.Context(), `
-		SELECT org_id, adventure_slug, max_players, state, assignment_id
+		SELECT org_id, adventure_slug, max_players, state, assignment_id, top_up_assignment_id
 		FROM purchases WHERE id = $1 FOR UPDATE
-	`, purchaseID).Scan(&orgID, &advSlug, &maxPlayers, &state, &existingAssn)
+	`, purchaseID).Scan(&orgID, &advSlug, &maxPlayers, &state, &existingAssn, &topUpID)
 	if errors.Is(err, sql.ErrNoRows) {
 		httpx.Error(w, http.StatusNotFound, "purchase not found")
 		return
@@ -359,13 +459,30 @@ func (h *Handlers) ConfirmPurchase(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var assID int64
-	if err := tx.QueryRowContext(r.Context(), `
-		INSERT INTO adventure_assignments(org_id, adventure_slug, max_players)
-		VALUES ($1, $2, $3)
-		RETURNING id
-	`, orgID, advSlug, maxPlayers).Scan(&assID); err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "assignment insert failed: "+err.Error())
-		return
+	if topUpID.Valid {
+		// Top-up: pin the existing assignment row, bump its cap, and
+		// return its id as the fulfilled assignment.
+		if err := tx.QueryRowContext(r.Context(),
+			`SELECT id FROM adventure_assignments WHERE id = $1 AND org_id = $2 FOR UPDATE`,
+			topUpID.Int64, orgID).Scan(&assID); err != nil {
+			httpx.Error(w, http.StatusInternalServerError, "top-up lookup failed: "+err.Error())
+			return
+		}
+		if _, err := tx.ExecContext(r.Context(),
+			`UPDATE adventure_assignments SET max_players = max_players + $1 WHERE id = $2`,
+			maxPlayers, assID); err != nil {
+			httpx.Error(w, http.StatusInternalServerError, "top-up bump failed: "+err.Error())
+			return
+		}
+	} else {
+		if err := tx.QueryRowContext(r.Context(), `
+			INSERT INTO adventure_assignments(org_id, adventure_slug, max_players)
+			VALUES ($1, $2, $3)
+			RETURNING id
+		`, orgID, advSlug, maxPlayers).Scan(&assID); err != nil {
+			httpx.Error(w, http.StatusInternalServerError, "assignment insert failed: "+err.Error())
+			return
+		}
 	}
 	if _, err := tx.ExecContext(r.Context(), `
 		UPDATE purchases
@@ -444,6 +561,7 @@ func (h *Handlers) ListPurchases(w http.ResponseWriter, r *http.Request) {
 		SELECT p.id, p.org_id, p.adventure_slug, COALESCE(a.title, ''),
 		       p.max_players, p.amount_cents, p.currency, p.provider,
 		       COALESCE(p.provider_session_id, ''), p.state, p.assignment_id,
+		       p.top_up_assignment_id,
 		       p.created_at, COALESCE(p.paid_at, ''),
 		       COALESCE(p.stripe_invoice_url, ''),
 		       COALESCE(p.billed_at, '')
@@ -471,10 +589,11 @@ func (h *Handlers) ListPurchases(w http.ResponseWriter, r *http.Request) {
 		var (
 			d          purchaseDTO
 			assignment sql.NullInt64
+			topUp      sql.NullInt64
 		)
 		if err := rows.Scan(&d.ID, &d.OrgID, &d.AdventureSlug, &d.AdventureTitle,
 			&d.MaxPlayers, &d.AmountCents, &d.Currency, &d.Provider,
-			&d.ProviderSessionID, &d.State, &assignment,
+			&d.ProviderSessionID, &d.State, &assignment, &topUp,
 			&d.CreatedAt, &d.PaidAt, &d.InvoiceURL, &d.BilledAt); err != nil {
 			httpx.Error(w, http.StatusInternalServerError, "scan failed")
 			return
@@ -482,6 +601,10 @@ func (h *Handlers) ListPurchases(w http.ResponseWriter, r *http.Request) {
 		if assignment.Valid {
 			v := assignment.Int64
 			d.AssignmentID = &v
+		}
+		if topUp.Valid {
+			v := topUp.Int64
+			d.TopUpAssignmentID = &v
 		}
 		out = append(out, d)
 	}
@@ -500,11 +623,13 @@ func (h *Handlers) GetPurchase(w http.ResponseWriter, r *http.Request) {
 	var (
 		d          purchaseDTO
 		assignment sql.NullInt64
+		topUp      sql.NullInt64
 	)
 	err = h.DB.QueryRowContext(r.Context(), `
 		SELECT p.id, p.org_id, p.adventure_slug, COALESCE(a.title, ''),
 		       p.max_players, p.amount_cents, p.currency, p.provider,
 		       COALESCE(p.provider_session_id, ''), p.state, p.assignment_id,
+		       p.top_up_assignment_id,
 		       p.created_at, COALESCE(p.paid_at, ''),
 		       COALESCE(p.stripe_invoice_url, ''),
 		       COALESCE(p.billed_at, '')
@@ -513,7 +638,7 @@ func (h *Handlers) GetPurchase(w http.ResponseWriter, r *http.Request) {
 		WHERE p.id = $1
 	`, purchaseID).Scan(&d.ID, &d.OrgID, &d.AdventureSlug, &d.AdventureTitle,
 		&d.MaxPlayers, &d.AmountCents, &d.Currency, &d.Provider,
-		&d.ProviderSessionID, &d.State, &assignment, &d.CreatedAt, &d.PaidAt, &d.InvoiceURL, &d.BilledAt)
+		&d.ProviderSessionID, &d.State, &assignment, &topUp, &d.CreatedAt, &d.PaidAt, &d.InvoiceURL, &d.BilledAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		httpx.Error(w, http.StatusNotFound, "purchase not found")
 		return
@@ -529,6 +654,10 @@ func (h *Handlers) GetPurchase(w http.ResponseWriter, r *http.Request) {
 	if assignment.Valid {
 		v := assignment.Int64
 		d.AssignmentID = &v
+	}
+	if topUp.Valid {
+		v := topUp.Int64
+		d.TopUpAssignmentID = &v
 	}
 	d.CheckoutURL = fmt.Sprintf("/purchase/%d", d.ID)
 	httpx.JSON(w, http.StatusOK, d)

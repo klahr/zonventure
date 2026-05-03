@@ -5276,6 +5276,93 @@ async function openPurchaseModal(adv) {
   });
 }
 
+// openTopUpModal is the "buy more slots for this event" affordance —
+// posts the same /api/admin/purchases endpoint as the first-time buy
+// but with top_up_assignment_id set, which makes the server bump the
+// existing assignment's max_players cap instead of minting a new one.
+// Pricing respects the per-event free band: any of the addition that
+// stays inside "first 15 in this event" is free; anything above the
+// band charges PRICE_CENTS per slot.
+async function openTopUpModal(event, adventure) {
+  const { PRICE_CENTS, FREE, fmtMoney } = pricingHelpers();
+  const trusted = activeOrgIsTrusted();
+  const previous = event.max_players || 0;
+  // chargeable for a top-up: how many of the added slots actually
+  // cross above the free band, given the existing event total.
+  const above = (n) => Math.max(0, n - FREE);
+  const chargeable = (added) => (above(previous + added) - above(previous)) * PRICE_CENTS;
+  const submit = async (provider, n) => {
+    const body = {
+      adventure_slug: event.adventure_slug,
+      max_players: n,
+      top_up_assignment_id: event.assignment_id,
+    };
+    if (provider) body.provider = provider;
+    const r = await api('/api/admin/purchases', {
+      method: 'POST', body: JSON.stringify(body),
+    });
+    if (r.status !== 201) {
+      toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+      return;
+    }
+    if (r.body.state === 'paid') {
+      toastOk(t('{{n}} more slots added', { n }));
+      // Stay on the event — the cap bump is local to this event,
+      // so re-render it instead of bouncing through #adventures.
+      renderRoute();
+      return;
+    }
+    location.href = r.body.checkout_url;
+  };
+  const eventLabel = adventure?.title || event.adventure_slug || t('this event');
+  await modal(t('Buy more slots'), ({ body, close }) => {
+    const players = h('input', { type: 'number', min: '1', max: '500', value: '5', required: true });
+    const totalEl = h('strong', {}, '');
+    const update = () => {
+      const n = Math.max(1, parseInt(players.value, 10) || 0);
+      totalEl.textContent = fmtMoney(chargeable(n));
+    };
+    players.addEventListener('input', update);
+    update();
+    const payNowBtn = h('button', { class: 'btn primary', type: 'submit' }, t('Continue'));
+    const invoiceBtn = trusted
+      ? h('button', { class: 'btn', type: 'button',
+          title: t('Skip Stripe — your finance team will get an invoice from us.'),
+          on: { click: async () => {
+            const n = Math.max(1, parseInt(players.value, 10) || 1);
+            close(true);
+            await submit('invoice', n);
+          } } },
+          t('Add to invoice'))
+      : null;
+    const form = h('form', {},
+      h('p', {},
+        t('"{{title}}" currently has {{n}} player slots. How many more do you want?',
+          { title: eventLabel, n: previous })),
+      h('label', { class: 'field' },
+        h('span', {}, t('Additional players')), players),
+      h('p', { class: 'muted' },
+        t('Total: '), totalEl,
+        ' ',
+        h('span', { class: 'muted', style: 'font-size:.85rem' },
+          previous >= FREE
+            ? t('({{price}} per added player)', { price: fmtMoney(PRICE_CENTS) })
+            : t('(first {{n}} in this event are free, then {{price}} per player)',
+                { n: FREE, price: fmtMoney(PRICE_CENTS) }))),
+      h('div', { class: 'row end', style: 'gap:.5rem; flex-wrap:wrap' },
+        h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, t('Cancel')),
+        invoiceBtn,
+        payNowBtn));
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const n = Math.max(1, parseInt(players.value, 10) || 1);
+      close(true);
+      await submit(null, n);
+    });
+    body.append(form);
+  });
+}
+
 async function viewAdventureDetail(view, slug) {
   const r = await api('/api/admin/adventures/' + encodeURIComponent(slug));
   if (!r.ok) { view.replaceChildren(h('p', { class: 'err' }, r.body?.error || t('not found'))); return; }
@@ -6856,6 +6943,19 @@ async function viewRunDetail(view, runID) {
     const cancel = h('button', { class: 'btn danger lifecycle-btn', on: { click: () => confirmCancel(event) } },
       icon(ICONS.trash), t('Cancel event'));
     actions.append(cancel);
+  }
+  // Top-up: buy more player slots for the assignment behind this
+  // event. Hidden on terminal-state events (no point growing a
+  // finished/cancelled event) and when the event is admin-seeded
+  // without an assignment row to grow.
+  if ((event.state === 'scheduled' || event.state === 'running' || event.state === 'paused')
+      && event.assignment_id) {
+    const topUp = h('button', {
+      class: 'btn lifecycle-btn',
+      on: { click: () => openTopUpModal(event, adventure) },
+      title: t('Add more player slots to this event'),
+    }, icon(ICONS.coins), t('Buy more slots'));
+    actions.append(topUp);
   }
   // Results export is always available once there are teams — arrangers
   // often want to grab mid-event standings too, not just post-mortem.

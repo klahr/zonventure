@@ -227,6 +227,7 @@ func (h *Handlers) handleCheckoutCompleted(ctx context.Context, event stripe.Eve
 		maxPlayers    int
 		state         string
 		existingAssn  sql.NullInt64
+		topUpID       sql.NullInt64
 	)
 	// FOR UPDATE serialises against ConfirmPurchase and against a
 	// concurrent redelivery of this same webhook event. Without it the
@@ -234,9 +235,9 @@ func (h *Handlers) handleCheckoutCompleted(ctx context.Context, event stripe.Eve
 	// two deliveries can both observe state='pending' and each insert
 	// an assignment row.
 	err = tx.QueryRowContext(ctx, `
-		SELECT org_id, adventure_slug, max_players, state, assignment_id
+		SELECT org_id, adventure_slug, max_players, state, assignment_id, top_up_assignment_id
 		FROM purchases WHERE id = $1 FOR UPDATE
-	`, purchaseID).Scan(&orgID, &advSlug, &maxPlayers, &state, &existingAssn)
+	`, purchaseID).Scan(&orgID, &advSlug, &maxPlayers, &state, &existingAssn, &topUpID)
 	if errors.Is(err, sql.ErrNoRows) {
 		// Purchase row was deleted between checkout creation and
 		// payment success. Nothing to fulfil.
@@ -257,11 +258,28 @@ func (h *Handlers) handleCheckoutCompleted(ctx context.Context, event stripe.Eve
 	}
 
 	var assID int64
-	if err := tx.QueryRowContext(ctx, `
-		INSERT INTO adventure_assignments(org_id, adventure_slug, max_players)
-		VALUES ($1, $2, $3) RETURNING id
-	`, orgID, advSlug, maxPlayers).Scan(&assID); err != nil {
-		return fmt.Errorf("assignment insert: %w", err)
+	if topUpID.Valid {
+		// Top-up: pin the existing assignment row, bump its cap. The
+		// purchase row's assignment_id will end up equal to the
+		// top-up target so downstream listings link to the same
+		// assignment a fresh-buy would have created.
+		if err := tx.QueryRowContext(ctx,
+			`SELECT id FROM adventure_assignments WHERE id = $1 AND org_id = $2 FOR UPDATE`,
+			topUpID.Int64, orgID).Scan(&assID); err != nil {
+			return fmt.Errorf("top-up lookup: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE adventure_assignments SET max_players = max_players + $1 WHERE id = $2`,
+			maxPlayers, assID); err != nil {
+			return fmt.Errorf("top-up bump: %w", err)
+		}
+	} else {
+		if err := tx.QueryRowContext(ctx, `
+			INSERT INTO adventure_assignments(org_id, adventure_slug, max_players)
+			VALUES ($1, $2, $3) RETURNING id
+		`, orgID, advSlug, maxPlayers).Scan(&assID); err != nil {
+			return fmt.Errorf("assignment insert: %w", err)
+		}
 	}
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE purchases
