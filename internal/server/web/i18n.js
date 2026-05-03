@@ -349,6 +349,11 @@
       'paused': 'pausad',
       'scheduled': 'schemalagd',
       'completed': 'slutförd',
+      // ---- purchase states ----
+      'paid':     'betald',
+      'pending':  'väntar',
+      'refunded': 'återbetald',
+      'failed':   'misslyckad',
       'waiting': 'väntar',
       // ---- admin Purchases page (financial workflow) ----
       'To bill': 'Att fakturera',

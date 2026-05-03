@@ -5026,7 +5026,7 @@ async function viewPurchases(view) {
           h('td', {},
             h('span', {
               class: 'pill ' + (p.state === 'paid' ? 'success' : p.state === 'pending' ? 'warning' : p.state === 'refunded' ? 'danger' : ''),
-            }, stateGlyph(p.state) + p.state),
+            }, stateGlyph(p.state) + t(p.state || '')),
             p.provider === 'invoice'
               ? h('span', { class: 'pill', style: 'margin-left:.35rem; font-size:.7rem' }, t('invoice'))
               : null,
@@ -8952,7 +8952,7 @@ function renderOrganizationCard(org, adventures, purchases) {
                 class: 'pill ' + (p.state === 'paid' ? 'success'
                   : p.state === 'pending' ? 'warning'
                   : p.state === 'refunded' ? 'danger' : ''),
-              }, stateGlyph(p.state) + p.state)),
+              }, stateGlyph(p.state) + t(p.state || ''))),
               h('td', { class: 'muted mono', style: 'font-size:.8rem' }, p.created_at),
               h('td', { class: 'row', style: 'gap:.5rem; flex-wrap:wrap; justify-content:flex-end' },
                 renderPurchaseActions(p)));
