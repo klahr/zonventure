@@ -7274,12 +7274,26 @@ async function viewEventControl(view, runID) {
   const mapCard = h('div', { class: 'card' },
     h('h2', { style: 'margin:0 0 .5rem' }, t('Map')),
     mapHost);
+  // Leaflet rejects L.map() on a host that already has a map attached,
+  // so without an explicit teardown a filter-driven re-render would
+  // silently fail and the map would freeze on whatever the first call
+  // drew. We capture the instance and remove() it before each rebuild.
+  let mapInstance = null;
   const buildMap = () => {
     if (!adventure) return;
+    if (mapInstance) {
+      try { mapInstance.remove(); } catch { /* leaflet teardown is best-effort */ }
+      mapInstance = null;
+    }
+    // .remove() detaches the map but leaves Leaflet's _leaflet_id on
+    // the host element; clearing children + removing that marker
+    // gives the next L.map() a truly fresh container.
+    mapHost.replaceChildren();
+    delete mapHost._leaflet_id;
     const visibleTeams = teams.filter(teamMatches);
     const visibleIDs = new Set(visibleTeams.map((tm) => tm.id));
     const visibleTracks = tracks.filter((tr) => visibleIDs.has(tr.team_id));
-    initRunMap(mapHost, adventure, visibleTeams, visibleTracks);
+    mapInstance = initRunMap(mapHost, adventure, visibleTeams, visibleTracks);
   };
 
   // === Compose + render ===
@@ -7303,11 +7317,15 @@ async function viewEventControl(view, runID) {
 
 // initRunMap mounts a Leaflet map inside host. Puzzle pins come from the
 // adventure (all pages always have a location now); per-team polylines and
-// latest-position dots come from the tracks payload.
+// latest-position dots come from the tracks payload. Returns the map
+// instance so callers can .remove() it before re-initialising — Leaflet
+// rejects L.map() on a host that already has a map attached, and a
+// silent failure is exactly what causes filter changes to look like
+// they don't apply.
 function initRunMap(host, adventure, teams, tracks) {
   if (typeof L === 'undefined') {
     host.replaceChildren(h('div', { class: 'empty' }, t('Map library is still loading — refresh the page.')));
-    return;
+    return null;
   }
   const map = L.map(host, { scrollWheelZoom: false }).setView([59.3293, 18.0686], 14);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -7374,6 +7392,7 @@ function initRunMap(host, adventure, teams, tracks) {
   if (bounds.isValid()) {
     map.fitBounds(bounds, { padding: [24, 24] });
   }
+  return map;
 }
 
 // renderEventFeed turns the run_events JSON into a readable timeline.
