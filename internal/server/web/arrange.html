@@ -4051,7 +4051,6 @@ let arrangePushTimer = null;
 // every few seconds. Keys are scoped by event/team ID so the state
 // doesn't bleed between different events.
 const arrangeUIState = {
-  mapOpen: new Map(),            // event_id -> bool (overrides state-based default)
   teamLinksPanelOpen: new Map(), // event_id -> bool (overrides roster-size default)
   teamLinkRowOpen: new Set(),    // team_id; presence = expanded
   // Race-control team filter — multi-select set of team IDs scoped per
@@ -6468,8 +6467,8 @@ function renderShareBar(event) {
   const summary = h('summary', {
     style: 'cursor:pointer; list-style:none; display:flex; align-items:center; gap:.6rem',
   },
-    h('span', { style: 'font-size:.7rem; font-weight:800; text-transform:uppercase; letter-spacing:.06em; color:var(--muted)' }, t('Public live view')),
-    h('span', { class: 'muted', style: 'font-size:.85rem' }, t('Share on a TV — token URL, no login needed')),
+    h('span', { style: 'font-size:.7rem; font-weight:800; text-transform:uppercase; letter-spacing:.06em; color:var(--muted)' }, t('Live view')),
+    h('span', { class: 'muted', style: 'font-size:.85rem' }, t('Open the link on any screen — no login needed.')),
   );
   return h('details', { class: 'card share-bar', style: 'padding:.85rem 1rem' },
     summary, body,
@@ -6643,16 +6642,16 @@ async function viewRunDetail(view, runID) {
   // the events fetch inside the Promise.all to avoid this dependency
   // — that was a wasted round-trip and silently dropped the
   // adventure on any HTTP-level error from the inner second call.
-  const [detail, positions, tracksR, eventsR] = await Promise.all([
+  // The live map + per-team tracks moved to /control — this page is
+  // setup + wrap-up now, so we only fetch the structured detail and
+  // the historical activity log.
+  const [detail, eventsR] = await Promise.all([
     api('/api/admin/events/' + runID),
-    api('/api/admin/events/' + runID + '/positions'),
-    api('/api/admin/events/' + runID + '/tracks'),
     api('/api/admin/events/' + runID + '/activity'),
   ]);
   if (!detail.ok) { view.replaceChildren(h('p', { class: 'err' }, detail.body?.error || t('not found'))); return; }
   const event = detail.body.event;
   const teams = detail.body.teams || [];
-  const tracks = tracksR.body?.tracks || [];
   const events = eventsR.body?.events || [];
 
   // Adventure: read after detail so we know the slug. ok-check
@@ -6674,7 +6673,7 @@ async function viewRunDetail(view, runID) {
     actions.append(h('button', {
       class: 'btn lifecycle-btn' + (live ? ' primary' : ''),
       on: { click: () => nav('#events/' + event.id + '/control') },
-      title: t('Live cockpit: leaderboard, map, and activity feed updating in real time'),
+      title: t('Live leaderboard, map, and activity'),
     }, icon(ICONS.eye), t('Race control')));
   }
   if (event.state === 'scheduled') {
@@ -6684,16 +6683,11 @@ async function viewRunDetail(view, runID) {
       icon(ICONS.schedule), t('Reschedule'));
     actions.append(start, sched);
   }
-  if (event.state === 'running') {
-    const pause = h('button', { class: 'btn lifecycle-btn warning', on: { click: () => confirmPause(event) } },
-      icon(ICONS.moon), t('Pause'));
-    actions.append(pause);
-  }
-  if (event.state === 'paused') {
-    const resume = h('button', { class: 'btn primary lifecycle-btn', on: { click: () => transition(event.id, 'resume') } },
-      icon(ICONS.play), t('Resume'));
-    actions.append(resume);
-  }
+  // Pause / Resume live on the Race control view — that's where the
+  // arranger watches the race in real time and would naturally reach
+  // for them. Keeping them here too just doubled up the same control
+  // surface in two places. Cancel stays because it's reachable from
+  // a scheduled event too (no race-control entry until running).
   // Cancel is the escape hatch for an event that needs to end before
   // it has finished — equipment broke, weather, the venue dropped out.
   // Allowed from scheduled / running / paused; the server gates with
@@ -6764,46 +6758,12 @@ async function viewRunDetail(view, runID) {
   }
   const STUCK_MS = 10 * 60 * 1000;
 
-  // Build team → colour map up-front so legend, trace and dots match.
+  // Build team → colour index up-front so the swatch next to each
+  // team in the table matches the leaderboard colours on Race control.
+  // (The legend + area map that used to live here moved to Race
+  // control, which has the live positions and full-width map.)
   const teamIndex = new Map();
   teams.forEach((t, i) => teamIndex.set(t.id, i));
-  const teamLegend = teams.map((t, i) => h('span', {},
-    h('span', { class: 'sw', style: `background:${teamColor(t.id, i)}` }),
-    t.name));
-
-  const mapHost = h('div', { class: 'map-host', id: 'run-map-' + event.id });
-  const legend = h('div', { class: 'map-legend' },
-    h('span', {}, h('span', { class: 'sw', style: 'background:var(--accent)' }), t('Gated puzzle')),
-    h('span', {}, h('span', { class: 'sw', style: 'background:var(--ink)' }), t('Puzzle')),
-    ...teamLegend);
-
-  // Collapsible area map card. Independent of event.show_map —
-  // that flag only gates the *public* live view's audience map. The
-  // arranger's area map defaults open during running / paused events
-  // (where it's most useful), collapsed otherwise. arrangeUIState.mapOpen
-  // overrides that default once the arranger has clicked the header,
-  // so WS pushes don't refold their choice on the next re-render.
-  // Leaflet needs a sized container at init, so initRunMap runs
-  // lazily when the body first becomes visible.
-  const opMapDefault = event.state === 'running' || event.state === 'paused';
-  const opMapOpen = arrangeUIState.mapOpen.get(event.id) ?? opMapDefault;
-  const mapBody = h('div', { style: opMapOpen ? '' : 'display:none' }, mapHost, legend);
-  const mapCaret = h('span', { style: 'margin-left:auto; color:var(--muted); font-size:.85rem' },
-    opMapOpen ? t('Hide') : t('Show'));
-  const mapHeader = h('div', { class: 'row between', style: 'cursor:pointer; user-select:none' },
-    h('h2', { style: 'margin:0' }, t('Area map')), mapCaret);
-  let mapReady = false;
-  const ensureMap = () => {
-    if (!mapReady && adventure) { initRunMap(mapHost, adventure, teams, tracks); mapReady = true; }
-  };
-  mapHeader.addEventListener('click', () => {
-    const nowOpen = mapBody.style.display === 'none';
-    mapBody.style.display = nowOpen ? '' : 'none';
-    mapCaret.textContent  = nowOpen ? t('Hide') : t('Show');
-    arrangeUIState.mapOpen.set(event.id, nowOpen);
-    if (nowOpen) ensureMap();
-  });
-  const mapCard = h('div', { class: 'card' }, mapHeader, mapBody);
 
   // Sticky lifecycle bar — pins to the top of the scroll area so big
   // Start/Pause/Resume stay reachable while scrolling through teams.
@@ -7013,14 +6973,8 @@ async function viewRunDetail(view, runID) {
     renderEventResultsCard(event, teams),
     renderTeamLinksPanel(event, teams),
     renderShareBar(event),
-    mapCard,
     h('div', { class: 'grid cols-2' }, teamsCard, eventLogCard),
   ].filter(Boolean));
-
-  // Initialise Leaflet now if the area map is open on arrival
-  // (running/paused). Otherwise the click handler runs init the
-  // first time the arranger expands it.
-  if (opMapOpen) ensureMap();
 }
 
 // viewEventControl is the live "race control" cockpit — a verbose,
@@ -7126,8 +7080,8 @@ async function viewEventControl(view, runID) {
       on: { click: () => confirmCancel(event) },
     }, icon(ICONS.trash), t('Cancel event')));
   }
-  // Lobby-TV share — copies the public /live URL to the clipboard so
-  // the arranger can paste it on the venue's TV.
+  // Live view share — copies the public /live URL to the clipboard
+  // so the arranger can paste it on a screen for spectators.
   const liveURL = location.origin + '/live/' + encodeURIComponent(event.live_token || '');
   lifecycleActions.append(h('button', {
     class: 'btn ghost small',
@@ -7135,12 +7089,12 @@ async function viewEventControl(view, runID) {
     on: { click: async () => {
       try {
         await navigator.clipboard.writeText(liveURL);
-        toastOk(t('Lobby-TV link copied'));
+        toastOk(t('Live view link copied'));
       } catch {
         toastErr(t('Copy failed — paste from the address bar manually.'));
       }
     } },
-  }, icon(ICONS.copy), t('Copy lobby-TV link')));
+  }, icon(ICONS.copy), t('Copy live view link')));
 
   const header = h('div', { class: 'lifecycle-bar' },
     h('div', { class: 'lifecycle-left' },
@@ -7843,7 +7797,7 @@ async function skipPuzzle(team, close) {
 async function confirmWithdrawTeam(eventID, team) {
   const ok = await modal(t('Mark “{{name}}” as withdrawn?', { name: team.name }), ({ body, close }) => {
     body.append(
-      h('p', {}, t('They stay in the recap as "withdrew at puzzle {{n}}", but stop counting against the leaderboard and the "stuck" detector. You can flip it back if they return.',
+      h('p', {}, t('They\'ll show in the recap as "withdrew at puzzle {{n}}". You can undo this if they return.',
         { n: team.page_index + 1 })),
       h('div', { class: 'row end' },
         h('button', { class: 'btn', on: { click: () => close(false) } }, t('Cancel')),

@@ -355,18 +355,17 @@
       'Mark returned':  'Markera som tillbaka',
       'Mark “{{name}}” as withdrawn?':
         'Markera "{{name}}" som tillbakadraget?',
-      'They stay in the recap as "withdrew at puzzle {{n}}", but stop counting against the leaderboard and the "stuck" detector. You can flip it back if they return.':
-        'De finns kvar i sammanfattningen som "drog sig ur vid pussel {{n}}", men räknas inte längre i topplistan eller "fastnat"-detektorn. Du kan ångra det om de återvänder.',
+      'They\'ll show in the recap as "withdrew at puzzle {{n}}". You can undo this if they return.':
+        'De visas i sammanfattningen som "drog sig ur vid pussel {{n}}". Du kan ångra det om de kommer tillbaka.',
       'Team marked as withdrawn': 'Lag markerat som tillbakadraget',
       'Team is active again': 'Lag är aktivt igen',
       'withdrew': 'tillbakadraget',
-      // ---- race control (live cockpit) ----
+      // ---- race control ----
       'Race control': 'Tävlingsledning',
-      'Live cockpit: leaderboard, map, and activity feed updating in real time':
-        'Live-vy: topplista, karta och aktivitetsflöde uppdateras i realtid',
+      'Live leaderboard, map, and activity': 'Live topplista, karta och aktivitet',
       'Back to event': 'Tillbaka till eventet',
-      'Copy lobby-TV link': 'Kopiera lobby-tv-länk',
-      'Lobby-TV link copied': 'Lobby-tv-länk kopierad',
+      'Copy live view link': 'Kopiera länk till live-vyn',
+      'Live view link copied': 'Länk till live-vyn kopierad',
       'Copy failed — paste from the address bar manually.':
         'Kopiering misslyckades — klistra in från adressfältet manuellt.',
       'Show:': 'Visa:',
@@ -494,9 +493,9 @@
       'Map enabled on live view': 'Karta aktiverad i livevyn',
       'Map hidden': 'Karta dold',
       'Show real-time map': 'Visa realtidskarta',
-      'Public live view': 'Offentlig livevy',
-      'Share on a TV — token URL, no login needed':
-        'Visa på tv — token-länk, ingen inloggning behövs',
+      'Live view': 'Live-vy',
+      'Open the link on any screen — no login needed.':
+        'Öppna länken på valfri skärm — ingen inloggning behövs.',
       // ---- run detail ----
       'Event #{{id}}': 'Event #{{id}}',
       'Lifecycle': 'Livscykel',
@@ -504,7 +503,6 @@
       'Scheduled to auto-start {{when}}': 'Schemalagd att autostarta {{when}}',
       'Not started yet': 'Inte startad än',
       'Map': 'Karta',
-      'Gated puzzle': 'Områdespussel',
       'New team': 'Nytt lag',
       'Team': 'Lag',
       'done': 'klart',
@@ -897,7 +895,6 @@
       '—': '—',
       '(no time set)': '(ingen tid satt)',
       '{{i}} / {{n}}': '{{i}} / {{n}}',
-      'Hide': 'Dölj',
       'Show': 'Visa',
       'When': 'När',
       'Date': 'Datum',
@@ -1295,7 +1292,6 @@
       'starts in': 'startar om',
       'now': 'nu',
       '{{n}}/{{m}} claimed': '{{n}}/{{m}} hämtade',
-      'Area map': 'Områdeskarta',
       'Search by name or email': 'Sök på namn eller e-post',
       'All': 'Alla',
       'Stuck': 'Fastnat',
