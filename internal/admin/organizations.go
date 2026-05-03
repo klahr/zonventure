@@ -149,6 +149,66 @@ type createOrgRequest struct {
 	Name string `json:"name"`
 }
 
+// CreateOwnOrg is the self-service "I want my own org" affordance.
+// Available to any authenticated non-admin: a lobby user (no
+// memberships) creates their first org, or an existing org user adds
+// a second org they're an admin of. The caller is automatically
+// inserted as the new org's org_admin in the same transaction so
+// half-state can't strand them outside their own org.
+//
+// Admins are blocked here — they don't carry memberships at all and
+// have CreateOrganization as the operator-side path.
+func (h *Handlers) CreateOwnOrg(w http.ResponseWriter, r *http.Request) {
+	me, _ := auth.FromContext(r.Context())
+	if me.IsAdmin {
+		httpx.Error(w, http.StatusBadRequest, "admins use the operator-side endpoint to create organizations")
+		return
+	}
+	var req createOrgRequest
+	if !httpx.DecodeJSON(w, r, &req) {
+		return
+	}
+	req.Name = strings.TrimSpace(req.Name)
+	if req.Name == "" {
+		httpx.Error(w, http.StatusBadRequest, "name required")
+		return
+	}
+	tx, err := h.DB.BeginTx(r.Context(), nil)
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "begin tx failed")
+		return
+	}
+	defer tx.Rollback() //nolint:errcheck
+	var id int64
+	if err := tx.QueryRowContext(r.Context(),
+		`INSERT INTO organizations(name) VALUES ($1) RETURNING id`, req.Name).Scan(&id); err != nil {
+		httpx.Error(w, http.StatusConflict, "name already used")
+		return
+	}
+	if _, err := tx.ExecContext(r.Context(), `
+		INSERT INTO org_memberships(user_id, org_id, role) VALUES ($1, $2, 'org_admin')
+	`, me.ID, id); err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "membership insert failed")
+		return
+	}
+	// Repoint the caller's current session at the new org so the next
+	// page load drops them into it rather than back into the lobby
+	// or whatever org they were on before.
+	if _, err := tx.ExecContext(r.Context(), `
+		UPDATE sessions SET active_org_id = $1 WHERE user_id = $2
+	`, id, me.ID); err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "session pin failed")
+		return
+	}
+	if err := tx.Commit(); err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "commit failed")
+		return
+	}
+	httpx.JSON(w, http.StatusCreated, organizationDTO{
+		ID: id, Name: req.Name, Members: []orgMemberDTO{}, Assignments: []assignmentDTO{},
+	})
+}
+
 // CreateOrganization creates a new organization. Admin-only.
 func (h *Handlers) CreateOrganization(w http.ResponseWriter, r *http.Request) {
 	var req createOrgRequest
@@ -465,19 +525,15 @@ func (h *Handlers) DeleteOrgMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if memberOf <= 1 {
-		// Last (or only) membership — preserve legacy hard-delete so
-		// the user doesn't end up as a member-of-nothing ghost.
-		if _, err := h.DB.ExecContext(r.Context(), `DELETE FROM users WHERE id = $1`, userID); err != nil {
-			httpx.Error(w, http.StatusInternalServerError, "delete failed")
-			return
-		}
-		httpx.JSON(w, http.StatusNoContent, nil)
-		return
-	}
+	// memberOf is read above for legacy reasons; org-less users are
+	// now a first-class concept (RoleLobby), so dropping the last
+	// membership is non-destructive — the user stays around and can
+	// be re-invited or create a new org from their dashboard. We no
+	// longer hard-delete on the last membership.
+	_ = memberOf
 
-	// Multi-org user — surgical remove. Wrap in a tx so the
-	// membership drop and active-session reset commit together.
+	// Drop the membership. Wrap in a tx so the drop and the
+	// active-session reset commit together.
 	tx, err := h.DB.BeginTx(r.Context(), nil)
 	if err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "begin tx failed")

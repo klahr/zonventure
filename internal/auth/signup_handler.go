@@ -57,10 +57,8 @@ func (h *Handlers) Signup(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusBadRequest, "email is not a valid address")
 		return
 	}
-	if req.OrgName == "" {
-		httpx.Error(w, http.StatusBadRequest, "organization name required")
-		return
-	}
+	// org_name is optional. Empty means "create a lobby user with no
+	// org membership" — they pick or create one after they land.
 	if err := ValidatePassword(req.Password); err != nil {
 		httpx.Error(w, http.StatusBadRequest, err.Error())
 		return

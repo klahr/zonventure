@@ -46,20 +46,19 @@ type SignupResult struct {
 	VerificationToken string
 }
 
-// Signup creates an organization + an org_admin user + an unverified
-// email + a one-shot verification token, all in one transaction so a
-// crash mid-way leaves no half-rows. The username column doubles as the
-// login identifier and is set to the (lower-cased, normalised) email
-// — keeps the form simple (no username field for the new arranger to
-// invent).
+// Signup creates a user + an unverified email + a one-shot
+// verification token in one transaction. When orgName is non-empty it
+// also mints a fresh organization and makes the user its org_admin;
+// when empty the user lands in the "lobby" — no memberships, no
+// active org — and either creates an org later from the dashboard or
+// accepts an invitation. The username column doubles as the login
+// identifier and is set to the (lower-cased, normalised) email so
+// the signup form stays minimal.
 func Signup(ctx context.Context, db *sql.DB, email, password, orgName string) (SignupResult, error) {
 	email = strings.TrimSpace(email)
 	orgName = strings.TrimSpace(orgName)
 	if email == "" || !strings.Contains(email, "@") {
 		return SignupResult{}, ErrSignupBadEmail
-	}
-	if orgName == "" {
-		return SignupResult{}, ErrSignupBadOrgName
 	}
 	if err := ValidatePassword(password); err != nil {
 		return SignupResult{}, err
@@ -71,13 +70,20 @@ func Signup(ctx context.Context, db *sql.DB, email, password, orgName string) (S
 	}
 	defer tx.Rollback() //nolint:errcheck — Commit takes over on success
 
-	var orgID int64
-	if err := tx.QueryRowContext(ctx,
-		`INSERT INTO organizations(name) VALUES ($1) RETURNING id`, orgName).Scan(&orgID); err != nil {
-		// Postgres reports a unique-violation error for both unique
-		// columns we touch (organizations.name and users.email);
-		// since we know the table here, attribute it correctly.
-		return SignupResult{}, fmt.Errorf("%w: %v", ErrSignupOrgNameTaken, err)
+	// orgName is optional. Empty → user goes into the lobby (no org,
+	// no membership). Set → mint the org first so we can attach the
+	// org_admin membership atomically.
+	var orgIDArg sql.NullInt64
+	if orgName != "" {
+		var oid int64
+		if err := tx.QueryRowContext(ctx,
+			`INSERT INTO organizations(name) VALUES ($1) RETURNING id`, orgName).Scan(&oid); err != nil {
+			// Postgres reports a unique-violation error for both unique
+			// columns we touch (organizations.name and users.email);
+			// since we know the table here, attribute it correctly.
+			return SignupResult{}, fmt.Errorf("%w: %v", ErrSignupOrgNameTaken, err)
+		}
+		orgIDArg = sql.NullInt64{Int64: oid, Valid: true}
 	}
 
 	hash, err := HashPassword(password)
@@ -94,13 +100,15 @@ func Signup(ctx context.Context, db *sql.DB, email, password, orgName string) (S
 		return SignupResult{}, fmt.Errorf("%w: %v", ErrSignupEmailTaken, err)
 	}
 
-	// Self-signup always creates an org_admin membership in the
-	// just-minted org — the user is the only person in there, so
-	// they get the keys.
-	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO org_memberships(user_id, org_id, role) VALUES ($1, $2, 'org_admin')
-	`, userID, orgID); err != nil {
-		return SignupResult{}, err
+	// Self-signup with org_name attaches the user as that org's only
+	// member with the org_admin role. Without org_name we skip the
+	// membership insert entirely — the caller is a lobby user.
+	if orgIDArg.Valid {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO org_memberships(user_id, org_id, role) VALUES ($1, $2, 'org_admin')
+		`, userID, orgIDArg.Int64); err != nil {
+			return SignupResult{}, err
+		}
 	}
 
 	verifyTok, err := newVerificationToken()
@@ -116,10 +124,10 @@ func Signup(ctx context.Context, db *sql.DB, email, password, orgName string) (S
 	}
 
 	// Issue the staff session inside the same tx so login is "free"
-	// after a successful signup. The cookie is set by the handler.
-	// active_org_id is the just-created org — signup always lands the
-	// caller into their new org, no picker needed.
-	sessionTok, err := newSession(ctx, txAsExecutor{tx}, userID, "", "", sql.NullInt64{Int64: orgID, Valid: true})
+	// after a successful signup. active_org_id is the just-created
+	// org when one was minted; otherwise NULL — the lobby dashboard
+	// renders for those.
+	sessionTok, err := newSession(ctx, txAsExecutor{tx}, userID, "", "", orgIDArg)
 	if err != nil {
 		return SignupResult{}, err
 	}
@@ -127,11 +135,19 @@ func Signup(ctx context.Context, db *sql.DB, email, password, orgName string) (S
 	if err := tx.Commit(); err != nil {
 		return SignupResult{}, err
 	}
+	user := User{
+		ID: userID, Username: email, IsAdmin: false,
+		Email: email, EmailVerified: false,
+	}
+	if orgIDArg.Valid {
+		oid := orgIDArg.Int64
+		user.OrgID = &oid
+		user.Role = RoleOrgAdmin
+	} else {
+		user.Role = RoleLobby
+	}
 	return SignupResult{
-		User: User{
-			ID: userID, Username: email, IsAdmin: false, Role: RoleOrgAdmin,
-			OrgID: &orgID, Email: email, EmailVerified: false,
-		},
+		User:              user,
 		SessionToken:      sessionTok,
 		VerificationToken: verifyTok,
 	}, nil

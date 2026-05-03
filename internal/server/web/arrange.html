@@ -3634,8 +3634,10 @@ function renderSignup(err) {
       h('span', {}, t('Email')),
       h('input', { name: 'email', type: 'email', autocomplete: 'email', required: true })),
     h('label', { class: 'field' },
-      h('span', {}, t('Organization name')),
-      h('input', { name: 'org_name', autocomplete: 'organization', required: true })),
+      h('span', {}, t('Organization name (optional)')),
+      h('input', { name: 'org_name', autocomplete: 'organization' }),
+      h('small', { class: 'muted', style: 'display:block; margin-top:.2rem' },
+        t('Leave blank if you\'re joining an existing organization or just want to look around — you can create one later.'))),
     h('label', { class: 'field' },
       h('span', {}, t('Password (min 8)')),
       h('input', { name: 'password', type: 'password', autocomplete: 'new-password', minlength: 8, required: true })),
@@ -3684,11 +3686,22 @@ function renderShell() {
   const role = state.me.role;
   const isAdmin = role === 'admin';
   const isOrgAdmin = role === 'org_admin';
+  const isLobby = role === 'lobby';
   // Admin runs the multi-tenant plumbing (organizations, other admins).
   // Org users play the game: adventures, runs, players. Org admins also
-  // manage their organization's members.
+  // manage their organization's members. Lobby users have signed up
+  // but haven't joined or created an org yet — sidebar collapses to
+  // the minimum that's actually navigable.
   let items;
-  if (isAdmin) {
+  if (isLobby) {
+    // Just Dashboard + Settings. The Dashboard renders the empty
+    // state with a "Create organisation" CTA, so the lobby user has
+    // a single place to escape from.
+    items = [
+      ['#dashboard', t('Dashboard'), ICONS.dashboard],
+      ['#settings',  t('Settings'),  ICONS.gear],
+    ];
+  } else if (isAdmin) {
     items = [
       ['#dashboard',     t('Dashboard'),     ICONS.dashboard],
       ['#organizations', t('Organizations'), ICONS.building],
@@ -3965,6 +3978,13 @@ async function renderRoute() {
   // other operator affordances live).
   const adminOnly = ['organizations', 'admins', 'logs'];
   const orgUserOnly = ['adventures', 'store', 'webhooks'];
+  // Lobby users (no memberships) only have Dashboard + Settings to
+  // navigate. Anything else gets redirected back to the empty-state
+  // dashboard rather than 4xx-ing on the API call inside the view.
+  const isLobby = role === 'lobby';
+  if (isLobby && section !== 'dashboard' && section !== 'settings') {
+    nav('#dashboard'); return;
+  }
   if (isAdmin && orgUserOnly.includes(section)) { nav('#organizations'); return; }
   if (!isAdmin && adminOnly.includes(section))   { nav('#dashboard');     return; }
   if (section === 'members' && !isOrgAdmin)      { nav('#dashboard');     return; }
@@ -4181,7 +4201,74 @@ async function logout() {
 /* ========== Dashboard ========== */
 async function viewDashboard(view) {
   if (state.me.role === 'admin') return viewAdminDashboard(view);
+  if (state.me.role === 'lobby') return viewLobbyDashboard(view);
   return viewArrangerDashboard(view);
+}
+
+// viewLobbyDashboard renders the empty-state for users who have
+// signed up but aren't members of any organization yet. Two
+// affordances: create their own org (which makes them its
+// org_admin) or wait for an invitation. Anything that would 500
+// without an org context (events, adventures, purchases) is
+// already hidden by the sidebar collapse upstream.
+async function viewLobbyDashboard(view) {
+  const heading = h('h1', { style: 'margin:0 0 .5rem' }, t('Welcome to Zonventure'));
+  const blurb = h('p', { class: 'muted' },
+    t('You\'re signed in but not part of any organisation yet. Either create one (you\'ll be its admin) or ask someone in an existing organisation to invite you.'));
+  const createBtn = h('button', { class: 'btn primary' },
+    icon(ICONS.building), t('Create an organization'));
+  createBtn.addEventListener('click', () => openCreateOwnOrg());
+  view.replaceChildren(
+    h('div', { class: 'card', style: 'max-width:640px' },
+      heading, blurb,
+      h('div', { class: 'row', style: 'gap:.5rem; flex-wrap:wrap; margin-top:1rem' },
+        createBtn)));
+}
+
+// openCreateOwnOrg is the self-service "spin up my own org" modal.
+// Available to lobby users (their primary path out of the empty
+// state) and to existing org users who want to admin a second org.
+// On success the server pins the caller's session at the new org;
+// we refreshMe + render so the sidebar / dashboard switch over.
+async function openCreateOwnOrg() {
+  await modal(t('Create an organization'), ({ body, close }) => {
+    const nameEl = h('input', { autofocus: true, required: true,
+      placeholder: t('e.g. "Acme Field Trips"') });
+    const status = h('p', { class: 'muted', style: 'font-size:.85rem; min-height:1.2em; margin:.5rem 0 0' });
+    const form = h('form', {},
+      h('label', { class: 'field' },
+        h('span', {}, t('Organization name')), nameEl,
+        h('small', { class: 'muted', style: 'display:block; margin-top:.2rem' },
+          t('You\'ll be the only member to start with — invite teammates afterwards from Settings.'))),
+      status,
+      h('div', { class: 'row end', style: 'gap:.5rem; margin-top:.75rem' },
+        h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, t('Cancel')),
+        h('button', { class: 'btn primary', type: 'submit' }, t('Create'))));
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const name = nameEl.value.trim();
+      if (!name) { status.className = 'err'; status.textContent = t('Name required'); return; }
+      status.className = 'muted'; status.textContent = t('Creating…');
+      const r = await api('/api/admin/me/organizations', {
+        method: 'POST',
+        body: JSON.stringify({ name }),
+      });
+      if (r.status !== 201) {
+        status.className = 'err';
+        status.textContent = r.body?.error || t('error {{status}}', { status: r.status });
+        return;
+      }
+      close(true);
+      await refreshMe();
+      // Land on the new org's dashboard. resetRouteToDashboard ensures
+      // a stale hash from the lobby state doesn't survive.
+      state.route = '#dashboard';
+      history.replaceState(null, '', '#dashboard');
+      render();
+      setTimeout(() => toastOk(t('Organization "{{name}}" created — you\'re its admin', { name })), 50);
+    });
+    body.append(form);
+  });
 }
 
 async function viewArrangerDashboard(view) {
@@ -14204,6 +14291,9 @@ function renderSettingsRoleCard() {
   } else if (role === 'org_member') {
     label = t('Race director');
     blurb = t('You can author adventures and run events in your organisation. Member management is reserved for admins.');
+  } else if (role === 'lobby') {
+    label = t('No organisation yet');
+    blurb = t('You\'re signed in but not part of any organisation. Create one (you\'ll be its admin) or wait for an invitation.');
   } else {
     label = t('Player');
     blurb = t('You play events as a team member. The arranger console is read-only for you.');
@@ -14221,11 +14311,27 @@ function renderSettingsRoleCard() {
         h('span', {}, t('Acting as '),
           h('strong', {}, active.org_name)))
     : null;
+  // Create-org affordance for any non-admin: lobby users use it as
+  // their primary escape hatch, existing org users use it to spin up
+  // a second org they admin. Hidden for global admins (they have
+  // their own operator-side flow on the Organizations page) and
+  // for player accounts.
+  const canCreateOrg = role === 'lobby' || role === 'org_admin' || role === 'org_member';
+  const createBtn = canCreateOrg
+    ? (() => {
+        const b = h('button', { class: 'btn small', style: 'margin-top:.6rem' },
+          icon(ICONS.plus),
+          role === 'lobby' ? t('Create an organization') : t('Create another organization'));
+        b.addEventListener('click', () => openCreateOwnOrg());
+        return b;
+      })()
+    : null;
   return h('section', { class: 'card' },
     h('h2', { style: 'margin:0 0 .25rem' }, label),
     h('p', { class: 'muted', style: 'margin:0 0 .5rem' }, blurb),
     identity,
     orgRow,
+    createBtn,
   );
 }
 

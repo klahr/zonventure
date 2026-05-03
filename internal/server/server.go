@@ -571,7 +571,8 @@ func New(cfg Config) http.Handler {
 
 	// Arranger subscription stream: mutations still use the /api/admin
 	// HTTP endpoints above; this socket exists only to push event-detail
-	// updates (positions, tracks, events, run+teams) on change.
+	// updates (positions, tracks, events, run+teams) on change. Lobby
+	// users have no org scope to subscribe to and are excluded.
 	r.Group(func(r chi.Router) {
 		r.Use(auth.RequireAnyRole(auth.RoleAdmin, auth.RoleOrgAdmin, auth.RoleOrgMember))
 		r.Get("/ws/arrange", adminH.WSArrange)
@@ -581,7 +582,7 @@ func New(cfg Config) http.Handler {
 	// after RequireAnyRole so the 401 for "no session" still wins
 	// (pre-auth callers don't care about the CSRF distinction).
 	r.Route("/api/admin", func(r chi.Router) {
-		r.Use(auth.RequireAnyRole(auth.RoleAdmin, auth.RoleOrgAdmin, auth.RoleOrgMember))
+		r.Use(auth.RequireAnyRole(auth.RoleAdmin, auth.RoleOrgAdmin, auth.RoleOrgMember, auth.RoleLobby))
 		r.Use(auth.RequireCSRF())
 
 		r.Get("/adventures", adminH.ListAdventures)
@@ -736,6 +737,12 @@ func New(cfg Config) http.Handler {
 		// else gets 403. Mounted here (not inside the admin-only
 		// group below) so org_admins reach it.
 		r.Get("/auth-events", adminH.ListAuthEvents)
+
+		// Self-service org creation. A lobby user (no memberships)
+		// uses it to leave the empty-state dashboard; an existing
+		// org user uses it to spin up a second org they admin.
+		// Admins are blocked inside the handler.
+		r.Post("/me/organizations", adminH.CreateOwnOrg)
 
 		// Account settings — every logged-in staff user can change
 		// their own password / email / delete themselves. No role

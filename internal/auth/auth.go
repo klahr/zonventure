@@ -31,6 +31,11 @@ const (
 	// RoleAdmin is the global tier: creates and manages organizations, mints
 	// assignments, and administers other admins. Belongs to no organization.
 	RoleAdmin = "admin"
+	// RoleLobby is an authenticated user with no organization memberships
+	// — sat in the "lobby" until they create their own org or accept an
+	// invitation. The dashboard renders an empty-state for these users
+	// and most surfaces are hidden behind the org-membership check.
+	RoleLobby = "lobby"
 )
 
 // SessionInactivityTTL is the rolling cap on how long a staff
@@ -402,9 +407,9 @@ func newSession(ctx context.Context, w sessionWriter, userID int64, ua, ip strin
 // resolveInitialActiveOrg picks the active_org_id to seed onto a
 // freshly-minted session and the role to populate User.Role with.
 // Single membership → (that org, that role). Multi-membership →
-// (null, "") so the UI fires its picker. Admin or no memberships at
-// all → also (null, ""); the caller decides whether IsAdmin maps to
-// Role="admin" instead.
+// (null, "") so the UI fires its picker. No memberships at all →
+// (null, RoleLobby) so the UI renders the empty-state dashboard.
+// Admin → caller short-circuits and overrides with RoleAdmin.
 //
 // One round-trip: COUNT decides whether to use the MIN values. With
 // COUNT==1, MIN(org_id)/MIN(role) come from the only row; with any
@@ -423,6 +428,9 @@ func resolveInitialActiveOrg(ctx context.Context, db *sql.DB, userID int64) (sql
 	}
 	if cnt == 1 {
 		return only, role.String, nil
+	}
+	if cnt == 0 {
+		return sql.NullInt64{}, RoleLobby, nil
 	}
 	return sql.NullInt64{}, "", nil
 }

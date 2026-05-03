@@ -1392,6 +1392,24 @@
       'All': 'Alla',
       'Live': 'Pågår',
       'All organizations': 'Alla organisationer',
+      'Welcome to Zonventure': 'Välkommen till Zonventure',
+      'You\'re signed in but not part of any organisation yet. Either create one (you\'ll be its admin) or ask someone in an existing organisation to invite you.':
+        'Du är inloggad men ingår inte i någon organisation än. Skapa en (du blir då admin) eller be någon i en befintlig organisation att bjuda in dig.',
+      'Create an organization': 'Skapa en organisation',
+      'Create another organization': 'Skapa ytterligare en organisation',
+      'You\'ll be the only member to start with — invite teammates afterwards from Settings.':
+        'Du blir ensam medlem från början — bjud in kollegor sedan från Inställningar.',
+      'e.g. "Acme Field Trips"': 't.ex. "Acme Utflykter"',
+      'Creating…': 'Skapar…',
+      'Name required': 'Namn krävs',
+      'Organization "{{name}}" created — you\'re its admin':
+        'Organisation "{{name}}" skapad — du är admin',
+      'Organization name (optional)': 'Organisationsnamn (valfritt)',
+      'Leave blank if you\'re joining an existing organization or just want to look around — you can create one later.':
+        'Lämna tomt om du ska gå med i en befintlig organisation eller bara vill titta omkring — du kan skapa en senare.',
+      'No organisation yet': 'Ingen organisation än',
+      'You\'re signed in but not part of any organisation. Create one (you\'ll be its admin) or wait for an invitation.':
+        'Du är inloggad men ingår inte i någon organisation. Skapa en (du blir då admin) eller invänta en inbjudan.',
       'Completed': 'Slutförda',
       'Cancelled': 'Avbrutna',
       'Stuck': 'Fastnat',
