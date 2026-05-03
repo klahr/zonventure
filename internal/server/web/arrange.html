@@ -4979,7 +4979,7 @@ async function viewPurchases(view) {
   let activeFilter = isAdmin ? 'tobill' : 'all';
   const matchesFilter = (p) => {
     switch (activeFilter) {
-      case 'tobill':  return p.provider === 'invoice' && p.state === 'paid' && !p.billed_at;
+      case 'tobill':  return p.provider === 'invoice' && p.state === 'paid' && !p.billed_at && !p.voided_at;
       case 'invoice': return p.provider === 'invoice';
       case 'stripe':  return p.provider === 'stripe';
       case 'free':    return p.provider === 'free';
@@ -5029,16 +5029,7 @@ async function viewPurchases(view) {
           isAdmin ? h('td', { class: 'mono', style: 'font-size:.85rem' }, '#' + p.org_id) : null,
           h('td', { class: 'mono' }, p.max_players),
           h('td', { class: 'mono' }, money(p.amount_cents, p.currency)),
-          h('td', {},
-            h('span', {
-              class: 'pill ' + (p.state === 'paid' ? 'success' : p.state === 'pending' ? 'warning' : p.state === 'refunded' ? 'danger' : ''),
-            }, stateGlyph(p.state) + t(p.state || '')),
-            p.provider === 'invoice'
-              ? h('span', { class: 'pill', style: 'margin-left:.35rem; font-size:.7rem' }, t('invoice'))
-              : null,
-            p.provider === 'invoice' && p.billed_at
-              ? h('span', { class: 'pill success', style: 'margin-left:.35rem; font-size:.7rem' }, t('billed'))
-              : null),
+          h('td', {}, ...purchaseStatePills(p)),
           h('td', { class: 'muted mono', style: 'font-size:.8rem' }, p.created_at),
           h('td', { class: 'row', style: 'gap:.5rem; flex-wrap:wrap; justify-content:flex-end' },
             renderPurchaseActions(p)),
@@ -5101,7 +5092,9 @@ function renderPurchaseActions(p) {
   // Admin-only "Mark billed" toggle for off-platform invoice purchases.
   // Once you've sent the actual invoice from outside the platform,
   // click this so the row drops out of the "To bill" focus filter.
-  if (state.me?.role === 'admin' && p.provider === 'invoice' && p.state === 'paid') {
+  // Hidden once the row is voided (makulera); a voided row isn't
+  // billable so the toggle would be meaningless.
+  if (state.me?.role === 'admin' && p.provider === 'invoice' && p.state === 'paid' && !p.voided_at) {
     const label = p.billed_at ? t('Unmark billed') : t('Mark billed');
     const btn = h('button', { class: 'btn small', type: 'button' }, label);
     btn.addEventListener('click', async () => {
@@ -5113,6 +5106,27 @@ function renderPurchaseActions(p) {
       });
       if (r.status === 200) {
         toastOk(next ? t('Marked billed') : t('Marked unbilled'));
+        renderRoute();
+      } else {
+        btn.disabled = false;
+        toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+      }
+    });
+    out.push(btn);
+  }
+  // Admin-only "Makulera" — exclude this invoice purchase from
+  // future billing without unwinding the assignment grant. Available
+  // only on unbilled, unvoided invoice rows; once billed it's too
+  // late (the operator already issued an invoice off-platform).
+  if (state.me?.role === 'admin' && p.provider === 'invoice' && p.state === 'paid'
+      && !p.billed_at && !p.voided_at) {
+    const btn = h('button', { class: 'btn small danger', type: 'button' }, t('Void'));
+    btn.addEventListener('click', async () => {
+      if (!confirm(t('Void this purchase so it won\'t appear on the next invoice? The slots stay granted; only the billable line is removed.'))) return;
+      btn.disabled = true;
+      const r = await api('/api/admin/purchases/' + p.id + '/void', { method: 'POST' });
+      if (r.status === 200) {
+        toastOk(t('Voided'));
         renderRoute();
       } else {
         btn.disabled = false;
@@ -5171,6 +5185,32 @@ function renderEmptyPurchases() {
     h('div', { style: 'margin-top:.75rem' },
       h('button', { class: 'btn primary', on: { click: () => nav('#catalog') } },
         icon(ICONS.coins), t('Open the store'))));
+}
+
+// purchaseStatePills renders the state pill (and any badge pills) for
+// a purchase row. Invoice-provider rows are special-cased: the DB
+// keeps state='paid' from the moment the assignment is fulfilled, but
+// the *org hasn't actually paid* — billing happens off-platform on
+// the operator's invoice. Showing "paid" would mislead the arranger,
+// so invoice rows render as "invoiced" (or "billed" once the operator
+// has marked the off-platform invoice sent). Non-invoice rows keep
+// the literal state pill the rest of the app uses.
+function purchaseStatePills(p) {
+  if (p.provider === 'invoice' && p.state === 'paid') {
+    if (p.voided_at) {
+      // Voided ("makulera") wins over billed_at if both are somehow
+      // set — a voided row is excluded from billing regardless.
+      return [h('span', { class: 'pill danger' }, t('void'))];
+    }
+    if (p.billed_at) {
+      return [h('span', { class: 'pill success' }, stateGlyph('paid') + t('billed'))];
+    }
+    return [h('span', { class: 'pill warning' }, t('to invoice'))];
+  }
+  const cls = 'pill ' + (p.state === 'paid' ? 'success'
+    : p.state === 'pending' ? 'warning'
+    : p.state === 'refunded' ? 'danger' : '');
+  return [h('span', { class: cls }, stateGlyph(p.state) + t(p.state || ''))];
 }
 
 // pricingHelpers reads the canonical per-player price + free-tier
@@ -5234,10 +5274,14 @@ async function openPurchaseModal(adv) {
     location.href = r.body.checkout_url;
   };
   await modal(t('Buy player slots'), ({ body, close }) => {
-    const players = h('input', { type: 'number', min: '1', max: '500', value: '15', required: true });
+    // Floor of 15 mirrors the free tier — buying fewer would still
+    // cost €0 and produce a smaller event for no reason. See the
+    // matching guard in the schedule modal and the server.
+    const MIN_PLAYERS = 15;
+    const players = h('input', { type: 'number', min: String(MIN_PLAYERS), max: '500', value: '15', required: true });
     const totalEl = h('strong', {}, '');
     const update = () => {
-      const n = Math.max(1, parseInt(players.value, 10) || 0);
+      const n = Math.max(MIN_PLAYERS, parseInt(players.value, 10) || 0);
       totalEl.textContent = fmtMoney(chargeable(n));
     };
     players.addEventListener('input', update);
@@ -5247,7 +5291,8 @@ async function openPurchaseModal(adv) {
       ? h('button', { class: 'btn', type: 'button',
           title: t('Skip Stripe — your finance team will get an invoice from us.'),
           on: { click: async () => {
-            const n = Math.max(1, parseInt(players.value, 10) || 1);
+            const n = parseInt(players.value, 10) || 0;
+            if (n < MIN_PLAYERS) { toastErr(t('Minimum {{n}} players per event', { n: MIN_PLAYERS })); return; }
             close(true);
             await submit('invoice', n);
           } } },
@@ -5270,7 +5315,8 @@ async function openPurchaseModal(adv) {
         payNowBtn));
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
-      const n = Math.max(1, parseInt(players.value, 10) || 1);
+      const n = parseInt(players.value, 10) || 0;
+      if (n < MIN_PLAYERS) { toastErr(t('Minimum {{n}} players per event', { n: MIN_PLAYERS })); return; }
       close(true);
       await submit(null, n);
     });
@@ -5286,13 +5332,15 @@ async function openPurchaseModal(adv) {
 // stays inside "first 15 in this event" is free; anything above the
 // band charges PRICE_CENTS per slot.
 async function openTopUpModal(event, adventure) {
-  const { PRICE_CENTS, FREE, fmtMoney } = pricingHelpers();
+  const { PRICE_CENTS, fmtMoney } = pricingHelpers();
   const trusted = activeOrgIsTrusted();
   const previous = event.max_players || 0;
-  // chargeable for a top-up: how many of the added slots actually
-  // cross above the free band, given the existing event total.
-  const above = (n) => Math.max(0, n - FREE);
-  const chargeable = (added) => (above(previous + added) - above(previous)) * PRICE_CENTS;
+  // Top-ups are linear — every added slot is billed. The free band
+  // (first FreePlayersPerEvent in an event) is consumed by the
+  // original assignment buy; subsequent additions don't get to
+  // re-dip into it. Without this rule a buyer could mint a 1-slot
+  // free assignment and grow it 14 more free slots later.
+  const chargeable = (added) => Math.max(0, added) * PRICE_CENTS;
   const submit = async (provider, n) => {
     const body = {
       adventure_slug: event.adventure_slug,
@@ -5347,10 +5395,7 @@ async function openTopUpModal(event, adventure) {
         t('Total: '), totalEl,
         ' ',
         h('span', { class: 'muted', style: 'font-size:.85rem' },
-          previous >= FREE
-            ? t('({{price}} per added player)', { price: fmtMoney(PRICE_CENTS) })
-            : t('(first {{n}} in this event are free, then {{price}} per player)',
-                { n: FREE, price: fmtMoney(PRICE_CENTS) }))),
+          t('({{price}} per added player)', { price: fmtMoney(PRICE_CENTS) }))),
       h('div', { class: 'row end', style: 'gap:.5rem; flex-wrap:wrap' },
         h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, t('Cancel')),
         invoiceBtn,
@@ -5360,6 +5405,104 @@ async function openTopUpModal(event, adventure) {
       const n = Math.max(1, parseInt(players.value, 10) || 1);
       close(true);
       await submit(null, n);
+    });
+    body.append(form);
+  });
+}
+
+// openAdminGrantModal is the operator's "give this org more slots on
+// their existing event" affordance. Two pricing modes the server
+// enforces:
+//
+//   - Org NOT trusted (invoice billing off): the grant is always
+//     free. The modal shows a free-only message and hides the price
+//     input — there's no path to bill an org that hasn't agreed to
+//     invoice billing.
+//   - Org trusted: admin types a price (default = linear top-up:
+//     count × per-player). Zero is allowed (goodwill). Positive
+//     creates an invoice purchase that lands in the operator's
+//     "to bill" filter.
+//
+// Either way the assignment is bumped server-side; the resulting
+// purchase row is "free" or "invoice". Voiding the invoice row later
+// drops it from billing without touching the slot grant.
+async function openAdminGrantModal(event, adventure) {
+  // Admin context — fetch the org row so we can mirror the
+  // server-side trusted check in the UI rather than letting the
+  // user pick a price that quietly gets forced to zero.
+  const orgsR = await api('/api/admin/organizations');
+  if (!orgsR.ok) {
+    toastErr(orgsR.body?.error || t('Could not load organisation'));
+    return;
+  }
+  const org = (orgsR.body?.organizations || []).find((o) => o.id === event.org_id);
+  if (!org) {
+    toastErr(t('Organisation not found for this event'));
+    return;
+  }
+  const trusted = !!org.trusted;
+  const { PRICE_CENTS, fmtMoney } = pricingHelpers();
+  const eventLabel = adventure?.title || event.adventure_slug || t('this event');
+  await modal(t('Grant slots'), ({ body, close }) => {
+    const players = h('input', { type: 'number', min: '1', max: '500', value: '5', required: true });
+    // Default suggested price = linear top-up cost (count × per-player).
+    // Operator can drop to 0 for goodwill, or raise it for any reason.
+    // Hidden entirely on non-trusted orgs.
+    const linearDefault = () => Math.max(1, parseInt(players.value, 10) || 0) * PRICE_CENTS;
+    const priceInput = h('input', {
+      type: 'number', min: '0', step: '1',
+      value: trusted ? String(linearDefault()) : '0',
+    });
+    const priceRow = h('label', {
+      class: 'field',
+      style: trusted ? '' : 'display:none',
+    },
+      h('span', {}, t('Price (cents)')),
+      priceInput,
+      h('small', { class: 'muted', style: 'display:block; margin-top:.2rem' },
+        t('Whatever you enter here lands on the next invoice. Zero is fine — that\'s a free goodwill grant.')));
+    players.addEventListener('input', () => {
+      // Re-suggest the linear default while the operator hasn't
+      // touched the price field manually. Cheapest signal: re-set if
+      // the current value equals the previous suggestion.
+      if (trusted) priceInput.value = String(linearDefault());
+    });
+    const noticeNonTrusted = trusted ? null : h('p', { class: 'muted', style: 'font-size:.85rem' },
+      t('"{{org}}" is not on invoice billing, so this grant is free. Flip the org\'s "Invoice billing" switch in Organizations to enable priced grants.',
+        { org: org.name || ('#' + org.id) }));
+    const noticeTrusted = trusted ? h('p', { class: 'muted', style: 'font-size:.85rem' },
+      t('Adding to "{{org}}" — the price below appears on their next invoice. Set it to 0 for a free grant.',
+        { org: org.name || ('#' + org.id) })) : null;
+    const submitBtn = h('button', { class: 'btn primary', type: 'submit' }, t('Grant'));
+    const form = h('form', {},
+      h('p', {}, t('"{{title}}" currently has {{n}} player slots. How many more?',
+        { title: eventLabel, n: event.max_players || 0 })),
+      noticeNonTrusted,
+      noticeTrusted,
+      h('label', { class: 'field' }, h('span', {}, t('Additional players')), players),
+      priceRow,
+      h('div', { class: 'row end', style: 'gap:.5rem; flex-wrap:wrap' },
+        h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, t('Cancel')),
+        submitBtn));
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const added = Math.max(1, parseInt(players.value, 10) || 0);
+      const amount = trusted ? Math.max(0, parseInt(priceInput.value, 10) || 0) : 0;
+      submitBtn.disabled = true;
+      const r = await api('/api/admin/events/' + event.id + '/grant-slots', {
+        method: 'POST',
+        body: JSON.stringify({ added_players: added, amount_cents: amount }),
+      });
+      submitBtn.disabled = false;
+      if (r.status !== 201) {
+        toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+        return;
+      }
+      toastOk(amount > 0
+        ? t('{{n}} slots granted — {{price}} on next invoice', { n: added, price: fmtMoney(amount) })
+        : t('{{n}} slots granted (free)', { n: added }));
+      close(true);
+      renderRoute();
     });
     body.append(form);
   });
@@ -5995,7 +6138,7 @@ async function scheduleRun(source) {
 
     // ---- Capacity (visible only when ctx.mode === 'buy') ----
     const capacityNode = h('div', { style: 'display:none; margin:.25rem 0 1rem' });
-    const buyCount = h('input', { type: 'number', min: '1', max: '500', value: '15' });
+    const buyCount = h('input', { type: 'number', min: '15', max: '500', value: '15' });
     const totalEl = h('strong', {}, '');
     const updateTotal = () => {
       const n = Math.max(1, parseInt(buyCount.value, 10) || 0);
@@ -6105,8 +6248,8 @@ async function scheduleRun(source) {
       }
       const ctx = resolveCtx();
       const players = Math.max(0, parseInt(buyCount.value, 10) || 0);
-      if (ctx.mode === 'buy' && players < 1) {
-        toastErr(t('Enter at least 1 player'));
+      if (ctx.mode === 'buy' && players < 15) {
+        toastErr(t('Minimum {{n}} players per event', { n: 15 }));
         return null;
       }
       const out = {
@@ -6923,9 +7066,12 @@ async function viewRunDetail(view, runID) {
   }
   // Top-up: buy more player slots for the assignment behind this
   // event. Hidden on terminal-state events (no point growing a
-  // finished/cancelled event) and when the event is admin-seeded
-  // without an assignment row to grow.
-  if ((event.state === 'scheduled' || event.state === 'running' || event.state === 'paused')
+  // finished/cancelled event), when the event is admin-seeded
+  // without an assignment row to grow, and for global admins (the
+  // /api/admin/purchases endpoint refuses admin callers — admins
+  // use the Grant slots affordance below instead).
+  if (state.me?.role !== 'admin'
+      && (event.state === 'scheduled' || event.state === 'running' || event.state === 'paused')
       && event.assignment_id) {
     const topUp = h('button', {
       class: 'btn lifecycle-btn',
@@ -6933,6 +7079,20 @@ async function viewRunDetail(view, runID) {
       title: t('Add more player slots to this event'),
     }, icon(ICONS.coins), t('Buy more slots'));
     actions.append(topUp);
+  }
+  // Admin-only "Grant slots" — operator-side gift / invoice. Same
+  // event-state gate as Buy more slots; trusted-vs-not handling is
+  // resolved server-side, but the modal also checks so the UI shows
+  // the right options up front.
+  if (state.me?.role === 'admin'
+      && (event.state === 'scheduled' || event.state === 'running' || event.state === 'paused')
+      && event.assignment_id) {
+    const grant = h('button', {
+      class: 'btn lifecycle-btn',
+      on: { click: () => openAdminGrantModal(event, adventure) },
+      title: t('Grant player slots to this event on the org\'s behalf'),
+    }, icon(ICONS.coins), t('Grant slots'));
+    actions.append(grant);
   }
   // Results export is always available once there are teams — arrangers
   // often want to grab mid-event standings too, not just post-mortem.
@@ -9053,11 +9213,7 @@ function renderOrganizationCard(org, adventures, purchases) {
               h('td', {}, p.adventure_title || p.adventure_slug),
               h('td', { class: 'mono' }, p.max_players),
               h('td', { class: 'mono' }, total),
-              h('td', {}, h('span', {
-                class: 'pill ' + (p.state === 'paid' ? 'success'
-                  : p.state === 'pending' ? 'warning'
-                  : p.state === 'refunded' ? 'danger' : ''),
-              }, stateGlyph(p.state) + t(p.state || ''))),
+              h('td', {}, ...purchaseStatePills(p)),
               h('td', { class: 'muted mono', style: 'font-size:.8rem' }, p.created_at),
               h('td', { class: 'row', style: 'gap:.5rem; flex-wrap:wrap; justify-content:flex-end' },
                 renderPurchaseActions(p)));

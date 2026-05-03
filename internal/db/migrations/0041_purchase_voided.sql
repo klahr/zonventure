@@ -1,0 +1,15 @@
+-- Operator-side "makulera" affordance for invoice purchases. Once the
+-- assignment has been delivered (state='paid'), the operator may
+-- decide not to bill — perhaps the slots were a goodwill gesture, or
+-- the purchase was added by mistake. Setting voided_at excludes the
+-- row from the "to bill" filter and from any future invoice run,
+-- without unwinding the assignment grant: the org keeps the slots
+-- they already received.
+--
+-- Sidecar column rather than a new state value so the existing
+-- state CHECK constraint and lifecycle stay untouched. Voided and
+-- billed_at are independent: the bookkeeping reflects how a manually
+-- voided row could in theory still have been "billed" first if the
+-- operator clicks both. Practical UI hides void after billed and
+-- vice-versa, but the schema doesn't enforce ordering.
+ALTER TABLE purchases ADD COLUMN voided_at TEXT;

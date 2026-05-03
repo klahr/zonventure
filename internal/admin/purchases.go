@@ -43,32 +43,28 @@ const (
 	FreePlayersPerEvent = 15
 )
 
-// purchaseAmountCents computes the chargeable total for a buy of N
-// player slots layered on top of an existing total of `previousTotal`
-// slots in the same event. The first FreePlayersPerEvent slots in any
-// given event are free regardless of how the buyer reached them, so a
-// top-up that stays inside the free band costs zero, a top-up that
-// crosses the free band charges only the slots above it, and a top-up
-// fully above the band charges per-slot. Pass previousTotal=0 for
-// first-time purchases.
-func purchaseAmountCents(previousTotal, addedPlayers int) int {
-	chargeable := chargeableSlots(previousTotal, addedPlayers)
+// purchaseAmountCents computes the chargeable total for a NEW
+// assignment buy of N player slots: the first FreePlayersPerEvent are
+// free, the rest cost PricePerPlayerCents each. Returns 0 for any
+// N ≤ FreePlayersPerEvent.
+//
+// Top-ups (adding slots to an existing assignment) bypass this helper
+// and are always linear — the free band is consumed by the original
+// purchase, so subsequent additions charge per slot regardless of
+// where the resulting total lands. Otherwise a buyer could mint a
+// 1-slot free assignment and grow it 14 more free slots later.
+func purchaseAmountCents(addedPlayers int) int {
+	chargeable := addedPlayers - FreePlayersPerEvent
+	if chargeable <= 0 {
+		return 0
+	}
 	return chargeable * PricePerPlayerCents
 }
 
-// chargeableSlots is the player-slot count actually billed for a buy
-// of `addedPlayers` layered on top of `previousTotal`. Splits "first
-// FreePlayersPerEvent free in this event" across the existing total
-// and the addition: existing slots that were inside the free band
-// stay free even after a top-up bumps the total above the band.
-func chargeableSlots(previousTotal, addedPlayers int) int {
-	above := func(n int) int {
-		if n <= FreePlayersPerEvent {
-			return 0
-		}
-		return n - FreePlayersPerEvent
-	}
-	return above(previousTotal+addedPlayers) - above(previousTotal)
+// topUpAmountCents charges PricePerPlayerCents per added slot. No
+// free-band deduction — see purchaseAmountCents for the rationale.
+func topUpAmountCents(addedPlayers int) int {
+	return addedPlayers * PricePerPlayerCents
 }
 
 type purchaseDTO struct {
@@ -98,6 +94,10 @@ type purchaseDTO struct {
 	// rows; on Stripe / free / simulated rows the column stays NULL
 	// because there's nothing for an admin to bill afterwards.
 	BilledAt          string `json:"billed_at,omitempty"`
+	// VoidedAt is set by the operator to exclude this purchase from
+	// invoice runs without unwinding the assignment grant. Only
+	// meaningful for provider="invoice" rows.
+	VoidedAt          string `json:"voided_at,omitempty"`
 }
 
 type createPurchaseRequest struct {
@@ -139,27 +139,34 @@ func (h *Handlers) CreatePurchase(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusBadRequest, "max_players must be 1–500")
 		return
 	}
-	// Top-up branch: derive the adventure slug + previous total from
-	// the target assignment, refusing if the assignment is missing,
-	// not owned by the caller's org, or attached to a terminal-state
-	// event. The eventual UPDATE happens at confirm/webhook time;
-	// here we just validate and resolve the per-event pricing inputs.
-	previousTotal := 0
+	// New-assignment buys carry the FreePlayersPerEvent floor: anything
+	// smaller would still cost €0 and produce a smaller event for no
+	// upside. Top-ups skip this — they're billed linearly per slot, so
+	// a +1 add is a meaningful (chargeable) operation.
+	if req.TopUpAssignmentID == nil && req.MaxPlayers < FreePlayersPerEvent {
+		httpx.Error(w, http.StatusBadRequest,
+			fmt.Sprintf("minimum %d players per event", FreePlayersPerEvent))
+		return
+	}
+	// Top-up branch: derive the adventure slug from the target
+	// assignment, refusing if the assignment is missing, not owned by
+	// the caller's org, or attached to a terminal-state event. The
+	// eventual UPDATE happens at confirm/webhook time; here we just
+	// validate and pin down the slug for the purchases row.
 	var topUpID *int64
 	if req.TopUpAssignmentID != nil && *req.TopUpAssignmentID > 0 {
 		var (
-			assnOrg     int64
-			assnSlug    string
-			assnMax     int
-			eventID     sql.NullInt64
-			eventState  sql.NullString
+			assnOrg    int64
+			assnSlug   string
+			eventID    sql.NullInt64
+			eventState sql.NullString
 		)
 		err := h.DB.QueryRowContext(r.Context(), `
-			SELECT aa.org_id, aa.adventure_slug, aa.max_players, ar.id, ar.state
+			SELECT aa.org_id, aa.adventure_slug, ar.id, ar.state
 			FROM adventure_assignments aa
 			LEFT JOIN events ar ON ar.assignment_id = aa.id
 			WHERE aa.id = $1
-		`, *req.TopUpAssignmentID).Scan(&assnOrg, &assnSlug, &assnMax, &eventID, &eventState)
+		`, *req.TopUpAssignmentID).Scan(&assnOrg, &assnSlug, &eventID, &eventState)
 		if errors.Is(err, sql.ErrNoRows) {
 			httpx.Error(w, http.StatusNotFound, "assignment not found")
 			return
@@ -177,7 +184,6 @@ func (h *Handlers) CreatePurchase(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		req.AdventureSlug = assnSlug // canonical — ignore any client value
-		previousTotal = assnMax
 		topUpID = req.TopUpAssignmentID
 	}
 	// Source adventure must exist + be visible to the buyer (either
@@ -195,7 +201,10 @@ func (h *Handlers) CreatePurchase(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusForbidden, "that adventure is not available to your org")
 		return
 	}
-	amount := purchaseAmountCents(previousTotal, req.MaxPlayers)
+	amount := purchaseAmountCents(req.MaxPlayers)
+	if topUpID != nil {
+		amount = topUpAmountCents(req.MaxPlayers)
+	}
 
 	provider := req.Provider
 	switch provider {
@@ -553,6 +562,161 @@ func (h *Handlers) SetPurchaseBilled(w http.ResponseWriter, r *http.Request) {
 	httpx.JSON(w, http.StatusOK, map[string]any{"billed_at": billedAt.String})
 }
 
+// VoidPurchase marks an invoice purchase as voided ("makulera") so it
+// drops out of the operator's "to bill" filter and any future invoice
+// run. The assignment grant is NOT unwound — the org keeps the slots
+// they already received; the row just stops being a billable line.
+//
+// Admin-only. Idempotent: voiding an already-voided row is a no-op.
+// Restricted to provider="invoice" rows that haven't been billed yet
+// — once billed_at is set the operator has already issued an
+// invoice, so voiding here would silently disagree with paperwork.
+func (h *Handlers) VoidPurchase(w http.ResponseWriter, r *http.Request) {
+	purchaseID, err := strconv.ParseInt(chi.URLParam(r, "purchaseID"), 10, 64)
+	if err != nil || purchaseID <= 0 {
+		httpx.Error(w, http.StatusBadRequest, "bad purchase id")
+		return
+	}
+	var (
+		provider string
+		state    string
+		billedAt sql.NullString
+	)
+	if err := h.DB.QueryRowContext(r.Context(),
+		`SELECT provider, state, billed_at FROM purchases WHERE id = $1`, purchaseID,
+	).Scan(&provider, &state, &billedAt); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			httpx.Error(w, http.StatusNotFound, "purchase not found")
+			return
+		}
+		httpx.Error(w, http.StatusInternalServerError, "lookup failed")
+		return
+	}
+	if provider != "invoice" {
+		httpx.Error(w, http.StatusBadRequest, "only invoice purchases can be voided")
+		return
+	}
+	if state != "paid" {
+		httpx.Error(w, http.StatusConflict, "purchase is "+state+"; cannot void")
+		return
+	}
+	if billedAt.Valid && billedAt.String != "" {
+		httpx.Error(w, http.StatusConflict, "purchase already billed; cannot void")
+		return
+	}
+	if _, err := h.DB.ExecContext(r.Context(),
+		`UPDATE purchases SET voided_at = COALESCE(voided_at, now_text()) WHERE id = $1`,
+		purchaseID); err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "update failed")
+		return
+	}
+	var voidedAt sql.NullString
+	_ = h.DB.QueryRowContext(r.Context(),
+		`SELECT voided_at FROM purchases WHERE id = $1`, purchaseID).Scan(&voidedAt)
+	httpx.JSON(w, http.StatusOK, map[string]any{"voided_at": voidedAt.String})
+}
+
+// GrantSlotsToEvent is the admin-only "add player slots to an org's
+// event on the org's behalf" affordance. The slots are granted by
+// bumping the underlying assignment's max_players cap; the cost of
+// the bump is recorded as a purchases row routed via either the
+// "free" or "invoice" provider:
+//
+//   - org NOT trusted (invoice billing off): amount is forced to 0
+//     and the row is provider="free". Admin can't surprise-bill an
+//     org that hasn't agreed to invoice billing.
+//   - org trusted: admin sets amount_cents. Zero → provider="free"
+//     (a goodwill grant). Positive → provider="invoice" so the row
+//     shows up in the "to bill" filter on the operator's Purchases
+//     page, ready to land on the next off-platform invoice.
+//
+// Either way the assignment is bumped and the org keeps the slots —
+// the price is bookkeeping. Voiding the resulting invoice purchase
+// later (POST /purchases/{id}/void) doesn't unwind the bump.
+type grantSlotsRequest struct {
+	AddedPlayers int `json:"added_players"`
+	AmountCents  int `json:"amount_cents"`
+}
+
+func (h *Handlers) GrantSlotsToEvent(w http.ResponseWriter, r *http.Request) {
+	eventID, err := strconv.ParseInt(chi.URLParam(r, "eventID"), 10, 64)
+	if err != nil || eventID <= 0 {
+		httpx.Error(w, http.StatusBadRequest, "bad event id")
+		return
+	}
+	var req grantSlotsRequest
+	if !httpx.DecodeJSON(w, r, &req) {
+		return
+	}
+	if req.AddedPlayers <= 0 || req.AddedPlayers > 500 {
+		httpx.Error(w, http.StatusBadRequest, "added_players must be 1–500")
+		return
+	}
+	if req.AmountCents < 0 {
+		httpx.Error(w, http.StatusBadRequest, "amount_cents must be ≥ 0")
+		return
+	}
+	me, _ := auth.FromContext(r.Context())
+	// Pull the event + its assignment + the owning org's trusted flag
+	// in one shot. The event must be in a non-terminal state so the
+	// grant lands on a live event the org can still use.
+	var (
+		orgID         int64
+		eventState    string
+		assignmentID  sql.NullInt64
+		advSlug       string
+		trusted       bool
+	)
+	err = h.DB.QueryRowContext(r.Context(), `
+		SELECT ar.org_id, ar.state, ar.assignment_id, ar.adventure_slug, (o.trusted <> 0)
+		FROM events ar
+		JOIN organizations o ON o.id = ar.org_id
+		WHERE ar.id = $1
+	`, eventID).Scan(&orgID, &eventState, &assignmentID, &advSlug, &trusted)
+	if errors.Is(err, sql.ErrNoRows) {
+		httpx.Error(w, http.StatusNotFound, "event not found")
+		return
+	}
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "lookup failed")
+		return
+	}
+	if !assignmentID.Valid || assignmentID.Int64 == 0 {
+		httpx.Error(w, http.StatusConflict, "event has no assignment to grow")
+		return
+	}
+	if eventState == "completed" || eventState == "cancelled" {
+		httpx.Error(w, http.StatusConflict, "cannot grant slots to a completed or cancelled event")
+		return
+	}
+	// Untrusted orgs can't be silently invoiced. Force free.
+	amount := req.AmountCents
+	if !trusted {
+		amount = 0
+	}
+	provider := "free"
+	if amount > 0 {
+		provider = "invoice"
+	}
+	topUp := assignmentID.Int64
+	// Reuse createOffPlatformPurchase: same assignment-bump + paid-row
+	// shape used by the org-side free / invoice buys. buyer_user_id is
+	// the admin who granted (audit trail) — not an org member.
+	assID, purchaseID, ferr := h.createOffPlatformPurchase(
+		r.Context(), orgID, me.ID, advSlug, req.AddedPlayers, amount, provider, &topUp)
+	if ferr != nil {
+		httpx.Error(w, http.StatusInternalServerError, "grant failed: "+ferr.Error())
+		return
+	}
+	metrics.PurchaseEvents.WithLabelValues("granted_" + provider).Inc()
+	httpx.JSON(w, http.StatusCreated, map[string]any{
+		"purchase_id":   purchaseID,
+		"assignment_id": assID,
+		"amount_cents":  amount,
+		"provider":      provider,
+	})
+}
+
 // ListPurchases returns every purchase visible to the caller — admins
 // see all, org users see their own.
 func (h *Handlers) ListPurchases(w http.ResponseWriter, r *http.Request) {
@@ -564,7 +728,8 @@ func (h *Handlers) ListPurchases(w http.ResponseWriter, r *http.Request) {
 		       p.top_up_assignment_id,
 		       p.created_at, COALESCE(p.paid_at, ''),
 		       COALESCE(p.stripe_invoice_url, ''),
-		       COALESCE(p.billed_at, '')
+		       COALESCE(p.billed_at, ''),
+		       COALESCE(p.voided_at, '')
 		FROM purchases p
 		LEFT JOIN adventures a ON a.slug = p.adventure_slug
 	`
@@ -594,7 +759,7 @@ func (h *Handlers) ListPurchases(w http.ResponseWriter, r *http.Request) {
 		if err := rows.Scan(&d.ID, &d.OrgID, &d.AdventureSlug, &d.AdventureTitle,
 			&d.MaxPlayers, &d.AmountCents, &d.Currency, &d.Provider,
 			&d.ProviderSessionID, &d.State, &assignment, &topUp,
-			&d.CreatedAt, &d.PaidAt, &d.InvoiceURL, &d.BilledAt); err != nil {
+			&d.CreatedAt, &d.PaidAt, &d.InvoiceURL, &d.BilledAt, &d.VoidedAt); err != nil {
 			httpx.Error(w, http.StatusInternalServerError, "scan failed")
 			return
 		}
@@ -632,13 +797,14 @@ func (h *Handlers) GetPurchase(w http.ResponseWriter, r *http.Request) {
 		       p.top_up_assignment_id,
 		       p.created_at, COALESCE(p.paid_at, ''),
 		       COALESCE(p.stripe_invoice_url, ''),
-		       COALESCE(p.billed_at, '')
+		       COALESCE(p.billed_at, ''),
+		       COALESCE(p.voided_at, '')
 		FROM purchases p
 		LEFT JOIN adventures a ON a.slug = p.adventure_slug
 		WHERE p.id = $1
 	`, purchaseID).Scan(&d.ID, &d.OrgID, &d.AdventureSlug, &d.AdventureTitle,
 		&d.MaxPlayers, &d.AmountCents, &d.Currency, &d.Provider,
-		&d.ProviderSessionID, &d.State, &assignment, &topUp, &d.CreatedAt, &d.PaidAt, &d.InvoiceURL, &d.BilledAt)
+		&d.ProviderSessionID, &d.State, &assignment, &topUp, &d.CreatedAt, &d.PaidAt, &d.InvoiceURL, &d.BilledAt, &d.VoidedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		httpx.Error(w, http.StatusNotFound, "purchase not found")
 		return

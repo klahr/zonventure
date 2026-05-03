@@ -144,7 +144,7 @@ func TestCreatePurchase_FreeTier(t *testing.T) {
 		Provider     string `json:"provider"`
 		AssignmentID int64  `json:"assignment_id"`
 	}
-	body := map[string]any{"adventure_slug": "demo", "max_players": 10}
+	body := map[string]any{"adventure_slug": "demo", "max_players": 15}
 	if s := c.do("POST", "/api/admin/purchases", body, &resp); s != 201 {
 		t.Fatalf("create free purchase = %d", s)
 	}

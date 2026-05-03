@@ -854,6 +854,14 @@ func New(cfg Config) http.Handler {
 			// The Purchases page's "to bill" filter ignores billed
 			// rows so the same row doesn't keep nagging.
 			r.Post("/purchases/{purchaseID}/billed", adminH.SetPurchaseBilled)
+			// "Makulera" — drop the row out of the to-bill filter
+			// without unwinding the assignment grant. Idempotent.
+			r.Post("/purchases/{purchaseID}/void", adminH.VoidPurchase)
+			// Admin-on-behalf-of grant: add player slots to an org's
+			// event. Free for non-trusted orgs (forced); for trusted
+			// orgs the admin chooses zero (goodwill) or a positive
+			// amount routed via the invoice provider.
+			r.Post("/events/{eventID}/grant-slots", adminH.GrantSlotsToEvent)
 
 			// Server logs — stream + level control. Admin-only so org
 			// users can't snoop another org's messages.

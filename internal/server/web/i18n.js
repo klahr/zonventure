@@ -371,6 +371,35 @@
       'Org': 'Organisation',
       'invoice': 'faktura',
       'billed': 'fakturerad',
+      'to invoice': 'att fakturera',
+      'void': 'makulerad',
+      'Void': 'Makulera',
+      'Voided': 'Makulerad',
+      'Void this purchase so it won\'t appear on the next invoice? The slots stay granted; only the billable line is removed.':
+        'Makulera detta köp så det inte hamnar på nästa faktura? Platserna behålls; endast den fakturerbara raden tas bort.',
+      'Grant slots': 'Tilldela platser',
+      'Grant': 'Tilldela',
+      'Grant player slots to this event on the org\'s behalf':
+        'Tilldela spelarplatser till detta event åt organisationen',
+      'Price (cents)': 'Pris (öre)',
+      'Whatever you enter here lands on the next invoice. Zero is fine — that\'s a free goodwill grant.':
+        'Det du anger här hamnar på nästa faktura. Noll fungerar — det är en gratis tilldelning.',
+      '"{{org}}" is not on invoice billing, so this grant is free. Flip the org\'s "Invoice billing" switch in Organizations to enable priced grants.':
+        '"{{org}}" har inte fakturabetalning aktiverad, så denna tilldelning är gratis. Aktivera "Fakturabetalning" på organisationen för att kunna prissätta.',
+      'Adding to "{{org}}" — the price below appears on their next invoice. Set it to 0 for a free grant.':
+        'Lägger till i "{{org}}" — priset nedan hamnar på nästa faktura. Sätt 0 för en gratis tilldelning.',
+      '"{{title}}" currently has {{n}} player slots. How many more?':
+        '"{{title}}" har {{n}} spelarplatser just nu. Hur många till?',
+      '{{n}} slots granted — {{price}} on next invoice':
+        '{{n}} platser tilldelade — {{price}} på nästa faktura',
+      '{{n}} slots granted (free)': '{{n}} platser tilldelade (gratis)',
+      'Could not load organisation': 'Kunde inte ladda organisationen',
+      'Organisation not found for this event': 'Organisationen hittades inte för detta event',
+      'event has no assignment to grow': 'eventet saknar tilldelning att utöka',
+      'cannot grant slots to a completed or cancelled event':
+        'kan inte tilldela platser till ett avslutat eller avbrutet event',
+      'only invoice purchases can be voided': 'endast fakturaköp kan makuleras',
+      'purchase already billed; cannot void': 'köpet är redan fakturerat; kan inte makuleras',
       'Mark billed':   'Markera som fakturerad',
       'Unmark billed': 'Avmarkera som fakturerad',
       'Marked billed':   'Markerad som fakturerad',
@@ -982,6 +1011,8 @@
       'How many players will join? You can grow this later from the event page.':
         'Hur många spelare kommer? Du kan utöka senare från eventsidan.',
       'Enter at least 1 player': 'Ange minst 1 spelare',
+      'Minimum {{n}} players per event': 'Minst {{n}} spelare per event',
+      'minimum 15 players per event': 'minst 15 spelare per event',
       'Payment did not complete': 'Betalningen slutfördes inte',
       'Team slots': 'Lagplatser',
       'Team name required': 'Lagnamn krävs',
