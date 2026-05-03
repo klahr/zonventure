@@ -270,6 +270,12 @@ type eventDTO struct {
 	State           string `json:"state"`
 	ScheduledAt     string `json:"scheduled_at,omitempty"`
 	StartedAt       string `json:"started_at,omitempty"`
+	// CompletedAt and CancelledAt freeze the "elapsed" counter on
+	// the event-detail page once the event reaches a terminal
+	// state. Without these the UI uses Date.now() and shows an
+	// ever-increasing duration on a finished event.
+	CompletedAt     string `json:"completed_at,omitempty"`
+	CancelledAt     string `json:"cancelled_at,omitempty"`
 	OrgID           int64  `json:"org_id"`
 	CreatedByUserID int64  `json:"created_by_user_id,omitempty"`
 	AssignmentID    int64  `json:"assignment_id"`
@@ -514,6 +520,7 @@ func (h *Handlers) ListEvents(w http.ResponseWriter, r *http.Request) {
 	query := `
 		SELECT ar.id, ar.name, ar.adventure_slug, COALESCE(adv.title, ''), ar.state,
 		       COALESCE(ar.scheduled_at, ''), COALESCE(ar.started_at, ''),
+		       COALESCE(ar.completed_at, ''), COALESCE(ar.cancelled_at, ''),
 		       ar.org_id, COALESCE(ar.created_by_user_id, 0),
 		       COALESCE(ar.assignment_id, 0), COALESCE(aa.max_players, 0),
 		       ar.live_token, ar.show_map,
@@ -546,6 +553,7 @@ func (h *Handlers) ListEvents(w http.ResponseWriter, r *http.Request) {
 			hasAvatar int
 		)
 		if err := rows.Scan(&d.ID, &d.Name, &d.AdventureSlug, &d.AdventureTitle, &d.State, &d.ScheduledAt, &d.StartedAt,
+			&d.CompletedAt, &d.CancelledAt,
 			&d.OrgID, &d.CreatedByUserID, &d.AssignmentID, &d.MaxPlayers,
 			&d.LiveToken, &showMap, &hasAvatar, &d.TeamsCount, &d.PlayerSlotsCount); err != nil {
 			httpx.Error(w, http.StatusInternalServerError, "scan failed")

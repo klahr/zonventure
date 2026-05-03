@@ -187,6 +187,7 @@ func (h *Handlers) buildEventDetail(ctx context.Context, eventID int64) (eventDe
 	if err := h.DB.QueryRowContext(ctx, `
 		SELECT ar.id, ar.name, ar.adventure_slug, ar.state,
 		       COALESCE(ar.scheduled_at,''), COALESCE(ar.started_at,''),
+		       COALESCE(ar.completed_at, ''), COALESCE(ar.cancelled_at, ''),
 		       ar.org_id, COALESCE(ar.created_by_user_id, 0),
 		       COALESCE(ar.assignment_id, 0), COALESCE(aa.max_players, 0),
 		       ar.live_token, ar.show_map,
@@ -198,6 +199,7 @@ func (h *Handlers) buildEventDetail(ctx context.Context, eventID int64) (eventDe
 		LEFT JOIN adventure_assignments aa ON aa.id = ar.assignment_id
 		WHERE ar.id = $1
 	`, eventID).Scan(&d.ID, &d.Name, &d.AdventureSlug, &d.State, &d.ScheduledAt, &d.StartedAt,
+		&d.CompletedAt, &d.CancelledAt,
 		&d.OrgID, &d.CreatedByUserID, &d.AssignmentID, &d.MaxPlayers,
 		&d.LiveToken, &showMap, &d.TeamsCount, &d.PlayerSlotsCount); err != nil {
 		return eventDetailDTO{}, err

@@ -6479,11 +6479,23 @@ function renderEventQuickStats(event, teams) {
   ];
   // Time tile: elapsed for running/paused/completed, "starts in" for
   // scheduled, blank for cancelled. fmtElapsed prints "1h 12m".
+  //
+  // For completed/cancelled events the elapsed counter is FROZEN at
+  // the completion time — without that clamp, an arranger looking at
+  // an event from yesterday would see "23h 14m" instead of the run
+  // duration. Server emits completed_at / cancelled_at on the DTO;
+  // we pick the earlier of the two non-empty timestamps as the end.
   if (event.started_at) {
-    const startMs = Date.parse(event.started_at.includes('T')
-      ? event.started_at : event.started_at.replace(' ', 'T') + 'Z');
+    const parseTS = (ts) => Date.parse(ts.includes('T') ? ts : ts.replace(' ', 'T') + 'Z');
+    const startMs = parseTS(event.started_at);
     if (Number.isFinite(startMs)) {
-      const elapsedSec = Math.max(0, Math.floor((Date.now() - startMs) / 1000));
+      let endMs = Date.now();
+      const candidates = [event.completed_at, event.cancelled_at].filter(Boolean);
+      for (const ts of candidates) {
+        const ms = parseTS(ts);
+        if (Number.isFinite(ms) && ms < endMs) endMs = ms;
+      }
+      const elapsedSec = Math.max(0, Math.floor((endMs - startMs) / 1000));
       tiles.push(statBlock(fmtElapsedShort(elapsedSec), t('elapsed')));
     }
   } else if (event.scheduled_at) {
