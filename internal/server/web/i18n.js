@@ -350,6 +350,16 @@
       'scheduled': 'schemalagd',
       'completed': 'slutförd',
       'waiting': 'väntar',
+      // ---- team withdraw / unwithdraw ----
+      'Mark withdrawn': 'Markera som tillbakadragen',
+      'Mark returned':  'Markera som tillbaka',
+      'Mark “{{name}}” as withdrawn?':
+        'Markera "{{name}}" som tillbakadraget?',
+      'They stay in the recap as "withdrew at puzzle {{n}}", but stop counting against the leaderboard and the "stuck" detector. You can flip it back if they return.':
+        'De finns kvar i sammanfattningen som "drog sig ur vid pussel {{n}}", men räknas inte längre i topplistan eller "fastnat"-detektorn. Du kan ångra det om de återvänder.',
+      'Team marked as withdrawn': 'Lag markerat som tillbakadraget',
+      'Team is active again': 'Lag är aktivt igen',
+      'withdrew': 'tillbakadraget',
       // ---- race control (live cockpit) ----
       'Race control': 'Tävlingsledning',
       'Live cockpit: leaderboard, map, and activity feed updating in real time':

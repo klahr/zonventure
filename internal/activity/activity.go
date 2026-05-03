@@ -41,6 +41,8 @@ const (
 	AnswerWrong    = "answer.wrong"
 	AnswerRight    = "answer.right"
 	TeamCompleted  = "team.completed"
+	TeamWithdrawn  = "team.withdrawn"
+	TeamReturned   = "team.returned"
 	TeamUnlocked   = "team.unlocked"
 	GateReached    = "gate.reached"
 )
@@ -102,9 +104,13 @@ func Record(ctx context.Context, db Execer, eventID int64, teamID *int64, actor 
 //     transition fires; the loser returns (false, nil).
 func MaybeCompleteEvent(ctx context.Context, db Execer, eventID int64) (bool, error) {
 	var total, done int
+	// Withdrawn teams count as "done" for the purpose of auto-completing
+	// an event. Otherwise an event with one finished team and one
+	// team that gave up would hang forever waiting for the dropout
+	// to finish, blocking the recap and the post-event webhook.
 	if err := db.QueryRowContext(ctx, `
 		SELECT COUNT(*),
-		       SUM(CASE WHEN completed_at IS NULL THEN 0 ELSE 1 END)
+		       SUM(CASE WHEN completed_at IS NULL AND withdrawn_at IS NULL THEN 0 ELSE 1 END)
 		FROM teams WHERE event_id = $1
 	`, eventID).Scan(&total, &done); err != nil {
 		return false, err

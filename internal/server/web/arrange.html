@@ -706,6 +706,36 @@ tr.row-stuck {
   .grid.cols-3, .grid.cols-2 { grid-template-columns: 1fr; }
 }
 
+/* Race-control side-by-side panels (leaderboard + activity feed). The
+   default .grid.cols-2 lets each child grow to its content, which on
+   the control view leaves the activity card capped at the .event-log-body
+   50vh while the leaderboard card stretches to however many rows it
+   has — visibly mismatched heights. .control-grid pins both cards to
+   the same max-height and scrolls their bodies internally so the
+   panels read as a matched pair. */
+.control-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  align-items: stretch;
+}
+.control-grid > .card {
+  display: flex;
+  flex-direction: column;
+  max-height: 60vh;
+  min-height: 0;
+}
+.control-grid > .card > h2 { flex: 0 0 auto; }
+.control-grid .control-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+@media (max-width: 820px) {
+  .control-grid { grid-template-columns: 1fr; }
+  .control-grid > .card { max-height: 50vh; }
+}
+
 .stat {
   background: var(--surface);
   border: 1px solid var(--border-soft);
@@ -6805,7 +6835,11 @@ async function viewRunDetail(view, runID) {
     const filtered = teams.filter((tm) => {
       const lastEv = lastEventByTeam.get(tm.id);
       const lastMs = lastEv ? Date.parse(lastEv.includes('T') ? lastEv : lastEv.replace(' ', 'T') + 'Z') : null;
-      const stuck = event.state === 'running' && !tm.completed_at && lastMs != null && (Date.now() - lastMs) > STUCK_MS;
+      // Withdrawn teams are intentionally inactive — they shouldn't
+      // raise the "stuck?" flag or fall under the "unstarted" filter
+      // (the race director already knows they're out).
+      const stuck = event.state === 'running' && !tm.completed_at && !tm.withdrawn_at
+        && lastMs != null && (Date.now() - lastMs) > STUCK_MS;
       // "Unstarted" — no slot has logged in yet. Distinct from
       // "stuck", which is "logged in but inactive for 10 min+".
       const claimed = (tm.members || []).some((m) => m.last_login_at);
@@ -6813,7 +6847,7 @@ async function viewRunDetail(view, runID) {
         teamsFilter === 'all' ||
         (teamsFilter === 'done' && tm.completed_at) ||
         (teamsFilter === 'stuck' && stuck) ||
-        (teamsFilter === 'unstarted' && !claimed)
+        (teamsFilter === 'unstarted' && !claimed && !tm.withdrawn_at)
       );
       if (!matchFilter) return false;
       if (!teamsQuery) return true;
@@ -6861,6 +6895,7 @@ async function viewRunDetail(view, runID) {
               teamAvatar(tm, teamColor(tm.id, i), 26),
               h('a', { href: '#', on: { click: (e) => { e.preventDefault(); openTeamDetail(event.id, tm, adventure, event); } } }, tm.name)),
             tm.completed_at ? h('span', { class: 'pill success', style: 'margin-left:.5rem' }, '✓ ' + t('done')) : null,
+            tm.withdrawn_at ? h('span', { class: 'pill', style: 'margin-left:.5rem' }, t('withdrew')) : null,
             stuck ? h('span', { class: 'pill warning', style: 'margin-left:.5rem' }, '⚠ ' + t('stuck?')) : null,
             showClaimed
               ? h('span', { class: 'pill', style: 'margin-left:.5rem; font-size:.7rem' },
@@ -7189,11 +7224,17 @@ async function viewEventControl(view, runID) {
     const prev = lastEventByTeam.get(ev.team_id);
     if (!prev || (ev.created_at > prev)) lastEventByTeam.set(ev.team_id, ev.created_at);
   }
+  const teamRank = (tm) => {
+    if (tm.completed_at) return 0;          // finished: top group
+    if (tm.withdrawn_at) return 2;          // withdrew: bottom group
+    return 1;                                // still active: middle group
+  };
+  const canWithdraw = (event.allowed_ops || []).includes('withdraw_team');
   const buildLeaderboard = () => {
     const visible = teams.filter(teamMatches).slice().sort((a, b) => {
-      const aDone = !!a.completed_at, bDone = !!b.completed_at;
-      if (aDone !== bDone) return aDone ? -1 : 1;
-      if (aDone && bDone) return (a.completed_at || '').localeCompare(b.completed_at || '');
+      const ra = teamRank(a), rb = teamRank(b);
+      if (ra !== rb) return ra - rb;
+      if (ra === 0) return (a.completed_at || '').localeCompare(b.completed_at || '');
       if (a.page_index !== b.page_index) return b.page_index - a.page_index;
       return a.name.localeCompare(b.name);
     });
@@ -7201,16 +7242,19 @@ async function viewEventControl(view, runID) {
       h('h2', { style: 'margin:0 0 .5rem' }, t('Leaderboard')),
       visible.length === 0
         ? h('p', { class: 'muted', style: 'margin:0' }, t('No teams match the current filter.'))
-        : h('table', { class: 'table' },
+        : h('div', { class: 'control-scroll' }, h('table', { class: 'table' },
             h('thead', {}, h('tr', {},
               h('th', {}, '#'),
               h('th', {}, t('Team')),
               h('th', {}, t('Puzzle')),
-              h('th', { class: 'hide-narrow' }, t('Last activity')))),
+              h('th', { class: 'hide-narrow' }, t('Last activity')),
+              h('th', {}, ''))),
             h('tbody', {}, visible.map((tm, rank) => {
               const i = teamIndex.get(tm.id) ?? 0;
               const lastEv = lastEventByTeam.get(tm.id);
-              return h('tr', {},
+              const withdrawn = !!tm.withdrawn_at;
+              const rowStyle = withdrawn ? 'opacity:.55' : '';
+              return h('tr', { style: rowStyle },
                 h('td', { class: 'mono' }, '#' + (rank + 1)),
                 h('td', {},
                   h('span', { style: 'display:inline-flex; align-items:center; gap:.5rem' },
@@ -7218,6 +7262,9 @@ async function viewEventControl(view, runID) {
                     tm.name),
                   tm.completed_at
                     ? h('span', { class: 'pill success', style: 'margin-left:.4rem' }, '✓ ' + t('done'))
+                    : null,
+                  withdrawn
+                    ? h('span', { class: 'pill', style: 'margin-left:.4rem' }, t('withdrew'))
                     : null),
                 h('td', { class: 'mono' },
                   adventure?.pages
@@ -7228,8 +7275,20 @@ async function viewEventControl(view, runID) {
                     : tm.page_index),
                 h('td', { class: 'hide-narrow muted', style: 'font-size:.85rem' },
                   lastEv ? fmtLocal(lastEv) : t('—')),
+                // Withdraw / un-withdraw is the per-row action surface.
+                // Hidden once the event hits a terminal state (server
+                // rejects too) and on already-finished teams (a finisher
+                // can't be retroactively withdrawn).
+                h('td', { style: 'text-align:right' },
+                  canWithdraw && !tm.completed_at
+                    ? (withdrawn
+                        ? iconBtn('back', t('Mark returned'),
+                            () => unwithdrawTeam(event.id, tm))
+                        : iconBtn('moon', t('Mark withdrawn'),
+                            () => confirmWithdrawTeam(event.id, tm)))
+                    : null),
               );
-            })))
+            }))))
     );
   };
 
@@ -7251,7 +7310,7 @@ async function viewEventControl(view, runID) {
       h('h2', { style: 'margin:0 0 .5rem' }, t('Activity')),
       visibleEvents.length === 0
         ? h('p', { class: 'muted', style: 'margin:0' }, t('No activity yet.'))
-        : h('div', { class: 'event-log-body' }, renderEventFeed(visibleEvents, teams)),
+        : h('div', { class: 'control-scroll' }, renderEventFeed(visibleEvents, teams)),
     );
   };
 
@@ -7280,7 +7339,7 @@ async function viewEventControl(view, runID) {
   };
   body.append(
     statsHost,
-    h('div', { class: 'grid cols-2', style: 'gap:1rem' }, lbHost, feedHost),
+    h('div', { class: 'control-grid' }, lbHost, feedHost),
     mapCard,
   );
 
@@ -7775,6 +7834,34 @@ async function skipPuzzle(team, close) {
   } else {
     toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
   }
+}
+
+// confirmWithdrawTeam stamps withdrawn_at on the team — a soft flag
+// that keeps the team visible in the recap (as "withdrew at puzzle N")
+// without removing them like a delete would. Reversible via the
+// "Mark returned" affordance until the event reaches a terminal state.
+async function confirmWithdrawTeam(eventID, team) {
+  const ok = await modal(t('Mark “{{name}}” as withdrawn?', { name: team.name }), ({ body, close }) => {
+    body.append(
+      h('p', {}, t('They stay in the recap as "withdrew at puzzle {{n}}", but stop counting against the leaderboard and the "stuck" detector. You can flip it back if they return.',
+        { n: team.page_index + 1 })),
+      h('div', { class: 'row end' },
+        h('button', { class: 'btn', on: { click: () => close(false) } }, t('Cancel')),
+        h('button', { class: 'btn primary', on: { click: () => close(true) } }, t('Mark withdrawn'))));
+  });
+  if (!ok) return;
+  const r = await api(`/api/admin/teams/${team.id}/withdraw`, { method: 'POST' });
+  if (r.status === 200) { toastOk(t('Team marked as withdrawn')); renderRoute(); }
+  else toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+}
+
+// unwithdrawTeam undoes a withdraw — used when the team rejoined or the
+// arranger clicked the wrong button. No password gate; the underlying
+// state transition is the symmetrical undo.
+async function unwithdrawTeam(eventID, team) {
+  const r = await api(`/api/admin/teams/${team.id}/unwithdraw`, { method: 'POST' });
+  if (r.status === 200) { toastOk(t('Team is active again')); renderRoute(); }
+  else toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
 }
 
 async function confirmDeleteTeam(team) {

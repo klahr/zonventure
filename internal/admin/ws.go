@@ -159,6 +159,7 @@ type eventDetailTeamDTO struct {
 	Email       string               `json:"email,omitempty"`
 	PageIndex   int                  `json:"page_index"`
 	CompletedAt string               `json:"completed_at,omitempty"`
+	WithdrawnAt string               `json:"withdrawn_at,omitempty"`
 	Token       string               `json:"token"`
 	// RecapToken matches the HTTP EventDetail field — surfaced on
 	// every state push so the post-completion view can link to
@@ -211,6 +212,7 @@ func (h *Handlers) buildEventDetail(ctx context.Context, eventID int64) (eventDe
 	rows, err := h.DB.QueryContext(ctx, `
 		SELECT t.id, t.name, COALESCE(t.email, ''),
 		       t.current_page_index, COALESCE(t.completed_at, ''),
+		       COALESCE(t.withdrawn_at, ''),
 		       t.token, COALESCE(t.recap_token, ''),
 		       (t.avatar_mime_type IS NOT NULL)::int AS has_avatar
 		FROM teams t WHERE t.event_id = $1 ORDER BY t.name
@@ -222,7 +224,7 @@ func (h *Handlers) buildEventDetail(ctx context.Context, eventID int64) (eventDe
 	for rows.Next() {
 		t := eventDetailTeamDTO{Members: []eventDetailMemberDTO{}}
 		var hasAvatar int
-		if err := rows.Scan(&t.ID, &t.Name, &t.Email, &t.PageIndex, &t.CompletedAt, &t.Token, &t.RecapToken, &hasAvatar); err != nil {
+		if err := rows.Scan(&t.ID, &t.Name, &t.Email, &t.PageIndex, &t.CompletedAt, &t.WithdrawnAt, &t.Token, &t.RecapToken, &hasAvatar); err != nil {
 			return eventDetailDTO{}, err
 		}
 		if hasAvatar != 0 {

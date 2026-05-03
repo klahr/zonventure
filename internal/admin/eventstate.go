@@ -25,6 +25,12 @@ const (
 	OpRemoveSlot      eventOp = "remove_slot"
 	OpRotateSlotToken eventOp = "rotate_slot_token"
 	OpUnlockTeam      eventOp = "unlock_team"
+	// OpWithdrawTeam soft-flags a team that gave up mid-event so it
+	// stops counting as "stuck" and gets its own "Withdrew" group on
+	// the leaderboard + recap. Reversible via the same op (toggle).
+	// Allowed only while a result-affecting state is in flight —
+	// post-completion the standings are frozen for honest reporting.
+	OpWithdrawTeam    eventOp = "withdraw_team"
 	// OpEditTeamEmail is the captain-contact email edit. Distinct
 	// from OpRenameTeam because email is purely arranger-side
 	// metadata (never surfaced on the player share page) and an
@@ -47,6 +53,7 @@ var allOps = []eventOp{
 	OpRemoveSlot,
 	OpRotateSlotToken,
 	OpUnlockTeam,
+	OpWithdrawTeam,
 	OpEditTeamEmail,
 }
 
@@ -82,7 +89,7 @@ func allowedForState(state string, op eventOp) bool {
 	case "running", "paused":
 		switch op {
 		case OpCreateTeam, OpRenameTeam, OpSetTeamAvatar,
-			OpAddSlot, OpRotateSlotToken, OpUnlockTeam:
+			OpAddSlot, OpRotateSlotToken, OpUnlockTeam, OpWithdrawTeam:
 			return true
 		}
 	case "completed", "cancelled":

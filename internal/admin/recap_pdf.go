@@ -92,6 +92,7 @@ type recapPDFTeam struct {
 	Members     string
 	Solved      int
 	CompletedAt string // raw stamp from DB; "" when team didn't finish
+	WithdrawnAt string // raw stamp; non-empty teams render in their own group
 	Elapsed     time.Duration
 }
 
@@ -154,11 +155,19 @@ func (h *Handlers) collectRecapPDFData(ctx context.Context, eventID, orgID int64
 	// teams identically. A stakeholder cross-checking the PDF against
 	// the spreadsheet should never see disagreement.
 	rows, err := h.DB.QueryContext(ctx, `
-		SELECT t.id, t.name, t.current_page_index, COALESCE(t.completed_at, '')
+		SELECT t.id, t.name, t.current_page_index,
+		       COALESCE(t.completed_at, ''),
+		       COALESCE(t.withdrawn_at, '')
 		FROM teams t
 		WHERE t.event_id = $1
 		ORDER BY
-		  (CASE WHEN t.completed_at IS NULL THEN 1 ELSE 0 END),
+		  -- Group order: finishers first, then unfinished (still active),
+		  -- then withdrawn at the bottom. Each group sorts internally.
+		  (CASE
+		     WHEN t.completed_at IS NOT NULL THEN 0
+		     WHEN t.withdrawn_at IS NULL    THEN 1
+		     ELSE 2
+		   END),
 		  t.completed_at ASC,
 		  t.current_page_index DESC,
 		  COALESCE(
@@ -190,8 +199,9 @@ func (h *Handlers) collectRecapPDFData(ctx context.Context, eventID, orgID int64
 			name      string
 			rawCursor int
 			completed string
+			withdrawn string
 		)
-		if err := rows.Scan(&teamID, &name, &rawCursor, &completed); err != nil {
+		if err := rows.Scan(&teamID, &name, &rawCursor, &completed, &withdrawn); err != nil {
 			return d, err
 		}
 		rank++
@@ -217,6 +227,7 @@ func (h *Handlers) collectRecapPDFData(ctx context.Context, eventID, orgID int64
 			Members:     members,
 			Solved:      solved,
 			CompletedAt: completed,
+			WithdrawnAt: withdrawn,
 			Elapsed:     elapsed,
 		})
 	}
@@ -415,16 +426,35 @@ func writeRecapPDF(w io.Writer, d recapPDFData) error {
 		pdf.SetFont("Helvetica", "I", 9)
 		pdf.CellFormat(usableW, 8, "No teams played in this event.", "", 1, "L", false, 0, "")
 	}
+	// Print a small "Withdrew" header the first time a withdrawn team
+	// appears so the reader sees the group break clearly. Same data
+	// table; just a faint divider row.
+	withdrawnHeaderPrinted := false
 	for i, t := range d.Teams {
+		if t.WithdrawnAt != "" && !withdrawnHeaderPrinted {
+			withdrawnHeaderPrinted = true
+			pdf.Ln(2)
+			pdf.SetFont("Helvetica", "I", 9)
+			pdf.SetTextColor(140, 140, 140)
+			pdf.CellFormat(usableW, 6, safeText("Withdrew"), "", 1, "L", false, 0, "")
+			pdf.SetFont("Helvetica", "", 9)
+			pdf.SetTextColor(40, 40, 40)
+		}
 		// Faint zebra striping so a long roster stays scannable.
 		if i%2 == 1 {
 			y := pdf.GetY()
 			pdf.SetFillColor(252, 252, 252)
 			pdf.Rect(marginX, y, usableW, 6, "F")
 		}
-		elapsed := "—"
+		elapsed := "-"
 		if t.Elapsed > 0 {
 			elapsed = formatHMS(t.Elapsed)
+		}
+		// Withdrawn row's "Time" column shows "withdrew" rather than
+		// the dash, so the column communicates intent rather than
+		// "we don't know."
+		if t.WithdrawnAt != "" {
+			elapsed = "withdrew"
 		}
 		row := []string{
 			strconv.Itoa(t.Rank),
@@ -433,8 +463,16 @@ func writeRecapPDF(w io.Writer, d recapPDFData) error {
 			fmt.Sprintf("%d / %d", t.Solved, d.PageCount),
 			elapsed,
 		}
+		// Withdrawn rows render in muted grey so they read as a
+		// supporting note rather than a competitor's standing.
+		if t.WithdrawnAt != "" {
+			pdf.SetTextColor(140, 140, 140)
+		}
 		for j, c := range cols {
 			pdf.CellFormat(c.w, 6, safeText(row[j]), "", 0, c.align, false, 0, "")
+		}
+		if t.WithdrawnAt != "" {
+			pdf.SetTextColor(40, 40, 40)
 		}
 		pdf.Ln(6)
 	}

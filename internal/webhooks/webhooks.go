@@ -40,6 +40,7 @@ const (
 	KindEventCompleted    = "event.completed"
 	KindTeamCreated     = "team.created"
 	KindTeamCompleted   = "team.completed"
+	KindTeamWithdrawn   = "team.withdrawn"
 	KindPurchasePaid    = "purchase.paid"
 	KindPurchaseRefunded = "purchase.refunded"
 
@@ -59,6 +60,7 @@ var AllKinds = []string{
 	KindEventCompleted,
 	KindTeamCreated,
 	KindTeamCompleted,
+	KindTeamWithdrawn,
 	KindPurchasePaid,
 	KindPurchaseRefunded,
 }

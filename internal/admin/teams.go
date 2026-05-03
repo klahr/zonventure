@@ -14,6 +14,7 @@ import (
 	"git.sr.ht/~klahr/zv/internal/imageutil"
 	"git.sr.ht/~klahr/zv/internal/activity"
 	"git.sr.ht/~klahr/zv/internal/storage"
+	"git.sr.ht/~klahr/zv/internal/webhooks"
 	"git.sr.ht/~klahr/zv/internal/ws"
 	"github.com/go-chi/chi/v5"
 )
@@ -395,6 +396,86 @@ func (h *Handlers) UnlockTeam(w http.ResponseWriter, r *http.Request) {
 	}
 	h.Hub.Publish(ws.EventTopic(eventID), "changed", nil)
 	httpx.JSON(w, http.StatusOK, map[string]any{"page_index": next, "completed": next >= len(adv.Pages)})
+}
+
+// WithdrawTeam soft-flags a team as withdrawn (stamps withdrawn_at).
+// Used when a team gives up mid-event but should still appear in the
+// recap as "didn't finish — withdrew." Idempotent: a second call on a
+// team already withdrawn is a no-op (still 200, no second activity
+// row).
+func (h *Handlers) WithdrawTeam(w http.ResponseWriter, r *http.Request) {
+	teamID, eventID, ok := h.teamFromRequest(w, r)
+	if !ok {
+		return
+	}
+	if !h.requireEventOp(w, r.Context(), eventID, OpWithdrawTeam) {
+		return
+	}
+	var alreadyWithdrawn sql.NullString
+	if err := h.DB.QueryRowContext(r.Context(),
+		`SELECT withdrawn_at FROM teams WHERE id = $1`, teamID).Scan(&alreadyWithdrawn); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			httpx.Error(w, http.StatusNotFound, "team not found")
+			return
+		}
+		httpx.Error(w, http.StatusInternalServerError, "lookup failed")
+		return
+	}
+	if alreadyWithdrawn.Valid && alreadyWithdrawn.String != "" {
+		httpx.JSON(w, http.StatusOK, map[string]any{"withdrawn_at": alreadyWithdrawn.String})
+		return
+	}
+	if _, err := h.DB.ExecContext(r.Context(),
+		`UPDATE teams SET withdrawn_at = now_text() WHERE id = $1`, teamID); err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "update failed")
+		return
+	}
+	var withdrawnAt string
+	_ = h.DB.QueryRowContext(r.Context(),
+		`SELECT withdrawn_at FROM teams WHERE id = $1`, teamID).Scan(&withdrawnAt)
+	me, _ := auth.FromContext(r.Context())
+	activity.Record(r.Context(), h.DB, eventID, &teamID, activity.UserActor(me.ID), activity.TeamWithdrawn,
+		map[string]any{"by_arranger": true})
+	orgID, _ := h.eventOrg(r.Context(), eventID)
+	webhooks.TryPublish(r.Context(), h.DB, orgID, webhooks.KindTeamWithdrawn, map[string]any{
+		"event_id":      eventID,
+		"team_id":       teamID,
+		"withdrawn_at":  withdrawnAt,
+	})
+	// Withdrawing the last unfinished team should flip the event to
+	// completed — same shape as an Unlock that takes the final team
+	// past its last puzzle.
+	_, _ = activity.MaybeCompleteEvent(r.Context(), h.DB, eventID)
+	h.Hub.Publish(ws.EventTopic(eventID), "changed", nil)
+	httpx.JSON(w, http.StatusOK, map[string]any{"withdrawn_at": withdrawnAt})
+}
+
+// UnwithdrawTeam clears the withdrawn_at flag — used to undo an
+// accidental click or to bring a team back if they returned. Records a
+// distinct activity kind ("team.returned") so the timeline reads
+// honestly. Permission gating mirrors WithdrawTeam.
+func (h *Handlers) UnwithdrawTeam(w http.ResponseWriter, r *http.Request) {
+	teamID, eventID, ok := h.teamFromRequest(w, r)
+	if !ok {
+		return
+	}
+	if !h.requireEventOp(w, r.Context(), eventID, OpWithdrawTeam) {
+		return
+	}
+	res, err := h.DB.ExecContext(r.Context(),
+		`UPDATE teams SET withdrawn_at = NULL WHERE id = $1 AND withdrawn_at IS NOT NULL`, teamID)
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "update failed")
+		return
+	}
+	rows, _ := res.RowsAffected()
+	if rows > 0 {
+		me, _ := auth.FromContext(r.Context())
+		activity.Record(r.Context(), h.DB, eventID, &teamID, activity.UserActor(me.ID), activity.TeamReturned,
+			map[string]any{"by_arranger": true})
+		h.Hub.Publish(ws.EventTopic(eventID), "changed", nil)
+	}
+	httpx.JSON(w, http.StatusOK, map[string]any{"withdrawn_at": ""})
 }
 
 func teamIDFrom(r *http.Request) (int64, bool) {

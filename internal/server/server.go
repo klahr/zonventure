@@ -635,6 +635,11 @@ func New(cfg Config) http.Handler {
 		r.Delete("/teams/{teamID}/slots/{slotID}", adminH.RemoveSlot)
 		r.Post("/teams/{teamID}/slots/{slotID}/rotate", adminH.RotateSlotToken)
 		r.Post("/teams/{teamID}/unlock", adminH.UnlockTeam)
+		// Withdraw / unwithdraw soft-flag a team that gave up mid-event
+		// without deleting them — they stay in the recap as
+		// "withdrew at puzzle 4" instead of vanishing from history.
+		r.Post("/teams/{teamID}/withdraw", adminH.WithdrawTeam)
+		r.Post("/teams/{teamID}/unwithdraw", adminH.UnwithdrawTeam)
 		// Per-team resend of the invitation email. Re-uses the team's
 		// existing slot tokens (no re-mint), so opening already-
 		// claimed sessions stays valid. Players who lost their session

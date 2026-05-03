@@ -326,6 +326,7 @@ func (h *Handlers) EventDetail(w http.ResponseWriter, r *http.Request) {
 		Email       string    `json:"email,omitempty"`
 		PageIndex   int       `json:"page_index"`
 		CompletedAt string    `json:"completed_at,omitempty"`
+		WithdrawnAt string    `json:"withdrawn_at,omitempty"`
 		Token       string    `json:"token"`
 		// RecapToken is the public /recap/{token} URL — emitted on
 		// every detail fetch so the post-completion results card can
@@ -339,6 +340,7 @@ func (h *Handlers) EventDetail(w http.ResponseWriter, r *http.Request) {
 	rows, err := h.DB.QueryContext(r.Context(), `
 		SELECT t.id, t.name, COALESCE(t.email, ''),
 		       t.current_page_index, COALESCE(t.completed_at, ''),
+		       COALESCE(t.withdrawn_at, ''),
 		       t.token, COALESCE(t.recap_token, ''),
 		       (t.avatar_mime_type IS NOT NULL)::int AS has_avatar
 		FROM teams t WHERE t.event_id = $1 ORDER BY t.name
@@ -351,7 +353,7 @@ func (h *Handlers) EventDetail(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		t := teamOut{Members: []slotOut{}}
 		var hasAvatar int
-		if err := rows.Scan(&t.ID, &t.Name, &t.Email, &t.PageIndex, &t.CompletedAt, &t.Token, &t.RecapToken, &hasAvatar); err != nil {
+		if err := rows.Scan(&t.ID, &t.Name, &t.Email, &t.PageIndex, &t.CompletedAt, &t.WithdrawnAt, &t.Token, &t.RecapToken, &hasAvatar); err != nil {
 			httpx.Error(w, http.StatusInternalServerError, "team scan failed")
 			return
 		}
