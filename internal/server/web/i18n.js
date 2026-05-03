@@ -21,6 +21,12 @@
       'arranger': 'arrangör',
       'administrator': 'administratör',
       'Username': 'Användarnamn',
+      'Username or email': 'Användarnamn eller e-post',
+      'Email (optional)': 'E-post (valfritt)',
+      'Lets the user log in with either their username or email, and gives them a contact address for password reset.':
+        'Låter användaren logga in med antingen användarnamn eller e-post, och ger en kontaktadress för lösenordsåterställning.',
+      'username or email not available': 'användarnamnet eller e-posten är upptagen',
+      'email must contain @': 'e-postadressen måste innehålla @',
       'Password': 'Lösenord',
       'Log in': 'Logga in',
       'login failed': 'inloggningen misslyckades',

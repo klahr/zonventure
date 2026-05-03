@@ -3312,6 +3312,10 @@ function renderLogin(err, mode, extra) {
   }, t('Log in'));
   const usernameEl = h('input', { name: 'u', autocomplete: 'username', required: true });
   const passwordEl = h('input', { name: 'p', type: 'password', autocomplete: 'current-password', required: true });
+  // Field accepts username OR email — VerifyPassword on the server
+  // tries username first, then falls back to email lookup. Labelling
+  // it explicitly so users with an email-only mental model don't
+  // bounce off a "Username" field they don't have.
   // SSO button rendered above the username/password block when the
   // operator has configured OIDC. Same brand-accent styling as the
   // primary submit so it reads as the recommended option for
@@ -3372,7 +3376,7 @@ function renderLogin(err, mode, extra) {
   const form = h('form', { class: 'login' },
     h('div', { class: 'brand' }, 'zonventure', h('small', {}, t('studio'))),
     ssoBlock,
-    h('label', { class: 'field' }, h('span', {}, t('Username')), usernameEl),
+    h('label', { class: 'field' }, h('span', {}, t('Username or email')), usernameEl),
     h('label', { class: 'field' }, h('span', {}, t('Password')), passwordEl),
     errEl,
     h('div', { style: 'margin-top:1rem' }, submit),
@@ -9082,6 +9086,14 @@ async function openAddOrgMember(org) {
       role: 'listbox',
       style: 'list-style:none; padding:.25rem; margin:.25rem 0 0; border:1px solid var(--border-soft); border-radius:8px; max-height:14rem; overflow-y:auto; background:var(--surface); display:none',
     });
+    const emailEl = h('input', {
+      name: 'e', type: 'email', autocomplete: 'email',
+    });
+    const emailRow = h('label', { class: 'field' },
+      h('span', {}, t('Email (optional)')),
+      emailEl,
+      h('small', { class: 'muted', style: 'display:block; margin-top:.2rem' },
+        t('Lets the user log in with either their username or email, and gives them a contact address for password reset.')));
     const passwordEl = h('input', {
       name: 'p', type: 'password', autocomplete: 'new-password', minlength: 8,
     });
@@ -9106,16 +9118,19 @@ async function openAddOrgMember(org) {
 
     const setMode = () => {
       if (pickedUser) {
+        emailRow.style.display = 'none';
         passwordRow.style.display = 'none';
         passwordEl.required = false;
         status.textContent = t('Adding existing user — they keep their current password.');
         status.className = 'ok';
       } else if (usernameEl.value.trim()) {
+        emailRow.style.display = '';
         passwordRow.style.display = '';
         passwordEl.required = true;
         status.textContent = t('Will create a new account — set an initial password below.');
         status.className = 'muted';
       } else {
+        emailRow.style.display = '';
         passwordRow.style.display = '';
         passwordEl.required = false;
         status.textContent = '';
@@ -9233,6 +9248,7 @@ async function openAddOrgMember(org) {
         usernameEl,
         suggList),
       status,
+      emailRow,
       passwordRow,
       h('label', { class: 'field' }, h('span', {}, t('Role')), roleEl),
       h('div', { class: 'row end' },
@@ -9257,6 +9273,8 @@ async function openAddOrgMember(org) {
           return;
         }
         payload.password = passwordEl.value;
+        const email = emailEl.value.trim();
+        if (email) payload.email = email;
       }
       const r = await api(`/api/admin/organizations/${org.id}/members`, {
         method: 'POST',

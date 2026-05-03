@@ -253,6 +253,7 @@ func (h *Handlers) DeleteOrganization(w http.ResponseWriter, r *http.Request) {
 
 type createOrgMemberRequest struct {
 	Username string `json:"username"`
+	Email    string `json:"email"` // optional; only consumed on the new-user branch
 	Password string `json:"password"`
 	Role     string `json:"role"` // org_admin | org_member
 }
@@ -291,8 +292,13 @@ func (h *Handlers) CreateOrgMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.Username = strings.TrimSpace(req.Username)
+	req.Email = strings.TrimSpace(req.Email)
 	if req.Username == "" {
 		httpx.Error(w, http.StatusBadRequest, "username required")
+		return
+	}
+	if req.Email != "" && !strings.Contains(req.Email, "@") {
+		httpx.Error(w, http.StatusBadRequest, "email must contain @")
 		return
 	}
 	if req.Role != auth.RoleOrgAdmin && req.Role != auth.RoleOrgMember {
@@ -355,12 +361,25 @@ func (h *Handlers) CreateOrgMember(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback() //nolint:errcheck
 	var id int64
+	// Email is optional. When supplied, mark it pre-verified the same
+	// way migration 0004 grandfathered admin-created users — the org
+	// admin is creating the account on the user's behalf and takes
+	// responsibility for the address. Without this, the new account
+	// would default to email_verified = 0 and be locked out of
+	// money-touching actions until it could verify, which makes no
+	// sense for an org-admin-provisioned user.
+	var emailParam any
+	emailVerified := 0
+	if req.Email != "" {
+		emailParam = req.Email
+		emailVerified = 1
+	}
 	if err := tx.QueryRowContext(r.Context(), `
-		INSERT INTO users(username, password_hash, created_by_user_id)
-		VALUES ($1, $2, $3)
+		INSERT INTO users(username, email, email_verified, password_hash, created_by_user_id)
+		VALUES ($1, $2, $3, $4, $5)
 		RETURNING id
-	`, req.Username, hash, me.ID).Scan(&id); err != nil {
-		httpx.Error(w, http.StatusConflict, "username not available")
+	`, req.Username, emailParam, emailVerified, hash, me.ID).Scan(&id); err != nil {
+		httpx.Error(w, http.StatusConflict, "username or email not available")
 		return
 	}
 	if _, err := tx.ExecContext(r.Context(), `

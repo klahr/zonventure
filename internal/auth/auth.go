@@ -176,10 +176,12 @@ func HashPassword(pw string) (string, error) {
 	return hashSecret(pw)
 }
 
-// VerifyPassword checks the username+password credential and returns
+// VerifyPassword checks the identifier+password credential and returns
 // the resolved User without minting a session. The caller (the login
 // handler) decides whether to immediately CompleteLogin or to fork
-// into the TOTP challenge based on User.TOTPEnabled.
+// into the TOTP challenge based on User.TOTPEnabled. Identifier may be
+// either a username or an email; lookup tries username first, then
+// email.
 //
 // Returns ErrPasswordNotSet when the user exists but never set a
 // password — the caller should route that user through
@@ -188,18 +190,32 @@ func HashPassword(pw string) (string, error) {
 // User.OrgID and User.Role are populated the same way Login used to
 // populate them: the only-membership pin for single-org users, NULL
 // for multi-org and admins (the UI picker takes over).
-func VerifyPassword(ctx context.Context, db *sql.DB, username, password string) (User, error) {
+func VerifyPassword(ctx context.Context, db *sql.DB, identifier, password string) (User, error) {
 	var (
 		u    User
 		hash sql.NullString
 	)
 	var pwIsDefault int
-	err := db.QueryRowContext(ctx, `
+	// Identifier may be a username or an email — both are accepted on
+	// the login form. Username takes precedence so an existing
+	// username-collides-with-someone-elses-email match (extreme edge
+	// case) keeps the behaviour callers had before email-as-login was
+	// allowed. Both columns are CITEXT so the compare is case-insensitive.
+	row := db.QueryRowContext(ctx, `
 		SELECT id, username, is_admin, password_hash, COALESCE(email,''),
 		       (email_verified <> 0), totp_enabled, password_is_default
 		FROM users WHERE username = $1
-	`, username).Scan(&u.ID, &u.Username, &u.IsAdmin, &hash, &u.Email,
+	`, identifier)
+	err := row.Scan(&u.ID, &u.Username, &u.IsAdmin, &hash, &u.Email,
 		&u.EmailVerified, &u.TOTPEnabled, &pwIsDefault)
+	if errors.Is(err, sql.ErrNoRows) {
+		err = db.QueryRowContext(ctx, `
+			SELECT id, username, is_admin, password_hash, COALESCE(email,''),
+			       (email_verified <> 0), totp_enabled, password_is_default
+			FROM users WHERE email = $1 AND email IS NOT NULL
+		`, identifier).Scan(&u.ID, &u.Username, &u.IsAdmin, &hash, &u.Email,
+			&u.EmailVerified, &u.TOTPEnabled, &pwIsDefault)
+	}
 	u.PasswordIsDefault = pwIsDefault != 0
 	if errors.Is(err, sql.ErrNoRows) {
 		return User{}, ErrInvalidCredentials
