@@ -244,11 +244,19 @@ func parseRecapTimestamp(s string) (time.Time, bool) {
 	return time.Time{}, false
 }
 
+// pdfPageSize is the page size every PDF this package emits MUST use.
+// A4 is the standard for our buyer base (Sweden / EU); Letter would
+// surprise the customer who prints a recap and finds the trim wrong.
+// Any future PDF added here goes through this constant — the page-
+// size assertion in writeRecapPDF tests pins this to A4 across
+// fpdf upgrades.
+const pdfPageSize = "A4"
+
 // writeRecapPDF emits the report onto w. Pure rendering — no DB,
 // no http.Request — so it's straightforward to unit-test by feeding
 // in a fixture and asserting the result is a non-trivial PDF.
 func writeRecapPDF(w io.Writer, d recapPDFData) error {
-	pdf := fpdf.New("P", "mm", "A4", "")
+	pdf := fpdf.New("P", "mm", pdfPageSize, "")
 	pdf.SetMargins(15, 15, 15)
 	pdf.SetAutoPageBreak(true, 18)
 	// Footer callback fires once per page, so we don't have to

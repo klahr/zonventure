@@ -5,10 +5,13 @@ import (
 	"image"
 	"image/color"
 	"image/jpeg"
+	"io"
 	"os"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/go-pdf/fpdf"
 )
 
 // mintTinyJPEG returns a small valid JPEG byte slice for tests that
@@ -302,6 +305,77 @@ func TestSafeText(t *testing.T) {
 	if got := safeText(in); got != want {
 		t.Errorf("safeText = %q, want %q", got, want)
 	}
+}
+
+// Pins every PDF this package emits to A4. Failing this test means
+// someone added a new PDF call site without going through the
+// pdfPageSize constant, OR fpdf changed its MediaBox encoding —
+// either way, a human should look. A4 is mandatory because the
+// buyer base prints these in EU offices; Letter (US) would
+// chop the margins.
+func TestWriteRecapPDF_PageSizeIsA4(t *testing.T) {
+	ref := func(size string) []byte {
+		var buf bytes.Buffer
+		p := newPDFRef(size)
+		if err := p.Output(&buf); err != nil {
+			t.Fatalf("ref %s: %v", size, err)
+		}
+		return mediaBoxBytes(t, buf.Bytes())
+	}
+	a4 := ref("A4")
+	letter := ref("Letter")
+	if bytes.Equal(a4, letter) {
+		t.Fatalf("A4 and Letter MediaBoxes are identical — fpdf changed?")
+	}
+
+	d := recapPDFData{
+		OrgName:        "Acme",
+		AdventureTitle: "T",
+		AdventureSlug:  "t",
+		EventID:        1,
+		Accent:         "#ad1357",
+		PageCount:      1,
+		GeneratedAt:    time.Date(2026, 5, 1, 13, 0, 0, 0, time.UTC),
+	}
+	var buf bytes.Buffer
+	if err := writeRecapPDF(&buf, d); err != nil {
+		t.Fatalf("writeRecapPDF: %v", err)
+	}
+	got := mediaBoxBytes(t, buf.Bytes())
+	if !bytes.Equal(got, a4) {
+		t.Errorf("recap MediaBox = %q, want A4 %q (Letter would be %q)", got, a4, letter)
+	}
+}
+
+// mediaBoxBytes extracts the first MediaBox declaration from a PDF
+// stream so the assertion above is decoupled from fpdf's exact
+// numeric formatting (different fpdf releases trim trailing zeros
+// differently). The returned slice excludes the surrounding "/MediaBox "
+// prefix and stops at the closing bracket.
+func mediaBoxBytes(t *testing.T, b []byte) []byte {
+	t.Helper()
+	marker := []byte("/MediaBox")
+	i := bytes.Index(b, marker)
+	if i < 0 {
+		t.Fatalf("no MediaBox in PDF stream")
+	}
+	rest := b[i+len(marker):]
+	end := bytes.IndexByte(rest, ']')
+	if end < 0 {
+		t.Fatalf("MediaBox not closed")
+	}
+	return bytes.TrimSpace(rest[:end+1])
+}
+
+// newPDFRef returns a minimal one-page fpdf doc at the requested
+// page size. Only used by TestWriteRecapPDF_PageSizeIsA4 to compute
+// reference MediaBox bytes for the comparison.
+func newPDFRef(size string) interface {
+	Output(io.Writer) error
+} {
+	p := fpdf.New("P", "mm", size, "")
+	p.AddPage()
+	return p
 }
 
 // Regression test for the unstarted-event recap: when no team has
