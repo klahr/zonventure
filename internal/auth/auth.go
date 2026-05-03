@@ -536,6 +536,20 @@ func Lookup(ctx context.Context, db *sql.DB, token string) (User, bool, error) {
 		u.Role = RoleAdmin
 	} else if membRole.Valid {
 		u.Role = membRole.String
+	} else {
+		// Non-admin with no active-org membership row: either they're
+		// org-less (lobby) or their session's active_org_id points
+		// at an org they no longer belong to (kicked, multi-org with
+		// stale pin). Cheap follow-up COUNT distinguishes — zero
+		// memberships = lobby; positive = picker (Role stays empty
+		// so the UI fires its org-switch flow).
+		var memCnt int
+		_ = db.QueryRowContext(ctx,
+			`SELECT COUNT(*) FROM org_memberships WHERE user_id = $1`,
+			u.ID).Scan(&memCnt)
+		if memCnt == 0 {
+			u.Role = RoleLobby
+		}
 	}
 	if schedDel.Valid {
 		t := schedDel.Time
