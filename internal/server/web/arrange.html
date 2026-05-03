@@ -4492,10 +4492,12 @@ async function viewAdventures(view) {
         on: { click: () => scheduleRun({ slug: adv.slug }) },
       }, icon(ICONS.schedule), t('Schedule event')));
     } else if (adv.mine_to_edit && adv.org_id) {
-      // Own org content — schedule via the buy-then-create path.
+      // Own org content — the unified schedule modal embeds the
+      // capacity / purchase step so the operator stays inside one
+      // flow instead of being bounced through a separate buy modal.
       actions.append(h('button', {
         class: 'btn primary',
-        on: { click: () => openPurchaseModal(adv) },
+        on: { click: () => scheduleRun({ slug: adv.slug, ownsIt: true, adv }) },
       }, icon(ICONS.schedule), t('Schedule event')));
     } else if (adv.mine_to_edit) {
       // Admin-authored global catalog row from this admin's seat —
@@ -5899,18 +5901,73 @@ function mountAdventureMap(host, pages, colors) {
 }
 
 async function scheduleRun(source) {
-  // `source` is either a number (assignment id — the Catalog purchase flow)
-  // or an object with `{ slug }` — an admin-commissioned share or the
-  // org's own-authored adventure, both of which skip the assignment and
-  // run free.
-  const baseReq = typeof source === 'number'
-    ? { assignment_id: source }
-    : { adventure_slug: source.slug };
+  // `source` accepts three shapes:
+  //   - number — a pre-paid assignment id; skip the capacity step.
+  //   - { slug } — an admin-commissioned share; skip the capacity
+  //                step (the bilateral deal already covers billing).
+  //   - { slug, ownsIt: true, adv? } — org's own content (self-
+  //                authored or forked from the catalog). Show a
+  //                capacity step in the same modal so a buy and the
+  //                event creation happen in one flow rather than
+  //                routing through a separately-titled "Buy player
+  //                slots" modal.
+  //
+  // The buy step uses the same /api/admin/purchases endpoint as the
+  // standalone "Buy player slots" affordance: free (≤15) and invoice
+  // (trusted orgs) complete inline; Stripe-paid (>15) redirects to
+  // hosted checkout. The redirect path comes back via
+  // zv-just-purchased, which the dashboard hands off to scheduleRun
+  // again — the user re-enters name/time on that second pass.
+  const ownsIt = typeof source === 'object' && source !== null && source.ownsIt === true;
+  const slug = typeof source === 'object' && source !== null ? source.slug : null;
+  const adv = typeof source === 'object' && source !== null ? (source.adv || null) : null;
+  const baseReqFor = (assignmentID) => assignmentID
+    ? { assignment_id: assignmentID }
+    : { adventure_slug: slug };
+
   const body = await modal(t('New event'), ({ body, close }) => {
+    // Capacity section is rendered only for the ownsIt branch — the
+    // assignment-id and share branches don't need it (assignment is
+    // pre-paid; share has no per-event cost).
+    let capacityNode = null;
+    let buyCount = null;
+    let invoiceBtn = null;
+    if (ownsIt) {
+      const { PRICE_CENTS, FREE, fmtMoney, chargeable } = pricingHelpers();
+      const trusted = activeOrgIsTrusted();
+      buyCount = h('input', { type: 'number', min: '1', max: '500', value: '30', required: true });
+      const totalEl = h('strong', {}, '');
+      const update = () => {
+        const n = Math.max(1, parseInt(buyCount.value, 10) || 0);
+        totalEl.textContent = fmtMoney(chargeable(n));
+      };
+      buyCount.addEventListener('input', update);
+      update();
+      capacityNode = h('div', { style: 'margin:.25rem 0 1rem' },
+        h('h3', { style: 'margin:.25rem 0' }, t('Capacity')),
+        h('p', { class: 'muted', style: 'font-size:.85rem; margin:.25rem 0' },
+          t('How many players will join? You can grow this later from the event page.')),
+        h('div', { class: 'row', style: 'gap:.75rem; align-items:center; flex-wrap:wrap' },
+          h('label', { class: 'field', style: 'flex:0 0 auto; margin:0' },
+            h('span', {}, t('Players')), buyCount),
+          h('p', { style: 'margin:0' },
+            t('Total: '), totalEl,
+            ' ',
+            h('span', { class: 'muted', style: 'font-size:.85rem' },
+              t('(first {{n}} free, then {{price}} per player)',
+                { n: FREE, price: fmtMoney(PRICE_CENTS) })))));
+      if (trusted) {
+        // Mirrors the standalone Buy player slots modal: a secondary
+        // submit that forces provider='invoice' so finance picks it up
+        // off-platform instead of bouncing through Stripe.
+        invoiceBtn = h('button', {
+          class: 'btn', type: 'button',
+          title: t('Skip Stripe — your finance team will get an invoice from us.'),
+        }, t('Add to invoice'));
+      }
+    }
+
     const name = h('input', { placeholder: t('e.g. “Saturday Andersson party”') });
-    // A newly created run stays scheduled until the arranger explicitly
-    // hits Start on the event page — auto-starting on create robbed the
-    // arranger of the chance to add teams and share links first.
     const modeManual = h('input', { type: 'radio', name: 'mode', value: 'manual', checked: true });
     const modeLater = h('input', { type: 'radio', name: 'mode', value: 'later' });
     const when = h('input', { type: 'datetime-local', disabled: '' });
@@ -5922,7 +5979,9 @@ async function scheduleRun(source) {
     const attestErr = h('p', { class: 'err',
       style: 'display:none; font-size:.85rem; margin:.15rem 0 .5rem 1.6rem' },
       t('Please confirm the player-age statement to continue.'));
+    const submitBtn = h('button', { class: 'btn primary', type: 'submit' }, t('Create event'));
     const form = h('form', {},
+      capacityNode,
       h('label', { class: 'field' }, h('span', {}, t('Name (optional)')), name),
       h('label', { style: 'display:flex; gap:.5rem; align-items:center; margin:.5rem 0' },
         modeManual, h('span', {}, t('Start manually — I\'ll hit Start when we\'re ready'))),
@@ -5932,37 +5991,93 @@ async function scheduleRun(source) {
       h('label', { style: 'display:flex; gap:.5rem; align-items:flex-start; margin:1rem 0 .25rem; font-size:.9rem' },
         attest,
         h('span', {}, t('I confirm no participants under 13 will play this adventure, or I have parental consent for any who will.'))),
-      // Inline error replaces the easy-to-miss toast — sits right
-      // under the checkbox so the user's eye lands on it on the next
-      // submit attempt.
       attestErr,
-      h('div', { class: 'row end' },
+      h('div', { class: 'row end', style: 'gap:.5rem; flex-wrap:wrap' },
         h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, t('Cancel')),
-        h('button', { class: 'btn primary', type: 'submit' }, t('Create event'))),
-    );
+        invoiceBtn,
+        submitBtn));
     attest.addEventListener('change', () => {
       if (attest.checked) attestErr.style.display = 'none';
     });
-    form.addEventListener('submit', (e) => {
-      e.preventDefault();
+    // collectScheduleFields validates the modal's shared widgets and
+    // returns the partial event-create payload (name + scheduled_at).
+    // Returns null after surfacing inline feedback when invalid.
+    const collectScheduleFields = () => {
       if (!attest.checked) {
         attestErr.style.display = '';
         attest.focus();
+        return null;
+      }
+      const out = { name: name.value.trim(), attest_no_minors: true };
+      if (modeLater.checked) {
+        if (!when.value) { toastErr(t('Pick an auto-start time')); return null; }
+        const d = new Date(when.value);
+        if (Number.isNaN(d.getTime())) { toastErr(t('Bad date')); return null; }
+        out.scheduled_at = d.toISOString();
+      }
+      return out;
+    };
+    // currentPlayers reads the buy-count input live so submit handlers
+    // close with the latest value. Returns 0 when there's no capacity
+    // section (assignment-id and share branches) — the caller skips
+    // the buy step in those cases.
+    const currentPlayers = () => buyCount
+      ? Math.max(0, parseInt(buyCount.value, 10) || 0)
+      : 0;
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const fields = collectScheduleFields();
+      if (!fields) return;
+      if (ownsIt && currentPlayers() < 1) {
+        toastErr(t('Enter at least 1 player'));
         return;
       }
-      const req = { ...baseReq, name: name.value.trim(), attest_no_minors: true };
-      if (modeLater.checked) {
-        if (!when.value) { toastErr(t('Pick an auto-start time')); return; }
-        const d = new Date(when.value);
-        if (Number.isNaN(d.getTime())) { toastErr(t('Bad date')); return; }
-        req.scheduled_at = d.toISOString();
-      }
-      close({ req });
+      close({ fields, provider: null, players: currentPlayers() });
     });
+    if (invoiceBtn) {
+      invoiceBtn.addEventListener('click', () => {
+        const fields = collectScheduleFields();
+        if (!fields) return;
+        if (currentPlayers() < 1) {
+          toastErr(t('Enter at least 1 player'));
+          return;
+        }
+        close({ fields, provider: 'invoice', players: currentPlayers() });
+      });
+    }
     body.append(form);
   });
   if (!body) return;
-  const r = await api('/api/admin/events', { method: 'POST', body: JSON.stringify(body.req) });
+  // Resolve assignment id for the create-event call. ownsIt mints
+  // one inline; the other two branches either supply it directly
+  // (number source) or let the server derive a free implicit one
+  // from the share (slug source).
+  let assignmentID = typeof source === 'number' ? source : null;
+  if (ownsIt) {
+    const buyBody = { adventure_slug: slug, max_players: body.players };
+    if (body.provider) buyBody.provider = body.provider;
+    const pr = await api('/api/admin/purchases', { method: 'POST', body: JSON.stringify(buyBody) });
+    if (pr.status !== 201) {
+      toastErr(pr.body?.error || t('Purchase failed'));
+      return;
+    }
+    if (pr.body.state === 'paid' && pr.body.assignment_id) {
+      assignmentID = pr.body.assignment_id;
+    } else if (pr.body.checkout_url) {
+      // Stripe-paid path: the redirect throws away modal state. The
+      // dashboard's zv-just-purchased handler reopens scheduleRun
+      // with the minted assignment id, so the user re-enters
+      // name/time on the second pass — acceptable trade vs. trying
+      // to round-trip form values through Stripe's hosted page.
+      location.href = pr.body.checkout_url;
+      return;
+    } else {
+      toastErr(t('Payment did not complete'));
+      return;
+    }
+  }
+  const req = { ...baseReqFor(assignmentID), ...body.fields };
+  const r = await api('/api/admin/events', { method: 'POST', body: JSON.stringify(req) });
   if (r.status !== 201) { toastErr(r.body?.error || t('error {{status}}', { status: r.status })); return; }
   const runID = r.body.id;
   toastOk(t('Event ready'));

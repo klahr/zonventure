@@ -979,6 +979,10 @@
         'Används endast av arrangören — visas aldrig på lagets delningssida.',
       'Add the first team': 'Lägg till första laget',
       'Capacity': 'Kapacitet',
+      'How many players will join? You can grow this later from the event page.':
+        'Hur många spelare kommer? Du kan utöka senare från eventsidan.',
+      'Enter at least 1 player': 'Ange minst 1 spelare',
+      'Payment did not complete': 'Betalningen slutfördes inte',
       'Team slots': 'Lagplatser',
       'Team name required': 'Lagnamn krävs',
       'Team name required.': 'Lagnamn krävs.',
