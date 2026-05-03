@@ -7030,8 +7030,12 @@ async function viewEventControl(view, runID) {
   for (const id of [...filterSet]) {
     if (!teams.some((tm) => tm.id === id)) filterSet.delete(id);
   }
-  const showAll = filterSet.size === 0;
-  const teamMatches = (tm) => showAll || filterSet.has(tm.id);
+  // Dynamic — must NOT be captured. The chip handlers mutate
+  // filterSet in place and call renderControlBody(); a captured
+  // `showAll` would still hold its initial value during that next
+  // render and the leaderboard/map/feed would keep showing every
+  // team regardless of which chips the arranger toggled.
+  const teamMatches = (tm) => filterSet.size === 0 || filterSet.has(tm.id);
 
   // Team -> colour map shared by leaderboard, map traces and chips.
   const teamIndex = new Map();
@@ -7146,7 +7150,7 @@ async function viewEventControl(view, runID) {
     filterBar.replaceChildren(
       h('span', { class: 'muted', style: 'font-size:.85rem; margin-right:.25rem' },
         t('Show:')),
-      filterChip(t('All teams'), showAll, clearFilter),
+      filterChip(t('All teams'), filterSet.size === 0, clearFilter),
       ...teams.map((tm) => {
         const i = teamIndex.get(tm.id) ?? 0;
         return filterChip(tm.name, filterSet.has(tm.id), () => toggleTeam(tm.id),
@@ -7233,7 +7237,7 @@ async function viewEventControl(view, runID) {
   const feedHost = h('div', { class: 'card' });
   const buildFeed = () => {
     const visibleEvents = events.filter((ev) => {
-      if (!showAll && ev.team_id && !filterSet.has(ev.team_id)) return false;
+      if (filterSet.size > 0 && ev.team_id && !filterSet.has(ev.team_id)) return false;
       // Drop noisy lifecycle rows from the feed — race control wants
       // the "what's happening to teams right now" stream, not setup
       // history. The setup-detail page's Event log keeps the full
