@@ -4182,7 +4182,7 @@ async function viewArrangerDashboard(view) {
     api('/api/admin/adventures'),
     api('/api/admin/assignments'),
   ]);
-  const newEventBtn = h('button', { class: 'btn primary', on: { click: () => openNewEventWizard() } },
+  const newEventBtn = h('button', { class: 'btn primary', on: { click: () => scheduleRun() } },
     icon(ICONS.plus), t('Start a new event'));
   const rs = eventsR.body?.events || [];
   const advs = advR.body?.adventures || [];
@@ -5900,94 +5900,188 @@ function mountAdventureMap(host, pages, colors) {
   }
 }
 
+// scheduleRun is the unified "create an event" flow — one modal that
+// adapts to what the caller already knows. Sources:
+//   undefined          — full picker mode: pick an adventure, then any
+//                        capacity step the chosen adventure needs.
+//   number             — a pre-paid assignment id; capacity skipped.
+//   { slug }           — an admin-commissioned share; capacity skipped
+//                        (the bilateral deal already covers billing).
+//   { slug, ownsIt }   — org's own content (self-authored or forked);
+//                        capacity step shown, buy minted on submit.
+//
+// The modal shows a lean default (Capacity when needed, Name, When,
+// Attestation) plus a collapsed "Add teams now" disclosure for
+// optional bulk team creation. Trusted orgs see an "Add to invoice"
+// button when a buy is in play.
+//
+// Stripe-paid (>15 players) redirects to hosted checkout; on return
+// the dashboard's zv-just-purchased hook reopens scheduleRun with the
+// minted assignment id, so the user re-enters name/time on that
+// second pass. Free / invoice / paid-pre-existing all complete inline.
 async function scheduleRun(source) {
-  // `source` accepts three shapes:
-  //   - number — a pre-paid assignment id; skip the capacity step.
-  //   - { slug } — an admin-commissioned share; skip the capacity
-  //                step (the bilateral deal already covers billing).
-  //   - { slug, ownsIt: true, adv? } — org's own content (self-
-  //                authored or forked from the catalog). Show a
-  //                capacity step in the same modal so a buy and the
-  //                event creation happen in one flow rather than
-  //                routing through a separately-titled "Buy player
-  //                slots" modal.
-  //
-  // The buy step uses the same /api/admin/purchases endpoint as the
-  // standalone "Buy player slots" affordance: free (≤15) and invoice
-  // (trusted orgs) complete inline; Stripe-paid (>15) redirects to
-  // hosted checkout. The redirect path comes back via
-  // zv-just-purchased, which the dashboard hands off to scheduleRun
-  // again — the user re-enters name/time on that second pass.
-  const ownsIt = typeof source === 'object' && source !== null && source.ownsIt === true;
-  const slug = typeof source === 'object' && source !== null ? source.slug : null;
-  const adv = typeof source === 'object' && source !== null ? (source.adv || null) : null;
-  const baseReqFor = (assignmentID) => assignmentID
-    ? { assignment_id: assignmentID }
-    : { adventure_slug: slug };
+  const presetAssignmentID = typeof source === 'number' ? source : null;
+  const isObj = typeof source === 'object' && source !== null;
+  const presetSlug = isObj ? (source.slug || null) : null;
+  const presetOwnsIt = isObj && source.ownsIt === true;
+  const needsPicker = source === undefined;
 
-  const body = await modal(t('New event'), ({ body, close }) => {
-    // Capacity section is rendered only for the ownsIt branch — the
-    // assignment-id and share branches don't need it (assignment is
-    // pre-paid; share has no per-event cost).
-    let capacityNode = null;
-    let buyCount = null;
-    let invoiceBtn = null;
-    if (ownsIt) {
-      const { PRICE_CENTS, FREE, fmtMoney, chargeable } = pricingHelpers();
-      const trusted = activeOrgIsTrusted();
-      buyCount = h('input', { type: 'number', min: '1', max: '500', value: '30', required: true });
-      const totalEl = h('strong', {}, '');
-      const update = () => {
-        const n = Math.max(1, parseInt(buyCount.value, 10) || 0);
-        totalEl.textContent = fmtMoney(chargeable(n));
-      };
-      buyCount.addEventListener('input', update);
-      update();
-      capacityNode = h('div', { style: 'margin:.25rem 0 1rem' },
-        h('h3', { style: 'margin:.25rem 0' }, t('Capacity')),
-        h('p', { class: 'muted', style: 'font-size:.85rem; margin:.25rem 0' },
-          t('How many players will join? You can grow this later from the event page.')),
-        h('div', { class: 'row', style: 'gap:.75rem; align-items:center; flex-wrap:wrap' },
-          h('label', { class: 'field', style: 'flex:0 0 auto; margin:0' },
-            h('span', {}, t('Players')), buyCount),
-          h('p', { style: 'margin:0' },
-            t('Total: '), totalEl,
-            ' ',
-            h('span', { class: 'muted', style: 'font-size:.85rem' },
-              t('(first {{n}} free, then {{price}} per player)',
-                { n: FREE, price: fmtMoney(PRICE_CENTS) })))));
-      if (trusted) {
-        // Mirrors the standalone Buy player slots modal: a secondary
-        // submit that forces provider='invoice' so finance picks it up
-        // off-platform instead of bouncing through Stripe.
-        invoiceBtn = h('button', {
-          class: 'btn', type: 'button',
-          title: t('Skip Stripe — your finance team will get an invoice from us.'),
-        }, t('Add to invoice'));
+  // Picker mode needs the adventures + assignments lists up front so
+  // the modal can react instantly when the user changes their pick.
+  let advs = [];
+  let assignments = [];
+  if (needsPicker) {
+    const [advR, assignR] = await Promise.all([
+      api('/api/admin/adventures'),
+      api('/api/admin/assignments'),
+    ]);
+    advs = advR.body?.adventures || [];
+    assignments = (assignR.body?.assignments || []).filter((x) => !x.event_id);
+    if (advs.length === 0) {
+      toastErr(t('Create or browse an adventure first'));
+      return;
+    }
+  }
+
+  const result = await modal(t('New event'), ({ body, close }) => {
+    let pickedAdv = needsPicker ? advs[0] : null;
+    const trusted = activeOrgIsTrusted();
+    const { PRICE_CENTS, FREE, fmtMoney, chargeable } = pricingHelpers();
+
+    // Resolve what kind of slot-acquisition the modal will perform on
+    // submit, given the current adventure pick (or the preset source).
+    // Returns: { mode: 'preset', assignmentID } — use existing slot
+    //          { mode: 'share',  slug }         — share-backed, no buy
+    //          { mode: 'buy',    slug }         — purchase before create
+    const resolveCtx = () => {
+      if (presetAssignmentID) return { mode: 'preset', assignmentID: presetAssignmentID };
+      if (needsPicker) {
+        const matching = assignments.find((x) => x.adventure_slug === pickedAdv.slug);
+        if (matching) return { mode: 'preset', assignmentID: matching.id };
+        if (pickedAdv.shared) return { mode: 'share', slug: pickedAdv.slug };
+        return { mode: 'buy', slug: pickedAdv.slug };
       }
+      if (presetOwnsIt) return { mode: 'buy', slug: presetSlug };
+      return { mode: 'share', slug: presetSlug };
+    };
+
+    // ---- Adventure picker (only when no preset) ----
+    let advNode = null;
+    let refreshChips = () => {};
+    if (needsPicker) {
+      const advPick = h('div', { class: 'chip-grid', style: 'max-height:200px' });
+      refreshChips = () => {
+        advPick.replaceChildren(...advs.map((a) => {
+          const chip = h('div', {
+            class: 'chip selectable' + (a.slug === pickedAdv.slug ? ' selected' : ''),
+            style: 'display:flex; flex-direction:column; gap:.1rem; min-width:160px',
+          },
+            h('strong', {}, a.title),
+            h('span', { class: 'muted', style: 'font-size:.75rem' },
+              a.mine_to_edit ? t('yours') : t('catalog')));
+          chip.addEventListener('click', () => {
+            pickedAdv = a;
+            refreshChips();
+            refreshCapacity();
+          });
+          return chip;
+        }));
+      };
+      refreshChips();
+      advNode = h('div', { style: 'margin-bottom:.75rem' },
+        h('h3', { style: 'margin:.25rem 0' }, t('Adventure')),
+        advPick);
     }
 
+    // ---- Capacity (visible only when ctx.mode === 'buy') ----
+    const capacityNode = h('div', { style: 'display:none; margin:.25rem 0 1rem' });
+    const buyCount = h('input', { type: 'number', min: '1', max: '500', value: '30' });
+    const totalEl = h('strong', {}, '');
+    const updateTotal = () => {
+      const n = Math.max(1, parseInt(buyCount.value, 10) || 0);
+      totalEl.textContent = fmtMoney(chargeable(n));
+    };
+    buyCount.addEventListener('input', updateTotal);
+    updateTotal();
+    capacityNode.replaceChildren(
+      h('h3', { style: 'margin:.25rem 0' }, t('Capacity')),
+      h('p', { class: 'muted', style: 'font-size:.85rem; margin:.25rem 0' },
+        t('How many players will join? You can grow this later from the event page.')),
+      h('div', { class: 'row', style: 'gap:.75rem; align-items:center; flex-wrap:wrap' },
+        h('label', { class: 'field', style: 'flex:0 0 auto; margin:0' },
+          h('span', {}, t('Players')), buyCount),
+        h('p', { style: 'margin:0' },
+          t('Total: '), totalEl, ' ',
+          h('span', { class: 'muted', style: 'font-size:.85rem' },
+            t('(first {{n}} free, then {{price}} per player)',
+              { n: FREE, price: fmtMoney(PRICE_CENTS) })))));
+    const invoiceBtn = trusted ? h('button', {
+      class: 'btn', type: 'button', style: 'display:none',
+      title: t('Skip Stripe — your finance team will get an invoice from us.'),
+    }, t('Add to invoice')) : null;
+    function refreshCapacity() {
+      const ctx = resolveCtx();
+      const buying = ctx.mode === 'buy';
+      capacityNode.style.display = buying ? '' : 'none';
+      if (invoiceBtn) invoiceBtn.style.display = buying ? '' : 'none';
+    }
+
+    // ---- Standard fields (always visible) ----
     const name = h('input', { placeholder: t('e.g. “Saturday Andersson party”') });
-    const modeManual = h('input', { type: 'radio', name: 'mode', value: 'manual', checked: true });
-    const modeLater = h('input', { type: 'radio', name: 'mode', value: 'later' });
+    const modeManual = h('input', { type: 'radio', name: 'sched-mode', value: 'manual', checked: true });
+    const modeLater = h('input', { type: 'radio', name: 'sched-mode', value: 'later' });
     const when = h('input', { type: 'datetime-local', disabled: '' });
-    const refresh = () => { when.disabled = !modeLater.checked; };
-    modeManual.addEventListener('change', refresh);
-    modeLater.addEventListener('change', refresh);
+    const toggleWhen = () => { when.disabled = !modeLater.checked; };
+    modeManual.addEventListener('change', toggleWhen);
+    modeLater.addEventListener('change', toggleWhen);
+    const localTZ = (() => {
+      try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ''; }
+      catch { return ''; }
+    })();
+    const tzHint = h('small', { class: 'muted', style: 'display:block; margin-top:.2rem' },
+      localTZ ? t('Times are interpreted as your local timezone ({{tz}}).', { tz: localTZ })
+              : t('Times are interpreted as your local timezone.'));
 
     const attest = h('input', { type: 'checkbox', required: true });
     const attestErr = h('p', { class: 'err',
       style: 'display:none; font-size:.85rem; margin:.15rem 0 .5rem 1.6rem' },
       t('Please confirm the player-age statement to continue.'));
+    attest.addEventListener('change', () => {
+      if (attest.checked) attestErr.style.display = 'none';
+    });
+
+    // ---- Optional team bulk-create (collapsed disclosure) ----
+    // Hidden behind <details> so the default modal stays lean. The
+    // user opens it only when they want to provision teams up front
+    // instead of adding them by hand on the event page later.
+    const teamCount = h('input', { type: 'number', min: '0', max: '50', value: '0' });
+    const playersPerTeam = h('input', { type: 'number', min: '1', max: '20', value: '3' });
+    const teamPrefix = h('input', { value: 'Team' });
+    const playerPrefix = h('input', { value: 'Player' });
+    const teamsDetails = h('details',
+      { class: 'card', style: 'padding:.6rem .85rem; margin:.5rem 0' },
+      h('summary', { style: 'cursor:pointer; font-weight:600' },
+        t('Add teams now (optional)')),
+      h('p', { class: 'muted', style: 'font-size:.85rem; margin:.5rem 0' },
+        t('Bulk-create teams up front. Skip this and add them by hand on the event page later if you prefer.')),
+      h('div', { class: 'grid cols-2' },
+        h('label', { class: 'field' }, h('span', {}, t('Number of teams')), teamCount),
+        h('label', { class: 'field' }, h('span', {}, t('Players per team')), playersPerTeam)),
+      h('div', { class: 'grid cols-2' },
+        h('label', { class: 'field' }, h('span', {}, t('Team name prefix')), teamPrefix),
+        h('label', { class: 'field' }, h('span', {}, t('Player name prefix')), playerPrefix)));
+
     const submitBtn = h('button', { class: 'btn primary', type: 'submit' }, t('Create event'));
     const form = h('form', {},
+      advNode,
       capacityNode,
       h('label', { class: 'field' }, h('span', {}, t('Name (optional)')), name),
       h('label', { style: 'display:flex; gap:.5rem; align-items:center; margin:.5rem 0' },
         modeManual, h('span', {}, t('Start manually — I\'ll hit Start when we\'re ready'))),
       h('label', { style: 'display:flex; gap:.5rem; align-items:center; margin:.5rem 0' },
         modeLater, h('span', {}, t('Schedule for later'))),
-      h('label', { class: 'field' }, h('span', {}, t('Auto-start at')), when),
+      h('label', { class: 'field' }, h('span', {}, t('Auto-start at')), when, tzHint),
+      teamsDetails,
       h('label', { style: 'display:flex; gap:.5rem; align-items:flex-start; margin:1rem 0 .25rem; font-size:.9rem' },
         attest,
         h('span', {}, t('I confirm no participants under 13 will play this adventure, or I have parental consent for any who will.'))),
@@ -5996,66 +6090,71 @@ async function scheduleRun(source) {
         h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, t('Cancel')),
         invoiceBtn,
         submitBtn));
-    attest.addEventListener('change', () => {
-      if (attest.checked) attestErr.style.display = 'none';
-    });
-    // collectScheduleFields validates the modal's shared widgets and
-    // returns the partial event-create payload (name + scheduled_at).
-    // Returns null after surfacing inline feedback when invalid.
-    const collectScheduleFields = () => {
+
+    refreshCapacity();
+
+    // collect validates the modal and returns a payload for the
+    // outer handler. Returns null on validation failure, after
+    // surfacing inline feedback. `provider` overrides default
+    // payment routing for the buy step (used by Add-to-invoice).
+    const collect = (provider) => {
       if (!attest.checked) {
         attestErr.style.display = '';
         attest.focus();
         return null;
       }
-      const out = { name: name.value.trim(), attest_no_minors: true };
+      const ctx = resolveCtx();
+      const players = Math.max(0, parseInt(buyCount.value, 10) || 0);
+      if (ctx.mode === 'buy' && players < 1) {
+        toastErr(t('Enter at least 1 player'));
+        return null;
+      }
+      const out = {
+        ctx, provider, players,
+        name: name.value.trim(),
+        scheduledAt: null,
+        teams: {
+          count: Math.max(0, parseInt(teamCount.value, 10) || 0),
+          per: Math.max(1, parseInt(playersPerTeam.value, 10) || 0),
+          tp: teamPrefix.value.trim() || 'Team',
+          pp: playerPrefix.value.trim() || 'Player',
+        },
+      };
       if (modeLater.checked) {
         if (!when.value) { toastErr(t('Pick an auto-start time')); return null; }
         const d = new Date(when.value);
         if (Number.isNaN(d.getTime())) { toastErr(t('Bad date')); return null; }
-        out.scheduled_at = d.toISOString();
+        out.scheduledAt = d.toISOString();
       }
       return out;
     };
-    // currentPlayers reads the buy-count input live so submit handlers
-    // close with the latest value. Returns 0 when there's no capacity
-    // section (assignment-id and share branches) — the caller skips
-    // the buy step in those cases.
-    const currentPlayers = () => buyCount
-      ? Math.max(0, parseInt(buyCount.value, 10) || 0)
-      : 0;
     form.addEventListener('submit', (e) => {
       e.preventDefault();
-      const fields = collectScheduleFields();
-      if (!fields) return;
-      if (ownsIt && currentPlayers() < 1) {
-        toastErr(t('Enter at least 1 player'));
-        return;
-      }
-      close({ fields, provider: null, players: currentPlayers() });
+      const data = collect(null);
+      if (data) close(data);
     });
     if (invoiceBtn) {
       invoiceBtn.addEventListener('click', () => {
-        const fields = collectScheduleFields();
-        if (!fields) return;
-        if (currentPlayers() < 1) {
-          toastErr(t('Enter at least 1 player'));
-          return;
-        }
-        close({ fields, provider: 'invoice', players: currentPlayers() });
+        const data = collect('invoice');
+        if (data) close(data);
       });
     }
     body.append(form);
-  });
-  if (!body) return;
-  // Resolve assignment id for the create-event call. ownsIt mints
-  // one inline; the other two branches either supply it directly
-  // (number source) or let the server derive a free implicit one
-  // from the share (slug source).
-  let assignmentID = typeof source === 'number' ? source : null;
-  if (ownsIt) {
-    const buyBody = { adventure_slug: slug, max_players: body.players };
-    if (body.provider) buyBody.provider = body.provider;
+  }, needsPicker ? { wide: true } : undefined);
+
+  if (!result) return;
+
+  // ---- Resolve assignment id ----
+  let assignmentID = null;
+  let slugForCreate = null;
+  if (result.ctx.mode === 'preset') {
+    assignmentID = result.ctx.assignmentID;
+  } else if (result.ctx.mode === 'share') {
+    slugForCreate = result.ctx.slug;
+  } else {
+    // 'buy'
+    const buyBody = { adventure_slug: result.ctx.slug, max_players: result.players };
+    if (result.provider) buyBody.provider = result.provider;
     const pr = await api('/api/admin/purchases', { method: 'POST', body: JSON.stringify(buyBody) });
     if (pr.status !== 201) {
       toastErr(pr.body?.error || t('Purchase failed'));
@@ -6064,11 +6163,6 @@ async function scheduleRun(source) {
     if (pr.body.state === 'paid' && pr.body.assignment_id) {
       assignmentID = pr.body.assignment_id;
     } else if (pr.body.checkout_url) {
-      // Stripe-paid path: the redirect throws away modal state. The
-      // dashboard's zv-just-purchased handler reopens scheduleRun
-      // with the minted assignment id, so the user re-enters
-      // name/time on the second pass — acceptable trade vs. trying
-      // to round-trip form values through Stripe's hosted page.
       location.href = pr.body.checkout_url;
       return;
     } else {
@@ -6076,264 +6170,32 @@ async function scheduleRun(source) {
       return;
     }
   }
-  const req = { ...baseReqFor(assignmentID), ...body.fields };
+
+  // ---- Create the event ----
+  const req = { name: result.name, attest_no_minors: true };
+  if (assignmentID) req.assignment_id = assignmentID;
+  else if (slugForCreate) req.adventure_slug = slugForCreate;
+  if (result.scheduledAt) req.scheduled_at = result.scheduledAt;
   const r = await api('/api/admin/events', { method: 'POST', body: JSON.stringify(req) });
   if (r.status !== 201) { toastErr(r.body?.error || t('error {{status}}', { status: r.status })); return; }
   const runID = r.body.id;
+
+  // ---- Optional bulk team creation ----
+  // Best-effort: a per-row failure logs but doesn't block the nav to
+  // the event page where the user can finish manually.
+  if (result.teams.count > 0) {
+    const { count, per, tp, pp } = result.teams;
+    for (let i = 1; i <= count; i++) {
+      const members = Array.from({ length: per }, (_, j) => `${pp} ${j + 1}`);
+      await api(`/api/admin/events/${runID}/teams`, {
+        method: 'POST',
+        body: JSON.stringify({ name: `${tp} ${i}`, member_names: members }),
+      });
+    }
+  }
+
   toastOk(t('Event ready'));
   nav('#events/' + runID);
-}
-
-// openNewEventWizard walks the arranger through every decision needed
-// to get from "I want to host" to "here's the event with teams ready".
-// Events inline (no checkout-page jump) by calling the purchase +
-// confirm endpoints directly from the submit handler. The simulated
-// checkout page still exists for the standalone "Buy player slots"
-// flow on the Adventures catalog, but the wizard bypasses it.
-async function openNewEventWizard() {
-  const [advR, assignR] = await Promise.all([
-    api('/api/admin/adventures'),
-    api('/api/admin/assignments'),
-  ]);
-  const advs = advR.body?.adventures || [];
-  if (advs.length === 0) {
-    toastErr(t('Create or browse an adventure first')); return;
-  }
-  const assignments = (assignR.body?.assignments || []).filter((a) => !a.event_id);
-
-  await modal(t('Start a new event'), ({ body, close }) => {
-    // ---- 1. Adventure picker ----
-    const advPick = h('div', { class: 'chip-grid', style: 'max-height:240px' });
-    let pickedAdv = advs[0];
-    const advChip = (a) => {
-      const chip = h('div', {
-        class: 'chip selectable' + (a.slug === pickedAdv.slug ? ' selected' : ''),
-        style: 'display:flex; flex-direction:column; gap:.1rem; min-width:160px',
-      },
-        h('strong', {}, a.title),
-        h('span', { class: 'muted', style: 'font-size:.75rem' },
-          a.mine_to_edit ? t('yours') : t('catalog')));
-      chip.addEventListener('click', () => {
-        pickedAdv = a;
-        for (const c of advPick.children) c.classList.remove('selected');
-        chip.classList.add('selected');
-        refreshAssignment();
-        refreshCapWarn();
-      });
-      return chip;
-    };
-    advs.forEach((a) => advPick.append(advChip(a)));
-
-    // ---- 2. Capacity: reuse existing assignment or buy ----
-    const buyCount = h('input', { type: 'number', min: '1', max: '500', value: '30' });
-    const capacitySection = h('div', {});
-    const { PRICE_CENTS, FREE, fmtMoney, chargeable } = pricingHelpers();
-    const refreshAssignment = () => {
-      capacitySection.replaceChildren();
-      const matching = assignments.filter((x) => x.adventure_slug === pickedAdv.slug);
-      if (matching.length > 0) {
-        capacitySection.append(
-          h('p', { class: 'muted' }, t('You have an unused assignment for this adventure — no new purchase needed.')),
-          h('p', {}, h('strong', {}, matching[0].max_players === 1
-            ? t('{{n}} player slot', { n: matching[0].max_players })
-            : t('{{n}} player slots', { n: matching[0].max_players }))));
-      } else {
-        const total = () => fmtMoney(chargeable(parseInt(buyCount.value, 10) || 0));
-        const totalEl = h('strong', {}, total());
-        buyCount.addEventListener('input', () => { totalEl.textContent = total(); });
-        capacitySection.append(
-          h('p', { class: 'muted' },
-            t('How many players will join? (first {{n}} free, then {{price}} per player.)',
-              { n: FREE, price: fmtMoney(PRICE_CENTS) })),
-          h('div', { class: 'row', style: 'gap:.5rem; align-items:center' },
-            h('label', { class: 'field', style: 'flex:0 0 auto; margin:0' },
-              h('span', {}, t('Players')), buyCount),
-            h('p', { style: 'margin:0' }, t('Total: '), totalEl)));
-      }
-    };
-    refreshAssignment();
-
-    // ---- 3. When ----
-    // The default is manual start: the wizard leaves the event in
-    // scheduled state so the arranger can share links and add teams
-    // before tapping Start on the event page.
-    const modeManual = h('input', { type: 'radio', name: 'ev-mode', value: 'manual', checked: true });
-    const modeLater  = h('input', { type: 'radio', name: 'ev-mode', value: 'later' });
-    const whenInput  = h('input', { type: 'datetime-local', disabled: '' });
-    const toggleWhen = () => { whenInput.disabled = !modeLater.checked; };
-    modeManual.addEventListener('change', toggleWhen);
-    modeLater.addEventListener('change', toggleWhen);
-    // datetime-local has no timezone selector, so a Stockholm arranger
-    // typing "14:00" can't tell if the server stores it as 14:00 local
-    // or 14:00 UTC. Make the user's resolved zone explicit so DST and
-    // remote-server clocks aren't a guessing game.
-    const localTZ = (() => {
-      try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ''; }
-      catch { return ''; }
-    })();
-    const tzHint = h('small', { class: 'muted', style: 'display:block; margin-top:.2rem' },
-      localTZ ? t('Times are interpreted as your local timezone ({{tz}}).', { tz: localTZ })
-              : t('Times are interpreted as your local timezone.'));
-    // Inline error for the auto-start time. Shown when the arranger
-    // submits with "Schedule for later" selected but no time picked,
-    // and on input as a self-clearing affordance.
-    const whenErr = h('p', { class: 'err',
-      style: 'display:none; margin:.15rem 0 0; font-size:.8rem' },
-      t('Pick an auto-start time, or switch back to Start manually.'));
-    whenInput.addEventListener('input', () => {
-      if (whenInput.value) whenErr.style.display = 'none';
-    });
-    modeManual.addEventListener('change', () => { whenErr.style.display = 'none'; });
-
-    const nameInput = h('input', { placeholder: t('e.g. “Saturday Andersson party”') });
-
-    // ---- 4. Teams ----
-    const teamCount = h('input', { type: 'number', min: '0', max: '50', value: '0' });
-    const playerCount = h('input', { type: 'number', min: '1', max: '20', value: '3' });
-    const teamPrefix   = h('input', { value: 'Team' });
-    const playerPrefix = h('input', { value: 'Player' });
-    // Pre-flight: warn when the requested team count exceeds the
-    // capacity available — saves a server 4xx after the user spent
-    // a step on the team-prefix details. Auto-clears when the user
-    // either drops the count or picks an adventure with more slots.
-    const capWarn = h('p', { class: 'err', style: 'display:none; font-size:.85rem; margin:.25rem 0 0' });
-    const refreshCapWarn = () => {
-      // Capacity is metered in player slots. Compare requested
-      // total players (teamCount × playerCount) against the
-      // assignment cap (max_players) — either the existing
-      // assignment's cap, or buyCount when a fresh purchase is
-      // about to be minted.
-      const reqTeams   = Math.max(0, parseInt(teamCount.value, 10) || 0);
-      const reqPlayers = reqTeams * Math.max(1, parseInt(playerCount.value, 10) || 0);
-      const matching = assignments.filter((x) => x.adventure_slug === pickedAdv.slug);
-      const cap = matching.length > 0
-        ? matching[0].max_players
-        : Math.max(0, parseInt(buyCount.value, 10) || 0);
-      if (reqPlayers > cap) {
-        capWarn.textContent = t('You picked {{players}} players but only {{cap}} slots are available. Lower the team count or buy more slots.',
-          { players: reqPlayers, cap });
-        capWarn.style.display = '';
-      } else {
-        capWarn.style.display = 'none';
-      }
-    };
-    teamCount.addEventListener('input', refreshCapWarn);
-    playerCount.addEventListener('input', refreshCapWarn);
-    buyCount.addEventListener('input', refreshCapWarn);
-
-    const submitBtn = h('button', { class: 'btn primary', type: 'submit' }, t('Create event'));
-    const attestWiz = h('input', { type: 'checkbox', required: true });
-    const attestWizErr = h('p', { class: 'err',
-      style: 'display:none; font-size:.85rem; margin:.15rem 0 .5rem 1.6rem' },
-      t('Please confirm the player-age statement to continue.'));
-    const form = h('form', {},
-      h('h3', { style: 'margin-top:0' }, t('Adventure')),
-      advPick,
-      h('h3', {}, t('Capacity')),
-      capacitySection,
-      h('h3', {}, t('When')),
-      h('label', { style: 'display:flex; gap:.5rem; align-items:center; margin:.25rem 0' },
-        modeManual, h('span', {}, t('Start manually — I\'ll hit Start when we\'re ready'))),
-      h('label', { style: 'display:flex; gap:.5rem; align-items:center; margin:.25rem 0' },
-        modeLater, h('span', {}, t('Schedule for later'))),
-      h('label', { class: 'field' }, h('span', {}, t('Auto-start at')), whenInput, tzHint),
-      whenErr,
-      h('label', { class: 'field' }, h('span', {}, t('Event name (optional)')), nameInput),
-      h('h3', {}, t('Teams (optional — add later if you prefer)')),
-      h('div', { class: 'grid cols-2' },
-        h('label', { class: 'field' }, h('span', {}, t('Number of teams')), teamCount),
-        h('label', { class: 'field' }, h('span', {}, t('Players per team')), playerCount)),
-      h('div', { class: 'grid cols-2' },
-        h('label', { class: 'field' }, h('span', {}, t('Team name prefix')), teamPrefix),
-        h('label', { class: 'field' }, h('span', {}, t('Player name prefix')), playerPrefix)),
-      capWarn,
-      h('h3', {}, t('Player ages')),
-      h('label', { style: 'display:flex; gap:.5rem; align-items:flex-start; margin:.25rem 0; font-size:.9rem' },
-        attestWiz,
-        h('span', {}, t('I confirm no participants under 13 will play this adventure, or I have parental consent for any who will.'))),
-      attestWizErr,
-      h('div', { class: 'row end', style: 'margin-top:1rem' },
-        h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, t('Cancel')),
-        submitBtn));
-
-    attestWiz.addEventListener('change', () => {
-      if (attestWiz.checked) attestWizErr.style.display = 'none';
-    });
-
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      if (!attestWiz.checked) {
-        attestWizErr.style.display = '';
-        attestWiz.focus();
-        return;
-      }
-      // Re-run the capacity check at submit time too — covers the
-      // "user fixed the field then bumped it back up before clicking
-      // Create" path that an input-listener-only check would miss.
-      refreshCapWarn();
-      if (capWarn.style.display !== 'none') {
-        toastErr(capWarn.textContent);
-        return;
-      }
-      submitBtn.disabled = true;
-      try {
-        // Resolve or mint an assignment.
-        let assignmentID = null;
-        const matching = assignments.filter((x) => x.adventure_slug === pickedAdv.slug);
-        if (matching.length > 0) {
-          assignmentID = matching[0].id;
-        } else {
-          const n = Math.max(1, parseInt(buyCount.value, 10) || 0);
-          const pr = await api('/api/admin/purchases', {
-            method: 'POST',
-            body: JSON.stringify({ adventure_slug: pickedAdv.slug, max_players: n }),
-          });
-          if (pr.status !== 201) { toastErr(pr.body?.error || t('Purchase failed')); return; }
-          // Free buys come back already paid with assignment_id;
-          // skip the confirm round-trip entirely. Paid buys via
-          // the simulated provider still need /confirm.
-          if (pr.body.state === 'paid' && pr.body.assignment_id) {
-            assignmentID = pr.body.assignment_id;
-          } else {
-            const cr = await api('/api/admin/purchases/' + pr.body.id + '/confirm', { method: 'POST' });
-            if (cr.status !== 200) { toastErr(cr.body?.error || t('Payment failed')); return; }
-            assignmentID = cr.body.assignment_id;
-          }
-        }
-        // Create the event.
-        const runReq = { assignment_id: assignmentID, name: nameInput.value.trim(), attest_no_minors: true };
-        if (modeLater.checked) {
-          if (!whenInput.value) {
-            whenErr.style.display = '';
-            whenInput.focus();
-            return;
-          }
-          runReq.scheduled_at = new Date(whenInput.value).toISOString();
-        }
-        const rr = await api('/api/admin/events', { method: 'POST', body: JSON.stringify(runReq) });
-        if (rr.status !== 201) { toastErr(rr.body?.error || t('Event creation failed')); return; }
-        const runID = rr.body.id;
-        // Bulk teams.
-        const T = Math.max(0, parseInt(teamCount.value, 10) || 0);
-        const P = Math.max(1, parseInt(playerCount.value, 10) || 0);
-        const tp = teamPrefix.value.trim() || 'Team';
-        const pp = playerPrefix.value.trim() || 'Player';
-        for (let i = 1; i <= T; i++) {
-          const members = Array.from({ length: P }, (_, j) => `${pp} ${j + 1}`);
-          await api(`/api/admin/events/${runID}/teams`, {
-            method: 'POST',
-            body: JSON.stringify({ name: `${tp} ${i}`, member_names: members }),
-          });
-        }
-        toastOk(t('Event ready'));
-        close(true);
-        nav('#events/' + runID);
-      } finally {
-        submitBtn.disabled = false;
-      }
-    });
-    body.append(form);
-  }, { wide: true });
 }
 
 // runLabel renders an event's display name — the human-set name if any,
@@ -6374,7 +6236,7 @@ async function viewRuns(view) {
       h('h1', { style: 'margin:0' }, t('Events')),
       // Affordance parity with the dashboard: Schedule from anywhere
       // events are listed, no detour through Adventures.
-      h('button', { class: 'btn primary', on: { click: () => openNewEventWizard() } },
+      h('button', { class: 'btn primary', on: { click: () => scheduleRun() } },
         icon(ICONS.plus), t('Schedule event'))),
     h('div', { class: 'card' }, runsTable(rs)),
   );

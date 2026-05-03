@@ -996,6 +996,9 @@
       'Player name prefix': 'Spelarnamnsprefix',
       'Players per team': 'Spelare per lag',
       'Number of teams': 'Antal lag',
+      'Add teams now (optional)': 'Lägg till lag nu (valfritt)',
+      'Bulk-create teams up front. Skip this and add them by hand on the event page later if you prefer.':
+        'Skapa flera lag direkt. Hoppa över och lägg till dem manuellt på eventsidan senare om du vill.',
       'One team': 'Ett lag',
       'Many teams at once': 'Flera lag samtidigt',
       'Paste roster': 'Klistra in laguppställning',
