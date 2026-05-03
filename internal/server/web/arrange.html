@@ -5234,7 +5234,7 @@ async function openPurchaseModal(adv) {
     location.href = r.body.checkout_url;
   };
   await modal(t('Buy player slots'), ({ body, close }) => {
-    const players = h('input', { type: 'number', min: '1', max: '500', value: '30', required: true });
+    const players = h('input', { type: 'number', min: '1', max: '500', value: '15', required: true });
     const totalEl = h('strong', {}, '');
     const update = () => {
       const n = Math.max(1, parseInt(players.value, 10) || 0);
@@ -5995,7 +5995,7 @@ async function scheduleRun(source) {
 
     // ---- Capacity (visible only when ctx.mode === 'buy') ----
     const capacityNode = h('div', { style: 'display:none; margin:.25rem 0 1rem' });
-    const buyCount = h('input', { type: 'number', min: '1', max: '500', value: '30' });
+    const buyCount = h('input', { type: 'number', min: '1', max: '500', value: '15' });
     const totalEl = h('strong', {}, '');
     const updateTotal = () => {
       const n = Math.max(1, parseInt(buyCount.value, 10) || 0);
