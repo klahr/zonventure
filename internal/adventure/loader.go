@@ -23,12 +23,123 @@ type Adventure struct {
 	Meta   Meta
 	Colors Colors
 	Pages  []Page
+	// Lanes are the ordered groupings of puzzles inside this adventure.
+	// Linear lanes have every team visit their pages in idx order;
+	// shuffled lanes give each team a deterministic cyclic-shifted
+	// permutation of the lane's pages so teams spread out at the start
+	// instead of piling up on puzzle 1. Lanes are sequenced — finishing
+	// every page in a team's permutation of lane N unlocks lane N+1.
+	// When every lane is exhausted the team is done; the winner is
+	// whoever's completed_at lands first. There's no separate finale
+	// puzzle — if an arranger wants a shared finish-line puzzle, they
+	// make the last lane linear with one puzzle. Adventures pre-dating
+	// the lanes feature load a single synthesised linear lane so the
+	// legacy "everyone the same order" behaviour is preserved without
+	// arrangers having to do anything.
+	Lanes []Lane
 	// StrictAssets, when true, scopes page-image / page-audio visibility
 	// to the team's current_page_index — the manifest endpoint and the
 	// per-asset gate both honour it. Default false keeps the permissive
 	// "any team in the adventure" behaviour that suits flavour-image
 	// hunts; opt-in for hunts where the photo IS the puzzle.
 	StrictAssets bool
+}
+
+// Lane is one ordered grouping of puzzles within an adventure.
+type Lane struct {
+	ID    int64
+	Index int
+	Mode  LaneMode
+	// Name is the optional human label the arranger picked for this
+	// lane. Empty means "fall back to a 'Lane N' default in the UI"
+	// — we don't auto-fill it server-side so a future rename to ""
+	// can re-engage the default.
+	Name string
+}
+
+// LaneMode controls how a lane orders its puzzles for each team.
+type LaneMode string
+
+const (
+	// LaneModeLinear plays every page in idx order — the legacy
+	// behaviour, identical for every team in the run.
+	LaneModeLinear LaneMode = "linear"
+	// LaneModeShuffled hands every team a deterministic cyclic shift
+	// of the lane's pages so they spread out across stations instead
+	// of piling up on the first puzzle.
+	LaneModeShuffled LaneMode = "shuffled"
+)
+
+// LanePages returns the enabled pages that belong to lane laneID,
+// preserving the adventure's idx ordering. Used as the "canonical"
+// ordering of a lane — shuffled-lane permutations are cyclic shifts
+// of this slice. Pages with no lane assignment (library puzzles, or
+// pages mid-edit) are excluded.
+func (a *Adventure) LanePages(laneID int64) []Page {
+	out := make([]Page, 0, len(a.Pages))
+	for _, p := range a.Pages {
+		if p.LaneID == laneID && !p.Disabled {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// LaneByID returns a pointer to the lane with the given id, or nil
+// if the adventure has no such lane.
+func (a *Adventure) LaneByID(laneID int64) *Lane {
+	for i := range a.Lanes {
+		if a.Lanes[i].ID == laneID {
+			return &a.Lanes[i]
+		}
+	}
+	return nil
+}
+
+// FirstLane returns the lane every team enters first (idx=0), or nil
+// if the adventure has no lanes — the latter shouldn't happen after
+// the lanes migration but the runtime tolerates it.
+func (a *Adventure) FirstLane() *Lane {
+	for i := range a.Lanes {
+		if a.Lanes[i].Index == 0 {
+			return &a.Lanes[i]
+		}
+	}
+	if len(a.Lanes) > 0 {
+		return &a.Lanes[0]
+	}
+	return nil
+}
+
+// NextLane returns the lane immediately after the given one in idx
+// order, or nil when the given lane is the last one.
+func (a *Adventure) NextLane(after *Lane) *Lane {
+	if after == nil {
+		return nil
+	}
+	var best *Lane
+	for i := range a.Lanes {
+		l := &a.Lanes[i]
+		if l.Index <= after.Index {
+			continue
+		}
+		if best == nil || l.Index < best.Index {
+			best = l
+		}
+	}
+	return best
+}
+
+// PageByID returns the page with the given id, or nil if the
+// adventure has no such page. O(N) — fine for the small page counts
+// adventures actually have.
+func (a *Adventure) PageByID(pageID int64) *Page {
+	for i := range a.Pages {
+		if a.Pages[i].ID == pageID {
+			return &a.Pages[i]
+		}
+	}
+	return nil
 }
 
 // Meta bundles the adventure's descriptive fields.
@@ -81,6 +192,11 @@ type Page struct {
 	Audio    []Audio
 	Disabled bool
 	Notes    string
+	// LaneID points at the lane this page belongs to. Zero on library
+	// puzzles (which never join a lane) and on pages briefly between
+	// lane assignments during admin edits — the runtime tolerates
+	// both by treating such pages as unrouteable.
+	LaneID int64
 }
 
 // AcceptEntry is one accepted answer for a puzzle. Plain entries
@@ -178,8 +294,8 @@ func (l *Library) GetContext(ctx context.Context, slug string) (*Adventure, erro
 		return nil, nil
 	}
 	var (
-		adv                                  Adventure
-		accent, accent2, bg, ink, submitBG   sql.NullString
+		adv                                Adventure
+		accent, accent2, bg, ink, submitBG sql.NullString
 	)
 	err := l.db.QueryRowContext(ctx, `
 		SELECT id, slug, title, description, author, intro_text, outro_text,
@@ -203,11 +319,17 @@ func (l *Library) GetContext(ctx context.Context, slug string) (*Adventure, erro
 		Text:             ink.String,
 		SubmitBackground: submitBG.String,
 	}
+	lanes, err := l.loadLanes(ctx, adv.ID)
+	if err != nil {
+		return nil, err
+	}
+	adv.Lanes = lanes
 	pages, err := l.loadPages(ctx, adv.ID)
 	if err != nil {
 		return nil, err
 	}
 	adv.Pages = pages
+	synthesizeDefaultLane(&adv)
 	return &adv, nil
 }
 
@@ -248,20 +370,71 @@ func (l *Library) ListContext(ctx context.Context) ([]*Adventure, error) {
 		}
 		out = append(out, a)
 	}
-	// Fill pages for each (small N * small N — acceptable).
+	// Fill lanes and pages for each (small N * small N — acceptable).
 	for _, a := range out {
+		lanes, err := l.loadLanes(ctx, a.ID)
+		if err != nil {
+			return nil, err
+		}
+		a.Lanes = lanes
 		pages, err := l.loadPages(ctx, a.ID)
 		if err != nil {
 			return nil, err
 		}
 		a.Pages = pages
+		synthesizeDefaultLane(a)
 	}
 	return out, nil
 }
 
+// SynthesizedLaneID is the sentinel id used for the in-memory implicit
+// lane the loader synthesizes for adventures that pre-date the lanes
+// migration (or that the migration left untouched). It's negative so it
+// can never collide with a real BIGSERIAL row, and the lanes runtime
+// special-cases it so writes to teams.current_lane_id collapse to SQL
+// NULL — the FK column won't accept a synthesized value.
+const SynthesizedLaneID = int64(-1)
+
+// IsSynthesizedLane reports whether laneID is the loader's synthesized
+// implicit-lane sentinel, meaning the lane has no database row and
+// downstream writers should treat it as "no lane assignment".
+func IsSynthesizedLane(laneID int64) bool { return laneID < 0 }
+
+// synthesizeDefaultLane gives an adventure that has pages but no
+// adventure_lanes rows an implicit single linear lane in memory, and
+// drops every orphan page (lane_id IS NULL in the DB) into it. Lets
+// the runtime treat pre-lanes adventures and freshly-created
+// adventures (no default lane row yet) as if they already had the
+// migration's default lane structure, so progression code doesn't
+// need to special-case "no lanes" alongside "lanes exist".
+func synthesizeDefaultLane(adv *Adventure) {
+	if adv == nil {
+		return
+	}
+	if len(adv.Lanes) > 0 {
+		return
+	}
+	hasAttachedPage := false
+	for _, p := range adv.Pages {
+		if !p.Disabled {
+			hasAttachedPage = true
+			break
+		}
+	}
+	if !hasAttachedPage {
+		return
+	}
+	adv.Lanes = []Lane{{ID: SynthesizedLaneID, Index: 0, Mode: LaneModeLinear}}
+	for i := range adv.Pages {
+		if adv.Pages[i].LaneID == 0 {
+			adv.Pages[i].LaneID = SynthesizedLaneID
+		}
+	}
+}
+
 func (l *Library) loadPages(ctx context.Context, adventureID int64) ([]Page, error) {
 	rows, err := l.db.QueryContext(ctx, `
-		SELECT id, idx, title, prompt, accept, lat, lng, radius_m, disabled, notes
+		SELECT id, idx, title, prompt, accept, lat, lng, radius_m, disabled, notes, lane_id
 		FROM adventure_pages
 		WHERE adventure_id = $1
 		ORDER BY idx
@@ -277,12 +450,16 @@ func (l *Library) loadPages(ctx context.Context, adventureID int64) ([]Page, err
 			acceptJS string
 			radius   sql.NullFloat64
 			disabled int
+			laneID   sql.NullInt64
 		)
 		if err := rows.Scan(&p.ID, &p.Index, &p.Title, &p.Prompt, &acceptJS,
-			&p.Location.Lat, &p.Location.Lng, &radius, &disabled, &p.Notes); err != nil {
+			&p.Location.Lat, &p.Location.Lng, &radius, &disabled, &p.Notes, &laneID); err != nil {
 			return nil, err
 		}
 		p.Disabled = disabled != 0
+		if laneID.Valid {
+			p.LaneID = laneID.Int64
+		}
 		if acceptJS != "" {
 			parsed, perr := ParseAcceptJSON([]byte(acceptJS))
 			if perr != nil {
@@ -317,6 +494,32 @@ func (l *Library) loadPages(ctx context.Context, adventureID int64) ([]Page, err
 		pages[i].Hints = hints
 	}
 	return pages, nil
+}
+
+func (l *Library) loadLanes(ctx context.Context, adventureID int64) ([]Lane, error) {
+	rows, err := l.db.QueryContext(ctx, `
+		SELECT id, idx, mode, name
+		FROM adventure_lanes
+		WHERE adventure_id = $1
+		ORDER BY idx
+	`, adventureID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Lane
+	for rows.Next() {
+		var (
+			ln   Lane
+			mode string
+		)
+		if err := rows.Scan(&ln.ID, &ln.Index, &mode, &ln.Name); err != nil {
+			return nil, err
+		}
+		ln.Mode = LaneMode(mode)
+		out = append(out, ln)
+	}
+	return out, rows.Err()
 }
 
 func (l *Library) loadHints(ctx context.Context, pageID int64) ([]Hint, error) {

@@ -52,15 +52,22 @@ func (h *Handlers) requireEditPage(w http.ResponseWriter, r *http.Request, pageI
 }
 
 type pageWriteRequest struct {
-	Title    string                  `json:"title"`
-	Prompt   string                  `json:"prompt"`
-	Hints    []hintView              `json:"hints"`
-	Notes    string                  `json:"notes"`
-	Accept   []adventure.AcceptEntry `json:"accept"`
-	Lat      float64                 `json:"lat"`
-	Lng      float64                 `json:"lng"`
-	RadiusM  *float64                `json:"radius_m,omitempty"`
-	Disabled bool                    `json:"disabled"`
+	Title   string                  `json:"title"`
+	Prompt  string                  `json:"prompt"`
+	Hints   []hintView              `json:"hints"`
+	Notes   string                  `json:"notes"`
+	Accept  []adventure.AcceptEntry `json:"accept"`
+	Lat     float64                 `json:"lat"`
+	Lng     float64                 `json:"lng"`
+	RadiusM *float64                `json:"radius_m,omitempty"`
+	Disabled bool                   `json:"disabled"`
+	// LaneID, when set on CreatePage, places the new page in that
+	// specific lane (used by the per-lane "Add puzzle" button in
+	// the editor). Zero or omitted falls back to the adventure's
+	// default lane (idx=0). Ignored on UpdatePage — moving a page
+	// between lanes goes through the reorder endpoint so the new
+	// idx and lane assignment land in one transaction.
+	LaneID int64 `json:"lane_id,omitempty"`
 }
 
 // validate checks only the constraints that are ALWAYS required,
@@ -179,6 +186,46 @@ func upsertPageHints(ctx context.Context, tx *sql.Tx, pageID int64, hints []hint
 	return nil
 }
 
+// resolveCreateLane returns the lane id a freshly created page should
+// land in. Explicit non-zero requestedLaneID is validated against the
+// adventure (must belong to it). Zero / omitted requestedLaneID falls
+// back to the idx=0 lane, creating it lazily if the adventure has no
+// lanes yet — keeps the legacy "just call CreatePage with no lane
+// awareness" client path working.
+func resolveCreateLane(ctx context.Context, db *sql.DB, advID, requestedLaneID int64) (int64, error) {
+	if requestedLaneID > 0 {
+		var owner int64
+		if err := db.QueryRowContext(ctx,
+			`SELECT adventure_id FROM adventure_lanes WHERE id = $1`, requestedLaneID).Scan(&owner); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return 0, errors.New("unknown lane id")
+			}
+			return 0, err
+		}
+		if owner != advID {
+			return 0, errors.New("lane belongs to another adventure")
+		}
+		return requestedLaneID, nil
+	}
+	var laneID int64
+	err := db.QueryRowContext(ctx,
+		`SELECT id FROM adventure_lanes WHERE adventure_id = $1 AND idx = 0`, advID).Scan(&laneID)
+	if err == nil {
+		return laneID, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return 0, err
+	}
+	if err := db.QueryRowContext(ctx, `
+		INSERT INTO adventure_lanes (adventure_id, idx, mode)
+		VALUES ($1, 0, 'linear')
+		RETURNING id
+	`, advID).Scan(&laneID); err != nil {
+		return 0, err
+	}
+	return laneID, nil
+}
+
 // CreatePage appends a new page at the end of the adventure.
 func (h *Handlers) CreatePage(w http.ResponseWriter, r *http.Request) {
 	slug := chi.URLParam(r, "slug")
@@ -196,6 +243,15 @@ func (h *Handlers) CreatePage(w http.ResponseWriter, r *http.Request) {
 	advID, err := adventureIDBySlug(r.Context(), h.DB, slug)
 	if err != nil {
 		httpx.Error(w, http.StatusNotFound, "unknown adventure")
+		return
+	}
+	// Resolve the lane to attach this page to. Explicit lane_id wins;
+	// otherwise fall back to the adventure's idx=0 lane (creating it
+	// if the adventure has no lanes yet — that happens for adventures
+	// authored fresh on a clean DB before any lane has been touched).
+	laneID, err := resolveCreateLane(r.Context(), h.DB, advID, req.LaneID)
+	if err != nil {
+		httpx.Error(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	var nextIdx int
@@ -222,10 +278,10 @@ func (h *Handlers) CreatePage(w http.ResponseWriter, r *http.Request) {
 	defer tx.Rollback()
 	var id int64
 	err = tx.QueryRowContext(r.Context(), `
-		INSERT INTO adventure_pages(adventure_id, idx, title, prompt, accept, lat, lng, radius_m, disabled, notes)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		INSERT INTO adventure_pages(adventure_id, idx, title, prompt, accept, lat, lng, radius_m, disabled, notes, lane_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 		RETURNING id
-	`, advID, nextIdx, req.Title, req.Prompt, string(accept), req.Lat, req.Lng, radius, disabled, req.Notes).Scan(&id)
+	`, advID, nextIdx, req.Title, req.Prompt, string(accept), req.Lat, req.Lng, radius, disabled, req.Notes, laneID).Scan(&id)
 	if err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "insert failed", err)
 		return
@@ -349,7 +405,21 @@ func (h *Handlers) DeletePage(w http.ResponseWriter, r *http.Request) {
 	httpx.JSON(w, http.StatusNoContent, nil)
 }
 
-// ReorderPages takes a list of page ids in the desired new order.
+// ReorderPages assigns each page in the supplied list a new idx in
+// list order. Two wire shapes are accepted, and both can travel in
+// the same body — clients send whichever fits their interaction:
+//
+//   - "page_ids": [id, id, ...] — legacy flat reorder. Each page
+//     keeps its current lane assignment. Used by clients that
+//     haven't been updated for the multi-lane editor yet.
+//   - "pages": [{"id":id,"lane_id":id}, ...] — lane-aware reorder.
+//     Each entry sets both position and lane in one round-trip so a
+//     drag-between-lanes commits atomically. lane_id == 0 (or
+//     omitted) keeps the page's current lane.
+//
+// Mixing the two is allowed: a client can send "pages" alone, or
+// "page_ids" alone. Behaviour is the same either way — the new idx
+// is the index in whichever array the client supplied.
 func (h *Handlers) ReorderPages(w http.ResponseWriter, r *http.Request) {
 	slug := chi.URLParam(r, "slug")
 	if _, ok := h.requireEditAdventure(w, r, slug); !ok {
@@ -361,17 +431,65 @@ func (h *Handlers) ReorderPages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		PageIDs []int64 `json:"page_ids"`
+		PageIDs []int64 `json:"page_ids,omitempty"`
+		Pages   []struct {
+			ID     int64 `json:"id"`
+			LaneID int64 `json:"lane_id,omitempty"`
+		} `json:"pages,omitempty"`
 	}
 	if !httpx.DecodeJSON(w, r, &req) {
 		return
+	}
+	type entry struct {
+		id     int64
+		laneID int64 // 0 = leave alone
+	}
+	var entries []entry
+	switch {
+	case len(req.Pages) > 0:
+		entries = make([]entry, len(req.Pages))
+		for i, p := range req.Pages {
+			entries[i] = entry{id: p.ID, laneID: p.LaneID}
+		}
+	case len(req.PageIDs) > 0:
+		entries = make([]entry, len(req.PageIDs))
+		for i, id := range req.PageIDs {
+			entries[i] = entry{id: id}
+		}
+	default:
+		httpx.Error(w, http.StatusBadRequest, "supply pages or page_ids")
+		return
+	}
+	// Validate every supplied lane belongs to this adventure before
+	// touching any rows. A bad lane id should 400 cleanly, not crash
+	// halfway through the reorder and leave parked rows behind.
+	laneSeen := map[int64]bool{}
+	for _, e := range entries {
+		if e.laneID == 0 || laneSeen[e.laneID] {
+			continue
+		}
+		laneSeen[e.laneID] = true
+		var owner int64
+		if err := h.DB.QueryRowContext(r.Context(),
+			`SELECT adventure_id FROM adventure_lanes WHERE id = $1`, e.laneID).Scan(&owner); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				httpx.Error(w, http.StatusBadRequest, "unknown lane id in list")
+				return
+			}
+			httpx.Error(w, http.StatusInternalServerError, "lane check failed")
+			return
+		}
+		if owner != advID {
+			httpx.Error(w, http.StatusBadRequest, "lane belongs to another adventure")
+			return
+		}
 	}
 	tx, err := h.DB.BeginTx(r.Context(), nil)
 	if err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "tx failed")
 		return
 	}
-	defer tx.Rollback()
+	defer tx.Rollback() //nolint:errcheck
 	// Park every row at a guaranteed-unique idx well above the reassign
 	// range so the second pass can write 0..N-1 without transient
 	// UNIQUE(adventure_id, idx) collisions. id is the row's surrogate
@@ -386,10 +504,24 @@ func (h *Handlers) ReorderPages(w http.ResponseWriter, r *http.Request) {
 		httpx.ServerErr(w, http.StatusInternalServerError, "prepare failed", err)
 		return
 	}
-	for i, id := range req.PageIDs {
-		res, err := tx.ExecContext(r.Context(),
-			`UPDATE adventure_pages SET idx = $1 WHERE id = $2 AND adventure_id = $3`,
-			i, id, advID)
+	for i, e := range entries {
+		var (
+			res sql.Result
+			err error
+		)
+		if e.laneID > 0 {
+			res, err = tx.ExecContext(r.Context(), `
+				UPDATE adventure_pages
+				SET idx = $1, lane_id = $2
+				WHERE id = $3 AND adventure_id = $4
+			`, i, e.laneID, e.id, advID)
+		} else {
+			res, err = tx.ExecContext(r.Context(), `
+				UPDATE adventure_pages
+				SET idx = $1
+				WHERE id = $2 AND adventure_id = $3
+			`, i, e.id, advID)
+		}
 		if err != nil {
 			httpx.ServerErr(w, http.StatusInternalServerError, "reorder failed", err)
 			return

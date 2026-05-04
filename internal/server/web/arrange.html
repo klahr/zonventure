@@ -1829,6 +1829,80 @@ textarea { min-height: 80px; resize: vertical; font-family: ui-monospace, monosp
   100% { outline-color: transparent; }
 }
 
+/* Lane sections in the editor. The header is what arrangers grab to
+   reorder lanes (the body collapses to keep the drag target small).
+   The body is a plain .puzzle-list reused from the flat editor — the
+   per-lane puzzle drag-drop is identical to the legacy single-list
+   case. */
+.lane-list { display: flex; flex-direction: column; gap: .75rem; }
+.lane-section {
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  overflow: hidden;
+}
+.lane-section[draggable]:active .lane-grip { cursor: grabbing; }
+.lane-section.drag-ghost { opacity: .35; }
+.lane-header {
+  display: flex; align-items: center; gap: .5rem;
+  padding: .55rem .75rem;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border-soft);
+  cursor: pointer; user-select: none;
+}
+.lane-section.collapsed .lane-header { border-bottom: none; }
+.lane-grip {
+  cursor: grab; padding: 0 .25rem;
+  color: var(--muted); display: inline-flex; align-items: center;
+}
+.lane-grip:hover { color: var(--ink); }
+.lane-caret { width: 1rem; text-align: center; transition: transform .15s ease; }
+.lane-section.collapsed .lane-caret { transform: rotate(-90deg); }
+.lane-name {
+  flex: 1; min-width: 0;
+  font-weight: 600;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.lane-name.muted-fallback { color: var(--muted); font-weight: 500; }
+.lane-count { color: var(--muted); font-size: .9em; }
+.lane-mode-pill {
+  border: 1px solid var(--border-soft);
+  background: var(--surface);
+  border-radius: 999px;
+  padding: .15rem .55rem;
+  font-size: .8em;
+  cursor: pointer;
+}
+.lane-mode-pill.shuffled { border-color: var(--accent); color: var(--accent); }
+.lane-mode-pill:hover { background: var(--surface-2); }
+/* Dropdown variant: same pill shape, native chevron on the right.
+   Anticipates more lane-mode types (we already have linear / shuffled
+   and want to drop in finale, branching, etc. without rewiring the
+   header). The `select` resets default UA chrome so the look matches
+   the surrounding pill controls. */
+.lane-mode-select {
+  border: 1px solid var(--border-soft);
+  background: var(--surface);
+  color: inherit;
+  border-radius: 999px;
+  padding: .15rem 1.6rem .15rem .55rem;
+  font: inherit;
+  font-size: .8em;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'><polyline points='1 1.5 6 6.5 11 1.5'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right .45rem center;
+  background-size: .65rem .45rem;
+}
+.lane-mode-select.shuffled { border-color: var(--accent); color: var(--accent); }
+.lane-mode-select:hover { background-color: var(--surface-2); }
+.lane-body { padding: .75rem; }
+.lane-section.collapsed .lane-body { display: none; }
+.lane-body .puzzle-list { display: flex; flex-direction: column; gap: .5rem; }
+.lane-actions { display: flex; gap: .25rem; }
+
 /* Selectable chip grid used in the team-create modal. */
 .chip-grid {
   display: flex; flex-wrap: wrap; gap: .4rem;
@@ -10209,109 +10283,376 @@ async function viewLibraryEdit(view, slug) {
 }
 
 function renderLibraryEdit(view, adv) {
+  // Lane-aware editor. Single-lane adventures (the legacy default
+  // and the post-migration shape for any pre-existing adventure)
+  // render exactly as before — no lane chrome, no extra concept to
+  // teach. Multi-lane adventures render each lane as a collapsible
+  // section. The lane-section header is the drag target for
+  // reordering lanes (collapsed = small height = easy to grab); the
+  // section body holds the same puzzle-list drag-drop the flat
+  // editor used.
+  if (!adv._uiLaneCollapsed) adv._uiLaneCollapsed = new Set();
+
   // Enabled index differs from adv.pages index once any puzzle is
   // disabled — the preview endpoint matches the player's view and
   // skips disabled pages, so we thread the enabled position to each
-  // card's Preview button.
+  // card's Preview button. Counted in display order across all lanes.
   let enabledIdx = 0;
-  // List container; cards are appended below. Keeping the variable
-  // here lets the drag handlers query it for drop-hint cleanup
-  // without searching the whole DOM.
-  const list = h('div', { class: 'puzzle-list' });
-  const cards = adv.pages.map((p, i) => {
-    const previewIdx = p.disabled ? null : enabledIdx;
-    if (!p.disabled) enabledIdx++;
-    return renderPuzzleCard(p, i, { mode: 'edit', adv, previewIdx });
-  });
-  cards.forEach((c) => list.append(c));
 
-  // Drag-and-drop reorder. Live-shuffle: as the cursor crosses a
-  // sibling's vertical midpoint we splice the dragged card to that
-  // position in the DOM. Other cards reflow to fill, giving the
-  // arranger a real preview of the final layout instead of an
-  // abstract "drop hint" line. State is closure-scoped so a single
-  // in-flight drag is shared across all cards.
-  let dragFrom = -1; // original index, captured at dragstart
-  let dragEl = null; // the card being dragged
-  const indexOfCard = (card) => Array.from(list.children).indexOf(card);
-  // moveOver places dragEl before/after `target` based on which half
-  // of the target the cursor (clientY) is over. The midpoint gives
-  // natural hysteresis: once dragEl crosses target's midpoint it
-  // stays past it until the cursor crosses back the other way, so
-  // small cursor jitter near a boundary doesn't oscillate. Tried
-  // entry-based and central-zone variants — both flickered with
-  // variable card heights. Midpoint + FLIP animation is what every
-  // shipping reorder UI (Linear, Notion, Trello) uses.
-  //
-  // No-op when already in the desired slot, so dragover firing many
-  // times stays cheap.
-  //
-  // FLIP animation: capture sibling rects pre-mutation, do the DOM
-  // splice, then translate each moved sibling back to its old
-  // position and animate the transform to 0. The dragged card itself
-  // is excluded — it'd fight the browser's drag image, which is
-  // already following the cursor.
-  const moveOver = (target, clientY) => {
-    if (!dragEl || target === dragEl) return;
-    const rect = target.getBoundingClientRect();
-    const before = (clientY - rect.top) < rect.height / 2;
-    const desiredBefore = before ? target : target.nextSibling;
-    if (dragEl.nextSibling === desiredBefore) return; // already in slot
+  const lanes = (adv.lanes || []).slice().sort((a, b) => a.idx - b.idx);
+  // Bucket pages by lane in the adventure's lane order, with an
+  // "orphan" bucket for any page whose lane_id doesn't match a
+  // known lane (mid-edit transient state — should be rare).
+  const pagesByLane = new Map();
+  for (const ln of lanes) pagesByLane.set(ln.id, []);
+  const orphans = [];
+  for (const p of adv.pages) {
+    const bucket = pagesByLane.get(p.lane_id);
+    if (bucket) bucket.push(p);
+    else orphans.push(p);
+  }
 
-    const siblings = Array.from(list.children).filter((el) => el !== dragEl);
+  // Shared drag state across every lane. Hoisting it here lets a
+  // puzzle drag cross between lanes (and a lane-header drag reorder
+  // sections) without each list re-implementing state.
+  let pageDrag = null; // { card } while a puzzle is being dragged
+  let laneDrag = null; // { section } while a lane section is being dragged
+
+  // pagesAreaRef is set once the page-area DOM root exists; the drag
+  // commit walkers read it to determine the new flat ordering. Single
+  // and multi-lane modes both populate this — for single-lane it
+  // points at the puzzle-list itself.
+  let pagesAreaRef = null;
+
+  // FLIP captures the rects of every visible card, runs the supplied
+  // mutation, then animates each card from its old position to its
+  // new one. Generalised to cross-list moves by walking every
+  // .puzzle-list under pagesAreaRef rather than a single list.
+  const flipCards = (mutate) => {
+    if (!pagesAreaRef) { mutate(); return; }
+    const lists = pagesAreaRef.classList && pagesAreaRef.classList.contains('puzzle-list')
+      ? [pagesAreaRef]
+      : Array.from(pagesAreaRef.querySelectorAll('.puzzle-list'));
+    const dragged = pageDrag && pageDrag.card;
     const firstRects = new Map();
-    for (const el of siblings) firstRects.set(el, el.getBoundingClientRect());
-
-    list.insertBefore(dragEl, desiredBefore);
-
-    for (const el of siblings) {
-      const old = firstRects.get(el);
+    for (const list of lists) {
+      for (const el of list.children) {
+        if (el !== dragged) firstRects.set(el, el.getBoundingClientRect());
+      }
+    }
+    mutate();
+    for (const [el, old] of firstRects) {
       const now = el.getBoundingClientRect();
+      const dx = old.left - now.left;
       const dy = old.top - now.top;
-      if (dy === 0) continue;
+      if (dx === 0 && dy === 0) continue;
       el.style.transition = 'none';
-      el.style.transform = `translateY(${dy}px)`;
-      // Force a reflow so the next transition runs from the inverted
-      // start, not from the natural 0 (otherwise the browser folds
-      // the two style mutations into one frame and skips the anim).
+      el.style.transform = `translate(${dx}px, ${dy}px)`;
       void el.offsetHeight;
       el.style.transition = 'transform 0.18s ease';
       el.style.transform = '';
     }
   };
-  const commitReorder = async () => {
-    if (!dragEl || dragFrom < 0) return;
-    const finalPos = indexOfCard(dragEl);
-    dragEl.classList.remove('drag-ghost');
-    const fromPos = dragFrom;
-    dragFrom = -1;
-    dragEl = null;
-    if (finalPos === fromPos || finalPos < 0) return;
-    // Optimistically reflect the new order on the data side; the
-    // server is told via the reorder endpoint, and we re-render at
-    // the end so the per-card position numbers ("1.", "2.", …)
-    // refresh.
-    const next = adv.pages.slice();
-    const [moved] = next.splice(fromPos, 1);
-    next.splice(finalPos, 0, moved);
+
+  // movePuzzleOverCard splices the dragged card before/after target
+  // based on which half of the target the cursor is over. Works
+  // across lists: if the dragged card is in another lane, we move
+  // it into the target's list at the right slot.
+  const movePuzzleOverCard = (target, clientY) => {
+    if (!pageDrag || target === pageDrag.card) return;
+    const list = target.parentNode;
+    const rect = target.getBoundingClientRect();
+    const before = (clientY - rect.top) < rect.height / 2;
+    const desiredBefore = before ? target : target.nextSibling;
+    const card = pageDrag.card;
+    if (card.parentNode === list && card.nextSibling === desiredBefore) return;
+    flipCards(() => list.insertBefore(card, desiredBefore));
+  };
+
+  // movePuzzleToListEnd appends the dragged card to a list — used
+  // when the cursor is over empty space in the list, or when a
+  // collapsed lane header receives a drop.
+  const movePuzzleToListEnd = (list) => {
+    if (!pageDrag || !list) return;
+    const card = pageDrag.card;
+    if (card.parentNode === list && card === list.lastChild) return;
+    flipCards(() => list.append(card));
+  };
+
+  // commitPuzzleReorder reads the final flat order out of the DOM
+  // and posts to /pages/reorder. Each puzzle-list carries its
+  // lane id in data-lane-id; each card carries its page id in
+  // data-page-id. The walker is the source of truth — local arrays
+  // never need to be reconciled.
+  const commitPuzzleReorder = async () => {
+    if (!pageDrag) return;
+    const card = pageDrag.card;
+    card.classList.remove('drag-ghost');
+    pageDrag = null;
+    const lists = pagesAreaRef && pagesAreaRef.classList.contains('puzzle-list')
+      ? [pagesAreaRef]
+      : Array.from(pagesAreaRef ? pagesAreaRef.querySelectorAll('.puzzle-list') : []);
+    const flat = [];
+    for (const list of lists) {
+      const laneID = parseInt(list.dataset.laneId || '0', 10);
+      for (const c of list.children) {
+        const pageID = parseInt(c.dataset.pageId || '0', 10);
+        if (pageID) flat.push({ id: pageID, lane_id: laneID });
+      }
+    }
     const r = await api(`/api/admin/adventures/${encodeURIComponent(adv.slug)}/pages/reorder`, {
-      method: 'PATCH', body: JSON.stringify({ page_ids: next.map((p) => p.id) }),
+      method: 'PATCH', body: JSON.stringify({ pages: flat }),
     });
     if (r.status !== 204) {
       toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
-      // Server rejected — re-render from the unchanged adv.pages so
-      // the DOM snaps back to the authoritative order.
-      renderLibraryEdit(view, adv);
-      return;
     }
-    adv.pages = next.map((p, i) => ({ ...p, index: i }));
-    renderLibraryEdit(view, adv);
+    // Refetch the authoritative DTO either way — error path snaps
+    // the view back to server state, success path picks up the new
+    // indices.
+    viewLibraryEdit(view, adv.slug);
   };
-  cards.forEach((card, i) => wirePuzzleDrag(card, i,
-    () => dragFrom, (from, el) => { dragFrom = from; dragEl = el; },
-    moveOver, commitReorder,
-    () => { if (dragEl) { dragEl.classList.remove('drag-ghost'); } dragFrom = -1; dragEl = null; },
-  ));
+
+  const cancelPuzzleDrag = () => {
+    if (!pageDrag) return;
+    pageDrag.card.classList.remove('drag-ghost');
+    pageDrag = null;
+  };
+
+  // wireCardDrag: HTML5 + touch drag on a single puzzle card.
+  // Updates the shared pageDrag state so movement / commit handlers
+  // can act regardless of which lane the card started in.
+  const wireCardDrag = (card) => {
+    card.addEventListener('dragstart', (e) => {
+      if (laneDrag) { e.preventDefault(); return; }
+      pageDrag = { card };
+      card.classList.add('drag-ghost');
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', card.dataset.pageId || '');
+    });
+    card.addEventListener('dragend', () => { if (pageDrag) cancelPuzzleDrag(); });
+    card.addEventListener('dragover', (e) => {
+      if (!pageDrag) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      movePuzzleOverCard(card, e.clientY);
+    });
+    card.addEventListener('drop', (e) => {
+      if (!pageDrag) return;
+      e.preventDefault();
+      e.stopPropagation();
+      commitPuzzleReorder();
+    });
+
+    // Touch fallback. Only the grip starts a touch drag; touching
+    // the card body keeps native scrolling. Cross-lane drag works
+    // by reading elementFromPoint and resolving to a card / list /
+    // lane-header — same gesture as the HTML5 path.
+    let touchStartX = 0, touchStartY = 0, touchMode = null;
+    const handle = card.querySelector('.drag-handle');
+    if (!handle) return;
+    const targetAt = (clientX, clientY) => {
+      const el = document.elementFromPoint(clientX, clientY);
+      if (!el) return null;
+      return el.closest('.puzzle-card') || el.closest('.puzzle-list') || el.closest('.lane-header');
+    };
+    handle.addEventListener('touchstart', (e) => {
+      if (e.touches.length !== 1) return;
+      touchStartX = e.touches[0].clientX;
+      touchStartY = e.touches[0].clientY;
+      touchMode = null;
+    }, { passive: true });
+    handle.addEventListener('touchmove', (e) => {
+      if (touchMode === 'skip' || e.touches.length !== 1) return;
+      const tt = e.touches[0];
+      if (touchMode === null) {
+        const dx = tt.clientX - touchStartX;
+        const dy = tt.clientY - touchStartY;
+        if (Math.hypot(dx, dy) < 8) return;
+        touchMode = 'drag';
+        pageDrag = { card };
+        card.classList.add('drag-ghost');
+      }
+      e.preventDefault();
+      const target = targetAt(tt.clientX, tt.clientY);
+      if (!target) return;
+      if (target.classList.contains('puzzle-card')) {
+        movePuzzleOverCard(target, tt.clientY);
+      } else if (target.classList.contains('puzzle-list')) {
+        movePuzzleToListEnd(target);
+      } else if (target.classList.contains('lane-header')) {
+        const sec = target.closest('.lane-section');
+        const list = sec && sec.querySelector('.puzzle-list');
+        if (list) movePuzzleToListEnd(list);
+      }
+    }, { passive: false });
+    handle.addEventListener('touchend', (e) => {
+      if (touchMode !== 'drag') { touchMode = null; return; }
+      touchMode = null;
+      e.preventDefault();
+      commitPuzzleReorder();
+    }, { passive: false });
+    handle.addEventListener('touchcancel', () => {
+      if (touchMode === 'drag') cancelPuzzleDrag();
+      touchMode = null;
+    }, { passive: true });
+  };
+
+  // wireListDrops accepts puzzle drops on the empty area of a list
+  // (e.g. an empty lane, or below the last card). Card-level
+  // dragover takes precedence when the cursor is over a card.
+  const wireListDrops = (list) => {
+    list.addEventListener('dragover', (e) => {
+      if (!pageDrag) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      // Only re-parent on dragover when the cursor is over the
+      // list itself (not bubbled from a card) — a card's own
+      // dragover decides position more precisely.
+      if (e.target === list) movePuzzleToListEnd(list);
+    });
+    list.addEventListener('drop', (e) => {
+      if (!pageDrag) return;
+      e.preventDefault();
+      commitPuzzleReorder();
+    });
+  };
+
+  // wireHeaderDrop accepts puzzle drops on a lane's header — used
+  // when the lane is collapsed (the body is hidden, the header is
+  // the only target). Drop = append the puzzle to that lane.
+  const wireHeaderDrop = (header, list) => {
+    header.addEventListener('dragover', (e) => {
+      if (!pageDrag || !list) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      movePuzzleToListEnd(list);
+    });
+    header.addEventListener('drop', (e) => {
+      if (!pageDrag) return;
+      e.preventDefault();
+      commitPuzzleReorder();
+    });
+  };
+
+  // moveLaneOverSection: reposition the dragged lane section
+  // before/after a target section based on cursor midpoint.
+  const moveLaneOverSection = (target, clientY) => {
+    if (!laneDrag || target === laneDrag.section || !pagesAreaRef) return;
+    const rect = target.getBoundingClientRect();
+    const before = (clientY - rect.top) < rect.height / 2;
+    const desiredBefore = before ? target : target.nextSibling;
+    const sec = laneDrag.section;
+    if (sec.nextSibling === desiredBefore) return;
+    pagesAreaRef.insertBefore(sec, desiredBefore);
+  };
+
+  const commitLaneReorder = async () => {
+    if (!laneDrag || !pagesAreaRef) return;
+    laneDrag.section.classList.remove('drag-ghost');
+    laneDrag = null;
+    const ids = [];
+    for (const sec of pagesAreaRef.querySelectorAll('.lane-section')) {
+      const id = parseInt(sec.dataset.laneId || '0', 10);
+      if (id > 0) ids.push(id);
+    }
+    const r = await api(`/api/admin/adventures/${encodeURIComponent(adv.slug)}/lanes/reorder`, {
+      method: 'POST', body: JSON.stringify({ lane_ids: ids }),
+    });
+    if (r.status !== 204) {
+      toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+    }
+    viewLibraryEdit(view, adv.slug);
+  };
+
+  const cancelLaneDrag = () => {
+    if (!laneDrag) return;
+    laneDrag.section.classList.remove('drag-ghost');
+    laneDrag = null;
+  };
+
+  // wireSectionDrag turns a lane-section into a draggable. The
+  // grip's mousedown arms `draggable=true` so a click anywhere else
+  // on the header (toggling collapse, hitting buttons) doesn't
+  // accidentally start a section drag.
+  const wireSectionDrag = (section) => {
+    const grip = section.querySelector('.lane-grip');
+    if (!grip) return;
+    grip.addEventListener('mousedown', () => { section.draggable = true; });
+    section.addEventListener('mouseup', () => { section.draggable = false; });
+    section.addEventListener('mouseleave', () => { if (!laneDrag) section.draggable = false; });
+    section.addEventListener('dragstart', (e) => {
+      // dragstart bubbles. When the user grabs a puzzle card inside
+      // this section, the card's own listener has already set
+      // pageDrag and the browser has begun a card drag; we must NOT
+      // call preventDefault on the bubbled event — that cancels the
+      // card drag entirely. Only act when the section itself is the
+      // drag source (the lane-grip mousedown set section.draggable
+      // = true and the user grabbed the section, not a card inside).
+      if (e.target !== section) return;
+      laneDrag = { section };
+      section.classList.add('drag-ghost');
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', 'lane:' + (section.dataset.laneId || ''));
+    });
+    section.addEventListener('dragend', () => {
+      if (laneDrag) cancelLaneDrag();
+      section.draggable = false;
+    });
+    section.addEventListener('dragover', (e) => {
+      if (!laneDrag) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      moveLaneOverSection(section, e.clientY);
+    });
+    section.addEventListener('drop', (e) => {
+      if (!laneDrag) return;
+      e.preventDefault();
+      e.stopPropagation();
+      commitLaneReorder();
+    });
+  };
+
+  // renderPuzzleListForLane is now thin: render cards, wire each
+  // for the shared drag state, hand back the list element.
+  const renderPuzzleListForLane = (lane, pages) => {
+    const list = h('div', {
+      class: 'puzzle-list',
+      'data-lane-id': lane ? String(lane.id) : '0',
+    });
+    for (const p of pages) {
+      const previewIdx = p.disabled ? null : enabledIdx;
+      if (!p.disabled) enabledIdx++;
+      const card = renderPuzzleCard(p, pages.indexOf(p), { mode: 'edit', adv, previewIdx });
+      list.append(card);
+      wireCardDrag(card);
+    }
+    wireListDrops(list);
+    return list;
+  };
+
+  // Build the page-area DOM: either a flat list (single-lane) or a
+  // stack of lane sections (multi-lane). pagesAreaRef is used by
+  // the drag-commit walkers and the lane-reorder logic.
+  let pagesArea;
+  if (lanes.length <= 1) {
+    pagesArea = renderPuzzleListForLane(lanes[0] || null, adv.pages);
+    pagesAreaRef = pagesArea;
+  } else {
+    pagesArea = h('div', { class: 'lane-list' });
+    pagesAreaRef = pagesArea;
+    for (const lane of lanes) {
+      const lanePages = pagesByLane.get(lane.id) || [];
+      const section = renderLaneSection(view, adv, lane, lanePages, renderPuzzleListForLane);
+      pagesArea.append(section);
+      wireSectionDrag(section);
+      const header = section.querySelector('.lane-header');
+      const list = section.querySelector('.puzzle-list');
+      if (header && list) wireHeaderDrop(header, list);
+    }
+    if (orphans.length > 0) {
+      pagesArea.append(renderOrphanSection(view, adv, orphans, renderPuzzleListForLane));
+    }
+  }
 
   const hasEnabled = enabledIdx > 0;
   // .filter(Boolean) drops null/undefined ternary branches. Native
@@ -10377,85 +10718,248 @@ function renderLibraryEdit(view, adv) {
       // features; a single button with a menu reads as one action
       // with options — same verb, two ways to fill it.
       addPuzzleButton(adv)),
-    adv.pages.length === 0
+    adv.pages.length === 0 && lanes.length <= 1
       ? h('div', { class: 'empty' },
           h('p', {}, t('No puzzles yet.')),
           h('p', { class: 'muted', style: 'margin-top:.5rem' },
             t('Use "Add puzzle" above to author a new one or copy from the library.')))
-      : list,
+      : pagesArea,
+    // "+ Add lane" lives below the puzzle area as a low-key button.
+    // Visible even in single-lane mode — that's how arrangers
+    // discover the multi-lane structure exists. Clicking it once
+    // splits the editor into the multi-lane layout (the existing
+    // pages stay in the original lane, the new one starts empty).
+    h('button', {
+      class: 'btn small ghost',
+      style: 'margin-top:.75rem',
+      title: t('Add a lane to group puzzles. Lanes are visited in order.'),
+      on: { click: () => addLane(view, adv) },
+    }, '+ ', t('Add lane')),
   ].filter(Boolean));
 }
 
-// wirePuzzleDrag attaches HTML5 + touch drag-and-drop handlers to a
-// puzzle card. The drag is "live": as the cursor crosses a sibling's
-// midpoint, the dragged card is spliced to that position in the DOM
-// and other cards naturally reflow. The original index is captured at
-// dragstart; the final index is read from the DOM at drop time.
-function wirePuzzleDrag(card, i, getDragFrom, setDragFrom, moveOver, commit, cancel) {
-  card.addEventListener('dragstart', (e) => {
-    setDragFrom(i, card);
-    card.classList.add('drag-ghost');
-    e.dataTransfer.effectAllowed = 'move';
-    // Firefox refuses to initiate the drag unless some payload is set.
-    e.dataTransfer.setData('text/plain', String(i));
+// renderLaneSection builds one collapsible lane card. The header
+// carries the drag grip (for stage-5 lane reorder), expand/collapse
+// caret, editable name, puzzle count, and mode pill. The body holds
+// the lane's puzzle list, rendered by the caller's
+// renderPuzzleListForLane closure so per-lane drag state stays
+// scoped to the body.
+function renderLaneSection(view, adv, lane, pages, renderPuzzleListForLane) {
+  const collapsed = adv._uiLaneCollapsed.has(lane.id);
+  const section = h('div', {
+    class: 'lane-section' + (collapsed ? ' collapsed' : ''),
+    'data-lane-id': lane.id,
   });
-  card.addEventListener('dragend', () => {
-    // Fired even if the drop landed outside the list. If we're still
-    // mid-drag (drop didn't fire), back out cleanly.
-    if (getDragFrom() >= 0) cancel();
+  const grip = h('span', {
+    class: 'lane-grip',
+    title: t('Drag to reorder lanes'),
+    'aria-label': t('Drag to reorder lanes'),
+    html: ICONS.grip,
+    on: { click: (e) => e.stopPropagation() },
   });
-  card.addEventListener('dragover', (e) => {
-    if (getDragFrom() < 0) return;
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-    moveOver(card, e.clientY);
-  });
-  card.addEventListener('drop', (e) => {
-    if (getDragFrom() < 0) return;
-    e.preventDefault();
-    commit();
-  });
+  const caret = h('span', { class: 'lane-caret' }, '▾');
+  const labelText = lane.name || t('Lane {{n}}', { n: lane.idx + 1 });
+  const label = h('span', {
+    class: 'lane-name' + (lane.name ? '' : ' muted-fallback'),
+    title: t('Click the pencil to rename'),
+  }, labelText);
+  const count = h('span', { class: 'lane-count' },
+    t('Puzzles ({{n}})', { n: pages.length }));
+  // Mode dropdown — preferred over a two-state toggle because we
+  // expect more modes (finale, branching, etc.) to land here over
+  // time, and a <select> grows to N options without UI surgery. The
+  // shuffled-state colouring is preserved via a class swap on each
+  // change so the visual cue ("this lane behaves differently") still
+  // reads at a glance from the header.
+  const LANE_MODES = [
+    { value: 'linear',   label: t('Linear') },
+    { value: 'shuffled', label: t('Shuffled') },
+  ];
+  const modePill = h('select', {
+    class: 'lane-mode-select' + (lane.mode === 'shuffled' ? ' shuffled' : ''),
+    title: t('Lane mode'),
+    'aria-label': t('Lane mode'),
+    on: {
+      // Header click toggles collapse; the dropdown lives inside the
+      // header, so swallow the click before it bubbles up.
+      click:    (e) => e.stopPropagation(),
+      mousedown:(e) => e.stopPropagation(),
+      change:   (e) => { e.stopPropagation(); setLaneMode(view, adv, lane, e.target.value); },
+    },
+  }, LANE_MODES.map((m) => h('option', {
+    value: m.value,
+    selected: m.value === lane.mode ? '' : null,
+  }, m.label)));
+  const renameBtn = iconBtn('pencil', t('Rename lane'),
+    (e) => { if (e) e.stopPropagation(); renameLane(view, adv, lane); });
+  const deleteBtn = iconBtn('trash', t('Delete lane'),
+    (e) => { if (e) e.stopPropagation(); deleteLane(view, adv, lane, pages.length); }, { danger: true });
+  const actions = h('div', { class: 'lane-actions' }, renameBtn, deleteBtn);
 
-  // Touch fallback. Only the grip starts a touch drag; touching the
-  // card body keeps native scrolling.
-  let touchStartX = 0, touchStartY = 0, touchMode = null;
-  const handle = card.querySelector('.drag-handle');
-  if (!handle) return;
-  const targetAt = (clientX, clientY) => {
-    const el = document.elementFromPoint(clientX, clientY);
-    return el?.closest('.puzzle-card');
-  };
-  handle.addEventListener('touchstart', (e) => {
-    if (e.touches.length !== 1) return;
-    touchStartX = e.touches[0].clientX;
-    touchStartY = e.touches[0].clientY;
-    touchMode = null;
-  }, { passive: true });
-  handle.addEventListener('touchmove', (e) => {
-    if (touchMode === 'skip' || e.touches.length !== 1) return;
-    const t = e.touches[0];
-    if (touchMode === null) {
-      const dx = t.clientX - touchStartX;
-      const dy = t.clientY - touchStartY;
-      if (Math.hypot(dx, dy) < 8) return;
-      touchMode = 'drag';
-      setDragFrom(i, card);
-      card.classList.add('drag-ghost');
+  const header = h('div', {
+    class: 'lane-header',
+    on: { click: () => toggleLaneCollapsed(view, adv, lane.id) },
+  }, grip, caret, label, count, modePill, actions);
+
+  const body = h('div', { class: 'lane-body' });
+  // Always render the puzzle-list element — even when empty — so it
+  // carries data-lane-id and the wireListDrops handlers, which are
+  // what make a cross-lane drag actually drop into THIS lane. With
+  // a conditional empty-state <p> instead, an empty lane had no
+  // .puzzle-list at all and the dragged card had nowhere to land.
+  // The empty-state hint sits inside the list with
+  // pointer-events:none so dragover bubbles to the list itself
+  // (otherwise `e.target === list` would be false when the cursor
+  // hovers the hint text).
+  const list = renderPuzzleListForLane(lane, pages);
+  if (pages.length === 0) {
+    list.append(h('p', {
+      class: 'muted',
+      style: 'margin:.5rem 0; pointer-events: none',
+    }, t('No puzzles in this lane yet.')));
+  }
+  body.append(list);
+  // Per-lane "+ Add puzzle" — places the new puzzle directly in
+  // this lane via the lane_id payload field. The global "Add puzzle"
+  // at the top of the page still exists; it always lands in lane 0.
+  // The local button is the discoverable, lane-scoped alternative
+  // arrangers reach for once they understand the lane structure.
+  const addBtn = h('button', {
+    class: 'btn small ghost',
+    style: 'margin-top:.5rem',
+    title: t('Add a puzzle to this lane'),
+    on: { click: (e) => { e.stopPropagation(); openEditPuzzle(adv, null, lane.id); } },
+  }, '+ ', t('Add puzzle'));
+  body.append(addBtn);
+  section.append(header, body);
+  return section;
+}
+
+// renderOrphanSection wraps any pages whose lane_id doesn't match a
+// known lane in a synthetic "Unassigned" section so they're not lost
+// from the editor. Shouldn't happen in normal operation; this is a
+// safety net for the rare race between a lane delete and a stale
+// editor view.
+function renderOrphanSection(view, adv, orphans, renderPuzzleListForLane) {
+  const section = h('div', { class: 'lane-section' });
+  const header = h('div', { class: 'lane-header', style: 'cursor:default' },
+    h('span', { class: 'lane-caret' }, ''),
+    h('span', { class: 'lane-name muted-fallback' }, t('Unassigned')),
+    h('span', { class: 'lane-count' },
+      t('Puzzles ({{n}})', { n: orphans.length })));
+  section.append(header,
+    h('div', { class: 'lane-body' }, renderPuzzleListForLane(null, orphans)));
+  return section;
+}
+
+function toggleLaneCollapsed(view, adv, laneID) {
+  if (adv._uiLaneCollapsed.has(laneID)) adv._uiLaneCollapsed.delete(laneID);
+  else adv._uiLaneCollapsed.add(laneID);
+  renderLibraryEdit(view, adv);
+}
+
+async function setLaneMode(view, adv, lane, next) {
+  if (!next || next === lane.mode) return;
+  const r = await api(`/api/admin/adventures/${encodeURIComponent(adv.slug)}/lanes/${lane.id}`, {
+    method: 'PATCH', body: JSON.stringify({ mode: next }),
+  });
+  if (r.status !== 204) {
+    toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+    return;
+  }
+  lane.mode = next;
+  renderLibraryEdit(view, adv);
+}
+
+async function renameLane(view, adv, lane) {
+  const current = lane.name || '';
+  const next = window.prompt(t('Lane name (leave empty for default)'), current);
+  if (next === null) return; // user cancelled
+  const trimmed = next.trim();
+  if (trimmed === current) return;
+  const r = await api(`/api/admin/adventures/${encodeURIComponent(adv.slug)}/lanes/${lane.id}`, {
+    method: 'PATCH', body: JSON.stringify({ name: trimmed }),
+  });
+  if (r.status !== 204) {
+    toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+    return;
+  }
+  lane.name = trimmed;
+  renderLibraryEdit(view, adv);
+}
+
+async function deleteLane(view, adv, lane, pageCount) {
+  if (pageCount > 0) {
+    toastErr(t('Move the puzzles out of this lane first.'));
+    return;
+  }
+  if (!window.confirm(t('Delete this lane?'))) return;
+  const r = await api(`/api/admin/adventures/${encodeURIComponent(adv.slug)}/lanes/${lane.id}`, {
+    method: 'DELETE',
+  });
+  if (r.status !== 204) {
+    toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+    return;
+  }
+  viewLibraryEdit(view, adv.slug);
+}
+
+async function addLane(view, adv) {
+  // Collect name + mode in one modal so the arranger doesn't have to
+  // create the lane and then reach for the mode pill afterwards.
+  // The previous shape was a window.prompt for the name only with a
+  // hard-coded linear mode — fine as a stub but discoverability of
+  // shuffled mode suffered.
+  const created = await modal(t('Add lane'), ({ body, close, setBeforeClose }) => {
+    const nameInput = h('input', {
+      autofocus: true,
+      maxlength: '200',
+      placeholder: t('Lane name (leave empty for default)'),
+    });
+    const modeLinear = h('input', { type: 'radio', name: 'lane-mode', value: 'linear', checked: '' });
+    const modeShuffled = h('input', { type: 'radio', name: 'lane-mode', value: 'shuffled' });
+    const modeRow = (input, label, sub) => h('label', {
+      class: 'row',
+      style: 'gap:.6rem; align-items:flex-start; padding:.5rem; border-radius:8px; cursor:pointer',
+    },
+      h('span', { style: 'padding-top:.15rem' }, input),
+      h('div', { style: 'flex:1; min-width:0' },
+        h('div', { style: 'font-weight:600' }, label),
+        h('div', { class: 'muted', style: 'font-size:.85rem; margin-top:.15rem' }, sub),
+      ));
+    const form = h('form', {},
+      h('label', { class: 'field' },
+        h('span', {}, t('Name (optional)')),
+        nameInput),
+      h('div', { class: 'field' },
+        h('span', {}, t('Mode')),
+        modeRow(modeLinear, t('Linear'),
+          t('Every team visits this lane\'s puzzles in the same order.')),
+        modeRow(modeShuffled, t('Shuffled'),
+          t('Each team gets their own deterministic order so they spread out instead of piling up on puzzle 1.'))),
+      h('div', { class: 'row end', style: 'gap:.5rem; margin-top:1rem' },
+        h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, t('Cancel')),
+        h('button', { class: 'btn primary', type: 'submit' }, t('Add lane'))));
+    if (typeof setBeforeClose === 'function') {
+      setBeforeClose(() => !nameInput.value.trim()
+        || confirm(t('Discard this lane?')));
     }
-    e.preventDefault();
-    const target = targetAt(t.clientX, t.clientY);
-    if (target) moveOver(target, t.clientY);
-  }, { passive: false });
-  handle.addEventListener('touchend', (e) => {
-    if (touchMode !== 'drag') { touchMode = null; return; }
-    touchMode = null;
-    e.preventDefault();
-    commit();
-  }, { passive: false });
-  handle.addEventListener('touchcancel', () => {
-    if (touchMode === 'drag') cancel();
-    touchMode = null;
-  }, { passive: true });
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const mode = modeShuffled.checked ? 'shuffled' : 'linear';
+      const r = await api(`/api/admin/adventures/${encodeURIComponent(adv.slug)}/lanes`, {
+        method: 'POST',
+        body: JSON.stringify({ mode, name: nameInput.value.trim() }),
+      });
+      if (r.status !== 201) {
+        toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+        return;
+      }
+      close(true);
+    });
+    body.append(form);
+  });
+  if (created) viewLibraryEdit(view, adv.slug);
 }
 
 // togglePublished flips the adventure's published flag and re-renders
@@ -11552,7 +12056,7 @@ function readableOn(hex) {
   return L > 0.5 ? '#000000' : '#ffffff';
 }
 
-async function openEditPuzzle(adv, page /* or null */) {
+async function openEditPuzzle(adv, page /* or null */, laneID /* optional, create only */) {
   const creating = !page;
   const standalone = !adv; // library puzzle with no adventure context
   // Persist in-progress new puzzles to localStorage so an accidental
@@ -11570,7 +12074,16 @@ async function openEditPuzzle(adv, page /* or null */) {
     : standalone
       ? (page.title ? t('Library: {{title}}', { title: page.title }) : t('Library puzzle'))
       : t('Puzzle {{i}}', { i: page.index + 1 });
-  await modal(title, ({ body, close, setBeforeClose }) => {
+  // The modal resolves with whatever close(value) was called with:
+  //   - close(true)  → form-submit save path (line ~12414, 12502).
+  //   - close(null)  → cancel / Esc / backdrop / pop.
+  // We use the truthy result to trigger a route re-render so the
+  // adventure card list reflects the new / edited puzzle. Without
+  // this, the create flow re-opens the editor for image upload and
+  // then leaves the adventure view stale once the user dismisses
+  // it — the new puzzle stays invisible until the user navigates
+  // away and back.
+  const result = await modal(title, ({ body, close, setBeforeClose }) => {
     // ---- Preview card: mirrors play.html's puzzle shape ----
     // None of these are HTML-`required` — an arranger often saves a stub
     // with nothing but a location (especially via Quick Puzzle) and
@@ -12012,6 +12525,12 @@ async function openEditPuzzle(adv, page /* or null */) {
       };
       if (gated.checked) payload.radius_m = parseFloat(radius.value);
       if (creating) {
+        // Lane targeting: when the editor was opened from a lane's
+        // "+ Add puzzle" button, drop the new page into that lane
+        // directly. Without this the server falls back to the idx=0
+        // lane (resolveCreateLane), which is rarely what the
+        // arranger wanted when they were already looking at lane N.
+        if (laneID) payload.lane_id = laneID;
         const r = await api(`/api/admin/adventures/${encodeURIComponent(adv.slug)}/pages`, {
           method: 'POST', body: JSON.stringify(payload),
         });
@@ -12318,6 +12837,12 @@ async function openEditPuzzle(adv, page /* or null */) {
       }
     }, { once: true });
   }, { wide: true });
+  // Re-render the adventure view if the modal closed via Save. The
+  // create flow's submit handler may have already opened a second
+  // modal for image upload; in that case we resolve once for each
+  // modal in the chain and re-render after each save, which is
+  // cheap and self-correcting.
+  if (result) renderRoute();
 }
 
 // renderPuzzleLocationMap wires a Leaflet map + marker + (optional)

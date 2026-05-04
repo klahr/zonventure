@@ -703,6 +703,13 @@ func New(cfg Config) http.Handler {
 		r.Delete("/adventures/{slug}/shares/{orgID}", adminH.RevokeAdventureShare)
 		r.Post("/adventures/{slug}/pages", adminH.CreatePage)
 		r.Patch("/adventures/{slug}/pages/reorder", adminH.ReorderPages)
+		// Lane CRUD. Reorder lives at /lanes/reorder rather than as
+		// a method-keyed verb so the router pattern stays decisive
+		// (no overlap with /lanes/{laneID}).
+		r.Post("/adventures/{slug}/lanes", adminH.CreateLane)
+		r.Post("/adventures/{slug}/lanes/reorder", adminH.ReorderLanes)
+		r.Patch("/adventures/{slug}/lanes/{laneID}", adminH.UpdateLane)
+		r.Delete("/adventures/{slug}/lanes/{laneID}", adminH.DeleteLane)
 		r.Post("/adventures/{slug}/pages/copy-from/{pageID}", adminH.CopyPuzzleToAdventure)
 		r.Patch("/pages/{pageID}", adminH.UpdatePage)
 		r.Delete("/pages/{pageID}", adminH.DeletePage)

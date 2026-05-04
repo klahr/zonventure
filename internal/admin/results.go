@@ -48,10 +48,8 @@ func (h *Handlers) ExportEventResults(w http.ResponseWriter, r *http.Request) {
 	// Enabled-only count — disabled puzzles never count toward a team's
 	// progress, so they shouldn't pad the "x of N" total on results.
 	enabledCount := 0
-	enabled := make([]int, 0, len(adv.Pages))
 	for _, p := range adv.Pages {
 		if !p.Disabled {
-			enabled = append(enabled, p.Index)
 			enabledCount++
 		}
 	}
@@ -103,15 +101,16 @@ func (h *Handlers) ExportEventResults(w http.ResponseWriter, r *http.Request) {
 		}
 		rank++
 		members, _ := h.teamMemberNames(r.Context(), teamID)
-		// Enabled-solved count: count enabled pages whose idx < rawCursor.
-		solved := 0
-		for _, idx := range enabled {
-			if idx < rawCursor {
-				solved++
-			}
-		}
+		// current_page_index is a monotonic count of advances (one per
+		// accepted answer / unlock), so it doubles as the "puzzles
+		// solved" tally. Cap at enabledCount to keep the column tidy
+		// when an arranger toggled puzzles after teams advanced.
+		solved := rawCursor
 		if solved > enabledCount {
 			solved = enabledCount
+		}
+		if solved < 0 {
+			solved = 0
 		}
 		elapsed := ""
 		if completedAt != "" && !startedTime.IsZero() {

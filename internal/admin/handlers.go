@@ -28,6 +28,7 @@ import (
 	"git.sr.ht/~klahr/zv/internal/auth"
 	"git.sr.ht/~klahr/zv/internal/components"
 	"git.sr.ht/~klahr/zv/internal/httpx"
+	"git.sr.ht/~klahr/zv/internal/lanes"
 	"git.sr.ht/~klahr/zv/internal/mailer"
 	"git.sr.ht/~klahr/zv/internal/roster"
 	"git.sr.ht/~klahr/zv/internal/simulator"
@@ -629,6 +630,20 @@ func (h *Handlers) transitionEvent(w http.ResponseWriter, r *http.Request, actio
 	if _, err := h.DB.ExecContext(r.Context(), update, eventID); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "update failed")
 		return
+	}
+	// Lane initialisation runs only on first transition to running
+	// (start, not resume). Persists per-team permutations + plants
+	// initial cursors so applyAnswer can take the lane-aware code
+	// path. Best-effort: a failure here doesn't undo the state
+	// transition — runtime fallbacks derive permutations on the fly
+	// when no row exists, so the run is still playable.
+	if action == "start" {
+		if err := lanes.Initialize(r.Context(), h.DB, h.Lib, eventID); err != nil {
+			// Log via activity feed for the audit trail; keep going
+			// since the runtime fallback covers correctness.
+			activity.Record(r.Context(), h.DB, eventID, nil, activity.Actor{},
+				"lanes.init.failed", map[string]any{"error": err.Error()})
+		}
 	}
 	me, _ := auth.FromContext(r.Context())
 	kind := map[string]string{"start": activity.EventStarted, "pause": activity.EventPaused, "resume": activity.EventResumed}[action]

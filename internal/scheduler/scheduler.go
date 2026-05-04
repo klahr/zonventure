@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"git.sr.ht/~klahr/zv/internal/activity"
+	"git.sr.ht/~klahr/zv/internal/adventure"
+	"git.sr.ht/~klahr/zv/internal/lanes"
 	"git.sr.ht/~klahr/zv/internal/logx"
 	"git.sr.ht/~klahr/zv/internal/periodic"
 	"git.sr.ht/~klahr/zv/internal/ws"
@@ -18,10 +20,13 @@ import (
 // Start launches the sweep loop in its own goroutine. Stop it by cancelling
 // the supplied context. The returned channel is closed once the loop has
 // fully exited — main.go waits on it during shutdown so the process doesn't
-// race the in-flight tick. hub may be nil (e.g. in tests).
-func Start(ctx context.Context, db *sql.DB, hub *ws.Hub, interval time.Duration) <-chan struct{} {
+// race the in-flight tick. hub may be nil (e.g. in tests). lib is the
+// adventure library used to seed per-team lane permutations on auto-start;
+// nil disables seeding (the runtime fallback derives permutations on the
+// fly so the run is still playable).
+func Start(ctx context.Context, db *sql.DB, hub *ws.Hub, lib *adventure.Library, interval time.Duration) <-chan struct{} {
 	return periodic.Start(ctx, interval, func(ctx context.Context) {
-		tick(ctx, db, hub)
+		tick(ctx, db, hub, lib)
 	})
 }
 
@@ -30,7 +35,7 @@ func Start(ctx context.Context, db *sql.DB, hub *ws.Hub, interval time.Duration)
 // scheduled_at can be either RFC3339 (from the JS Date input) or our own
 // "YYYY-MM-DD HH:MM:SS" wire format; casting through timestamptz parses
 // both so we don't have to care what the writer chose.
-func tick(ctx context.Context, db *sql.DB, hub *ws.Hub) {
+func tick(ctx context.Context, db *sql.DB, hub *ws.Hub, lib *adventure.Library) {
 	rows, err := db.QueryContext(ctx, `
 		SELECT id, COALESCE(created_by_user_id, 0)
 		FROM events
@@ -66,6 +71,11 @@ func tick(ctx context.Context, db *sql.DB, hub *ws.Hub) {
 		}
 		if n, _ := res.RowsAffected(); n == 0 {
 			continue // lost the race to a manual start — that's fine
+		}
+		if lib != nil {
+			if err := lanes.Initialize(ctx, db, lib, d.id); err != nil {
+				logx.Error("scheduler.lanes_init", "event_id", d.id, "err", err)
+			}
 		}
 		var actor activity.Actor
 		if d.actor > 0 {

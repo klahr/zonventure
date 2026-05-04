@@ -206,15 +206,17 @@ func (h *Handlers) collectRecapPDFData(ctx context.Context, eventID, orgID int64
 		}
 		rank++
 		members, _ := h.teamMemberNames(ctx, teamID)
-		solved := 0
-		for _, idx := range enabled {
-			if idx < rawCursor {
-				solved++
-			}
-		}
+		// current_page_index is the team's monotonic count of solves
+		// (see results.go for the same treatment under lanes). Cap at
+		// the adventure's enabled page count for display sanity.
+		solved := rawCursor
 		if solved > d.PageCount {
 			solved = d.PageCount
 		}
+		if solved < 0 {
+			solved = 0
+		}
+		_ = enabled // kept above for parity with the legacy code path; no longer load-bearing
 		var elapsed time.Duration
 		if completed != "" && !d.EventStartedAt.IsZero() {
 			if finished, ok := parseRecapTimestamp(completed); ok {

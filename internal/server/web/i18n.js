@@ -116,6 +116,36 @@
       'Delete': 'Ta bort',
       'Edit': 'Redigera',
       'Drag to reorder': 'Dra för att ordna om',
+      'Drag to reorder lanes': 'Dra för att ordna om körfält',
+      'Lane {{n}}': 'Körfält {{n}}',
+      'Linear': 'Linjär',
+      'Shuffled': 'Slumpad',
+      'Add lane': 'Lägg till körfält',
+      'Add a lane to group puzzles. Lanes are visited in order.':
+        'Lägg till ett körfält för att gruppera pussel. Körfält besöks i tur och ordning.',
+      'Rename lane': 'Byt namn på körfält',
+      'Delete lane': 'Ta bort körfält',
+      'Delete this lane?': 'Ta bort det här körfältet?',
+      'Lane name (leave empty for default)': 'Körfältets namn (lämna tomt för standard)',
+      'Lane mode': 'Körfältets läge',
+      'Mode': 'Läge',
+      'Every team visits this lane\'s puzzles in the same order.':
+        'Alla lag besöker körfältets pussel i samma ordning.',
+      'Each team gets their own deterministic order so they spread out instead of piling up on puzzle 1.':
+        'Varje lag får sin egen deterministiska ordning så att de sprider ut sig istället för att samlas på pussel 1.',
+      'Discard this lane?': 'Kasta det här körfältet?',
+      'Move the puzzles out of this lane first.':
+        'Flytta pusslen ur körfältet först.',
+      'No puzzles in this lane yet. Use the "Add puzzle" button above.':
+        'Inga pussel i körfältet ännu. Använd "Lägg till pussel" ovan.',
+      'No puzzles in this lane yet.': 'Inga pussel i körfältet ännu.',
+      'Add a puzzle to this lane': 'Lägg till ett pussel i det här körfältet',
+      'All teams in the same order. Click to switch to shuffled.':
+        'Alla lag i samma ordning. Klicka för att byta till slumpad.',
+      'Each team gets their own order. Click to switch to linear.':
+        'Varje lag får sin egen ordning. Klicka för att byta till linjär.',
+      'Click the pencil to rename': 'Klicka på pennan för att byta namn',
+      'Unassigned': 'Otilldelade',
       'Back': 'Tillbaka',
       'Close': 'Stäng',
       'Create': 'Skapa',
@@ -244,6 +274,7 @@
         'Nästa ledtråd är inte redo ännu. Kämpa på ett tag till.',
       // ---- hint editor (arrange) ----
       'Add hint': 'Lägg till ledtråd',
+      'Add puzzle': 'Lägg till pussel',
       'Remove hint': 'Ta bort ledtråd',
       'Clue in markdown…': 'Ledtråd i markdown…',
       'No hints yet — add one below for a delayed helper button.':

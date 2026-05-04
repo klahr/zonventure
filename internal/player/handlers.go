@@ -19,12 +19,13 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"git.sr.ht/~klahr/zv/internal/activity"
 	"git.sr.ht/~klahr/zv/internal/adventure"
 	"git.sr.ht/~klahr/zv/internal/auth"
 	"git.sr.ht/~klahr/zv/internal/httpx"
+	"git.sr.ht/~klahr/zv/internal/lanes"
 	mailerpkg "git.sr.ht/~klahr/zv/internal/mailer"
 	"git.sr.ht/~klahr/zv/internal/mdx"
-	"git.sr.ht/~klahr/zv/internal/activity"
 	"git.sr.ht/~klahr/zv/internal/webhooks"
 	"git.sr.ht/~klahr/zv/internal/ws"
 )
@@ -215,7 +216,14 @@ type teamContext struct {
 	RunState             string
 	ScheduledAt          sql.NullString
 	StartedAt            sql.NullString
+	// CurrentPageIndex is preserved as a monotonic "puzzles solved"
+	// counter for sorting/leaderboards and the assets-strict-mode
+	// gate. With lanes, the source of truth for "which page is this
+	// team on now" is CurrentPageID; CurrentPageIndex is incremented
+	// once per advance regardless of which lane the team is in.
 	CurrentPageIndex     int
+	CurrentPageID        int64 // 0 = no active page (pre-start or completed)
+	CurrentLaneID        int64 // 0 = not in a lane (pre-start or completed)
 	CurrentPageStartedAt sql.NullString
 	CompletedAt          sql.NullString
 }
@@ -273,7 +281,13 @@ func (h *Handlers) publishEventCompleted(ctx context.Context, tc teamContext) {
 // already running; a lost race (manual start, concurrent sweep) is
 // returned as (false, nil). The intent is to remove the "player
 // arrived at 00:00 but still waits 15 s for the scheduler" UX hiccup.
-func maybePromoteScheduled(ctx context.Context, db *sql.DB, hub *ws.Hub, eventID int64, scheduledAt string) (bool, error) {
+//
+// On a successful promotion the lane initialiser runs to seed
+// per-team permutations and initial cursors. Failures there are
+// logged via the activity feed but don't roll back the state
+// transition — the runtime fallback derives permutations on the fly
+// when no row exists, so the run is still playable.
+func maybePromoteScheduled(ctx context.Context, db *sql.DB, hub *ws.Hub, lib *adventure.Library, eventID int64, scheduledAt string) (bool, error) {
 	due, err := parsePlayTime(scheduledAt)
 	if err != nil {
 		return false, nil
@@ -292,6 +306,12 @@ func maybePromoteScheduled(ctx context.Context, db *sql.DB, hub *ws.Hub, eventID
 	if n, _ := res.RowsAffected(); n == 0 {
 		return false, nil
 	}
+	if lib != nil {
+		if err := lanes.Initialize(ctx, db, lib, eventID); err != nil {
+			activity.Record(ctx, db, eventID, nil, activity.Actor{},
+				"lanes.init.failed", map[string]any{"error": err.Error()})
+		}
+	}
 	activity.Record(ctx, db, eventID, nil, activity.Actor{}, activity.EventStarted,
 		map[string]any{"auto": true})
 	if hub != nil {
@@ -303,10 +323,12 @@ func maybePromoteScheduled(ctx context.Context, db *sql.DB, hub *ws.Hub, eventID
 func loadTeam(ctx context.Context, db *sql.DB, slot auth.Slot) (teamContext, error) {
 	var tc teamContext
 	var hasLogo int
+	var pageID, laneID sql.NullInt64
 	err := db.QueryRowContext(ctx, `
 		SELECT t.id, t.name, t.token, ar.id, ar.org_id, ar.adventure_slug, ar.state,
 		       ar.scheduled_at, ar.started_at,
-		       t.current_page_index, t.current_page_started_at, t.completed_at,
+		       t.current_page_index, t.current_page_id, t.current_lane_id,
+		       t.current_page_started_at, t.completed_at,
 		       o.name,
 		       (o.logo_content IS NOT NULL AND length(o.logo_content) > 0)::int
 		FROM teams t
@@ -316,9 +338,16 @@ func loadTeam(ctx context.Context, db *sql.DB, slot auth.Slot) (teamContext, err
 	`, slot.TeamID).Scan(&tc.TeamID, &tc.TeamName, &tc.TeamToken,
 		&tc.EventID, &tc.OrgID, &tc.AdventureSlug,
 		&tc.RunState, &tc.ScheduledAt, &tc.StartedAt,
-		&tc.CurrentPageIndex, &tc.CurrentPageStartedAt, &tc.CompletedAt,
+		&tc.CurrentPageIndex, &pageID, &laneID,
+		&tc.CurrentPageStartedAt, &tc.CompletedAt,
 		&tc.OrgName, &hasLogo)
 	tc.OrgHasLogo = hasLogo != 0
+	if pageID.Valid {
+		tc.CurrentPageID = pageID.Int64
+	}
+	if laneID.Valid {
+		tc.CurrentLaneID = laneID.Int64
+	}
 	return tc, err
 }
 
@@ -519,6 +548,11 @@ func enabledPages(adv *adventure.Adventure) []adventure.Page {
 // enabled slice. The (nil, 0) result means "no more enabled pages —
 // team is done". The pointer returned is borrowed from pages and must
 // not be retained past the caller's use of the slice.
+//
+// Used for the legacy linear path that hasn't been migrated to the
+// lane-aware resolver yet (e.g., the manifest's strict-assets gate
+// where the cheap idx-watermark comparison is good enough). New
+// progression code should call resolveCurrentPage instead.
 func visibleFor(pages []adventure.Page, startIdx int) (*adventure.Page, int) {
 	enabledIdx := 0
 	for i := range pages {
@@ -531,6 +565,48 @@ func visibleFor(pages []adventure.Page, startIdx int) (*adventure.Page, int) {
 		enabledIdx++
 	}
 	return nil, 0
+}
+
+// resolveCurrentPage returns the page the team should be answering
+// right now. Prefers the explicit current_page_id pointer (the
+// post-lanes source of truth); falls back to the lane-aware first
+// page resolver when the pointer is unset (a brand-new team mid-
+// migration, or a team whose Initialize call hasn't run yet). Returns
+// nil when the team has no active page — the caller should treat
+// that as "completed" or "no current puzzle".
+//
+// When current_page_id points at a now-disabled page (an arranger
+// disabled it mid-run), this walks forward through the team's
+// permutation as if the page had been solved, so the player gets a
+// playable next puzzle instead of a stuck cursor.
+func resolveCurrentPage(ctx context.Context, db lanes.Execer, adv *adventure.Adventure, tc teamContext) (*adventure.Page, error) {
+	if tc.CurrentPageID != 0 {
+		if p := adv.PageByID(tc.CurrentPageID); p != nil && !p.Disabled {
+			return p, nil
+		}
+		_, nextID, err := lanes.NextPageAfter(ctx, db, adv, tc.TeamID, tc.CurrentPageID)
+		if err != nil {
+			return nil, err
+		}
+		if nextID == 0 {
+			return nil, nil
+		}
+		if p := adv.PageByID(nextID); p != nil && !p.Disabled {
+			return p, nil
+		}
+		return nil, nil
+	}
+	_, firstID, err := lanes.FirstPageFor(ctx, db, adv, tc.TeamID)
+	if err != nil {
+		return nil, err
+	}
+	if firstID == 0 {
+		return nil, nil
+	}
+	if p := adv.PageByID(firstID); p != nil && !p.Disabled {
+		return p, nil
+	}
+	return nil, nil
 }
 
 // buildState is the shared state builder used by the HTTP and WS handlers.
@@ -581,7 +657,7 @@ func (h *Handlers) buildState(ctx context.Context, slot auth.Slot) (State, int, 
 	// the WHERE state = 'scheduled' guard — a concurrent sweep or
 	// manual start loses the race cleanly.
 	if tc.RunState == "scheduled" && tc.ScheduledAt.Valid {
-		if started, err := maybePromoteScheduled(ctx, h.DB, h.Hub, tc.EventID, tc.ScheduledAt.String); err == nil && started {
+		if started, err := maybePromoteScheduled(ctx, h.DB, h.Hub, h.Lib, tc.EventID, tc.ScheduledAt.String); err == nil && started {
 			tc.RunState = "running"
 			tc.StartedAt = sql.NullString{String: time.Now().UTC().Format(time.RFC3339), Valid: true}
 			h.publishEventStartedAuto(ctx, tc)
@@ -608,12 +684,15 @@ func (h *Handlers) buildState(ctx context.Context, slot auth.Slot) (State, int, 
 		resp.Status = "cancelled"
 		return resp, http.StatusOK, ""
 	}
-	page, enabledIdx := visibleFor(adv.Pages, tc.CurrentPageIndex)
+	page, err := resolveCurrentPage(ctx, h.DB, adv, tc)
+	if err != nil {
+		return State{}, http.StatusInternalServerError, "resolve page failed"
+	}
 	if page == nil {
 		resp.Status = "completed"
 		return resp, http.StatusOK, ""
 	}
-	resp.PageIndex = enabledIdx
+	resp.PageIndex = tc.CurrentPageIndex
 	resp.Title = page.Title
 	resp.NoAnswer = len(page.Accept) == 0
 	// Gate info is attached when the puzzle has one — but we DON'T hide
@@ -689,7 +768,7 @@ func (h *Handlers) applyAdvance(ctx context.Context, slot auth.Slot) (AnswerResp
 		return AnswerResponse{}, 0, http.StatusInternalServerError, "lookup failed"
 	}
 	if tc.RunState == "scheduled" && tc.ScheduledAt.Valid {
-		if started, _ := maybePromoteScheduled(ctx, h.DB, h.Hub, tc.EventID, tc.ScheduledAt.String); started {
+		if started, _ := maybePromoteScheduled(ctx, h.DB, h.Hub, h.Lib, tc.EventID, tc.ScheduledAt.String); started {
 			tc.RunState = "running"
 			h.publishEventStartedAuto(ctx, tc)
 		}
@@ -704,7 +783,10 @@ func (h *Handlers) applyAdvance(ctx context.Context, slot auth.Slot) (AnswerResp
 	if adv == nil {
 		return AnswerResponse{}, tc.EventID, http.StatusInternalServerError, "no current page"
 	}
-	page, _ := visibleFor(adv.Pages, tc.CurrentPageIndex)
+	page, err := resolveCurrentPage(ctx, h.DB, adv, tc)
+	if err != nil {
+		return AnswerResponse{}, tc.EventID, http.StatusInternalServerError, "resolve page failed"
+	}
 	if page == nil {
 		return AnswerResponse{}, tc.EventID, http.StatusInternalServerError, "no current page"
 	}
@@ -721,14 +803,6 @@ func (h *Handlers) applyAdvance(ctx context.Context, slot auth.Slot) (AnswerResp
 		}
 	}
 	teamID := tc.TeamID
-	// Same atomicity argument as applyAnswer: the AnswerRight runevent
-	// and the team UPDATE must commit together, or the activity feed
-	// disagrees with the team's actual page index. Each UPDATE is also
-	// guarded on `current_page_index = $oldIdx` so two concurrent
-	// advance calls (two slots on the same team firing the WS frame
-	// simultaneously) can't both land — the second one sees zero rows
-	// affected and we abort with 409 instead of double-recording the
-	// activity.
 	tx, err := h.DB.BeginTx(ctx, nil)
 	if err != nil {
 		return AnswerResponse{}, tc.EventID, http.StatusInternalServerError, "begin tx failed"
@@ -737,14 +811,22 @@ func (h *Handlers) applyAdvance(ctx context.Context, slot auth.Slot) (AnswerResp
 
 	activity.Record(ctx, tx, tc.EventID, &teamID, activity.SlotActor(slot.ID),
 		activity.AnswerRight, map[string]any{"page_index": page.Index, "no_answer": true})
-	curIdx := page.Index
-	nextIdx := curIdx + 1
+	nextLaneID, nextPageID, err := lanes.NextPageAfter(ctx, tx, adv, tc.TeamID, page.ID)
+	if err != nil {
+		return AnswerResponse{}, tc.EventID, http.StatusInternalServerError, "resolve next failed"
+	}
+	nextIdx := tc.CurrentPageIndex + 1
 	resp := AnswerResponse{Accepted: true}
-	if next, _ := visibleFor(adv.Pages, nextIdx); next == nil {
+	if nextPageID == 0 {
 		res, err := tx.ExecContext(ctx, `
-			UPDATE teams SET current_page_index = $1, current_page_started_at = now_text(), completed_at = now_text()
-			WHERE id = $2 AND current_page_index = $3
-		`, nextIdx, tc.TeamID, curIdx)
+			UPDATE teams
+			SET current_page_id = NULL,
+			    current_lane_id = NULL,
+			    current_page_index = $1,
+			    current_page_started_at = now_text(),
+			    completed_at = now_text()
+			WHERE id = $2 AND current_page_id IS NOT DISTINCT FROM $3
+		`, nextIdx, tc.TeamID, nullableID(page.ID))
 		if err != nil {
 			return AnswerResponse{}, tc.EventID, http.StatusInternalServerError, "save progress failed"
 		}
@@ -753,9 +835,6 @@ func (h *Handlers) applyAdvance(ctx context.Context, slot auth.Slot) (AnswerResp
 		}
 		activity.Record(ctx, tx, tc.EventID, &teamID, activity.SlotActor(slot.ID),
 			activity.TeamCompleted, nil)
-		// If this team was the last one to finish, the event itself
-		// transitions to 'completed' too. Caller pushes the broadcast
-		// after we return (it already does on any answer).
 		runCompleted, err := activity.MaybeCompleteEvent(ctx, tx, tc.EventID)
 		if err != nil {
 			return AnswerResponse{}, tc.EventID, http.StatusInternalServerError, "complete-event check failed"
@@ -772,9 +851,13 @@ func (h *Handlers) applyAdvance(ctx context.Context, slot auth.Slot) (AnswerResp
 		return resp, tc.EventID, http.StatusOK, ""
 	}
 	res, err := tx.ExecContext(ctx, `
-		UPDATE teams SET current_page_index = $1, current_page_started_at = now_text()
-		WHERE id = $2 AND current_page_index = $3
-	`, nextIdx, tc.TeamID, curIdx)
+		UPDATE teams
+		SET current_page_id = $1,
+		    current_lane_id = $2,
+		    current_page_index = $3,
+		    current_page_started_at = now_text()
+		WHERE id = $4 AND current_page_id IS NOT DISTINCT FROM $5
+	`, nextPageID, nullableID(nextLaneID), nextIdx, tc.TeamID, nullableID(page.ID))
 	if err != nil {
 		return AnswerResponse{}, tc.EventID, http.StatusInternalServerError, "save progress failed"
 	}
@@ -843,16 +926,45 @@ func (h *Handlers) Manifest(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusInternalServerError, "adventure not loaded")
 		return
 	}
+	// Strict-assets adventures cap the manifest at pages the team has
+	// already visited (solved or currently on). Hint assets stay
+	// scoped per-hint by their own reveal gate regardless of this
+	// flag. Visited-page detection now uses answer_attempts + the
+	// team's current page id, so it works under shuffled lanes where
+	// p.Index <-> progress is no longer a one-to-one mapping.
+	visited := map[int64]bool{}
+	if adv.StrictAssets {
+		rows, err := h.DB.QueryContext(r.Context(), `
+			SELECT DISTINCT p.id
+			FROM answer_attempts aa
+			JOIN adventure_pages p
+			  ON p.adventure_id = $2 AND p.idx = aa.page_index
+			WHERE aa.team_id = $1 AND aa.accepted = 1
+		`, tc.TeamID, adv.ID)
+		if err != nil {
+			httpx.Error(w, http.StatusInternalServerError, "manifest gate failed")
+			return
+		}
+		for rows.Next() {
+			var id int64
+			if err := rows.Scan(&id); err != nil {
+				rows.Close()
+				httpx.Error(w, http.StatusInternalServerError, "manifest gate failed")
+				return
+			}
+			visited[id] = true
+		}
+		rows.Close()
+		if tc.CurrentPageID != 0 {
+			visited[tc.CurrentPageID] = true
+		}
+	}
 	urls := make([]string, 0, 32)
 	for _, p := range adv.Pages {
 		if p.Disabled {
 			continue
 		}
-		// Strict-assets adventures cap the manifest at the team's current
-		// page so the offline cache can't pre-fetch puzzles the team
-		// hasn't reached yet. Hint assets stay scoped per-hint by their
-		// own reveal gate regardless of this flag.
-		if adv.StrictAssets && p.Index > tc.CurrentPageIndex {
+		if adv.StrictAssets && !visited[p.ID] {
 			continue
 		}
 		for _, im := range p.Images {
@@ -989,7 +1101,7 @@ func (h *Handlers) applyAnswer(ctx context.Context, slot auth.Slot, answer strin
 	// Same lazy-promote as buildState — don't make the player wait on
 	// the scheduler sweep if they click at the stroke of 0.
 	if tc.RunState == "scheduled" && tc.ScheduledAt.Valid {
-		if started, _ := maybePromoteScheduled(ctx, h.DB, h.Hub, tc.EventID, tc.ScheduledAt.String); started {
+		if started, _ := maybePromoteScheduled(ctx, h.DB, h.Hub, h.Lib, tc.EventID, tc.ScheduledAt.String); started {
 			tc.RunState = "running"
 			h.publishEventStartedAuto(ctx, tc)
 		}
@@ -1004,10 +1116,10 @@ func (h *Handlers) applyAnswer(ctx context.Context, slot auth.Slot, answer strin
 	if adv == nil {
 		return AnswerResponse{}, tc.EventID, http.StatusInternalServerError, "no current page"
 	}
-	// The player is answering the first enabled page at or after their
-	// stored cursor — NOT necessarily adv.Pages[tc.CurrentPageIndex],
-	// because authors may have disabled one or more pages in between.
-	page, _ := visibleFor(adv.Pages, tc.CurrentPageIndex)
+	page, err := resolveCurrentPage(ctx, h.DB, adv, tc)
+	if err != nil {
+		return AnswerResponse{}, tc.EventID, http.StatusInternalServerError, "resolve page failed"
+	}
 	if page == nil {
 		return AnswerResponse{}, tc.EventID, http.StatusInternalServerError, "no current page"
 	}
@@ -1056,20 +1168,27 @@ func (h *Handlers) applyAnswer(ctx context.Context, slot auth.Slot, answer strin
 	}
 	activity.Record(ctx, tx, tc.EventID, &teamID, activity.SlotActor(slot.ID),
 		activity.AnswerRight, map[string]any{"page_index": page.Index})
-	// Advance past the page the player just solved. The NEXT call to
-	// buildState will re-resolve the new visible page (which will skip
-	// any disabled pages that follow). Each UPDATE is guarded on the
-	// old current_page_index so concurrent winning answers from two
-	// slots on the same team can't both land — second caller's UPDATE
-	// finds zero rows, we roll back the AnswerRight runevent it just
-	// queued, and surface a 409 so the client re-fetches state.
-	curIdx := page.Index
-	nextIdx := curIdx + 1
-	if next, _ := visibleFor(adv.Pages, nextIdx); next == nil {
+	// Advance past the page the player just solved. Lane-aware: the
+	// next page comes from the team's permutation (or the next lane,
+	// on lane exhaustion). Concurrency is guarded on current_page_id
+	// so two slots on the same team submitting at the same instant
+	// can't both land — second UPDATE finds zero rows, we roll back
+	// the AnswerRight activity row, and surface a 409.
+	nextLaneID, nextPageID, err := lanes.NextPageAfter(ctx, tx, adv, tc.TeamID, page.ID)
+	if err != nil {
+		return AnswerResponse{}, tc.EventID, http.StatusInternalServerError, "resolve next failed"
+	}
+	nextIdx := tc.CurrentPageIndex + 1
+	if nextPageID == 0 {
 		res, err := tx.ExecContext(ctx, `
-			UPDATE teams SET current_page_index = $1, current_page_started_at = now_text(), completed_at = now_text()
-			WHERE id = $2 AND current_page_index = $3
-		`, nextIdx, tc.TeamID, curIdx)
+			UPDATE teams
+			SET current_page_id = NULL,
+			    current_lane_id = NULL,
+			    current_page_index = $1,
+			    current_page_started_at = now_text(),
+			    completed_at = now_text()
+			WHERE id = $2 AND current_page_id IS NOT DISTINCT FROM $3
+		`, nextIdx, tc.TeamID, nullableID(page.ID))
 		if err != nil {
 			return AnswerResponse{}, tc.EventID, http.StatusInternalServerError, "save progress failed"
 		}
@@ -1094,9 +1213,13 @@ func (h *Handlers) applyAnswer(ctx context.Context, slot auth.Slot, answer strin
 		return resp, tc.EventID, http.StatusOK, ""
 	}
 	res, err := tx.ExecContext(ctx, `
-		UPDATE teams SET current_page_index = $1, current_page_started_at = now_text()
-		WHERE id = $2 AND current_page_index = $3
-	`, nextIdx, tc.TeamID, curIdx)
+		UPDATE teams
+		SET current_page_id = $1,
+		    current_lane_id = $2,
+		    current_page_index = $3,
+		    current_page_started_at = now_text()
+		WHERE id = $4 AND current_page_id IS NOT DISTINCT FROM $5
+	`, nextPageID, nullableID(nextLaneID), nextIdx, tc.TeamID, nullableID(page.ID))
 	if err != nil {
 		return AnswerResponse{}, tc.EventID, http.StatusInternalServerError, "save progress failed"
 	}
@@ -1108,6 +1231,19 @@ func (h *Handlers) applyAnswer(ctx context.Context, slot auth.Slot, answer strin
 	}
 	resp.NextIndex = nextIdx
 	return resp, tc.EventID, http.StatusOK, ""
+}
+
+// nullableID wraps a BIGINT into sql.NullInt64 — zero (no id) and
+// negative (synthesized in-memory lane) values encode as SQL NULL,
+// matching the FK column's nullability. Used by the progression
+// UPDATEs so completed teams clear their cursor cleanly and so
+// loader-synthesized lanes (which have no DB row) don't try to
+// write a non-existent id into teams.current_lane_id.
+func nullableID(id int64) any {
+	if id <= 0 {
+		return sql.NullInt64{}
+	}
+	return id
 }
 
 // SubmitAnswer evaluates a submitted answer for the slot's current page.
@@ -1568,7 +1704,11 @@ func (h *Handlers) RevealHint(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusInternalServerError, "adventure not loaded")
 		return
 	}
-	page, _ := visibleFor(adv.Pages, tc.CurrentPageIndex)
+	page, err := resolveCurrentPage(r.Context(), h.DB, adv, tc)
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "resolve page failed")
+		return
+	}
 	if page == nil {
 		httpx.Error(w, http.StatusConflict, "no current puzzle")
 		return

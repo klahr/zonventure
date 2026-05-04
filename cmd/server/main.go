@@ -290,7 +290,7 @@ func main() {
 	// for an awkward up-to-15-second pause. The query is "SELECT … WHERE
 	// state = 'scheduled' AND scheduled_at <= now()" against an indexed
 	// column, so 60 queries/min on an idle system is trivial DB load.
-	schedDone := scheduler.Start(ctx, sqlDB, hub, time.Second)
+	schedDone := scheduler.Start(ctx, sqlDB, hub, lib, time.Second)
 
 	// Privacy-retention sweeper: prunes location pings + answer attempts
 	// from completed runs and ages out auth_events. Operator-tunable via

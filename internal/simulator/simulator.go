@@ -23,6 +23,7 @@ import (
 
 	"git.sr.ht/~klahr/zv/internal/activity"
 	"git.sr.ht/~klahr/zv/internal/adventure"
+	"git.sr.ht/~klahr/zv/internal/lanes"
 	"git.sr.ht/~klahr/zv/internal/logx"
 	"git.sr.ht/~klahr/zv/internal/tokenx"
 	"git.sr.ht/~klahr/zv/internal/ws"
@@ -117,11 +118,12 @@ type run struct {
 // loop mutates (position, dwell) are not shared across goroutines —
 // only the driver goroutine touches them.
 type simTeam struct {
-	id         int64
-	slotID     int64
-	name       string
-	lat, lng   float64
-	rawPageIdx int // adventure_pages.idx of the next puzzle to solve
+	id            int64
+	slotID        int64
+	name          string
+	lat, lng      float64
+	currentPageID int64 // adventure_pages.id of the team's current puzzle (lane-aware), 0 once finished
+	currentIdx    int   // count of puzzles already solved; mirrors teams.current_page_index
 
 	speedMps  float64 // metres per simulated second
 	wrongProb float64 // 0..1 probability of a wrong answer per attempt
@@ -240,20 +242,45 @@ func (s *Simulator) Start(ctx context.Context, orgID int64, adventureSlug string
 		}
 		lat, lng := jitter(startPuzzle.Location.Lat, startPuzzle.Location.Lng, 300, rng)
 		teams = append(teams, &simTeam{
-			id:         tid,
-			slotID:     sid,
-			name:       name,
-			lat:        lat,
-			lng:        lng,
-			rawPageIdx: enabled[0].Index,
-			// Spread speeds so teams overtake each other — otherwise
-			// the rank list is static and the FLIP animation never
-			// fires. Range is ~0.8 – 1.6 m/s base (walking pace).
+			id:     tid,
+			slotID: sid,
+			name:   name,
+			lat:    lat,
+			lng:    lng,
+			// currentPageID gets set after lanes.Initialize plants the
+			// initial cursor below — for shuffled lanes each team's
+			// first puzzle differs, so we re-read it from the DB.
 			speedMps:  0.8 + rng.Float64()*0.8,
 			wrongProb: 0.15 + rng.Float64()*0.15, // 15–30%
 		})
 		activity.Record(ctx, s.db, eventID, &tid, activity.Actor{}, activity.TeamCreated,
 			map[string]any{"source": "simulator", "name": name})
+	}
+	// Seed lane permutations + initial cursors. The simulator inserts
+	// events directly in 'running' state so the start handler's
+	// Initialize hook never fires; do it here so each simTeam's first
+	// target follows the team's permutation rather than always being
+	// enabled[0]. A failure falls back to the runtime cyclic-shift
+	// derivation, which is also fine.
+	if err := lanes.Initialize(ctx, s.db, s.lib, eventID); err != nil {
+		logx.Error("simulator.lanes_init", "event_id", eventID, "err", err)
+	}
+	for _, t := range teams {
+		var pid sql.NullInt64
+		if err := s.db.QueryRowContext(ctx,
+			`SELECT current_page_id FROM teams WHERE id = $1`, t.id).Scan(&pid); err == nil && pid.Valid {
+			t.currentPageID = pid.Int64
+		}
+		if t.currentPageID == 0 {
+			// Fallback: take the team's first page directly via the
+			// lane resolver. Keeps the sim playable even if the
+			// Initialize call left no row.
+			adv2 := s.lib.Get(adventureSlug)
+			if adv2 != nil {
+				_, fid, _ := lanes.FirstPageFor(ctx, s.db, adv2, t.id)
+				t.currentPageID = fid
+			}
+		}
 	}
 
 	ctxRun, cancel := context.WithCancel(context.Background())
@@ -453,28 +480,48 @@ func (s *Simulator) attemptAnswer(ctx context.Context, r *run, t *simTeam, puzzl
 			map[string]any{"source": "simulator", "puzzle_idx": puzzle.Index})
 		return
 	}
-	// Correct — advance cursor to the puzzle after this one in the
-	// enabled list. The raw idx (not the enabled position) is what the
-	// schema stores.
-	next := r.nextPuzzleAfter(puzzle.Index)
-	newCursor := puzzle.Index + 1
-	if next != nil {
-		// Walk forward past any disabled pages by setting cursor to
-		// the *next* enabled raw idx. Otherwise nextPuzzle would keep
-		// handing back the same target.
-		newCursor = next.Index
-	} else {
-		newCursor = puzzle.Index + 1 // past the end; finishTeam handles it
+	// Correct — advance via the lane-aware resolver so shuffled lanes
+	// route the team along its own permutation. We have to re-fetch
+	// the adventure each time because pages can be disabled mid-run;
+	// cheap given the small N.
+	adv := s.lib.Get(r.adventureSlug)
+	if adv == nil {
+		return
 	}
-	t.rawPageIdx = newCursor
-	_, _ = s.db.ExecContext(ctx,
-		`UPDATE teams SET current_page_index = $1 WHERE id = $2`,
-		newCursor, t.id)
+	nextLaneID, nextPageID, err := lanes.NextPageAfter(ctx, s.db, adv, t.id, puzzle.ID)
+	if err != nil {
+		logx.Error("simulator.next_page", "event_id", r.id, "team_id", t.id, "err", err)
+		return
+	}
+	t.currentIdx++
 	activity.Record(ctx, s.db, r.id, &t.id, activity.Actor{}, activity.AnswerRight,
 		map[string]any{"source": "simulator", "puzzle_idx": puzzle.Index})
-	if next == nil {
+	if nextPageID == 0 {
+		_, _ = s.db.ExecContext(ctx, `
+			UPDATE teams
+			SET current_page_id = NULL,
+			    current_lane_id = NULL,
+			    current_page_index = $1
+			WHERE id = $2
+		`, t.currentIdx, t.id)
+		t.currentPageID = 0
 		s.finishTeam(ctx, r, t)
+		return
 	}
+	var laneArg any
+	if nextLaneID != 0 {
+		laneArg = nextLaneID
+	} else {
+		laneArg = sql.NullInt64{}
+	}
+	_, _ = s.db.ExecContext(ctx, `
+		UPDATE teams
+		SET current_page_id = $1,
+		    current_lane_id = $2,
+		    current_page_index = $3
+		WHERE id = $4
+	`, nextPageID, laneArg, t.currentIdx, t.id)
+	t.currentPageID = nextPageID
 }
 
 // finishTeam stamps completed_at, emits the usual event, and flags the
@@ -493,23 +540,14 @@ func (s *Simulator) finishTeam(ctx context.Context, r *run, t *simTeam) {
 	_, _ = activity.MaybeCompleteEvent(ctx, s.db, r.id)
 }
 
-// nextPuzzle returns the team's current target — the first enabled
-// puzzle whose raw index is >= the team's cursor. Returns nil once the
-// team has walked off the end.
+// nextPuzzle returns the team's current target — the page their
+// current_page_id points at. Returns nil once the team has finished.
 func (r *run) nextPuzzle(t *simTeam) *adventure.Page {
-	for i := range r.enabled {
-		if r.enabled[i].Index >= t.rawPageIdx {
-			return &r.enabled[i]
-		}
+	if t.currentPageID == 0 {
+		return nil
 	}
-	return nil
-}
-
-// nextPuzzleAfter returns the enabled puzzle strictly after the given
-// raw adventure_pages.idx, or nil if none.
-func (r *run) nextPuzzleAfter(rawIdx int) *adventure.Page {
 	for i := range r.enabled {
-		if r.enabled[i].Index > rawIdx {
+		if r.enabled[i].ID == t.currentPageID {
 			return &r.enabled[i]
 		}
 	}

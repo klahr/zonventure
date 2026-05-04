@@ -2976,12 +2976,17 @@ function renderSubmitDock(s) {
           return;
         }
         // Ungated continue: advance locally as if the server said yes,
-        // without any animations (per the no-answer rule).
+        // without any animations (per the no-answer rule). Mirror the
+        // gated branch and handlePreviewSubmit by scheduling the
+        // next-page load — without it the arranger taps Continue but
+        // the page never advances, so they're stuck on whichever
+        // no-answer puzzle they're previewing.
         advanceMode = 'silent';
-        onAnswerResult({
-          accepted: true,
-          completed: previewState.pageIndex + 1 >= previewState.pageCount,
-        });
+        const completedAll = previewState.pageIndex + 1 >= previewState.pageCount;
+        onAnswerResult({ accepted: true, completed: completedAll });
+        if (!completedAll) {
+          setTimeout(() => loadPreviewPage(previewState.pageIndex + 1), 1400);
+        }
         return;
       }
       // Gated: send the latest fix first so the server's gate check
@@ -3160,9 +3165,10 @@ async function loadPreviewPage(pageIdx) {
 // "state" frame (pushed because the hub fires on answer); the celebrate
 // overlay covers the re-render while it plays.
 function onAnswerResult(r) {
-  // Consume the advance-mode flag so only the matching result branch
-  // animates (or suppresses).
-  const mode = advanceMode;
+  // Consume any pending advance-mode flag (handleAnswerError reads
+  // it on the failure path to decide whether to play the gated
+  // rebuff). The success branch celebrates unconditionally — see
+  // below.
   advanceMode = 'none';
   if (submitResultEl) {
     // Verdict text would be redundant now that celebrate/rebuff carry
@@ -3173,9 +3179,13 @@ function onAnswerResult(r) {
   }
   if (r.accepted) {
     if (submitInputEl) { submitInputEl.value = ''; submitInputEl.blur(); }
-    // Plain Continue button on a no-answer puzzle advances silently —
-    // no celebrate, just the state frame that follows.
-    if (mode !== 'silent') celebrate(r.completed);
+    // Celebrate fires on every accepted advance — typed answers,
+    // gated "I'm here" continues, and plain no-answer Continues —
+    // so the player gets the same "you moved on" feedback regardless
+    // of puzzle shape. We previously suppressed the overlay on the
+    // ungated Continue path (advanceMode === 'silent'); arrangers
+    // and players found the silent transition jarring.
+    celebrate(r.completed);
   } else {
     // Wrong-answer guidance: nudge toward a hint when one is unlocked
     // but not yet revealed. Avoids "Not quite" being the only feedback

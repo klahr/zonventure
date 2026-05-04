@@ -58,6 +58,11 @@ type pageView struct {
 	Notes      string                  `json:"notes"`
 	Images     []imageView             `json:"images"`
 	Audio      []audioView             `json:"audio"`
+	// LaneID is the lane this page currently belongs to. Zero means
+	// "unassigned" — fresh pages briefly between lane attachments
+	// land here, and the editor renders them in an "Unsorted" bucket
+	// or auto-files them into the default lane.
+	LaneID int64 `json:"lane_id,omitempty"`
 }
 
 // hintView is a single hint row on the editor side. DelaySeconds is
@@ -134,6 +139,11 @@ type adventureEditDTO struct {
 	StrictAssets         bool        `json:"strict_assets"`
 	Shares               []shareView `json:"shares"`
 	Pages                []pageView  `json:"pages"`
+	// Lanes lists the adventure's lanes in idx order. The editor
+	// uses this to render its collapsible lane sections; Pages still
+	// arrives flat (with each page tagged by lane_id) so the editor
+	// can group them client-side without an extra round-trip.
+	Lanes                []laneDTO   `json:"lanes"`
 	// RunningEventCount lets the editor warn the author before saving
 	// edits that will land on teams currently mid-event. Counts both
 	// scheduled (about to start) and running events using this slug —
@@ -563,7 +573,7 @@ func loadAdventureDTO(ctx context.Context, db *sql.DB, slug string) (*adventureE
 		a.AvatarURL = adventureAvatarURL(a.Slug)
 	}
 	rows, err := db.QueryContext(ctx, `
-		SELECT id, idx, title, prompt, accept, lat, lng, radius_m, disabled, notes
+		SELECT id, idx, title, prompt, accept, lat, lng, radius_m, disabled, notes, lane_id
 		FROM adventure_pages WHERE adventure_id = $1 ORDER BY idx
 	`, a.ID)
 	if err != nil {
@@ -576,10 +586,14 @@ func loadAdventureDTO(ctx context.Context, db *sql.DB, slug string) (*adventureE
 			acceptJS string
 			radius   sql.NullFloat64
 			disabled int
+			laneID   sql.NullInt64
 		)
 		if err := rows.Scan(&p.ID, &p.Index, &p.Title, &p.Prompt, &acceptJS,
-			&p.Lat, &p.Lng, &radius, &disabled, &p.Notes); err != nil {
+			&p.Lat, &p.Lng, &radius, &disabled, &p.Notes, &laneID); err != nil {
 			return nil, err
+		}
+		if laneID.Valid {
+			p.LaneID = laneID.Int64
 		}
 		p.Disabled = disabled != 0
 		p.PromptHTML = mdx.Render(p.Prompt)
@@ -624,6 +638,13 @@ func loadAdventureDTO(ctx context.Context, db *sql.DB, slug string) (*adventureE
 		return nil, err
 	}
 	a.Shares = shares
+	// Lanes ride alongside pages in the editor DTO so the front-end
+	// can render lane sections without a second round-trip.
+	lanes, err := loadAdventureLanes(ctx, db, a.ID)
+	if err != nil {
+		return nil, err
+	}
+	a.Lanes = lanes
 	// Count events currently running with this adventure. We treat
 	// 'running' as "any change to a puzzle ships immediately to a real
 	// team" — that's the case worth warning about. Scheduled events

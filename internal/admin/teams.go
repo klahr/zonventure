@@ -9,10 +9,11 @@ import (
 	"strconv"
 	"strings"
 
+	"git.sr.ht/~klahr/zv/internal/activity"
 	"git.sr.ht/~klahr/zv/internal/auth"
 	"git.sr.ht/~klahr/zv/internal/httpx"
 	"git.sr.ht/~klahr/zv/internal/imageutil"
-	"git.sr.ht/~klahr/zv/internal/activity"
+	"git.sr.ht/~klahr/zv/internal/lanes"
 	"git.sr.ht/~klahr/zv/internal/storage"
 	"git.sr.ht/~klahr/zv/internal/webhooks"
 	"git.sr.ht/~klahr/zv/internal/ws"
@@ -347,14 +348,16 @@ func (h *Handlers) UnlockTeam(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var (
-		slug    string
-		current int
+		slug          string
+		currentIdx    int
+		currentPageID sql.NullInt64
+		completedAt   sql.NullString
 	)
 	err := h.DB.QueryRowContext(r.Context(), `
-		SELECT ar.adventure_slug, t.current_page_index
+		SELECT ar.adventure_slug, t.current_page_index, t.current_page_id, t.completed_at
 		FROM teams t JOIN events ar ON ar.id = t.event_id
 		WHERE t.id = $1
-	`, teamID).Scan(&slug, &current)
+	`, teamID).Scan(&slug, &currentIdx, &currentPageID, &completedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		httpx.Error(w, http.StatusNotFound, "team not found")
 		return
@@ -363,40 +366,78 @@ func (h *Handlers) UnlockTeam(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusInternalServerError, "lookup failed")
 		return
 	}
+	if completedAt.Valid {
+		httpx.Error(w, http.StatusConflict, "team already finished")
+		return
+	}
 	adv := h.Lib.Get(slug)
 	if adv == nil {
 		httpx.Error(w, http.StatusInternalServerError, "adventure not loaded")
 		return
 	}
-	if current >= len(adv.Pages) {
+	// Resolve the team's current page id when not yet set (a team
+	// that hasn't moved since the lanes migration backfilled it).
+	curID := currentPageID.Int64
+	if !currentPageID.Valid {
+		_, firstID, ferr := lanes.FirstPageFor(r.Context(), h.DB, adv, teamID)
+		if ferr != nil {
+			httpx.Error(w, http.StatusInternalServerError, "resolve current failed")
+			return
+		}
+		curID = firstID
+	}
+	if curID == 0 {
 		httpx.Error(w, http.StatusConflict, "team already finished")
 		return
 	}
-	next := current + 1
+	nextLaneID, nextPageID, err := lanes.NextPageAfter(r.Context(), h.DB, adv, teamID, curID)
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "resolve next failed")
+		return
+	}
+	nextIdx := currentIdx + 1
 	me, _ := auth.FromContext(r.Context())
-	if next >= len(adv.Pages) {
-		if _, err := h.DB.ExecContext(r.Context(),
-			`UPDATE teams SET current_page_index = $1, current_page_started_at = now_text(), completed_at = now_text() WHERE id = $2`,
-			next, teamID); err != nil {
+	if nextPageID == 0 {
+		if _, err := h.DB.ExecContext(r.Context(), `
+			UPDATE teams
+			SET current_page_id = NULL,
+			    current_lane_id = NULL,
+			    current_page_index = $1,
+			    current_page_started_at = now_text(),
+			    completed_at = now_text()
+			WHERE id = $2
+		`, nextIdx, teamID); err != nil {
 			httpx.Error(w, http.StatusInternalServerError, "update failed")
 			return
 		}
 		activity.Record(r.Context(), h.DB, eventID, &teamID, activity.UserActor(me.ID), activity.TeamUnlocked,
-			map[string]any{"from_page_index": current, "to_page_index": next, "by_arranger": true})
+			map[string]any{"from_page_index": currentIdx, "to_page_index": nextIdx, "by_arranger": true})
 		activity.Record(r.Context(), h.DB, eventID, &teamID, activity.UserActor(me.ID), activity.TeamCompleted,
 			map[string]any{"by_arranger": true})
 		_, _ = activity.MaybeCompleteEvent(r.Context(), h.DB, eventID)
 	} else {
-		if _, err := h.DB.ExecContext(r.Context(),
-			`UPDATE teams SET current_page_index = $1, current_page_started_at = now_text() WHERE id = $2`, next, teamID); err != nil {
+		var laneArg any
+		if nextLaneID != 0 {
+			laneArg = nextLaneID
+		} else {
+			laneArg = sql.NullInt64{}
+		}
+		if _, err := h.DB.ExecContext(r.Context(), `
+			UPDATE teams
+			SET current_page_id = $1,
+			    current_lane_id = $2,
+			    current_page_index = $3,
+			    current_page_started_at = now_text()
+			WHERE id = $4
+		`, nextPageID, laneArg, nextIdx, teamID); err != nil {
 			httpx.Error(w, http.StatusInternalServerError, "update failed")
 			return
 		}
 		activity.Record(r.Context(), h.DB, eventID, &teamID, activity.UserActor(me.ID), activity.TeamUnlocked,
-			map[string]any{"from_page_index": current, "to_page_index": next, "by_arranger": true})
+			map[string]any{"from_page_index": currentIdx, "to_page_index": nextIdx, "by_arranger": true})
 	}
 	h.Hub.Publish(ws.EventTopic(eventID), "changed", nil)
-	httpx.JSON(w, http.StatusOK, map[string]any{"page_index": next, "completed": next >= len(adv.Pages)})
+	httpx.JSON(w, http.StatusOK, map[string]any{"page_index": nextIdx, "completed": nextPageID == 0})
 }
 
 // WithdrawTeam soft-flags a team as withdrawn (stamps withdrawn_at).

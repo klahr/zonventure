@@ -240,30 +240,70 @@ func (h *Handlers) canViewPageImage(r *http.Request, pageID int64) bool {
 		return false
 	}
 	var (
-		strict      bool
-		pageIdx     int
-		teamPage    int
-		inAdventure int
+		strict        bool
+		currentPageID sql.NullInt64
+		visited       int
+		inAdventure   int
 	)
+	// "Visited" = the team has already submitted an accepted answer
+	// for this page (recorded by raw page idx in answer_attempts).
+	// We also include the team's current page id explicitly, so the
+	// page they're actively on is allowed even before they've solved
+	// it. Lane-aware: "have I been here yet" is no longer derivable
+	// from a single idx-watermark in shuffled mode, so we ground it
+	// in the actual answer log.
 	err := h.DB.QueryRowContext(r.Context(), `
-		SELECT a.strict_assets, p.idx, t.current_page_index, 1
+		SELECT a.strict_assets,
+		       t.current_page_id,
+		       (SELECT 1
+		          FROM answer_attempts aa
+		         WHERE aa.team_id = t.id
+		           AND aa.page_index = p.idx
+		           AND aa.accepted = 1
+		         LIMIT 1) AS visited,
+		       1 AS in_adventure
 		FROM adventure_pages p
 		JOIN adventures a ON a.id = p.adventure_id
 		JOIN events e     ON e.adventure_slug = a.slug
 		JOIN teams t      ON t.event_id = e.id
 		WHERE p.id = $1 AND t.id = $2
 		LIMIT 1
-	`, pageID, slot.TeamID).Scan(&strict, &pageIdx, &teamPage, &inAdventure)
+	`, pageID, slot.TeamID).Scan(&strict, &currentPageID, &visitedNullable{&visited}, &inAdventure)
 	if err != nil {
 		return false
 	}
 	if inAdventure == 0 {
 		return false
 	}
-	if strict && teamPage < pageIdx {
-		return false
+	if !strict {
+		return true
 	}
-	return true
+	if visited == 1 {
+		return true
+	}
+	if currentPageID.Valid && currentPageID.Int64 == pageID {
+		return true
+	}
+	return false
+}
+
+// visitedNullable is a Scanner that maps SQL NULL to int 0. Lets the
+// canViewPageImage query keep the "either visited or not" semantic
+// without an extra coalesce in the SQL.
+type visitedNullable struct{ dst *int }
+
+func (v visitedNullable) Scan(src any) error {
+	switch x := src.(type) {
+	case nil:
+		*v.dst = 0
+	case int64:
+		*v.dst = int(x)
+	case int:
+		*v.dst = x
+	default:
+		*v.dst = 0
+	}
+	return nil
 }
 
 func loadPageImages(ctx context.Context, db *sql.DB, pageID int64) ([]imageView, error) {
