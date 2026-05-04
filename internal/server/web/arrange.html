@@ -10104,11 +10104,20 @@ function colorRow(label, initial) {
 
 async function openCreateAdventure() {
   await modal(t('New adventure'), ({ body, close, setBeforeClose }) => {
+    // Pre-populate Author with the user's active org name so the
+    // common case (org publishes under its own name) is one less
+    // field to fill in. Falls through to empty for admins or when
+    // memberships haven't been loaded.
+    const orgID = state.me?.org_id;
+    const orgName = (orgID == null
+      ? ''
+      : ((state.me?.memberships || []).find((m) => m.org_id === orgID)?.org_name || ''));
     const slug  = h('input', { required: true, placeholder: 'my-adventure', pattern: '[a-z0-9-]+' });
     const slugHint = h('small', { class: 'muted', style: 'display:block; margin-top:.2rem' }, '');
-    const title = h('input', { required: true });
-    const desc  = h('textarea', { rows: 2 });
-    const author = h('input', {});
+    const title = h('input', { required: true, placeholder: t('e.g. “The Lost Vault”') });
+    const desc  = h('textarea', { rows: 2,
+      placeholder: t('A short pitch — what players encounter and roughly how long it takes.') });
+    const author = h('input', orgName ? { value: orgName } : {});
     const cAccent    = colorRow(t('Accent — buttons, progress'),      '');
     const cSecondary = colorRow(t('Secondary — titles, status pill'), '');
     const cBackground = colorRow(t('Background'),                     '');
@@ -10135,8 +10144,12 @@ async function openCreateAdventure() {
       h('label', { class: 'field' }, h('span', {}, t('Title')), title),
       h('label', { class: 'field' }, h('span', {}, t('Description')), desc),
       h('label', { class: 'field' }, h('span', {}, t('Author')), author),
-      h('h3', { style: 'margin-top:1rem' }, t('Brand colours (optional)')),
-      cAccent.el, cSecondary.el, cBackground.el, cText.el, cSubmitBg.el,
+      h('details', { class: 'card', style: 'padding:.6rem .85rem; margin:.75rem 0' },
+        h('summary', { style: 'cursor:pointer; font-weight:600' },
+          t('Brand colours (optional)')),
+        h('p', { class: 'muted', style: 'font-size:.85rem; margin:.5rem 0' },
+          t('Override the default colours for white-labelled events. You can change these later.')),
+        cAccent.el, cSecondary.el, cBackground.el, cText.el, cSubmitBg.el),
       h('div', { class: 'row end' },
         h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, t('Cancel')),
         h('button', { class: 'btn primary', type: 'submit' }, t('Create'))));
@@ -10145,7 +10158,11 @@ async function openCreateAdventure() {
     // as dirty since blank-on-create is the common abandoned state.
     if (typeof setBeforeClose === 'function') {
       setBeforeClose(() => {
-        const dirty = !!(slug.value || title.value || desc.value || author.value
+        // Compare author against the pre-fill rather than the empty
+        // string so a pristine prepopulated org name doesn't read as
+        // dirty on a backdrop click.
+        const dirty = !!(slug.value || title.value || desc.value
+          || author.value !== orgName
           || cAccent.get() || cSecondary.get() || cBackground.get() || cText.get() || cSubmitBg.get());
         return !dirty || confirm(t('Discard this adventure?'));
       });

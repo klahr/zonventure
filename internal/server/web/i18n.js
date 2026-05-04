@@ -853,9 +853,14 @@
       'Submit dock — answer bar at the bottom': 'Svarspanel — svarsfältet längst ner',
       'Slug — lowercase letters, digits, hyphens': 'Slug — små bokstäver, siffror, bindestreck',
       'Title': 'Titel',
+      'e.g. “The Lost Vault”': 't.ex. ”Det försvunna valvet”',
       'Description': 'Beskrivning',
+      'A short pitch — what players encounter and roughly how long it takes.':
+        'En kort beskrivning — vad spelarna möter och ungefär hur lång tid det tar.',
       'Author': 'Författare',
       'Brand colours (optional)': 'Varumärkesfärger (valfritt)',
+      'Override the default colours for white-labelled events. You can change these later.':
+        'Ersätt standardfärgerna för white label-event. Du kan ändra dem senare.',
       'Adventure created': 'Äventyret skapat',
       'Back to library': 'Tillbaka till biblioteket',
       'Open the adventure in the player view': 'Öppna äventyret i spelarvyn',
