@@ -319,7 +319,7 @@ p { margin: 0 0 .5rem; }
 .nav a.active { background: var(--accent); color: var(--accent-fg); box-shadow: var(--shadow-soft); }
 .nav a.active svg { stroke: var(--accent-fg); }
 .nav svg { width: 18px; height: 18px; stroke: var(--muted); stroke-width: 1.75; fill: none; flex-shrink: 0; }
-.nav a:hover svg { stroke: var(--accent); }
+.nav a:hover:not(.active) svg { stroke: var(--accent); }
 /* Visible keyboard focus on the sidebar links — :focus-visible avoids
    the outline showing up on mouse clicks while still helping
    keyboard-only users orient. */
@@ -6550,7 +6550,7 @@ async function viewRuns(view) {
       sel);
   }
 
-  view.replaceChildren(
+  view.replaceChildren(...[
     h('div', { class: 'row between', style: 'margin-bottom:1rem' },
       h('h1', { style: 'margin:0' }, t('Events')),
       isAdmin
@@ -6560,7 +6560,7 @@ async function viewRuns(view) {
     orgPickerRow,
     chipBar,
     tableHost,
-  );
+  ].filter(Boolean));
 }
 
 function runsTable(rs, opts) {
