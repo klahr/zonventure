@@ -14373,7 +14373,7 @@ function renderSettingsSystem(view) {
       t('Server-wide settings and the components wired into the running build. Read by every visitor; changes are immediate.')),
     renderSettingsServerCard(),
     renderSettingsComponentsCard(),
-    renderSettingsEmailCard(),
+    renderSettingsTestEmailCard(),
   );
 }
 
@@ -14531,13 +14531,15 @@ function renderSettingsComponentsCard() {
   return card;
 }
 
-// renderSettingsEmailCard exposes a one-shot "send a canned message"
+// renderSettingsTestEmailCard exposes a one-shot "send a canned message"
 // button so the admin can verify the SMTP configuration end to end
 // without waiting for the next signup / password-reset to fail loudly.
 // The body is fixed server-side (see admin.SendTestEmail), so this can
 // only ever send the same boilerplate — not a spam-relay primitive.
-// Admin-only.
-function renderSettingsEmailCard() {
+// Admin-only. Distinct name from the personal renderSettingsEmailCard
+// on the Account tab — duplicate function declarations would otherwise
+// silently shadow each other and the wrong one would be called.
+function renderSettingsTestEmailCard() {
   const card = h('div', { class: 'card settings-card' });
   const input = h('input', {
     type: 'email',
