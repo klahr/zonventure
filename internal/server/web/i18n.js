@@ -455,13 +455,31 @@
       'Scheduled': 'Schemalagda',
       'Recent events': 'Senaste eventen',
       'Getting started': 'Kom igång',
-      'A few clicks to your first adventure.': 'Några klick till ditt första äventyr.',
-      'Pick an adventure — browse the Catalog or create your own':
-        'Välj ett äventyr — bläddra i katalogen eller skapa ett eget',
-      'Have player slots ready — an assignment lets you schedule an event':
-        'Ha spelarplatser redo — en tilldelning låter dig schemalägga en event',
-      'Schedule an event, add teams, share their links — and start!':
-        'Schemalägg en event, lägg till lag, dela länkarna — och kör!',
+      'Three steps from here to your first event.':
+        'Tre steg härifrån till ditt första event.',
+      'Three steps to a working deployment.':
+        'Tre steg till en fungerande installation.',
+      // Org-user setup steps
+      'Pick an adventure': 'Välj ett äventyr',
+      'Browse the catalog or write your own.':
+        'Bläddra i katalogen eller skapa ett eget.',
+      'Add player slots': 'Lägg till spelarplatser',
+      'One slot per invited player. The first 15 are free.':
+        'En plats per inbjuden spelare. De första 15 är gratis.',
+      'Open the catalog': 'Öppna katalogen',
+      'Schedule and start': 'Schemalägg och starta',
+      'Pick a date, add teams, share each player’s magic link.':
+        'Välj en tid, lägg till lag, dela varje spelares magiska länk.',
+      // Admin setup steps
+      'Create an organization': 'Skapa en organisation',
+      'One organization per customer. They’ll run their own events inside it.':
+        'En organisation per kund. De kör sina egna event där.',
+      'Invite the first user': 'Bjud in den första användaren',
+      'They’ll set up events and share player links for that organization.':
+        'De skapar event och delar spelarlänkar för organisationen.',
+      'Add an adventure to the catalog': 'Lägg till ett äventyr i katalogen',
+      'Author your own or import the samples — orgs pick from here.':
+        'Skapa ett eget eller importera exemplen — organisationerna väljer härifrån.',
       'Schedule': 'Schemalägg',
       'Go': 'Kör',
       'Start a new event': 'Starta ett nytt event',
@@ -479,14 +497,6 @@
       'Active': 'Aktiva',
       '{{n}} running': '{{n}} pågår',
       ' · {{n}} running': ' · {{n}} pågår',
-      // ---- arrange dashboard: admin quick-start ----
-      'Three steps to a working deployment.': 'Tre steg till en driftklar installation.',
-      'Create an organization — one tenant per customer':
-        'Skapa en organisation — en hyresgäst per kund',
-      'Add a user to it — at least one org_admin can run events':
-        'Lägg till en användare — minst en org_admin behövs för att köra event',
-      'Stock the library — author an adventure or import the samples':
-        'Fyll biblioteket — skapa ett äventyr eller importera exempelpaketet',
       'New adventure': 'Nytt äventyr',
       'Admin shortcut — three steps to a working deployment:':
         'Adminväg — tre steg till en driftklar installation:',
