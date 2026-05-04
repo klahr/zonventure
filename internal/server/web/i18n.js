@@ -2249,6 +2249,15 @@
           'Pluggbara skarvar som binären byggdes med. Skrivskyddat — byt implementation genom att bygga om.',
       'on': 'på',
       'off': 'av',
+      // ---- Test-email card (System tab) ----
+      'Email': 'E-post',
+      'Send test email': 'Skicka test-e-post',
+      'Recipient': 'Mottagare',
+      'Sending…': 'Skickar…',
+      'Send a canned message to verify the SMTP configuration before signups, password resets, or invitations need to deliver.':
+          'Skicka ett standardmeddelande för att verifiera SMTP-konfigurationen innan registreringar, lösenordsåterställningar eller inbjudningar behöver levereras.',
+      'Sent to {{to}}. Check the inbox (and spam folder).':
+          'Skickat till {{to}}. Kontrollera inkorgen (och skräpposten).',
       // ---- Round 15: 2FA / TOTP ----
       'Two-factor authentication': 'Tvåfaktorsautentisering',
       'Two-factor authentication disabled.': 'Tvåfaktorsautentisering inaktiverad.',
