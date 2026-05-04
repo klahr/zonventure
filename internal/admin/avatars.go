@@ -69,7 +69,7 @@ func (h *Handlers) SetAdventureAvatar(w http.ResponseWriter, r *http.Request) {
 			httpx.Error(w, http.StatusNotFound, "adventure not found")
 			return
 		}
-		httpx.Error(w, http.StatusInternalServerError, "store failed: "+err.Error())
+		httpx.ServerErr(w, http.StatusInternalServerError, "store failed", err)
 		return
 	}
 	httpx.JSON(w, http.StatusOK, map[string]any{

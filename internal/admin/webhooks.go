@@ -83,8 +83,7 @@ func validateWebhookURL(raw string) (string, error) {
 	if host == "" {
 		return "", errors.New("url must have a host")
 	}
-	loopback := host == "localhost" || host == "127.0.0.1" || host == "::1" ||
-		strings.HasPrefix(host, "127.")
+	loopback := webhooks.IsLoopbackHost(host)
 	switch u.Scheme {
 	case "https":
 		// fine
@@ -172,7 +171,7 @@ func (h *Handlers) ListWebhooks(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := json.Unmarshal(kindsRaw, &d.EventKinds); err != nil {
-			httpx.Error(w, http.StatusInternalServerError, "decode kinds: "+err.Error())
+			httpx.ServerErr(w, http.StatusInternalServerError, "decode kinds", err)
 			return
 		}
 		// Hint = first 8 chars of secret. Enough to disambiguate which
@@ -225,7 +224,7 @@ func (h *Handlers) CreateWebhook(w http.ResponseWriter, r *http.Request) {
 		VALUES ($1, $2, $3, $4::jsonb, $5)
 		RETURNING id
 	`, orgID, cleanURL, secret, string(kindsJSON), strings.TrimSpace(req.Name)).Scan(&id); err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "insert failed: "+err.Error())
+		httpx.ServerErr(w, http.StatusInternalServerError, "insert failed", err)
 		return
 	}
 	httpx.JSON(w, http.StatusCreated, map[string]any{
@@ -430,7 +429,7 @@ func (h *Handlers) ListWebhookDeliveries(w http.ResponseWriter, r *http.Request)
 		 LIMIT $` + strconv.Itoa(len(args))
 	rows, err := h.DB.QueryContext(r.Context(), query, args...)
 	if err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "list failed: "+err.Error())
+		httpx.ServerErr(w, http.StatusInternalServerError, "list failed", err)
 		return
 	}
 	defer rows.Close()
@@ -507,7 +506,7 @@ func (h *Handlers) SendTestWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := webhooks.SendTest(r.Context(), h.DB, id); err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "enqueue test failed: "+err.Error())
+		httpx.ServerErr(w, http.StatusInternalServerError, "enqueue test failed", err)
 		return
 	}
 	httpx.JSON(w, http.StatusAccepted, map[string]any{

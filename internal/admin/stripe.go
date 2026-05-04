@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"git.sr.ht/~klahr/zv/internal/auth"
 	"git.sr.ht/~klahr/zv/internal/httpx"
@@ -375,7 +376,7 @@ func (h *Handlers) RefundPurchase(w http.ResponseWriter, r *http.Request) {
 	rf, err := refund.New(rp)
 	if err != nil {
 		logx.Error("stripe.refund.failed", "purchase_id", purchaseID, "err", err.Error())
-		httpx.Error(w, http.StatusBadGateway, "stripe refund failed: "+err.Error())
+		httpx.ServerErr(w, http.StatusBadGateway, "stripe refund failed", err)
 		return
 	}
 	logx.Info("stripe.refund.initiated", "purchase_id", purchaseID, "charge_id", chargeID.String, "refund_id", rf.ID)
@@ -388,9 +389,30 @@ func (h *Handlers) RefundPurchase(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// stripeRefundReconcileWindow caps how long handleChargeRefunded
+// will return errors to force Stripe redelivery when the charge
+// doesn't yet match a paid purchase. After the window we ack the
+// event so an unrelated charge (manual Stripe Dashboard action,
+// other tenant on the same account) doesn't loop forever. 24 hours
+// is well below Stripe's redelivery horizon (~3 days) so a
+// legitimately out-of-order charge.refunded vs checkout.session.
+// completed pair gets reconciled before the cutoff.
+const stripeRefundReconcileWindow = 24 * time.Hour
+
 // handleChargeRefunded marks the matching purchase refunded so the UI
 // can show the chip + the org loses the assignment. Matched by
 // stripe_charge_id which we recorded at checkout completion.
+//
+// Out-of-order delivery: Stripe doesn't guarantee that
+// checkout.session.completed lands before charge.refunded. When the
+// refund event arrives first, our purchases row has no
+// stripe_charge_id yet (handleCheckoutCompleted is what writes it),
+// so the UPDATE matches 0 rows. Without the reconcile gate below,
+// the refund event would be marked processed and lost — the later
+// session.completed would then mark the row 'paid' and the customer
+// would be in a paid-but-stripe-refunded state forever. We bias
+// toward "redeliver" for fresh events; non-zv charges age out and
+// get acked after the reconcile window.
 func (h *Handlers) handleChargeRefunded(ctx context.Context, event stripe.Event) error {
 	var charge stripe.Charge
 	if err := decodeEvent(event, &charge); err != nil {
@@ -424,11 +446,26 @@ func (h *Handlers) handleChargeRefunded(ctx context.Context, event stripe.Event)
 	if err := rows.Err(); err != nil {
 		return err
 	}
-	if len(refunded) > 0 {
-		logx.Info("stripe.purchase.refunded", "charge_id", charge.ID, "rows", len(refunded))
-		for range refunded {
-			metrics.PurchaseEvents.WithLabelValues("refunded").Inc()
+	if len(refunded) == 0 {
+		// Either out-of-order (the matching paid row hasn't been
+		// written yet) or not our charge at all. We can't tell from
+		// the Charge object alone, so bias toward the recoverable
+		// case: return an error → Stripe redelivers → eventually
+		// session.completed lands and the next attempt succeeds.
+		// After the reconcile window, accept the loss and ack.
+		eventAge := time.Since(time.Unix(event.Created, 0))
+		if eventAge < stripeRefundReconcileWindow {
+			logx.Warn("stripe.refund.no_match.redeliver",
+				"charge_id", charge.ID, "event_age_seconds", int(eventAge.Seconds()))
+			return fmt.Errorf("no paid purchase matches charge %s yet — request redelivery", charge.ID)
 		}
+		logx.Warn("stripe.refund.no_match.aged_out",
+			"charge_id", charge.ID, "event_age_hours", eventAge.Hours())
+		return nil
+	}
+	logx.Info("stripe.purchase.refunded", "charge_id", charge.ID, "rows", len(refunded))
+	for range refunded {
+		metrics.PurchaseEvents.WithLabelValues("refunded").Inc()
 	}
 	for _, rr := range refunded {
 		webhooks.TryPublish(ctx, h.DB, rr.orgID, webhooks.KindPurchaseRefunded, map[string]any{

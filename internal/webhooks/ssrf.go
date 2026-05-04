@@ -5,43 +5,80 @@ import (
 	"net"
 )
 
+// errNonPublic is the public-facing reason a webhook URL fails the
+// SSRF gate. Returned identically from ValidateHost and LookupPublic
+// so the user never learns whether the rejection was due to a literal
+// private IP or a DNS answer in a private range.
+var errNonPublic = errors.New("url resolves to a non-public address (private / loopback / metadata)")
+
 // ValidateHost resolves the supplied host and reports an error when
 // any answer falls in a non-public IP range. The check runs in two
 // places:
 //
 //  1. Endpoint registration in internal/admin (validateWebhookURL)
 //     — catches obvious mistakes before they're stored.
-//  2. Worker delivery (delivery.go) — re-resolves on every send, so
-//     a DNS-rebinding flip between registration and dispatch can't
-//     pivot the worker into an internal service.
+//  2. Worker delivery (delivery.go) — re-resolves on every send via
+//     LookupPublic, which returns the chosen IP so the dialer can
+//     bind to that literal address and a DNS-rebinding flip between
+//     resolve and dial can't pivot the worker into an internal
+//     service.
 //
 // Loopback hosts are intentionally NOT exempted here — the caller
 // (validateWebhookURL or the delivery worker) decides whether to
 // allow loopback for dev. This helper just answers "is this address
 // unsafe to dial".
 func ValidateHost(host string) error {
+	_, err := LookupPublic(host)
+	return err
+}
+
+// LookupPublic resolves host and returns the first IP that is safe
+// for outbound webhook delivery (rejects every entry that fails
+// isPublicIP). The returned IP is what the worker's DialContext pins
+// for the actual TCP connect, closing the DNS-rebinding window
+// between this lookup and the dial. Literal IPs short-circuit
+// without a DNS query.
+func LookupPublic(host string) (net.IP, error) {
 	if host == "" {
-		return errors.New("url must have a host")
+		return nil, errors.New("url must have a host")
 	}
-	// Reject literal IPs that fall in the bad ranges before any DNS
-	// resolution — net.LookupIP would still return them, but
-	// short-circuiting saves a syscall on the obvious cases.
 	if ip := net.ParseIP(host); ip != nil {
 		if !isPublicIP(ip) {
-			return errors.New("url resolves to a non-public address (private / loopback / metadata)")
+			return nil, errNonPublic
 		}
-		return nil
+		return ip, nil
 	}
 	ips, err := net.LookupIP(host)
 	if err != nil {
-		return errors.New("could not resolve host: " + err.Error())
+		return nil, errors.New("could not resolve host: " + err.Error())
+	}
+	if len(ips) == 0 {
+		return nil, errors.New("could not resolve host")
 	}
 	for _, ip := range ips {
 		if !isPublicIP(ip) {
-			return errors.New("url resolves to a non-public address (private / loopback / metadata)")
+			return nil, errNonPublic
 		}
 	}
-	return nil
+	// All answers are safe. Return the first; the dialer will bind
+	// to it explicitly so a TTL-flip mid-request can't redirect us.
+	return ips[0], nil
+}
+
+// IsLoopbackHost reports whether the URL host is one we should
+// exempt from the SSRF gate for dev convenience. Recognises:
+//   - the literal name "localhost"
+//   - any IP literal that satisfies net.IP.IsLoopback (covers all
+//     of 127.0.0.0/8 and ::1 without the brittle string-prefix check
+//     that previously let `127.evil.com` slip past the gate)
+func IsLoopbackHost(host string) bool {
+	if host == "localhost" {
+		return true
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		return ip.IsLoopback()
+	}
+	return false
 }
 
 // isPublicIP reports whether the given IP is safe for outbound

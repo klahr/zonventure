@@ -269,7 +269,7 @@ func (h *Handlers) CreatePurchase(w http.ResponseWriter, r *http.Request) {
 		assID, purchaseID, ferr := h.createOffPlatformPurchase(
 			r.Context(), *me.OrgID, me.ID, req.AdventureSlug, req.MaxPlayers, amount, provider, topUpID)
 		if ferr != nil {
-			httpx.Error(w, http.StatusInternalServerError, provider+" purchase failed: "+ferr.Error())
+			httpx.ServerErr(w, http.StatusInternalServerError, provider+" purchase failed", ferr)
 			return
 		}
 		metrics.PurchaseEvents.WithLabelValues("created_" + provider).Inc()
@@ -296,7 +296,7 @@ func (h *Handlers) CreatePurchase(w http.ResponseWriter, r *http.Request) {
 		VALUES ($1, $2, $3, $4, $5, 'EUR', $6, 'pending', $7)
 		RETURNING id
 	`, *me.OrgID, me.ID, req.AdventureSlug, req.MaxPlayers, amount, provider, topUpArg).Scan(&id); err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "insert failed: "+err.Error())
+		httpx.ServerErr(w, http.StatusInternalServerError, "insert failed", err)
 		return
 	}
 
@@ -322,7 +322,7 @@ func (h *Handlers) CreatePurchase(w http.ResponseWriter, r *http.Request) {
 			// the DELETE itself fails, the user already sees a 502
 			// and the orphan row is cleaned by the next admin sweep.
 			_, _ = h.DB.ExecContext(r.Context(), `DELETE FROM purchases WHERE id = $1`, id)
-			httpx.Error(w, http.StatusBadGateway, "stripe checkout failed: "+serr.Error())
+			httpx.ServerErr(w, http.StatusBadGateway, "stripe checkout failed", serr)
 			return
 		}
 		// Stash the session id so the webhook can correlate. Best-
@@ -474,13 +474,13 @@ func (h *Handlers) ConfirmPurchase(w http.ResponseWriter, r *http.Request) {
 		if err := tx.QueryRowContext(r.Context(),
 			`SELECT id FROM adventure_assignments WHERE id = $1 AND org_id = $2 FOR UPDATE`,
 			topUpID.Int64, orgID).Scan(&assID); err != nil {
-			httpx.Error(w, http.StatusInternalServerError, "top-up lookup failed: "+err.Error())
+			httpx.ServerErr(w, http.StatusInternalServerError, "top-up lookup failed", err)
 			return
 		}
 		if _, err := tx.ExecContext(r.Context(),
 			`UPDATE adventure_assignments SET max_players = max_players + $1 WHERE id = $2`,
 			maxPlayers, assID); err != nil {
-			httpx.Error(w, http.StatusInternalServerError, "top-up bump failed: "+err.Error())
+			httpx.ServerErr(w, http.StatusInternalServerError, "top-up bump failed", err)
 			return
 		}
 	} else {
@@ -489,7 +489,7 @@ func (h *Handlers) ConfirmPurchase(w http.ResponseWriter, r *http.Request) {
 			VALUES ($1, $2, $3)
 			RETURNING id
 		`, orgID, advSlug, maxPlayers).Scan(&assID); err != nil {
-			httpx.Error(w, http.StatusInternalServerError, "assignment insert failed: "+err.Error())
+			httpx.ServerErr(w, http.StatusInternalServerError, "assignment insert failed", err)
 			return
 		}
 	}
@@ -705,7 +705,7 @@ func (h *Handlers) GrantSlotsToEvent(w http.ResponseWriter, r *http.Request) {
 	assID, purchaseID, ferr := h.createOffPlatformPurchase(
 		r.Context(), orgID, me.ID, advSlug, req.AddedPlayers, amount, provider, &topUp)
 	if ferr != nil {
-		httpx.Error(w, http.StatusInternalServerError, "grant failed: "+ferr.Error())
+		httpx.ServerErr(w, http.StatusInternalServerError, "grant failed", ferr)
 		return
 	}
 	metrics.PurchaseEvents.WithLabelValues("granted_" + provider).Inc()

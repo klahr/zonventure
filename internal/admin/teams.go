@@ -113,11 +113,12 @@ func (h *Handlers) UpdateTeam(w http.ResponseWriter, r *http.Request) {
 		setEmail bool
 	)
 	if req.Name != nil {
-		newName = strings.TrimSpace(*req.Name)
-		if newName == "" {
-			httpx.Error(w, http.StatusBadRequest, "name required")
+		n, err := validateName(*req.Name, MaxNameLen)
+		if err != nil {
+			httpx.Error(w, http.StatusBadRequest, err.Error())
 			return
 		}
+		newName = n
 		setName = true
 	}
 	if req.Email != nil {
@@ -534,7 +535,10 @@ func (h *Handlers) SetTeamAvatar(w http.ResponseWriter, r *http.Request) {
 	}
 	shrunk, newMIME, err := imageutil.Shrink(data, imageutil.DefaultMaxDim)
 	if err != nil {
-		httpx.Error(w, http.StatusBadRequest, "unreadable image: "+err.Error())
+		// Generic public message — the imageutil error text can carry
+		// decoder internals (offsets, codec names) that don't help the
+		// uploader and might leak format-detection state.
+		httpx.ServerErr(w, http.StatusBadRequest, "image could not be processed", err)
 		return
 	}
 	data, mime = shrunk, newMIME
@@ -545,7 +549,7 @@ func (h *Handlers) SetTeamAvatar(w http.ResponseWriter, r *http.Request) {
 			httpx.Error(w, http.StatusNotFound, "team not found")
 			return
 		}
-		httpx.Error(w, http.StatusInternalServerError, "store failed: "+err.Error())
+		httpx.ServerErr(w, http.StatusInternalServerError, "store failed", err)
 		return
 	}
 	// Hub push so the event-detail view and any live-board listeners pick

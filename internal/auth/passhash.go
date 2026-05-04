@@ -33,6 +33,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 
 	"golang.org/x/crypto/argon2"
 	"golang.org/x/crypto/bcrypt"
@@ -60,6 +61,55 @@ const (
 // a healthy DB; treated as an internal error so the caller logs and
 // rejects the login (rather than silently returning "bad password").
 var errUnknownHashFormat = errors.New("unknown password-hash format")
+
+// decoyHash is a one-shot Argon2id PHC string we run verifySecret
+// against on the user-not-found branch of VerifyPassword so the
+// response time of "unknown identifier" matches "known identifier,
+// wrong password". Without it, a network observer can mine valid
+// usernames / emails by timing the difference between the no-DB-row
+// path (~1 ms) and the Argon2id path (~50 ms), despite the per-
+// (ip, user) rate limiter. The plaintext used to mint the decoy is
+// fixed and meaningless — the verify dispatch only cares that the
+// PHC parses with the current params so the cost matches a real
+// login.
+var (
+	decoyHashOnce sync.Once
+	decoyHashStr  string
+)
+
+// primeDecoyHash builds the dummy Argon2id PHC string lazily on the
+// first call. PrimeDecoyHash exposes the same trigger from outside
+// the package so cmd/server/main.go can amortise the cost at server
+// boot — without that, the very first user-not-found request after
+// process start pays Argon2 mint (~50ms) PLUS the verify (~50ms),
+// distinguishable from subsequent ~50ms calls and re-opening the
+// timing oracle this whole mechanism exists to close.
+func primeDecoyHash() {
+	decoyHashOnce.Do(func() {
+		h, err := hashSecret("decoy-not-a-real-password")
+		if err == nil {
+			decoyHashStr = h
+		}
+	})
+}
+
+// PrimeDecoyHash is the public entry point for the lazy init above.
+// Idempotent — sync.Once guards re-entry; calling more than once is
+// a no-op. Safe to invoke from main.go before the HTTP listener
+// starts.
+func PrimeDecoyHash() { primeDecoyHash() }
+
+// SpendVerifyTime runs the full Argon2id verify against the decoy
+// hash and discards the result. Callers (VerifyPassword on the
+// user-not-found branch) use this to equalise login response time
+// against the user-found, wrong-password branch.
+func SpendVerifyTime(plain string) {
+	primeDecoyHash()
+	if decoyHashStr == "" {
+		return
+	}
+	_, _, _ = verifySecret(decoyHashStr, plain)
+}
 
 // hashSecret produces a fresh Argon2id PHC string for plain. Used
 // for both passwords (HashPassword) and TOTP recovery codes.

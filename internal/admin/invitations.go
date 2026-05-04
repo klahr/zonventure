@@ -235,7 +235,7 @@ func (h *Handlers) SendTeamInvitation(w http.ResponseWriter, r *http.Request) {
 	publicURL := strings.TrimRight(strings.TrimSpace(h.PublicURL), "/")
 	if err := sendOneInvitation(r.Context(), h.Mailer, teamName, teamMail, publicURL, slots, icsAttach); err != nil {
 		logx.Warn("admin.invitations.team.send", "event", eventID, "team", teamID, "err", err.Error())
-		httpx.Error(w, http.StatusBadGateway, "send failed: "+err.Error())
+		httpx.ServerErr(w, http.StatusBadGateway, "send failed", err)
 		return
 	}
 	httpx.JSON(w, http.StatusOK, map[string]any{"sent": 1})

@@ -73,9 +73,21 @@ func (req pageWriteRequest) validate() error {
 	if req.RadiusM != nil && *req.RadiusM <= 0 {
 		return errors.New("radius_m must be > 0")
 	}
+	if _, err := validateBlurb(req.Title, MaxNameLen); err != nil {
+		return fmt.Errorf("title %s", err.Error())
+	}
+	if _, err := validateBlurb(req.Prompt, MaxPromptLen); err != nil {
+		return fmt.Errorf("prompt %s", err.Error())
+	}
+	if _, err := validateBlurb(req.Notes, MaxBlurbLen); err != nil {
+		return fmt.Errorf("notes %s", err.Error())
+	}
 	for i, h := range req.Hints {
 		if h.DelaySeconds < 0 {
 			return fmt.Errorf("hint %d: delay_seconds must be >= 0", i+1)
+		}
+		if _, err := validateBlurb(h.Text, MaxHintTextLen); err != nil {
+			return fmt.Errorf("hint %d text %s", i+1, err.Error())
 		}
 	}
 	if err := adventure.ValidateAcceptEntries(req.Accept); err != nil {
@@ -215,15 +227,15 @@ func (h *Handlers) CreatePage(w http.ResponseWriter, r *http.Request) {
 		RETURNING id
 	`, advID, nextIdx, req.Title, req.Prompt, string(accept), req.Lat, req.Lng, radius, disabled, req.Notes).Scan(&id)
 	if err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "insert failed: "+err.Error())
+		httpx.ServerErr(w, http.StatusInternalServerError, "insert failed", err)
 		return
 	}
 	if err := upsertPageHints(r.Context(), tx, id, req.Hints); err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "hints insert failed: "+err.Error())
+		httpx.ServerErr(w, http.StatusInternalServerError, "hints insert failed", err)
 		return
 	}
 	if err := tx.Commit(); err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "commit failed: "+err.Error())
+		httpx.ServerErr(w, http.StatusInternalServerError, "commit failed", err)
 		return
 	}
 	httpx.JSON(w, http.StatusCreated, map[string]any{"id": id, "index": nextIdx})
@@ -267,7 +279,7 @@ func (h *Handlers) UpdatePage(w http.ResponseWriter, r *http.Request) {
 		WHERE id = $9
 	`, req.Title, req.Prompt, string(accept), req.Lat, req.Lng, radius, disabled, req.Notes, pageID)
 	if err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "update failed: "+err.Error())
+		httpx.ServerErr(w, http.StatusInternalServerError, "update failed", err)
 		return
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
@@ -275,11 +287,11 @@ func (h *Handlers) UpdatePage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := upsertPageHints(r.Context(), tx, pageID, req.Hints); err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "hints update failed: "+err.Error())
+		httpx.ServerErr(w, http.StatusInternalServerError, "hints update failed", err)
 		return
 	}
 	if err := tx.Commit(); err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "commit failed: "+err.Error())
+		httpx.ServerErr(w, http.StatusInternalServerError, "commit failed", err)
 		return
 	}
 	httpx.JSON(w, http.StatusNoContent, nil)
@@ -371,7 +383,7 @@ func (h *Handlers) ReorderPages(w http.ResponseWriter, r *http.Request) {
 	// range and re-collide).
 	if _, err := tx.ExecContext(r.Context(),
 		`UPDATE adventure_pages SET idx = 1000000000 + id WHERE adventure_id = $1`, advID); err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "prepare failed: "+err.Error())
+		httpx.ServerErr(w, http.StatusInternalServerError, "prepare failed", err)
 		return
 	}
 	for i, id := range req.PageIDs {
@@ -379,7 +391,7 @@ func (h *Handlers) ReorderPages(w http.ResponseWriter, r *http.Request) {
 			`UPDATE adventure_pages SET idx = $1 WHERE id = $2 AND adventure_id = $3`,
 			i, id, advID)
 		if err != nil {
-			httpx.Error(w, http.StatusInternalServerError, "reorder failed: "+err.Error())
+			httpx.ServerErr(w, http.StatusInternalServerError, "reorder failed", err)
 			return
 		}
 		if n, _ := res.RowsAffected(); n == 0 {

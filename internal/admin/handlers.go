@@ -453,6 +453,13 @@ func (h *Handlers) CreateEvent(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	// Event name is optional — but if set, cap it before it lands in
+	// the events table and starts riding every WS state-change ping.
+	eventName := strings.TrimSpace(req.Name)
+	if _, err := validateBlurb(eventName, MaxNameLen); err != nil {
+		httpx.Error(w, http.StatusBadRequest, "name "+err.Error())
+		return
+	}
 
 	var schedAt any
 	if req.ScheduledAt != "" {
@@ -480,9 +487,9 @@ func (h *Handlers) CreateEvent(w http.ResponseWriter, r *http.Request) {
 		INSERT INTO events(adventure_slug, org_id, created_by_user_id, state, scheduled_at, assignment_id, live_token, name, attested_no_minors_at)
 		VALUES ($1, $2, $3, 'scheduled', $4, $5, $6, $7, now_text())
 		RETURNING id
-	`, slug, *me.OrgID, me.ID, schedAt, assignmentArg, liveToken, strings.TrimSpace(req.Name)).Scan(&id)
+	`, slug, *me.OrgID, me.ID, schedAt, assignmentArg, liveToken, eventName).Scan(&id)
 	if err != nil {
-		httpx.Error(w, http.StatusConflict, "could not create run: "+err.Error())
+		httpx.ServerErr(w, http.StatusConflict, "could not create run", err)
 		return
 	}
 	activity.Record(r.Context(), h.DB, id, nil, activity.UserActor(me.ID), activity.EventCreated,
@@ -752,8 +759,13 @@ func (h *Handlers) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.Name != nil {
+		name := strings.TrimSpace(*req.Name)
+		if _, err := validateBlurb(name, MaxNameLen); err != nil {
+			httpx.Error(w, http.StatusBadRequest, "name "+err.Error())
+			return
+		}
 		if _, err := h.DB.ExecContext(r.Context(),
-			`UPDATE events SET name = $1 WHERE id = $2`, strings.TrimSpace(*req.Name), eventID); err != nil {
+			`UPDATE events SET name = $1 WHERE id = $2`, name, eventID); err != nil {
 			httpx.Error(w, http.StatusInternalServerError, "update failed")
 			return
 		}
@@ -964,7 +976,7 @@ func (h *Handlers) CreateTeam(w http.ResponseWriter, r *http.Request) {
 		if err := tx.QueryRowContext(r.Context(),
 			`INSERT INTO player_slots(team_id, name, token, expires_at) VALUES ($1, $2, $3, $4) RETURNING id`,
 			teamID, name, token, expiresAt).Scan(&slotID); err != nil {
-			httpx.Error(w, http.StatusConflict, "could not add "+name+": "+err.Error())
+			httpx.ServerErr(w, http.StatusConflict, "could not add "+name, err)
 			return
 		}
 		members = append(members, teamSlotDTO{ID: slotID, Name: name, Token: token, ExpiresAt: expiresAt})
@@ -1339,18 +1351,22 @@ func eventIDFrom(r *http.Request) (int64, bool) {
 	return id, true
 }
 
-// parseISO8601 accepts the ISO-8601 variants browsers emit.
+// parseISO8601 accepts the ISO-8601 variants browsers emit. The
+// fallback formats without a timezone offset (`2006-01-02T15:04:05`,
+// `2006-01-02T15:04`) used to be accepted too; time.Parse silently
+// treats those as UTC, so a user in CET typing "14:00" stored 14:00
+// UTC = 16:00 their local — confusing on the .ics export. We now
+// require an explicit offset (Z or ±HH:MM) so the server's
+// interpretation matches what the user wrote.
 func parseISO8601(s string) (time.Time, error) {
 	layouts := []string{
 		time.RFC3339Nano,
 		time.RFC3339,
-		"2006-01-02T15:04:05",
-		"2006-01-02T15:04",
 	}
 	for _, l := range layouts {
 		if t, err := time.Parse(l, s); err == nil {
 			return t, nil
 		}
 	}
-	return time.Time{}, errors.New("need RFC3339 (e.g. 2026-04-22T14:00:00Z)")
+	return time.Time{}, errors.New("need RFC3339 with timezone (e.g. 2026-04-22T14:00:00Z or 2026-04-22T14:00:00+02:00)")
 }

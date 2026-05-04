@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"net"
 	"net/http"
 	"strings"
@@ -149,6 +150,52 @@ func (l *LoginLimiter) RecordSuccess(ip, username string) {
 
 func pairKey(ip, username string) string {
 	return ip + "\x00" + strings.ToLower(username)
+}
+
+// Sweep drops entries whose last activity is older than the relevant
+// window AND whose lockout has expired. Cheap O(N) walk under the
+// existing mutex; intended to run on a periodic ticker so an
+// attacker rotating usernames / IPs can't grow the maps unboundedly
+// over the process's lifetime. Idempotent and safe to call any time.
+func (l *LoginLimiter) Sweep() {
+	if l == nil {
+		return
+	}
+	now := l.now()
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	for k, p := range l.perPair {
+		if now.Sub(p.lastFail) > PairWindow && now.After(p.lockedUntil) {
+			delete(l.perPair, k)
+		}
+	}
+	for k, i := range l.perIP {
+		if now.Sub(i.lastFail) > IPWindow && now.After(i.lockedUntil) {
+			delete(l.perIP, k)
+		}
+	}
+}
+
+// RunSweeper drives Sweep on a ticker until ctx is cancelled. Spawn
+// it once at server start; the goroutine exits on shutdown via the
+// context.
+func (l *LoginLimiter) RunSweeper(ctx context.Context, interval time.Duration) {
+	if l == nil {
+		return
+	}
+	if interval <= 0 {
+		interval = 5 * time.Minute
+	}
+	t := time.NewTicker(interval)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			l.Sweep()
+		}
+	}
 }
 
 // ceilSecond rounds a duration UP to the nearest second so the

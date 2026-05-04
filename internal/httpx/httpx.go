@@ -27,6 +27,20 @@ func Error(w http.ResponseWriter, status int, msg string) {
 	JSON(w, status, map[string]string{"error": msg})
 }
 
+// ServerErr writes a generic public-facing message and logs the
+// internal err for operator debugging. Use this anywhere a 5xx
+// response (or a 409 backed by a DB-engine error) would otherwise
+// echo a Postgres / external-service message verbatim and leak
+// schema names, constraint names, or co-tenant row values to the
+// caller. The msg should be the user-facing summary ("save failed");
+// err goes to the log only.
+func ServerErr(w http.ResponseWriter, status int, msg string, err error) {
+	if err != nil {
+		log.Printf("httpx.server_err: %s: %v", msg, err)
+	}
+	Error(w, status, msg)
+}
+
 // DecodeJSON decodes a JSON request body into dst, enforcing a 1 MiB limit
 // and rejecting unknown fields. Returns a user-safe error string via Error
 // on failure (the caller should still return after calling this).

@@ -116,6 +116,14 @@ func (h *Handlers) RecoverLink(w http.ResponseWriter, r *http.Request) {
 			tok, s.ID); err != nil {
 			continue
 		}
+		// Drop any existing slot sessions for this slot. Without this
+		// step a previously-claimed device keeps a valid session cookie
+		// (LookupSlot joins by slot_id, not the magic token), so the
+		// recover-link email's "old links are now dead" promise would
+		// only kill future claims, not active ones. Mirrors the admin
+		// rotate path in admin/teams.go.
+		_, _ = h.DB.ExecContext(r.Context(),
+			`DELETE FROM slot_sessions WHERE slot_id = $1`, s.ID)
 		base := strings.TrimRight(h.PublicURL, "/")
 		// Origin-relative fallback for misconfigured self-host:
 		// the email body becomes useless to the recipient, which

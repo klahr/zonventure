@@ -26,6 +26,16 @@ import (
 // section. The endpoint is synchronous — at our scale a single
 // org's data fits comfortably in a JSON response. If exports start
 // hitting megabytes we'll move to "email me the link" + S3 later.
+//
+// The org section is intentionally identical for org_admin and
+// org_member because the underlying data is already reachable from
+// each role's GUI: org_member already sees adventures via
+// /api/admin/adventures, events via /api/admin/events, and
+// purchases via the Settings → Purchases tab. The export is a
+// convenience aggregation of those existing reads; it does not
+// expand the role's data envelope. If a future GDPR review wants a
+// strict "personal data only" subset, the gate to flip is
+// `me.Role == auth.RoleOrgAdmin || me.IsAdmin` here.
 func (h *Handlers) ExportMyData(w http.ResponseWriter, r *http.Request) {
 	me, _ := auth.FromContext(r.Context())
 
@@ -38,16 +48,16 @@ func (h *Handlers) ExportMyData(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := loadPersonalAuthEvents(r.Context(), h.DB, me.ID, &out); err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "audit export failed: "+err.Error())
+		httpx.ServerErr(w, http.StatusInternalServerError, "audit export failed", err)
 		return
 	}
 	if err := loadActiveSessions(r.Context(), h.DB, me.ID, &out); err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "session export failed: "+err.Error())
+		httpx.ServerErr(w, http.StatusInternalServerError, "session export failed", err)
 		return
 	}
 	if me.OrgID != nil {
 		if err := loadOrgExport(r.Context(), h.DB, *me.OrgID, &out); err != nil {
-			httpx.Error(w, http.StatusInternalServerError, "org export failed: "+err.Error())
+			httpx.ServerErr(w, http.StatusInternalServerError, "org export failed", err)
 			return
 		}
 	}

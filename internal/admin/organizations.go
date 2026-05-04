@@ -244,12 +244,17 @@ func (h *Handlers) UpdateOrganization(w http.ResponseWriter, r *http.Request) {
 	if !httpx.DecodeJSON(w, r, &req) {
 		return
 	}
-	if req.Name == nil || strings.TrimSpace(*req.Name) == "" {
+	if req.Name == nil {
 		httpx.Error(w, http.StatusBadRequest, "name required")
 		return
 	}
+	name, err := validateName(*req.Name, MaxNameLen)
+	if err != nil {
+		httpx.Error(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	if _, err := h.DB.ExecContext(r.Context(),
-		`UPDATE organizations SET name = $1 WHERE id = $2`, strings.TrimSpace(*req.Name), id); err != nil {
+		`UPDATE organizations SET name = $1 WHERE id = $2`, name, id); err != nil {
 		httpx.Error(w, http.StatusConflict, "name already used")
 		return
 	}
@@ -624,13 +629,13 @@ func (h *Handlers) TransferOwnership(w http.ResponseWriter, r *http.Request) {
 	if _, err := tx.ExecContext(r.Context(),
 		`UPDATE org_memberships SET role = $1 WHERE user_id = $2 AND org_id = $3`,
 		auth.RoleOrgAdmin, req.ToUserID, orgID); err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "promote failed: "+err.Error())
+		httpx.ServerErr(w, http.StatusInternalServerError, "promote failed", err)
 		return
 	}
 	if _, err := tx.ExecContext(r.Context(),
 		`UPDATE org_memberships SET role = $1 WHERE user_id = $2 AND org_id = $3`,
 		auth.RoleOrgMember, me.ID, orgID); err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "demote failed: "+err.Error())
+		httpx.ServerErr(w, http.StatusInternalServerError, "demote failed", err)
 		return
 	}
 	if err := tx.Commit(); err != nil {

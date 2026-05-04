@@ -84,7 +84,7 @@ func (h *Handlers) ListPuzzles(w http.ResponseWriter, r *http.Request) {
 	`
 	rows, err := h.DB.QueryContext(r.Context(), query, args...)
 	if err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "list failed: "+err.Error())
+		httpx.ServerErr(w, http.StatusInternalServerError, "list failed", err)
 		return
 	}
 	defer rows.Close()
@@ -102,7 +102,7 @@ func (h *Handlers) ListPuzzles(w http.ResponseWriter, r *http.Request) {
 		if err := rows.Scan(&p.ID, &p.Title, &p.Prompt, &p.Notes, &acceptJS,
 			&p.Lat, &p.Lng, &radius, &disabled, &hasImages,
 			&advID, &p.AdventureSlug, &p.AdventureTitle, &advIdx); err != nil {
-			httpx.Error(w, http.StatusInternalServerError, "scan failed: "+err.Error())
+			httpx.ServerErr(w, http.StatusInternalServerError, "scan failed", err)
 			return
 		}
 		// The listing DTO uses []string (regex flag isn't surfaced on
@@ -193,7 +193,7 @@ func (h *Handlers) CreateLibraryPuzzle(w http.ResponseWriter, r *http.Request) {
 		VALUES (NULL, 0, $1, $2, $3, $4, $5, $6, $7, $8)
 		RETURNING id
 	`, req.Title, req.Prompt, string(acceptJS), req.Lat, req.Lng, radius, req.Notes, orgArg).Scan(&id); err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "insert failed: "+err.Error())
+		httpx.ServerErr(w, http.StatusInternalServerError, "insert failed", err)
 		return
 	}
 	httpx.JSON(w, http.StatusCreated, map[string]any{"id": id})
@@ -242,7 +242,7 @@ func (h *Handlers) GetPuzzle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "lookup failed: "+err.Error())
+		httpx.ServerErr(w, http.StatusInternalServerError, "lookup failed", err)
 		return
 	}
 	// Visibility check: attached → adventure's org; orphan → page's own.
@@ -275,13 +275,13 @@ func (h *Handlers) GetPuzzle(w http.ResponseWriter, r *http.Request) {
 	p.AdventureTitle = advTitle.String
 	imgs, err := loadPageImages(r.Context(), h.DB, pageID)
 	if err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "images failed: "+err.Error())
+		httpx.ServerErr(w, http.StatusInternalServerError, "images failed", err)
 		return
 	}
 	p.Images = imgs
 	hints, err := loadPageHints(r.Context(), h.DB, pageID)
 	if err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "hints failed: "+err.Error())
+		httpx.ServerErr(w, http.StatusInternalServerError, "hints failed", err)
 		return
 	}
 	p.Hints = hints
@@ -362,7 +362,7 @@ func (h *Handlers) CopyPuzzleToAdventure(w http.ResponseWriter, r *http.Request)
 			httpx.Error(w, http.StatusNotFound, "source puzzle not found")
 			return
 		}
-		httpx.Error(w, http.StatusInternalServerError, "source lookup failed: "+err.Error())
+		httpx.ServerErr(w, http.StatusInternalServerError, "source lookup failed", err)
 		return
 	}
 
@@ -385,7 +385,7 @@ func (h *Handlers) CopyPuzzleToAdventure(w http.ResponseWriter, r *http.Request)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		RETURNING id
 	`, advID, nextIdx, title, prompt, notes, accept, lat, lng, radiusArg, disabled).Scan(&newID); err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "insert copy failed: "+err.Error())
+		httpx.ServerErr(w, http.StatusInternalServerError, "insert copy failed", err)
 		return
 	}
 
@@ -396,7 +396,7 @@ func (h *Handlers) CopyPuzzleToAdventure(w http.ResponseWriter, r *http.Request)
 		SELECT $1, idx, mime_type, size_bytes, content, alt_text
 		FROM adventure_page_images WHERE page_id = $2
 	`, newID, srcID); err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "image copy failed: "+err.Error())
+		httpx.ServerErr(w, http.StatusInternalServerError, "image copy failed", err)
 		return
 	}
 	// Same blob-for-blob copy for audio attachments.
@@ -405,7 +405,7 @@ func (h *Handlers) CopyPuzzleToAdventure(w http.ResponseWriter, r *http.Request)
 		SELECT $1, idx, mime_type, size_bytes, content, description
 		FROM adventure_page_audio WHERE page_id = $2
 	`, newID, srcID); err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "audio copy failed: "+err.Error())
+		httpx.ServerErr(w, http.StatusInternalServerError, "audio copy failed", err)
 		return
 	}
 	// Hints + per-hint images: insert each source hint into the new
@@ -421,7 +421,7 @@ func (h *Handlers) CopyPuzzleToAdventure(w http.ResponseWriter, r *http.Request)
 		WHERE page_id = $1 ORDER BY idx
 	`, srcID)
 	if err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "hints read failed: "+err.Error())
+		httpx.ServerErr(w, http.StatusInternalServerError, "hints read failed", err)
 		return
 	}
 	type srcHintRow struct {
@@ -435,14 +435,14 @@ func (h *Handlers) CopyPuzzleToAdventure(w http.ResponseWriter, r *http.Request)
 		var row srcHintRow
 		if err := srcHints.Scan(&row.id, &row.idx, &row.text, &row.delaySeconds); err != nil {
 			srcHints.Close()
-			httpx.Error(w, http.StatusInternalServerError, "hints read failed: "+err.Error())
+			httpx.ServerErr(w, http.StatusInternalServerError, "hints read failed", err)
 			return
 		}
 		hintRows = append(hintRows, row)
 	}
 	if err := srcHints.Err(); err != nil {
 		srcHints.Close()
-		httpx.Error(w, http.StatusInternalServerError, "hints read failed: "+err.Error())
+		httpx.ServerErr(w, http.StatusInternalServerError, "hints read failed", err)
 		return
 	}
 	srcHints.Close()
@@ -453,7 +453,7 @@ func (h *Handlers) CopyPuzzleToAdventure(w http.ResponseWriter, r *http.Request)
 			VALUES ($1, $2, $3, $4)
 			RETURNING id
 		`, newID, row.idx, row.text, row.delaySeconds).Scan(&newHintID); err != nil {
-			httpx.Error(w, http.StatusInternalServerError, "hint copy failed: "+err.Error())
+			httpx.ServerErr(w, http.StatusInternalServerError, "hint copy failed", err)
 			return
 		}
 		if _, err := tx.ExecContext(r.Context(), `
@@ -461,7 +461,7 @@ func (h *Handlers) CopyPuzzleToAdventure(w http.ResponseWriter, r *http.Request)
 			SELECT $1, idx, mime_type, size_bytes, content, alt_text
 			FROM adventure_page_hint_images WHERE hint_id = $2
 		`, newHintID, row.id); err != nil {
-			httpx.Error(w, http.StatusInternalServerError, "hint image copy failed: "+err.Error())
+			httpx.ServerErr(w, http.StatusInternalServerError, "hint image copy failed", err)
 			return
 		}
 		if _, err := tx.ExecContext(r.Context(), `
@@ -469,12 +469,12 @@ func (h *Handlers) CopyPuzzleToAdventure(w http.ResponseWriter, r *http.Request)
 			SELECT $1, idx, mime_type, size_bytes, content, description
 			FROM adventure_page_hint_audio WHERE hint_id = $2
 		`, newHintID, row.id); err != nil {
-			httpx.Error(w, http.StatusInternalServerError, "hint audio copy failed: "+err.Error())
+			httpx.ServerErr(w, http.StatusInternalServerError, "hint audio copy failed", err)
 			return
 		}
 	}
 	if err := tx.Commit(); err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "commit failed: "+err.Error())
+		httpx.ServerErr(w, http.StatusInternalServerError, "commit failed", err)
 		return
 	}
 	httpx.JSON(w, http.StatusCreated, map[string]any{"id": newID, "index": nextIdx})

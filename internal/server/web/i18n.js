@@ -45,6 +45,8 @@
         'Inloggningen tog för lång tid och sessionen löpte ut. Försök igen.',
       'Single sign-on failed ({{code}}). Try again, or contact your admin.':
         'Enkel inloggning misslyckades ({{code}}). Försök igen eller kontakta din admin.',
+      'An account already exists with that email and a local password. Sign in with your password, or ask an admin to remove your local password before signing in with SSO.':
+        'Ett konto finns redan med den e-postadressen och ett lokalt lösenord. Logga in med ditt lösenord, eller be en admin att ta bort ditt lokala lösenord innan du loggar in via SSO.',
       'Download report (PDF)': 'Ladda ner rapport (PDF)',
       'Download a branded PDF report you can share with stakeholders':
         'Ladda ner en varumärkesanpassad PDF-rapport som du kan dela med intressenter',
@@ -1679,6 +1681,11 @@
       'Could not fork the template.': 'Kunde inte forka mallen.',
       'BCP 47 tag — surfaced on the Catalog so buyers can spot adventures in their language.':
         'BCP 47-tagg — visas i Katalogen så att köpare kan hitta äventyr på sitt språk.',
+      'Strict assets': 'Strikta resurser',
+      'Hide images and audio for pages the team hasn\'t reached yet':
+        'Dölj bilder och ljud för sidor laget ännu inte har nått',
+      'Default off lets the offline cache prefetch every page\'s media. Turn on for hunts where the picture is the puzzle (find-the-glyph, hidden QR, map fragments).':
+        'Avstängd som standard så offline-cachen kan förladda alla sidors media. Slå på för jakter där bilden ÄR pusslet (hitta-glyfen, dold QR, kartfragment).',
       'Adventure content language': 'Äventyrets innehållsspråk',
       'Use this adventure': 'Använd detta äventyr',
       'Added to your Adventures — customise as much or as little as you want, then schedule.':

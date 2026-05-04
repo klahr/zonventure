@@ -104,7 +104,7 @@ func (h *Handlers) DuplicateAdventure(w http.ResponseWriter, r *http.Request) {
 			httpx.Error(w, http.StatusConflict, "slug already in use")
 			return
 		}
-		httpx.Error(w, http.StatusInternalServerError, "duplicate failed: "+err.Error())
+		httpx.ServerErr(w, http.StatusInternalServerError, "duplicate failed", err)
 		return
 	}
 
@@ -396,7 +396,7 @@ func (h *Handlers) DuplicatePage(w http.ResponseWriter, r *http.Request) {
 			UPDATE adventure_pages SET idx = idx + $1
 			WHERE adventure_id = $2 AND idx > $3
 		`, offset, advID.Int64, sourceIdx); err != nil {
-			httpx.Error(w, http.StatusInternalServerError, "shift failed: "+err.Error())
+			httpx.ServerErr(w, http.StatusInternalServerError, "shift failed", err)
 			return
 		}
 		newIdx = sourceIdx + 1
@@ -407,14 +407,14 @@ func (h *Handlers) DuplicatePage(w http.ResponseWriter, r *http.Request) {
 			       lat, lng, radius_m, disabled, notes, org_id
 			FROM adventure_pages WHERE id = $2
 		`, newIdx, pageID); err != nil {
-			httpx.Error(w, http.StatusInternalServerError, "insert page: "+err.Error())
+			httpx.ServerErr(w, http.StatusInternalServerError, "insert page", err)
 			return
 		}
 		if _, err := tx.ExecContext(r.Context(), `
 			UPDATE adventure_pages SET idx = idx - $1
 			WHERE adventure_id = $2 AND idx > $3
 		`, offset-1, advID.Int64, offset+sourceIdx); err != nil {
-			httpx.Error(w, http.StatusInternalServerError, "unshift failed: "+err.Error())
+			httpx.ServerErr(w, http.StatusInternalServerError, "unshift failed", err)
 			return
 		}
 	} else {
@@ -427,7 +427,7 @@ func (h *Handlers) DuplicatePage(w http.ResponseWriter, r *http.Request) {
 			       lat, lng, radius_m, disabled, notes, org_id
 			FROM adventure_pages WHERE id = $1
 		`, pageID); err != nil {
-			httpx.Error(w, http.StatusInternalServerError, "insert page: "+err.Error())
+			httpx.ServerErr(w, http.StatusInternalServerError, "insert page", err)
 			return
 		}
 	}
@@ -443,7 +443,7 @@ func (h *Handlers) DuplicatePage(w http.ResponseWriter, r *http.Request) {
 		if err := tx.QueryRowContext(r.Context(), `
 			SELECT id FROM adventure_pages WHERE adventure_id = $1 AND idx = $2
 		`, advID.Int64, newIdx).Scan(&newPageID); err != nil {
-			httpx.Error(w, http.StatusInternalServerError, "locate clone: "+err.Error())
+			httpx.ServerErr(w, http.StatusInternalServerError, "locate clone", err)
 			return
 		}
 	} else {
@@ -452,7 +452,7 @@ func (h *Handlers) DuplicatePage(w http.ResponseWriter, r *http.Request) {
 		if err := tx.QueryRowContext(r.Context(),
 			`SELECT MAX(id) FROM adventure_pages WHERE adventure_id IS NULL`).
 			Scan(&newPageID); err != nil {
-			httpx.Error(w, http.StatusInternalServerError, "locate clone: "+err.Error())
+			httpx.ServerErr(w, http.StatusInternalServerError, "locate clone", err)
 			return
 		}
 	}
@@ -463,7 +463,7 @@ func (h *Handlers) DuplicatePage(w http.ResponseWriter, r *http.Request) {
 		SELECT $1, idx, mime_type, size_bytes, content, alt_text
 		FROM adventure_page_images WHERE page_id = $2
 	`, newPageID, pageID); err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "clone images: "+err.Error())
+		httpx.ServerErr(w, http.StatusInternalServerError, "clone images", err)
 		return
 	}
 	if _, err := tx.ExecContext(r.Context(), `
@@ -471,7 +471,7 @@ func (h *Handlers) DuplicatePage(w http.ResponseWriter, r *http.Request) {
 		SELECT $1, idx, mime_type, size_bytes, content, description
 		FROM adventure_page_audio WHERE page_id = $2
 	`, newPageID, pageID); err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "clone audio: "+err.Error())
+		httpx.ServerErr(w, http.StatusInternalServerError, "clone audio", err)
 		return
 	}
 
@@ -481,7 +481,7 @@ func (h *Handlers) DuplicatePage(w http.ResponseWriter, r *http.Request) {
 	hintRows, err := tx.QueryContext(r.Context(),
 		`SELECT id FROM adventure_page_hints WHERE page_id = $1 ORDER BY idx`, pageID)
 	if err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "load hints: "+err.Error())
+		httpx.ServerErr(w, http.StatusInternalServerError, "load hints", err)
 		return
 	}
 	var oldHintIDs []int64
@@ -489,14 +489,14 @@ func (h *Handlers) DuplicatePage(w http.ResponseWriter, r *http.Request) {
 		var hid int64
 		if err := hintRows.Scan(&hid); err != nil {
 			hintRows.Close()
-			httpx.Error(w, http.StatusInternalServerError, "scan hint: "+err.Error())
+			httpx.ServerErr(w, http.StatusInternalServerError, "scan hint", err)
 			return
 		}
 		oldHintIDs = append(oldHintIDs, hid)
 	}
 	hintRows.Close()
 	if err := hintRows.Err(); err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "iter hints: "+err.Error())
+		httpx.ServerErr(w, http.StatusInternalServerError, "iter hints", err)
 		return
 	}
 	for _, oldHID := range oldHintIDs {
@@ -507,7 +507,7 @@ func (h *Handlers) DuplicatePage(w http.ResponseWriter, r *http.Request) {
 			FROM adventure_page_hints WHERE id = $2
 			RETURNING id
 		`, newPageID, oldHID).Scan(&newHID); err != nil {
-			httpx.Error(w, http.StatusInternalServerError, "clone hint: "+err.Error())
+			httpx.ServerErr(w, http.StatusInternalServerError, "clone hint", err)
 			return
 		}
 		if _, err := tx.ExecContext(r.Context(), `
@@ -515,7 +515,7 @@ func (h *Handlers) DuplicatePage(w http.ResponseWriter, r *http.Request) {
 			SELECT $1, idx, mime_type, size_bytes, content, alt_text
 			FROM adventure_page_hint_images WHERE hint_id = $2
 		`, newHID, oldHID); err != nil {
-			httpx.Error(w, http.StatusInternalServerError, "clone hint images: "+err.Error())
+			httpx.ServerErr(w, http.StatusInternalServerError, "clone hint images", err)
 			return
 		}
 		if _, err := tx.ExecContext(r.Context(), `
@@ -523,13 +523,13 @@ func (h *Handlers) DuplicatePage(w http.ResponseWriter, r *http.Request) {
 			SELECT $1, idx, mime_type, size_bytes, content, description
 			FROM adventure_page_hint_audio WHERE hint_id = $2
 		`, newHID, oldHID); err != nil {
-			httpx.Error(w, http.StatusInternalServerError, "clone hint audio: "+err.Error())
+			httpx.ServerErr(w, http.StatusInternalServerError, "clone hint audio", err)
 			return
 		}
 	}
 
 	if err := tx.Commit(); err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "commit failed: "+err.Error())
+		httpx.ServerErr(w, http.StatusInternalServerError, "commit failed", err)
 		return
 	}
 	httpx.JSON(w, http.StatusCreated, map[string]any{

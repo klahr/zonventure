@@ -438,9 +438,19 @@ func consumeRecoveryCode(ctx context.Context, db *sql.DB, userID int64, plaintex
 		}
 		if ok {
 			rows.Close()
-			if _, err := db.ExecContext(ctx,
-				`UPDATE user_recovery_codes SET used_at = now_text() WHERE id = $1 AND used_at IS NULL`, id); err != nil {
+			// Atomic claim: the WHERE used_at IS NULL filter is the
+			// load-bearing piece. Two concurrent challenges with the
+			// same recovery code both verify the hash, but only the
+			// first UPDATE that runs sees a NULL used_at and flips
+			// it. The second sees rowsAffected=0 and we treat that
+			// as "already used" — same posture as LoginSlotByToken.
+			res, err := db.ExecContext(ctx,
+				`UPDATE user_recovery_codes SET used_at = now_text() WHERE id = $1 AND used_at IS NULL`, id)
+			if err != nil {
 				return err
+			}
+			if n, _ := res.RowsAffected(); n == 0 {
+				return ErrRecoveryCodeInvalid
 			}
 			return nil
 		}

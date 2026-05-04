@@ -137,6 +137,29 @@ func (h *Hub) Publish(topic, kind string, data any) {
 	}
 }
 
+// PublishAll delivers the same kind+data to every active topic. Used
+// by the graceful-shutdown path: cmd/server/main.go calls this with
+// kind="server_closing" before srv.Shutdown so live WS clients learn
+// the server is going down instead of seeing the connection vanish
+// when the process exits. The same drop-oldest backpressure rules as
+// Publish apply per topic.
+//
+// Safe on a nil receiver.
+func (h *Hub) PublishAll(kind string, data any) {
+	if h == nil {
+		return
+	}
+	h.mu.Lock()
+	topics := make([]string, 0, len(h.subs))
+	for t := range h.subs {
+		topics = append(topics, t)
+	}
+	h.mu.Unlock()
+	for _, t := range topics {
+		h.Publish(t, kind, data)
+	}
+}
+
 // EventTopic is the topic string used for event-scoped broadcasts.
 // The "event:" prefix matches the rename (was "run:" pre-rebrand).
 func EventTopic(eventID int64) string {

@@ -118,6 +118,18 @@ type Config struct {
 	UpdateContext context.Context
 }
 
+// newSweptLimiter constructs a LoginLimiter and spawns a background
+// sweeper that drops entries past their lockout window. Without the
+// sweep, a patient attacker rotating fake usernames or IPs would
+// grow the in-memory maps unboundedly over the process's lifetime.
+// The goroutine uses context.Background so it lives for the process;
+// the OS reaps it on shutdown.
+func newSweptLimiter() *auth.LoginLimiter {
+	l := auth.NewLoginLimiter()
+	go l.RunSweeper(context.Background(), 5*time.Minute)
+	return l
+}
+
 // New builds the HTTP router.
 func New(cfg Config) http.Handler {
 	// Apply on-disk template overrides, if configured. Done before any
@@ -174,9 +186,9 @@ func New(cfg Config) http.Handler {
 			FreePlayersPerEvent: admin.FreePlayersPerEvent,
 			Currency:            "EUR",
 		},
-		Limiter:       auth.NewLoginLimiter(),
-		ForgotLimiter: auth.NewLoginLimiter(),
-		TOTPLimiter:   auth.NewLoginLimiter(),
+		Limiter:       newSweptLimiter(),
+		ForgotLimiter: newSweptLimiter(),
+		TOTPLimiter:   newSweptLimiter(),
 		TOTPKey:       cfg.TOTPKey,
 		Mailer:        cfg.Mailer,
 		PublicURL:     cfg.PublicURL,

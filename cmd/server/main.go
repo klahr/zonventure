@@ -220,6 +220,13 @@ func main() {
 	if oidcClient.Enabled() {
 		logx.Info("auth.oidc.ready", "issuer", oidcCfg.Issuer, "hosted_domain", oidcCfg.HostedDomain)
 	}
+	// Pay the one-shot decoy-hash construction cost before traffic
+	// lands so the very first /api/auth/login on an unknown user
+	// already finds the sentinel ready. Otherwise that request pays
+	// hashSecret + verify (~100ms) while subsequent ones pay only
+	// verify (~50ms), re-opening the user-enumeration timing oracle
+	// VerifyPassword's user-not-found branch is meant to close.
+	auth.PrimeDecoyHash()
 	h := server.New(server.Config{
 		DB:           sqlDB,
 		Library:      lib,
@@ -309,6 +316,18 @@ func main() {
 
 	<-ctx.Done()
 	logx.Info("http.shutdown")
+	// Notify live WebSocket clients before tearing the listener down.
+	// srv.Shutdown only drains in-flight HTTP — hijacked WS upgrades
+	// are invisible to it, so without this announce the client just
+	// sees the TCP connection drop on process exit. The hub fans the
+	// frame out to every topic on a best-effort basis (drop-oldest
+	// backpressure if a subscriber is slow); we sleep briefly so the
+	// per-connection write goroutine has time to flush before the
+	// listener stops accepting.
+	hub.PublishAll("server_closing", map[string]string{
+		"reason": "shutdown",
+	})
+	time.Sleep(250 * time.Millisecond)
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil {

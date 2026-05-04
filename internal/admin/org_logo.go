@@ -76,7 +76,7 @@ func (h *Handlers) SetOrgLogo(w http.ResponseWriter, r *http.Request) {
 			httpx.Error(w, http.StatusNotFound, "organisation not found")
 			return
 		}
-		httpx.Error(w, http.StatusInternalServerError, "store failed: "+err.Error())
+		httpx.ServerErr(w, http.StatusInternalServerError, "store failed", err)
 		return
 	}
 	httpx.JSON(w, http.StatusOK, map[string]any{

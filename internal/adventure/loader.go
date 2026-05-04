@@ -23,6 +23,12 @@ type Adventure struct {
 	Meta   Meta
 	Colors Colors
 	Pages  []Page
+	// StrictAssets, when true, scopes page-image / page-audio visibility
+	// to the team's current_page_index — the manifest endpoint and the
+	// per-asset gate both honour it. Default false keeps the permissive
+	// "any team in the adventure" behaviour that suits flavour-image
+	// hunts; opt-in for hunts where the photo IS the puzzle.
+	StrictAssets bool
 }
 
 // Meta bundles the adventure's descriptive fields.
@@ -177,11 +183,13 @@ func (l *Library) GetContext(ctx context.Context, slug string) (*Adventure, erro
 	)
 	err := l.db.QueryRowContext(ctx, `
 		SELECT id, slug, title, description, author, intro_text, outro_text,
-		       accent_color, accent_secondary_color, background_color, text_color, submit_bg_color
+		       accent_color, accent_secondary_color, background_color, text_color, submit_bg_color,
+		       strict_assets
 		FROM adventures WHERE slug = $1
 	`, slug).Scan(&adv.ID, &adv.Slug, &adv.Meta.Title, &adv.Meta.Description, &adv.Meta.Author,
 		&adv.Meta.IntroText, &adv.Meta.OutroText,
-		&accent, &accent2, &bg, &ink, &submitBG)
+		&accent, &accent2, &bg, &ink, &submitBG,
+		&adv.StrictAssets)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -213,7 +221,8 @@ func (l *Library) List() []*Adventure {
 func (l *Library) ListContext(ctx context.Context) ([]*Adventure, error) {
 	rows, err := l.db.QueryContext(ctx, `
 		SELECT id, slug, title, description, author, intro_text, outro_text,
-		       accent_color, accent_secondary_color, background_color, text_color, submit_bg_color
+		       accent_color, accent_secondary_color, background_color, text_color, submit_bg_color,
+		       strict_assets
 		FROM adventures ORDER BY slug
 	`)
 	if err != nil {
@@ -226,7 +235,8 @@ func (l *Library) ListContext(ctx context.Context) ([]*Adventure, error) {
 		var accent, accent2, bg, ink, submitBG sql.NullString
 		if err := rows.Scan(&a.ID, &a.Slug, &a.Meta.Title, &a.Meta.Description, &a.Meta.Author,
 			&a.Meta.IntroText, &a.Meta.OutroText,
-			&accent, &accent2, &bg, &ink, &submitBG); err != nil {
+			&accent, &accent2, &bg, &ink, &submitBG,
+			&a.StrictAssets); err != nil {
 			return nil, err
 		}
 		a.Colors = Colors{

@@ -1,0 +1,16 @@
+-- Per-adventure "strict assets" toggle. When TRUE, the page-image and
+-- page-audio visibility gates restrict callers to assets at or before
+-- their team's current_page_index; the manifest endpoint also drops
+-- URLs for pages they haven't reached yet.
+--
+-- The default permissive behaviour is fine for hunts where the picture
+-- is supporting flavour — every team eventually reaches every page, so
+-- proactive offline prefetch is a usability win, not a leak. Hunts
+-- where the picture IS the puzzle (find-the-glyph, hidden QR, partial
+-- map fragments revealed across multiple pages) need the stricter
+-- gate; flipping this column to TRUE turns it on without redeploying.
+--
+-- Hint media still uses the per-hint reveal gate regardless of this
+-- flag — see canViewHintImage. The flag only controls the page-body
+-- assets that ship with the prompt itself.
+ALTER TABLE adventures ADD COLUMN strict_assets BOOLEAN NOT NULL DEFAULT FALSE;

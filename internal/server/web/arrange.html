@@ -3236,6 +3236,7 @@ async function render() {
         email_unverified:   t('Your identity provider didn’t mark your email as verified.'),
         idp_error:          t('The sign-in provider declined the request. Try again, or contact your admin.'),
         session_expired:    t('Sign-in took too long and the session expired. Try again.'),
+        link_refused:       t('An account already exists with that email and a local password. Sign in with your password, or ask an admin to remove your local password before signing in with SSO.'),
       };
       toastErr(map[code] || t('Single sign-on failed ({{code}}). Try again, or contact your admin.', { code }));
     }, 50);
@@ -6662,6 +6663,16 @@ function canDo(event, op) {
 const TEAM_COLORS = ['#e24080', '#429a3f', '#2563eb', '#f59e0b', '#7c3aed', '#0891b2', '#be185d', '#16a34a'];
 function teamColor(teamID, i) { return TEAM_COLORS[i % TEAM_COLORS.length]; }
 
+// esc escapes the five HTML metacharacters before string-concat into a
+// template literal that ends up as innerHTML / Leaflet bindPopup. The
+// h() helper renders via textContent and doesn't need this; only
+// hand-built HTML strings (puzzle / team marker popups) do.
+function esc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
 // teamInitials returns up to two letters from the team name — the
 // fallback content for the generated avatar when no upload exists.
 function teamInitials(name) {
@@ -7928,9 +7939,9 @@ function initRunMap(host, adventure, teams, tracks) {
       }),
     }).addTo(map);
     marker.bindPopup(
-      `<strong>${p.index + 1}. ${p.title || t('Puzzle')}</strong>` +
+      `<strong>${p.index + 1}. ${esc(p.title || t('Puzzle'))}</strong>` +
       (p.gated && p.location.radius_m
-        ? `<br><em>${t('Gated — {{r}} m', { r: p.location.radius_m })}</em>`
+        ? `<br><em>${esc(t('Gated — {{r}} m', { r: p.location.radius_m }))}</em>`
         : '') +
       `<br><small>${p.location.lat.toFixed(5)}, ${p.location.lng.toFixed(5)}</small>`
     );
@@ -7954,10 +7965,10 @@ function initRunMap(host, adventure, teams, tracks) {
       const size = 30;
       const html = track.avatar_url
         ? `<div class="team-marker" style="--team-col:${colour}; width:${size}px; height:${size}px;">`
-            + `<img src="${track.avatar_url}" alt="" onerror="this.replaceWith(Object.assign(document.createElement('span'),{textContent:${JSON.stringify(initials)}}))"/>`
+            + `<img src="${esc(track.avatar_url)}" alt="" onerror="this.replaceWith(Object.assign(document.createElement('span'),{textContent:${JSON.stringify(initials)}}))"/>`
             + `</div>`
         : `<div class="team-marker no-img" style="--team-col:${colour}; width:${size}px; height:${size}px;">`
-            + `<span>${initials}</span></div>`;
+            + `<span>${esc(initials)}</span></div>`;
       L.marker([latest.lat, latest.lng], {
         icon: L.divIcon({
           className: '',
@@ -7965,7 +7976,7 @@ function initRunMap(host, adventure, teams, tracks) {
           iconSize: [size, size],
           iconAnchor: [size / 2, size / 2],
         }),
-      }).bindPopup(`<strong>${track.team_name}</strong><br><small>${fmtLocal(latest.server_ts)}</small>`).addTo(map);
+      }).bindPopup(`<strong>${esc(track.team_name)}</strong><br><small>${esc(fmtLocal(latest.server_ts))}</small>`).addTo(map);
       for (const ll of latlngs) bounds.extend(ll);
     }
   }
@@ -10700,12 +10711,27 @@ async function openEditAdventureMeta(adv) {
       h('p', { class: 'muted', style: 'margin:.2rem 0 0; font-size:.8rem' },
         t('BCP 47 tag — surfaced on the Catalog so buyers can spot adventures in their language.')));
 
+    // Strict assets — opt-in tighter visibility for adventures where
+    // the picture IS the puzzle. Default off keeps the prefetch-friendly
+    // behaviour that suits flavour-image hunts.
+    const initialStrictAssets = !!adv.strict_assets;
+    const strictAssetsInput = h('input', { type: 'checkbox' });
+    if (initialStrictAssets) strictAssetsInput.checked = true;
+    const strictAssetsRow = h('label', { class: 'field' },
+      h('span', {}, t('Strict assets')),
+      h('div', { class: 'row', style: 'gap:.5rem; align-items:center' },
+        strictAssetsInput,
+        h('span', {}, t('Hide images and audio for pages the team hasn\'t reached yet'))),
+      h('p', { class: 'muted', style: 'margin:.2rem 0 0; font-size:.8rem' },
+        t('Default off lets the offline cache prefetch every page\'s media. Turn on for hunts where the picture is the puzzle (find-the-glyph, hidden QR, map fragments).')));
+
     const paneDetails = h('div', { class: 'tab-pane active' },
       h('label', { class: 'field' }, h('span', {}, t('Slug')), slug),
       h('label', { class: 'field' }, h('span', {}, t('Title')), title),
       h('label', { class: 'field' }, h('span', {}, t('Description')), desc),
       h('label', { class: 'field' }, h('span', {}, t('Author')), author),
       langRow,
+      strictAssetsRow,
       coverRow, coverFile);
     const paneCopy = h('div', { class: 'tab-pane' },
       h('label', { class: 'field' },
@@ -10758,6 +10784,7 @@ async function openEditAdventureMeta(adv) {
       || cSecondary.get()  !== initialSecondary
       || cBackground.get() !== initialBg
       || cText.get()       !== initialText
+      || strictAssetsInput.checked !== initialStrictAssets
     );
     if (typeof setBeforeClose === 'function') {
       setBeforeClose(() => !isDirty() || confirm(t('Discard unsaved changes to this adventure?')));
@@ -10777,6 +10804,7 @@ async function openEditAdventureMeta(adv) {
       if (cText.get()       !== initialText)      payload.text_color             = cText.get();
       if (cSubmitBg.get()   !== initialSubmitBg)  payload.submit_bg_color        = cSubmitBg.get();
       if (langInput.value.trim() !== initialLanguage) payload.language          = langInput.value.trim();
+      if (strictAssetsInput.checked !== initialStrictAssets) payload.strict_assets = strictAssetsInput.checked;
       if (Object.keys(payload).length === 0) { close(null); return; }
       const r = await api(`/api/admin/adventures/${encodeURIComponent(adv.slug)}`, {
         method: 'PATCH', body: JSON.stringify(payload),

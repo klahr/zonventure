@@ -191,6 +191,13 @@ const (
 	oidcStateSep = ":"
 )
 
+// ErrOIDCLinkRefused signals that findOrCreateOIDCUser declined to
+// link the IdP identity to a local-password account at the same
+// email. The callback surfaces it as a "link_refused" redirect so
+// the operator can see the audit trail without leaking which email
+// was matched.
+var ErrOIDCLinkRefused = errors.New("oidc: refusing to link existing local-password account")
+
 // OIDCLogin handles GET /auth/oidc/login. Generates a fresh state and
 // nonce, stores both in a short-lived HttpOnly cookie, and redirects
 // the user to the IdP's authorization endpoint. The state pins the
@@ -360,6 +367,19 @@ func (h *Handlers) OIDCCallback(w http.ResponseWriter, r *http.Request) {
 	// JIT provision / link by email / load existing.
 	u, err := findOrCreateOIDCUser(r.Context(), h.DB, h.OIDC.cfg, claims)
 	if err != nil {
+		// Refused-link is its own audit class so the operator can
+		// distinguish "IdP fine, we wouldn't bind" from "IdP/DB
+		// failure". The user-facing message stays generic so the
+		// page doesn't leak which email matched.
+		if errors.Is(err, ErrOIDCLinkRefused) {
+			logx.Warn("auth.oidc.link_refused", "email", claims.Email)
+			Record(r.Context(), h.DB, AuditEvent{
+				Event: EventLogin, OK: false, Username: claims.Email, IP: ip, UserAgent: ua,
+				Reason: "oidc_link_refused",
+			})
+			oidcRedirectErr(w, r, "link_refused")
+			return
+		}
 		logx.Warn("auth.oidc.provision_failed", "err", err.Error(), "email", claims.Email)
 		Record(r.Context(), h.DB, AuditEvent{
 			Event: EventLogin, OK: false, Username: claims.Email, IP: ip, UserAgent: ua,
@@ -441,14 +461,30 @@ func findOrCreateOIDCUser(ctx context.Context, db *sql.DB, cfg OIDCConfig, c oid
 		return User{}, fmt.Errorf("oidc: lookup by sub: %w", err)
 	}
 
-	// 2) Email match — link the existing password-only account to this
-	//    OIDC identity. Safe because the hd claim has already been
-	//    verified to match the configured workspace, and Google sets
-	//    email_verified=true for managed-domain accounts.
+	// 2) Email match — link an existing password-less account (e.g. a
+	//    user previously SSO-bound whose oidc_subject was wiped, or
+	//    an admin-seeded placeholder) to this OIDC identity.
+	//
+	//    SECURITY: refuse the implicit link when the existing user
+	//    has a local password set. Otherwise an attacker who controls
+	//    a Workspace account at the same email as a legacy local user
+	//    (someone who left the org years ago and never bound to SSO)
+	//    can take over the account, bypassing whatever local TOTP +
+	//    password the legitimate owner had. The hd claim guarantees
+	//    the IdP-side domain match; it does NOT guarantee the IdP
+	//    user is the same human as the local user. An explicit
+	//    "link my SSO" step from inside the existing session is the
+	//    safe path; we don't yet implement that, so the operator's
+	//    short-term remedy is to clear the local password (forcing
+	//    the user through SSO) before SSO is enabled.
+	var passwordHash sql.NullString
 	err = tx.QueryRowContext(ctx, `
-		SELECT id FROM users WHERE LOWER(email) = LOWER($1)
-	`, c.Email).Scan(&userID)
+		SELECT id, password_hash FROM users WHERE LOWER(email) = LOWER($1)
+	`, c.Email).Scan(&userID, &passwordHash)
 	if err == nil {
+		if passwordHash.Valid && passwordHash.String != "" {
+			return User{}, ErrOIDCLinkRefused
+		}
 		if _, err := tx.ExecContext(ctx, `
 			UPDATE users
 			SET oidc_provider = $1,

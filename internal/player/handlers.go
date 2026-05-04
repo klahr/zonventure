@@ -162,12 +162,12 @@ func (h *Handlers) Forget(w http.ResponseWriter, r *http.Request) {
 
 	if _, err := tx.ExecContext(r.Context(),
 		`DELETE FROM location_pings WHERE slot_id = $1`, slot.ID); err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "wipe pings: "+err.Error())
+		httpx.ServerErr(w, http.StatusInternalServerError, "wipe pings", err)
 		return
 	}
 	if _, err := tx.ExecContext(r.Context(),
 		`DELETE FROM answer_attempts WHERE slot_id = $1`, slot.ID); err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "wipe answers: "+err.Error())
+		httpx.ServerErr(w, http.StatusInternalServerError, "wipe answers", err)
 		return
 	}
 	// New unguessable token + already-expired expires_at so the row
@@ -183,12 +183,12 @@ func (h *Handlers) Forget(w http.ResponseWriter, r *http.Request) {
 		   SET name = '(forgotten)', token = $1, expires_at = '1970-01-01 00:00:00'
 		 WHERE id = $2
 	`, deadToken, slot.ID); err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "wipe slot: "+err.Error())
+		httpx.ServerErr(w, http.StatusInternalServerError, "wipe slot", err)
 		return
 	}
 	if _, err := tx.ExecContext(r.Context(),
 		`DELETE FROM slot_sessions WHERE slot_id = $1`, slot.ID); err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "wipe sessions: "+err.Error())
+		httpx.ServerErr(w, http.StatusInternalServerError, "wipe sessions", err)
 		return
 	}
 	if err := tx.Commit(); err != nil {
@@ -723,7 +723,12 @@ func (h *Handlers) applyAdvance(ctx context.Context, slot auth.Slot) (AnswerResp
 	teamID := tc.TeamID
 	// Same atomicity argument as applyAnswer: the AnswerRight runevent
 	// and the team UPDATE must commit together, or the activity feed
-	// disagrees with the team's actual page index.
+	// disagrees with the team's actual page index. Each UPDATE is also
+	// guarded on `current_page_index = $oldIdx` so two concurrent
+	// advance calls (two slots on the same team firing the WS frame
+	// simultaneously) can't both land — the second one sees zero rows
+	// affected and we abort with 409 instead of double-recording the
+	// activity.
 	tx, err := h.DB.BeginTx(ctx, nil)
 	if err != nil {
 		return AnswerResponse{}, tc.EventID, http.StatusInternalServerError, "begin tx failed"
@@ -732,13 +737,19 @@ func (h *Handlers) applyAdvance(ctx context.Context, slot auth.Slot) (AnswerResp
 
 	activity.Record(ctx, tx, tc.EventID, &teamID, activity.SlotActor(slot.ID),
 		activity.AnswerRight, map[string]any{"page_index": page.Index, "no_answer": true})
-	nextIdx := page.Index + 1
+	curIdx := page.Index
+	nextIdx := curIdx + 1
 	resp := AnswerResponse{Accepted: true}
 	if next, _ := visibleFor(adv.Pages, nextIdx); next == nil {
-		if _, err := tx.ExecContext(ctx, `
-			UPDATE teams SET current_page_index = $1, current_page_started_at = now_text(), completed_at = now_text() WHERE id = $2
-		`, nextIdx, tc.TeamID); err != nil {
+		res, err := tx.ExecContext(ctx, `
+			UPDATE teams SET current_page_index = $1, current_page_started_at = now_text(), completed_at = now_text()
+			WHERE id = $2 AND current_page_index = $3
+		`, nextIdx, tc.TeamID, curIdx)
+		if err != nil {
 			return AnswerResponse{}, tc.EventID, http.StatusInternalServerError, "save progress failed"
+		}
+		if n, _ := res.RowsAffected(); n == 0 {
+			return AnswerResponse{}, tc.EventID, http.StatusConflict, "team already advanced"
 		}
 		activity.Record(ctx, tx, tc.EventID, &teamID, activity.SlotActor(slot.ID),
 			activity.TeamCompleted, nil)
@@ -760,10 +771,15 @@ func (h *Handlers) applyAdvance(ctx context.Context, slot auth.Slot) (AnswerResp
 		resp.NextIndex = nextIdx
 		return resp, tc.EventID, http.StatusOK, ""
 	}
-	if _, err := tx.ExecContext(ctx, `
-		UPDATE teams SET current_page_index = $1, current_page_started_at = now_text() WHERE id = $2
-	`, nextIdx, tc.TeamID); err != nil {
+	res, err := tx.ExecContext(ctx, `
+		UPDATE teams SET current_page_index = $1, current_page_started_at = now_text()
+		WHERE id = $2 AND current_page_index = $3
+	`, nextIdx, tc.TeamID, curIdx)
+	if err != nil {
 		return AnswerResponse{}, tc.EventID, http.StatusInternalServerError, "save progress failed"
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return AnswerResponse{}, tc.EventID, http.StatusConflict, "team already advanced"
 	}
 	if err := tx.Commit(); err != nil {
 		return AnswerResponse{}, tc.EventID, http.StatusInternalServerError, "commit failed"
@@ -791,8 +807,15 @@ func (h *Handlers) GetState(w http.ResponseWriter, r *http.Request) {
 // once a hint is revealed (at which point the request succeeds and
 // gets cached for the rest of the offline window).
 type AssetManifest struct {
-	AdventureSlug string   `json:"adventure_slug"`
-	URLs          []string `json:"urls"`
+	AdventureSlug string `json:"adventure_slug"`
+	// TeamID partitions the service-worker asset cache so a shared
+	// device (kiosk, family iPad, sequential teams in the same
+	// browser) can't serve Team A's prefetched bytes to Team B and
+	// bypass the server-side canViewPageImage gate. The SW uses this
+	// as the cache-name suffix and evicts any caches that don't
+	// match when the active team changes.
+	TeamID int64    `json:"team_id"`
+	URLs   []string `json:"urls"`
 }
 
 // Manifest returns every puzzle/hint image+audio URL for the slot's
@@ -825,6 +848,13 @@ func (h *Handlers) Manifest(w http.ResponseWriter, r *http.Request) {
 		if p.Disabled {
 			continue
 		}
+		// Strict-assets adventures cap the manifest at the team's current
+		// page so the offline cache can't pre-fetch puzzles the team
+		// hasn't reached yet. Hint assets stay scoped per-hint by their
+		// own reveal gate regardless of this flag.
+		if adv.StrictAssets && p.Index > tc.CurrentPageIndex {
+			continue
+		}
 		for _, im := range p.Images {
 			urls = append(urls, "/adventure-assets/image/"+strconv.FormatInt(im.ID, 10))
 		}
@@ -846,24 +876,68 @@ func (h *Handlers) Manifest(w http.ResponseWriter, r *http.Request) {
 	if tc.OrgHasLogo {
 		urls = append(urls, fmt.Sprintf("/org-logo/%d", tc.OrgID))
 	}
-	httpx.JSON(w, http.StatusOK, AssetManifest{AdventureSlug: tc.AdventureSlug, URLs: urls})
+	httpx.JSON(w, http.StatusOK, AssetManifest{
+		AdventureSlug: tc.AdventureSlug,
+		TeamID:        tc.TeamID,
+		URLs:          urls,
+	})
 }
 
 // gateReached checks whether the team's latest location ping places them
-// inside the location's gate radius.
+// inside the location's gate radius — but only credits pings that pass
+// a chained-plausibility check. plausibleNextPing lets a ping land
+// even when the gap to its predecessor exceeds maxLookbackForSpeedSec
+// (the "free pass" for GPS dropouts), which would otherwise let a
+// stationary player pause pings for two minutes and then post a
+// single ping at the gate to satisfy it. Pulling the latest two pings
+// here lets us reject the free-pass case for gating purposes — the
+// player has to chain another plausible ping inside the window before
+// the gate credits. parsePlayTime / DB errors fall through to the
+// permissive branch so a flaky read doesn't lock real players out.
 func gateReached(ctx context.Context, db *sql.DB, teamID int64, loc adventure.Location) (bool, error) {
-	var lat, lng float64
-	err := db.QueryRowContext(ctx, `
-		SELECT lat, lng FROM location_pings WHERE team_id = $1
-		ORDER BY server_ts DESC LIMIT 1
-	`, teamID).Scan(&lat, &lng)
-	if errors.Is(err, sql.ErrNoRows) {
-		return false, nil
-	}
+	rows, err := db.QueryContext(ctx, `
+		SELECT lat, lng, server_ts FROM location_pings WHERE team_id = $1
+		ORDER BY server_ts DESC LIMIT 2
+	`, teamID)
 	if err != nil {
 		return false, err
 	}
-	return haversineMeters(lat, lng, loc.Lat, loc.Lng) <= *loc.RadiusM, nil
+	defer rows.Close()
+	var (
+		latLat, latLng                         float64
+		latTS, prevTS                          time.Time
+		gotLatest, gotPrev                     bool
+		latParseErr, prevParseErr              bool
+	)
+	for rows.Next() {
+		var lat, lng float64
+		var serverTS string
+		if err := rows.Scan(&lat, &lng, &serverTS); err != nil {
+			return false, err
+		}
+		ts, perr := parsePlayTime(serverTS)
+		if !gotLatest {
+			latLat, latLng, latTS = lat, lng, ts
+			gotLatest = true
+			latParseErr = perr != nil
+		} else {
+			prevTS = ts
+			gotPrev = true
+			prevParseErr = perr != nil
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return false, err
+	}
+	if !gotLatest {
+		return false, nil
+	}
+	if gotPrev && !latParseErr && !prevParseErr {
+		if latTS.Sub(prevTS).Seconds() > maxLookbackForSpeedSec {
+			return false, nil
+		}
+	}
+	return haversineMeters(latLat, latLng, loc.Lat, loc.Lng) <= *loc.RadiusM, nil
 }
 
 func haversineMeters(lat1, lng1, lat2, lng2 float64) float64 {
@@ -984,13 +1058,23 @@ func (h *Handlers) applyAnswer(ctx context.Context, slot auth.Slot, answer strin
 		activity.AnswerRight, map[string]any{"page_index": page.Index})
 	// Advance past the page the player just solved. The NEXT call to
 	// buildState will re-resolve the new visible page (which will skip
-	// any disabled pages that follow).
-	nextIdx := page.Index + 1
+	// any disabled pages that follow). Each UPDATE is guarded on the
+	// old current_page_index so concurrent winning answers from two
+	// slots on the same team can't both land — second caller's UPDATE
+	// finds zero rows, we roll back the AnswerRight runevent it just
+	// queued, and surface a 409 so the client re-fetches state.
+	curIdx := page.Index
+	nextIdx := curIdx + 1
 	if next, _ := visibleFor(adv.Pages, nextIdx); next == nil {
-		if _, err := tx.ExecContext(ctx, `
-			UPDATE teams SET current_page_index = $1, current_page_started_at = now_text(), completed_at = now_text() WHERE id = $2
-		`, nextIdx, tc.TeamID); err != nil {
+		res, err := tx.ExecContext(ctx, `
+			UPDATE teams SET current_page_index = $1, current_page_started_at = now_text(), completed_at = now_text()
+			WHERE id = $2 AND current_page_index = $3
+		`, nextIdx, tc.TeamID, curIdx)
+		if err != nil {
 			return AnswerResponse{}, tc.EventID, http.StatusInternalServerError, "save progress failed"
+		}
+		if n, _ := res.RowsAffected(); n == 0 {
+			return AnswerResponse{}, tc.EventID, http.StatusConflict, "team already advanced"
 		}
 		activity.Record(ctx, tx, tc.EventID, &teamID, activity.SlotActor(slot.ID),
 			activity.TeamCompleted, nil)
@@ -1009,10 +1093,15 @@ func (h *Handlers) applyAnswer(ctx context.Context, slot auth.Slot, answer strin
 		resp.NextIndex = nextIdx
 		return resp, tc.EventID, http.StatusOK, ""
 	}
-	if _, err := tx.ExecContext(ctx, `
-		UPDATE teams SET current_page_index = $1, current_page_started_at = now_text() WHERE id = $2
-	`, nextIdx, tc.TeamID); err != nil {
+	res, err := tx.ExecContext(ctx, `
+		UPDATE teams SET current_page_index = $1, current_page_started_at = now_text()
+		WHERE id = $2 AND current_page_index = $3
+	`, nextIdx, tc.TeamID, curIdx)
+	if err != nil {
 		return AnswerResponse{}, tc.EventID, http.StatusInternalServerError, "save progress failed"
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return AnswerResponse{}, tc.EventID, http.StatusConflict, "team already advanced"
 	}
 	if err := tx.Commit(); err != nil {
 		return AnswerResponse{}, tc.EventID, http.StatusInternalServerError, "commit failed"
@@ -1538,7 +1627,7 @@ func (h *Handlers) RevealHint(w http.ResponseWriter, r *http.Request) {
 		 VALUES ($1, $2, $3)
 		 ON CONFLICT (team_id, page_id, hint_index) DO NOTHING`,
 		tc.TeamID, page.ID, req.HintIndex); err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "insert failed: "+err.Error())
+		httpx.ServerErr(w, http.StatusInternalServerError, "insert failed", err)
 		return
 	}
 	// Push so other team-mates' WS state refreshes immediately with

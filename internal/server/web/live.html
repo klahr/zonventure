@@ -610,6 +610,16 @@ function h(tag, attrs = {}, ...children) {
   return e;
 }
 
+// esc escapes HTML metacharacters before string-concat into a Leaflet
+// bindPopup / divIcon HTML template. The h() helper above renders text
+// children via createTextNode so it doesn't need this; only hand-built
+// HTML strings (puzzle / team marker popups) do.
+function esc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
 const knownTeams = new Set();
 
 // Server timestamps are stored as 'YYYY-MM-DD HH:MM:SS' UTC text
@@ -936,7 +946,7 @@ async function renderLiveMap(inner, hint, data) {
           iconSize: [28, 28], iconAnchor: [14, 28],
         }),
       }).addTo(map);
-      marker.bindPopup(`<strong>${p.index + 1}. ${p.title || t('Puzzle')}</strong>${p.gated ? `<br><em>${t('gated')}</em>` : ''}`);
+      marker.bindPopup(`<strong>${p.index + 1}. ${esc(p.title || t('Puzzle'))}</strong>${p.gated ? `<br><em>${esc(t('gated'))}</em>` : ''}`);
       mapLayers.puzzles.set(key, marker);
     }
     puzzleBounds.extend([p.lat, p.lng]);
@@ -983,10 +993,10 @@ async function renderLiveMap(inner, hint, data) {
       const size = 34;
       const html = track.avatar_url
         ? `<div class="team-marker-lv" style="--team-col:${colour}; width:${size}px; height:${size}px;">`
-            + `<img src="${track.avatar_url}" alt="" onerror="this.replaceWith(Object.assign(document.createElement('span'),{textContent:${JSON.stringify(initials)}}))"/>`
+            + `<img src="${esc(track.avatar_url)}" alt="" onerror="this.replaceWith(Object.assign(document.createElement('span'),{textContent:${JSON.stringify(initials)}}))"/>`
             + `</div>`
         : `<div class="team-marker-lv no-img" style="--team-col:${colour}; width:${size}px; height:${size}px;">`
-            + `<span>${initials}</span></div>`;
+            + `<span>${esc(initials)}</span></div>`;
       // Privacy: the marker shows team initials only — never the full
       // team_name in a popup. The live page is shareable and often
        // projected at a public venue; pairing precise GPS coordinates

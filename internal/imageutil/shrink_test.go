@@ -2,6 +2,9 @@ package imageutil_test
 
 import (
 	"bytes"
+	"encoding/binary"
+	"errors"
+	"hash/crc32"
 	"image"
 	"image/color"
 	"image/jpeg"
@@ -109,6 +112,41 @@ func TestShrink_LargerThanCap_ResizesAndReencodes(t *testing.T) {
 	// Want the longer side to be the cap.
 	if w != 512 {
 		t.Errorf("longer side = %d, want 512", w)
+	}
+}
+
+// makeBombPNG builds a tiny PNG byte stream whose IHDR chunk advertises
+// the requested dimensions but whose data section is empty. DecodeConfig
+// reads only signature + IHDR and reports the declared size, so this
+// suffices to exercise the pixel-bomb pre-check without allocating
+// width*height*4 bytes at construction time.
+func makeBombPNG(width, height uint32) []byte {
+	var buf bytes.Buffer
+	buf.Write([]byte{0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A})
+	binary.Write(&buf, binary.BigEndian, uint32(13))
+	ihdrStart := buf.Len()
+	buf.WriteString("IHDR")
+	binary.Write(&buf, binary.BigEndian, width)
+	binary.Write(&buf, binary.BigEndian, height)
+	buf.WriteByte(8) // bit depth
+	buf.WriteByte(2) // color type RGB
+	buf.WriteByte(0) // compression
+	buf.WriteByte(0) // filter
+	buf.WriteByte(0) // interlace
+	crc := crc32.ChecksumIEEE(buf.Bytes()[ihdrStart:])
+	binary.Write(&buf, binary.BigEndian, crc)
+	return buf.Bytes()
+}
+
+func TestShrink_RejectsPixelBomb(t *testing.T) {
+	// 50000 × 50000 = 2.5 billion pixels → ~10 GB of RGBA. Without the
+	// DecodeConfig pre-check, image.Decode would attempt to allocate
+	// the buffer and OOM the test runner. A successful decode here
+	// would already be a regression; check for the specific sentinel.
+	bomb := makeBombPNG(50000, 50000)
+	_, _, err := imageutil.Shrink(bomb, 512)
+	if !errors.Is(err, imageutil.ErrPixelBomb) {
+		t.Fatalf("expected ErrPixelBomb, got %v", err)
 	}
 }
 

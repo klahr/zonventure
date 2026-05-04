@@ -128,6 +128,10 @@ type adventureEditDTO struct {
 	// rows where flipping it has no effect.
 	OrgID                *int64      `json:"org_id,omitempty"`
 	Published            bool        `json:"published"`
+	// StrictAssets, when true, scopes player asset visibility (page
+	// images + audio + manifest URLs) to the team's current page index.
+	// Default false keeps the permissive prefetch-friendly behaviour.
+	StrictAssets         bool        `json:"strict_assets"`
 	Shares               []shareView `json:"shares"`
 	Pages                []pageView  `json:"pages"`
 	// RunningEventCount lets the editor warn the author before saving
@@ -158,7 +162,7 @@ func (h *Handlers) LoadAdventureForEdit(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	if err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "load failed: "+err.Error())
+		httpx.ServerErr(w, http.StatusInternalServerError, "load failed", err)
 		return
 	}
 	httpx.JSON(w, http.StatusOK, dto)
@@ -213,13 +217,34 @@ func (h *Handlers) CreateAdventure(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.Slug = strings.TrimSpace(req.Slug)
-	req.Title = strings.TrimSpace(req.Title)
-	if req.Slug == "" || req.Title == "" {
+	if req.Slug == "" {
 		httpx.Error(w, http.StatusBadRequest, "slug and title required")
 		return
 	}
+	title, err := validateName(req.Title, MaxNameLen)
+	if err != nil {
+		httpx.Error(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	req.Title = title
 	if !validSlug(req.Slug) {
 		httpx.Error(w, http.StatusBadRequest, "slug may only contain a-z 0-9 and hyphens")
+		return
+	}
+	if _, err := validateBlurb(req.Description, MaxBlurbLen); err != nil {
+		httpx.Error(w, http.StatusBadRequest, "description "+err.Error())
+		return
+	}
+	if _, err := validateBlurb(req.Author, MaxAuthorLen); err != nil {
+		httpx.Error(w, http.StatusBadRequest, "author "+err.Error())
+		return
+	}
+	if _, err := validateBlurb(req.IntroText, MaxBlurbLen); err != nil {
+		httpx.Error(w, http.StatusBadRequest, "intro_text "+err.Error())
+		return
+	}
+	if _, err := validateBlurb(req.OutroText, MaxBlurbLen); err != nil {
+		httpx.Error(w, http.StatusBadRequest, "outro_text "+err.Error())
 		return
 	}
 	colorFields := []struct{ label, value string }{
@@ -253,7 +278,7 @@ func (h *Handlers) CreateAdventure(w http.ResponseWriter, r *http.Request) {
 		orgArg = org.Int64
 	}
 	var id int64
-	err := h.DB.QueryRowContext(r.Context(), `
+	err = h.DB.QueryRowContext(r.Context(), `
 		INSERT INTO adventures(slug, title, description, author, intro_text, outro_text,
 		                       accent_color, accent_secondary_color, background_color, text_color, submit_bg_color,
 		                       language,
@@ -317,6 +342,7 @@ type updateAdventureRequest struct {
 	SubmitBgColor        *string `json:"submit_bg_color,omitempty"`
 	Language             *string `json:"language,omitempty"`
 	Published            *bool   `json:"published,omitempty"`
+	StrictAssets         *bool   `json:"strict_assets,omitempty"`
 }
 
 // UpdateAdventure amends the metadata.
@@ -340,18 +366,39 @@ func (h *Handlers) UpdateAdventure(w http.ResponseWriter, r *http.Request) {
 		args = append(args, val)
 	}
 	if req.Title != nil {
-		add("title", strings.TrimSpace(*req.Title))
+		title, err := validateName(*req.Title, MaxNameLen)
+		if err != nil {
+			httpx.Error(w, http.StatusBadRequest, "title "+err.Error())
+			return
+		}
+		add("title", title)
 	}
 	if req.Description != nil {
+		if _, err := validateBlurb(*req.Description, MaxBlurbLen); err != nil {
+			httpx.Error(w, http.StatusBadRequest, "description "+err.Error())
+			return
+		}
 		add("description", *req.Description)
 	}
 	if req.Author != nil {
+		if _, err := validateBlurb(*req.Author, MaxAuthorLen); err != nil {
+			httpx.Error(w, http.StatusBadRequest, "author "+err.Error())
+			return
+		}
 		add("author", *req.Author)
 	}
 	if req.IntroText != nil {
+		if _, err := validateBlurb(*req.IntroText, MaxBlurbLen); err != nil {
+			httpx.Error(w, http.StatusBadRequest, "intro_text "+err.Error())
+			return
+		}
 		add("intro_text", *req.IntroText)
 	}
 	if req.OutroText != nil {
+		if _, err := validateBlurb(*req.OutroText, MaxBlurbLen); err != nil {
+			httpx.Error(w, http.StatusBadRequest, "outro_text "+err.Error())
+			return
+		}
 		add("outro_text", *req.OutroText)
 	}
 	if req.Slug != nil {
@@ -401,6 +448,9 @@ func (h *Handlers) UpdateAdventure(w http.ResponseWriter, r *http.Request) {
 			add("published", 0)
 		}
 	}
+	if req.StrictAssets != nil {
+		add("strict_assets", *req.StrictAssets)
+	}
 	if len(sets) == 1 {
 		httpx.Error(w, http.StatusBadRequest, "nothing to update")
 		return
@@ -409,7 +459,7 @@ func (h *Handlers) UpdateAdventure(w http.ResponseWriter, r *http.Request) {
 	q := fmt.Sprintf(`UPDATE adventures SET %s WHERE slug = $%d`, strings.Join(sets, ", "), len(args))
 	res, err := h.DB.ExecContext(r.Context(), q, args...)
 	if err != nil {
-		httpx.Error(w, http.StatusConflict, "update failed: "+err.Error())
+		httpx.ServerErr(w, http.StatusConflict, "update failed", err)
 		return
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
@@ -492,11 +542,11 @@ func loadAdventureDTO(ctx context.Context, db *sql.DB, slug string) (*adventureE
 		       accent_color, accent_secondary_color, background_color, text_color, submit_bg_color,
 		       language,
 		       (avatar_mime_type IS NOT NULL)::int AS has_avatar,
-		       published, org_id
+		       published, org_id, strict_assets
 		FROM adventures WHERE slug = $1
 	`, slug).Scan(&a.ID, &a.Slug, &a.Title, &a.Description, &a.Author,
 		&a.IntroText, &a.OutroText,
-		&accent, &accent2, &bg, &ink, &submitBG, &a.Language, &hasAvatar, &published, &orgID); err != nil {
+		&accent, &accent2, &bg, &ink, &submitBG, &a.Language, &hasAvatar, &published, &orgID, &a.StrictAssets); err != nil {
 		return nil, err
 	}
 	a.AccentColor = accent.String

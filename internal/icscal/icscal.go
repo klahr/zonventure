@@ -253,7 +253,11 @@ func Write(w io.Writer, e Event) error {
 	line(&b, "CALSCALE:GREGORIAN")
 	line(&b, "METHOD:PUBLISH")
 	line(&b, "BEGIN:VEVENT")
-	line(&b, "UID:"+e.UID)
+	// UID is server-built ("event-N@host") in current callers — but
+	// run it through Escape regardless so a future hostFromURL change
+	// (or any later caller passing a user-derived value) can't break
+	// out of the property line via a stray comma / semicolon / CRLF.
+	line(&b, "UID:"+Escape(e.UID))
 	line(&b, "DTSTAMP:"+formatTime(e.GeneratedAt))
 	line(&b, "DTSTART:"+formatTime(e.StartAt))
 	line(&b, "DTEND:"+formatTime(e.EndAt))
@@ -272,11 +276,16 @@ func Write(w io.Writer, e Event) error {
 		line(&b, "URL:"+Escape(e.JoinURL))
 	}
 	if e.OrganizerEmail != "" {
+		// Belt-and-braces escape on the email too — signup validation
+		// rejects CRLF in addresses today, but a regression there
+		// would otherwise let a crafted address inject extra ICS
+		// properties past the ORGANIZER line.
+		email := Escape(e.OrganizerEmail)
 		cn := Escape(strings.TrimSpace(e.OrganizerName))
 		if cn != "" {
-			line(&b, "ORGANIZER;CN="+paramQuote(cn)+":mailto:"+e.OrganizerEmail)
+			line(&b, "ORGANIZER;CN="+paramQuote(cn)+":mailto:"+email)
 		} else {
-			line(&b, "ORGANIZER:mailto:"+e.OrganizerEmail)
+			line(&b, "ORGANIZER:mailto:"+email)
 		}
 	}
 	line(&b, "END:VEVENT")

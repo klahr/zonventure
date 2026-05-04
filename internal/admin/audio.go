@@ -95,7 +95,7 @@ func (h *Handlers) AddPageAudio(w http.ResponseWriter, r *http.Request) {
 		SELECT $1, COALESCE(MAX(idx)+1, 0), $2, $3, $4 FROM adventure_page_audio WHERE page_id = $1
 		RETURNING id, idx
 	`, pageID, mime, int64(len(data)), data).Scan(&id, &nextIdx); err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "insert failed: "+err.Error())
+		httpx.ServerErr(w, http.StatusInternalServerError, "insert failed", err)
 		return
 	}
 	httpx.JSON(w, http.StatusCreated, audioView{
@@ -309,7 +309,7 @@ func (h *Handlers) AddHintAudio(w http.ResponseWriter, r *http.Request) {
 		SELECT $1, COALESCE(MAX(idx)+1, 0), $2, $3, $4 FROM adventure_page_hint_audio WHERE hint_id = $1
 		RETURNING id, idx
 	`, hintID, mime, int64(len(data)), data).Scan(&id, &nextIdx); err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "insert failed: "+err.Error())
+		httpx.ServerErr(w, http.StatusInternalServerError, "insert failed", err)
 		return
 	}
 	httpx.JSON(w, http.StatusCreated, audioView{

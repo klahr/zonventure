@@ -79,7 +79,7 @@ func (h *Handlers) AddPageImage(w http.ResponseWriter, r *http.Request) {
 		SELECT $1, COALESCE(MAX(idx)+1, 0), $2, $3, $4 FROM adventure_page_images WHERE page_id = $1
 		RETURNING id, idx
 	`, pageID, mime, int64(len(data)), data).Scan(&id, &nextIdx); err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "insert failed: "+err.Error())
+		httpx.ServerErr(w, http.StatusInternalServerError, "insert failed", err)
 		return
 	}
 	httpx.JSON(w, http.StatusCreated, imageView{
@@ -207,40 +207,63 @@ func (h *Handlers) ServeImage(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(content)
 }
 
-// canViewPageImage allows any staff user and any player whose team
-// is in an event for the same adventure as the page. The previous
-// rule pinned visibility to the team's CURRENT page only — that
-// blocked proactive offline asset prefetch (the player can't cache
-// puzzle 5's image while they're on puzzle 1) without a real
-// security upside, since any team member sees every page in author
-// order eventually. The reveal-gated path for hint assets still
-// uses the stricter canViewHintImage check; that one matters
-// because hints are a game mechanic, not just per-page progress.
+// canViewPageImage gates access to a page's image / audio bytes.
+// Staff callers (admin, org_admin, org_member, lobby) get the same
+// visibility cascade ListAdventures uses — the previous "any
+// authenticated staff session" pass let any signed-up arranger
+// iterate /adventure-assets/image/{id} and harvest every adventure's
+// puzzle media, including unpublished drafts of foreign orgs. Player
+// slot callers must be in an event for the same adventure; for
+// strict-assets adventures the page index must be at or before the
+// team's current_page_index so prefetch can't pull future puzzles
+// (find-the-glyph, hidden QR, map fragments). Hint assets stay
+// reveal-gated regardless via canViewHintImage.
 func (h *Handlers) canViewPageImage(r *http.Request, pageID int64) bool {
-	if u, ok := auth.FromContext(r.Context()); ok {
-		_ = u
-		return true
+	if me, ok := auth.FromContext(r.Context()); ok {
+		var (
+			ownerOrg     sql.NullInt64
+			publishedInt int
+			slug         string
+		)
+		if err := h.DB.QueryRowContext(r.Context(), `
+			SELECT a.org_id, a.published, a.slug
+			FROM adventure_pages p
+			JOIN adventures a ON a.id = p.adventure_id
+			WHERE p.id = $1
+		`, pageID).Scan(&ownerOrg, &publishedInt, &slug); err != nil {
+			return false
+		}
+		return h.staffCanSeeAdventure(r.Context(), me, ownerOrg, publishedInt != 0, slug)
 	}
 	slot, ok := auth.SlotFromContext(r.Context())
 	if !ok {
 		return false
 	}
-	var advID int64
-	if err := h.DB.QueryRowContext(r.Context(),
-		`SELECT adventure_id FROM adventure_pages WHERE id = $1`, pageID).Scan(&advID); err != nil {
-		return false
-	}
-	var inAdventure int
+	var (
+		strict      bool
+		pageIdx     int
+		teamPage    int
+		inAdventure int
+	)
 	err := h.DB.QueryRowContext(r.Context(), `
-		SELECT COUNT(*) FROM teams t
-		JOIN events ar ON ar.id = t.event_id
-		JOIN adventures a ON a.slug = ar.adventure_slug
-		WHERE t.id = $1 AND a.id = $2
-	`, slot.TeamID, advID).Scan(&inAdventure)
+		SELECT a.strict_assets, p.idx, t.current_page_index, 1
+		FROM adventure_pages p
+		JOIN adventures a ON a.id = p.adventure_id
+		JOIN events e     ON e.adventure_slug = a.slug
+		JOIN teams t      ON t.event_id = e.id
+		WHERE p.id = $1 AND t.id = $2
+		LIMIT 1
+	`, pageID, slot.TeamID).Scan(&strict, &pageIdx, &teamPage, &inAdventure)
 	if err != nil {
 		return false
 	}
-	return inAdventure > 0
+	if inAdventure == 0 {
+		return false
+	}
+	if strict && teamPage < pageIdx {
+		return false
+	}
+	return true
 }
 
 func loadPageImages(ctx context.Context, db *sql.DB, pageID int64) ([]imageView, error) {
@@ -348,7 +371,7 @@ func (h *Handlers) AddHintImage(w http.ResponseWriter, r *http.Request) {
 		SELECT $1, COALESCE(MAX(idx)+1, 0), $2, $3, $4 FROM adventure_page_hint_images WHERE hint_id = $1
 		RETURNING id, idx
 	`, hintID, mime, int64(len(data)), data).Scan(&id, &nextIdx); err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "insert failed: "+err.Error())
+		httpx.ServerErr(w, http.StatusInternalServerError, "insert failed", err)
 		return
 	}
 	httpx.JSON(w, http.StatusCreated, imageView{
@@ -468,14 +491,33 @@ func (h *Handlers) ServeHintImage(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(content)
 }
 
-// canViewHintImage allows any staff user (read-through to the
-// authoring side) and players whose team (a) is on the page that
-// owns the hint AND (b) has revealed the hint at this index. The
-// reveal join is the load-bearing check: without it a player could
-// guess image IDs and read clues they haven't yet asked for.
+// canViewHintImage allows staff who can see the owning adventure
+// (authoring + read-through for catalog browsers / share recipients,
+// matching ListAdventures) and players whose team (a) is on the page
+// that owns the hint AND (b) has revealed the hint at this index.
+// The reveal join is the load-bearing check for the player path:
+// without it a player could guess image IDs and read clues they
+// haven't yet asked for. The previous "any authenticated staff
+// session" pass let any signed-up arranger iterate hint asset IDs
+// and read every adventure's hint media including unpublished
+// foreign-org drafts.
 func (h *Handlers) canViewHintImage(r *http.Request, hintID int64) bool {
-	if _, ok := auth.FromContext(r.Context()); ok {
-		return true
+	if me, ok := auth.FromContext(r.Context()); ok {
+		var (
+			ownerOrg     sql.NullInt64
+			publishedInt int
+			slug         string
+		)
+		if err := h.DB.QueryRowContext(r.Context(), `
+			SELECT a.org_id, a.published, a.slug
+			FROM adventure_page_hints h
+			JOIN adventure_pages p ON p.id = h.page_id
+			JOIN adventures a      ON a.id = p.adventure_id
+			WHERE h.id = $1
+		`, hintID).Scan(&ownerOrg, &publishedInt, &slug); err != nil {
+			return false
+		}
+		return h.staffCanSeeAdventure(r.Context(), me, ownerOrg, publishedInt != 0, slug)
 	}
 	slot, ok := auth.SlotFromContext(r.Context())
 	if !ok {

@@ -34,7 +34,7 @@ func (h *Handlers) buildActivity(ctx context.Context, eventID int64, teamFilter 
 		WHERE e.event_id = $1`
 	args := []any{eventID}
 	if teamFilter != nil {
-		query += ` AND e.team_id = $1`
+		query += ` AND e.team_id = $2`
 		args = append(args, *teamFilter)
 	}
 	query += ` ORDER BY e.created_at DESC, e.id DESC LIMIT 500`

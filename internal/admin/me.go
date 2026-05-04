@@ -197,7 +197,7 @@ func (h *Handlers) DeleteMyAccount(w http.ResponseWriter, r *http.Request) {
 	if _, err := h.DB.ExecContext(r.Context(),
 		`UPDATE users SET scheduled_deletion_at = $1 WHERE id = $2`,
 		scheduled, me.ID); err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "schedule deletion failed: "+err.Error())
+		httpx.ServerErr(w, http.StatusInternalServerError, "schedule deletion failed", err)
 		return
 	}
 	// Drop every session so a cookie that's already in the wild can't
@@ -224,7 +224,7 @@ func (h *Handlers) CancelMyDeletion(w http.ResponseWriter, r *http.Request) {
 	me, _ := auth.FromContext(r.Context())
 	if _, err := h.DB.ExecContext(r.Context(),
 		`UPDATE users SET scheduled_deletion_at = NULL WHERE id = $1`, me.ID); err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "cancel failed: "+err.Error())
+		httpx.ServerErr(w, http.StatusInternalServerError, "cancel failed", err)
 		return
 	}
 	logx.Info("admin.me.delete.cancelled", "user_id", me.ID, "username", me.Username)

@@ -65,7 +65,7 @@ func (h *Handlers) GrantAdventureShare(w http.ResponseWriter, r *http.Request) {
 		VALUES ($1, $2, $3)
 		ON CONFLICT(adventure_slug, org_id) DO NOTHING
 	`, slug, req.OrgID, me.ID); err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "grant failed: "+err.Error())
+		httpx.ServerErr(w, http.StatusInternalServerError, "grant failed", err)
 		return
 	}
 	httpx.JSON(w, http.StatusNoContent, nil)

@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"context"
 	"database/sql"
 
 	"git.sr.ht/~klahr/zv/internal/auth"
@@ -91,4 +92,36 @@ func callerOrgID(u auth.User) sql.NullInt64 {
 		return sql.NullInt64{}
 	}
 	return sql.NullInt64{Int64: *u.OrgID, Valid: true}
+}
+
+// staffCanSeeAdventure mirrors the visibility cascade ListAdventures
+// uses (and AdventureDetail re-implements) so any staff-side surface
+// that exposes adventure data — JSON DTOs, image bytes, audio bytes —
+// applies the same gate. Returns true when the caller is allowed to
+// read this adventure: global admin, or member of the owning org, or
+// the row is admin-owned and published, or the caller's org holds an
+// assignment / share grant for the slug.
+//
+// Read-only; does not gate writes (canAuthor handles those). DB-error
+// on the grant lookup is treated as "not visible" — failing closed
+// matches the rest of the asset gates.
+func (h *Handlers) staffCanSeeAdventure(ctx context.Context, me auth.User, ownerOrg sql.NullInt64, published bool, slug string) bool {
+	if canEditOwned(me, ownerOrg) {
+		return true
+	}
+	if !ownerOrg.Valid && published {
+		return true
+	}
+	if me.OrgID == nil {
+		return false
+	}
+	var n int
+	if err := h.DB.QueryRowContext(ctx, `
+		SELECT
+		  (SELECT COUNT(*) FROM adventure_assignments WHERE adventure_slug = $1 AND org_id = $2)
+		+ (SELECT COUNT(*) FROM adventure_shares      WHERE adventure_slug = $1 AND org_id = $2)
+	`, slug, *me.OrgID).Scan(&n); err != nil {
+		return false
+	}
+	return n > 0
 }

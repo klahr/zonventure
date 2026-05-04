@@ -83,21 +83,32 @@ func LoginSlotByToken(ctx context.Context, db *sql.DB, magic string) (Slot, stri
 			return Slot{}, "", ErrSlotTokenExpired
 		}
 	}
-	if claimedAt.Valid && claimedAt.String != "" {
-		// Token already exchanged once — refuse the second claim.
-		// The original session's cookie still works; this gate is
-		// only on minting fresh sessions from the same token.
+	_ = claimedAt // initial check; the load-bearing one is the conditional UPDATE below.
+
+	// Atomic claim: only one caller wins. The previous shape — read
+	// claimed_at, decide, INSERT slot_sessions, UPDATE — let two
+	// concurrent GETs of /play?t=<magic> both pass the NULL check and
+	// both mint a parallel session, defeating the "single-use"
+	// promise. Keying the UPDATE on `claimed_at IS NULL` collapses
+	// the read+write into one statement; rowsAffected tells us
+	// whether we won the race. last_login_at piggybacks since the
+	// successful path was already updating both columns.
+	res, err := db.ExecContext(ctx,
+		`UPDATE player_slots SET last_login_at = now_text(), claimed_at = now_text()
+		 WHERE id = $1 AND claimed_at IS NULL`, s.ID)
+	if err != nil {
+		return Slot{}, "", err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		// Either the row vanished (unlikely — we just SELECTed it) or
+		// another caller claimed it first. Both resolve to "this
+		// token is no longer redeemable for a fresh session".
 		return Slot{}, "", ErrSlotTokenExpired
 	}
 	session, err := newSlotSession(ctx, db, s.ID)
 	if err != nil {
 		return Slot{}, "", err
 	}
-	// Stamp claimed_at + last_login_at atomically. The claim is what
-	// makes the token single-use; last_login_at is informational so
-	// the arranger can see when the player actually came online.
-	_, _ = db.ExecContext(ctx,
-		`UPDATE player_slots SET last_login_at = now_text(), claimed_at = now_text() WHERE id = $1`, s.ID)
 	return s, session, nil
 }
 

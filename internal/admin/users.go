@@ -110,12 +110,22 @@ func requirePasswordConfirm(w http.ResponseWriter, r *http.Request, db *sql.DB) 
 
 /* ---------------- Adventure & run detail ---------------- */
 
-// AdventureDetail returns the full page list for an adventure. All
-// authenticated admin-surface users can see it. Powers both the
-// catalog "view this adventure" page and the in-event adventure
-// summary strip — so it carries everything the new layout needs:
+// AdventureDetail returns the page list for an adventure. Powers both
+// the catalog "view this adventure" page and the in-event adventure
+// summary strip — so it carries everything the layout needs:
 // intro/outro copy, per-page prompt_html / images / hints,
 // permission flags (mine_to_edit), and running_event_count.
+//
+// Visibility mirrors ListAdventures: a slug visible there is fetchable
+// here, anything else is 404 (don't leak existence of foreign-org
+// drafts). Within the visible set, the answer key (pages[].accept) and
+// hint bodies (pages[].hints[].text_html / .images / .audio) are
+// stripped for non-editor callers — i.e. anyone who isn't an admin or
+// a member of the owning org. This is the gate against a lobby /
+// foreign-org account browsing the catalog and reading the answer key
+// out of the JSON response. Editors keep the full payload because
+// race directors legitimately need to see accepts to help stuck teams
+// during a live event.
 //
 // Field shape is a map[string]any rather than a typed struct
 // because the frontend already keys off literal strings; a future
@@ -123,6 +133,45 @@ func requirePasswordConfirm(w http.ResponseWriter, r *http.Request, db *sql.DB) 
 // settle on a stable surface.
 func (h *Handlers) AdventureDetail(w http.ResponseWriter, r *http.Request) {
 	slug := chi.URLParam(r, "slug")
+	me, _ := auth.FromContext(r.Context())
+
+	// One DB lookup serves both the visibility gate and the metadata
+	// fields the response carries. Run BEFORE Lib.Get so a 404 doesn't
+	// leak via a different error path. The previous version of this
+	// handler discarded this query's error and proceeded to leak full
+	// content on any signed-up session.
+	var (
+		hasAvatar    int
+		publishedInt int
+		ownerOrg     sql.NullInt64
+		language     string
+		runningN     int
+	)
+	err := h.DB.QueryRowContext(r.Context(), `
+		SELECT (avatar_mime_type IS NOT NULL)::int, published, org_id, language,
+		       (SELECT COUNT(*) FROM events WHERE adventure_slug = $1 AND state = 'running')
+		FROM adventures WHERE slug = $1
+	`, slug).Scan(&hasAvatar, &publishedInt, &ownerOrg, &language, &runningN)
+	if errors.Is(err, sql.ErrNoRows) {
+		httpx.Error(w, http.StatusNotFound, "unknown adventure")
+		return
+	}
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "lookup failed")
+		return
+	}
+	published := publishedInt != 0
+
+	// canEdit covers admin + any member of the owning org (org_admin
+	// and org_member). Race directors are intentionally included so
+	// they can read the answer key while running events; the stricter
+	// canAuthor check still gates writes.
+	canEdit := canEditOwned(me, ownerOrg)
+	if !h.staffCanSeeAdventure(r.Context(), me, ownerOrg, published, slug) {
+		httpx.Error(w, http.StatusNotFound, "unknown adventure")
+		return
+	}
+
 	adv := h.Lib.Get(slug)
 	if adv == nil {
 		httpx.Error(w, http.StatusNotFound, "unknown adventure")
@@ -220,6 +269,20 @@ func (h *Handlers) AdventureDetail(w http.ResponseWriter, r *http.Request) {
 			Disabled:   p.Disabled,
 		}
 	}
+	// Strip puzzle solutions for non-editor callers (catalog browsers,
+	// foreign org users with an assignment/share, …). canEdit was
+	// computed up top from the same query that populated ownerOrg.
+	if !canEdit {
+		for i := range pages {
+			pages[i].Accept = nil
+			for j := range pages[i].Hints {
+				pages[i].Hints[j].TextHTML = ""
+				pages[i].Hints[j].Images = nil
+				pages[i].Hints[j].Audio = nil
+			}
+		}
+	}
+
 	out := map[string]any{
 		"slug":        adv.Slug,
 		"title":       adv.Meta.Title,
@@ -233,46 +296,21 @@ func (h *Handlers) AdventureDetail(w http.ResponseWriter, r *http.Request) {
 	if !adv.Colors.Empty() {
 		out["colors"] = adv.Colors
 	}
-	// One-shot DB probe for adventure-level metadata Lib.Get doesn't
-	// carry: cover-image presence, publish state, owning org, and the
-	// number of currently-running events using this adventure (drives
-	// the "Running on N events" pill on the new hero).
-	var (
-		hasAvatar int
-		published int
-		orgID     sql.NullInt64
-		runningN  int
-		language  string
-	)
-	// Postgres returns `IS NOT NULL` as a boolean; the previous query
-	// scanned it straight into a Go *int and silently failed (the
-	// outer `_ =` discarded the driver error), so hasAvatar stayed at
-	// 0 and the cover URL was never emitted on event-detail strips
-	// even when the adventure had an avatar uploaded. ::int matches
-	// the cast already used in ListAdventures.
-	_ = h.DB.QueryRowContext(r.Context(), `
-		SELECT (avatar_mime_type IS NOT NULL)::int, published, org_id, language,
-		       (SELECT COUNT(*) FROM events WHERE adventure_slug = $1 AND state = 'running')
-		FROM adventures WHERE slug = $1
-	`, slug).Scan(&hasAvatar, &published, &orgID, &language, &runningN)
 	if hasAvatar != 0 {
 		out["avatar_url"] = adventureAvatarURL(slug)
 	}
-	out["published"] = published != 0
+	out["published"] = published
 	out["running_event_count"] = runningN
 	out["language"] = language
-	if orgID.Valid {
-		v := orgID.Int64
-		out["org_id"] = v
+	if ownerOrg.Valid {
+		out["org_id"] = ownerOrg.Int64
 	}
 	// mine_to_edit is the canonical flag the UI keys off for
-	// "show Edit, hide Buy" decisions. Computed against the caller's
-	// auth context, same shape as ListAdventures so the two surfaces
-	// agree. Tracks canAuthor so org_member sees the row but doesn't
-	// see edit affordances — the role can still run events that use
-	// the adventure, just not modify the puzzle content.
-	me, _ := auth.FromContext(r.Context())
-	out["mine_to_edit"] = canAuthor(me, orgID)
+	// "show Edit, hide Buy" decisions. Tracks canAuthor (stricter than
+	// canEdit) so org_member sees the row but doesn't see edit
+	// affordances — the role can still run events that use the
+	// adventure, just not modify the puzzle content.
+	out["mine_to_edit"] = canAuthor(me, ownerOrg)
 	httpx.JSON(w, http.StatusOK, out)
 }
 

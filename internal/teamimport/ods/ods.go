@@ -93,6 +93,28 @@ type odsCell struct {
 // plausible memory exhaustion threshold.
 const maxDecompressedBytes = 50 << 20 // 50 MiB
 
+// maxRowsTotal / maxColsPerRow cap the run-length amplification on
+// the table:number-rows-repeated and table:number-columns-repeated
+// attributes. The XML parser otherwise honours the integer verbatim
+// — a 30-byte attribute like number-rows-repeated="2147483647" runs
+// a 2-billion-iteration append loop, OOMing the worker long before
+// the 50 MiB content.xml cap kicks in (the attribute itself is
+// vanishingly small, the explosion happens in memory).
+//
+// Real-world rosters are at most a few hundred rows × dozens of
+// columns; these caps are two orders of magnitude beyond any
+// legitimate input and explicit enough that an operator can spot the
+// rejection in logs.
+const (
+	maxRowsTotal  = 100_000
+	maxColsPerRow = 10_000
+)
+
+// errRepeatTooLarge is the single error every amplification site
+// returns. Wrapped at the parseContent boundary so the operator sees
+// a coherent reason instead of a torrent of EOF-style noise.
+var errRepeatTooLarge = errors.New("teamimport/ods: row/column repeat count exceeds limit (refusing amplification)")
+
 func (impl) Parse(r io.Reader) ([]teamimport.Team, error) {
 	// archive/zip needs a ReaderAt + size, so buffer the whole
 	// upload first. ODS rosters are tiny — a 5 MiB cap upstream in
@@ -199,10 +221,16 @@ func parseContent(r io.Reader) ([]teamimport.Team, error) {
 			if err := dec.DecodeElement(&row, &start); err != nil {
 				return nil, err
 			}
-			cells := flattenCells(row.Cells)
+			cells, err := flattenCells(row.Cells)
+			if err != nil {
+				return nil, err
+			}
 			repeats := row.RepeatedCount
 			if repeats <= 0 {
 				repeats = 1
+			}
+			if repeats > maxRowsTotal {
+				return nil, errRepeatTooLarge
 			}
 			// Sparse-row collapse: a writer might encode "rows 5–999
 			// are empty" as a single repeated row with no cells.
@@ -210,6 +238,9 @@ func parseContent(r io.Reader) ([]teamimport.Team, error) {
 			// rows slice for nothing — skip empty repeats.
 			if isAllEmpty(cells) {
 				continue
+			}
+			if len(rows)+repeats > maxRowsTotal {
+				return nil, errRepeatTooLarge
 			}
 			for i := 0; i < repeats; i++ {
 				rows = append(rows, cells)
@@ -222,14 +253,22 @@ func parseContent(r io.Reader) ([]teamimport.Team, error) {
 // flattenCells expands repeated-cell run lengths into a flat slice
 // of strings. Non-string cells (numbers, dates) fall back to the
 // office:value attribute so a numeric ID column parses as a name
-// rather than disappearing.
-func flattenCells(cells []odsCell) []string {
+// rather than disappearing. Repeats are capped at maxColsPerRow so
+// an attacker-controlled number-columns-repeated attribute can't
+// drive the slice past sane bounds.
+func flattenCells(cells []odsCell) ([]string, error) {
 	var out []string
 	for _, c := range cells {
 		text := cellText(c)
 		repeats := c.RepeatedCount
 		if repeats <= 0 {
 			repeats = 1
+		}
+		if repeats > maxColsPerRow {
+			return nil, errRepeatTooLarge
+		}
+		if len(out)+repeats > maxColsPerRow {
+			return nil, errRepeatTooLarge
 		}
 		// A run of empty repeated cells at the row-end is a writer
 		// convention for "this row has no more data" — preserving
@@ -240,7 +279,7 @@ func flattenCells(cells []odsCell) []string {
 			out = append(out, text)
 		}
 	}
-	return out
+	return out, nil
 }
 
 func cellText(c odsCell) string {

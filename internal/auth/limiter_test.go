@@ -167,3 +167,37 @@ func makeUser(i int) string {
 	const letters = "abcdefghijklmnopqrstuvwxyz"
 	return string(letters[i%len(letters)]) + string(letters[(i/len(letters))%len(letters)])
 }
+
+// TestLimiter_SweepDropsExpiredEntries confirms the periodic sweeper
+// keeps the in-memory maps from growing unboundedly: a patient
+// attacker rotating fake (ip, user) pairs would otherwise accumulate
+// state forever, eventually OOMing the process. After the lockout
+// window plus the per-pair window have elapsed since the last fail,
+// Sweep should drop the entry.
+func TestLimiter_SweepDropsExpiredEntries(t *testing.T) {
+	now, clock := fakeClock(time.Date(2026, 4, 25, 12, 0, 0, 0, time.UTC))
+	l := NewLoginLimiter()
+	l.now = clock
+
+	for range PairThreshold {
+		l.RecordFailure("1.1.1.1", "alice")
+	}
+	if len(l.perPair) != 1 || len(l.perIP) != 1 {
+		t.Fatalf("setup: want 1 entry each, got pair=%d ip=%d", len(l.perPair), len(l.perIP))
+	}
+
+	// Within the windows — Sweep keeps the rows.
+	*now = now.Add(time.Minute)
+	l.Sweep()
+	if len(l.perPair) != 1 {
+		t.Fatalf("sweep evicted active entry")
+	}
+
+	// Past the lockout AND past PairWindow — Sweep should drop both.
+	*now = now.Add(2 * PairMaxLockout).Add(2 * PairWindow)
+	l.Sweep()
+	if len(l.perPair) != 0 || len(l.perIP) != 0 {
+		t.Fatalf("sweep failed to drop expired entries: pair=%d ip=%d",
+			len(l.perPair), len(l.perIP))
+	}
+}

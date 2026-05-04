@@ -108,7 +108,7 @@ func (h *Handlers) ListAuthEvents(w http.ResponseWriter, r *http.Request) {
 
 	rows, err := h.DB.QueryContext(r.Context(), query, args...)
 	if err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "list failed: "+err.Error())
+		httpx.ServerErr(w, http.StatusInternalServerError, "list failed", err)
 		return
 	}
 	defer rows.Close()
@@ -121,7 +121,7 @@ func (h *Handlers) ListAuthEvents(w http.ResponseWriter, r *http.Request) {
 		)
 		if err := rows.Scan(&e.ID, &e.TS, &e.Event, &ok, &userID,
 			&e.Username, &e.IP, &e.UserAgent, &e.Reason); err != nil {
-			httpx.Error(w, http.StatusInternalServerError, "scan failed: "+err.Error())
+			httpx.ServerErr(w, http.StatusInternalServerError, "scan failed", err)
 			return
 		}
 		e.OK = ok != 0

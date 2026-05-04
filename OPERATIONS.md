@@ -66,6 +66,31 @@ Emergency revocation: `zv -revoke-sessions all` drops every staff +
 slot session, forcing every user to re-authenticate. Scope to one user
 with `zv -revoke-sessions <username>`.
 
+## Login throttling
+
+Failed-login state — the per-(ip, username) and per-ip lockout counters
+that slow down credential-stuffing — lives **in process memory only**.
+A restart (deploy, container recycle, OOM kill) wipes the counters and
+gives a patient attacker a clean slate.
+
+This is fine for the supported single-instance topology: lockouts of
+the order of an hour matter much more than counters that survive a
+weekly redeploy, and the in-memory implementation has zero dependencies
+to fail.
+
+If you run multiple replicas, or you want lockouts to survive restarts:
+
+- Front the app with a reverse proxy (nginx, Caddy, Traefik) and use
+  its rate-limit module against `/api/auth/login` and
+  `/api/auth/forgot`. The proxy keeps state across app restarts and
+  shares it across replicas natively.
+- Or: pin the deployment to one replica and accept the restart wipe.
+
+Either way, keep `ZV_PUBLIC_URL` set to your real origin so password
+reset / verification mails carry working links — `X-Forwarded-For`
+must reach the app for the per-IP bucket to identify the right caller
+(see `auth.ClientIP` for the parsing rule: leftmost XFF entry wins).
+
 ## Two-factor authentication (TOTP)
 
 Optional, opt-in per user. Requires a server-side secret to wrap each

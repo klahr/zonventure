@@ -6,23 +6,32 @@
 //   1. Install: cache the play page + i18n + the few static assets
 //      the page pulls in. The shell is what makes the app *load*
 //      offline at all.
-//   2. Message handler: when the page sends {type:'prefetch', urls},
-//      cache.addAll() those URLs (puzzle images, audio, hint media).
-//      Individual failures (a 403 from a reveal-gated hint asset, a
-//      transient 5xx) are swallowed so the whole prefetch doesn't
-//      abort on one missing item.
+//   2. Message handler: when the page sends {type:'prefetch', team_id, urls},
+//      cache.addAll() those URLs into the team's asset cache. Per-team
+//      partitioning matters: without it, Team A's prefetched bytes
+//      would serve cache-first to Team B on a shared device and
+//      bypass the server-side canViewPageImage gate (which is also
+//      what the adventures.strict_assets column gates server-side).
 //   3. Fetch handler: cache-first for /adventure-assets/* (immutable
-//      blobs keyed by id, so a cache hit is always correct); network
-//      -first with cache fallback for the app shell (so a fresh
-//      deploy reaches users while still leaving offline users with
-//      *some* working UI).
+//      blobs keyed by id, so a cache hit is always correct, AND the
+//      cache is keyed by team) — network-first with cache fallback
+//      for the app shell.
 //
 // Cache version is baked into the SW source — bumping the constant
 // rotates the cache key, which causes activate's purge of any older
 // caches to clean up after a deploy.
 
 const SHELL_CACHE = 'zv-play-shell-v1';
-const ASSET_CACHE = 'zv-play-assets-v1';
+const ASSET_PREFIX = 'zv-play-assets-';
+const ASSET_SUFFIX = '-v1';
+
+// activeTeamID is mirrored into a sentinel cache entry below so it
+// survives SW restarts. The page re-sends {type: 'prefetch'} on every
+// load so this is also refreshed at session start, but the persistent
+// copy keeps the fetch handler honest if the SW wakes for a fetch
+// before the page's prefetch message arrives.
+let activeTeamID = null;
+const SLOT_SENTINEL = '/__zv_active_team__';
 
 // Files to pre-cache on install. The play page itself is fetched
 // network-first so a fresh deploy reaches users; we still cache it on
@@ -34,6 +43,53 @@ const SHELL_URLS = [
   '/i18n.js',
   '/favicon.svg',
 ];
+
+function teamCacheName(teamID) {
+  return ASSET_PREFIX + String(teamID) + ASSET_SUFFIX;
+}
+
+// loadActiveTeamID reads the sentinel cache entry the message handler
+// writes on every prefetch. Lets the fetch handler recover the active
+// team on SW restart without waiting for the page to message us first.
+async function loadActiveTeamID() {
+  if (activeTeamID != null) return activeTeamID;
+  try {
+    const cache = await caches.open(SHELL_CACHE);
+    const hit = await cache.match(SLOT_SENTINEL);
+    if (!hit) return null;
+    const body = await hit.json();
+    if (body && Number.isFinite(body.team_id)) {
+      activeTeamID = body.team_id;
+      return activeTeamID;
+    }
+  } catch (_) { /* fall through */ }
+  return null;
+}
+
+async function setActiveTeamID(teamID) {
+  if (!Number.isFinite(teamID)) return;
+  if (activeTeamID === teamID) return;
+  activeTeamID = teamID;
+  // Persist for the next SW wake-up.
+  try {
+    const cache = await caches.open(SHELL_CACHE);
+    await cache.put(SLOT_SENTINEL,
+      new Response(JSON.stringify({ team_id: teamID }), {
+        headers: { 'Content-Type': 'application/json' },
+      }));
+  } catch (_) { /* best-effort */ }
+  // Sweep any per-team asset caches that don't match the new active
+  // team. A shared device that swaps between teams should not retain
+  // the previous team's prefetched bytes — that's the whole point of
+  // partitioning the cache here.
+  try {
+    const names = await caches.keys();
+    const keep = teamCacheName(teamID);
+    await Promise.all(names
+      .filter((n) => n.startsWith(ASSET_PREFIX) && n !== keep)
+      .map((n) => caches.delete(n)));
+  } catch (_) { /* best-effort */ }
+}
 
 self.addEventListener('install', (ev) => {
   ev.waitUntil((async () => {
@@ -49,10 +105,15 @@ self.addEventListener('install', (ev) => {
 
 self.addEventListener('activate', (ev) => {
   ev.waitUntil((async () => {
-    // Sweep older caches when the version constant rolls forward.
-    const keep = new Set([SHELL_CACHE, ASSET_CACHE]);
+    // Sweep older shell caches when the version constant rolls
+    // forward. Per-team asset caches (zv-play-assets-{id}-v1) are
+    // managed separately by setActiveTeamID — leave them alone here
+    // so a player who hasn't reloaded the page yet keeps offline
+    // access to their assets through a deploy.
     const names = await caches.keys();
-    await Promise.all(names.filter((n) => !keep.has(n)).map((n) => caches.delete(n)));
+    await Promise.all(names
+      .filter((n) => n !== SHELL_CACHE && !n.startsWith(ASSET_PREFIX))
+      .map((n) => caches.delete(n)));
     await self.clients.claim();
   })());
 });
@@ -60,7 +121,12 @@ self.addEventListener('activate', (ev) => {
 self.addEventListener('message', (ev) => {
   const data = ev.data || {};
   if (data.type === 'prefetch' && Array.isArray(data.urls)) {
-    ev.waitUntil(prefetchAssets(data.urls));
+    ev.waitUntil((async () => {
+      if (Number.isFinite(data.team_id)) await setActiveTeamID(data.team_id);
+      const teamID = await loadActiveTeamID();
+      if (teamID == null) return; // no slot context — refuse to cache
+      await prefetchAssets(teamCacheName(teamID), data.urls);
+    })());
   } else if (data.type === 'skipWaiting') {
     self.skipWaiting();
   }
@@ -73,8 +139,8 @@ self.addEventListener('message', (ev) => {
 // not a hard error. opaque/redirected responses are skipped because
 // the Cache API stores them but they re-serve as `network-error`
 // next time which is worse than a cache miss.
-async function prefetchAssets(urls) {
-  const cache = await caches.open(ASSET_CACHE);
+async function prefetchAssets(cacheName, urls) {
+  const cache = await caches.open(cacheName);
   // Limit concurrency: a fresh team-join shouldn't fire 200 parallel
   // requests at the server; trickle them six at a time.
   const queue = urls.slice();
@@ -101,17 +167,16 @@ self.addEventListener('fetch', (ev) => {
   if (url.origin !== self.location.origin) return;
 
   if (url.pathname.startsWith('/adventure-assets/')) {
-    ev.respondWith(cacheFirst(req, ASSET_CACHE));
+    ev.respondWith(teamScopedCacheFirst(req));
     return;
   }
-  // Org brand logo — same cache-first treatment as adventure
-  // assets so an offline reload still paints the brand strip.
-  // The bytes are bound to a numeric org id so the URL is stable
-  // across re-uploads (the cache-bust on upload is handled at the
-  // arranger console layer, separate from the player's offline
-  // store).
+  // Org brand logo — cache against the active team so a shared
+  // device doesn't serve org A's logo to org B's player. Bytes are
+  // bound to a numeric org id so the URL is stable across re-uploads
+  // (the cache-bust on upload is handled at the arranger console
+  // layer, separate from the player's offline store).
   if (url.pathname.startsWith('/org-logo/')) {
-    ev.respondWith(cacheFirst(req, ASSET_CACHE));
+    ev.respondWith(teamScopedCacheFirst(req));
     return;
   }
   if (url.pathname === '/play' || url.pathname === '/i18n.js' || url.pathname === '/favicon.svg') {
@@ -123,6 +188,21 @@ self.addEventListener('fetch', (ev) => {
   // either idempotent reads (which the page can re-issue on
   // reconnect) or mutations (which go through the offline queue).
 });
+
+// teamScopedCacheFirst routes the request through the active team's
+// asset cache. If we don't yet know which team the client belongs to
+// (very first paint, or a SW that hasn't seen a prefetch message
+// since a cold restart), we pass the request straight to the network
+// without caching — the server still enforces canViewPageImage, so
+// nothing leaks; the device just won't have offline assets until the
+// page next runs registerOfflineCache.
+async function teamScopedCacheFirst(req) {
+  const teamID = await loadActiveTeamID();
+  if (teamID == null) {
+    return fetch(req);
+  }
+  return cacheFirst(req, teamCacheName(teamID));
+}
 
 async function cacheFirst(req, cacheName) {
   const cache = await caches.open(cacheName);

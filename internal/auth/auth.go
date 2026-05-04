@@ -223,6 +223,12 @@ func VerifyPassword(ctx context.Context, db *sql.DB, identifier, password string
 	}
 	u.PasswordIsDefault = pwIsDefault != 0
 	if errors.Is(err, sql.ErrNoRows) {
+		// Equalise response time with the user-found branch by running
+		// the same Argon2id work against a sentinel hash. Without this
+		// the no-row path returns in ~1 ms, the matched-user path in
+		// ~50 ms, and a network observer can mine valid identifiers
+		// despite the rate limiter.
+		SpendVerifyTime(password)
 		return User{}, ErrInvalidCredentials
 	}
 	if err != nil {

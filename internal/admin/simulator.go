@@ -22,10 +22,21 @@ import (
 // targets. Org-bound users get their own org. A global admin has no
 // org binding, so we anchor on the first org in the system to keep
 // the behavior the same one-click dev tool it always was.
+//
+// SECURITY: lobby users (signed-up, no org membership yet) must NOT
+// reach the first-org fallback — that would let any signed-up
+// account start/pause/reset a simulator inside someone else's org.
+// The route group still includes RoleLobby for lifecycle reasons
+// (lobby users will graduate to org_member once they accept an
+// invite or create their own org), so the guard lives here at the
+// org-resolution step.
 func (h *Handlers) callerOrgID(r *http.Request) (int64, error) {
 	me, _ := auth.FromContext(r.Context())
 	if me.OrgID != nil && *me.OrgID > 0 {
 		return *me.OrgID, nil
+	}
+	if !me.IsAdmin {
+		return 0, errors.New("simulator requires an organisation; create or join one first")
 	}
 	var orgID int64
 	if err := h.DB.QueryRowContext(r.Context(),
@@ -135,7 +146,7 @@ func (h *Handlers) SimulatorReset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.Sim.Reset(r.Context(), orgID); err != nil {
-		httpx.Error(w, http.StatusInternalServerError, err.Error())
+		httpx.ServerErr(w, http.StatusInternalServerError, "reset failed", err)
 		return
 	}
 	httpx.JSON(w, http.StatusOK, h.Sim.Status(orgID))

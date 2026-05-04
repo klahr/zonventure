@@ -1719,6 +1719,21 @@ function handleAnswerError(d) {
     return;
   }
 
+  if (status === 409) {
+    // The team's current_page_index moved out from under us — another
+    // slot on the same team submitted a winning answer or advance
+    // simultaneously. The server has rolled back our duplicate
+    // activity row; the winning slot's hub broadcast is en route and
+    // will push a fresh `state` frame within a tick. Don't flash an
+    // error in the meantime — silently let the next state render
+    // catch the player up to the new page.
+    if (submitResultEl) {
+      submitResultEl.className = 'result muted';
+      submitResultEl.textContent = '';
+    }
+    return;
+  }
+
   // Generic fallback: keep the legacy gated rebuff for parity with the
   // pre-existing flow when the server gives back something we don't
   // specifically classify. Server error string is run through t()
@@ -4038,7 +4053,11 @@ async function registerOfflineCache() {
     const m = await api('/api/player/manifest');
     if (m.status !== 200 || !m.body?.urls) return;
     const sw = navigator.serviceWorker.controller || reg.active;
-    if (sw) sw.postMessage({ type: 'prefetch', urls: m.body.urls });
+    // team_id partitions the SW's asset cache so a shared device
+    // (kiosk, family iPad, sequential teams in the same browser)
+    // can't serve Team A's prefetched bytes to Team B and bypass the
+    // server-side canViewPageImage gate.
+    if (sw) sw.postMessage({ type: 'prefetch', team_id: m.body.team_id, urls: m.body.urls });
   } catch (_) { /* offline already, or SW disallowed — ignore */ }
 }
 

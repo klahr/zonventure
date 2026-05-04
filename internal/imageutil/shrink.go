@@ -28,6 +28,22 @@ import (
 // JPEG re-encoding.
 const DefaultMaxDim = 512
 
+// MaxInputPixels caps the source image's declared dimensions before
+// image.Decode allocates a pixel buffer. A small (~5 KB) PNG can
+// declare 50000×50000 pixels in its IHDR — image.Decode would then
+// try to allocate ~10 GB of RGBA and OOM the process. 25 megapixels
+// is roughly a 5K-by-5K image, plenty for any phone photo or scan
+// before downscaling. Reachable via every authoring upload (puzzle
+// images, avatars, covers, logos) AND the unauthenticated team-
+// avatar-by-token surface, so failing fast at this layer protects
+// the public attack surface too.
+const MaxInputPixels = 25_000_000
+
+// ErrPixelBomb is returned when a decoded image's declared dimensions
+// exceed MaxInputPixels. Surfaces as a 400 at upload sites since the
+// caller chose the file.
+var ErrPixelBomb = errors.New("image dimensions too large")
+
 // Shrink caps both dimensions of an image at maxDim, preserving aspect
 // ratio, and ALWAYS re-encodes the result as JPEG. Returns the new
 // bytes + "image/jpeg".
@@ -95,6 +111,18 @@ func ShrinkPNG(data []byte, maxDim int) ([]byte, string, error) {
 func decodeAndResize(data []byte, maxDim int) (*image.RGBA, error) {
 	if maxDim <= 0 {
 		return nil, errors.New("maxDim must be > 0")
+	}
+	// Pixel-bomb pre-check. DecodeConfig parses just the image header,
+	// so the dimensions check happens before image.Decode reaches the
+	// allocator. Without this gate, a few KB of attacker bytes can
+	// push the process past its memory limits.
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(data))
+	if err != nil {
+		return nil, err
+	}
+	if cfg.Width <= 0 || cfg.Height <= 0 ||
+		int64(cfg.Width)*int64(cfg.Height) > int64(MaxInputPixels) {
+		return nil, ErrPixelBomb
 	}
 	img, _, err := image.Decode(bytes.NewReader(data))
 	if err != nil {

@@ -7,13 +7,43 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
-	"strings"
 	"time"
 
 	"git.sr.ht/~klahr/zv/internal/logx"
 )
+
+// pinnedDialIPKey is the request-context key carrying the IP we want
+// the Transport.DialContext to bind. The send() path stamps this
+// before calling Client.Do; the dialer below honours it for the
+// outbound connect, dialing the literal address rather than re-
+// resolving the hostname (which would re-open the DNS-rebinding
+// window the SSRF gate exists to close).
+type pinnedDialIPKey struct{}
+
+// pinnedDialer is the package-level Dialer reused by every send. The
+// timeout matches the previous default Transport budget; sharing the
+// instance across requests lets Go's net stack pool resolver state.
+var pinnedDialer = &net.Dialer{Timeout: 10 * time.Second}
+
+// dialPinned is installed as Transport.DialContext on the shared
+// Worker.Client. When the request context carries a pinnedDialIPKey,
+// it dials that IP literal with the original port from `address`;
+// otherwise it falls back to the default resolution path (used for
+// loopback dev connections where pinning is overkill).
+func dialPinned(ctx context.Context, network, address string) (net.Conn, error) {
+	ip, ok := ctx.Value(pinnedDialIPKey{}).(string)
+	if !ok || ip == "" {
+		return pinnedDialer.DialContext(ctx, network, address)
+	}
+	_, port, err := net.SplitHostPort(address)
+	if err != nil {
+		return nil, err
+	}
+	return pinnedDialer.DialContext(ctx, network, net.JoinHostPort(ip, port))
+}
 
 // MaxAttempts is the cap before a delivery is dead-lettered. With the
 // backoff schedule below, 6 attempts span ~36 hours — long enough to
@@ -96,6 +126,14 @@ func (w *Worker) Run(ctx context.Context) {
 			Timeout: 30 * time.Second,
 			CheckRedirect: func(*http.Request, []*http.Request) error {
 				return http.ErrUseLastResponse
+			},
+			Transport: &http.Transport{
+				DialContext:           dialPinned,
+				ForceAttemptHTTP2:     true,
+				MaxIdleConns:          50,
+				IdleConnTimeout:       90 * time.Second,
+				TLSHandshakeTimeout:   10 * time.Second,
+				ExpectContinueTimeout: 1 * time.Second,
 			},
 		}
 	}
@@ -289,12 +327,19 @@ func (w *Worker) send(ctx context.Context, target, secret, kind, deliveryUUID st
 		return 0, fmt.Errorf("invalid stored url: %w", err)
 	}
 	host := parsed.Hostname()
-	loopback := host == "localhost" || host == "127.0.0.1" || host == "::1" ||
-		strings.HasPrefix(host, "127.")
-	if !loopback {
-		if err := ValidateHost(host); err != nil {
+	if !IsLoopbackHost(host) {
+		// Resolve once and pin the literal IP onto the request
+		// context. The Transport's DialContext (dialPinned) reads
+		// the value and connects to that exact address — without it,
+		// the default resolver would re-resolve the hostname at dial
+		// time and a TTL-flip / DNS-rebinding flip between this
+		// LookupPublic call and the connect could land on an
+		// internal IP.
+		ip, err := LookupPublic(host)
+		if err != nil {
 			return 0, fmt.Errorf("ssrf gate: %w", err)
 		}
+		ctx = context.WithValue(ctx, pinnedDialIPKey{}, ip.String())
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, target, bytes.NewReader(body))
 	if err != nil {
