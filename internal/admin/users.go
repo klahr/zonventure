@@ -216,6 +216,7 @@ func (h *Handlers) AdventureDetail(w http.ResponseWriter, r *http.Request) {
 		Audio      []audioDTO              `json:"audio,omitempty"`
 		Hints      []hintDTO               `json:"hints,omitempty"`
 		Disabled   bool                    `json:"disabled,omitempty"`
+		LaneID     int64                   `json:"lane_id,omitempty"`
 	}
 	pages := make([]pageDTO, len(adv.Pages))
 	for i, p := range adv.Pages {
@@ -267,6 +268,7 @@ func (h *Handlers) AdventureDetail(w http.ResponseWriter, r *http.Request) {
 			Audio:      audio,
 			Hints:      hints,
 			Disabled:   p.Disabled,
+			LaneID:     p.LaneID,
 		}
 	}
 	// Strip puzzle solutions for non-editor callers (catalog browsers,
@@ -311,6 +313,13 @@ func (h *Handlers) AdventureDetail(w http.ResponseWriter, r *http.Request) {
 	// affordances — the role can still run events that use the
 	// adventure, just not modify the puzzle content.
 	out["mine_to_edit"] = canAuthor(me, ownerOrg)
+	// Lanes ride alongside pages so the catalog detail view can
+	// visualise the lane structure (header + name + mode) instead
+	// of rendering one undifferentiated puzzle list. Single-lane
+	// adventures still render flat client-side.
+	if lanes, err := loadAdventureLanes(r.Context(), h.DB, adv.ID); err == nil {
+		out["lanes"] = lanes
+	}
 	httpx.JSON(w, http.StatusOK, out)
 }
 

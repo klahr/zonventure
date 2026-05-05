@@ -5802,7 +5802,55 @@ async function viewAdventureDetail(view, slug) {
     mapHost);
 
   // ---- Puzzle cards ----
-  const puzzleCards = enabled.map((p, i) => renderPuzzleCard(p, i, { mode: 'detail' }));
+  // Lane-aware grouping: single-lane (or unset) adventures keep the
+  // flat list — that's the legacy default and adding chrome would
+  // just be noise. Multi-lane adventures render each lane as its
+  // own subsection with a small header (name + mode pill +
+  // puzzle count) so the catalog browser sees the lane structure
+  // before they buy.
+  const lanes = (a.lanes || []).slice().sort((x, y) => x.idx - y.idx);
+  const renderDetailLaneHeader = (lane, count) => h('div', {
+    class: 'adv-lane-head',
+    style: 'display:flex; gap:.6rem; align-items:baseline; margin:1.25rem 0 .5rem; flex-wrap:wrap',
+  },
+    h('h3', { class: 'adv-section-h', style: 'margin:0' },
+      lane.name || t('Lane {{n}}', { n: lane.idx + 1 })),
+    h('span', { class: 'lane-mode-pill' + (lane.mode === 'shuffled' ? ' shuffled' : ''),
+      style: 'cursor:default' },
+      lane.mode === 'shuffled' ? t('Shuffled') : t('Linear')),
+    h('span', { class: 'muted', style: 'font-size:.85rem' },
+      t('Puzzles ({{n}})', { n: count })),
+  );
+  let puzzleSection;
+  if (lanes.length <= 1) {
+    const cards = enabled.map((p, i) => renderPuzzleCard(p, i, { mode: 'detail' }));
+    puzzleSection = h('div', { class: 'adv-puzzles' }, ...cards);
+  } else {
+    const pagesByLane = new Map();
+    for (const ln of lanes) pagesByLane.set(ln.id, []);
+    const orphans = [];
+    for (const p of enabled) {
+      const bucket = pagesByLane.get(p.lane_id);
+      if (bucket) bucket.push(p);
+      else orphans.push(p);
+    }
+    const parts = [];
+    let globalIdx = 0;
+    for (const lane of lanes) {
+      const lp = pagesByLane.get(lane.id) || [];
+      if (lp.length === 0) continue;
+      const cards = lp.map((p) => renderPuzzleCard(p, globalIdx++, { mode: 'detail' }));
+      parts.push(renderDetailLaneHeader(lane, lp.length));
+      parts.push(h('div', { class: 'adv-puzzles' }, ...cards));
+    }
+    if (orphans.length > 0) {
+      const cards = orphans.map((p) => renderPuzzleCard(p, globalIdx++, { mode: 'detail' }));
+      parts.push(h('h3', { class: 'adv-section-h muted-fallback', style: 'margin:1.25rem 0 .5rem' },
+        t('Unassigned')));
+      parts.push(h('div', { class: 'adv-puzzles' }, ...cards));
+    }
+    puzzleSection = h('div', {}, ...parts);
+  }
 
   // ---- Simulator card ----
   // Only meaningful once there's at least one enabled puzzle to walk
@@ -5822,7 +5870,7 @@ async function viewAdventureDetail(view, slug) {
     mapCard,
     simHost,
     h('h2', { style: 'margin-top:1.5rem' }, t('Puzzles')),
-    h('div', { class: 'adv-puzzles' }, ...puzzleCards),
+    puzzleSection,
   ].filter(Boolean));
 
   // Mount the map after the DOM lands so Leaflet has a sized
