@@ -125,6 +125,12 @@ type adventureEditDTO struct {
 	Author               string      `json:"author"`
 	IntroText            string      `json:"intro_text"`
 	OutroText            string      `json:"outro_text"`
+	// IntroHTML / OutroHTML are the goldmark-rendered siblings of
+	// IntroText / OutroText — same shape pageView uses for prompt_html.
+	// The arranger UI (and any future read surface) renders the HTML
+	// instead of dumping the raw markdown source as plain text.
+	IntroHTML            string      `json:"intro_html,omitempty"`
+	OutroHTML            string      `json:"outro_html,omitempty"`
 	AccentColor          string      `json:"accent_color"`
 	AccentSecondaryColor string      `json:"accent_secondary_color"`
 	BackgroundColor      string      `json:"background_color"`
@@ -710,6 +716,12 @@ func loadAdventureDTO(ctx context.Context, db *sql.DB, slug string) (*adventureE
 	}
 	if hasAvatar != 0 {
 		a.AvatarURL = adventureAvatarURL(a.Slug)
+	}
+	if a.IntroText != "" {
+		a.IntroHTML = mdx.Render(a.IntroText)
+	}
+	if a.OutroText != "" {
+		a.OutroHTML = mdx.Render(a.OutroText)
 	}
 	rows, err := db.QueryContext(ctx, `
 		SELECT id, idx, title, prompt, accept, lat, lng, radius_m, disabled, notes, lane_id

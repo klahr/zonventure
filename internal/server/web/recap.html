@@ -282,7 +282,9 @@ function render(d) {
   root.append(head);
 
   if (d.outro_text && d.outro_text.trim()) {
-    root.append(el('div', { class: 'outro' }, d.outro_text));
+    // Server pre-renders the markdown via goldmark, so drop the HTML
+    // straight into innerHTML — same approach play.html uses.
+    root.append(el('div', { class: 'outro', html: d.outro_text }));
   }
 
   root.append(el('div', { class: 'stats' },

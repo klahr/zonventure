@@ -122,6 +122,14 @@
        fallback keeps the default white-on-accent contrast. */
     color: var(--submit-bg, var(--accent-fg));
   }
+  /* Empty-input + rate-limit lockout share this style — the user
+     should see "you can't tap me right now" without having to try.
+     Browsers grey out by default, but at the dock's brand colour
+     that's barely visible, so reinforce with explicit opacity. */
+  .submit-dock button:disabled {
+    opacity: .45;
+    cursor: not-allowed;
+  }
   .submit-dock .qr-btn {
     display: inline-flex; align-items: center; justify-content: center;
     padding: 0 .85rem;
@@ -208,28 +216,39 @@
      Adventure title + team name moved into the hamburger drawer
      because they're set-once context, not in-the-moment info — the
      player already knows what they joined and which team they're on. */
-  /* Brand strip — sits above the runbar when the owning org has a
-     logo (or name). Subtle so it reads as chrome, not content.
-     Hidden when both org_logo_url and org_name are empty (the
-     orgless / preview-without-org case) so an unbranded play page
-     stays clean rather than carrying a generic platform mark. */
-  .brand-strip {
-    display: flex; align-items: center; gap: .5rem;
-    padding: .35rem .15rem;
-    margin: 0 0 .25rem;
-    border-bottom: 1px solid var(--border-soft);
-    min-height: 1.85rem;
+  /* Brand pieces inside the runbar — render the owning org's logo +
+     name on the right of the toolbar so the chrome row carries it
+     instead of taking its own row. Saves the ~2rem the previous
+     standalone strip ate, which lets the puzzle content sit higher
+     on small phones. Hidden when both org_logo_url and org_name are
+     empty (orgless / preview-without-org). The name truncates on
+     narrow widths so the hamburger / progress / hint button keep
+     their layout priority. */
+  .runbar-brand {
+    display: flex; align-items: center; gap: .4rem;
+    min-width: 0;
   }
-  .brand-strip-logo {
+  .runbar-brand-logo {
     max-height: 22px;
-    max-width: 140px;
+    max-width: 96px;
     object-fit: contain;
     display: block;
+    flex-shrink: 0;
   }
-  .brand-strip-name {
+  .runbar-brand-name {
     font-weight: 700;
     font-size: .85rem;
     color: var(--ink);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+  }
+  /* Hide the org name on narrow phones so the runbar doesn't
+     overflow; the logo (when present) is enough brand presence. On
+     name-only orgs we keep the name visible and let it ellipsize. */
+  @media (max-width: 420px) {
+    .runbar-brand.has-logo .runbar-brand-name { display: none; }
   }
   .runbar {
     display: flex; align-items: center; justify-content: space-between;
@@ -1759,6 +1778,25 @@ function setSubmitDisabled(disabled) {
   dock.querySelectorAll('button, input').forEach((el) => {
     el.disabled = !!disabled;
   });
+  // On re-enable, the typed-answer submit button should remain
+  // disabled when the input is empty — otherwise lifting a 429
+  // cooldown would re-arm submit even with nothing typed, which
+  // contradicts the empty-input lockout.
+  if (!disabled) updateAnswerSubmitState();
+}
+
+// updateAnswerSubmitState gates the typed-answer submit button on
+// "input has non-whitespace content". Called from the input event
+// listener (set up in renderSubmitDock) and from setSubmitDisabled
+// when a rate-limit cooldown lifts. No-op for the no-answer dock
+// (which has no input[name="a"]) and the spoiler-free dock (same).
+function updateAnswerSubmitState() {
+  const dock = document.getElementById('submit-dock');
+  if (!dock) return;
+  const input = dock.querySelector('input[name="a"]');
+  const btn = dock.querySelector('button[type="submit"]');
+  if (!input || !btn) return;
+  btn.disabled = !input.value.trim();
 }
 
 // applyColors paints the adventure brand accents onto the puzzle scope
@@ -2360,29 +2398,32 @@ function renderGpsHelp() {
 // When only one is set we fall back to a single-piece strip (logo OR
 // name on the left). Returns null when neither is available so an
 // unbranded play page stays clean.
-function renderBrandStrip(s) {
+// renderRunbarBrand produces the right-aligned org chrome that
+// rides on the runbar (hamburger / progress / hint share the same
+// row). Keeping logo + name on a single line — instead of the
+// previous standalone strip — gives the puzzle ~2rem more vertical
+// real estate, which the user explicitly asked for on small
+// screens. Returns null when the org has no logo and no name set so
+// the runbar doesn't grow an empty trailing slot.
+function renderRunbarBrand(s) {
   const logo = s && s.org_logo_url ? s.org_logo_url : '';
   const name = s && s.org_name ? s.org_name.trim() : '';
   if (!logo && !name) return null;
+  const hostClass = 'runbar-brand' + (logo ? ' has-logo' : '');
   if (logo && name) {
-    return el('div', { class: 'brand-strip' },
-      el('img', {
-        class: 'brand-strip-logo',
-        src: logo,
-        alt: name,
-      }),
-      el('span', { class: 'brand-strip-spacer', style: 'flex:1' }),
-      el('span', { class: 'brand-strip-name' }, name),
+    return el('div', { class: hostClass },
+      el('img', { class: 'runbar-brand-logo', src: logo, alt: name }),
+      el('span', { class: 'runbar-brand-name' }, name),
     );
   }
-  return el('div', { class: 'brand-strip' },
+  return el('div', { class: hostClass },
     logo
       ? el('img', {
-          class: 'brand-strip-logo',
+          class: 'runbar-brand-logo',
           src: logo,
           alt: t('Organization logo'),
         })
-      : el('span', { class: 'brand-strip-name' }, name),
+      : el('span', { class: 'runbar-brand-name' }, name),
   );
 }
 
@@ -2420,19 +2461,14 @@ function render(s) {
   hintTickerAnchor = Date.now();
 
   app.replaceChildren();
-  // Brand strip — when the operator has uploaded a logo for the
-  // owning org, paint it above the runbar so participants in a
-  // corporate event see "powered by Acme" rather than the generic
-  // Zonventure mark. Subtle styling on purpose: the strip should
-  // read as a brand chrome, not compete with the puzzle content.
-  // Falls back to the org name as text when only that's available.
-  const brand = renderBrandStrip(s);
-  if (brand) app.append(brand);
   const playing = s.status === 'running';
   const hintBtn = playing ? renderHintButton(s) : null;
-  // Runbar layout: [☰] [progress] [hint?]. Hamburger on the left
-  // (matches GitHub / Slack mobile patterns); progress in the
-  // middle via flex space-between distribution; hint on the right.
+  // Runbar layout: [☰] [progress] [hint?] [brand?]. Hamburger on
+  // the left (matches GitHub / Slack mobile patterns); progress in
+  // the middle via flex space-between distribution; hint and the
+  // owning-org brand chrome (logo + name) on the right. The brand
+  // shares this row instead of getting its own strip above so the
+  // puzzle content sits ~2rem higher on small screens.
   // The state pill was removed earlier — main content already
   // conveys state (waiting card / paused paragraph / completion
   // summary). Title + team moved into the hamburger drawer.
@@ -2450,7 +2486,12 @@ function render(s) {
     : el('span', { class: 'progress empty' }, '');
   const actions = el('div', { class: 'actions' });
   if (hintBtn) actions.append(hintBtn);
-  const bar = el('div', { class: 'runbar' }, buildMenuButton(s), progress, actions);
+  const brand = renderRunbarBrand(s);
+  const bar = el('div', { class: 'runbar' },
+    buildMenuButton(s),
+    progress,
+    actions,
+    ...(brand ? [brand] : []));
   app.append(bar);
 
   // Welcome screen shown once per (adventure, team, slot). Runs
@@ -3030,6 +3071,14 @@ function renderSubmitDock(s) {
   const button = document.createElement('button');
   button.type = 'submit';
   button.textContent = t('Submit');
+  // Initial lockout: the input is freshly created and empty, so the
+  // submit button starts disabled. Toggling on every keystroke keeps
+  // the lockout honest — paste, IME composition, and cut all fire
+  // 'input' events. updateAnswerSubmitState is also called by
+  // setSubmitDisabled(false) so a rate-limit cooldown can't re-arm
+  // submit while the field stays empty.
+  button.disabled = !input.value.trim();
+  input.addEventListener('input', updateAnswerSubmitState);
   const result = document.createElement('p');
   result.className = 'result muted';
   // aria-live so the rate-limit countdown / "saved while offline" /
@@ -3055,6 +3104,12 @@ function renderSubmitDock(s) {
   submitResultEl = result;
   form.addEventListener('submit', (e) => {
     e.preventDefault();
+    // Empty-input guard. The submit button is disabled when the
+    // input is empty (see updateAnswerSubmitState), but pressing
+    // Enter inside the input can still fire a form submit in some
+    // browsers even with the button disabled. Bail before the WS
+    // round-trip rather than asking the server to reject a blank.
+    if (!input.value.trim()) return;
     if (previewState) { handlePreviewSubmit(input.value); return; }
     if (!wsSendOrQueue('answer', { answer: input.value })) {
       // Queued — clear the input optimistically so the player can

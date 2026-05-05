@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"git.sr.ht/~klahr/zv/internal/httpx"
+	"git.sr.ht/~klahr/zv/internal/mdx"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -125,7 +126,11 @@ func (h *Handlers) Recap(w http.ResponseWriter, r *http.Request) {
 		TeamName:       teamName,
 		AdventureTitle: adv.Meta.Title,
 		AdventureSlug:  adv.Slug,
-		OutroText:      adv.Meta.OutroText,
+		// Pre-render to HTML so the recap page can drop it into
+		// innerHTML and the author's markdown actually renders. Same
+		// goldmark pipeline puzzle prompts and the player intro/outro
+		// already use.
+		OutroText:      mdx.Render(adv.Meta.OutroText),
 		StartedAt:      startedAt.String,
 		PageCount:      len(adv.Pages),
 		State:          state,

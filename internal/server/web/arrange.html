@@ -5787,15 +5787,25 @@ async function viewAdventureDetail(view, slug) {
   // ---- Description / intro / outro ----
   const story = h('section', { class: 'adv-story' });
   if (a.description) story.append(h('p', { class: 'adv-desc' }, a.description));
+  // Prefer the server-rendered HTML siblings (intro_html / outro_html)
+  // — same goldmark output the player surface uses for puzzle prompts.
+  // Falls back to the raw text if a stale server is missing the HTML
+  // fields, so opening an old API response doesn't render blank.
   if (a.intro_text && a.intro_text.trim()) {
+    const introHost = h('div', { class: 'adv-prose' });
+    if (a.intro_html) introHost.innerHTML = a.intro_html;
+    else introHost.textContent = a.intro_text;
     story.append(
       h('h3', { class: 'adv-section-h' }, t('Intro shown to players')),
-      h('div', { class: 'adv-prose' }, a.intro_text));
+      introHost);
   }
   if (a.outro_text && a.outro_text.trim()) {
+    const outroHost = h('div', { class: 'adv-prose' });
+    if (a.outro_html) outroHost.innerHTML = a.outro_html;
+    else outroHost.textContent = a.outro_text;
     story.append(
       h('h3', { class: 'adv-section-h' }, t('Outro on completion')),
-      h('div', { class: 'adv-prose' }, a.outro_text));
+      outroHost);
   }
 
   // ---- Adventure-wide map ----
