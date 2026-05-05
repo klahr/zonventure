@@ -10730,13 +10730,12 @@ function renderLibraryEdit(view, adv) {
     section.addEventListener('mouseleave', () => { if (!laneDrag) section.draggable = false; });
     section.addEventListener('dragstart', (e) => {
       // dragstart bubbles. When the user grabs a puzzle card inside
-      // this section, the card's own listener has already set
-      // pageDrag and the browser has begun a card drag; we must NOT
-      // call preventDefault on the bubbled event — that cancels the
-      // card drag entirely. Only act when the section itself is the
-      // drag source (the lane-grip mousedown set section.draggable
-      // = true and the user grabbed the section, not a card inside).
-      if (e.target !== section) return;
+      // this section, the card's own listener has already run and
+      // set pageDrag — bail so we don't claim this drag as a lane
+      // drag. e.target isn't a usable discriminator here: when the
+      // user grabs the grip the browser sets e.target to the grip
+      // (or its SVG child), not the section itself.
+      if (pageDrag) return;
       laneDrag = { section };
       section.classList.add('drag-ghost');
       e.dataTransfer.effectAllowed = 'move';
@@ -10758,6 +10757,52 @@ function renderLibraryEdit(view, adv) {
       e.stopPropagation();
       commitLaneReorder();
     });
+
+    // Touch fallback. HTML5 `draggable=true` doesn't fire on touch
+    // devices, so the lane grip needs the same touchstart/move/end
+    // pattern the puzzle cards use. Only the grip starts the drag —
+    // touching the rest of the header keeps native scrolling.
+    let touchStartX = 0, touchStartY = 0, touchMode = null;
+    const targetLaneAt = (clientX, clientY) => {
+      const el = document.elementFromPoint(clientX, clientY);
+      return el ? el.closest('.lane-section') : null;
+    };
+    grip.addEventListener('touchstart', (e) => {
+      if (e.touches.length !== 1) return;
+      touchStartX = e.touches[0].clientX;
+      touchStartY = e.touches[0].clientY;
+      touchMode = null;
+    }, { passive: true });
+    grip.addEventListener('touchmove', (e) => {
+      if (touchMode === 'skip' || e.touches.length !== 1) return;
+      const tt = e.touches[0];
+      if (touchMode === null) {
+        const dx = tt.clientX - touchStartX;
+        const dy = tt.clientY - touchStartY;
+        if (Math.hypot(dx, dy) < 8) return;
+        // Once we commit to a lane drag, suppress the puzzle-card
+        // path: a stray touchmove that lands on a card during the
+        // drag should reposition the lane, not start a card drag.
+        if (pageDrag) { touchMode = 'skip'; return; }
+        touchMode = 'drag';
+        laneDrag = { section };
+        section.classList.add('drag-ghost');
+      }
+      // preventDefault stops the page from scrolling under the drag.
+      e.preventDefault();
+      const target = targetLaneAt(tt.clientX, tt.clientY);
+      if (target && target !== section) moveLaneOverSection(target, tt.clientY);
+    }, { passive: false });
+    grip.addEventListener('touchend', (e) => {
+      if (touchMode !== 'drag') { touchMode = null; return; }
+      touchMode = null;
+      e.preventDefault();
+      commitLaneReorder();
+    }, { passive: false });
+    grip.addEventListener('touchcancel', () => {
+      if (touchMode === 'drag') cancelLaneDrag();
+      touchMode = null;
+    }, { passive: true });
   };
 
   // renderPuzzleListForLane is now thin: render cards, wire each
