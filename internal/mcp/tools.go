@@ -170,6 +170,23 @@ func (s *Server) registerTools() {
 	}, setLaneMode)
 
 	s.tools.register(ToolDescriptor{
+		Name:        "update_puzzle",
+		Description: "Replace the content of an existing puzzle. Identified by (slug, page_idx) — same idx the export shape uses. The page payload is the full per-puzzle shape (title, prompt, accept[], lat, lng, lane_idx, optional radius_m, optional disabled, optional notes, optional hints[]); fields not present default to their zero values, so passing a partial object will clear the omitted ones (e.g. omitting `accept` empties the answer list). Image / audio attachments are managed by attach_image — they're not editable here. Use this to translate or rewrite an existing puzzle without losing its images or its position in the lane.",
+		InputSchema: map[string]any{
+			"type":     "object",
+			"required": []string{"slug", "page_idx", "page"},
+			"properties": map[string]any{
+				"slug":     map[string]any{"type": "string", "description": "Adventure containing the puzzle."},
+				"page_idx": map[string]any{"type": "integer", "minimum": 0, "description": "Index of the puzzle to replace (matches export shape)."},
+				"page": map[string]any{
+					"type":        "object",
+					"description": "Full per-puzzle shape — same fields as one element of envelope.pages[]. Omitted fields are reset to defaults; pass the puzzle's existing values for anything you want to keep.",
+				},
+			},
+		},
+	}, updatePuzzle)
+
+	s.tools.register(ToolDescriptor{
 		Name:        "attach_image",
 		Description: "Attach an image to an adventure. Set target=\"avatar\" for the adventure cover/icon, or pass a numeric page index (matching the export shape) to attach to that puzzle. The image bytes travel base64-encoded inside this call — there is no URL fetch path. Re-calling for the same (slug, target) replaces what was there: avatar overwrites, puzzle deletes existing puzzle images then stores this one as the puzzle's only image. Server normalises (shrinks to 512 px max dim, re-encodes JPEG/PNG) before storing, mirroring the multipart UI flow. Per-image cap is ZV_MAX_IMAGE_BYTES (default 5 MiB on the decoded bytes).",
 		InputSchema: map[string]any{
@@ -430,6 +447,51 @@ func addPuzzle(ctx context.Context, s *Server, args json.RawMessage) (ToolCallRe
 	body, _ := json.MarshalIndent(map[string]any{
 		"slug":    p.Slug,
 		"page_id": pageID,
+	}, "", "  ")
+	return textResult(string(body)), nil
+}
+
+// updatePuzzle replaces an existing puzzle's content in place.
+// Sibling of addPuzzle: where addPuzzle appends, this rewrites at a
+// caller-supplied page_idx so the LLM can translate or revise a
+// puzzle without losing its images / hint history that downstream
+// tools (attach_image) have wired up.
+func updatePuzzle(ctx context.Context, s *Server, args json.RawMessage) (ToolCallResult, error) {
+	var p struct {
+		Slug    string          `json:"slug"`
+		PageIdx int             `json:"page_idx"`
+		Page    json.RawMessage `json:"page"`
+	}
+	if err := json.Unmarshal(args, &p); err != nil {
+		return errorResult("bad arguments: " + err.Error()), nil
+	}
+	if p.Slug == "" {
+		return errorResult("slug is required"), nil
+	}
+	if p.PageIdx < 0 {
+		return errorResult("page_idx must be >= 0"), nil
+	}
+	if len(p.Page) == 0 {
+		return errorResult("page is required"), nil
+	}
+	me, ok := auth.FromContext(ctx)
+	if !ok {
+		return errorResult("no authenticated caller"), nil
+	}
+	advID, _, err := admin.AuthorizeAdventureEdit(ctx, s.DB, p.Slug, me)
+	if err != nil {
+		if errors.Is(err, admin.ErrForbidden) {
+			return errorResult("forbidden: you cannot edit this adventure"), nil
+		}
+		return errorResult("lookup: " + err.Error()), nil
+	}
+	if err := admin.UpdatePageFromExport(ctx, s.DB, advID, p.PageIdx, p.Page); err != nil {
+		return errorResult(err.Error()), nil
+	}
+	body, _ := json.MarshalIndent(map[string]any{
+		"slug":     p.Slug,
+		"page_idx": p.PageIdx,
+		"ok":       true,
 	}, "", "  ")
 	return textResult(string(body)), nil
 }

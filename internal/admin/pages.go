@@ -346,6 +346,125 @@ func AddPageFromExport(ctx context.Context, db *sql.DB, advID int64, pageJSON []
 	return pageID, nil
 }
 
+// UpdatePageFromExport replaces the content of the page at
+// (advID, pageIdx) with the fields from a per-page export object —
+// same shape AddPageFromExport accepts. Used by the MCP
+// update_puzzle tool so an LLM can rewrite an existing puzzle (e.g.
+// translate prompts) without going through the multipart UI.
+//
+// Validation runs the same gauntlet as AddPageFromExport so the
+// model gets identical error messages whether it's authoring or
+// editing. Image / audio fields on the input are rejected — assets
+// are managed by attach_image, never by puzzle content edits.
+//
+// lane_idx in the input is honoured when it points at an existing
+// lane on the adventure; an unknown idx is rejected (no silent
+// lane-zero fallback on update — silent re-laning is more
+// surprising on edit than on create).
+//
+// Hints are replace-all: existing rows for the page are deleted,
+// the input slice is inserted from idx 0. Same shape the UI's
+// PUT handler uses via upsertPageHints.
+//
+// Caller is responsible for authorizing the slug first
+// (AuthorizeAdventureEdit).
+func UpdatePageFromExport(ctx context.Context, db *sql.DB, advID int64, pageIdx int, pageJSON []byte) error {
+	dec := json.NewDecoder(bytes.NewReader(pageJSON))
+	dec.DisallowUnknownFields()
+	var p exportPage
+	if err := dec.Decode(&p); err != nil {
+		return fmt.Errorf("page parse: %w", err)
+	}
+	if len(p.Images) > 0 || len(p.Audio) > 0 {
+		return errors.New("page assets unsupported via this entry — attach via attach_image")
+	}
+	for i, hint := range p.Hints {
+		if len(hint.Images) > 0 || len(hint.Audio) > 0 {
+			return fmt.Errorf("hint %d assets unsupported via this entry", i+1)
+		}
+	}
+	if _, err := validateBlurb(p.Title, MaxNameLen); err != nil {
+		return fmt.Errorf("title %s", err.Error())
+	}
+	if _, err := validateBlurb(p.Prompt, MaxPromptLen); err != nil {
+		return fmt.Errorf("prompt %s", err.Error())
+	}
+	if _, err := validateBlurb(p.Notes, MaxBlurbLen); err != nil {
+		return fmt.Errorf("notes %s", err.Error())
+	}
+	if p.RadiusM != nil && *p.RadiusM <= 0 {
+		return errors.New("radius_m must be > 0")
+	}
+	for i, hint := range p.Hints {
+		if hint.DelaySeconds < 0 {
+			return fmt.Errorf("hint %d: delay_seconds must be >= 0", i+1)
+		}
+		if _, err := validateBlurb(hint.Text, MaxHintTextLen); err != nil {
+			return fmt.Errorf("hint %d text %s", i+1, err.Error())
+		}
+	}
+	if err := adventure.ValidateAcceptEntries(p.Accept); err != nil {
+		return err
+	}
+
+	var pageID int64
+	if err := db.QueryRowContext(ctx,
+		`SELECT id FROM adventure_pages WHERE adventure_id = $1 AND idx = $2`,
+		advID, pageIdx).Scan(&pageID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("no puzzle at idx %d in this adventure", pageIdx)
+		}
+		return fmt.Errorf("page lookup: %w", err)
+	}
+	var laneID int64
+	if err := db.QueryRowContext(ctx,
+		`SELECT id FROM adventure_lanes WHERE adventure_id = $1 AND idx = $2`,
+		advID, p.LaneIdx).Scan(&laneID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("no lane at idx %d in this adventure", p.LaneIdx)
+		}
+		return fmt.Errorf("resolve lane: %w", err)
+	}
+
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	acceptJ, _ := json.Marshal(p.Accept)
+	var radius any
+	if p.RadiusM != nil {
+		radius = *p.RadiusM
+	}
+	disabled := 0
+	if p.Disabled {
+		disabled = 1
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE adventure_pages
+		SET title = $1, prompt = $2, accept = $3, lat = $4, lng = $5,
+		    radius_m = $6, disabled = $7, notes = $8, lane_id = $9
+		WHERE id = $10
+	`, p.Title, p.Prompt, string(acceptJ), p.Lat, p.Lng,
+		radius, disabled, p.Notes, laneID, pageID); err != nil {
+		return fmt.Errorf("update page: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx,
+		`DELETE FROM adventure_page_hints WHERE page_id = $1`, pageID); err != nil {
+		return fmt.Errorf("clear hints: %w", err)
+	}
+	for i, hint := range p.Hints {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO adventure_page_hints(page_id, idx, text, delay_seconds)
+			VALUES ($1, $2, $3, $4)
+		`, pageID, i, hint.Text, hint.DelaySeconds); err != nil {
+			return fmt.Errorf("insert hint %d: %w", i+1, err)
+		}
+	}
+	return tx.Commit()
+}
+
 // CreatePage appends a new page at the end of the adventure.
 func (h *Handlers) CreatePage(w http.ResponseWriter, r *http.Request) {
 	slug := chi.URLParam(r, "slug")
