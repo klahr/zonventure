@@ -210,22 +210,48 @@ func LookupMCPToken(ctx context.Context, db *sql.DB, plaintext string) (auth.Use
 		`UPDATE mcp_tokens SET last_used_at = now_text() WHERE token_hash = $1`,
 		hash[:])
 
-	var (
-		u     auth.User
-		orgID sql.NullInt64
-	)
+	// users has no role / org_id columns — those live on
+	// org_memberships, joined per active session in auth.Lookup. MCP
+	// tokens have no session, so we resolve the role ourselves: admins
+	// short-circuit; everyone else gets the role + org from their
+	// lowest-id membership (deterministic pick for users in multiple
+	// orgs — bind to a specific org at mint time if/when that becomes
+	// a real ergonomics problem).
+	var u auth.User
 	err = db.QueryRowContext(ctx, `
-		SELECT id, username, role, org_id, COALESCE(email, ''),
-		       COALESCE(email_verified, 1)
+		SELECT id, username, is_admin, COALESCE(email, ''),
+		       (email_verified <> 0)
 		FROM users WHERE id = $1
-	`, uid).Scan(&u.ID, &u.Username, &u.Role, &orgID, &u.Email, &u.EmailVerified)
+	`, uid).Scan(&u.ID, &u.Username, &u.IsAdmin, &u.Email, &u.EmailVerified)
 	if err != nil {
 		return auth.User{}, err
 	}
-	if orgID.Valid {
-		u.OrgID = &orgID.Int64
+	if u.IsAdmin {
+		u.Role = auth.RoleAdmin
+		return u, nil
 	}
-	u.IsAdmin = u.Role == auth.RoleAdmin
+	var (
+		role  sql.NullString
+		orgID sql.NullInt64
+	)
+	err = db.QueryRowContext(ctx, `
+		SELECT role, org_id FROM org_memberships
+		WHERE user_id = $1
+		ORDER BY org_id ASC
+		LIMIT 1
+	`, uid).Scan(&role, &orgID)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return auth.User{}, err
+	}
+	if role.Valid {
+		u.Role = role.String
+	} else {
+		u.Role = auth.RoleLobby
+	}
+	if orgID.Valid {
+		v := orgID.Int64
+		u.OrgID = &v
+	}
 	return u, nil
 }
 
