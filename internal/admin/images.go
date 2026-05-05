@@ -16,6 +16,51 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
+// DetachPageImages removes every image attached to (advID, pageIdx).
+// Idempotent: a page with no images returns nil. Used by the MCP
+// detach_image tool. Mirrors attach_image's "one image per page"
+// abstraction by clearing the lot in a single statement instead of
+// requiring callers to pass the image idx.
+func DetachPageImages(ctx context.Context, db *sql.DB, advID int64, pageIdx int) error {
+	var pageID int64
+	if err := db.QueryRowContext(ctx,
+		`SELECT id FROM adventure_pages WHERE adventure_id = $1 AND idx = $2`,
+		advID, pageIdx).Scan(&pageID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("no puzzle at idx %d in this adventure", pageIdx)
+		}
+		return fmt.Errorf("page lookup: %w", err)
+	}
+	if _, err := db.ExecContext(ctx,
+		`DELETE FROM adventure_page_images WHERE page_id = $1`, pageID); err != nil {
+		return fmt.Errorf("delete: %w", err)
+	}
+	return nil
+}
+
+// UpdatePageImageAlt rewrites the alt_text on the page's primary
+// image (idx 0). The MCP attach_image tool stores at most one image
+// per page, so addressing by page is unambiguous. Returns nil even
+// when the page has no image — keeps callers simple — but errors
+// when the page itself doesn't exist.
+func UpdatePageImageAlt(ctx context.Context, db *sql.DB, advID int64, pageIdx int, altText string) error {
+	var pageID int64
+	if err := db.QueryRowContext(ctx,
+		`SELECT id FROM adventure_pages WHERE adventure_id = $1 AND idx = $2`,
+		advID, pageIdx).Scan(&pageID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("no puzzle at idx %d in this adventure", pageIdx)
+		}
+		return fmt.Errorf("page lookup: %w", err)
+	}
+	if _, err := db.ExecContext(ctx,
+		`UPDATE adventure_page_images SET alt_text = $1 WHERE page_id = $2`,
+		altText, pageID); err != nil {
+		return fmt.Errorf("update alt: %w", err)
+	}
+	return nil
+}
+
 /* ---------------- Page images (upload + edit + delete) ---------------- */
 
 // AddPageImage reads the multipart "file" form field and stores the blob.

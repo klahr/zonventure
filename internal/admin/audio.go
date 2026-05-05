@@ -30,6 +30,82 @@ var maxAudioBytes int64 = func() int64 {
 	return def
 }()
 
+// MaxAudioBytes exposes the per-upload audio cap to callers in
+// other packages (the MCP attach_audio tool needs to validate the
+// decoded base64 payload against the same ceiling the multipart UI
+// enforces).
+func MaxAudioBytes() int64 { return maxAudioBytes }
+
+// PutPageAudio replaces the audio attached to (advID, pageIdx)
+// with the supplied bytes — same idempotent semantics as the MCP
+// attach_image tool: existing audio rows on the page are deleted
+// and the new clip is stored as the page's only audio at idx 0.
+//
+// MIME is sniffed from the bytes (http.DetectContentType reads the
+// first 512) and must be audio/* — the client's declared mime_type
+// is ignored for the security decision, same as AddPageAudio's
+// http handler. Returns the sniffed MIME so the caller can echo it
+// back in the tool result.
+//
+// Caller authorises the slug first (AuthorizeAdventureEdit).
+func PutPageAudio(ctx context.Context, db *sql.DB, advID int64, pageIdx int, content []byte, description string) (mime string, err error) {
+	if int64(len(content)) > maxAudioBytes {
+		return "", fmt.Errorf("audio too large: %d bytes (cap %d)", len(content), maxAudioBytes)
+	}
+	mime = http.DetectContentType(content)
+	if !strings.HasPrefix(mime, "audio/") {
+		return "", errors.New("only audio uploads are accepted")
+	}
+	var pageID int64
+	if err := db.QueryRowContext(ctx,
+		`SELECT id FROM adventure_pages WHERE adventure_id = $1 AND idx = $2`,
+		advID, pageIdx).Scan(&pageID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", fmt.Errorf("no puzzle at idx %d in this adventure", pageIdx)
+		}
+		return "", fmt.Errorf("page lookup: %w", err)
+	}
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return "", err
+	}
+	defer tx.Rollback() //nolint:errcheck
+	if _, err := tx.ExecContext(ctx,
+		`DELETE FROM adventure_page_audio WHERE page_id = $1`, pageID); err != nil {
+		return "", fmt.Errorf("clear: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO adventure_page_audio(page_id, idx, mime_type, size_bytes, content, description)
+		VALUES ($1, 0, $2, $3, $4, $5)
+	`, pageID, mime, int64(len(content)), content, description); err != nil {
+		return "", fmt.Errorf("insert: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return "", err
+	}
+	return mime, nil
+}
+
+// DetachPageAudio removes every audio clip attached to
+// (advID, pageIdx). Idempotent: a page with no audio returns nil.
+// Used by the MCP detach_audio tool — mirrors detach_image.
+func DetachPageAudio(ctx context.Context, db *sql.DB, advID int64, pageIdx int) error {
+	var pageID int64
+	if err := db.QueryRowContext(ctx,
+		`SELECT id FROM adventure_pages WHERE adventure_id = $1 AND idx = $2`,
+		advID, pageIdx).Scan(&pageID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("no puzzle at idx %d in this adventure", pageIdx)
+		}
+		return fmt.Errorf("page lookup: %w", err)
+	}
+	if _, err := db.ExecContext(ctx,
+		`DELETE FROM adventure_page_audio WHERE page_id = $1`, pageID); err != nil {
+		return fmt.Errorf("delete: %w", err)
+	}
+	return nil
+}
+
 /* ---------------- Page audio (upload + edit + delete) ---------------- */
 
 // AddPageAudio reads the multipart "file" form field and stores the

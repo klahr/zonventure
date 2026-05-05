@@ -295,6 +295,16 @@ func (h *Handlers) AdventureDetail(w http.ResponseWriter, r *http.Request) {
 		"page_count":  len(adv.Pages),
 		"pages":       pages,
 	}
+	// Pre-render markdown to HTML so the inspect page can render
+	// formatting (same goldmark pipeline puzzle prompts use). Empty
+	// strings are skipped so the JSON shape stays clean for
+	// adventures with no intro/outro authored.
+	if adv.Meta.IntroText != "" {
+		out["intro_html"] = mdx.Render(adv.Meta.IntroText)
+	}
+	if adv.Meta.OutroText != "" {
+		out["outro_html"] = mdx.Render(adv.Meta.OutroText)
+	}
 	if !adv.Colors.Empty() {
 		out["colors"] = adv.Colors
 	}

@@ -221,6 +221,212 @@ func (s *Server) registerTools() {
 	}, attachImage)
 
 	s.tools.register(ToolDescriptor{
+		Name:        "delete_puzzle",
+		Description: "Remove one puzzle from an adventure. Identified by (slug, page_idx). Subsequent puzzles slide down so the global ordering stays gap-free. Idempotent in spirit but errors if the idx doesn't exist (safer than silent no-op). Cannot be undone.",
+		InputSchema: map[string]any{
+			"type":     "object",
+			"required": []string{"slug", "page_idx"},
+			"properties": map[string]any{
+				"slug":     map[string]any{"type": "string", "description": "Adventure containing the puzzle."},
+				"page_idx": map[string]any{"type": "integer", "minimum": 0, "description": "Index of the puzzle to remove."},
+			},
+		},
+	}, deletePuzzle)
+
+	s.tools.register(ToolDescriptor{
+		Name:        "move_puzzle",
+		Description: "Reorder a puzzle within an adventure. from_idx is the puzzle's current index, to_idx the new position. Optional lane_idx reassigns the puzzle to a different lane in the same operation; omit it to leave the lane assignment alone. to_idx is clamped to the last position so passing a large value moves to the end.",
+		InputSchema: map[string]any{
+			"type":     "object",
+			"required": []string{"slug", "from_idx", "to_idx"},
+			"properties": map[string]any{
+				"slug":     map[string]any{"type": "string", "description": "Adventure containing the puzzle."},
+				"from_idx": map[string]any{"type": "integer", "minimum": 0, "description": "Current index of the puzzle."},
+				"to_idx":   map[string]any{"type": "integer", "minimum": 0, "description": "Target index (clamped to last position)."},
+				"lane_idx": map[string]any{"type": "integer", "minimum": 0, "description": "Optional new lane index. Omit to leave the lane unchanged."},
+			},
+		},
+	}, movePuzzle)
+
+	s.tools.register(ToolDescriptor{
+		Name:        "create_lane",
+		Description: "Append a new lane to the adventure at the next idx. Mode defaults to \"linear\" (every team visits puzzles in idx order); pass \"shuffled\" to give each team a deterministic cyclic shift. Name is the human-facing label shown in the editor / runbar; empty falls back to \"Lane N\".",
+		InputSchema: map[string]any{
+			"type":     "object",
+			"required": []string{"slug"},
+			"properties": map[string]any{
+				"slug": map[string]any{"type": "string", "description": "Adventure to add the lane to."},
+				"mode": map[string]any{"type": "string", "enum": []string{"linear", "shuffled"}, "description": `"linear" or "shuffled". Defaults to "linear".`},
+				"name": map[string]any{"type": "string", "description": "Human-facing lane name. Optional."},
+			},
+		},
+	}, createLane)
+
+	s.tools.register(ToolDescriptor{
+		Name:        "update_lane",
+		Description: "Patch a lane's mode and/or name addressed by (slug, lane_idx). Either field may be omitted; passing neither errors. Use to translate a lane name or flip its mode without going through set_lane_mode + a separate rename.",
+		InputSchema: map[string]any{
+			"type":     "object",
+			"required": []string{"slug", "lane_idx"},
+			"properties": map[string]any{
+				"slug":     map[string]any{"type": "string", "description": "Adventure containing the lane."},
+				"lane_idx": map[string]any{"type": "integer", "minimum": 0, "description": "Index of the lane to update."},
+				"mode":     map[string]any{"type": "string", "enum": []string{"linear", "shuffled"}, "description": `New mode — "linear" or "shuffled". Optional.`},
+				"name":     map[string]any{"type": "string", "description": "New name. Empty string clears the name. Optional."},
+			},
+		},
+	}, updateLane)
+
+	s.tools.register(ToolDescriptor{
+		Name:        "delete_lane",
+		Description: "Remove a lane addressed by (slug, lane_idx). Refuses if the lane still owns any puzzles — move them out via move_puzzle first. Lane indices of remaining lanes are not renumbered automatically; the editor expects a follow-up reorder if you want a gap-free sequence.",
+		InputSchema: map[string]any{
+			"type":     "object",
+			"required": []string{"slug", "lane_idx"},
+			"properties": map[string]any{
+				"slug":     map[string]any{"type": "string", "description": "Adventure containing the lane."},
+				"lane_idx": map[string]any{"type": "integer", "minimum": 0, "description": "Index of the lane to delete."},
+			},
+		},
+	}, deleteLane)
+
+	s.tools.register(ToolDescriptor{
+		Name:        "attach_audio",
+		Description: "Attach an audio clip to a puzzle. Bytes travel base64-encoded inside the call (no URL fetch path). Re-calling for the same (slug, page_idx) replaces the puzzle's existing audio. MIME is sniffed server-side from the bytes — the client's declared mime_type is taken as a hint but the audio/* gate is enforced on the sniffed value. Cap is ZV_MAX_AUDIO_BYTES (default 15 MiB on decoded bytes).",
+		InputSchema: map[string]any{
+			"type":     "object",
+			"required": []string{"slug", "page_idx", "data_b64"},
+			"properties": map[string]any{
+				"slug":     map[string]any{"type": "string", "description": "Adventure containing the puzzle."},
+				"page_idx": map[string]any{"type": "integer", "minimum": 0, "description": "Index of the puzzle to attach the audio to."},
+				"data_b64": map[string]any{"type": "string", "description": "Base64-encoded audio bytes. MP3, M4A/AAC, OGG/Opus, WAV all accepted."},
+				"mime_type": map[string]any{
+					"type":        "string",
+					"description": `Hint for the declared MIME (e.g. "audio/mpeg"). Server sniffs the bytes and uses the sniffed value regardless.`,
+				},
+				"description": map[string]any{
+					"type":        "string",
+					"description": "Optional descriptive caption shown in the arranger UI. Optional.",
+				},
+			},
+		},
+	}, attachAudio)
+
+	s.tools.register(ToolDescriptor{
+		Name:        "reorder_lanes",
+		Description: "Rearrange the adventure's lanes by passing the current lane indices in their new order. The list must contain every lane exactly once — partial reorders are rejected. Pages keep their lane assignments; only the lane sequence changes.",
+		InputSchema: map[string]any{
+			"type":     "object",
+			"required": []string{"slug", "new_order"},
+			"properties": map[string]any{
+				"slug": map[string]any{"type": "string", "description": "Adventure to reorder."},
+				"new_order": map[string]any{
+					"type":        "array",
+					"items":       map[string]any{"type": "integer", "minimum": 0},
+					"description": "Current lane indices in the desired new order. e.g. [2,0,1] means: existing lane 2 becomes lane 0, existing lane 0 becomes 1, existing lane 1 becomes 2.",
+				},
+			},
+		},
+	}, reorderLanes)
+
+	s.tools.register(ToolDescriptor{
+		Name:        "detach_image",
+		Description: "Remove the image attached to a puzzle. Idempotent — a puzzle with no image is a no-op. Use this when an image was attached by mistake; for replacing, just call attach_image again (it overwrites).",
+		InputSchema: map[string]any{
+			"type":     "object",
+			"required": []string{"slug", "page_idx"},
+			"properties": map[string]any{
+				"slug":     map[string]any{"type": "string", "description": "Adventure containing the puzzle."},
+				"page_idx": map[string]any{"type": "integer", "minimum": 0, "description": "Index of the puzzle whose image should be cleared."},
+			},
+		},
+	}, detachImage)
+
+	s.tools.register(ToolDescriptor{
+		Name:        "detach_audio",
+		Description: "Remove the audio clip attached to a puzzle. Idempotent — a puzzle with no audio is a no-op. For replacing audio, call attach_audio again (it overwrites).",
+		InputSchema: map[string]any{
+			"type":     "object",
+			"required": []string{"slug", "page_idx"},
+			"properties": map[string]any{
+				"slug":     map[string]any{"type": "string", "description": "Adventure containing the puzzle."},
+				"page_idx": map[string]any{"type": "integer", "minimum": 0, "description": "Index of the puzzle whose audio should be cleared."},
+			},
+		},
+	}, detachAudio)
+
+	s.tools.register(ToolDescriptor{
+		Name:        "update_image_alt",
+		Description: "Rewrite the alt_text on a puzzle's image without re-uploading the bytes. Useful when translating an existing adventure: the image stays, the screen-reader caption changes language. No-op when the puzzle has no image.",
+		InputSchema: map[string]any{
+			"type":     "object",
+			"required": []string{"slug", "page_idx", "alt_text"},
+			"properties": map[string]any{
+				"slug":     map[string]any{"type": "string", "description": "Adventure containing the puzzle."},
+				"page_idx": map[string]any{"type": "integer", "minimum": 0, "description": "Index of the puzzle whose image alt_text should change."},
+				"alt_text": map[string]any{"type": "string", "description": "New accessibility caption. Empty string clears it."},
+			},
+		},
+	}, updateImageAlt)
+
+	s.tools.register(ToolDescriptor{
+		Name:        "detach_avatar",
+		Description: "Clear the adventure's avatar / cover icon. Idempotent — calling on an avatar-less adventure is a no-op.",
+		InputSchema: map[string]any{
+			"type":     "object",
+			"required": []string{"slug"},
+			"properties": map[string]any{
+				"slug": map[string]any{"type": "string", "description": "Adventure to clear the avatar on."},
+			},
+		},
+	}, detachAvatar)
+
+	s.tools.register(ToolDescriptor{
+		Name:        "add_hint",
+		Description: "Append one hint to an existing puzzle. Hints are revealed in idx order in the player UI; delay_seconds gates when each becomes revealable (counted from when the team reached the puzzle). The new hint lands at the next idx after the puzzle's current hints. Use update_puzzle if you'd rather replace the entire hint list in one shot.",
+		InputSchema: map[string]any{
+			"type":     "object",
+			"required": []string{"slug", "page_idx", "text"},
+			"properties": map[string]any{
+				"slug":          map[string]any{"type": "string", "description": "Adventure containing the puzzle."},
+				"page_idx":      map[string]any{"type": "integer", "minimum": 0, "description": "Index of the puzzle to add the hint to."},
+				"text":          map[string]any{"type": "string", "description": "Hint body. Markdown is rendered."},
+				"delay_seconds": map[string]any{"type": "integer", "minimum": 0, "description": "Seconds before the hint becomes revealable (default 0 = immediately)."},
+			},
+		},
+	}, addHint)
+
+	s.tools.register(ToolDescriptor{
+		Name:        "update_hint",
+		Description: "Patch a hint's text and/or delay_seconds, addressed by (slug, page_idx, hint_idx). Either field may be omitted; passing neither errors. The hint's position in the reveal order doesn't change — use a delete + add or update_puzzle to reorder.",
+		InputSchema: map[string]any{
+			"type":     "object",
+			"required": []string{"slug", "page_idx", "hint_idx"},
+			"properties": map[string]any{
+				"slug":          map[string]any{"type": "string", "description": "Adventure containing the puzzle."},
+				"page_idx":      map[string]any{"type": "integer", "minimum": 0, "description": "Index of the puzzle."},
+				"hint_idx":      map[string]any{"type": "integer", "minimum": 0, "description": "Index of the hint within the puzzle."},
+				"text":          map[string]any{"type": "string", "description": "New hint body. Optional."},
+				"delay_seconds": map[string]any{"type": "integer", "minimum": 0, "description": "New delay in seconds. Optional."},
+			},
+		},
+	}, updateHint)
+
+	s.tools.register(ToolDescriptor{
+		Name:        "delete_hint",
+		Description: "Remove one hint from a puzzle. Subsequent hints slide down so the per-page idx sequence stays gap-free. Errors if the hint doesn't exist (safer than silent no-op).",
+		InputSchema: map[string]any{
+			"type":     "object",
+			"required": []string{"slug", "page_idx", "hint_idx"},
+			"properties": map[string]any{
+				"slug":     map[string]any{"type": "string", "description": "Adventure containing the puzzle."},
+				"page_idx": map[string]any{"type": "integer", "minimum": 0, "description": "Index of the puzzle."},
+				"hint_idx": map[string]any{"type": "integer", "minimum": 0, "description": "Index of the hint within the puzzle."},
+			},
+		},
+	}, deleteHint)
+
+	s.tools.register(ToolDescriptor{
 		Name:        "delete_adventure",
 		Description: "Delete an adventure and every page / lane / image it owns. Refuses if the adventure still backs any events or assignments — clean those up via the arranger UI first. Requires confirm:true to actually run; without it the tool reports what would be deleted.",
 		InputSchema: map[string]any{
@@ -749,6 +955,448 @@ func attachImage(ctx context.Context, s *Server, args json.RawMessage) (ToolCall
 		"size":      len(shrunk),
 	}, "", "  ")
 	return textResult(string(body)), nil
+}
+
+// deletePuzzle removes one puzzle by (slug, page_idx). The admin
+// helper compacts subsequent idx values in the same transaction so
+// the global ordering stays gap-free.
+func deletePuzzle(ctx context.Context, s *Server, args json.RawMessage) (ToolCallResult, error) {
+	var p struct {
+		Slug    string `json:"slug"`
+		PageIdx int    `json:"page_idx"`
+	}
+	if err := json.Unmarshal(args, &p); err != nil {
+		return errorResult("bad arguments: " + err.Error()), nil
+	}
+	if p.Slug == "" {
+		return errorResult("slug is required"), nil
+	}
+	if p.PageIdx < 0 {
+		return errorResult("page_idx must be >= 0"), nil
+	}
+	advID, _, err := authoriseEdit(ctx, s, p.Slug)
+	if err != nil {
+		return *err, nil
+	}
+	if e := admin.DeletePageByIdx(ctx, s.DB, advID, p.PageIdx); e != nil {
+		return errorResult(e.Error()), nil
+	}
+	return textResult(fmt.Sprintf(`{"slug":%q,"deleted_idx":%d}`, p.Slug, p.PageIdx)), nil
+}
+
+// movePuzzle relocates a puzzle within an adventure (and optionally
+// across lanes). The admin helper handles the parking + renumber
+// dance; this wrapper just unpacks the args and forwards.
+func movePuzzle(ctx context.Context, s *Server, args json.RawMessage) (ToolCallResult, error) {
+	var p struct {
+		Slug    string `json:"slug"`
+		FromIdx int    `json:"from_idx"`
+		ToIdx   int    `json:"to_idx"`
+		LaneIdx *int   `json:"lane_idx,omitempty"`
+	}
+	if err := json.Unmarshal(args, &p); err != nil {
+		return errorResult("bad arguments: " + err.Error()), nil
+	}
+	if p.Slug == "" {
+		return errorResult("slug is required"), nil
+	}
+	advID, _, err := authoriseEdit(ctx, s, p.Slug)
+	if err != nil {
+		return *err, nil
+	}
+	if e := admin.MovePage(ctx, s.DB, advID, p.FromIdx, p.ToIdx, p.LaneIdx); e != nil {
+		return errorResult(e.Error()), nil
+	}
+	body, _ := json.MarshalIndent(map[string]any{
+		"slug":     p.Slug,
+		"from_idx": p.FromIdx,
+		"to_idx":   p.ToIdx,
+		"lane_idx": p.LaneIdx,
+		"ok":       true,
+	}, "", "  ")
+	return textResult(string(body)), nil
+}
+
+// createLane appends a new lane and returns its idx so the model
+// can immediately reference it in subsequent move_puzzle / add_puzzle
+// calls without needing to re-fetch the envelope.
+func createLane(ctx context.Context, s *Server, args json.RawMessage) (ToolCallResult, error) {
+	var p struct {
+		Slug string `json:"slug"`
+		Mode string `json:"mode,omitempty"`
+		Name string `json:"name,omitempty"`
+	}
+	if err := json.Unmarshal(args, &p); err != nil {
+		return errorResult("bad arguments: " + err.Error()), nil
+	}
+	if p.Slug == "" {
+		return errorResult("slug is required"), nil
+	}
+	advID, _, err := authoriseEdit(ctx, s, p.Slug)
+	if err != nil {
+		return *err, nil
+	}
+	_, idx, e := admin.CreateLaneRow(ctx, s.DB, advID, p.Mode, p.Name)
+	if e != nil {
+		return errorResult(e.Error()), nil
+	}
+	body, _ := json.MarshalIndent(map[string]any{
+		"slug":     p.Slug,
+		"lane_idx": idx,
+		"mode":     p.Mode,
+		"name":     p.Name,
+	}, "", "  ")
+	return textResult(string(body)), nil
+}
+
+// updateLane patches a lane's mode and/or name. Either field may be
+// omitted from the JSON; passing neither is rejected by the admin
+// helper as "nothing to update".
+func updateLane(ctx context.Context, s *Server, args json.RawMessage) (ToolCallResult, error) {
+	var p struct {
+		Slug    string  `json:"slug"`
+		LaneIdx int     `json:"lane_idx"`
+		Mode    *string `json:"mode,omitempty"`
+		Name    *string `json:"name,omitempty"`
+	}
+	if err := json.Unmarshal(args, &p); err != nil {
+		return errorResult("bad arguments: " + err.Error()), nil
+	}
+	if p.Slug == "" {
+		return errorResult("slug is required"), nil
+	}
+	advID, _, err := authoriseEdit(ctx, s, p.Slug)
+	if err != nil {
+		return *err, nil
+	}
+	if e := admin.UpdateLaneByIdx(ctx, s.DB, advID, p.LaneIdx, p.Mode, p.Name); e != nil {
+		return errorResult(e.Error()), nil
+	}
+	return textResult(fmt.Sprintf(`{"slug":%q,"lane_idx":%d,"ok":true}`, p.Slug, p.LaneIdx)), nil
+}
+
+// deleteLane removes an empty lane. Refuses if the lane still owns
+// puzzles — that's a "data-loss-shaped surprise" guard inherited
+// from the multipart UI handler.
+func deleteLane(ctx context.Context, s *Server, args json.RawMessage) (ToolCallResult, error) {
+	var p struct {
+		Slug    string `json:"slug"`
+		LaneIdx int    `json:"lane_idx"`
+	}
+	if err := json.Unmarshal(args, &p); err != nil {
+		return errorResult("bad arguments: " + err.Error()), nil
+	}
+	if p.Slug == "" {
+		return errorResult("slug is required"), nil
+	}
+	advID, _, err := authoriseEdit(ctx, s, p.Slug)
+	if err != nil {
+		return *err, nil
+	}
+	if e := admin.DeleteLaneByIdx(ctx, s.DB, advID, p.LaneIdx); e != nil {
+		return errorResult(e.Error()), nil
+	}
+	return textResult(fmt.Sprintf(`{"slug":%q,"deleted_lane_idx":%d}`, p.Slug, p.LaneIdx)), nil
+}
+
+// attachAudio is the audio counterpart of attach_image. Bytes
+// travel base64; server sniffs MIME and rejects non-audio/* blobs;
+// existing audio on the puzzle is replaced.
+func attachAudio(ctx context.Context, s *Server, args json.RawMessage) (ToolCallResult, error) {
+	var p struct {
+		Slug        string `json:"slug"`
+		PageIdx     int    `json:"page_idx"`
+		DataB64     string `json:"data_b64"`
+		MimeType    string `json:"mime_type,omitempty"`
+		Description string `json:"description,omitempty"`
+	}
+	if err := json.Unmarshal(args, &p); err != nil {
+		return errorResult("bad arguments: " + err.Error()), nil
+	}
+	if p.Slug == "" {
+		return errorResult("slug is required"), nil
+	}
+	if p.PageIdx < 0 {
+		return errorResult("page_idx must be >= 0"), nil
+	}
+	if p.DataB64 == "" {
+		return errorResult("data_b64 is required"), nil
+	}
+	data, err := base64.StdEncoding.DecodeString(p.DataB64)
+	if err != nil {
+		data, err = base64.RawStdEncoding.DecodeString(p.DataB64)
+	}
+	if err != nil {
+		return errorResult("data_b64 is not valid base64: " + err.Error()), nil
+	}
+	advID, _, autherr := authoriseEdit(ctx, s, p.Slug)
+	if autherr != nil {
+		return *autherr, nil
+	}
+	mime, e := admin.PutPageAudio(ctx, s.DB, advID, p.PageIdx, data, p.Description)
+	if e != nil {
+		return errorResult(e.Error()), nil
+	}
+	body, _ := json.MarshalIndent(map[string]any{
+		"slug":      p.Slug,
+		"page_idx":  p.PageIdx,
+		"mime_type": mime,
+		"size":      len(data),
+	}, "", "  ")
+	return textResult(string(body)), nil
+}
+
+// detachAvatar clears the adventure's cover icon via the same
+// storage seam the multipart DELETE handler uses. Idempotent.
+func detachAvatar(ctx context.Context, s *Server, args json.RawMessage) (ToolCallResult, error) {
+	var p struct {
+		Slug string `json:"slug"`
+	}
+	if err := json.Unmarshal(args, &p); err != nil {
+		return errorResult("bad arguments: " + err.Error()), nil
+	}
+	if p.Slug == "" {
+		return errorResult("slug is required"), nil
+	}
+	if _, _, err := authoriseEdit(ctx, s, p.Slug); err != nil {
+		return *err, nil
+	}
+	if s.Storage == nil {
+		return errorResult("storage backend not configured on this server"), nil
+	}
+	if err := s.Storage.DeleteAdventureAvatar(ctx, p.Slug); err != nil {
+		return errorResult("clear failed: " + err.Error()), nil
+	}
+	return textResult(fmt.Sprintf(`{"slug":%q,"avatar_cleared":true}`, p.Slug)), nil
+}
+
+// reorderLanes accepts an array of current lane indices in their
+// new order and reassigns lane idx values to match.
+func reorderLanes(ctx context.Context, s *Server, args json.RawMessage) (ToolCallResult, error) {
+	var p struct {
+		Slug     string `json:"slug"`
+		NewOrder []int  `json:"new_order"`
+	}
+	if err := json.Unmarshal(args, &p); err != nil {
+		return errorResult("bad arguments: " + err.Error()), nil
+	}
+	if p.Slug == "" {
+		return errorResult("slug is required"), nil
+	}
+	if len(p.NewOrder) == 0 {
+		return errorResult("new_order must be a non-empty array of lane indices"), nil
+	}
+	advID, _, err := authoriseEdit(ctx, s, p.Slug)
+	if err != nil {
+		return *err, nil
+	}
+	if e := admin.ReorderLanesByIdx(ctx, s.DB, advID, p.NewOrder); e != nil {
+		return errorResult(e.Error()), nil
+	}
+	body, _ := json.MarshalIndent(map[string]any{
+		"slug":      p.Slug,
+		"new_order": p.NewOrder,
+		"ok":        true,
+	}, "", "  ")
+	return textResult(string(body)), nil
+}
+
+// detachImage removes every image on a puzzle. Idempotent.
+func detachImage(ctx context.Context, s *Server, args json.RawMessage) (ToolCallResult, error) {
+	var p struct {
+		Slug    string `json:"slug"`
+		PageIdx int    `json:"page_idx"`
+	}
+	if err := json.Unmarshal(args, &p); err != nil {
+		return errorResult("bad arguments: " + err.Error()), nil
+	}
+	if p.Slug == "" {
+		return errorResult("slug is required"), nil
+	}
+	if p.PageIdx < 0 {
+		return errorResult("page_idx must be >= 0"), nil
+	}
+	advID, _, err := authoriseEdit(ctx, s, p.Slug)
+	if err != nil {
+		return *err, nil
+	}
+	if e := admin.DetachPageImages(ctx, s.DB, advID, p.PageIdx); e != nil {
+		return errorResult(e.Error()), nil
+	}
+	return textResult(fmt.Sprintf(`{"slug":%q,"page_idx":%d,"images_cleared":true}`, p.Slug, p.PageIdx)), nil
+}
+
+// detachAudio removes every audio clip on a puzzle. Idempotent.
+func detachAudio(ctx context.Context, s *Server, args json.RawMessage) (ToolCallResult, error) {
+	var p struct {
+		Slug    string `json:"slug"`
+		PageIdx int    `json:"page_idx"`
+	}
+	if err := json.Unmarshal(args, &p); err != nil {
+		return errorResult("bad arguments: " + err.Error()), nil
+	}
+	if p.Slug == "" {
+		return errorResult("slug is required"), nil
+	}
+	if p.PageIdx < 0 {
+		return errorResult("page_idx must be >= 0"), nil
+	}
+	advID, _, err := authoriseEdit(ctx, s, p.Slug)
+	if err != nil {
+		return *err, nil
+	}
+	if e := admin.DetachPageAudio(ctx, s.DB, advID, p.PageIdx); e != nil {
+		return errorResult(e.Error()), nil
+	}
+	return textResult(fmt.Sprintf(`{"slug":%q,"page_idx":%d,"audio_cleared":true}`, p.Slug, p.PageIdx)), nil
+}
+
+// updateImageAlt rewrites alt_text on a puzzle's image without
+// requiring a re-upload of the bytes. No-ops when the puzzle has
+// no image.
+func updateImageAlt(ctx context.Context, s *Server, args json.RawMessage) (ToolCallResult, error) {
+	var p struct {
+		Slug    string `json:"slug"`
+		PageIdx int    `json:"page_idx"`
+		AltText string `json:"alt_text"`
+	}
+	if err := json.Unmarshal(args, &p); err != nil {
+		return errorResult("bad arguments: " + err.Error()), nil
+	}
+	if p.Slug == "" {
+		return errorResult("slug is required"), nil
+	}
+	if p.PageIdx < 0 {
+		return errorResult("page_idx must be >= 0"), nil
+	}
+	advID, _, err := authoriseEdit(ctx, s, p.Slug)
+	if err != nil {
+		return *err, nil
+	}
+	if e := admin.UpdatePageImageAlt(ctx, s.DB, advID, p.PageIdx, p.AltText); e != nil {
+		return errorResult(e.Error()), nil
+	}
+	return textResult(fmt.Sprintf(`{"slug":%q,"page_idx":%d,"alt_text":%q}`, p.Slug, p.PageIdx, p.AltText)), nil
+}
+
+// addHint appends one hint to a puzzle. Returns the assigned idx
+// so the model can immediately update_hint or delete_hint without
+// re-fetching the envelope.
+func addHint(ctx context.Context, s *Server, args json.RawMessage) (ToolCallResult, error) {
+	var p struct {
+		Slug         string `json:"slug"`
+		PageIdx      int    `json:"page_idx"`
+		Text         string `json:"text"`
+		DelaySeconds int    `json:"delay_seconds,omitempty"`
+	}
+	if err := json.Unmarshal(args, &p); err != nil {
+		return errorResult("bad arguments: " + err.Error()), nil
+	}
+	if p.Slug == "" {
+		return errorResult("slug is required"), nil
+	}
+	if p.PageIdx < 0 {
+		return errorResult("page_idx must be >= 0"), nil
+	}
+	if p.Text == "" {
+		return errorResult("text is required"), nil
+	}
+	advID, _, err := authoriseEdit(ctx, s, p.Slug)
+	if err != nil {
+		return *err, nil
+	}
+	idx, e := admin.AddHintAtEnd(ctx, s.DB, advID, p.PageIdx, p.Text, p.DelaySeconds)
+	if e != nil {
+		return errorResult(e.Error()), nil
+	}
+	body, _ := json.MarshalIndent(map[string]any{
+		"slug":          p.Slug,
+		"page_idx":      p.PageIdx,
+		"hint_idx":      idx,
+		"delay_seconds": p.DelaySeconds,
+	}, "", "  ")
+	return textResult(string(body)), nil
+}
+
+// updateHint patches text and/or delay_seconds on an existing hint.
+func updateHint(ctx context.Context, s *Server, args json.RawMessage) (ToolCallResult, error) {
+	var p struct {
+		Slug         string  `json:"slug"`
+		PageIdx      int     `json:"page_idx"`
+		HintIdx      int     `json:"hint_idx"`
+		Text         *string `json:"text,omitempty"`
+		DelaySeconds *int    `json:"delay_seconds,omitempty"`
+	}
+	if err := json.Unmarshal(args, &p); err != nil {
+		return errorResult("bad arguments: " + err.Error()), nil
+	}
+	if p.Slug == "" {
+		return errorResult("slug is required"), nil
+	}
+	if p.PageIdx < 0 || p.HintIdx < 0 {
+		return errorResult("page_idx and hint_idx must be >= 0"), nil
+	}
+	advID, _, err := authoriseEdit(ctx, s, p.Slug)
+	if err != nil {
+		return *err, nil
+	}
+	if e := admin.UpdateHintByIdx(ctx, s.DB, advID, p.PageIdx, p.HintIdx, p.Text, p.DelaySeconds); e != nil {
+		return errorResult(e.Error()), nil
+	}
+	return textResult(fmt.Sprintf(`{"slug":%q,"page_idx":%d,"hint_idx":%d,"ok":true}`,
+		p.Slug, p.PageIdx, p.HintIdx)), nil
+}
+
+// deleteHint removes one hint and compacts subsequent idx values
+// so the per-page hint sequence stays gap-free.
+func deleteHint(ctx context.Context, s *Server, args json.RawMessage) (ToolCallResult, error) {
+	var p struct {
+		Slug    string `json:"slug"`
+		PageIdx int    `json:"page_idx"`
+		HintIdx int    `json:"hint_idx"`
+	}
+	if err := json.Unmarshal(args, &p); err != nil {
+		return errorResult("bad arguments: " + err.Error()), nil
+	}
+	if p.Slug == "" {
+		return errorResult("slug is required"), nil
+	}
+	if p.PageIdx < 0 || p.HintIdx < 0 {
+		return errorResult("page_idx and hint_idx must be >= 0"), nil
+	}
+	advID, _, err := authoriseEdit(ctx, s, p.Slug)
+	if err != nil {
+		return *err, nil
+	}
+	if e := admin.DeleteHintByIdx(ctx, s.DB, advID, p.PageIdx, p.HintIdx); e != nil {
+		return errorResult(e.Error()), nil
+	}
+	return textResult(fmt.Sprintf(`{"slug":%q,"page_idx":%d,"deleted_hint_idx":%d}`,
+		p.Slug, p.PageIdx, p.HintIdx)), nil
+}
+
+// authoriseEdit consolidates the auth + edit-permission boilerplate
+// shared by every mutating MCP tool. Returns advID and the user, or
+// a populated ToolCallResult when the caller should bail (auth
+// missing / forbidden / lookup failed). The caller dereferences and
+// returns the result as-is — keeps each tool handler under ~30
+// lines without a blanket "errAuth" sentinel.
+func authoriseEdit(ctx context.Context, s *Server, slug string) (int64, auth.User, *ToolCallResult) {
+	me, ok := auth.FromContext(ctx)
+	if !ok {
+		r := errorResult("no authenticated caller")
+		return 0, auth.User{}, &r
+	}
+	advID, _, err := admin.AuthorizeAdventureEdit(ctx, s.DB, slug, me)
+	if err != nil {
+		if errors.Is(err, admin.ErrForbidden) {
+			r := errorResult("forbidden: you cannot edit this adventure")
+			return 0, auth.User{}, &r
+		}
+		r := errorResult("lookup: " + err.Error())
+		return 0, auth.User{}, &r
+	}
+	return advID, me, nil
 }
 
 // wrapEnvelope normalises whatever shape the LLM produced into the

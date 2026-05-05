@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"git.sr.ht/~klahr/zv/internal/adventure"
 	"git.sr.ht/~klahr/zv/internal/auth"
@@ -461,6 +462,239 @@ func UpdatePageFromExport(ctx context.Context, db *sql.DB, advID int64, pageIdx 
 		`, pageID, i, hint.Text, hint.DelaySeconds); err != nil {
 			return fmt.Errorf("insert hint %d: %w", i+1, err)
 		}
+	}
+	return tx.Commit()
+}
+
+// DeletePageByIdx removes the puzzle at (advID, pageIdx) and
+// compacts subsequent idx values so the global ordering stays
+// gap-free. Same semantics as the multipart DELETE handler, just
+// addressed by export-shape idx instead of internal pageID — used
+// by the MCP delete_puzzle tool.
+//
+// Caller authorises the slug first (AuthorizeAdventureEdit).
+func DeletePageByIdx(ctx context.Context, db *sql.DB, advID int64, pageIdx int) error {
+	var pageID int64
+	if err := db.QueryRowContext(ctx,
+		`SELECT id FROM adventure_pages WHERE adventure_id = $1 AND idx = $2`,
+		advID, pageIdx).Scan(&pageID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("no puzzle at idx %d in this adventure", pageIdx)
+		}
+		return fmt.Errorf("page lookup: %w", err)
+	}
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck
+	if _, err := tx.ExecContext(ctx,
+		`DELETE FROM adventure_pages WHERE id = $1`, pageID); err != nil {
+		return fmt.Errorf("delete: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE adventure_pages SET idx = idx - 1 WHERE adventure_id = $1 AND idx > $2`,
+		advID, pageIdx); err != nil {
+		return fmt.Errorf("compact: %w", err)
+	}
+	return tx.Commit()
+}
+
+// MovePage moves the puzzle at fromIdx to toIdx within the
+// adventure, optionally reassigning it to a different lane in the
+// same transaction. Park-then-renumber under the
+// UNIQUE(adventure_id, idx) constraint mirrors ReorderPages — same
+// reason, same trick: stage every row at id+10^9 and then write
+// 0..N-1 in the desired order without transient collisions.
+//
+// toIdx is clamped to [0, len(pages)-1] so callers can pass a
+// large value to mean "move to end" without needing the count.
+// newLaneIdx == nil leaves the lane unchanged; non-nil resolves
+// against (advID, lane idx) and rejects an unknown lane.
+func MovePage(ctx context.Context, db *sql.DB, advID int64, fromIdx, toIdx int, newLaneIdx *int) error {
+	if fromIdx < 0 || toIdx < 0 {
+		return errors.New("from_idx and to_idx must be >= 0")
+	}
+	rows, err := db.QueryContext(ctx,
+		`SELECT id FROM adventure_pages WHERE adventure_id = $1 ORDER BY idx`, advID)
+	if err != nil {
+		return fmt.Errorf("load pages: %w", err)
+	}
+	defer rows.Close()
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return fmt.Errorf("scan: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("rows: %w", err)
+	}
+	if len(ids) == 0 {
+		return errors.New("adventure has no puzzles")
+	}
+	if fromIdx >= len(ids) {
+		return fmt.Errorf("from_idx %d is past the last puzzle (idx %d)", fromIdx, len(ids)-1)
+	}
+	if toIdx >= len(ids) {
+		toIdx = len(ids) - 1
+	}
+	noopMove := fromIdx == toIdx && newLaneIdx == nil
+	if noopMove {
+		return nil
+	}
+	moved := ids[fromIdx]
+	ids = append(ids[:fromIdx], ids[fromIdx+1:]...)
+	ids = append(ids[:toIdx], append([]int64{moved}, ids[toIdx:]...)...)
+
+	var newLaneID int64
+	if newLaneIdx != nil {
+		if err := db.QueryRowContext(ctx,
+			`SELECT id FROM adventure_lanes WHERE adventure_id = $1 AND idx = $2`,
+			advID, *newLaneIdx).Scan(&newLaneID); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return fmt.Errorf("no lane at idx %d in this adventure", *newLaneIdx)
+			}
+			return fmt.Errorf("resolve lane: %w", err)
+		}
+	}
+
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE adventure_pages SET idx = 1000000000 + id WHERE adventure_id = $1`, advID); err != nil {
+		return fmt.Errorf("park: %w", err)
+	}
+	for i, id := range ids {
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE adventure_pages SET idx = $1 WHERE id = $2`, i, id); err != nil {
+			return fmt.Errorf("renumber idx %d: %w", i, err)
+		}
+	}
+	if newLaneIdx != nil {
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE adventure_pages SET lane_id = $1 WHERE id = $2`, newLaneID, moved); err != nil {
+			return fmt.Errorf("relane: %w", err)
+		}
+	}
+	return tx.Commit()
+}
+
+// AddHintAtEnd appends one hint to the puzzle at (advID, pageIdx)
+// at the next idx, returning the new hint's idx so the caller can
+// echo it back. Validation matches CreatePage's hint loop —
+// non-negative delay, length-capped text — so error messages stay
+// identical between full-puzzle authoring and per-hint additions.
+func AddHintAtEnd(ctx context.Context, db *sql.DB, advID int64, pageIdx int, text string, delaySeconds int) (int, error) {
+	if delaySeconds < 0 {
+		return 0, errors.New("delay_seconds must be >= 0")
+	}
+	if _, err := validateBlurb(text, MaxHintTextLen); err != nil {
+		return 0, fmt.Errorf("text %s", err.Error())
+	}
+	var pageID int64
+	if err := db.QueryRowContext(ctx,
+		`SELECT id FROM adventure_pages WHERE adventure_id = $1 AND idx = $2`,
+		advID, pageIdx).Scan(&pageID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, fmt.Errorf("no puzzle at idx %d in this adventure", pageIdx)
+		}
+		return 0, fmt.Errorf("page lookup: %w", err)
+	}
+	// Atomic next-idx + INSERT in a single statement so two concurrent
+	// adds to the same page can't compute the same idx.
+	var newIdx int
+	if err := db.QueryRowContext(ctx, `
+		INSERT INTO adventure_page_hints(page_id, idx, text, delay_seconds)
+		SELECT $1, COALESCE(MAX(idx)+1, 0), $2, $3 FROM adventure_page_hints WHERE page_id = $1
+		RETURNING idx
+	`, pageID, text, delaySeconds).Scan(&newIdx); err != nil {
+		return 0, fmt.Errorf("insert: %w", err)
+	}
+	return newIdx, nil
+}
+
+// UpdateHintByIdx patches the text and/or delay_seconds of a hint
+// addressed by (advID, pageIdx, hintIdx). Either field may be nil
+// to leave it alone; both nil is a 400-shape error. Used by the
+// MCP update_hint tool — addressed by export-shape idx so the
+// model doesn't need to know DB rowids.
+func UpdateHintByIdx(ctx context.Context, db *sql.DB, advID int64, pageIdx, hintIdx int, text *string, delaySeconds *int) error {
+	if text == nil && delaySeconds == nil {
+		return errors.New("nothing to update")
+	}
+	if delaySeconds != nil && *delaySeconds < 0 {
+		return errors.New("delay_seconds must be >= 0")
+	}
+	if text != nil {
+		if _, err := validateBlurb(*text, MaxHintTextLen); err != nil {
+			return fmt.Errorf("text %s", err.Error())
+		}
+	}
+	var hintID int64
+	if err := db.QueryRowContext(ctx, `
+		SELECT h.id FROM adventure_page_hints h
+		JOIN adventure_pages p ON p.id = h.page_id
+		WHERE p.adventure_id = $1 AND p.idx = $2 AND h.idx = $3
+	`, advID, pageIdx, hintIdx).Scan(&hintID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("no hint at idx %d on puzzle %d", hintIdx, pageIdx)
+		}
+		return fmt.Errorf("hint lookup: %w", err)
+	}
+	sets := []string{}
+	args := []any{}
+	if text != nil {
+		args = append(args, *text)
+		sets = append(sets, fmt.Sprintf("text = $%d", len(args)))
+	}
+	if delaySeconds != nil {
+		args = append(args, *delaySeconds)
+		sets = append(sets, fmt.Sprintf("delay_seconds = $%d", len(args)))
+	}
+	args = append(args, hintID)
+	q := `UPDATE adventure_page_hints SET ` + strings.Join(sets, ", ") +
+		fmt.Sprintf(" WHERE id = $%d", len(args))
+	if _, err := db.ExecContext(ctx, q, args...); err != nil {
+		return fmt.Errorf("update: %w", err)
+	}
+	return nil
+}
+
+// DeleteHintByIdx removes one hint and compacts subsequent idx
+// values so the per-page hint sequence stays gap-free. Same
+// reasoning as DeletePageByIdx for puzzles: gappy idx breaks the
+// player UI's reveal-in-order assumption.
+func DeleteHintByIdx(ctx context.Context, db *sql.DB, advID int64, pageIdx, hintIdx int) error {
+	var pageID, hintID int64
+	if err := db.QueryRowContext(ctx, `
+		SELECT p.id, h.id FROM adventure_page_hints h
+		JOIN adventure_pages p ON p.id = h.page_id
+		WHERE p.adventure_id = $1 AND p.idx = $2 AND h.idx = $3
+	`, advID, pageIdx, hintIdx).Scan(&pageID, &hintID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("no hint at idx %d on puzzle %d", hintIdx, pageIdx)
+		}
+		return fmt.Errorf("hint lookup: %w", err)
+	}
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck
+	if _, err := tx.ExecContext(ctx,
+		`DELETE FROM adventure_page_hints WHERE id = $1`, hintID); err != nil {
+		return fmt.Errorf("delete: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE adventure_page_hints SET idx = idx - 1 WHERE page_id = $1 AND idx > $2`,
+		pageID, hintIdx); err != nil {
+		return fmt.Errorf("compact: %w", err)
 	}
 	return tx.Commit()
 }

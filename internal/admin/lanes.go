@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -49,6 +50,188 @@ func SetLaneMode(ctx context.Context, db *sql.DB, advID int64, laneIdx int, mode
 		return err
 	}
 	return nil
+}
+
+// CreateLaneRow appends a new lane to the adventure at the next
+// idx. Mode defaults to "linear" when blank; name is optional ("" =
+// UI falls back to "Lane N"). Used by the MCP create_lane tool —
+// the multipart UI handler runs the same validation but stays in
+// HTTP shape (CreateLane).
+//
+// Caller authorises the slug first.
+func CreateLaneRow(ctx context.Context, db *sql.DB, advID int64, mode, name string) (laneID int64, idx int, err error) {
+	if mode == "" {
+		mode = string(adventure.LaneModeLinear)
+	}
+	if mode != string(adventure.LaneModeLinear) && mode != string(adventure.LaneModeShuffled) {
+		return 0, 0, errors.New(`mode must be "linear" or "shuffled"`)
+	}
+	cleanName, nameErr := validateLaneName(name)
+	if nameErr != "" {
+		return 0, 0, errors.New("name " + nameErr)
+	}
+	if err := db.QueryRowContext(ctx, `
+		SELECT COALESCE(MAX(idx) + 1, 0) FROM adventure_lanes WHERE adventure_id = $1
+	`, advID).Scan(&idx); err != nil {
+		return 0, 0, fmt.Errorf("next idx: %w", err)
+	}
+	if err := db.QueryRowContext(ctx, `
+		INSERT INTO adventure_lanes (adventure_id, idx, mode, name)
+		VALUES ($1, $2, $3, $4)
+		RETURNING id
+	`, advID, idx, mode, cleanName).Scan(&laneID); err != nil {
+		return 0, 0, fmt.Errorf("insert: %w", err)
+	}
+	_, _ = db.ExecContext(ctx,
+		`UPDATE adventures SET updated_at = now_text() WHERE id = $1`, advID)
+	return laneID, idx, nil
+}
+
+// UpdateLaneByIdx patches a lane's mode and/or name addressed by
+// (advID, laneIdx). Either field nil = leave alone; both nil = 400.
+// Used by the MCP update_lane tool — the cousin of the multipart
+// UpdateLane handler with idx-based addressing.
+func UpdateLaneByIdx(ctx context.Context, db *sql.DB, advID int64, laneIdx int, mode, name *string) error {
+	var laneID int64
+	if err := db.QueryRowContext(ctx,
+		`SELECT id FROM adventure_lanes WHERE adventure_id = $1 AND idx = $2`,
+		advID, laneIdx).Scan(&laneID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("no lane at idx %d in this adventure", laneIdx)
+		}
+		return fmt.Errorf("lane lookup: %w", err)
+	}
+	if mode == nil && name == nil {
+		return errors.New("nothing to update")
+	}
+	sets := []string{}
+	args := []any{}
+	if mode != nil {
+		m := adventure.LaneMode(*mode)
+		if m != adventure.LaneModeLinear && m != adventure.LaneModeShuffled {
+			return errors.New(`mode must be "linear" or "shuffled"`)
+		}
+		args = append(args, string(m))
+		sets = append(sets, fmt.Sprintf("mode = $%d", len(args)))
+	}
+	if name != nil {
+		cleanName, nameErr := validateLaneName(*name)
+		if nameErr != "" {
+			return errors.New("name " + nameErr)
+		}
+		args = append(args, cleanName)
+		sets = append(sets, fmt.Sprintf("name = $%d", len(args)))
+	}
+	args = append(args, laneID)
+	q := `UPDATE adventure_lanes SET ` + strings.Join(sets, ", ") +
+		fmt.Sprintf(" WHERE id = $%d", len(args))
+	if _, err := db.ExecContext(ctx, q, args...); err != nil {
+		return fmt.Errorf("update: %w", err)
+	}
+	_, _ = db.ExecContext(ctx,
+		`UPDATE adventures SET updated_at = now_text() WHERE id = $1`, advID)
+	return nil
+}
+
+// DeleteLaneByIdx removes a lane addressed by (advID, laneIdx).
+// Refuses if the lane still owns puzzles — the model has to move
+// them out via move_puzzle first. Same blast-radius reasoning as
+// the multipart DeleteLane handler: silent re-laning of someone's
+// puzzles is a data-loss-shaped surprise we'd rather avoid.
+func DeleteLaneByIdx(ctx context.Context, db *sql.DB, advID int64, laneIdx int) error {
+	var laneID int64
+	if err := db.QueryRowContext(ctx,
+		`SELECT id FROM adventure_lanes WHERE adventure_id = $1 AND idx = $2`,
+		advID, laneIdx).Scan(&laneID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("no lane at idx %d in this adventure", laneIdx)
+		}
+		return fmt.Errorf("lane lookup: %w", err)
+	}
+	var n int
+	if err := db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM adventure_pages WHERE lane_id = $1`, laneID).Scan(&n); err != nil {
+		return fmt.Errorf("page count: %w", err)
+	}
+	if n > 0 {
+		return fmt.Errorf("lane has %d puzzle(s) — move them out via move_puzzle first", n)
+	}
+	if _, err := db.ExecContext(ctx,
+		`DELETE FROM adventure_lanes WHERE id = $1`, laneID); err != nil {
+		return fmt.Errorf("delete: %w", err)
+	}
+	_, _ = db.ExecContext(ctx,
+		`UPDATE adventures SET updated_at = now_text() WHERE id = $1`, advID)
+	return nil
+}
+
+// ReorderLanesByIdx assigns each lane in the supplied list a new
+// idx in list order. Lanes are addressed by their *current* idx
+// (the export-shape index) rather than DB rowid, so the MCP shape
+// matches the model's mental model of the envelope.
+//
+// Same parking-then-reassign pattern as ReorderPages — stage every
+// row at id+10^9 first, then write 0..N-1 in the desired order to
+// avoid transient UNIQUE(adventure_id, idx) collisions.
+//
+// The supplied list must contain every lane in the adventure
+// exactly once. Anything else is a 400-shaped error: silently
+// permitting a partial list would leave parked rows behind.
+func ReorderLanesByIdx(ctx context.Context, db *sql.DB, advID int64, newOrder []int) error {
+	rows, err := db.QueryContext(ctx,
+		`SELECT id, idx FROM adventure_lanes WHERE adventure_id = $1`, advID)
+	if err != nil {
+		return fmt.Errorf("load lanes: %w", err)
+	}
+	defer rows.Close()
+	idxToID := map[int]int64{}
+	for rows.Next() {
+		var id int64
+		var idx int
+		if err := rows.Scan(&id, &idx); err != nil {
+			return fmt.Errorf("scan: %w", err)
+		}
+		idxToID[idx] = id
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("rows: %w", err)
+	}
+	if len(newOrder) != len(idxToID) {
+		return fmt.Errorf("new_order has %d entries but adventure has %d lanes", len(newOrder), len(idxToID))
+	}
+	seen := map[int]bool{}
+	ids := make([]int64, len(newOrder))
+	for i, idx := range newOrder {
+		if seen[idx] {
+			return fmt.Errorf("lane idx %d listed twice", idx)
+		}
+		seen[idx] = true
+		id, ok := idxToID[idx]
+		if !ok {
+			return fmt.Errorf("no lane at idx %d in this adventure", idx)
+		}
+		ids[i] = id
+	}
+
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE adventure_lanes SET idx = 1000000000 + id WHERE adventure_id = $1`, advID); err != nil {
+		return fmt.Errorf("park: %w", err)
+	}
+	for i, id := range ids {
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE adventure_lanes SET idx = $1 WHERE id = $2 AND adventure_id = $3`,
+			i, id, advID); err != nil {
+			return fmt.Errorf("renumber idx %d: %w", i, err)
+		}
+	}
+	_, _ = tx.ExecContext(ctx,
+		`UPDATE adventures SET updated_at = now_text() WHERE id = $1`, advID)
+	return tx.Commit()
 }
 
 // laneIDFrom pulls the {laneID} URL parameter and returns it as an
