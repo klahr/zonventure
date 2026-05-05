@@ -12,13 +12,15 @@ import (
 	"git.sr.ht/~klahr/zv/internal/admin"
 	"git.sr.ht/~klahr/zv/internal/auth"
 	"git.sr.ht/~klahr/zv/internal/logx"
+	"git.sr.ht/~klahr/zv/internal/storage"
 )
 
 // Server holds the dependencies the JSON-RPC handlers need. One
 // instance per zv process; safe for concurrent use (the underlying
-// *sql.DB is the only state).
+// *sql.DB and storage.Blobs are the only mutable references).
 type Server struct {
 	DB      *sql.DB
+	Storage storage.Blobs
 	version string
 	tools   *registry
 }
@@ -30,11 +32,16 @@ type Server struct {
 // version is surfaced in the initialize handshake's serverInfo so
 // MCP clients can show the same string /api/version reports. Empty
 // falls back to "dev", matching buildVersion's posture.
-func New(db *sql.DB, version string) *Server {
+//
+// blobs is the same storage.Blobs the admin handlers use; the
+// attach_image tool calls PutAdventureAvatar through it so an S3
+// (or future localfs) backend gets the bytes through the same seam
+// as the multipart UI flow.
+func New(db *sql.DB, version string, blobs storage.Blobs) *Server {
 	if version == "" {
 		version = "dev"
 	}
-	s := &Server{DB: db, version: version, tools: newRegistry()}
+	s := &Server{DB: db, Storage: blobs, version: version, tools: newRegistry()}
 	s.registerTools()
 	return s
 }
@@ -74,7 +81,14 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req Request
-	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
+	// 16 MiB request cap. The default 1 MiB was too tight once
+	// attach_image came online: a 5 MiB image (the default per-image
+	// upload cap) base64-encodes to ~6.7 MiB, so we need headroom for
+	// the encoded payload + JSON envelope. Operators who raised
+	// ZV_MAX_IMAGE_BYTES well past the default may need to bump this
+	// further; the ceiling stays a hard cap so a runaway client can't
+	// exhaust memory streaming garbage at us.
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<20))
 	if err := dec.Decode(&req); err != nil {
 		writeError(w, nil, codeParseError, "parse error: "+err.Error())
 		return

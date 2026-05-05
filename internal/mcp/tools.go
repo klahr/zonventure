@@ -3,12 +3,15 @@ package mcp
 import (
 	"context"
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"git.sr.ht/~klahr/zv/internal/admin"
 	"git.sr.ht/~klahr/zv/internal/auth"
+	"git.sr.ht/~klahr/zv/internal/imageutil"
 )
 
 // errUnknownTool is the sentinel the dispatcher uses to map "no
@@ -165,6 +168,40 @@ func (s *Server) registerTools() {
 			},
 		},
 	}, setLaneMode)
+
+	s.tools.register(ToolDescriptor{
+		Name:        "attach_image",
+		Description: "Attach an image to an adventure. Set target=\"avatar\" for the adventure cover/icon, or pass a numeric page index (matching the export shape) to attach to that puzzle. The image bytes travel base64-encoded inside this call — there is no URL fetch path. Re-calling for the same (slug, target) replaces what was there: avatar overwrites, puzzle deletes existing puzzle images then stores this one as the puzzle's only image. Server normalises (shrinks to 512 px max dim, re-encodes JPEG/PNG) before storing, mirroring the multipart UI flow. Per-image cap is ZV_MAX_IMAGE_BYTES (default 5 MiB on the decoded bytes).",
+		InputSchema: map[string]any{
+			"type":     "object",
+			"required": []string{"slug", "target", "data_b64", "mime_type"},
+			"properties": map[string]any{
+				"slug": map[string]any{
+					"type":        "string",
+					"description": "Adventure to attach the image to.",
+				},
+				"target": map[string]any{
+					"description": `"avatar" for the adventure cover icon, or a non-negative integer puzzle index (page idx, matching envelope.pages[i].idx).`,
+					"oneOf": []any{
+						map[string]any{"type": "string", "enum": []string{"avatar"}},
+						map[string]any{"type": "integer", "minimum": 0},
+					},
+				},
+				"data_b64": map[string]any{
+					"type":        "string",
+					"description": "Base64 (standard alphabet, with or without padding) of the raw image bytes. Avatars accept JPEG/PNG/WebP/SVG; puzzle images accept JPEG/PNG/WebP.",
+				},
+				"mime_type": map[string]any{
+					"type":        "string",
+					"description": `Declared content type, e.g. "image/jpeg", "image/png", "image/webp", "image/svg+xml" (avatar only). Must start with "image/".`,
+				},
+				"alt_text": map[string]any{
+					"type":        "string",
+					"description": "Optional accessibility description for puzzle images (ignored for avatars). The arranger UI surfaces this and players' screen readers read it aloud — write what the image shows, not where the player should go.",
+				},
+			},
+		},
+	}, attachImage)
 
 	s.tools.register(ToolDescriptor{
 		Name:        "delete_adventure",
@@ -515,6 +552,141 @@ func deleteAdventure(ctx context.Context, s *Server, args json.RawMessage) (Tool
 		return errorResult(err.Error()), nil
 	}
 	return textResult(`{"ok":true,"deleted":"` + p.Slug + `"}`), nil
+}
+
+// attachImage stores a base64-encoded image as either the
+// adventure's avatar or a single puzzle image. Re-calling on the
+// same (slug, target) replaces — for avatars that's a single
+// UPSERT-shaped overwrite via storage.PutAdventureAvatar; for
+// puzzles we delete the page's existing images and insert this one
+// as the page's sole image at idx 0. Bytes go through the same
+// imageutil pipeline the multipart UI uses (shrink to 512 px, force
+// JPEG/PNG re-encode for raster) so storage stays consistent
+// regardless of which surface produced it.
+func attachImage(ctx context.Context, s *Server, args json.RawMessage) (ToolCallResult, error) {
+	var p struct {
+		Slug     string          `json:"slug"`
+		Target   json.RawMessage `json:"target"`
+		DataB64  string          `json:"data_b64"`
+		MimeType string          `json:"mime_type"`
+		AltText  string          `json:"alt_text,omitempty"`
+	}
+	if err := json.Unmarshal(args, &p); err != nil {
+		return errorResult("bad arguments: " + err.Error()), nil
+	}
+	if p.Slug == "" {
+		return errorResult("slug is required"), nil
+	}
+	if len(p.Target) == 0 {
+		return errorResult(`target is required ("avatar" or a non-negative page idx)`), nil
+	}
+	if p.DataB64 == "" {
+		return errorResult("data_b64 is required"), nil
+	}
+	if !strings.HasPrefix(p.MimeType, "image/") {
+		return errorResult(`mime_type must start with "image/"`), nil
+	}
+	// Accept both standard and raw (no-padding) base64; some clients
+	// strip the trailing '=' for compactness.
+	data, err := base64.StdEncoding.DecodeString(p.DataB64)
+	if err != nil {
+		data, err = base64.RawStdEncoding.DecodeString(p.DataB64)
+	}
+	if err != nil {
+		return errorResult("data_b64 is not valid base64: " + err.Error()), nil
+	}
+	if maxBytes := admin.MaxImageBytes(); int64(len(data)) > maxBytes {
+		return errorResult(fmt.Sprintf("image too large: %d bytes (cap %d). Lower the resolution or shrink before encoding.", len(data), maxBytes)), nil
+	}
+	me, ok := auth.FromContext(ctx)
+	if !ok {
+		return errorResult("no authenticated caller"), nil
+	}
+	advID, _, err := admin.AuthorizeAdventureEdit(ctx, s.DB, p.Slug, me)
+	if err != nil {
+		if errors.Is(err, admin.ErrForbidden) {
+			return errorResult("forbidden: you cannot edit this adventure"), nil
+		}
+		return errorResult("lookup: " + err.Error()), nil
+	}
+
+	// target is "avatar" (string) or an integer page idx. We probe by
+	// trimming and comparing rather than two unmarshal attempts so the
+	// error message stays specific.
+	rawTarget := strings.TrimSpace(string(p.Target))
+	if rawTarget == `"avatar"` {
+		normalized, mime, nerr := imageutil.NormalizeUpload(data, p.MimeType, imageutil.DefaultMaxDim)
+		if errors.Is(nerr, imageutil.ErrUnsupportedMIME) {
+			return errorResult("avatars accept PNG, JPEG, WebP, or SVG"), nil
+		}
+		if nerr != nil {
+			return errorResult("unreadable image: " + nerr.Error()), nil
+		}
+		if s.Storage == nil {
+			return errorResult("storage backend not configured on this server"), nil
+		}
+		if err := s.Storage.PutAdventureAvatar(ctx, p.Slug, normalized, mime); err != nil {
+			return errorResult("store failed: " + err.Error()), nil
+		}
+		body, _ := json.MarshalIndent(map[string]any{
+			"slug":      p.Slug,
+			"target":    "avatar",
+			"mime_type": mime,
+			"size":      len(normalized),
+		}, "", "  ")
+		return textResult(string(body)), nil
+	}
+
+	var pageIdx int
+	if err := json.Unmarshal(p.Target, &pageIdx); err != nil {
+		return errorResult(`target must be "avatar" or a non-negative integer page idx`), nil
+	}
+	if pageIdx < 0 {
+		return errorResult("page idx must be >= 0"), nil
+	}
+	var pageID int64
+	err = s.DB.QueryRowContext(ctx,
+		`SELECT id FROM adventure_pages WHERE adventure_id = $1 AND idx = $2`,
+		advID, pageIdx).Scan(&pageID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return errorResult(fmt.Sprintf("no puzzle at idx %d in this adventure", pageIdx)), nil
+	}
+	if err != nil {
+		return errorResult("page lookup: " + err.Error()), nil
+	}
+
+	// Shrink + re-encode (raster only — page images don't accept SVG,
+	// matching the existing AddPageImage handler).
+	shrunk, mime, err := imageutil.Shrink(data, imageutil.DefaultMaxDim)
+	if err != nil {
+		return errorResult("unreadable image: " + err.Error()), nil
+	}
+
+	tx, err := s.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return errorResult("tx begin: " + err.Error()), nil
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx,
+		`DELETE FROM adventure_page_images WHERE page_id = $1`, pageID); err != nil {
+		return errorResult("clear: " + err.Error()), nil
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO adventure_page_images(page_id, idx, mime_type, size_bytes, content, alt_text)
+		VALUES ($1, 0, $2, $3, $4, $5)
+	`, pageID, mime, int64(len(shrunk)), shrunk, p.AltText); err != nil {
+		return errorResult("insert: " + err.Error()), nil
+	}
+	if err := tx.Commit(); err != nil {
+		return errorResult("commit: " + err.Error()), nil
+	}
+	body, _ := json.MarshalIndent(map[string]any{
+		"slug":      p.Slug,
+		"target":    pageIdx,
+		"mime_type": mime,
+		"size":      len(shrunk),
+	}, "", "  ")
+	return textResult(string(body)), nil
 }
 
 // wrapEnvelope normalises whatever shape the LLM produced into the

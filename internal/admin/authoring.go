@@ -40,6 +40,13 @@ var maxImageBytes int64 = func() int64 {
 	return def
 }()
 
+// MaxImageBytes exposes the per-image upload cap to other packages
+// (currently the MCP attach_image tool, which validates the decoded
+// payload against the same ceiling the multipart UI enforces). Cheap
+// accessor over the package-private var so callers don't have to
+// re-parse ZV_MAX_IMAGE_BYTES.
+func MaxImageBytes() int64 { return maxImageBytes }
+
 type pageView struct {
 	ID     int64  `json:"id"`
 	Index  int    `json:"index"`
