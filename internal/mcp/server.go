@@ -18,15 +18,23 @@ import (
 // instance per zv process; safe for concurrent use (the underlying
 // *sql.DB is the only state).
 type Server struct {
-	DB    *sql.DB
-	tools *registry
+	DB      *sql.DB
+	version string
+	tools   *registry
 }
 
 // New wires up the server and registers the tool set. Tools are
 // registered once at startup so tools/list is a cheap snapshot
 // instead of a reflective walk.
-func New(db *sql.DB) *Server {
-	s := &Server{DB: db, tools: newRegistry()}
+//
+// version is surfaced in the initialize handshake's serverInfo so
+// MCP clients can show the same string /api/version reports. Empty
+// falls back to "dev", matching buildVersion's posture.
+func New(db *sql.DB, version string) *Server {
+	if version == "" {
+		version = "dev"
+	}
+	s := &Server{DB: db, version: version, tools: newRegistry()}
 	s.registerTools()
 	return s
 }
@@ -100,7 +108,7 @@ func (s *Server) dispatch(ctx context.Context, req Request) (Response, bool) {
 	case "initialize":
 		out.Result = initializeResult{
 			ProtocolVersion: protocolVersion,
-			ServerInfo:      serverInfo{Name: "zv", Version: "0.1"},
+			ServerInfo:      serverInfo{Name: "Zonventure", Version: s.version},
 			Capabilities: map[string]any{
 				"tools": map[string]any{},
 			},

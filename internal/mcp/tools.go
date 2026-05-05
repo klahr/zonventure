@@ -319,10 +319,13 @@ func getAdventure(ctx context.Context, s *Server, args json.RawMessage) (ToolCal
 	// panel — puzzle prompts are themselves markdown so they pick
 	// up real headings / emphasis instead of showing as JSON-escaped
 	// strings), and the JSON envelope second so the model can feed
-	// it back into create_adventure / update_adventure_meta.
+	// it back into create_adventure / update_adventure_meta. The
+	// horizontal rule + fenced code block is the seam so the two
+	// blocks don't visually run into each other when a client
+	// concatenates content blocks for display.
 	return multiTextResult(
 		renderEnvelopeMarkdown(body),
-		string(body),
+		"\n\n---\n\n```json\n"+string(body)+"\n```",
 	), nil
 }
 

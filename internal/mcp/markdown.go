@@ -6,6 +6,17 @@ import (
 	"strings"
 )
 
+// mediaAsset mirrors the export's image / audio asset entry shape.
+// Only the fields the markdown view actually shows — filename plus
+// any author-supplied descriptive text — are decoded; the binary
+// bytes never travel through MCP at all (ExportAdventureEnvelopeJSON
+// strips them).
+type mediaAsset struct {
+	File        string `json:"file"`
+	AltText     string `json:"alt_text"`
+	Description string `json:"description"`
+}
+
 // renderEnvelopeMarkdown produces a human-readable view of an
 // exported adventure envelope. The rendered string is emitted as a
 // second content block alongside the raw JSON: clients (Claude Code,
@@ -41,7 +52,7 @@ func renderEnvelopeMarkdown(envelopeJSON []byte) string {
 				LaneIdx int    `json:"lane_idx"`
 				Title   string `json:"title"`
 				Prompt  string `json:"prompt"`
-				Accept []struct {
+				Accept  []struct {
 					Text  string `json:"text"`
 					Regex bool   `json:"regex"`
 				} `json:"accept"`
@@ -54,7 +65,11 @@ func renderEnvelopeMarkdown(envelopeJSON []byte) string {
 					Idx          int    `json:"idx"`
 					Text         string `json:"text"`
 					DelaySeconds int    `json:"delay_seconds"`
+					Images       []mediaAsset `json:"images"`
+					Audio        []mediaAsset `json:"audio"`
 				} `json:"hints"`
+				Images []mediaAsset `json:"images"`
+				Audio  []mediaAsset `json:"audio"`
 			} `json:"pages"`
 		} `json:"adventure"`
 	}
@@ -142,14 +157,24 @@ func renderEnvelopeMarkdown(envelopeJSON []byte) string {
 			} else {
 				fmt.Fprintf(&b, "**Location:** %s\n\n", loc)
 			}
+			renderMedia(&b, "Images", p.Images)
+			renderMedia(&b, "Audio", p.Audio)
 			if len(p.Hints) > 0 {
 				b.WriteString("**Hints:**\n\n")
 				for _, h := range p.Hints {
 					if h.DelaySeconds > 0 {
-						fmt.Fprintf(&b, "- *(after %ds)* %s\n", h.DelaySeconds, h.Text)
+						fmt.Fprintf(&b, "- *(after %ds)* %s", h.DelaySeconds, h.Text)
 					} else {
-						fmt.Fprintf(&b, "- %s\n", h.Text)
+						fmt.Fprintf(&b, "- %s", h.Text)
 					}
+					// Hint-attached media stays hidden until the
+					// player reveals the hint, but flagging it on
+					// the export lets the model know the puzzle has
+					// extra material if needed.
+					if n := len(h.Images) + len(h.Audio); n > 0 {
+						fmt.Fprintf(&b, " *(+%d media)*", n)
+					}
+					b.WriteString("\n")
 				}
 				b.WriteString("\n")
 			}
@@ -176,4 +201,25 @@ func nonEmpty(s, fallback string) string {
 		return s
 	}
 	return fallback
+}
+
+// renderMedia writes an "**Images:**" or "**Audio:**" block listing
+// each asset's filename plus alt text / description when the author
+// supplied one. The binary bytes themselves never leave the server,
+// so this is the entire signal the model gets that supplementary
+// media exists. No-op when the slice is empty.
+func renderMedia(b *strings.Builder, label string, assets []mediaAsset) {
+	if len(assets) == 0 {
+		return
+	}
+	fmt.Fprintf(b, "**%s:**\n\n", label)
+	for _, a := range assets {
+		desc := nonEmpty(a.AltText, a.Description)
+		if desc != "" {
+			fmt.Fprintf(b, "- `%s` — %s\n", a.File, desc)
+		} else {
+			fmt.Fprintf(b, "- `%s`\n", a.File)
+		}
+	}
+	b.WriteString("\n")
 }
