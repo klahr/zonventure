@@ -117,6 +117,24 @@ func textResult(s string) ToolCallResult {
 	return ToolCallResult{Content: []ToolContent{{Type: "text", Text: s}}}
 }
 
+// multiTextResult emits one ToolCallResult with several text blocks
+// in order. Used when a tool wants to surface a human-readable
+// rendering alongside the canonical JSON envelope (get_adventure):
+// MCP clients render text blocks as markdown, so the markdown view
+// shows up nicely in the tool-result panel while the model still
+// gets the JSON for round-tripping. Empty strings are skipped so a
+// missing rendering doesn't produce an empty content block.
+func multiTextResult(blocks ...string) ToolCallResult {
+	out := make([]ToolContent, 0, len(blocks))
+	for _, b := range blocks {
+		if b == "" {
+			continue
+		}
+		out = append(out, ToolContent{Type: "text", Text: b})
+	}
+	return ToolCallResult{Content: out}
+}
+
 // errorResult flags the call as failed but still returns a 200
 // JSON-RPC response — the model needs to see the error text to
 // self-correct on the next turn.

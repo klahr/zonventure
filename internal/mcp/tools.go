@@ -208,7 +208,7 @@ func listAdventures(ctx context.Context, s *Server, _ json.RawMessage) (ToolCall
 	const q = `
 		SELECT a.slug, a.title, COALESCE(a.language,''), a.org_id,
 		       (SELECT COUNT(*) FROM adventure_lanes l WHERE l.adventure_id = a.id) AS lanes,
-		       (SELECT COUNT(*) FROM pages p WHERE p.adventure_id = a.id) AS puzzles
+		       (SELECT COUNT(*) FROM adventure_pages p WHERE p.adventure_id = a.id) AS puzzles
 		FROM adventures a
 		WHERE a.org_id IS NULL OR a.org_id = $1
 		ORDER BY a.title
@@ -315,7 +315,15 @@ func getAdventure(ctx context.Context, s *Server, args json.RawMessage) (ToolCal
 	if err != nil {
 		return errorResult("export: " + err.Error()), nil
 	}
-	return textResult(string(body)), nil
+	// Two blocks: a markdown view first (renders nicely in the tool
+	// panel — puzzle prompts are themselves markdown so they pick
+	// up real headings / emphasis instead of showing as JSON-escaped
+	// strings), and the JSON envelope second so the model can feed
+	// it back into create_adventure / update_adventure_meta.
+	return multiTextResult(
+		renderEnvelopeMarkdown(body),
+		string(body),
+	), nil
 }
 
 // validateAdventure runs the manifest through the importer's full
