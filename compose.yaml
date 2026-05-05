@@ -50,6 +50,10 @@ services:
       # Optional pin for the marketing landing/pricing surfaces. When
       # blank, the admin Settings toggle (DB-backed) is in charge.
       ZV_LANDING_ENABLED: ${ZV_LANDING_ENABLED:-}
+      # Opt-in MCP server at POST /mcp. Off by default so a self-host
+      # install never exposes the route unless the operator explicitly
+      # turns it on. Accepts 1 / true / on / yes.
+      ZV_MCP_ENABLED:   ${ZV_MCP_ENABLED:-}
       # Everything below is optional and pass-through; defaults are
       # empty strings so the server falls back to its own defaults.
       ZV_SMTP_HOST:     ${ZV_SMTP_HOST:-}

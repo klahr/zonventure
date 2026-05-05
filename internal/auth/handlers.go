@@ -55,6 +55,13 @@ type Handlers struct {
 	// entirely — the /auth/oidc/* endpoints 404 and the login UI
 	// hides the SSO button. Built once at boot via auth.NewOIDC.
 	OIDC *OIDC
+	// MCPEnabled mirrors mcp.Enabled() at boot — true when the
+	// operator set ZV_MCP_ENABLED. Surfaced on /whoami so the UI
+	// hides the MCP-tokens settings card on instances where the
+	// /mcp route is not mounted (otherwise users could mint tokens
+	// that hit a 404). Cached at construction since the env var
+	// can't change during the process lifetime.
+	MCPEnabled bool
 }
 
 // Pricing is the small slice of catalog data the frontend needs to
@@ -114,6 +121,11 @@ type whoamiResponse struct {
 	// self-host operators who skim the docs need a louder nudge
 	// than a footnote in SELFHOSTING.md.
 	PasswordIsDefault bool `json:"password_is_default,omitempty"`
+	// MCPEnabled mirrors the server-side ZV_MCP_ENABLED gate so
+	// the UI knows whether to surface the MCP tokens settings card.
+	// Instance-wide, not per-user, but bootstrapped here so the
+	// frontend doesn't need a second fetch.
+	MCPEnabled bool `json:"mcp_enabled,omitempty"`
 }
 
 func (h *Handlers) userResponse(ctx context.Context, u User) whoamiResponse {
@@ -123,6 +135,7 @@ func (h *Handlers) userResponse(ctx context.Context, u User) whoamiResponse {
 		Pricing:           h.Pricing,
 		Memberships:       []membershipDTO{},
 		PasswordIsDefault: u.PasswordIsDefault,
+		MCPEnabled:        h.MCPEnabled,
 	}
 	if u.ScheduledDeletionAt != nil {
 		resp.ScheduledDeletionAt = u.ScheduledDeletionAt.UTC().Format(time.RFC3339)

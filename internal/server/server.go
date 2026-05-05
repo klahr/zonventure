@@ -194,6 +194,7 @@ func New(cfg Config) http.Handler {
 		Mailer:        cfg.Mailer,
 		PublicURL:     cfg.PublicURL,
 		OIDC:          cfg.OIDC,
+		MCPEnabled:    mcp.Enabled(),
 	}
 	playerH := &player.Handlers{
 		DB: cfg.DB, Lib: cfg.Library, Hub: hub, SecureCookie: cfg.SecureCookie,
