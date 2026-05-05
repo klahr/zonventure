@@ -1,0 +1,235 @@
+package admin
+
+import (
+	"context"
+	"crypto/sha256"
+	"database/sql"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"strconv"
+
+	"git.sr.ht/~klahr/zv/internal/auth"
+	"git.sr.ht/~klahr/zv/internal/httpx"
+	"git.sr.ht/~klahr/zv/internal/tokenx"
+	"github.com/go-chi/chi/v5"
+)
+
+// MCP API tokens — long-lived bearer credentials a user pastes into
+// Claude desktop or claude.ai's connector UI so the LLM can author
+// adventures via /mcp on this user's behalf.
+//
+// The full plaintext is shown ONCE at creation (POST). After that
+// the DB only stores sha256(token); the list view returns the
+// user-chosen name and the first few visible chars (token_prefix)
+// so the user can identify which token is which without us being
+// able to re-reveal them.
+
+// mcpTokenPlaintextPrefix is the visible literal prepended to every
+// minted token. Lets a leaked token be grep'd out of logs / paste
+// histories and identified as a zv MCP credential before its owner
+// is contacted.
+const mcpTokenPlaintextPrefix = "zvmcp_"
+
+// mcpTokenSecretBytes is the entropy of the random suffix. 32 bytes
+// (256 bits) matches session tokens; the prefix is purely for
+// identification and is not counted against entropy.
+const mcpTokenSecretBytes = 32
+
+// mcpTokenPrefixDisplay is how many leading characters of the
+// plaintext we keep in token_prefix for display. Long enough to
+// disambiguate two tokens at a glance, short enough that the rest
+// of the secret remains unbruteforceable from this stub alone.
+const mcpTokenPrefixDisplay = 12
+
+// MaxMCPTokenNameLen caps the user-chosen label. Same generous
+// 5–10× headroom as other naming caps in this package.
+const MaxMCPTokenNameLen = 200
+
+type mcpTokenDTO struct {
+	ID         int64  `json:"id"`
+	Name       string `json:"name"`
+	Prefix     string `json:"prefix"`
+	CreatedAt  string `json:"created_at"`
+	LastUsedAt string `json:"last_used_at,omitempty"`
+}
+
+type createMCPTokenReq struct {
+	Name string `json:"name"`
+}
+
+type createMCPTokenResp struct {
+	ID        int64  `json:"id"`
+	Name      string `json:"name"`
+	Prefix    string `json:"prefix"`
+	CreatedAt string `json:"created_at"`
+	// Token is the plaintext. Returned ONCE; subsequent GETs only
+	// surface Prefix.
+	Token string `json:"token"`
+}
+
+// CreateMCPToken mints a fresh token for the calling user.
+//
+// POST /api/admin/me/mcp-tokens
+func (h *Handlers) CreateMCPToken(w http.ResponseWriter, r *http.Request) {
+	me, _ := auth.FromContext(r.Context())
+	var req createMCPTokenReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.Error(w, http.StatusBadRequest, "bad request body")
+		return
+	}
+	name, err := validateName(req.Name, MaxMCPTokenNameLen)
+	if err != nil {
+		httpx.Error(w, http.StatusBadRequest, "name "+err.Error())
+		return
+	}
+	secret, err := tokenx.New(mcpTokenSecretBytes)
+	if err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "token gen", err)
+		return
+	}
+	plaintext := mcpTokenPlaintextPrefix + secret
+	hash := sha256.Sum256([]byte(plaintext))
+	prefix := plaintext
+	if len(prefix) > mcpTokenPrefixDisplay {
+		prefix = prefix[:mcpTokenPrefixDisplay]
+	}
+
+	var (
+		id        int64
+		createdAt string
+	)
+	err = h.DB.QueryRowContext(r.Context(), `
+		INSERT INTO mcp_tokens (user_id, token_hash, name, token_prefix)
+		VALUES ($1, $2, $3, $4)
+		RETURNING id, created_at
+	`, me.ID, hash[:], name, prefix).Scan(&id, &createdAt)
+	if err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "insert", err)
+		return
+	}
+	httpx.JSON(w, http.StatusCreated, createMCPTokenResp{
+		ID:        id,
+		Name:      name,
+		Prefix:    prefix,
+		CreatedAt: createdAt,
+		Token:     plaintext,
+	})
+}
+
+// ListMCPTokens returns every token the calling user has minted.
+// Plaintext is never re-emitted; the response carries name + prefix
+// only.
+//
+// GET /api/admin/me/mcp-tokens
+func (h *Handlers) ListMCPTokens(w http.ResponseWriter, r *http.Request) {
+	me, _ := auth.FromContext(r.Context())
+	rows, err := h.DB.QueryContext(r.Context(), `
+		SELECT id, name, token_prefix, created_at, COALESCE(last_used_at, '')
+		FROM mcp_tokens
+		WHERE user_id = $1
+		ORDER BY created_at DESC
+	`, me.ID)
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "list failed")
+		return
+	}
+	defer rows.Close()
+	out := []mcpTokenDTO{}
+	for rows.Next() {
+		var t mcpTokenDTO
+		if err := rows.Scan(&t.ID, &t.Name, &t.Prefix, &t.CreatedAt, &t.LastUsedAt); err != nil {
+			httpx.Error(w, http.StatusInternalServerError, "scan failed")
+			return
+		}
+		out = append(out, t)
+	}
+	httpx.JSON(w, http.StatusOK, map[string]any{"tokens": out})
+}
+
+// RevokeMCPToken deletes a single token by its id. 404 when no
+// matching row belongs to the caller — same probing-resistant shape
+// RevokeMySession uses.
+//
+// DELETE /api/admin/me/mcp-tokens/{id}
+func (h *Handlers) RevokeMCPToken(w http.ResponseWriter, r *http.Request) {
+	me, _ := auth.FromContext(r.Context())
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		httpx.Error(w, http.StatusBadRequest, "bad id")
+		return
+	}
+	res, err := h.DB.ExecContext(r.Context(),
+		`DELETE FROM mcp_tokens WHERE id = $1 AND user_id = $2`, id, me.ID)
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "delete failed")
+		return
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "delete check failed")
+		return
+	}
+	if n == 0 {
+		httpx.Error(w, http.StatusNotFound, "token not found")
+		return
+	}
+	httpx.JSON(w, http.StatusNoContent, nil)
+}
+
+// LookupMCPToken resolves a plaintext bearer token into the owning
+// user. Used by the MCP server's authenticate path; lives in this
+// package because mcp_tokens is admin-side state and the password /
+// session helpers it sits next to do their lookups here too.
+//
+// Returns ErrUnknownMCPToken when no row matches; any other error
+// is a DB-side failure. On success the user row is returned in the
+// same shape auth.Lookup yields, so the caller can drop it straight
+// into auth.WithUser.
+//
+// last_used_at is updated best-effort (a failure to update doesn't
+// fail the lookup) — the worst case is one stale "never used"
+// banner in the settings UI.
+func LookupMCPToken(ctx context.Context, db *sql.DB, plaintext string) (auth.User, error) {
+	if plaintext == "" {
+		return auth.User{}, ErrUnknownMCPToken
+	}
+	hash := sha256.Sum256([]byte(plaintext))
+	var uid int64
+	err := db.QueryRowContext(ctx, `
+		SELECT user_id FROM mcp_tokens WHERE token_hash = $1
+	`, hash[:]).Scan(&uid)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return auth.User{}, ErrUnknownMCPToken
+		}
+		return auth.User{}, err
+	}
+	// Best-effort touch.
+	_, _ = db.ExecContext(ctx,
+		`UPDATE mcp_tokens SET last_used_at = now_text() WHERE token_hash = $1`,
+		hash[:])
+
+	var (
+		u     auth.User
+		orgID sql.NullInt64
+	)
+	err = db.QueryRowContext(ctx, `
+		SELECT id, username, role, org_id, COALESCE(email, ''),
+		       COALESCE(email_verified, 1)
+		FROM users WHERE id = $1
+	`, uid).Scan(&u.ID, &u.Username, &u.Role, &orgID, &u.Email, &u.EmailVerified)
+	if err != nil {
+		return auth.User{}, err
+	}
+	if orgID.Valid {
+		u.OrgID = &orgID.Int64
+	}
+	u.IsAdmin = u.Role == auth.RoleAdmin
+	return u, nil
+}
+
+// ErrUnknownMCPToken is returned by LookupMCPToken when the bearer
+// token doesn't match any row. Sentinel so the MCP server can map
+// it to a 401 without inspecting message strings.
+var ErrUnknownMCPToken = errors.New("unknown mcp token")

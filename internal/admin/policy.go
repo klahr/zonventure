@@ -3,9 +3,70 @@ package admin
 import (
 	"context"
 	"database/sql"
+	"errors"
 
 	"git.sr.ht/~klahr/zv/internal/auth"
 )
+
+// ErrForbidden is the policy-level "you can't do that" error returned
+// by Authorize* helpers. Sentinel so callers outside HTTP land (the
+// MCP server most notably) can map it to a 401/403 instead of
+// inspecting message strings.
+var ErrForbidden = errors.New("forbidden")
+
+// AuthorizeAdventureRead checks the caller is allowed to read the
+// named adventure under the same visibility rules ListAdventures
+// applies: globally-owned admin catalog visible to everyone in the
+// authoring tier, org-owned visible to that org's members, plus the
+// share/grant cascade. Returns the adventure id and the owning org
+// on success.
+//
+// On miss returns sql.ErrNoRows (so callers can distinguish "no such
+// adventure" from "exists but you can't see it"); on policy denial
+// returns ErrForbidden.
+func AuthorizeAdventureRead(ctx context.Context, db *sql.DB, slug string, user auth.User) (int64, sql.NullInt64, error) {
+	h := &Handlers{DB: db}
+	org, err := h.adventureOwner(ctx, slug)
+	if err != nil {
+		return 0, sql.NullInt64{}, err
+	}
+	// Reuse the staff-side visibility cascade so the MCP read path
+	// honours the same grant + share table the arranger UI does.
+	// Published flag is sourced inline; cheap and avoids returning
+	// it through adventureOwner.
+	var published bool
+	_ = db.QueryRowContext(ctx,
+		`SELECT COALESCE(published, 0) <> 0 FROM adventures WHERE slug = $1`, slug).Scan(&published)
+	if !h.staffCanSeeAdventure(ctx, user, org, published, slug) {
+		return 0, sql.NullInt64{}, ErrForbidden
+	}
+	advID, err := adventureIDBySlug(ctx, db, slug)
+	if err != nil {
+		return 0, sql.NullInt64{}, err
+	}
+	return advID, org, nil
+}
+
+// AuthorizeAdventureEdit is the canAuthor counterpart: passes only
+// for callers who can mutate authored content (admins, plus
+// org_admins of the owning org). org_member is rejected — they can
+// run events but not rewrite puzzle copy. Same error contract as
+// AuthorizeAdventureRead.
+func AuthorizeAdventureEdit(ctx context.Context, db *sql.DB, slug string, user auth.User) (int64, sql.NullInt64, error) {
+	h := &Handlers{DB: db}
+	org, err := h.adventureOwner(ctx, slug)
+	if err != nil {
+		return 0, sql.NullInt64{}, err
+	}
+	if !canAuthor(user, org) {
+		return 0, sql.NullInt64{}, ErrForbidden
+	}
+	advID, err := adventureIDBySlug(ctx, db, slug)
+	if err != nil {
+		return 0, sql.NullInt64{}, err
+	}
+	return advID, org, nil
+}
 
 /* ---------------- Authoring policy ----------------
  *

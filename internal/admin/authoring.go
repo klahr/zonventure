@@ -414,12 +414,31 @@ func (h *Handlers) UpdateAdventure(w http.ResponseWriter, r *http.Request) {
 	if !httpx.DecodeJSON(w, r, &req) {
 		return
 	}
+	if err := applyAdventureMetaUpdate(r.Context(), h.DB, slug, req); err != nil {
+		var ie *importError
+		if errors.As(err, &ie) {
+			httpx.Error(w, ie.status, ie.Error())
+			return
+		}
+		httpx.ServerErr(w, http.StatusInternalServerError, "update failed", err)
+		return
+	}
+	httpx.JSON(w, http.StatusNoContent, nil)
+}
+
+// applyAdventureMetaUpdate is the shared core of UpdateAdventure (the
+// HTTP handler) and UpdateAdventureMetaJSON (the MCP entry point).
+// Builds the SET clause off whichever fields the caller patched,
+// runs the full per-column validation pipeline, and either commits
+// with a stamped updated_at or returns an *importError carrying
+// the right HTTP status for the multipart handler to map back.
+//
+// "nothing to update" reads as 400 — empty patches are caller bugs,
+// not no-ops. Slug uniqueness violations bubble up as 409 via the
+// generic conflict mapping.
+func applyAdventureMetaUpdate(ctx context.Context, db *sql.DB, slug string, req updateAdventureRequest) error {
 	sets := []string{"updated_at = now_text()"}
 	args := []any{}
-	// Postgres uses `$N` placeholders, not `?`. Each `add` mints the
-	// next index off the current arg count so SET clauses stay in sync
-	// with their values regardless of which optional fields the caller
-	// patched.
 	add := func(col string, val any) {
 		sets = append(sets, fmt.Sprintf("%s = $%d", col, len(args)+1))
 		args = append(args, val)
@@ -427,50 +446,41 @@ func (h *Handlers) UpdateAdventure(w http.ResponseWriter, r *http.Request) {
 	if req.Title != nil {
 		title, err := validateName(*req.Title, MaxNameLen)
 		if err != nil {
-			httpx.Error(w, http.StatusBadRequest, "title "+err.Error())
-			return
+			return badRequestf("title %s", err.Error())
 		}
 		add("title", title)
 	}
 	if req.Description != nil {
 		if _, err := validateBlurb(*req.Description, MaxBlurbLen); err != nil {
-			httpx.Error(w, http.StatusBadRequest, "description "+err.Error())
-			return
+			return badRequestf("description %s", err.Error())
 		}
 		add("description", *req.Description)
 	}
 	if req.Author != nil {
 		if _, err := validateBlurb(*req.Author, MaxAuthorLen); err != nil {
-			httpx.Error(w, http.StatusBadRequest, "author "+err.Error())
-			return
+			return badRequestf("author %s", err.Error())
 		}
 		add("author", *req.Author)
 	}
 	if req.IntroText != nil {
 		if _, err := validateBlurb(*req.IntroText, MaxBlurbLen); err != nil {
-			httpx.Error(w, http.StatusBadRequest, "intro_text "+err.Error())
-			return
+			return badRequestf("intro_text %s", err.Error())
 		}
 		add("intro_text", *req.IntroText)
 	}
 	if req.OutroText != nil {
 		if _, err := validateBlurb(*req.OutroText, MaxBlurbLen); err != nil {
-			httpx.Error(w, http.StatusBadRequest, "outro_text "+err.Error())
-			return
+			return badRequestf("outro_text %s", err.Error())
 		}
 		add("outro_text", *req.OutroText)
 	}
 	if req.Slug != nil {
 		newSlug := strings.TrimSpace(*req.Slug)
 		if !validSlug(newSlug) {
-			httpx.Error(w, http.StatusBadRequest, "slug may only contain a-z 0-9 and hyphens")
-			return
+			return badRequestf("slug may only contain a-z 0-9 and hyphens")
 		}
 		add("slug", newSlug)
 	}
-	// Colour fields: accept empty string as "clear to default". Pointer
-	// semantics let callers patch one colour at a time without touching
-	// the others.
 	colorPatches := []struct {
 		col string
 		val *string
@@ -486,17 +496,14 @@ func (h *Handlers) UpdateAdventure(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		if !validHexColor(*p.val) {
-			httpx.Error(w, http.StatusBadRequest, p.col+` must be empty or "#rrggbb"`)
-			return
+			return badRequestf(`%s must be empty or "#rrggbb"`, p.col)
 		}
 		add(p.col, nullIfEmpty(*p.val))
 	}
 	if req.Language != nil {
 		lang := strings.TrimSpace(*req.Language)
 		if !validLanguageTag(lang) {
-			httpx.Error(w, http.StatusBadRequest,
-				`language must be a BCP 47 tag (e.g. "en", "sv", "pt-BR")`)
-			return
+			return badRequestf(`language must be a BCP 47 tag (e.g. "en", "sv", "pt-BR")`)
 		}
 		add("language", lang)
 	}
@@ -510,19 +517,11 @@ func (h *Handlers) UpdateAdventure(w http.ResponseWriter, r *http.Request) {
 	if req.StrictAssets != nil {
 		add("strict_assets", *req.StrictAssets)
 	}
-	// Starting location: each component patches independently. Lat
-	// and Lng are Nullable so {"start_lat": null} clears that column;
-	// {"start_lat": 59.32} sets it. Validation: when setting lat the
-	// value must be a sane WGS84 coordinate; same for lng. Mismatched
-	// halves (lat without lng or vice versa) aren't checked here —
-	// the loader treats either-nil as "no start" and the UI greys
-	// the marker, so an interim partial state is harmless.
 	if req.StartLat != nil {
 		if req.StartLat.Valid {
 			lat := req.StartLat.Value
 			if lat < -90 || lat > 90 {
-				httpx.Error(w, http.StatusBadRequest, "start_lat out of range")
-				return
+				return badRequestf("start_lat out of range")
 			}
 			add("start_lat", lat)
 		} else {
@@ -533,8 +532,7 @@ func (h *Handlers) UpdateAdventure(w http.ResponseWriter, r *http.Request) {
 		if req.StartLng.Valid {
 			lng := req.StartLng.Value
 			if lng < -180 || lng > 180 {
-				httpx.Error(w, http.StatusBadRequest, "start_lng out of range")
-				return
+				return badRequestf("start_lng out of range")
 			}
 			add("start_lng", lng)
 		} else {
@@ -544,27 +542,42 @@ func (h *Handlers) UpdateAdventure(w http.ResponseWriter, r *http.Request) {
 	if req.StartLabel != nil {
 		label, err := validateBlurb(*req.StartLabel, MaxNameLen)
 		if err != nil {
-			httpx.Error(w, http.StatusBadRequest, "start_label "+err.Error())
-			return
+			return badRequestf("start_label %s", err.Error())
 		}
 		add("start_label", label)
 	}
 	if len(sets) == 1 {
-		httpx.Error(w, http.StatusBadRequest, "nothing to update")
-		return
+		return badRequestf("nothing to update")
 	}
 	args = append(args, slug)
 	q := fmt.Sprintf(`UPDATE adventures SET %s WHERE slug = $%d`, strings.Join(sets, ", "), len(args))
-	res, err := h.DB.ExecContext(r.Context(), q, args...)
+	res, err := db.ExecContext(ctx, q, args...)
 	if err != nil {
-		httpx.ServerErr(w, http.StatusConflict, "update failed", err)
-		return
+		return conflictf("update failed: %s", err.Error())
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
-		httpx.Error(w, http.StatusNotFound, "unknown adventure")
-		return
+		return &importError{status: http.StatusNotFound, msg: "unknown adventure"}
 	}
-	httpx.JSON(w, http.StatusNoContent, nil)
+	return nil
+}
+
+// UpdateAdventureMetaJSON applies a partial-update patch to the
+// named adventure. patchJSON shape matches updateAdventureRequest:
+// every field is optional and only present keys are applied. The
+// LLM-facing MCP tool calls this so the model can rename, recolor,
+// flip published, or tweak intro/outro without rebuilding the
+// whole envelope.
+//
+// Caller is responsible for authorization
+// (AuthorizeAdventureEdit). Returns *importError carrying the
+// HTTP status equivalent of any validation failure, or a wrapped
+// DB error for infrastructure problems.
+func UpdateAdventureMetaJSON(ctx context.Context, db *sql.DB, slug string, patchJSON []byte) error {
+	var req updateAdventureRequest
+	if err := json.Unmarshal(patchJSON, &req); err != nil {
+		return badRequestf("patch parse: %s", err.Error())
+	}
+	return applyAdventureMetaUpdate(ctx, db, slug, req)
 }
 
 // DeleteAdventure removes an adventure (and all its pages + images).
@@ -577,42 +590,62 @@ func (h *Handlers) DeleteAdventure(w http.ResponseWriter, r *http.Request) {
 	if _, ok := h.requireEditAdventure(w, r, slug); !ok {
 		return
 	}
-	var count int
-	if err := h.DB.QueryRowContext(r.Context(),
-		`SELECT COUNT(*) FROM events WHERE adventure_slug = $1`, slug).Scan(&count); err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "runs lookup failed")
-		return
-	}
-	if count > 0 {
-		httpx.Error(w, http.StatusConflict, "adventure still has runs; delete them first")
-		return
-	}
-	if err := h.DB.QueryRowContext(r.Context(),
-		`SELECT COUNT(*) FROM adventure_assignments WHERE adventure_slug = $1`, slug).Scan(&count); err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "assignments lookup failed")
-		return
-	}
-	if count > 0 {
-		httpx.Error(w, http.StatusConflict, "adventure still has assignments; revoke them first")
-		return
-	}
-	// Shares have no FK to adventures.slug (kept loose so slug renames
-	// don't break), so clean them up explicitly on delete.
-	if _, err := h.DB.ExecContext(r.Context(),
-		`DELETE FROM adventure_shares WHERE adventure_slug = $1`, slug); err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "shares cleanup failed")
-		return
-	}
-	res, err := h.DB.ExecContext(r.Context(), `DELETE FROM adventures WHERE slug = $1`, slug)
-	if err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "delete failed")
-		return
-	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		httpx.Error(w, http.StatusNotFound, "unknown adventure")
+	if err := DeleteAdventureBySlug(r.Context(), h.DB, slug); err != nil {
+		var ie *importError
+		if errors.As(err, &ie) {
+			httpx.Error(w, ie.status, ie.Error())
+			return
+		}
+		httpx.ServerErr(w, http.StatusInternalServerError, "delete failed", err)
 		return
 	}
 	httpx.JSON(w, http.StatusNoContent, nil)
+}
+
+// DeleteAdventureBySlug is the non-HTTP core of DeleteAdventure. It
+// blocks the delete if the adventure still backs runs or
+// assignments (those need to be cleaned up first), then sweeps the
+// shares table (no FK on slug — kept loose so slug renames don't
+// break) and drops the adventure row. CASCADE on adventure_pages,
+// adventure_lanes, etc. handles the rest.
+//
+// Used by the MCP delete_adventure tool. The password-confirm gate
+// the HTTP handler enforces is intentionally NOT replicated here:
+// the bearer token IS the credential, and the MCP tool surfaces
+// its own confirm-flag UX before reaching this function.
+//
+// Caller is responsible for authorization
+// (AuthorizeAdventureEdit). Returns *importError on
+// "still has runs / assignments / unknown slug"; wrapped DB error
+// otherwise.
+func DeleteAdventureBySlug(ctx context.Context, db *sql.DB, slug string) error {
+	var count int
+	if err := db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM events WHERE adventure_slug = $1`, slug).Scan(&count); err != nil {
+		return fmt.Errorf("runs lookup: %w", err)
+	}
+	if count > 0 {
+		return conflictf("adventure still has runs; delete them first")
+	}
+	if err := db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM adventure_assignments WHERE adventure_slug = $1`, slug).Scan(&count); err != nil {
+		return fmt.Errorf("assignments lookup: %w", err)
+	}
+	if count > 0 {
+		return conflictf("adventure still has assignments; revoke them first")
+	}
+	if _, err := db.ExecContext(ctx,
+		`DELETE FROM adventure_shares WHERE adventure_slug = $1`, slug); err != nil {
+		return fmt.Errorf("shares cleanup: %w", err)
+	}
+	res, err := db.ExecContext(ctx, `DELETE FROM adventures WHERE slug = $1`, slug)
+	if err != nil {
+		return fmt.Errorf("delete: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return &importError{status: http.StatusNotFound, msg: "unknown adventure"}
+	}
+	return nil
 }
 
 /* page CRUD lives in pages.go — types, validation, requireEditPage,

@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -224,6 +225,125 @@ func resolveCreateLane(ctx context.Context, db *sql.DB, advID, requestedLaneID i
 		return 0, err
 	}
 	return laneID, nil
+}
+
+// AddPageFromExport inserts a single puzzle into the named adventure
+// from an exportPage-shaped JSON blob (the same shape ImportEnvelope
+// nests under `pages[]`). Used by the MCP add_puzzle tool so the
+// LLM can grow an adventure incrementally instead of replacing it
+// wholesale on every edit.
+//
+// Lane resolution is by idx, not id (the LLM only sees the export
+// shape, which never mentions DB ids): a non-negative LaneIdx is
+// matched against the adventure's own lanes; missing matches fall
+// back to the idx=0 lane, lazily created if absent. The page's
+// own Idx field is ignored — new pages always append. Image / audio
+// references on the page are rejected (assets need to be attached
+// via the arranger UI).
+//
+// Caller is responsible for authorizing the slug first
+// (AuthorizeAdventureEdit).
+func AddPageFromExport(ctx context.Context, db *sql.DB, advID int64, pageJSON []byte) (int64, error) {
+	dec := json.NewDecoder(bytes.NewReader(pageJSON))
+	dec.DisallowUnknownFields()
+	var p exportPage
+	if err := dec.Decode(&p); err != nil {
+		return 0, fmt.Errorf("page parse: %w", err)
+	}
+	if len(p.Images) > 0 || len(p.Audio) > 0 {
+		return 0, errors.New("page assets unsupported via this entry — attach via arranger UI")
+	}
+	for i, hint := range p.Hints {
+		if len(hint.Images) > 0 || len(hint.Audio) > 0 {
+			return 0, fmt.Errorf("hint %d assets unsupported via this entry", i+1)
+		}
+	}
+	// Title / prompt / hints reuse the same validators CreatePage
+	// runs so the model gets identical error messages whether it
+	// authors via add_puzzle or via the create_adventure full-blob
+	// path.
+	if _, err := validateBlurb(p.Title, MaxNameLen); err != nil {
+		return 0, fmt.Errorf("title %s", err.Error())
+	}
+	if _, err := validateBlurb(p.Prompt, MaxPromptLen); err != nil {
+		return 0, fmt.Errorf("prompt %s", err.Error())
+	}
+	if _, err := validateBlurb(p.Notes, MaxBlurbLen); err != nil {
+		return 0, fmt.Errorf("notes %s", err.Error())
+	}
+	if p.RadiusM != nil && *p.RadiusM <= 0 {
+		return 0, errors.New("radius_m must be > 0")
+	}
+	for i, hint := range p.Hints {
+		if hint.DelaySeconds < 0 {
+			return 0, fmt.Errorf("hint %d: delay_seconds must be >= 0", i+1)
+		}
+		if _, err := validateBlurb(hint.Text, MaxHintTextLen); err != nil {
+			return 0, fmt.Errorf("hint %d text %s", i+1, err.Error())
+		}
+	}
+	if err := adventure.ValidateAcceptEntries(p.Accept); err != nil {
+		return 0, err
+	}
+
+	// Resolve lane by idx, falling back to (and lazily creating)
+	// idx=0 — same lenient defaulting resolveCreateLane offers when
+	// requestedLaneID is zero.
+	var laneID int64
+	err := db.QueryRowContext(ctx,
+		`SELECT id FROM adventure_lanes WHERE adventure_id = $1 AND idx = $2`,
+		advID, p.LaneIdx).Scan(&laneID)
+	if errors.Is(err, sql.ErrNoRows) {
+		// Unknown idx: fall back to idx=0 (creating it if needed).
+		laneID, err = resolveCreateLane(ctx, db, advID, 0)
+		if err != nil {
+			return 0, fmt.Errorf("resolve lane: %w", err)
+		}
+	} else if err != nil {
+		return 0, fmt.Errorf("resolve lane: %w", err)
+	}
+
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	var nextIdx int
+	if err := tx.QueryRowContext(ctx,
+		`SELECT COALESCE(MAX(idx)+1, 0) FROM adventure_pages WHERE adventure_id = $1`,
+		advID).Scan(&nextIdx); err != nil {
+		return 0, fmt.Errorf("next idx: %w", err)
+	}
+	acceptJ, _ := json.Marshal(p.Accept)
+	var radius any
+	if p.RadiusM != nil {
+		radius = *p.RadiusM
+	}
+	disabled := 0
+	if p.Disabled {
+		disabled = 1
+	}
+	var pageID int64
+	if err := tx.QueryRowContext(ctx, `
+		INSERT INTO adventure_pages(adventure_id, idx, title, prompt, accept, lat, lng, radius_m, disabled, notes, lane_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		RETURNING id
+	`, advID, nextIdx, p.Title, p.Prompt, string(acceptJ), p.Lat, p.Lng, radius, disabled, p.Notes, laneID).Scan(&pageID); err != nil {
+		return 0, fmt.Errorf("insert page: %w", err)
+	}
+	for i, hint := range p.Hints {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO adventure_page_hints(page_id, idx, text, delay_seconds)
+			VALUES ($1, $2, $3, $4)
+		`, pageID, i, hint.Text, hint.DelaySeconds); err != nil {
+			return 0, fmt.Errorf("insert hint %d: %w", i+1, err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("commit: %w", err)
+	}
+	return pageID, nil
 }
 
 // CreatePage appends a new page at the end of the adventure.

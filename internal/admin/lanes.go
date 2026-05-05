@@ -19,6 +19,38 @@ import (
 // pixels around.
 const maxLaneNameLen = 80
 
+// SetLaneMode flips a single lane's mode between "linear" and
+// "shuffled" by adventure id and lane idx. Used by the MCP
+// set_lane_mode tool — the LLM-facing shape uses lane_idx (export
+// shape) rather than the DB row id, so this entry point hides the
+// id lookup.
+//
+// Caller is responsible for authorization
+// (AuthorizeAdventureEdit). Returns an *importError on bad mode
+// or unknown idx; wrapped DB error otherwise. Stamps the parent
+// adventure's updated_at on success — same as the HTTP handler.
+func SetLaneMode(ctx context.Context, db *sql.DB, advID int64, laneIdx int, mode string) error {
+	m := adventure.LaneMode(mode)
+	if m != adventure.LaneModeLinear && m != adventure.LaneModeShuffled {
+		return badRequestf(`mode must be "linear" or "shuffled"`)
+	}
+	res, err := db.ExecContext(ctx,
+		`UPDATE adventure_lanes SET mode = $1 WHERE adventure_id = $2 AND idx = $3`,
+		string(m), advID, laneIdx)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return &importError{status: http.StatusNotFound,
+			msg: "no lane with that idx in this adventure"}
+	}
+	if _, err := db.ExecContext(ctx,
+		`UPDATE adventures SET updated_at = now_text() WHERE id = $1`, advID); err != nil {
+		return err
+	}
+	return nil
+}
+
 // laneIDFrom pulls the {laneID} URL parameter and returns it as an
 // int64 plus an ok flag. Writes the 400 on parse failure so callers
 // can early-return.

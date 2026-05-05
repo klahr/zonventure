@@ -2154,6 +2154,30 @@
       "Sign out of every other browser, phone, and tablet? You'll stay signed in here.":
           'Logga ut från alla andra webbläsare, telefoner och surfplattor? Du förblir inloggad här.',
       'Other sessions signed out': 'Andra sessioner utloggade',
+      'MCP API tokens': 'MCP API-tokens',
+      'Long-lived tokens for connecting Claude or another MCP client to this account so it can author adventures on your behalf.':
+          'Långlivade tokens för att ansluta Claude eller en annan MCP-klient till det här kontot så att den kan skapa äventyr åt dig.',
+      'New token': 'Ny token',
+      'No MCP tokens yet.': 'Inga MCP-tokens ännu.',
+      'last used {{when}}': 'senast använd {{when}}',
+      'never used': 'aldrig använd',
+      'Revoke this token? Any client currently using it will stop working.':
+          'Återkalla den här token? Klienter som använder den just nu kommer att sluta fungera.',
+      'Token revoked': 'Token återkallad',
+      'Create MCP token': 'Skapa MCP-token',
+      'e.g. "Claude desktop"': 't.ex. "Claude desktop"',
+      'Token name': 'Tokennamn',
+      'A label for your reference. The token itself is generated.':
+          'En etikett för din referens. Själva token genereras automatiskt.',
+      'Your new token': 'Din nya token',
+      'Copy token': 'Kopiera token',
+      'Token copied': 'Token kopierad',
+      'Copy failed — select the field and copy manually.':
+          'Kopieringen misslyckades — markera fältet och kopiera manuellt.',
+      'Copy this token now — it will not be shown again.':
+          'Kopiera token nu — den visas inte igen.',
+      'Paste it into your MCP client as the bearer token. Treat it like a password.':
+          'Klistra in den i din MCP-klient som bearer-token. Behandla den som ett lösenord.',
       'Server settings': 'Serverinställningar',
       'Knobs that affect the whole deployment. Visible only to global admins.':
           'Inställningar som påverkar hela installationen. Syns bara för globala administratörer.',

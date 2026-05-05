@@ -547,14 +547,123 @@ func (h *Handlers) ImportAdventure(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusRequestEntityTooLarge, "archive too large")
 		return
 	}
-	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	manifestJSON, assets, err := splitImportZip(data)
 	if err != nil {
-		httpx.Error(w, http.StatusBadRequest, "not a valid zip archive")
+		httpx.Error(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	// Locate adventure.json.
-	var manifest *zip.File
-	assets := map[string]*zip.File{}
+	me, _ := auth.FromContext(r.Context())
+	advID, slug, title, err := importEnvelopeJSON(r.Context(), h.DB, manifestJSON, r.URL.Query().Get("slug"), me, assets, false)
+	if err != nil {
+		// Validation failures and missing-asset references read as
+		// "the client sent a bad archive" — 400 carries that. Any
+		// other error is a server-side failure (DB hiccup, tx
+		// commit) and reads as 500.
+		var ie *importError
+		if errors.As(err, &ie) {
+			httpx.Error(w, ie.status, ie.Error())
+			return
+		}
+		httpx.ServerErr(w, http.StatusInternalServerError, "import failed", err)
+		return
+	}
+	httpx.JSON(w, http.StatusCreated, map[string]any{
+		"slug":  slug,
+		"id":    advID,
+		"title": title,
+	})
+}
+
+// ImportEnvelopeJSON imports an adventure from a parsed JSON manifest
+// (the bytes that would otherwise sit at adventure.json inside a
+// .zvadv.zip export). Used by callers that produce structured
+// adventures programmatically — most notably the MCP server, where
+// an LLM generates the manifest and binary assets get attached
+// later through the arranger UI.
+//
+// overrideSlug, when non-empty, replaces the envelope's own slug
+// (mirrors the multipart handler's ?slug= collision-avoidance
+// path). Pass "" to use whatever the manifest carries.
+//
+// Asset references in the manifest (page images, hint audio,
+// avatar) cannot be satisfied without a zip — page / hint asset
+// references hard-fail the import; an avatar reference is silently
+// skipped, matching the multipart handler's behaviour for an
+// otherwise valid zip whose avatar entry is missing.
+//
+// Returns the new adventures.id, the slug it was written under,
+// and the title from the manifest. On validation failure (bad
+// slug, missing format tag, asset-missing) the error is an
+// *importError carrying the appropriate HTTP status; the
+// multipart handler maps that back to a 400, callers outside HTTP
+// land can ignore the status and treat any error as fatal.
+func ImportEnvelopeJSON(ctx context.Context, db *sql.DB, manifestJSON []byte, overrideSlug string, user auth.User) (advID int64, slug, title string, err error) {
+	return importEnvelopeJSON(ctx, db, manifestJSON, overrideSlug, user, nil, false)
+}
+
+// ValidateEnvelopeJSON runs the full import pipeline against a
+// throwaway transaction and rolls back instead of committing. Used
+// by the MCP validate_adventure tool so the LLM can catch slug
+// collisions, language-tag typos, lane-mode invalid values, and
+// every other constraint the importer enforces — without leaving
+// a half-baked adventure behind on each retry.
+//
+// Returns the same error shape ImportEnvelopeJSON does (an
+// *importError with the corresponding HTTP status, or a wrapped
+// DB error). nil means "this manifest would import cleanly".
+func ValidateEnvelopeJSON(ctx context.Context, db *sql.DB, manifestJSON []byte, overrideSlug string, user auth.User) error {
+	_, _, _, err := importEnvelopeJSON(ctx, db, manifestJSON, overrideSlug, user, nil, true)
+	return err
+}
+
+// ExportAdventureEnvelopeJSON returns the manifest JSON for the
+// named adventure — same shape as adventure.json inside a
+// .zvadv.zip export, ready to be fed back into ImportEnvelopeJSON.
+// The binary asset blobs are NOT included (the model can't
+// usefully consume them, and round-tripping megabytes of image
+// content through every MCP read would be wasteful).
+//
+// Used by the MCP get_adventure tool. Caller is responsible for
+// authorizing the slug first (AuthorizeAdventureRead).
+func ExportAdventureEnvelopeJSON(ctx context.Context, db *sql.DB, advID int64) ([]byte, error) {
+	h := &Handlers{DB: db}
+	env, _, err := h.buildExport(ctx, advID)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(env)
+}
+
+// importError carries an HTTP status alongside the message so the
+// multipart handler can preserve its current 400 / 409 / 500
+// distinctions while sharing the import core with non-HTTP callers.
+type importError struct {
+	status int
+	msg    string
+}
+
+func (e *importError) Error() string { return e.msg }
+
+func badRequestf(format string, a ...any) *importError {
+	return &importError{status: http.StatusBadRequest, msg: fmt.Sprintf(format, a...)}
+}
+
+func conflictf(format string, a ...any) *importError {
+	return &importError{status: http.StatusConflict, msg: fmt.Sprintf(format, a...)}
+}
+
+// splitImportZip walks the buffered upload, validates the entries
+// have flat (non-traversing) names, and separates the manifest
+// from the asset blobs. Asset bytes are pre-read into memory so
+// the importer doesn't hold the *zip.Reader open across the
+// transaction — matters for callers that pass the assets map
+// through goroutines or layer further.
+func splitImportZip(data []byte) (manifestJSON []byte, assets map[string][]byte, err error) {
+	zr, zerr := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if zerr != nil {
+		return nil, nil, badRequestf("not a valid zip archive")
+	}
+	assets = map[string][]byte{}
 	for _, zf := range zr.File {
 		if zf.FileInfo().IsDir() {
 			continue
@@ -566,96 +675,90 @@ func (h *Handlers) ImportAdventure(w http.ResponseWriter, r *http.Request) {
 		// shadow legitimate files. Reject anything that looks
 		// non-flat.
 		if strings.ContainsAny(zf.Name, `\`) || strings.Contains(zf.Name, "..") || strings.HasPrefix(zf.Name, "/") {
-			httpx.Error(w, http.StatusBadRequest, "archive contains a non-flat path")
-			return
+			return nil, nil, badRequestf("archive contains a non-flat path")
+		}
+		b, rerr := readZipFile(zf, maxImportZipBytes)
+		if rerr != nil {
+			return nil, nil, badRequestf("read %s: %v", zf.Name, rerr)
 		}
 		if zf.Name == "adventure.json" {
-			manifest = zf
+			manifestJSON = b
 		} else {
-			assets[zf.Name] = zf
+			assets[zf.Name] = b
 		}
 	}
-	if manifest == nil {
-		httpx.Error(w, http.StatusBadRequest, "missing adventure.json in archive")
-		return
+	if manifestJSON == nil {
+		return nil, nil, badRequestf("missing adventure.json in archive")
 	}
-	mr, err := manifest.Open()
-	if err != nil {
-		httpx.ServerErr(w, http.StatusInternalServerError, "open manifest", err)
-		return
-	}
-	defer mr.Close()
-	dec := json.NewDecoder(mr)
+	return manifestJSON, assets, nil
+}
+
+// importEnvelopeJSON is the shared core. The exported
+// ImportEnvelopeJSON wraps the assets-less call (MCP); the
+// multipart handler passes the zip-derived asset map.
+//
+// dryRun, when true, skips the final Commit so the deferred
+// Rollback wipes every insert. Used by ValidateEnvelopeJSON to
+// surface validation failures (slug uniqueness, bad language tag,
+// missing lane refs) without persisting the partial work — same
+// code path, just no commit.
+func importEnvelopeJSON(ctx context.Context, db *sql.DB, manifestJSON []byte, overrideSlug string, user auth.User, assets map[string][]byte, dryRun bool) (int64, string, string, error) {
+	dec := json.NewDecoder(bytes.NewReader(manifestJSON))
 	dec.DisallowUnknownFields()
 	var env exportEnvelope
 	if err := dec.Decode(&env); err != nil {
-		httpx.Error(w, http.StatusBadRequest, "manifest parse: "+err.Error())
-		return
+		return 0, "", "", badRequestf("manifest parse: %s", err.Error())
 	}
 	if env.Format != adventureExportFormat {
-		httpx.Error(w, http.StatusBadRequest, "unknown export format: "+env.Format)
-		return
+		return 0, "", "", badRequestf("unknown export format: %s", env.Format)
 	}
-	// Slug: caller can override via ?slug= for collision avoidance.
-	slug := strings.TrimSpace(r.URL.Query().Get("slug"))
+	slug := strings.TrimSpace(overrideSlug)
 	if slug == "" {
 		slug = strings.TrimSpace(env.Adventure.Slug)
 	}
 	if !validSlug(slug) {
-		httpx.Error(w, http.StatusBadRequest, "slug may only contain a-z 0-9 and hyphens")
-		return
+		return 0, "", "", badRequestf("slug may only contain a-z 0-9 and hyphens")
 	}
 	if _, err := validateName(env.Adventure.Title, MaxNameLen); err != nil {
-		httpx.Error(w, http.StatusBadRequest, "title "+err.Error())
-		return
+		return 0, "", "", badRequestf("title %s", err.Error())
 	}
-	me, _ := auth.FromContext(r.Context())
-	org := callerOrgID(me)
-	tx, err := h.DB.BeginTx(r.Context(), nil)
+	org := callerOrgID(user)
+	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
-		httpx.ServerErr(w, http.StatusInternalServerError, "tx failed", err)
-		return
+		return 0, "", "", fmt.Errorf("tx: %w", err)
 	}
 	defer tx.Rollback() //nolint:errcheck
-	advID, err := importAdventureRow(r.Context(), tx, slug, env.Adventure, org, me.ID)
+	advID, err := importAdventureRow(ctx, tx, slug, env.Adventure, org, user.ID)
 	if err != nil {
-		httpx.ServerErr(w, http.StatusConflict, "import failed", err)
-		return
+		return 0, "", "", conflictf("import: %s", err.Error())
 	}
-	// Avatar.
 	if env.Adventure.Avatar != nil && env.Adventure.Avatar.File != "" {
-		if zf, ok := assets[env.Adventure.Avatar.File]; ok {
-			b, err := readZipFile(zf, maxImportZipBytes)
-			if err != nil {
-				httpx.ServerErr(w, http.StatusBadRequest, "read avatar", err)
-				return
-			}
-			if _, err := tx.ExecContext(r.Context(),
+		if b, ok := assets[env.Adventure.Avatar.File]; ok {
+			if _, err := tx.ExecContext(ctx,
 				`UPDATE adventures SET avatar_mime_type = $1, avatar_content = $2 WHERE id = $3`,
 				env.Adventure.Avatar.MimeType, b, advID); err != nil {
-				httpx.ServerErr(w, http.StatusInternalServerError, "write avatar", err)
-				return
+				return 0, "", "", fmt.Errorf("write avatar: %w", err)
 			}
 		}
 	}
-	laneIDByIdx, err := importLanes(r.Context(), tx, advID, env.Adventure.Lanes)
+	laneIDByIdx, err := importLanes(ctx, tx, advID, env.Adventure.Lanes)
 	if err != nil {
-		httpx.ServerErr(w, http.StatusInternalServerError, "import lanes", err)
-		return
+		return 0, "", "", fmt.Errorf("import lanes: %w", err)
 	}
-	if err := importPages(r.Context(), tx, advID, env.Adventure.Pages, laneIDByIdx, assets); err != nil {
-		httpx.ServerErr(w, http.StatusBadRequest, "import pages", err)
-		return
+	if err := importPages(ctx, tx, advID, env.Adventure.Pages, laneIDByIdx, assets); err != nil {
+		return 0, "", "", badRequestf("import pages: %s", err.Error())
+	}
+	if dryRun {
+		// Deferred Rollback wipes the tx; ids/slug/title returned
+		// here describe what WOULD have landed and are useful to
+		// the caller for logging. Validate callers that don't care
+		// about the values just discard them.
+		return advID, slug, env.Adventure.Title, nil
 	}
 	if err := tx.Commit(); err != nil {
-		httpx.ServerErr(w, http.StatusInternalServerError, "commit failed", err)
-		return
+		return 0, "", "", fmt.Errorf("commit: %w", err)
 	}
-	httpx.JSON(w, http.StatusCreated, map[string]any{
-		"slug":  slug,
-		"id":    advID,
-		"title": env.Adventure.Title,
-	})
+	return advID, slug, env.Adventure.Title, nil
 }
 
 // importAdventureRow inserts the adventures row and returns the id.
@@ -731,7 +834,7 @@ func importLanes(ctx context.Context, tx *sql.Tx, advID int64, lanes []exportLan
 	return out, nil
 }
 
-func importPages(ctx context.Context, tx *sql.Tx, advID int64, pages []exportPage, laneIDByIdx map[int]int64, assets map[string]*zip.File) error {
+func importPages(ctx context.Context, tx *sql.Tx, advID int64, pages []exportPage, laneIDByIdx map[int]int64, assets map[string][]byte) error {
 	for _, p := range pages {
 		laneID, ok := laneIDByIdx[p.LaneIdx]
 		if !ok {
@@ -798,14 +901,10 @@ func importPages(ctx context.Context, tx *sql.Tx, advID int64, pages []exportPag
 	return nil
 }
 
-func importImageRow(ctx context.Context, tx *sql.Tx, table, parentCol string, parentID int64, asset exportAsset, assets map[string]*zip.File) error {
-	zf, ok := assets[asset.File]
+func importImageRow(ctx context.Context, tx *sql.Tx, table, parentCol string, parentID int64, asset exportAsset, assets map[string][]byte) error {
+	b, ok := assets[asset.File]
 	if !ok {
 		return fmt.Errorf("image asset %q missing from archive", asset.File)
-	}
-	bytes, err := readZipFile(zf, maxImportZipBytes)
-	if err != nil {
-		return fmt.Errorf("read image %q: %w", asset.File, err)
 	}
 	mime := asset.MimeType
 	if mime == "" {
@@ -813,20 +912,16 @@ func importImageRow(ctx context.Context, tx *sql.Tx, table, parentCol string, pa
 	}
 	q := fmt.Sprintf(`INSERT INTO %s(%s, idx, mime_type, size_bytes, content, alt_text)
 		VALUES ($1, $2, $3, $4, $5, $6)`, table, parentCol)
-	if _, err := tx.ExecContext(ctx, q, parentID, asset.Idx, mime, int64(len(bytes)), bytes, asset.AltText); err != nil {
+	if _, err := tx.ExecContext(ctx, q, parentID, asset.Idx, mime, int64(len(b)), b, asset.AltText); err != nil {
 		return fmt.Errorf("insert image %q: %w", asset.File, err)
 	}
 	return nil
 }
 
-func importAudioRow(ctx context.Context, tx *sql.Tx, table, parentCol string, parentID int64, asset exportAsset, assets map[string]*zip.File) error {
-	zf, ok := assets[asset.File]
+func importAudioRow(ctx context.Context, tx *sql.Tx, table, parentCol string, parentID int64, asset exportAsset, assets map[string][]byte) error {
+	b, ok := assets[asset.File]
 	if !ok {
 		return fmt.Errorf("audio asset %q missing from archive", asset.File)
-	}
-	bytes, err := readZipFile(zf, maxImportZipBytes)
-	if err != nil {
-		return fmt.Errorf("read audio %q: %w", asset.File, err)
 	}
 	mime := asset.MimeType
 	if mime == "" {
@@ -834,7 +929,7 @@ func importAudioRow(ctx context.Context, tx *sql.Tx, table, parentCol string, pa
 	}
 	q := fmt.Sprintf(`INSERT INTO %s(%s, idx, mime_type, size_bytes, content, description)
 		VALUES ($1, $2, $3, $4, $5, $6)`, table, parentCol)
-	if _, err := tx.ExecContext(ctx, q, parentID, asset.Idx, mime, int64(len(bytes)), bytes, asset.Description); err != nil {
+	if _, err := tx.ExecContext(ctx, q, parentID, asset.Idx, mime, int64(len(b)), b, asset.Description); err != nil {
 		return fmt.Errorf("insert audio %q: %w", asset.File, err)
 	}
 	return nil

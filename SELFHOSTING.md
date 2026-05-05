@@ -87,6 +87,7 @@ short tour:
 | `ZV_LOCATION_RETENTION_DAYS` / `ZV_AUDIT_RETENTION_DAYS` | Privacy sweepers; `0` to disable | `30` / `90` |
 | `ZV_DB_MAX_OPEN_CONNS` / `ZV_DB_MAX_IDLE_CONNS` | Postgres pool sizing; bump for managed clusters with high `max_connections` | `25` / `5` |
 | `ZV_WEB_OVERRIDE_DIR` | Path to a directory of HTML / JSON files that shadow the embedded marketing pages — see [Custom landing page](#custom-landing-page) | unset (use embedded) |
+| `ZV_MCP_ENABLED` | `1` mounts the `POST /mcp` endpoint so users can connect Claude / other MCP clients to author adventures — see [MCP.md](MCP.md) | unset (off) |
 
 After editing `.env`:
 
@@ -559,5 +560,8 @@ config from the section above.
 
 - **[OPERATIONS.md](OPERATIONS.md)** — backup, restore, metrics,
   logging format, retention sweepers.
+- **[MCP.md](MCP.md)** — opt-in `POST /mcp` endpoint that lets
+  arrangers connect Claude / other MCP clients and author
+  adventures via tool calls. Off until `ZV_MCP_ENABLED=1`.
 - **[`/manual`](https://zonventure.com/manual)** — in-app arranger
   manual, also bundled offline at `internal/server/web/manual.html`.

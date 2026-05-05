@@ -52,6 +52,8 @@ see [SELFHOSTING.md](SELFHOSTING.md#building-from-source-without-docker).
   recipes, upgrades. Native-binary build instructions live there too.
 - **[OPERATIONS.md](OPERATIONS.md)** — day-2 ops: backup / restore,
   metrics, log format, retention.
+- **[MCP.md](MCP.md)** — opt-in Model Context Protocol endpoint
+  for connecting Claude / other LLM clients to author adventures.
 - **[`/manual`](https://zonventure.com/manual)** — in-app arranger
   manual (also available offline at `internal/server/web/manual.html`).
 - **[`/pricing`](https://zonventure.com/pricing)** — hosted-product
@@ -63,6 +65,7 @@ see [SELFHOSTING.md](SELFHOSTING.md#building-from-source-without-docker).
 cmd/server/        # entry point + flag plumbing + backup/restore CLI
 internal/admin/    # arranger + admin HTTP handlers
 internal/auth/     # login, signup, sessions, audit, rate-limits
+internal/mcp/      # opt-in Model Context Protocol endpoint (POST /mcp)
 internal/player/   # player-side HTTP + state machine
 internal/public/   # landing + live audience pages
 internal/server/   # router, embedded web assets, integration tests

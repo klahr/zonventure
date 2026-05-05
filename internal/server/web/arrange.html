@@ -15110,6 +15110,7 @@ function renderSettingsAccount(view) {
     renderSettingsEmailCard(me),
     renderSettingsTOTPCard(),
     renderSettingsSessionsCard(),
+    renderSettingsMCPTokensCard(),
     renderSettingsAuditCard(),
     renderSettingsExportCard(),
     renderSettingsDeleteCard(),
@@ -15648,6 +15649,134 @@ function renderSettingsSessionsCard() {
   );
   refresh();
   return card;
+}
+
+// renderSettingsMCPTokensCard surfaces the per-user MCP API tokens —
+// long-lived bearer credentials a user pastes into Claude desktop /
+// claude.ai connectors so the LLM can call /mcp on their behalf.
+// Plaintext is shown ONCE on creation (in a follow-up modal); the
+// list view only shows name + prefix + last-used so a leaked token
+// can't be reconstructed from a stolen DB read of this surface.
+function renderSettingsMCPTokensCard() {
+  const card = h('div', { class: 'card settings-card' });
+  const list = h('div');
+  const refresh = async () => {
+    list.replaceChildren(h('p', { class: 'muted', style: 'font-size:.85rem' }, t('Loading…')));
+    const r = await api('/api/admin/me/mcp-tokens');
+    if (!r.ok) {
+      list.replaceChildren(h('p', { class: 'err' }, r.body?.error || t('error {{status}}', { status: r.status })));
+      return;
+    }
+    const tokens = r.body?.tokens || [];
+    if (tokens.length === 0) {
+      list.replaceChildren(h('p', { class: 'muted' }, t('No MCP tokens yet.')));
+      return;
+    }
+    list.replaceChildren(...tokens.map((tok) => h('div', { class: 'session-row' },
+      h('div', { class: 'session-row-info' },
+        h('div', { class: 'session-row-name' }, tok.name),
+        h('div', { class: 'session-row-meta' },
+          h('code', {}, tok.prefix + '…'),
+          ' · ',
+          t('Created {{when}}', { when: formatAuditTS(tok.created_at) }),
+          ' · ',
+          tok.last_used_at
+            ? t('last used {{when}}', { when: formatAuditTS(tok.last_used_at) })
+            : t('never used'))),
+      h('button', { class: 'btn small danger', type: 'button',
+        on: { click: async () => {
+          if (!confirm(t('Revoke this token? Any client currently using it will stop working.'))) return;
+          const rr = await api('/api/admin/me/mcp-tokens/' + encodeURIComponent(tok.id),
+            { method: 'DELETE' });
+          if (rr.status === 204) { toastOk(t('Token revoked')); refresh(); }
+          else toastErr(rr.body?.error || t('error {{status}}', { status: rr.status }));
+        } } },
+        t('Revoke')),
+    )));
+  };
+  const newBtn = h('button', { class: 'btn primary', type: 'button' },
+    icon(ICONS.plus), t('New token'));
+  newBtn.addEventListener('click', () => openCreateMCPToken().then((created) => {
+    if (created) refresh();
+  }));
+  card.append(
+    h('h2', {}, t('MCP API tokens')),
+    h('p', { class: 'muted', style: 'font-size:.9rem' },
+      t('Long-lived tokens for connecting Claude or another MCP client to this account so it can author adventures on your behalf.')),
+    list,
+    h('div', { class: 'row end', style: 'margin-top:.75rem' }, newBtn),
+  );
+  refresh();
+  return card;
+}
+
+// openCreateMCPToken runs the two-step flow: name the token, then
+// see the plaintext exactly once. The second modal is mandatory —
+// once it closes we can't get the secret back, so we lean on a
+// "Copy token" affordance plus an explicit acknowledgement before
+// the user can dismiss it.
+async function openCreateMCPToken() {
+  const created = await modal(t('Create MCP token'), ({ body, close }) => {
+    const nameEl = h('input', { autofocus: true, required: true,
+      placeholder: t('e.g. "Claude desktop"') });
+    const status = h('p', { class: 'muted', style: 'font-size:.85rem; min-height:1.2em; margin:.5rem 0 0' });
+    const form = h('form', {},
+      h('label', { class: 'field' },
+        h('span', {}, t('Token name')), nameEl,
+        h('small', { class: 'muted', style: 'display:block; margin-top:.2rem' },
+          t('A label for your reference. The token itself is generated.'))),
+      status,
+      h('div', { class: 'row end', style: 'gap:.5rem; margin-top:.75rem' },
+        h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, t('Cancel')),
+        h('button', { class: 'btn primary', type: 'submit' }, t('Create'))));
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const name = nameEl.value.trim();
+      if (!name) { status.className = 'err'; status.textContent = t('Name required'); return; }
+      status.className = 'muted'; status.textContent = t('Creating…');
+      const r = await api('/api/admin/me/mcp-tokens', {
+        method: 'POST',
+        body: JSON.stringify({ name }),
+      });
+      if (r.status !== 201) {
+        status.className = 'err';
+        status.textContent = r.body?.error || t('error {{status}}', { status: r.status });
+        return;
+      }
+      close(r.body);
+    });
+    body.append(form);
+  });
+  if (!created || !created.token) return false;
+  await modal(t('Your new token'), ({ body, close }) => {
+    const tokInput = h('input', { type: 'text', readonly: true, value: created.token,
+      style: 'width:100%; font-family:monospace; font-size:.9rem' });
+    tokInput.addEventListener('focus', () => tokInput.select());
+    const copyBtn = h('button', { class: 'btn primary', type: 'button' },
+      icon(ICONS.copy), t('Copy token'));
+    copyBtn.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(created.token);
+        toastOk(t('Token copied'));
+      } catch {
+        tokInput.focus();
+        tokInput.select();
+        toastErr(t('Copy failed — select the field and copy manually.'));
+      }
+    });
+    body.append(
+      h('p', { class: 'warn', style: 'font-weight:600' },
+        t('Copy this token now — it will not be shown again.')),
+      h('p', { class: 'muted', style: 'font-size:.9rem' },
+        t('Paste it into your MCP client as the bearer token. Treat it like a password.')),
+      tokInput,
+      h('div', { class: 'row end', style: 'gap:.5rem; margin-top:.75rem' },
+        copyBtn,
+        h('button', { class: 'btn', type: 'button',
+          on: { click: () => close(true) } }, t('Done'))),
+    );
+  });
+  return true;
 }
 
 function renderSettingsAuditCard() {

@@ -11,6 +11,27 @@ The repository, Go module, and CLI binary are named `zv`; the product is
 
 ## [Unreleased]
 
+### Added
+
+- **MCP connector.** New opt-in `POST /mcp` endpoint exposing
+  adventure authoring as Model Context Protocol tools so an
+  arranger can connect Claude desktop / claude.ai / other MCP
+  clients and author adventures by tool call. Eight tools cover
+  full CRUD: `list_adventures`, `get_adventure`,
+  `validate_adventure` (dry-run), `create_adventure`, `add_puzzle`,
+  `update_adventure_meta`, `set_lane_mode`,
+  `delete_adventure` (two-phase, requires `confirm:true`). Per-user
+  bearer tokens minted from **Settings → Account → MCP API tokens**;
+  plaintext shown once, stored as `sha256(token)` in a new
+  `mcp_tokens` table (migration `0045_mcp_tokens.sql`). Off by
+  default — operators set `ZV_MCP_ENABLED=1` to mount the route.
+  Tool calls inherit the minting user's authoring policy
+  (`canAuthor` / `canSeeOwned`) so an MCP session can't reach
+  beyond what the user could do in `/arrange`. Binary assets
+  (image / audio bytes) are intentionally NOT supported via MCP —
+  the model writes alt-text placeholders and the user attaches
+  files via the arranger UI. See [MCP.md](MCP.md).
+
 ### Security (round 2)
 
 - **Webhook SSRF closed.** `validateWebhookURL` now resolves the

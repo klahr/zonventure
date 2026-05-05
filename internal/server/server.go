@@ -18,6 +18,7 @@ import (
 	"git.sr.ht/~klahr/zv/internal/auth"
 	"git.sr.ht/~klahr/zv/internal/components"
 	"git.sr.ht/~klahr/zv/internal/mailer"
+	"git.sr.ht/~klahr/zv/internal/mcp"
 	"git.sr.ht/~klahr/zv/internal/storage"
 	"git.sr.ht/~klahr/zv/internal/storage/dbblob"
 	"git.sr.ht/~klahr/zv/internal/metrics"
@@ -264,6 +265,16 @@ func New(cfg Config) http.Handler {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
 	})
+
+	// MCP (Model Context Protocol) endpoint. Off by default — flips
+	// on for self-host operators who set ZV_MCP_ENABLED=1 in their
+	// .env. Auth is bearer-token, distinct from the cookie+CSRF
+	// stack the rest of /api/admin uses, since MCP clients (Claude
+	// desktop, claude.ai connectors) speak Authorization headers.
+	if mcp.Enabled() {
+		mcpSrv := mcp.New(cfg.DB)
+		r.Method(http.MethodPost, "/mcp", mcpSrv.Handler())
+	}
 
 	// Build info, computed once at startup (debug.ReadBuildInfo is
 	// stable for the lifetime of the process). Lets operators confirm
@@ -797,6 +808,13 @@ func New(cfg Config) http.Handler {
 		r.Get("/me/sessions", adminH.ListMySessions)
 		r.Delete("/me/sessions/{token}", adminH.RevokeMySession)
 		r.Delete("/me/sessions", adminH.RevokeMyOtherSessions)
+		// MCP API tokens: long-lived bearer credentials a user pastes
+		// into Claude desktop / claude.ai connectors so the LLM can
+		// call /mcp on their behalf. Plaintext is returned once at
+		// creation; subsequent reads only surface name + prefix.
+		r.Post("/me/mcp-tokens", adminH.CreateMCPToken)
+		r.Get("/me/mcp-tokens", adminH.ListMCPTokens)
+		r.Delete("/me/mcp-tokens/{id}", adminH.RevokeMCPToken)
 		// TOTP 2FA: status, enrol (setup → confirm), disable, and
 		// recovery-code regenerate. Disable + regenerate require
 		// X-Confirm-Password reauth.
