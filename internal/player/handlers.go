@@ -411,6 +411,14 @@ type State struct {
 	// OrgName is the human label paired with the logo (used as
 	// alt-text and as a fallback when the image fails to load).
 	OrgName string `json:"org_name,omitempty"`
+	// Starting location surfaced on the welcome overlay so a player
+	// who lands on the magic link before they've reached the meeting
+	// point sees "Start at: <label>" + a map link. Both coords have
+	// to be present together; an unset start lets the client fall
+	// back to the first gated puzzle's location client-side.
+	StartLat   *float64 `json:"start_lat,omitempty"`
+	StartLng   *float64 `json:"start_lng,omitempty"`
+	StartLabel string   `json:"start_label,omitempty"`
 }
 
 type imageDTO struct {
@@ -635,6 +643,11 @@ func (h *Handlers) buildState(ctx context.Context, slot auth.Slot) (State, int, 
 		IntroText:      mdx.Render(adv.Meta.IntroText),
 		OutroText:      mdx.Render(adv.Meta.OutroText),
 		OrgName:        tc.OrgName,
+		StartLabel:     adv.Start.Label,
+	}
+	if adv.Start.HasCoords() {
+		resp.StartLat = adv.Start.Lat
+		resp.StartLng = adv.Start.Lng
 	}
 	// Logo URL: only set when the owning org has actually uploaded
 	// one. Players running an event for an unbranded org just see

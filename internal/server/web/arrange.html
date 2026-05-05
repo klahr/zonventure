@@ -2564,6 +2564,8 @@ const ICONS = {
   chevronUp:   '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 15 12 9 18 15"/></svg>',
   chevronDown: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>',
   trash: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/></svg>',
+  download: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>',
+  upload:   '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>',
   key: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="15" r="4"/><path d="M10.85 12.15 19 4"/><path d="m18 5 2 2"/><path d="m15 8 2 2"/></svg>',
   sun: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>',
   moon: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>',
@@ -4741,8 +4743,11 @@ async function viewAdventures(view) {
   view.replaceChildren(
     h('div', { class: 'row between' },
       h('h1', {}, t('Adventures')),
-      h('button', { class: 'btn primary', on: { click: () => openCreateAdventure() } },
-        icon(ICONS.plus), t('New adventure'))),
+      h('div', { class: 'row', style: 'gap:.5rem; flex-wrap:wrap' },
+        h('button', { class: 'btn', on: { click: () => importAdventureFlow(view) } },
+          icon(ICONS.upload), t('Import')),
+        h('button', { class: 'btn primary', on: { click: () => openCreateAdventure() } },
+          icon(ICONS.plus), t('New adventure')))),
     renderAdventureTabs('yours'),
     runnable.length === 0
       ? h('div', { class: 'empty' },
@@ -5862,11 +5867,53 @@ async function viewAdventureDetail(view, slug) {
   const simHost = canSimulate ? h('div', { class: 'card' }) : null;
   if (simHost) mountSimulatorPanel(simHost, a.slug);
 
+  // ---- Starting-location card ----
+  // Authors can pin an explicit start (e.g. a meeting point near the
+  // first puzzle but slightly off — bench, metro exit, kiosk). The
+  // catalog browser sees "Start here" with the label and a button
+  // that opens the coordinates in the device's map app. When no
+  // explicit start is set we fall back to the first gated puzzle so
+  // legacy adventures keep working without a backfill.
+  let startCard = null;
+  let startCoords = null;
+  let startLabel  = '';
+  if (typeof a.start_lat === 'number' && typeof a.start_lng === 'number') {
+    startCoords = { lat: a.start_lat, lng: a.start_lng };
+    startLabel  = a.start_label || '';
+  } else {
+    const firstGated = enabled.find((p) => p.gated && p.location && typeof p.location.lat === 'number');
+    if (firstGated) {
+      startCoords = { lat: firstGated.location.lat, lng: firstGated.location.lng };
+      startLabel  = firstGated.title || '';
+    }
+  }
+  if (startCoords) {
+    const mapsURL = `https://www.openstreetmap.org/?mlat=${startCoords.lat}&mlon=${startCoords.lng}#map=17/${startCoords.lat}/${startCoords.lng}`;
+    startCard = h('div', { class: 'card', style: 'margin-top:1rem' },
+      h('div', { class: 'row between', style: 'gap:.6rem; align-items:baseline; flex-wrap:wrap' },
+        h('h2', { style: 'margin:0' }, t('Start here')),
+        h('a', {
+          class: 'btn small', href: mapsURL,
+          target: '_blank', rel: 'noopener',
+        }, icon(ICONS.map), t('Open in maps'))),
+      startLabel
+        ? h('p', { style: 'margin:.4rem 0 .2rem; font-weight:600' }, startLabel)
+        : null,
+      h('p', { class: 'muted mono', style: 'margin:0; font-size:.85rem' },
+        startCoords.lat.toFixed(5) + ', ' + startCoords.lng.toFixed(5)),
+      (typeof a.start_lat !== 'number' || typeof a.start_lng !== 'number')
+        ? h('p', { class: 'muted', style: 'margin:.35rem 0 0; font-size:.8rem' },
+            t('Inferred from the first gated puzzle. Author: set an explicit starting location in the adventure editor.'))
+        : null,
+    );
+  }
+
   view.replaceChildren(...[
     h('button', { class: 'btn ghost small', on: { click: () => nav('#adventures') } }, icon(ICONS.back), t('Back')),
     hero,
     stats,
     story,
+    startCard,
     mapCard,
     simHost,
     h('h2', { style: 'margin-top:1.5rem' }, t('Puzzles')),
@@ -10179,8 +10226,11 @@ async function viewLibrary(view) {
   view.replaceChildren(
     h('div', { class: 'row between' },
       h('h1', {}, t('Library')),
-      h('button', { class: 'btn primary', on: { click: () => openCreateAdventure() } },
-        icon(ICONS.plus), t('New adventure'))),
+      h('div', { class: 'row', style: 'gap:.5rem; flex-wrap:wrap' },
+        h('button', { class: 'btn', on: { click: () => importAdventureFlow(view) } },
+          icon(ICONS.upload), t('Import')),
+        h('button', { class: 'btn primary', on: { click: () => openCreateAdventure() } },
+          icon(ICONS.plus), t('New adventure')))),
     libraryTabs('library'),
     h('p', { class: 'muted' },
       t('Adventures you have authored live in the database. Assign them to organizations from the Organizations page.')),
@@ -10233,6 +10283,56 @@ function colorRow(label, initial) {
       h('div', { class: 'row', style: 'gap:.5rem; align-items:center' }, picker, reset, show)),
     get: () => state.value,
   };
+}
+
+// importAdventureFlow opens a file picker, uploads the chosen
+// .zvadv.zip to /api/admin/adventures/import, and on a 409
+// (slug-collision) re-prompts for a fresh slug. The new adventure
+// lands under the caller's org; the catalog-detail page opens on
+// success so the operator can immediately review the imported
+// content.
+async function importAdventureFlow(view) {
+  const file = await new Promise((resolve) => {
+    const input = h('input', { type: 'file', accept: '.zip,application/zip', style: 'display:none' });
+    document.body.append(input);
+    input.addEventListener('change', () => {
+      const f = input.files?.[0] || null;
+      input.remove();
+      resolve(f);
+    });
+    input.addEventListener('cancel', () => { input.remove(); resolve(null); });
+    input.click();
+  });
+  if (!file) return;
+  const upload = async (slugOverride) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    const url = `/api/admin/adventures/import` + (slugOverride ? `?slug=${encodeURIComponent(slugOverride)}` : '');
+    const res = await fetch(url, {
+      method: 'POST', body: fd, credentials: 'same-origin',
+      headers: { 'X-CSRF-Token': csrfToken() },
+    });
+    let body = {};
+    try { body = await res.json(); } catch { /* non-JSON error path */ }
+    return { status: res.status, body };
+  };
+  let r = await upload();
+  if (r.status === 409 || r.status === 500) {
+    // Slug collision is the common case (re-importing on top of an
+    // existing slug). Offer a rename-and-retry rather than making
+    // the operator re-pick the file.
+    const next = window.prompt(t('That slug already exists or could not be created. Pick a new slug:'), '');
+    if (next) {
+      r = await upload(next.trim());
+    }
+  }
+  if (r.status !== 201) {
+    toastErr(r.body?.error || t('Import failed ({{status}}).', { status: r.status }));
+    return;
+  }
+  toastOk(t('Imported "{{title}}".', { title: r.body.title || r.body.slug }));
+  if (r.body.slug) nav('#library/' + encodeURIComponent(r.body.slug));
+  else if (typeof view !== 'undefined') renderRoute();
 }
 
 async function openCreateAdventure() {
@@ -10753,6 +10853,11 @@ function renderLibraryEdit(view, adv) {
         title: t('Edit title/slug/colours'),
         on: { click: () => openEditAdventureMeta(adv) } },
         icon(ICONS.pencil), t('Edit')),
+      h('a', { class: 'btn small',
+        title: t('Download this adventure as a portable .zip'),
+        href: `/api/admin/adventures/${encodeURIComponent(adv.slug)}/export`,
+        download: `${adv.slug}.zvadv.zip`,
+      }, icon(ICONS.download), t('Export')),
       h('button', { class: 'btn icon small danger',
         title: t('Delete adventure'),
         'aria-label': t('Delete adventure'),
@@ -11277,12 +11382,64 @@ async function openEditAdventureMeta(adv) {
       h('p', { class: 'muted', style: 'margin:.2rem 0 0; font-size:.8rem' },
         t('Default off lets the offline cache prefetch every page\'s media. Turn on for hunts where the picture is the puzzle (find-the-glyph, hidden QR, map fragments).')));
 
+    // Starting location — explicit lat/lng/label so the player knows
+    // where to begin before they reach the first puzzle. Optional;
+    // both coords need to be set together, otherwise the player UI
+    // falls back to the first gated puzzle.
+    const initialStartLat   = (typeof adv.start_lat === 'number') ? adv.start_lat : null;
+    const initialStartLng   = (typeof adv.start_lng === 'number') ? adv.start_lng : null;
+    const initialStartLabel = adv.start_label || '';
+    const startLatInput = h('input', {
+      type: 'number', step: 'any', min: '-90', max: '90',
+      placeholder: 'e.g. 59.3214',
+      value: initialStartLat == null ? '' : String(initialStartLat),
+      style: 'max-width:10rem',
+    });
+    const startLngInput = h('input', {
+      type: 'number', step: 'any', min: '-180', max: '180',
+      placeholder: 'e.g. 18.0641',
+      value: initialStartLng == null ? '' : String(initialStartLng),
+      style: 'max-width:10rem',
+    });
+    const startLabelInput = h('input', {
+      maxlength: '200',
+      placeholder: t('e.g. “Monteliusvägen, vid bänken under trappan”'),
+      value: initialStartLabel,
+    });
+    const fillFromFirstBtn = h('button', {
+      class: 'btn small ghost', type: 'button',
+      title: t('Copy coordinates from the first gated puzzle'),
+    }, t('Use first gated puzzle'));
+    fillFromFirstBtn.addEventListener('click', () => {
+      const firstGated = (adv.pages || []).find((p) => p.gated && p.location && typeof p.location.lat === 'number');
+      if (!firstGated) {
+        toastErr(t('No gated puzzle to copy from yet.'));
+        return;
+      }
+      startLatInput.value = String(firstGated.location.lat);
+      startLngInput.value = String(firstGated.location.lng);
+    });
+    const startRow = h('div', { class: 'field' },
+      h('span', {}, t('Starting location (optional)')),
+      h('div', { class: 'row', style: 'gap:.5rem; flex-wrap:wrap; align-items:center' },
+        h('label', { style: 'display:flex; gap:.3rem; align-items:center; font-size:.85rem' },
+          h('span', { class: 'muted' }, t('Lat')), startLatInput),
+        h('label', { style: 'display:flex; gap:.3rem; align-items:center; font-size:.85rem' },
+          h('span', { class: 'muted' }, t('Lng')), startLngInput),
+        fillFromFirstBtn),
+      h('div', { style: 'margin-top:.5rem' },
+        h('span', { class: 'muted', style: 'font-size:.85rem' }, t('Label')),
+        h('div', { style: 'margin-top:.2rem' }, startLabelInput)),
+      h('p', { class: 'muted', style: 'margin:.3rem 0 0; font-size:.8rem' },
+        t('Shown on the catalog page and the player welcome overlay so the team knows where to meet up. Leave blank to fall back to the first gated puzzle\'s location.')));
+
     const paneDetails = h('div', { class: 'tab-pane active' },
       h('label', { class: 'field' }, h('span', {}, t('Slug')), slug),
       h('label', { class: 'field' }, h('span', {}, t('Title')), title),
       h('label', { class: 'field' }, h('span', {}, t('Description')), desc),
       h('label', { class: 'field' }, h('span', {}, t('Author')), author),
       langRow,
+      startRow,
       strictAssetsRow,
       coverRow, coverFile);
     const paneCopy = h('div', { class: 'tab-pane' },
@@ -11325,6 +11482,15 @@ async function openEditAdventureMeta(adv) {
     // Dirty check: any field divergent from the loaded adventure spec
     // counts. Cover image upload/remove already POSTs immediately so
     // it doesn't participate here — only the form fields matter.
+    // Parse the lat/lng inputs once per dirty-check / submit. Empty
+    // string is a "cleared" signal (return null) so the patch can
+    // distinguish missing-from-form vs explicit-clear.
+    const readStartCoord = (input) => {
+      const v = input.value.trim();
+      if (v === '') return null;
+      const n = parseFloat(v);
+      return Number.isFinite(n) ? n : null;
+    };
     const isDirty = () => (
       slug.value.trim() !== adv.slug
       || title.value.trim() !== adv.title
@@ -11337,6 +11503,9 @@ async function openEditAdventureMeta(adv) {
       || cBackground.get() !== initialBg
       || cText.get()       !== initialText
       || strictAssetsInput.checked !== initialStrictAssets
+      || readStartCoord(startLatInput)   !== initialStartLat
+      || readStartCoord(startLngInput)   !== initialStartLng
+      || startLabelInput.value.trim()    !== initialStartLabel
     );
     if (typeof setBeforeClose === 'function') {
       setBeforeClose(() => !isDirty() || confirm(t('Discard unsaved changes to this adventure?')));
@@ -11357,6 +11526,15 @@ async function openEditAdventureMeta(adv) {
       if (cSubmitBg.get()   !== initialSubmitBg)  payload.submit_bg_color        = cSubmitBg.get();
       if (langInput.value.trim() !== initialLanguage) payload.language          = langInput.value.trim();
       if (strictAssetsInput.checked !== initialStrictAssets) payload.strict_assets = strictAssetsInput.checked;
+      // Starting-location patch. The server distinguishes "field
+      // absent" (no patch) from "field present and null" (clear),
+      // so we send explicit nulls when the input was cleared.
+      const newLat = readStartCoord(startLatInput);
+      const newLng = readStartCoord(startLngInput);
+      if (newLat !== initialStartLat) payload.start_lat = newLat;
+      if (newLng !== initialStartLng) payload.start_lng = newLng;
+      const newLabel = startLabelInput.value.trim();
+      if (newLabel !== initialStartLabel) payload.start_label = newLabel;
       if (Object.keys(payload).length === 0) { close(null); return; }
       const r = await api(`/api/admin/adventures/${encodeURIComponent(adv.slug)}`, {
         method: 'PATCH', body: JSON.stringify(payload),

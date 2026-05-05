@@ -43,7 +43,28 @@ type Adventure struct {
 	// "any team in the adventure" behaviour that suits flavour-image
 	// hunts; opt-in for hunts where the photo IS the puzzle.
 	StrictAssets bool
+	// Start is the optional "go here first" location. Both coordinates
+	// must be set together; an absent start lets the player UI fall
+	// back to the first gated puzzle's location. The label is a short
+	// free-text hint ("vid bänken under trappan") that the intro
+	// overlay and catalog page surface alongside the map link.
+	Start StartLocation
 }
+
+// StartLocation is the explicit starting point for an adventure.
+// Lat / Lng are pointers because both have to be present together for
+// the location to render — a partial config (one coordinate, or only
+// a label) gets rendered as "no start set" and the UI falls back to
+// the first gated puzzle.
+type StartLocation struct {
+	Lat   *float64
+	Lng   *float64
+	Label string
+}
+
+// HasCoords reports whether the start location is fully specified —
+// the gate before any "open in maps" / "Start here" link renders.
+func (s StartLocation) HasCoords() bool { return s.Lat != nil && s.Lng != nil }
 
 // Lane is one ordered grouping of puzzles within an adventure.
 type Lane struct {
@@ -296,16 +317,27 @@ func (l *Library) GetContext(ctx context.Context, slug string) (*Adventure, erro
 	var (
 		adv                                Adventure
 		accent, accent2, bg, ink, submitBG sql.NullString
+		startLat, startLng                 sql.NullFloat64
 	)
 	err := l.db.QueryRowContext(ctx, `
 		SELECT id, slug, title, description, author, intro_text, outro_text,
 		       accent_color, accent_secondary_color, background_color, text_color, submit_bg_color,
-		       strict_assets
+		       strict_assets,
+		       start_lat, start_lng, start_label
 		FROM adventures WHERE slug = $1
 	`, slug).Scan(&adv.ID, &adv.Slug, &adv.Meta.Title, &adv.Meta.Description, &adv.Meta.Author,
 		&adv.Meta.IntroText, &adv.Meta.OutroText,
 		&accent, &accent2, &bg, &ink, &submitBG,
-		&adv.StrictAssets)
+		&adv.StrictAssets,
+		&startLat, &startLng, &adv.Start.Label)
+	if startLat.Valid {
+		v := startLat.Float64
+		adv.Start.Lat = &v
+	}
+	if startLng.Valid {
+		v := startLng.Float64
+		adv.Start.Lng = &v
+	}
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -344,7 +376,8 @@ func (l *Library) ListContext(ctx context.Context) ([]*Adventure, error) {
 	rows, err := l.db.QueryContext(ctx, `
 		SELECT id, slug, title, description, author, intro_text, outro_text,
 		       accent_color, accent_secondary_color, background_color, text_color, submit_bg_color,
-		       strict_assets
+		       strict_assets,
+		       start_lat, start_lng, start_label
 		FROM adventures ORDER BY slug
 	`)
 	if err != nil {
@@ -354,11 +387,15 @@ func (l *Library) ListContext(ctx context.Context) ([]*Adventure, error) {
 	var out []*Adventure
 	for rows.Next() {
 		a := &Adventure{}
-		var accent, accent2, bg, ink, submitBG sql.NullString
+		var (
+			accent, accent2, bg, ink, submitBG sql.NullString
+			startLat, startLng                 sql.NullFloat64
+		)
 		if err := rows.Scan(&a.ID, &a.Slug, &a.Meta.Title, &a.Meta.Description, &a.Meta.Author,
 			&a.Meta.IntroText, &a.Meta.OutroText,
 			&accent, &accent2, &bg, &ink, &submitBG,
-			&a.StrictAssets); err != nil {
+			&a.StrictAssets,
+			&startLat, &startLng, &a.Start.Label); err != nil {
 			return nil, err
 		}
 		a.Colors = Colors{
@@ -367,6 +404,14 @@ func (l *Library) ListContext(ctx context.Context) ([]*Adventure, error) {
 			Background:       bg.String,
 			Text:             ink.String,
 			SubmitBackground: submitBG.String,
+		}
+		if startLat.Valid {
+			v := startLat.Float64
+			a.Start.Lat = &v
+		}
+		if startLng.Valid {
+			v := startLng.Float64
+			a.Start.Lng = &v
 		}
 		out = append(out, a)
 	}

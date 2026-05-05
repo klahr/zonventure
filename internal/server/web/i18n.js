@@ -1712,6 +1712,29 @@
       'Could not fork the template.': 'Kunde inte forka mallen.',
       'BCP 47 tag — surfaced on the Catalog so buyers can spot adventures in their language.':
         'BCP 47-tagg — visas i Katalogen så att köpare kan hitta äventyr på sitt språk.',
+      'Starting location (optional)': 'Startplats (valfritt)',
+      'Lat': 'Lat',
+      'Lng': 'Lng',
+      'Label': 'Etikett',
+      'Use first gated puzzle': 'Använd första låsta pusslet',
+      'Copy coordinates from the first gated puzzle': 'Kopiera koordinater från första låsta pusslet',
+      'No gated puzzle to copy from yet.': 'Inget låst pussel att kopiera från ännu.',
+      'Shown on the catalog page and the player welcome overlay so the team knows where to meet up. Leave blank to fall back to the first gated puzzle\'s location.':
+        'Visas på katalogsidan och i välkomstrutan så att laget vet var de ska samlas. Lämna tomt för att falla tillbaka på första låsta pusslets plats.',
+      'e.g. “Monteliusvägen, vid bänken under trappan”':
+        't.ex. ”Monteliusvägen, vid bänken under trappan”',
+      'Start here': 'Börja här',
+      'Open in maps': 'Öppna i kartan',
+      'Inferred from the first gated puzzle. Author: set an explicit starting location in the adventure editor.':
+        'Härledd från första låsta pusslet. Författare: ange en uttrycklig startplats i äventyrsredigeraren.',
+      'Current puzzle': 'Aktuellt pussel',
+      'Import': 'Importera',
+      'Export': 'Exportera',
+      'Download this adventure as a portable .zip': 'Ladda ner detta äventyr som en portabel .zip',
+      'That slug already exists or could not be created. Pick a new slug:':
+        'Den slugen finns redan eller kunde inte skapas. Välj en ny slug:',
+      'Imported "{{title}}".': 'Importerade "{{title}}".',
+      'Import failed ({{status}}).': 'Import misslyckades ({{status}}).',
       'Strict assets': 'Strikta resurser',
       'Hide images and audio for pages the team hasn\'t reached yet':
         'Dölj bilder och ljud för sidor laget ännu inte har nått',

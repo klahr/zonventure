@@ -3,6 +3,7 @@ package admin
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -137,6 +138,14 @@ type adventureEditDTO struct {
 	// images + audio + manifest URLs) to the team's current page index.
 	// Default false keeps the permissive prefetch-friendly behaviour.
 	StrictAssets         bool        `json:"strict_assets"`
+	// Starting location — optional. Both StartLat and StartLng are
+	// pointers because they're meaningful only as a pair; an absent
+	// start (one or both nil) means "fall back to the first gated
+	// puzzle's location". StartLabel is a short free-text hint
+	// surfaced alongside the coords ("vid bänken under trappan").
+	StartLat             *float64    `json:"start_lat,omitempty"`
+	StartLng             *float64    `json:"start_lng,omitempty"`
+	StartLabel           string      `json:"start_label,omitempty"`
 	Shares               []shareView `json:"shares"`
 	Pages                []pageView  `json:"pages"`
 	// Lanes lists the adventure's lanes in idx order. The editor
@@ -353,6 +362,46 @@ type updateAdventureRequest struct {
 	Language             *string `json:"language,omitempty"`
 	Published            *bool   `json:"published,omitempty"`
 	StrictAssets         *bool   `json:"strict_assets,omitempty"`
+	// Starting location (optional). Pass both lat and lng pointing at
+	// values to set; pass them with explicit null inside the JSON body
+	// to clear ({"start_lat": null}) — the wrapper struct distinguishes
+	// "not present" (no patch) from "present and null" (clear). The
+	// label is independent and passes through verbatim.
+	StartLat   *Nullable[float64] `json:"start_lat,omitempty"`
+	StartLng   *Nullable[float64] `json:"start_lng,omitempty"`
+	StartLabel *string            `json:"start_label,omitempty"`
+}
+
+// Nullable distinguishes "field absent in JSON" (the outer pointer is
+// nil) from "field present with null" (the outer pointer is non-nil
+// and Set is true with Value zero) and "field present with value".
+// Used by patch-style endpoints where clearing a column is a real
+// state transition the caller may want to express. UnmarshalJSON
+// flips Set to true on any decoded input, so a caller writing
+// `{"start_lat": null}` clears the column while an absent field is
+// left unchanged.
+type Nullable[T any] struct {
+	Value T
+	Valid bool // true when the JSON value was non-null
+}
+
+// UnmarshalJSON tracks whether the field was present at all (the
+// containing struct has *Nullable; nil means absent) and whether the
+// value was null vs a real T.
+func (n *Nullable[T]) UnmarshalJSON(b []byte) error {
+	if string(b) == "null" {
+		n.Valid = false
+		var zero T
+		n.Value = zero
+		return nil
+	}
+	var v T
+	if err := json.Unmarshal(b, &v); err != nil {
+		return err
+	}
+	n.Value = v
+	n.Valid = true
+	return nil
 }
 
 // UpdateAdventure amends the metadata.
@@ -461,6 +510,45 @@ func (h *Handlers) UpdateAdventure(w http.ResponseWriter, r *http.Request) {
 	if req.StrictAssets != nil {
 		add("strict_assets", *req.StrictAssets)
 	}
+	// Starting location: each component patches independently. Lat
+	// and Lng are Nullable so {"start_lat": null} clears that column;
+	// {"start_lat": 59.32} sets it. Validation: when setting lat the
+	// value must be a sane WGS84 coordinate; same for lng. Mismatched
+	// halves (lat without lng or vice versa) aren't checked here —
+	// the loader treats either-nil as "no start" and the UI greys
+	// the marker, so an interim partial state is harmless.
+	if req.StartLat != nil {
+		if req.StartLat.Valid {
+			lat := req.StartLat.Value
+			if lat < -90 || lat > 90 {
+				httpx.Error(w, http.StatusBadRequest, "start_lat out of range")
+				return
+			}
+			add("start_lat", lat)
+		} else {
+			add("start_lat", nil)
+		}
+	}
+	if req.StartLng != nil {
+		if req.StartLng.Valid {
+			lng := req.StartLng.Value
+			if lng < -180 || lng > 180 {
+				httpx.Error(w, http.StatusBadRequest, "start_lng out of range")
+				return
+			}
+			add("start_lng", lng)
+		} else {
+			add("start_lng", nil)
+		}
+	}
+	if req.StartLabel != nil {
+		label, err := validateBlurb(*req.StartLabel, MaxNameLen)
+		if err != nil {
+			httpx.Error(w, http.StatusBadRequest, "start_label "+err.Error())
+			return
+		}
+		add("start_label", label)
+	}
 	if len(sets) == 1 {
 		httpx.Error(w, http.StatusBadRequest, "nothing to update")
 		return
@@ -546,18 +634,29 @@ func loadAdventureDTO(ctx context.Context, db *sql.DB, slug string) (*adventureE
 		hasAvatar                          int
 		published                          int
 		orgID                              sql.NullInt64
+		startLat, startLng                 sql.NullFloat64
 	)
 	if err := db.QueryRowContext(ctx, `
 		SELECT id, slug, title, description, author, intro_text, outro_text,
 		       accent_color, accent_secondary_color, background_color, text_color, submit_bg_color,
 		       language,
 		       (avatar_mime_type IS NOT NULL)::int AS has_avatar,
-		       published, org_id, strict_assets
+		       published, org_id, strict_assets,
+		       start_lat, start_lng, start_label
 		FROM adventures WHERE slug = $1
 	`, slug).Scan(&a.ID, &a.Slug, &a.Title, &a.Description, &a.Author,
 		&a.IntroText, &a.OutroText,
-		&accent, &accent2, &bg, &ink, &submitBG, &a.Language, &hasAvatar, &published, &orgID, &a.StrictAssets); err != nil {
+		&accent, &accent2, &bg, &ink, &submitBG, &a.Language, &hasAvatar, &published, &orgID, &a.StrictAssets,
+		&startLat, &startLng, &a.StartLabel); err != nil {
 		return nil, err
+	}
+	if startLat.Valid {
+		v := startLat.Float64
+		a.StartLat = &v
+	}
+	if startLng.Valid {
+		v := startLng.Float64
+		a.StartLng = &v
 	}
 	a.AccentColor = accent.String
 	a.AccentSecondaryColor = accent2.String

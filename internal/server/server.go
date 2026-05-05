@@ -698,6 +698,12 @@ func New(cfg Config) http.Handler {
 		// admin only. See internal/admin/duplicate.go for the
 		// transactional copy logic.
 		r.Post("/adventures/{slug}/duplicate", adminH.DuplicateAdventure)
+		// Portability: zip-archive export of a single adventure
+		// (manifest + assets) and import that recreates one under
+		// the caller's org. The import endpoint sits at the
+		// adventures collection root because it has no slug yet.
+		r.Get("/adventures/{slug}/export", adminH.ExportAdventure)
+		r.Post("/adventures/import", adminH.ImportAdventure)
 		r.Get("/adventures/{slug}/shares", adminH.ListAdventureShares)
 		r.Post("/adventures/{slug}/shares", adminH.GrantAdventureShare)
 		r.Delete("/adventures/{slug}/shares/{orgID}", adminH.RevokeAdventureShare)

@@ -320,6 +320,17 @@ func (h *Handlers) AdventureDetail(w http.ResponseWriter, r *http.Request) {
 	if lanes, err := loadAdventureLanes(r.Context(), h.DB, adv.ID); err == nil {
 		out["lanes"] = lanes
 	}
+	// Starting location surfaces on the catalog detail page (a "Start
+	// here" pill with the label and a map link) and on the player's
+	// intro overlay. Both coords need to be set together; callers
+	// fall back to the first gated puzzle if either is nil.
+	if adv.Start.HasCoords() {
+		out["start_lat"] = *adv.Start.Lat
+		out["start_lng"] = *adv.Start.Lng
+	}
+	if adv.Start.Label != "" {
+		out["start_label"] = adv.Start.Label
+	}
 	httpx.JSON(w, http.StatusOK, out)
 }
 

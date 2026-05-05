@@ -1328,6 +1328,14 @@ let submitInputEl = null;
 // submit dock switches to local answer matching when `accept` is set
 // (only present when ?debug=1 so the page has the answers).
 let previewState = null;
+// previewAllLocations caches the full puzzle-location list for the
+// adventure currently being previewed, so the spoof-location map can
+// drop pins for every puzzle alongside the editing target. Populated
+// once per preview session (slug-keyed); the catalog detail endpoint
+// is the source of truth, with per-puzzle `gated` + radius so the
+// other-puzzle markers visually match the run-detail map.
+let previewAllLocations = null;
+
 // previewSpoofedFix is a fake GPS position the arranger picks from the
 // debug-strip "Set test location" button. Only meaningful in preview
 // mode; persists across loadPreviewPage so the arranger can flow
@@ -3433,6 +3441,26 @@ function showWelcomeDialog(s, opts = {}) {
         el('li', {}, t('Whoever in your team has this link installed can type answers — pick one phone and keep it handy.')),
         el('li', {}, t('Wrong answers don\'t cost you anything — keep trying.'))));
   }
+  // Starting-location card. Surfaced regardless of whether the
+  // adventure has custom intro text — a player who lands on the
+  // magic link before reaching the meeting point benefits from a
+  // direct map link more than from another paragraph of prose.
+  if (typeof s.start_lat === 'number' && typeof s.start_lng === 'number') {
+    const startBox = el('div', { class: 'start-here' });
+    startBox.append(el('h3', { style: 'margin:.75rem 0 .25rem' }, t('Start here')));
+    if (s.start_label) {
+      startBox.append(el('p', { style: 'margin:.15rem 0; font-weight:600' }, s.start_label));
+    }
+    startBox.append(el('p', { class: 'mono', style: 'margin:.1rem 0; font-size:.85rem; opacity:.75' },
+      s.start_lat.toFixed(5) + ', ' + s.start_lng.toFixed(5)));
+    const mapsURL = `https://www.openstreetmap.org/?mlat=${s.start_lat}&mlon=${s.start_lng}#map=17/${s.start_lat}/${s.start_lng}`;
+    startBox.append(el('a', {
+      class: 'start-here-link',
+      href: mapsURL, target: '_blank', rel: 'noopener',
+      style: 'display:inline-block; margin-top:.4rem',
+    }, t('Open in maps')));
+    panel.append(startBox);
+  }
   panel.append(el('div', { class: 'cta' }, cta));
   overlay.append(panel);
   overlay.addEventListener('click', (e) => {
@@ -4071,9 +4099,38 @@ async function registerOfflineCache() {
   } catch (_) { /* offline already, or SW disallowed — ignore */ }
 }
 
+// loadPreviewAllLocations populates previewAllLocations for the given
+// slug from the catalog detail endpoint. Cached — re-entrancy on the
+// same slug skips the fetch. Failures leave the cache untouched, so
+// the spoof map quietly falls back to the single-pin default rather
+// than blocking the preview itself on a transient network blip.
+async function loadPreviewAllLocations(slug) {
+  if (previewAllLocations && previewAllLocations.slug === slug) return;
+  try {
+    const detail = await api(`/api/admin/adventures/${encodeURIComponent(slug)}`);
+    if (!detail.ok || !Array.isArray(detail.body?.pages)) return;
+    previewAllLocations = {
+      slug,
+      pins: detail.body.pages
+        .filter((p) => !p.disabled && p.location && typeof p.location.lat === 'number')
+        .map((p, i) => ({
+          lat: p.location.lat,
+          lng: p.location.lng,
+          gated: !!p.gated,
+          radiusM: p.location.radius_m || 0,
+          label: `${i + 1}. ${p.title || ''}`,
+        })),
+    };
+  } catch (_) { /* leave cache as-is */ }
+}
+
 async function bootstrapPreview(slug, pageIdx, debug) {
   const qs = new URLSearchParams({ page: String(pageIdx) });
   if (debug) qs.set('debug', '1');
+  // Fire the catalog-detail fetch in parallel with the preview
+  // request so the all-puzzle pins are ready when the user opens
+  // the spoof map. Awaited together below.
+  const allLocsPromise = loadPreviewAllLocations(slug);
   const r = await api(`/api/admin/adventures/${encodeURIComponent(slug)}/preview?${qs}`);
   if (r.status === 401) {
     app.replaceChildren(el('p', { class: 'err' },
@@ -4096,6 +4153,9 @@ async function bootstrapPreview(slug, pageIdx, debug) {
     pageIndex: r.body.page_index ?? 0,
     pageCount: r.body.page_count ?? 0,
   };
+  // Wait on the parallel fetch — best-effort, errors leave the cache
+  // untouched and the spoof map degrades to single-pin mode.
+  await allLocsPromise;
   render(r.body);
   renderPreviewChrome(r.body);
 }
@@ -4186,15 +4246,32 @@ function renderPreviewDebug(d, anchor) {
   // sits where they meant. For gated puzzles the map opens in pick
   // mode so the arranger can drop a "test position" the local gate
   // check honours, letting them verify the radius without travelling.
-  const openMap = () => openFullscreenMap({
-    title: isGated ? t('Set test location') : t('Puzzle location'),
-    pins: [{
-      lat: d.lat,
-      lng: d.lng,
-      gated: isGated,
-      radiusM: d.radius_m || 0,
-    }],
-    pick: isGated ? {
+  const openMap = () => {
+    // Build the pin list: the puzzle being previewed first (so it
+    // sits on top in z-order via Leaflet's add-order rendering),
+    // then every other puzzle in the adventure as outline / filled
+    // markers. Equal-coord matches are dropped so the current pin
+    // doesn't get a duplicate. previewAllLocations is populated by
+    // bootstrapPreview's parallel catalog-detail fetch; if that
+    // fetch failed we silently degrade to single-pin mode.
+    const others = (previewAllLocations && previewAllLocations.slug
+      && Array.isArray(previewAllLocations.pins))
+      ? previewAllLocations.pins.filter((p) =>
+          Math.abs(p.lat - d.lat) > 1e-7 || Math.abs(p.lng - d.lng) > 1e-7)
+      : [];
+    return openFullscreenMap({
+      title: isGated ? t('Set test location') : t('Puzzle location'),
+      pins: [
+        {
+          lat: d.lat,
+          lng: d.lng,
+          gated: isGated,
+          radiusM: d.radius_m || 0,
+          label: t('Current puzzle'),
+        },
+        ...others,
+      ],
+      pick: isGated ? {
       initial: previewSpoofedFix
         ? { lat: previewSpoofedFix.lat, lng: previewSpoofedFix.lng }
         : null,
@@ -4213,7 +4290,8 @@ function renderPreviewDebug(d, anchor) {
         refreshPreviewSpoofUI();
       } : null,
     } : null,
-  });
+    });
+  };
   const locCell = el('button', {
     class: 'cell mono linklike',
     type: 'button',
