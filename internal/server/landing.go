@@ -428,6 +428,14 @@ func renderTopbarPage(w http.ResponseWriter, r *http.Request, name string) {
 // landing template and writes the result. Style mirrors renderLegalPage
 // — strings.ReplaceAll over a {{KEY}} placeholder grammar so the
 // template stays a normal HTML file an editor can syntax-highlight.
+//
+// Chrome substitutions (lang attribute, topbar nav, footer, picker
+// flags) come from topbarSubs so the same set covers every page that
+// shares the topbar. Body-content substitutions (hero, benefits,
+// use-cases, "how it works", quote band, closing CTA) are landing-
+// specific and stay inline below. A new chrome field — like
+// {{NAV_STORE}} — only needs adding to topbarSubs once and every
+// caller picks it up automatically.
 func renderLandingPage(w http.ResponseWriter, r *http.Request) {
 	body, err := readWebFile("web/landing.html")
 	if err != nil {
@@ -437,72 +445,68 @@ func renderLandingPage(w http.ResponseWriter, r *http.Request) {
 	lang := resolveLang(w, r)
 	s := landingLocales[lang]
 	out := string(body)
-	subs := [][2]string{
-		{"{{LANG_CODE}}", s.LangCode},
-		{"{{LANG_ARIA}}", s.LangAriaLabel},
-		{"{{TITLE}}", s.Title},
-		{"{{META_DESC}}", s.MetaDesc},
-		{"{{OG_DESC}}", s.OGDesc},
-		{"{{SCHEMA_ORG_DESC}}", s.SchemaOrgDesc},
-		{"{{SCHEMA_APP_DESC}}", s.SchemaAppDesc},
-		{"{{NAV_PRIMARY_ARIA}}", s.NavPrimaryARIA},
-		{"{{NAV_TOGGLE_ARIA}}", s.NavToggleARIA},
-		{"{{BRAND_ARIA}}", s.BrandARIA},
-		{"{{NAV_MANUAL}}", s.NavManual},
-		{"{{NAV_PRICING}}", s.NavPricing},
-		{"{{NAV_LOGIN}}", s.NavLogin},
-		{"{{HERO_TAG}}", s.HeroTag},
-		{"{{HERO_HEADING}}", s.HeroHeading},
-		{"{{HERO_LEDE}}", s.HeroLede},
-		{"{{CTA_FREE}}", s.CTAFree},
-		{"{{CTA_POSSIBLE}}", s.CTAPossible},
-		{"{{SCROLL_HINT}}", s.ScrollHint},
-		{"{{BENEFITS_ARIA}}", s.BenefitsARIA},
-		{"{{BENEFIT1_TITLE}}", s.Benefit1Title},
-		{"{{BENEFIT1_BODY}}", s.Benefit1Body},
-		{"{{BENEFIT2_TITLE}}", s.Benefit2Title},
-		{"{{BENEFIT2_BODY}}", s.Benefit2Body},
-		{"{{BENEFIT3_TITLE}}", s.Benefit3Title},
-		{"{{BENEFIT3_BODY}}", s.Benefit3Body},
-		{"{{USECASES_EYEBROW}}", s.UsecasesEyebrow},
-		{"{{USECASES_HEADING}}", s.UsecasesHeading},
-		{"{{USECASES_SUB}}", s.UsecasesSub},
-		{"{{USECASE1_TITLE}}", s.Usecase1Title},
-		{"{{USECASE1_BODY}}", s.Usecase1Body},
-		{"{{USECASE2_TITLE}}", s.Usecase2Title},
-		{"{{USECASE2_BODY}}", s.Usecase2Body},
-		{"{{USECASE3_TITLE}}", s.Usecase3Title},
-		{"{{USECASE3_BODY}}", s.Usecase3Body},
-		{"{{USECASE_LINK}}", s.UsecaseLink},
-		{"{{HOW_EYEBROW}}", s.HowEyebrow},
-		{"{{HOW_HEADING}}", s.HowHeading},
-		{"{{HOW_SUB}}", s.HowSub},
-		{"{{STEP1_TITLE}}", s.Step1Title},
-		{"{{STEP1_BODY}}", s.Step1Body},
-		{"{{STEP2_TITLE}}", s.Step2Title},
-		{"{{STEP2_BODY}}", s.Step2Body},
-		{"{{STEP3_TITLE}}", s.Step3Title},
-		{"{{STEP3_BODY}}", s.Step3Body},
-		{"{{QUOTE_ARIA}}", s.QuoteARIA},
-		{"{{QUOTE_BODY}}", s.QuoteBody},
-		{"{{QUOTE_ATTR_LABEL}}", s.QuoteAttrLabel},
-		{"{{QUOTE_ATTR_AFTER}}", s.QuoteAttrAfter},
-		{"{{CLOSING_HEADING}}", s.ClosingHeading},
-		{"{{CLOSING_BODY}}", s.ClosingBody},
-		{"{{CTA_GET_STARTED}}", s.CTAGetStarted},
-		{"{{CTA_READ_MANUAL}}", s.CTAReadManual},
-		{"{{FOOTER_ARIA}}", s.FooterARIA},
-		{"{{FOOTER_PRIVACY}}", s.FooterPrivacy},
-		{"{{FOOTER_TERMS}}", s.FooterTerms},
-		{"{{FOOTER_COPY}}", s.FooterCopy},
-		// `aria-current="page"` on the active language link, blank on
-		// the inactive one. Dropping the attribute entirely is cleaner
-		// than `aria-current="false"` per WAI-ARIA practice.
-		{"{{EN_CURRENT}}", ariaCurrentIf(lang == "en")},
-		{"{{SV_CURRENT}}", ariaCurrentIf(lang == "sv")},
-		{"{{EN_ACTIVE}}", activeClassIf(lang == "en")},
-		{"{{SV_ACTIVE}}", activeClassIf(lang == "sv")},
-	}
+	subs := topbarSubs(s, lang)
+	subs = append(subs,
+		// <head> meta — landing-specific, not part of the shared
+		// topbar (manual / pricing have their own page-level meta).
+		[2]string{"{{TITLE}}", s.Title},
+		[2]string{"{{META_DESC}}", s.MetaDesc},
+		[2]string{"{{OG_DESC}}", s.OGDesc},
+		[2]string{"{{SCHEMA_ORG_DESC}}", s.SchemaOrgDesc},
+		[2]string{"{{SCHEMA_APP_DESC}}", s.SchemaAppDesc},
+
+		// Hero band.
+		[2]string{"{{HERO_TAG}}", s.HeroTag},
+		[2]string{"{{HERO_HEADING}}", s.HeroHeading},
+		[2]string{"{{HERO_LEDE}}", s.HeroLede},
+		[2]string{"{{CTA_FREE}}", s.CTAFree},
+		[2]string{"{{CTA_POSSIBLE}}", s.CTAPossible},
+		[2]string{"{{SCROLL_HINT}}", s.ScrollHint},
+
+		// Benefits.
+		[2]string{"{{BENEFITS_ARIA}}", s.BenefitsARIA},
+		[2]string{"{{BENEFIT1_TITLE}}", s.Benefit1Title},
+		[2]string{"{{BENEFIT1_BODY}}", s.Benefit1Body},
+		[2]string{"{{BENEFIT2_TITLE}}", s.Benefit2Title},
+		[2]string{"{{BENEFIT2_BODY}}", s.Benefit2Body},
+		[2]string{"{{BENEFIT3_TITLE}}", s.Benefit3Title},
+		[2]string{"{{BENEFIT3_BODY}}", s.Benefit3Body},
+
+		// Use-cases.
+		[2]string{"{{USECASES_EYEBROW}}", s.UsecasesEyebrow},
+		[2]string{"{{USECASES_HEADING}}", s.UsecasesHeading},
+		[2]string{"{{USECASES_SUB}}", s.UsecasesSub},
+		[2]string{"{{USECASE1_TITLE}}", s.Usecase1Title},
+		[2]string{"{{USECASE1_BODY}}", s.Usecase1Body},
+		[2]string{"{{USECASE2_TITLE}}", s.Usecase2Title},
+		[2]string{"{{USECASE2_BODY}}", s.Usecase2Body},
+		[2]string{"{{USECASE3_TITLE}}", s.Usecase3Title},
+		[2]string{"{{USECASE3_BODY}}", s.Usecase3Body},
+		[2]string{"{{USECASE_LINK}}", s.UsecaseLink},
+
+		// How-it-works.
+		[2]string{"{{HOW_EYEBROW}}", s.HowEyebrow},
+		[2]string{"{{HOW_HEADING}}", s.HowHeading},
+		[2]string{"{{HOW_SUB}}", s.HowSub},
+		[2]string{"{{STEP1_TITLE}}", s.Step1Title},
+		[2]string{"{{STEP1_BODY}}", s.Step1Body},
+		[2]string{"{{STEP2_TITLE}}", s.Step2Title},
+		[2]string{"{{STEP2_BODY}}", s.Step2Body},
+		[2]string{"{{STEP3_TITLE}}", s.Step3Title},
+		[2]string{"{{STEP3_BODY}}", s.Step3Body},
+
+		// Quote band.
+		[2]string{"{{QUOTE_ARIA}}", s.QuoteARIA},
+		[2]string{"{{QUOTE_BODY}}", s.QuoteBody},
+		[2]string{"{{QUOTE_ATTR_LABEL}}", s.QuoteAttrLabel},
+		[2]string{"{{QUOTE_ATTR_AFTER}}", s.QuoteAttrAfter},
+
+		// Closing CTA.
+		[2]string{"{{CLOSING_HEADING}}", s.ClosingHeading},
+		[2]string{"{{CLOSING_BODY}}", s.ClosingBody},
+		[2]string{"{{CTA_GET_STARTED}}", s.CTAGetStarted},
+		[2]string{"{{CTA_READ_MANUAL}}", s.CTAReadManual},
+	)
 	for _, sub := range subs {
 		out = strings.ReplaceAll(out, sub[0], sub[1])
 	}

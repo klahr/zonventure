@@ -19,7 +19,12 @@ import (
 // the package.
 func TestLandingOverride(t *testing.T) {
 	dir := t.TempDir()
-	tpl := `<!doctype html><html lang="{{LANG_CODE}}"><body>HERO={{HERO_HEADING}};FOOTER={{FOOTER_COPY}}</body></html>`
+	// NAV_STORE is included to lock in the bug fix where
+	// renderLandingPage was substituting its own duplicated chrome
+	// list and silently dropping any field added to topbarSubs
+	// (NavStore, future additions). Now it delegates to topbarSubs
+	// so this assertion proves the chrome subs reach the landing.
+	tpl := `<!doctype html><html lang="{{LANG_CODE}}"><body>HERO={{HERO_HEADING}};STORE={{NAV_STORE}};FOOTER={{FOOTER_COPY}}</body></html>`
 	if err := os.WriteFile(filepath.Join(dir, "landing.html"), []byte(tpl), 0o644); err != nil {
 		t.Fatalf("write landing: %v", err)
 	}
@@ -70,6 +75,16 @@ func TestLandingOverride(t *testing.T) {
 	}
 	if !strings.Contains(body, "FOOTER=© Override EN") {
 		t.Errorf("rendered body missing override footer: %s", body)
+	}
+	// The Store nav link was the original bug: NAV_STORE existed
+	// in topbarSubs but renderLandingPage rolled its own duplicated
+	// list and never picked it up, so the literal placeholder
+	// leaked through to users on the override-rendered landing.
+	if !strings.Contains(body, "STORE=Store") {
+		t.Errorf("rendered body missing NAV_STORE substitution (chrome subs not delegated to topbarSubs?): %s", body)
+	}
+	if strings.Contains(body, "{{NAV_STORE}}") {
+		t.Errorf("rendered body still contains {{NAV_STORE}} placeholder: %s", body)
 	}
 }
 
