@@ -86,6 +86,33 @@ func TestRenderTopbarPage_NoLeftoverPlaceholders(t *testing.T) {
 	}
 }
 
+// TestRenderStoreListingPage_NoLeftoverPlaceholders covers the
+// /store template substitution path. Both topbar chrome and the
+// store-specific body copy are merged in renderStoreListingPage,
+// so any unmapped {{KEY}} surfaces as a test failure.
+func TestRenderStoreListingPage_NoLeftoverPlaceholders(t *testing.T) {
+	for _, lang := range []string{"en", "sv"} {
+		t.Run(lang, func(t *testing.T) {
+			req := httptest.NewRequest("GET", "/store?lang="+lang, nil)
+			rec := httptest.NewRecorder()
+			renderStoreListingPage(rec, req)
+
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d, want 200; body = %s", rec.Code, rec.Body.String())
+			}
+			body := rec.Body.String()
+			if strings.Contains(body, "{{") {
+				idx := strings.Index(body, "{{")
+				end := idx + 50
+				if end > len(body) {
+					end = len(body)
+				}
+				t.Fatalf("leftover placeholder at %d: %q", idx, body[idx:end])
+			}
+		})
+	}
+}
+
 func TestResolveLang_Fallbacks(t *testing.T) {
 	cases := []struct {
 		name           string

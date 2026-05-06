@@ -16,8 +16,8 @@
 <html lang="{{LANG_CODE}}"><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Store · Zonventure</title>
-<meta name="description" content="Buy a ticket and play right now. One purchase, one team, one magic link to your inbox.">
+<title>{{STORE_TITLE}}</title>
+<meta name="description" content="{{STORE_META_DESC}}">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 
 <meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
@@ -211,7 +211,7 @@
       <div class="nav-menu">
         <a href="/manual">{{NAV_MANUAL}}</a>
         <a href="/pricing">{{NAV_PRICING}}</a>
-        <a href="/store" aria-current="page">Store</a>
+        <a href="/store" aria-current="page">{{NAV_STORE}}</a>
         <a href="/arrange" class="btn">{{NAV_LOGIN}}</a>
       </div>
     </nav>
@@ -227,12 +227,12 @@
 
 <main id="main">
   <div class="wrap">
-    <h1>Store</h1>
-    <p class="lede">Pick an adventure, type your email, pay. We email you a magic link — open it on your phone and play.</p>
+    <h1>{{STORE_SECTION_HEADING}}</h1>
+    <p class="lede">{{STORE_HERO_LEDE}}</p>
 
     <div id="status"></div>
     <div id="grid" class="grid" aria-busy="true">
-      <div class="empty">Loading available adventures…</div>
+      <div class="empty">{{STORE_LOADING_HEADING}}</div>
     </div>
   </div>
 </main>
@@ -242,7 +242,7 @@
     <nav aria-label="{{FOOTER_ARIA}}">
       <a href="/manual">{{NAV_MANUAL}}</a> ·
       <a href="/pricing">{{NAV_PRICING}}</a> ·
-      <a href="/store">Store</a> ·
+      <a href="/store">{{NAV_STORE}}</a> ·
       <a href="/privacy">{{FOOTER_PRIVACY}}</a> ·
       <a href="/terms">{{FOOTER_TERMS}}</a> ·
       <a href="/arrange">{{NAV_LOGIN}}</a>
@@ -251,8 +251,38 @@
   </div>
 </footer>
 
+<!--
+  i18n bundle for the listing JS. Server-rendered per locale so the
+  card vocabulary, toasts, and empty / error states stay in the
+  caller's language. Keys mirror the names used inside the JS — see
+  storeSubs() in internal/server/landing.go for the source.
+-->
+<script id="store-i18n" type="application/json">{
+  "toastPaid": "{{STORE_TOAST_PAID}}",
+  "toastCancelled": "{{STORE_TOAST_CANCELLED}}",
+  "teamSizeSolo": "{{STORE_TEAM_SIZE_SOLO}}",
+  "teamSizePlural": "{{STORE_TEAM_SIZE_PLURAL}}",
+  "meetsAt": "{{STORE_MEETS_AT}}",
+  "cardCTA": "{{STORE_CARD_CTA}}",
+  "perTicket": "{{STORE_PER_TICKET}}",
+  "perTeam": "{{STORE_PER_TEAM}}",
+  "emptyHeading": "{{STORE_EMPTY_HEADING}}",
+  "emptyBody": "{{STORE_EMPTY_BODY}}",
+  "errorHeading": "{{STORE_ERROR_HEADING}}",
+  "errorBody": "{{STORE_ERROR_BODY}}"
+}</script>
 <script>
 (function () {
+  var I18N = (function () {
+    try { return JSON.parse(document.getElementById('store-i18n').textContent); }
+    catch (_) { return {}; }
+  })();
+  function t(key) { return I18N[key] || ''; }
+  function teamSizeLabel(n) {
+    if (n <= 1) return t('teamSizeSolo');
+    return t('teamSizePlural').replace('{n}', String(n));
+  }
+
   // The /store success / cancel redirects from Stripe carry a
   // ?paid=<id> or ?cancelled=<id> query string. Show a one-line
   // toast so the buyer knows what happened, then strip the
@@ -265,9 +295,7 @@
     var status = document.getElementById('status');
     var div = document.createElement('div');
     div.className = 'toast' + (cancelled ? ' cancelled' : '');
-    div.textContent = paid
-      ? 'Payment received. Check your inbox — your magic link is on its way (give it a minute).'
-      : 'Checkout cancelled. Nothing was charged. Pick another ticket whenever you’re ready.';
+    div.textContent = paid ? t('toastPaid') : t('toastCancelled');
     status.appendChild(div);
     var url = new URL(window.location);
     url.searchParams.delete('paid');
@@ -275,10 +303,6 @@
     history.replaceState({}, '', url.toString());
   }
 
-  // Format an integer in minor units (cents) into a human-readable
-  // major-unit string. We don't have full ICU here so this is a
-  // best-effort: known currencies get their symbol, the rest fall
-  // back to the ISO code.
   var SYMBOLS = { eur: '€', usd: '$', sek: 'kr', gbp: '£', dkk: 'kr', nok: 'kr' };
   function formatPrice(cents, currency) {
     var c = (currency || 'eur').toLowerCase();
@@ -296,17 +320,12 @@
   }
 
   function buildCard(item) {
-    // The listing card is a link straight into the per-event detail
-    // page — that's where the buy form lives, where the OG tags
-    // generate proper social previews, and where the longer copy
-    // can breathe. Keeping the listing card itself simple makes
-    // the grid scannable on mobile.
     var card = document.createElement('a');
     card.className = 'card';
     card.href = '/store/event/' + encodeURIComponent(item.event_id);
     card.style.color = 'inherit';
     card.style.textDecoration = 'none';
-    var size = item.team_size > 1 ? ('Up to ' + item.team_size + ' players') : 'Solo';
+    var size = teamSizeLabel(item.team_size);
     var cover = item.cover_image_url
       ? '<div class="cover" role="img" aria-label="' + escapeHTML(item.adventure_title || item.adventure_slug) +
         '" style="background-image:url(' + escapeHTML(item.cover_image_url) + ')"></div>'
@@ -317,12 +336,12 @@
         (item.event_name ? ' <small style="color:var(--muted);font-size:.85rem">— ' + escapeHTML(item.event_name) + '</small>' : '') +
       '</h2>' +
       (item.blurb ? '<p class="blurb">' + escapeHTML(item.blurb) + '</p>' : '<p class="blurb"></p>') +
-      '<div class="meta">' + size +
-        (item.start_label ? ' · meets at ' + escapeHTML(item.start_label) : '') +
+      '<div class="meta">' + escapeHTML(size) +
+        (item.start_label ? ' · ' + escapeHTML(t('meetsAt')) + ' ' + escapeHTML(item.start_label) : '') +
       '</div>' +
       '<div class="price">' + escapeHTML(formatPrice(item.price_cents, item.currency)) +
-        ' <small>per ' + (item.team_size > 1 ? 'team' : 'ticket') + '</small></div>' +
-      '<span class="btn primary" style="text-align:center">Details & buy →</span>';
+        ' <small>' + escapeHTML(item.team_size > 1 ? t('perTeam') : t('perTicket')) + '</small></div>' +
+      '<span class="btn primary" style="text-align:center">' + escapeHTML(t('cardCTA')) + '</span>';
     return card;
   }
 
@@ -333,7 +352,7 @@
     if (!items || items.length === 0) {
       var empty = document.createElement('div');
       empty.className = 'empty';
-      empty.textContent = 'No tickets available right now. Check back soon.';
+      empty.textContent = t('emptyBody') || t('emptyHeading');
       grid.appendChild(empty);
       return;
     }
@@ -347,7 +366,10 @@
     .catch(function () {
       var grid = document.getElementById('grid');
       grid.removeAttribute('aria-busy');
-      grid.innerHTML = '<div class="empty">Could not load store right now. Please try again later.</div>';
+      var msg = document.createElement('div');
+      msg.className = 'empty';
+      msg.textContent = t('errorBody') || t('errorHeading');
+      grid.replaceChildren(msg);
     });
 })();
 </script>

@@ -112,18 +112,22 @@ func renderStoreEventPage(w http.ResponseWriter, r *http.Request, db *sql.DB, pu
 	}
 
 	teamSizeStr := strconv.Itoa(teamSize)
-	teamLabel := "Solo"
-	if teamSize > 1 {
-		teamLabel = fmt.Sprintf("Up to %d players", teamSize)
-	}
 
-	// Localised topbar chrome shared with /landing and /pricing —
-	// the lang-picker, brand link, footer copy. The page body's
-	// English copy is intentionally not yet localised; that will
-	// follow once the store has more visitors than translators.
+	// Localised topbar chrome + body copy. Both pull from the
+	// shared landingLocales table so a translator updates one place
+	// and every store surface follows.
 	lang := resolveLang(w, r)
 	s := landingLocales[lang]
 	subs := topbarSubs(s, lang)
+	subs = append(subs, storeSubs(s)...)
+
+	// Team label needs the locale's plural template. Same {n}
+	// placeholder convention as the JS-side teamSizeLabel — keep
+	// them in lock-step so a translator only edits one phrase.
+	teamLabel := s.StoreTeamSizeSolo
+	if teamSize > 1 {
+		teamLabel = strings.ReplaceAll(s.StoreTeamSizePlural, "{n}", teamSizeStr)
+	}
 
 	subs = append(subs,
 		[2]string{"{{TITLE}}", html.EscapeString(title)},
@@ -147,6 +151,13 @@ func renderStoreEventPage(w http.ResponseWriter, r *http.Request, db *sql.DB, pu
 	for _, sub := range subs {
 		out = strings.ReplaceAll(out, sub[0], sub[1])
 	}
+	// Final pass: the locale strings carry inline {n} / {team_label}
+	// placeholders for the team-size feature line, FAQ answer, and
+	// hero price suffix. Run them after the main {{KEY}} pass so a
+	// translator can place them anywhere inside the localised
+	// string without coordinating with the renderer.
+	out = strings.ReplaceAll(out, "{n}", teamSizeStr)
+	out = strings.ReplaceAll(out, "{team_label}", teamLabel)
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Vary", "Cookie, Accept-Language")

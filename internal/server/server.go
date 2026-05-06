@@ -398,9 +398,7 @@ func New(cfg Config) http.Handler {
 		// Checkout session and lives on adminH because that's where
 		// the Stripe credentials are wired (mirrors the StripeWebhook
 		// admin/public split below).
-		r.Get("/store", func(w http.ResponseWriter, req *http.Request) {
-			renderTopbarPage(w, req, "web/store.html")
-		})
+		r.Get("/store", renderStoreListingPage)
 		// Per-event detail page. Server-rendered (rather than SPA
 		// in JS) so social-media previewers, search crawlers, and
 		// AI agents see real OpenGraph metadata + the description

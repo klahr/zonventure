@@ -50,7 +50,15 @@ The repository, Go module, and CLI binary are named `zv`; the product is
   time, same shape as `landing.html` and `pricing.html`. The
   branded variants in the sibling `zv-web` repo carry the hosted
   visual language (Aclonica heading, brand-pink hero gradient,
-  hero photo, "how it works" strip, FAQ).
+  hero photo, "how it works" strip, FAQ). Both pages — embedded
+  and override — are localised English / Swedish via the shared
+  `landingStrings` table; ~50 new keys cover hero copy, "how it
+  works" steps, card vocabulary, FAQ Q&A, buy-form labels, JS-
+  side toasts and validation. A `{n}` placeholder convention lets
+  team-size phrasing live in the locale string ("Up to {n}
+  players" / "Upp till {n} spelare") and gets resolved per-event
+  server-side. The hosted `zv-web/landing.html` now also surfaces
+  a Store link in the topbar, mobile overlay, and footer.
 - **MCP connector.** New opt-in `POST /mcp` endpoint exposing
   adventure authoring as Model Context Protocol tools so an
   arranger can connect Claude desktop / claude.ai / other MCP

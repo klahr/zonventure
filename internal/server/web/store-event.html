@@ -256,7 +256,7 @@
       <div class="nav-menu">
         <a href="/manual">{{NAV_MANUAL}}</a>
         <a href="/pricing">{{NAV_PRICING}}</a>
-        <a href="/store">Store</a>
+        <a href="/store">{{NAV_STORE}}</a>
         <a href="/arrange" class="btn">{{NAV_LOGIN}}</a>
       </div>
     </nav>
@@ -266,13 +266,13 @@
 <aside class="nav-overlay" aria-label="{{NAV_PRIMARY_ARIA}}">
   <a href="/manual">{{NAV_MANUAL}}</a>
   <a href="/pricing">{{NAV_PRICING}}</a>
-  <a href="/store">Store</a>
+  <a href="/store">{{NAV_STORE}}</a>
   <a href="/arrange" class="btn">{{NAV_LOGIN}}</a>
 </aside>
 
 <main id="main">
   <div class="wrap">
-    <p class="crumbs"><a href="/store">← Store</a></p>
+    <p class="crumbs"><a href="/store">{{STORE_EVENT_CRUMBS}}</a></p>
 
     <div id="status"></div>
 
@@ -283,7 +283,7 @@
         <p class="subtitle">{{SUBTITLE}}</p>
         <div class="price-row">
           <span class="price">{{PRICE_DISPLAY}}</span>
-          <span class="per">per ticket</span>
+          <span class="per">{{STORE_PER_TICKET}}</span>
         </div>
         <p class="blurb">{{BLURB}}</p>
       </div>
@@ -292,32 +292,31 @@
 
     <div class="meta-grid" aria-label="Ticket details">
       <div class="meta-tile">
-        <div class="k">Team size</div>
+        <div class="k">{{STORE_EVENT_META_TEAM_SIZE}}</div>
         <div class="v">{{TEAM_LABEL}}</div>
       </div>
       <div class="meta-tile">
-        <div class="k">Format</div>
-        <div class="v">Phone-based outdoor adventure</div>
+        <div class="k">{{STORE_EVENT_META_FORMAT}}</div>
+        <div class="v">{{STORE_EVENT_META_FORMAT_VALUE}}</div>
       </div>
       <div class="meta-tile">
-        <div class="k">When</div>
-        <div class="v">Always on — start whenever you want</div>
+        <div class="k">{{STORE_EVENT_META_WHEN}}</div>
+        <div class="v">{{STORE_EVENT_META_WHEN_VALUE}}</div>
       </div>
       <div class="meta-tile">
-        <div class="k">Meeting point</div>
+        <div class="k">{{STORE_EVENT_META_MEETING_POINT}}</div>
         <div class="v">{{START_LABEL}}</div>
       </div>
     </div>
 
     <div class="buy-card">
-      <h2>Buy a ticket</h2>
-      <p>Type your email and we'll send you the magic links to start playing. One ticket buys your team — share with friends from inside the app.</p>
+      <h2>{{STORE_EVENT_BUY_HEADING}}</h2>
       <form id="buy-form" novalidate>
-        <label for="buyer-email">Your email</label>
-        <input id="buyer-email" type="email" required autocomplete="email" placeholder="you@example.com">
+        <label for="buyer-email">{{STORE_EVENT_EMAIL_LABEL}}</label>
+        <input id="buyer-email" type="email" required autocomplete="email" placeholder="{{STORE_EVENT_EMAIL_PLACEHOLDER}}">
         <div class="err" id="buy-err" role="alert"></div>
-        <button type="submit" class="btn primary" id="buy-submit">Continue to payment — {{PRICE_DISPLAY}}</button>
-        <p class="terms-note">Payment processed by Stripe. By continuing you agree to the <a href="/terms">terms</a> and <a href="/privacy">privacy notice</a>.</p>
+        <button type="submit" class="btn primary" id="buy-submit">{{STORE_EVENT_BUY_CTA}}</button>
+        <p class="terms-note">{{STORE_EVENT_TERMS_HTML}}</p>
       </form>
     </div>
   </div>
@@ -328,7 +327,7 @@
     <nav aria-label="{{FOOTER_ARIA}}">
       <a href="/manual">{{NAV_MANUAL}}</a> ·
       <a href="/pricing">{{NAV_PRICING}}</a> ·
-      <a href="/store">Store</a> ·
+      <a href="/store">{{NAV_STORE}}</a> ·
       <a href="/privacy">{{FOOTER_PRIVACY}}</a> ·
       <a href="/terms">{{FOOTER_TERMS}}</a> ·
       <a href="/arrange">{{NAV_LOGIN}}</a>
@@ -337,12 +336,23 @@
   </div>
 </footer>
 
+<!-- i18n bundle for the per-event JS. Locale text is rendered into
+     this JSON block server-side so the buy form's validation +
+     error toasts stay in the caller's language. -->
+<script id="store-event-i18n" type="application/json">{
+  "toastPaid": "{{STORE_TOAST_PAID}}",
+  "toastCancelled": "{{STORE_TOAST_CANCELLED}}",
+  "badEmail": "{{STORE_EVENT_BAD_EMAIL}}",
+  "genericErr": "{{STORE_EVENT_GENERIC_ERR}}"
+}</script>
 <script>
 (function () {
-  // Surface ?paid= / ?cancelled= toasts the same way the listing
-  // page does — Stripe redirects back here when a buy was started
-  // from the detail page, so the toast surface needs to live both
-  // places.
+  var I18N = (function () {
+    try { return JSON.parse(document.getElementById('store-event-i18n').textContent); }
+    catch (_) { return {}; }
+  })();
+  function t(key) { return I18N[key] || ''; }
+
   function flashFromQuery() {
     var params = new URLSearchParams(window.location.search);
     var paid = params.get('paid');
@@ -351,9 +361,7 @@
     var status = document.getElementById('status');
     var div = document.createElement('div');
     div.className = 'toast' + (cancelled ? ' cancelled' : '');
-    div.textContent = paid
-      ? 'Payment received. Check your inbox — your magic link is on its way (give it a minute).'
-      : 'Checkout cancelled. Nothing was charged.';
+    div.textContent = paid ? t('toastPaid') : t('toastCancelled');
     status.appendChild(div);
     var url = new URL(window.location);
     url.searchParams.delete('paid');
@@ -372,11 +380,11 @@
     err.textContent = '';
     var email = input.value.trim();
     if (!email || email.indexOf('@') === -1) {
-      err.textContent = 'Please enter a valid email address.';
+      err.textContent = t('badEmail');
       return;
     }
     submit.disabled = true;
-    submit.textContent = 'Redirecting…';
+    submit.textContent = '…';
     fetch('/api/store/buy', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -384,18 +392,18 @@
     })
       .then(function (r) {
         if (!r.ok) {
-          return r.text().then(function (t) { throw new Error(t || 'Checkout failed'); });
+          return r.text().then(function (txt) { throw new Error(txt || ''); });
         }
         return r.json();
       })
       .then(function (resp) {
-        if (!resp || !resp.checkout_url) throw new Error('No checkout URL returned');
+        if (!resp || !resp.checkout_url) throw new Error('');
         window.location.href = resp.checkout_url;
       })
       .catch(function (e) {
         submit.disabled = false;
         submit.textContent = originalSubmitText;
-        err.textContent = (e && e.message) || 'Something went wrong, please try again.';
+        err.textContent = (e && e.message) || t('genericErr');
       });
   });
 })();
