@@ -17,6 +17,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/mail"
 	"strconv"
@@ -327,6 +328,13 @@ type createEventRequest struct {
 	// have parental consent for any under-13 players". Stored as a
 	// timestamp on the event row so the consent moment is auditable.
 	AttestNoMinors bool `json:"attest_no_minors,omitempty"`
+	// PublicForSale marks the event as a Quest at creation time —
+	// listed on /store, ticket-purchased, always-on. The flag is
+	// immutable after creation: a quest stays a quest, a regular
+	// event stays a regular event. UpdateEvent refuses changes.
+	// Default false makes every legacy create call (no field on the
+	// wire) keep producing a regular event, which is what we want.
+	PublicForSale bool `json:"public_for_sale,omitempty"`
 }
 
 
@@ -497,10 +505,10 @@ func (h *Handlers) CreateEvent(w http.ResponseWriter, r *http.Request) {
 	// who want a closed-room spectator screen flip it on per-event
 	// from the dashboard. DO NOT add show_map=1 to this INSERT.
 	err = h.DB.QueryRowContext(r.Context(), `
-		INSERT INTO events(adventure_slug, org_id, created_by_user_id, state, scheduled_at, assignment_id, live_token, name, attested_no_minors_at)
-		VALUES ($1, $2, $3, 'scheduled', $4, $5, $6, $7, now_text())
+		INSERT INTO events(adventure_slug, org_id, created_by_user_id, state, scheduled_at, assignment_id, live_token, name, attested_no_minors_at, public_for_sale)
+		VALUES ($1, $2, $3, 'scheduled', $4, $5, $6, $7, now_text(), $8)
 		RETURNING id
-	`, slug, *me.OrgID, me.ID, schedAt, assignmentArg, liveToken, eventName).Scan(&id)
+	`, slug, *me.OrgID, me.ID, schedAt, assignmentArg, liveToken, eventName, req.PublicForSale).Scan(&id)
 	if err != nil {
 		httpx.ServerErr(w, http.StatusConflict, "could not create run", err)
 		return
@@ -535,6 +543,11 @@ func newLiveToken() (string, error) { return tokenx.New(16) }
 
 // ListEvents returns events visible to the caller: admins see everything,
 // org users see their own org.
+//
+// Optional `?public_for_sale=true|false` partitions Quests (the
+// public-store-listed subset) from regular events. The Events page
+// passes `false` so quests don't clutter it; the Quests page passes
+// `true` to render only quests. Omitted = both.
 func (h *Handlers) ListEvents(w http.ResponseWriter, r *http.Request) {
 	me, _ := auth.FromContext(r.Context())
 	query := `
@@ -548,15 +561,35 @@ func (h *Handlers) ListEvents(w http.ResponseWriter, r *http.Request) {
 		       (SELECT COUNT(*) FROM teams WHERE event_id = ar.id) AS teams_count,
 		       (SELECT COUNT(*) FROM player_slots ps
 		         JOIN teams t ON t.id = ps.team_id
-		        WHERE t.event_id = ar.id) AS player_slots_count
+		        WHERE t.event_id = ar.id) AS player_slots_count,
+		       ar.public_for_sale,
+		       COALESCE(ar.ticket_price_cents, 0),
+		       COALESCE(ar.ticket_currency, ''),
+		       COALESCE(ar.ticket_team_size, 0),
+		       COALESCE(ar.cover_image_mime_type, '') <> '' AS has_cover_image
 		FROM events ar
 		LEFT JOIN adventure_assignments aa ON aa.id = ar.assignment_id
 		LEFT JOIN adventures adv ON adv.slug = ar.adventure_slug
 	`
-	var args []any
+	var (
+		args   []any
+		wheres []string
+	)
 	if me.Role != auth.RoleAdmin {
-		query += ` WHERE ar.org_id = $1`
 		args = append(args, *me.OrgID)
+		wheres = append(wheres, fmt.Sprintf("ar.org_id = $%d", len(args)))
+	}
+	if v := strings.TrimSpace(r.URL.Query().Get("public_for_sale")); v != "" {
+		want, err := strconv.ParseBool(v)
+		if err != nil {
+			httpx.Error(w, http.StatusBadRequest, "public_for_sale must be true or false")
+			return
+		}
+		args = append(args, want)
+		wheres = append(wheres, fmt.Sprintf("ar.public_for_sale = $%d", len(args)))
+	}
+	if len(wheres) > 0 {
+		query += " WHERE " + strings.Join(wheres, " AND ")
 	}
 	query += ` ORDER BY ar.created_at DESC`
 	rows, err := h.DB.QueryContext(r.Context(), query, args...)
@@ -575,7 +608,8 @@ func (h *Handlers) ListEvents(w http.ResponseWriter, r *http.Request) {
 		if err := rows.Scan(&d.ID, &d.Name, &d.AdventureSlug, &d.AdventureTitle, &d.State, &d.ScheduledAt, &d.StartedAt,
 			&d.CompletedAt, &d.CancelledAt,
 			&d.OrgID, &d.CreatedByUserID, &d.AssignmentID, &d.MaxPlayers,
-			&d.LiveToken, &showMap, &hasAvatar, &d.TeamsCount, &d.PlayerSlotsCount); err != nil {
+			&d.LiveToken, &showMap, &hasAvatar, &d.TeamsCount, &d.PlayerSlotsCount,
+			&d.PublicForSale, &d.TicketPriceCents, &d.TicketCurrency, &d.TicketTeamSize, &d.HasCoverImage); err != nil {
 			httpx.Error(w, http.StatusInternalServerError, "scan failed")
 			return
 		}
@@ -599,9 +633,12 @@ func (h *Handlers) transitionEvent(w http.ResponseWriter, r *http.Request, actio
 	if !ok {
 		return
 	}
-	var state string
+	var (
+		state         string
+		publicForSale bool
+	)
 	if err := h.DB.QueryRowContext(r.Context(),
-		`SELECT state FROM events WHERE id = $1`, eventID).Scan(&state); err != nil {
+		`SELECT state, public_for_sale FROM events WHERE id = $1`, eventID).Scan(&state, &publicForSale); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "lookup failed")
 		return
 	}
@@ -627,7 +664,11 @@ func (h *Handlers) transitionEvent(w http.ResponseWriter, r *http.Request, actio
 	// meant to add a team first. The arrange UI catches this in
 	// confirmStart, but a stale cache or scripted client would
 	// otherwise slip through.
-	if action == "start" {
+	//
+	// Quests (public_for_sale) intentionally bypass the guard: every
+	// team comes from a /store ticket purchase AFTER the quest is
+	// running, so a fresh quest is necessarily empty at start time.
+	if action == "start" && !publicForSale {
 		var teamCount int
 		if err := h.DB.QueryRowContext(r.Context(),
 			`SELECT COUNT(*) FROM teams WHERE event_id = $1`, eventID).Scan(&teamCount); err != nil {
@@ -841,29 +882,21 @@ func (h *Handlers) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if req.PublicForSale != nil {
-		// Flipping ON without a price is a misconfiguration — the
-		// listing query would skip the row anyway (price IS NOT NULL)
-		// so block at the API to fail loud rather than silently.
-		if *req.PublicForSale {
-			var price sql.NullInt64
-			incoming := req.TicketPriceCents
-			if incoming != nil && *incoming > 0 {
-				price = sql.NullInt64{Int64: int64(*incoming), Valid: true}
-			} else {
-				if err := h.DB.QueryRowContext(r.Context(),
-					`SELECT ticket_price_cents FROM events WHERE id = $1`, eventID).Scan(&price); err != nil {
-					httpx.Error(w, http.StatusInternalServerError, "price lookup failed")
-					return
-				}
-			}
-			if !price.Valid || price.Int64 <= 0 {
-				httpx.Error(w, http.StatusBadRequest, "set a ticket price before publishing for sale")
-				return
-			}
+		// public_for_sale is the Quest/Event type marker — set once
+		// at CreateEvent, immutable thereafter. Flipping it on a
+		// live event would silently change the type (regular event
+		// becomes a quest mid-flight, or vice versa) which is never
+		// what the operator wants. Refuse the change unless the
+		// requested value matches the stored one (idempotent no-op).
+		var current bool
+		if err := h.DB.QueryRowContext(r.Context(),
+			`SELECT public_for_sale FROM events WHERE id = $1`, eventID).Scan(&current); err != nil {
+			httpx.Error(w, http.StatusInternalServerError, "lookup failed")
+			return
 		}
-		if _, err := h.DB.ExecContext(r.Context(),
-			`UPDATE events SET public_for_sale = $1 WHERE id = $2`, *req.PublicForSale, eventID); err != nil {
-			httpx.Error(w, http.StatusInternalServerError, "update failed")
+		if *req.PublicForSale != current {
+			httpx.Error(w, http.StatusConflict,
+				"public_for_sale is set at creation time and cannot be changed afterwards")
 			return
 		}
 	}

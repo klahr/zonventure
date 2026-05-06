@@ -37,9 +37,9 @@ An event moves through five named states. Most authoring happens in **scheduled*
 
 | From → To              | Tool          | Notes                                                                  |
 |------------------------|---------------|------------------------------------------------------------------------|
-| (none) → scheduled     | create_event  | Adds a fresh row in state ` + "`scheduled`" + `.                                  |
-| scheduled → running    | start_event   | Requires at least one team. Initialises lane permutations.             |
-| running → paused       | pause_event   | Players see a "paused" banner; answers/movement aren't recorded.       |
+| (none) → scheduled     | create_event  | Adds a fresh row in state ` + "`scheduled`" + `. Pass ` + "`public_for_sale: true`" + ` to mark it as a Quest. |
+| scheduled → running    | start_event   | Requires at least one team for regular events. **Quests bypass this guard** — they're started empty, with teams minted from ticket purchases at /store. |
+| running → paused       | pause_event   | Players see a "paused" banner; answers/movement aren't recorded. For Quests, pausing also delists from /store (no new ticket sales) without ending the quest. |
 | paused → running       | resume_event  | Same elapsed clock; team progress untouched.                           |
 | running → completed    | (automatic)   | When the last non-withdrawn team finishes its lane.                    |
 | any non-terminal → cancelled | cancel_event | Allowed from scheduled, running, paused. Requires the user's password. |
@@ -78,6 +78,14 @@ The MCP surface has no streaming. To watch a live event, poll:
 - ` + "`cancel_event`" + ` and ` + "`delete_team`" + ` require the caller's password (passed as ` + "`password`" + `, forwarded as X-Confirm-Password). The MCP token alone cannot cancel or destroy.
 - ` + "`grant_slots_to_event`" + ` is admin-only and refused at the MCP layer when the token's user isn't a global admin.
 - ` + "`create_purchase`" + ` is hard-coded to provider="simulated" and refuses on Stripe-enabled deployments — real-money buys go through the web checkout.
+
+## Quests vs regular events
+
+A Quest is an event with ` + "`public_for_sale: true`" + ` — set once at create_event, immutable thereafter. update_event refuses to flip the flag with a 409. Practical consequences for the LLM:
+
+- A quest is listed at /store as soon as it's in ` + "`running`" + ` or ` + "`paused`" + ` state and has a ticket price set (use update_event to set ` + "`ticket_price_cents`" + `, ` + "`ticket_currency`" + `, ` + "`ticket_team_size`" + `, ` + "`public_blurb`" + ` after create_event).
+- Quests start with no teams. start_event won't 409 the way it does for regular events.
+- To "delist" a quest temporarily, pause_event it. To kill it, cancel_event.
 `
 
 func (s *Server) registerLifecycleTool() {

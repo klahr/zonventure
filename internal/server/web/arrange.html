@@ -2586,6 +2586,9 @@ const ICONS = {
   eye:    '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>',
   coins:  '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="10" r="6"/><circle cx="16" cy="14" r="6"/><path d="M8 8v4"/><path d="M6 10h4"/></svg>',
   schedule:'<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><path d="M12 14v4"/><path d="M10 18h4"/></svg>',
+  // Compass — used for Quests in the sidebar (and for other "find
+  // your way" / wayfinding affordances in the future).
+  compass: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg>',
   fastForward: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 19 22 12 13 5 13 19"/><polygon points="2 19 11 12 2 5 2 19"/></svg>',
   // Open book — used for the Manual / arranger handbook entry.
   book: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4h6a4 4 0 0 1 4 4v12a3 3 0 0 0-3-3H2z"/><path d="M22 4h-6a4 4 0 0 0-4 4v12a3 3 0 0 1 3-3h7z"/></svg>',
@@ -3789,6 +3792,10 @@ function renderShell() {
       // navigation path. The list endpoint returns all events for
       // admins, so it's a cross-org overview by default.
       ['#events',        t('Events'),        ICONS.schedule],
+      // Quests are public-store always-on events. Admin sees them
+      // cross-org for the same triage reason Events is admin-visible
+      // (grant slots, cancel-mid-flight, etc.).
+      ['#quests',        t('Quests'),        ICONS.compass],
       // "Library" is the single entry point for authored content — a
       // tab strip inside the view splits Adventures and Puzzles. Two
       // sidebar entries for what's essentially one catalog was noise.
@@ -3806,6 +3813,11 @@ function renderShell() {
       ['#dashboard',  t('Dashboard'),  ICONS.dashboard],
       ['#adventures', t('Adventures'), ICONS.map],
       ['#events',     t('Events'),     ICONS.schedule],
+      // Quests are the always-on / ticket-purchasable variant of an
+      // event — public_for_sale on the backend, marketed as a
+      // separate concept here. Filtered out of #events so the two
+      // surfaces don't overlap.
+      ['#quests',     t('Quests'),     ICONS.compass],
     ];
     items.push(['#settings', t('Settings'), ICONS.gear]);
   }
@@ -4103,6 +4115,18 @@ async function renderRoute() {
         const parts = r.split('/');
         if (parts[2] === 'control') return await viewEventControl(view, parseInt(arg, 10));
         return await viewRunDetail(view, parseInt(arg, 10));
+      }
+      // Quests share the underlying event table (public_for_sale=true);
+      // the list page is a simplified Events surface and the detail
+      // page reuses #events/{id} via a redirect once the row is
+      // identified — saves duplicating the entire detail view.
+      case 'quests': {
+        if (!arg) return await viewQuests(view);
+        // /quests/{id} bounces straight to the unified event detail
+        // so all the existing affordances (teams, slots, audit,
+        // simulator) keep working without a parallel implementation.
+        nav('#events/' + arg);
+        return;
       }
       // Members / Admins / Audit / Purchases / Webhooks were lifted
       // into the Settings hub as tabs; old links / bookmarks /
@@ -6662,7 +6686,12 @@ async function viewRuns(view) {
   // Admins also need an org filter to triage at a per-org level
   // without scanning the full table; org users see only their own
   // org so the picker would be redundant.
-  const calls = [api('/api/admin/events')];
+  // public_for_sale=false partitions out Quests so the Events page
+  // shows only regular (operator-scheduled) events. Quests live on
+  // their own #quests page; including them here would dilute the
+  // operational-events overview an arranger reaches for during a
+  // live race.
+  const calls = [api('/api/admin/events?public_for_sale=false')];
   if (isAdmin) calls.push(api('/api/admin/organizations'));
   const [eventsR, orgsR] = await Promise.all(calls);
   const rs = eventsR.body?.events || [];
@@ -6790,6 +6819,294 @@ function runsTable(rs, opts) {
         h('td', { class: 'hide-narrow' }, fmtLocal(r.started_at)),
       ))),
   );
+}
+
+/* ============================ Quests ============================
+ *
+ * Quests are public_for_sale events: long-running, ticket-purchased,
+ * always-on adventures the public buys at /store. The backend type
+ * is the same `events` row — the ?public_for_sale=true filter
+ * partitions them off from regular events so each surface has its
+ * own focused list.
+ *
+ * The list page is intentionally simpler than #events: no state
+ * chip-bar, no org filter (admin still sees cross-org rows because
+ * the API returns them), just the few facts an operator wants when
+ * triaging "what's published, what's selling, what's paused".
+ * ================================================================ */
+
+async function viewQuests(view) {
+  const isAdmin = state.me?.role === 'admin';
+  const calls = [api('/api/admin/events?public_for_sale=true')];
+  if (isAdmin) calls.push(api('/api/admin/organizations'));
+  const [eventsR, orgsR] = await Promise.all(calls);
+  const rs = eventsR.body?.events || [];
+  const orgs = orgsR ? (orgsR.body?.organizations || []) : [];
+  const orgName = (id) => {
+    const o = orgs.find((x) => x.id === id);
+    return o ? o.name : '#' + id;
+  };
+
+  const newBtn = isAdmin
+    ? null
+    : h('button', { class: 'btn primary', on: { click: () => newQuest() } },
+        icon(ICONS.plus), t('New quest'));
+
+  view.replaceChildren(
+    h('div', { class: 'row between', style: 'margin-bottom:1rem' },
+      h('h1', { style: 'margin:0' }, t('Quests')),
+      newBtn),
+    h('p', { class: 'muted', style: 'font-size:.9rem; margin:0 0 1rem' },
+      t('Always-on adventures listed at /store. Each ticket purchase mints a team; teams play whenever they want.')),
+    questsTable(rs, { showOrg: isAdmin, orgName }));
+}
+
+function questsTable(rs, opts) {
+  opts = opts || {};
+  const showOrg = !!opts.showOrg;
+  const orgName = opts.orgName || ((id) => '#' + id);
+  if (rs.length === 0) {
+    return h('div', { class: 'empty' },
+      h('p', {}, t('No quests yet.')),
+      h('p', { class: 'muted', style: 'margin-top:.5rem' },
+        t('Create a quest to list an always-on adventure on /store.')),
+      h('div', { style: 'margin-top:.75rem' },
+        h('button', { class: 'btn primary', on: { click: () => newQuest() } },
+          icon(ICONS.plus), t('New quest'))));
+  }
+  return h('table', { class: 'table' },
+    h('thead', {}, h('tr', {},
+      h('th', { style: 'width:48px' }, ''),
+      h('th', {}, t('Quest')),
+      h('th', { class: 'hide-narrow' }, t('Adventure')),
+      showOrg ? h('th', { class: 'hide-narrow' }, t('Organization')) : null,
+      h('th', {}, t('State')),
+      // "Tickets" — current sold count over the assignment cap.
+      h('th', { class: 'hide-narrow' }, t('Tickets')),
+      h('th', {}, t('Price')))),
+    h('tbody', {}, rs.map((r) =>
+      h('tr', { style: 'cursor:pointer', on: { click: () => nav('#events/' + r.id) } },
+        h('td', { style: 'width:48px' }, adventureCover({
+          title:      r.adventure_title || r.adventure_slug,
+          avatar_url: r.adventure_avatar_url,
+        }, 32)),
+        h('td', {}, h('strong', {}, runLabel(r))),
+        h('td', { class: 'hide-narrow' },
+          r.adventure_title
+            ? h('div', {},
+                r.adventure_title,
+                h('div', { class: 'muted mono', style: 'font-size:.75rem' }, r.adventure_slug))
+            : h('span', { class: 'muted mono' }, r.adventure_slug)),
+        showOrg ? h('td', { class: 'hide-narrow' }, orgName(r.org_id)) : null,
+        h('td', {}, h('span', { class: 'pill ' + pillClassForState(r.state) }, stateGlyph(r.state) + tEventState(r.state))),
+        // teams_count and max_players already populate from
+        // /api/admin/events; no extra round-trip per row.
+        h('td', { class: 'hide-narrow' },
+          r.max_players > 0
+            ? `${r.teams_count} / ${r.max_players}`
+            : `${r.teams_count}`),
+        h('td', {}, fmtTicketPrice(r.ticket_price_cents, r.ticket_currency)),
+      ))),
+  );
+}
+
+// fmtTicketPrice renders a price+currency pair as a readable string,
+// matching the formatting /store and the public detail page use. A
+// missing price (quest in setup, never published) shows an em-dash
+// so the column doesn't render an alarming "0".
+function fmtTicketPrice(cents, currency) {
+  if (!cents || cents <= 0) return h('span', { class: 'muted' }, '—');
+  const c = (currency || 'EUR').toUpperCase();
+  const n = (cents / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return `${n} ${c}`;
+}
+
+// newQuest opens the quest-creation modal. Picks an adventure the
+// caller can run, collects quest meta + public-store fields,
+// chains: pick assignment → POST /events → PATCH public-store
+// fields → optional cover upload → POST /events/{id}/start. Each
+// step surfaces failure separately so the operator can recover
+// from the failed step in the event-detail page.
+async function newQuest() {
+  // Pull adventures and unused assignments up front so the modal
+  // can react instantly when the user changes their pick.
+  const [advR, assignR] = await Promise.all([
+    api('/api/admin/adventures'),
+    api('/api/admin/assignments'),
+  ]);
+  const advs = (advR.body?.adventures || []).filter((a) => a.mine_to_edit || a.shared);
+  const assignments = (assignR.body?.assignments || []).filter((x) => !x.event_id);
+  if (advs.length === 0) {
+    toastErr(t('Create or browse an adventure first'));
+    return;
+  }
+
+  const result = await modal(t('New quest'), ({ body, close }) => {
+    let pickedAdv = advs[0];
+
+    // Adventure picker (chips). Reusing the schedule-run styling so
+    // the two creation flows feel consistent.
+    const advPick = h('div', { class: 'chip-grid', style: 'max-height:200px' });
+    const refreshChips = () => {
+      advPick.replaceChildren(...advs.map((a) => {
+        const chip = h('div', {
+          class: 'chip selectable' + (a.slug === pickedAdv.slug ? ' selected' : ''),
+          style: 'display:flex; flex-direction:column; gap:.1rem; min-width:160px',
+        },
+          h('strong', {}, a.title),
+          h('span', { class: 'muted', style: 'font-size:.75rem' },
+            a.mine_to_edit ? t('yours') : t('catalog')));
+        chip.addEventListener('click', () => {
+          pickedAdv = a;
+          refreshChips();
+          refreshAssignmentHint();
+        });
+        return chip;
+      }));
+    };
+    refreshChips();
+
+    const name = h('input', { type: 'text', required: true, maxlength: '200', placeholder: t('Quest name') });
+    const blurb = h('textarea', { rows: '4', maxlength: '1000', placeholder: t('Short description shown on the /store card and detail page.') });
+    const price = h('input', { type: 'number', min: '1', step: '1', value: '20' });
+    const currency = h('select', {},
+      ['EUR', 'USD', 'SEK', 'GBP', 'NOK', 'DKK'].map((c) =>
+        h('option', { value: c, selected: c === 'EUR' ? '' : null }, c)));
+    const teamSize = h('input', { type: 'number', min: '1', max: '20', value: '4' });
+    const cover = h('input', { type: 'file', accept: 'image/*' });
+    const attest = h('input', { type: 'checkbox' });
+
+    // Surface "you need to buy slots first" inline so the user
+    // doesn't submit and bounce off a 404. The hint text updates as
+    // the picked adventure changes.
+    const assignHint = h('p', { class: 'muted', style: 'font-size:.85rem; margin:.25rem 0 0; min-height:1.2em' });
+    const refreshAssignmentHint = () => {
+      const m = assignments.find((x) => x.adventure_slug === pickedAdv.slug);
+      if (m) {
+        assignHint.className = 'muted';
+        assignHint.textContent = t('Up to {{n}} tickets available from existing assignment', { n: m.max_players });
+      } else {
+        assignHint.className = 'err';
+        assignHint.textContent = t('No unused assignment for this adventure. Buy slots from the Events page first.');
+      }
+    };
+    refreshAssignmentHint();
+
+    const submitBtn = h('button', { class: 'btn primary', type: 'submit' }, t('Create quest'));
+    const form = h('form', {},
+      h('h3', { style: 'margin:.25rem 0' }, t('Adventure')),
+      advPick,
+      assignHint,
+      h('label', { class: 'field' }, h('span', {}, t('Quest name')), name),
+      h('label', { class: 'field' }, h('span', {}, t('Public description')), blurb),
+      h('div', { class: 'row', style: 'gap:.75rem; flex-wrap:wrap' },
+        h('label', { class: 'field', style: 'flex:1; min-width:8rem' },
+          h('span', {}, t('Ticket price')), price),
+        h('label', { class: 'field', style: 'flex:0 0 auto' },
+          h('span', {}, t('Currency')), currency),
+        h('label', { class: 'field', style: 'flex:0 0 auto' },
+          h('span', {}, t('Players per ticket')), teamSize)),
+      h('label', { class: 'field' },
+        h('span', {}, t('Cover image (optional)')), cover,
+        h('small', { class: 'muted', style: 'display:block; margin-top:.2rem' },
+          t('Shown on the /store card and detail page. JPEG / PNG / WebP / SVG, max 5 MB.'))),
+      h('label', { class: 'row', style: 'gap:.5rem; align-items:flex-start; margin-top:.5rem' },
+        attest,
+        h('span', { style: 'font-size:.9rem' },
+          t('I confirm there are no under-13 players (or that I have parental consent for any).'))),
+      h('div', { class: 'row end', style: 'gap:.5rem; margin-top:1rem' },
+        h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, t('Cancel')),
+        submitBtn));
+
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const m = assignments.find((x) => x.adventure_slug === pickedAdv.slug);
+      if (!m) { toastErr(t('No unused assignment for this adventure. Buy slots from the Events page first.')); return; }
+      if (!name.value.trim()) { toastErr(t('Quest name required')); return; }
+      const priceN = parseInt(price.value, 10);
+      if (!priceN || priceN <= 0) { toastErr(t('Ticket price must be greater than zero')); return; }
+      const teamN = parseInt(teamSize.value, 10);
+      if (!teamN || teamN < 1) { toastErr(t('Players per ticket must be at least 1')); return; }
+      if (!attest.checked) { toastErr(t('Confirm the no-minors attestation')); return; }
+      close({
+        assignment_id: m.id,
+        name: name.value.trim(),
+        public_blurb: blurb.value.trim(),
+        ticket_price_cents: priceN * 100,
+        ticket_currency: currency.value,
+        ticket_team_size: teamN,
+        cover_file: cover.files && cover.files[0] ? cover.files[0] : null,
+      });
+    });
+    body.append(form);
+  }, { wide: true });
+
+  if (!result) return;
+
+  // Step 1: create the underlying event with public_for_sale=true.
+  const cr = await api('/api/admin/events', {
+    method: 'POST',
+    body: JSON.stringify({
+      assignment_id: result.assignment_id,
+      name: result.name,
+      attest_no_minors: true,
+      public_for_sale: true,
+    }),
+  });
+  if (cr.status !== 201) {
+    toastErr(cr.body?.error || t('Could not create quest'));
+    return;
+  }
+  const eventID = cr.body.id;
+
+  // Step 2: PATCH the public-store fields. A failure here leaves an
+  // unpriced quest the operator can fix from the detail page; we
+  // toast and bounce them there rather than trying to clean up.
+  const pr = await api('/api/admin/events/' + eventID, {
+    method: 'PATCH',
+    body: JSON.stringify({
+      public_blurb: result.public_blurb,
+      ticket_price_cents: result.ticket_price_cents,
+      ticket_currency: result.ticket_currency,
+      ticket_team_size: result.ticket_team_size,
+    }),
+  });
+  if (pr.status !== 204) {
+    toastErr(pr.body?.error || t('Quest created but ticket details failed to save'));
+    nav('#events/' + eventID);
+    return;
+  }
+
+  // Step 3: cover image (optional). Upload via the existing
+  // /api/admin/events/{id}/cover multipart endpoint. Failure isn't
+  // fatal — the quest still works without a cover.
+  if (result.cover_file) {
+    const fd = new FormData();
+    fd.append('file', result.cover_file);
+    const cv = await fetch('/api/admin/events/' + eventID + '/cover', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'X-CSRF-Token': csrfToken() },
+      body: fd,
+    });
+    if (!cv.ok) {
+      toastErr(t('Quest created but cover upload failed'));
+      // Continue to start — cover isn't required.
+    }
+  }
+
+  // Step 4: start the quest. The empty-team guard in transitionEvent
+  // is bypassed for public_for_sale=true so a fresh quest with no
+  // teams starts cleanly.
+  const sr = await api('/api/admin/events/' + eventID + '/start', { method: 'POST' });
+  if (sr.status !== 204 && sr.status !== 200) {
+    toastErr(sr.body?.error || t('Quest created but could not start'));
+    nav('#events/' + eventID);
+    return;
+  }
+
+  toastOk(t('Quest created and listed at /store'));
+  nav('#quests');
 }
 
 function pillClassForState(s) {
@@ -7604,9 +7921,16 @@ async function viewRunDetail(view, runID) {
   if (event.state === 'scheduled') {
     const start = h('button', { class: 'btn primary lifecycle-btn', on: { click: () => confirmStart(event) } },
       icon(ICONS.play), t('Start now'));
-    const sched = h('button', { class: 'btn lifecycle-btn', on: { click: () => openEditSchedule(event) } },
-      icon(ICONS.schedule), t('Reschedule'));
-    actions.append(start, sched);
+    actions.append(start);
+    // Quests are always-on (no scheduled_at by design) — hide the
+    // Reschedule affordance so the operator can't push a quest into
+    // a scheduled state that the listing query treats as "not for
+    // sale". Regular events keep the button.
+    if (!event.public_for_sale) {
+      const sched = h('button', { class: 'btn lifecycle-btn', on: { click: () => openEditSchedule(event) } },
+        icon(ICONS.schedule), t('Reschedule'));
+      actions.append(sched);
+    }
   }
   // Pause / Resume live on the Race control view — that's where the
   // arranger watches the race in real time and would naturally reach
@@ -7722,13 +8046,21 @@ async function viewRunDetail(view, runID) {
 
   // Sticky lifecycle bar — pins to the top of the scroll area so big
   // Start/Pause/Resume stay reachable while scrolling through teams.
+  // Quests get a "Quest" badge so the operator knows the
+  // ticket-purchase + always-on rules apply, and a back-link that
+  // returns to the Quests list instead of Events.
+  const isQuest = event.public_for_sale === true;
   const titleEl = h('h1', {}, runLabel(event));
   const renameBtn = iconBtn('pencil', t('Rename event'), () => openRenameEvent(event));
   const lifecycleBar = h('div', { class: 'lifecycle-bar' },
     h('div', { class: 'lifecycle-left' },
-      h('button', { class: 'btn ghost small', on: { click: () => nav('#events') } },
-        icon(ICONS.back), t('Events')),
+      h('button', { class: 'btn ghost small', on: { click: () => nav(isQuest ? '#quests' : '#events') } },
+        icon(ICONS.back), isQuest ? t('Quests') : t('Events')),
       titleEl, renameBtn,
+      isQuest
+        ? h('span', { class: 'pill accent', title: t('Listed at /store; tickets sold to the public.') },
+            icon(ICONS.compass), t('Quest'))
+        : null,
       h('span', { class: 'pill ' + pillClassForState(event.state) },
         stateGlyph(eventStateLabel(event)) + tEventState(eventStateLabel(event))),
       h('span', { class: 'muted', style: 'font-size:.85rem' },

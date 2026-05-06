@@ -50,7 +50,7 @@ func (s *Server) registerEventTools() {
 	s.tools.register(ToolDescriptor{
 		Name:        "create_event",
 		Scope:       scopeWrite,
-		Description: "Create a new event in the caller's organization. Requires either assignment_id (the usual path: an unused player-slot assignment from /api/admin/purchases binds the adventure + cap) OR adventure_slug (only valid when an admin has commissioned the adventure for this org via a share). Caller's email must already be verified. attest_no_minors must be true to acknowledge the under-13 rule. Returns the new event's full DTO including id and live_token.",
+		Description: "Create a new event in the caller's organization. Requires either assignment_id (the usual path: an unused player-slot assignment from /api/admin/purchases binds the adventure + cap) OR adventure_slug (only valid when an admin has commissioned the adventure for this org via a share). Caller's email must already be verified. attest_no_minors must be true to acknowledge the under-13 rule. Set public_for_sale=true to create a Quest — an always-on event listed at /store where members of the public buy tickets and play whenever they want; quests bypass the empty-team guard at start_event since teams are minted from ticket purchases AFTER the event is running. The flag is immutable after creation (update_event refuses to flip it), so pick a value carefully. Returns the new event's full DTO including id and live_token.",
 		InputSchema: map[string]any{
 			"type":     "object",
 			"required": []string{"attest_no_minors"},
@@ -60,6 +60,7 @@ func (s *Server) registerEventTools() {
 				"adventure_slug":   map[string]any{"type": "string", "description": "Adventure slug (only valid for share-commissioned content)."},
 				"scheduled_at":     map[string]any{"type": "string", "description": "Optional ISO 8601 start time. Empty leaves it unscheduled (ad-hoc start)."},
 				"attest_no_minors": map[string]any{"type": "boolean", "description": "Must be true. Confirms no under-13 players (or that you have parental consent)."},
+				"public_for_sale":  map[string]any{"type": "boolean", "description": "When true, creates a Quest: listed at /store, ticket-purchased, always-on. Default false (regular event). Immutable after creation."},
 			},
 		},
 	}, createEvent)
@@ -194,6 +195,10 @@ type createEventArgs struct {
 	AdventureSlug  string `json:"adventure_slug"`
 	ScheduledAt    string `json:"scheduled_at"`
 	AttestNoMinors bool   `json:"attest_no_minors"`
+	// PublicForSale flips the event into a Quest at creation time —
+	// listed at /store, ticket-purchased, always-on. Immutable after
+	// creation. False (default) produces a regular event.
+	PublicForSale bool `json:"public_for_sale"`
 }
 
 func createEvent(ctx context.Context, s *Server, raw json.RawMessage) (ToolCallResult, error) {
@@ -210,6 +215,7 @@ func createEvent(ctx context.Context, s *Server, raw json.RawMessage) (ToolCallR
 		"adventure_slug":   a.AdventureSlug,
 		"scheduled_at":     a.ScheduledAt,
 		"attest_no_minors": a.AttestNoMinors,
+		"public_for_sale":  a.PublicForSale,
 	}
 	status, respBody, err := callAdmin(ctx, s.Admin.CreateEvent,
 		"POST", "/api/admin/events", nil, nil, body)
