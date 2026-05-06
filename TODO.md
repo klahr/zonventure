@@ -2,35 +2,12 @@
 
 Findings from a code review of the repo. Grouped by **gap** (missing
 feature) vs **simplification** (existing code that could be smaller),
-ordered by recommended sequence. Each item lists rough size in the
-`(small / medium / large)` column.
+ordered by recommended sequence. Each item lists rough size in
+parentheses.
 
 The hosted launch is gated on legal review, not on this list — but
 clearing the small items before the launch reduces ongoing friction
 for self-hosters and operators.
-
-## Gaps
-
-| # | Item | Size | Status |
-| - | - | - | - |
-| 1 | This `TODO.md` referenced from `README.md:80` didn't exist | small | **done** |
-| 2 | No CI: nothing runs `go test`, `go vet`, `go build` automatically | small–medium | **done** — `.builds.yml` (sourcehut, Postgres-backed) |
-| 3 | No `/api/version` or build-info endpoint | small | **done** — `Makefile` + `Dockerfile` + `.builds.yml` inject `git describe`; runtime/debug fills VCS info |
-| 4 | No event cancellation — only path is delete-team-by-team | medium | **done** — `POST /api/admin/events/:id/cancel` (password-gated), `cancelled` state in schema + retention sweep, UI button on event detail, player + live screens render the new state |
-| 5 | No 2FA for arranger accounts | medium–large | **done** — opt-in TOTP per user (`ZV_TOTP_KEY` enables; AES-GCM at rest), Settings card with QR + manual secret + 10 single-use recovery codes, password-reset gate, admin factory-reset endpoint, new audit events. Login splits into `VerifyPassword` + `CompleteLogin(factors)` so future Google Sign-in (#18) plugs into the same seam |
-| 6 | No bulk team/player roster import | medium | **done** — `POST /api/admin/events/:id/teams/bulk` with per-row results (partial success); "Paste roster" mode in the new-team modal accepts comma/tab/semicolon/colon-separated lines |
-| 7 | Audit log has no filtering UI | small | **done** — event/result/user/IP filters on `/api/admin/auth-events` + UI |
-| 8 | Image `alt` is hardcoded empty (`arrange.html:4543`) | small | **done** — `alt_text` column on `adventure_page_images`, `PATCH /api/admin/images/:id` (500-char cap), inline alt input in puzzle-edit modal, surfaced through player + preview DTOs and rendered in play.html. Team-avatar `alt=""` deliberately kept (decorative). |
-
-## Simplifications
-
-| # | Item | Size | Status |
-| - | - | - | - |
-| 9  | `internal/admin/simulator.go` is a pure passthrough over `internal/simulator/simulator.go` | small | **done** — typed sentinels (`ErrAlreadyActive`, `ErrNoActive`) + `callerOrgIDOrFail` shortcut; brittle string-equality error check gone |
-| 10 | `scheduler` + `retention` reimplement the same ticker shell | small | **done** — extracted `internal/periodic` |
-| 11 | Six near-identical token generators across auth / admin / simulator | small | **done** — extracted `internal/tokenx`; six call sites collapsed to one-line wrappers |
-| 12 | `db.go` doesn't tune the connection pool | small | **done** — `db.Opts` + `-db-max-open-conns` / `-db-max-idle-conns` flags + `ZV_DB_MAX_*_CONNS` env |
-| 13 | `internal/admin/authoring.go` is 1299 lines mixing four concerns | medium | **done** — split into `authoring.go` (adventure CRUD, types, helpers, 541), `pages.go` (page CRUD + reorder, 363), `images.go` (upload + serve + alt edit, 262), `avatars.go` (cover art, 131), `shares.go` (commission to org, 116) |
 
 ## Plugin / extensibility candidates
 
@@ -40,18 +17,14 @@ direction is "thin core, named seams" — every entry below is sized as
 "add a second concrete implementation behind a Go interface", not "build
 a generic plugin runtime". Tackle one at a time.
 
-| # | Item | Size | Status |
-| - | - | - | - |
-| 14 | Roster import: file-format plugins via `teamimport.Importer` (`internal/teamimport/`); MIME + extension dispatch in `ImportTeams` handler | medium | **done** — interface + Registry + four importers (CSV, xlsx, ODS, IOF XML 3.0), each in its own subpackage so operators can subset; preview-then-confirm flow re-uses `/teams/bulk`; user-facing docs in `manual.html` link to RFC 4180, ECMA-376, OpenDocument 1.3, IOF datastandard-v3. vCard 4.0 dropped — no team-grouping shape in the spec |
-| 15 | Mailer recipes for Amazon SES / Postmark / SendGrid / Mailgun — all four expose SMTP submission so the bundled `SMTPMailer` already covers them; only docs were missing | small | **done** — `SELFHOSTING.md` "SMTP recipes" section. A native HTTP-API mailer behind a build tag (per-message tracking IDs, SES IAM auth) remains a future option but isn't load-bearing for the auth/verification mail volumes the product sends today |
-| 16 | Payment provider abstraction — extract `payments.Provider`, make Stripe one impl, allow self-host to ship without the Stripe SDK at all (Mollie / Paddle / Adyen as future impls) | medium | pending |
-| 17 | Image / avatar storage abstraction — `teams.avatar_content` and `adventure_page_images.content` are DB blobs today; pluggable backends for local FS / S3 / R2 / GCS keep the binary thin and the DB small | medium | **partial** — `storage.Blobs` interface (`internal/storage/`) + `dbblob` impl shipped; team avatars + adventure cover art now go through the seam end-to-end (admin + public/share-page paths). Remaining: `adventure_page_images.content` (more complex shape — multi-row-per-entity with `alt_text` / `idx` metadata), and the actual non-DB impls (`-tags=storage_fs`, `-tags=storage_s3`) |
-| 18 | Auth backends — OIDC / SAML / GitHub / Google / passkeys alongside the current username/password; magic-link slot flow stays core | medium–large per backend | pending |
-| 19 | Metrics exporter alternates — OTLP and StatsD alongside the Prometheus collectors in `internal/metrics` | small | pending |
-| 20 | Webhook formatter plugins — pre-shaped Slack / Discord / MS Teams / Zapier deliveries on top of the generic signed-POST in `internal/webhooks`, so customers don't have to write a translator service | small per integration | pending |
-| 21 | i18n language packs — loadable bundles instead of strings baked into `i18n.js`; lets translators contribute without a JS rebuild | medium | pending |
-| 22 | SCIM 2.0 provisioning endpoint (RFC 7643/7644) — inbound user/group sync for corporate team-build and school-IT customers; lands rosters straight from Workday / Okta / Azure AD / Google Workspace | large | pending |
-| 23 | Installed-components panel — `internal/components.Component` registry, admin-only `GET /api/admin/components`, "Installed components" card on the Settings page (admin role) showing seam → impl → on/off → notes | small | **done** — `cmd/server` builds the snapshot from configured env (`describeComponents`); read-only, no runtime swapping |
+- [ ] **Payment provider abstraction** (medium) — extract `payments.Provider`, make Stripe one impl, allow self-host to ship without the Stripe SDK at all (Mollie / Paddle / Adyen as future impls)
+- [ ] **Image / avatar storage abstraction** (medium) — `storage.Blobs` interface + `dbblob` impl shipped; team avatars + adventure cover art go through the seam. Remaining: `adventure_page_images.content` (multi-row-per-entity with `alt_text` / `idx` metadata), and the actual non-DB impls (`-tags=storage_fs`, `-tags=storage_s3`)
+- [ ] **Auth backends** (medium–large per backend) — OIDC / SAML / GitHub / Google / passkeys alongside the current username/password; magic-link slot flow stays core
+- [ ] **Metrics exporter alternates** (small) — OTLP and StatsD alongside the Prometheus collectors in `internal/metrics`
+- [ ] **Webhook formatter plugins** (small per integration) — pre-shaped Slack / Discord / MS Teams / Zapier deliveries on top of the generic signed-POST in `internal/webhooks`, so customers don't have to write a translator service
+- [ ] **i18n language packs** (medium) — loadable bundles instead of strings baked into `i18n.js`; lets translators contribute without a JS rebuild
+- [ ] **SCIM 2.0 provisioning endpoint** (large) — RFC 7643/7644 inbound user/group sync for corporate team-build and school-IT customers; lands rosters straight from Workday / Okta / Azure AD / Google Workspace
+- [ ] **Per-org DNS aliases** (medium) — let companies reach the hosted product on a branded host like `my-company.zonventure.com` (and eventually CNAME'd `play.my-company.com`); needs an `org → hostname` mapping, host-aware routing, and automated TLS (Let's Encrypt / on-demand cert) for the wildcard + custom domains
 
 ## Product themes
 
@@ -60,13 +33,12 @@ Each theme expands into several concrete tickets when picked up; kept
 at theme level here so the directional choice ("coordination or
 memory next?") stays visible above the implementation noise.
 
-| # | Theme | Audience | Size | Status |
-| - | - | - | - | - |
-| 24 | In-event team coordination — chat / pings / "I'm here, where are you?" channel for split groups. Today there's no in-app channel between team-mates; the moment a team disperses 50 m apart they go silent and use SMS, which fragments the experience and pulls them out of the app | Player | medium | pending |
-| 25 | Post-event memory — track replay, team-photo upload at puzzle locations, shareable highlight reel. The share-result button is the start; the full loop ("here's our team's day, in one page") is what converts one-off players into people who book again with their friends | Player | medium–large | pending |
-| 26 | Puzzle analytics — per-puzzle stall time, hint-reveal rate, completion histograms surfaced to arrangers ("puzzle 4 stalls 70% of teams"). Today they have raw audit logs and have to eyeball patterns; without this they can't iterate on adventure design | Creator | medium | pending |
-| 27 | Template / shared puzzle library — fight the cold-start problem of "I just bought this product, now I owe my customer 12 puzzles by Saturday". A starter pack of public adventures or a remixable cross-org puzzle pool is what gets a new customer to first-event-shipped | Creator | medium–large | pending |
-| 28 | Post-event report — puzzle-level pacing + optional player survey + revenue tally on a single page sent to the arranger when the event completes. Both audiences benefit at once: arrangers know what to fix, players have somewhere to say it was great or that hint #3 was bad. Unblocks the data #26 / #27 build on | Both | medium | pending |
+- [ ] **In-event team coordination** — Player — (medium) — chat / pings / "I'm here, where are you?" channel for split groups. Today there's no in-app channel between team-mates; the moment a team disperses 50 m apart they go silent and use SMS, which fragments the experience and pulls them out of the app
+- [ ] **Post-event memory** — Player — (medium–large) — track replay, team-photo upload at puzzle locations, shareable highlight reel. The share-result button is the start; the full loop ("here's our team's day, in one page") is what converts one-off players into people who book again with their friends
+- [ ] **Puzzle analytics** — Creator — (medium) — per-puzzle stall time, hint-reveal rate, completion histograms surfaced to arrangers ("puzzle 4 stalls 70% of teams"). Today they have raw audit logs and have to eyeball patterns; without this they can't iterate on adventure design
+- [ ] **Template / shared puzzle library** — Creator — (medium–large) — fight the cold-start problem of "I just bought this product, now I owe my customer 12 puzzles by Saturday". A starter pack of public adventures or a remixable cross-org puzzle pool is what gets a new customer to first-event-shipped
+- [ ] **Post-event report** — Both — (medium) — puzzle-level pacing + optional player survey + revenue tally on a single page sent to the arranger when the event completes. Both audiences benefit at once: arrangers know what to fix, players have somewhere to say it was great or that hint #3 was bad. Unblocks the data the analytics / library themes build on
+- [ ] **Always-on adventures + public store** — Both — (large) — long-running adventures players can start whenever they want (no fixed event window, individual or self-formed teams, per-purchase progress), paired with a public-facing store that surfaces them with cover art, trailers, screenshots, descriptions, ratings, and a checkout flow. Today every adventure is bound to a scheduled event; this unlocks evergreen revenue for creators and "show up and play" discoverability for players, and it's what gives the template/library theme a customer-visible front door
 
 ## What was checked and is fine
 
