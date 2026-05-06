@@ -37,7 +37,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 )
 
-//go:embed web/play.html web/play-sw.js web/play-queue.js web/arrange.html web/live.html web/recap.html web/i18n.js web/favicon.svg web/privacy.html web/terms.html web/manual.html web/landing.html web/pricing.html web/store.html web/topbar.css web/topbar.js web/fsmap.css web/jsqr.js web/404.html web/robots.txt web/sitemap.xml
+//go:embed web/play.html web/play-sw.js web/play-queue.js web/arrange.html web/live.html web/recap.html web/i18n.js web/favicon.svg web/privacy.html web/terms.html web/manual.html web/landing.html web/pricing.html web/store.html web/store-event.html web/topbar.css web/topbar.js web/fsmap.css web/jsqr.js web/404.html web/robots.txt web/sitemap.xml
 var webFS embed.FS
 
 // Config is the bag of knobs New needs.
@@ -400,6 +400,15 @@ func New(cfg Config) http.Handler {
 		// admin/public split below).
 		r.Get("/store", func(w http.ResponseWriter, req *http.Request) {
 			renderTopbarPage(w, req, "web/store.html")
+		})
+		// Per-event detail page. Server-rendered (rather than SPA
+		// in JS) so social-media previewers, search crawlers, and
+		// AI agents see real OpenGraph metadata + the description
+		// + the price as text in the response body. The template
+		// is override-friendly: drop store-event.html into
+		// ZV_WEB_OVERRIDE_DIR for a branded variant.
+		r.Get("/store/event/{event_id}", func(w http.ResponseWriter, req *http.Request) {
+			renderStoreEventPage(w, req, cfg.DB, cfg.PublicURL)
 		})
 		r.Get("/api/store/items", publicH.StoreList)
 		r.Get("/api/store/items/{event_id}", publicH.StoreEvent)

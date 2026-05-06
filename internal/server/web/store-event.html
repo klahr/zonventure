@@ -1,0 +1,404 @@
+<!doctype html>
+<!--
+  Brand-neutral upstream per-event detail page. Rendered by
+  renderStoreEventPage in internal/server/store_event.go: the {{KEY}}
+  placeholders below are substituted server-side from the events row,
+  and topbar locale strings come from the shared landingLocales table.
+
+  Operators who want a marketing-quality variant drop their own
+  store-event.html into ZV_WEB_OVERRIDE_DIR; the override mechanism
+  shadows this file at request time. The placeholder set is part of
+  the public contract — keep the same {{KEY}} names so an override
+  template stays drop-in compatible.
+
+  Available placeholders:
+    {{TITLE}} {{SUBTITLE}} {{ORG_NAME}} {{BLURB}}
+    {{PRICE_DISPLAY}} {{PRICE_MAJOR}} {{CURRENCY}}
+    {{TEAM_SIZE}} {{TEAM_LABEL}} {{START_LABEL}}
+    {{COVER_URL}} {{HAS_COVER}}
+    {{EVENT_ID}} {{ADVENTURE_SLUG}} {{CANONICAL_URL}}
+  Plus every topbar substitution (LANG_CODE, NAV_*, FOOTER_*, …).
+-->
+<html lang="{{LANG_CODE}}"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{{TITLE}} · Zonventure</title>
+<meta name="description" content="{{BLURB}}">
+<link rel="canonical" href="{{CANONICAL_URL}}">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+
+<meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#14202e" media="(prefers-color-scheme: dark)">
+
+<meta property="og:type" content="product">
+<meta property="og:title" content="{{TITLE}}">
+<meta property="og:description" content="{{BLURB}}">
+<meta property="og:url" content="{{CANONICAL_URL}}">
+<meta property="og:site_name" content="Zonventure">
+<meta property="og:image" content="{{COVER_URL}}">
+<meta property="og:locale" content="{{LANG_CODE}}">
+<meta property="product:price:amount" content="{{PRICE_MAJOR}}">
+<meta property="product:price:currency" content="{{CURRENCY}}">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="{{TITLE}}">
+<meta name="twitter:description" content="{{BLURB}}">
+<meta name="twitter:image" content="{{COVER_URL}}">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Aclonica&family=Open+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+
+<link rel="stylesheet" href="/assets/topbar.css">
+<script defer src="/assets/topbar.js"></script>
+<script>(function(){try{var v=localStorage.getItem('zv-theme');if(v==='light'||v==='dark')document.documentElement.setAttribute('data-theme',v);}catch(e){}})();</script>
+
+<style>
+  :root {
+    color-scheme: light dark;
+    --accent: #ad1357;
+    --accent-2: #e24080;
+    --accent-deep: #6d0a35;
+    --ink: #1f3349;
+    --ink-soft: #3d5573;
+    --muted: #6b7f96;
+    --bg: #fbfbfd;
+    --surface: #ffffff;
+    --surface-2: #f3f4f7;
+    --border-soft: #e2e7ef;
+    --shadow: 0 1px 2px rgba(31,51,73,.06), 0 4px 16px rgba(31,51,73,.08);
+    --shadow-lg: 0 8px 28px rgba(31,51,73,.14);
+  }
+  [data-theme="dark"] {
+    --ink: #e7ecf4; --ink-soft: #c2cee0; --muted: #9db1cc;
+    --bg: #14202e; --surface: #1f3349; --surface-2: #2c4361;
+    --border-soft: #2c4361;
+    --accent: #e24080; --accent-2: #ff6aa3; --accent-deep: #ad1357;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme]) {
+      --ink: #e7ecf4; --ink-soft: #c2cee0; --muted: #9db1cc;
+      --bg: #14202e; --surface: #1f3349; --surface-2: #2c4361;
+      --border-soft: #2c4361;
+      --accent: #e24080; --accent-2: #ff6aa3; --accent-deep: #ad1357;
+    }
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    font: 16px/1.6 'Open Sans', system-ui, sans-serif;
+    color: var(--ink); background: var(--bg);
+  }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .wrap { max-width: 60rem; margin: 0 auto; padding: 0 1.25rem; }
+  .skip-link {
+    position: absolute; top: -2.5rem; left: .5rem; z-index: 50;
+    padding: .5rem 1rem; border-radius: 8px;
+    background: var(--accent); color: #fff;
+    font-weight: 700; text-decoration: none;
+  }
+  .skip-link:focus { top: .5rem; }
+  a:focus-visible, button:focus-visible, .btn:focus-visible, input:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+    border-radius: 4px;
+  }
+
+  .btn {
+    display: inline-block;
+    padding: .9rem 1.9rem;
+    border-radius: 999px;
+    font-weight: 700; font-size: 1rem;
+    text-decoration: none;
+    border: 1px solid transparent;
+    transition: transform .12s, opacity .12s;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .btn:hover { transform: translateY(-1px); text-decoration: none; }
+  .btn.primary {
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    color: #fff;
+  }
+  .btn.primary:hover { opacity: .94; }
+  .btn.primary[disabled] { opacity: .55; cursor: not-allowed; transform: none; }
+  .btn.ghost {
+    color: var(--ink);
+    border-color: var(--border-soft);
+    background: var(--surface);
+  }
+  .btn.ghost:hover { border-color: var(--accent); color: var(--accent); }
+
+  main { padding: 2.5rem 0 5rem; }
+  .crumbs { color: var(--muted); font-size: .85rem; margin: 0 0 1rem; }
+  .crumbs a { color: var(--muted); }
+
+  .hero {
+    display: grid;
+    gap: 2rem;
+    grid-template-columns: minmax(0, 1fr);
+    margin-bottom: 2.5rem;
+  }
+  @media (min-width: 50rem) {
+    .hero { grid-template-columns: 1.4fr 1fr; align-items: center; }
+  }
+  .hero-art {
+    aspect-ratio: 16 / 10;
+    border-radius: 20px;
+    background: linear-gradient(135deg, var(--accent-deep), var(--accent-2));
+    background-size: cover;
+    background-position: center;
+    box-shadow: var(--shadow-lg);
+  }
+  .hero-art[data-cover="true"] { background-image: var(--cover-img); }
+  .org { color: var(--muted); font-size: .85rem; text-transform: uppercase; letter-spacing: .08em; }
+  h1 {
+    font-family: 'Aclonica', Georgia, serif;
+    font-size: clamp(2rem, 5vw, 3rem);
+    margin: .5rem 0 .35rem;
+    line-height: 1.1;
+  }
+  .subtitle { color: var(--ink-soft); font-size: 1.1rem; margin: 0 0 1.5rem; }
+  .price-row {
+    display: inline-flex; align-items: baseline; gap: .55rem;
+    padding: .65rem 1.1rem;
+    background: var(--surface); border: 1px solid var(--border-soft);
+    border-radius: 999px; box-shadow: var(--shadow);
+  }
+  .price-row .price { font-weight: 800; font-size: 1.4rem; color: var(--ink); }
+  .price-row .per { color: var(--muted); font-size: .9rem; }
+
+  .blurb { color: var(--ink-soft); font-size: 1.05rem; margin: 1.5rem 0 0; }
+
+  .meta-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+    gap: 1rem;
+    margin: 2rem 0;
+  }
+  .meta-tile {
+    background: var(--surface);
+    border: 1px solid var(--border-soft);
+    border-radius: 14px;
+    padding: 1rem 1.1rem;
+  }
+  .meta-tile .k { color: var(--muted); font-size: .75rem; text-transform: uppercase; letter-spacing: .06em; }
+  .meta-tile .v { font-weight: 700; margin-top: .25rem; }
+
+  .buy-card {
+    background: var(--surface);
+    border: 1px solid var(--border-soft);
+    border-radius: 18px;
+    padding: 1.75rem;
+    box-shadow: var(--shadow);
+  }
+  .buy-card h2 { margin: 0 0 .5rem; font-size: 1.25rem; }
+  .buy-card p { margin: 0 0 1.25rem; color: var(--ink-soft); }
+  .buy-card form { display: grid; gap: .65rem; }
+  .buy-card label { font-size: .85rem; color: var(--ink-soft); font-weight: 600; }
+  .buy-card input[type=email] {
+    padding: .75rem .9rem;
+    border: 1px solid var(--border-soft);
+    border-radius: 10px;
+    background: var(--bg);
+    color: var(--ink);
+    font: inherit;
+  }
+  .buy-card .err { color: #c0392b; font-size: .9rem; min-height: 1.2em; }
+  .buy-card .terms-note { color: var(--muted); font-size: .8rem; margin: .5rem 0 0; }
+
+  .toast {
+    background: var(--surface);
+    border: 1px solid var(--border-soft);
+    border-left: 4px solid var(--accent);
+    border-radius: 8px;
+    padding: 1rem 1.25rem;
+    margin: 0 0 1.5rem;
+    color: var(--ink);
+    box-shadow: var(--shadow);
+  }
+  .toast.cancelled { border-left-color: var(--muted); color: var(--ink-soft); }
+
+  footer {
+    padding: 1.75rem 0 2.5rem;
+    color: var(--muted);
+    font-size: .88rem;
+    text-align: center;
+    border-top: 1px solid var(--border-soft);
+  }
+  footer a { color: inherit; margin: 0 .5rem; }
+  footer a:hover { color: var(--accent); }
+  footer .copy { margin-top: .5rem; font-size: .8rem; }
+</style>
+</head>
+<body>
+
+<a class="skip-link" href="#main">Skip to content</a>
+
+<input type="checkbox" id="nav-toggle" class="nav-toggle" aria-label="{{NAV_TOGGLE_ARIA}}">
+
+<header class="topbar" role="banner">
+  <div class="wrap topbar-row">
+    <label for="nav-toggle" class="hamburger" aria-hidden="true">
+      <span></span><span></span><span></span>
+    </label>
+    <a class="brand" href="/" aria-label="{{BRAND_ARIA}}">zonventure</a>
+    <nav aria-label="{{NAV_PRIMARY_ARIA}}">
+      <div class="lang-picker" role="group" aria-label="{{LANG_ARIA}}">
+        <a href="?lang=en" class="lang-link {{EN_ACTIVE}}" {{EN_CURRENT}} hreflang="en">
+          <span class="flag" aria-hidden="true">🇬🇧</span><span class="label">EN</span>
+        </a>
+        <a href="?lang=sv" class="lang-link {{SV_ACTIVE}}" {{SV_CURRENT}} hreflang="sv">
+          <span class="flag" aria-hidden="true">🇸🇪</span><span class="label">SV</span>
+        </a>
+      </div>
+      <div class="nav-menu">
+        <a href="/manual">{{NAV_MANUAL}}</a>
+        <a href="/pricing">{{NAV_PRICING}}</a>
+        <a href="/store">Store</a>
+        <a href="/arrange" class="btn">{{NAV_LOGIN}}</a>
+      </div>
+    </nav>
+  </div>
+</header>
+
+<aside class="nav-overlay" aria-label="{{NAV_PRIMARY_ARIA}}">
+  <a href="/manual">{{NAV_MANUAL}}</a>
+  <a href="/pricing">{{NAV_PRICING}}</a>
+  <a href="/store">Store</a>
+  <a href="/arrange" class="btn">{{NAV_LOGIN}}</a>
+</aside>
+
+<main id="main">
+  <div class="wrap">
+    <p class="crumbs"><a href="/store">← Store</a></p>
+
+    <div id="status"></div>
+
+    <div class="hero">
+      <div>
+        <p class="org">{{ORG_NAME}}</p>
+        <h1>{{TITLE}}</h1>
+        <p class="subtitle">{{SUBTITLE}}</p>
+        <div class="price-row">
+          <span class="price">{{PRICE_DISPLAY}}</span>
+          <span class="per">per ticket</span>
+        </div>
+        <p class="blurb">{{BLURB}}</p>
+      </div>
+      <div class="hero-art" data-cover="{{HAS_COVER}}" style="--cover-img: url({{COVER_URL}})" role="img" aria-label="{{TITLE}}"></div>
+    </div>
+
+    <div class="meta-grid" aria-label="Ticket details">
+      <div class="meta-tile">
+        <div class="k">Team size</div>
+        <div class="v">{{TEAM_LABEL}}</div>
+      </div>
+      <div class="meta-tile">
+        <div class="k">Format</div>
+        <div class="v">Phone-based outdoor adventure</div>
+      </div>
+      <div class="meta-tile">
+        <div class="k">When</div>
+        <div class="v">Always on — start whenever you want</div>
+      </div>
+      <div class="meta-tile">
+        <div class="k">Meeting point</div>
+        <div class="v">{{START_LABEL}}</div>
+      </div>
+    </div>
+
+    <div class="buy-card">
+      <h2>Buy a ticket</h2>
+      <p>Type your email and we'll send you the magic links to start playing. One ticket buys your team — share with friends from inside the app.</p>
+      <form id="buy-form" novalidate>
+        <label for="buyer-email">Your email</label>
+        <input id="buyer-email" type="email" required autocomplete="email" placeholder="you@example.com">
+        <div class="err" id="buy-err" role="alert"></div>
+        <button type="submit" class="btn primary" id="buy-submit">Continue to payment — {{PRICE_DISPLAY}}</button>
+        <p class="terms-note">Payment processed by Stripe. By continuing you agree to the <a href="/terms">terms</a> and <a href="/privacy">privacy notice</a>.</p>
+      </form>
+    </div>
+  </div>
+</main>
+
+<footer role="contentinfo">
+  <div class="wrap">
+    <nav aria-label="{{FOOTER_ARIA}}">
+      <a href="/manual">{{NAV_MANUAL}}</a> ·
+      <a href="/pricing">{{NAV_PRICING}}</a> ·
+      <a href="/store">Store</a> ·
+      <a href="/privacy">{{FOOTER_PRIVACY}}</a> ·
+      <a href="/terms">{{FOOTER_TERMS}}</a> ·
+      <a href="/arrange">{{NAV_LOGIN}}</a>
+    </nav>
+    <p class="copy">{{FOOTER_COPY}}</p>
+  </div>
+</footer>
+
+<script>
+(function () {
+  // Surface ?paid= / ?cancelled= toasts the same way the listing
+  // page does — Stripe redirects back here when a buy was started
+  // from the detail page, so the toast surface needs to live both
+  // places.
+  function flashFromQuery() {
+    var params = new URLSearchParams(window.location.search);
+    var paid = params.get('paid');
+    var cancelled = params.get('cancelled');
+    if (!paid && !cancelled) return;
+    var status = document.getElementById('status');
+    var div = document.createElement('div');
+    div.className = 'toast' + (cancelled ? ' cancelled' : '');
+    div.textContent = paid
+      ? 'Payment received. Check your inbox — your magic link is on its way (give it a minute).'
+      : 'Checkout cancelled. Nothing was charged.';
+    status.appendChild(div);
+    var url = new URL(window.location);
+    url.searchParams.delete('paid');
+    url.searchParams.delete('cancelled');
+    history.replaceState({}, '', url.toString());
+  }
+  flashFromQuery();
+
+  var form = document.getElementById('buy-form');
+  var input = document.getElementById('buyer-email');
+  var err = document.getElementById('buy-err');
+  var submit = document.getElementById('buy-submit');
+  var originalSubmitText = submit.textContent;
+  form.addEventListener('submit', function (e) {
+    e.preventDefault();
+    err.textContent = '';
+    var email = input.value.trim();
+    if (!email || email.indexOf('@') === -1) {
+      err.textContent = 'Please enter a valid email address.';
+      return;
+    }
+    submit.disabled = true;
+    submit.textContent = 'Redirecting…';
+    fetch('/api/store/buy', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event_id: {{EVENT_ID}}, buyer_email: email }),
+    })
+      .then(function (r) {
+        if (!r.ok) {
+          return r.text().then(function (t) { throw new Error(t || 'Checkout failed'); });
+        }
+        return r.json();
+      })
+      .then(function (resp) {
+        if (!resp || !resp.checkout_url) throw new Error('No checkout URL returned');
+        window.location.href = resp.checkout_url;
+      })
+      .catch(function (e) {
+        submit.disabled = false;
+        submit.textContent = originalSubmitText;
+        err.textContent = (e && e.message) || 'Something went wrong, please try again.';
+      });
+  });
+})();
+</script>
+
+</body></html>

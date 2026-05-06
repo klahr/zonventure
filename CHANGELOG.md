@@ -40,10 +40,17 @@ The repository, Go module, and CLI binary are named `zv`; the product is
   Refund handling reuses the existing `charge.refunded` webhook —
   a refunded ticket flips its row to `refunded` and withdraws the
   team it created, so the buyer can no longer act on the magic
-  link. Marketing override seam is preserved: drop a custom
-  `store.html` into `ZV_WEB_OVERRIDE_DIR` and the embedded
-  brand-neutral version is shadowed at request time, same shape as
-  `landing.html` and `pricing.html`.
+  link. Each adventure also gets its own server-rendered detail
+  page at `/store/event/{id}` with proper OpenGraph metadata,
+  product price markup, and a sticky buy card; this is the
+  canonical buy surface, and the listing cards now link straight
+  to it. Marketing override seam covers both pages: drop custom
+  `store.html` and `store-event.html` into `ZV_WEB_OVERRIDE_DIR`
+  and the embedded brand-neutral versions are shadowed at request
+  time, same shape as `landing.html` and `pricing.html`. The
+  branded variants in the sibling `zv-web` repo carry the hosted
+  visual language (Aclonica heading, brand-pink hero gradient,
+  hero photo, "how it works" strip, FAQ).
 - **MCP connector.** New opt-in `POST /mcp` endpoint exposing
   adventure authoring as Model Context Protocol tools so an
   arranger can connect Claude desktop / claude.ai / other MCP

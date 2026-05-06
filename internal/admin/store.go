@@ -83,7 +83,7 @@ func (h *Handlers) BuyTicket(w http.ResponseWriter, r *http.Request) {
 	if err := h.DB.QueryRowContext(r.Context(), `
 		SELECT e.adventure_slug,
 		       e.name,
-		       a.name AS adv_title,
+		       a.title AS adv_title,
 		       e.ticket_price_cents,
 		       e.ticket_currency,
 		       e.ticket_team_size,

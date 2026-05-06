@@ -296,8 +296,16 @@
   }
 
   function buildCard(item) {
-    var card = document.createElement('article');
+    // The listing card is a link straight into the per-event detail
+    // page — that's where the buy form lives, where the OG tags
+    // generate proper social previews, and where the longer copy
+    // can breathe. Keeping the listing card itself simple makes
+    // the grid scannable on mobile.
+    var card = document.createElement('a');
     card.className = 'card';
+    card.href = '/store/event/' + encodeURIComponent(item.event_id);
+    card.style.color = 'inherit';
+    card.style.textDecoration = 'none';
     var size = item.team_size > 1 ? ('Up to ' + item.team_size + ' players') : 'Solo';
     var cover = item.cover_image_url
       ? '<div class="cover" role="img" aria-label="' + escapeHTML(item.adventure_title || item.adventure_slug) +
@@ -314,59 +322,7 @@
       '</div>' +
       '<div class="price">' + escapeHTML(formatPrice(item.price_cents, item.currency)) +
         ' <small>per ' + (item.team_size > 1 ? 'team' : 'ticket') + '</small></div>' +
-      '<button type="button" class="btn primary buy-cta">Buy ticket</button>' +
-      '<form class="buy-form" novalidate>' +
-        '<label>Your email' +
-          '<input type="email" required autocomplete="email" placeholder="you@example.com">' +
-        '</label>' +
-        '<div class="err" role="alert"></div>' +
-        '<button type="submit" class="btn primary">Continue to payment</button>' +
-      '</form>';
-
-    var cta = card.querySelector('.buy-cta');
-    var form = card.querySelector('.buy-form');
-    var input = form.querySelector('input[type=email]');
-    var err = form.querySelector('.err');
-    var submitBtn = form.querySelector('button[type=submit]');
-
-    cta.addEventListener('click', function () {
-      cta.style.display = 'none';
-      form.classList.add('open');
-      input.focus();
-    });
-
-    form.addEventListener('submit', function (e) {
-      e.preventDefault();
-      err.textContent = '';
-      var email = input.value.trim();
-      if (!email || email.indexOf('@') === -1) {
-        err.textContent = 'Please enter a valid email address.';
-        return;
-      }
-      submitBtn.disabled = true;
-      submitBtn.textContent = 'Redirecting…';
-      fetch('/api/store/buy', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ event_id: item.event_id, buyer_email: email }),
-      })
-        .then(function (r) {
-          if (!r.ok) {
-            return r.text().then(function (t) { throw new Error(t || 'Checkout failed'); });
-          }
-          return r.json();
-        })
-        .then(function (resp) {
-          if (!resp || !resp.checkout_url) throw new Error('No checkout URL returned');
-          window.location.href = resp.checkout_url;
-        })
-        .catch(function (e) {
-          submitBtn.disabled = false;
-          submitBtn.textContent = 'Continue to payment';
-          err.textContent = (e && e.message) || 'Something went wrong, please try again.';
-        });
-    });
-
+      '<span class="btn primary" style="text-align:center">Details & buy →</span>';
     return card;
   }
 

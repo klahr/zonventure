@@ -79,7 +79,7 @@ func (h *Handlers) StoreEvent(w http.ResponseWriter, r *http.Request) {
 
 const storeItemSelect = `
 	SELECT e.id, e.name, e.adventure_slug,
-	       COALESCE(a.name, e.adventure_slug) AS adv_title,
+	       COALESCE(a.title, e.adventure_slug) AS adv_title,
 	       o.name AS org_name,
 	       e.public_blurb,
 	       e.ticket_price_cents,

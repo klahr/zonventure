@@ -28,7 +28,7 @@ func TestStoreList_Filtering(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := db.Exec(`
-		INSERT INTO adventures(slug, name, org_id) VALUES ('demo', 'Demo Adv', $1)
+		INSERT INTO adventures(slug, title, org_id) VALUES ('demo', 'Demo Adv', $1)
 	`, orgID); err != nil {
 		t.Fatal(err)
 	}
@@ -138,7 +138,7 @@ func TestHandleTicketCheckoutCompleted_HappyPath(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := db.Exec(`
-		INSERT INTO adventures(slug, name, org_id) VALUES ('demo', 'Demo Adv', $1)
+		INSERT INTO adventures(slug, title, org_id) VALUES ('demo', 'Demo Adv', $1)
 	`, orgID); err != nil {
 		t.Fatal(err)
 	}
@@ -244,7 +244,7 @@ func TestHandleChargeRefunded_TicketWithdrawsTeam(t *testing.T) {
 	if err := db.QueryRow(`INSERT INTO organizations(name) VALUES ('Acme') RETURNING id`).Scan(&orgID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.Exec(`INSERT INTO adventures(slug, name, org_id) VALUES ('demo', 'Demo Adv', $1)`, orgID); err != nil {
+	if _, err := db.Exec(`INSERT INTO adventures(slug, title, org_id) VALUES ('demo', 'Demo Adv', $1)`, orgID); err != nil {
 		t.Fatal(err)
 	}
 	var eventID int64

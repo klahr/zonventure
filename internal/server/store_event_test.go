@@ -1,0 +1,194 @@
+package server
+
+import (
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	"git.sr.ht/~klahr/zv/internal/dbtest"
+	"github.com/go-chi/chi/v5"
+)
+
+// TestRenderStoreEventPage_HappyPath drives the per-event detail
+// renderer against a real DB row and asserts the embedded template
+// has no leftover placeholders. Mirrors landing_test's posture so a
+// missing substitution becomes a test failure rather than a silent
+// "{{TITLE}} on the live page" defect.
+func TestRenderStoreEventPage_HappyPath(t *testing.T) {
+	db, cleanup := dbtest.Open(t)
+	defer cleanup()
+
+	var orgID int64
+	if err := db.QueryRow(`INSERT INTO organizations(name) VALUES ('Acme') RETURNING id`).
+		Scan(&orgID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`
+		INSERT INTO adventures(slug, title, org_id, start_label) VALUES ('demo', 'Demo Adv', $1, 'By the fountain')
+	`, orgID); err != nil {
+		t.Fatal(err)
+	}
+	var eventID int64
+	if err := db.QueryRow(`
+		INSERT INTO events(adventure_slug, org_id, state, live_token, name,
+		                   public_for_sale, ticket_price_cents, ticket_currency, ticket_team_size, public_blurb)
+		VALUES ('demo', $1, 'running', 'lt-' || md5(random()::text), 'Always-on demo',
+		        TRUE, 2500, 'eur', 5, 'A two-hour outdoor adventure.')
+		RETURNING id
+	`, orgID).Scan(&eventID); err != nil {
+		t.Fatal(err)
+	}
+
+	r := chi.NewRouter()
+	r.Get("/store/event/{event_id}", func(w http.ResponseWriter, req *http.Request) {
+		renderStoreEventPage(w, req, db, "https://zv.example.com")
+	})
+
+	req := httptest.NewRequest("GET", "/store/event/"+itoa64(eventID), nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body = %s", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	if strings.Contains(body, "{{") {
+		idx := strings.Index(body, "{{")
+		end := idx + 50
+		if end > len(body) {
+			end = len(body)
+		}
+		t.Fatalf("leftover placeholder at %d: %q", idx, body[idx:end])
+	}
+	for _, want := range []string{
+		"Demo Adv",                       // adventure title
+		"Acme",                           // org name
+		"A two-hour outdoor adventure.",  // blurb
+		"https://zv.example.com/store/event/", // canonical URL
+		"€25",                            // formatted price
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("body missing %q", want)
+		}
+	}
+	// Cache headers + content type are part of the contract.
+	if got := rec.Header().Get("Content-Type"); !strings.HasPrefix(got, "text/html") {
+		t.Errorf("Content-Type = %q, want text/html…", got)
+	}
+}
+
+// TestRenderStoreEventPage_404OnUnlisted asserts that a 404 is
+// returned for events that exist but aren't currently for sale —
+// stale link from a previously-listed event must not leak the
+// row's data.
+func TestRenderStoreEventPage_404OnUnlisted(t *testing.T) {
+	db, cleanup := dbtest.Open(t)
+	defer cleanup()
+
+	var orgID int64
+	if err := db.QueryRow(`INSERT INTO organizations(name) VALUES ('Acme') RETURNING id`).
+		Scan(&orgID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO adventures(slug, title, org_id) VALUES ('demo', 'Demo', $1)`, orgID); err != nil {
+		t.Fatal(err)
+	}
+	var eventID int64
+	if err := db.QueryRow(`
+		INSERT INTO events(adventure_slug, org_id, state, live_token, name,
+		                   public_for_sale, ticket_price_cents, ticket_currency, ticket_team_size)
+		VALUES ('demo', $1, 'running', 'lt-' || md5(random()::text), 'Hidden',
+		        FALSE, 2500, 'eur', 5)
+		RETURNING id
+	`, orgID).Scan(&eventID); err != nil {
+		t.Fatal(err)
+	}
+
+	r := chi.NewRouter()
+	r.NotFound(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte("404"))
+	})
+	r.Get("/store/event/{event_id}", func(w http.ResponseWriter, req *http.Request) {
+		renderStoreEventPage(w, req, db, "")
+	})
+
+	req := httptest.NewRequest("GET", "/store/event/"+itoa64(eventID), nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", rec.Code)
+	}
+}
+
+// TestFormatStorePrice covers the currency-aware formatter so a
+// future tweak to symbol placement or zero-cents stripping can't
+// silently break the hero copy.
+func TestFormatStorePrice(t *testing.T) {
+	cases := []struct {
+		cents    int64
+		currency string
+		want     string
+	}{
+		{2500, "eur", "€25"},
+		{2599, "eur", "€25.99"},
+		{2500, "usd", "$25"},
+		{1000, "gbp", "£10"},
+		{50000, "sek", "500 kr"},
+		{2500, "xyz", "25 XYZ"},
+		{0, "eur", ""},
+	}
+	for _, c := range cases {
+		t.Run(c.currency, func(t *testing.T) {
+			got := formatStorePrice(c.cents, c.currency)
+			if got != c.want {
+				t.Errorf("formatStorePrice(%d, %q) = %q, want %q",
+					c.cents, c.currency, got, c.want)
+			}
+		})
+	}
+}
+
+// TestBuildAbsoluteURL covers the publicURL-or-relative split. An
+// empty publicURL must return the path verbatim so the page still
+// works in dev / before the operator has set ZV_PUBLIC_URL.
+func TestBuildAbsoluteURL(t *testing.T) {
+	cases := []struct {
+		base, path, want string
+	}{
+		{"https://zv.example.com", "/store/event/1", "https://zv.example.com/store/event/1"},
+		{"https://zv.example.com/", "/store/event/1", "https://zv.example.com/store/event/1"},
+		{"", "/store/event/1", "/store/event/1"},
+	}
+	for _, c := range cases {
+		got := buildAbsoluteURL(c.base, c.path)
+		if got != c.want {
+			t.Errorf("buildAbsoluteURL(%q, %q) = %q, want %q", c.base, c.path, got, c.want)
+		}
+	}
+}
+
+func itoa64(n int64) string {
+	const digits = "0123456789"
+	if n == 0 {
+		return "0"
+	}
+	var b [20]byte
+	i := len(b)
+	neg := n < 0
+	if neg {
+		n = -n
+	}
+	for n > 0 {
+		i--
+		b[i] = digits[n%10]
+		n /= 10
+	}
+	if neg {
+		i--
+		b[i] = '-'
+	}
+	return string(b[i:])
+}
