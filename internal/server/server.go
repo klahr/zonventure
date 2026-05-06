@@ -37,7 +37,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 )
 
-//go:embed web/play.html web/play-sw.js web/play-queue.js web/arrange.html web/live.html web/recap.html web/i18n.js web/favicon.svg web/privacy.html web/terms.html web/manual.html web/landing.html web/pricing.html web/topbar.css web/topbar.js web/fsmap.css web/jsqr.js web/404.html web/robots.txt web/sitemap.xml
+//go:embed web/play.html web/play-sw.js web/play-queue.js web/arrange.html web/live.html web/recap.html web/i18n.js web/favicon.svg web/privacy.html web/terms.html web/manual.html web/landing.html web/pricing.html web/store.html web/topbar.css web/topbar.js web/fsmap.css web/jsqr.js web/404.html web/robots.txt web/sitemap.xml
 var webFS embed.FS
 
 // Config is the bag of knobs New needs.
@@ -392,6 +392,18 @@ func New(cfg Config) http.Handler {
 		// auth; no staff session required.
 		r.Post("/api/public/team/{token}/avatar", publicH.SetTeamAvatarByToken)
 		r.Delete("/api/public/team/{token}/avatar", publicH.DeleteTeamAvatarByToken)
+
+		// Public store. Listing + per-event detail are read-only and
+		// served by publicH; the buy endpoint initiates a Stripe
+		// Checkout session and lives on adminH because that's where
+		// the Stripe credentials are wired (mirrors the StripeWebhook
+		// admin/public split below).
+		r.Get("/store", func(w http.ResponseWriter, req *http.Request) {
+			renderTopbarPage(w, req, "web/store.html")
+		})
+		r.Get("/api/store/items", publicH.StoreList)
+		r.Get("/api/store/items/{event_id}", publicH.StoreEvent)
+		r.Post("/api/store/buy", adminH.BuyTicket)
 	})
 
 	// Image serving: permission is decided inside the handler (staff
@@ -419,6 +431,11 @@ func New(cfg Config) http.Handler {
 	// is short ("/org-logo/{id}") so the bytes embed cleanly into the
 	// recap PDF and any future server-rendered surfaces.
 	r.Get("/org-logo/{orgID}", adminH.ServeOrgLogo)
+	// Event store-cover image. Public so the /store page can render
+	// the hero on every card without authentication; mounted at a
+	// short path because it's the most-fetched public-image route on
+	// a busy hosted instance.
+	r.Get("/store-cover/event/{eventID}", adminH.ServeEventCover)
 
 	// Staff authentication. CSRF-protected — the user gets a zv_csrf
 	// cookie from the /arrange page GET that hosts the login form, so
@@ -622,6 +639,8 @@ func New(cfg Config) http.Handler {
 		r.Post("/events", adminH.CreateEvent)
 		r.Get("/events/{eventID}", adminH.EventDetail)
 		r.Patch("/events/{eventID}", adminH.UpdateEvent)
+		r.Post("/events/{eventID}/cover", adminH.SetEventCover)
+		r.Delete("/events/{eventID}/cover", adminH.DeleteEventCover)
 		r.Post("/events/{eventID}/start", adminH.StartEvent)
 		r.Post("/events/{eventID}/pause", adminH.PauseEvent)
 		r.Post("/events/{eventID}/resume", adminH.ResumeEvent)

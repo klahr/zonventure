@@ -152,3 +152,46 @@ func (s *Store) DeleteOrgLogo(ctx context.Context, orgID int64) error {
 	`, orgID)
 	return err
 }
+
+func (s *Store) PutEventCover(ctx context.Context, eventID int64, content []byte, mimeType string) error {
+	res, err := s.DB.ExecContext(ctx, `
+		UPDATE events
+		   SET cover_image_mime_type = $1, cover_image_size_bytes = $2, cover_image_content = $3
+		 WHERE id = $4
+	`, mimeType, int64(len(content)), content, eventID)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return storage.ErrNotFound
+	}
+	return nil
+}
+
+func (s *Store) GetEventCover(ctx context.Context, eventID int64) ([]byte, string, error) {
+	var (
+		mime    sql.NullString
+		size    sql.NullInt64
+		content []byte
+	)
+	err := s.DB.QueryRowContext(ctx, `
+		SELECT cover_image_mime_type, cover_image_size_bytes, cover_image_content
+		FROM events WHERE id = $1
+	`, eventID).Scan(&mime, &size, &content)
+	if errors.Is(err, sql.ErrNoRows) || !mime.Valid || len(content) == 0 {
+		return nil, "", storage.ErrNotFound
+	}
+	if err != nil {
+		return nil, "", err
+	}
+	return content, mime.String, nil
+}
+
+func (s *Store) DeleteEventCover(ctx context.Context, eventID int64) error {
+	_, err := s.DB.ExecContext(ctx, `
+		UPDATE events
+		   SET cover_image_mime_type = NULL, cover_image_size_bytes = NULL, cover_image_content = NULL
+		 WHERE id = $1
+	`, eventID)
+	return err
+}

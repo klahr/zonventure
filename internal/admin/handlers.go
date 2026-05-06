@@ -303,6 +303,19 @@ type eventDTO struct {
 	// would otherwise round-trip to a 409. Empty for list responses
 	// where the rendering only needs name/state.
 	AllowedOps []string `json:"allowed_ops,omitempty"`
+	// Public-store fields. Populated on detail responses; the list
+	// endpoint omits them since the events table doesn't render them
+	// per row. PublicForSale + a non-zero TicketPriceCents is what
+	// makes a row appear on /store; the other fields tune the card.
+	PublicForSale    bool   `json:"public_for_sale"`
+	TicketPriceCents int    `json:"ticket_price_cents,omitempty"`
+	TicketCurrency   string `json:"ticket_currency,omitempty"`
+	TicketTeamSize   int    `json:"ticket_team_size,omitempty"`
+	PublicBlurb      string `json:"public_blurb,omitempty"`
+	// HasCoverImage tells the arrange UI whether to render the
+	// upload-or-replace affordance. The bytes themselves are served
+	// out-of-band at /store-cover/event/{id}.
+	HasCoverImage bool `json:"has_cover_image,omitempty"`
 }
 
 type createEventRequest struct {
@@ -751,6 +764,16 @@ type updateEventRequest struct {
 	Name        *string `json:"name,omitempty"`
 	ScheduledAt *string `json:"scheduled_at,omitempty"`
 	ShowMap     *bool   `json:"show_map,omitempty"`
+	// Public-store fields. nil pointers leave the column untouched
+	// so a partial PATCH from the arrange UI doesn't accidentally
+	// reset them. PublicForSale=false implicitly hides the row from
+	// /store regardless of what the price columns say; the listing
+	// query filters on public_for_sale alone.
+	PublicForSale    *bool   `json:"public_for_sale,omitempty"`
+	TicketPriceCents *int    `json:"ticket_price_cents,omitempty"`
+	TicketCurrency   *string `json:"ticket_currency,omitempty"`
+	TicketTeamSize   *int    `json:"ticket_team_size,omitempty"`
+	PublicBlurb      *string `json:"public_blurb,omitempty"`
 }
 
 // UpdateEvent amends mutable run settings. scheduled_at is only editable
@@ -769,7 +792,9 @@ func (h *Handlers) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 	if !httpx.DecodeJSON(w, r, &req) {
 		return
 	}
-	if req.ScheduledAt == nil && req.ShowMap == nil && req.Name == nil {
+	if req.ScheduledAt == nil && req.ShowMap == nil && req.Name == nil &&
+		req.PublicForSale == nil && req.TicketPriceCents == nil &&
+		req.TicketCurrency == nil && req.TicketTeamSize == nil && req.PublicBlurb == nil {
 		httpx.Error(w, http.StatusBadRequest, "nothing to update")
 		return
 	}
@@ -812,6 +837,83 @@ func (h *Handlers) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 		}
 		if _, err := h.DB.ExecContext(r.Context(),
 			`UPDATE events SET show_map = $1 WHERE id = $2`, v, eventID); err != nil {
+			httpx.Error(w, http.StatusInternalServerError, "update failed")
+			return
+		}
+	}
+	if req.PublicForSale != nil {
+		// Flipping ON without a price is a misconfiguration — the
+		// listing query would skip the row anyway (price IS NOT NULL)
+		// so block at the API to fail loud rather than silently.
+		if *req.PublicForSale {
+			var price sql.NullInt64
+			incoming := req.TicketPriceCents
+			if incoming != nil && *incoming > 0 {
+				price = sql.NullInt64{Int64: int64(*incoming), Valid: true}
+			} else {
+				if err := h.DB.QueryRowContext(r.Context(),
+					`SELECT ticket_price_cents FROM events WHERE id = $1`, eventID).Scan(&price); err != nil {
+					httpx.Error(w, http.StatusInternalServerError, "price lookup failed")
+					return
+				}
+			}
+			if !price.Valid || price.Int64 <= 0 {
+				httpx.Error(w, http.StatusBadRequest, "set a ticket price before publishing for sale")
+				return
+			}
+		}
+		if _, err := h.DB.ExecContext(r.Context(),
+			`UPDATE events SET public_for_sale = $1 WHERE id = $2`, *req.PublicForSale, eventID); err != nil {
+			httpx.Error(w, http.StatusInternalServerError, "update failed")
+			return
+		}
+	}
+	if req.TicketPriceCents != nil {
+		var v sql.NullInt64
+		if *req.TicketPriceCents > 0 {
+			v = sql.NullInt64{Int64: int64(*req.TicketPriceCents), Valid: true}
+		}
+		if _, err := h.DB.ExecContext(r.Context(),
+			`UPDATE events SET ticket_price_cents = $1 WHERE id = $2`, v, eventID); err != nil {
+			httpx.Error(w, http.StatusInternalServerError, "update failed")
+			return
+		}
+	}
+	if req.TicketCurrency != nil {
+		c := strings.ToLower(strings.TrimSpace(*req.TicketCurrency))
+		// ISO 4217 alpha codes are 3 letters. Loose check rather than
+		// a hardcoded allowlist — Stripe rejects unknown currencies
+		// at checkout-create time, so the bound here is just "looks
+		// like a currency".
+		if len(c) != 3 {
+			httpx.Error(w, http.StatusBadRequest, "ticket_currency must be a 3-letter ISO 4217 code")
+			return
+		}
+		if _, err := h.DB.ExecContext(r.Context(),
+			`UPDATE events SET ticket_currency = $1 WHERE id = $2`, c, eventID); err != nil {
+			httpx.Error(w, http.StatusInternalServerError, "update failed")
+			return
+		}
+	}
+	if req.TicketTeamSize != nil {
+		if *req.TicketTeamSize < 1 || *req.TicketTeamSize > 50 {
+			httpx.Error(w, http.StatusBadRequest, "ticket_team_size must be between 1 and 50")
+			return
+		}
+		if _, err := h.DB.ExecContext(r.Context(),
+			`UPDATE events SET ticket_team_size = $1 WHERE id = $2`, *req.TicketTeamSize, eventID); err != nil {
+			httpx.Error(w, http.StatusInternalServerError, "update failed")
+			return
+		}
+	}
+	if req.PublicBlurb != nil {
+		blurb := strings.TrimSpace(*req.PublicBlurb)
+		if len(blurb) > 1000 {
+			httpx.Error(w, http.StatusBadRequest, "public_blurb is too long (max 1000 chars)")
+			return
+		}
+		if _, err := h.DB.ExecContext(r.Context(),
+			`UPDATE events SET public_blurb = $1 WHERE id = $2`, blurb, eventID); err != nil {
 			httpx.Error(w, http.StatusInternalServerError, "update failed")
 			return
 		}

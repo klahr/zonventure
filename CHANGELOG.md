@@ -13,6 +13,37 @@ The repository, Go module, and CLI binary are named `zv`; the product is
 
 ### Added
 
+- **Always-on adventures with public ticket sales.** A new public
+  store page at `/store` lists every event with `public_for_sale=true`
+  as a buy-card. A buyer types their email, pays via Stripe Checkout,
+  and the webhook creates a single team in the event and emails the
+  magic links to the buyer. The event itself is just an ordinary
+  event the operator manually started without a `scheduled_at`,
+  flipped public, and priced — no new event mode, no per-purchase
+  progress primitive, no separate "always-on" lifecycle. The buyer
+  becomes the team's "captain" and uses the existing team-share QR
+  to bring teammates in. Schema in `0047_event_public_store.sql`:
+  `public_for_sale`, `ticket_price_cents`, `ticket_currency`,
+  `ticket_team_size`, `public_blurb` columns on `events` plus a
+  `ticket_purchases` ledger keyed on `stripe_session_id` for
+  redelivery dedupe. Per-event hero image lives on the same row
+  via `0048_event_cover_image.sql` (`cover_image_*` columns) and
+  is served at `/store-cover/event/{id}`; uploads route through
+  `imageutil.NormalizeUpload` so the same MIME / SVG / shrink rules
+  the rest of the app uses apply uniformly. Endpoints:
+  `GET /api/store/items`, `GET /api/store/items/{event_id}`,
+  `POST /api/store/buy`, plus admin
+  `POST /api/admin/events/{id}/cover` + `DELETE` companion. The
+  arrange UI gains a "Public store" panel below the live-view bar
+  on every event detail page: cover upload, price + currency +
+  team-size + blurb form, one-click "List on /store" toggle.
+  Refund handling reuses the existing `charge.refunded` webhook —
+  a refunded ticket flips its row to `refunded` and withdraws the
+  team it created, so the buyer can no longer act on the magic
+  link. Marketing override seam is preserved: drop a custom
+  `store.html` into `ZV_WEB_OVERRIDE_DIR` and the embedded
+  brand-neutral version is shadowed at request time, same shape as
+  `landing.html` and `pricing.html`.
 - **MCP connector.** New opt-in `POST /mcp` endpoint exposing
   adventure authoring as Model Context Protocol tools so an
   arranger can connect Claude desktop / claude.ai / other MCP

@@ -7215,6 +7215,189 @@ function renderShareBar(event) {
   );
 }
 
+// renderStoreBar is the public-store control panel. Editable price /
+// currency / team-size / blurb fields, plus a "List on /store" toggle
+// that flips public_for_sale once a price is set. The toggle is the
+// load-bearing affordance — until it's on, the row is invisible to
+// the public store regardless of what the other fields say.
+//
+// Collapsed by default: most events aren't ticketed, so the bar
+// stays out of the way until an arranger expands it.
+function renderStoreBar(event) {
+  const priceMajor = event.ticket_price_cents
+    ? (event.ticket_price_cents / 100).toFixed(2) : '';
+  const currency = (event.ticket_currency || 'eur').toLowerCase();
+  const teamSize = event.ticket_team_size || 5;
+
+  const priceInput = h('input', {
+    type: 'number', step: '0.01', min: '0', value: priceMajor,
+    placeholder: '25.00', style: 'width:8rem',
+  });
+  const currencySelect = h('select', { style: 'width:6rem' },
+    ...['eur', 'usd', 'sek', 'gbp', 'dkk', 'nok'].map((c) =>
+      h('option', { value: c, selected: c === currency ? '' : null }, c.toUpperCase())));
+  const teamSizeInput = h('input', {
+    type: 'number', min: '1', max: '50', value: String(teamSize), style: 'width:5rem',
+  });
+  const blurbInput = h('textarea', {
+    rows: '2', maxlength: '1000', placeholder: t('Two-hour treasure hunt around the old town.'),
+    style: 'width:100%; resize:vertical',
+  });
+  blurbInput.value = event.public_blurb || '';
+
+  const toggle = h('input', { type: 'checkbox' });
+  if (event.public_for_sale) toggle.checked = true;
+  const status = h('span', { class: 'muted', style: 'font-size:.85rem' });
+  const updateStatus = () => {
+    status.textContent = toggle.checked
+      ? t('Listed on /store')
+      : t('Not listed');
+  };
+  updateStatus();
+
+  const saveBtn = h('button', { class: 'btn small', type: 'button' }, t('Save'));
+  saveBtn.addEventListener('click', async () => {
+    const major = priceInput.value.trim();
+    const cents = major === '' ? 0 : Math.round(parseFloat(major) * 100);
+    if (major !== '' && (Number.isNaN(cents) || cents < 0)) {
+      toastErr(t('Enter a valid price (or leave blank to clear)'));
+      return;
+    }
+    const size = parseInt(teamSizeInput.value, 10);
+    if (!Number.isFinite(size) || size < 1 || size > 50) {
+      toastErr(t('Team size must be between 1 and 50'));
+      return;
+    }
+    const r = await api(`/api/admin/events/${event.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        ticket_price_cents: cents,
+        ticket_currency: currencySelect.value,
+        ticket_team_size: size,
+        public_blurb: blurbInput.value.trim(),
+      }),
+    });
+    if (r.status === 204) toastOk(t('Saved'));
+    else toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+  });
+
+  toggle.addEventListener('change', async () => {
+    // Send the current price alongside the flag so the server's
+    // "no price → 400" guard reads what's in the form (not what
+    // was last saved). Saves an extra Save click for the common
+    // "fill in price + flip on" workflow.
+    const major = priceInput.value.trim();
+    const cents = major === '' ? 0 : Math.round(parseFloat(major) * 100);
+    const r = await api(`/api/admin/events/${event.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        public_for_sale: toggle.checked,
+        ticket_price_cents: cents > 0 ? cents : undefined,
+      }),
+    });
+    if (r.status === 204) {
+      toastOk(toggle.checked ? t('Listed on /store') : t('Removed from /store'));
+      updateStatus();
+    } else {
+      toggle.checked = !toggle.checked;
+      toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+    }
+  });
+
+  const storeURL = `${location.origin}/store`;
+  const storeLink = h('a', { href: storeURL, target: '_blank', rel: 'noopener' },
+    t('Open store ↗'));
+
+  // Cover image — uploaded as multipart, replaced inline. Bust the
+  // browser cache with a query param tied to upload time so a fresh
+  // upload doesn't keep showing the old picture.
+  const coverURL = `/store-cover/event/${event.id}`;
+  const coverPreview = h('div', {
+    style: 'width:160px; aspect-ratio:16/9; border-radius:8px; background-color:var(--surface-2); background-size:cover; background-position:center; border:1px solid var(--border-soft); flex-shrink:0',
+  });
+  const setCoverBg = (hasCover, bust) => {
+    coverPreview.style.backgroundImage = hasCover
+      ? `url(${coverURL}${bust ? '?v=' + bust : ''})` : '';
+  };
+  setCoverBg(!!event.has_cover_image, '');
+  const fileInput = h('input', { type: 'file', accept: 'image/*', style: 'display:none' });
+  const uploadBtn = h('button', { class: 'btn small', type: 'button' },
+    event.has_cover_image ? t('Replace cover') : t('Upload cover'));
+  const clearBtn = h('button', { class: 'btn small ghost', type: 'button',
+    style: event.has_cover_image ? '' : 'display:none' }, t('Remove'));
+  uploadBtn.addEventListener('click', () => fileInput.click());
+  fileInput.addEventListener('change', async () => {
+    const f = fileInput.files && fileInput.files[0];
+    if (!f) return;
+    const fd = new FormData();
+    fd.append('file', f);
+    const r = await fetch(`/api/admin/events/${event.id}/cover`, {
+      method: 'POST', body: fd, credentials: 'same-origin',
+      headers: { 'X-CSRF-Token': csrfToken() },
+    });
+    if (r.ok) {
+      toastOk(t('Cover updated'));
+      setCoverBg(true, Date.now());
+      uploadBtn.textContent = t('Replace cover');
+      clearBtn.style.display = '';
+    } else {
+      const txt = await r.text().catch(() => '');
+      toastErr(txt || t('Upload failed'));
+    }
+    fileInput.value = '';
+  });
+  clearBtn.addEventListener('click', async () => {
+    const r = await api(`/api/admin/events/${event.id}/cover`, { method: 'DELETE' });
+    if (r.status === 204) {
+      toastOk(t('Cover removed'));
+      setCoverBg(false, '');
+      uploadBtn.textContent = t('Upload cover');
+      clearBtn.style.display = 'none';
+    } else {
+      toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+    }
+  });
+
+  const body = h('div', { style: 'margin-top:.75rem; display:grid; gap:.75rem' },
+    h('div', { class: 'row', style: 'gap:.75rem; align-items:flex-start; flex-wrap:wrap' },
+      coverPreview,
+      h('div', { style: 'display:flex; flex-direction:column; gap:.4rem' },
+        h('div', { class: 'muted', style: 'font-size:.8rem' }, t('Cover image (16:9 looks best)')),
+        h('div', { class: 'row', style: 'gap:.5rem; flex-wrap:wrap' },
+          uploadBtn, clearBtn, fileInput))),
+    h('div', { class: 'row', style: 'gap:.75rem; align-items:center; flex-wrap:wrap' },
+      h('label', { style: 'display:flex; flex-direction:column; gap:.2rem; font-size:.8rem; color:var(--muted)' },
+        t('Price'), priceInput),
+      h('label', { style: 'display:flex; flex-direction:column; gap:.2rem; font-size:.8rem; color:var(--muted)' },
+        t('Currency'), currencySelect),
+      h('label', { style: 'display:flex; flex-direction:column; gap:.2rem; font-size:.8rem; color:var(--muted)' },
+        t('Team size'), teamSizeInput),
+    ),
+    h('label', { style: 'display:flex; flex-direction:column; gap:.2rem; font-size:.8rem; color:var(--muted)' },
+      t('Blurb (shown on the store card)'), blurbInput),
+    h('div', { class: 'row', style: 'gap:.75rem; align-items:center; flex-wrap:wrap' },
+      saveBtn,
+      h('label', {
+        style: 'display:inline-flex; align-items:center; gap:.35rem; cursor:pointer; font-size:.85rem',
+      }, toggle, t('List on /store')),
+      status,
+      storeLink,
+    ),
+  );
+  const summary = h('summary', {
+    style: 'cursor:pointer; list-style:none; display:flex; align-items:center; gap:.6rem',
+  },
+    h('span', { style: 'font-size:.7rem; font-weight:800; text-transform:uppercase; letter-spacing:.06em; color:var(--muted)' }, t('Public store')),
+    h('span', { class: 'muted', style: 'font-size:.85rem' },
+      event.public_for_sale
+        ? t('Listed at {{price}} {{cur}}', { price: priceMajor || '?', cur: currency.toUpperCase() })
+        : t('Sell tickets directly to players via Stripe Checkout.')),
+  );
+  return h('details', { class: 'card share-bar', style: 'padding:.85rem 1rem' },
+    summary, body,
+  );
+}
+
 // renderEventAdventureStrip is the compact adventure summary that
 // sits below the lifecycle bar on the event-detail view: cover +
 // title + puzzle count + a "View adventure →" link to the read-only
@@ -7744,6 +7927,7 @@ async function viewRunDetail(view, runID) {
     renderEventResultsCard(event, teams),
     renderTeamLinksPanel(event, teams),
     renderShareBar(event),
+    renderStoreBar(event),
     h('div', { class: 'grid cols-2' }, teamsCard, eventLogCard),
   ].filter(Boolean));
 }

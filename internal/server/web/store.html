@@ -1,0 +1,399 @@
+<!doctype html>
+<!--
+  Brand-neutral upstream store stub. Served at /store on any
+  deployment that hasn't shipped its own variant via
+  ZV_WEB_OVERRIDE_DIR.
+
+  Lists every event with public_for_sale=true (queried from
+  /api/store/items) as a buy-card. Buyers type their email, the
+  page POSTs to /api/store/buy and redirects the browser to the
+  hosted Stripe Checkout URL. The webhook does the rest.
+
+  No JS framework — vanilla fetch + DOM. Same posture as the
+  rest of the marketing surface: indexable, JS-light, fast first
+  paint, override-friendly.
+-->
+<html lang="{{LANG_CODE}}"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Store · Zonventure</title>
+<meta name="description" content="Buy a ticket and play right now. One purchase, one team, one magic link to your inbox.">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+
+<meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#14202e" media="(prefers-color-scheme: dark)">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Aclonica&family=Open+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+
+<link rel="stylesheet" href="/assets/topbar.css">
+<script defer src="/assets/topbar.js"></script>
+<script>(function(){try{var v=localStorage.getItem('zv-theme');if(v==='light'||v==='dark')document.documentElement.setAttribute('data-theme',v);}catch(e){}})();</script>
+
+<style>
+  :root {
+    color-scheme: light dark;
+    --accent: #ad1357;
+    --accent-2: #e24080;
+    --accent-deep: #6d0a35;
+    --ink: #1f3349;
+    --ink-soft: #3d5573;
+    --muted: #6b7f96;
+    --bg: #fbfbfd;
+    --surface: #ffffff;
+    --border-soft: #e2e7ef;
+    --shadow: 0 1px 2px rgba(31,51,73,.06), 0 4px 16px rgba(31,51,73,.08);
+  }
+  [data-theme="dark"] {
+    --ink: #e7ecf4; --ink-soft: #c2cee0; --muted: #9db1cc;
+    --bg: #14202e; --surface: #1f3349; --border-soft: #2c4361;
+    --accent: #e24080; --accent-2: #ff6aa3; --accent-deep: #ad1357;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme]) {
+      --ink: #e7ecf4; --ink-soft: #c2cee0; --muted: #9db1cc;
+      --bg: #14202e; --surface: #1f3349; --border-soft: #2c4361;
+      --accent: #e24080; --accent-2: #ff6aa3; --accent-deep: #ad1357;
+    }
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    font: 16px/1.6 'Open Sans', system-ui, sans-serif;
+    color: var(--ink); background: var(--bg);
+  }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .wrap { max-width: 60rem; margin: 0 auto; padding: 0 1.25rem; }
+  .skip-link {
+    position: absolute; top: -2.5rem; left: .5rem; z-index: 50;
+    padding: .5rem 1rem; border-radius: 8px;
+    background: var(--accent); color: #fff;
+    font-weight: 700; text-decoration: none;
+  }
+  .skip-link:focus { top: .5rem; }
+  a:focus-visible, button:focus-visible, .btn:focus-visible, input:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+    border-radius: 4px;
+  }
+
+  .btn {
+    display: inline-block;
+    padding: .8rem 1.75rem;
+    border-radius: 999px;
+    font-weight: 700; font-size: .95rem;
+    text-decoration: none;
+    border: 1px solid transparent;
+    transition: transform .12s, opacity .12s;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .btn:hover { transform: translateY(-1px); text-decoration: none; }
+  .btn.primary {
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    color: #fff;
+  }
+  .btn.primary:hover { opacity: .94; }
+  .btn.primary[disabled] { opacity: .55; cursor: not-allowed; transform: none; }
+
+  main { padding: 3rem 0 5rem; }
+  h1 {
+    font-family: 'Aclonica', Georgia, serif;
+    font-size: clamp(2rem, 4vw, 2.8rem);
+    margin: 0 0 1rem;
+  }
+  .lede { color: var(--ink-soft); font-size: 1.1rem; margin: 0 0 2.5rem; }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr));
+    gap: 1.25rem;
+  }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border-soft);
+    border-radius: 16px;
+    padding: 1.5rem;
+    box-shadow: var(--shadow);
+    display: flex;
+    flex-direction: column;
+  }
+  .card .cover {
+    margin: -1.5rem -1.5rem 1rem;
+    aspect-ratio: 16 / 9;
+    background: var(--surface-2, #f3f4f7);
+    background-size: cover;
+    background-position: center;
+    border-radius: 16px 16px 0 0;
+  }
+  .card .org { color: var(--muted); font-size: .85rem; text-transform: uppercase; letter-spacing: .04em; }
+  .card h2 { margin: .25rem 0 .5rem; font-size: 1.2rem; }
+  .card .blurb { color: var(--ink-soft); margin: 0 0 1rem; flex: 1; }
+  .card .meta { color: var(--muted); font-size: .85rem; margin-bottom: 1rem; }
+  .card .price { font-weight: 700; font-size: 1.4rem; color: var(--ink); margin-bottom: 1rem; }
+  .card .price small { font-weight: 400; color: var(--muted); font-size: .85rem; }
+
+  .buy-form { display: none; flex-direction: column; gap: .5rem; }
+  .buy-form.open { display: flex; }
+  .buy-form label { font-size: .85rem; color: var(--ink-soft); font-weight: 600; }
+  .buy-form input[type=email] {
+    padding: .6rem .75rem;
+    border: 1px solid var(--border-soft);
+    border-radius: 8px;
+    background: var(--bg);
+    color: var(--ink);
+    font: inherit;
+  }
+  .buy-form .err {
+    color: #c0392b;
+    font-size: .85rem;
+    margin: .25rem 0 0;
+    min-height: 1.2em;
+  }
+
+  .empty {
+    background: var(--surface);
+    border: 1px dashed var(--border-soft);
+    border-radius: 16px;
+    padding: 2.5rem 1.5rem;
+    text-align: center;
+    color: var(--ink-soft);
+  }
+
+  .toast {
+    background: var(--surface);
+    border: 1px solid var(--border-soft);
+    border-left: 4px solid var(--accent);
+    border-radius: 8px;
+    padding: 1rem 1.25rem;
+    margin: 0 0 2rem;
+    color: var(--ink);
+    box-shadow: var(--shadow);
+  }
+  .toast.cancelled { border-left-color: var(--muted); color: var(--ink-soft); }
+
+  footer {
+    padding: 1.75rem 0 2.5rem;
+    color: var(--muted);
+    font-size: .88rem;
+    text-align: center;
+    border-top: 1px solid var(--border-soft);
+  }
+  footer a { color: inherit; margin: 0 .5rem; }
+  footer a:hover { color: var(--accent); }
+  footer .copy { margin-top: .5rem; font-size: .8rem; }
+</style>
+</head>
+<body>
+
+<a class="skip-link" href="#main">Skip to content</a>
+
+<input type="checkbox" id="nav-toggle" class="nav-toggle" aria-label="{{NAV_TOGGLE_ARIA}}">
+
+<header class="topbar" role="banner">
+  <div class="wrap topbar-row">
+    <label for="nav-toggle" class="hamburger" aria-hidden="true">
+      <span></span><span></span><span></span>
+    </label>
+    <a class="brand" href="/" aria-label="{{BRAND_ARIA}}">zonventure</a>
+    <nav aria-label="{{NAV_PRIMARY_ARIA}}">
+      <div class="lang-picker" role="group" aria-label="{{LANG_ARIA}}">
+        <a href="?lang=en" class="lang-link {{EN_ACTIVE}}" {{EN_CURRENT}} hreflang="en">
+          <span class="flag" aria-hidden="true">🇬🇧</span><span class="label">EN</span>
+        </a>
+        <a href="?lang=sv" class="lang-link {{SV_ACTIVE}}" {{SV_CURRENT}} hreflang="sv">
+          <span class="flag" aria-hidden="true">🇸🇪</span><span class="label">SV</span>
+        </a>
+      </div>
+      <div class="nav-menu">
+        <a href="/manual">{{NAV_MANUAL}}</a>
+        <a href="/pricing">{{NAV_PRICING}}</a>
+        <a href="/store" aria-current="page">Store</a>
+        <a href="/arrange" class="btn">{{NAV_LOGIN}}</a>
+      </div>
+    </nav>
+  </div>
+</header>
+
+<aside class="nav-overlay" aria-label="{{NAV_PRIMARY_ARIA}}">
+  <a href="/manual">{{NAV_MANUAL}}</a>
+  <a href="/pricing">{{NAV_PRICING}}</a>
+  <a href="/store" aria-current="page">Store</a>
+  <a href="/arrange" class="btn">{{NAV_LOGIN}}</a>
+</aside>
+
+<main id="main">
+  <div class="wrap">
+    <h1>Store</h1>
+    <p class="lede">Pick an adventure, type your email, pay. We email you a magic link — open it on your phone and play.</p>
+
+    <div id="status"></div>
+    <div id="grid" class="grid" aria-busy="true">
+      <div class="empty">Loading available adventures…</div>
+    </div>
+  </div>
+</main>
+
+<footer role="contentinfo">
+  <div class="wrap">
+    <nav aria-label="{{FOOTER_ARIA}}">
+      <a href="/manual">{{NAV_MANUAL}}</a> ·
+      <a href="/pricing">{{NAV_PRICING}}</a> ·
+      <a href="/store">Store</a> ·
+      <a href="/privacy">{{FOOTER_PRIVACY}}</a> ·
+      <a href="/terms">{{FOOTER_TERMS}}</a> ·
+      <a href="/arrange">{{NAV_LOGIN}}</a>
+    </nav>
+    <p class="copy">{{FOOTER_COPY}}</p>
+  </div>
+</footer>
+
+<script>
+(function () {
+  // The /store success / cancel redirects from Stripe carry a
+  // ?paid=<id> or ?cancelled=<id> query string. Show a one-line
+  // toast so the buyer knows what happened, then strip the
+  // parameter from the URL so a refresh doesn't re-toast.
+  function flashFromQuery() {
+    var params = new URLSearchParams(window.location.search);
+    var paid = params.get('paid');
+    var cancelled = params.get('cancelled');
+    if (!paid && !cancelled) return;
+    var status = document.getElementById('status');
+    var div = document.createElement('div');
+    div.className = 'toast' + (cancelled ? ' cancelled' : '');
+    div.textContent = paid
+      ? 'Payment received. Check your inbox — your magic link is on its way (give it a minute).'
+      : 'Checkout cancelled. Nothing was charged. Pick another ticket whenever you’re ready.';
+    status.appendChild(div);
+    var url = new URL(window.location);
+    url.searchParams.delete('paid');
+    url.searchParams.delete('cancelled');
+    history.replaceState({}, '', url.toString());
+  }
+
+  // Format an integer in minor units (cents) into a human-readable
+  // major-unit string. We don't have full ICU here so this is a
+  // best-effort: known currencies get their symbol, the rest fall
+  // back to the ISO code.
+  var SYMBOLS = { eur: '€', usd: '$', sek: 'kr', gbp: '£', dkk: 'kr', nok: 'kr' };
+  function formatPrice(cents, currency) {
+    var c = (currency || 'eur').toLowerCase();
+    var amount = (cents / 100).toFixed(2).replace(/\.00$/, '');
+    var symbol = SYMBOLS[c];
+    if (!symbol) return amount + ' ' + c.toUpperCase();
+    if (c === 'sek' || c === 'dkk' || c === 'nok') return amount + ' ' + symbol;
+    return symbol + amount;
+  }
+
+  function escapeHTML(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  function buildCard(item) {
+    var card = document.createElement('article');
+    card.className = 'card';
+    var size = item.team_size > 1 ? ('Up to ' + item.team_size + ' players') : 'Solo';
+    var cover = item.cover_image_url
+      ? '<div class="cover" role="img" aria-label="' + escapeHTML(item.adventure_title || item.adventure_slug) +
+        '" style="background-image:url(' + escapeHTML(item.cover_image_url) + ')"></div>'
+      : '';
+    card.innerHTML = cover +
+      '<div class="org">' + escapeHTML(item.org_name) + '</div>' +
+      '<h2>' + escapeHTML(item.adventure_title || item.adventure_slug) +
+        (item.event_name ? ' <small style="color:var(--muted);font-size:.85rem">— ' + escapeHTML(item.event_name) + '</small>' : '') +
+      '</h2>' +
+      (item.blurb ? '<p class="blurb">' + escapeHTML(item.blurb) + '</p>' : '<p class="blurb"></p>') +
+      '<div class="meta">' + size +
+        (item.start_label ? ' · meets at ' + escapeHTML(item.start_label) : '') +
+      '</div>' +
+      '<div class="price">' + escapeHTML(formatPrice(item.price_cents, item.currency)) +
+        ' <small>per ' + (item.team_size > 1 ? 'team' : 'ticket') + '</small></div>' +
+      '<button type="button" class="btn primary buy-cta">Buy ticket</button>' +
+      '<form class="buy-form" novalidate>' +
+        '<label>Your email' +
+          '<input type="email" required autocomplete="email" placeholder="you@example.com">' +
+        '</label>' +
+        '<div class="err" role="alert"></div>' +
+        '<button type="submit" class="btn primary">Continue to payment</button>' +
+      '</form>';
+
+    var cta = card.querySelector('.buy-cta');
+    var form = card.querySelector('.buy-form');
+    var input = form.querySelector('input[type=email]');
+    var err = form.querySelector('.err');
+    var submitBtn = form.querySelector('button[type=submit]');
+
+    cta.addEventListener('click', function () {
+      cta.style.display = 'none';
+      form.classList.add('open');
+      input.focus();
+    });
+
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      err.textContent = '';
+      var email = input.value.trim();
+      if (!email || email.indexOf('@') === -1) {
+        err.textContent = 'Please enter a valid email address.';
+        return;
+      }
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Redirecting…';
+      fetch('/api/store/buy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ event_id: item.event_id, buyer_email: email }),
+      })
+        .then(function (r) {
+          if (!r.ok) {
+            return r.text().then(function (t) { throw new Error(t || 'Checkout failed'); });
+          }
+          return r.json();
+        })
+        .then(function (resp) {
+          if (!resp || !resp.checkout_url) throw new Error('No checkout URL returned');
+          window.location.href = resp.checkout_url;
+        })
+        .catch(function (e) {
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Continue to payment';
+          err.textContent = (e && e.message) || 'Something went wrong, please try again.';
+        });
+    });
+
+    return card;
+  }
+
+  function render(items) {
+    var grid = document.getElementById('grid');
+    grid.removeAttribute('aria-busy');
+    grid.innerHTML = '';
+    if (!items || items.length === 0) {
+      var empty = document.createElement('div');
+      empty.className = 'empty';
+      empty.textContent = 'No tickets available right now. Check back soon.';
+      grid.appendChild(empty);
+      return;
+    }
+    items.forEach(function (it) { grid.appendChild(buildCard(it)); });
+  }
+
+  flashFromQuery();
+  fetch('/api/store/items', { headers: { 'Accept': 'application/json' } })
+    .then(function (r) { return r.json(); })
+    .then(function (resp) { render(resp && resp.items); })
+    .catch(function () {
+      var grid = document.getElementById('grid');
+      grid.removeAttribute('aria-busy');
+      grid.innerHTML = '<div class="empty">Could not load store right now. Please try again later.</div>';
+    });
+})();
+</script>
+
+</body></html>

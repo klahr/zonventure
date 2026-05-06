@@ -626,6 +626,32 @@
       'Live view': 'Live-vy',
       'Open the link on any screen — no login needed.':
         'Öppna länken på valfri skärm — ingen inloggning behövs.',
+      // ---- public store bar ----
+      'Public store': 'Offentlig butik',
+      'Sell tickets directly to players via Stripe Checkout.':
+        'Sälj biljetter direkt till spelare via Stripe Checkout.',
+      'Listed at {{price}} {{cur}}': 'Listad för {{price}} {{cur}}',
+      'Listed on /store': 'Listad i /store',
+      'Not listed': 'Inte listad',
+      'Removed from /store': 'Borttagen från /store',
+      'List on /store': 'Lista i /store',
+      'Open store ↗': 'Öppna butik ↗',
+      'Price': 'Pris',
+      'Currency': 'Valuta',
+      'Team size': 'Lagstorlek',
+      'Blurb (shown on the store card)': 'Beskrivning (visas på butikskortet)',
+      'Two-hour treasure hunt around the old town.':
+        'Tvåtimmars skattjakt runt gamla stan.',
+      'Enter a valid price (or leave blank to clear)':
+        'Ange ett giltigt pris (eller lämna tomt för att rensa)',
+      'Team size must be between 1 and 50':
+        'Lagstorleken måste vara mellan 1 och 50',
+      'Cover image (16:9 looks best)': 'Omslagsbild (16:9 ser bäst ut)',
+      'Upload cover': 'Ladda upp omslag',
+      'Replace cover': 'Byt omslag',
+      'Cover updated': 'Omslag uppdaterat',
+      'Cover removed': 'Omslag borttaget',
+      'Upload failed': 'Uppladdning misslyckades',
       // ---- run detail ----
       'Event #{{id}}': 'Event #{{id}}',
       'Lifecycle': 'Livscykel',

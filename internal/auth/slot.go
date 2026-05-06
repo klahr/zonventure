@@ -117,11 +117,18 @@ func parseSlotTimestamp(s string) (time.Time, error) {
 	return t.UTC(), nil
 }
 
+// rowQuerier is the subset of *sql.DB and *sql.Tx the slot helpers
+// need. Lets DefaultSlotExpiresAt run inside or outside a tx without
+// the caller juggling two APIs.
+type rowQuerier interface {
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
 // DefaultSlotExpiresAt computes the default expires_at value for a
 // newly-created slot. Uses the event's scheduled_at + 7 days when the event
 // is scheduled, else now + 30 days. Returned as the wire-format string
 // admin queries pass directly to the INSERT.
-func DefaultSlotExpiresAt(ctx context.Context, db *sql.DB, eventID int64) string {
+func DefaultSlotExpiresAt(ctx context.Context, db rowQuerier, eventID int64) string {
 	const layout = "2006-01-02 15:04:05"
 	var sched sql.NullString
 	if err := db.QueryRowContext(ctx,

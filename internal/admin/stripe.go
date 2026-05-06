@@ -169,8 +169,18 @@ func (h *Handlers) StripeWebhook(w http.ResponseWriter, r *http.Request) {
 
 	switch event.Type {
 	case "checkout.session.completed":
+		// Two flavours of session land on the same webhook: org-side
+		// adventure purchases (zv_purchase_id metadata) and public
+		// ticket purchases (zv_ticket_purchase_id). Each handler
+		// short-circuits when its metadata key is absent, so dispatch
+		// just calls both in turn.
 		if err := h.handleCheckoutCompleted(r.Context(), event); err != nil {
 			logx.Error("stripe.webhook.checkout_completed", "event_id", event.ID, "err", err.Error())
+			http.Error(w, "handler failed", http.StatusInternalServerError)
+			return
+		}
+		if err := h.handleTicketCheckoutCompleted(r.Context(), event); err != nil {
+			logx.Error("stripe.webhook.ticket_checkout_completed", "event_id", event.ID, "err", err.Error())
 			http.Error(w, "handler failed", http.StatusInternalServerError)
 			return
 		}
@@ -446,7 +456,56 @@ func (h *Handlers) handleChargeRefunded(ctx context.Context, event stripe.Event)
 	if err := rows.Err(); err != nil {
 		return err
 	}
-	if len(refunded) == 0 {
+	// Ticket purchases share the same charge.refunded webhook as the
+	// org-purchases flow. Flip any matching ticket_purchases row,
+	// then withdraw the team it created so a refunded buyer can't
+	// keep playing — same posture as the admin "withdraw team"
+	// action; magic-link sessions stay valid but actions return
+	// withdrawn errors.
+	ticketRows, err := h.DB.QueryContext(ctx, `
+		UPDATE ticket_purchases
+		   SET state = 'refunded', refunded_at = now_text()
+		 WHERE stripe_charge_id = $1 AND state = 'paid'
+		 RETURNING id, COALESCE(team_id, 0)
+	`, charge.ID)
+	if err != nil {
+		return err
+	}
+	type refundedTicket struct {
+		purchaseID int64
+		teamID     int64
+	}
+	var tickets []refundedTicket
+	for ticketRows.Next() {
+		var rr refundedTicket
+		if err := ticketRows.Scan(&rr.purchaseID, &rr.teamID); err != nil {
+			ticketRows.Close()
+			return err
+		}
+		tickets = append(tickets, rr)
+	}
+	ticketRows.Close()
+	if err := ticketRows.Err(); err != nil {
+		return err
+	}
+	for _, rr := range tickets {
+		if rr.teamID == 0 {
+			continue
+		}
+		// Best-effort withdraw: idempotent (the WHERE clause keeps
+		// already-withdrawn rows untouched) and never fatal — a
+		// failed withdraw still leaves the purchase refund recorded
+		// for accounting.
+		if _, werr := h.DB.ExecContext(ctx, `
+			UPDATE teams SET withdrawn_at = now_text()
+			 WHERE id = $1 AND withdrawn_at IS NULL
+		`, rr.teamID); werr != nil {
+			logx.Warn("stripe.ticket.refund.withdraw",
+				"purchase_id", rr.purchaseID, "team_id", rr.teamID, "err", werr.Error())
+		}
+	}
+
+	if len(refunded) == 0 && len(tickets) == 0 {
 		// Either out-of-order (the matching paid row hasn't been
 		// written yet) or not our charge at all. We can't tell from
 		// the Charge object alone, so bias toward the recoverable
@@ -463,9 +522,20 @@ func (h *Handlers) handleChargeRefunded(ctx context.Context, event stripe.Event)
 			"charge_id", charge.ID, "event_age_hours", eventAge.Hours())
 		return nil
 	}
-	logx.Info("stripe.purchase.refunded", "charge_id", charge.ID, "rows", len(refunded))
+	if len(refunded) > 0 {
+		logx.Info("stripe.purchase.refunded", "charge_id", charge.ID, "rows", len(refunded))
+	}
+	if len(tickets) > 0 {
+		logx.Info("stripe.ticket.refunded", "charge_id", charge.ID, "rows", len(tickets))
+	}
 	for range refunded {
 		metrics.PurchaseEvents.WithLabelValues("refunded").Inc()
+	}
+	for range tickets {
+		// Same metric label so dashboards aggregate uniformly; the
+		// purchase_id label on the webhook fan-out below distinguishes
+		// the two flavours.
+		metrics.PurchaseEvents.WithLabelValues("ticket_refunded").Inc()
 	}
 	for _, rr := range refunded {
 		webhooks.TryPublish(ctx, h.DB, rr.orgID, webhooks.KindPurchaseRefunded, map[string]any{

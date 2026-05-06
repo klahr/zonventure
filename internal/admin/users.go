@@ -355,8 +355,9 @@ func (h *Handlers) EventDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var (
-		d       eventDTO
-		showMap int
+		d          eventDTO
+		showMap    int
+		priceCents sql.NullInt64
 	)
 	if err := h.DB.QueryRowContext(r.Context(), `
 		SELECT ar.id, ar.name, ar.adventure_slug, ar.state,
@@ -368,16 +369,24 @@ func (h *Handlers) EventDetail(w http.ResponseWriter, r *http.Request) {
 		       (SELECT COUNT(*) FROM teams WHERE event_id = ar.id) AS teams_count,
 		       (SELECT COUNT(*) FROM player_slots ps
 		         JOIN teams t ON t.id = ps.team_id
-		        WHERE t.event_id = ar.id) AS player_slots_count
+		        WHERE t.event_id = ar.id) AS player_slots_count,
+		       ar.public_for_sale, ar.ticket_price_cents,
+		       ar.ticket_currency, ar.ticket_team_size, ar.public_blurb,
+		       (ar.cover_image_mime_type IS NOT NULL) AS has_cover_image
 		FROM events ar
 		LEFT JOIN adventure_assignments aa ON aa.id = ar.assignment_id
 		WHERE ar.id = $1
 	`, eventID).Scan(&d.ID, &d.Name, &d.AdventureSlug, &d.State, &d.ScheduledAt, &d.StartedAt,
 		&d.CompletedAt, &d.CancelledAt,
 		&d.OrgID, &d.CreatedByUserID, &d.AssignmentID, &d.MaxPlayers,
-		&d.LiveToken, &showMap, &d.TeamsCount, &d.PlayerSlotsCount); err != nil {
+		&d.LiveToken, &showMap, &d.TeamsCount, &d.PlayerSlotsCount,
+		&d.PublicForSale, &priceCents, &d.TicketCurrency, &d.TicketTeamSize, &d.PublicBlurb,
+		&d.HasCoverImage); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "lookup failed")
 		return
+	}
+	if priceCents.Valid {
+		d.TicketPriceCents = int(priceCents.Int64)
 	}
 	d.ShowMap = showMap != 0
 	d.AllowedOps = allowedOpsForState(d.State)

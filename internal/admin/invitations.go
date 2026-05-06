@@ -261,7 +261,7 @@ func sendOneInvitation(
 ) error {
 	var b strings.Builder
 	fmt.Fprintf(&b,
-		"Your team \"%s\" is ready to play. Forward each link below to the right teammate — each link is single-use and claims the player's slot when opened.\r\n\r\n",
+		"Your team \"%s\" is ready to play. Forward each link below to the right teammate — opening a link claims the player's slot and starts their session.\r\n\r\n",
 		teamName)
 	for _, s := range slots {
 		fmt.Fprintf(&b, "Player: %s\r\nLink: %s/play?t=%s\r\n\r\n", s.Player, publicURL, s.Token)
