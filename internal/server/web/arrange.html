@@ -7534,14 +7534,50 @@ function renderShareBar(event) {
   );
 }
 
-// renderStoreBar is the public-store control panel. Editable price /
-// currency / team-size / blurb fields, plus a "List on /store" toggle
-// that flips public_for_sale once a price is set. The toggle is the
-// load-bearing affordance — until it's on, the row is invisible to
-// the public store regardless of what the other fields say.
-//
-// Collapsed by default: most events aren't ticketed, so the bar
-// stays out of the way until an arranger expands it.
+// renderConnectBanner is the "your quest can't sell tickets yet"
+// nag that appears on quest-detail pages when the marketplace fee
+// is configured but the org's Stripe Connect account isn't
+// charges_enabled. status is the body returned by
+// /api/admin/organizations/{orgID}/stripe-connect/status; null
+// means "we couldn't fetch — probably not a quest, or the user
+// can't see the org's Connect state." Returns null (no banner)
+// when no nag applies.
+function renderConnectBanner(event, status) {
+  if (!event.public_for_sale) return null;
+  if (!status) return null;
+  if (!status.platform_fee_enabled) return null;
+  if (status.charges_enabled) return null;
+  // org_admins of the seller org get the actionable copy + a deep
+  // link to Settings → Billing. Other viewers (admin cross-org,
+  // org_member) get a softer "the org needs to finish setup"
+  // because they can't act from here.
+  const isOwnerAdmin = state.me?.role === 'org_admin'
+    && state.me.org_id === event.org_id;
+  return h('div', {
+    class: 'card',
+    style: 'border-left:4px solid var(--warning, #d97706); padding:1rem',
+  },
+    h('h3', { style: 'margin:0 0 .25rem; font-size:1rem' },
+      '⚠ ' + t('Stripe Connect required')),
+    h('p', { class: 'muted', style: 'font-size:.9rem; margin:0' },
+      isOwnerAdmin
+        ? t('Your org hasn\'t completed Stripe Connect onboarding yet, so this quest is hidden from /store and can\'t take payments. Set it up under Settings → Billing.')
+        : t('The seller org hasn\'t completed Stripe Connect onboarding yet, so this quest is hidden from /store and can\'t take payments. Their org admin needs to set it up under Settings → Billing.')),
+    isOwnerAdmin
+      ? h('div', { class: 'row', style: 'margin-top:.5rem' },
+          h('a', { class: 'btn small primary', href: '#settings/billing',
+            on: { click: (e) => { e.preventDefault(); nav('#settings/billing'); } } },
+            icon(ICONS.compass), t('Set up Stripe Connect')))
+      : null);
+}
+
+// renderStoreBar is the quest-detail edit panel: ticket price,
+// currency, team size, public blurb, cover image. Only rendered for
+// quests (events with public_for_sale=true) — see the gate in
+// viewRunDetail. The flag itself is immutable after create_event,
+// so there's no "List on /store" toggle here; visibility on /store
+// is state-driven (running/paused → listed; completed/cancelled →
+// hidden). To delist temporarily, pause_event the quest.
 function renderStoreBar(event) {
   const priceMajor = event.ticket_price_cents
     ? (event.ticket_price_cents / 100).toFixed(2) : '';
@@ -7563,16 +7599,6 @@ function renderStoreBar(event) {
     style: 'width:100%; resize:vertical',
   });
   blurbInput.value = event.public_blurb || '';
-
-  const toggle = h('input', { type: 'checkbox' });
-  if (event.public_for_sale) toggle.checked = true;
-  const status = h('span', { class: 'muted', style: 'font-size:.85rem' });
-  const updateStatus = () => {
-    status.textContent = toggle.checked
-      ? t('Listed on /store')
-      : t('Not listed');
-  };
-  updateStatus();
 
   const saveBtn = h('button', { class: 'btn small', type: 'button' }, t('Save'));
   saveBtn.addEventListener('click', async () => {
@@ -7598,29 +7624,6 @@ function renderStoreBar(event) {
     });
     if (r.status === 204) toastOk(t('Saved'));
     else toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
-  });
-
-  toggle.addEventListener('change', async () => {
-    // Send the current price alongside the flag so the server's
-    // "no price → 400" guard reads what's in the form (not what
-    // was last saved). Saves an extra Save click for the common
-    // "fill in price + flip on" workflow.
-    const major = priceInput.value.trim();
-    const cents = major === '' ? 0 : Math.round(parseFloat(major) * 100);
-    const r = await api(`/api/admin/events/${event.id}`, {
-      method: 'PATCH',
-      body: JSON.stringify({
-        public_for_sale: toggle.checked,
-        ticket_price_cents: cents > 0 ? cents : undefined,
-      }),
-    });
-    if (r.status === 204) {
-      toastOk(toggle.checked ? t('Listed on /store') : t('Removed from /store'));
-      updateStatus();
-    } else {
-      toggle.checked = !toggle.checked;
-      toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
-    }
   });
 
   const storeURL = `${location.origin}/store`;
@@ -7696,21 +7699,20 @@ function renderStoreBar(event) {
       t('Blurb (shown on the store card)'), blurbInput),
     h('div', { class: 'row', style: 'gap:.75rem; align-items:center; flex-wrap:wrap' },
       saveBtn,
-      h('label', {
-        style: 'display:inline-flex; align-items:center; gap:.35rem; cursor:pointer; font-size:.85rem',
-      }, toggle, t('List on /store')),
-      status,
       storeLink,
     ),
   );
+  // Visibility on /store is state-driven for quests (running/paused
+  // → listed; completed/cancelled → hidden), so the summary text
+  // surfaces the price and the current state, not a toggle status.
   const summary = h('summary', {
     style: 'cursor:pointer; list-style:none; display:flex; align-items:center; gap:.6rem',
   },
-    h('span', { style: 'font-size:.7rem; font-weight:800; text-transform:uppercase; letter-spacing:.06em; color:var(--muted)' }, t('Public store')),
+    h('span', { style: 'font-size:.7rem; font-weight:800; text-transform:uppercase; letter-spacing:.06em; color:var(--muted)' }, t('Quest details')),
     h('span', { class: 'muted', style: 'font-size:.85rem' },
-      event.public_for_sale
-        ? t('Listed at {{price}} {{cur}}', { price: priceMajor || '?', cur: currency.toUpperCase() })
-        : t('Sell tickets directly to players via Stripe Checkout.')),
+      priceMajor
+        ? t('{{price}} {{cur}} per ticket', { price: priceMajor, cur: currency.toUpperCase() })
+        : t('No ticket price set yet — players can\'t buy until you save one.')),
   );
   return h('details', { class: 'card share-bar', style: 'padding:.85rem 1rem' },
     summary, body,
@@ -7902,6 +7904,18 @@ async function viewRunDetail(view, runID) {
   // explaining the "no icon" reports.
   const adventureR = await api('/api/admin/adventures/' + encodeURIComponent(event.adventure_slug));
   const adventure = adventureR.ok ? adventureR.body : null;
+
+  // Connect status — only relevant for quests on a marketplace
+  // deployment. We always fetch when public_for_sale is true (the
+  // status endpoint cheaply returns platform_fee_enabled too, so
+  // the caller doesn't need to know the operator's env config).
+  // Fetch fails fall through to "no banner" rather than blocking
+  // the whole page on a transient status-API hiccup.
+  let questConnectStatus = null;
+  if (event.public_for_sale) {
+    const cs = await api(`/api/admin/organizations/${event.org_id}/stripe-connect/status`);
+    if (cs.ok) questConnectStatus = cs.body;
+  }
 
   // Lifecycle action lives at the top — during a live event this is
   // what the arranger reaches for, so it belongs above everything.
@@ -8261,7 +8275,18 @@ async function viewRunDetail(view, runID) {
     renderEventResultsCard(event, teams),
     renderTeamLinksPanel(event, teams),
     renderShareBar(event),
-    renderStoreBar(event),
+    // Connect-not-ready banner: shown for quests on a marketplace
+    // deployment when the org hasn't completed Stripe Connect
+    // onboarding. Surfaces above the store details panel because
+    // the panel's prices etc. are useless without a payments
+    // destination — fixing Connect is the prerequisite.
+    renderConnectBanner(event, questConnectStatus),
+    // The public-store panel is quest-only: regular events don't
+    // ticket-sell, and public_for_sale is now an immutable type
+    // marker set at create_event. Quest creation lives on the new
+    // #quests page, so the panel here is purely for editing an
+    // existing quest's ticket price / blurb / cover after the fact.
+    event.public_for_sale ? renderStoreBar(event) : null,
     h('div', { class: 'grid cols-2' }, teamsCard, eventLogCard),
   ].filter(Boolean));
 }
@@ -15565,6 +15590,15 @@ async function viewSettings(view, tab) {
     // their activity" pair clusters together.
     { id: 'audit',        label: t('Audit'),        visible: isOrgAdmin || isAdmin },
     { id: 'purchases',    label: t('Purchases'),    visible: isOrgUser },
+    // Billing is the org-side payments-out hub: where the org sets
+    // up Stripe Connect to receive ticket revenue from /store
+    // sales. Only org_admins manage it (org_members can author
+    // quests but can't touch the org's bank-account-linked Stripe
+    // account). The whole tab no-ops on self-host where no
+    // platform fee is configured — the panel itself surfaces that
+    // state rather than being hidden, so an arranger evaluating
+    // the platform sees that marketplace mode exists.
+    { id: 'billing',      label: t('Billing'),      visible: isOrgAdmin },
     { id: 'system',       label: t('System'),       visible: isAdmin },
     // Software update is admin-only and carries a badge dot when
     // the cached snapshot says a newer release is available, so the
@@ -15599,6 +15633,7 @@ async function viewSettings(view, tab) {
     case 'admins':       return await viewAdmins(body);
     case 'audit':        return await viewAudit(body);
     case 'purchases':    return await viewPurchases(body);
+    case 'billing':      return await viewSettingsBilling(body);
     case 'integrations': return await viewWebhooks(body);
     case 'system':       return renderSettingsSystem(body);
     case 'software-update': return await viewSettingsSoftwareUpdate(body);
@@ -15717,6 +15752,136 @@ function renderSettingsRoleCard() {
 // renderSettingsSystem houses the operator-tunable knobs: server-wide
 // signup / landing-page toggles plus the components panel. The
 // software-update surface lives in a sibling tab next to this one.
+// viewSettingsBilling renders the org-side Stripe Connect onboarding
+// panel. Org_admin only — the role guard re-checks here for the
+// URL-typing edge case (the tab strip already hides the entry from
+// non-org_admins). The whole tab is meaningful only when the
+// operator has configured a marketplace fee
+// (ZV_PLATFORM_FEE_PERCENT_BPS); on self-host without one, the
+// panel surfaces a "marketplace mode is off" message rather than
+// rendering blank — discoverability beats hiding.
+async function viewSettingsBilling(view) {
+  if (state.me?.role !== 'org_admin') {
+    view.replaceChildren(h('p', { class: 'err' }, t('Org admin only.')));
+    return;
+  }
+  const orgID = state.me.org_id;
+  // Read ?stripe_connect= once and act on it. The query param is
+  // appended by the Connect onboarding redirect URL — see
+  // StartStripeConnect in internal/admin/stripe_connect.go. URL
+  // is cleaned up after the toast so a refresh doesn't re-fire.
+  const returnFlag = new URLSearchParams(location.search).get('stripe_connect');
+
+  const card = h('div', { class: 'card settings-card' });
+  view.replaceChildren(
+    h('h1', {}, t('Billing')),
+    h('p', { class: 'muted' },
+      t('Stripe Connect lets your org receive payouts from /store ticket sales. The platform takes a per-charge fee; the rest lands in your Stripe account.')),
+    card);
+
+  const refresh = async (afterReturn) => {
+    card.replaceChildren(h('p', { class: 'muted' }, t('Loading…')));
+    let r;
+    if (afterReturn) {
+      // Fresh from Stripe-hosted onboarding — force a server-side
+      // sync from Stripe before rendering so the cached charges_enabled
+      // flag matches what the user just finished.
+      r = await api(`/api/admin/organizations/${orgID}/stripe-connect/refresh`, { method: 'POST' });
+    } else {
+      r = await api(`/api/admin/organizations/${orgID}/stripe-connect/status`);
+    }
+    if (!r.ok) {
+      card.replaceChildren(h('p', { class: 'err' }, r.body?.error || t('Failed to load Connect status')));
+      return;
+    }
+    const s = r.body;
+    if (!s.platform_fee_enabled) {
+      card.replaceChildren(
+        h('h2', {}, t('Stripe Connect')),
+        h('p', { class: 'muted' },
+          t('Marketplace mode is off on this server. The operator hasn\'t configured ZV_PLATFORM_FEE_PERCENT_BPS, so /store sales would land directly in the platform account with no per-charge fee. No Connect setup needed.')));
+      return;
+    }
+    if (!s.account_id) {
+      card.replaceChildren(
+        h('h2', {}, t('Stripe Connect')),
+        h('p', { class: 'muted' },
+          t('Connect a Stripe account to start selling quest tickets at /store. Stripe-hosted KYC takes a few minutes; you keep full control of your account afterwards.')),
+        h('div', { class: 'row', style: 'margin-top:.75rem; gap:.5rem' },
+          h('button', { class: 'btn primary', type: 'button',
+            on: { click: () => startConnect(orgID) } },
+            icon(ICONS.compass), t('Connect Stripe'))));
+      return;
+    }
+    if (!s.charges_enabled) {
+      card.replaceChildren(
+        h('h2', {}, t('Stripe Connect')),
+        h('p', {},
+          t('Stripe account {{id}}: setup not yet complete.', { id: s.account_id })),
+        h('p', { class: 'muted', style: 'font-size:.9rem' },
+          t('Stripe still needs more information before your account can accept charges. Resume onboarding to finish.')),
+        h('div', { class: 'row', style: 'margin-top:.75rem; gap:.5rem' },
+          h('button', { class: 'btn primary', type: 'button',
+            on: { click: () => startConnect(orgID) } },
+            t('Resume onboarding')),
+          h('button', { class: 'btn', type: 'button',
+            on: { click: () => refresh(false) } },
+            t('Refresh status'))));
+      return;
+    }
+    // Charges enabled — happy path.
+    card.replaceChildren(
+      h('h2', {}, t('Stripe Connect')),
+      h('p', {},
+        h('span', { class: 'pill success' }, '✓ ', t('Connected — accepting charges')),
+        ' ',
+        h('code', { style: 'margin-left:.5rem; font-size:.85rem' }, s.account_id)),
+      h('p', { class: 'muted', style: 'font-size:.9rem' },
+        s.payouts_enabled
+          ? t('Payouts enabled — money flows to your bank on Stripe\'s standard schedule.')
+          : t('Charges accepted but payouts are paused — usually means a missing bank account. Visit your Stripe dashboard to fix.')),
+      s.synced_at
+        ? h('p', { class: 'muted', style: 'font-size:.8rem; margin-top:.25rem' },
+            t('Last verified {{when}}', { when: formatAuditTS(s.synced_at) }))
+        : null,
+      h('div', { class: 'row', style: 'margin-top:.75rem; gap:.5rem' },
+        h('button', { class: 'btn', type: 'button',
+          on: { click: () => refresh(false) } }, t('Refresh status'))));
+  };
+
+  // First load: if the user just returned from Stripe, force a sync;
+  // otherwise read the cache. Either way, scrub the query param off
+  // the URL so a refresh doesn't keep re-syncing.
+  if (returnFlag) {
+    if (returnFlag === 'return') toastOk(t('Welcome back from Stripe — checking status…'));
+    history.replaceState(null, '', location.pathname + location.hash);
+    await refresh(returnFlag === 'return');
+  } else {
+    await refresh(false);
+  }
+}
+
+// startConnect kicks off (or resumes) the Stripe Connect onboarding
+// flow by minting a fresh hosted-onboarding URL and redirecting the
+// browser to it. The server tolerates a stale account_id — calling
+// /start when one already exists just returns a new account_link
+// for the same account.
+async function startConnect(orgID) {
+  const r = await api(`/api/admin/organizations/${orgID}/stripe-connect/start`, { method: 'POST' });
+  if (!r.ok) {
+    toastErr(r.body?.error || t('Failed to start Stripe Connect'));
+    return;
+  }
+  if (!r.body?.url) {
+    toastErr(t('Stripe didn\'t return an onboarding URL'));
+    return;
+  }
+  // Hard navigation — Stripe-hosted KYC isn't an iframe-friendly
+  // surface. The browser comes back via the configured ReturnURL
+  // and viewSettingsBilling picks up where we left off.
+  location.href = r.body.url;
+}
+
 // Admin-only — the tab strip already hides this entry from
 // non-admins, but the role guard stays for the URL-typing edge case.
 function renderSettingsSystem(view) {

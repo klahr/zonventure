@@ -161,6 +161,17 @@ func (h *Handlers) PaymentsWebhook(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "handler failed", http.StatusInternalServerError)
 			return
 		}
+	case payments.EventConnectedAccountUpdated:
+		// Marketplace-only: the connected account's verification
+		// state changed (charges_enabled, payouts_enabled, etc.).
+		// Sync the cache so the listing query and the quest-detail
+		// banner reflect Stripe's reality without waiting for the
+		// arranger to hit the manual refresh button.
+		if err := h.handleConnectedAccountUpdated(r.Context(), event); err != nil {
+			logx.Error("payments.webhook.account_updated", "event_id", event.ID, "err", err.Error())
+			http.Error(w, "handler failed", http.StatusInternalServerError)
+			return
+		}
 	default:
 		logx.Debug("payments.webhook.unhandled", "event_id", event.ID, "provider", event.Provider)
 	}

@@ -22,6 +22,8 @@ import (
 	"git.sr.ht/~klahr/zv/internal/payments"
 
 	stripego "github.com/stripe/stripe-go/v82"
+	"github.com/stripe/stripe-go/v82/account"
+	"github.com/stripe/stripe-go/v82/accountlink"
 	portalsession "github.com/stripe/stripe-go/v82/billingportal/session"
 	checkoutsession "github.com/stripe/stripe-go/v82/checkout/session"
 	"github.com/stripe/stripe-go/v82/refund"
@@ -34,9 +36,12 @@ type Provider struct {
 	WebhookSecret string
 }
 
-// Compile-time assertion that *Provider satisfies the interface.
+// Compile-time assertion that *Provider satisfies both interfaces.
 // Catches signature drift if either side changes shape.
-var _ payments.Provider = (*Provider)(nil)
+var (
+	_ payments.Provider            = (*Provider)(nil)
+	_ payments.MarketplaceProvider = (*Provider)(nil)
+)
 
 // New returns a configured Stripe provider, or nil when either
 // credential is missing. Returning nil rather than an error lets
@@ -113,6 +118,23 @@ func (p *Provider) CreateCheckout(ctx context.Context, params payments.CheckoutP
 		}
 	}
 
+	// Marketplace path: the charge is destination-charged into a
+	// connected Standard account, with the platform's application
+	// fee captured off the top. Both fields must be set together —
+	// a non-empty ConnectedAccountID with no fee would produce a
+	// "free passthrough" charge that benefits nobody, and a fee
+	// without a destination has nowhere to send the rest of the
+	// money. Caller is expected to honour both-or-neither; we
+	// defensively branch on the destination.
+	if params.ConnectedAccountID != "" {
+		csParams.PaymentIntentData = &stripego.CheckoutSessionPaymentIntentDataParams{
+			ApplicationFeeAmount: stripego.Int64(params.ApplicationFeeCents),
+			TransferData: &stripego.CheckoutSessionPaymentIntentDataTransferDataParams{
+				Destination: stripego.String(params.ConnectedAccountID),
+			},
+		}
+	}
+
 	// stripe-go doesn't accept ctx on CheckoutSession.New; deadline
 	// is enforced by the package-level HTTP client. Caller-supplied
 	// cancellation is the right fix for the SDK to expose, but for
@@ -185,6 +207,24 @@ func (p *Provider) VerifyAndParseWebhook(body []byte, headers http.Header) (paym
 			detail.CustomerID = ch.Customer.ID
 		}
 		out.Charge = &detail
+
+	case "account.updated":
+		// Connect Standard accounts emit account.updated through
+		// the platform webhook endpoint when their verification or
+		// capability state changes. The event body is the account
+		// itself; the load-bearing fields are charges_enabled and
+		// payouts_enabled, which the admin layer caches into the
+		// org row so the listing query stays cheap.
+		var a stripego.Account
+		if err := json.Unmarshal(ev.Data.Raw, &a); err != nil {
+			return payments.Event{}, fmt.Errorf("decode account: %w", err)
+		}
+		out.Type = payments.EventConnectedAccountUpdated
+		out.ConnectedAccount = &payments.ConnectedAccount{
+			ID:             a.ID,
+			ChargesEnabled: a.ChargesEnabled,
+			PayoutsEnabled: a.PayoutsEnabled,
+		}
 	}
 	return out, nil
 }
@@ -193,6 +233,13 @@ func (p *Provider) VerifyAndParseWebhook(body []byte, headers http.Header) (paym
 // is the default — the more accurate ReasonFraudulent / ReasonDuplicate
 // distinctions live in the Stripe dashboard and don't have a
 // generic counterpart in payments.RefundParams yet.
+//
+// For destination-charged refunds (RefundApplicationFee=true), we
+// set ReverseTransfer so the connected account's transfer is
+// undone proportionally and RefundApplicationFee so the platform
+// returns its cut. The original charge always lives on the
+// platform account (that's where destination charges originate),
+// so the refund call doesn't need a Stripe-Account header.
 func (p *Provider) Refund(ctx context.Context, params payments.RefundParams) (payments.Refund, error) {
 	if params.ChargeID == "" {
 		return payments.Refund{}, errors.New("stripe: missing charge id")
@@ -200,15 +247,106 @@ func (p *Provider) Refund(ctx context.Context, params payments.RefundParams) (pa
 	stripego.Key = p.SecretKey
 	_ = ctx
 
-	rf, err := refund.New(&stripego.RefundParams{
+	rp := &stripego.RefundParams{
 		Charge: stripego.String(params.ChargeID),
-	})
+	}
+	if params.RefundApplicationFee {
+		rp.RefundApplicationFee = stripego.Bool(true)
+		rp.ReverseTransfer = stripego.Bool(true)
+	}
+	rf, err := refund.New(rp)
 	if err != nil {
 		return payments.Refund{}, err
 	}
 	return payments.Refund{
 		ID:     rf.ID,
 		Status: string(rf.Status),
+	}, nil
+}
+
+/* ---------------- MarketplaceProvider ---------------- */
+
+// CreateConnectedAccount creates a Standard Connect account. The
+// arranger keeps full control of the resulting Stripe account —
+// they accept Stripe's TOS during onboarding, see Stripe's brand
+// in their dashboard, and pay normal Stripe processing fees on
+// their side. The platform pays nothing extra per account.
+//
+// Country is ISO 3166-1 alpha-2; an empty value means "let Stripe
+// infer from the platform's default", which works for most
+// single-country deployments.
+func (p *Provider) CreateConnectedAccount(ctx context.Context, params payments.ConnectedAccountParams) (string, error) {
+	stripego.Key = p.SecretKey
+	_ = ctx
+
+	ap := &stripego.AccountParams{
+		Type: stripego.String(string(stripego.AccountTypeStandard)),
+	}
+	if params.Email != "" {
+		ap.Email = stripego.String(params.Email)
+	}
+	if params.Country != "" {
+		ap.Country = stripego.String(strings.ToUpper(params.Country))
+	}
+	if params.DisplayName != "" {
+		ap.BusinessProfile = &stripego.AccountBusinessProfileParams{
+			Name: stripego.String(params.DisplayName),
+		}
+	}
+	a, err := account.New(ap)
+	if err != nil {
+		return "", err
+	}
+	return a.ID, nil
+}
+
+// CreateAccountLink mints a hosted onboarding URL the arranger
+// follows to complete (or resume) Connect onboarding. The link is
+// single-use — once the user clicks it, follow-up retries need a
+// fresh link generated server-side.
+func (p *Provider) CreateAccountLink(ctx context.Context, params payments.AccountLinkParams) (string, error) {
+	if params.AccountID == "" {
+		return "", errors.New("stripe: missing account id")
+	}
+	if params.RefreshURL == "" || params.ReturnURL == "" {
+		return "", errors.New("stripe: missing refresh/return URL")
+	}
+	stripego.Key = p.SecretKey
+	_ = ctx
+
+	link, err := accountlink.New(&stripego.AccountLinkParams{
+		Account:    stripego.String(params.AccountID),
+		RefreshURL: stripego.String(params.RefreshURL),
+		ReturnURL:  stripego.String(params.ReturnURL),
+		Type:       stripego.String("account_onboarding"),
+	})
+	if err != nil {
+		return "", err
+	}
+	return link.URL, nil
+}
+
+// GetConnectedAccount fetches the live status flags from Stripe.
+// Called from the manual "refresh" affordance on the Connect
+// settings page and (eventually) from the account.updated webhook
+// handler. Returns ChargesEnabled / PayoutsEnabled which the
+// caller writes back into the local DB cache so subsequent
+// requests don't round-trip.
+func (p *Provider) GetConnectedAccount(ctx context.Context, accountID string) (payments.ConnectedAccount, error) {
+	if accountID == "" {
+		return payments.ConnectedAccount{}, errors.New("stripe: missing account id")
+	}
+	stripego.Key = p.SecretKey
+	_ = ctx
+
+	a, err := account.GetByID(accountID, nil)
+	if err != nil {
+		return payments.ConnectedAccount{}, err
+	}
+	return payments.ConnectedAccount{
+		ID:             a.ID,
+		ChargesEnabled: a.ChargesEnabled,
+		PayoutsEnabled: a.PayoutsEnabled,
 	}, nil
 }
 

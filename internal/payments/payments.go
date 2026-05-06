@@ -101,6 +101,15 @@ type CheckoutParams struct {
 	CollectAddress  bool
 	AutoTax         bool
 	InvoiceCreation bool
+
+	// Marketplace fields — set together when the charge should be
+	// destination-charged: money lands in the connected account
+	// (ConnectedAccountID) first, with ApplicationFeeCents captured
+	// by the platform. Both empty/zero leaves the charge on the
+	// platform account directly (the regular flow). Providers that
+	// don't satisfy MarketplaceProvider ignore these.
+	ConnectedAccountID  string
+	ApplicationFeeCents int64
 }
 
 // CheckoutSession is what CreateCheckout returns. The buyer is
@@ -118,9 +127,16 @@ type CheckoutSession struct {
 type EventType string
 
 const (
-	EventCheckoutCompleted EventType = "checkout.completed"
-	EventChargeRefunded    EventType = "charge.refunded"
-	EventOther             EventType = "other"
+	EventCheckoutCompleted        EventType = "checkout.completed"
+	EventChargeRefunded           EventType = "charge.refunded"
+	// EventConnectedAccountUpdated fires when a connected
+	// marketplace account's verification / capability state
+	// changes. The webhook handler uses it to refresh the
+	// stripe_connect_charges_enabled cache without waiting for
+	// the next manual refresh. Stripe Connect-specific; non-
+	// marketplace providers never emit it.
+	EventConnectedAccountUpdated  EventType = "account.updated"
+	EventOther                    EventType = "other"
 )
 
 // Event is the parsed shape of an incoming webhook. Provider names
@@ -135,9 +151,10 @@ type Event struct {
 	Metadata map[string]string
 
 	// Exactly one of these is populated based on Type. EventOther
-	// leaves both nil.
-	Checkout *CheckoutDetail
-	Charge   *ChargeDetail
+	// leaves them all nil.
+	Checkout         *CheckoutDetail
+	Charge           *ChargeDetail
+	ConnectedAccount *ConnectedAccount
 }
 
 // CheckoutDetail is the post-payment view of a CheckoutSession.
@@ -168,6 +185,19 @@ type ChargeDetail struct {
 // modelled — every refund we issue is full-amount today.
 type RefundParams struct {
 	ChargeID string
+
+	// RefundApplicationFee, when true on a destination-charged
+	// refund, proportionally claws back the platform's
+	// application fee from the connected account so the platform
+	// doesn't profit from refunded sales. Marketplace-specific;
+	// providers that don't satisfy MarketplaceProvider ignore.
+	RefundApplicationFee bool
+
+	// ConnectedAccountID names the connected account the original
+	// charge landed in. Required when RefundApplicationFee is true
+	// because the refund call has to be issued against the
+	// connected account, not the platform account.
+	ConnectedAccountID string
 }
 
 // Refund is the post-call view of a refund. Status is provider-

@@ -64,6 +64,14 @@ type Handlers struct {
 	// option (the right default for dev clones) and the webhook
 	// route returns 503.
 	Provider payments.Provider
+	// PlatformFee is the per-charge marketplace fee for /store
+	// quest tickets. Read from ZV_PLATFORM_FEE_* at startup; zero-
+	// value disables the marketplace flow entirely (no Connect
+	// onboarding gate, no application_fee_amount on checkout, no
+	// stripe_connect_charges_enabled filter on the listing). The
+	// right posture for self-host: the operator runs the platform
+	// for themselves and pays nobody a cut.
+	PlatformFee payments.PlatformFee
 	// SecureCookie is the operator's force-secure override, mirrored
 	// from server.Config. Cookie-emitting paths in this package pass
 	// it to auth.CookieSecure for parity with the auth/player handlers.

@@ -18,6 +18,7 @@ import (
 
 	"git.sr.ht/~klahr/zv/internal/adventure"
 	"git.sr.ht/~klahr/zv/internal/httpx"
+	"git.sr.ht/~klahr/zv/internal/payments"
 	"git.sr.ht/~klahr/zv/internal/storage"
 	"git.sr.ht/~klahr/zv/internal/ws"
 	"github.com/go-chi/chi/v5"
@@ -37,6 +38,13 @@ type Handlers struct {
 	// QR code, principally). Forwarded-host headers are NOT
 	// consulted — see buildResetLink for the security rationale.
 	PublicURL string
+	// PlatformFee gates the marketplace-aware /store filter: when
+	// the operator has configured a platform fee, only quests whose
+	// org has completed Stripe Connect onboarding are listed
+	// (because un-onboarded quests can't actually take a payment).
+	// Zero-value = no marketplace = no extra filter, which is the
+	// right posture for self-host.
+	PlatformFee payments.PlatformFee
 }
 
 type puzzleDTO struct {

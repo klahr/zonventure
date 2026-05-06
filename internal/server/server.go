@@ -288,6 +288,10 @@ func New(cfg Config) http.Handler {
 		Mailer:        mail,
 		PublicURL:     cfg.PublicURL,
 		Provider:      paymentProvider,
+		// Platform fee is read once at startup and held on the
+		// handler set. Zero-value (no env vars) keeps self-host
+		// inert: no marketplace flow, no Connect onboarding gate.
+		PlatformFee:   payments.PlatformFeeFromEnv(),
 		SecureCookie:  cfg.SecureCookie,
 		Components:    cfg.Components,
 		Storage:       store,
@@ -295,7 +299,14 @@ func New(cfg Config) http.Handler {
 		TeamImporters: importers,
 		Updates:       updateSvc,
 	}
-	publicH := &public.Handlers{DB: cfg.DB, Lib: cfg.Library, Hub: hub, Storage: store, PublicURL: cfg.PublicURL}
+	publicH := &public.Handlers{
+		DB: cfg.DB, Lib: cfg.Library, Hub: hub, Storage: store, PublicURL: cfg.PublicURL,
+		// Same PlatformFee as adminH so the /store listing filter
+		// agrees with the BuyTicket gate: an un-onboarded quest
+		// neither lists nor accepts purchases when the marketplace
+		// fee is configured.
+		PlatformFee: adminH.PlatformFee,
+	}
 
 	// Health probe used by load balancers and `depends_on: condition:
 	// service_healthy` in compose. Pings the DB so we report unhealthy
@@ -777,6 +788,14 @@ func New(cfg Config) http.Handler {
 		// Atomic ownership transfer — promotes a member to org_admin
 		// and demotes the calling org_admin to org_member in one tx.
 		r.Post("/organizations/{orgID}/transfer-ownership", adminH.TransferOwnership)
+
+		// Stripe Connect onboarding for the /store marketplace flow.
+		// Each handler re-checks org_admin-of-named-org or global
+		// admin; rejecting silently here would leak that endpoints
+		// exist to org members of other orgs.
+		r.Post("/organizations/{orgID}/stripe-connect/start", adminH.StartStripeConnect)
+		r.Get("/organizations/{orgID}/stripe-connect/status", adminH.GetStripeConnectStatus)
+		r.Post("/organizations/{orgID}/stripe-connect/refresh", adminH.RefreshStripeConnectStatus)
 
 		// Adventure authoring. Available to every authoring tier —
 		// handlers enforce ownership inline (admin edits the global

@@ -92,20 +92,35 @@ const storeItemSelect = `
 	LEFT JOIN adventures a ON a.org_id = e.org_id AND a.slug = e.adventure_slug
 `
 
-// storeItemRowFilter is the WHERE clause shared by listing + single-
-// item lookup. A row is "for sale right now" when the event is
+// storeItemRowFilterBase is the always-on portion of the listing
+// WHERE clause. A row is "for sale right now" when the event is
 // publicly listed, has a non-NULL price, and is in a state where
 // fresh tickets make sense — running or paused. 'pending',
 // 'scheduled', 'completed', 'cancelled' are deliberately excluded.
-const storeItemRowFilter = `
+const storeItemRowFilterBase = `
 	WHERE e.public_for_sale
 	  AND e.ticket_price_cents IS NOT NULL
 	  AND e.state IN ('running', 'paused')
 `
 
+// storeItemRowFilter returns the WHERE clause to use given the
+// platform-fee config. When a platform fee is configured (= the
+// hosted instance's marketplace mode), the listing also requires
+// the org to have completed Stripe Connect onboarding so the
+// purchase flow can actually take a payment. Self-host (no fee,
+// no marketplace) renders the base filter only.
+func (h *Handlers) storeItemRowFilter() string {
+	if h.PlatformFee.Enabled() {
+		return storeItemRowFilterBase + `
+		  AND o.stripe_connect_charges_enabled
+		`
+	}
+	return storeItemRowFilterBase
+}
+
 func (h *Handlers) loadStoreItems(ctx context.Context) ([]StoreItemDTO, error) {
 	rows, err := h.DB.QueryContext(ctx,
-		storeItemSelect+storeItemRowFilter+`
+		storeItemSelect+h.storeItemRowFilter()+`
 		ORDER BY o.name, e.name, e.id`)
 	if err != nil {
 		return nil, err
@@ -124,7 +139,7 @@ func (h *Handlers) loadStoreItems(ctx context.Context) ([]StoreItemDTO, error) {
 
 func (h *Handlers) loadStoreItem(ctx context.Context, eventID int64) (StoreItemDTO, error) {
 	row := h.DB.QueryRowContext(ctx,
-		storeItemSelect+storeItemRowFilter+` AND e.id = $1`, eventID)
+		storeItemSelect+h.storeItemRowFilter()+` AND e.id = $1`, eventID)
 	return scanStoreItem(row)
 }
 

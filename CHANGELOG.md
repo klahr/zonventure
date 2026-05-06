@@ -13,6 +13,110 @@ The repository, Go module, and CLI binary are named `zv`; the product is
 
 ### Added
 
+- **Stripe Connect marketplace flow.** The hosted instance can now
+  charge a per-ticket platform fee on /store sales and route the
+  rest of the money straight to the selling org's Stripe account.
+  Self-host stays inert — the entire path is gated on
+  `ZV_PLATFORM_FEE_PERCENT_BPS` / `ZV_PLATFORM_FEE_MIN_CENTS`,
+  both default 0, no Connect onboarding required, no behaviour
+  change on existing deployments. Fee formula is
+  `max(percent_of_price, floor)` so a flat €5 doesn't crush an €8
+  ticket and a flat percentage doesn't trail off on a €120
+  corporate ticket; matches Eventbrite / Tito conventions.
+
+  Implementation lives behind a new optional `MarketplaceProvider`
+  interface that extends `payments.Provider` with three methods:
+  `CreateConnectedAccount`, `CreateAccountLink`, `GetConnectedAccount`.
+  Stripe satisfies both interfaces (compile-time-asserted); other
+  providers (the simulated dev impl, future Mollie / Paddle if/when
+  they land) only satisfy Provider and are unaffected. Marketplace
+  bits on `CheckoutParams` (`ConnectedAccountID`,
+  `ApplicationFeeCents`) and `RefundParams` (`RefundApplicationFee`,
+  `ConnectedAccountID`) are ignored by non-marketplace providers.
+  The Stripe impl wires `PaymentIntentData.{TransferData,
+  ApplicationFeeAmount}` for destination charges and
+  `RefundApplicationFee + ReverseTransfer` for proportional
+  application-fee clawback on refunds.
+
+  Schema in `0049_stripe_connect.sql`: `organizations` gains
+  `stripe_connect_account_id` (unique partial index),
+  `stripe_connect_charges_enabled`, `stripe_connect_payouts_enabled`,
+  `stripe_connect_synced_at`. `ticket_purchases` gains
+  `application_fee_cents BIGINT NOT NULL DEFAULT 0` so the per-row
+  fee is captured at checkout creation (not at webhook time) — a
+  fee-formula change later doesn't retroactively alter what was
+  charged on already-completed sales.
+
+  Org-side onboarding is **lazy** — quest creation works without
+  Connect (the quest just stays hidden from /store and /store/buy
+  refuses with 409 until the org finishes setup). Three new admin
+  endpoints under `/api/admin/organizations/{orgID}/stripe-connect/`:
+  `start` (idempotent: creates the account on first call, mints
+  fresh hosted-onboarding URL on every call), `status` (cached
+  read), `refresh` (force-syncs from Stripe). All three gated to
+  org_admins of the named org plus global admins.
+
+  Settings → **Billing** is the new tab where the arranger
+  manages it. Four states are surfaced explicitly: marketplace
+  off (self-host), no account yet, onboarding incomplete, and
+  connected & accepting. The `?stripe_connect=return` query
+  param the Stripe redirect URL appends triggers a forced
+  server-side sync + welcome toast on landing. Quest detail
+  pages get a "Stripe Connect required" banner when the seller
+  org isn't onboarded — owner org_admins see an actionable deep
+  link to Settings → Billing; cross-org viewers see a softer "the
+  seller org needs to finish setup" line.
+
+  The /store listing query and `/store/buy` are both
+  marketplace-aware: when the platform fee is configured, the
+  WHERE filters out un-onboarded quests, and BuyTicket forwards
+  the connected account id + computed application fee into the
+  Checkout call. `account.updated` webhook events update the
+  cache directly from the payload (no extra Stripe API call) so
+  the listing reflects Stripe's reality without waiting for the
+  manual refresh button. Operator runbook for turning the flow
+  on lives at the bottom of the Stripe Connect section in
+  SELFHOSTING.md.
+
+- **Quests** — a tailored arranger surface for always-on, ticket-
+  purchased events. Backend rows are still `events` with
+  `public_for_sale=true`; the new "Quests" sidebar entry partitions
+  them into a dedicated list (`#quests`) so the regular `#events`
+  page stays focused on operator-scheduled events the org runs
+  itself. ListEvents gains a `?public_for_sale=true|false` filter
+  param backing the partition; the Events page passes `false`,
+  the Quests page passes `true`.
+
+  Quest creation is a single form (adventure picker, name,
+  blurb, ticket price, currency, players-per-ticket, attestation,
+  optional cover image) that chains POST /events → PATCH
+  public-store fields → optional cover upload → POST /events/start
+  in one click. The quest auto-starts so it's immediately listed
+  at /store; teams arrive later via ticket purchases. The
+  empty-team start guard is relaxed for `public_for_sale=true`
+  events — without this, every quest would 409 at start since
+  there's no team to add yet.
+
+  `public_for_sale` is now an **immutable type marker** set at
+  CreateEvent — UpdateEvent refuses to flip the flag with 409 so
+  an arranger can't silently turn a regular event into a quest
+  mid-flight (or vice versa). Quest detail pages reuse the
+  existing event-detail view with rebranding: a "Quest" pill in
+  the lifecycle bar, the Reschedule action hidden (quests are
+  always-on), and a quest-only edit panel for ticket price /
+  blurb / cover (the legacy "List on /store" toggle on the event-
+  detail page is gone — it was a footgun once the type became
+  immutable). Visibility on /store is state-driven: pause to
+  delist temporarily, cancel to kill.
+
+  MCP coverage: `create_event` accepts `public_for_sale` so an
+  LLM can author quests; `start_event` inherits the relaxed
+  empty-team guard automatically. `describe_event_lifecycle`
+  documents the differences in the transition table and a
+  dedicated "Quests vs regular events" section. The whole MCP
+  surface is uniform across regular events and quests since
+  they're the same DB rows differing only in the type marker.
+
 - **Simulated payment provider.** Second `payments.Provider` impl
   alongside Stripe, picked via `ZV_PAYMENTS_PROVIDER=simulated`.
   Auto-confirms checkouts in-process: the buyer hits a tiny

@@ -111,17 +111,45 @@ func (h *Handlers) BuyTicket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Marketplace routing: when the platform fee is configured
+	// (= the hosted instance), the charge must destination-charge
+	// into the org's connected Stripe account with the platform
+	// fee captured off the top. Self-host (no fee) skips this
+	// entirely and the charge lands on the platform account.
+	var (
+		connectedAccountID string
+		applicationFee     int64
+	)
+	if h.PlatformFee.Enabled() {
+		acct, err := h.stripeConnectAccountForEvent(r.Context(), req.EventID)
+		if err != nil {
+			if errors.Is(err, ErrConnectNotReady) {
+				// The /store listing filter should have hidden this
+				// quest already, but a stale tab or someone hitting
+				// the API directly can race past it. Return a clear
+				// 409 the buyer's UI can translate into "this quest
+				// isn't selling tickets right now."
+				httpx.Error(w, http.StatusConflict, "this quest is not currently selling tickets")
+				return
+			}
+			httpx.ServerErr(w, http.StatusInternalServerError, "connect account lookup failed", err)
+			return
+		}
+		connectedAccountID = acct
+		applicationFee = h.PlatformFee.Compute(priceCents.Int64)
+	}
+
 	var purchaseID int64
 	if err := h.DB.QueryRowContext(r.Context(), `
-		INSERT INTO ticket_purchases(event_id, buyer_email, team_size, amount_cents, currency)
-		VALUES ($1, $2, $3, $4, $5) RETURNING id
-	`, req.EventID, email, teamSize, priceCents.Int64, currency).Scan(&purchaseID); err != nil {
+		INSERT INTO ticket_purchases(event_id, buyer_email, team_size, amount_cents, currency, application_fee_cents)
+		VALUES ($1, $2, $3, $4, $5, $6) RETURNING id
+	`, req.EventID, email, teamSize, priceCents.Int64, currency, applicationFee).Scan(&purchaseID); err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "purchase create failed", err)
 		return
 	}
 
 	productName := storeProductName(eventName, advTitle, advSlug, teamSize)
-	url, sessID, err := h.createTicketCheckoutSession(r.Context(), purchaseID, productName, currency, priceCents.Int64, email)
+	url, sessID, err := h.createTicketCheckoutSession(r.Context(), purchaseID, productName, currency, priceCents.Int64, email, connectedAccountID, applicationFee)
 	if err != nil {
 		// Mark the orphan as failed so the listing pages don't see a
 		// stale 'pending' that's already dead provider-side.
@@ -175,6 +203,8 @@ func (h *Handlers) createTicketCheckoutSession(
 	productName, currency string,
 	amountCents int64,
 	buyerEmail string,
+	connectedAccountID string,
+	applicationFeeCents int64,
 ) (string, string, error) {
 	publicURL := strings.TrimRight(h.PublicURL, "/")
 	if publicURL == "" {
@@ -190,6 +220,13 @@ func (h *Handlers) createTicketCheckoutSession(
 		Metadata: map[string]string{
 			"zv_ticket_purchase_id": fmt.Sprintf("%d", purchaseID),
 		},
+		// Marketplace routing — both empty/zero leaves the charge on
+		// the platform account (self-host posture). When set, the
+		// Stripe impl wires up PaymentIntentData.{TransferData,
+		// ApplicationFeeAmount} so the money lands in the connected
+		// account and the platform takes its cut off the top.
+		ConnectedAccountID:  connectedAccountID,
+		ApplicationFeeCents: applicationFeeCents,
 	})
 	if err != nil {
 		return "", "", err
