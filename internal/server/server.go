@@ -40,7 +40,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 )
 
-//go:embed web/play.html web/play-sw.js web/play-queue.js web/arrange.html web/live.html web/recap.html web/i18n.js web/favicon.svg web/privacy.html web/terms.html web/manual.html web/landing.html web/pricing.html web/store.html web/store-event.html web/topbar.css web/topbar.js web/fsmap.css web/jsqr.js web/404.html web/robots.txt web/sitemap.xml
+//go:embed web/play.html web/play-sw.js web/play-queue.js web/arrange.html web/live.html web/recap.html web/i18n.js web/favicon.svg web/privacy.html web/terms.html web/manual.html web/landing.html web/pricing.html web/store.html web/store-event.html web/topbar.css web/topbar.js web/fsmap.css web/jsqr.js web/404.html web/robots.txt web/sitemap.xml web/locales/web/*.json web/locales/landing/*.json
 var webFS embed.FS
 
 // Config is the bag of knobs New needs.
@@ -152,6 +152,14 @@ func New(cfg Config) http.Handler {
 	// the override is in effect.
 	if err := loadOverrides(cfg.WebOverrideDir); err != nil {
 		panic("web overrides: " + err.Error())
+	}
+	// Render the /i18n.js bytes from the embedded JSON locales (or
+	// the override copy of i18n.js, if loadOverrides above pointed
+	// at one). landingLocales itself is populated in package
+	// init() so the override-merge inside loadOverrides has
+	// something to merge into.
+	if err := initI18nFromJSON(); err != nil {
+		panic("i18n init: " + err.Error())
 	}
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
@@ -401,7 +409,7 @@ func New(cfg Config) http.Handler {
 	})
 
 	// Shared i18n dictionary + helpers, loaded by all three entry points.
-	r.Get("/i18n.js", serveAsset("web/i18n.js", "application/javascript; charset=utf-8"))
+	r.Get("/i18n.js", serveRenderedI18n())
 	// Favicon: single SVG served at both the conventional /favicon.ico
 	// path and the explicit /favicon.svg so old browsers that sniff
 	// the extension don't 404. SVG is tiny, scales for any device.

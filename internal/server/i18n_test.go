@@ -1,29 +1,33 @@
 package server
 
 import (
-	"bytes"
+	"encoding/json"
 	"regexp"
 	"strings"
 	"testing"
 )
 
 // TestI18nCompleteness checks that every English string passed to the
-// `t(...)` helper in the embedded HTML/JS has a Swedish translation in
-// i18n.js. Missing keys still render in English (the runtime falls
-// through), but a translator scanning the dictionary should see the
-// scope of work, and a forgotten key during refactors is exactly the
-// thing this test catches.
+// `t(...)` helper in the embedded HTML/JS has a Swedish translation
+// in the JSON locale source-of-truth (web/locales/web/sv.json).
+// Missing keys still render in English at runtime (the t() helper
+// falls through), but a translator scanning the dictionary should
+// see the scope of work, and a forgotten key during refactors is
+// exactly the thing this test catches.
 //
 // Limitations: only finds string-literal arguments to t(); a dynamic
 // argument like t(state.flag) escapes the lexer. Those are rare and
 // listed in the audit comment below.
 func TestI18nCompleteness(t *testing.T) {
 	pages := []string{"web/arrange.html", "web/play.html", "web/live.html", "web/recap.html"}
-	i18n, err := webFS.ReadFile("web/i18n.js")
+	raw, err := webFS.ReadFile("web/locales/web/sv.json")
 	if err != nil {
-		t.Fatalf("read i18n.js: %v", err)
+		t.Fatalf("read sv.json: %v", err)
 	}
-	i18nText := string(i18n)
+	var sv map[string]string
+	if err := json.Unmarshal(raw, &sv); err != nil {
+		t.Fatalf("parse sv.json: %v", err)
+	}
 
 	// Regex matches the first string-literal argument to t(...). Both
 	// single and double quoted; backslash escapes recognised so an
@@ -63,7 +67,7 @@ func TestI18nCompleteness(t *testing.T) {
 		if skip[k] {
 			continue
 		}
-		if !i18nHasKey(i18nText, k) {
+		if _, ok := sv[k]; !ok {
 			missing = append(missing, k)
 		}
 	}
@@ -83,20 +87,6 @@ func TestI18nCompleteness(t *testing.T) {
 		}
 		t.Errorf("i18n.js is missing %d English string(s) — see log above", len(missing))
 	}
-}
-
-// i18nHasKey reports whether i18n.js contains the given English key
-// as a JS string literal. We try the quoted shapes the file actually
-// uses and accept either single-quoted-with-escapes or
-// double-quoted-with-escapes.
-func i18nHasKey(i18n, key string) bool {
-	if bytes.Contains([]byte(i18n), []byte("'"+escapeForSingle(key)+"'")) {
-		return true
-	}
-	if bytes.Contains([]byte(i18n), []byte(`"`+escapeForDouble(key)+`"`)) {
-		return true
-	}
-	return false
 }
 
 func unescapeSingle(s string) string { return jsUnescape(s) }
@@ -132,12 +122,3 @@ func jsUnescape(s string) string {
 	return b.String()
 }
 
-func escapeForSingle(s string) string {
-	r := strings.NewReplacer(`\`, `\\`, `'`, `\'`)
-	return r.Replace(s)
-}
-
-func escapeForDouble(s string) string {
-	r := strings.NewReplacer(`\`, `\\`, `"`, `\"`)
-	return r.Replace(s)
-}

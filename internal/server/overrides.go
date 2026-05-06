@@ -22,12 +22,13 @@ var webOverrideDir string
 // HTML templates and locale strings. The dir's layout flattens the
 // embed paths: drop a landing.html in the override dir to shadow the
 // embedded one; landing-locales.json (optional) merges per-locale
-// field overrides on top of the compiled-in defaults.
+// field overrides on top of the embedded defaults that package init()
+// loaded from web/locales/landing/<lang>.json.
 //
-// Called once from server.New(). A missing dir is treated as "no
-// override configured" rather than fatal so a deploy that renames or
-// hasn't yet mounted the dir doesn't take the service down — it just
-// serves the embedded defaults.
+// A missing dir is treated as "no override configured" rather than
+// fatal so a deploy that renames or hasn't yet mounted the dir
+// doesn't take the service down — it just serves the embedded
+// defaults.
 func loadOverrides(dir string) error {
 	if dir == "" {
 		return nil
