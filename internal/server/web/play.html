@@ -1508,11 +1508,12 @@ async function api(path, opts = {}) {
   });
   let body = null;
   if (res.status !== 204) { try { body = await res.json(); } catch {} }
-  // Auto-translate the server's error message — t() falls through
-  // to the English literal when no translation exists, so this
-  // upgrades surfaces without breaking anything.
+  // Auto-translate the server's error message. Prefers body.code
+  // (looked up under errors.<code>) for handlers that emit one;
+  // falls back to translating the English text directly when no
+  // code is attached. See tError in i18n.js for the routing rules.
   if (body && typeof body.error === 'string') {
-    body.error = t(body.error);
+    body.error = tError(body.code, body.error);
   }
   return { status: res.status, body };
 }

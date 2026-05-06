@@ -145,6 +145,40 @@
     }
   }
 
+  // tError translates a server error response. The server attaches a
+  // stable `code` on errors that the UI is expected to act on (most
+  // 4xx responses with structured payloads do); the client looks up
+  // `errors.<code>` for the localised message. Unknown codes fall
+  // back to translating the server's English text directly, which
+  // means handlers without an attached code keep working — adding a
+  // code is a per-handler upgrade, not a big-bang migration.
+  //
+  // Every case in the switch corresponds to a code emitted somewhere
+  // under internal/admin or internal/auth; adding a new code there
+  // requires adding a case here AND the matching `errors.<code>` key
+  // to web/locales/web/<lang>.json.
+  function tError(code, fallback) {
+    switch (code) {
+      case 'verification_required':      return t('errors.verification_required');
+      case 'assignment_required':        return t('errors.assignment_required');
+      case 'minor_attestation_required': return t('errors.minor_attestation_required');
+      case 'sso_required':               return t('errors.sso_required');
+      case 'password_not_set':           return t('errors.password_not_set');
+      case 'signup_disabled':            return t('errors.signup_disabled');
+      // totp_required is a 200-OK continuation marker (the login flow
+      // forks into the second-factor challenge), not a user-facing
+      // error — callers shouldn't reach here, but if they do we have
+      // nothing to render.
+      case 'totp_required':              return fallback || '';
+      default:
+        // No known code: opportunistically translate the server's
+        // English text. Same fall-through `t()` exhibits when no
+        // translation entry exists, just routed via the explicit
+        // fallback so the caller passes the string in only once.
+        return fallback != null ? t(fallback) : '';
+    }
+  }
+
   function setLang(code) {
     if (!DICT[code] || code === currentLang) return;
     currentLang = code;
@@ -177,9 +211,11 @@
     return sel;
   }
 
-  window.zvI18n = { t, tEventState, tStageLabel, setLang, getLang, available, makeLangPicker, flagFor };
-  // Shorthands so call sites read cleanly: t('Save'), tEventState(r.state).
+  window.zvI18n = { t, tEventState, tStageLabel, tError, setLang, getLang, available, makeLangPicker, flagFor };
+  // Shorthands so call sites read cleanly: t('Save'), tEventState(r.state),
+  // tError(body.code, body.error).
   window.t = t;
   window.tEventState = tEventState;
   window.tStageLabel = tStageLabel;
+  window.tError = tError;
 })();
