@@ -160,12 +160,6 @@ The repository, Go module, and CLI binary are named `zv`; the product is
   off the state DTO; a fresh reveal returns the body in the
   `RevealedText` field of the HTTP response so the UI paints
   instantly without waiting for the next WS state push.
-- **Magic-link tokens are now single-use.** `LoginSlotByToken`
-  stamps `claimed_at` on first exchange and refuses subsequent
-  exchanges of the same token. A leaked link can no longer mint
-  parallel sessions on multiple devices; players who legitimately
-  need a new device after their token's been claimed go through
-  the new lost-link recovery flow.
 - **Open redirect via `X-Forwarded-Host` closed.** Email links
   (password reset, email verify, email change) and the team-share
   QR URL now read only from the operator-set `ZV_PUBLIC_URL`,

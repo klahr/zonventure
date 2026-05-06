@@ -17,9 +17,11 @@ import (
 // RecoverLinkRequest is the body of POST /api/player/recover-link.
 // The team's contact email is the only input — server looks up
 // every still-active slot tied to teams with that email and re-mints
-// each slot's magic-link token (clearing claimed_at so the new
-// link is single-use again). Mails the fresh links to the same
-// address.
+// each slot's magic-link token, then mails the fresh links to the
+// same address. The reset of claimed_at is cosmetic (the timestamp
+// is no longer a gate) — it just keeps the audit column reading
+// "claimed when the new link was first opened" rather than
+// "claimed by whoever opened the dead link".
 type RecoverLinkRequest struct {
 	Email string `json:"email"`
 }

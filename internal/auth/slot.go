@@ -47,16 +47,18 @@ type slotCtxKey struct{}
 // LoginSlotByToken exchanges a magic-link (player_slots.token) for a
 // new slot session, returning the session token the caller should set on
 // the client as a cookie. Returns ErrSlotTokenExpired when the slot's
-// expires_at is in the past or claimed_at is non-null — the row stays
-// in place so the arranger can rotate, but no new sessions are issued
-// from a dead or already-claimed token.
+// expires_at is in the past — the row stays in place so the arranger
+// can rotate, but no new sessions are issued from a dead token.
 //
-// Single-use: claimed_at is NULL on a fresh slot and gets stamped on
-// the first successful exchange. Subsequent exchanges of the same
-// token return ErrSlotTokenExpired so a leaked link can't mint
-// parallel sessions on multiple devices. Players who legitimately
-// need a new device after the token's been claimed go through the
-// lost-link recovery flow to mint a fresh token.
+// The token is deliberately reusable. Single-use was tried and reverted:
+// link previewers (Slack, iMessage, WhatsApp, etc.) fetch the URL when
+// a player shares the link to a teammate, consuming the token before
+// the human ever taps it. The remaining defences are: 144-bit token
+// entropy, expires_at, the per-IP rate limit on the exchange, and the
+// arranger's ability to rotate via the lost-link flow.
+//
+// claimed_at is still stamped (on first claim) as forensic record of
+// when the slot first activated, but is never read as a gate.
 func LoginSlotByToken(ctx context.Context, db *sql.DB, magic string) (Slot, string, error) {
 	if magic == "" {
 		return Slot{}, "", ErrSlotTokenUnknown
@@ -64,14 +66,13 @@ func LoginSlotByToken(ctx context.Context, db *sql.DB, magic string) (Slot, stri
 	var (
 		s         Slot
 		expiresAt sql.NullString
-		claimedAt sql.NullString
 	)
 	err := db.QueryRowContext(ctx, `
-		SELECT ps.id, ps.name, ps.team_id, t.event_id, ps.expires_at, ps.claimed_at
+		SELECT ps.id, ps.name, ps.team_id, t.event_id, ps.expires_at
 		FROM player_slots ps
 		JOIN teams t ON t.id = ps.team_id
 		WHERE ps.token = $1
-	`, magic).Scan(&s.ID, &s.Name, &s.TeamID, &s.EventID, &expiresAt, &claimedAt)
+	`, magic).Scan(&s.ID, &s.Name, &s.TeamID, &s.EventID, &expiresAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Slot{}, "", ErrSlotTokenUnknown
 	}
@@ -83,27 +84,16 @@ func LoginSlotByToken(ctx context.Context, db *sql.DB, magic string) (Slot, stri
 			return Slot{}, "", ErrSlotTokenExpired
 		}
 	}
-	_ = claimedAt // initial check; the load-bearing one is the conditional UPDATE below.
 
-	// Atomic claim: only one caller wins. The previous shape — read
-	// claimed_at, decide, INSERT slot_sessions, UPDATE — let two
-	// concurrent GETs of /play?t=<magic> both pass the NULL check and
-	// both mint a parallel session, defeating the "single-use"
-	// promise. Keying the UPDATE on `claimed_at IS NULL` collapses
-	// the read+write into one statement; rowsAffected tells us
-	// whether we won the race. last_login_at piggybacks since the
-	// successful path was already updating both columns.
-	res, err := db.ExecContext(ctx,
-		`UPDATE player_slots SET last_login_at = now_text(), claimed_at = now_text()
-		 WHERE id = $1 AND claimed_at IS NULL`, s.ID)
-	if err != nil {
+	// Stamp last_login_at every exchange; stamp claimed_at only the
+	// first time so it preserves the original activation moment for
+	// audit. COALESCE keeps the existing value once set.
+	if _, err := db.ExecContext(ctx,
+		`UPDATE player_slots
+		    SET last_login_at = now_text(),
+		        claimed_at    = COALESCE(claimed_at, now_text())
+		  WHERE id = $1`, s.ID); err != nil {
 		return Slot{}, "", err
-	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		// Either the row vanished (unlikely — we just SELECTed it) or
-		// another caller claimed it first. Both resolve to "this
-		// token is no longer redeemable for a fresh session".
-		return Slot{}, "", ErrSlotTokenExpired
 	}
 	session, err := newSlotSession(ctx, db, s.ID)
 	if err != nil {
