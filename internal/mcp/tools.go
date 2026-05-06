@@ -25,19 +25,33 @@ var errUnknownTool = errors.New("unknown tool")
 // surfaces as JSON-RPC -32601.
 type toolHandler func(ctx context.Context, s *Server, args json.RawMessage) (ToolCallResult, error)
 
-// registry is the immutable-after-startup tool table.
+// registry is the immutable-after-startup tool table. Descriptors
+// preserve registration order so tools/list returns a stable
+// listing; the parallel handler / scope maps give O(1) dispatch.
 type registry struct {
 	descriptors []ToolDescriptor
 	handlers    map[string]toolHandler
+	scopes      map[string]string
 }
 
 func newRegistry() *registry {
-	return &registry{handlers: map[string]toolHandler{}}
+	return &registry{
+		handlers: map[string]toolHandler{},
+		scopes:   map[string]string{},
+	}
 }
 
+// register panics on a missing or unknown scope. This is a
+// startup-time correctness check (registerTools runs once in New)
+// — better to crash the process than silently ship an unscoped
+// tool that bypasses the gate.
 func (r *registry) register(d ToolDescriptor, h toolHandler) {
+	if d.Scope != scopeRead && d.Scope != scopeWrite {
+		panic("mcp: tool " + d.Name + " registered with invalid scope: " + d.Scope)
+	}
 	r.descriptors = append(r.descriptors, d)
 	r.handlers[d.Name] = h
+	r.scopes[d.Name] = d.Scope
 }
 
 func (r *registry) list() []ToolDescriptor { return r.descriptors }
@@ -47,6 +61,17 @@ func (r *registry) call(ctx context.Context, s *Server, name string, args json.R
 	if !ok {
 		return ToolCallResult{}, fmt.Errorf("%w: %s", errUnknownTool, name)
 	}
+	need := r.scopes[name]
+	have := scopesFromContext(ctx)
+	if !scopesAllow(have, need) {
+		// In-band tool error — the model sees a structured failure
+		// it can react to (drop the call, ask the user to widen the
+		// token) without the JSON-RPC layer treating it as a
+		// protocol error.
+		return errorResult(fmt.Sprintf(
+			"forbidden_scope: tool %q requires the %q scope; this token has %v",
+			name, need, have)), nil
+	}
 	return h(ctx, s, args)
 }
 
@@ -54,8 +79,30 @@ func (r *registry) call(ctx context.Context, s *Server, name string, args json.R
 // the descriptors near the handlers so a contributor sees the
 // public schema and the server-side behaviour together.
 func (s *Server) registerTools() {
+	// Phase 1 — event lifecycle. Lives in events.go alongside the
+	// per-tool handlers so the descriptor and behaviour stay
+	// adjacent to each other.
+	s.registerEventTools()
+	// Phase 2 — teams + slots. teams.go.
+	s.registerTeamTools()
+	// Phase 5 — read-only observation tools used during a live
+	// event (positions, activity, tracks, summary). observation.go.
+	s.registerObservationTools()
+	// Phase 3 — assignments / billing. purchases.go. Real-money
+	// charges are explicitly NOT exposed: create_purchase pins the
+	// provider to "simulated" and refuses on Stripe-enabled
+	// deployments.
+	s.registerPurchaseTools()
+	// Phase 4 — invitations + ICS export. invitations.go.
+	s.registerInvitationTools()
+	// Slice 3 polish — CSV results export and a static lifecycle
+	// reference doc the model can fetch as a one-shot orientation.
+	s.registerResultsTools()
+	s.registerLifecycleTool()
+
 	s.tools.register(ToolDescriptor{
 		Name:        "list_adventures",
+		Scope:       scopeRead,
 		Description: "List adventures visible to the caller. Returns slug, title, language, lane and puzzle counts. Use this before generating new content to avoid slug collisions and to reference an existing adventure as a template.",
 		InputSchema: map[string]any{
 			"type":       "object",
@@ -65,6 +112,7 @@ func (s *Server) registerTools() {
 
 	s.tools.register(ToolDescriptor{
 		Name:        "get_adventure",
+		Scope:       scopeRead,
 		Description: "Read one adventure as the same JSON envelope create_adventure accepts. Use as a template for variants, or to inspect what's already there before edits. Binary assets (image / audio bytes) are NOT included — only the metadata that references them.",
 		InputSchema: map[string]any{
 			"type":     "object",
@@ -80,6 +128,7 @@ func (s *Server) registerTools() {
 
 	s.tools.register(ToolDescriptor{
 		Name:        "validate_adventure",
+		Scope:       scopeRead,
 		Description: "Dry-run an envelope through the importer and report any validation errors WITHOUT writing anything. Run this first when generating a new adventure so you can self-correct (bad slug, missing language, broken lane refs, slug collision) before committing with create_adventure.",
 		InputSchema: map[string]any{
 			"type":     "object",
@@ -99,6 +148,7 @@ func (s *Server) registerTools() {
 
 	s.tools.register(ToolDescriptor{
 		Name:        "create_adventure",
+		Scope:       scopeWrite,
 		Description: "Create a new adventure from a structured envelope (matching the export/import JSON shape). Run validate_adventure first to surface errors. Assets (images, audio) cannot be uploaded via MCP — leave them out and have the user attach files in the arranger UI.",
 		InputSchema: map[string]any{
 			"type":     "object",
@@ -118,6 +168,7 @@ func (s *Server) registerTools() {
 
 	s.tools.register(ToolDescriptor{
 		Name:        "add_puzzle",
+		Scope:       scopeWrite,
 		Description: "Append one puzzle to an existing adventure. Use this to grow an adventure incrementally — cheaper than a full create_adventure rewrite. Lane is selected by lane_idx (matching the export shape); unknown idx falls back to the first lane.",
 		InputSchema: map[string]any{
 			"type":     "object",
@@ -137,6 +188,7 @@ func (s *Server) registerTools() {
 
 	s.tools.register(ToolDescriptor{
 		Name:        "update_adventure_meta",
+		Scope:       scopeWrite,
 		Description: "Patch an adventure's metadata: rename, recolor, edit intro/outro, change language, set start coords, flip published/strict_assets. Only present keys are applied — omit a field to leave it untouched. Use {field: null} on start_lat/start_lng to clear those columns.",
 		InputSchema: map[string]any{
 			"type":     "object",
@@ -153,6 +205,7 @@ func (s *Server) registerTools() {
 
 	s.tools.register(ToolDescriptor{
 		Name:        "set_lane_mode",
+		Scope:       scopeWrite,
 		Description: `Flip a lane between "linear" (every team visits puzzles in idx order) and "shuffled" (each team gets a deterministic cyclic shift to spread starts). Lane is identified by lane_idx (the export-shape index, not a DB id).`,
 		InputSchema: map[string]any{
 			"type":     "object",
@@ -171,6 +224,7 @@ func (s *Server) registerTools() {
 
 	s.tools.register(ToolDescriptor{
 		Name:        "update_puzzle",
+		Scope:       scopeWrite,
 		Description: "Replace the content of an existing puzzle. Identified by (slug, page_idx) — same idx the export shape uses. The page payload is the full per-puzzle shape (title, prompt, accept[], lat, lng, lane_idx, optional radius_m, optional disabled, optional notes, optional hints[]); fields not present default to their zero values, so passing a partial object will clear the omitted ones (e.g. omitting `accept` empties the answer list). Image / audio attachments are managed by attach_image — they're not editable here. Use this to translate or rewrite an existing puzzle without losing its images or its position in the lane.",
 		InputSchema: map[string]any{
 			"type":     "object",
@@ -188,6 +242,7 @@ func (s *Server) registerTools() {
 
 	s.tools.register(ToolDescriptor{
 		Name:        "attach_image",
+		Scope:       scopeWrite,
 		Description: "Attach an image to an adventure. Set target=\"avatar\" for the adventure cover/icon, or pass a numeric page index (matching the export shape) to attach to that puzzle. The image bytes travel base64-encoded inside this call — there is no URL fetch path. Re-calling for the same (slug, target) replaces what was there: avatar overwrites, puzzle deletes existing puzzle images then stores this one as the puzzle's only image. Server normalises (shrinks to 512 px max dim, re-encodes JPEG/PNG) before storing, mirroring the multipart UI flow. Per-image cap is ZV_MAX_IMAGE_BYTES (default 5 MiB on the decoded bytes).",
 		InputSchema: map[string]any{
 			"type":     "object",
@@ -222,6 +277,7 @@ func (s *Server) registerTools() {
 
 	s.tools.register(ToolDescriptor{
 		Name:        "delete_puzzle",
+		Scope:       scopeWrite,
 		Description: "Remove one puzzle from an adventure. Identified by (slug, page_idx). Subsequent puzzles slide down so the global ordering stays gap-free. Idempotent in spirit but errors if the idx doesn't exist (safer than silent no-op). Cannot be undone.",
 		InputSchema: map[string]any{
 			"type":     "object",
@@ -235,6 +291,7 @@ func (s *Server) registerTools() {
 
 	s.tools.register(ToolDescriptor{
 		Name:        "move_puzzle",
+		Scope:       scopeWrite,
 		Description: "Reorder a puzzle within an adventure. from_idx is the puzzle's current index, to_idx the new position. Optional lane_idx reassigns the puzzle to a different lane in the same operation; omit it to leave the lane assignment alone. to_idx is clamped to the last position so passing a large value moves to the end.",
 		InputSchema: map[string]any{
 			"type":     "object",
@@ -250,6 +307,7 @@ func (s *Server) registerTools() {
 
 	s.tools.register(ToolDescriptor{
 		Name:        "create_lane",
+		Scope:       scopeWrite,
 		Description: "Append a new lane to the adventure at the next idx. Mode defaults to \"linear\" (every team visits puzzles in idx order); pass \"shuffled\" to give each team a deterministic cyclic shift. Name is the human-facing label shown in the editor / runbar; empty falls back to \"Lane N\".",
 		InputSchema: map[string]any{
 			"type":     "object",
@@ -264,6 +322,7 @@ func (s *Server) registerTools() {
 
 	s.tools.register(ToolDescriptor{
 		Name:        "update_lane",
+		Scope:       scopeWrite,
 		Description: "Patch a lane's mode and/or name addressed by (slug, lane_idx). Either field may be omitted; passing neither errors. Use to translate a lane name or flip its mode without going through set_lane_mode + a separate rename.",
 		InputSchema: map[string]any{
 			"type":     "object",
@@ -279,6 +338,7 @@ func (s *Server) registerTools() {
 
 	s.tools.register(ToolDescriptor{
 		Name:        "delete_lane",
+		Scope:       scopeWrite,
 		Description: "Remove a lane addressed by (slug, lane_idx). Refuses if the lane still owns any puzzles — move them out via move_puzzle first. Lane indices of remaining lanes are not renumbered automatically; the editor expects a follow-up reorder if you want a gap-free sequence.",
 		InputSchema: map[string]any{
 			"type":     "object",
@@ -292,6 +352,7 @@ func (s *Server) registerTools() {
 
 	s.tools.register(ToolDescriptor{
 		Name:        "attach_audio",
+		Scope:       scopeWrite,
 		Description: "Attach an audio clip to a puzzle. Bytes travel base64-encoded inside the call (no URL fetch path). Re-calling for the same (slug, page_idx) replaces the puzzle's existing audio. MIME is sniffed server-side from the bytes — the client's declared mime_type is taken as a hint but the audio/* gate is enforced on the sniffed value. Cap is ZV_MAX_AUDIO_BYTES (default 15 MiB on decoded bytes).",
 		InputSchema: map[string]any{
 			"type":     "object",
@@ -314,6 +375,7 @@ func (s *Server) registerTools() {
 
 	s.tools.register(ToolDescriptor{
 		Name:        "reorder_lanes",
+		Scope:       scopeWrite,
 		Description: "Rearrange the adventure's lanes by passing the current lane indices in their new order. The list must contain every lane exactly once — partial reorders are rejected. Pages keep their lane assignments; only the lane sequence changes.",
 		InputSchema: map[string]any{
 			"type":     "object",
@@ -331,6 +393,7 @@ func (s *Server) registerTools() {
 
 	s.tools.register(ToolDescriptor{
 		Name:        "detach_image",
+		Scope:       scopeWrite,
 		Description: "Remove the image attached to a puzzle. Idempotent — a puzzle with no image is a no-op. Use this when an image was attached by mistake; for replacing, just call attach_image again (it overwrites).",
 		InputSchema: map[string]any{
 			"type":     "object",
@@ -344,6 +407,7 @@ func (s *Server) registerTools() {
 
 	s.tools.register(ToolDescriptor{
 		Name:        "detach_audio",
+		Scope:       scopeWrite,
 		Description: "Remove the audio clip attached to a puzzle. Idempotent — a puzzle with no audio is a no-op. For replacing audio, call attach_audio again (it overwrites).",
 		InputSchema: map[string]any{
 			"type":     "object",
@@ -357,6 +421,7 @@ func (s *Server) registerTools() {
 
 	s.tools.register(ToolDescriptor{
 		Name:        "update_image_alt",
+		Scope:       scopeWrite,
 		Description: "Rewrite the alt_text on a puzzle's image without re-uploading the bytes. Useful when translating an existing adventure: the image stays, the screen-reader caption changes language. No-op when the puzzle has no image.",
 		InputSchema: map[string]any{
 			"type":     "object",
@@ -371,6 +436,7 @@ func (s *Server) registerTools() {
 
 	s.tools.register(ToolDescriptor{
 		Name:        "detach_avatar",
+		Scope:       scopeWrite,
 		Description: "Clear the adventure's avatar / cover icon. Idempotent — calling on an avatar-less adventure is a no-op.",
 		InputSchema: map[string]any{
 			"type":     "object",
@@ -383,6 +449,7 @@ func (s *Server) registerTools() {
 
 	s.tools.register(ToolDescriptor{
 		Name:        "add_hint",
+		Scope:       scopeWrite,
 		Description: "Append one hint to an existing puzzle. Hints are revealed in idx order in the player UI; delay_seconds gates when each becomes revealable (counted from when the team reached the puzzle). The new hint lands at the next idx after the puzzle's current hints. Use update_puzzle if you'd rather replace the entire hint list in one shot.",
 		InputSchema: map[string]any{
 			"type":     "object",
@@ -398,6 +465,7 @@ func (s *Server) registerTools() {
 
 	s.tools.register(ToolDescriptor{
 		Name:        "update_hint",
+		Scope:       scopeWrite,
 		Description: "Patch a hint's text and/or delay_seconds, addressed by (slug, page_idx, hint_idx). Either field may be omitted; passing neither errors. The hint's position in the reveal order doesn't change — use a delete + add or update_puzzle to reorder.",
 		InputSchema: map[string]any{
 			"type":     "object",
@@ -414,6 +482,7 @@ func (s *Server) registerTools() {
 
 	s.tools.register(ToolDescriptor{
 		Name:        "delete_hint",
+		Scope:       scopeWrite,
 		Description: "Remove one hint from a puzzle. Subsequent hints slide down so the per-page idx sequence stays gap-free. Errors if the hint doesn't exist (safer than silent no-op).",
 		InputSchema: map[string]any{
 			"type":     "object",
@@ -428,6 +497,7 @@ func (s *Server) registerTools() {
 
 	s.tools.register(ToolDescriptor{
 		Name:        "delete_adventure",
+		Scope:       scopeWrite,
 		Description: "Delete an adventure and every page / lane / image it owns. Refuses if the adventure still backs any events or assignments — clean those up via the arranger UI first. Requires confirm:true to actually run; without it the tool reports what would be deleted.",
 		InputSchema: map[string]any{
 			"type":     "object",

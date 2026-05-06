@@ -2159,6 +2159,10 @@
           'Långlivade tokens för att ansluta Claude eller en annan MCP-klient till det här kontot så att den kan skapa äventyr åt dig.',
       'New token': 'Ny token',
       'No MCP tokens yet.': 'Inga MCP-tokens ännu.',
+      'Copy URL': 'Kopiera URL',
+      'URL copied': 'URL kopierad',
+      'Point your MCP client at this endpoint and paste a token below as the bearer credential:':
+          'Peka din MCP-klient på den här endpointen och klistra in en token nedan som bearer-token:',
       'last used {{when}}': 'senast använd {{when}}',
       'never used': 'aldrig använd',
       'Revoke this token? Any client currently using it will stop working.':
@@ -2178,6 +2182,17 @@
           'Kopiera token nu — den visas inte igen.',
       'Paste it into your MCP client as the bearer token. Treat it like a password.':
           'Klistra in den i din MCP-klient som bearer-token. Behandla den som ett lösenord.',
+      'Scopes': 'Behörigheter',
+      'read': 'läs',
+      'write': 'skriv',
+      'no scopes': 'inga behörigheter',
+      'read — list, get, validate (no changes)':
+          'läs — lista, hämta, validera (inga ändringar)',
+      'write — create, edit, delete, run':
+          'skriv — skapa, redigera, ta bort, köra',
+      'Scopes can only narrow what the token can do — they never grant powers beyond your account.':
+          'Behörigheter kan bara begränsa vad token kan göra — de ger aldrig befogenheter utöver ditt konto.',
+      'Pick at least one scope': 'Välj minst en behörighet',
       'Server settings': 'Serverinställningar',
       'Knobs that affect the whole deployment. Visible only to global admins.':
           'Inställningar som påverkar hela installationen. Syns bara för globala administratörer.',

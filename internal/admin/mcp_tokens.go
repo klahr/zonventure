@@ -46,23 +46,67 @@ const mcpTokenPrefixDisplay = 12
 // 5–10× headroom as other naming caps in this package.
 const MaxMCPTokenNameLen = 200
 
+// MCP token scopes. read covers list/get/validate; write covers every
+// mutation, transition, and side-effecting tool. The set is closed —
+// adding a new scope requires a migration default + a UI update.
+const (
+	MCPScopeRead  = "read"
+	MCPScopeWrite = "write"
+)
+
+// validMCPScopes is the closed set the API accepts. Intentionally
+// small for now (Slice 0): a coarse read/write split is enough for
+// the dashboard-token use case without committing to a per-tool
+// scope taxonomy we'd later have to migrate.
+var validMCPScopes = map[string]bool{MCPScopeRead: true, MCPScopeWrite: true}
+
+// normaliseMCPScopes deduplicates, validates, and sort-stabilises a
+// caller-supplied scope list. Empty input falls back to the full set
+// so legacy clients posting {name} keep getting a fully-powered
+// token (matches the column DEFAULT). Returns an error string the
+// handler can pass straight to httpx.Error.
+func normaliseMCPScopes(in []string) ([]string, string) {
+	if len(in) == 0 {
+		return []string{MCPScopeRead, MCPScopeWrite}, ""
+	}
+	seen := map[string]bool{}
+	for _, s := range in {
+		if !validMCPScopes[s] {
+			return nil, "unknown scope: " + s
+		}
+		seen[s] = true
+	}
+	// Stable canonical ordering so a token created with
+	// ["write","read"] stores the same bytes as ["read","write"].
+	out := make([]string, 0, len(seen))
+	for _, s := range []string{MCPScopeRead, MCPScopeWrite} {
+		if seen[s] {
+			out = append(out, s)
+		}
+	}
+	return out, ""
+}
+
 type mcpTokenDTO struct {
-	ID         int64  `json:"id"`
-	Name       string `json:"name"`
-	Prefix     string `json:"prefix"`
-	CreatedAt  string `json:"created_at"`
-	LastUsedAt string `json:"last_used_at,omitempty"`
+	ID         int64    `json:"id"`
+	Name       string   `json:"name"`
+	Prefix     string   `json:"prefix"`
+	Scopes     []string `json:"scopes"`
+	CreatedAt  string   `json:"created_at"`
+	LastUsedAt string   `json:"last_used_at,omitempty"`
 }
 
 type createMCPTokenReq struct {
-	Name string `json:"name"`
+	Name   string   `json:"name"`
+	Scopes []string `json:"scopes,omitempty"`
 }
 
 type createMCPTokenResp struct {
-	ID        int64  `json:"id"`
-	Name      string `json:"name"`
-	Prefix    string `json:"prefix"`
-	CreatedAt string `json:"created_at"`
+	ID        int64    `json:"id"`
+	Name      string   `json:"name"`
+	Prefix    string   `json:"prefix"`
+	Scopes    []string `json:"scopes"`
+	CreatedAt string   `json:"created_at"`
 	// Token is the plaintext. Returned ONCE; subsequent GETs only
 	// surface Prefix.
 	Token string `json:"token"`
@@ -83,6 +127,16 @@ func (h *Handlers) CreateMCPToken(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusBadRequest, "name "+err.Error())
 		return
 	}
+	scopes, scopeErr := normaliseMCPScopes(req.Scopes)
+	if scopeErr != "" {
+		httpx.Error(w, http.StatusBadRequest, scopeErr)
+		return
+	}
+	scopesJSON, err := json.Marshal(scopes)
+	if err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "scopes encode", err)
+		return
+	}
 	secret, err := tokenx.New(mcpTokenSecretBytes)
 	if err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "token gen", err)
@@ -100,10 +154,10 @@ func (h *Handlers) CreateMCPToken(w http.ResponseWriter, r *http.Request) {
 		createdAt string
 	)
 	err = h.DB.QueryRowContext(r.Context(), `
-		INSERT INTO mcp_tokens (user_id, token_hash, name, token_prefix)
-		VALUES ($1, $2, $3, $4)
+		INSERT INTO mcp_tokens (user_id, token_hash, name, token_prefix, scopes)
+		VALUES ($1, $2, $3, $4, $5)
 		RETURNING id, created_at
-	`, me.ID, hash[:], name, prefix).Scan(&id, &createdAt)
+	`, me.ID, hash[:], name, prefix, scopesJSON).Scan(&id, &createdAt)
 	if err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "insert", err)
 		return
@@ -112,6 +166,7 @@ func (h *Handlers) CreateMCPToken(w http.ResponseWriter, r *http.Request) {
 		ID:        id,
 		Name:      name,
 		Prefix:    prefix,
+		Scopes:    scopes,
 		CreatedAt: createdAt,
 		Token:     plaintext,
 	})
@@ -125,7 +180,7 @@ func (h *Handlers) CreateMCPToken(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) ListMCPTokens(w http.ResponseWriter, r *http.Request) {
 	me, _ := auth.FromContext(r.Context())
 	rows, err := h.DB.QueryContext(r.Context(), `
-		SELECT id, name, token_prefix, created_at, COALESCE(last_used_at, '')
+		SELECT id, name, token_prefix, scopes, created_at, COALESCE(last_used_at, '')
 		FROM mcp_tokens
 		WHERE user_id = $1
 		ORDER BY created_at DESC
@@ -137,10 +192,19 @@ func (h *Handlers) ListMCPTokens(w http.ResponseWriter, r *http.Request) {
 	defer rows.Close()
 	out := []mcpTokenDTO{}
 	for rows.Next() {
-		var t mcpTokenDTO
-		if err := rows.Scan(&t.ID, &t.Name, &t.Prefix, &t.CreatedAt, &t.LastUsedAt); err != nil {
+		var (
+			t          mcpTokenDTO
+			scopesJSON []byte
+		)
+		if err := rows.Scan(&t.ID, &t.Name, &t.Prefix, &scopesJSON, &t.CreatedAt, &t.LastUsedAt); err != nil {
 			httpx.Error(w, http.StatusInternalServerError, "scan failed")
 			return
+		}
+		if err := json.Unmarshal(scopesJSON, &t.Scopes); err != nil {
+			// A malformed scopes column would render the whole list
+			// useless; fall back to "no scopes" so the row still
+			// surfaces and the user can revoke it.
+			t.Scopes = []string{}
 		}
 		out = append(out, t)
 	}
@@ -178,32 +242,42 @@ func (h *Handlers) RevokeMCPToken(w http.ResponseWriter, r *http.Request) {
 }
 
 // LookupMCPToken resolves a plaintext bearer token into the owning
-// user. Used by the MCP server's authenticate path; lives in this
-// package because mcp_tokens is admin-side state and the password /
-// session helpers it sits next to do their lookups here too.
+// user and the token's scope set. Used by the MCP server's
+// authenticate path; lives in this package because mcp_tokens is
+// admin-side state and the password / session helpers it sits next
+// to do their lookups here too.
 //
 // Returns ErrUnknownMCPToken when no row matches; any other error
 // is a DB-side failure. On success the user row is returned in the
-// same shape auth.Lookup yields, so the caller can drop it straight
-// into auth.WithUser.
+// same shape auth.Lookup yields and the scopes slice mirrors the
+// JSONB column (canonical order, validated at mint time).
 //
 // last_used_at is updated best-effort (a failure to update doesn't
 // fail the lookup) — the worst case is one stale "never used"
 // banner in the settings UI.
-func LookupMCPToken(ctx context.Context, db *sql.DB, plaintext string) (auth.User, error) {
+func LookupMCPToken(ctx context.Context, db *sql.DB, plaintext string) (auth.User, []string, error) {
 	if plaintext == "" {
-		return auth.User{}, ErrUnknownMCPToken
+		return auth.User{}, nil, ErrUnknownMCPToken
 	}
 	hash := sha256.Sum256([]byte(plaintext))
-	var uid int64
+	var (
+		uid        int64
+		scopesJSON []byte
+	)
 	err := db.QueryRowContext(ctx, `
-		SELECT user_id FROM mcp_tokens WHERE token_hash = $1
-	`, hash[:]).Scan(&uid)
+		SELECT user_id, scopes FROM mcp_tokens WHERE token_hash = $1
+	`, hash[:]).Scan(&uid, &scopesJSON)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return auth.User{}, ErrUnknownMCPToken
+			return auth.User{}, nil, ErrUnknownMCPToken
 		}
-		return auth.User{}, err
+		return auth.User{}, nil, err
+	}
+	var scopes []string
+	if err := json.Unmarshal(scopesJSON, &scopes); err != nil {
+		// Corrupt scopes column — fail closed (treat as no scopes)
+		// rather than gifting full powers on a parse hiccup.
+		scopes = nil
 	}
 	// Best-effort touch.
 	_, _ = db.ExecContext(ctx,
@@ -224,11 +298,11 @@ func LookupMCPToken(ctx context.Context, db *sql.DB, plaintext string) (auth.Use
 		FROM users WHERE id = $1
 	`, uid).Scan(&u.ID, &u.Username, &u.IsAdmin, &u.Email, &u.EmailVerified)
 	if err != nil {
-		return auth.User{}, err
+		return auth.User{}, nil, err
 	}
 	if u.IsAdmin {
 		u.Role = auth.RoleAdmin
-		return u, nil
+		return u, scopes, nil
 	}
 	var (
 		role  sql.NullString
@@ -241,7 +315,7 @@ func LookupMCPToken(ctx context.Context, db *sql.DB, plaintext string) (auth.Use
 		LIMIT 1
 	`, uid).Scan(&role, &orgID)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return auth.User{}, err
+		return auth.User{}, nil, err
 	}
 	if role.Valid {
 		u.Role = role.String
@@ -252,7 +326,7 @@ func LookupMCPToken(ctx context.Context, db *sql.DB, plaintext string) (auth.Use
 		v := orgID.Int64
 		u.OrgID = &v
 	}
-	return u, nil
+	return u, scopes, nil
 }
 
 // ErrUnknownMCPToken is returned by LookupMCPToken when the bearer

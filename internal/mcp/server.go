@@ -17,10 +17,17 @@ import (
 
 // Server holds the dependencies the JSON-RPC handlers need. One
 // instance per zv process; safe for concurrent use (the underlying
-// *sql.DB and storage.Blobs are the only mutable references).
+// *sql.DB, storage.Blobs and *admin.Handlers are the only mutable
+// references and each is internally goroutine-safe).
 type Server struct {
 	DB      *sql.DB
 	Storage storage.Blobs
+	// Admin is the same handler set the HTTP /api/admin routes are
+	// bound to. The events / teams / observation tools dispatch to
+	// these methods via the callAdmin adapter so policy lives in
+	// exactly one place — no parallel implementation in the MCP
+	// package, no surface drift when the admin API evolves.
+	Admin   *admin.Handlers
 	version string
 	tools   *registry
 }
@@ -37,11 +44,17 @@ type Server struct {
 // attach_image tool calls PutAdventureAvatar through it so an S3
 // (or future localfs) backend gets the bytes through the same seam
 // as the multipart UI flow.
-func New(db *sql.DB, version string, blobs storage.Blobs) *Server {
+//
+// adminH is the live admin handler set; events / teams / observation
+// tools call its methods via callAdmin. nil leaves the event-side
+// tools unable to dispatch — register them anyway so the schema
+// stays stable across deployments, but every call returns a
+// "server misconfigured" error.
+func New(db *sql.DB, version string, blobs storage.Blobs, adminH *admin.Handlers) *Server {
 	if version == "" {
 		version = "dev"
 	}
-	s := &Server{DB: db, Storage: blobs, version: version, tools: newRegistry()}
+	s := &Server{DB: db, Storage: blobs, Admin: adminH, version: version, tools: newRegistry()}
 	s.registerTools()
 	return s
 }
@@ -70,7 +83,7 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "expected application/json", http.StatusUnsupportedMediaType)
 		return
 	}
-	user, ok := s.authenticate(r)
+	user, scopes, ok := s.authenticate(r)
 	if !ok {
 		// Per MCP guidance, auth failure is an HTTP 401 — JSON-RPC
 		// errors are reserved for protocol / method problems on an
@@ -99,6 +112,7 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := auth.WithUser(r.Context(), user)
+	ctx = withScopes(ctx, scopes)
 	resp, suppress := s.dispatch(ctx, req)
 	if suppress {
 		// Notifications don't get a response body — the spec says
@@ -163,28 +177,29 @@ func (s *Server) dispatch(ctx context.Context, req Request) (Response, bool) {
 }
 
 // authenticate resolves the Authorization header into an auth.User
-// by looking the bearer token up in mcp_tokens. Tokens are minted
-// via POST /api/admin/me/mcp-tokens; see admin.LookupMCPToken for
-// the lookup details (sha256 of plaintext, best-effort
-// last_used_at update).
+// and the token's scope set by looking the bearer token up in
+// mcp_tokens. Tokens are minted via POST /api/admin/me/mcp-tokens;
+// see admin.LookupMCPToken for the lookup details (sha256 of
+// plaintext, best-effort last_used_at update).
 //
-// Returns (zero, false) on every failure path — missing header,
-// unknown token, DB hiccup. Successes attach the resolved user to
-// the request context downstream.
-func (s *Server) authenticate(r *http.Request) (auth.User, bool) {
+// Returns (zero, nil, false) on every failure path — missing
+// header, unknown token, DB hiccup. Successes attach the resolved
+// user and scopes to the request context downstream so the registry
+// can gate tool calls on scope.
+func (s *Server) authenticate(r *http.Request) (auth.User, []string, bool) {
 	got := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 	got = strings.TrimSpace(got)
 	if got == "" {
-		return auth.User{}, false
+		return auth.User{}, nil, false
 	}
-	u, err := admin.LookupMCPToken(r.Context(), s.DB, got)
+	u, scopes, err := admin.LookupMCPToken(r.Context(), s.DB, got)
 	if err != nil {
 		if !errors.Is(err, admin.ErrUnknownMCPToken) {
 			logx.Warn("mcp.auth.lookup", "err", err.Error())
 		}
-		return auth.User{}, false
+		return auth.User{}, nil, false
 	}
-	return u, true
+	return u, scopes, true
 }
 
 func writeError(w http.ResponseWriter, id json.RawMessage, code int, msg string) {

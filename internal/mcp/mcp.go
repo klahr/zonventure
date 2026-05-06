@@ -17,7 +17,10 @@
 // kind of surface that should be off until the operator asks for it.
 package mcp
 
-import "encoding/json"
+import (
+	"context"
+	"encoding/json"
+)
 
 // protocolVersion is the MCP wire version the server advertises
 // during initialize. The client sends its own version too; we echo
@@ -81,10 +84,64 @@ type serverInfo struct {
 // ToolDescriptor is the public schema of one tool, as returned
 // from tools/list. InputSchema is a JSON Schema object — clients
 // validate arguments against it before calling.
+//
+// Scope is server-side metadata (json:"-") used to gate which
+// tokens may invoke this tool — see scopeRead / scopeWrite. Reads
+// are tools that don't mutate DB state and don't trigger side
+// effects (email, webhooks); writes are everything else. The
+// registry refuses to register a tool with an empty Scope so a
+// new tool can't accidentally land without classification.
 type ToolDescriptor struct {
 	Name        string         `json:"name"`
 	Description string         `json:"description"`
 	InputSchema map[string]any `json:"inputSchema"`
+	Scope       string         `json:"-"`
+}
+
+// Scope identifiers — kept in sync with admin.MCPScope* constants.
+// Defined here too so internal code (registry, tools) doesn't need
+// to import admin just to tag a descriptor.
+const (
+	scopeRead  = "read"
+	scopeWrite = "write"
+)
+
+// scopesCtxKey is the private key under which serve() stores the
+// authenticated token's scope set. The registry pulls it back out
+// at call time so handlers don't need a parallel parameter.
+type scopesCtxKey struct{}
+
+// withScopes attaches a token's scope set to the request context.
+// nil scopes (i.e. malformed DB row, fail-closed in LookupMCPToken)
+// produce a non-nil empty slice so callers can rely on the value
+// always being non-nil after this returns.
+func withScopes(ctx context.Context, scopes []string) context.Context {
+	if scopes == nil {
+		scopes = []string{}
+	}
+	return context.WithValue(ctx, scopesCtxKey{}, scopes)
+}
+
+// scopesFromContext retrieves the authenticated token's scopes.
+// Returns an empty slice when no scopes were attached (e.g. unit
+// tests calling the registry directly without going through serve).
+func scopesFromContext(ctx context.Context) []string {
+	v, _ := ctx.Value(scopesCtxKey{}).([]string)
+	return v
+}
+
+// scopesAllow reports whether a token with `have` scopes may invoke
+// a tool requiring `need`. A token's scope set is interpreted as
+// pure capabilities — no implication relationships (a write-only
+// token cannot call read tools). UI defaults check both boxes so
+// this only bites a user who deliberately narrowed their token.
+func scopesAllow(have []string, need string) bool {
+	for _, s := range have {
+		if s == need {
+			return true
+		}
+	}
+	return false
 }
 
 // ToolCallParams is the params payload for tools/call.

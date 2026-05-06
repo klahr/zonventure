@@ -273,7 +273,7 @@ func New(cfg Config) http.Handler {
 	// stack the rest of /api/admin uses, since MCP clients (Claude
 	// desktop, claude.ai connectors) speak Authorization headers.
 	if mcp.Enabled() {
-		mcpSrv := mcp.New(cfg.DB, cfg.Version, store)
+		mcpSrv := mcp.New(cfg.DB, cfg.Version, store, adminH)
 		r.Method(http.MethodPost, "/mcp", mcpSrv.Handler())
 	}
 

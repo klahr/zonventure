@@ -31,6 +31,52 @@ The repository, Go module, and CLI binary are named `zv`; the product is
   (image / audio bytes) are intentionally NOT supported via MCP —
   the model writes alt-text placeholders and the user attaches
   files via the arranger UI. See [MCP.md](MCP.md).
+- **MCP: run a whole event without visiting the web.** The
+  connector grows from 24 authoring tools to 32 covering the full
+  event lifecycle, so an arranger can author → buy slots → schedule
+  → invite → start → observe → wrap up an event entirely through
+  an MCP client. New phases:
+  - **Lifecycle (8 tools):** `list_events`, `get_event`,
+    `create_event`, `update_event`, `start_event`, `pause_event`,
+    `resume_event`, `cancel_event` (password-gated).
+  - **Teams + slots (10 tools):** `create_team`, `bulk_create_teams`
+    (JSON; multipart import stays web-only), `update_team`,
+    `delete_team` (password-gated), `withdraw_team`,
+    `unwithdraw_team`, `unlock_team`, `add_slot`, `remove_slot`,
+    `rotate_slot_token`.
+  - **Observation (4 tools):** `list_positions`, `list_activity`,
+    `list_tracks`, `get_event_state_summary` (synthesised
+    poll-friendly leaderboard for "wait until done" loops).
+  - **Billing (5 tools):** `list_purchases`, `get_purchase`,
+    `create_purchase` (provider hard-coded to `simulated`; refused
+    on Stripe-enabled deployments — real-money buys stay in the
+    web checkout), `confirm_purchase`, `grant_slots_to_event`
+    (admin-only, re-checked at the MCP layer since the route gate
+    is bypassed).
+  - **Invitations (3 tools):** `send_event_invitations`,
+    `send_team_invitation`, `get_event_invite_ics`. Real emails go
+    out under the existing org rate limit; descriptions flag
+    non-idempotency.
+  - **Polish (2 tools):** `export_event_results_csv` (CSV inline;
+    recap PDF stays web-only), `describe_event_lifecycle` (static
+    Markdown reference covering the state machine, edit-permission
+    matrix, polling cadence, and security gates so the model can
+    plan transitions without trial-and-error).
+
+  Every new tool delegates to the existing `*admin.Handlers`
+  method via a thin in-process adapter (`internal/mcp/adapter.go`),
+  so policy, audit, webhook and WebSocket publish work runs in
+  exactly one place — no parallel implementation. `mcp.New()`
+  gains a fourth argument (`*admin.Handlers`); update embedders.
+- **MCP token scopes.** `mcp_tokens` gains a `scopes` JSONB
+  column (migration `0046_mcp_token_scopes.sql`); the token-mint
+  modal exposes two checkboxes (`read` / `write`). Existing tokens
+  default to `["read","write"]` so back-compat is invisible.
+  Read-only tokens are useful for dashboards / monitoring clients
+  that should never mutate state. Scopes only narrow what the
+  underlying user can do — they never grant authority beyond the
+  user's role. Tools panic at startup if registered without a
+  scope so a new tool can't ship ungated.
 
 ### Security (round 2)
 
