@@ -13,6 +13,38 @@ The repository, Go module, and CLI binary are named `zv`; the product is
 
 ### Added
 
+- **Simulated payment provider.** Second `payments.Provider` impl
+  alongside Stripe, picked via `ZV_PAYMENTS_PROVIDER=simulated`.
+  Auto-confirms checkouts in-process: the buyer hits a tiny
+  `/dev/payments/checkout/{sid}` page, clicks "Pay (simulate)", the
+  server fires a synthesised `payments.Event` into its own webhook
+  endpoint, and the rest of the flow runs end-to-end — team
+  created, magic links emailed, dedupe + idempotency exercised.
+  Strictly dev-only (no signature verification, no real money). Its
+  primary purpose is validating that the abstraction works: the
+  same handler code consumes events from both providers without
+  importing either SDK. Lives at `internal/payments/simulated/`.
+
+### Changed
+
+- **Payment-provider abstraction.** Stripe is now a concrete impl
+  behind a `payments.Provider` interface (`internal/payments`). The
+  rest of the app no longer imports `github.com/stripe/stripe-go`
+  — checkout, refund, webhook ingest, and customer-portal calls all
+  flow through the four-method interface, and `stripe-go` itself is
+  confined to `internal/payments/stripe/`. Future Mollie / Paddle /
+  Adyen impls drop in next to it; cmd/server picks one at startup
+  based on env, and the rest of the wiring is untouched. The admin
+  webhook route is renamed to `PaymentsWebhook` (still mounted at
+  `/api/webhooks/stripe` for back-compat with operator-configured
+  Stripe URLs); `Handlers.StripeSecretKey` / `StripeWebhookSecret`
+  fields are replaced by `Handlers.Provider`. No schema changes —
+  the DB columns keep their `stripe_*` names for now and a future
+  multi-provider deployment can either widen their meaning or
+  alias-rename per provider.
+
+### Added
+
 - **Always-on adventures with public ticket sales.** A new public
   store page at `/store` lists every event with `public_for_sale=true`
   as a buy-card. A buyer types their email, pays via Stripe Checkout,

@@ -3,12 +3,33 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"net/http"
 	"strings"
 	"testing"
 
 	"git.sr.ht/~klahr/zv/internal/admin"
 	"git.sr.ht/~klahr/zv/internal/auth"
+	"git.sr.ht/~klahr/zv/internal/payments"
 )
+
+// stubProvider is the smallest payments.Provider that flips
+// adminH.paymentsEnabled() / mcp.stripeConfigured() to true. Tests
+// here only check the gate, never actually invoke the methods.
+type stubProvider struct{}
+
+func (stubProvider) Name() string { return "stub" }
+func (stubProvider) CreateCheckout(ctx context.Context, p payments.CheckoutParams) (payments.CheckoutSession, error) {
+	return payments.CheckoutSession{}, nil
+}
+func (stubProvider) VerifyAndParseWebhook(body []byte, headers http.Header) (payments.Event, error) {
+	return payments.Event{}, nil
+}
+func (stubProvider) Refund(ctx context.Context, p payments.RefundParams) (payments.Refund, error) {
+	return payments.Refund{}, nil
+}
+func (stubProvider) CustomerPortal(ctx context.Context, customerID, returnURL string) (string, error) {
+	return "", nil
+}
 
 func TestPurchaseTools_NilAdminGuard(t *testing.T) {
 	s := &Server{Admin: nil}
@@ -88,8 +109,7 @@ func TestPurchaseTools_ArgValidation(t *testing.T) {
 // a real-money flow.
 func TestCreatePurchase_RefusesOnStripeEnabled(t *testing.T) {
 	stripeOn := &Server{Admin: &admin.Handlers{
-		StripeSecretKey:     "sk_test_x",
-		StripeWebhookSecret: "whsec_x",
+		Provider: stubProvider{},
 	}}
 	ctx := withScopes(context.Background(), []string{"read", "write"})
 	res, err := createPurchase(ctx, stripeOn,

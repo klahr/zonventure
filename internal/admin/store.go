@@ -13,9 +13,7 @@ import (
 	"git.sr.ht/~klahr/zv/internal/httpx"
 	"git.sr.ht/~klahr/zv/internal/logx"
 	mailerpkg "git.sr.ht/~klahr/zv/internal/mailer"
-
-	stripe "github.com/stripe/stripe-go/v82"
-	"github.com/stripe/stripe-go/v82/checkout/session"
+	"git.sr.ht/~klahr/zv/internal/payments"
 )
 
 // BuyTicketRequest is the body of POST /api/store/buy. The buyer
@@ -27,14 +25,14 @@ type BuyTicketRequest struct {
 	BuyerEmail string `json:"buyer_email"`
 }
 
-// BuyTicketResponse carries the hosted Stripe Checkout URL the
-// buyer's browser is redirected to. Once the buyer pays, the
-// webhook creates the team and emails the magic link.
+// BuyTicketResponse carries the hosted Checkout URL the buyer's
+// browser is redirected to. Once the buyer pays, the webhook
+// creates the team and emails the magic link.
 type BuyTicketResponse struct {
 	CheckoutURL string `json:"checkout_url"`
 }
 
-// BuyTicket initiates a Stripe Checkout session for one ticket on a
+// BuyTicket initiates a Checkout session for one ticket on a
 // public-for-sale event. Public POST: no auth. Rate-limited at the
 // route level to keep someone from spamming pending purchase rows.
 //
@@ -44,12 +42,12 @@ type BuyTicketResponse struct {
 //     fresh tickets — the listing should already hide them but we
 //     re-check here to close the race).
 //  2. Insert a ticket_purchases row in 'pending'.
-//  3. Open a Stripe Checkout session, stash zv_ticket_purchase_id
+//  3. Open a provider Checkout session, stash zv_ticket_purchase_id
 //     in metadata so the webhook can find the row, and persist the
 //     session id on the row for redelivery dedupe.
 //  4. Return the hosted URL; the browser redirects.
 func (h *Handlers) BuyTicket(w http.ResponseWriter, r *http.Request) {
-	if !h.stripeEnabled() {
+	if !h.paymentsEnabled() {
 		httpx.Error(w, http.StatusServiceUnavailable, "ticket sales not configured on this server")
 		return
 	}
@@ -123,13 +121,13 @@ func (h *Handlers) BuyTicket(w http.ResponseWriter, r *http.Request) {
 	}
 
 	productName := storeProductName(eventName, advTitle, advSlug, teamSize)
-	url, sessID, err := h.createTicketCheckoutSession(r.Context(), purchaseID, productName, currency, int(priceCents.Int64), email)
+	url, sessID, err := h.createTicketCheckoutSession(r.Context(), purchaseID, productName, currency, priceCents.Int64, email)
 	if err != nil {
 		// Mark the orphan as failed so the listing pages don't see a
-		// stale 'pending' that's already dead Stripe-side.
+		// stale 'pending' that's already dead provider-side.
 		_, _ = h.DB.ExecContext(r.Context(),
 			`UPDATE ticket_purchases SET state = 'failed' WHERE id = $1 AND state = 'pending'`, purchaseID)
-		httpx.ServerErr(w, http.StatusBadGateway, "stripe checkout create failed", err)
+		httpx.ServerErr(w, http.StatusBadGateway, "checkout create failed", err)
 		return
 	}
 	if _, err := h.DB.ExecContext(r.Context(),
@@ -142,9 +140,9 @@ func (h *Handlers) BuyTicket(w http.ResponseWriter, r *http.Request) {
 	httpx.JSON(w, http.StatusOK, BuyTicketResponse{CheckoutURL: url})
 }
 
-// storeProductName builds the line-item name shown on the Stripe
-// Checkout page and on the resulting invoice / receipt. Order of
-// preference: adventure title → event name → adventure slug.
+// storeProductName builds the line-item name shown on the Checkout
+// page and on the resulting invoice / receipt. Order of preference:
+// adventure title → event name → adventure slug.
 func storeProductName(eventName, advTitle sql.NullString, advSlug string, teamSize int) string {
 	title := ""
 	switch {
@@ -162,15 +160,12 @@ func storeProductName(eventName, advTitle sql.NullString, advSlug string, teamSi
 }
 
 // createTicketCheckoutSession is the ticket-flow analogue of
-// createStripeCheckoutSession. Differences from the org-purchase
-// flow it parallels:
+// createPurchaseCheckoutSession. Differences:
 //   - Customer email is always passed inline (the buyer is anonymous;
 //     no org → no stripe_customer_id to reuse).
 //   - Tax + invoice + billing-address collection are off: a $30
 //     consumer ticket purchase doesn't need a B2B invoice with VAT
 //     id, and forcing them through that flow tanks conversion.
-//     Operators who do need that for a particular event can ship a
-//     follow-up flag later.
 //   - Success URL goes back to /store with a paid token; the buyer
 //     waits for the email to arrive rather than landing on /play
 //     directly (the magic link doesn't exist until the webhook runs).
@@ -178,55 +173,41 @@ func (h *Handlers) createTicketCheckoutSession(
 	ctx context.Context,
 	purchaseID int64,
 	productName, currency string,
-	amountCents int,
+	amountCents int64,
 	buyerEmail string,
 ) (string, string, error) {
-	stripe.Key = h.StripeSecretKey
-
 	publicURL := strings.TrimRight(h.PublicURL, "/")
 	if publicURL == "" {
 		return "", "", errors.New("ticket checkout requires PublicURL to be configured")
 	}
-
-	params := &stripe.CheckoutSessionParams{
-		Mode: stripe.String(string(stripe.CheckoutSessionModePayment)),
-		LineItems: []*stripe.CheckoutSessionLineItemParams{{
-			Quantity: stripe.Int64(1),
-			PriceData: &stripe.CheckoutSessionLineItemPriceDataParams{
-				Currency:   stripe.String(currency),
-				UnitAmount: stripe.Int64(int64(amountCents)),
-				ProductData: &stripe.CheckoutSessionLineItemPriceDataProductDataParams{
-					Name: stripe.String(productName),
-				},
-			},
-		}},
-		SuccessURL: stripe.String(fmt.Sprintf("%s/store?paid=%d", publicURL, purchaseID)),
-		CancelURL:  stripe.String(fmt.Sprintf("%s/store?cancelled=%d", publicURL, purchaseID)),
-	}
-	params.AddMetadata("zv_ticket_purchase_id", fmt.Sprintf("%d", purchaseID))
-	if buyerEmail != "" {
-		params.CustomerEmail = stripe.String(buyerEmail)
-	}
-
-	s, err := session.New(params)
+	sess, err := h.Provider.CreateCheckout(ctx, payments.CheckoutParams{
+		AmountCents:   amountCents,
+		Currency:      currency,
+		ProductName:   productName,
+		SuccessURL:    fmt.Sprintf("%s/store?paid=%d", publicURL, purchaseID),
+		CancelURL:     fmt.Sprintf("%s/store?cancelled=%d", publicURL, purchaseID),
+		CustomerEmail: buyerEmail,
+		Metadata: map[string]string{
+			"zv_ticket_purchase_id": fmt.Sprintf("%d", purchaseID),
+		},
+	})
 	if err != nil {
 		return "", "", err
 	}
-	return s.URL, s.ID, nil
+	return sess.URL, sess.SessionID, nil
 }
 
-// handleTicketCheckoutCompleted runs when a Stripe checkout.session.
-// completed event references a ticket_purchases row. Creates the
-// team + slots, mails the magic links to the buyer, and flips the
-// purchase to 'paid'. Idempotent: a redelivery sees state='paid'
-// and short-circuits, so the buyer never gets a duplicate email or
-// a duplicate team.
-func (h *Handlers) handleTicketCheckoutCompleted(ctx context.Context, event stripe.Event) error {
-	var sess stripe.CheckoutSession
-	if err := decodeEvent(event, &sess); err != nil {
-		return fmt.Errorf("decode session: %w", err)
+// handleTicketCheckoutCompleted runs when a checkout.completed
+// event references a ticket_purchases row (zv_ticket_purchase_id
+// metadata). Creates the team + slots, mails the magic links to
+// the buyer, and flips the purchase to 'paid'. Idempotent: a
+// redelivery sees state='paid' and short-circuits, so the buyer
+// never gets a duplicate email or a duplicate team.
+func (h *Handlers) handleTicketCheckoutCompleted(ctx context.Context, event payments.Event) error {
+	if event.Checkout == nil {
+		return nil
 	}
-	idStr := sess.Metadata["zv_ticket_purchase_id"]
+	idStr := event.Metadata["zv_ticket_purchase_id"]
 	if idStr == "" {
 		return nil
 	}
@@ -259,7 +240,7 @@ func (h *Handlers) handleTicketCheckoutCompleted(ctx context.Context, event stri
 	if state == "paid" {
 		// Already fulfilled. Refresh the charge id in case the field
 		// only landed on a later delivery.
-		return updateTicketStripeMetadata(ctx, tx, purchaseID, sess)
+		return updateTicketStripeMetadata(ctx, tx, purchaseID, *event.Checkout)
 	}
 	if state != "pending" {
 		return nil
@@ -277,10 +258,10 @@ func (h *Handlers) handleTicketCheckoutCompleted(ctx context.Context, event stri
 		       team_id = $1,
 		       stripe_session_id = COALESCE(stripe_session_id, $2)
 		 WHERE id = $3
-	`, teamID, sess.ID, purchaseID); err != nil {
+	`, teamID, event.Checkout.SessionID, purchaseID); err != nil {
 		return fmt.Errorf("purchase update: %w", err)
 	}
-	if err := updateTicketStripeMetadata(ctx, tx, purchaseID, sess); err != nil {
+	if err := updateTicketStripeMetadata(ctx, tx, purchaseID, *event.Checkout); err != nil {
 		return err
 	}
 	if err := tx.Commit(); err != nil {
@@ -418,27 +399,19 @@ func (h *Handlers) sendTicketMagicLinks(ctx context.Context, buyerEmail string, 
 	})
 }
 
-// updateTicketStripeMetadata captures Stripe-side identifiers on
-// the purchase row. Mirrors the equivalent helper in the org
-// purchases flow but writes to ticket_purchases. The charge id is
-// what RefundPurchase / charge.refunded keys on, so getting it
-// here matters.
-func updateTicketStripeMetadata(ctx context.Context, tx *sql.Tx, purchaseID int64, sess stripe.CheckoutSession) error {
-	var (
-		chargeID   sql.NullString
-		invoiceURL sql.NullString
-	)
-	if sess.PaymentIntent != nil && sess.PaymentIntent.LatestCharge != nil {
-		chargeID.String, chargeID.Valid = sess.PaymentIntent.LatestCharge.ID, true
-	}
-	if sess.Invoice != nil && sess.Invoice.HostedInvoiceURL != "" {
-		invoiceURL.String, invoiceURL.Valid = sess.Invoice.HostedInvoiceURL, true
+// updateTicketStripeMetadata captures provider-side identifiers on
+// the purchase row. Mirrors the org-purchase helper but writes to
+// ticket_purchases. The charge id is what RefundPurchase /
+// charge.refunded keys on, so getting it here matters.
+func updateTicketStripeMetadata(ctx context.Context, tx *sql.Tx, purchaseID int64, c payments.CheckoutDetail) error {
+	if c.ChargeID == "" && c.InvoiceURL == "" {
+		return nil
 	}
 	_, err := tx.ExecContext(ctx, `
 		UPDATE ticket_purchases
 		   SET stripe_charge_id    = COALESCE(NULLIF($1, ''), stripe_charge_id),
 		       stripe_invoice_url  = COALESCE(NULLIF($2, ''), stripe_invoice_url)
 		 WHERE id = $3
-	`, chargeID.String, invoiceURL.String, purchaseID)
+	`, c.ChargeID, c.InvoiceURL, purchaseID)
 	return err
 }

@@ -7,13 +7,14 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"git.sr.ht/~klahr/zv/internal/admin"
 	"git.sr.ht/~klahr/zv/internal/adventure"
 	"git.sr.ht/~klahr/zv/internal/dbtest"
+	"git.sr.ht/~klahr/zv/internal/payments"
 	"git.sr.ht/~klahr/zv/internal/public"
 	"github.com/go-chi/chi/v5"
-	stripe "github.com/stripe/stripe-go/v82"
 )
 
 // TestStoreList_Filtering exercises the listing query: only events
@@ -94,11 +95,10 @@ func TestBuyTicket_RejectsBadInput(t *testing.T) {
 	defer cleanup()
 
 	h := &admin.Handlers{
-		DB:                  db,
-		Lib:                 adventure.New(db),
-		PublicURL:           "https://zv.example.com",
-		StripeSecretKey:     "sk_test_dummy",
-		StripeWebhookSecret: "whsec_dummy",
+		DB:        db,
+		Lib:       adventure.New(db),
+		PublicURL: "https://zv.example.com",
+		Provider:  &fakeProvider{}, // present but not actually invoked on the rejected paths
 	}
 	r := chi.NewRouter()
 	r.Post("/api/store/buy", h.BuyTicket)
@@ -296,42 +296,61 @@ func TestHandleChargeRefunded_TicketWithdrawsTeam(t *testing.T) {
 	}
 }
 
-// buildSessionCompletedEvent constructs a stripe.Event whose Data
-// holds a CheckoutSession with the given metadata. The webhook
-// handler decodes Data.Raw into a CheckoutSession via the same
-// path Stripe takes in production.
-func buildSessionCompletedEvent(t *testing.T, ticketPurchaseID int64, sessionID string) stripe.Event {
+// buildSessionCompletedEvent constructs the abstract payments.Event
+// that the webhook handler operates on. Tests synthesise events
+// directly rather than going through a provider's parser, so the
+// test stays decoupled from any specific SDK shape.
+func buildSessionCompletedEvent(t *testing.T, ticketPurchaseID int64, sessionID string) payments.Event {
 	t.Helper()
-	body := map[string]any{
-		"id":       sessionID,
-		"object":   "checkout.session",
-		"metadata": map[string]string{"zv_ticket_purchase_id": itoa64(ticketPurchaseID)},
-	}
-	raw, err := json.Marshal(body)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return stripe.Event{
-		Type: "checkout.session.completed",
-		Data: &stripe.EventData{Raw: raw},
+	return payments.Event{
+		Provider: "test",
+		Type:     payments.EventCheckoutCompleted,
+		ID:       "evt_" + sessionID,
+		Created:  time.Now(),
+		Metadata: map[string]string{"zv_ticket_purchase_id": itoa64(ticketPurchaseID)},
+		Checkout: &payments.CheckoutDetail{
+			SessionID:   sessionID,
+			AmountTotal: 2500,
+			Currency:    "eur",
+		},
 	}
 }
 
-func buildChargeRefundedEvent(t *testing.T, chargeID string) stripe.Event {
+func buildChargeRefundedEvent(t *testing.T, chargeID string) payments.Event {
 	t.Helper()
-	body := map[string]any{
-		"id":     chargeID,
-		"object": "charge",
-	}
-	raw, err := json.Marshal(body)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return stripe.Event{
-		Type: "charge.refunded",
-		Data: &stripe.EventData{Raw: raw},
+	return payments.Event{
+		Provider: "test",
+		Type:     payments.EventChargeRefunded,
+		ID:       "evt_refund_" + chargeID,
+		Created:  time.Now(),
+		Charge: &payments.ChargeDetail{
+			ID:          chargeID,
+			AmountCents: 1000,
+			Currency:    "eur",
+		},
 	}
 }
+
+// fakeProvider satisfies payments.Provider just enough for tests
+// that need a non-nil h.Provider. None of these methods should fire
+// in the rejected-input paths above; if they do the test asserts an
+// unexpected code path.
+type fakeProvider struct{}
+
+func (fakeProvider) Name() string { return "fake" }
+func (fakeProvider) CreateCheckout(ctx context.Context, p payments.CheckoutParams) (payments.CheckoutSession, error) {
+	return payments.CheckoutSession{URL: "https://fake/checkout", SessionID: "cs_fake"}, nil
+}
+func (fakeProvider) VerifyAndParseWebhook(body []byte, headers http.Header) (payments.Event, error) {
+	return payments.Event{}, nil
+}
+func (fakeProvider) Refund(ctx context.Context, p payments.RefundParams) (payments.Refund, error) {
+	return payments.Refund{ID: "re_fake", Status: "succeeded"}, nil
+}
+func (fakeProvider) CustomerPortal(ctx context.Context, customerID, returnURL string) (string, error) {
+	return "https://fake/portal", nil
+}
+
 
 func intp(v int) *int { return &v }
 

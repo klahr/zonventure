@@ -135,15 +135,17 @@ type createPurchaseArgs struct {
 	TopUpAssignmentID *int64 `json:"top_up_assignment_id,omitempty"`
 }
 
-// stripeConfigured mirrors admin.Handlers.stripeEnabled — both keys
-// must be present for Stripe traffic to be considered real. Replicated
-// here so MCP can refuse before dispatching, without needing to add
-// a new exported method on the admin package.
+// stripeConfigured mirrors admin.Handlers.paymentsEnabled — true
+// when the operator has wired a real provider. Replicated here so
+// MCP can refuse before dispatching, without needing to add a new
+// exported method on the admin package. Named for the Stripe-only
+// past, kept for now since "stripe" is the user-visible provider
+// id MCP callers pass in their args.
 func stripeConfigured(s *Server) bool {
 	if s.Admin == nil {
 		return false
 	}
-	return s.Admin.StripeSecretKey != "" && s.Admin.StripeWebhookSecret != ""
+	return s.Admin.Provider != nil
 }
 
 func createPurchase(ctx context.Context, s *Server, raw json.RawMessage) (ToolCallResult, error) {

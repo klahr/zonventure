@@ -19,6 +19,9 @@ import (
 	"git.sr.ht/~klahr/zv/internal/components"
 	"git.sr.ht/~klahr/zv/internal/mailer"
 	"git.sr.ht/~klahr/zv/internal/mcp"
+	"git.sr.ht/~klahr/zv/internal/payments"
+	simulatedprovider "git.sr.ht/~klahr/zv/internal/payments/simulated"
+	stripeprovider "git.sr.ht/~klahr/zv/internal/payments/stripe"
 	"git.sr.ht/~klahr/zv/internal/storage"
 	"git.sr.ht/~klahr/zv/internal/storage/dbblob"
 	"git.sr.ht/~klahr/zv/internal/metrics"
@@ -66,6 +69,14 @@ type Config struct {
 	// the only purchase flow.
 	StripeSecretKey     string
 	StripeWebhookSecret string
+	// PaymentsProvider names which payments.Provider impl to wire.
+	// Empty (default) auto-picks: Stripe when both Stripe credentials
+	// are set, otherwise nil ("payments not configured"). Setting
+	// this to "simulated" picks the dev-only no-money impl that
+	// auto-confirms checkouts in-process — never deploy with this
+	// in production. Future provider impls (mollie, paddle, …) get
+	// added here as new accepted values.
+	PaymentsProvider string
 	// Version is the human-readable build identifier surfaced on
 	// /api/version. cmd/server injects it via -ldflags at build time;
 	// when empty, /api/version reports "dev". The VCS revision and
@@ -234,18 +245,47 @@ func New(cfg Config) http.Handler {
 	})
 	updateSvc.Start(updateCtx)
 
+	// Pick a payments.Provider impl. The default is auto-discovery:
+	// Stripe when both Stripe credentials are set, else nil. The
+	// operator can override with PaymentsProvider — "simulated" is
+	// the dev-only impl that auto-confirms checkouts without
+	// touching real money.
+	var (
+		paymentProvider payments.Provider
+		simulatedProv   *simulatedprovider.Provider
+	)
+	switch strings.ToLower(strings.TrimSpace(cfg.PaymentsProvider)) {
+	case "simulated":
+		// Auto-confirm posts the synthetic event back to the
+		// public webhook endpoint on the same origin so the
+		// existing dedupe + handler path runs end-to-end.
+		base := strings.TrimRight(cfg.PublicURL, "/")
+		if base == "" {
+			base = "http://127.0.0.1:8080"
+		}
+		simulatedProv = simulatedprovider.New(base + "/api/webhooks/stripe")
+		paymentProvider = simulatedProv
+	case "stripe", "":
+		if p := stripeprovider.New(cfg.StripeSecretKey, cfg.StripeWebhookSecret); p != nil {
+			paymentProvider = p
+		}
+	default:
+		// Unknown name — fail loud rather than silently falling
+		// through to "payments disabled" and confusing the
+		// operator about why their checkout flow doesn't work.
+		panic("unknown ZV_PAYMENTS_PROVIDER: " + cfg.PaymentsProvider)
+	}
 	adminH := &admin.Handlers{
 		DB: cfg.DB, Lib: cfg.Library, Hub: hub, Sim: sim,
-		Mailer:              mail,
-		PublicURL:           cfg.PublicURL,
-		StripeSecretKey:     cfg.StripeSecretKey,
-		StripeWebhookSecret: cfg.StripeWebhookSecret,
-		SecureCookie:        cfg.SecureCookie,
-		Components:          cfg.Components,
-		Storage:             store,
-		TOTPKey:             cfg.TOTPKey,
-		TeamImporters:       importers,
-		Updates:             updateSvc,
+		Mailer:        mail,
+		PublicURL:     cfg.PublicURL,
+		Provider:      paymentProvider,
+		SecureCookie:  cfg.SecureCookie,
+		Components:    cfg.Components,
+		Storage:       store,
+		TOTPKey:       cfg.TOTPKey,
+		TeamImporters: importers,
+		Updates:       updateSvc,
 	}
 	publicH := &public.Handlers{DB: cfg.DB, Lib: cfg.Library, Hub: hub, Storage: store, PublicURL: cfg.PublicURL}
 
@@ -569,7 +609,15 @@ func New(cfg Config) http.Handler {
 	// the Stripe-Signature header, verified by the handler. Sits OUTSIDE
 	// the CSRF middleware because Stripe doesn't (and shouldn't) know
 	// our CSRF cookie. Idempotency is handled by processed_webhook_events.
-	r.Post("/api/webhooks/stripe", adminH.StripeWebhook)
+	r.Post("/api/webhooks/stripe", adminH.PaymentsWebhook)
+	// When the operator picked the simulated provider, mount the
+	// dev-only checkout / confirm / cancel routes. Doing this from
+	// here (rather than from the simulated package itself) keeps
+	// the route surface visible in one place + means the rest of
+	// the code stays unaware of the provider choice.
+	if simulatedProv != nil {
+		simulatedProv.MountDevRoutes(r)
+	}
 	// Change-email confirmation: public POST (the token IS the auth),
 	// CSRF-protected because the page that calls it is /arrange and
 	// already has the cookie. JSON body: {"token": "..."}.

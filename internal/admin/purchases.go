@@ -214,7 +214,7 @@ func (h *Handlers) CreatePurchase(w http.ResponseWriter, r *http.Request) {
 		// default to stripe when wired, simulated as the dev fallback.
 		if amount == 0 {
 			provider = "free"
-		} else if h.stripeEnabled() {
+		} else if h.paymentsEnabled() {
 			provider = "stripe"
 		} else {
 			provider = "simulated"
@@ -225,7 +225,7 @@ func (h *Handlers) CreatePurchase(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusBadRequest, "unsupported provider")
 		return
 	}
-	if provider == "stripe" && !h.stripeEnabled() {
+	if provider == "stripe" && !h.paymentsEnabled() {
 		httpx.Error(w, http.StatusServiceUnavailable, "stripe is not configured on this server")
 		return
 	}
@@ -313,7 +313,7 @@ func (h *Handlers) CreatePurchase(w http.ResponseWriter, r *http.Request) {
 		_ = h.DB.QueryRowContext(r.Context(),
 			`SELECT stripe_customer_id FROM organizations WHERE id = $1`,
 			*me.OrgID).Scan(&existingCustomerID)
-		url, sessID, serr := h.createStripeCheckoutSession(r.Context(),
+		url, sessID, serr := h.createPurchaseCheckoutSession(r.Context(),
 			id, req.AdventureSlug, advTitle, req.MaxPlayers, amount, me.Email,
 			existingCustomerID.String)
 		if serr != nil {

@@ -30,6 +30,7 @@ import (
 	"git.sr.ht/~klahr/zv/internal/httpx"
 	"git.sr.ht/~klahr/zv/internal/lanes"
 	"git.sr.ht/~klahr/zv/internal/mailer"
+	"git.sr.ht/~klahr/zv/internal/payments"
 	"git.sr.ht/~klahr/zv/internal/roster"
 	"git.sr.ht/~klahr/zv/internal/simulator"
 	"git.sr.ht/~klahr/zv/internal/storage"
@@ -56,14 +57,12 @@ type Handlers struct {
 	// be empty in dev — the admin handlers fall back to the request
 	// Host the same way auth.Handlers does.
 	PublicURL string
-	// StripeSecretKey, when set, enables provider=stripe on
-	// CreatePurchase. Empty leaves the simulated provider as the
-	// only option, which is the right default for dev clones.
-	StripeSecretKey string
-	// StripeWebhookSecret authenticates POST /api/webhooks/stripe.
-	// Required to enable Stripe — without it we'd be a payment
-	// processor that accepts arbitrary "the customer paid" requests.
-	StripeWebhookSecret string
+	// Provider is the abstracted payments seam (see internal/payments).
+	// Nil means the operator hasn't configured a real provider; in
+	// that case the simulated provider stays the only checkout
+	// option (the right default for dev clones) and the webhook
+	// route returns 503.
+	Provider payments.Provider
 	// SecureCookie is the operator's force-secure override, mirrored
 	// from server.Config. Cookie-emitting paths in this package pass
 	// it to auth.CookieSecure for parity with the auth/player handlers.

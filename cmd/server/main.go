@@ -234,7 +234,7 @@ func main() {
 		SecureCookie: *secureCookie,
 		Mailer:       mail,
 		PublicURL:    *publicURL,
-		Components:   describeComponents(mail, os.Getenv("ZV_STRIPE_SECRET_KEY"), os.Getenv("ZV_STRIPE_WEBHOOK_SECRET"), os.Getenv("ZV_METRICS_ADDR"), totpKey != nil),
+		Components:   describeComponents(mail, os.Getenv("ZV_STRIPE_SECRET_KEY"), os.Getenv("ZV_STRIPE_WEBHOOK_SECRET"), os.Getenv("ZV_METRICS_ADDR"), os.Getenv("ZV_PAYMENTS_PROVIDER"), totpKey != nil),
 		TOTPKey:      totpKey,
 		Legal: server.LegalConfig{
 			CompanyName:           os.Getenv("ZV_COMPANY_NAME"),
@@ -250,6 +250,13 @@ func main() {
 		},
 		StripeSecretKey:     os.Getenv("ZV_STRIPE_SECRET_KEY"),
 		StripeWebhookSecret: os.Getenv("ZV_STRIPE_WEBHOOK_SECRET"),
+		// PaymentsProvider lets the operator override which
+		// payments.Provider impl gets wired. Empty = auto (stripe
+		// when keys present, else nil); "simulated" picks the
+		// dev-only no-money impl that auto-confirms checkouts in-
+		// process. Useful for CI / local dev where you want to
+		// walk a buy flow without real Stripe credentials.
+		PaymentsProvider: os.Getenv("ZV_PAYMENTS_PROVIDER"),
 		Version:             version,
 		WebOverrideDir:      os.Getenv("ZV_WEB_OVERRIDE_DIR"),
 		ChangelogURL:        os.Getenv("ZV_CHANGELOG_URL"),
@@ -366,15 +373,24 @@ func main() {
 // have intended to wire. Add an entry whenever a new seam is
 // introduced (e.g. a payments interface, a blob-storage interface);
 // keep entries pure descriptive — no side effects, no DB calls.
-func describeComponents(m mailer.Mailer, stripeKey, stripeWebhookSecret, metricsAddr string, totpEnabled bool) []components.Component {
+func describeComponents(m mailer.Mailer, stripeKey, stripeWebhookSecret, metricsAddr, paymentsOverride string, totpEnabled bool) []components.Component {
 	mailerImpl, mailerEnabled, mailerNotes := "log", false, "set $ZV_SMTP_HOST to send real mail"
 	if _, ok := m.(*mailer.SMTPMailer); ok {
 		mailerImpl, mailerEnabled, mailerNotes = "smtp", true, ""
 	}
+	// Payments component: the runtime decision tree mirrors what
+	// server.New does — explicit ZV_PAYMENTS_PROVIDER wins, else
+	// auto-discover stripe when both creds are present, else fall
+	// back to the in-app simulated/free/invoice flow.
 	stripeOK := stripeKey != "" && stripeWebhookSecret != ""
-	paymentsImpl, paymentsEnabled, paymentsNotes := "simulated", true, "set $ZV_STRIPE_SECRET_KEY and $ZV_STRIPE_WEBHOOK_SECRET to enable Stripe"
-	if stripeOK {
-		paymentsImpl, paymentsEnabled, paymentsNotes = "stripe", true, ""
+	paymentsImpl, paymentsEnabled, paymentsNotes := "simulated-app", true, "set $ZV_STRIPE_SECRET_KEY and $ZV_STRIPE_WEBHOOK_SECRET to enable Stripe"
+	switch strings.ToLower(strings.TrimSpace(paymentsOverride)) {
+	case "simulated":
+		paymentsImpl, paymentsEnabled, paymentsNotes = "simulated", true, "DEV ONLY — auto-confirms checkouts in-process; no money moves"
+	case "stripe", "":
+		if stripeOK {
+			paymentsImpl, paymentsEnabled, paymentsNotes = "stripe", true, ""
+		}
 	}
 	metricsEnabled := metricsAddr != ""
 	metricsNotes := "set $ZV_METRICS_ADDR to expose /metrics"
