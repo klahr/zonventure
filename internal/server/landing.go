@@ -496,6 +496,7 @@ func topbarSubs(s landingStrings, lang string) [][2]string {
 		{"{{BRAND_ARIA}}", s.BrandARIA},
 		{"{{NAV_MANUAL}}", s.NavManual},
 		{"{{NAV_PRICING}}", s.NavPricing},
+		{"{{NAV_STORE}}", s.NavStore},
 		{"{{NAV_LOGIN}}", s.NavLogin},
 		{"{{FOOTER_ARIA}}", s.FooterARIA},
 		{"{{FOOTER_PRIVACY}}", s.FooterPrivacy},
@@ -511,19 +512,13 @@ func topbarSubs(s landingStrings, lang string) [][2]string {
 // storeSubs returns the {{KEY}} replacements specific to the public
 // /store listing and /store/event/{id} detail pages — all the body
 // copy, vocabulary fragments, and FAQ lines for the requested
-// locale. Topbar / footer chrome subs come from topbarSubs and are
-// merged separately so the same store template can be served by
-// either renderStoreListingPage or renderStoreEventPage without
-// duplicating the chrome list.
-//
-// {{NAV_STORE}} is here rather than in topbarSubs because today only
-// the store templates render that nav entry; landing/manual/pricing
-// don't list the store in their topbars yet, and adding it there
-// would require their templates to ship the placeholder too.
+// locale. Topbar / footer chrome subs come from topbarSubs (which
+// also owns {{NAV_STORE}} so every page sharing the topbar can link
+// here) and are merged separately so the same store template can be
+// served by either renderStoreListingPage or renderStoreEventPage
+// without duplicating the chrome list.
 func storeSubs(s landingStrings) [][2]string {
 	return [][2]string{
-		{"{{NAV_STORE}}", s.NavStore},
-
 		{"{{STORE_TITLE}}", s.StoreTitle},
 		{"{{STORE_META_DESC}}", s.StoreMetaDesc},
 		{"{{STORE_OG_DESC}}", s.StoreOGDesc},
