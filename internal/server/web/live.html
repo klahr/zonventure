@@ -1110,7 +1110,7 @@ function buildHeader(data) {
             : data.state === 'cancelled' ? '✕ '
             : data.state === 'scheduled' ? '⏰ '
             : ''),
-          t(data.state || '')),
+          tEventState(data.state)),
         ' · ', data.adventure_slug),
     ),
     h('div', { class: 'clockwrap' },

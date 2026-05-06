@@ -4402,7 +4402,7 @@ async function viewArrangerDashboard(view) {
             h('div', { style: 'flex:1; min-width:0' },
               h('div', { class: 'row between' },
                 h('strong', {}, runLabel(r)),
-                h('span', { class: 'pill ' + pillClassForState(r.state) }, stateGlyph(r.state) + t(r.state || ''))),
+                h('span', { class: 'pill ' + pillClassForState(r.state) }, stateGlyph(r.state) + tEventState(r.state))),
               h('p', { class: 'muted', style: 'font-size:.8rem; margin:.1rem 0 .3rem' },
                 r.adventure_title || r.adventure_slug),
               h('p', { class: 'muted', style: 'font-size:.85rem; margin:0' },
@@ -5390,7 +5390,7 @@ function purchaseStatePills(p) {
   const cls = 'pill ' + (p.state === 'paid' ? 'success'
     : p.state === 'pending' ? 'warning'
     : p.state === 'refunded' ? 'danger' : '');
-  return [h('span', { class: cls }, stateGlyph(p.state) + t(p.state || ''))];
+  return [h('span', { class: cls }, stateGlyph(p.state) + tEventState(p.state))];
 }
 
 // pricingHelpers reads the canonical per-player price + free-tier
@@ -6783,7 +6783,7 @@ function runsTable(rs, opts) {
                 h('div', { class: 'muted mono', style: 'font-size:.75rem' }, r.adventure_slug))
             : h('span', { class: 'muted mono' }, r.adventure_slug)),
         showOrg ? h('td', { class: 'hide-narrow' }, orgName(r.org_id)) : null,
-        h('td', {}, h('span', { class: 'pill ' + pillClassForState(r.state) }, stateGlyph(r.state) + t(r.state || ''))),
+        h('td', {}, h('span', { class: 'pill ' + pillClassForState(r.state) }, stateGlyph(r.state) + tEventState(r.state))),
         h('td', { class: 'hide-narrow' }, fmtLocal(r.scheduled_at)),
         h('td', { class: 'hide-narrow' }, fmtLocal(r.started_at)),
       ))),
@@ -7728,7 +7728,7 @@ async function viewRunDetail(view, runID) {
         icon(ICONS.back), t('Events')),
       titleEl, renameBtn,
       h('span', { class: 'pill ' + pillClassForState(event.state) },
-        stateGlyph(eventStateLabel(event)) + t(eventStateLabel(event))),
+        stateGlyph(eventStateLabel(event)) + tEventState(eventStateLabel(event))),
       h('span', { class: 'muted', style: 'font-size:.85rem' },
         event.started_at
           ? t('Started {{when}}', { when: fmtLocal(event.started_at) })
@@ -8056,7 +8056,7 @@ async function viewEventControl(view, runID) {
       back,
       h('h1', { style: 'margin:0; font-size:1.4rem' }, runLabel(event)),
       h('span', { class: 'pill ' + pillClassForState(event.state) },
-        stateGlyph(eventStateLabel(event)) + t(eventStateLabel(event))),
+        stateGlyph(eventStateLabel(event)) + tEventState(eventStateLabel(event))),
       h('span', { class: 'muted', style: 'font-size:.85rem' },
         event.started_at ? t('elapsed') + ' ' : t('—')),
       elapsedEl,
@@ -13738,7 +13738,7 @@ async function mountSimulatorPanel(host, advSlug) {
       h('div', { class: 'row between', style: 'gap:.5rem' },
         h('h2', { style: 'margin:0' }, t('Simulator')),
         h('span', { class: `pill ${stagePillClass(status.stage)}` },
-          t(stageLabel(status.stage)))),
+          tStageLabel(status.stage))),
       h('p', { class: 'muted', style: 'margin:.25rem 0 .5rem' },
         t('A simulation is already running on another adventure. Reset it from there to start one here.')),
       h('div', { class: 'row', style: 'gap:.5rem; align-items:center' },
@@ -13758,7 +13758,7 @@ async function mountSimulatorPanel(host, advSlug) {
 
   // On-this-adventure (or idle) path: full controls.
   const stagePill = h('span', { class: `pill ${stagePillClass(status.stage)}` },
-    t(stageLabel(status.stage)));
+    tStageLabel(status.stage));
   const elapsed = h('span', { class: 'muted mono', style: 'font-size:.85rem' },
     (status.stage !== 'idle' && status.started_at)
       ? t('Live for {{t}}', { t: fmtElapsed(status.started_at) })
@@ -13803,7 +13803,7 @@ async function mountSimulatorPanel(host, advSlug) {
   const applyStage = (st) => {
     const stage = st?.stage || 'idle';
     stagePill.className = 'pill ' + stagePillClass(stage);
-    stagePill.textContent = t(stageLabel(stage));
+    stagePill.textContent = tStageLabel(stage);
     elapsed.textContent = (stage !== 'idle' && st?.started_at)
       ? t('Live for {{t}}', { t: fmtElapsed(st.started_at) })
       : '';

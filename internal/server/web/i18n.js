@@ -112,6 +112,39 @@
     return s;
   }
 
+  // tEventState routes a runtime event-state value through static
+  // t() calls so the i18n extractor sees every possible key. The
+  // alternative — t(event.state) — is invisible to the regex in
+  // TestI18nCompleteness, so the Swedish dictionary silently drifts
+  // out of sync whenever a new state value lands. Adding a state
+  // here REQUIRES adding the matching key to web/locales/web/sv.json
+  // (and any other locale).
+  function tEventState(state) {
+    switch (state) {
+      case 'scheduled': return t('scheduled');
+      case 'running':   return t('running');
+      case 'paused':    return t('paused');
+      case 'completed': return t('completed');
+      case 'cancelled': return t('cancelled');
+      // 'manual' is a UI-only synthetic state set by eventStateLabel
+      // when an event is `scheduled` but has no scheduled_at — i.e.
+      // an ad-hoc event the arranger will start manually.
+      case 'manual':    return t('manual');
+      default:          return state || '';
+    }
+  }
+
+  // tStageLabel mirrors arrange.html::stageLabel — translates the
+  // simulator/run-bar stage badge. Same static-dispatch reason as
+  // tEventState.
+  function tStageLabel(stage) {
+    switch (stage) {
+      case 'running': return t('Running');
+      case 'paused':  return t('Paused');
+      default:        return t('Idle');
+    }
+  }
+
   function setLang(code) {
     if (!DICT[code] || code === currentLang) return;
     currentLang = code;
@@ -144,7 +177,9 @@
     return sel;
   }
 
-  window.zvI18n = { t, setLang, getLang, available, makeLangPicker, flagFor };
-  // Shorthand so call sites read cleanly: t('Save')
+  window.zvI18n = { t, tEventState, tStageLabel, setLang, getLang, available, makeLangPicker, flagFor };
+  // Shorthands so call sites read cleanly: t('Save'), tEventState(r.state).
   window.t = t;
+  window.tEventState = tEventState;
+  window.tStageLabel = tStageLabel;
 })();
