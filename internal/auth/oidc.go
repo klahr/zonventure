@@ -16,6 +16,7 @@ import (
 
 	"git.sr.ht/~klahr/zv/internal/logx"
 	"git.sr.ht/~klahr/zv/internal/metrics"
+	"git.sr.ht/~klahr/zv/internal/orgslug"
 )
 
 // OIDCConfig is the operator-supplied OpenID Connect configuration.
@@ -543,8 +544,12 @@ func ensureSSOOrg(ctx context.Context, tx *sql.Tx, name string) (int64, bool, er
 	if !errors.Is(err, sql.ErrNoRows) {
 		return 0, false, err
 	}
+	slug, err := orgslug.Reserve(ctx, tx, name)
+	if err != nil {
+		return 0, false, fmt.Errorf("reserve slug: %w", err)
+	}
 	if err := tx.QueryRowContext(ctx,
-		`INSERT INTO organizations(name) VALUES ($1) RETURNING id`, name).Scan(&orgID); err != nil {
+		`INSERT INTO organizations(name, slug) VALUES ($1, $2) RETURNING id`, name, slug).Scan(&orgID); err != nil {
 		return 0, false, err
 	}
 	return orgID, true, nil

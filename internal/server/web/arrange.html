@@ -16030,13 +16030,270 @@ function renderSettingsGeneral(view) {
   // export, delete) moved to the dedicated Account tab so a user
   // looking for "change my password" goes to the obviously-named
   // place, not a kitchen-sink "General" page.
-  view.replaceChildren(
+  const me = state.me || {};
+  const isOrgAdmin = me.role === 'org_admin';
+  const cards = [
     h('h1', {}, t('General')),
     h('p', { class: 'muted' },
       t('Appearance and quick links to help. For password, email, sessions, and account deletion, see the Account tab.')),
     renderSettingsAppearanceCard(),
-    renderSettingsHelpCard(),
+  ];
+  // Public profile: org_admin-only. The card bundles the store
+  // URL (with Copy + rename), the org's tagline / website / cover
+  // image — every knob that shows up on /o/{slug}. Lives in
+  // General because that's where org_admins look for "what does
+  // my public-facing surface look like".
+  if (isOrgAdmin) {
+    cards.push(renderSettingsPublicProfileCard());
+  }
+  cards.push(renderSettingsHelpCard());
+  view.replaceChildren(...cards);
+}
+
+// renderSettingsPublicProfileCard owns every editable field that
+// surfaces on /o/{slug} (the per-org landing) and /o/{slug}/store
+// (the per-org store). Org-admin only.
+//
+// Sections, in order:
+//   1. URL readout + Copy button (the most-asked question: "where
+//      do I send customers?")
+//   2. Slug rename (separate save button + confirm dialog because
+//      it breaks every previously-shared link)
+//   3. Tagline + website (PUT /profile in one save)
+//   4. Cover image upload + delete
+//
+// Each save round-trips to the backend and re-reads the GET payload
+// so derived fields (has_cover, store_url) refresh without a manual
+// page reload.
+function renderSettingsPublicProfileCard() {
+  const card = h('div', { class: 'card settings-card' });
+  const status = h('p', { class: 'muted', style: 'font-size:.85rem; margin:.5rem 0 0; min-height:1.2em' });
+  const setStatus = (cls, msg) => {
+    status.className = cls;
+    status.textContent = msg || '';
+  };
+
+  // ---- URL readout ----
+  const urlReadout = h('code', {
+    style: 'display:inline-block; padding:.4rem .55rem; border-radius:6px; background:var(--surface-2, transparent); font-size:.9rem; word-break:break-all',
+  }, '—');
+  const copyBtn = h('button', { class: 'btn small ghost', type: 'button' },
+    icon(ICONS.copy), t('Copy'));
+
+  // ---- Slug rename ----
+  const slugInput = h('input', {
+    type: 'text', placeholder: 'mindrace', spellcheck: 'false',
+    style: 'min-width:14rem; flex:1; font-family:var(--font-mono, monospace)',
+  });
+  const slugSaveBtn = h('button', { class: 'btn primary small', type: 'button' }, t('Save'));
+
+  // ---- Tagline + website ----
+  const taglineInput = h('input', {
+    type: 'text', maxlength: '140',
+    placeholder: t('Real-world adventures around Stockholm'),
+    style: 'width:100%',
+  });
+  const taglineCount = h('span', { class: 'muted', style: 'font-size:.75rem' }, '');
+  taglineInput.addEventListener('input', () => {
+    taglineCount.textContent = taglineInput.value.length + ' / 140';
+  });
+  const websiteInput = h('input', {
+    type: 'url',
+    placeholder: 'https://example.com',
+    style: 'width:100%',
+  });
+  const profileSaveBtn = h('button', { class: 'btn primary small', type: 'button' },
+    t('Save profile'));
+
+  // ---- Cover image ----
+  const coverPreview = h('div', {
+    style: 'aspect-ratio: 16/9; max-width: 22rem; border-radius: 12px; background: var(--surface-2, transparent); border: 1px dashed var(--border, currentColor); background-size: cover; background-position: center',
+  });
+  const coverPlaceholder = h('p', { class: 'muted', style: 'font-size:.85rem; text-align:center; padding:1rem' },
+    t('No cover image yet.'));
+  coverPreview.append(coverPlaceholder);
+  const coverInput = h('input', { type: 'file', accept: 'image/png,image/jpeg,image/webp' });
+  const coverUploadBtn = h('button', { class: 'btn primary small', type: 'button' },
+    icon(ICONS.upload), t('Upload cover'));
+  const coverDeleteBtn = h('button', { class: 'btn ghost small', type: 'button' },
+    t('Remove'));
+
+  let currentSlug = '';
+  let currentURL = '';
+
+  const renderCover = (orgID, hasCover) => {
+    if (!hasCover || !orgID) {
+      coverPreview.style.backgroundImage = '';
+      coverPreview.replaceChildren(coverPlaceholder);
+      coverDeleteBtn.disabled = true;
+      return;
+    }
+    // Cache-bust on every render: a fresh upload would otherwise
+    // serve from the browser cache and look like the upload didn't
+    // take effect. /org-cover replies with a 60s Cache-Control so
+    // crawlers + the public landing page still cache, but the admin
+    // edit affordance always sees the latest bytes.
+    coverPreview.style.backgroundImage = "url('/org-cover/" + orgID + "?t=" + Date.now() + "')";
+    coverPreview.replaceChildren();
+    coverDeleteBtn.disabled = false;
+  };
+
+  copyBtn.addEventListener('click', async () => {
+    if (!currentURL) return;
+    try {
+      await navigator.clipboard.writeText(currentURL);
+      setStatus('muted', t('Copied to clipboard.'));
+    } catch (e) {
+      setStatus('err', t('Could not copy — select the URL manually.'));
+    }
+  });
+
+  slugSaveBtn.addEventListener('click', async () => {
+    const next = slugInput.value.trim().toLowerCase();
+    if (!next) { setStatus('err', t('Slug cannot be empty.')); return; }
+    if (next === currentSlug) { setStatus('muted', t('No change.')); return; }
+    if (!confirm(t('Rename the public store URL? Any previously-shared link to /o/{{old}}/store will stop working immediately.', { old: currentSlug }))) {
+      return;
+    }
+    slugSaveBtn.disabled = true;
+    setStatus('muted', t('Saving…'));
+    const r = await api('/api/admin/orgs/me/slug', {
+      method: 'PUT',
+      body: JSON.stringify({ slug: next }),
+    });
+    slugSaveBtn.disabled = false;
+    if (!r.ok) {
+      setStatus('err', r.body?.error || t('error {{status}}', { status: r.status }));
+      return;
+    }
+    setStatus('muted', t('Saved.'));
+    await refresh();
+  });
+
+  profileSaveBtn.addEventListener('click', async () => {
+    profileSaveBtn.disabled = true;
+    setStatus('muted', t('Saving…'));
+    const r = await api('/api/admin/orgs/me/profile', {
+      method: 'PUT',
+      body: JSON.stringify({
+        tagline: taglineInput.value.trim(),
+        public_website: websiteInput.value.trim(),
+      }),
+    });
+    profileSaveBtn.disabled = false;
+    if (!r.ok) {
+      setStatus('err', r.body?.error || t('error {{status}}', { status: r.status }));
+      return;
+    }
+    setStatus('muted', t('Profile saved.'));
+    applyProfile(r.body || {});
+  });
+
+  coverUploadBtn.addEventListener('click', async () => {
+    const f = coverInput.files && coverInput.files[0];
+    if (!f) { setStatus('err', t('Pick an image file first.')); return; }
+    coverUploadBtn.disabled = true;
+    setStatus('muted', t('Uploading…'));
+    const fd = new FormData();
+    fd.append('file', f);
+    try {
+      const r = await fetch('/api/admin/orgs/me/cover', {
+        method: 'POST', body: fd, credentials: 'same-origin',
+        headers: { 'X-CSRF-Token': csrfToken() },
+      });
+      if (!r.ok) {
+        const txt = await r.text().catch(() => '');
+        throw new Error(txt || ('HTTP ' + r.status));
+      }
+      setStatus('muted', t('Cover uploaded.'));
+      coverInput.value = '';
+      await refresh();
+    } catch (err) {
+      setStatus('err', t('Upload failed: {{err}}', { err: String(err.message || err) }));
+    } finally {
+      coverUploadBtn.disabled = false;
+    }
+  });
+
+  coverDeleteBtn.addEventListener('click', async () => {
+    if (!confirm(t('Remove the cover image? The landing page falls back to the accent gradient.'))) return;
+    coverDeleteBtn.disabled = true;
+    const r = await api('/api/admin/orgs/me/cover', { method: 'DELETE' });
+    if (!r.ok && r.status !== 204) {
+      setStatus('err', r.body?.error || t('error {{status}}', { status: r.status }));
+      coverDeleteBtn.disabled = false;
+      return;
+    }
+    setStatus('muted', t('Cover removed.'));
+    await refresh();
+  });
+
+  function applyProfile(body) {
+    currentSlug = body.slug || '';
+    currentURL = body.store_url || '';
+    slugInput.value = currentSlug;
+    urlReadout.textContent = currentURL || ('/o/' + currentSlug + '/store');
+    taglineInput.value = body.tagline || '';
+    taglineCount.textContent = (body.tagline || '').length + ' / 140';
+    websiteInput.value = body.public_website || '';
+    // org_id isn't in the DTO; derive it from state.me so the cover
+    // preview URL points at the right /org-cover/{id}.
+    const orgID = (state.me && state.me.org_id) || 0;
+    renderCover(orgID, !!body.has_cover);
+  }
+
+  const refresh = async () => {
+    setStatus('muted', t('Loading…'));
+    const r = await api('/api/admin/orgs/me/profile');
+    if (!r.ok) {
+      setStatus('err', r.body?.error || t('error {{status}}', { status: r.status }));
+      return;
+    }
+    applyProfile(r.body || {});
+    setStatus('muted', '');
+  };
+
+  card.append(
+    h('h2', {}, t('Public profile')),
+    h('p', { class: 'muted', style: 'font-size:.9rem' },
+      t('Everything that surfaces on your public landing and store. Customers see this — keep it tidy.')),
+
+    // 1. URL readout + Copy
+    h('h3', { style: 'margin:1.25rem 0 .25rem; font-size:.95rem' }, t('Store URL')),
+    h('div', { class: 'row', style: 'gap:.5rem; flex-wrap:wrap; align-items:center' },
+      urlReadout, copyBtn),
+
+    // 2. Slug rename
+    h('h3', { style: 'margin:1.5rem 0 .25rem; font-size:.95rem' }, t('Rename slug')),
+    h('div', { class: 'row', style: 'gap:.5rem; align-items:center; flex-wrap:wrap' },
+      slugInput, slugSaveBtn),
+    h('p', { class: 'muted', style: 'font-size:.8rem; margin:.25rem 0 0' },
+      t('Lowercase letters, digits, and hyphens. Old URLs stop working when you save — share the new one.')),
+
+    // 3. Tagline + website
+    h('h3', { style: 'margin:1.5rem 0 .25rem; font-size:.95rem' }, t('About')),
+    h('label', { class: 'field', style: 'display:flex; flex-direction:column; gap:.25rem' },
+      h('div', { class: 'row', style: 'justify-content:space-between' },
+        h('span', { class: 'muted', style: 'font-size:.8rem' }, t('Tagline')),
+        taglineCount),
+      taglineInput),
+    h('label', { class: 'field', style: 'display:flex; flex-direction:column; gap:.25rem; margin-top:.5rem' },
+      h('span', { class: 'muted', style: 'font-size:.8rem' }, t('Website')),
+      websiteInput),
+    h('div', { class: 'row', style: 'gap:.5rem; margin-top:.5rem' }, profileSaveBtn),
+
+    // 4. Cover image
+    h('h3', { style: 'margin:1.5rem 0 .25rem; font-size:.95rem' }, t('Cover image')),
+    h('p', { class: 'muted', style: 'font-size:.8rem; margin:0 0 .5rem' },
+      t('Used as the hero on /o/{{slug}}. Recommended 1600×900, PNG/JPEG/WebP.', { slug: 'mindrace' })),
+    coverPreview,
+    h('div', { class: 'row', style: 'gap:.5rem; align-items:center; flex-wrap:wrap; margin-top:.5rem' },
+      coverInput, coverUploadBtn, coverDeleteBtn),
+
+    status,
   );
+  refresh();
+  return card;
 }
 
 // renderSettingsAccount paints the identity / security / data cards.

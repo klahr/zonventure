@@ -44,6 +44,10 @@ type Blobs interface {
 	GetOrgLogo(ctx context.Context, orgID int64) (content []byte, mimeType string, err error)
 	DeleteOrgLogo(ctx context.Context, orgID int64) error
 
+	PutOrgCover(ctx context.Context, orgID int64, content []byte, mimeType string) error
+	GetOrgCover(ctx context.Context, orgID int64) (content []byte, mimeType string, err error)
+	DeleteOrgCover(ctx context.Context, orgID int64) error
+
 	PutEventCover(ctx context.Context, eventID int64, content []byte, mimeType string) error
 	GetEventCover(ctx context.Context, eventID int64) (content []byte, mimeType string, err error)
 	DeleteEventCover(ctx context.Context, eventID int64) error

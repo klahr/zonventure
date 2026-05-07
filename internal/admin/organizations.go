@@ -11,6 +11,7 @@ import (
 	"git.sr.ht/~klahr/zv/internal/auth"
 	"git.sr.ht/~klahr/zv/internal/httpx"
 	"git.sr.ht/~klahr/zv/internal/logx"
+	"git.sr.ht/~klahr/zv/internal/orgslug"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -38,8 +39,12 @@ type orgMemberDTO struct {
 }
 
 type organizationDTO struct {
-	ID            int64           `json:"id"`
-	Name          string          `json:"name"`
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
+	// Slug powers the per-org store URL (/o/{slug}/store). Auto-derived
+	// from name at creation time, editable by org_admin afterwards.
+	// See internal/orgslug.
+	Slug          string          `json:"slug,omitempty"`
 	CreatedAt     string          `json:"created_at"`
 	Members       []orgMemberDTO  `json:"members"`
 	Assignments   []assignmentDTO `json:"assignments"`
@@ -64,7 +69,7 @@ type organizationDTO struct {
 // and activity counts. Admin-only.
 func (h *Handlers) ListOrganizations(w http.ResponseWriter, r *http.Request) {
 	rows, err := h.DB.QueryContext(r.Context(), `
-		SELECT o.id, o.name, o.created_at,
+		SELECT o.id, o.name, o.slug, o.created_at,
 		       0 AS players_total,
 		       (SELECT COUNT(*) FROM events ar WHERE ar.org_id = o.id),
 		       (SELECT COUNT(*) FROM events ar WHERE ar.org_id = o.id AND ar.state = 'running'),
@@ -81,7 +86,7 @@ func (h *Handlers) ListOrganizations(w http.ResponseWriter, r *http.Request) {
 	out := []organizationDTO{}
 	for rows.Next() {
 		o := organizationDTO{Members: []orgMemberDTO{}, Assignments: []assignmentDTO{}}
-		if err := rows.Scan(&o.ID, &o.Name, &o.CreatedAt, &o.PlayersTotal, &o.EventsTotal, &o.EventsRunning, &o.HasLogo, &o.Trusted); err != nil {
+		if err := rows.Scan(&o.ID, &o.Name, &o.Slug, &o.CreatedAt, &o.PlayersTotal, &o.EventsTotal, &o.EventsRunning, &o.HasLogo, &o.Trusted); err != nil {
 			httpx.Error(w, http.StatusInternalServerError, "scan failed")
 			return
 		}
@@ -118,14 +123,14 @@ func (h *Handlers) GetOrganization(w http.ResponseWriter, r *http.Request) {
 	o.Members = []orgMemberDTO{}
 	o.Assignments = []assignmentDTO{}
 	err := h.DB.QueryRowContext(r.Context(), `
-		SELECT o.id, o.name, o.created_at,
+		SELECT o.id, o.name, o.slug, o.created_at,
 		       0 AS players_total,
 		       (SELECT COUNT(*) FROM events ar WHERE ar.org_id = o.id),
 		       (SELECT COUNT(*) FROM events ar WHERE ar.org_id = o.id AND ar.state = 'running'),
 		       (o.logo_content IS NOT NULL AND length(o.logo_content) > 0) AS has_logo,
 		       (o.trusted <> 0) AS trusted
 		FROM organizations o WHERE o.id = $1
-	`, id).Scan(&o.ID, &o.Name, &o.CreatedAt, &o.PlayersTotal, &o.EventsTotal, &o.EventsRunning, &o.HasLogo, &o.Trusted)
+	`, id).Scan(&o.ID, &o.Name, &o.Slug, &o.CreatedAt, &o.PlayersTotal, &o.EventsTotal, &o.EventsRunning, &o.HasLogo, &o.Trusted)
 	if errors.Is(err, sql.ErrNoRows) {
 		httpx.Error(w, http.StatusNotFound, "organization not found")
 		return
@@ -179,9 +184,14 @@ func (h *Handlers) CreateOwnOrg(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback() //nolint:errcheck
+	slug, err := orgslug.Reserve(r.Context(), tx, req.Name)
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "slug reservation failed")
+		return
+	}
 	var id int64
 	if err := tx.QueryRowContext(r.Context(),
-		`INSERT INTO organizations(name) VALUES ($1) RETURNING id`, req.Name).Scan(&id); err != nil {
+		`INSERT INTO organizations(name, slug) VALUES ($1, $2) RETURNING id`, req.Name, slug).Scan(&id); err != nil {
 		httpx.Error(w, http.StatusConflict, "name already used")
 		return
 	}
@@ -205,7 +215,7 @@ func (h *Handlers) CreateOwnOrg(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.JSON(w, http.StatusCreated, organizationDTO{
-		ID: id, Name: req.Name, Members: []orgMemberDTO{}, Assignments: []assignmentDTO{},
+		ID: id, Name: req.Name, Slug: slug, Members: []orgMemberDTO{}, Assignments: []assignmentDTO{},
 	})
 }
 
@@ -220,18 +230,125 @@ func (h *Handlers) CreateOrganization(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusBadRequest, "name required")
 		return
 	}
+	slug, err := orgslug.Reserve(r.Context(), h.DB, req.Name)
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "slug reservation failed")
+		return
+	}
 	var id int64
-	if err := h.DB.QueryRowContext(r.Context(), `INSERT INTO organizations(name) VALUES ($1) RETURNING id`, req.Name).Scan(&id); err != nil {
+	if err := h.DB.QueryRowContext(r.Context(),
+		`INSERT INTO organizations(name, slug) VALUES ($1, $2) RETURNING id`, req.Name, slug).Scan(&id); err != nil {
 		httpx.Error(w, http.StatusConflict, "name already used")
 		return
 	}
 	httpx.JSON(w, http.StatusCreated, organizationDTO{
-		ID: id, Name: req.Name, Members: []orgMemberDTO{}, Assignments: []assignmentDTO{},
+		ID: id, Name: req.Name, Slug: slug, Members: []orgMemberDTO{}, Assignments: []assignmentDTO{},
 	})
 }
 
 type updateOrgRequest struct {
 	Name *string `json:"name,omitempty"`
+}
+
+// orgSlugDTO is the GET + PUT body for /api/admin/orgs/me/slug.
+// Returns the bare slug plus a fully-resolved store URL the
+// frontend can drop into a Copy button without re-deriving it.
+type orgSlugDTO struct {
+	Slug     string `json:"slug"`
+	StoreURL string `json:"store_url"`
+}
+
+// GetMyOrgSlug returns the slug of the caller's active org. Reads
+// the active org from the session (auth.FromContext) so it works
+// for any role attached to one — an org_admin reading their slug
+// to display, or a future read-only path for org_member that just
+// shows the URL without an edit affordance.
+func (h *Handlers) GetMyOrgSlug(w http.ResponseWriter, r *http.Request) {
+	me, ok := auth.FromContext(r.Context())
+	if !ok || me.OrgID == nil || *me.OrgID == 0 {
+		httpx.Error(w, http.StatusForbidden, "not in an organization")
+		return
+	}
+	orgID := *me.OrgID
+	var slug string
+	if err := h.DB.QueryRowContext(r.Context(),
+		`SELECT slug FROM organizations WHERE id = $1`, orgID).Scan(&slug); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			httpx.Error(w, http.StatusNotFound, "organization not found")
+			return
+		}
+		httpx.Error(w, http.StatusInternalServerError, "lookup failed")
+		return
+	}
+	httpx.JSON(w, http.StatusOK, orgSlugDTO{
+		Slug:     slug,
+		StoreURL: storeURLFromSlug(h.PublicURL, slug),
+	})
+}
+
+// SetMyOrgSlug rewrites the caller's active-org slug. RoleOrgAdmin
+// only — an org_member can read the URL but not change it (a
+// rename breaks every printed flyer / email link the company sent
+// out, so it's an "owner" decision).
+//
+// Validation runs through orgslug.Validate, so format + length +
+// reserved-word checks live in one place. Slug-already-taken
+// returns 409 so the caller can show "pick another" inline.
+func (h *Handlers) SetMyOrgSlug(w http.ResponseWriter, r *http.Request) {
+	me, ok := auth.FromContext(r.Context())
+	if !ok || me.OrgID == nil || *me.OrgID == 0 {
+		httpx.Error(w, http.StatusForbidden, "not in an organization")
+		return
+	}
+	orgID := *me.OrgID
+	if me.Role != auth.RoleOrgAdmin {
+		httpx.Error(w, http.StatusForbidden, "org admins only")
+		return
+	}
+	var req orgSlugDTO
+	if !httpx.DecodeJSON(w, r, &req) {
+		return
+	}
+	slug := strings.ToLower(strings.TrimSpace(req.Slug))
+	if err := orgslug.Validate(slug); err != nil {
+		httpx.Error(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	res, err := h.DB.ExecContext(r.Context(),
+		`UPDATE organizations SET slug = $1 WHERE id = $2`, slug, orgID)
+	if err != nil {
+		// Postgres reports unique violations on (slug). Surface as
+		// 409 so the frontend's "pick another" UI lights up rather
+		// than a generic 500.
+		if strings.Contains(strings.ToLower(err.Error()), "duplicate") ||
+			strings.Contains(strings.ToLower(err.Error()), "unique") {
+			httpx.Error(w, http.StatusConflict, "that slug is already taken")
+			return
+		}
+		httpx.Error(w, http.StatusInternalServerError, "update failed")
+		return
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		httpx.Error(w, http.StatusNotFound, "organization not found")
+		return
+	}
+	logx.Info("admin.org.slug.updated", "org_id", orgID, "slug", slug, "by", me.Username)
+	httpx.JSON(w, http.StatusOK, orgSlugDTO{
+		Slug:     slug,
+		StoreURL: storeURLFromSlug(h.PublicURL, slug),
+	})
+}
+
+// storeURLFromSlug returns the absolute store URL for a slug. Falls
+// back to a relative path when the operator hasn't set PublicURL —
+// the Copy button will still produce something usable, just origin-
+// relative rather than fully-qualified.
+func storeURLFromSlug(publicURL, slug string) string {
+	base := strings.TrimRight(publicURL, "/")
+	if base == "" {
+		return "/o/" + slug + "/store"
+	}
+	return base + "/o/" + slug + "/store"
 }
 
 // UpdateOrganization renames an organization. Admin-only.

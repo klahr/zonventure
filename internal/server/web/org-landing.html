@@ -1,0 +1,361 @@
+<!doctype html>
+<!--
+  Per-org public landing page. Mounted at /o/{slug}.
+  Server-rendered (rather than SPA) so search engines, social-media
+  previewers, and AI agents see real OG metadata + a description in
+  the response body. Override with ZV_WEB_OVERRIDE_DIR/org-landing.html
+  for a fully-branded variant.
+
+  Substitutions follow the same {{KEY}} pattern as store.html /
+  store-event.html — see renderOrgLandingPage in
+  internal/server/org_landing.go for the full key list.
+-->
+<html lang="{{LANG_CODE}}"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{{ORG_NAME}} — {{NAV_STORE}}</title>
+<meta name="description" content="{{TAGLINE_OR_DEFAULT}}">
+<link rel="canonical" href="{{CANONICAL_URL}}">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+
+<meta property="og:title" content="{{ORG_NAME}}">
+<meta property="og:description" content="{{TAGLINE_OR_DEFAULT}}">
+<meta property="og:type" content="website">
+<meta property="og:url" content="{{CANONICAL_URL}}">
+{{OG_COVER_TAG}}
+
+<meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#14202e" media="(prefers-color-scheme: dark)">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Aclonica&family=Open+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+
+<link rel="stylesheet" href="/assets/topbar.css">
+<script defer src="/assets/topbar.js"></script>
+<script>(function(){try{var v=localStorage.getItem('zv-theme');if(v==='light'||v==='dark')document.documentElement.setAttribute('data-theme',v);}catch(e){}})();</script>
+
+<style>
+  :root {
+    color-scheme: light dark;
+    --accent: #ad1357;
+    --accent-2: #e24080;
+    --accent-deep: #6d0a35;
+    --ink: #1f3349;
+    --ink-soft: #3d5573;
+    --muted: #6b7f96;
+    --bg: #fbfbfd;
+    --surface: #ffffff;
+    --border-soft: #e2e7ef;
+    --shadow: 0 1px 2px rgba(31,51,73,.06), 0 4px 16px rgba(31,51,73,.08);
+  }
+  [data-theme="dark"] {
+    --ink: #e7ecf4; --ink-soft: #c2cee0; --muted: #9db1cc;
+    --bg: #14202e; --surface: #1f3349; --border-soft: #2c4361;
+    --accent: #e24080; --accent-2: #ff6aa3; --accent-deep: #ad1357;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme]) {
+      --ink: #e7ecf4; --ink-soft: #c2cee0; --muted: #9db1cc;
+      --bg: #14202e; --surface: #1f3349; --border-soft: #2c4361;
+      --accent: #e24080; --accent-2: #ff6aa3; --accent-deep: #ad1357;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font: 16px/1.6 'Open Sans', system-ui, sans-serif;
+    color: var(--ink); background: var(--bg);
+  }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .wrap { max-width: 64rem; margin: 0 auto; padding: 0 1.25rem; }
+
+  /* Hero: full-bleed cover image (when set) with a soft overlay so
+     headline/tagline stay readable regardless of cover contrast.
+     No-cover fallback paints a solid accent gradient instead. */
+  .hero {
+    position: relative;
+    color: #fff;
+    padding: 5rem 0 4rem;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    {{HERO_BG_STYLE}}
+  }
+  .hero::after {
+    content: '';
+    position: absolute; inset: 0;
+    background: linear-gradient(180deg, rgba(0,0,0,.15), rgba(0,0,0,.55));
+    pointer-events: none;
+  }
+  .hero .wrap { position: relative; z-index: 1; }
+  .hero h1 {
+    font-family: 'Aclonica', Georgia, serif;
+    font-size: clamp(2.2rem, 5vw, 3.4rem);
+    margin: 0 0 .75rem;
+    letter-spacing: -0.01em;
+  }
+  .hero .tagline {
+    font-size: 1.2rem;
+    margin: 0 0 1.5rem;
+    opacity: .92;
+    max-width: 36rem;
+  }
+  .hero .logo-wrap {
+    margin-bottom: 1.25rem;
+  }
+  .hero .logo {
+    display: inline-block;
+    background: #fff;
+    border-radius: 14px;
+    padding: .5rem;
+    box-shadow: 0 4px 16px rgba(0,0,0,.25);
+  }
+  .hero .logo img {
+    display: block;
+    max-height: 4rem;
+    max-width: 12rem;
+  }
+  .hero-cta {
+    display: inline-flex;
+    gap: .75rem;
+    flex-wrap: wrap;
+  }
+  .btn {
+    display: inline-block;
+    padding: .8rem 1.75rem;
+    border-radius: 999px;
+    font-weight: 700; font-size: .95rem;
+    text-decoration: none;
+    border: 1px solid transparent;
+    transition: transform .12s, opacity .12s;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .btn:hover { transform: translateY(-1px); text-decoration: none; }
+  .btn.primary {
+    background: #fff; color: var(--accent-deep);
+  }
+  .btn.primary:hover { opacity: .92; }
+  .btn.ghost {
+    background: rgba(255,255,255,.12);
+    color: #fff;
+    border-color: rgba(255,255,255,.65);
+    backdrop-filter: blur(2px);
+  }
+  .btn.ghost:hover { background: rgba(255,255,255,.2); }
+
+  main { padding: 3.5rem 0 5rem; }
+  h2 {
+    font-family: 'Aclonica', Georgia, serif;
+    font-size: clamp(1.4rem, 2.5vw, 1.9rem);
+    margin: 0 0 1.5rem;
+  }
+  .featured {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr));
+    gap: 1.25rem;
+    margin-bottom: 2.5rem;
+  }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border-soft);
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: var(--shadow);
+    color: inherit;
+    text-decoration: none;
+    display: flex;
+    flex-direction: column;
+    transition: transform .12s, box-shadow .12s;
+  }
+  .card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(31,51,73,.10), 0 12px 32px rgba(31,51,73,.12);
+    text-decoration: none;
+  }
+  .card .cover {
+    aspect-ratio: 16 / 9;
+    background-color: var(--border-soft);
+    background-size: cover;
+    background-position: center;
+  }
+  .card .body { padding: 1.25rem 1.25rem 1.4rem; }
+  .card h3 { font-size: 1.1rem; margin: 0 0 .35rem; }
+  .card .blurb {
+    color: var(--ink-soft); font-size: .95rem;
+    margin: 0 0 .75rem; min-height: 2.6em;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .card .price {
+    font-weight: 700; font-size: 1.05rem;
+    color: var(--accent);
+  }
+  .empty {
+    color: var(--muted); font-size: .95rem;
+    text-align: center;
+    padding: 2rem 1rem;
+    border: 1px dashed var(--border-soft);
+    border-radius: 12px;
+  }
+  .see-all {
+    text-align: center; margin: 1.5rem 0 0;
+  }
+  .footer-note {
+    color: var(--muted); font-size: .85rem;
+    margin-top: 3rem;
+    text-align: center;
+  }
+  .footer-note a { color: var(--muted); text-decoration: underline; }
+</style>
+</head>
+<body>
+
+<a href="#main" class="skip-link">Skip to content</a>
+
+<header role="banner">
+  <div class="wrap">
+    <label class="hamburger" for="navtoggle" aria-label="{{NAV_OPEN_ARIA}}">
+      <span></span><span></span><span></span>
+    </label>
+    <input type="checkbox" id="navtoggle" class="nav-toggle" aria-hidden="true">
+    <label class="backdrop" for="navtoggle" aria-hidden="true">
+    </label>
+    <a class="brand" href="/" aria-label="{{BRAND_ARIA}}">zonventure</a>
+    <nav aria-label="{{NAV_PRIMARY_ARIA}}">
+      <div class="lang-picker" role="group" aria-label="{{LANG_ARIA}}">
+        <a href="?lang=en" class="lang-link {{EN_ACTIVE}}" {{EN_CURRENT}} hreflang="en">
+          <span class="flag" aria-hidden="true">🇬🇧</span><span class="label">EN</span>
+        </a>
+        <a href="?lang=sv" class="lang-link {{SV_ACTIVE}}" {{SV_CURRENT}} hreflang="sv">
+          <span class="flag" aria-hidden="true">🇸🇪</span><span class="label">SV</span>
+        </a>
+      </div>
+      <div class="nav-menu">
+        <a href="/manual">{{NAV_MANUAL}}</a>
+        <a href="/pricing">{{NAV_PRICING}}</a>
+        <a href="/store">{{NAV_STORE}}</a>
+        <a href="/arrange" class="btn">{{NAV_LOGIN}}</a>
+      </div>
+    </nav>
+  </div>
+</header>
+
+<aside class="nav-overlay" aria-label="{{NAV_PRIMARY_ARIA}}">
+  <a href="/manual">{{NAV_MANUAL}}</a>
+  <a href="/pricing">{{NAV_PRICING}}</a>
+  <a href="/store">{{NAV_STORE}}</a>
+  <a href="/arrange" class="btn">{{NAV_LOGIN}}</a>
+</aside>
+
+<section class="hero">
+  <div class="wrap">
+    {{LOGO_BLOCK}}
+    <h1>{{ORG_NAME}}</h1>
+    <p class="tagline">{{TAGLINE_OR_DEFAULT}}</p>
+    <div class="hero-cta">
+      <a class="btn primary" href="{{STORE_PATH}}">{{LANDING_BROWSE_CTA}}</a>
+      {{WEBSITE_LINK_BLOCK}}
+    </div>
+  </div>
+</section>
+
+<main id="main">
+  <div class="wrap">
+    <h2>{{LANDING_FEATURED_HEADING}}</h2>
+    <div id="featured" class="featured" aria-busy="true">
+      <div class="empty">{{STORE_LOADING_HEADING}}</div>
+    </div>
+    <div class="see-all">
+      <a class="btn primary" href="{{STORE_PATH}}" style="background:linear-gradient(135deg,var(--accent),var(--accent-2)); color:#fff">
+        {{LANDING_SEE_ALL}}
+      </a>
+    </div>
+    <p class="footer-note">
+      <a href="/privacy">{{FOOTER_PRIVACY}}</a> ·
+      <a href="/terms">{{FOOTER_TERMS}}</a>
+    </p>
+  </div>
+</main>
+
+<script id="store-i18n" type="application/json">{
+  "teamSizeSolo": "{{STORE_TEAM_SIZE_SOLO}}",
+  "teamSizePlural": "{{STORE_TEAM_SIZE_PLURAL}}",
+  "perTicket": "{{STORE_PER_TICKET}}",
+  "perTeam": "{{STORE_PER_TEAM}}",
+  "emptyHeading": "{{LANDING_FEATURED_EMPTY}}",
+  "errorHeading": "{{STORE_ERROR_HEADING}}"
+}</script>
+<script>
+(function () {
+  var I18N = (function () {
+    try { return JSON.parse(document.getElementById('store-i18n').textContent); }
+    catch (_) { return {}; }
+  })();
+  function t(key) { return I18N[key] || ''; }
+  function teamSizeLabel(n) {
+    if (n <= 1) return t('teamSizeSolo');
+    return t('teamSizePlural').replace('{n}', String(n));
+  }
+  var SYMBOLS = { eur: '€', usd: '$', sek: 'kr', gbp: '£', dkk: 'kr', nok: 'kr' };
+  function formatPrice(cents, currency) {
+    var c = (currency || 'eur').toLowerCase();
+    var amount = (cents / 100).toFixed(2).replace(/\.00$/, '');
+    var symbol = SYMBOLS[c];
+    if (!symbol) return amount + ' ' + c.toUpperCase();
+    if (c === 'sek' || c === 'dkk' || c === 'nok') return amount + ' ' + symbol;
+    return symbol + amount;
+  }
+  function escapeHTML(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+  function buildCard(item) {
+    var card = document.createElement('a');
+    card.className = 'card';
+    card.href = '{{STORE_PATH}}/event/' + encodeURIComponent(item.event_id);
+    var cover = item.cover_image_url
+      ? '<div class="cover" style="background-image:url(' + escapeHTML(item.cover_image_url) + ')"></div>'
+      : '<div class="cover"></div>';
+    card.innerHTML = cover +
+      '<div class="body">' +
+      '<h3>' + escapeHTML(item.adventure_title || item.adventure_slug) + '</h3>' +
+      '<p class="blurb">' + escapeHTML(item.blurb || '') + '</p>' +
+      '<div class="price">' + escapeHTML(formatPrice(item.price_cents, item.currency)) +
+      ' <small style="color:var(--muted);font-weight:400">' +
+      escapeHTML(item.team_size > 1 ? t('perTeam') : t('perTicket')) +
+      '</small></div></div>';
+    return card;
+  }
+  function render(items) {
+    var grid = document.getElementById('featured');
+    grid.removeAttribute('aria-busy');
+    grid.innerHTML = '';
+    if (!items || items.length === 0) {
+      var empty = document.createElement('div');
+      empty.className = 'empty';
+      empty.textContent = t('emptyHeading');
+      grid.appendChild(empty);
+      return;
+    }
+    // Cap to 3 — the "See all" link is right below if they want
+    // the full catalogue. Three cards reads as a curated taste,
+    // not a brochure dump.
+    items.slice(0, 3).forEach(function (it) { grid.appendChild(buildCard(it)); });
+  }
+  fetch('{{STORE_API_BASE}}/items', { headers: { 'Accept': 'application/json' } })
+    .then(function (r) { return r.json(); })
+    .then(function (resp) { render(resp && resp.items); })
+    .catch(function () {
+      var grid = document.getElementById('featured');
+      grid.removeAttribute('aria-busy');
+      var msg = document.createElement('div');
+      msg.className = 'empty';
+      msg.textContent = t('errorHeading');
+      grid.replaceChildren(msg);
+    });
+})();
+</script>
+
+</body></html>

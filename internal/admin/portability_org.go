@@ -50,6 +50,7 @@ import (
 
 	"git.sr.ht/~klahr/zv/internal/auth"
 	"git.sr.ht/~klahr/zv/internal/logx"
+	"git.sr.ht/~klahr/zv/internal/orgslug"
 )
 
 // orgExportFormat tags the org-bundle manifest. Bumped per
@@ -782,11 +783,18 @@ func ImportOrgBundle(ctx context.Context, db *sql.DB, data []byte) (OrgImportSum
 	if err != nil {
 		return summary, fmt.Errorf("resolve org name: %w", err)
 	}
+	// Mint a slug from the resolved name so the imported org is
+	// reachable at /o/{slug}/store. Reserve handles the "-2/-3"
+	// suffix dance against existing slugs in this destination.
+	slug, err := orgslug.Reserve(ctx, db, resolvedName)
+	if err != nil {
+		return summary, fmt.Errorf("reserve slug: %w", err)
+	}
 	var orgID int64
 	if err := db.QueryRowContext(ctx, `
-		INSERT INTO organizations(name, logo_mime_type, logo_content, logo_size_bytes)
-		VALUES ($1, $2, $3, $4) RETURNING id
-	`, resolvedName, sqlNullStr(env.Org.LogoMime), assets[env.Org.LogoFile], int64(len(assets[env.Org.LogoFile]))).Scan(&orgID); err != nil {
+		INSERT INTO organizations(name, slug, logo_mime_type, logo_content, logo_size_bytes)
+		VALUES ($1, $2, $3, $4, $5) RETURNING id
+	`, resolvedName, slug, sqlNullStr(env.Org.LogoMime), assets[env.Org.LogoFile], int64(len(assets[env.Org.LogoFile]))).Scan(&orgID); err != nil {
 		return summary, fmt.Errorf("create org: %w", err)
 	}
 	summary.OrgID = orgID

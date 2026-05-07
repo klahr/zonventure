@@ -40,7 +40,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 )
 
-//go:embed web/play.html web/play-sw.js web/play-queue.js web/arrange.html web/live.html web/recap.html web/i18n.js web/favicon.svg web/privacy.html web/terms.html web/manual.html web/landing.html web/pricing.html web/store.html web/store-event.html web/topbar.css web/topbar.js web/fsmap.css web/jsqr.js web/404.html web/robots.txt web/sitemap.xml web/locales/web/*.json web/locales/landing/*.json
+//go:embed web/play.html web/play-sw.js web/play-queue.js web/arrange.html web/live.html web/recap.html web/i18n.js web/favicon.svg web/privacy.html web/terms.html web/manual.html web/landing.html web/pricing.html web/store.html web/store-event.html web/org-landing.html web/topbar.css web/topbar.js web/fsmap.css web/jsqr.js web/404.html web/robots.txt web/sitemap.xml web/locales/web/*.json web/locales/landing/*.json
 var webFS embed.FS
 
 // Config is the bag of knobs New needs.
@@ -498,12 +498,43 @@ func New(cfg Config) http.Handler {
 		// + the price as text in the response body. The template
 		// is override-friendly: drop store-event.html into
 		// ZV_WEB_OVERRIDE_DIR for a branded variant.
+		//
+		// Legacy / global path: 301 to the org-scoped canonical
+		// (/o/{slug}/store/event/{id}) after looking up the event's
+		// org. Old QR codes / emailed links / search-engine
+		// snapshots all keep working through the redirect.
 		r.Get("/store/event/{event_id}", func(w http.ResponseWriter, req *http.Request) {
-			renderStoreEventPage(w, req, cfg.DB, cfg.PublicURL)
+			redirectLegacyStoreEvent(w, req, cfg.DB)
 		})
 		r.Get("/api/store/items", publicH.StoreList)
 		r.Get("/api/store/items/{event_id}", publicH.StoreEvent)
 		r.Post("/api/store/buy", adminH.BuyTicket)
+
+		// Per-org public surfaces. /o/{slug}/store + /o/{slug}/store/event/{id}
+		// are the canonical buyer-facing URLs; the bare /store stays
+		// as a global discovery page. The matching API endpoints
+		// scope every query to the slug's org_id, refusing
+		// cross-org event ids with a 404.
+		r.Get("/o/{slug}", func(w http.ResponseWriter, req *http.Request) {
+			renderOrgLandingPage(w, req, cfg.DB, cfg.PublicURL)
+		})
+		r.Get("/o/{slug}/store", func(w http.ResponseWriter, req *http.Request) {
+			slug := chi.URLParam(req, "slug")
+			// Confirm the org exists before painting the chrome —
+			// otherwise a typo'd link renders a fully-formed page
+			// with an empty grid, which is worse UX than 404.
+			if !orgSlugExists(req.Context(), cfg.DB, slug) {
+				servePublicPage("web/404.html", http.StatusNotFound)(w, req)
+				return
+			}
+			renderStoreListingPageScoped(w, req, slug)
+		})
+		r.Get("/o/{slug}/store/event/{event_id}", func(w http.ResponseWriter, req *http.Request) {
+			renderStoreEventPage(w, req, cfg.DB, cfg.PublicURL)
+		})
+		r.Get("/api/o/{slug}/store/items", publicH.StoreListByOrg)
+		r.Get("/api/o/{slug}/store/items/{event_id}", publicH.StoreEventByOrg)
+		r.Post("/api/o/{slug}/store/buy", adminH.BuyTicketByOrg)
 	})
 
 	// Image serving: permission is decided inside the handler (staff
@@ -531,6 +562,11 @@ func New(cfg Config) http.Handler {
 	// is short ("/org-logo/{id}") so the bytes embed cleanly into the
 	// recap PDF and any future server-rendered surfaces.
 	r.Get("/org-logo/{orgID}", adminH.ServeOrgLogo)
+	// Org cover image — public-read for the same reasons as the
+	// logo: the bytes are intentionally on the org's public
+	// landing page, not sensitive material. Mirrors /org-logo's
+	// shape so a single download path covers either asset.
+	r.Get("/org-cover/{orgID}", adminH.ServeOrgCover)
 	// Event store-cover image. Public so the /store page can render
 	// the hero on every card without authentication; mounted at a
 	// short path because it's the most-fetched public-image route on
@@ -646,7 +682,13 @@ func New(cfg Config) http.Handler {
 			}
 			host = scheme + "://" + req.Host
 		}
+		// Per-org store entries: list the slug of every org with at
+		// least one for-sale event. The query is cheap (count + slug
+		// per org) and rebuilds on every fetch — cache-control still
+		// pins the response for an hour, so crawler load stays low.
+		orgURLs := buildOrgSitemapURLs(req.Context(), cfg.DB, host)
 		out := strings.ReplaceAll(string(sitemapBody), "{{HOST}}", host)
+		out = strings.ReplaceAll(out, "{{ORG_URLS}}", orgURLs)
 		w.Header().Set("Content-Type", "application/xml; charset=utf-8")
 		w.Header().Set("Cache-Control", "public, max-age=3600")
 		_, _ = w.Write([]byte(out))
@@ -857,6 +899,19 @@ func New(cfg Config) http.Handler {
 		// pins org_id to the caller's session and refuses anyone other
 		// than RoleOrgAdmin.
 		r.Get("/migrate/self-export", adminH.MigrateSelfExport)
+		// Org slug self-management: read + write the slug that powers
+		// /o/{slug}/store. Pinned to the caller's active org and
+		// gated to RoleOrgAdmin inside the handler so an org_member
+		// can't rename the URL out from under their team.
+		r.Get("/orgs/me/slug", adminH.GetMyOrgSlug)
+		r.Put("/orgs/me/slug", adminH.SetMyOrgSlug)
+		// Public-profile read/write (tagline, website, cover image)
+		// surfaced on /o/{slug}. Read is org-user, writes are
+		// gated to RoleOrgAdmin inside each handler.
+		r.Get("/orgs/me/profile", adminH.GetMyOrgProfile)
+		r.Put("/orgs/me/profile", adminH.SetMyOrgProfile)
+		r.Post("/orgs/me/cover", adminH.SetMyOrgCover)
+		r.Delete("/orgs/me/cover", adminH.DeleteMyOrgCover)
 		r.Get("/adventures/{slug}/shares", adminH.ListAdventureShares)
 		r.Post("/adventures/{slug}/shares", adminH.GrantAdventureShare)
 		r.Delete("/adventures/{slug}/shares/{orgID}", adminH.RevokeAdventureShare)

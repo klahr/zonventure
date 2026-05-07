@@ -77,6 +77,81 @@ func (h *Handlers) StoreEvent(w http.ResponseWriter, r *http.Request) {
 	httpx.JSON(w, http.StatusOK, item)
 }
 
+// StoreListByOrg serves GET /api/o/{slug}/store/items — same shape
+// as StoreList but filtered to one organization. Used by the per-org
+// store page (zonventure.com/o/{slug}/store) so a single company's
+// page only lists their quests, not every multi-tenant neighbour.
+// 404s if the slug doesn't resolve.
+func (h *Handlers) StoreListByOrg(w http.ResponseWriter, r *http.Request) {
+	orgID, _, err := h.resolveOrgSlug(r.Context(), chi.URLParam(r, "slug"))
+	if errors.Is(err, sql.ErrNoRows) {
+		httpx.Error(w, http.StatusNotFound, "organization not found")
+		return
+	}
+	if err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "org lookup failed", err)
+		return
+	}
+	items, err := h.loadStoreItemsByOrg(r.Context(), orgID)
+	if err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "store list failed", err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	httpx.JSON(w, http.StatusOK, struct {
+		Items []StoreItemDTO `json:"items"`
+	}{items})
+}
+
+// StoreEventByOrg serves GET /api/o/{slug}/store/items/{event_id}.
+// Refuses (404) when the event exists but belongs to a different
+// org — prevents a deep link from leaking another org's content
+// through the per-org URL.
+func (h *Handlers) StoreEventByOrg(w http.ResponseWriter, r *http.Request) {
+	orgID, _, err := h.resolveOrgSlug(r.Context(), chi.URLParam(r, "slug"))
+	if errors.Is(err, sql.ErrNoRows) {
+		httpx.Error(w, http.StatusNotFound, "organization not found")
+		return
+	}
+	if err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "org lookup failed", err)
+		return
+	}
+	idStr := chi.URLParam(r, "event_id")
+	id, perr := strconv.ParseInt(idStr, 10, 64)
+	if perr != nil || id <= 0 {
+		httpx.Error(w, http.StatusBadRequest, "bad event id")
+		return
+	}
+	item, err := h.loadStoreItemByOrg(r.Context(), orgID, id)
+	if errors.Is(err, sql.ErrNoRows) {
+		httpx.Error(w, http.StatusNotFound, "not found")
+		return
+	}
+	if err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "store event failed", err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	httpx.JSON(w, http.StatusOK, item)
+}
+
+// resolveOrgSlug maps a URL slug to (id, name). Returns sql.ErrNoRows
+// when the slug doesn't exist so the caller can branch on 404 cleanly.
+func (h *Handlers) resolveOrgSlug(ctx context.Context, slug string) (int64, string, error) {
+	slug = strings.TrimSpace(slug)
+	if slug == "" {
+		return 0, "", sql.ErrNoRows
+	}
+	var (
+		id   int64
+		name string
+	)
+	err := h.DB.QueryRowContext(ctx,
+		`SELECT id, name FROM organizations WHERE slug = $1`, slug).Scan(&id, &name)
+	return id, name, err
+}
+
 const storeItemSelect = `
 	SELECT e.id, e.name, e.adventure_slug,
 	       COALESCE(a.title, e.adventure_slug) AS adv_title,
@@ -140,6 +215,41 @@ func (h *Handlers) loadStoreItems(ctx context.Context) ([]StoreItemDTO, error) {
 func (h *Handlers) loadStoreItem(ctx context.Context, eventID int64) (StoreItemDTO, error) {
 	row := h.DB.QueryRowContext(ctx,
 		storeItemSelect+h.storeItemRowFilter()+` AND e.id = $1`, eventID)
+	return scanStoreItem(row)
+}
+
+// loadStoreItemsByOrg is loadStoreItems scoped to a single org. The
+// extra `e.org_id = $1` predicate piggybacks on storeItemRowFilter so
+// the platform-fee + Stripe-Connect gates still apply (a self-host
+// org without Connect onboarding would still surface here because
+// the fee is disabled; on hosted, the join still requires onboarding).
+func (h *Handlers) loadStoreItemsByOrg(ctx context.Context, orgID int64) ([]StoreItemDTO, error) {
+	rows, err := h.DB.QueryContext(ctx,
+		storeItemSelect+h.storeItemRowFilter()+`
+		AND e.org_id = $1
+		ORDER BY e.name, e.id`, orgID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []StoreItemDTO
+	for rows.Next() {
+		item, err := scanStoreItem(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, item)
+	}
+	return out, rows.Err()
+}
+
+// loadStoreItemByOrg is loadStoreItem with a cross-org guard: when
+// the event_id matches a different org the row filter excludes it,
+// so the caller sees sql.ErrNoRows rather than another org's data.
+func (h *Handlers) loadStoreItemByOrg(ctx context.Context, orgID, eventID int64) (StoreItemDTO, error) {
+	row := h.DB.QueryRowContext(ctx,
+		storeItemSelect+h.storeItemRowFilter()+` AND e.id = $1 AND e.org_id = $2`,
+		eventID, orgID)
 	return scanStoreItem(row)
 }
 

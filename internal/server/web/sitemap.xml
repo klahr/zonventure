@@ -28,6 +28,7 @@
     <changefreq>weekly</changefreq>
     <priority>0.9</priority>
   </url>
+  {{ORG_URLS}}
   <url>
     <loc>{{HOST}}/privacy</loc>
     <changefreq>yearly</changefreq>

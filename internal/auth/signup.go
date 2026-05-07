@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"git.sr.ht/~klahr/zv/internal/orgslug"
 	"git.sr.ht/~klahr/zv/internal/tokenx"
 )
 
@@ -75,9 +76,13 @@ func Signup(ctx context.Context, db *sql.DB, email, password, orgName string) (S
 	// org_admin membership atomically.
 	var orgIDArg sql.NullInt64
 	if orgName != "" {
+		slug, err := orgslug.Reserve(ctx, tx, orgName)
+		if err != nil {
+			return SignupResult{}, fmt.Errorf("reserve slug: %w", err)
+		}
 		var oid int64
 		if err := tx.QueryRowContext(ctx,
-			`INSERT INTO organizations(name) VALUES ($1) RETURNING id`, orgName).Scan(&oid); err != nil {
+			`INSERT INTO organizations(name, slug) VALUES ($1, $2) RETURNING id`, orgName, slug).Scan(&oid); err != nil {
 			// Postgres reports a unique-violation error for both unique
 			// columns we touch (organizations.name and users.email);
 			// since we know the table here, attribute it correctly.

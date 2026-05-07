@@ -14,6 +14,7 @@ import (
 	"git.sr.ht/~klahr/zv/internal/logx"
 	mailerpkg "git.sr.ht/~klahr/zv/internal/mailer"
 	"git.sr.ht/~klahr/zv/internal/payments"
+	"github.com/go-chi/chi/v5"
 )
 
 // BuyTicketRequest is the body of POST /api/store/buy. The buyer
@@ -149,7 +150,7 @@ func (h *Handlers) BuyTicket(w http.ResponseWriter, r *http.Request) {
 	}
 
 	productName := storeProductName(eventName, advTitle, advSlug, teamSize)
-	url, sessID, err := h.createTicketCheckoutSession(r.Context(), purchaseID, productName, currency, priceCents.Int64, email, connectedAccountID, applicationFee)
+	url, sessID, err := h.createTicketCheckoutSession(r.Context(), purchaseID, productName, currency, priceCents.Int64, email, connectedAccountID, applicationFee, "/store")
 	if err != nil {
 		// Mark the orphan as failed so the listing pages don't see a
 		// stale 'pending' that's already dead provider-side.
@@ -168,6 +169,139 @@ func (h *Handlers) BuyTicket(w http.ResponseWriter, r *http.Request) {
 	// no-store on the buyer-specific checkout URL so a shared proxy
 	// can't hand the same Stripe Checkout session to a second buyer.
 	// Matches the Cache-Control posture on /api/store/items[/{id}].
+	w.Header().Set("Cache-Control", "no-store")
+	httpx.JSON(w, http.StatusOK, BuyTicketResponse{CheckoutURL: url})
+}
+
+// BuyTicketByOrg is the org-scoped variant of BuyTicket. Same buy
+// flow, two extra invariants:
+//  1. The slug must resolve to an org. 404 otherwise — we don't want
+//     to mint a Checkout session against a typo-domain.
+//  2. The event_id must belong to that org. Cross-org event ids
+//     return 404 so a deep-linked or hand-crafted POST can't tunnel
+//     a buy through one company's store URL into another's quest.
+//
+// Success / cancel URLs route the buyer back to /o/{slug}/store
+// rather than the global /store, so the post-payment confirmation
+// stays on the company's branded URL.
+func (h *Handlers) BuyTicketByOrg(w http.ResponseWriter, r *http.Request) {
+	if !h.paymentsEnabled() {
+		httpx.Error(w, http.StatusServiceUnavailable, "ticket sales not configured on this server")
+		return
+	}
+	slug := strings.TrimSpace(chi.URLParam(r, "slug"))
+	if slug == "" {
+		httpx.Error(w, http.StatusBadRequest, "missing org slug")
+		return
+	}
+	var orgID int64
+	if err := h.DB.QueryRowContext(r.Context(),
+		`SELECT id FROM organizations WHERE slug = $1`, slug).Scan(&orgID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			httpx.Error(w, http.StatusNotFound, "organization not found")
+			return
+		}
+		httpx.ServerErr(w, http.StatusInternalServerError, "org lookup failed", err)
+		return
+	}
+	var req BuyTicketRequest
+	if !httpx.DecodeJSON(w, r, &req) {
+		return
+	}
+	if req.EventID <= 0 {
+		httpx.Error(w, http.StatusBadRequest, "missing event_id")
+		return
+	}
+	email := strings.ToLower(strings.TrimSpace(req.BuyerEmail))
+	if email == "" {
+		httpx.Error(w, http.StatusBadRequest, "missing buyer_email")
+		return
+	}
+	if _, err := mail.ParseAddress(email); err != nil {
+		httpx.Error(w, http.StatusBadRequest, "buyer_email is not a valid email address")
+		return
+	}
+
+	var (
+		advSlug    string
+		eventName  sql.NullString
+		advTitle   sql.NullString
+		priceCents sql.NullInt64
+		currency   string
+		teamSize   int
+		state      string
+	)
+	if err := h.DB.QueryRowContext(r.Context(), `
+		SELECT e.adventure_slug,
+		       e.name,
+		       a.title AS adv_title,
+		       e.ticket_price_cents,
+		       e.ticket_currency,
+		       e.ticket_team_size,
+		       e.state
+		FROM events e
+		LEFT JOIN adventures a ON a.org_id = e.org_id AND a.slug = e.adventure_slug
+		WHERE e.id = $1
+		  AND e.org_id = $2
+		  AND e.public_for_sale
+		  AND e.ticket_price_cents IS NOT NULL
+	`, req.EventID, orgID).Scan(&advSlug, &eventName, &advTitle, &priceCents, &currency, &teamSize, &state); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			httpx.Error(w, http.StatusNotFound, "event not for sale")
+			return
+		}
+		httpx.ServerErr(w, http.StatusInternalServerError, "event lookup failed", err)
+		return
+	}
+	if state != "running" {
+		httpx.Error(w, http.StatusConflict, "event not for sale")
+		return
+	}
+	if !priceCents.Valid || priceCents.Int64 <= 0 {
+		httpx.Error(w, http.StatusConflict, "event has no price set")
+		return
+	}
+
+	var (
+		connectedAccountID string
+		applicationFee     int64
+	)
+	if h.PlatformFee.Enabled() {
+		acct, err := h.stripeConnectAccountForEvent(r.Context(), req.EventID)
+		if err != nil {
+			if errors.Is(err, ErrConnectNotReady) {
+				httpx.Error(w, http.StatusConflict, "this quest is not currently selling tickets")
+				return
+			}
+			httpx.ServerErr(w, http.StatusInternalServerError, "connect account lookup failed", err)
+			return
+		}
+		connectedAccountID = acct
+		applicationFee = h.PlatformFee.Compute(priceCents.Int64)
+	}
+
+	var purchaseID int64
+	if err := h.DB.QueryRowContext(r.Context(), `
+		INSERT INTO ticket_purchases(event_id, buyer_email, team_size, amount_cents, currency, application_fee_cents)
+		VALUES ($1, $2, $3, $4, $5, $6) RETURNING id
+	`, req.EventID, email, teamSize, priceCents.Int64, currency, applicationFee).Scan(&purchaseID); err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "purchase create failed", err)
+		return
+	}
+
+	productName := storeProductName(eventName, advTitle, advSlug, teamSize)
+	storeBase := "/o/" + slug + "/store"
+	url, sessID, err := h.createTicketCheckoutSession(r.Context(), purchaseID, productName, currency, priceCents.Int64, email, connectedAccountID, applicationFee, storeBase)
+	if err != nil {
+		_, _ = h.DB.ExecContext(r.Context(),
+			`UPDATE ticket_purchases SET state = 'failed' WHERE id = $1 AND state = 'pending'`, purchaseID)
+		httpx.ServerErr(w, http.StatusBadGateway, "checkout create failed", err)
+		return
+	}
+	if _, err := h.DB.ExecContext(r.Context(),
+		`UPDATE ticket_purchases SET stripe_session_id = $1 WHERE id = $2`, sessID, purchaseID); err != nil {
+		logx.Warn("admin.store.buy.session_id_persist", "purchase_id", purchaseID, "err", err.Error())
+	}
 	w.Header().Set("Cache-Control", "no-store")
 	httpx.JSON(w, http.StatusOK, BuyTicketResponse{CheckoutURL: url})
 }
@@ -209,17 +343,25 @@ func (h *Handlers) createTicketCheckoutSession(
 	buyerEmail string,
 	connectedAccountID string,
 	applicationFeeCents int64,
+	storeBasePath string,
 ) (string, string, error) {
 	publicURL := strings.TrimRight(h.PublicURL, "/")
 	if publicURL == "" {
 		return "", "", errors.New("ticket checkout requires PublicURL to be configured")
 	}
+	// storeBasePath lets the org-scoped buy flow send the buyer back
+	// to /o/{slug}/store while the global buy flow lands on /store.
+	// Default keeps the legacy posture for any caller that doesn't
+	// set it explicitly.
+	if storeBasePath == "" {
+		storeBasePath = "/store"
+	}
 	sess, err := h.Provider.CreateCheckout(ctx, payments.CheckoutParams{
 		AmountCents:   amountCents,
 		Currency:      currency,
 		ProductName:   productName,
-		SuccessURL:    fmt.Sprintf("%s/store?paid=%d", publicURL, purchaseID),
-		CancelURL:     fmt.Sprintf("%s/store?cancelled=%d", publicURL, purchaseID),
+		SuccessURL:    fmt.Sprintf("%s%s?paid=%d", publicURL, storeBasePath, purchaseID),
+		CancelURL:     fmt.Sprintf("%s%s?cancelled=%d", publicURL, storeBasePath, purchaseID),
 		CustomerEmail: buyerEmail,
 		Metadata: map[string]string{
 			"zv_ticket_purchase_id": fmt.Sprintf("%d", purchaseID),

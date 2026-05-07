@@ -94,5 +94,11 @@
 "StoreTitle": "Butik — Zonventure",
 "StoreToastCancelled": "Betalning avbruten. Inget debiterades.",
 "StoreToastPaid": "Betalning mottagen. Kolla din inkorg — din magiska länk är på väg (ge det en minut).",
-"Title": "Zonventure"
+"Title": "Zonventure",
+"LandingTaglineFallback": "Verklighetsbaserade äventyr och uppdrag.",
+"LandingBrowseCTA": "Bläddra bland våra uppdrag",
+"LandingFeaturedHeading": "Utvalda uppdrag",
+"LandingFeaturedEmpty": "Inga uppdrag till salu just nu — titta in igen snart.",
+"LandingSeeAll": "Se alla uppdrag",
+"LandingVisitWebsite": "Besök vår webbplats"
 }

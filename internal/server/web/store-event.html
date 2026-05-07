@@ -386,7 +386,7 @@
     }
     submit.disabled = true;
     submit.textContent = '…';
-    fetch('/api/store/buy', {
+    fetch('{{STORE_API_BASE}}/buy', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ event_id: {{EVENT_ID}}, buyer_email: email }),

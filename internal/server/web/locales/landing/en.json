@@ -94,5 +94,11 @@
 "StoreTitle": "Store — Zonventure",
 "StoreToastCancelled": "Checkout cancelled. Nothing was charged.",
 "StoreToastPaid": "Payment received. Check your inbox — your magic link is on its way (give it a minute).",
-"Title": "Zonventure"
+"Title": "Zonventure",
+"LandingTaglineFallback": "Real-world adventures and quests.",
+"LandingBrowseCTA": "Browse our quests",
+"LandingFeaturedHeading": "Featured quests",
+"LandingFeaturedEmpty": "No quests on sale right now — check back soon.",
+"LandingSeeAll": "See all quests",
+"LandingVisitWebsite": "Visit our website"
 }

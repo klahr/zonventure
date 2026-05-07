@@ -183,6 +183,16 @@ type landingStrings struct {
 	// block so client-side messages stay in the user's locale.
 	StoreEventBadEmail   string
 	StoreEventGenericErr string
+
+	// Per-org landing page (org-landing.html). Used for the hero
+	// CTA, the featured-quests strip, and the description fallback
+	// when an org hasn't set a tagline.
+	LandingTaglineFallback string
+	LandingBrowseCTA       string
+	LandingFeaturedHeading string
+	LandingFeaturedEmpty   string
+	LandingSeeAll          string
+	LandingVisitWebsite    string
 }
 
 // landingLocales maps a language code to its strings. Add a new
@@ -380,6 +390,16 @@ func storeSubs(s landingStrings) [][2]string {
 // chrome and the JSON locale block emitted at the bottom of the
 // template stay server-rendered.
 func renderStoreListingPage(w http.ResponseWriter, r *http.Request) {
+	renderStoreListingPageScoped(w, r, "")
+}
+
+// renderStoreListingPageScoped renders the store landing for either
+// the global /store (orgSlug == "") or a per-org /o/{slug}/store. The
+// only difference is the API base the client-side fetch hits — the
+// global page reads every org's listings via /api/store/items, while
+// the per-org page narrows to one org via /api/o/{slug}/store/items.
+// Body copy + chrome localisation is identical.
+func renderStoreListingPageScoped(w http.ResponseWriter, r *http.Request, orgSlug string) {
 	body, err := readWebFile("web/store.html")
 	if err != nil {
 		http.Error(w, "not found", http.StatusNotFound)
@@ -394,6 +414,11 @@ func renderStoreListingPage(w http.ResponseWriter, r *http.Request) {
 	for _, sub := range storeSubs(s) {
 		out = strings.ReplaceAll(out, sub[0], sub[1])
 	}
+	apiBase := "/api/store"
+	if orgSlug != "" {
+		apiBase = "/api/o/" + orgSlug + "/store"
+	}
+	out = strings.ReplaceAll(out, "{{STORE_API_BASE}}", apiBase)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Vary", "Cookie, Accept-Language")
 	w.Header().Set("Cache-Control", "no-store")

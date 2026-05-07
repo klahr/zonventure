@@ -12,11 +12,19 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
-// renderStoreEventPage serves /store/event/{event_id} — the per-
-// game detail page paired with the listing at /store. Returns 404
-// for events that aren't currently public_for_sale + priced + in
-// running/paused state, so a stale link doesn't expose past prices
-// or events the operator has unlisted.
+// renderStoreEventPage serves the per-game detail page paired with
+// /store. Returns 404 for events that aren't currently
+// public_for_sale + priced + in running/paused state, so a stale
+// link doesn't expose past prices or events the operator has
+// unlisted.
+//
+// Mounted at /o/{slug}/store/event/{event_id} as the canonical URL;
+// the legacy /store/event/{event_id} route 301-redirects there via
+// redirectLegacyStoreEvent so old QR codes / emailed links keep
+// working. When `slugFromURL` is empty (legacy route fallthrough,
+// in tests, or operators without a slug routed yet), the renderer
+// derives the slug from the event's owning org and emits canonical
+// links to the org-scoped path.
 //
 // Substitution shape mirrors renderLandingPage / renderTopbarPage:
 // the template is plain HTML with {{KEY}} placeholders, swapped via
@@ -32,6 +40,7 @@ func renderStoreEventPage(w http.ResponseWriter, r *http.Request, db *sql.DB, pu
 		servePublicPage("web/404.html", http.StatusNotFound)(w, r)
 		return
 	}
+	slugFromURL := strings.TrimSpace(chi.URLParam(r, "slug"))
 
 	body, err := readWebFile("web/store-event.html")
 	if err != nil {
@@ -44,6 +53,7 @@ func renderStoreEventPage(w http.ResponseWriter, r *http.Request, db *sql.DB, pu
 		advSlug    string
 		advTitle   sql.NullString
 		orgName    string
+		orgSlug    string
 		blurb      string
 		priceCents sql.NullInt64
 		currency   string
@@ -55,6 +65,7 @@ func renderStoreEventPage(w http.ResponseWriter, r *http.Request, db *sql.DB, pu
 		SELECT e.name, e.adventure_slug,
 		       a.title AS adv_title,
 		       o.name AS org_name,
+		       o.slug AS org_slug,
 		       e.public_blurb,
 		       e.ticket_price_cents,
 		       e.ticket_currency,
@@ -68,7 +79,7 @@ func renderStoreEventPage(w http.ResponseWriter, r *http.Request, db *sql.DB, pu
 		  AND e.public_for_sale
 		  AND e.ticket_price_cents IS NOT NULL
 		  AND e.state IN ('running', 'paused')
-	`, id).Scan(&eventName, &advSlug, &advTitle, &orgName, &blurb, &priceCents,
+	`, id).Scan(&eventName, &advSlug, &advTitle, &orgName, &orgSlug, &blurb, &priceCents,
 		&currency, &teamSize, &startLabel, &hasCover)
 	if errors.Is(err, sql.ErrNoRows) {
 		servePublicPage("web/404.html", http.StatusNotFound)(w, r)
@@ -76,6 +87,16 @@ func renderStoreEventPage(w http.ResponseWriter, r *http.Request, db *sql.DB, pu
 	}
 	if err != nil {
 		http.Error(w, "lookup failed", http.StatusInternalServerError)
+		return
+	}
+
+	// Cross-org tunnelling guard: if the page was reached via
+	// /o/{slug}/store/event/{id} but the event belongs to a
+	// different org, 404 rather than render a different company's
+	// product page under this company's URL. The legacy /store/event/{id}
+	// path leaves slugFromURL empty and skips this check.
+	if slugFromURL != "" && slugFromURL != orgSlug {
+		servePublicPage("web/404.html", http.StatusNotFound)(w, r)
 		return
 	}
 
@@ -129,6 +150,13 @@ func renderStoreEventPage(w http.ResponseWriter, r *http.Request, db *sql.DB, pu
 		teamLabel = strings.ReplaceAll(s.StoreTeamSizePlural, "{n}", teamSizeStr)
 	}
 
+	// Canonical path always points at the org-scoped URL — the
+	// legacy /store/event/{id} surface 301s here, so search engines
+	// converge on a single URL per event regardless of how the
+	// page was reached.
+	canonicalPath := "/o/" + orgSlug + "/store/event/" + strconv.FormatInt(id, 10)
+	apiBase := "/api/o/" + orgSlug + "/store"
+
 	subs = append(subs,
 		[2]string{"{{TITLE}}", html.EscapeString(title)},
 		[2]string{"{{SUBTITLE}}", html.EscapeString(subtitle)},
@@ -144,7 +172,8 @@ func renderStoreEventPage(w http.ResponseWriter, r *http.Request, db *sql.DB, pu
 		[2]string{"{{HAS_COVER}}", boolAttr(hasCover)},
 		[2]string{"{{EVENT_ID}}", strconv.FormatInt(id, 10)},
 		[2]string{"{{ADVENTURE_SLUG}}", html.EscapeString(advSlug)},
-		[2]string{"{{CANONICAL_URL}}", html.EscapeString(buildAbsoluteURL(publicURL, "/store/event/"+strconv.FormatInt(id, 10)))},
+		[2]string{"{{CANONICAL_URL}}", html.EscapeString(buildAbsoluteURL(publicURL, canonicalPath))},
+		[2]string{"{{STORE_API_BASE}}", apiBase},
 	)
 
 	out := string(body)

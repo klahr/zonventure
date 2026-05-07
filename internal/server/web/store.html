@@ -360,7 +360,7 @@
   }
 
   flashFromQuery();
-  fetch('/api/store/items', { headers: { 'Accept': 'application/json' } })
+  fetch('{{STORE_API_BASE}}/items', { headers: { 'Accept': 'application/json' } })
     .then(function (r) { return r.json(); })
     .then(function (resp) { render(resp && resp.items); })
     .catch(function () {
