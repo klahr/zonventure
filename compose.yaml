@@ -76,7 +76,10 @@ services:
       # credentials above are set, else nil ("payments not configured").
       # "simulated" picks the dev-only no-money impl that auto-confirms
       # checkouts in-process — never set on a production deployment.
+      # Pairs with ZV_ENV below: the simulated impl refuses to wire
+      # unless ZV_ENV=dev, so both must flow through to the container.
       ZV_PAYMENTS_PROVIDER:       ${ZV_PAYMENTS_PROVIDER:-}
+      ZV_ENV:                     ${ZV_ENV:-}
       ZV_TOTP_KEY:                ${ZV_TOTP_KEY:-}
       # Single sign-on (OpenID Connect, e.g. Google Workspace). All
       # blank by default → SSO endpoints 404 and the login UI hides
