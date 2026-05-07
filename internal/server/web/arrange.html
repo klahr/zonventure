@@ -3801,10 +3801,6 @@ function renderShell() {
       // sidebar entries for what's essentially one catalog was noise.
       ['#library',       t('Library'),       ICONS.map],
       ['#logs',          t('Logs'),          ICONS.terminal],
-      // Migrate is the operator-only self-host → hosted cutover
-      // page: export an org bundle, import one, flip redirect mode.
-      // Admin-only; not visible to org_admin / org_member.
-      ['#migrate',       t('Migrate'),       ICONS.upload],
       ['#settings',      t('Settings'),      ICONS.gear],
     ];
   } else {
@@ -4160,7 +4156,6 @@ async function renderRoute() {
       case 'puzzles':      return arg ? await viewPuzzleEditRoute(view, arg) : await viewPuzzles(view);
       case 'logs':         return await viewLogs(view);
       case 'manual':       return viewManual(view, arg);
-      case 'migrate':      return await viewMigrate(view);
       case 'settings':     return await viewSettings(view, arg);
       default: view.replaceChildren(h('p', {}, t('Not found')));
     }
@@ -14505,27 +14500,29 @@ async function viewLogs(view) {
   window.addEventListener('hashchange', onHash);
 }
 
-/* ============================ Migrate ===========================
+/* ======================== Settings → Migration ========================
  *
- * Admin-only self-host → hosted cutover surface. Three discrete
- * operations on one page so the operator sees the whole flow:
+ * Admin-only self-host → another-instance cutover wizard. Replaces the
+ * old four-card surface with a single guided flow:
  *
- *  1. Export bundle — POST /api/admin/migrate/export?org_id=N
- *     downloads a zip containing the named org's data.
- *  2. Import bundle — POST /api/admin/migrate/import (multipart)
- *     replays a bundle into a fresh org on this instance.
- *  3. Switch to redirect mode — POST /api/admin/migrate/redirect-mode
- *     flips the in-process atomic pointer that the redirect
- *     middleware reads. The flag persists across restarts via
- *     the settings table.
+ *   1. Pause writes (POST /api/admin/migrate/maintenance {on:true})
+ *   2. Build + download bundle (GET /api/admin/migrate/export?org_id=N)
+ *   3. Operator uploads the zip on the destination — only manual step,
+ *      because that's a separate machine with its own admin login.
+ *   4. Flip redirect (POST /api/admin/migrate/redirect-mode {target})
  *
- * Pinned-by-env: when ZV_REDIRECT_TARGET is set, the toggle is
- * disabled with an explanatory note so the operator doesn't waste
- * time wondering why nothing happens.
- * ================================================================ */
+ * Pinned-by-env (ZV_REDIRECT_TARGET / ZV_MAINTENANCE_MODE) blocks the
+ * wizard up front with an explanation rather than letting the operator
+ * click Start and bounce off a 409 mid-flow.
+ * ====================================================================== */
 
-async function viewMigrate(view) {
-  // Cross-org list so the admin can pick which org to export.
+async function viewSettingsMigration(view) {
+  if (state.me?.role !== 'admin') {
+    view.replaceChildren(h('p', { class: 'err' }, t('Admin only.')));
+    return;
+  }
+
+  view.replaceChildren(h('p', { class: 'muted' }, t('Loading…')));
   const [orgsR, modeR, maintR] = await Promise.all([
     api('/api/admin/organizations'),
     api('/api/admin/migrate/redirect-mode'),
@@ -14535,109 +14532,272 @@ async function viewMigrate(view) {
   const mode = modeR.body || { target: '', pinned_by_env: false };
   const maint = maintR.body || { on: false, pinned_by_env: false };
 
-  const head = h('div', { style: 'display:flex; flex-direction:column; gap:.4rem; margin-bottom:1.25rem' },
-    h('h1', { style: 'margin:0' }, t('Migrate')),
-    h('p', { class: 'muted', style: 'margin:0; font-size:.9rem; max-width:48rem' },
-      t('Self-host → hosted cutover surface. Flip maintenance mode on, export the org bundle, import it on the destination, then flip redirect mode to keep printed QR codes and emailed magic links working through the cutover.')));
-
   view.replaceChildren(
-    head,
-    renderMigrateMaintenanceCard(maint),
-    renderMigrateExportCard(orgs, maint),
-    renderMigrateImportCard(),
-    renderMigrateRedirectCard(mode));
+    h('h1', {}, t('Migration')),
+    h('p', { class: 'muted', style: 'max-width:50rem' },
+      t('Move an org from this instance to another zv installation. The wizard pauses writes, downloads a bundle for you to upload on the destination, then redirects this instance there so existing QR codes and magic links keep working.')),
+    renderMigrationOutCard(orgs, mode, maint),
+    renderMigrationInCard(),
+  );
 }
 
-function renderMigrateMaintenanceCard(maint) {
-  const onBtn = h('button', { class: 'btn' + (maint.on ? ' ghost' : ' primary'), type: 'button',
-    disabled: maint.pinned_by_env ? '' : null }, icon(ICONS.moon),
-    maint.on ? t('Disable maintenance mode') : t('Enable maintenance mode'));
-  const status = h('p', { style: 'margin:.5rem 0 0; font-size:.85rem; min-height:1.2em' },
-    maint.pinned_by_env
-      ? h('span', { class: 'muted' },
-          t('ZV_MAINTENANCE_MODE is pinned in the environment file — unset it there to manage from this page.'))
-      : maint.on
-        ? h('span', {}, t('Maintenance mode is ON. Reads still work; mutations get a 503 until you turn it off.'))
-        : h('span', { class: 'muted' },
-            t('Maintenance mode is off. Enable it before exporting so concurrent writes don\'t tear the snapshot.')));
+// Source-side: one form, one Start button, hidden progress steps.
+function renderMigrationOutCard(orgs, mode, maint) {
+  // Already-redirecting state shouldn't actually be reachable (the
+  // redirectMode middleware would have 301'd this very page out from
+  // under the admin), but if env-pinned target lives in the DB row
+  // we still surface the read-only banner instead of an empty form.
+  if (mode.target && !mode.pinned_by_env) {
+    return renderMigrationActiveCard(mode);
+  }
 
-  onBtn.addEventListener('click', async () => {
-    const proceed = maint.on
-      ? confirm(t('Disable maintenance mode? Players + arrangers will be able to mutate state again.'))
-      : confirm(t('Enable maintenance mode? Players + arrangers will see a 503 on every write until you turn it off.'));
-    if (!proceed) return;
-    onBtn.disabled = true;
-    try {
-      const r = await api('/api/admin/migrate/maintenance', {
-        method: 'POST',
-        body: JSON.stringify({ on: !maint.on }),
-      });
-      if (!r.ok) {
-        toastErr(r.body?.error || t('Could not toggle maintenance mode.'));
-        return;
-      }
-      toastOk(maint.on ? t('Maintenance mode disabled.') : t('Maintenance mode enabled.'));
-      const view = document.getElementById('view') || document.querySelector('main') || document.body;
-      await viewMigrate(view);
-    } finally {
-      onBtn.disabled = false;
-    }
-  });
+  const card = h('div', { class: 'card' });
+  const blockedReason = mode.pinned_by_env
+    ? t('ZV_REDIRECT_TARGET is pinned in the environment file. Unset it in .env to use the wizard.')
+    : '';
 
-  return h('div', { class: 'card' },
-    h('h2', { style: 'margin:0 0 .25rem' }, t('Maintenance mode')),
-    h('p', { class: 'muted', style: 'margin:0 0 .75rem; font-size:.9rem' },
-      t('Pause player + arranger writes so the bundle export sees a static snapshot. The migrate, settings, and auth endpoints stay open so you can run the rest of the cutover without exiting the freeze.')),
-    h('div', { class: 'row', style: 'gap:.75rem; flex-wrap:wrap; align-items:center' },
-      onBtn),
-    status);
-}
-
-function renderMigrateExportCard(orgs, maint) {
-  // Maintenance gate: the operator-side export refuses with a 409
-  // unless maintenance mode is on (so concurrent writes can't tear
-  // the snapshot). Grey out the button + show the requirement
-  // inline so the operator doesn't click and bounce off the error.
-  const ready = !!(maint && maint.on);
-  const orgSelect = h('select', { style: 'min-width:14rem', disabled: ready ? null : '' },
+  const orgSelect = h('select', { style: 'min-width:14rem' },
     orgs.length === 0
       ? [h('option', { value: '' }, t('No orgs to export'))]
       : orgs.map((o) => h('option', { value: String(o.id) }, `${o.name} (#${o.id})`)));
-  const exportBtn = h('button', { class: 'btn primary', type: 'button',
-    disabled: (!ready || orgs.length === 0) ? '' : null },
-    icon(ICONS.copy), t('Download bundle'));
-  exportBtn.addEventListener('click', () => {
-    const orgID = orgSelect.value;
-    if (!orgID) return;
-    const a = document.createElement('a');
-    a.href = `/api/admin/migrate/export?org_id=${encodeURIComponent(orgID)}`;
-    a.rel = 'noopener';
-    document.body.append(a);
-    a.click();
-    a.remove();
-    toastOk(t('Download started — save the file somewhere safe.'));
+  const targetInput = h('input', {
+    type: 'text',
+    placeholder: 'https://app.zonventure.com',
+    style: 'min-width:18rem; flex:1',
+    value: mode.target || '',
   });
-  return h('div', { class: 'card' },
-    h('h2', { style: 'margin:0 0 .25rem' }, t('Export bundle')),
-    h('p', { class: 'muted', style: 'margin:0 0 .75rem; font-size:.9rem' },
-      t('Bundles all of an org\'s adventures, events, teams, slots, and ticket purchases into a portable zip. Tokens (team / recap / live / slot) are preserved so existing URLs keep working on the destination.')),
-    ready ? null : h('p', { class: 'muted', style: 'margin:0 0 .5rem; font-size:.85rem' },
-      t('Enable maintenance mode above before exporting — the operator endpoint refuses without it.')),
-    h('div', { class: 'row', style: 'gap:.75rem; flex-wrap:wrap; align-items:center' },
-      h('label', { style: 'display:flex; flex-direction:column; gap:.2rem; font-size:.8rem; color:var(--muted)' },
-        t('Source org'), orgSelect),
-      exportBtn));
+  const startBtn = h('button', {
+    class: 'btn primary', type: 'button',
+    disabled: (orgs.length === 0 || blockedReason) ? '' : null,
+  }, icon(ICONS.upload), t('Start migration'));
+
+  const formArea = h('div', { style: 'display:flex; flex-direction:column; gap:.75rem' },
+    h('label', { style: 'display:flex; flex-direction:column; gap:.2rem; font-size:.8rem; color:var(--muted)' },
+      t('Source org'), orgSelect),
+    h('label', { style: 'display:flex; flex-direction:column; gap:.2rem; font-size:.8rem; color:var(--muted)' },
+      t('Destination URL'), targetInput),
+    h('div', { class: 'row', style: 'gap:.5rem' }, startBtn));
+  const progressArea = h('div', { hidden: '' });
+
+  startBtn.addEventListener('click', () => {
+    const orgID = orgSelect.value;
+    const target = targetInput.value.trim();
+    if (!orgID) { toastErr(t('Pick a source org.')); return; }
+    if (!target) { toastErr(t('Enter the destination URL.')); return; }
+    if (!/^https?:\/\//.test(target)) {
+      toastErr(t('Destination must start with http:// or https://'));
+      return;
+    }
+    const orgName = orgs.find((o) => String(o.id) === orgID)?.name || `#${orgID}`;
+    const ok = confirm(t('Migrate "{{name}}" to {{target}}? You can stop before the redirect step. Once redirect flips, this instance will 301 every page to the destination.', { name: orgName, target }));
+    if (!ok) return;
+    formArea.hidden = true;
+    progressArea.hidden = false;
+    runMigrationWizard(progressArea, { orgID, orgName, target, maintPinnedByEnv: maint.pinned_by_env });
+  });
+
+  card.append(
+    h('h2', {}, t('Migrate an org to another instance')),
+    h('p', { class: 'muted', style: 'font-size:.9rem; margin-bottom:1rem' },
+      t('One operation, run end to end. The wizard handles the freeze, export, and redirect — you upload the zip on the destination in between.')),
+    blockedReason
+      ? h('p', { class: 'muted', style: 'font-size:.85rem; font-style:italic; margin-bottom:.75rem' },
+          blockedReason)
+      : null,
+    formArea,
+    progressArea,
+  );
+  return card;
 }
 
-function renderMigrateImportCard() {
+// runMigrationWizard drives the steps and renders progress in `area`.
+// Each step flips its row's icon/class and writes status text. The
+// only manual checkpoint is "I've uploaded the bundle on the
+// destination" — everything else fires automatically.
+async function runMigrationWizard(area, ctx) {
+  const steps = [
+    { id: 'pause',    label: t('Pause writes (maintenance mode)') },
+    { id: 'export',   label: t('Build and download bundle') },
+    { id: 'upload',   label: t('Upload bundle on destination') },
+    { id: 'redirect', label: t('Activate redirect to destination') },
+  ];
+  const stepEls = new Map();
+  const list = h('ol', { style: 'list-style:none; padding:0; margin:0; display:flex; flex-direction:column; gap:.4rem' });
+  for (const s of steps) {
+    const ic = h('span', { style: 'display:inline-block; width:1.5rem; text-align:center; font-family:var(--font-mono, monospace)' }, '·');
+    const lbl = h('span', {}, s.label);
+    const li = h('li', { style: 'display:flex; align-items:center; gap:.5rem; opacity:.55' }, ic, lbl);
+    stepEls.set(s.id, { li, ic, lbl });
+    list.append(li);
+  }
+  const setStep = (id, status) => {
+    const el = stepEls.get(id);
+    if (!el) return;
+    if (status === 'running') {
+      el.ic.textContent = '⋯';
+      el.li.style.opacity = '1';
+    } else if (status === 'done') {
+      el.ic.textContent = '✓';
+      el.li.style.opacity = '1';
+      el.lbl.style.color = 'var(--ok, inherit)';
+    } else if (status === 'error') {
+      el.ic.textContent = '✗';
+      el.li.style.opacity = '1';
+      el.lbl.style.color = 'var(--err, inherit)';
+    }
+  };
+
+  const log = h('p', { class: 'muted', style: 'font-size:.85rem; min-height:1.2em; margin:.75rem 0 0' });
+  const cancelBtn = h('button', { class: 'btn ghost small' }, t('Cancel'));
+  const checkpoint = h('div');
+  const finish = h('div');
+  area.replaceChildren(list, log, h('div', { class: 'row', style: 'gap:.5rem; margin-top:1rem' }, cancelBtn), checkpoint, finish);
+
+  let aborted = false;
+  cancelBtn.addEventListener('click', async () => {
+    if (!confirm(t('Cancel the migration? Maintenance mode will be turned back off; any bundle already downloaded is your responsibility to discard.'))) return;
+    aborted = true;
+    cancelBtn.disabled = true;
+    log.textContent = t('Disabling maintenance mode…');
+    if (!ctx.maintPinnedByEnv) {
+      await api('/api/admin/migrate/maintenance', { method: 'POST', body: JSON.stringify({ on: false }) }).catch(() => {});
+    }
+    toastOk(t('Migration cancelled.'));
+    const main = document.getElementById('view') || document.querySelector('main') || document.body;
+    await viewSettings(main, 'migration');
+  });
+
+  // Step 1: maintenance ON. Skip the API call when env-pinned (the
+  // toggle returns 409); the operator's already opted into the freeze
+  // by setting the env var, so we just note it and move on.
+  setStep('pause', 'running');
+  if (ctx.maintPinnedByEnv) {
+    log.textContent = t('Maintenance mode pinned by env — leaving as-is.');
+  } else {
+    const m = await api('/api/admin/migrate/maintenance', { method: 'POST', body: JSON.stringify({ on: true }) });
+    if (!m.ok) {
+      setStep('pause', 'error');
+      log.className = 'err';
+      log.textContent = t('Could not enable maintenance: {{err}}', { err: m.body?.error || ('HTTP ' + m.status) });
+      return;
+    }
+  }
+  setStep('pause', 'done');
+  if (aborted) return;
+
+  // Step 2: trigger the browser download. Browsers don't surface
+  // success/failure for click-driven downloads, so we mark this step
+  // done as soon as the click fires and let the operator confirm by
+  // proceeding to the upload checkpoint.
+  setStep('export', 'running');
+  log.textContent = t('Downloading bundle…');
+  const a = document.createElement('a');
+  a.href = `/api/admin/migrate/export?org_id=${encodeURIComponent(ctx.orgID)}`;
+  a.rel = 'noopener';
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setStep('export', 'done');
+  log.textContent = '';
+
+  // Step 3: human checkpoint. The destination's a separate machine
+  // with its own admin login, so we can't push the zip from here
+  // without introducing cross-instance auth — see the design notes.
+  setStep('upload', 'running');
+  const destURL = ctx.target.replace(/\/$/, '') + '/arrange#settings/migration';
+  checkpoint.replaceChildren(
+    h('div', { class: 'card', style: 'margin:1rem 0; background:var(--surface-2, transparent); border:1px dashed var(--border, currentColor)' },
+      h('p', { style: 'margin:0 0 .5rem' }, t('Bundle saved to your downloads folder. Now:')),
+      h('ol', { style: 'margin:0 0 .75rem 1.25rem' },
+        h('li', {}, t('Open '),
+          h('a', { href: destURL, target: '_blank', rel: 'noopener' }, destURL)),
+        h('li', {}, t('Sign in there with your admin account.')),
+        h('li', {}, t('Pick the bundle file and click "Import bundle".'))),
+      h('div', { class: 'row', style: 'gap:.5rem' },
+        h('button', {
+          class: 'btn primary', type: 'button',
+          on: { click: confirmUpload },
+        }, icon(ICONS.compass), t('I\'ve uploaded the bundle — flip redirect now')))));
+
+  function confirmUpload() {
+    if (aborted) return;
+    if (!confirm(t('Flip redirect mode now? Every page on this instance will 301 to {{target}} from the moment you confirm.', { target: ctx.target }))) return;
+    flipRedirect();
+  }
+
+  async function flipRedirect() {
+    setStep('upload', 'done');
+    setStep('redirect', 'running');
+    cancelBtn.disabled = true;
+    checkpoint.replaceChildren();
+    const r = await api('/api/admin/migrate/redirect-mode', {
+      method: 'POST',
+      body: JSON.stringify({ target: ctx.target }),
+    });
+    if (!r.ok) {
+      setStep('redirect', 'error');
+      log.className = 'err';
+      log.textContent = t('Could not enable redirect: {{err}}', { err: r.body?.error || ('HTTP ' + r.status) });
+      return;
+    }
+    setStep('redirect', 'done');
+    log.className = '';
+    log.textContent = t('Migration complete. This instance now redirects to {{target}}.', { target: ctx.target });
+    finish.replaceChildren(
+      h('div', { class: 'card', style: 'margin:1rem 0; background:var(--surface-2, transparent)' },
+        h('p', { style: 'margin:0 0 .5rem' }, t('Done. Suggested follow-ups:')),
+        h('ul', { style: 'margin:0 0 0 1.25rem' },
+          h('li', {}, t('Take a final pg_dump of this instance before tearing it down.')),
+          h('li', {}, t('Once you\'ve confirmed the destination is serving traffic, this instance can be retired.')))));
+  }
+}
+
+// renderMigrationActiveCard is the read-only banner for an instance
+// that's already in redirect mode. In practice the redirectMode
+// middleware would have 301'd the admin away before they reach this
+// page, so this branch is only exercised when the redirect target
+// lives in the DB but somehow allowlists let the page render.
+function renderMigrationActiveCard(mode) {
+  const card = h('div', { class: 'card' });
+  const disableBtn = h('button', { class: 'btn ghost', type: 'button',
+    disabled: mode.pinned_by_env ? '' : null }, t('Disable redirect mode'));
+  disableBtn.addEventListener('click', async () => {
+    if (!confirm(t('Disable redirect mode? Pages on this instance will resume serving normally.'))) return;
+    disableBtn.disabled = true;
+    const r = await api('/api/admin/migrate/redirect-mode', {
+      method: 'POST', body: JSON.stringify({ target: '' }),
+    });
+    if (!r.ok) {
+      toastErr(r.body?.error || t('Could not disable redirect mode.'));
+      disableBtn.disabled = false;
+      return;
+    }
+    toastOk(t('Redirect mode disabled.'));
+    const main = document.getElementById('view') || document.querySelector('main') || document.body;
+    await viewSettings(main, 'migration');
+  });
+  card.append(
+    h('h2', {}, t('Redirect mode is ON')),
+    h('p', { class: 'muted', style: 'font-size:.9rem' },
+      t('Every non-allowlisted page on this instance 301s to:')),
+    h('p', { style: 'font-size:1.05rem' }, h('strong', {}, mode.target)),
+    h('div', { class: 'row', style: 'gap:.5rem; margin-top:.75rem' }, disableBtn));
+  return card;
+}
+
+// Destination-side: drop a zip, get a fresh org. The same surface as
+// the source-side wizard so an operator with admin on both ends only
+// has one page to remember.
+function renderMigrationInCard() {
   const fileInput = h('input', { type: 'file', accept: '.zip,application/zip' });
-  const importBtn = h('button', { class: 'btn primary', type: 'button' },
-    icon(ICONS.upload), t('Upload bundle'));
+  const importBtn = h('button', { class: 'btn', type: 'button' },
+    icon(ICONS.upload), t('Import bundle'));
   const status = h('p', { class: 'muted', style: 'margin:.5rem 0 0; font-size:.85rem; min-height:1.2em' });
   importBtn.addEventListener('click', async () => {
     const f = fileInput.files && fileInput.files[0];
     if (!f) { toastErr(t('Pick a bundle zip first')); return; }
     importBtn.disabled = true;
+    status.className = 'muted';
     status.textContent = t('Uploading and replaying — this can take a moment.');
     const fd = new FormData();
     fd.append('bundle', f);
@@ -14669,73 +14829,11 @@ function renderMigrateImportCard() {
     }
   });
   return h('div', { class: 'card' },
-    h('h2', { style: 'margin:0 0 .25rem' }, t('Import bundle')),
-    h('p', { class: 'muted', style: 'margin:0 0 .75rem; font-size:.9rem' },
-      t('Mints a fresh org on this instance and replays every record under new primary keys. Slug collisions reject with 409 — rename on the source side and re-export.')),
-    h('div', { class: 'row', style: 'gap:.75rem; flex-wrap:wrap; align-items:center' },
+    h('h2', {}, t('Import a bundle into this instance')),
+    h('p', { class: 'muted', style: 'font-size:.9rem' },
+      t('Pick the zip downloaded from another zv instance\'s migration wizard. A fresh org is minted here with all records replayed under new IDs. Slug collisions reject with 409 — rename on the source side and re-export.')),
+    h('div', { class: 'row', style: 'gap:.5rem; flex-wrap:wrap; align-items:center; margin-top:.5rem' },
       fileInput, importBtn),
-    status);
-}
-
-function renderMigrateRedirectCard(mode) {
-  const targetInput = h('input', {
-    type: 'text', placeholder: 'https://app.zonventure.com',
-    value: mode.target || '',
-    style: 'min-width:18rem; flex:1',
-    disabled: mode.pinned_by_env ? '' : null,
-  });
-  const enableBtn = h('button', { class: 'btn primary', type: 'button',
-    disabled: mode.pinned_by_env ? '' : null }, icon(ICONS.compass),
-    mode.target ? t('Update redirect target') : t('Switch to redirect mode'));
-  const disableBtn = mode.target
-    ? h('button', { class: 'btn ghost', type: 'button',
-        disabled: mode.pinned_by_env ? '' : null }, t('Disable redirect mode'))
-    : null;
-  const status = h('p', { style: 'margin:.5rem 0 0; font-size:.85rem; min-height:1.2em' },
-    mode.pinned_by_env
-      ? h('span', { class: 'muted' },
-          t('ZV_REDIRECT_TARGET is pinned in the environment file — unset it there to manage from this page.'))
-      : mode.target
-        ? h('span', {}, t('Redirect mode is ON. Every page on this instance 301s to: '),
-            h('strong', {}, mode.target))
-        : h('span', { class: 'muted' },
-            t('Redirect mode is off. Flip it on once the destination instance has imported your bundle and is ready to receive traffic.')));
-
-  const post = async (target) => {
-    const proceed = target === ''
-      ? confirm(t('Disable redirect mode? Pages on this instance will resume serving normally.'))
-      : confirm(t('Switch this instance into redirect mode? Every non-allowlisted page will 301 to {{target}} until you turn it back off.', { target }));
-    if (!proceed) return;
-    enableBtn.disabled = true;
-    if (disableBtn) disableBtn.disabled = true;
-    try {
-      const r = await api('/api/admin/migrate/redirect-mode', {
-        method: 'POST',
-        body: JSON.stringify({ target }),
-      });
-      if (!r.ok) {
-        toastErr(r.body?.error || t('Could not save redirect target.'));
-        return;
-      }
-      toastOk(target === '' ? t('Redirect mode disabled.') : t('Redirect mode enabled.'));
-      // Re-render the page so the buttons + status block reflect the
-      // new state. Keep the user on this page rather than navigating.
-      const view = document.getElementById('view') || document.querySelector('main') || document.body;
-      await viewMigrate(view);
-    } finally {
-      enableBtn.disabled = false;
-      if (disableBtn) disableBtn.disabled = false;
-    }
-  };
-  enableBtn.addEventListener('click', () => post(targetInput.value.trim()));
-  if (disableBtn) disableBtn.addEventListener('click', () => post(''));
-
-  return h('div', { class: 'card' },
-    h('h2', { style: 'margin:0 0 .25rem' }, t('Switch to redirect mode')),
-    h('p', { class: 'muted', style: 'margin:0 0 .75rem; font-size:.9rem' },
-      t('Once the destination instance has imported your bundle, flip this to 301 every page here to the destination. Existing token-bearing URLs (printed QR codes, emailed magic links) keep working through the cutover.')),
-    h('div', { class: 'row', style: 'gap:.75rem; flex-wrap:wrap; align-items:center' },
-      targetInput, enableBtn, disableBtn),
     status);
 }
 
@@ -15878,6 +15976,10 @@ async function viewSettings(view, tab) {
     // the platform sees that marketplace mode exists.
     { id: 'billing',      label: t('Billing'),      visible: isOrgAdmin },
     { id: 'system',       label: t('System'),       visible: isAdmin },
+    // Migration is the self-host → hosted cutover wizard. Admin-only,
+    // adjacent to System because both are operator surfaces — System
+    // configures the running instance, Migration moves an org off it.
+    { id: 'migration',    label: t('Migration'),    visible: isAdmin },
     // Software update is admin-only and carries a badge dot when
     // the cached snapshot says a newer release is available, so the
     // operator finds the page even without remembering it exists.
@@ -15914,6 +16016,7 @@ async function viewSettings(view, tab) {
     case 'billing':      return await viewSettingsBilling(body);
     case 'integrations': return await viewWebhooks(body);
     case 'system':       return renderSettingsSystem(body);
+    case 'migration':    return await viewSettingsMigration(body);
     case 'software-update': return await viewSettingsSoftwareUpdate(body);
   }
 }
