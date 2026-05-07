@@ -287,7 +287,7 @@ func (h *Handlers) handleTicketCheckoutCompleted(ctx context.Context, event paym
 		return nil
 	}
 
-	teamID, slots, err := createTicketTeam(ctx, tx, eventID, buyerEmail, teamSize)
+	teamID, teamToken, err := createTicketTeam(ctx, tx, eventID, buyerEmail, teamSize)
 	if err != nil {
 		return fmt.Errorf("ticket team create: %w", err)
 	}
@@ -309,45 +309,38 @@ func (h *Handlers) handleTicketCheckoutCompleted(ctx context.Context, event paym
 		return err
 	}
 
-	// Email the magic links. Best-effort: a send failure leaves the
+	// Email the team link. Best-effort: a send failure leaves the
 	// purchase in a paid-but-not-emailed state, which the operator
 	// can re-send via the existing per-team SendTeamInvitation route.
-	if err := h.sendTicketMagicLinks(ctx, buyerEmail, slots); err != nil {
+	if err := h.sendTicketTeamLink(ctx, buyerEmail, teamToken); err != nil {
 		logx.Warn("admin.store.ticket.mail",
 			"purchase_id", purchaseID, "team_id", teamID, "err", err.Error())
 	}
 	logx.Info("admin.store.ticket.paid",
-		"purchase_id", purchaseID, "team_id", teamID, "slots", len(slots))
+		"purchase_id", purchaseID, "team_id", teamID, "team_size", teamSize)
 	return nil
 }
 
-// ticketSlot is the (player-name, magic-token) pair used to render
-// the buyer's email body. Mirrors invitationSlot but local to the
-// ticket-purchase flow so changes to either don't entangle.
-type ticketSlot struct {
-	Player string
-	Token  string
-}
-
 // createTicketTeam inserts the team + N slots inside the webhook's
-// transaction and returns the slot tokens so the caller can email
-// them. Slots are pre-named "Player 1".."Player N" — the buyer can
-// rename them inside /play once they open their link.
-func createTicketTeam(ctx context.Context, tx *sql.Tx, eventID int64, buyerEmail string, teamSize int) (int64, []ticketSlot, error) {
+// transaction and returns the team's share token. Slots are pre-named
+// "Player 1".."Player N" — the buyer (team captain) opens the team
+// link, claims their own slot, and shares the remaining slots from
+// inside the app via the team-share QR.
+func createTicketTeam(ctx context.Context, tx *sql.Tx, eventID int64, buyerEmail string, teamSize int) (int64, string, error) {
 	if teamSize < 1 {
 		teamSize = 1
 	}
 	teamTok, err := auth.NewSlotToken()
 	if err != nil {
-		return 0, nil, fmt.Errorf("team token: %w", err)
+		return 0, "", fmt.Errorf("team token: %w", err)
 	}
 	recapTok, err := auth.NewSlotToken()
 	if err != nil {
-		return 0, nil, fmt.Errorf("recap token: %w", err)
+		return 0, "", fmt.Errorf("recap token: %w", err)
 	}
 	teamName, err := uniqueTicketTeamName(ctx, tx, eventID, buyerEmail)
 	if err != nil {
-		return 0, nil, fmt.Errorf("team name: %w", err)
+		return 0, "", fmt.Errorf("team name: %w", err)
 	}
 
 	var teamID int64
@@ -355,25 +348,23 @@ func createTicketTeam(ctx context.Context, tx *sql.Tx, eventID int64, buyerEmail
 		INSERT INTO teams(event_id, name, token, recap_token, email)
 		VALUES ($1, $2, $3, $4, $5) RETURNING id
 	`, eventID, teamName, teamTok, recapTok, buyerEmail).Scan(&teamID); err != nil {
-		return 0, nil, fmt.Errorf("teams insert: %w", err)
+		return 0, "", fmt.Errorf("teams insert: %w", err)
 	}
 
 	expiresAt := auth.DefaultSlotExpiresAt(ctx, tx, eventID)
-	slots := make([]ticketSlot, 0, teamSize)
 	for i := 1; i <= teamSize; i++ {
 		tok, err := auth.NewSlotToken()
 		if err != nil {
-			return 0, nil, fmt.Errorf("slot token: %w", err)
+			return 0, "", fmt.Errorf("slot token: %w", err)
 		}
 		name := fmt.Sprintf("Player %d", i)
 		if _, err := tx.ExecContext(ctx,
 			`INSERT INTO player_slots(team_id, name, token, expires_at) VALUES ($1, $2, $3, $4)`,
 			teamID, name, tok, expiresAt); err != nil {
-			return 0, nil, fmt.Errorf("player_slots insert: %w", err)
+			return 0, "", fmt.Errorf("player_slots insert: %w", err)
 		}
-		slots = append(slots, ticketSlot{Player: name, Token: tok})
 	}
-	return teamID, slots, nil
+	return teamID, teamTok, nil
 }
 
 // uniqueTicketTeamName picks a team name unique within the event.
@@ -412,11 +403,14 @@ func uniqueTicketTeamName(ctx context.Context, tx *sql.Tx, eventID int64, buyerE
 	return fmt.Sprintf("%s-%s", base, tok[:6]), nil
 }
 
-// sendTicketMagicLinks emails the buyer one message containing
-// every slot's magic-link URL. The buyer is the team's "captain";
-// they forward the per-player links (or show the team-share QR
-// from /play) to friends.
-func (h *Handlers) sendTicketMagicLinks(ctx context.Context, buyerEmail string, slots []ticketSlot) error {
+// sendTicketTeamLink emails the buyer a single team-share URL. Quests
+// are bought-and-played-immediately: the buyer opens the link, claims
+// a player slot, and shares the remaining slots with their teammates
+// from inside the team-share page (QR + per-player URLs). Sending one
+// link instead of N keeps the email short, avoids the "which link is
+// mine" friction, and lets a buyer playing solo skip the share step
+// entirely.
+func (h *Handlers) sendTicketTeamLink(ctx context.Context, buyerEmail, teamToken string) error {
 	if h.Mailer == nil {
 		// No mailer is a self-host LogMailer fallback. The order is
 		// "create team, then mail" so we still log via the LogMailer
@@ -427,15 +421,14 @@ func (h *Handlers) sendTicketMagicLinks(ctx context.Context, buyerEmail string, 
 	if publicURL == "" {
 		return errors.New("ticket email requires PublicURL")
 	}
+	teamURL := publicURL + "/team/" + teamToken
 	var b strings.Builder
-	b.WriteString("Thanks for your purchase! Below are the magic links for your team. Forward each link to one teammate, or open the first link yourself and share the team QR code from inside the app.\r\n\r\n")
-	for _, s := range slots {
-		fmt.Fprintf(&b, "%s: %s/play?t=%s\r\n", s.Player, publicURL, s.Token)
-	}
-	b.WriteString("\r\nLinks stay valid for the duration of the event. Lose one? Use the \"I lost my link\" recovery on the play page with this same email address.\r\n")
+	b.WriteString("Thanks for your purchase! Open the link below to set up your team — claim your own player slot, share the rest with your teammates, and start playing whenever you're ready.\r\n\r\n")
+	fmt.Fprintf(&b, "Team page: %s\r\n", teamURL)
+	b.WriteString("\r\nThe link stays valid for the duration of the quest. Lose it? Use the \"I lost my link\" recovery on the play page with this same email address.\r\n")
 	return h.Mailer.Send(ctx, mailerpkg.Message{
 		To:      []string{buyerEmail},
-		Subject: "Your Zonventure ticket — magic links inside",
+		Subject: "Your Zonventure ticket — team link inside",
 		Text:    b.String(),
 	})
 }

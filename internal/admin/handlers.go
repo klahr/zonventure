@@ -423,14 +423,17 @@ func (h *Handlers) CreateEvent(w http.ResponseWriter, r *http.Request) {
 		assignmentArg = req.AssignmentID
 	} else if strings.TrimSpace(req.AdventureSlug) != "" {
 		slug = strings.TrimSpace(req.AdventureSlug)
-		// Slug-only path is share-only: an admin has commissioned this
-		// adventure for the caller's org, so per-event billing is
-		// already handled out-of-band via the bilateral deal. Org-
-		// owned content (self-authored or forked) does NOT match here
-		// — its events flow through /api/admin/purchases first to mint
-		// a billed assignment, and then come back through the
-		// assignment-backed branch above. The 409 below tells the
-		// frontend to start that flow rather than retrying.
+		// Slug-only path covers two cases:
+		//   1. Share-backed regular events — an admin has commissioned
+		//      this adventure for the caller's org, so per-event
+		//      billing is handled out-of-band via the bilateral deal.
+		//   2. Quests on org-owned adventures — per-ticket billing at
+		//      /store handles revenue, so the upfront-assignment step
+		//      doesn't apply: ownership of the adventure is enough.
+		// Regular events on org-owned content still bounce through
+		// the buy-an-assignment flow (so per-event billing is
+		// recorded before play); the 409 below tells the frontend
+		// to start that flow rather than retrying.
 		var hasShare bool
 		if err := h.DB.QueryRowContext(r.Context(), `
 			SELECT EXISTS (
@@ -443,7 +446,7 @@ func (h *Handlers) CreateEvent(w http.ResponseWriter, r *http.Request) {
 		}
 		if !hasShare {
 			// Confirm the org can at least see the adventure; if so,
-			// signal "buy first"; otherwise, plain 403.
+			// branch on quest-vs-regular; otherwise, plain 403.
 			var advOrg sql.NullInt64
 			if err := h.DB.QueryRowContext(r.Context(),
 				`SELECT org_id FROM adventures WHERE slug = $1`, slug).Scan(&advOrg); err != nil {
@@ -459,11 +462,13 @@ func (h *Handlers) CreateEvent(w http.ResponseWriter, r *http.Request) {
 				httpx.Error(w, http.StatusForbidden, "no access to that adventure")
 				return
 			}
-			httpx.JSON(w, http.StatusConflict, map[string]string{
-				"error": "buy a player-slot assignment for this adventure first",
-				"code":  "assignment_required",
-			})
-			return
+			if !(ownsIt && req.PublicForSale) {
+				httpx.JSON(w, http.StatusConflict, map[string]string{
+					"error": "buy a player-slot assignment for this adventure first",
+					"code":  "assignment_required",
+				})
+				return
+			}
 		}
 	} else {
 		httpx.Error(w, http.StatusBadRequest, "assignment_id or adventure_slug required")

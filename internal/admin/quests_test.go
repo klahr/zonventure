@@ -106,6 +106,53 @@ func TestQuest_CreateAndStartEmpty(t *testing.T) {
 	}
 }
 
+// TestQuest_CreateWithoutAssignment locks in the slug-only path:
+// quests bill per ticket via /store, so an org-owned adventure
+// is enough access — no pre-purchased assignment required. The
+// regression this guards against is the old "Buy slots from the
+// Events page first" 409 that bounced quest creation.
+func TestQuest_CreateWithoutAssignment(t *testing.T) {
+	_, _, _, r := questFixture(t)
+
+	createBody, _ := json.Marshal(map[string]any{
+		"adventure_slug":   "treasure",
+		"name":             "Treasure Hunt — always-on",
+		"attest_no_minors": true,
+		"public_for_sale":  true,
+	})
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/api/admin/events", strings.NewReader(string(createBody)))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("create: status=%d body=%s, want 201 (quest on org-owned adventure should not need an assignment)",
+			w.Code, w.Body.String())
+	}
+}
+
+// TestEvent_SlugOnlyOwnedStillBlocked is the inverse: a regular
+// event on an org-owned adventure must still hit the buy-an-
+// assignment 409 — the relaxation is conditioned on public_for_sale,
+// not adventure ownership.
+func TestEvent_SlugOnlyOwnedStillBlocked(t *testing.T) {
+	_, _, _, r := questFixture(t)
+
+	createBody, _ := json.Marshal(map[string]any{
+		"adventure_slug":   "treasure",
+		"name":             "Sunday hunt",
+		"attest_no_minors": true,
+		// public_for_sale omitted → false → regular event
+	})
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/api/admin/events", strings.NewReader(string(createBody)))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusConflict {
+		t.Errorf("create: status=%d body=%s, want 409 (regular events still need an assignment)",
+			w.Code, w.Body.String())
+	}
+}
+
 // TestEvent_StartEmptyStillBlocked is the inverse: a regular event
 // with no teams must still hit the empty-team guard. Locks in
 // that the guard relaxation is conditioned on public_for_sale,

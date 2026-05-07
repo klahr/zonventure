@@ -6928,14 +6928,12 @@ function fmtTicketPrice(cents, currency) {
 // step surfaces failure separately so the operator can recover
 // from the failed step in the event-detail page.
 async function newQuest() {
-  // Pull adventures and unused assignments up front so the modal
-  // can react instantly when the user changes their pick.
-  const [advR, assignR] = await Promise.all([
-    api('/api/admin/adventures'),
-    api('/api/admin/assignments'),
-  ]);
+  // Quests bill per ticket via /store, so unlike regular events they
+  // don't need a pre-purchased assignment — adventure access (owned
+  // or shared) is enough. The picker filters to those, and the
+  // server's slug-only branch handles the gate.
+  const advR = await api('/api/admin/adventures');
   const advs = (advR.body?.adventures || []).filter((a) => a.mine_to_edit || a.shared);
-  const assignments = (assignR.body?.assignments || []).filter((x) => !x.event_id);
   if (advs.length === 0) {
     toastErr(t('Create or browse an adventure first'));
     return;
@@ -6959,7 +6957,6 @@ async function newQuest() {
         chip.addEventListener('click', () => {
           pickedAdv = a;
           refreshChips();
-          refreshAssignmentHint();
         });
         return chip;
       }));
@@ -6976,27 +6973,10 @@ async function newQuest() {
     const cover = h('input', { type: 'file', accept: 'image/*' });
     const attest = h('input', { type: 'checkbox' });
 
-    // Surface "you need to buy slots first" inline so the user
-    // doesn't submit and bounce off a 404. The hint text updates as
-    // the picked adventure changes.
-    const assignHint = h('p', { class: 'muted', style: 'font-size:.85rem; margin:.25rem 0 0; min-height:1.2em' });
-    const refreshAssignmentHint = () => {
-      const m = assignments.find((x) => x.adventure_slug === pickedAdv.slug);
-      if (m) {
-        assignHint.className = 'muted';
-        assignHint.textContent = t('Up to {{n}} tickets available from existing assignment', { n: m.max_players });
-      } else {
-        assignHint.className = 'err';
-        assignHint.textContent = t('No unused assignment for this adventure. Buy slots from the Events page first.');
-      }
-    };
-    refreshAssignmentHint();
-
     const submitBtn = h('button', { class: 'btn primary', type: 'submit' }, t('Create quest'));
     const form = h('form', {},
       h('h3', { style: 'margin:.25rem 0' }, t('Adventure')),
       advPick,
-      assignHint,
       h('label', { class: 'field' }, h('span', {}, t('Quest name')), name),
       h('label', { class: 'field' }, h('span', {}, t('Public description')), blurb),
       h('div', { class: 'row', style: 'gap:.75rem; flex-wrap:wrap' },
@@ -7020,8 +7000,6 @@ async function newQuest() {
 
     form.addEventListener('submit', (e) => {
       e.preventDefault();
-      const m = assignments.find((x) => x.adventure_slug === pickedAdv.slug);
-      if (!m) { toastErr(t('No unused assignment for this adventure. Buy slots from the Events page first.')); return; }
       if (!name.value.trim()) { toastErr(t('Quest name required')); return; }
       const priceN = parseInt(price.value, 10);
       if (!priceN || priceN <= 0) { toastErr(t('Ticket price must be greater than zero')); return; }
@@ -7029,7 +7007,7 @@ async function newQuest() {
       if (!teamN || teamN < 1) { toastErr(t('Players per ticket must be at least 1')); return; }
       if (!attest.checked) { toastErr(t('Confirm the no-minors attestation')); return; }
       close({
-        assignment_id: m.id,
+        adventure_slug: pickedAdv.slug,
         name: name.value.trim(),
         public_blurb: blurb.value.trim(),
         ticket_price_cents: priceN * 100,
@@ -7044,10 +7022,13 @@ async function newQuest() {
   if (!result) return;
 
   // Step 1: create the underlying event with public_for_sale=true.
+  // Quests bill per ticket so no assignment_id is sent — the
+  // server's slug-only branch accepts org-owned adventures (or
+  // shares) when public_for_sale is true.
   const cr = await api('/api/admin/events', {
     method: 'POST',
     body: JSON.stringify({
-      assignment_id: result.assignment_id,
+      adventure_slug: result.adventure_slug,
       name: result.name,
       attest_no_minors: true,
       public_for_sale: true,
