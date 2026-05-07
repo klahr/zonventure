@@ -7927,17 +7927,34 @@ async function viewRunDetail(view, runID) {
     // Reschedule affordance so the operator can't push a quest into
     // a scheduled state that the listing query treats as "not for
     // sale". Regular events keep the button.
-    if (!event.public_for_sale) {
+    if (!isQuest) {
       const sched = h('button', { class: 'btn lifecycle-btn', on: { click: () => openEditSchedule(event) } },
         icon(ICONS.schedule), t('Reschedule'));
       actions.append(sched);
     }
   }
-  // Pause / Resume live on the Race control view — that's where the
-  // arranger watches the race in real time and would naturally reach
-  // for them. Keeping them here too just doubled up the same control
-  // surface in two places. Cancel stays because it's reachable from
-  // a scheduled event too (no race-control entry until running).
+  // Pause / Resume on the detail page — for quests only. Regular
+  // events surface them on the Race control cockpit instead, since
+  // that's where the arranger watches the live race and would
+  // naturally reach for them. Quests have no "live cockpit" moment;
+  // the detail page is the operator's primary surface (it owns the
+  // store settings), so the lifecycle controls live here too.
+  // Pausing a quest delists it from /store without cancelling;
+  // resuming re-lists.
+  if (isQuest && event.state === 'running') {
+    actions.append(h('button', {
+      class: 'btn lifecycle-btn',
+      on: { click: () => confirmPause(event) },
+      title: t('Pause the quest — delists from /store until resumed'),
+    }, icon(ICONS.moon), t('Pause')));
+  }
+  if (isQuest && event.state === 'paused') {
+    actions.append(h('button', {
+      class: 'btn primary lifecycle-btn',
+      on: { click: () => transition(event.id, 'resume') },
+      title: t('Resume the quest — re-lists on /store'),
+    }, icon(ICONS.play), t('Resume')));
+  }
   // Cancel is the escape hatch for an event that needs to end before
   // it has finished — equipment broke, weather, the venue dropped out.
   // Allowed from scheduled / running / paused; the server gates with
@@ -8267,12 +8284,12 @@ async function viewRunDetail(view, runID) {
     h('div', { class: 'event-log-body' }, renderEventFeed(events, teams)));
 
   // Page composition diverges by event type:
-  //   • Quests — store details are the main settings, so they sit at
-  //     the top right under the lifecycle bar (with the connect-
-  //     readiness banner above them, since the price/blurb panel is
-  //     useless without a payments destination). The "distribute
+  //   • Quests — adventure strip + quick stats sit at the top so the
+  //     three at-a-glance numbers match the position they have on
+  //     other pages, then the connect banner + store-details panel
+  //     (the main settings surface for a quest). The "distribute
   //     links" and public-share bars are dropped entirely: buyers
-  //     receive their slot links through the Stripe checkout-success
+  //     receive their team link through the Stripe checkout-success
   //     path, and quests are sold via /store rather than per-event
   //     share URLs.
   //   • Regular events — unchanged ordering: adventure strip, quick
@@ -8281,10 +8298,10 @@ async function viewRunDetail(view, runID) {
   const composition = isQuest
     ? [
         lifecycleBar,
-        renderConnectBanner(event, questConnectStatus),
-        renderStoreBar(event),
         renderEventAdventureStrip(adventure, event),
         renderEventQuickStats(event, teams),
+        renderConnectBanner(event, questConnectStatus),
+        renderStoreBar(event),
         renderEventResultsCard(event, teams),
         h('div', { class: 'grid cols-2' }, teamsCard, eventLogCard),
       ]
