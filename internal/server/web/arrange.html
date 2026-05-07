@@ -7680,42 +7680,42 @@ function renderStoreBar(event) {
     }
   });
 
-  const body = h('div', { style: 'margin-top:.75rem; display:grid; gap:.75rem' },
-    h('div', { class: 'row', style: 'gap:.75rem; align-items:flex-start; flex-wrap:wrap' },
-      coverPreview,
-      h('div', { style: 'display:flex; flex-direction:column; gap:.4rem' },
-        h('div', { class: 'muted', style: 'font-size:.8rem' }, t('Cover image (16:9 looks best)')),
-        h('div', { class: 'row', style: 'gap:.5rem; flex-wrap:wrap' },
-          uploadBtn, clearBtn, fileInput))),
-    h('div', { class: 'row', style: 'gap:.75rem; align-items:center; flex-wrap:wrap' },
-      h('label', { style: 'display:flex; flex-direction:column; gap:.2rem; font-size:.8rem; color:var(--muted)' },
-        t('Price'), priceInput),
-      h('label', { style: 'display:flex; flex-direction:column; gap:.2rem; font-size:.8rem; color:var(--muted)' },
-        t('Currency'), currencySelect),
-      h('label', { style: 'display:flex; flex-direction:column; gap:.2rem; font-size:.8rem; color:var(--muted)' },
-        t('Team size'), teamSizeInput),
-    ),
-    h('label', { style: 'display:flex; flex-direction:column; gap:.2rem; font-size:.8rem; color:var(--muted)' },
-      t('Blurb (shown on the store card)'), blurbInput),
-    h('div', { class: 'row', style: 'gap:.75rem; align-items:center; flex-wrap:wrap' },
-      saveBtn,
-      storeLink,
-    ),
-  );
-  // Visibility on /store is state-driven for quests (running/paused
-  // → listed; completed/cancelled → hidden), so the summary text
-  // surfaces the price and the current state, not a toggle status.
-  const summary = h('summary', {
-    style: 'cursor:pointer; list-style:none; display:flex; align-items:center; gap:.6rem',
-  },
-    h('span', { style: 'font-size:.7rem; font-weight:800; text-transform:uppercase; letter-spacing:.06em; color:var(--muted)' }, t('Quest details')),
+  // Quest details are the main settings surface for an always-on
+  // adventure — price, currency, team size, blurb, cover. The card
+  // is always open (not a collapsible <details>), since it's the
+  // primary editing surface on the quest detail page rather than
+  // an aside.
+  const header = h('div', { class: 'row between', style: 'align-items:center; gap:.6rem; flex-wrap:wrap' },
+    h('h2', { style: 'margin:0' }, t('Quest details')),
     h('span', { class: 'muted', style: 'font-size:.85rem' },
       priceMajor
         ? t('{{price}} {{cur}} per ticket', { price: priceMajor, cur: currency.toUpperCase() })
         : t('No ticket price set yet — players can\'t buy until you save one.')),
   );
-  return h('details', { class: 'card share-bar', style: 'padding:.85rem 1rem' },
-    summary, body,
+  return h('div', { class: 'card' },
+    header,
+    h('div', { style: 'margin-top:.75rem; display:grid; gap:.75rem' },
+      h('div', { class: 'row', style: 'gap:.75rem; align-items:flex-start; flex-wrap:wrap' },
+        coverPreview,
+        h('div', { style: 'display:flex; flex-direction:column; gap:.4rem' },
+          h('div', { class: 'muted', style: 'font-size:.8rem' }, t('Cover image (16:9 looks best)')),
+          h('div', { class: 'row', style: 'gap:.5rem; flex-wrap:wrap' },
+            uploadBtn, clearBtn, fileInput))),
+      h('div', { class: 'row', style: 'gap:.75rem; align-items:center; flex-wrap:wrap' },
+        h('label', { style: 'display:flex; flex-direction:column; gap:.2rem; font-size:.8rem; color:var(--muted)' },
+          t('Price'), priceInput),
+        h('label', { style: 'display:flex; flex-direction:column; gap:.2rem; font-size:.8rem; color:var(--muted)' },
+          t('Currency'), currencySelect),
+        h('label', { style: 'display:flex; flex-direction:column; gap:.2rem; font-size:.8rem; color:var(--muted)' },
+          t('Team size'), teamSizeInput),
+      ),
+      h('label', { style: 'display:flex; flex-direction:column; gap:.2rem; font-size:.8rem; color:var(--muted)' },
+        t('Blurb (shown on the store card)'), blurbInput),
+      h('div', { class: 'row', style: 'gap:.75rem; align-items:center; flex-wrap:wrap' },
+        saveBtn,
+        storeLink,
+      ),
+    ),
   );
 }
 
@@ -7905,6 +7905,12 @@ async function viewRunDetail(view, runID) {
   const adventureR = await api('/api/admin/adventures/' + encodeURIComponent(event.adventure_slug));
   const adventure = adventureR.ok ? adventureR.body : null;
 
+  // isQuest decides which affordances apply: ticket-sold always-on
+  // adventures (true) vs operator-scheduled fixed-roster events
+  // (false). Reports, calendar invites, slot top-ups, and the
+  // distribute-links panel only make sense on the latter.
+  const isQuest = event.public_for_sale === true;
+
   // Connect status — only relevant for quests on a marketplace
   // deployment. We always fetch when public_for_sale is true (the
   // status endpoint cheaply returns platform_fee_enabled too, so
@@ -7912,7 +7918,7 @@ async function viewRunDetail(view, runID) {
   // Fetch fails fall through to "no banner" rather than blocking
   // the whole page on a transient status-API hiccup.
   let questConnectStatus = null;
-  if (event.public_for_sale) {
+  if (isQuest) {
     const cs = await api(`/api/admin/organizations/${event.org_id}/stripe-connect/status`);
     if (cs.ok) questConnectStatus = cs.body;
   }
@@ -7963,12 +7969,15 @@ async function viewRunDetail(view, runID) {
   // Top-up: buy more player slots for the assignment behind this
   // event. Hidden on terminal-state events (no point growing a
   // finished/cancelled event), when the event is admin-seeded
-  // without an assignment row to grow, and for global admins (the
+  // without an assignment row to grow, for global admins (the
   // /api/admin/purchases endpoint refuses admin callers — admins
-  // use the Grant slots affordance below instead).
+  // use the Grant slots affordance below instead), and on quests
+  // (each ticket purchase mints its own team; the assignment cap
+  // is the seller's roster limit, not a pool the buyer grows).
   if (state.me?.role !== 'admin'
       && (event.state === 'scheduled' || event.state === 'running' || event.state === 'paused')
-      && event.assignment_id) {
+      && event.assignment_id
+      && !isQuest) {
     const topUp = h('button', {
       class: 'btn lifecycle-btn',
       on: { click: () => openTopUpModal(event, adventure) },
@@ -7979,10 +7988,12 @@ async function viewRunDetail(view, runID) {
   // Admin-only "Grant slots" — operator-side gift / invoice. Same
   // event-state gate as Buy more slots; trusted-vs-not handling is
   // resolved server-side, but the modal also checks so the UI shows
-  // the right options up front.
+  // the right options up front. Hidden on quests for the same reason
+  // as the buyer-side top-up.
   if (state.me?.role === 'admin'
       && (event.state === 'scheduled' || event.state === 'running' || event.state === 'paused')
-      && event.assignment_id) {
+      && event.assignment_id
+      && !isQuest) {
     const grant = h('button', {
       class: 'btn lifecycle-btn',
       on: { click: () => openAdminGrantModal(event, adventure) },
@@ -7995,8 +8006,10 @@ async function viewRunDetail(view, runID) {
   // The PDF is the polished artifact for stakeholders (HR boss, the
   // participating team's Slack); the CSV is the spreadsheet drilldown
   // for finance / further analysis. Both off the same data so a
-  // stakeholder cross-checking won't see disagreement.
-  if (teams.length > 0) {
+  // stakeholder cross-checking won't see disagreement. Hidden on
+  // quests — the always-on model has no "post-event" wrap moment, and
+  // arrangers don't ship reports to a stakeholder per quest run.
+  if (teams.length > 0 && !isQuest) {
     const finishedN = teams.filter((tm) => tm.completed_at).length;
     const allDone   = finishedN === teams.length;
     const pdf = h('a', {
@@ -8017,8 +8030,10 @@ async function viewRunDetail(view, runID) {
   // Calendar invite — useful before AND during scheduling, so we
   // surface it whenever the event has a scheduled / started time.
   // Forwards the .ics to participants so the event drops into their
-  // Google / Outlook calendar like any other meeting.
-  if (event.scheduled_at || event.started_at) {
+  // Google / Outlook calendar like any other meeting. Hidden on
+  // quests because they have no scheduled time players need to
+  // diary in advance — they're played whenever the buyer wants.
+  if ((event.scheduled_at || event.started_at) && !isQuest) {
     const ics = h('a', {
       class: 'btn lifecycle-btn',
       href: '/api/admin/events/' + event.id + '/invite.ics',
@@ -8031,8 +8046,11 @@ async function viewRunDetail(view, runID) {
   // their slot links + the .ics. Surfaced once at least one team
   // has a contact email so the button isn't a dead-end on events
   // where the arranger always plans to hand out links manually.
+  // Hidden on quests — buyers receive their slot links through the
+  // Stripe checkout-success path; sending another batch would just
+  // duplicate-mail them.
   const teamsWithEmail = teams.filter((tm) => tm.email && tm.email.trim()).length;
-  if (teamsWithEmail > 0) {
+  if (teamsWithEmail > 0 && !isQuest) {
     actions.append(h('button', {
       class: 'btn lifecycle-btn',
       type: 'button',
@@ -8063,7 +8081,6 @@ async function viewRunDetail(view, runID) {
   // Quests get a "Quest" badge so the operator knows the
   // ticket-purchase + always-on rules apply, and a back-link that
   // returns to the Quests list instead of Events.
-  const isQuest = event.public_for_sale === true;
   const titleEl = h('h1', {}, runLabel(event));
   const renameBtn = iconBtn('pencil', t('Rename event'), () => openRenameEvent(event));
   const lifecycleBar = h('div', { class: 'lifecycle-bar' },
@@ -8268,27 +8285,38 @@ async function viewRunDetail(view, runID) {
     h('h2', { style: 'margin:0 0 .5rem' }, t('Event log')),
     h('div', { class: 'event-log-body' }, renderEventFeed(events, teams)));
 
-  view.replaceChildren(...[
-    lifecycleBar,
-    renderEventAdventureStrip(adventure, event),
-    renderEventQuickStats(event, teams),
-    renderEventResultsCard(event, teams),
-    renderTeamLinksPanel(event, teams),
-    renderShareBar(event),
-    // Connect-not-ready banner: shown for quests on a marketplace
-    // deployment when the org hasn't completed Stripe Connect
-    // onboarding. Surfaces above the store details panel because
-    // the panel's prices etc. are useless without a payments
-    // destination — fixing Connect is the prerequisite.
-    renderConnectBanner(event, questConnectStatus),
-    // The public-store panel is quest-only: regular events don't
-    // ticket-sell, and public_for_sale is now an immutable type
-    // marker set at create_event. Quest creation lives on the new
-    // #quests page, so the panel here is purely for editing an
-    // existing quest's ticket price / blurb / cover after the fact.
-    event.public_for_sale ? renderStoreBar(event) : null,
-    h('div', { class: 'grid cols-2' }, teamsCard, eventLogCard),
-  ].filter(Boolean));
+  // Page composition diverges by event type:
+  //   • Quests — store details are the main settings, so they sit at
+  //     the top right under the lifecycle bar (with the connect-
+  //     readiness banner above them, since the price/blurb panel is
+  //     useless without a payments destination). The "distribute
+  //     links" and public-share bars are dropped entirely: buyers
+  //     receive their slot links through the Stripe checkout-success
+  //     path, and quests are sold via /store rather than per-event
+  //     share URLs.
+  //   • Regular events — unchanged ordering: adventure strip, quick
+  //     stats, results, distribute-links, share-bar, then teams +
+  //     log. No connect / store panels (those only apply to quests).
+  const composition = isQuest
+    ? [
+        lifecycleBar,
+        renderConnectBanner(event, questConnectStatus),
+        renderStoreBar(event),
+        renderEventAdventureStrip(adventure, event),
+        renderEventQuickStats(event, teams),
+        renderEventResultsCard(event, teams),
+        h('div', { class: 'grid cols-2' }, teamsCard, eventLogCard),
+      ]
+    : [
+        lifecycleBar,
+        renderEventAdventureStrip(adventure, event),
+        renderEventQuickStats(event, teams),
+        renderEventResultsCard(event, teams),
+        renderTeamLinksPanel(event, teams),
+        renderShareBar(event),
+        h('div', { class: 'grid cols-2' }, teamsCard, eventLogCard),
+      ];
+  view.replaceChildren(...composition.filter(Boolean));
 }
 
 // viewEventControl is the live "race control" cockpit — a verbose,
