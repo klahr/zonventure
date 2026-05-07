@@ -257,6 +257,7 @@ func main() {
 		// process. Useful for CI / local dev where you want to
 		// walk a buy flow without real Stripe credentials.
 		PaymentsProvider: os.Getenv("ZV_PAYMENTS_PROVIDER"),
+		Env:              os.Getenv("ZV_ENV"),
 		Version:             version,
 		WebOverrideDir:      os.Getenv("ZV_WEB_OVERRIDE_DIR"),
 		ChangelogURL:        os.Getenv("ZV_CHANGELOG_URL"),

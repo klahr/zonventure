@@ -165,6 +165,10 @@ func (h *Handlers) BuyTicket(w http.ResponseWriter, r *http.Request) {
 		// finds the row.
 		logx.Warn("admin.store.buy.session_id_persist", "purchase_id", purchaseID, "err", err.Error())
 	}
+	// no-store on the buyer-specific checkout URL so a shared proxy
+	// can't hand the same Stripe Checkout session to a second buyer.
+	// Matches the Cache-Control posture on /api/store/items[/{id}].
+	w.Header().Set("Cache-Control", "no-store")
 	httpx.JSON(w, http.StatusOK, BuyTicketResponse{CheckoutURL: url})
 }
 

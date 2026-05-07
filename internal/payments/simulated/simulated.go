@@ -13,9 +13,10 @@
 //
 // Strictly NOT for production: nothing is verified, nothing is
 // charged, and the webhook bypass means anyone hitting the dev
-// route can fulfil any pending purchase. The constructor refuses
-// to wire when ZV_ENV != "dev" — operators who want this in a
-// staging environment have to deliberately opt in.
+// route can fulfil any pending purchase. The wiring layer in
+// internal/server refuses to instantiate this provider unless
+// ZV_ENV is "dev"/"development" — operators who want this in a
+// staging environment have to deliberately opt in via that knob.
 package simulated
 
 import (

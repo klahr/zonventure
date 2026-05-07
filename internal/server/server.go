@@ -77,6 +77,12 @@ type Config struct {
 	// in production. Future provider impls (mollie, paddle, …) get
 	// added here as new accepted values.
 	PaymentsProvider string
+	// Env is the deployment-environment label ("dev", "staging",
+	// "production"). The only behaviour keyed on it today is the
+	// safety gate on PaymentsProvider="simulated", which refuses to
+	// wire unless Env is "dev"/"development". An empty Env counts as
+	// non-dev, so the gate trips on a default-config self-host.
+	Env string
 	// Version is the human-readable build identifier surfaced on
 	// /api/version. cmd/server injects it via -ldflags at build time;
 	// when empty, /api/version reports "dev". The VCS revision and
@@ -264,6 +270,17 @@ func New(cfg Config) http.Handler {
 	)
 	switch strings.ToLower(strings.TrimSpace(cfg.PaymentsProvider)) {
 	case "simulated":
+		// Refuse to wire fake payments anywhere that isn't explicitly
+		// a dev environment. The simulated provider auto-confirms
+		// every checkout without taking a real charge, so an operator
+		// flipping ZV_PAYMENTS_PROVIDER=simulated in prod would hand
+		// out free fulfilment on every buy. ZV_ENV is the operator-
+		// visible knob — anything other than "dev"/"development"
+		// (including unset) trips the panic.
+		env := strings.ToLower(strings.TrimSpace(cfg.Env))
+		if env != "dev" && env != "development" {
+			panic("ZV_PAYMENTS_PROVIDER=simulated requires ZV_ENV=dev (refusing to wire fake payments outside a dev environment)")
+		}
 		// Auto-confirm posts the synthetic event back to the
 		// public webhook endpoint on the same origin so the
 		// existing dedupe + handler path runs end-to-end.

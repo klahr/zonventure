@@ -17,7 +17,6 @@ direction is "thin core, named seams" — every entry below is sized as
 "add a second concrete implementation behind a Go interface", not "build
 a generic plugin runtime". Tackle one at a time.
 
-- [ ] **Payment provider abstraction** (medium) — extract `payments.Provider`, make Stripe one impl, allow self-host to ship without the Stripe SDK at all (Mollie / Paddle / Adyen as future impls)
 - [ ] **Image / avatar storage abstraction** (medium) — `storage.Blobs` interface + `dbblob` impl shipped; team avatars + adventure cover art go through the seam. Remaining: `adventure_page_images.content` (multi-row-per-entity with `alt_text` / `idx` metadata), and the actual non-DB impls (`-tags=storage_fs`, `-tags=storage_s3`)
 - [ ] **Auth backends** (medium–large per backend) — OIDC / SAML / GitHub / Google / passkeys alongside the current username/password; magic-link slot flow stays core
 - [ ] **Metrics exporter alternates** (small) — OTLP and StatsD alongside the Prometheus collectors in `internal/metrics`
