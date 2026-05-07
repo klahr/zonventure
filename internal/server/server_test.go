@@ -46,11 +46,24 @@ func newTestServer(t *testing.T) (*httptest.Server, int64, func()) {
 		{"The Finish", `Name the Swedish word for "adventure".`,
 			`[{"text":"äventyr"},{"text":"aventyr"}]`, 59.3252, 18.0708, nil},
 	}
+	// Default linear lane — migration 0043 backfilled this for all
+	// existing adventures, but adventures inserted AFTER migration
+	// (i.e., this seed) don't get one automatically. The runtime
+	// tolerates lane-less pages but the lane-aware handlers that
+	// the lanes_test suite drives expect a real default lane.
+	var defaultLaneID int64
+	if err := sqlDB.QueryRow(`
+		INSERT INTO adventure_lanes(adventure_id, idx, mode) VALUES ($1, 0, 'linear')
+		RETURNING id
+	`, advID).Scan(&defaultLaneID); err != nil {
+		dbCleanup()
+		t.Fatalf("seed default lane: %v", err)
+	}
 	for i, p := range pages {
 		if _, err := sqlDB.Exec(`
-			INSERT INTO adventure_pages(adventure_id, idx, title, prompt, accept, lat, lng, radius_m)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-		`, advID, i, p.title, p.prompt, p.accept, p.lat, p.lng, p.radius); err != nil {
+			INSERT INTO adventure_pages(adventure_id, lane_id, idx, title, prompt, accept, lat, lng, radius_m)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		`, advID, defaultLaneID, i, p.title, p.prompt, p.accept, p.lat, p.lng, p.radius); err != nil {
 			dbCleanup()
 			t.Fatalf("seed page %d: %v", i, err)
 		}
@@ -64,19 +77,43 @@ func newTestServer(t *testing.T) (*httptest.Server, int64, func()) {
 		dbCleanup()
 		t.Fatalf("seed org: %v", err)
 	}
+	// Post-migration 0020 schema: role column dropped from users.
+	// Org-scoped role lives on org_memberships; admin status on
+	// users.is_admin.
 	hash, _ := auth.HashPassword("s3cret")
-	if _, err := sqlDB.Exec(
-		`INSERT INTO users(username, password_hash, role, org_id) VALUES ($1, $2, 'org_admin', $3)`,
-		"boss", hash, orgID); err != nil {
+	var bossID int64
+	if err := sqlDB.QueryRow(
+		`INSERT INTO users(username, password_hash, email_verified) VALUES ($1, $2, 1) RETURNING id`,
+		"boss", hash).Scan(&bossID); err != nil {
 		dbCleanup()
 		t.Fatalf("seed arranger: %v", err)
 	}
+	if _, err := sqlDB.Exec(
+		`INSERT INTO org_memberships(user_id, org_id, role) VALUES ($1, $2, 'org_admin')`,
+		bossID, orgID); err != nil {
+		dbCleanup()
+		t.Fatalf("seed arranger membership: %v", err)
+	}
 	rootHash, _ := auth.HashPassword("rootpw")
 	if _, err := sqlDB.Exec(
-		`INSERT INTO users(username, password_hash, role, org_id) VALUES ($1, $2, 'admin', NULL)`,
+		`INSERT INTO users(username, password_hash, email_verified, is_admin) VALUES ($1, $2, 1, TRUE)`,
 		"root", rootHash); err != nil {
 		dbCleanup()
 		t.Fatalf("seed admin: %v", err)
+	}
+	_ = bossID // referenced by the membership insert above
+	// Demo adventure stays admin-owned (NULL org_id) so the
+	// catalog-vs-org-owned ownership tests can rely on it. To let
+	// boss's org consume it for events / runs, drop in a share
+	// (the post-migration auth model treats a share as the
+	// equivalent of "this adventure is admin-commissioned for the
+	// org" — the original implicit "users.role=org_admin can edit
+	// anything" path no longer exists).
+	if _, err := sqlDB.Exec(
+		`INSERT INTO adventure_shares(adventure_slug, org_id) VALUES ('demo', $1)`,
+		orgID); err != nil {
+		dbCleanup()
+		t.Fatalf("share demo to org: %v", err)
 	}
 	var assignmentID int64
 	if err := sqlDB.QueryRow(
@@ -198,7 +235,7 @@ func TestFullFlow(t *testing.T) {
 	var run struct {
 		ID int64 `json:"id"`
 	}
-	if s := arr.do("POST", "/api/admin/events", map[string]any{"assignment_id": assignmentID}, &run); s != 201 {
+	if s := arr.do("POST", "/api/admin/events", map[string]any{"assignment_id": assignmentID, "attest_no_minors": true}, &run); s != 201 {
 		t.Fatalf("create event = %d", s)
 	}
 
@@ -333,10 +370,17 @@ func TestFullFlow(t *testing.T) {
 		t.Fatalf("final answer = %d accepted=%v", s, answerResp.Accepted)
 	}
 
-	// State becomes "completed".
-	state.Status = ""
-	if s := alice.do("GET", "/api/player/state", nil, &state); s != 200 || state.Status != "completed" {
-		t.Fatalf("final state status = %q (status %d)", state.Status, s)
+	// Once the event completes, MaybeCompleteEvent expires every
+	// slot session so the player is bounced off the active screen
+	// rather than left lingering on a frozen view. The shape this
+	// pins is "401 on subsequent player calls" — the older
+	// "GET state still works and reports status=completed" posture
+	// changed when slot-session expiration moved into the
+	// completion / cancellation flow. Recap-token surfaces remain
+	// available; that's where players land for the post-event
+	// summary, not /api/player/state.
+	if s := alice.do("GET", "/api/player/state", nil, nil); s != 401 {
+		t.Fatalf("final state after completion = %d, want 401 (slot session expired on completion)", s)
 	}
 
 	// Arranger positions listing contains Team Alpha with latest ping.

@@ -167,10 +167,27 @@ func New(cfg Config) http.Handler {
 	if err := initI18nFromJSON(); err != nil {
 		panic("i18n init: " + err.Error())
 	}
+	// Seed the in-process redirect-mode + maintenance-mode pointers
+	// from env + DB before the middleware chain reads them. Both
+	// middlewares are DB-free on the hot path so a self-host with a
+	// flaky DB during cutover still serves clean 301s and 503s.
+	settings.LoadRedirectTarget(context.Background(), cfg.DB)
+	settings.LoadMaintenanceMode(context.Background(), cfg.DB)
+
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Recoverer)
+	// Cutover redirect: when the operator has flipped redirect mode,
+	// every non-allowlisted path 301s to the hosted instance so
+	// printed QR codes / emailed magic links keep working. Sits ahead
+	// of securityHeaders since CSP / X-Frame on a 301 is wasted bytes.
+	r.Use(redirectMode)
+	// Maintenance-mode freeze: 503s mutations while the operator
+	// runs an org-bundle export so concurrent writes don't tear
+	// the snapshot. Reads pass through; the migrate toggles are
+	// allowlisted so the operator can still flip the flag back off.
+	r.Use(maintenanceFreeze)
 	// Baseline security headers on every response. Tight by default —
 	// the app loads fonts from Google's CDN (the embedded HTML pages
 	// reference fonts.googleapis.com / fonts.gstatic.com) and a few
@@ -834,6 +851,12 @@ func New(cfg Config) http.Handler {
 		// adventures collection root because it has no slug yet.
 		r.Get("/adventures/{slug}/export", adminH.ExportAdventure)
 		r.Post("/adventures/import", adminH.ImportAdventure)
+		// Org-admin self-export of the whole org bundle (data-portability
+		// surface). Operator-side full export + import + redirect-mode
+		// flip live in the RoleAdmin-only block further down. The handler
+		// pins org_id to the caller's session and refuses anyone other
+		// than RoleOrgAdmin.
+		r.Get("/migrate/self-export", adminH.MigrateSelfExport)
 		r.Get("/adventures/{slug}/shares", adminH.ListAdventureShares)
 		r.Post("/adventures/{slug}/shares", adminH.GrantAdventureShare)
 		r.Delete("/adventures/{slug}/shares/{orgID}", adminH.RevokeAdventureShare)
@@ -985,6 +1008,21 @@ func New(cfg Config) http.Handler {
 			r.Get("/settings", adminH.GetSettings)
 			r.Put("/settings/signup", adminH.SetSignupEnabled)
 			r.Put("/settings/landing", adminH.SetLandingEnabled)
+
+			// Self-host → hosted migration. Admin-only operator
+			// surface — never an org-self-service flow. Export
+			// streams a portable bundle for one org; import replays
+			// a bundle into a fresh org on this instance; the
+			// redirect-mode toggle flips the post-cutover 301
+			// forwarder. The redirect-mode path is also on the
+			// redirectMode middleware allowlist so an admin can
+			// turn the flag off from inside a redirected instance.
+			r.Get("/migrate/export", adminH.MigrateExport)
+			r.Post("/migrate/import", adminH.MigrateImport)
+			r.Get("/migrate/redirect-mode", adminH.MigrateRedirectMode)
+			r.Post("/migrate/redirect-mode", adminH.MigrateRedirectMode)
+			r.Get("/migrate/maintenance", adminH.MigrateMaintenance)
+			r.Post("/migrate/maintenance", adminH.MigrateMaintenance)
 
 			// Read-only "what's wired in?" panel — surfaces the
 			// build's pluggable seams (mailer/payments/etc.) and

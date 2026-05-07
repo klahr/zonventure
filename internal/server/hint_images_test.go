@@ -110,7 +110,7 @@ func TestHints_UpsertPreservesAttachedImages(t *testing.T) {
 	defer cleanup()
 
 	var orgID int64
-	if err := db.QueryRow(`SELECT org_id FROM users WHERE username = 'boss'`).Scan(&orgID); err != nil {
+	if err := db.QueryRow(`SELECT org_id FROM org_memberships WHERE user_id = (SELECT id FROM users WHERE username = 'boss') LIMIT 1`).Scan(&orgID); err != nil {
 		t.Fatalf("read boss org: %v", err)
 	}
 	if _, err := db.Exec(`UPDATE adventures SET org_id = $1 WHERE slug = 'demo'`, orgID); err != nil {
@@ -210,7 +210,7 @@ func TestHints_CopyClonesImages(t *testing.T) {
 	defer cleanup()
 
 	var orgID int64
-	if err := db.QueryRow(`SELECT org_id FROM users WHERE username = 'boss'`).Scan(&orgID); err != nil {
+	if err := db.QueryRow(`SELECT org_id FROM org_memberships WHERE user_id = (SELECT id FROM users WHERE username = 'boss') LIMIT 1`).Scan(&orgID); err != nil {
 		t.Fatalf("read boss org: %v", err)
 	}
 	if _, err := db.Exec(`UPDATE adventures SET org_id = $1 WHERE slug = 'demo'`, orgID); err != nil {

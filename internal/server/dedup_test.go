@@ -61,18 +61,29 @@ func TestSubmitAnswer_ReplaysCachedResponseOnRetry(t *testing.T) {
 	}
 
 	// A FRESH action id must NOT replay — it should run against the
-	// team's current state (page 1), which expects "blue" and would
-	// reject "hello". Pinning this so a too-eager dedup change
-	// doesn't accidentally make every "answer" call idempotent.
+	// team's current state (page 1) and yield something different
+	// from the page-0 cached response. Two acceptable outcomes:
+	//   • 200 with accepted=false (the answer-mismatch path)
+	//   • 403 "must reach the location first" (the geofence gate
+	//     when page 1 has radius_m set in the seed)
+	// Either is evidence the cached response wasn't blindly replayed;
+	// the failure mode this test pins is "dedup applied to fresh
+	// action and produced accepted=true" which would return the
+	// page-0 cached response.
 	var fresh answerResp
-	if s := alice.do("POST", "/api/player/answer", map[string]any{
+	s := alice.do("POST", "/api/player/answer", map[string]any{
 		"answer":           "hello",
 		"client_action_id": "different-id",
-	}, &fresh); s != 200 {
-		t.Fatalf("fresh submit = %d", s)
-	}
-	if fresh.Accepted {
-		t.Fatalf("fresh action with old answer should be rejected, got %+v", fresh)
+	}, &fresh)
+	switch s {
+	case 200:
+		if fresh.Accepted {
+			t.Fatalf("fresh action with old answer should be rejected, got %+v", fresh)
+		}
+	case 403:
+		// Geofence-gated; the dedup path obviously didn't fire.
+	default:
+		t.Fatalf("fresh submit = %d, want 200 (rejected) or 403 (gated)", s)
 	}
 }
 

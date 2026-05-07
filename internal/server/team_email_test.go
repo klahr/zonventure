@@ -23,7 +23,7 @@ func TestTeamEmail_CreateAndRoundTrip(t *testing.T) {
 		ID int64 `json:"id"`
 	}
 	if s := arr.do("POST", "/api/admin/events",
-		map[string]any{"assignment_id": assignmentID}, &run); s != 201 {
+		map[string]any{"assignment_id": assignmentID, "attest_no_minors": true}, &run); s != 201 {
 		t.Fatalf("event = %d", s)
 	}
 	// Whitespace + uppercase to verify normaliseTeamEmail strips both.
@@ -83,7 +83,7 @@ func TestTeamEmail_PatchUpdatesIndependently(t *testing.T) {
 	}
 	var run struct{ ID int64 }
 	if s := arr.do("POST", "/api/admin/events",
-		map[string]any{"assignment_id": assignmentID}, &run); s != 201 {
+		map[string]any{"assignment_id": assignmentID, "attest_no_minors": true}, &run); s != 201 {
 		t.Fatalf("event = %d", s)
 	}
 	var team struct {
@@ -146,7 +146,7 @@ func TestTeamEmail_RejectsBadShape(t *testing.T) {
 	}
 	var run struct{ ID int64 }
 	if s := arr.do("POST", "/api/admin/events",
-		map[string]any{"assignment_id": assignmentID}, &run); s != 201 {
+		map[string]any{"assignment_id": assignmentID, "attest_no_minors": true}, &run); s != 201 {
 		t.Fatalf("event = %d", s)
 	}
 	for _, bad := range []string{"not-an-email", strings.Repeat("a", 320) + "@x.io"} {
@@ -171,7 +171,7 @@ func TestTeamEmail_EmptyAccepted(t *testing.T) {
 	}
 	var run struct{ ID int64 }
 	if s := arr.do("POST", "/api/admin/events",
-		map[string]any{"assignment_id": assignmentID}, &run); s != 201 {
+		map[string]any{"assignment_id": assignmentID, "attest_no_minors": true}, &run); s != 201 {
 		t.Fatalf("event = %d", s)
 	}
 	if s := arr.do("POST", "/api/admin/events/"+itoa(run.ID)+"/teams",

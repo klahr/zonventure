@@ -9,8 +9,15 @@ import (
 // fakeMP3 is a tiny byte payload that's not a real MP3 but is enough
 // for the upload + storage round-trip. The handler doesn't decode
 // audio — it just stores the bytes verbatim — so the "format" only
-// matters insofar as the MIME type test demands `audio/*`.
-var fakeMP3 = []byte{0xFF, 0xFB, 0x90, 0x44, 0x00, 0x00}
+// matters insofar as the MIME type test demands `audio/*`. The ID3v2
+// magic "ID3\x03\x00\x00" is the prefix that makes http.DetectContentType
+// classify the blob as audio/mpeg; without it the bare MP3 frame
+// header alone is ambiguous and the sniffer falls back to
+// application/octet-stream, which the server (correctly) refuses.
+var fakeMP3 = []byte{
+	0x49, 0x44, 0x33, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	0xFF, 0xFB, 0x90, 0x44, 0x00, 0x00,
+}
 
 // TestAudio_PageUploadRoundTrip uploads an audio clip to a puzzle,
 // fetches the served bytes, and confirms they match. Pins the new

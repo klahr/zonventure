@@ -556,6 +556,99 @@ daemon-reload && systemctl enable --now zv`. Bind on
 `127.0.0.1:8080` (the default) and front it with the Caddy or nginx
 config from the section above.
 
+## Migrating to the hosted product
+
+If you've outgrown self-hosting and want to move your org to the
+hosted Zonventure platform (managed Postgres, multi-tenant,
+marketplace via Stripe Connect), the migration ships in three
+pieces:
+
+1. **Org-bundle export.** A portable zip of your org's data —
+   adventures, events, teams, player slots, ticket purchases.
+2. **ID-rebase import.** The hosted side mints a fresh org and
+   replays the bundle with new primary keys, but every URL-bearing
+   token (`/team/{token}`, `/play?t=…`, `/live/{live_token}`) is
+   carried over byte-for-byte.
+3. **Redirect bridge.** Your self-host instance flips into a
+   301-only forwarder so printed QR codes, emailed magic links,
+   and existing bookmarks keep working through the cutover window.
+
+### GUI cutover (recommended)
+
+1. Sign in as a global admin on your self-host instance and open
+   the **Migrate** page in the admin nav.
+2. Click **Export bundle** and save the resulting
+   `zonventure-org-<name>-<date>.zip`.
+3. On the hosted instance, an operator with admin access uploads
+   the bundle via the **Import bundle** button on the same page
+   (this is an operator-only flow on the hosted side).
+4. Have your hosted-side org admin complete Stripe Connect
+   onboarding (the bundle clears the old Stripe identifiers — you
+   re-onboard against the hosted platform's marketplace).
+5. **Unhook the Stripe webhook** on your old Stripe dashboard so
+   future events don't double-fire. The redirect-mode endpoint
+   acknowledges any in-flight redeliveries with 200 OK so Stripe
+   stops retrying — that's a backstop, not a substitute.
+6. Back on the self-host instance, click **Switch to redirect
+   mode**, paste the hosted URL (e.g. `https://app.zonventure.com`),
+   and confirm. Every page on the self-host now 301s to the same
+   path on the hosted instance — no restart needed.
+7. Leave the self-host running for the cutover window (90 days is
+   a reasonable default — long enough that printed materials and
+   in-flight emails resolve cleanly). Monitor `/api/health` to
+   confirm the instance is alive but redirecting.
+8. After the window, shut the self-host down. Existing tokens
+   stay valid on the hosted instance.
+
+### Headless cutover (CLI)
+
+The same operations are available as CLI flags for scripted /
+no-browser environments. Mirror of the `-backup` / `-restore`
+shape:
+
+```bash
+# On the self-host: dump the org bundle.
+zv -export-org=1 > zonventure-org-bundle.zip
+
+# On the hosted side: replay it.
+zv -import-org < zonventure-org-bundle.zip
+
+# Flip the self-host into redirect mode (this can also be set as
+# ZV_REDIRECT_TARGET in the env file; the GUI toggle is disabled
+# while the env pin is in effect).
+ZV_REDIRECT_TARGET=https://app.zonventure.com
+```
+
+### What carries over, what doesn't
+
+Carried over:
+- Adventures (manifest + images + audio + hints) with their slugs.
+- Adventure assignments (capacity records).
+- Events with `live_token`, scheduled / started / completed / cancelled
+  timestamps, public-store fields, cover images.
+- Teams with `token` and `recap_token` preserved verbatim.
+- Player slots with `token` preserved verbatim.
+- Ticket purchases as historical audit data — Stripe charge ids
+  preserved, but the **refund button on hosted shows a "legacy"
+  notice for any pre-migration charge** since the platform Connect
+  account doesn't have those charges. Refund those out-of-band on
+  your old Stripe dashboard.
+- Org members (username, email, role). They re-set their password
+  via the lost-link / forgot-password flow on first login.
+
+Not carried over:
+- Active sessions (`sessions`, `slot_sessions`) — players re-tap
+  their preserved magic link, which mints a fresh session. Their
+  in-app state (current puzzle, page index) is preserved.
+- MCP tokens — the operator re-mints on hosted.
+- Stripe Connect onboarding state — the org re-onboards on the
+  hosted platform's Connect (different account, different
+  identifiers).
+- Out of scope for v1: per-puzzle event activity log (`event_activity`),
+  per-team lane permutations (`team_lane_orderings` — in-flight quests
+  with shuffled lanes will lose their per-team order), location pings,
+  answer attempts, audit log slice.
+
 ## Going further
 
 - **[OPERATIONS.md](OPERATIONS.md)** — backup, restore, metrics,

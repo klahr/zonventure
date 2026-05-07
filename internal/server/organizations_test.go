@@ -181,11 +181,17 @@ func TestOrganizations_DeleteCascadesMembersAndAssignments(t *testing.T) {
 	if err := db.QueryRow(`INSERT INTO organizations(name) VALUES ('Cascadia') RETURNING id`).Scan(&orgID); err != nil {
 		t.Fatalf("seed org: %v", err)
 	}
-	if _, err := db.Exec(
-		`INSERT INTO users(username, password_hash, role, org_id, email_verified) VALUES ('casc', 'x', 'org_admin', $1, 1)`,
-		orgID,
-	); err != nil {
+	var cascID int64
+	if err := db.QueryRow(
+		`INSERT INTO users(username, password_hash, email_verified) VALUES ('casc', 'x', 1) RETURNING id`,
+	).Scan(&cascID); err != nil {
 		t.Fatalf("seed member: %v", err)
+	}
+	if _, err := db.Exec(
+		`INSERT INTO org_memberships(user_id, org_id, role) VALUES ($1, $2, 'org_admin')`,
+		cascID, orgID,
+	); err != nil {
+		t.Fatalf("seed membership: %v", err)
 	}
 	if _, err := db.Exec(
 		`INSERT INTO adventure_assignments(org_id, adventure_slug, max_players) VALUES ($1, 'demo', 5)`,
@@ -202,15 +208,19 @@ func TestOrganizations_DeleteCascadesMembersAndAssignments(t *testing.T) {
 		t.Fatalf("delete = %d, want 204", s)
 	}
 
-	var users, assns int
-	if err := db.QueryRow(`SELECT COUNT(*) FROM users WHERE org_id = $1`, orgID).Scan(&users); err != nil {
-		t.Fatalf("count users: %v", err)
+	// Post-migration 0020: users no longer carries org_id; org
+	// membership is on org_memberships, which CASCADE-deletes when
+	// the org row goes away. The deleted-org count surfaces as
+	// "no rows in org_memberships for this org_id".
+	var memberships, assns int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM org_memberships WHERE org_id = $1`, orgID).Scan(&memberships); err != nil {
+		t.Fatalf("count memberships: %v", err)
 	}
 	if err := db.QueryRow(`SELECT COUNT(*) FROM adventure_assignments WHERE org_id = $1`, orgID).Scan(&assns); err != nil {
 		t.Fatalf("count assns: %v", err)
 	}
-	if users != 0 || assns != 0 {
-		t.Fatalf("cascade incomplete: users=%d assignments=%d (want 0/0)", users, assns)
+	if memberships != 0 || assns != 0 {
+		t.Fatalf("cascade incomplete: memberships=%d assignments=%d (want 0/0)", memberships, assns)
 	}
 }
 

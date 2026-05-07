@@ -844,9 +844,21 @@ func importPages(ctx context.Context, tx *sql.Tx, advID int64, pages []exportPag
 				return fmt.Errorf("page idx=%d references unknown lane_idx=%d", p.Idx, p.LaneIdx)
 			}
 		}
-		acceptJ, err := json.Marshal(p.Accept)
-		if err != nil {
-			return fmt.Errorf("marshal accept: %w", err)
+		// `accept` is NOT NULL with default '[]'. The export DTO
+		// uses omitempty on the slice, so an empty/nil Accept
+		// arrives as nil here and `json.Marshal(nil)` would emit
+		// "null" — landing as the string "null" in the column,
+		// which the loader can't parse. Force the empty case to
+		// the canonical empty array literal.
+		var acceptJ []byte
+		if len(p.Accept) == 0 {
+			acceptJ = []byte("[]")
+		} else {
+			var err error
+			acceptJ, err = json.Marshal(p.Accept)
+			if err != nil {
+				return fmt.Errorf("marshal accept: %w", err)
+			}
 		}
 		var radius any
 		if p.RadiusM != nil {

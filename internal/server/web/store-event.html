@@ -1,15 +1,16 @@
 <!doctype html>
 <!--
   Brand-neutral upstream per-event detail page. Rendered by
-  renderStoreEventPage in internal/server/store_event.go: the {{KEY}}
-  placeholders below are substituted server-side from the events row,
-  and topbar locale strings come from the shared landingLocales table.
+  renderStoreEventPage in internal/server/store_event.go: the
+  double-curly placeholders below are substituted server-side from
+  the events row, and topbar locale strings come from the shared
+  landingLocales table.
 
   Operators who want a marketing-quality variant drop their own
   store-event.html into ZV_WEB_OVERRIDE_DIR; the override mechanism
   shadows this file at request time. The placeholder set is part of
-  the public contract — keep the same {{KEY}} names so an override
-  template stays drop-in compatible.
+  the public contract — keep the same names so an override template
+  stays drop-in compatible.
 
   Available placeholders:
     {{TITLE}} {{SUBTITLE}} {{ORG_NAME}} {{BLURB}}

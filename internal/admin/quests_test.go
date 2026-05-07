@@ -251,11 +251,14 @@ func TestListEvents_PublicForSaleFilter(t *testing.T) {
 	// Insert two events directly so we don't have to mint a second
 	// assignment — the filter behaviour is what's under test, not
 	// the create-flow's assignment validation.
+	// `created_by_user_id` is a real FK to users.id post-migration —
+	// look up the seeded boss instead of stuffing in a literal 0
+	// (which violates the FK).
 	if _, err := db.Exec(`
 		INSERT INTO events(adventure_slug, org_id, created_by_user_id, state, live_token, name, public_for_sale, attested_no_minors_at)
 		VALUES
-		  ('treasure', $1, 0, 'scheduled', 'tok-quest', 'My Quest', TRUE, now_text()),
-		  ('treasure', $1, 0, 'scheduled', 'tok-event', 'My Event', FALSE, now_text())
+		  ('treasure', $1, (SELECT id FROM users WHERE username = 'boss'), 'scheduled', 'tok-quest', 'My Quest', TRUE, now_text()),
+		  ('treasure', $1, (SELECT id FROM users WHERE username = 'boss'), 'scheduled', 'tok-event', 'My Event', FALSE, now_text())
 	`, orgID); err != nil {
 		t.Fatal(err)
 	}

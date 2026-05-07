@@ -60,11 +60,18 @@ func postWebhook(t *testing.T, ts *httptest.Server, body []byte, sigHeader strin
 // the per-event handler, so we only need to make this shape match the
 // envelope.
 type stripeEventEnvelope struct {
-	ID      string          `json:"id"`
-	Object  string          `json:"object"`
-	Type    string          `json:"type"`
-	Created int64           `json:"created"`
-	Data    json.RawMessage `json:"data"`
+	ID         string          `json:"id"`
+	Object     string          `json:"object"`
+	Type       string          `json:"type"`
+	Created    int64           `json:"created"`
+	Data       json.RawMessage `json:"data"`
+	// APIVersion needs to match what stripe-go expects, otherwise
+	// ConstructEvent fails with "Received event with API version ,
+	// but stripe-go N.M.K expects ...". The library's expected
+	// version moves with stripe-go upgrades; testStripeAPIVersion
+	// holds the current one so tests don't drift silently when the
+	// SDK is bumped.
+	APIVersion string `json:"api_version"`
 }
 
 func eventEnvelope(t *testing.T, id, eventType string, object any) []byte {
@@ -74,17 +81,24 @@ func eventEnvelope(t *testing.T, id, eventType string, object any) []byte {
 		t.Fatalf("marshal object: %v", err)
 	}
 	envBytes, err := json.Marshal(stripeEventEnvelope{
-		ID:      id,
-		Object:  "event",
-		Type:    eventType,
-		Created: time.Now().Unix(),
-		Data:    json.RawMessage(`{"object":` + string(objBytes) + `}`),
+		ID:         id,
+		Object:     "event",
+		Type:       eventType,
+		Created:    time.Now().Unix(),
+		Data:       json.RawMessage(`{"object":` + string(objBytes) + `}`),
+		APIVersion: testStripeAPIVersion,
 	})
 	if err != nil {
 		t.Fatalf("marshal envelope: %v", err)
 	}
 	return envBytes
 }
+
+// testStripeAPIVersion is the API version stripe-go expects to see
+// in incoming webhook envelopes. Bump this in lockstep with the
+// stripe-go module upgrade. Mismatch surfaces as a 400 "bad
+// signature" with a wrapped log line about API version mismatch.
+const testStripeAPIVersion = "2025-08-27.basil"
 
 func TestStripeWebhook_DisabledWithoutCreds(t *testing.T) {
 	ts, _, _, cleanup := seedPurchaseStack(t, server.Config{})
@@ -142,7 +156,7 @@ func TestStripeWebhook_CheckoutCompleted_HappyPath(t *testing.T) {
 		t.Fatalf("login = %d", s)
 	}
 	var orgID int64
-	if err := db.QueryRow(`SELECT org_id FROM users WHERE username = 'boss'`).Scan(&orgID); err != nil {
+	if err := db.QueryRow(`SELECT org_id FROM org_memberships WHERE user_id = (SELECT id FROM users WHERE username = 'boss') LIMIT 1`).Scan(&orgID); err != nil {
 		t.Fatalf("lookup org: %v", err)
 	}
 	var purchaseID int64
@@ -245,7 +259,7 @@ func TestStripeWebhook_ChargeRefunded(t *testing.T) {
 	// Seed a paid purchase with a known stripe_charge_id so the refund
 	// handler has something to flip.
 	var orgID int64
-	if err := db.QueryRow(`SELECT org_id FROM users WHERE username = 'boss'`).Scan(&orgID); err != nil {
+	if err := db.QueryRow(`SELECT org_id FROM org_memberships WHERE user_id = (SELECT id FROM users WHERE username = 'boss') LIMIT 1`).Scan(&orgID); err != nil {
 		t.Fatalf("lookup org: %v", err)
 	}
 	var purchaseID int64

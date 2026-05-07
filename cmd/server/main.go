@@ -78,6 +78,8 @@ func main() {
 		revokeFlag        = flag.String("revoke-sessions", "", `if set, drop staff sessions and exit. Pass a username to scope, or "all" to nuke every session+slot session`)
 		backupFlag        = flag.Bool("backup", false, "stream a pg_dump of the configured database to stdout and exit; redirect to a file (e.g. `zv -backup > zv.sql`)")
 		restoreFlag       = flag.Bool("restore", false, "read a pg_dump from stdin and replay it into the configured database; pair with -backup for round-trips")
+		exportOrgFlag     = flag.Int64("export-org", 0, "stream a self-host → hosted migration bundle for the given org id to stdout and exit (e.g. `zv -export-org=1 > bundle.zip`)")
+		importOrgFlag     = flag.Bool("import-org", false, "read an org migration bundle from stdin and replay it into the configured database as a fresh org")
 		retentionLocation = flag.Int("retention-location-days", envIntDefault("ZV_LOCATION_RETENTION_DAYS", 30), "delete player location pings + answer attempts this many days after the event completes (0 disables)")
 		retentionAudit    = flag.Int("retention-audit-days", envIntDefault("ZV_AUDIT_RETENTION_DAYS", 90), "delete auth_events rows this many days after they were emitted (0 disables)")
 		retentionInterval = flag.Duration("retention-interval", time.Hour, "how often the retention sweeper runs")
@@ -107,6 +109,18 @@ func main() {
 	}
 	if *restoreFlag {
 		if err := runRestore(connStr, os.Stdin); err != nil {
+			log.Fatalf("%v", err)
+		}
+		return
+	}
+	if *exportOrgFlag > 0 {
+		if err := runExportOrg(connStr, *exportOrgFlag, os.Stdout); err != nil {
+			log.Fatalf("%v", err)
+		}
+		return
+	}
+	if *importOrgFlag {
+		if err := runImportOrg(connStr, os.Stdin); err != nil {
 			log.Fatalf("%v", err)
 		}
 		return

@@ -107,7 +107,7 @@ func setupRun(t *testing.T, ts *httptest.Server, assignmentID int64) (arranger *
 		LiveToken string `json:"live_token"`
 	}
 	if s := arr.do("POST", "/api/admin/events",
-		map[string]any{"assignment_id": assignmentID}, &run); s != 201 {
+		map[string]any{"assignment_id": assignmentID, "attest_no_minors": true}, &run); s != 201 {
 		t.Fatalf("create event = %d", s)
 	}
 

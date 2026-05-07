@@ -41,17 +41,29 @@ func seedPurchaseStack(t *testing.T, cfg server.Config) (*httptest.Server, *sql.
 		dbCleanup()
 		t.Fatalf("seed org: %v", err)
 	}
+	// boss: org_admin of TestOrg. Post-migration 0020, the role
+	// column was dropped from users; org-scoped role lives on
+	// org_memberships and admin status on users.is_admin.
 	hash, _ := auth.HashPassword("s3cret")
-	if _, err := sqlDB.Exec(
-		`INSERT INTO users(username, password_hash, role, org_id, email_verified) VALUES ('boss', $1, 'org_admin', $2, 1)`,
-		hash, orgID,
-	); err != nil {
+	var bossID int64
+	if err := sqlDB.QueryRow(
+		`INSERT INTO users(username, password_hash, email_verified) VALUES ('boss', $1, 1) RETURNING id`,
+		hash,
+	).Scan(&bossID); err != nil {
 		dbCleanup()
 		t.Fatalf("seed boss: %v", err)
 	}
+	if _, err := sqlDB.Exec(
+		`INSERT INTO org_memberships(user_id, org_id, role) VALUES ($1, $2, 'org_admin')`,
+		bossID, orgID,
+	); err != nil {
+		dbCleanup()
+		t.Fatalf("seed boss membership: %v", err)
+	}
+	// root: global admin. is_admin=TRUE; no org membership.
 	rootHash, _ := auth.HashPassword("rootpw")
 	if _, err := sqlDB.Exec(
-		`INSERT INTO users(username, password_hash, role, org_id, email_verified) VALUES ('root', $1, 'admin', NULL, 1)`,
+		`INSERT INTO users(username, password_hash, email_verified, is_admin) VALUES ('root', $1, 1, TRUE)`,
 		rootHash,
 	); err != nil {
 		dbCleanup()
@@ -68,12 +80,20 @@ func seedPurchaseStack(t *testing.T, cfg server.Config) (*httptest.Server, *sql.
 		t.Fatalf("seed other org: %v", err)
 	}
 	otherHash, _ := auth.HashPassword("otherpw")
-	if _, err := sqlDB.Exec(
-		`INSERT INTO users(username, password_hash, role, org_id, email_verified) VALUES ('rival', $1, 'org_admin', $2, 1)`,
-		otherHash, otherOrgID,
-	); err != nil {
+	var rivalID int64
+	if err := sqlDB.QueryRow(
+		`INSERT INTO users(username, password_hash, email_verified) VALUES ('rival', $1, 1) RETURNING id`,
+		otherHash,
+	).Scan(&rivalID); err != nil {
 		dbCleanup()
 		t.Fatalf("seed rival: %v", err)
+	}
+	if _, err := sqlDB.Exec(
+		`INSERT INTO org_memberships(user_id, org_id, role) VALUES ($1, $2, 'org_admin')`,
+		rivalID, otherOrgID,
+	); err != nil {
+		dbCleanup()
+		t.Fatalf("seed rival membership: %v", err)
 	}
 
 	cfg.DB = sqlDB

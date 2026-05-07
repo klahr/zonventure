@@ -261,12 +261,23 @@ func TestOIDCCallback_EmailUnverified(t *testing.T) {
 	}
 }
 
-func TestOIDCCallback_LinksExistingPasswordAccount(t *testing.T) {
+// TestOIDCCallback_RefusesLinkingExistingPasswordAccount pins the
+// security posture in oidc.go's findOrCreateOIDCUser: when an
+// existing local-password user shares the email of an incoming SSO
+// claim, the link is REFUSED. The doc-comment in oidc.go explains
+// why — without an "explicit link my SSO from inside an existing
+// session" step (which the codebase doesn't yet implement), an IdP
+// account on the same email could take over a legacy local user's
+// row and bypass their TOTP + password. The test was originally
+// authored for the opposite behaviour (auto-link); when the
+// security gate landed the test should have flipped along with it
+// but didn't, so it's been silently failing under DB-backed runs.
+func TestOIDCCallback_RefusesLinkingExistingPasswordAccount(t *testing.T) {
 	db, cleanup := dbtest.Open(t)
 	defer cleanup()
 
-	// Pre-create an org + user with a password — the SSO sign-in
-	// should link to this row instead of creating a duplicate.
+	// Pre-create an org + user with a password. The SSO sign-in
+	// must NOT link to this row; production refuses on purpose.
 	var orgID int64
 	if err := db.QueryRow(`INSERT INTO organizations(name) VALUES ('Test Org') RETURNING id`).Scan(&orgID); err != nil {
 		t.Fatal(err)
@@ -300,30 +311,36 @@ func TestOIDCCallback_LinksExistingPasswordAccount(t *testing.T) {
 	})
 
 	resp := callCallback(t, h, code, state, cookie)
-	if resp.StatusCode != http.StatusFound || strings.Contains(resp.Header.Get("Location"), "sso-error") {
-		t.Fatalf("link path should succeed, got status=%d location=%q",
-			resp.StatusCode, resp.Header.Get("Location"))
+	loc := resp.Header.Get("Location")
+	if resp.StatusCode != http.StatusFound {
+		t.Fatalf("link should redirect, got status=%d", resp.StatusCode)
 	}
-	// Same user row, now with oidc fields populated and email_verified=1.
+	if !strings.Contains(loc, "sso-error=link_refused") {
+		t.Fatalf("link should be refused, got location=%q", loc)
+	}
+
+	// The pre-existing user row must be untouched: no oidc_subject
+	// stamped, password_hash still present, email_verified still 0.
+	// Any of those flipping would mean the gate is leaking through.
 	var (
-		linkedUserID  int64
 		oidcSub       sql.NullString
+		passwordHash  sql.NullString
 		emailVerified int
 	)
 	if err := db.QueryRow(`
-		SELECT id, oidc_subject, email_verified
-		FROM users WHERE email = $1
-	`, "alice@example.com").Scan(&linkedUserID, &oidcSub, &emailVerified); err != nil {
+		SELECT oidc_subject, password_hash, email_verified
+		FROM users WHERE id = $1
+	`, userID).Scan(&oidcSub, &passwordHash, &emailVerified); err != nil {
 		t.Fatal(err)
 	}
-	if linkedUserID != userID {
-		t.Errorf("expected link to existing user %d, got %d (duplicate provisioned)", userID, linkedUserID)
+	if oidcSub.Valid && oidcSub.String != "" {
+		t.Errorf("oidc_subject populated despite refusal: %q", oidcSub.String)
 	}
-	if !oidcSub.Valid || oidcSub.String != "google-user-1" {
-		t.Errorf("oidc_subject not set: %v", oidcSub)
+	if !passwordHash.Valid || passwordHash.String == "" {
+		t.Errorf("password_hash cleared despite refusal — local creds must remain authoritative")
 	}
-	if emailVerified != 1 {
-		t.Errorf("email_verified should be 1 after IdP-asserted verification, got %d", emailVerified)
+	if emailVerified != 0 {
+		t.Errorf("email_verified flipped to %d despite refusal", emailVerified)
 	}
 }
 

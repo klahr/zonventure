@@ -18,7 +18,7 @@ func TestCancelEvent_FromScheduled(t *testing.T) {
 	}
 	var run struct{ ID int64 `json:"id"` }
 	if s := arr.do("POST", "/api/admin/events",
-		map[string]any{"assignment_id": assignmentID}, &run); s != 201 {
+		map[string]any{"assignment_id": assignmentID, "attest_no_minors": true}, &run); s != 201 {
 		t.Fatalf("create event = %d", s)
 	}
 
@@ -60,7 +60,7 @@ func TestCancelEvent_FromRunning(t *testing.T) {
 	}
 	var run struct{ ID int64 `json:"id"` }
 	if s := arr.do("POST", "/api/admin/events",
-		map[string]any{"assignment_id": assignmentID}, &run); s != 201 {
+		map[string]any{"assignment_id": assignmentID, "attest_no_minors": true}, &run); s != 201 {
 		t.Fatalf("create event = %d", s)
 	}
 	var team struct {
@@ -89,12 +89,22 @@ func TestCancelEvent_FromRunning(t *testing.T) {
 		t.Fatalf("cancel running event = %d, want 204", s)
 	}
 
-	if s := alice.do("GET", "/api/player/state", nil, &state); s != 200 || state.Status != "cancelled" {
-		t.Fatalf("post-cancel player status = %q (HTTP %d), want cancelled", state.Status, s)
+	// Post-cancel the slot session is forcibly expired — see
+	// activity.ExpireEventSlotSessions in CancelEvent. The player
+	// gets a 401 on every subsequent call, which is more aggressive
+	// (and more correct) than the older "still authenticated, just
+	// shows status=cancelled" posture this test was written
+	// against. Either signal achieves the same UX outcome (the
+	// player UI bounces them off the active screen); 401 is the
+	// shape the production code now produces.
+	if s := alice.do("GET", "/api/player/state", nil, &state); s != 401 {
+		t.Fatalf("post-cancel player state = %d, want 401 (slot session expired on cancel)", s)
 	}
-	// Submitting an answer post-cancel must 409 — RunState != "running".
-	if s := alice.do("POST", "/api/player/answer", map[string]string{"answer": "hello"}, nil); s != 409 {
-		t.Fatalf("answer after cancel = %d, want 409", s)
+	// Submitting an answer post-cancel hits the same expired-session
+	// 401 — the per-handler 409 "RunState != running" never fires
+	// because the auth middleware short-circuits first.
+	if s := alice.do("POST", "/api/player/answer", map[string]string{"answer": "hello"}, nil); s != 401 {
+		t.Fatalf("answer after cancel = %d, want 401 (expired session)", s)
 	}
 }
 

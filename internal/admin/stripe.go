@@ -344,12 +344,13 @@ func (h *Handlers) RefundPurchase(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var (
-		state    string
-		chargeID sql.NullString
+		state        string
+		chargeID     sql.NullString
+		preMigration bool
 	)
 	if err := h.DB.QueryRowContext(r.Context(),
-		`SELECT state, stripe_charge_id FROM purchases WHERE id = $1`,
-		purchaseID).Scan(&state, &chargeID); err != nil {
+		`SELECT state, stripe_charge_id, pre_migration FROM purchases WHERE id = $1`,
+		purchaseID).Scan(&state, &chargeID, &preMigration); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			httpx.Error(w, http.StatusNotFound, "purchase not found")
 			return
@@ -363,6 +364,16 @@ func (h *Handlers) RefundPurchase(w http.ResponseWriter, r *http.Request) {
 	}
 	if !chargeID.Valid || chargeID.String == "" {
 		httpx.Error(w, http.StatusConflict, "purchase has no recorded charge id")
+		return
+	}
+	if preMigration {
+		// Imported from another zv deployment; the recorded charge
+		// id is on the source instance's Stripe account, not ours.
+		// Calling Refund here would 404 against our credentials —
+		// or worse, match an unrelated charge. Refuse with a clear
+		// pointer back to the legacy dashboard.
+		httpx.Error(w, http.StatusConflict,
+			"this purchase pre-dates the migration to this instance — refund it through the pre-migration Stripe dashboard, not the in-app button")
 		return
 	}
 

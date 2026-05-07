@@ -144,9 +144,13 @@ func TestHints_PlayerStateComputesUnlockCountdown(t *testing.T) {
 	if st.Hints[1].UnlocksInSeconds < 300-elapsed-15 || st.Hints[1].UnlocksInSeconds > 300 {
 		t.Fatalf("hint 1 countdown = %d; expected ~300 (±15)", st.Hints[1].UnlocksInSeconds)
 	}
-	if st.Hints[0].TextHTML == "" || st.Hints[1].TextHTML == "" {
-		t.Fatalf("hint HTML missing: %+v", st.Hints)
-	}
+	// Note on TextHTML: a later refactor gated `text_html` behind
+	// the player having explicitly revealed each hint (so devtools-
+	// peeking can't surface every body before the countdown
+	// completes). Pre-reveal the field is intentionally empty;
+	// the structural + countdown checks above are what this test
+	// pins. Verifying TextHTML round-trips lives in the dedicated
+	// reveal-hint test instead.
 }
 
 func TestHints_CopyToAdventurePreservesHints(t *testing.T) {

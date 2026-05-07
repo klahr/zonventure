@@ -18,7 +18,7 @@ func TestBulkCreateTeams_HappyPath(t *testing.T) {
 	}
 	var run struct{ ID int64 `json:"id"` }
 	if s := arr.do("POST", "/api/admin/events",
-		map[string]any{"assignment_id": assignmentID}, &run); s != 201 {
+		map[string]any{"assignment_id": assignmentID, "attest_no_minors": true}, &run); s != 201 {
 		t.Fatalf("create event = %d", s)
 	}
 
@@ -83,7 +83,7 @@ func TestBulkCreateTeams_PartialFailure(t *testing.T) {
 	}
 	var run struct{ ID int64 `json:"id"` }
 	if s := arr.do("POST", "/api/admin/events",
-		map[string]any{"assignment_id": assignmentID}, &run); s != 201 {
+		map[string]any{"assignment_id": assignmentID, "attest_no_minors": true}, &run); s != 201 {
 		t.Fatalf("create event = %d", s)
 	}
 
@@ -129,7 +129,7 @@ func TestBulkCreateTeams_RejectsHugeBatch(t *testing.T) {
 	}
 	var run struct{ ID int64 `json:"id"` }
 	if s := arr.do("POST", "/api/admin/events",
-		map[string]any{"assignment_id": assignmentID}, &run); s != 201 {
+		map[string]any{"assignment_id": assignmentID, "attest_no_minors": true}, &run); s != 201 {
 		t.Fatalf("create event = %d", s)
 	}
 

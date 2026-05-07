@@ -183,10 +183,16 @@ func TestLibrary_CopyToAdventure(t *testing.T) {
 	}
 
 	// The copy should be attached to demo, carrying the fleshed content.
+	// `accept` is a list of {text, regex?} structs in the current
+	// schema (not flat strings); the loader normalised away from the
+	// older bare-string shape when AcceptEntry shipped.
 	var cp struct {
-		AdventureSlug string   `json:"adventure_slug"`
-		Title         string   `json:"title"`
-		Accept        []string `json:"accept"`
+		AdventureSlug string `json:"adventure_slug"`
+		Title         string `json:"title"`
+		Accept        []struct {
+			Text  string `json:"text"`
+			Regex bool   `json:"regex,omitempty"`
+		} `json:"accept"`
 	}
 	if s := admin.do("GET", "/api/admin/puzzles/"+itoa(copied.ID), nil, &cp); s != 200 {
 		t.Fatalf("get copy = %d", s)
@@ -194,7 +200,7 @@ func TestLibrary_CopyToAdventure(t *testing.T) {
 	if cp.AdventureSlug != "demo" {
 		t.Fatalf("copy adventure_slug = %q, want demo", cp.AdventureSlug)
 	}
-	if cp.Title != "bonus" || len(cp.Accept) != 1 || cp.Accept[0] != "1999" {
+	if cp.Title != "bonus" || len(cp.Accept) != 1 || cp.Accept[0].Text != "1999" {
 		t.Fatalf("copy didn't carry content: %+v", cp)
 	}
 }

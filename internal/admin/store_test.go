@@ -210,8 +210,13 @@ func TestHandleTicketCheckoutCompleted_HappyPath(t *testing.T) {
 	if len(msg.To) == 0 || msg.To[0] != "buyer@example.com" {
 		t.Errorf("To = %v, want [buyer@example.com]", msg.To)
 	}
-	if !strings.Contains(msg.Text, "/play?t=") {
-		t.Errorf("body has no /play?t= link: %s", msg.Text)
+	// The ticket email carries one team-share URL — the buyer (team
+	// captain) opens it, claims their own player slot, and shares
+	// the remaining slots from inside the app. Switching from N
+	// per-player links to one team link is the change tracked by
+	// "Email team link instead of per-player links" (Round 7).
+	if !strings.Contains(msg.Text, "/team/") {
+		t.Errorf("body has no /team/ link: %s", msg.Text)
 	}
 
 	// Idempotency: a second invocation must not create a second team

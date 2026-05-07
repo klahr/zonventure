@@ -86,7 +86,7 @@ func TestSendEventInvitations_HappyPath(t *testing.T) {
 		t.Helper()
 		var teamID int64
 		if err := db.QueryRow(`
-			INSERT INTO teams(event_id, name, email) VALUES ($1, $2, $3) RETURNING id
+			INSERT INTO teams(event_id, name, email, token, recap_token) VALUES ($1, $2, $3, gen_random_uuid()::text, gen_random_uuid()::text) RETURNING id
 		`, eventID, name, email).Scan(&teamID); err != nil {
 			t.Fatal(err)
 		}
@@ -277,7 +277,7 @@ func TestSendTeamInvitation_HappyPath(t *testing.T) {
 	}
 	var teamID int64
 	if err := db.QueryRow(`
-		INSERT INTO teams(event_id, name, email) VALUES ($1, 'Alpha', 'alpha@acme.com')
+		INSERT INTO teams(event_id, name, email, token, recap_token) VALUES ($1, 'Alpha', 'alpha@acme.com', gen_random_uuid()::text, gen_random_uuid()::text)
 		RETURNING id
 	`, eventID).Scan(&teamID); err != nil {
 		t.Fatal(err)
@@ -355,7 +355,7 @@ func TestSendTeamInvitation_NoEmail(t *testing.T) {
 	// Team with empty email + a slot.
 	var teamID int64
 	if err := db.QueryRow(`
-		INSERT INTO teams(event_id, name) VALUES ($1, 'Alpha') RETURNING id
+		INSERT INTO teams(event_id, name, token, recap_token) VALUES ($1, 'Alpha', gen_random_uuid()::text, gen_random_uuid()::text) RETURNING id
 	`, eventID).Scan(&teamID); err != nil {
 		t.Fatal(err)
 	}
@@ -432,7 +432,7 @@ func TestSendTeamInvitation_CrossOrgRejected(t *testing.T) {
 	}
 	var bTeam int64
 	if err := db.QueryRow(`
-		INSERT INTO teams(event_id, name, email) VALUES ($1, 'BeeTeam', 'b@b.com') RETURNING id
+		INSERT INTO teams(event_id, name, email, token, recap_token) VALUES ($1, 'BeeTeam', 'b@b.com', gen_random_uuid()::text, gen_random_uuid()::text) RETURNING id
 	`, bEvent).Scan(&bTeam); err != nil {
 		t.Fatal(err)
 	}

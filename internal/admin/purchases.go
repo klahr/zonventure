@@ -98,6 +98,13 @@ type purchaseDTO struct {
 	// invoice runs without unwinding the assignment grant. Only
 	// meaningful for provider="invoice" rows.
 	VoidedAt          string `json:"voided_at,omitempty"`
+	// PreMigration is set when this row was imported from another zv
+	// instance via the org-bundle importer. The recorded charge id
+	// is on the source instance's Stripe account; the refund button
+	// in the UI swaps to a "refund through legacy dashboard" notice
+	// when this is true, and the RefundPurchase handler 409s if
+	// called anyway.
+	PreMigration      bool   `json:"pre_migration,omitempty"`
 }
 
 type createPurchaseRequest struct {
@@ -729,7 +736,8 @@ func (h *Handlers) ListPurchases(w http.ResponseWriter, r *http.Request) {
 		       p.created_at, COALESCE(p.paid_at, ''),
 		       COALESCE(p.stripe_invoice_url, ''),
 		       COALESCE(p.billed_at, ''),
-		       COALESCE(p.voided_at, '')
+		       COALESCE(p.voided_at, ''),
+		       p.pre_migration
 		FROM purchases p
 		LEFT JOIN adventures a ON a.slug = p.adventure_slug
 	`
@@ -759,7 +767,7 @@ func (h *Handlers) ListPurchases(w http.ResponseWriter, r *http.Request) {
 		if err := rows.Scan(&d.ID, &d.OrgID, &d.AdventureSlug, &d.AdventureTitle,
 			&d.MaxPlayers, &d.AmountCents, &d.Currency, &d.Provider,
 			&d.ProviderSessionID, &d.State, &assignment, &topUp,
-			&d.CreatedAt, &d.PaidAt, &d.InvoiceURL, &d.BilledAt, &d.VoidedAt); err != nil {
+			&d.CreatedAt, &d.PaidAt, &d.InvoiceURL, &d.BilledAt, &d.VoidedAt, &d.PreMigration); err != nil {
 			httpx.Error(w, http.StatusInternalServerError, "scan failed")
 			return
 		}
@@ -798,13 +806,14 @@ func (h *Handlers) GetPurchase(w http.ResponseWriter, r *http.Request) {
 		       p.created_at, COALESCE(p.paid_at, ''),
 		       COALESCE(p.stripe_invoice_url, ''),
 		       COALESCE(p.billed_at, ''),
-		       COALESCE(p.voided_at, '')
+		       COALESCE(p.voided_at, ''),
+		       p.pre_migration
 		FROM purchases p
 		LEFT JOIN adventures a ON a.slug = p.adventure_slug
 		WHERE p.id = $1
 	`, purchaseID).Scan(&d.ID, &d.OrgID, &d.AdventureSlug, &d.AdventureTitle,
 		&d.MaxPlayers, &d.AmountCents, &d.Currency, &d.Provider,
-		&d.ProviderSessionID, &d.State, &assignment, &topUp, &d.CreatedAt, &d.PaidAt, &d.InvoiceURL, &d.BilledAt, &d.VoidedAt)
+		&d.ProviderSessionID, &d.State, &assignment, &topUp, &d.CreatedAt, &d.PaidAt, &d.InvoiceURL, &d.BilledAt, &d.VoidedAt, &d.PreMigration)
 	if errors.Is(err, sql.ErrNoRows) {
 		httpx.Error(w, http.StatusNotFound, "purchase not found")
 		return
