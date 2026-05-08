@@ -131,8 +131,8 @@ Hash-routed SPA. Mirrors the route table at `renderRoute`.
 - [ ] `software-update` — Update checker (`viewSettingsSoftwareUpdate`)
 
 #### Admin-only
-- [ ] `#organizations` — Cross-org list (`viewOrganizations`)
-- [ ] `#logs` — Live log tail (`viewLogs`, xterm.js)
+- [x] `#organizations` — Cross-org list (`viewOrganizations`)
+- [x] `#logs` — Live log tail (`viewLogs`, xterm.js)
 - [ ] Simulator panel (mounted on adventure detail; admin-toggleable)
 
 #### Misc
