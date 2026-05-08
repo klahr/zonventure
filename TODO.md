@@ -151,12 +151,6 @@ sessions where they were raised. Listed here so they don't fall on
 the floor.
 
 ### Backend
-- [ ] `internal/server/server.go` is 1331 lines — split into
-      `routes_player.go` / `routes_admin.go` / `routes_public.go`
-      so route additions are a localised change
-- [ ] `landing.go` template render: ~80 `strings.ReplaceAll` per
-      request on a 30 KB body; cache by `(lang, page-variant)` at
-      startup
 - [ ] BYTEAs on hot tables (events / teams / organizations carry
       inline blob columns) — move to dedicated child tables to
       avoid TOAST-thrash on accidental `SELECT *`

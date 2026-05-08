@@ -1,0 +1,56 @@
+// Player routes — /api/player REST surface and the /ws/play
+// WebSocket. Both gate on a slot session; the REST mutations also
+// require CSRF because the player UI can be embedded in a third-
+// party context (eg. an arranger sharing the play URL).
+package server
+
+import (
+	"github.com/go-chi/chi/v5"
+
+	"git.sr.ht/~klahr/zv/internal/auth"
+)
+
+// registerPlayerRoutes wires the slot-authenticated REST endpoints
+// and the WS push channel that replaces the 5 s state poll.
+func registerPlayerRoutes(r chi.Router, env *routesEnv) {
+	playerH := env.playerH
+
+	// Player (slot-authenticated). Mutations under CSRF; the GET reads
+	// stay open since they're idempotent and can't damage state.
+	r.Route("/api/player", func(r chi.Router) {
+		r.Use(auth.RequireSlot)
+		r.Use(auth.RequireCSRF())
+		r.Get("/state", playerH.GetState)
+		// Asset manifest powers the player-side service-worker prefetch
+		// for offline play: the SW cache.addAll()s these URLs on team
+		// join so puzzles render even in a dead spot. Each URL is
+		// still visibility-gated at fetch time.
+		r.Get("/manifest", playerH.Manifest)
+		r.Post("/answer", playerH.SubmitAnswer)
+		r.Post("/location", playerH.PostLocation)
+		r.Post("/hint", playerH.RevealHint)
+		// Player-driven slot rename — the arranger's pre-set name is
+		// often a placeholder ("Player 3"). Letting the player put
+		// their own name on the leaderboard improves engagement.
+		r.Post("/me/name", playerH.RenameMyself)
+		// Player-driven team rename — the arranger's "Team 3"
+		// placeholder is a common pre-event setup and the team
+		// itself agrees on the real name as a group. Any team
+		// member can update; UNIQUE(event_id, name) prevents
+		// collisions across teams.
+		r.Post("/team/name", playerH.RenameMyTeam)
+		r.Get("/summary", playerH.Summary)
+		r.Post("/logout", playerH.Logout)
+		// GDPR right-to-erasure: wipes pings + answers + slot name +
+		// session for the caller's slot. The slot row stays so the
+		// team's run keeps working for everyone else.
+		r.Post("/forget", playerH.Forget)
+	})
+
+	// Player WebSocket: replaces the 5s /state poll and 15s /location POST
+	// with a single push-when-changed socket.
+	r.Group(func(r chi.Router) {
+		r.Use(auth.RequireSlot)
+		r.Get("/ws/play", playerH.WSPlay)
+	})
+}

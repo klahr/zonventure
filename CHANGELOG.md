@@ -79,6 +79,18 @@ a specific footgun the previous shape exposed.
   per-page meta wins over the header for the surfaces that
   don't need the looser allowance.
 
+- **`server.go` split into `routes_*.go`.** The 1470-line monolith
+  shrank to 660 lines; the route registrations moved into
+  `routes_pages.go`, `routes_assets.go`, `routes_public.go`,
+  `routes_auth.go`, `routes_player.go`, and `routes_admin.go`,
+  one helper per surface. `New()` keeps the middleware chain and
+  the per-package handler construction; a private `routesEnv`
+  struct bundles the captured deps so each helper signature is
+  just `(r chi.Router, env *routesEnv)`. Route patterns don't
+  overlap, so the call order in `New()` is purely for
+  readability — chi treats each pattern independently. Tests
+  pass unchanged.
+
 ### Added
 
 - **Stripe Connect marketplace flow.** The hosted instance can now
