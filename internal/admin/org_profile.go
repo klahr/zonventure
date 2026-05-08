@@ -18,17 +18,24 @@ import (
 
 // orgProfileDTO is the GET / PUT body for the org-admin "Public
 // profile" surface (Settings → General). Pairs the slug-derived
-// store URL with the editable copy fields (tagline, website) and
-// boolean indicators for the binary asset endpoints (logo + cover)
-// so the GUI can render upload/preview without a speculative fetch.
+// store URL with the editable copy fields (tagline, website),
+// brand-color overrides (accent / accent secondary / background /
+// text — empty string means "fall back to the platform default"),
+// and boolean indicators for the binary asset endpoints (logo +
+// cover) so the GUI can render upload/preview without a
+// speculative fetch.
 type orgProfileDTO struct {
-	Slug          string `json:"slug"`
-	StoreURL      string `json:"store_url"`
-	LandingURL    string `json:"landing_url"`
-	Tagline       string `json:"tagline"`
-	PublicWebsite string `json:"public_website"`
-	HasLogo       bool   `json:"has_logo"`
-	HasCover      bool   `json:"has_cover"`
+	Slug                 string `json:"slug"`
+	StoreURL             string `json:"store_url"`
+	LandingURL           string `json:"landing_url"`
+	Tagline              string `json:"tagline"`
+	PublicWebsite        string `json:"public_website"`
+	HasLogo              bool   `json:"has_logo"`
+	HasCover             bool   `json:"has_cover"`
+	AccentColor          string `json:"accent_color,omitempty"`
+	AccentSecondaryColor string `json:"accent_secondary_color,omitempty"`
+	BackgroundColor      string `json:"background_color,omitempty"`
+	TextColor            string `json:"text_color,omitempty"`
 }
 
 // orgProfileMaxTagline caps the tagline length. Long enough for a
@@ -57,21 +64,27 @@ func (h *Handlers) GetMyOrgProfile(w http.ResponseWriter, r *http.Request) {
 	}
 	orgID := *me.OrgID
 	var (
-		slug     string
-		tagline  sql.NullString
-		website  sql.NullString
-		hasLogo  bool
-		hasCover bool
+		slug                 string
+		tagline              sql.NullString
+		website              sql.NullString
+		hasLogo              bool
+		hasCover             bool
+		accentColor          sql.NullString
+		accentSecondaryColor sql.NullString
+		backgroundColor      sql.NullString
+		textColor            sql.NullString
 	)
 	err := h.DB.QueryRowContext(r.Context(), `
 		SELECT slug,
 		       tagline,
 		       public_website,
 		       (logo_content IS NOT NULL AND length(logo_content) > 0),
-		       (cover_image_content IS NOT NULL AND length(cover_image_content) > 0)
+		       (cover_image_content IS NOT NULL AND length(cover_image_content) > 0),
+		       accent_color, accent_secondary_color, background_color, text_color
 		FROM organizations
 		WHERE id = $1
-	`, orgID).Scan(&slug, &tagline, &website, &hasLogo, &hasCover)
+	`, orgID).Scan(&slug, &tagline, &website, &hasLogo, &hasCover,
+		&accentColor, &accentSecondaryColor, &backgroundColor, &textColor)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			httpx.Error(w, http.StatusNotFound, "organization not found")
@@ -81,13 +94,17 @@ func (h *Handlers) GetMyOrgProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.JSON(w, http.StatusOK, orgProfileDTO{
-		Slug:          slug,
-		StoreURL:      storeURLFromSlug(h.PublicURL, slug),
-		LandingURL:    landingURLFromSlug(h.PublicURL, slug),
-		Tagline:       tagline.String,
-		PublicWebsite: website.String,
-		HasLogo:       hasLogo,
-		HasCover:      hasCover,
+		Slug:                 slug,
+		StoreURL:             storeURLFromSlug(h.PublicURL, slug),
+		LandingURL:           landingURLFromSlug(h.PublicURL, slug),
+		Tagline:              tagline.String,
+		PublicWebsite:        website.String,
+		HasLogo:              hasLogo,
+		HasCover:             hasCover,
+		AccentColor:          accentColor.String,
+		AccentSecondaryColor: accentSecondaryColor.String,
+		BackgroundColor:      backgroundColor.String,
+		TextColor:            textColor.String,
 	})
 }
 
@@ -129,12 +146,40 @@ func (h *Handlers) SetMyOrgProfile(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	// Brand colors: each is either empty (clear → fall back to
+	// platform defaults) or a valid #RRGGBB / #RGB hex string.
+	// Reject anything else so a typo doesn't render arbitrary CSS
+	// fragments into the public landing's <style> block.
+	colors := map[string]string{
+		"accent":           strings.TrimSpace(req.AccentColor),
+		"accent_secondary": strings.TrimSpace(req.AccentSecondaryColor),
+		"background":       strings.TrimSpace(req.BackgroundColor),
+		"text":             strings.TrimSpace(req.TextColor),
+	}
+	for label, v := range colors {
+		if v == "" {
+			continue
+		}
+		if !isValidHexColor(v) {
+			httpx.Error(w, http.StatusBadRequest,
+				label+" color must be a hex value like #ad1357 or #abc")
+			return
+		}
+	}
+
 	if _, err := h.DB.ExecContext(r.Context(), `
 		UPDATE organizations
 		   SET tagline = NULLIF($1, ''),
-		       public_website = NULLIF($2, '')
-		 WHERE id = $3
-	`, tagline, website, orgID); err != nil {
+		       public_website = NULLIF($2, ''),
+		       accent_color = NULLIF($3, ''),
+		       accent_secondary_color = NULLIF($4, ''),
+		       background_color = NULLIF($5, ''),
+		       text_color = NULLIF($6, '')
+		 WHERE id = $7
+	`, tagline, website,
+		colors["accent"], colors["accent_secondary"],
+		colors["background"], colors["text"],
+		orgID); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "update failed")
 		return
 	}
@@ -142,6 +187,118 @@ func (h *Handlers) SetMyOrgProfile(w http.ResponseWriter, r *http.Request) {
 	// Re-render the GET payload so the frontend doesn't need a second
 	// round-trip to refresh has_cover / has_logo derived booleans.
 	h.GetMyOrgProfile(w, r)
+}
+
+// isValidHexColor accepts the same shapes the CSS color spec does
+// for hex values: #RGB / #RRGGBB. Lowercased + trimmed by the
+// caller; we don't accept the 8-digit RGBA form because the
+// renderer composes alpha via gradients, not on the brand swatches
+// themselves.
+func isValidHexColor(s string) bool {
+	if len(s) != 4 && len(s) != 7 {
+		return false
+	}
+	if s[0] != '#' {
+		return false
+	}
+	for i := 1; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case c >= '0' && c <= '9':
+		case c >= 'a' && c <= 'f':
+		case c >= 'A' && c <= 'F':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// SetMyOrgLogo is the org-admin self-serve counterpart to SetOrgLogo
+// (which is admin-only at the route level). RoleOrgAdmin only;
+// pins the org id from the session so an org_admin can only
+// upload to their own org. Same imageutil normalisation as the
+// admin-side handler — re-encoding kills polyglot uploads.
+func (h *Handlers) SetMyOrgLogo(w http.ResponseWriter, r *http.Request) {
+	me, ok := auth.FromContext(r.Context())
+	if !ok || me.OrgID == nil || *me.OrgID == 0 {
+		httpx.Error(w, http.StatusForbidden, "not in an organization")
+		return
+	}
+	if me.Role != auth.RoleOrgAdmin {
+		httpx.Error(w, http.StatusForbidden, "org admins only")
+		return
+	}
+	orgID := *me.OrgID
+	if err := r.ParseMultipartForm(maxImageBytes); err != nil {
+		httpx.Error(w, http.StatusBadRequest, "bad multipart form")
+		return
+	}
+	f, hdr, err := r.FormFile("file")
+	if err != nil {
+		httpx.Error(w, http.StatusBadRequest, "file field required")
+		return
+	}
+	defer f.Close()
+	if hdr.Size > maxImageBytes {
+		httpx.Error(w, http.StatusRequestEntityTooLarge, "image too large")
+		return
+	}
+	data, err := io.ReadAll(io.LimitReader(f, maxImageBytes+1))
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "read failed")
+		return
+	}
+	if int64(len(data)) > maxImageBytes {
+		httpx.Error(w, http.StatusRequestEntityTooLarge, "image too large")
+		return
+	}
+	mime := hdr.Header.Get("Content-Type")
+	normalized, newMIME, err := imageutil.NormalizeUpload(data, mime, imageutil.DefaultMaxDim)
+	if errors.Is(err, imageutil.ErrUnsupportedMIME) {
+		httpx.Error(w, http.StatusBadRequest,
+			"only PNG, JPEG, WebP, or SVG logos are accepted")
+		return
+	}
+	if err != nil {
+		httpx.Error(w, http.StatusBadRequest, "unreadable image: "+err.Error())
+		return
+	}
+	data, mime = normalized, newMIME
+	if err := h.Storage.PutOrgLogo(r.Context(), orgID, data, mime); err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			httpx.Error(w, http.StatusNotFound, "organisation not found")
+			return
+		}
+		httpx.ServerErr(w, http.StatusInternalServerError, "store failed", err)
+		return
+	}
+	logx.Info("admin.org.logo.uploaded", "org_id", orgID, "size", len(data), "by", me.Username)
+	httpx.JSON(w, http.StatusOK, map[string]any{
+		"url":  orgLogoURL(orgID),
+		"mime": mime,
+		"size": int64(len(data)),
+	})
+}
+
+// DeleteMyOrgLogo clears the org's logo. RoleOrgAdmin only.
+func (h *Handlers) DeleteMyOrgLogo(w http.ResponseWriter, r *http.Request) {
+	me, ok := auth.FromContext(r.Context())
+	if !ok || me.OrgID == nil || *me.OrgID == 0 {
+		httpx.Error(w, http.StatusForbidden, "not in an organization")
+		return
+	}
+	if me.Role != auth.RoleOrgAdmin {
+		httpx.Error(w, http.StatusForbidden, "org admins only")
+		return
+	}
+	orgID := *me.OrgID
+	if err := h.Storage.DeleteOrgLogo(r.Context(), orgID); err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "clear failed")
+		return
+	}
+	logx.Info("admin.org.logo.removed", "org_id", orgID, "by", me.Username)
+	httpx.JSON(w, http.StatusNoContent, nil)
 }
 
 // SetMyOrgCover stores the uploaded cover image. Mirrors SetOrgLogo

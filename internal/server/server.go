@@ -912,6 +912,12 @@ func New(cfg Config) http.Handler {
 		r.Put("/orgs/me/profile", adminH.SetMyOrgProfile)
 		r.Post("/orgs/me/cover", adminH.SetMyOrgCover)
 		r.Delete("/orgs/me/cover", adminH.DeleteMyOrgCover)
+		// Org-admin self-serve logo (mirror of admin-side
+		// /organizations/{id}/logo, but pinned to the caller's
+		// session). Lets an org_admin upload + replace the brand
+		// logo without involving platform support.
+		r.Post("/orgs/me/logo", adminH.SetMyOrgLogo)
+		r.Delete("/orgs/me/logo", adminH.DeleteMyOrgLogo)
 		r.Get("/adventures/{slug}/shares", adminH.ListAdventureShares)
 		r.Post("/adventures/{slug}/shares", adminH.GrantAdventureShare)
 		r.Delete("/adventures/{slug}/shares/{orgID}", adminH.RevokeAdventureShare)

@@ -61,12 +61,17 @@ func TestRenderStoreEventPage_HappyPath(t *testing.T) {
 		}
 		t.Fatalf("leftover placeholder at %d: %q", idx, body[idx:end])
 	}
+	// The canonical URL moved under /o/{slug}/ when per-org store
+	// pages landed (migration 0051). The trigger auto-derives slug
+	// "acme" from the seeded org name, so the absolute URL is
+	// `https://zv.example.com/o/acme/store/event/{id}` rather than
+	// the legacy `/store/event/` path.
 	for _, want := range []string{
-		"Demo Adv",                       // adventure title
-		"Acme",                           // org name
-		"A two-hour outdoor adventure.",  // blurb
-		"https://zv.example.com/store/event/", // canonical URL
-		"€25",                            // formatted price
+		"Demo Adv",                          // adventure title
+		"Acme",                              // org name
+		"A two-hour outdoor adventure.",     // blurb
+		"https://zv.example.com/o/acme/store/event/", // canonical URL
+		"€25",                               // formatted price
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("body missing %q", want)

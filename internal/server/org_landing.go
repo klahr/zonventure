@@ -32,20 +32,26 @@ func renderOrgLandingPage(w http.ResponseWriter, r *http.Request, db *sql.DB, pu
 		return
 	}
 	var (
-		orgID    int64
-		orgName  string
-		tagline  sql.NullString
-		website  sql.NullString
-		hasLogo  bool
-		hasCover bool
+		orgID                int64
+		orgName              string
+		tagline              sql.NullString
+		website              sql.NullString
+		hasLogo              bool
+		hasCover             bool
+		accentColor          sql.NullString
+		accentSecondaryColor sql.NullString
+		backgroundColor      sql.NullString
+		textColor            sql.NullString
 	)
 	err := db.QueryRowContext(r.Context(), `
 		SELECT id, name, tagline, public_website,
 		       (logo_content IS NOT NULL AND length(logo_content) > 0),
-		       (cover_image_content IS NOT NULL AND length(cover_image_content) > 0)
+		       (cover_image_content IS NOT NULL AND length(cover_image_content) > 0),
+		       accent_color, accent_secondary_color, background_color, text_color
 		FROM organizations
 		WHERE slug = $1
-	`, slug).Scan(&orgID, &orgName, &tagline, &website, &hasLogo, &hasCover)
+	`, slug).Scan(&orgID, &orgName, &tagline, &website, &hasLogo, &hasCover,
+		&accentColor, &accentSecondaryColor, &backgroundColor, &textColor)
 	if errors.Is(err, sql.ErrNoRows) {
 		servePublicPage("web/404.html", http.StatusNotFound)(w, r)
 		return
@@ -118,6 +124,9 @@ func renderOrgLandingPage(w http.ResponseWriter, r *http.Request, db *sql.DB, pu
 	storePath := "/o/" + slug + "/store"
 	apiBase := "/api/o/" + slug + "/store"
 	canonical := buildAbsoluteURL(publicURL, "/o/"+slug)
+	brandOverrides := orgBrandStyleBlock(
+		accentColor.String, accentSecondaryColor.String,
+		backgroundColor.String, textColor.String)
 
 	subs = append(subs,
 		[2]string{"{{ORG_NAME}}", html.EscapeString(orgName)},
@@ -133,6 +142,7 @@ func renderOrgLandingPage(w http.ResponseWriter, r *http.Request, db *sql.DB, pu
 		[2]string{"{{LANDING_FEATURED_HEADING}}", html.EscapeString(s.LandingFeaturedHeading)},
 		[2]string{"{{LANDING_FEATURED_EMPTY}}", html.EscapeString(s.LandingFeaturedEmpty)},
 		[2]string{"{{LANDING_SEE_ALL}}", html.EscapeString(s.LandingSeeAll)},
+		[2]string{"{{ORG_BRAND_OVERRIDES}}", brandOverrides},
 	)
 
 	out := string(body)
@@ -143,6 +153,51 @@ func renderOrgLandingPage(w http.ResponseWriter, r *http.Request, db *sql.DB, pu
 	w.Header().Set("Vary", "Cookie, Accept-Language")
 	w.Header().Set("Cache-Control", "public, max-age=60")
 	_, _ = w.Write([]byte(out))
+}
+
+// orgBrandStyleBlock emits a `<style>:root { --foo: #bar; }</style>`
+// snippet that overrides the platform-default CSS variables on the
+// org-landing + store templates. Any of the four colours can be
+// empty — empty drops that variable from the override and the
+// template's fallback applies. When ALL are empty the function
+// returns "" so the placeholder is a no-op (no extra <style> tag,
+// no chrome bytes).
+//
+// All four inputs go through isValidHexColor at the API boundary
+// (SetMyOrgProfile rejects anything else), so we trust them here
+// without re-validating. The output is HTML-safe by construction:
+// only #-prefixed hex values reach the substitution.
+func orgBrandStyleBlock(accent, accent2, bg, ink string) string {
+	type override struct {
+		name string
+		val  string
+	}
+	overrides := []override{}
+	if accent != "" {
+		overrides = append(overrides, override{"--accent", accent})
+	}
+	if accent2 != "" {
+		overrides = append(overrides, override{"--accent-2", accent2})
+	}
+	if bg != "" {
+		overrides = append(overrides, override{"--bg", bg})
+	}
+	if ink != "" {
+		overrides = append(overrides, override{"--ink", ink})
+	}
+	if len(overrides) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("<style>:root{")
+	for _, o := range overrides {
+		b.WriteString(o.name)
+		b.WriteString(":")
+		b.WriteString(o.val)
+		b.WriteString(";")
+	}
+	b.WriteString("}</style>")
+	return b.String()
 }
 
 // buildOrgSitemapURLs returns <url>… entries for every org with at

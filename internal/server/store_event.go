@@ -61,6 +61,12 @@ func renderStoreEventPage(w http.ResponseWriter, r *http.Request, db *sql.DB, pu
 		startLabel sql.NullString
 		hasCover   bool
 	)
+	var (
+		brandAccent          sql.NullString
+		brandAccentSecondary sql.NullString
+		brandBackground      sql.NullString
+		brandText            sql.NullString
+	)
 	err = db.QueryRowContext(r.Context(), `
 		SELECT e.name, e.adventure_slug,
 		       a.title AS adv_title,
@@ -71,7 +77,8 @@ func renderStoreEventPage(w http.ResponseWriter, r *http.Request, db *sql.DB, pu
 		       e.ticket_currency,
 		       e.ticket_team_size,
 		       a.start_label,
-		       (e.cover_image_mime_type IS NOT NULL) AS has_cover
+		       (e.cover_image_mime_type IS NOT NULL) AS has_cover,
+		       o.accent_color, o.accent_secondary_color, o.background_color, o.text_color
 		FROM events e
 		JOIN organizations o ON o.id = e.org_id
 		LEFT JOIN adventures a ON a.org_id = e.org_id AND a.slug = e.adventure_slug
@@ -80,7 +87,8 @@ func renderStoreEventPage(w http.ResponseWriter, r *http.Request, db *sql.DB, pu
 		  AND e.ticket_price_cents IS NOT NULL
 		  AND e.state IN ('running', 'paused')
 	`, id).Scan(&eventName, &advSlug, &advTitle, &orgName, &orgSlug, &blurb, &priceCents,
-		&currency, &teamSize, &startLabel, &hasCover)
+		&currency, &teamSize, &startLabel, &hasCover,
+		&brandAccent, &brandAccentSecondary, &brandBackground, &brandText)
 	if errors.Is(err, sql.ErrNoRows) {
 		servePublicPage("web/404.html", http.StatusNotFound)(w, r)
 		return
@@ -174,6 +182,10 @@ func renderStoreEventPage(w http.ResponseWriter, r *http.Request, db *sql.DB, pu
 		[2]string{"{{ADVENTURE_SLUG}}", html.EscapeString(advSlug)},
 		[2]string{"{{CANONICAL_URL}}", html.EscapeString(buildAbsoluteURL(publicURL, canonicalPath))},
 		[2]string{"{{STORE_API_BASE}}", apiBase},
+		[2]string{"{{ORG_BRAND_OVERRIDES}}", orgBrandStyleBlock(
+			brandAccent.String, brandAccentSecondary.String,
+			brandBackground.String, brandText.String,
+		)},
 	)
 
 	out := string(body)

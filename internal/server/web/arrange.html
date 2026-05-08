@@ -1700,6 +1700,17 @@ textarea { min-height: 80px; resize: vertical; font-family: ui-monospace, monosp
 .settings-card .ok  { color: #2c8048; }
 .settings-card .err { color: #b03a3a; }
 
+/* Two-column branding grid: controls on the left, live preview on
+   the right above ~64rem; collapses to one column below that so the
+   preview drops below the controls instead of squeezing both. */
+@media (min-width: 64rem) {
+  .org-branding-grid {
+    grid-template-columns: minmax(0, 1.4fr) minmax(18rem, 1fr) !important;
+    align-items: start;
+  }
+  .org-branding-grid > :last-child { position: sticky; top: 1rem; }
+}
+
 /* Session list rows in the Active Sessions settings card. Visually
    nested inside the parent card so the list reads as one block, not a
    bunch of separate cards. */
@@ -16054,17 +16065,27 @@ function renderSettingsGeneral(view) {
 // surfaces on /o/{slug} (the per-org landing) and /o/{slug}/store
 // (the per-org store). Org-admin only.
 //
-// Sections, in order:
+// Layout: two-column on wide viewports — controls on the left,
+// a live mock-up of the public landing hero on the right that
+// updates reactively as the operator types / picks colors / uploads
+// a logo. The mock-up uses the same CSS variables (--accent etc.)
+// the production templates substitute server-side, so what you
+// see is what your visitors see.
+//
+// Sections, top to bottom in the controls column:
 //   1. URL readout + Copy button (the most-asked question: "where
 //      do I send customers?")
 //   2. Slug rename (separate save button + confirm dialog because
 //      it breaks every previously-shared link)
-//   3. Tagline + website (PUT /profile in one save)
-//   4. Cover image upload + delete
+//   3. Logo upload + delete
+//   4. Brand colors (accent / accent-2 / background / text) with a
+//      Reset to defaults shortcut
+//   5. Cover image upload + delete
+//   6. Tagline + website (PUT /profile in one save with the colors)
 //
 // Each save round-trips to the backend and re-reads the GET payload
-// so derived fields (has_cover, store_url) refresh without a manual
-// page reload.
+// so derived fields (has_cover, has_logo, store_url) refresh without
+// a manual page reload.
 function renderSettingsPublicProfileCard() {
   const card = h('div', { class: 'card settings-card' });
   const status = h('p', { class: 'muted', style: 'font-size:.85rem; margin:.5rem 0 0; min-height:1.2em' });
@@ -16096,6 +16117,7 @@ function renderSettingsPublicProfileCard() {
   const taglineCount = h('span', { class: 'muted', style: 'font-size:.75rem' }, '');
   taglineInput.addEventListener('input', () => {
     taglineCount.textContent = taglineInput.value.length + ' / 140';
+    if (typeof renderPreview === 'function') renderPreview();
   });
   const websiteInput = h('input', {
     type: 'url',
@@ -16104,6 +16126,74 @@ function renderSettingsPublicProfileCard() {
   });
   const profileSaveBtn = h('button', { class: 'btn primary small', type: 'button' },
     t('Save profile'));
+
+  // ---- Logo upload ----
+  const logoThumb = h('div', {
+    style: 'width: 5rem; height: 5rem; border-radius: 12px; background: var(--surface-2, transparent); border: 1px dashed var(--border, currentColor); display:flex; align-items:center; justify-content:center; flex-shrink:0; overflow:hidden',
+  });
+  const logoPlaceholder = h('span', { class: 'muted', style: 'font-size:.7rem' }, t('No logo'));
+  logoThumb.append(logoPlaceholder);
+  const logoInput = h('input', { type: 'file', accept: 'image/png,image/jpeg,image/webp,image/svg+xml' });
+  const logoUploadBtn = h('button', { class: 'btn small', type: 'button' },
+    icon(ICONS.upload), t('Upload logo'));
+  const logoDeleteBtn = h('button', { class: 'btn ghost small', type: 'button' }, t('Remove'));
+
+  // ---- Brand colors ----
+  // Defaults match the platform's --accent / --accent-2 / --bg /
+  // --ink in org-landing.html. Empty input means "fall back to
+  // these defaults"; saving with the field empty clears the row.
+  const defaultColors = {
+    accent: '#ad1357',
+    accent_secondary: '#e24080',
+    background: '#fbfbfd',
+    text: '#1f3349',
+  };
+  const colorInputs = {};
+  const colorRow = (key, label) => {
+    const native = h('input', {
+      type: 'color', value: defaultColors[key],
+      style: 'width:2.5rem; height:2.5rem; padding:0; border:1px solid var(--border-soft, transparent); border-radius:6px; cursor:pointer',
+    });
+    const text = h('input', {
+      type: 'text', maxlength: '7', placeholder: defaultColors[key],
+      value: '',
+      style: 'width:6.5rem; font-family: var(--font-mono, monospace); font-size:.85rem',
+    });
+    // Two-way sync: typing into the hex field updates the swatch,
+    // moving the swatch updates the hex field. The swatch always
+    // holds a value (HTML color inputs don't do nullable); the
+    // text field holds the *user's* choice — empty means "use
+    // platform default". renderPreview re-runs on every change.
+    native.addEventListener('input', () => {
+      text.value = native.value;
+      renderPreview();
+    });
+    text.addEventListener('input', () => {
+      const v = text.value.trim();
+      if (/^#[0-9a-fA-F]{6}$/.test(v) || /^#[0-9a-fA-F]{3}$/.test(v)) {
+        native.value = v.length === 4
+          ? '#' + v[1] + v[1] + v[2] + v[2] + v[3] + v[3]
+          : v;
+      }
+      renderPreview();
+    });
+    colorInputs[key] = { native, text };
+    return h('label', {
+      class: 'field',
+      style: 'display:flex; align-items:center; gap:.6rem; margin:0',
+    },
+      h('span', { class: 'muted', style: 'font-size:.8rem; min-width:7.5rem' }, label),
+      native, text);
+  };
+  const colorResetBtn = h('button', { class: 'btn ghost small', type: 'button' },
+    t('Reset to defaults'));
+  colorResetBtn.addEventListener('click', () => {
+    for (const k of Object.keys(defaultColors)) {
+      colorInputs[k].text.value = '';
+      colorInputs[k].native.value = defaultColors[k];
+    }
+    renderPreview();
+  });
 
   // ---- Cover image ----
   const coverPreview = h('div', {
@@ -16118,8 +16208,88 @@ function renderSettingsPublicProfileCard() {
   const coverDeleteBtn = h('button', { class: 'btn ghost small', type: 'button' },
     t('Remove'));
 
+  // ---- Live preview pane ----
+  // Mirrors the chrome of /o/{slug}: cover-as-hero with accent
+  // gradient overlay, logo + name + tagline. Updated reactively on
+  // every input change so the operator sees the impact before
+  // saving. The CSS variables are inlined on the preview's host
+  // div so multiple side-by-side previews on the same page (none
+  // today, but cheap to keep self-contained) wouldn't collide.
+  const previewName = h('div', { style: 'font-family: var(--font-brand, Georgia, serif); font-size:1.6rem; font-weight:700; color:#fff; line-height:1.1; margin:0' });
+  const previewTagline = h('div', { style: 'color:rgba(255,255,255,.85); font-size:.95rem; margin-top:.4rem' });
+  const previewLogo = h('div', { style: 'width:3.2rem; height:3.2rem; border-radius:8px; background:#fff; display:flex; align-items:center; justify-content:center; overflow:hidden; flex-shrink:0' });
+  const previewLogoPlaceholder = h('span', { style: 'font-size:.7rem; color:#999' }, t('Logo'));
+  previewLogo.append(previewLogoPlaceholder);
+  const previewBtn = h('button', {
+    type: 'button', disabled: '',
+    style: 'border:0; padding:.65rem 1.2rem; border-radius:999px; font-weight:700; color:#fff; cursor:default; opacity:.92',
+  }, t('Browse store'));
+  const previewHero = h('div', {
+    style: 'min-height:11rem; padding:1.25rem; border-radius:14px; display:flex; flex-direction:column; justify-content:flex-end; gap:.6rem; box-shadow: 0 4px 16px rgba(31,51,73,.12); position:relative; overflow:hidden',
+  },
+    h('div', { style: 'display:flex; align-items:center; gap:.7rem' }, previewLogo, previewName),
+    previewTagline,
+    h('div', {}, previewBtn));
+  const previewPane = h('div', {
+    style: 'display:flex; flex-direction:column; gap:.6rem; padding:1rem; border-radius:14px; border:1px solid var(--border-soft, transparent); background:var(--surface-2, transparent)',
+  },
+    h('span', { class: 'muted', style: 'font-size:.7rem; text-transform:uppercase; letter-spacing:.08em; font-weight:700' },
+      t('Live preview')),
+    previewHero,
+    h('p', { class: 'muted', style: 'font-size:.78rem; margin:0' },
+      t('How your /o/{{slug}} hero will look. Save to apply.', { slug: 'mindrace' })));
+
   let currentSlug = '';
   let currentURL = '';
+  let currentOrgID = 0;
+  let currentHasLogo = false;
+  let currentHasCover = false;
+
+  function renderPreview() {
+    const accent = colorInputs.accent.text.value.trim() || defaultColors.accent;
+    const accent2 = colorInputs.accent_secondary.text.value.trim() || defaultColors.accent_secondary;
+    const bg = colorInputs.background.text.value.trim() || defaultColors.background;
+    const ink = colorInputs.text.text.value.trim() || defaultColors.text;
+    const coverURL = currentHasCover && currentOrgID
+      ? `/org-cover/${currentOrgID}?t=${Date.now()}`
+      : '';
+    const heroBg = coverURL
+      ? `linear-gradient(135deg, ${hexToRgba(accent, 0.6)}, ${hexToRgba(accent2, 0.5)}), url('${coverURL}')`
+      : `linear-gradient(135deg, ${accent}, ${accent2})`;
+    previewHero.style.background = heroBg;
+    previewHero.style.backgroundSize = 'cover';
+    previewHero.style.backgroundPosition = 'center';
+    previewBtn.style.background = `linear-gradient(135deg, ${accent}, ${accent2})`;
+    previewPane.style.setProperty('--bg', bg);
+    previewPane.style.setProperty('--ink', ink);
+    previewName.textContent = state.me?.org_name || t('Your organization');
+    const tagline = taglineInput.value.trim();
+    previewTagline.textContent = tagline || t('Add a tagline below to fill this space.');
+    if (currentHasLogo && currentOrgID) {
+      previewLogo.replaceChildren(h('img', {
+        src: `/org-logo/${currentOrgID}?t=${Date.now()}`,
+        alt: '',
+        style: 'max-width:100%; max-height:100%; object-fit:contain',
+      }));
+    } else {
+      previewLogo.replaceChildren(previewLogoPlaceholder);
+    }
+  }
+
+  // hexToRgba accepts #rgb / #rrggbb and emits a CSS rgba() string.
+  // Used by the live preview to layer the accent gradient over the
+  // cover image at less-than-100% opacity, matching the production
+  // renderer in renderOrgLandingPage.
+  function hexToRgba(hex, a) {
+    const v = (hex || '').trim();
+    let r = 0, g = 0, b = 0;
+    if (/^#[0-9a-fA-F]{3}$/.test(v)) {
+      r = parseInt(v[1] + v[1], 16); g = parseInt(v[2] + v[2], 16); b = parseInt(v[3] + v[3], 16);
+    } else if (/^#[0-9a-fA-F]{6}$/.test(v)) {
+      r = parseInt(v.slice(1, 3), 16); g = parseInt(v.slice(3, 5), 16); b = parseInt(v.slice(5, 7), 16);
+    }
+    return `rgba(${r}, ${g}, ${b}, ${a})`;
+  }
 
   const renderCover = (orgID, hasCover) => {
     if (!hasCover || !orgID) {
@@ -16178,6 +16348,10 @@ function renderSettingsPublicProfileCard() {
       body: JSON.stringify({
         tagline: taglineInput.value.trim(),
         public_website: websiteInput.value.trim(),
+        accent_color:           colorInputs.accent.text.value.trim(),
+        accent_secondary_color: colorInputs.accent_secondary.text.value.trim(),
+        background_color:       colorInputs.background.text.value.trim(),
+        text_color:             colorInputs.text.text.value.trim(),
       }),
     });
     profileSaveBtn.disabled = false;
@@ -16185,8 +16359,51 @@ function renderSettingsPublicProfileCard() {
       setStatus('err', r.body?.error || t('error {{status}}', { status: r.status }));
       return;
     }
-    setStatus('muted', t('Profile saved.'));
+    setStatus('ok', t('Branding saved.'));
     applyProfile(r.body || {});
+  });
+
+  // Logo upload / delete — POST returns the served URL. We re-fetch
+  // the profile after both actions so has_logo + the preview thumb
+  // re-render off the canonical state (and the live mock-up
+  // updates).
+  logoUploadBtn.addEventListener('click', async () => {
+    const f = logoInput.files && logoInput.files[0];
+    if (!f) { setStatus('err', t('Pick a logo file first.')); return; }
+    logoUploadBtn.disabled = true;
+    setStatus('muted', t('Uploading logo…'));
+    const fd = new FormData();
+    fd.append('file', f);
+    try {
+      const r = await fetch('/api/admin/orgs/me/logo', {
+        method: 'POST', body: fd, credentials: 'same-origin',
+        headers: { 'X-CSRF-Token': csrfToken() },
+      });
+      if (!r.ok) {
+        const txt = await r.text().catch(() => '');
+        throw new Error(txt || ('HTTP ' + r.status));
+      }
+      setStatus('ok', t('Logo uploaded.'));
+      logoInput.value = '';
+      await refresh();
+    } catch (err) {
+      setStatus('err', t('Logo upload failed: {{err}}', { err: String(err.message || err) }));
+    } finally {
+      logoUploadBtn.disabled = false;
+    }
+  });
+
+  logoDeleteBtn.addEventListener('click', async () => {
+    if (!confirm(t('Remove the brand logo?'))) return;
+    logoDeleteBtn.disabled = true;
+    const r = await api('/api/admin/orgs/me/logo', { method: 'DELETE' });
+    if (!r.ok && r.status !== 204) {
+      setStatus('err', r.body?.error || t('error {{status}}', { status: r.status }));
+      logoDeleteBtn.disabled = false;
+      return;
+    }
+    setStatus('muted', t('Logo removed.'));
+    await refresh();
   });
 
   coverUploadBtn.addEventListener('click', async () => {
@@ -16236,10 +16453,39 @@ function renderSettingsPublicProfileCard() {
     taglineInput.value = body.tagline || '';
     taglineCount.textContent = (body.tagline || '').length + ' / 140';
     websiteInput.value = body.public_website || '';
-    // org_id isn't in the DTO; derive it from state.me so the cover
-    // preview URL points at the right /org-cover/{id}.
-    const orgID = (state.me && state.me.org_id) || 0;
-    renderCover(orgID, !!body.has_cover);
+    // org_id isn't in the DTO; derive it from state.me so the
+    // logo + cover preview URLs point at the right /org-*/{id}.
+    currentOrgID = (state.me && state.me.org_id) || 0;
+    currentHasLogo = !!body.has_logo;
+    currentHasCover = !!body.has_cover;
+    renderCover(currentOrgID, currentHasCover);
+    // Logo thumb mirrors the cover one-shot logic — fresh upload
+    // goes through refresh() so a cache-buster query string keeps
+    // the browser from serving the old bytes.
+    if (currentHasLogo) {
+      logoThumb.replaceChildren(h('img', {
+        src: `/org-logo/${currentOrgID}?t=${Date.now()}`, alt: '',
+        style: 'max-width:100%; max-height:100%; object-fit:contain',
+      }));
+      logoDeleteBtn.disabled = false;
+    } else {
+      logoThumb.replaceChildren(logoPlaceholder);
+      logoDeleteBtn.disabled = true;
+    }
+    // Brand colors: empty in the DTO means "fall through to platform
+    // default", which in the form means the text input is empty and
+    // the swatch sits on the default value (so the user sees what
+    // they're inheriting).
+    for (const k of Object.keys(defaultColors)) {
+      const dtoKey = k === 'text' ? 'text_color'
+        : k === 'background' ? 'background_color'
+        : k === 'accent' ? 'accent_color'
+        : 'accent_secondary_color';
+      const v = (body[dtoKey] || '').trim();
+      colorInputs[k].text.value = v;
+      colorInputs[k].native.value = v || defaultColors[k];
+    }
+    renderPreview();
   }
 
   const refresh = async () => {
@@ -16253,25 +16499,58 @@ function renderSettingsPublicProfileCard() {
     setStatus('muted', '');
   };
 
-  card.append(
-    h('h2', {}, t('Public profile')),
-    h('p', { class: 'muted', style: 'font-size:.9rem' },
-      t('Everything that surfaces on your public landing and store. Customers see this — keep it tidy.')),
+  // Section-builder convenience: H3 with a uniform top margin +
+  // size, used to break the controls column into named blocks
+  // ("Store URL", "Logo", "Brand colors", …) without each call
+  // site repeating the same inline style.
+  const section = (title) => h('h3', {
+    style: 'margin:1.25rem 0 .35rem; font-size:.92rem; font-weight:700',
+  }, title);
 
+  const controls = h('div', { style: 'display:flex; flex-direction:column; gap:.25rem; min-width:0' },
     // 1. URL readout + Copy
-    h('h3', { style: 'margin:1.25rem 0 .25rem; font-size:.95rem' }, t('Store URL')),
+    section(t('Store URL')),
     h('div', { class: 'row', style: 'gap:.5rem; flex-wrap:wrap; align-items:center' },
       urlReadout, copyBtn),
 
     // 2. Slug rename
-    h('h3', { style: 'margin:1.5rem 0 .25rem; font-size:.95rem' }, t('Rename slug')),
+    section(t('Rename slug')),
     h('div', { class: 'row', style: 'gap:.5rem; align-items:center; flex-wrap:wrap' },
       slugInput, slugSaveBtn),
-    h('p', { class: 'muted', style: 'font-size:.8rem; margin:.25rem 0 0' },
+    h('p', { class: 'muted', style: 'font-size:.78rem; margin:.25rem 0 0' },
       t('Lowercase letters, digits, and hyphens. Old URLs stop working when you save — share the new one.')),
 
-    // 3. Tagline + website
-    h('h3', { style: 'margin:1.5rem 0 .25rem; font-size:.95rem' }, t('About')),
+    // 3. Logo
+    section(t('Logo')),
+    h('div', { class: 'row', style: 'gap:.75rem; align-items:center; flex-wrap:wrap' },
+      logoThumb,
+      h('div', { style: 'display:flex; flex-direction:column; gap:.4rem' },
+        h('div', { class: 'row', style: 'gap:.5rem; align-items:center; flex-wrap:wrap' },
+          logoInput, logoUploadBtn, logoDeleteBtn),
+        h('p', { class: 'muted', style: 'font-size:.78rem; margin:0' },
+          t('PNG, JPEG, WebP, or SVG. Max 5 MB. Used on the recap PDF and the public landing.')))),
+
+    // 4. Brand colors
+    section(t('Brand colors')),
+    h('p', { class: 'muted', style: 'font-size:.78rem; margin:0 0 .5rem' },
+      t('Override the platform palette on /o/{{slug}} and the per-event store page. Leave a field blank to keep the default.', { slug: 'mindrace' })),
+    h('div', { style: 'display:flex; flex-direction:column; gap:.45rem' },
+      colorRow('accent', t('Accent')),
+      colorRow('accent_secondary', t('Accent (secondary)')),
+      colorRow('background', t('Background')),
+      colorRow('text', t('Text'))),
+    h('div', { class: 'row', style: 'gap:.5rem; margin-top:.5rem' }, colorResetBtn),
+
+    // 5. Cover image
+    section(t('Cover image')),
+    h('p', { class: 'muted', style: 'font-size:.78rem; margin:0 0 .5rem' },
+      t('Used as the hero on /o/{{slug}}. Recommended 1600×900, PNG/JPEG/WebP.', { slug: 'mindrace' })),
+    coverPreview,
+    h('div', { class: 'row', style: 'gap:.5rem; align-items:center; flex-wrap:wrap; margin-top:.5rem' },
+      coverInput, coverUploadBtn, coverDeleteBtn),
+
+    // 6. Tagline + website (saved together with colors via Save)
+    section(t('About')),
     h('label', { class: 'field', style: 'display:flex; flex-direction:column; gap:.25rem' },
       h('div', { class: 'row', style: 'justify-content:space-between' },
         h('span', { class: 'muted', style: 'font-size:.8rem' }, t('Tagline')),
@@ -16280,18 +16559,27 @@ function renderSettingsPublicProfileCard() {
     h('label', { class: 'field', style: 'display:flex; flex-direction:column; gap:.25rem; margin-top:.5rem' },
       h('span', { class: 'muted', style: 'font-size:.8rem' }, t('Website')),
       websiteInput),
-    h('div', { class: 'row', style: 'gap:.5rem; margin-top:.5rem' }, profileSaveBtn),
-
-    // 4. Cover image
-    h('h3', { style: 'margin:1.5rem 0 .25rem; font-size:.95rem' }, t('Cover image')),
-    h('p', { class: 'muted', style: 'font-size:.8rem; margin:0 0 .5rem' },
-      t('Used as the hero on /o/{{slug}}. Recommended 1600×900, PNG/JPEG/WebP.', { slug: 'mindrace' })),
-    coverPreview,
-    h('div', { class: 'row', style: 'gap:.5rem; align-items:center; flex-wrap:wrap; margin-top:.5rem' },
-      coverInput, coverUploadBtn, coverDeleteBtn),
+    h('div', { class: 'row', style: 'gap:.5rem; margin-top:.75rem' }, profileSaveBtn),
 
     status,
   );
+
+  // Two-column grid on wide viewports — controls left, preview
+  // right. On narrow viewports the grid collapses to one column;
+  // CSS `repeat(auto-fit, minmax(20rem, 1fr))` would break the
+  // intent (we want exactly 2 columns when there's room) so we
+  // hand-roll the breakpoint via a media query embedded in the
+  // grid container's class.
+  card.append(
+    h('h2', {}, t('Branding')),
+    h('p', { class: 'muted', style: 'font-size:.9rem' },
+      t('Everything that surfaces on your public landing and store. Customers see this — keep it tidy.')),
+    h('div', {
+      class: 'org-branding-grid',
+      style: 'display:grid; grid-template-columns: minmax(0,1fr); gap:1.25rem; margin-top:.75rem',
+    },
+      controls,
+      previewPane));
   refresh();
   return card;
 }
