@@ -140,6 +140,16 @@ func Slugify(input string) string {
 			s = s[:MaxLen]
 		}
 	}
+	// Reserved-slug clash: "www", "api", "admin" etc. would Validate-
+	// fail if returned verbatim. The auto-derive contract is "always
+	// produces something the caller can save", so suffix to push it
+	// out of the reserved namespace.
+	if Reserved[s] {
+		s = s + "-org"
+		if len(s) > MaxLen {
+			s = s[:MaxLen]
+		}
+	}
 	return s
 }
 

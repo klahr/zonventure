@@ -12,6 +12,7 @@ package mdx
 
 import (
 	"bytes"
+	"html"
 	"strings"
 	"sync"
 
@@ -116,9 +117,10 @@ const MaxRenderBytes = 64 * 1024
 // output (handy so callers can flow the field through unchanged when
 // the arranger left it blank). Sources over MaxRenderBytes are
 // truncated with a marker so we never feed goldmark an unbounded
-// input. On the unlikely chance goldmark fails, the raw source is
-// returned — that's safer than nothing at all, and the default
-// renderer escapes any stray HTML so the output is still XSS-safe.
+// input. On the unlikely chance goldmark fails (or panics — fuzzing
+// has surfaced inputs like `0<0@0>` that crash inside the AutoLink
+// parser), the raw source is returned escaped via html.EscapeString
+// so the output stays XSS-safe even on the failure path.
 func Render(src string) string {
 	if src == "" {
 		return ""
@@ -141,9 +143,22 @@ func Render(src string) string {
 			),
 		)
 	})
+	return renderWithRecover(src)
+}
+
+// renderWithRecover wraps the Convert call in a defer/recover so a
+// panic from goldmark (slice-out-of-range on malformed autolinks,
+// etc.) doesn't crash the request handler. On panic we fall back to
+// the HTML-escaped raw source so the output is always safe.
+func renderWithRecover(src string) (out string) {
+	defer func() {
+		if r := recover(); r != nil {
+			out = html.EscapeString(src)
+		}
+	}()
 	var buf bytes.Buffer
 	if err := md.Convert([]byte(src), &buf); err != nil {
-		return src
+		return html.EscapeString(src)
 	}
 	return buf.String()
 }

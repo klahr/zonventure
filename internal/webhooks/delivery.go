@@ -160,6 +160,15 @@ func (w *Worker) Run(ctx context.Context) {
 // fetched, attempted, and recorded individually so a single bad row
 // doesn't poison the batch. Order: oldest next_attempt_at first, so
 // retried-and-due rows precede freshly-enqueued ones (fairness).
+//
+// KNOWN LIMITATION (audit H2): the row lock is held across the
+// customer HTTP call (up to 30 s), so a slow-loris customer pins a
+// Postgres backend the whole time and the queue serialises through
+// a single in-flight delivery. The fix is a two-tx design — claim
+// with `in_flight_until` lease in tx 1, send + update in tx 2 — plus
+// per-row parallelism, but it requires a schema migration to add
+// the lease column. Tracked for a follow-up PR; for the typical
+// single-arranger self-host the current shape is fine.
 func (w *Worker) tick(ctx context.Context) error {
 	for {
 		// Pull one due row at a time and SKIP LOCKED so multiple

@@ -475,21 +475,7 @@ func ConsumeEmailChangeToken(ctx context.Context, db *sql.DB, token string) (Use
 		return User{}, err
 	}
 
-	var (
-		u     User
-		orgID sql.NullInt64
-	)
-	if err := db.QueryRowContext(ctx, `
-		SELECT id, username, role, org_id, COALESCE(email,''), (email_verified <> 0)
-		FROM users WHERE id = $1
-	`, userID).Scan(&u.ID, &u.Username, &u.Role, &orgID, &u.Email, &u.EmailVerified); err != nil {
-		return User{}, err
-	}
-	if orgID.Valid {
-		v := orgID.Int64
-		u.OrgID = &v
-	}
-	return u, nil
+	return loadUserByID(ctx, db, userID)
 }
 
 // issueOneShotToken is the shared body of IssueVerificationToken and

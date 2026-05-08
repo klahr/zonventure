@@ -20,7 +20,6 @@ func TestPlatformFee_Compute(t *testing.T) {
 		{"disabled returns zero", PlatformFee{}, 1000, 0},
 		{"percent only — small charge", PlatformFee{PercentBPS: 800}, 100, 8},  // 8% of €1.00 = €0.08
 		{"percent only — large charge", PlatformFee{PercentBPS: 800}, 12000, 960}, // 8% of €120 = €9.60
-		{"floor only — wins on small", PlatformFee{MinCents: 100}, 50, 100},     // €0.50 ticket → €1 floor
 		{"floor only — wins regardless", PlatformFee{MinCents: 100}, 5000, 100}, // floor still wins (no percent)
 		// max(percent, floor): floor wins when percent rounds below it.
 		{"hybrid — floor wins on cheap", PlatformFee{PercentBPS: 800, MinCents: 100}, 800, 100},  // 8% of €8 = €0.64 → €1 floor wins
@@ -28,6 +27,14 @@ func TestPlatformFee_Compute(t *testing.T) {
 		{"hybrid — exactly at crossover", PlatformFee{PercentBPS: 800, MinCents: 100}, 1250, 100}, // 8% of €12.50 = €1, tie → floor (since percent > floor is the test)
 		{"zero price returns zero", PlatformFee{PercentBPS: 800, MinCents: 100}, 0, 0},
 		{"negative price returns zero", PlatformFee{PercentBPS: 800, MinCents: 100}, -100, 0},
+		// Clamp: Stripe rejects ApplicationFee >= total. A floor of
+		// €1 against a €0.50 ticket clamps to (price-1) so the
+		// downstream Stripe call doesn't 400 opaquely. The audit's
+		// MEDIUM note recommends the listing page filter such
+		// tickets out — the clamp is the safety net.
+		{"floor exceeds price clamps to price-1", PlatformFee{MinCents: 100}, 50, 49},
+		{"floor equals price clamps to price-1", PlatformFee{MinCents: 100}, 100, 99},
+		{"floor 1 below price stays untouched", PlatformFee{MinCents: 100}, 101, 100},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

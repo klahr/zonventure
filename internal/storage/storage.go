@@ -20,13 +20,25 @@ package storage
 import (
 	"context"
 	"errors"
+	"fmt"
 )
 
-// ErrNotFound is returned by Get/Put/Delete when the addressed entity
-// row doesn't exist (Get also returns it when the entity exists but
-// has no avatar stored). Wrapped, so callers should compare with
-// errors.Is.
-var ErrNotFound = errors.New("storage: not found")
+// ErrNotFound is the umbrella sentinel for "blob unavailable" — the
+// addressed entity row doesn't exist OR the row exists but has no
+// avatar stored. Existing callers compare with errors.Is(err,
+// ErrNotFound) and treat both cases identically, which is fine for
+// the avatar/cover serving paths we have today (404 fallback either
+// way).
+//
+// New code that needs to distinguish "team doesn't exist" from "team
+// has no avatar yet" can compare against ErrEntityMissing or
+// ErrNoBlob directly. Both wrap ErrNotFound, so legacy callers
+// continue to work.
+var (
+	ErrNotFound      = errors.New("storage: not found")
+	ErrEntityMissing = fmt.Errorf("storage: entity missing: %w", ErrNotFound)
+	ErrNoBlob        = fmt.Errorf("storage: no blob: %w", ErrNotFound)
+)
 
 // Blobs is the seam wired into the admin and public handlers.
 // Every method here owns one entity's avatar; helpers that span

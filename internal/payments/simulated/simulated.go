@@ -30,7 +30,6 @@ import (
 	"html"
 	"io"
 	"net/http"
-	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -67,6 +66,15 @@ type Provider struct {
 	// events. Substituted in tests so the auto-confirm flow can be
 	// exercised without standing up a real http server.
 	HTTPClient *http.Client
+
+	// secret is a per-process random value the simulated provider
+	// stamps on its outbound webhook deliveries (X-Simulated-Secret)
+	// and demands on every inbound VerifyAndParseWebhook call. It
+	// turns the "no signature check" gap into a defence-in-depth
+	// posture: a forgotten ZV_ENV that leaves the simulated route
+	// mounted in staging no longer accepts unauthenticated POSTs
+	// from the public internet.
+	secret string
 }
 
 // Compile-time interface assertion — same posture as the Stripe
@@ -83,11 +91,17 @@ func New(webhookURL string) *Provider {
 		sessions:   make(map[string]*session),
 		WebhookURL: webhookURL,
 		HTTPClient: &http.Client{Timeout: 5 * time.Second},
+		secret:     newSessionID(),
 	}
 }
 
 // Name identifies this impl in logs / metrics.
 func (p *Provider) Name() string { return "simulated" }
+
+// Secret returns the per-process X-Simulated-Secret value. Exposed
+// for tests that drive VerifyAndParseWebhook directly without going
+// through deliver(). Production handlers never reach for it.
+func (p *Provider) Secret() string { return p.secret }
 
 // CreateCheckout stores the params under a fresh session id and
 // returns a URL pointing at the dev confirm route. The buyer's
@@ -113,10 +127,15 @@ func (p *Provider) CreateCheckout(ctx context.Context, params payments.CheckoutP
 }
 
 // VerifyAndParseWebhook parses a JSON body emitted by the dev
-// confirm handler. No signature check — the body is locally
-// synthesised, never crosses the network from a third party.
-// Operators who run this in production have already lost.
+// confirm handler. The header X-Simulated-Secret must match the
+// per-process secret stamped on outbound deliveries — a defence in
+// depth on top of the ZV_ENV gate. The body itself is trusted (this
+// provider is dev-only) but the secret check stops a forgotten
+// ZV_ENV from turning the route into a public fulfilment buffet.
 func (p *Provider) VerifyAndParseWebhook(body []byte, headers http.Header) (payments.Event, error) {
+	if got := headers.Get("X-Simulated-Secret"); got == "" || got != p.secret {
+		return payments.Event{}, errors.New("simulated: shared secret mismatch")
+	}
 	var ev payments.Event
 	if err := json.Unmarshal(body, &ev); err != nil {
 		return payments.Event{}, fmt.Errorf("simulated: parse: %w", err)
@@ -229,10 +248,11 @@ func (p *Provider) devConfirm(w http.ResponseWriter, r *http.Request) {
 		Created:  time.Now(),
 		Metadata: s.params.Metadata,
 		Checkout: &payments.CheckoutDetail{
-			SessionID:   sid,
-			AmountTotal: s.params.AmountCents,
-			Currency:    strings.ToLower(s.params.Currency),
-			ChargeID:    chargeID,
+			SessionID:     sid,
+			AmountTotal:   s.params.AmountCents,
+			Currency:      strings.ToLower(s.params.Currency),
+			ChargeID:      chargeID,
+			PaymentStatus: payments.PaymentStatusPaid,
 		},
 	}
 	if err := p.deliver(r.Context(), ev); err != nil {
@@ -282,6 +302,7 @@ func (p *Provider) deliver(ctx context.Context, ev payments.Event) error {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Simulated-Secret", p.secret)
 	resp, err := p.HTTPClient.Do(req)
 	if err != nil {
 		return err
@@ -328,13 +349,3 @@ func formatPrice(cents int64, currency string) string {
 	}
 }
 
-// ensureURLPath is a tiny defensive helper used elsewhere — kept
-// here in case the WebhookURL is missing a scheme.
-//
-//nolint:unused
-func ensureURLPath(s string) string {
-	if u, err := url.Parse(s); err == nil && u.Scheme != "" {
-		return s
-	}
-	return "http://localhost:8080" + strings.TrimPrefix(s, "/")
-}

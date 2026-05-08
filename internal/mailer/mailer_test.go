@@ -188,6 +188,54 @@ func TestBuildRFC5322_AttachmentLineWrapping(t *testing.T) {
 	}
 }
 
+// TestSanitizeHeader_StripsCRLF is the H1 regression guard. An attacker-
+// controlled header value containing CR / LF / NUL must never reach the
+// SMTP wire intact — that's the canonical email-header-injection vector
+// (BCC smuggling, From spoofing, SMTP command injection in older relays).
+func TestSanitizeHeader_StripsCRLF(t *testing.T) {
+	cases := []struct {
+		in, want string
+	}{
+		{"Hello", "Hello"},
+		{"foo\r\nBcc: victim@example.com", "fooBcc: victim@example.com"},
+		{"line1\nline2", "line1line2"},
+		{"\x00null", "null"},
+		{"trailing\r", "trailing"},
+		{"keepüumlauts", "keepüumlauts"},
+	}
+	for _, c := range cases {
+		if got := sanitizeHeader(c.in); got != c.want {
+			t.Errorf("sanitizeHeader(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+// TestValidateAddrSafe_RejectsControl is the H1 regression guard for
+// the SMTP envelope (MAIL FROM / RCPT TO). net/smtp doesn't validate;
+// a recipient like "ok@x\r\nRCPT TO:<victim>" would be passed straight
+// through to the server's command stream.
+func TestValidateAddrSafe_RejectsControl(t *testing.T) {
+	good := []string{"a@b.example", "Name@example.com"}
+	for _, g := range good {
+		if err := validateAddrSafe(g); err != nil {
+			t.Errorf("validateAddrSafe(%q) = %v, want nil", g, err)
+		}
+	}
+	bad := []string{
+		"",
+		"ok@x\r\n",
+		"a@b\nRCPT TO:<v@x>",
+		"a@b ",
+		"a, b",
+		"a\tb",
+	}
+	for _, b := range bad {
+		if err := validateAddrSafe(b); err == nil {
+			t.Errorf("validateAddrSafe(%q) = nil, want error", b)
+		}
+	}
+}
+
 func TestExtractAddr(t *testing.T) {
 	cases := []struct {
 		in, want string

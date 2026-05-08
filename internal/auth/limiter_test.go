@@ -118,7 +118,8 @@ func TestLimiter_NilSafe(t *testing.T) {
 	l.RecordSuccess("x", "y") // must not panic
 }
 
-func TestClientIP_TrustsXFFFirstHop(t *testing.T) {
+func TestClientIP_TrustsXFFFromTrustedPeer(t *testing.T) {
+	withTrustedProxies(t, "127.0.0.0/8")
 	r := httptest.NewRequest("POST", "/", nil)
 	r.RemoteAddr = "127.0.0.1:54321"
 	r.Header.Set("X-Forwarded-For", "203.0.113.7, 10.0.0.1")
@@ -127,7 +128,23 @@ func TestClientIP_TrustsXFFFirstHop(t *testing.T) {
 	}
 }
 
+// TestClientIP_IgnoresXFFFromUntrustedPeer is the C6 regression
+// guard. Without a trusted-proxy gate, an attacker on a directly-
+// reachable deployment forges X-Forwarded-For and dodges per-IP
+// rate limiting + audit logging. ClientIP must fall back to the
+// real remote address whenever the immediate peer isn't whitelisted.
+func TestClientIP_IgnoresXFFFromUntrustedPeer(t *testing.T) {
+	withTrustedProxies(t) // empty: trust nothing
+	r := httptest.NewRequest("POST", "/", nil)
+	r.RemoteAddr = "203.0.113.99:54321"
+	r.Header.Set("X-Forwarded-For", "10.0.0.1, 192.168.0.1")
+	if got := ClientIP(r); got != "203.0.113.99" {
+		t.Fatalf("ClientIP = %q, want 203.0.113.99 (XFF from untrusted peer must be ignored)", got)
+	}
+}
+
 func TestClientIP_FallsBackToRemoteAddr(t *testing.T) {
+	withTrustedProxies(t, "127.0.0.0/8")
 	r := httptest.NewRequest("POST", "/", nil)
 	r.RemoteAddr = "127.0.0.1:54321"
 	if got := ClientIP(r); got != "127.0.0.1" {

@@ -168,7 +168,9 @@ func TestVerifyAndParseWebhook_RoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	out, err := prov.VerifyAndParseWebhook(body, http.Header{})
+	hdr := http.Header{}
+	hdr.Set("X-Simulated-Secret", prov.Secret())
+	out, err := prov.VerifyAndParseWebhook(body, hdr)
 	if err != nil {
 		t.Fatalf("VerifyAndParseWebhook: %v", err)
 	}

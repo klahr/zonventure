@@ -382,6 +382,10 @@ func (h *Handlers) createTicketCheckoutSession(
 		// account and the platform takes its cut off the top.
 		ConnectedAccountID:  connectedAccountID,
 		ApplicationFeeCents: applicationFeeCents,
+		// Stable per-ticket-purchase: a retried BuyTicket handler
+		// (transport timeout) receives the same Stripe session back
+		// instead of an orphan duplicate.
+		IdempotencyKey: fmt.Sprintf("checkout-ticket-%d", purchaseID),
 	})
 	if err != nil {
 		return "", "", err
@@ -401,6 +405,13 @@ func (h *Handlers) handleTicketCheckoutCompleted(ctx context.Context, event paym
 	}
 	idStr := event.Metadata["zv_ticket_purchase_id"]
 	if idStr == "" {
+		return nil
+	}
+	// Same fail-closed posture as handleCheckoutCompleted: an "unpaid"
+	// async session must not mail the magic link or create the team.
+	if !event.Checkout.PaymentStatus.FulfilmentReady() {
+		logx.Warn("payments.ticket_checkout.unpaid_skipped",
+			"ticket_purchase_id", idStr, "status", string(event.Checkout.PaymentStatus))
 		return nil
 	}
 	var purchaseID int64

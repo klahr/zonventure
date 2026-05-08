@@ -140,11 +140,12 @@ type Config struct {
 // sweeper that drops entries past their lockout window. Without the
 // sweep, a patient attacker rotating fake usernames or IPs would
 // grow the in-memory maps unboundedly over the process's lifetime.
-// The goroutine uses context.Background so it lives for the process;
-// the OS reaps it on shutdown.
-func newSweptLimiter() *auth.LoginLimiter {
+// ctx scopes the goroutine to the server's lifetime so a graceful
+// shutdown can drain them cleanly; passing context.Background() is
+// equivalent to "live until the process exits".
+func newSweptLimiter(ctx context.Context) *auth.LoginLimiter {
 	l := auth.NewLoginLimiter()
-	go l.RunSweeper(context.Background(), 5*time.Minute)
+	go l.RunSweeper(ctx, 5*time.Minute)
 	return l
 }
 
@@ -176,29 +177,28 @@ func New(cfg Config) http.Handler {
 
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
-	r.Use(middleware.RealIP)
+	// chi's RealIP rewrites RemoteAddr from X-Forwarded-* unconditionally,
+	// which on a directly-reachable deployment lets an attacker forge the
+	// header and dodge the per-IP limiter. trustedProxyRealIP gates the
+	// rewrite behind auth.IsTrustedPeer so XFF is only honoured when the
+	// immediate peer is in the operator-configured trusted set.
+	r.Use(trustedProxyRealIP)
 	r.Use(middleware.Recoverer)
+	// Baseline security headers wrap every response, including the
+	// short-circuit 301 from redirectMode and 503 from maintenanceFreeze
+	// below — without wrapping them first, those responses would lack
+	// CSP / X-Frame / X-Content-Type-Options. Costs nothing on a 301
+	// where the body is empty anyway; closes a real gap on the 503.
+	r.Use(securityHeaders)
 	// Cutover redirect: when the operator has flipped redirect mode,
 	// every non-allowlisted path 301s to the hosted instance so
-	// printed QR codes / emailed magic links keep working. Sits ahead
-	// of securityHeaders since CSP / X-Frame on a 301 is wasted bytes.
+	// printed QR codes / emailed magic links keep working.
 	r.Use(redirectMode)
 	// Maintenance-mode freeze: 503s mutations while the operator
 	// runs an org-bundle export so concurrent writes don't tear
 	// the snapshot. Reads pass through; the migrate toggles are
 	// allowlisted so the operator can still flip the flag back off.
 	r.Use(maintenanceFreeze)
-	// Baseline security headers on every response. Tight by default —
-	// the app loads fonts from Google's CDN (the embedded HTML pages
-	// reference fonts.googleapis.com / fonts.gstatic.com) and a few
-	// inline styles + scripts; the CSP allows those explicitly. No
-	// remote scripts, no remote XHR / fetch — every JS asset and
-	// API endpoint is same-origin. frame-ancestors 'none' blocks
-	// clickjacking by refusing to be iframed; X-Frame-Options is
-	// the legacy fallback for older browsers. Referrer-Policy
-	// strict-origin keeps team-share / recap / live tokens out of
-	// the Referer header on outbound link clicks.
-	r.Use(securityHeaders)
 	// Metrics middleware runs early so it records every request,
 	// including those rejected by auth or CSRF below. The collectors
 	// always increment; the /metrics scrape endpoint is only exposed
@@ -221,6 +221,16 @@ func New(cfg Config) http.Handler {
 		hub = ws.NewHub()
 	}
 
+	// One server-lifetime context drives every long-lived background
+	// goroutine spawned from here on (login-limiter sweepers, the
+	// public-rate-limiter sweep loop, and updateSvc below). Falls back
+	// to context.Background when the caller didn't supply one — that
+	// matches the historic "live for the process" posture but lets a
+	// future graceful-shutdown thread one in.
+	bgCtx := cfg.UpdateContext
+	if bgCtx == nil {
+		bgCtx = context.Background()
+	}
 	authH := &auth.Handlers{
 		DB:            cfg.DB,
 		SecureCookie:  cfg.SecureCookie,
@@ -229,9 +239,9 @@ func New(cfg Config) http.Handler {
 			FreePlayersPerEvent: admin.FreePlayersPerEvent,
 			Currency:            "EUR",
 		},
-		Limiter:       newSweptLimiter(),
-		ForgotLimiter: newSweptLimiter(),
-		TOTPLimiter:   newSweptLimiter(),
+		Limiter:       newSweptLimiter(bgCtx),
+		ForgotLimiter: newSweptLimiter(bgCtx),
+		TOTPLimiter:   newSweptLimiter(bgCtx),
 		TOTPKey:       cfg.TOTPKey,
 		Mailer:        cfg.Mailer,
 		PublicURL:     cfg.PublicURL,
@@ -266,10 +276,7 @@ func New(cfg Config) http.Handler {
 		importers.Register(teamimportxlsx.New())
 		importers.Register(teamimportiofxml.New())
 	}
-	updateCtx := cfg.UpdateContext
-	if updateCtx == nil {
-		updateCtx = context.Background()
-	}
+	updateCtx := bgCtx
 	updateSvc := updates.NewService(updates.Config{
 		Version:      cfg.Version,
 		ChangelogURL: cfg.ChangelogURL,
@@ -465,7 +472,7 @@ func New(cfg Config) http.Handler {
 	// the routes still hit the database; rate-limit per IP so a script
 	// can't brute-force or DoS them. Caps generously so a real viewer
 	// (with reconnect storms, tab refreshes, etc.) never trips it.
-	publicRL := newPublicLimiter()
+	publicRL := newPublicLimiter(bgCtx)
 	r.Group(func(r chi.Router) {
 		r.Use(publicRLMiddleware(publicRL))
 		r.Get("/live/{token}", servePage("web/live.html"))
@@ -1221,6 +1228,42 @@ const baselineCSP = "default-src 'self'; " +
 	"frame-ancestors 'none'; " +
 	"object-src 'none'; " +
 	"base-uri 'self'"
+
+// trustedProxyRealIP is a gated replacement for chi's middleware.RealIP.
+// chi's version rewrites RemoteAddr from X-Forwarded-For / X-Real-IP
+// regardless of who sent the request, which on a directly-reachable
+// deployment lets an attacker spoof their source IP and bypass per-IP
+// rate limits, audit logging, and lockouts. Here, the rewrite only
+// happens when auth.IsTrustedPeer reports the immediate peer is in the
+// operator-configured ZV_TRUSTED_PROXIES set; otherwise RemoteAddr is
+// left intact and the limiter / audit see the real edge address.
+func trustedProxyRealIP(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if auth.IsTrustedPeer(r) {
+			if real := firstForwardedAddr(r); real != "" {
+				r.RemoteAddr = real
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// firstForwardedAddr returns the leftmost X-Forwarded-For entry, or
+// X-Real-IP, or empty when neither is present. Matches the shape chi's
+// RealIP middleware produced (RemoteAddr is "<host>" with no port —
+// callers like net.SplitHostPort handle either shape).
+func firstForwardedAddr(r *http.Request) string {
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		if i := strings.IndexByte(xff, ','); i > 0 {
+			return strings.TrimSpace(xff[:i])
+		}
+		return strings.TrimSpace(xff)
+	}
+	if xri := r.Header.Get("X-Real-IP"); xri != "" {
+		return strings.TrimSpace(xri)
+	}
+	return ""
+}
 
 func securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

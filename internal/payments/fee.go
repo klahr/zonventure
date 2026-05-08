@@ -53,8 +53,10 @@ func (f PlatformFee) Enabled() bool {
 }
 
 // Compute returns the fee in cents for a charge of priceCents.
-// max(percent-of-price, floor). Negative or zero prices return 0
-// rather than something weird; the caller should already have
+// max(percent-of-price, floor), clamped strictly below priceCents
+// so Stripe (which rejects ApplicationFee >= total) never sees an
+// over-floor fee on a tiny ticket. Negative or zero prices return
+// 0 rather than something weird; the caller should already have
 // rejected free / negative tickets upstream but defensiveness is
 // cheap here.
 func (f PlatformFee) Compute(priceCents int64) int64 {
@@ -67,8 +69,20 @@ func (f PlatformFee) Compute(priceCents int64) int64 {
 	// ticket-cents × 10000 BPS, far above any plausible single
 	// purchase.
 	percent := priceCents * f.PercentBPS / 10000
-	if percent > f.MinCents {
-		return percent
+	fee := percent
+	if f.MinCents > fee {
+		fee = f.MinCents
 	}
-	return f.MinCents
+	// Clamp strictly below priceCents. Stripe ApplicationFee must
+	// be < total charge, so a €5 floor on a €3 ticket would
+	// otherwise produce an opaque 400 from Stripe at checkout
+	// time. Caller should also filter such tickets out of the
+	// public listing — see the audit's MEDIUM note.
+	if fee >= priceCents {
+		fee = priceCents - 1
+	}
+	if fee < 0 {
+		return 0
+	}
+	return fee
 }

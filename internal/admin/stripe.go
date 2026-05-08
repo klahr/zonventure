@@ -76,6 +76,11 @@ func (h *Handlers) createPurchaseCheckoutSession(ctx context.Context, purchaseID
 		CollectTaxID:    true,
 		CollectAddress:  true,
 		InvoiceCreation: true,
+		// Stable, derived from the local row id: a retried handler
+		// (transport timeout, browser double-submit) hits Stripe with
+		// the same key and gets the original session back instead of
+		// minting a duplicate.
+		IdempotencyKey: fmt.Sprintf("checkout-purchase-%d", purchaseID),
 	})
 	if err != nil {
 		return "", "", err
@@ -200,6 +205,17 @@ func (h *Handlers) handleCheckoutCompleted(ctx context.Context, event payments.E
 	if idStr == "" {
 		// Not one of ours (e.g. a sandbox event from a different
 		// integration sharing the same webhook secret). Skip silently.
+		return nil
+	}
+	// Async payment methods (ACH, BACS, PIX, …) land
+	// checkout.session.completed before the funds actually clear. The
+	// session reports payment_status="unpaid" until the matching
+	// payment_intent.succeeded follow-up. Fulfilling here would grant
+	// the goods on a not-yet-paid order. Fail closed; an operator who
+	// turns on async methods must wire payment_intent.succeeded too.
+	if !event.Checkout.PaymentStatus.FulfilmentReady() {
+		logx.Warn("payments.checkout.unpaid_skipped",
+			"purchase_id", idStr, "status", string(event.Checkout.PaymentStatus))
 		return nil
 	}
 	var purchaseID int64
@@ -377,7 +393,13 @@ func (h *Handlers) RefundPurchase(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rf, err := h.Provider.Refund(r.Context(), payments.RefundParams{ChargeID: chargeID.String})
+	rf, err := h.Provider.Refund(r.Context(), payments.RefundParams{
+		ChargeID: chargeID.String,
+		// Stable per-purchase: a double-click on the admin Refund
+		// button retries with the same key and Stripe returns the
+		// original refund object rather than cutting a duplicate.
+		IdempotencyKey: fmt.Sprintf("refund-purchase-%d", purchaseID),
+	})
 	if err != nil {
 		logx.Error("payments.refund.new_failed",
 			"purchase_id", purchaseID, "charge_id", chargeID.String, "err", err.Error())
@@ -423,6 +445,22 @@ func (h *Handlers) handleChargeRefunded(ctx context.Context, event payments.Even
 		return nil
 	}
 	chargeID := event.Charge.ID
+	// charge.refunded fires for every refund delta. A €5 partial
+	// refund on a €100 ticket arrives in this handler the same shape
+	// as a full €100 refund. Flipping the purchase to 'refunded' on
+	// a partial would withdraw the team and revoke their slots —
+	// catastrophic for the buyer, and recoverable only by a manual
+	// undo. Skip non-full refunds; the partial is still visible on
+	// the Stripe dashboard, and the operator can complete the full
+	// refund there if that was the intent.
+	if !event.Charge.FullyRefunded() {
+		logx.Info("payments.refund.partial_skipped",
+			"charge_id", chargeID,
+			"amount_cents", event.Charge.AmountCents,
+			"amount_refunded", event.Charge.AmountRefunded,
+			"refunded_flag", event.Charge.Refunded)
+		return nil
+	}
 	// Capture the affected rows' org + purchase ids in the same
 	// statement that flips the state — a separate SELECT after the
 	// UPDATE could race with a parallel deletion.

@@ -52,16 +52,20 @@ type Conn struct {
 // Context returns a context that is cancelled when the connection closes.
 func (c *Conn) Context() context.Context { return c.ctx }
 
-// Send queues a pre-encoded Msg for delivery. Drops silently if the queue
-// is full — better than blocking a publisher behind one lagging client.
+// Send queues a pre-encoded Msg for delivery. Drops silently if the
+// queue is full — better than blocking a publisher behind one lagging
+// client. Earlier versions cancelled the connection on the first
+// queue-full event, which turned a transient burst (rapid position
+// updates during a hint reveal, say) into a permanent disconnect for
+// the player. We rely instead on the writer goroutine + 30 s ping to
+// notice a truly-dead peer and tear down via err.
 func (c *Conn) Send(b []byte) {
 	select {
 	case c.out <- b:
 	case <-c.ctx.Done():
 	default:
-		// Queue full: the peer is too slow. Tear the connection down so the
-		// hub can stop publishing to this dead end.
-		c.cancel()
+		// Drop silently: the peer is momentarily slow. The next
+		// publish that lands when the channel has space goes through.
 	}
 }
 

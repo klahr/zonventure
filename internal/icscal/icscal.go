@@ -339,8 +339,12 @@ func formatTime(t time.Time) string {
 
 // Escape applies RFC 5545 §3.3.11 text escaping. Values may not
 // contain raw backslash, semicolon, comma, or newline; each must
-// be replaced with the listed sequence.
+// be replaced with the listed sequence. Other C0 control bytes
+// (NUL, BEL, etc.) are stripped — RFC 5545 limits property values
+// to printable + folding-whitespace, and at least Outlook chokes
+// on a NUL inside SUMMARY.
 func Escape(s string) string {
+	s = stripControl(s)
 	r := strings.NewReplacer(
 		`\`, `\\`,
 		";", `\;`,
@@ -350,6 +354,24 @@ func Escape(s string) string {
 		"\r", `\n`,
 	)
 	return r.Replace(s)
+}
+
+// stripControl drops C0 control bytes other than CR/LF/TAB. CR/LF are
+// handled by the escape replacer above; TAB is legal as folding ws.
+func stripControl(s string) string {
+	if !strings.ContainsAny(s, "\x00\x01\x02\x03\x04\x05\x06\x07\x08\x0B\x0C\x0E\x0F\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1A\x1B\x1C\x1D\x1E\x1F\x7F") {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if (c < 0x20 && c != '\t' && c != '\r' && c != '\n') || c == 0x7F {
+			continue
+		}
+		b.WriteByte(c)
+	}
+	return b.String()
 }
 
 // paramQuote wraps a parameter value in double quotes when it

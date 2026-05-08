@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"time"
 
+	"git.sr.ht/~klahr/zv/internal/logx"
 	"git.sr.ht/~klahr/zv/internal/tokenx"
 )
 
@@ -289,27 +290,6 @@ func VerifyPassword(ctx context.Context, db *sql.DB, identifier, password string
 func CompleteLogin(ctx context.Context, w sessionWriter, u User, factors []Factor, ua, ip string, activeOrgID sql.NullInt64) (string, error) {
 	_ = factors // reserved for future use; see doc comment.
 	return newSession(ctx, w, u.ID, ua, ip, activeOrgID)
-}
-
-// Login validates credentials and creates a new session row. Thin
-// shim around VerifyPassword + CompleteLogin so existing callers
-// (set-password flow, tests) keep compiling. The login handler now
-// uses the two-step variant directly so it can interpose a TOTP
-// challenge between verification and session minting.
-func Login(ctx context.Context, db *sql.DB, username, password string) (User, string, error) {
-	u, err := VerifyPassword(ctx, db, username, password)
-	if err != nil {
-		return u, "", err
-	}
-	var active sql.NullInt64
-	if u.OrgID != nil {
-		active = sql.NullInt64{Int64: *u.OrgID, Valid: true}
-	}
-	token, err := CompleteLogin(ctx, db, u, []Factor{FactorPassword}, "", "", active)
-	if err != nil {
-		return User{}, "", err
-	}
-	return u, token, nil
 }
 
 // SetInitialPassword assigns a first password to an account that was
@@ -591,10 +571,15 @@ func Lookup(ctx context.Context, db *sql.DB, token string) (User, bool, error) {
 	}
 	// Bump last_used_at, but throttle: at most one write per minute
 	// per session keeps the per-request DB cost negligible while
-	// still getting near-real-time inactivity detection.
+	// still getting near-real-time inactivity detection. Errors are
+	// best-effort but logged — a persistently failing UPDATE means
+	// last_used_at never advances and a long-lived legitimate
+	// session looks idle on the next visit and gets killed.
 	if !haveLastUsed || now.Sub(lastUsedAt) > sessionLastUsedBumpInterval {
-		_, _ = db.ExecContext(ctx,
-			`UPDATE sessions SET last_used_at = now_text() WHERE token = $1`, token)
+		if _, err := db.ExecContext(ctx,
+			`UPDATE sessions SET last_used_at = now_text() WHERE token = $1`, token); err != nil {
+			logx.Warn("auth.session.last_used_bump_failed", "err", err.Error())
+		}
 	}
 	return u, true, nil
 }

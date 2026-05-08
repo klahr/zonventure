@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"net/http"
 	"sync"
 	"time"
@@ -37,20 +38,26 @@ const (
 	publicRLMaxRequests = 120
 )
 
-func newPublicLimiter() *publicLimiter {
+func newPublicLimiter(ctx context.Context) *publicLimiter {
 	l := &publicLimiter{counts: map[string]*publicCount{}, now: time.Now}
-	go l.sweepLoop()
+	go l.sweepLoop(ctx)
 	return l
 }
 
 // sweepLoop drops stale buckets so the map doesn't grow unboundedly
 // across the lifetime of the server. Five-minute cadence is plenty —
 // we just want to prune inactive IPs, not maintain second-level
-// freshness.
-func (l *publicLimiter) sweepLoop() {
+// freshness. Exits cleanly when ctx is cancelled (graceful shutdown).
+func (l *publicLimiter) sweepLoop(ctx context.Context) {
+	t := time.NewTicker(5 * time.Minute)
+	defer t.Stop()
 	for {
-		time.Sleep(5 * time.Minute)
-		l.sweep()
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			l.sweep()
+		}
 	}
 }
 

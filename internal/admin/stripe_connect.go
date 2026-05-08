@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -115,6 +116,12 @@ func (h *Handlers) StartStripeConnect(w http.ResponseWriter, r *http.Request) {
 		newID, err := mp.CreateConnectedAccount(r.Context(), payments.ConnectedAccountParams{
 			Email:       strings.TrimSpace(me.Email),
 			DisplayName: orgName,
+			// Stable per-org: even if the local UPDATE below fails
+			// after a successful CreateConnectedAccount, a retry
+			// must hit Stripe with the same key and get the original
+			// account id back rather than provisioning a second
+			// acct_xxx (with its own KYC requirements).
+			IdempotencyKey: fmt.Sprintf("connect-org-%d", orgID),
 		})
 		if err != nil {
 			logx.Warn("admin.stripe_connect.create", "org", orgID, "err", err.Error())

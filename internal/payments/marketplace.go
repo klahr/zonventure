@@ -59,6 +59,13 @@ type ConnectedAccountParams struct {
 	Email       string
 	Country     string
 	DisplayName string
+
+	// IdempotencyKey deduplicates retried CreateConnectedAccount
+	// calls. A retried "Connect Stripe" handler must not provision
+	// two acct_xxx accounts (each requiring KYC, each costing the
+	// arranger separate onboarding steps). Callers derive from the
+	// local org id, e.g. "connect-org-42".
+	IdempotencyKey string
 }
 
 // AccountLinkParams describes a hosted onboarding URL request.

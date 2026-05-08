@@ -135,11 +135,14 @@ func (p *Provider) CreateCheckout(ctx context.Context, params payments.CheckoutP
 		}
 	}
 
-	// stripe-go doesn't accept ctx on CheckoutSession.New; deadline
-	// is enforced by the package-level HTTP client. Caller-supplied
-	// cancellation is the right fix for the SDK to expose, but for
-	// now we accept the parameter to keep the interface consistent.
-	_ = ctx
+	// Plumb ctx onto the embedded stripe.Params so the underlying
+	// HTTP request is bound to the caller's lifetime. A browser-close
+	// or upstream timeout now aborts the in-flight Stripe call rather
+	// than letting it run to completion against a vanished caller.
+	csParams.Context = ctx
+	if params.IdempotencyKey != "" {
+		csParams.IdempotencyKey = stripego.String(params.IdempotencyKey)
+	}
 
 	s, err := checkoutsession.New(csParams)
 	if err != nil {
@@ -177,9 +180,10 @@ func (p *Provider) VerifyAndParseWebhook(body []byte, headers http.Header) (paym
 		out.Type = payments.EventCheckoutCompleted
 		out.Metadata = sess.Metadata
 		detail := payments.CheckoutDetail{
-			SessionID:   sess.ID,
-			AmountTotal: sess.AmountTotal,
-			Currency:    string(sess.Currency),
+			SessionID:     sess.ID,
+			AmountTotal:   sess.AmountTotal,
+			Currency:      string(sess.Currency),
+			PaymentStatus: payments.PaymentStatus(sess.PaymentStatus),
 		}
 		if sess.Customer != nil {
 			detail.CustomerID = sess.Customer.ID
@@ -199,9 +203,11 @@ func (p *Provider) VerifyAndParseWebhook(body []byte, headers http.Header) (paym
 		}
 		out.Type = payments.EventChargeRefunded
 		detail := payments.ChargeDetail{
-			ID:          ch.ID,
-			AmountCents: ch.Amount,
-			Currency:    string(ch.Currency),
+			ID:             ch.ID,
+			AmountCents:    ch.Amount,
+			AmountRefunded: ch.AmountRefunded,
+			Refunded:       ch.Refunded,
+			Currency:       string(ch.Currency),
 		}
 		if ch.Customer != nil {
 			detail.CustomerID = ch.Customer.ID
@@ -245,14 +251,17 @@ func (p *Provider) Refund(ctx context.Context, params payments.RefundParams) (pa
 		return payments.Refund{}, errors.New("stripe: missing charge id")
 	}
 	stripego.Key = p.SecretKey
-	_ = ctx
 
 	rp := &stripego.RefundParams{
 		Charge: stripego.String(params.ChargeID),
 	}
+	rp.Context = ctx
 	if params.RefundApplicationFee {
 		rp.RefundApplicationFee = stripego.Bool(true)
 		rp.ReverseTransfer = stripego.Bool(true)
+	}
+	if params.IdempotencyKey != "" {
+		rp.IdempotencyKey = stripego.String(params.IdempotencyKey)
 	}
 	rf, err := refund.New(rp)
 	if err != nil {
@@ -277,11 +286,11 @@ func (p *Provider) Refund(ctx context.Context, params payments.RefundParams) (pa
 // single-country deployments.
 func (p *Provider) CreateConnectedAccount(ctx context.Context, params payments.ConnectedAccountParams) (string, error) {
 	stripego.Key = p.SecretKey
-	_ = ctx
 
 	ap := &stripego.AccountParams{
 		Type: stripego.String(string(stripego.AccountTypeStandard)),
 	}
+	ap.Context = ctx
 	if params.Email != "" {
 		ap.Email = stripego.String(params.Email)
 	}
@@ -292,6 +301,9 @@ func (p *Provider) CreateConnectedAccount(ctx context.Context, params payments.C
 		ap.BusinessProfile = &stripego.AccountBusinessProfileParams{
 			Name: stripego.String(params.DisplayName),
 		}
+	}
+	if params.IdempotencyKey != "" {
+		ap.IdempotencyKey = stripego.String(params.IdempotencyKey)
 	}
 	a, err := account.New(ap)
 	if err != nil {
@@ -312,14 +324,15 @@ func (p *Provider) CreateAccountLink(ctx context.Context, params payments.Accoun
 		return "", errors.New("stripe: missing refresh/return URL")
 	}
 	stripego.Key = p.SecretKey
-	_ = ctx
 
-	link, err := accountlink.New(&stripego.AccountLinkParams{
+	alParams := &stripego.AccountLinkParams{
 		Account:    stripego.String(params.AccountID),
 		RefreshURL: stripego.String(params.RefreshURL),
 		ReturnURL:  stripego.String(params.ReturnURL),
 		Type:       stripego.String("account_onboarding"),
-	})
+	}
+	alParams.Context = ctx
+	link, err := accountlink.New(alParams)
 	if err != nil {
 		return "", err
 	}
@@ -337,9 +350,10 @@ func (p *Provider) GetConnectedAccount(ctx context.Context, accountID string) (p
 		return payments.ConnectedAccount{}, errors.New("stripe: missing account id")
 	}
 	stripego.Key = p.SecretKey
-	_ = ctx
 
-	a, err := account.GetByID(accountID, nil)
+	getParams := &stripego.AccountParams{}
+	getParams.Context = ctx
+	a, err := account.GetByID(accountID, getParams)
 	if err != nil {
 		return payments.ConnectedAccount{}, err
 	}
@@ -357,12 +371,13 @@ func (p *Provider) CustomerPortal(ctx context.Context, customerID, returnURL str
 		return "", errors.New("stripe: missing customer id")
 	}
 	stripego.Key = p.SecretKey
-	_ = ctx
 
-	sess, err := portalsession.New(&stripego.BillingPortalSessionParams{
+	psParams := &stripego.BillingPortalSessionParams{
 		Customer:  stripego.String(customerID),
 		ReturnURL: stripego.String(returnURL),
-	})
+	}
+	psParams.Context = ctx
+	sess, err := portalsession.New(psParams)
 	if err != nil {
 		return "", err
 	}

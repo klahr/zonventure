@@ -172,10 +172,11 @@ func TestStripeWebhook_CheckoutCompleted_HappyPath(t *testing.T) {
 
 	body := eventEnvelope(t, "evt_test_completed_1", "checkout.session.completed",
 		map[string]any{
-			"id":           "cs_test_abc",
-			"object":       "checkout.session",
-			"amount_total": 800,
-			"currency":     "eur",
+			"id":             "cs_test_abc",
+			"object":         "checkout.session",
+			"amount_total":   800,
+			"currency":       "eur",
+			"payment_status": "paid",
 			"metadata": map[string]string{
 				"zv_purchase_id": fmt.Sprintf("%d", purchaseID),
 			},
@@ -236,8 +237,9 @@ func TestStripeWebhook_CheckoutCompleted_UnknownPurchase(t *testing.T) {
 	// retry forever.
 	body := eventEnvelope(t, "evt_test_orphan_1", "checkout.session.completed",
 		map[string]any{
-			"id":     "cs_orphan",
-			"object": "checkout.session",
+			"id":             "cs_orphan",
+			"object":         "checkout.session",
+			"payment_status": "paid",
 			"metadata": map[string]string{
 				"zv_purchase_id": "999999",
 			},
@@ -275,9 +277,11 @@ func TestStripeWebhook_ChargeRefunded(t *testing.T) {
 
 	body := eventEnvelope(t, "evt_test_refunded_1", "charge.refunded",
 		map[string]any{
-			"id":     "ch_test_xyz",
-			"object": "charge",
-			"amount": 200,
+			"id":              "ch_test_xyz",
+			"object":          "charge",
+			"amount":          200,
+			"amount_refunded": 200,
+			"refunded":        true,
 		})
 	sig := stripeSign(t, body, testStripeWebhookKey)
 	if status, msg := postWebhook(t, ts, body, sig); status != http.StatusOK {

@@ -64,12 +64,17 @@ func EnsureCSRF(forceSecure bool) func(http.Handler) http.Handler {
 					SameSite: http.SameSiteLaxMode,
 					MaxAge:   csrfMaxAge,
 				})
-				// Stash the new value on the request itself so a
-				// RequireCSRF check that runs later in the same chain
-				// can still see "the cookie we just set" — this only
-				// matters for nested middleware setups; a fresh
-				// request's first POST is naturally the next round-trip.
-				r.AddCookie(&http.Cookie{Name: CSRFCookieName, Value: tok})
+				// We deliberately do NOT inject the freshly-minted token
+				// onto r so a downstream RequireCSRF can "see" it. The
+				// double-submit pattern requires that the attacker can't
+				// learn the cookie value — synthesising one in-flight
+				// would mean a same-request handler could accept any
+				// X-CSRF-Token header that matched the just-minted value
+				// the attacker also doesn't know, which is benign today
+				// but a refactor away from collapsing the protection.
+				// Real flows always GET-then-POST: the GET seeds the
+				// cookie, the browser stores it, the next request carries
+				// it naturally.
 			}
 			next.ServeHTTP(w, r)
 		})

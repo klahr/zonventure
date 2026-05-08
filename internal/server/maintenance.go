@@ -2,7 +2,6 @@ package server
 
 import (
 	"net/http"
-	"strings"
 
 	"git.sr.ht/~klahr/zv/internal/httpx"
 	"git.sr.ht/~klahr/zv/internal/settings"
@@ -61,10 +60,20 @@ func isMaintenanceAllowlisted(path string) bool {
 		"/api/admin/migrate/import":
 		return true
 	}
-	// Auth-related paths so a stale-session admin can sign back in
-	// to flip the flag. Without these, an operator who triggered
-	// maintenance and then got logged out is stuck.
-	if strings.HasPrefix(path, "/api/auth/") {
+	// A narrow auth allowlist so a stale-session admin can sign back
+	// in to flip the flag. The full /api/auth/ prefix used to be
+	// allowlisted here, but signup / forgot / reset / oidc-callback
+	// all write to users / sessions / email_verifications, which
+	// contaminates the snapshot the org-bundle export is supposed
+	// to capture. The list below covers only the read or narrow-
+	// write surfaces an operator needs to log back in.
+	switch path {
+	case "/api/auth/login",
+		"/api/auth/logout",
+		"/api/auth/whoami",
+		"/api/auth/totp/login",
+		"/api/auth/oidc/login",
+		"/api/auth/oidc/callback":
 		return true
 	}
 	return false

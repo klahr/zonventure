@@ -2,12 +2,12 @@ package auth
 
 import (
 	"context"
-	"crypto/rand"
+	"crypto/subtle"
 	"database/sql"
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"net/http"
+	"net/mail"
 	"strings"
 	"time"
 
@@ -17,7 +17,22 @@ import (
 	"git.sr.ht/~klahr/zv/internal/logx"
 	"git.sr.ht/~klahr/zv/internal/metrics"
 	"git.sr.ht/~klahr/zv/internal/orgslug"
+	"git.sr.ht/~klahr/zv/internal/tokenx"
 )
+
+// isASCIIPrintable reports whether s contains only printable ASCII
+// (0x20..0x7E). Non-printable, non-ASCII (Unicode confusables,
+// homoglyphs, RTL marks), and control bytes all fail. Used to reject
+// oddly-shaped IdP claims before they become usernames.
+func isASCIIPrintable(s string) bool {
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c < 0x20 || c > 0x7E {
+			return false
+		}
+	}
+	return true
+}
 
 // OIDCConfig is the operator-supplied OpenID Connect configuration.
 // SSO is gated by Enabled — when false, all SSO endpoints 404 and the
@@ -353,6 +368,30 @@ func (h *Handlers) OIDCCallback(w http.ResponseWriter, r *http.Request) {
 		oidcRedirectErr(w, r, "email_unverified")
 		return
 	}
+	// Normalise the IdP-provided email before it becomes the username.
+	// Trim surrounding whitespace, reject any non-printable byte, and
+	// require a plausible local@domain shape (mail.ParseAddress). An
+	// IdP returning oddly-shaped values (whitespace, unicode confusables,
+	// CRLF) would otherwise mint an account whose username collides
+	// visually with a legitimate user — combined with the auto-org-admin
+	// grant on the first user, that's a privilege-escalation seam.
+	claims.Email = strings.TrimSpace(claims.Email)
+	if !isASCIIPrintable(claims.Email) {
+		Record(r.Context(), h.DB, AuditEvent{
+			Event: EventLogin, OK: false, Username: claims.Email, IP: ip, UserAgent: ua,
+			Reason: "oidc_email_unprintable",
+		})
+		oidcRedirectErr(w, r, "email_unverified")
+		return
+	}
+	if _, err := mail.ParseAddress(claims.Email); err != nil {
+		Record(r.Context(), h.DB, AuditEvent{
+			Event: EventLogin, OK: false, Username: claims.Email, IP: ip, UserAgent: ua,
+			Reason: "oidc_email_unparseable",
+		})
+		oidcRedirectErr(w, r, "email_unverified")
+		return
+	}
 	if claims.Aud != "" && claims.Aud != h.OIDC.cfg.ClientID {
 		// go-oidc verifies aud, but defence in depth: also reject when
 		// a future change widens the verifier and our claim doesn't
@@ -602,14 +641,16 @@ func loadUserPostCommit(ctx context.Context, db *sql.DB, userID int64) (User, er
 }
 
 // amrIncludesMFA reports whether the IdP's `amr` claim includes a
-// value that conventionally signals multi-factor authentication.
-// The claim is provider-specific; the strings here cover Google
-// (`mfa`), Microsoft (`mfa`), and the Auth0 / generic OIDC
-// convention (`mfa`, `otp`, `swk`, `hwk`).
+// value that signals multi-factor authentication per RFC 8176. Only
+// `mfa` and `mca` (multi-channel) are accepted; the previous lenient
+// match included `otp`, `swk`, and `hwk`, but those are individual
+// factors not a multi-factor combination — accepting them would
+// allow a future "skip local TOTP because IdP did MFA" policy to
+// under-step on a single-factor login.
 func amrIncludesMFA(amr []string) bool {
 	for _, v := range amr {
 		switch strings.ToLower(v) {
-		case "mfa", "otp", "swk", "hwk":
+		case "mfa", "mca":
 			return true
 		}
 	}
@@ -670,14 +711,13 @@ func clearOIDCStateCookie(w http.ResponseWriter, r *http.Request, secureCfg bool
 	})
 }
 
-// randomURLSafeToken returns a high-entropy URL-safe random string of
-// at least n bytes of entropy. Used for state + nonce.
+// randomURLSafeToken is a thin wrapper around tokenx.New so the OIDC
+// state/nonce paths use the same primitive as the rest of the auth
+// package. Kept as a named function only because the call sites read
+// "randomURLSafeToken(24)" more clearly than "tokenx.New(24)" in
+// context — a future cleanup can inline.
 func randomURLSafeToken(n int) (string, error) {
-	b := make([]byte, n)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
-	}
-	return base64.RawURLEncoding.EncodeToString(b), nil
+	return tokenx.New(n)
 }
 
 // subtleEqualString is a constant-time equality check on two strings.
@@ -685,12 +725,5 @@ func randomURLSafeToken(n int) (string, error) {
 // which prefix matched. (Not load-bearing — the values are random
 // and short — but cheap to do right.)
 func subtleEqualString(a, b string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	var v byte
-	for i := 0; i < len(a); i++ {
-		v |= a[i] ^ b[i]
-	}
-	return v == 0
+	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
 }

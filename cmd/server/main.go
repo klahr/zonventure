@@ -241,6 +241,22 @@ func main() {
 	// verify (~50ms), re-opening the user-enumeration timing oracle
 	// VerifyPassword's user-not-found branch is meant to close.
 	auth.PrimeDecoyHash()
+	// ZV_TRUSTED_PROXIES is a comma-separated CIDR/IP list naming the
+	// reverse proxies whose X-Forwarded-* headers we honour. Empty
+	// (the default) means "trust nothing" — auth.ClientIP and the
+	// trustedProxyRealIP middleware ignore forwarded headers, which
+	// is the correct posture for a directly-reachable self-host. An
+	// operator behind nginx/Caddy/Cloudflare-Tunnel sets this to
+	// their internal subnet (e.g. "127.0.0.1,::1" for sidecar mode,
+	// "10.0.0.0/8" for a private VPC).
+	if spec := os.Getenv("ZV_TRUSTED_PROXIES"); spec != "" {
+		prefixes, err := auth.ParseTrustedProxies(spec)
+		if err != nil {
+			log.Fatalf("ZV_TRUSTED_PROXIES: %v", err)
+		}
+		auth.SetTrustedProxies(prefixes)
+		logx.Info("auth.trusted_proxies", "count", len(prefixes))
+	}
 	h := server.New(server.Config{
 		DB:           sqlDB,
 		Library:      lib,

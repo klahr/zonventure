@@ -9,6 +9,7 @@ package ws
 
 import (
 	"encoding/json"
+	"strconv"
 	"sync"
 )
 
@@ -163,28 +164,5 @@ func (h *Hub) PublishAll(kind string, data any) {
 // EventTopic is the topic string used for event-scoped broadcasts.
 // The "event:" prefix matches the rename (was "run:" pre-rebrand).
 func EventTopic(eventID int64) string {
-	return "event:" + itoa(eventID)
-}
-
-func itoa(v int64) string {
-	// Small helper so callers don't pull strconv for one integer.
-	if v == 0 {
-		return "0"
-	}
-	neg := v < 0
-	if neg {
-		v = -v
-	}
-	var buf [20]byte
-	i := len(buf)
-	for v > 0 {
-		i--
-		buf[i] = byte('0' + v%10)
-		v /= 10
-	}
-	if neg {
-		i--
-		buf[i] = '-'
-	}
-	return string(buf[i:])
+	return "event:" + strconv.FormatInt(eventID, 10)
 }

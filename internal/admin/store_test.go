@@ -301,6 +301,139 @@ func TestHandleChargeRefunded_TicketWithdrawsTeam(t *testing.T) {
 	}
 }
 
+// TestHandleChargeRefunded_PartialDoesNotWithdraw is the C3
+// regression guard: a partial refund (e.g. €5 off a €100 ticket)
+// must not flip the purchase to 'refunded' or withdraw the team.
+// charge.refunded fires for every refund delta, so the handler
+// has to read amount/amount_refunded/refunded and gate.
+func TestHandleChargeRefunded_PartialDoesNotWithdraw(t *testing.T) {
+	db, cleanup := dbtest.Open(t)
+	defer cleanup()
+
+	var orgID int64
+	if err := db.QueryRow(`INSERT INTO organizations(name) VALUES ('Acme') RETURNING id`).Scan(&orgID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO adventures(slug, title, org_id) VALUES ('demo', 'Demo Adv', $1)`, orgID); err != nil {
+		t.Fatal(err)
+	}
+	var eventID int64
+	if err := db.QueryRow(`
+		INSERT INTO events(adventure_slug, org_id, state, live_token, name)
+		VALUES ('demo', $1, 'running', 'lt-' || md5(random()::text), 'X') RETURNING id
+	`, orgID).Scan(&eventID); err != nil {
+		t.Fatal(err)
+	}
+	var teamID int64
+	if err := db.QueryRow(`
+		INSERT INTO teams(event_id, name, token) VALUES ($1, 'buyer', 'team-tok-' || md5(random()::text))
+		RETURNING id
+	`, eventID).Scan(&teamID); err != nil {
+		t.Fatal(err)
+	}
+	var purchaseID int64
+	if err := db.QueryRow(`
+		INSERT INTO ticket_purchases(event_id, buyer_email, team_size, amount_cents, currency,
+		                             state, paid_at, team_id, stripe_session_id, stripe_charge_id)
+		VALUES ($1, 'b@x.com', 1, 1000, 'eur', 'paid', now_text(), $2, 'cs_x', 'ch_partial_42')
+		RETURNING id
+	`, eventID, teamID).Scan(&purchaseID); err != nil {
+		t.Fatal(err)
+	}
+
+	h := &admin.Handlers{DB: db, Lib: adventure.New(db)}
+	event := buildChargeRefundedEvent(t, "ch_partial_42")
+	// €1.00 charge with €0.30 refunded — the buyer should keep
+	// playing, the row should stay 'paid'.
+	event.Charge.AmountRefunded = 300
+	event.Charge.Refunded = false
+	if err := admin.ExportedHandleChargeRefunded(h, context.Background(), event); err != nil {
+		t.Fatalf("handle: %v", err)
+	}
+
+	var state string
+	if err := db.QueryRow(`SELECT state FROM ticket_purchases WHERE id = $1`, purchaseID).
+		Scan(&state); err != nil {
+		t.Fatal(err)
+	}
+	if state != "paid" {
+		t.Errorf("state = %q, want paid (partial refund must not flip)", state)
+	}
+	var withdrawn *string
+	if err := db.QueryRow(`SELECT withdrawn_at FROM teams WHERE id = $1`, teamID).
+		Scan(&withdrawn); err != nil {
+		t.Fatal(err)
+	}
+	if withdrawn != nil && *withdrawn != "" {
+		t.Errorf("team was withdrawn after partial refund (withdrawn_at = %q)", *withdrawn)
+	}
+}
+
+// TestHandleTicketCheckoutCompleted_RejectsUnpaid asserts that a
+// session with payment_status="unpaid" (async method like ACH/PIX
+// in flight) does not fulfil. The session row stays pending, no
+// team is created, and no email goes out. Regression guard: the
+// pre-fix handler dispatched on event.Type alone and would create
+// the team on an unpaid session.
+func TestHandleTicketCheckoutCompleted_RejectsUnpaid(t *testing.T) {
+	db, cleanup := dbtest.Open(t)
+	defer cleanup()
+
+	var orgID int64
+	if err := db.QueryRow(`INSERT INTO organizations(name) VALUES ('Acme') RETURNING id`).Scan(&orgID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`
+		INSERT INTO adventures(slug, title, org_id) VALUES ('demo', 'Demo Adv', $1)
+	`, orgID); err != nil {
+		t.Fatal(err)
+	}
+	var eventID int64
+	if err := db.QueryRow(`
+		INSERT INTO events(adventure_slug, org_id, state, live_token, name,
+		                   public_for_sale, ticket_price_cents, ticket_currency, ticket_team_size, public_blurb)
+		VALUES ('demo', $1, 'running', 'lt-' || md5(random()::text), 'X',
+		        TRUE, 2500, 'eur', 4, 'B')
+		RETURNING id
+	`, orgID).Scan(&eventID); err != nil {
+		t.Fatal(err)
+	}
+	var purchaseID int64
+	if err := db.QueryRow(`
+		INSERT INTO ticket_purchases(event_id, buyer_email, team_size, amount_cents, currency, stripe_session_id)
+		VALUES ($1, 'buyer@example.com', 4, 2500, 'eur', 'cs_unpaid')
+		RETURNING id
+	`, eventID).Scan(&purchaseID); err != nil {
+		t.Fatal(err)
+	}
+
+	mailerStub := &fakeMailer{}
+	h := &admin.Handlers{DB: db, Lib: adventure.New(db), Mailer: mailerStub, PublicURL: "https://zv.example.com"}
+
+	ev := buildSessionCompletedEvent(t, purchaseID, "cs_unpaid")
+	ev.Checkout.PaymentStatus = payments.PaymentStatusUnpaid
+	if err := admin.ExportedHandleTicketCheckoutCompleted(h, context.Background(), ev); err != nil {
+		t.Fatalf("handle: %v", err)
+	}
+
+	var state string
+	var teamID *int64
+	if err := db.QueryRow(
+		`SELECT state, team_id FROM ticket_purchases WHERE id = $1`, purchaseID).
+		Scan(&state, &teamID); err != nil {
+		t.Fatal(err)
+	}
+	if state != "pending" {
+		t.Errorf("state = %q, want pending (unpaid session must not fulfil)", state)
+	}
+	if teamID != nil {
+		t.Errorf("team_id = %v, want nil (no team should be created)", *teamID)
+	}
+	if got := len(mailerStub.messages); got != 0 {
+		t.Errorf("messages = %d, want 0 (unpaid session must not mail the buyer)", got)
+	}
+}
+
 // buildSessionCompletedEvent constructs the abstract payments.Event
 // that the webhook handler operates on. Tests synthesise events
 // directly rather than going through a provider's parser, so the
@@ -314,9 +447,10 @@ func buildSessionCompletedEvent(t *testing.T, ticketPurchaseID int64, sessionID 
 		Created:  time.Now(),
 		Metadata: map[string]string{"zv_ticket_purchase_id": itoa64(ticketPurchaseID)},
 		Checkout: &payments.CheckoutDetail{
-			SessionID:   sessionID,
-			AmountTotal: 2500,
-			Currency:    "eur",
+			SessionID:     sessionID,
+			AmountTotal:   2500,
+			Currency:      "eur",
+			PaymentStatus: payments.PaymentStatusPaid,
 		},
 	}
 }
@@ -328,10 +462,14 @@ func buildChargeRefundedEvent(t *testing.T, chargeID string) payments.Event {
 		Type:     payments.EventChargeRefunded,
 		ID:       "evt_refund_" + chargeID,
 		Created:  time.Now(),
+		// Default: a full refund. Tests that need to exercise the
+		// partial-refund path override AmountRefunded / Refunded.
 		Charge: &payments.ChargeDetail{
-			ID:          chargeID,
-			AmountCents: 1000,
-			Currency:    "eur",
+			ID:             chargeID,
+			AmountCents:    1000,
+			AmountRefunded: 1000,
+			Refunded:       true,
+			Currency:       "eur",
 		},
 	}
 }

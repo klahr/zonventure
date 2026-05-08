@@ -75,6 +75,12 @@ func sweep(ctx context.Context, db *sql.DB, cfg Config) {
 	// rows when a slot rotates between events, so this sweep is
 	// just for the long-tail.
 	prunePlayerActionDedup(ctx, db)
+	// Stripe webhook dedupe keys: Stripe redrives for at most ~3
+	// days. Anything older than 60 days is dead weight slowing the
+	// SELECT-COUNT(*) probe on every redelivery; we keep a buffer
+	// past Stripe's window so a clock skew between us and them
+	// doesn't accidentally re-fulfil an old event.
+	pruneProcessedWebhookEvents(ctx, db)
 }
 
 func prunePlayerActionDedup(ctx context.Context, db *sql.DB) {
@@ -105,6 +111,40 @@ func prunePlayerActionDedup(ctx context.Context, db *sql.DB) {
 	}
 	if total > 0 {
 		logx.Info("retention.player_action_dedup.pruned", "rows", total)
+	}
+}
+
+func pruneProcessedWebhookEvents(ctx context.Context, db *sql.DB) {
+	stmt := `
+		DELETE FROM processed_webhook_events
+		WHERE ctid IN (
+		  SELECT ctid FROM processed_webhook_events
+		  WHERE received_at::timestamptz < now() - make_interval(days => 60)
+		  LIMIT ` + strconv.Itoa(batchSize) + `
+		)
+	`
+	total := int64(0)
+	for {
+		if ctx.Err() != nil {
+			return
+		}
+		res, err := db.ExecContext(ctx, stmt)
+		if err != nil {
+			// Older self-host instances may not have a processed_at
+			// column; the audit table predates the retention sweep.
+			// Log once-per-sweep and move on rather than failing the
+			// whole retention pass.
+			logx.Warn("retention.processed_webhook_events.failed", "err", err.Error())
+			return
+		}
+		n, _ := res.RowsAffected()
+		total += n
+		if n < batchSize {
+			break
+		}
+	}
+	if total > 0 {
+		logx.Info("retention.processed_webhook_events.pruned", "rows", total)
 	}
 }
 

@@ -118,10 +118,17 @@ func (s *SMTPMailer) Send(ctx context.Context, msg Message) error {
 			return fmt.Errorf("smtp auth: %w", err)
 		}
 	}
-	if err := c.Mail(extractAddr(s.From)); err != nil {
+	fromAddr := extractAddr(s.From)
+	if err := validateAddrSafe(fromAddr); err != nil {
+		return fmt.Errorf("smtp MAIL: %w", err)
+	}
+	if err := c.Mail(fromAddr); err != nil {
 		return fmt.Errorf("smtp MAIL: %w", err)
 	}
 	for _, rcpt := range msg.To {
+		if err := validateAddrSafe(rcpt); err != nil {
+			return fmt.Errorf("smtp RCPT: %w", err)
+		}
 		if err := c.Rcpt(rcpt); err != nil {
 			return fmt.Errorf("smtp RCPT %s: %w", rcpt, err)
 		}
@@ -176,7 +183,13 @@ func extractAddr(from string) string {
 func buildRFC5322(msg Message, from string) ([]byte, error) {
 	var b bytes.Buffer
 	hdr := func(k, v string) {
-		fmt.Fprintf(&b, "%s: %s\r\n", k, v)
+		// CRLF-strip every header value defensively. Any caller that
+		// hands us a value with an embedded newline is either a bug
+		// or an attacker injecting fake headers (BCC, From override,
+		// MIME confusion). Belt-and-braces alongside the per-recipient
+		// validateAddrSafe — header values can come from places other
+		// than addresses (Subject, Reply-To, the From label).
+		fmt.Fprintf(&b, "%s: %s\r\n", k, sanitizeHeader(v))
 	}
 	hdr("From", from)
 	hdr("To", strings.Join(msg.To, ", "))
@@ -316,6 +329,45 @@ func newMessageID(from string) string {
 		domain = addr[i+1:]
 	}
 	return "<" + randHex(16) + "@" + domain + ">"
+}
+
+// sanitizeHeader strips any control byte (0x00..0x1F, 0x7F) from a
+// header value to prevent CRLF / NUL injection. RFC 5322 § 2.2 forbids
+// CR / LF inside a field-body except for folding whitespace, which we
+// don't generate. An attacker who controls part of a Subject or
+// Reply-To could otherwise inject "BCC: victim@..." or a forged From.
+// Returns the cleaned string; callers that wanted to reject rather
+// than sanitise should validate at their own boundary first.
+func sanitizeHeader(v string) string {
+	var b strings.Builder
+	b.Grow(len(v))
+	for i := 0; i < len(v); i++ {
+		c := v[i]
+		if c < 0x20 || c == 0x7F {
+			continue
+		}
+		b.WriteByte(c)
+	}
+	return b.String()
+}
+
+// validateAddrSafe rejects an envelope address that contains bytes the
+// SMTP / RFC 5321 ABNF would never accept — most importantly CR / LF /
+// NUL, which an attacker would use to smuggle "RCPT TO:<victim>" lines
+// past net/smtp into a server's command stream. We only check for the
+// catastrophic injection bytes here; the SMTP server itself is the
+// authority on whether the address is otherwise well-formed.
+func validateAddrSafe(addr string) error {
+	if addr == "" {
+		return errors.New("empty address")
+	}
+	for i := 0; i < len(addr); i++ {
+		c := addr[i]
+		if c <= 0x20 || c == 0x7F || c == ',' {
+			return fmt.Errorf("address contains forbidden byte 0x%02x", c)
+		}
+	}
+	return nil
 }
 
 func randHex(n int) string {

@@ -6,7 +6,6 @@ import (
 	"crypto/cipher"
 	"crypto/rand"
 	"database/sql"
-	"encoding/base32"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -423,39 +422,61 @@ func consumeRecoveryCode(ctx context.Context, db *sql.DB, userID int64, plaintex
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
+	type row struct {
+		id   int64
+		hash string
+	}
+	var pending []row
 	for rows.Next() {
-		var (
-			id   int64
-			hash string
-		)
-		if err := rows.Scan(&id, &hash); err != nil {
+		var r row
+		if err := rows.Scan(&r.id, &r.hash); err != nil {
+			rows.Close()
 			return err
 		}
-		ok, _, vErr := verifySecret(hash, plaintext)
+		pending = append(pending, r)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	// Always run Argon2id verify against EVERY remaining hash regardless
+	// of an early match, so the response time is a function of how many
+	// codes the user has left, not which one matched. An early break on
+	// match would otherwise leak via timing both "you guessed correctly"
+	// and "the user already used N of 10 codes". The matched id is
+	// captured in matchID and consumed after the loop.
+	var (
+		matchID int64
+		matched bool
+	)
+	for _, r := range pending {
+		ok, _, vErr := verifySecret(r.hash, plaintext)
 		if vErr != nil {
 			return vErr
 		}
-		if ok {
-			rows.Close()
-			// Atomic claim: the WHERE used_at IS NULL filter is the
-			// load-bearing piece. Two concurrent challenges with the
-			// same recovery code both verify the hash, but only the
-			// first UPDATE that runs sees a NULL used_at and flips
-			// it. The second sees rowsAffected=0 and we treat that
-			// as "already used" — same posture as LoginSlotByToken.
-			res, err := db.ExecContext(ctx,
-				`UPDATE user_recovery_codes SET used_at = now_text() WHERE id = $1 AND used_at IS NULL`, id)
-			if err != nil {
-				return err
-			}
-			if n, _ := res.RowsAffected(); n == 0 {
-				return ErrRecoveryCodeInvalid
-			}
-			return nil
+		if ok && !matched {
+			matchID = r.id
+			matched = true
+			// keep iterating to drain the timing budget
 		}
 	}
-	return ErrRecoveryCodeInvalid
+	if !matched {
+		return ErrRecoveryCodeInvalid
+	}
+	// Atomic claim: the WHERE used_at IS NULL filter is the load-
+	// bearing piece. Two concurrent challenges with the same recovery
+	// code both verify the hash, but only the first UPDATE sees a NULL
+	// used_at and flips it. The second sees rowsAffected=0 and we
+	// treat that as "already used" — same posture as LoginSlotByToken.
+	res, err := db.ExecContext(ctx,
+		`UPDATE user_recovery_codes SET used_at = now_text() WHERE id = $1 AND used_at IS NULL`, matchID)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrRecoveryCodeInvalid
+	}
+	return nil
 }
 
 // generateRecoveryCodes mints totpRecoveryCodeCount codes formatted
@@ -561,12 +582,3 @@ func LoadTOTPStatus(ctx context.Context, db *sql.DB, userID int64) (TOTPStatus, 
 	return TOTPStatus{Enabled: enabled, EnrolledAt: at.String}, nil
 }
 
-// validateBase32Secret is here to keep imports tidy when callers want
-// to sanity-check a manually-typed secret before treating it as
-// authoritative. Keeps the single base32 dependency in one file.
-func validateBase32Secret(s string) error {
-	_, err := base32.StdEncoding.WithPadding(base32.NoPadding).DecodeString(strings.ToUpper(strings.TrimSpace(s)))
-	return err
-}
-
-var _ = validateBase32Secret // reserved for future "import a secret" admin hook

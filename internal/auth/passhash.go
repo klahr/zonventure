@@ -73,8 +73,8 @@ var errUnknownHashFormat = errors.New("unknown password-hash format")
 // PHC parses with the current params so the cost matches a real
 // login.
 var (
-	decoyHashOnce sync.Once
-	decoyHashStr  string
+	decoyHashMu  sync.Mutex
+	decoyHashStr string
 )
 
 // primeDecoyHash builds the dummy Argon2id PHC string lazily on the
@@ -84,13 +84,25 @@ var (
 // process start pays Argon2 mint (~50ms) PLUS the verify (~50ms),
 // distinguishable from subsequent ~50ms calls and re-opening the
 // timing oracle this whole mechanism exists to close.
+//
+// Retries on each call when the prior attempt failed (e.g. crypto/rand
+// hiccup at boot): a one-shot sync.Once would freeze decoyHashStr at
+// "" forever and silently turn SpendVerifyTime into a no-op,
+// re-opening the timing oracle. The mutex is uncontended in the warm
+// path because we early-out on `decoyHashStr != ""` before grabbing
+// it.
 func primeDecoyHash() {
-	decoyHashOnce.Do(func() {
-		h, err := hashSecret("decoy-not-a-real-password")
-		if err == nil {
-			decoyHashStr = h
-		}
-	})
+	if decoyHashStr != "" {
+		return
+	}
+	decoyHashMu.Lock()
+	defer decoyHashMu.Unlock()
+	if decoyHashStr != "" {
+		return
+	}
+	if h, err := hashSecret("decoy-not-a-real-password"); err == nil {
+		decoyHashStr = h
+	}
 }
 
 // PrimeDecoyHash is the public entry point for the lazy init above.

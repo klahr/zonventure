@@ -110,6 +110,16 @@ type CheckoutParams struct {
 	// don't satisfy MarketplaceProvider ignore these.
 	ConnectedAccountID  string
 	ApplicationFeeCents int64
+
+	// IdempotencyKey deduplicates retried CreateCheckout calls. A
+	// transport hiccup or browser double-click that re-runs the
+	// purchase handler must not create two checkout sessions for
+	// the same buyer; with the same key, Stripe returns the original
+	// session. Callers derive a stable key from the local row id
+	// (e.g. "checkout-purchase-42") so the dedupe is durable across
+	// process restarts. Empty string disables idempotency, which
+	// callers should avoid for state-changing requests.
+	IdempotencyKey string
 }
 
 // CheckoutSession is what CreateCheckout returns. The buyer is
@@ -163,22 +173,67 @@ type Event struct {
 // the charge.refunded path key on. CustomerID is what we persist
 // on the org row for portal sessions; InvoiceURL surfaces in the
 // admin UI when the provider issued one.
+//
+// PaymentStatus distinguishes a session that's truly paid from one
+// where the buyer has only committed (async methods like ACH/PIX/BACS
+// land checkout.session.completed before the funds actually clear).
+// Fulfilment must gate on PaymentStatusPaid or PaymentStatusNoPayment;
+// PaymentStatusUnpaid means "wait for payment_intent.succeeded".
 type CheckoutDetail struct {
-	SessionID   string
-	AmountTotal int64
-	Currency    string
-	CustomerID  string
-	ChargeID    string
-	InvoiceURL  string
+	SessionID     string
+	AmountTotal   int64
+	Currency      string
+	CustomerID    string
+	ChargeID      string
+	InvoiceURL    string
+	PaymentStatus PaymentStatus
+}
+
+// PaymentStatus mirrors Stripe's `payment_status` on a Checkout
+// Session: "paid" (synchronous, funds captured), "unpaid" (async
+// method in flight), or "no_payment_required" (€0 session, e.g.
+// 100% coupon). Other providers map onto the same three.
+type PaymentStatus string
+
+const (
+	PaymentStatusPaid      PaymentStatus = "paid"
+	PaymentStatusUnpaid    PaymentStatus = "unpaid"
+	PaymentStatusNoPayment PaymentStatus = "no_payment_required"
+)
+
+// FulfilmentReady reports whether a checkout session is in a state
+// where it's safe to grant the goods. Async-method sessions that are
+// still PaymentStatusUnpaid land on the same checkout.session.completed
+// event but must not trigger fulfilment until payment_intent.succeeded.
+func (s PaymentStatus) FulfilmentReady() bool {
+	return s == PaymentStatusPaid || s == PaymentStatusNoPayment
 }
 
 // ChargeDetail is the per-charge slice of a charge.refunded event.
 // Currency + AmountCents come along for refund accounting.
+//
+// Refunded vs AmountRefunded distinguish a full refund from a partial:
+// a charge.refunded webhook fires for every refund delta, including
+// €5 off a €100 charge. Fulfilment-reversal logic (state='refunded',
+// withdraw team) must only run when the full amount is back —
+// otherwise an arranger initiating a partial refund from the Stripe
+// dashboard would lose the team. FullyRefunded is the helper that
+// captures the gate.
 type ChargeDetail struct {
-	ID          string
-	AmountCents int64
-	Currency    string
-	CustomerID  string
+	ID              string
+	AmountCents     int64
+	AmountRefunded  int64
+	Refunded        bool
+	Currency        string
+	CustomerID      string
+}
+
+// FullyRefunded reports whether the charge has been refunded to zero
+// (i.e. amount_refunded equals the original amount and Stripe has set
+// the `refunded` flag). Only then should the matching purchase row
+// flip to state='refunded'.
+func (c ChargeDetail) FullyRefunded() bool {
+	return c.Refunded && c.AmountRefunded >= c.AmountCents && c.AmountCents > 0
 }
 
 // RefundParams names a charge by id. Partial refunds aren't
@@ -198,6 +253,15 @@ type RefundParams struct {
 	// because the refund call has to be issued against the
 	// connected account, not the platform account.
 	ConnectedAccountID string
+
+	// IdempotencyKey deduplicates retried Refund calls. A double-
+	// click on the admin "refund" button must not cut two refund
+	// objects against the same charge. Callers derive a stable key
+	// from the local row id (e.g. "refund-purchase-42"). The key
+	// must NOT be reused across genuinely-distinct refunds (full
+	// after a partial, etc.); embedding the local row id and the
+	// intended amount in the key avoids that.
+	IdempotencyKey string
 }
 
 // Refund is the post-call view of a refund. Status is provider-

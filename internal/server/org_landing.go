@@ -265,16 +265,25 @@ func redirectLegacyStoreEvent(w http.ResponseWriter, r *http.Request, db *sql.DB
 		servePublicPage("web/404.html", http.StatusNotFound)(w, r)
 		return
 	}
+	// Parse the URL param to int64 so the WHERE clause can use the
+	// indexed integer column directly. The previous `e.id::TEXT = $1`
+	// cast forced a sequential scan once events grew. Garbage in the
+	// path falls through to a clean 404.
+	eventID, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		servePublicPage("web/404.html", http.StatusNotFound)(w, r)
+		return
+	}
 	var slug string
-	err := db.QueryRowContext(r.Context(), `
+	err = db.QueryRowContext(r.Context(), `
 		SELECT o.slug
 		FROM events e
 		JOIN organizations o ON o.id = e.org_id
-		WHERE e.id::TEXT = $1
+		WHERE e.id = $1
 		  AND e.public_for_sale
 		  AND e.ticket_price_cents IS NOT NULL
 		  AND e.state IN ('running', 'paused')
-	`, idStr).Scan(&slug)
+	`, eventID).Scan(&slug)
 	if errors.Is(err, sql.ErrNoRows) || slug == "" {
 		servePublicPage("web/404.html", http.StatusNotFound)(w, r)
 		return

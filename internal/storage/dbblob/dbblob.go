@@ -35,7 +35,7 @@ func (s *Store) PutTeamAvatar(ctx context.Context, teamID int64, content []byte,
 		return err
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
-		return storage.ErrNotFound
+		return storage.ErrEntityMissing
 	}
 	return nil
 }
@@ -49,11 +49,14 @@ func (s *Store) GetTeamAvatar(ctx context.Context, teamID int64) ([]byte, string
 	err := s.DB.QueryRowContext(ctx,
 		`SELECT avatar_mime_type, avatar_size_bytes, avatar_content FROM teams WHERE id = $1`, teamID).
 		Scan(&mime, &size, &content)
-	if errors.Is(err, sql.ErrNoRows) || !mime.Valid || len(content) == 0 {
-		return nil, "", storage.ErrNotFound
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, "", storage.ErrEntityMissing
 	}
 	if err != nil {
 		return nil, "", err
+	}
+	if !mime.Valid || len(content) == 0 {
+		return nil, "", storage.ErrNoBlob
 	}
 	return content, mime.String, nil
 }
@@ -77,7 +80,7 @@ func (s *Store) PutAdventureAvatar(ctx context.Context, slug string, content []b
 		return err
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
-		return storage.ErrNotFound
+		return storage.ErrEntityMissing
 	}
 	return nil
 }
@@ -92,11 +95,14 @@ func (s *Store) GetAdventureAvatar(ctx context.Context, slug string) ([]byte, st
 		SELECT avatar_mime_type, avatar_size_bytes, avatar_content
 		FROM adventures WHERE slug = $1
 	`, slug).Scan(&mime, &size, &content)
-	if errors.Is(err, sql.ErrNoRows) || !mime.Valid || len(content) == 0 {
-		return nil, "", storage.ErrNotFound
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, "", storage.ErrEntityMissing
 	}
 	if err != nil {
 		return nil, "", err
+	}
+	if !mime.Valid || len(content) == 0 {
+		return nil, "", storage.ErrNoBlob
 	}
 	return content, mime.String, nil
 }
@@ -120,7 +126,7 @@ func (s *Store) PutOrgLogo(ctx context.Context, orgID int64, content []byte, mim
 		return err
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
-		return storage.ErrNotFound
+		return storage.ErrEntityMissing
 	}
 	return nil
 }
@@ -135,11 +141,14 @@ func (s *Store) GetOrgLogo(ctx context.Context, orgID int64) ([]byte, string, er
 		SELECT logo_mime_type, logo_size_bytes, logo_content
 		FROM organizations WHERE id = $1
 	`, orgID).Scan(&mime, &size, &content)
-	if errors.Is(err, sql.ErrNoRows) || !mime.Valid || len(content) == 0 {
-		return nil, "", storage.ErrNotFound
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, "", storage.ErrEntityMissing
 	}
 	if err != nil {
 		return nil, "", err
+	}
+	if !mime.Valid || len(content) == 0 {
+		return nil, "", storage.ErrNoBlob
 	}
 	return content, mime.String, nil
 }
@@ -163,7 +172,7 @@ func (s *Store) PutOrgCover(ctx context.Context, orgID int64, content []byte, mi
 		return err
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
-		return storage.ErrNotFound
+		return storage.ErrEntityMissing
 	}
 	return nil
 }
@@ -178,11 +187,14 @@ func (s *Store) GetOrgCover(ctx context.Context, orgID int64) ([]byte, string, e
 		SELECT cover_image_mime_type, cover_image_size_bytes, cover_image_content
 		FROM organizations WHERE id = $1
 	`, orgID).Scan(&mime, &size, &content)
-	if errors.Is(err, sql.ErrNoRows) || !mime.Valid || len(content) == 0 {
-		return nil, "", storage.ErrNotFound
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, "", storage.ErrEntityMissing
 	}
 	if err != nil {
 		return nil, "", err
+	}
+	if !mime.Valid || len(content) == 0 {
+		return nil, "", storage.ErrNoBlob
 	}
 	return content, mime.String, nil
 }
@@ -206,7 +218,7 @@ func (s *Store) PutEventCover(ctx context.Context, eventID int64, content []byte
 		return err
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
-		return storage.ErrNotFound
+		return storage.ErrEntityMissing
 	}
 	return nil
 }
@@ -221,11 +233,14 @@ func (s *Store) GetEventCover(ctx context.Context, eventID int64) ([]byte, strin
 		SELECT cover_image_mime_type, cover_image_size_bytes, cover_image_content
 		FROM events WHERE id = $1
 	`, eventID).Scan(&mime, &size, &content)
-	if errors.Is(err, sql.ErrNoRows) || !mime.Valid || len(content) == 0 {
-		return nil, "", storage.ErrNotFound
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, "", storage.ErrEntityMissing
 	}
 	if err != nil {
 		return nil, "", err
+	}
+	if !mime.Valid || len(content) == 0 {
+		return nil, "", storage.ErrNoBlob
 	}
 	return content, mime.String, nil
 }
