@@ -93,7 +93,7 @@ Hash-routed SPA. Mirrors the route table at `renderRoute`.
 
 #### Dashboard family
 - [ ] `#dashboard` (lobby user — `viewLobbyDashboard`)
-- [ ] `#dashboard` (org member / admin — `viewArrangerDashboard`)
+- [x] `#dashboard` (org member / admin — `viewArrangerDashboard`)
 - [ ] `#dashboard` (global admin — `viewAdminDashboard`)
 
 #### Adventures (authoring)
