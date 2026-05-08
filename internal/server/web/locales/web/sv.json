@@ -2103,5 +2103,14 @@
 "No organizations match “{{q}}”.": "Inga organisationer matchar ”{{q}}”.",
 "Search organizations": "Sök organisationer",
 "Search organizations…": "Sök organisationer…",
-"{{n}} total": "{{n}} totalt"
+"{{n}} total": "{{n}} totalt",
+"Assignments": "Tilldelningar",
+"Available ({{n}})": "Tillgängliga ({{n}})",
+"Danger zone": "Farozon",
+"Delete organization": "Radera organisation",
+"Deleting cascades through every user, assignment, and event in this organization. The action is not reversible.": "Radering kaskader genom varje användare, tilldelning och event i organisationen. Åtgärden går inte att ångra.",
+"In use ({{n}})": "I bruk ({{n}})",
+"Logo uploaded": "Logotyp uppladdad",
+"Open public page": "Öppna publik sida",
+"Remove logo": "Ta bort logotyp"
 }

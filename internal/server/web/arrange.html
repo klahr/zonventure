@@ -10378,13 +10378,11 @@ async function viewOrganizationDetail(view, orgID) {
     nav('#organizations');
     return;
   }
-  view.replaceChildren(
-    h('div', { class: 'row between', style: 'margin-bottom:1rem' },
-      h('a', { href: '#organizations',
-        on: { click: (e) => { e.preventDefault(); nav('#organizations'); } } },
-        '← ', t('Organizations'))),
-    h('div', { class: 'card' }, h('p', { class: 'muted' }, t('Loading…'))),
-  );
+  // Loading skeleton — the topbar breadcrumb already does the
+  // "where am I" job, so the detail body just paints a placeholder
+  // card while the fetches resolve.
+  view.replaceChildren(h('div', { class: 'card' },
+    h('p', { class: 'muted' }, t('Loading…'))));
 
   const [orgR, advR, purR] = await Promise.all([
     api('/api/admin/organizations/' + orgID),
@@ -10392,193 +10390,134 @@ async function viewOrganizationDetail(view, orgID) {
     api('/api/admin/purchases'),
   ]);
   if (!orgR.ok) {
-    view.replaceChildren(
-      h('div', { class: 'row between', style: 'margin-bottom:1rem' },
-        h('a', { href: '#organizations',
-          on: { click: (e) => { e.preventDefault(); nav('#organizations'); } } },
-          '← ', t('Organizations'))),
-      h('div', { class: 'card' },
-        h('p', { class: 'err' },
-          t('Couldn\'t load this organization ({{err}}).', {
-            err: orgR.body?.error || ('HTTP ' + (orgR.status || 0)),
-          }))));
+    view.replaceChildren(h('div', { class: 'card' },
+      h('p', { class: 'err' },
+        t('Couldn\'t load this organization ({{err}}).', {
+          err: orgR.body?.error || ('HTTP ' + (orgR.status || 0)),
+        }))));
     return;
   }
   const org = orgR.body || {};
   const adventures = advR.body?.adventures || [];
   const orgPurchases = (purR.body?.purchases || []).filter((p) => p.org_id === orgID);
 
-  const back = h('a', {
-    href: '#organizations',
-    style: 'display:inline-flex; align-items:center; gap:.25rem',
-    on: { click: (e) => { e.preventDefault(); nav('#organizations'); } },
-  }, '← ', t('Organizations'));
-
-  view.replaceChildren(
-    h('div', { style: 'margin-bottom:1rem' }, back),
-    renderOrganizationCard(org, adventures, orgPurchases),
-  );
-}
-
-// renderOrgLogoBlock builds the per-org brand-logo affordance:
-// preview thumbnail (or placeholder), upload, remove. Admin-only —
-// the parent card is already gated on the global-admin route.
-//
-// On upload success we mutate `org.has_logo` and rebuild the block
-// in place so the operator sees the new image immediately, without
-// a full Organizations-tab refetch. Cache-bust via a `?v=<ts>` query
-// so the browser drops any stale copy of the previous logo.
-function renderOrgLogoBlock(org) {
-  const wrap = h('div', {
-    class: 'org-logo-row',
-    style: 'display:flex; align-items:center; gap:.85rem; margin:.5rem 0 .25rem; padding:.6rem .85rem; background:var(--surface-2); border-radius:8px',
-  });
-  let cacheBust = Date.now();
-  let uploading = false;
-  const fileInput = h('input', {
-    type: 'file',
-    accept: 'image/png,image/jpeg,image/webp,image/svg+xml',
+  // ============================================================
+  // Header card — logo (click-to-upload), name, stat strip,
+  // invoice-billing pill, "Open public page ↗" link.
+  // ============================================================
+  const logoFileInput = h('input', {
+    type: 'file', accept: 'image/png,image/jpeg,image/webp,image/svg+xml',
     style: 'display:none',
   });
-  const preview = h('div', {
-    style: 'width:64px; height:42px; display:flex; align-items:center; justify-content:center; background:var(--surface); border:1px solid var(--border-soft); border-radius:6px; overflow:hidden; flex:0 0 auto',
+  const logoThumb = h('button', {
+    type: 'button',
+    class: 'org-thumb logo',
+    'aria-label': t('Upload logo'),
+    title: t('Click to upload a logo'),
+    on: { click: () => logoFileInput.click() },
   });
-  const actions = h('div', { class: 'row', style: 'gap:.4rem; flex-wrap:wrap; flex:1 1 auto' });
-  const draw = () => {
-    preview.replaceChildren();
+  const logoRemoveBtn = h('button', {
+    type: 'button', class: 'btn ghost small',
+    style: 'margin-top:.4rem',
+    on: { click: async () => {
+      if (!await inAppConfirm(t('Remove the brand logo?'), { danger: true })) return;
+      const r = await api(`/api/admin/organizations/${org.id}/logo`, { method: 'DELETE' });
+      if (r.status === 204) {
+        org.has_logo = false;
+        renderLogoThumb();
+        toastOk(t('Logo removed'));
+      } else {
+        toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+      }
+    } },
+  }, t('Remove logo'));
+
+  function renderLogoThumb() {
     if (org.has_logo) {
-      preview.append(h('img', {
-        src: '/org-logo/' + org.id + '?v=' + cacheBust,
-        alt: t('{{name}} logo', { name: org.name }),
-        style: 'max-width:100%; max-height:100%; object-fit:contain',
+      logoThumb.replaceChildren(h('img', {
+        src: '/org-logo/' + org.id + '?t=' + Date.now(), alt: '',
       }));
+      logoThumb.classList.add('has-image');
+      logoRemoveBtn.style.display = '';
     } else {
-      preview.append(h('span', { class: 'muted', style: 'font-size:.7rem; text-align:center' }, t('No logo')));
+      logoThumb.replaceChildren(h('span', { class: 'placeholder' },
+        t('Click to upload')));
+      logoThumb.classList.remove('has-image');
+      logoRemoveBtn.style.display = 'none';
     }
-    actions.replaceChildren();
-    actions.append(
-      h('span', { class: 'muted', style: 'font-size:.75rem; text-transform:uppercase; letter-spacing:.06em; font-weight:700' },
-        t('Brand logo')),
-      h('p', { class: 'muted', style: 'margin:0; font-size:.8rem' },
-        t('Shown on the event-recap PDF. PNG, JPEG, WebP, or SVG — max 5 MB. SVGs are rasterised to PNG on upload; transparency is flattened to white on render.')),
-      h('div', { class: 'row', style: 'gap:.4rem' },
-        (() => {
-          const label = uploading
-            ? t('Uploading…')
-            : (org.has_logo ? t('Replace logo') : t('Upload logo'));
-          const b = h('button', { class: 'btn small', type: 'button', disabled: uploading || null },
-            uploading ? null : icon(ICONS.plus), label);
-          if (!uploading) b.addEventListener('click', () => fileInput.click());
-          return b;
-        })(),
-        org.has_logo ? (() => {
-          const b = h('button', { class: 'btn small danger', type: 'button', disabled: uploading || null },
-            icon(ICONS.trash), t('Remove'));
-          if (!uploading) b.addEventListener('click', async () => {
-            const r = await api(`/api/admin/organizations/${org.id}/logo`, { method: 'DELETE' });
-            if (r.status === 204) {
-              org.has_logo = false;
-              cacheBust = Date.now();
-              toastOk(t('Logo removed'));
-              draw();
-            } else {
-              toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
-            }
-          });
-          return b;
-        })() : null,
-      ),
-    );
-  };
-  fileInput.addEventListener('change', async () => {
-    const file = fileInput.files?.[0];
-    if (!file) return;
+  }
+  renderLogoThumb();
+
+  logoFileInput.addEventListener('change', async () => {
+    const f = logoFileInput.files && logoFileInput.files[0];
+    if (!f) return;
     const fd = new FormData();
-    fd.append('file', file);
-    uploading = true;
-    draw();
-    let res;
+    fd.append('file', f);
     try {
-      res = await fetch(`/api/admin/organizations/${org.id}/logo`, {
+      const r = await fetch(`/api/admin/organizations/${org.id}/logo`, {
         method: 'POST', body: fd, credentials: 'same-origin',
         headers: { 'X-CSRF-Token': csrfToken() },
       });
-    } finally {
-      uploading = false;
-      fileInput.value = '';
-    }
-    if (res.ok) {
+      if (!r.ok) {
+        const txt = await r.text().catch(() => '');
+        throw new Error(txt || ('HTTP ' + r.status));
+      }
+      logoFileInput.value = '';
       org.has_logo = true;
-      cacheBust = Date.now();
-      toastOk(t('Logo updated'));
-      draw();
-    } else {
-      const txt = await res.text().catch(() => '');
-      toastErr(txt || t('error {{status}}', { status: res.status }));
-      draw();
+      renderLogoThumb();
+      toastOk(t('Logo uploaded'));
+    } catch (err) {
+      toastErr(t('Logo upload failed: {{err}}', { err: String(err.message || err) }));
     }
   });
-  wrap.append(preview, actions, fileInput);
-  draw();
-  return wrap;
-}
 
-function renderOrganizationCard(org, adventures, purchases) {
-  const assignments = org.assignments || [];
-  const unused = assignments.filter((x) => !x.event_id);
-  const used = assignments.filter((x) => x.event_id);
+  const renamePencil = iconBtn('pencil', t('Rename'),
+    () => openRenameOrg(org), { ghost: true });
+
+  const trustedPill = h('button', {
+    type: 'button',
+    class: 'pill ' + (org.trusted ? 'success' : ''),
+    style: 'cursor:pointer; border:0',
+    title: t('Lets the org add player slots to an invoice instead of paying via Stripe.'),
+    on: { click: () => toggleOrgTrusted(org) },
+  }, org.trusted ? t('Invoice billing on') : t('Invoice billing off'));
+
+  const slug = org.slug || '';
+  const storeLink = slug ? h('a', {
+    href: '/o/' + slug,
+    target: '_blank', rel: 'noopener',
+    class: 'btn ghost small',
+  }, t('Open public page'), ' ↗') : null;
+
+  const headerCard = h('div', { class: 'card' },
+    h('div', { class: 'row', style: 'gap:1rem; align-items:flex-start; flex-wrap:wrap' },
+      h('div', { style: 'display:flex; flex-direction:column; align-items:flex-start' },
+        logoThumb, logoFileInput, logoRemoveBtn),
+      h('div', { style: 'flex:1; min-width:14rem' },
+        h('div', { class: 'row', style: 'gap:.4rem; align-items:center; flex-wrap:wrap' },
+          h('h1', { style: 'margin:0' }, org.name),
+          renamePencil),
+        h('div', { class: 'row', style: 'gap:.4rem; flex-wrap:wrap; margin-top:.4rem' },
+          trustedPill, storeLink),
+        h('div', { class: 'grid stats', style: 'margin-top:.75rem' },
+          stat(t('Users'), (org.members || []).length),
+          stat(t('Players'), org.players_total || 0),
+          stat(t('Events'), org.events_total || 0),
+          stat(t('Live now'), org.events_running || 0)))));
+
+  // ============================================================
+  // Users card — chip list with verify + remove buttons.
+  // ============================================================
   const members = org.members || [];
-  purchases = purchases || [];
-
-  const usersPart = members.length === 1
-    ? t('{{n}} user', { n: members.length })
-    : t('{{n}} users', { n: members.length });
-  const playersCount = org.players_total || 0;
-  const playersPart = playersCount === 1
-    ? t('{{n}} player', { n: playersCount })
-    : t('{{n}} players', { n: playersCount });
-  const eventsCount = org.events_total || 0;
-  const runsPart = eventsCount === 1
-    ? t('{{n}} event', { n: eventsCount })
-    : t('{{n}} events', { n: eventsCount });
-
-  return h('div', { class: 'card' },
-    h('div', { class: 'row between' },
-      h('div', {},
-        h('h2', {}, org.name),
-        h('p', { class: 'muted', style: 'font-size:.85rem' },
-          `${usersPart} · ${playersPart} · ${runsPart}`,
-          (org.events_running || 0) > 0
-            ? t(' · {{n}} running', { n: org.events_running })
-            : '')),
-      h('div', { class: 'card-actions' },
-        iconBtn('key',    t('Assign adventure'),   () => openAssignAdventure(org, adventures)),
-        iconBtn('user',   t('Add user'),           () => openAddOrgMember(org)),
-        iconBtn('pencil', t('Rename'),             () => openRenameOrg(org)),
-        iconBtn('trash',  t('Delete'),             () => confirmDeleteOrg(org), { danger: true }))),
-
-    // Brand logo row — surfaced on the recap PDF cover (and, in the
-    // future, the play / arrange chrome). PNG/JPEG/WebP only;
-    // re-encoded server-side so a polyglot upload can't survive.
-    renderOrgLogoBlock(org),
-
-    // Trusted toggle — gives the org an "Add to invoice" option on
-    // the buy-player-slots modal. Off-platform invoice generation; the
-    // platform just tags the resulting purchase row with
-    // provider='invoice' for the operator to reconcile.
-    h('div', { class: 'row', style: 'gap:.5rem; align-items:center; margin:.5rem 0' },
-      h('span', { class: org.trusted ? 'pill success' : 'pill' },
-        org.trusted ? t('Invoice billing on') : t('Invoice billing off')),
-      h('button', {
-        class: 'btn small ghost',
-        on: { click: () => toggleOrgTrusted(org) },
-      }, org.trusted ? t('Disable invoice billing') : t('Enable invoice billing')),
-      h('span', { class: 'muted', style: 'font-size:.8rem' },
-        t('Lets the org add player slots to an invoice instead of paying via Stripe.'))),
-
-    h('h3', { style: 'margin-top:.75rem' }, t('Users ({{n}})', { n: members.length })),
+  const usersCard = h('div', { class: 'card' },
+    h('div', { class: 'row between', style: 'margin-bottom:.5rem; gap:.5rem; flex-wrap:wrap' },
+      h('h2', { style: 'margin:0' }, t('Users')),
+      h('button', { class: 'btn primary small', type: 'button',
+        on: { click: () => openAddOrgMember(org) } },
+        icon(ICONS.plus), t('Add user'))),
     members.length === 0
-      ? h('p', { class: 'muted', style: 'font-size:.85rem' }, t('No users yet — add one to get started.'))
+      ? h('p', { class: 'muted', style: 'margin:0' },
+          t('No users yet — add one to get started.'))
       : h('div', {}, members.map((m) => h('span', {
           class: 'chip' + (m.email_verified === false ? ' chip-unverified' : ''),
           style: 'margin: 0 .35rem .35rem 0',
@@ -10586,45 +10525,64 @@ function renderOrganizationCard(org, adventures, purchases) {
         }, m.role === 'org_admin'
             ? t('{{username}} (admin)', { username: m.username })
             : t('{{username}} (race director)', { username: m.username }),
-        // Manual verify button: shown only when the user hasn't
-        // confirmed their email through the self-serve flow yet. Use
-        // sparingly — it bypasses the deliverability check that
-        // signup verification gives us, so the admin should already
-        // have confirmed identity out-of-band.
         m.email_verified === false ? h('button', {
           title: t('Manually verify email (use only after confirming the user out-of-band)'),
           class: 'chip-verify',
           on: { click: (e) => { e.stopPropagation(); confirmVerifyMemberEmail(org, m); } },
         }, t('verify')) : null,
-        h('button', { title: t('Remove'), on: { click: () => confirmRemoveOrgMember(org, m) } }, '×')))),
+        h('button', { title: t('Remove'),
+          on: { click: () => confirmRemoveOrgMember(org, m) } }, '×')))));
 
-    h('h3', { style: 'margin-top:.75rem' }, t('Unused assignments ({{n}})', { n: unused.length })),
-    unused.length === 0
-      ? h('p', { class: 'muted', style: 'font-size:.85rem' }, t('None — assign an adventure to let them schedule an event.'))
-      : h('div', {}, unused.map((x) => h('span', {
-          class: 'chip selectable',
-          style: 'margin: 0 .35rem .35rem 0',
-          title: t('Click to edit'),
-          on: { click: () => openEditAssignment(org, x, adventures) },
-        }, x.max_players === 1
-            ? t('{{slug}} · {{n}} player', { slug: x.adventure_slug, n: x.max_players })
-            : t('{{slug}} · {{n}} players', { slug: x.adventure_slug, n: x.max_players })))),
+  // ============================================================
+  // Assignments card — collapsed Available + In-use sub-lists.
+  // The two states surface as small muted sub-headings instead of
+  // h3-as-only-divider walls; the "selectable" chips themselves
+  // hint at clickability.
+  // ============================================================
+  const assignments = org.assignments || [];
+  const unused = assignments.filter((x) => !x.event_id);
+  const used = assignments.filter((x) => x.event_id);
+  const assignmentsCard = h('div', { class: 'card' },
+    h('div', { class: 'row between', style: 'margin-bottom:.5rem; gap:.5rem; flex-wrap:wrap' },
+      h('h2', { style: 'margin:0' }, t('Assignments')),
+      h('button', { class: 'btn primary small', type: 'button',
+        on: { click: () => openAssignAdventure(org, adventures) } },
+        icon(ICONS.plus), t('Assign adventure'))),
+    assignments.length === 0
+      ? h('p', { class: 'muted', style: 'margin:0' },
+          t('None — assign an adventure to let them schedule an event.'))
+      : h('div', {},
+          unused.length === 0 ? null : h('div', { style: 'margin-bottom:.6rem' },
+            h('div', { class: 'muted', style: 'font-size:.8rem; margin-bottom:.3rem; text-transform:uppercase; letter-spacing:.04em; font-weight:700' },
+              t('Available ({{n}})', { n: unused.length })),
+            ...unused.map((x) => h('span', {
+              class: 'chip selectable',
+              style: 'margin: 0 .35rem .35rem 0',
+              title: t('Click to edit'),
+              on: { click: () => openEditAssignment(org, x, adventures) },
+            }, x.max_players === 1
+                ? t('{{slug}} · {{n}} player', { slug: x.adventure_slug, n: x.max_players })
+                : t('{{slug}} · {{n}} players', { slug: x.adventure_slug, n: x.max_players })))),
+          used.length === 0 ? null : h('div', {},
+            h('div', { class: 'muted', style: 'font-size:.8rem; margin-bottom:.3rem; text-transform:uppercase; letter-spacing:.04em; font-weight:700' },
+              t('In use ({{n}})', { n: used.length })),
+            ...used.map((x) => h('span', {
+              class: 'chip selectable',
+              style: 'margin: 0 .35rem .35rem 0; opacity:.75; font-style:italic',
+              title: t('Click to edit player cap'),
+              on: { click: () => openEditAssignment(org, x, adventures) },
+            }, t('{{slug}} · event #{{event}} · max {{max}}', {
+              slug: x.adventure_slug, run: x.event_id, max: x.max_players,
+            }))))));
 
-    ...(used.length === 0 ? [] : [h('div', { style: 'margin-top:.75rem' },
-      h('h3', {}, t('Used ({{n}})', { n: used.length })),
-      h('div', {}, used.map((x) => h('span', {
-          class: 'chip selectable',
-          style: 'margin: 0 .35rem .35rem 0; opacity:.75; font-style:italic',
-          title: t('Click to edit player cap'),
-          on: { click: () => openEditAssignment(org, x, adventures) },
-        }, t('{{slug}} · event #{{event}} · max {{max}}', {
-          slug: x.adventure_slug, run: x.event_id, max: x.max_players,
-        })))))]),
-
-    h('h3', { style: 'margin-top:.75rem' }, t('Purchases ({{n}})', { n: purchases.length })),
-    purchases.length === 0
-      ? h('p', { class: 'muted', style: 'font-size:.85rem' }, t('No purchases.'))
-      : h('table', { class: 'table', style: 'margin-top:.25rem' },
+  // ============================================================
+  // Purchases card — historical billing for this org.
+  // ============================================================
+  const purchasesCard = h('div', { class: 'card' },
+    h('h2', { style: 'margin:0 0 .5rem' }, t('Purchases')),
+    orgPurchases.length === 0
+      ? h('p', { class: 'muted', style: 'margin:0' }, t('No purchases.'))
+      : h('table', { class: 'table' },
           h('thead', {}, h('tr', {},
             h('th', {}, t('Adventure')),
             h('th', {}, t('Slots')),
@@ -10632,7 +10590,7 @@ function renderOrganizationCard(org, adventures, purchases) {
             h('th', {}, t('State')),
             h('th', {}, t('Date')),
             h('th', {}, ''))),
-          h('tbody', {}, purchases.map((p) => {
+          h('tbody', {}, orgPurchases.map((p) => {
             const total = new Intl.NumberFormat(undefined, {
               style: 'currency', currency: p.currency || 'EUR',
             }).format(p.amount_cents / 100);
@@ -10644,8 +10602,32 @@ function renderOrganizationCard(org, adventures, purchases) {
               h('td', { class: 'muted mono', style: 'font-size:.8rem' }, p.created_at),
               h('td', { class: 'row', style: 'gap:.5rem; flex-wrap:wrap; justify-content:flex-end' },
                 renderPurchaseActions(p)));
-          }))),
-  );
+          }))));
+
+  // ============================================================
+  // Danger zone — Delete sits behind a visually-distinct card
+  // because every column in this org cascades on it. Rename
+  // already lives next to the title; it's not really destructive.
+  // ============================================================
+  const dangerCard = h('div', {
+    class: 'card',
+    style: 'border-color: var(--danger, #ff5252); background: color-mix(in srgb, var(--danger, #ff5252) 4%, var(--surface))',
+  },
+    h('h2', { style: 'margin:0 0 .25rem; color: var(--danger, #b03a3a); font-size:1rem' },
+      t('Danger zone')),
+    h('p', { class: 'muted', style: 'font-size:.85rem; margin:0 0 .75rem' },
+      t('Deleting cascades through every user, assignment, and event in this organization. The action is not reversible.')),
+    h('button', { class: 'btn danger', type: 'button',
+      on: { click: () => confirmDeleteOrg(org) } },
+      icon(ICONS.trash), t('Delete organization')));
+
+  view.replaceChildren(
+    headerCard,
+    h('div', { style: 'display:flex; flex-direction:column; gap:1rem; margin-top:1rem' },
+      usersCard,
+      assignmentsCard,
+      purchasesCard,
+      dangerCard));
 }
 
 async function openCreateOrg() {

@@ -2103,5 +2103,14 @@
 "No organizations match “{{q}}”.": "No organizations match “{{q}}”.",
 "Search organizations": "Search organizations",
 "Search organizations…": "Search organizations…",
-"{{n}} total": "{{n}} total"
+"{{n}} total": "{{n}} total",
+"Assignments": "Assignments",
+"Available ({{n}})": "Available ({{n}})",
+"Danger zone": "Danger zone",
+"Delete organization": "Delete organization",
+"Deleting cascades through every user, assignment, and event in this organization. The action is not reversible.": "Deleting cascades through every user, assignment, and event in this organization. The action is not reversible.",
+"In use ({{n}})": "In use ({{n}})",
+"Logo uploaded": "Logo uploaded",
+"Open public page": "Open public page",
+"Remove logo": "Remove logo"
 }
