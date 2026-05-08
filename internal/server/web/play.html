@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,interactive-widget=resizes-content">
 <title>Zonventure | Play</title>
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -370,13 +370,18 @@
      handles details when they ask for them. */
   .runbar .hint-toggle {
     position: relative;
-    width: auto; min-width: 0; padding: .2rem .55rem;
+    /* Hint is the player's primary aid; bumped to the 44 floor so a
+       gloved finger or quick-glance tap hits cleanly. The visible
+       pill stays compact via padding; min-height carries the tap area. */
+    min-height: var(--tap-target);
+    width: auto; min-width: 0; padding: .35rem .8rem;
     margin-left: auto;
     background: var(--surface); color: var(--muted);
     border: 1px solid var(--border);
     border-radius: 999px; box-shadow: none;
     font-weight: 800; font-size: var(--ts-sm); line-height: 1;
     cursor: pointer;
+    display: inline-flex; align-items: center; gap: .35rem;
   }
   .runbar .hint-toggle:hover { color: var(--accent); border-color: var(--accent); }
   .hint-toggle-glyph {
@@ -555,13 +560,18 @@
   .hint-sheet-close,
   .welcome .panel-close,
   .team-share .panel-close {
-    width: 2rem; height: 2rem; padding: 0;
+    /* WCAG 2.5.5 / 2.5.8: 44×44 hit area on dismiss controls. The
+       visible glyph stays small via font-size; the surrounding
+       transparent box provides the tappable area for gloved /
+       outdoor-phone use. */
+    min-width: var(--tap-target); min-height: var(--tap-target);
+    width: var(--tap-target); height: var(--tap-target); padding: 0;
     border: 0; background: transparent;
     border-radius: 999px;
     font-size: 1.5rem; line-height: 1;
     color: var(--muted); cursor: pointer;
     box-shadow: none;
-    min-height: 0;
+    display: inline-flex; align-items: center; justify-content: center;
   }
   .hint-sheet-close:hover,
   .welcome .panel-close:hover,
@@ -883,7 +893,11 @@
      links all live one tap away instead of competing with the
      puzzle for attention. */
   .menu-btn {
-    width: 2.5rem; height: 2.5rem;
+    /* Hit area is the 44×44 token; the visual border can be slightly
+       inset visually if needed, but for a chrome control the full
+       tap area looks correct. */
+    width: var(--tap-target); height: var(--tap-target);
+    min-width: var(--tap-target); min-height: var(--tap-target);
     display: inline-flex; align-items: center; justify-content: center;
     background: transparent;
     border: 1px solid var(--border-soft);
@@ -893,7 +907,6 @@
     padding: 0;
     flex: 0 0 auto;
     box-shadow: none;
-    min-height: 0;
   }
   .menu-btn:hover { background: var(--surface-2); }
   .menu-btn svg { width: 1.1rem; height: 1.1rem; }
@@ -932,11 +945,12 @@
     margin: .15rem 0 0;
   }
   .menu-close {
-    width: 2.25rem; height: 2.25rem;
+    width: var(--tap-target); height: var(--tap-target);
+    min-width: var(--tap-target); min-height: var(--tap-target);
     display: inline-flex; align-items: center; justify-content: center;
     background: transparent; border: 0; color: var(--muted);
     cursor: pointer; padding: 0;
-    box-shadow: none; min-height: 0;
+    box-shadow: none;
     font-size: 1.4rem; line-height: 1;
   }
   .menu-close:hover { color: var(--ink); }
@@ -1937,6 +1951,101 @@ function readableOn(hex) {
   return L > 0.5 ? '#000000' : '#ffffff';
 }
 
+// FOCUSABLE_SEL covers everything an inert modal trap needs to find:
+// links, buttons, inputs, textareas, selects, and any explicitly
+// focusable element. Excludes negative tabindex (which means "focusable
+// only via JS"; keep it out of the Tab cycle).
+const FOCUSABLE_SEL = [
+  'a[href]',
+  'button:not([disabled])',
+  'input:not([disabled]):not([type="hidden"])',
+  'select:not([disabled])',
+  'textarea:not([disabled])',
+  '[tabindex]:not([tabindex^="-"])',
+].join(',');
+
+// wireModal stamps dialog semantics on `panelEl`, optionally labels
+// it via the heading at `opts.labelledBy` (a CSS selector inside the
+// panel), saves the previously-focused element, moves focus to
+// `opts.initialFocus` (selector or element) or the first focusable,
+// and traps Tab/Shift-Tab inside the panel until the returned
+// cleanup() runs.
+//
+// Modal owners still keep their own Esc + backdrop-click dismiss
+// paths; wireModal layers the a11y plumbing on top so a keyboard /
+// screen-reader user gets a real dialog instead of a div parked on
+// top of the underlying surface.
+//
+// Usage:
+//   const undo = wireModal(panel, { labelledBy: 'h3', initialFocus: '.cta' });
+//   ...
+//   undo();   // call this in your existing close() before removing the panel
+function wireModal(panelEl, opts = {}) {
+  const previouslyFocused = document.activeElement;
+  panelEl.setAttribute('role', 'dialog');
+  panelEl.setAttribute('aria-modal', 'true');
+  panelEl.setAttribute('tabindex', '-1');
+  if (opts.labelledBy) {
+    const h = panelEl.querySelector(opts.labelledBy);
+    if (h) {
+      if (!h.id) h.id = 'zv-dlg-' + Math.random().toString(36).slice(2, 9);
+      panelEl.setAttribute('aria-labelledby', h.id);
+    }
+  } else if (opts.label) {
+    panelEl.setAttribute('aria-label', opts.label);
+  }
+
+  // Move focus into the panel. requestAnimationFrame so the panel is
+  // in the layout tree (browsers refuse to focus elements with
+  // display:none ancestors).
+  requestAnimationFrame(() => {
+    let target = null;
+    if (opts.initialFocus) {
+      target = typeof opts.initialFocus === 'string'
+        ? panelEl.querySelector(opts.initialFocus)
+        : opts.initialFocus;
+    }
+    if (!target) target = panelEl.querySelector(FOCUSABLE_SEL);
+    if (!target) target = panelEl;
+    try { target.focus({ preventScroll: false }); } catch {}
+  });
+
+  // Tab-trap: when Tab leaves the last focusable, wrap to first;
+  // Shift-Tab from first wraps to last. Outside the panel we
+  // refocus into the first focusable so the user can't escape.
+  const onKeydown = (e) => {
+    if (e.key !== 'Tab') return;
+    const focusables = panelEl.querySelectorAll(FOCUSABLE_SEL);
+    if (focusables.length === 0) {
+      e.preventDefault();
+      panelEl.focus();
+      return;
+    }
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+    const active = document.activeElement;
+    if (e.shiftKey) {
+      if (active === first || !panelEl.contains(active)) {
+        e.preventDefault();
+        last.focus();
+      }
+    } else {
+      if (active === last || !panelEl.contains(active)) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+  };
+  panelEl.addEventListener('keydown', onKeydown);
+
+  return function cleanup() {
+    panelEl.removeEventListener('keydown', onKeydown);
+    if (previouslyFocused && typeof previouslyFocused.focus === 'function') {
+      try { previouslyFocused.focus({ preventScroll: true }); } catch {}
+    }
+  };
+}
+
 function el(tag, attrs = {}, ...children) {
   const e = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs)) {
@@ -2474,6 +2583,19 @@ let lastState = null;
 function render(s) {
   lastState = s;
   applyColors(s.colors);
+  // Tab title reflects player position so a player browsing tabs can
+  // see "3/8 – Lake Quest" without switching. SPA navigation never
+  // updates document.title without help. Falls back to "Zonventure |
+  // Play" when no puzzle is active.
+  if (s && s.adventure_title) {
+    if (s.status === 'playing' && Number.isFinite(s.page_index) && s.page_count) {
+      document.title = `${s.page_index + 1}/${s.page_count} – ${s.adventure_title} – Zonventure`;
+    } else if (s.status === 'completed') {
+      document.title = `✓ ${s.adventure_title} – Zonventure`;
+    } else {
+      document.title = `${s.adventure_title} – Zonventure`;
+    }
+  }
   const key = JSON.stringify({
     status: s.status, pi: s.page_index, pc: s.page_count,
     t: s.title, p: s.prompt,
@@ -2839,7 +2961,12 @@ function openHintSheet(s) {
   const back = el('div', { class: 'hint-sheet-back' });
   const sheet = el('div', { class: 'hint-sheet' });
   back.append(sheet);
-  const close = () => { back.remove(); document.removeEventListener('keydown', onKey); };
+  let undoModal = null;
+  const close = () => {
+    if (undoModal) undoModal();
+    back.remove();
+    document.removeEventListener('keydown', onKey);
+  };
   const onKey = (e) => { if (e.key === 'Escape') close(); };
   document.addEventListener('keydown', onKey);
   back.addEventListener('click', (e) => { if (e.target === back) close(); });
@@ -2924,6 +3051,15 @@ function openHintSheet(s) {
   };
   drawBody();
   document.body.append(back);
+  // Dialog scaffolding — focus moves into the sheet, Tab is trapped
+  // inside, Esc + backdrop click already handled above. Initial focus
+  // lands on the close button (always present); when there's a Reveal
+  // CTA, the user can Tab to it. Restores focus to the runbar Hint
+  // button on close.
+  undoModal = wireModal(sheet, {
+    labelledBy: '.hint-sheet-head h3',
+    initialFocus: '.hint-sheet-close',
+  });
 }
 
 // hintTickerAnchor is the wall-clock time of the last state snapshot;
@@ -3103,6 +3239,16 @@ function renderSubmitDock(s) {
   input.placeholder = previewState ? t('Try an answer (preview)') : t('Your answer');
   input.autocomplete = 'off';
   input.required = true;
+  // iOS Safari aggressively auto-capitalises and autocorrects free-text
+  // input. Puzzle answers are case-insensitive on the server side, but
+  // the player sees their typing being mangled mid-attempt — "shed" →
+  // "She'd", "rosa" → "Rosa", and the like. Disabling those, plus
+  // setting enterkeyhint=send so the soft keyboard's return key
+  // labels itself "Send" instead of the default "return".
+  input.setAttribute('autocapitalize', 'off');
+  input.setAttribute('autocorrect', 'off');
+  input.setAttribute('spellcheck', 'false');
+  input.setAttribute('enterkeyhint', 'send');
   // Screen-reader users hear the placeholder, but a real label is
   // strictly correct + survives placeholder localisation if any
   // assistive tech ever ignores it.
@@ -3411,27 +3557,37 @@ function rebuff(guidance) {
 // Debug shortcut: Alt+S pops the celebration so you can tweak the visuals
 // without actually solving a puzzle. Alt+W re-shows the welcome overlay,
 // Alt+C renders the completion summary with placeholder numbers.
-document.addEventListener('keydown', (e) => {
-  if (!e.altKey) return;
-  if (e.key === 'S' || e.key === 's') {
-    e.preventDefault();
-    celebrate(e.shiftKey);
-    return;
-  }
-  if (e.key === 'W' || e.key === 'w') {
-    e.preventDefault();
-    showWelcomeDialog({
-      team_name: 'Team Alfa',
-      adventure_title: 'Debug preview',
-      page_count: 3,
-    }, { force: true });
-    return;
-  }
-  if (e.key === 'C' || e.key === 'c') {
-    e.preventDefault();
-    showDebugSummary();
-  }
-});
+//
+// Gated behind ?debug=1 so a real player who fat-fingers Alt during an
+// answer entry can't drop into a phantom UI state mid-event. Reading
+// the flag once and capturing it lets the listener stay declarative.
+const DEBUG_KEYS_ENABLED = (() => {
+  try { return new URLSearchParams(location.search).get('debug') === '1'; }
+  catch { return false; }
+})();
+if (DEBUG_KEYS_ENABLED) {
+  document.addEventListener('keydown', (e) => {
+    if (!e.altKey) return;
+    if (e.key === 'S' || e.key === 's') {
+      e.preventDefault();
+      celebrate(e.shiftKey);
+      return;
+    }
+    if (e.key === 'W' || e.key === 'w') {
+      e.preventDefault();
+      showWelcomeDialog({
+        team_name: 'Team Alfa',
+        adventure_title: 'Debug preview',
+        page_count: 3,
+      }, { force: true });
+      return;
+    }
+    if (e.key === 'C' || e.key === 'c') {
+      e.preventDefault();
+      showDebugSummary();
+    }
+  });
+}
 
 // maybeShowWelcome pops the welcome overlay the first time this slot
 // opens this adventure, remembered in localStorage so a refresh doesn't
@@ -3452,14 +3608,19 @@ function showWelcomeDialog(s, opts = {}) {
   // Drop any leftover overlay (Alt+W pressed twice, etc.).
   document.querySelectorAll('.welcome').forEach((n) => n.remove());
 
+  let undoModal = null;
   const dismiss = () => {
     if (opts.storageKey) localStorage.setItem(opts.storageKey, '1');
+    if (undoModal) undoModal();
+    document.removeEventListener('keydown', onKey);
     overlay.remove();
     // If render() rendered puzzle 1 underneath while welcome was up,
     // its block was held at .pre-enter — promote it now so it eases
     // into view as welcome clears.
     resolvePendingEntrance();
   };
+  const onKey = (e) => { if (e.key === 'Escape') dismiss(); };
+  document.addEventListener('keydown', onKey);
 
   // maybeShowWelcome suppresses the overlay during the 'waiting' state,
   // so by the time we get here the event is live and the CTA can just
@@ -3561,6 +3722,13 @@ function showWelcomeDialog(s, opts = {}) {
     if (e.target === overlay) dismiss();
   });
   document.body.append(overlay);
+  // Welcome is a real dialog: aria-labelledby points at the heading,
+  // initial focus on the primary CTA so the player can confirm with
+  // Enter alone, focus restored on dismiss.
+  undoModal = wireModal(panel, {
+    labelledBy: 'h2',
+    initialFocus: cta,
+  });
 }
 
 // buildPausedCard distinguishes a mid-event pause from the pre-start
@@ -3937,6 +4105,12 @@ function openQrScanner() {
     frame.className = 'qr-frame';
     const status = document.createElement('p');
     status.className = 'qr-status';
+    // aria-live="polite" so a screen-reader user hears "Camera
+    // permission denied" / "Camera unavailable" when the async
+    // getUserMedia path updates the message — without it the
+    // failure is silent for non-sighted users.
+    status.setAttribute('role', 'status');
+    status.setAttribute('aria-live', 'polite');
     status.textContent = t('Point the camera at a QR code');
     const cancel = document.createElement('button');
     cancel.type = 'button';
@@ -3944,6 +4118,13 @@ function openQrScanner() {
     cancel.textContent = t('Cancel');
     modal.append(video, frame, status, cancel);
     document.body.append(modal);
+    // Dialog scaffolding — the modal IS the dialog (no nested panel).
+    // Initial focus on Cancel since it's the only keyboard-actionable
+    // control and keeps the user one Esc/Enter from dismissing.
+    const undoModal = wireModal(modal, {
+      label: t('QR scanner'),
+      initialFocus: cancel,
+    });
 
     let stream = null;
     let stopped = false;
@@ -3951,13 +4132,14 @@ function openQrScanner() {
       if (stopped) return;
       stopped = true;
       if (stream) stream.getTracks().forEach((tk) => tk.stop());
+      undoModal();
+      document.removeEventListener('keydown', onKey);
       modal.remove();
       resolve(value);
     };
     cancel.addEventListener('click', () => cleanup(null));
     const onKey = (e) => { if (e.key === 'Escape') cleanup(null); };
     document.addEventListener('keydown', onKey);
-    modal.addEventListener('remove', () => document.removeEventListener('keydown', onKey));
 
     (async () => {
       try {
@@ -4977,12 +5159,22 @@ function openMenuDrawer(s) {
   drawer.append(panel);
   document.body.append(drawer);
 
+  // Dialog scaffolding — focus moves to the close button on open
+  // (predictable for screen-reader users; the drawer's content is
+  // long and varies per state). Tab is trapped within the panel
+  // until close().
+  const undoModal = wireModal(panel, {
+    labelledBy: '.menu-title',
+    initialFocus: closeBtn,
+  });
+
   let closed = false;
   function close() {
     if (closed) return;
     closed = true;
     drawer.classList.remove('open');
     setTimeout(() => drawer.remove(), 280);
+    undoModal();
     document.removeEventListener('keydown', onKey);
   }
   function onKey(e) { if (e.key === 'Escape') close(); }

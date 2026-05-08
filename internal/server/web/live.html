@@ -553,8 +553,8 @@ const TEAM_COLORS = ['#e24080', '#7fd17b', '#60a5fa', '#f5c452', '#a78bfa', '#22
 // value first and then animate to the NEW one via the CSS transition.
 // Without this the bar would either replay from 0 every tick (if we
 // used keyframes) or snap instantly to the new width (fresh node →
-// no transition). Entries are kept across snapshots; a team id that
-// disappears just leaves a stale entry behind, which is harmless.
+// no transition). Entries are pruned in the board-render path so a
+// long-running TV doesn't accumulate stale ids across events.
 const lastPct = new Map();
 function teamColor(i) { return TEAM_COLORS[i % TEAM_COLORS.length]; }
 
@@ -1311,6 +1311,13 @@ function buildBoard(data) {
     board.append(row);
   });
   knownTeams.clear(); seen.forEach((id) => knownTeams.add(id));
+  // Prune lastPct against the current `seen` set so a TV that runs
+  // for hours across multiple back-to-back events doesn't accumulate
+  // an entry for every team_id ever observed. The transition CSS
+  // only needs the last value for currently-rendered teams.
+  for (const id of lastPct.keys()) {
+    if (!seen.has(id)) lastPct.delete(id);
+  }
   return board;
 }
 
@@ -1443,6 +1450,22 @@ function setLiveStatus(level, text) {
   liveStatusEl.textContent = text;
 }
 
+// Coalesce render() calls so a `snapshot` + `tracks` burst from the
+// server (which arrive as two separate WS frames within the same
+// network event) only triggers one render per animation frame
+// instead of two back-to-back full DOM rebuilds. The flag is read
+// in the rAF callback so a render scheduled while one is already
+// pending is a no-op.
+let renderPending = false;
+function scheduleRender() {
+  if (renderPending) return;
+  renderPending = true;
+  requestAnimationFrame(() => {
+    renderPending = false;
+    render();
+  });
+}
+
 function connectWS() {
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
   ws = new WebSocket(`${proto}//${location.host}/ws/live/${encodeURIComponent(LIVE_TOKEN)}`);
@@ -1456,12 +1479,12 @@ function connectWS() {
     if (!msg || !msg.kind) return;
     if (msg.kind === 'snapshot') {
       latestSnapshot = msg.data;
-      render();
+      scheduleRender();
     } else if (msg.kind === 'tracks') {
       latestTracks = msg.data?.tracks || [];
       // Only re-render if the map is currently shown — saves a full rebuild
       // of the leaderboard DOM when only map overlays changed.
-      if (latestSnapshot?.show_map) render();
+      if (latestSnapshot?.show_map) scheduleRender();
     }
   };
   ws.onclose = () => {
@@ -1484,7 +1507,11 @@ function connectWS() {
 // don't look frozen while waiting for the next state change. Skipped
 // once the run has completed — the clock is pinned to completed_at
 // and mutating it on every tick would visibly jitter the digits.
+// Pauses while document.hidden so a TV that's been switched to a
+// different input (or a host's tab buried behind a screensaver) isn't
+// burning CPU + GPU on layout-thrashing setInterval bodies for hours.
 setInterval(() => {
+  if (document.hidden) return;
   if (!latestSnapshot) return;
   if (latestSnapshot.state !== 'completed') {
     const clockEl = document.querySelector('.clock');

@@ -24,7 +24,10 @@
   --accent-deep: #6d0a35;
   --ink: #1f3349;
   --ink-soft: #3d5573;
-  --muted: #6b7f96;
+  /* AA contrast on light --bg: #6b7f96 falls at 3.86:1 which fails the
+     4.5:1 floor for body text. Bumping to #4f6478 (~5.4:1) — same
+     value play.html already uses for the same reason. */
+  --muted: #4f6478;
   --bg: #fbfbfd;
   --surface: #ffffff;
   --surface-2: #f3f4f7;

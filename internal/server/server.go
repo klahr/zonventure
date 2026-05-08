@@ -4,8 +4,10 @@ package server
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"embed"
+	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"runtime"
@@ -1357,17 +1359,36 @@ func servePublicPage(path string, status int) http.HandlerFunc {
 	}
 }
 
-// serveAsset serves an embedded asset with an explicit Content-Type.
-// Used for the shared i18n.js so all three HTML pages can load a single
-// copy instead of duplicating the dictionary per file.
+// serveAsset serves an embedded asset with an explicit Content-Type
+// and ETag-based revalidation.
+//
+// The body is read once at handler construction so the ETag is a
+// stable hash of the served bytes for the process lifetime. Browsers
+// repeat-visit with `If-None-Match` and get a 304 when nothing has
+// changed; combined with a moderate `max-age`, that means a typical
+// nav doesn't even hit our handler. A deploy mints new ETags
+// (process restart → fresh hash if bytes changed) so users pick up
+// updated assets the next time the cache entry expires.
+//
+// Earlier the handler emitted `Cache-Control: no-store` which forced
+// every navigation to re-download topbar.css, page-tokens.css,
+// fsmap.css, i18n.js, and the 130 KB jsqr.js — the worst single
+// repeat-visit cost in the product.
 func serveAsset(path, contentType string) http.HandlerFunc {
 	body, err := readWebFile(path)
 	if err != nil {
 		panic("embed: " + err.Error())
 	}
-	return func(w http.ResponseWriter, _ *http.Request) {
+	sum := sha256.Sum256(body)
+	etag := `"` + hex.EncodeToString(sum[:16]) + `"`
+	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", contentType)
-		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("ETag", etag)
+		w.Header().Set("Cache-Control", "public, max-age=3600, must-revalidate")
+		if match := r.Header.Get("If-None-Match"); match != "" && match == etag {
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
 		_, _ = w.Write(body)
 	}
 }

@@ -69,7 +69,9 @@
   --border-soft:   #c6d2e166;
 
   --text:          var(--ink);
-  --muted:         #6b7f96;
+  /* AA contrast: #6b7f96 fails 4.5:1 against light --bg. Bumped to
+     #4f6478 (~5.4:1) — same value play.html / page-tokens.css use. */
+  --muted:         #4f6478;
 
   --shadow-soft:   0 1px 4px #00000014, 0 2px 8px #00000012;
   --shadow:        1px 1px 4px #00000033;
@@ -2039,6 +2041,20 @@ textarea { min-height: 80px; resize: vertical; font-family: ui-monospace, monosp
 .toast.err { border-color: var(--danger); color: var(--danger); }
 .toast.ok { border-color: var(--success); color: var(--success); }
 @keyframes slideIn { from { transform: translateY(8px); opacity: 0; } to { transform: none; opacity: 1; } }
+
+/* prefers-reduced-motion respect for the entire arranger surface.
+   24+ keyframes + many transitions live in this file (toast slide-in,
+   puzzle pulse, drag-and-drop transforms, accordion expand, etc.) —
+   collapsing them all to ~instant for users with vestibular needs.
+   Mirrors the same pattern in page-tokens.css. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
 
 /* ---------- Login ---------- */
 .login-wrap {
@@ -14270,25 +14286,44 @@ async function mountSimulatorPanel(host, advSlug) {
 // to switch between busy-elsewhere and full-controls layouts), or
 // the stage transitions to/from idle (same reason).
 function schedulePoll(host, advSlug, prevStatus, applyStage) {
-  if (simulatorPollTimer) clearInterval(simulatorPollTimer);
-  simulatorPollTimer = setInterval(async () => {
-    if (!document.contains(host)) {
-      clearInterval(simulatorPollTimer); simulatorPollTimer = null; return;
+  if (simulatorPollTimer) clearTimeout(simulatorPollTimer);
+  // Self-rescheduling setTimeout instead of setInterval so we can
+  // back off on errors (network blip, server restart) and skip the
+  // tick entirely while document.hidden. The previous setInterval
+  // fired every 1.5s regardless; on a backgrounded tab during an
+  // outage this hammered the server in lockstep with every other
+  // open arranger console.
+  let delay = 1500;
+  const tick = async () => {
+    simulatorPollTimer = null;
+    if (!document.contains(host)) return;
+    if (document.hidden) {
+      simulatorPollTimer = setTimeout(tick, delay);
+      return;
     }
     try {
       const r = await api('/api/admin/simulator');
-      if (!r.ok) return;
-      const next = r.body || { stage: 'idle' };
-      const stageChanged = (next.stage || 'idle') !== (prevStatus.stage || 'idle');
-      const advChanged = (next.adventure_slug || '') !== (prevStatus.adventure_slug || '');
-      if (stageChanged || advChanged) {
-        clearInterval(simulatorPollTimer); simulatorPollTimer = null;
-        mountSimulatorPanel(host, advSlug);
-        return;
+      if (!r.ok) {
+        delay = Math.min(delay * 2, 30000); // exponential, cap 30s
+      } else {
+        delay = 1500;
+        const next = r.body || { stage: 'idle' };
+        const stageChanged = (next.stage || 'idle') !== (prevStatus.stage || 'idle');
+        const advChanged = (next.adventure_slug || '') !== (prevStatus.adventure_slug || '');
+        if (stageChanged || advChanged) {
+          mountSimulatorPanel(host, advSlug);
+          return;
+        }
+        if (applyStage) applyStage(next);
       }
-      if (applyStage) applyStage(next);
-    } catch { /* server restart or offline — next tick will catch up */ }
-  }, 1500);
+    } catch {
+      delay = Math.min(delay * 2, 30000);
+    }
+    if (document.contains(host)) {
+      simulatorPollTimer = setTimeout(tick, delay);
+    }
+  };
+  simulatorPollTimer = setTimeout(tick, delay);
 }
 
 // simulatorAction posts a control command. Re-mounts only the
@@ -15698,7 +15733,10 @@ async function openSecretReveal({ secret, title }) {
 // unwatchRun pattern) so a left-behind interval can't leak.
 let webhookLogPoll = null;
 function stopWebhookLogPoll() {
-  if (webhookLogPoll) { clearInterval(webhookLogPoll); webhookLogPoll = null; }
+  // setTimeout id (was setInterval pre-poll-refactor); clearTimeout
+  // also handles a clearInterval id transparently in browsers, but
+  // matching the new shape is clearer.
+  if (webhookLogPoll) { clearTimeout(webhookLogPoll); webhookLogPoll = null; }
 }
 
 // viewWebhooksLog renders one endpoint's delivery audit log: every
@@ -15822,21 +15860,26 @@ async function viewWebhooksLog(view, endpointID) {
   );
   await fetchPage({ reset: true });
 
-  // Auto-refresh while any row is still pending. The worker attempts
-  // every 5s and exponentially backs off after failure; polling at
-  // 4s catches the first success/failure transition without thrashing.
-  // Self-stops once everything has settled (delivered/dead) so an
-  // open log page on a quiet org isn't a constant DB hit. Uses
-  // quiet=true so the visible list stays put until the new data
-  // arrives — no "list goes empty then fills" flash on every tick.
+  // Auto-refresh while any row is still pending. Self-rescheduling
+  // setTimeout (instead of setInterval) so we can pause while the
+  // tab is hidden — no point polling for status updates on a
+  // backgrounded log page. Uses quiet=true so the visible list stays
+  // put until the new data arrives — no "list goes empty then fills"
+  // flash on every tick.
   stopWebhookLogPoll();
-  webhookLogPoll = setInterval(() => {
-    if (!deliveries.some((d) => d.status === 'pending')) {
-      stopWebhookLogPoll();
+  const tick = async () => {
+    webhookLogPoll = null;
+    if (!deliveries.some((d) => d.status === 'pending')) return;
+    if (document.hidden) {
+      webhookLogPoll = setTimeout(tick, 4000);
       return;
     }
-    fetchPage({ reset: true, quiet: true });
-  }, 4000);
+    await fetchPage({ reset: true, quiet: true });
+    if (deliveries.some((d) => d.status === 'pending')) {
+      webhookLogPoll = setTimeout(tick, 4000);
+    }
+  };
+  webhookLogPoll = setTimeout(tick, 4000);
 }
 
 // renderDeliveryRow returns one delivery as a clickable card. Click

@@ -1017,6 +1017,7 @@
 "Puzzles": "Puzzles",
 "Puzzles ({{n}})": "Puzzles ({{n}})",
 "QR contains \"{{v}}\" — accepted.": "QR contains \"{{v}}\" — accepted.",
+"QR scanner": "QR scanner",
 "QR contains \"{{v}}\" — not in accept list.": "QR contains \"{{v}}\" — not in accept list.",
 "Quest": "Quest",
 "Quest created and listed at /store": "Quest created and listed at /store",
