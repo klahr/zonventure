@@ -133,6 +133,14 @@ type landingStrings struct {
 	StoreToastPaid      string
 	StoreToastCancelled string
 
+	// Post-purchase hand-off: while the JS polls the team-token
+	// endpoint, between Stripe's redirect and the webhook landing,
+	// these short messages tell the buyer what's happening so the
+	// page never goes silent.
+	StoreHandoffPreparing     string // "Setting up your team — one moment…"
+	StoreHandoffEmailFallback string // shown on timeout / 404 — "Almost done. Your team link is on its way to your inbox."
+	StoreHandoffFailed        string // state == "failed" path — "Something went wrong with this purchase."
+
 	// Card vocabulary — used both server-side and by the JS that
 	// hydrates listing cards from /api/store/items. Two team-size
 	// phrasings: solo (1) and the plural (anything ≥ 2). The
@@ -336,6 +344,9 @@ func storeSubs(s landingStrings) [][2]string {
 
 		{"{{STORE_TOAST_PAID}}", s.StoreToastPaid},
 		{"{{STORE_TOAST_CANCELLED}}", s.StoreToastCancelled},
+		{"{{STORE_HANDOFF_PREPARING}}", s.StoreHandoffPreparing},
+		{"{{STORE_HANDOFF_EMAIL_FALLBACK}}", s.StoreHandoffEmailFallback},
+		{"{{STORE_HANDOFF_FAILED}}", s.StoreHandoffFailed},
 
 		{"{{STORE_TEAM_SIZE_SOLO}}", s.StoreTeamSizeSolo},
 		{"{{STORE_TEAM_SIZE_PLURAL}}", s.StoreTeamSizePlural},

@@ -509,6 +509,13 @@ func New(cfg Config) http.Handler {
 		r.Get("/api/store/items", publicH.StoreList)
 		r.Get("/api/store/items/{event_id}", publicH.StoreEvent)
 		r.Post("/api/store/buy", adminH.BuyTicket)
+		// Post-purchase handoff: the /store?paid=N&session_id=...
+		// landing polls this every couple of seconds until the
+		// webhook fulfills the purchase, then redirects the buyer
+		// to /team/{token} so they never have to leave the page
+		// to find their team link. session_id is the capability
+		// check; mismatch returns 404.
+		r.Get("/api/store/ticket/{purchase_id}/team-token", publicH.TicketTeamToken)
 
 		// Per-org public surfaces. /o/{slug}/store + /o/{slug}/store/event/{id}
 		// are the canonical buyer-facing URLs; the bare /store stays

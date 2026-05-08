@@ -269,7 +269,10 @@
   "emptyHeading": "{{STORE_EMPTY_HEADING}}",
   "emptyBody": "{{STORE_EMPTY_BODY}}",
   "errorHeading": "{{STORE_ERROR_HEADING}}",
-  "errorBody": "{{STORE_ERROR_BODY}}"
+  "errorBody": "{{STORE_ERROR_BODY}}",
+  "handoffPreparing": "{{STORE_HANDOFF_PREPARING}}",
+  "handoffEmailFallback": "{{STORE_HANDOFF_EMAIL_FALLBACK}}",
+  "handoffFailed": "{{STORE_HANDOFF_FAILED}}"
 }</script>
 <script>
 (function () {
@@ -284,23 +287,113 @@
   }
 
   // The /store success / cancel redirects from Stripe carry a
-  // ?paid=<id> or ?cancelled=<id> query string. Show a one-line
-  // toast so the buyer knows what happened, then strip the
-  // parameter from the URL so a refresh doesn't re-toast.
+  // ?paid=<id>[&session_id=cs_...] or ?cancelled=<id> query
+  // string. The session_id form is the hand-off path: poll the
+  // server until the webhook fulfills the purchase, then
+  // forward to /team/{token} so the buyer doesn't have to leave
+  // the page to find their team link. Without session_id we
+  // fall back to the legacy "check your email" toast — a stale
+  // bookmark or an old client somehow producing the bare ?paid=
+  // shape still works, just without the smooth handoff.
   function flashFromQuery() {
     var params = new URLSearchParams(window.location.search);
     var paid = params.get('paid');
+    var sessionID = params.get('session_id');
     var cancelled = params.get('cancelled');
     if (!paid && !cancelled) return;
     var status = document.getElementById('status');
-    var div = document.createElement('div');
-    div.className = 'toast' + (cancelled ? ' cancelled' : '');
-    div.textContent = paid ? t('toastPaid') : t('toastCancelled');
-    status.appendChild(div);
+    if (cancelled) {
+      var c = document.createElement('div');
+      c.className = 'toast cancelled';
+      c.textContent = t('toastCancelled');
+      status.appendChild(c);
+      stripQuery();
+      return;
+    }
+    if (paid && sessionID) {
+      runHandoff(paid, sessionID, status);
+      return;
+    }
+    // Bare ?paid= — legacy fallback toast.
+    var p = document.createElement('div');
+    p.className = 'toast';
+    p.textContent = t('toastPaid');
+    status.appendChild(p);
+    stripQuery();
+  }
+
+  function stripQuery() {
     var url = new URL(window.location);
     url.searchParams.delete('paid');
+    url.searchParams.delete('session_id');
     url.searchParams.delete('cancelled');
     history.replaceState({}, '', url.toString());
+  }
+
+  // runHandoff polls the team-token endpoint every 2s until
+  // either the webhook lands (state=paid + team_token) or the
+  // 30s deadline passes. The intermediate "preparing" message
+  // tells the buyer something is happening — without it they'd
+  // see a blank store catalogue and think the purchase failed.
+  // On timeout we fall back to "check your email"; the email
+  // pipeline is already wired and remains the canonical
+  // delivery path.
+  function runHandoff(purchaseID, sessionID, status) {
+    var div = document.createElement('div');
+    div.className = 'toast';
+    div.textContent = t('handoffPreparing');
+    status.appendChild(div);
+
+    var pollURL = '/api/store/ticket/' + encodeURIComponent(purchaseID) +
+                  '/team-token?session_id=' + encodeURIComponent(sessionID);
+    var deadline = Date.now() + 30000;
+    var interval = 2000;
+
+    function tick() {
+      fetch(pollURL, { credentials: 'same-origin', cache: 'no-store' })
+        .then(function (r) {
+          if (r.status === 404) {
+            // Wrong session_id (or purchase missing entirely).
+            // Treat as "the handoff capability isn't valid" and
+            // fall back to the email path — a buyer who lost
+            // their session can still find their team link via
+            // the email we sent.
+            div.textContent = t('handoffEmailFallback');
+            stripQuery();
+            return;
+          }
+          if (!r.ok) {
+            scheduleNext();
+            return;
+          }
+          return r.json().then(function (body) {
+            if (body && body.state === 'paid' && body.team_token) {
+              // Got the team token — forward to the team page.
+              // location.replace so the back button skips this
+              // intermediate state instead of bouncing here.
+              window.location.replace('/team/' + encodeURIComponent(body.team_token));
+              return;
+            }
+            if (body && body.state === 'failed') {
+              div.className = 'toast cancelled';
+              div.textContent = t('handoffFailed');
+              stripQuery();
+              return;
+            }
+            scheduleNext();
+          });
+        })
+        .catch(scheduleNext);
+    }
+    function scheduleNext() {
+      if (Date.now() >= deadline) {
+        div.textContent = t('handoffEmailFallback');
+        stripQuery();
+        return;
+      }
+      setTimeout(tick, interval);
+    }
+    tick();
   }
 
   var SYMBOLS = { eur: '€', usd: '$', sek: 'kr', gbp: '£', dkk: 'kr', nok: 'kr' };

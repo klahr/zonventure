@@ -239,7 +239,12 @@ func (p *Provider) devConfirm(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "simulated webhook delivery failed: "+err.Error(), http.StatusBadGateway)
 		return
 	}
-	http.Redirect(w, r, s.params.SuccessURL, http.StatusSeeOther)
+	// Stripe substitutes {CHECKOUT_SESSION_ID} at redirect time;
+	// the simulated provider mirrors that so callers get the same
+	// query-string shape on both backends. The /store post-
+	// purchase poll relies on it.
+	successURL := strings.ReplaceAll(s.params.SuccessURL, "{CHECKOUT_SESSION_ID}", sid)
+	http.Redirect(w, r, successURL, http.StatusSeeOther)
 }
 
 // devCancel drops the pending session and redirects to the

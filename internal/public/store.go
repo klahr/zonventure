@@ -36,6 +36,87 @@ type StoreItemDTO struct {
 	CoverImageURL string `json:"cover_image_url,omitempty"`
 }
 
+// TicketTeamTokenDTO is the response shape for the post-purchase
+// poll endpoint. The buyer's browser hits the endpoint after Stripe
+// redirects back to /store?paid={id}&session_id={cs_...}; the JS
+// flips on `state == "paid"` and forwards to /team/{team_token} so
+// the buyer never has to leave the page to find their team link.
+//
+//	{ "state": "pending" }                               — webhook hasn't fired yet
+//	{ "state": "paid", "team_token": "abc123…" }         — ready to redirect
+//	{ "state": "failed" }                                — Stripe declined / cancelled-then-failed
+type TicketTeamTokenDTO struct {
+	State     string `json:"state"`
+	TeamToken string `json:"team_token,omitempty"`
+}
+
+// TicketTeamToken is the post-purchase handoff endpoint. Verifies
+// that the supplied session_id matches the one we recorded for the
+// purchase before returning the team token, so a guess at the
+// purchase id from a third party can't surface someone else's
+// team-share URL.
+//
+// 404 on:
+//   - purchase id doesn't exist
+//   - session_id query param missing
+//   - session_id doesn't match the recorded stripe_session_id
+//
+// Returning 404 (rather than 403) on the auth failure is
+// deliberate: indistinguishable from "no such purchase" so a
+// scraper can't tell whether they hit a real id with a wrong
+// session or just a bogus id.
+//
+// Cache-Control: no-store because the JSON contains a security
+// token and the body changes once between webhook arrival and
+// the buyer's next poll.
+func (h *Handlers) TicketTeamToken(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "purchase_id")
+	purchaseID, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil || purchaseID <= 0 {
+		http.NotFound(w, r)
+		return
+	}
+	suppliedSession := strings.TrimSpace(r.URL.Query().Get("session_id"))
+	if suppliedSession == "" {
+		http.NotFound(w, r)
+		return
+	}
+
+	var (
+		state      string
+		recordedSI sql.NullString
+		teamToken  sql.NullString
+	)
+	err = h.DB.QueryRowContext(r.Context(), `
+		SELECT p.state, p.stripe_session_id, t.token
+		FROM ticket_purchases p
+		LEFT JOIN teams t ON t.id = p.team_id
+		WHERE p.id = $1
+	`, purchaseID).Scan(&state, &recordedSI, &teamToken)
+	if errors.Is(err, sql.ErrNoRows) {
+		http.NotFound(w, r)
+		return
+	}
+	if err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "lookup failed", err)
+		return
+	}
+	if !recordedSI.Valid || recordedSI.String == "" || recordedSI.String != suppliedSession {
+		// Session id doesn't match (or wasn't recorded yet — the
+		// webhook handler stamps it via COALESCE, so a brief race
+		// where the buyer polls before checkout.completed lands
+		// produces the same 404 the unauthorised case does).
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	resp := TicketTeamTokenDTO{State: state}
+	if state == "paid" && teamToken.Valid {
+		resp.TeamToken = teamToken.String
+	}
+	httpx.JSON(w, http.StatusOK, resp)
+}
+
 // StoreList serves GET /api/store/items: the JSON catalogue of
 // public-for-sale events. Only events in 'running' or 'paused'
 // state with a non-NULL ticket_price_cents are returned. Results

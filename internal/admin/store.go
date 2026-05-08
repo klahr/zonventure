@@ -360,7 +360,16 @@ func (h *Handlers) createTicketCheckoutSession(
 		AmountCents:   amountCents,
 		Currency:      currency,
 		ProductName:   productName,
-		SuccessURL:    fmt.Sprintf("%s%s?paid=%d", publicURL, storeBasePath, purchaseID),
+		// `{CHECKOUT_SESSION_ID}` is Stripe's redirect-time
+		// substitution: at the moment Stripe sends the buyer back
+		// to us, it replaces the literal placeholder with the
+		// actual session id. The /store post-purchase poll then
+		// uses the session_id as a capability token, verifying
+		// against the purchase row's stripe_session_id before
+		// returning the team token. The simulated provider does
+		// the same substitution in devConfirm so both backends
+		// behave identically end-to-end.
+		SuccessURL:    fmt.Sprintf("%s%s?paid=%d&session_id={CHECKOUT_SESSION_ID}", publicURL, storeBasePath, purchaseID),
 		CancelURL:     fmt.Sprintf("%s%s?cancelled=%d", publicURL, storeBasePath, purchaseID),
 		CustomerEmail: buyerEmail,
 		Metadata: map[string]string{
