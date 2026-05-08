@@ -2094,5 +2094,14 @@
 "Override the platform palette on your public landing. Leave a field blank to keep the default.": "Skriv över plattformens palett på er publika sida. Lämna ett fält tomt för att behålla standard.",
 "Renaming breaks every previously-shared /o/old-slug link — share the new one.": "Att byta namn bryter varje tidigare delad /o/old-slug-länk — dela den nya.",
 "Upload cover image": "Ladda upp omslagsbild",
-"Where customers find you.": "Var kunder hittar er."
+"Where customers find you.": "Var kunder hittar er.",
+"Couldn't load organizations ({{err}}).": "Kunde inte ladda organisationer ({{err}}).",
+"Couldn't load this organization ({{err}}).": "Kunde inte ladda den här organisationen ({{err}}).",
+"Each organization is a tenant. Click a row to manage its users, assignments, and purchases.": "Varje organisation är en tenant. Klicka på en rad för att hantera dess användare, tilldelningar och köp.",
+"Invoice billing": "Fakturering",
+"Manage {{name}}": "Hantera {{name}}",
+"No organizations match “{{q}}”.": "Inga organisationer matchar ”{{q}}”.",
+"Search organizations": "Sök organisationer",
+"Search organizations…": "Sök organisationer…",
+"{{n}} total": "{{n}} totalt"
 }

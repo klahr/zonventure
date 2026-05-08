@@ -4359,7 +4359,9 @@ async function renderRoute() {
         nav('#settings/integrations');
         return;
       }
-      case 'organizations':return await viewOrganizations(view);
+      case 'organizations':return arg
+        ? await viewOrganizationDetail(view, parseInt(arg, 10))
+        : await viewOrganizations(view);
       case 'library':      return arg ? await viewLibraryEdit(view, arg) : await viewLibrary(view);
       case 'puzzles':      return arg ? await viewPuzzleEditRoute(view, arg) : await viewPuzzles(view);
       case 'logs':         return await viewLogs(view);
@@ -10232,35 +10234,189 @@ async function confirmDeleteUser(user) {
   else toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
 }
 
-/* ========== Organizations (admin only) ========== */
+/* ========== Organizations (admin only) ==========
+   The list is the master surface: one compact row per org with key
+   counts + a trusted-billing pill. Clicking a row navigates to
+   #organizations/{id} (viewOrganizationDetail) where the heavy
+   sections — users, assignments, purchases, branding, billing —
+   live. Splitting list/detail keeps the master view scannable past
+   ~5 orgs and gives each detail page enough real estate to
+   restructure later without crowding the list.
+*/
 async function viewOrganizations(view) {
-  const [orgsR, advsR, purR] = await Promise.all([
-    api('/api/admin/organizations'),
+  // Loading skeleton — paint title + a placeholder line before the
+  // fetch resolves so a slow API call doesn't leave the previous
+  // view stranded.
+  view.replaceChildren(
+    h('div', { class: 'row between', style: 'margin-bottom:1rem' },
+      h('h1', { style: 'margin:0' }, t('Organizations'))),
+    h('div', { class: 'card' }, h('p', { class: 'muted' }, t('Loading…'))));
+
+  const r = await api('/api/admin/organizations');
+  if (!r.ok) {
+    view.replaceChildren(
+      h('div', { class: 'row between', style: 'margin-bottom:1rem' },
+        h('h1', { style: 'margin:0' }, t('Organizations'))),
+      h('div', { class: 'card' },
+        h('p', { class: 'err', style: 'margin:0 0 .75rem' },
+          t('Couldn\'t load organizations ({{err}}).', {
+            err: r.body?.error || ('HTTP ' + (r.status || 0)),
+          })),
+        h('button', { class: 'btn', type: 'button',
+          on: { click: () => viewOrganizations(view) } }, t('Retry'))));
+    return;
+  }
+  const allOrgs = r.body?.organizations || [];
+
+  const newBtn = h('button', { class: 'btn primary', type: 'button',
+    on: { click: () => openCreateOrg() } },
+    icon(ICONS.plus), t('New organization'));
+
+  // Search input — case-insensitive substring match on the org name.
+  // Re-renders the list inline (no fetch) so typing is instantaneous
+  // even with a few hundred orgs.
+  const search = h('input', {
+    type: 'search', placeholder: t('Search organizations…'),
+    'aria-label': t('Search organizations'),
+    autocomplete: 'off',
+    style: 'min-width:14rem; flex:1; max-width:24rem',
+  });
+  const listHost = h('div');
+
+  const renderList = () => {
+    const q = search.value.trim().toLowerCase();
+    const filtered = q
+      ? allOrgs.filter((o) => (o.name || '').toLowerCase().includes(q))
+      : allOrgs;
+    if (allOrgs.length === 0) {
+      listHost.replaceChildren(h('div', { class: 'empty' }, t('No organizations yet.')));
+      return;
+    }
+    if (filtered.length === 0) {
+      listHost.replaceChildren(h('div', { class: 'empty' },
+        t('No organizations match “{{q}}”.', { q })));
+      return;
+    }
+    listHost.replaceChildren(
+      h('div', {
+        class: 'org-list',
+        style: 'display:flex; flex-direction:column; gap:.5rem',
+      }, filtered.map(renderOrganizationRow)),
+    );
+  };
+  search.addEventListener('input', renderList);
+
+  view.replaceChildren(
+    h('div', { class: 'row between', style: 'margin-bottom:.75rem; gap:.5rem; flex-wrap:wrap; align-items:center' },
+      h('h1', { style: 'margin:0' }, t('Organizations')),
+      newBtn),
+    h('p', { class: 'muted', style: 'font-size:.9rem; margin:0 0 .75rem' },
+      t('Each organization is a tenant. Click a row to manage its users, assignments, and purchases.')),
+    h('div', { class: 'row', style: 'gap:.5rem; margin-bottom:.75rem; align-items:center; flex-wrap:wrap' },
+      search,
+      h('span', { class: 'muted', style: 'font-size:.85rem' },
+        t('{{n}} total', { n: allOrgs.length }))),
+    listHost);
+  renderList();
+}
+
+// renderOrganizationRow is the master-list row. Compact: logo
+// thumb, name + a tight stat line, a trusted-billing pill, a
+// chevron hint. The whole row is keyboard-activatable and
+// navigates to #organizations/{id} on click.
+function renderOrganizationRow(org) {
+  const members = (org.members || []).length;
+  const players = org.players_total || 0;
+  const events = org.events_total || 0;
+  const running = org.events_running || 0;
+  const counts = h('p', {
+    class: 'muted',
+    style: 'margin:.15rem 0 0; font-size:.85rem',
+  },
+    t('{{n}} users', { n: members }), ' · ',
+    t('{{n}} players', { n: players }), ' · ',
+    t('{{n}} events', { n: events }),
+    running > 0
+      ? h('span', { class: 'pill success', style: 'margin-left:.5rem; font-size:.7rem' },
+          t('{{n}} running', { n: running }))
+      : null,
+  );
+  const trustedPill = org.trusted
+    ? h('span', { class: 'pill success', style: 'margin-left:auto; font-size:.7rem; flex-shrink:0' },
+        t('Invoice billing'))
+    : null;
+  const onActivate = (handler) => ({
+    click: handler,
+    keydown: (e) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handler(e); }
+    },
+  });
+  return h('div', {
+    class: 'card clickable',
+    role: 'button',
+    tabindex: '0',
+    'aria-label': t('Manage {{name}}', { name: org.name }),
+    style: 'display:flex; align-items:center; gap:.75rem; cursor:pointer',
+    on: onActivate(() => nav('#organizations/' + org.id)),
+  },
+    orgIcon(org, 40),
+    h('div', { style: 'flex:1; min-width:0' },
+      h('strong', { style: 'display:block' }, org.name),
+      counts),
+    trustedPill,
+    h('span', { class: 'muted', style: 'font-size:1.1rem; flex-shrink:0', 'aria-hidden': 'true' }, '›'),
+  );
+}
+
+// viewOrganizationDetail is the per-org page. Reached by clicking
+// a row on viewOrganizations or by deep-linking
+// #organizations/{id}. The heavy sections (users, assignments,
+// purchases, branding, billing) all live here so the master list
+// can stay scannable.
+async function viewOrganizationDetail(view, orgID) {
+  if (!Number.isFinite(orgID) || orgID <= 0) {
+    nav('#organizations');
+    return;
+  }
+  view.replaceChildren(
+    h('div', { class: 'row between', style: 'margin-bottom:1rem' },
+      h('a', { href: '#organizations',
+        on: { click: (e) => { e.preventDefault(); nav('#organizations'); } } },
+        '← ', t('Organizations'))),
+    h('div', { class: 'card' }, h('p', { class: 'muted' }, t('Loading…'))),
+  );
+
+  const [orgR, advR, purR] = await Promise.all([
+    api('/api/admin/organizations/' + orgID),
     api('/api/admin/adventures'),
     api('/api/admin/purchases'),
   ]);
-  const orgs = orgsR.body?.organizations || [];
-  const adventures = advsR.body?.adventures || [];
-  // Admin gets every purchase; bucket by org_id so each card can render
-  // only the rows for its own tenant. Server already orders by created_at
-  // DESC, so the per-org slice stays newest-first without re-sorting.
-  const purchasesByOrg = new Map();
-  for (const p of (purR.body?.purchases || [])) {
-    const list = purchasesByOrg.get(p.org_id) || [];
-    list.push(p);
-    purchasesByOrg.set(p.org_id, list);
+  if (!orgR.ok) {
+    view.replaceChildren(
+      h('div', { class: 'row between', style: 'margin-bottom:1rem' },
+        h('a', { href: '#organizations',
+          on: { click: (e) => { e.preventDefault(); nav('#organizations'); } } },
+          '← ', t('Organizations'))),
+      h('div', { class: 'card' },
+        h('p', { class: 'err' },
+          t('Couldn\'t load this organization ({{err}}).', {
+            err: orgR.body?.error || ('HTTP ' + (orgR.status || 0)),
+          }))));
+    return;
   }
+  const org = orgR.body || {};
+  const adventures = advR.body?.adventures || [];
+  const orgPurchases = (purR.body?.purchases || []).filter((p) => p.org_id === orgID);
+
+  const back = h('a', {
+    href: '#organizations',
+    style: 'display:inline-flex; align-items:center; gap:.25rem',
+    on: { click: (e) => { e.preventDefault(); nav('#organizations'); } },
+  }, '← ', t('Organizations'));
+
   view.replaceChildren(
-    h('div', { class: 'row between' },
-      h('h1', {}, t('Organizations')),
-      h('button', { class: 'btn primary', on: { click: () => openCreateOrg() } },
-        icon(ICONS.plus), t('New organization'))),
-    h('p', { class: 'muted' },
-      t('Each organization is a tenant — its admins author adventures and manage members; its race directors run events and manage teams. Assign adventures to an organization to let them schedule events.')),
-    orgs.length === 0
-      ? h('div', { class: 'empty' }, t('No organizations yet.'))
-      : h('div', {}, orgs.map((o) =>
-          renderOrganizationCard(o, adventures, purchasesByOrg.get(o.id) || []))),
+    h('div', { style: 'margin-bottom:1rem' }, back),
+    renderOrganizationCard(org, adventures, orgPurchases),
   );
 }
 

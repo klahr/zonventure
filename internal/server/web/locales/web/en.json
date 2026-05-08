@@ -2094,5 +2094,14 @@
 "Override the platform palette on your public landing. Leave a field blank to keep the default.": "Override the platform palette on your public landing. Leave a field blank to keep the default.",
 "Renaming breaks every previously-shared /o/old-slug link — share the new one.": "Renaming breaks every previously-shared /o/old-slug link — share the new one.",
 "Upload cover image": "Upload cover image",
-"Where customers find you.": "Where customers find you."
+"Where customers find you.": "Where customers find you.",
+"Couldn't load organizations ({{err}}).": "Couldn't load organizations ({{err}}).",
+"Couldn't load this organization ({{err}}).": "Couldn't load this organization ({{err}}).",
+"Each organization is a tenant. Click a row to manage its users, assignments, and purchases.": "Each organization is a tenant. Click a row to manage its users, assignments, and purchases.",
+"Invoice billing": "Invoice billing",
+"Manage {{name}}": "Manage {{name}}",
+"No organizations match “{{q}}”.": "No organizations match “{{q}}”.",
+"Search organizations": "Search organizations",
+"Search organizations…": "Search organizations…",
+"{{n}} total": "{{n}} total"
 }
