@@ -279,14 +279,7 @@
   </div>
 </main>
 
-<script id="store-i18n" type="application/json">{
-  "teamSizeSolo": "{{STORE_TEAM_SIZE_SOLO}}",
-  "teamSizePlural": "{{STORE_TEAM_SIZE_PLURAL}}",
-  "perTicket": "{{STORE_PER_TICKET}}",
-  "perTeam": "{{STORE_PER_TEAM}}",
-  "emptyHeading": "{{LANDING_FEATURED_EMPTY}}",
-  "errorHeading": "{{STORE_ERROR_HEADING}}"
-}</script>
+<script id="store-i18n" type="application/json">{{ORG_LANDING_I18N_JSON}}</script>
 <script>
 (function () {
   var I18N = (function () {
@@ -312,14 +305,19 @@
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
+  // cssURLEncode keeps a URL safe inside CSS `url("…")` — see store.html
+  // for the rationale. Mirroring instead of extracting because both
+  // store and org-landing are independently embedded HTML files.
+  function cssURLEncode(u) {
+    return String(u == null ? '' : u).replace(/[\\'"() \t\r\n]/g, function (c) {
+      return '%' + c.charCodeAt(0).toString(16).toUpperCase().padStart(2, '0');
+    });
+  }
   function buildCard(item) {
     var card = document.createElement('a');
     card.className = 'card';
     card.href = '{{STORE_PATH}}/event/' + encodeURIComponent(item.event_id);
-    var cover = item.cover_image_url
-      ? '<div class="cover" style="background-image:url(' + escapeHTML(item.cover_image_url) + ')"></div>'
-      : '<div class="cover"></div>';
-    card.innerHTML = cover +
+    card.innerHTML = '<div class="cover"></div>' +
       '<div class="body">' +
       '<h3>' + escapeHTML(item.adventure_title || item.adventure_slug) + '</h3>' +
       '<p class="blurb">' + escapeHTML(item.blurb || '') + '</p>' +
@@ -327,6 +325,12 @@
       ' <small style="color:var(--muted);font-weight:400">' +
       escapeHTML(item.team_size > 1 ? t('perTeam') : t('perTicket')) +
       '</small></div></div>';
+    if (item.cover_image_url) {
+      var coverEl = card.querySelector('.cover');
+      if (coverEl) {
+        coverEl.style.backgroundImage = 'url("' + cssURLEncode(item.cover_image_url) + '")';
+      }
+    }
     return card;
   }
   function render(items) {

@@ -290,7 +290,7 @@
         </div>
         <p class="blurb">{{BLURB}}</p>
       </div>
-      <div class="hero-art" data-cover="{{HAS_COVER}}" style="--cover-img: url({{COVER_URL}})" role="img" aria-label="{{TITLE}}"></div>
+      <div class="hero-art" data-cover="{{HAS_COVER}}" style="--cover-img: url('{{COVER_URL}}')" role="img" aria-label="{{TITLE}}"></div>
     </div>
 
     <div class="meta-grid" aria-label="Ticket details">
@@ -314,7 +314,7 @@
 
     <div class="buy-card">
       <h2>{{STORE_EVENT_BUY_HEADING}}</h2>
-      <form id="buy-form" novalidate>
+      <form id="buy-form" data-event-id="{{EVENT_ID}}" novalidate>
         <label for="buyer-email">{{STORE_EVENT_EMAIL_LABEL}}</label>
         <input id="buyer-email" type="email" required autocomplete="email" placeholder="{{STORE_EVENT_EMAIL_PLACEHOLDER}}">
         <div class="err" id="buy-err" role="alert"></div>
@@ -342,12 +342,7 @@
 <!-- i18n bundle for the per-event JS. Locale text is rendered into
      this JSON block server-side so the buy form's validation +
      error toasts stay in the caller's language. -->
-<script id="store-event-i18n" type="application/json">{
-  "toastPaid": "{{STORE_TOAST_PAID}}",
-  "toastCancelled": "{{STORE_TOAST_CANCELLED}}",
-  "badEmail": "{{STORE_EVENT_BAD_EMAIL}}",
-  "genericErr": "{{STORE_EVENT_GENERIC_ERR}}"
-}</script>
+<script id="store-event-i18n" type="application/json">{{STORE_EVENT_I18N_JSON}}</script>
 <script>
 (function () {
   var I18N = (function () {
@@ -388,10 +383,15 @@
     }
     submit.disabled = true;
     submit.textContent = '…';
+    // The event id rides on the form's data-event-id attribute
+    // (HTML-escaped at render time) rather than being interpolated
+    // into the JS literal, so an unexpected value can't ever
+    // produce a SyntaxError on the page.
+    var eventID = parseInt(form.dataset.eventId || '', 10);
     fetch('{{STORE_API_BASE}}/buy', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ event_id: {{EVENT_ID}}, buyer_email: email }),
+      body: JSON.stringify({ event_id: eventID, buyer_email: email }),
     })
       .then(function (r) {
         if (!r.ok) {

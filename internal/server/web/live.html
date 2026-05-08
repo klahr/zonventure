@@ -3,6 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<!-- Public-but-unguessable token URL. Crawlers must not index it —
+     the meta tag is paired with X-Robots-Tag on /live/{token} in
+     publicrl.go so a token that surfaces in a chat preview can't
+     end up in a search index. Mirrors recap.html's posture. -->
+<meta name="robots" content="noindex, nofollow">
 <title>Zonventure | Live</title>
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <!-- Public-but-unguessable URL: a leaked /live/{token} should still
@@ -1268,7 +1273,7 @@ function playStartAnimation() {
   overlay.className = 'startfx';
   const ring = document.createElement('div');
   ring.className = 'ring';
-  ring.textContent = 'GO';
+  ring.textContent = t('Go!');
   const head = document.createElement('div');
   head.className = 'head';
   head.textContent = t("We're live!");

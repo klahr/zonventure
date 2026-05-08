@@ -1,0 +1,108 @@
+/* Shared design tokens, button styles, and link/focus rules for the
+ * public marketing surfaces (landing, pricing, store, store-event,
+ * org-landing, 404). Pulled out of each page's inline <style> block
+ * so the brand palette and the .btn / .skip-link rules live in one
+ * place — bumping --accent or tweaking the focus ring used to
+ * require touching six files.
+ *
+ * Pages still own:
+ *   - .wrap max-width (each page picks its own)
+ *   - any page-specific button variants (.btn.ghost-light on landing,
+ *     .btn.primary gradient overrides per page)
+ *   - dark-mode reflections of those overrides
+ *
+ * Loaded via <link rel="stylesheet" href="/assets/page-tokens.css">.
+ * SPA pages (arrange.html, play.html) and the dynamic-render pages
+ * (live, recap) keep their own self-contained CSS — those bundles
+ * are pre-loaded with the page itself for first-paint performance.
+ */
+
+:root {
+  color-scheme: light dark;
+  --accent: #ad1357;
+  --accent-2: #e24080;
+  --accent-deep: #6d0a35;
+  --ink: #1f3349;
+  --ink-soft: #3d5573;
+  --muted: #6b7f96;
+  --bg: #fbfbfd;
+  --surface: #ffffff;
+  --surface-2: #f3f4f7;
+  --border-soft: #e2e7ef;
+  --shadow: 0 1px 2px rgba(31,51,73,.06), 0 4px 16px rgba(31,51,73,.08);
+}
+[data-theme="dark"] {
+  --ink: #e7ecf4; --ink-soft: #c2cee0; --muted: #9db1cc;
+  --bg: #14202e; --surface: #1f3349; --surface-2: #263d56;
+  --border-soft: #2c4361;
+  --accent: #e24080; --accent-2: #ff6aa3; --accent-deep: #ad1357;
+  --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.3);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    --ink: #e7ecf4; --ink-soft: #c2cee0; --muted: #9db1cc;
+    --bg: #14202e; --surface: #1f3349; --surface-2: #263d56;
+    --border-soft: #2c4361;
+    --accent: #e24080; --accent-2: #ff6aa3; --accent-deep: #ad1357;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.3);
+  }
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0;
+  font: 16px/1.55 'Open Sans', system-ui, sans-serif;
+  color: var(--ink); background: var(--bg);
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+.skip-link {
+  position: absolute; top: -2.5rem; left: .5rem; z-index: 50;
+  padding: .5rem 1rem; border-radius: 8px;
+  background: var(--accent); color: #fff;
+  font-weight: 700; text-decoration: none;
+  transition: top .15s;
+}
+.skip-link:focus { top: .5rem; outline: 2px solid #fff; outline-offset: 2px; }
+
+a:focus-visible, button:focus-visible, .btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+.btn {
+  display: inline-block;
+  padding: .8rem 1.75rem;
+  border-radius: 999px;
+  font-weight: 700; font-size: .95rem;
+  text-decoration: none;
+  border: 1px solid transparent;
+  transition: transform .12s, box-shadow .12s, opacity .12s,
+              background .12s, color .12s, border-color .12s;
+  cursor: pointer;
+}
+.btn:hover { text-decoration: none; transform: translateY(-1px); }
+.btn.primary {
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  color: #fff;
+  box-shadow: 0 6px 20px color-mix(in srgb, var(--accent) 40%, transparent);
+}
+.btn.primary:hover { opacity: .94; }
+.btn.ghost {
+  color: var(--ink);
+  border-color: var(--border-soft);
+  background: var(--surface);
+}
+.btn.ghost:hover { border-color: var(--accent); color: var(--accent); }

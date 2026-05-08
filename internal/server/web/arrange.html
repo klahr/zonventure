@@ -13,9 +13,12 @@
 <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
   integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 <link rel="stylesheet" href="/assets/fsmap.css">
-<link rel="stylesheet" href="https://unpkg.com/xterm@5.3.0/css/xterm.css">
-<script defer src="https://unpkg.com/xterm@5.3.0/lib/xterm.js"></script>
-<script defer src="https://unpkg.com/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/xterm@5.3.0/css/xterm.css"
+  integrity="sha384-LJcOxlx9IMbNXDqJ2axpfEQKkAYbFjJfhXexLfiRJhjDU81mzgkiQq8rkV0j6dVh" crossorigin="">
+<script defer src="https://unpkg.com/xterm@5.3.0/lib/xterm.js"
+  integrity="sha384-/nfmYPUzWMS6v2atn8hbljz7NE0EI1iGx34lJaNzyVjWGDzMv+ciUZUeJpKA3Glc" crossorigin=""></script>
+<script defer src="https://unpkg.com/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"
+  integrity="sha384-AQLWHRKAgdTxkolJcLOELg4E9rE89CPE2xMy3tIRFn08NcGKPTsELdvKomqji+DL" crossorigin=""></script>
 <script src="/i18n.js"></script>
 <!-- Apply persisted theme synchronously, before stylesheets render, so
      a saved-dark user doesn't see a light flash on refresh. The full
@@ -1974,6 +1977,7 @@ textarea { min-height: 80px; resize: vertical; font-family: ui-monospace, monosp
    custom prop comes from inline style). Falls back to initials on the
    team colour when there's no uploaded image. */
 .team-marker {
+  position: relative; /* lets has-img stack initials behind img */
   width: 100%; height: 100%; border-radius: 50%;
   overflow: hidden;
   border: 3px solid var(--team-col, #e24080);
@@ -1983,6 +1987,15 @@ textarea { min-height: 80px; resize: vertical; font-family: ui-monospace, monosp
   color: #fff; font-weight: 700; font-size: 12px;
 }
 .team-marker img { width: 100%; height: 100%; object-fit: cover; display: block; }
+/* has-img: initials sit underneath as a fallback that shows through
+   when the img fails to load. No inline onerror needed; CSS handles
+   the swap via z-stacking. */
+.team-marker.has-img > span {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  z-index: 0;
+}
+.team-marker.has-img > img { position: relative; z-index: 1; }
 .team-marker.no-img { /* initials variant keeps the background coloured */ }
 .map-legend {
   display: flex; flex-wrap: wrap; gap: .75rem;
@@ -2622,12 +2635,10 @@ const ICONS = {
 };
 
 /* ========== Theme ========== */
-function initTheme() {
-  const saved = localStorage.getItem('zv-theme');
-  if (saved === 'light' || saved === 'dark') {
-    document.documentElement.setAttribute('data-theme', saved);
-  }
-}
+// The data-theme attribute is set synchronously by the inline IIFE
+// at the top of the page (line 25) so the first paint matches the
+// saved preference. No bootstrap call here — only the toggle path
+// remains in this script.
 function currentTheme() {
   const attr = document.documentElement.getAttribute('data-theme');
   if (attr) return attr;
@@ -2639,7 +2650,6 @@ function toggleTheme() {
   localStorage.setItem('zv-theme', next);
   render();
 }
-initTheme();
 
 /* ========== Toast ========== */
 function toast(msg, kind = '') {
@@ -7473,7 +7483,7 @@ function buildTeamLinkRow(tm, i, teamURL, memberURL) {
 // arranger can read/copy it and send it to whoever's running the TV
 // screen.
 function renderShareBar(event) {
-  const url = `${location.origin}/live/${event.live_token}`;
+  const url = `${location.origin}/live/${encodeURIComponent(event.live_token || '')}`;
   const urlBox = h('input', {
     readonly: '', value: url,
     style: 'flex:1; min-width:0; background:var(--surface-2); font-family:ui-monospace,SFMono-Regular,monospace; font-size:.9rem; box-shadow:none; border-color:var(--border-soft)',
@@ -8735,9 +8745,18 @@ function initRunMap(host, adventure, teams, tracks) {
       // "which polyline is whose" legibility we had with the dot.
       const initials = teamInitials(track.team_name);
       const size = 30;
+      // Stack approach: the initials span sits underneath the img.
+      // When the img loads, object-fit:cover hides the span. When it
+      // fails, the broken img is transparent and the span shows
+      // through. Replaces an earlier inline onerror handler that
+      // depended on CSP `script-src 'unsafe-inline'` to function and
+      // mixed user data into a script context one rename away from
+      // XSS. The CSS for .team-marker.has-img > span uses absolute
+      // positioning so the layering works out.
       const html = track.avatar_url
-        ? `<div class="team-marker" style="--team-col:${colour}; width:${size}px; height:${size}px;">`
-            + `<img src="${esc(track.avatar_url)}" alt="" onerror="this.replaceWith(Object.assign(document.createElement('span'),{textContent:${JSON.stringify(initials)}}))"/>`
+        ? `<div class="team-marker has-img" style="--team-col:${colour}; width:${size}px; height:${size}px;">`
+            + `<span>${esc(initials)}</span>`
+            + `<img src="${esc(track.avatar_url)}" alt=""/>`
             + `</div>`
         : `<div class="team-marker no-img" style="--team-col:${colour}; width:${size}px; height:${size}px;">`
             + `<span>${esc(initials)}</span></div>`;
@@ -14487,21 +14506,41 @@ async function viewLogs(view) {
   clientLevelSel.value = 'DEBUG';
   for (const e of (initial.body?.entries || [])) ingest(e);
 
+  // Reconnect-on-close so a transient disconnect (server restart,
+  // proxy idle-timeout) doesn't silently kill the live tail. Backoff
+  // doubles to 10s, with ±500ms jitter to avoid thundering herds
+  // when several admins watch logs through the same outage.
+  let backoff = 500;
+  let reconnectTimer = null;
+  let disposed = false;
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const sock = new WebSocket(`${proto}//${location.host}/ws/logs`);
-  state.ws = sock;
-  sock.onmessage = (ev) => {
-    let msg; try { msg = JSON.parse(ev.data); } catch { return; }
-    if (!msg || msg.kind !== 'entry') return;
-    const e = msg.data;
-    if (!e) return;
-    ingest(e);
+  const connect = () => {
+    if (disposed) return;
+    const sock = new WebSocket(`${proto}//${location.host}/ws/logs`);
+    state.ws = sock;
+    sock.onopen = () => { backoff = 500; };
+    sock.onmessage = (ev) => {
+      let msg; try { msg = JSON.parse(ev.data); } catch { return; }
+      if (!msg || msg.kind !== 'entry') return;
+      const e = msg.data;
+      if (!e) return;
+      ingest(e);
+    };
+    sock.onclose = () => {
+      if (disposed) return;
+      const delay = Math.min(backoff, 10000) + Math.floor(Math.random() * 500);
+      backoff = Math.min(backoff * 2, 10000);
+      reconnectTimer = setTimeout(connect, delay);
+    };
   };
+  connect();
 
   // Tear down when the route changes so we don't keep WS open.
   const cleanup = () => {
+    disposed = true;
+    if (reconnectTimer) clearTimeout(reconnectTimer);
     window.removeEventListener('resize', onResize);
-    try { sock.close(); } catch {}
+    try { state.ws && state.ws.close(); } catch {}
     try { term.dispose(); } catch {}
     window.removeEventListener('hashchange', onHash);
   };

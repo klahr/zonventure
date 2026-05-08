@@ -65,7 +65,7 @@ func TestLandingOverride(t *testing.T) {
 
 	req := httptest.NewRequest("GET", "/?lang=en", nil)
 	rec := httptest.NewRecorder()
-	renderLandingPage(rec, req)
+	renderLandingPage(rec, req, "https://zv.example.com")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d", rec.Code)
 	}

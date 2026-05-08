@@ -40,7 +40,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 )
 
-//go:embed web/play.html web/play-sw.js web/play-queue.js web/arrange.html web/live.html web/recap.html web/i18n.js web/favicon.svg web/privacy.html web/terms.html web/manual.html web/landing.html web/pricing.html web/store.html web/store-event.html web/org-landing.html web/topbar.css web/topbar.js web/fsmap.css web/jsqr.js web/404.html web/robots.txt web/sitemap.xml web/locales/web/*.json web/locales/landing/*.json
+//go:embed web/play.html web/play-sw.js web/play-queue.js web/arrange.html web/live.html web/recap.html web/i18n.js web/favicon.svg web/privacy.html web/terms.html web/manual.html web/landing.html web/pricing.html web/store.html web/store-event.html web/org-landing.html web/topbar.css web/topbar.js web/page-tokens.css web/fsmap.css web/jsqr.js web/404.html web/robots.txt web/sitemap.xml web/locales/web/*.json web/locales/landing/*.json
 var webFS embed.FS
 
 // Config is the bag of knobs New needs.
@@ -415,13 +415,13 @@ func New(cfg Config) http.Handler {
 			http.Redirect(w, req, "/arrange", http.StatusFound)
 			return
 		}
-		renderLandingPage(w, req)
+		renderLandingPage(w, req, cfg.PublicURL)
 	})
 
 	// Custom 404 with branded chrome and a "back to home / read manual"
 	// fallback. chi serves a plain "404 page not found" otherwise,
 	// which feels broken from a marketing-site perspective.
-	r.NotFound(servePublicPage("web/404.html", http.StatusNotFound))
+	r.NotFound(render404)
 
 	// /play handles three things:
 	//   - /play?t=<magic> — exchange the magic-link for a slot session and
@@ -457,7 +457,16 @@ func New(cfg Config) http.Handler {
 			http.Error(w, "embed", http.StatusInternalServerError)
 			return
 		}
-		_, _ = w.Write(body)
+		// Inject the build version into the SW's cache constants so
+		// every deploy rotates the cache key without anyone bumping
+		// a literal by hand. The activate handler then purges the
+		// old cache entries automatically. "dev" is the unversioned
+		// local-build fallback.
+		ver := cfg.Version
+		if ver == "" {
+			ver = "dev"
+		}
+		_, _ = w.Write([]byte(strings.ReplaceAll(string(body), "__ZV_BUILD_VERSION__", swCacheSafeVersion(ver))))
 	})
 
 	// Shared i18n dictionary + helpers, loaded by all three entry points.
@@ -475,7 +484,15 @@ func New(cfg Config) http.Handler {
 	publicRL := newPublicLimiter(bgCtx)
 	r.Group(func(r chi.Router) {
 		r.Use(publicRLMiddleware(publicRL))
-		r.Get("/live/{token}", servePage("web/live.html"))
+		// Token URLs must not be crawled. The page itself carries
+		// `<meta name="robots" content="noindex, nofollow">`; the
+		// header is the belt to that suspenders, blocking indexers
+		// that don't render JS but do honour the HTTP header.
+		liveHandler := servePage("web/live.html")
+		r.Get("/live/{token}", func(w http.ResponseWriter, req *http.Request) {
+			w.Header().Set("X-Robots-Tag", "noindex, nofollow")
+			liveHandler(w, req)
+		})
 		r.Get("/api/public/live/{token}", publicH.Live)
 		r.Get("/api/public/live/{token}/tracks", publicH.Tracks)
 		r.Get("/ws/live/{token}", publicH.WSLive)
@@ -666,6 +683,7 @@ func New(cfg Config) http.Handler {
 	// Shared topbar CSS + JS, served as long-cached static assets.
 	r.Get("/assets/topbar.css", serveAsset("web/topbar.css", "text/css; charset=utf-8"))
 	r.Get("/assets/topbar.js", serveAsset("web/topbar.js", "application/javascript; charset=utf-8"))
+	r.Get("/assets/page-tokens.css", serveAsset("web/page-tokens.css", "text/css; charset=utf-8"))
 	// Shared fullscreen-map overlay CSS — used by both the player
 	// preview-debug coord overlay and the arranger's "show on map"
 	// links. Same theme tokens, same DOM contract; the JS that
@@ -1228,6 +1246,30 @@ const baselineCSP = "default-src 'self'; " +
 	"frame-ancestors 'none'; " +
 	"object-src 'none'; " +
 	"base-uri 'self'"
+
+// swCacheSafeVersion sanitises the build version for use as a Cache
+// Storage cache name. Cache names tolerate most strings, but ' and "
+// would terminate the surrounding JS string literal in play-sw.js.
+// Drop everything outside [A-Za-z0-9._-] so an exotic version tag
+// (annotated git describe, e.g. "v1.2.3+abcd'broken") can't break the
+// SW. Empty result falls back to "dev".
+func swCacheSafeVersion(v string) string {
+	out := make([]byte, 0, len(v))
+	for i := 0; i < len(v); i++ {
+		c := v[i]
+		switch {
+		case c >= 'A' && c <= 'Z',
+			c >= 'a' && c <= 'z',
+			c >= '0' && c <= '9',
+			c == '.' || c == '-' || c == '_':
+			out = append(out, c)
+		}
+	}
+	if len(out) == 0 {
+		return "dev"
+	}
+	return string(out)
+}
 
 // trustedProxyRealIP is a gated replacement for chi's middleware.RealIP.
 // chi's version rewrites RemoteAddr from X-Forwarded-For / X-Real-IP

@@ -257,23 +257,7 @@
   caller's language. Keys mirror the names used inside the JS — see
   storeSubs() in internal/server/landing.go for the source.
 -->
-<script id="store-i18n" type="application/json">{
-  "toastPaid": "{{STORE_TOAST_PAID}}",
-  "toastCancelled": "{{STORE_TOAST_CANCELLED}}",
-  "teamSizeSolo": "{{STORE_TEAM_SIZE_SOLO}}",
-  "teamSizePlural": "{{STORE_TEAM_SIZE_PLURAL}}",
-  "meetsAt": "{{STORE_MEETS_AT}}",
-  "cardCTA": "{{STORE_CARD_CTA}}",
-  "perTicket": "{{STORE_PER_TICKET}}",
-  "perTeam": "{{STORE_PER_TEAM}}",
-  "emptyHeading": "{{STORE_EMPTY_HEADING}}",
-  "emptyBody": "{{STORE_EMPTY_BODY}}",
-  "errorHeading": "{{STORE_ERROR_HEADING}}",
-  "errorBody": "{{STORE_ERROR_BODY}}",
-  "handoffPreparing": "{{STORE_HANDOFF_PREPARING}}",
-  "handoffEmailFallback": "{{STORE_HANDOFF_EMAIL_FALLBACK}}",
-  "handoffFailed": "{{STORE_HANDOFF_FAILED}}"
-}</script>
+<script id="store-i18n" type="application/json">{{STORE_I18N_JSON}}</script>
 <script>
 (function () {
   var I18N = (function () {
@@ -411,6 +395,15 @@
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
+  // cssURLEncode percent-encodes the chars that would let a URL break
+  // out of a CSS `url("…")` literal: quotes, parens, backslash, and
+  // whitespace. The downstream parser un-percent-encodes when fetching,
+  // so the URL still resolves to the original bytes.
+  function cssURLEncode(u) {
+    return String(u == null ? '' : u).replace(/[\\'"() \t\r\n]/g, function (c) {
+      return '%' + c.charCodeAt(0).toString(16).toUpperCase().padStart(2, '0');
+    });
+  }
 
   function buildCard(item) {
     var card = document.createElement('a');
@@ -419,9 +412,12 @@
     card.style.color = 'inherit';
     card.style.textDecoration = 'none';
     var size = teamSizeLabel(item.team_size);
+    // Cover image goes onto a separate child div via style.setProperty
+    // (after innerHTML construction below) so the URL never round-trips
+    // through innerHTML. cssURLEncode keeps the URL safe inside url("…").
     var cover = item.cover_image_url
       ? '<div class="cover" role="img" aria-label="' + escapeHTML(item.adventure_title || item.adventure_slug) +
-        '" style="background-image:url(' + escapeHTML(item.cover_image_url) + ')"></div>'
+        '"></div>'
       : '';
     card.innerHTML = cover +
       '<div class="org">' + escapeHTML(item.org_name) + '</div>' +
@@ -435,6 +431,12 @@
       '<div class="price">' + escapeHTML(formatPrice(item.price_cents, item.currency)) +
         ' <small>' + escapeHTML(item.team_size > 1 ? t('perTeam') : t('perTicket')) + '</small></div>' +
       '<span class="btn primary" style="text-align:center">' + escapeHTML(t('cardCTA')) + '</span>';
+    if (item.cover_image_url) {
+      var coverEl = card.querySelector('.cover');
+      if (coverEl) {
+        coverEl.style.backgroundImage = 'url("' + cssURLEncode(item.cover_image_url) + '")';
+      }
+    }
     return card;
   }
 

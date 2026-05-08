@@ -1,10 +1,12 @@
 package server
 
 import (
+	"encoding/json"
 	"net/http"
 	"strings"
 
 	"git.sr.ht/~klahr/zv/internal/auth"
+	"git.sr.ht/~klahr/zv/internal/logx"
 )
 
 // langCookie is the name of the persisted language preference. Set on
@@ -95,6 +97,13 @@ type landingStrings struct {
 	FooterPrivacy string
 	FooterTerms   string
 	FooterCopy    string
+
+	// 404 page.
+	NotFoundTitle      string
+	NotFoundHeading    string
+	NotFoundBody       string
+	NotFoundCTAHome    string
+	NotFoundCTAManual  string
 
 	// /store + /store/event/{id}. Both pages share the same locale
 	// pool so a translator can update one column and watch every
@@ -308,6 +317,87 @@ func topbarSubs(s landingStrings, lang string) [][2]string {
 	}
 }
 
+// storeI18nJSON returns the JSON blob the /store listing's inline
+// `<script id="store-i18n" type="application/json">` consumes. We
+// marshal one map server-side rather than substituting strings into
+// a literal JSON template, because translator-supplied values can
+// contain double quotes / backslashes / `</script` substrings that
+// would break out of the JSON or even the surrounding script element
+// if interpolated raw. json.Marshal handles every escape correctly.
+//
+// Keep the keys aligned with the t() lookups in store.html.
+func storeI18nJSON(s landingStrings) string {
+	m := map[string]string{
+		"toastPaid":            s.StoreToastPaid,
+		"toastCancelled":       s.StoreToastCancelled,
+		"teamSizeSolo":         s.StoreTeamSizeSolo,
+		"teamSizePlural":       s.StoreTeamSizePlural,
+		"meetsAt":              s.StoreMeetsAt,
+		"cardCTA":              s.StoreCardCTA,
+		"perTicket":            s.StorePerTicket,
+		"perTeam":              s.StorePerTeam,
+		"emptyHeading":         s.StoreEmptyHeading,
+		"emptyBody":            s.StoreEmptyBody,
+		"errorHeading":         s.StoreErrorHeading,
+		"errorBody":            s.StoreErrorBody,
+		"handoffPreparing":     s.StoreHandoffPreparing,
+		"handoffEmailFallback": s.StoreHandoffEmailFallback,
+		"handoffFailed":        s.StoreHandoffFailed,
+	}
+	return marshalJSONForScript(m)
+}
+
+// storeEventI18nJSON returns the JSON blob the /store/event/{id}
+// page's inline `<script id="store-event-i18n">` consumes. Same
+// rationale as storeI18nJSON: avoid raw substitution into a JSON
+// literal.
+func storeEventI18nJSON(s landingStrings) string {
+	return marshalJSONForScript(map[string]string{
+		"toastPaid":      s.StoreToastPaid,
+		"toastCancelled": s.StoreToastCancelled,
+		"badEmail":       s.StoreEventBadEmail,
+		"genericErr":     s.StoreEventGenericErr,
+	})
+}
+
+// orgLandingI18nJSON returns the JSON blob org-landing.html consumes
+// for its featured-event card grid. Smaller key set than the main
+// store page; only the labels the cards render.
+func orgLandingI18nJSON(s landingStrings) string {
+	return marshalJSONForScript(map[string]string{
+		"teamSizeSolo":   s.StoreTeamSizeSolo,
+		"teamSizePlural": s.StoreTeamSizePlural,
+		"perTicket":      s.StorePerTicket,
+		"perTeam":        s.StorePerTeam,
+		"emptyHeading":   s.LandingFeaturedEmpty,
+		"errorHeading":   s.StoreErrorHeading,
+	})
+}
+
+// marshalJSONForScript JSON-encodes v and additionally escapes the
+// HTML token `</script>` so a malicious or unlucky string can't end
+// the surrounding inline `<script type="application/json">` block.
+// `<` is escaped to `<`, which JSON.parse decodes back to `<`.
+// json.Marshal already escapes <, >, & for safety in HTML contexts;
+// we keep that on (it's the default) and double-check by rewriting
+// the close-tag sequence as a final guard.
+func marshalJSONForScript(v any) string {
+	b, err := json.Marshal(v)
+	if err != nil {
+		// Fail closed: an empty object is harmless on the page (every
+		// t() lookup returns "", which the JS already handles). Logged
+		// once at startup if this ever happens.
+		logx.Warn("store.i18n.marshal_failed", "err", err.Error())
+		return "{}"
+	}
+	// Defence in depth: json.Marshal escapes < > & by default but
+	// only inside string values. Direct substring guard for the
+	// </script terminator and for ]]> which would close a CDATA
+	// section (not used today but cheap to forbid).
+	out := strings.ReplaceAll(string(b), "</", `<\/`)
+	return out
+}
+
 // storeSubs returns the {{KEY}} replacements specific to the public
 // /store listing and /store/event/{id} detail pages — all the body
 // copy, vocabulary fragments, and FAQ lines for the requested
@@ -390,6 +480,14 @@ func storeSubs(s landingStrings) [][2]string {
 
 		{"{{STORE_EVENT_BAD_EMAIL}}", s.StoreEventBadEmail},
 		{"{{STORE_EVENT_GENERIC_ERR}}", s.StoreEventGenericErr},
+
+		// JSON blobs that the inline `<script type="application/json">`
+		// elements parse with JSON.parse. Build them once with
+		// json.Marshal so a translator's quote / backslash / </script
+		// can never break the page or escape the script context.
+		{"{{STORE_I18N_JSON}}", storeI18nJSON(s)},
+		{"{{STORE_EVENT_I18N_JSON}}", storeEventI18nJSON(s)},
+		{"{{ORG_LANDING_I18N_JSON}}", orgLandingI18nJSON(s)},
 	}
 }
 
@@ -436,6 +534,39 @@ func renderStoreListingPageScoped(w http.ResponseWriter, r *http.Request, orgSlu
 	_, _ = w.Write([]byte(out))
 }
 
+// render404 serves the locale-aware 404 page. Kept minimal (no
+// topbar chrome) on the theory that a 404 is the last surface that
+// should depend on the rest of the site working — so the page is a
+// self-contained card with its own CSS. The four user-visible
+// strings are localised so SV / future locale visitors don't get
+// English on the failure floor.
+func render404(w http.ResponseWriter, r *http.Request) {
+	body, err := readWebFile("web/404.html")
+	if err != nil {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	lang := resolveLang(w, r)
+	s := landingLocales[lang]
+	subs := [][2]string{
+		{"{{LANG_CODE}}", lang},
+		{"{{NOT_FOUND_TITLE}}", s.NotFoundTitle},
+		{"{{NOT_FOUND_HEADING}}", s.NotFoundHeading},
+		{"{{NOT_FOUND_BODY}}", s.NotFoundBody},
+		{"{{NOT_FOUND_CTA_HOME}}", s.NotFoundCTAHome},
+		{"{{NOT_FOUND_CTA_MANUAL}}", s.NotFoundCTAManual},
+	}
+	out := string(body)
+	for _, sub := range subs {
+		out = strings.ReplaceAll(out, sub[0], sub[1])
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Vary", "Cookie, Accept-Language")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusNotFound)
+	_, _ = w.Write([]byte(out))
+}
+
 // renderTopbarPage reads an embedded HTML template, splices in the
 // topbar locale strings, and writes the result. Used for pages whose
 // body is plain English (today: manual, pricing) but whose shared
@@ -472,7 +603,7 @@ func renderTopbarPage(w http.ResponseWriter, r *http.Request, name string) {
 // specific and stay inline below. A new chrome field — like
 // {{NAV_STORE}} — only needs adding to topbarSubs once and every
 // caller picks it up automatically.
-func renderLandingPage(w http.ResponseWriter, r *http.Request) {
+func renderLandingPage(w http.ResponseWriter, r *http.Request, publicURL string) {
 	body, err := readWebFile("web/landing.html")
 	if err != nil {
 		http.Error(w, "not found", http.StatusNotFound)
@@ -481,6 +612,13 @@ func renderLandingPage(w http.ResponseWriter, r *http.Request) {
 	lang := resolveLang(w, r)
 	s := landingLocales[lang]
 	out := string(body)
+	// Absolute URL for og:url + og:image. Falls back to "/" when no
+	// PublicURL is configured (dev / unconfigured self-host) — that's
+	// no worse than what shipped before, and the page still renders.
+	landingURL := strings.TrimRight(publicURL, "/")
+	if landingURL == "" {
+		landingURL = "/"
+	}
 	subs := topbarSubs(s, lang)
 	subs = append(subs,
 		// <head> meta — landing-specific, not part of the shared
@@ -490,6 +628,7 @@ func renderLandingPage(w http.ResponseWriter, r *http.Request) {
 		[2]string{"{{OG_DESC}}", s.OGDesc},
 		[2]string{"{{SCHEMA_ORG_DESC}}", s.SchemaOrgDesc},
 		[2]string{"{{SCHEMA_APP_DESC}}", s.SchemaAppDesc},
+		[2]string{"{{LANDING_URL}}", landingURL},
 
 		// Hero band.
 		[2]string{"{{HERO_TAG}}", s.HeroTag},

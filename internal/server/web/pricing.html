@@ -20,81 +20,16 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Aclonica&family=Open+Sans:wght@400;600;700&display=swap" rel="stylesheet">
 
+<link rel="stylesheet" href="/assets/page-tokens.css">
 <link rel="stylesheet" href="/assets/topbar.css">
 <script defer src="/assets/topbar.js"></script>
 <script>(function(){try{var v=localStorage.getItem('zv-theme');if(v==='light'||v==='dark')document.documentElement.setAttribute('data-theme',v);}catch(e){}})();</script>
 
 <style>
-  :root {
-    color-scheme: light dark;
-    --accent: #ad1357;
-    --accent-2: #e24080;
-    --accent-deep: #6d0a35;
-    --ink: #1f3349;
-    --ink-soft: #3d5573;
-    --muted: #6b7f96;
-    --bg: #fbfbfd;
-    --surface: #ffffff;
-    --border-soft: #e2e7ef;
-    --shadow: 0 1px 2px rgba(31,51,73,.06), 0 4px 16px rgba(31,51,73,.08);
-  }
-  [data-theme="dark"] {
-    --ink: #e7ecf4; --ink-soft: #c2cee0; --muted: #9db1cc;
-    --bg: #14202e; --surface: #1f3349; --border-soft: #2c4361;
-    --accent: #e24080; --accent-2: #ff6aa3; --accent-deep: #ad1357;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root:not([data-theme]) {
-      --ink: #e7ecf4; --ink-soft: #c2cee0; --muted: #9db1cc;
-      --bg: #14202e; --surface: #1f3349; --border-soft: #2c4361;
-      --accent: #e24080; --accent-2: #ff6aa3; --accent-deep: #ad1357;
-    }
-  }
-  * { box-sizing: border-box; }
-  html { scroll-behavior: smooth; }
-  body {
-    margin: 0;
-    font: 16px/1.6 'Open Sans', system-ui, sans-serif;
-    color: var(--ink); background: var(--bg);
-  }
-  a { color: var(--accent); text-decoration: none; }
-  a:hover { text-decoration: underline; }
+  /* Design tokens, .btn, .skip-link, focus outlines, prefers-reduced-motion
+     all live in /assets/page-tokens.css. Page-specific overrides below. */
+  body { line-height: 1.6; }
   .wrap { max-width: 48rem; margin: 0 auto; padding: 0 1.25rem; }
-  .skip-link {
-    position: absolute; top: -2.5rem; left: .5rem; z-index: 50;
-    padding: .5rem 1rem; border-radius: 8px;
-    background: var(--accent); color: #fff;
-    font-weight: 700; text-decoration: none;
-  }
-  .skip-link:focus { top: .5rem; }
-  a:focus-visible, button:focus-visible, .btn:focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: 3px;
-    border-radius: 4px;
-  }
-
-  .btn {
-    display: inline-block;
-    padding: .8rem 1.75rem;
-    border-radius: 999px;
-    font-weight: 700; font-size: .95rem;
-    text-decoration: none;
-    border: 1px solid transparent;
-    transition: transform .12s, opacity .12s;
-    cursor: pointer;
-  }
-  .btn:hover { transform: translateY(-1px); text-decoration: none; }
-  .btn.primary {
-    background: linear-gradient(135deg, var(--accent), var(--accent-2));
-    color: #fff;
-  }
-  .btn.primary:hover { opacity: .94; }
-  .btn.ghost {
-    color: var(--ink);
-    border-color: var(--border-soft);
-    background: var(--surface);
-  }
-  .btn.ghost:hover { border-color: var(--accent); color: var(--accent); }
 
   main { padding: 4rem 0 5rem; }
   h1 {
@@ -116,6 +51,30 @@
   .card ul { padding-left: 1.25rem; margin: 0 0 1rem; color: var(--ink-soft); }
   .card li { margin-bottom: .35rem; }
   .actions { display: flex; gap: .75rem; flex-wrap: wrap; margin-top: 1.5rem; }
+
+  .faq-heading { margin-top: 3rem; font-size: 1.5rem; }
+  .faq { display: flex; flex-direction: column; gap: .75rem; margin-top: 1.25rem; }
+  .faq details {
+    background: var(--surface);
+    border: 1px solid var(--border-soft);
+    border-radius: .75rem;
+    padding: 1rem 1.25rem;
+  }
+  .faq summary {
+    cursor: pointer;
+    font-weight: 600;
+    list-style: none;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .faq summary::after {
+    content: '+';
+    font-size: 1.4rem; line-height: 1;
+    color: var(--muted);
+    transition: transform .2s ease;
+  }
+  .faq details[open] summary::after { transform: rotate(45deg); }
+  .faq details p { margin: .75rem 0 0; color: var(--ink-soft); }
+  .faq details a { color: var(--accent); }
 
   footer {
     padding: 1.75rem 0 2.5rem;
@@ -176,9 +135,12 @@
       <h2>Self-hosted — free</h2>
       <p>Clone, configure, run. No licence fees, no per-team metering, no telemetry.</p>
       <ul>
-        <li>Unlimited adventures, events, and teams</li>
-        <li>Bring your own SMTP for verification mail</li>
-        <li>Bring your own Stripe keys to charge other organisations on your instance</li>
+        <li>Unlimited adventures, events, teams, and players</li>
+        <li>Live audience leaderboard, post-event recap, organisation-branded landing</li>
+        <li>Single binary plus Postgres — runs on a $5/month VPS</li>
+        <li>Bring your own SMTP for verification mail (or use the dev log fallback)</li>
+        <li>Bring your own Stripe keys if you want to sell tickets through the public store</li>
+        <li>OpenID Connect single sign-on, TOTP, audit log, GDPR-shaped retention controls</li>
       </ul>
       <div class="actions">
         <a class="btn primary" href="/arrange">Sign in</a>
@@ -189,6 +151,26 @@
     <div class="card">
       <h2>Hosted</h2>
       <p>If you reached this page on a hosted instance, the operator hasn't published a pricing page. Contact them directly — the platform itself doesn't dictate billing terms.</p>
+    </div>
+
+    <h2 class="faq-heading">Common questions</h2>
+    <div class="faq">
+      <details>
+        <summary>Why is there no price for the hosted offering?</summary>
+        <p>The platform is open source. Anyone can run a hosted instance and set their own pricing. If you reached this page from a hosted operator, ask them — they're the ones billing you. We don't centralise that.</p>
+      </details>
+      <details>
+        <summary>What does self-hosting actually require?</summary>
+        <p>A small Linux box (any cloud VPS), Postgres, and either an SMTP relay or a willingness to copy magic links from the server log during development. Docker Compose ships in the repo and brings everything up with one command. See the <a href="/manual">manual</a> for the full setup walk-through.</p>
+      </details>
+      <details>
+        <summary>Can I charge players for an event on a self-hosted instance?</summary>
+        <p>Yes. Wire up your own Stripe credentials and the public store routes (/store, /o/&lt;org&gt;/store) become buyable. Stripe takes its standard processing fee; you keep the rest. There is no platform fee unless you set one explicitly via env vars.</p>
+      </details>
+      <details>
+        <summary>Is my data tied into a specific provider?</summary>
+        <p>No. Everything lives in your Postgres database. There's a built-in org-bundle export you can use to migrate to another instance — same code on both sides, so the bundle is portable.</p>
+      </details>
     </div>
   </div>
 </main>

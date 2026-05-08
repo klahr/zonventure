@@ -11,6 +11,15 @@
 <!-- Shared fullscreen-map overlay styles, identical across player +
      arranger surfaces. Pick-mode extras stay inline below. -->
 <link rel="stylesheet" href="/assets/fsmap.css">
+<!-- Minimum-viable t/tError stubs in case /i18n.js is blocked (CSP,
+     ad-blocker, network). The real implementations from /i18n.js
+     overwrite these as soon as the script lands. Without the stubs,
+     a failed i18n.js load throws ReferenceError on every t() call
+     and crashes the bootstrap. -->
+<script>
+  window.t = window.t || function(s){return s;};
+  window.tError = window.tError || function(_code, msg){return msg || '';};
+</script>
 <script src="/i18n.js"></script>
 <!-- play-queue.js exposes the offline-action queue as top-level
      globals (pendingAnswers, clientActionId, persistPendingActions,
@@ -1520,7 +1529,18 @@ async function api(path, opts = {}) {
 
 function wsSend(kind, data) {
   if (!ws || ws.readyState !== 1) return false;
-  try { ws.send(JSON.stringify({ kind, data })); return true; }
+  // Pre-stringify so we can distinguish a transient send error
+  // (caller should retry) from an undeliverable payload (caller
+  // must drop, not queue — re-stringifying on the next attempt
+  // would fail the same way and infinite-loop). Returns null on
+  // unencodable data so the caller can take the right action.
+  let frame;
+  try { frame = JSON.stringify({ kind, data }); }
+  catch (e) {
+    if (window.console) console.warn('wsSend: unencodable payload, dropping', kind, e);
+    return false;
+  }
+  try { ws.send(frame); return true; }
   catch { return false; }
 }
 
@@ -1673,9 +1693,27 @@ function connectWS() {
       renderNoSession({ expired: hadActiveSession });
       return;
     }
-    const delay = Math.min(wsBackoff, 10000);
+    // Backoff doubling, capped at 10s. Add 0–500ms of jitter so a
+    // mass-disconnect (server restart, NAT eviction event) doesn't
+    // produce a thundering-herd reconnect spike. If the tab is hidden,
+    // pause until it comes back into focus — a backgrounded player
+    // doesn't need to keep retrying every 10s either for the user's
+    // sake or for the server's.
+    const baseDelay = Math.min(wsBackoff, 10000);
+    const jitter = Math.floor(Math.random() * 500);
+    const delay = baseDelay + jitter;
     wsBackoff = Math.min(wsBackoff * 2, 10000);
-    wsReconnectTimer = setTimeout(connectWS, delay);
+    wsReconnectTimer = setTimeout(() => {
+      if (document.hidden) {
+        // Defer until visible. visibilitychange listener at the
+        // bottom of the script (added once at bootstrap) will retry
+        // immediately on focus. Leaving wsReconnectTimer null keeps
+        // the connectWS-on-show path simple.
+        wsReconnectTimer = null;
+        return;
+      }
+      connectWS();
+    }, delay);
     // Two tiers of feedback so a brief blip stays invisible but a real
     // outage doesn't leave the player staring at a stale screen.
     if (wsStatusTimer) clearTimeout(wsStatusTimer);
@@ -2539,7 +2577,7 @@ function render(s) {
   if (Array.isArray(s.images)) {
     // im.alt is the author's text alternative; empty string keeps
     // decorative semantics (screen readers skip the <img>).
-    for (const im of s.images) block.append(el('img', { class: 'puzzle-img', src: im.url, alt: im.alt || '' }));
+    for (const im of s.images) block.append(el('img', { class: 'puzzle-img', src: im.url, alt: im.alt || '', loading: 'lazy', decoding: 'async' }));
   }
   if (Array.isArray(s.audio)) {
     // Native <audio controls> — no autoplay (browsers block silent
@@ -2829,7 +2867,7 @@ function openHintSheet(s) {
       if (h.images && h.images.length) {
         const grid = el('div', { class: 'hint-images' });
         for (const im of h.images) {
-          grid.append(el('img', { src: im.url, alt: im.alt || '' }));
+          grid.append(el('img', { src: im.url, alt: im.alt || '', loading: 'lazy', decoding: 'async' }));
         }
         card.append(grid);
       }
@@ -4116,6 +4154,17 @@ async function bootstrapAfterClaim() {
   startGPS();
   render(s.body);
   connectWS();
+  // Resume the WS when the tab comes back to the foreground after
+  // having been hidden long enough for the reconnect path above to
+  // park itself (wsReconnectTimer === null and ws.readyState !== 1).
+  // No-op when the WS is already open.
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) return;
+    if (ws && ws.readyState === 1) return;
+    if (wsReconnectTimer) return; // a deferred retry is already armed
+    wsBackoff = 500; // foreground recovery: don't carry stale backoff
+    connectWS();
+  });
   // Fire-and-forget: register the service worker and ask it to
   // prefetch the team's adventure assets so they're cached for
   // offline play (dead spots, woods, patchy 4G). The SW handles
@@ -4164,7 +4213,7 @@ async function loadPreviewAllLocations(slug) {
   if (previewAllLocations && previewAllLocations.slug === slug) return;
   try {
     const detail = await api(`/api/admin/adventures/${encodeURIComponent(slug)}`);
-    if (!detail.ok || !Array.isArray(detail.body?.pages)) return;
+    if (detail.status !== 200 || !Array.isArray(detail.body?.pages)) return;
     previewAllLocations = {
       slug,
       pins: detail.body.pages

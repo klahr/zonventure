@@ -89,9 +89,14 @@ func renderOrgLandingPage(w http.ResponseWriter, r *http.Request, db *sql.DB, pu
 	// readable through the gradient overlay defined in CSS.
 	heroBgStyle := ""
 	if hasCover {
+		// Same nested-context concern as store_event.go's COVER_URL:
+		// the URL lands inside a `style=` attribute, then a CSS
+		// url('…') literal. cssURLQuote percent-encodes the
+		// CSS-meaningful chars so a future cover-URL shape can't
+		// escape the quotes.
 		heroBgStyle = fmt.Sprintf(
 			"background-image: linear-gradient(135deg, rgba(173,19,87,.6), rgba(226,64,128,.5)), url('%s'); background-size: cover; background-position: center;",
-			html.EscapeString("/org-cover/"+strconv.FormatInt(orgID, 10)),
+			html.EscapeString(cssURLQuote("/org-cover/"+strconv.FormatInt(orgID, 10))),
 		)
 	}
 

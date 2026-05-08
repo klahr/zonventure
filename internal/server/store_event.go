@@ -176,7 +176,13 @@ func renderStoreEventPage(w http.ResponseWriter, r *http.Request, db *sql.DB, pu
 		[2]string{"{{TEAM_SIZE}}", teamSizeStr},
 		[2]string{"{{TEAM_LABEL}}", html.EscapeString(teamLabel)},
 		[2]string{"{{START_LABEL}}", html.EscapeString(strings.TrimSpace(startLabel.String))},
-		[2]string{"{{COVER_URL}}", html.EscapeString(coverURL)},
+		// COVER_URL lands inside both an HTML attribute AND a CSS
+		// url('…') context; html.EscapeString covers the HTML side
+		// but a `'` would still break out of the CSS quotes once
+		// the HTML parser decodes &#39;. cssURLQuote percent-encodes
+		// the chars that matter for CSS so the URL survives the
+		// nested-context decode chain.
+		[2]string{"{{COVER_URL}}", html.EscapeString(cssURLQuote(coverURL))},
 		[2]string{"{{HAS_COVER}}", boolAttr(hasCover)},
 		[2]string{"{{EVENT_ID}}", strconv.FormatInt(id, 10)},
 		[2]string{"{{ADVENTURE_SLUG}}", html.EscapeString(advSlug)},
@@ -255,6 +261,28 @@ func buildAbsoluteURL(publicURL, path string) string {
 // boolAttr returns "true" / "false" for {{KEY}} placeholders that
 // drive CSS data attributes or simple JS boolean checks in inlined
 // scripts.
+// cssURLQuote percent-encodes characters that would let a URL break
+// out of a CSS `url('…')` literal: quotes, parens, backslash, and
+// whitespace. The browser's URL fetch un-encodes them back, so the
+// underlying request still resolves to the original bytes. Only used
+// for URLs that flow into a `style=` attribute via template
+// substitution; the HTML attribute encode is layered on top.
+func cssURLQuote(u string) string {
+	out := make([]byte, 0, len(u)+8)
+	for i := 0; i < len(u); i++ {
+		c := u[i]
+		switch c {
+		case '"', '\'', '(', ')', '\\', ' ', '\t', '\r', '\n':
+			out = append(out, '%')
+			const hex = "0123456789ABCDEF"
+			out = append(out, hex[c>>4], hex[c&0x0F])
+		default:
+			out = append(out, c)
+		}
+	}
+	return string(out)
+}
+
 func boolAttr(b bool) string {
 	if b {
 		return "true"

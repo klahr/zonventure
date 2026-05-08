@@ -17,13 +17,16 @@
 //      cache is keyed by team) — network-first with cache fallback
 //      for the app shell.
 //
-// Cache version is baked into the SW source — bumping the constant
-// rotates the cache key, which causes activate's purge of any older
-// caches to clean up after a deploy.
+// Cache version is the build version the server injects at serve time
+// (see /play-sw.js handler in internal/server/server.go). Each deploy
+// rotates the cache key, so activate's purge cleans up old caches
+// without anyone bumping a constant by hand. "dev" is the fallback for
+// unversioned local builds.
 
-const SHELL_CACHE = 'zv-play-shell-v1';
+const BUILD_VERSION = '__ZV_BUILD_VERSION__';
+const SHELL_CACHE = 'zv-play-shell-' + BUILD_VERSION;
 const ASSET_PREFIX = 'zv-play-assets-';
-const ASSET_SUFFIX = '-v1';
+const ASSET_SUFFIX = '-' + BUILD_VERSION;
 
 // activeTeamID is mirrored into a sentinel cache entry below so it
 // survives SW restarts. The page re-sends {type: 'prefetch'} on every
@@ -105,16 +108,28 @@ self.addEventListener('install', (ev) => {
 
 self.addEventListener('activate', (ev) => {
   ev.waitUntil((async () => {
-    // Sweep older shell caches when the version constant rolls
-    // forward. Per-team asset caches (zv-play-assets-{id}-v1) are
-    // managed separately by setActiveTeamID — leave them alone here
-    // so a player who hasn't reloaded the page yet keeps offline
-    // access to their assets through a deploy.
+    // Sweep stale caches: any zv-play-shell-* whose version doesn't
+    // match the current build, plus any zv-play-assets-{id}-* cache
+    // whose suffix doesn't match the current ASSET_SUFFIX. Tying the
+    // suffix to the build version makes the asset purge happen
+    // automatically on each deploy without an operator-tunable knob.
+    // Caches outside the "zv-play-" namespace are left alone — other
+    // SWs (none today) might own them.
     const names = await caches.keys();
     await Promise.all(names
-      .filter((n) => n !== SHELL_CACHE && !n.startsWith(ASSET_PREFIX))
+      .filter((n) => {
+        if (n === SHELL_CACHE) return false;
+        if (n.startsWith('zv-play-shell-')) return true;
+        if (n.startsWith(ASSET_PREFIX)) return !n.endsWith(ASSET_SUFFIX);
+        return false;
+      })
       .map((n) => caches.delete(n)));
-    await self.clients.claim();
+    // Deliberately NOT calling clients.claim(): a hot-swap of the
+    // controller mid-event would yank a player's offline state out
+    // from under them with no rollback. Existing tabs keep their
+    // current SW until natural reload; new tabs land on the fresh
+    // worker. skipWaiting in install ensures the new worker is
+    // ready when the next reload happens.
   })());
 });
 
@@ -139,8 +154,19 @@ self.addEventListener('message', (ev) => {
 // not a hard error. opaque/redirected responses are skipped because
 // the Cache API stores them but they re-serve as `network-error`
 // next time which is worse than a cache miss.
+// MAX_PREFETCH_URLS caps the number of URLs the SW will pull on one
+// prefetch message. A misconfigured manifest, a malicious arranger
+// pointing at an unbounded asset list, or a forgotten image-loop
+// won't drain the team's data plan / device storage. The server's
+// /api/player/manifest is the source of truth and already bounds the
+// page count; this is defence in depth.
+const MAX_PREFETCH_URLS = 200;
+
 async function prefetchAssets(cacheName, urls) {
   const cache = await caches.open(cacheName);
+  if (urls.length > MAX_PREFETCH_URLS) {
+    urls = urls.slice(0, MAX_PREFETCH_URLS);
+  }
   // Limit concurrency: a fresh team-join shouldn't fire 200 parallel
   // requests at the server; trickle them six at a time.
   const queue = urls.slice();
@@ -158,6 +184,16 @@ async function prefetchAssets(cacheName, urls) {
   await Promise.all([worker(), worker(), worker(), worker(), worker(), worker()]);
 }
 
+// HANDLED_PATHS is the explicit allowlist of URL prefixes / exact
+// paths this worker is allowed to intercept. Registration scope is
+// `/` (we need to cache /adventure-assets/* and /org-logo/* which
+// are siblings of /play, not children), but defence-in-depth: any
+// path not in this list passes straight through to the network so a
+// future bug in one of the handlers below can't accidentally widen
+// the SW's reach into /arrange, /api/admin/*, etc.
+const HANDLED_PREFIXES = ['/adventure-assets/', '/org-logo/'];
+const HANDLED_EXACT = new Set(['/play', '/i18n.js', '/favicon.svg']);
+
 self.addEventListener('fetch', (ev) => {
   const req = ev.request;
   // Only handle same-origin GETs. POSTs (answer submit, etc.) flow
@@ -165,6 +201,13 @@ self.addEventListener('fetch', (ev) => {
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
+  // Explicit early-return: only intercept the player-related paths.
+  // Everything else (e.g. /arrange, /api/admin/*, /store) is the
+  // browser's responsibility, even though our scope nominally covers
+  // them.
+  const exact = HANDLED_EXACT.has(url.pathname);
+  const prefixed = HANDLED_PREFIXES.some((p) => url.pathname.startsWith(p));
+  if (!exact && !prefixed) return;
 
   if (url.pathname.startsWith('/adventure-assets/')) {
     ev.respondWith(teamScopedCacheFirst(req));
@@ -179,14 +222,8 @@ self.addEventListener('fetch', (ev) => {
     ev.respondWith(teamScopedCacheFirst(req));
     return;
   }
-  if (url.pathname === '/play' || url.pathname === '/i18n.js' || url.pathname === '/favicon.svg') {
-    ev.respondWith(networkFirst(req, SHELL_CACHE));
-    return;
-  }
-  // Pass-through for everything else (API calls, WS upgrades, etc.).
-  // The SW intentionally doesn't second-guess /api/* — those are
-  // either idempotent reads (which the page can re-issue on
-  // reconnect) or mutations (which go through the offline queue).
+  // /play, /i18n.js, /favicon.svg — the shell.
+  ev.respondWith(networkFirst(req, SHELL_CACHE));
 });
 
 // teamScopedCacheFirst routes the request through the active team's

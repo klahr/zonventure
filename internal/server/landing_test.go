@@ -17,7 +17,7 @@ func TestRenderLandingPage_NoLeftoverPlaceholders(t *testing.T) {
 		t.Run(lang, func(t *testing.T) {
 			req := httptest.NewRequest("GET", "/?lang="+lang, nil)
 			rec := httptest.NewRecorder()
-			renderLandingPage(rec, req)
+			renderLandingPage(rec, req, "https://zv.example.com")
 
 			if rec.Code != http.StatusOK {
 				t.Fatalf("status = %d, want 200", rec.Code)

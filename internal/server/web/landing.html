@@ -37,12 +37,19 @@
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Zonventure">
 <meta property="og:locale" content="{{LANG_CODE}}">
-<meta property="og:url" content="/">
-<meta property="og:image" content="/favicon.svg">
+<!-- og:url MUST be absolute per the OpenGraph spec; relative "/" is
+     accepted by some unfurlers but Slack and others fall back to
+     guessing the canonical URL when this is missing. {{LANDING_URL}}
+     is rendered server-side from PublicURL. -->
+<meta property="og:url" content="{{LANDING_URL}}">
+<!-- og:image is the favicon for now. Slack / Discord / iMessage want
+     a 1200x630 raster, not an SVG; flag in CHANGELOG / TODO so a real
+     OG asset can land before the landing page is publicly linked. -->
+<meta property="og:image" content="{{LANDING_URL}}/favicon.svg">
 <meta name="twitter:card" content="summary">
 <meta name="twitter:title" content="Zonventure">
 <meta name="twitter:description" content="{{OG_DESC}}">
-<meta name="twitter:image" content="/favicon.svg">
+<meta name="twitter:image" content="{{LANDING_URL}}/favicon.svg">
 
 <script type="application/ld+json">
 {
@@ -71,6 +78,7 @@
 <!-- Shared topbar / hamburger / overlay styles + the scroll-fade JS.
      Same files are pulled in by /pricing and /manual so the menu
      system is identical across marketing surfaces. -->
+<link rel="stylesheet" href="/assets/page-tokens.css">
 <link rel="stylesheet" href="/assets/topbar.css">
 <script defer src="/assets/topbar.js"></script>
 <!-- Apply persisted theme synchronously to dodge a light-on-load
@@ -78,88 +86,14 @@
      but `defer` runs after parse — too late. -->
 <script>(function(){try{var v=localStorage.getItem('zv-theme');if(v==='light'||v==='dark')document.documentElement.setAttribute('data-theme',v);}catch(e){}})();</script>
 <style>
-  :root {
-    color-scheme: light dark;
-    --accent: #ad1357;
-    --accent-2: #e24080;
-    --accent-deep: #6d0a35;
-    --ink: #1f3349;
-    --ink-soft: #3d5573;
-    --muted: #6b7f96;
-    --bg: #fbfbfd;
-    --surface: #ffffff;
-    --surface-2: #f3f4f7;
-    --border-soft: #e2e7ef;
-    --shadow: 0 1px 2px rgba(31,51,73,.06), 0 4px 16px rgba(31,51,73,.08);
-  }
-  [data-theme="dark"] {
-    --ink: #e7ecf4; --ink-soft: #c2cee0; --muted: #9db1cc;
-    --bg: #14202e; --surface: #1f3349; --surface-2: #263d56;
-    --border-soft: #2c4361;
-    --accent: #e24080; --accent-2: #ff6aa3; --accent-deep: #ad1357;
-    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.3);
-  }
-  @media (prefers-color-scheme: dark) {
-    :root:not([data-theme]) {
-      --ink: #e7ecf4; --ink-soft: #c2cee0; --muted: #9db1cc;
-      --bg: #14202e; --surface: #1f3349; --surface-2: #263d56;
-      --border-soft: #2c4361;
-      --accent: #e24080; --accent-2: #ff6aa3; --accent-deep: #ad1357;
-      --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.3);
-    }
-  }
-  * { box-sizing: border-box; }
-  html { scroll-behavior: smooth; overflow-x: hidden; }
-  body {
-    margin: 0;
-    font: 16px/1.55 'Open Sans', system-ui, sans-serif;
-    color: var(--ink); background: var(--bg);
-    overflow-x: hidden;
-  }
-  a { color: var(--accent); text-decoration: none; }
-  a:hover { text-decoration: underline; }
+  /* Design tokens, .btn, .skip-link, focus outlines, prefers-reduced-motion
+     all live in /assets/page-tokens.css. Page-specific overrides below. */
+  html { overflow-x: hidden; }
+  body { overflow-x: hidden; }
   .wrap { max-width: 64rem; margin: 0 auto; padding: 0 1.25rem; }
 
-  .skip-link {
-    position: absolute; top: -2.5rem; left: .5rem; z-index: 50;
-    padding: .5rem 1rem; border-radius: 8px;
-    background: var(--accent); color: #fff;
-    font-weight: 700; text-decoration: none;
-    transition: top .15s;
-  }
-  .skip-link:focus { top: .5rem; outline: 2px solid #fff; outline-offset: 2px; }
-  a:focus-visible, button:focus-visible, .btn:focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: 3px;
-    border-radius: 4px;
-  }
-  @media (prefers-reduced-motion: reduce) {
-    *, *::before, *::after {
-      animation-duration: 0.01ms !important;
-      animation-iteration-count: 1 !important;
-      transition-duration: 0.01ms !important;
-      scroll-behavior: auto !important;
-    }
-  }
-
-  .btn {
-    display: inline-block;
-    padding: .8rem 1.75rem;
-    border-radius: 999px;
-    font-weight: 700; font-size: .95rem;
-    text-decoration: none;
-    border: 1px solid transparent;
-    transition: transform .12s, box-shadow .12s, opacity .12s,
-                background .12s, color .12s, border-color .12s;
-    cursor: pointer;
-  }
-  .btn:hover { text-decoration: none; transform: translateY(-1px); }
-  .btn.primary {
-    background: linear-gradient(135deg, var(--accent), var(--accent-2));
-    color: #fff;
-    box-shadow: 0 6px 20px color-mix(in srgb, var(--accent) 40%, transparent);
-  }
-  .btn.primary:hover { opacity: .94; }
+  /* Hero-band-friendly button variant — only landing has a dark hero,
+     so this stays page-local. */
   .btn.ghost-light {
     color: #fff;
     background: rgba(255,255,255,.08);
@@ -170,12 +104,6 @@
     background: rgba(255,255,255,.18);
     border-color: rgba(255,255,255,.7);
   }
-  .btn.ghost {
-    color: var(--ink);
-    border-color: var(--border-soft);
-    background: var(--surface);
-  }
-  .btn.ghost:hover { border-color: var(--accent); color: var(--accent); }
 
   /* Hero band — flat brand-color gradient, no external imagery. A
      deployment that wants a hero photo can ship a custom landing.html

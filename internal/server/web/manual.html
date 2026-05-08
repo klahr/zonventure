@@ -169,6 +169,16 @@
     border-left-color: #d99500;
     background: color-mix(in srgb, #d99500 8%, var(--surface));
   }
+  .lang-note {
+    margin: 0 0 2rem;
+    padding: .75rem 1rem;
+    border-radius: 8px;
+    background: var(--surface-soft, color-mix(in srgb, var(--accent) 4%, var(--surface)));
+    border: 1px solid var(--border-soft);
+    font-size: .92rem;
+    color: var(--ink-soft);
+  }
+  .lang-note a { color: var(--accent); }
   .toc {
     margin: 1.5rem 0 2rem;
     padding: 1rem 1.25rem;
@@ -308,6 +318,9 @@
 <h1>Arranger manual</h1>
 <p class="updated">Last updated: 2026-05-02</p>
 <p class="lede">A pedagogic walk-through of the platform: create an adventure, fill it with puzzles, schedule an event, add teams, and watch them play. Read it once start to finish, or jump to a section from the table of contents.</p>
+<aside class="lang-note" role="note">
+  This public copy is English-only — the canonical reference for crawlers, AI agents, and curl. Once you <a href="/arrange">sign in</a>, the in-app <em>Manual</em> view shows the same content in your account's language.
+</aside>
 
 <section id="welcome">
   <h2>Welcome</h2>
