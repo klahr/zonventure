@@ -5,13 +5,10 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Zonventure Studio | Arranger</title>
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Aclonica&family=Open+Sans:wght@400;600;700&family=Roboto:wght@500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-  integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
-<script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-  integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<link rel="stylesheet" href="/assets/fontface.css">
+<!-- Leaflet (CSS + JS) is injected on demand by ensureLeaflet() — most
+     arranger views never open a map, so we don't pay the 150 KB cost
+     on first paint. -->
 <link rel="stylesheet" href="/assets/fsmap.css">
 <link rel="stylesheet" href="https://unpkg.com/xterm@5.3.0/css/xterm.css"
   integrity="sha384-LJcOxlx9IMbNXDqJ2axpfEQKkAYbFjJfhXexLfiRJhjDU81mzgkiQq8rkV0j6dVh" crossorigin="">
@@ -2722,6 +2719,30 @@ function loadJsqr() {
   return jsqrLoading;
 }
 
+// Lazy-loaded Leaflet — most arranger views never touch a map, so the
+// 150 KB JS + 14 KB CSS are injected only when the first map function
+// runs. Both assets are self-hosted under /assets/leaflet/, so a
+// hostile CDN swap can't inject script into a logged-in arranger
+// session and the player surface keeps working offline once cached.
+let leafletLoading = null;
+function ensureLeaflet() {
+  if (typeof window.L !== 'undefined') return Promise.resolve(window.L);
+  if (leafletLoading) return leafletLoading;
+  leafletLoading = new Promise((resolve, reject) => {
+    const css = document.createElement('link');
+    css.rel = 'stylesheet';
+    css.href = '/assets/leaflet/leaflet.css';
+    document.head.append(css);
+    const s = document.createElement('script');
+    s.src = '/assets/leaflet/leaflet.js';
+    s.async = true;
+    s.onload = () => resolve(window.L);
+    s.onerror = () => { leafletLoading = null; reject(new Error('leaflet load failed')); };
+    document.head.append(s);
+  });
+  return leafletLoading;
+}
+
 function openQrScanner() {
   return new Promise((resolve) => {
     const modal = document.createElement('div');
@@ -2880,17 +2901,31 @@ function modal(title, bodyFn, opts = {}) {
       // (the cancel/Esc/backdrop signals) as candidates for the guard.
       const isCancel = value === null || value === undefined;
       if (isCancel && !force && beforeClose) {
-        try {
-          if (beforeClose() === false) {
-            // Dirty-check refused. If the gesture was the browser's
-            // back button, re-push so the URL/back stack still maps to
-            // "this modal is open". Otherwise just stay open.
-            if (fromPop) {
-              history.pushState({ zvModal: titleID }, '');
+        let result;
+        try { result = beforeClose(); } catch { result = true; }
+        // Async beforeClose (returns a Promise) waits for the answer
+        // and then re-attempts the close with force:true so the guard
+        // doesn't fire twice. Sync false/true keeps the original fast
+        // path so the common dirty-check just compares to false.
+        if (result && typeof result.then === 'function') {
+          result.then((ok) => {
+            if (ok === false) {
+              if (fromPop) history.pushState({ zvModal: titleID }, '');
+              return;
             }
-            return;
+            close(value, Object.assign({}, options || {}, { force: true }));
+          }, () => close(value, Object.assign({}, options || {}, { force: true })));
+          return;
+        }
+        if (result === false) {
+          // Dirty-check refused. If the gesture was the browser's
+          // back button, re-push so the URL/back stack still maps to
+          // "this modal is open". Otherwise just stay open.
+          if (fromPop) {
+            history.pushState({ zvModal: titleID }, '');
           }
-        } catch { /* fall through to close */ }
+          return;
+        }
       }
       if (removed) return; // idempotent: a button handler may call close twice.
       removed = true;
@@ -2978,6 +3013,66 @@ function modal(title, bodyFn, opts = {}) {
         'input:not([type="hidden"]):not([disabled]), textarea:not([disabled]), select:not([disabled]), button:not([disabled])');
       (firstInput || dialog).focus();
     }, 30);
+  });
+}
+
+// inAppConfirm and inAppPrompt are awaitable replacements for the
+// browser's native confirm()/prompt(). They render through the same
+// modal() chrome the rest of arrange uses (focus trap, Esc handling,
+// back-button integration), so destructive prompts get visual parity
+// with the surrounding UI and don't blow away the surface in mobile
+// browsers that style native dialogs over the whole viewport.
+function inAppConfirm(message, opts = {}) {
+  return modal(opts.title || t('Confirm'), ({ body, close }) => {
+    const ok = h('button', {
+      class: 'btn' + (opts.danger ? ' danger' : ' primary'),
+      type: 'button',
+      on: { click: () => close(true) },
+    }, opts.ok || t('OK'));
+    body.append(
+      h('p', { style: 'margin:0 0 1rem; white-space:pre-line' }, message),
+      h('div', { class: 'btn-row', style: 'display:flex; gap:.5rem; justify-content:flex-end' },
+        h('button', {
+          class: 'btn ghost',
+          type: 'button',
+          on: { click: () => close(false) },
+        }, opts.cancel || t('Cancel')),
+        ok,
+      ),
+    );
+    setTimeout(() => { try { ok.focus(); } catch { /* element gone */ } }, 30);
+  }).then((v) => v === true);
+}
+
+function inAppPrompt(message, defaultValue = '', opts = {}) {
+  return modal(opts.title || t('Confirm'), ({ body, close }) => {
+    const input = h('input', {
+      type: opts.type || 'text',
+      value: defaultValue || '',
+      style: 'width:100%; padding:.5rem; margin:.5rem 0 1rem; box-sizing:border-box',
+      autocomplete: opts.autocomplete || 'off',
+    });
+    const submit = () => close(input.value);
+    body.append(
+      h('p', { style: 'margin:0 0 .25rem; white-space:pre-line' }, message),
+      input,
+      h('div', { class: 'btn-row', style: 'display:flex; gap:.5rem; justify-content:flex-end' },
+        h('button', {
+          class: 'btn ghost',
+          type: 'button',
+          on: { click: () => close(null) },
+        }, t('Cancel')),
+        h('button', {
+          class: 'btn primary',
+          type: 'button',
+          on: { click: submit },
+        }, opts.ok || t('OK')),
+      ),
+    );
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); submit(); }
+    });
+    setTimeout(() => { try { input.focus(); input.select(); } catch { /* element gone */ } }, 30);
   });
 }
 
@@ -5365,7 +5460,7 @@ function renderPurchaseActions(p) {
       && !p.billed_at && !p.voided_at) {
     const btn = h('button', { class: 'btn small danger', type: 'button' }, t('Void'));
     btn.addEventListener('click', async () => {
-      if (!confirm(t('Void this purchase so it won\'t appear on the next invoice? The slots stay granted; only the billable line is removed.'))) return;
+      if (!await inAppConfirm(t('Void this purchase so it won\'t appear on the next invoice? The slots stay granted; only the billable line is removed.'), { danger: true })) return;
       btn.disabled = true;
       const r = await api('/api/admin/purchases/' + p.id + '/void', { method: 'POST' });
       if (r.status === 200) {
@@ -5394,9 +5489,9 @@ function renderPurchaseActions(p) {
     }
     const btn = h('button', { class: 'btn small danger', type: 'button' }, t('Refund'));
     btn.addEventListener('click', async () => {
-      if (!confirm(t('Refund {{amount}} to the customer? The state flips to "refunded" once Stripe confirms.', {
+      if (!await inAppConfirm(t('Refund {{amount}} to the customer? The state flips to "refunded" once Stripe confirms.', {
         amount: new Intl.NumberFormat(undefined, { style: 'currency', currency: p.currency || 'EUR' }).format(p.amount_cents / 100),
-      }))) return;
+      }), { danger: true })) return;
       btn.disabled = true;
       const r = await api('/api/admin/purchases/' + p.id + '/refund', { method: 'POST' });
       if (r.status !== 202) {
@@ -6284,11 +6379,13 @@ function openFullscreenMap(opts) {
       mapEl,
     );
     host.replaceChildren(back);
-    if (typeof L === 'undefined') {
+    ensureLeaflet().then(() => {
+      buildMap();
+    }).catch(() => {
       mapEl.replaceChildren(h('div', { class: 'empty', style: 'padding:2rem' },
-        t('Map library is still loading — refresh the page.')));
-      return;
-    }
+        t('Map library failed to load — check your connection.')));
+    });
+    function buildMap() {
     map = L.map(mapEl).setView([58.1820, 13.9554], 13);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '© OpenStreetMap contributors',
@@ -6357,6 +6454,7 @@ function openFullscreenMap(opts) {
     // browser commits the layout is the standard belt-and-braces call
     // for map-in-flex setups.
     setTimeout(() => { try { map.invalidateSize(); } catch { /* torn down */ } }, 30);
+    }
   });
 }
 
@@ -6366,11 +6464,12 @@ function openFullscreenMap(opts) {
 // when there's at least one location, falls back to Stockholm
 // otherwise so the map never lands on the ocean.
 function mountAdventureMap(host, pages, colors) {
-  if (typeof L === 'undefined') {
+  ensureLeaflet().then(() => buildAdventureMap(host, pages, colors)).catch(() => {
     host.replaceChildren(h('div', { class: 'empty' },
-      t('Map library is still loading — refresh the page.')));
-    return;
-  }
+      t('Map library failed to load — check your connection.')));
+  });
+}
+function buildAdventureMap(host, pages, colors) {
   const map = L.map(host, { scrollWheelZoom: false }).setView([58.1820, 13.9554], 13);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '© OpenStreetMap contributors',
@@ -8713,10 +8812,29 @@ async function viewEventControl(view, runID) {
 // silent failure is exactly what causes filter changes to look like
 // they don't apply.
 function initRunMap(host, adventure, teams, tracks) {
-  if (typeof L === 'undefined') {
-    host.replaceChildren(h('div', { class: 'empty' }, t('Map library is still loading — refresh the page.')));
-    return null;
-  }
+  // Returned synchronously so the caller can `.remove()` even before
+  // Leaflet loads. If a teardown lands first, we mark the handle and
+  // bail out of buildMap; otherwise the real map.remove gets wired up
+  // once L is ready.
+  const handle = {
+    _real: null,
+    _tornDown: false,
+    remove() {
+      this._tornDown = true;
+      if (this._real) { try { this._real.remove(); } catch { /* best effort */ } this._real = null; }
+    },
+  };
+  ensureLeaflet().then(() => {
+    if (handle._tornDown) return;
+    handle._real = buildRunMap(host, adventure, teams, tracks);
+  }).catch(() => {
+    if (handle._tornDown) return;
+    host.replaceChildren(h('div', { class: 'empty' }, t('Map library failed to load — check your connection.')));
+  });
+  return handle;
+}
+
+function buildRunMap(host, adventure, teams, tracks) {
   const map = L.map(host, { scrollWheelZoom: false }).setView([58.1820, 13.9554], 14);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '© OpenStreetMap contributors',
@@ -9522,7 +9640,7 @@ async function openNewTeamModal(runID) {
         const dirty = !!(nameInput.value.trim() || memberArea.value.trim()
           || rosterArea.value.trim()
           || (importParsed && importParsed.teams && importParsed.teams.length));
-        return !dirty || confirm(t('Discard the team(s) you were adding?'));
+        return !dirty || inAppConfirm(t('Discard the team(s) you were adding?'), { danger: true });
       });
     }
 
@@ -9902,7 +10020,7 @@ function renderSlotRow(teamID, slot, reload, event) {
   const liveEvent = event && (event.state === 'running' || event.state === 'paused');
   const rotateBtn = canDo(event, 'rotate_slot_token')
     ? iconBtn('key', t('Rotate link — invalidates the old one'), async () => {
-        if (liveEvent && !confirm(t('Rotate {{slot}}\'s link mid-event? The current device will be signed out and need the new link to keep playing.', { slot: slot.name }))) return;
+        if (liveEvent && !await inAppConfirm(t('Rotate {{slot}}\'s link mid-event? The current device will be signed out and need the new link to keep playing.', { slot: slot.name }), { danger: true })) return;
         const rr = await api(`/api/admin/teams/${teamID}/slots/${slot.id}/rotate`, { method: 'POST' });
         if (rr.status === 200) { toastOk(t('Link rotated')); reload(); }
         else toastErr(rr.body?.error || t('error {{status}}', { status: rr.status }));
@@ -9910,7 +10028,7 @@ function renderSlotRow(teamID, slot, reload, event) {
     : null;
   const removeBtn = canDo(event, 'remove_slot')
     ? iconBtn('trash', t('Remove slot'), async () => {
-        if (liveEvent && !confirm(t('Remove {{slot}} mid-event? Their link stops working immediately and any answers they\'ve already submitted stay with the team.', { slot: slot.name }))) return;
+        if (liveEvent && !await inAppConfirm(t('Remove {{slot}} mid-event? Their link stops working immediately and any answers they\'ve already submitted stay with the team.', { slot: slot.name }), { danger: true })) return;
         const rr = await api(`/api/admin/teams/${teamID}/slots/${slot.id}`, { method: 'DELETE' });
         if (rr.status === 204) { toastOk(t('Removed')); reload(); }
         else toastErr(rr.body?.error || t('error {{status}}', { status: rr.status }));
@@ -10621,11 +10739,11 @@ async function confirmRemoveOrgMember(org, member) {
 
 // confirmVerifyMemberEmail bypasses the self-serve email-verification
 // flow on behalf of an arranger who couldn't receive (or never
-// received) their verification mail. Plain confirm() is enough — the
-// action is reversible by simply asking the arranger to log in and
-// re-trigger the verification flow if it turns out to be wrong.
+// received) their verification mail. The action is reversible by
+// simply asking the arranger to log in and re-trigger the
+// verification flow if it turns out to be wrong.
 async function confirmVerifyMemberEmail(org, member) {
-  if (!confirm(t('Manually verify {{username}}\'s email? Only do this after confirming the user out-of-band — this bypasses the verification mail loop.',
+  if (!await inAppConfirm(t('Manually verify {{username}}\'s email? Only do this after confirming the user out-of-band — this bypasses the verification mail loop.',
       { username: member.username }))) return;
   const r = await api(`/api/admin/users/${member.id}/verify-email`, { method: 'POST' });
   if (r.status === 204) { toastOk(t('Email verified')); renderRoute(); }
@@ -10959,7 +11077,7 @@ async function importAdventureFlow(view) {
     // Slug collision is the common case (re-importing on top of an
     // existing slug). Offer a rename-and-retry rather than making
     // the operator re-pick the file.
-    const next = window.prompt(t('That slug already exists or could not be created. Pick a new slug:'), '');
+    const next = await inAppPrompt(t('That slug already exists or could not be created. Pick a new slug:'), '');
     if (next) {
       r = await upload(next.trim());
     }
@@ -11035,7 +11153,7 @@ async function openCreateAdventure() {
         const dirty = !!(slug.value || title.value || desc.value
           || author.value !== orgName
           || cAccent.get() || cSecondary.get() || cBackground.get() || cText.get() || cSubmitBg.get());
-        return !dirty || confirm(t('Discard this adventure?'));
+        return !dirty || inAppConfirm(t('Discard this adventure?'), { danger: true });
       });
     }
     form.addEventListener('submit', async (e) => {
@@ -11709,7 +11827,7 @@ async function setLaneMode(view, adv, lane, next) {
 
 async function renameLane(view, adv, lane) {
   const current = lane.name || '';
-  const next = window.prompt(t('Lane name (leave empty for default)'), current);
+  const next = await inAppPrompt(t('Lane name (leave empty for default)'), current, { title: t('Rename lane') });
   if (next === null) return; // user cancelled
   const trimmed = next.trim();
   if (trimmed === current) return;
@@ -11729,7 +11847,7 @@ async function deleteLane(view, adv, lane, pageCount) {
     toastErr(t('Move the puzzles out of this lane first.'));
     return;
   }
-  if (!window.confirm(t('Delete this lane?'))) return;
+  if (!await inAppConfirm(t('Delete this lane?'), { danger: true })) return;
   const r = await api(`/api/admin/adventures/${encodeURIComponent(adv.slug)}/lanes/${lane.id}`, {
     method: 'DELETE',
   });
@@ -11778,7 +11896,7 @@ async function addLane(view, adv) {
         h('button', { class: 'btn primary', type: 'submit' }, t('Add lane'))));
     if (typeof setBeforeClose === 'function') {
       setBeforeClose(() => !nameInput.value.trim()
-        || confirm(t('Discard this lane?')));
+        || inAppConfirm(t('Discard this lane?'), { danger: true }));
     }
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -11885,11 +12003,11 @@ async function openShareAdventureModal(adv) {
 }
 
 async function revokeShare(adv, share) {
-  // Plain confirm: revoking is non-destructive (existing runs keep
-  // working, only future run creation is blocked), so the heavier
-  // promptPassword gate would be noise here.
-  if (!confirm(t('Revoke share with {{org}}? Existing events keep working; new events will be blocked.',
-    { org: share.org_name }))) return;
+  // Lightweight confirm: revoking is non-destructive (existing runs
+  // keep working, only future run creation is blocked), so the
+  // heavier promptPassword gate would be noise here.
+  if (!await inAppConfirm(t('Revoke share with {{org}}? Existing events keep working; new events will be blocked.',
+    { org: share.org_name }), { danger: true })) return;
   const r = await api(`/api/admin/adventures/${encodeURIComponent(adv.slug)}/shares/${share.org_id}`, {
     method: 'DELETE',
   });
@@ -12191,7 +12309,7 @@ async function openEditAdventureMeta(adv) {
       || startLabelInput.value.trim()    !== initialStartLabel
     );
     if (typeof setBeforeClose === 'function') {
-      setBeforeClose(() => !isDirty() || confirm(t('Discard unsaved changes to this adventure?')));
+      setBeforeClose(() => !isDirty() || inAppConfirm(t('Discard unsaved changes to this adventure?'), { danger: true }));
     }
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -13089,7 +13207,7 @@ async function openEditPuzzle(adv, page /* or null */, laneID /* optional, creat
               const refByID  = promptText.includes('/image/' + im.id);
               const refByURL = im.url ? promptText.includes(im.url) : false;
               if (refByID || refByURL) {
-                if (!confirm(t('This image is embedded in the puzzle prompt. Deleting will leave a broken image where it appears. Continue?'))) return;
+                if (!await inAppConfirm(t('This image is embedded in the puzzle prompt. Deleting will leave a broken image where it appears. Continue?'), { danger: true })) return;
               }
               const rr = await api(`/api/admin/images/${im.id}`, { method: 'DELETE' });
               if (rr.status === 204) {
@@ -13483,7 +13601,7 @@ async function openEditPuzzle(adv, page /* or null */, laneID /* optional, creat
         const msg = creating
           ? t('Discard this draft? You can come back to it from the same adventure.')
           : t('Discard unsaved changes to this puzzle?');
-        return confirm(msg);
+        return inAppConfirm(msg, { danger: true });
       });
     }
     let saveState = 'idle';
@@ -13596,8 +13714,8 @@ async function openEditPuzzle(adv, page /* or null */, laneID /* optional, creat
       (gated.checked && parseFloat(radius.value) !== (page?.radius_m || 50)) ||
       disabled.checked !== !!page?.disabled
     );
-    const switchTo = (targetPage) => {
-      if (isDirty() && !confirm(t('Discard unsaved changes in this puzzle?'))) return;
+    const switchTo = async (targetPage) => {
+      if (isDirty() && !await inAppConfirm(t('Discard unsaved changes in this puzzle?'), { danger: true })) return;
       file.remove();
       close(null);
       openEditPuzzle(adv, targetPage);
@@ -13766,6 +13884,36 @@ async function openEditPuzzle(adv, page /* or null */, laneID /* optional, creat
 //   radius input edits                   → resize circle + reposition handle
 //   radius handle drag                   → resize circle + update input
 function renderPuzzleLocationMap(args) {
+  // Lazy Leaflet — the puzzle editor wraps the real impl in a handle
+  // that buffers invalidate()/destroy() calls fired before the script
+  // arrives. Once L is loaded, we forward any pending invalidate and
+  // wire destroy() to the real map.
+  const handle = {
+    _real: null,
+    _destroyed: false,
+    _pendingInvalidate: false,
+    invalidate() {
+      if (this._real) this._real.invalidate();
+      else this._pendingInvalidate = true;
+    },
+    destroy() {
+      this._destroyed = true;
+      if (this._real) this._real.destroy();
+    },
+  };
+  ensureLeaflet().then(() => {
+    if (handle._destroyed) return;
+    handle._real = buildPuzzleLocationMap(args);
+    if (handle._pendingInvalidate) handle._real.invalidate();
+  }).catch(() => {
+    if (handle._destroyed) return;
+    args.mapEl.replaceChildren(h('div', { class: 'empty' },
+      t('Map library failed to load — check your connection.')));
+  });
+  return handle;
+}
+
+function buildPuzzleLocationMap(args) {
   const { mapEl, gpsBtn, lat, lng, gated, radius, initial, freshPuzzle } = args;
 
   // A new puzzle without a prior sibling starts at a city-level zoom so
@@ -14664,7 +14812,7 @@ function renderMigrationOutCard(orgs, mode, maint) {
     h('div', { class: 'row', style: 'gap:.5rem' }, startBtn));
   const progressArea = h('div', { hidden: '' });
 
-  startBtn.addEventListener('click', () => {
+  startBtn.addEventListener('click', async () => {
     const orgID = orgSelect.value;
     const target = targetInput.value.trim();
     if (!orgID) { toastErr(t('Pick a source org.')); return; }
@@ -14674,7 +14822,7 @@ function renderMigrationOutCard(orgs, mode, maint) {
       return;
     }
     const orgName = orgs.find((o) => String(o.id) === orgID)?.name || `#${orgID}`;
-    const ok = confirm(t('Migrate "{{name}}" to {{target}}? You can stop before the redirect step. Once redirect flips, this instance will 301 every page to the destination.', { name: orgName, target }));
+    const ok = await inAppConfirm(t('Migrate "{{name}}" to {{target}}? You can stop before the redirect step. Once redirect flips, this instance will 301 every page to the destination.', { name: orgName, target }), { danger: true });
     if (!ok) return;
     formArea.hidden = true;
     progressArea.hidden = false;
@@ -14740,7 +14888,7 @@ async function runMigrationWizard(area, ctx) {
 
   let aborted = false;
   cancelBtn.addEventListener('click', async () => {
-    if (!confirm(t('Cancel the migration? Maintenance mode will be turned back off; any bundle already downloaded is your responsibility to discard.'))) return;
+    if (!await inAppConfirm(t('Cancel the migration? Maintenance mode will be turned back off; any bundle already downloaded is your responsibility to discard.'), { danger: true })) return;
     aborted = true;
     cancelBtn.disabled = true;
     log.textContent = t('Disabling maintenance mode…');
@@ -14804,9 +14952,9 @@ async function runMigrationWizard(area, ctx) {
           on: { click: confirmUpload },
         }, icon(ICONS.compass), t('I\'ve uploaded the bundle — flip redirect now')))));
 
-  function confirmUpload() {
+  async function confirmUpload() {
     if (aborted) return;
-    if (!confirm(t('Flip redirect mode now? Every page on this instance will 301 to {{target}} from the moment you confirm.', { target: ctx.target }))) return;
+    if (!await inAppConfirm(t('Flip redirect mode now? Every page on this instance will 301 to {{target}} from the moment you confirm.', { target: ctx.target }), { danger: true })) return;
     flipRedirect();
   }
 
@@ -14847,7 +14995,7 @@ function renderMigrationActiveCard(mode) {
   const disableBtn = h('button', { class: 'btn ghost', type: 'button',
     disabled: mode.pinned_by_env ? '' : null }, t('Disable redirect mode'));
   disableBtn.addEventListener('click', async () => {
-    if (!confirm(t('Disable redirect mode? Pages on this instance will resume serving normally.'))) return;
+    if (!await inAppConfirm(t('Disable redirect mode? Pages on this instance will resume serving normally.'), { danger: true })) return;
     disableBtn.disabled = true;
     const r = await api('/api/admin/migrate/redirect-mode', {
       method: 'POST', body: JSON.stringify({ target: '' }),
@@ -15638,9 +15786,9 @@ async function openWebhookForm({ kinds, existing }) {
     const initial = snapshot();
     if (typeof setBeforeClose === 'function') {
       setBeforeClose(() => snapshot() === initial
-        || confirm(isEdit
+        || inAppConfirm(isEdit
           ? t('Discard unsaved changes to this webhook?')
-          : t('Discard this webhook?')));
+          : t('Discard this webhook?'), { danger: true }));
     }
 
     form.addEventListener('submit', async (e) => {
@@ -16404,7 +16552,7 @@ function renderSettingsPublicProfileCard() {
     const next = slugInput.value.trim().toLowerCase();
     if (!next) { setStatus('err', t('Slug cannot be empty.')); return; }
     if (next === currentSlug) { setStatus('muted', t('No change.')); return; }
-    if (!confirm(t('Rename the public store URL? Any previously-shared link to /o/{{old}}/store will stop working immediately.', { old: currentSlug }))) {
+    if (!await inAppConfirm(t('Rename the public store URL? Any previously-shared link to /o/{{old}}/store will stop working immediately.', { old: currentSlug }), { danger: true })) {
       return;
     }
     slugSaveBtn.disabled = true;
@@ -16476,7 +16624,7 @@ function renderSettingsPublicProfileCard() {
   });
 
   logoDeleteBtn.addEventListener('click', async () => {
-    if (!confirm(t('Remove the brand logo?'))) return;
+    if (!await inAppConfirm(t('Remove the brand logo?'), { danger: true })) return;
     logoDeleteBtn.disabled = true;
     const r = await api('/api/admin/orgs/me/logo', { method: 'DELETE' });
     if (!r.ok && r.status !== 204) {
@@ -16515,7 +16663,7 @@ function renderSettingsPublicProfileCard() {
   });
 
   coverDeleteBtn.addEventListener('click', async () => {
-    if (!confirm(t('Remove the cover image? The landing page falls back to the accent gradient.'))) return;
+    if (!await inAppConfirm(t('Remove the cover image? The landing page falls back to the accent gradient.'), { danger: true })) return;
     coverDeleteBtn.disabled = true;
     const r = await api('/api/admin/orgs/me/cover', { method: 'DELETE' });
     if (!r.ok && r.status !== 204) {
@@ -17345,7 +17493,7 @@ function renderSettingsSessionsCard() {
   const otherBtn = h('button', { class: 'btn', type: 'button' },
     icon(ICONS.shield), t('Sign out everywhere else'));
   otherBtn.addEventListener('click', async () => {
-    if (!confirm(t('Sign out of every other browser, phone, and tablet? You\'ll stay signed in here.'))) return;
+    if (!await inAppConfirm(t('Sign out of every other browser, phone, and tablet? You\'ll stay signed in here.'), { danger: true })) return;
     otherBtn.disabled = true;
     const rr = await api('/api/admin/me/sessions', { method: 'DELETE' });
     otherBtn.disabled = false;
@@ -17410,7 +17558,7 @@ function renderSettingsMCPTokensCard() {
             ...scopeBadges)),
         h('button', { class: 'btn small danger', type: 'button',
           on: { click: async () => {
-            if (!confirm(t('Revoke this token? Any client currently using it will stop working.'))) return;
+            if (!await inAppConfirm(t('Revoke this token? Any client currently using it will stop working.'), { danger: true })) return;
             const rr = await api('/api/admin/me/mcp-tokens/' + encodeURIComponent(tok.id),
               { method: 'DELETE' });
             if (rr.status === 204) { toastOk(t('Token revoked')); refresh(); }
@@ -17870,7 +18018,7 @@ function renderTOTPEnabled(refresh, enrolledAt) {
     status,
     h('div', { class: 'row', style: 'gap:.5rem; margin-top:.5rem; flex-wrap:wrap' },
       h('button', { class: 'btn', type: 'button', on: { click: async () => {
-        const pw = prompt(t('Confirm your current password to regenerate recovery codes:'));
+        const pw = await inAppPrompt(t('Confirm your current password to regenerate recovery codes:'), '', { type: 'password', title: t('Confirm password') });
         if (!pw) return;
         status.className = 'muted'; status.textContent = t('Generating…');
         const r = await api('/api/admin/me/totp/recovery-codes/regenerate', {
@@ -17886,8 +18034,8 @@ function renderTOTPEnabled(refresh, enrolledAt) {
         showRecoveryCodes(r.body?.recovery_codes || []);
       } } }, t('Regenerate recovery codes')),
       h('button', { class: 'btn danger', type: 'button', on: { click: async () => {
-        if (!confirm(t('Turn off two-factor authentication for this account?'))) return;
-        const pw = prompt(t('Confirm your current password to disable 2FA:'));
+        if (!await inAppConfirm(t('Turn off two-factor authentication for this account?'), { danger: true })) return;
+        const pw = await inAppPrompt(t('Confirm your current password to disable 2FA:'), '', { type: 'password', title: t('Confirm password') });
         if (!pw) return;
         status.className = 'muted'; status.textContent = t('Disabling…');
         const r = await api('/api/admin/me/totp/disable', {
@@ -18050,7 +18198,7 @@ function renderSettingsEmailCard(me) {
         h('div', { class: 'row end' },
           h('button', { class: 'btn small', type: 'button',
             on: { click: async () => {
-              if (!confirm(t('Revert your email back to {{prev}}?', { prev: r.body.previous_email }))) return;
+              if (!await inAppConfirm(t('Revert your email back to {{prev}}?', { prev: r.body.previous_email }))) return;
               const rr = await api('/api/admin/me/email/revert', { method: 'POST' });
               if (rr.ok) {
                 toastOk(t('Email reverted to {{email}}.', { email: rr.body?.email || r.body.previous_email }));

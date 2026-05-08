@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self'; connect-src 'self' wss: ws:; media-src 'self' blob:; object-src 'none'; base-uri 'self'">
 <title>Zonventure | Recap</title>
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <!-- Public-by-token. The recap is shared into chat apps and social
@@ -16,13 +17,9 @@
      emits X-Robots-Tag on the JSON, but the meta tag covers
      crawlers that fetch HTML without setting Accept correctly. -->
 <meta name="robots" content="noindex, nofollow">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Aclonica&family=Open+Sans:wght@400;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-  integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
-<script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-  integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<link rel="stylesheet" href="/assets/fontface.css">
+<link rel="stylesheet" href="/assets/leaflet/leaflet.css">
+<script defer src="/assets/leaflet/leaflet.js"></script>
 <script src="/i18n.js"></script>
 <style>
 :root {
@@ -120,11 +117,17 @@ body {
   border-radius: 10px;
 }
 .playback button.pp {
-  width: 2.2rem; height: 2.2rem; padding: 0;
+  /* WCAG 2.5.5: 44 px tap-target floor. Recap is shared into chat
+     apps and opened on phones — 35 px was too small for outdoor /
+     gloved use. */
+  width: 2.75rem; height: 2.75rem;
+  min-width: 2.75rem; min-height: 2.75rem;
+  padding: 0;
   border-radius: 50%;
   border: 1px solid var(--border);
   background: var(--accent); color: var(--accent-fg);
   font-weight: 700; cursor: pointer; flex: 0 0 auto;
+  display: inline-flex; align-items: center; justify-content: center;
 }
 .playback button.pp:disabled { opacity: .55; cursor: not-allowed; }
 .playback input[type=range] {
@@ -458,7 +461,12 @@ function mountPlayback(mapHost, map, d, accent) {
 
   let playheadMs = 0;
   let lastFrameAt = 0;
-  let playing = true;
+  // Auto-play unless the user has asked the OS for reduced motion —
+  // then we land paused at the END of the track (full trail visible)
+  // and the player can press Play to scrub. Same value WCAG asks
+  // for: no animation runs without explicit user intent.
+  const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let playing = !reducedMotion;
   let rafId = 0;
 
   function rebuildTrail(uptoIdx, head) {
@@ -518,10 +526,20 @@ function mountPlayback(mapHost, map, d, accent) {
     lastFrameAt = 0;
   });
 
-  // Auto-play on first paint — the page is shown specifically to
-  // watch the team's day, paused-at-start would be a stale
-  // skeumorphism from desktop video players.
-  rafId = requestAnimationFrame(tick);
+  if (reducedMotion) {
+    // Land at the end of the track with the full trail rendered, so
+    // a vestibular-sensitive viewer sees the same final shape an
+    // auto-played viewer would arrive at — without the motion. The
+    // play button still works for an opt-in scrub.
+    setPlayhead(totalMs, false);
+    playBtn.textContent = '▶';
+    playBtn.setAttribute('aria-label', t('Play'));
+  } else {
+    // Auto-play on first paint — the page is shown specifically to
+    // watch the team's day, paused-at-start would be a stale
+    // skeumorphism from desktop video players.
+    rafId = requestAnimationFrame(tick);
+  }
 }
 
 load();

@@ -11,6 +11,74 @@ The repository, Go module, and CLI binary are named `zv`; the product is
 
 ## [Unreleased]
 
+### Hardening — vendor pinning, CSP, durable submits
+
+A round of polish on the player + arranger surfaces. Each item closes
+a specific footgun the previous shape exposed.
+
+- **Self-hosted Leaflet (with lazy loader).** Both the live board and
+  the recap previously pulled `leaflet@1.9.4` from `unpkg.com` on
+  page-open; an unpkg outage or a hostile CDN swap would have either
+  broken the live view mid-event or — worse — let an attacker inject
+  script into a logged-in arranger session. Bytes now live under
+  `/assets/leaflet/` (JS + CSS + the marker / layer PNGs the CSS
+  references via relative paths) and ship from the Go binary. The
+  arranger surface uses a new `ensureLeaflet()` helper that injects
+  the script on first map open — most arranger views never touch a
+  map, so the 150 KB cost is paid once per session by the views
+  that actually need it. Same helper landed earlier in `play.html`;
+  the previous `unpkg` URL there moved to the self-hosted path
+  alongside it. All map-using arrange functions
+  (`mountAdventureMap`, `initRunMap`, `renderPuzzleLocationMap`,
+  `openFullscreenMap`) wrap their bodies in `ensureLeaflet().then()`
+  and return synchronously-callable handles so the caller's
+  `.remove()` / `.invalidate()` keeps working before Leaflet has
+  arrived.
+
+- **In-app `confirm()` / `prompt()` across the arranger surface.**
+  Twenty-odd destructive actions (refund, void, lane delete, slug
+  rename, mid-event slot rotate, brand-asset removal, 2FA off,
+  recovery-code regenerate, …) used the browser's native
+  `window.confirm` / `window.prompt`. Mobile browsers style those
+  full-screen on top of the page chrome, killing the surrounding
+  context the user just chose to act from. Two new helpers,
+  `inAppConfirm` and `inAppPrompt`, render through the existing
+  `modal()` chrome (focus trap, Esc handling, back-button
+  integration). The modal's `setBeforeClose` hook also learned to
+  await Promises, so dirty-check guards like "Discard unsaved
+  changes?" can use the same async helper without losing their
+  block-the-close contract. Power-user keyboard shortcuts (Enter to
+  submit a prompt, Esc to cancel) are wired up.
+
+- **At-least-once player submit outbox.** The player surface kept
+  queued answer/advance frames in `pendingAnswers` until
+  `ws.send()` returned success. That return only proves the OS
+  buffer accepted the frame, not that the server processed it — a
+  socket that died mid-flight could lose an answer with no error
+  path. Submissions now stay on disk until the server explicitly
+  acks the matching `client_action_id` on the
+  `answer_result` / `answer_error` channel. The server already
+  deduped retries via `player_action_dedup`; this change extends
+  that contract end-to-end so a retried frame replays the cached
+  response. Reconnect re-sends every queued entry; the new
+  `ackPending(actionID)` helper drops the matching outbox row when
+  the server confirms. Three new unit tests in
+  `play-queue.test.js` exercise the ack path.
+
+- **Tightened CSP.** The global header dropped its
+  `https://fonts.googleapis.com` / `https://fonts.gstatic.com`
+  allowances now that the webfonts ship from `/assets/fonts/*`.
+  Player and public-facing pages (play, live, recap, landing,
+  pricing, privacy, terms, manual, store, store-event,
+  org-landing, 404) gained a stricter `<meta http-equiv>`
+  Content-Security-Policy that drops the `unpkg.com` allowance
+  entirely — those surfaces no longer load anything from a CDN.
+  The `/arrange` admin surface keeps the looser baseline because
+  xterm + xterm-addon-fit are still pulled from unpkg; browsers
+  intersect the meta and header policies, so a stricter
+  per-page meta wins over the header for the surfaces that
+  don't need the looser allowance.
+
 ### Added
 
 - **Stripe Connect marketplace flow.** The hosted instance can now

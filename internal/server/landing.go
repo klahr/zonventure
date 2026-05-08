@@ -2,12 +2,50 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
+	"sync"
 
+	"git.sr.ht/~klahr/zv/internal/admin"
 	"git.sr.ht/~klahr/zv/internal/auth"
 	"git.sr.ht/~klahr/zv/internal/logx"
 )
+
+// landingPageCache holds the precomputed per-(lang, name, publicURL)
+// rendered body so we don't re-run the ~80 strings.ReplaceAll loop on
+// every request to a marketing page. Filled lazily on first request
+// and kept for the process lifetime (locales + templates are static
+// after startup; override-dir hits skip the cache entirely so a dev
+// workflow with ZV_WEB_OVERRIDE_DIR still sees edits without
+// restart).
+var (
+	landingPageCacheMu sync.RWMutex
+	landingPageCache   = map[string][]byte{}
+)
+
+// cachedRender memoises build()'s result keyed by the named tuple.
+// First call: build runs, output is stored. Subsequent calls return
+// the stored bytes without re-running build. The override-dir gate
+// short-circuits the cache so dev iteration is unaffected.
+func cachedRender(lang, name, extraKey string, build func() []byte) []byte {
+	if webOverrideDir != "" {
+		return build()
+	}
+	key := lang + "|" + name + "|" + extraKey
+	landingPageCacheMu.RLock()
+	if v, ok := landingPageCache[key]; ok {
+		landingPageCacheMu.RUnlock()
+		return v
+	}
+	landingPageCacheMu.RUnlock()
+	v := build()
+	landingPageCacheMu.Lock()
+	landingPageCache[key] = v
+	landingPageCacheMu.Unlock()
+	return v
+}
 
 // langCookie is the name of the persisted language preference. Set on
 // any request that carries `?lang=` and read on subsequent requests so
@@ -573,22 +611,56 @@ func render404(w http.ResponseWriter, r *http.Request) {
 // topbar + footer still need to honour the caller's locale and
 // surface the language picker correctly. The page body should
 // reference the topbar/footer keys via {{KEY}} placeholders.
+//
+// Also splices the live pricing constants so the manual's "first N
+// free, then €X per player" copy stays in sync with whatever
+// admin.PricePerPlayerCents / FreePlayersPerEvent currently are —
+// no more risk of the documentation lying about the price.
 func renderTopbarPage(w http.ResponseWriter, r *http.Request, name string) {
-	body, err := readWebFile(name)
-	if err != nil {
+	lang := resolveLang(w, r)
+	out := cachedRender(lang, name, "", func() []byte {
+		body, err := readWebFile(name)
+		if err != nil {
+			return nil
+		}
+		s := landingLocales[lang]
+		txt := string(body)
+		for _, sub := range topbarSubs(s, lang) {
+			txt = strings.ReplaceAll(txt, sub[0], sub[1])
+		}
+		for _, sub := range pricingSubs() {
+			txt = strings.ReplaceAll(txt, sub[0], sub[1])
+		}
+		return []byte(txt)
+	})
+	if out == nil {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
-	}
-	lang := resolveLang(w, r)
-	s := landingLocales[lang]
-	out := string(body)
-	for _, sub := range topbarSubs(s, lang) {
-		out = strings.ReplaceAll(out, sub[0], sub[1])
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Vary", "Cookie, Accept-Language")
 	w.Header().Set("Cache-Control", "no-store")
-	_, _ = w.Write([]byte(out))
+	_, _ = w.Write(out)
+}
+
+// pricingSubs renders {{FREE_PLAYERS_PER_EVENT}} and
+// {{PRICE_PER_EXTRA_PLAYER}} from the live admin constants. Single
+// source of truth: bumping the price in admin/purchases.go
+// automatically updates the manual + any future page that opts in.
+func pricingSubs() [][2]string {
+	free := strconv.Itoa(admin.FreePlayersPerEvent)
+	priceMajor := admin.PricePerPlayerCents / 100
+	priceMinor := admin.PricePerPlayerCents % 100
+	var price string
+	if priceMinor == 0 {
+		price = "€" + strconv.Itoa(priceMajor)
+	} else {
+		price = "€" + strconv.Itoa(priceMajor) + "." + fmt.Sprintf("%02d", priceMinor)
+	}
+	return [][2]string{
+		{"{{FREE_PLAYERS_PER_EVENT}}", free},
+		{"{{PRICE_PER_EXTRA_PLAYER}}", price},
+	}
 }
 
 // renderLandingPage substitutes the locale's strings into the embedded
@@ -604,14 +676,7 @@ func renderTopbarPage(w http.ResponseWriter, r *http.Request, name string) {
 // {{NAV_STORE}} — only needs adding to topbarSubs once and every
 // caller picks it up automatically.
 func renderLandingPage(w http.ResponseWriter, r *http.Request, publicURL string) {
-	body, err := readWebFile("web/landing.html")
-	if err != nil {
-		http.Error(w, "not found", http.StatusNotFound)
-		return
-	}
 	lang := resolveLang(w, r)
-	s := landingLocales[lang]
-	out := string(body)
 	// Absolute URL for og:url + og:image. Falls back to "/" when no
 	// PublicURL is configured (dev / unconfigured self-host) — that's
 	// no worse than what shipped before, and the page still renders.
@@ -619,6 +684,33 @@ func renderLandingPage(w http.ResponseWriter, r *http.Request, publicURL string)
 	if landingURL == "" {
 		landingURL = "/"
 	}
+	out := cachedRender(lang, "web/landing.html", landingURL, func() []byte {
+		return buildLandingBody(lang, landingURL)
+	})
+	if out == nil {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	// Vary on Accept-Language + Cookie so caches don't serve the
+	// English version to a Swedish-cookie visitor.
+	w.Header().Set("Vary", "Cookie, Accept-Language")
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write(out)
+}
+
+// buildLandingBody is the actual substitution loop, factored out of
+// renderLandingPage so it can be invoked once (per lang+publicURL)
+// from inside the cachedRender callback. Reads the embedded template
+// fresh every call so an override-dir hit picks up edits — the
+// cachedRender wrapper short-circuits in dev anyway.
+func buildLandingBody(lang, landingURL string) []byte {
+	body, err := readWebFile("web/landing.html")
+	if err != nil {
+		return nil
+	}
+	s := landingLocales[lang]
+	out := string(body)
 	subs := topbarSubs(s, lang)
 	subs = append(subs,
 		// <head> meta — landing-specific, not part of the shared
@@ -685,12 +777,7 @@ func renderLandingPage(w http.ResponseWriter, r *http.Request, publicURL string)
 	for _, sub := range subs {
 		out = strings.ReplaceAll(out, sub[0], sub[1])
 	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	// Vary on Accept-Language + Cookie so caches don't serve the
-	// English version to a Swedish-cookie visitor.
-	w.Header().Set("Vary", "Cookie, Accept-Language")
-	w.Header().Set("Cache-Control", "no-store")
-	_, _ = w.Write([]byte(out))
+	return []byte(out)
 }
 
 func ariaCurrentIf(active bool) string {

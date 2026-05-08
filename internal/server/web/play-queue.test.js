@@ -192,3 +192,32 @@ test('round-trip: persist then reset then load restores the same shape', () => {
     assert.deepEqual(queue.pendingAnswers[i], original[i]);
   }
 });
+
+// ---- ackPending ----
+
+test('ackPending drops the queued entry whose client_action_id matches', () => {
+  reset();
+  queue.pendingAnswers.push({ kind: 'answer', data: { answer: 'a', client_action_id: 'id-1' } });
+  queue.pendingAnswers.push({ kind: 'answer', data: { answer: 'b', client_action_id: 'id-2' } });
+  queue.pendingAnswers.push({ kind: 'advance', data: { client_action_id: 'id-3' } });
+  const dropped = queue.ackPending('id-2');
+  assert.equal(dropped, true);
+  assert.equal(queue.pendingAnswers.length, 2);
+  assert.deepEqual(queue.pendingAnswers.map((m) => m.data.client_action_id), ['id-1', 'id-3']);
+});
+
+test('ackPending returns false when no entry matches', () => {
+  reset();
+  queue.pendingAnswers.push({ kind: 'answer', data: { answer: 'x', client_action_id: 'present' } });
+  assert.equal(queue.ackPending('absent'), false);
+  assert.equal(queue.pendingAnswers.length, 1);
+});
+
+test('ackPending ignores empty / missing ids', () => {
+  reset();
+  queue.pendingAnswers.push({ kind: 'answer', data: { answer: 'x', client_action_id: 'present' } });
+  assert.equal(queue.ackPending(''), false);
+  assert.equal(queue.ackPending(undefined), false);
+  assert.equal(queue.ackPending(null), false);
+  assert.equal(queue.pendingAnswers.length, 1, 'empty id must not drop entries');
+});

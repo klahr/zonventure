@@ -3,11 +3,17 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,interactive-widget=resizes-content">
+<!-- Page-level CSP: tighter than the global header (which has to
+     keep https://unpkg.com whitelisted for the /arrange admin
+     terminal). The player surface only needs same-origin assets +
+     data/blob URLs (QR canvases, audio clips, OSM tiles), so we
+     drop the unpkg allowance entirely. Browsers intersect the meta
+     and header policies, so a stricter meta wins. frame-ancestors
+     stays on the header — meta CSP doesn't support that directive. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self'; connect-src 'self' wss: ws:; media-src 'self' blob:; object-src 'none'; base-uri 'self'">
 <title>Zonventure | Play</title>
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Aclonica&family=Open+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/assets/fontface.css">
 <!-- Shared fullscreen-map overlay styles, identical across player +
      arranger surfaces. Pick-mode extras stay inline below. -->
 <link rel="stylesheet" href="/assets/fsmap.css">
@@ -23,10 +29,10 @@
 <script src="/i18n.js"></script>
 <!-- play-queue.js exposes the offline-action queue as top-level
      globals (pendingAnswers, clientActionId, persistPendingActions,
-     loadPendingActions). Loaded before the inline play-page script
-     so the helpers are in scope when the IIFE runs. Lives in its
-     own file so node --test can unit-test it in isolation; see
-     play-queue.test.js. -->
+     loadPendingActions, ackPending). Loaded before the inline
+     play-page script so the helpers are in scope when the IIFE
+     runs. Lives in its own file so node --test can unit-test it in
+     isolation; see play-queue.test.js. -->
 <script src="/play-queue.js"></script>
 <!-- Light theme is forced for the play surface — outdoor sunlight
      readability and predictable QR-scanning contrast both win against
@@ -1461,7 +1467,24 @@ function setSoundEnabledPref(v) {
 // require a user-gesture-induced resume() before the first audible
 // frame; we call resume() on every fetch so a context that started
 // suspended (Safari) lights up the moment the player taps anything.
+//
+// Idle suspension: a cue that hasn't played in AUDIO_IDLE_MS lets the
+// context drop to suspended state automatically, releasing the audio
+// thread + power draw. Next playTone resumes it. Player runs for
+// hours; an always-warm AudioContext is wasted battery on most
+// puzzles which don't trigger audio.
+const AUDIO_IDLE_MS = 30 * 1000;
 let zvAudioCtx = null;
+let zvAudioIdleTimer = null;
+function armAudioIdleSuspend() {
+  if (zvAudioIdleTimer) clearTimeout(zvAudioIdleTimer);
+  zvAudioIdleTimer = setTimeout(() => {
+    zvAudioIdleTimer = null;
+    if (zvAudioCtx && zvAudioCtx.state === 'running') {
+      try { zvAudioCtx.suspend(); } catch { /* ignore */ }
+    }
+  }, AUDIO_IDLE_MS);
+}
 function audioCtx() {
   const Ctor = window.AudioContext || window.webkitAudioContext;
   if (!Ctor) return null;
@@ -1469,6 +1492,9 @@ function audioCtx() {
   if (zvAudioCtx.state === 'suspended') {
     try { zvAudioCtx.resume(); } catch { /* ignore — next gesture */ }
   }
+  // Re-arm the idle timer on every fetch so a steady stream of cues
+  // never falls through to suspend, but a quiet stretch does.
+  armAudioIdleSuspend();
   return zvAudioCtx;
 }
 function playTone(freq, durationMs, peak) {
@@ -1559,10 +1585,10 @@ function wsSend(kind, data) {
 }
 
 // pendingAnswers, PENDING_ANSWERS_MAX, clientActionId,
-// persistPendingActions, loadPendingActions are loaded from
-// /play-queue.js before this script runs — see <script> tag at the
-// top of the page. pendingLocation is the only piece that stays
-// inline because it isn't part of the persisted queue.
+// persistPendingActions, loadPendingActions, ackPending are loaded
+// from /play-queue.js before this script runs — see <script> tag
+// at the top of the page. pendingLocation is the only piece that
+// stays inline because it isn't part of the persisted queue.
 let pendingLocation = null;
 
 // Did we lose the WS while typing? Tracked so the "saved while you
@@ -1582,41 +1608,56 @@ function wsSendOrQueue(kind, data) {
   // Mutating actions get a stable idempotency key so a queued+
   // replayed submit doesn't double-fire on the server. The same id
   // travels with both the live attempt and any later retry.
+  //
+  // We always enqueue answer/advance frames *before* attempting to
+  // send. The dedup table on the server is keyed on (slot_id,
+  // client_action_id), and we don't drop an entry from our outbox
+  // until the server has acked it on the answer_result/answer_error
+  // channel — ws.send() returning success only proves the OS buffer
+  // accepted the frame, not that the server processed it. Any other
+  // kind (location pings) is fire-and-forget; we only stash the
+  // latest one so a reconnect doesn't replay a stale fix.
   if (kind === 'answer' || kind === 'advance') {
     if (data && !data.client_action_id) data.client_action_id = clientActionId();
-  }
-  if (ws && ws.readyState === 1) {
-    return wsSend(kind, data);
-  }
-  if (kind === 'answer' || kind === 'advance') {
-    if (pendingAnswers.length < PENDING_ANSWERS_MAX) {
-      pendingAnswers.push({ kind, data });
-      didQueueWhileOffline = true;
-      persistPendingActions();
+    if (pendingAnswers.length >= PENDING_ANSWERS_MAX) {
+      // FIFO drop: a player spamming during dead air shouldn't be
+      // able to pre-fill the rate limiter on reconnect.
+      pendingAnswers.shift();
     }
-    return false;
+    pendingAnswers.push({ kind, data });
+    persistPendingActions();
+    if (ws && ws.readyState === 1) {
+      wsSend(kind, data);
+    } else {
+      didQueueWhileOffline = true;
+    }
+    return true;
   }
   if (kind === 'location') {
+    if (ws && ws.readyState === 1) return wsSend(kind, data);
     pendingLocation = data;
     return false;
   }
+  if (ws && ws.readyState === 1) return wsSend(kind, data);
   return false;
 }
 
+// flushPending re-sends every queued entry on a fresh WS open. The
+// server's dedup cache replays the cached response for ids it has
+// already processed, so this is safe to call as many times as the
+// connection cycles. Entries are removed from the outbox only when
+// answer_result / answer_error lands with the matching id (see
+// onAnswerResult / handleAnswerError below).
 function flushPending() {
   if (!ws || ws.readyState !== 1) return;
   const announce = didQueueWhileOffline;
   didQueueWhileOffline = false;
-  while (pendingAnswers.length > 0) {
-    const m = pendingAnswers.shift();
+  for (const m of pendingAnswers.slice()) {
     if (!wsSend(m.kind, m.data)) {
-      // Re-queue and bail — we'll try again on the next onopen.
-      pendingAnswers.unshift(m);
+      // Send buffer rejected — bail; we'll retry on the next onopen.
       didQueueWhileOffline = true;
-      persistPendingActions();
       return;
     }
-    persistPendingActions();
   }
   if (pendingLocation) {
     if (wsSend('location', pendingLocation)) pendingLocation = null;
@@ -1682,8 +1723,23 @@ function connectWS() {
       startGPS();
       render(msg.data);
     } else if (msg.kind === 'answer_result') {
+      // Server-side ack: drop the matching outbox entry so we don't
+      // re-send it on the next reconnect. Persist exactly when the
+      // queue actually shrunk to avoid pointless localStorage writes
+      // on the fresh-fired path (queued and acked in the same tick).
+      if (msg.data && ackPending(msg.data.client_action_id)) {
+        persistPendingActions();
+      }
       onAnswerResult(msg.data);
     } else if (msg.kind === 'answer_error') {
+      // Errors also ack the outbox: the server already evaluated the
+      // submit (4xx/429), so retrying it would just hit the same
+      // rejection. The user has to retype on a 4xx and the rate
+      // limiter will keep the cooldown enforced on a 429 even
+      // without the client retrying on its own.
+      if (msg.data && ackPending(msg.data.client_action_id)) {
+        persistPendingActions();
+      }
       handleAnswerError(msg.data || {});
     } else if (msg.kind === 'removed') {
       // Arranger deleted this team mid-event. Stop polling, kill the
@@ -2044,6 +2100,114 @@ function wireModal(panelEl, opts = {}) {
       try { previouslyFocused.focus({ preventScroll: true }); } catch {}
     }
   };
+}
+
+// inAppPrompt is the modal-styled replacement for native prompt().
+// Returns the entered string, or null on cancel / backdrop tap / Esc.
+// Async because the user has to interact with the panel — callers
+// await the result the same way they'd await an api() call.
+//
+// Why bother: native prompt() is unstyled, ignores aria-* hints,
+// blocks the JS event loop, and on iOS in PWA / standalone mode has
+// known glitches. The slot / team rename flows in particular are
+// mid-event interactions where the unbranded native dialog felt
+// jarring.
+function inAppPrompt(opts) {
+  return new Promise((resolve) => {
+    const overlay = el('div', { class: 'welcome' });
+    const panel = el('div', { class: 'panel' });
+    const heading = el('h2', {}, opts.title || '');
+    const desc = opts.body
+      ? el('p', { class: 'muted' }, opts.body)
+      : null;
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.value = opts.value || '';
+    input.maxLength = opts.maxLength || 64;
+    input.style.cssText = 'width:100%; padding:.6rem .75rem; border-radius:8px; border:1px solid var(--border-soft); background:var(--surface); color:var(--ink); font:inherit; box-sizing:border-box;';
+    if (opts.placeholder) input.placeholder = opts.placeholder;
+    input.setAttribute('autocapitalize', 'off');
+    input.setAttribute('autocorrect', 'off');
+    input.setAttribute('spellcheck', 'false');
+    const cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button';
+    cancelBtn.className = 'secondary';
+    cancelBtn.textContent = opts.cancel || t('Cancel');
+    const okBtn = document.createElement('button');
+    okBtn.type = 'submit';
+    okBtn.textContent = opts.ok || t('OK');
+    const form = document.createElement('form');
+    form.style.cssText = 'display:flex; flex-direction:column; gap:.75rem;';
+    panel.append(heading);
+    if (desc) panel.append(desc);
+    form.append(input);
+    const cta = el('div', { class: 'cta', style: 'gap:.5rem; justify-content:flex-end' }, cancelBtn, okBtn);
+    form.append(cta);
+    panel.append(form);
+    overlay.append(panel);
+
+    let undoModal = null;
+    const close = (value) => {
+      if (undoModal) undoModal();
+      document.removeEventListener('keydown', onKey);
+      overlay.remove();
+      resolve(value);
+    };
+    const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); close(null); } };
+    document.addEventListener('keydown', onKey);
+    cancelBtn.addEventListener('click', () => close(null));
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      close(input.value);
+    });
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(null); });
+    document.body.append(overlay);
+    undoModal = wireModal(panel, { labelledBy: 'h2', initialFocus: input });
+  });
+}
+
+// inAppConfirm is the modal-styled replacement for native confirm().
+// Returns true on OK, false on cancel / Esc / backdrop. `danger`
+// styles the confirm button in the destructive accent so a player
+// stops on the "Forget me" path.
+function inAppConfirm(opts) {
+  return new Promise((resolve) => {
+    const overlay = el('div', { class: 'welcome' });
+    const panel = el('div', { class: 'panel' });
+    panel.append(el('h2', {}, opts.title || ''));
+    if (opts.body) panel.append(el('p', { class: 'muted' }, opts.body));
+    const cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button';
+    cancelBtn.className = 'secondary';
+    cancelBtn.textContent = opts.cancel || t('Cancel');
+    const okBtn = document.createElement('button');
+    okBtn.type = 'button';
+    if (opts.danger) okBtn.className = 'danger';
+    okBtn.textContent = opts.ok || t('OK');
+    const cta = el('div', { class: 'cta', style: 'gap:.5rem; justify-content:flex-end' }, cancelBtn, okBtn);
+    panel.append(cta);
+    overlay.append(panel);
+
+    let undoModal = null;
+    const close = (value) => {
+      if (undoModal) undoModal();
+      document.removeEventListener('keydown', onKey);
+      overlay.remove();
+      resolve(value);
+    };
+    const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); close(false); } };
+    document.addEventListener('keydown', onKey);
+    cancelBtn.addEventListener('click', () => close(false));
+    okBtn.addEventListener('click', () => close(true));
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(false); });
+    document.body.append(overlay);
+    // Initial focus on Cancel for destructive prompts so accidental
+    // Enter doesn't confirm; on OK for benign confirms.
+    undoModal = wireModal(panel, {
+      labelledBy: 'h2',
+      initialFocus: opts.danger ? cancelBtn : okBtn,
+    });
+  });
 }
 
 function el(tag, attrs = {}, ...children) {
@@ -3653,7 +3817,12 @@ function showWelcomeDialog(s, opts = {}) {
           renameBtn.className = 'who-rename';
           renameBtn.textContent = t('rename');
           renameBtn.addEventListener('click', async () => {
-            const next = (prompt(t('Choose your name:'), slot) || '').trim();
+            const raw = await inAppPrompt({
+              title: t('Choose your name:'),
+              value: slot,
+              maxLength: 64,
+            });
+            const next = (raw || '').trim();
             if (!next || next === slot) return;
             const r = await api('/api/player/me/name', {
               method: 'POST', body: JSON.stringify({ name: next }),
@@ -4312,6 +4481,18 @@ async function bootstrap() {
     await bootstrapPreview(qs.get('preview'), parseInt(qs.get('page') || '0', 10), qs.get('debug') === '1');
     return;
   }
+  // Modern path: Web Locks API. Held for the page's lifetime by a
+  // never-resolving promise; auto-released on tab close / navigation.
+  // Browsers throttle background tabs aggressively, which used to
+  // produce the localStorage-heartbeat ping-pong this replaces. The
+  // ifAvailable=true call resolves instantly with null when another
+  // tab already holds the lock — that's the conflict screen.
+  if (typeof navigator !== 'undefined' && navigator.locks && typeof navigator.locks.request === 'function') {
+    bootstrapWithNativeLock();
+    return;
+  }
+  // Fallback for older browsers (Safari pre-15.4): heartbeat-based
+  // lock in localStorage.
   const holder = tabLockHolder();
   if (holder && holder.id !== tabId) {
     showTabConflict();
@@ -4319,6 +4500,55 @@ async function bootstrap() {
   }
   startTabHeartbeat();
   await bootstrapAfterClaim();
+}
+
+// holdLockForever returns a never-resolving promise. Used inside a
+// navigator.locks.request callback to hold the lock for the page's
+// lifetime — the browser releases it automatically when the
+// document goes away.
+function holdLockForever() { return new Promise(() => {}); }
+
+// bootstrapWithNativeLock requests an exclusive Web Lock on the
+// per-page name; if another tab already holds it, falls back to
+// the conflict screen which lets the user steal the lock by
+// queueing for it (closing the other tab releases the queue).
+function bootstrapWithNativeLock() {
+  // Don't await: the lock request never resolves while we hold it.
+  navigator.locks.request('zv_player_active_tab', { mode: 'exclusive', ifAvailable: true }, async (lock) => {
+    if (!lock) {
+      showTabConflictNative();
+      return;
+    }
+    await bootstrapAfterClaim();
+    await holdLockForever();
+  });
+}
+
+// showTabConflictNative is the navigator.locks variant of
+// showTabConflict. The "Use this tab instead" button enqueues for
+// the lock — the browser hands it over when the holding tab closes
+// or navigates away, at which point bootstrapAfterClaim runs in
+// this tab.
+function showTabConflictNative() {
+  document.querySelectorAll('.tab-conflict').forEach((n) => n.remove());
+  const overlay = el('div', { class: 'tab-conflict' },
+    el('div', { class: 'panel' },
+      el('h3', {}, t('Already open in another tab')),
+      el('p', { class: 'muted' },
+        t("This game is already running in another tab on this device. Close this one and continue there to keep your answers and location in sync.")),
+      el('button', {
+        on: { click: () => {
+          overlay.remove();
+          // Queue for the lock — will resolve as soon as the
+          // holding tab closes.
+          navigator.locks.request('zv_player_active_tab', { mode: 'exclusive' }, async (lock) => {
+            if (!lock) return;
+            await bootstrapAfterClaim();
+            await holdLockForever();
+          });
+        } },
+      }, t('Use this tab instead'))));
+  document.body.append(overlay);
 }
 
 async function bootstrapAfterClaim() {
@@ -4633,26 +4863,23 @@ function renderPreviewDebug(d, anchor) {
   anchor.after(panel);
 }
 
-// ensureLeaflet pulls Leaflet's CSS + JS from unpkg the first time
-// any caller asks for it, and returns a cached promise on subsequent
-// calls so multiple open-map clicks don't duplicate-load. Lazy on
-// purpose: 99% of play.html visits are real players who never need
-// a map — we don't want to ship ~150 KB of mapping code to every
-// phone just so the arranger preview can open a coord overlay.
+// ensureLeaflet pulls Leaflet's CSS + JS (self-hosted under
+// /assets/leaflet/) the first time any caller asks for it, and
+// returns a cached promise on subsequent calls so multiple
+// open-map clicks don't duplicate-load. Lazy on purpose: 99% of
+// play.html visits are real players who never need a map — we don't
+// want to ship ~150 KB of mapping code to every phone just so the
+// arranger preview can open a coord overlay.
 let leafletReady = null;
 function ensureLeaflet() {
   if (leafletReady) return leafletReady;
   leafletReady = new Promise((resolve, reject) => {
     const css = document.createElement('link');
     css.rel = 'stylesheet';
-    css.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
-    css.integrity = 'sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=';
-    css.crossOrigin = '';
+    css.href = '/assets/leaflet/leaflet.css';
     document.head.append(css);
     const js = document.createElement('script');
-    js.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
-    js.integrity = 'sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=';
-    js.crossOrigin = '';
+    js.src = '/assets/leaflet/leaflet.js';
     js.onload = () => resolve();
     js.onerror = () => reject(new Error('leaflet load failed'));
     document.head.append(js);
@@ -5020,7 +5247,12 @@ function openMenuDrawer(s) {
     renameBtn.append(renameSub);
     renameBtn.addEventListener('click', async () => {
       const current = s.team_name || '';
-      const next = (prompt(t('New team name:'), current) || '').trim();
+      const raw = await inAppPrompt({
+        title: t('New team name:'),
+        value: current,
+        maxLength: 64,
+      });
+      const next = (raw || '').trim();
       if (!next || next === current) return;
       const r = await api('/api/player/team/name', {
         method: 'POST', body: JSON.stringify({ name: next }),
@@ -5131,7 +5363,13 @@ function openMenuDrawer(s) {
   forget.append(forgetSub);
   forget.addEventListener('click', async () => {
     close();
-    if (!confirm(t('This wipes your location history and your answers from this event. Other team members keep playing. You\'ll be signed out and the link won\'t work again. Continue?'))) return;
+    const ok = await inAppConfirm({
+      title: t('Erase my play data'),
+      body: t('This wipes your location history and your answers from this event. Other team members keep playing. You\'ll be signed out and the link won\'t work again. Continue?'),
+      ok: t('Erase'),
+      danger: true,
+    });
+    if (!ok) return;
     const r = await api('/api/player/forget', { method: 'POST' });
     if (r.status === 204) {
       location.href = '/play';

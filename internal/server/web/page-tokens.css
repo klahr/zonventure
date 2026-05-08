@@ -5,6 +5,12 @@
  * place — bumping --accent or tweaking the focus ring used to
  * require touching six files.
  *
+ * @font-face declarations live in /assets/fontface.css so pages
+ * that don't want the design-token block (play.html, arrange.html,
+ * live.html, etc.) can still self-host the fonts without pulling
+ * in body / .btn / .skip-link rules they don't need. Pages that
+ * link page-tokens.css should also link fontface.css separately. */
+ *
  * Pages still own:
  *   - .wrap max-width (each page picks its own)
  *   - any page-specific button variants (.btn.ghost-light on landing,

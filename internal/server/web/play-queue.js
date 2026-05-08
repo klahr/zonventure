@@ -95,6 +95,29 @@ function loadPendingActions() {
   }
 }
 
+// ackPending removes any queued action whose data.client_action_id
+// matches the supplied id. Returns true if something was dropped so
+// the caller can persist exactly when state actually changed (avoiding
+// pointless localStorage churn when the ack lands for a fresh-fired
+// submit that never went into the queue).
+//
+// The dedup table on the server is keyed on (slot_id, client_action_id),
+// so the queue can hold a submission until we see an answer_result or
+// answer_error for that id. Reconnect re-sends every queued entry; the
+// server replays the cached response for the ones that already landed.
+function ackPending(actionID) {
+  if (!actionID) return false;
+  var dropped = false;
+  for (var i = pendingAnswers.length - 1; i >= 0; i--) {
+    var m = pendingAnswers[i];
+    if (m && m.data && m.data.client_action_id === actionID) {
+      pendingAnswers.splice(i, 1);
+      dropped = true;
+    }
+  }
+  return dropped;
+}
+
 // Test helper: drop all in-memory state. Browser code never calls
 // this; only the Node test runner does, between cases.
 function resetForTests() {
@@ -111,6 +134,7 @@ if (typeof module !== 'undefined' && typeof module.exports !== 'undefined') {
     clientActionId: clientActionId,
     persistPendingActions: persistPendingActions,
     loadPendingActions: loadPendingActions,
+    ackPending: ackPending,
     resetForTests: resetForTests,
   };
 }

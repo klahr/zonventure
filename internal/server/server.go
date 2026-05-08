@@ -42,7 +42,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 )
 
-//go:embed web/play.html web/play-sw.js web/play-queue.js web/arrange.html web/live.html web/recap.html web/i18n.js web/favicon.svg web/privacy.html web/terms.html web/manual.html web/landing.html web/pricing.html web/store.html web/store-event.html web/org-landing.html web/topbar.css web/topbar.js web/page-tokens.css web/fsmap.css web/jsqr.js web/404.html web/robots.txt web/sitemap.xml web/locales/web/*.json web/locales/landing/*.json
+//go:embed web/play.html web/play-sw.js web/play-queue.js web/arrange.html web/live.html web/recap.html web/i18n.js web/favicon.svg web/privacy.html web/terms.html web/manual.html web/landing.html web/pricing.html web/store.html web/store-event.html web/org-landing.html web/topbar.css web/topbar.js web/page-tokens.css web/fontface.css web/fsmap.css web/jsqr.js web/404.html web/robots.txt web/sitemap.xml web/locales/web/*.json web/locales/landing/*.json web/assets/fonts/*.woff2 web/assets/leaflet/leaflet.js web/assets/leaflet/leaflet.css web/assets/leaflet/images/*.png
 var webFS embed.FS
 
 // Config is the bag of knobs New needs.
@@ -694,6 +694,30 @@ func New(cfg Config) http.Handler {
 	r.Get("/assets/topbar.css", serveAsset("web/topbar.css", "text/css; charset=utf-8"))
 	r.Get("/assets/topbar.js", serveAsset("web/topbar.js", "application/javascript; charset=utf-8"))
 	r.Get("/assets/page-tokens.css", serveAsset("web/page-tokens.css", "text/css; charset=utf-8"))
+	r.Get("/assets/fontface.css", serveAsset("web/fontface.css", "text/css; charset=utf-8"))
+	// Self-hosted webfonts (replaces the render-blocking link to
+	// fonts.googleapis.com on every marketing page). Bytes are
+	// content-addressed by URL filename; ETag from serveAsset gives
+	// us 304s on revisit and the variable Open Sans woff2 covers
+	// every weight in one ~50 KB download.
+	r.Get("/assets/fonts/aclonica-latin.woff2", serveAsset("web/assets/fonts/aclonica-latin.woff2", "font/woff2"))
+	r.Get("/assets/fonts/aclonica-latin-ext.woff2", serveAsset("web/assets/fonts/aclonica-latin-ext.woff2", "font/woff2"))
+	r.Get("/assets/fonts/opensans-latin.woff2", serveAsset("web/assets/fonts/opensans-latin.woff2", "font/woff2"))
+	r.Get("/assets/fonts/opensans-latin-ext.woff2", serveAsset("web/assets/fonts/opensans-latin-ext.woff2", "font/woff2"))
+	// Self-hosted Leaflet (the maps library used by the live board,
+	// recap, and the arrange-side map editor). Vendored so the player
+	// surface never reaches out to unpkg.com mid-event, and so a
+	// hostile CDN swap can't inject script into a logged-in arranger.
+	// Marker images are referenced via relative ./images/* URLs from
+	// inside leaflet.css, which is why the directory layout matches
+	// upstream's dist/ exactly.
+	r.Get("/assets/leaflet/leaflet.js", serveAsset("web/assets/leaflet/leaflet.js", "application/javascript; charset=utf-8"))
+	r.Get("/assets/leaflet/leaflet.css", serveAsset("web/assets/leaflet/leaflet.css", "text/css; charset=utf-8"))
+	r.Get("/assets/leaflet/images/marker-icon.png", serveAsset("web/assets/leaflet/images/marker-icon.png", "image/png"))
+	r.Get("/assets/leaflet/images/marker-icon-2x.png", serveAsset("web/assets/leaflet/images/marker-icon-2x.png", "image/png"))
+	r.Get("/assets/leaflet/images/marker-shadow.png", serveAsset("web/assets/leaflet/images/marker-shadow.png", "image/png"))
+	r.Get("/assets/leaflet/images/layers.png", serveAsset("web/assets/leaflet/images/layers.png", "image/png"))
+	r.Get("/assets/leaflet/images/layers-2x.png", serveAsset("web/assets/leaflet/images/layers-2x.png", "image/png"))
 	// Shared fullscreen-map overlay CSS — used by both the player
 	// preview-debug coord overlay and the arranger's "show on map"
 	// links. Same theme tokens, same DOM contract; the JS that
@@ -1222,21 +1246,22 @@ func New(cfg Config) http.Handler {
 //   - default-src 'self' — same-origin only, no implicit allow.
 //   - script-src 'self' 'unsafe-inline' https://unpkg.com —
 //     every page has at least one inline <script> block (login
-//     form handlers, page-load theme application). The maps on
-//     /play, /arrange, /live, /recap pull Leaflet from unpkg
-//     at runtime; whitelisting the host (rather than 'self'-
-//     hosting the JS file) keeps the embed footprint small.
-//     Tightening to nonces is a real refactor; leaving this as
-//     a known-loose-but-bounded surface for now.
-//   - style-src 'self' 'unsafe-inline' https://fonts.googleapis.com
-//     https://unpkg.com — Google Fonts stylesheet + inline
-//     `style="..."` from the existing DOM helpers + Leaflet's
-//     CSS from the same unpkg URL.
+//     form handlers, page-load theme application). The
+//     /arrange surface still pulls xterm + xterm-addon-fit from
+//     unpkg for the embedded admin terminal; player- and
+//     public-facing pages override this header with a stricter
+//     <meta> CSP that drops the unpkg allowance entirely (see
+//     servePage and servePageStrict).
+//   - style-src 'self' 'unsafe-inline' https://unpkg.com —
+//     inline `style="..."` from the existing DOM helpers +
+//     xterm's CSS from unpkg. Fonts are now self-hosted under
+//     /assets/fonts/* so fonts.googleapis.com is gone.
 //   - img-src 'self' data: blob: https: — data: for QR / canvas
 //     downscale, blob: for QR-decoder + audio clips, https: so
 //     adventure assets / map tiles (OpenStreetMap) work.
-//   - font-src 'self' https://fonts.gstatic.com — Google Fonts
-//     binary fonts.
+//   - font-src 'self' — Open Sans + Aclonica are bundled; the
+//     gstatic.com allowance was dropped along with the Google
+//     Fonts stylesheet.
 //   - connect-src 'self' wss: ws: — XHR / fetch / WebSocket all
 //     same-origin; wss/ws because the WebSocket scheme isn't
 //     covered by 'self' alone in older browsers.
@@ -1248,9 +1273,9 @@ func New(cfg Config) http.Handler {
 //     relative URLs.
 const baselineCSP = "default-src 'self'; " +
 	"script-src 'self' 'unsafe-inline' https://unpkg.com; " +
-	"style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://unpkg.com; " +
+	"style-src 'self' 'unsafe-inline' https://unpkg.com; " +
 	"img-src 'self' data: blob: https:; " +
-	"font-src 'self' https://fonts.gstatic.com; " +
+	"font-src 'self'; " +
 	"connect-src 'self' wss: ws:; " +
 	"media-src 'self' blob:; " +
 	"frame-ancestors 'none'; " +

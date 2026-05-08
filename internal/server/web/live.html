@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self'; connect-src 'self' wss: ws:; media-src 'self' blob:; object-src 'none'; base-uri 'self'">
 <!-- Public-but-unguessable token URL. Crawlers must not index it —
      the meta tag is paired with X-Robots-Tag on /live/{token} in
      publicrl.go so a token that surfaces in a chat preview can't
@@ -17,13 +18,9 @@
 <meta property="og:description" content="Live leaderboard for an in-progress Zonventure event.">
 <meta property="og:type" content="website">
 <meta name="twitter:card" content="summary">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Aclonica&family=Open+Sans:wght@400;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-  integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
-<script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-  integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<link rel="stylesheet" href="/assets/fontface.css">
+<link rel="stylesheet" href="/assets/leaflet/leaflet.css">
+<script defer src="/assets/leaflet/leaflet.js"></script>
 <script src="/i18n.js"></script>
 <style>
 :root {
@@ -490,6 +487,22 @@ html, body {
   0%   { opacity: 0; transform: translate(0, -50px) rotate(0) }
   6%   { opacity: 1 }
   100% { opacity: 0; transform: translate(var(--dx, 0), 110vh) rotate(var(--rot, 360deg)) }
+}
+
+/* prefers-reduced-motion: collapse every transition + animation
+   to ~instant. Particularly important on a TV that runs for hours
+   in a venue with vestibular-sensitive viewers; the constantly-
+   pulsing state-pill dot, the row entry slide, and the start-
+   animation confetti all stop. The .startfx confetti is also
+   gated client-side at the moment of fire (see playStartAnimation),
+   so reduced-motion users get a static pop instead of the full
+   2.6 s cascade. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 .footer {

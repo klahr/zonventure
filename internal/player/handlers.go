@@ -1090,10 +1090,18 @@ type AnswerRequest struct {
 }
 
 // AnswerResponse is the reply.
+//
+// ClientActionID is echoed back when the request supplied one. The
+// player's WS handler uses it to ack the matching entry in its
+// at-least-once outbox so a queued submission stays on disk until
+// the server has confirmed durability — we can't trust ws.send()
+// returning success because that only proves the OS buffer accepted
+// the frame, not that the server processed it.
 type AnswerResponse struct {
-	Accepted  bool `json:"accepted"`
-	Completed bool `json:"completed"`
-	NextIndex int  `json:"next_index,omitempty"`
+	Accepted       bool   `json:"accepted"`
+	Completed      bool   `json:"completed"`
+	NextIndex      int    `json:"next_index,omitempty"`
+	ClientActionID string `json:"client_action_id,omitempty"`
 }
 
 // AdvanceRequest is the body of the WS "advance" frame on no-answer

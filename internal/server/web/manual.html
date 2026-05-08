@@ -12,6 +12,7 @@
 <html lang="en"><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self'; connect-src 'self' wss: ws:; media-src 'self' blob:; object-src 'none'; base-uri 'self'">
 <title>Arranger manual · Zonventure</title>
 <meta name="description" content="A pedagogic walk-through of the Zonventure platform for arrangers: author adventures, fill them with puzzles, schedule events, add teams, and integrate via webhooks.">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
@@ -45,73 +46,22 @@
   }
 }
 </script>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Aclonica&family=Open+Sans:wght@400;600;700&display=swap" rel="stylesheet">
-
+<link rel="stylesheet" href="/assets/fontface.css">
 <!-- Shared topbar / hamburger / overlay styles + scroll-fade JS,
      same as landing.html / pricing.html. -->
+<link rel="stylesheet" href="/assets/page-tokens.css">
 <link rel="stylesheet" href="/assets/topbar.css">
 <script defer src="/assets/topbar.js"></script>
 <!-- Apply persisted theme synchronously to dodge a light-on-load
      flash for saved-dark visitors. -->
 <script>(function(){try{var v=localStorage.getItem('zv-theme');if(v==='light'||v==='dark')document.documentElement.setAttribute('data-theme',v);}catch(e){}})();</script>
 <style>
-  :root {
-    color-scheme: light dark;
-    --accent: #ad1357;
-    --ink: #1f3349;
-    --muted: #6b7f96;
-    --bg: #fbfbfd;
-    --surface: #ffffff;
-    --surface-2: #f3f4f7;
-    --border: #c6d2e1;
-    --border-soft: #e2e7ef;
-  }
-  /* Dark tokens. data-theme="dark" wins (set by topbar toggle +
-     persisted in localStorage); system preference applies only when
-     no explicit choice has been made. */
-  [data-theme="dark"] {
-    --ink: #e7ecf4; --muted: #9db1cc;
-    --bg: #14202e; --surface: #1f3349; --surface-2: #263d56;
-    --border: #3a5172; --border-soft: #2c4361;
-    --accent: #e24080;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root:not([data-theme]) {
-      --ink: #e7ecf4; --muted: #9db1cc;
-      --bg: #14202e; --surface: #1f3349; --surface-2: #263d56;
-      --border: #3a5172; --border-soft: #2c4361;
-      --accent: #e24080;
-    }
-  }
-  body {
-    font: 16px/1.6 'Open Sans', system-ui, sans-serif;
-    color: var(--ink); background: var(--bg);
-    margin: 0;
-  }
-  /* Skip-to-content: invisible until keyboard-focused. */
-  .skip-link {
-    position: absolute; top: -2.5rem; left: .5rem; z-index: 10;
-    padding: .5rem 1rem; border-radius: 8px;
-    background: var(--accent); color: #fff;
-    font-weight: 700; text-decoration: none;
-    transition: top .15s;
-  }
-  .skip-link:focus { top: .5rem; outline: 2px solid #fff; outline-offset: 2px; }
-  /* Visible focus ring for keyboard navigation. */
-  a:focus-visible, button:focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: 3px;
-    border-radius: 4px;
-  }
-  @media (prefers-reduced-motion: reduce) {
-    *, *::before, *::after {
-      animation-duration: 0.01ms !important;
-      transition-duration: 0.01ms !important;
-      scroll-behavior: auto !important;
-    }
-  }
+  /* Design tokens, .skip-link, focus outlines, prefers-reduced-motion
+     all live in /assets/page-tokens.css. Manual-specific extras below
+     (a `--border` shade for the H2 underline + code-block surface). */
+  :root { --border: #c6d2e1; }
+  [data-theme="dark"] { --border: #3a5172; }
+  body { line-height: 1.6; }
   /* Topbar / nav / hamburger CSS comes from /assets/topbar.css. */
   /* Article width pinned by .layout on desktop; on mobile the
      padding is on .layout itself so main can fill the row. */
@@ -334,7 +284,7 @@
     <li><strong>Team</strong> — a group of players in an event, identified by a team name. Each player gets their own magic-link to log in as part of the team.</li>
   </ul>
 
-  <div class="callout">Mental model: an Adventure is a recipe; an Assignment is the right to cook it once; a Event is one specific dinner; a Team is the people sitting at a table.</div>
+  <div class="callout">Mental model: an Adventure is a recipe; an Assignment is the right to cook it once; an Event is one specific dinner; a Team is the people sitting at a table.</div>
 </section>
 
 <section id="first-steps">
@@ -413,7 +363,7 @@
   <ul>
     <li>You author or pick an Adventure (free).</li>
     <li>You buy an Assignment for that adventure: pays for up to N teams.</li>
-    <li>You create a Event from the Assignment: ties it to a specific date/time.</li>
+    <li>You create an Event from the Assignment: ties it to a specific date/time.</li>
     <li>You add Teams to the Event: each team is a group of players.</li>
     <li>You share each Player a magic link: they tap, the event starts, they play.</li>
   </ul>
@@ -422,7 +372,7 @@
 
 <section id="assignments">
   <h2>Buying player-slot assignments</h2>
-  <p>An assignment licences one event for up to N player slots — across however many teams you want to form. Pricing is per-player: the first 15 in any event are free, and each additional player is €5.</p>
+  <p>An assignment licences one event for up to N player slots — across however many teams you want to form. Pricing is per-player: the first {{FREE_PLAYERS_PER_EVENT}} in any event are free, and each additional player has a fixed cost configured by your operator (currently {{PRICE_PER_EXTRA_PLAYER}}).</p>
   <ol>
     <li>Click "Catalog" in the sidebar.</li>
     <li>Pick the adventure you want to run.</li>
@@ -445,7 +395,7 @@
     <li>Save. The event appears in the Events list with state "scheduled".</li>
   </ol>
   <div class="shot">[Screenshot: the schedule-event dialog]</div>
-  <div class="callout">A scheduled run auto-starts the moment its time arrives, even if you've forgotten to click Start. Players who open their magic link at the scheduled minute get going immediately.</div>
+  <div class="callout">A scheduled event auto-starts the moment its time arrives, even if you've forgotten to click Start. Players who open their magic link at the scheduled minute get going immediately.</div>
 </section>
 
 <section id="teams">
@@ -486,7 +436,7 @@
   <h2>Running the event</h2>
 
   <h3>Start, pause, resume</h3>
-  <p>A scheduled run auto-starts at its time, but you can also start it manually from the event-detail page. Pause the event to freeze player progress (lunch break, weather delay), then Resume to continue.</p>
+  <p>A scheduled event auto-starts at its time, but you can also start it manually from the event-detail page. Pause the event to freeze player progress (lunch break, weather delay), then Resume to continue.</p>
 
   <h3>The activity feed</h3>
   <p>The event-detail page has a live activity feed — answer attempts (right and wrong), team completions, gate reaches, state changes. Useful for noticing a stuck team in real time.</p>
@@ -516,11 +466,11 @@
   <h3>The event catalog</h3>
   <p>Seven event kinds in v1:</p>
   <ul>
-    <li><code>event.scheduled</code> — a new run was created.</li>
+    <li><code>event.scheduled</code> — a new event was created.</li>
     <li><code>event.started</code> — an event actually started (manual or auto-promote).</li>
     <li><code>event.completed</code> — all teams finished.</li>
     <li><code>team.created</code> — a new team was added to an event.</li>
-    <li><code>team.completed</code> — a team finished. Includes their name and run id.</li>
+    <li><code>team.completed</code> — a team finished. Includes their name and event id.</li>
     <li><code>purchase.paid</code> — an assignment was purchased.</li>
     <li><code>purchase.refunded</code> — a purchase was refunded.</li>
   </ul>

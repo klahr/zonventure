@@ -93,6 +93,7 @@ func (h *Handlers) WSPlay(w http.ResponseWriter, r *http.Request) {
 			if cached, found, err := lookupCachedAction(conn.Context(), h.DB, slot.ID, actionID); err == nil && found {
 				var resp AnswerResponse
 				if json.Unmarshal(cached.Body, &resp) == nil {
+					resp.ClientActionID = actionID
 					conn.SendKind("answer_result", resp)
 				}
 				continue
@@ -102,16 +103,22 @@ func (h *Handlers) WSPlay(w http.ResponseWriter, r *http.Request) {
 					"error":            "too many attempts, slow down",
 					"status":           http.StatusTooManyRequests,
 					"retry_after_secs": int(retry / time.Second),
+					"client_action_id": actionID,
 				})
 				continue
 			}
 			resp, eventID, status, errMsg := h.applyAnswer(conn.Context(), slot, req.Answer)
 			if status != http.StatusOK {
-				conn.SendKind("answer_error", map[string]any{"error": errMsg, "status": status})
+				conn.SendKind("answer_error", map[string]any{
+					"error":            errMsg,
+					"status":           status,
+					"client_action_id": actionID,
+				})
 				continue
 			}
 			body, _ := json.Marshal(resp)
 			recordAction(conn.Context(), h.DB, slot.ID, actionID, status, body)
+			resp.ClientActionID = actionID
 			conn.SendKind("answer_result", resp)
 			if eventID != 0 {
 				h.Hub.Publish(ws.EventTopic(eventID), "changed", nil)
@@ -133,6 +140,7 @@ func (h *Handlers) WSPlay(w http.ResponseWriter, r *http.Request) {
 			if cached, found, err := lookupCachedAction(conn.Context(), h.DB, slot.ID, actionID); err == nil && found {
 				var resp AnswerResponse
 				if json.Unmarshal(cached.Body, &resp) == nil {
+					resp.ClientActionID = actionID
 					conn.SendKind("answer_result", resp)
 				}
 				continue
@@ -142,16 +150,22 @@ func (h *Handlers) WSPlay(w http.ResponseWriter, r *http.Request) {
 					"error":            "too many attempts, slow down",
 					"status":           http.StatusTooManyRequests,
 					"retry_after_secs": int(retry / time.Second),
+					"client_action_id": actionID,
 				})
 				continue
 			}
 			resp, eventID, status, errMsg := h.applyAdvance(conn.Context(), slot)
 			if status != http.StatusOK {
-				conn.SendKind("answer_error", map[string]any{"error": errMsg, "status": status})
+				conn.SendKind("answer_error", map[string]any{
+					"error":            errMsg,
+					"status":           status,
+					"client_action_id": actionID,
+				})
 				continue
 			}
 			body, _ := json.Marshal(resp)
 			recordAction(conn.Context(), h.DB, slot.ID, actionID, status, body)
+			resp.ClientActionID = actionID
 			conn.SendKind("answer_result", resp)
 			if eventID != 0 {
 				h.Hub.Publish(ws.EventTopic(eventID), "changed", nil)

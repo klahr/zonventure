@@ -75,8 +75,6 @@ since the empty / loading / error UX differs by state.
 - [ ] Server error / WS-disconnected banner — `setWSStatus`
 - [ ] Map fullscreen overlay (`/play` map button)
 - [ ] Email recovery (lost-link recovery form)
-- [ ] Slot rename — currently `prompt()`, deferred for modal swap
-- [ ] Forget-me destructive confirm — currently `confirm()`
 - [ ] Spoiler-free preview mode (buyer / share-holder view)
 - [ ] Brand strip / org logo — degraded fallback when load fails
 
@@ -175,28 +173,11 @@ the floor.
       `privacy.html` / `terms.html` / `pricing.html` / `manual.html`
       are hardcoded English. SV users hit an English wall via the
       footer. Copy work, not engineering, but real
-- [ ] **Player flushPending server-ack.** Currently declares "sent"
-      when the WS frame buffers locally; if the socket dies before
-      flush, an answer is silently lost. Wait for the matching
-      `answer_result` / `answer_error` frame before removing from
-      the queue
-- [ ] **Replace `localStorage` tab-lock with `navigator.locks`.**
-      Current 3 s heartbeat can ping-pong between throttled
-      background tabs
-- [ ] **Replace native `confirm()` / `prompt()` / `alert()`** in
-      arrange.html (~17 sites) and play.html (slot rename, forget-me)
-      with the existing modal helpers
-- [ ] **AudioContext suspend/resume** when no cue has played in 30 s
-      (battery; player runs for hours)
-- [ ] **Self-host Leaflet** (live.html, recap.html, arrange.html)
-      and lazy-load it on demand; same for xterm on the Logs view
-- [ ] **Self-host Google Fonts** as woff2 under `/assets/fonts/` —
-      removes the render-blocking third-party CSS on every marketing
-      page load
-- [ ] **CSP `meta` tag on player + public pages** for defense-in-depth
-      on inline-rendered markdown (today the only barrier is goldmark
-      running without `WithUnsafe()` — single regression away from
-      XSS)
+- [ ] **Self-host xterm on the Logs view.** Leaflet + Google Fonts
+      now ship from the binary (see CHANGELOG); xterm + xterm-addon-fit
+      are the last unpkg dependencies, kept whitelisted in the
+      baseline CSP so the admin terminal keeps working. Vendoring
+      them lets the global CSP drop the unpkg allowance entirely
 - [ ] **Real `og:image` PNG** (1200×630) for landing — chat unfurls
       currently render the SVG favicon poorly
 - [ ] **Page-tokens migration** for `store.html`, `store-event.html`,
