@@ -2,11 +2,13 @@
 <html lang="{{LANG_CODE}}"><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self'; connect-src 'self' wss: ws:; media-src 'self' blob:; object-src 'none'; base-uri 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https:; font-src 'self' https://fonts.gstatic.com; connect-src 'self' wss: ws:; media-src 'self' blob:; object-src 'none'; base-uri 'self'">
 <title>{{NOT_FOUND_TITLE}}</title>
 <meta name="robots" content="noindex">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="/assets/fontface.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Aclonica&family=Open+Sans:wght@400;600;700&display=swap" rel="stylesheet">
 <style>
   :root {
     color-scheme: light dark;
@@ -18,7 +20,7 @@
             --border-soft: #2c4361; --accent: #e24080; }
   }
   body {
-    font: 16px/1.55 'Open Sans', system-ui, sans-serif;
+    font: 16px/1.55 'Open Sans', 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', system-ui, -apple-system, 'Segoe UI', sans-serif;
     color: var(--ink); background: var(--bg);
     margin: 0; min-height: 100vh;
     display: grid; place-items: center; padding: 1rem;

@@ -11,11 +11,16 @@ COPY . .
 # from a tarball), fall back to "dev" so the build still succeeds —
 # runtime/debug.ReadBuildInfo gets vcs.* from the Go toolchain.
 #
-# `git checkout -- .` restores tracked files that .dockerignore stripped
-# from the build context (Dockerfile, compose.yaml, etc.) so git no
-# longer sees them as deleted and `--dirty` doesn't fire on a clean
-# tagged checkout. Errors are swallowed for the no-.git tarball case.
-RUN git checkout -- . 2>/dev/null; \
+# `git checkout` restores ONLY the tracked files that .dockerignore
+# stripped from the build context — without it, git sees them as
+# deleted inside the container and `git describe --dirty` falsely
+# tags every build "-dirty". Listing the paths explicitly (rather
+# than `git checkout -- .`) means uncommitted edits to real source
+# files survive the build, so `make rebuild` actually picks up
+# work-in-progress instead of silently reverting to HEAD. Keep this
+# list in sync with .dockerignore. Errors are swallowed for the
+# no-.git tarball case.
+RUN git checkout -- .gitignore TODO.md Dockerfile .dockerignore compose.yaml 2>/dev/null; \
     VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo dev) && \
     CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version=$VERSION" -o /out/server ./cmd/server
 

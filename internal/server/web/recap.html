@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self'; connect-src 'self' wss: ws:; media-src 'self' blob:; object-src 'none'; base-uri 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https:; font-src 'self' https://fonts.gstatic.com; connect-src 'self' wss: ws:; media-src 'self' blob:; object-src 'none'; base-uri 'self'">
 <title>Zonventure | Recap</title>
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <!-- Public-by-token. The recap is shared into chat apps and social
@@ -17,7 +17,9 @@
      emits X-Robots-Tag on the JSON, but the meta tag covers
      crawlers that fetch HTML without setting Accept correctly. -->
 <meta name="robots" content="noindex, nofollow">
-<link rel="stylesheet" href="/assets/fontface.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Aclonica&family=Open+Sans:wght@400;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/assets/leaflet/leaflet.css">
 <script defer src="/assets/leaflet/leaflet.js"></script>
 <script src="/i18n.js"></script>
@@ -47,7 +49,7 @@
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
 body {
-  font-family: 'Open Sans', system-ui, -apple-system, sans-serif;
+  font-family: 'Open Sans', 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', system-ui, -apple-system, 'Segoe UI', sans-serif;
   background: var(--bg);
   color: var(--ink);
   line-height: 1.5;
@@ -60,7 +62,7 @@ body {
   color: var(--accent); margin-bottom: 1rem;
 }
 .brand small {
-  font-family: 'Open Sans', sans-serif; font-size: .7rem;
+  font-family: 'Open Sans', 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif; font-size: .7rem;
   color: var(--muted); font-weight: 600; text-transform: lowercase;
 }
 .head h1 {

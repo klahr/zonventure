@@ -41,7 +41,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 )
 
-//go:embed web/play.html web/play-sw.js web/play-queue.js web/arrange.html web/live.html web/recap.html web/i18n.js web/favicon.svg web/privacy.html web/terms.html web/manual.html web/landing.html web/pricing.html web/store.html web/store-event.html web/org-landing.html web/topbar.css web/topbar.js web/page-tokens.css web/fontface.css web/fsmap.css web/jsqr.js web/404.html web/robots.txt web/sitemap.xml web/locales/web/*.json web/locales/landing/*.json web/assets/fonts/*.woff2 web/assets/leaflet/leaflet.js web/assets/leaflet/leaflet.css web/assets/leaflet/images/*.png
+//go:embed web/play.html web/play-sw.js web/play-queue.js web/arrange.html web/live.html web/recap.html web/i18n.js web/favicon.svg web/privacy.html web/terms.html web/manual.html web/landing.html web/pricing.html web/store.html web/store-event.html web/org-landing.html web/topbar.css web/topbar.js web/page-tokens.css web/fsmap.css web/jsqr.js web/404.html web/robots.txt web/sitemap.xml web/locales/web/*.json web/locales/landing/*.json web/assets/leaflet/leaflet.js web/assets/leaflet/leaflet.css web/assets/leaflet/images/*.png
 var webFS embed.FS
 
 // Config is the bag of knobs New needs.
@@ -436,23 +436,25 @@ type routesEnv struct {
 //     every page has at least one inline <script> block (login
 //     form handlers, page-load theme application). The
 //     /arrange surface still pulls xterm + xterm-addon-fit from
-//     unpkg for the embedded admin terminal; player- and
-//     public-facing pages override this header with a stricter
-//     <meta> CSP that drops the unpkg allowance entirely (see
-//     servePage and servePageStrict).
-//   - style-src 'self' 'unsafe-inline' https://unpkg.com —
-//     inline `style="..."` from the existing DOM helpers +
-//     xterm's CSS from unpkg. Fonts are now self-hosted under
-//     /assets/fonts/* so fonts.googleapis.com is gone.
+//     unpkg for the embedded admin terminal.
+//   - style-src 'self' 'unsafe-inline' https://fonts.googleapis.com
+//     https://unpkg.com — inline `style="..."` from the DOM
+//     helpers + Google Fonts stylesheet + xterm's CSS from
+//     unpkg.
 //   - img-src 'self' data: blob: https: — data: for QR / canvas
 //     downscale, blob: for QR-decoder + audio clips, https: so
 //     adventure assets / map tiles (OpenStreetMap) work.
-//   - font-src 'self' — Open Sans + Aclonica are bundled; the
-//     gstatic.com allowance was dropped along with the Google
-//     Fonts stylesheet.
-//   - connect-src 'self' wss: ws: — XHR / fetch / WebSocket all
-//     same-origin; wss/ws because the WebSocket scheme isn't
-//     covered by 'self' alone in older browsers.
+//   - font-src 'self' https://fonts.gstatic.com — Aclonica /
+//     Open Sans woff2 served by Google. Self-hosting was
+//     attempted briefly but the bundled subsets ended up
+//     mis-named, broke the brand mark, and lacked emoji
+//     coverage; the Google CDN's emoji fallback chain is what
+//     yesterday's working build relied on, so we're back to
+//     that until self-hosting is done with the correct files.
+//   - connect-src 'self' wss: ws: https://unpkg.com — XHR /
+//     fetch / WebSocket. unpkg is whitelisted so devtools can
+//     pull xterm's sourcemaps without the browser logging a
+//     CSP-block warning on every /arrange page open.
 //   - media-src 'self' blob: — audio attachments are blob URLs.
 //   - frame-ancestors 'none' — blocks the clickjacking surface on
 //     /team/{token}, /recap/{token}, /play, /arrange.
@@ -461,10 +463,10 @@ type routesEnv struct {
 //     relative URLs.
 const baselineCSP = "default-src 'self'; " +
 	"script-src 'self' 'unsafe-inline' https://unpkg.com; " +
-	"style-src 'self' 'unsafe-inline' https://unpkg.com; " +
+	"style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://unpkg.com; " +
 	"img-src 'self' data: blob: https:; " +
-	"font-src 'self'; " +
-	"connect-src 'self' wss: ws:; " +
+	"font-src 'self' https://fonts.gstatic.com; " +
+	"connect-src 'self' wss: ws: https://unpkg.com; " +
 	"media-src 'self' blob:; " +
 	"frame-ancestors 'none'; " +
 	"object-src 'none'; " +

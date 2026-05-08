@@ -64,16 +64,6 @@ func registerStaticAssetRoutes(r chi.Router, env *routesEnv) {
 	r.Get("/assets/topbar.css", serveAsset("web/topbar.css", "text/css; charset=utf-8"))
 	r.Get("/assets/topbar.js", serveAsset("web/topbar.js", "application/javascript; charset=utf-8"))
 	r.Get("/assets/page-tokens.css", serveAsset("web/page-tokens.css", "text/css; charset=utf-8"))
-	r.Get("/assets/fontface.css", serveAsset("web/fontface.css", "text/css; charset=utf-8"))
-	// Self-hosted webfonts (replaces the render-blocking link to
-	// fonts.googleapis.com on every marketing page). Bytes are
-	// content-addressed by URL filename; ETag from serveAsset gives
-	// us 304s on revisit and the variable Open Sans woff2 covers
-	// every weight in one ~50 KB download.
-	r.Get("/assets/fonts/aclonica-latin.woff2", serveAsset("web/assets/fonts/aclonica-latin.woff2", "font/woff2"))
-	r.Get("/assets/fonts/aclonica-latin-ext.woff2", serveAsset("web/assets/fonts/aclonica-latin-ext.woff2", "font/woff2"))
-	r.Get("/assets/fonts/opensans-latin.woff2", serveAsset("web/assets/fonts/opensans-latin.woff2", "font/woff2"))
-	r.Get("/assets/fonts/opensans-latin-ext.woff2", serveAsset("web/assets/fonts/opensans-latin-ext.woff2", "font/woff2"))
 	// Self-hosted Leaflet (the maps library used by the live board,
 	// recap, and the arrange-side map editor). Vendored so the player
 	// surface never reaches out to unpkg.com mid-event, and so a

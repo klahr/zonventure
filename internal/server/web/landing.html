@@ -18,7 +18,7 @@
 <html lang="{{LANG_CODE}}"><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self'; connect-src 'self' wss: ws:; media-src 'self' blob:; object-src 'none'; base-uri 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https:; font-src 'self' https://fonts.gstatic.com; connect-src 'self' wss: ws:; media-src 'self' blob:; object-src 'none'; base-uri 'self'">
 <title>{{TITLE}}</title>
 <meta name="description" content="{{META_DESC}}">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
@@ -72,7 +72,9 @@
 }
 </script>
 
-<link rel="stylesheet" href="/assets/fontface.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Aclonica&family=Open+Sans:wght@400;600;700&display=swap" rel="stylesheet">
 <!-- Shared topbar / hamburger / overlay styles + the scroll-fade JS.
      Same files are pulled in by /pricing and /manual so the menu
      system is identical across marketing surfaces. -->

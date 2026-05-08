@@ -10,10 +10,12 @@
      drop the unpkg allowance entirely. Browsers intersect the meta
      and header policies, so a stricter meta wins. frame-ancestors
      stays on the header — meta CSP doesn't support that directive. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self'; connect-src 'self' wss: ws:; media-src 'self' blob:; object-src 'none'; base-uri 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https:; font-src 'self' https://fonts.gstatic.com; connect-src 'self' wss: ws:; media-src 'self' blob:; object-src 'none'; base-uri 'self'">
 <title>Zonventure | Play</title>
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-<link rel="stylesheet" href="/assets/fontface.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Aclonica&family=Open+Sans:wght@400;600;700&display=swap" rel="stylesheet">
 <!-- Shared fullscreen-map overlay styles, identical across player +
      arranger surfaces. Pick-mode extras stay inline below. -->
 <link rel="stylesheet" href="/assets/fsmap.css">
@@ -76,7 +78,7 @@
     --ts-lg: 1.15rem;
     /* 44 px (CSS) tap target — Apple HIG / WCAG 2.5.5. */
     --tap-target: 2.75rem;
-    --font-body:     'Open Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    --font-body:     'Open Sans', 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
     --font-brand:    'Aclonica', 'Vollkorn', Georgia, serif;
   }
   * { box-sizing: border-box; }
