@@ -703,9 +703,18 @@ function render() {
   const root = document.getElementById('root');
   // FLIP: snapshot the pre-render position of every team row so we can
   // animate surviving rows from their old spot to the new one after the
-  // DOM rebuild. Rows that are new or gone are skipped naturally (no
-  // prior rect / no new node).
+  // chrome rebuild. Rows that are new or gone are skipped naturally (no
+  // prior rect / no new node). data-team-id is the FLIP key so node
+  // identity doesn't matter — surviving across re-renders is what counts.
   const priorRowRects = captureBoardPositions(root);
+  // DOM reconciliation: detach the existing board element (if any)
+  // before wiping root, then hand it to buildBoard for in-place row
+  // reuse. Rows whose per-team fingerprint is unchanged stay as-is —
+  // big perf win on a 30-team TV that gets a position-ping burst
+  // touching only one or two rows. Header, banner, footer, and the
+  // empty-state copy are cheap to rebuild on every render.
+  const existingBoard = root.querySelector('.board');
+  if (existingBoard) existingBoard.remove();
   root.replaceChildren();
 
   root.append(buildHeader(data));
@@ -723,7 +732,7 @@ function render() {
   if (data.state === 'cancelled') {
     root.append(h('div', { class: 'cancelled-banner' },
       h('span', { class: 'state-pill cancelled' }, '✕ ' + t('cancelled'))));
-    root.append(buildBoard(data));
+    root.append(buildBoard(data, existingBoard));
     root.append(h('div', { class: 'footer' },
       t('Event cancelled by the arranger · '),
       t('server time {{time}}', { time: data.server_now || '' })));
@@ -747,14 +756,14 @@ function render() {
   }
   if (showMapEffective(data)) {
     const split = h('div', { class: 'split' });
-    split.append(buildBoard(data));
+    split.append(buildBoard(data, existingBoard));
     split.append(buildMapSlot());
     root.append(split);
     // Initialise / refresh Leaflet AFTER the map container is in the DOM
     // (else Leaflet sees a 0x0 viewport and loads wrong tiles).
     renderLiveMap(mapInnerEl, mapHintEl, data);
   } else {
-    root.append(buildBoard(data));
+    root.append(buildBoard(data, existingBoard));
   }
   root.append(h('div', { class: 'footer' },
     t('Live · push updates · '),
@@ -1297,24 +1306,87 @@ function playStartAnimation() {
   setTimeout(() => overlay.remove(), 3800);
 }
 
-function buildBoard(data) {
-  const board = h('div', { class: 'board' });
+// teamRowFingerprint serialises every input that affects a row's
+// rendered output. Two snapshots producing the same fingerprint mean
+// the row's DOM doesn't need to be rebuilt — we keep the existing
+// node. progress-bar `width` is intentionally NOT included: it's a
+// CSS transition the row's own renderRow tracks via lastPct, and
+// re-rendering would flicker the bar even for tiny pct changes.
+function teamRowFingerprint(team, data) {
+  const finished = !!team.completed_at || (data.page_count > 0 && team.page_index >= data.page_count);
+  const cur = data.puzzles?.[team.page_index]?.title || '';
+  const members = (team.members || []).map((m) => m.username).join('|');
+  return [
+    team.rank,
+    team.page_index,
+    finished ? 1 : 0,
+    team.name,
+    team.avatar_url || '',
+    members,
+    data.page_count,
+    cur,
+  ].join('§');
+}
+
+// buildBoard renders the leaderboard. When `existing` is provided
+// (the previous render's `.board` element, detached from the DOM by
+// render() before its replaceChildren call), rows whose fingerprint
+// is unchanged are reused in place — no DOM destruction, no fresh
+// allocation. New / changed rows go through renderRow as before.
+//
+// On a 30-team TV running for hours, this drops the per-WS-push DOM
+// work from "rebuild 30 rows" to "rebuild only the 1-2 rows that
+// changed", with the rest carrying their state (animations, focus,
+// the lastPct progress-bar transition) across renders.
+function buildBoard(data, existing) {
+  const board = existing || h('div', { class: 'board' });
   if (!data.teams || data.teams.length === 0) {
-    board.append(h('div', { class: 'empty-board' }, t('No teams yet.')));
+    board.replaceChildren(h('div', { class: 'empty-board' }, t('No teams yet.')));
     return board;
   }
+  // Map existing row nodes by team_id so we can pluck the ones we
+  // want to reuse and skip-rebuild them.
+  const existingRows = new Map();
+  for (const r of board.querySelectorAll('.row[data-team-id]')) {
+    existingRows.set(r.getAttribute('data-team-id'), r);
+  }
+
   const seen = new Set();
-  data.teams.forEach((t, i) => {
-    const row = renderRow(t, i, data);
-    seen.add(t.id);
-    if (!knownTeams.has(t.id)) row.classList.add('new');
-    board.append(row);
+  const newOrder = [];
+  data.teams.forEach((team, i) => {
+    seen.add(team.id);
+    const id = String(team.id);
+    const fp = teamRowFingerprint(team, data);
+    const existingRow = existingRows.get(id);
+    if (existingRow && existingRow.dataset.fp === fp) {
+      // Reuse — DOM and any in-flight transitions stay intact.
+      newOrder.push(existingRow);
+      // Keep lastPct in sync even on reused rows so a future render
+      // that DOES rebuild this row starts the bar transition from
+      // the correct current value.
+      const pct = data.page_count > 0
+        ? Math.min(100, Math.round((team.page_index / data.page_count) * 100))
+        : 0;
+      const finished = !!team.completed_at || (data.page_count > 0 && team.page_index >= data.page_count);
+      lastPct.set(team.id, finished ? 100 : pct);
+    } else {
+      const row = renderRow(team, i, data);
+      row.dataset.fp = fp;
+      // .new is the entry-animation hook for first-seen team_ids —
+      // keep the original behaviour. Rows that existed but had
+      // their fingerprint change are NOT marked new (they're a
+      // content update, not an arrival).
+      if (!existingRow && !knownTeams.has(team.id)) row.classList.add('new');
+      newOrder.push(row);
+    }
   });
-  knownTeams.clear(); seen.forEach((id) => knownTeams.add(id));
+  board.replaceChildren(...newOrder);
+
+  knownTeams.clear();
+  seen.forEach((id) => knownTeams.add(id));
   // Prune lastPct against the current `seen` set so a TV that runs
   // for hours across multiple back-to-back events doesn't accumulate
-  // an entry for every team_id ever observed. The transition CSS
-  // only needs the last value for currently-rendered teams.
+  // an entry for every team_id ever observed.
   for (const id of lastPct.keys()) {
     if (!seen.has(id)) lastPct.delete(id);
   }

@@ -572,13 +572,15 @@ func uniqueTicketTeamName(ctx context.Context, tx *sql.Tx, eventID int64, buyerE
 // link instead of N keeps the email short, avoids the "which link is
 // mine" friction, and lets a buyer playing solo skip the share step
 // entirely.
+//
+// The send goes through MailOutbox so a transient SMTP failure
+// doesn't strand a paid buyer. The outbox row commits inside the
+// purchase-fulfilment tx (callers must invoke this BEFORE the tx
+// commits to share atomicity); the worker then drains with retry +
+// backoff. Falls back to a direct Mailer.Send when the outbox is
+// not configured (early dev setups) so a fresh checkout still
+// behaves the same way.
 func (h *Handlers) sendTicketTeamLink(ctx context.Context, buyerEmail, teamToken string) error {
-	if h.Mailer == nil {
-		// No mailer is a self-host LogMailer fallback. The order is
-		// "create team, then mail" so we still log via the LogMailer
-		// branch — the operator can read the link out of the logs.
-		return errors.New("no mailer configured")
-	}
 	publicURL := strings.TrimRight(strings.TrimSpace(h.PublicURL), "/")
 	if publicURL == "" {
 		return errors.New("ticket email requires PublicURL")
@@ -588,11 +590,18 @@ func (h *Handlers) sendTicketTeamLink(ctx context.Context, buyerEmail, teamToken
 	b.WriteString("Thanks for your purchase! Open the link below to set up your team — claim your own player slot, share the rest with your teammates, and start playing whenever you're ready.\r\n\r\n")
 	fmt.Fprintf(&b, "Team page: %s\r\n", teamURL)
 	b.WriteString("\r\nThe link stays valid for the duration of the quest. Lose it? Use the \"I lost my link\" recovery on the play page with this same email address.\r\n")
-	return h.Mailer.Send(ctx, mailerpkg.Message{
+	msg := mailerpkg.Message{
 		To:      []string{buyerEmail},
 		Subject: "Your Zonventure ticket — team link inside",
 		Text:    b.String(),
-	})
+	}
+	if h.MailOutbox != nil {
+		return h.MailOutbox.Enqueue(ctx, "ticket_team_link", msg)
+	}
+	if h.Mailer == nil {
+		return errors.New("no mailer configured")
+	}
+	return h.Mailer.Send(ctx, msg)
 }
 
 // updateTicketStripeMetadata captures provider-side identifiers on

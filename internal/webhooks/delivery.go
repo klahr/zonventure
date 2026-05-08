@@ -156,153 +156,209 @@ func (w *Worker) Run(ctx context.Context) {
 	}
 }
 
-// tick processes every due delivery in one pass. Each delivery is
-// fetched, attempted, and recorded individually so a single bad row
-// doesn't poison the batch. Order: oldest next_attempt_at first, so
-// retried-and-due rows precede freshly-enqueued ones (fairness).
+// leaseWindow caps how long a worker may hold a claim before another
+// worker is allowed to retry the same row. The window is generous
+// against the client's 30 s HTTP timeout — a worker that crashes
+// mid-send leaves the row in flight for at most this long before the
+// queue picks it up again. Stale leases just mean a duplicate
+// delivery; consumers are required to dedupe by `X-Zv-Delivery-Id`
+// (already documented in the public webhook contract).
+const leaseWindow = 5 * time.Minute
+
+// tick processes every due delivery in one pass. Each delivery moves
+// through TWO transactions:
 //
-// KNOWN LIMITATION (audit H2): the row lock is held across the
-// customer HTTP call (up to 30 s), so a slow-loris customer pins a
-// Postgres backend the whole time and the queue serialises through
-// a single in-flight delivery. The fix is a two-tx design — claim
-// with `in_flight_until` lease in tx 1, send + update in tx 2 — plus
-// per-row parallelism, but it requires a schema migration to add
-// the lease column. Tracked for a follow-up PR; for the typical
-// single-arranger self-host the current shape is fine.
+//	tx1: claim — stamp in_flight_until + bump attempts, commit fast
+//	         (releases the row lock immediately).
+//	(no DB connection held during the customer HTTP call.)
+//	tx2: outcome — record success / retry / dead-letter, clear
+//	         in_flight_until.
+//
+// Earlier the row lock was held across the entire HTTP call, which
+// pinned a Postgres backend for up to 30 s per delivery and
+// serialised the queue through one slow-loris customer. The lease
+// pattern decouples the two so a stuck customer endpoint costs only
+// a single goroutine + http connection until its timeout fires.
+//
+// Workers also coexist now: SKIP LOCKED + the lease guard mean a
+// future per-row goroutine fan-out is a localised change in this
+// loop, not a full rewrite.
 func (w *Worker) tick(ctx context.Context) error {
 	for {
-		// Pull one due row at a time and SKIP LOCKED so multiple
-		// workers (today: one) wouldn't fight for the same row. The
-		// FOR UPDATE arms the row lock; we update status/attempts
-		// inside the same tx and commit so the lock releases.
-		tx, err := w.DB.BeginTx(ctx, nil)
+		claimed, err := w.claimNext(ctx)
 		if err != nil {
-			return fmt.Errorf("begin: %w", err)
+			return err
 		}
-		var (
-			id           int64
-			endpointID   int64
-			deliveryUUID string
-			kind         string
-			payloadStr   string
-			attempts     int
-		)
-		err = tx.QueryRowContext(ctx, `
-			SELECT id, endpoint_id, delivery_uuid, event_kind, payload, attempts
-			  FROM webhook_deliveries
-			 WHERE status = 'pending' AND next_attempt_at <= now_text()
-			 ORDER BY next_attempt_at
-			 LIMIT 1
-			 FOR UPDATE SKIP LOCKED
-		`).Scan(&id, &endpointID, &deliveryUUID, &kind, &payloadStr, &attempts)
-		if errors.Is(err, sql.ErrNoRows) {
-			_ = tx.Rollback()
-			return nil
+		if claimed == nil {
+			return nil // queue empty (or nothing eligible right now)
 		}
-		if err != nil {
-			_ = tx.Rollback()
-			return fmt.Errorf("select due: %w", err)
-		}
-		var (
-			endpointURL string
-			secret      string
-			active      bool
-		)
-		if err := tx.QueryRowContext(ctx,
-			`SELECT url, secret, active FROM webhook_endpoints WHERE id = $1`,
-			endpointID,
-		).Scan(&endpointURL, &secret, &active); err != nil {
-			_ = tx.Rollback()
-			return fmt.Errorf("select endpoint: %w", err)
-		}
-		// Endpoint disabled between enqueue and delivery: drop the
-		// delivery quietly. Re-enabling won't replay — that matches
-		// "active=false means stop sending", which is what the
-		// customer asked for.
-		if !active {
-			if _, err := tx.ExecContext(ctx,
-				`UPDATE webhook_deliveries SET status = 'dead', last_error = 'endpoint disabled' WHERE id = $1`,
-				id,
-			); err != nil {
-				_ = tx.Rollback()
-				return fmt.Errorf("mark dead (disabled): %w", err)
-			}
-			if err := tx.Commit(); err != nil {
-				return fmt.Errorf("commit dead-disabled: %w", err)
-			}
-			continue
-		}
+		w.deliver(ctx, claimed)
+	}
+}
 
-		// Send happens INSIDE the tx-with-row-lock so the row stays
-		// locked for the duration. That's intentional: it prevents
-		// a future second worker from picking up the same row mid-
-		// flight. The 30s client timeout caps how long we hold it.
-		status, sendErr := w.send(ctx, endpointURL, secret, kind, deliveryUUID, []byte(payloadStr))
+// claimedDelivery is what claimNext returns — the row plus the
+// already-loaded endpoint config so the deliver() path doesn't need
+// a second SELECT. attempts has ALREADY been incremented by claim;
+// callers see the post-claim count.
+type claimedDelivery struct {
+	id           int64
+	endpointID   int64
+	deliveryUUID string
+	kind         string
+	payload      []byte
+	attempts     int
+	endpointURL  string
+	secret       string
+}
 
-		newAttempts := attempts + 1
-		if sendErr == nil && status >= 200 && status < 300 {
-			if _, err := tx.ExecContext(ctx, `
-				UPDATE webhook_deliveries
-				   SET status = 'delivered',
-				       attempts = $1,
-				       last_status = $2,
-				       last_error = NULL,
-				       delivered_at = now_text()
-				 WHERE id = $3
-			`, newAttempts, status, id); err != nil {
-				_ = tx.Rollback()
-				return fmt.Errorf("mark delivered: %w", err)
-			}
-			if err := tx.Commit(); err != nil {
-				return fmt.Errorf("commit delivered: %w", err)
-			}
-			logx.Info("webhooks.delivered",
-				"delivery_id", id, "endpoint_id", endpointID,
-				"kind", kind, "status", status, "attempts", newAttempts)
-			continue
-		}
+// claimNext reserves one due row by stamping in_flight_until and
+// returning the work to do. Eligibility:
+//
+//  1. status='pending' AND next_attempt_at <= now (regular due)
+//  2. (in_flight_until IS NULL OR in_flight_until::timestamptz < now)
+//     so a stale lease from a crashed worker is reclaimable.
+//
+// FOR UPDATE SKIP LOCKED keeps multiple workers from racing on the
+// same row inside this brief tx; once we COMMIT the lock is gone and
+// any other worker will see in_flight_until in the future and skip
+// the row in their own SKIP-LOCKED scan.
+//
+// Returns nil, nil when nothing is due.
+func (w *Worker) claimNext(ctx context.Context) (*claimedDelivery, error) {
+	tx, err := w.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("begin claim: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck
 
-		// Failure path: record + reschedule, or dead-letter if we've
-		// exhausted attempts.
-		errMsg := ""
-		if sendErr != nil {
-			errMsg = sendErr.Error()
-		} else {
-			errMsg = fmt.Sprintf("HTTP %d", status)
-		}
-		if newAttempts >= MaxAttempts {
-			if _, err := tx.ExecContext(ctx, `
-				UPDATE webhook_deliveries
-				   SET status = 'dead', attempts = $1, last_status = $2, last_error = $3
-				 WHERE id = $4
-			`, newAttempts, nullableStatus(status), errMsg, id); err != nil {
-				_ = tx.Rollback()
-				return fmt.Errorf("mark dead: %w", err)
-			}
-			if err := tx.Commit(); err != nil {
-				return fmt.Errorf("commit dead: %w", err)
-			}
-			logx.Warn("webhooks.dead_letter",
-				"delivery_id", id, "endpoint_id", endpointID,
-				"kind", kind, "attempts", newAttempts, "err", errMsg)
-			continue
-		}
-		nextAt := time.Now().UTC().Add(backoffDelay(newAttempts)).Format("2006-01-02 15:04:05")
-		if _, err := tx.ExecContext(ctx, `
-			UPDATE webhook_deliveries
-			   SET attempts = $1, last_status = $2, last_error = $3, next_attempt_at = $4
-			 WHERE id = $5
-		`, newAttempts, nullableStatus(status), errMsg, nextAt, id); err != nil {
-			_ = tx.Rollback()
-			return fmt.Errorf("reschedule: %w", err)
+	var c claimedDelivery
+	var payloadStr string
+	err = tx.QueryRowContext(ctx, `
+		SELECT id, endpoint_id, delivery_uuid, event_kind, payload, attempts
+		  FROM webhook_deliveries
+		 WHERE status = 'pending'
+		   AND next_attempt_at <= now_text()
+		   AND (in_flight_until IS NULL OR in_flight_until::timestamptz < now())
+		 ORDER BY next_attempt_at
+		 LIMIT 1
+		 FOR UPDATE SKIP LOCKED
+	`).Scan(&c.id, &c.endpointID, &c.deliveryUUID, &c.kind, &payloadStr, &c.attempts)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("select due: %w", err)
+	}
+	c.payload = []byte(payloadStr)
+
+	var active bool
+	if err := tx.QueryRowContext(ctx,
+		`SELECT url, secret, active FROM webhook_endpoints WHERE id = $1`,
+		c.endpointID,
+	).Scan(&c.endpointURL, &c.secret, &active); err != nil {
+		return nil, fmt.Errorf("select endpoint: %w", err)
+	}
+
+	// Endpoint disabled between enqueue and delivery: dead-letter
+	// inline, no HTTP work to do. Same single-tx as before — we're
+	// not crossing into the customer-call window for this case.
+	if !active {
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE webhook_deliveries SET status = 'dead', last_error = 'endpoint disabled', in_flight_until = NULL WHERE id = $1`,
+			c.id,
+		); err != nil {
+			return nil, fmt.Errorf("mark dead (disabled): %w", err)
 		}
 		if err := tx.Commit(); err != nil {
-			return fmt.Errorf("commit reschedule: %w", err)
+			return nil, fmt.Errorf("commit dead-disabled: %w", err)
 		}
-		logx.Info("webhooks.retry_scheduled",
-			"delivery_id", id, "endpoint_id", endpointID,
-			"kind", kind, "attempts", newAttempts, "next_attempt_at", nextAt, "err", errMsg)
+		// Tell the caller to keep looping.
+		return w.claimNext(ctx)
 	}
+
+	// Stamp the lease + bump attempts before committing. The bump
+	// happens here (not on outcome write) so a crashed worker can't
+	// retry forever — attempts increments toward MaxAttempts every
+	// claim, with or without a successful outcome write.
+	leaseExp := time.Now().UTC().Add(leaseWindow).Format("2006-01-02 15:04:05")
+	c.attempts++
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE webhook_deliveries
+		   SET attempts = $1, in_flight_until = $2
+		 WHERE id = $3
+	`, c.attempts, leaseExp, c.id); err != nil {
+		return nil, fmt.Errorf("stamp lease: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit claim: %w", err)
+	}
+	return &c, nil
+}
+
+// deliver does the actual customer HTTP call WITHOUT holding any DB
+// transaction or row lock, then writes the outcome in a fresh tx.
+// Errors here are logged but never bubbled to the caller — a write
+// failure on the outcome path leaves the row "in flight" until the
+// lease expires, and another worker will pick it up.
+func (w *Worker) deliver(ctx context.Context, c *claimedDelivery) {
+	status, sendErr := w.send(ctx, c.endpointURL, c.secret, c.kind, c.deliveryUUID, c.payload)
+
+	if sendErr == nil && status >= 200 && status < 300 {
+		if _, err := w.DB.ExecContext(ctx, `
+			UPDATE webhook_deliveries
+			   SET status = 'delivered',
+			       last_status = $1,
+			       last_error = NULL,
+			       delivered_at = now_text(),
+			       in_flight_until = NULL
+			 WHERE id = $2
+		`, status, c.id); err != nil {
+			logx.Warn("webhooks.outcome.write_failed",
+				"delivery_id", c.id, "stage", "delivered", "err", err.Error())
+			return
+		}
+		logx.Info("webhooks.delivered",
+			"delivery_id", c.id, "endpoint_id", c.endpointID,
+			"kind", c.kind, "status", status, "attempts", c.attempts)
+		return
+	}
+
+	// Failure path.
+	errMsg := ""
+	if sendErr != nil {
+		errMsg = sendErr.Error()
+	} else {
+		errMsg = fmt.Sprintf("HTTP %d", status)
+	}
+	if c.attempts >= MaxAttempts {
+		if _, err := w.DB.ExecContext(ctx, `
+			UPDATE webhook_deliveries
+			   SET status = 'dead', last_status = $1, last_error = $2, in_flight_until = NULL
+			 WHERE id = $3
+		`, nullableStatus(status), errMsg, c.id); err != nil {
+			logx.Warn("webhooks.outcome.write_failed",
+				"delivery_id", c.id, "stage", "dead", "err", err.Error())
+			return
+		}
+		logx.Warn("webhooks.dead_letter",
+			"delivery_id", c.id, "endpoint_id", c.endpointID,
+			"kind", c.kind, "attempts", c.attempts, "err", errMsg)
+		return
+	}
+
+	nextAt := time.Now().UTC().Add(backoffDelay(c.attempts)).Format("2006-01-02 15:04:05")
+	if _, err := w.DB.ExecContext(ctx, `
+		UPDATE webhook_deliveries
+		   SET last_status = $1, last_error = $2, next_attempt_at = $3, in_flight_until = NULL
+		 WHERE id = $4
+	`, nullableStatus(status), errMsg, nextAt, c.id); err != nil {
+		logx.Warn("webhooks.outcome.write_failed",
+			"delivery_id", c.id, "stage", "retry", "err", err.Error())
+		return
+	}
+	logx.Info("webhooks.retry_scheduled",
+		"delivery_id", c.id, "endpoint_id", c.endpointID,
+		"kind", c.kind, "attempts", c.attempts, "next_attempt_at", nextAt, "err", errMsg)
 }
 
 // nullableStatus turns 0 into a NULL for last_status when the send

@@ -326,9 +326,17 @@ func New(cfg Config) http.Handler {
 		// operator about why their checkout flow doesn't work.
 		panic("unknown ZV_PAYMENTS_PROVIDER: " + cfg.PaymentsProvider)
 	}
+	// MailOutbox is the durable retry layer for transactional sends
+	// where a paid user must not be stranded by an SMTP blip
+	// (post-Stripe ticket fulfilment magic link). The worker drains
+	// rows enqueued by sendTicketTeamLink with exponential backoff;
+	// see internal/mailer/outbox.go for the contract.
+	mailOutbox := &mailer.Outbox{DB: cfg.DB, Mailer: mail}
+	go mailOutbox.Run(bgCtx)
 	adminH := &admin.Handlers{
 		DB: cfg.DB, Lib: cfg.Library, Hub: hub, Sim: sim,
 		Mailer:        mail,
+		MailOutbox:    mailOutbox,
 		PublicURL:     cfg.PublicURL,
 		Provider:      paymentProvider,
 		// Platform fee is read once at startup and held on the

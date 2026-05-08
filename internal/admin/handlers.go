@@ -49,10 +49,16 @@ type Handlers struct {
 	Lib *adventure.Library
 	Hub *ws.Hub
 	Sim *simulator.Simulator
-	// Mailer is used by /api/admin/send-test-email and (future) signup
-	// + forgot-password flows. Always non-nil thanks to the server
-	// constructor's LogMailer fallback.
+	// Mailer is used by /api/admin/send-test-email and best-effort
+	// interactive flows. Always non-nil thanks to the server
+	// constructor's LogMailer fallback. For load-bearing transactional
+	// sends where a paid user ends up stranded if mail fails (the
+	// post-Stripe ticket-fulfilment magic link), use MailOutbox.
 	Mailer mailer.Mailer
+	// MailOutbox is the durable retry layer in front of Mailer. Nil
+	// when not configured (early dev setups) — callers fall back to
+	// direct Mailer.Send with a logged warning.
+	MailOutbox *mailer.Outbox
 	// PublicURL is the externally-reachable origin used to build
 	// links in outbound mail (change-email confirmation, etc.). May
 	// be empty in dev — the admin handlers fall back to the request
