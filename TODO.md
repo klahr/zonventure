@@ -9,13 +9,237 @@ The hosted launch is gated on legal review, not on this list — but
 clearing the small items before the launch reduces ongoing friction
 for self-hosters and operators.
 
+> Recently-completed production-hardening rounds (security &
+> correctness audit, three reliability gaps, a11y / mobile / perf
+> work, i18n quality) are summarised in `CHANGELOG.md` under the
+> current `[Unreleased]` section. This file tracks what's still
+> open.
+
+## View-by-view UX review (current focus)
+
+We're walking every view in the product to confirm it's good, simple,
+and has proper UX. Each entry below is one self-contained surface;
+the review answers the same questions for every one:
+
+- Is this view doing one job clearly, or is it three jobs stacked?
+- Is the content right-sized — neither bloated nor missing?
+- Are the affordances discoverable, the failure states actionable,
+  and the empty states pedagogic?
+- Mobile / outdoor / one-handed use covered?
+- A11y baseline (keyboard nav, AT announce, focus, motion respect)?
+- Localised end-to-end (no English fragments leaking through)?
+- Loading + error + empty distinguishable from each other?
+- Anything that should be cut or merged with another view?
+
+Each box gets ticked once we've walked it together. Findings flow
+into focused fix tasks below the list.
+
+### Public-facing surfaces
+
+- [ ] `/` — Marketing landing (`landing.html`)
+- [ ] `/o/{slug}` — Per-organisation landing (`org-landing.html`)
+- [ ] `/pricing` — Pricing (`pricing.html`)
+- [ ] `/manual` — Public arranger manual (`manual.html`)
+- [ ] `/privacy` — Privacy policy (`privacy.html`)
+- [ ] `/terms` — Terms of service (`terms.html`)
+- [ ] `/store` — Public listing (`store.html`)
+- [ ] `/o/{slug}/store` — Org-scoped public listing
+- [ ] `/store/event/{id}` — Single event purchase (`store-event.html`)
+- [ ] `/o/{slug}/store/event/{id}` — Org-scoped purchase
+- [ ] `/live/{token}` — Audience leaderboard (`live.html`)
+- [ ] `/recap/{token}` — Post-event recap (`recap.html`)
+- [ ] `/team/{token}` — Team share page (slot picker / QR)
+- [ ] 404 — Not-found fallback (`404.html`)
+
+### Player surfaces (`play.html`)
+
+The player SPA renders many distinct states; review each independently
+since the empty / loading / error UX differs by state.
+
+- [ ] No-session entry / magic-link arrival (`renderNoSession`)
+- [ ] First-join welcome dialog (`showWelcomeDialog`)
+- [ ] Waiting (event scheduled, not started yet) — `buildWaitingCard`
+- [ ] Pre-start countdown (T-minutes ticking down)
+- [ ] Playing (puzzle visible) — main interaction state
+- [ ] Hint sheet (modal) — `openHintSheet`
+- [ ] Menu drawer (modal) — `openMenuDrawer`
+- [ ] QR scanner (modal) — `openQrScanner`
+- [ ] Team-share sheet (modal) — `openTeamShareSheet`
+- [ ] Geo-consent dialog
+- [ ] Submit-dock 429 cooldown UX
+- [ ] Offline / queued-actions UX (`pendingAnswers` flush feedback)
+- [ ] Paused state — `buildPausedCard`
+- [ ] Cancelled state — terminal banner
+- [ ] Completed / celebration overlay — `celebrate`, summary
+- [ ] Withdrawn state (post-refund team)
+- [ ] Server error / WS-disconnected banner — `setWSStatus`
+- [ ] Map fullscreen overlay (`/play` map button)
+- [ ] Email recovery (lost-link recovery form)
+- [ ] Slot rename — currently `prompt()`, deferred for modal swap
+- [ ] Forget-me destructive confirm — currently `confirm()`
+- [ ] Spoiler-free preview mode (buyer / share-holder view)
+- [ ] Brand strip / org logo — degraded fallback when load fails
+
+### Arranger surfaces (`arrange.html`)
+
+Hash-routed SPA. Mirrors the route table at `renderRoute`.
+
+#### Auth flows
+- [ ] `#login` — Sign-in form + OIDC button + forgot-password
+- [ ] `#signup` — New account form
+- [ ] TOTP challenge / enrol — interstitial flow
+- [ ] OIDC callback (transient, redirect-only)
+- [ ] `#verify-ok` / `#verify-failed` — email-verification landings
+- [ ] `#reset?token=…` — password reset
+- [ ] `#change-email?token=…` — email-change confirmation
+
+#### Dashboard family
+- [ ] `#dashboard` (lobby user — `viewLobbyDashboard`)
+- [ ] `#dashboard` (org member / admin — `viewArrangerDashboard`)
+- [ ] `#dashboard` (global admin — `viewAdminDashboard`)
+
+#### Adventures (authoring)
+- [ ] `#adventures` — Adventure list (`viewAdventures`)
+- [ ] `#adventures/{slug}` — Adventure detail / editor (`viewAdventureDetail`)
+- [ ] `#puzzles` — Puzzles list (`viewPuzzles`)
+- [ ] `#puzzles/{id}` — Puzzle editor (`viewPuzzleEditRoute`)
+- [ ] `#library` — Library list (`viewLibrary`)
+- [ ] `#library/{slug}` — Library item edit (`viewLibraryEdit`)
+
+#### Events
+- [ ] `#events` — Event list (`viewRuns`)
+- [ ] `#events/{id}` — Event detail (`viewRunDetail`)
+- [ ] `#events/{id}/control` — Race-control cockpit (`viewEventControl`)
+- [ ] `#quests` — Public-store quest list (`viewQuests`)
+
+#### Catalog / commerce
+- [ ] `#catalog` — Buyable assignments list (`viewCatalog`)
+- [ ] `#catalog/{slug}` — Single catalog item (`viewCatalogDetail`)
+
+#### Settings hub (`#settings/<tab>`)
+- [ ] `general` — UI prefs + help (`renderSettingsGeneral`)
+- [ ] `account` — Personal account cards (password / email / TOTP /
+      sessions / audit / export / delete)
+- [ ] `members` — Org member roster (`viewMembers`)
+- [ ] `admins` — Global admins (`viewAdmins`, admin-only)
+- [ ] `audit` — Audit log (`viewAudit`)
+- [ ] `purchases` — Purchase history (`viewPurchases`)
+- [ ] `billing` — Stripe Connect / payouts (`viewSettingsBilling`)
+- [ ] `integrations` — Webhooks list (`viewWebhooks`)
+- [ ] `integrations/log` — Per-endpoint delivery log (`viewWebhooksLog`)
+- [ ] `system` — Org branding / SMTP test / migration entrypoint
+      (`renderSettingsSystem`)
+- [ ] `migration` — Cutover wizard (`viewSettingsMigration`)
+- [ ] `software-update` — Update checker (`viewSettingsSoftwareUpdate`)
+
+#### Admin-only
+- [ ] `#organizations` — Cross-org list (`viewOrganizations`)
+- [ ] `#logs` — Live log tail (`viewLogs`, xterm.js)
+- [ ] Simulator panel (mounted on adventure detail; admin-toggleable)
+
+#### Misc
+- [ ] `#manual` — In-app localised manual (`viewManual`)
+- [ ] Adventure preview / spoiler-free run-as-player
+- [ ] Toast + modal + global error-overlay shell
+
+#### Fix tasks (filled in as the review walks each view)
+
+_(empty — populated as we work through the list above)_
+
+## Outstanding from production-hardening rounds
+
+Items the audits identified that are real but didn't fit the
+sessions where they were raised. Listed here so they don't fall on
+the floor.
+
+### Backend
+- [ ] `internal/server/server.go` is 1331 lines — split into
+      `routes_player.go` / `routes_admin.go` / `routes_public.go`
+      so route additions are a localised change
+- [ ] `landing.go` template render: ~80 `strings.ReplaceAll` per
+      request on a 30 KB body; cache by `(lang, page-variant)` at
+      startup
+- [ ] BYTEAs on hot tables (events / teams / organizations carry
+      inline blob columns) — move to dedicated child tables to
+      avoid TOAST-thrash on accidental `SELECT *`
+- [ ] Per-`Provider` Stripe `client.API` instance so concurrent
+      goroutines don't race on the package-global `stripego.Key`.
+      Real only when multi-tenant per-org Stripe keys land
+- [ ] Write `processed_webhook_events` + handler outcome inside one
+      outer tx so a `markProcessed` failure can't lead to duplicate
+      fulfilment on redelivery (today the action handlers' state
+      checks make this a non-issue, but the seam is brittle)
+
+### Frontend
+- [ ] **Localise legal + manual + pricing into Swedish.**
+      `privacy.html` / `terms.html` / `pricing.html` / `manual.html`
+      are hardcoded English. SV users hit an English wall via the
+      footer. Copy work, not engineering, but real
+- [ ] **Player flushPending server-ack.** Currently declares "sent"
+      when the WS frame buffers locally; if the socket dies before
+      flush, an answer is silently lost. Wait for the matching
+      `answer_result` / `answer_error` frame before removing from
+      the queue
+- [ ] **Replace `localStorage` tab-lock with `navigator.locks`.**
+      Current 3 s heartbeat can ping-pong between throttled
+      background tabs
+- [ ] **Replace native `confirm()` / `prompt()` / `alert()`** in
+      arrange.html (~17 sites) and play.html (slot rename, forget-me)
+      with the existing modal helpers
+- [ ] **AudioContext suspend/resume** when no cue has played in 30 s
+      (battery; player runs for hours)
+- [ ] **Self-host Leaflet** (live.html, recap.html, arrange.html)
+      and lazy-load it on demand; same for xterm on the Logs view
+- [ ] **Self-host Google Fonts** as woff2 under `/assets/fonts/` —
+      removes the render-blocking third-party CSS on every marketing
+      page load
+- [ ] **CSP `meta` tag on player + public pages** for defense-in-depth
+      on inline-rendered markdown (today the only barrier is goldmark
+      running without `WithUnsafe()` — single regression away from
+      XSS)
+- [ ] **Real `og:image` PNG** (1200×630) for landing — chat unfurls
+      currently render the SVG favicon poorly
+- [ ] **Page-tokens migration** for `store.html`, `store-event.html`,
+      `org-landing.html`, `manual.html` — earlier work migrated
+      `landing.html` and `pricing.html`; the others still ship their
+      own copies of the design tokens
+- [ ] **Swedish nuance pass.** Mechanical sweep landed; remaining
+      taste calls: `Uppdrag` is overloaded for both Quest (consumer-
+      facing /store) and Assignment (paid licence) — pick one;
+      `Recap` left untranslated; `Hint` rendered as both `tips` and
+      `ledtråd`; brand split `Zonventure` vs `Zonventure Studio` vs
+      `zonventure.studio` needs a rule
+- [ ] **arrange.html code-split.** 18k-line monolith parses in full
+      on every page load regardless of role. Logs / migration /
+      simulator are admin-only and could lazy-load
+- [ ] **arrange.html inline-style extraction.** ~738 inline `style:`
+      strings; the top ~10 recipes (`stack-tight`, `mono-input`,
+      etc.) extract into utility classes for ~1-2 KLOC saved
+
+### Manual + content drift
+- [ ] **Manual: "run" vs "event" terminology drift.** The concept
+      was renamed to Event but `manual.html` still says "scheduled
+      run" / "a new run was created" in places. Webhook payload
+      `event.scheduled` is glossed as "a new run was created"
+- [ ] **Manual: "a Event" grammar** — should be "an Event"
+- [ ] **Manual: hardcoded €5 / 15 free pricing** is an
+      operator-configurable env var; placeholder it
+- [ ] **Privacy ↔ COPPA contradiction.** `privacy.html` says "for
+      adults"; `manual.html` references the COPPA path for under-13s
+      that arrange.html exposes. Update one to match the other
+- [ ] **Terms ↔ refund-promise mismatch.** `store-event.html`
+      `StoreEventFeature4` ("Refundable up to event start") is a
+      stronger consumer promise than the standard digital-goods
+      withdrawal carve-out terms.html sets. Align via the legal
+      review
+
 ## Plugin / extensibility candidates
 
 Functionality that's optional, vendor-flavoured, or replaceable, and
 is a natural fit for an interface + drop-in implementations. The
 direction is "thin core, named seams" — every entry below is sized as
-"add a second concrete implementation behind a Go interface", not "build
-a generic plugin runtime". Tackle one at a time.
+"add a second concrete implementation behind a Go interface", not
+"build a generic plugin runtime". Tackle one at a time.
 
 - [ ] **Image / avatar storage abstraction** (medium) — `storage.Blobs` interface + `dbblob` impl shipped; team avatars + adventure cover art go through the seam. Remaining: `adventure_page_images.content` (multi-row-per-entity with `alt_text` / `idx` metadata), and the actual non-DB impls (`-tags=storage_fs`, `-tags=storage_s3`)
 - [ ] **Auth backends** (medium–large per backend) — OIDC / SAML / GitHub / Google / passkeys alongside the current username/password; magic-link slot flow stays core
@@ -41,12 +265,29 @@ memory next?") stays visible above the implementation noise.
 
 ## What was checked and is fine
 
-- Refunds are wired (`stripe.go:304` `RefundPurchase` + `handleChargeRefunded` + `KindPurchaseRefunded`).
-- Player-side language picker exists (`play.html:3326`, via `zvI18n.makeLangPicker`).
-- Org-member roles are validated and editable (`organizations.go:236`,
-  `org_admin` / `org_member`).
-- `embed`-based assets and migrations are clean.
-- No SQL injection or auth-bypass smells in the spot checks.
+- Refunds wire end-to-end (`stripe.go` `RefundPurchase` +
+  `handleChargeRefunded` + `KindPurchaseRefunded`); partial-refund
+  detection added in the recent audit round, full audit trail
+- Player-side language picker (`play.html`, via
+  `zvI18n.makeLangPicker`)
+- Org-member roles validated and editable (`organizations.go`,
+  `org_admin` / `org_member`)
+- `embed`-based assets and migrations are clean; duplicate-prefix
+  guard added in the recent audit round
+- No SQL injection or auth-bypass smells in either round of audit
+- Stripe webhook signature verification + `processed_webhook_events`
+  dedupe in place; `IdempotencyKey` headers on every state-changing
+  call from the recent audit round
+- TOTP wrapped in AES-256-GCM at rest (`auth/totp.go`); recovery
+  codes consumed in constant time (no early-exit timing leak)
+- SSRF guard on outbound webhooks (DNS rebinding: pin literal IP at
+  request time via `Transport.DialContext`)
+- WebSocket origin check via `coder/websocket` default; no bare
+  `OriginPatterns: ["*"]` anywhere
+- Reverse-proxy trust gated behind `ZV_TRUSTED_PROXIES` —
+  direct-reachable deploys can't be spoofed via `X-Forwarded-For`
+- Service worker scope (`/`) is guarded by an explicit fetch-handler
+  allowlist so future code can't accidentally widen interception
 
 ## Out of scope for now
 

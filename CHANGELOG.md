@@ -472,6 +472,255 @@ The repository, Go module, and CLI binary are named `zv`; the product is
   unchanged, audio takes a new code path that skips client-side
   downscaling.
 
+### Reliability — three load-bearing gaps closed
+
+Three places where the existing code was correct in the small but
+fragile under load. Each is now sound.
+
+- **Webhook delivery worker no longer holds a Postgres row lock
+  across the customer HTTP call.** New migration
+  `0054_webhook_delivery_lease.sql` adds `in_flight_until`. The
+  worker's `tick` is split into two transactions: claim+lease
+  (commits in milliseconds) → customer HTTP without any DB
+  connection held → outcome write. A slow-loris customer endpoint
+  costs one goroutine + http connection until its 30-second
+  timeout, not a Postgres backend pinned for the full window.
+  Multiple workers can now coexist (`SKIP LOCKED` + the lease
+  guard against double-claim); a worker that crashes mid-send
+  leaves the row reclaimable after `leaseWindow` (5 minutes).
+  Consumers were already required to dedupe on
+  `X-Zv-Delivery-Id`, so a duplicate from a stale lease behaves
+  the same as a duplicate from existing redelivery.
+
+- **Durable mail outbox.** Migration `0055_mail_outbox.sql` plus a
+  new `internal/mailer/outbox.go`. The post-Stripe ticket-fulfilment
+  magic-link send now enqueues to the outbox inside the
+  fulfilment transaction; a worker drains the queue with the same
+  retry shape as webhooks (1m → 5m → 30m → 2h → 8h → 24h, six
+  attempts). Earlier a transient SMTP outage could leave a paid
+  buyer stranded with no UI to trigger a resend; now they get the
+  link automatically when the relay recovers. Other interactive
+  mail flows (signup verification, password reset) keep direct
+  `Mailer.Send` calls because the user has UI-driven retry there.
+  Falls back to direct `Send` when no outbox is configured (early
+  dev setups).
+
+- **live.html DOM reconciliation by `team_id`.** The audience
+  leaderboard previously rebuilt every team row on every WS push
+  (`replaceChildren` + FLIP capture). On a 30-team TV with rapid
+  position pings that meant hundreds of full board rebuilds per
+  minute. The render path now reuses rows whose
+  `teamRowFingerprint` (rank, page-index, finished, name, avatar,
+  members, page count, current puzzle title) is unchanged — DOM
+  destruction drops from "all rows" to "only changed rows", and
+  in-flight CSS transitions (the progress-bar fill, FLIP) survive
+  across renders. Stays smooth at 30+ teams.
+
+### Security & correctness round
+
+A round of audit work landed a set of bugs, hardening seams, and
+test coverage gaps. Headline items:
+
+- **Email-change confirmation no longer 500s.**
+  `ConsumeEmailChangeToken` was reading `users.role` and
+  `users.org_id` — columns dropped by migration 0020. Now reuses
+  `loadUserByID`. Regression test drives the issue + confirm flow
+  end-to-end against a real database.
+
+- **Stripe webhook handlers gate on `payment_status`.**
+  `checkout.session.completed` fires for async methods (ACH / PIX
+  / BACS) before funds are captured. Both `handleCheckoutCompleted`
+  and `handleTicketCheckoutCompleted` now require
+  `payment_status="paid"` or `"no_payment_required"` before
+  fulfilling. An unpaid session is logged and skipped, not flipped
+  to "paid" optimistically.
+
+- **Partial refunds no longer trigger team withdrawal.**
+  `charge.refunded` fires for every refund delta, so a €5 partial
+  refund used to flip an entire ticket purchase to `refunded` and
+  withdraw the team. The handler now requires
+  `Refunded == true && AmountRefunded >= AmountCents` before
+  flipping state.
+
+- **Stripe API calls carry `IdempotencyKey` headers.** `Refund`,
+  `CreateCheckout`, and `CreateConnectedAccount` derive a stable
+  key from the local row id (e.g. `refund-purchase-42`,
+  `checkout-purchase-42`, `connect-org-42`). A retried admin
+  Refund click no longer cuts a duplicate refund; a transport
+  hiccup mid-checkout no longer mints two Stripe sessions. The
+  three params types gain an `IdempotencyKey` field on the
+  abstract `payments` interface so future provider impls can
+  honour it the same way.
+
+- **`X-Forwarded-For` honoured only behind a trusted proxy.** New
+  `ZV_TRUSTED_PROXIES` env var (comma-separated CIDR/IP list,
+  e.g. `127.0.0.1,::1` for sidecar mode or `10.0.0.0/8` for a
+  private VPC). When unset (the safe default), forwarded headers
+  are ignored — attackers on a directly-reachable deployment
+  can't spoof their source IP to bypass the per-IP rate limiter
+  or audit log. Same gate applies to `X-Forwarded-Proto` for
+  cookie `Secure` decisions, and chi's stock `middleware.RealIP`
+  is replaced by `trustedProxyRealIP` that honours the same gate.
+  Operators behind nginx / Caddy / Traefik need to set this on
+  upgrade; the fresh `.env.example` documents both common shapes.
+
+- **Migration runner.** `pg_advisory_lock` around the boot-time
+  loop so two booting processes serialise. Single-shot `SELECT`
+  for applied migrations replaces N×SELECT-COUNT round-trips.
+  Boot-time duplicate-prefix check refuses to start when two
+  migrations share a 4-digit prefix (the existing `0033_*` pair
+  is grandfathered).
+
+- **SMTP CRLF / header-injection guard.** Recipient and From
+  addresses are validated for control bytes before being passed
+  to `net/smtp`; every header value goes through
+  `sanitizeHeader` which strips CR/LF/NUL/etc. before reaching
+  the wire. Closes the BCC-smuggling vector if a future caller
+  stops sanitising at the boundary.
+
+- **OIDC + TOTP hardening.** OIDC: the IdP-supplied email goes
+  through `TrimSpace` + a printable-ASCII gate before becoming
+  the username, so unicode confusables can't collide with a
+  legitimate user. `amrIncludesMFA` now matches only RFC 8176's
+  `mfa` / `mca` (was lenient and accepted single-factor `otp` /
+  `swk` / `hwk`). TOTP recovery codes consume in constant time:
+  `consumeRecoveryCode` runs Argon2 against every unused hash
+  regardless of an early match, so a wrong-guess and a
+  right-guess take the same wall-clock time.
+
+- **Fuzz tests for parser surfaces.** New `Fuzz*` tests for
+  tokenx, mdx, icscal, orgslug, teamimport CSV + IOFXML, and
+  adventure validation. The fuzzer caught and we fixed three real
+  bugs in flight: an mdx panic on a malformed autolink (`0<0@0>`)
+  that would have crashed any handler rendering author markdown;
+  an icscal NUL byte propagating through SUMMARY (rejected by
+  some mail clients); an orgslug `Slugify("www")` returning a
+  value that fails `Validate` (auto-derived slugs from "www
+  Inc." were unsavable).
+
+### Service worker + asset caching
+
+- **Static assets get ETag + revalidation.** `serveAsset`
+  previously set `Cache-Control: no-store` despite the comment
+  claiming long-cached. Every navigation re-downloaded
+  `topbar.css`, `page-tokens.css`, `i18n.js`, `fsmap.css`, and
+  the 130 KB `jsqr.js` blob. Now: ETag computed from the served
+  bytes at handler-construction time + `public, max-age=3600,
+  must-revalidate`. Repeat visits get 304s; a deploy mints fresh
+  ETags (process restart → new sums) so users pick up new
+  assets within the cache window. Single biggest repeat-visit
+  perf win in the product.
+
+- **Service worker cache rotates per deploy.** The cache version
+  is now keyed to the server-injected build version (was hardcoded
+  `-v1`). The `/play-sw.js` route substitutes `__ZV_BUILD_VERSION__`
+  with the running version stamp; `activate` purges any stale
+  shell or per-team asset cache whose suffix doesn't match
+  current. An operator no longer has to remember to bump a
+  literal in the source on every release.
+
+- **Mid-event SW hot-swaps disabled.** Removed `clients.claim()`
+  from `activate`. A fresh SW no longer takes over open player
+  tabs the moment it activates — existing clients keep their
+  current SW until a natural reload, so a regression in the new
+  worker can't strip offline state out from under a team during
+  their event. New tabs land on the fresh worker as expected.
+
+- **Fetch-handler scope guard.** The SW registers at scope `/`
+  because it needs to intercept `/adventure-assets/*` and
+  `/org-logo/*` (siblings of `/play`, not children). Defence in
+  depth: an explicit allowlist at the top of the fetch handler
+  — `HANDLED_PREFIXES` + `HANDLED_EXACT` — early-returns on
+  anything outside the player's surface so a future bug in one
+  handler can't accidentally widen the SW's reach into
+  `/arrange`, `/api/admin/*`, etc. `prefetchAssets` is also
+  capped at 200 URLs per message.
+
+### Player a11y, mobile, i18n
+
+- **Player modals are real dialogs.** Hint sheet, menu drawer,
+  welcome dialog, and QR scanner all now carry `role="dialog"`,
+  `aria-modal="true"`, `aria-labelledby` on the heading, focus
+  trap (Tab / Shift-Tab cycle within the panel), focus restore
+  on close, and focus the right initial element on open (the
+  close button by default; the primary CTA for the welcome
+  dialog). The same pattern is exposed as `wireModal()` for
+  reuse. Earlier these were "fake modals" — keyboard users
+  tabbed straight out into the page behind.
+
+- **iOS soft-keyboard no longer hides the submit dock.** The
+  `viewport` meta on `play.html` gets
+  `interactive-widget=resizes-content` so the layout viewport
+  shrinks when the keyboard slides up. Combined with new
+  answer-input attributes (`autocapitalize="off"`,
+  `autocorrect="off"`, `spellcheck="false"`,
+  `enterkeyhint="send"`) the central interaction — typing an
+  answer — works correctly on iOS without the keyboard's
+  autocorrect mangling the input.
+
+- **44 px tap targets across the player.** Every dismiss control
+  (hint-sheet-close, welcome panel-close, team-share panel-close,
+  menu-btn, menu-close, hint-toggle pill) now meets the WCAG
+  2.5.5 floor that the file's own `--tap-target` token had been
+  specifying. The visible glyph stays compact via `padding`;
+  `min-width`/`min-height` carries the hit area for outdoor /
+  gloved use.
+
+- **`prefers-reduced-motion` honoured across the arranger surface.**
+  arrange.html previously had ZERO reduced-motion handling
+  despite shipping 24+ keyframe animations. Now matches the
+  global pattern in page-tokens.css. AA contrast on the `--muted`
+  token is bumped from `#6b7f96` (3.86:1, fails AA on light bg)
+  to `#4f6478` (~5.4:1) — same value play.html already used.
+
+- **Live page memory + CPU on long-running TVs.** The clock
+  interval pauses when `document.hidden`. The `lastPct` map is
+  pruned against the current seen-team set so a TV cycling
+  through back-to-back events doesn't accumulate entries forever.
+  WS `snapshot`+`tracks` bursts coalesce via
+  `requestAnimationFrame` so the back-to-back pair triggers one
+  render per frame instead of two.
+
+- **Arranger pollers go quiet when the tab is hidden.** Simulator
+  status (1.5 s) and webhook-log (4 s) pollers are now
+  self-rescheduling `setTimeout` loops that skip ticks when the
+  tab is buried and double their delay (cap 30 s) on failure —
+  no more thundering herd against a recovering server.
+
+- **Swedish translation sweep.** A round of mechanical fixes to
+  `sv.json` closed pervasive grammar errors: `en event` →
+  `ett event` (event is neuter — 14 hits); `genevent` →
+  `genomgång` (a machine-translation typo at the top of the SV
+  manual); `Läser in` → `Laddar` (literal calque);
+  `exportet` → `exporten` (gender); `spelartak`/`lagtak` → `Max
+  antal spelare`/`Max antal lag` (calques). Nuance calls
+  (`Uppdrag` overloading, `Recap` untranslated, `Hint`
+  inconsistency, brand split) deferred to a copywriting pass.
+
+- **404 page localised.** Routes through a new `render404` handler
+  that substitutes the `NotFound*` strings into the embedded
+  template; SV translations land in `landing/sv.json`. The
+  English-only minimal-card design is preserved so the failure
+  floor stays self-contained.
+
+### Operator-visible config
+
+- **`ZV_TRUSTED_PROXIES`** (new). Comma-separated CIDR/IP list of
+  reverse proxies whose `X-Forwarded-*` headers are honoured.
+  Empty (default) means "trust nothing": forwarded headers are
+  ignored and per-IP rate limits / audit log see the immediate
+  peer. Operators behind nginx / Caddy / Traefik / Cloudflare
+  Tunnel need to set this on upgrade. See `.env.example` for
+  shape examples.
+
+- **Makefile reorganised.** `make` (no args) now prints a short
+  menu grouped by purpose. New: `make rebuild` (clean image
+  build without wiping the DB), `make reset` (wipe Postgres
+  volume + rebuild — destructive, confirms first). Removed:
+  `make deploy` (was misnamed and duplicated `make up`),
+  `make seed-compose` (folded into `make seed`),
+  systemd-specific `make restart`. Existing targets kept.
+
 ## [0.1.5] - 2026-05-01
 
 ### Added
