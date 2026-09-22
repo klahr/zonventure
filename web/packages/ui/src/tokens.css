@@ -1,0 +1,195 @@
+/*
+ * Design tokens for the React surfaces.
+ *
+ * Ported from internal/server/web/page-tokens.css, which is the best
+ * token system in the estate and already has the precedence order
+ * right — and that order is the part people usually get wrong:
+ *
+ *   1. :root                                  light defaults
+ *   2. [data-theme="dark"]                    explicit user choice wins
+ *   3. @media (prefers-color-scheme: dark)
+ *        :root:not([data-theme])              OS preference, only when
+ *                                             the user has not chosen
+ *
+ * Getting (3) wrong — omitting :not([data-theme]) — means a user who
+ * explicitly picks light still gets dark on a dark-mode OS.
+ *
+ * The palette values are the live brand ones; do not "tidy" them.
+ * --muted in particular is deliberate: #6b7f96 measures 3.86:1 on the
+ * light --bg, below the 4.5:1 floor for body text, so it is bumped to
+ * #4f6478 (~5.4:1). That fix was made once already in play.html for
+ * the same reason.
+ *
+ * Layers the original lacks — spacing, radii, type scale, z-index,
+ * motion — are added here because a component library needs them and
+ * six marketing pages did not.
+ */
+
+:root {
+  color-scheme: light dark;
+
+  /* Brand */
+  --accent: #ad1357;
+  --accent-2: #e24080;
+  --accent-deep: #6d0a35;
+
+  /* Text */
+  --ink: #1f3349;
+  --ink-soft: #3d5573;
+  --muted: #4f6478;
+
+  /* Surfaces */
+  --bg: #fbfbfd;
+  --surface: #ffffff;
+  --surface-2: #f3f4f7;
+  --border-soft: #e2e7ef;
+  --shadow:
+    0 1px 2px rgba(31, 51, 73, 0.06), 0 4px 16px rgba(31, 51, 73, 0.08);
+
+  /* Status. Tuned against --bg for AA on body text. */
+  --danger: #b3261e;
+  --danger-bg: #fdecea;
+  --success: #1b6b43;
+  --success-bg: #e7f5ec;
+
+  /* Spacing — 4px base. */
+  --sp-1: 0.25rem;
+  --sp-2: 0.5rem;
+  --sp-3: 0.75rem;
+  --sp-4: 1rem;
+  --sp-5: 1.5rem;
+  --sp-6: 2rem;
+  --sp-7: 3rem;
+
+  /* Radii */
+  --radius-sm: 4px;
+  --radius: 8px;
+  --radius-lg: 14px;
+  --radius-pill: 999px;
+
+  /* Type */
+  --font-body:
+    "Open Sans", "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji",
+    system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --text-xs: 0.78rem;
+  --text-sm: 0.875rem;
+  --text-base: 1rem;
+  --text-lg: 1.15rem;
+  --text-xl: 1.5rem;
+  --text-2xl: 2rem;
+
+  /* Z-index. Named so "what sits above what" is a lookup, not a guess. */
+  --z-sticky: 10;
+  --z-drawer: 20;
+  --z-overlay: 30;
+  --z-modal: 40;
+  --z-toast: 50;
+
+  /* Motion */
+  --dur-fast: 0.12s;
+  --dur: 0.2s;
+}
+
+[data-theme="dark"] {
+  --ink: #e7ecf4;
+  --ink-soft: #c2cee0;
+  --muted: #9db1cc;
+  --bg: #14202e;
+  --surface: #1f3349;
+  --surface-2: #263d56;
+  --border-soft: #2c4361;
+  --accent: #e24080;
+  --accent-2: #ff6aa3;
+  --accent-deep: #ad1357;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.3);
+  --danger: #f2837c;
+  --danger-bg: #3a1f1d;
+  --success: #6dcf92;
+  --success-bg: #14301f;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    --ink: #e7ecf4;
+    --ink-soft: #c2cee0;
+    --muted: #9db1cc;
+    --bg: #14202e;
+    --surface: #1f3349;
+    --surface-2: #263d56;
+    --border-soft: #2c4361;
+    --accent: #e24080;
+    --accent-2: #ff6aa3;
+    --accent-deep: #ad1357;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.3);
+    --danger: #f2837c;
+    --danger-bg: #3a1f1d;
+    --success: #6dcf92;
+    --success-bg: #14301f;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font: var(--text-base) / 1.55 var(--font-body);
+  color: var(--ink);
+  background: var(--bg);
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+a:hover {
+  text-decoration: underline;
+}
+
+/* One focus rule for everything, so a new component cannot ship
+ * without a visible focus ring. :focus-visible rather than :focus so
+ * mouse users do not see rings they did not ask for. */
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: var(--radius-sm);
+}
+
+/* Keyboard users land here first; it is off-screen until focused. */
+.zv-skip-link {
+  position: absolute;
+  top: -2.5rem;
+  left: var(--sp-2);
+  z-index: var(--z-toast);
+  padding: var(--sp-2) var(--sp-4);
+  border-radius: var(--radius);
+  background: var(--accent);
+  color: #fff;
+  font-weight: 700;
+  transition: top var(--dur-fast);
+}
+.zv-skip-link:focus {
+  top: var(--sp-2);
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+
+/* Respect the OS setting rather than animating regardless. Carried
+ * over from page-tokens.css verbatim. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

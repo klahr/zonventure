@@ -120,13 +120,26 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
 
-      # Node's built-in test runner — no Jest, no package.json. Scoped
-      # to the offline action queue today; new browser-side modules add
-      # their own *.test.js next to the source. This suite is the only
-      # thing standing between a player and a lost answer, so it runs on
-      # every push regardless of what else changed.
-      - name: node --test
+      - name: install
+        run: cd web && npm ci
+
+      # Typecheck is separate from build so a type error is reported as
+      # a type error rather than buried in a bundler failure.
+      - name: typecheck
+        run: cd web && npm run typecheck --workspaces --if-present
+
+      - name: test
+        run: cd web && npm run test --workspaces --if-present
+
+      # The original vanilla outbox, still shipped and still serving
+      # the live player at /play. It keeps running until that surface
+      # is ported, so a change to one is never silently untested in the
+      # other — @zonventure/outbox is a port of this file and the two
+      # must not drift while both are in production.
+      - name: node --test (legacy player queue)
         working-directory: internal/server/web
         run: node --test play-queue.test.js
 

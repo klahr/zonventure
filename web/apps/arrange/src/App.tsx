@@ -1,58 +1,55 @@
-import { useEffect, useState } from "react";
+import { I18nProvider, useT } from "./i18n.tsx";
+import { SessionProvider, useSession } from "./session.tsx";
+import { Login } from "./Login.tsx";
+import { Shell } from "./Shell.tsx";
 
-interface VersionResponse {
-  version: string;
-  commit?: string;
-  modified?: boolean;
+export function App() {
+  return (
+    <I18nProvider>
+      <SessionProvider>
+        <Gate />
+      </SessionProvider>
+    </I18nProvider>
+  );
 }
 
 /**
- * Phase 0 seam check.
+ * Route on session state alone.
  *
- * This is deliberately thin. Its job is to prove the whole pipeline
- * end to end — Vite builds, `go:embed` picks the output up, the Go
- * router serves it under /app/arrange/, and the bundle can reach the
- * existing JSON API with the session cookie — before any real console
- * work starts in Phase 1.
- *
- * /api/version is the right probe: it is unauthenticated, it is the
- * endpoint monitoring already pins to, and rendering the running
- * binary's version proves the React bundle and the Go binary that
- * embedded it are the same build.
+ * "anonymous" renders the login form rather than an error, because a
+ * 401 from whoami is the ordinary logged-out case. Only a genuine
+ * failure — network, 5xx — gets the error branch, with a retry that
+ * re-runs whoami instead of forcing a page reload.
  */
-export function App() {
-  const [version, setVersion] = useState<VersionResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
+function Gate() {
+  const t = useT();
+  const { state, refresh } = useSession();
 
-  useEffect(() => {
-    const ac = new AbortController();
-    fetch("/api/version", { signal: ac.signal, credentials: "same-origin" })
-      .then((r) => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        return r.json() as Promise<VersionResponse>;
-      })
-      .then(setVersion)
-      .catch((e: unknown) => {
-        if (ac.signal.aborted) return;
-        setError(e instanceof Error ? e.message : String(e));
-      });
-    return () => ac.abort();
-  }, []);
+  switch (state.status) {
+    case "loading":
+      return (
+        <main className="centered" aria-busy="true">
+          <p className="lede">{t.t("Loading…")}</p>
+        </main>
+      );
 
-  return (
-    <main className="shell">
-      <h1>Zonventure</h1>
-      <p className="lede">React shell — Phase 0 seam.</p>
-      <dl>
-        <dt>Server</dt>
-        <dd>
-          {error !== null
-            ? `unreachable (${error})`
-            : version
-              ? `${version.version}${version.modified ? " (modified)" : ""}`
-              : "…"}
-        </dd>
-      </dl>
-    </main>
-  );
+    case "anonymous":
+      return <Login onSuccess={() => void refresh()} />;
+
+    case "authenticated":
+      return <Shell user={state.user} />;
+
+    case "error":
+      return (
+        <main className="centered">
+          <div className="alert alert--danger" role="alert">
+            <strong>{t.t("Something went wrong")}</strong>
+            <p>{state.message}</p>
+          </div>
+          <button className="btn btn--primary" onClick={() => void refresh()}>
+            {t.t("Try again")}
+          </button>
+        </main>
+      );
+  }
 }

@@ -11,7 +11,10 @@
   },
   "dependencies": {
     "react": "^19.2.0",
-    "react-dom": "^19.2.0"
+    "react-dom": "^19.2.0",
+    "@zonventure/api": "*",
+    "@zonventure/ui": "*",
+    "@zonventure/i18n": "*"
   },
   "devDependencies": {
     "@types/node": "^26.6.2",
