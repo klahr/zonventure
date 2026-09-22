@@ -64,11 +64,11 @@ type landingStrings struct {
 	LangAriaLabel string // "Language", localized
 
 	// <head> meta — these affect SEO, share previews, and tab title.
-	Title          string
-	MetaDesc       string
-	OGDesc         string
-	SchemaOrgDesc  string
-	SchemaAppDesc  string
+	Title         string
+	MetaDesc      string
+	OGDesc        string
+	SchemaOrgDesc string
+	SchemaAppDesc string
 
 	// Topbar navigation.
 	NavPrimaryARIA string
@@ -79,12 +79,12 @@ type landingStrings struct {
 	NavLogin       string
 
 	// Hero band.
-	HeroTag      string
-	HeroHeading  string
-	HeroLede     string
-	CTAFree      string
-	CTAPossible  string
-	ScrollHint   string
+	HeroTag     string
+	HeroHeading string
+	HeroLede    string
+	CTAFree     string
+	CTAPossible string
+	ScrollHint  string
 
 	// Benefits row.
 	BenefitsARIA  string
@@ -119,10 +119,10 @@ type landingStrings struct {
 	Step3Body  string
 
 	// Quote band.
-	QuoteARIA       string
-	QuoteBody       string
-	QuoteAttrLabel  string
-	QuoteAttrAfter  string
+	QuoteARIA      string
+	QuoteBody      string
+	QuoteAttrLabel string
+	QuoteAttrAfter string
 
 	// Closing CTA.
 	ClosingHeading string
@@ -137,11 +137,11 @@ type landingStrings struct {
 	FooterCopy    string
 
 	// 404 page.
-	NotFoundTitle      string
-	NotFoundHeading    string
-	NotFoundBody       string
-	NotFoundCTAHome    string
-	NotFoundCTAManual  string
+	NotFoundTitle     string
+	NotFoundHeading   string
+	NotFoundBody      string
+	NotFoundCTAHome   string
+	NotFoundCTAManual string
 
 	// /store + /store/event/{id}. Both pages share the same locale
 	// pool so a translator can update one column and watch every
@@ -151,20 +151,20 @@ type landingStrings struct {
 	NavStore string
 
 	// Listing page (store.html).
-	StoreTitle           string
-	StoreMetaDesc        string
-	StoreOGDesc          string
-	StoreHeroEyebrow     string
-	StoreHeroHeading     string
-	StoreHeroLede        string
-	StoreSectionEyebrow  string
-	StoreSectionHeading  string
-	StoreLoadingHeading  string
-	StoreLoadingBody     string
-	StoreEmptyHeading    string
-	StoreEmptyBody       string
-	StoreErrorHeading    string
-	StoreErrorBody       string
+	StoreTitle          string
+	StoreMetaDesc       string
+	StoreOGDesc         string
+	StoreHeroEyebrow    string
+	StoreHeroHeading    string
+	StoreHeroLede       string
+	StoreSectionEyebrow string
+	StoreSectionHeading string
+	StoreLoadingHeading string
+	StoreLoadingBody    string
+	StoreEmptyHeading   string
+	StoreEmptyBody      string
+	StoreErrorHeading   string
+	StoreErrorBody      string
 
 	// "How it works" strip — shared by listing + detail.
 	StoreHowEyebrow string
@@ -273,12 +273,11 @@ type landingStrings struct {
 // the unlikely case the init step is skipped.
 var landingLocales = map[string]landingStrings{}
 
-
 // resolveLang picks the language for this request. Order:
-//   1. explicit `?lang=xx` query (and persists it via cookie)
-//   2. previously-stored `zv_lang` cookie
-//   3. Accept-Language first segment when it matches a supported locale
-//   4. fall back to "en"
+//  1. explicit `?lang=xx` query (and persists it via cookie)
+//  2. previously-stored `zv_lang` cookie
+//  3. Accept-Language first segment when it matches a supported locale
+//  4. fall back to "en"
 //
 // When (1) fires the cookie is set so the next visit hits (2) without a
 // query string.

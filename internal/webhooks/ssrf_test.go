@@ -17,7 +17,7 @@ func TestIsLoopbackHost_NoPrefixBypass(t *testing.T) {
 		{"127.0.0.1", true},
 		{"127.0.0.2", true}, // any 127/8 literal
 		{"::1", true},
-		{"127.evil.com", false},      // the bypass case
+		{"127.evil.com", false}, // the bypass case
 		{"127.0.0.1.evil.com", false},
 		{"169.254.169.254", false}, // metadata IP — must NOT count as loopback
 		{"example.com", false},

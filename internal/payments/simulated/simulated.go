@@ -348,4 +348,3 @@ func formatPrice(cents int64, currency string) string {
 		return amount + " " + strings.ToUpper(c)
 	}
 }
-

@@ -16,7 +16,9 @@ func TestBulkCreateTeams_HappyPath(t *testing.T) {
 		map[string]string{"username": "boss", "password": "s3cret"}, nil); s != 200 {
 		t.Fatalf("login = %d", s)
 	}
-	var run struct{ ID int64 `json:"id"` }
+	var run struct {
+		ID int64 `json:"id"`
+	}
 	if s := arr.do("POST", "/api/admin/events",
 		map[string]any{"assignment_id": assignmentID, "attest_no_minors": true}, &run); s != 201 {
 		t.Fatalf("create event = %d", s)
@@ -38,7 +40,9 @@ func TestBulkCreateTeams_HappyPath(t *testing.T) {
 			Error string `json:"error,omitempty"`
 			Team  *struct {
 				ID      int64 `json:"id"`
-				Members []struct{ Token string `json:"token"` } `json:"members"`
+				Members []struct {
+					Token string `json:"token"`
+				} `json:"members"`
 			} `json:"team,omitempty"`
 		} `json:"results"`
 	}
@@ -81,7 +85,9 @@ func TestBulkCreateTeams_PartialFailure(t *testing.T) {
 		map[string]string{"username": "boss", "password": "s3cret"}, nil); s != 200 {
 		t.Fatalf("login = %d", s)
 	}
-	var run struct{ ID int64 `json:"id"` }
+	var run struct {
+		ID int64 `json:"id"`
+	}
 	if s := arr.do("POST", "/api/admin/events",
 		map[string]any{"assignment_id": assignmentID, "attest_no_minors": true}, &run); s != 201 {
 		t.Fatalf("create event = %d", s)
@@ -91,7 +97,7 @@ func TestBulkCreateTeams_PartialFailure(t *testing.T) {
 		"teams": []map[string]any{
 			{"name": "Alpha", "member_names": []string{"alice"}},
 			{"name": "Alpha", "member_names": []string{"alice"}}, // dup of row 0
-			{"name": "Beta",  "member_names": []string{"bob"}},
+			{"name": "Beta", "member_names": []string{"bob"}},
 		},
 	}
 	var resp struct {
@@ -127,7 +133,9 @@ func TestBulkCreateTeams_RejectsHugeBatch(t *testing.T) {
 		map[string]string{"username": "boss", "password": "s3cret"}, nil); s != 200 {
 		t.Fatalf("login = %d", s)
 	}
-	var run struct{ ID int64 `json:"id"` }
+	var run struct {
+		ID int64 `json:"id"`
+	}
 	if s := arr.do("POST", "/api/admin/events",
 		map[string]any{"assignment_id": assignmentID, "attest_no_minors": true}, &run); s != 201 {
 		t.Fatalf("create event = %d", s)

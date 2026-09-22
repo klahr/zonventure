@@ -35,13 +35,13 @@ import (
 // schema-free change, but customers can only subscribe to kinds they
 // know exist; keep this list authoritative and document additions.
 const (
-	KindEventScheduled    = "event.scheduled"
-	KindEventStarted      = "event.started"
-	KindEventCompleted    = "event.completed"
-	KindTeamCreated     = "team.created"
-	KindTeamCompleted   = "team.completed"
-	KindTeamWithdrawn   = "team.withdrawn"
-	KindPurchasePaid    = "purchase.paid"
+	KindEventScheduled   = "event.scheduled"
+	KindEventStarted     = "event.started"
+	KindEventCompleted   = "event.completed"
+	KindTeamCreated      = "team.created"
+	KindTeamCompleted    = "team.completed"
+	KindTeamWithdrawn    = "team.withdrawn"
+	KindPurchasePaid     = "purchase.paid"
 	KindPurchaseRefunded = "purchase.refunded"
 
 	// KindWebhookTest is reserved for the manual "Send test" button.

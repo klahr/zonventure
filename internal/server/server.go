@@ -14,22 +14,24 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
 	"github.com/klahr/zonventure/internal/admin"
 	"github.com/klahr/zonventure/internal/adventure"
 	"github.com/klahr/zonventure/internal/auth"
 	"github.com/klahr/zonventure/internal/components"
 	"github.com/klahr/zonventure/internal/mailer"
 	"github.com/klahr/zonventure/internal/mcp"
+	"github.com/klahr/zonventure/internal/metrics"
 	"github.com/klahr/zonventure/internal/payments"
 	simulatedprovider "github.com/klahr/zonventure/internal/payments/simulated"
 	stripeprovider "github.com/klahr/zonventure/internal/payments/stripe"
-	"github.com/klahr/zonventure/internal/storage"
-	"github.com/klahr/zonventure/internal/storage/dbblob"
-	"github.com/klahr/zonventure/internal/metrics"
 	"github.com/klahr/zonventure/internal/player"
 	"github.com/klahr/zonventure/internal/public"
 	"github.com/klahr/zonventure/internal/settings"
 	"github.com/klahr/zonventure/internal/simulator"
+	"github.com/klahr/zonventure/internal/storage"
+	"github.com/klahr/zonventure/internal/storage/dbblob"
 	"github.com/klahr/zonventure/internal/teamimport"
 	teamimportcsv "github.com/klahr/zonventure/internal/teamimport/csv"
 	teamimportiofxml "github.com/klahr/zonventure/internal/teamimport/iofxml"
@@ -37,8 +39,6 @@ import (
 	teamimportxlsx "github.com/klahr/zonventure/internal/teamimport/xlsx"
 	"github.com/klahr/zonventure/internal/updates"
 	"github.com/klahr/zonventure/internal/ws"
-	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
 )
 
 //go:embed web/play.html web/play-sw.js web/play-queue.js web/arrange.html web/live.html web/recap.html web/i18n.js web/favicon.svg web/privacy.html web/terms.html web/manual.html web/landing.html web/pricing.html web/store.html web/store-event.html web/org-landing.html web/topbar.css web/topbar.js web/page-tokens.css web/fsmap.css web/jsqr.js web/404.html web/robots.txt web/sitemap.xml web/locales/web/*.json web/locales/landing/*.json web/assets/leaflet/leaflet.js web/assets/leaflet/leaflet.css web/assets/leaflet/images/*.png
@@ -233,8 +233,8 @@ func New(cfg Config) http.Handler {
 		bgCtx = context.Background()
 	}
 	authH := &auth.Handlers{
-		DB:            cfg.DB,
-		SecureCookie:  cfg.SecureCookie,
+		DB:           cfg.DB,
+		SecureCookie: cfg.SecureCookie,
 		Pricing: auth.Pricing{
 			PlayerCents:         admin.PricePerPlayerCents,
 			FreePlayersPerEvent: admin.FreePlayersPerEvent,
@@ -334,10 +334,10 @@ func New(cfg Config) http.Handler {
 	go mailOutbox.Run(bgCtx)
 	adminH := &admin.Handlers{
 		DB: cfg.DB, Lib: cfg.Library, Hub: hub, Sim: sim,
-		Mailer:        mail,
-		MailOutbox:    mailOutbox,
-		PublicURL:     cfg.PublicURL,
-		Provider:      paymentProvider,
+		Mailer:     mail,
+		MailOutbox: mailOutbox,
+		PublicURL:  cfg.PublicURL,
+		Provider:   paymentProvider,
 		// Platform fee is read once at startup and held on the
 		// handler set. Zero-value (no env vars) keeps self-host
 		// inert: no marketplace flow, no Connect onboarding gate.
@@ -417,7 +417,6 @@ type routesEnv struct {
 	sitemapBody   []byte
 	publicRL      *publicLimiter
 }
-
 
 // servePage returns a handler that writes a single embedded HTML page with
 // no caching. Used for the SPA shells (/arrange, /play, /live) where a
@@ -619,13 +618,13 @@ func serveAsset(path, contentType string) http.HandlerFunc {
 // versionResp is the /api/version payload. Stable shape so monitoring
 // scripts can pin to specific fields; new fields are additive only.
 type versionResp struct {
-	Version   string `json:"version"`
-	Commit    string `json:"commit,omitempty"`
-	Time      string `json:"time,omitempty"`
-	Modified  bool   `json:"modified,omitempty"`
-	Go        string `json:"go,omitempty"`
-	OS        string `json:"os,omitempty"`
-	Arch      string `json:"arch,omitempty"`
+	Version  string `json:"version"`
+	Commit   string `json:"commit,omitempty"`
+	Time     string `json:"time,omitempty"`
+	Modified bool   `json:"modified,omitempty"`
+	Go       string `json:"go,omitempty"`
+	OS       string `json:"os,omitempty"`
+	Arch     string `json:"arch,omitempty"`
 }
 
 // buildVersion assembles the response for /api/version. The version

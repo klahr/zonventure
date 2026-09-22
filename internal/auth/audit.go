@@ -37,14 +37,14 @@ const (
 // Common reason codes. Free-form strings — these are the canonical
 // values the admin UI knows how to label, but anything goes.
 const (
-	ReasonSuccess           = "success"
-	ReasonInvalidCreds      = "invalid_credentials"
-	ReasonRateLimited       = "rate_limited"
-	ReasonPasswordNotSet    = "password_not_set"
+	ReasonSuccess            = "success"
+	ReasonInvalidCreds       = "invalid_credentials"
+	ReasonRateLimited        = "rate_limited"
+	ReasonPasswordNotSet     = "password_not_set"
 	ReasonPasswordAlreadySet = "password_already_set"
-	ReasonExpiredToken      = "expired_token"
-	ReasonUnknownToken      = "unknown_token"
-	ReasonAdminManual       = "admin_manual"
+	ReasonExpiredToken       = "expired_token"
+	ReasonUnknownToken       = "unknown_token"
+	ReasonAdminManual        = "admin_manual"
 	// TOTP-specific reasons. Required is set on a login attempt that
 	// short-circuits with a totp_required response (password was OK,
 	// second factor still needs entering). Invalid covers both bad

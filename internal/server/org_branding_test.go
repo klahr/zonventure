@@ -12,9 +12,9 @@ import (
 // so the placeholder is a no-op.
 func TestOrgBrandStyleBlock(t *testing.T) {
 	cases := []struct {
-		name                                string
-		accent, accent2, bg, ink            string
-		want                                string
+		name                     string
+		accent, accent2, bg, ink string
+		want                     string
 	}{
 		{
 			name: "all empty produces no override",
@@ -34,9 +34,9 @@ func TestOrgBrandStyleBlock(t *testing.T) {
 			want:    "<style>:root{--accent:#aa1111;--accent-2:#bb2222;--bg:#cccccc;--ink:#222222;}</style>",
 		},
 		{
-			name:    "background only",
-			bg:      "#fafafa",
-			want:    "<style>:root{--bg:#fafafa;}</style>",
+			name: "background only",
+			bg:   "#fafafa",
+			want: "<style>:root{--bg:#fafafa;}</style>",
 		},
 	}
 	for _, tc := range cases {

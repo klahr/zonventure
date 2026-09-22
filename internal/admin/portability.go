@@ -34,11 +34,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/klahr/zonventure/internal/adventure"
 	"github.com/klahr/zonventure/internal/auth"
 	"github.com/klahr/zonventure/internal/httpx"
 	"github.com/klahr/zonventure/internal/logx"
-	"github.com/go-chi/chi/v5"
 )
 
 // adventureExportFormat tags the manifest so future format bumps are
@@ -291,10 +291,10 @@ func (h *Handlers) buildExport(ctx context.Context, advID int64) (exportEnvelope
 	var pages []pageRow
 	for pageRows.Next() {
 		var (
-			pr        pageRow
-			radius    sql.NullFloat64
-			disabled  int
-			laneID    sql.NullInt64
+			pr       pageRow
+			radius   sql.NullFloat64
+			disabled int
+			laneID   sql.NullInt64
 		)
 		if err := pageRows.Scan(&pr.id, &pr.idx, &pr.page.Title, &pr.page.Prompt,
 			&pr.acceptJ, &pr.page.Lat, &pr.page.Lng, &radius, &disabled,

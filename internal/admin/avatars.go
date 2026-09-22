@@ -7,10 +7,10 @@ import (
 	"net/url"
 	"strconv"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/klahr/zonventure/internal/httpx"
 	"github.com/klahr/zonventure/internal/imageutil"
 	"github.com/klahr/zonventure/internal/storage"
-	"github.com/go-chi/chi/v5"
 )
 
 /* ---------------- Adventure avatar ---------------- */

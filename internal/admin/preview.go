@@ -8,11 +8,11 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/klahr/zonventure/internal/adventure"
 	"github.com/klahr/zonventure/internal/auth"
 	"github.com/klahr/zonventure/internal/httpx"
 	"github.com/klahr/zonventure/internal/mdx"
-	"github.com/go-chi/chi/v5"
 )
 
 // previewStateDTO mirrors player.State so play.html's render() path works
@@ -35,9 +35,9 @@ type previewStateDTO struct {
 	// in preview just like a live run. Without this, audio attached
 	// to a puzzle is invisible everywhere except the editor's own
 	// per-clip strip — uploaded but unreachable.
-	Audio          []previewAudioDTO `json:"audio,omitempty"`
-	Colors         *adventure.Colors `json:"colors,omitempty"`
-	Preview        bool              `json:"preview"`
+	Audio   []previewAudioDTO `json:"audio,omitempty"`
+	Colors  *adventure.Colors `json:"colors,omitempty"`
+	Preview bool              `json:"preview"`
 	// SpoilerFree marks a buyer / share-holder preview where the
 	// accept list and notes have been stripped out. The play-side
 	// reads this to swap the answer dock for a "Next puzzle"
@@ -50,9 +50,9 @@ type previewStateDTO struct {
 	// through an adventure they bought shouldn't be handed the
 	// answer key alongside the prompt.
 	Accept   []adventure.AcceptEntry `json:"accept,omitempty"`
-	NoAnswer bool             `json:"no_answer,omitempty"`
-	Gate     *gatePreviewDTO  `json:"gate,omitempty"`
-	Debug    *previewDebugDTO `json:"preview_debug,omitempty"`
+	NoAnswer bool                    `json:"no_answer,omitempty"`
+	Gate     *gatePreviewDTO         `json:"gate,omitempty"`
+	Debug    *previewDebugDTO        `json:"preview_debug,omitempty"`
 	// OrgLogoURL + OrgName mirror the player.State fields so the
 	// preview's brand strip matches what real participants see. The
 	// preview uses the caller's active org rather than the

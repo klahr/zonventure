@@ -49,10 +49,10 @@ import (
 // stripeConnectStatusDTO is the response shape for the status
 // endpoint. Mirrors the columns added in 0049_stripe_connect.sql.
 type stripeConnectStatusDTO struct {
-	AccountID       string `json:"account_id,omitempty"`
-	ChargesEnabled  bool   `json:"charges_enabled"`
-	PayoutsEnabled  bool   `json:"payouts_enabled"`
-	SyncedAt        string `json:"synced_at,omitempty"`
+	AccountID      string `json:"account_id,omitempty"`
+	ChargesEnabled bool   `json:"charges_enabled"`
+	PayoutsEnabled bool   `json:"payouts_enabled"`
+	SyncedAt       string `json:"synced_at,omitempty"`
 	// PlatformFeeEnabled mirrors PlatformFee.Enabled() — the UI
 	// uses it to suppress the entire Connect panel on self-host
 	// (no platform fee = no marketplace = nothing to onboard).
@@ -261,9 +261,9 @@ func canManageOrgConnect(u auth.User, orgID int64) bool {
 // enabled flag so the UI can suppress the panel on self-host.
 func (h *Handlers) loadStripeConnectStatus(ctx context.Context, orgID int64) (stripeConnectStatusDTO, error) {
 	var (
-		out      stripeConnectStatusDTO
-		acct     sql.NullString
-		synced   sql.NullString
+		out    stripeConnectStatusDTO
+		acct   sql.NullString
+		synced sql.NullString
 	)
 	err := h.DB.QueryRowContext(ctx, `
 		SELECT stripe_connect_account_id, stripe_connect_charges_enabled,

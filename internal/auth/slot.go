@@ -16,10 +16,10 @@ import (
 // context by SlotMiddleware and is the "who is this player" value that
 // player endpoints use.
 type Slot struct {
-	ID       int64
-	Name     string
-	TeamID   int64
-	EventID    int64
+	ID      int64
+	Name    string
+	TeamID  int64
+	EventID int64
 }
 
 const (

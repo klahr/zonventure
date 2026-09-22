@@ -37,11 +37,11 @@ func TestMaintenance_MutationsBlockedReadsPass(t *testing.T) {
 	pinMaintenanceMode(t, true)
 
 	cases := []struct {
-		name        string
-		method      string
-		path        string
-		wantStatus  int
-		wantInner   bool
+		name           string
+		method         string
+		path           string
+		wantStatus     int
+		wantInner      bool
 		wantRetryAfter bool
 	}{
 		// Reads always pass through, even on mutation-shaped paths.

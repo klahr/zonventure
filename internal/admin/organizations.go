@@ -8,11 +8,11 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/klahr/zonventure/internal/auth"
 	"github.com/klahr/zonventure/internal/httpx"
 	"github.com/klahr/zonventure/internal/logx"
 	"github.com/klahr/zonventure/internal/orgslug"
-	"github.com/go-chi/chi/v5"
 )
 
 /* ---------------- DTOs ---------------- */
@@ -23,7 +23,7 @@ type assignmentDTO struct {
 	AdventureTitle string `json:"adventure_title,omitempty"`
 	MaxPlayers     int    `json:"max_players"`
 	CreatedAt      string `json:"created_at"`
-	EventID          *int64 `json:"event_id,omitempty"`
+	EventID        *int64 `json:"event_id,omitempty"`
 }
 
 type orgMemberDTO struct {
@@ -832,7 +832,7 @@ func (h *Handlers) UpdateAssignment(w http.ResponseWriter, r *http.Request) {
 		ownerOrg    int64
 		currentSlug string
 		currentMax  int
-		eventID       sql.NullInt64
+		eventID     sql.NullInt64
 	)
 	err = h.DB.QueryRowContext(r.Context(), `
 		SELECT aa.org_id, aa.adventure_slug, aa.max_players, ar.id
@@ -908,7 +908,7 @@ func (h *Handlers) DeleteAssignment(w http.ResponseWriter, r *http.Request) {
 	}
 	var (
 		ownerOrg int64
-		eventID    sql.NullInt64
+		eventID  sql.NullInt64
 	)
 	err = h.DB.QueryRowContext(r.Context(), `
 		SELECT aa.org_id, ar.id
@@ -1117,7 +1117,7 @@ func (h *Handlers) listAssignments(ctx context.Context, orgID int64) ([]assignme
 	out := []assignmentDTO{}
 	for rows.Next() {
 		var (
-			as    assignmentDTO
+			as      assignmentDTO
 			eventID sql.NullInt64
 		)
 		if err := rows.Scan(&as.ID, &as.AdventureSlug, &as.MaxPlayers, &as.CreatedAt, &eventID); err != nil {

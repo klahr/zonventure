@@ -182,9 +182,9 @@ func TestHexToRGB(t *testing.T) {
 		{"#AD1357", [3]int{0xad, 0x13, 0x57}, false},
 		{"", [3]int{1, 2, 3}, true},
 		{"nope", [3]int{1, 2, 3}, true},
-		{"#abcd", [3]int{1, 2, 3}, true},     // wrong length
-		{"#zzzzzz", [3]int{1, 2, 3}, true},   // invalid hex
-		{"#abcdefg", [3]int{1, 2, 3}, true},  // too long
+		{"#abcd", [3]int{1, 2, 3}, true},    // wrong length
+		{"#zzzzzz", [3]int{1, 2, 3}, true},  // invalid hex
+		{"#abcdefg", [3]int{1, 2, 3}, true}, // too long
 	}
 	for _, c := range cases {
 		r, g, b := hexToRGB(c.in, 1, 2, 3)

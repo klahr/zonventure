@@ -6,9 +6,9 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/klahr/zonventure/internal/httpx"
 	"github.com/klahr/zonventure/internal/mdx"
-	"github.com/go-chi/chi/v5"
 )
 
 /* ---------------- Post-event recap (public-by-token) ----------------
@@ -37,21 +37,21 @@ import (
 // Mirrors player.SummaryResponse plus the track + per-puzzle data
 // the post-event view needs.
 type recapResponse struct {
-	TeamName        string         `json:"team_name"`
-	AdventureTitle  string         `json:"adventure_title"`
-	AdventureSlug   string         `json:"adventure_slug,omitempty"`
-	OutroText       string         `json:"outro_text,omitempty"`
-	Colors          *recapColors   `json:"colors,omitempty"`
-	StartedAt       string         `json:"started_at,omitempty"`
-	CompletedAt     string         `json:"completed_at,omitempty"`
-	DurationSeconds int            `json:"duration_seconds"`
-	DistanceM       float64        `json:"distance_m"`
-	AnswersRight    int            `json:"answers_right"`
-	AnswersWrong    int            `json:"answers_wrong"`
-	PageCount       int            `json:"page_count"`
-	State           string         `json:"state"`
-	Track           []recapTrack   `json:"track"`
-	Puzzles         []recapPuzzle  `json:"puzzles"`
+	TeamName        string        `json:"team_name"`
+	AdventureTitle  string        `json:"adventure_title"`
+	AdventureSlug   string        `json:"adventure_slug,omitempty"`
+	OutroText       string        `json:"outro_text,omitempty"`
+	Colors          *recapColors  `json:"colors,omitempty"`
+	StartedAt       string        `json:"started_at,omitempty"`
+	CompletedAt     string        `json:"completed_at,omitempty"`
+	DurationSeconds int           `json:"duration_seconds"`
+	DistanceM       float64       `json:"distance_m"`
+	AnswersRight    int           `json:"answers_right"`
+	AnswersWrong    int           `json:"answers_wrong"`
+	PageCount       int           `json:"page_count"`
+	State           string        `json:"state"`
+	Track           []recapTrack  `json:"track"`
+	Puzzles         []recapPuzzle `json:"puzzles"`
 }
 
 type recapColors struct {
@@ -68,11 +68,11 @@ type recapTrack struct {
 }
 
 type recapPuzzle struct {
-	Index       int     `json:"index"`
-	Title       string  `json:"title,omitempty"`
-	Lat         float64 `json:"lat"`
-	Lng         float64 `json:"lng"`
-	SolvedAt    string  `json:"solved_at,omitempty"`
+	Index    int     `json:"index"`
+	Title    string  `json:"title,omitempty"`
+	Lat      float64 `json:"lat"`
+	Lng      float64 `json:"lng"`
+	SolvedAt string  `json:"solved_at,omitempty"`
 }
 
 // Recap serves the JSON for /api/public/recap/{token}. The HTML
@@ -85,13 +85,13 @@ func (h *Handlers) Recap(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var (
-		teamID         int64
-		teamName       string
-		adventureSlug  string
-		startedAt      sql.NullString
-		completedAt    sql.NullString
-		teamCompleted  sql.NullString
-		state          string
+		teamID        int64
+		teamName      string
+		adventureSlug string
+		startedAt     sql.NullString
+		completedAt   sql.NullString
+		teamCompleted sql.NullString
+		state         string
 	)
 	err := h.DB.QueryRowContext(r.Context(), `
 		SELECT t.id, t.name, ar.adventure_slug, ar.started_at,
@@ -130,10 +130,10 @@ func (h *Handlers) Recap(w http.ResponseWriter, r *http.Request) {
 		// innerHTML and the author's markdown actually renders. Same
 		// goldmark pipeline puzzle prompts and the player intro/outro
 		// already use.
-		OutroText:      mdx.Render(adv.Meta.OutroText),
-		StartedAt:      startedAt.String,
-		PageCount:      len(adv.Pages),
-		State:          state,
+		OutroText: mdx.Render(adv.Meta.OutroText),
+		StartedAt: startedAt.String,
+		PageCount: len(adv.Pages),
+		State:     state,
 	}
 	// Team's own completion stamp wins over the event's — multiple
 	// teams in one event can finish at different times, and the

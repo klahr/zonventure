@@ -99,13 +99,13 @@ type membershipDTO struct {
 }
 
 type whoamiResponse struct {
-	ID            int64           `json:"id"`
-	Username      string          `json:"username"`
-	Role          string          `json:"role"`
-	OrgID         *int64          `json:"org_id,omitempty"`
-	Email         string          `json:"email,omitempty"`
-	EmailVerified bool            `json:"email_verified"`
-	Pricing       Pricing         `json:"pricing"`
+	ID            int64   `json:"id"`
+	Username      string  `json:"username"`
+	Role          string  `json:"role"`
+	OrgID         *int64  `json:"org_id,omitempty"`
+	Email         string  `json:"email,omitempty"`
+	EmailVerified bool    `json:"email_verified"`
+	Pricing       Pricing `json:"pricing"`
 	// Memberships is the user's full org list with the role they
 	// hold in each. Drives the login picker (count > 1) and the
 	// hamburger org switcher. Empty for admins.

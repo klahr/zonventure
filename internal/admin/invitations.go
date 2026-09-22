@@ -87,8 +87,8 @@ func (h *Handlers) SendEventInvitations(w http.ResponseWriter, r *http.Request) 
 		Slots []invitationSlot
 	}
 	var (
-		teams        []*teamInfo
-		byID         = map[int64]*teamInfo{}
+		teams []*teamInfo
+		byID  = map[int64]*teamInfo{}
 	)
 	for rows.Next() {
 		var (

@@ -30,7 +30,7 @@ const (
 	// the leaderboard + recap. Reversible via the same op (toggle).
 	// Allowed only while a result-affecting state is in flight —
 	// post-completion the standings are frozen for honest reporting.
-	OpWithdrawTeam    eventOp = "withdraw_team"
+	OpWithdrawTeam eventOp = "withdraw_team"
 	// OpEditTeamEmail is the captain-contact email edit. Distinct
 	// from OpRenameTeam because email is purely arranger-side
 	// metadata (never surfaced on the player share page) and an
@@ -61,16 +61,16 @@ var allOps = []eventOp{
 // at each lifecycle point. Keep this exhaustive: a missing (state, op)
 // pair defaults to disallowed so a forgotten case fails closed.
 //
-//   scheduled — fully editable, nothing has happened yet.
-//   running   — operational tweaks only; the structure is locked.
-//   paused    — same as running.
-//   completed — read-only by default. Renames of the *event* itself
-//               and show_map happen via UpdateEvent which doesn't
-//               consult this matrix; everything that would mutate the
-//               leaderboard or team roster is blocked.
-//   cancelled — terminal & read-only. Same posture as completed; kept
-//               distinct so the UI and the activity log can show a
-//               truthful label instead of pretending the event finished.
+//	scheduled — fully editable, nothing has happened yet.
+//	running   — operational tweaks only; the structure is locked.
+//	paused    — same as running.
+//	completed — read-only by default. Renames of the *event* itself
+//	            and show_map happen via UpdateEvent which doesn't
+//	            consult this matrix; everything that would mutate the
+//	            leaderboard or team roster is blocked.
+//	cancelled — terminal & read-only. Same posture as completed; kept
+//	            distinct so the UI and the activity log can show a
+//	            truthful label instead of pretending the event finished.
 func allowedForState(state string, op eventOp) bool {
 	// OpEditTeamEmail is the lone exception to the "terminal states
 	// are read-only" rule — see the const doc-comment. Email is

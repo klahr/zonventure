@@ -9,11 +9,11 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/klahr/zonventure/internal/httpx"
 	"github.com/klahr/zonventure/internal/imageutil"
 	"github.com/klahr/zonventure/internal/storage"
 	"github.com/klahr/zonventure/internal/ws"
-	"github.com/go-chi/chi/v5"
 	qrcode "github.com/skip2/go-qrcode"
 )
 
@@ -132,8 +132,8 @@ func (h *Handlers) teamByToken(w http.ResponseWriter, r *http.Request, token str
 		return 0, 0, false
 	}
 	var (
-		teamID int64
-		eventID  int64
+		teamID  int64
+		eventID int64
 	)
 	err := h.DB.QueryRowContext(r.Context(), `
 		SELECT id, event_id FROM teams WHERE token = $1

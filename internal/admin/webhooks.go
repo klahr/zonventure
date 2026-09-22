@@ -29,13 +29,13 @@ import (
  */
 
 type webhookEndpointDTO struct {
-	ID          int64    `json:"id"`
-	Name        string   `json:"name"`
-	URL         string   `json:"url"`
-	EventKinds  []string `json:"event_kinds"`
-	Active      bool     `json:"active"`
-	SecretHint  string   `json:"secret_hint"`
-	CreatedAt   string   `json:"created_at"`
+	ID         int64    `json:"id"`
+	Name       string   `json:"name"`
+	URL        string   `json:"url"`
+	EventKinds []string `json:"event_kinds"`
+	Active     bool     `json:"active"`
+	SecretHint string   `json:"secret_hint"`
+	CreatedAt  string   `json:"created_at"`
 }
 
 type createWebhookRequest struct {
@@ -355,19 +355,19 @@ func (h *Handlers) ListWebhookEventKinds(w http.ResponseWriter, r *http.Request)
 // LastError is omitted when empty so a fresh delivery doesn't carry
 // a noisy `"last_error": ""` field.
 type webhookDeliveryDTO struct {
-	ID            int64   `json:"id"`
-	EndpointID    int64   `json:"endpoint_id"`
-	EndpointName  string  `json:"endpoint_name"`
-	DeliveryUUID  string  `json:"delivery_uuid"`
-	EventKind     string  `json:"event_kind"`
-	Status        string  `json:"status"`
-	Attempts      int     `json:"attempts"`
-	LastStatus    *int    `json:"last_status,omitempty"`
-	LastError     string  `json:"last_error,omitempty"`
-	NextAttemptAt string  `json:"next_attempt_at"`
-	CreatedAt     string  `json:"created_at"`
-	DeliveredAt   string  `json:"delivered_at,omitempty"`
-	Payload       string  `json:"payload"`
+	ID            int64  `json:"id"`
+	EndpointID    int64  `json:"endpoint_id"`
+	EndpointName  string `json:"endpoint_name"`
+	DeliveryUUID  string `json:"delivery_uuid"`
+	EventKind     string `json:"event_kind"`
+	Status        string `json:"status"`
+	Attempts      int    `json:"attempts"`
+	LastStatus    *int   `json:"last_status,omitempty"`
+	LastError     string `json:"last_error,omitempty"`
+	NextAttemptAt string `json:"next_attempt_at"`
+	CreatedAt     string `json:"created_at"`
+	DeliveredAt   string `json:"delivered_at,omitempty"`
+	Payload       string `json:"payload"`
 }
 
 // ListWebhookDeliveries returns the org's recent webhook delivery

@@ -9,10 +9,10 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/klahr/zonventure/internal/adventure"
 	"github.com/klahr/zonventure/internal/auth"
 	"github.com/klahr/zonventure/internal/httpx"
-	"github.com/go-chi/chi/v5"
 )
 
 // Maximum lane name length. Long enough for "Downtown puzzles" or

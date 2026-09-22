@@ -7,11 +7,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/klahr/zonventure/internal/admin"
 	"github.com/klahr/zonventure/internal/adventure"
 	"github.com/klahr/zonventure/internal/auth"
 	"github.com/klahr/zonventure/internal/dbtest"
-	"github.com/go-chi/chi/v5"
 )
 
 // TestDuplicatePage_HappyPath confirms the Google-Slides-style

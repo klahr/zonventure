@@ -21,10 +21,10 @@ import (
 // admin handler, and the read sites in auth/server all reference the
 // same strings.
 const (
-	KeySignupEnabled    = "signup_enabled"
-	KeyLandingEnabled   = "landing_enabled"
-	KeyRedirectTarget   = "redirect_target"
-	KeyMaintenanceMode  = "maintenance_mode"
+	KeySignupEnabled   = "signup_enabled"
+	KeyLandingEnabled  = "landing_enabled"
+	KeyRedirectTarget  = "redirect_target"
+	KeyMaintenanceMode = "maintenance_mode"
 )
 
 // SignupEnabled reports whether the public /api/auth/signup endpoint

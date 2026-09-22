@@ -73,7 +73,7 @@ func FuzzWrite(f *testing.F) {
 		{"Title with;semi", "desc,with,commas", "loc\nwith\nnewlines"},
 		{"unicode 🎉", "räksmörgås", "Göteborg"},
 		{"", "", ""},
-		{strings.Repeat("a", 200), "long description "+strings.Repeat("x", 500), ""},
+		{strings.Repeat("a", 200), "long description " + strings.Repeat("x", 500), ""},
 	}
 	for _, s := range seeds {
 		f.Add(s.title, s.desc, s.location)

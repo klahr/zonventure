@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/klahr/zonventure/internal/payments"
 	"github.com/go-chi/chi/v5"
+	"github.com/klahr/zonventure/internal/payments"
 )
 
 // TestRoundTrip exercises the full flow: a buyer hits CreateCheckout,
@@ -159,10 +159,10 @@ func TestCustomerPortal_Unsupported(t *testing.T) {
 func TestVerifyAndParseWebhook_RoundTrip(t *testing.T) {
 	prov := New("")
 	in := payments.Event{
-		Type:     payments.EventChargeRefunded,
-		ID:       "sim_evt_round",
-		Created:  time.Now().Truncate(time.Second),
-		Charge:   &payments.ChargeDetail{ID: "sim_ch_a", AmountCents: 1000, Currency: "eur"},
+		Type:    payments.EventChargeRefunded,
+		ID:      "sim_evt_round",
+		Created: time.Now().Truncate(time.Second),
+		Charge:  &payments.ChargeDetail{ID: "sim_ch_a", AmountCents: 1000, Currency: "eur"},
 	}
 	body, err := json.Marshal(in)
 	if err != nil {

@@ -9,10 +9,10 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/klahr/zonventure/internal/auth"
 	"github.com/klahr/zonventure/internal/httpx"
 	"github.com/klahr/zonventure/internal/tokenx"
-	"github.com/go-chi/chi/v5"
 )
 
 // MCP API tokens — long-lived bearer credentials a user pastes into

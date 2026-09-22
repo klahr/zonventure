@@ -6,9 +6,9 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/klahr/zonventure/internal/auth"
 	"github.com/klahr/zonventure/internal/httpx"
-	"github.com/go-chi/chi/v5"
 )
 
 /* ---------------- Adventure shares (commission an adventure for a specific org) ---------------- */

@@ -9,12 +9,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/klahr/zonventure/internal/admin"
 	"github.com/klahr/zonventure/internal/adventure"
 	"github.com/klahr/zonventure/internal/auth"
 	"github.com/klahr/zonventure/internal/dbtest"
 	"github.com/klahr/zonventure/internal/ws"
-	"github.com/go-chi/chi/v5"
 )
 
 // questFixture returns a router pre-wired with the events handlers

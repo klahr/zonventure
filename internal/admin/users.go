@@ -7,11 +7,11 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/klahr/zonventure/internal/adventure"
 	"github.com/klahr/zonventure/internal/auth"
 	"github.com/klahr/zonventure/internal/httpx"
 	"github.com/klahr/zonventure/internal/mdx"
-	"github.com/go-chi/chi/v5"
 )
 
 /* ---------------- User typeahead search ---------------- */
@@ -183,9 +183,9 @@ func (h *Handlers) AdventureDetail(w http.ResponseWriter, r *http.Request) {
 		RadiusM *float64 `json:"radius_m,omitempty"`
 	}
 	type imageDTO struct {
-		ID       int64  `json:"id"`
-		URL      string `json:"url"`
-		AltText  string `json:"alt_text,omitempty"`
+		ID      int64  `json:"id"`
+		URL     string `json:"url"`
+		AltText string `json:"alt_text,omitempty"`
 	}
 	type audioDTO struct {
 		ID          int64  `json:"id"`
@@ -398,20 +398,20 @@ func (h *Handlers) EventDetail(w http.ResponseWriter, r *http.Request) {
 		LastLoginAt string `json:"last_login_at,omitempty"`
 	}
 	type teamOut struct {
-		ID          int64     `json:"id"`
-		Name        string    `json:"name"`
-		Email       string    `json:"email,omitempty"`
-		PageIndex   int       `json:"page_index"`
-		CompletedAt string    `json:"completed_at,omitempty"`
-		WithdrawnAt string    `json:"withdrawn_at,omitempty"`
-		Token       string    `json:"token"`
+		ID          int64  `json:"id"`
+		Name        string `json:"name"`
+		Email       string `json:"email,omitempty"`
+		PageIndex   int    `json:"page_index"`
+		CompletedAt string `json:"completed_at,omitempty"`
+		WithdrawnAt string `json:"withdrawn_at,omitempty"`
+		Token       string `json:"token"`
 		// RecapToken is the public /recap/{token} URL — emitted on
 		// every detail fetch so the post-completion results card can
 		// link directly without a follow-up round-trip. The /recap
 		// route gates on event state, so a leak mid-event 404s.
-		RecapToken  string    `json:"recap_token,omitempty"`
-		AvatarURL   string    `json:"avatar_url,omitempty"`
-		Members     []slotOut `json:"members"`
+		RecapToken string    `json:"recap_token,omitempty"`
+		AvatarURL  string    `json:"avatar_url,omitempty"`
+		Members    []slotOut `json:"members"`
 	}
 	teams := []teamOut{}
 	rows, err := h.DB.QueryContext(r.Context(), `

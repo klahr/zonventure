@@ -230,12 +230,12 @@ func (h *Handlers) handleCheckoutCompleted(ctx context.Context, event payments.E
 	defer tx.Rollback() //nolint:errcheck
 
 	var (
-		orgID         int64
-		advSlug       string
-		maxPlayers    int
-		state         string
-		existingAssn  sql.NullInt64
-		topUpID       sql.NullInt64
+		orgID        int64
+		advSlug      string
+		maxPlayers   int
+		state        string
+		existingAssn sql.NullInt64
+		topUpID      sql.NullInt64
 	)
 	// FOR UPDATE serialises against ConfirmPurchase and against a
 	// concurrent redelivery of this same webhook event. Without it the
@@ -324,13 +324,13 @@ func (h *Handlers) handleCheckoutCompleted(ctx context.Context, event payments.E
 	// own copy of the paid event. Most won't subscribe (they
 	// reconcile via Stripe directly) but ship for completeness.
 	webhooks.TryPublish(ctx, h.DB, orgID, webhooks.KindPurchasePaid, map[string]any{
-		"purchase_id":     purchaseID,
-		"assignment_id":   assID,
-		"adventure_slug":  advSlug,
-		"max_players":     maxPlayers,
-		"amount_cents":    event.Checkout.AmountTotal,
-		"currency":        event.Checkout.Currency,
-		"stripe_session":  event.Checkout.SessionID,
+		"purchase_id":    purchaseID,
+		"assignment_id":  assID,
+		"adventure_slug": advSlug,
+		"max_players":    maxPlayers,
+		"amount_cents":   event.Checkout.AmountTotal,
+		"currency":       event.Checkout.Currency,
+		"stripe_session": event.Checkout.SessionID,
 	})
 	return nil
 }

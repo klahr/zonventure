@@ -10,10 +10,10 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/klahr/zonventure/internal/auth"
 	"github.com/klahr/zonventure/internal/httpx"
 	"github.com/klahr/zonventure/internal/imageutil"
-	"github.com/go-chi/chi/v5"
 )
 
 // DetachPageImages removes every image attached to (advID, pageIdx).

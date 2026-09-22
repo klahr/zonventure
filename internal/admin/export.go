@@ -127,22 +127,22 @@ type adventureExport struct {
 }
 
 type assignmentExport struct {
-	ID             int64  `json:"id"`
-	AdventureSlug  string `json:"adventure_slug"`
-	MaxPlayers     int    `json:"max_players"`
-	CreatedAt      string `json:"created_at"`
+	ID            int64  `json:"id"`
+	AdventureSlug string `json:"adventure_slug"`
+	MaxPlayers    int    `json:"max_players"`
+	CreatedAt     string `json:"created_at"`
 }
 
 type purchaseExport struct {
-	ID             int64  `json:"id"`
-	AdventureSlug  string `json:"adventure_slug"`
-	MaxPlayers     int    `json:"max_players"`
-	AmountCents    int    `json:"amount_cents"`
-	Currency       string `json:"currency"`
-	State          string `json:"state"`
-	Provider       string `json:"provider"`
-	CreatedAt      string `json:"created_at"`
-	PaidAt         string `json:"paid_at,omitempty"`
+	ID            int64  `json:"id"`
+	AdventureSlug string `json:"adventure_slug"`
+	MaxPlayers    int    `json:"max_players"`
+	AmountCents   int    `json:"amount_cents"`
+	Currency      string `json:"currency"`
+	State         string `json:"state"`
+	Provider      string `json:"provider"`
+	CreatedAt     string `json:"created_at"`
+	PaidAt        string `json:"paid_at,omitempty"`
 }
 
 type eventExport struct {
@@ -374,4 +374,3 @@ func loadTeamSlots(ctx context.Context, db *sql.DB, teamID int64) ([]slotExport,
 	}
 	return out, rows.Err()
 }
-

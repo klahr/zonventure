@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/klahr/zonventure/internal/activity"
 	"github.com/klahr/zonventure/internal/auth"
 	"github.com/klahr/zonventure/internal/httpx"
@@ -17,7 +18,6 @@ import (
 	"github.com/klahr/zonventure/internal/storage"
 	"github.com/klahr/zonventure/internal/webhooks"
 	"github.com/klahr/zonventure/internal/ws"
-	"github.com/go-chi/chi/v5"
 )
 
 // teamFromRequest is the canonical preamble for every team handler:
@@ -480,9 +480,9 @@ func (h *Handlers) WithdrawTeam(w http.ResponseWriter, r *http.Request) {
 		map[string]any{"by_arranger": true})
 	orgID, _ := h.eventOrg(r.Context(), eventID)
 	webhooks.TryPublish(r.Context(), h.DB, orgID, webhooks.KindTeamWithdrawn, map[string]any{
-		"event_id":      eventID,
-		"team_id":       teamID,
-		"withdrawn_at":  withdrawnAt,
+		"event_id":     eventID,
+		"team_id":      teamID,
+		"withdrawn_at": withdrawnAt,
 	})
 	// Withdrawing the last unfinished team should flip the event to
 	// completed — same shape as an Unlock that takes the final team

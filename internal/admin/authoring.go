@@ -11,11 +11,11 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/klahr/zonventure/internal/adventure"
 	"github.com/klahr/zonventure/internal/auth"
 	"github.com/klahr/zonventure/internal/httpx"
 	"github.com/klahr/zonventure/internal/mdx"
-	"github.com/go-chi/chi/v5"
 )
 
 /* ---------------- Adventure authoring (admin-only) ---------------- */
@@ -118,54 +118,54 @@ type audioView struct {
 }
 
 type adventureEditDTO struct {
-	ID                   int64       `json:"id"`
-	Slug                 string      `json:"slug"`
-	Title                string      `json:"title"`
-	Description          string      `json:"description"`
-	Author               string      `json:"author"`
-	IntroText            string      `json:"intro_text"`
-	OutroText            string      `json:"outro_text"`
+	ID          int64  `json:"id"`
+	Slug        string `json:"slug"`
+	Title       string `json:"title"`
+	Description string `json:"description"`
+	Author      string `json:"author"`
+	IntroText   string `json:"intro_text"`
+	OutroText   string `json:"outro_text"`
 	// IntroHTML / OutroHTML are the goldmark-rendered siblings of
 	// IntroText / OutroText — same shape pageView uses for prompt_html.
 	// The arranger UI (and any future read surface) renders the HTML
 	// instead of dumping the raw markdown source as plain text.
-	IntroHTML            string      `json:"intro_html,omitempty"`
-	OutroHTML            string      `json:"outro_html,omitempty"`
-	AccentColor          string      `json:"accent_color"`
-	AccentSecondaryColor string      `json:"accent_secondary_color"`
-	BackgroundColor      string      `json:"background_color"`
-	TextColor            string      `json:"text_color"`
-	SubmitBgColor        string      `json:"submit_bg_color"`
+	IntroHTML            string `json:"intro_html,omitempty"`
+	OutroHTML            string `json:"outro_html,omitempty"`
+	AccentColor          string `json:"accent_color"`
+	AccentSecondaryColor string `json:"accent_secondary_color"`
+	BackgroundColor      string `json:"background_color"`
+	TextColor            string `json:"text_color"`
+	SubmitBgColor        string `json:"submit_bg_color"`
 	// Language is the BCP 47 tag of the puzzle content (e.g. "en",
 	// "sv"). Defaults to "en" via the schema's column default.
-	Language             string      `json:"language"`
-	AvatarURL            string      `json:"avatar_url,omitempty"`
+	Language  string `json:"language"`
+	AvatarURL string `json:"avatar_url,omitempty"`
 	// OrgID identifies the owner — nil for admin-owned global-catalog
 	// adventures, set for org-owned ones. The publish flag is only
 	// load-bearing for the nil case (it gates cross-org catalog
 	// visibility); the UI uses this to hide the toggle for org-owned
 	// rows where flipping it has no effect.
-	OrgID                *int64      `json:"org_id,omitempty"`
-	Published            bool        `json:"published"`
+	OrgID     *int64 `json:"org_id,omitempty"`
+	Published bool   `json:"published"`
 	// StrictAssets, when true, scopes player asset visibility (page
 	// images + audio + manifest URLs) to the team's current page index.
 	// Default false keeps the permissive prefetch-friendly behaviour.
-	StrictAssets         bool        `json:"strict_assets"`
+	StrictAssets bool `json:"strict_assets"`
 	// Starting location — optional. Both StartLat and StartLng are
 	// pointers because they're meaningful only as a pair; an absent
 	// start (one or both nil) means "fall back to the first gated
 	// puzzle's location". StartLabel is a short free-text hint
 	// surfaced alongside the coords ("vid bänken under trappan").
-	StartLat             *float64    `json:"start_lat,omitempty"`
-	StartLng             *float64    `json:"start_lng,omitempty"`
-	StartLabel           string      `json:"start_label,omitempty"`
-	Shares               []shareView `json:"shares"`
-	Pages                []pageView  `json:"pages"`
+	StartLat   *float64    `json:"start_lat,omitempty"`
+	StartLng   *float64    `json:"start_lng,omitempty"`
+	StartLabel string      `json:"start_label,omitempty"`
+	Shares     []shareView `json:"shares"`
+	Pages      []pageView  `json:"pages"`
 	// Lanes lists the adventure's lanes in idx order. The editor
 	// uses this to render its collapsible lane sections; Pages still
 	// arrives flat (with each page tagged by lane_id) so the editor
 	// can group them client-side without an extra round-trip.
-	Lanes                []laneDTO   `json:"lanes"`
+	Lanes []laneDTO `json:"lanes"`
 	// RunningEventCount lets the editor warn the author before saving
 	// edits that will land on teams currently mid-event. Counts both
 	// scheduled (about to start) and running events using this slug —
@@ -808,7 +808,6 @@ func loadAdventureDTO(ctx context.Context, db *sql.DB, slug string) (*adventureE
 	return &a, nil
 }
 
-
 // validHexColor accepts "" (meaning "use default") or exactly "#rrggbb"
 // (case-insensitive). Rejecting "red"/shorthand/rgba keeps client output
 // deterministic across browsers and makes the field safe to interpolate
@@ -857,5 +856,3 @@ func validSlug(s string) bool {
 	}
 	return true
 }
-
-

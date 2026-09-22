@@ -16,12 +16,12 @@ import (
 	"sort"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/klahr/zonventure/internal/adventure"
 	"github.com/klahr/zonventure/internal/httpx"
 	"github.com/klahr/zonventure/internal/payments"
 	"github.com/klahr/zonventure/internal/storage"
 	"github.com/klahr/zonventure/internal/ws"
-	"github.com/go-chi/chi/v5"
 )
 
 // Handlers is the dependency bag for public endpoints.
@@ -73,7 +73,7 @@ type teamDTO struct {
 // LiveDTO is the snapshot shape served both by /api/public/live/{token}
 // and pushed as a "snapshot" WS message.
 type LiveDTO struct {
-	EventID          int64             `json:"event_id"`
+	EventID        int64             `json:"event_id"`
 	AdventureTitle string            `json:"adventure_title"`
 	AdventureSlug  string            `json:"adventure_slug"`
 	State          string            `json:"state"`
@@ -219,7 +219,7 @@ func (h *Handlers) buildLive(ctx context.Context, token string) (LiveDTO, int64,
 		teams[i].Rank = i + 1
 	}
 	dto := LiveDTO{
-		EventID:          id,
+		EventID:        id,
 		AdventureTitle: adv.Meta.Title,
 		AdventureSlug:  slug,
 		State:          state,

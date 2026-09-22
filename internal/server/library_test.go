@@ -95,12 +95,12 @@ func TestLibrary_GetSinglePuzzle(t *testing.T) {
 		t.Fatalf("create = %d", s)
 	}
 	var got struct {
-		ID             int64    `json:"id"`
-		Title          string   `json:"title"`
-		Notes          string   `json:"notes"`
-		Accept         []string `json:"accept"`
-		AdventureSlug  string   `json:"adventure_slug"`
-		Images         []any    `json:"images"`
+		ID            int64    `json:"id"`
+		Title         string   `json:"title"`
+		Notes         string   `json:"notes"`
+		Accept        []string `json:"accept"`
+		AdventureSlug string   `json:"adventure_slug"`
+		Images        []any    `json:"images"`
 	}
 	if s := admin.do("GET", "/api/admin/puzzles/"+itoa(st.ID), nil, &got); s != 200 {
 		t.Fatalf("get = %d", s)
@@ -287,4 +287,3 @@ func TestLibrary_OrgUserCanAuthorOwnPuzzles(t *testing.T) {
 		t.Fatalf("org user patched admin stub, status=%d (want 403)", s)
 	}
 }
-

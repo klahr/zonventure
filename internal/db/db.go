@@ -28,17 +28,17 @@ var migrationsFS embed.FS
 //
 // Defaults:
 //   - MaxOpenConns:    25  (Postgres' default max_connections is 100;
-//                          25 leaves ample headroom for psql sessions,
-//                          backups, and `docker compose` peers)
+//     25 leaves ample headroom for psql sessions,
+//     backups, and `docker compose` peers)
 //   - MaxIdleConns:    5   (database/sql defaults to 2, which is too
-//                          stingy for the WS hub + scheduler + retention
-//                          + handler concurrency we have)
+//     stingy for the WS hub + scheduler + retention
+//   - handler concurrency we have)
 //   - ConnMaxLifetime: 1h  (cycles connections so a long-running process
-//                          eventually picks up DNS / TLS / Postgres
-//                          rollovers without an operator restart)
+//     eventually picks up DNS / TLS / Postgres
+//     rollovers without an operator restart)
 //   - ConnMaxIdleTime: 30m (drops long-idle connections so pgbouncer or
-//                          a reverse proxy in front of the cluster
-//                          doesn't hold them open forever)
+//     a reverse proxy in front of the cluster
+//     doesn't hold them open forever)
 type Opts struct {
 	MaxOpenConns    int
 	MaxIdleConns    int

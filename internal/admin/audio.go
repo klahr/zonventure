@@ -11,8 +11,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/klahr/zonventure/internal/httpx"
 	"github.com/go-chi/chi/v5"
+	"github.com/klahr/zonventure/internal/httpx"
 )
 
 // maxAudioBytes is the per-upload size cap for audio. Defaults to 15
@@ -534,4 +534,3 @@ func loadHintAudio(ctx context.Context, db *sql.DB, hintID int64) ([]audioView, 
 	}
 	return out, nil
 }
-

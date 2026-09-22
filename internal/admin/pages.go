@@ -11,10 +11,10 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/klahr/zonventure/internal/adventure"
 	"github.com/klahr/zonventure/internal/auth"
 	"github.com/klahr/zonventure/internal/httpx"
-	"github.com/go-chi/chi/v5"
 )
 
 /* ---------------- Pages (CRUD + reorder) ---------------- */
@@ -54,15 +54,15 @@ func (h *Handlers) requireEditPage(w http.ResponseWriter, r *http.Request, pageI
 }
 
 type pageWriteRequest struct {
-	Title   string                  `json:"title"`
-	Prompt  string                  `json:"prompt"`
-	Hints   []hintView              `json:"hints"`
-	Notes   string                  `json:"notes"`
-	Accept  []adventure.AcceptEntry `json:"accept"`
-	Lat     float64                 `json:"lat"`
-	Lng     float64                 `json:"lng"`
-	RadiusM *float64                `json:"radius_m,omitempty"`
-	Disabled bool                   `json:"disabled"`
+	Title    string                  `json:"title"`
+	Prompt   string                  `json:"prompt"`
+	Hints    []hintView              `json:"hints"`
+	Notes    string                  `json:"notes"`
+	Accept   []adventure.AcceptEntry `json:"accept"`
+	Lat      float64                 `json:"lat"`
+	Lng      float64                 `json:"lng"`
+	RadiusM  *float64                `json:"radius_m,omitempty"`
+	Disabled bool                    `json:"disabled"`
 	// LaneID, when set on CreatePage, places the new page in that
 	// specific lane (used by the per-lane "Add puzzle" button in
 	// the editor). Zero or omitted falls back to the adventure's

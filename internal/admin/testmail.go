@@ -29,9 +29,9 @@ type sendTestEmailRequest struct {
 // on SMTP config doesn't get throttled mid-debug. They exist to put a
 // ceiling on abuse, not to slow down day-one setup.
 const (
-	testEmailWindow      = time.Hour
-	testEmailPerUserMax  = 20
-	testEmailPerIPMax    = 40
+	testEmailWindow     = time.Hour
+	testEmailPerUserMax = 20
+	testEmailPerIPMax   = 40
 )
 
 type testEmailLimiter struct {

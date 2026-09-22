@@ -151,14 +151,14 @@ func Start(ctx context.Context, db *sql.DB, m Mailer) <-chan struct{} {
 // claimedMail is one row reserved for delivery. attempts has already
 // been incremented by claim.
 type claimedMail struct {
-	id        int64
-	kind      string
-	toAddr    string
-	subject   string
-	bodyText  string
-	bodyHTML  string
-	replyTo   string
-	attempts  int
+	id       int64
+	kind     string
+	toAddr   string
+	subject  string
+	bodyText string
+	bodyHTML string
+	replyTo  string
+	attempts int
 }
 
 // tick claims one due row at a time, sends it, and records the

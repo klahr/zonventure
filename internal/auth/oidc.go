@@ -464,11 +464,11 @@ func (h *Handlers) OIDCCallback(w http.ResponseWriter, r *http.Request) {
 // derives those from elsewhere if at all, and keeping the surface
 // minimal limits the blast radius of a future claims-injection bug.
 type oidcClaims struct {
-	Sub           string `json:"sub"`
-	Email         string `json:"email"`
-	EmailVerified bool   `json:"email_verified"`
-	HD            string `json:"hd"`
-	Aud           string `json:"aud"`
+	Sub           string   `json:"sub"`
+	Email         string   `json:"email"`
+	EmailVerified bool     `json:"email_verified"`
+	HD            string   `json:"hd"`
+	Aud           string   `json:"aud"`
 	AMR           []string `json:"amr"`
 }
 

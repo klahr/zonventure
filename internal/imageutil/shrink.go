@@ -15,9 +15,9 @@ import (
 	// — without this blank import the decoder isn't registered, so
 	// uploads with Content-Type: image/webp fail with "unknown
 	// format" even though the MIME guard accepts them.
+	_ "golang.org/x/image/webp"
 	"image/jpeg"
 	"image/png"
-	_ "golang.org/x/image/webp"
 
 	"golang.org/x/image/draw"
 )

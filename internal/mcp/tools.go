@@ -878,9 +878,9 @@ func deleteAdventure(ctx context.Context, s *Server, args json.RawMessage) (Tool
 			`SELECT COUNT(*) FROM adventure_pages WHERE adventure_id = $1`, advID).Scan(&pages)
 		body, _ := json.MarshalIndent(map[string]any{
 			"would_delete": map[string]any{
-				"slug":   p.Slug,
-				"lanes":  lanes,
-				"pages":  pages,
+				"slug":  p.Slug,
+				"lanes": lanes,
+				"pages": pages,
 			},
 			"hint": "re-call with confirm:true to actually delete",
 		}, "", "  ")

@@ -10,9 +10,9 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/klahr/zonventure/internal/auth"
 	"github.com/klahr/zonventure/internal/httpx"
-	"github.com/go-chi/chi/v5"
 )
 
 // DuplicateAdventure clones a source adventure into the caller's

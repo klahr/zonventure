@@ -12,19 +12,19 @@ import (
 // inputs (defensive 0), and the disabled case (always 0).
 func TestPlatformFee_Compute(t *testing.T) {
 	cases := []struct {
-		name           string
-		fee            PlatformFee
-		priceCents     int64
-		want           int64
+		name       string
+		fee        PlatformFee
+		priceCents int64
+		want       int64
 	}{
 		{"disabled returns zero", PlatformFee{}, 1000, 0},
-		{"percent only — small charge", PlatformFee{PercentBPS: 800}, 100, 8},  // 8% of €1.00 = €0.08
+		{"percent only — small charge", PlatformFee{PercentBPS: 800}, 100, 8},     // 8% of €1.00 = €0.08
 		{"percent only — large charge", PlatformFee{PercentBPS: 800}, 12000, 960}, // 8% of €120 = €9.60
-		{"floor only — wins regardless", PlatformFee{MinCents: 100}, 5000, 100}, // floor still wins (no percent)
+		{"floor only — wins regardless", PlatformFee{MinCents: 100}, 5000, 100},   // floor still wins (no percent)
 		// max(percent, floor): floor wins when percent rounds below it.
-		{"hybrid — floor wins on cheap", PlatformFee{PercentBPS: 800, MinCents: 100}, 800, 100},  // 8% of €8 = €0.64 → €1 floor wins
+		{"hybrid — floor wins on cheap", PlatformFee{PercentBPS: 800, MinCents: 100}, 800, 100},        // 8% of €8 = €0.64 → €1 floor wins
 		{"hybrid — percent wins on expensive", PlatformFee{PercentBPS: 800, MinCents: 100}, 5000, 400}, // 8% of €50 = €4 wins
-		{"hybrid — exactly at crossover", PlatformFee{PercentBPS: 800, MinCents: 100}, 1250, 100}, // 8% of €12.50 = €1, tie → floor (since percent > floor is the test)
+		{"hybrid — exactly at crossover", PlatformFee{PercentBPS: 800, MinCents: 100}, 1250, 100},      // 8% of €12.50 = €1, tie → floor (since percent > floor is the test)
 		{"zero price returns zero", PlatformFee{PercentBPS: 800, MinCents: 100}, 0, 0},
 		{"negative price returns zero", PlatformFee{PercentBPS: 800, MinCents: 100}, -100, 0},
 		// Clamp: Stripe rejects ApplicationFee >= total. A floor of

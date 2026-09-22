@@ -9,12 +9,12 @@ import (
 	"net/mail"
 	"strings"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/klahr/zonventure/internal/auth"
 	"github.com/klahr/zonventure/internal/httpx"
 	"github.com/klahr/zonventure/internal/logx"
 	mailerpkg "github.com/klahr/zonventure/internal/mailer"
 	"github.com/klahr/zonventure/internal/payments"
-	"github.com/go-chi/chi/v5"
 )
 
 // BuyTicketRequest is the body of POST /api/store/buy. The buyer
@@ -357,9 +357,9 @@ func (h *Handlers) createTicketCheckoutSession(
 		storeBasePath = "/store"
 	}
 	sess, err := h.Provider.CreateCheckout(ctx, payments.CheckoutParams{
-		AmountCents:   amountCents,
-		Currency:      currency,
-		ProductName:   productName,
+		AmountCents: amountCents,
+		Currency:    currency,
+		ProductName: productName,
 		// `{CHECKOUT_SESSION_ID}` is Stripe's redirect-time
 		// substitution: at the moment Stripe sends the buyer back
 		// to us, it replaces the literal placeholder with the

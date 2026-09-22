@@ -20,9 +20,9 @@ import (
 
 // TOTP 2FA implementation. The user-visible flow is:
 //
-//   enrol:    SetupTOTP → ConfirmTOTP (returns recovery codes once)
-//   login:    VerifyPassword → IssueChallenge → ConsumeChallenge
-//   disable:  DisableTOTP / AdminReset
+//	enrol:    SetupTOTP → ConfirmTOTP (returns recovery codes once)
+//	login:    VerifyPassword → IssueChallenge → ConsumeChallenge
+//	disable:  DisableTOTP / AdminReset
 //
 // The secret is encrypted at rest with AES-GCM using a key from the
 // ZV_TOTP_KEY env var. Losing the key forces every enrolled user to
@@ -53,15 +53,15 @@ const totpRecoveryCodeAlphabet = "abcdefghijkmnpqrstuvwxyz23456789"
 // Errors returned by the TOTP layer. Handlers map these to specific
 // audit reasons + HTTP status codes.
 var (
-	ErrTOTPKeyMissing       = errors.New("ZV_TOTP_KEY is not configured")
-	ErrTOTPKeyMalformed     = errors.New("ZV_TOTP_KEY is malformed (need 32 bytes base64)")
-	ErrTOTPNotEnrolled      = errors.New("totp not enrolled")
-	ErrTOTPAlreadyEnrolled  = errors.New("totp already enrolled")
-	ErrTOTPInvalid          = errors.New("invalid totp code")
-	ErrChallengeUnknown     = errors.New("totp challenge unknown")
-	ErrChallengeExpired     = errors.New("totp challenge expired")
-	ErrRecoveryCodeInvalid  = errors.New("recovery code invalid")
-	ErrTOTPSecretCorrupt    = errors.New("totp secret could not be decrypted")
+	ErrTOTPKeyMissing      = errors.New("ZV_TOTP_KEY is not configured")
+	ErrTOTPKeyMalformed    = errors.New("ZV_TOTP_KEY is malformed (need 32 bytes base64)")
+	ErrTOTPNotEnrolled     = errors.New("totp not enrolled")
+	ErrTOTPAlreadyEnrolled = errors.New("totp already enrolled")
+	ErrTOTPInvalid         = errors.New("invalid totp code")
+	ErrChallengeUnknown    = errors.New("totp challenge unknown")
+	ErrChallengeExpired    = errors.New("totp challenge expired")
+	ErrRecoveryCodeInvalid = errors.New("recovery code invalid")
+	ErrTOTPSecretCorrupt   = errors.New("totp secret could not be decrypted")
 )
 
 // LoadTOTPKey decodes ZV_TOTP_KEY into a 32-byte AES key. Called
@@ -581,4 +581,3 @@ func LoadTOTPStatus(ctx context.Context, db *sql.DB, userID int64) (TOTPStatus, 
 	}
 	return TOTPStatus{Enabled: enabled, EnrolledAt: at.String}, nil
 }
-

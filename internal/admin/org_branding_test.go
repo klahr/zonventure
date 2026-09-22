@@ -9,10 +9,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/klahr/zonventure/internal/admin"
 	"github.com/klahr/zonventure/internal/auth"
 	"github.com/klahr/zonventure/internal/dbtest"
-	"github.com/go-chi/chi/v5"
 )
 
 // brandingFixture seeds a single org + an org_admin and returns the
@@ -76,10 +76,10 @@ func TestBranding_ColorsRoundTrip(t *testing.T) {
 	}
 
 	var got struct {
-		Accent      string `json:"accent_color"`
-		AccentSec   string `json:"accent_secondary_color"`
-		Background  string `json:"background_color"`
-		Text        string `json:"text_color"`
+		Accent     string `json:"accent_color"`
+		AccentSec  string `json:"accent_secondary_color"`
+		Background string `json:"background_color"`
+		Text       string `json:"text_color"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
 		t.Fatalf("decode response: %v", err)
@@ -276,9 +276,9 @@ func TestBranding_ProfilePreservesUnrelatedFields(t *testing.T) {
 	// preserve them. The test pins the contract: the GUI saves the
 	// whole form on every Save click, never just the colors.
 	body, _ := json.Marshal(map[string]any{
-		"tagline":         "A real-world adventure company",
-		"public_website":  "https://acme.example",
-		"accent_color":    "#112233",
+		"tagline":        "A real-world adventure company",
+		"public_website": "https://acme.example",
+		"accent_color":   "#112233",
 	})
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest("PUT", "/api/admin/orgs/me/profile", strings.NewReader(string(body)))

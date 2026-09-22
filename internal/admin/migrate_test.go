@@ -14,10 +14,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/klahr/zonventure/internal/admin"
 	"github.com/klahr/zonventure/internal/auth"
 	"github.com/klahr/zonventure/internal/settings"
-	"github.com/go-chi/chi/v5"
 )
 
 // migrateRouter wires the three migrate handlers behind a fake auth

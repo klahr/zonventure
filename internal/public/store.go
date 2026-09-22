@@ -8,8 +8,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/klahr/zonventure/internal/httpx"
 	"github.com/go-chi/chi/v5"
+	"github.com/klahr/zonventure/internal/httpx"
 )
 
 // StoreItemDTO is a single row on the public /store listing — one
@@ -17,19 +17,19 @@ import (
 // deliberately narrow: nothing leaks that a buyer doesn't need to
 // decide whether to buy. No live_token, no team list, no GPS.
 type StoreItemDTO struct {
-	EventID         int64  `json:"event_id"`
-	EventName       string `json:"event_name,omitempty"`
-	AdventureSlug   string `json:"adventure_slug"`
-	AdventureTitle  string `json:"adventure_title"`
-	OrgName         string `json:"org_name"`
-	Blurb           string `json:"blurb,omitempty"`
-	PriceCents      int    `json:"price_cents"`
-	Currency        string `json:"currency"`
-	TeamSize        int    `json:"team_size"`
-	StartLabel      string `json:"start_label,omitempty"`
-	StartLat        float64 `json:"start_lat,omitempty"`
-	StartLng        float64 `json:"start_lng,omitempty"`
-	HasStartLatLng  bool    `json:"has_start_latlng"`
+	EventID        int64   `json:"event_id"`
+	EventName      string  `json:"event_name,omitempty"`
+	AdventureSlug  string  `json:"adventure_slug"`
+	AdventureTitle string  `json:"adventure_title"`
+	OrgName        string  `json:"org_name"`
+	Blurb          string  `json:"blurb,omitempty"`
+	PriceCents     int     `json:"price_cents"`
+	Currency       string  `json:"currency"`
+	TeamSize       int     `json:"team_size"`
+	StartLabel     string  `json:"start_label,omitempty"`
+	StartLat       float64 `json:"start_lat,omitempty"`
+	StartLng       float64 `json:"start_lng,omitempty"`
+	HasStartLatLng bool    `json:"has_start_latlng"`
 	// CoverImageURL is set when the event has uploaded a hero image.
 	// Empty means the store card renders text-only — the JS template
 	// already has a fallback layout.

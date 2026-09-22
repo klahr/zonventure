@@ -205,17 +205,17 @@ func (h *Handlers) Forget(w http.ResponseWriter, r *http.Request) {
 
 // teamContext is the slot's team/event snapshot used by all the handlers.
 type teamContext struct {
-	TeamID               int64
-	TeamName             string
-	TeamToken            string // team-share token, exposed to the player so they can show a join QR for teammates
-	EventID                int64
-	OrgID                int64
-	OrgName              string
-	OrgHasLogo           bool // true when the owning org has uploaded a brand logo
-	AdventureSlug        string
-	RunState             string
-	ScheduledAt          sql.NullString
-	StartedAt            sql.NullString
+	TeamID        int64
+	TeamName      string
+	TeamToken     string // team-share token, exposed to the player so they can show a join QR for teammates
+	EventID       int64
+	OrgID         int64
+	OrgName       string
+	OrgHasLogo    bool // true when the owning org has uploaded a brand logo
+	AdventureSlug string
+	RunState      string
+	ScheduledAt   sql.NullString
+	StartedAt     sql.NullString
 	// CurrentPageIndex is preserved as a monotonic "puzzles solved"
 	// counter for sorting/leaderboards and the assets-strict-mode
 	// gate. With lanes, the source of truth for "which page is this
@@ -354,10 +354,10 @@ func loadTeam(ctx context.Context, db *sql.DB, slot auth.Slot) (teamContext, err
 // State is the response body for GET /api/player/state and the "state" WS
 // push kind.
 type State struct {
-	Status         string            `json:"status"` // waiting | running | paused | completed | cancelled | gated
-	AdventureSlug  string            `json:"adventure_slug,omitempty"`
-	AdventureTitle string            `json:"adventure_title,omitempty"`
-	TeamName       string            `json:"team_name,omitempty"`
+	Status         string `json:"status"` // waiting | running | paused | completed | cancelled | gated
+	AdventureSlug  string `json:"adventure_slug,omitempty"`
+	AdventureTitle string `json:"adventure_title,omitempty"`
+	TeamName       string `json:"team_name,omitempty"`
 	// TeamToken is the team-share token (the public /team/{token}
 	// page where each member picks their own slot). Surfaced to the
 	// player so they can show a join QR to a teammate whose magic
@@ -365,27 +365,27 @@ type State struct {
 	// done. Not sensitive on its own: the team-share page reveals
 	// every slot's magic link, so only share it with people who
 	// already belong on this team.
-	TeamToken      string            `json:"team_token,omitempty"`
-	SlotName       string            `json:"slot_name,omitempty"`
-	PageIndex      int               `json:"page_index,omitempty"`
-	PageCount      int               `json:"page_count,omitempty"`
-	Title          string            `json:"title,omitempty"`
-	Prompt         string            `json:"prompt,omitempty"`
+	TeamToken string `json:"team_token,omitempty"`
+	SlotName  string `json:"slot_name,omitempty"`
+	PageIndex int    `json:"page_index,omitempty"`
+	PageCount int    `json:"page_count,omitempty"`
+	Title     string `json:"title,omitempty"`
+	Prompt    string `json:"prompt,omitempty"`
 	// Hints carries the puzzle's authored hints with their unlock
 	// schedule computed against the team's arrival time on this
 	// puzzle. Empty slice when the puzzle has no hints — the client
 	// hides the reveal button entirely.
-	Hints  []hintDTO         `json:"hints,omitempty"`
+	Hints []hintDTO `json:"hints,omitempty"`
 	// HintsRevealed is the team-shared count of hints already
 	// uncovered on the current puzzle. Sourced from team_hint_reveals
 	// so a device switch / storage clear / team-mate's reveal all
 	// land on the same number. omitempty drops the zero so existing
 	// clients on older versions ignore it cleanly.
 	HintsRevealed int               `json:"hints_revealed,omitempty"`
-	Images []imageDTO        `json:"images,omitempty"`
-	Audio  []audioDTO        `json:"audio,omitempty"`
-	Gate   *gateDTO          `json:"gate,omitempty"`
-	Colors *adventure.Colors `json:"colors,omitempty"`
+	Images        []imageDTO        `json:"images,omitempty"`
+	Audio         []audioDTO        `json:"audio,omitempty"`
+	Gate          *gateDTO          `json:"gate,omitempty"`
+	Colors        *adventure.Colors `json:"colors,omitempty"`
 	// ScheduledAt / ServerNow let the pre-start countdown tick against
 	// the server's clock. ScheduledAt is only set for scheduled events.
 	ScheduledAt string `json:"scheduled_at,omitempty"`
@@ -1029,10 +1029,10 @@ func gateReached(ctx context.Context, db *sql.DB, teamID int64, loc adventure.Lo
 	}
 	defer rows.Close()
 	var (
-		latLat, latLng                         float64
-		latTS, prevTS                          time.Time
-		gotLatest, gotPrev                     bool
-		latParseErr, prevParseErr              bool
+		latLat, latLng            float64
+		latTS, prevTS             time.Time
+		gotLatest, gotPrev        bool
+		latParseErr, prevParseErr bool
 	)
 	for rows.Next() {
 		var lat, lng float64
@@ -1525,9 +1525,9 @@ func (h *Handlers) Summary(w http.ResponseWriter, r *http.Request) {
 	}
 	defer rows.Close()
 	var (
-		hasPrev        bool
+		hasPrev          bool
 		prevLat, prevLng float64
-		dist           float64
+		dist             float64
 	)
 	for rows.Next() {
 		var lat, lng float64

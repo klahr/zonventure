@@ -14,10 +14,10 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/klahr/zonventure/internal/auth"
 	"github.com/klahr/zonventure/internal/mcp"
 	"github.com/klahr/zonventure/internal/settings"
-	"github.com/go-chi/chi/v5"
 )
 
 // registerMetaRoutes wires /api/health, /api/version, and the
@@ -157,4 +157,3 @@ func registerPageRoutes(r chi.Router, env *routesEnv) {
 		renderLegalPage(w, "terms.html", cfg.Legal)
 	})
 }
-

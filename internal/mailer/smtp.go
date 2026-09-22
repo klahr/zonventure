@@ -173,8 +173,8 @@ func extractAddr(from string) string {
 //   - HTML only        → single text/html part
 //   - text + HTML      → multipart/alternative (text first, HTML second)
 //   - any + attachment → multipart/mixed wrapping the body part(s)
-//                        described above, plus one base64 attachment
-//                        part per Message.Attachments entry.
+//     described above, plus one base64 attachment
+//     part per Message.Attachments entry.
 //
 // The nested multipart/alternative inside multipart/mixed is the
 // shape every major mail client (Gmail, Outlook, Apple Mail) reads

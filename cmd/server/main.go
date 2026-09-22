@@ -32,7 +32,9 @@ import (
 
 // version is the build identifier surfaced on /api/version. Default
 // "dev"; production builds override it via
-//   go build -ldflags="-X main.version=$(git describe --always --dirty)"
+//
+//	go build -ldflags="-X main.version=$(git describe --always --dirty)"
+//
 // The accompanying commit / build time / dirty flag come from
 // runtime/debug.ReadBuildInfo and don't need ldflags.
 var version = "dev"
@@ -288,15 +290,15 @@ func main() {
 		// walk a buy flow without real Stripe credentials.
 		PaymentsProvider: os.Getenv("ZV_PAYMENTS_PROVIDER"),
 		Env:              os.Getenv("ZV_ENV"),
-		Version:             version,
-		WebOverrideDir:      os.Getenv("ZV_WEB_OVERRIDE_DIR"),
-		ChangelogURL:        os.Getenv("ZV_CHANGELOG_URL"),
-		OIDC:                oidcClient,
+		Version:          version,
+		WebOverrideDir:   os.Getenv("ZV_WEB_OVERRIDE_DIR"),
+		ChangelogURL:     os.Getenv("ZV_CHANGELOG_URL"),
+		OIDC:             oidcClient,
 	})
 
 	srv := &http.Server{
-		Addr:              *addr,
-		Handler:           h,
+		Addr:    *addr,
+		Handler: h,
 		// Read/write/idle timeouts cap how long the server holds a
 		// connection in any one state, so a misbehaving client (slow
 		// loris-style attack, hung upload, idle-and-forgotten socket)

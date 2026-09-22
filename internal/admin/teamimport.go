@@ -33,8 +33,8 @@ import (
 // "Recognised as Excel (.xlsx) — 4 teams" without us having to
 // duplicate the Name() table on the front-end.
 type teamImportPreview struct {
-	Format string             `json:"format"`
-	Teams  []teamimport.Team  `json:"teams"`
+	Format string            `json:"format"`
+	Teams  []teamimport.Team `json:"teams"`
 }
 
 // ImportTeams accepts an uploaded roster file, dispatches to the
@@ -116,4 +116,3 @@ func (h *Handlers) ImportTeams(w http.ResponseWriter, r *http.Request) {
 		Teams:  teams,
 	})
 }
-

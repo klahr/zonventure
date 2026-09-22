@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/klahr/zonventure/internal/dbtest"
 	"github.com/go-chi/chi/v5"
+	"github.com/klahr/zonventure/internal/dbtest"
 )
 
 // TestRenderStoreEventPage_HappyPath drives the per-event detail
@@ -67,11 +67,11 @@ func TestRenderStoreEventPage_HappyPath(t *testing.T) {
 	// `https://zv.example.com/o/acme/store/event/{id}` rather than
 	// the legacy `/store/event/` path.
 	for _, want := range []string{
-		"Demo Adv",                          // adventure title
-		"Acme",                              // org name
-		"A two-hour outdoor adventure.",     // blurb
+		"Demo Adv",                      // adventure title
+		"Acme",                          // org name
+		"A two-hour outdoor adventure.", // blurb
 		"https://zv.example.com/o/acme/store/event/", // canonical URL
-		"€25",                               // formatted price
+		"€25", // formatted price
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("body missing %q", want)

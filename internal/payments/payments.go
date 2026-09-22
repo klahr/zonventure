@@ -137,16 +137,16 @@ type CheckoutSession struct {
 type EventType string
 
 const (
-	EventCheckoutCompleted        EventType = "checkout.completed"
-	EventChargeRefunded           EventType = "charge.refunded"
+	EventCheckoutCompleted EventType = "checkout.completed"
+	EventChargeRefunded    EventType = "charge.refunded"
 	// EventConnectedAccountUpdated fires when a connected
 	// marketplace account's verification / capability state
 	// changes. The webhook handler uses it to refresh the
 	// stripe_connect_charges_enabled cache without waiting for
 	// the next manual refresh. Stripe Connect-specific; non-
 	// marketplace providers never emit it.
-	EventConnectedAccountUpdated  EventType = "account.updated"
-	EventOther                    EventType = "other"
+	EventConnectedAccountUpdated EventType = "account.updated"
+	EventOther                   EventType = "other"
 )
 
 // Event is the parsed shape of an incoming webhook. Provider names
@@ -220,12 +220,12 @@ func (s PaymentStatus) FulfilmentReady() bool {
 // dashboard would lose the team. FullyRefunded is the helper that
 // captures the gate.
 type ChargeDetail struct {
-	ID              string
-	AmountCents     int64
-	AmountRefunded  int64
-	Refunded        bool
-	Currency        string
-	CustomerID      string
+	ID             string
+	AmountCents    int64
+	AmountRefunded int64
+	Refunded       bool
+	Currency       string
+	CustomerID     string
 }
 
 // FullyRefunded reports whether the charge has been refunded to zero

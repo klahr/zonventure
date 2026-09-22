@@ -9,12 +9,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/klahr/zonventure/internal/admin"
 	"github.com/klahr/zonventure/internal/adventure"
 	"github.com/klahr/zonventure/internal/dbtest"
 	"github.com/klahr/zonventure/internal/payments"
 	"github.com/klahr/zonventure/internal/public"
-	"github.com/go-chi/chi/v5"
 )
 
 // TestStoreList_Filtering exercises the listing query: only events
@@ -494,7 +494,6 @@ func (fakeProvider) CustomerPortal(ctx context.Context, customerID, returnURL st
 	return "https://fake/portal", nil
 }
 
-
 func intp(v int) *int { return &v }
 
 func priceArg(p *int) any {
@@ -503,4 +502,3 @@ func priceArg(p *int) any {
 	}
 	return *p
 }
-

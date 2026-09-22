@@ -169,7 +169,7 @@ func TestPurchase_CreateConfirmProducesAssignment(t *testing.T) {
 			ID            int64  `json:"id"`
 			AdventureSlug string `json:"adventure_slug"`
 			MaxPlayers    int    `json:"max_players"`
-			EventID         *int64 `json:"event_id,omitempty"`
+			EventID       *int64 `json:"event_id,omitempty"`
 		} `json:"assignments"`
 	}
 	if s := boss.do("GET", "/api/admin/assignments", nil, &assigns); s != 200 {
@@ -262,4 +262,3 @@ func TestPurchase_AdminCannotBuy(t *testing.T) {
 		t.Fatalf("admin buy status = %d, want 400", s)
 	}
 }
-

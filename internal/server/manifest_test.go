@@ -33,7 +33,9 @@ func TestManifest_IncludesAllAdventureAssets(t *testing.T) {
 	if status != 201 {
 		t.Fatalf("upload page0 audio = %d", status)
 	}
-	var a0 struct{ URL string `json:"url"` }
+	var a0 struct {
+		URL string `json:"url"`
+	}
 	_ = json.Unmarshal(body0, &a0)
 	status, body2 := uploadFile(t, admin,
 		"/api/admin/pages/"+itoa(page2ID)+"/audio",
@@ -41,7 +43,9 @@ func TestManifest_IncludesAllAdventureAssets(t *testing.T) {
 	if status != 201 {
 		t.Fatalf("upload page2 audio = %d", status)
 	}
-	var a2 struct{ URL string `json:"url"` }
+	var a2 struct {
+		URL string `json:"url"`
+	}
 	_ = json.Unmarshal(body2, &a2)
 
 	// Hint with audio attached so the manifest includes the
@@ -65,7 +69,9 @@ func TestManifest_IncludesAllAdventureAssets(t *testing.T) {
 	if status != 201 {
 		t.Fatalf("upload hint audio = %d", status)
 	}
-	var ah struct{ URL string `json:"url"` }
+	var ah struct {
+		URL string `json:"url"`
+	}
 	_ = json.Unmarshal(bodyH, &ah)
 
 	// Now spin up an event, log in as alice, fetch the manifest.

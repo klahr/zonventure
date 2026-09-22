@@ -16,7 +16,9 @@ func TestCancelEvent_FromScheduled(t *testing.T) {
 		map[string]string{"username": "boss", "password": "s3cret"}, nil); s != 200 {
 		t.Fatalf("login = %d", s)
 	}
-	var run struct{ ID int64 `json:"id"` }
+	var run struct {
+		ID int64 `json:"id"`
+	}
 	if s := arr.do("POST", "/api/admin/events",
 		map[string]any{"assignment_id": assignmentID, "attest_no_minors": true}, &run); s != 201 {
 		t.Fatalf("create event = %d", s)
@@ -58,14 +60,18 @@ func TestCancelEvent_FromRunning(t *testing.T) {
 		map[string]string{"username": "boss", "password": "s3cret"}, nil); s != 200 {
 		t.Fatalf("login = %d", s)
 	}
-	var run struct{ ID int64 `json:"id"` }
+	var run struct {
+		ID int64 `json:"id"`
+	}
 	if s := arr.do("POST", "/api/admin/events",
 		map[string]any{"assignment_id": assignmentID, "attest_no_minors": true}, &run); s != 201 {
 		t.Fatalf("create event = %d", s)
 	}
 	var team struct {
 		ID      int64 `json:"id"`
-		Members []struct{ Token string `json:"token"` } `json:"members"`
+		Members []struct {
+			Token string `json:"token"`
+		} `json:"members"`
 	}
 	if s := arr.do("POST", "/api/admin/events/"+itoa(run.ID)+"/teams",
 		map[string]any{"name": "Alpha", "member_names": []string{"alice"}}, &team); s != 201 {
@@ -79,7 +85,9 @@ func TestCancelEvent_FromRunning(t *testing.T) {
 	if s := alice.do("GET", "/play?t="+team.Members[0].Token, nil, nil); s != 200 {
 		t.Fatalf("magic link = %d", s)
 	}
-	var state struct{ Status string `json:"status"` }
+	var state struct {
+		Status string `json:"status"`
+	}
 	if s := alice.do("GET", "/api/player/state", nil, &state); s != 200 || state.Status != "running" {
 		t.Fatalf("pre-cancel player status = %q (HTTP %d), want running", state.Status, s)
 	}

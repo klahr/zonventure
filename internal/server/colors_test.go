@@ -87,9 +87,9 @@ func TestColors_HexValidation(t *testing.T) {
 	}{
 		{"#ffffff", true},
 		{"#ABC123", true},
-		{"", true},        // empty = "use default"
-		{"red", false},    // CSS keyword rejected
-		{"#fff", false},   // 3-digit shorthand rejected (ambiguous wire format)
+		{"", true},      // empty = "use default"
+		{"red", false},  // CSS keyword rejected
+		{"#fff", false}, // 3-digit shorthand rejected (ambiguous wire format)
 		{"#gggggg", false},
 		{"ffffff", false}, // missing '#'
 	}

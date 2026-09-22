@@ -189,4 +189,3 @@ func ServeAddr(ctx context.Context, addr string) {
 		logx.Error("metrics.listen.failed", "addr", addr, "err", err.Error())
 	}
 }
-

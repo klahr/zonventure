@@ -144,14 +144,14 @@ func listTracks(ctx context.Context, s *Server, raw json.RawMessage) (ToolCallRe
 // EventDetail payload through this struct lets unrelated fields
 // drift in the admin layer without breaking the summary tool.
 type eventDetailForSummary struct {
-	State        string   `json:"state"`
-	ScheduledAt  string   `json:"scheduled_at"`
-	StartedAt    string   `json:"started_at"`
-	CompletedAt  string   `json:"completed_at"`
-	CancelledAt  string   `json:"cancelled_at"`
-	AllowedOps   []string `json:"allowed_ops"`
-	TeamsCount   int      `json:"teams_count"`
-	Teams        []struct {
+	State       string   `json:"state"`
+	ScheduledAt string   `json:"scheduled_at"`
+	StartedAt   string   `json:"started_at"`
+	CompletedAt string   `json:"completed_at"`
+	CancelledAt string   `json:"cancelled_at"`
+	AllowedOps  []string `json:"allowed_ops"`
+	TeamsCount  int      `json:"teams_count"`
+	Teams       []struct {
 		ID          int64  `json:"id"`
 		Name        string `json:"name"`
 		PageIndex   int    `json:"page_index"`
@@ -169,16 +169,16 @@ type leaderboardEntry struct {
 }
 
 type eventStateSummary struct {
-	State           string             `json:"state"`
-	ScheduledAt     string             `json:"scheduled_at,omitempty"`
-	StartedAt       string             `json:"started_at,omitempty"`
-	CompletedAt     string             `json:"completed_at,omitempty"`
-	CancelledAt     string             `json:"cancelled_at,omitempty"`
-	AllowedOps      []string           `json:"allowed_ops"`
-	TeamsCount      int                `json:"teams_count"`
-	CompletedCount  int                `json:"completed_count"`
-	WithdrawnCount  int                `json:"withdrawn_count"`
-	Leaderboard     []leaderboardEntry `json:"leaderboard"`
+	State          string             `json:"state"`
+	ScheduledAt    string             `json:"scheduled_at,omitempty"`
+	StartedAt      string             `json:"started_at,omitempty"`
+	CompletedAt    string             `json:"completed_at,omitempty"`
+	CancelledAt    string             `json:"cancelled_at,omitempty"`
+	AllowedOps     []string           `json:"allowed_ops"`
+	TeamsCount     int                `json:"teams_count"`
+	CompletedCount int                `json:"completed_count"`
+	WithdrawnCount int                `json:"withdrawn_count"`
+	Leaderboard    []leaderboardEntry `json:"leaderboard"`
 }
 
 const summaryLeaderboardSize = 5

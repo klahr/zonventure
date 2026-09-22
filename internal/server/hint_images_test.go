@@ -186,7 +186,7 @@ func TestHints_UpsertPreservesAttachedImages(t *testing.T) {
 		"title": "p", "prompt": "q",
 		"accept": acceptLits("x"),
 		"lat":    0, "lng": 0,
-		"hints":  []map[string]any{},
+		"hints": []map[string]any{},
 	}, nil); s != 204 {
 		t.Fatalf("clear hints = %d", s)
 	}

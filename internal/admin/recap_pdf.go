@@ -113,9 +113,9 @@ func (h *Handlers) collectRecapPDFData(ctx context.Context, eventID, orgID int64
 	}
 
 	var (
-		slug          string
-		startedRaw    sql.NullString
-		completedRaw  sql.NullString
+		slug         string
+		startedRaw   sql.NullString
+		completedRaw sql.NullString
 	)
 	if err := h.DB.QueryRowContext(ctx, `
 		SELECT adventure_slug, started_at, completed_at
@@ -311,7 +311,7 @@ func writeRecapPDF(w io.Writer, d recapPDFData) error {
 	pdf.SetY(18)
 	logoRendered := false
 	if len(d.LogoBytes) > 0 {
-		const logoH = 14.0       // mm; bounded so it never overwhelms the page
+		const logoH = 14.0 // mm; bounded so it never overwhelms the page
 		const logoMaxW = 70.0
 		opts := fpdf.ImageOptions{ImageType: "JPG", ReadDpi: false}
 		// RegisterImageOptionsReader hands fpdf the bytes once,

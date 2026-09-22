@@ -132,7 +132,9 @@ func TestAudio_PageVisibleAcrossPagesInSameAdventure(t *testing.T) {
 	if status != http.StatusCreated {
 		t.Fatalf("upload = %d, body=%s", status, raw)
 	}
-	var up struct{ URL string `json:"url"` }
+	var up struct {
+		URL string `json:"url"`
+	}
 	_ = json.Unmarshal(raw, &up)
 
 	arr, _, slotToken, eventID := setupRun(t, ts, assignmentID)
@@ -183,7 +185,9 @@ func TestAudio_HintGatedByReveal(t *testing.T) {
 	if status != http.StatusCreated {
 		t.Fatalf("upload hint audio = %d, body=%s", status, raw)
 	}
-	var up struct{ URL string `json:"url"` }
+	var up struct {
+		URL string `json:"url"`
+	}
 	_ = json.Unmarshal(raw, &up)
 
 	arr, _, slotToken, eventID := setupRun(t, ts, assignmentID)

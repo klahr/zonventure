@@ -3,8 +3,8 @@ package public
 import (
 	"net/http"
 
-	"github.com/klahr/zonventure/internal/ws"
 	"github.com/go-chi/chi/v5"
+	"github.com/klahr/zonventure/internal/ws"
 )
 
 // WSLive is the TV-leaderboard WebSocket endpoint. The event is identified

@@ -24,6 +24,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/klahr/zonventure/internal/activity"
 	"github.com/klahr/zonventure/internal/adventure"
 	"github.com/klahr/zonventure/internal/auth"
@@ -40,7 +41,6 @@ import (
 	"github.com/klahr/zonventure/internal/updates"
 	"github.com/klahr/zonventure/internal/webhooks"
 	"github.com/klahr/zonventure/internal/ws"
-	"github.com/go-chi/chi/v5"
 )
 
 // Handlers wires the admin endpoints to their dependencies.
@@ -175,7 +175,7 @@ type adventureDTO struct {
 	Description string `json:"description,omitempty"`
 	Author      string `json:"author,omitempty"`
 	PageCount   int    `json:"page_count"`
-	OrgID       *int64 `json:"org_id,omitempty"`   // nil = admin-owned global catalog
+	OrgID       *int64 `json:"org_id,omitempty"` // nil = admin-owned global catalog
 	MineToEdit  bool   `json:"mine_to_edit"`
 	AvatarURL   string `json:"avatar_url,omitempty"`
 	Published   bool   `json:"published"`
@@ -269,22 +269,22 @@ func (h *Handlers) ListAdventures(w http.ResponseWriter, r *http.Request) {
 /* ---------------- Runs ---------------- */
 
 type eventDTO struct {
-	ID              int64  `json:"id"`
-	Name            string `json:"name,omitempty"`
-	AdventureSlug   string `json:"adventure_slug"`
+	ID            int64  `json:"id"`
+	Name          string `json:"name,omitempty"`
+	AdventureSlug string `json:"adventure_slug"`
 	// AdventureTitle is the human-friendly name. Joined in via the
 	// list query so the UI doesn't have to round-trip per row to
 	// pick a slug-or-title fallback.
-	AdventureTitle  string `json:"adventure_title,omitempty"`
+	AdventureTitle string `json:"adventure_title,omitempty"`
 	// AdventureAvatarURL is set when the adventure has cover art
 	// uploaded, so the events list can render the same icon used on
 	// the Adventures cards next to each row without a follow-up
 	// fetch per event. Empty means the client should fall back to
 	// the initials tile.
 	AdventureAvatarURL string `json:"adventure_avatar_url,omitempty"`
-	State           string `json:"state"`
-	ScheduledAt     string `json:"scheduled_at,omitempty"`
-	StartedAt       string `json:"started_at,omitempty"`
+	State              string `json:"state"`
+	ScheduledAt        string `json:"scheduled_at,omitempty"`
+	StartedAt          string `json:"started_at,omitempty"`
 	// CompletedAt and CancelledAt freeze the "elapsed" counter on
 	// the event-detail page once the event reaches a terminal
 	// state. Without these the UI uses Date.now() and shows an
@@ -297,20 +297,20 @@ type eventDTO struct {
 	// MaxPlayers is the assignment's player-slot cap (0 for share-
 	// backed events that have no per-event cap). The team-creation
 	// gate enforces sum(player_slots in event) ≤ MaxPlayers.
-	MaxPlayers      int    `json:"max_players"`
-	LiveToken       string `json:"live_token"`
-	ShowMap         bool   `json:"show_map"`
+	MaxPlayers int    `json:"max_players"`
+	LiveToken  string `json:"live_token"`
+	ShowMap    bool   `json:"show_map"`
 	// TeamsCount is the number of teams attached to the event. The
 	// arrange UI gates the "Start now" affordance on this so a
 	// scheduled event with zero teams gets a concrete error instead
 	// of a vague server reject. Populated on list and detail; the
 	// create response leaves it at 0 since a fresh event has no teams.
-	TeamsCount      int    `json:"teams_count"`
+	TeamsCount int `json:"teams_count"`
 	// PlayerSlotsCount is the number of player slots already created
 	// across every team in this event. The arrange UI displays it as
 	// "(N/M players)" alongside the team list and uses it client-side
 	// to gate the Add-team button before round-tripping to the server.
-	PlayerSlotsCount int   `json:"player_slots_count"`
+	PlayerSlotsCount int `json:"player_slots_count"`
 	// AllowedOps lists the lifecycle-mutating operations the server
 	// will accept at this event's current state. Populated only on
 	// detail responses so the client can disable affordances that
@@ -350,7 +350,6 @@ type createEventRequest struct {
 	// wire) keep producing a regular event, which is what we want.
 	PublicForSale bool `json:"public_for_sale,omitempty"`
 }
-
 
 // CreateEvent schedules an event in one of two modes:
 //
@@ -747,13 +746,19 @@ func (h *Handlers) transitionEvent(w http.ResponseWriter, r *http.Request, actio
 }
 
 // StartEvent moves a scheduled event into the running state.
-func (h *Handlers) StartEvent(w http.ResponseWriter, r *http.Request) { h.transitionEvent(w, r, "start") }
+func (h *Handlers) StartEvent(w http.ResponseWriter, r *http.Request) {
+	h.transitionEvent(w, r, "start")
+}
 
 // PauseEvent pauses a running run.
-func (h *Handlers) PauseEvent(w http.ResponseWriter, r *http.Request) { h.transitionEvent(w, r, "pause") }
+func (h *Handlers) PauseEvent(w http.ResponseWriter, r *http.Request) {
+	h.transitionEvent(w, r, "pause")
+}
 
 // ResumeEvent resumes a paused run.
-func (h *Handlers) ResumeEvent(w http.ResponseWriter, r *http.Request) { h.transitionEvent(w, r, "resume") }
+func (h *Handlers) ResumeEvent(w http.ResponseWriter, r *http.Request) {
+	h.transitionEvent(w, r, "resume")
+}
 
 // CancelEvent terminates an event before it has finished. Allowed
 // from scheduled / running / paused; rejected from completed or
@@ -977,7 +982,7 @@ func (h *Handlers) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 
 // normaliseTeamEmail trims, lower-cases, and validates an optional
 // team contact email. Empty input is fine (the field defaults to
-// '' in the schema). Non-empty input must parse via net/mail and
+// ” in the schema). Non-empty input must parse via net/mail and
 // be ≤ 320 chars (the RFC 5321 ceiling). Returns the cleaned form
 // or an error suitable for a 400 response.
 func normaliseTeamEmail(raw string) (string, error) {
@@ -1015,8 +1020,8 @@ type teamSlotDTO struct {
 }
 
 type teamDTO struct {
-	ID      int64         `json:"id"`
-	Name    string        `json:"name"`
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
 	// Email is the optional captain-contact address arrangers
 	// fill in for ops use. omitempty so old code paths that
 	// don't yet read this field don't see a "" they have to
@@ -1161,7 +1166,7 @@ func (h *Handlers) CreateTeam(w http.ResponseWriter, r *http.Request) {
 	activity.Record(r.Context(), h.DB, eventID, &teamID, activity.UserActor(me.ID), activity.TeamCreated,
 		map[string]any{"name": req.Name, "members": memberNames})
 	webhooks.TryPublish(r.Context(), h.DB, orgID, webhooks.KindTeamCreated, map[string]any{
-		"event_id":       eventID,
+		"event_id":     eventID,
 		"team_id":      teamID,
 		"team_name":    req.Name,
 		"member_count": len(members),
@@ -1175,10 +1180,10 @@ type bulkTeamResultDTO struct {
 	// highlight the offending paste line. -1 for entries the server
 	// dropped during input normalisation (shouldn't happen with the
 	// current code; reserved for future per-row preflight checks).
-	Index int           `json:"index"`
-	Name  string        `json:"name"`
-	Team  *teamDTO      `json:"team,omitempty"`
-	Error string        `json:"error,omitempty"`
+	Index int      `json:"index"`
+	Name  string   `json:"name"`
+	Team  *teamDTO `json:"team,omitempty"`
+	Error string   `json:"error,omitempty"`
 }
 
 // BulkCreateTeams ingests a roster — multiple teams with their member

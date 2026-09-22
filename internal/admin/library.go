@@ -7,11 +7,11 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/klahr/zonventure/internal/adventure"
 	"github.com/klahr/zonventure/internal/auth"
 	"github.com/klahr/zonventure/internal/httpx"
 	"github.com/klahr/zonventure/internal/mdx"
-	"github.com/go-chi/chi/v5"
 )
 
 /* ---------------- Puzzle library ----------------
@@ -91,13 +91,13 @@ func (h *Handlers) ListPuzzles(w http.ResponseWriter, r *http.Request) {
 	out := []libraryPuzzleDTO{}
 	for rows.Next() {
 		var (
-			p          libraryPuzzleDTO
-			acceptJS   string
-			radius     sql.NullFloat64
-			disabled   int
-			advID      sql.NullInt64
-			advIdx     int
-			hasImages  int
+			p         libraryPuzzleDTO
+			acceptJS  string
+			radius    sql.NullFloat64
+			disabled  int
+			advID     sql.NullInt64
+			advIdx    int
+			hasImages int
 		)
 		if err := rows.Scan(&p.ID, &p.Title, &p.Prompt, &p.Notes, &acceptJS,
 			&p.Lat, &p.Lng, &radius, &disabled, &hasImages,

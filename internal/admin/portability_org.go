@@ -67,13 +67,13 @@ const maxOrgImportZipBytes int64 = 500 << 20 // 500 MiB
 // All FKs use idx-based references so the importer mints fresh
 // primary keys without surprises.
 type orgExportEnvelope struct {
-	Format      string                       `json:"format"`
-	ExportedAt  string                       `json:"exported_at"`
-	Org         orgExportOrg                 `json:"org"`
-	Members     []orgExportMember            `json:"members,omitempty"`
-	Adventures  []orgExportAdvRef            `json:"adventures,omitempty"`
-	Assignments []orgExportAssignment        `json:"assignments,omitempty"`
-	Events      []orgExportEvent             `json:"events,omitempty"`
+	Format      string                `json:"format"`
+	ExportedAt  string                `json:"exported_at"`
+	Org         orgExportOrg          `json:"org"`
+	Members     []orgExportMember     `json:"members,omitempty"`
+	Adventures  []orgExportAdvRef     `json:"adventures,omitempty"`
+	Assignments []orgExportAssignment `json:"assignments,omitempty"`
+	Events      []orgExportEvent      `json:"events,omitempty"`
 }
 
 type orgExportOrg struct {
@@ -142,30 +142,30 @@ type orgExportEvent struct {
 // stable identifiers (username, slot token) rather than primary keys
 // so the authorship survives the ID rebase.
 type orgExportActivity struct {
-	Kind          string `json:"kind"`
-	Payload       string `json:"payload,omitempty"`
-	CreatedAt     string `json:"created_at"`
-	TeamToken     string `json:"team_token,omitempty"`
-	ActorUsername string `json:"actor_username,omitempty"`
+	Kind           string `json:"kind"`
+	Payload        string `json:"payload,omitempty"`
+	CreatedAt      string `json:"created_at"`
+	TeamToken      string `json:"team_token,omitempty"`
+	ActorUsername  string `json:"actor_username,omitempty"`
 	ActorSlotToken string `json:"actor_slot_token,omitempty"`
 }
 
 type orgExportTeam struct {
-	Idx              int                     `json:"idx"`
-	Name             string                  `json:"name"`
-	Token            string                  `json:"token"`       // preserved
-	RecapToken       string                  `json:"recap_token"` // preserved
-	Email            string                  `json:"email,omitempty"`
-	WithdrawnAt      string                  `json:"withdrawn_at,omitempty"`
-	CompletedAt      string                  `json:"completed_at,omitempty"`
-	CurrentPageIndex int                     `json:"current_page_index"`
+	Idx              int    `json:"idx"`
+	Name             string `json:"name"`
+	Token            string `json:"token"`       // preserved
+	RecapToken       string `json:"recap_token"` // preserved
+	Email            string `json:"email,omitempty"`
+	WithdrawnAt      string `json:"withdrawn_at,omitempty"`
+	CompletedAt      string `json:"completed_at,omitempty"`
+	CurrentPageIndex int    `json:"current_page_index"`
 	// CurrentPagePosition + CurrentLaneIdx anchor the lane-aware
 	// cursor (`teams.current_page_id` + `current_lane_id`) so an
 	// in-flight team resumes on the right puzzle on the destination
 	// instead of bouncing to the adventure's first page. Both nil
 	// for pre-start / completed / cancelled teams.
-	CurrentPageIdx *int `json:"current_page_idx,omitempty"`
-	CurrentLaneIdx *int `json:"current_lane_idx,omitempty"`
+	CurrentPageIdx *int                    `json:"current_page_idx,omitempty"`
+	CurrentLaneIdx *int                    `json:"current_lane_idx,omitempty"`
 	AvatarFile     string                  `json:"avatar_file,omitempty"`
 	AvatarMime     string                  `json:"avatar_mime,omitempty"`
 	Slots          []orgExportSlot         `json:"slots,omitempty"`
@@ -337,8 +337,8 @@ func (h *Handlers) ExportOrgEnvelope(ctx context.Context, orgID int64) (orgExpor
 	}
 	for assignRows.Next() {
 		var (
-			id   int64
-			a    orgExportAssignment
+			id int64
+			a  orgExportAssignment
 		)
 		if err := assignRows.Scan(&id, &a.AdventureSlug, &a.MaxPlayers); err != nil {
 			assignRows.Close()
@@ -513,12 +513,12 @@ func (h *Handlers) exportOrgEventTeams(ctx context.Context, eventID int64, event
 	)
 	for rows.Next() {
 		var (
-			id        int64
-			tm        orgExportTeam
-			curPgIdx  sql.NullInt64
-			curLnIdx  sql.NullInt64
-			avMime    sql.NullString
-			avBlob    []byte
+			id       int64
+			tm       orgExportTeam
+			curPgIdx sql.NullInt64
+			curLnIdx sql.NullInt64
+			avMime   sql.NullString
+			avBlob   []byte
 		)
 		if err := rows.Scan(&id, &tm.Name, &tm.Token, &tm.RecapToken, &tm.Email,
 			&tm.WithdrawnAt, &tm.CompletedAt, &tm.CurrentPageIndex,
@@ -597,8 +597,8 @@ func (h *Handlers) exportOrgEventTeams(ctx context.Context, eventID int64, event
 		}
 		for loRows.Next() {
 			var (
-				laneIdx  int
-				rawIDs   []byte
+				laneIdx int
+				rawIDs  []byte
 			)
 			if err := loRows.Scan(&laneIdx, &rawIDs); err != nil {
 				loRows.Close()

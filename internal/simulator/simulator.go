@@ -69,7 +69,7 @@ var teamNames = []string{
 // endpoint. Intentionally flat so the JSON shape is stable.
 type State struct {
 	Stage         string  `json:"stage"` // "idle" | "running" | "paused"
-	EventID         int64   `json:"event_id,omitempty"`
+	EventID       int64   `json:"event_id,omitempty"`
 	LiveToken     string  `json:"live_token,omitempty"`
 	AdventureSlug string  `json:"adventure_slug,omitempty"`
 	TeamCount     int     `json:"team_count,omitempty"`

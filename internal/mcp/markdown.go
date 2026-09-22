@@ -62,9 +62,9 @@ func renderEnvelopeMarkdown(envelopeJSON []byte) string {
 				Disabled bool     `json:"disabled"`
 				Notes    string   `json:"notes"`
 				Hints    []struct {
-					Idx          int    `json:"idx"`
-					Text         string `json:"text"`
-					DelaySeconds int    `json:"delay_seconds"`
+					Idx          int          `json:"idx"`
+					Text         string       `json:"text"`
+					DelaySeconds int          `json:"delay_seconds"`
 					Images       []mediaAsset `json:"images"`
 					Audio        []mediaAsset `json:"audio"`
 				} `json:"hints"`

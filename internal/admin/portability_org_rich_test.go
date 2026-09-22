@@ -53,25 +53,25 @@ var mp3Bytes = []byte{0xFF, 0xFB, 0x90, 0x00, 0x01, 0x02, 0x03, 0x04}
 // time (the destination must end up with the imported Acme org +
 // the original Bystander, untouched).
 type richFixtureIDs struct {
-	acme              int64
-	bystander         int64
-	bossUserID        int64
-	minionUserID      int64
-	advLinear         string // slug
-	advShuffled       string // slug
-	advBystander      string // slug — must NOT appear in Acme's bundle
-	advLinearPages    []int64
-	advShuffledLanes  []int64
-	eventScheduledID  int64
-	eventRunningID    int64
-	eventCompletedID  int64
-	eventCancelledID  int64
-	eventQuestID      int64
-	bystanderEventID  int64 // must NOT appear in Acme's bundle
-	teamMidGameID     int64
-	teamCompletedID   int64
-	teamWithdrawnID   int64
-	teamQuestBuyerID  int64
+	acme             int64
+	bystander        int64
+	bossUserID       int64
+	minionUserID     int64
+	advLinear        string // slug
+	advShuffled      string // slug
+	advBystander     string // slug — must NOT appear in Acme's bundle
+	advLinearPages   []int64
+	advShuffledLanes []int64
+	eventScheduledID int64
+	eventRunningID   int64
+	eventCompletedID int64
+	eventCancelledID int64
+	eventQuestID     int64
+	bystanderEventID int64 // must NOT appear in Acme's bundle
+	teamMidGameID    int64
+	teamCompletedID  int64
+	teamWithdrawnID  int64
+	teamQuestBuyerID int64
 }
 
 func richFixture(t *testing.T) (db *sql.DB, h *admin.Handlers, ids richFixtureIDs) {
@@ -450,23 +450,23 @@ func trimQuery(q string) string {
 // differ — that's the whole point.
 
 type orgSnapshot struct {
-	Org              orgRow
-	Members          []memberRow
-	Adventures       []advRow
-	Lanes            []laneRow
-	Pages            []pageRow
-	PageImages       []assetRow
-	PageAudio        []assetRow
-	Hints            []hintRow
-	HintImages       []assetRow
-	HintAudio        []assetRow
-	Assignments      []assignRow
-	Events           []eventRow
-	Teams            []teamRow
-	Slots            []slotRow
-	LaneOrderings    []laneOrderRow
-	TicketPurchases  []ticketRow
-	Activity         []activityRow
+	Org             orgRow
+	Members         []memberRow
+	Adventures      []advRow
+	Lanes           []laneRow
+	Pages           []pageRow
+	PageImages      []assetRow
+	PageAudio       []assetRow
+	Hints           []hintRow
+	HintImages      []assetRow
+	HintAudio       []assetRow
+	Assignments     []assignRow
+	Events          []eventRow
+	Teams           []teamRow
+	Slots           []slotRow
+	LaneOrderings   []laneOrderRow
+	TicketPurchases []ticketRow
+	Activity        []activityRow
 }
 
 type orgRow struct {
@@ -498,13 +498,13 @@ type laneRow struct {
 	Mode, Name    string
 }
 type pageRow struct {
-	AdventureSlug      string
-	LaneIdx            int
-	Idx                int
+	AdventureSlug                string
+	LaneIdx                      int
+	Idx                          int
 	Title, Prompt, Accept, Notes string
-	Lat, Lng           float64
-	Radius             sql.NullFloat64
-	Disabled           int
+	Lat, Lng                     float64
+	Radius                       sql.NullFloat64
+	Disabled                     int
 }
 type assetRow struct {
 	// Key: (adventure-slug, page-idx[, hint-idx], idx)
@@ -587,12 +587,12 @@ type activityRow struct {
 	ActorSlotToken string
 }
 type slotRow struct {
-	Token         string
-	TeamToken     string
-	Name          string
-	ExpiresAt     string
-	HasClaimedAt  bool
-	HasLastLogin  bool
+	Token        string
+	TeamToken    string
+	Name         string
+	ExpiresAt    string
+	HasClaimedAt bool
+	HasLastLogin bool
 }
 type ticketRow struct {
 	BuyerEmail          string
@@ -1568,22 +1568,22 @@ func TestOrgBundle_RichRoundTrip(t *testing.T) {
 	// here as a count mismatch rather than silently round-tripping
 	// zero rows because nobody added the export query.
 	expect := map[string]int{
-		"members":          2,  // boss org_admin + minion org_member
-		"adventures":       2,  // linear-quest + race-relay
-		"lanes":            3,  // 1 linear + 2 (shuffled + finish)
-		"pages":            6,  // linear has 3, race-relay has 3
+		"members":          2, // boss org_admin + minion org_member
+		"adventures":       2, // linear-quest + race-relay
+		"lanes":            3, // 1 linear + 2 (shuffled + finish)
+		"pages":            6, // linear has 3, race-relay has 3
 		"page_images":      1,
 		"page_audio":       1,
-		"hints":            2,  // both on linear-quest p0
+		"hints":            2, // both on linear-quest p0
 		"hint_images":      1,
 		"hint_audio":       1,
 		"assignments":      2,
-		"events":           5,  // scheduled + running + completed + cancelled + quest
-		"teams":            4,  // mid + completed + withdrawn + quest-buyer
-		"slots":            7,  // 3 mid-team + 4 quest-buyer
-		"ticket_purchases": 3,  // paid + pending + failed
-		"lane_orderings":   1,  // quest-buyer team has one frozen permutation
-		"activity":         3,  // team_started + answer_correct + event_paused
+		"events":           5, // scheduled + running + completed + cancelled + quest
+		"teams":            4, // mid + completed + withdrawn + quest-buyer
+		"slots":            7, // 3 mid-team + 4 quest-buyer
+		"ticket_purchases": 3, // paid + pending + failed
+		"lane_orderings":   1, // quest-buyer team has one frozen permutation
+		"activity":         3, // team_started + answer_correct + event_paused
 	}
 	got := map[string]int{
 		"members":          len(imported.Members),

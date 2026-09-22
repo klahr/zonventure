@@ -152,21 +152,21 @@ type eventDetailDTO struct {
 }
 
 type eventDetailTeamDTO struct {
-	ID          int64                `json:"id"`
-	Name        string               `json:"name"`
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
 	// Email is the captain-contact address — arranger-side only,
 	// never echoed onto the public team-share page.
-	Email       string               `json:"email,omitempty"`
-	PageIndex   int                  `json:"page_index"`
-	CompletedAt string               `json:"completed_at,omitempty"`
-	WithdrawnAt string               `json:"withdrawn_at,omitempty"`
-	Token       string               `json:"token"`
+	Email       string `json:"email,omitempty"`
+	PageIndex   int    `json:"page_index"`
+	CompletedAt string `json:"completed_at,omitempty"`
+	WithdrawnAt string `json:"withdrawn_at,omitempty"`
+	Token       string `json:"token"`
 	// RecapToken matches the HTTP EventDetail field — surfaced on
 	// every state push so the post-completion view can link to
 	// each team's recap page without a follow-up fetch.
-	RecapToken  string               `json:"recap_token,omitempty"`
-	AvatarURL   string               `json:"avatar_url,omitempty"`
-	Members     []eventDetailMemberDTO `json:"members"`
+	RecapToken string                 `json:"recap_token,omitempty"`
+	AvatarURL  string                 `json:"avatar_url,omitempty"`
+	Members    []eventDetailMemberDTO `json:"members"`
 }
 
 type eventDetailMemberDTO struct {

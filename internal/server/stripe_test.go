@@ -16,8 +16,8 @@ import (
 )
 
 const (
-	testStripeSecretKey    = "sk_test_zv_unit"
-	testStripeWebhookKey   = "whsec_zv_unit_test"
+	testStripeSecretKey  = "sk_test_zv_unit"
+	testStripeWebhookKey = "whsec_zv_unit_test"
 )
 
 // stripeSign constructs the Stripe-Signature header value for `body`
@@ -60,11 +60,11 @@ func postWebhook(t *testing.T, ts *httptest.Server, body []byte, sigHeader strin
 // the per-event handler, so we only need to make this shape match the
 // envelope.
 type stripeEventEnvelope struct {
-	ID         string          `json:"id"`
-	Object     string          `json:"object"`
-	Type       string          `json:"type"`
-	Created    int64           `json:"created"`
-	Data       json.RawMessage `json:"data"`
+	ID      string          `json:"id"`
+	Object  string          `json:"object"`
+	Type    string          `json:"type"`
+	Created int64           `json:"created"`
+	Data    json.RawMessage `json:"data"`
 	// APIVersion needs to match what stripe-go expects, otherwise
 	// ConstructEvent fails with "Received event with API version ,
 	// but stripe-go N.M.K expects ...". The library's expected
@@ -189,9 +189,9 @@ func TestStripeWebhook_CheckoutCompleted_HappyPath(t *testing.T) {
 	// Purchase should be paid with an assignment id and the provider
 	// session id stamped.
 	var (
-		state    string
-		assID    *int64
-		sessID   *string
+		state  string
+		assID  *int64
+		sessID *string
 	)
 	if err := db.QueryRow(
 		`SELECT state, assignment_id, provider_session_id FROM purchases WHERE id = $1`, purchaseID,

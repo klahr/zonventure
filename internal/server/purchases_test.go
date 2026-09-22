@@ -12,13 +12,13 @@ import (
 )
 
 // seedPurchaseStack seeds the minimum schema for purchase tests:
-// - one adventure ("demo") visible to the org
-// - one organization ("TestOrg")
-// - one verified org_admin ("boss" / "s3cret") so purchases pass the
-//   email_verified gate
-// - one global admin ("root" / "rootpw") for cross-org assertions
-// - one second org with its own org_admin so we can prove cross-org
-//   confirms are rejected.
+//   - one adventure ("demo") visible to the org
+//   - one organization ("TestOrg")
+//   - one verified org_admin ("boss" / "s3cret") so purchases pass the
+//     email_verified gate
+//   - one global admin ("root" / "rootpw") for cross-org assertions
+//   - one second org with its own org_admin so we can prove cross-org
+//     confirms are rejected.
 //
 // Returns the test server, the *sql.DB (so tests can mutate state
 // directly), the boss user's org id, and a cleanup.

@@ -31,7 +31,7 @@ type demoPage struct {
 // demoHint matches the shape of adventure_page_hints rows: a short text
 // revealed after delay_seconds from when the team opened the puzzle.
 type demoHint struct {
-	Text    string
+	Text     string
 	DelaySec int
 }
 

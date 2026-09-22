@@ -9,10 +9,10 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/klahr/zonventure/internal/auth"
 	"github.com/klahr/zonventure/internal/httpx"
 	"github.com/klahr/zonventure/internal/metrics"
-	"github.com/go-chi/chi/v5"
 )
 
 /* ---------------- Purchases ----------------
@@ -93,18 +93,18 @@ type purchaseDTO struct {
 	// off-platform invoice. Only meaningful for provider="invoice"
 	// rows; on Stripe / free / simulated rows the column stays NULL
 	// because there's nothing for an admin to bill afterwards.
-	BilledAt          string `json:"billed_at,omitempty"`
+	BilledAt string `json:"billed_at,omitempty"`
 	// VoidedAt is set by the operator to exclude this purchase from
 	// invoice runs without unwinding the assignment grant. Only
 	// meaningful for provider="invoice" rows.
-	VoidedAt          string `json:"voided_at,omitempty"`
+	VoidedAt string `json:"voided_at,omitempty"`
 	// PreMigration is set when this row was imported from another zv
 	// instance via the org-bundle importer. The recorded charge id
 	// is on the source instance's Stripe account; the refund button
 	// in the UI swaps to a "refund through legacy dashboard" notice
 	// when this is true, and the RefundPurchase handler 409s if
 	// called anyway.
-	PreMigration      bool   `json:"pre_migration,omitempty"`
+	PreMigration bool `json:"pre_migration,omitempty"`
 }
 
 type createPurchaseRequest struct {
@@ -429,12 +429,12 @@ func (h *Handlers) ConfirmPurchase(w http.ResponseWriter, r *http.Request) {
 	defer tx.Rollback()
 
 	var (
-		orgID         int64
-		advSlug       string
-		maxPlayers    int
-		state         string
-		existingAssn  sql.NullInt64
-		topUpID       sql.NullInt64
+		orgID        int64
+		advSlug      string
+		maxPlayers   int
+		state        string
+		existingAssn sql.NullInt64
+		topUpID      sql.NullInt64
 	)
 	// FOR UPDATE serialises overlapping confirms (double-clicked Pay
 	// button, webhook arriving alongside a manual confirm) so two
@@ -668,11 +668,11 @@ func (h *Handlers) GrantSlotsToEvent(w http.ResponseWriter, r *http.Request) {
 	// in one shot. The event must be in a non-terminal state so the
 	// grant lands on a live event the org can still use.
 	var (
-		orgID         int64
-		eventState    string
-		assignmentID  sql.NullInt64
-		advSlug       string
-		trusted       bool
+		orgID        int64
+		eventState   string
+		assignmentID sql.NullInt64
+		advSlug      string
+		trusted      bool
 	)
 	err = h.DB.QueryRowContext(r.Context(), `
 		SELECT ar.org_id, ar.state, ar.assignment_id, ar.adventure_slug, (o.trusted <> 0)

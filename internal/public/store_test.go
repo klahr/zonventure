@@ -9,10 +9,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/klahr/zonventure/internal/adventure"
 	"github.com/klahr/zonventure/internal/dbtest"
 	"github.com/klahr/zonventure/internal/public"
-	"github.com/go-chi/chi/v5"
 )
 
 // TestTicketTeamToken_Pending: a freshly-recorded purchase whose
