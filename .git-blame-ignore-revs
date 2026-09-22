@@ -1,0 +1,10 @@
+# Revisions to skip when running git blame. These are whole-tree
+# mechanical rewrites with no behaviour change; without this file they
+# would show up as the last author of almost every line.
+#
+# Enable locally with:
+#   git config blame.ignoreRevsFile .git-blame-ignore-revs
+# GitHub's blame view honours this file automatically.
+
+# gofmt -w ./... — formatting only, no logic touched.
+fe145c3fbcab5393461f0a734879d2a6c1cc824e
