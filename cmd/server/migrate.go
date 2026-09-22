@@ -13,8 +13,8 @@ import (
 	"io"
 	"os"
 
-	"git.sr.ht/~klahr/zv/internal/admin"
-	"git.sr.ht/~klahr/zv/internal/db"
+	"github.com/klahr/zonventure/internal/admin"
+	"github.com/klahr/zonventure/internal/db"
 )
 
 // runExportOrg streams the bundle for orgID to out. The caller has

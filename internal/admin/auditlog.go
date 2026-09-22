@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"strings"
 
-	"git.sr.ht/~klahr/zv/internal/auth"
-	"git.sr.ht/~klahr/zv/internal/httpx"
+	"github.com/klahr/zonventure/internal/auth"
+	"github.com/klahr/zonventure/internal/httpx"
 )
 
 // auditEventDTO is one row of the auth_events table as the UI sees it.

@@ -28,7 +28,7 @@ import (
 	"fmt"
 	"time"
 
-	"git.sr.ht/~klahr/zv/internal/logx"
+	"github.com/klahr/zonventure/internal/logx"
 )
 
 // Event kind constants — the v1 catalog. Adding a new kind is a

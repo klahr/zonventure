@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"testing"
 
-	"git.sr.ht/~klahr/zv/internal/auth"
+	"github.com/klahr/zonventure/internal/auth"
 )
 
 // postJSONRaw is the test-side bypass that lets a test inspect raw

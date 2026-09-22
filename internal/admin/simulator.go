@@ -5,9 +5,9 @@ import (
 	"errors"
 	"net/http"
 
-	"git.sr.ht/~klahr/zv/internal/auth"
-	"git.sr.ht/~klahr/zv/internal/httpx"
-	"git.sr.ht/~klahr/zv/internal/simulator"
+	"github.com/klahr/zonventure/internal/auth"
+	"github.com/klahr/zonventure/internal/httpx"
+	"github.com/klahr/zonventure/internal/simulator"
 )
 
 /* ---------------- Race simulator control surface ---------------- */

@@ -5,10 +5,10 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"git.sr.ht/~klahr/zv/internal/adventure"
-	"git.sr.ht/~klahr/zv/internal/auth"
-	"git.sr.ht/~klahr/zv/internal/dbtest"
-	"git.sr.ht/~klahr/zv/internal/server"
+	"github.com/klahr/zonventure/internal/adventure"
+	"github.com/klahr/zonventure/internal/auth"
+	"github.com/klahr/zonventure/internal/dbtest"
+	"github.com/klahr/zonventure/internal/server"
 )
 
 // seedPurchaseStack seeds the minimum schema for purchase tests:

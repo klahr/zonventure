@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"git.sr.ht/~klahr/zv/internal/orgslug"
-	"git.sr.ht/~klahr/zv/internal/tokenx"
+	"github.com/klahr/zonventure/internal/orgslug"
+	"github.com/klahr/zonventure/internal/tokenx"
 )
 
 // VerificationTTL is how long a "verify your email" token stays valid

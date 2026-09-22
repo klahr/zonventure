@@ -6,7 +6,7 @@ and the app together, run schema migrations, and seed an initial
 admin so you can log in immediately.
 
 ```sh
-git clone https://git.sr.ht/~klahr/zv && cd zv
+git clone https://github.com/klahr/zonventure && cd zonventure
 docker compose up -d
 ```
 

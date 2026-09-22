@@ -3,7 +3,7 @@ package admin
 import (
 	"net/http"
 
-	"git.sr.ht/~klahr/zv/internal/httpx"
+	"github.com/klahr/zonventure/internal/httpx"
 )
 
 // SystemUpdate returns the cached changelog snapshot: running

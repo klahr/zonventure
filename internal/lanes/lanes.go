@@ -17,7 +17,7 @@ import (
 	"errors"
 	"fmt"
 
-	"git.sr.ht/~klahr/zv/internal/adventure"
+	"github.com/klahr/zonventure/internal/adventure"
 )
 
 // Execer is the read+write subset of *sql.DB / *sql.Tx that the lane

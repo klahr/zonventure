@@ -4,7 +4,7 @@ packages:
   - postgresql
   - nodejs
 sources:
-  - https://git.sr.ht/~klahr/zv
+  - https://github.com/klahr/zonventure
 environment:
   # Socket-auth Postgres on /run/postgresql; the dbtest harness clones
   # databases off this admin DSN per test.

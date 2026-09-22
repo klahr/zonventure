@@ -3,7 +3,7 @@ package admin
 import (
 	"context"
 
-	"git.sr.ht/~klahr/zv/internal/payments"
+	"github.com/klahr/zonventure/internal/payments"
 )
 
 // Test-only re-exports so external_test files (package admin_test)

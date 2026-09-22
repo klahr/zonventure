@@ -33,7 +33,7 @@ import (
 	"io"
 	"strings"
 
-	"git.sr.ht/~klahr/zv/internal/teamimport"
+	"github.com/klahr/zonventure/internal/teamimport"
 )
 
 // New returns the CSV importer. No knobs — Excel / Sheets / numbers

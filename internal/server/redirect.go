@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strings"
 
-	"git.sr.ht/~klahr/zv/internal/settings"
+	"github.com/klahr/zonventure/internal/settings"
 )
 
 // redirectMode is the top-level cutover middleware: when the operator

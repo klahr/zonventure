@@ -19,15 +19,15 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"git.sr.ht/~klahr/zv/internal/activity"
-	"git.sr.ht/~klahr/zv/internal/adventure"
-	"git.sr.ht/~klahr/zv/internal/auth"
-	"git.sr.ht/~klahr/zv/internal/httpx"
-	"git.sr.ht/~klahr/zv/internal/lanes"
-	mailerpkg "git.sr.ht/~klahr/zv/internal/mailer"
-	"git.sr.ht/~klahr/zv/internal/mdx"
-	"git.sr.ht/~klahr/zv/internal/webhooks"
-	"git.sr.ht/~klahr/zv/internal/ws"
+	"github.com/klahr/zonventure/internal/activity"
+	"github.com/klahr/zonventure/internal/adventure"
+	"github.com/klahr/zonventure/internal/auth"
+	"github.com/klahr/zonventure/internal/httpx"
+	"github.com/klahr/zonventure/internal/lanes"
+	mailerpkg "github.com/klahr/zonventure/internal/mailer"
+	"github.com/klahr/zonventure/internal/mdx"
+	"github.com/klahr/zonventure/internal/webhooks"
+	"github.com/klahr/zonventure/internal/ws"
 )
 
 // parsePlayTime accepts both SQLite's "YYYY-MM-DD HH:MM:SS" (UTC) and

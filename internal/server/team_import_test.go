@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"testing"
 
-	"git.sr.ht/~klahr/zv/internal/auth"
+	"github.com/klahr/zonventure/internal/auth"
 )
 
 // uploadFile builds a multipart/form-data request with a single

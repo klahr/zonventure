@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"git.sr.ht/~klahr/zv/internal/settings"
+	"github.com/klahr/zonventure/internal/settings"
 )
 
 // reachedHandler is a sentinel inner handler the redirect middleware

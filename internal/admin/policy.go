@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"errors"
 
-	"git.sr.ht/~klahr/zv/internal/auth"
+	"github.com/klahr/zonventure/internal/auth"
 )
 
 // ErrForbidden is the policy-level "you can't do that" error returned

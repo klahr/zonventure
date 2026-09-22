@@ -9,14 +9,14 @@ import (
 	"strconv"
 	"strings"
 
-	"git.sr.ht/~klahr/zv/internal/activity"
-	"git.sr.ht/~klahr/zv/internal/auth"
-	"git.sr.ht/~klahr/zv/internal/httpx"
-	"git.sr.ht/~klahr/zv/internal/imageutil"
-	"git.sr.ht/~klahr/zv/internal/lanes"
-	"git.sr.ht/~klahr/zv/internal/storage"
-	"git.sr.ht/~klahr/zv/internal/webhooks"
-	"git.sr.ht/~klahr/zv/internal/ws"
+	"github.com/klahr/zonventure/internal/activity"
+	"github.com/klahr/zonventure/internal/auth"
+	"github.com/klahr/zonventure/internal/httpx"
+	"github.com/klahr/zonventure/internal/imageutil"
+	"github.com/klahr/zonventure/internal/lanes"
+	"github.com/klahr/zonventure/internal/storage"
+	"github.com/klahr/zonventure/internal/webhooks"
+	"github.com/klahr/zonventure/internal/ws"
 	"github.com/go-chi/chi/v5"
 )
 

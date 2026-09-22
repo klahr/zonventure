@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"slices"
 
-	"git.sr.ht/~klahr/zv/internal/httpx"
+	"github.com/klahr/zonventure/internal/httpx"
 )
 
 // Middleware resolves the session cookie into a User and attaches it to the

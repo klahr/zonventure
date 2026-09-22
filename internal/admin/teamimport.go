@@ -5,8 +5,8 @@ import (
 	"io"
 	"net/http"
 
-	"git.sr.ht/~klahr/zv/internal/httpx"
-	"git.sr.ht/~klahr/zv/internal/teamimport"
+	"github.com/klahr/zonventure/internal/httpx"
+	"github.com/klahr/zonventure/internal/teamimport"
 )
 
 /* ---------------- Team-roster file import (preview) ---------------- */

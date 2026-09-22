@@ -9,11 +9,11 @@ import (
 	"sync"
 	"testing"
 
-	"git.sr.ht/~klahr/zv/internal/admin"
-	"git.sr.ht/~klahr/zv/internal/adventure"
-	"git.sr.ht/~klahr/zv/internal/auth"
-	"git.sr.ht/~klahr/zv/internal/dbtest"
-	"git.sr.ht/~klahr/zv/internal/mailer"
+	"github.com/klahr/zonventure/internal/admin"
+	"github.com/klahr/zonventure/internal/adventure"
+	"github.com/klahr/zonventure/internal/auth"
+	"github.com/klahr/zonventure/internal/dbtest"
+	"github.com/klahr/zonventure/internal/mailer"
 	"github.com/go-chi/chi/v5"
 )
 

@@ -10,7 +10,7 @@ import (
 	"database/sql"
 	"errors"
 
-	"git.sr.ht/~klahr/zv/internal/storage"
+	"github.com/klahr/zonventure/internal/storage"
 )
 
 // Store implements storage.Blobs against the live SQL database.

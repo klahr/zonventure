@@ -3,8 +3,8 @@ package admin
 import (
 	"net/http"
 
-	"git.sr.ht/~klahr/zv/internal/httpx"
-	"git.sr.ht/~klahr/zv/internal/mdx"
+	"github.com/klahr/zonventure/internal/httpx"
+	"github.com/klahr/zonventure/internal/mdx"
 )
 
 // PreviewMarkdown is the live-preview counterpart of the goldmark

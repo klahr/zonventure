@@ -18,8 +18,8 @@ import (
 	"testing"
 	"time"
 
-	"git.sr.ht/~klahr/zv/internal/auth"
-	"git.sr.ht/~klahr/zv/internal/dbtest"
+	"github.com/klahr/zonventure/internal/auth"
+	"github.com/klahr/zonventure/internal/dbtest"
 )
 
 // ----- pure-unit tests (no DB / no network) -------------------------

@@ -8,13 +8,13 @@ import (
 	"sync"
 	"time"
 
-	"git.sr.ht/~klahr/zv/internal/mdx"
+	"github.com/klahr/zonventure/internal/mdx"
 )
 
 // DefaultChangelogURL is the canonical fetch target for the upstream
 // project. Operators of forks point at their own fork via the
 // ZV_CHANGELOG_URL env var.
-const DefaultChangelogURL = "https://git.sr.ht/~klahr/zv/blob/master/CHANGELOG.md"
+const DefaultChangelogURL = "https://raw.githubusercontent.com/klahr/zonventure/main/CHANGELOG.md"
 
 // DefaultPollInterval is how often the background loop refetches
 // the changelog. Daily is plenty — releases are weekly at best, and

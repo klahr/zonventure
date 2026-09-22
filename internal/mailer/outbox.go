@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"time"
 
-	"git.sr.ht/~klahr/zv/internal/logx"
+	"github.com/klahr/zonventure/internal/logx"
 )
 
 // Outbox is a durable retry layer in front of a Mailer. Callers that

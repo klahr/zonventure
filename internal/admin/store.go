@@ -9,11 +9,11 @@ import (
 	"net/mail"
 	"strings"
 
-	"git.sr.ht/~klahr/zv/internal/auth"
-	"git.sr.ht/~klahr/zv/internal/httpx"
-	"git.sr.ht/~klahr/zv/internal/logx"
-	mailerpkg "git.sr.ht/~klahr/zv/internal/mailer"
-	"git.sr.ht/~klahr/zv/internal/payments"
+	"github.com/klahr/zonventure/internal/auth"
+	"github.com/klahr/zonventure/internal/httpx"
+	"github.com/klahr/zonventure/internal/logx"
+	mailerpkg "github.com/klahr/zonventure/internal/mailer"
+	"github.com/klahr/zonventure/internal/payments"
 	"github.com/go-chi/chi/v5"
 )
 

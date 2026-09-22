@@ -8,8 +8,8 @@ import (
 	"net/http"
 	"time"
 
-	"git.sr.ht/~klahr/zv/internal/auth"
-	"git.sr.ht/~klahr/zv/internal/httpx"
+	"github.com/klahr/zonventure/internal/auth"
+	"github.com/klahr/zonventure/internal/httpx"
 )
 
 // ExportMyData serves a single JSON dump of everything the caller has

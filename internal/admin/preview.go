@@ -8,10 +8,10 @@ import (
 	"net/http"
 	"strconv"
 
-	"git.sr.ht/~klahr/zv/internal/adventure"
-	"git.sr.ht/~klahr/zv/internal/auth"
-	"git.sr.ht/~klahr/zv/internal/httpx"
-	"git.sr.ht/~klahr/zv/internal/mdx"
+	"github.com/klahr/zonventure/internal/adventure"
+	"github.com/klahr/zonventure/internal/auth"
+	"github.com/klahr/zonventure/internal/httpx"
+	"github.com/klahr/zonventure/internal/mdx"
 	"github.com/go-chi/chi/v5"
 )
 

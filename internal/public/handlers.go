@@ -16,11 +16,11 @@ import (
 	"sort"
 	"time"
 
-	"git.sr.ht/~klahr/zv/internal/adventure"
-	"git.sr.ht/~klahr/zv/internal/httpx"
-	"git.sr.ht/~klahr/zv/internal/payments"
-	"git.sr.ht/~klahr/zv/internal/storage"
-	"git.sr.ht/~klahr/zv/internal/ws"
+	"github.com/klahr/zonventure/internal/adventure"
+	"github.com/klahr/zonventure/internal/httpx"
+	"github.com/klahr/zonventure/internal/payments"
+	"github.com/klahr/zonventure/internal/storage"
+	"github.com/klahr/zonventure/internal/ws"
 	"github.com/go-chi/chi/v5"
 )
 

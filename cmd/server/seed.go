@@ -11,9 +11,9 @@ import (
 	"strings"
 	"time"
 
-	"git.sr.ht/~klahr/zv/internal/activity"
-	"git.sr.ht/~klahr/zv/internal/adventure"
-	"git.sr.ht/~klahr/zv/internal/auth"
+	"github.com/klahr/zonventure/internal/activity"
+	"github.com/klahr/zonventure/internal/adventure"
+	"github.com/klahr/zonventure/internal/auth"
 )
 
 // demo adventure data — previously in adventures/demo/*.toml, now seeded

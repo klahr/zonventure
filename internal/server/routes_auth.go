@@ -7,7 +7,7 @@ package server
 import (
 	"github.com/go-chi/chi/v5"
 
-	"git.sr.ht/~klahr/zv/internal/auth"
+	"github.com/klahr/zonventure/internal/auth"
 )
 
 // registerAuthRoutes wires the staff authentication endpoints. The

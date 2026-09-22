@@ -19,7 +19,7 @@ import (
 	"strings"
 	"testing"
 
-	"git.sr.ht/~klahr/zv/internal/db"
+	"github.com/klahr/zonventure/internal/db"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 )

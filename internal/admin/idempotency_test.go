@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"testing"
 
-	"git.sr.ht/~klahr/zv/internal/admin"
-	"git.sr.ht/~klahr/zv/internal/payments"
+	"github.com/klahr/zonventure/internal/admin"
+	"github.com/klahr/zonventure/internal/payments"
 )
 
 // recordingProvider captures the params handed to each Provider call

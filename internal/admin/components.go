@@ -3,8 +3,8 @@ package admin
 import (
 	"net/http"
 
-	"git.sr.ht/~klahr/zv/internal/components"
-	"git.sr.ht/~klahr/zv/internal/httpx"
+	"github.com/klahr/zonventure/internal/components"
+	"github.com/klahr/zonventure/internal/httpx"
 )
 
 // ListComponents returns the build's wired-in plugin seams — the

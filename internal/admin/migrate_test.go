@@ -14,9 +14,9 @@ import (
 	"strings"
 	"testing"
 
-	"git.sr.ht/~klahr/zv/internal/admin"
-	"git.sr.ht/~klahr/zv/internal/auth"
-	"git.sr.ht/~klahr/zv/internal/settings"
+	"github.com/klahr/zonventure/internal/admin"
+	"github.com/klahr/zonventure/internal/auth"
+	"github.com/klahr/zonventure/internal/settings"
 	"github.com/go-chi/chi/v5"
 )
 

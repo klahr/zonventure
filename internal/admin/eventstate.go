@@ -6,7 +6,7 @@ import (
 	"errors"
 	"net/http"
 
-	"git.sr.ht/~klahr/zv/internal/httpx"
+	"github.com/klahr/zonventure/internal/httpx"
 )
 
 // eventOp is the set of mutating operations the arranger surface

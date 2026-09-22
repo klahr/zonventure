@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"git.sr.ht/~klahr/zv/internal/dbtest"
-	"git.sr.ht/~klahr/zv/internal/mailer"
+	"github.com/klahr/zonventure/internal/dbtest"
+	"github.com/klahr/zonventure/internal/mailer"
 )
 
 // recordingMailer captures every Send call so tests can assert what

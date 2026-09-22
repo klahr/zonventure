@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"testing"
 
-	"git.sr.ht/~klahr/zv/internal/server"
+	"github.com/klahr/zonventure/internal/server"
 )
 
 // (getRaw lives in team_share_test.go — reused here for hint-image

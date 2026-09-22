@@ -8,10 +8,10 @@ import (
 	"strconv"
 	"strings"
 
-	"git.sr.ht/~klahr/zv/internal/auth"
-	"git.sr.ht/~klahr/zv/internal/httpx"
-	"git.sr.ht/~klahr/zv/internal/logx"
-	"git.sr.ht/~klahr/zv/internal/orgslug"
+	"github.com/klahr/zonventure/internal/auth"
+	"github.com/klahr/zonventure/internal/httpx"
+	"github.com/klahr/zonventure/internal/logx"
+	"github.com/klahr/zonventure/internal/orgslug"
 	"github.com/go-chi/chi/v5"
 )
 

@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"git.sr.ht/~klahr/zv/internal/server"
+	"github.com/klahr/zonventure/internal/server"
 )
 
 const (

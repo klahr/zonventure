@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"time"
 
-	"git.sr.ht/~klahr/zv/internal/httpx"
-	"git.sr.ht/~klahr/zv/internal/mdx"
+	"github.com/klahr/zonventure/internal/httpx"
+	"github.com/klahr/zonventure/internal/mdx"
 	"github.com/go-chi/chi/v5"
 )
 

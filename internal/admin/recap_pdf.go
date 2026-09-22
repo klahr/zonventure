@@ -14,9 +14,9 @@ import (
 	"bytes"
 	"errors"
 
-	"git.sr.ht/~klahr/zv/internal/httpx"
-	"git.sr.ht/~klahr/zv/internal/logx"
-	"git.sr.ht/~klahr/zv/internal/storage"
+	"github.com/klahr/zonventure/internal/httpx"
+	"github.com/klahr/zonventure/internal/logx"
+	"github.com/klahr/zonventure/internal/storage"
 
 	"github.com/go-pdf/fpdf"
 )

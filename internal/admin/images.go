@@ -10,9 +10,9 @@ import (
 	"strconv"
 	"strings"
 
-	"git.sr.ht/~klahr/zv/internal/auth"
-	"git.sr.ht/~klahr/zv/internal/httpx"
-	"git.sr.ht/~klahr/zv/internal/imageutil"
+	"github.com/klahr/zonventure/internal/auth"
+	"github.com/klahr/zonventure/internal/httpx"
+	"github.com/klahr/zonventure/internal/imageutil"
 	"github.com/go-chi/chi/v5"
 )
 

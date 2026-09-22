@@ -4,9 +4,9 @@ import (
 	"crypto/subtle"
 	"net/http"
 
-	"git.sr.ht/~klahr/zv/internal/httpx"
-	"git.sr.ht/~klahr/zv/internal/logx"
-	"git.sr.ht/~klahr/zv/internal/tokenx"
+	"github.com/klahr/zonventure/internal/httpx"
+	"github.com/klahr/zonventure/internal/logx"
+	"github.com/klahr/zonventure/internal/tokenx"
 )
 
 // CSRF protection — double-submit cookie pattern.

@@ -14,9 +14,9 @@ import (
 	"net/http"
 	"time"
 
-	"git.sr.ht/~klahr/zv/internal/auth"
-	"git.sr.ht/~klahr/zv/internal/mcp"
-	"git.sr.ht/~klahr/zv/internal/settings"
+	"github.com/klahr/zonventure/internal/auth"
+	"github.com/klahr/zonventure/internal/mcp"
+	"github.com/klahr/zonventure/internal/settings"
 	"github.com/go-chi/chi/v5"
 )
 

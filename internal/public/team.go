@@ -9,10 +9,10 @@ import (
 	"net/http"
 	"strings"
 
-	"git.sr.ht/~klahr/zv/internal/httpx"
-	"git.sr.ht/~klahr/zv/internal/imageutil"
-	"git.sr.ht/~klahr/zv/internal/storage"
-	"git.sr.ht/~klahr/zv/internal/ws"
+	"github.com/klahr/zonventure/internal/httpx"
+	"github.com/klahr/zonventure/internal/imageutil"
+	"github.com/klahr/zonventure/internal/storage"
+	"github.com/klahr/zonventure/internal/ws"
 	"github.com/go-chi/chi/v5"
 	qrcode "github.com/skip2/go-qrcode"
 )

@@ -9,12 +9,12 @@ import (
 	"database/sql"
 	"time"
 
-	"git.sr.ht/~klahr/zv/internal/activity"
-	"git.sr.ht/~klahr/zv/internal/adventure"
-	"git.sr.ht/~klahr/zv/internal/lanes"
-	"git.sr.ht/~klahr/zv/internal/logx"
-	"git.sr.ht/~klahr/zv/internal/periodic"
-	"git.sr.ht/~klahr/zv/internal/ws"
+	"github.com/klahr/zonventure/internal/activity"
+	"github.com/klahr/zonventure/internal/adventure"
+	"github.com/klahr/zonventure/internal/lanes"
+	"github.com/klahr/zonventure/internal/logx"
+	"github.com/klahr/zonventure/internal/periodic"
+	"github.com/klahr/zonventure/internal/ws"
 )
 
 // Start launches the sweep loop in its own goroutine. Stop it by cancelling

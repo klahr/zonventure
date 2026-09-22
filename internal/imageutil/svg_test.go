@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"git.sr.ht/~klahr/zv/internal/imageutil"
+	"github.com/klahr/zonventure/internal/imageutil"
 )
 
 const trivialSVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">

@@ -21,12 +21,12 @@ import (
 	"sync/atomic"
 	"time"
 
-	"git.sr.ht/~klahr/zv/internal/activity"
-	"git.sr.ht/~klahr/zv/internal/adventure"
-	"git.sr.ht/~klahr/zv/internal/lanes"
-	"git.sr.ht/~klahr/zv/internal/logx"
-	"git.sr.ht/~klahr/zv/internal/tokenx"
-	"git.sr.ht/~klahr/zv/internal/ws"
+	"github.com/klahr/zonventure/internal/activity"
+	"github.com/klahr/zonventure/internal/adventure"
+	"github.com/klahr/zonventure/internal/lanes"
+	"github.com/klahr/zonventure/internal/logx"
+	"github.com/klahr/zonventure/internal/tokenx"
+	"github.com/klahr/zonventure/internal/ws"
 )
 
 // tickInterval is the simulator's logical tick. At the default speedMul

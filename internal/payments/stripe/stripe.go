@@ -19,7 +19,7 @@ import (
 	"strings"
 	"time"
 
-	"git.sr.ht/~klahr/zv/internal/payments"
+	"github.com/klahr/zonventure/internal/payments"
 
 	stripego "github.com/stripe/stripe-go/v82"
 	"github.com/stripe/stripe-go/v82/account"

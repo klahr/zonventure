@@ -8,10 +8,10 @@ import (
 	"sync"
 	"time"
 
-	"git.sr.ht/~klahr/zv/internal/auth"
-	"git.sr.ht/~klahr/zv/internal/httpx"
-	"git.sr.ht/~klahr/zv/internal/logx"
-	mailerpkg "git.sr.ht/~klahr/zv/internal/mailer"
+	"github.com/klahr/zonventure/internal/auth"
+	"github.com/klahr/zonventure/internal/httpx"
+	"github.com/klahr/zonventure/internal/logx"
+	mailerpkg "github.com/klahr/zonventure/internal/mailer"
 )
 
 type sendTestEmailRequest struct {

@@ -7,9 +7,9 @@ import (
 	"net/url"
 	"strconv"
 
-	"git.sr.ht/~klahr/zv/internal/httpx"
-	"git.sr.ht/~klahr/zv/internal/imageutil"
-	"git.sr.ht/~klahr/zv/internal/storage"
+	"github.com/klahr/zonventure/internal/httpx"
+	"github.com/klahr/zonventure/internal/imageutil"
+	"github.com/klahr/zonventure/internal/storage"
 	"github.com/go-chi/chi/v5"
 )
 

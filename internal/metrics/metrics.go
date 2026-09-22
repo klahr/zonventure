@@ -19,7 +19,7 @@ import (
 	"net/http"
 	"time"
 
-	"git.sr.ht/~klahr/zv/internal/logx"
+	"github.com/klahr/zonventure/internal/logx"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"

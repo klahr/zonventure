@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"git.sr.ht/~klahr/zv/internal/dbtest"
+	"github.com/klahr/zonventure/internal/dbtest"
 )
 
 // seedEndpoint inserts a minimal org + endpoint and returns the

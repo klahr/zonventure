@@ -7,7 +7,7 @@ import (
 	"runtime"
 	"testing"
 
-	"git.sr.ht/~klahr/zv/internal/dbtest"
+	"github.com/klahr/zonventure/internal/dbtest"
 )
 
 // TestVersionEndpoint asserts that /api/version returns the configured

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"git.sr.ht/~klahr/zv/internal/ws"
+	"github.com/klahr/zonventure/internal/ws"
 )
 
 // decode is a tiny helper that pulls a hub envelope apart.

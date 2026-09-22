@@ -5,9 +5,9 @@ import (
 	"net/http"
 	"time"
 
-	"git.sr.ht/~klahr/zv/internal/auth"
-	"git.sr.ht/~klahr/zv/internal/logx"
-	"git.sr.ht/~klahr/zv/internal/ws"
+	"github.com/klahr/zonventure/internal/auth"
+	"github.com/klahr/zonventure/internal/logx"
+	"github.com/klahr/zonventure/internal/ws"
 )
 
 // WSPlay is the player-side WebSocket endpoint. It replaces the 5s state

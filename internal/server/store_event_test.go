@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"git.sr.ht/~klahr/zv/internal/dbtest"
+	"github.com/klahr/zonventure/internal/dbtest"
 	"github.com/go-chi/chi/v5"
 )
 

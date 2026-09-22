@@ -48,9 +48,9 @@ import (
 	"strings"
 	"time"
 
-	"git.sr.ht/~klahr/zv/internal/auth"
-	"git.sr.ht/~klahr/zv/internal/logx"
-	"git.sr.ht/~klahr/zv/internal/orgslug"
+	"github.com/klahr/zonventure/internal/auth"
+	"github.com/klahr/zonventure/internal/logx"
+	"github.com/klahr/zonventure/internal/orgslug"
 )
 
 // orgExportFormat tags the org-bundle manifest. Bumped per

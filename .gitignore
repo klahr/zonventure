@@ -1,5 +1,28 @@
+/zonventure
 /zv-server
 *.test
 /coverage.out
 /.env
+.env.*
 /compose.override.yaml
+
+# Keys and certificates must never be committed. The legacy deployments
+# kept RS256 keypairs on disk next to the binary; nothing of that shape
+# may reach this repo's history.
+*.pem
+*.key
+*.p12
+*.jks
+
+# Database dumps. The legacy production dump contains real user PII and
+# lives in an encrypted offline archive, never here.
+*.sql.gz
+*.dump
+
+# Frontend. The Vite build output is embedded via go:embed at build time.
+# dist/index.html is committed as a stub so `go build` works on a fresh
+# clone before `make web` has ever run — see internal/server/web/dist/.
+node_modules/
+web/*/dist/
+/internal/server/web/dist/*
+!/internal/server/web/dist/index.html

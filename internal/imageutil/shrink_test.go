@@ -11,7 +11,7 @@ import (
 	"image/png"
 	"testing"
 
-	"git.sr.ht/~klahr/zv/internal/imageutil"
+	"github.com/klahr/zonventure/internal/imageutil"
 )
 
 // makeImage produces a solid-colour test image of the requested size

@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"git.sr.ht/~klahr/zv/internal/tokenx"
+	"github.com/klahr/zonventure/internal/tokenx"
 
 	"github.com/pquerna/otp/totp"
 )

@@ -4,9 +4,9 @@ import (
 	"net/http"
 	"strconv"
 
-	"git.sr.ht/~klahr/zv/internal/httpx"
-	"git.sr.ht/~klahr/zv/internal/logx"
-	"git.sr.ht/~klahr/zv/internal/ws"
+	"github.com/klahr/zonventure/internal/httpx"
+	"github.com/klahr/zonventure/internal/logx"
+	"github.com/klahr/zonventure/internal/ws"
 )
 
 // LogsLevel returns the current log level and the available names so

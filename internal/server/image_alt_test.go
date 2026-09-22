@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"git.sr.ht/~klahr/zv/internal/server"
+	"github.com/klahr/zonventure/internal/server"
 )
 
 // TestUpdatePageImage_AltText round-trips alt text through the PATCH

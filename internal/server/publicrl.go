@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"git.sr.ht/~klahr/zv/internal/auth"
+	"github.com/klahr/zonventure/internal/auth"
 )
 
 // publicLimiter caps requests-per-minute per IP across the public,

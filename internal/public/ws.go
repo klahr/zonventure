@@ -3,7 +3,7 @@ package public
 import (
 	"net/http"
 
-	"git.sr.ht/~klahr/zv/internal/ws"
+	"github.com/klahr/zonventure/internal/ws"
 	"github.com/go-chi/chi/v5"
 )
 

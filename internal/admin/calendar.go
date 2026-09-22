@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"net/http"
 
-	"git.sr.ht/~klahr/zv/internal/httpx"
-	"git.sr.ht/~klahr/zv/internal/icscal"
-	"git.sr.ht/~klahr/zv/internal/logx"
+	"github.com/klahr/zonventure/internal/httpx"
+	"github.com/klahr/zonventure/internal/icscal"
+	"github.com/klahr/zonventure/internal/logx"
 )
 
 // ExportEventInviteICS writes an RFC 5545 iCalendar file for one

@@ -9,10 +9,10 @@ import (
 	"strings"
 	"testing"
 
-	"git.sr.ht/~klahr/zv/internal/admin"
-	"git.sr.ht/~klahr/zv/internal/adventure"
-	"git.sr.ht/~klahr/zv/internal/dbtest"
-	"git.sr.ht/~klahr/zv/internal/ws"
+	"github.com/klahr/zonventure/internal/admin"
+	"github.com/klahr/zonventure/internal/adventure"
+	"github.com/klahr/zonventure/internal/dbtest"
+	"github.com/klahr/zonventure/internal/ws"
 )
 
 // fixtureAvatarPNG is a synthetic 1x1 PNG byte blob — realistic

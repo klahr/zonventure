@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"git.sr.ht/~klahr/zv/internal/adventure"
-	"git.sr.ht/~klahr/zv/internal/dbtest"
-	"git.sr.ht/~klahr/zv/internal/public"
+	"github.com/klahr/zonventure/internal/adventure"
+	"github.com/klahr/zonventure/internal/dbtest"
+	"github.com/klahr/zonventure/internal/public"
 	"github.com/go-chi/chi/v5"
 )
 

@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"time"
 
-	"git.sr.ht/~klahr/zv/internal/httpx"
-	"git.sr.ht/~klahr/zv/internal/tokenx"
+	"github.com/klahr/zonventure/internal/httpx"
+	"github.com/klahr/zonventure/internal/tokenx"
 )
 
 // Slot identifies a player's seat on a team (one row in player_slots).

@@ -3,7 +3,7 @@ package mailer
 import (
 	"context"
 
-	"git.sr.ht/~klahr/zv/internal/logx"
+	"github.com/klahr/zonventure/internal/logx"
 )
 
 // LogMailer writes a structured log entry instead of sending email. The

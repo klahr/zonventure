@@ -3,8 +3,8 @@ package server
 import (
 	"net/http"
 
-	"git.sr.ht/~klahr/zv/internal/httpx"
-	"git.sr.ht/~klahr/zv/internal/settings"
+	"github.com/klahr/zonventure/internal/httpx"
+	"github.com/klahr/zonventure/internal/settings"
 )
 
 // maintenanceMode is the operator-initiated read-only middleware.

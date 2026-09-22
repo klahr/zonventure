@@ -34,7 +34,7 @@ import (
 	"sync"
 	"time"
 
-	"git.sr.ht/~klahr/zv/internal/payments"
+	"github.com/klahr/zonventure/internal/payments"
 
 	"github.com/go-chi/chi/v5"
 )

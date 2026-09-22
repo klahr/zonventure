@@ -34,7 +34,7 @@ the price of a coffee per team.
 ## Quick start
 
 ```sh
-git clone https://git.sr.ht/~klahr/zv && cd zv
+git clone https://github.com/klahr/zonventure && cd zonventure
 docker compose up -d
 ```
 
@@ -104,7 +104,7 @@ procurement policies preclude the AGPL — write to
 ## Contributing
 
 Patches, bug reports and translation contributions welcome via
-[git.sr.ht/~klahr/zv](https://git.sr.ht/~klahr/zv). Please run
+[github.com/klahr/zonventure](https://github.com/klahr/zonventure). Please run
 `go test ./...` against a real Postgres before sending a patch — the
 DB-bound tests skip silently without one (`ZV_TEST_DSN`).
 

@@ -21,7 +21,7 @@ import (
 	"strings"
 	"time"
 
-	"git.sr.ht/~klahr/zv/internal/adventure"
+	"github.com/klahr/zonventure/internal/adventure"
 )
 
 // ErrNoSchedule indicates the event has neither a scheduled_at nor

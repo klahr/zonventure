@@ -10,9 +10,9 @@ import (
 	"sort"
 	"testing"
 
-	"git.sr.ht/~klahr/zv/internal/admin"
-	"git.sr.ht/~klahr/zv/internal/auth"
-	"git.sr.ht/~klahr/zv/internal/dbtest"
+	"github.com/klahr/zonventure/internal/admin"
+	"github.com/klahr/zonventure/internal/auth"
+	"github.com/klahr/zonventure/internal/dbtest"
 )
 
 // seedMCPUser installs a fresh org + user + admin membership and

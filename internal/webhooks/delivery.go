@@ -12,7 +12,7 @@ import (
 	"net/url"
 	"time"
 
-	"git.sr.ht/~klahr/zv/internal/logx"
+	"github.com/klahr/zonventure/internal/logx"
 )
 
 // pinnedDialIPKey is the request-context key carrying the IP we want

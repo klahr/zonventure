@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"net/http"
 
-	"git.sr.ht/~klahr/zv/internal/logx"
+	"github.com/klahr/zonventure/internal/logx"
 )
 
 // AuthEvent kinds. Strings are the values stored in auth_events.event;

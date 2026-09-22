@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"strconv"
 
-	"git.sr.ht/~klahr/zv/internal/auth"
+	"github.com/klahr/zonventure/internal/auth"
 )
 
 // Phase 3: assignments / billing.

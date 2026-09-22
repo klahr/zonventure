@@ -7,10 +7,10 @@ import (
 	"net/url"
 	"strings"
 
-	"git.sr.ht/~klahr/zv/internal/httpx"
-	"git.sr.ht/~klahr/zv/internal/logx"
-	mailerpkg "git.sr.ht/~klahr/zv/internal/mailer"
-	"git.sr.ht/~klahr/zv/internal/settings"
+	"github.com/klahr/zonventure/internal/httpx"
+	"github.com/klahr/zonventure/internal/logx"
+	mailerpkg "github.com/klahr/zonventure/internal/mailer"
+	"github.com/klahr/zonventure/internal/settings"
 )
 
 type signupRequest struct {

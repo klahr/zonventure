@@ -5,9 +5,9 @@ import (
 	"database/sql"
 	"testing"
 
-	"git.sr.ht/~klahr/zv/internal/adventure"
-	"git.sr.ht/~klahr/zv/internal/dbtest"
-	"git.sr.ht/~klahr/zv/internal/lanes"
+	"github.com/klahr/zonventure/internal/adventure"
+	"github.com/klahr/zonventure/internal/dbtest"
+	"github.com/klahr/zonventure/internal/lanes"
 )
 
 // TestLanes_ShuffledProgression seeds a 4-page shuffled lane, makes

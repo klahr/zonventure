@@ -8,9 +8,9 @@ import (
 	"net/http"
 	"sync"
 
-	"git.sr.ht/~klahr/zv/internal/auth"
-	"git.sr.ht/~klahr/zv/internal/logx"
-	"git.sr.ht/~klahr/zv/internal/ws"
+	"github.com/klahr/zonventure/internal/auth"
+	"github.com/klahr/zonventure/internal/logx"
+	"github.com/klahr/zonventure/internal/ws"
 )
 
 // WSArrange is the arranger-side subscription stream. Mutations still flow

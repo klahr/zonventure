@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"git.sr.ht/~klahr/zv/internal/teamimport"
+	"github.com/klahr/zonventure/internal/teamimport"
 )
 
 func TestCSV_Basic(t *testing.T) {

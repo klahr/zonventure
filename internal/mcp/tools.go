@@ -9,9 +9,9 @@ import (
 	"fmt"
 	"strings"
 
-	"git.sr.ht/~klahr/zv/internal/admin"
-	"git.sr.ht/~klahr/zv/internal/auth"
-	"git.sr.ht/~klahr/zv/internal/imageutil"
+	"github.com/klahr/zonventure/internal/admin"
+	"github.com/klahr/zonventure/internal/auth"
+	"github.com/klahr/zonventure/internal/imageutil"
 )
 
 // errUnknownTool is the sentinel the dispatcher uses to map "no

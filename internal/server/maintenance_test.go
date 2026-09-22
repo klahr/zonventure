@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"git.sr.ht/~klahr/zv/internal/settings"
+	"github.com/klahr/zonventure/internal/settings"
 )
 
 // pinMaintenanceMode flips the in-process maintenance flag via the

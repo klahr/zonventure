@@ -4,7 +4,7 @@ import (
 	"net/url"
 	"testing"
 
-	"git.sr.ht/~klahr/zv/internal/server"
+	"github.com/klahr/zonventure/internal/server"
 )
 
 // TestListAuthEvents_Filters seeds a handful of auth_events rows and

@@ -3,7 +3,7 @@ package updates_test
 import (
 	"testing"
 
-	"git.sr.ht/~klahr/zv/internal/updates"
+	"github.com/klahr/zonventure/internal/updates"
 )
 
 func TestParseSemverShapes(t *testing.T) {

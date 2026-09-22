@@ -37,7 +37,7 @@ import (
 	"strconv"
 	"strings"
 
-	"git.sr.ht/~klahr/zv/internal/teamimport"
+	"github.com/klahr/zonventure/internal/teamimport"
 )
 
 // New returns the ODS importer.

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"git.sr.ht/~klahr/zv/internal/adventure"
+	"github.com/klahr/zonventure/internal/adventure"
 )
 
 // ----- Write structural shape -------------------------------------

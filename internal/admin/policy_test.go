@@ -4,7 +4,7 @@ import (
 	"database/sql"
 	"testing"
 
-	"git.sr.ht/~klahr/zv/internal/auth"
+	"github.com/klahr/zonventure/internal/auth"
 )
 
 // TestCanAuthor walks the truth table for the authoring gate. The

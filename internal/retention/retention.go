@@ -15,8 +15,8 @@ import (
 	"strconv"
 	"time"
 
-	"git.sr.ht/~klahr/zv/internal/logx"
-	"git.sr.ht/~klahr/zv/internal/periodic"
+	"github.com/klahr/zonventure/internal/logx"
+	"github.com/klahr/zonventure/internal/periodic"
 )
 
 // Config controls thresholds + cadence. Zero values are treated as

@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 The repository, Go module, and CLI binary are named `zv`; the product is
 **Zonventure**. Versions tagged here correspond to git tags `v<version>` on
-[git.sr.ht/~klahr/zv](https://git.sr.ht/~klahr/zv).
+[github.com/klahr/zonventure](https://github.com/klahr/zonventure).
 
 ## [Unreleased]
 
@@ -914,10 +914,10 @@ First tagged release.
   Postgres. Configurable retention, optional Prometheus metrics, and
   pg_dump-portable backup / restore.
 
-[Unreleased]: https://git.sr.ht/~klahr/zv/log/master
-[0.1.5]: https://git.sr.ht/~klahr/zv/refs/0.1.5
-[0.1.4]: https://git.sr.ht/~klahr/zv/refs/0.1.4
-[0.1.3]: https://git.sr.ht/~klahr/zv/refs/0.1.3
-[0.1.2]: https://git.sr.ht/~klahr/zv/refs/0.1.2
-[0.1.1]: https://git.sr.ht/~klahr/zv/refs/0.1.1
-[0.1.0]: https://git.sr.ht/~klahr/zv/refs/0.1.0
+[Unreleased]: https://github.com/klahr/zonventure/commits/main
+[0.1.5]: https://github.com/klahr/zonventure/releases/tag/0.1.5
+[0.1.4]: https://github.com/klahr/zonventure/releases/tag/0.1.4
+[0.1.3]: https://github.com/klahr/zonventure/releases/tag/0.1.3
+[0.1.2]: https://github.com/klahr/zonventure/releases/tag/0.1.2
+[0.1.1]: https://github.com/klahr/zonventure/releases/tag/0.1.1
+[0.1.0]: https://github.com/klahr/zonventure/releases/tag/0.1.0

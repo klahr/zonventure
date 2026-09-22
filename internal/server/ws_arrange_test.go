@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"git.sr.ht/~klahr/zv/internal/server"
-	"git.sr.ht/~klahr/zv/internal/ws"
+	"github.com/klahr/zonventure/internal/server"
+	"github.com/klahr/zonventure/internal/ws"
 
 	"github.com/coder/websocket"
 )

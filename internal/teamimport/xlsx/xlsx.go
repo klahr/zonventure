@@ -34,7 +34,7 @@ import (
 	"io"
 	"strings"
 
-	"git.sr.ht/~klahr/zv/internal/teamimport"
+	"github.com/klahr/zonventure/internal/teamimport"
 	"github.com/xuri/excelize/v2"
 )
 

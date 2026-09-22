@@ -1,4 +1,4 @@
-module git.sr.ht/~klahr/zv
+module github.com/klahr/zonventure
 
 go 1.26
 

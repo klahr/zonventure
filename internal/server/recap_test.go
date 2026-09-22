@@ -8,7 +8,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"git.sr.ht/~klahr/zv/internal/server"
+	"github.com/klahr/zonventure/internal/server"
 )
 
 // recapPath builds the public recap JSON URL for a token.
