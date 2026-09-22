@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <title>Zonventure</title>
+    <script>
+      // Applied before first paint so a dark-mode user never sees a
+      // white flash. Mirrors the mechanism in zv-web/landing.html and
+      // page-tokens.css: an explicit [data-theme] wins, otherwise the
+      // OS preference decides. Inline and synchronous by necessity —
+      // this is the one script the CSP allows by hash.
+      (function () {
+        try {
+          var t = localStorage.getItem("zv-theme");
+          if (t === "light" || t === "dark") {
+            document.documentElement.dataset.theme = t;
+          }
+        } catch (e) {
+          /* private mode: fall through to the OS preference */
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

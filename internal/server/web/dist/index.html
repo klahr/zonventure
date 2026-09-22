@@ -1,0 +1,58 @@
+<!doctype html>
+<!--
+  Committed placeholder. Do not delete.
+
+  internal/server/spa.go embeds this directory with `//go:embed
+  all:web/dist`, and go:embed fails at COMPILE time if the pattern
+  matches nothing. Everything else under web/dist/ is build output and
+  is gitignored, so without this file a fresh clone — or CI, or anyone
+  running `go test ./...` on a machine with no Node — would fail to
+  build before `make web` ever had a chance to run.
+
+  The Go router serves this only when an app's own index.html is
+  missing, i.e. when the binary was built without running the frontend
+  build first.
+-->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <title>Zonventure — frontend not built</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 4rem 1.5rem;
+        background: #0f1418;
+        color: #e6edf3;
+        font: 16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
+      }
+      main {
+        max-width: 34rem;
+        margin: 0 auto;
+      }
+      code {
+        background: #1c242c;
+        border-radius: 4px;
+        padding: 0.15em 0.4em;
+      }
+      p {
+        color: #9fb0c0;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Frontend not built</h1>
+      <p>
+        This binary was compiled without the React build output. Run
+        <code>make web</code> and rebuild, or use <code>make build</code>, which
+        does both.
+      </p>
+      <p>
+        The server itself is running normally — the existing interface is
+        unaffected and the JSON API is available.
+      </p>
+    </main>
+  </body>
+</html>

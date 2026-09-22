@@ -1,5 +1,6 @@
 .PHONY: help up down rebuild logs psql reset seed run \
-        test test-race vet tidy build tag upgrade
+        test test-race vet tidy build tag upgrade \
+        web web-dev web-clean
 
 # `make` alone prints the menu so a new contributor sees what's
 # available without grepping the file.
@@ -43,6 +44,11 @@ help:
 	@echo "    make test-race  go test -race ./..."
 	@echo "    make vet        go vet ./..."
 	@echo "    make tidy       go mod tidy"
+	@echo ""
+	@echo "  Frontend (React apps under web/, embedded into the binary)"
+	@echo "    make web        Build the React apps into internal/server/web/dist"
+	@echo "    make web-dev    Vite dev server, proxying /api to :8080"
+	@echo "    make web-clean  Remove build output, keeping the committed stub"
 	@echo ""
 	@echo "  Build & release"
 	@echo "    make build      Production binary (trimpath, stripped, static)"
@@ -125,11 +131,37 @@ tidy:
 #   -trimpath     strip absolute paths from the binary (reproducible)
 #   -s -w         strip symbol + DWARF tables (~30 % smaller)
 #   CGO_ENABLED=0 fully static — no glibc dependency at runtime
-build:
+# Depends on `web` so a release binary can never ship a stale bundle.
+# `test` deliberately does NOT, so `go test ./...` stays fast and needs
+# no Node — the SPA tests skip when the apps aren't built.
+build: web
 	CGO_ENABLED=0 go build -trimpath \
 	  -ldflags="-s -w -X main.version=$(VERSION)" \
 	  -o $(BIN) ./cmd/server
 	@ls -lh $(BIN)
+
+# --- Frontend ----------------------------------------------------------------
+
+# The React apps build into internal/server/web/dist/<app>/, which
+# internal/server/spa.go embeds. One npm workspace, no extra monorepo
+# orchestration tool: the graph is a handful of apps and shared
+# packages, so Turborepo/Nx would be more configuration than code.
+#
+# `npm ci` only when node_modules is absent — it deletes and reinstalls
+# the tree every run, which is right for CI and needlessly slow here.
+web:
+	@cd web && [ -d node_modules ] || npm ci
+	cd web && npm run build --workspaces --if-present
+
+web-dev:
+	cd web && npm run dev
+
+# Leaves internal/server/web/dist/index.html in place. Removing that
+# stub breaks `go build` outright, because //go:embed is a compile-time
+# error when its pattern matches nothing.
+web-clean:
+	find internal/server/web/dist -mindepth 1 -maxdepth 1 \
+	  ! -name index.html -exec rm -rf {} +
 
 # --- Release -----------------------------------------------------------------
 

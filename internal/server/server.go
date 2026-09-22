@@ -389,6 +389,10 @@ func New(cfg Config) http.Handler {
 	// independently.
 	registerMetaRoutes(r, env)
 	registerPageRoutes(r, env)
+	// The React apps, served under /app/<name>/. Mounted alongside the
+	// hand-written pages above rather than replacing them: surfaces
+	// move over one route registration at a time. See spa.go.
+	registerSPARoutes(r)
 	registerStaticAssetRoutes(r, env)
 	registerAdventureAssetRoutes(r, env)
 	registerPublicTokenRoutes(r, env)

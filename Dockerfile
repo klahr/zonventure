@@ -1,3 +1,23 @@
+# Frontend stage. The React apps under web/ compile to
+# internal/server/web/dist/<app>/, which the Go build then embeds. Split
+# into its own stage so Node never reaches the runtime image and so the
+# dependency install caches on the lockfile alone.
+FROM node:22-alpine AS web
+WORKDIR /src
+# The whole workspace in one copy. A manifests-first layer would cache
+# `npm ci` more tightly, but `COPY web/apps/*/package.json` flattens
+# under Docker's wildcard rules and collides the moment there is a
+# second app — not worth the sharper cache on a tree this size.
+#
+# Copying everything also guarantees tsconfig.base.json is present. Each
+# app's tsconfig extends it; without it tsc falls back to the default
+# moduleResolution, under which Vite's own "#types/*" subpath imports do
+# not resolve, and the build dies in a wall of TS2307s that point
+# nowhere near the actual cause. node_modules is excluded by
+# .dockerignore, so the host's install never leaks in.
+COPY web ./web
+RUN cd web && npm ci && npm run build --workspaces --if-present
+
 # Build stage. Pure-Go build (CGO off) so the runtime image can be the
 # tiny distroless static one. Migrations and web/ assets are embedded via
 # go:embed so the resulting binary is fully self-contained.
@@ -6,6 +26,10 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
+# Overwrite the committed placeholder with the real build output. This
+# COPY is what makes the single-binary story hold: without it the image
+# would ship the "frontend not built" stub.
+COPY --from=web /src/internal/server/web/dist ./internal/server/web/dist
 # Version stamping. The caller supplies VERSION — the Makefile and
 # compose pass `git describe --tags --always --dirty` from the host,
 # and CI passes the tag it is building. That is the accurate source,

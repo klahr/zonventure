@@ -14,3 +14,8 @@ Dockerfile
 compose.yaml
 zonventure
 zv-server
+
+# Never ship the host's installed dependencies into the build
+# context; the web stage runs `npm ci` from the lockfile instead.
+node_modules
+web/node_modules

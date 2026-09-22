@@ -1,0 +1,70 @@
+/*
+ * Minimal Phase 0 styling. The real design tokens land in
+ * @zonventure/ui in Phase 1, lifted from zv-web's landing.html and
+ * internal/server/web/page-tokens.css — those already have the correct
+ * three-tier structure (explicit [data-theme] wins, OS preference as
+ * fallback) and are the best token system in the estate.
+ */
+:root {
+  color-scheme: light dark;
+  --bg: #ffffff;
+  --ink: #16212b;
+  --muted: #4f6478;
+  --accent: #1f6feb;
+}
+
+:root[data-theme="dark"] {
+  --bg: #0f1418;
+  --ink: #e6edf3;
+  --muted: #9fb0c0;
+  --accent: #58a6ff;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    --bg: #0f1418;
+    --ink: #e6edf3;
+    --muted: #9fb0c0;
+    --accent: #58a6ff;
+  }
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.shell {
+  max-width: 40rem;
+  margin: 4rem auto;
+  padding: 0 1.5rem;
+}
+
+.shell h1 {
+  margin: 0 0 0.25rem;
+  font-size: 1.75rem;
+  letter-spacing: -0.02em;
+}
+
+.lede {
+  margin: 0 0 2rem;
+  color: var(--muted);
+}
+
+dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.25rem 1rem;
+  margin: 0;
+}
+
+dt {
+  color: var(--muted);
+}
+
+dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
