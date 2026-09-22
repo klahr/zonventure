@@ -174,3 +174,10 @@ export const put = <T>(path: string, body?: unknown, opts?: RequestOptions) =>
     method: "PUT",
     ...(body !== undefined ? { body } : {}),
   });
+
+export const patch = <T>(path: string, body?: unknown, opts?: RequestOptions) =>
+  request<T>(path, {
+    ...opts,
+    method: "PATCH",
+    ...(body !== undefined ? { body } : {}),
+  });

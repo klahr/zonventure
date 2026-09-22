@@ -10,6 +10,7 @@
  *   3. @media (prefers-color-scheme: dark)
  *        :root:not([data-theme])              OS preference, only when
  *                                             the user has not chosen
+ *   4. [data-theme="light"] on any element    forces light on a subtree
  *
  * Getting (3) wrong — omitting :not([data-theme]) — means a user who
  * explicitly picks light still gets dark on a dark-mode OS.
@@ -24,6 +25,46 @@
  * motion — are added here because a component library needs them and
  * six marketing pages did not.
  */
+
+/* --- Fonts ------------------------------------------------------------
+ * Aclonica is the Zonventure brand face: the wordmark on zonventure-web,
+ * the shop and the old app's splash, and every display heading in zv.
+ * Open Sans is the body face it has always been paired with. Both are
+ * self-hosted — see fonts/README.md for why and for the licences. */
+@font-face {
+  font-family: "Aclonica";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("./fonts/aclonica-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Aclonica";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("./fonts/aclonica-latin-ext.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: "Open Sans";
+  font-style: normal;
+  font-weight: 300 800;
+  font-stretch: 100%;
+  font-display: swap;
+  src: url("./fonts/open-sans-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Open Sans";
+  font-style: normal;
+  font-weight: 300 800;
+  font-stretch: 100%;
+  font-display: swap;
+  src: url("./fonts/open-sans-latin-ext.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
 
 :root {
   color-scheme: light dark;
@@ -71,6 +112,9 @@
   --font-body:
     "Open Sans", "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji",
     system-ui, -apple-system, "Segoe UI", sans-serif;
+  /* Display face: wordmarks, step titles, scores, celebrations. Never
+   * body copy — it is a single weight and tires the eye in paragraphs. */
+  --font-brand: "Aclonica", "Vollkorn", Georgia, serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --text-xs: 0.78rem;
   --text-sm: 0.875rem;
@@ -127,6 +171,31 @@
     --success: #6dcf92;
     --success-bg: #14301f;
   }
+}
+
+/* Light, on demand, for any subtree. The play surface is always light —
+ * outdoor sunlight readability and QR contrast beat night comfort, as
+ * play.html decided — and the designer shows its phone preview inside a
+ * possibly dark console, so the light palette must be re-declarable on
+ * an element, not only on :root. Keep in step with the :root values. */
+[data-theme="light"] {
+  color-scheme: light;
+  --accent: #ad1357;
+  --accent-2: #e24080;
+  --accent-deep: #6d0a35;
+  --ink: #1f3349;
+  --ink-soft: #3d5573;
+  --muted: #4f6478;
+  --bg: #fbfbfd;
+  --surface: #ffffff;
+  --surface-2: #f3f4f7;
+  --border-soft: #e2e7ef;
+  --shadow:
+    0 1px 2px rgba(31, 51, 73, 0.06), 0 4px 16px rgba(31, 51, 73, 0.08);
+  --danger: #b3261e;
+  --danger-bg: #fdecea;
+  --success: #1b6b43;
+  --success-bg: #e7f5ec;
 }
 
 * {

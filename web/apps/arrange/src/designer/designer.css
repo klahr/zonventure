@@ -349,17 +349,36 @@ textarea.field__input { resize: vertical; font-family: var(--font-body); }
 /* A phone-sized frame, so an author judges the screen at the size a team
  * reads it. The step inside is styled by @zonventure/play-ui alone. */
 .phone {
-  box-sizing: border-box;
+  position: relative;
+  /* Makes the frame the containing block for the step's fixed overlays. */
+  transform: translateZ(0);
+  display: flex;
+  flex-direction: column;
   width: 100%;
   max-width: 22rem;
-  min-height: 24rem;
+  height: 38rem;
+  max-height: 70dvh;
   margin: 0 auto;
-  padding: var(--sp-5) var(--sp-4);
   border: 8px solid var(--ink-soft);
   border-radius: 1.75rem;
-  background: var(--bg);
+  overflow: hidden;
   box-shadow: var(--shadow);
 }
+.phone__screen {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  background: #fbfbfd;
+}
+.phone__empty { margin: auto; padding: var(--sp-5); text-align: center; color: #4f6478; font-size: var(--text-sm); }
+
+.look__row { display: grid; grid-template-columns: auto 1fr 6.5rem auto; align-items: center; gap: var(--sp-2); }
+.look__swatch { width: 2.25rem; height: 2.25rem; padding: 0; border: 1px solid var(--border-soft); border-radius: var(--radius); background: none; cursor: pointer; }
+.look__text { display: flex; flex-direction: column; min-width: 0; }
+.look__label { font-size: var(--text-sm); font-weight: 700; }
+.look__hex { font-family: var(--font-mono); font-size: var(--text-xs); padding: var(--sp-2); }
+.look__actions { display: flex; gap: var(--sp-2); }
 
 /* Where the simulated team is, on the canvas and in the list. */
 .card.is-playing,

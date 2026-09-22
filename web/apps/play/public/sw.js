@@ -16,9 +16,14 @@
  * assets are cache-first — their URLs change whenever their bytes do —
  * and assets the current shell no longer references are pruned, so the
  * cache holds one build, not every build ever shipped.
+ *
+ * "References" follows the shell's stylesheets one level down, because
+ * the fonts live there: the brand face is a hashed file only the CSS
+ * names. Those are fetched ahead of need, so a player who has never
+ * seen an å still gets the latin-ext subset in a dead spot.
  */
 
-const CACHE = "zv-play-shell-v1";
+const CACHE = "zv-play-shell-v2";
 const SCOPE = "/app/play/";
 const SHELL = SCOPE;
 
@@ -86,13 +91,39 @@ async function shell(req) {
   }
 }
 
-// Store the new shell and drop cached assets it no longer references.
+// Store the new shell, make sure everything it needs is cached, and drop
+// cached assets it no longer references.
 async function keepOnly(cache, html, res) {
   await cache.put(SHELL, res);
-  const wanted = new Set();
-  for (const m of html.matchAll(/(?:src|href)="(\/app\/play\/assets\/[^"]+)"/g)) wanted.add(m[1]);
+  const wanted = refs(html, /(?:src|href)="(\/app\/play\/assets\/[^"]+)"/g);
+  for (const p of [...wanted]) {
+    if (!p.endsWith(".css")) continue;
+    const css = await cached(cache, p);
+    if (css) for (const u of refs(await css.text(), /url\((\/app\/play\/assets\/[^)"']+)\)/g)) wanted.add(u);
+  }
+  await Promise.all([...wanted].map((p) => cached(cache, p)));
   for (const req of await cache.keys()) {
     const p = new URL(req.url).pathname;
     if (p.startsWith(SCOPE + "assets/") && !wanted.has(p)) await cache.delete(req);
+  }
+}
+
+function refs(text, re) {
+  const out = new Set();
+  for (const m of text.matchAll(re)) out.add(m[1]);
+  return out;
+}
+
+// The cached response for an asset, fetching and storing it if absent.
+async function cached(cache, path) {
+  const hit = await cache.match(path);
+  if (hit) return hit;
+  try {
+    const res = await fetch(path);
+    if (!res.ok) return null;
+    await cache.put(path, res.clone());
+    return res;
+  } catch {
+    return null;
   }
 }

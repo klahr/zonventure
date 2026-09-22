@@ -1,7 +1,8 @@
 // Adventure and graph endpoints. Routes: internal/server/routes_admin.go;
 // handlers: internal/admin/handlers.go (list) and internal/admin/graph.go.
 
-import { ApiError, get, post, put } from "./http.ts";
+import { ApiError, get, patch, post, put } from "./http.ts";
+import type { Brand } from "./play.ts";
 
 /** internal/admin/handlers.go: adventureDTO */
 export interface AdventureSummary {
@@ -66,3 +67,41 @@ export function refusedReport<Rep>(e: unknown): Rep | undefined {
   }
   return undefined;
 }
+
+// --- look ------------------------------------------------------------------
+
+/** internal/admin: adventureEditDTO, the palette part. */
+interface AdventureEdit {
+  title: string;
+  accent_color: string;
+  accent_secondary_color: string;
+  background_color: string;
+  text_color: string;
+  submit_bg_color: string;
+}
+
+/**
+ * The adventure's palette — the colours the player paints a step with.
+ * It belongs to the adventure, not to a graph version: recolouring does
+ * not make a new version, and applies to events already running.
+ */
+export async function getLook(slug: string, signal?: AbortSignal): Promise<{ title: string; brand: Brand }> {
+  const a = await get<AdventureEdit>(`/api/admin/adventures/${encodeURIComponent(slug)}/edit`, signal ? { signal } : {});
+  const b: Brand = {};
+  if (a.accent_color) b.accent = a.accent_color;
+  if (a.accent_secondary_color) b.accent_secondary = a.accent_secondary_color;
+  if (a.background_color) b.background = a.background_color;
+  if (a.text_color) b.text = a.text_color;
+  if (a.submit_bg_color) b.submit_bg = a.submit_bg_color;
+  return { title: a.title, brand: b };
+}
+
+/** Save the palette. A missing colour is cleared back to the default. */
+export const saveBrand = (slug: string, b: Brand) =>
+  patch<void>(`/api/admin/adventures/${encodeURIComponent(slug)}`, {
+    accent_color: b.accent ?? "",
+    accent_secondary_color: b.accent_secondary ?? "",
+    background_color: b.background ?? "",
+    text_color: b.text ?? "",
+    submit_bg_color: b.submit_bg ?? "",
+  });

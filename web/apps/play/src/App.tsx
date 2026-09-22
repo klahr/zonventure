@@ -1,5 +1,5 @@
-import { useEffect, type ReactNode } from "react";
-import { PlayView } from "@zonventure/play-ui";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { PlayView, StartCeremony, brandVars } from "@zonventure/play-ui";
 import { useT } from "./i18n.tsx";
 import { useGame } from "./useGame.ts";
 import { metresBetween, useGeo, useLiveRefresh } from "./live.ts";
@@ -14,6 +14,19 @@ export function App() {
 
   useLiveRefresh(game.status === "ready", game.refresh);
   const geo = useGeo(game.status === "ready" && running && !view?.finished, !!view?.zone && !view.here, game.refresh);
+
+  // The start moment plays when this tab watched the lobby turn into the
+  // game — not on every reload of a game already under way.
+  const [ceremony, setCeremony] = useState(false);
+  const sawLobby = useRef(false);
+  useEffect(() => {
+    if (game.status !== "ready" || !s) return;
+    if (!view) sawLobby.current = true;
+    else if (sawLobby.current) {
+      sawLobby.current = false;
+      setCeremony(true);
+    }
+  }, [game.status, s, view]);
 
   // Lane events are played in the original player.
   useEffect(() => {
@@ -59,7 +72,8 @@ export function App() {
   return (
     <div className="app">
       <header className="app-bar">
-        <div>
+        {s.event.org_logo_url && <img className="app-bar__logo" src={s.event.org_logo_url} alt={s.event.org_name ?? ""} />}
+        <div className="app-bar__who">
           <div className="app-bar__title">{s.event.adventure_title || "Zonventure"}</div>
           <div className="app-bar__team">{s.team.name}</div>
         </div>
@@ -80,12 +94,14 @@ export function App() {
             busy={game.busy || !running}
             feedback={game.feedback}
             t={t}
+            brand={s.brand ?? null}
             {...(zoneNote ? { zoneNote } : {})}
           />
         ) : (
           <Lobby state={s} t={t} />
         )}
       </main>
+      {ceremony && <StartCeremony title={s.event.adventure_title || "Zonventure"} brand={s.brand ?? null} onDone={() => setCeremony(false)} />}
     </div>
   );
 }
@@ -99,7 +115,7 @@ function Lobby({ state, t }: { state: NonNullable<ReturnType<typeof useGame>["st
     return <p>{t("This event has ended. Thanks for playing!")}</p>;
   }
   return (
-    <div className="app-lobby">
+    <div className="app-lobby" style={brandVars(state.brand)}>
       <h1>{t("You're on team {{team}}", { team: state.team.name })}</h1>
       <p>
         {at && !Number.isNaN(at.getTime())

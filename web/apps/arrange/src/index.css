@@ -127,9 +127,9 @@
 }
 .login__wordmark,
 .shell__wordmark {
+  font-family: var(--font-brand);
   font-size: var(--text-xl);
-  font-weight: 800;
-  letter-spacing: -0.03em;
+  font-weight: 400;
   color: var(--accent);
 }
 .login__sub,
@@ -192,8 +192,10 @@
 }
 .shell__main h1 {
   margin: 0 0 var(--sp-4);
+  font-family: var(--font-brand);
   font-size: var(--text-2xl);
-  letter-spacing: -0.02em;
+  font-weight: 400;
+  color: var(--accent);
 }
 
 .meta {

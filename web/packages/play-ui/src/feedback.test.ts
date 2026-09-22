@@ -8,6 +8,7 @@ test("a right answer says so, with the points", () => {
   assert.deepEqual(feedbackForResult("answer", { accepted: true, points: 7.5, view }, english), {
     tone: "good",
     text: "Correct! +7.5 points",
+    burst: { kind: "celebrate", head: "Correct!", sub: "+7.5 points" },
   });
 });
 
@@ -19,6 +20,15 @@ test("a wrong answer shows the author's ladder text first", () => {
 test("a wrong answer that took a pity path does not say try again", () => {
   const fb = feedbackForResult("answer", { accepted: false, port: "gave-up", view }, english);
   assert.equal(fb?.tone, "info");
+  assert.equal(fb?.burst, undefined, "moving on is not a rebuff");
+});
+
+test("a wrong answer shakes, carrying the ladder text", () => {
+  assert.deepEqual(feedbackForResult("answer", { accepted: false, response: "Colder.", view }, english)?.burst, {
+    kind: "rebuff",
+    head: "Not quite",
+    sub: "Colder.",
+  });
 });
 
 test("moves without an answer are silent", () => {

@@ -124,6 +124,19 @@ export type RefusalCode =
   | "no_game"
   | "graph";
 
+/**
+ * internal/adventure: Colors — the adventure's brand palette, #rrggbb
+ * each, any of them optional. The same palette the lane player used.
+ */
+export interface Brand {
+  accent?: string;
+  accent_secondary?: string;
+  background?: string;
+  text?: string;
+  /** The answer bar at the bottom of the screen. */
+  submit_bg?: string;
+}
+
 // --- player ---------------------------------------------------------------
 
 /** internal/player: PlayState */
@@ -137,7 +150,10 @@ export interface PlayState {
     scheduled_at?: string;
     adventure_title?: string;
     org_name?: string;
+    org_logo_url?: string;
   };
+  /** The adventure's palette, when the author set one. */
+  brand?: Brand;
   view?: View;
 }
 

@@ -4,6 +4,11 @@ import { App } from "./App.tsx";
 import { I18nProvider } from "./i18n.tsx";
 import "./index.css";
 
+// The play surface is always light, as play.html's was: outdoor sunlight
+// readability and QR contrast beat night comfort. Set before the first
+// render so no dark frame flashes.
+document.documentElement.dataset.theme = "light";
+
 const root = document.getElementById("root");
 if (!root) throw new Error("#root missing from index.html");
 

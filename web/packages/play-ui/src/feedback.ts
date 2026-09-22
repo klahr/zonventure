@@ -15,7 +15,14 @@ export const english: Translate = (key, vars) =>
 
 export interface Feedback {
   tone: "good" | "bad" | "info";
+  /** The line that stays on screen. */
   text: string;
+  /**
+   * A moment to mark, as play.html did: a confetti celebration for a
+   * right answer, a quick shake for a wrong one. Played over the step,
+   * then gone; `text` stays.
+   */
+  burst?: { kind: "celebrate" | "rebuff"; head: string; sub?: string };
 }
 
 /** Feedback for an action the engine accepted (HTTP 200). */
@@ -24,14 +31,24 @@ export function feedbackForResult(kind: play.PlayAction["kind"], r: play.Result,
     case "answer":
       if (r.accepted) {
         const pts = Math.round((r.points ?? 0) * 10) / 10;
-        return { tone: "good", text: pts > 0 ? t("Correct! +{{points}} points", { points: pts }) : t("Correct!") };
+        const sub = pts > 0 ? t("+{{points}} points", { points: pts }) : undefined;
+        return {
+          tone: "good",
+          text: pts > 0 ? t("Correct! +{{points}} points", { points: pts }) : t("Correct!"),
+          burst: { kind: "celebrate", head: t("Correct!"), ...(sub ? { sub } : {}) },
+        };
       }
       // A wrong answer that took a pity path ("after 5 tries") moved the
       // team on; saying "try again" would be wrong.
       if (r.port) return { tone: "info", text: r.response || t("That wasn't it — moving on.") };
-      if (r.response) return { tone: "bad", text: r.response };
-      if (r.blocked_until) return { tone: "bad", text: t("Not right. Wait a moment before trying again.") };
-      return { tone: "bad", text: t("That's not it. Try again.") };
+      {
+        const text = r.response || (r.blocked_until ? t("Not right. Wait a moment before trying again.") : t("That's not it. Try again."));
+        return {
+          tone: "bad",
+          text,
+          burst: { kind: "rebuff", head: t("Not quite"), ...(r.response ? { sub: r.response } : {}) },
+        };
+      }
     case "skip":
       return { tone: "info", text: t("Skipped.") };
     case "timeout":

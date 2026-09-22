@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError, play } from "@zonventure/api";
 import { nodeBySlug, portLabel, type Envelope, type Graph } from "@zonventure/graph";
-import { PlayView, feedbackForRefusal, feedbackForResult, formatSeconds, type Feedback } from "@zonventure/play-ui";
+import { PlayView, StartCeremony, feedbackForRefusal, feedbackForResult, formatSeconds, type Feedback } from "@zonventure/play-ui";
 import "@zonventure/play-ui/play-ui.css";
 import { useT } from "../i18n.tsx";
 
@@ -42,6 +42,10 @@ interface Props {
   restart: number;
   /** Reports where the simulated team is, for the canvas. */
   onPosition: (slug: string | null) => void;
+  /** The adventure's palette, as currently edited. */
+  brand: play.Brand;
+  /** Shown in the start ceremony. */
+  title: string;
 }
 
 interface LogLine {
@@ -53,7 +57,7 @@ interface LogLine {
 /** Steps a player sees. The others run the moment a team reaches them. */
 const VISIBLE = new Set(["puzzle", "story", "hub", "end"]);
 
-export function Simulator({ slug, graph, envelope, selected, mode, onMode, restart, onPosition }: Props) {
+export function Simulator({ slug, graph, envelope, selected, mode, onMode, restart, onPosition, brand, title }: Props) {
   const t = useT();
   const tr = useCallback((key: string, vars?: Record<string, string | number>) => t.t(key, vars), [t]);
 
@@ -65,6 +69,7 @@ export function Simulator({ slug, graph, envelope, selected, mode, onMode, resta
   const [log, setLog] = useState<LogLine[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [nonce, setNonce] = useState(0);
+  const [ceremony, setCeremony] = useState(false);
 
   // The latest draft, read at send time so a run in progress uses the
   // graph as it is now rather than as it was when the run started.
@@ -141,7 +146,10 @@ export function Simulator({ slug, graph, envelope, selected, mode, onMode, resta
     const ac = new AbortController();
     void run({ kind: "start" }, null, ac.signal).then((r) => {
       if (r?.refusal) say(r.refusal.message, "warn");
-      else if (r) say(t.t("Started at {{step}}.", { step: titleOf(r.result.view.node ?? "") }));
+      else if (r) {
+        setCeremony(true);
+        say(t.t("Started at {{step}}.", { step: titleOf(r.result.view.node ?? "") }));
+      }
     });
     return () => ac.abort();
     // Deliberately not keyed on the graph: a run carries on across edits.
@@ -243,14 +251,22 @@ export function Simulator({ slug, graph, envelope, selected, mode, onMode, resta
 
       {error && <div className="alert alert--danger">{error}</div>}
 
+      {/* The frame's transform makes it the containing block for the
+          step's fixed overlays — confetti and sheets cover the phone,
+          not the designer. */}
       <div className="phone" aria-label={t.t("What the team sees")}>
-        {view ? (
-          <PlayView view={view} onAction={(a) => void act(a)} busy={busy} feedback={feedback} live={false} t={tr} />
-        ) : mode === "step" && selectedNode && !VISIBLE.has(selectedNode.type) ? (
-          <p className="pv-muted">{t.t("Teams never see this step. It happens the moment they reach it, and they carry on.")}</p>
-        ) : (
-          <p className="pv-muted">{t.t("Select a puzzle, story or hub to see it as a team will.")}</p>
-        )}
+        <div className="phone__screen">
+          {view ? (
+            <PlayView view={view} onAction={(a) => void act(a)} busy={busy} feedback={feedback} live={false} t={tr} brand={brand} />
+          ) : (
+            <p className="phone__empty">
+              {mode === "step" && selectedNode && !VISIBLE.has(selectedNode.type)
+                ? t.t("Teams never see this step. It happens the moment they reach it, and they carry on.")
+                : t.t("Select a puzzle, story or hub to see it as a team will.")}
+            </p>
+          )}
+        </div>
+        {ceremony && <StartCeremony title={title} brand={brand} onDone={() => setCeremony(false)} />}
       </div>
 
       {log.length > 0 && (

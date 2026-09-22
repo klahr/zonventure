@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ReactFlowProvider } from "@xyflow/react";
-import { ApiError, adventures } from "@zonventure/api";
+import { ApiError, adventures, type play } from "@zonventure/api";
 import {
   FORMAT_V2,
   canRedo,
@@ -31,6 +31,7 @@ import { Inspector } from "./Inspector.tsx";
 import { ListView } from "./ListView.tsx";
 import { Resources } from "./Resources.tsx";
 import { Simulator, type SimMode } from "./Simulator.tsx";
+import { Look } from "./Look.tsx";
 import "./designer.css";
 
 type Loaded =
@@ -67,6 +68,42 @@ export function Designer({ slug }: { slug: string }) {
   const [simMode, setSimMode] = useState<SimMode>("step");
   const [simRestart, setSimRestart] = useState(0);
   const [playing, setPlaying] = useState<string | null>(null);
+  // The adventure's palette: as saved, and as being edited. The preview
+  // shows the edited one, so a colour change is visible before saving.
+  const [brandSaved, setBrandSaved] = useState<play.Brand>({});
+  const [brand, setBrand] = useState<play.Brand>({});
+  const [brandSaving, setBrandSaving] = useState(false);
+  const [brandError, setBrandError] = useState<string | null>(null);
+  const [adventureTitle, setAdventureTitle] = useState(slug);
+  const brandDirty = JSON.stringify(brand) !== JSON.stringify(brandSaved);
+
+  useEffect(() => {
+    const ac = new AbortController();
+    adventures
+      .getLook(slug, ac.signal)
+      .then(({ title, brand: b }) => {
+        if (title) setAdventureTitle(title);
+        setBrandSaved(b);
+        setBrand(b);
+      })
+      .catch(() => {
+        /* no palette is the default look; the editor still works */
+      });
+    return () => ac.abort();
+  }, [slug]);
+
+  const saveBrand = async () => {
+    setBrandSaving(true);
+    setBrandError(null);
+    try {
+      await adventures.saveBrand(slug, brand);
+      setBrandSaved(brand);
+    } catch (e) {
+      setBrandError(e instanceof ApiError ? e.message : t.t("Could not reach the server. Check your connection."));
+    } finally {
+      setBrandSaving(false);
+    }
+  };
   const [forceCanvas, setForceCanvas] = useState(false);
   const [paletteRequest, setPaletteRequest] = useState(0);
   const [focusRequest, setFocusRequest] = useState(0);
@@ -377,7 +414,22 @@ export function Designer({ slug }: { slug: string }) {
               onMode={setSimMode}
               restart={simRestart}
               onPosition={setPlaying}
+              brand={brand}
+              title={adventureTitle}
             />
+          )}
+          {panel === "play" && (
+            <div className="insp">
+              <Look
+                brand={brand}
+                dirty={brandDirty}
+                saving={brandSaving}
+                error={brandError}
+                onChange={setBrand}
+                onSave={() => void saveBrand()}
+                onRevert={() => setBrand(brandSaved)}
+              />
+            </div>
           )}
 
           {panel === "resources" && <Resources graph={graph} onChange={change} />}

@@ -16,8 +16,10 @@ package player
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -25,6 +27,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/klahr/zonventure/internal/activity"
+	"github.com/klahr/zonventure/internal/adventure"
 	"github.com/klahr/zonventure/internal/auth"
 	"github.com/klahr/zonventure/internal/graph/session"
 	"github.com/klahr/zonventure/internal/httpx"
@@ -56,6 +59,7 @@ type PlayEvent struct {
 	ScheduledAt    string `json:"scheduled_at,omitempty"`
 	AdventureTitle string `json:"adventure_title,omitempty"`
 	OrgName        string `json:"org_name,omitempty"`
+	OrgLogoURL     string `json:"org_logo_url,omitempty"`
 }
 
 // PlayState is the body of GET /api/player/play.
@@ -65,6 +69,9 @@ type PlayState struct {
 	Engine string    `json:"engine"`
 	Team   PlayTeam  `json:"team"`
 	Event  PlayEvent `json:"event"`
+	// Brand is the adventure's palette, the one the lane player paints
+	// with too, so an adventure styled for either looks the same.
+	Brand *adventure.Colors `json:"brand,omitempty"`
 	// View is set once the event has started.
 	View *play.View `json:"view,omitempty"`
 }
@@ -93,9 +100,20 @@ func (h *Handlers) GetPlay(w http.ResponseWriter, r *http.Request) {
 		Engine: "lanes",
 		Team:   PlayTeam{ID: tc.TeamID, Name: tc.TeamName, Token: tc.TeamToken},
 		Event: PlayEvent{
-			ID: tc.EventID, State: tc.RunState, ScheduledAt: tc.ScheduledAt.String,
-			AdventureTitle: h.adventureTitle(tc.AdventureSlug), OrgName: tc.OrgName,
+			ID: tc.EventID, State: tc.RunState, ScheduledAt: tc.ScheduledAt.String, OrgName: tc.OrgName,
 		},
+	}
+	title, brand, err := adventureLook(ctx, h.DB, tc.AdventureSlug)
+	if err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "loading adventure failed", err)
+		return
+	}
+	out.Event.AdventureTitle = title
+	if !brand.Empty() {
+		out.Brand = &brand
+	}
+	if tc.OrgHasLogo {
+		out.Event.OrgLogoURL = fmt.Sprintf("/org-logo/%d", tc.OrgID)
 	}
 	uses, err := play.UsesGraph(ctx, h.DB, tc.EventID)
 	if err != nil {
@@ -129,6 +147,28 @@ func (h *Handlers) GetPlay(w http.ResponseWriter, r *http.Request) {
 		out.View = &view
 	}
 	httpx.JSON(w, http.StatusOK, out)
+}
+
+// adventureLook reads what the player app shows of the adventure itself:
+// its title and palette. One small query, because this runs on every
+// push and poll — adventure.Library.Get would load every page, hint and
+// image to answer it.
+func adventureLook(ctx context.Context, db *sql.DB, slug string) (string, adventure.Colors, error) {
+	var (
+		title                         string
+		accent, second, bg, ink, dock sql.NullString
+	)
+	err := db.QueryRowContext(ctx, `
+		SELECT title, accent_color, accent_secondary_color, background_color, text_color, submit_bg_color
+		FROM adventures WHERE slug = $1
+	`, slug).Scan(&title, &accent, &second, &bg, &ink, &dock)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", adventure.Colors{}, nil
+	}
+	return title, adventure.Colors{
+		Accent: accent.String, AccentSecondary: second.String, Background: bg.String,
+		Text: ink.String, SubmitBackground: dock.String,
+	}, err
 }
 
 // PlayActionRequest is the body of POST /api/player/play/{action}.
