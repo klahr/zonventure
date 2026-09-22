@@ -104,9 +104,32 @@ procurement policies preclude the AGPL — write to
 ## Contributing
 
 Patches, bug reports and translation contributions welcome via
-[github.com/klahr/zonventure](https://github.com/klahr/zonventure). Please run
-`go test ./...` against a real Postgres before sending a patch — the
-DB-bound tests skip silently without one (`ZV_TEST_DSN`).
+[github.com/klahr/zonventure](https://github.com/klahr/zonventure).
+
+Run `go test ./...` against a real Postgres before sending a patch. The
+DB-bound tests — roughly a quarter of the suite — skip silently without
+one, so a green run on a machine with no Postgres means very little.
+Point `ZV_TEST_DSN` at an admin DSN with `CREATEDB`:
+
+```sh
+docker run -d --name zv-test-pg -e POSTGRES_PASSWORD=postgres -p 5432:5432 postgres:16-alpine
+export ZV_TEST_DSN='postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable'
+go test ./...
+```
+
+CI sets `CI=true`, which turns an unreachable database into a failure
+rather than a skip.
+
+After cloning, enable the repository's hooks once:
+
+```sh
+git config core.hooksPath .githooks
+git config blame.ignoreRevsFile .git-blame-ignore-revs
+```
+
+The pre-commit hook runs `gitleaks` over staged changes and checks
+`gofmt`. The blame-ignore file keeps `git blame` off the whole-tree
+formatting sweep.
 
 ## Contact
 

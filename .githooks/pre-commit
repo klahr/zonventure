@@ -1,0 +1,42 @@
+#!/bin/sh
+# Pre-commit gate. Deliberately minimal: CI is the real check, this just
+# catches the two things that are expensive to undo.
+#
+# Enable with:  git config core.hooksPath .githooks
+#
+# 1. Secrets. GitHub's own secret scanning needs Advanced Security,
+#    which is not available on a free private repo, so this hook is the
+#    only automated barrier before a push — and a push cannot be undone.
+# 2. gofmt. Cheap here, and it keeps CI from failing on formatting.
+#
+# No Node dependencies: husky/lint-staged in the commit path of a
+# Go-first repo is a recurring source of "why can't I commit" for no
+# added value when there is one committer.
+#
+# Note on coverage: gitleaks matches known credential shapes and
+# allowlists well-known documentation samples, so it will not catch a
+# hand-rolled password in a config file. It is a backstop, not a
+# substitute for not committing secrets.
+
+set -e
+
+if command -v gitleaks >/dev/null 2>&1; then
+    if ! gitleaks protect --staged --no-banner --redact; then
+        echo >&2
+        echo "pre-commit: gitleaks flagged a staged secret." >&2
+        echo "Fix it, or annotate a false positive with a gitleaks:allow comment." >&2
+        exit 1
+    fi
+else
+    echo "pre-commit: gitleaks not found; skipping the secret scan." >&2
+fi
+
+unformatted=$(git diff --cached --name-only --diff-filter=ACM -- '*.go' \
+    | xargs -r gofmt -l)
+if [ -n "$unformatted" ]; then
+    echo >&2
+    echo "pre-commit: these staged files need gofmt:" >&2
+    echo "$unformatted" | sed 's/^/  /' >&2
+    echo "Run: gofmt -w $unformatted" >&2
+    exit 1
+fi
