@@ -135,6 +135,13 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 		// handlers enforce ownership inline (admin edits the global
 		// catalog; org users edit their own org's adventures).
 		r.Get("/adventures/{slug}/edit", adminH.LoadAdventureForEdit)
+
+		// The adventure as a graph (internal/graph). Saving creates a new
+		// version; convert builds one from the lanes without saving.
+		r.Get("/adventures/{slug}/graph", adminH.GetAdventureGraph)
+		r.Put("/adventures/{slug}/graph", adminH.PutAdventureGraph)
+		r.Post("/adventures/{slug}/graph/validate", adminH.ValidateAdventureGraph)
+		r.Post("/adventures/{slug}/graph/convert", adminH.ConvertAdventureGraph)
 		r.Post("/adventures", adminH.CreateAdventure)
 		r.Patch("/adventures/{slug}", adminH.UpdateAdventure)
 		r.Delete("/adventures/{slug}", adminH.DeleteAdventure)

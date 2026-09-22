@@ -93,6 +93,7 @@ func (s *Server) registerTools() {
 	// provider to "simulated" and refuses on Stripe-enabled
 	// deployments.
 	s.registerPurchaseTools()
+	s.registerGraphTools()
 	// Phase 4 — invitations + ICS export. invitations.go.
 	s.registerInvitationTools()
 	// Slice 3 polish — CSV results export and a static lifecycle
