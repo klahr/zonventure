@@ -13,12 +13,15 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  CGO_ENABLED: "0"
   # Setting CI makes internal/dbtest treat an unreachable Postgres as a
   # failure rather than a skip. Without it a broken service container
   # produces a green run that skipped ~200 DB-bound tests. See
   # internal/dbtest/dbtest.go.
   CI: "true"
+  # CGO is set per step, not globally. The race detector needs it on;
+  # the release binary needs it off so the distroless static image
+  # works. The previous SourceHut config set CGO_ENABLED=0 globally and
+  # also ran `go test -race`, which cannot have worked.
 
 jobs:
   go:
@@ -64,6 +67,8 @@ jobs:
         run: go vet ./...
 
       - name: go test -race
+        env:
+          CGO_ENABLED: "1"
         run: go test -race ./...
 
       # Belt and braces alongside the CI guard in dbtest: if any *test*
@@ -82,7 +87,11 @@ jobs:
             exit 1
           fi
 
+      # CGO off so the binary is fully static, matching what the
+      # distroless runtime image in the Dockerfile requires.
       - name: build
+        env:
+          CGO_ENABLED: "0"
         run: |
           go build -trimpath \
             -ldflags="-s -w -X main.version=${{ github.ref_name }}" \
