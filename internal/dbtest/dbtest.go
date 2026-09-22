@@ -7,6 +7,13 @@
 // that touch the DB Skip when no DSN is reachable so a bare
 // `go test ./...` on a workstation without Postgres still passes —
 // the DB-bound tests just get marked as skipped.
+//
+// That convenience is a liability in CI. Roughly a quarter of this
+// suite is DB-bound (201 of 736 tests at the time of writing), so a
+// misconfigured Postgres service container would produce a green build
+// that tested almost nothing — silently, and exactly when it matters
+// most. When $CI is set, an unreachable database is therefore a
+// failure, not a skip. See unreachable below.
 package dbtest
 
 import (
@@ -29,9 +36,24 @@ import (
 // different cluster (e.g. CI's `postgres://postgres:postgres@localhost`).
 const defaultAdminDSN = "postgres:///postgres?host=/var/run/postgresql"
 
+// unreachable reports a database we could not reach. On a developer
+// workstation that is a skip, so `go test ./...` stays useful without
+// Postgres installed. Under CI it is a fatal error: a green run that
+// skipped its DB-bound tests is worse than a red one, because it looks
+// like coverage it does not have.
+func unreachable(t *testing.T, op, dsn string, err error) {
+	t.Helper()
+	const hint = "set ZV_TEST_DSN to a postgres admin DSN with CREATEDB"
+	if os.Getenv("CI") != "" {
+		t.Fatalf("dbtest: %s %q: %v (%s; skipping is disabled under CI)", op, dsn, err, hint)
+	}
+	t.Skipf("dbtest: %s %q: %v (%s)", op, dsn, err, hint)
+}
+
 // Open returns a *sql.DB pointing at a brand-new test database. The
 // caller MUST call the returned cleanup; otherwise the database lingers.
-// Skips the test if no Postgres is reachable.
+// Skips the test if no Postgres is reachable — except under CI, where
+// an unreachable database fails the run. See unreachable.
 func Open(t *testing.T) (*sql.DB, func()) {
 	t.Helper()
 
@@ -42,11 +64,11 @@ func Open(t *testing.T) (*sql.DB, func()) {
 
 	admin, err := sql.Open("pgx", adminDSN)
 	if err != nil {
-		t.Skipf("dbtest: open %q: %v (set ZV_TEST_DSN to a postgres admin DSN with CREATEDB)", adminDSN, err)
+		unreachable(t, "open", adminDSN, err)
 	}
 	if err := admin.Ping(); err != nil {
 		admin.Close()
-		t.Skipf("dbtest: ping %q: %v (set ZV_TEST_DSN to a postgres admin DSN with CREATEDB)", adminDSN, err)
+		unreachable(t, "ping", adminDSN, err)
 	}
 
 	name := "zv_test_" + randHex(8)
