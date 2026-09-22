@@ -183,6 +183,12 @@
 }
 .shell__main {
   padding: var(--sp-6);
+  min-width: 0;
+}
+/* The designer owns its whole area: toolbar, canvas and side panel. */
+.shell__main--full {
+  padding: 0;
+  overflow: hidden;
 }
 .shell__main h1 {
   margin: 0 0 var(--sp-4);

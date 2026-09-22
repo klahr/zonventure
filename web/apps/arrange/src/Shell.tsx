@@ -1,24 +1,31 @@
 import { useState } from "react";
-import { isGlobalAdmin, type Whoami } from "@zonventure/api";
+import type { Whoami } from "@zonventure/api";
 import { readTheme, setTheme, type Theme } from "@zonventure/ui";
 import { useT } from "./i18n.tsx";
 import { useSession } from "./session.tsx";
+import { href, useRoute, type Route } from "./router.ts";
+import { AdventuresPage } from "./AdventuresPage.tsx";
+import { Designer } from "./designer/Designer.tsx";
 
 /**
  * Authenticated shell: sidebar, header and the content region.
  *
- * Navigation differs by role, matching the existing console — a global
- * admin manages organisations and reads logs, an org member does not,
- * and showing links that 403 on click is worse than not showing them.
+ * Navigation links only the screens that exist. Role-specific items
+ * (organisations and logs for a global admin) return with their views —
+ * a link that 403s or goes nowhere is worse than no link.
  */
 export function Shell({ user }: { user: Whoami }) {
   const t = useT();
   const { logout } = useSession();
   const [theme, setThemeState] = useState<Theme>(() => readTheme());
 
-  const nav = isGlobalAdmin(user)
-    ? ["Dashboard", "Organisations", "Adventures", "Events", "Settings"]
-    : ["Dashboard", "Adventures", "Events", "Settings"];
+  const route = useRoute();
+  // Only screens that exist are linked. A nav item that goes nowhere is
+  // worse than a missing one; the rest arrive as the console is ported.
+  const nav: { label: string; to: Route; active: boolean }[] = [
+    { label: "Dashboard", to: { name: "dashboard" }, active: route.name === "dashboard" },
+    { label: "Adventures", to: { name: "adventures" }, active: route.name === "adventures" || route.name === "designer" },
+  ];
 
   function changeTheme(next: Theme) {
     setTheme(next);
@@ -40,14 +47,14 @@ export function Shell({ user }: { user: Whoami }) {
         </div>
 
         <nav className="shell__nav" aria-label={t.t("Primary")}>
-          {nav.map((item, i) => (
+          {nav.map((item) => (
             <a
-              key={item}
-              className={"shell__link" + (i === 0 ? " is-active" : "")}
-              href={"#" + item.toLowerCase()}
-              {...(i === 0 ? { "aria-current": "page" as const } : {})}
+              key={item.label}
+              className={"shell__link" + (item.active ? " is-active" : "")}
+              href={href(item.to)}
+              {...(item.active ? { "aria-current": "page" as const } : {})}
             >
-              {t.t(item)}
+              {t.t(item.label)}
             </a>
           ))}
         </nav>
@@ -87,10 +94,10 @@ export function Shell({ user }: { user: Whoami }) {
         </div>
       </aside>
 
-      <main className="shell__main" id="main">
+      <main className={"shell__main" + (route.name === "designer" ? " shell__main--full" : "")} id="main">
         {/* Leaving a seeded credential on a reachable box is a
             takeover, so this is loud and not dismissible. */}
-        {user.password_is_default && (
+        {user.password_is_default && route.name !== "designer" && (
           <div className="alert alert--danger" role="alert">
             <strong>{t.t("Default password in use.")}</strong>{" "}
             {t.t(
@@ -99,24 +106,28 @@ export function Shell({ user }: { user: Whoami }) {
           </div>
         )}
 
-        <h1>{t.t("Dashboard")}</h1>
-        <dl className="meta">
-          <dt>{t.t("Signed in as {{name}}", { name: "" }).trim()}</dt>
-          <dd>
-            {user.username} · {user.role}
-          </dd>
-          {org && (
-            <>
-              <dt>{t.t("Organisation")}</dt>
-              <dd>{org.org_name}</dd>
-            </>
-          )}
-        </dl>
-
-        <p className="lede">
-          Phase 1 shell. Authentication, session, theming and i18n are
-          live; the console views land in Phase 6.
-        </p>
+        {route.name === "designer" && <Designer key={route.slug} slug={route.slug} />}
+        {route.name === "adventures" && <AdventuresPage />}
+        {route.name === "dashboard" && (
+          <>
+            <h1>{t.t("Dashboard")}</h1>
+            <dl className="meta">
+              <dt>{t.t("Signed in as {{name}}", { name: "" }).trim()}</dt>
+              <dd>
+                {user.username} · {user.role}
+              </dd>
+              {org && (
+                <>
+                  <dt>{t.t("Organisation")}</dt>
+                  <dd>{org.org_name}</dd>
+                </>
+              )}
+            </dl>
+            <p className="lede">
+              <a href={href({ name: "adventures" })}>{t.t("Design an adventure →")}</a>
+            </p>
+          </>
+        )}
       </main>
     </div>
   );

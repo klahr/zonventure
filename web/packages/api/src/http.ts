@@ -23,12 +23,19 @@ interface ErrorBody {
 export class ApiError extends Error {
   readonly status: number;
   readonly code: string | undefined;
+  /**
+   * The decoded error body, when it was JSON. Some refusals carry more
+   * than a message — a rejected graph save includes the full validation
+   * report — and the caller needs that to show every problem at once.
+   */
+  readonly body: unknown;
 
-  constructor(status: number, message: string, code?: string) {
+  constructor(status: number, message: string, code?: string, body?: unknown) {
     super(message);
     this.name = "ApiError";
     this.status = status;
     this.code = code;
+    this.body = body;
   }
 
   /** 401. The session is gone — re-authenticate rather than retrying. */
@@ -137,16 +144,18 @@ export async function request<T>(
 async function errorFrom(res: Response): Promise<ApiError> {
   let message = `HTTP ${res.status}`;
   let code: string | undefined;
+  let body: unknown;
   try {
-    const body = (await res.json()) as ErrorBody;
-    if (body.error) message = body.error;
-    if (body.code) code = body.code;
+    body = await res.json();
+    const b = body as ErrorBody;
+    if (b.error) message = b.error;
+    if (b.code) code = b.code;
   } catch {
     // Not JSON — a proxy error page, or an empty body. Keep the
     // status-derived message rather than surfacing a parse failure,
     // which would tell the user nothing useful.
   }
-  return new ApiError(res.status, message, code);
+  return new ApiError(res.status, message, code, body);
 }
 
 export const get = <T>(path: string, opts?: RequestOptions) =>
@@ -156,5 +165,12 @@ export const post = <T>(path: string, body?: unknown, opts?: RequestOptions) =>
   request<T>(path, {
     ...opts,
     method: "POST",
+    ...(body !== undefined ? { body } : {}),
+  });
+
+export const put = <T>(path: string, body?: unknown, opts?: RequestOptions) =>
+  request<T>(path, {
+    ...opts,
+    method: "PUT",
     ...(body !== undefined ? { body } : {}),
   });

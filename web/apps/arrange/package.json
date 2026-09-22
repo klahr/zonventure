@@ -14,7 +14,9 @@
     "react-dom": "^19.2.0",
     "@zonventure/api": "*",
     "@zonventure/ui": "*",
-    "@zonventure/i18n": "*"
+    "@zonventure/i18n": "*",
+    "@zonventure/graph": "*",
+    "@xyflow/react": "^12.11.5"
   },
   "devDependencies": {
     "@types/node": "^26.6.2",

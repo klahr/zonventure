@@ -1,0 +1,336 @@
+// Palette entries: the things an author can drop onto the canvas.
+//
+// Deliberately richer than the seven node types. "Puzzle" alone says
+// nothing about intent; "Choice: two answers, two ways" is a decision an
+// author actually makes, and arriving pre-configured saves them building
+// the same outputs by hand every time. Each preset is one node type with
+// sensible defaults — nothing here the inspector cannot also produce.
+//
+// Modelled on dazyflow's quick-drop palette: drag a wire out of a port,
+// release on empty canvas, pick from a searchable list, and the new node
+// is created at the drop point already wired in.
+
+import { freshSlug, portsOf } from "./model.ts";
+import type { Graph, Node, NodeType } from "./types.ts";
+
+export type PresetCategory = "puzzle" | "story" | "flow" | "effect" | "end";
+
+export interface Preset {
+  id: string;
+  type: NodeType;
+  category: PresetCategory;
+  label: string;
+  /** One line under the label: what it is for, not what it is. */
+  hint: string;
+  /** Extra words the search should match, for synonyms authors use. */
+  keywords?: string;
+  build: (slug: string) => Omit<Node, "slug" | "x" | "y">;
+}
+
+const answer = (port: string, label: string, value: string, points = 10) => ({
+  port,
+  label,
+  trigger: "answer" as const,
+  points,
+  matchers: [{ kind: "exact" as const, value }],
+});
+
+export const PRESETS: Preset[] = [
+  {
+    id: "puzzle-text",
+    type: "puzzle",
+    category: "puzzle",
+    label: "Puzzle",
+    hint: "A question with a typed answer",
+    keywords: "question riddle text answer",
+    build: () => ({
+      type: "puzzle",
+      title: "Puzzle",
+      puzzle: { prompt: "", outputs: [answer("solved", "Solved", "")] },
+    }),
+  },
+  {
+    id: "puzzle-choice",
+    type: "puzzle",
+    category: "puzzle",
+    label: "Choice",
+    hint: "Two answers that lead two different ways",
+    keywords: "branch fork decision door left right option",
+    build: () => ({
+      type: "puzzle",
+      title: "Choice",
+      puzzle: {
+        prompt: "",
+        outputs: [answer("a", "Option A", "", 0), answer("b", "Option B", "", 0)],
+      },
+    }),
+  },
+  {
+    id: "puzzle-number",
+    type: "puzzle",
+    category: "puzzle",
+    label: "Number, partial credit",
+    hint: "Closer guesses earn more points",
+    keywords: "estimate guess numeric near count how many",
+    build: () => ({
+      type: "puzzle",
+      title: "Estimate",
+      puzzle: {
+        prompt: "",
+        outputs: [{
+          port: "solved", label: "Answered", trigger: "answer", points: 100,
+          matchers: [{ kind: "near", target: 100, tolerance: 20 }],
+        }],
+      },
+    }),
+  },
+  {
+    // A story gated on a zone, not a puzzle: the player presses one
+    // button that only works on the spot, exactly as zv's no-answer pages
+    // behave today. A puzzle with a catch-all answer would make them type
+    // something just to prove they arrived.
+    id: "checkin",
+    type: "story",
+    category: "story",
+    label: "Check in at a place",
+    hint: "Reach a spot on the map to continue",
+    keywords: "gps location geofence arrive zone place map checkpoint",
+    build: () => ({ type: "story", title: "Check in", story: { text: "", zone: "" } }),
+  },
+  {
+    id: "story",
+    type: "story",
+    category: "story",
+    label: "Story",
+    hint: "Text to read, then continue",
+    keywords: "narrative intro message text info read",
+    build: () => ({ type: "story", title: "Story", story: { text: "" } }),
+  },
+  {
+    id: "hub-choice",
+    type: "hub",
+    category: "flow",
+    label: "Let the team choose",
+    hint: "Branches the team picks between",
+    keywords: "hub stations choice open world pick menu",
+    build: () => ({
+      type: "hub",
+      title: "Choose",
+      hub: { policy: "choice", branches: [{ port: "a", label: "A" }, { port: "b", label: "B" }] },
+    }),
+  },
+  {
+    id: "hub-shuffle",
+    type: "hub",
+    category: "flow",
+    label: "Shuffled stations",
+    hint: "Every team visits all, each in its own order",
+    keywords: "hub shuffle rotate stations order spread",
+    build: () => ({
+      type: "hub",
+      title: "Stations",
+      hub: {
+        policy: "shuffle",
+        branches: [{ port: "a", label: "Station A" }, { port: "b", label: "Station B" }, { port: "c", label: "Station C" }],
+      },
+    }),
+  },
+  {
+    id: "hub-capacity",
+    type: "hub",
+    category: "flow",
+    label: "Crowd control",
+    hint: "Stations with a limit on teams at once",
+    keywords: "hub capacity limit queue crowd busy stations",
+    build: () => ({
+      type: "hub",
+      title: "Stations",
+      hub: {
+        policy: "capacity",
+        branches: [{ port: "a", label: "Station A", capacity: 2 }, { port: "b", label: "Station B", capacity: 2 }],
+      },
+    }),
+  },
+  {
+    id: "gate",
+    type: "gate",
+    category: "flow",
+    label: "Gate",
+    hint: "Go one way or another based on what the team has done",
+    keywords: "condition if branch check require history solved",
+    build: () => ({ type: "gate", title: "Gate", gate: { condition: { op: "" } } }),
+  },
+  {
+    id: "effect-score",
+    type: "effect",
+    category: "effect",
+    label: "Award points",
+    hint: "Add to the team's score",
+    keywords: "score points bonus reward",
+    build: () => ({ type: "effect", title: "Award points", effect: { kind: "score", points: 10 } }),
+  },
+  {
+    id: "effect-item",
+    type: "effect",
+    category: "effect",
+    label: "Give an item",
+    hint: "Something the team can see in its inventory",
+    keywords: "item inventory key object collect give",
+    build: () => ({ type: "effect", title: "Give item", effect: { kind: "grant_item", item: "", qty: 1 } }),
+  },
+  {
+    id: "effect-counter",
+    type: "effect",
+    category: "effect",
+    label: "Change a counter",
+    hint: "A number every team in the event shares",
+    keywords: "counter shared global tally variable",
+    build: () => ({ type: "effect", title: "Counter", effect: { kind: "counter", counter: "", op: "add", value: 1 } }),
+  },
+  {
+    id: "effect-journal",
+    type: "effect",
+    category: "effect",
+    label: "Unlock a journal entry",
+    hint: "Lore the team can read back later",
+    keywords: "journal lore notebook diary unlock",
+    build: () => ({ type: "effect", title: "Journal", effect: { kind: "journal", journal_entry: "" } }),
+  },
+  {
+    id: "effect-email",
+    type: "effect",
+    category: "effect",
+    label: "Send an email",
+    hint: "Queued and sent after the move is saved",
+    keywords: "email mail notify message",
+    build: () => ({ type: "effect", title: "Email", effect: { kind: "email", template: "" } }),
+  },
+  {
+    id: "effect-webhook",
+    type: "effect",
+    category: "effect",
+    label: "Call a webhook",
+    hint: "Tell your own system something happened",
+    keywords: "webhook http integration api notify",
+    build: () => ({ type: "effect", title: "Webhook", effect: { kind: "webhook", url: "" } }),
+  },
+  {
+    id: "effect-theme",
+    type: "effect",
+    category: "effect",
+    label: "Change the theme",
+    hint: "Restyle the player's screen from here on",
+    keywords: "theme style colour color mood skin",
+    build: () => ({ type: "effect", title: "Theme", effect: { kind: "theme", theme: "" } }),
+  },
+  {
+    id: "end",
+    type: "end",
+    category: "end",
+    label: "Finish",
+    hint: "The adventure is complete",
+    keywords: "end finish complete done win",
+    build: () => ({ type: "end", title: "Finish", end: { outcome: "complete" } }),
+  },
+  {
+    id: "end-fail",
+    type: "end",
+    category: "end",
+    label: "Fail",
+    hint: "The run ends without success",
+    keywords: "end fail lose game over",
+    build: () => ({ type: "end", title: "Failed", end: { outcome: "fail" } }),
+  },
+];
+
+/** Build a node from a preset at a canvas position. */
+export function nodeFromPreset(g: Graph, preset: Preset, at: { x: number; y: number }): Node {
+  const slug = freshSlug(g, preset.type);
+  return { ...preset.build(slug), slug, x: Math.round(at.x), y: Math.round(at.y) } as Node;
+}
+
+/**
+ * Which end of a wire the author dragged. Dragging from an output needs
+ * something that takes an input; dragging backwards from an input needs
+ * something with an output.
+ */
+export type DragFrom = { side: "output"; node: Node; port: string } | { side: "input"; node: Node };
+
+/** The presets that make sense to create for a drag, or all when there is none. */
+export function presetsFor(from: DragFrom | null): Preset[] {
+  if (!from) return PRESETS;
+  if (from.side === "output") return PRESETS; // every preset takes an input
+  return PRESETS.filter((p) => p.type !== "end"); // an end has no output to wire in
+}
+
+/**
+ * Suggestions shown first, for the common next step.
+ *
+ * dazyflow learns these from what other flows connect; there is no usage
+ * data for adventures yet, so these are the handful of moves authors make
+ * most, by where the wire came from. Worth replacing with learned
+ * adjacency once there are enough saved graphs to learn from.
+ */
+export function suggestionsFor(from: DragFrom | null): string[] {
+  if (!from) return ["puzzle-text", "story", "puzzle-choice"];
+  if (from.side === "input") return ["puzzle-text", "story"];
+  const n = from.node;
+  switch (n.type) {
+    case "start":
+      return ["story", "puzzle-text", "checkin"];
+    case "puzzle":
+    case "story":
+      return ["puzzle-text", "story", "effect-score", "end"];
+    case "hub":
+      return from.port === "done" ? ["gate", "puzzle-text", "end"] : ["puzzle-text", "checkin", "story"];
+    case "gate":
+      return ["puzzle-text", "story", "end"];
+    case "effect":
+      return ["puzzle-text", "story", "gate"];
+    default:
+      return [];
+  }
+}
+
+/**
+ * Score a preset against a search query; 0 means no match.
+ *
+ * Label beats keywords beats hint, and a prefix beats a substring, so
+ * "gat" puts Gate first rather than anything whose hint mentions a gate.
+ * Every word of the query must match somewhere.
+ */
+export function scorePreset(p: Preset, query: string): number {
+  const words = query.toLowerCase().trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return 1;
+  const label = p.label.toLowerCase();
+  const keywords = (p.keywords ?? "").toLowerCase();
+  const hint = p.hint.toLowerCase();
+
+  let total = 0;
+  for (const w of words) {
+    let s = 0;
+    if (label.startsWith(w)) s = 100;
+    else if (label.split(/\W+/).some((part) => part.startsWith(w))) s = 80;
+    else if (label.includes(w)) s = 60;
+    else if (keywords.split(/\s+/).some((k) => k.startsWith(w))) s = 40;
+    else if (hint.includes(w)) s = 20;
+    if (s === 0) return 0;
+    total += s;
+  }
+  return total;
+}
+
+/**
+ * Existing nodes a dragged output could be wired to, for "connect to an
+ * existing step" — loops back to a hub are common, and the hub's handle is
+ * often far off screen.
+ */
+export function existingTargets(g: Graph, from: DragFrom | null): Node[] {
+  if (!from || from.side !== "output") return [];
+  return g.nodes.filter((n) => n.type !== "start" && n.slug !== from.node.slug);
+}
+
+/** The port on a new node that a backward drag should wire from. */
+export function firstPort(n: Node): string | undefined {
+  return portsOf(n)[0];
+}

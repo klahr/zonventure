@@ -1,0 +1,26 @@
+{
+  "_comment": "Shared test vectors: read by both internal/graph (Go) and @zonventure/graph (TypeScript). The editor draws one handle per port and the validator reports any unconnected port, so the two implementations must agree exactly.",
+  "cases": [
+    { "node": { "slug": "s", "type": "start" }, "ports": ["out"] },
+    { "node": { "slug": "st", "type": "story", "story": { "text": "x" } }, "ports": ["out"] },
+    { "node": { "slug": "fx", "type": "effect", "effect": { "kind": "score", "points": 1 } }, "ports": ["out"] },
+    { "node": { "slug": "g", "type": "gate", "gate": { "condition": { "op": "" } } }, "ports": ["pass", "fail"] },
+    { "node": { "slug": "e", "type": "end" }, "ports": [] },
+    {
+      "node": { "slug": "p", "type": "puzzle", "puzzle": { "outputs": [
+        { "port": "left", "trigger": "answer" },
+        { "port": "right", "trigger": "answer" },
+        { "port": "late", "trigger": "timeout" }
+      ] } },
+      "ports": ["left", "right", "late"]
+    },
+    { "node": { "slug": "p0", "type": "puzzle" }, "ports": [] },
+    {
+      "node": { "slug": "h", "type": "hub", "hub": { "policy": "choice", "branches": [
+        { "port": "a" }, { "port": "b" }
+      ] } },
+      "ports": ["a", "b", "done"]
+    },
+    { "node": { "slug": "h0", "type": "hub" }, "ports": [] }
+  ]
+}
