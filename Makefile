@@ -7,8 +7,11 @@
 
 # --- Knobs (override on the command line where useful) -----------------------
 
-BIN      := zv-server
+BIN      := zonventure
 VERSION  ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+# Exported so `docker compose build` picks it up as a build arg — only
+# the host can tell whether the working tree is dirty. See Dockerfile.
+export VERSION
 
 # Native `make run` talks to the compose'd Postgres on the host.
 DSN      ?= postgres://zv:zv@127.0.0.1:5432/zv?sslmode=disable

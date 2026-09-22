@@ -6,22 +6,22 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-# git is needed for `git describe`; the golang image already ships it.
-# When the build context lacks a .git directory (e.g. `docker build`
-# from a tarball), fall back to "dev" so the build still succeeds —
-# runtime/debug.ReadBuildInfo gets vcs.* from the Go toolchain.
+# Version stamping. The caller supplies VERSION — the Makefile and
+# compose pass `git describe --tags --always --dirty` from the host,
+# and CI passes the tag it is building. That is the accurate source,
+# because only the host can tell whether the working tree is dirty.
 #
-# `git checkout` restores ONLY the tracked files that .dockerignore
-# stripped from the build context — without it, git sees them as
-# deleted inside the container and `git describe --dirty` falsely
-# tags every build "-dirty". Listing the paths explicitly (rather
-# than `git checkout -- .`) means uncommitted edits to real source
-# files survive the build, so `make rebuild` actually picks up
-# work-in-progress instead of silently reverting to HEAD. Keep this
-# list in sync with .dockerignore. Errors are swallowed for the
-# no-.git tarball case.
-RUN git checkout -- .gitignore TODO.md Dockerfile .dockerignore compose.yaml 2>/dev/null; \
-    VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo dev) && \
+# The in-container fallback exists for a bare `docker build .` with no
+# arg. It deliberately omits --dirty: .dockerignore strips a handful of
+# tracked files from the build context, so git inside the container sees
+# them as deleted and --dirty would mark every build dirty regardless of
+# the real tree state. A previous revision worked around that by running
+# `git checkout` on an explicit file list that had to stay in sync with
+# .dockerignore by hand; passing the version in removes the need.
+#
+# `|| echo dev` covers a context with no .git at all (e.g. a tarball).
+ARG VERSION=""
+RUN VERSION="${VERSION:-$(git describe --tags --always 2>/dev/null || echo dev)}" && \
     CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version=$VERSION" -o /out/server ./cmd/server
 
 # Runtime image. distroless/static is ~2 MB; no shell, no package

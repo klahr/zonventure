@@ -35,7 +35,13 @@ services:
       retries: 10
 
   app:
-    build: .
+    build:
+      context: .
+      args:
+        # Stamped into the binary and shown on the Software update page.
+        # The Makefile exports this; a bare `docker compose build` leaves
+        # it empty and the Dockerfile falls back to `git describe`.
+        VERSION: ${VERSION:-}
     restart: unless-stopped
     depends_on:
       db:

@@ -1,0 +1,124 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CGO_ENABLED: "0"
+  # Setting CI makes internal/dbtest treat an unreachable Postgres as a
+  # failure rather than a skip. Without it a broken service container
+  # produces a green run that skipped ~200 DB-bound tests. See
+  # internal/dbtest/dbtest.go.
+  CI: "true"
+
+jobs:
+  go:
+    name: Go
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        # Gate the job on the database actually accepting connections;
+        # otherwise the first test races the container's startup.
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      ZV_TEST_DSN: postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "These files need gofmt:" >&2
+            echo "$unformatted" >&2
+            exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go test -race
+        run: go test -race ./...
+
+      # Belt and braces alongside the CI guard in dbtest: if any *test*
+      # reports a skip, the DB-bound surface is silently not running.
+      # Packages without test files also emit a skip action, so filter
+      # on entries that name a Test.
+      - name: assert no tests skipped
+        run: |
+          skipped=$(go test -json ./... 2>/dev/null \
+            | grep '"Action":"skip"' \
+            | grep -o '"Test":"[^"]*"' \
+            | sort -u)
+          if [ -n "$skipped" ]; then
+            echo "Tests skipped in CI — the DB-bound surface is not running:" >&2
+            echo "$skipped" >&2
+            exit 1
+          fi
+
+      - name: build
+        run: |
+          go build -trimpath \
+            -ldflags="-s -w -X main.version=${{ github.ref_name }}" \
+            -o /tmp/zonventure ./cmd/server
+
+  js:
+    name: JS
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # Node's built-in test runner — no Jest, no package.json. Scoped
+      # to the offline action queue today; new browser-side modules add
+      # their own *.test.js next to the source. This suite is the only
+      # thing standing between a player and a lost answer, so it runs on
+      # every push regardless of what else changed.
+      - name: node --test
+        working-directory: internal/server/web
+        run: node --test play-queue.test.js
+
+  docker:
+    name: Docker
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # `git describe` needs tags and full history. actions/checkout
+          # is shallow and tagless by default, which would otherwise
+          # degrade every image's stamped version to a bare SHA.
+          fetch-depth: 0
+
+      - name: build image
+        run: |
+          VERSION=$(git describe --tags --always 2>/dev/null || echo dev)
+          docker build --build-arg "VERSION=$VERSION" -t zonventure:ci .
