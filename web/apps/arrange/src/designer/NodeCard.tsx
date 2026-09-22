@@ -5,6 +5,8 @@ import { hasInput, portLabel, portsOf, type Issue, type Node } from "@zonventure
 export interface CardData extends Record<string, unknown> {
   node: Node;
   issues: Issue[];
+  /** The simulated team is here. */
+  playing?: boolean;
 }
 
 export type CardNode = RFNode<CardData, "zv">;
@@ -82,6 +84,7 @@ function NodeCardImpl({ data, selected }: NodeProps<CardNode>) {
         "card",
         `card--${n.type}`,
         selected ? "is-selected" : "",
+        data.playing ? "is-playing" : "",
         errors.length ? "has-error" : warnings.length ? "has-warning" : "",
       ].join(" ")}
     >

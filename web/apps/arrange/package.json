@@ -16,6 +16,7 @@
     "@zonventure/ui": "*",
     "@zonventure/i18n": "*",
     "@zonventure/graph": "*",
+    "@zonventure/play-ui": "*",
     "@xyflow/react": "^12.11.5"
   },
   "devDependencies": {

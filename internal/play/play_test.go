@@ -611,10 +611,10 @@ func TestEffectsPersistAndAreVisibleToGates(t *testing.T) {
 	if r.View.Node != "vault" {
 		t.Fatalf("10 + 50 should clear the 50-point gate in the same step; landed on %q", r.View.Node)
 	}
-	if r.View.Items["crowbar"] != 1 {
+	if len(r.View.Items) != 1 || r.View.Items[0].Slug != "crowbar" || r.View.Items[0].Qty != 1 {
 		t.Errorf("items = %v, want a crowbar", r.View.Items)
 	}
-	if len(r.View.Journal) != 1 || r.View.Journal[0] != "letter" {
+	if len(r.View.Journal) != 1 || r.View.Journal[0].Slug != "letter" || r.View.Journal[0].Title != "A letter" {
 		t.Errorf("journal = %v, want the letter", r.View.Journal)
 	}
 

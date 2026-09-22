@@ -156,18 +156,19 @@ describe("load", () => {
     assert.equal(out.pending[0]?.data.client_action_id, "good");
   });
 
-  test("accepts both action kinds", () => {
+  test("accepts every action kind", () => {
     const s = new FakeStorage();
     s.map.set(
       PENDING_QUEUE_KEY,
       JSON.stringify([
         { kind: "answer", data: { client_action_id: "a" } },
         { kind: "advance", data: { client_action_id: "b" } },
+        { kind: "play", data: { client_action_id: "c", action: { kind: "answer", node: "n", guess: "g" } } },
       ]),
     );
     const out = new Outbox(s);
     assert.equal(out.load(), true);
-    assert.equal(out.size, 2);
+    assert.equal(out.size, 3);
   });
 
   // A hand-edited storage value must not be able to stuff the queue.

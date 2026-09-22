@@ -1,0 +1,23 @@
+{
+  "name": "@zonventure/play-ui",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./play-ui.css": "./src/play-ui.css"
+  },
+  "scripts": {
+    "test": "node --test --experimental-strip-types src/*.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": { "@zonventure/api": "*" },
+  "peerDependencies": { "react": "^19.2.0" },
+  "devDependencies": {
+    "@types/node": "^26.6.2",
+    "@types/react": "^19.2.0",
+    "typescript": "^5.9.3"
+  }
+}

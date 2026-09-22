@@ -40,7 +40,7 @@ var spaFS embed.FS
 // deliberately untouched: old and new frontends coexist in the same
 // binary for the whole migration, and a surface is switched over by
 // changing one route registration, never by a big-bang cutover.
-var spaApps = []string{"arrange"}
+var spaApps = []string{"arrange", "play"}
 
 // registerSPARoutes registers /app/<name>/ for each built app.
 //
@@ -77,9 +77,15 @@ func registerSPARoutes(r chi.Router) {
 			w.Header().Set("Cache-Control", "no-store")
 			_, _ = w.Write(index)
 		}
+		rootFile := spaRootFileHandler(app)
 		r.Get(prefix, serveIndex)
 		r.Get(prefix+"/", serveIndex)
-		r.Get(prefix+"/*", serveIndex)
+		r.Get(prefix+"/*", func(w http.ResponseWriter, req *http.Request) {
+			if rootFile(w, req) {
+				return
+			}
+			serveIndex(w, req)
+		})
 	}
 }
 
@@ -101,6 +107,39 @@ func spaAssetHandler(app string) http.HandlerFunc {
 		// revalidate. This is the whole point of hashed filenames.
 		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 		fileServer.ServeHTTP(w, r)
+	}
+}
+
+// spaRootFileHandler serves the un-hashed files Vite copies from an
+// app's public/ directory to the root of its build — a PWA's service
+// worker, web manifest and icons. It reports false for anything else,
+// which the caller answers with the app shell.
+//
+// These files must revalidate on every load, unlike /assets/: their URLs
+// are fixed by the manifest and the service-worker registration, so a
+// year of immutability would pin every player to the first deploy's
+// worker. no-cache lets the browser keep a copy and ask whether it is
+// still current.
+func spaRootFileHandler(app string) func(http.ResponseWriter, *http.Request) bool {
+	sub, err := fs.Sub(spaFS, path.Join("web/dist", app))
+	if err != nil {
+		return func(http.ResponseWriter, *http.Request) bool { return false }
+	}
+	prefix := "/app/" + app + "/"
+	return func(w http.ResponseWriter, r *http.Request) bool {
+		name := strings.TrimPrefix(r.URL.Path, prefix)
+		// Root-level files only: no subdirectories, nothing hidden, and
+		// not the shell itself, which has its own no-store policy.
+		if name == "" || strings.Contains(name, "/") || strings.HasPrefix(name, ".") || name == "index.html" {
+			return false
+		}
+		st, err := fs.Stat(sub, name)
+		if err != nil || st.IsDir() {
+			return false
+		}
+		w.Header().Set("Cache-Control", "no-cache")
+		http.ServeFileFS(w, r, sub, name)
+		return true
 	}
 }
 

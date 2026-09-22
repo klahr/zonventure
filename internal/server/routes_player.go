@@ -21,6 +21,10 @@ func registerPlayerRoutes(r chi.Router, env *routesEnv) {
 		r.Use(auth.RequireSlot)
 		r.Use(auth.RequireCSRF())
 		r.Get("/state", playerH.GetState)
+		// Graph-engine events, for the React player app. An event is on
+		// one engine or the other for its whole life; see play.UsesGraph.
+		r.Get("/play", playerH.GetPlay)
+		r.Post("/play/{action}", playerH.PostPlayAction)
 		// Asset manifest powers the player-side service-worker prefetch
 		// for offline play: the SW cache.addAll()s these URLs on team
 		// join so puzzles render even in a dead spot. Each URL is

@@ -26,6 +26,7 @@ import (
 	"github.com/klahr/zonventure/internal/payments"
 	simulatedprovider "github.com/klahr/zonventure/internal/payments/simulated"
 	stripeprovider "github.com/klahr/zonventure/internal/payments/stripe"
+	"github.com/klahr/zonventure/internal/play"
 	"github.com/klahr/zonventure/internal/player"
 	"github.com/klahr/zonventure/internal/public"
 	"github.com/klahr/zonventure/internal/settings"
@@ -252,6 +253,9 @@ func New(cfg Config) http.Handler {
 	playerH := &player.Handlers{
 		DB: cfg.DB, Lib: cfg.Library, Hub: hub, SecureCookie: cfg.SecureCookie,
 		PublicURL: cfg.PublicURL,
+		// One engine for every request, so decoded graph versions are
+		// cached once per process.
+		Engine: play.New(cfg.DB),
 		// Mailer is wired below the LogMailer fallback so dev/test
 		// see the recovered link in stderr instead of failing closed.
 	}

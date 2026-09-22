@@ -14,6 +14,7 @@ import (
 	"github.com/klahr/zonventure/internal/lanes"
 	"github.com/klahr/zonventure/internal/logx"
 	"github.com/klahr/zonventure/internal/periodic"
+	"github.com/klahr/zonventure/internal/play"
 	"github.com/klahr/zonventure/internal/ws"
 )
 
@@ -76,6 +77,9 @@ func tick(ctx context.Context, db *sql.DB, hub *ws.Hub, lib *adventure.Library) 
 			if err := lanes.Initialize(ctx, db, lib, d.id); err != nil {
 				logx.Error("scheduler.lanes_init", "event_id", d.id, "err", err)
 			}
+		}
+		if _, err := play.StartIfGraph(ctx, db, d.id); err != nil {
+			logx.Error("scheduler.graph_start", "event_id", d.id, "err", err)
 		}
 		var actor activity.Actor
 		if d.actor > 0 {

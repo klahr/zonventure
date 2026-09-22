@@ -17,6 +17,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/klahr/zonventure/internal/auth"
 	"github.com/klahr/zonventure/internal/mcp"
+	"github.com/klahr/zonventure/internal/play"
 	"github.com/klahr/zonventure/internal/settings"
 )
 
@@ -117,6 +118,15 @@ func registerPageRoutes(r chi.Router, env *routesEnv) {
 	r.Get("/play", func(w http.ResponseWriter, req *http.Request) {
 		if playerH.MagicLinkLogin(w, req) {
 			return
+		}
+		// A team whose event runs on the graph engine plays in the React
+		// app. Deciding here keeps every magic link ever sent working:
+		// the link still says /play, and lane events still get play.html.
+		if slot, ok := auth.SlotFromContext(req.Context()); ok {
+			if uses, err := play.UsesGraph(req.Context(), cfg.DB, slot.EventID); err == nil && uses {
+				http.Redirect(w, req, "/app/play/", http.StatusFound)
+				return
+			}
 		}
 		servePage("web/play.html")(w, req)
 	})

@@ -142,6 +142,9 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 		r.Put("/adventures/{slug}/graph", adminH.PutAdventureGraph)
 		r.Post("/adventures/{slug}/graph/validate", adminH.ValidateAdventureGraph)
 		r.Post("/adventures/{slug}/graph/convert", adminH.ConvertAdventureGraph)
+		// Play the unsaved draft with the live rules: the designer's
+		// preview and simulator. Stateless — the client carries the team.
+		r.Post("/adventures/{slug}/simulate", adminH.SimulateAdventureGraph)
 		r.Post("/adventures", adminH.CreateAdventure)
 		r.Patch("/adventures/{slug}", adminH.UpdateAdventure)
 		r.Delete("/adventures/{slug}", adminH.DeleteAdventure)

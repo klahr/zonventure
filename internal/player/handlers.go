@@ -26,6 +26,7 @@ import (
 	"github.com/klahr/zonventure/internal/lanes"
 	mailerpkg "github.com/klahr/zonventure/internal/mailer"
 	"github.com/klahr/zonventure/internal/mdx"
+	"github.com/klahr/zonventure/internal/play"
 	"github.com/klahr/zonventure/internal/webhooks"
 	"github.com/klahr/zonventure/internal/ws"
 )
@@ -60,6 +61,9 @@ type Handlers struct {
 	// falls back to LogMailer so dev still sees the URL in stderr.
 	Mailer    mailerpkg.Mailer
 	PublicURL string
+	// Engine runs graph adventures. The server sets one shared engine so
+	// its graph cache is shared; nil builds a throwaway one per call.
+	Engine *play.Engine
 	// limiter throttles answer + location attempts per slot. Lazy-init
 	// on first use so tests that construct Handlers directly don't
 	// need to plumb a value through. nil-safe.
@@ -311,6 +315,10 @@ func maybePromoteScheduled(ctx context.Context, db *sql.DB, hub *ws.Hub, lib *ad
 			activity.Record(ctx, db, eventID, nil, activity.Actor{},
 				"lanes.init.failed", map[string]any{"error": err.Error()})
 		}
+	}
+	if _, err := play.StartIfGraph(ctx, db, eventID); err != nil {
+		activity.Record(ctx, db, eventID, nil, activity.Actor{},
+			"graph.start.failed", map[string]any{"error": err.Error()})
 	}
 	activity.Record(ctx, db, eventID, nil, activity.Actor{}, activity.EventStarted,
 		map[string]any{"auto": true})

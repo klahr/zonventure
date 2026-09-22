@@ -30,6 +30,7 @@ import { Canvas } from "./Canvas.tsx";
 import { Inspector } from "./Inspector.tsx";
 import { ListView } from "./ListView.tsx";
 import { Resources } from "./Resources.tsx";
+import { Simulator, type SimMode } from "./Simulator.tsx";
 import "./designer.css";
 
 type Loaded =
@@ -60,7 +61,12 @@ export function Designer({ slug }: { slug: string }) {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
-  const [panel, setPanel] = useState<"step" | "resources" | "issues">("step");
+  const [panel, setPanel] = useState<"step" | "play" | "resources" | "issues">("step");
+  // The preview/simulator: which mode, a counter to restart a run, and
+  // where the simulated team is, which the canvas and list mark.
+  const [simMode, setSimMode] = useState<SimMode>("step");
+  const [simRestart, setSimRestart] = useState(0);
+  const [playing, setPlaying] = useState<string | null>(null);
   const [forceCanvas, setForceCanvas] = useState(false);
   const [paletteRequest, setPaletteRequest] = useState(0);
   const [focusRequest, setFocusRequest] = useState(0);
@@ -213,9 +219,12 @@ export function Designer({ slug }: { slug: string }) {
   const steps = useMemo(() => (graph ? linearSteps(graph) : null), [graph]);
   const showList = !!steps && !forceCanvas;
   const node = graph && selected ? nodeBySlug(graph, selected) : undefined;
+  const simEnvelope = useMemo(() => (graph ? envelope(graph) : null), [graph]);
 
   useEffect(() => {
-    if (selected) setPanel("step");
+    // Selecting a step opens its form, except while previewing: then
+    // the preview follows the selection instead.
+    if (selected) setPanel((p) => (p === "play" ? p : "step"));
   }, [selected]);
 
   // --- render ---------------------------------------------------------------------
@@ -279,6 +288,15 @@ export function Designer({ slug }: { slug: string }) {
           </>
         )}
 
+        <button type="button" className="btn btn--ghost btn--sm" title={t.t("Play the draft from the start, as a team")}
+          onClick={() => {
+            setSimMode("run");
+            setSimRestart((n) => n + 1);
+            setPanel("play");
+          }}>
+          {"\u25B6\uFE0E"} {t.t("Test play")}
+        </button>
+
         <button type="button" className={"status" + (errors.length ? " status--error" : warnings.length ? " status--warning" : " status--ok")}
           onClick={() => setPanel("issues")}>
           {validating ? t.t("Checking…") : errors.length ? t.plural(errors.length, { one: "{{n}} error", other: "{{n}} errors" })
@@ -299,11 +317,11 @@ export function Designer({ slug }: { slug: string }) {
       <div className="designer__body">
         <div className="designer__main">
           {showList ? (
-            <ListView graph={graph} steps={steps!} issues={issues} selected={selected} onChange={change}
+            <ListView graph={graph} steps={steps!} issues={issues} selected={selected} playing={panel === "play" ? playing : null} onChange={change}
               onSelect={setSelected} onOpenCanvas={() => setForceCanvas(true)} />
           ) : (
             <ReactFlowProvider>
-              <Canvas graph={graph} issues={issues} selected={selected} onChange={change} onSelect={setSelected}
+              <Canvas graph={graph} issues={issues} selected={selected} playing={panel === "play" ? playing : null} onChange={change} onSelect={setSelected}
                 paletteRequest={paletteRequest} focusRequest={focusRequest} />
             </ReactFlowProvider>
           )}
@@ -313,6 +331,9 @@ export function Designer({ slug }: { slug: string }) {
           <div className="tabs" role="tablist">
             <button type="button" role="tab" aria-selected={panel === "step"} className={panel === "step" ? "is-on" : ""} onClick={() => setPanel("step")}>
               {t.t("Step")}
+            </button>
+            <button type="button" role="tab" aria-selected={panel === "play"} className={panel === "play" ? "is-on" : ""} onClick={() => setPanel("play")}>
+              {t.t("Preview")}
             </button>
             <button type="button" role="tab" aria-selected={panel === "resources"} className={panel === "resources" ? "is-on" : ""} onClick={() => setPanel("resources")}>
               {t.t("Zones & items")}
@@ -345,6 +366,19 @@ export function Designer({ slug }: { slug: string }) {
                 )}
               </div>
             ))}
+
+          {panel === "play" && (
+            <Simulator
+              slug={slug}
+              graph={graph}
+              envelope={simEnvelope!}
+              selected={selected}
+              mode={simMode}
+              onMode={setSimMode}
+              restart={simRestart}
+              onPosition={setPlaying}
+            />
+          )}
 
           {panel === "resources" && <Resources graph={graph} onChange={change} />}
 

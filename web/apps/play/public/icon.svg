@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Zonventure brand mark: a stylised "Z" inside a pin silhouette
+     that doubles as a location marker — the product is a GPS-gated
+     adventure game, so the map-pin reading is on-brand. Single colour
+     so it renders legibly at 16×16 without a palette-dependent tint. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- Pin body: drop silhouette, accent fill. -->
+  <path d="M32 4 C18 4 10 14 10 26 c0 14 12 24 22 34 c10-10 22-20 22-34 C54 14 46 4 32 4Z"
+        fill="#ad1357"/>
+  <!-- Inner disc contrast so the Z reads on dark backgrounds too. -->
+  <circle cx="32" cy="26" r="13" fill="#ffffff"/>
+  <!-- "Z" glyph centred in the disc. -->
+  <path d="M24 19 h16 l-12 14 h12"
+        stroke="#ad1357" stroke-width="3"
+        stroke-linecap="round" stroke-linejoin="round"
+        fill="none"/>
+</svg>

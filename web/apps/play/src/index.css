@@ -1,0 +1,85 @@
+/* Player app chrome. The step itself is styled by @zonventure/play-ui,
+ * shared with the designer's preview — nothing about a step belongs
+ * here, or the preview would stop matching. Tokens only. */
+@import "@zonventure/ui/tokens.css";
+@import "@zonventure/play-ui/play-ui.css";
+
+html,
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-body);
+  -webkit-text-size-adjust: 100%;
+}
+
+.app {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-bar {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-sticky);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: calc(var(--sp-3) + env(safe-area-inset-top)) var(--sp-4) var(--sp-3);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border-soft);
+}
+.app-bar__title {
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--accent);
+}
+.app-bar__team {
+  font-size: var(--text-sm);
+  color: var(--muted);
+}
+.app-status {
+  padding: var(--sp-1) var(--sp-3);
+  border-radius: var(--radius-pill);
+  background: var(--danger-bg);
+  color: var(--danger);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.app-main {
+  flex: 1;
+  width: min(36rem, 100%);
+  box-sizing: border-box;
+  margin: 0 auto;
+  padding: var(--sp-5) var(--sp-4) calc(var(--sp-6) + env(safe-area-inset-bottom));
+}
+.app-main--center {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--sp-3);
+  text-align: center;
+}
+.app-main h1 {
+  margin: 0 0 var(--sp-3);
+  font-size: var(--text-2xl);
+  letter-spacing: -0.02em;
+}
+
+.app-banner {
+  margin: 0 0 var(--sp-4);
+  padding: var(--sp-3) var(--sp-4);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  font-weight: 600;
+}
+.app-muted {
+  color: var(--muted);
+}
+.app-lobby p {
+  margin: 0 0 var(--sp-3);
+}

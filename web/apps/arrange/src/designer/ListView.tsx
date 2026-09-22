@@ -6,6 +6,8 @@ interface Props {
   steps: Node[];
   issues: Issue[];
   selected: string | null;
+  /** Where the simulated team is. */
+  playing?: string | null;
   onChange: (g: Graph) => void;
   onSelect: (slug: string | null) => void;
   onOpenCanvas: () => void;
@@ -20,7 +22,7 @@ interface Props {
  * done by rewiring underneath, and hands over to the canvas the moment
  * the author wants a branch.
  */
-export function ListView({ graph, steps, issues, selected, onChange, onSelect, onOpenCanvas }: Props) {
+export function ListView({ graph, steps, issues, selected, playing = null, onChange, onSelect, onOpenCanvas }: Props) {
   const t = useT();
   const add = (type: "puzzle" | "story") => {
     const r = appendStep(graph, type);
@@ -34,7 +36,7 @@ export function ListView({ graph, steps, issues, selected, onChange, onSelect, o
         {steps.map((s, i) => {
           const errs = issues.filter((x) => x.node === s.slug && x.severity === "error").length;
           return (
-            <li key={s.slug} className={"step" + (s.slug === selected ? " is-selected" : "") + (errs ? " has-error" : "")}>
+            <li key={s.slug} className={"step" + (s.slug === selected ? " is-selected" : "") + (s.slug === playing ? " is-playing" : "") + (errs ? " has-error" : "")}>
               <button type="button" className="step__main" onClick={() => onSelect(s.slug)}>
                 <span className="step__num">{i + 1}</span>
                 <span className="step__text">

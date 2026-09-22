@@ -1,0 +1,15 @@
+{
+  "name": "Zonventure",
+  "short_name": "Zonventure",
+  "description": "Play your Zonventure adventure.",
+  "id": "/app/play/",
+  "start_url": "/app/play/",
+  "scope": "/app/play/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#ffffff",
+  "theme_color": "#ad1357",
+  "icons": [
+    { "src": "/app/play/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

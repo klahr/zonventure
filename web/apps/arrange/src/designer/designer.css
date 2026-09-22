@@ -335,3 +335,46 @@ textarea.field__input { resize: vertical; font-family: var(--font-body); }
   .designer__body { grid-template-columns: 1fr; grid-template-rows: 1fr auto; }
   .designer__side { border-left: 0; border-top: 1px solid var(--border-soft); max-height: 45dvh; }
 }
+
+/* --- Preview and test play ------------------------------------------ */
+
+.sim { display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-4); }
+.sim__mode { align-self: flex-start; }
+.sim__controls { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
+.sim__controls .btn { padding: var(--sp-2) var(--sp-3); }
+.sim__clock { font-variant-numeric: tabular-nums; font-size: var(--text-sm); color: var(--ink-soft); margin-right: auto; }
+.sim__log { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-1); font-size: var(--text-xs); color: var(--muted); }
+.sim__log li.is-warn { color: var(--danger); font-weight: 600; }
+
+/* A phone-sized frame, so an author judges the screen at the size a team
+ * reads it. The step inside is styled by @zonventure/play-ui alone. */
+.phone {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 22rem;
+  min-height: 24rem;
+  margin: 0 auto;
+  padding: var(--sp-5) var(--sp-4);
+  border: 8px solid var(--ink-soft);
+  border-radius: 1.75rem;
+  background: var(--bg);
+  box-shadow: var(--shadow);
+}
+
+/* Where the simulated team is, on the canvas and in the list. */
+.card.is-playing,
+.step.is-playing { position: relative; box-shadow: 0 0 0 3px var(--success), var(--shadow); }
+.card.is-playing::after {
+  content: "▶";
+  position: absolute;
+  top: -0.7rem;
+  left: -0.7rem;
+  width: 1.4rem;
+  height: 1.4rem;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--success);
+  color: #fff;
+  font-size: 0.65rem;
+}

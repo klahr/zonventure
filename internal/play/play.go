@@ -33,33 +33,34 @@ import (
 	"time"
 
 	"github.com/klahr/zonventure/internal/graph"
+	"github.com/klahr/zonventure/internal/graph/session"
 	"github.com/klahr/zonventure/internal/graphstore"
 )
 
+// The refusals a player action can meet. They are the session
+// package's, re-exported so callers of the engine need not import it.
 var (
 	// ErrStale means the team has moved since the client last looked:
 	// the node it acted on is no longer current. Map to 409.
-	ErrStale = errors.New("team has already moved on")
+	ErrStale = session.ErrStale
 	// ErrNotHere means a zone gate is not satisfied. Map to 403.
-	ErrNotHere = errors.New("not inside the required zone")
+	ErrNotHere = session.ErrNotHere
 	// ErrLocked means answering is blocked after a wrong guess. Map to
 	// 429 with Retry-After from Result.BlockedUntil.
-	ErrLocked = errors.New("answering is temporarily locked")
+	ErrLocked = session.ErrLocked
 	// ErrTimeUp means the puzzle's time limit has passed. The client
 	// should call Timeout to take the timeout path, if there is one.
-	ErrTimeUp = errors.New("time limit has passed")
-	// ErrNotAllowed means the action is not available right now: a skip
-	// whose thresholds are unmet, a hint not yet due, a timeout that has
-	// not happened. Map to 403.
-	ErrNotAllowed = errors.New("action not available")
+	ErrTimeUp = session.ErrTimeUp
+	// ErrNotAllowed means the action is not available right now. Map to
+	// 403.
+	ErrNotAllowed = session.ErrNotAllowed
 	// ErrFinished means the team has already finished. Map to 409.
-	ErrFinished = errors.New("team has finished")
+	ErrFinished = session.ErrFinished
+	// ErrWrongNode means the action does not fit the node. Map to 400.
+	ErrWrongNode = session.ErrWrongNode
 	// ErrNoGraph means the event is not running on the graph engine, or
 	// the adventure has no graph. Map to 404.
 	ErrNoGraph = errors.New("event has no graph")
-	// ErrWrongNode means the action does not fit the node — answering a
-	// story, choosing a branch at a puzzle. Map to 400.
-	ErrWrongNode = errors.New("action does not apply to this node")
 )
 
 // Locator reports where a team is. The default reads location_pings;
@@ -125,57 +126,11 @@ func (e *Engine) graph(ctx context.Context, q Querier, id int64) (*graph.Graph, 
 	return s.Graph, nil
 }
 
-// Result is what a player action produced.
-type Result struct {
-	// Accepted is true when an answer matched an output.
-	Accepted bool `json:"accepted"`
-	// Port is the output the team left by, when it moved.
-	Port string `json:"port,omitempty"`
-	// Points awarded by this action, after any partial-credit multiplier.
-	Points float64 `json:"points,omitempty"`
-	// Response is the wrong-answer ladder text for a rejected guess.
-	Response string `json:"response,omitempty"`
-	// BlockedUntil is set when a wrong guess triggered a lockout.
-	BlockedUntil *time.Time `json:"blocked_until,omitempty"`
-	// Hint is the text revealed by RevealHint.
-	Hint string `json:"hint,omitempty"`
-
-	// View is the team's state after the action.
-	View View `json:"view"`
-}
-
-// View is what a player needs to render: where the team is, and what
-// they can do there.
-type View struct {
-	Node      string       `json:"node,omitempty"`
-	Type      graph.Type   `json:"type,omitempty"`
-	Title     string       `json:"title,omitempty"`
-	Text      string       `json:"text,omitempty"`
-	Zone      *graph.Zone  `json:"zone,omitempty"`
-	Hints     []string     `json:"hints,omitempty"`
-	HintCount int          `json:"hint_count,omitempty"`
-	Attempts  int          `json:"attempts,omitempty"`
-	Offer     []OfferEntry `json:"offer,omitempty"`
-	CanFinish bool         `json:"can_finish,omitempty"`
-	// CanSkip reports whether the skip thresholds are currently met.
-	CanSkip        bool           `json:"can_skip,omitempty"`
-	BlockedUntil   *time.Time     `json:"blocked_until,omitempty"`
-	Deadline       *time.Time     `json:"deadline,omitempty"`
-	Score          float64        `json:"score"`
-	PenaltyScore   float64        `json:"penalty_score"`
-	PenaltySeconds int            `json:"penalty_seconds"`
-	Finished       bool           `json:"finished,omitempty"`
-	Outcome        graph.Outcome  `json:"outcome,omitempty"`
-	Items          map[string]int `json:"items,omitempty"`
-	Journal        []string       `json:"journal,omitempty"`
-	Theme          string         `json:"theme,omitempty"`
-}
-
-// OfferEntry is one hub branch the team may choose.
-type OfferEntry struct {
-	Port  string `json:"port"`
-	Label string `json:"label,omitempty"`
-	// Locked is set for a branch whose condition does not hold yet. It
-	// is shown greyed out, unless the hub hides locked branches.
-	Locked bool `json:"locked,omitempty"`
-}
+// Result, View and OfferEntry are the session package's: the live
+// engine, the designer's preview and the simulator all return exactly
+// the same shapes, which is what lets one component render all three.
+type (
+	Result     = session.Result
+	View       = session.View
+	OfferEntry = session.OfferEntry
+)

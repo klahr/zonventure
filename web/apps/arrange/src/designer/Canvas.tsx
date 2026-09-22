@@ -47,6 +47,8 @@ interface Props {
   paletteRequest: number;
   /** Bumped by the parent to centre the canvas on the selected node. */
   focusRequest: number;
+  /** Where the simulated team is, so the canvas can show it. */
+  playing?: string | null;
 }
 
 interface PendingDrag {
@@ -70,7 +72,7 @@ interface PendingDrag {
  * The pick is created at that spot and wired in. Releasing on a handle
  * that refuses the wire shows why instead.
  */
-export function Canvas({ graph, issues, selected, onChange, onSelect, paletteRequest, focusRequest }: Props) {
+export function Canvas({ graph, issues, selected, onChange, onSelect, paletteRequest, focusRequest, playing = null }: Props) {
   const rf = useReactFlow();
   const [nodes, setNodes] = useState<CardNode[]>([]);
   const [edges, setEdges] = useState<RFEdge[]>([]);
@@ -102,12 +104,13 @@ export function Canvas({ graph, issues, selected, onChange, onSelect, paletteReq
           existing.data.node === n &&
           sameData(existing.data.issues, issuesBySlug.get(n.slug) ?? []) &&
           existing.selected === (n.slug === selected) &&
+          existing.data.playing === (n.slug === playing) &&
           samePosition(existing.position, { x: n.x ?? 0, y: n.y ?? 0 }),
         build: (n, previous) => ({
           id: n.slug,
           type: "zv" as const,
           position: { x: n.x ?? 0, y: n.y ?? 0 },
-          data: { node: n, issues: issuesBySlug.get(n.slug) ?? [] },
+          data: { node: n, issues: issuesBySlug.get(n.slug) ?? [], playing: n.slug === playing },
           selected: n.slug === selected,
           // Keep React Flow's measurement so handles do not jump.
           ...(previous?.measured ? { measured: previous.measured } : {}),
@@ -115,7 +118,7 @@ export function Canvas({ graph, issues, selected, onChange, onSelect, paletteReq
         }),
       }).items,
     );
-  }, [graph.nodes, issuesBySlug, selected]);
+  }, [graph.nodes, issuesBySlug, selected, playing]);
 
   useEffect(() => {
     setEdges((prev) => {

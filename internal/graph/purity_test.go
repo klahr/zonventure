@@ -43,6 +43,7 @@ func TestDomainPackagesStayPure(t *testing.T) {
 		"internal/graph/walk",
 		"internal/graph/valid",
 		"internal/graph/convert",
+		"internal/graph/session",
 	}
 
 	for _, rel := range pkgs {

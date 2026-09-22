@@ -6,11 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
-	"math"
 	"sort"
 	"time"
 
 	"github.com/klahr/zonventure/internal/graph"
+	"github.com/klahr/zonventure/internal/graph/session"
 	"github.com/klahr/zonventure/internal/icscal"
 )
 
@@ -66,104 +66,32 @@ func (PingLocator) Position(ctx context.Context, q Querier, teamID int64) (float
 	return pings[0].lat, pings[0].lng, true, nil
 }
 
-// HaversineMeters is the great-circle distance, R = 6371000, matching
-// the lane runtime exactly so a zone admits the same positions.
-func HaversineMeters(lat1, lng1, lat2, lng2 float64) float64 {
-	const r = 6371000.0
-	rad := func(d float64) float64 { return d * math.Pi / 180 }
-	dLat, dLng := rad(lat2-lat1), rad(lng2-lng1)
-	a := math.Sin(dLat/2)*math.Sin(dLat/2) +
-		math.Cos(rad(lat1))*math.Cos(rad(lat2))*math.Sin(dLng/2)*math.Sin(dLng/2)
-	return r * 2 * math.Atan2(math.Sqrt(a), math.Sqrt(1-a))
-}
-
-// nodeRow is one team_node_state row.
-type nodeRow struct {
-	firstSeen     time.Time
-	solved        bool
-	outcome       string
-	hasOutcome    bool
-	attempts      int
-	blockedUntil  *time.Time
-	hintsRevealed int
-}
+// HaversineMeters is the great-circle distance used for zones. It lives
+// in internal/graph/session with the rest of the rules; this alias keeps
+// the lane runtime's name for it.
+var HaversineMeters = session.HaversineMeters
 
 // teamState is a team's full state, loaded once per action and held in
-// memory while the walk runs. It implements walk.State.
+// memory while the action runs. The rules live on the embedded
+// session.Team; this adds the keys needed to write it back.
 type teamState struct {
+	*session.Team
 	teamID, eventID, graphID int64
-	g                        *graph.Graph
+}
 
-	current       string
-	nodeEnteredAt time.Time
-	startedAt     time.Time
-	completed     bool
-	outcome       graph.Outcome
-
-	score, penaltyScore float64
-	penaltySeconds      int
-	theme               string
-
-	nodes    map[string]*nodeRow
-	items    map[string]int
-	journal  map[string]bool
-	counters map[string]float64
-	entered  map[string]map[string]bool // hub -> port -> ever entered
-	occ      map[string]int             // "hub\x00port" -> other teams inside
-
-	slot, teamSize int
-	now            time.Time
-
-	lat, lng float64
-	hasPos   bool
+// newTeamState returns an empty state for teamID at now.
+func newTeamState(teamID int64, now time.Time) *teamState {
+	t := &session.Team{Now: now}
+	t.Init()
+	return &teamState{Team: t, teamID: teamID}
 }
 
 // loadTeam locks the team's state row and reads everything the walk may
 // ask about. It must run inside the action's transaction: the row lock
 // is what serialises two teammates acting at once.
 func (e *Engine) loadTeam(ctx context.Context, tx *sql.Tx, teamID int64) (*teamState, error) {
-	s := &teamState{
-		teamID:   teamID,
-		now:      e.now(),
-		nodes:    map[string]*nodeRow{},
-		items:    map[string]int{},
-		journal:  map[string]bool{},
-		counters: map[string]float64{},
-		entered:  map[string]map[string]bool{},
-		occ:      map[string]int{},
-	}
-
-	var (
-		current   sql.NullString
-		entered   sql.NullTime
-		completed sql.NullTime
-		outcome   sql.NullString
-	)
-	err := tx.QueryRowContext(ctx, `
-		SELECT event_id, graph_id, current_node, node_entered_at, started_at,
-		       completed_at, outcome, score, penalty_score, penalty_seconds, theme
-		FROM team_graph_state
-		WHERE team_id = $1
-		FOR UPDATE
-	`, teamID).Scan(&s.eventID, &s.graphID, &current, &entered, &s.startedAt,
-		&completed, &outcome, &s.score, &s.penaltyScore, &s.penaltySeconds, &s.theme)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, ErrNoGraph
-	}
+	s, err := e.loadCore(ctx, tx, teamID, true)
 	if err != nil {
-		return nil, fmt.Errorf("loading team state: %w", err)
-	}
-	s.current = current.String
-	if entered.Valid {
-		s.nodeEnteredAt = entered.Time
-	}
-	s.completed = completed.Valid
-	s.outcome = graph.Outcome(outcome.String)
-
-	if s.g, err = e.graph(ctx, tx, s.graphID); err != nil {
-		return nil, err
-	}
-	if err := s.loadRest(ctx, tx); err != nil {
 		return nil, err
 	}
 
@@ -177,8 +105,50 @@ func (e *Engine) loadTeam(ctx context.Context, tx *sql.Tx, teamID int64) (*teamS
 	if err != nil {
 		return nil, fmt.Errorf("reading position: %w", err)
 	}
-	s.lat, s.lng, s.hasPos = lat, lng, ok
+	if ok {
+		s.Position = &session.Position{Lat: lat, Lng: lng}
+	}
 	return s, nil
+}
+
+// loadCore reads the team's state row and everything hanging off it.
+// forUpdate takes the row lock; a read-only snapshot cannot.
+func (e *Engine) loadCore(ctx context.Context, q Querier, teamID int64, forUpdate bool) (*teamState, error) {
+	s := newTeamState(teamID, e.now())
+
+	var (
+		current   sql.NullString
+		entered   sql.NullTime
+		completed sql.NullTime
+		outcome   sql.NullString
+	)
+	query := `
+		SELECT event_id, graph_id, current_node, node_entered_at, started_at,
+		       completed_at, outcome, score, penalty_score, penalty_seconds, theme
+		FROM team_graph_state
+		WHERE team_id = $1`
+	if forUpdate {
+		query += ` FOR UPDATE`
+	}
+	err := q.QueryRowContext(ctx, query, teamID).Scan(&s.eventID, &s.graphID, &current, &entered, &s.StartedAt,
+		&completed, &outcome, &s.Points, &s.PenaltyScore, &s.PenaltySeconds, &s.Theme)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNoGraph
+	}
+	if err != nil {
+		return nil, fmt.Errorf("loading team state: %w", err)
+	}
+	s.Current = current.String
+	if entered.Valid {
+		s.NodeEnteredAt = entered.Time
+	}
+	s.Completed = completed.Valid
+	s.Ending = graph.Outcome(outcome.String)
+
+	if s.G, err = e.graph(ctx, q, s.graphID); err != nil {
+		return nil, err
+	}
+	return s, s.loadRest(ctx, q)
 }
 
 func (s *teamState) loadRest(ctx context.Context, q Querier) error {
@@ -192,35 +162,35 @@ func (s *teamState) loadRest(ctx context.Context, q Querier) error {
 	for rows.Next() {
 		var (
 			slug    string
-			r       nodeRow
+			r       session.NodeState
 			outcome sql.NullString
 			blocked sql.NullTime
 		)
-		if err := rows.Scan(&slug, &r.firstSeen, &r.solved, &outcome, &r.attempts, &blocked, &r.hintsRevealed); err != nil {
+		if err := rows.Scan(&slug, &r.FirstSeen, &r.Solved, &outcome, &r.Attempts, &blocked, &r.HintsRevealed); err != nil {
 			rows.Close()
 			return err
 		}
-		r.outcome, r.hasOutcome = outcome.String, outcome.Valid
+		r.Outcome, r.HasOutcome = outcome.String, outcome.Valid
 		if blocked.Valid {
 			t := blocked.Time
-			r.blockedUntil = &t
+			r.BlockedUntil = &t
 		}
-		s.nodes[slug] = &r
+		s.Nodes[slug] = &r
 	}
 	if err := closeRows(rows); err != nil {
 		return err
 	}
 
 	if err := scanPairs(ctx, q, `SELECT item, qty FROM team_items WHERE team_id = $1`, s.teamID,
-		func(k string, v float64) { s.items[k] = int(v) }); err != nil {
+		func(k string, v float64) { s.Items[k] = int(v) }); err != nil {
 		return err
 	}
 	if err := scanPairs(ctx, q, `SELECT entry, 1 FROM team_journal WHERE team_id = $1`, s.teamID,
-		func(k string, _ float64) { s.journal[k] = true }); err != nil {
+		func(k string, _ float64) { s.Journal[k] = true }); err != nil {
 		return err
 	}
 	if err := scanPairs(ctx, q, `SELECT counter, value FROM event_counters WHERE event_id = $1`, s.eventID,
-		func(k string, v float64) { s.counters[k] = v }); err != nil {
+		func(k string, v float64) { s.Counters[k] = v }); err != nil {
 		return err
 	}
 
@@ -234,7 +204,7 @@ func (s *teamState) loadRest(ctx context.Context, q Querier) error {
 			brows.Close()
 			return err
 		}
-		s.markEntered(hub, port)
+		s.MarkEntered(hub, port)
 	}
 	if err := closeRows(brows); err != nil {
 		return err
@@ -244,10 +214,10 @@ func (s *teamState) loadRest(ctx context.Context, q Querier) error {
 	// lanes.teamSlot uses, so the shuffle is identical.
 	if err := q.QueryRowContext(ctx, `
 		SELECT COUNT(*) FROM teams WHERE event_id = $1 AND id < $2
-	`, s.eventID, s.teamID).Scan(&s.slot); err != nil {
+	`, s.eventID, s.teamID).Scan(&s.SlotIndex); err != nil {
 		return err
 	}
-	return q.QueryRowContext(ctx, `SELECT COUNT(*) FROM player_slots WHERE team_id = $1`, s.teamID).Scan(&s.teamSize)
+	return q.QueryRowContext(ctx, `SELECT COUNT(*) FROM player_slots WHERE team_id = $1`, s.teamID).Scan(&s.Size)
 }
 
 // lockAndCountOccupancy takes one transaction-scoped advisory lock per
@@ -260,7 +230,7 @@ func (s *teamState) loadRest(ctx context.Context, q Querier) error {
 // occupancy, and serialising them would slow every event for nothing.
 func (s *teamState) lockAndCountOccupancy(ctx context.Context, tx *sql.Tx) error {
 	var hubs []string
-	for _, n := range s.g.Nodes {
+	for _, n := range s.G.Nodes {
 		if n.Type == graph.Hub && n.HubCfg != nil &&
 			(n.HubCfg.Policy == graph.PolicyCapacity || n.HubCfg.Policy == graph.PolicySpread) {
 			hubs = append(hubs, n.Slug)
@@ -291,7 +261,7 @@ func (s *teamState) lockAndCountOccupancy(ctx context.Context, tx *sql.Tx) error
 			rows.Close()
 			return err
 		}
-		s.occ[hub+"\x00"+port] = n
+		s.Occ[hub+"\x00"+port] = n
 	}
 	return closeRows(rows)
 }
@@ -301,147 +271,6 @@ func lockKey(eventID int64, hub string) int64 {
 	h := fnv.New64a()
 	_, _ = fmt.Fprintf(h, "zv-hub:%d:%s", eventID, hub)
 	return int64(h.Sum64())
-}
-
-func (s *teamState) markEntered(hub, port string) {
-	if s.entered[hub] == nil {
-		s.entered[hub] = map[string]bool{}
-	}
-	s.entered[hub][port] = true
-}
-
-func (s *teamState) row(slug string) *nodeRow {
-	r := s.nodes[slug]
-	if r == nil {
-		r = &nodeRow{firstSeen: s.now}
-		s.nodes[slug] = r
-	}
-	return r
-}
-
-// --- walk.State --------------------------------------------------------
-
-func (s *teamState) Solved(n string) bool {
-	r := s.nodes[n]
-	return r != nil && r.solved
-}
-
-func (s *teamState) Visited(n string) bool { return s.nodes[n] != nil }
-
-func (s *teamState) Outcome(n string) (string, bool) {
-	r := s.nodes[n]
-	if r == nil || !r.hasOutcome {
-		return "", false
-	}
-	return r.outcome, true
-}
-
-func (s *teamState) Attempts(n string) int {
-	if r := s.nodes[n]; r != nil {
-		return r.attempts
-	}
-	return 0
-}
-
-func (s *teamState) ItemQty(i string) int { return s.items[i] }
-
-func (s *teamState) CounterValue(c string) float64 {
-	if v, ok := s.counters[c]; ok {
-		return v
-	}
-	// A counter no team has touched yet reads as its declared initial
-	// value, not zero.
-	for _, def := range s.g.Counters {
-		if def.Slug == c {
-			return def.Initial
-		}
-	}
-	return 0
-}
-
-// Score is the net score — points earned minus hint and penalty costs —
-// because that is the figure a "score ≥ 100" gate means.
-func (s *teamState) Score() float64 { return s.score - s.penaltyScore }
-
-func (s *teamState) ElapsedSeconds() float64 {
-	return s.now.Sub(s.startedAt).Seconds()
-}
-
-func (s *teamState) NodeElapsedSeconds() float64 {
-	if s.nodeEnteredAt.IsZero() {
-		return 0
-	}
-	return s.now.Sub(s.nodeEnteredAt).Seconds()
-}
-
-func (s *teamState) TeamSize() int { return s.teamSize }
-
-func (s *teamState) InZone(slug string) bool {
-	if !s.hasPos {
-		return false
-	}
-	for _, z := range s.g.Zones {
-		if z.Slug == slug {
-			return HaversineMeters(s.lat, s.lng, z.Lat, z.Lng) <= z.RadiusM
-		}
-	}
-	return false
-}
-
-func (s *teamState) LocalTime() time.Time { return s.now }
-
-func (s *teamState) Slot() int { return s.slot }
-
-func (s *teamState) BranchDone(hub, port string) bool { return s.entered[hub][port] }
-
-func (s *teamState) CompletedBranches(hub string) int { return len(s.entered[hub]) }
-
-func (s *teamState) Occupancy(hub, port string) int { return s.occ[hub+"\x00"+port] }
-
-// ApplyEffect folds an effect into memory as the walk passes it, so a
-// gate later in the same step sees it. Persistence happens afterwards,
-// from Step.Effects, in applyEffects.
-func (s *teamState) ApplyEffect(_ string, e graph.EffectConfig) {
-	switch e.Kind {
-	case graph.GrantItem:
-		s.items[e.Item] += qtyOf(e)
-	case graph.AdjustScore:
-		s.score += float64(e.Points)
-	case graph.SetCounter:
-		s.counters[e.Counter] = s.nextCounterValue(e)
-	case graph.UnlockJournal:
-		s.journal[e.JournalEntry] = true
-	case graph.SetTheme:
-		s.theme = e.Theme
-	}
-}
-
-// nextCounterValue computes a counter's value after an effect, clamped
-// to its declared bounds.
-func (s *teamState) nextCounterValue(e graph.EffectConfig) float64 {
-	v := e.Value
-	if e.Op != graph.CounterSet {
-		v = s.CounterValue(e.Counter) + e.Value
-	}
-	for _, def := range s.g.Counters {
-		if def.Slug != e.Counter {
-			continue
-		}
-		if def.Min != nil && v < *def.Min {
-			v = *def.Min
-		}
-		if def.Max != nil && v > *def.Max {
-			v = *def.Max
-		}
-	}
-	return v
-}
-
-func qtyOf(e graph.EffectConfig) int {
-	if e.Qty == 0 {
-		return 1
-	}
-	return e.Qty
 }
 
 // --- helpers -------------------------------------------------------------

@@ -31,7 +31,13 @@ export const PENDING_QUEUE_KEY = "zv-play-pending-v1";
  */
 export const PENDING_ANSWERS_MAX = 5;
 
-export type PendingKind = "answer" | "advance";
+/**
+ * "answer" and "advance" are play.html's lane actions. "play" is a graph
+ * action from the React player: data.action is the api play.PlayAction.
+ * Added rather than substituted, so a queue written by either app loads
+ * in either, and each flushes only the kinds it understands.
+ */
+export type PendingKind = "answer" | "advance" | "play";
 
 export interface PendingAction {
   kind: PendingKind;
@@ -64,7 +70,7 @@ export function clientActionId(): string {
 function isPendingAction(v: unknown): v is PendingAction {
   if (typeof v !== "object" || v === null) return false;
   const m = v as { kind?: unknown; data?: unknown };
-  if (m.kind !== "answer" && m.kind !== "advance") return false;
+  if (m.kind !== "answer" && m.kind !== "advance" && m.kind !== "play") return false;
   return typeof m.data === "object" && m.data !== null;
 }
 

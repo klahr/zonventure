@@ -33,6 +33,7 @@ import (
 	"github.com/klahr/zonventure/internal/lanes"
 	"github.com/klahr/zonventure/internal/mailer"
 	"github.com/klahr/zonventure/internal/payments"
+	"github.com/klahr/zonventure/internal/play"
 	"github.com/klahr/zonventure/internal/roster"
 	"github.com/klahr/zonventure/internal/simulator"
 	"github.com/klahr/zonventure/internal/storage"
@@ -714,6 +715,14 @@ func (h *Handlers) transitionEvent(w http.ResponseWriter, r *http.Request, actio
 			// since the runtime fallback covers correctness.
 			activity.Record(r.Context(), h.DB, eventID, nil, activity.Actor{},
 				"lanes.init.failed", map[string]any{"error": err.Error()})
+		}
+		// A graph adventure pins its graph and places every team now.
+		// There is no runtime fallback for a missing pin, so a failure is
+		// audited under its own kind. Teams added later are placed when
+		// they first open the game; StartEvent is idempotent.
+		if _, err := play.StartIfGraph(r.Context(), h.DB, eventID); err != nil {
+			activity.Record(r.Context(), h.DB, eventID, nil, activity.Actor{},
+				"graph.start.failed", map[string]any{"error": err.Error()})
 		}
 	}
 	me, _ := auth.FromContext(r.Context())
