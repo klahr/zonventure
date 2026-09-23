@@ -28,7 +28,7 @@ func (s *Server) registerGraphTools() {
 			"envelope": map[string]any{
 				"type": "object",
 				"description": `A graph envelope: {"format":"zonventure-adventure-v2","graph":{...}}. ` +
-					"The graph has nodes (start, puzzle, story, hub, gate, effect, end), edges from a node's " +
+					"The graph has nodes (start, puzzle, story, hub, gate, effect, switch, end), edges from a node's " +
 					"output port to another node, and zones/items/counters/journal referenced by slug. " +
 					"Get one to edit with get_adventure_graph, or build one from lanes with convert_adventure_graph.",
 			},
@@ -38,7 +38,8 @@ func (s *Server) registerGraphTools() {
 	s.tools.register(ToolDescriptor{
 		Name:  "get_adventure_graph",
 		Scope: scopeRead,
-		Description: "Load an adventure's latest saved graph, with a fresh validation report. " +
+		Description: "Load an adventure's draft graph (or its published one if there is no draft), with a fresh validation report, " +
+			"the published version and whether the draft has unpublished changes. " +
 			"Returns 404 with code graph_not_found if the adventure has no graph yet — use convert_adventure_graph to start one from its lanes.",
 		InputSchema: slugOnly,
 	}, getAdventureGraph)
@@ -62,15 +63,31 @@ func (s *Server) registerGraphTools() {
 	s.tools.register(ToolDescriptor{
 		Name:  "save_adventure_graph",
 		Scope: scopeWrite,
-		Description: "Save a graph as the adventure's next version. Refused with code graph_invalid and the full report if it has errors; nothing is written. " +
-			"Events already running keep the version they started with.",
+		Description: "Save a graph as the adventure's draft. Drafts may have errors; the returned report lists them. " +
+			"Nothing reaches players until publish_adventure_graph.",
 		InputSchema: withEnvelope,
 	}, saveAdventureGraph)
+
+	s.tools.register(ToolDescriptor{
+		Name:  "publish_adventure_graph",
+		Scope: scopeWrite,
+		Description: "Publish the saved draft as the adventure's next version; events that start afterwards play it. " +
+			"Refused with code graph_invalid and the full report if the draft has errors. Events already running keep their version.",
+		InputSchema: map[string]any{
+			"type":     "object",
+			"required": []string{"slug"},
+			"properties": map[string]any{
+				"slug":  map[string]any{"type": "string", "description": "Adventure slug."},
+				"label": map[string]any{"type": "string", "description": "Optional release name."},
+			},
+		},
+	}, publishAdventureGraph)
 }
 
 type graphArgs struct {
 	Slug     string          `json:"slug"`
 	Envelope json.RawMessage `json:"envelope,omitempty"`
+	Label    string          `json:"label,omitempty"`
 }
 
 func parseGraphArgs(raw json.RawMessage, needEnvelope bool) (graphArgs, *ToolCallResult) {
@@ -102,6 +119,8 @@ func graphCall(ctx context.Context, s *Server, method, suffix string, raw json.R
 	var body any
 	if needEnvelope {
 		body = a.Envelope
+	} else if a.Label != "" {
+		body = map[string]string{"label": a.Label}
 	}
 	status, resp, err := callAdmin(ctx, pick(s), method, "/api/admin/adventures/"+a.Slug+"/graph"+suffix,
 		map[string]string{"slug": a.Slug}, nil, body)
@@ -125,4 +144,8 @@ func convertAdventureGraph(ctx context.Context, s *Server, raw json.RawMessage) 
 
 func saveAdventureGraph(ctx context.Context, s *Server, raw json.RawMessage) (ToolCallResult, error) {
 	return graphCall(ctx, s, "PUT", "", raw, true, func(s *Server) http.HandlerFunc { return s.Admin.PutAdventureGraph })
+}
+
+func publishAdventureGraph(ctx context.Context, s *Server, raw json.RawMessage) (ToolCallResult, error) {
+	return graphCall(ctx, s, "POST", "/publish", raw, false, func(s *Server) http.HandlerFunc { return s.Admin.PublishAdventureGraph })
 }

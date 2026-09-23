@@ -23,6 +23,7 @@ func TestGraphTools_AreRegisteredWithCorrectScope(t *testing.T) {
 		"validate_adventure_graph": scopeRead,
 		"convert_adventure_graph":  scopeRead,
 		"save_adventure_graph":     scopeWrite,
+		"publish_adventure_graph":  scopeWrite,
 	}
 	for name, w := range want {
 		if got, ok := s.tools.scopes[name]; !ok || got != w {
@@ -115,21 +116,24 @@ func TestGraphTools_ConvertSaveGet(t *testing.T) {
 
 	env, _ := json.Marshal(converted.Envelope)
 	res, _ = saveAdventureGraph(ctx, s, json.RawMessage(`{"slug":"mcp-graph","envelope":`+string(env)+`}`))
-	if res.IsError || !strings.Contains(textOf(res), `"version":1`) {
-		t.Fatalf("save: %s", textOf(res))
+	if res.IsError || !strings.Contains(textOf(res), `"dirty":true`) {
+		t.Fatalf("save draft: %s", textOf(res))
+	}
+	res, _ = publishAdventureGraph(ctx, s, json.RawMessage(`{"slug":"mcp-graph","label":"First"}`))
+	if res.IsError || !strings.Contains(textOf(res), `"published":{"version":1,"label":"First"}`) {
+		t.Fatalf("publish: %s", textOf(res))
 	}
 
-	res, _ = getAdventureGraph(ctx, s, json.RawMessage(`{"slug":"mcp-graph"}`))
-	if res.IsError || !strings.Contains(textOf(res), `"version":1`) {
-		t.Fatalf("get: %s", textOf(res))
-	}
-
-	// A broken graph is refused with the machine-readable code.
+	// A broken draft saves, but publishing it is refused with the
+	// machine-readable code.
 	broken := converted.Envelope
 	broken.Graph.Edges = nil
 	env, _ = json.Marshal(broken)
-	res, _ = saveAdventureGraph(ctx, s, json.RawMessage(`{"slug":"mcp-graph","envelope":`+string(env)+`}`))
+	if res, _ = saveAdventureGraph(ctx, s, json.RawMessage(`{"slug":"mcp-graph","envelope":`+string(env)+`}`)); res.IsError {
+		t.Fatalf("a broken draft should still save: %s", textOf(res))
+	}
+	res, _ = publishAdventureGraph(ctx, s, json.RawMessage(`{"slug":"mcp-graph"}`))
 	if !res.IsError || !strings.Contains(textOf(res), "graph_invalid") {
-		t.Errorf("saving a broken graph should be refused with graph_invalid, got %q", textOf(res))
+		t.Errorf("publishing a broken draft should be refused with graph_invalid, got %q", textOf(res))
 	}
 }

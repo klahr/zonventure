@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { PlayView, StartCeremony, brandVars } from "@zonventure/play-ui";
+import { Markdown, PlayView, StartCeremony, brandVars } from "@zonventure/play-ui";
+import type { play } from "@zonventure/api";
 import { useT } from "./i18n.tsx";
 import { useGame } from "./useGame.ts";
 import { metresBetween, useGeo, useLiveRefresh } from "./live.ts";
@@ -13,7 +14,7 @@ export function App() {
   const running = s?.event.state === "running";
 
   useLiveRefresh(game.status === "ready", game.refresh);
-  const geo = useGeo(game.status === "ready" && running && !view?.finished, !!view?.zone && !view.here, game.refresh);
+  const geo = useGeo(game.status === "ready" && running && !view?.finished, (!!view?.zone && !view.here) || !!view?.starts?.some((o) => o.zone && !o.here), game.refresh);
 
   // The start moment plays when this tab watched the lobby turn into the
   // game — not on every reload of a game already under way.
@@ -56,18 +57,16 @@ export function App() {
     );
   }
 
-  let zoneNote: string | undefined;
-  if (view?.zone && !view.here) {
-    if (geo.error) zoneNote = t("Turn on location sharing so we can tell when you're there.");
-    else if (!geo.pos) zoneNote = t("Finding your location…");
-    else {
-      const m = metresBetween(geo.pos.coords.latitude, geo.pos.coords.longitude, view.zone.lat, view.zone.lng);
-      zoneNote =
-        m < 1000
-          ? t("About {{m}} m away", { m: Math.max(5, Math.round(m / 5) * 5) })
-          : t("About {{km}} km away", { km: (m < 10_000 ? Math.round(m / 100) / 10 : Math.round(m / 1000)).toLocaleString(i18n.current()) });
-    }
-  }
+  // How far the team is from a place it has to reach.
+  const placeNote = (zone: play.PlayZone): string => {
+    if (geo.error) return t("Turn on location sharing so we can tell when you're there.");
+    if (!geo.pos) return t("Finding your location…");
+    const m = metresBetween(geo.pos.coords.latitude, geo.pos.coords.longitude, zone.lat, zone.lng);
+    return m < 1000
+      ? t("About {{m}} m away", { m: Math.max(5, Math.round(m / 5) * 5) })
+      : t("About {{km}} km away", { km: (m < 10_000 ? Math.round(m / 100) / 10 : Math.round(m / 1000)).toLocaleString(i18n.current()) });
+  };
+  const zoneNote = view?.zone && !view.here ? placeNote(view.zone) : undefined;
 
   return (
     <div className="app">
@@ -86,6 +85,7 @@ export function App() {
 
       <main className="app-main">
         {s.event.state === "paused" && <p className="app-banner">{t("The game is paused. Hold on.")}</p>}
+        {game.status === "ended" && <p className="app-banner">{t("This event has ended. Thanks for playing!")}</p>}
 
         {view ? (
           <PlayView
@@ -95,7 +95,9 @@ export function App() {
             feedback={game.feedback}
             t={t}
             brand={s.brand ?? null}
+            {...(s.event.outro_text ? { outro: s.event.outro_text } : {})}
             {...(zoneNote ? { zoneNote } : {})}
+            placeNote={placeNote}
           />
         ) : (
           <Lobby state={s} t={t} />
@@ -122,6 +124,19 @@ function Lobby({ state, t }: { state: NonNullable<ReturnType<typeof useGame>["st
           ? t("The game starts {{when}}.", { when: at.toLocaleString([], { weekday: "long", hour: "2-digit", minute: "2-digit" }) })
           : t("The game starts when your organiser says go.")}
       </p>
+      {state.event.intro_text && <Markdown className="app-lobby__intro" text={state.event.intro_text} />}
+      {state.event.start && (
+        <p className="app-lobby__start">
+          <strong>{t("Meet at")}</strong>{" "}
+          <a
+            href={`https://www.openstreetmap.org/?mlat=${state.event.start.lat}&mlon=${state.event.start.lng}#map=18/${state.event.start.lat}/${state.event.start.lng}`}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            {state.event.start.label || t("the starting point")}
+          </a>
+        </p>
+      )}
       <p className="app-muted">{t("Keep this page open. It will change by itself.")}</p>
     </div>
   );

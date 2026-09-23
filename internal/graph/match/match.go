@@ -66,7 +66,13 @@ const (
 // from a schema and the validator check it without executing anything.
 // Fields not relevant to Kind are ignored.
 type Matcher struct {
-	Kind Kind `json:"kind"`
+	// ID names this accepted answer, stably, so a crossroads can refer
+	// to it ("the team gave this answer") rather than repeat its text. It
+	// survives edits to the value, which is the point: fixing a spelling
+	// here must not silently break a route that depends on it. Optional;
+	// the editor assigns one when something first refers to the answer.
+	ID   string `json:"id,omitempty"`
+	Kind Kind   `json:"kind"`
 
 	// Value is used by Exact, Contains and Regex.
 	Value string `json:"value,omitempty"`
@@ -97,6 +103,8 @@ type Result struct {
 	// A zero-multiplier match is still a match: the player answered
 	// within tolerance, they just earn nothing for it.
 	Multiplier float64
+	// ID is the ID of the matcher that accepted, if it has one.
+	ID string
 }
 
 var miss = Result{OK: false, Multiplier: 0}
@@ -324,6 +332,7 @@ func Any(matchers []Matcher, guess string) Result {
 			continue
 		}
 		if r := m.Match(guess); r.OK {
+			r.ID = m.ID
 			return r
 		}
 	}
@@ -332,6 +341,7 @@ func Any(matchers []Matcher, guess string) Result {
 			continue
 		}
 		if r := m.Match(guess); r.OK {
+			r.ID = m.ID
 			return r
 		}
 	}

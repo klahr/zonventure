@@ -87,7 +87,7 @@ func setup(t *testing.T, g *graph.Graph, n int) *fixture {
 	mustScan(t, db.QueryRow(
 		`INSERT INTO adventures(slug, title, description, author) VALUES ($1, $1, '', '') RETURNING id`, slug), &advID)
 
-	if _, _, err := graphstore.Save(context.Background(), db, advID, 0, g); err != nil {
+	if _, _, err := graphstore.Publish(context.Background(), db, advID, 0, g, ""); err != nil {
 		t.Fatalf("saving graph: %v", err)
 	}
 
@@ -671,7 +671,7 @@ func TestEventKeepsItsPinnedGraph(t *testing.T) {
 	mustScan(t, f.db.QueryRow(`
 		SELECT a.id FROM adventures a JOIN events e ON e.adventure_slug = a.slug WHERE e.id = $1
 	`, f.eventID), &advID)
-	if _, _, err := graphstore.Save(ctx, f.db, advID, 0, linear("changed")); err != nil {
+	if _, _, err := graphstore.Publish(ctx, f.db, advID, 0, linear("changed"), ""); err != nil {
 		t.Fatalf("saving a new version: %v", err)
 	}
 
@@ -716,5 +716,75 @@ func TestPingLocatorRejectsTeleports(t *testing.T) {
 	ping(60.0, 18.0, "2026-09-22 10:05:00") // 270 s gap
 	if _, _, ok, _ := (PingLocator{}).Position(ctx, f.db, team); ok {
 		t.Error("a ping after a 270 s gap must not be trusted")
+	}
+}
+
+// The answer survives the database between actions: a switch several
+// steps later still reads the first puzzle's answer after a reload.
+func TestSwitchReadsAnAnswerFromEarlier(t *testing.T) {
+	anything := []match.Matcher{{Kind: match.Anything}}
+	g := &graph.Graph{
+		Nodes: []graph.Node{
+			{Slug: "start", Type: graph.Start},
+			{Slug: "door", Type: graph.Puzzle, PuzzleCfg: &graph.PuzzleConfig{
+				Outputs: []graph.Output{{Port: "said", Trigger: graph.OnAnswer, Matchers: anything}},
+			}},
+			puzzle("middle", "ok"),
+			{Slug: "which", Type: graph.Switch, SwitchCfg: &graph.SwitchConfig{From: "door", Cases: []graph.Case{
+				{Port: "left", Matchers: []match.Matcher{{Kind: match.Exact, Value: "left"}}},
+			}}},
+			{Slug: "left-end", Type: graph.End},
+			{Slug: "else-end", Type: graph.End},
+		},
+		Edges: []graph.Edge{
+			edge("start", "out", "door"),
+			edge("door", "said", "middle"),
+			edge("middle", "solved", "which"),
+			edge("which", "left", "left-end"),
+			edge("which", "else", "else-end"),
+		},
+	}
+	f := setup(t, g, 2)
+	f.answer(f.teams[0], "Left")
+	f.answer(f.teams[1], "right")
+	if r := f.answer(f.teams[0], "ok"); r.View.Node != "left-end" {
+		t.Errorf("left should route left, got %q", r.View.Node)
+	}
+	if r := f.answer(f.teams[1], "ok"); r.View.Node != "else-end" {
+		t.Errorf("right should route otherwise, got %q", r.View.Node)
+	}
+}
+
+// Choosing a start survives the database: the team waits unplaced after
+// the event starts, chooses, and its adventure clock starts then.
+func TestTeamChoosesItsStart(t *testing.T) {
+	g := &graph.Graph{
+		Nodes: []graph.Node{
+			{Slug: "s1", Type: graph.Start, Title: "East"},
+			{Slug: "s2", Type: graph.Start, Title: "West"},
+			puzzle("east", "e"),
+			puzzle("west", "w"),
+			{Slug: "end", Type: graph.End},
+		},
+		Edges: []graph.Edge{
+			edge("s1", "out", "east"), edge("s2", "out", "west"),
+			edge("east", "solved", "end"), edge("west", "solved", "end"),
+		},
+	}
+	f := setup(t, g, 1)
+	team := f.teams[0]
+	if v := f.view(team); v.Node != "" || len(v.Starts) != 2 {
+		t.Fatalf("before choosing: %+v", v)
+	}
+	f.clock.Advance(10 * time.Minute)
+	r, err := f.eng.ChooseStart(context.Background(), team, "s2")
+	if err != nil || r.View.Node != "west" {
+		t.Fatalf("choose west: %+v %v", r.View, err)
+	}
+	if _, err := f.eng.ChooseStart(context.Background(), team, "s1"); !errors.Is(err, ErrStale) {
+		t.Errorf("choosing twice = %v", err)
+	}
+	if v := f.view(team); v.Node != "west" {
+		t.Errorf("after reload the team is on %q", v.Node)
 	}
 }

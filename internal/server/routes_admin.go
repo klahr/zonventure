@@ -140,11 +140,17 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 		// version; convert builds one from the lanes without saving.
 		r.Get("/adventures/{slug}/graph", adminH.GetAdventureGraph)
 		r.Put("/adventures/{slug}/graph", adminH.PutAdventureGraph)
+		r.Post("/adventures/{slug}/graph/publish", adminH.PublishAdventureGraph)
+		r.Get("/adventures/{slug}/graph/versions", adminH.ListAdventureGraphVersions)
+		r.Get("/adventures/{slug}/graph/versions/{version}", adminH.GetAdventureGraphVersion)
+		r.Post("/adventures/{slug}/graph/versions/{version}/publish", adminH.PublishAdventureGraphVersion)
+		r.Patch("/adventures/{slug}/graph/versions/{version}", adminH.LabelAdventureGraphVersion)
 		r.Post("/adventures/{slug}/graph/validate", adminH.ValidateAdventureGraph)
 		r.Post("/adventures/{slug}/graph/convert", adminH.ConvertAdventureGraph)
 		// Play the unsaved draft with the live rules: the designer's
 		// preview and simulator. Stateless — the client carries the team.
 		r.Post("/adventures/{slug}/simulate", adminH.SimulateAdventureGraph)
+		r.Post("/adventures/{slug}/media", adminH.UploadAdventureMedia)
 		r.Post("/adventures", adminH.CreateAdventure)
 		r.Patch("/adventures/{slug}", adminH.UpdateAdventure)
 		r.Delete("/adventures/{slug}", adminH.DeleteAdventure)

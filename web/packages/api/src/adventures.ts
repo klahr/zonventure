@@ -1,7 +1,7 @@
 // Adventure and graph endpoints. Routes: internal/server/routes_admin.go;
 // handlers: internal/admin/handlers.go (list) and internal/admin/graph.go.
 
-import { ApiError, get, patch, post, put } from "./http.ts";
+import { ApiError, get, patch, post, put, request } from "./http.ts";
 import type { Brand } from "./play.ts";
 
 /** internal/admin/handlers.go: adventureDTO */
@@ -31,6 +31,20 @@ export interface GraphPayload<Env, Rep> {
   version?: number;
   envelope: Env;
   report: Rep;
+  /** The live version, when anything is published. */
+  published?: { version: number; label?: string };
+  /** The draft differs from what is published — "unpublished changes". */
+  dirty?: boolean;
+  saved_at?: string;
+}
+
+/** internal/graphstore: Version — one release in the history. */
+export interface GraphVersion {
+  version: number;
+  label?: string;
+  created_at: string;
+  author?: string;
+  published?: boolean;
 }
 
 const base = (slug: string) => `/api/admin/adventures/${encodeURIComponent(slug)}/graph`;
@@ -47,8 +61,26 @@ export async function getGraph<Env, Rep>(slug: string, signal?: AbortSignal) {
   }
 }
 
+/** Autosave the draft. Errors do not block; the report lists them. */
 export const saveGraph = <Env, Rep>(slug: string, envelope: Env) =>
   put<GraphPayload<Env, Rep>>(base(slug), envelope);
+
+/** Release the saved draft. Refused (422 graph_invalid) when it has errors. */
+export const publishGraph = <Env, Rep>(slug: string, label: string) =>
+  post<GraphPayload<Env, Rep>>(base(slug) + "/publish", label ? { label } : undefined);
+
+export const listVersions = (slug: string, signal?: AbortSignal) =>
+  get<{ versions: GraphVersion[] }>(base(slug) + "/versions", signal ? { signal } : {});
+
+export const getVersion = <Env, Rep>(slug: string, version: number) =>
+  get<GraphPayload<Env, Rep>>(`${base(slug)}/versions/${version}`);
+
+/** Roll back: make an older version the published one. */
+export const publishVersion = <Env, Rep>(slug: string, version: number, label = "") =>
+  post<GraphPayload<Env, Rep>>(`${base(slug)}/versions/${version}/publish`, label ? { label } : undefined);
+
+export const labelVersion = (slug: string, version: number, label: string) =>
+  patch<void>(`${base(slug)}/versions/${version}`, { label });
 
 export const validateGraph = <Env, Rep>(slug: string, envelope: Env, signal?: AbortSignal) =>
   post<GraphPayload<Env, Rep>>(base(slug) + "/validate", envelope, signal ? { signal } : {});
@@ -105,3 +137,23 @@ export const saveBrand = (slug: string, b: Brand) =>
     text_color: b.text ?? "",
     submit_bg_color: b.submit_bg ?? "",
   });
+
+// --- media -----------------------------------------------------------------
+
+/** internal/admin: mediaView */
+export interface MediaUpload {
+  id: number;
+  kind: "image" | "audio";
+  mime_type: string;
+  size_bytes: number;
+}
+
+/**
+ * Upload one image or audio file for the adventure. Images are resized
+ * by the server; the same file twice returns the same id.
+ */
+export function uploadMedia(slug: string, file: File) {
+  const form = new FormData();
+  form.append("file", file);
+  return request<MediaUpload>(`/api/admin/adventures/${encodeURIComponent(slug)}/media`, { method: "POST", form });
+}

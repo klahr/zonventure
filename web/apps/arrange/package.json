@@ -10,14 +10,16 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "react": "^19.2.0",
-    "react-dom": "^19.2.0",
+    "@xyflow/react": "^12.11.5",
     "@zonventure/api": "*",
-    "@zonventure/ui": "*",
-    "@zonventure/i18n": "*",
     "@zonventure/graph": "*",
+    "@zonventure/i18n": "*",
     "@zonventure/play-ui": "*",
-    "@xyflow/react": "^12.11.5"
+    "@zonventure/ui": "*",
+    "lucide-react": "^1.47.0",
+    "maplibre-gl": "^6.11.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
   },
   "devDependencies": {
     "@types/node": "^26.6.2",

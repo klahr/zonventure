@@ -90,10 +90,12 @@ func TestStartAndEnd(t *testing.T) {
 		assertCode(t, Check(g), "graph.start.missing")
 	})
 
-	t.Run("two starts", func(t *testing.T) {
+	// Several starts are allowed; an unwired one is still an unconnected
+	// output, like any other.
+	t.Run("an unwired second start", func(t *testing.T) {
 		g := valid3()
 		g.Nodes = append(g.Nodes, graph.Node{Slug: "start2", Type: graph.Start})
-		assertCode(t, Check(g), "graph.start.duplicate")
+		assertCode(t, Check(g), "port.unconnected")
 	})
 
 	// An adventure nobody can finish is the worst possible silent bug.
@@ -563,5 +565,53 @@ func TestIssueString(t *testing.T) {
 	got := (Issue{Code: "c", Node: "n", Port: "p", Message: "m"}).String()
 	if !strings.Contains(got, "n.p") {
 		t.Errorf("String() = %q; should name the node and port", got)
+	}
+}
+
+func TestCrossroadsAnswerReferences(t *testing.T) {
+	g := &graph.Graph{
+		Nodes: []graph.Node{
+			{Slug: "start", Type: graph.Start},
+			{Slug: "q", Type: graph.Puzzle, PuzzleCfg: &graph.PuzzleConfig{Outputs: []graph.Output{{
+				Port: "ok", Trigger: graph.OnAnswer, Matchers: []match.Matcher{
+					{ID: "a", Kind: match.Exact, Value: "x"}, {ID: "a", Kind: match.Exact, Value: "y"},
+				},
+			}}}},
+			{Slug: "x", Type: graph.Switch, SwitchCfg: &graph.SwitchConfig{Cases: []graph.Case{
+				{Port: "p", Answers: []string{"q/gone"}},
+			}}},
+			{Slug: "end", Type: graph.End},
+		},
+		Edges: []graph.Edge{
+			{From: "start", FromPort: "out", To: "q"},
+			{From: "q", FromPort: "ok", To: "x"},
+			{From: "x", FromPort: "p", To: "end"},
+			{From: "x", FromPort: "else", To: "end"},
+		},
+	}
+	got := strings.Join(codes(Check(g)), " ")
+	for _, want := range []string{"case.answer.unknown", "matcher.id.duplicate"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("want %s in %s", want, got)
+		}
+	}
+}
+
+// Several starts are allowed, and reachability counts from all of them.
+func TestSeveralStarts(t *testing.T) {
+	g := &graph.Graph{
+		Nodes: []graph.Node{
+			{Slug: "s1", Type: graph.Start},
+			{Slug: "s2", Type: graph.Start, StartCfg: &graph.StartConfig{Zone: "nowhere"}},
+			{Slug: "end", Type: graph.End},
+		},
+		Edges: []graph.Edge{{From: "s1", FromPort: "out", To: "end"}, {From: "s2", FromPort: "out", To: "end"}},
+	}
+	got := strings.Join(codes(Check(g)), " ")
+	if strings.Contains(got, "start.duplicate") || strings.Contains(got, "unreachable") {
+		t.Errorf("two starts should be fine: %s", got)
+	}
+	if !strings.Contains(got, "ref.zone.unknown") {
+		t.Errorf("a start at an undeclared zone should be reported: %s", got)
 	}
 }

@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Background,
+  BackgroundVariant,
+  ControlButton,
   Controls,
   MiniMap,
   ReactFlow,
@@ -26,12 +28,31 @@ import {
   reconcileByID,
   removeNode,
   disconnect,
+  freshSlug,
+  startZone,
+  tidy,
   sameData,
   samePosition,
   type DragFrom,
   type Graph,
   type Issue,
+  type Size,
 } from "@zonventure/graph";
+import { LayoutGrid } from "lucide-react";
+import { useT } from "../i18n.tsx";
+import { CanvasContextMenu, type ContextMenuItem } from "./dz/CanvasContextMenu.tsx";
+import { ICON } from "./dz/ui.tsx";
+
+// Copied steps, shared across designer tabs the way dazyflow's clipboard
+// is: a JSON payload under one key.
+const CLIPBOARD = "__zonventure_clipboard";
+
+type GraphNode = Graph["nodes"][number];
+
+/** A copy of a step with a fresh slug, offset so it does not hide the original. */
+function copyNode(g: Graph, n: GraphNode, dx = 40, dy = 40): GraphNode {
+  return { ...structuredClone(n), slug: freshSlug(g, n.type), x: (n.x ?? 0) + dx, y: (n.y ?? 0) + dy };
+}
 import { NodeCard, type CardNode } from "./NodeCard.tsx";
 import { QuickPalette, type PaletteChoice } from "./QuickPalette.tsx";
 
@@ -72,8 +93,24 @@ interface PendingDrag {
  * The pick is created at that spot and wired in. Releasing on a handle
  * that refuses the wire shows why instead.
  */
+/**
+ * The rendered size of every card, for Tidy. Read from the DOM so the
+ * toolbar, outside the canvas's React Flow context, can use it too;
+ * offset sizes ignore the zoom transform. A card with a map or a picture
+ * is much taller than the default tidy assumes.
+ */
+export function cardSizes(): Map<string, Size> {
+  const sizes = new Map<string, Size>();
+  for (const el of document.querySelectorAll<HTMLElement>(".dz-flow .react-flow__node[data-id]")) {
+    sizes.set(el.dataset.id!, { w: el.offsetWidth, h: el.offsetHeight });
+  }
+  return sizes;
+}
+
 export function Canvas({ graph, issues, selected, onChange, onSelect, paletteRequest, focusRequest, playing = null }: Props) {
   const rf = useReactFlow();
+  const t = useT();
+  const [menu, setMenu] = useState<{ x: number; y: number; items: ContextMenuItem[] } | null>(null);
   const [nodes, setNodes] = useState<CardNode[]>([]);
   const [edges, setEdges] = useState<RFEdge[]>([]);
   const [palette, setPalette] = useState<{ from: DragFrom | null; screen: { x: number; y: number } } | null>(null);
@@ -93,6 +130,13 @@ export function Canvas({ graph, issues, selected, onChange, onSelect, paletteReq
     return m;
   }, [issues]);
 
+  const sourceTitle = (n: Graph["nodes"][number]): string | undefined => {
+    const from = n.switch?.from;
+    if (!from) return undefined;
+    const src = graph.nodes.find((x) => x.slug === from);
+    return src?.title || from;
+  };
+
   // Document → React Flow nodes, reusing unchanged objects so memoised
   // cards do not re-render.
   useEffect(() => {
@@ -105,20 +149,23 @@ export function Canvas({ graph, issues, selected, onChange, onSelect, paletteReq
           sameData(existing.data.issues, issuesBySlug.get(n.slug) ?? []) &&
           existing.selected === (n.slug === selected) &&
           existing.data.playing === (n.slug === playing) &&
+          existing.data.sourceTitle === sourceTitle(n) &&
+          existing.data.zone === startZone(graph, n) &&
           samePosition(existing.position, { x: n.x ?? 0, y: n.y ?? 0 }),
         build: (n, previous) => ({
           id: n.slug,
           type: "zv" as const,
           position: { x: n.x ?? 0, y: n.y ?? 0 },
-          data: { node: n, issues: issuesBySlug.get(n.slug) ?? [], playing: n.slug === playing },
+          data: { node: n, issues: issuesBySlug.get(n.slug) ?? [], playing: n.slug === playing, ...(sourceTitle(n) ? { sourceTitle: sourceTitle(n)! } : {}), ...(startZone(graph, n) ? { zone: startZone(graph, n)! } : {}) },
           selected: n.slug === selected,
           // Keep React Flow's measurement so handles do not jump.
           ...(previous?.measured ? { measured: previous.measured } : {}),
-          deletable: n.type !== "start",
+          // Any start may go while another remains.
+          deletable: n.type !== "start" || graph.nodes.filter((x) => x.type === "start").length > 1,
         }),
       }).items,
     );
-  }, [graph.nodes, issuesBySlug, selected, playing]);
+  }, [graph, issuesBySlug, selected, playing]);
 
   useEffect(() => {
     setEdges((prev) => {
@@ -261,6 +308,126 @@ export function Canvas({ graph, issues, selected, onChange, onSelect, paletteReq
     [palette, graph, onChange, onSelect, rf],
   );
 
+  // --- dazyflow's context menus ------------------------------------------------
+
+  const duplicate = useCallback(
+    (slug: string) => {
+      const n = nodeBySlug(graph, slug);
+      if (!n) return;
+      const c = copyNode(graph, n);
+      onChange(addNode(graph, c));
+      onSelect(c.slug);
+    },
+    [graph, onChange, onSelect],
+  );
+
+  const onNodeContextMenu = useCallback(
+    (e: React.MouseEvent, n: CardNode) => {
+      e.preventDefault();
+      onSelect(n.id);
+      const isStart = n.data.node.type === "start" && graph.nodes.filter((x) => x.type === "start").length === 1;
+      setMenu({
+        x: e.clientX,
+        y: e.clientY,
+        items: [
+          { label: t.t("Duplicate"), onClick: () => duplicate(n.id), shortcut: "Ctrl+D" },
+          { label: t.t("Copy"), onClick: () => copySteps([n.id]), shortcut: "Ctrl+C" },
+          { separator: true },
+          {
+            label: t.t("Delete"),
+            danger: true,
+            disabled: isStart,
+            shortcut: "Del",
+            onClick: () => {
+              onChange(removeNode(graph, n.id));
+              onSelect(null);
+            },
+          },
+        ],
+      });
+    },
+    // copySteps is stable enough: it reads graph through its own closure.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [graph, duplicate, onChange, onSelect, t],
+  );
+
+  const onEdgeContextMenu = useCallback(
+    (e: React.MouseEvent, edge: RFEdge) => {
+      e.preventDefault();
+      setMenu({
+        x: e.clientX,
+        y: e.clientY,
+        items: [
+          { header: t.t("Connection") },
+          {
+            label: t.t("Delete connection"),
+            danger: true,
+            shortcut: "Del",
+            onClick: () => edge.sourceHandle && onChange(disconnect(graph, edge.source, edge.sourceHandle)),
+          },
+        ],
+      });
+    },
+    [graph, onChange, t],
+  );
+
+  // Right-clicking empty canvas opens the step palette at the cursor, as
+  // in dazyflow — there is no separate pane menu.
+  const onPaneContextMenu = useCallback((e: MouseEvent | React.MouseEvent) => {
+    e.preventDefault();
+    setPalette({ from: null, screen: { x: e.clientX, y: e.clientY } });
+  }, []);
+
+  // --- copy and paste ------------------------------------------------------------
+
+  const copySteps = (slugs: string[]) => {
+    const picked = graph.nodes.filter((n) => slugs.includes(n.slug));
+    if (!picked.length) return;
+    try {
+      localStorage.setItem(CLIPBOARD, JSON.stringify(picked));
+    } catch {
+      /* private mode: copy within this tab only is not worth a fallback */
+    }
+  };
+  const graphRef = useRef(graph);
+  graphRef.current = graph;
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      if ((e.target as HTMLElement)?.closest?.("input, textarea, select, [contenteditable]")) return;
+      const k = e.key.toLowerCase();
+      const g = graphRef.current;
+      const sel = rf.getNodes().filter((n) => n.selected).map((n) => n.id);
+      if (k === "c" && sel.length) {
+        copySteps(sel);
+      } else if (k === "d" && sel.length === 1) {
+        e.preventDefault();
+        duplicate(sel[0]!);
+      } else if (k === "v") {
+        let raw: string | null = null;
+        try {
+          raw = localStorage.getItem(CLIPBOARD);
+        } catch {
+          raw = null;
+        }
+        if (!raw) return;
+        e.preventDefault();
+        let next = g;
+        let last = "";
+        for (const n of JSON.parse(raw) as GraphNode[]) {
+          const c = copyNode(next, n, 60, 60);
+          next = addNode(next, c);
+          last = c.slug;
+        }
+        onChange(next);
+        if (last) onSelect(last);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [duplicate, onChange, onSelect, rf]);
+
   // Double-clicking empty canvas opens the palette there, unconnected.
   const onDoubleClick = useCallback((e: React.MouseEvent) => {
     if ((e.target as HTMLElement).classList.contains("react-flow__pane")) {
@@ -290,7 +457,7 @@ export function Canvas({ graph, issues, selected, onChange, onSelect, paletteReq
   }, [hint]);
 
   return (
-    <div className="canvas" ref={wrapper} onDoubleClick={onDoubleClick}>
+    <div className="dz-flow" ref={wrapper} onDoubleClick={onDoubleClick}>
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -304,6 +471,9 @@ export function Canvas({ graph, issues, selected, onChange, onSelect, paletteReq
         onConnectEnd={onConnectEnd}
         isValidConnection={isValidConnection}
         onPaneClick={() => onSelect(null)}
+        onNodeContextMenu={onNodeContextMenu}
+        onEdgeContextMenu={onEdgeContextMenu}
+        onPaneContextMenu={onPaneContextMenu}
         zoomOnDoubleClick={false}
         deleteKeyCode={["Delete", "Backspace"]}
         fitView
@@ -311,9 +481,15 @@ export function Canvas({ graph, issues, selected, onChange, onSelect, paletteReq
         minZoom={0.2}
         proOptions={{ hideAttribution: true }}
       >
-        <Background gap={24} />
-        <Controls showInteractive={false} />
-        <MiniMap pannable zoomable className="canvas__minimap" />
+        {/* dazyflow's two-level grid: a major line every 100, fine every 20. */}
+        <Background id="fine" variant={BackgroundVariant.Lines} gap={20} className="dz-grid-fine" />
+        <Background id="major" variant={BackgroundVariant.Lines} gap={100} className="dz-grid-major" />
+        <Controls showInteractive={false}>
+          <ControlButton onClick={() => onChange(tidy(graph, cardSizes()))} title={t.t("Tidy")} aria-label={t.t("Tidy")}>
+            <LayoutGrid size={ICON.sm} />
+          </ControlButton>
+        </Controls>
+        <MiniMap pannable zoomable className="dz-minimap canvas__minimap" />
       </ReactFlow>
 
       {hint && (
@@ -321,6 +497,8 @@ export function Canvas({ graph, issues, selected, onChange, onSelect, paletteReq
           {hint}
         </div>
       )}
+
+      {menu && <CanvasContextMenu x={menu.x} y={menu.y} items={menu.items} onClose={() => setMenu(null)} />}
 
       {palette && (
         <QuickPalette

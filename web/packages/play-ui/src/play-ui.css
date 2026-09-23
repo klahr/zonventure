@@ -21,6 +21,7 @@
   --pv-dock-fg: var(--pv-on-accent);
   --pv-tap: 2.75rem;
 
+  container: pv / inline-size;
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -232,6 +233,17 @@
   font-weight: 700;
 }
 
+/* A start to choose: the zone card, with its own button beneath. */
+.pv-begin {
+  flex-direction: column;
+  align-items: stretch;
+}
+.pv-begin__head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+
 .pv-timer {
   align-self: flex-start;
   margin: 0;
@@ -282,6 +294,123 @@
   display: grid;
   grid-template-columns: 1fr auto;
   gap: var(--sp-2);
+}
+.pv-answer:has(.pv-qr-btn) {
+  grid-template-columns: 1fr auto auto;
+}
+/* On a very narrow screen — the designer's preview, a small phone — the
+ * answer box gets its own row rather than being squeezed by two buttons. */
+@container pv (max-width: 300px) {
+  .pv-answer:has(.pv-qr-btn) {
+    grid-template-columns: 1fr auto;
+  }
+  .pv-answer .pv-input {
+    grid-column: 1 / -1;
+  }
+}
+.pv-qr-btn {
+  display: inline-grid;
+  place-items: center;
+  padding: 0 var(--sp-3);
+}
+.pv-qr-btn svg {
+  width: 1.4rem;
+  height: 1.4rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+}
+
+/* Full-screen camera for a QR answer. */
+.pv-qr {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal);
+  background: #000;
+}
+.pv-qr video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.pv-qr__frame {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+.pv-qr__frame::before {
+  content: "";
+  width: min(70vmin, 320px);
+  height: min(70vmin, 320px);
+  border: 3px solid rgba(255, 255, 255, 0.85);
+  border-radius: 16px;
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.45);
+}
+.pv-qr__status {
+  position: absolute;
+  top: calc(env(safe-area-inset-top) + var(--sp-4));
+  left: 0;
+  right: 0;
+  margin: 0;
+  padding: 0 var(--sp-4);
+  color: #fff;
+  font-weight: 600;
+  text-align: center;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+}
+.pv-qr__cancel {
+  position: absolute;
+  left: 50%;
+  bottom: calc(env(safe-area-inset-bottom) + var(--sp-5));
+  transform: translateX(-50%);
+  min-height: var(--pv-tap);
+  padding: var(--sp-3) var(--sp-5);
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: rgba(255, 255, 255, 0.95);
+  color: #111;
+  font: 700 var(--text-base) / 1 var(--font-body);
+  cursor: pointer;
+}
+
+/* A hint's pictures sit in a grid, as play.html laid them out. */
+.pv-hint .pv-media {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
+  margin-top: var(--sp-2);
+}
+.pv-hint .pv-media__img {
+  border-radius: var(--radius);
+  box-shadow: none;
+}
+
+/* Pictures and sounds on a step or hint. */
+.pv-media {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.pv-media__img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  background: var(--surface-2);
+}
+.pv-media__audio {
+  margin: 0;
+}
+.pv-media__audio audio {
+  width: 100%;
+}
+.pv-media__audio figcaption {
+  margin-top: var(--sp-1);
+  color: var(--muted);
+  font-size: var(--text-sm);
 }
 .pv-input {
   min-width: 0;

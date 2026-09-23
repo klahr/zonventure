@@ -33,7 +33,7 @@ import (
 const maxSimulateWait = 24 * 60 * 60
 
 type simulateAction struct {
-	// Kind is start, place, answer, continue, choose, skip, timeout,
+	// Kind is start, place, begin, answer, continue, choose, skip, timeout,
 	// hint, wait or move.
 	Kind  string `json:"kind"`
 	Node  string `json:"node,omitempty"`
@@ -140,6 +140,8 @@ func simulate(g *graph.Graph, team *session.Team, a simulateAction, now time.Tim
 	}
 
 	switch a.Kind {
+	case "begin":
+		res, step, err = team.ChooseStart(a.Port)
 	case "answer":
 		res, step, err = team.Answer(a.Node, a.Guess)
 	case "continue":

@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import type { play } from "@zonventure/api";
 import { Markdown } from "./Markdown.tsx";
+import { MediaList } from "./Media.tsx";
+import { QrButton } from "./Qr.tsx";
 import { brandVars, isHex } from "./brand.ts";
 import { formatSeconds, secondsUntil, useEngineClock } from "./clock.ts";
 import { english, type Feedback, type Translate } from "./feedback.ts";
@@ -42,8 +44,12 @@ export interface PlayViewProps {
   t?: Translate;
   /** Extra line under a zone requirement, such as the distance to it. */
   zoneNote?: ReactNode;
+  /** The same line for any place, such as each start a team may choose. */
+  placeNote?: (zone: play.PlayZone) => ReactNode;
   /** The adventure's palette. */
   brand?: play.Brand | null;
+  /** The adventure's farewell, shown under the end step's own text. */
+  outro?: string;
 }
 
 export function PlayView(props: PlayViewProps) {
@@ -65,7 +71,8 @@ export function PlayView(props: PlayViewProps) {
   const step: StepProps = { ...props, t, now, openHints: () => setHintsOpen(true) };
 
   let body: ReactNode;
-  if (kind === "end") body = <EndStep {...step} />;
+  if (kind === "start" && view.starts?.length) body = <StartChoice {...step} />;
+  else if (kind === "end") body = <EndStep {...step} />;
   else if (kind === "puzzle") body = <PuzzleStep {...step} />;
   else if (kind === "story") body = <StoryStep {...step} />;
   else if (kind === "hub") body = <HubStep {...step} />;
@@ -263,6 +270,7 @@ function PuzzleStep(props: StepProps) {
     <>
       <Title view={view} />
       <ZoneCard view={view} t={t} note={props.zoneNote} />
+      <MediaList media={view.media} />
       {view.text && <Markdown className="pv-text" text={view.text} />}
 
       {view.deadline && (
@@ -305,6 +313,10 @@ function PuzzleStep(props: StepProps) {
             <button className="pv-btn pv-btn--primary" disabled={busy || !guess.trim() || blockedFor > 0 || needsPlace}>
               {blockedFor > 0 ? formatSeconds(blockedFor) : t("Answer")}
             </button>
+            {/* A scan is a guess like any typed one: the decoded text goes
+                through the same matchers, so an author prints a QR code
+                of any accepted answer. */}
+            <QrButton t={t} disabled={busy || blockedFor > 0 || needsPlace} onScan={(text) => onAction({ kind: "answer", node, guess: text })} />
           </form>
         )}
       </div>
@@ -353,7 +365,8 @@ function HintSheet(props: StepProps & { onClose: () => void }) {
           {view.hints?.map((h, i) => (
             <div key={i} className="pv-hint">
               <div className="pv-hint__n">{t("Hint {{n}}", { n: i + 1 })}</div>
-              <Markdown text={h} />
+              <Markdown text={h.text} />
+              <MediaList media={h.media} />
             </div>
           ))}
           {!view.hints?.length && !hint && <p className="pv-muted">{t("No hints for this one.")}</p>}
@@ -408,6 +421,7 @@ function StoryStep({ view, t, busy, onAction, zoneNote, feedback }: StepProps) {
     <>
       <Title view={view} />
       <ZoneCard view={view} t={t} note={zoneNote} />
+      <MediaList media={view.media} />
       {view.text && <Markdown className="pv-text" text={view.text} />}
       <div className="pv-dock">
         <FeedbackLine feedback={feedback} />
@@ -465,7 +479,48 @@ function HubStep({ view, t, busy, onAction, feedback }: StepProps) {
   );
 }
 
-function EndStep({ view, t }: StepProps) {
+/** Several starts, or one with a place: the team picks where to begin and walks there. */
+function StartChoice({ view, t, busy, onAction, placeNote }: StepProps) {
+  const starts = view.starts ?? [];
+  return (
+    <>
+      <h2 className="pv-title">{starts.length > 1 ? t("Where do you start?") : t("Head to the start")}</h2>
+      <p className="pv-text">
+        {starts.length > 1 ? t("Pick a start and go there. The adventure begins when you arrive.") : t("The adventure begins when you arrive.")}
+      </p>
+      <ul className="pv-offer">
+        {starts.map((o, i) => {
+          const z = o.zone;
+          const name = o.title || z?.name || t("Start");
+          return (
+            <li key={o.node} className={"pv-zone pv-begin" + (o.here ? " is-here" : "")} style={{ "--i": i } as CSSProperties}>
+              <div className="pv-begin__head">
+                <span className="pv-zone__pin" aria-hidden>
+                  {o.here ? "✓" : "⌖"}
+                </span>
+                <div className="pv-zone__body">
+                  <strong>{name}</strong>
+                  {z && !o.here && placeNote && <span className="pv-zone__note">{placeNote(z)}</span>}
+                  {z && o.here && <span className="pv-zone__note">{t("You are here.")}</span>}
+                </div>
+                {z && (
+                  <a href={`https://www.openstreetmap.org/?mlat=${z.lat}&mlon=${z.lng}#map=18/${z.lat}/${z.lng}`} target="_blank" rel="noopener noreferrer">
+                    {t("Map")}
+                  </a>
+                )}
+              </div>
+              <button type="button" className="pv-btn pv-btn--primary pv-btn--wide" disabled={busy || !o.here} onClick={() => onAction({ kind: "begin", node: "", port: o.node })}>
+                {o.here ? t("Start here") : t("Get there to start")}
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </>
+  );
+}
+
+function EndStep({ view, t, outro }: StepProps) {
   const failed = view.outcome === "fail";
   return (
     <div className={"pv-summary" + (failed ? " is-fail" : "")}>
@@ -473,7 +528,9 @@ function EndStep({ view, t }: StepProps) {
         {failed ? "⚑" : "★"}
       </div>
       <h2 className="pv-summary__head">{failed ? t("The adventure is over.") : t("You made it!")}</h2>
+      <MediaList media={view.media} />
       {view.text && <Markdown className="pv-text" text={view.text} />}
+      {outro && <Markdown className="pv-text" text={outro} />}
       <div className="pv-stats">
         <div className="pv-stat">
           <div className="pv-stat__v">{round(view.score)}</div>

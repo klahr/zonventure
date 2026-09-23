@@ -462,6 +462,10 @@ type routesEnv struct {
 //     fetch / WebSocket. unpkg is whitelisted so devtools can
 //     pull xterm's sourcemaps without the browser logging a
 //     CSP-block warning on every /arrange page open.
+//     tile.openstreetmap.org is where the designer's zone editor
+//     (MapLibre) fetches map tiles.
+//   - worker-src 'self' blob: — MapLibre decodes tiles in a
+//     worker it starts from a blob URL.
 //   - media-src 'self' blob: — audio attachments are blob URLs.
 //   - frame-ancestors 'none' — blocks the clickjacking surface on
 //     /team/{token}, /recap/{token}, /play, /arrange.
@@ -473,7 +477,12 @@ const baselineCSP = "default-src 'self'; " +
 	"style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://unpkg.com; " +
 	"img-src 'self' data: blob: https:; " +
 	"font-src 'self' https://fonts.gstatic.com; " +
-	"connect-src 'self' wss: ws: https://unpkg.com; " +
+	// tile.openstreetmap.org: the designer's zone map (MapLibre) fetches
+	// its tiles; blob: workers are how MapLibre decodes them off the main
+	// thread. See web/apps/arrange/src/designer/StaticMap.tsx for the tile
+	// source and why it must change before maps reach players.
+	"connect-src 'self' wss: ws: https://unpkg.com https://tile.openstreetmap.org; " +
+	"worker-src 'self' blob:; " +
 	"media-src 'self' blob:; " +
 	"frame-ancestors 'none'; " +
 	"object-src 'none'; " +

@@ -34,9 +34,8 @@ func UsesGraph(ctx context.Context, q Querier, eventID int64) (bool, error) {
 	var state string
 	err := q.QueryRowContext(ctx, `
 		SELECT e.graph_id IS NOT NULL, e.state,
-		       EXISTS (SELECT 1 FROM adventure_graphs g
-		               JOIN adventures a ON a.id = g.adventure_id
-		               WHERE a.slug = e.adventure_slug)
+		       EXISTS (SELECT 1 FROM adventures a
+		               WHERE a.slug = e.adventure_slug AND a.published_graph_id IS NOT NULL)
 		FROM events e WHERE e.id = $1
 	`, eventID).Scan(&pinned, &state, &hasGraph)
 	if err != nil {

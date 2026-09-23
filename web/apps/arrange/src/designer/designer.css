@@ -86,9 +86,9 @@
 
 /* --- canvas ---------------------------------------------------------- */
 
-.canvas { position: absolute; inset: 0; }
-.canvas .react-flow { background: var(--bg); }
-.canvas .react-flow__controls button { background: var(--surface); color: var(--ink); border-color: var(--border-soft); }
+.dz-flow { position: absolute; inset: 0; }
+.dz-flow .react-flow { background: var(--bg); }
+.dz-flow .react-flow__controls button { background: var(--surface); color: var(--ink); border-color: var(--border-soft); }
 .canvas__minimap { background: var(--surface) !important; }
 .canvas__hint {
   position: absolute;
@@ -103,10 +103,10 @@
   z-index: var(--z-toast);
 }
 
-.react-flow__edge-path { stroke: var(--ink-soft); stroke-width: 1.5; }
-.react-flow__edge.selected .react-flow__edge-path { stroke: var(--accent); stroke-width: 2.5; }
+.react-flow__edge-path { stroke: var(--ink-soft); stroke-width: 2.5; }
+.react-flow__edge.selected .react-flow__edge-path { stroke: var(--accent); stroke-width: 3.5; }
 .react-flow__edge.edge--bad .react-flow__edge-path { stroke: var(--danger); stroke-dasharray: 5 4; }
-.react-flow__connection-path { stroke: var(--accent); stroke-width: 2; }
+.react-flow__connection-path { stroke: var(--accent); stroke-width: 3; }
 
 .card {
   --type: var(--ink-soft);
@@ -123,6 +123,7 @@
 .card--story { --type: #6b5bd6; }
 .card--hub { --type: #0f8b8d; }
 .card--gate { --type: #d98e04; }
+.card--switch { --type: #0e8a7e; }
 .card--effect { --type: #3d7bd9; }
 .card--end { --type: var(--ink); }
 .card.is-selected { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -165,7 +166,7 @@
 }
 .card__port.is-bad .card__port-label { color: var(--danger); font-weight: 700; }
 
-.card .react-flow__handle { width: 12px; height: 12px; border: 2px solid var(--surface); }
+.card .react-flow__handle { width: 16px; height: 16px; border: 2px solid var(--surface); }
 .card__in { background: var(--ink-soft); }
 .card__out { background: var(--type); right: -7px; }
 .card__port.is-bad .card__out { background: var(--danger); }
@@ -225,6 +226,7 @@
 .qp__dot--story { background: #6b5bd6; }
 .qp__dot--hub { background: #0f8b8d; }
 .qp__dot--gate { background: #d98e04; }
+.qp__dot--switch { background: #0e8a7e; }
 .qp__dot--effect { background: #3d7bd9; }
 .qp__dot--end { background: var(--ink); }
 .qp__dot--start { background: var(--success); }
@@ -397,3 +399,88 @@ textarea.field__input { resize: vertical; font-family: var(--font-body); }
   color: #fff;
   font-size: 0.65rem;
 }
+
+.media-ed { display: flex; flex-direction: column; gap: var(--sp-2); }
+.media-ed__item { display: grid; grid-template-columns: 3.5rem 1fr auto; align-items: center; gap: var(--sp-2); }
+.media-ed__thumb { width: 3.5rem; height: 3.5rem; object-fit: cover; border-radius: var(--radius); border: 1px solid var(--border-soft); background: var(--surface-2); }
+.media-ed__audio { width: 3.5rem; }
+
+/* A step's first picture, so an author finds the step by its image. */
+.card__thumb { display: block; width: calc(100% - 2 * var(--sp-3)); height: 64px; margin: var(--sp-2) var(--sp-3) 0; object-fit: cover; border-radius: var(--radius-sm); border: 1px solid var(--border-soft); }
+.step__thumb { flex: none; width: 3rem; height: 3rem; margin-left: auto; object-fit: cover; border-radius: var(--radius-sm); border: 1px solid var(--border-soft); }
+
+/* Crossroads: the answers a path takes, picked from the puzzle's own. */
+.answer-chips { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1); margin-top: var(--sp-2); }
+.answer-chip { display: inline-flex; align-items: center; gap: var(--sp-1); padding: 0.15rem 0.3rem 0.15rem 0.6rem; border-radius: var(--radius-pill); background: color-mix(in srgb, var(--accent) 14%, var(--surface)); font-size: var(--text-sm); font-weight: 600; }
+.answer-chip small { font-weight: 400; color: var(--muted); }
+.answer-chip.is-gone { background: var(--danger-bg); color: var(--danger); }
+.answer-chip button { border: 0; background: none; color: inherit; cursor: pointer; font-size: 1rem; line-height: 1; padding: 0 0.2rem; }
+.answer-add { width: auto; padding: var(--sp-1) var(--sp-2); font-size: var(--text-sm); }
+
+/* --- The dazyflow shell -------------------------------------------------
+ * dz.css carries dazyflow's own rules; these are the few joints it leaves
+ * to its FlowEditor and app shell, which are not ported. */
+.dz-designer { height: 100dvh; min-height: 0; }
+.dz-designer .editor { height: 100%; }
+.dz-designer .canvas { position: relative; display: flex; flex-direction: column; height: 100%; min-width: 0; min-height: 0; }
+.dz-stage { position: relative; flex: 1; min-height: 0; }
+.dz-list { position: absolute; inset: 0; overflow: auto; }
+@media (min-width: 1101px) {
+  .dz .editor[data-has-selection="true"] .dz-stage { margin-right: var(--dz-inspector-w); }
+}
+.dz-back { display: inline-grid; place-items: center; width: 32px; height: 32px; border-radius: var(--dz-r-2); color: var(--dz-ink-soft); }
+.dz-back:hover { background: var(--dz-surface-2); text-decoration: none; }
+.dz-title { max-width: 16rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-brand); font-weight: 400; font-size: var(--dz-text-lg); color: var(--accent); }
+.dz .editor-run { margin-left: var(--dz-space-1); }
+.dz .inspector-body { overflow-y: auto; min-height: 0; flex: 1; }
+.dz .inspector-body .insp { padding: var(--dz-space-3) var(--dz-space-4); }
+.dz .inspector-actions { padding-top: var(--dz-space-3); border-top: 1px solid var(--dz-border); }
+.dz .dz-history-in-slot { position: static; width: auto; height: 100%; box-shadow: none; border-left: 0; }
+.dz-step-icon { display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: var(--dz-r-2); color: #fff; background: var(--type, var(--dz-accent)); }
+.dz-step-icon--start { --type: #1b6b43; }
+.dz-step-icon--puzzle { --type: var(--accent); }
+.dz-step-icon--story { --type: #6d4bc3; }
+.dz-step-icon--hub { --type: #2f6fb3; }
+.dz-step-icon--gate { --type: #d98e04; }
+.dz-step-icon--effect { --type: #2f7fd1; }
+.dz-step-icon--switch { --type: #0e8a7e; }
+.dz-step-icon--end { --type: var(--ink); }
+.dz .modal.modal-wide { width: min(56rem, 94vw); max-width: none; }
+.dz-settings { display: grid; grid-template-columns: 1fr 1fr; gap: var(--dz-space-5); align-items: start; }
+@media (max-width: 800px) { .dz-settings { grid-template-columns: 1fr; } }
+.dz-shortcuts { display: grid; gap: var(--dz-space-2); margin: 0; }
+.dz-shortcut { display: grid; grid-template-columns: 12rem 1fr; gap: var(--dz-space-3); align-items: baseline; }
+.dz-shortcut dd { margin: 0; color: var(--dz-ink-soft); }
+.dz-shortcuts kbd { font-family: var(--dz-font-mono); font-size: var(--dz-text-xs); padding: 2px 6px; border: 1px solid var(--dz-border-strong); border-bottom-width: 2px; border-radius: var(--dz-r-1); background: var(--dz-surface-2); }
+.card__icon { width: 20px; height: 20px; border-radius: var(--radius-sm); margin-right: var(--sp-1); }
+.card__head { display: flex; align-items: center; }
+/* The phone preview is the player's screen: nothing from the editor
+ * chrome may reach inside it. The player's own classes already outrank
+ * dz.css's :where()-scoped element rules; this resets the one inherited
+ * property they rely on. */
+.dz .phone { font-family: var(--font-body); line-height: 1.5; }
+
+/* --- maps ----------------------------------------------------------------- */
+
+.static-map { position: relative; overflow: hidden; border-radius: var(--radius-sm); background: #e8e4dc; flex: none; }
+.static-map img { position: absolute; width: 256px; height: 256px; max-width: none; user-select: none; pointer-events: none; }
+.static-map svg { position: absolute; inset: 0; pointer-events: none; }
+.static-map polygon { fill: color-mix(in srgb, var(--accent) 22%, transparent); stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; }
+.static-map__credit { position: absolute; right: 2px; bottom: 1px; font-size: 9px; line-height: 1.2; padding: 0 3px; color: #333; background: rgb(255 255 255 / 0.75); border-radius: 3px; }
+
+.card__map { margin: var(--sp-2) var(--sp-3) 0; border: 1px solid var(--border-soft); }
+
+.zone-thumb { position: relative; display: block; padding: 0; border: 0; background: none; cursor: pointer; }
+.zone-thumb__edit { position: absolute; left: 6px; top: 6px; font-size: var(--text-xs); padding: 2px 8px; border-radius: var(--radius-pill); background: rgb(255 255 255 / 0.9); color: #222; }
+.zone-thumb:hover .zone-thumb__edit, .zone-thumb:focus-visible .zone-thumb__edit { background: var(--accent); color: #fff; }
+
+.zone-map { display: flex; flex-direction: column; gap: 8px; }
+.zone-map__mode { align-self: flex-start; }
+.zone-map__map { height: 260px; border-radius: var(--radius-sm); overflow: hidden; border: 1px solid var(--border-soft); }
+.zone-map__gl { width: 100%; height: 100%; }
+.zone-map__map.is-drawing .maplibregl-canvas-container { cursor: crosshair; }
+.zone-map__row { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; }
+.zone-map__row .field__hint { flex: 1 1 140px; }
+.zone-map__row .field--num { flex: 0 0 96px; }
+.zone-map__centre { width: 18px; height: 18px; border-radius: 50%; background: var(--accent); border: 3px solid #fff; box-shadow: 0 1px 4px rgb(0 0 0 / 0.4); cursor: grab; }
+.zone-map__corner { width: 12px; height: 12px; border-radius: 50%; background: #fff; border: 2px solid var(--accent); box-shadow: 0 1px 3px rgb(0 0 0 / 0.35); cursor: grab; }

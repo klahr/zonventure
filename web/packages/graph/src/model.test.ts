@@ -2,7 +2,10 @@ import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
+  answerOptions,
   appendStep,
+  referAnswer,
+  resolveAnswer,
   cleanGraph,
   connect,
   connectionError,
@@ -231,4 +234,23 @@ describe("tidy", () => {
     const x = (slug: string) => t.nodes.find((n) => n.slug === slug)!.x ?? 0;
     assert.ok(x(hub.slug) < x(a.slug), "the hub should sit left of the branch that loops back to it");
   });
+});
+
+test("a crossroads reference follows the answer through a spelling fix", () => {
+  let g: Graph = {
+    nodes: [
+      { slug: "q", type: "puzzle", puzzle: { outputs: [{ port: "ok", trigger: "answer", matchers: [{ kind: "exact", value: "nroth" }, { kind: "anything" }] }] } },
+    ],
+    edges: [],
+  };
+  const opts = answerOptions(g, "q");
+  assert.equal(opts.length, 1, "“any answer” is not something to route on");
+  const { graph, ref } = referAnswer(g, opts[0]!);
+  assert.equal(ref, "q/a1");
+  g = updateNode(graph, "q", (n) => ({
+    ...n,
+    puzzle: { outputs: [{ port: "ok", trigger: "answer", matchers: [{ id: "a1", kind: "exact", value: "north" }] }] },
+  }));
+  assert.equal(resolveAnswer(g, ref)?.label, "north");
+  assert.equal(referAnswer(g, answerOptions(g, "q")[0]!).graph, g, "an answer with an id is left alone");
 });

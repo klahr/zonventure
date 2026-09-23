@@ -6,7 +6,7 @@ package player
 // play.UsesGraph), and the React player app speaks only these.
 //
 //	GET  /api/player/play            where the team is and what it sees
-//	POST /api/player/play/{action}   answer, continue, choose, skip, timeout, hint
+//	POST /api/player/play/{action}   begin, answer, continue, choose, skip, timeout, hint
 //
 // Every action carries the node the player is looking at. A teammate who
 // answered first moves the team, and the second submit is refused as
@@ -60,6 +60,20 @@ type PlayEvent struct {
 	AdventureTitle string `json:"adventure_title,omitempty"`
 	OrgName        string `json:"org_name,omitempty"`
 	OrgLogoURL     string `json:"org_logo_url,omitempty"`
+	// IntroText and OutroText are the author's welcome and farewell,
+	// Markdown. The client renders them with the same safe renderer as
+	// puzzle text.
+	IntroText string `json:"intro_text,omitempty"`
+	OutroText string `json:"outro_text,omitempty"`
+	// Start is where the team should meet, when the author set it.
+	Start *PlayStart `json:"start,omitempty"`
+}
+
+// PlayStart is the adventure's meeting point.
+type PlayStart struct {
+	Lat   float64 `json:"lat"`
+	Lng   float64 `json:"lng"`
+	Label string  `json:"label,omitempty"`
 }
 
 // PlayState is the body of GET /api/player/play.
@@ -74,6 +88,9 @@ type PlayState struct {
 	Brand *adventure.Colors `json:"brand,omitempty"`
 	// View is set once the event has started.
 	View *play.View `json:"view,omitempty"`
+	// Prefetch is every media id the team may fetch now. The player app
+	// downloads them ahead of need, so pictures show in a dead spot.
+	Prefetch []int64 `json:"prefetch,omitempty"`
 }
 
 // GetPlay returns the team's current state.
@@ -103,14 +120,15 @@ func (h *Handlers) GetPlay(w http.ResponseWriter, r *http.Request) {
 			ID: tc.EventID, State: tc.RunState, ScheduledAt: tc.ScheduledAt.String, OrgName: tc.OrgName,
 		},
 	}
-	title, brand, err := adventureLook(ctx, h.DB, tc.AdventureSlug)
+	look, err := adventureLook(ctx, h.DB, tc.AdventureSlug)
 	if err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "loading adventure failed", err)
 		return
 	}
-	out.Event.AdventureTitle = title
-	if !brand.Empty() {
-		out.Brand = &brand
+	out.Event.AdventureTitle, out.Event.IntroText, out.Event.OutroText = look.title, look.intro, look.outro
+	out.Event.Start = look.start
+	if !look.brand.Empty() {
+		out.Brand = &look.brand
 	}
 	if tc.OrgHasLogo {
 		out.Event.OrgLogoURL = fmt.Sprintf("/org-logo/%d", tc.OrgID)
@@ -145,30 +163,48 @@ func (h *Handlers) GetPlay(w http.ResponseWriter, r *http.Request) {
 	}
 	if err == nil {
 		out.View = &view
+		if out.Prefetch, err = h.engine().Media(ctx, tc.TeamID); err != nil {
+			httpx.ServerErr(w, http.StatusInternalServerError, "loading media failed", err)
+			return
+		}
 	}
 	httpx.JSON(w, http.StatusOK, out)
 }
 
-// adventureLook reads what the player app shows of the adventure itself:
-// its title and palette. One small query, because this runs on every
-// push and poll — adventure.Library.Get would load every page, hint and
-// image to answer it.
-func adventureLook(ctx context.Context, db *sql.DB, slug string) (string, adventure.Colors, error) {
+// adventureLook reads what the player app shows of the adventure itself.
+// One small query, because this runs on every push and poll —
+// adventure.Library.Get would load every page, hint and image to answer
+// it.
+type look struct {
+	title, intro, outro string
+	brand               adventure.Colors
+	start               *PlayStart
+}
+
+func adventureLook(ctx context.Context, db *sql.DB, slug string) (look, error) {
 	var (
-		title                         string
+		l                             look
 		accent, second, bg, ink, dock sql.NullString
+		lat, lng                      sql.NullFloat64
+		label                         sql.NullString
 	)
 	err := db.QueryRowContext(ctx, `
-		SELECT title, accent_color, accent_secondary_color, background_color, text_color, submit_bg_color
+		SELECT title, intro_text, outro_text,
+		       accent_color, accent_secondary_color, background_color, text_color, submit_bg_color,
+		       start_lat, start_lng, start_label
 		FROM adventures WHERE slug = $1
-	`, slug).Scan(&title, &accent, &second, &bg, &ink, &dock)
+	`, slug).Scan(&l.title, &l.intro, &l.outro, &accent, &second, &bg, &ink, &dock, &lat, &lng, &label)
 	if errors.Is(err, sql.ErrNoRows) {
-		return "", adventure.Colors{}, nil
+		return look{}, nil
 	}
-	return title, adventure.Colors{
+	l.brand = adventure.Colors{
 		Accent: accent.String, AccentSecondary: second.String, Background: bg.String,
 		Text: ink.String, SubmitBackground: dock.String,
-	}, err
+	}
+	if lat.Valid && lng.Valid {
+		l.start = &PlayStart{Lat: lat.Float64, Lng: lng.Float64, Label: label.String}
+	}
+	return l, err
 }
 
 // PlayActionRequest is the body of POST /api/player/play/{action}.
@@ -238,6 +274,8 @@ func (h *Handlers) PostPlayAction(w http.ResponseWriter, r *http.Request) {
 	switch action {
 	case "answer":
 		res, err = e.Answer(ctx, tc.TeamID, req.Node, req.Guess)
+	case "begin":
+		res, err = e.ChooseStart(ctx, tc.TeamID, req.Port)
 	case "continue":
 		res, err = e.Continue(ctx, tc.TeamID, req.Node)
 	case "choose":

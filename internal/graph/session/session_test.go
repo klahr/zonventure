@@ -226,3 +226,223 @@ func TestPlaceShowsOneStepWithoutHistory(t *testing.T) {
 		t.Error("placing on a missing node should fail")
 	}
 }
+
+// A picture is often the puzzle itself, so media is visible only on a
+// step the team has reached, and in a hint only once it is revealed.
+func TestMediaVisibility(t *testing.T) {
+	g := hunt()
+	for i := range g.Nodes {
+		switch g.Nodes[i].Slug {
+		case "door":
+			g.Nodes[i].PuzzleCfg.Media = []graph.Media{{ID: 1, Kind: graph.MediaImage}}
+			g.Nodes[i].PuzzleCfg.Hints[0].Media = []graph.Media{{ID: 2, Kind: graph.MediaAudio}}
+		case "walk":
+			g.Nodes[i].StoryCfg.Media = []graph.Media{{ID: 3, Kind: graph.MediaImage}}
+		}
+	}
+	tm, _, err := Start(g, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !tm.CanSeeMedia(1, true) || tm.CanSeeMedia(2, true) || tm.CanSeeMedia(3, true) || tm.CanSeeMedia(99, true) {
+		t.Fatal("strict, on the door: only its own picture should be visible")
+	}
+	if !tm.CanSeeMedia(3, false) || tm.CanSeeMedia(2, false) {
+		t.Fatal("not strict: every step's picture, but still no unrevealed hint's")
+	}
+	if got := tm.VisibleMedia(false); len(got) != 2 || got[0] != 1 || got[1] != 3 {
+		t.Errorf("prefetch list = %v, want [1 3]", got)
+	}
+	if v := tm.View(); len(v.Media) != 1 || v.Media[0].ID != 1 {
+		t.Errorf("view media = %+v", v.Media)
+	}
+	tm.RevealHint("door", 0)
+	if !tm.CanSeeMedia(2, true) {
+		t.Error("a revealed hint's sound should be visible")
+	}
+	if v := tm.View(); len(v.Hints) != 1 || len(v.Hints[0].Media) != 1 {
+		t.Errorf("hint view = %+v", v.Hints)
+	}
+	_, step, _ := tm.Answer("door", "right")
+	tm.Apply(*step)
+	if !tm.CanSeeMedia(3, true) || !tm.CanSeeMedia(1, true) {
+		t.Error("media on reached steps stays visible")
+	}
+}
+
+// A puzzle accepts any answer and carries it down its output; a switch
+// routes on what it was. Cases are tried in order, "otherwise" catches
+// the rest, and a switch naming a puzzle reads that puzzle's answer
+// even after later answers.
+func TestSwitchRoutesOnTheAnswer(t *testing.T) {
+	anything := []match.Matcher{{Kind: match.Anything}}
+	g := &graph.Graph{
+		Nodes: []graph.Node{
+			{Slug: "start", Type: graph.Start},
+			{Slug: "colour", Type: graph.Puzzle, PuzzleCfg: &graph.PuzzleConfig{
+				Outputs: []graph.Output{{Port: "said", Trigger: graph.OnAnswer, Matchers: anything}},
+			}},
+			{Slug: "by-colour", Type: graph.Switch, SwitchCfg: &graph.SwitchConfig{Cases: []graph.Case{
+				{Port: "red", Matchers: []match.Matcher{{Kind: match.Exact, Value: "red"}, {Kind: match.Contains, Value: "crimson"}}},
+				{Port: "blue", Matchers: []match.Matcher{{Kind: match.Exact, Value: "blue"}}},
+			}}},
+			{Slug: "red-path", Type: graph.Puzzle, PuzzleCfg: &graph.PuzzleConfig{
+				Outputs: []graph.Output{{Port: "said", Trigger: graph.OnAnswer, Matchers: anything}},
+			}},
+			{Slug: "recall", Type: graph.Switch, SwitchCfg: &graph.SwitchConfig{From: "colour", Cases: []graph.Case{
+				{Port: "red", Matchers: []match.Matcher{{Kind: match.Contains, Value: "crimson"}}},
+			}}},
+			{Slug: "blue-end", Type: graph.End},
+			{Slug: "else-end", Type: graph.End},
+			{Slug: "crimson-end", Type: graph.End},
+		},
+		Edges: []graph.Edge{
+			{From: "start", FromPort: "out", To: "colour"},
+			{From: "colour", FromPort: "said", To: "by-colour"},
+			{From: "by-colour", FromPort: "red", To: "red-path"},
+			{From: "by-colour", FromPort: "blue", To: "blue-end"},
+			{From: "by-colour", FromPort: "else", To: "else-end"},
+			{From: "red-path", FromPort: "said", To: "recall"},
+			{From: "recall", FromPort: "red", To: "crimson-end"},
+			{From: "recall", FromPort: "else", To: "else-end"},
+		},
+	}
+	play := func(answers ...string) string {
+		tm, _, err := Start(g, t0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, a := range answers {
+			_, step, err := tm.Answer(tm.Current, a)
+			if err != nil || step == nil {
+				t.Fatalf("answer %q: %v", a, err)
+			}
+			tm.Apply(*step)
+		}
+		return tm.Current
+	}
+	if got := play(" Blue "); got != "blue-end" {
+		t.Errorf("blue went to %q", got)
+	}
+	if got := play("green"); got != "else-end" {
+		t.Errorf("an unmatched answer should take otherwise, went to %q", got)
+	}
+	if got := play("red"); got != "red-path" {
+		t.Errorf("red went to %q", got)
+	}
+	// The second switch reads the first puzzle's answer, not the latest.
+	if got := play("dark crimson", "whatever"); got != "crimson-end" {
+		t.Errorf("recall of the first answer went to %q", got)
+	}
+}
+
+// A path that refers to a puzzle's answer follows the answer, not its
+// spelling: correcting the text in the puzzle keeps the route working.
+func TestCrossroadsFollowsAnswerReferences(t *testing.T) {
+	build := func(northText string) *graph.Graph {
+		return &graph.Graph{
+			Nodes: []graph.Node{
+				{Slug: "start", Type: graph.Start},
+				{Slug: "q", Type: graph.Puzzle, PuzzleCfg: &graph.PuzzleConfig{Outputs: []graph.Output{{
+					Port: "ok", Trigger: graph.OnAnswer, Matchers: []match.Matcher{
+						{ID: "n", Kind: match.Exact, Value: northText},
+						{ID: "s", Kind: match.Exact, Value: "south"},
+					},
+				}}}},
+				{Slug: "x", Type: graph.Switch, SwitchCfg: &graph.SwitchConfig{Cases: []graph.Case{
+					{Port: "north", Answers: []string{graph.AnswerRef("q", "n")}},
+				}}},
+				{Slug: "north-end", Type: graph.End},
+				{Slug: "else-end", Type: graph.End},
+			},
+			Edges: []graph.Edge{
+				{From: "start", FromPort: "out", To: "q"},
+				{From: "q", FromPort: "ok", To: "x"},
+				{From: "x", FromPort: "north", To: "north-end"},
+				{From: "x", FromPort: "else", To: "else-end"},
+			},
+		}
+	}
+	for _, c := range []struct{ text, guess, want string }{
+		{"nroth", "nroth", "north-end"},
+		{"north", "North", "north-end"},
+		{"north", "south", "else-end"},
+	} {
+		tm, _, _ := Start(build(c.text), t0)
+		_, step, err := tm.Answer("q", c.guess)
+		if err != nil {
+			t.Fatal(err)
+		}
+		tm.Apply(*step)
+		if tm.Current != c.want {
+			t.Errorf("%q with the answer spelt %q went to %q, want %q", c.guess, c.text, tm.Current, c.want)
+		}
+	}
+}
+
+func TestPolygonZone(t *testing.T) {
+	// A square around Sergels torg, drawn clockwise.
+	z := graph.Zone{Slug: "sq", Lat: 59.3325, Lng: 18.0645, Polygon: [][2]float64{
+		{59.3330, 18.0640}, {59.3330, 18.0650}, {59.3320, 18.0650}, {59.3320, 18.0640},
+	}}
+	if !ZoneContains(z, 59.3325, 18.0645) {
+		t.Error("the centre is inside")
+	}
+	if ZoneContains(z, 59.3335, 18.0645) || ZoneContains(z, 59.3325, 18.0660) {
+		t.Error("points beyond an edge are outside")
+	}
+	// An L shape: the notch is outside even though it is inside the
+	// bounding box — the case a circle or a box could not express.
+	l := graph.Zone{Slug: "l", Polygon: [][2]float64{{0, 0}, {0, 2}, {1, 2}, {1, 1}, {2, 1}, {2, 0}}}
+	if ZoneContains(l, 1.5, 1.5) || !ZoneContains(l, 0.5, 1.5) {
+		t.Error("the notch of an L is outside, its arm inside")
+	}
+}
+
+// With several starts the team waits, chooses one, and may choose a
+// zoned start only from inside its zone.
+func TestChoosingAStart(t *testing.T) {
+	g := &graph.Graph{
+		Zones: []graph.Zone{{Slug: "north", Lat: 59.34, Lng: 18.06, RadiusM: 40}},
+		Nodes: []graph.Node{
+			{Slug: "s-north", Type: graph.Start, Title: "North gate", StartCfg: &graph.StartConfig{Zone: "north"}},
+			{Slug: "s-south", Type: graph.Start, Title: "South gate"},
+			{Slug: "a", Type: graph.Story, StoryCfg: &graph.StoryConfig{Text: "north route"}},
+			{Slug: "b", Type: graph.Story, StoryCfg: &graph.StoryConfig{Text: "south route"}},
+			{Slug: "end", Type: graph.End},
+		},
+		Edges: []graph.Edge{
+			{From: "s-north", FromPort: "out", To: "a"},
+			{From: "s-south", FromPort: "out", To: "b"},
+			{From: "a", FromPort: "out", To: "end"},
+			{From: "b", FromPort: "out", To: "end"},
+		},
+	}
+	tm, step, err := Start(g, t0)
+	if err != nil || tm.Current != "" || len(step.Passed) != 0 {
+		t.Fatalf("a team that chooses its start must wait unplaced: %v %+v", err, tm)
+	}
+	v := tm.View()
+	if v.Type != graph.Start || len(v.Starts) != 2 || v.Starts[0].Here || !v.Starts[1].Here {
+		t.Fatalf("start choice view = %+v", v)
+	}
+	if _, _, err := tm.ChooseStart("s-north"); !errors.Is(err, ErrNotHere) {
+		t.Errorf("a zoned start away from its zone = %v, want ErrNotHere", err)
+	}
+	if _, _, err := tm.ChooseStart("a"); !errors.Is(err, ErrWrongNode) {
+		t.Errorf("choosing a non-start = %v", err)
+	}
+	tm.Position = &Position{Lat: 59.34, Lng: 18.06}
+	tm.Now = t0.Add(20 * time.Minute)
+	_, step2, err := tm.ChooseStart("s-north")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tm.Apply(*step2)
+	if tm.Current != "a" || !tm.StartedAt.Equal(tm.Now) {
+		t.Errorf("after choosing north: on %q, started %v", tm.Current, tm.StartedAt)
+	}
+	if _, _, err := tm.ChooseStart("s-south"); !errors.Is(err, ErrStale) {
+		t.Errorf("choosing again = %v, want ErrStale", err)
+	}
+}

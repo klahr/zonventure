@@ -1,5 +1,6 @@
 import { appendStep, moveStep, removeStep, type Graph, type Issue, type Node } from "@zonventure/graph";
 import { useT } from "../i18n.tsx";
+import { Thumb } from "./NodeCard.tsx";
 
 interface Props {
   graph: Graph;
@@ -45,6 +46,7 @@ export function ListView({ graph, steps, issues, selected, playing = null, onCha
                     {s.type === "story" ? t.t("Story") : s.puzzle?.prompt?.slice(0, 90) || t.t("No prompt yet")}
                   </span>
                 </span>
+                <Thumb node={s} className="step__thumb" />
                 {errs > 0 && <span className="card__badge card__badge--error">{errs}</span>}
               </button>
               <span className="step__actions">

@@ -10,12 +10,13 @@
 // settled that trade is now close; if these start drifting, generating
 // them from the Go structs (tygo) is the fix, not more care.
 
-export type NodeType = "start" | "puzzle" | "story" | "hub" | "gate" | "effect" | "end";
+export type NodeType = "start" | "puzzle" | "story" | "hub" | "gate" | "effect" | "switch" | "end";
 
 export const PORT_OUT = "out";
 export const PORT_PASS = "pass";
 export const PORT_FAIL = "fail";
 export const PORT_DONE = "done";
+export const PORT_ELSE = "else";
 
 export interface Graph {
   nodes: Node[];
@@ -44,7 +45,9 @@ export interface Node {
   hub?: HubConfig;
   gate?: GateConfig;
   effect?: EffectConfig;
+  switch?: SwitchConfig;
   end?: EndConfig;
+  start?: StartConfig;
 }
 
 export interface Edge {
@@ -71,14 +74,23 @@ export interface Response {
   text: string;
 }
 
+/** internal/graph: Media — a picture or sound, by adventure_media id. */
+export interface Media {
+  id: number;
+  kind: "image" | "audio";
+  alt?: string;
+}
+
 export interface Hint {
   text: string;
   delay_seconds?: number;
   cost?: number;
+  media?: Media[];
 }
 
 export interface PuzzleConfig {
   prompt?: string;
+  media?: Media[];
   zone?: string;
   outputs?: Output[];
   responses?: Response[];
@@ -92,6 +104,7 @@ export interface PuzzleConfig {
 
 export interface StoryConfig {
   text?: string;
+  media?: Media[];
   zone?: string;
 }
 
@@ -138,17 +151,50 @@ export interface EffectConfig {
   theme?: string;
 }
 
+/**
+ * internal/graph: SwitchConfig — routes on an answer. `from` names the
+ * puzzle whose answer is read; empty means the latest answer, the one
+ * that came down the wire. The first matching case wins; otherwise
+ * "else".
+ */
+export interface SwitchConfig {
+  from?: string;
+  cases?: Case[];
+}
+
+export interface Case {
+  port: string;
+  label?: string;
+  /** Accepted answers of a puzzle, as "node/answer-id". See answerOptions. */
+  answers?: string[];
+  /** Typed answers, for questions whose puzzle accepts anything. */
+  matchers?: Matcher[];
+}
+
 export interface EndConfig {
   outcome?: "complete" | "fail";
   text?: string;
+  media?: Media[];
 }
 
+/**
+ * internal/graph: Zone. A circle (lat, lng, radius_m) unless `polygon`
+ * has three or more corners; then the polygon is the shape and lat/lng
+ * only centres the map.
+ */
 export interface Zone {
   slug: string;
   name?: string;
   lat: number;
   lng: number;
   radius_m: number;
+  /** Corners as [lat, lng]; the last joins the first. */
+  polygon?: [number, number][];
+}
+
+/** internal/graph: StartConfig — where a start is, if anywhere. */
+export interface StartConfig {
+  zone?: string;
 }
 
 export interface Item {
@@ -182,6 +228,8 @@ export type MatcherKind =
   | "anything";
 
 export interface Matcher {
+  /** Stable name for this accepted answer, so a crossroads can refer to it. */
+  id?: string;
   kind: MatcherKind;
   value?: string;
   low?: number;

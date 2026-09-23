@@ -124,14 +124,14 @@ func (e *Engine) loadCore(ctx context.Context, q Querier, teamID int64, forUpdat
 	)
 	query := `
 		SELECT event_id, graph_id, current_node, node_entered_at, started_at,
-		       completed_at, outcome, score, penalty_score, penalty_seconds, theme
+		       completed_at, outcome, score, penalty_score, penalty_seconds, theme, last_answer
 		FROM team_graph_state
 		WHERE team_id = $1`
 	if forUpdate {
 		query += ` FOR UPDATE`
 	}
 	err := q.QueryRowContext(ctx, query, teamID).Scan(&s.eventID, &s.graphID, &current, &entered, &s.StartedAt,
-		&completed, &outcome, &s.Points, &s.PenaltyScore, &s.PenaltySeconds, &s.Theme)
+		&completed, &outcome, &s.Points, &s.PenaltyScore, &s.PenaltySeconds, &s.Theme, &s.LatestAnswer)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNoGraph
 	}
@@ -153,7 +153,7 @@ func (e *Engine) loadCore(ctx context.Context, q Querier, teamID int64, forUpdat
 
 func (s *teamState) loadRest(ctx context.Context, q Querier) error {
 	rows, err := q.QueryContext(ctx, `
-		SELECT node, first_seen_at, solved_at IS NOT NULL, outcome, attempts, blocked_until, hints_revealed
+		SELECT node, first_seen_at, solved_at IS NOT NULL, outcome, attempts, blocked_until, hints_revealed, answer, match_id
 		FROM team_node_state WHERE team_id = $1
 	`, s.teamID)
 	if err != nil {
@@ -166,7 +166,7 @@ func (s *teamState) loadRest(ctx context.Context, q Querier) error {
 			outcome sql.NullString
 			blocked sql.NullTime
 		)
-		if err := rows.Scan(&slug, &r.FirstSeen, &r.Solved, &outcome, &r.Attempts, &blocked, &r.HintsRevealed); err != nil {
+		if err := rows.Scan(&slug, &r.FirstSeen, &r.Solved, &outcome, &r.Attempts, &blocked, &r.HintsRevealed, &r.Answer, &r.MatchID); err != nil {
 			rows.Close()
 			return err
 		}

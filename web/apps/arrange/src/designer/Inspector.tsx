@@ -11,18 +11,35 @@ import type {
   Output,
   Policy,
   PuzzleConfig,
+  Case,
   Response,
+  SwitchConfig,
   Trigger,
+  Zone,
 } from "@zonventure/graph";
+import { answerOptions, isPolygon, nodeBySlug, portLabel, puzzlesInto, referAnswer, resolveAnswer, updateNode } from "@zonventure/graph";
 import { useT } from "../i18n.tsx";
 import { ConditionEditor } from "./ConditionEditor.tsx";
+import { MediaEditor } from "./MediaEditor.tsx";
+import { Eye, Trash2, X } from "lucide-react";
+import { Button, HelpPopover, ICON } from "./dz/ui.tsx";
+import { STEP } from "./dz/types.tsx";
+import { ZoneMap } from "./ZoneMap.tsx";
 
 interface Props {
   node: Node;
   graph: Graph;
   issues: Issue[];
   onChange: (n: Node) => void;
+  /** For edits that reach beyond this node, such as naming an answer a crossroads refers to. */
+  onGraphChange: (g: Graph) => void;
   onDelete: () => void;
+  /** Close the inspector (deselect). */
+  onClose: () => void;
+  /** Open this step in the phone preview. */
+  onPreview: () => void;
+  /** Viewing an old version: everything shows, nothing edits. */
+  readOnly?: boolean;
 }
 
 /**
@@ -32,32 +49,61 @@ interface Props {
  * coalesces consecutive edits to one node, so typing a prompt is one undo
  * step rather than one per keystroke.
  */
-export function Inspector({ node, graph, issues, onChange, onDelete }: Props) {
+export function Inspector({ node, graph, issues, onChange, onGraphChange, onDelete, onClose, onPreview, readOnly }: Props) {
   const t = useT();
+  const kind = STEP[node.type];
+  const Icon = kind.icon;
 
   return (
-    <div className="insp">
-      <div className="insp__head">
-        <span className={`insp__type insp__type--${node.type}`}>{node.type}</span>
-        <code className="insp__slug" title={t.t("The step's permanent address. It never changes, so saved team history and conditions keep pointing at it.")}>
-          {node.slug}
-        </code>
+    <>
+      {/* dazyflow's inspector head: the step's icon, its name edited in
+          place as the title, what the step type does, and close. */}
+      <div className="panel-head inspector-head">
+        <span className="inspector-identity">
+          <span className={`inspector-drop-icon dz-step-icon dz-step-icon--${node.type}`} aria-hidden="true">
+            <Icon size={ICON.lg} />
+          </span>
+          <span className="inspector-identity-text">
+            <input
+              className="inspector-name"
+              value={node.title ?? ""}
+              placeholder={t.t(kind.label)}
+              spellCheck={false}
+              disabled={readOnly}
+              onChange={(e) => onChange({ ...node, title: e.target.value })}
+              aria-label={t.t("Title")}
+            />
+            <span className="inspector-subtitle">{t.t(kind.label)}</span>
+          </span>
+          <HelpPopover label={t.t("What this step does")} body={t.t(kind.about)} />
+        </span>
+        <span className="inspector-head-right">
+          {(node.type === "puzzle" || node.type === "story" || node.type === "hub" || node.type === "end") && (
+            <Button variant="ghost" size="icon" onClick={onPreview} aria-label={t.t("Preview this step")} title={t.t("Preview this step")}>
+              <Eye size={ICON.md} />
+            </Button>
+          )}
+          <Button variant="ghost" size="icon" className="inspector-close" onClick={onClose} aria-label={t.t("Close inspector")} title={t.t("Close inspector")}>
+            <X size={ICON.md} />
+          </Button>
+        </span>
       </div>
+    <div className="inspector-body">
+    <div className="insp inspector-edits" {...(readOnly ? { inert: true } : {})}>
 
       {issues.length > 0 && (
         <ul className="insp__issues">
           {issues.map((i, k) => (
             <li key={k} className={`issue issue--${i.severity}`}>
-              {i.port ? <strong>{i.port}: </strong> : null}
+              {i.port ? <strong>{portLabel(node, i.port)}: </strong> : null}
               {i.message}
             </li>
           ))}
         </ul>
       )}
 
-      <Field label={t.t("Title")}>
-        <input className="field__input" value={node.title ?? ""} onChange={(e) => onChange({ ...node, title: e.target.value })} />
-      </Field>
+
+      {node.type === "start" && <StartForm node={node} graph={graph} onGraphChange={onGraphChange} />}
 
       {node.type === "puzzle" && node.puzzle && (
         <PuzzleForm cfg={node.puzzle} graph={graph} onChange={(puzzle) => onChange({ ...node, puzzle })} />
@@ -72,6 +118,9 @@ export function Inspector({ node, graph, issues, onChange, onDelete }: Props) {
               value={node.story?.text ?? ""}
               onChange={(e) => onChange({ ...node, story: { ...node.story, text: e.target.value } })}
             />
+          </Field>
+          <Field label={t.t("Pictures and sounds")}>
+            <MediaEditor media={node.story?.media} onChange={(media) => onChange({ ...node, story: withOptional({ ...node.story }, "media", media) })} />
           </Field>
           <ZoneSelect
             graph={graph}
@@ -91,6 +140,8 @@ export function Inspector({ node, graph, issues, onChange, onDelete }: Props) {
           <ConditionEditor graph={graph} value={node.gate.condition} onChange={(condition) => onChange({ ...node, gate: { condition } })} />
         </Field>
       )}
+
+      {node.type === "switch" && <SwitchForm node={node} graph={graph} onGraphChange={onGraphChange} />}
 
       {node.type === "effect" && node.effect && (
         <EffectForm cfg={node.effect} graph={graph} onChange={(effect) => onChange({ ...node, effect })} />
@@ -116,15 +167,88 @@ export function Inspector({ node, graph, issues, onChange, onDelete }: Props) {
               onChange={(e) => onChange({ ...node, end: { ...node.end, text: e.target.value } })}
             />
           </Field>
+          <Field label={t.t("Pictures and sounds")}>
+            <MediaEditor media={node.end?.media} onChange={(media) => onChange({ ...node, end: withOptional({ ...node.end }, "media", media) })} />
+          </Field>
         </>
       )}
 
-      {node.type !== "start" && (
-        <button type="button" className="btn btn--ghost insp__delete" onClick={onDelete}>
-          {t.t("Delete step")}
-        </button>
+      {(node.type !== "start" || graph.nodes.filter((n) => n.type === "start").length > 1) && !readOnly && (
+        <div className="inspector-actions">
+          <Button variant="danger" onClick={onDelete}>
+            <Trash2 size={ICON.sm} />
+            {t.t("Delete step")}
+          </Button>
+        </div>
       )}
     </div>
+    </div>
+    </>
+  );
+}
+
+// --- start -----------------------------------------------------------------
+
+/**
+ * Where a start is. With one start and no place, teams begin wherever they
+ * are; give a start a place, or add a second start, and each team picks
+ * one and must stand in its zone to begin.
+ */
+function StartForm({ node, graph, onGraphChange }: { node: Node; graph: Graph; onGraphChange: (g: Graph) => void }) {
+  const t = useT();
+  const zones = graph.zones ?? [];
+  const slug = node.start?.zone;
+  const zone = zones.find((z) => z.slug === slug);
+  const starts = graph.nodes.filter((n) => n.type === "start").length;
+
+  const setZone = (g: Graph, z: string | undefined) =>
+    onGraphChange(updateNode(g, node.slug, (n) => withOptional({ ...n }, "start", z ? { zone: z } : undefined)));
+  const editZone = (next: Zone) => onGraphChange({ ...graph, zones: zones.map((z) => (z.slug === next.slug ? next : z)) });
+  const newPlace = () => {
+    const used = new Set(zones.map((z) => z.slug));
+    let i = 1;
+    while (used.has(`start-${i}`)) i++;
+    // Near the adventure's other places, or central Stockholm for a first one.
+    const near = zones[zones.length - 1];
+    const z: Zone = { slug: `start-${i}`, name: node.title || t.t("Start"), lat: near?.lat ?? 59.3293, lng: near?.lng ?? 18.0686, radius_m: 30 };
+    setZone({ ...graph, zones: [...zones, z] }, z.slug);
+  };
+
+  return (
+    <>
+      <Field
+        label={t.t("Where teams start")}
+        hint={
+          starts > 1
+            ? t.t("This adventure has several starts. Each team picks one, and begins once it stands there.")
+            : zone
+              ? t.t("Teams begin once they stand here.")
+              : t.t("Anywhere: teams begin as soon as the event starts.")
+        }
+      >
+        <select className="field__input" value={slug ?? ""} onChange={(e) => setZone(graph, e.target.value || undefined)}>
+          <option value="">{t.t("Anywhere")}</option>
+          {zones.map((z) => (
+            <option key={z.slug} value={z.slug}>
+              {z.name || z.slug}
+            </option>
+          ))}
+        </select>
+      </Field>
+      {!zone && (
+        <button type="button" className="link-btn" onClick={newPlace}>
+          + {t.t("Pick a place on the map")}
+        </button>
+      )}
+      {zone && (
+        <>
+          <Field label={t.t("Name of the place")} hint={t.t("Teams see this when they choose where to start.")}>
+            <input className="field__input" value={zone.name ?? ""} placeholder={zone.slug} onChange={(e) => editZone({ ...zone, name: e.target.value })} />
+          </Field>
+          <ZoneMap key={zone.slug} zone={zone} onChange={editZone} />
+        </>
+      )}
+    </>
   );
 }
 
@@ -164,6 +288,10 @@ function PuzzleForm({ cfg, graph, onChange }: { cfg: PuzzleConfig; graph: Graph;
     <>
       <Field label={t.t("Prompt")} hint={t.t("Markdown. This is what the team reads.")}>
         <textarea className="field__input" rows={5} value={cfg.prompt ?? ""} onChange={(e) => onChange({ ...cfg, prompt: e.target.value })} />
+      </Field>
+
+      <Field label={t.t("Pictures and sounds")} hint={t.t("Shown above the prompt. A team only receives them once it reaches this step.")}>
+        <MediaEditor media={cfg.media} onChange={(media) => onChange(withOptional({ ...cfg }, "media", media))} />
       </Field>
 
       <ZoneSelect
@@ -262,6 +390,7 @@ function PuzzleForm({ cfg, graph, onChange }: { cfg: PuzzleConfig; graph: Graph;
                 <NumberField label={t.t("Available after (s)")} value={h.delay_seconds} onChange={(n) => set(withOptional({ ...h }, "delay_seconds", n))} />
                 <NumberField label={t.t("Costs points")} value={h.cost} onChange={(n) => set(withOptional({ ...h }, "cost", n))} />
               </div>
+              <MediaEditor media={h.media} onChange={(media) => set(withOptional({ ...h }, "media", media))} />
             </>
           )}
           addLabel={t.t("Add hint")}
@@ -449,6 +578,127 @@ function HubForm({ cfg, graph, onChange }: { cfg: HubConfig; graph: Graph; onCha
 }
 
 /** a, b, … z, then branch-27, branch-28 — never a port already in use. */
+/**
+ * A crossroads (a switch node): which answer it reads, and the paths it
+ * can take. A path picks answers from the puzzle's own accepted answers,
+ * by reference — so correcting a spelling in the puzzle keeps the path
+ * working. Typed answers remain, folded away, for open questions whose
+ * puzzle accepts anything. "Any other answer" is always there.
+ */
+function SwitchForm({ node, graph, onGraphChange }: { node: Node; graph: Graph; onGraphChange: (g: Graph) => void }) {
+  const t = useT();
+  const cfg: SwitchConfig = node.switch ?? {};
+  const cases = cfg.cases ?? [];
+  const puzzles = graph.nodes.filter((n) => n.type === "puzzle");
+  // Answers come from the chosen puzzle, or from the puzzles wired
+  // straight in when the crossroads reads "the answer just given".
+  const sources = cfg.from ? [cfg.from] : puzzlesInto(graph, node.slug);
+  const options = sources.flatMap((s) => answerOptions(graph, s));
+  const titleOf = (slug: string) => nodeBySlug(graph, slug)?.title || slug;
+
+  const setCfg = (g: Graph, next: SwitchConfig) => onGraphChange(updateNode(g, node.slug, (n) => ({ ...n, switch: next })));
+  const setCase = (g: Graph, i: number, c: Case) => setCfg(g, { ...cfg, cases: cases.map((x, j) => (j === i ? c : x)) });
+
+  return (
+    <>
+      <Field label={t.t("Which answer?")}>
+        <select className="field__input" value={cfg.from ?? ""} onChange={(e) => setCfg(graph, withOptional({ ...cfg }, "from", e.target.value || undefined))}>
+          <option value="">{t.t("The answer just given")}</option>
+          {puzzles.map((p) => (
+            <option key={p.slug} value={p.slug}>
+              {t.t("The answer to “{{title}}”", { title: p.title || p.slug })}
+            </option>
+          ))}
+        </select>
+      </Field>
+      {sources.length === 0 && (
+        <p className="field__hint">{t.t("Connect a puzzle to this crossroads, or pick one above, to choose from its answers.")}</p>
+      )}
+
+      <Section title={t.t("Paths")} hint={t.t("Checked from the top; the first that fits the answer is taken. Anything else takes “Any other answer”.")}>
+        {cases.map((c, i) => {
+          const chosen = c.answers ?? [];
+          const free = options.filter((o) => !o.ref || !chosen.includes(o.ref));
+          return (
+            <div key={c.port} className="box">
+              <div className="box__row">
+                <input
+                  className="field__input"
+                  value={c.label ?? ""}
+                  placeholder={c.port}
+                  onChange={(e) => setCase(graph, i, { ...c, label: e.target.value })}
+                  aria-label={t.t("Path name")}
+                />
+                <button type="button" className="link-btn" onClick={() => setCfg(graph, { ...cfg, cases: cases.filter((_, j) => j !== i) })}>
+                  {t.t("Remove")}
+                </button>
+              </div>
+
+              <div className="answer-chips">
+                {chosen.map((ref) => {
+                  const a = resolveAnswer(graph, ref);
+                  return (
+                    <span key={ref} className={"answer-chip" + (a ? "" : " is-gone")}>
+                      {a ? a.label : t.t("(answer removed)")}
+                      {a && sources.length > 1 && <small> · {titleOf(a.node)}</small>}
+                      <button
+                        type="button"
+                        aria-label={t.t("Remove")}
+                        onClick={() => setCase(graph, i, withOptional({ ...c }, "answers", chosen.filter((r) => r !== ref).length ? chosen.filter((r) => r !== ref) : undefined))}
+                      >
+                        ×
+                      </button>
+                    </span>
+                  );
+                })}
+                {free.length > 0 && (
+                  <select
+                    className="field__input answer-add"
+                    value=""
+                    aria-label={t.t("Add an answer")}
+                    onChange={(e) => {
+                      const opt = free[Number(e.target.value)];
+                      if (!opt) return;
+                      const { graph: g, ref } = referAnswer(graph, opt);
+                      setCase(g, i, { ...c, answers: [...chosen, ref] });
+                    }}
+                  >
+                    <option value="">{t.t("+ Add an answer…")}</option>
+                    {free.map((o, k) => (
+                      <option key={k} value={k}>
+                        {sources.length > 1 ? `${titleOf(o.node)}: ${o.label}` : o.label}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+
+              <details className="box__more" open={(c.matchers?.length ?? 0) > 0 || options.length === 0}>
+                <summary>{t.t("Or type answers")}</summary>
+                <p className="field__hint">{t.t("For open questions, where the puzzle accepts any answer. Typed answers do not follow spelling fixes in the puzzle.")}</p>
+                <MatcherList
+                  matchers={c.matchers ?? []}
+                  onChange={(matchers) => setCase(graph, i, withOptional({ ...c }, "matchers", matchers.length ? matchers : undefined))}
+                />
+              </details>
+            </div>
+          );
+        })}
+        <button
+          type="button"
+          className="link-btn"
+          onClick={() => {
+            const port = nextBranchPort(cases.map((c) => c.port));
+            setCfg(graph, { ...cfg, cases: [...cases, { port, label: port.toUpperCase() }] });
+          }}
+        >
+          + {t.t("Add path")}
+        </button>
+      </Section>
+    </>
+  );
+}
+
 function nextBranchPort(taken: string[]): string {
   const used = new Set(taken);
   for (let c = 0; c < 26; c++) {
@@ -559,7 +809,7 @@ function ZoneSelect({ graph, label, value, onChange }: { graph: Graph; label: st
         <option value="">{t.t("Anywhere")}</option>
         {zones.map((z) => (
           <option key={z.slug} value={z.slug}>
-            {z.name || z.slug} ({z.radius_m} m)
+            {z.name || z.slug} ({isPolygon(z) ? t.t("area") : `${z.radius_m} m`})
           </option>
         ))}
       </select>

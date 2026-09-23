@@ -20,9 +20,11 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
+	"strings"
 
 	"github.com/klahr/zonventure/internal/graph"
 	"github.com/klahr/zonventure/internal/graph/cond"
+	"github.com/klahr/zonventure/internal/graph/match"
 )
 
 // State is what the interpreter reads about a team. It extends the
@@ -56,6 +58,14 @@ type State interface {
 	// caller's job, from Step.Effects; this only updates what the rest
 	// of the walk reads.
 	ApplyEffect(node string, e graph.EffectConfig)
+	// AnswerTo is the answer the team gave that took it out of a
+	// puzzle, and LastAnswer the most recent such answer anywhere. A
+	// switch routes on one of them.
+	AnswerTo(node string) (string, bool)
+	LastAnswer() (string, bool)
+	// MatchedAnswer is the ID of the accepted answer that took the team
+	// out of a puzzle, or "" — what a crossroads reference compares.
+	MatchedAnswer(node string) string
 }
 
 // Step is one movement through the graph.
@@ -127,6 +137,15 @@ func First(g *graph.Graph, s State) (Step, error) {
 		return Step{}, ErrNoStart
 	}
 	return advanceFrom(g, s, start.Slug, graph.PortOut)
+}
+
+// FirstFrom is First for a chosen start, when an adventure has several.
+func FirstFrom(g *graph.Graph, s State, start string) (Step, error) {
+	n, ok := g.Node(start)
+	if !ok || n.Type != graph.Start {
+		return Step{}, fmt.Errorf("%w: %q is not a start", ErrNoStart, start)
+	}
+	return advanceFrom(g, s, start, graph.PortOut)
 }
 
 // Advance moves the team out of node `from` via output port `port` and
@@ -213,6 +232,13 @@ func advanceFrom(g *graph.Graph, s State, from, port string) (Step, error) {
 			if node.GateCfg == nil || cond.Eval(node.GateCfg.Condition, s) {
 				p = graph.PortPass
 			}
+			next, ok = g.Target(node.Slug, p)
+			if !ok {
+				return step, fmt.Errorf("%w: %s.%s", ErrDanglingPort, node.Slug, p)
+			}
+
+		case graph.Switch:
+			p := switchPort(s, node)
 			next, ok = g.Target(node.Slug, p)
 			if !ok {
 				return step, fmt.Errorf("%w: %s.%s", ErrDanglingPort, node.Slug, p)
@@ -431,4 +457,28 @@ func seed(slug string, slot int) uint64 {
 	_, _ = h.Write([]byte(slug))
 	_, _ = fmt.Fprintf(h, ":%d", slot)
 	return h.Sum64()
+}
+
+// switchPort picks a switch's exit: the first case whose matchers accept
+// the answer, or PortElse.
+func switchPort(s State, n graph.Node) string {
+	if n.SwitchCfg == nil {
+		return graph.PortElse
+	}
+	answer, ok := s.LastAnswer()
+	if n.SwitchCfg.From != "" {
+		answer, ok = s.AnswerTo(n.SwitchCfg.From)
+	}
+	for _, c := range n.SwitchCfg.Cases {
+		for _, ref := range c.Answers {
+			node, id, _ := strings.Cut(ref, "/")
+			if id != "" && s.MatchedAnswer(node) == id {
+				return c.Port
+			}
+		}
+		if ok && len(c.Matchers) > 0 && match.Any(c.Matchers, answer).OK {
+			return c.Port
+		}
+	}
+	return graph.PortElse
 }

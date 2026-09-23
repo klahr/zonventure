@@ -290,3 +290,7 @@ func playHub(t *testing.T, g *graph.Graph, slot int) []string {
 	}
 	return visited
 }
+
+func (s *state) AnswerTo(string) (string, bool) { return "", false }
+func (s *state) LastAnswer() (string, bool)     { return "", false }
+func (s *state) MatchedAnswer(string) string    { return "" }

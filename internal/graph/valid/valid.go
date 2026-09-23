@@ -16,6 +16,7 @@ package valid
 import (
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/klahr/zonventure/internal/graph"
 	"github.com/klahr/zonventure/internal/graph/cond"
@@ -111,6 +112,7 @@ func Check(g *graph.Graph) Report {
 	checkTermination(r, g)
 	checkProgressFreeCycles(r, g)
 	checkResources(r, g)
+	checkMedia(r, g)
 
 	sort.SliceStable(r.issues, func(i, j int) bool {
 		if r.issues[i].Severity != r.issues[j].Severity {
@@ -142,11 +144,8 @@ func checkSlugs(r *reporter, g *graph.Graph) {
 		}
 	}
 
-	switch {
-	case starts == 0:
+	if starts == 0 {
 		r.err("graph.start.missing", "", "", "the adventure has no start node")
-	case starts > 1:
-		r.err("graph.start.duplicate", "", "", "the adventure has %d start nodes; it may have only one", starts)
 	}
 	if ends == 0 {
 		r.err("graph.end.missing", "", "", "the adventure has no end node, so no team can finish it")
@@ -266,6 +265,9 @@ func checkNodeConfigs(r *reporter, g *graph.Graph) {
 			}
 			checkEffect(r, n)
 
+		case graph.Switch:
+			checkSwitch(r, g, n)
+
 		case graph.Start, graph.Story, graph.End:
 			// No required configuration.
 
@@ -273,6 +275,61 @@ func checkNodeConfigs(r *reporter, g *graph.Graph) {
 			r.err("node.type.unknown", n.Slug, "", "unknown node type %q", n.Type)
 		}
 	}
+}
+
+// checkSwitch checks a switch's cases and its source.
+func checkSwitch(r *reporter, g *graph.Graph, n graph.Node) {
+	cfg := n.SwitchCfg
+	if cfg == nil || len(cfg.Cases) == 0 {
+		r.err("switch.cases.none", n.Slug, "", "crossroads has no paths, so every team takes \"any other answer\"")
+		return
+	}
+	ports := map[string]bool{}
+	for _, c := range cfg.Cases {
+		switch {
+		case c.Port == "":
+			r.err("case.port.empty", n.Slug, "", "a path has no name")
+		case c.Port == graph.PortElse:
+			r.err("case.port.reserved", n.Slug, c.Port, "%q is reserved for \"any other answer\"", graph.PortElse)
+		case ports[c.Port]:
+			r.err("case.port.duplicate", n.Slug, c.Port, "two paths share the name %q", c.Port)
+		}
+		ports[c.Port] = true
+		if len(c.Matchers) == 0 && len(c.Answers) == 0 {
+			r.err("case.matchers.none", n.Slug, c.Port, "path has no answers, so no team can take it")
+		}
+		for _, ref := range c.Answers {
+			if !answerExists(g, ref) {
+				r.err("case.answer.unknown", n.Slug, c.Port, "path refers to an answer that no longer exists; pick it again")
+			}
+		}
+	}
+	if cfg.From != "" {
+		src, ok := g.Node(cfg.From)
+		if !ok {
+			r.err("switch.from.unknown", n.Slug, "", "crossroads reads the answer to %q, which is not a step", cfg.From)
+		} else if src.Type != graph.Puzzle {
+			r.err("switch.from.notpuzzle", n.Slug, "", "crossroads reads the answer to %q, which is a %s, not a puzzle", cfg.From, src.Type)
+		}
+	}
+}
+
+// answerExists reports whether a "node/matcher-id" reference names an
+// accepted answer on a puzzle in the graph.
+func answerExists(g *graph.Graph, ref string) bool {
+	node, id, _ := strings.Cut(ref, "/")
+	n, ok := g.Node(node)
+	if !ok || n.PuzzleCfg == nil || id == "" {
+		return false
+	}
+	for _, o := range n.PuzzleCfg.Outputs {
+		for _, m := range o.Matchers {
+			if m.ID == id {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func checkEffect(r *reporter, n graph.Node) {
@@ -435,6 +492,10 @@ func checkReferences(r *reporter, g *graph.Graph) {
 			if n.StoryCfg != nil && n.StoryCfg.Zone != "" && !zones[n.StoryCfg.Zone] {
 				r.err("ref.zone.unknown", n.Slug, "", "story is gated on zone %q, which is not declared", n.StoryCfg.Zone)
 			}
+		case graph.Start:
+			if n.StartCfg != nil && n.StartCfg.Zone != "" && !zones[n.StartCfg.Zone] {
+				r.err("ref.zone.unknown", n.Slug, "", "start is at zone %q, which is not declared", n.StartCfg.Zone)
+			}
 		case graph.Effect:
 			if n.EffectCfg == nil {
 				continue
@@ -458,11 +519,31 @@ func checkReferences(r *reporter, g *graph.Graph) {
 // time, with nothing in any log to say why.
 func checkMatchers(r *reporter, g *graph.Graph) {
 	for _, n := range g.Nodes {
-		if n.PuzzleCfg == nil {
-			continue
+		// Puzzle outputs and switch cases carry the same matchers.
+		type out struct {
+			Port     string
+			Matchers []match.Matcher
 		}
-		for _, o := range n.PuzzleCfg.Outputs {
+		var outs []out
+		if n.PuzzleCfg != nil {
+			for _, o := range n.PuzzleCfg.Outputs {
+				outs = append(outs, out{o.Port, o.Matchers})
+			}
+		}
+		if n.SwitchCfg != nil {
+			for _, c := range n.SwitchCfg.Cases {
+				outs = append(outs, out{c.Port, c.Matchers})
+			}
+		}
+		ids := map[string]bool{}
+		for _, o := range outs {
 			for _, m := range o.Matchers {
+				if m.ID != "" {
+					if ids[m.ID] {
+						r.err("matcher.id.duplicate", n.Slug, o.Port, "two answers share the id %q; a crossroads could not tell them apart", m.ID)
+					}
+					ids[m.ID] = true
+				}
 				switch m.Kind {
 				case match.Regex:
 					if _, err := match.CompileRegex(m.Value); err != nil {
@@ -501,11 +582,10 @@ func checkMatchers(r *reporter, g *graph.Graph) {
 // checkReachability finds nodes no team can ever arrive at — usually a
 // leftover from an edit, occasionally a branch the author forgot to wire.
 func checkReachability(r *reporter, g *graph.Graph) {
-	start, ok := g.StartNode()
-	if !ok {
+	if _, ok := g.StartNode(); !ok {
 		return // already reported
 	}
-	seen := reachableFrom(g, start.Slug)
+	seen := reachableFromStarts(g)
 	for _, n := range g.Nodes {
 		if !seen[n.Slug] {
 			r.warn("node.unreachable", n.Slug, "", "no path from the start reaches this node")
@@ -544,8 +624,7 @@ func checkTermination(r *reporter, g *graph.Graph) {
 		}
 	}
 
-	start, _ := g.StartNode()
-	reachable := reachableFrom(g, start.Slug)
+	reachable := reachableFromStarts(g)
 	for _, n := range g.Nodes {
 		if reachable[n.Slug] && !canEnd[n.Slug] {
 			r.err("node.nodeadend", n.Slug, "", "no path from this node reaches an end, so a team arriving here can never finish")
@@ -562,7 +641,7 @@ func checkTermination(r *reporter, g *graph.Graph) {
 func checkProgressFreeCycles(r *reporter, g *graph.Graph) {
 	passive := map[string]bool{}
 	for _, n := range g.Nodes {
-		if n.Type == graph.Effect || n.Type == graph.Gate {
+		if n.Type == graph.Effect || n.Type == graph.Gate || n.Type == graph.Switch {
 			passive[n.Slug] = true
 		}
 	}
@@ -613,17 +692,45 @@ func checkResources(r *reporter, g *graph.Graph) {
 	checkUnique(r, "counter", len(g.Counters), func(i int) string { return g.Counters[i].Slug })
 	checkUnique(r, "journal entry", len(g.Journal), func(i int) string { return g.Journal[i].Slug })
 
+	offGlobe := func(lat, lng float64) bool { return lat < -90 || lat > 90 || lng < -180 || lng > 180 }
 	for _, z := range g.Zones {
-		if z.RadiusM <= 0 {
+		switch {
+		case len(z.Polygon) > 0 && len(z.Polygon) < 3:
+			r.err("zone.polygon", "", "", "zone %q has %d corners; an area needs at least three", z.Slug, len(z.Polygon))
+		case !z.IsPolygon() && z.RadiusM <= 0:
 			r.err("zone.radius", "", "", "zone %q has a radius of %g; a team could never be inside it", z.Slug, z.RadiusM)
 		}
-		if z.Lat < -90 || z.Lat > 90 || z.Lng < -180 || z.Lng > 180 {
+		if offGlobe(z.Lat, z.Lng) {
 			r.err("zone.coords", "", "", "zone %q has coordinates off the globe (%g, %g)", z.Slug, z.Lat, z.Lng)
+		}
+		for _, p := range z.Polygon {
+			if offGlobe(p[0], p[1]) {
+				r.err("zone.coords", "", "", "zone %q has a corner off the globe (%g, %g)", z.Slug, p[0], p[1])
+				break
+			}
 		}
 	}
 	for _, c := range g.Counters {
 		if c.Min != nil && c.Max != nil && *c.Min > *c.Max {
 			r.err("counter.bounds", "", "", "counter %q has a minimum above its maximum", c.Slug)
+		}
+	}
+}
+
+// checkMedia checks the shape of media references. Whether an id exists,
+// and belongs to this adventure, needs the database: graphstore.Save
+// checks that.
+func checkMedia(r *reporter, g *graph.Graph) {
+	for _, n := range g.Nodes {
+		for _, ms := range n.MediaLists() {
+			for _, m := range ms {
+				if m.ID <= 0 {
+					r.err("media.id", n.Slug, "", "a picture or sound on this step has no file")
+				}
+				if m.Kind != graph.MediaImage && m.Kind != graph.MediaAudio {
+					r.err("media.kind", n.Slug, "", "media %d is %q; it must be an image or audio", m.ID, m.Kind)
+				}
+			}
 		}
 	}
 }
@@ -669,4 +776,15 @@ func slugSet(n int, at func(int) string) map[string]bool {
 		out[at(i)] = true
 	}
 	return out
+}
+
+// reachableFromStarts is every node some start leads to, starts included.
+func reachableFromStarts(g *graph.Graph) map[string]bool {
+	seen := map[string]bool{}
+	for _, st := range g.Starts() {
+		for k := range reachableFrom(g, st.Slug) {
+			seen[k] = true
+		}
+	}
+	return seen
 }

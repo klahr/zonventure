@@ -1,12 +1,17 @@
 package admin
 
-// Graph authoring endpoints: load, validate, save and convert an
-// adventure's structure as a graph (internal/graph).
+// Graph authoring endpoints, with dazyflow's draft-and-release model
+// (see internal/graphstore).
 //
-//	GET  /api/admin/adventures/{slug}/graph           latest saved version
-//	PUT  /api/admin/adventures/{slug}/graph           save a new version
-//	POST /api/admin/adventures/{slug}/graph/validate  check without saving
-//	POST /api/admin/adventures/{slug}/graph/convert   build from lanes, unsaved
+//	GET   /api/admin/adventures/{slug}/graph                      the draft, and what is published
+//	PUT   /api/admin/adventures/{slug}/graph                      autosave the draft (errors allowed)
+//	POST  /api/admin/adventures/{slug}/graph/publish              release the draft {label}
+//	GET   /api/admin/adventures/{slug}/graph/versions             version history
+//	GET   /api/admin/adventures/{slug}/graph/versions/{version}   one version, to preview or restore
+//	POST  /api/admin/adventures/{slug}/graph/versions/{version}/publish   roll back to it
+//	PATCH /api/admin/adventures/{slug}/graph/versions/{version}   name it {label}
+//	POST  /api/admin/adventures/{slug}/graph/validate             check without saving
+//	POST  /api/admin/adventures/{slug}/graph/convert              build from lanes, unsaved
 //
 // All four use requireEditAdventure: only someone who can edit the
 // adventure may see its graph, because the graph carries every answer.
@@ -17,9 +22,13 @@ package admin
 // what a client should branch on.
 
 import (
+	"context"
 	"errors"
 	"io"
 	"net/http"
+	"strconv"
+	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -40,6 +49,18 @@ type graphResponse struct {
 	Version  int            `json:"version,omitempty"`
 	Envelope graph.Envelope `json:"envelope"`
 	Report   valid.Report   `json:"report"`
+	// Published describes the live version; nil when nothing is.
+	Published *publishedInfo `json:"published,omitempty"`
+	// Dirty is set when the draft differs from what is published in
+	// anything a team would notice — dazyflow's "unpublished changes".
+	Dirty bool `json:"dirty,omitempty"`
+	// SavedAt is when the draft was last saved.
+	SavedAt *time.Time `json:"saved_at,omitempty"`
+}
+
+type publishedInfo struct {
+	Version int    `json:"version"`
+	Label   string `json:"label,omitempty"`
 }
 
 type graphRefusal struct {
@@ -48,34 +69,59 @@ type graphRefusal struct {
 	Report *valid.Report `json:"report,omitempty"`
 }
 
-// GetAdventureGraph returns the latest saved graph with a fresh
-// validation report. The report is recomputed rather than stored, so a
-// graph saved under an older validator still shows current findings.
+// GetAdventureGraph returns the draft — or, when there is none yet, the
+// published version as the starting draft — with a fresh validation
+// report and the release state.
 func (h *Handlers) GetAdventureGraph(w http.ResponseWriter, r *http.Request) {
 	advID, ok := h.graphTarget(w, r)
 	if !ok {
 		return
 	}
-	s, err := graphstore.Latest(r.Context(), h.DB, advID)
-	if errors.Is(err, graphstore.ErrNotFound) {
+	resp, found, err := h.graphState(r.Context(), advID)
+	if err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "loading graph failed", err)
+		return
+	}
+	if !found {
 		httpx.JSON(w, http.StatusNotFound, graphRefusal{
 			Error: "this adventure has no graph yet", Code: "graph_not_found",
 		})
 		return
 	}
-	if err != nil {
-		httpx.ServerErr(w, http.StatusInternalServerError, "loading graph failed", err)
-		return
-	}
-	httpx.JSON(w, http.StatusOK, graphResponse{
-		Version:  s.Version,
-		Envelope: graph.Envelope{Format: graph.FormatV2, Graph: *s.Graph},
-		Report:   valid.Check(s.Graph),
-	})
+	httpx.JSON(w, http.StatusOK, resp)
 }
 
-// PutAdventureGraph validates and saves a new version. An invalid graph
-// is refused with 422 and the full report; nothing is written.
+// graphState assembles the draft-and-release view of an adventure.
+func (h *Handlers) graphState(ctx context.Context, advID int64) (graphResponse, bool, error) {
+	var resp graphResponse
+	pub, err := graphstore.Published(ctx, h.DB, advID)
+	if err != nil && !errors.Is(err, graphstore.ErrNotFound) {
+		return resp, false, err
+	}
+	if err == nil {
+		resp.Published = &publishedInfo{Version: pub.Version, Label: pub.Label}
+	}
+	draft, err := graphstore.LoadDraft(ctx, h.DB, advID)
+	switch {
+	case err == nil:
+		resp.Envelope = graph.Envelope{Format: graph.FormatV2, Graph: *draft.Graph}
+		resp.SavedAt = &draft.UpdatedAt
+		resp.Dirty = resp.Published == nil || graphstore.Differs(draft.Graph, pub.Graph)
+	case errors.Is(err, graphstore.ErrNotFound):
+		if resp.Published == nil {
+			return resp, false, nil
+		}
+		resp.Envelope = graph.Envelope{Format: graph.FormatV2, Graph: *pub.Graph}
+	default:
+		return resp, false, err
+	}
+	resp.Report = valid.Check(&resp.Envelope.Graph)
+	return resp, true, nil
+}
+
+// PutAdventureGraph autosaves the draft. Errors do not block — the
+// report says what they are — because an author mid-edit always has
+// some. Only media from another adventure is refused.
 func (h *Handlers) PutAdventureGraph(w http.ResponseWriter, r *http.Request) {
 	advID, ok := h.graphTarget(w, r)
 	if !ok {
@@ -85,29 +131,188 @@ func (h *Handlers) PutAdventureGraph(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	var userID int64
-	if me, ok := auth.FromContext(r.Context()); ok {
-		userID = me.ID
-	}
-
-	s, report, err := graphstore.Save(r.Context(), h.DB, advID, userID, &env.Graph)
-	var invalid *graphstore.InvalidError
-	if errors.As(err, &invalid) {
-		httpx.JSON(w, http.StatusUnprocessableEntity, graphRefusal{
-			Error: "the graph has errors and was not saved", Code: "graph_invalid", Report: &report,
-		})
+	_, _, err := graphstore.SaveDraft(r.Context(), h.DB, advID, h.userID(r), &env.Graph)
+	if errors.Is(err, graphstore.ErrForeignMedia) {
+		httpx.JSON(w, http.StatusUnprocessableEntity, graphRefusal{Error: err.Error(), Code: "media_foreign"})
 		return
 	}
 	if err != nil {
-		httpx.ServerErr(w, http.StatusInternalServerError, "saving graph failed", err)
+		httpx.ServerErr(w, http.StatusInternalServerError, "saving draft failed", err)
+		return
+	}
+	h.writeGraphState(w, r, advID)
+}
+
+type publishRequest struct {
+	Label string `json:"label,omitempty"`
+}
+
+// PublishAdventureGraph releases the saved draft. It publishes what is
+// stored, not the request body, so the release is exactly what the
+// author last saw saved.
+func (h *Handlers) PublishAdventureGraph(w http.ResponseWriter, r *http.Request) {
+	advID, ok := h.graphTarget(w, r)
+	if !ok {
+		return
+	}
+	var req publishRequest
+	if r.ContentLength != 0 && !httpx.DecodeJSON(w, r, &req) {
+		return
+	}
+	draft, err := graphstore.LoadDraft(r.Context(), h.DB, advID)
+	if errors.Is(err, graphstore.ErrNotFound) {
+		httpx.JSON(w, http.StatusConflict, graphRefusal{Error: "there is no draft to publish", Code: "draft_not_found"})
+		return
+	}
+	if err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "loading draft failed", err)
+		return
+	}
+	_, report, err := graphstore.Publish(r.Context(), h.DB, advID, h.userID(r), draft.Graph, strings.TrimSpace(req.Label))
+	if !h.publishRefused(w, report, err) {
+		h.writeGraphState(w, r, advID)
+	}
+}
+
+// ListAdventureGraphVersions returns the version history, newest first.
+func (h *Handlers) ListAdventureGraphVersions(w http.ResponseWriter, r *http.Request) {
+	advID, ok := h.graphTarget(w, r)
+	if !ok {
+		return
+	}
+	vs, err := graphstore.Versions(r.Context(), h.DB, advID)
+	if err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "loading history failed", err)
+		return
+	}
+	if vs == nil {
+		vs = []graphstore.Version{}
+	}
+	httpx.JSON(w, http.StatusOK, map[string]any{"versions": vs})
+}
+
+// GetAdventureGraphVersion returns one version, for previewing it.
+func (h *Handlers) GetAdventureGraphVersion(w http.ResponseWriter, r *http.Request) {
+	advID, version, ok := h.versionTarget(w, r)
+	if !ok {
+		return
+	}
+	s, err := graphstore.ByVersion(r.Context(), h.DB, advID, version)
+	if errors.Is(err, graphstore.ErrNotFound) {
+		httpx.JSON(w, http.StatusNotFound, graphRefusal{Error: "no such version", Code: "version_not_found"})
+		return
+	}
+	if err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "loading version failed", err)
 		return
 	}
 	httpx.JSON(w, http.StatusOK, graphResponse{
 		Version:  s.Version,
 		Envelope: graph.Envelope{Format: graph.FormatV2, Graph: *s.Graph},
-		Report:   report,
+		Report:   valid.Check(s.Graph),
 	})
+}
+
+// PublishAdventureGraphVersion rolls back: an older version becomes the
+// published one. The draft is left alone.
+func (h *Handlers) PublishAdventureGraphVersion(w http.ResponseWriter, r *http.Request) {
+	advID, version, ok := h.versionTarget(w, r)
+	if !ok {
+		return
+	}
+	var req publishRequest
+	if r.ContentLength != 0 && !httpx.DecodeJSON(w, r, &req) {
+		return
+	}
+	if l := strings.TrimSpace(req.Label); l != "" {
+		if err := graphstore.SetLabel(r.Context(), h.DB, advID, version, l); err != nil && !errors.Is(err, graphstore.ErrNotFound) {
+			httpx.ServerErr(w, http.StatusInternalServerError, "naming version failed", err)
+			return
+		}
+	}
+	_, err := graphstore.PublishVersion(r.Context(), h.DB, advID, version)
+	if errors.Is(err, graphstore.ErrNotFound) {
+		httpx.JSON(w, http.StatusNotFound, graphRefusal{Error: "no such version", Code: "version_not_found"})
+		return
+	}
+	var report valid.Report
+	var invalid *graphstore.InvalidError
+	if errors.As(err, &invalid) {
+		report = invalid.Report
+	}
+	if !h.publishRefused(w, report, err) {
+		h.writeGraphState(w, r, advID)
+	}
+}
+
+// LabelAdventureGraphVersion names a version.
+func (h *Handlers) LabelAdventureGraphVersion(w http.ResponseWriter, r *http.Request) {
+	advID, version, ok := h.versionTarget(w, r)
+	if !ok {
+		return
+	}
+	var req publishRequest
+	if !httpx.DecodeJSON(w, r, &req) {
+		return
+	}
+	err := graphstore.SetLabel(r.Context(), h.DB, advID, version, strings.TrimSpace(req.Label))
+	if errors.Is(err, graphstore.ErrNotFound) {
+		httpx.JSON(w, http.StatusNotFound, graphRefusal{Error: "no such version", Code: "version_not_found"})
+		return
+	}
+	if err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "naming version failed", err)
+		return
+	}
+	httpx.JSON(w, http.StatusNoContent, nil)
+}
+
+// publishRefused writes the refusal for a failed publish and reports
+// whether it did.
+func (h *Handlers) publishRefused(w http.ResponseWriter, report valid.Report, err error) bool {
+	var invalid *graphstore.InvalidError
+	switch {
+	case err == nil:
+		return false
+	case errors.As(err, &invalid):
+		httpx.JSON(w, http.StatusUnprocessableEntity, graphRefusal{
+			Error: "the adventure has errors and was not published", Code: "graph_invalid", Report: &report,
+		})
+	case errors.Is(err, graphstore.ErrForeignMedia):
+		httpx.JSON(w, http.StatusUnprocessableEntity, graphRefusal{Error: err.Error(), Code: "media_foreign"})
+	default:
+		httpx.ServerErr(w, http.StatusInternalServerError, "publishing failed", err)
+	}
+	return true
+}
+
+func (h *Handlers) writeGraphState(w http.ResponseWriter, r *http.Request, advID int64) {
+	resp, _, err := h.graphState(r.Context(), advID)
+	if err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "loading graph failed", err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, resp)
+}
+
+func (h *Handlers) versionTarget(w http.ResponseWriter, r *http.Request) (int64, int, bool) {
+	advID, ok := h.graphTarget(w, r)
+	if !ok {
+		return 0, 0, false
+	}
+	v, err := strconv.Atoi(chi.URLParam(r, "version"))
+	if err != nil || v <= 0 {
+		httpx.Error(w, http.StatusBadRequest, "bad version")
+		return 0, 0, false
+	}
+	return advID, v, true
+}
+
+func (h *Handlers) userID(r *http.Request) int64 {
+	if me, ok := auth.FromContext(r.Context()); ok {
+		return me.ID
+	}
+	return 0
 }
 
 // ValidateAdventureGraph checks a graph without saving it. This is what
@@ -136,10 +341,47 @@ func (h *Handlers) ConvertAdventureGraph(w http.ResponseWriter, r *http.Request)
 	if !ok {
 		return
 	}
-	env, _, err := h.buildExport(r.Context(), advID)
+	env, files, err := h.buildExport(r.Context(), advID)
 	if err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "reading lanes failed", err)
 		return
+	}
+
+	// Page and hint media are copied into adventure media so the graph
+	// can refer to them. Deduplicated by content, so converting twice
+	// does not store twice; an unsaved conversion leaves rows no graph
+	// uses, which is harmless.
+	byName := map[string][]byte{}
+	for _, f := range files {
+		byName[f.name] = f.bytes
+	}
+	var userID int64
+	if me, ok := auth.FromContext(r.Context()); ok {
+		userID = me.ID
+	}
+	copyMedia := func(images, audio []exportAsset) ([]graph.Media, error) {
+		var out []graph.Media
+		for _, list := range []struct {
+			kind   graph.MediaKind
+			assets []exportAsset
+		}{{graph.MediaImage, images}, {graph.MediaAudio, audio}} {
+			for _, a := range list.assets {
+				data, ok := byName[a.File]
+				if !ok {
+					continue
+				}
+				v, err := putMedia(r.Context(), h.DB, advID, userID, list.kind, a.MimeType, data)
+				if err != nil {
+					return nil, err
+				}
+				alt := a.AltText
+				if alt == "" {
+					alt = a.Description
+				}
+				out = append(out, graph.Media{ID: v.ID, Kind: list.kind, Alt: alt})
+			}
+		}
+		return out, nil
 	}
 
 	in := convert.Adventure{}
@@ -154,8 +396,17 @@ func (h *Handlers) ConvertAdventureGraph(w http.ResponseWriter, r *http.Request)
 		for _, a := range p.Accept {
 			cp.Accept = append(cp.Accept, convert.Accept{Text: a.Text, Regex: a.Regex})
 		}
+		if cp.Media, err = copyMedia(p.Images, p.Audio); err != nil {
+			httpx.ServerErr(w, http.StatusInternalServerError, "copying media failed", err)
+			return
+		}
 		for _, hint := range p.Hints {
-			cp.Hints = append(cp.Hints, convert.Hint{Idx: hint.Idx, Text: hint.Text, DelaySeconds: hint.DelaySeconds})
+			ch := convert.Hint{Idx: hint.Idx, Text: hint.Text, DelaySeconds: hint.DelaySeconds}
+			if ch.Media, err = copyMedia(hint.Images, hint.Audio); err != nil {
+				httpx.ServerErr(w, http.StatusInternalServerError, "copying media failed", err)
+				return
+			}
+			cp.Hints = append(cp.Hints, ch)
 		}
 		in.Pages = append(in.Pages, cp)
 	}

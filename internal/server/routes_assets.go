@@ -140,6 +140,9 @@ func registerAdventureAssetRoutes(r chi.Router, env *routesEnv) {
 	// reveal-gated rule. Same handlers, audio binary served verbatim.
 	r.Get("/adventure-assets/audio/{audioID}", adminH.ServeAudio)
 	r.Get("/adventure-assets/hint-audio/{audioID}", adminH.ServeHintAudio)
+	// Graph-adventure media: one route for images and audio, gated in
+	// the handler by what the team's graph has shown it.
+	r.Get("/media/{mediaID}", adminH.ServeMedia)
 	// Team avatars are intentionally open — they surface on the public
 	// live board and on player views without a staff session. The team
 	// id is opaque enough to be acceptable public read-only data.

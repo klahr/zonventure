@@ -17,6 +17,16 @@ export interface PlayZone {
   lat: number;
   lng: number;
   radius_m: number;
+  polygon?: [number, number][];
+}
+
+/** session.StartOption — a start the team may begin at. */
+export interface StartOption {
+  node: string;
+  title?: string;
+  zone?: PlayZone;
+  /** The team is inside the zone (always true without one). */
+  here: boolean;
 }
 
 /** session.Input — the shape of a puzzle's answer box. */
@@ -25,6 +35,21 @@ export interface PlayInput {
   /** Set when the answer is a list: how many items to give. */
   parts?: number;
   ordered?: boolean;
+}
+
+/** internal/graph: Media. Fetched from mediaURL(id). */
+export interface PlayMedia {
+  id: number;
+  kind: "image" | "audio";
+  alt?: string;
+}
+
+export const mediaURL = (id: number) => `/media/${id}`;
+
+/** session.HintView — one revealed hint. */
+export interface HintView {
+  text: string;
+  media?: PlayMedia[];
 }
 
 /** session.NextHint */
@@ -65,8 +90,11 @@ export interface View {
   text?: string;
   zone?: PlayZone;
   here?: boolean;
+  /** Set while the team chooses where to begin; `node` is then empty. */
+  starts?: StartOption[];
+  media?: PlayMedia[];
   input?: PlayInput;
-  hints?: string[];
+  hints?: HintView[];
   hint_count?: number;
   next_hint?: NextHint;
   attempts?: number;
@@ -100,6 +128,7 @@ export interface Result {
 
 /** One thing a player can do. `node` is the step they are looking at. */
 export type PlayAction =
+  | { kind: "begin"; node: string; port: string }
   | { kind: "answer"; node: string; guess: string }
   | { kind: "continue"; node: string }
   | { kind: "choose"; node: string; port: string }
@@ -151,10 +180,17 @@ export interface PlayState {
     adventure_title?: string;
     org_name?: string;
     org_logo_url?: string;
+    /** The author's welcome and farewell, Markdown. */
+    intro_text?: string;
+    outro_text?: string;
+    /** Where the team should meet. */
+    start?: { lat: number; lng: number; label?: string };
   };
   /** The adventure's palette, when the author set one. */
   brand?: Brand;
   view?: View;
+  /** Media ids the team may fetch now, for downloading ahead of need. */
+  prefetch?: number[];
 }
 
 export const getPlay = (opts?: RequestOptions) => get<PlayState>("/api/player/play", opts);

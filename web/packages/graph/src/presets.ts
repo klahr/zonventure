@@ -161,6 +161,49 @@ export const PRESETS: Preset[] = [
     build: () => ({ type: "gate", title: "Gate", gate: { condition: { op: "" } } }),
   },
   {
+    id: "puzzle-open",
+    type: "puzzle",
+    category: "puzzle",
+    label: "Open question",
+    hint: "Any answer moves on, carrying it to a crossroads",
+    keywords: "anything free text response poll opinion switch",
+    build: () => ({
+      type: "puzzle",
+      title: "Open question",
+      puzzle: {
+        prompt: "",
+        outputs: [{ port: "answered", label: "Answered", trigger: "answer", matchers: [{ kind: "anything" }] }],
+      },
+    }),
+  },
+  {
+    id: "start",
+    type: "start",
+    category: "flow",
+    label: "Another start",
+    hint: "A second place to begin; teams choose where they start",
+    keywords: "start begin entry meeting point location place",
+    build: () => ({ type: "start", title: "Start" }),
+  },
+  {
+    id: "switch",
+    type: "switch",
+    category: "flow",
+    label: "Crossroads",
+    hint: "Send the team different ways depending on what they answered",
+    keywords: "switch case route path fork response answer branch depends",
+    build: () => ({
+      type: "switch",
+      title: "Crossroads",
+      switch: {
+        cases: [
+          { port: "a", label: "A" },
+          { port: "b", label: "B" },
+        ],
+      },
+    }),
+  },
+  {
     id: "effect-score",
     type: "effect",
     category: "effect",
@@ -273,14 +316,17 @@ export function presetsFor(from: DragFrom | null): Preset[] {
  */
 export function suggestionsFor(from: DragFrom | null): string[] {
   if (!from) return ["puzzle-text", "story", "puzzle-choice"];
-  if (from.side === "input") return ["puzzle-text", "story"];
+  if (from.side === "input") return ["puzzle-text", "story", "start"];
   const n = from.node;
   switch (n.type) {
     case "start":
       return ["story", "puzzle-text", "checkin"];
     case "puzzle":
+      return ["puzzle-text", "switch", "story", "effect-score", "end"];
     case "story":
       return ["puzzle-text", "story", "effect-score", "end"];
+    case "switch":
+      return ["puzzle-text", "story", "end"];
     case "hub":
       return from.port === "done" ? ["gate", "puzzle-text", "end"] : ["puzzle-text", "checkin", "story"];
     case "gate":

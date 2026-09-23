@@ -23,7 +23,12 @@ import { feedbackForRefusal, feedbackForResult, type Feedback, type Translate } 
  *     view to show instead.
  */
 
-export type GameStatus = "loading" | "signed-out" | "lanes" | "ready" | "error";
+/**
+ * "ended" is a finished team whose session the server has since closed —
+ * it ends every player session when the event completes. The team keeps
+ * its final screen, read-only, instead of being told to sign in again.
+ */
+export type GameStatus = "loading" | "signed-out" | "ended" | "lanes" | "ready" | "error";
 
 export interface Game {
   status: GameStatus;
@@ -74,6 +79,14 @@ function saveLast(s: play.PlayState | null) {
   }
 }
 
+/**
+ * Tell the service worker which files this team may keep offline (see
+ * public/sw.js). Sent on every load; the worker skips what it has.
+ */
+function toWorker(msg: { type: "prefetch"; team: number; urls: string[] } | { type: "forget" }) {
+  navigator.serviceWorker?.ready.then((r) => r.active?.postMessage(msg)).catch(() => {});
+}
+
 function playEntries(): PendingAction[] {
   return outbox.pending.filter((p) => p.kind === "play");
 }
@@ -99,8 +112,19 @@ export function useGame(t: Translate): Game {
 
   const fail = useCallback((e: unknown) => {
     if (e instanceof ApiError && e.isUnauthorized) {
+      // Nothing queued can be sent any more.
+      outbox.pending.length = 0;
+      outbox.persist();
+      setQueued(0);
+      const last = loadLast();
+      if (last?.view?.finished) {
+        setState(last);
+        setStatus("ended");
+        return true;
+      }
       saveLast(null);
       setState(null);
+      toWorker({ type: "forget" });
       setStatus("signed-out");
       return true;
     }
@@ -116,6 +140,7 @@ export function useGame(t: Translate): Game {
       }
       setState(s);
       saveLast(s);
+      if (s.prefetch?.length) toWorker({ type: "prefetch", team: s.team.id, urls: s.prefetch.map(play.mediaURL) });
       setStatus("ready");
       setOnline(true);
     } catch (e) {

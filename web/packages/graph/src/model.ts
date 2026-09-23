@@ -8,11 +8,14 @@
 
 import {
   PORT_DONE,
+  PORT_ELSE,
   PORT_FAIL,
   PORT_OUT,
   PORT_PASS,
   type Edge,
   type Graph,
+  type Matcher,
+  type Zone,
   type Node,
   type NodeType,
 } from "./types.ts";
@@ -31,6 +34,8 @@ export function portsOf(n: Node): string[] {
       return [PORT_OUT];
     case "gate":
       return [PORT_PASS, PORT_FAIL];
+    case "switch":
+      return [...(n.switch?.cases ?? []).map((c) => c.port), PORT_ELSE];
     case "end":
       return [];
     case "puzzle":
@@ -59,6 +64,11 @@ export function portLabel(n: Node, port: string): string {
     if (port === PORT_DONE) return "done";
     const b = n.hub?.branches?.find((x) => x.port === port);
     return b?.label || port;
+  }
+  if (n.type === "switch") {
+    if (port === PORT_ELSE) return "Any other answer";
+    const c = n.switch?.cases?.find((x) => x.port === port);
+    return c?.label || port;
   }
   return port;
 }
@@ -183,6 +193,8 @@ export function newNode(g: Graph, type: NodeType, at: { x: number; y: number }):
       return { ...base, title: "New gate", gate: { condition: { op: "" } } };
     case "effect":
       return { ...base, title: "Award points", effect: { kind: "score", points: 10 } };
+    case "switch":
+      return { ...base, title: "Crossroads", switch: { cases: [{ port: "a", label: "A" }] } };
     case "end":
       return { ...base, title: "End", end: { outcome: "complete" } };
     case "start":
@@ -336,7 +348,9 @@ function cleanNode(n: Node): Node {
   if (n.hub) out.hub = n.hub;
   if (n.gate) out.gate = n.gate;
   if (n.effect) out.effect = n.effect;
+  if (n.switch) out.switch = n.switch;
   if (n.end) out.end = n.end;
+  if (n.start) out.start = n.start;
   return out;
 }
 
@@ -348,4 +362,104 @@ function cleanNode(n: Node): Node {
  */
 export function differs(a: Graph, b: Graph): boolean {
   return JSON.stringify(cleanGraph(a)) !== JSON.stringify(cleanGraph(b));
+}
+
+// --- answer references ---------------------------------------------------
+
+/** A short, readable description of an accepted answer. */
+export function matcherLabel(m: Matcher): string {
+  switch (m.kind) {
+    case "exact":
+      return m.value || "(empty)";
+    case "contains":
+      return `contains “${m.value ?? ""}”`;
+    case "regex":
+      return `pattern ${m.value ?? ""}`;
+    case "interval":
+      return `${m.low ?? 0}–${m.high ?? 0}`;
+    case "near":
+      return `about ${m.target ?? 0}`;
+    case "set":
+      return (m.members ?? []).join(", ");
+    case "anything":
+      return "any answer";
+  }
+}
+
+export interface AnswerOption {
+  /** "node/answer-id", or "" when the answer has no id yet. */
+  ref: string;
+  node: string;
+  output: number;
+  matcher: number;
+  label: string;
+  /** The puzzle output the answer belongs to, for grouping. */
+  outputLabel: string;
+}
+
+/**
+ * The accepted answers of a puzzle that a crossroads can refer to. "Any
+ * answer" is left out: it says nothing a path could route on.
+ */
+export function answerOptions(g: Graph, puzzle: string): AnswerOption[] {
+  const n = nodeBySlug(g, puzzle);
+  if (!n?.puzzle) return [];
+  const out: AnswerOption[] = [];
+  (n.puzzle.outputs ?? []).forEach((o, oi) => {
+    if (o.trigger !== "answer") return;
+    (o.matchers ?? []).forEach((m, mi) => {
+      if (m.kind === "anything") return;
+      out.push({
+        ref: m.id ? `${puzzle}/${m.id}` : "",
+        node: puzzle,
+        output: oi,
+        matcher: mi,
+        label: matcherLabel(m),
+        outputLabel: o.label || o.port,
+      });
+    });
+  });
+  return out;
+}
+
+/** What a reference currently points at, or undefined if it is gone. */
+export function resolveAnswer(g: Graph, ref: string): AnswerOption | undefined {
+  const node = ref.slice(0, ref.indexOf("/"));
+  return answerOptions(g, node).find((a) => a.ref === ref);
+}
+
+/**
+ * Give an answer an id if it has none, returning the updated graph and
+ * the reference to it. Ids are only added when something refers to the
+ * answer, so a graph nobody routes on is left exactly as authored.
+ */
+export function referAnswer(g: Graph, opt: AnswerOption): { graph: Graph; ref: string } {
+  if (opt.ref) return { graph: g, ref: opt.ref };
+  const taken = new Set(answerOptions(g, opt.node).map((a) => a.ref.split("/")[1]).filter(Boolean));
+  let id = "";
+  for (let i = 1; !id || taken.has(id); i++) id = `a${i}`;
+  const graph = updateNode(g, opt.node, (n) => ({
+    ...n,
+    puzzle: {
+      ...n.puzzle,
+      outputs: (n.puzzle?.outputs ?? []).map((o, oi) =>
+        oi !== opt.output ? o : { ...o, matchers: (o.matchers ?? []).map((m, mi) => (mi === opt.matcher ? { ...m, id } : m)) },
+      ),
+    },
+  }));
+  return { graph, ref: `${opt.node}/${id}` };
+}
+
+/** Puzzles wired straight into a node — a crossroads' natural sources. */
+export function puzzlesInto(g: Graph, slug: string): string[] {
+  return g.edges.filter((e) => e.to === slug && nodeBySlug(g, e.from)?.type === "puzzle").map((e) => e.from);
+}
+
+/** Whether a zone's shape is its polygon. Mirrors Zone.IsPolygon in Go. */
+export const isPolygon = (z: Zone) => (z.polygon?.length ?? 0) >= 3;
+
+/** The zone a start stands on, if any. */
+export function startZone(g: Graph, n: Node): Zone | undefined {
+  const slug = n.type === "start" ? n.start?.zone : undefined;
+  return slug ? g.zones?.find((z) => z.slug === slug) : undefined;
 }

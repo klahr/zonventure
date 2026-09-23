@@ -891,3 +891,7 @@ func TestRepeatablePuzzleIsPresentedAgain(t *testing.T) {
 		t.Errorf("a repeatable puzzle should be presented again; got %q, %v", step.To, err)
 	}
 }
+
+func (f *fakeState) AnswerTo(string) (string, bool) { return "", false }
+func (f *fakeState) LastAnswer() (string, bool)     { return "", false }
+func (f *fakeState) MatchedAnswer(string) string    { return "" }

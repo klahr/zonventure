@@ -84,6 +84,8 @@ export interface RequestOptions {
   body?: unknown;
   signal?: AbortSignal;
   headers?: Record<string, string>;
+  /** A multipart body. The browser sets its Content-Type. */
+  form?: FormData;
 }
 
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
@@ -109,7 +111,7 @@ export async function request<T>(
     const token = csrfToken();
     if (token) headers[CSRF_HEADER] = token;
   }
-  if (opts.body !== undefined) {
+  if (opts.body !== undefined && !opts.form) {
     headers["Content-Type"] = "application/json";
   }
 
@@ -119,9 +121,11 @@ export async function request<T>(
       method,
       credentials: "same-origin",
       headers,
-      ...(opts.body !== undefined
-        ? { body: JSON.stringify(opts.body) }
-        : {}),
+      ...(opts.form
+        ? { body: opts.form }
+        : opts.body !== undefined
+          ? { body: JSON.stringify(opts.body) }
+          : {}),
       ...(opts.signal ? { signal: opts.signal } : {}),
     });
   } catch (e) {

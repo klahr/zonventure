@@ -19,6 +19,16 @@ type graphDTO struct {
 	Report   valid.Report   `json:"report"`
 }
 
+type graphStateDTO struct {
+	Envelope  graph.Envelope `json:"envelope"`
+	Report    valid.Report   `json:"report"`
+	Dirty     bool           `json:"dirty"`
+	Published *struct {
+		Version int    `json:"version"`
+		Label   string `json:"label"`
+	} `json:"published"`
+}
+
 type refusalDTO struct {
 	Error  string        `json:"error"`
 	Code   string        `json:"code"`
@@ -99,49 +109,81 @@ func TestGraphAuthoringLoop(t *testing.T) {
 		t.Errorf("convert must not save; GET after convert = %d, want 404", s)
 	}
 
-	// Save it.
-	var saved graphDTO
-	if s := root.do("PUT", "/api/admin/adventures/demo/graph", converted.Envelope, &saved); s != 200 || saved.Version != 1 {
-		t.Fatalf("save = %d, version %d", s, saved.Version)
+	// Autosave it as the draft. Nothing is published yet.
+	var state graphStateDTO
+	state = graphStateDTO{}
+	if s := root.do("PUT", "/api/admin/adventures/demo/graph", converted.Envelope, &state); s != 200 || state.Published != nil || !state.Dirty {
+		t.Fatalf("draft save = %d %+v", s, state)
 	}
 
-	// Reload it.
-	var loaded graphDTO
-	if s := root.do("GET", "/api/admin/adventures/demo/graph", nil, &loaded); s != 200 {
-		t.Fatalf("reload = %d", s)
-	}
-	if loaded.Version != 1 || len(loaded.Envelope.Graph.Nodes) != 5 || loaded.Envelope.Format != graph.FormatV2 {
-		t.Errorf("reloaded %+v", loaded)
-	}
-
-	// Validate without saving: a broken graph reports its problems.
+	// A broken draft still saves — autosave must never refuse an edit
+	// in progress — and reports its errors.
 	broken := converted.Envelope
 	broken.Graph.Edges = nil
-	var checked graphDTO
-	if s := root.do("POST", "/api/admin/adventures/demo/graph/validate", broken, &checked); s != 200 {
-		t.Fatalf("validate = %d", s)
+	state = graphStateDTO{}
+	if s := root.do("PUT", "/api/admin/adventures/demo/graph", broken, &state); s != 200 || state.Report.OK() {
+		t.Fatalf("broken draft save = %d, report ok=%v", s, state.Report.OK())
 	}
-	if checked.Report.OK() {
-		t.Error("a graph with no edges should not validate")
-	}
-
-	// And saving it is refused with the full report; no version created.
+	// Publishing it is refused with the full report.
 	refused = refusalDTO{}
-	if s := root.doAny("PUT", "/api/admin/adventures/demo/graph", broken, &refused); s != 422 || refused.Code != "graph_invalid" {
-		t.Fatalf("saving a broken graph = %d %+v; want 422 graph_invalid", s, refused)
+	if s := root.doAny("POST", "/api/admin/adventures/demo/graph/publish", nil, &refused); s != 422 || refused.Code != "graph_invalid" {
+		t.Fatalf("publishing a broken draft = %d %+v; want 422 graph_invalid", s, refused)
 	}
 	if refused.Report == nil || len(refused.Report.Errors()) == 0 {
 		t.Error("the refusal should carry every error, so the editor can mark them all")
 	}
-	loaded = graphDTO{}
-	root.do("GET", "/api/admin/adventures/demo/graph", nil, &loaded)
-	if loaded.Version != 1 {
-		t.Errorf("a refused save must not create a version; latest is %d", loaded.Version)
+
+	// Fix the draft and publish it, named.
+	root.do("PUT", "/api/admin/adventures/demo/graph", converted.Envelope, nil)
+	state = graphStateDTO{}
+	if s := root.do("POST", "/api/admin/adventures/demo/graph/publish", map[string]string{"label": "Launch"}, &state); s != 200 ||
+		state.Published == nil || state.Published.Version != 1 || state.Published.Label != "Launch" || state.Dirty {
+		t.Fatalf("publish = %d %+v", s, state)
 	}
 
-	// A second good save is version 2.
-	if s := root.do("PUT", "/api/admin/adventures/demo/graph", converted.Envelope, &saved); s != 200 || saved.Version != 2 {
-		t.Errorf("second save = %d, version %d; want 200, 2", s, saved.Version)
+	// Reload: the draft, clean against what is published.
+	var loaded graphStateDTO
+	if s := root.do("GET", "/api/admin/adventures/demo/graph", nil, &loaded); s != 200 {
+		t.Fatalf("reload = %d", s)
+	}
+	if loaded.Dirty || len(loaded.Envelope.Graph.Nodes) != 5 || loaded.Envelope.Format != graph.FormatV2 {
+		t.Errorf("reloaded %+v", loaded)
+	}
+
+	// An edit makes the draft dirty; publishing makes version 2.
+	edited := converted.Envelope
+	edited.Graph.Nodes = append([]graph.Node(nil), edited.Graph.Nodes...)
+	edited.Graph.Nodes[1].Title = "Hello there"
+	state = graphStateDTO{}
+	root.do("PUT", "/api/admin/adventures/demo/graph", edited, &state)
+	if !state.Dirty {
+		t.Error("a changed title is an unpublished change")
+	}
+	state = graphStateDTO{}
+	root.do("POST", "/api/admin/adventures/demo/graph/publish", nil, &state)
+
+	// History, preview and rollback.
+	var hist struct {
+		Versions []struct {
+			Version   int    `json:"version"`
+			Label     string `json:"label"`
+			Published bool   `json:"published"`
+		} `json:"versions"`
+	}
+	root.do("GET", "/api/admin/adventures/demo/graph/versions", nil, &hist)
+	if len(hist.Versions) != 2 || !hist.Versions[0].Published || hist.Versions[1].Label != "Launch" {
+		t.Fatalf("history = %+v", hist.Versions)
+	}
+	var v1 graphDTO
+	if s := root.do("GET", "/api/admin/adventures/demo/graph/versions/1", nil, &v1); s != 200 || v1.Envelope.Graph.Nodes[1].Title == "Hello there" {
+		t.Errorf("version 1 preview = %d %+v", s, v1.Envelope.Graph.Nodes[1])
+	}
+	state = graphStateDTO{}
+	if s := root.do("POST", "/api/admin/adventures/demo/graph/versions/1/publish", nil, &state); s != 200 || state.Published.Version != 1 || !state.Dirty {
+		t.Errorf("rollback = %d %+v; the draft keeps the newer edit, so it is dirty", s, state)
+	}
+	if s := root.do("PATCH", "/api/admin/adventures/demo/graph/versions/2", map[string]string{"label": "Friendlier"}, nil); s != 204 {
+		t.Errorf("label = %d", s)
 	}
 }
 
@@ -179,6 +221,8 @@ func TestGraphRequiresEditRights(t *testing.T) {
 		{"POST", "/api/admin/adventures/demo/graph/convert"},
 		{"POST", "/api/admin/adventures/demo/graph/validate"},
 		{"PUT", "/api/admin/adventures/demo/graph"},
+		{"POST", "/api/admin/adventures/demo/graph/publish"},
+		{"GET", "/api/admin/adventures/demo/graph/versions"},
 	} {
 		if s := boss.do(c.method, c.path, map[string]any{}, nil); s != 403 {
 			t.Errorf("%s %s as an org admin on a global adventure = %d, want 403", c.method, c.path, s)

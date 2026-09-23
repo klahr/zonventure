@@ -50,6 +50,9 @@ func TestGraphPlayerLoop(t *testing.T) {
 	if s := root.doAny("PUT", "/api/admin/adventures/demo/graph", graph.Envelope{Format: graph.FormatV2, Graph: g}, nil); s != 200 {
 		t.Fatalf("save graph = %d", s)
 	}
+	if s := root.doAny("POST", "/api/admin/adventures/demo/graph/publish", nil, nil); s != 200 {
+		t.Fatalf("publish = %d", s)
+	}
 
 	// The designer's preview of the saved puzzle, through the simulator.
 	var sim struct {

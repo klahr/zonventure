@@ -51,9 +51,10 @@ type Accept struct {
 
 // Hint is one v1 hint.
 type Hint struct {
-	Idx          int    `json:"idx"`
-	Text         string `json:"text"`
-	DelaySeconds int    `json:"delay_seconds"`
+	Idx          int           `json:"idx"`
+	Text         string        `json:"text"`
+	DelaySeconds int           `json:"delay_seconds"`
+	Media        []graph.Media `json:"media,omitempty"`
 }
 
 // Page is one v1 page (puzzle).
@@ -68,6 +69,9 @@ type Page struct {
 	RadiusM  *float64 `json:"radius_m,omitempty"`
 	Disabled bool     `json:"disabled,omitempty"`
 	Hints    []Hint   `json:"hints,omitempty"`
+	// Media is the page's images and audio, already stored as adventure
+	// media by the caller — conversion itself touches no storage.
+	Media []graph.Media `json:"media,omitempty"`
 }
 
 // Adventure is the structural part of a v1 envelope.
@@ -233,7 +237,7 @@ func pageNode(g *graph.Graph, p Page, x, y float64) graph.Node {
 	if len(p.Accept) == 0 {
 		// No answer: zv shows a Continue button. That is a Story.
 		n.Type = graph.Story
-		n.StoryCfg = &graph.StoryConfig{Text: p.Prompt, Zone: zone}
+		n.StoryCfg = &graph.StoryConfig{Text: p.Prompt, Zone: zone, Media: p.Media}
 		g.Nodes = append(g.Nodes, n)
 		return n
 	}
@@ -251,12 +255,13 @@ func pageNode(g *graph.Graph, p Page, x, y float64) graph.Node {
 	sorted := append([]Hint(nil), p.Hints...)
 	sort.SliceStable(sorted, func(i, j int) bool { return sorted[i].Idx < sorted[j].Idx })
 	for _, h := range sorted {
-		hints = append(hints, graph.Hint{Text: h.Text, DelaySeconds: h.DelaySeconds})
+		hints = append(hints, graph.Hint{Text: h.Text, DelaySeconds: h.DelaySeconds, Media: h.Media})
 	}
 
 	n.Type = graph.Puzzle
 	n.PuzzleCfg = &graph.PuzzleConfig{
 		Prompt: p.Prompt,
+		Media:  p.Media,
 		Zone:   zone,
 		Hints:  hints,
 		Outputs: []graph.Output{{

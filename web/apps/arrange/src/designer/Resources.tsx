@@ -1,5 +1,8 @@
 import type { Counter, Graph, Item, JournalEntry, Zone } from "@zonventure/graph";
+import { useState } from "react";
 import { useT } from "../i18n.tsx";
+import { StaticMap } from "./StaticMap.tsx";
+import { ZoneMap } from "./ZoneMap.tsx";
 
 /**
  * Adventure-level resources nodes refer to by slug: zones, items, shared
@@ -9,11 +12,12 @@ import { useT } from "../i18n.tsx";
  * node would show the world instead of the flow, and the flow is what an
  * author is reasoning about on the canvas.
  *
- * Zones take coordinates as numbers for now; picking them on a map is the
- * MapLibre work, which is a separate piece.
+ * Zones are edited on a map, one at a time: each open editor is a WebGL
+ * context, and browsers cap those per page. The rest show a static map.
  */
 export function Resources({ graph, onChange }: { graph: Graph; onChange: (g: Graph) => void }) {
   const t = useT();
+  const [open, setOpen] = useState<string | null>(null);
 
   const slugFor = (prefix: string, taken: { slug: string }[]) => {
     const used = new Set(taken.map((x) => x.slug));
@@ -30,8 +34,6 @@ export function Resources({ graph, onChange }: { graph: Graph; onChange: (g: Gra
   const setCounters = (c: Counter[]) => onChange({ ...graph, counters: c });
   const setJournal = (j: JournalEntry[]) => onChange({ ...graph, journal: j });
 
-  const num = (v: string) => (v === "" ? 0 : Number(v));
-
   return (
     <div className="res">
       <section className="insp__section">
@@ -44,25 +46,23 @@ export function Resources({ graph, onChange }: { graph: Graph; onChange: (g: Gra
                 onChange={(e) => setZones(zones.map((x, j) => (j === i ? { ...z, name: e.target.value } : x)))} />
               <button type="button" className="link-btn" onClick={() => setZones(zones.filter((_, j) => j !== i))}>{t.t("Remove")}</button>
             </div>
-            <div className="box__row">
-              <label className="field field--num"><span className="field__label">{t.t("Lat")}</span>
-                <input className="field__input" type="number" step="0.00001" value={z.lat}
-                  onChange={(e) => setZones(zones.map((x, j) => (j === i ? { ...z, lat: num(e.target.value) } : x)))} /></label>
-              <label className="field field--num"><span className="field__label">{t.t("Lng")}</span>
-                <input className="field__input" type="number" step="0.00001" value={z.lng}
-                  onChange={(e) => setZones(zones.map((x, j) => (j === i ? { ...z, lng: num(e.target.value) } : x)))} /></label>
-              <label className="field field--num"><span className="field__label">{t.t("Radius m")}</span>
-                <input className="field__input" type="number" min={1} value={z.radius_m}
-                  onChange={(e) => setZones(zones.map((x, j) => (j === i ? { ...z, radius_m: num(e.target.value) } : x)))} /></label>
-            </div>
-            <a className="link-btn" target="_blank" rel="noreferrer"
-              href={`https://www.openstreetmap.org/?mlat=${z.lat}&mlon=${z.lng}#map=18/${z.lat}/${z.lng}`}>
-              {t.t("Check on a map ↗")}
-            </a>
+            {open === z.slug ? (
+              <ZoneMap zone={z} onChange={(nz) => setZones(zones.map((x, j) => (j === i ? nz : x)))} />
+            ) : (
+              <button type="button" className="zone-thumb" onClick={() => setOpen(z.slug)} aria-label={t.t("Edit on the map")}>
+                <StaticMap zone={z} width={320} height={120} />
+                <span className="zone-thumb__edit">{t.t("Edit on the map")}</span>
+              </button>
+            )}
           </div>
         ))}
         <button type="button" className="link-btn"
-          onClick={() => setZones([...zones, { slug: slugFor("zone", zones), name: "", lat: 59.3293, lng: 18.0686, radius_m: 30 }])}>
+          onClick={() => {
+            const slug = slugFor("zone", zones);
+            const near = zones[zones.length - 1];
+            setZones([...zones, { slug, name: "", lat: near?.lat ?? 59.3293, lng: near?.lng ?? 18.0686, radius_m: 30 }]);
+            setOpen(slug);
+          }}>
           + {t.t("Add zone")}
         </button>
       </section>

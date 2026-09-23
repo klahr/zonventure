@@ -36,6 +36,7 @@ const (
 	Hub    Type = "hub"    // a set of branches with a selection policy
 	Gate   Type = "gate"   // routes on a condition
 	Effect Type = "effect" // changes state, then continues
+	Switch Type = "switch" // routes on an answer the team gave
 	End    Type = "end"    // finishes the run
 )
 
@@ -46,6 +47,7 @@ const (
 	PortPass = "pass" // Gate, condition held
 	PortFail = "fail" // Gate, condition did not hold
 	PortDone = "done" // Hub, enough branches completed
+	PortElse = "else" // Switch, no case matched
 )
 
 // Graph is one authored version of an adventure.
@@ -83,7 +85,9 @@ type Node struct {
 	HubCfg    *HubConfig    `json:"hub,omitempty"`
 	GateCfg   *GateConfig   `json:"gate,omitempty"`
 	EffectCfg *EffectConfig `json:"effect,omitempty"`
+	SwitchCfg *SwitchConfig `json:"switch,omitempty"`
 	EndCfg    *EndConfig    `json:"end,omitempty"`
+	StartCfg  *StartConfig  `json:"start,omitempty"`
 }
 
 // Edge connects one output port to one node. A port may have at most
@@ -143,6 +147,26 @@ type Output struct {
 // separation is the thing legacy conflated — its AnswerResponses both
 // spoke to the player *and* granted keys that unlocked routes, which is
 // why branching needed keys in the first place.
+// MediaKind is what a Media reference points at.
+type MediaKind string
+
+const (
+	MediaImage MediaKind = "image"
+	MediaAudio MediaKind = "audio"
+)
+
+// Media shows a picture or plays a sound on a step or a hint. ID is an
+// adventure_media row of the same adventure; graphstore.Save refuses an
+// id that belongs to another adventure, because a player may fetch any
+// media their current step names.
+type Media struct {
+	ID   int64     `json:"id"`
+	Kind MediaKind `json:"kind"`
+	// Alt describes an image for someone who cannot see it, or an audio
+	// clip for someone who cannot hear it.
+	Alt string `json:"alt,omitempty"`
+}
+
 type Response struct {
 	// AfterAttempts is the wrong-guess count at which this text starts
 	// being shown. The highest matching rung wins, and the last one
@@ -158,11 +182,14 @@ type Hint struct {
 	DelaySeconds int `json:"delay_seconds,omitempty"`
 	// Cost is subtracted from the team's score when revealed.
 	Cost int `json:"cost,omitempty"`
+
+	Media []Media `json:"media,omitempty"`
 }
 
 // PuzzleConfig is the workhorse node.
 type PuzzleConfig struct {
-	Prompt string `json:"prompt,omitempty"`
+	Prompt string  `json:"prompt,omitempty"`
+	Media  []Media `json:"media,omitempty"`
 
 	// Zone gates arrival: the prompt is withheld and answers refused
 	// until the team is inside it.
@@ -196,8 +223,9 @@ type PuzzleConfig struct {
 // outputs, but stays a distinct type because the canvas reads better
 // when a narrative beat does not look like a challenge.
 type StoryConfig struct {
-	Text string `json:"text,omitempty"`
-	Zone string `json:"zone,omitempty"`
+	Text  string  `json:"text,omitempty"`
+	Media []Media `json:"media,omitempty"`
+	Zone  string  `json:"zone,omitempty"`
 }
 
 // Policy decides which branch of a Hub a team enters.
@@ -262,6 +290,42 @@ type GateConfig struct {
 }
 
 // EffectKind is what an Effect node does.
+// SwitchConfig routes on an answer, the way a hub routes on a choice.
+//
+// A puzzle's own outputs decide whether an answer is accepted at all — a
+// wrong one keeps the team on the puzzle. A switch comes after: the
+// puzzle accepts (often with an "anything" matcher), carries the answer
+// down its output, and the switch sends the team one way or another by
+// what it was. That separates "did they answer" from "what did they
+// say", and lets a later switch route on an answer given much earlier.
+type SwitchConfig struct {
+	// From is the puzzle whose answer is tested. Empty means the answer
+	// the team gave most recently — the one "on the wire".
+	From string `json:"from,omitempty"`
+	// Cases are tried in order; the first whose matchers accept the
+	// answer is taken. None matching, or no answer yet, takes PortElse.
+	Cases []Case `json:"cases,omitempty"`
+}
+
+// Case is one route out of a switch. It is taken when the answer is one
+// of Answers, or failing that, is accepted by Matchers.
+//
+// Answers is the usual form: references to accepted answers of a puzzle,
+// as "node/matcher-id". Following a reference rather than comparing text
+// means an author who corrects "Nroth" to "North" in the puzzle does not
+// also have to find and fix every crossroads that routes on it. Matchers
+// are for answers that have nothing to refer to — an open question whose
+// puzzle accepts anything.
+type Case struct {
+	Port     string          `json:"port"`
+	Label    string          `json:"label,omitempty"`
+	Answers  []string        `json:"answers,omitempty"`
+	Matchers []match.Matcher `json:"matchers,omitempty"`
+}
+
+// AnswerRef builds a Case.Answers entry.
+func AnswerRef(node, matcherID string) string { return node + "/" + matcherID }
+
 type EffectKind string
 
 const (
@@ -314,20 +378,54 @@ const (
 	Failed   Outcome = "fail"
 )
 
+// StartConfig is where a start is. An adventure may have several starts;
+// with more than one, or with a start that has a zone, each team chooses
+// its start before playing, and may only choose a zoned start from inside
+// it. A single start without a zone places every team at once, as before.
+type StartConfig struct {
+	Zone string `json:"zone,omitempty"`
+}
+
 // EndConfig terminates the run.
 type EndConfig struct {
 	Outcome Outcome `json:"outcome,omitempty"`
 	Text    string  `json:"text,omitempty"`
+	Media   []Media `json:"media,omitempty"`
 }
 
-// Zone is a named geofence, referenced by slug from puzzles, outputs
-// and conditions.
+// Zone is a named geofence, referenced by slug from starts, puzzles,
+// outputs and conditions. It is a circle — Lat, Lng and RadiusM — unless
+// Polygon has three or more corners, in which case the polygon is the
+// shape and Lat/Lng is only where maps centre it.
 type Zone struct {
 	Slug    string  `json:"slug"`
 	Name    string  `json:"name,omitempty"`
 	Lat     float64 `json:"lat"`
 	Lng     float64 `json:"lng"`
 	RadiusM float64 `json:"radius_m"`
+	// Polygon corners as [lat, lng], in order; the last joins the first.
+	Polygon [][2]float64 `json:"polygon,omitempty"`
+}
+
+// IsPolygon reports whether the zone's shape is its polygon.
+func (z Zone) IsPolygon() bool { return len(z.Polygon) >= 3 }
+
+// Starts returns every start node, in graph order.
+func (g *Graph) Starts() []Node {
+	var out []Node
+	for _, n := range g.Nodes {
+		if n.Type == Start {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
+// ChoosesStart reports whether teams pick their start rather than being
+// placed: there is more than one, or the only one has a zone.
+func (g *Graph) ChoosesStart() bool {
+	s := g.Starts()
+	return len(s) > 1 || (len(s) == 1 && s[0].StartCfg != nil && s[0].StartCfg.Zone != "")
 }
 
 // Item is inventory. Flavour only: the player can see it and an Effect
@@ -399,6 +497,15 @@ func (n Node) Ports() []string {
 		return []string{PortOut}
 	case Gate:
 		return []string{PortPass, PortFail}
+	case Switch:
+		if n.SwitchCfg == nil {
+			return []string{PortElse}
+		}
+		out := make([]string, 0, len(n.SwitchCfg.Cases)+1)
+		for _, c := range n.SwitchCfg.Cases {
+			out = append(out, c.Port)
+		}
+		return append(out, PortElse)
 	case End:
 		return nil
 	case Puzzle:
@@ -477,6 +584,43 @@ func (p *PuzzleConfig) ResponseFor(attempts int) (Response, bool) {
 
 // Slugs returns every node slug, sorted, for stable error messages and
 // diffs.
+// MediaIDs returns every media id the graph refers to, once each.
+func (g *Graph) MediaIDs() []int64 {
+	seen := map[int64]bool{}
+	var out []int64
+	add := func(ms []Media) {
+		for _, m := range ms {
+			if !seen[m.ID] {
+				seen[m.ID] = true
+				out = append(out, m.ID)
+			}
+		}
+	}
+	for _, n := range g.Nodes {
+		for _, ms := range n.MediaLists() {
+			add(ms)
+		}
+	}
+	return out
+}
+
+// MediaLists returns the node's own media, then each hint's in order.
+func (n Node) MediaLists() [][]Media {
+	var out [][]Media
+	switch {
+	case n.PuzzleCfg != nil:
+		out = append(out, n.PuzzleCfg.Media)
+		for _, h := range n.PuzzleCfg.Hints {
+			out = append(out, h.Media)
+		}
+	case n.StoryCfg != nil:
+		out = append(out, n.StoryCfg.Media)
+	case n.EndCfg != nil:
+		out = append(out, n.EndCfg.Media)
+	}
+	return out
+}
+
 func (g *Graph) Slugs() []string {
 	out := make([]string, 0, len(g.Nodes))
 	for _, n := range g.Nodes {

@@ -143,17 +143,35 @@
 /* --- Shell ---------------------------------------------------------- */
 
 .shell {
+  --sidebar-w: 15rem;
+  --sidebar-rail-w: 3.5rem;
   display: grid;
-  grid-template-columns: 15rem 1fr;
+  grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
   min-height: 100dvh;
+  transition: grid-template-columns 180ms ease;
+}
+.shell[data-nav-collapsed="true"] {
+  grid-template-columns: var(--sidebar-rail-w) minmax(0, 1fr);
 }
 .shell__sidebar {
+  position: sticky;
+  top: 0;
+  height: 100dvh;
   display: flex;
   flex-direction: column;
-  gap: var(--sp-5);
-  padding: var(--sp-5);
+  gap: var(--sp-1);
+  padding: var(--sp-4) var(--sp-2);
   background: var(--surface);
   border-right: 1px solid var(--border-soft);
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+.shell__brand {
+  padding: var(--sp-1) var(--sp-3) var(--sp-4);
+  white-space: nowrap;
+}
+.shell__brand:hover {
+  text-decoration: none;
 }
 .shell__nav {
   display: flex;
@@ -161,25 +179,209 @@
   gap: var(--sp-1);
 }
 .shell__link {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
   padding: var(--sp-2) var(--sp-3);
   border-radius: var(--radius);
-  color: var(--ink-soft);
+  color: var(--muted);
   font-weight: 600;
   font-size: var(--text-sm);
+  white-space: nowrap;
+  transition:
+    background 120ms,
+    color 120ms;
 }
 .shell__link:hover {
   background: var(--surface-2);
+  color: var(--ink);
   text-decoration: none;
 }
 .shell__link.is-active {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
+}
+.shell__spacer {
+  flex: 1;
+}
+.shell__collapse {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  padding: var(--sp-2) var(--sp-3);
+  background: transparent;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+  color: var(--muted);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.shell__collapse:hover {
+  background: var(--surface-2);
+  color: var(--ink);
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border-soft));
+}
+
+/* The rail: icons only, labels as tooltips. */
+.shell__sidebar[data-collapsed="true"] .nav-label {
+  display: none;
+}
+.shell__sidebar[data-collapsed="true"] .shell__brand {
+  padding-inline: 0;
+  text-align: center;
+}
+.shell__sidebar[data-collapsed="true"] .shell__link,
+.shell__sidebar[data-collapsed="true"] .shell__collapse,
+.shell__sidebar[data-collapsed="true"] .account-menu__trigger {
+  justify-content: center;
+  padding: var(--sp-2);
+}
+
+.account-menu__trigger {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  margin-top: var(--sp-2);
+  padding: var(--sp-2);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius);
+  color: var(--muted);
+  cursor: pointer;
+  text-align: left;
+}
+.account-menu__trigger:hover,
+.account-menu__trigger[aria-expanded="true"] {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+.account-menu__avatar {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
   background: var(--accent);
   color: #fff;
+  font-weight: 700;
+  font-size: var(--text-sm);
 }
-.shell__footer {
+.account-menu__who {
   display: flex;
   flex-direction: column;
-  gap: var(--sp-3);
-  margin-top: auto;
+  flex: 1;
+  min-width: 0;
+  line-height: 1.25;
+}
+.account-menu__who strong,
+.account-menu__who span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.account-menu__who strong {
+  color: var(--ink);
+  font-size: var(--text-sm);
+}
+.account-menu__who span {
+  font-size: var(--text-xs);
+}
+
+/* Portaled to <body>; the inline style places it above the trigger. */
+.account-pop {
+  position: fixed;
+  z-index: var(--z-modal);
+  min-width: 15rem;
+  padding: var(--sp-1);
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+.account-pop__head {
+  display: flex;
+  flex-direction: column;
+  padding: var(--sp-2) var(--sp-3);
+  font-size: var(--text-sm);
+}
+.account-pop__head span {
+  color: var(--muted);
+  font-size: var(--text-xs);
+}
+.account-pop__sep {
+  height: 1px;
+  margin: var(--sp-1) 0;
+  background: var(--border-soft);
+}
+.account-pop__label {
+  padding: var(--sp-2) var(--sp-3) var(--sp-1);
+  color: var(--muted);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.account-pop__choices {
+  display: flex;
+  gap: var(--sp-1);
+  padding: 0 var(--sp-2) var(--sp-1);
+}
+.account-pop__choice {
+  display: inline-flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-1);
+  padding: var(--sp-1) var(--sp-2);
+  background: transparent;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+  color: var(--ink-soft);
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+.account-pop__choice:hover {
+  background: var(--surface-2);
+}
+.account-pop__choice.is-on {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 700;
+}
+.account-pop__row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  padding: var(--sp-2) var(--sp-3);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius);
+  color: var(--ink);
+  font-size: var(--text-sm);
+  text-align: left;
+  cursor: pointer;
+}
+.account-pop__row:hover {
+  background: var(--surface-2);
+}
+.shell__collapse,
+.account-menu__trigger,
+.account-pop__choice,
+.account-pop__row {
+  font-family: inherit;
+}
+.account-pop__row.is-danger {
+  color: var(--danger);
+}
+.account-pop__row.is-danger:hover {
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
 }
 .shell__main {
   padding: var(--sp-6);
@@ -216,10 +418,13 @@
  * viewports. The arranger console is desktop-first by nature — events
  * are run from a laptop — so this is a courtesy, not a mobile design. */
 @media (max-width: 40rem) {
-  .shell {
+  .shell,
+  .shell[data-nav-collapsed="true"] {
     grid-template-columns: 1fr;
   }
   .shell__sidebar {
+    position: static;
+    height: auto;
     border-right: 0;
     border-bottom: 1px solid var(--border-soft);
   }

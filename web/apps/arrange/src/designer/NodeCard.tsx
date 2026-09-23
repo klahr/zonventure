@@ -1,12 +1,19 @@
 import { memo } from "react";
+import { play } from "@zonventure/api";
+import { STEP } from "./dz/types.tsx";
 import { Handle, Position, type NodeProps, type Node as RFNode } from "@xyflow/react";
-import { hasInput, portLabel, portsOf, type Issue, type Node } from "@zonventure/graph";
+import { hasInput, portLabel, portsOf, type Issue, type Node, type Zone } from "@zonventure/graph";
+import { StaticMap } from "./StaticMap.tsx";
 
 export interface CardData extends Record<string, unknown> {
   node: Node;
   issues: Issue[];
   /** The simulated team is here. */
   playing?: boolean;
+  /** For a crossroads: the title of the puzzle whose answer it reads. */
+  sourceTitle?: string;
+  /** For a start with a place: its zone, drawn as a map on the card. */
+  zone?: Zone;
 }
 
 export type CardNode = RFNode<CardData, "zv">;
@@ -18,11 +25,12 @@ const TYPE_LABEL: Record<Node["type"], string> = {
   hub: "Hub",
   gate: "Gate",
   effect: "Effect",
+  switch: "Crossroads",
   end: "End",
 };
 
 /** One line summarising what the node does, so the canvas reads without opening each card. */
-function summary(n: Node): string {
+function summary(n: Node, sourceTitle?: string): string {
   switch (n.type) {
     case "puzzle":
       return n.puzzle?.prompt?.trim() || "No prompt yet";
@@ -35,6 +43,10 @@ function summary(n: Node): string {
     }
     case "gate":
       return n.gate?.condition.op ? "Conditional" : "Always passes";
+    case "switch": {
+      const k = n.switch?.cases?.length ?? 0;
+      return `${k} path${k === 1 ? "" : "s"}, by ${n.switch?.from ? `the answer to “${sourceTitle ?? n.switch.from}”` : "the answer just given"}`;
+    }
     case "effect": {
       const e = n.effect;
       if (!e) return "";
@@ -91,6 +103,7 @@ function NodeCardImpl({ data, selected }: NodeProps<CardNode>) {
       {hasInput(n) && <Handle type="target" position={Position.Left} id="in" className="card__in" />}
 
       <div className="card__head">
+        <StepIcon type={n.type} />
         <span className="card__type">{TYPE_LABEL[n.type]}</span>
         {errors.length > 0 && (
           <span className="card__badge card__badge--error" title={errors.map((e) => e.message).join("\n")}>
@@ -104,7 +117,9 @@ function NodeCardImpl({ data, selected }: NodeProps<CardNode>) {
         )}
       </div>
       <div className="card__title">{n.title || n.slug}</div>
-      {n.type !== "start" && <div className="card__summary">{summary(n)}</div>}
+      {n.type !== "start" && <div className="card__summary">{summary(n, data.sourceTitle)}</div>}
+      <Thumb node={n} className="card__thumb" />
+      {data.zone && <StaticMap zone={data.zone} width={216} height={112} className="card__map" />}
 
       {ports.length > 0 && (
         <div className="card__ports">
@@ -121,3 +136,27 @@ function NodeCardImpl({ data, selected }: NodeProps<CardNode>) {
 }
 
 export const NodeCard = memo(NodeCardImpl);
+
+/** The first picture on a step — or its first hint's — or nothing. */
+export function firstImage(n: Node): number | undefined {
+  const lists = [n.puzzle?.media, n.story?.media, n.end?.media, ...(n.puzzle?.hints ?? []).map((h) => h.media)];
+  for (const l of lists) {
+    const m = l?.find((x) => x.kind === "image");
+    if (m) return m.id;
+  }
+  return undefined;
+}
+
+export function Thumb({ node, className }: { node: Node; className: string }) {
+  const id = firstImage(node);
+  return id === undefined ? null : <img className={className} src={play.mediaURL(id)} alt="" loading="lazy" draggable={false} />;
+}
+
+function StepIcon({ type }: { type: Node["type"] }) {
+  const Icon = STEP[type].icon;
+  return (
+    <span className={`card__icon dz-step-icon dz-step-icon--${type}`} aria-hidden="true">
+      <Icon size={13} />
+    </span>
+  );
+}

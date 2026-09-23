@@ -10,6 +10,13 @@
  *     app's outbox — not this worker — handles being offline.
  *   - It only handles its own scope, /app/play/.
  *
+ * One exception to "never answers game data": /media/{id}, the pictures
+ * and sounds of the adventure. The page tells the worker which team is
+ * playing and which files that team may fetch; the worker downloads them
+ * into a cache named for that team and serves only from it. A second
+ * team signing in on the same phone gets its own cache and never sees
+ * the first team's files, and signing out deletes them.
+ *
  * What it does: keeps the app shell openable with no signal. The shell
  * (index.html) is fetched network-first so a deploy reaches players on
  * their next load, falling back to the cached copy offline. Hashed
@@ -26,6 +33,10 @@
 const CACHE = "zv-play-shell-v2";
 const SCOPE = "/app/play/";
 const SHELL = SCOPE;
+const MEDIA_PREFIX = "zv-play-media-";
+const META = "zv-play-meta";
+// Defence in depth against a runaway list: the server already bounds it.
+const MAX_PREFETCH = 200;
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -48,10 +59,23 @@ self.addEventListener("activate", (event) => {
   );
 });
 
+self.addEventListener("message", (event) => {
+  const d = event.data || {};
+  if (d.type === "prefetch" && Number.isFinite(d.team) && Array.isArray(d.urls)) {
+    event.waitUntil(prefetch(d.team, d.urls));
+  } else if (d.type === "forget") {
+    event.waitUntil(forget(null));
+  }
+});
+
 self.addEventListener("fetch", (event) => {
   const req = event.request;
   if (req.method !== "GET") return;
   const url = new URL(req.url);
+  if (url.origin === self.location.origin && url.pathname.startsWith("/media/")) {
+    event.respondWith(mediaFirst(req));
+    return;
+  }
   if (url.origin !== self.location.origin || !url.pathname.startsWith(SCOPE)) return;
 
   if (url.pathname.startsWith(SCOPE + "assets/")) {
@@ -126,4 +150,53 @@ async function cached(cache, path) {
   } catch {
     return null;
   }
+}
+
+// --- media ---------------------------------------------------------------
+
+async function activeTeam() {
+  const hit = await (await caches.open(META)).match("/team");
+  return hit ? Number(await hit.text()) : null;
+}
+
+async function prefetch(team, urls) {
+  if ((await activeTeam()) !== team) {
+    await forget(team);
+    await (await caches.open(META)).put("/team", new Response(String(team)));
+  }
+  const cache = await caches.open(MEDIA_PREFIX + team);
+  const queue = urls.filter((u) => typeof u === "string" && u.startsWith("/media/")).slice(0, MAX_PREFETCH);
+  // A few at a time: a fresh join must not fire the whole list at once.
+  const worker = async () => {
+    while (queue.length) {
+      const u = queue.shift();
+      if (await cache.match(u)) continue;
+      try {
+        const res = await fetch(u, { credentials: "same-origin" });
+        if (res.ok && res.type === "basic") await cache.put(u, res);
+      } catch {
+        /* offline or refused: the next prefetch tries again */
+      }
+    }
+  };
+  await Promise.all([worker(), worker(), worker(), worker()]);
+}
+
+// Delete every team's media except keep's (null deletes all).
+async function forget(keep) {
+  for (const k of await caches.keys()) {
+    if (k.startsWith(MEDIA_PREFIX) && k !== MEDIA_PREFIX + keep) await caches.delete(k);
+  }
+  if (keep === null) await caches.delete(META);
+}
+
+async function mediaFirst(req) {
+  const team = await activeTeam();
+  if (team === null) return fetch(req);
+  const cache = await caches.open(MEDIA_PREFIX + team);
+  const hit = await cache.match(req.url);
+  if (hit) return hit;
+  const res = await fetch(req);
+  if (res.ok && res.type === "basic") cache.put(req.url, res.clone());
+  return res;
 }

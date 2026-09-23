@@ -14,7 +14,7 @@ import (
 	"github.com/klahr/zonventure/internal/graphstore"
 )
 
-// StartEvent pins the adventure's latest graph to the event and places
+// StartEvent pins the adventure's published graph to the event and places
 // every team on its first node.
 //
 // Idempotent: the pin is written only if the event has none, and a team
@@ -50,7 +50,7 @@ func (e *Engine) StartEvent(ctx context.Context, eventID int64) error {
 		if err := tx.QueryRowContext(ctx, `SELECT id FROM adventures WHERE slug = $1`, slug).Scan(&adventureID); err != nil {
 			return fmt.Errorf("loading adventure %q: %w", slug, err)
 		}
-		stored, err := graphstore.Latest(ctx, tx, adventureID)
+		stored, err := graphstore.Published(ctx, tx, adventureID)
 		if errors.Is(err, graphstore.ErrNotFound) {
 			return ErrNoGraph
 		}
@@ -100,6 +100,10 @@ func (e *Engine) StartEvent(ctx context.Context, eventID int64) error {
 		if err != nil {
 			return err
 		}
+		// A team that chooses its start waits, unplaced, until it does.
+		if s.G.ChoosesStart() {
+			continue
+		}
 		step, err := walk.First(s.G, s)
 		if err != nil {
 			return fmt.Errorf("placing team %d: %w", teamID, err)
@@ -115,6 +119,11 @@ func (e *Engine) StartEvent(ctx context.Context, eventID int64) error {
 // session.Team.Answer for the rules; this makes the outcome durable.
 func (e *Engine) Answer(ctx context.Context, teamID int64, node, guess string) (Result, error) {
 	return e.act(ctx, teamID, func(t *session.Team) (Result, *walk.Step, error) { return t.Answer(node, guess) })
+}
+
+// ChooseStart begins the team's adventure at one of its starts.
+func (e *Engine) ChooseStart(ctx context.Context, teamID int64, start string) (Result, error) {
+	return e.act(ctx, teamID, func(t *session.Team) (Result, *walk.Step, error) { return t.ChooseStart(start) })
 }
 
 // Continue moves the team past a story node.
@@ -296,10 +305,10 @@ func (e *Engine) commit(ctx context.Context, tx *sql.Tx, s *teamState, step walk
 		UPDATE team_graph_state
 		SET current_node = $1, node_entered_at = $2, score = $3, penalty_score = $4,
 		    penalty_seconds = $5, theme = $6, completed_at = COALESCE(completed_at, $7),
-		    outcome = COALESCE(outcome, $8), updated_at = $2
+		    outcome = COALESCE(outcome, $8), last_answer = $11, started_at = $12, updated_at = $2
 		WHERE team_id = $9 AND current_node IS NOT DISTINCT FROM $10
 	`, nullIfEmpty(step.To), now, s.Points, s.PenaltyScore, s.PenaltySeconds, s.Theme,
-		completedAt, outcome, s.teamID, nullIfEmpty(old))
+		completedAt, outcome, s.teamID, nullIfEmpty(old), s.LatestAnswer, s.StartedAt)
 	if err != nil {
 		return err
 	}
@@ -372,15 +381,17 @@ func saveNodeRow(ctx context.Context, tx *sql.Tx, s *teamState, slug string) err
 		blocked = *r.BlockedUntil
 	}
 	_, err := tx.ExecContext(ctx, `
-		INSERT INTO team_node_state (team_id, node, first_seen_at, solved_at, outcome, attempts, blocked_until, hints_revealed)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		INSERT INTO team_node_state (team_id, node, first_seen_at, solved_at, outcome, attempts, blocked_until, hints_revealed, answer, match_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		ON CONFLICT (team_id, node) DO UPDATE SET
 		    solved_at      = COALESCE(team_node_state.solved_at, EXCLUDED.solved_at),
 		    outcome        = COALESCE(EXCLUDED.outcome, team_node_state.outcome),
 		    attempts       = EXCLUDED.attempts,
 		    blocked_until  = EXCLUDED.blocked_until,
-		    hints_revealed = EXCLUDED.hints_revealed
-	`, s.teamID, slug, r.FirstSeen, solvedAt, outcome, r.Attempts, blocked, r.HintsRevealed)
+		    hints_revealed = EXCLUDED.hints_revealed,
+		    answer         = EXCLUDED.answer,
+		    match_id       = EXCLUDED.match_id
+	`, s.teamID, slug, r.FirstSeen, solvedAt, outcome, r.Attempts, blocked, r.HintsRevealed, r.Answer, r.MatchID)
 	return err
 }
 
@@ -389,4 +400,39 @@ func nullIfEmpty(s string) any {
 		return nil
 	}
 	return s
+}
+
+// Media returns the media ids a team may fetch now (see
+// session.Team.VisibleMedia), honouring the adventure's strict-assets
+// setting. A team with no graph state sees nothing.
+func (e *Engine) Media(ctx context.Context, teamID int64) ([]int64, error) {
+	s, err := e.loadCore(ctx, e.DB, teamID, false)
+	if errors.Is(err, ErrNoGraph) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var strict bool
+	if err := e.DB.QueryRowContext(ctx, `
+		SELECT a.strict_assets FROM events ev JOIN adventures a ON a.slug = ev.adventure_slug
+		WHERE ev.id = $1
+	`, s.eventID).Scan(&strict); err != nil {
+		return nil, err
+	}
+	return s.VisibleMedia(strict), nil
+}
+
+// CanSeeMedia reports whether a team may fetch one media file.
+func (e *Engine) CanSeeMedia(ctx context.Context, teamID, mediaID int64) (bool, error) {
+	ids, err := e.Media(ctx, teamID)
+	if err != nil {
+		return false, err
+	}
+	for _, id := range ids {
+		if id == mediaID {
+			return true, nil
+		}
+	}
+	return false, nil
 }

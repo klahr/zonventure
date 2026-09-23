@@ -26,6 +26,8 @@ export default defineConfig({
     manifest: true,
     modulePreload: { polyfill: false },
   },
+  // MapLibre starts its worker as a module worker.
+  worker: { format: "es" },
   server: {
     proxy: {
       "/api": "http://localhost:8080",

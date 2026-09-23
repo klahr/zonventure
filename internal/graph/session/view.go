@@ -25,13 +25,22 @@ type View struct {
 	// Zone is nil.
 	Here bool `json:"here,omitempty"`
 
+	// Starts are set while the team is choosing where to begin: Node is
+	// empty, Type is "start", and the team picks one with ChooseStart.
+	Starts []StartOption `json:"starts,omitempty"`
+
+	// Media are the step's pictures and sounds, in the author's order.
+	// The client fetches each from /media/{id}.
+	Media []graph.Media `json:"media,omitempty"`
+
 	// Input describes the answer box of a puzzle.
 	Input *Input `json:"input,omitempty"`
 
-	Hints     []string  `json:"hints,omitempty"`
-	HintCount int       `json:"hint_count,omitempty"`
-	NextHint  *NextHint `json:"next_hint,omitempty"`
-	Attempts  int       `json:"attempts,omitempty"`
+	// Hints are the revealed hints, with their media.
+	Hints     []HintView `json:"hints,omitempty"`
+	HintCount int        `json:"hint_count,omitempty"`
+	NextHint  *NextHint  `json:"next_hint,omitempty"`
+	Attempts  int        `json:"attempts,omitempty"`
 
 	Offer     []OfferEntry `json:"offer,omitempty"`
 	CanFinish bool         `json:"can_finish,omitempty"`
@@ -71,6 +80,22 @@ type Input struct {
 	Parts int `json:"parts,omitempty"`
 	// Ordered says the list must be in the right order.
 	Ordered bool `json:"ordered,omitempty"`
+}
+
+// StartOption is one start a team may begin at.
+type StartOption struct {
+	Node  string      `json:"node"`
+	Title string      `json:"title,omitempty"`
+	Zone  *graph.Zone `json:"zone,omitempty"`
+	// Here reports whether the team is inside Zone, so the start can be
+	// chosen now. Always true for a start without a zone.
+	Here bool `json:"here"`
+}
+
+// HintView is one revealed hint.
+type HintView struct {
+	Text  string        `json:"text"`
+	Media []graph.Media `json:"media,omitempty"`
 }
 
 // NextHint is the next hint the team can reveal.
@@ -137,6 +162,23 @@ func (t *Team) View() View {
 		v.Journal = append(v.Journal, jv)
 	}
 
+	if t.Current == "" && !t.Completed && t.G.ChoosesStart() {
+		v.Type = graph.Start
+		for _, st := range t.G.Starts() {
+			o := StartOption{Node: st.Slug, Title: st.Title, Here: true}
+			if st.StartCfg != nil && st.StartCfg.Zone != "" {
+				for _, z := range t.G.Zones {
+					if z.Slug == st.StartCfg.Zone {
+						zc := z
+						o.Zone, o.Here = &zc, t.InZone(z.Slug)
+					}
+				}
+			}
+			v.Starts = append(v.Starts, o)
+		}
+		return v
+	}
+
 	n, ok := t.G.Node(t.Current)
 	if !ok {
 		return v
@@ -157,7 +199,7 @@ func (t *Team) View() View {
 		if cfg == nil {
 			return v
 		}
-		v.Text = cfg.Prompt
+		v.Text, v.Media = cfg.Prompt, cfg.Media
 		if cfg.Zone != "" {
 			setZone(cfg.Zone)
 		}
@@ -170,7 +212,7 @@ func (t *Team) View() View {
 			}
 		}
 		for i := 0; i < revealed && i < len(cfg.Hints); i++ {
-			v.Hints = append(v.Hints, cfg.Hints[i].Text)
+			v.Hints = append(v.Hints, HintView{Text: cfg.Hints[i].Text, Media: cfg.Hints[i].Media})
 		}
 		v.HintCount = len(cfg.Hints)
 		if revealed < len(cfg.Hints) {
@@ -189,14 +231,14 @@ func (t *Team) View() View {
 		v.CanSkip = t.canSkip(n)
 	case graph.Story:
 		if n.StoryCfg != nil {
-			v.Text = n.StoryCfg.Text
+			v.Text, v.Media = n.StoryCfg.Text, n.StoryCfg.Media
 			if n.StoryCfg.Zone != "" {
 				setZone(n.StoryCfg.Zone)
 			}
 		}
 	case graph.End:
 		if n.EndCfg != nil {
-			v.Text = n.EndCfg.Text
+			v.Text, v.Media = n.EndCfg.Text, n.EndCfg.Media
 		}
 	case graph.Hub:
 		// Recompute the offer: it is a function of state, not stored.
@@ -215,6 +257,51 @@ func (t *Team) View() View {
 		}
 	}
 	return v
+}
+
+// CanSeeMedia reports whether the team may fetch a media file.
+//
+// Hint media is visible only once the hint is revealed, always — a hint
+// the team has not paid for must not leak through its picture.
+//
+// Step media follows the adventure's strict-assets setting, exactly as
+// lane pages do. Strict: only steps the team has reached, for puzzles
+// where the picture is the clue. Not strict (the default): any step of
+// the adventure, so the player can download pictures ahead and still
+// show them in a dead spot.
+func (t *Team) CanSeeMedia(id int64, strict bool) bool {
+	for _, m := range t.VisibleMedia(strict) {
+		if m == id {
+			return true
+		}
+	}
+	return false
+}
+
+// VisibleMedia lists every media id the team may fetch now, once each,
+// in graph order. The player app downloads these ahead of need.
+func (t *Team) VisibleMedia(strict bool) []int64 {
+	seen := map[int64]bool{}
+	var out []int64
+	for _, n := range t.G.Nodes {
+		r := t.Nodes[n.Slug]
+		if r == nil && strict {
+			continue
+		}
+		for i, ms := range n.MediaLists() {
+			// List 0 is the step's own; list i is hint i-1.
+			if i > 0 && (r == nil || i > r.HintsRevealed) {
+				break
+			}
+			for _, m := range ms {
+				if !seen[m.ID] {
+					seen[m.ID] = true
+					out = append(out, m.ID)
+				}
+			}
+		}
+	}
+	return out
 }
 
 // inputFor derives the answer box from the matchers of a puzzle's

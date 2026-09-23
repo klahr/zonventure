@@ -28,6 +28,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/klahr/zonventure/internal/graph"
@@ -68,6 +69,12 @@ type NodeState struct {
 	Attempts      int        `json:"attempts,omitempty"`
 	BlockedUntil  *time.Time `json:"blocked_until,omitempty"`
 	HintsRevealed int        `json:"hints_revealed,omitempty"`
+	// Answer is what the team typed when it left this puzzle by an
+	// answer. A switch routes on it.
+	Answer string `json:"answer,omitempty"`
+	// MatchID is the ID of the accepted answer that matched, when it has
+	// one — what a crossroads path that refers to answers compares.
+	MatchID string `json:"match_id,omitempty"`
 }
 
 // Position is where the team is. Nil means unknown, or not trusted —
@@ -96,6 +103,9 @@ type Team struct {
 	PenaltyScore   float64 `json:"penalty_score"`
 	PenaltySeconds int     `json:"penalty_seconds"`
 	Theme          string  `json:"theme,omitempty"`
+	// LatestAnswer is the answer that most recently moved the team on:
+	// what a switch reads when it names no puzzle.
+	LatestAnswer string `json:"last_answer,omitempty"`
 
 	Nodes    map[string]*NodeState      `json:"nodes,omitempty"`
 	Items    map[string]int             `json:"items,omitempty"`
@@ -145,9 +155,15 @@ func (t *Team) Init() {
 	}
 }
 
-// Start places a new team on the graph's first stop.
+// Start places a new team on the graph's first stop — or, when the
+// adventure lets teams choose where to begin (graph.ChoosesStart), leaves
+// it waiting at the starts with no current node until it calls
+// ChooseStart.
 func Start(g *graph.Graph, now time.Time) (*Team, walk.Step, error) {
 	t := New(g, now)
+	if g.ChoosesStart() {
+		return t, walk.Step{}, nil
+	}
 	step, err := walk.First(g, t)
 	if err != nil {
 		return nil, walk.Step{}, err
@@ -234,6 +250,23 @@ func (t *Team) Attempts(n string) int {
 
 func (t *Team) ItemQty(i string) int { return t.Items[i] }
 
+func (t *Team) AnswerTo(n string) (string, bool) {
+	r := t.Nodes[n]
+	if r == nil || r.Answer == "" {
+		return "", false
+	}
+	return r.Answer, true
+}
+
+func (t *Team) MatchedAnswer(n string) string {
+	if r := t.Nodes[n]; r != nil {
+		return r.MatchID
+	}
+	return ""
+}
+
+func (t *Team) LastAnswer() (string, bool) { return t.LatestAnswer, t.LatestAnswer != "" }
+
 func (t *Team) CounterValue(c string) float64 {
 	if v, ok := t.Counters[c]; ok {
 		return v
@@ -269,10 +302,32 @@ func (t *Team) InZone(slug string) bool {
 	}
 	for _, z := range t.G.Zones {
 		if z.Slug == slug {
-			return HaversineMeters(t.Position.Lat, t.Position.Lng, z.Lat, z.Lng) <= z.RadiusM
+			return ZoneContains(z, t.Position.Lat, t.Position.Lng)
 		}
 	}
 	return false
+}
+
+// ZoneContains reports whether a point is inside a zone: within the
+// circle, or inside the polygon.
+//
+// The polygon test is the even-odd ray cast on raw latitude and
+// longitude. Treating degrees as a flat plane is exact enough at the
+// scale of a zone — a park, a square, a block — and the answer does not
+// depend on which corner the author drew first.
+func ZoneContains(z graph.Zone, lat, lng float64) bool {
+	if !z.IsPolygon() {
+		return HaversineMeters(lat, lng, z.Lat, z.Lng) <= z.RadiusM
+	}
+	in := false
+	p := z.Polygon
+	for i, j := 0, len(p)-1; i < len(p); j, i = i, i+1 {
+		yi, xi, yj, xj := p[i][0], p[i][1], p[j][0], p[j][1]
+		if (yi > lat) != (yj > lat) && lng < (xj-xi)*(lat-yi)/(yj-yi)+xi {
+			in = !in
+		}
+	}
+	return in
 }
 
 func (t *Team) LocalTime() time.Time { return t.Now }
@@ -411,6 +466,9 @@ func (t *Team) Answer(node, guess string) (Result, *walk.Step, error) {
 		}
 		points := float64(o.Points) * m.Multiplier
 		r.Solved = true
+		// Recorded before the walk, which may pass a switch reading it.
+		r.Answer, r.MatchID = strings.TrimSpace(guess), m.ID
+		t.LatestAnswer = r.Answer
 		step, err := t.leave(n, o.Port, points)
 		if err != nil {
 			return Result{}, nil, err
@@ -454,6 +512,34 @@ func (t *Team) outputZoneOK(o graph.Output) bool {
 		return !in
 	}
 	return in
+}
+
+// ChooseStart begins the adventure at one of its starts. The team must be
+// waiting to begin, and inside the start's zone if it has one. The clock
+// for the whole adventure starts here, not when the event did: a team
+// that walks twenty minutes to its start is not behind for it.
+func (t *Team) ChooseStart(start string) (Result, *walk.Step, error) {
+	if t.Completed {
+		return Result{}, nil, ErrFinished
+	}
+	if t.Current != "" {
+		return Result{}, nil, ErrStale
+	}
+	n, ok := t.G.Node(start)
+	if !ok || n.Type != graph.Start {
+		return Result{}, nil, ErrWrongNode
+	}
+	if n.StartCfg != nil && n.StartCfg.Zone != "" && !t.InZone(n.StartCfg.Zone) {
+		return Result{}, nil, ErrNotHere
+	}
+	t.StartedAt = t.Now
+	r := t.Row(start)
+	r.Solved, r.Outcome, r.HasOutcome = true, graph.PortOut, true
+	step, err := walk.FirstFrom(t.G, t, start)
+	if err != nil {
+		return Result{}, nil, err
+	}
+	return Result{Port: graph.PortOut}, &step, nil
 }
 
 // Continue moves the team past a story node.

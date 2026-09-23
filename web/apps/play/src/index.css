@@ -114,3 +114,13 @@ body {
 .app-lobby p {
   margin: 0 0 var(--sp-3);
 }
+/* The author's welcome reads as a letter, not centred marketing copy. */
+.app-lobby__intro {
+  margin: var(--sp-4) 0;
+  text-align: left;
+  line-height: 1.55;
+}
+.app-lobby__start a {
+  color: var(--accent);
+  font-weight: 700;
+}

@@ -148,7 +148,11 @@ export function Simulator({ slug, graph, envelope, selected, mode, onMode, resta
       if (r?.refusal) say(r.refusal.message, "warn");
       else if (r) {
         setCeremony(true);
-        say(t.t("Started at {{step}}.", { step: titleOf(r.result.view.node ?? "") }));
+        say(
+          r.result.view.node
+            ? t.t("Started at {{step}}.", { step: titleOf(r.result.view.node) })
+            : t.t("Started. The team picks where to begin."),
+        );
       }
     });
     return () => ac.abort();

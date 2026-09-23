@@ -100,3 +100,66 @@ func TestByIDAndInvalidErrorMessage(t *testing.T) {
 		t.Errorf("the error should carry the full report, got %v", err)
 	}
 }
+
+// The dazyflow release model: drafts accept anything, publishing refuses
+// errors, the published pointer moves on publish and on rollback, and
+// history lists every release.
+func TestDraftsAndReleases(t *testing.T) {
+	db, cleanup := dbtest.Open(t)
+	defer cleanup()
+	ctx := context.Background()
+	var advID int64
+	if err := db.QueryRow(`INSERT INTO adventures(slug, title, description, author) VALUES ('rel', 'rel', '', '') RETURNING id`).Scan(&advID); err != nil {
+		t.Fatal(err)
+	}
+
+	broken := linear("a")
+	broken.Edges = broken.Edges[:1]
+	if _, report, err := graphstore.SaveDraft(ctx, db, advID, 0, broken); err != nil || !report.HasErrors() {
+		t.Fatalf("a broken draft must save, and report its errors: %v %v", err, report)
+	}
+	if d, err := graphstore.LoadDraft(ctx, db, advID); err != nil || len(d.Graph.Edges) != 1 {
+		t.Fatalf("draft = %+v, %v", d, err)
+	}
+	var invalid *graphstore.InvalidError
+	if _, _, err := graphstore.Publish(ctx, db, advID, 0, broken, ""); !errors.As(err, &invalid) {
+		t.Fatalf("publishing a broken graph must be refused, got %v", err)
+	}
+	if _, err := graphstore.Published(ctx, db, advID); !errors.Is(err, graphstore.ErrNotFound) {
+		t.Fatal("nothing should be published yet")
+	}
+
+	v1, _, err := graphstore.Publish(ctx, db, advID, 0, linear("a"), "First")
+	if err != nil {
+		t.Fatal(err)
+	}
+	v2, _, err := graphstore.Publish(ctx, db, advID, 0, linear("a", "b"), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p, _ := graphstore.Published(ctx, db, advID); p.Version != v2.Version {
+		t.Errorf("published = v%d, want the newest", p.Version)
+	}
+	if _, err := graphstore.PublishVersion(ctx, db, advID, v1.Version); err != nil {
+		t.Fatal(err)
+	}
+	if p, _ := graphstore.Published(ctx, db, advID); p.Version != v1.Version || p.Label != "First" {
+		t.Errorf("after rollback published = v%d %q", p.Version, p.Label)
+	}
+	if err := graphstore.SetLabel(ctx, db, advID, v2.Version, "Second"); err != nil {
+		t.Fatal(err)
+	}
+	vs, err := graphstore.Versions(ctx, db, advID)
+	if err != nil || len(vs) != 2 || vs[0].Label != "Second" || vs[0].Published || !vs[1].Published {
+		t.Errorf("history = %+v, %v", vs, err)
+	}
+
+	moved := linear("a")
+	moved.Nodes[1].X = 500
+	if graphstore.Differs(linear("a"), moved) {
+		t.Error("moving a card is not a change to publish")
+	}
+	if !graphstore.Differs(linear("a"), linear("b")) {
+		t.Error("a changed answer is")
+	}
+}
