@@ -217,7 +217,9 @@ export type SimAction =
   | { kind: "start" }
   | { kind: "place"; node: string }
   | { kind: "wait"; seconds: number }
-  | { kind: "move"; zone?: string };
+  | { kind: "move"; zone?: string; lat?: number; lng?: number }
+  /** Take a puzzle output without its answer — the simulator's pass. */
+  | { kind: "force"; node: string; port: string };
 
 export interface SimResponse {
   team: SimTeam | null;

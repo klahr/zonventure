@@ -458,6 +458,31 @@ export function puzzlesInto(g: Graph, slug: string): string[] {
 /** Whether a zone's shape is its polygon. Mirrors Zone.IsPolygon in Go. */
 export const isPolygon = (z: Zone) => (z.polygon?.length ?? 0) >= 3;
 
+/** Great-circle distance in metres. Mirrors session.HaversineMeters in Go. */
+export function metresBetween(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const rad = (d: number) => (d * Math.PI) / 180;
+  const dLat = rad(lat2 - lat1);
+  const dLng = rad(lng2 - lng1);
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(rad(lat1)) * Math.cos(rad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return 6371000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+/**
+ * Whether a point is inside a zone. Mirrors session.ZoneContains in Go —
+ * the server decides; this is for telling the author what it will say.
+ */
+export function zoneContains(z: Zone, lat: number, lng: number): boolean {
+  if (!isPolygon(z)) return metresBetween(lat, lng, z.lat, z.lng) <= z.radius_m;
+  const p = z.polygon!;
+  let inside = false;
+  for (let i = 0, j = p.length - 1; i < p.length; j = i++) {
+    const [yi, xi] = p[i]!;
+    const [yj, xj] = p[j]!;
+    if (yi > lat !== yj > lat && lng < ((xj - xi) * (lat - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+
 /** The zone a start stands on, if any. */
 export function startZone(g: Graph, n: Node): Zone | undefined {
   const slug = n.type === "start" ? n.start?.zone : undefined;

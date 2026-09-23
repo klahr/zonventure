@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError, play } from "@zonventure/api";
-import { nodeBySlug, portLabel, type Envelope, type Graph } from "@zonventure/graph";
+import { metresBetween, nodeBySlug, portLabel, zoneContains, type Envelope, type Graph } from "@zonventure/graph";
 import { PlayView, StartCeremony, feedbackForRefusal, feedbackForResult, formatSeconds, type Feedback } from "@zonventure/play-ui";
 import "@zonventure/play-ui/play-ui.css";
 import { useT } from "../i18n.tsx";
+import { SpoofMap, type Point } from "./SpoofMap.tsx";
 
 /**
  * Preview and test-play, in one.
@@ -54,6 +55,55 @@ interface LogLine {
   tone?: "warn";
 }
 
+/**
+ * Screens to preview on, in CSS pixels — the size the browser lays the
+ * page out at, which is what decides whether a prompt wraps or a button
+ * fits. The player is used on phones; the tablet is for a team sharing
+ * one screen.
+ */
+export const DEVICES = [
+  { id: "iphone-se", label: "iPhone SE", w: 375, h: 667 },
+  { id: "iphone", label: "iPhone 16", w: 393, h: 852 },
+  { id: "iphone-max", label: "iPhone 16 Pro Max", w: 440, h: 956 },
+  { id: "pixel", label: "Pixel 9", w: 412, h: 923 },
+  { id: "galaxy", label: "Galaxy S24", w: 360, h: 780 },
+  { id: "ipad-mini", label: "iPad mini", w: 744, h: 1133 },
+] as const;
+type DeviceId = (typeof DEVICES)[number]["id"];
+
+/** 0 is "fit": as large as the window allows, never above actual size. */
+const ZOOMS = [0, 1, 0.75, 0.5] as const;
+const BEZEL = 8;
+
+function stored<T>(key: string, ok: (v: unknown) => v is T, fallback: T): T {
+  try {
+    const v: unknown = JSON.parse(localStorage.getItem(key) ?? "null");
+    return ok(v) ? v : fallback;
+  } catch {
+    return fallback;
+  }
+}
+function keep(key: string, v: unknown) {
+  try {
+    localStorage.setItem(key, JSON.stringify(v));
+  } catch {
+    /* private mode: remembered for this visit only */
+  }
+}
+const isDevice = (v: unknown): v is DeviceId => DEVICES.some((d) => d.id === v);
+const isZoom = (v: unknown): v is number => (ZOOMS as readonly unknown[]).includes(v);
+
+/** Tracks the window height, which "fit" scales the device to. */
+function useWindowHeight(): number {
+  const [h, setH] = useState(() => window.innerHeight);
+  useEffect(() => {
+    const on = () => setH(window.innerHeight);
+    window.addEventListener("resize", on);
+    return () => window.removeEventListener("resize", on);
+  }, []);
+  return h;
+}
+
 /** Steps a player sees. The others run the moment a team reaches them. */
 const VISIBLE = new Set(["puzzle", "story", "hub", "end"]);
 
@@ -70,15 +120,23 @@ export function Simulator({ slug, graph, envelope, selected, mode, onMode, resta
   const [error, setError] = useState<string | null>(null);
   const [nonce, setNonce] = useState(0);
   const [ceremony, setCeremony] = useState(false);
+  const [deviceId, setDeviceId] = useState<DeviceId>(() => stored("zonventure.preview.device", isDevice, "iphone"));
+  const [zoom, setZoom] = useState<number>(() => stored("zonventure.preview.zoom", isZoom, 0));
+  const winH = useWindowHeight();
+  const device = DEVICES.find((d) => d.id === deviceId) ?? DEVICES[1];
+  const frameW = device.w + 2 * BEZEL;
+  const frameH = device.h + 2 * BEZEL;
+  // Room left under the designer's toolbar, less the window's title bar,
+  // padding and a margin: about 180 px.
+  const scale = zoom || Math.min(1, Math.max(0.3, (winH - 180) / frameH));
 
   // The latest draft, read at send time so a run in progress uses the
   // graph as it is now rather than as it was when the run started.
   const envRef = useRef(envelope);
   envRef.current = envelope;
-  // Read by the preview effect without re-placing the team when the
-  // author only moves it.
-  const zoneRef = useRef(zone);
-  zoneRef.current = zone;
+  // Where the author last put the team — a zone or a point on the map —
+  // read by the preview effect so re-placing on an edit keeps it there.
+  const whereRef = useRef<play.SimAction | null>(null);
   const logId = useRef(0);
 
   const say = useCallback((text: string, tone?: "warn") => {
@@ -125,8 +183,8 @@ export function Simulator({ slug, graph, envelope, selected, mode, onMode, resta
       void run({ kind: "place", node: selected }, null, ac.signal).then((r) => {
         // Keep the team where the author put it, so previewing a
         // zone-gated step does not reset to "not there" on every edit.
-        const z = zoneRef.current;
-        if (r?.team && z) void run({ kind: "move", zone: z }, r.team, ac.signal);
+        const where = whereRef.current;
+        if (r?.team && where) void run(where, r.team, ac.signal);
       });
     }, 300);
     return () => {
@@ -143,6 +201,7 @@ export function Simulator({ slug, graph, envelope, selected, mode, onMode, resta
     setFeedback(null);
     setLog([]);
     setZone("");
+    whereRef.current = null;
     const ac = new AbortController();
     void run({ kind: "start" }, null, ac.signal).then((r) => {
       if (r?.refusal) say(r.refusal.message, "warn");
@@ -162,7 +221,7 @@ export function Simulator({ slug, graph, envelope, selected, mode, onMode, resta
   // Clear the canvas marker when the simulator goes away.
   useEffect(() => () => onPosition(null), [onPosition]);
 
-  const act = async (a: play.PlayAction) => {
+  const act = async (a: play.PlayAction | Extract<play.SimAction, { kind: "force" }>) => {
     const before = view?.node;
     const r = await run(a, team);
     if (!r) return;
@@ -175,11 +234,13 @@ export function Simulator({ slug, graph, envelope, selected, mode, onMode, resta
       }
       return;
     }
-    setFeedback(feedbackForResult(a.kind, r.result, tr));
+    // A pass celebrates like the right answer it stands in for.
+    setFeedback(feedbackForResult(a.kind === "force" ? "answer" : a.kind, r.result, tr));
     const after = r.result.view.node;
     const left = before ? nodeBySlug(graph, before) : undefined;
     const port = r.result.port && left ? portLabel(left, r.result.port) : r.result.port;
     if (a.kind === "answer") say(t.t("Answered “{{guess}}”.", { guess: a.guess }));
+    if (a.kind === "force") say(t.t("Passed without answering."));
     if (r.result.port) {
       const via = (r.passed ?? []).filter((s) => s !== after).map(titleOf);
       say(
@@ -200,8 +261,29 @@ export function Simulator({ slug, graph, envelope, selected, mode, onMode, resta
     });
   };
 
+  const moveTo = (p: Point) => {
+    const zones = graph.zones ?? [];
+    const inside = zones.find((z) => zoneContains(z, p.lat, p.lng));
+    setZone(inside?.slug ?? "");
+    const where: play.SimAction = { kind: "move", lat: p.lat, lng: p.lng };
+    whereRef.current = where;
+    if (!team) return;
+    setFeedback(null);
+    // Say where that is, so a click just outside a small zone reads as
+    // "outside", not as the simulator ignoring it.
+    const need = view?.zone ?? view?.starts?.find((o) => o.zone)?.zone;
+    let text: string;
+    if (inside) text = t.t("Moved the team into {{zone}}.", { zone: inside.name || inside.slug });
+    else if (need) text = t.t("Moved the team to {{m}} m from {{zone}} — outside it.", { m: Math.round(metresBetween(p.lat, p.lng, need.lat, need.lng)), zone: need.name || need.slug });
+    else text = t.t("Moved the team outside every zone.");
+    void run(where, team).then((r) => {
+      if (r) say(text);
+    });
+  };
+
   const move = (z: string) => {
     setZone(z);
+    whereRef.current = z ? { kind: "move", zone: z } : null;
     if (!team) return;
     setFeedback(null);
     void run(z ? { kind: "move", zone: z } : { kind: "move" }, team).then((r) => {
@@ -214,74 +296,152 @@ export function Simulator({ slug, graph, envelope, selected, mode, onMode, resta
     : 0;
 
   const selectedNode = selected ? nodeBySlug(graph, selected) : undefined;
+  const pos = team?.["position"] as Point | undefined;
+  // "About N m away", as the player app says it — the same line the
+  // phone shows a real team.
+  const placeNote = (z: play.PlayZone) => {
+    if (!pos) return t.t("Put the team on the map to see how far it is.");
+    const m = metresBetween(pos.lat, pos.lng, z.lat, z.lng);
+    return m < 1000 ? t.t("About {{m}} m away", { m: Math.max(1, Math.round(m)) }) : t.t("About {{km}} km away", { km: Math.round(m / 100) / 10 });
+  };
+  const focus = view?.zone && !view.here ? view.zone : view?.starts?.find((o) => o.zone && !o.here)?.zone;
+  // The puzzle the team is on, for passing it without the answer.
+  const current = view?.type === "puzzle" && view.node && !view.finished ? nodeBySlug(graph, view.node) : undefined;
 
   return (
     <div className="sim">
-      <div className="seg sim__mode" role="group" aria-label={t.t("Preview mode")}>
-        <button type="button" className={mode === "step" ? "is-on" : ""} onClick={() => onMode("step")}>
-          {t.t("This step")}
-        </button>
-        <button type="button" className={mode === "run" ? "is-on" : ""} onClick={() => onMode("run")}>
-          {t.t("Play from start")}
-        </button>
-      </div>
+      <div className="sim__side">
+        <div className="seg sim__mode" role="group" aria-label={t.t("Preview mode")}>
+          <button type="button" className={mode === "step" ? "is-on" : ""} onClick={() => onMode("step")}>
+            {t.t("This step")}
+          </button>
+          <button type="button" className={mode === "run" ? "is-on" : ""} onClick={() => onMode("run")}>
+            {t.t("Play from start")}
+          </button>
+        </div>
 
-      <div className="sim__controls">
-        <span className="sim__clock" title={t.t("Time since the team started")}>⏱ {formatSeconds(elapsed)}</span>
-        {[60, 300, 1800].map((s) => (
-          <button key={s} type="button" className="btn btn--ghost btn--sm" disabled={!team || busy} onClick={() => wait(s)}>
-            +{s / 60} {t.t("min")}
-          </button>
-        ))}
-        {mode === "run" && (
-          <button type="button" className="btn btn--ghost btn--sm" disabled={busy} onClick={() => setNonce((n) => n + 1)}
-            aria-label={t.t("Start over")} title={t.t("Start over")}>
-            ↺
-          </button>
+        <div className="sim__device">
+          <label className="field">
+            <span className="field__label">{t.t("Device")}</span>
+            <select
+              className="field__input"
+              value={device.id}
+              onChange={(e) => {
+                setDeviceId(e.target.value as DeviceId);
+                keep("zonventure.preview.device", e.target.value);
+              }}
+            >
+              {DEVICES.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.label} · {d.w}×{d.h}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
+            <span className="field__label">{t.t("Zoom")}</span>
+            <select
+              className="field__input"
+              value={zoom}
+              onChange={(e) => {
+                const z = Number(e.target.value);
+                setZoom(z);
+                keep("zonventure.preview.zoom", z);
+              }}
+            >
+              {ZOOMS.map((z) => (
+                <option key={z} value={z}>
+                  {z === 0 ? t.t("Fit ({{pct}} %)", { pct: Math.round(scale * 100) }) : `${z * 100} %`}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        <div className="sim__controls">
+          <span className="sim__clock" title={t.t("Time since the team started")}>⏱ {formatSeconds(elapsed)}</span>
+          {[60, 300, 1800].map((s) => (
+            <button key={s} type="button" className="btn btn--ghost btn--sm" disabled={!team || busy} onClick={() => wait(s)}>
+              +{s / 60} {t.t("min")}
+            </button>
+          ))}
+          {mode === "run" && (
+            <button type="button" className="btn btn--ghost btn--sm" disabled={busy} onClick={() => setNonce((n) => n + 1)}
+              aria-label={t.t("Start over")} title={t.t("Start over")}>
+              ↺
+            </button>
+          )}
+        </div>
+
+        <label className="field sim__where">
+          <span className="field__label">{t.t("Team is at")}</span>
+          <select className="field__input" value={zone} disabled={!team || busy} onChange={(e) => move(e.target.value)}>
+            <option value="">{t.t("Nowhere in particular")}</option>
+            {(graph.zones ?? []).map((z) => (
+              <option key={z.slug} value={z.slug}>
+                {z.name || z.slug}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <SpoofMap zones={graph.zones ?? []} position={pos ?? null} focus={focus} onPick={moveTo} disabled={!team || busy} />
+
+        {current?.puzzle?.outputs?.length ? (
+          <div className="sim__pass">
+            <span className="field__label">{t.t("Get past it")}</span>
+            <span className="field__hint">{t.t("Leave by an output without the answer — for a QR code you can't scan, or a place you're not at.")}</span>
+            {current.puzzle.outputs.map((o) => (
+              <button key={o.port} type="button" className="btn btn--ghost btn--sm" disabled={busy} onClick={() => void act({ kind: "force", node: current.slug, port: o.port })}>
+                {t.t("Pass: {{port}}", { port: portLabel(current, o.port) })}
+              </button>
+            ))}
+          </div>
+        ) : null}
+
+        {error && <div className="alert alert--danger">{error}</div>}
+
+        {log.length > 0 && (
+          <ol className="sim__log" aria-label={t.t("What happened")}>
+            {log.map((l) => (
+              <li key={l.id} className={l.tone === "warn" ? "is-warn" : ""}>
+                {l.text}
+              </li>
+            ))}
+          </ol>
         )}
       </div>
 
-      <label className="field field--inline sim__where">
-        <span className="field__label">{t.t("Team is at")}</span>
-        <select className="field__input" value={zone} disabled={!team || busy} onChange={(e) => move(e.target.value)}>
-          <option value="">{t.t("Nowhere in particular")}</option>
-          {(graph.zones ?? []).map((z) => (
-            <option key={z.slug} value={z.slug}>
-              {z.name || z.slug}
-            </option>
-          ))}
-        </select>
-      </label>
-
-      {error && <div className="alert alert--danger">{error}</div>}
-
-      {/* The frame's transform makes it the containing block for the
-          step's fixed overlays — confetti and sheets cover the phone,
-          not the designer. */}
-      <div className="phone" aria-label={t.t("What the team sees")}>
-        <div className="phone__screen">
-          {view ? (
-            <PlayView view={view} onAction={(a) => void act(a)} busy={busy} feedback={feedback} live={false} t={tr} brand={brand} />
-          ) : (
-            <p className="phone__empty">
-              {mode === "step" && selectedNode && !VISIBLE.has(selectedNode.type)
-                ? t.t("Teams never see this step. It happens the moment they reach it, and they carry on.")
-                : t.t("Select a puzzle, story or hub to see it as a team will.")}
-            </p>
-          )}
+      {/* Laid out at the device's real size, then scaled: the step wraps
+          and fits exactly as on the device, only smaller. The scale also
+          makes the frame the containing block for the step's fixed
+          overlays — confetti and sheets cover the phone, not the designer. */}
+      <div className="phone-fit" style={{ width: frameW * scale, height: frameH * scale }}>
+        <div className="phone" aria-label={t.t("What the team sees")} style={{ width: frameW, height: frameH, transform: `scale(${scale})` }}>
+          <div className="phone__screen">
+            {view ? (
+              <PlayView
+                view={view}
+                onAction={(a) => void act(a)}
+                busy={busy}
+                feedback={feedback}
+                live={false}
+                t={tr}
+                brand={brand}
+                placeNote={placeNote}
+                {...(view.zone && !view.here ? { zoneNote: placeNote(view.zone) } : {})}
+              />
+            ) : (
+              <p className="phone__empty">
+                {mode === "step" && selectedNode && !VISIBLE.has(selectedNode.type)
+                  ? t.t("Teams never see this step. It happens the moment they reach it, and they carry on.")
+                  : t.t("Select a puzzle, story or hub to see it as a team will.")}
+              </p>
+            )}
+          </div>
+          {ceremony && <StartCeremony title={title} brand={brand} onDone={() => setCeremony(false)} />}
         </div>
-        {ceremony && <StartCeremony title={title} brand={brand} onDone={() => setCeremony(false)} />}
       </div>
-
-      {log.length > 0 && (
-        <ol className="sim__log" aria-label={t.t("What happened")}>
-          {log.map((l) => (
-            <li key={l.id} className={l.tone === "warn" ? "is-warn" : ""}>
-              {l.text}
-            </li>
-          ))}
-        </ol>
-      )}
     </div>
   );
 }

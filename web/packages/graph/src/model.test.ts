@@ -2,6 +2,7 @@ import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
+  zoneContains,
   answerOptions,
   appendStep,
   referAnswer,
@@ -253,4 +254,13 @@ test("a crossroads reference follows the answer through a spelling fix", () => {
   }));
   assert.equal(resolveAnswer(g, ref)?.label, "north");
   assert.equal(referAnswer(g, answerOptions(g, "q")[0]!).graph, g, "an answer with an id is left alone");
+});
+
+test("zoneContains matches the server's circle and polygon tests", () => {
+  const circle = { slug: "c", lat: 59.3, lng: 18.0, radius_m: 10 };
+  assert.equal(zoneContains(circle, 59.30005, 18.0), true); // ~5.6 m
+  assert.equal(zoneContains(circle, 59.3002, 18.0), false); // ~22 m
+  const square = { slug: "s", lat: 0, lng: 0, radius_m: 0, polygon: [[0, 0], [0, 1], [1, 1], [1, 0]] as [number, number][] };
+  assert.equal(zoneContains(square, 0.5, 0.5), true);
+  assert.equal(zoneContains(square, 1.5, 0.5), false);
 });

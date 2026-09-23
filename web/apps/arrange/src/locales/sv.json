@@ -125,5 +125,19 @@
   "Member": "Medlem",
   "Expand sidebar": "Visa sidopanelen",
   "Collapse sidebar": "Fäll ihop sidopanelen",
-  "Account menu": "Kontomeny"
+  "Account menu": "Kontomeny",
+  "Device": "Enhet",
+  "Zoom": "Zoom",
+  "Fit ({{pct}} %)": "Anpassa ({{pct}} %)",
+  "Get past it": "Ta dig förbi",
+  "Leave by an output without the answer — for a QR code you can't scan, or a place you're not at.": "Gå vidare via en utgång utan svaret – för en QR-kod du inte kan skanna, eller en plats du inte är vid.",
+  "Pass: {{port}}": "Förbi: {{port}}",
+  "Passed without answering.": "Gick förbi utan att svara.",
+  "Click the map or drag the pin to move the team.": "Klicka på kartan eller dra nålen för att flytta laget.",
+  "Moved the team into {{zone}}.": "Flyttade laget in i {{zone}}.",
+  "Moved the team to {{m}} m from {{zone}} — outside it.": "Flyttade laget till {{m}} m från {{zone}} – utanför.",
+  "Moved the team outside every zone.": "Flyttade laget utanför alla zoner.",
+  "Put the team on the map to see how far it is.": "Sätt laget på kartan för att se hur långt det är.",
+  "About {{m}} m away": "Cirka {{m}} m bort",
+  "About {{km}} km away": "Cirka {{km}} km bort"
 }

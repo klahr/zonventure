@@ -595,6 +595,47 @@ func (t *Team) Skip(node string) (Result, *walk.Step, error) {
 	return Result{Port: o.Port}, step, err
 }
 
+// ForceSolve takes a puzzle output as though the team had earned it,
+// for an author testing a route without the answer to hand — a QR code
+// at a signpost they are not standing by, say. It skips the zone,
+// lockout and time-limit checks; that is the point of it. An answer
+// output counts as solved with full points and records its first answer,
+// so a crossroads further on routes as it would after a real one.
+//
+// Only the simulator calls it. A live force-solve must also be audited,
+// which is the caller's job, not this package's.
+func (t *Team) ForceSolve(node, port string) (Result, *walk.Step, error) {
+	n, err := t.current(node)
+	if err != nil {
+		return Result{}, nil, err
+	}
+	if n.Type != graph.Puzzle || n.PuzzleCfg == nil {
+		return Result{}, nil, ErrWrongNode
+	}
+	for _, o := range n.PuzzleCfg.Outputs {
+		if o.Port != port {
+			continue
+		}
+		points := 0.0
+		if o.Trigger == graph.OnAnswer {
+			r := t.Row(n.Slug)
+			r.Solved = true
+			if len(o.Matchers) > 0 {
+				m := o.Matchers[0]
+				r.Answer, r.MatchID = m.Value, m.ID
+				t.LatestAnswer = r.Answer
+			}
+			points = float64(o.Points)
+		}
+		step, err := t.leave(n, o.Port, points)
+		if err != nil {
+			return Result{}, nil, err
+		}
+		return Result{Accepted: o.Trigger == graph.OnAnswer, Port: o.Port, Points: points}, step, nil
+	}
+	return Result{}, nil, ErrNotAllowed
+}
+
 // Timeout takes a puzzle's timeout output once its limit has passed.
 // The client calls it when its countdown reaches zero; this re-checks
 // the time rather than trusting the client.

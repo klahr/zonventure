@@ -53,6 +53,7 @@ import { Inspector } from "./Inspector.tsx";
 import { ListView } from "./ListView.tsx";
 import { Resources } from "./Resources.tsx";
 import { Simulator, type SimMode } from "./Simulator.tsx";
+import { FloatingWindow } from "./FloatingWindow.tsx";
 import { Look } from "./Look.tsx";
 import { AdventureSlug } from "./MediaEditor.tsx";
 import { CanvasContextMenu, type ContextMenuItem } from "./dz/CanvasContextMenu.tsx";
@@ -73,7 +74,7 @@ type Published = { version: number; label?: string } | null;
 type Preview = { version: number; graph: Graph };
 
 /** What the right-hand slot shows, dazyflow-style: one slot, many uses. */
-type Slot = "inspect" | "history" | "play";
+type Slot = "inspect" | "history";
 
 type PublishAsk = { kind: "first" | "update" } | { kind: "rollback"; version: number };
 
@@ -129,6 +130,9 @@ export function Designer({ slug }: { slug: string }) {
   const [simMode, setSimMode] = useState<SimMode>("step");
   const [simRestart, setSimRestart] = useState(0);
   const [playing, setPlaying] = useState<string | null>(null);
+  // The preview floats beside the inspector, so a step can be edited and
+  // watched at once.
+  const [previewing, setPreviewing] = useState(false);
   const [listView, setListView] = useState(false);
   const [paletteRequest, setPaletteRequest] = useState(0);
   const [focusRequest, setFocusRequest] = useState(0);
@@ -581,7 +585,7 @@ export function Designer({ slug }: { slug: string }) {
                 onClick={() => {
                   setSimMode("run");
                   setSimRestart((n) => n + 1);
-                  setSlot("play");
+                  setPreviewing(true);
                 }}
                 title={t.t("Play the draft from the start, as a team")}
               >
@@ -665,7 +669,7 @@ export function Designer({ slug }: { slug: string }) {
                 steps={steps!}
                 issues={issues}
                 selected={selected}
-                playing={slot === "play" ? playing : null}
+                playing={previewing ? playing : null}
                 onChange={change}
                 onSelect={setSelected}
                 onOpenCanvas={() => setListView(false)}
@@ -677,7 +681,7 @@ export function Designer({ slug }: { slug: string }) {
                 graph={graph}
                 issues={preview ? [] : issues}
                 selected={selected}
-                playing={slot === "play" ? playing : null}
+                playing={previewing ? playing : null}
                 onChange={change}
                 onSelect={(s) => {
                   setSelected(s);
@@ -706,29 +710,6 @@ export function Designer({ slug }: { slug: string }) {
               onLabel={setLabelEditing}
               onMakeLive={(v) => (v.label ? void doPublish({ kind: "rollback", version: v.version }, "") : setPublishAsk({ kind: "rollback", version: v.version }))}
             />
-          ) : slot === "play" ? (
-            <>
-              <div className="panel-head">
-                <span>{t.t("Preview")}</span>
-                <Button variant="ghost" size="icon" className="inspector-close" onClick={() => setSlot("inspect")} aria-label={t.t("Close")} title={t.t("Close")}>
-                  <X size={ICON.md} />
-                </Button>
-              </div>
-              <div className="inspector-body">
-                <Simulator
-                  slug={slug}
-                  graph={draft!}
-                  envelope={simEnvelope!}
-                  selected={selected}
-                  mode={simMode}
-                  onMode={setSimMode}
-                  restart={simRestart}
-                  onPosition={setPlaying}
-                  brand={brand}
-                  title={adventureTitle}
-                />
-              </div>
-            </>
           ) : node ? (
             <AdventureSlug.Provider value={slug}>
               <Inspector
@@ -742,7 +723,7 @@ export function Designer({ slug }: { slug: string }) {
                 onClose={() => setSelected(null)}
                 onPreview={() => {
                   setSimMode("step");
-                  setSlot("play");
+                  setPreviewing(true);
                 }}
                 onDelete={() => {
                   change(removeNode(graph, node.slug));
@@ -753,6 +734,23 @@ export function Designer({ slug }: { slug: string }) {
           ) : null}
         </div>
       </div>
+
+      {previewing && (
+        <FloatingWindow title={t.t("Preview")} storageKey="zonventure.preview.pos" onClose={() => setPreviewing(false)}>
+          <Simulator
+            slug={slug}
+            graph={draft!}
+            envelope={simEnvelope!}
+            selected={selected}
+            mode={simMode}
+            onMode={setSimMode}
+            restart={simRestart}
+            onPosition={setPlaying}
+            brand={brand}
+            title={adventureTitle}
+          />
+        </FloatingWindow>
+      )}
 
       {kebab && <CanvasContextMenu x={kebab.x} y={kebab.y} items={kebabItems} onClose={() => setKebab(null)} />}
 

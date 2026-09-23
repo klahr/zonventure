@@ -34,7 +34,7 @@ const maxSimulateWait = 24 * 60 * 60
 
 type simulateAction struct {
 	// Kind is start, place, begin, answer, continue, choose, skip, timeout,
-	// hint, wait or move.
+	// hint, force, wait or move.
 	Kind  string `json:"kind"`
 	Node  string `json:"node,omitempty"`
 	Guess string `json:"guess,omitempty"`
@@ -44,6 +44,9 @@ type simulateAction struct {
 	Seconds int `json:"seconds,omitempty"`
 	// Zone is where move puts the team; empty means nowhere.
 	Zone string `json:"zone,omitempty"`
+	// Lat and Lng put the team at a point instead, as picked on a map.
+	Lat *float64 `json:"lat,omitempty"`
+	Lng *float64 `json:"lng,omitempty"`
 }
 
 type simulateRequest struct {
@@ -152,6 +155,8 @@ func simulate(g *graph.Graph, team *session.Team, a simulateAction, now time.Tim
 		res, step, err = team.Skip(a.Node)
 	case "timeout":
 		res, step, err = team.Timeout(a.Node)
+	case "force":
+		res, step, err = team.ForceSolve(a.Node, a.Port)
 	case "hint":
 		res, step, err = team.RevealHint(a.Node, a.Index)
 	case "wait":
@@ -161,7 +166,12 @@ func simulate(g *graph.Graph, team *session.Team, a simulateAction, now time.Tim
 		team.Now = team.Now.Add(time.Duration(a.Seconds) * time.Second)
 	case "move":
 		team.Position = nil
-		if a.Zone != "" {
+		if a.Lat != nil && a.Lng != nil {
+			if *a.Lat < -90 || *a.Lat > 90 || *a.Lng < -180 || *a.Lng > 180 {
+				return simulateResponse{}, http.StatusBadRequest, "position is off the globe"
+			}
+			team.Position = &session.Position{Lat: *a.Lat, Lng: *a.Lng}
+		} else if a.Zone != "" {
 			found := false
 			for _, z := range g.Zones {
 				if z.Slug == a.Zone {

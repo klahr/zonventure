@@ -13,7 +13,7 @@ import { useT } from "../i18n.tsx";
  */
 type MapLib = typeof import("maplibre-gl");
 let loading: Promise<MapLib> | null = null;
-function loadMapLibre(): Promise<MapLib> {
+export function loadMapLibre(): Promise<MapLib> {
   // MapLibre looks for its worker beside its own module, which bundling
   // moves; point it at the worker Vite builds instead.
   loading ??= Promise.all([import("maplibre-gl"), import("maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url"), import("maplibre-gl/dist/maplibre-gl.css")]).then(
@@ -25,7 +25,7 @@ function loadMapLibre(): Promise<MapLib> {
   return loading;
 }
 
-const STYLE = {
+export const STYLE = {
   version: 8 as const,
   sources: {
     osm: {
@@ -51,7 +51,7 @@ function circleRing(z: Zone): [number, number][] {
 }
 
 /** The zone as GeoJSON, in MapLibre's [lng, lat] order. */
-function shape(z: Zone) {
+export function shape(z: Zone) {
   const poly = z.polygon ?? [];
   const ring: [number, number][] =
     poly.length >= 3 ? [...poly.map(([la, ln]) => [ln, la] as [number, number]), [poly[0]![1], poly[0]![0]]] : poly.length ? poly.map(([la, ln]) => [ln, la] as [number, number]) : circleRing(z);

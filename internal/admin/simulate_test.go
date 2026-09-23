@@ -125,3 +125,34 @@ func TestSimulateMoveAndPlace(t *testing.T) {
 		t.Errorf("placing on a missing node should be a 400, got %d", status)
 	}
 }
+
+// Passing a puzzle takes the chosen output without its answer, and a
+// map pick puts the team at a point rather than a zone's centre.
+func TestSimulateForceAndPoint(t *testing.T) {
+	r := sim(t, nil, simulateAction{Kind: "start"})
+	r = sim(t, r.Team, simulateAction{Kind: "force", Node: "riddle", Port: "left"})
+	if !r.Result.View.Finished || r.Result.View.Score != 10 {
+		t.Fatalf("forcing left should finish with its points: %+v", r.Result)
+	}
+
+	r = sim(t, nil, simulateAction{Kind: "start"})
+	r = sim(t, r.Team, simulateAction{Kind: "force", Node: "riddle", Port: "nope"})
+	if r.Refuse == nil || r.Refuse.Code != "not_allowed" {
+		t.Errorf("forcing a port the puzzle lacks should be refused, got %+v", r.Refuse)
+	}
+
+	near, far := 59.30005, 59.31
+	lng := 18.0
+	r = sim(t, r.Team, simulateAction{Kind: "move", Lat: &near, Lng: &lng})
+	if !r.Team.InZone("square") {
+		t.Error("a point 5 m from the centre should be in the square")
+	}
+	r = sim(t, r.Team, simulateAction{Kind: "move", Lat: &far, Lng: &lng})
+	if r.Team.Position == nil || r.Team.InZone("square") {
+		t.Error("a point a kilometre off should be placed, but outside the square")
+	}
+	bad := 91.0
+	if _, status, _ := simulate(simGraph(), roundTrip(t, r.Team), simulateAction{Kind: "move", Lat: &bad, Lng: &lng}, simT0); status != http.StatusBadRequest {
+		t.Errorf("a latitude off the globe should be a 400, got %d", status)
+	}
+}
