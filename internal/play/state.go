@@ -124,14 +124,14 @@ func (e *Engine) loadCore(ctx context.Context, q Querier, teamID int64, forUpdat
 	)
 	query := `
 		SELECT event_id, graph_id, current_node, node_entered_at, started_at,
-		       completed_at, outcome, score, penalty_score, penalty_seconds, theme, last_answer
+		       completed_at, outcome, score, penalty_score, penalty_seconds, theme, last_answer, timed_out, lang
 		FROM team_graph_state
 		WHERE team_id = $1`
 	if forUpdate {
 		query += ` FOR UPDATE`
 	}
 	err := q.QueryRowContext(ctx, query, teamID).Scan(&s.eventID, &s.graphID, &current, &entered, &s.StartedAt,
-		&completed, &outcome, &s.Points, &s.PenaltyScore, &s.PenaltySeconds, &s.Theme, &s.LatestAnswer)
+		&completed, &outcome, &s.Points, &s.PenaltyScore, &s.PenaltySeconds, &s.Theme, &s.LatestAnswer, &s.TimedOut, &s.Lang)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNoGraph
 	}
@@ -185,8 +185,11 @@ func (s *teamState) loadRest(ctx context.Context, q Querier) error {
 		func(k string, v float64) { s.Items[k] = int(v) }); err != nil {
 		return err
 	}
-	if err := scanPairs(ctx, q, `SELECT entry, 1 FROM team_journal WHERE team_id = $1`, s.teamID,
-		func(k string, _ float64) { s.Journal[k] = true }); err != nil {
+	if err := scanPairs(ctx, q, `SELECT entry, 1 FROM team_journal WHERE team_id = $1 ORDER BY unlocked_at, entry`, s.teamID,
+		func(k string, _ float64) {
+			s.Journal[k] = true
+			s.JournalOrder = append(s.JournalOrder, k)
+		}); err != nil {
 		return err
 	}
 	if err := scanPairs(ctx, q, `SELECT counter, value FROM event_counters WHERE event_id = $1`, s.eventID,

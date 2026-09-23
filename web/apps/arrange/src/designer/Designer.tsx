@@ -50,6 +50,7 @@ import { useT } from "../i18n.tsx";
 import { href } from "../router.ts";
 import { Canvas, cardSizes } from "./Canvas.tsx";
 import { Inspector } from "./Inspector.tsx";
+import { LanguageSwitch, LanguagesSettings, TranslateStep, mainLanguage, translationLanguages } from "./Translate.tsx";
 import { ListView } from "./ListView.tsx";
 import { Resources } from "./Resources.tsx";
 import { Simulator, type SimMode } from "./Simulator.tsx";
@@ -149,6 +150,11 @@ export function Designer({ slug }: { slug: string }) {
   // What the canvas shows: an older version while previewing, else the draft.
   const graph = preview?.graph ?? draft;
   const readOnly = !!preview;
+  // The language the author is editing the text in; the main one edits
+  // everything, another only its translations.
+  const [editLangPick, setEditLang] = useState("");
+  const editLang = graph && translationLanguages(graph).includes(editLangPick) ? editLangPick : graph ? mainLanguage(graph) : "sv";
+  const translating = !!graph && editLang !== mainLanguage(graph);
 
   // --- load -------------------------------------------------------------------
 
@@ -511,6 +517,8 @@ export function Designer({ slug }: { slug: string }) {
               </div>
             </div>
 
+            {graph && <LanguageSwitch graph={graph} value={editLang} onChange={setEditLang} />}
+
             <Button variant="ghost" data-tidy="toolbar" disabled={readOnly} onClick={() => change(tidy(graph, cardSizes()))} title={t.t("Auto-arrange the adventure into clean columns")}>
               <LayoutGrid size={ICON.sm} aria-hidden="true" />
               <span className="toolbar-label">{t.t("Tidy")}</span>
@@ -710,6 +718,8 @@ export function Designer({ slug }: { slug: string }) {
               onLabel={setLabelEditing}
               onMakeLive={(v) => (v.label ? void doPublish({ kind: "rollback", version: v.version }, "") : setPublishAsk({ kind: "rollback", version: v.version }))}
             />
+          ) : node && translating ? (
+            <TranslateStep node={node} graph={graph} lang={editLang} onGraphChange={change} onClose={() => setSelected(null)} readOnly={readOnly} />
           ) : node ? (
             <AdventureSlug.Provider value={slug}>
               <Inspector
@@ -801,7 +811,10 @@ export function Designer({ slug }: { slug: string }) {
       {settingsOpen && (
         <PanelModal title={t.t("Adventure settings")} wide onClose={() => setSettingsOpen(false)}>
           <div className="dz-settings">
-            <Resources graph={graph} onChange={change} />
+            <AdventureSlug.Provider value={slug}>
+              <Resources graph={graph} onChange={change} />
+            </AdventureSlug.Provider>
+            <LanguagesSettings graph={graph} onChange={change} editing={editLang} onEditing={setEditLang} />
             <Look
               brand={brand}
               dirty={brandDirty}

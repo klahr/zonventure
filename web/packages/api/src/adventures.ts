@@ -110,6 +110,7 @@ interface AdventureEdit {
   background_color: string;
   text_color: string;
   submit_bg_color: string;
+  font?: string;
 }
 
 /**
@@ -125,6 +126,7 @@ export async function getLook(slug: string, signal?: AbortSignal): Promise<{ tit
   if (a.background_color) b.background = a.background_color;
   if (a.text_color) b.text = a.text_color;
   if (a.submit_bg_color) b.submit_bg = a.submit_bg_color;
+  if (a.font) b.font = a.font;
   return { title: a.title, brand: b };
 }
 
@@ -136,6 +138,7 @@ export const saveBrand = (slug: string, b: Brand) =>
     background_color: b.background ?? "",
     text_color: b.text ?? "",
     submit_bg_color: b.submit_bg ?? "",
+    font: b.font ?? "",
   });
 
 // --- media -----------------------------------------------------------------

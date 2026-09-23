@@ -37,8 +37,9 @@ import {
   type Graph,
   type Issue,
   type Size,
+  type Frame,
 } from "@zonventure/graph";
-import { LayoutGrid } from "lucide-react";
+import { Frame as FrameIcon, LayoutGrid } from "lucide-react";
 import { useT } from "../i18n.tsx";
 import { CanvasContextMenu, type ContextMenuItem } from "./dz/CanvasContextMenu.tsx";
 import { ICON } from "./dz/ui.tsx";
@@ -54,9 +55,15 @@ function copyNode(g: Graph, n: GraphNode, dx = 40, dy = 40): GraphNode {
   return { ...structuredClone(n), slug: freshSlug(g, n.type), x: (n.x ?? 0) + dx, y: (n.y ?? 0) + dy };
 }
 import { NodeCard, type CardNode } from "./NodeCard.tsx";
+import { FrameCard, FRAME_COLOR_DEFAULT, type FrameNode } from "./FrameCard.tsx";
 import { QuickPalette, type PaletteChoice } from "./QuickPalette.tsx";
 
-const nodeTypes = { zv: NodeCard };
+const nodeTypes = { zv: NodeCard, frame: FrameCard };
+
+/** Frames live beside the steps in React Flow; their ids never clash with a slug. */
+const FRAME_PREFIX = "frame:";
+const isFrameID = (id: string) => id.startsWith(FRAME_PREFIX);
+type AnyNode = CardNode | FrameNode;
 
 interface Props {
   graph: Graph;
@@ -112,6 +119,10 @@ export function Canvas({ graph, issues, selected, onChange, onSelect, paletteReq
   const t = useT();
   const [menu, setMenu] = useState<{ x: number; y: number; items: ContextMenuItem[] } | null>(null);
   const [nodes, setNodes] = useState<CardNode[]>([]);
+  const [frameNodes, setFrameNodes] = useState<FrameNode[]>([]);
+  // The steps a frame carries along while it is dragged, and where each
+  // started; taken when the drag begins.
+  const frameDrag = useRef<{ id: string; x: number; y: number; members: { id: string; x: number; y: number }[] } | null>(null);
   const [edges, setEdges] = useState<RFEdge[]>([]);
   const [palette, setPalette] = useState<{ from: DragFrom | null; screen: { x: number; y: number } } | null>(null);
   const [hint, setHint] = useState<string | null>(null);
@@ -167,6 +178,63 @@ export function Canvas({ graph, issues, selected, onChange, onSelect, paletteReq
     );
   }, [graph, issuesBySlug, selected, playing]);
 
+  // Frames: the document's boxes, behind every card.
+  const graphRefForFrames = useRef(graph);
+  graphRefForFrames.current = graph;
+  const setFrame = useCallback(
+    (id: string, patch: Partial<Frame> | null) => {
+      const g = graphRefForFrames.current;
+      const frames = (g.frames ?? []).flatMap((f) => (f.id !== id ? [f] : patch ? [{ ...f, ...patch }] : []));
+      onChange({ ...g, frames });
+    },
+    [onChange],
+  );
+  useEffect(() => {
+    setFrameNodes((prev) =>
+      (graph.frames ?? []).map((f) => {
+        const id = FRAME_PREFIX + f.id;
+        const old = prev.find((p) => p.id === id);
+        return {
+          id,
+          type: "frame" as const,
+          position: { x: f.x, y: f.y },
+          width: f.width,
+          height: f.height,
+          zIndex: -1,
+          connectable: false,
+          selected: old?.selected ?? false,
+          data: {
+            ...(f.title ? { title: f.title } : {}),
+            color: f.color || FRAME_COLOR_DEFAULT,
+            onTitleChange: (title: string) => setFrame(f.id, { title }),
+            onColorChange: (color: string) => setFrame(f.id, { color }),
+            onRequestDelete: () => setFrame(f.id, null),
+          },
+        };
+      }),
+    );
+  }, [graph.frames, setFrame]);
+
+  /** Wrap the selected steps in a frame, or drop an empty one in view. */
+  const addFrame = () => {
+    const picked = rf.getNodes().filter((n) => n.selected && !isFrameID(n.id));
+    let box: { x: number; y: number; width: number; height: number };
+    if (picked.length) {
+      const pad = 40;
+      const xs = picked.flatMap((n) => [n.position.x, n.position.x + (n.measured?.width ?? 240)]);
+      const ys = picked.flatMap((n) => [n.position.y, n.position.y + (n.measured?.height ?? 110)]);
+      box = { x: Math.min(...xs) - pad, y: Math.min(...ys) - pad - 24, width: Math.max(...xs) - Math.min(...xs) + 2 * pad, height: Math.max(...ys) - Math.min(...ys) + 2 * pad + 24 };
+    } else {
+      const r = wrapper.current?.getBoundingClientRect();
+      const c = rf.screenToFlowPosition({ x: (r?.left ?? 0) + (r?.width ?? 800) / 2, y: (r?.top ?? 0) + (r?.height ?? 600) / 2 });
+      box = { x: c.x - 240, y: c.y - 160, width: 480, height: 320 };
+    }
+    const used = new Set((graph.frames ?? []).map((f) => f.id));
+    let n = (graph.frames?.length ?? 0) + 1;
+    while (used.has(`f${n}`)) n++;
+    onChange({ ...graph, frames: [...(graph.frames ?? []), { id: `f${n}`, title: "", ...box }] });
+  };
+
   useEffect(() => {
     setEdges((prev) => {
       const selectedIDs = new Set(prev.filter((e) => e.selected).map((e) => e.id));
@@ -187,9 +255,48 @@ export function Canvas({ graph, issues, selected, onChange, onSelect, paletteReq
   }, [graph.edges, issues]);
 
   const onNodesChange = useCallback(
-    (changes: NodeChange<CardNode>[]) => {
-      setNodes((ns) => applyNodeChanges(changes, ns));
+    (all: NodeChange<AnyNode>[]) => {
+      const frameChanges = all.filter((c) => "id" in c && isFrameID(c.id)) as NodeChange<FrameNode>[];
+      const changes = all.filter((c) => !("id" in c && isFrameID(c.id))) as NodeChange<CardNode>[];
       let next = graph;
+      if (frameChanges.length) {
+        setFrameNodes((fs) => applyNodeChanges(frameChanges, fs));
+        for (const c of frameChanges) {
+          if (!("id" in c)) continue;
+          const fid = c.id.slice(FRAME_PREFIX.length);
+          const f = (next.frames ?? []).find((x) => x.id === fid);
+          if (!f) continue;
+          if (c.type === "position" && c.position) {
+            // A frame carries the steps whose centre is inside it.
+            if (c.dragging && !frameDrag.current) {
+              const inside = nodes.filter((n) => {
+                const cx = n.position.x + (n.measured?.width ?? 240) / 2;
+                const cy = n.position.y + (n.measured?.height ?? 110) / 2;
+                return cx >= f.x && cx <= f.x + f.width && cy >= f.y && cy <= f.y + f.height;
+              });
+              frameDrag.current = { id: c.id, x: f.x, y: f.y, members: inside.map((n) => ({ id: n.id, x: n.position.x, y: n.position.y })) };
+            }
+            const drag = frameDrag.current?.id === c.id ? frameDrag.current : null;
+            const dx = c.position.x - (drag?.x ?? f.x);
+            const dy = c.position.y - (drag?.y ?? f.y);
+            if (drag) {
+              const at = new Map(drag.members.map((m) => [m.id, m]));
+              setNodes((ns) => ns.map((n) => (at.has(n.id) ? { ...n, position: { x: at.get(n.id)!.x + dx, y: at.get(n.id)!.y + dy } } : n)));
+            }
+            if (c.dragging === false || c.dragging === undefined) {
+              next = { ...next, frames: (next.frames ?? []).map((x) => (x.id === fid ? { ...x, x: c.position!.x, y: c.position!.y } : x)) };
+              if (drag) {
+                for (const m of drag.members) next = moveNode(next, m.id, m.x + dx, m.y + dy);
+                frameDrag.current = null;
+              }
+            }
+          }
+          if (c.type === "dimensions" && c.dimensions && c.resizing === false) {
+            next = { ...next, frames: (next.frames ?? []).map((x) => (x.id === fid ? { ...x, width: c.dimensions!.width, height: c.dimensions!.height } : x)) };
+          }
+        }
+      }
+      setNodes((ns) => applyNodeChanges(changes, ns));
       for (const c of changes) {
         // Commit a position only when the drag ends, so a drag is one
         // document change (and one undo step) rather than hundreds.
@@ -208,9 +315,11 @@ export function Canvas({ graph, issues, selected, onChange, onSelect, paletteReq
   }, []);
 
   const onNodesDelete = useCallback(
-    (deleted: CardNode[]) => {
+    (deleted: AnyNode[]) => {
       let next = graph;
-      for (const n of deleted) next = removeNode(next, n.id);
+      const gone = new Set(deleted.filter((n) => isFrameID(n.id)).map((n) => n.id.slice(FRAME_PREFIX.length)));
+      if (gone.size) next = { ...next, frames: (next.frames ?? []).filter((f) => !gone.has(f.id)) };
+      for (const n of deleted) if (!isFrameID(n.id)) next = removeNode(next, n.id);
       onChange(next);
       onSelect(null);
     },
@@ -322,8 +431,11 @@ export function Canvas({ graph, issues, selected, onChange, onSelect, paletteReq
   );
 
   const onNodeContextMenu = useCallback(
-    (e: React.MouseEvent, n: CardNode) => {
+    (e: React.MouseEvent, any: AnyNode) => {
       e.preventDefault();
+      // A frame has its own tools; the step menu does not apply to it.
+      if (any.type !== "zv") return;
+      const n = any as CardNode;
       onSelect(n.id);
       const isStart = n.data.node.type === "start" && graph.nodes.filter((x) => x.type === "start").length === 1;
       setMenu({
@@ -459,7 +571,7 @@ export function Canvas({ graph, issues, selected, onChange, onSelect, paletteReq
   return (
     <div className="dz-flow" ref={wrapper} onDoubleClick={onDoubleClick}>
       <ReactFlow
-        nodes={nodes}
+        nodes={[...frameNodes, ...nodes] as AnyNode[]}
         edges={edges}
         nodeTypes={nodeTypes}
         onNodesChange={onNodesChange}
@@ -487,6 +599,9 @@ export function Canvas({ graph, issues, selected, onChange, onSelect, paletteReq
         <Controls showInteractive={false}>
           <ControlButton onClick={() => onChange(tidy(graph, cardSizes()))} title={t.t("Tidy")} aria-label={t.t("Tidy")}>
             <LayoutGrid size={ICON.sm} />
+          </ControlButton>
+          <ControlButton onClick={addFrame} title={t.t("Group the selected steps in a frame")} aria-label={t.t("Add a frame")}>
+            <FrameIcon size={ICON.sm} />
           </ControlButton>
         </Controls>
         <MiniMap pannable zoomable className="dz-minimap canvas__minimap" />

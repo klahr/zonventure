@@ -68,7 +68,7 @@ function centroid(p: [number, number][]): [number, number] {
   return [p.reduce((s, q) => s + q[0], 0) / n, p.reduce((s, q) => s + q[1], 0) / n];
 }
 
-export function ZoneMap({ zone, onChange }: { zone: Zone; onChange: (z: Zone) => void }) {
+export function ZoneMap({ zone, onChange, areaOnly, maxCorners }: { zone: Zone; onChange: (z: Zone) => void; areaOnly?: boolean; maxCorners?: number }) {
   const t = useT();
   const box = useRef<HTMLDivElement>(null);
   const mapRef = useRef<import("maplibre-gl").Map | null>(null);
@@ -81,7 +81,9 @@ export function ZoneMap({ zone, onChange }: { zone: Zone; onChange: (z: Zone) =>
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false);
   // Local, not derived: an area with no corners yet is still being drawn.
-  const [polygonMode, setPolygonMode] = useState((zone.polygon?.length ?? 0) > 0);
+  const [polygonMode, setPolygonMode] = useState(areaOnly || (zone.polygon?.length ?? 0) > 0);
+  const maxRef = useRef(maxCorners);
+  maxRef.current = maxCorners;
   const modeRef = useRef(polygonMode);
   modeRef.current = polygonMode;
 
@@ -104,6 +106,7 @@ export function ZoneMap({ zone, onChange }: { zone: Zone; onChange: (z: Zone) =>
         map.on("click", (e) => {
           if (!modeRef.current) return;
           const z = zoneRef.current;
+          if (maxRef.current && (z.polygon?.length ?? 0) >= maxRef.current) return;
           const polygon = [...(z.polygon ?? []), [e.lngLat.lat, e.lngLat.lng] as [number, number]];
           const [lat, lng] = centroid(polygon);
           changeRef.current({ ...z, polygon, lat, lng });
@@ -165,14 +168,16 @@ export function ZoneMap({ zone, onChange }: { zone: Zone; onChange: (z: Zone) =>
 
   return (
     <div className="zone-map">
-      <div className="seg zone-map__mode" role="group" aria-label={t.t("Shape")}>
-        <button type="button" className={!polygonMode ? "is-on" : ""} onClick={() => setMode(false)}>
-          {t.t("Circle")}
-        </button>
-        <button type="button" className={polygonMode ? "is-on" : ""} onClick={() => setMode(true)}>
-          {t.t("Area")}
-        </button>
-      </div>
+      {!areaOnly && (
+        <div className="seg zone-map__mode" role="group" aria-label={t.t("Shape")}>
+          <button type="button" className={!polygonMode ? "is-on" : ""} onClick={() => setMode(false)}>
+            {t.t("Circle")}
+          </button>
+          <button type="button" className={polygonMode ? "is-on" : ""} onClick={() => setMode(true)}>
+            {t.t("Area")}
+          </button>
+        </div>
+      )}
       {failed ? (
         <p className="field__hint">{t.t("The map could not load. Check the connection.")}</p>
       ) : (
@@ -184,7 +189,12 @@ export function ZoneMap({ zone, onChange }: { zone: Zone; onChange: (z: Zone) =>
       {polygonMode ? (
         <div className="zone-map__row">
           <span className="field__hint">
-            {corners < 3 ? t.t("Click the map to place corners — at least three.") : t.t("{{n}} corners. Drag a corner to move it; click to add more.", { n: corners })}
+            {maxCorners === 4
+              ? [t.t("Click the top-left corner."), t.t("Now the top-right corner."), t.t("Now the bottom-right corner."), t.t("Now the bottom-left corner.")][corners] ??
+                t.t("Drag a corner to adjust the area.")
+              : corners < 3
+                ? t.t("Click the map to place corners — at least three.")
+                : t.t("{{n}} corners. Drag a corner to move it; click to add more.", { n: corners })}
           </span>
           <button type="button" className="link-btn" disabled={!corners} onClick={() => onChange({ ...zone, polygon: (zone.polygon ?? []).slice(0, -1) })}>
             {t.t("Undo corner")}

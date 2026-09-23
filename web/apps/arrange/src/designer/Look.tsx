@@ -1,5 +1,5 @@
 import type { play } from "@zonventure/api";
-import { isHex } from "@zonventure/play-ui";
+import { FONTS, isHex } from "@zonventure/play-ui";
 import { useT } from "../i18n.tsx";
 
 /**
@@ -13,6 +13,14 @@ import { useT } from "../i18n.tsx";
  * the author's job: text on the accent and on the answer bar is picked
  * automatically (play-ui/brand.ts).
  */
+/** What each typeface is for, in the author's words. */
+const FONT_LABELS: Record<string, string> = {
+  inconsolata: "Terminal",
+  "special-elite": "Typewriter",
+  merriweather: "Book",
+  fredoka: "Playful",
+};
+
 const FIELDS: { key: keyof play.Brand; label: string; hint: string }[] = [
   { key: "accent", label: "Accent", hint: "Buttons, the map pin, the score." },
   { key: "accent_secondary", label: "Titles", hint: "Step titles and headings. Defaults to the accent." },
@@ -78,6 +86,20 @@ export function Look({ brand, dirty, saving, error, onChange, onSave, onRevert }
           </div>
         );
       })}
+      <label className="field">
+        <span className="field__label">{t.t("Typeface")}</span>
+        <select className="field__input" value={brand.font ?? ""} onChange={(e) => {
+          const next = { ...brand };
+          if (e.target.value) next.font = e.target.value;
+          else delete next.font;
+          onChange(next);
+        }}>
+          <option value="">{t.t("Standard")}</option>
+          {Object.entries(FONT_LABELS).map(([k, label]) => (
+            <option key={k} value={k}>{t.t(label)} — {FONTS[k]}</option>
+          ))}
+        </select>
+      </label>
       {error && <div className="alert alert--danger">{error}</div>}
       <div className="look__actions">
         <button type="button" className="btn btn--primary btn--sm" disabled={!dirty || saving} onClick={onSave}>

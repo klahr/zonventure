@@ -3,6 +3,7 @@ package session
 import (
 	"encoding/json"
 	"errors"
+	"reflect"
 	"testing"
 	"time"
 
@@ -207,7 +208,7 @@ func TestInputShape(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			got := inputFor(&graph.PuzzleConfig{Outputs: []graph.Output{{Port: "ok", Trigger: graph.OnAnswer, Matchers: c.matchers}}})
-			if *got != c.want {
+			if !reflect.DeepEqual(*got, c.want) {
 				t.Errorf("got %+v, want %+v", *got, c.want)
 			}
 		})
@@ -444,5 +445,51 @@ func TestChoosingAStart(t *testing.T) {
 	}
 	if _, _, err := tm.ChooseStart("s-south"); !errors.Is(err, ErrStale) {
 		t.Errorf("choosing again = %v, want ErrStale", err)
+	}
+}
+
+// A tile puzzle is solved by the tile order alone: the solved order
+// takes the answer output, anything else is a wrong guess.
+func TestTilePuzzle(t *testing.T) {
+	g := &graph.Graph{
+		Nodes: []graph.Node{
+			{Slug: "start", Type: graph.Start},
+			{Slug: "painting", Type: graph.Puzzle, PuzzleCfg: &graph.PuzzleConfig{
+				Tiles:     &graph.TileConfig{Image: graph.Media{ID: 7, Kind: graph.MediaImage}, Rows: 2, Cols: 3},
+				Outputs:   []graph.Output{{Port: "solved", Trigger: graph.OnAnswer, Points: 20}},
+				Responses: []graph.Response{{Text: "Not quite."}},
+			}},
+			{Slug: "end", Type: graph.End},
+		},
+		Edges: []graph.Edge{
+			{From: "start", FromPort: "out", To: "painting"},
+			{From: "painting", FromPort: "solved", To: "end"},
+		},
+	}
+	tm, _, err := Start(g, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v := tm.View()
+	if v.Input == nil || v.Input.Kind != "tiles" || v.Input.Rows != 2 || v.Input.Cols != 3 || v.Input.Image == nil || v.Input.Image.ID != 7 {
+		t.Fatalf("the view should describe the tiles: %+v", v.Input)
+	}
+	if ids := tm.VisibleMedia(true); len(ids) != 1 || ids[0] != 7 {
+		t.Errorf("the tile picture should be fetchable once the team is there, got %v", ids)
+	}
+
+	for _, wrong := range []string{"1,0,2,3,4,5", "0,1,2,3,4", "0,1,2,3,4,5,6", ""} {
+		res, step, err := tm.Answer("painting", wrong)
+		if err != nil || step != nil || res.Accepted {
+			t.Fatalf("%q should be a wrong guess: %+v %v", wrong, res, err)
+		}
+	}
+	if tm.Attempts("painting") != 4 {
+		t.Errorf("wrong orders count as attempts, got %d", tm.Attempts("painting"))
+	}
+
+	res, step, err := tm.Answer("painting", "0, 1, 2, 3, 4, 5")
+	if err != nil || !res.Accepted || res.Points != 20 || step == nil {
+		t.Fatalf("the solved order should take the output: %+v %v", res, err)
 	}
 }

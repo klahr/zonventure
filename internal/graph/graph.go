@@ -20,6 +20,8 @@ package graph
 import (
 	"fmt"
 	"sort"
+	"strconv"
+	"strings"
 
 	"github.com/klahr/zonventure/internal/graph/cond"
 	"github.com/klahr/zonventure/internal/graph/match"
@@ -63,6 +65,109 @@ type Graph struct {
 	Items    []Item         `json:"items,omitempty"`
 	Counters []Counter      `json:"counters,omitempty"`
 	Journal  []JournalEntry `json:"journal,omitempty"`
+
+	// JournalByUnlock lists a team's journal in the order it found the
+	// notes, rather than the order the author wrote them in — legacy's
+	// sort_on_unlock_timestamp.
+	JournalByUnlock bool `json:"journal_by_unlock,omitempty"`
+
+	// TimeLimit ends the free play of an adventure: see TimeLimit.
+	TimeLimit *TimeLimit `json:"time_limit,omitempty"`
+
+	// Frames are titled boxes the designer draws behind steps to group
+	// them — one per suspect, say. Cosmetic, like positions: evaluation
+	// never reads them.
+	Frames []Frame `json:"frames,omitempty"`
+
+	// Language is the BCP 47 tag the graph's own text is written in.
+	Language string `json:"language,omitempty"`
+	// Translations holds the text in other languages: language → field
+	// key → text, the keys made by NodeKey, ZoneKey and JournalKey. The
+	// graph stays in its main language; a team's view is translated as
+	// it is rendered, and anything untranslated falls back to the main
+	// text — a half-translated adventure still plays.
+	Translations map[string]map[string]string `json:"translations,omitempty"`
+}
+
+// Field keys for Translations. A node's are:
+//
+//	title  text  hub-text
+//	out:<port>:label   out:<port>:answers (more accepted answers, one per line)
+//	reply:<i>  hint:<i>
+//	branch:<port>:label  branch:<port>:note
+//	field:<i>:label  field:<i>:opt:<value>  sym:<value>
+func NodeKey(slug, field string) string    { return "n:" + slug + ":" + field }
+func ZoneKey(slug string) string           { return "z:" + slug }
+func JournalKey(slug, field string) string { return "j:" + slug + ":" + field }
+
+// TimeUpKey and MetaKey address the time limit's message and the
+// adventure's own title, intro and outro.
+const TimeUpKey = "time-up"
+
+func MetaKey(field string) string { return "meta:" + field }
+
+// Tr is the text for key in lang, or main when it has none.
+func (g *Graph) Tr(lang, key, main string) string {
+	if lang == "" || lang == g.Language {
+		return main
+	}
+	if s := strings.TrimSpace(g.Translations[lang][key]); s != "" {
+		return g.Translations[lang][key]
+	}
+	return main
+}
+
+// Languages lists the languages the adventure can be played in: its main
+// language first, then those it has translations for.
+func (g *Graph) Languages() []string {
+	main := g.Language
+	if main == "" {
+		main = "sv"
+	}
+	out := []string{main}
+	extra := make([]string, 0, len(g.Translations))
+	for l := range g.Translations {
+		if l != main {
+			extra = append(extra, l)
+		}
+	}
+	sort.Strings(extra)
+	return append(out, extra...)
+}
+
+// AlternativeAnswers are the accepted answers an output gains in every
+// translation — so a team is never wrong for answering in the other
+// language.
+func (g *Graph) AlternativeAnswers(node, port string) []string {
+	var out []string
+	for _, tr := range g.Translations {
+		for _, line := range strings.Split(tr[NodeKey(node, "out:"+port+":answers")], "\n") {
+			if a := strings.TrimSpace(line); a != "" {
+				out = append(out, a)
+			}
+		}
+	}
+	return out
+}
+
+// Frame is one designer grouping box, in canvas coordinates.
+type Frame struct {
+	ID     string  `json:"id"`
+	Title  string  `json:"title,omitempty"`
+	Color  string  `json:"color,omitempty"`
+	X      float64 `json:"x"`
+	Y      float64 `json:"y"`
+	Width  float64 `json:"width"`
+	Height float64 `json:"height"`
+}
+
+// TimeLimit is legacy's block time limit as the Obscurium mysteries used
+// it: Seconds after a team starts, wherever it is, it is moved to the
+// step To — the accusation — and shown Text. It fires once.
+type TimeLimit struct {
+	Seconds int    `json:"seconds"`
+	To      string `json:"to"`
+	Text    string `json:"text,omitempty"`
 }
 
 // Node is one step. Exactly one of the typed config pointers is set,
@@ -88,6 +193,68 @@ type Node struct {
 	SwitchCfg *SwitchConfig `json:"switch,omitempty"`
 	EndCfg    *EndConfig    `json:"end,omitempty"`
 	StartCfg  *StartConfig  `json:"start,omitempty"`
+
+	// Unlocks lists journal entries the team gains the moment it reaches
+	// this step — a clue noted as it is read. It is the Effect node's
+	// "unlock journal" without the node: the Obscurium mysteries note
+	// something on almost every page, and a hundred extra nodes on the
+	// canvas would bury the story.
+	Unlocks []string `json:"unlocks,omitempty"`
+}
+
+// OwnerHub is the hub whose branches lead to a node without passing
+// through another hub — where "back" takes a team. It is found from the
+// graph's shape, not remembered per team: the innermost hub in front of
+// a step is the same for every team that stands on it. A node that two
+// hubs both reach that way has no single owner, and reports false.
+func (g *Graph) OwnerHub(slug string) (string, bool) {
+	owner := ""
+	for _, h := range g.Nodes {
+		if h.Type != Hub || h.HubCfg == nil || h.Slug == slug {
+			continue
+		}
+		if g.inBranches(h, slug) {
+			if owner != "" {
+				return "", false
+			}
+			owner = h.Slug
+		}
+	}
+	return owner, owner != ""
+}
+
+// inBranches reports whether slug is reachable from one of the hub's
+// branch outputs without passing through a hub (the hub it stops at is
+// reached, not passed).
+func (g *Graph) inBranches(h Node, slug string) bool {
+	seen := map[string]bool{}
+	var queue []string
+	for _, b := range h.HubCfg.Branches {
+		if to, ok := g.Target(h.Slug, b.Port); ok {
+			queue = append(queue, to)
+		}
+	}
+	for len(queue) > 0 {
+		n := queue[0]
+		queue = queue[1:]
+		if seen[n] || n == h.Slug {
+			continue
+		}
+		seen[n] = true
+		if n == slug {
+			return true
+		}
+		node, ok := g.Node(n)
+		if !ok || node.Type == Hub {
+			continue
+		}
+		for _, e := range g.Edges {
+			if e.From == n {
+				queue = append(queue, e.To)
+			}
+		}
+	}
+	return false
 }
 
 // Edge connects one output port to one node. A port may have at most
@@ -216,6 +383,147 @@ type PuzzleConfig struct {
 	// Repeatable allows re-solving on a later visit. Off by default:
 	// that is what guarantees a Hub loop terminates.
 	Repeatable bool `json:"repeatable,omitempty"`
+
+	// Tiles turns the puzzle into a picture to put back together, in
+	// place of typing an answer. See TileConfig.
+	Tiles *TileConfig `json:"tiles,omitempty"`
+
+	// Search makes the puzzle answered by where the team stands, not by
+	// what it types. See SearchConfig.
+	Search *SearchConfig `json:"search,omitempty"`
+
+	// Choices replaces the text box with options to pick. See
+	// ChoiceConfig.
+	Choices *ChoiceConfig `json:"choices,omitempty"`
+
+	// Lock replaces the text box with a combination lock. See LockConfig.
+	Lock *LockConfig `json:"lock,omitempty"`
+}
+
+// LockConfig is a combination lock: Wheels wheels, each turning through
+// the same Symbols — pictures or words. It is only a way of typing: the
+// phone sends the chosen symbols' values joined by "|", in wheel order,
+// and the outputs' matchers decide as for any typed answer, so the right
+// combination is an ordinary exact answer and wrong ones get the replies.
+// Legacy built the one in Greta Garbos Torg as a page script.
+type LockConfig struct {
+	Wheels  int          `json:"wheels"`
+	Symbols []LockSymbol `json:"symbols"`
+	// Start is where each wheel begins, as a symbol index — so the lock
+	// does not open at the right combination. Missing wheels start at 0.
+	Start []int `json:"start,omitempty"`
+}
+
+// LockSymbol is one face of a wheel.
+type LockSymbol struct {
+	Value string `json:"value"`
+	Label string `json:"label,omitempty"`
+	Image *Media `json:"image,omitempty"`
+}
+
+// MaxWheels bounds a lock: past six, the wheels do not fit a phone.
+const MaxWheels = 6
+
+// ChoiceConfig asks one or more questions with fixed options instead of
+// a text box. The phone sends the picked values joined by "|", in field
+// order, and the server decides.
+//
+// Ungraded — no field has an Answer — the guess goes through the
+// outputs' matchers as usual, so a single question can route each option
+// a different way.
+//
+// Graded — every field has an Answer — it is a form marked on submit:
+// the first answer output is always taken, and pays its points in equal
+// shares for the fields answered correctly. That is legacy's Obscurium
+// accusation (place, weapon, killer…, 20 points each), without the page
+// script that did the sum on the phone, where a team could change it.
+type ChoiceConfig struct {
+	Fields []ChoiceField `json:"fields"`
+}
+
+// ChoiceField is one question of a ChoiceConfig.
+type ChoiceField struct {
+	Label   string         `json:"label,omitempty"`
+	Options []ChoiceOption `json:"options"`
+	// Answer is the Value of the correct option, for a graded form.
+	// Never sent to the phone.
+	Answer string `json:"answer,omitempty"`
+}
+
+// ChoiceOption is one pickable option. Value is what is sent and
+// matched; Label what the team reads, defaulting to Value.
+type ChoiceOption struct {
+	Value string `json:"value"`
+	Label string `json:"label,omitempty"`
+}
+
+// Graded reports whether the choices are marked against answers.
+func (c ChoiceConfig) Graded() bool {
+	if len(c.Fields) == 0 {
+		return false
+	}
+	for _, f := range c.Fields {
+		if f.Answer == "" {
+			return false
+		}
+	}
+	return true
+}
+
+// Mark counts the fields a guess answers correctly, and reports whether
+// the guess has one value per field at all.
+func (c ChoiceConfig) Mark(guess string) (correct int, ok bool) {
+	parts := strings.Split(guess, "|")
+	if len(parts) != len(c.Fields) {
+		return 0, false
+	}
+	for i, f := range c.Fields {
+		if strings.TrimSpace(parts[i]) == f.Answer {
+			correct++
+		}
+	}
+	return correct, true
+}
+
+// SearchConfig is legacy's Obscurium scanner, as data: the team presses
+// "Search here", and the first answer output whose zone the team is in
+// fires — its matchers are not consulted. Standing anywhere else is a
+// wrong guess, so the wrong-answer replies say "nothing here". An answer
+// output with no zone matches anywhere, as a fallback after the others.
+type SearchConfig struct {
+	// Group names the zones the phone reports the team as standing in —
+	// "You are in sector C3" — including those with nothing to find.
+	// Empty means the zones of the puzzle's own outputs.
+	Group string `json:"group,omitempty"`
+}
+
+// TileConfig is a picture cut into Rows × Cols tiles, shuffled, that the
+// team swaps back into place — legacy's scripted TilePuzzleModule, as
+// data. The phone sends the tile order as the guess and the server
+// decides whether it is solved, exactly as legacy compared the order
+// against the answer: a phone cannot declare itself right.
+type TileConfig struct {
+	Image Media `json:"image"`
+	Rows  int   `json:"rows"`
+	Cols  int   `json:"cols"`
+}
+
+// MinTiles and MaxTiles bound each side of the grid: one row is not a
+// puzzle, and past eight a phone's tiles are too small to drag.
+const (
+	MinTiles = 2
+	MaxTiles = 8
+)
+
+// Solution is the solved order in the form the phone reports it: the
+// tile numbers in reading order, comma-separated — "0,1,2,…".
+func (c TileConfig) Solution() string {
+	n := c.Rows * c.Cols
+	parts := make([]string, n)
+	for i := range n {
+		parts[i] = strconv.Itoa(i)
+	}
+	return strings.Join(parts, ",")
 }
 
 // StoryConfig is content with no challenge — an intro, an interstitial,
@@ -226,6 +534,11 @@ type StoryConfig struct {
 	Text  string  `json:"text,omitempty"`
 	Media []Media `json:"media,omitempty"`
 	Zone  string  `json:"zone,omitempty"`
+	// Once shows the story only the first time: a team that comes this
+	// way again passes straight through. For an arrival or introduction
+	// on a branch a team returns to — walking back to a suspect should
+	// not mean walking to their door again.
+	Once bool `json:"once,omitempty"`
 }
 
 // Policy decides which branch of a Hub a team enters.
@@ -257,6 +570,10 @@ const (
 type Branch struct {
 	Port  string `json:"port"`
 	Label string `json:"label,omitempty"`
+	// Note is a line under the label, and Image a picture on the tile —
+	// a suspect's portrait on a home screen.
+	Note  string `json:"note,omitempty"`
+	Image *Media `json:"image,omitempty"`
 
 	// Condition decides whether this branch is offered at all. This is
 	// about *offering*, which is intrinsically a hub concern; Gate
@@ -282,6 +599,18 @@ type HubConfig struct {
 	// HideLocked hides branches whose Condition is false, rather than
 	// showing them greyed out.
 	HideLocked bool `json:"hide_locked,omitempty"`
+
+	// Home makes the hub a home screen the team keeps returning to, as
+	// legacy's PLAYER_CHOICE blocks were used in the Obscurium mysteries:
+	// every branch stays open after a visit, the team may go back to the
+	// hub from anywhere inside one of its branches, and the hub never
+	// finishes — the team leaves through a branch that ends the adventure.
+	// It has no done output, and Required does not apply.
+	Home bool `json:"home,omitempty"`
+
+	// Text is shown above the branches, in place of "choose where to go
+	// next": a home screen's welcome, a suspect's opening words.
+	Text string `json:"text,omitempty"`
 }
 
 // GateConfig routes on a condition, to PortPass or PortFail.
@@ -405,6 +734,9 @@ type Zone struct {
 	RadiusM float64 `json:"radius_m"`
 	// Polygon corners as [lat, lng], in order; the last joins the first.
 	Polygon [][2]float64 `json:"polygon,omitempty"`
+	// Group ties zones that belong together — the cells of a grid laid
+	// over a park — so a search can say which of them the team is in.
+	Group string `json:"group,omitempty"`
 }
 
 // IsPolygon reports whether the zone's shape is its polygon.
@@ -454,6 +786,10 @@ type JournalEntry struct {
 	Slug  string `json:"slug"`
 	Title string `json:"title,omitempty"`
 	Body  string `json:"body,omitempty"`
+	// Section groups notes under a heading in the journal — a suspect,
+	// a place. Notes of one section are shown together, in order.
+	Section string  `json:"section,omitempty"`
+	Media   []Media `json:"media,omitempty"`
 }
 
 // Node returns the node with the given slug.
@@ -525,6 +861,10 @@ func (n Node) Ports() []string {
 		for _, b := range n.HubCfg.Branches {
 			out = append(out, b.Port)
 		}
+		if n.HubCfg.Home {
+			// A home screen never finishes, so it has no exit to wire.
+			return out
+		}
 		return append(out, PortDone)
 	}
 	return nil
@@ -570,16 +910,22 @@ func (h *HubConfig) RequiredBranches() int {
 // ResponseFor picks the ladder rung for a given wrong-guess count: the
 // highest rung at or below attempts, with the last one repeating.
 func (p *PuzzleConfig) ResponseFor(attempts int) (Response, bool) {
+	i := p.ResponseIndex(attempts)
+	if i < 0 {
+		return Response{}, false
+	}
+	return p.Responses[i], true
+}
+
+// ResponseIndex is the index of the reply ResponseFor gives, or -1.
+func (p *PuzzleConfig) ResponseIndex(attempts int) int {
 	best := -1
 	for i, r := range p.Responses {
 		if r.AfterAttempts <= attempts && (best < 0 || r.AfterAttempts >= p.Responses[best].AfterAttempts) {
 			best = i
 		}
 	}
-	if best < 0 {
-		return Response{}, false
-	}
-	return p.Responses[best], true
+	return best
 }
 
 // Slugs returns every node slug, sorted, for stable error messages and
@@ -601,6 +947,9 @@ func (g *Graph) MediaIDs() []int64 {
 			add(ms)
 		}
 	}
+	for _, je := range g.Journal {
+		add(je.Media)
+	}
 	return out
 }
 
@@ -609,12 +958,33 @@ func (n Node) MediaLists() [][]Media {
 	var out [][]Media
 	switch {
 	case n.PuzzleCfg != nil:
-		out = append(out, n.PuzzleCfg.Media)
+		// A tile picture is part of the step itself, so it is fetched and
+		// gated with the prompt's own media, not with a hint's.
+		own := n.PuzzleCfg.Media
+		if t := n.PuzzleCfg.Tiles; t != nil {
+			own = append(append([]Media{}, own...), t.Image)
+		}
+		if l := n.PuzzleCfg.Lock; l != nil {
+			for _, s := range l.Symbols {
+				if s.Image != nil {
+					own = append(append([]Media{}, own...), *s.Image)
+				}
+			}
+		}
+		out = append(out, own)
 		for _, h := range n.PuzzleCfg.Hints {
 			out = append(out, h.Media)
 		}
 	case n.StoryCfg != nil:
 		out = append(out, n.StoryCfg.Media)
+	case n.HubCfg != nil:
+		var own []Media
+		for _, b := range n.HubCfg.Branches {
+			if b.Image != nil {
+				own = append(own, *b.Image)
+			}
+		}
+		out = append(out, own)
 	case n.EndCfg != nil:
 		out = append(out, n.EndCfg.Media)
 	}

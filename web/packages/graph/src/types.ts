@@ -25,6 +25,33 @@ export interface Graph {
   items?: Item[];
   counters?: Counter[];
   journal?: JournalEntry[];
+  /** List a team's journal in the order it found the notes. */
+  journal_by_unlock?: boolean;
+  /** After `seconds` from its start, the team is moved to `to` and shown `text`. */
+  time_limit?: TimeLimit;
+  /** Designer-only grouping boxes drawn behind steps. */
+  frames?: Frame[];
+  /** The BCP 47 tag the graph's own text is in. */
+  language?: string;
+  /** Other languages: language → field key → text. See i18n.ts. */
+  translations?: Record<string, Record<string, string>>;
+}
+
+/** graph.Frame — cosmetic, like a card's position. */
+export interface Frame {
+  id: string;
+  title?: string;
+  color?: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface TimeLimit {
+  seconds: number;
+  to: string;
+  text?: string;
 }
 
 export interface Envelope {
@@ -48,6 +75,8 @@ export interface Node {
   switch?: SwitchConfig;
   end?: EndConfig;
   start?: StartConfig;
+  /** Journal entries the team gains on reaching this step. */
+  unlocks?: string[];
 }
 
 export interface Edge {
@@ -100,12 +129,67 @@ export interface PuzzleConfig {
   skip_after_seconds?: number;
   lockout_seconds?: number;
   repeatable?: boolean;
+  /** A picture to put back together instead of a typed answer. */
+  tiles?: TileConfig;
+  /** Answered by where the team stands: a "Search here" button. */
+  search?: SearchConfig;
+  /** Options to pick instead of a text box. */
+  choices?: ChoiceConfig;
+  /** A combination lock instead of a text box. */
+  lock?: LockConfig;
+}
+
+/**
+ * graph.LockConfig: wheels turning through the same symbols. The phone
+ * sends the chosen values joined by "|"; the outputs' matchers decide.
+ */
+export interface LockConfig {
+  wheels: number;
+  symbols: LockSymbol[];
+  start?: number[];
+}
+export interface LockSymbol {
+  value: string;
+  label?: string;
+  image?: Media;
+}
+
+/**
+ * graph.ChoiceConfig. Ungraded (no answers): the picked value goes through
+ * the outputs' matchers. Graded (every question has an answer): a form
+ * marked on submit, paying the first output's points in shares.
+ */
+export interface ChoiceConfig {
+  fields: ChoiceField[];
+}
+export interface ChoiceField {
+  label?: string;
+  options: ChoiceOption[];
+  answer?: string;
+}
+export interface ChoiceOption {
+  value: string;
+  label?: string;
+}
+
+/** graph.SearchConfig: which zones the phone reports the team as in. */
+export interface SearchConfig {
+  group?: string;
+}
+
+/** graph.TileConfig: the picture and the grid it is cut into. */
+export interface TileConfig {
+  image: Media;
+  rows: number;
+  cols: number;
 }
 
 export interface StoryConfig {
   text?: string;
   media?: Media[];
   zone?: string;
+  /** Shown only the first time; a returning team passes straight through. */
+  once?: boolean;
 }
 
 export type Policy = "choice" | "sequence" | "shuffle" | "spread" | "capacity" | "random";
@@ -113,6 +197,9 @@ export type Policy = "choice" | "sequence" | "shuffle" | "spread" | "capacity" |
 export interface Branch {
   port: string;
   label?: string;
+  /** A line under the label, and a picture on the tile. */
+  note?: string;
+  image?: Media;
   condition?: Predicate;
   capacity?: number;
 }
@@ -122,6 +209,10 @@ export interface HubConfig {
   branches?: Branch[];
   required?: number;
   hide_locked?: boolean;
+  /** A home screen: branches stay open, back works from inside them, it never finishes. */
+  home?: boolean;
+  /** Shown above the branches instead of "choose where to go next". Markdown. */
+  text?: string;
 }
 
 export interface GateConfig {
@@ -190,6 +281,8 @@ export interface Zone {
   radius_m: number;
   /** Corners as [lat, lng]; the last joins the first. */
   polygon?: [number, number][];
+  /** Zones that belong together, such as the cells of a grid. */
+  group?: string;
 }
 
 /** internal/graph: StartConfig — where a start is, if anywhere. */
@@ -216,6 +309,9 @@ export interface JournalEntry {
   slug: string;
   title?: string;
   body?: string;
+  /** A heading notes are grouped under — a suspect, a place. */
+  section?: string;
+  media?: Media[];
 }
 
 export type MatcherKind =

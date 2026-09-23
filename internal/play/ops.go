@@ -131,6 +131,23 @@ func (e *Engine) Continue(ctx context.Context, teamID int64, node string) (Resul
 	return e.act(ctx, teamID, func(t *session.Team) (Result, *walk.Step, error) { return t.Continue(node) })
 }
 
+// SetLanguage switches the language the team plays in.
+func (e *Engine) SetLanguage(ctx context.Context, teamID int64, lang string) (Result, error) {
+	return e.act(ctx, teamID, func(t *session.Team) (Result, *walk.Step, error) { return Result{}, nil, t.SetLanguage(lang) })
+}
+
+// TimeUp applies the adventure's time limit once it has passed. The
+// client calls it when its countdown ends; the engine re-checks.
+func (e *Engine) TimeUp(ctx context.Context, teamID int64) (Result, error) {
+	return e.act(ctx, teamID, func(t *session.Team) (Result, *walk.Step, error) { return t.TimeUp() })
+}
+
+// Back returns the team from inside a home screen's branch to that home
+// screen. See session.Team.Back.
+func (e *Engine) Back(ctx context.Context, teamID int64, node string) (Result, error) {
+	return e.act(ctx, teamID, func(t *session.Team) (Result, *walk.Step, error) { return t.Back(node) })
+}
+
 // Choose enters a hub branch, or moves on from a satisfied hub when port
 // is graph.PortDone.
 func (e *Engine) Choose(ctx context.Context, teamID int64, hub, port string) (Result, error) {
@@ -224,8 +241,8 @@ func (e *Engine) stay(ctx context.Context, tx *sql.Tx, s *teamState) error {
 		return err
 	}
 	_, err := tx.ExecContext(ctx, `
-		UPDATE team_graph_state SET penalty_score = $1, updated_at = $2 WHERE team_id = $3
-	`, s.PenaltyScore, s.Now, s.teamID)
+		UPDATE team_graph_state SET penalty_score = $1, lang = $4, updated_at = $2 WHERE team_id = $3
+	`, s.PenaltyScore, s.Now, s.teamID, s.Lang)
 	return err
 }
 
@@ -305,10 +322,10 @@ func (e *Engine) commit(ctx context.Context, tx *sql.Tx, s *teamState, step walk
 		UPDATE team_graph_state
 		SET current_node = $1, node_entered_at = $2, score = $3, penalty_score = $4,
 		    penalty_seconds = $5, theme = $6, completed_at = COALESCE(completed_at, $7),
-		    outcome = COALESCE(outcome, $8), last_answer = $11, started_at = $12, updated_at = $2
+		    outcome = COALESCE(outcome, $8), last_answer = $11, started_at = $12, timed_out = $13, lang = $14, updated_at = $2
 		WHERE team_id = $9 AND current_node IS NOT DISTINCT FROM $10
 	`, nullIfEmpty(step.To), now, s.Points, s.PenaltyScore, s.PenaltySeconds, s.Theme,
-		completedAt, outcome, s.teamID, nullIfEmpty(old), s.LatestAnswer, s.StartedAt)
+		completedAt, outcome, s.teamID, nullIfEmpty(old), s.LatestAnswer, s.StartedAt, s.TimedOut, s.Lang)
 	if err != nil {
 		return err
 	}

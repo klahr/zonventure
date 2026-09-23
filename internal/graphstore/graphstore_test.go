@@ -159,6 +159,11 @@ func TestDraftsAndReleases(t *testing.T) {
 	if graphstore.Differs(linear("a"), moved) {
 		t.Error("moving a card is not a change to publish")
 	}
+	framed := linear("a")
+	framed.Frames = []graph.Frame{{ID: "f1", Title: "Carl", Width: 400, Height: 300}}
+	if graphstore.Differs(linear("a"), framed) {
+		t.Error("drawing a frame is not a change to publish")
+	}
 	if !graphstore.Differs(linear("a"), linear("b")) {
 		t.Error("a changed answer is")
 	}

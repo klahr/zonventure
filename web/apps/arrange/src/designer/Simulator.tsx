@@ -257,7 +257,9 @@ export function Simulator({ slug, graph, envelope, selected, mode, onMode, resta
     if (!team) return;
     setFeedback(null);
     void run({ kind: "wait", seconds }, team).then((r) => {
-      if (r) say(t.t("Waited {{time}}.", { time: formatSeconds(seconds) }));
+      if (!r) return;
+      say(t.t("Waited {{time}}.", { time: formatSeconds(seconds) }));
+      if (r.result.time_up) say(t.t("Time is up: the team was moved to {{step}}.", { step: titleOf(r.result.view.node ?? "") }), "warn");
     });
   };
 
@@ -429,6 +431,7 @@ export function Simulator({ slug, graph, envelope, selected, mode, onMode, resta
                 t={tr}
                 brand={brand}
                 placeNote={placeNote}
+                storageKey={`sim-${slug}`}
                 {...(view.zone && !view.here ? { zoneNote: placeNote(view.zone) } : {})}
               />
             ) : (

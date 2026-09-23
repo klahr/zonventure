@@ -192,12 +192,25 @@ type Colors struct {
 	// the buttons' text colour, producing the "punched-through"
 	// effect the customisation copy describes.
 	SubmitBackground string `json:"submit_bg,omitempty"`
+	// Font is one of Fonts by key; empty is the default typeface.
+	Font string `json:"font,omitempty"`
+}
+
+// Fonts are the typefaces an adventure may choose, by key. A short list
+// rather than any font name: the player loads them from Google Fonts,
+// which the page's security policy allows and nothing else, and each has
+// been checked to stay legible outdoors on a phone.
+var Fonts = map[string]string{
+	"inconsolata":   "Inconsolata",   // terminal — the Obscurium mysteries
+	"special-elite": "Special Elite", // typewriter
+	"merriweather":  "Merriweather",  // book
+	"fredoka":       "Fredoka",       // playful
 }
 
 // Empty reports whether no colours are set — handy for skipping the field
 // entirely in JSON responses.
 func (c Colors) Empty() bool {
-	return c.Accent == "" && c.AccentSecondary == "" && c.Background == "" && c.Text == "" && c.SubmitBackground == ""
+	return c.Accent == "" && c.AccentSecondary == "" && c.Background == "" && c.Text == "" && c.SubmitBackground == "" && c.Font == ""
 }
 
 // Page is one puzzle in an adventure.

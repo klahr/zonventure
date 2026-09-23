@@ -2,6 +2,7 @@ import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
+  gridZones,
   zoneContains,
   answerOptions,
   appendStep,
@@ -235,6 +236,36 @@ describe("tidy", () => {
     const x = (slug: string) => t.nodes.find((n) => n.slug === slug)!.x ?? 0;
     assert.ok(x(hub.slug) < x(a.slug), "the hub should sit left of the branch that loops back to it");
   });
+
+  // Tidy keeps an author's grouping: steps stay in their frame, frames
+  // fit their steps, and a frame that grows pushes the next one down.
+  test("keeps steps inside their frames", () => {
+    const story = (slug: string, x: number, y: number) => ({ slug, type: "story" as const, x, y, story: { text: "" } });
+    const g: Graph = {
+      nodes: [story("a1", 0, 60), story("a2", 20, 70), story("a3", 40, 80), story("b1", 0, 360), story("b2", 30, 370)],
+      edges: [
+        { from: "a1", from_port: "out", to: "a2" },
+        { from: "a2", from_port: "out", to: "a3" },
+        { from: "b1", from_port: "out", to: "b2" },
+      ],
+      frames: [
+        { id: "A", x: -50, y: 0, width: 400, height: 250 },
+        { id: "B", x: -50, y: 300, width: 400, height: 250 },
+      ],
+    };
+    const t = tidy(g);
+    const node = (s: string) => t.nodes.find((n) => n.slug === s)!;
+    const frame = (id: string) => t.frames!.find((f) => f.id === id)!;
+    const inFrame = (s: string, id: string) => {
+      const n = node(s), f = frame(id);
+      return n.x! >= f.x && n.x! + 240 <= f.x + f.width && n.y! >= f.y && n.y! + 110 <= f.y + f.height;
+    };
+    for (const s of ["a1", "a2", "a3"]) assert.ok(inFrame(s, "A"), `${s} stays in A`);
+    for (const s of ["b1", "b2"]) assert.ok(inFrame(s, "B"), `${s} stays in B`);
+    assert.ok(node("a1").x! < node("a2").x! && node("a2").x! < node("a3").x!, "laid out left to right inside the frame");
+    assert.ok(frame("A").width > 400, "A grew to fit three steps in a row");
+    assert.ok(frame("B").y >= frame("A").y + frame("A").height, "B is pushed below A");
+  });
 });
 
 test("a crossroads reference follows the answer through a spelling fix", () => {
@@ -263,4 +294,19 @@ test("zoneContains matches the server's circle and polygon tests", () => {
   const square = { slug: "s", lat: 0, lng: 0, radius_m: 0, polygon: [[0, 0], [0, 1], [1, 1], [1, 0]] as [number, number][] };
   assert.equal(zoneContains(square, 0.5, 0.5), true);
   assert.equal(zoneContains(square, 1.5, 0.5), false);
+});
+
+test("gridZones cuts an area into lettered cells that tile it", () => {
+  const cells = gridZones([[1, 0], [1, 3], [0, 3], [0, 0]], 2, 3, "Scanner");
+  assert.equal(cells.length, 6);
+  assert.deepEqual(cells.map((z) => z.name), ["A1", "B1", "C1", "A2", "B2", "C2"]);
+  assert.equal(cells[0]!.slug, "scanner-a1");
+  assert.equal(cells[0]!.group, "Scanner");
+  // Every point of the area is in exactly one cell.
+  for (const [lat, lng] of [[0.9, 0.1], [0.6, 1.5], [0.1, 2.9], [0.4, 0.2]] as const) {
+    assert.equal(cells.filter((z) => zoneContains(z, lat, lng)).length, 1, `${lat},${lng}`);
+  }
+  assert.equal(zoneContains(cells[0]!, 0.9, 0.1), true, "top-left is A1");
+  const again = gridZones([[1, 0], [1, 3], [0, 3], [0, 0]], 1, 1, "Scanner", cells);
+  assert.equal(again[0]!.slug, "scanner-a1-2", "slugs never collide");
 });

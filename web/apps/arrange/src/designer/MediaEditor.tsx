@@ -12,7 +12,16 @@ export const AdventureSlug = createContext("");
  * the reference to it is part of the graph, so it is saved with Save like
  * any other edit — and undone with Undo.
  */
-export function MediaEditor({ media, onChange }: { media: Media[] | undefined; onChange: (m: Media[] | undefined) => void }) {
+export function MediaEditor({
+  media,
+  onChange,
+  single,
+}: {
+  media: Media[] | undefined;
+  onChange: (m: Media[] | undefined) => void;
+  /** Exactly one picture, such as a tile puzzle's: a new upload replaces it. */
+  single?: boolean;
+}) {
   const t = useT();
   const slug = useContext(AdventureSlug);
   const input = useRef<HTMLInputElement>(null);
@@ -31,7 +40,7 @@ export function MediaEditor({ media, onChange }: { media: Media[] | undefined; o
         const r = await adventures.uploadMedia(slug, await downscale(f));
         if (!list.some((m) => m.id === r.id)) added.push({ id: r.id, kind: r.kind });
       }
-      set([...list, ...added]);
+      set(single ? added.slice(-1) : [...list, ...added]);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : t.t("Could not reach the server. Check your connection."));
     } finally {
@@ -61,9 +70,9 @@ export function MediaEditor({ media, onChange }: { media: Media[] | undefined; o
           </button>
         </div>
       ))}
-      <input ref={input} type="file" accept="image/*,audio/*" multiple hidden onChange={(e) => void pick(e.target.files)} />
+      <input ref={input} type="file" accept={single ? "image/*" : "image/*,audio/*"} multiple={!single} hidden onChange={(e) => void pick(e.target.files)} />
       <button type="button" className="link-btn" disabled={busy || !slug} onClick={() => input.current?.click()}>
-        {busy ? t.t("Uploading…") : "+ " + t.t("Add picture or sound")}
+        {busy ? t.t("Uploading…") : single ? (list.length ? t.t("Replace picture") : "+ " + t.t("Add picture")) : "+ " + t.t("Add picture or sound")}
       </button>
       {error && <div className="alert alert--danger">{error}</div>}
     </div>

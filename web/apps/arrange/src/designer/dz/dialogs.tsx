@@ -87,7 +87,7 @@ export function DiffDialog({
 }) {
   const t = useT();
   useEscapeToClose(onClose);
-  const kinds: Record<string, string> = { zones: t.t("Zones"), items: t.t("Items"), counters: t.t("Shared counters"), journal: t.t("Journal") };
+  const kinds: Record<string, string> = { zones: t.t("Zones"), items: t.t("Items"), counters: t.t("Shared counters"), journal: t.t("Journal"), time_limit: t.t("Time limit") };
   return (
     <DzPortal>
       <div className="modal-backdrop" onClick={onClose}>

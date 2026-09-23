@@ -615,3 +615,44 @@ func TestSeveralStarts(t *testing.T) {
 		t.Errorf("a start at an undeclared zone should be reported: %s", got)
 	}
 }
+
+func TestTilePuzzleValidation(t *testing.T) {
+	g := valid3()
+	g.Nodes[1].PuzzleCfg = &graph.PuzzleConfig{
+		Tiles:   &graph.TileConfig{Image: graph.Media{ID: 3, Kind: graph.MediaImage}, Rows: 3, Cols: 3},
+		Outputs: []graph.Output{{Port: "solved", Trigger: graph.OnAnswer}},
+	}
+	r := Check(g)
+	assertNoCode(t, r, "output.matchers.none")
+	assertNoCode(t, r, "tiles.size")
+
+	g.Nodes[1].PuzzleCfg.Tiles = &graph.TileConfig{Rows: 1, Cols: 12}
+	r = Check(g)
+	assertCode(t, r, "tiles.size")
+	assertCode(t, r, "tiles.image")
+}
+
+func TestChoiceValidation(t *testing.T) {
+	g := valid3()
+	g.Nodes[1].PuzzleCfg.Choices = &graph.ChoiceConfig{Fields: []graph.ChoiceField{
+		{Options: []graph.ChoiceOption{{Value: "a"}}, Answer: "z"},
+		{Options: []graph.ChoiceOption{{Value: "a|b"}, {Value: "c"}, {Value: "c"}}},
+	}}
+	r := Check(g)
+	for _, code := range []string{"choices.options", "choices.answer.unknown", "choices.value.pipe", "choices.value.duplicate", "choices.answer.partial"} {
+		assertCode(t, r, code)
+	}
+}
+
+func TestStaleTranslations(t *testing.T) {
+	g := valid3()
+	g.Translations = map[string]map[string]string{"en": {
+		graph.NodeKey("p1", "text"):   "fine",
+		graph.NodeKey("gone", "text"): "left behind",
+	}}
+	r := Check(g)
+	assertCode(t, r, "translation.stale")
+	if r.HasErrors() {
+		t.Errorf("stale translations are a warning, not an error: %v", r.Errors())
+	}
+}

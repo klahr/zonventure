@@ -163,6 +163,16 @@ func (h *Handlers) GetPlay(w http.ResponseWriter, r *http.Request) {
 	}
 	if err == nil {
 		out.View = &view
+		// The adventure's own words, in the team's language where translated.
+		if s := view.Meta["title"]; s != "" {
+			out.Event.AdventureTitle = s
+		}
+		if s := view.Meta["intro"]; s != "" {
+			out.Event.IntroText = s
+		}
+		if s := view.Meta["outro"]; s != "" {
+			out.Event.OutroText = s
+		}
 		if out.Prefetch, err = h.engine().Media(ctx, tc.TeamID); err != nil {
 			httpx.ServerErr(w, http.StatusInternalServerError, "loading media failed", err)
 			return
@@ -190,16 +200,16 @@ func adventureLook(ctx context.Context, db *sql.DB, slug string) (look, error) {
 	)
 	err := db.QueryRowContext(ctx, `
 		SELECT title, intro_text, outro_text,
-		       accent_color, accent_secondary_color, background_color, text_color, submit_bg_color,
+		       accent_color, accent_secondary_color, background_color, text_color, submit_bg_color, font,
 		       start_lat, start_lng, start_label
 		FROM adventures WHERE slug = $1
-	`, slug).Scan(&l.title, &l.intro, &l.outro, &accent, &second, &bg, &ink, &dock, &lat, &lng, &label)
+	`, slug).Scan(&l.title, &l.intro, &l.outro, &accent, &second, &bg, &ink, &dock, &l.brand.Font, &lat, &lng, &label)
 	if errors.Is(err, sql.ErrNoRows) {
 		return look{}, nil
 	}
 	l.brand = adventure.Colors{
 		Accent: accent.String, AccentSecondary: second.String, Background: bg.String,
-		Text: ink.String, SubmitBackground: dock.String,
+		Text: ink.String, SubmitBackground: dock.String, Font: l.brand.Font,
 	}
 	if lat.Valid && lng.Valid {
 		l.start = &PlayStart{Lat: lat.Float64, Lng: lng.Float64, Label: label.String}
@@ -209,10 +219,12 @@ func adventureLook(ctx context.Context, db *sql.DB, slug string) (look, error) {
 
 // PlayActionRequest is the body of POST /api/player/play/{action}.
 type PlayActionRequest struct {
-	Node           string `json:"node"`
-	Guess          string `json:"guess,omitempty"`
-	Port           string `json:"port,omitempty"`
-	Index          int    `json:"index,omitempty"`
+	Node  string `json:"node"`
+	Guess string `json:"guess,omitempty"`
+	Port  string `json:"port,omitempty"`
+	Index int    `json:"index,omitempty"`
+	// Lang is the language for the "language" action.
+	Lang           string `json:"lang,omitempty"`
 	ClientActionID string `json:"client_action_id,omitempty"`
 }
 
@@ -278,6 +290,12 @@ func (h *Handlers) PostPlayAction(w http.ResponseWriter, r *http.Request) {
 		res, err = e.ChooseStart(ctx, tc.TeamID, req.Port)
 	case "continue":
 		res, err = e.Continue(ctx, tc.TeamID, req.Node)
+	case "back":
+		res, err = e.Back(ctx, tc.TeamID, req.Node)
+	case "timeup":
+		res, err = e.TimeUp(ctx, tc.TeamID)
+	case "language":
+		res, err = e.SetLanguage(ctx, tc.TeamID, req.Lang)
 	case "choose":
 		res, err = e.Choose(ctx, tc.TeamID, req.Node, req.Port)
 	case "skip":

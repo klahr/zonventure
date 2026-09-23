@@ -113,6 +113,8 @@ func Check(g *graph.Graph) Report {
 	checkProgressFreeCycles(r, g)
 	checkResources(r, g)
 	checkMedia(r, g)
+	checkTimeLimit(r, g)
+	checkTranslations(r, g)
 
 	sort.SliceStable(r.issues, func(i, j int) bool {
 		if r.issues[i].Severity != r.issues[j].Severity {
@@ -166,6 +168,40 @@ func checkNodeConfigs(r *reporter, g *graph.Graph) {
 			if len(n.PuzzleCfg.Outputs) == 0 {
 				r.err("puzzle.outputs.none", n.Slug, "", "puzzle has no outputs, so a team that solves it has nowhere to go")
 			}
+			if c := n.PuzzleCfg.Choices; c != nil {
+				checkChoices(r, n.Slug, *c)
+			}
+			if l := n.PuzzleCfg.Lock; l != nil {
+				checkLock(r, n.Slug, *l)
+			}
+			answerKinds := 0
+			for _, on := range []bool{n.PuzzleCfg.Tiles != nil, n.PuzzleCfg.Search != nil, n.PuzzleCfg.Choices != nil, n.PuzzleCfg.Lock != nil} {
+				if on {
+					answerKinds++
+				}
+			}
+			if answerKinds > 1 {
+				r.err("puzzle.answer.kinds", n.Slug, "", "a puzzle takes one kind of answer: a tile picture, a search, choices or a lock")
+			}
+			if n.PuzzleCfg.Search != nil {
+				if n.PuzzleCfg.Tiles != nil {
+					r.err("search.tiles", n.Slug, "", "a puzzle is answered either by a tile picture or by where the team stands, not both")
+				}
+				if hub, ok := g.OwnerHub(n.Slug); ok && !n.PuzzleCfg.Repeatable {
+					if h, _ := g.Node(hub); h.HubCfg != nil && h.HubCfg.Home {
+						r.warn("search.repeatable", n.Slug, "",
+							"teams come back to this search from the home screen, but it is not repeatable, so they will only ever see their first find")
+					}
+				}
+			}
+			if t := n.PuzzleCfg.Tiles; t != nil {
+				if t.Rows < graph.MinTiles || t.Rows > graph.MaxTiles || t.Cols < graph.MinTiles || t.Cols > graph.MaxTiles {
+					r.err("tiles.size", n.Slug, "", "a tile puzzle needs %d to %d rows and columns", graph.MinTiles, graph.MaxTiles)
+				}
+				if t.Image.Kind != graph.MediaImage {
+					r.err("tiles.image", n.Slug, "", "a tile puzzle needs a picture to cut up")
+				}
+			}
 			ports := map[string]bool{}
 			answers := 0
 			for _, o := range n.PuzzleCfg.Outputs {
@@ -181,7 +217,11 @@ func checkNodeConfigs(r *reporter, g *graph.Graph) {
 				switch o.Trigger {
 				case graph.OnAnswer:
 					answers++
-					if len(o.Matchers) == 0 {
+					// A tile puzzle's answer is its solved order, and a
+					// search's is where the team stands; neither has
+					// matchers to write.
+					graded := n.PuzzleCfg.Choices != nil && n.PuzzleCfg.Choices.Graded()
+					if len(o.Matchers) == 0 && n.PuzzleCfg.Tiles == nil && n.PuzzleCfg.Search == nil && !graded {
 						r.err("output.matchers.none", n.Slug, o.Port,
 							"output accepts an answer but has no matchers, so nothing can satisfy it")
 					}
@@ -235,7 +275,10 @@ func checkNodeConfigs(r *reporter, g *graph.Graph) {
 					r.err("branch.capacity.negative", n.Slug, b.Port, "capacity cannot be negative")
 				}
 			}
-			if n.HubCfg.Required > len(n.HubCfg.Branches) {
+			if n.HubCfg.Home && n.HubCfg.Policy != graph.PolicyChoice {
+				r.err("hub.home.policy", n.Slug, "", "a home screen lets the team choose; its policy must be choice")
+			}
+			if !n.HubCfg.Home && n.HubCfg.Required > len(n.HubCfg.Branches) {
 				r.err("hub.required.exceeds", n.Slug, "",
 					"hub requires %d branches but only has %d, so it can never complete",
 					n.HubCfg.Required, len(n.HubCfg.Branches))
@@ -510,6 +553,11 @@ func checkReferences(r *reporter, g *graph.Graph) {
 				r.err("ref.journal.unknown", n.Slug, "", "effect unlocks journal entry %q, which is not declared", s)
 			}
 		}
+		for _, s := range n.Unlocks {
+			if !journal[s] {
+				r.err("ref.journal.unknown", n.Slug, "", "step unlocks journal entry %q, which is not declared", s)
+			}
+		}
 	}
 }
 
@@ -604,6 +652,15 @@ func checkTermination(r *reporter, g *graph.Graph) {
 	rev := map[string][]string{}
 	for _, e := range g.Edges {
 		rev[e.To] = append(rev[e.To], e.From)
+	}
+	// Back is a way out too: a step inside a home screen's branch can
+	// always return to it, with no edge drawn.
+	for _, n := range g.Nodes {
+		if hub, ok := g.OwnerHub(n.Slug); ok {
+			if h, _ := g.Node(hub); h.HubCfg != nil && h.HubCfg.Home {
+				rev[hub] = append(rev[hub], n.Slug)
+			}
+		}
 	}
 	canEnd := map[string]bool{}
 	var stack []string
@@ -720,7 +777,126 @@ func checkResources(r *reporter, g *graph.Graph) {
 // checkMedia checks the shape of media references. Whether an id exists,
 // and belongs to this adventure, needs the database: graphstore.Save
 // checks that.
+// checkLock catches a lock that cannot be turned, or whose symbols could
+// not be told apart in the answer.
+func checkLock(r *reporter, node string, l graph.LockConfig) {
+	if l.Wheels < 1 || l.Wheels > graph.MaxWheels {
+		r.err("lock.wheels", node, "", "a lock has 1 to %d wheels", graph.MaxWheels)
+	}
+	if len(l.Symbols) < 2 {
+		r.err("lock.symbols", node, "", "a lock's wheels need at least two symbols to turn through")
+	}
+	seen := map[string]bool{}
+	for _, s := range l.Symbols {
+		switch {
+		case strings.TrimSpace(s.Value) == "":
+			r.err("lock.value.empty", node, "", "a lock symbol has no value")
+		case strings.Contains(s.Value, "|"):
+			r.err("lock.value.pipe", node, "", "lock symbol %q contains \"|\", which separates the wheels", s.Value)
+		case seen[s.Value]:
+			r.err("lock.value.duplicate", node, "", "the lock has the symbol %q twice", s.Value)
+		}
+		seen[s.Value] = true
+	}
+	for _, i := range l.Start {
+		if i < 0 || i >= len(l.Symbols) {
+			r.err("lock.start", node, "", "a wheel starts at symbol %d, which the lock does not have", i+1)
+		}
+	}
+}
+
+// checkChoices catches a choice question a team could not answer, or
+// whose answers could not be told apart.
+func checkChoices(r *reporter, node string, c graph.ChoiceConfig) {
+	if len(c.Fields) == 0 {
+		r.err("choices.none", node, "", "a choice puzzle has no questions")
+	}
+	answers := 0
+	for i, f := range c.Fields {
+		if len(f.Options) < 2 {
+			r.err("choices.options", node, "", "question %d needs at least two options", i+1)
+		}
+		seen := map[string]bool{}
+		for _, o := range f.Options {
+			switch {
+			case strings.TrimSpace(o.Value) == "":
+				r.err("choices.value.empty", node, "", "question %d has an option with no value", i+1)
+			case strings.Contains(o.Value, "|"):
+				r.err("choices.value.pipe", node, "", "option %q of question %d contains \"|\", which separates the answers", o.Value, i+1)
+			case seen[o.Value]:
+				r.err("choices.value.duplicate", node, "", "question %d offers %q twice", i+1, o.Value)
+			}
+			seen[o.Value] = true
+		}
+		if f.Answer != "" {
+			answers++
+			if !seen[f.Answer] {
+				r.err("choices.answer.unknown", node, "", "the answer to question %d, %q, is not one of its options", i+1, f.Answer)
+			}
+		}
+	}
+	if answers > 0 && answers < len(c.Fields) {
+		r.err("choices.answer.partial", node, "", "either every question has a right answer, for a marked form, or none does")
+	}
+}
+
+// checkTranslations warns about translations left behind by an edit — a
+// step, zone or note deleted or renamed. They do no harm, but an author
+// deserves to know their English for it is gone with it.
+func checkTranslations(r *reporter, g *graph.Graph) {
+	nodes := map[string]bool{}
+	for _, n := range g.Nodes {
+		nodes[n.Slug] = true
+	}
+	zones := slugSet(len(g.Zones), func(i int) string { return g.Zones[i].Slug })
+	journal := slugSet(len(g.Journal), func(i int) string { return g.Journal[i].Slug })
+	langs := make([]string, 0, len(g.Translations))
+	for l := range g.Translations {
+		langs = append(langs, l)
+	}
+	sort.Strings(langs)
+	for _, l := range langs {
+		stale := 0
+		for key := range g.Translations[l] {
+			kind, rest, _ := strings.Cut(key, ":")
+			slug, _, _ := strings.Cut(rest, ":")
+			switch {
+			case kind == "n" && !nodes[slug], kind == "z" && !zones[slug], kind == "j" && !journal[slug]:
+				stale++
+			}
+		}
+		if stale > 0 {
+			r.warn("translation.stale", "", "", "%d %s translations belong to steps, zones or notes that no longer exist", stale, l)
+		}
+	}
+}
+
+// checkTimeLimit catches a time limit with nowhere to send the team.
+func checkTimeLimit(r *reporter, g *graph.Graph) {
+	tl := g.TimeLimit
+	if tl == nil {
+		return
+	}
+	if tl.Seconds <= 0 {
+		r.err("time_limit.seconds", "", "", "the adventure's time limit must be longer than zero")
+	}
+	n, ok := g.Node(tl.To)
+	switch {
+	case tl.To == "" || !ok:
+		r.err("time_limit.to", "", "", "the adventure's time limit sends teams to %q, which is not a step", tl.To)
+	case n.Type == graph.Start:
+		r.err("time_limit.to", tl.To, "", "the time limit cannot send teams back to a start")
+	}
+}
+
 func checkMedia(r *reporter, g *graph.Graph) {
+	for _, je := range g.Journal {
+		for _, m := range je.Media {
+			if m.ID <= 0 || m.Kind != graph.MediaImage && m.Kind != graph.MediaAudio {
+				r.err("media.journal", "", "", "journal note %q has a picture or sound with no file", je.Slug)
+			}
+		}
+	}
 	for _, n := range g.Nodes {
 		for _, ms := range n.MediaLists() {
 			for _, m := range ms {

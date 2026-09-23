@@ -31,10 +31,22 @@ export interface StartOption {
 
 /** session.Input — the shape of a puzzle's answer box. */
 export interface PlayInput {
-  kind: "text" | "number";
+  kind: "text" | "number" | "tiles" | "search" | "choice" | "lock";
+  /** A combination lock: how many wheels, their symbols, where each starts. */
+  wheels?: number;
+  symbols?: { value: string; label?: string; image?: PlayMedia }[];
+  start?: number[];
+  /** A choice: the questions and their options (never the answers). */
+  fields?: { label?: string; options: { value: string; label?: string }[] }[];
+  /** A search: the zone the team stands in, if any. */
+  at?: string;
   /** Set when the answer is a list: how many items to give. */
   parts?: number;
   ordered?: boolean;
+  /** A tile puzzle (kind "tiles"): the picture and the grid to cut it into. */
+  rows?: number;
+  cols?: number;
+  image?: PlayMedia;
 }
 
 /** internal/graph: Media. Fetched from mediaURL(id). */
@@ -64,6 +76,10 @@ export interface OfferEntry {
   port: string;
   label?: string;
   locked?: boolean;
+  /** A home-screen branch the team has been into; still open. */
+  visited?: boolean;
+  note?: string;
+  image?: PlayMedia;
 }
 
 export interface ItemView {
@@ -77,6 +93,8 @@ export interface JournalView {
   slug: string;
   title?: string;
   body?: string;
+  section?: string;
+  media?: PlayMedia[];
 }
 
 /**
@@ -100,6 +118,16 @@ export interface View {
   attempts?: number;
   offer?: OfferEntry[];
   can_finish?: boolean;
+  /** Languages the adventure plays in, main first, and the view's own. */
+  languages?: string[];
+  lang?: string;
+  /** When the adventure's time limit falls, for a countdown. */
+  ends_at?: string;
+  /** The time limit's message, once it has moved the team. */
+  time_up_text?: string;
+  /** The home screen a team may go back to from here, and its title. */
+  back_to?: string;
+  back_label?: string;
   can_skip?: boolean;
   blocked_until?: string;
   deadline?: string;
@@ -111,6 +139,8 @@ export interface View {
   outcome?: "complete" | "fail";
   items?: ItemView[];
   journal?: JournalView[];
+  /** The adventure keeps a journal, so its button shows even while empty. */
+  has_journal?: boolean;
   theme?: string;
   now: string;
 }
@@ -123,6 +153,8 @@ export interface Result {
   response?: string;
   blocked_until?: string;
   hint?: string;
+  /** The time limit moved the team instead of the action asked for. */
+  time_up?: boolean;
   view: View;
 }
 
@@ -131,6 +163,9 @@ export type PlayAction =
   | { kind: "begin"; node: string; port: string }
   | { kind: "answer"; node: string; guess: string }
   | { kind: "continue"; node: string }
+  | { kind: "back"; node: string }
+  | { kind: "timeup"; node: string }
+  | { kind: "language"; node: string; lang: string }
   | { kind: "choose"; node: string; port: string }
   | { kind: "skip"; node: string }
   | { kind: "timeout"; node: string }
@@ -164,6 +199,8 @@ export interface Brand {
   text?: string;
   /** The answer bar at the bottom of the screen. */
   submit_bg?: string;
+  /** A typeface key from adventure.Fonts; empty is the default. */
+  font?: string;
 }
 
 // --- player ---------------------------------------------------------------

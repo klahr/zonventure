@@ -27,6 +27,7 @@ package session
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -107,9 +108,18 @@ type Team struct {
 	// what a switch reads when it names no puzzle.
 	LatestAnswer string `json:"last_answer,omitempty"`
 
-	Nodes    map[string]*NodeState      `json:"nodes,omitempty"`
-	Items    map[string]int             `json:"items,omitempty"`
-	Journal  map[string]bool            `json:"journal,omitempty"`
+	Nodes   map[string]*NodeState `json:"nodes,omitempty"`
+	Items   map[string]int        `json:"items,omitempty"`
+	Journal map[string]bool       `json:"journal,omitempty"`
+	// JournalOrder is the journal in the order it was unlocked, for an
+	// adventure that lists notes as they were found.
+	JournalOrder []string `json:"journal_order,omitempty"`
+	// TimedOut records that the adventure's time limit has moved the
+	// team, so it does not again.
+	TimedOut bool `json:"timed_out,omitempty"`
+	// Lang is the language the team plays in; empty is the adventure's
+	// main language.
+	Lang     string                     `json:"lang,omitempty"`
 	Counters map[string]float64         `json:"counters,omitempty"`
 	Entered  map[string]map[string]bool `json:"entered,omitempty"` // hub -> port -> ever entered
 
@@ -351,7 +361,10 @@ func (t *Team) ApplyEffect(_ string, e graph.EffectConfig) {
 	case graph.SetCounter:
 		t.Counters[e.Counter] = t.nextCounterValue(e)
 	case graph.UnlockJournal:
-		t.Journal[e.JournalEntry] = true
+		if !t.Journal[e.JournalEntry] {
+			t.Journal[e.JournalEntry] = true
+			t.JournalOrder = append(t.JournalOrder, e.JournalEntry)
+		}
 	case graph.SetTheme:
 		t.Theme = e.Theme
 	}
@@ -402,6 +415,9 @@ type Result struct {
 	BlockedUntil *time.Time `json:"blocked_until,omitempty"`
 	// Hint is the text revealed by RevealHint.
 	Hint string `json:"hint,omitempty"`
+	// TimeUp is set when the adventure's time limit moved the team
+	// instead of the action it asked for.
+	TimeUp bool `json:"time_up,omitempty"`
 
 	// View is the team's state after the action.
 	View View `json:"view"`
@@ -433,6 +449,9 @@ func (t *Team) current(node string) (graph.Node, error) {
 // A nil step with a nil error means the team stayed put but its record
 // at node changed (a wrong guess was counted); the caller persists that.
 func (t *Team) Answer(node, guess string) (Result, *walk.Step, error) {
+	if t.TimeUpDue() {
+		return t.fireTimeUp()
+	}
 	n, err := t.current(node)
 	if err != nil {
 		return Result{}, nil, err
@@ -453,6 +472,27 @@ func (t *Team) Answer(node, guess string) (Result, *walk.Step, error) {
 		return Result{}, nil, ErrTimeUp
 	}
 
+	// A graded form is marked, never wrong: the first answer output is
+	// taken, paying for the fields answered correctly.
+	if c := cfg.Choices; c != nil && c.Graded() {
+		if correct, ok := c.Mark(guess); ok {
+			for _, o := range cfg.Outputs {
+				if o.Trigger != graph.OnAnswer || !t.outputZoneOK(o) {
+					continue
+				}
+				points := float64(o.Points) * float64(correct) / float64(len(c.Fields))
+				r.Solved = true
+				r.Answer = strings.TrimSpace(guess)
+				t.LatestAnswer = r.Answer
+				step, err := t.leave(n, o.Port, points)
+				if err != nil {
+					return Result{}, nil, err
+				}
+				return Result{Accepted: true, Port: o.Port, Points: points}, step, nil
+			}
+		}
+	}
+
 	// First answer output whose matchers and zone constraint both hold.
 	// Order is the author's: it is how they express precedence between
 	// overlapping answers.
@@ -460,7 +500,28 @@ func (t *Team) Answer(node, guess string) (Result, *walk.Step, error) {
 		if o.Trigger != graph.OnAnswer {
 			continue
 		}
-		m := match.Any(o.Matchers, guess)
+		var m match.Result
+		if cfg.Search != nil {
+			// Where the team stands is the answer; the zone test below
+			// decides, and there are no matchers to consult.
+			m = match.Result{OK: true, Multiplier: 1}
+		} else if cfg.Tiles != nil {
+			// A tile puzzle has one right answer, the solved order, and
+			// no matchers to write it in.
+			m = match.Result{OK: tilesSolved(*cfg.Tiles, guess), Multiplier: 1}
+		} else {
+			m = match.Any(o.Matchers, guess)
+			// An answer in another language the adventure is written in
+			// counts too.
+			if !m.OK {
+				for _, alt := range t.G.AlternativeAnswers(n.Slug, o.Port) {
+					if a := match.Any([]match.Matcher{{Kind: match.Exact, Value: alt}}, guess); a.OK {
+						m = a
+						break
+					}
+				}
+			}
+		}
 		if !m.OK || !t.outputZoneOK(o) {
 			continue
 		}
@@ -495,10 +556,16 @@ func (t *Team) Answer(node, guess string) (Result, *walk.Step, error) {
 			return res, step, nil
 		}
 	}
-	if resp, ok := cfg.ResponseFor(r.Attempts); ok {
-		res.Response = resp.Text
+	if i := cfg.ResponseIndex(r.Attempts); i >= 0 {
+		res.Response = t.G.Tr(t.Lang, graph.NodeKey(n.Slug, fmt.Sprintf("reply:%d", i)), cfg.Responses[i].Text)
 	}
 	return res, nil, nil
+}
+
+// tilesSolved reports whether a reported tile order is the solved one.
+// Spaces are ignored; anything else — a short list, a repeat — is wrong.
+func tilesSolved(c graph.TileConfig, guess string) bool {
+	return strings.ReplaceAll(guess, " ", "") == c.Solution()
 }
 
 // outputZoneOK applies an output's zone constraint, including the
@@ -542,8 +609,86 @@ func (t *Team) ChooseStart(start string) (Result, *walk.Step, error) {
 	return Result{Port: graph.PortOut}, &step, nil
 }
 
+// Deadline is when the adventure's time limit falls for this team: a
+// limit's length after it started. None before it has begun.
+func (t *Team) Deadline() (time.Time, bool) {
+	tl := t.G.TimeLimit
+	if tl == nil || tl.Seconds <= 0 || t.StartedAt.IsZero() || t.Current == "" {
+		return time.Time{}, false
+	}
+	return t.StartedAt.Add(time.Duration(tl.Seconds) * time.Second), true
+}
+
+// TimeUpDue reports whether the time limit has passed and not yet moved
+// the team.
+func (t *Team) TimeUpDue() bool {
+	if t.TimedOut || t.Completed {
+		return false
+	}
+	d, ok := t.Deadline()
+	return ok && !t.Now.Before(d)
+}
+
+// TimeUp moves the team as the time limit says, if it is due — the
+// client calls it when its countdown ends, and the engine re-checks the
+// time rather than trusting it. Every other action does the same first,
+// so a phone that was asleep at the deadline cannot slip past it.
+func (t *Team) TimeUp() (Result, *walk.Step, error) {
+	if !t.TimeUpDue() {
+		return Result{}, nil, ErrNotAllowed
+	}
+	return t.fireTimeUp()
+}
+
+func (t *Team) fireTimeUp() (Result, *walk.Step, error) {
+	t.TimedOut = true
+	step, err := walk.Jump(t.G, t, t.Current, t.G.TimeLimit.To)
+	if err != nil {
+		return Result{}, nil, err
+	}
+	return Result{TimeUp: true}, &step, nil
+}
+
+// Back returns the team from a step inside a home hub's branch to that
+// hub — legacy's "leave route", which is how a team walks away from a
+// suspect mid-interview and comes back later. The step it leaves keeps
+// no outcome: an unanswered question is still there to answer.
+func (t *Team) Back(node string) (Result, *walk.Step, error) {
+	if t.TimeUpDue() {
+		return t.fireTimeUp()
+	}
+	if _, err := t.current(node); err != nil {
+		return Result{}, nil, err
+	}
+	hub, ok := t.backTo()
+	if !ok {
+		return Result{}, nil, ErrNotAllowed
+	}
+	step, err := walk.Back(t.G, t, node, hub)
+	if err != nil {
+		return Result{}, nil, err
+	}
+	return Result{}, &step, nil
+}
+
+// backTo is the home hub the team can go back to from where it stands.
+func (t *Team) backTo() (string, bool) {
+	if t.Current == "" {
+		return "", false
+	}
+	hub, ok := t.G.OwnerHub(t.Current)
+	if !ok {
+		return "", false
+	}
+	h, _ := t.G.Node(hub)
+	return hub, h.HubCfg != nil && h.HubCfg.Home
+}
+
 // Continue moves the team past a story node.
 func (t *Team) Continue(node string) (Result, *walk.Step, error) {
+	if t.TimeUpDue() {
+		return t.fireTimeUp()
+	}
 	n, err := t.current(node)
 	if err != nil {
 		return Result{}, nil, err
@@ -562,6 +707,9 @@ func (t *Team) Continue(node string) (Result, *walk.Step, error) {
 // Choose enters a hub branch, or moves on from a satisfied hub when port
 // is graph.PortDone.
 func (t *Team) Choose(hub, port string) (Result, *walk.Step, error) {
+	if t.TimeUpDue() {
+		return t.fireTimeUp()
+	}
 	n, err := t.current(hub)
 	if err != nil {
 		return Result{}, nil, err
@@ -580,6 +728,9 @@ func (t *Team) Choose(hub, port string) (Result, *walk.Step, error) {
 // anti-abuse rule carried over from legacy: spamming guesses alone must
 // never unlock a skip.
 func (t *Team) Skip(node string) (Result, *walk.Step, error) {
+	if t.TimeUpDue() {
+		return t.fireTimeUp()
+	}
 	n, err := t.current(node)
 	if err != nil {
 		return Result{}, nil, err
@@ -605,6 +756,9 @@ func (t *Team) Skip(node string) (Result, *walk.Step, error) {
 // Only the simulator calls it. A live force-solve must also be audited,
 // which is the caller's job, not this package's.
 func (t *Team) ForceSolve(node, port string) (Result, *walk.Step, error) {
+	if t.TimeUpDue() {
+		return t.fireTimeUp()
+	}
 	n, err := t.current(node)
 	if err != nil {
 		return Result{}, nil, err
@@ -640,6 +794,9 @@ func (t *Team) ForceSolve(node, port string) (Result, *walk.Step, error) {
 // The client calls it when its countdown reaches zero; this re-checks
 // the time rather than trusting the client.
 func (t *Team) Timeout(node string) (Result, *walk.Step, error) {
+	if t.TimeUpDue() {
+		return t.fireTimeUp()
+	}
 	n, err := t.current(node)
 	if err != nil {
 		return Result{}, nil, err
@@ -666,6 +823,9 @@ func (t *Team) Timeout(node string) (Result, *walk.Step, error) {
 // the team reached the puzzle, and the hint's cost is charged to the
 // team's penalty score. Like a wrong answer, it never moves the team.
 func (t *Team) RevealHint(node string, index int) (Result, *walk.Step, error) {
+	if t.TimeUpDue() {
+		return t.fireTimeUp()
+	}
 	n, err := t.current(node)
 	if err != nil {
 		return Result{}, nil, err
@@ -684,7 +844,20 @@ func (t *Team) RevealHint(node string, index int) (Result, *walk.Step, error) {
 	}
 	r.HintsRevealed++
 	t.PenaltyScore += float64(h.Cost)
-	return Result{Hint: h.Text}, nil, nil
+	return Result{Hint: t.G.Tr(t.Lang, graph.NodeKey(n.Slug, fmt.Sprintf("hint:%d", index)), h.Text)}, nil, nil
+}
+
+// SetLanguage switches the language the team plays in: one the adventure
+// is written or translated in, or "" for its main language.
+func (t *Team) SetLanguage(lang string) error {
+	if lang != "" && !slices.Contains(t.G.Languages(), lang) {
+		return ErrNotAllowed
+	}
+	if lang == t.G.Language {
+		lang = ""
+	}
+	t.Lang = lang
+	return nil
 }
 
 // leave records the team leaving node n by port — the outcome that

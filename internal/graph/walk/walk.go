@@ -159,13 +159,35 @@ func Advance(g *graph.Graph, s State, from, port string) (Step, error) {
 }
 
 func advanceFrom(g *graph.Graph, s State, from, port string) (Step, error) {
-	step := Step{From: from, Port: port}
-
 	next, ok := g.Target(from, port)
 	if !ok {
-		return step, fmt.Errorf("%w: %s.%s", ErrDanglingPort, from, port)
+		return Step{From: from, Port: port}, fmt.Errorf("%w: %s.%s", ErrDanglingPort, from, port)
 	}
+	return walkTo(g, s, Step{From: from, Port: port}, next)
+}
 
+// Back takes a team from a step inside a home hub's branch back to that
+// hub, without an outcome for the step it leaves: an unanswered question
+// stays unanswered, to come back to.
+func Back(g *graph.Graph, s State, from, hub string) (Step, error) {
+	h, ok := g.Node(hub)
+	if !ok || h.Type != graph.Hub || h.HubCfg == nil || !h.HubCfg.Home {
+		return Step{From: from}, fmt.Errorf("%q is not a home hub", hub)
+	}
+	return walkTo(g, s, Step{From: from}, hub)
+}
+
+// Jump moves a team from wherever it is to `to`, as a time limit does,
+// settling there like any arrival. The step it leaves keeps no outcome.
+func Jump(g *graph.Graph, s State, from, to string) (Step, error) {
+	if _, ok := g.Node(to); !ok {
+		return Step{From: from}, fmt.Errorf("jump to unknown node %q", to)
+	}
+	return walkTo(g, s, Step{From: from}, to)
+}
+
+// walkTo settles a step that has arrived at `next`: see Advance.
+func walkTo(g *graph.Graph, s State, step Step, next string) (Step, error) {
 	seen := map[string]int{}
 	for range maxHops {
 		node, ok := g.Node(next)
@@ -182,6 +204,14 @@ func advanceFrom(g *graph.Graph, s State, from, port string) (Step, error) {
 			return step, fmt.Errorf("%w: revisited %s", ErrLoop, next)
 		}
 		step.Passed = append(step.Passed, next)
+		// Journal entries noted on the step itself are unlocked as the
+		// team reaches it — through the same effect a journal node
+		// would have, so the caller persists them the same way.
+		for _, entry := range node.Unlocks {
+			fx := graph.Node{Slug: node.Slug, Type: graph.Effect, EffectCfg: &graph.EffectConfig{Kind: graph.UnlockJournal, JournalEntry: entry}}
+			step.Effects = append(step.Effects, fx)
+			s.ApplyEffect(fx.Slug, *fx.EffectCfg)
+		}
 
 		switch node.Type {
 		case graph.Puzzle:
@@ -203,8 +233,17 @@ func advanceFrom(g *graph.Graph, s State, from, port string) (Step, error) {
 			return step, nil
 
 		case graph.Story:
-			// Stories are shown every time. A "you still need the code"
-			// beat on a loop back to a hub has to be seen on every pass.
+			// Stories are shown every time — a "you still need the code"
+			// beat on a loop back to a hub has to be seen on every pass —
+			// unless the author marked one to be seen once.
+			if node.StoryCfg != nil && node.StoryCfg.Once {
+				if port, left := s.Outcome(next); left {
+					if to, ok := g.Target(next, port); ok {
+						next = to
+						continue
+					}
+				}
+			}
 			step.To = next
 			return step, nil
 
@@ -291,7 +330,11 @@ func EnterBranch(g *graph.Graph, s State, hubSlug, port string) (Step, error) {
 		return Step{}, fmt.Errorf("%q is not a hub", hubSlug)
 	}
 
+	home := hub.HubCfg != nil && hub.HubCfg.Home
 	if port == graph.PortDone {
+		if home {
+			return Step{}, fmt.Errorf("hub %q is a home screen and never finishes", hubSlug)
+		}
 		if hub.HubCfg == nil || s.CompletedBranches(hubSlug) < hub.HubCfg.RequiredBranches() {
 			return Step{}, fmt.Errorf("hub %q is not finished yet", hubSlug)
 		}
@@ -304,7 +347,7 @@ func EnterBranch(g *graph.Graph, s State, hubSlug, port string) (Step, error) {
 	}
 	// Re-check rather than trusting the client: the offer was computed
 	// on a previous request and the team's state may have moved on.
-	if s.BranchDone(hubSlug, port) {
+	if s.BranchDone(hubSlug, port) && !home {
 		return Step{}, fmt.Errorf("branch %q is already done", port)
 	}
 	if !branchOpen(s, hub, b) {
@@ -332,6 +375,21 @@ func resolveHub(s State, hub graph.Node) (chosen string, offer []graph.Branch, s
 		return "", nil, false, false, fmt.Errorf("hub %q has no configuration", hub.Slug)
 	}
 	cfg := hub.HubCfg
+
+	// A home screen offers every open branch, visited or not, and never
+	// finishes: a team goes on through a branch that ends the adventure.
+	if cfg.Home {
+		var open []graph.Branch
+		for _, b := range cfg.Branches {
+			if branchOpen(s, hub, b) {
+				open = append(open, b)
+			}
+		}
+		if len(open) == 0 {
+			return "", nil, false, false, fmt.Errorf("%w: hub %s", ErrStuck, hub.Slug)
+		}
+		return "", open, false, false, nil
+	}
 
 	met := s.CompletedBranches(hub.Slug) >= cfg.RequiredBranches()
 

@@ -12,9 +12,15 @@ export function App() {
   const s = game.state;
   const view = s?.view;
   const running = s?.event.state === "running";
+  // The team's language for a translated adventure also switches the
+  // app's own words, where the app has them.
+  const teamLang = view?.lang;
+  useEffect(() => {
+    if (teamLang && i18n.available().includes(teamLang) && i18n.current() !== teamLang) i18n.setLocale(teamLang);
+  }, [teamLang, i18n]);
 
   useLiveRefresh(game.status === "ready", game.refresh);
-  const geo = useGeo(game.status === "ready" && running && !view?.finished, (!!view?.zone && !view.here) || !!view?.starts?.some((o) => o.zone && !o.here), game.refresh);
+  const geo = useGeo(game.status === "ready" && running && !view?.finished, (!!view?.zone && !view.here) || !!view?.starts?.some((o) => o.zone && !o.here) || view?.input?.kind === "search", game.refresh);
 
   // The start moment plays when this tab watched the lobby turn into the
   // game — not on every reload of a game already under way.
@@ -98,6 +104,7 @@ export function App() {
             {...(s.event.outro_text ? { outro: s.event.outro_text } : {})}
             {...(zoneNote ? { zoneNote } : {})}
             placeNote={placeNote}
+            storageKey={`team-${s.team.id}`}
           />
         ) : (
           <Lobby state={s} t={t} />

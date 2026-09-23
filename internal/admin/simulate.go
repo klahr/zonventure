@@ -34,7 +34,7 @@ const maxSimulateWait = 24 * 60 * 60
 
 type simulateAction struct {
 	// Kind is start, place, begin, answer, continue, choose, skip, timeout,
-	// hint, force, wait or move.
+	// hint, back, timeup, language, force, wait or move.
 	Kind  string `json:"kind"`
 	Node  string `json:"node,omitempty"`
 	Guess string `json:"guess,omitempty"`
@@ -44,6 +44,8 @@ type simulateAction struct {
 	Seconds int `json:"seconds,omitempty"`
 	// Zone is where move puts the team; empty means nowhere.
 	Zone string `json:"zone,omitempty"`
+	// Lang is the language for the language action.
+	Lang string `json:"lang,omitempty"`
 	// Lat and Lng put the team at a point instead, as picked on a map.
 	Lat *float64 `json:"lat,omitempty"`
 	Lng *float64 `json:"lng,omitempty"`
@@ -149,6 +151,12 @@ func simulate(g *graph.Graph, team *session.Team, a simulateAction, now time.Tim
 		res, step, err = team.Answer(a.Node, a.Guess)
 	case "continue":
 		res, step, err = team.Continue(a.Node)
+	case "back":
+		res, step, err = team.Back(a.Node)
+	case "timeup":
+		res, step, err = team.TimeUp()
+	case "language":
+		err = team.SetLanguage(a.Lang)
 	case "choose":
 		res, step, err = team.Choose(a.Node, a.Port)
 	case "skip":
@@ -164,6 +172,11 @@ func simulate(g *graph.Graph, team *session.Team, a simulateAction, now time.Tim
 			return simulateResponse{}, http.StatusBadRequest, "seconds must be between 1 and 86400"
 		}
 		team.Now = team.Now.Add(time.Duration(a.Seconds) * time.Second)
+		// The simulated clock has no countdown on a phone to call time
+		// up; moving it past the limit applies the limit there and then.
+		if team.TimeUpDue() {
+			res, step, err = team.TimeUp()
+		}
 	case "move":
 		team.Position = nil
 		if a.Lat != nil && a.Lng != nil {

@@ -136,6 +136,7 @@ type adventureEditDTO struct {
 	BackgroundColor      string `json:"background_color"`
 	TextColor            string `json:"text_color"`
 	SubmitBgColor        string `json:"submit_bg_color"`
+	Font                 string `json:"font"`
 	// Language is the BCP 47 tag of the puzzle content (e.g. "en",
 	// "sv"). Defaults to "en" via the schema's column default.
 	Language  string `json:"language"`
@@ -372,6 +373,7 @@ type updateAdventureRequest struct {
 	BackgroundColor      *string `json:"background_color,omitempty"`
 	TextColor            *string `json:"text_color,omitempty"`
 	SubmitBgColor        *string `json:"submit_bg_color,omitempty"`
+	Font                 *string `json:"font,omitempty"`
 	Language             *string `json:"language,omitempty"`
 	Published            *bool   `json:"published,omitempty"`
 	StrictAssets         *bool   `json:"strict_assets,omitempty"`
@@ -512,6 +514,12 @@ func applyAdventureMetaUpdate(ctx context.Context, db *sql.DB, slug string, req 
 			return badRequestf(`%s must be empty or "#rrggbb"`, p.col)
 		}
 		add(p.col, nullIfEmpty(*p.val))
+	}
+	if req.Font != nil {
+		if _, ok := adventure.Fonts[*req.Font]; !ok && *req.Font != "" {
+			return badRequestf("font must be empty or one of the listed fonts")
+		}
+		add("font", *req.Font)
 	}
 	if req.Language != nil {
 		lang := strings.TrimSpace(*req.Language)
@@ -684,7 +692,7 @@ func loadAdventureDTO(ctx context.Context, db *sql.DB, slug string) (*adventureE
 	)
 	if err := db.QueryRowContext(ctx, `
 		SELECT id, slug, title, description, author, intro_text, outro_text,
-		       accent_color, accent_secondary_color, background_color, text_color, submit_bg_color,
+		       accent_color, accent_secondary_color, background_color, text_color, submit_bg_color, font,
 		       language,
 		       (avatar_mime_type IS NOT NULL)::int AS has_avatar,
 		       published, org_id, strict_assets,
@@ -692,7 +700,7 @@ func loadAdventureDTO(ctx context.Context, db *sql.DB, slug string) (*adventureE
 		FROM adventures WHERE slug = $1
 	`, slug).Scan(&a.ID, &a.Slug, &a.Title, &a.Description, &a.Author,
 		&a.IntroText, &a.OutroText,
-		&accent, &accent2, &bg, &ink, &submitBG, &a.Language, &hasAvatar, &published, &orgID, &a.StrictAssets,
+		&accent, &accent2, &bg, &ink, &submitBG, &a.Font, &a.Language, &hasAvatar, &published, &orgID, &a.StrictAssets,
 		&startLat, &startLng, &a.StartLabel); err != nil {
 		return nil, err
 	}

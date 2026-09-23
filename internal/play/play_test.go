@@ -788,3 +788,133 @@ func TestTeamChoosesItsStart(t *testing.T) {
 		t.Errorf("after reload the team is on %q", v.Node)
 	}
 }
+
+// A home screen, played live: a note unlocked on reaching a step, a
+// branch left with Back and marked visited, and a second visit — all of
+// it read back from the database, not from memory.
+func TestHomeScreenLive(t *testing.T) {
+	g := &graph.Graph{
+		Journal: []graph.JournalEntry{{Slug: "carl", Title: "Carl"}},
+		Nodes: []graph.Node{
+			{Slug: "start", Type: graph.Start},
+			{Slug: "home", Type: graph.Hub, Title: "Obscurium", HubCfg: &graph.HubConfig{Policy: graph.PolicyChoice, Home: true, Branches: []graph.Branch{
+				{Port: "carl", Label: "Carl"}, {Port: "accuse", Label: "Solve"},
+			}}},
+			{Slug: "carl", Type: graph.Story, StoryCfg: &graph.StoryConfig{Text: "Carl.", Once: true}, Unlocks: []string{"carl"}},
+			puzzle("carl-q", "1997"),
+			puzzle("accuse", "erika"),
+			{Slug: "end", Type: graph.End},
+		},
+		Edges: []graph.Edge{
+			edge("start", "out", "home"),
+			edge("home", "carl", "carl"), edge("carl", "out", "carl-q"), edge("carl-q", "solved", "home"),
+			edge("home", "accuse", "accuse"), edge("accuse", "solved", "end"),
+		},
+	}
+	ctx := context.Background()
+	f := setup(t, g, 1)
+	team := f.teams[0]
+
+	if _, err := f.eng.Choose(ctx, team, "home", "carl"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.eng.Continue(ctx, team, "carl"); err != nil {
+		t.Fatal(err)
+	}
+	v := f.view(team)
+	if v.Node != "carl-q" || v.BackTo != "home" || len(v.Journal) != 1 {
+		t.Fatalf("on Carl's question, with a way back and Carl noted: %+v", v)
+	}
+	if _, err := f.eng.Back(ctx, team, "carl-q"); err != nil {
+		t.Fatal(err)
+	}
+	v = f.view(team)
+	if v.Node != "home" || len(v.Offer) != 2 || !v.Offer[0].Visited || v.Offer[1].Visited {
+		t.Fatalf("back home, Carl visited and still offered: %+v", v.Offer)
+	}
+	if _, err := f.eng.Choose(ctx, team, "home", "carl"); err != nil {
+		t.Fatalf("a home branch can be entered again: %v", err)
+	}
+	if v := f.view(team); v.Node != "carl-q" {
+		t.Errorf("the second visit skips the introduction read once, got %q", v.Node)
+	}
+}
+
+// The time limit, live: past the deadline the team is moved once, and the
+// database remembers it — a second action after the move acts normally.
+func TestTimeLimitLive(t *testing.T) {
+	g := &graph.Graph{
+		TimeLimit: &graph.TimeLimit{Seconds: 600, To: "accuse", Text: "Time's up."},
+		Nodes: []graph.Node{
+			{Slug: "start", Type: graph.Start},
+			puzzle("clue", "x"),
+			puzzle("accuse", "erika"),
+			{Slug: "end", Type: graph.End},
+		},
+		Edges: []graph.Edge{
+			edge("start", "out", "clue"), edge("clue", "solved", "accuse"), edge("accuse", "solved", "end"),
+		},
+	}
+	ctx := context.Background()
+	f := setup(t, g, 1)
+	team := f.teams[0]
+	if v := f.view(team); v.EndsAt == nil {
+		t.Fatalf("a countdown is shown: %+v", v)
+	}
+	if _, err := f.eng.TimeUp(ctx, team); err == nil {
+		t.Error("time-up before the deadline is refused")
+	}
+	f.clock.Advance(11 * time.Minute)
+	r, err := f.eng.Answer(ctx, team, "clue", "wrong")
+	if err != nil || !r.TimeUp || r.View.Node != "accuse" {
+		t.Fatalf("past the deadline, the answer moves the team instead: %+v %v", r, err)
+	}
+	if v := f.view(team); v.Node != "accuse" || v.TimeUpText != "Time's up." {
+		t.Fatalf("after reload, at the accusation with the message: %+v", v)
+	}
+	r, err = f.eng.Answer(ctx, team, "accuse", "erika")
+	if err != nil || r.TimeUp || !r.View.Finished {
+		t.Fatalf("it fired once; the next answer counts: %+v %v", r, err)
+	}
+}
+
+// A team's language, live: chosen, remembered by the database, and used
+// for the view and the replies.
+func TestLanguageLive(t *testing.T) {
+	g := &graph.Graph{
+		Language: "sv",
+		Nodes: []graph.Node{
+			{Slug: "start", Type: graph.Start},
+			{Slug: "q", Type: graph.Puzzle, Title: "Frågan", PuzzleCfg: &graph.PuzzleConfig{
+				Prompt:    "Hur många?",
+				Outputs:   []graph.Output{{Port: "solved", Trigger: graph.OnAnswer, Matchers: []match.Matcher{{Kind: match.Exact, Value: "sex"}}}},
+				Responses: []graph.Response{{Text: "Fel."}},
+			}},
+			{Slug: "end", Type: graph.End},
+		},
+		Edges: []graph.Edge{edge("start", "out", "q"), edge("q", "solved", "end")},
+		Translations: map[string]map[string]string{"en": {
+			graph.NodeKey("q", "text"):               "How many?",
+			graph.NodeKey("q", "reply:0"):            "Wrong.",
+			graph.NodeKey("q", "out:solved:answers"): "six",
+		}},
+	}
+	ctx := context.Background()
+	f := setup(t, g, 1)
+	team := f.teams[0]
+	if _, err := f.eng.SetLanguage(ctx, team, "fi"); err == nil {
+		t.Error("an untranslated language is refused")
+	}
+	if _, err := f.eng.SetLanguage(ctx, team, "en"); err != nil {
+		t.Fatal(err)
+	}
+	if v := f.view(team); v.Lang != "en" || v.Text != "How many?" {
+		t.Fatalf("after reload, the view is in English: %+v", v)
+	}
+	if r, _ := f.eng.Answer(ctx, team, "q", "five"); r.Response != "Wrong." {
+		t.Errorf("the reply is in English: %q", r.Response)
+	}
+	if r, err := f.eng.Answer(ctx, team, "q", "six"); err != nil || !r.View.Finished {
+		t.Errorf("the English answer counts: %+v %v", r, err)
+	}
+}

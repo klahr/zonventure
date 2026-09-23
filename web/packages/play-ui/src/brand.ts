@@ -62,6 +62,30 @@ export function readableOn(bg: string): "#000000" | "#ffffff" {
  * default Zonventure look applies. Invalid values are dropped: a colour
  * reaches a style attribute only if it is a plain hex triplet.
  */
+/**
+ * The typefaces an adventure may choose — the same keys as adventure.Fonts
+ * in Go. Loaded from Google Fonts, the only font host the page allows.
+ */
+export const FONTS: Record<string, string> = {
+  inconsolata: "Inconsolata",
+  "special-elite": "Special Elite",
+  merriweather: "Merriweather",
+  fredoka: "Fredoka",
+};
+
+/** Load an adventure's typeface once per page. Offline, text falls back to the system font. */
+export function loadFont(key: string | undefined) {
+  const family = key ? FONTS[key] : undefined;
+  if (!family || typeof document === "undefined") return;
+  const id = `zv-font-${key}`;
+  if (document.getElementById(id)) return;
+  const link = document.createElement("link");
+  link.id = id;
+  link.rel = "stylesheet";
+  link.href = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(family).replace(/%20/g, "+")}:wght@400;700&display=swap`;
+  document.head.appendChild(link);
+}
+
 export function brandVars(b: play.Brand | null | undefined): Record<string, string> {
   const out: Record<string, string> = {};
   if (!b) return out;
@@ -83,6 +107,11 @@ export function brandVars(b: play.Brand | null | undefined): Record<string, stri
     out["--ink"] = b.text;
     out["--ink-soft"] = b.text;
     out["--muted"] = `color-mix(in srgb, ${b.text} 72%, transparent)`;
+  }
+  const family = b.font ? FONTS[b.font] : undefined;
+  if (family) {
+    out["--font-body"] = `"${family}", system-ui, sans-serif`;
+    out["--font-brand"] = `"${family}", system-ui, sans-serif`;
   }
   if (isHex(b.submit_bg)) {
     out["--pv-dock-bg"] = b.submit_bg;

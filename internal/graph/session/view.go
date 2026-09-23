@@ -1,6 +1,7 @@
 package session
 
 import (
+	"fmt"
 	"math"
 	"time"
 
@@ -45,6 +46,25 @@ type View struct {
 	Offer     []OfferEntry `json:"offer,omitempty"`
 	CanFinish bool         `json:"can_finish,omitempty"`
 
+	// Languages the adventure can be played in, main first, and the one
+	// this view is in — for the phone's language switch.
+	Languages []string `json:"languages,omitempty"`
+	Lang      string   `json:"lang,omitempty"`
+	// Meta is the adventure's own title, intro and outro in the team's
+	// language, where they are translated — they live on the adventure,
+	// not in the graph, so the caller swaps them in.
+	Meta map[string]string `json:"meta,omitempty"`
+
+	// EndsAt is when the adventure's time limit falls, for a countdown;
+	// TimeUpText is its message, once it has moved the team.
+	EndsAt     *time.Time `json:"ends_at,omitempty"`
+	TimeUpText string     `json:"time_up_text,omitempty"`
+
+	// BackTo is the home hub a team may go back to from here, and
+	// BackLabel its title, for the button. Empty when there is none.
+	BackTo    string `json:"back_to,omitempty"`
+	BackLabel string `json:"back_label,omitempty"`
+
 	// CanSkip reports whether the skip thresholds are currently met.
 	CanSkip      bool       `json:"can_skip,omitempty"`
 	BlockedUntil *time.Time `json:"blocked_until,omitempty"`
@@ -61,7 +81,10 @@ type View struct {
 	Outcome        graph.Outcome `json:"outcome,omitempty"`
 	Items          []ItemView    `json:"items,omitempty"`
 	Journal        []JournalView `json:"journal,omitempty"`
-	Theme          string        `json:"theme,omitempty"`
+	// HasJournal says the adventure keeps a journal at all, so the
+	// player shows its button from the start, empty until notes arrive.
+	HasJournal bool   `json:"has_journal,omitempty"`
+	Theme      string `json:"theme,omitempty"`
 
 	// Now is the engine's clock when the view was built. Every deadline
 	// above is relative to it, so a client counts down from Now rather
@@ -80,6 +103,31 @@ type Input struct {
 	Parts int `json:"parts,omitempty"`
 	// Ordered says the list must be in the right order.
 	Ordered bool `json:"ordered,omitempty"`
+
+	// Wheels, Symbols and Start describe a combination lock (Kind "lock").
+	Wheels  int                `json:"wheels,omitempty"`
+	Symbols []graph.LockSymbol `json:"symbols,omitempty"`
+	Start   []int              `json:"start,omitempty"`
+
+	// Fields are the questions of a choice (Kind "choice"): labels and
+	// options only — the answers stay on the server.
+	Fields []ChoiceFieldView `json:"fields,omitempty"`
+
+	// At is, for a search (Kind "search"), the zone the team stands in —
+	// "sector C3" — or empty when it is in none of them.
+	At string `json:"at,omitempty"`
+
+	// Rows, Cols and Image describe a tile puzzle (Kind "tiles"): the
+	// picture to cut up and the grid to cut it into.
+	Rows  int          `json:"rows,omitempty"`
+	Cols  int          `json:"cols,omitempty"`
+	Image *graph.Media `json:"image,omitempty"`
+}
+
+// ChoiceFieldView is a question as the phone shows it.
+type ChoiceFieldView struct {
+	Label   string               `json:"label,omitempty"`
+	Options []graph.ChoiceOption `json:"options"`
 }
 
 // StartOption is one start a team may begin at.
@@ -112,6 +160,11 @@ type OfferEntry struct {
 	// Locked is set for a branch whose condition does not hold yet. It
 	// is shown greyed out, unless the hub hides locked branches.
 	Locked bool `json:"locked,omitempty"`
+	// Visited marks a home-screen branch the team has been into. It
+	// stays open; this only tells the team where they have been.
+	Visited bool         `json:"visited,omitempty"`
+	Note    string       `json:"note,omitempty"`
+	Image   *graph.Media `json:"image,omitempty"`
 }
 
 // ItemView is one thing the team is carrying.
@@ -124,13 +177,180 @@ type ItemView struct {
 
 // JournalView is one unlocked journal entry.
 type JournalView struct {
-	Slug  string `json:"slug"`
-	Title string `json:"title,omitempty"`
-	Body  string `json:"body,omitempty"`
+	Slug    string        `json:"slug"`
+	Title   string        `json:"title,omitempty"`
+	Body    string        `json:"body,omitempty"`
+	Section string        `json:"section,omitempty"`
+	Media   []graph.Media `json:"media,omitempty"`
+}
+
+// searchAt names the zone a searching team stands in: one of the search's
+// group, or of the puzzle's own output zones when it names no group.
+func (t *Team) searchAt(cfg *graph.PuzzleConfig) string {
+	if t.Position == nil {
+		return ""
+	}
+	mine := map[string]bool{}
+	for _, o := range cfg.Outputs {
+		if o.Zone != "" {
+			mine[o.Zone] = true
+		}
+	}
+	for _, z := range t.G.Zones {
+		in := cfg.Search.Group != "" && z.Group == cfg.Search.Group || cfg.Search.Group == "" && mine[z.Slug]
+		if in && ZoneContains(z, t.Position.Lat, t.Position.Lng) {
+			name := z.Name
+			if name == "" {
+				name = z.Slug
+			}
+			return t.G.Tr(t.Lang, graph.ZoneKey(z.Slug), name)
+		}
+	}
+	return ""
+}
+
+// journalView lists the unlocked notes: in the order the author wrote
+// them, or — when the adventure asks — the order the team found them.
+func (t *Team) journalView() []JournalView {
+	bySlug := make(map[string]graph.JournalEntry, len(t.G.Journal))
+	for _, je := range t.G.Journal {
+		bySlug[je.Slug] = je
+	}
+	view := func(je graph.JournalEntry) JournalView {
+		return JournalView{Slug: je.Slug, Title: je.Title, Body: je.Body, Section: je.Section, Media: je.Media}
+	}
+	var out []JournalView
+	if t.G.JournalByUnlock {
+		listed := map[string]bool{}
+		for _, slug := range t.JournalOrder {
+			if je, ok := bySlug[slug]; ok && t.Journal[slug] && !listed[slug] {
+				listed[slug] = true
+				out = append(out, view(je))
+			}
+		}
+		// Anything unlocked but not in the order — a team saved before
+		// the order was kept — goes last, in the author's order.
+		for _, je := range t.G.Journal {
+			if t.Journal[je.Slug] && !listed[je.Slug] {
+				out = append(out, view(je))
+			}
+		}
+		return out
+	}
+	for _, je := range t.G.Journal {
+		if t.Journal[je.Slug] {
+			out = append(out, view(je))
+		}
+	}
+	return out
 }
 
 // View renders the team's state for the player.
 func (t *Team) View() View {
+	v := t.view()
+	t.translate(&v)
+	return v
+}
+
+// translate puts a view into the team's language. The walk and the view
+// are built in the adventure's main language; this is the only place the
+// translations are read, and anything without one stays as it was.
+func (t *Team) translate(v *View) {
+	v.Languages = t.G.Languages()
+	v.Lang = t.Lang
+	if v.Lang == "" {
+		v.Lang = v.Languages[0]
+	}
+	if t.Lang == "" || t.Lang == t.G.Language {
+		return
+	}
+	g, l := t.G, t.Lang
+	tr := func(key, main string) string { return g.Tr(l, key, main) }
+	for _, f := range []string{"title", "intro", "outro"} {
+		if s := tr(graph.MetaKey(f), ""); s != "" {
+			if v.Meta == nil {
+				v.Meta = map[string]string{}
+			}
+			v.Meta[f] = s
+		}
+	}
+	zone := func(z *graph.Zone) *graph.Zone {
+		if z == nil {
+			return nil
+		}
+		c := *z
+		c.Name = tr(graph.ZoneKey(z.Slug), z.Name)
+		return &c
+	}
+	for i := range v.Starts {
+		s := &v.Starts[i]
+		s.Title = tr(graph.NodeKey(s.Node, "title"), s.Title)
+		s.Zone = zone(s.Zone)
+	}
+	v.Journal = append([]JournalView(nil), v.Journal...)
+	for i := range v.Journal {
+		j := &v.Journal[i]
+		j.Title = tr(graph.JournalKey(j.Slug, "title"), j.Title)
+		j.Body = tr(graph.JournalKey(j.Slug, "body"), j.Body)
+		// A section is one heading for all its notes, translated once,
+		// under the key of the first note that has it.
+		for _, je := range g.Journal {
+			if je.Section == j.Section && j.Section != "" {
+				j.Section = tr(graph.JournalKey(je.Slug, "section"), j.Section)
+				break
+			}
+		}
+	}
+	if v.TimeUpText != "" && g.TimeLimit != nil {
+		v.TimeUpText = tr(graph.TimeUpKey, v.TimeUpText)
+	}
+	if v.BackTo != "" {
+		v.BackLabel = tr(graph.NodeKey(v.BackTo, "title"), v.BackLabel)
+	}
+	if v.Node == "" {
+		return
+	}
+	key := func(field string) string { return graph.NodeKey(v.Node, field) }
+	v.Title = tr(key("title"), v.Title)
+	if v.Type == graph.Hub {
+		v.Text = tr(key("hub-text"), v.Text)
+	} else {
+		v.Text = tr(key("text"), v.Text)
+	}
+	v.Zone = zone(v.Zone)
+	for i := range v.Hints {
+		v.Hints[i].Text = tr(key(fmt.Sprintf("hint:%d", i)), v.Hints[i].Text)
+	}
+	for i := range v.Offer {
+		o := &v.Offer[i]
+		o.Label = tr(key("branch:"+o.Port+":label"), o.Label)
+		o.Note = tr(key("branch:"+o.Port+":note"), o.Note)
+	}
+	if in := v.Input; in != nil {
+		c := *in
+		c.Fields = make([]ChoiceFieldView, len(in.Fields))
+		for i, f := range in.Fields {
+			opts := make([]graph.ChoiceOption, len(f.Options))
+			for k, o := range f.Options {
+				opts[k] = graph.ChoiceOption{Value: o.Value, Label: tr(key(fmt.Sprintf("field:%d:opt:%s", i, o.Value)), o.Label)}
+			}
+			c.Fields[i] = ChoiceFieldView{Label: tr(key(fmt.Sprintf("field:%d:label", i)), f.Label), Options: opts}
+		}
+		if len(in.Fields) == 0 {
+			c.Fields = nil
+		}
+		if len(in.Symbols) > 0 {
+			c.Symbols = make([]graph.LockSymbol, len(in.Symbols))
+			for i, s := range in.Symbols {
+				s.Label = tr(key("sym:"+s.Value), s.Label)
+				c.Symbols[i] = s
+			}
+		}
+		v.Input = &c
+	}
+}
+
+func (t *Team) view() View {
 	v := View{
 		Node:           t.Current,
 		Score:          t.Points,
@@ -152,15 +372,8 @@ func (t *Team) View() View {
 			v.Items = append(v.Items, iv)
 		}
 	}
-	for _, slug := range sortedKeys(t.Journal) {
-		jv := JournalView{Slug: slug}
-		for _, je := range t.G.Journal {
-			if je.Slug == slug {
-				jv.Title, jv.Body = je.Title, je.Body
-			}
-		}
-		v.Journal = append(v.Journal, jv)
-	}
+	v.HasJournal = len(t.G.Journal) > 0
+	v.Journal = t.journalView()
 
 	if t.Current == "" && !t.Completed && t.G.ChoosesStart() {
 		v.Type = graph.Start
@@ -184,6 +397,20 @@ func (t *Team) View() View {
 		return v
 	}
 	v.Type, v.Title = n.Type, n.Title
+	if t.TimedOut {
+		v.TimeUpText = t.G.TimeLimit.Text
+		if v.TimeUpText == "" {
+			v.TimeUpText = "Time is up."
+		}
+	} else if d, ok := t.Deadline(); ok && !t.Completed {
+		v.EndsAt = &d
+	}
+	if !t.Completed {
+		if hub, ok := t.backTo(); ok {
+			h, _ := t.G.Node(hub)
+			v.BackTo, v.BackLabel = hub, h.Title
+		}
+	}
 	setZone := func(slug string) {
 		for _, z := range t.G.Zones {
 			if z.Slug == slug {
@@ -204,6 +431,9 @@ func (t *Team) View() View {
 			setZone(cfg.Zone)
 		}
 		v.Input = inputFor(cfg)
+		if cfg.Search != nil {
+			v.Input.At = t.searchAt(cfg)
+		}
 		revealed := 0
 		if r := t.Nodes[n.Slug]; r != nil {
 			revealed, v.Attempts = r.HintsRevealed, r.Attempts
@@ -244,16 +474,17 @@ func (t *Team) View() View {
 		// Recompute the offer: it is a function of state, not stored.
 		if n.HubCfg != nil {
 			for _, b := range n.HubCfg.Branches {
-				if t.BranchDone(n.Slug, b.Port) {
+				if t.BranchDone(n.Slug, b.Port) && !n.HubCfg.Home {
 					continue
 				}
 				open := t.branchOpen(b)
 				if !open && n.HubCfg.HideLocked {
 					continue
 				}
-				v.Offer = append(v.Offer, OfferEntry{Port: b.Port, Label: b.Label, Locked: !open})
+				v.Offer = append(v.Offer, OfferEntry{Port: b.Port, Label: b.Label, Locked: !open, Visited: t.BranchDone(n.Slug, b.Port), Note: b.Note, Image: b.Image})
 			}
-			v.CanFinish = t.CompletedBranches(n.Slug) >= n.HubCfg.RequiredBranches()
+			v.Text = n.HubCfg.Text
+			v.CanFinish = !n.HubCfg.Home && t.CompletedBranches(n.Slug) >= n.HubCfg.RequiredBranches()
 		}
 	}
 	return v
@@ -283,6 +514,18 @@ func (t *Team) CanSeeMedia(id int64, strict bool) bool {
 func (t *Team) VisibleMedia(strict bool) []int64 {
 	seen := map[int64]bool{}
 	var out []int64
+	// A journal note's pictures come with the note, never before it.
+	for _, je := range t.G.Journal {
+		if !t.Journal[je.Slug] {
+			continue
+		}
+		for _, m := range je.Media {
+			if !seen[m.ID] {
+				seen[m.ID] = true
+				out = append(out, m.ID)
+			}
+		}
+	}
 	for _, n := range t.G.Nodes {
 		r := t.Nodes[n.Slug]
 		if r == nil && strict {
@@ -308,6 +551,23 @@ func (t *Team) VisibleMedia(strict bool) []int64 {
 // answer outputs. A catch-all ("anything") says nothing about shape, so
 // it does not stop an otherwise numeric puzzle getting the number pad.
 func inputFor(cfg *graph.PuzzleConfig) *Input {
+	if cfg.Search != nil {
+		return &Input{Kind: "search"}
+	}
+	if l := cfg.Lock; l != nil {
+		return &Input{Kind: "lock", Wheels: l.Wheels, Symbols: l.Symbols, Start: l.Start}
+	}
+	if c := cfg.Choices; c != nil {
+		in := &Input{Kind: "choice"}
+		for _, f := range c.Fields {
+			in.Fields = append(in.Fields, ChoiceFieldView{Label: f.Label, Options: f.Options})
+		}
+		return in
+	}
+	if t := cfg.Tiles; t != nil {
+		img := t.Image
+		return &Input{Kind: "tiles", Rows: t.Rows, Cols: t.Cols, Image: &img}
+	}
 	in := &Input{Kind: "text"}
 	numeric, seen := true, false
 	for _, o := range cfg.Outputs {

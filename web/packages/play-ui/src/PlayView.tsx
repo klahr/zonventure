@@ -1,9 +1,14 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import type { play } from "@zonventure/api";
+import { play as playApi } from "@zonventure/api";
 import { Markdown } from "./Markdown.tsx";
+import { TileBoard } from "./Tiles.tsx";
+import { ChoiceForm } from "./Choices.tsx";
+import { LockBoard } from "./Lock.tsx";
+import { JournalNotes, useUnreadNotes } from "./Journal.tsx";
 import { MediaList } from "./Media.tsx";
 import { QrButton } from "./Qr.tsx";
-import { brandVars, isHex } from "./brand.ts";
+import { brandVars, isHex, loadFont } from "./brand.ts";
 import { formatSeconds, secondsUntil, useEngineClock } from "./clock.ts";
 import { english, type Feedback, type Translate } from "./feedback.ts";
 
@@ -50,6 +55,11 @@ export interface PlayViewProps {
   brand?: play.Brand | null;
   /** The adventure's farewell, shown under the end step's own text. */
   outro?: string;
+  /**
+   * Scopes what the phone remembers — which journal notes are read — to
+   * one team, so two teams sharing a phone do not share "new".
+   */
+  storageKey?: string;
 }
 
 export function PlayView(props: PlayViewProps) {
@@ -59,12 +69,39 @@ export function PlayView(props: PlayViewProps) {
   const burst = useBurst(props.feedback ?? null);
   const [hintsOpen, setHintsOpen] = useState(false);
   const [bagOpen, setBagOpen] = useState(false);
+  const [journalOpen, setJournalOpen] = useState(false);
+  const storageKey = props.storageKey ?? "local";
+  const unread = useUnreadNotes(view.journal, storageKey, journalOpen);
+  const endsIn = view.ends_at ? secondsUntil(view.ends_at, now) : null;
+  const live = props.live ?? true;
+
+  // Live, the phone calls time-up itself when the countdown ends; the
+  // engine re-checks the clock, so an early or repeated call is harmless.
+  const firedTimeUp = useRef(false);
+  useEffect(() => {
+    if (live && endsIn !== null && endsIn <= 0 && !firedTimeUp.current) {
+      firedTimeUp.current = true;
+      props.onAction({ kind: "timeup", node: view.node ?? "" });
+    }
+  }, [live, endsIn, view.node, props]);
+
+  // The time-up message is shown once per team, until acknowledged.
+  const upKey = `zv.timeup:${storageKey}`;
+  const [upSeen, setUpSeen] = useState(() => {
+    try {
+      return localStorage.getItem(upKey) === "1";
+    } catch {
+      return false;
+    }
+  });
   const style = useMemo(() => brandVars(brand) as CSSProperties, [brand]);
+  useEffect(() => loadFont(brand?.font), [brand?.font]);
 
   // A new step closes a sheet left open on the old one.
   useEffect(() => {
     setHintsOpen(false);
     setBagOpen(false);
+    setJournalOpen(false);
   }, [view.node]);
 
   const kind = view.finished || view.type === "end" ? "end" : view.type;
@@ -87,9 +124,44 @@ export function PlayView(props: PlayViewProps) {
           <span className="pv-score__n">{round(view.score - view.penalty_score)}</span>
           <span className="pv-score__l">{t("pts")}</span>
         </div>
-        {kind !== "end" && (view.items?.length || view.journal?.length) ? (
-          <button type="button" className="pv-bag-toggle" onClick={() => setBagOpen(true)} aria-label={t("Items and journal")}>
-            <span aria-hidden>🎒</span> {(view.items?.length ?? 0) + (view.journal?.length ?? 0)}
+        {endsIn !== null && (
+          <span className={"pv-clock" + (endsIn < 600 ? " is-urgent" : "")} aria-label={t("Time left: {{time}}", { time: formatSeconds(Math.max(0, endsIn)) })}>
+            <span aria-hidden>⏱</span> {formatSeconds(Math.max(0, endsIn))}
+          </span>
+        )}
+        {kind !== "end" && view.items?.length ? (
+          <button type="button" className="pv-bag-toggle" onClick={() => setBagOpen(true)} aria-label={t("Items")}>
+            <span aria-hidden>🎒</span> {view.items.length}
+          </button>
+        ) : null}
+        {/* The journal is the case file: always one tap away, the end
+            screen included, so a team can check its notes before an
+            accusation and read them back afterwards. */}
+        {/* A translated adventure: the team switches language here. Each
+            language names itself, so a team finds its own. */}
+        {(view.languages?.length ?? 0) > 1 && (
+          <select
+            className="pv-lang"
+            value={view.lang ?? view.languages![0]}
+            aria-label={t("Language")}
+            onChange={(e) => props.onAction({ kind: "language", node: view.node ?? "", lang: e.target.value })}
+          >
+            {view.languages!.map((l) => (
+              <option key={l} value={l}>
+                {LANGUAGE_SELF[l] ?? l.toUpperCase()}
+              </option>
+            ))}
+          </select>
+        )}
+        {view.has_journal || view.journal?.length ? (
+          <button
+            type="button"
+            className="pv-bag-toggle pv-journal-toggle"
+            onClick={() => setJournalOpen(true)}
+            aria-label={unread ? t("Journal, {{n}} new", { n: unread }) : t("Journal")}
+          >
+            <span aria-hidden>📓</span> {view.journal?.length ?? 0}
+            {unread > 0 && <span className="pv-hint-toggle__badge">{unread}</span>}
           </button>
         ) : null}
         {kind === "puzzle" && (view.hint_count ?? 0) > 0 && (
@@ -101,6 +173,14 @@ export function PlayView(props: PlayViewProps) {
         )}
       </header>
 
+      {/* Inside a home screen's branch the team can always walk away and
+          come back — legacy's back button, labelled with where it goes. */}
+      {view.back_to && kind !== "end" && (
+        <button type="button" className="pv-back" disabled={props.busy} onClick={() => props.onAction({ kind: "back", node: view.node ?? "" })}>
+          <span aria-hidden>←</span> {view.back_label || t("Back")}
+        </button>
+      )}
+
       {/* Keyed on the node, so each step plays its entrance — held back
           while a celebration covers the screen, then released. */}
       <div key={view.node ?? "none"} className={"pv-step" + (burst?.kind === "celebrate" ? "" : " is-entered")}>
@@ -109,14 +189,34 @@ export function PlayView(props: PlayViewProps) {
 
       {hintsOpen && <HintSheet {...step} onClose={() => setHintsOpen(false)} />}
       {bagOpen && (
-        <Sheet title={t("Items and journal")} t={t} onClose={() => setBagOpen(false)}>
+        <Sheet title={t("Items")} t={t} onClose={() => setBagOpen(false)}>
           <Bag view={view} t={t} />
+        </Sheet>
+      )}
+      {view.time_up_text && !upSeen && (
+        <Sheet title={t("Time is up")} t={t} onClose={() => {
+          setUpSeen(true);
+          try {
+            localStorage.setItem(upKey, "1");
+          } catch {
+            /* private mode: shown again after a reload */
+          }
+        }}>
+          <Markdown className="pv-text" text={view.time_up_text} />
+        </Sheet>
+      )}
+      {journalOpen && (
+        <Sheet title={t("Journal")} t={t} onClose={() => setJournalOpen(false)}>
+          <JournalNotes journal={view.journal ?? []} storageKey={storageKey} t={t} />
         </Sheet>
       )}
       {burst && <BurstOverlay burst={burst} />}
     </div>
   );
 }
+
+/** Each language in its own words, for the language switch. */
+const LANGUAGE_SELF: Record<string, string> = { sv: "Svenska", en: "English", de: "Deutsch", fi: "Suomi", no: "Norsk", da: "Dansk", fr: "Français", es: "Español" };
 
 interface StepProps extends PlayViewProps {
   t: Translate;
@@ -261,7 +361,11 @@ function PuzzleStep(props: StepProps) {
     onAction({ kind: "answer", node, guess: g });
   };
 
-  const input = view.input ?? { kind: "text" as const };
+  const input: play.PlayInput = view.input ?? { kind: "text" };
+  const tiles = input.kind === "tiles" && input.image && input.rows && input.cols ? input : null;
+  const search = input.kind === "search";
+  const choices = input.kind === "choice" && input.fields?.length ? input.fields : null;
+  const lock = input.kind === "lock" && input.wheels && input.symbols?.length ? input : null;
   const placeholder = input.parts
     ? t(input.ordered ? "{{n}} answers, in order, with commas" : "{{n}} answers, with commas", { n: input.parts })
     : t("Your answer");
@@ -285,11 +389,67 @@ function PuzzleStep(props: StepProps) {
         </button>
       )}
 
+      {tiles && !timeUp && (
+        <TileBoard
+          key={node}
+          image={tiles.image!}
+          rows={tiles.rows!}
+          cols={tiles.cols!}
+          storageKey={node}
+          disabled={!!busy || blockedFor > 0 || needsPlace}
+          t={t}
+          onSolved={(g) => onAction({ kind: "answer", node, guess: g })}
+        />
+      )}
+
+      {lock && !timeUp && (
+        <LockBoard
+          key={node}
+          wheels={lock.wheels!}
+          symbols={lock.symbols!}
+          start={lock.start}
+          disabled={!!busy || blockedFor > 0 || needsPlace}
+          t={t}
+          onTry={(g) => onAction({ kind: "answer", node, guess: g })}
+        />
+      )}
+
+      {choices && !timeUp && (
+        <ChoiceForm
+          key={node}
+          fields={choices}
+          disabled={!!busy || blockedFor > 0 || needsPlace}
+          t={t}
+          onAnswer={(g) => onAction({ kind: "answer", node, guess: g })}
+        />
+      )}
+
+      {search && !timeUp && (
+        <div className={"pv-zone pv-search" + (input.at ? " is-here" : "")}>
+          <span className="pv-zone__pin" aria-hidden>
+            {input.at ? "⌖" : "?"}
+          </span>
+          <div className="pv-zone__body">
+            <strong>{input.at ? t("You are in {{place}}.", { place: input.at }) : t("You are not in any of the places to search.")}</strong>
+            {!input.at && props.zoneNote && <span className="pv-zone__note">{props.zoneNote}</span>}
+          </div>
+        </div>
+      )}
+
       {view.can_skip && <SkipLink {...props} />}
 
       <div className="pv-dock">
         <FeedbackLine feedback={feedback} />
-        {timeUp ? (
+        {search && !timeUp ? (
+          <button
+            type="button"
+            className="pv-btn pv-btn--primary pv-btn--wide"
+            disabled={busy || blockedFor > 0 || needsPlace}
+            onClick={() => onAction({ kind: "answer", node, guess: "" })}
+          >
+            {blockedFor > 0 ? formatSeconds(blockedFor) : t("Search here")}
+          </button>
+        ) : tiles || choices || lock ? null : timeUp ? (
           view.has_timeout && !live ? (
             <button type="button" className="pv-btn pv-btn--primary pv-btn--wide" disabled={busy} onClick={() => onAction({ kind: "timeout", node })}>
               {t("Continue")}
@@ -444,7 +604,7 @@ function HubStep({ view, t, busy, onAction, feedback }: StepProps) {
   return (
     <>
       <Title view={view} />
-      <p className="pv-text">{t("Choose where to go next.")}</p>
+      {view.text ? <Markdown className="pv-text" text={view.text} /> : <p className="pv-text">{t("Choose where to go next.")}</p>}
       <ul className="pv-offer">
         {offer.map((o, i) => (
           <li key={o.port}>
@@ -455,9 +615,14 @@ function HubStep({ view, t, busy, onAction, feedback }: StepProps) {
               disabled={busy || o.locked}
               onClick={() => onAction({ kind: "choose", node, port: o.port })}
             >
-              <span className="pv-tile__label">{o.label || o.port}</span>
+              {o.image && <img className="pv-tile__img" src={playApi.mediaURL(o.image.id)} alt="" loading="lazy" draggable={false} />}
+              <span className="pv-tile__label">
+                {o.label || o.port}
+                {o.note && <span className="pv-tile__note">{o.note}</span>}
+              </span>
+              {o.visited && <span className="pv-tile__seen">{t("Visited")}</span>}
               <span className="pv-tile__go" aria-hidden>
-                {o.locked ? "🔒" : "→"}
+                {o.locked ? "🔒" : o.visited ? "✓" : "→"}
               </span>
               {o.locked && <span className="pv-visually-hidden">{t("locked")}</span>}
             </button>
@@ -553,7 +718,6 @@ function EndStep({ view, t, outro }: StepProps) {
 /** What the team carries and has read. Nothing when both are empty. */
 function Bag({ view, t }: { view: play.View; t: Translate }) {
   const items = view.items ?? [];
-  const journal = view.journal ?? [];
   return (
     <>
       {items.length > 0 && (
@@ -568,17 +732,6 @@ function Bag({ view, t }: { view: play.View; t: Translate }) {
               </li>
             ))}
           </ul>
-        </section>
-      )}
-      {journal.length > 0 && (
-        <section className="pv-bag">
-          <h3>{t("Journal ({{n}})", { n: journal.length })}</h3>
-          {journal.map((j) => (
-            <article key={j.slug} className="pv-journal">
-              <h4>{j.title || j.slug}</h4>
-              {j.body && <Markdown text={j.body} />}
-            </article>
-          ))}
         </section>
       )}
     </>

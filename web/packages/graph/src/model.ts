@@ -45,6 +45,8 @@ export function portsOf(n: Node): string[] {
       // as in Go; the validator reports it. Offering "done" here would draw
       // a handle the server does not consider to exist.
       if (!n.hub) return [];
+      // A home screen never finishes, so it has no done to wire — as in Go.
+      if (n.hub.home) return (n.hub.branches ?? []).map((b) => b.port);
       return [...(n.hub.branches ?? []).map((b) => b.port), PORT_DONE];
   }
 }
@@ -335,6 +337,11 @@ export function cleanGraph(g: Graph): Graph {
   if (g.items?.length) out.items = g.items;
   if (g.counters?.length) out.counters = g.counters;
   if (g.journal?.length) out.journal = g.journal;
+  if (g.journal_by_unlock) out.journal_by_unlock = true;
+  if (g.time_limit) out.time_limit = g.time_limit;
+  if (g.language) out.language = g.language;
+  if (g.translations && Object.keys(g.translations).length) out.translations = g.translations;
+  if (g.frames?.length) out.frames = g.frames.map((f) => ({ ...f, x: Math.round(f.x), y: Math.round(f.y), width: Math.round(f.width), height: Math.round(f.height) }));
   return out;
 }
 
@@ -351,6 +358,7 @@ function cleanNode(n: Node): Node {
   if (n.switch) out.switch = n.switch;
   if (n.end) out.end = n.end;
   if (n.start) out.start = n.start;
+  if (n.unlocks?.length) out.unlocks = n.unlocks;
   return out;
 }
 
@@ -487,4 +495,41 @@ export function zoneContains(z: Zone, lat: number, lng: number): boolean {
 export function startZone(g: Graph, n: Node): Zone | undefined {
   const slug = n.type === "start" ? n.start?.zone : undefined;
   return slug ? g.zones?.find((z) => z.slug === slug) : undefined;
+}
+
+/**
+ * Cut a four-cornered area into a grid of zones — legacy's scanner
+ * sectors. Corners are [lat, lng] in drawing order: top-left, top-right,
+ * bottom-right, bottom-left. The area need not be a rectangle: cells
+ * follow its edges, as the hand-measured legacy grids did. Columns are
+ * lettered and rows numbered, so the top-left cell is A1 and the one to
+ * its right B1.
+ */
+export function gridZones(
+  corners: [number, number][],
+  rows: number,
+  cols: number,
+  group: string,
+  taken: { slug: string }[] = [],
+): Zone[] {
+  const [nw, ne, se, sw] = corners as [[number, number], [number, number], [number, number], [number, number]];
+  const at = (u: number, v: number): [number, number] => [
+    (1 - v) * ((1 - u) * nw[0] + u * ne[0]) + v * ((1 - u) * sw[0] + u * se[0]),
+    (1 - v) * ((1 - u) * nw[1] + u * ne[1]) + v * ((1 - u) * sw[1] + u * se[1]),
+  ];
+  const used = new Set(taken.map((z) => z.slug));
+  const base = group.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "grid";
+  const out: Zone[] = [];
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const name = `${String.fromCharCode(65 + (c % 26))}${r + 1}`;
+      let slug = `${base}-${name.toLowerCase()}`;
+      for (let i = 2; used.has(slug); i++) slug = `${base}-${name.toLowerCase()}-${i}`;
+      used.add(slug);
+      const polygon = [at(c / cols, r / rows), at((c + 1) / cols, r / rows), at((c + 1) / cols, (r + 1) / rows), at(c / cols, (r + 1) / rows)];
+      const [lat, lng] = at((c + 0.5) / cols, (r + 0.5) / rows);
+      out.push({ slug, name, group, lat, lng, radius_m: 0, polygon });
+    }
+  }
+  return out;
 }

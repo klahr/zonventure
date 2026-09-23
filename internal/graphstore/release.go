@@ -185,6 +185,9 @@ func canonical(g *graph.Graph) string {
 		return ""
 	}
 	c := *g
+	// Frames are layout, like positions: moving one is not a change to
+	// publish.
+	c.Frames = nil
 	c.Nodes = make([]graph.Node, len(g.Nodes))
 	for i, n := range g.Nodes {
 		n.X, n.Y = 0, 0

@@ -115,6 +115,28 @@
     },
     {
       "node": {
+        "slug": "home",
+        "type": "hub",
+        "hub": {
+          "policy": "choice",
+          "home": true,
+          "branches": [
+            {
+              "port": "a"
+            },
+            {
+              "port": "b"
+            }
+          ]
+        }
+      },
+      "ports": [
+        "a",
+        "b"
+      ]
+    },
+    {
+      "node": {
         "slug": "h0",
         "type": "hub"
       },
