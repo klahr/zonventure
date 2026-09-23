@@ -14,16 +14,14 @@ import type {
   Case,
   Response,
   SwitchConfig,
-  ChoiceConfig,
+  AnswerOf,
   ChoiceField,
   ChoiceOption,
-  LockConfig,
   LockSymbol,
-  TileConfig,
   Trigger,
   Zone,
 } from "@zonventure/graph";
-import { answerOptions, isPolygon, nodeBySlug, portLabel, puzzlesInto, referAnswer, resolveAnswer, updateNode } from "@zonventure/graph";
+import { answerOptions, isGraded, isPolygon, nodeBySlug, portLabel, puzzlesInto, referAnswer, resolveAnswer, updateNode } from "@zonventure/graph";
 import { useT } from "../i18n.tsx";
 import { ConditionEditor } from "./ConditionEditor.tsx";
 import { MediaEditor } from "./MediaEditor.tsx";
@@ -290,6 +288,7 @@ const TRIGGERS: { t: Trigger; label: string }[] = [
 function PuzzleForm({ cfg, graph, onChange }: { cfg: PuzzleConfig; graph: Graph; onChange: (c: PuzzleConfig) => void }) {
   const t = useT();
   const outputs = cfg.outputs ?? [];
+  const answer = cfg.answer;
   const setOutput = (i: number, o: Output) => onChange({ ...cfg, outputs: outputs.map((x, j) => (j === i ? o : x)) });
 
   const addOutput = (trigger: Trigger) => {
@@ -327,10 +326,10 @@ function PuzzleForm({ cfg, graph, onChange }: { cfg: PuzzleConfig; graph: Graph;
         onChange={(zone) => onChange(withOptional({ ...cfg }, "zone", zone))}
       />
 
-      {cfg.tiles && <TilesForm tiles={cfg.tiles} onChange={(tiles) => onChange({ ...cfg, tiles })} />}
-      {cfg.search && <SearchForm cfg={cfg} graph={graph} onChange={onChange} />}
-      {cfg.choices && <ChoicesForm cfg={cfg} onChange={onChange} />}
-      {cfg.lock && <LockForm cfg={cfg} onChange={onChange} />}
+      {answer?.kind === "tiles" && <TilesForm tiles={answer} onChange={(tiles) => onChange({ ...cfg, answer: tiles })} />}
+      {answer?.kind === "search" && <SearchForm cfg={cfg} search={answer} graph={graph} onChange={onChange} />}
+      {answer?.kind === "choice" && <ChoicesForm cfg={cfg} choice={answer} onChange={onChange} />}
+      {answer?.kind === "lock" && <LockForm cfg={cfg} lock={answer} onChange={onChange} />}
 
       <Section title={t.t("Ways out")} hint={t.t("Each route becomes an output you can wire somewhere different.")}>
         {outputs.map((o, i) => (
@@ -363,13 +362,13 @@ function PuzzleForm({ cfg, graph, onChange }: { cfg: PuzzleConfig; graph: Graph;
 
             {o.trigger === "answer" && (
               <>
-                {cfg.tiles ? (
+                {answer?.kind === "tiles" ? (
                   <p className="field__hint">{t.t("Taken when the picture is whole.")}</p>
-                ) : cfg.lock ? (
+                ) : answer?.kind === "lock" ? (
                   <p className="field__hint">{t.t("Taken for the combination set above: {{combo}}", { combo: (o.matchers?.[0]?.value ?? "").split("|").join(" · ") })}</p>
-                ) : cfg.choices && isGraded(cfg.choices) ? (
+                ) : isGraded(answer) ? (
                   <p className="field__hint">{t.t("Always taken when the form is sent in; its points are shared between the questions answered right.")}</p>
-                ) : cfg.search ? (
+                ) : answer?.kind === "search" ? (
                   <p className="field__hint">{t.t("Taken when the team searches inside this route's zone. Without a zone, it is taken anywhere else.")}</p>
                 ) : (
                   <MatcherList matchers={o.matchers ?? []} onChange={(matchers) => setOutput(i, { ...o, matchers })} />
@@ -397,9 +396,9 @@ function PuzzleForm({ cfg, graph, onChange }: { cfg: PuzzleConfig; graph: Graph;
           </div>
         ))}
         <div className="box__row box__row--wrap">
-          {!cfg.tiles && (
+          {answer?.kind !== "tiles" && (
             <button type="button" className="link-btn" onClick={() => addOutput("answer")}>
-              + {cfg.search ? t.t("Another place") : t.t("Another answer")}
+              + {answer?.kind === "search" ? t.t("Another place") : t.t("Another answer")}
             </button>
           )}
           <button type="button" className="link-btn" onClick={() => addOutput("attempts")}>+ {t.t("Pity route")}</button>
@@ -872,17 +871,16 @@ function Section({ title, hint, children }: { title: string; hint?: string; chil
  * the right combination — written as the first route's answer, which is
  * all the lock is: a way of typing it.
  */
-function LockForm({ cfg, onChange }: { cfg: PuzzleConfig; onChange: (c: PuzzleConfig) => void }) {
+function LockForm({ cfg, lock, onChange }: { cfg: PuzzleConfig; lock: AnswerOf<"lock">; onChange: (c: PuzzleConfig) => void }) {
   const t = useT();
-  const lock = cfg.lock!;
   const outputs = cfg.outputs ?? [];
   const first = outputs.findIndex((o) => o.trigger === "answer");
   const combo = (first >= 0 ? outputs[first]!.matchers?.[0]?.value ?? "" : "").split("|");
-  const setLock = (l: LockConfig, nextCombo = combo) => {
+  const setLock = (l: AnswerOf<"lock">, nextCombo = combo) => {
     const value = Array.from({ length: l.wheels }, (_, i) => nextCombo[i] ?? l.symbols[0]?.value ?? "").join("|");
     onChange({
       ...cfg,
-      lock: l,
+      answer: l,
       outputs: outputs.map((o, i) => (i === first ? { ...o, matchers: [{ kind: "exact", value }] } : o)),
     });
   };
@@ -946,19 +944,16 @@ function LockForm({ cfg, onChange }: { cfg: PuzzleConfig; onChange: (c: PuzzleCo
   );
 }
 
-const isGraded = (c: ChoiceConfig) => c.fields.length > 0 && c.fields.every((f) => !!f.answer);
-
 /**
  * Questions with options to tap. With a right answer on every question it
  * is a marked form, like an accusation; without, the option picked is the
  * answer the routes below match — "Route each option its own way" writes
  * those routes.
  */
-function ChoicesForm({ cfg, onChange }: { cfg: PuzzleConfig; onChange: (c: PuzzleConfig) => void }) {
+function ChoicesForm({ cfg, choice: choices, onChange }: { cfg: PuzzleConfig; choice: AnswerOf<"choice">; onChange: (c: PuzzleConfig) => void }) {
   const t = useT();
-  const choices = cfg.choices!;
   const graded = isGraded(choices);
-  const setFields = (fields: ChoiceField[]) => onChange({ ...cfg, choices: { fields } });
+  const setFields = (fields: ChoiceField[]) => onChange({ ...cfg, answer: { kind: "choice", fields } });
   const setField = (i: number, f: ChoiceField) => setFields(choices.fields.map((x, j) => (j === i ? f : x)));
   const valueFor = (label: string, taken: ChoiceOption[]) => {
     const base = label.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "option";
@@ -1032,7 +1027,7 @@ function ChoicesForm({ cfg, onChange }: { cfg: PuzzleConfig; onChange: (c: Puzzl
  * stands in is taken. The group decides which zones the phone names —
  * "You are in sector C3" — including cells with nothing to find.
  */
-function SearchForm({ cfg, graph, onChange }: { cfg: PuzzleConfig; graph: Graph; onChange: (c: PuzzleConfig) => void }) {
+function SearchForm({ cfg, search, graph, onChange }: { cfg: PuzzleConfig; search: AnswerOf<"search">; graph: Graph; onChange: (c: PuzzleConfig) => void }) {
   const t = useT();
   const groups = [...new Set((graph.zones ?? []).map((z) => z.group).filter((g): g is string => !!g))];
   return (
@@ -1040,8 +1035,8 @@ function SearchForm({ cfg, graph, onChange }: { cfg: PuzzleConfig; graph: Graph;
       <Field label={t.t("Tell the team which of these it is in")} hint={groups.length ? undefined : t.t("Give zones a group under Adventure settings → Zones, such as the cells of a grid.")}>
         <select
           className="field__input"
-          value={cfg.search?.group ?? ""}
-          onChange={(e) => onChange({ ...cfg, search: e.target.value ? { group: e.target.value } : {} })}
+          value={search.group ?? ""}
+          onChange={(e) => onChange({ ...cfg, answer: e.target.value ? { kind: "search", group: e.target.value } : { kind: "search" } })}
         >
           <option value="">{t.t("The zones of the routes below")}</option>
           {groups.map((g) => (
@@ -1063,15 +1058,15 @@ function SearchForm({ cfg, graph, onChange }: { cfg: PuzzleConfig; graph: Graph;
  * A tile puzzle's picture and grid. The phone cuts the picture itself, so
  * one upload is all it takes; the grid decides how hard it is.
  */
-function TilesForm({ tiles, onChange }: { tiles: TileConfig; onChange: (t: TileConfig) => void }) {
+function TilesForm({ tiles, onChange }: { tiles: AnswerOf<"tiles">; onChange: (t: AnswerOf<"tiles">) => void }) {
   const t = useT();
   const clamp = (n: number | undefined) => Math.min(8, Math.max(2, Math.round(n ?? 3)));
   return (
     <Section title={t.t("Tile puzzle")} hint={t.t("The picture is cut into a grid and shuffled. Teams swap pieces until it is whole.")}>
       <MediaEditor
         single
-        media={tiles.image.id > 0 ? [tiles.image] : undefined}
-        onChange={(m) => onChange({ ...tiles, image: m?.[0] ?? { id: 0, kind: "image" } })}
+        media={tiles.image ? [tiles.image] : undefined}
+        onChange={(m) => onChange(m?.[0] ? { ...tiles, image: m[0] } : withOptional({ ...tiles }, "image", undefined))}
       />
       <div className="box__row">
         <NumberField label={t.t("Rows")} value={tiles.rows} onChange={(n) => onChange({ ...tiles, rows: clamp(n) })} />

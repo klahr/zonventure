@@ -39,6 +39,7 @@ import {
   undo,
   updateNode,
   emptyHistory,
+  type AdventureMeta,
   type Envelope,
   type Graph,
   type GraphDiff,
@@ -50,7 +51,7 @@ import { useT } from "../i18n.tsx";
 import { href } from "../router.ts";
 import { Canvas, cardSizes } from "./Canvas.tsx";
 import { Inspector } from "./Inspector.tsx";
-import { LanguageSwitch, LanguagesSettings, TranslateStep, mainLanguage, translationLanguages } from "./Translate.tsx";
+import { LanguageSwitch, LanguagesSettings, TranslateStep, translationLanguages } from "./Translate.tsx";
 import { ListView } from "./ListView.tsx";
 import { Resources } from "./Resources.tsx";
 import { Simulator, type SimMode } from "./Simulator.tsx";
@@ -144,6 +145,10 @@ export function Designer({ slug }: { slug: string }) {
   const [brandSaving, setBrandSaving] = useState(false);
   const [brandError, setBrandError] = useState<string | null>(null);
   const [adventureTitle, setAdventureTitle] = useState(slug);
+  // The adventure's own language and texts, which its translations cover
+  // too; they live on the adventure, not in the graph.
+  const [adventureLang, setAdventureLang] = useState("");
+  const [meta, setMeta] = useState<AdventureMeta>({});
   const brandDirty = JSON.stringify(brand) !== JSON.stringify(brandSaved);
 
   const draft = history.present;
@@ -152,9 +157,12 @@ export function Designer({ slug }: { slug: string }) {
   const readOnly = !!preview;
   // The language the author is editing the text in; the main one edits
   // everything, another only its translations.
+  // The server writes the adventure's language into every graph it
+  // stores; a graph not saved yet takes it from the adventure.
+  const mainLang = graph?.language || adventureLang;
   const [editLangPick, setEditLang] = useState("");
-  const editLang = graph && translationLanguages(graph).includes(editLangPick) ? editLangPick : graph ? mainLanguage(graph) : "sv";
-  const translating = !!graph && editLang !== mainLanguage(graph);
+  const editLang = graph && translationLanguages(graph, mainLang).includes(editLangPick) ? editLangPick : mainLang;
+  const translating = !!graph && editLang !== mainLang;
 
   // --- load -------------------------------------------------------------------
 
@@ -181,8 +189,10 @@ export function Designer({ slug }: { slug: string }) {
       });
     adventures
       .getLook(slug, ac.signal)
-      .then(({ title, brand: b }) => {
+      .then(({ title, intro, outro, language, brand: b }) => {
         if (title) setAdventureTitle(title);
+        setAdventureLang(language);
+        setMeta({ title, intro, outro });
         setBrandSaved(b);
         setBrand(b);
       })
@@ -517,7 +527,7 @@ export function Designer({ slug }: { slug: string }) {
               </div>
             </div>
 
-            {graph && <LanguageSwitch graph={graph} value={editLang} onChange={setEditLang} />}
+            {graph && <LanguageSwitch graph={graph} main={mainLang} meta={meta} value={editLang} onChange={setEditLang} />}
 
             <Button variant="ghost" data-tidy="toolbar" disabled={readOnly} onClick={() => change(tidy(graph, cardSizes()))} title={t.t("Auto-arrange the adventure into clean columns")}>
               <LayoutGrid size={ICON.sm} aria-hidden="true" />
@@ -814,7 +824,21 @@ export function Designer({ slug }: { slug: string }) {
             <AdventureSlug.Provider value={slug}>
               <Resources graph={graph} onChange={change} />
             </AdventureSlug.Provider>
-            <LanguagesSettings graph={graph} onChange={change} editing={editLang} onEditing={setEditLang} />
+            <LanguagesSettings
+              graph={graph}
+              main={mainLang}
+              meta={meta}
+              onChange={change}
+              onMainChange={async (l) => {
+                await adventures.saveLanguage(slug, l);
+                setAdventureLang(l);
+                // Also the draft's copy, so the simulator and the next
+                // save agree with the adventure straight away.
+                change({ ...graph, language: l });
+              }}
+              editing={editLang}
+              onEditing={setEditLang}
+            />
             <Look
               brand={brand}
               dirty={brandDirty}

@@ -18,7 +18,32 @@ import {
   type Zone,
   type Node,
   type NodeType,
+  type Answer,
+  type PuzzleConfig,
 } from "./types.ts";
+
+/** Whether a choice is a form marked against answers. Mirrors Answer.Graded in Go. */
+export function isGraded(a: Answer | undefined): boolean {
+  return a?.kind === "choice" && a.fields.length > 0 && a.fields.every((f) => !!f.answer);
+}
+
+/**
+ * Whether a puzzle's answer outputs decide by their matchers. Mirrors
+ * PuzzleConfig.UsesMatchers in Go: a tile picture's answer is its solved
+ * order, a search's is where the team stands, and a marked form takes its
+ * first output whatever was picked.
+ */
+export function usesMatchers(p: PuzzleConfig): boolean {
+  switch (p.answer?.kind) {
+    case "tiles":
+    case "search":
+      return false;
+    case "choice":
+      return !isGraded(p.answer);
+    default:
+      return true;
+  }
+}
 
 /**
  * A node's output ports in declared order. Mirrors Node.Ports() in

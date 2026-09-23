@@ -105,6 +105,9 @@ export function refusedReport<Rep>(e: unknown): Rep | undefined {
 /** internal/admin: adventureEditDTO, the palette part. */
 interface AdventureEdit {
   title: string;
+  intro_text: string;
+  outro_text: string;
+  language: string;
   accent_color: string;
   accent_secondary_color: string;
   background_color: string;
@@ -118,7 +121,7 @@ interface AdventureEdit {
  * It belongs to the adventure, not to a graph version: recolouring does
  * not make a new version, and applies to events already running.
  */
-export async function getLook(slug: string, signal?: AbortSignal): Promise<{ title: string; brand: Brand }> {
+export async function getLook(slug: string, signal?: AbortSignal): Promise<Look> {
   const a = await get<AdventureEdit>(`/api/admin/adventures/${encodeURIComponent(slug)}/edit`, signal ? { signal } : {});
   const b: Brand = {};
   if (a.accent_color) b.accent = a.accent_color;
@@ -127,8 +130,22 @@ export async function getLook(slug: string, signal?: AbortSignal): Promise<{ tit
   if (a.text_color) b.text = a.text_color;
   if (a.submit_bg_color) b.submit_bg = a.submit_bg_color;
   if (a.font) b.font = a.font;
-  return { title: a.title, brand: b };
+  return { title: a.title, intro: a.intro_text, outro: a.outro_text, language: a.language, brand: b };
 }
+
+/** The adventure's own settings the designer shows beside its graph. */
+export interface Look {
+  title: string;
+  intro: string;
+  outro: string;
+  /** The language the adventure is written in — its graph's main language. */
+  language: string;
+  brand: Brand;
+}
+
+/** Set the language the adventure is written in. */
+export const saveLanguage = (slug: string, language: string) =>
+  patch<void>(`/api/admin/adventures/${encodeURIComponent(slug)}`, { language });
 
 /** Save the palette. A missing colour is cleared back to the default. */
 export const saveBrand = (slug: string, b: Brand) =>

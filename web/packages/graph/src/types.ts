@@ -129,38 +129,37 @@ export interface PuzzleConfig {
   skip_after_seconds?: number;
   lockout_seconds?: number;
   repeatable?: boolean;
-  /** A picture to put back together instead of a typed answer. */
-  tiles?: TileConfig;
-  /** Answered by where the team stands: a "Search here" button. */
-  search?: SearchConfig;
-  /** Options to pick instead of a text box. */
-  choices?: ChoiceConfig;
-  /** A combination lock instead of a text box. */
-  lock?: LockConfig;
+  /** Another way of answering than typing; absent is a typed answer. */
+  answer?: Answer;
 }
 
 /**
- * graph.LockConfig: wheels turning through the same symbols. The phone
- * sends the chosen values joined by "|"; the outputs' matchers decide.
+ * graph.Answer: how a puzzle takes its answer, beyond typing it — one
+ * kind, and only that kind's fields.
+ *
+ * - tiles: a picture cut into a grid and shuffled; solved when whole.
+ * - search: answered by where the team stands ("Search here"). Group names
+ *   the zones the phone reports the team as in; empty is the outputs' own.
+ * - choice: options to pick. Ungraded (no answers), the picked value goes
+ *   through the outputs' matchers; graded (every question has an answer),
+ *   a form marked on submit, paying the first output's points in shares.
+ * - lock: wheels turning through the same symbols; the phone sends the
+ *   chosen values joined by "|" and the outputs' matchers decide.
  */
-export interface LockConfig {
-  wheels: number;
-  symbols: LockSymbol[];
-  start?: number[];
-}
+export type Answer =
+  | { kind: "tiles"; image?: Media; rows: number; cols: number }
+  | { kind: "search"; group?: string }
+  | { kind: "choice"; fields: ChoiceField[] }
+  | { kind: "lock"; wheels: number; symbols: LockSymbol[]; start?: number[] };
+
+export type AnswerKind = Answer["kind"];
+/** One kind of answer, by name: AnswerOf<"lock">. */
+export type AnswerOf<K extends AnswerKind> = Extract<Answer, { kind: K }>;
+
 export interface LockSymbol {
   value: string;
   label?: string;
   image?: Media;
-}
-
-/**
- * graph.ChoiceConfig. Ungraded (no answers): the picked value goes through
- * the outputs' matchers. Graded (every question has an answer): a form
- * marked on submit, paying the first output's points in shares.
- */
-export interface ChoiceConfig {
-  fields: ChoiceField[];
 }
 export interface ChoiceField {
   label?: string;
@@ -170,18 +169,6 @@ export interface ChoiceField {
 export interface ChoiceOption {
   value: string;
   label?: string;
-}
-
-/** graph.SearchConfig: which zones the phone reports the team as in. */
-export interface SearchConfig {
-  group?: string;
-}
-
-/** graph.TileConfig: the picture and the grid it is cut into. */
-export interface TileConfig {
-  image: Media;
-  rows: number;
-  cols: number;
 }
 
 export interface StoryConfig {

@@ -1,14 +1,27 @@
 // Translations of an adventure's text. The graph is written in its main
-// language; other languages live in graph.translations, keyed by field —
-// the same keys the engine reads (graph.NodeKey, ZoneKey, JournalKey in
-// Go). A missing translation falls back to the main text.
+// language — the adventure's own, which the server writes into
+// graph.language — and other languages live in graph.translations, keyed
+// by field: the same keys the engine reads (graph.NodeKey, ZoneKey,
+// JournalKey, SectionKey, MetaKey in Go). A missing translation falls
+// back to the main text.
 
 import type { Graph, Node } from "./types.ts";
 
 export const nodeKey = (slug: string, field: string) => `n:${slug}:${field}`;
 export const zoneKey = (slug: string) => `z:${slug}`;
 export const journalKey = (slug: string, field: string) => `j:${slug}:${field}`;
+/** A journal section's heading: one per section, however many notes share it. */
+export const sectionKey = (section: string) => `js:${section}`;
+/** The adventure's own title, intro and outro, which live outside the graph. */
+export const metaKey = (field: "title" | "intro" | "outro") => `meta:${field}`;
 export const TIME_UP_KEY = "time-up";
+
+/** The adventure's own texts, from its settings rather than its graph. */
+export interface AdventureMeta {
+  title?: string;
+  intro?: string;
+  outro?: string;
+}
 
 /** One piece of text an author can translate. */
 export interface Translatable {
@@ -35,18 +48,27 @@ export function nodeTexts(n: Node): Translatable[] {
     add("text", "Prompt", p.prompt, { multiline: true });
     for (const o of p.outputs ?? []) {
       add(`out:${o.port}:label`, `Route “${o.label || o.port}”`, o.label);
-      const typed = (o.matchers ?? []).filter((m) => m.kind === "exact" || m.kind === "contains").map((m) => m.value ?? "");
-      if (o.trigger === "answer" && typed.length && !p.lock && !p.choices && !p.tiles && !p.search) {
-        add(`out:${o.port}:answers`, `Answers for “${o.label || o.port}”`, typed.join("\n"), { multiline: true, answers: true });
+      // Only a typed answer is words a team could give in another
+      // language; a lock's or a choice's values are what the phone sends.
+      if (o.trigger !== "answer" || p.answer) continue;
+      // Each kind of matcher keeps its own key, so a translated answer is
+      // matched the way the original is.
+      for (const [kind, field, label] of [["exact", "answers", "Answers"], ["contains", "contains", "Words anywhere in the answer"]] as const) {
+        const values = (o.matchers ?? []).filter((m) => m.kind === kind).map((m) => m.value ?? "");
+        if (values.length) add(`out:${o.port}:${field}`, `${label} for “${o.label || o.port}”`, values.join("\n"), { multiline: true, answers: true });
       }
     }
     (p.responses ?? []).forEach((r, i) => add(`reply:${i}`, `Wrong-answer reply ${i + 1}`, r.text, { multiline: true }));
     (p.hints ?? []).forEach((h, i) => add(`hint:${i}`, `Hint ${i + 1}`, h.text, { multiline: true }));
-    (p.choices?.fields ?? []).forEach((f, i) => {
-      add(`field:${i}:label`, `Question ${i + 1}`, f.label);
-      for (const o of f.options) add(`field:${i}:opt:${o.value}`, `Question ${i + 1}: option`, o.label || o.value);
-    });
-    for (const s of p.lock?.symbols ?? []) add(`sym:${s.value}`, "Lock symbol", s.label || (s.image ? "" : s.value));
+    if (p.answer?.kind === "choice") {
+      p.answer.fields.forEach((f, i) => {
+        add(`field:${i}:label`, `Question ${i + 1}`, f.label);
+        for (const o of f.options) add(`field:${i}:opt:${o.value}`, `Question ${i + 1}: option`, o.label || o.value);
+      });
+    }
+    if (p.answer?.kind === "lock") {
+      for (const s of p.answer.symbols) add(`sym:${s.value}`, "Lock symbol", s.label || (s.image ? "" : s.value));
+    }
   }
   if (n.story) add("text", "Text", n.story.text, { multiline: true });
   if (n.end) add("text", "Closing text", n.end.text, { multiline: true });
@@ -60,18 +82,21 @@ export function nodeTexts(n: Node): Translatable[] {
   return out;
 }
 
-/** The adventure-wide texts: journal notes, zone names, the time-up message. */
-export function adventureTexts(g: Graph): Translatable[] {
+/**
+ * The adventure-wide texts: its title, intro and outro, journal notes,
+ * zone names, the time-up message.
+ */
+export function adventureTexts(g: Graph, meta: AdventureMeta = {}): Translatable[] {
   const out: Translatable[] = [];
+  if (meta.title?.trim()) out.push({ key: metaKey("title"), label: "Adventure title", main: meta.title });
+  if (meta.intro?.trim()) out.push({ key: metaKey("intro"), label: "Introduction", main: meta.intro, multiline: true });
+  if (meta.outro?.trim()) out.push({ key: metaKey("outro"), label: "Closing words", main: meta.outro, multiline: true });
   for (const j of g.journal ?? []) {
     if (j.title?.trim()) out.push({ key: journalKey(j.slug, "title"), label: `Journal: ${j.title}`, main: j.title });
     if (j.body?.trim()) out.push({ key: journalKey(j.slug, "body"), label: `Journal: ${j.title || j.slug}`, main: j.body, multiline: true });
   }
   for (const s of new Set((g.journal ?? []).map((j) => j.section).filter((x): x is string => !!x))) {
-    // A section is one heading however many notes share it; the key is
-    // its first note's, which is what the engine reads for all of them.
-    const first = g.journal!.find((j) => j.section === s)!;
-    out.push({ key: journalKey(first.slug, "section"), label: "Journal section", main: s });
+    out.push({ key: sectionKey(s), label: "Journal section", main: s });
   }
   for (const z of g.zones ?? []) if (z.name?.trim() && !z.group) out.push({ key: zoneKey(z.slug), label: "Place name", main: z.name });
   if (g.time_limit?.text?.trim()) out.push({ key: TIME_UP_KEY, label: "Time is up: message", main: g.time_limit.text, multiline: true });
@@ -79,13 +104,13 @@ export function adventureTexts(g: Graph): Translatable[] {
 }
 
 /** Every translatable text of the adventure. */
-export function allTexts(g: Graph): Translatable[] {
-  return [...g.nodes.flatMap(nodeTexts), ...adventureTexts(g)];
+export function allTexts(g: Graph, meta: AdventureMeta = {}): Translatable[] {
+  return [...g.nodes.flatMap(nodeTexts), ...adventureTexts(g, meta)];
 }
 
 /** How much of the adventure is translated into lang, 0–1. */
-export function coverage(g: Graph, lang: string): number {
-  const all = allTexts(g).filter((t) => !t.answers);
+export function coverage(g: Graph, lang: string, meta: AdventureMeta = {}): number {
+  const all = allTexts(g, meta).filter((t) => !t.answers);
   if (!all.length) return 1;
   const tr = g.translations?.[lang] ?? {};
   return all.filter((t) => tr[t.key]?.trim()).length / all.length;

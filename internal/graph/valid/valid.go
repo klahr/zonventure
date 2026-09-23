@@ -158,6 +158,7 @@ func checkSlugs(r *reporter, g *graph.Graph) {
 // or belongs to a different type — the shape a hand-edited import can
 // produce, and one the runtime cannot act on.
 func checkNodeConfigs(r *reporter, g *graph.Graph) {
+	var owners map[string]string // g.OwnerHubs(), once a puzzle needs it
 	for _, n := range g.Nodes {
 		switch n.Type {
 		case graph.Puzzle:
@@ -168,39 +169,11 @@ func checkNodeConfigs(r *reporter, g *graph.Graph) {
 			if len(n.PuzzleCfg.Outputs) == 0 {
 				r.err("puzzle.outputs.none", n.Slug, "", "puzzle has no outputs, so a team that solves it has nowhere to go")
 			}
-			if c := n.PuzzleCfg.Choices; c != nil {
-				checkChoices(r, n.Slug, *c)
-			}
-			if l := n.PuzzleCfg.Lock; l != nil {
-				checkLock(r, n.Slug, *l)
-			}
-			answerKinds := 0
-			for _, on := range []bool{n.PuzzleCfg.Tiles != nil, n.PuzzleCfg.Search != nil, n.PuzzleCfg.Choices != nil, n.PuzzleCfg.Lock != nil} {
-				if on {
-					answerKinds++
+			if n.PuzzleCfg.Answer != nil {
+				if owners == nil {
+					owners = g.OwnerHubs()
 				}
-			}
-			if answerKinds > 1 {
-				r.err("puzzle.answer.kinds", n.Slug, "", "a puzzle takes one kind of answer: a tile picture, a search, choices or a lock")
-			}
-			if n.PuzzleCfg.Search != nil {
-				if n.PuzzleCfg.Tiles != nil {
-					r.err("search.tiles", n.Slug, "", "a puzzle is answered either by a tile picture or by where the team stands, not both")
-				}
-				if hub, ok := g.OwnerHub(n.Slug); ok && !n.PuzzleCfg.Repeatable {
-					if h, _ := g.Node(hub); h.HubCfg != nil && h.HubCfg.Home {
-						r.warn("search.repeatable", n.Slug, "",
-							"teams come back to this search from the home screen, but it is not repeatable, so they will only ever see their first find")
-					}
-				}
-			}
-			if t := n.PuzzleCfg.Tiles; t != nil {
-				if t.Rows < graph.MinTiles || t.Rows > graph.MaxTiles || t.Cols < graph.MinTiles || t.Cols > graph.MaxTiles {
-					r.err("tiles.size", n.Slug, "", "a tile puzzle needs %d to %d rows and columns", graph.MinTiles, graph.MaxTiles)
-				}
-				if t.Image.Kind != graph.MediaImage {
-					r.err("tiles.image", n.Slug, "", "a tile puzzle needs a picture to cut up")
-				}
+				checkAnswer(r, g, n, owners)
 			}
 			ports := map[string]bool{}
 			answers := 0
@@ -217,11 +190,7 @@ func checkNodeConfigs(r *reporter, g *graph.Graph) {
 				switch o.Trigger {
 				case graph.OnAnswer:
 					answers++
-					// A tile puzzle's answer is its solved order, and a
-					// search's is where the team stands; neither has
-					// matchers to write.
-					graded := n.PuzzleCfg.Choices != nil && n.PuzzleCfg.Choices.Graded()
-					if len(o.Matchers) == 0 && n.PuzzleCfg.Tiles == nil && n.PuzzleCfg.Search == nil && !graded {
+					if len(o.Matchers) == 0 && n.PuzzleCfg.UsesMatchers() {
 						r.err("output.matchers.none", n.Slug, o.Port,
 							"output accepts an answer but has no matchers, so nothing can satisfy it")
 					}
@@ -655,11 +624,9 @@ func checkTermination(r *reporter, g *graph.Graph) {
 	}
 	// Back is a way out too: a step inside a home screen's branch can
 	// always return to it, with no edge drawn.
-	for _, n := range g.Nodes {
-		if hub, ok := g.OwnerHub(n.Slug); ok {
-			if h, _ := g.Node(hub); h.HubCfg != nil && h.HubCfg.Home {
-				rev[hub] = append(rev[hub], n.Slug)
-			}
+	for slug, hub := range g.OwnerHubs() {
+		if h, _ := g.Node(hub); h.HubCfg != nil && h.HubCfg.Home {
+			rev[hub] = append(rev[hub], slug)
 		}
 	}
 	canEnd := map[string]bool{}
@@ -777,9 +744,36 @@ func checkResources(r *reporter, g *graph.Graph) {
 // checkMedia checks the shape of media references. Whether an id exists,
 // and belongs to this adventure, needs the database: graphstore.Save
 // checks that.
+// checkAnswer checks a puzzle's way of answering, by its kind.
+func checkAnswer(r *reporter, g *graph.Graph, n graph.Node, owners map[string]string) {
+	a := n.PuzzleCfg.Answer
+	switch a.Kind {
+	case graph.AnswerTiles:
+		if a.Rows < graph.MinTiles || a.Rows > graph.MaxTiles || a.Cols < graph.MinTiles || a.Cols > graph.MaxTiles {
+			r.err("tiles.size", n.Slug, "", "a tile puzzle needs %d to %d rows and columns", graph.MinTiles, graph.MaxTiles)
+		}
+		if a.Image == nil || a.Image.Kind != graph.MediaImage {
+			r.err("tiles.image", n.Slug, "", "a tile puzzle needs a picture to cut up")
+		}
+	case graph.AnswerSearch:
+		if hub, ok := owners[n.Slug]; ok && !n.PuzzleCfg.Repeatable {
+			if h, _ := g.Node(hub); h.HubCfg != nil && h.HubCfg.Home {
+				r.warn("search.repeatable", n.Slug, "",
+					"teams come back to this search from the home screen, but it is not repeatable, so they will only ever see their first find")
+			}
+		}
+	case graph.AnswerChoice:
+		checkChoices(r, n.Slug, a)
+	case graph.AnswerLock:
+		checkLock(r, n.Slug, a)
+	default:
+		r.err("puzzle.answer.kind", n.Slug, "", "unknown kind of answer %q", a.Kind)
+	}
+}
+
 // checkLock catches a lock that cannot be turned, or whose symbols could
 // not be told apart in the answer.
-func checkLock(r *reporter, node string, l graph.LockConfig) {
+func checkLock(r *reporter, node string, l *graph.Answer) {
 	if l.Wheels < 1 || l.Wheels > graph.MaxWheels {
 		r.err("lock.wheels", node, "", "a lock has 1 to %d wheels", graph.MaxWheels)
 	}
@@ -807,7 +801,7 @@ func checkLock(r *reporter, node string, l graph.LockConfig) {
 
 // checkChoices catches a choice question a team could not answer, or
 // whose answers could not be told apart.
-func checkChoices(r *reporter, node string, c graph.ChoiceConfig) {
+func checkChoices(r *reporter, node string, c *graph.Answer) {
 	if len(c.Fields) == 0 {
 		r.err("choices.none", node, "", "a choice puzzle has no questions")
 	}
@@ -850,23 +844,28 @@ func checkTranslations(r *reporter, g *graph.Graph) {
 	}
 	zones := slugSet(len(g.Zones), func(i int) string { return g.Zones[i].Slug })
 	journal := slugSet(len(g.Journal), func(i int) string { return g.Journal[i].Slug })
+	sections := slugSet(len(g.Journal), func(i int) string { return g.Journal[i].Section })
 	langs := make([]string, 0, len(g.Translations))
 	for l := range g.Translations {
 		langs = append(langs, l)
 	}
 	sort.Strings(langs)
 	for _, l := range langs {
+		if l == g.Language && len(g.Translations[l]) > 0 {
+			r.warn("translation.main", "", "", "the adventure is written in %s, so its %s translation is never shown", l, l)
+		}
 		stale := 0
 		for key := range g.Translations[l] {
 			kind, rest, _ := strings.Cut(key, ":")
 			slug, _, _ := strings.Cut(rest, ":")
 			switch {
-			case kind == "n" && !nodes[slug], kind == "z" && !zones[slug], kind == "j" && !journal[slug]:
+			case kind == "n" && !nodes[slug], kind == "z" && !zones[slug], kind == "j" && !journal[slug],
+				kind == "js" && !sections[rest]:
 				stale++
 			}
 		}
 		if stale > 0 {
-			r.warn("translation.stale", "", "", "%d %s translations belong to steps, zones or notes that no longer exist", stale, l)
+			r.warn("translation.stale", "", "", "%d %s translations belong to steps, zones, notes or journal sections that no longer exist", stale, l)
 		}
 	}
 }

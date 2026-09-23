@@ -455,7 +455,7 @@ func TestTilePuzzle(t *testing.T) {
 		Nodes: []graph.Node{
 			{Slug: "start", Type: graph.Start},
 			{Slug: "painting", Type: graph.Puzzle, PuzzleCfg: &graph.PuzzleConfig{
-				Tiles:     &graph.TileConfig{Image: graph.Media{ID: 7, Kind: graph.MediaImage}, Rows: 2, Cols: 3},
+				Answer:    &graph.Answer{Kind: graph.AnswerTiles, Image: &graph.Media{ID: 7, Kind: graph.MediaImage}, Rows: 2, Cols: 3},
 				Outputs:   []graph.Output{{Port: "solved", Trigger: graph.OnAnswer, Points: 20}},
 				Responses: []graph.Response{{Text: "Not quite."}},
 			}},

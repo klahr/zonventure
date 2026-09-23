@@ -144,29 +144,34 @@ func simulate(g *graph.Graph, team *session.Team, a simulateAction, now time.Tim
 		return simulateResponse{}, http.StatusInternalServerError, "copying team failed"
 	}
 
+	// The team's own actions go through Act, which applies a time limit
+	// that has passed before anything else, as the live engine does.
+	act := func(action func() (session.Result, *walk.Step, error)) {
+		res, step, err = team.Act(action)
+	}
 	switch a.Kind {
 	case "begin":
-		res, step, err = team.ChooseStart(a.Port)
+		act(func() (session.Result, *walk.Step, error) { return team.ChooseStart(a.Port) })
 	case "answer":
-		res, step, err = team.Answer(a.Node, a.Guess)
+		act(func() (session.Result, *walk.Step, error) { return team.Answer(a.Node, a.Guess) })
 	case "continue":
-		res, step, err = team.Continue(a.Node)
+		act(func() (session.Result, *walk.Step, error) { return team.Continue(a.Node) })
 	case "back":
-		res, step, err = team.Back(a.Node)
+		act(func() (session.Result, *walk.Step, error) { return team.Back(a.Node) })
 	case "timeup":
-		res, step, err = team.TimeUp()
+		act(func() (session.Result, *walk.Step, error) { return team.TimeUp() })
 	case "language":
-		err = team.SetLanguage(a.Lang)
+		act(func() (session.Result, *walk.Step, error) { return session.Result{}, nil, team.SetLanguage(a.Lang) })
 	case "choose":
-		res, step, err = team.Choose(a.Node, a.Port)
+		act(func() (session.Result, *walk.Step, error) { return team.Choose(a.Node, a.Port) })
 	case "skip":
-		res, step, err = team.Skip(a.Node)
+		act(func() (session.Result, *walk.Step, error) { return team.Skip(a.Node) })
 	case "timeout":
-		res, step, err = team.Timeout(a.Node)
+		act(func() (session.Result, *walk.Step, error) { return team.Timeout(a.Node) })
 	case "force":
-		res, step, err = team.ForceSolve(a.Node, a.Port)
+		act(func() (session.Result, *walk.Step, error) { return team.ForceSolve(a.Node, a.Port) })
 	case "hint":
-		res, step, err = team.RevealHint(a.Node, a.Index)
+		act(func() (session.Result, *walk.Step, error) { return team.RevealHint(a.Node, a.Index) })
 	case "wait":
 		if a.Seconds <= 0 || a.Seconds > maxSimulateWait {
 			return simulateResponse{}, http.StatusBadRequest, "seconds must be between 1 and 86400"

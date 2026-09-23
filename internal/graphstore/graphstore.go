@@ -72,6 +72,9 @@ func Save(ctx context.Context, q Querier, adventureID, userID int64, g *graph.Gr
 }
 
 func saveVersion(ctx context.Context, q Querier, adventureID, userID int64, g *graph.Graph, label string) (Stored, valid.Report, error) {
+	if err := stampLanguage(ctx, q, adventureID, g); err != nil {
+		return Stored{}, valid.Report{}, err
+	}
 	report := valid.Check(g)
 	if report.HasErrors() {
 		return Stored{}, report, &InvalidError{Report: report}
@@ -108,7 +111,7 @@ func saveVersion(ctx context.Context, q Querier, adventureID, userID int64, g *g
 // Latest returns the newest saved version.
 func Latest(ctx context.Context, q Querier, adventureID int64) (Stored, error) {
 	return scan(q.QueryRowContext(ctx, `
-		SELECT id, adventure_id, version, label, graph FROM adventure_graphs
+		SELECT id, adventure_id, version, label, graph, `+adventureLanguage+` FROM adventure_graphs
 		WHERE adventure_id = $1
 		ORDER BY version DESC
 		LIMIT 1
@@ -118,16 +121,33 @@ func Latest(ctx context.Context, q Querier, adventureID int64) (Stored, error) {
 // ByID returns one specific version, as pinned by an event.
 func ByID(ctx context.Context, q Querier, id int64) (Stored, error) {
 	return scan(q.QueryRowContext(ctx, `
-		SELECT id, adventure_id, version, label, graph FROM adventure_graphs WHERE id = $1
+		SELECT id, adventure_id, version, label, graph, `+adventureLanguage+` FROM adventure_graphs WHERE id = $1
 	`, id))
+}
+
+// adventureLanguage selects, beside a stored graph, its adventure's
+// language — for graphs stored before graphstore wrote it into them.
+const adventureLanguage = `(SELECT language FROM adventures WHERE adventures.id = adventure_graphs.adventure_id)`
+
+// stampLanguage writes the adventure's language into g as it is saved.
+// The adventure's column is the one place the language is edited; the
+// graph carries a copy because that is where the engine and the
+// simulator read it, beside the translations it is the original of, and
+// a published version keeps the language it was published with.
+func stampLanguage(ctx context.Context, q Querier, adventureID int64, g *graph.Graph) error {
+	if err := q.QueryRowContext(ctx, `SELECT language FROM adventures WHERE id = $1`, adventureID).Scan(&g.Language); err != nil {
+		return fmt.Errorf("reading adventure language: %w", err)
+	}
+	return nil
 }
 
 func scan(row *sql.Row) (Stored, error) {
 	var (
-		s   Stored
-		doc []byte
+		s    Stored
+		doc  []byte
+		lang string
 	)
-	if err := row.Scan(&s.ID, &s.AdventureID, &s.Version, &s.Label, &doc); err != nil {
+	if err := row.Scan(&s.ID, &s.AdventureID, &s.Version, &s.Label, &doc, &lang); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return Stored{}, ErrNotFound
 		}
@@ -136,6 +156,9 @@ func scan(row *sql.Row) (Stored, error) {
 	var g graph.Graph
 	if err := json.Unmarshal(doc, &g); err != nil {
 		return Stored{}, fmt.Errorf("decoding stored graph %d: %w", s.ID, err)
+	}
+	if g.Language == "" {
+		g.Language = lang
 	}
 	s.Graph = &g
 	return s, nil

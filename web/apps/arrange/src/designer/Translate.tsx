@@ -1,4 +1,5 @@
-import type { Graph, Node, Translatable } from "@zonventure/graph";
+import { useState } from "react";
+import type { AdventureMeta, Graph, Node, Translatable } from "@zonventure/graph";
 import { adventureTexts, coverage, nodeTexts, setTranslation } from "@zonventure/graph";
 import { Languages, X } from "lucide-react";
 import { useT } from "../i18n.tsx";
@@ -11,6 +12,10 @@ import { STEP } from "./dz/types.tsx";
  * Choosing a language to edit in the toolbar turns the inspector into a
  * list of the step's texts, each with the original beside a box for the
  * translation. Anything left empty plays in the main language.
+ *
+ * The main language is the adventure's own setting, not the graph's: the
+ * designer passes it in as `main`, and the server writes it into the
+ * graph as it is saved.
  */
 
 /** Each language in its own words. */
@@ -26,14 +31,12 @@ export const LANGUAGE_NAMES: Record<string, string> = {
 };
 export const languageName = (l: string) => LANGUAGE_NAMES[l] ?? l.toUpperCase();
 
-export const mainLanguage = (g: Graph) => g.language || "sv";
-export const translationLanguages = (g: Graph) => Object.keys(g.translations ?? {}).filter((l) => l !== mainLanguage(g)).sort();
+export const translationLanguages = (g: Graph, main: string) => Object.keys(g.translations ?? {}).filter((l) => l !== main).sort();
 
 /** The toolbar's "editing in" switch, with how far each translation has come. */
-export function LanguageSwitch({ graph, value, onChange }: { graph: Graph; value: string; onChange: (l: string) => void }) {
+export function LanguageSwitch({ graph, main, meta, value, onChange }: { graph: Graph; main: string; meta: AdventureMeta; value: string; onChange: (l: string) => void }) {
   const t = useT();
-  const main = mainLanguage(graph);
-  const others = translationLanguages(graph);
+  const others = translationLanguages(graph, main);
   if (!others.length) return null;
   return (
     <label className="lang-switch" title={t.t("The language you are editing the text in")}>
@@ -42,7 +45,7 @@ export function LanguageSwitch({ graph, value, onChange }: { graph: Graph; value
         <option value={main}>{languageName(main)}</option>
         {others.map((l) => (
           <option key={l} value={l}>
-            {languageName(l)} — {Math.round(coverage(graph, l) * 100)} %
+            {languageName(l)} — {Math.round(coverage(graph, l, meta) * 100)} %
           </option>
         ))}
       </select>
@@ -117,11 +120,23 @@ export function TranslateStep({ node, graph, lang, onGraphChange, onClose, readO
   );
 }
 
-/** Adventure settings: the main language, the translations, and their adventure-wide texts. */
-export function LanguagesSettings({ graph, onChange, editing, onEditing }: { graph: Graph; onChange: (g: Graph) => void; editing: string; onEditing: (l: string) => void }) {
+/**
+ * Adventure settings: the main language, the translations, and their
+ * adventure-wide texts. Changing the main language saves the adventure's
+ * setting straight away, through onMainChange.
+ */
+export function LanguagesSettings({ graph, main, meta, onChange, onMainChange, editing, onEditing }: {
+  graph: Graph;
+  main: string;
+  meta: AdventureMeta;
+  onChange: (g: Graph) => void;
+  onMainChange: (l: string) => Promise<void>;
+  editing: string;
+  onEditing: (l: string) => void;
+}) {
   const t = useT();
-  const main = mainLanguage(graph);
-  const others = translationLanguages(graph);
+  const [error, setError] = useState<string | null>(null);
+  const others = translationLanguages(graph, main);
   const addable = Object.keys(LANGUAGE_NAMES).filter((l) => l !== main && !others.includes(l));
   const lang = others.includes(editing) ? editing : others[0];
   return (
@@ -132,16 +147,20 @@ export function LanguagesSettings({ graph, onChange, editing, onEditing }: { gra
       </p>
       <label className="field">
         <span className="field__label">{t.t("Main language")}</span>
-        <select className="field__input" value={main} onChange={(e) => onChange({ ...graph, language: e.target.value })}>
+        <select className="field__input" value={main} onChange={(e) => {
+          setError(null);
+          onMainChange(e.target.value).catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)));
+        }}>
           {Object.keys(LANGUAGE_NAMES).filter((l) => !others.includes(l)).map((l) => (
             <option key={l} value={l}>{languageName(l)}</option>
           ))}
         </select>
+        {error && <span className="field__error" role="alert">{error}</span>}
       </label>
       {others.map((l) => (
         <div key={l} className="box__row">
           <span className="tr-lang">
-            <strong>{languageName(l)}</strong> · {t.t("{{pct}} % translated", { pct: Math.round(coverage(graph, l) * 100) })}
+            <strong>{languageName(l)}</strong> · {t.t("{{pct}} % translated", { pct: Math.round(coverage(graph, l, meta) * 100) })}
           </span>
           <button type="button" className="link-btn" onClick={() => onEditing(l)}>{t.t("Translate")}</button>
           <button
@@ -163,7 +182,7 @@ export function LanguagesSettings({ graph, onChange, editing, onEditing }: { gra
         <select className="field__input" value="" aria-label={t.t("Add a translation")}
           onChange={(e) => {
             if (!e.target.value) return;
-            onChange({ ...graph, language: main, translations: { ...(graph.translations ?? {}), [e.target.value]: {} } });
+            onChange({ ...graph, translations: { ...(graph.translations ?? {}), [e.target.value]: {} } });
             onEditing(e.target.value);
           }}>
           <option value="">{t.t("+ Add a translation…")}</option>
@@ -174,8 +193,8 @@ export function LanguagesSettings({ graph, onChange, editing, onEditing }: { gra
       )}
       {lang && (
         <details className="box" open={editing === lang}>
-          <summary>{t.t("Journal, places and messages in {{lang}}", { lang: languageName(lang) })}</summary>
-          <TextRows texts={adventureTexts(graph)} graph={graph} lang={lang} onGraphChange={onChange} />
+          <summary>{t.t("Title, journal, places and messages in {{lang}}", { lang: languageName(lang) })}</summary>
+          <TextRows texts={adventureTexts(graph, meta)} graph={graph} lang={lang} onGraphChange={onChange} />
         </details>
       )}
     </section>

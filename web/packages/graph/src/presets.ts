@@ -172,7 +172,7 @@ export const PRESETS: Preset[] = [
       title: "Tile puzzle",
       puzzle: {
         prompt: "",
-        tiles: { image: { id: 0, kind: "image" }, rows: 3, cols: 3 },
+        answer: { kind: "tiles", rows: 3, cols: 3 },
         outputs: [{ port: "solved", label: "Solved", trigger: "answer" }],
       },
     }),
@@ -189,7 +189,7 @@ export const PRESETS: Preset[] = [
       title: "Multiple choice",
       puzzle: {
         prompt: "",
-        choices: { fields: [{ options: [{ value: "a", label: "A" }, { value: "b", label: "B" }] }] },
+        answer: { kind: "choice", fields: [{ options: [{ value: "a", label: "A" }, { value: "b", label: "B" }] }] },
         outputs: [
           { port: "a", label: "A", trigger: "answer", matchers: [{ kind: "exact", value: "a" }] },
           { port: "b", label: "B", trigger: "answer", matchers: [{ kind: "exact", value: "b" }] },
@@ -209,7 +209,7 @@ export const PRESETS: Preset[] = [
       title: "Solve the case",
       puzzle: {
         prompt: "",
-        choices: { fields: [{ label: "Who did it?", options: [{ value: "a", label: "A" }, { value: "b", label: "B" }], answer: "a" }] },
+        answer: { kind: "choice", fields: [{ label: "Who did it?", options: [{ value: "a", label: "A" }, { value: "b", label: "B" }], answer: "a" }] },
         outputs: [{ port: "done", label: "Sent in", trigger: "answer", points: 100 }],
       },
     }),
@@ -226,7 +226,7 @@ export const PRESETS: Preset[] = [
       title: "Combination lock",
       puzzle: {
         prompt: "",
-        lock: { wheels: 3, start: [1, 2, 0], symbols: [{ value: "1", label: "1" }, { value: "2", label: "2" }, { value: "3", label: "3" }] },
+        answer: { kind: "lock", wheels: 3, start: [1, 2, 0], symbols: [{ value: "1", label: "1" }, { value: "2", label: "2" }, { value: "3", label: "3" }] },
         outputs: [{ port: "open", label: "Open", trigger: "answer", matchers: [{ kind: "exact", value: "1|1|1" }] }],
         responses: [{ text: "It does not budge." }],
       },
@@ -244,7 +244,7 @@ export const PRESETS: Preset[] = [
       title: "Scanner",
       puzzle: {
         prompt: "",
-        search: {},
+        answer: { kind: "search" },
         repeatable: true,
         outputs: [{ port: "found", label: "Found", trigger: "answer", zone: "" }],
         responses: [{ text: "Nothing here." }],

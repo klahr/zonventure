@@ -123,7 +123,9 @@ export interface View {
   lang?: string;
   /** When the adventure's time limit falls, for a countdown. */
   ends_at?: string;
-  /** The time limit's message, once it has moved the team. */
+  /** The adventure's time limit has moved the team. */
+  timed_out?: boolean;
+  /** The author's message for that; empty for the player's own default. */
   time_up_text?: string;
   /** The home screen a team may go back to from here, and its title. */
   back_to?: string;
@@ -164,8 +166,8 @@ export type PlayAction =
   | { kind: "answer"; node: string; guess: string }
   | { kind: "continue"; node: string }
   | { kind: "back"; node: string }
-  | { kind: "timeup"; node: string }
-  | { kind: "language"; node: string; lang: string }
+  | { kind: "timeup" }
+  | { kind: "language"; lang: string }
   | { kind: "choose"; node: string; port: string }
   | { kind: "skip"; node: string }
   | { kind: "timeout"; node: string }

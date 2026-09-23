@@ -55,9 +55,11 @@ type View struct {
 	// not in the graph, so the caller swaps them in.
 	Meta map[string]string `json:"meta,omitempty"`
 
-	// EndsAt is when the adventure's time limit falls, for a countdown;
-	// TimeUpText is its message, once it has moved the team.
+	// EndsAt is when the adventure's time limit falls, for a countdown.
+	// TimedOut says it has moved the team, and TimeUpText is the author's
+	// message for that — empty for the phone's own "time is up".
 	EndsAt     *time.Time `json:"ends_at,omitempty"`
+	TimedOut   bool       `json:"timed_out,omitempty"`
 	TimeUpText string     `json:"time_up_text,omitempty"`
 
 	// BackTo is the home hub a team may go back to from here, and
@@ -184,31 +186,6 @@ type JournalView struct {
 	Media   []graph.Media `json:"media,omitempty"`
 }
 
-// searchAt names the zone a searching team stands in: one of the search's
-// group, or of the puzzle's own output zones when it names no group.
-func (t *Team) searchAt(cfg *graph.PuzzleConfig) string {
-	if t.Position == nil {
-		return ""
-	}
-	mine := map[string]bool{}
-	for _, o := range cfg.Outputs {
-		if o.Zone != "" {
-			mine[o.Zone] = true
-		}
-	}
-	for _, z := range t.G.Zones {
-		in := cfg.Search.Group != "" && z.Group == cfg.Search.Group || cfg.Search.Group == "" && mine[z.Slug]
-		if in && ZoneContains(z, t.Position.Lat, t.Position.Lng) {
-			name := z.Name
-			if name == "" {
-				name = z.Slug
-			}
-			return t.G.Tr(t.Lang, graph.ZoneKey(z.Slug), name)
-		}
-	}
-	return ""
-}
-
 // journalView lists the unlocked notes: in the order the author wrote
 // them, or — when the adventure asks — the order the team found them.
 func (t *Team) journalView() []JournalView {
@@ -256,10 +233,13 @@ func (t *Team) View() View {
 // are built in the adventure's main language; this is the only place the
 // translations are read, and anything without one stays as it was.
 func (t *Team) translate(v *View) {
-	v.Languages = t.G.Languages()
-	v.Lang = t.Lang
-	if v.Lang == "" {
-		v.Lang = v.Languages[0]
+	// Only a translated adventure has languages to choose between; any
+	// other leaves the phone in the player's own.
+	if v.Languages = t.G.Languages(); v.Languages != nil {
+		v.Lang = t.Lang
+		if v.Lang == "" {
+			v.Lang = v.Languages[0]
+		}
 	}
 	if t.Lang == "" || t.Lang == t.G.Language {
 		return
@@ -292,13 +272,8 @@ func (t *Team) translate(v *View) {
 		j := &v.Journal[i]
 		j.Title = tr(graph.JournalKey(j.Slug, "title"), j.Title)
 		j.Body = tr(graph.JournalKey(j.Slug, "body"), j.Body)
-		// A section is one heading for all its notes, translated once,
-		// under the key of the first note that has it.
-		for _, je := range g.Journal {
-			if je.Section == j.Section && j.Section != "" {
-				j.Section = tr(graph.JournalKey(je.Slug, "section"), j.Section)
-				break
-			}
+		if j.Section != "" {
+			j.Section = tr(graph.SectionKey(j.Section), j.Section)
 		}
 	}
 	if v.TimeUpText != "" && g.TimeLimit != nil {
@@ -398,9 +373,9 @@ func (t *Team) view() View {
 	}
 	v.Type, v.Title = n.Type, n.Title
 	if t.TimedOut {
-		v.TimeUpText = t.G.TimeLimit.Text
-		if v.TimeUpText == "" {
-			v.TimeUpText = "Time is up."
+		v.TimedOut = true
+		if t.G.TimeLimit != nil {
+			v.TimeUpText = t.G.TimeLimit.Text
 		}
 	} else if d, ok := t.Deadline(); ok && !t.Completed {
 		v.EndsAt = &d
@@ -430,10 +405,7 @@ func (t *Team) view() View {
 		if cfg.Zone != "" {
 			setZone(cfg.Zone)
 		}
-		v.Input = inputFor(cfg)
-		if cfg.Search != nil {
-			v.Input.At = t.searchAt(cfg)
-		}
+		v.Input = t.answerInput(cfg)
 		revealed := 0
 		if r := t.Nodes[n.Slug]; r != nil {
 			revealed, v.Attempts = r.HintsRevealed, r.Attempts
@@ -547,27 +519,10 @@ func (t *Team) VisibleMedia(strict bool) []int64 {
 	return out
 }
 
-// inputFor derives the answer box from the matchers of a puzzle's
+// inputFor derives a typed answer's box from the matchers of a puzzle's
 // answer outputs. A catch-all ("anything") says nothing about shape, so
 // it does not stop an otherwise numeric puzzle getting the number pad.
 func inputFor(cfg *graph.PuzzleConfig) *Input {
-	if cfg.Search != nil {
-		return &Input{Kind: "search"}
-	}
-	if l := cfg.Lock; l != nil {
-		return &Input{Kind: "lock", Wheels: l.Wheels, Symbols: l.Symbols, Start: l.Start}
-	}
-	if c := cfg.Choices; c != nil {
-		in := &Input{Kind: "choice"}
-		for _, f := range c.Fields {
-			in.Fields = append(in.Fields, ChoiceFieldView{Label: f.Label, Options: f.Options})
-		}
-		return in
-	}
-	if t := cfg.Tiles; t != nil {
-		img := t.Image
-		return &Input{Kind: "tiles", Rows: t.Rows, Cols: t.Cols, Image: &img}
-	}
 	in := &Input{Kind: "text"}
 	numeric, seen := true, false
 	for _, o := range cfg.Outputs {

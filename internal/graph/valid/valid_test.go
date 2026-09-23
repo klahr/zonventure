@@ -619,14 +619,14 @@ func TestSeveralStarts(t *testing.T) {
 func TestTilePuzzleValidation(t *testing.T) {
 	g := valid3()
 	g.Nodes[1].PuzzleCfg = &graph.PuzzleConfig{
-		Tiles:   &graph.TileConfig{Image: graph.Media{ID: 3, Kind: graph.MediaImage}, Rows: 3, Cols: 3},
+		Answer:  &graph.Answer{Kind: graph.AnswerTiles, Image: &graph.Media{ID: 3, Kind: graph.MediaImage}, Rows: 3, Cols: 3},
 		Outputs: []graph.Output{{Port: "solved", Trigger: graph.OnAnswer}},
 	}
 	r := Check(g)
 	assertNoCode(t, r, "output.matchers.none")
 	assertNoCode(t, r, "tiles.size")
 
-	g.Nodes[1].PuzzleCfg.Tiles = &graph.TileConfig{Rows: 1, Cols: 12}
+	g.Nodes[1].PuzzleCfg.Answer = &graph.Answer{Kind: graph.AnswerTiles, Rows: 1, Cols: 12}
 	r = Check(g)
 	assertCode(t, r, "tiles.size")
 	assertCode(t, r, "tiles.image")
@@ -634,7 +634,7 @@ func TestTilePuzzleValidation(t *testing.T) {
 
 func TestChoiceValidation(t *testing.T) {
 	g := valid3()
-	g.Nodes[1].PuzzleCfg.Choices = &graph.ChoiceConfig{Fields: []graph.ChoiceField{
+	g.Nodes[1].PuzzleCfg.Answer = &graph.Answer{Kind: graph.AnswerChoice, Fields: []graph.ChoiceField{
 		{Options: []graph.ChoiceOption{{Value: "a"}}, Answer: "z"},
 		{Options: []graph.ChoiceOption{{Value: "a|b"}, {Value: "c"}, {Value: "c"}}},
 	}}
@@ -655,4 +655,19 @@ func TestStaleTranslations(t *testing.T) {
 	if r.HasErrors() {
 		t.Errorf("stale translations are a warning, not an error: %v", r.Errors())
 	}
+}
+
+func TestSectionAndMainLanguageTranslations(t *testing.T) {
+	g := valid3()
+	g.Journal = []graph.JournalEntry{{Slug: "a", Section: "Carl"}}
+	g.Translations = map[string]map[string]string{"en": {graph.SectionKey("Carl"): "Carl"}}
+	r := Check(g)
+	assertNoCode(t, r, "translation.stale")
+	assertNoCode(t, r, "translation.main")
+
+	g.Translations["en"][graph.SectionKey("Erika")] = "Erika"
+	g.Language = "en"
+	r = Check(g)
+	assertCode(t, r, "translation.stale")
+	assertCode(t, r, "translation.main")
 }

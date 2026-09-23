@@ -92,13 +92,18 @@ type Graph struct {
 // Field keys for Translations. A node's are:
 //
 //	title  text  hub-text
-//	out:<port>:label   out:<port>:answers (more accepted answers, one per line)
+//	out:<port>:label
+//	out:<port>:answers  out:<port>:contains (more accepted answers, one per line)
 //	reply:<i>  hint:<i>
 //	branch:<port>:label  branch:<port>:note
 //	field:<i>:label  field:<i>:opt:<value>  sym:<value>
 func NodeKey(slug, field string) string    { return "n:" + slug + ":" + field }
 func ZoneKey(slug string) string           { return "z:" + slug }
 func JournalKey(slug, field string) string { return "j:" + slug + ":" + field }
+
+// SectionKey is a journal section's heading: one per section, however
+// many notes share it.
+func SectionKey(section string) string { return "js:" + section }
 
 // TimeUpKey and MetaKey address the time limit's message and the
 // adventure's own title, intro and outro.
@@ -118,32 +123,38 @@ func (g *Graph) Tr(lang, key, main string) string {
 }
 
 // Languages lists the languages the adventure can be played in: its main
-// language first, then those it has translations for.
+// language first, then those it has translations for. It is nil for an
+// adventure with no translations: there is nothing to choose between.
+//
+// Language is the adventure's own language, which graphstore writes into
+// the graph as it is saved and read; the graph is where it travels with
+// the translations it is the original of.
 func (g *Graph) Languages() []string {
-	main := g.Language
-	if main == "" {
-		main = "sv"
-	}
-	out := []string{main}
-	extra := make([]string, 0, len(g.Translations))
+	var extra []string
 	for l := range g.Translations {
-		if l != main {
+		if l != g.Language {
 			extra = append(extra, l)
 		}
 	}
+	if len(extra) == 0 {
+		return nil
+	}
 	sort.Strings(extra)
-	return append(out, extra...)
+	return append([]string{g.Language}, extra...)
 }
 
 // AlternativeAnswers are the accepted answers an output gains in every
 // translation — so a team is never wrong for answering in the other
-// language.
-func (g *Graph) AlternativeAnswers(node, port string) []string {
-	var out []string
+// language. Each is matched the way the original answers of its kind
+// are: exactly, or anywhere in the guess.
+func (g *Graph) AlternativeAnswers(node, port string) []match.Matcher {
+	var out []match.Matcher
 	for _, tr := range g.Translations {
-		for _, line := range strings.Split(tr[NodeKey(node, "out:"+port+":answers")], "\n") {
-			if a := strings.TrimSpace(line); a != "" {
-				out = append(out, a)
+		for field, kind := range map[string]match.Kind{"answers": match.Exact, "contains": match.Contains} {
+			for _, line := range strings.Split(tr[NodeKey(node, "out:"+port+":"+field)], "\n") {
+				if a := strings.TrimSpace(line); a != "" {
+					out = append(out, match.Matcher{Kind: kind, Value: a})
+				}
 			}
 		}
 	}
@@ -208,53 +219,56 @@ type Node struct {
 // a step is the same for every team that stands on it. A node that two
 // hubs both reach that way has no single owner, and reports false.
 func (g *Graph) OwnerHub(slug string) (string, bool) {
-	owner := ""
-	for _, h := range g.Nodes {
-		if h.Type != Hub || h.HubCfg == nil || h.Slug == slug {
-			continue
-		}
-		if g.inBranches(h, slug) {
-			if owner != "" {
-				return "", false
-			}
-			owner = h.Slug
-		}
-	}
-	return owner, owner != ""
+	h, ok := g.OwnerHubs()[slug]
+	return h, ok
 }
 
-// inBranches reports whether slug is reachable from one of the hub's
-// branch outputs without passing through a hub (the hub it stops at is
-// reached, not passed).
-func (g *Graph) inBranches(h Node, slug string) bool {
-	seen := map[string]bool{}
-	var queue []string
-	for _, b := range h.HubCfg.Branches {
-		if to, ok := g.Target(h.Slug, b.Port); ok {
-			queue = append(queue, to)
-		}
+// OwnerHubs is OwnerHub for every node at once, for a caller that needs
+// many: node → its owner hub, leaving out nodes with none.
+func (g *Graph) OwnerHubs() map[string]string {
+	next := make(map[string][]string, len(g.Edges))
+	for _, e := range g.Edges {
+		next[e.From] = append(next[e.From], e.To)
 	}
-	for len(queue) > 0 {
-		n := queue[0]
-		queue = queue[1:]
-		if seen[n] || n == h.Slug {
+	isHub := map[string]bool{}
+	for _, n := range g.Nodes {
+		isHub[n.Slug] = n.Type == Hub
+	}
+	owner := map[string]string{}
+	shared := map[string]bool{}
+	for _, h := range g.Nodes {
+		if h.Type != Hub || h.HubCfg == nil {
 			continue
 		}
-		seen[n] = true
-		if n == slug {
-			return true
+		// Everything the hub's branches reach without passing through a
+		// hub; the hub it stops at is reached, not passed.
+		seen := map[string]bool{h.Slug: true}
+		var queue []string
+		for _, b := range h.HubCfg.Branches {
+			if to, ok := g.Target(h.Slug, b.Port); ok {
+				queue = append(queue, to)
+			}
 		}
-		node, ok := g.Node(n)
-		if !ok || node.Type == Hub {
-			continue
-		}
-		for _, e := range g.Edges {
-			if e.From == n {
-				queue = append(queue, e.To)
+		for len(queue) > 0 {
+			n := queue[0]
+			queue = queue[1:]
+			if seen[n] {
+				continue
+			}
+			seen[n] = true
+			if o, ok := owner[n]; ok && o != h.Slug {
+				shared[n] = true
+			}
+			owner[n] = h.Slug
+			if !isHub[n] {
+				queue = append(queue, next[n]...)
 			}
 		}
 	}
-	return false
+	for n := range shared {
+		delete(owner, n)
+	}
+	return owner
 }
 
 // Edge connects one output port to one node. A port may have at most
@@ -384,37 +398,160 @@ type PuzzleConfig struct {
 	// that is what guarantees a Hub loop terminates.
 	Repeatable bool `json:"repeatable,omitempty"`
 
-	// Tiles turns the puzzle into a picture to put back together, in
-	// place of typing an answer. See TileConfig.
-	Tiles *TileConfig `json:"tiles,omitempty"`
-
-	// Search makes the puzzle answered by where the team stands, not by
-	// what it types. See SearchConfig.
-	Search *SearchConfig `json:"search,omitempty"`
-
-	// Choices replaces the text box with options to pick. See
-	// ChoiceConfig.
-	Choices *ChoiceConfig `json:"choices,omitempty"`
-
-	// Lock replaces the text box with a combination lock. See LockConfig.
-	Lock *LockConfig `json:"lock,omitempty"`
+	// Answer replaces the text box with another way of answering: a tile
+	// picture, a search, choices or a lock. Nil is a typed answer.
+	Answer *Answer `json:"answer,omitempty"`
 }
 
-// LockConfig is a combination lock: Wheels wheels, each turning through
-// the same Symbols — pictures or words. It is only a way of typing: the
-// phone sends the chosen symbols' values joined by "|", in wheel order,
-// and the outputs' matchers decide as for any typed answer, so the right
-// combination is an ordinary exact answer and wrong ones get the replies.
-// Legacy built the one in Greta Garbos Torg as a page script.
-type LockConfig struct {
-	Wheels  int          `json:"wheels"`
-	Symbols []LockSymbol `json:"symbols"`
-	// Start is where each wheel begins, as a symbol index — so the lock
-	// does not open at the right combination. Missing wheels start at 0.
-	Start []int `json:"start,omitempty"`
+// AnswerKind is how a puzzle takes its answer, beyond typing it.
+type AnswerKind string
+
+const (
+	// AnswerTiles is a picture cut into Rows × Cols tiles, shuffled, that
+	// the team swaps back into place — legacy's scripted TilePuzzleModule,
+	// as data. The phone sends the tile order and the server decides, as
+	// legacy compared it against the answer: a phone cannot declare itself
+	// right. Every answer output is taken for the solved order.
+	AnswerTiles AnswerKind = "tiles"
+
+	// AnswerSearch is legacy's Obscurium scanner: the team presses "Search
+	// here", and the first answer output whose zone the team is in fires —
+	// its matchers are not consulted. An answer output with no zone
+	// matches anywhere, after the others. Standing anywhere else is a
+	// wrong guess, so the wrong-answer replies say "nothing here".
+	AnswerSearch AnswerKind = "search"
+
+	// AnswerChoice asks one or more questions with fixed options. The
+	// phone sends the picked values joined by "|", in field order.
+	//
+	// Ungraded — no field has an Answer — the guess goes through the
+	// outputs' matchers as usual, so a single question can route each
+	// option a different way.
+	//
+	// Graded — every field has an Answer — it is a form marked on submit:
+	// the first answer output is always taken, and pays its points in
+	// equal shares for the fields answered correctly. That is legacy's
+	// Obscurium accusation (place, weapon, killer…, 20 points each),
+	// without the page script that did the sum on the phone, where a team
+	// could change it.
+	AnswerChoice AnswerKind = "choice"
+
+	// AnswerLock is a combination lock: Wheels wheels, each turning
+	// through the same Symbols — pictures or words. It is only a way of
+	// typing: the phone sends the chosen symbols' values joined by "|", in
+	// wheel order, and the outputs' matchers decide as for any typed
+	// answer. Legacy built the one in Greta Garbos Torg as a page script.
+	AnswerLock AnswerKind = "lock"
+)
+
+// Answer is a puzzle's way of answering, one of the AnswerKinds. Only the
+// fields of its Kind are read.
+type Answer struct {
+	Kind AnswerKind `json:"kind"`
+
+	// Tiles: the picture and the grid it is cut into.
+	Image *Media `json:"image,omitempty"`
+	Rows  int    `json:"rows,omitempty"`
+	Cols  int    `json:"cols,omitempty"`
+
+	// Search: Group names the zones the phone reports the team as
+	// standing in — "You are in sector C3" — including those with
+	// nothing to find. Empty means the zones of the puzzle's own outputs.
+	Group string `json:"group,omitempty"`
+
+	// Choice: the questions.
+	Fields []ChoiceField `json:"fields,omitempty"`
+
+	// Lock: the wheels, the symbols each turns through, and where each
+	// begins, as a symbol index — so the lock does not open at the right
+	// combination. Missing wheels start at 0.
+	Wheels  int          `json:"wheels,omitempty"`
+	Symbols []LockSymbol `json:"symbols,omitempty"`
+	Start   []int        `json:"start,omitempty"`
 }
 
-// LockSymbol is one face of a wheel.
+// Kind is how the puzzle takes its answer; "" is typing it.
+func (p *PuzzleConfig) Kind() AnswerKind {
+	if p.Answer == nil {
+		return ""
+	}
+	return p.Answer.Kind
+}
+
+// UsesMatchers reports whether the puzzle's answer outputs decide by
+// their matchers. A tile picture's answer is its solved order, a search's
+// is where the team stands, and a marked form takes its first output
+// whatever was picked; none of those has matchers to write.
+func (p *PuzzleConfig) UsesMatchers() bool {
+	switch p.Kind() {
+	case AnswerTiles, AnswerSearch:
+		return false
+	case AnswerChoice:
+		return !p.Answer.Graded()
+	}
+	return true
+}
+
+// Graded reports whether a choice is a form marked against answers.
+func (a *Answer) Graded() bool {
+	if a.Kind != AnswerChoice || len(a.Fields) == 0 {
+		return false
+	}
+	for _, f := range a.Fields {
+		if f.Answer == "" {
+			return false
+		}
+	}
+	return true
+}
+
+// Mark counts the fields a choice guess answers correctly, and reports
+// whether the guess has one value per field at all.
+func (a *Answer) Mark(guess string) (correct int, ok bool) {
+	parts := strings.Split(guess, "|")
+	if len(parts) != len(a.Fields) {
+		return 0, false
+	}
+	for i, f := range a.Fields {
+		if strings.TrimSpace(parts[i]) == f.Answer {
+			correct++
+		}
+	}
+	return correct, true
+}
+
+// Solution is a tile puzzle's solved order in the form the phone reports
+// it: the tile numbers in reading order, comma-separated — "0,1,2,…".
+func (a *Answer) Solution() string {
+	n := a.Rows * a.Cols
+	parts := make([]string, n)
+	for i := range n {
+		parts[i] = strconv.Itoa(i)
+	}
+	return strings.Join(parts, ",")
+}
+
+// Media is the answer's own pictures: the tile picture, the lock's
+// symbols. They are part of the step itself, so they are fetched and
+// gated with the prompt's media, not with a hint's.
+func (a *Answer) Media() []Media {
+	var out []Media
+	switch a.Kind {
+	case AnswerTiles:
+		if a.Image != nil {
+			out = append(out, *a.Image)
+		}
+	case AnswerLock:
+		for _, s := range a.Symbols {
+			if s.Image != nil {
+				out = append(out, *s.Image)
+			}
+		}
+	}
+	return out
+}
+
+// LockSymbol is one face of a lock's wheel.
 type LockSymbol struct {
 	Value string `json:"value"`
 	Label string `json:"label,omitempty"`
@@ -424,24 +561,7 @@ type LockSymbol struct {
 // MaxWheels bounds a lock: past six, the wheels do not fit a phone.
 const MaxWheels = 6
 
-// ChoiceConfig asks one or more questions with fixed options instead of
-// a text box. The phone sends the picked values joined by "|", in field
-// order, and the server decides.
-//
-// Ungraded — no field has an Answer — the guess goes through the
-// outputs' matchers as usual, so a single question can route each option
-// a different way.
-//
-// Graded — every field has an Answer — it is a form marked on submit:
-// the first answer output is always taken, and pays its points in equal
-// shares for the fields answered correctly. That is legacy's Obscurium
-// accusation (place, weapon, killer…, 20 points each), without the page
-// script that did the sum on the phone, where a team could change it.
-type ChoiceConfig struct {
-	Fields []ChoiceField `json:"fields"`
-}
-
-// ChoiceField is one question of a ChoiceConfig.
+// ChoiceField is one question of a choice.
 type ChoiceField struct {
 	Label   string         `json:"label,omitempty"`
 	Options []ChoiceOption `json:"options"`
@@ -457,74 +577,12 @@ type ChoiceOption struct {
 	Label string `json:"label,omitempty"`
 }
 
-// Graded reports whether the choices are marked against answers.
-func (c ChoiceConfig) Graded() bool {
-	if len(c.Fields) == 0 {
-		return false
-	}
-	for _, f := range c.Fields {
-		if f.Answer == "" {
-			return false
-		}
-	}
-	return true
-}
-
-// Mark counts the fields a guess answers correctly, and reports whether
-// the guess has one value per field at all.
-func (c ChoiceConfig) Mark(guess string) (correct int, ok bool) {
-	parts := strings.Split(guess, "|")
-	if len(parts) != len(c.Fields) {
-		return 0, false
-	}
-	for i, f := range c.Fields {
-		if strings.TrimSpace(parts[i]) == f.Answer {
-			correct++
-		}
-	}
-	return correct, true
-}
-
-// SearchConfig is legacy's Obscurium scanner, as data: the team presses
-// "Search here", and the first answer output whose zone the team is in
-// fires — its matchers are not consulted. Standing anywhere else is a
-// wrong guess, so the wrong-answer replies say "nothing here". An answer
-// output with no zone matches anywhere, as a fallback after the others.
-type SearchConfig struct {
-	// Group names the zones the phone reports the team as standing in —
-	// "You are in sector C3" — including those with nothing to find.
-	// Empty means the zones of the puzzle's own outputs.
-	Group string `json:"group,omitempty"`
-}
-
-// TileConfig is a picture cut into Rows × Cols tiles, shuffled, that the
-// team swaps back into place — legacy's scripted TilePuzzleModule, as
-// data. The phone sends the tile order as the guess and the server
-// decides whether it is solved, exactly as legacy compared the order
-// against the answer: a phone cannot declare itself right.
-type TileConfig struct {
-	Image Media `json:"image"`
-	Rows  int   `json:"rows"`
-	Cols  int   `json:"cols"`
-}
-
-// MinTiles and MaxTiles bound each side of the grid: one row is not a
+// MinTiles and MaxTiles bound each side of a tile grid: one row is not a
 // puzzle, and past eight a phone's tiles are too small to drag.
 const (
 	MinTiles = 2
 	MaxTiles = 8
 )
-
-// Solution is the solved order in the form the phone reports it: the
-// tile numbers in reading order, comma-separated — "0,1,2,…".
-func (c TileConfig) Solution() string {
-	n := c.Rows * c.Cols
-	parts := make([]string, n)
-	for i := range n {
-		parts[i] = strconv.Itoa(i)
-	}
-	return strings.Join(parts, ",")
-}
 
 // StoryConfig is content with no challenge — an intro, an interstitial,
 // a reveal. Shares its implementation with a puzzle that has no answer
@@ -958,18 +1016,9 @@ func (n Node) MediaLists() [][]Media {
 	var out [][]Media
 	switch {
 	case n.PuzzleCfg != nil:
-		// A tile picture is part of the step itself, so it is fetched and
-		// gated with the prompt's own media, not with a hint's.
 		own := n.PuzzleCfg.Media
-		if t := n.PuzzleCfg.Tiles; t != nil {
-			own = append(append([]Media{}, own...), t.Image)
-		}
-		if l := n.PuzzleCfg.Lock; l != nil {
-			for _, s := range l.Symbols {
-				if s.Image != nil {
-					own = append(append([]Media{}, own...), *s.Image)
-				}
-			}
+		if a := n.PuzzleCfg.Answer; a != nil {
+			own = append(append([]Media{}, own...), a.Media()...)
 		}
 		out = append(out, own)
 		for _, h := range n.PuzzleCfg.Hints {

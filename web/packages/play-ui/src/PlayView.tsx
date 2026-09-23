@@ -81,9 +81,9 @@ export function PlayView(props: PlayViewProps) {
   useEffect(() => {
     if (live && endsIn !== null && endsIn <= 0 && !firedTimeUp.current) {
       firedTimeUp.current = true;
-      props.onAction({ kind: "timeup", node: view.node ?? "" });
+      props.onAction({ kind: "timeup" });
     }
-  }, [live, endsIn, view.node, props]);
+  }, [live, endsIn, props]);
 
   // The time-up message is shown once per team, until acknowledged.
   const upKey = `zv.timeup:${storageKey}`;
@@ -144,7 +144,7 @@ export function PlayView(props: PlayViewProps) {
             className="pv-lang"
             value={view.lang ?? view.languages![0]}
             aria-label={t("Language")}
-            onChange={(e) => props.onAction({ kind: "language", node: view.node ?? "", lang: e.target.value })}
+            onChange={(e) => props.onAction({ kind: "language", lang: e.target.value })}
           >
             {view.languages!.map((l) => (
               <option key={l} value={l}>
@@ -193,7 +193,7 @@ export function PlayView(props: PlayViewProps) {
           <Bag view={view} t={t} />
         </Sheet>
       )}
-      {view.time_up_text && !upSeen && (
+      {view.timed_out && !upSeen && (
         <Sheet title={t("Time is up")} t={t} onClose={() => {
           setUpSeen(true);
           try {
@@ -202,7 +202,7 @@ export function PlayView(props: PlayViewProps) {
             /* private mode: shown again after a reload */
           }
         }}>
-          <Markdown className="pv-text" text={view.time_up_text} />
+          <Markdown className="pv-text" text={view.time_up_text || t("The time for this adventure has run out.")} />
         </Sheet>
       )}
       {journalOpen && (

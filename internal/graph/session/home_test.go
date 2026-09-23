@@ -288,7 +288,7 @@ func TestSearchByPlace(t *testing.T) {
 		Nodes: []graph.Node{
 			{Slug: "start", Type: graph.Start},
 			{Slug: "scan", Type: graph.Puzzle, PuzzleCfg: &graph.PuzzleConfig{
-				Search:     &graph.SearchConfig{Group: "grid"},
+				Answer:     &graph.Answer{Kind: graph.AnswerSearch, Group: "grid"},
 				Repeatable: true,
 				Outputs:    []graph.Output{{Port: "c3", Trigger: graph.OnAnswer, Zone: "c3"}},
 				Responses:  []graph.Response{{Text: "Nothing on record here."}},
@@ -345,7 +345,7 @@ func TestGradedChoices(t *testing.T) {
 		Nodes: []graph.Node{
 			{Slug: "start", Type: graph.Start},
 			{Slug: "accuse", Type: graph.Puzzle, PuzzleCfg: &graph.PuzzleConfig{
-				Choices: &graph.ChoiceConfig{Fields: []graph.ChoiceField{
+				Answer: &graph.Answer{Kind: graph.AnswerChoice, Fields: []graph.ChoiceField{
 					{Label: "Who?", Options: opts("carl", "erika", "olivia"), Answer: "erika"},
 					{Label: "How?", Options: opts("poison", "firearm"), Answer: "firearm"},
 				}},
@@ -402,13 +402,13 @@ func TestAdventureTimeLimit(t *testing.T) {
 	act(t, tm, "scanner", res, st, err)
 
 	tm.Now = t0.Add(3*time.Hour + time.Second)
-	res, st, err = tm.Continue("scanner")
+	res, st, err = tm.Act(func() (Result, *walk.Step, error) { return tm.Continue("scanner") })
 	if err != nil || !res.TimeUp || st == nil || st.To != "accuse" {
 		t.Fatalf("past the deadline, any action moves the team to the accusation: %+v %+v %v", res, st, err)
 	}
 	tm.Apply(*st)
 	v := tm.View()
-	if v.TimeUpText != "Time to send in your answer." || v.EndsAt != nil || tm.Solved("scanner") {
+	if !v.TimedOut || v.TimeUpText != "Time to send in your answer." || v.EndsAt != nil || tm.Solved("scanner") {
 		t.Errorf("the message shows, the countdown stops, the left step keeps no outcome: %+v", v)
 	}
 	if tm.TimeUpDue() {
@@ -439,7 +439,7 @@ func TestCombinationLock(t *testing.T) {
 		Nodes: []graph.Node{
 			{Slug: "start", Type: graph.Start},
 			{Slug: "facade", Type: graph.Puzzle, PuzzleCfg: &graph.PuzzleConfig{
-				Lock: &graph.LockConfig{Wheels: 3, Start: []int{2, 0, 1}, Symbols: []graph.LockSymbol{
+				Answer: &graph.Answer{Kind: graph.AnswerLock, Wheels: 3, Start: []int{2, 0, 1}, Symbols: []graph.LockSymbol{
 					{Value: "owl", Image: img(11)}, {Value: "lion", Image: img(12)}, {Value: "fox", Image: img(13)},
 				}},
 				Outputs:   []graph.Output{{Port: "open", Trigger: graph.OnAnswer, Matchers: []match.Matcher{{Kind: match.Exact, Value: "lion|owl|fox"}}}},
@@ -471,7 +471,7 @@ func TestCombinationLock(t *testing.T) {
 		t.Fatalf("the right combination opens it: %+v %v", res, err)
 	}
 
-	g.Nodes[1].PuzzleCfg.Lock = &graph.LockConfig{Wheels: 9, Start: []int{5}, Symbols: []graph.LockSymbol{{Value: "a|b"}}}
+	g.Nodes[1].PuzzleCfg.Answer = &graph.Answer{Kind: graph.AnswerLock, Wheels: 9, Start: []int{5}, Symbols: []graph.LockSymbol{{Value: "a|b"}}}
 	codes := map[string]bool{}
 	for _, i := range valid.Check(g).Errors() {
 		codes[i.Code] = true
@@ -489,6 +489,7 @@ func TestCombinationLock(t *testing.T) {
 func TestTranslations(t *testing.T) {
 	g := mystery()
 	g.Language = "sv"
+	g.Journal[0].Section = "Carl"
 	for i := range g.Nodes {
 		if g.Nodes[i].Slug == "carl-murder-q" {
 			g.Nodes[i].PuzzleCfg.Responses = []graph.Response{{Text: "Fel år."}}
@@ -496,14 +497,16 @@ func TestTranslations(t *testing.T) {
 		}
 	}
 	g.Translations = map[string]map[string]string{"en": {
-		graph.NodeKey("home", "branch:carl:label"):           "Carl (EN)",
-		graph.NodeKey("carl-murder-q", "text"):               "Which year?",
-		graph.NodeKey("carl-murder-q", "reply:0"):            "Wrong year.",
-		graph.NodeKey("carl-murder-q", "hint:0"):             "Look at the sphere.",
-		graph.NodeKey("carl-murder-q", "out:solved:answers"): "nineteen ninety-seven\nninety-seven",
-		graph.NodeKey("carl-hub", "title"):                   "Carl, in English",
-		graph.JournalKey("carl", "body"):                     "Works at the foundation.",
-		graph.ZoneKey("office"):                              "The office",
+		graph.NodeKey("home", "branch:carl:label"):            "Carl (EN)",
+		graph.NodeKey("carl-murder-q", "text"):                "Which year?",
+		graph.NodeKey("carl-murder-q", "reply:0"):             "Wrong year.",
+		graph.NodeKey("carl-murder-q", "hint:0"):              "Look at the sphere.",
+		graph.NodeKey("carl-murder-q", "out:solved:answers"):  "nineteen ninety-seven\nninety-seven",
+		graph.NodeKey("carl-hub", "title"):                    "Carl, in English",
+		graph.JournalKey("carl", "body"):                      "Works at the foundation.",
+		graph.NodeKey("carl-murder-q", "out:solved:contains"): "millennium",
+		graph.SectionKey("Carl"):                              "Carl (notes)",
+		graph.ZoneKey("office"):                               "The office",
 	}}
 	tm, step, err := Start(g, t0)
 	if err != nil {
@@ -541,8 +544,8 @@ func TestTranslations(t *testing.T) {
 		res, st, err := tm.Continue(s)
 		act(t, tm, s, res, st, err)
 	}
-	if j := tm.View().Journal; len(j) != 1 || j[0].Body != "Works at the foundation." {
-		t.Errorf("journal notes are translated: %+v", j)
+	if j := tm.View().Journal; len(j) != 1 || j[0].Body != "Works at the foundation." || j[0].Section != "Carl (notes)" {
+		t.Errorf("journal notes and their section are translated: %+v", j)
 	}
 	if v := tm.View(); v.Title != "Carl, in English" {
 		t.Errorf("titles are translated: %q", v.Title)
@@ -559,10 +562,67 @@ func TestTranslations(t *testing.T) {
 	if res, _, _ := tm.RevealHint("carl-murder-q", 0); res.Hint != "Look at the sphere." {
 		t.Errorf("hints are translated: %q", res.Hint)
 	}
-	if res, st, err := tm.Answer("carl-murder-q", "Ninety-Seven"); err != nil || !res.Accepted || st == nil {
-		t.Errorf("an answer given in English counts: %+v %v", res, err)
+	if res, _, _ := tm.Answer("carl-murder-q", "the millennium bug"); !res.Accepted {
+		t.Errorf("a translated contains-answer matches anywhere in the guess: %+v", res)
 	}
 	if g.Nodes[5].PuzzleCfg != nil && g.Nodes[5].PuzzleCfg.Prompt != "When?" {
 		t.Error("translating a view never changes the graph")
+	}
+}
+
+// An adventure with no translations offers no language switch, so the
+// phone stays in the player's own language.
+func TestUntranslatedHasNoLanguages(t *testing.T) {
+	g := mystery()
+	g.Language = "en"
+	tm, step, err := Start(g, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tm.Apply(step)
+	if v := tm.View(); v.Languages != nil || v.Lang != "" {
+		t.Errorf("nothing to choose: %+v %q", v.Languages, v.Lang)
+	}
+	if err := tm.SetLanguage("en"); err != nil {
+		t.Errorf("the main language is always allowed: %v", err)
+	}
+}
+
+// A search tries its placed outputs first: one with no zone is the
+// fallback, wherever the author listed it.
+func TestSearchFallbackComesLast(t *testing.T) {
+	z := graph.Zone{Slug: "c3", Lat: 59.342, Lng: 18.072, RadiusM: 30}
+	g := &graph.Graph{
+		Zones: []graph.Zone{z},
+		Nodes: []graph.Node{
+			{Slug: "start", Type: graph.Start},
+			{Slug: "scan", Type: graph.Puzzle, PuzzleCfg: &graph.PuzzleConfig{
+				Answer: &graph.Answer{Kind: graph.AnswerSearch},
+				Outputs: []graph.Output{
+					{Port: "elsewhere", Trigger: graph.OnAnswer},
+					{Port: "c3", Trigger: graph.OnAnswer, Zone: "c3"},
+				},
+			}},
+			{Slug: "end", Type: graph.End},
+		},
+		Edges: []graph.Edge{
+			{From: "start", FromPort: "out", To: "scan"},
+			{From: "scan", FromPort: "elsewhere", To: "end"},
+			{From: "scan", FromPort: "c3", To: "end"},
+		},
+	}
+	for _, c := range []struct {
+		at   Position
+		port string
+	}{{Position{Lat: 59.342, Lng: 18.072}, "c3"}, {Position{Lat: 59.0, Lng: 18.0}, "elsewhere"}} {
+		tm, step, err := Start(g, t0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		tm.Apply(step)
+		tm.Position = &c.at
+		if res, _, err := tm.Answer("scan", ""); err != nil || res.Port != c.port {
+			t.Errorf("at %v: want %s, got %+v %v", c.at, c.port, res, err)
+		}
 	}
 }

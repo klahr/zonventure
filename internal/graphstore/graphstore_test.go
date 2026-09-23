@@ -168,3 +168,38 @@ func TestDraftsAndReleases(t *testing.T) {
 		t.Error("a changed answer is")
 	}
 }
+
+// The adventure's language column is the one place the language is set:
+// saving writes it into the graph, over whatever the graph said.
+func TestGraphstoreStampsAdventureLanguage(t *testing.T) {
+	db, cleanup := dbtest.Open(t)
+	t.Cleanup(cleanup)
+	ctx := context.Background()
+
+	var advID int64
+	if err := db.QueryRow(`INSERT INTO adventures(slug, title, description, author, language) VALUES ('gl', 'gl', '', '', 'sv') RETURNING id`).Scan(&advID); err != nil {
+		t.Fatal(err)
+	}
+	g := linear("a")
+	g.Language = "de"
+	if _, _, err := graphstore.SaveDraft(ctx, db, advID, 0, g); err != nil {
+		t.Fatal(err)
+	}
+	d, err := graphstore.LoadDraft(ctx, db, advID)
+	if err != nil || d.Graph.Language != "sv" {
+		t.Fatalf("draft language = %q, %v; want the adventure's", d.Graph.Language, err)
+	}
+	s, _, err := graphstore.Publish(ctx, db, advID, 0, linear("a"), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`UPDATE adventures SET language = 'en' WHERE id = $1`, advID); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := graphstore.ByID(ctx, db, s.ID); err != nil || got.Graph.Language != "sv" {
+		t.Errorf("a published version keeps the language it was published with: %q, %v", got.Graph.Language, err)
+	}
+	if d, err := graphstore.LoadDraft(ctx, db, advID); err != nil || d.Graph.Language != "en" {
+		t.Errorf("the draft follows the adventure: %q, %v", d.Graph.Language, err)
+	}
+}

@@ -37,13 +37,15 @@ function stable(v: unknown): string {
   });
 }
 
-const CONFIGS = ["puzzle", "story", "hub", "gate", "effect", "switch", "end", "start", "unlocks"] as const;
+// The node fields whose change counts as the step's settings: its typed
+// config, and the journal notes it unlocks.
+const SETTINGS = ["puzzle", "story", "hub", "gate", "effect", "switch", "end", "start", "unlocks"] as const;
 
 function stepChanges(a: Node, b: Node): string[] {
   const fields: string[] = [];
   if (a.type !== b.type) fields.push("type");
   if ((a.title ?? "") !== (b.title ?? "")) fields.push("title");
-  for (const k of CONFIGS) if (stable(a[k]) !== stable(b[k])) fields.push("settings");
+  for (const k of SETTINGS) if (stable(a[k]) !== stable(b[k])) fields.push("settings");
   return [...new Set(fields)];
 }
 
@@ -74,7 +76,7 @@ export function diffGraphs(baseline: Graph, draft: Graph): GraphDiff {
   }
   if (!!baseline.journal_by_unlock !== !!draft.journal_by_unlock && !d.resources.includes("journal")) d.resources.push("journal");
   if (stable(baseline.time_limit ?? null) !== stable(draft.time_limit ?? null)) d.resources.push("time_limit");
-  if (stable(baseline.translations ?? {}) !== stable(draft.translations ?? {})) d.resources.push("translations");
+  if ((baseline.language ?? "") !== (draft.language ?? "") || stable(baseline.translations ?? {}) !== stable(draft.translations ?? {})) d.resources.push("translations");
   return d;
 }
 

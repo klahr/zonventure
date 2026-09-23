@@ -222,6 +222,7 @@
   "Route each option its own way": "Ge varje alternativ en egen väg",
   "Solve the case": "Lös fallet",
   "Time is up": "Tiden är ute",
+  "The time for this adventure has run out.": "Tiden för äventyret har tagit slut.",
   "Time left: {{time}}": "Tid kvar: {{time}}",
   "Time limit": "Tidsgräns",
   "After this long from a team's start, wherever it is, the team is moved to a step of your choosing — such as the accusation — and shown a message. It happens once.": "Så här lång tid efter lagets start flyttas laget, var det än är, till ett steg du väljer – till exempel anklagelsen – och får se ett meddelande. Det händer en gång.",
@@ -285,7 +286,7 @@
   "Remove the {{lang}} translation? Its texts are deleted.": "Ta bort översättningen till {{lang}}? Dess texter raderas.",
   "Add a translation": "Lägg till en översättning",
   "+ Add a translation…": "+ Lägg till en översättning…",
-  "Journal, places and messages in {{lang}}": "Journal, platser och meddelanden på {{lang}}",
+  "Title, journal, places and messages in {{lang}}": "Titel, journal, platser och meddelanden på {{lang}}",
   "Title": "Titel",
   "Prompt": "Uppgift",
   "Closing text": "Avslutande text",
@@ -293,5 +294,8 @@
   "Journal section": "Journalavsnitt",
   "Place name": "Platsnamn",
   "Time is up: message": "Tiden är ute: meddelande",
-  "Lock symbol": "Låssymbol"
+  "Lock symbol": "Låssymbol",
+  "Adventure title": "Äventyrets titel",
+  "Introduction": "Inledning",
+  "Closing words": "Avslutning"
 }

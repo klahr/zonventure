@@ -212,7 +212,7 @@ func (e *Engine) act(ctx context.Context, teamID int64, fn func(*session.Team) (
 		return Result{}, err
 	}
 
-	res, step, err := fn(s.Team)
+	res, step, err := s.Act(func() (Result, *walk.Step, error) { return fn(s.Team) })
 	if err != nil {
 		// Some refusals (a lockout) still carry information worth
 		// returning, but nothing is persisted.

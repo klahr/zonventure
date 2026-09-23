@@ -34,7 +34,6 @@ import (
 
 	"github.com/klahr/zonventure/internal/graph"
 	"github.com/klahr/zonventure/internal/graph/cond"
-	"github.com/klahr/zonventure/internal/graph/match"
 	"github.com/klahr/zonventure/internal/graph/walk"
 )
 
@@ -449,9 +448,6 @@ func (t *Team) current(node string) (graph.Node, error) {
 // A nil step with a nil error means the team stayed put but its record
 // at node changed (a wrong guess was counted); the caller persists that.
 func (t *Team) Answer(node, guess string) (Result, *walk.Step, error) {
-	if t.TimeUpDue() {
-		return t.fireTimeUp()
-	}
 	n, err := t.current(node)
 	if err != nil {
 		return Result{}, nil, err
@@ -472,56 +468,11 @@ func (t *Team) Answer(node, guess string) (Result, *walk.Step, error) {
 		return Result{}, nil, ErrTimeUp
 	}
 
-	// A graded form is marked, never wrong: the first answer output is
-	// taken, paying for the fields answered correctly.
-	if c := cfg.Choices; c != nil && c.Graded() {
-		if correct, ok := c.Mark(guess); ok {
-			for _, o := range cfg.Outputs {
-				if o.Trigger != graph.OnAnswer || !t.outputZoneOK(o) {
-					continue
-				}
-				points := float64(o.Points) * float64(correct) / float64(len(c.Fields))
-				r.Solved = true
-				r.Answer = strings.TrimSpace(guess)
-				t.LatestAnswer = r.Answer
-				step, err := t.leave(n, o.Port, points)
-				if err != nil {
-					return Result{}, nil, err
-				}
-				return Result{Accepted: true, Port: o.Port, Points: points}, step, nil
-			}
-		}
-	}
-
-	// First answer output whose matchers and zone constraint both hold.
-	// Order is the author's: it is how they express precedence between
-	// overlapping answers.
-	for _, o := range cfg.Outputs {
-		if o.Trigger != graph.OnAnswer {
-			continue
-		}
-		var m match.Result
-		if cfg.Search != nil {
-			// Where the team stands is the answer; the zone test below
-			// decides, and there are no matchers to consult.
-			m = match.Result{OK: true, Multiplier: 1}
-		} else if cfg.Tiles != nil {
-			// A tile puzzle has one right answer, the solved order, and
-			// no matchers to write it in.
-			m = match.Result{OK: tilesSolved(*cfg.Tiles, guess), Multiplier: 1}
-		} else {
-			m = match.Any(o.Matchers, guess)
-			// An answer in another language the adventure is written in
-			// counts too.
-			if !m.OK {
-				for _, alt := range t.G.AlternativeAnswers(n.Slug, o.Port) {
-					if a := match.Any([]match.Matcher{{Kind: match.Exact, Value: alt}}, guess); a.OK {
-						m = a
-						break
-					}
-				}
-			}
-		}
+	// First answer output that accepts the guess and whose zone
+	// constraint holds. Order is the author's: it is how they express
+	// precedence between overlapping answers.
+	for _, o := range answerOrder(cfg) {
+		m := t.judge(n, o, guess)
 		if !m.OK || !t.outputZoneOK(o) {
 			continue
 		}
@@ -560,12 +511,6 @@ func (t *Team) Answer(node, guess string) (Result, *walk.Step, error) {
 		res.Response = t.G.Tr(t.Lang, graph.NodeKey(n.Slug, fmt.Sprintf("reply:%d", i)), cfg.Responses[i].Text)
 	}
 	return res, nil, nil
-}
-
-// tilesSolved reports whether a reported tile order is the solved one.
-// Spaces are ignored; anything else — a short list, a repeat — is wrong.
-func tilesSolved(c graph.TileConfig, guess string) bool {
-	return strings.ReplaceAll(guess, " ", "") == c.Solution()
 }
 
 // outputZoneOK applies an output's zone constraint, including the
@@ -629,10 +574,22 @@ func (t *Team) TimeUpDue() bool {
 	return ok && !t.Now.Before(d)
 }
 
+// Act runs one of the team's actions — Answer, Continue, Choose and the
+// rest — after applying the adventure's time limit if it has passed: then
+// the limit moves the team instead, and the action is not run. Every
+// caller goes through here, so a phone that was asleep at the deadline
+// cannot slip past it, and a new action cannot forget to check.
+func (t *Team) Act(action func() (Result, *walk.Step, error)) (Result, *walk.Step, error) {
+	if t.TimeUpDue() {
+		return t.fireTimeUp()
+	}
+	return action()
+}
+
 // TimeUp moves the team as the time limit says, if it is due — the
 // client calls it when its countdown ends, and the engine re-checks the
-// time rather than trusting it. Every other action does the same first,
-// so a phone that was asleep at the deadline cannot slip past it.
+// time rather than trusting it. Through Act, a due limit has already
+// fired; alone, it refuses when there is nothing to do.
 func (t *Team) TimeUp() (Result, *walk.Step, error) {
 	if !t.TimeUpDue() {
 		return Result{}, nil, ErrNotAllowed
@@ -654,9 +611,6 @@ func (t *Team) fireTimeUp() (Result, *walk.Step, error) {
 // suspect mid-interview and comes back later. The step it leaves keeps
 // no outcome: an unanswered question is still there to answer.
 func (t *Team) Back(node string) (Result, *walk.Step, error) {
-	if t.TimeUpDue() {
-		return t.fireTimeUp()
-	}
 	if _, err := t.current(node); err != nil {
 		return Result{}, nil, err
 	}
@@ -686,9 +640,6 @@ func (t *Team) backTo() (string, bool) {
 
 // Continue moves the team past a story node.
 func (t *Team) Continue(node string) (Result, *walk.Step, error) {
-	if t.TimeUpDue() {
-		return t.fireTimeUp()
-	}
 	n, err := t.current(node)
 	if err != nil {
 		return Result{}, nil, err
@@ -707,9 +658,6 @@ func (t *Team) Continue(node string) (Result, *walk.Step, error) {
 // Choose enters a hub branch, or moves on from a satisfied hub when port
 // is graph.PortDone.
 func (t *Team) Choose(hub, port string) (Result, *walk.Step, error) {
-	if t.TimeUpDue() {
-		return t.fireTimeUp()
-	}
 	n, err := t.current(hub)
 	if err != nil {
 		return Result{}, nil, err
@@ -728,9 +676,6 @@ func (t *Team) Choose(hub, port string) (Result, *walk.Step, error) {
 // anti-abuse rule carried over from legacy: spamming guesses alone must
 // never unlock a skip.
 func (t *Team) Skip(node string) (Result, *walk.Step, error) {
-	if t.TimeUpDue() {
-		return t.fireTimeUp()
-	}
 	n, err := t.current(node)
 	if err != nil {
 		return Result{}, nil, err
@@ -756,9 +701,6 @@ func (t *Team) Skip(node string) (Result, *walk.Step, error) {
 // Only the simulator calls it. A live force-solve must also be audited,
 // which is the caller's job, not this package's.
 func (t *Team) ForceSolve(node, port string) (Result, *walk.Step, error) {
-	if t.TimeUpDue() {
-		return t.fireTimeUp()
-	}
 	n, err := t.current(node)
 	if err != nil {
 		return Result{}, nil, err
@@ -794,9 +736,6 @@ func (t *Team) ForceSolve(node, port string) (Result, *walk.Step, error) {
 // The client calls it when its countdown reaches zero; this re-checks
 // the time rather than trusting the client.
 func (t *Team) Timeout(node string) (Result, *walk.Step, error) {
-	if t.TimeUpDue() {
-		return t.fireTimeUp()
-	}
 	n, err := t.current(node)
 	if err != nil {
 		return Result{}, nil, err
@@ -823,9 +762,6 @@ func (t *Team) Timeout(node string) (Result, *walk.Step, error) {
 // the team reached the puzzle, and the hint's cost is charged to the
 // team's penalty score. Like a wrong answer, it never moves the team.
 func (t *Team) RevealHint(node string, index int) (Result, *walk.Step, error) {
-	if t.TimeUpDue() {
-		return t.fireTimeUp()
-	}
 	n, err := t.current(node)
 	if err != nil {
 		return Result{}, nil, err
@@ -850,7 +786,7 @@ func (t *Team) RevealHint(node string, index int) (Result, *walk.Step, error) {
 // SetLanguage switches the language the team plays in: one the adventure
 // is written or translated in, or "" for its main language.
 func (t *Team) SetLanguage(lang string) error {
-	if lang != "" && !slices.Contains(t.G.Languages(), lang) {
+	if lang != "" && lang != t.G.Language && !slices.Contains(t.G.Languages(), lang) {
 		return ErrNotAllowed
 	}
 	if lang == t.G.Language {

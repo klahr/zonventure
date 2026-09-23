@@ -23,6 +23,9 @@ type Draft struct {
 // not the adventure's is still refused: a draft becomes a release by
 // publishing, and there is no point storing what could never publish.
 func SaveDraft(ctx context.Context, q Querier, adventureID, userID int64, g *graph.Graph) (Draft, valid.Report, error) {
+	if err := stampLanguage(ctx, q, adventureID, g); err != nil {
+		return Draft{}, valid.Report{}, err
+	}
 	report := valid.Check(g)
 	if err := checkMedia(ctx, q, adventureID, g); err != nil {
 		return Draft{}, report, err
@@ -49,12 +52,15 @@ func SaveDraft(ctx context.Context, q Querier, adventureID, userID int64, g *gra
 // LoadDraft returns the draft, or ErrNotFound.
 func LoadDraft(ctx context.Context, q Querier, adventureID int64) (Draft, error) {
 	var (
-		d   Draft
-		doc []byte
+		d    Draft
+		doc  []byte
+		lang string
 	)
 	err := q.QueryRowContext(ctx, `
-		SELECT graph, updated_at FROM adventure_graph_drafts WHERE adventure_id = $1
-	`, adventureID).Scan(&doc, &d.UpdatedAt)
+		SELECT d.graph, d.updated_at, a.language
+		FROM adventure_graph_drafts d JOIN adventures a ON a.id = d.adventure_id
+		WHERE d.adventure_id = $1
+	`, adventureID).Scan(&doc, &d.UpdatedAt, &lang)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Draft{}, ErrNotFound
 	}
@@ -65,6 +71,9 @@ func LoadDraft(ctx context.Context, q Querier, adventureID int64) (Draft, error)
 	if err := json.Unmarshal(doc, &g); err != nil {
 		return Draft{}, fmt.Errorf("decoding draft: %w", err)
 	}
+	// The draft follows the adventure's language, even when that changed
+	// since it was saved.
+	g.Language = lang
 	d.Graph = &g
 	return d, nil
 }
@@ -103,7 +112,7 @@ func point(ctx context.Context, q Querier, adventureID, graphID int64) error {
 // Published returns the published version, or ErrNotFound.
 func Published(ctx context.Context, q Querier, adventureID int64) (Stored, error) {
 	return scan(q.QueryRowContext(ctx, `
-		SELECT g.id, g.adventure_id, g.version, g.label, g.graph
+		SELECT g.id, g.adventure_id, g.version, g.label, g.graph, a.language
 		FROM adventures a JOIN adventure_graphs g ON g.id = a.published_graph_id
 		WHERE a.id = $1
 	`, adventureID))
@@ -112,7 +121,7 @@ func Published(ctx context.Context, q Querier, adventureID int64) (Stored, error
 // ByVersion returns one version by its number.
 func ByVersion(ctx context.Context, q Querier, adventureID int64, version int) (Stored, error) {
 	return scan(q.QueryRowContext(ctx, `
-		SELECT id, adventure_id, version, label, graph FROM adventure_graphs
+		SELECT id, adventure_id, version, label, graph, `+adventureLanguage+` FROM adventure_graphs
 		WHERE adventure_id = $1 AND version = $2
 	`, adventureID, version))
 }
