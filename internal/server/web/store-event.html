@@ -328,7 +328,11 @@
     })
       .then(function (r) {
         if (!r.ok) {
-          return r.text().then(function (txt) { throw new Error(txt || ''); });
+          return r.text().then(function (txt) {
+            var msg = txt;
+            try { msg = JSON.parse(txt).error; } catch (_) {}
+            throw new Error(msg || '');
+          });
         }
         return r.json();
       })

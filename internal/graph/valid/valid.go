@@ -112,6 +112,7 @@ func Check(g *graph.Graph) Report {
 	checkTermination(r, g)
 	checkProgressFreeCycles(r, g)
 	checkResources(r, g)
+	checkBlocks(r, g)
 	checkMedia(r, g)
 	checkTimeLimit(r, g)
 	checkTranslations(r, g)
@@ -839,8 +840,12 @@ func checkChoices(r *reporter, node string, c *graph.Answer) {
 // deserves to know their English for it is gone with it.
 func checkTranslations(r *reporter, g *graph.Graph) {
 	nodes := map[string]bool{}
+	blocks := map[string]bool{}
 	for _, n := range g.Nodes {
 		nodes[n.Slug] = true
+		for _, b := range n.Blocks() {
+			blocks[graph.BlockKey(n.Slug, b.ID)] = true
+		}
 	}
 	zones := slugSet(len(g.Zones), func(i int) string { return g.Zones[i].Slug })
 	journal := slugSet(len(g.Journal), func(i int) string { return g.Journal[i].Slug })
@@ -860,12 +865,13 @@ func checkTranslations(r *reporter, g *graph.Graph) {
 			slug, _, _ := strings.Cut(rest, ":")
 			switch {
 			case kind == "n" && !nodes[slug], kind == "z" && !zones[slug], kind == "j" && !journal[slug],
-				kind == "js" && !sections[rest]:
+				kind == "js" && !sections[rest],
+				kind == "n" && strings.HasPrefix(rest, slug+":block:") && !blocks[key]:
 				stale++
 			}
 		}
 		if stale > 0 {
-			r.warn("translation.stale", "", "", "%d %s translations belong to steps, zones, notes or journal sections that no longer exist", stale, l)
+			r.warn("translation.stale", "", "", "%d %s translations belong to steps, content blocks, zones, notes or journal sections that no longer exist", stale, l)
 		}
 	}
 }
@@ -885,6 +891,38 @@ func checkTimeLimit(r *reporter, g *graph.Graph) {
 		r.err("time_limit.to", "", "", "the adventure's time limit sends teams to %q, which is not a step", tl.To)
 	case n.Type == graph.Start:
 		r.err("time_limit.to", tl.To, "", "the time limit cannot send teams back to a start")
+	}
+}
+
+// checkBlocks checks the shape of a step's content. A picture or sound
+// without a file is checkMedia's.
+func checkBlocks(r *reporter, g *graph.Graph) {
+	zones := slugSet(len(g.Zones), func(i int) string { return g.Zones[i].Slug })
+	for _, n := range g.Nodes {
+		seen := map[string]bool{}
+		for _, b := range n.Blocks() {
+			switch {
+			case b.ID == "":
+				r.err("block.id.empty", n.Slug, "", "a content block on this step has no id")
+			case seen[b.ID]:
+				r.err("block.id.duplicate", n.Slug, "", "two content blocks on this step share the id %q", b.ID)
+			}
+			seen[b.ID] = true
+			switch b.Kind {
+			case graph.BlockText, graph.BlockImage, graph.BlockAudio:
+			case graph.BlockCompass, graph.BlockMap:
+				if b.Zone == "" {
+					r.err("block.zone.missing", n.Slug, "", "the %s on this step has no zone to show", b.Kind)
+				} else if !zones[b.Zone] {
+					r.err("ref.zone.unknown", n.Slug, "", "the %s on this step shows zone %q, which is not declared", b.Kind, b.Zone)
+				}
+				if b.Kind == graph.BlockMap && b.Zoom != 0 && (b.Zoom < graph.MinZoom || b.Zoom > graph.MaxZoom) {
+					r.err("block.zoom", n.Slug, "", "the map on this step is at zoom %d; it must be %d to %d, or fit the zone", b.Zoom, graph.MinZoom, graph.MaxZoom)
+				}
+			default:
+				r.err("block.kind", n.Slug, "", "content block %q is %q; it must be text, image, audio, compass or map", b.ID, b.Kind)
+			}
+		}
 	}
 }
 

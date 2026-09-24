@@ -224,6 +224,7 @@ function el(tag, attrs, ...kids) {
   for (const [k, v] of Object.entries(attrs || {})) {
     if (k === 'class') e.className = v;
     else if (k === 'on') for (const [ev, fn] of Object.entries(v)) e.addEventListener(ev, fn);
+    else if (k === 'html') e.innerHTML = v;
     else if (v != null) e.setAttribute(k, v);
   }
   for (const c of kids) {
@@ -516,6 +517,9 @@ function mountPlayback(mapHost, map, d, accent) {
       lastFrameAt = 0;
       rafId = requestAnimationFrame(tick);
     } else {
+      // Cancel the pending frame so a quick pause→play doesn't leave
+      // two tick loops running (double-speed playback).
+      if (rafId) { cancelAnimationFrame(rafId); rafId = 0; }
       playBtn.textContent = '▶';
       playBtn.setAttribute('aria-label', t('Play'));
     }

@@ -27,28 +27,20 @@ export function MediaEditor({
   const t = useT();
   const slug = useContext(AdventureSlug);
   const input = useRef<HTMLInputElement>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { busy, error, upload } = useMediaUpload();
   const list = media ?? [];
   const set = (next: Media[]) => onChange(next.length ? next : undefined);
+  // An upload outlives the render that started it: add its files to the
+  // step as it is when they arrive, not as it was when they were picked.
+  const latest = useRef({ list, onChange });
+  latest.current = { list, onChange };
 
   const pick = async (files: FileList | null) => {
-    if (!files?.length) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const added: Media[] = [];
-      for (const f of Array.from(files)) {
-        const r = await adventures.uploadMedia(slug, await downscale(f));
-        if (!list.some((m) => m.id === r.id)) added.push({ id: r.id, kind: r.kind });
-      }
-      set(single ? added.slice(-1) : [...list, ...added]);
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : t.t("Could not reach the server. Check your connection."));
-    } finally {
-      setBusy(false);
-      if (input.current) input.current.value = "";
-    }
+    const added = await upload(files);
+    if (input.current) input.current.value = "";
+    if (!added.length) return;
+    const { list: now, onChange: change } = latest.current;
+    change(single ? added.slice(-1) : [...now, ...added.filter((a) => !now.some((m) => m.id === a.id))]);
   };
 
   return (
@@ -80,6 +72,36 @@ export function MediaEditor({
       {error && <div className="alert alert--danger">{error}</div>}
     </div>
   );
+}
+
+/**
+ * Uploads picked files to the adventure being edited, one at a time. It
+ * resolves with what was stored, even when a later file failed; the
+ * failure is in `error`.
+ */
+export function useMediaUpload() {
+  const t = useT();
+  const slug = useContext(AdventureSlug);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const upload = async (files: FileList | null): Promise<Media[]> => {
+    const added: Media[] = [];
+    if (!files?.length) return added;
+    setBusy(true);
+    setError(null);
+    try {
+      for (const f of Array.from(files)) {
+        const r = await adventures.uploadMedia(slug, await downscale(f));
+        if (!added.some((m) => m.id === r.id)) added.push({ id: r.id, kind: r.kind });
+      }
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : t.t("Could not reach the server. Check your connection."));
+    } finally {
+      setBusy(false);
+    }
+    return added;
+  };
+  return { busy, error, upload, ready: !!slug };
 }
 
 /**

@@ -22,7 +22,7 @@ func hunt() *graph.Graph {
 		Nodes: []graph.Node{
 			{Slug: "start", Type: graph.Start},
 			{Slug: "door", Type: graph.Puzzle, Title: "Which door?", PuzzleCfg: &graph.PuzzleConfig{
-				Prompt: "Left or right?",
+				Blocks: graph.LegacyBlocks("Left or right?", nil),
 				Outputs: []graph.Output{
 					{Port: "left", Trigger: graph.OnAnswer, Points: 10, Matchers: []match.Matcher{{Kind: match.Exact, Value: "left"}}},
 					{Port: "right", Trigger: graph.OnAnswer, Points: 5, Matchers: []match.Matcher{{Kind: match.Exact, Value: "right"}}},
@@ -34,8 +34,8 @@ func hunt() *graph.Graph {
 				SkipAfterSeconds: 120,
 			}},
 			{Slug: "gift", Type: graph.Effect, EffectCfg: &graph.EffectConfig{Kind: graph.GrantItem, Item: "key"}},
-			{Slug: "walk", Type: graph.Story, StoryCfg: &graph.StoryConfig{Text: "Walk to the park.", Zone: "park"}},
-			{Slug: "end", Type: graph.End, EndCfg: &graph.EndConfig{Outcome: graph.Complete, Text: "Done."}},
+			{Slug: "walk", Type: graph.Story, StoryCfg: &graph.StoryConfig{Blocks: graph.LegacyBlocks("Walk to the park.", nil), Zone: "park"}},
+			{Slug: "end", Type: graph.End, EndCfg: &graph.EndConfig{Outcome: graph.Complete, Blocks: graph.LegacyBlocks("Done.", nil)}},
 		},
 		Edges: []graph.Edge{
 			{From: "start", FromPort: "out", To: "door"},
@@ -235,10 +235,10 @@ func TestMediaVisibility(t *testing.T) {
 	for i := range g.Nodes {
 		switch g.Nodes[i].Slug {
 		case "door":
-			g.Nodes[i].PuzzleCfg.Media = []graph.Media{{ID: 1, Kind: graph.MediaImage}}
+			g.Nodes[i].PuzzleCfg.Blocks = append(g.Nodes[i].PuzzleCfg.Blocks, graph.Block{ID: "pic", Kind: graph.BlockImage, Media: 1})
 			g.Nodes[i].PuzzleCfg.Hints[0].Media = []graph.Media{{ID: 2, Kind: graph.MediaAudio}}
 		case "walk":
-			g.Nodes[i].StoryCfg.Media = []graph.Media{{ID: 3, Kind: graph.MediaImage}}
+			g.Nodes[i].StoryCfg.Blocks = append(g.Nodes[i].StoryCfg.Blocks, graph.Block{ID: "pic", Kind: graph.BlockImage, Media: 3})
 		}
 	}
 	tm, _, err := Start(g, t0)
@@ -408,8 +408,8 @@ func TestChoosingAStart(t *testing.T) {
 		Nodes: []graph.Node{
 			{Slug: "s-north", Type: graph.Start, Title: "North gate", StartCfg: &graph.StartConfig{Zone: "north"}},
 			{Slug: "s-south", Type: graph.Start, Title: "South gate"},
-			{Slug: "a", Type: graph.Story, StoryCfg: &graph.StoryConfig{Text: "north route"}},
-			{Slug: "b", Type: graph.Story, StoryCfg: &graph.StoryConfig{Text: "south route"}},
+			{Slug: "a", Type: graph.Story, StoryCfg: &graph.StoryConfig{Blocks: graph.LegacyBlocks("north route", nil)}},
+			{Slug: "b", Type: graph.Story, StoryCfg: &graph.StoryConfig{Blocks: graph.LegacyBlocks("south route", nil)}},
 			{Slug: "end", Type: graph.End},
 		},
 		Edges: []graph.Edge{
@@ -491,5 +491,45 @@ func TestTilePuzzle(t *testing.T) {
 	res, step, err := tm.Answer("painting", "0, 1, 2, 3, 4, 5")
 	if err != nil || !res.Accepted || res.Points != 20 || step == nil {
 		t.Fatalf("the solved order should take the output: %+v %v", res, err)
+	}
+}
+
+// A compass or map arrives with the zone it shows, in the team's language.
+func TestBlockPlaces(t *testing.T) {
+	g := &graph.Graph{
+		Language: "sv",
+		Nodes: []graph.Node{
+			{Slug: "start", Type: graph.Start},
+			{Slug: "s", Type: graph.Story, StoryCfg: &graph.StoryConfig{Blocks: []graph.Block{
+				{ID: "t", Kind: graph.BlockText, Text: "Gå till parken."},
+				{ID: "c", Kind: graph.BlockCompass, Zone: "park"},
+			}}},
+			{Slug: "end", Type: graph.End},
+		},
+		Edges: []graph.Edge{{From: "start", FromPort: "out", To: "s"}, {From: "s", FromPort: "out", To: "end"}},
+		Zones: []graph.Zone{{Slug: "park", Name: "Parken", Lat: 59.3, Lng: 18.0, RadiusM: 40}},
+		Translations: map[string]map[string]string{"en": {
+			graph.BlockKey("s", "t"): "Walk to the park.",
+			graph.ZoneKey("park"):    "The park",
+		}},
+	}
+	tm, step, err := Start(g, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tm.Apply(step)
+	v := tm.View()
+	if len(v.Blocks) != 2 || v.Blocks[1].Place == nil || v.Blocks[1].Place.Name != "Parken" || v.Blocks[0].Place != nil {
+		t.Fatalf("blocks = %+v", v.Blocks)
+	}
+	if err := tm.SetLanguage("en"); err != nil {
+		t.Fatal(err)
+	}
+	v = tm.View()
+	if v.Blocks[0].Text != "Walk to the park." || v.Blocks[1].Place.Name != "The park" || v.Text != "Walk to the park." {
+		t.Errorf("translated blocks = %+v, text %q", v.Blocks, v.Text)
+	}
+	if g.Zones[0].Name != "Parken" {
+		t.Error("translating a view changed the graph")
 	}
 }

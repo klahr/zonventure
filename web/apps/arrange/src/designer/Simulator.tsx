@@ -5,6 +5,8 @@ import { PlayView, StartCeremony, feedbackForRefusal, feedbackForResult, formatS
 import "@zonventure/play-ui/play-ui.css";
 import { useT } from "../i18n.tsx";
 import { SpoofMap, type Point } from "./SpoofMap.tsx";
+import { VISIBLE } from "./dz/types.tsx";
+import { zoneName } from "./zones.ts";
 
 /**
  * Preview and test-play, in one.
@@ -103,9 +105,6 @@ function useWindowHeight(): number {
   }, []);
   return h;
 }
-
-/** Steps a player sees. The others run the moment a team reaches them. */
-const VISIBLE = new Set(["puzzle", "story", "hub", "end"]);
 
 export function Simulator({ slug, graph, envelope, selected, mode, onMode, restart, onPosition, brand, title }: Props) {
   const t = useT();
@@ -431,6 +430,7 @@ export function Simulator({ slug, graph, envelope, selected, mode, onMode, resta
                 t={tr}
                 brand={brand}
                 placeNote={placeNote}
+                {...(pos ? { position: pos } : {})}
                 storageKey={`sim-${slug}`}
                 {...(view.zone && !view.here ? { zoneNote: placeNote(view.zone) } : {})}
               />
@@ -447,8 +447,4 @@ export function Simulator({ slug, graph, envelope, selected, mode, onMode, resta
       </div>
     </div>
   );
-}
-
-function zoneName(g: Graph, slug: string) {
-  return g.zones?.find((z) => z.slug === slug)?.name || slug;
 }

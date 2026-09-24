@@ -91,7 +91,8 @@
   }
 
   function pickInitial() {
-    const saved = localStorage.getItem('zv-lang');
+    let saved = null;
+    try { saved = localStorage.getItem('zv-lang'); } catch (_) {}
     if (saved && DICT[saved]) return saved;
     const browser = (navigator.language || '').slice(0, 2).toLowerCase();
     return DICT[browser] ? browser : 'en';
@@ -106,7 +107,7 @@
     if (s === undefined) s = key; // fall through to the English source text
     if (vars) {
       for (const k of Object.keys(vars)) {
-        s = s.replace(new RegExp('\\{\\{\\s*' + k + '\\s*\\}\\}', 'g'), vars[k]);
+        s = s.replace(new RegExp('\\{\\{\\s*' + k + '\\s*\\}\\}', 'g'), () => vars[k]);
       }
     }
     return s;
@@ -182,7 +183,7 @@
   function setLang(code) {
     if (!DICT[code] || code === currentLang) return;
     currentLang = code;
-    localStorage.setItem('zv-lang', code);
+    try { localStorage.setItem('zv-lang', code); } catch (_) {}
     // Full reload is the simplest way to re-run every t() call across
     // the app. The login/localStorage session survives the reload.
     location.reload();

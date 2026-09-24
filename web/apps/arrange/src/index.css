@@ -53,12 +53,6 @@
   flex-direction: column;
   gap: var(--sp-1);
 }
-.field--inline {
-  flex-direction: row;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--sp-3);
-}
 .field__label {
   font-size: var(--text-xs);
   font-weight: 700;
@@ -85,10 +79,6 @@
   border-color: var(--accent);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
 }
-.field--inline .field__input {
-  padding: var(--sp-2);
-  font-size: var(--text-sm);
-}
 
 .alert {
   padding: var(--sp-3) var(--sp-4);
@@ -100,11 +90,6 @@
   background: var(--danger-bg);
   color: var(--danger);
   border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent);
-}
-.alert--warning {
-  background: var(--warning-bg);
-  color: var(--warning);
-  border: 1px solid color-mix(in srgb, var(--warning) 35%, transparent);
 }
 .alert p {
   margin: var(--sp-2) 0 0;

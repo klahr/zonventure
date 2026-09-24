@@ -5,9 +5,11 @@
 // JournalKey, SectionKey, MetaKey in Go). A missing translation falls
 // back to the main text.
 
-import type { Graph, Node } from "./types.ts";
+import type { Block, Graph, Node } from "./types.ts";
 
 export const nodeKey = (slug: string, field: string) => `n:${slug}:${field}`;
+/** A text block's: graph.BlockKey. */
+export const blockKey = (slug: string, id: string) => nodeKey(slug, `block:${id}`);
 export const zoneKey = (slug: string) => `z:${slug}`;
 export const journalKey = (slug: string, field: string) => `j:${slug}:${field}`;
 /** A journal section's heading: one per section, however many notes share it. */
@@ -26,7 +28,7 @@ export interface AdventureMeta {
 /** One piece of text an author can translate. */
 export interface Translatable {
   key: string;
-  /** What the field is, for the form: "Prompt", "Reply 2". */
+  /** What the field is, for the form: "Text", "Reply 2". */
   label: string;
   /** The main-language text, shown beside the translation. */
   main: string;
@@ -43,9 +45,12 @@ export function nodeTexts(n: Node): Translatable[] {
     if (main?.trim() || extra.answers) out.push({ key: k(field), label, main: main ?? "", ...extra });
   };
   add("title", "Title", n.title);
+  const blocks = (list: Block[] | undefined, label: string) => {
+    for (const b of list ?? []) if (b.kind === "text") add(`block:${b.id}`, label, b.text, { multiline: true });
+  };
   const p = n.puzzle;
   if (p) {
-    add("text", "Prompt", p.prompt, { multiline: true });
+    blocks(p.blocks, "Text");
     for (const o of p.outputs ?? []) {
       add(`out:${o.port}:label`, `Route “${o.label || o.port}”`, o.label);
       // Only a typed answer is words a team could give in another
@@ -70,8 +75,8 @@ export function nodeTexts(n: Node): Translatable[] {
       for (const s of p.answer.symbols) add(`sym:${s.value}`, "Lock symbol", s.label || (s.image ? "" : s.value));
     }
   }
-  if (n.story) add("text", "Text", n.story.text, { multiline: true });
-  if (n.end) add("text", "Closing text", n.end.text, { multiline: true });
+  if (n.story) blocks(n.story.blocks, "Text");
+  if (n.end) blocks(n.end.blocks, "Closing text");
   if (n.hub) {
     add("hub-text", "Text", n.hub.text, { multiline: true });
     for (const b of n.hub.branches ?? []) {

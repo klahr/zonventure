@@ -5,7 +5,7 @@ import { diffGraphs, diffIsEmpty, type Graph } from "./index.ts";
 const base: Graph = {
   nodes: [
     { slug: "start", type: "start" },
-    { slug: "q", type: "puzzle", title: "Q", puzzle: { prompt: "?" } },
+    { slug: "q", type: "puzzle", title: "Q", puzzle: { blocks: [{ id: "b1", kind: "text", text: "?" }] } },
     { slug: "end", type: "end" },
   ],
   edges: [
@@ -23,7 +23,7 @@ test("steps, wires and resources are itemised", () => {
   const draft: Graph = {
     nodes: [
       { slug: "start", type: "start" },
-      { slug: "q", type: "puzzle", title: "Question", puzzle: { prompt: "Why?" } },
+      { slug: "q", type: "puzzle", title: "Question", puzzle: { blocks: [{ id: "b1", kind: "text", text: "Why?" }] } },
       { slug: "s", type: "story", title: "Tale" },
       { slug: "end", type: "end" },
     ],

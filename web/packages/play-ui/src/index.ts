@@ -4,3 +4,7 @@ export { Markdown } from "./Markdown.tsx";
 export { parseMarkdown, parseInline, safeHref, type Block, type Inline } from "./markdown.ts";
 export { english, feedbackForRefusal, feedbackForResult, type Feedback, type Translate } from "./feedback.ts";
 export { formatSeconds, secondsUntil, useEngineClock } from "./clock.ts";
+export { Blocks, FitMap, type BlocksProps } from "./Blocks.tsx";
+export { CompassFace } from "./Compass.tsx";
+export { StaticMap, project, TILE_URL, type MapPoint, type MapZone } from "./StaticMap.tsx";
+export { bearing, metresBetween } from "./geo.ts";

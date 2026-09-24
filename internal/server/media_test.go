@@ -88,13 +88,12 @@ func TestGraphMedia(t *testing.T) {
 		Nodes: []graph.Node{
 			{Slug: "start", Type: graph.Start},
 			{Slug: "look", Type: graph.Puzzle, PuzzleCfg: &graph.PuzzleConfig{
-				Prompt: "What colour?",
-				Media:  []graph.Media{{ID: now, Kind: graph.MediaImage, Alt: "a grey square"}},
+				Blocks: graph.LegacyBlocks("What colour?", []graph.Media{{ID: now, Kind: graph.MediaImage, Alt: "a grey square"}}),
 				Outputs: []graph.Output{{Port: "solved", Trigger: graph.OnAnswer,
 					Matchers: []match.Matcher{{Kind: match.Exact, Value: "grey"}}}},
 			}},
 			{Slug: "end", Type: graph.End, EndCfg: &graph.EndConfig{
-				Media: []graph.Media{{ID: ahead, Kind: graph.MediaImage}},
+				Blocks: graph.LegacyBlocks("", []graph.Media{{ID: ahead, Kind: graph.MediaImage}}),
 			}},
 		},
 		Edges: []graph.Edge{
@@ -105,7 +104,7 @@ func TestGraphMedia(t *testing.T) {
 	foreign := g
 	foreign.Nodes = append([]graph.Node(nil), g.Nodes...)
 	foreign.Nodes[1].PuzzleCfg = &graph.PuzzleConfig{
-		Media:   []graph.Media{{ID: ahead + 1000, Kind: graph.MediaImage}},
+		Blocks:  graph.LegacyBlocks("", []graph.Media{{ID: ahead + 1000, Kind: graph.MediaImage}}),
 		Outputs: g.Nodes[1].PuzzleCfg.Outputs,
 	}
 	var refused refusalDTO

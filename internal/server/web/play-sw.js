@@ -209,16 +209,13 @@ self.addEventListener('fetch', (ev) => {
   const prefixed = HANDLED_PREFIXES.some((p) => url.pathname.startsWith(p));
   if (!exact && !prefixed) return;
 
-  if (url.pathname.startsWith('/adventure-assets/')) {
-    ev.respondWith(teamScopedCacheFirst(req));
-    return;
-  }
-  // Org brand logo — cache against the active team so a shared
-  // device doesn't serve org A's logo to org B's player. Bytes are
-  // bound to a numeric org id so the URL is stable across re-uploads
-  // (the cache-bust on upload is handled at the arranger console
-  // layer, separate from the player's offline store).
-  if (url.pathname.startsWith('/org-logo/')) {
+  // /adventure-assets/* and /org-logo/* — cached against the active
+  // team so a shared device doesn't serve org A's bytes to org B's
+  // player. Org logos are bound to a numeric org id so the URL is
+  // stable across re-uploads (the cache-bust on upload is handled at
+  // the arranger console layer, separate from the player's offline
+  // store).
+  if (prefixed) {
     ev.respondWith(teamScopedCacheFirst(req));
     return;
   }
@@ -245,19 +242,14 @@ async function cacheFirst(req, cacheName) {
   const cache = await caches.open(cacheName);
   const hit = await cache.match(req);
   if (hit) return hit;
-  try {
-    const res = await fetch(req);
-    if (res.ok && res.type === 'basic') {
-      cache.put(req, res.clone());
-    }
-    return res;
-  } catch (err) {
-    // Offline + uncached — let the page handle the failure (broken
-    // image / audio element). Returning a Response with status 504
-    // would force every <img> into onerror; better to surface the
-    // genuine network error so devtools shows what's missing.
-    throw err;
+  // Offline + uncached: let the fetch error propagate so the page
+  // sees a genuine network error (broken image / audio element) and
+  // devtools shows what's missing, rather than a synthetic 504.
+  const res = await fetch(req);
+  if (res.ok && res.type === 'basic') {
+    cache.put(req, res.clone());
   }
+  return res;
 }
 
 async function networkFirst(req, cacheName) {

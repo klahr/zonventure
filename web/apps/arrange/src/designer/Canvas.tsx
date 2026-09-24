@@ -34,6 +34,7 @@ import {
   startZone,
   sameData,
   samePosition,
+  upgradeNode,
   type DragFrom,
   type Graph,
   type Issue,
@@ -44,6 +45,9 @@ import { Frame as FrameIcon } from "lucide-react";
 import { useT } from "../i18n.tsx";
 import { CanvasContextMenu, type ContextMenuItem } from "./dz/CanvasContextMenu.tsx";
 import { ICON } from "./dz/ui.tsx";
+import { NodeCard, type CardNode } from "./NodeCard.tsx";
+import { FrameCard, FRAME_COLOR_DEFAULT, type FrameNode } from "./FrameCard.tsx";
+import { QuickPalette, type PaletteChoice } from "./QuickPalette.tsx";
 
 // Copied steps, shared across designer tabs the way dazyflow's clipboard
 // is: a JSON payload under one key.
@@ -55,9 +59,6 @@ type GraphNode = Graph["nodes"][number];
 function copyNode(g: Graph, n: GraphNode, dx = 40, dy = 40): GraphNode {
   return { ...structuredClone(n), slug: freshSlug(g, n.type), x: (n.x ?? 0) + dx, y: (n.y ?? 0) + dy };
 }
-import { NodeCard, type CardNode } from "./NodeCard.tsx";
-import { FrameCard, FRAME_COLOR_DEFAULT, type FrameNode } from "./FrameCard.tsx";
-import { QuickPalette, type PaletteChoice } from "./QuickPalette.tsx";
 
 const nodeTypes = { zv: NodeCard, frame: FrameCard };
 
@@ -87,6 +88,20 @@ interface PendingDrag {
 }
 
 /**
+ * The rendered size of every card, for Tidy. Read from the DOM so the
+ * toolbar, outside the canvas's React Flow context, can use it too;
+ * offset sizes ignore the zoom transform. A card with a map or a picture
+ * is much taller than the default tidy assumes.
+ */
+export function cardSizes(): Map<string, Size> {
+  const sizes = new Map<string, Size>();
+  for (const el of document.querySelectorAll<HTMLElement>(".dz-flow .react-flow__node[data-id]")) {
+    sizes.set(el.dataset.id!, { w: el.offsetWidth, h: el.offsetHeight });
+  }
+  return sizes;
+}
+
+/**
  * The Blueprint canvas.
  *
  * The graph document is the single source of truth. React Flow keeps its
@@ -101,20 +116,6 @@ interface PendingDrag {
  * The pick is created at that spot and wired in. Releasing on a handle
  * that refuses the wire shows why instead.
  */
-/**
- * The rendered size of every card, for Tidy. Read from the DOM so the
- * toolbar, outside the canvas's React Flow context, can use it too;
- * offset sizes ignore the zoom transform. A card with a map or a picture
- * is much taller than the default tidy assumes.
- */
-export function cardSizes(): Map<string, Size> {
-  const sizes = new Map<string, Size>();
-  for (const el of document.querySelectorAll<HTMLElement>(".dz-flow .react-flow__node[data-id]")) {
-    sizes.set(el.dataset.id!, { w: el.offsetWidth, h: el.offsetHeight });
-  }
-  return sizes;
-}
-
 export function Canvas({ graph, issues, selected, onChange, onSelect, paletteRequest, focusRequest, playing = null }: Props) {
   const rf = useReactFlow();
   const t = useT();
@@ -310,7 +311,7 @@ export function Canvas({ graph, issues, selected, onChange, onSelect, paletteReq
       }
       if (next !== graph) onChange(next);
     },
-    [graph, onChange, onSelect],
+    [graph, nodes, onChange, onSelect],
   );
 
   const onEdgesChange = useCallback((changes: EdgeChange[]) => {
@@ -538,11 +539,17 @@ export function Canvas({ graph, issues, selected, onChange, onSelect, paletteReq
         } catch {
           raw = null;
         }
-        if (!raw) return;
+        let copied: GraphNode[];
+        try {
+          copied = raw ? (JSON.parse(raw) as GraphNode[]).map(upgradeNode) : [];
+        } catch {
+          copied = [];
+        }
+        if (!copied.length) return;
         e.preventDefault();
         let next = g;
         let last = "";
-        for (const n of JSON.parse(raw) as GraphNode[]) {
+        for (const n of copied) {
           const c = copyNode(next, n, 60, 60);
           next = addNode(next, c);
           last = c.slug;

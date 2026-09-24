@@ -22,7 +22,7 @@ func simGraph() *graph.Graph {
 		Nodes: []graph.Node{
 			{Slug: "start", Type: graph.Start},
 			{Slug: "riddle", Type: graph.Puzzle, PuzzleCfg: &graph.PuzzleConfig{
-				Prompt: "Left or right?",
+				Blocks: graph.LegacyBlocks("Left or right?", nil),
 				Outputs: []graph.Output{
 					{Port: "left", Trigger: graph.OnAnswer, Points: 10, Matchers: []match.Matcher{{Kind: match.Exact, Value: "left"}}},
 					{Port: "right", Trigger: graph.OnAnswer, Matchers: []match.Matcher{{Kind: match.Exact, Value: "right"}}},

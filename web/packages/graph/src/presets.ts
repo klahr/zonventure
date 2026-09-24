@@ -46,7 +46,7 @@ export const PRESETS: Preset[] = [
     build: () => ({
       type: "puzzle",
       title: "Puzzle",
-      puzzle: { prompt: "", outputs: [answer("solved", "Solved", "")] },
+      puzzle: { blocks: [{ id: "b1", kind: "text", text: "" }], outputs: [answer("solved", "Solved", "")] },
     }),
   },
   {
@@ -60,7 +60,7 @@ export const PRESETS: Preset[] = [
       type: "puzzle",
       title: "Choice",
       puzzle: {
-        prompt: "",
+        blocks: [{ id: "b1", kind: "text", text: "" }],
         outputs: [answer("a", "Option A", "", 0), answer("b", "Option B", "", 0)],
       },
     }),
@@ -76,7 +76,7 @@ export const PRESETS: Preset[] = [
       type: "puzzle",
       title: "Estimate",
       puzzle: {
-        prompt: "",
+        blocks: [{ id: "b1", kind: "text", text: "" }],
         outputs: [{
           port: "solved", label: "Answered", trigger: "answer", points: 100,
           matchers: [{ kind: "near", target: 100, tolerance: 20 }],
@@ -104,7 +104,7 @@ export const PRESETS: Preset[] = [
     label: "Story",
     hint: "Text to read, then continue",
     keywords: "narrative intro message text info read",
-    build: () => ({ type: "story", title: "Story", story: { text: "" } }),
+    build: () => ({ type: "story", title: "Story", story: { blocks: [{ id: "b1", kind: "text", text: "" }] } }),
   },
   {
     id: "hub-choice",
@@ -171,7 +171,7 @@ export const PRESETS: Preset[] = [
       type: "puzzle",
       title: "Tile puzzle",
       puzzle: {
-        prompt: "",
+        blocks: [{ id: "b1", kind: "text", text: "" }],
         answer: { kind: "tiles", rows: 3, cols: 3 },
         outputs: [{ port: "solved", label: "Solved", trigger: "answer" }],
       },
@@ -188,7 +188,7 @@ export const PRESETS: Preset[] = [
       type: "puzzle",
       title: "Multiple choice",
       puzzle: {
-        prompt: "",
+        blocks: [{ id: "b1", kind: "text", text: "" }],
         answer: { kind: "choice", fields: [{ options: [{ value: "a", label: "A" }, { value: "b", label: "B" }] }] },
         outputs: [
           { port: "a", label: "A", trigger: "answer", matchers: [{ kind: "exact", value: "a" }] },
@@ -208,7 +208,7 @@ export const PRESETS: Preset[] = [
       type: "puzzle",
       title: "Solve the case",
       puzzle: {
-        prompt: "",
+        blocks: [{ id: "b1", kind: "text", text: "" }],
         answer: { kind: "choice", fields: [{ label: "Who did it?", options: [{ value: "a", label: "A" }, { value: "b", label: "B" }], answer: "a" }] },
         outputs: [{ port: "done", label: "Sent in", trigger: "answer", points: 100 }],
       },
@@ -225,7 +225,7 @@ export const PRESETS: Preset[] = [
       type: "puzzle",
       title: "Combination lock",
       puzzle: {
-        prompt: "",
+        blocks: [{ id: "b1", kind: "text", text: "" }],
         answer: { kind: "lock", wheels: 3, start: [1, 2, 0], symbols: [{ value: "1", label: "1" }, { value: "2", label: "2" }, { value: "3", label: "3" }] },
         outputs: [{ port: "open", label: "Open", trigger: "answer", matchers: [{ kind: "exact", value: "1|1|1" }] }],
         responses: [{ text: "It does not budge." }],
@@ -243,7 +243,7 @@ export const PRESETS: Preset[] = [
       type: "puzzle",
       title: "Scanner",
       puzzle: {
-        prompt: "",
+        blocks: [{ id: "b1", kind: "text", text: "" }],
         answer: { kind: "search" },
         repeatable: true,
         outputs: [{ port: "found", label: "Found", trigger: "answer", zone: "" }],
@@ -262,7 +262,7 @@ export const PRESETS: Preset[] = [
       type: "puzzle",
       title: "Open question",
       puzzle: {
-        prompt: "",
+        blocks: [{ id: "b1", kind: "text", text: "" }],
         outputs: [{ port: "answered", label: "Answered", trigger: "answer", matchers: [{ kind: "anything" }] }],
       },
     }),
@@ -392,8 +392,7 @@ export type DragFrom = { side: "output"; node: Node; port: string } | { side: "i
 
 /** The presets that make sense to create for a drag, or all when there is none. */
 export function presetsFor(from: DragFrom | null): Preset[] {
-  if (!from) return PRESETS;
-  if (from.side === "output") return PRESETS; // every preset takes an input
+  if (from?.side !== "input") return PRESETS; // every preset takes an input
   return PRESETS.filter((p) => p.type !== "end"); // an end has no output to wire in
 }
 

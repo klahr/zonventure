@@ -80,8 +80,8 @@ func TestNoAnswerPageBecomesStory(t *testing.T) {
 	if !ok || n.Type != graph.Story {
 		t.Fatalf("expected a story node, got %+v", n)
 	}
-	if n.StoryCfg.Text != "Welcome" {
-		t.Errorf("story text = %q, want the page prompt", n.StoryCfg.Text)
+	if graph.TextOf(n.StoryCfg.Blocks) != "Welcome" {
+		t.Errorf("story text = %q, want the page prompt", graph.TextOf(n.StoryCfg.Blocks))
 	}
 }
 

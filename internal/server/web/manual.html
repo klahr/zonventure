@@ -63,6 +63,9 @@
      (a `--border` shade for the H2 underline + code-block surface). */
   :root { --border: #c6d2e1; }
   [data-theme="dark"] { --border: #3a5172; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme]) { --border: #3a5172; }
+  }
   body { line-height: 1.6; }
   /* Topbar / nav / hamburger CSS comes from /assets/topbar.css. */
   /* Article width pinned by .layout on desktop; on mobile the
@@ -82,7 +85,6 @@
   p, ul, ol { margin: .5rem 0 .75rem; }
   ul, ol { padding-left: 1.5rem; }
   li + li { margin-top: .25rem; }
-  a { color: var(--accent); }
   code {
     background: var(--surface-2);
     padding: .1rem .35rem;

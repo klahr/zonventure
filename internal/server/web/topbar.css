@@ -1,6 +1,6 @@
 /* Shared topbar / hamburger / mobile-overlay / language-picker CSS.
- * Linked by landing.html, pricing.html and manual.html so the menu
- * system is one source of truth. Pages must define `--accent-deep`
+ * Linked by landing, pricing, manual, store, store-event and
+ * org-landing so the menu system is one source of truth. Pages must define `--accent-deep`
  * (the brand-deep colour used by the picker active state and the
  * mobile-overlay primary button); other colour values are baked in
  * because the topbar is intentionally identical regardless of which
@@ -87,8 +87,7 @@ body.has-hero { padding-top: 0; }
   margin: 0 auto;
   padding: 0 1.25rem;
 }
-.topbar nav { margin-left: auto; }
-.topbar nav { display: flex; gap: 1.25rem; align-items: center; }
+.topbar nav { margin-left: auto; display: flex; gap: 1.25rem; align-items: center; }
 .topbar nav a {
   color: rgba(255,255,255,.85); font-weight: 600; font-size: .95rem;
   text-decoration: none;

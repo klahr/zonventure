@@ -1,10 +1,10 @@
 import { memo } from "react";
 import { play } from "@zonventure/api";
+import { StaticMap } from "@zonventure/play-ui";
 import { STEP } from "./dz/types.tsx";
 import { TRIGGER } from "./dz/concepts.tsx";
 import { Handle, Position, type NodeProps, type Node as RFNode } from "@xyflow/react";
-import { hasInput, portLabel, portsOf, type Issue, type Node, type Zone } from "@zonventure/graph";
-import { StaticMap } from "./StaticMap.tsx";
+import { blocksOf, hasInput, mediaOf, portLabel, portsOf, textOf, type Issue, type Node, type Zone } from "@zonventure/graph";
 
 export interface CardData extends Record<string, unknown> {
   node: Node;
@@ -34,9 +34,9 @@ const TYPE_LABEL: Record<Node["type"], string> = {
 function summary(n: Node, sourceTitle?: string): string {
   switch (n.type) {
     case "puzzle":
-      return n.puzzle?.prompt?.trim() || "No prompt yet";
+      return textOf(n.puzzle?.blocks).trim() || "No text yet";
     case "story":
-      return n.story?.text?.trim() || (n.story?.zone !== undefined ? "Check in at a place" : "No text yet");
+      return textOf(n.story?.blocks).trim() || (n.story?.zone !== undefined ? "Check in at a place" : "No text yet");
     case "hub": {
       const policy = n.hub?.policy ?? "choice";
       const req = n.hub?.required;
@@ -144,7 +144,7 @@ export const NodeCard = memo(NodeCardImpl);
 
 /** The first picture on a step — or its first hint's — or nothing. */
 export function firstImage(n: Node): number | undefined {
-  const lists = [n.puzzle?.media, n.story?.media, n.end?.media, ...(n.puzzle?.hints ?? []).map((h) => h.media)];
+  const lists = [mediaOf(blocksOf(n)), ...(n.puzzle?.hints ?? []).map((h) => h.media)];
   for (const l of lists) {
     const m = l?.find((x) => x.kind === "image");
     if (m) return m.id;

@@ -1,13 +1,14 @@
 import type { Counter, Graph, Item, JournalEntry, Zone } from "@zonventure/graph";
 import { gridZones } from "@zonventure/graph";
+import { StaticMap } from "@zonventure/play-ui";
 import { useState } from "react";
 import { useT } from "../i18n.tsx";
-import { StaticMap } from "./StaticMap.tsx";
 import { ZoneMap } from "./ZoneMap.tsx";
 import { MediaEditor } from "./MediaEditor.tsx";
 import { ConceptIcon, RESOURCE } from "./dz/concepts.tsx";
 import { Plus, Trash2 } from "lucide-react";
 import { ICON } from "./dz/ui.tsx";
+import { nearLastZone, zoneGroups } from "./zones.ts";
 
 /** A copy without one key, for clearing an optional field under exactOptionalPropertyTypes. */
 function withoutKey<T extends object, K extends keyof T>(obj: T, key: K): T {
@@ -56,7 +57,7 @@ export function Resources({ graph, onChange }: { graph: Graph; onChange: (g: Gra
           {t.t("Zones")}
         </h3>
         <p className="field__hint">{t.t("Places on the map. Puzzles, stories and conditions can require the team to be inside one.")}</p>
-        {[...new Set(zones.map((z) => z.group).filter((g): g is string => !!g))].map((g) => {
+        {zoneGroups(zones).map((g) => {
           const cells = zones.filter((z) => z.group === g);
           return (
             <details key={`group-${g}`} className="box">
@@ -129,24 +130,22 @@ export function Resources({ graph, onChange }: { graph: Graph; onChange: (g: Gra
         ) : (
           <button type="button" className="add-btn"
             onClick={() => {
-              const near = zones[zones.length - 1];
               setOpen(null);
-              setGrid({ group: t.t("Grid"), rows: 7, cols: 6, area: { slug: "grid-area", lat: near?.lat ?? 59.3293, lng: near?.lng ?? 18.0686, radius_m: 0, polygon: [] } });
+              setGrid({ group: t.t("Grid"), rows: 7, cols: 6, area: { slug: "grid-area", ...nearLastZone(zones), radius_m: 0, polygon: [] } });
             }}>
             <Plus size={ICON.sm} aria-hidden="true" />
             {t.t("Add a grid of zones")}
           </button>
         )}
         <datalist id="zone-groups">
-          {[...new Set(zones.map((z) => z.group).filter(Boolean))].map((g) => (
+          {zoneGroups(zones).map((g) => (
             <option key={g} value={g} />
           ))}
         </datalist>
         <button type="button" className="add-btn"
           onClick={() => {
             const slug = slugFor("zone", zones);
-            const near = zones[zones.length - 1];
-            setZones([...zones, { slug, name: "", lat: near?.lat ?? 59.3293, lng: near?.lng ?? 18.0686, radius_m: 30 }]);
+            setZones([...zones, { slug, name: "", ...nearLastZone(zones), radius_m: 30 }]);
             setOpen(slug);
           }}>
           <Plus size={ICON.sm} aria-hidden="true" />

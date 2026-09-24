@@ -49,6 +49,8 @@ function stepChanges(a: Node, b: Node): string[] {
   return [...new Set(fields)];
 }
 
+const wire = (e: Edge) => `${e.from}\0${e.from_port}\0${e.to}`;
+
 const edgeKey = (g: Graph, e: Edge) => {
   const title = (slug: string) => g.nodes.find((n) => n.slug === slug)?.title || slug;
   return `${title(e.from)} · ${e.from_port} → ${title(e.to)}`;
@@ -67,10 +69,10 @@ export function diffGraphs(baseline: Graph, draft: Graph): GraphDiff {
     }
   }
   for (const [slug, n] of base) if (!next.has(slug)) d.removed.push({ slug, title: n.title || slug });
-  const be = new Set(baseline.edges.map((e) => `${e.from}\0${e.from_port}\0${e.to}`));
-  const de = new Set(draft.edges.map((e) => `${e.from}\0${e.from_port}\0${e.to}`));
-  for (const e of draft.edges) if (!be.has(`${e.from}\0${e.from_port}\0${e.to}`)) d.addedEdges.push(edgeKey(draft, e));
-  for (const e of baseline.edges) if (!de.has(`${e.from}\0${e.from_port}\0${e.to}`)) d.removedEdges.push(edgeKey(baseline, e));
+  const be = new Set(baseline.edges.map(wire));
+  const de = new Set(draft.edges.map(wire));
+  for (const e of draft.edges) if (!be.has(wire(e))) d.addedEdges.push(edgeKey(draft, e));
+  for (const e of baseline.edges) if (!de.has(wire(e))) d.removedEdges.push(edgeKey(baseline, e));
   for (const k of ["zones", "items", "counters", "journal"] as const) {
     if (stable(baseline[k] ?? []) !== stable(draft[k] ?? [])) d.resources.push(k);
   }

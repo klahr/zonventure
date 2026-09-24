@@ -134,9 +134,7 @@ export function connectionError(g: Graph, from: string, port: string, to: string
  */
 export function connect(g: Graph, from: string, port: string, to: string): Graph {
   if (connectionError(g, from, port, to)) return g;
-  const edges = g.edges.filter((e) => !(e.from === from && e.from_port === port));
-  edges.push({ from, from_port: port, to });
-  return { ...g, edges };
+  return { ...g, edges: [...disconnect(g, from, port).edges, { from, from_port: port, to }] };
 }
 
 export function disconnect(g: Graph, from: string, port: string): Graph {
@@ -202,12 +200,12 @@ export function newNode(g: Graph, type: NodeType, at: { x: number; y: number }):
         ...base,
         title: "New puzzle",
         puzzle: {
-          prompt: "",
+          blocks: [{ id: "b1", kind: "text", text: "" }],
           outputs: [{ port: "solved", label: "Solved", trigger: "answer", matchers: [{ kind: "exact", value: "" }] }],
         },
       };
     case "story":
-      return { ...base, title: "New story", story: { text: "" } };
+      return { ...base, title: "New story", story: { blocks: [{ id: "b1", kind: "text", text: "" }] } };
     case "hub":
       return {
         ...base,
@@ -287,7 +285,7 @@ export function insertAfter(g: Graph, at: InsertionPoint, node: Node): Graph {
         }
       : {}),
   };
-  const next = g.edges.find((e) => e.from === at.from && e.from_port === at.port)?.to;
+  const next = targetOf(g, at.from, at.port);
   let out = connect(addNode(shifted, placed), at.from, at.port, placed.slug);
   const own = portsOf(placed)[0];
   if (next && own) out = connect(out, placed.slug, own, next);

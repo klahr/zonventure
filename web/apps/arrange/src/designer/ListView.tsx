@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import {
+  blocksOf,
   insertAfter,
   insertionPoint,
   linearSteps,
@@ -8,6 +9,7 @@ import {
   nodeBySlug,
   outline,
   removeStep,
+  textOf,
   type Graph,
   type Issue,
   type Node,
@@ -155,6 +157,6 @@ export function ListView({ graph, issues, selected, playing = null, onChange, on
 
 /** A line about what the step says: its prompt, text or closing words. */
 function summary(n: Node): string {
-  const text = n.puzzle?.prompt ?? n.story?.text ?? n.hub?.text ?? n.end?.text ?? "";
+  const text = n.hub?.text ?? textOf(blocksOf(n));
   return text.replace(/[#*_>`[\]]/g, "").trim().slice(0, 90);
 }

@@ -651,24 +651,23 @@ function parseServerTime(s) {
   return new Date(s.includes('T') ? s : s.replace(' ', 'T') + 'Z');
 }
 
-function formatElapsed(startISO, nowISO) {
-  if (!startISO) return '—';
-  const start = parseServerTime(startISO);
-  const now = nowISO ? parseServerTime(nowISO) : new Date();
-  const sec = Math.max(0, Math.round((now.getTime() - start.getTime()) / 1000));
+// formatSpan renders the whole seconds between two Dates as MM:SS,
+// or H:MM:SS once it reaches an hour. Negative spans clamp to 0.
+function formatSpan(from, to) {
+  const sec = Math.max(0, Math.round((to.getTime() - from.getTime()) / 1000));
   const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
   const pad = (n) => String(n).padStart(2, '0');
   return h ? `${h}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
 }
 
+function formatElapsed(startISO, nowISO) {
+  if (!startISO) return '—';
+  return formatSpan(parseServerTime(startISO), nowISO ? parseServerTime(nowISO) : new Date());
+}
+
 function formatFinishTime(startISO, completedAt) {
   if (!startISO || !completedAt) return '';
-  const start = parseServerTime(startISO);
-  const end = parseServerTime(completedAt);
-  const sec = Math.max(0, Math.round((end.getTime() - start.getTime()) / 1000));
-  const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
-  const pad = (n) => String(n).padStart(2, '0');
-  return h ? `${h}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
+  return formatSpan(parseServerTime(startISO), parseServerTime(completedAt));
 }
 
 // formatFinishGap renders the delta between the winner's finish time
@@ -677,10 +676,7 @@ function formatFinishTime(startISO, completedAt) {
 // positions 2+, so viewers see at a glance how close the chase was.
 function formatFinishGap(winnerCompletedAt, completedAt) {
   if (!winnerCompletedAt || !completedAt) return '';
-  const sec = Math.max(0, Math.round((parseServerTime(completedAt).getTime() - parseServerTime(winnerCompletedAt).getTime()) / 1000));
-  const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
-  const pad = (n) => String(n).padStart(2, '0');
-  return h ? `+${h}:${pad(m)}:${pad(s)}` : `+${pad(m)}:${pad(s)}`;
+  return '+' + formatSpan(parseServerTime(winnerCompletedAt), parseServerTime(completedAt));
 }
 
 // mapShown is a client-side override. null → follow the server's
@@ -759,7 +755,7 @@ function render() {
   // during the dwell window so audience members arriving late still
   // see the final standings; press 'b' to bring it back.
   if (data.state === 'completed' && data.completed_at && !showBoardOverride) {
-    const completedAt = new Date(data.completed_at.includes('T') ? data.completed_at : data.completed_at.replace(' ', 'T') + 'Z').getTime();
+    const completedAt = parseServerTime(data.completed_at).getTime();
     const dwell = Date.now() - completedAt;
     if (Number.isFinite(completedAt) && dwell > COMPLETION_DWELL_MS) {
       root.append(buildCompletionFrame(data));
@@ -1189,8 +1185,8 @@ function buildCompletionFrame(data) {
   // ranking front and centre, not the live-tick rank carried over
   // from the running state.
   const teams = (data.teams || []).slice().sort((a, b) => {
-    const aDone = a.completed_at ? new Date(a.completed_at).getTime() : Infinity;
-    const bDone = b.completed_at ? new Date(b.completed_at).getTime() : Infinity;
+    const aDone = a.completed_at ? parseServerTime(a.completed_at).getTime() : Infinity;
+    const bDone = b.completed_at ? parseServerTime(b.completed_at).getTime() : Infinity;
     return aDone - bDone;
   });
   const winner = teams[0];
@@ -1629,8 +1625,7 @@ setInterval(() => {
       && latestSnapshot.completed_at
       && !showBoardOverride
       && !document.querySelector('.prestart')) {
-    const ca = latestSnapshot.completed_at;
-    const completedAt = new Date(ca.includes('T') ? ca : ca.replace(' ', 'T') + 'Z').getTime();
+    const completedAt = parseServerTime(latestSnapshot.completed_at).getTime();
     if (Number.isFinite(completedAt) && Date.now() - completedAt > COMPLETION_DWELL_MS) {
       render();
     }

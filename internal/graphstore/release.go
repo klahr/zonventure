@@ -71,6 +71,7 @@ func LoadDraft(ctx context.Context, q Querier, adventureID int64) (Draft, error)
 	if err := json.Unmarshal(doc, &g); err != nil {
 		return Draft{}, fmt.Errorf("decoding draft: %w", err)
 	}
+	g.Normalize()
 	// The draft follows the adventure's language, even when that changed
 	// since it was saved.
 	g.Language = lang

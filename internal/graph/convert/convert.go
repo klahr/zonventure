@@ -237,7 +237,7 @@ func pageNode(g *graph.Graph, p Page, x, y float64) graph.Node {
 	if len(p.Accept) == 0 {
 		// No answer: zv shows a Continue button. That is a Story.
 		n.Type = graph.Story
-		n.StoryCfg = &graph.StoryConfig{Text: p.Prompt, Zone: zone, Media: p.Media}
+		n.StoryCfg = &graph.StoryConfig{Blocks: graph.LegacyBlocks(p.Prompt, p.Media), Zone: zone}
 		g.Nodes = append(g.Nodes, n)
 		return n
 	}
@@ -260,8 +260,7 @@ func pageNode(g *graph.Graph, p Page, x, y float64) graph.Node {
 
 	n.Type = graph.Puzzle
 	n.PuzzleCfg = &graph.PuzzleConfig{
-		Prompt: p.Prompt,
-		Media:  p.Media,
+		Blocks: graph.LegacyBlocks(p.Prompt, p.Media),
 		Zone:   zone,
 		Hints:  hints,
 		Outputs: []graph.Output{{

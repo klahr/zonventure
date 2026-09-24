@@ -110,6 +110,21 @@ export interface Media {
   alt?: string;
 }
 
+/**
+ * internal/graph: Block — one piece of what a puzzle, story or end shows,
+ * in the author's order. Fields are per kind; `id` is stable within the
+ * step, so translations and the editor follow a block as it moves.
+ */
+export type Block =
+  | { id: string; kind: "text"; text: string }
+  | { id: string; kind: "image" | "audio"; media: number; alt?: string }
+  /** A compass pointing at a zone, or a map showing it; "" until chosen. */
+  | { id: string; kind: "compass"; zone: string; hide_distance?: boolean }
+  /** zoom fixes the map's zoom level (MAP_ZOOM); without it the map fits the zone. */
+  | { id: string; kind: "map"; zone: string; zoom?: number };
+
+export type BlockKind = Block["kind"];
+
 export interface Hint {
   text: string;
   delay_seconds?: number;
@@ -118,8 +133,7 @@ export interface Hint {
 }
 
 export interface PuzzleConfig {
-  prompt?: string;
-  media?: Media[];
+  blocks?: Block[];
   zone?: string;
   outputs?: Output[];
   responses?: Response[];
@@ -172,8 +186,7 @@ export interface ChoiceOption {
 }
 
 export interface StoryConfig {
-  text?: string;
-  media?: Media[];
+  blocks?: Block[];
   zone?: string;
   /** Shown only the first time; a returning team passes straight through. */
   once?: boolean;
@@ -251,8 +264,7 @@ export interface Case {
 
 export interface EndConfig {
   outcome?: "complete" | "fail";
-  text?: string;
-  media?: Media[];
+  blocks?: Block[];
 }
 
 /**

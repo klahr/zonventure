@@ -63,12 +63,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(async () => {
     try {
       await auth.logout();
-    } finally {
+    } catch {
       // Drop the session locally even if the call failed — the cookie
       // may already be gone, and leaving the user looking logged in
       // after they asked to leave is the worse outcome.
-      setState({ status: "anonymous" });
     }
+    setState({ status: "anonymous" });
   }, []);
 
   return (

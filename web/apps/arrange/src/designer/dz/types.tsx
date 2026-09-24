@@ -16,3 +16,6 @@ export const STEP: Record<NodeType, { icon: LucideIcon; label: string; about: st
   switch: { icon: Signpost, label: "Crossroads", about: "Sends the team different ways depending on what it answered. Teams never see it." },
   end: { icon: Trophy, label: "End", about: "The adventure is over, as a success or a failure." },
 };
+
+/** Steps a player sees. The others run the moment a team reaches them. */
+export const VISIBLE: ReadonlySet<string> = new Set<NodeType>(["puzzle", "story", "hub", "end"]);

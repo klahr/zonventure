@@ -1374,6 +1374,9 @@ let lastRenderKey = null;
 let ws = null;
 let wsBackoff = 500;
 let wsReconnectTimer = null;
+// Set once the server says this team was removed; nothing may
+// reconnect the socket after that.
+let wsStopped = false;
 let submitResultEl = null;
 let submitInputEl = null;
 // previewState is non-null while the page is running in preview mode:
@@ -1577,8 +1580,7 @@ function wsSend(kind, data) {
   // Pre-stringify so we can distinguish a transient send error
   // (caller should retry) from an undeliverable payload (caller
   // must drop, not queue — re-stringifying on the next attempt
-  // would fail the same way and infinite-loop). Returns null on
-  // unencodable data so the caller can take the right action.
+  // would fail the same way and infinite-loop).
   let frame;
   try { frame = JSON.stringify({ kind, data }); }
   catch (e) {
@@ -1750,12 +1752,13 @@ function connectWS() {
       // Arranger deleted this team mid-event. Stop polling, kill the
       // submit dock, and render an explanatory card so the player
       // doesn't loop on a generic "open your magic link" prompt.
-      if (gpsWatchID !== null && navigator.geolocation) {
-        try { navigator.geolocation.clearWatch(gpsWatchID); } catch { /* ignore */ }
-        gpsWatchID = null;
-      }
-      if (pingTimer !== null) { clearInterval(pingTimer); pingTimer = null; }
+      stopGPS();
       hideSubmitDock();
+      // Detach onclose first: the reconnect path would otherwise
+      // re-open the socket and a 1008 on the retry would replace
+      // the removed card with the "no session" screen.
+      wsStopped = true;
+      ws.onclose = null;
       try { ws.close(); } catch { /* ignore */ }
       app.replaceChildren(buildTeamRemovedCard());
     }
@@ -2369,7 +2372,6 @@ function showGeoConsent() {
     card.className = 'geo-consent-card';
     card.setAttribute('role', 'dialog');
     card.setAttribute('aria-modal', 'true');
-    card.innerHTML = '';
     const h2 = document.createElement('h2');
     h2.textContent = t('Use your location?');
     const lead = document.createElement('p');
@@ -2409,12 +2411,19 @@ function showGeoConsent() {
   });
 }
 
+// setGpsError records a GPS failure and refreshes the gate UI.
+// lastRenderKey is cleared so the gate card picks up the error on the
+// next render.
+function setGpsError(code, msg) {
+  gpsErrorCode = code;
+  gpsError = msg;
+  lastRenderKey = null;
+  updateGateLock();
+}
+
 function startGPS() {
   if (!navigator.geolocation) {
-    gpsError = t('geolocation not supported on this device');
-    gpsErrorCode = 2;
-    lastRenderKey = null; // so the gate card picks up the error on next refresh
-    updateGateLock();
+    setGpsError(2, t('geolocation not supported on this device'));
     return;
   }
   // Player has paused location reporting from the menu drawer. The
@@ -2422,10 +2431,7 @@ function startGPS() {
   // message instead of "no signal" — distinct copy so the player
   // doesn't think the browser failed.
   if (prefLocationPaused()) {
-    gpsError = t('Location is paused. Open the menu to share again.');
-    gpsErrorCode = 4;
-    lastRenderKey = null;
-    updateGateLock();
+    setGpsError(4, t('Location is paused. Open the menu to share again.'));
     return;
   }
   if (gpsWatchID !== null) return;
@@ -2435,21 +2441,13 @@ function startGPS() {
   // and Retry button keep working without a second branch.
   const status = geoConsentStatus();
   if (status === 'declined') {
-    gpsErrorCode = 1;
-    gpsError = t('permission denied — enable location for this site');
-    lastRenderKey = null;
-    updateGateLock();
+    setGpsError(1, t('permission denied — enable location for this site'));
     return;
   }
   if (status !== 'granted') {
     showGeoConsent().then((choice) => {
       if (choice === 'granted') startGPS();
-      else {
-        gpsErrorCode = 1;
-        gpsError = t('permission denied — enable location for this site');
-        lastRenderKey = null;
-        updateGateLock();
-      }
+      else setGpsError(1, t('permission denied — enable location for this site'));
     });
     return;
   }
@@ -2481,13 +2479,11 @@ function startGPS() {
       // player so they know whether to flip the browser toggle, go
       // outdoors, or wait a moment.
       const code = err.code;
-      gpsErrorCode = code || 0;
-      gpsError = code === 1 ? t('permission denied — enable location for this site')
-               : code === 2 ? t('no signal — try moving outdoors')
-               : code === 3 ? t('timed out — retrying')
-               : err.message || 'unknown';
-      lastRenderKey = null;
-      updateGateLock();
+      setGpsError(code || 0,
+        code === 1 ? t('permission denied — enable location for this site')
+        : code === 2 ? t('no signal — try moving outdoors')
+        : code === 3 ? t('timed out — retrying')
+        : err.message || 'unknown');
       console.warn('gps', err.message);
     },
     // maximumAge: 0 forces the freshest reading every call. The default
@@ -2497,6 +2493,18 @@ function startGPS() {
     { enableHighAccuracy: true, maximumAge: 0, timeout: 30000 },
   );
   if (pingTimer === null) pingTimer = setInterval(sendPing, 15000);
+}
+
+// stopGPS tears down the watchPosition watcher and the ping loop.
+function stopGPS() {
+  if (gpsWatchID !== null && navigator.geolocation) {
+    try { navigator.geolocation.clearWatch(gpsWatchID); } catch { /* ignore */ }
+  }
+  gpsWatchID = null;
+  if (pingTimer !== null) {
+    clearInterval(pingTimer);
+    pingTimer = null;
+  }
 }
 
 // retryGPS re-arms the watcher after the user taps Retry. Clearing
@@ -2530,14 +2538,7 @@ function retryGPS() {
 function applyLocationPause(paused) {
   setLocationPausedPref(paused);
   if (paused) {
-    if (gpsWatchID !== null && navigator.geolocation) {
-      try { navigator.geolocation.clearWatch(gpsWatchID); } catch { /* ignore */ }
-    }
-    gpsWatchID = null;
-    if (pingTimer !== null) {
-      clearInterval(pingTimer);
-      pingTimer = null;
-    }
+    stopGPS();
     lastFix = null;
     gpsError = t('Location is paused. Open the menu to share again.');
     gpsErrorCode = 4;
@@ -4576,8 +4577,10 @@ async function bootstrapAfterClaim() {
   // park itself (wsReconnectTimer === null and ws.readyState !== 1).
   // No-op when the WS is already open.
   document.addEventListener('visibilitychange', () => {
-    if (document.hidden) return;
-    if (ws && ws.readyState === 1) return;
+    if (document.hidden || wsStopped) return;
+    // CONNECTING (0) or OPEN (1): a second connectWS would orphan
+    // this socket, whose onclose would then schedule its own retry.
+    if (ws && ws.readyState <= 1) return;
     if (wsReconnectTimer) return; // a deferred retry is already armed
     wsBackoff = 500; // foreground recovery: don't carry stale backoff
     connectWS();

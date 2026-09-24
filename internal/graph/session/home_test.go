@@ -19,7 +19,7 @@ import (
 // "place" topic only appears once the murder topic has been read.
 func mystery() *graph.Graph {
 	story := func(slug, text string, once bool, unlocks ...string) graph.Node {
-		return graph.Node{Slug: slug, Type: graph.Story, Title: slug, StoryCfg: &graph.StoryConfig{Text: text, Once: once}, Unlocks: unlocks}
+		return graph.Node{Slug: slug, Type: graph.Story, Title: slug, StoryCfg: &graph.StoryConfig{Blocks: graph.LegacyBlocks(text, nil), Once: once}, Unlocks: unlocks}
 	}
 	answer := func(v string) []graph.Output {
 		return []graph.Output{{Port: "solved", Trigger: graph.OnAnswer, Matchers: []match.Matcher{{Kind: match.Exact, Value: v}}}}
@@ -41,10 +41,10 @@ func mystery() *graph.Graph {
 				{Port: "murder", Label: "The murder"},
 				{Port: "place", Label: "The place", Condition: cond.Predicate{Op: cond.OpVisited, Node: "carl-murder-a"}},
 			}}},
-			{Slug: "carl-murder-q", Type: graph.Puzzle, PuzzleCfg: &graph.PuzzleConfig{Prompt: "When?", Outputs: answer("1997")}},
+			{Slug: "carl-murder-q", Type: graph.Puzzle, PuzzleCfg: &graph.PuzzleConfig{Blocks: graph.LegacyBlocks("When?", nil), Outputs: answer("1997")}},
 			story("carl-murder-a", "Just so.", false, "carl-murder"),
 			story("carl-place", "The park.", false),
-			{Slug: "accuse", Type: graph.Puzzle, PuzzleCfg: &graph.PuzzleConfig{Prompt: "Who?", Outputs: answer("erika")}},
+			{Slug: "accuse", Type: graph.Puzzle, PuzzleCfg: &graph.PuzzleConfig{Blocks: graph.LegacyBlocks("Who?", nil), Outputs: answer("erika")}},
 			{Slug: "end", Type: graph.End},
 		},
 		Edges: []graph.Edge{
@@ -293,7 +293,7 @@ func TestSearchByPlace(t *testing.T) {
 				Outputs:    []graph.Output{{Port: "c3", Trigger: graph.OnAnswer, Zone: "c3"}},
 				Responses:  []graph.Response{{Text: "Nothing on record here."}},
 			}},
-			{Slug: "found", Type: graph.Story, StoryCfg: &graph.StoryConfig{Text: "A shell casing."}},
+			{Slug: "found", Type: graph.Story, StoryCfg: &graph.StoryConfig{Blocks: graph.LegacyBlocks("A shell casing.", nil)}},
 			{Slug: "end", Type: graph.End},
 		},
 		Edges: []graph.Edge{
@@ -498,7 +498,7 @@ func TestTranslations(t *testing.T) {
 	}
 	g.Translations = map[string]map[string]string{"en": {
 		graph.NodeKey("home", "branch:carl:label"):            "Carl (EN)",
-		graph.NodeKey("carl-murder-q", "text"):                "Which year?",
+		graph.BlockKey("carl-murder-q", "text"):               "Which year?",
 		graph.NodeKey("carl-murder-q", "reply:0"):             "Wrong year.",
 		graph.NodeKey("carl-murder-q", "hint:0"):              "Look at the sphere.",
 		graph.NodeKey("carl-murder-q", "out:solved:answers"):  "nineteen ninety-seven\nninety-seven",
@@ -565,7 +565,7 @@ func TestTranslations(t *testing.T) {
 	if res, _, _ := tm.Answer("carl-murder-q", "the millennium bug"); !res.Accepted {
 		t.Errorf("a translated contains-answer matches anywhere in the guess: %+v", res)
 	}
-	if g.Nodes[5].PuzzleCfg != nil && g.Nodes[5].PuzzleCfg.Prompt != "When?" {
+	if g.Nodes[5].PuzzleCfg != nil && graph.TextOf(g.Nodes[5].PuzzleCfg.Blocks) != "When?" {
 		t.Error("translating a view never changes the graph")
 	}
 }

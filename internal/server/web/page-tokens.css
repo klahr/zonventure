@@ -1,9 +1,8 @@
 /* Shared design tokens, button styles, and link/focus rules for the
- * public marketing surfaces (landing, pricing, store, store-event,
- * org-landing, 404). Pulled out of each page's inline <style> block
- * so the brand palette and the .btn / .skip-link rules live in one
- * place — bumping --accent or tweaking the focus ring used to
- * require touching six files.
+ * public marketing surfaces (landing, pricing, manual, store,
+ * store-event, org-landing). Pulled out of each page's inline <style>
+ * block so the brand palette and the .btn / .skip-link rules live in
+ * one place. 404.html stays self-contained on purpose.
  *
  * @font-face declarations live in /assets/fontface.css so pages
  * that don't want the design-token block (play.html, arrange.html,

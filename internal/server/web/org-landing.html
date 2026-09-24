@@ -177,17 +177,16 @@
   .footer-note a { color: var(--muted); text-decoration: underline; }
 </style>
 </head>
-<body>
+<body class="has-hero">
 
 <a href="#main" class="skip-link">Skip to content</a>
 
-<header role="banner">
-  <div class="wrap">
-    <label class="hamburger" for="navtoggle" aria-label="{{NAV_OPEN_ARIA}}">
+<input type="checkbox" id="nav-toggle" class="nav-toggle" aria-label="{{NAV_TOGGLE_ARIA}}">
+
+<header class="topbar" role="banner">
+  <div class="wrap topbar-row">
+    <label for="nav-toggle" class="hamburger" aria-hidden="true">
       <span></span><span></span><span></span>
-    </label>
-    <input type="checkbox" id="navtoggle" class="nav-toggle" aria-hidden="true">
-    <label class="backdrop" for="navtoggle" aria-hidden="true">
     </label>
     <a class="brand" href="/" aria-label="{{BRAND_ARIA}}">zonventure</a>
     <nav aria-label="{{NAV_PRIMARY_ARIA}}">
@@ -235,7 +234,7 @@
       <div class="empty">{{STORE_LOADING_HEADING}}</div>
     </div>
     <div class="see-all">
-      <a class="btn primary" href="{{STORE_PATH}}" style="background:linear-gradient(135deg,var(--accent),var(--accent-2)); color:#fff">
+      <a class="btn primary" href="{{STORE_PATH}}">
         {{LANDING_SEE_ALL}}
       </a>
     </div>
@@ -317,7 +316,10 @@
     items.slice(0, 3).forEach(function (it) { grid.appendChild(buildCard(it)); });
   }
   fetch('{{STORE_API_BASE}}/items', { headers: { 'Accept': 'application/json' } })
-    .then(function (r) { return r.json(); })
+    .then(function (r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    })
     .then(function (resp) { render(resp && resp.items); })
     .catch(function () {
       var grid = document.getElementById('featured');

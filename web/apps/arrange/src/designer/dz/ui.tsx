@@ -71,22 +71,6 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
 
 // --- small pieces ------------------------------------------------------------
 
-export function Switch({ checked, onChange, label, disabled }: { checked: boolean; onChange: (c: boolean) => void; label?: ReactNode; disabled?: boolean }) {
-  return (
-    <label className={"dz-switch" + (disabled ? " disabled" : "")}>
-      <input type="checkbox" role="switch" checked={checked} disabled={disabled} onChange={(e) => onChange(e.target.checked)} />
-      <span className="dz-switch-track" aria-hidden="true">
-        <span className="dz-switch-thumb" />
-      </span>
-      {label && (
-        <span className="dz-switch-text">
-          <span className="dz-switch-label">{label}</span>
-        </span>
-      )}
-    </label>
-  );
-}
-
 const CALLOUT: Record<"warning" | "info" | "danger" | "success", LucideIcon> = {
   warning: AlertTriangle,
   info: Info,
@@ -298,47 +282,6 @@ export function IssueRow({ text, actions }: { text: ReactNode; actions?: ReactNo
 }
 
 // --- modals ----------------------------------------------------------------
-
-export function ConfirmModal({
-  title,
-  message,
-  confirmLabel,
-  danger,
-  onConfirm,
-  onCancel,
-}: {
-  title: string;
-  message: ReactNode;
-  confirmLabel: string;
-  danger?: boolean;
-  onConfirm: () => void;
-  onCancel: () => void;
-}) {
-  const t = useT();
-  useEscapeToClose(onCancel);
-  return (
-    <DzPortal>
-      <div className="modal-backdrop" onClick={onCancel}>
-        <div className="modal confirm-dialog" onClick={(e) => e.stopPropagation()} role="alertdialog" aria-modal="true">
-          <div className="modal-head">
-            <h2>{title}</h2>
-          </div>
-          <div className="modal-body">
-            <div className="confirm-message">{message}</div>
-          </div>
-          <div className="modal-foot">
-            <Button onClick={onCancel} autoFocus>
-              {t.t("Cancel")}
-            </Button>
-            <Button variant={danger ? "danger" : "primary"} onClick={onConfirm}>
-              {confirmLabel}
-            </Button>
-          </div>
-        </div>
-      </div>
-    </DzPortal>
-  );
-}
 
 export function PromptModal({
   title,

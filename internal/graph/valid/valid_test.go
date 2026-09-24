@@ -671,3 +671,27 @@ func TestSectionAndMainLanguageTranslations(t *testing.T) {
 	assertCode(t, r, "translation.stale")
 	assertCode(t, r, "translation.main")
 }
+
+func TestBlocks(t *testing.T) {
+	g := graph.Graph{Nodes: []graph.Node{{Slug: "s", Type: graph.Story, StoryCfg: &graph.StoryConfig{Blocks: []graph.Block{
+		{ID: "a", Kind: graph.BlockText, Text: "Hi."},
+		{ID: "a", Kind: graph.BlockImage},
+		{Kind: "sparkle"},
+		{ID: "c", Kind: graph.BlockCompass},
+		{ID: "m", Kind: graph.BlockMap, Zone: "nowhere", Zoom: 25},
+	}}}}, Translations: map[string]map[string]string{"en": {
+		graph.BlockKey("s", "a"):    "Hi, in English.",
+		graph.BlockKey("s", "gone"): "Deleted.",
+	}}}
+	codes := map[string]int{}
+	for _, i := range Check(&g).Issues {
+		if i.Node == "s" || i.Code == "translation.stale" {
+			codes[i.Code]++
+		}
+	}
+	for _, c := range []string{"block.id.duplicate", "block.id.empty", "block.kind", "media.id", "translation.stale", "block.zone.missing", "ref.zone.unknown", "block.zoom"} {
+		if codes[c] != 1 {
+			t.Errorf("%s reported %d times, want once: %v", c, codes[c], codes)
+		}
+	}
+}

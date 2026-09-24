@@ -22,6 +22,11 @@ export function loadMapLibre(): Promise<MapLib> {
       m.setWorkerUrl(new URL(worker.default, location.href).href);
       return m;
     },
+    (e: unknown) => {
+      // Forget the failure, so the next map to open tries again.
+      loading = null;
+      throw e;
+    },
   );
   return loading;
 }

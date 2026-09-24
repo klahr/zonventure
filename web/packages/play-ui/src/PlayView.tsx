@@ -7,6 +7,8 @@ import { ChoiceForm } from "./Choices.tsx";
 import { LockBoard } from "./Lock.tsx";
 import { JournalNotes, useUnreadNotes } from "./Journal.tsx";
 import { MediaList } from "./Media.tsx";
+import { Blocks } from "./Blocks.tsx";
+import type { MapPoint } from "./StaticMap.tsx";
 import { QrButton } from "./Qr.tsx";
 import { brandVars, isHex, loadFont } from "./brand.ts";
 import { formatSeconds, secondsUntil, useEngineClock } from "./clock.ts";
@@ -51,6 +53,8 @@ export interface PlayViewProps {
   zoneNote?: ReactNode;
   /** The same line for any place, such as each start a team may choose. */
   placeNote?: (zone: play.PlayZone) => ReactNode;
+  /** Where the team is, for compass and map blocks. */
+  position?: MapPoint;
   /** The adventure's palette. */
   brand?: play.Brand | null;
   /** The adventure's farewell, shown under the end step's own text. */
@@ -65,7 +69,8 @@ export interface PlayViewProps {
 export function PlayView(props: PlayViewProps) {
   const { view, brand } = props;
   const t = props.t ?? english;
-  const now = useEngineClock(view.now, props.live ?? true);
+  const live = props.live ?? true;
+  const now = useEngineClock(view.now, live);
   const burst = useBurst(props.feedback ?? null);
   const [hintsOpen, setHintsOpen] = useState(false);
   const [bagOpen, setBagOpen] = useState(false);
@@ -73,7 +78,6 @@ export function PlayView(props: PlayViewProps) {
   const storageKey = props.storageKey ?? "local";
   const unread = useUnreadNotes(view.journal, storageKey, journalOpen);
   const endsIn = view.ends_at ? secondsUntil(view.ends_at, now) : null;
-  const live = props.live ?? true;
 
   // Live, the phone calls time-up itself when the countdown ends; the
   // engine re-checks the clock, so an early or repeated call is harmless.
@@ -134,9 +138,6 @@ export function PlayView(props: PlayViewProps) {
             <span aria-hidden>🎒</span> {view.items.length}
           </button>
         ) : null}
-        {/* The journal is the case file: always one tap away, the end
-            screen included, so a team can check its notes before an
-            accusation and read them back afterwards. */}
         {/* A translated adventure: the team switches language here. Each
             language names itself, so a team finds its own. */}
         {(view.languages?.length ?? 0) > 1 && (
@@ -153,6 +154,9 @@ export function PlayView(props: PlayViewProps) {
             ))}
           </select>
         )}
+        {/* The journal is the case file: always one tap away, the end
+            screen included, so a team can check its notes before an
+            accusation and read them back afterwards. */}
         {view.has_journal || view.journal?.length ? (
           <button
             type="button"
@@ -308,11 +312,12 @@ function Title({ view }: { view: play.View }) {
   return view.title ? <h2 className="pv-title">{view.title}</h2> : null;
 }
 
+const mapURL = (z: play.PlayZone) => `https://www.openstreetmap.org/?mlat=${z.lat}&mlon=${z.lng}#map=18/${z.lat}/${z.lng}`;
+
 function ZoneCard({ view, t, note }: { view: play.View; t: Translate; note?: ReactNode }) {
   const z = view.zone;
   if (!z) return null;
   const name = z.name || t("the marked place");
-  const map = `https://www.openstreetmap.org/?mlat=${z.lat}&mlon=${z.lng}#map=18/${z.lat}/${z.lng}`;
   return (
     <div className={"pv-zone" + (view.here ? " is-here" : "")}>
       <span className="pv-zone__pin" aria-hidden>
@@ -322,7 +327,7 @@ function ZoneCard({ view, t, note }: { view: play.View; t: Translate; note?: Rea
         <strong>{view.here ? t("You are at {{place}}.", { place: name }) : t("Go to {{place}}.", { place: name })}</strong>
         {!view.here && note && <span className="pv-zone__note">{note}</span>}
       </div>
-      <a href={map} target="_blank" rel="noopener noreferrer">
+      <a href={mapURL(z)} target="_blank" rel="noopener noreferrer">
         {t("Map")}
       </a>
     </div>
@@ -341,6 +346,8 @@ function PuzzleStep(props: StepProps) {
   const timeLeft = view.deadline ? secondsUntil(view.deadline, now) : Infinity;
   const timeUp = timeLeft <= 0;
   const needsPlace = !!view.zone && !view.here;
+  const locked = !!busy || blockedFor > 0 || needsPlace;
+  const answer = (g: string) => onAction({ kind: "answer", node, guess: g });
 
   // Live, the client calls Timeout itself when the countdown ends — the
   // engine re-checks the time, so an early or repeated call is harmless.
@@ -358,7 +365,7 @@ function PuzzleStep(props: StepProps) {
     e.preventDefault();
     const g = guess.trim();
     if (!g || busy) return;
-    onAction({ kind: "answer", node, guess: g });
+    answer(g);
   };
 
   const input: play.PlayInput = view.input ?? { kind: "text" };
@@ -374,8 +381,7 @@ function PuzzleStep(props: StepProps) {
     <>
       <Title view={view} />
       <ZoneCard view={view} t={t} note={props.zoneNote} />
-      <MediaList media={view.media} />
-      {view.text && <Markdown className="pv-text" text={view.text} />}
+      <Blocks blocks={view.blocks} position={props.position} t={t} placeNote={props.placeNote} />
 
       {view.deadline && (
         <p className={"pv-timer" + (timeLeft < 60 ? " is-urgent" : "")}>
@@ -396,9 +402,9 @@ function PuzzleStep(props: StepProps) {
           rows={tiles.rows!}
           cols={tiles.cols!}
           storageKey={node}
-          disabled={!!busy || blockedFor > 0 || needsPlace}
+          disabled={locked}
           t={t}
-          onSolved={(g) => onAction({ kind: "answer", node, guess: g })}
+          onSolved={answer}
         />
       )}
 
@@ -408,9 +414,9 @@ function PuzzleStep(props: StepProps) {
           wheels={lock.wheels!}
           symbols={lock.symbols!}
           start={lock.start}
-          disabled={!!busy || blockedFor > 0 || needsPlace}
+          disabled={locked}
           t={t}
-          onTry={(g) => onAction({ kind: "answer", node, guess: g })}
+          onTry={answer}
         />
       )}
 
@@ -418,9 +424,9 @@ function PuzzleStep(props: StepProps) {
         <ChoiceForm
           key={node}
           fields={choices}
-          disabled={!!busy || blockedFor > 0 || needsPlace}
+          disabled={locked}
           t={t}
-          onAnswer={(g) => onAction({ kind: "answer", node, guess: g })}
+          onAnswer={answer}
         />
       )}
 
@@ -444,8 +450,8 @@ function PuzzleStep(props: StepProps) {
           <button
             type="button"
             className="pv-btn pv-btn--primary pv-btn--wide"
-            disabled={busy || blockedFor > 0 || needsPlace}
-            onClick={() => onAction({ kind: "answer", node, guess: "" })}
+            disabled={locked}
+            onClick={() => answer("")}
           >
             {blockedFor > 0 ? formatSeconds(blockedFor) : t("Search here")}
           </button>
@@ -470,13 +476,13 @@ function PuzzleStep(props: StepProps) {
               enterKeyHint="send"
               disabled={needsPlace}
             />
-            <button className="pv-btn pv-btn--primary" disabled={busy || !guess.trim() || blockedFor > 0 || needsPlace}>
+            <button className="pv-btn pv-btn--primary" disabled={locked || !guess.trim()}>
               {blockedFor > 0 ? formatSeconds(blockedFor) : t("Answer")}
             </button>
             {/* A scan is a guess like any typed one: the decoded text goes
                 through the same matchers, so an author prints a QR code
                 of any accepted answer. */}
-            <QrButton t={t} disabled={busy || blockedFor > 0 || needsPlace} onScan={(text) => onAction({ kind: "answer", node, guess: text })} />
+            <QrButton t={t} disabled={locked} onScan={answer} />
           </form>
         )}
       </div>
@@ -575,14 +581,13 @@ function Sheet({ title, t, onClose, children }: { title: string; t: Translate; o
   );
 }
 
-function StoryStep({ view, t, busy, onAction, zoneNote, feedback }: StepProps) {
+function StoryStep({ view, t, busy, onAction, zoneNote, feedback, position, placeNote }: StepProps) {
   const needsPlace = !!view.zone && !view.here;
   return (
     <>
       <Title view={view} />
       <ZoneCard view={view} t={t} note={zoneNote} />
-      <MediaList media={view.media} />
-      {view.text && <Markdown className="pv-text" text={view.text} />}
+      <Blocks blocks={view.blocks} position={position} t={t} placeNote={placeNote} />
       <div className="pv-dock">
         <FeedbackLine feedback={feedback} />
         <button
@@ -669,7 +674,7 @@ function StartChoice({ view, t, busy, onAction, placeNote }: StepProps) {
                   {z && o.here && <span className="pv-zone__note">{t("You are here.")}</span>}
                 </div>
                 {z && (
-                  <a href={`https://www.openstreetmap.org/?mlat=${z.lat}&mlon=${z.lng}#map=18/${z.lat}/${z.lng}`} target="_blank" rel="noopener noreferrer">
+                  <a href={mapURL(z)} target="_blank" rel="noopener noreferrer">
                     {t("Map")}
                   </a>
                 )}
@@ -685,7 +690,7 @@ function StartChoice({ view, t, busy, onAction, placeNote }: StepProps) {
   );
 }
 
-function EndStep({ view, t, outro }: StepProps) {
+function EndStep({ view, t, outro, position, placeNote }: StepProps) {
   const failed = view.outcome === "fail";
   return (
     <div className={"pv-summary" + (failed ? " is-fail" : "")}>
@@ -693,8 +698,7 @@ function EndStep({ view, t, outro }: StepProps) {
         {failed ? "⚑" : "★"}
       </div>
       <h2 className="pv-summary__head">{failed ? t("The adventure is over.") : t("You made it!")}</h2>
-      <MediaList media={view.media} />
-      {view.text && <Markdown className="pv-text" text={view.text} />}
+      <Blocks blocks={view.blocks} position={position} t={t} placeNote={placeNote} />
       {outro && <Markdown className="pv-text" text={outro} />}
       <div className="pv-stats">
         <div className="pv-stat">

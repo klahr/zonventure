@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { adventureTexts, allTexts, coverage, metaKey, nodeKey, nodeTexts, sectionKey, setTranslation, journalKey } from "./i18n.ts";
+import { adventureTexts, allTexts, coverage, blockKey, metaKey, nodeKey, nodeTexts, sectionKey, setTranslation, journalKey } from "./i18n.ts";
 import type { Graph } from "./types.ts";
 
 const g: Graph = {
@@ -8,11 +8,11 @@ const g: Graph = {
   nodes: [
     { slug: "start", type: "start" },
     { slug: "q", type: "puzzle", title: "Frågan", puzzle: {
-      prompt: "Hur många?",
+      blocks: [{ id: "b1", kind: "text", text: "Hur många?" }],
       outputs: [{ port: "solved", label: "Rätt", trigger: "answer", matchers: [{ kind: "exact", value: "sex" }, { kind: "exact", value: "6" }, { kind: "contains", value: "sexton" }] }],
       responses: [{ text: "Fel." }],
     } },
-    { slug: "end", type: "end", end: { text: "Tack!" } },
+    { slug: "end", type: "end", end: { blocks: [{ id: "b1", kind: "text", text: "Tack!" }] } },
   ],
   edges: [],
   journal: [{ slug: "carl", title: "Carl", body: "Jobbar här.", section: "Misstänkta" }],
@@ -21,7 +21,7 @@ const g: Graph = {
 test("a step's texts use the engine's keys", () => {
   const keys = nodeTexts(g.nodes[1]!).map((t) => t.key);
   assert.deepEqual(keys, [
-    nodeKey("q", "title"), nodeKey("q", "text"), nodeKey("q", "out:solved:label"),
+    nodeKey("q", "title"), blockKey("q", "b1"), nodeKey("q", "out:solved:label"),
     nodeKey("q", "out:solved:answers"), nodeKey("q", "out:solved:contains"), nodeKey("q", "reply:0"),
   ]);
   const answers = nodeTexts(g.nodes[1]!).filter((t) => t.answers);
@@ -47,9 +47,9 @@ test("adventure texts: meta, sections by name", () => {
 test("coverage counts translated texts, not extra answers", () => {
   const total = allTexts(g).filter((t) => !t.answers).length;
   assert.equal(coverage(g, "en"), 0);
-  let t = setTranslation(g, "en", nodeKey("q", "text"), "How many?");
+  let t = setTranslation(g, "en", blockKey("q", "b1"), "How many?");
   t = setTranslation(t, "en", journalKey("carl", "body"), "Works here.");
   assert.equal(coverage(t, "en"), 2 / total);
-  t = setTranslation(t, "en", nodeKey("q", "text"), "  ");
-  assert.equal(t.translations!.en![nodeKey("q", "text")], undefined, "an emptied translation is removed");
+  t = setTranslation(t, "en", blockKey("q", "b1"), "  ");
+  assert.equal(t.translations!.en![blockKey("q", "b1")], undefined, "an emptied translation is removed");
 });

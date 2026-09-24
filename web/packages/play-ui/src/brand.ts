@@ -58,11 +58,6 @@ export function readableOn(bg: string): "#000000" | "#ffffff" {
 }
 
 /**
- * CSS custom properties for a palette. Empty for no palette, so the
- * default Zonventure look applies. Invalid values are dropped: a colour
- * reaches a style attribute only if it is a plain hex triplet.
- */
-/**
  * The typefaces an adventure may choose — the same keys as adventure.Fonts
  * in Go. Loaded from Google Fonts, the only font host the page allows.
  */
@@ -86,6 +81,11 @@ export function loadFont(key: string | undefined) {
   document.head.appendChild(link);
 }
 
+/**
+ * CSS custom properties for a palette. Empty for no palette, so the
+ * default Zonventure look applies. Invalid values are dropped: a colour
+ * reaches a style attribute only if it is a plain hex triplet.
+ */
 export function brandVars(b: play.Brand | null | undefined): Record<string, string> {
   const out: Record<string, string> = {};
   if (!b) return out;

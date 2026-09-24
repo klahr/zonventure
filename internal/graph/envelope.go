@@ -57,6 +57,7 @@ func ParseEnvelope(b []byte) (*Envelope, error) {
 	if env.Format != FormatV2 {
 		return nil, fmt.Errorf("%w (format is %q)", ErrFormat, env.Format)
 	}
+	env.Graph.Normalize()
 	return &env, nil
 }
 

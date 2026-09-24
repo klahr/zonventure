@@ -58,6 +58,14 @@ export interface PlayMedia {
 
 export const mediaURL = (id: number) => `/media/${id}`;
 
+/** internal/graph: Block — one piece of a step's content, in order. */
+export type PlayBlock =
+  | { id: string; kind: "text"; text: string }
+  | { id: string; kind: "image" | "audio"; media: number; alt?: string }
+  /** place is the zone it shows; missing if the zone was deleted. */
+  | { id: string; kind: "compass"; zone: string; hide_distance?: boolean; place?: PlayZone }
+  | { id: string; kind: "map"; zone: string; zoom?: number; place?: PlayZone };
+
 /** session.HintView — one revealed hint. */
 export interface HintView {
   text: string;
@@ -105,11 +113,15 @@ export interface View {
   node?: string;
   type?: NodeType;
   title?: string;
+  /** A hub's text. On other steps, blocks' texts flattened, for older bundles. */
   text?: string;
   zone?: PlayZone;
   here?: boolean;
   /** Set while the team chooses where to begin; `node` is then empty. */
   starts?: StartOption[];
+  /** What a puzzle, story or end shows, in order. */
+  blocks?: PlayBlock[];
+  /** blocks' pictures and sounds flattened, for older bundles. */
   media?: PlayMedia[];
   input?: PlayInput;
   hints?: HintView[];

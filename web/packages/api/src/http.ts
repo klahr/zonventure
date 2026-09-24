@@ -165,23 +165,15 @@ async function errorFrom(res: Response): Promise<ApiError> {
 export const get = <T>(path: string, opts?: RequestOptions) =>
   request<T>(path, { ...opts, method: "GET" });
 
-export const post = <T>(path: string, body?: unknown, opts?: RequestOptions) =>
-  request<T>(path, {
-    ...opts,
-    method: "POST",
-    ...(body !== undefined ? { body } : {}),
-  });
+const withBody =
+  (method: string) =>
+  <T>(path: string, body?: unknown, opts?: RequestOptions) =>
+    request<T>(path, {
+      ...opts,
+      method,
+      ...(body !== undefined ? { body } : {}),
+    });
 
-export const put = <T>(path: string, body?: unknown, opts?: RequestOptions) =>
-  request<T>(path, {
-    ...opts,
-    method: "PUT",
-    ...(body !== undefined ? { body } : {}),
-  });
-
-export const patch = <T>(path: string, body?: unknown, opts?: RequestOptions) =>
-  request<T>(path, {
-    ...opts,
-    method: "PATCH",
-    ...(body !== undefined ? { body } : {}),
-  });
+export const post = withBody("POST");
+export const put = withBody("PUT");
+export const patch = withBody("PATCH");

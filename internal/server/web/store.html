@@ -37,7 +37,6 @@
      all live in /assets/page-tokens.css. Page-specific overrides below. */
   body { line-height: 1.6; }
   .wrap { max-width: 60rem; margin: 0 auto; padding: 0 1.25rem; }
-  .btn.primary[disabled] { opacity: .55; cursor: not-allowed; transform: none; }
 
   main { padding: 3rem 0 5rem; }
   h1 {
@@ -75,24 +74,6 @@
   .card .meta { color: var(--muted); font-size: .85rem; margin-bottom: 1rem; }
   .card .price { font-weight: 700; font-size: 1.4rem; color: var(--ink); margin-bottom: 1rem; }
   .card .price small { font-weight: 400; color: var(--muted); font-size: .85rem; }
-
-  .buy-form { display: none; flex-direction: column; gap: .5rem; }
-  .buy-form.open { display: flex; }
-  .buy-form label { font-size: .85rem; color: var(--ink-soft); font-weight: 600; }
-  .buy-form input[type=email] {
-    padding: .6rem .75rem;
-    border: 1px solid var(--border-soft);
-    border-radius: 8px;
-    background: var(--bg);
-    color: var(--ink);
-    font: inherit;
-  }
-  .buy-form .err {
-    color: #c0392b;
-    font-size: .85rem;
-    margin: .25rem 0 0;
-    min-height: 1.2em;
-  }
 
   .empty {
     background: var(--surface);
@@ -396,7 +377,10 @@
 
   flashFromQuery();
   fetch('{{STORE_API_BASE}}/items', { headers: { 'Accept': 'application/json' } })
-    .then(function (r) { return r.json(); })
+    .then(function (r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    })
     .then(function (resp) { render(resp && resp.items); })
     .catch(function () {
       var grid = document.getElementById('grid');

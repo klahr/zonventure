@@ -21,6 +21,7 @@ export function tidy(g: Graph, sizes: Map<string, Size> = new Map()): Graph {
   return g.frames?.length ? tidyFramed(g, sizes) : tidyAll(g, sizes);
 }
 
+const DEFAULT_SIZE: Size = { w: 240, h: 110 };
 const FRAME_PAD = 50;
 const FRAME_HEAD = 40;
 const FRAME_GAP = 60;
@@ -33,8 +34,7 @@ const FRAME_GAP = 60;
  * are left where they are.
  */
 function tidyFramed(g: Graph, sizes: Map<string, Size>): Graph {
-  const fallback: Size = { w: 240, h: 110 };
-  const size = (slug: string) => sizes.get(slug) ?? fallback;
+  const size = (slug: string) => sizes.get(slug) ?? DEFAULT_SIZE;
   const frames = [...g.frames!].sort((a, b) => a.y - b.y || a.x - b.x);
   const owner = new Map<string, string>();
   for (const n of g.nodes) {
@@ -93,7 +93,6 @@ function tidyFramed(g: Graph, sizes: Map<string, Size>): Graph {
 }
 
 function tidyAll(g: Graph, sizes: Map<string, Size>): Graph {
-  const fallback: Size = { w: 240, h: 110 };
   const ids = g.nodes.map((n) => n.slug);
 
   // Edges back into a hub are what make a hub loop; laying them out
@@ -107,7 +106,7 @@ function tidyAll(g: Graph, sizes: Map<string, Size>): Graph {
   const starts = new Set(g.nodes.filter((n) => n.type === "start").map((n) => n.slug));
   const layer = layerNodes(ids, forward, (id) => starts.has(id));
   const boxes = g.nodes.map((n) => {
-    const s = sizes.get(n.slug) ?? fallback;
+    const s = sizes.get(n.slug) ?? DEFAULT_SIZE;
     return { id: n.slug, x: n.x ?? 0, y: n.y ?? 0, w: s.w, h: s.h };
   });
   const pos = packColumns(boxes, layer, { hgap: 96, vgap: 40, startX: 0, startY: 0 });

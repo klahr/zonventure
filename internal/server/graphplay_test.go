@@ -36,11 +36,11 @@ func TestGraphPlayerLoop(t *testing.T) {
 		Nodes: []graph.Node{
 			{Slug: "start", Type: graph.Start},
 			{Slug: "hello", Type: graph.Puzzle, Title: "Greeting", PuzzleCfg: &graph.PuzzleConfig{
-				Prompt:    "Say hello.",
+				Blocks:    graph.LegacyBlocks("Say hello.", nil),
 				Outputs:   []graph.Output{{Port: "solved", Trigger: graph.OnAnswer, Points: 10, Matchers: []match.Matcher{{Kind: match.Exact, Value: "hello"}}}},
 				Responses: []graph.Response{{Text: "Not quite."}},
 			}},
-			{Slug: "end", Type: graph.End, EndCfg: &graph.EndConfig{Outcome: graph.Complete, Text: "Well done."}},
+			{Slug: "end", Type: graph.End, EndCfg: &graph.EndConfig{Outcome: graph.Complete, Blocks: graph.LegacyBlocks("Well done.", nil)}},
 		},
 		Edges: []graph.Edge{
 			{From: "start", FromPort: "out", To: "hello"},

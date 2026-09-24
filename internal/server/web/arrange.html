@@ -111,17 +111,6 @@
 }
 
 /* ============ Accessibility utilities ============ */
-/* visually-hidden hides content from sighted users while keeping it
-   exposed to assistive tech. The standard inert/clip-path technique. */
-.visually-hidden {
-  position: absolute !important;
-  width: 1px; height: 1px;
-  padding: 0; margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
-}
 /* Skip-to-content link: invisible until focused, then jumps into the
    top-left so a keyboard user can fly past the sidebar/topbar to the
    main content in one Tab. */
@@ -391,7 +380,6 @@ p { margin: 0 0 .5rem; }
   .btn.menu-btn { display: inline-flex; }
   .content { padding: 1rem; }
   .topbar .crumb { display: none; }
-  .topbar .user-details { display: none; }
 }
 .backdrop {
   display: none;
@@ -484,14 +472,6 @@ p { margin: 0 0 .5rem; }
 .puzzle-card .md-preview { margin-top: .75rem; margin-bottom: .75rem; }
 .card.clickable { cursor: pointer; transition: transform var(--anim), box-shadow var(--anim); }
 .card.clickable:hover { transform: translateY(-2px) scale(1.015); box-shadow: var(--shadow-lg); }
-/* Primary-tinted CTA card: used for "ready to schedule" assignments.
-   Visually distinct from neutral browse-style cards so the dominant
-   next action is obvious at a glance. */
-.card.card-cta {
-  background: color-mix(in srgb, var(--accent) 7%, var(--surface));
-  border-color: color-mix(in srgb, var(--accent) 30%, var(--border));
-}
-.card.card-cta:hover { border-color: var(--accent); }
 
 /* ---------- Adventure detail page ---------- */
 /* Hero strip: cover (left), title + meta + pills (mid), CTA stack
@@ -708,12 +688,11 @@ tr.row-stuck {
 }
 
 .grid { display: grid; gap: 1rem; }
-.grid.cols-3 { grid-template-columns: repeat(3, minmax(0,1fr)); }
 .grid.cols-2 { grid-template-columns: repeat(2, minmax(0,1fr)); }
 /* stats are small enough to stay side-by-side even on very narrow phones */
 .grid.stats { grid-template-columns: repeat(3, minmax(0,1fr)); gap: 1rem; }
 @media (max-width: 820px) {
-  .grid.cols-3, .grid.cols-2 { grid-template-columns: 1fr; }
+  .grid.cols-2 { grid-template-columns: 1fr; }
 }
 
 /* Race-control side-by-side panels (leaderboard + activity feed). The
@@ -930,7 +909,6 @@ textarea { min-height: 80px; resize: vertical; font-family: ui-monospace, monosp
   position: relative;
 }
 .modal.wide { max-width: 560px; }
-.modal.xwide { max-width: 720px; }
 .modal h2 { margin-top: 0; padding-right: 2rem; }
 .modal-close {
   position: absolute;
@@ -1159,21 +1137,6 @@ textarea { min-height: 80px; resize: vertical; font-family: ui-monospace, monosp
   font-size: 1.05rem; font-weight: 700;
   color: var(--accent-secondary);
   margin: 0 0 .5rem;
-}
-.puzzle-editor textarea.pe-prompt {
-  /* Matches play.html's .prompt. */
-  font-size: 1.1rem; line-height: 1.55;
-  white-space: pre-wrap; color: var(--ink);
-}
-.puzzle-editor textarea.pe-hint {
-  color: var(--muted);
-}
-.puzzle-editor .pe-hint-row {
-  display: flex; gap: .35rem; align-items: flex-start; margin-top: .5rem;
-}
-.puzzle-editor .pe-hint-row .tag {
-  color: var(--muted); font-weight: 600;
-  padding: .35rem 0; flex-shrink: 0;
 }
 /* Image strip — shared between the puzzle prompt's images block
    and the per-hint images block. Originally scoped to
@@ -1506,25 +1469,6 @@ a.split-btn-item { text-decoration: none; }
   cursor: ew-resize;
 }
 
-/* Floating action button for the Puzzles view. Sits above the content
-   in the bottom-right corner so a phone-in-hand admin can tap it
-   without scrolling. */
-.fab {
-  position: fixed;
-  right: calc(1rem + env(safe-area-inset-right));
-  bottom: calc(1rem + env(safe-area-inset-bottom));
-  width: 56px; height: 56px;
-  border-radius: 50%;
-  background: var(--accent); color: var(--accent-fg);
-  border: none; cursor: pointer;
-  box-shadow: 0 8px 24px rgba(0,0,0,.25), 0 2px 8px rgba(0,0,0,.15);
-  display: grid; place-items: center;
-  z-index: 500;
-}
-.fab svg { width: 24px; height: 24px; }
-.fab:hover { background: var(--accent-hover); }
-.fab:disabled { opacity: .6; cursor: wait; }
-
 /* Puzzle timeline: numbered pills at the top of the editor modal so an
    arranger can jump between puzzles without closing the dialog. The
    trailing "+" pill creates a new puzzle. */
@@ -1853,55 +1797,6 @@ a.split-btn-item { text-decoration: none; }
   word-break: break-all;
 }
 
-/* QR-scanner modal — same affordance as the player UI's scanner in
-   play.html (the styles are intentionally identical). Used in the
-   puzzle editor for "Test scan" so an arranger can verify a printed
-   QR resolves to a string in their accept list before laminating it.
-*/
-.qr-modal {
-  position: fixed; inset: 0; z-index: 100;
-  background: #000;
-  display: flex; flex-direction: column;
-  align-items: stretch; justify-content: center;
-}
-.qr-modal video { width: 100%; height: 100%; object-fit: cover; }
-.qr-modal .qr-frame {
-  position: absolute; inset: 0;
-  display: flex; align-items: center; justify-content: center;
-  pointer-events: none;
-}
-.qr-modal .qr-frame::before {
-  content: '';
-  width: min(70vmin, 320px); height: min(70vmin, 320px);
-  border: 3px solid rgba(255,255,255,.85);
-  border-radius: 16px;
-  box-shadow: 0 0 0 9999px rgba(0,0,0,.45);
-}
-.qr-modal .qr-status {
-  position: absolute; left: 0; right: 0; top: calc(env(safe-area-inset-top) + 1rem);
-  text-align: center; color: #fff;
-  font-weight: 600; text-shadow: 0 2px 8px rgba(0,0,0,.6);
-  padding: 0 1rem;
-}
-.qr-modal .qr-cancel {
-  position: absolute; left: 50%; transform: translateX(-50%);
-  bottom: calc(env(safe-area-inset-bottom) + 1.25rem);
-  padding: .75rem 1.5rem;
-  background: rgba(255,255,255,.95); color: #111;
-  border: 0; border-radius: 999px;
-  font-weight: 700; cursor: pointer;
-}
-.qr-modal .qr-cancel:hover { background: #fff; }
-
-/* Dragging feedback: the pill being dragged dims, and the drop target
-   grows a coloured edge on whichever side the cursor is closer to so
-   arrangers see the exact insertion point (same affordance as Slides). */
-.pt-pill[draggable] { cursor: grab; }
-.pt-pill[draggable]:active { cursor: grabbing; }
-.pt-pill.drag-ghost { opacity: .3; }
-.pt-pill.drop-before { box-shadow: inset 3px 0 0 0 var(--accent); }
-.pt-pill.drop-after  { box-shadow: inset -3px 0 0 0 var(--accent); }
-
 /* Puzzle list reorder. Each card on the adventure detail page is the
    drag source; the grip icon is the visual affordance. The reorder
    is "live": as the cursor crosses a sibling's midpoint we splice
@@ -2031,14 +1926,6 @@ a.split-btn-item { text-decoration: none; }
 }
 .chip.selectable.taken:hover { border-color: var(--border-soft); }
 
-.inline-form {
-  margin-top: .6rem; padding: .85rem;
-  background: var(--surface-2); border: 1px solid var(--border-soft);
-  border-radius: var(--radius-sm);
-}
-.inline-form .row > input { flex: 1 1 0; min-width: 0; margin: 0; }
-.inline-form .row { gap: .4rem; align-items: stretch; }
-
 /* ---------- Map ---------- */
 .map-host {
   width: 100%; height: 420px;
@@ -2058,11 +1945,6 @@ a.split-btn-item { text-decoration: none; }
 }
 .puzzle-marker.gated { background: var(--accent); }
 .puzzle-marker > span { transform: rotate(45deg); }
-.team-dot {
-  width: 14px; height: 14px; border-radius: 50%;
-  border: 2px solid #fff;
-  box-shadow: 0 0 0 1px rgba(0,0,0,.25);
-}
 /* Team map marker = circular avatar with a coloured ring (the --team-col
    custom prop comes from inline style). Falls back to initials on the
    team colour when there's no uploaded image. */
@@ -2087,11 +1969,6 @@ a.split-btn-item { text-decoration: none; }
 }
 .team-marker.has-img > img { position: relative; z-index: 1; }
 .team-marker.no-img { /* initials variant keeps the background coloured */ }
-.map-legend {
-  display: flex; flex-wrap: wrap; gap: .75rem;
-  margin-top: .75rem; font-size: .8rem;
-}
-.map-legend .sw { display: inline-block; width: 14px; height: 14px; border-radius: 3px; vertical-align: middle; margin-right: .35rem; }
 
 /* ---------- Event feed ---------- */
 .feed { list-style: none; padding: 0; margin: 0; max-height: 380px; overflow-y: auto; }
@@ -2470,6 +2347,15 @@ function csrfToken() {
   const m = document.cookie.match(/(?:^|;\s*)zv_csrf=([^;]+)/);
   return m ? decodeURIComponent(m[1]) : '';
 }
+// postForm sends a multipart upload. api() can't carry FormData (it
+// forces a JSON content type and parses the body), so uploads return
+// the raw Response and each caller reads it as it needs.
+function postForm(path, fd) {
+  return fetch(path, {
+    method: 'POST', body: fd, credentials: 'same-origin',
+    headers: { 'X-CSRF-Token': csrfToken() },
+  });
+}
 async function api(path, opts = {}) {
   const headers = { ...(opts.body ? { 'Content-Type': 'application/json' } : {}), ...(opts.headers || {}) };
   const method = (opts.method || 'GET').toUpperCase();
@@ -2502,6 +2388,12 @@ async function api(path, opts = {}) {
   const ra = res.headers.get('Retry-After');
   const retryAfter = ra ? parseInt(ra, 10) || 0 : 0;
   return { status: res.status, ok: res.ok, body, retryAfter };
+}
+
+// apiError is the user-facing message for a failed api() result:
+// the server's (already translated) error, else the HTTP status.
+function apiError(r) {
+  return r.body?.error || t('error {{status}}', { status: r.status });
 }
 
 // downscaleImage caps an uploaded image's longer side at maxDim and
@@ -2556,6 +2448,40 @@ async function downscaleImage(file, maxDim = 1600, quality = 0.85) {
   } finally {
     bitmap.close?.();
   }
+}
+
+// uploadMedia posts an audio file verbatim to base + '/audio', or
+// anything else (downscaled) to base + '/images'. Toasts the error
+// and resolves null on failure, else { isAudio, item } with the
+// server's JSON for the new row.
+async function uploadMedia(base, picked) {
+  const isAudio = (picked.type || '').startsWith('audio/');
+  const fd = new FormData();
+  fd.append('file', isAudio ? picked : await downscaleImage(picked));
+  const res = await postForm(base + (isAudio ? '/audio' : '/images'), fd);
+  if (!res.ok) {
+    const errTxt = await res.text();
+    toastErr(errTxt || t('error {{status}}', { status: res.status }));
+    return null;
+  }
+  return { isAudio, item: await res.json() };
+}
+
+// copyFromInput copies text via the async clipboard API, falling back
+// to selecting the read-only input that shows it and execCommand.
+async function copyFromInput(text, input, okMsg) {
+  try { await navigator.clipboard.writeText(text); }
+  catch { input.select(); document.execCommand('copy'); }
+  toastOk(okMsg);
+}
+
+// downloadBlob hands blob to the browser as a file download.
+function downloadBlob(blob, name) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = name;
+  document.body.append(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
 }
 
 /* ========== DOM helper ========== */
@@ -2758,7 +2684,7 @@ function currentTheme() {
 function toggleTheme() {
   const next = currentTheme() === 'dark' ? 'light' : 'dark';
   document.documentElement.setAttribute('data-theme', next);
-  localStorage.setItem('zv-theme', next);
+  try { localStorage.setItem('zv-theme', next); } catch { /* storage blocked */ }
   render();
 }
 
@@ -2787,36 +2713,6 @@ function toast(msg, kind = '') {
 const toastOk = (m) => toast(m, 'ok');
 const toastErr = (m) => toast(m, 'err');
 
-/* ========== QR-scanner helpers ==========
- *
- * Used by the puzzle editor so an arranger can test-scan a printed
- * QR before laminating it. Same code shape as play.html's scanner.
- * Kept inline because there are only two callers; if a third
- * appears extract to /assets/qr-scanner.js.
- *
- * Decode path mirrors play.html: native BarcodeDetector when the
- * browser exposes it, vendored jsQR (~130 KB) lazily loaded as a
- * fallback for Firefox / older Safari.
- */
-function qrSupported() {
-  return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
-}
-
-let jsqrLoading = null;
-function loadJsqr() {
-  if (typeof window.jsQR === 'function') return Promise.resolve(window.jsQR);
-  if (jsqrLoading) return jsqrLoading;
-  jsqrLoading = new Promise((resolve, reject) => {
-    const s = document.createElement('script');
-    s.src = '/assets/jsqr.js';
-    s.async = true;
-    s.onload = () => resolve(window.jsQR);
-    s.onerror = () => { jsqrLoading = null; reject(new Error('jsqr load failed')); };
-    document.head.append(s);
-  });
-  return jsqrLoading;
-}
-
 // Lazy-loaded Leaflet — most arranger views never touch a map, so the
 // 150 KB JS + 14 KB CSS are injected only when the first map function
 // runs. Both assets are self-hosted under /assets/leaflet/, so a
@@ -2839,91 +2735,6 @@ function ensureLeaflet() {
     document.head.append(s);
   });
   return leafletLoading;
-}
-
-function openQrScanner() {
-  return new Promise((resolve) => {
-    const modal = document.createElement('div');
-    modal.className = 'qr-modal';
-    const video = document.createElement('video');
-    video.setAttribute('playsinline', '');
-    video.muted = true;
-    video.autoplay = true;
-    const frame = document.createElement('div');
-    frame.className = 'qr-frame';
-    const status = document.createElement('p');
-    status.className = 'qr-status';
-    status.textContent = t('Point the camera at a QR code');
-    const cancel = document.createElement('button');
-    cancel.type = 'button';
-    cancel.className = 'qr-cancel';
-    cancel.textContent = t('Cancel');
-    modal.append(video, frame, status, cancel);
-    document.body.append(modal);
-
-    let stream = null;
-    let stopped = false;
-    const cleanup = (value) => {
-      if (stopped) return;
-      stopped = true;
-      if (stream) stream.getTracks().forEach((tk) => tk.stop());
-      modal.remove();
-      resolve(value);
-    };
-    cancel.addEventListener('click', () => cleanup(null));
-    const onKey = (e) => { if (e.key === 'Escape') cleanup(null); };
-    document.addEventListener('keydown', onKey);
-    modal.addEventListener('remove', () => document.removeEventListener('keydown', onKey));
-
-    (async () => {
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { ideal: 'environment' } },
-        });
-        if (stopped) { stream.getTracks().forEach((tk) => tk.stop()); return; }
-        video.srcObject = stream;
-        await video.play().catch(() => { /* autoplay rejection is benign */ });
-      } catch {
-        status.textContent = t('Camera permission denied.');
-        return;
-      }
-      const native = (typeof window.BarcodeDetector === 'function')
-        ? new BarcodeDetector({ formats: ['qr_code'] }) : null;
-      let jsqr = null;
-      if (!native) {
-        try { jsqr = await loadJsqr(); }
-        catch { status.textContent = t('Camera unavailable.'); return; }
-      }
-      const canvas = jsqr ? document.createElement('canvas') : null;
-      const ctx = canvas ? canvas.getContext('2d', { willReadFrequently: true }) : null;
-      const tick = async () => {
-        if (stopped) return;
-        if (video.readyState >= 2) {
-          try {
-            if (native) {
-              const codes = await native.detect(video);
-              if (codes && codes.length > 0) {
-                cleanup(codes[0].rawValue || '');
-                return;
-              }
-            } else if (jsqr && video.videoWidth > 0) {
-              canvas.width = video.videoWidth;
-              canvas.height = video.videoHeight;
-              ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-              const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
-              const code = jsqr(img.data, img.width, img.height, { inversionAttempts: 'dontInvert' });
-              if (code && code.data) {
-                cleanup(code.data);
-                return;
-              }
-            }
-          } catch { /* per-frame failures are benign */ }
-        }
-        requestAnimationFrame(tick);
-      };
-      requestAnimationFrame(tick);
-    })();
-  });
 }
 
 /* ========== Password-confirm prompt ==========
@@ -4587,7 +4398,7 @@ async function openCreateOwnOrg() {
       });
       if (r.status !== 201) {
         status.className = 'err';
-        status.textContent = r.body?.error || t('error {{status}}', { status: r.status });
+        status.textContent = apiError(r);
         return;
       }
       close(true);
@@ -5416,21 +5227,6 @@ function computeAdventureFacts(pages) {
   return { geo, audioPages, imagePages, mediaLabel, hintsLabel, playtime };
 }
 
-// haversineKm returns great-circle distance in km between two
-// lat/lng pairs. Used here to characterise the geographic span of
-// gated puzzles; mathx-quality precision isn't needed (we round to
-// fairly coarse buckets in the Catalog copy).
-function haversineKm(aLat, aLng, bLat, bLng) {
-  if (!isFinite(aLat) || !isFinite(bLat)) return 0;
-  const R = 6371;
-  const toRad = (d) => d * Math.PI / 180;
-  const dLat = toRad(bLat - aLat);
-  const dLng = toRad(bLng - aLng);
-  const x = Math.sin(dLat / 2) ** 2
-    + Math.cos(toRad(aLat)) * Math.cos(toRad(bLat)) * Math.sin(dLng / 2) ** 2;
-  return 2 * R * Math.asin(Math.sqrt(x));
-}
-
 // viewPurchases is the post-checkout landing + history view. Simulated
 // checkout redirects here after a successful /confirm; the user sees
 // their new assignment alongside any previous purchases.
@@ -5606,7 +5402,7 @@ function renderPurchaseActions(p) {
         renderRoute();
       } else {
         btn.disabled = false;
-        toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+        toastErr(apiError(r));
       }
     });
     out.push(btn);
@@ -5627,7 +5423,7 @@ function renderPurchaseActions(p) {
         renderRoute();
       } else {
         btn.disabled = false;
-        toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+        toastErr(apiError(r));
       }
     });
     out.push(btn);
@@ -5655,7 +5451,7 @@ function renderPurchaseActions(p) {
       const r = await api('/api/admin/purchases/' + p.id + '/refund', { method: 'POST' });
       if (r.status !== 202) {
         btn.disabled = false;
-        toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+        toastErr(apiError(r));
         return;
       }
       toastOk(t('Refund initiated. Confirming with Stripe…'));
@@ -5772,7 +5568,7 @@ async function openPurchaseModal(adv) {
       method: 'POST', body: JSON.stringify(body),
     });
     if (r.status !== 201) {
-      toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+      toastErr(apiError(r));
       return;
     }
     if (r.body.state === 'paid' && r.body.assignment_id) {
@@ -5862,7 +5658,7 @@ async function openTopUpModal(event, adventure) {
       method: 'POST', body: JSON.stringify(body),
     });
     if (r.status !== 201) {
-      toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+      toastErr(apiError(r));
       return;
     }
     if (r.body.state === 'paid') {
@@ -5995,7 +5791,7 @@ async function openAdminGrantModal(org, event) {
       });
       submitBtn.disabled = false;
       if (r.status !== 201) {
-        toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+        toastErr(apiError(r));
         return;
       }
       toastOk(amount > 0
@@ -6300,6 +6096,7 @@ function statBlock(value, label) {
 // stat so authors can see the rough geographic spread of their
 // puzzles without doing the math themselves.
 function haversineKm(lat1, lng1, lat2, lng2) {
+  if (!isFinite(lat1) || !isFinite(lat2)) return 0;
   const R = 6371; // km
   const rad = Math.PI / 180;
   const dLat = (lat2 - lat1) * rad;
@@ -6567,10 +6364,7 @@ function openFullscreenMap(opts) {
     });
     function buildMap() {
     map = L.map(mapEl).setView([58.1820, 13.9554], 13);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '© OpenStreetMap contributors',
-      maxZoom: 19,
-    }).addTo(map);
+    addOSMTiles(map);
     const fillColour = accent ||
       getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() ||
       '#ad1357';
@@ -6584,7 +6378,7 @@ function openFullscreenMap(opts) {
         fillColor: pin.gated ? fillColour : 'transparent',
         fillOpacity: pin.gated ? 1 : 0,
       }).addTo(map);
-      if (pin.label) m.bindTooltip(pin.label);
+      if (pin.label) m.bindTooltip(esc(pin.label));
       if (pin.radiusM > 0) {
         L.circle([pin.lat, pin.lng], {
           radius: pin.radiusM,
@@ -6638,6 +6432,13 @@ function openFullscreenMap(opts) {
   });
 }
 
+function addOSMTiles(map) {
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© OpenStreetMap contributors',
+    maxZoom: 19,
+  }).addTo(map);
+}
+
 // mountAdventureMap drops a Leaflet preview showing every puzzle
 // pin. Gated puzzles get the accent fill (matches the run-detail
 // legend); regular puzzles get a hollow ring. Auto-fits bounds
@@ -6651,10 +6452,7 @@ function mountAdventureMap(host, pages, colors) {
 }
 function buildAdventureMap(host, pages, colors) {
   const map = L.map(host, { scrollWheelZoom: false }).setView([58.1820, 13.9554], 13);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '© OpenStreetMap contributors',
-    maxZoom: 19,
-  }).addTo(map);
+  addOSMTiles(map);
   const accent = (colors && colors.accent) ||
     getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() ||
     '#ad1357';
@@ -6669,7 +6467,7 @@ function buildAdventureMap(host, pages, colors) {
       fillColor: p.gated ? accent : 'transparent',
       fillOpacity: p.gated ? 1 : 0,
     });
-    m.bindTooltip(`${i + 1}. ` + (p.title || t('(untitled)')));
+    m.bindTooltip(esc(`${i + 1}. ` + (p.title || t('(untitled)'))));
     m.addTo(map);
     pts.push([p.location.lat, p.location.lng]);
   });
@@ -6955,7 +6753,7 @@ async function scheduleRun(source) {
   else if (slugForCreate) req.adventure_slug = slugForCreate;
   if (result.scheduledAt) req.scheduled_at = result.scheduledAt;
   const r = await api('/api/admin/events', { method: 'POST', body: JSON.stringify(req) });
-  if (r.status !== 201) { toastErr(r.body?.error || t('error {{status}}', { status: r.status })); return; }
+  if (r.status !== 201) { toastErr(apiError(r)); return; }
   const runID = r.body.id;
 
   // ---- Optional bulk team creation ----
@@ -6999,7 +6797,7 @@ async function openRenameEvent(event) {
         method: 'PATCH', body: JSON.stringify({ name: input.value.trim() }),
       });
       if (r.status === 204) { toastOk(t('Renamed')); close(true); renderRoute(); }
-      else toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+      else toastErr(apiError(r));
     });
     body.append(form);
   });
@@ -7330,12 +7128,7 @@ async function newQuest() {
   if (result.cover_file) {
     const fd = new FormData();
     fd.append('file', result.cover_file);
-    const cv = await fetch('/api/admin/events/' + eventID + '/cover', {
-      method: 'POST',
-      credentials: 'same-origin',
-      headers: { 'X-CSRF-Token': csrfToken() },
-      body: fd,
-    });
+    const cv = await postForm('/api/admin/events/' + eventID + '/cover', fd);
     if (!cv.ok) {
       toastErr(t('Self-guided adventure created, but the cover upload failed'));
       // Continue to start — cover isn't required.
@@ -7588,11 +7381,7 @@ function renderTeamLinksPanel(run, teams) {
     // sharing surface the OS gives them next.
     try {
       const blob = new Blob([csv], { type: 'text/csv' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url; a.download = 'team-links.csv';
-      document.body.append(a); a.click(); a.remove();
-      URL.revokeObjectURL(url);
+      downloadBlob(blob, 'team-links.csv');
       toastOk(t('Downloaded team-links.csv — open it in your sharing app.'));
     } catch {
       toastErr(t('Clipboard blocked — select and copy by hand'));
@@ -7653,8 +7442,7 @@ function buildTeamLinkRow(tm, i, teamURL, memberURL) {
     on: { click: (e) => e.target.select() },
   });
   const copyBtn = iconBtn('copy', t('Copy captain link'), async () => {
-    try { await navigator.clipboard.writeText(url); toastOk(t('Link copied')); }
-    catch { urlInput.select(); document.execCommand('copy'); toastOk(t('Link copied')); }
+    await copyFromInput(url, urlInput, t('Link copied'));
   });
   const members = tm.members || [];
   // Persist per-team expansion across WS re-renders. Default collapsed;
@@ -7669,8 +7457,7 @@ function buildTeamLinkRow(tm, i, teamURL, memberURL) {
         on: { click: (e) => e.target.select() },
       });
       const mcopy = iconBtn('copy', t('Copy link'), async () => {
-        try { await navigator.clipboard.writeText(murl); toastOk(t('Link copied')); }
-        catch { minput.select(); document.execCommand('copy'); toastOk(t('Link copied')); }
+        await copyFromInput(murl, minput, t('Link copied'));
       });
       // Magic-link expiry hint. Red "expired" when past, muted
       // "expires in Nd" otherwise. Hidden (no badge) when the slot
@@ -7752,7 +7539,7 @@ function renderShareBar(event) {
       toastOk(mapToggle.checked ? t('Map enabled on live view') : t('Map hidden'));
     } else {
       mapToggle.checked = !mapToggle.checked;
-      toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+      toastErr(apiError(r));
     }
   });
   const mapLabel = h('label', {
@@ -7870,7 +7657,7 @@ function renderStoreBar(event) {
       }),
     });
     if (r.status === 204) toastOk(t('Saved'));
-    else toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+    else toastErr(apiError(r));
   });
 
   const storeURL = `${location.origin}/store`;
@@ -7900,10 +7687,7 @@ function renderStoreBar(event) {
     if (!f) return;
     const fd = new FormData();
     fd.append('file', f);
-    const r = await fetch(`/api/admin/events/${event.id}/cover`, {
-      method: 'POST', body: fd, credentials: 'same-origin',
-      headers: { 'X-CSRF-Token': csrfToken() },
-    });
+    const r = await postForm(`/api/admin/events/${event.id}/cover`, fd);
     if (r.ok) {
       toastOk(t('Cover updated'));
       setCoverBg(true, Date.now());
@@ -7923,7 +7707,7 @@ function renderStoreBar(event) {
       uploadBtn.textContent = t('Upload cover');
       clearBtn.style.display = 'none';
     } else {
-      toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+      toastErr(apiError(r));
     }
   });
 
@@ -8024,7 +7808,7 @@ function renderEventQuickStats(event, teams) {
   // duration. Server emits completed_at / cancelled_at on the DTO;
   // we pick the earlier of the two non-empty timestamps as the end.
   if (event.started_at) {
-    const parseTS = (ts) => Date.parse(ts.includes('T') ? ts : ts.replace(' ', 'T') + 'Z');
+    const parseTS = (ts) => Date.parse(serverISO(ts));
     const startMs = parseTS(event.started_at);
     if (Number.isFinite(startMs)) {
       let endMs = Date.now();
@@ -8037,8 +7821,7 @@ function renderEventQuickStats(event, teams) {
       tiles.push(statBlock(fmtElapsedShort(elapsedSec), t('elapsed')));
     }
   } else if (event.scheduled_at) {
-    const sMs = Date.parse(event.scheduled_at.includes('T')
-      ? event.scheduled_at : event.scheduled_at.replace(' ', 'T') + 'Z');
+    const sMs = Date.parse(serverISO(event.scheduled_at));
     if (Number.isFinite(sMs)) {
       const remaining = Math.max(0, Math.floor((sMs - Date.now()) / 1000));
       tiles.push(statBlock(remaining > 0 ? fmtElapsedShort(remaining) : t('now'),
@@ -8369,7 +8152,7 @@ async function viewRunDetail(view, runID) {
   const teamsRender = () => {
     const filtered = teams.filter((tm) => {
       const lastEv = lastEventByTeam.get(tm.id);
-      const lastMs = lastEv ? Date.parse(lastEv.includes('T') ? lastEv : lastEv.replace(' ', 'T') + 'Z') : null;
+      const lastMs = lastEv ? Date.parse(serverISO(lastEv)) : null;
       // Withdrawn teams are intentionally inactive — they shouldn't
       // raise the "stuck?" flag or fall under the "unstarted" filter
       // (the race director already knows they're out).
@@ -8413,7 +8196,7 @@ async function viewRunDetail(view, runID) {
         const i = teamIndex.get(tm.id) ?? 0;
         const page = adventure?.pages?.[tm.page_index];
         const lastEv = lastEventByTeam.get(tm.id);
-        const lastMs = lastEv ? Date.parse(lastEv.includes('T') ? lastEv : lastEv.replace(' ', 'T') + 'Z') : null;
+        const lastMs = lastEv ? Date.parse(serverISO(lastEv)) : null;
         const stuck = event.state === 'running' && !tm.completed_at && lastMs != null && (Date.now() - lastMs) > STUCK_MS;
         // Per-team claimed-slot count — surfaces "3/4 claimed" when
         // not every player has tapped their magic link yet. Hidden
@@ -8636,7 +8419,7 @@ async function viewEventControl(view, runID) {
 
   // Elapsed clamps to completed_at / cancelled_at when set so the
   // counter freezes on a finished event.
-  const parseTS = (ts) => Date.parse(ts.includes('T') ? ts : ts.replace(' ', 'T') + 'Z');
+  const parseTS = (ts) => Date.parse(serverISO(ts));
   const elapsedSeconds = () => {
     if (!event.started_at) return 0;
     const startMs = parseTS(event.started_at);
@@ -8945,10 +8728,7 @@ function initRunMap(host, adventure, teams, tracks) {
 
 function buildRunMap(host, adventure, teams, tracks) {
   const map = L.map(host, { scrollWheelZoom: false }).setView([58.1820, 13.9554], 14);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '© OpenStreetMap contributors',
-    maxZoom: 19,
-  }).addTo(map);
+  addOSMTiles(map);
 
   const bounds = L.latLngBounds([]);
 
@@ -9085,9 +8865,16 @@ function renderEvent(e, teams) {
 // and the raw value when it can't be parsed, so we never show "Invalid Date".
 // hour12:false forces a 24h clock regardless of locale; AM/PM is never the
 // right answer in an arranger's ops UI (puzzle queues, sched/start times).
+// serverISO normalises a server timestamp: SQLite's
+// "YYYY-MM-DD HH:MM:SS" (UTC, no zone) becomes ISO with a Z suffix;
+// values that already carry a 'T' pass through unchanged.
+function serverISO(s) {
+  return s.includes('T') ? s : s.replace(' ', 'T') + 'Z';
+}
+
 function fmtLocal(s, opts) {
   if (!s) return '—';
-  const iso = s.includes('T') ? s : s.replace(' ', 'T') + 'Z';
+  const iso = serverISO(s);
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return s;
   return d.toLocaleString(undefined, opts || { dateStyle: 'medium', timeStyle: 'short', hour12: false });
@@ -9097,7 +8884,7 @@ function formatEventTime(s) {
   if (!s) return '';
   // SQLite datetime('now') returns "YYYY-MM-DD HH:MM:SS" in UTC. Let users
   // see something friendlier; locale defaults are fine.
-  const d = new Date(s.includes('T') ? s : s.replace(' ', 'T') + 'Z');
+  const d = new Date(serverISO(s));
   if (Number.isNaN(d.getTime())) return s;
   const now = Date.now();
   const diff = (now - d.getTime()) / 1000;
@@ -9105,10 +8892,6 @@ function formatEventTime(s) {
   if (diff < 3600) return t('{{n}}m ago', { n: Math.round(diff / 60) });
   if (diff < 86400) return t('{{n}}h ago', { n: Math.round(diff / 3600) });
   return d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short', hour12: false });
-}
-
-function btn(label, cls, fn) {
-  return h('button', { class: 'btn ' + (cls || ''), on: { click: fn } }, label);
 }
 
 async function transition(runID, action) {
@@ -9126,7 +8909,7 @@ async function transition(runID, action) {
     toastOk(TRANSITION_OK[action] || t('Done'));
     renderRoute();
   } else {
-    toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+    toastErr(apiError(r));
   }
 }
 
@@ -9211,7 +8994,7 @@ async function sendEventInvitations(event, teamsWithEmailCount) {
     body: JSON.stringify({}),
   });
   if (!r.ok) {
-    toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+    toastErr(apiError(r));
     return;
   }
   const sent = r.body?.sent || 0;
@@ -9268,7 +9051,7 @@ async function resendTeamInvitation(team, btn) {
     toastOk(t('Invitation re-sent to {{email}}', { email: team.email }));
     return;
   }
-  toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+  toastErr(apiError(r));
 }
 
 // cancelURL defaults to the arranger's endpoint; the operator cancels
@@ -9285,7 +9068,7 @@ async function confirmCancel(event, cancelURL = `/api/admin/events/${event.id}/c
     headers: { 'X-Confirm-Password': pw },
   });
   if (r.status === 204) { toastOk(t('Event cancelled')); renderRoute(); }
-  else toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+  else toastErr(apiError(r));
 }
 
 async function openEditSchedule(event) {
@@ -9294,7 +9077,7 @@ async function openEditSchedule(event) {
   // convert without a chunky date library.
   let prefill = '';
   if (event.scheduled_at) {
-    const iso = event.scheduled_at.includes('T') ? event.scheduled_at : event.scheduled_at.replace(' ', 'T') + 'Z';
+    const iso = serverISO(event.scheduled_at);
     const d = new Date(iso);
     if (!Number.isNaN(d.getTime())) {
       const pad = (n) => String(n).padStart(2, '0');
@@ -9340,7 +9123,7 @@ async function patchSchedule(runID, iso) {
     toastOk(iso ? t('Schedule updated') : t('Auto-start cleared'));
     renderRoute();
   } else {
-    toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+    toastErr(apiError(r));
   }
 }
 
@@ -9413,7 +9196,7 @@ async function skipPuzzleNow(team, close) {
     close(true);
     renderRoute();
   } else {
-    toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+    toastErr(apiError(r));
   }
 }
 
@@ -9435,7 +9218,7 @@ async function skipPuzzle(team, close) {
     close(true);
     renderRoute();
   } else {
-    toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+    toastErr(apiError(r));
   }
 }
 
@@ -9455,7 +9238,7 @@ async function confirmWithdrawTeam(eventID, team) {
   if (!ok) return;
   const r = await api(`/api/admin/teams/${team.id}/withdraw`, { method: 'POST' });
   if (r.status === 200) { toastOk(t('Team marked as withdrawn')); renderRoute(); }
-  else toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+  else toastErr(apiError(r));
 }
 
 // unwithdrawTeam undoes a withdraw — used when the team rejoined or the
@@ -9464,7 +9247,7 @@ async function confirmWithdrawTeam(eventID, team) {
 async function unwithdrawTeam(eventID, team) {
   const r = await api(`/api/admin/teams/${team.id}/unwithdraw`, { method: 'POST' });
   if (r.status === 200) { toastOk(t('Team is active again')); renderRoute(); }
-  else toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+  else toastErr(apiError(r));
 }
 
 async function confirmDeleteTeam(team) {
@@ -9476,7 +9259,7 @@ async function confirmDeleteTeam(team) {
     headers: { 'X-Confirm-Password': pw },
   });
   if (r.status === 204) { toastOk(t('Team deleted')); renderRoute(); }
-  else toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+  else toastErr(apiError(r));
 }
 
 // openTeamModal handles both new-team and edit-team. For a new team the
@@ -9701,10 +9484,7 @@ async function openNewTeamModal(runID) {
       importStatus.className = 'muted';
       const fd = new FormData();
       fd.append('file', importFile.files[0]);
-      const res = await fetch(`/api/admin/events/${runID}/teams/import`, {
-        method: 'POST', body: fd, credentials: 'same-origin',
-        headers: { 'X-CSRF-Token': csrfToken() },
-      });
+      const res = await postForm(`/api/admin/events/${runID}/teams/import`, fd);
       if (!res.ok) {
         const errTxt = (await res.text()).trim();
         importStatus.textContent = errTxt || t('error {{status}}', { status: res.status });
@@ -9775,7 +9555,7 @@ async function openNewTeamModal(runID) {
             body: JSON.stringify({ teams: importParsed.teams }),
           });
           if (rr.status !== 200) {
-            toastErr(rr.body?.error || t('error {{status}}', { status: rr.status }));
+            toastErr(apiError(rr));
             return;
           }
           const created = rr.body?.created || 0;
@@ -9803,7 +9583,7 @@ async function openNewTeamModal(runID) {
             body: JSON.stringify({ teams }),
           });
           if (rr.status !== 200) {
-            toastErr(rr.body?.error || t('error {{status}}', { status: rr.status }));
+            toastErr(apiError(rr));
             return;
           }
           const created = rr.body?.created || 0;
@@ -9845,7 +9625,7 @@ async function openNewTeamModal(runID) {
             method: 'POST',
             body: JSON.stringify({ name: tName, member_names: names, email: tEmail }),
           });
-          if (rr.status !== 201) { toastErr(rr.body?.error || t('error {{status}}', { status: rr.status })); return; }
+          if (rr.status !== 201) { toastErr(apiError(rr)); return; }
           toastOk(t('Team created'));
         } else {
           const T = Math.max(1, parseInt(teamCount.value, 10) || 0);
@@ -9874,7 +9654,7 @@ async function openNewTeamModal(runID) {
               existingNames.add(name);
             } else {
               failed++;
-              lastError = rr.body?.error || t('error {{status}}', { status: rr.status });
+              lastError = apiError(rr);
               // If the server rejected once for a non-collision reason
               // (e.g. run full, permission), stop hammering it.
               if (!/already used/i.test(lastError)) break;
@@ -9946,7 +9726,7 @@ async function openEditTeamModal(runID, existing, event) {
         method: 'PATCH', body: JSON.stringify(body),
       });
       if (rr.status === 204) { toastOk(t('Saved')); close(true); renderRoute(); }
-      else toastErr(rr.body?.error || t('error {{status}}', { status: rr.status }));
+      else toastErr(apiError(rr));
     });
 
     const membersWrap = h('div', {});
@@ -9986,7 +9766,7 @@ async function openEditTeamModal(runID, existing, event) {
         toastOk(t('Added {{name}}', { name: rr.body.name }));
         await reload();
       } else {
-        toastErr(rr.body?.error || t('error {{status}}', { status: rr.status }));
+        toastErr(apiError(rr));
       }
     });
     newName.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addBtn.click(); } });
@@ -10001,8 +9781,7 @@ async function openEditTeamModal(runID, existing, event) {
       on: { click: (e) => e.target.select() },
     });
     const copyTeamBtn = iconBtn('copy', t('Copy team share link'), async () => {
-      try { await navigator.clipboard.writeText(teamURL); toastOk(t('Team link copied')); }
-      catch { teamURLInput.select(); document.execCommand('copy'); toastOk(t('Team link copied')); }
+      await copyFromInput(teamURL, teamURLInput, t('Team link copied'));
     });
     const openTeamBtn = iconBtn('eye', t('Open team page'), () => window.open(teamURL, '_blank', 'noopener'));
     const copyAllBtn = h('button', { class: 'btn small', type: 'button' },
@@ -10050,7 +9829,7 @@ async function openEditTeamModal(runID, existing, event) {
         redrawAvatar();
         renderRoute();
       } else {
-        toastErr(rr.body?.error || t('error {{status}}', { status: rr.status }));
+        toastErr(apiError(rr));
       }
     });
     fileInput.addEventListener('change', async () => {
@@ -10059,10 +9838,7 @@ async function openEditTeamModal(runID, existing, event) {
       const shrunk = await downscaleImage(file);
       const fd = new FormData();
       fd.append('file', shrunk);
-      const res = await fetch(`/api/admin/teams/${freshTeam.id}/avatar`, {
-        method: 'POST', body: fd, credentials: 'same-origin',
-        headers: { 'X-CSRF-Token': csrfToken() },
-      });
+      const res = await postForm(`/api/admin/teams/${freshTeam.id}/avatar`, fd);
       fileInput.value = '';
       if (res.ok) {
         const body = await res.json().catch(() => ({}));
@@ -10123,8 +9899,7 @@ function renderSlotRow(teamID, slot, reload, event) {
     on: { click: (e) => e.target.select() },
   });
   const copyBtn = iconBtn('copy', t('Copy link'), async () => {
-    try { await navigator.clipboard.writeText(url); toastOk(t('Link copied')); }
-    catch { urlInput.select(); document.execCommand('copy'); toastOk(t('Link copied')); }
+    await copyFromInput(url, urlInput, t('Link copied'));
   });
   // Mid-event guard: rotating or removing a slot kicks the player off
   // their current link with no second chance, so during a live event
@@ -10136,7 +9911,7 @@ function renderSlotRow(teamID, slot, reload, event) {
         if (liveEvent && !await inAppConfirm(t('Rotate {{slot}}\'s link mid-event? The current device will be signed out and need the new link to keep playing.', { slot: slot.name }), { danger: true })) return;
         const rr = await api(`/api/admin/teams/${teamID}/slots/${slot.id}/rotate`, { method: 'POST' });
         if (rr.status === 200) { toastOk(t('Link rotated')); reload(); }
-        else toastErr(rr.body?.error || t('error {{status}}', { status: rr.status }));
+        else toastErr(apiError(rr));
       })
     : null;
   const removeBtn = canDo(event, 'remove_slot')
@@ -10144,7 +9919,7 @@ function renderSlotRow(teamID, slot, reload, event) {
         if (liveEvent && !await inAppConfirm(t('Remove {{slot}} mid-event? Their link stops working immediately and any answers they\'ve already submitted stay with the team.', { slot: slot.name }), { danger: true })) return;
         const rr = await api(`/api/admin/teams/${teamID}/slots/${slot.id}`, { method: 'DELETE' });
         if (rr.status === 204) { toastOk(t('Removed')); reload(); }
-        else toastErr(rr.body?.error || t('error {{status}}', { status: rr.status }));
+        else toastErr(apiError(rr));
       }, { danger: true })
     : null;
   return h('div', { style: 'margin-bottom:.5rem' },
@@ -10155,42 +9930,6 @@ function renderSlotRow(teamID, slot, reload, event) {
       ? h('div', { class: 'muted', style: 'font-size:.75rem; margin-left:.5rem' },
           t('last login {{when}}', { when: fmtLocal(slot.last_login_at) }))
       : null);
-}
-
-/* ========== Players ========== */
-// Players are per-slot rows on a team now — there is no global Players
-// page. Kept only the password-reset modal since org-admin reset flows
-// (below) still use it.
-
-async function openResetPassword(user) {
-  await modal(t('Reset password for {{username}}', { username: user.username }), ({ body, close }) => {
-    const form = h('form', {},
-      h('label', { class: 'field' }, h('span', {}, t('New password')), h('input', { name: 'p', type: 'password', required: true })),
-      h('div', { class: 'row end' },
-        h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, t('Cancel')),
-        h('button', { class: 'btn primary', type: 'submit' }, t('Set password'))),
-    );
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const fd = new FormData(form);
-      const r = await api(`/api/admin/users/${user.id}/password`, { method: 'POST', body: JSON.stringify({ password: fd.get('p') }) });
-      if (r.status === 204) { toastOk(t('password reset')); close(true); }
-      else toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
-    });
-    body.append(form);
-  });
-}
-
-async function confirmDeleteUser(user) {
-  const pw = await promptPassword(t('Delete {{username}}?', { username: user.username }),
-    t('This permanently removes {{username}} and unlinks them from any teams. Enter your password to confirm.', { username: user.username }));
-  if (!pw) return;
-  const r = await api(`/api/admin/users/${user.id}`, {
-    method: 'DELETE',
-    headers: { 'X-Confirm-Password': pw },
-  });
-  if (r.status === 204) { toastOk(t('deleted')); renderRoute(); }
-  else toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
 }
 
 /* ========== Organizations (admin only) ==========
@@ -10390,7 +10129,7 @@ async function viewOrganizationDetail(view, orgID) {
         renderLogoThumb();
         toastOk(t('Logo removed'));
       } else {
-        toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+        toastErr(apiError(r));
       }
     } },
   }, t('Remove logo'));
@@ -10417,10 +10156,7 @@ async function viewOrganizationDetail(view, orgID) {
     const fd = new FormData();
     fd.append('file', f);
     try {
-      const r = await fetch(`/api/admin/organizations/${org.id}/logo`, {
-        method: 'POST', body: fd, credentials: 'same-origin',
-        headers: { 'X-CSRF-Token': csrfToken() },
-      });
+      const r = await postForm(`/api/admin/organizations/${org.id}/logo`, fd);
       if (!r.ok) {
         const txt = await r.text().catch(() => '');
         throw new Error(txt || ('HTTP ' + r.status));
@@ -10720,7 +10456,7 @@ async function openCreateOrg() {
         method: 'POST', body: JSON.stringify({ name: fd.get('n') }),
       });
       if (r.status === 201) { toastOk(t('Organization created')); close(true); renderRoute(); }
-      else toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+      else toastErr(apiError(r));
     });
     body.append(form);
   });
@@ -10741,7 +10477,7 @@ async function openRenameOrg(org) {
         method: 'PATCH', body: JSON.stringify({ name: fd.get('n') }),
       });
       if (r.status === 204) { toastOk(t('Renamed')); close(true); renderRoute(); }
-      else toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+      else toastErr(apiError(r));
     });
     body.append(form);
   });
@@ -10757,7 +10493,7 @@ async function toggleOrgTrusted(org) {
     toastOk(next ? t('Invoice billing enabled') : t('Invoice billing disabled'));
     renderRoute();
   } else {
-    toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+    toastErr(apiError(r));
   }
 }
 
@@ -10780,7 +10516,7 @@ async function toggleOrgPublisher(org) {
     toastOk(next ? t('Now the catalog publisher') : t('No longer the catalog publisher'));
     renderRoute();
   } else {
-    toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+    toastErr(apiError(r));
   }
 }
 
@@ -10810,7 +10546,7 @@ async function openCommissionForOrg(org, candidates) {
     toastOk(t('Shared'));
     renderRoute();
   } else {
-    toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+    toastErr(apiError(r));
   }
 }
 
@@ -10838,7 +10574,7 @@ async function confirmDeleteOrg(org) {
     method: 'DELETE', headers: { 'X-Confirm-Password': pw },
   });
   if (r.status === 204) { toastOk(t('Organization deleted')); renderRoute(); }
-  else toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+  else toastErr(apiError(r));
 }
 
 async function openAddOrgMember(org) {
@@ -11063,7 +10799,7 @@ async function openAddOrgMember(org) {
         body: JSON.stringify(payload),
       });
       if (r.status === 201) { toastOk(t('User added')); close(true); renderRoute(); }
-      else toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+      else toastErr(apiError(r));
     });
     body.append(form);
   });
@@ -11115,7 +10851,7 @@ async function openTransferOwnership(org) {
         await refreshMe();
         renderRoute();
       } else {
-        toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+        toastErr(apiError(r));
       }
     });
     body.append(form);
@@ -11152,7 +10888,7 @@ async function confirmRemoveOrgMember(org, member) {
     method: 'DELETE', headers: { 'X-Confirm-Password': pw },
   });
   if (r.status === 204) { toastOk(t('Removed')); renderRoute(); }
-  else toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+  else toastErr(apiError(r));
 }
 
 // confirmVerifyMemberEmail bypasses the self-serve email-verification
@@ -11165,7 +10901,7 @@ async function confirmVerifyMemberEmail(org, member) {
       { username: member.username }))) return;
   const r = await api(`/api/admin/users/${member.id}/verify-email`, { method: 'POST' });
   if (r.status === 204) { toastOk(t('Email verified')); renderRoute(); }
-  else toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+  else toastErr(apiError(r));
 }
 
 async function openEditAssignment(org, assignment, adventures) {
@@ -11209,7 +10945,7 @@ async function openEditAssignment(org, assignment, adventures) {
         method: 'PATCH', body: JSON.stringify(payload),
       });
       if (r.status === 200) { toastOk(t('Event pass updated')); close(true); renderRoute(); }
-      else toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+      else toastErr(apiError(r));
     });
     body.append(form);
   });
@@ -11238,7 +10974,7 @@ async function openAssignAdventure(org, adventures) {
         body: JSON.stringify({ adventure_slug: sel.value, max_players: maxPlayers }),
       });
       if (r.status === 201) { toastOk(t('Event pass granted')); close(true); renderRoute(); }
-      else toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+      else toastErr(apiError(r));
     });
     body.append(form);
   });
@@ -11247,7 +10983,7 @@ async function openAssignAdventure(org, adventures) {
 async function revokeAssignment(orgID, assignmentID) {
   const r = await api(`/api/admin/organizations/${orgID}/assignments/${assignmentID}`, { method: 'DELETE' });
   if (r.status === 204) { toastOk(t('Event pass revoked')); renderRoute(); }
-  else toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+  else toastErr(apiError(r));
 }
 
 /* ========== Puzzles (admin only) ==========
@@ -11314,7 +11050,7 @@ async function quickPuzzle(ev) {
     body: JSON.stringify({}),
   });
   if (btn) btn.disabled = false;
-  if (r.status !== 201) { toastErr(r.body?.error || t('error {{status}}', { status: r.status })); return; }
+  if (r.status !== 201) { toastErr(apiError(r)); return; }
   toastOk(t('Puzzle captured'));
   pendingQuickPuzzleGPS = { puzzleID: r.body.id, promise: gpsPromise };
   nav('#puzzles/' + r.body.id);
@@ -11427,10 +11163,7 @@ async function importAdventureFlow(view) {
     const fd = new FormData();
     fd.append('file', file);
     const url = `/api/admin/adventures/import` + (slugOverride ? `?slug=${encodeURIComponent(slugOverride)}` : '');
-    const res = await fetch(url, {
-      method: 'POST', body: fd, credentials: 'same-origin',
-      headers: { 'X-CSRF-Token': csrfToken() },
-    });
+    const res = await postForm(url, fd);
     let body = {};
     try { body = await res.json(); } catch { /* non-JSON error path */ }
     return { status: res.status, body };
@@ -11526,7 +11259,7 @@ async function openCreateAdventure() {
       // Straight on to designing it: a new adventure has nothing to
       // schedule or look at yet.
       if (r.status === 201) { close(true); location.href = designerURL(r.body.slug); }
-      else toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+      else toastErr(apiError(r));
     });
     body.append(form);
   });
@@ -11664,7 +11397,7 @@ function renderLibraryEdit(view, adv) {
       method: 'PATCH', body: JSON.stringify({ pages: flat }),
     });
     if (r.status !== 204) {
-      toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+      toastErr(apiError(r));
     }
     // Refetch the authoritative DTO either way — error path snaps
     // the view back to server state, success path picks up the new
@@ -11819,7 +11552,7 @@ function renderLibraryEdit(view, adv) {
       method: 'POST', body: JSON.stringify({ lane_ids: ids }),
     });
     if (r.status !== 204) {
-      toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+      toastErr(apiError(r));
     }
     viewLibraryEdit(view, adv.slug);
   };
@@ -12155,7 +11888,7 @@ async function setLaneMode(view, adv, lane, next) {
     method: 'PATCH', body: JSON.stringify({ mode: next }),
   });
   if (r.status !== 204) {
-    toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+    toastErr(apiError(r));
     return;
   }
   lane.mode = next;
@@ -12172,7 +11905,7 @@ async function renameLane(view, adv, lane) {
     method: 'PATCH', body: JSON.stringify({ name: trimmed }),
   });
   if (r.status !== 204) {
-    toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+    toastErr(apiError(r));
     return;
   }
   lane.name = trimmed;
@@ -12189,7 +11922,7 @@ async function deleteLane(view, adv, lane, pageCount) {
     method: 'DELETE',
   });
   if (r.status !== 204) {
-    toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+    toastErr(apiError(r));
     return;
   }
   viewLibraryEdit(view, adv.slug);
@@ -12243,7 +11976,7 @@ async function addLane(view, adv) {
         body: JSON.stringify({ mode, name: nameInput.value.trim() }),
       });
       if (r.status !== 201) {
-        toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+        toastErr(apiError(r));
         return;
       }
       close(true);
@@ -12266,7 +11999,7 @@ async function togglePublished(adv, next) {
     toastOk(next ? t('Listed in the catalog') : t('Removed from the catalog'));
     renderRoute();
   } else {
-    toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+    toastErr(apiError(r));
   }
 }
 
@@ -12276,7 +12009,7 @@ async function togglePublished(adv, next) {
 // because share management is admin-only anyway.
 async function openShareAdventureModal(adv) {
   const r = await api('/api/admin/organizations');
-  if (!r.ok) { toastErr(r.body?.error || t('error {{status}}', { status: r.status })); return; }
+  if (!r.ok) { toastErr(apiError(r)); return; }
   const all = r.body?.organizations || [];
   const already = new Set((adv.shares || []).map((s) => s.org_id));
   const candidates = all.filter((o) => !already.has(o.id) && !o.is_publisher);
@@ -12308,7 +12041,7 @@ async function openShareAdventureModal(adv) {
     // Reload so the new chip appears with org name + timestamp.
     renderRoute();
   } else {
-    toastErr(gr.body?.error || t('error {{status}}', { status: gr.status }));
+    toastErr(apiError(gr));
   }
 }
 
@@ -12325,7 +12058,7 @@ async function revokeShare(adv, share) {
     toastOk(t('Share revoked'));
     renderRoute();
   } else {
-    toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+    toastErr(apiError(r));
   }
 }
 
@@ -12418,7 +12151,7 @@ async function openEditAdventureMeta(adv) {
         toastOk(t('Cover removed'));
         redrawCoverActions(); redrawCover();
       } else {
-        toastErr(rr.body?.error || t('error {{status}}', { status: rr.status }));
+        toastErr(apiError(rr));
       }
     });
     coverFile.addEventListener('change', async () => {
@@ -12427,10 +12160,7 @@ async function openEditAdventureMeta(adv) {
       const shrunk = await downscaleImage(f);
       const fd = new FormData();
       fd.append('file', shrunk);
-      const res = await fetch(`/api/admin/adventures/${encodeURIComponent(adv.slug)}/avatar`, {
-        method: 'POST', body: fd, credentials: 'same-origin',
-        headers: { 'X-CSRF-Token': csrfToken() },
-      });
+      const res = await postForm(`/api/admin/adventures/${encodeURIComponent(adv.slug)}/avatar`, fd);
       coverFile.value = '';
       if (res.ok) {
         const body = await res.json().catch(() => ({}));
@@ -12665,7 +12395,7 @@ async function openEditAdventureMeta(adv) {
           renderRoute();
         }
       } else {
-        toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+        toastErr(apiError(r));
       }
     });
     body.append(form);
@@ -12680,7 +12410,7 @@ async function confirmDeleteAdventure(adv) {
     method: 'DELETE', headers: { 'X-Confirm-Password': pw },
   });
   if (r.status === 204) { toastOk(t('Deleted')); nav('#adventures'); }
-  else toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+  else toastErr(apiError(r));
 }
 
 // autosize makes a textarea grow to fit its content — used in the
@@ -12734,39 +12464,11 @@ function buildHintsEditor(initial) {
       fileInput.value = '';
       return;
     }
-    const isAudio = (picked.type || '').startsWith('audio/');
-    const fd = new FormData();
-    if (isAudio) {
-      fd.append('file', picked);
-      const res = await fetch(`/api/admin/hints/${target.id}/audio`, {
-        method: 'POST', body: fd, credentials: 'same-origin',
-        headers: { 'X-CSRF-Token': csrfToken() },
-      });
-      if (res.ok) {
-        const au = await res.json();
-        target.audio.push(au);
-        draw();
-        toastOk(t('Audio added'));
-      } else {
-        const errTxt = await res.text();
-        toastErr(errTxt || t('error {{status}}', { status: res.status }));
-      }
-    } else {
-      const shrunk = await downscaleImage(picked);
-      fd.append('file', shrunk);
-      const res = await fetch(`/api/admin/hints/${target.id}/images`, {
-        method: 'POST', body: fd, credentials: 'same-origin',
-        headers: { 'X-CSRF-Token': csrfToken() },
-      });
-      if (res.ok) {
-        const im = await res.json();
-        target.images.push(im);
-        draw();
-        toastOk(t('Image added'));
-      } else {
-        const errTxt = await res.text();
-        toastErr(errTxt || t('error {{status}}', { status: res.status }));
-      }
+    const up = await uploadMedia(`/api/admin/hints/${target.id}`, picked);
+    if (up) {
+      (up.isAudio ? target.audio : target.images).push(up.item);
+      draw();
+      toastOk(up.isAudio ? t('Audio added') : t('Image added'));
     }
     fileInput.value = '';
   });
@@ -12895,7 +12597,7 @@ function buildHintsEditor(initial) {
             im.alt_text = next;
             toastOk(t('Alt text saved'));
           } else {
-            toastErr(rr.body?.error || t('error {{status}}', { status: rr.status }));
+            toastErr(apiError(rr));
             altInput.value = im.alt_text || '';
           }
         });
@@ -12912,7 +12614,7 @@ function buildHintsEditor(initial) {
                 draw();
                 toastOk(t('Image removed'));
               } else {
-                toastErr(rr.body?.error || t('error {{status}}', { status: rr.status }));
+                toastErr(apiError(rr));
               }
             } },
           }, icon(ICONS.trash)),
@@ -12964,7 +12666,7 @@ function buildHintsEditor(initial) {
             au.description = next;
             toastOk(t('Description saved'));
           } else {
-            toastErr(rr.body?.error || t('error {{status}}', { status: rr.status }));
+            toastErr(apiError(rr));
             descInput.value = au.description || '';
           }
         });
@@ -12981,7 +12683,7 @@ function buildHintsEditor(initial) {
                 draw();
                 toastOk(t('Audio removed'));
               } else {
-                toastErr(rr.body?.error || t('error {{status}}', { status: rr.status }));
+                toastErr(apiError(rr));
               }
             } },
           }, icon(ICONS.trash)),
@@ -13140,7 +12842,8 @@ function markdownField(opts) {
       const r = await api('/api/admin/markdown/preview', {
         method: 'POST', body: JSON.stringify({ text }),
       });
-      if (r.status === 200 && typeof r.body?.html === 'string') {
+      // Drop a stale response when the text changed mid-flight.
+      if (r.status === 200 && typeof r.body?.html === 'string' && editor.value === text) {
         rendered = r.body.html;
         renderedFor = text;
         view.innerHTML = rendered;
@@ -13186,35 +12889,6 @@ function markdownField(opts) {
     get: () => editor.value,
     focus: enterEdit,
   };
-}
-
-// matcherNormalise mirrors the server's normalise(): trim, lowercase,
-// runs of whitespace collapsed to a single space. Used by the
-// preview-mode QR scan test and the play-side preview matcher so
-// authors see the same accept/reject decision the server would make.
-function matcherNormalise(s) {
-  return (s || '').trim().toLowerCase().replace(/\s+/g, ' ');
-}
-
-// checkAcceptMatches reports whether `normInput` (already normalised)
-// matches any entry in the accept list. Plain entries are compared
-// literally after normalising the entry text the same way; regex
-// entries are anchored with ^...$ and matched case-insensitively. Bad
-// regex compiles silently miss — the server's save-time validation is
-// the real check, this is defence in depth.
-function checkAcceptMatches(entries, normInput) {
-  if (!Array.isArray(entries) || normInput === '') return false;
-  for (const a of entries) {
-    if (!a) continue;
-    if (a.regex) {
-      try {
-        if (new RegExp('^(?:' + a.text + ')$', 'i').test(normInput)) return true;
-      } catch { /* malformed pattern — skip */ }
-      continue;
-    }
-    if (matcherNormalise(a.text || '') === normInput) return true;
-  }
-  return false;
 }
 
 // buildAcceptController returns a controller for the editor's
@@ -13284,50 +12958,6 @@ function buildAcceptController(initial) {
       .map((r) => ({ text: r.text.value.trim(), regex: r.regexBox.checked }))
       .filter((e) => e.text.length > 0),
   };
-}
-
-// attachMdPreview returns a live-updating preview div for a textarea.
-// The server endpoint runs the same goldmark pipeline used at egress,
-// so what the author sees here is exactly what the player will see.
-// The fetch is debounced so the author can type "## a real heading"
-// without the server hearing every keystroke, and the request body
-// is sized-capped indirectly by the textarea's own content length.
-function attachMdPreview(textarea, extraClass) {
-  const preview = h('div', { class: 'md-preview' + (extraClass ? ' ' + extraClass : '') });
-  preview.setAttribute('aria-live', 'polite');
-  // Seed text so the pane isn't empty before the first fetch comes
-  // back or when the textarea is empty — an empty preview with no
-  // explanation reads as broken.
-  const paintEmpty = () => {
-    preview.innerHTML = '';
-    preview.append(h('span', { class: 'muted' }, t('Preview appears here as you type.')));
-  };
-  let timer = null;
-  let inFlight = false;
-  let pending = false;
-  const render = async () => {
-    if (inFlight) { pending = true; return; }
-    const text = textarea.value;
-    if (!text.trim()) { paintEmpty(); return; }
-    inFlight = true;
-    try {
-      const r = await api('/api/admin/markdown/preview', {
-        method: 'POST', body: JSON.stringify({ text }),
-      });
-      if (r.status === 200 && typeof r.body?.html === 'string') {
-        preview.innerHTML = r.body.html;
-      }
-    } catch { /* keep last successful render */ }
-    inFlight = false;
-    if (pending) { pending = false; render(); }
-  };
-  textarea.addEventListener('input', () => {
-    if (timer) clearTimeout(timer);
-    timer = setTimeout(render, 200);
-  });
-  // First paint: whatever's already in the textarea.
-  render();
-  return preview;
 }
 
 function autosize(el) {
@@ -13499,7 +13129,7 @@ async function openEditPuzzle(adv, page /* or null */, laneID /* optional, creat
             im.alt_text = next;
             toastOk(t('Alt text saved'));
           } else {
-            toastErr(rr.body?.error || t('error {{status}}', { status: rr.status }));
+            toastErr(apiError(rr));
             altInput.value = im.alt_text || '';
           }
         });
@@ -13526,7 +13156,7 @@ async function openEditPuzzle(adv, page /* or null */, laneID /* optional, creat
                 drawImages();
                 toastOk(t('Image removed'));
               } else {
-                toastErr(rr.body?.error || t('error {{status}}', { status: rr.status }));
+                toastErr(apiError(rr));
               }
             } },
           }, icon(ICONS.trash)),
@@ -13580,7 +13210,7 @@ async function openEditPuzzle(adv, page /* or null */, laneID /* optional, creat
             au.description = next;
             toastOk(t('Description saved'));
           } else {
-            toastErr(rr.body?.error || t('error {{status}}', { status: rr.status }));
+            toastErr(apiError(rr));
             descInput.value = au.description || '';
           }
         });
@@ -13597,7 +13227,7 @@ async function openEditPuzzle(adv, page /* or null */, laneID /* optional, creat
                 drawAudios();
                 toastOk(t('Audio removed'));
               } else {
-                toastErr(rr.body?.error || t('error {{status}}', { status: rr.status }));
+                toastErr(apiError(rr));
               }
             } },
           }, icon(ICONS.trash)),
@@ -13610,43 +13240,15 @@ async function openEditPuzzle(adv, page /* or null */, laneID /* optional, creat
     file.addEventListener('change', async () => {
       const picked = file.files?.[0];
       if (!picked) return;
-      const isAudio = (picked.type || '').startsWith('audio/');
-      const fd = new FormData();
-      if (isAudio) {
-        // Audio is uploaded verbatim — the server stores the blob and
-        // the player's <audio controls> picks the decoder via MIME.
-        fd.append('file', picked);
-        const res = await fetch(`/api/admin/pages/${page.id}/audio`, {
-          method: 'POST', body: fd, credentials: 'same-origin',
-          headers: { 'X-CSRF-Token': csrfToken() },
-        });
-        if (res.ok) {
-          const au = await res.json();
-          audios.push(au);
-          drawAudios();
-          toastOk(t('Audio added'));
-        } else {
-          const errTxt = await res.text();
-          toastErr(errTxt || t('error {{status}}', { status: res.status }));
-        }
-      } else {
-        // Default to the image flow for anything else — downscale on
-        // the client (saves Postgres rowsize) and POST to /images.
-        const shrunk = await downscaleImage(picked);
-        fd.append('file', shrunk);
-        const res = await fetch(`/api/admin/pages/${page.id}/images`, {
-          method: 'POST', body: fd, credentials: 'same-origin',
-          headers: { 'X-CSRF-Token': csrfToken() },
-        });
-        if (res.ok) {
-          const im = await res.json();
-          images.push(im);
-          drawImages();
-          toastOk(t('Image added'));
-        } else {
-          const errTxt = await res.text();
-          toastErr(errTxt || t('error {{status}}', { status: res.status }));
-        }
+      const up = await uploadMedia(`/api/admin/pages/${page.id}`, picked);
+      if (up && up.isAudio) {
+        audios.push(up.item);
+        drawAudios();
+        toastOk(t('Audio added'));
+      } else if (up) {
+        images.push(up.item);
+        drawImages();
+        toastOk(t('Image added'));
       }
       file.value = '';
     });
@@ -13871,7 +13473,7 @@ async function openEditPuzzle(adv, page /* or null */, laneID /* optional, creat
         const r = await api(`/api/admin/adventures/${encodeURIComponent(adv.slug)}/pages`, {
           method: 'POST', body: JSON.stringify(payload),
         });
-        if (r.status !== 201) { toastErr(r.body?.error || t('error {{status}}', { status: r.status })); return; }
+        if (r.status !== 201) { toastErr(apiError(r)); return; }
         toastOk(t('Puzzle created'));
         saved = true;
         file.remove();
@@ -13888,7 +13490,7 @@ async function openEditPuzzle(adv, page /* or null */, laneID /* optional, creat
       const r = await api(`/api/admin/pages/${page.id}`, {
         method: 'PATCH', body: JSON.stringify(payload),
       });
-      if (r.status !== 204) { toastErr(r.body?.error || t('error {{status}}', { status: r.status })); return; }
+      if (r.status !== 204) { toastErr(apiError(r)); return; }
       toastOk(t('Puzzle saved'));
       saved = true;
       lastSavedSnapshot = JSON.stringify(snapshotDraft());
@@ -14232,10 +13834,7 @@ function buildPuzzleLocationMap(args) {
   const startZoom = freshPuzzle && initial.lat === 58.1820 ? 12 : 16;
 
   const map = L.map(mapEl, { scrollWheelZoom: true }).setView([initial.lat, initial.lng], startZoom);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '© OpenStreetMap contributors',
-    maxZoom: 19,
-  }).addTo(map);
+  addOSMTiles(map);
 
   const marker = L.marker([initial.lat, initial.lng], { draggable: true }).addTo(map);
   let circle = null;
@@ -14444,22 +14043,26 @@ function addPuzzleButton(adv) {
     h('button', { class: 'split-btn-item', role: 'menuitem' }, t('Copy from library…')),
   );
   const [libItem] = menu.querySelectorAll('.split-btn-item');
-  libItem.addEventListener('click', () => {
+  // Outside-click / Escape listeners live only while the menu is open,
+  // so re-rendered views don't pile up document listeners.
+  const onDocClick = (e) => { if (!wrap.contains(e.target)) close(); };
+  const onKey = (e) => { if (e.key === 'Escape') close(); };
+  const close = () => {
     menu.classList.remove('open');
+    document.removeEventListener('click', onDocClick);
+    document.removeEventListener('keydown', onKey);
+  };
+  libItem.addEventListener('click', () => {
+    close();
     openLibraryPicker(adv);
   });
   toggle.addEventListener('click', (e) => {
     e.stopPropagation();
-    menu.classList.toggle('open');
+    if (menu.classList.contains('open')) { close(); return; }
+    menu.classList.add('open');
+    document.addEventListener('click', onDocClick);
+    document.addEventListener('keydown', onKey);
   });
-  // Close the menu on outside click / Escape.
-  const onDocClick = (e) => { if (!wrap.contains(e.target)) menu.classList.remove('open'); };
-  const onKey = (e) => { if (e.key === 'Escape') menu.classList.remove('open'); };
-  document.addEventListener('click', onDocClick);
-  document.addEventListener('keydown', onKey);
-  // If the button tree is later removed from the DOM (navigation), drop
-  // the listeners. Using MutationObserver is overkill; just attach a
-  // one-shot cleanup via the view's replaceChildren cycle.
   wrap.append(primary, toggle, menu);
   return wrap;
 }
@@ -14528,7 +14131,7 @@ async function openLibraryPicker(adv) {
             close(true);
             renderRoute();
           } else {
-            toastErr(rr.body?.error || t('error {{status}}', { status: rr.status }));
+            toastErr(apiError(rr));
           }
         });
         list.append(card);
@@ -14553,7 +14156,7 @@ async function duplicatePuzzle(adv, page) {
     body: JSON.stringify({}),
   });
   if (r.status !== 201 || !r.body?.id) {
-    toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+    toastErr(apiError(r));
     return;
   }
   const newID = r.body.id;
@@ -14582,7 +14185,7 @@ async function confirmDeletePuzzle(adv, page) {
   if (!ok) return;
   const r = await api(`/api/admin/pages/${page.id}`, { method: 'DELETE' });
   if (r.status === 204) { toastOk(t('Deleted')); renderRoute(); }
-  else toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+  else toastErr(apiError(r));
 }
 
 /* ========== Admins (global admin only) ========== */
@@ -14629,7 +14232,7 @@ async function openCreateAdmin() {
         body: JSON.stringify({ username: fd.get('u'), password: fd.get('p') }),
       });
       if (r.status === 201) { toastOk(t('Admin created')); close(true); renderRoute(); }
-      else toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+      else toastErr(apiError(r));
     });
     body.append(form);
   });
@@ -14643,7 +14246,7 @@ async function confirmDeleteAdmin(admin) {
     method: 'DELETE', headers: { 'X-Confirm-Password': pw },
   });
   if (r.status === 204) { toastOk(t('Admin deleted')); renderRoute(); }
-  else toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+  else toastErr(apiError(r));
 }
 
 /* ========== Race simulator (admin only) ==========
@@ -14790,6 +14393,9 @@ async function mountSimulatorPanel(host, advSlug) {
 // the stage transitions to/from idle (same reason).
 function schedulePoll(host, advSlug, prevStatus, applyStage) {
   if (simulatorPollTimer) clearTimeout(simulatorPollTimer);
+  // A tick still awaiting its fetch when a newer loop starts must not
+  // reschedule itself, or remounts would stack parallel poll loops.
+  const gen = ++simulatorPollGen;
   // Self-rescheduling setTimeout instead of setInterval so we can
   // back off on errors (network blip, server restart) and skip the
   // tick entirely while document.hidden. The previous setInterval
@@ -14806,6 +14412,7 @@ function schedulePoll(host, advSlug, prevStatus, applyStage) {
     }
     try {
       const r = await api('/api/admin/simulator');
+      if (gen !== simulatorPollGen) return;
       if (!r.ok) {
         delay = Math.min(delay * 2, 30000); // exponential, cap 30s
       } else {
@@ -14822,7 +14429,7 @@ function schedulePoll(host, advSlug, prevStatus, applyStage) {
     } catch {
       delay = Math.min(delay * 2, 30000);
     }
-    if (document.contains(host)) {
+    if (gen === simulatorPollGen && document.contains(host)) {
       simulatorPollTimer = setTimeout(tick, delay);
     }
   };
@@ -14844,7 +14451,7 @@ async function simulatorAction(kind, body, host, advSlug) {
     return;
   }
   if (!r.ok) {
-    toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+    toastErr(apiError(r));
     return;
   }
   if (kind === 'start') toastOk(t('Simulation started'));
@@ -14857,14 +14464,7 @@ async function simulatorAction(kind, body, host, advSlug) {
 }
 
 let simulatorPollTimer = null;
-
-function stageLabel(stage) {
-  switch (stage) {
-    case 'running': return 'Running';
-    case 'paused':  return 'Paused';
-    default:        return 'Idle';
-  }
-}
+let simulatorPollGen = 0;
 
 function stagePillClass(stage) {
   switch (stage) {
@@ -14887,7 +14487,11 @@ function fmtElapsed(startISO) {
    /ws/logs, and a small control row lets the admin pick a minimum
    level + substring filter. Filter is client-side; level change hits
    the server so dropped entries never enter the ring buffer. */
+// logsCleanup tears down the previous mount's socket and listeners
+// when the view re-renders without leaving #logs (e.g. theme toggle).
+let logsCleanup = null;
 async function viewLogs(view) {
+  if (logsCleanup) logsCleanup();
   // xterm may not be ready yet if the defer scripts are still loading —
   // bail out with a polite retry.
   if (typeof Terminal === 'undefined') {
@@ -14957,7 +14561,7 @@ async function viewLogs(view) {
     const rr = await api('/api/admin/logs/level', {
       method: 'PUT', body: JSON.stringify({ level: serverLevelSel.value }),
     });
-    if (!rr.ok) toastErr(rr.body?.error || t('error {{status}}', { status: rr.status }));
+    if (!rr.ok) toastErr(apiError(rr));
   });
 
   const clientLevelSel = h('select', { class: 'zv-log-sel', title: t('Client-side minimum level') });
@@ -15075,6 +14679,7 @@ async function viewLogs(view) {
 
   // Tear down when the route changes so we don't keep WS open.
   const cleanup = () => {
+    if (logsCleanup === cleanup) logsCleanup = null;
     disposed = true;
     if (reconnectTimer) clearTimeout(reconnectTimer);
     window.removeEventListener('resize', onResize);
@@ -15086,6 +14691,9 @@ async function viewLogs(view) {
     if (!location.hash.startsWith('#logs')) cleanup();
   };
   window.addEventListener('hashchange', onHash);
+  logsCleanup = cleanup;
+  // The route may have changed while the initial snapshot was loading.
+  if (!location.hash.startsWith('#logs')) cleanup();
 }
 
 /* ======================== Settings → Migration ========================
@@ -15390,10 +14998,7 @@ function renderMigrationInCard() {
     const fd = new FormData();
     fd.append('bundle', f);
     try {
-      const r = await fetch('/api/admin/migrate/import', {
-        method: 'POST', body: fd, credentials: 'same-origin',
-        headers: { 'X-CSRF-Token': csrfToken() },
-      });
+      const r = await postForm('/api/admin/migrate/import', fd);
       if (!r.ok) {
         const txt = await r.text().catch(() => '');
         throw new Error(txt || ('HTTP ' + r.status));
@@ -16022,7 +15627,7 @@ function renderWebhookCard(ep, kinds, reload) {
       if (r.status === 202) {
         toastOk(t('Test queued. Watch your endpoint logs (delivery within ~5s).'));
       } else {
-        toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+        toastErr(apiError(r));
       }
     } finally {
       testBtn.disabled = false;
@@ -16041,7 +15646,7 @@ function renderWebhookCard(ep, kinds, reload) {
       await openSecretReveal({ secret: r.body.secret, title: t('New webhook secret') });
       reload();
     } else {
-      toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+      toastErr(apiError(r));
     }
   });
   const logBtn = h('button', { class: 'btn small', type: 'button',
@@ -16059,7 +15664,7 @@ function renderWebhookCard(ep, kinds, reload) {
       toastOk(ep.active ? t('Endpoint disabled.') : t('Endpoint enabled.'));
       reload();
     } else {
-      toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+      toastErr(apiError(r));
     }
   });
   const deleteBtn = iconBtn('trash', t('Delete endpoint'), async () => {
@@ -16072,7 +15677,7 @@ function renderWebhookCard(ep, kinds, reload) {
       toastOk(t('Endpoint deleted.'));
       reload();
     } else {
-      toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+      toastErr(apiError(r));
     }
   }, { danger: true });
 
@@ -16171,7 +15776,7 @@ async function openWebhookForm({ kinds, existing }) {
           toastOk(t('Webhook updated.'));
           close(true);
         } else {
-          err.style.display = ''; err.textContent = r.body?.error || t('error {{status}}', { status: r.status });
+          err.style.display = ''; err.textContent = apiError(r);
         }
       } else {
         const r = await api('/api/admin/webhooks', {
@@ -16188,7 +15793,7 @@ async function openWebhookForm({ kinds, existing }) {
           close(true);
           await openSecretReveal({ secret: r.body.secret, title: t('Webhook created') });
         } else {
-          err.style.display = ''; err.textContent = r.body?.error || t('error {{status}}', { status: r.status });
+          err.style.display = ''; err.textContent = apiError(r);
         }
       }
     });
@@ -16235,7 +15840,11 @@ async function openSecretReveal({ secret, title }) {
 // from renderRoute on every navigation away (mirroring the
 // unwatchRun pattern) so a left-behind interval can't leak.
 let webhookLogPoll = null;
+// Bumped on every stop so a tick that was mid-fetch when the user
+// navigated away doesn't reschedule itself.
+let webhookLogPollGen = 0;
 function stopWebhookLogPoll() {
+  webhookLogPollGen++;
   // setTimeout id (was setInterval pre-poll-refactor); clearTimeout
   // also handles a clearInterval id transparently in browsers, but
   // matching the new shape is clearer.
@@ -16370,6 +15979,7 @@ async function viewWebhooksLog(view, endpointID) {
   // put until the new data arrives — no "list goes empty then fills"
   // flash on every tick.
   stopWebhookLogPoll();
+  const gen = webhookLogPollGen;
   const tick = async () => {
     webhookLogPoll = null;
     if (!deliveries.some((d) => d.status === 'pending')) return;
@@ -16378,7 +15988,7 @@ async function viewWebhooksLog(view, endpointID) {
       return;
     }
     await fetchPage({ reset: true, quiet: true });
-    if (deliveries.some((d) => d.status === 'pending')) {
+    if (gen === webhookLogPollGen && deliveries.some((d) => d.status === 'pending')) {
       webhookLogPoll = setTimeout(tick, 4000);
     }
   };
@@ -16751,7 +16361,7 @@ function renderSettingsPublicProfileCard() {
     });
     slugSaveBtn.disabled = false;
     if (!r.ok) {
-      setErr(r.body?.error || t('error {{status}}', { status: r.status }));
+      setErr(apiError(r));
       return;
     }
     await refresh();
@@ -16801,10 +16411,7 @@ function renderSettingsPublicProfileCard() {
     const fd = new FormData();
     fd.append('file', f);
     try {
-      const r = await fetch('/api/admin/orgs/me/logo', {
-        method: 'POST', body: fd, credentials: 'same-origin',
-        headers: { 'X-CSRF-Token': csrfToken() },
-      });
+      const r = await postForm('/api/admin/orgs/me/logo', fd);
       if (!r.ok) {
         const txt = await r.text().catch(() => '');
         throw new Error(txt || ('HTTP ' + r.status));
@@ -16820,7 +16427,7 @@ function renderSettingsPublicProfileCard() {
     setErr('');
     const r = await api('/api/admin/orgs/me/logo', { method: 'DELETE' });
     if (!r.ok && r.status !== 204) {
-      setErr(r.body?.error || t('error {{status}}', { status: r.status }));
+      setErr(apiError(r));
       return;
     }
     await refresh();
@@ -16832,10 +16439,7 @@ function renderSettingsPublicProfileCard() {
     const fd = new FormData();
     fd.append('file', f);
     try {
-      const r = await fetch('/api/admin/orgs/me/cover', {
-        method: 'POST', body: fd, credentials: 'same-origin',
-        headers: { 'X-CSRF-Token': csrfToken() },
-      });
+      const r = await postForm('/api/admin/orgs/me/cover', fd);
       if (!r.ok) {
         const txt = await r.text().catch(() => '');
         throw new Error(txt || ('HTTP ' + r.status));
@@ -16851,7 +16455,7 @@ function renderSettingsPublicProfileCard() {
     setErr('');
     const r = await api('/api/admin/orgs/me/cover', { method: 'DELETE' });
     if (!r.ok && r.status !== 204) {
-      setErr(r.body?.error || t('error {{status}}', { status: r.status }));
+      setErr(apiError(r));
       return;
     }
     await refresh();
@@ -16954,7 +16558,7 @@ function renderSettingsPublicProfileCard() {
     });
     saveInflight = false;
     if (!r.ok) {
-      setErr(r.body?.error || t('error {{status}}', { status: r.status }));
+      setErr(apiError(r));
       return;
     }
     if (chipToFlash) flashSaved(chipToFlash);
@@ -17085,7 +16689,7 @@ function renderSettingsPublicProfileCard() {
     setErr('');
     const r = await api('/api/admin/orgs/me/profile');
     if (!r.ok) {
-      setErr(r.body?.error || t('error {{status}}', { status: r.status }));
+      setErr(apiError(r));
       return;
     }
     applyProfile(r.body || {});
@@ -17452,7 +17056,7 @@ function renderSettingsServerCard() {
       });
       input.disabled = false;
       if (!r.ok) {
-        setStatus(false, r.body?.error || t('error {{status}}', { status: r.status }));
+        setStatus(false, apiError(r));
         input.checked = !input.checked;
         return;
       }
@@ -17500,7 +17104,7 @@ function renderSettingsServerCard() {
     setStatus(true, t('Loading…'));
     const r = await api('/api/admin/settings');
     if (!r.ok) {
-      setStatus(false, r.body?.error || t('error {{status}}', { status: r.status }));
+      setStatus(false, apiError(r));
       toggles.forEach((tg) => { tg.input.disabled = true; });
       return;
     }
@@ -17544,7 +17148,7 @@ function renderSettingsComponentsCard() {
     list.replaceChildren(h('p', { class: 'muted', style: 'font-size:.85rem' }, t('Loading…')));
     const r = await api('/api/admin/components');
     if (!r.ok) {
-      list.replaceChildren(h('p', { class: 'err' }, r.body?.error || t('error {{status}}', { status: r.status })));
+      list.replaceChildren(h('p', { class: 'err' }, apiError(r)));
       return;
     }
     const items = r.body?.components || [];
@@ -17619,7 +17223,7 @@ function renderSettingsTestEmailCard() {
     if (r.ok) {
       setStatus('ok', t('Sent to {{to}}. Check the inbox (and spam folder).', { to }));
     } else {
-      setStatus('err', r.body?.error || t('error {{status}}', { status: r.status }));
+      setStatus('err', apiError(r));
     }
   });
   card.append(
@@ -17690,7 +17294,7 @@ async function viewSettingsSoftwareUpdate(view) {
         paint();
         renderShellChrome();
       } else {
-        checkStatus.textContent = r.body?.error || t('error {{status}}', { status: r.status });
+        checkStatus.textContent = apiError(r);
       }
     });
 
@@ -17821,7 +17425,7 @@ function renderSettingsSessionsCard() {
     list.replaceChildren(h('p', { class: 'muted', style: 'font-size:.85rem' }, t('Loading…')));
     const r = await api('/api/admin/me/sessions');
     if (!r.ok) {
-      list.replaceChildren(h('p', { class: 'err' }, r.body?.error || t('error {{status}}', { status: r.status })));
+      list.replaceChildren(h('p', { class: 'err' }, apiError(r)));
       return;
     }
     const sessions = r.body?.sessions || [];
@@ -17845,7 +17449,7 @@ function renderSettingsSessionsCard() {
               const rr = await api('/api/admin/me/sessions/' + encodeURIComponent(s.id),
                 { method: 'DELETE' });
               if (rr.status === 204) { toastOk(t('Session signed out')); refresh(); }
-              else toastErr(rr.body?.error || t('error {{status}}', { status: rr.status }));
+              else toastErr(apiError(rr));
             } } },
             t('Sign out')),
     )));
@@ -17858,7 +17462,7 @@ function renderSettingsSessionsCard() {
     const rr = await api('/api/admin/me/sessions', { method: 'DELETE' });
     otherBtn.disabled = false;
     if (rr.status === 204) { toastOk(t('Other sessions signed out')); refresh(); }
-    else toastErr(rr.body?.error || t('error {{status}}', { status: rr.status }));
+    else toastErr(apiError(rr));
   });
   card.append(
     h('h2', {}, t('Active sessions')),
@@ -17885,7 +17489,7 @@ function renderSettingsMCPTokensCard() {
     list.replaceChildren(h('p', { class: 'muted', style: 'font-size:.85rem' }, t('Loading…')));
     const r = await api('/api/admin/me/mcp-tokens');
     if (!r.ok) {
-      list.replaceChildren(h('p', { class: 'err' }, r.body?.error || t('error {{status}}', { status: r.status })));
+      list.replaceChildren(h('p', { class: 'err' }, apiError(r)));
       return;
     }
     const tokens = r.body?.tokens || [];
@@ -17922,7 +17526,7 @@ function renderSettingsMCPTokensCard() {
             const rr = await api('/api/admin/me/mcp-tokens/' + encodeURIComponent(tok.id),
               { method: 'DELETE' });
             if (rr.status === 204) { toastOk(t('Token revoked')); refresh(); }
-            else toastErr(rr.body?.error || t('error {{status}}', { status: rr.status }));
+            else toastErr(apiError(rr));
           } } },
           t('Revoke')));
     }));
@@ -17941,8 +17545,7 @@ function renderSettingsMCPTokensCard() {
   const endpointCopy = h('button', {
     class: 'btn small', type: 'button', title: t('Copy URL'),
     on: { click: async () => {
-      try { await navigator.clipboard.writeText(endpointURL); toastOk(t('URL copied')); }
-      catch { endpointInput.select(); document.execCommand('copy'); toastOk(t('URL copied')); }
+      await copyFromInput(endpointURL, endpointInput, t('URL copied'));
     } },
   }, t('Copy'));
   card.append(
@@ -18013,7 +17616,7 @@ async function openCreateMCPToken() {
       });
       if (r.status !== 201) {
         status.className = 'err';
-        status.textContent = r.body?.error || t('error {{status}}', { status: r.status });
+        status.textContent = apiError(r);
         return;
       }
       close(r.body);
@@ -18062,7 +17665,7 @@ function renderSettingsAuditCard() {
     list.replaceChildren(h('p', { class: 'muted', style: 'font-size:.85rem' }, t('Loading…')));
     const r = await api('/api/admin/me/audit');
     if (!r.ok) {
-      list.replaceChildren(h('p', { class: 'err' }, r.body?.error || t('error {{status}}', { status: r.status })));
+      list.replaceChildren(h('p', { class: 'err' }, apiError(r)));
       return;
     }
     const events = r.body?.events || [];
@@ -18217,11 +17820,7 @@ function renderSettingsExportCard() {
       const cd = res.headers.get('Content-Disposition') || '';
       const m = cd.match(/filename="([^"]+)"/);
       const name = m ? m[1] : 'zonventure-export.json';
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url; a.download = name;
-      document.body.append(a); a.click(); a.remove();
-      URL.revokeObjectURL(url);
+      downloadBlob(blob, name);
       status.className = 'ok';
       status.replaceChildren(
         document.createTextNode(t('Downloaded {{name}}.', { name }) + ' '),
@@ -18277,11 +17876,7 @@ function renderSettingsOrgBundleCard() {
       const cd = res.headers.get('Content-Disposition') || '';
       const m = cd.match(/filename="([^"]+)"/);
       const name = m ? m[1] : 'zonventure-org-bundle.zip';
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url; a.download = name;
-      document.body.append(a); a.click(); a.remove();
-      URL.revokeObjectURL(url);
+      downloadBlob(blob, name);
       status.className = 'ok';
       status.textContent = t('Downloaded {{name}}.', { name });
     } catch (e) {
@@ -18327,7 +17922,7 @@ function renderSettingsPasswordCard() {
       render();
       setTimeout(() => toastOk(t('Password updated. You\'re still signed in here; every other session was kicked.')), 50);
     } else {
-      status.className = 'err'; status.textContent = r.body?.error || t('error {{status}}', { status: r.status });
+      status.className = 'err'; status.textContent = apiError(r);
     }
   });
   return form;
@@ -18349,7 +17944,7 @@ function renderSettingsTOTPCard() {
     const r = await api('/api/admin/me/totp');
     if (!r.ok) {
       card.replaceChildren(h('h2', {}, t('Two-factor authentication')),
-        h('p', { class: 'err' }, r.body?.error || t('error {{status}}', { status: r.status })));
+        h('p', { class: 'err' }, apiError(r)));
       return;
     }
     if (!r.body.server_ready) {
@@ -18389,7 +17984,7 @@ function renderTOTPEnabled(refresh, enrolledAt) {
         });
         if (!r.ok) {
           status.className = 'err';
-          status.textContent = r.body?.error || t('error {{status}}', { status: r.status });
+          status.textContent = apiError(r);
           return;
         }
         status.className = 'ok';
@@ -18406,7 +18001,7 @@ function renderTOTPEnabled(refresh, enrolledAt) {
         });
         if (!r.ok) {
           status.className = 'err';
-          status.textContent = r.body?.error || t('error {{status}}', { status: r.status });
+          status.textContent = apiError(r);
           return;
         }
         toastOk(t('Two-factor authentication disabled.'));
@@ -18427,7 +18022,7 @@ function renderTOTPDisabledSetup(refresh) {
     startBtn.disabled = false;
     if (!r.ok) {
       status.className = 'err';
-      status.textContent = r.body?.error || t('error {{status}}', { status: r.status });
+      status.textContent = apiError(r);
       return;
     }
     status.textContent = '';
@@ -18498,7 +18093,7 @@ function renderSetupConfirmFlow(box, body, refresh) {
     });
     if (!r.ok) {
       status.className = 'err';
-      status.textContent = r.body?.error || t('error {{status}}', { status: r.status });
+      status.textContent = apiError(r);
       otp.clear();
       return;
     }
@@ -18567,7 +18162,7 @@ function renderSettingsEmailCard(me) {
                 toastOk(t('Email reverted to {{email}}.', { email: rr.body?.email || r.body.previous_email }));
                 await refreshMe(); render();
               } else {
-                toastErr(rr.body?.error || t('error {{status}}', { status: rr.status }));
+                toastErr(apiError(rr));
               }
             } } },
             t('Revert email change')))));
@@ -18597,7 +18192,7 @@ function renderSettingsEmailCard(me) {
       newEmail.value = '';
     } else {
       status.className = 'err';
-      status.textContent = r.body?.error || t('error {{status}}', { status: r.status });
+      status.textContent = apiError(r);
     }
   });
   return form;
@@ -18631,7 +18226,7 @@ function renderSettingsDeleteCard() {
       return;
     }
     status.className = 'err';
-    status.textContent = r.body?.error || t('error {{status}}', { status: r.status });
+    status.textContent = apiError(r);
   });
   return form;
 }
@@ -18642,7 +18237,7 @@ function renderSettingsDeleteCard() {
 // noise in the common case where the link is healthy.
 function renderSlotExpiryHint(expiresAt, _lastLogin) {
   if (!expiresAt) return null;
-  const iso = expiresAt.includes('T') ? expiresAt : expiresAt.replace(' ', 'T') + 'Z';
+  const iso = serverISO(expiresAt);
   const exp = new Date(iso);
   if (isNaN(exp.getTime())) return null;
   const ms = exp.getTime() - Date.now();
@@ -18663,7 +18258,7 @@ function formatAuditTS(ts) {
   // operator's clock matches the row. 24h clock matches the rest of
   // the app — forensic timestamps shouldn't be ambiguous AM/PM.
   if (!ts) return '';
-  const iso = ts.includes('T') ? ts : ts.replace(' ', 'T') + 'Z';
+  const iso = serverISO(ts);
   const d = new Date(iso);
   if (isNaN(d.getTime())) return ts;
   return d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'medium', hour12: false });

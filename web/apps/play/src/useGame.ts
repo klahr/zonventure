@@ -92,8 +92,8 @@ function playEntries(): PendingAction[] {
 }
 
 export function useGame(t: Translate): Game {
-  const [status, setStatus] = useState<GameStatus>(() => (loadLast() ? "ready" : "loading"));
   const [state, setState] = useState<play.PlayState | null>(loadLast);
+  const [status, setStatus] = useState<GameStatus>(state ? "ready" : "loading");
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [queued, setQueued] = useState(0);
@@ -167,7 +167,10 @@ export function useGame(t: Translate): Game {
         const id = entry.data.client_action_id;
         const action = entry.data["action"] as play.PlayAction | undefined;
         if (!id || !action) {
-          outbox.ack(id);
+          // Unsendable. ack() matches by id, which this may not have.
+          const i = outbox.pending.indexOf(entry);
+          if (i >= 0) outbox.pending.splice(i, 1);
+          outbox.persist();
           continue;
         }
         try {

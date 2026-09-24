@@ -47,7 +47,8 @@ export interface GraphVersion {
   published?: boolean;
 }
 
-const base = (slug: string) => `/api/admin/adventures/${encodeURIComponent(slug)}/graph`;
+const adventure = (slug: string) => `/api/admin/adventures/${encodeURIComponent(slug)}`;
+const base = (slug: string) => `${adventure(slug)}/graph`;
 
 /** The latest saved graph, or null when the adventure has none yet. */
 export async function getGraph<Env, Rep>(slug: string, signal?: AbortSignal) {
@@ -123,7 +124,7 @@ interface AdventureEdit {
  * not make a new version, and applies to events already running.
  */
 export async function getLook(slug: string, signal?: AbortSignal): Promise<Look> {
-  const a = await get<AdventureEdit>(`/api/admin/adventures/${encodeURIComponent(slug)}/edit`, signal ? { signal } : {});
+  const a = await get<AdventureEdit>(`${adventure(slug)}/edit`, signal ? { signal } : {});
   const b: Brand = {};
   if (a.accent_color) b.accent = a.accent_color;
   if (a.accent_secondary_color) b.accent_secondary = a.accent_secondary_color;
@@ -148,11 +149,11 @@ export interface Look {
 
 /** Set the language the adventure is written in. */
 export const saveLanguage = (slug: string, language: string) =>
-  patch<void>(`/api/admin/adventures/${encodeURIComponent(slug)}`, { language });
+  patch<void>(adventure(slug), { language });
 
 /** Save the palette. A missing colour is cleared back to the default. */
 export const saveBrand = (slug: string, b: Brand) =>
-  patch<void>(`/api/admin/adventures/${encodeURIComponent(slug)}`, {
+  patch<void>(adventure(slug), {
     accent_color: b.accent ?? "",
     accent_secondary_color: b.accent_secondary ?? "",
     background_color: b.background ?? "",
@@ -178,5 +179,5 @@ export interface MediaUpload {
 export function uploadMedia(slug: string, file: File) {
   const form = new FormData();
   form.append("file", file);
-  return request<MediaUpload>(`/api/admin/adventures/${encodeURIComponent(slug)}/media`, { method: "POST", form });
+  return request<MediaUpload>(`${adventure(slug)}/media`, { method: "POST", form });
 }

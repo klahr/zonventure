@@ -30,8 +30,12 @@ type View struct {
 	// empty, Type is "start", and the team picks one with ChooseStart.
 	Starts []StartOption `json:"starts,omitempty"`
 
-	// Media are the step's pictures and sounds, in the author's order.
-	// The client fetches each from /media/{id}.
+	// Blocks are what a puzzle, story or end shows, in the author's
+	// order: texts, and pictures and sounds the client fetches from
+	// /media/{id}.
+	Blocks []BlockView `json:"blocks,omitempty"`
+	// Media, with Text, is Blocks for a player still running the bundle
+	// from before blocks: its pictures and sounds, and Text its texts.
 	Media []graph.Media `json:"media,omitempty"`
 
 	// Input describes the answer box of a puzzle.
@@ -142,6 +146,13 @@ type StartOption struct {
 	Here bool `json:"here"`
 }
 
+// BlockView is a block as the player sees it. A compass or map carries
+// the zone it shows, so the phone needs nothing else to draw it.
+type BlockView struct {
+	graph.Block
+	Place *graph.Zone `json:"place,omitempty"`
+}
+
 // HintView is one revealed hint.
 type HintView struct {
 	Text  string        `json:"text"`
@@ -222,6 +233,24 @@ func (t *Team) journalView() []JournalView {
 	return out
 }
 
+// setBlocks shows a step's blocks, and the same content in the shape
+// players from before blocks read.
+func (t *Team) setBlocks(v *View, bs []graph.Block) {
+	v.Blocks = make([]BlockView, len(bs))
+	for i, b := range bs {
+		v.Blocks[i].Block = b
+		if b.Kind == graph.BlockCompass || b.Kind == graph.BlockMap {
+			for _, z := range t.G.Zones {
+				if z.Slug == b.Zone {
+					zc := z
+					v.Blocks[i].Place = &zc
+				}
+			}
+		}
+	}
+	v.Text, v.Media = graph.TextOf(bs), graph.MediaOf(bs)
+}
+
 // View renders the team's state for the player.
 func (t *Team) View() View {
 	v := t.view()
@@ -289,8 +318,18 @@ func (t *Team) translate(v *View) {
 	v.Title = tr(key("title"), v.Title)
 	if v.Type == graph.Hub {
 		v.Text = tr(key("hub-text"), v.Text)
-	} else {
-		v.Text = tr(key("text"), v.Text)
+	} else if v.Blocks != nil {
+		v.Blocks = append([]BlockView(nil), v.Blocks...)
+		plain := make([]graph.Block, len(v.Blocks))
+		for i := range v.Blocks {
+			b := &v.Blocks[i]
+			if b.Kind == graph.BlockText {
+				b.Text = tr(graph.BlockKey(v.Node, b.ID), b.Text)
+			}
+			b.Place = zone(b.Place)
+			plain[i] = b.Block
+		}
+		v.Text = graph.TextOf(plain)
 	}
 	v.Zone = zone(v.Zone)
 	for i := range v.Hints {
@@ -401,7 +440,7 @@ func (t *Team) view() View {
 		if cfg == nil {
 			return v
 		}
-		v.Text, v.Media = cfg.Prompt, cfg.Media
+		t.setBlocks(&v, cfg.Blocks)
 		if cfg.Zone != "" {
 			setZone(cfg.Zone)
 		}
@@ -433,14 +472,14 @@ func (t *Team) view() View {
 		v.CanSkip = t.canSkip(n)
 	case graph.Story:
 		if n.StoryCfg != nil {
-			v.Text, v.Media = n.StoryCfg.Text, n.StoryCfg.Media
+			t.setBlocks(&v, n.StoryCfg.Blocks)
 			if n.StoryCfg.Zone != "" {
 				setZone(n.StoryCfg.Zone)
 			}
 		}
 	case graph.End:
 		if n.EndCfg != nil {
-			v.Text, v.Media = n.EndCfg.Text, n.EndCfg.Media
+			t.setBlocks(&v, n.EndCfg.Blocks)
 		}
 	case graph.Hub:
 		// Recompute the offer: it is a function of state, not stored.

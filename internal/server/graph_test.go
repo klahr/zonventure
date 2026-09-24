@@ -287,7 +287,7 @@ func TestAdventureListFollowsTheDesigner(t *testing.T) {
 	g := graph.Graph{
 		Nodes: []graph.Node{
 			{Slug: "start", Type: graph.Start},
-			{Slug: "q", Type: graph.Puzzle, PuzzleCfg: &graph.PuzzleConfig{Prompt: "?", Outputs: []graph.Output{
+			{Slug: "q", Type: graph.Puzzle, PuzzleCfg: &graph.PuzzleConfig{Blocks: graph.LegacyBlocks("?", nil), Outputs: []graph.Output{
 				{Port: "solved", Trigger: graph.OnAnswer, Matchers: []match.Matcher{{Kind: match.Exact, Value: "x"}}},
 			}}},
 			{Slug: "end", Type: graph.End},

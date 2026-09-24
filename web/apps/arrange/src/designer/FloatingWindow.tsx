@@ -61,6 +61,7 @@ export function FloatingWindow({ title, storageKey, onClose, actions, children }
     const up = () => {
       el.removeEventListener("pointermove", move);
       el.removeEventListener("pointerup", up);
+      el.removeEventListener("pointercancel", up);
       setPos((p) => {
         if (p) {
           try {
@@ -74,6 +75,7 @@ export function FloatingWindow({ title, storageKey, onClose, actions, children }
     };
     el.addEventListener("pointermove", move);
     el.addEventListener("pointerup", up);
+    el.addEventListener("pointercancel", up);
   };
 
   return (

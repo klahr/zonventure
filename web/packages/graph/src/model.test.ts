@@ -200,10 +200,12 @@ describe("persistence", () => {
       edges: g.edges.map((e) => ({ ...e, id: "x", animated: true })),
       viewport: { zoom: 1 },
     } as unknown as Graph;
-    const clean = JSON.stringify(cleanGraph(dirty));
-    for (const bad of ["selected", "measured", "animated", "viewport", '"id"']) {
+    const cleaned = cleanGraph(dirty);
+    const clean = JSON.stringify(cleaned);
+    for (const bad of ["selected", "measured", "animated", "viewport"]) {
       assert.equal(clean.includes(bad), false, `${bad} should have been stripped`);
     }
+    for (const e of cleaned.edges) assert.deepEqual(Object.keys(e), ["from", "from_port", "to"], "an edge keeps only its own fields");
   });
 
   test("differs notices content and layout changes, not identity", () => {
@@ -243,7 +245,7 @@ describe("tidy", () => {
   // Tidy keeps an author's grouping: steps stay in their frame, frames
   // fit their steps, and a frame that grows pushes the next one down.
   test("keeps steps inside their frames", () => {
-    const story = (slug: string, x: number, y: number) => ({ slug, type: "story" as const, x, y, story: { text: "" } });
+    const story = (slug: string, x: number, y: number) => ({ slug, type: "story" as const, x, y, story: { blocks: [{ id: "b1", kind: "text" as const, text: "" }] } });
     const g: Graph = {
       nodes: [story("a1", 0, 60), story("a2", 20, 70), story("a3", 40, 80), story("b1", 0, 360), story("b2", 30, 370)],
       edges: [

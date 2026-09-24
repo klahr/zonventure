@@ -151,7 +151,7 @@ func puzzle(slug, answer string, extra ...graph.Output) graph.Node {
 		Matchers: []match.Matcher{{Kind: match.Exact, Value: answer}},
 	}}
 	return graph.Node{Slug: slug, Type: graph.Puzzle, Title: slug,
-		PuzzleCfg: &graph.PuzzleConfig{Prompt: "?", Outputs: append(outs, extra...)}}
+		PuzzleCfg: &graph.PuzzleConfig{Blocks: graph.LegacyBlocks("?", nil), Outputs: append(outs, extra...)}}
 }
 
 func edge(from, port, to string) graph.Edge { return graph.Edge{From: from, FromPort: port, To: to} }
@@ -359,8 +359,8 @@ func TestBranchingAdventureOnPostgres(t *testing.T) {
 			puzzle("statue", "horse"), hub,
 			puzzle("task-church", "bell"), puzzle("task-market", "fish"),
 			gate, puzzle("vault", "open"),
-			{Slug: "hint", Type: graph.Story, StoryCfg: &graph.StoryConfig{Text: "You need the church code."}},
-			{Slug: "end", Type: graph.End, EndCfg: &graph.EndConfig{Text: "Well done."}},
+			{Slug: "hint", Type: graph.Story, StoryCfg: &graph.StoryConfig{Blocks: graph.LegacyBlocks("You need the church code.", nil)}},
+			{Slug: "end", Type: graph.End, EndCfg: &graph.EndConfig{Blocks: graph.LegacyBlocks("Well done.", nil)}},
 		},
 		Edges: []graph.Edge{
 			edge("start", graph.PortOut, "statue"),
@@ -802,7 +802,7 @@ func TestHomeScreenLive(t *testing.T) {
 			{Slug: "home", Type: graph.Hub, Title: "Obscurium", HubCfg: &graph.HubConfig{Policy: graph.PolicyChoice, Home: true, Branches: []graph.Branch{
 				{Port: "carl", Label: "Carl"}, {Port: "accuse", Label: "Solve"},
 			}}},
-			{Slug: "carl", Type: graph.Story, StoryCfg: &graph.StoryConfig{Text: "Carl.", Once: true}, Unlocks: []string{"carl"}},
+			{Slug: "carl", Type: graph.Story, StoryCfg: &graph.StoryConfig{Blocks: graph.LegacyBlocks("Carl.", nil), Once: true}, Unlocks: []string{"carl"}},
 			puzzle("carl-q", "1997"),
 			puzzle("accuse", "erika"),
 			{Slug: "end", Type: graph.End},
@@ -888,7 +888,7 @@ func TestLanguageLive(t *testing.T) {
 		Nodes: []graph.Node{
 			{Slug: "start", Type: graph.Start},
 			{Slug: "q", Type: graph.Puzzle, Title: "Frågan", PuzzleCfg: &graph.PuzzleConfig{
-				Prompt:    "Hur många?",
+				Blocks:    graph.LegacyBlocks("Hur många?", nil),
 				Outputs:   []graph.Output{{Port: "solved", Trigger: graph.OnAnswer, Matchers: []match.Matcher{{Kind: match.Exact, Value: "sex"}}}},
 				Responses: []graph.Response{{Text: "Fel."}},
 			}},

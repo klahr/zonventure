@@ -91,7 +91,7 @@ type Graph struct {
 
 // Field keys for Translations. A node's are:
 //
-//	title  text  hub-text
+//	title  hub-text  block:<id> (a text block)
 //	out:<port>:label
 //	out:<port>:answers  out:<port>:contains (more accepted answers, one per line)
 //	reply:<i>  hint:<i>
@@ -369,8 +369,11 @@ type Hint struct {
 
 // PuzzleConfig is the workhorse node.
 type PuzzleConfig struct {
-	Prompt string  `json:"prompt,omitempty"`
-	Media  []Media `json:"media,omitempty"`
+	Blocks []Block `json:"blocks,omitempty"`
+	// LegacyPrompt and LegacyMedia are the content of a graph saved
+	// before blocks. Only Graph.Normalize reads them.
+	LegacyPrompt string  `json:"prompt,omitempty"`
+	LegacyMedia  []Media `json:"media,omitempty"`
 
 	// Zone gates arrival: the prompt is withheld and answers refused
 	// until the team is inside it.
@@ -589,9 +592,11 @@ const (
 // outputs, but stays a distinct type because the canvas reads better
 // when a narrative beat does not look like a challenge.
 type StoryConfig struct {
-	Text  string  `json:"text,omitempty"`
-	Media []Media `json:"media,omitempty"`
-	Zone  string  `json:"zone,omitempty"`
+	Blocks []Block `json:"blocks,omitempty"`
+	// LegacyText and LegacyMedia: see PuzzleConfig.LegacyPrompt.
+	LegacyText  string  `json:"text,omitempty"`
+	LegacyMedia []Media `json:"media,omitempty"`
+	Zone        string  `json:"zone,omitempty"`
 	// Once shows the story only the first time: a team that comes this
 	// way again passes straight through. For an arrival or introduction
 	// on a branch a team returns to — walking back to a suspect should
@@ -776,8 +781,10 @@ type StartConfig struct {
 // EndConfig terminates the run.
 type EndConfig struct {
 	Outcome Outcome `json:"outcome,omitempty"`
-	Text    string  `json:"text,omitempty"`
-	Media   []Media `json:"media,omitempty"`
+	Blocks  []Block `json:"blocks,omitempty"`
+	// LegacyText and LegacyMedia: see PuzzleConfig.LegacyPrompt.
+	LegacyText  string  `json:"text,omitempty"`
+	LegacyMedia []Media `json:"media,omitempty"`
 }
 
 // Zone is a named geofence, referenced by slug from starts, puzzles,
@@ -1016,16 +1023,16 @@ func (n Node) MediaLists() [][]Media {
 	var out [][]Media
 	switch {
 	case n.PuzzleCfg != nil:
-		own := n.PuzzleCfg.Media
+		own := MediaOf(n.PuzzleCfg.Blocks)
 		if a := n.PuzzleCfg.Answer; a != nil {
-			own = append(append([]Media{}, own...), a.Media()...)
+			own = append(own, a.Media()...)
 		}
 		out = append(out, own)
 		for _, h := range n.PuzzleCfg.Hints {
 			out = append(out, h.Media)
 		}
 	case n.StoryCfg != nil:
-		out = append(out, n.StoryCfg.Media)
+		out = append(out, MediaOf(n.StoryCfg.Blocks))
 	case n.HubCfg != nil:
 		var own []Media
 		for _, b := range n.HubCfg.Branches {
@@ -1035,7 +1042,7 @@ func (n Node) MediaLists() [][]Media {
 		}
 		out = append(out, own)
 	case n.EndCfg != nil:
-		out = append(out, n.EndCfg.Media)
+		out = append(out, MediaOf(n.EndCfg.Blocks))
 	}
 	return out
 }

@@ -202,7 +202,7 @@ func TestJSONRoundTrip(t *testing.T) {
 		Nodes: []Node{
 			{Slug: "start", Type: Start},
 			{Slug: "door", Type: Puzzle, PuzzleCfg: &PuzzleConfig{
-				Prompt:  "Which door?",
+				Blocks:  LegacyBlocks("Which door?", nil),
 				Outputs: []Output{{Port: "left", Trigger: OnAnswer, Points: 10}},
 			}},
 			{Slug: "hub", Type: Hub, HubCfg: &HubConfig{

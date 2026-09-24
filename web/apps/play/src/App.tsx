@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Markdown, PlayView, StartCeremony, brandVars } from "@zonventure/play-ui";
+import { Markdown, PlayView, StartCeremony, brandVars, metresBetween, type Translate } from "@zonventure/play-ui";
 import type { play } from "@zonventure/api";
 import { useT } from "./i18n.tsx";
 import { useGame } from "./useGame.ts";
-import { metresBetween, useGeo, useLiveRefresh } from "./live.ts";
+import { useGeo, useLiveRefresh } from "./live.ts";
 
 export function App() {
   const i18n = useT();
-  const t = (key: string, vars?: Record<string, string | number>) => i18n.t(key, vars);
+  const t = i18n.t;
   const game = useGame(t);
   const s = game.state;
   const view = s?.view;
@@ -104,6 +104,7 @@ export function App() {
             {...(s.event.outro_text ? { outro: s.event.outro_text } : {})}
             {...(zoneNote ? { zoneNote } : {})}
             placeNote={placeNote}
+            {...(geo.pos ? { position: { lat: geo.pos.coords.latitude, lng: geo.pos.coords.longitude } } : {})}
             storageKey={`team-${s.team.id}`}
           />
         ) : (
@@ -115,7 +116,7 @@ export function App() {
   );
 }
 
-function Lobby({ state, t }: { state: NonNullable<ReturnType<typeof useGame>["state"]>; t: (k: string, v?: Record<string, string | number>) => string }) {
+function Lobby({ state, t }: { state: play.PlayState; t: Translate }) {
   const at = state.event.scheduled_at ? new Date(state.event.scheduled_at) : null;
   if (state.event.state === "cancelled") {
     return <p>{t("This event has been cancelled.")}</p>;

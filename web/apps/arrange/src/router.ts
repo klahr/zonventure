@@ -13,8 +13,16 @@ export type Route =
   | { name: "adventures" }
   | { name: "designer"; slug: string };
 
+function decode(part: string): string {
+  try {
+    return decodeURIComponent(part);
+  } catch {
+    return part;
+  }
+}
+
 export function parseRoute(hash: string): Route {
-  const parts = hash.replace(/^#\/?/, "").split("/").filter(Boolean).map(decodeURIComponent);
+  const parts = hash.replace(/^#\/?/, "").split("/").filter(Boolean).map(decode);
   if (parts[0] === "adventures" && parts[1]) return { name: "designer", slug: parts[1] };
   if (parts[0] === "adventures") return { name: "adventures" };
   return { name: "dashboard" };
@@ -38,10 +46,6 @@ export function href(r: Route): string {
  */
 export function consoleHref(hash: string): string {
   return `/arrange#${hash}`;
-}
-
-export function navigate(r: Route): void {
-  window.location.hash = href(r);
 }
 
 function subscribe(cb: () => void) {

@@ -157,6 +157,7 @@ func scan(row *sql.Row) (Stored, error) {
 	if err := json.Unmarshal(doc, &g); err != nil {
 		return Stored{}, fmt.Errorf("decoding stored graph %d: %w", s.ID, err)
 	}
+	g.Normalize()
 	if g.Language == "" {
 		g.Language = lang
 	}

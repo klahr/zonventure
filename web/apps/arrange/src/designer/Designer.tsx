@@ -71,9 +71,11 @@ function narrowScreen(): boolean {
   return typeof window !== "undefined" && !!window.matchMedia?.(NARROW).matches;
 }
 
+const errorText = (e: unknown): string => (e instanceof Error ? e.message : String(e));
+
 const loadError = (e: unknown): Loaded => ({
   state: "error",
-  message: e instanceof Error ? e.message : String(e),
+  message: errorText(e),
   ...(e instanceof ApiError ? { status: e.status } : {}),
 });
 
@@ -266,7 +268,7 @@ export function Designer({ slug }: { slug: string }) {
       setSaveError(null);
       return true;
     } catch (e) {
-      setSaveError(e instanceof ApiError || e instanceof Error ? e.message : String(e));
+      setSaveError(errorText(e));
       return false;
     } finally {
       setSaving(false);
@@ -356,7 +358,7 @@ export function Designer({ slug }: { slug: string }) {
         setIssuePanel("error");
         setSaveError(t.t("Not published: fix the errors first."));
       } else {
-        setSaveError(e instanceof Error ? e.message : String(e));
+        setSaveError(errorText(e));
       }
     } finally {
       setPublishing(false);
@@ -396,7 +398,7 @@ export function Designer({ slug }: { slug: string }) {
       setPreview({ version: v, graph: r.envelope.graph });
       setSelected(null);
     } catch (e) {
-      setSaveError(e instanceof Error ? e.message : String(e));
+      setSaveError(errorText(e));
     }
   };
 
@@ -415,7 +417,7 @@ export function Designer({ slug }: { slug: string }) {
       void loadVersions();
       if (published?.version === v.version) setPublished({ ...published, label });
     } catch (e) {
-      setSaveError(e instanceof Error ? e.message : String(e));
+      setSaveError(errorText(e));
     }
   };
 
@@ -453,7 +455,6 @@ export function Designer({ slug }: { slug: string }) {
 
   // --- derived ----------------------------------------------------------------------
 
-  const showList = listView;
   const node = graph && selected ? nodeBySlug(graph, selected) : undefined;
   const simEnvelope = useMemo(() => (draft ? envelope(draft) : null), [draft]);
   const slotOpen = slot !== "inspect" || !!node;
@@ -513,6 +514,10 @@ export function Designer({ slug }: { slug: string }) {
   if (!graph) return null;
 
   const isLive = published !== null;
+  const issueRows = (list: Issue[]) =>
+    list.map((i, k) => (
+      <IssueRow key={k} text={<IssueText graph={graph} issue={i} />} actions={i.node ? <Button variant="link" onClick={() => jumpTo(i)}>{t.t("Show")}</Button> : undefined} />
+    ));
   const kebabItems: ContextMenuItem[] = [
     { label: t.t("Adventure settings"), onClick: () => setSettingsOpen(true) },
     { label: t.t("Keyboard shortcuts"), shortcut: "?", onClick: () => setHelpOpen(true) },
@@ -540,7 +545,7 @@ export function Designer({ slug }: { slug: string }) {
               <span className="toolbar-divider" aria-hidden="true" />
               <div className="toolbar-group">
                 {/* The outline has its own add buttons, beneath its steps. */}
-                {!showList && (
+                {!listView && (
                 <Button
                   variant="ghost"
                   className="editor-add-drop"
@@ -555,10 +560,10 @@ export function Designer({ slug }: { slug: string }) {
                 )}
                 <Button
                   variant="ghost"
-                  className={"editor-dataview" + (showList ? " on" : "")}
-                  aria-pressed={showList}
+                  className={"editor-dataview" + (listView ? " on" : "")}
+                  aria-pressed={listView}
                   onClick={() => setListView((v) => !v)}
-                  title={showList ? t.t("Back to the canvas") : t.t("Show the adventure as an outline of its steps")}
+                  title={listView ? t.t("Back to the canvas") : t.t("Show the adventure as an outline of its steps")}
                   aria-label={t.t("List view")}
                 >
                   <ListOrdered size={ICON.sm} />
@@ -585,9 +590,9 @@ export function Designer({ slug }: { slug: string }) {
               </div>
             </div>
 
-            {graph && <LanguageSwitch graph={graph} main={mainLang} meta={meta} value={editLang} onChange={setEditLang} />}
+            <LanguageSwitch graph={graph} main={mainLang} meta={meta} value={editLang} onChange={setEditLang} />
 
-            {!showList && (
+            {!listView && (
               <Button variant="ghost" data-tidy="toolbar" disabled={readOnly} onClick={() => change(tidy(graph, cardSizes()))} title={t.t("Auto-arrange the adventure into clean columns")}>
                 <LayoutGrid size={ICON.sm} aria-hidden="true" />
                 <span className="toolbar-label">{t.t("Tidy")}</span>
@@ -602,9 +607,7 @@ export function Designer({ slug }: { slug: string }) {
               open={issuePanel === "error"}
               onOpenChange={(o) => setIssuePanel(o ? "error" : null)}
             >
-              {errors.map((i, k) => (
-                <IssueRow key={k} text={<IssueText graph={graph} issue={i} />} actions={i.node ? <Button variant="link" onClick={() => jumpTo(i)}>{t.t("Show")}</Button> : undefined} />
-              ))}
+              {issueRows(errors)}
             </IssuesButton>
             <IssuesButton
               kind="warning"
@@ -614,9 +617,7 @@ export function Designer({ slug }: { slug: string }) {
               open={issuePanel === "warning"}
               onOpenChange={(o) => setIssuePanel(o ? "warning" : null)}
             >
-              {warnings.map((i, k) => (
-                <IssueRow key={k} text={<IssueText graph={graph} issue={i} />} actions={i.node ? <Button variant="link" onClick={() => jumpTo(i)}>{t.t("Show")}</Button> : undefined} />
-              ))}
+              {issueRows(warnings)}
             </IssuesButton>
 
             {/* The one place to publish. A button, not a switch: publishing
@@ -723,7 +724,7 @@ export function Designer({ slug }: { slug: string }) {
             </div>
           )}
 
-          {showList ? (
+          {listView ? (
             <div className="dz-list">
               <ListView
                 graph={graph}

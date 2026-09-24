@@ -4,17 +4,6 @@ import { useT } from "../i18n.tsx";
 import { X } from "lucide-react";
 import { ICON } from "./dz/ui.tsx";
 
-/**
- * The adventure's palette, edited beside the phone preview so every
- * change shows on the step at once. These are the five colours the lane
- * player already understood (internal/adventure: Colors), so an
- * adventure styled for either player looks the same in both.
- *
- * Only #rrggbb is kept — the colour picker produces nothing else, and
- * the text field is checked before a value is accepted. Contrast is not
- * the author's job: text on the accent and on the answer bar is picked
- * automatically (play-ui/brand.ts).
- */
 /** What each typeface is for, in the author's words. */
 const FONT_LABELS: Record<string, string> = {
   inconsolata: "Terminal",
@@ -41,6 +30,17 @@ interface Props {
   onRevert: () => void;
 }
 
+/**
+ * The adventure's palette, edited beside the phone preview so every
+ * change shows on the step at once. These are the five colours the lane
+ * player already understood (internal/adventure: Colors), so an
+ * adventure styled for either player looks the same in both.
+ *
+ * Only #rrggbb is kept — the colour picker produces nothing else, and
+ * the text field is checked before a value is accepted. Contrast is not
+ * the author's job: text on the accent and on the answer bar is picked
+ * automatically (play-ui/brand.ts).
+ */
 export function Look({ brand, dirty, saving, error, onChange, onSave, onRevert }: Props) {
   const t = useT();
   const set = (key: keyof play.Brand, v: string | null) => {

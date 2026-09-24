@@ -30,11 +30,14 @@ export function CanvasContextMenu({
   onClose: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  // Callers pass a fresh onClose each render; the listeners stay put.
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   useEffect(() => {
-    const close = () => onClose();
+    const close = () => onCloseRef.current();
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") onCloseRef.current();
     };
     const id = window.setTimeout(() => {
       window.addEventListener("click", close);
@@ -51,7 +54,7 @@ export function CanvasContextMenu({
       window.removeEventListener("scroll", close, true);
       window.removeEventListener("keydown", onKey);
     };
-  }, [onClose]);
+  }, []);
 
   // Nudge the menu back on-screen if it would overflow the right/bottom edge.
   useEffect(() => {

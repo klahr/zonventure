@@ -7,6 +7,7 @@
 // dazyflow's nodes carry an untyped `params` bag and frames; ours carry
 // typed per-node configs and x/y coordinates.
 
+import { sameData as sameJSON } from "./reconcile.ts";
 import type { Graph } from "./types.ts";
 
 // Whole-document snapshots rather than a command stack: the editor mutates
@@ -54,11 +55,6 @@ export const HISTORY_LIMIT = 200;
 
 export function emptyHistory(): HistoryState {
   return { past: [], present: null, future: [], presentDelta: { kind: "none" }, presentAt: 0 };
-}
-
-function sameJSON(a: unknown, b: unknown): boolean {
-  if (a === b) return true;
-  return JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 }
 
 function withoutPositions(g: HistoryDoc): unknown {
@@ -115,9 +111,7 @@ function coalescible(a: DeltaKind, b: DeltaKind): boolean {
  * selection-only changes reach here constantly and must not create steps.
  */
 export function record(state: HistoryState, doc: HistoryDoc, now: number): HistoryState {
-  if (state.present === null) {
-    return { past: [], present: doc, future: [], presentDelta: { kind: "none" }, presentAt: now };
-  }
+  if (state.present === null) return rebase(doc, now);
   const delta = classifyDelta(state.present, doc);
   if (delta.kind === "none") return state;
 

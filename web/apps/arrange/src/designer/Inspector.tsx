@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from "react";
 import type {
+  Branch,
   EffectConfig,
   Graph,
   Hint,
@@ -21,15 +22,18 @@ import type {
   Trigger,
   Zone,
 } from "@zonventure/graph";
-import { answerOptions, isGraded, isPolygon, matcherLabel, nodeBySlug, portLabel, puzzlesInto, referAnswer, resolveAnswer, updateNode } from "@zonventure/graph";
+import { answerOptions, isGraded, withBlocks, matcherLabel, nodeBySlug, portLabel, puzzlesInto, referAnswer, resolveAnswer, updateNode } from "@zonventure/graph";
 import { useT } from "../i18n.tsx";
 import { ConditionEditor } from "./ConditionEditor.tsx";
 import { MediaEditor } from "./MediaEditor.tsx";
+import { BlocksEditor } from "./BlocksEditor.tsx";
+import { Field, ZoneSelect } from "./fields.tsx";
 import { AlertTriangle, ChevronLeft, ChevronRight, Eye, Plus, Trash2, X } from "lucide-react";
 import { Button, HelpPopover, ICON } from "./dz/ui.tsx";
-import { STEP } from "./dz/types.tsx";
+import { STEP, VISIBLE } from "./dz/types.tsx";
 import { ConceptIcon, PART, TRIGGER } from "./dz/concepts.tsx";
 import { ZoneMap } from "./ZoneMap.tsx";
+import { nearLastZone, zoneGroups, zoneName } from "./zones.ts";
 
 interface Props {
   node: Node;
@@ -93,7 +97,7 @@ export function Inspector({ node, graph, issues, onChange, onGraphChange, onDele
           <HelpPopover label={t.t("What this step does")} body={t.t(kind.about)} />
         </span>
         <span className="inspector-head-right">
-          {(node.type === "puzzle" || node.type === "story" || node.type === "hub" || node.type === "end") && (
+          {VISIBLE.has(node.type) && (
             <Button variant="ghost" size="icon" onClick={onPreview} aria-label={t.t("Preview this step")} title={t.t("Preview this step")}>
               <Eye size={ICON.md} />
             </Button>
@@ -238,10 +242,6 @@ function clip(s: string | undefined, n = 60): string {
   return one.length > n ? one.slice(0, n - 1) + "…" : one;
 }
 
-function zoneName(graph: Graph, slug: string): string {
-  return (graph.zones ?? []).find((x) => x.slug === slug)?.name || slug;
-}
-
 /** The parts of a node's settings, in the order the inspector shows them. */
 function partsOf(node: Node, graph: Graph, onChange: (n: Node) => void, onGraphChange: (g: Graph) => void, t: T): Part[] {
   const parts: Part[] = [];
@@ -259,17 +259,7 @@ function partsOf(node: Node, graph: Graph, onChange: (n: Node) => void, onGraphC
         title: t.t("What the team sees"),
         editor: (
           <>
-            <Field label={t.t("Text")} hint={t.t("Markdown.")}>
-              <textarea
-                className="field__input"
-                rows={6}
-                value={story.text ?? ""}
-                onChange={(e) => onChange({ ...node, story: { ...story, text: e.target.value } })}
-              />
-            </Field>
-            <Field label={t.t("Pictures and sounds")}>
-              <MediaEditor media={story.media} onChange={(media) => onChange({ ...node, story: withOptional({ ...story }, "media", media) })} />
-            </Field>
+            <BlocksEditor graph={graph} blocks={story.blocks} textLabel={t.t("Text")} onChange={(blocks) => onChange(withBlocks(node, blocks))} />
           </>
         ),
       });
@@ -339,19 +329,14 @@ function partsOf(node: Node, graph: Graph, onChange: (n: Node) => void, onGraphC
                 <option value="fail">{t.t("Failure")}</option>
               </select>
             </Field>
-            <Field label={t.t("Closing text")}>
-              <textarea className="field__input" rows={4} value={end.text ?? ""} onChange={(e) => onChange({ ...node, end: { ...end, text: e.target.value } })} />
-            </Field>
-            <Field label={t.t("Pictures and sounds")}>
-              <MediaEditor media={end.media} onChange={(media) => onChange({ ...node, end: withOptional({ ...end }, "media", media) })} />
-            </Field>
+            <BlocksEditor graph={graph} blocks={end.blocks} textLabel={t.t("Closing text")} onChange={(blocks) => onChange(withBlocks({ ...node, end }, blocks))} />
           </>
         ),
       });
       break;
     }
   }
-  if (node.type === "puzzle" || node.type === "story" || node.type === "hub" || node.type === "end") {
+  if (VISIBLE.has(node.type)) {
     const titles = (node.unlocks ?? []).map((s) => (graph.journal ?? []).find((e) => e.slug === s)?.title || s);
     parts.push({
       id: "journal",
@@ -385,9 +370,7 @@ function StartForm({ node, graph, onGraphChange }: { node: Node; graph: Graph; o
     const used = new Set(zones.map((z) => z.slug));
     let i = 1;
     while (used.has(`start-${i}`)) i++;
-    // Near the adventure's other places, or central Stockholm for a first one.
-    const near = zones[zones.length - 1];
-    const z: Zone = { slug: `start-${i}`, name: node.title || t.t("Start"), lat: near?.lat ?? 59.3293, lng: near?.lng ?? 18.0686, radius_m: 30 };
+    const z: Zone = { slug: `start-${i}`, name: node.title || t.t("Start"), ...nearLastZone(zones), radius_m: 30 };
     setZone({ ...graph, zones: [...zones, z] }, z.slug);
   };
 
@@ -446,7 +429,7 @@ function puzzleParts(cfg: PuzzleConfig, graph: Graph, onChange: (c: PuzzleConfig
 
   const addOutput = (trigger: Trigger) => {
     const taken = new Set(outputs.map((o) => o.port));
-    let port = trigger === "answer" ? "answer" : trigger;
+    let port: string = trigger;
     for (let i = 2; taken.has(port); i++) port = `${trigger}-${i}`;
     const o: Output = { port, label: TRIGGERS.find((x) => x.t === trigger)!.label, trigger };
     if (trigger === "answer") o.matchers = [{ kind: "exact", value: "" }];
@@ -468,12 +451,8 @@ function puzzleParts(cfg: PuzzleConfig, graph: Graph, onChange: (c: PuzzleConfig
       title: t.t("What the team sees"),
       editor: (
         <>
-          <Field label={t.t("Prompt")} hint={t.t("Markdown. This is what the team reads.")}>
-            <textarea className="field__input" rows={5} value={cfg.prompt ?? ""} onChange={(e) => onChange({ ...cfg, prompt: e.target.value })} />
-          </Field>
-          <Field label={t.t("Pictures and sounds")} hint={t.t("Shown above the prompt. A team only receives them once it reaches this step.")}>
-            <MediaEditor media={cfg.media} onChange={(media) => onChange(withOptional({ ...cfg }, "media", media))} />
-          </Field>
+          <BlocksEditor graph={graph} blocks={cfg.blocks} textLabel={t.t("Text")} onChange={(blocks) => onChange(withOptional({ ...cfg }, "blocks", blocks.length ? blocks : undefined))} />
+          <p className="field__hint">{t.t("Shown in this order, above the answer. A team only receives pictures and sounds once it reaches this step.")}</p>
         </>
       ),
     },
@@ -859,6 +838,7 @@ const POLICIES: { p: Policy; label: string; hint: string }[] = [
 function hubParts(cfg: HubConfig, graph: Graph, onChange: (c: HubConfig) => void, onHome: (home: boolean) => void, t: T): Part[] {
   const branches = cfg.branches ?? [];
   const policy = POLICIES.find((p) => p.p === cfg.policy);
+  const setBranch = (i: number, b: Branch) => onChange({ ...cfg, branches: branches.map((x, j) => (j === i ? b : x)) });
   const parts: Part[] = [
     {
       id: "setup",
@@ -957,14 +937,14 @@ function hubParts(cfg: HubConfig, graph: Graph, onChange: (c: HubConfig) => void
               className="field__input"
               value={b.label ?? ""}
               placeholder={b.port}
-              onChange={(e) => onChange({ ...cfg, branches: branches.map((x, j) => (j === i ? { ...b, label: e.target.value } : x)) })}
+              onChange={(e) => setBranch(i, { ...b, label: e.target.value })}
               aria-label={t.t("Branch label")}
             />
             {cfg.policy === "capacity" && (
               <NumberField
                 label={t.t("Max teams")}
                 value={b.capacity}
-                onChange={(n) => onChange({ ...cfg, branches: branches.map((x, j) => (j === i ? withOptional({ ...b }, "capacity", n) : x)) })}
+                onChange={(n) => setBranch(i, withOptional({ ...b }, "capacity", n))}
               />
             )}
             <button
@@ -986,12 +966,12 @@ function hubParts(cfg: HubConfig, graph: Graph, onChange: (c: HubConfig) => void
                 value={b.note ?? ""}
                 placeholder={t.t("A line under the label")}
                 aria-label={t.t("Subtitle")}
-                onChange={(e) => onChange({ ...cfg, branches: branches.map((x, j) => (j === i ? withOptional({ ...b }, "note", e.target.value || undefined) : x)) })}
+                onChange={(e) => setBranch(i, withOptional({ ...b }, "note", e.target.value || undefined))}
               />
               <MediaEditor
                 single
                 media={b.image ? [b.image] : undefined}
-                onChange={(m) => onChange({ ...cfg, branches: branches.map((x, j) => (j === i ? withOptional({ ...b }, "image", m?.[0]) : x)) })}
+                onChange={(m) => setBranch(i, withOptional({ ...b }, "image", m?.[0]))}
               />
             </details>
           )}
@@ -1000,9 +980,7 @@ function hubParts(cfg: HubConfig, graph: Graph, onChange: (c: HubConfig) => void
             <ConditionEditor
               graph={graph}
               value={b.condition ?? { op: "" }}
-              onChange={(c) =>
-                onChange({ ...cfg, branches: branches.map((x, j) => (j === i ? withOptional({ ...b }, "condition", c.op ? c : undefined) : x)) })
-              }
+              onChange={(c) => setBranch(i, withOptional({ ...b }, "condition", c.op ? c : undefined))}
             />
           </details>
         </div>
@@ -1025,7 +1003,6 @@ function hubParts(cfg: HubConfig, graph: Graph, onChange: (c: HubConfig) => void
   return parts;
 }
 
-/** a, b, … z, then branch-27, branch-28 — never a port already in use. */
 /**
  * A crossroads (a switch node): which answer it reads, and the paths it
  * can take. A path picks answers from the puzzle's own accepted answers,
@@ -1175,6 +1152,7 @@ function switchParts(node: Node, graph: Graph, onGraphChange: (g: Graph) => void
   return parts;
 }
 
+/** a, b, … z, then branch-27, branch-28 — never a port already in use. */
 function nextBranchPort(taken: string[]): string {
   const used = new Set(taken);
   for (let c = 0; c < 26; c++) {
@@ -1242,15 +1220,6 @@ function EffectForm({ cfg, graph, onChange }: { cfg: EffectConfig; graph: Graph;
 
 // --- small building blocks ---------------------------------------------------
 
-function Field({ label, hint, children }: { label: string; hint?: string | undefined; children: ReactNode }) {
-  return (
-    <label className="field">
-      <span className="field__label">{label}</span>
-      {children}
-      {hint && <span className="field__hint">{hint}</span>}
-    </label>
-  );
-}
 
 /**
  * A combination lock: how many wheels, the symbols they turn through, and
@@ -1419,7 +1388,7 @@ function ChoicesForm({ cfg, choice: choices, onChange }: { cfg: PuzzleConfig; ch
  */
 function SearchForm({ cfg, search, graph, onChange }: { cfg: PuzzleConfig; search: AnswerOf<"search">; graph: Graph; onChange: (c: PuzzleConfig) => void }) {
   const t = useT();
-  const groups = [...new Set((graph.zones ?? []).map((z) => z.group).filter((g): g is string => !!g))];
+  const groups = zoneGroups(graph.zones ?? []);
   return (
     <>
       <Field label={t.t("Tell the team which of these it is in")} hint={groups.length ? undefined : t.t("Give zones a group under Adventure settings → Zones, such as the cells of a grid.")}>
@@ -1524,22 +1493,6 @@ function NumberField({ label, value, onChange }: { label: string; value: number 
   );
 }
 
-function ZoneSelect({ graph, label, value, onChange }: { graph: Graph; label: string; value: string | undefined; onChange: (z: string | undefined) => void }) {
-  const t = useT();
-  const zones = graph.zones ?? [];
-  return (
-    <Field label={label} hint={zones.length === 0 ? t.t("Add zones under Adventure settings (⋮ menu) → Zones.") : undefined}>
-      <select className="field__input" value={value ?? ""} onChange={(e) => onChange(e.target.value || undefined)}>
-        <option value="">{t.t("Anywhere")}</option>
-        {zones.map((z) => (
-          <option key={z.slug} value={z.slug}>
-            {z.name || z.slug} ({isPolygon(z) ? t.t("area") : `${z.radius_m} m`})
-          </option>
-        ))}
-      </select>
-    </Field>
-  );
-}
 
 function ResourceSelect({ label, value, options, onChange }: { label: string; value: string | undefined; options: { slug: string; name?: string }[]; onChange: (s: string) => void }) {
   const t = useT();
