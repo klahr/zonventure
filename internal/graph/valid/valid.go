@@ -167,7 +167,7 @@ func checkNodeConfigs(r *reporter, g *graph.Graph) {
 				continue
 			}
 			if len(n.PuzzleCfg.Outputs) == 0 {
-				r.err("puzzle.outputs.none", n.Slug, "", "puzzle has no outputs, so a team that solves it has nowhere to go")
+				r.err("puzzle.outputs.none", n.Slug, "", "the puzzle has no ways out, so a team that solves it has nowhere to go")
 			}
 			if n.PuzzleCfg.Answer != nil {
 				if owners == nil {
@@ -192,7 +192,7 @@ func checkNodeConfigs(r *reporter, g *graph.Graph) {
 					answers++
 					if len(o.Matchers) == 0 && n.PuzzleCfg.UsesMatchers() {
 						r.err("output.matchers.none", n.Slug, o.Port,
-							"output accepts an answer but has no matchers, so nothing can satisfy it")
+							"no answer is set, so no team can take this route")
 					}
 				case graph.OnAttempts:
 					if o.AfterAttempts <= 0 {
@@ -433,7 +433,7 @@ func checkPortsConnected(r *reporter, g *graph.Graph) {
 	for _, n := range g.Nodes {
 		for _, p := range n.Ports() {
 			if !connected[n.Slug+"\x00"+p] {
-				r.err("port.unconnected", n.Slug, p, "output port is not connected to anything")
+				r.err("port.unconnected", n.Slug, p, "leads nowhere yet — connect it to the next step")
 			}
 		}
 	}
@@ -584,7 +584,7 @@ func checkMatchers(r *reporter, g *graph.Graph) {
 					}
 				case match.Exact, match.Contains:
 					if m.Value == "" {
-						r.err("matcher.value.empty", n.Slug, o.Port, "%s matcher has no value", m.Kind)
+						r.err("matcher.value.empty", n.Slug, o.Port, "an answer is empty — type what the team should give")
 					}
 				case match.Anything:
 					// Legal, and evaluated last so it cannot shadow.
@@ -605,7 +605,7 @@ func checkReachability(r *reporter, g *graph.Graph) {
 	seen := reachableFromStarts(g)
 	for _, n := range g.Nodes {
 		if !seen[n.Slug] {
-			r.warn("node.unreachable", n.Slug, "", "no path from the start reaches this node")
+			r.warn("node.unreachable", n.Slug, "", "nothing leads here yet, so no team will reach this step")
 		}
 	}
 }
@@ -651,7 +651,7 @@ func checkTermination(r *reporter, g *graph.Graph) {
 	reachable := reachableFromStarts(g)
 	for _, n := range g.Nodes {
 		if reachable[n.Slug] && !canEnd[n.Slug] {
-			r.err("node.nodeadend", n.Slug, "", "no path from this node reaches an end, so a team arriving here can never finish")
+			r.err("node.nodeadend", n.Slug, "", "no route from here reaches an end, so a team arriving here could never finish")
 		}
 	}
 }

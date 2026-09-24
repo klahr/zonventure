@@ -319,13 +319,6 @@ function PuzzleForm({ cfg, graph, onChange }: { cfg: PuzzleConfig; graph: Graph;
         <MediaEditor media={cfg.media} onChange={(media) => onChange(withOptional({ ...cfg }, "media", media))} />
       </Field>
 
-      <ZoneSelect
-        graph={graph}
-        label={t.t("Only answerable inside a zone")}
-        value={cfg.zone}
-        onChange={(zone) => onChange(withOptional({ ...cfg }, "zone", zone))}
-      />
-
       {answer?.kind === "tiles" && <TilesForm tiles={answer} onChange={(tiles) => onChange({ ...cfg, answer: tiles })} />}
       {answer?.kind === "search" && <SearchForm cfg={cfg} search={answer} graph={graph} onChange={onChange} />}
       {answer?.kind === "choice" && <ChoicesForm cfg={cfg} choice={answer} onChange={onChange} />}
@@ -376,18 +369,23 @@ function PuzzleForm({ cfg, graph, onChange }: { cfg: PuzzleConfig; graph: Graph;
                 <div className="box__row">
                   <NumberField label={t.t("Points")} value={o.points} onChange={(points) => setOutput(i, withOptional({ ...o }, "points", points))} />
                 </div>
-                <ZoneSelect
-                  graph={graph}
-                  label={t.t("Only counts…")}
-                  value={o.zone}
-                  onChange={(zone) => setOutput(i, withOptional({ ...o }, "zone", zone))}
-                />
-                {o.zone && (
-                  <label className="check">
-                    <input type="checkbox" checked={!!o.inverted} onChange={(e) => setOutput(i, { ...o, inverted: e.target.checked })} />
-                    {t.t("…when the team is NOT inside it")}
-                  </label>
-                )}
+                {/* A search's routes are chosen by where the team stands, so
+                    their zone is the point; elsewhere it is rarely needed. */}
+                <details className="box__more" open={!!o.zone || answer?.kind === "search"}>
+                  <summary>{t.t("Only counts in a zone")}</summary>
+                  <ZoneSelect
+                    graph={graph}
+                    label={t.t("Only counts…")}
+                    value={o.zone}
+                    onChange={(zone) => setOutput(i, withOptional({ ...o }, "zone", zone))}
+                  />
+                  {o.zone && (
+                    <label className="check">
+                      <input type="checkbox" checked={!!o.inverted} onChange={(e) => setOutput(i, { ...o, inverted: e.target.checked })} />
+                      {t.t("…when the team is NOT inside it")}
+                    </label>
+                  )}
+                </details>
               </>
             )}
             {o.trigger === "attempts" && (
@@ -441,7 +439,19 @@ function PuzzleForm({ cfg, graph, onChange }: { cfg: PuzzleConfig; graph: Graph;
         />
       </Section>
 
-      <Section title={t.t("Rules")}>
+      {/* The settings most puzzles never need, closed until they are:
+          open by itself when any is set, so nothing set is ever hidden. */}
+      <details
+        className="insp__section insp__advanced"
+        open={!!(cfg.zone || cfg.time_limit_seconds || cfg.lockout_seconds || cfg.skip_after_guesses || cfg.skip_after_seconds || cfg.repeatable)}
+      >
+        <summary>{t.t("Advanced: place, time limits, skipping")}</summary>
+        <ZoneSelect
+          graph={graph}
+          label={t.t("Only answerable inside a zone")}
+          value={cfg.zone}
+          onChange={(zone) => onChange(withOptional({ ...cfg }, "zone", zone))}
+        />
         <div className="box__row box__row--wrap">
           <NumberField label={t.t("Time limit (s)")} value={cfg.time_limit_seconds} onChange={(n) => onChange(withOptional({ ...cfg }, "time_limit_seconds", n))} />
           <NumberField label={t.t("Lockout after wrong (s)")} value={cfg.lockout_seconds} onChange={(n) => onChange(withOptional({ ...cfg }, "lockout_seconds", n))} />
@@ -454,7 +464,7 @@ function PuzzleForm({ cfg, graph, onChange }: { cfg: PuzzleConfig; graph: Graph;
           <input type="checkbox" checked={!!cfg.repeatable} onChange={(e) => onChange(withOptional({ ...cfg }, "repeatable", e.target.checked || undefined))} />
           {t.t("Ask again if the team comes back")}
         </label>
-      </Section>
+      </details>
     </>
   );
 }
@@ -1138,7 +1148,7 @@ function ZoneSelect({ graph, label, value, onChange }: { graph: Graph; label: st
   const t = useT();
   const zones = graph.zones ?? [];
   return (
-    <Field label={label} hint={zones.length === 0 ? t.t("Add zones in the Zones & items panel.") : undefined}>
+    <Field label={label} hint={zones.length === 0 ? t.t("Add zones under Adventure settings (⋮ menu) → Zones.") : undefined}>
       <select className="field__input" value={value ?? ""} onChange={(e) => onChange(e.target.value || undefined)}>
         <option value="">{t.t("Anywhere")}</option>
         {zones.map((z) => (

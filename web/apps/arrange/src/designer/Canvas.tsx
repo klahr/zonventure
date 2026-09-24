@@ -19,6 +19,8 @@ import {
 import "@xyflow/react/dist/style.css";
 import {
   addNode,
+  insertAfter,
+  insertionPoint,
   connect,
   connectionError,
   firstPort,
@@ -30,7 +32,6 @@ import {
   disconnect,
   freshSlug,
   startZone,
-  tidy,
   sameData,
   samePosition,
   type DragFrom,
@@ -39,7 +40,7 @@ import {
   type Size,
   type Frame,
 } from "@zonventure/graph";
-import { Frame as FrameIcon, LayoutGrid } from "lucide-react";
+import { Frame as FrameIcon } from "lucide-react";
 import { useT } from "../i18n.tsx";
 import { CanvasContextMenu, type ContextMenuItem } from "./dz/CanvasContextMenu.tsx";
 import { ICON } from "./dz/ui.tsx";
@@ -124,7 +125,9 @@ export function Canvas({ graph, issues, selected, onChange, onSelect, paletteReq
   // started; taken when the drag begins.
   const frameDrag = useRef<{ id: string; x: number; y: number; members: { id: string; x: number; y: number }[] } | null>(null);
   const [edges, setEdges] = useState<RFEdge[]>([]);
-  const [palette, setPalette] = useState<{ from: DragFrom | null; screen: { x: number; y: number } } | null>(null);
+  // `insert`: opened from the toolbar, with no wire and no spot picked,
+  // so the new step is attached where the flow is being built.
+  const [palette, setPalette] = useState<{ from: DragFrom | null; screen: { x: number; y: number }; insert?: boolean } | null>(null);
   const [hint, setHint] = useState<string | null>(null);
   const pending = useRef<PendingDrag | null>(null);
   const connected = useRef(false);
@@ -391,12 +394,25 @@ export function Canvas({ graph, issues, selected, onChange, onSelect, paletteReq
   const pick = useCallback(
     (choice: PaletteChoice) => {
       if (!palette) return;
-      const { from, screen } = palette;
+      const { from, screen, insert } = palette;
       setPalette(null);
 
       if (choice.kind === "existing") {
         if (from?.side === "output") onChange(connect(graph, from.node.slug, from.port, choice.node.slug));
         onSelect(choice.node.slug);
+        return;
+      }
+
+      // From the toolbar: after the selected step, or before the End,
+      // wired in and with room made for it — not dropped loose on top
+      // of whatever is under the middle of the screen.
+      const point = insert ? insertionPoint(graph, selected) : null;
+      if (point) {
+        const next = insertAfter(graph, point, nodeFromPreset(graph, choice.preset, { x: 0, y: 0 }));
+        const added = next.nodes[next.nodes.length - 1]!;
+        onChange(next);
+        onSelect(added.slug);
+        void rf.setCenter((added.x ?? 0) + 120, (added.y ?? 0) + 60, { zoom: rf.getZoom(), duration: 300 });
         return;
       }
 
@@ -414,7 +430,7 @@ export function Canvas({ graph, issues, selected, onChange, onSelect, paletteReq
       onChange(next);
       onSelect(node.slug);
     },
-    [palette, graph, onChange, onSelect, rf],
+    [palette, graph, selected, onChange, onSelect, rf],
   );
 
   // --- dazyflow's context menus ------------------------------------------------
@@ -551,7 +567,7 @@ export function Canvas({ graph, issues, selected, onChange, onSelect, paletteReq
   useEffect(() => {
     if (!paletteRequest || !wrapper.current) return;
     const r = wrapper.current.getBoundingClientRect();
-    setPalette({ from: null, screen: { x: r.left + r.width / 2 - 170, y: r.top + r.height / 3 } });
+    setPalette({ from: null, screen: { x: r.left + r.width / 2 - 170, y: r.top + r.height / 3 }, insert: true });
   }, [paletteRequest]);
 
   useEffect(() => {
@@ -597,9 +613,6 @@ export function Canvas({ graph, issues, selected, onChange, onSelect, paletteReq
         <Background id="fine" variant={BackgroundVariant.Lines} gap={20} className="dz-grid-fine" />
         <Background id="major" variant={BackgroundVariant.Lines} gap={100} className="dz-grid-major" />
         <Controls showInteractive={false}>
-          <ControlButton onClick={() => onChange(tidy(graph, cardSizes()))} title={t.t("Tidy")} aria-label={t.t("Tidy")}>
-            <LayoutGrid size={ICON.sm} />
-          </ControlButton>
           <ControlButton onClick={addFrame} title={t.t("Group the selected steps in a frame")} aria-label={t.t("Add a frame")}>
             <FrameIcon size={ICON.sm} />
           </ControlButton>

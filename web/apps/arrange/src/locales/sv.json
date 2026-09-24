@@ -307,5 +307,9 @@
   "Quests": "Uppdrag",
   "Library": "Bibliotek",
   "Logs": "Loggar",
-  "Back to the adventure": "Tillbaka till äventyret"
+  "Back to the adventure": "Tillbaka till äventyret",
+  "Advanced: place, time limits, skipping": "Avancerat: plats, tidsgränser, hoppa över",
+  "Add zones under Adventure settings (⋮ menu) → Zones.": "Lägg till zoner under Äventyrsinställningar (⋮-menyn) → Zoner.",
+  "Not published yet, so events can't play it. Publish from the toolbar when it's ready.": "Inte publicerat än, så evenemang kan inte spela det. Publicera från verktygsfältet när det är klart.",
+  "Only counts in a zone": "Gäller bara i en zon"
 }

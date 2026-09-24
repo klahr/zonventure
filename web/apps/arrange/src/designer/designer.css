@@ -256,6 +256,8 @@
 .insp__slug { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--muted); }
 .insp__section { display: flex; flex-direction: column; gap: var(--sp-2); }
 .insp__section h3 { margin: 0; font-size: var(--text-sm); }
+.insp__advanced > summary { cursor: pointer; font-size: var(--text-sm); font-weight: 600; color: var(--ink-soft); }
+.insp__advanced[open] > summary { margin-bottom: var(--sp-1); }
 .insp__issues { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-1); }
 .insp__delete { align-self: flex-start; }
 .res { padding: var(--sp-4); display: flex; flex-direction: column; gap: var(--sp-5); }

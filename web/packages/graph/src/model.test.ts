@@ -6,6 +6,9 @@ import {
   zoneContains,
   answerOptions,
   appendStep,
+  insertAfter,
+  insertionPoint,
+  STEP_PITCH,
   referAnswer,
   resolveAnswer,
   cleanGraph,
@@ -309,4 +312,47 @@ test("gridZones cuts an area into lettered cells that tile it", () => {
   assert.equal(zoneContains(cells[0]!, 0.9, 0.1), true, "top-left is A1");
   const again = gridZones([[1, 0], [1, 3], [0, 3], [0, 0]], 1, 1, "Scanner", cells);
   assert.equal(again[0]!.slug, "scanner-a1-2", "slugs never collide");
+});
+
+describe("adding a step without a wire", () => {
+  const puzzle = (g: Graph) => newNode(g, "puzzle", { x: 0, y: 0 });
+
+  test("a blank adventure gains its first step between start and end", () => {
+    const g = emptyGraph();
+    const at = insertionPoint(g, null);
+    assert.deepEqual(at, { from: "start", port: "out" });
+    const p = puzzle(g);
+    const out = insertAfter(g, at!, p);
+    const edges = out.edges.map((e) => `${e.from}.${e.from_port}>${e.to}`).sort();
+    assert.deepEqual(edges, [`${p.slug}.solved>end`, `start.out>${p.slug}`]);
+    const pos = (slug: string) => out.nodes.find((n) => n.slug === slug)!;
+    assert.equal(pos(p.slug).x, STEP_PITCH, "a column right of the start");
+    assert.equal(pos("end").x, 2 * STEP_PITCH, "the end moves over to make room");
+    assert.equal(pos(p.slug).y, 0);
+  });
+
+  test("with a step selected, the new one follows it", () => {
+    let g = emptyGraph();
+    const a = puzzle(g);
+    g = insertAfter(g, insertionPoint(g, null)!, a);
+    assert.deepEqual(insertionPoint(g, a.slug), { from: a.slug, port: "solved" });
+    assert.deepEqual(insertionPoint(g, "end"), { from: a.slug, port: "solved" }, "an end: just before it");
+  });
+
+  test("frames around the insertion widen, frames further right move", () => {
+    const g: Graph = {
+      ...emptyGraph(),
+      frames: [
+        { id: "around", x: -20, y: -20, width: 300, height: 200 },
+        { id: "right", x: 2000, y: 0, width: 100, height: 100 },
+      ],
+    };
+    const out = insertAfter(g, { from: "start", port: "out" }, puzzle(g));
+    assert.equal(out.frames![0]!.width, 300 + STEP_PITCH);
+    assert.equal(out.frames![1]!.x, 2000 + STEP_PITCH);
+  });
+
+  test("nowhere to attach is null", () => {
+    assert.equal(insertionPoint({ nodes: [{ slug: "start", type: "start" }], edges: [] }, null), null);
+  });
 });

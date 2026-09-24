@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ReactFlowProvider } from "@xyflow/react";
 import {
   ArrowLeft,
@@ -284,6 +284,26 @@ export function Designer({ slug }: { slug: string }) {
   }, [unsaved]);
 
   // --- publish ----------------------------------------------------------------------
+
+  // A step just added is left alone while the author fills it in: its
+  // problems — no prompt yet, no answer — are what "new" means, and a
+  // card that opens covered in red reads as a mistake. They appear once
+  // the author moves on to another step. The toolbar's counts still
+  // include them, so nothing publishes unnoticed.
+  const [fresh, setFresh] = useState<string | null>(null);
+  const knownSlugs = useRef<Set<string> | null>(null);
+  useEffect(() => {
+    if (!draft) return;
+    const now = new Set(draft.nodes.map((n) => n.slug));
+    const before = knownSlugs.current;
+    knownSlugs.current = now;
+    const added = before ? [...now].filter((x) => !before.has(x)) : [];
+    if (added.length === 1) setFresh(added[0]!);
+  }, [draft]);
+  useEffect(() => {
+    if (fresh && selected !== fresh) setFresh(null);
+  }, [selected, fresh]);
+  const shownIssues = fresh ? issues.filter((i) => i.node !== fresh) : issues;
 
   const errors = issues.filter((i) => i.severity === "error");
   const warnings = issues.filter((i) => i.severity === "warning");
@@ -578,28 +598,30 @@ export function Designer({ slug }: { slug: string }) {
               ))}
             </IssuesButton>
 
+            {/* The one place to publish. A button, not a switch: publishing
+                makes a version, it is not a setting to turn off again. With
+                nothing to publish, it says so. */}
             <div className="editor-publish-group">
-              <Button
-                role="switch"
-                aria-checked={isLive}
-                className={"editor-publish-toggle" + (isLive ? " on" : "") + (celebrate ? " celebrate" : "")}
-                onClick={() => (isLive ? dirty && setPublishAsk({ kind: "update" }) : setPublishAsk({ kind: "first" }))}
-                disabled={publishing || readOnly}
-                title={
-                  readOnly
-                    ? t.t("Exit version preview before publishing.")
-                    : isLive
-                      ? t.t("Published: events that start now play version {{n}}.", { n: published.version })
-                      : t.t("Publish this adventure so events can play it.")
-                }
-              >
-                <span className="editor-publish-track" aria-hidden="true">
-                  <span className="editor-publish-knob">
-                    <Rocket size={ICON.xs} strokeWidth={2.4} />
-                  </span>
+              {!isLive && (
+                <Button
+                  className={"editor-publish" + (celebrate ? " celebrate" : "")}
+                  onClick={() => setPublishAsk({ kind: "first" })}
+                  disabled={publishing || readOnly}
+                  title={readOnly ? t.t("Exit version preview before publishing.") : t.t("Publish this adventure so events can play it.")}
+                >
+                  <Rocket size={ICON.sm} />
+                  <span className="toolbar-label">{publishing ? t.t("Publishing…") : t.t("Publish")}</span>
+                </Button>
+              )}
+              {isLive && !dirty && (
+                <span
+                  className={"editor-live-chip" + (celebrate ? " celebrate" : "")}
+                  title={t.t("Published: events that start now play version {{n}}.", { n: published.version })}
+                >
+                  <span className="editor-live-dot" aria-hidden="true" />
+                  <span className="toolbar-label">{t.t("Live")}</span>
                 </span>
-                <span className="toolbar-label">{publishing ? t.t("Publishing…") : isLive ? t.t("Live") : t.t("Publish")}</span>
-              </Button>
+              )}
               {isLive && dirty && (
                 <>
                   <Button className="editor-publish" onClick={() => setPublishAsk({ kind: "update" })} disabled={publishing || readOnly} title={t.t("Publish your draft — events that start afterwards play it.")}>
@@ -652,30 +674,7 @@ export function Designer({ slug }: { slug: string }) {
             )}
             {!isLive && !preview && (
               <div className="editor-conn-banner" role="status">
-                <span className="editor-conn-banner-text">{t.t("This adventure hasn't been published yet, so events can't play it.")}</span>
-                <span className="editor-conn-banner-actions">
-                  <Button variant="primary" onClick={() => setPublishAsk({ kind: "first" })} disabled={publishing}>
-                    {t.t("Publish")}
-                  </Button>
-                </span>
-              </div>
-            )}
-            {isLive && !preview && (
-              <div className="editor-live-state" role="status">
-                {dirty ? (
-                  <>
-                    <span className="editor-live-dot dirty" aria-hidden="true" />
-                    {t.t("Published, but your draft has changes that aren't live yet.")}
-                    <Button variant="link" className="editor-live-action" onClick={() => setPublishAsk({ kind: "update" })} disabled={publishing}>
-                      {t.t("Publish changes")}
-                    </Button>
-                  </>
-                ) : (
-                  <>
-                    <span className="editor-live-dot" aria-hidden="true" />
-                    {t.t("Published — the live version matches your draft.")}
-                  </>
-                )}
+                <span className="editor-conn-banner-text">{t.t("Not published yet, so events can't play it. Publish from the toolbar when it's ready.")}</span>
               </div>
             )}
           </div>
@@ -704,7 +703,7 @@ export function Designer({ slug }: { slug: string }) {
               <ListView
                 graph={graph}
                 steps={steps!}
-                issues={issues}
+                issues={shownIssues}
                 selected={selected}
                 playing={previewing ? playing : null}
                 onChange={change}
@@ -716,7 +715,7 @@ export function Designer({ slug }: { slug: string }) {
             <ReactFlowProvider>
               <Canvas
                 graph={graph}
-                issues={preview ? [] : issues}
+                issues={preview ? [] : shownIssues}
                 selected={selected}
                 playing={previewing ? playing : null}
                 onChange={change}
@@ -756,7 +755,7 @@ export function Designer({ slug }: { slug: string }) {
                 node={node}
                 graph={graph}
                 readOnly={readOnly}
-                issues={issues.filter((i) => i.node === node.slug)}
+                issues={shownIssues.filter((i) => i.node === node.slug)}
                 onChange={(n) => change(updateNode(graph, node.slug, () => n))}
                 onGraphChange={change}
                 onClose={() => setSelected(null)}

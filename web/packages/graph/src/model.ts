@@ -233,12 +233,75 @@ export function addNode(g: Graph, node: Node): Graph {
   return { ...g, nodes: [...g.nodes, node] };
 }
 
+/**
+ * How far apart two steps in a row sit: a card's width and the gap
+ * Tidy leaves between columns.
+ */
+export const STEP_PITCH = 240 + 96;
+
+/** Where a step added without a wire is attached: after an output. */
+export interface InsertionPoint {
+  from: string;
+  port: string;
+}
+
+/**
+ * Where "Add step" attaches a new step when no wire was dragged: after
+ * the selected step's first output, or — with nothing selected, or a
+ * step with no outputs — just before an End, on the lowest branch that
+ * reaches one. That is where an author building a flow step by step
+ * wants the next one. Null when there is nowhere sensible.
+ */
+export function insertionPoint(g: Graph, selected: string | null): InsertionPoint | null {
+  const sel = selected ? nodeBySlug(g, selected) : undefined;
+  const port = sel ? portsOf(sel)[0] : undefined;
+  if (sel && port) return { from: sel.slug, port };
+  const ends = new Set(g.nodes.filter((n) => n.type === "end").map((n) => n.slug));
+  const into = g.edges.filter((e) => ends.has(e.to) && (!sel || e.to === sel.slug));
+  if (!into.length) return null;
+  const y = (slug: string) => nodeBySlug(g, slug)?.y ?? 0;
+  const e = into.reduce((a, b) => (y(b.from) > y(a.from) ? b : a));
+  return { from: e.from, port: e.from_port };
+}
+
+/**
+ * Put a new step after an output: the output now leads to it, and the
+ * step's own first output leads on to wherever the output led before.
+ * The step is placed a column to the right of the one it follows, and
+ * everything further right moves over a column to make room — frames
+ * around the insertion widen with it.
+ */
+export function insertAfter(g: Graph, at: InsertionPoint, node: Node): Graph {
+  const from = nodeBySlug(g, at.from);
+  if (!from) return g;
+  const fx = from.x ?? 0;
+  const placed = { ...node, x: fx + STEP_PITCH, y: from.y ?? 0 };
+  const shifted: Graph = {
+    ...g,
+    nodes: g.nodes.map((n) => ((n.x ?? 0) > fx ? { ...n, x: (n.x ?? 0) + STEP_PITCH } : n)),
+    ...(g.frames
+      ? {
+          frames: g.frames.map((f) =>
+            f.x > fx ? { ...f, x: f.x + STEP_PITCH } : f.x + f.width > fx ? { ...f, width: f.width + STEP_PITCH } : f,
+          ),
+        }
+      : {}),
+  };
+  const next = g.edges.find((e) => e.from === at.from && e.from_port === at.port)?.to;
+  let out = connect(addNode(shifted, placed), at.from, at.port, placed.slug);
+  const own = portsOf(placed)[0];
+  if (next && own) out = connect(out, placed.slug, own, next);
+  return out;
+}
+
 /** A new adventure: start wired straight to end. Valid, and plays as an immediate finish. */
 export function emptyGraph(): Graph {
+  // Side by side, as Tidy lays a flow out: outputs are on a card's right
+  // and inputs on its left, so a wire runs straight across.
   return {
     nodes: [
       { slug: "start", type: "start", title: "Start", x: 0, y: 0 },
-      { slug: "end", type: "end", title: "End", x: 0, y: 280, end: { outcome: "complete" } },
+      { slug: "end", type: "end", title: "End", x: STEP_PITCH, y: 0, end: { outcome: "complete" } },
     ],
     edges: [{ from: "start", from_port: PORT_OUT, to: "end" }],
   };
@@ -295,17 +358,12 @@ export function linearSteps(g: Graph): Node[] | null {
 export function appendStep(g: Graph, type: "puzzle" | "story"): { graph: Graph; slug?: string } {
   const steps = linearSteps(g);
   if (!steps) return { graph: g };
-  const end = g.nodes.find((n) => n.type === "end")!;
   const last = steps.at(-1);
   const lastSlug = last?.slug ?? g.nodes.find((n) => n.type === "start")!.slug;
   const lastPort = last ? portsOf(last)[0]! : PORT_OUT;
 
-  const y = (last?.y ?? 0) + 160;
-  const node = newNode(g, type, { x: last?.x ?? 0, y });
-  let out = addNode(g, node);
-  out = connect(out, lastSlug, lastPort, node.slug);
-  out = connect(out, node.slug, portsOf(node)[0]!, end.slug);
-  out = moveNode(out, end.slug, end.x ?? 0, y + 160);
+  const node = newNode(g, type, { x: 0, y: 0 });
+  const out = insertAfter(g, { from: lastSlug, port: lastPort }, node);
   return { graph: out, slug: node.slug };
 }
 
