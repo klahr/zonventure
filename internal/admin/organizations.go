@@ -841,7 +841,7 @@ func (h *Handlers) UpdateAssignment(w http.ResponseWriter, r *http.Request) {
 		WHERE aa.id = $1
 	`, assignmentID).Scan(&ownerOrg, &currentSlug, &currentMax, &eventID)
 	if errors.Is(err, sql.ErrNoRows) || ownerOrg != orgID {
-		httpx.Error(w, http.StatusNotFound, "assignment not found")
+		httpx.Error(w, http.StatusNotFound, "event pass not found")
 		return
 	}
 	if err != nil {
@@ -851,7 +851,7 @@ func (h *Handlers) UpdateAssignment(w http.ResponseWriter, r *http.Request) {
 	newSlug := currentSlug
 	if req.AdventureSlug != nil && *req.AdventureSlug != currentSlug {
 		if eventID.Valid {
-			httpx.Error(w, http.StatusConflict, "cannot change adventure on a used assignment")
+			httpx.Error(w, http.StatusConflict, "cannot change the adventure of a used event pass")
 			return
 		}
 		if h.Lib.Get(*req.AdventureSlug) == nil {
@@ -917,7 +917,7 @@ func (h *Handlers) DeleteAssignment(w http.ResponseWriter, r *http.Request) {
 		WHERE aa.id = $1
 	`, assignmentID).Scan(&ownerOrg, &eventID)
 	if errors.Is(err, sql.ErrNoRows) || ownerOrg != orgID {
-		httpx.Error(w, http.StatusNotFound, "assignment not found")
+		httpx.Error(w, http.StatusNotFound, "event pass not found")
 		return
 	}
 	if err != nil {
@@ -925,7 +925,7 @@ func (h *Handlers) DeleteAssignment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if eventID.Valid {
-		httpx.Error(w, http.StatusConflict, "assignment is already in use by an event")
+		httpx.Error(w, http.StatusConflict, "this event pass is already used by an event")
 		return
 	}
 	if _, err := h.DB.ExecContext(r.Context(),

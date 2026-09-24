@@ -653,7 +653,7 @@ func DeleteAdventureBySlug(ctx context.Context, db *sql.DB, slug string) error {
 		return fmt.Errorf("assignments lookup: %w", err)
 	}
 	if count > 0 {
-		return conflictf("adventure still has assignments; revoke them first")
+		return conflictf("adventure still has event passes; revoke them first")
 	}
 	if _, err := db.ExecContext(ctx,
 		`DELETE FROM adventure_shares WHERE adventure_slug = $1`, slug); err != nil {

@@ -568,7 +568,7 @@ func checkMatchers(r *reporter, g *graph.Graph) {
 					}
 				case match.Near:
 					if m.Tolerance <= 0 {
-						r.err("matcher.near.tolerance", n.Slug, o.Port, "a near matcher needs a tolerance above zero")
+						r.err("matcher.near.tolerance", n.Slug, o.Port, "a \"number near\" answer needs a tolerance above zero")
 					}
 				case match.Interval:
 					if m.Low > m.High {
@@ -576,7 +576,7 @@ func checkMatchers(r *reporter, g *graph.Graph) {
 					}
 				case match.Set:
 					if len(m.Members) == 0 {
-						r.err("matcher.set.empty", n.Slug, o.Port, "a set matcher needs members")
+						r.err("matcher.set.empty", n.Slug, o.Port, "a \"several of a list\" answer needs its list")
 					}
 					if m.Required > len(m.Members) {
 						r.err("matcher.set.required", n.Slug, o.Port,
@@ -589,7 +589,7 @@ func checkMatchers(r *reporter, g *graph.Graph) {
 				case match.Anything:
 					// Legal, and evaluated last so it cannot shadow.
 				default:
-					r.err("matcher.kind.unknown", n.Slug, o.Port, "unknown matcher kind %q", m.Kind)
+					r.err("matcher.kind.unknown", n.Slug, o.Port, "unknown kind of answer %q", m.Kind)
 				}
 			}
 		}

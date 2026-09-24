@@ -166,7 +166,7 @@ func main() {
 		if err := seedDemo(context.Background(), sqlDB); err != nil {
 			log.Fatalf("seed demo: %v", err)
 		}
-		log.Printf(`demo data installed. Log in at /arrange as admin/admin, boss/s3cret (org_admin) or jane/jane (org_member). Players use per-slot magic links — copy them from Runs → Run #1 → Edit team.`)
+		log.Printf(`demo data installed. Log in at /arrange as admin/admin, boss/s3cret (org_admin) or jane/jane (org_member). Players use per-slot magic links — copy them from Events → Event #1 → Edit team.`)
 		seeded = true
 	}
 	if *revokeFlag != "" {

@@ -21,11 +21,11 @@ import type {
   Trigger,
   Zone,
 } from "@zonventure/graph";
-import { answerOptions, isGraded, isPolygon, nodeBySlug, portLabel, puzzlesInto, referAnswer, resolveAnswer, updateNode } from "@zonventure/graph";
+import { answerOptions, isGraded, isPolygon, nodeBySlug, portsOf, portLabel, puzzlesInto, referAnswer, resolveAnswer, updateNode } from "@zonventure/graph";
 import { useT } from "../i18n.tsx";
 import { ConditionEditor } from "./ConditionEditor.tsx";
 import { MediaEditor } from "./MediaEditor.tsx";
-import { Eye, Trash2, X } from "lucide-react";
+import { Eye, Plus, Trash2, X } from "lucide-react";
 import { Button, HelpPopover, ICON } from "./dz/ui.tsx";
 import { STEP } from "./dz/types.tsx";
 import { ZoneMap } from "./ZoneMap.tsx";
@@ -38,6 +38,8 @@ interface Props {
   /** For edits that reach beyond this node, such as naming an answer a crossroads refers to. */
   onGraphChange: (g: Graph) => void;
   onDelete: () => void;
+  /** Insert a new step after this one, wired in; see insertAfter. */
+  onAddAfter: (type: "puzzle" | "story") => void;
   /** Close the inspector (deselect). */
   onClose: () => void;
   /** Open this step in the phone preview. */
@@ -53,7 +55,7 @@ interface Props {
  * coalesces consecutive edits to one node, so typing a prompt is one undo
  * step rather than one per keystroke.
  */
-export function Inspector({ node, graph, issues, onChange, onGraphChange, onDelete, onClose, onPreview, readOnly }: Props) {
+export function Inspector({ node, graph, issues, onChange, onGraphChange, onDelete, onAddAfter, onClose, onPreview, readOnly }: Props) {
   const t = useT();
   const kind = STEP[node.type];
   const Icon = kind.icon;
@@ -197,12 +199,29 @@ export function Inspector({ node, graph, issues, onChange, onGraphChange, onDele
         </>
       )}
 
-      {(node.type !== "start" || graph.nodes.filter((n) => n.type === "start").length > 1) && !readOnly && (
+      {!readOnly && (
         <div className="inspector-actions">
-          <Button variant="danger" onClick={onDelete}>
-            <Trash2 size={ICON.sm} />
-            {t.t("Delete step")}
-          </Button>
+          {/* Adding after this step from its own editor: on a phone the
+              editor covers the outline, so selecting a step and adding
+              after it from there is not possible. */}
+          {portsOf(node).length > 0 && (
+            <div className="box__row box__row--wrap">
+              <Button variant="ghost" onClick={() => onAddAfter("puzzle")}>
+                <Plus size={ICON.sm} />
+                {t.t("Puzzle after this")}
+              </Button>
+              <Button variant="ghost" onClick={() => onAddAfter("story")}>
+                <Plus size={ICON.sm} />
+                {t.t("Story after this")}
+              </Button>
+            </div>
+          )}
+          {(node.type !== "start" || graph.nodes.filter((n) => n.type === "start").length > 1) && (
+            <Button variant="danger" onClick={onDelete}>
+              <Trash2 size={ICON.sm} />
+              {t.t("Delete step")}
+            </Button>
+          )}
         </div>
       )}
     </div>
@@ -324,7 +343,7 @@ function PuzzleForm({ cfg, graph, onChange }: { cfg: PuzzleConfig; graph: Graph;
       {answer?.kind === "choice" && <ChoicesForm cfg={cfg} choice={answer} onChange={onChange} />}
       {answer?.kind === "lock" && <LockForm cfg={cfg} lock={answer} onChange={onChange} />}
 
-      <Section title={t.t("Ways out")} hint={t.t("Each route becomes an output you can wire somewhere different.")}>
+      <Section title={t.t("Routes")} hint={t.t("Where the team goes next. Each route gets its own dot on the card, to connect to a different step.")}>
         {outputs.map((o, i) => (
           <div key={i} className="box">
             <div className="box__row box__row--wrap box__row--route">
@@ -399,9 +418,9 @@ function PuzzleForm({ cfg, graph, onChange }: { cfg: PuzzleConfig; graph: Graph;
               + {answer?.kind === "search" ? t.t("Another place") : t.t("Another answer")}
             </button>
           )}
-          <button type="button" className="link-btn" onClick={() => addOutput("attempts")}>+ {t.t("Pity route")}</button>
-          <button type="button" className="link-btn" onClick={() => addOutput("timeout")}>+ {t.t("Timeout route")}</button>
-          <button type="button" className="link-btn" onClick={() => addOutput("skipped")}>+ {t.t("Skip route")}</button>
+          <button type="button" className="link-btn" onClick={() => addOutput("attempts")}>+ {t.t("After wrong guesses")}</button>
+          <button type="button" className="link-btn" onClick={() => addOutput("timeout")}>+ {t.t("When time runs out")}</button>
+          <button type="button" className="link-btn" onClick={() => addOutput("skipped")}>+ {t.t("When the team skips")}</button>
         </div>
       </Section>
 

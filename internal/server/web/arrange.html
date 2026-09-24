@@ -316,6 +316,9 @@ p { margin: 0 0 .5rem; }
   cursor: pointer;
 }
 .zv-lang-picker:hover { border-color: var(--muted); }
+/* In Settings it sits beside the theme button, sized like it rather
+   than stretched across the card like a form field. */
+.settings-card .zv-lang-picker { width: auto; min-width: 12rem; }
 .nav a {
   display: flex; align-items: center; gap: .75rem;
   padding: .6rem .85rem; border-radius: var(--radius-pill);
@@ -774,6 +777,10 @@ label.field > span {
   color: var(--ink); font-size: .8rem; font-weight: 700;
   text-transform: uppercase; letter-spacing: .04em;
 }
+/* The branding card lays its labels out as quiet captions beside and
+   above its controls; the form-label capitals caught only those that
+   happened to be a label's direct child ("WEBSITE" next to "Tagline"). */
+.org-branding-grid label > span { text-transform: none; letter-spacing: normal; font-weight: 400; color: var(--muted); }
 input, select, textarea {
   font: inherit; width: 100%;
   padding: .65rem .85rem;
@@ -1350,6 +1357,11 @@ textarea { min-height: 80px; resize: vertical; font-family: ui-monospace, monosp
   font: inherit; cursor: pointer; border-radius: 6px;
 }
 .split-btn-item:hover { background: var(--surface-2); }
+a.split-btn-item { text-decoration: none; }
+.split-btn-item { display: flex; align-items: center; gap: .5rem; }
+.split-btn-item svg { width: 1rem; height: 1rem; flex: none; }
+.split-btn-item.danger { color: var(--danger); }
+.split-btn-sep { height: 1px; margin: .25rem 0; background: var(--border-soft); }
 
 /* In-modal tabs: same feel as .lib-tabs but scoped to dialogs so we can
    break a crowded form (Details / Copy / Branding) into bite-sized
@@ -3095,8 +3107,10 @@ function modal(title, bodyFn, opts = {}) {
     setTimeout(() => {
       const dialog = back.querySelector('[role="dialog"]');
       if (!dialog) return;
-      const firstInput = dialog.querySelector(
-        'input:not([type="hidden"]):not([disabled]), textarea:not([disabled]), select:not([disabled]), button:not([disabled])');
+      // Fields first, then buttons: one selector list would match in
+      // document order, where the × close button comes before them all.
+      const firstInput = dialog.querySelector('input:not([type="hidden"]):not([disabled]), textarea:not([disabled]), select:not([disabled])')
+        || dialog.querySelector('button:not(.modal-close):not([disabled])');
       (firstInput || dialog).focus();
     }, 30);
   });
@@ -3338,7 +3352,7 @@ function renderOrgPicker() {
         }, mark,
            h('strong', { style: 'flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap' }, m.org_name),
            h('span', { class: 'muted', style: 'font-size:.85rem; flex:0 0 auto' },
-             m.role === 'org_admin' ? t('admin') : t('race director')));
+             m.role === 'org_admin' ? t('admin') : t('event host')));
       })),
     h('div', { class: 'row end', style: 'margin-top:1rem' },
       h('button', {
@@ -3438,16 +3452,16 @@ async function showOnboardingModal() {
       h('ol', { style: 'padding-left:1.25rem; line-height:1.7' },
         h('li', {}, h('strong', {}, t('Browse adventures')), ' — ',
           t('the catalog has ready-made adventures, or you can author your own.')),
-        h('li', {}, h('strong', {}, t('Buy player slots')), ' — ',
-          t('one slot per team. Pay once per event.')),
+        h('li', {}, h('strong', {}, t('Get an event pass')), ' — ',
+          t('one per event, covering all its players. The first {{n}} play free.', { n: state.me?.pricing?.free_players_per_event ?? 15 })),
         h('li', {}, h('strong', {}, t('Schedule an event')), ' — ',
           t('add teams, share magic links, and start when ready.'))),
       h('p', { class: 'muted', style: 'font-size:.85rem; margin-top:1rem' },
-        t('You can revisit this from the Settings page anytime.')),
+        t('You can open this again from Settings → Account → Help.')),
       h('div', { class: 'row end', style: 'margin-top:1rem; gap:.5rem' },
         h('button', { class: 'btn', on: { click: () => close(null) } }, t('Skip')),
         h('button', { class: 'btn primary', on: { click: () => { close(null); nav('#catalog'); } } },
-          t('Open the store'))));
+          t('Browse the catalog'))));
   });
 }
 
@@ -3549,7 +3563,7 @@ async function render() {
     history.replaceState(null, '', '#dashboard');
     state.route = '#dashboard';
     setTimeout(() => {
-      if (ok) toastOk(t('Email verified — you can now schedule events and buy assignments.'));
+      if (ok) toastOk(t('Email verified — you can now schedule events and buy event passes.'));
       else toastErr(t('Verification link is invalid or has expired. Sign in and tap "Resend email".'));
       // refreshMe so the banner disappears now that email_verified=true.
       if (ok) refreshMe().then(render);
@@ -4013,7 +4027,7 @@ function renderShell() {
       // Quests are public-store always-on events. Admin sees them
       // cross-org for the same triage reason Events is admin-visible
       // (grant slots, cancel-mid-flight, etc.).
-      ['#quests',        t('Quests'),        ICONS.compass],
+      ['#quests',        t('Self-guided'),        ICONS.compass],
       // "Library" is the single entry point for authored content — a
       // tab strip inside the view splits Adventures and Puzzles. Two
       // sidebar entries for what's essentially one catalog was noise.
@@ -4035,7 +4049,7 @@ function renderShell() {
       // event — public_for_sale on the backend, marketed as a
       // separate concept here. Filtered out of #events so the two
       // surfaces don't overlap.
-      ['#quests',     t('Quests'),     ICONS.compass],
+      ['#quests',     t('Self-guided'),     ICONS.compass],
     ];
     items.push(['#settings', t('Settings'), ICONS.gear]);
   }
@@ -4236,6 +4250,7 @@ function currentCrumb() {
   const LABELS = {
     dashboard:     t('Dashboard'),
     adventures:    t('Adventures'),
+    quests:        t('Self-guided adventures'),
     // Both prefixes resolve to viewCatalog (see the route table); the
     // label is the same in either case.
     catalog:       t('Catalog'),
@@ -4678,7 +4693,7 @@ async function viewArrangerDashboard(view) {
   // first-time arranger. The stat() helper doesn't accept opts so we
   // attach the title after construction.
   const unusedStat = stat(t('Unused player slots'), unusedAssigns.length);
-  unusedStat.title = t('Player-slot assignments not yet attached to an event.');
+  unusedStat.title = t('Event passes not yet used for an event.');
 
   // DOM's replaceChildren coerces null arguments to the string "null"
   // and appends them as text nodes — unlike h(), which skips them. The
@@ -4728,7 +4743,7 @@ async function viewArrangerDashboard(view) {
               // propagation so the rest of the card still navigates
               // to event-detail on click.
               h('div', { class: 'row', style: 'gap:.4rem' },
-                iconBtn('terminal', t('Race control'), () => nav('#events/' + r.id + '/control'), { primary: true })))))))),
+                iconBtn('terminal', t('Live control'), () => nav('#events/' + r.id + '/control'), { primary: true })))))))),
     // "Starts soon" is actionable — one-click Start on scheduled events.
     scheduled.length === 0 ? null : h('div', { class: 'card' },
       h('h2', {}, t('Starts soon')),
@@ -4993,6 +5008,13 @@ async function viewAdventures(view) {
         class: 'btn primary',
         on: { click: () => scheduleRun({ slug: adv.slug }) },
       }, icon(ICONS.schedule), t('Schedule event')));
+    } else if (adv.mine_to_edit && adv.org_id && !adv.playable) {
+      // Nothing to play yet — a new adventure. Scheduling an event for
+      // it would only fail later; designing it is the next step.
+      actions.append(h('a', { class: 'btn primary', href: designerURL(adv.slug) },
+        icon(ICONS.flow), t('Open designer')));
+      actions.append(h('span', { class: 'muted', style: 'font-size:.85rem; align-self:center' },
+        t('Publish it from the designer to schedule events.')));
     } else if (adv.mine_to_edit && adv.org_id) {
       // Own org content — the unified schedule modal embeds the
       // capacity / purchase step so the operator stays inside one
@@ -5030,8 +5052,8 @@ async function viewAdventures(view) {
       !adv.mine_to_edit && adv.shared ? h('span', { class: 'pill accent' }, t('Shared')) : null,
       bucket.unused.length > 0
         ? h('span', { class: 'pill accent' }, bucket.unused.length === 1
-            ? t('{{n}} assignment available', { n: bucket.unused.length })
-            : t('{{n}} assignments available', { n: bucket.unused.length }))
+            ? t('{{n}} event pass ready', { n: bucket.unused.length })
+            : t('{{n}} event passes ready', { n: bucket.unused.length }))
         : bucket.used.length > 0
           ? h('span', { class: 'pill' }, bucket.used.length === 1
               ? t('{{n}} event held', { n: bucket.used.length })
@@ -5111,9 +5133,9 @@ async function pickAndScheduleRun(unusedAssignments, adv) {
   if (unusedAssignments.length === 1) {
     return scheduleRun(unusedAssignments[0].id);
   }
-  const pick = await modal(t('Pick an assignment'), ({ body, close }) => {
+  const pick = await modal(t('Pick an event pass'), ({ body, close }) => {
     body.append(h('p', { class: 'muted' },
-      t('You hold several assignments for {{title}}. Which one do you want to schedule?', { title: adv.title })));
+      t('You hold several event passes for {{title}}. Which one do you want to use?', { title: adv.title })));
     const list = h('div', { class: 'grid', style: 'gap:.4rem' });
     for (const a of unusedAssignments) {
       list.append(h('button', {
@@ -5574,7 +5596,7 @@ async function viewPurchases(view) {
       ? h('p', { class: 'muted' },
           t('Every purchase across all orgs. Off-platform invoices show under "To bill" until you mark them billed.'))
       : h('p', { class: 'muted' },
-          t('Every player-slot purchase. Paid ones produce an assignment you can schedule from the Adventures page.')),
+          t('Every player-slot purchase. Paid ones give an event pass you can schedule from the Adventures page.')),
     chipBar,
     summaryHost,
     purchases.length === 0 ? renderEmptyPurchases() : tableHost,
@@ -6037,9 +6059,12 @@ async function viewAdventureDetail(view, slug) {
   if (a.mine_to_edit) {
     pills.push(h('span', { class: 'pill' }, t('Yours to edit')));
   }
-  if (a.org_id == null) {
+  // Catalog visibility is an admin's concern, and says nothing about
+  // whether the adventure can be played — "Draft" beside "1 event
+  // running now" read as a contradiction.
+  if (a.org_id == null && state.me?.role === 'admin') {
     pills.push(h('span', { class: 'pill' + (a.published ? ' success' : ' warning') },
-      a.published ? t('Published in catalog') : t('Draft')));
+      a.published ? t('In the catalog') : t('Not in the catalog')));
   }
   if (a.language) {
     pills.push(h('span', {
@@ -6058,15 +6083,18 @@ async function viewAdventureDetail(view, slug) {
   }
   const ctas = h('div', { class: 'row', style: 'gap:.5rem; flex-wrap:wrap' });
   if (a.mine_to_edit) {
-    ctas.append(h('button', {
-      class: 'btn primary',
-      on: { click: () => nav('#library/' + encodeURIComponent(a.slug)) },
-    }, icon(ICONS.pencil), t('Edit')));
+    // The designer is where adventures are made; the classic list
+    // editor stays reachable until it is retired.
     ctas.append(h('a', {
-      class: 'btn',
+      class: 'btn primary',
       href: designerURL(a.slug),
       title: t('Design the adventure as a flow of steps'),
     }, icon(ICONS.flow), t('Open designer')));
+    ctas.append(h('button', {
+      class: 'btn',
+      title: t('The older editor: puzzles in lanes'),
+      on: { click: () => nav('#library/' + encodeURIComponent(a.slug)) },
+    }, icon(ICONS.pencil), t('Classic editor')));
   } else {
     ctas.append(h('button', {
       class: 'btn primary',
@@ -6075,8 +6103,9 @@ async function viewAdventureDetail(view, slug) {
   }
   // Preview opens the player view in a new tab — handy for both
   // catalog browsers and authors checking their own work without
-  // losing this page's scroll position.
-  ctas.append(h('a', {
+  // losing this page's scroll position. It plays lane pages; an
+  // adventure made in the designer is tried with its Test play.
+  if (pages.length) ctas.append(h('a', {
     class: 'btn',
     href: '/arrange/preview/' + encodeURIComponent(a.slug) + '?page=0',
     target: '_blank', rel: 'noopener',
@@ -6123,8 +6152,8 @@ async function viewAdventureDetail(view, slug) {
   }
   const stats = h('div', { class: 'adv-stats' },
     statBlock(String(enabled.length), enabled.length === 1 ? t('puzzle') : t('puzzles')),
-    statBlock(String(gatedCount), gatedCount === 1 ? t('gated stop') : t('gated stops')),
-    maxKm > 0 ? statBlock(formatKm(maxKm), t('extent')) : null,
+    statBlock(String(gatedCount), gatedCount === 1 ? t('place to reach') : t('places to reach')),
+    maxKm > 0 ? statBlock(formatKm(maxKm), t('across')) : null,
   );
 
   // ---- Description / intro / outro ----
@@ -6261,21 +6290,47 @@ async function viewAdventureDetail(view, slug) {
     );
   }
 
+  // An adventure made in the designer has no lane pages: the stats, map
+  // and puzzle list above would all read zero. Say what the designer
+  // holds instead — how much is there, and whether events can play it.
+  const designed = pages.length === 0;
+  const flowCard = designed ? h('section', { class: 'card' },
+    h('h2', { style: 'margin:0 0 .5rem' }, t('Steps')),
+    h('p', { class: 'muted' }, t('Loading…'))) : null;
+  if (designed) {
+    (async () => {
+      const g = a.mine_to_edit ? await api('/api/admin/adventures/' + encodeURIComponent(a.slug) + '/graph') : null;
+      const nodes = g?.ok ? (g.body?.envelope?.graph?.nodes || []) : [];
+      const puzzles = nodes.filter((n) => n.type === 'puzzle').length;
+      const steps = nodes.filter((n) => n.type !== 'start' && n.type !== 'end').length;
+      const pub = g?.ok ? g.body?.published : null;
+      flowCard.replaceChildren(
+        h('h2', { style: 'margin:0 0 .5rem' }, t('Steps')),
+        h('p', { style: 'margin:0 0 .35rem' }, steps
+          ? t('{{steps}} steps, {{puzzles}} of them puzzles.', { steps, puzzles })
+          : t('Nothing designed yet.')),
+        h('p', { class: 'muted', style: 'margin:0' }, pub
+          ? t('Published: events that start now play version {{n}}.', { n: pub.version })
+          : t('Not published yet, so events can\'t play it. Publish it from the designer.')));
+    })();
+  }
+
   view.replaceChildren(...[
     h('button', { class: 'btn ghost small', on: { click: () => nav('#adventures') } }, icon(ICONS.back), t('Back')),
     hero,
-    stats,
+    designed ? null : stats,
     story,
     startCard,
-    mapCard,
+    flowCard,
+    designed ? null : mapCard,
     simHost,
-    h('h2', { style: 'margin-top:1.5rem' }, t('Puzzles')),
-    puzzleSection,
+    designed ? null : h('h2', { style: 'margin-top:1.5rem' }, t('Puzzles')),
+    designed ? null : puzzleSection,
   ].filter(Boolean));
 
   // Mount the map after the DOM lands so Leaflet has a sized
   // container — same trick the run-detail map uses.
-  setTimeout(() => mountAdventureMap(mapHost, enabled, a.colors), 0);
+  if (!designed) setTimeout(() => mountAdventureMap(mapHost, enabled, a.colors), 0);
 }
 
 // statBlock is a small bordered tile rendering a value + label.
@@ -7171,14 +7226,14 @@ async function viewQuests(view) {
   const newBtn = isAdmin
     ? null
     : h('button', { class: 'btn primary', on: { click: () => newQuest() } },
-        icon(ICONS.plus), t('New quest'));
+        icon(ICONS.plus), t('New self-guided adventure'));
 
   view.replaceChildren(
     h('div', { class: 'row between', style: 'margin-bottom:1rem' },
-      h('h1', { style: 'margin:0' }, t('Quests')),
+      h('h1', { style: 'margin:0' }, t('Self-guided adventures')),
       newBtn),
     h('p', { class: 'muted', style: 'font-size:.9rem; margin:0 0 1rem' },
-      t('Always-on adventures listed at /store. Each ticket purchase mints a team; teams play whenever they want.')),
+      t('Sold in your store: each ticket bought creates a team, and teams play whenever they like.')),
     questsTable(rs, { showOrg: isAdmin, orgName }));
 }
 
@@ -7188,17 +7243,17 @@ function questsTable(rs, opts) {
   const orgName = opts.orgName || ((id) => '#' + id);
   if (rs.length === 0) {
     return h('div', { class: 'empty' },
-      h('p', {}, t('No quests yet.')),
+      h('p', {}, t('No self-guided adventures yet.')),
       h('p', { class: 'muted', style: 'margin-top:.5rem' },
-        t('Create a quest to list an always-on adventure on /store.')),
+        t('Create one to sell an adventure in your store that teams play whenever they like.')),
       h('div', { style: 'margin-top:.75rem' },
         h('button', { class: 'btn primary', on: { click: () => newQuest() } },
-          icon(ICONS.plus), t('New quest'))));
+          icon(ICONS.plus), t('New self-guided adventure'))));
   }
   return h('table', { class: 'table' },
     h('thead', {}, h('tr', {},
       h('th', { style: 'width:48px' }, ''),
-      h('th', {}, t('Quest')),
+      h('th', {}, t('Self-guided adventure')),
       h('th', { class: 'hide-narrow' }, t('Adventure')),
       showOrg ? h('th', { class: 'hide-narrow' }, t('Organization')) : null,
       h('th', {}, t('State')),
@@ -7260,7 +7315,7 @@ async function newQuest() {
     return;
   }
 
-  const result = await modal(t('New quest'), ({ body, close }) => {
+  const result = await modal(t('New self-guided adventure'), ({ body, close }) => {
     let pickedAdv = advs[0];
 
     // Adventure picker (chips). Reusing the schedule-run styling so
@@ -7284,8 +7339,8 @@ async function newQuest() {
     };
     refreshChips();
 
-    const name = h('input', { type: 'text', required: true, maxlength: '200', placeholder: t('Quest name') });
-    const blurb = h('textarea', { rows: '4', maxlength: '1000', placeholder: t('Short description shown on the /store card and detail page.') });
+    const name = h('input', { type: 'text', required: true, maxlength: '200', placeholder: t('Name in the store') });
+    const blurb = h('textarea', { rows: '4', maxlength: '1000', placeholder: t('Short description shown in your store.') });
     const price = h('input', { type: 'number', min: '1', step: '1', value: '20' });
     const currency = h('select', {},
       ['EUR', 'USD', 'SEK', 'GBP', 'NOK', 'DKK'].map((c) =>
@@ -7294,11 +7349,11 @@ async function newQuest() {
     const cover = h('input', { type: 'file', accept: 'image/*' });
     const attest = h('input', { type: 'checkbox' });
 
-    const submitBtn = h('button', { class: 'btn primary', type: 'submit' }, t('Create quest'));
+    const submitBtn = h('button', { class: 'btn primary', type: 'submit' }, t('Create self-guided adventure'));
     const form = h('form', {},
       h('h3', { style: 'margin:.25rem 0' }, t('Adventure')),
       advPick,
-      h('label', { class: 'field' }, h('span', {}, t('Quest name')), name),
+      h('label', { class: 'field' }, h('span', {}, t('Name in the store')), name),
       h('label', { class: 'field' }, h('span', {}, t('Public description')), blurb),
       h('div', { class: 'row', style: 'gap:.75rem; flex-wrap:wrap' },
         h('label', { class: 'field', style: 'flex:1; min-width:8rem' },
@@ -7310,7 +7365,7 @@ async function newQuest() {
       h('label', { class: 'field' },
         h('span', {}, t('Cover image (optional)')), cover,
         h('small', { class: 'muted', style: 'display:block; margin-top:.2rem' },
-          t('Shown on the /store card and detail page. JPEG / PNG / WebP / SVG, max 5 MB.'))),
+          t('Shown in your store. JPEG / PNG / WebP / SVG, max 5 MB.'))),
       h('label', { class: 'row', style: 'gap:.5rem; align-items:flex-start; margin-top:.5rem' },
         attest,
         h('span', { style: 'font-size:.9rem' },
@@ -7321,7 +7376,7 @@ async function newQuest() {
 
     form.addEventListener('submit', (e) => {
       e.preventDefault();
-      if (!name.value.trim()) { toastErr(t('Quest name required')); return; }
+      if (!name.value.trim()) { toastErr(t('A name is required')); return; }
       const priceN = parseInt(price.value, 10);
       if (!priceN || priceN <= 0) { toastErr(t('Ticket price must be greater than zero')); return; }
       const teamN = parseInt(teamSize.value, 10);
@@ -7356,7 +7411,7 @@ async function newQuest() {
     }),
   });
   if (cr.status !== 201) {
-    toastErr(cr.body?.error || t('Could not create quest'));
+    toastErr(cr.body?.error || t('Could not create the self-guided adventure'));
     return;
   }
   const eventID = cr.body.id;
@@ -7374,7 +7429,7 @@ async function newQuest() {
     }),
   });
   if (pr.status !== 204) {
-    toastErr(pr.body?.error || t('Quest created but ticket details failed to save'));
+    toastErr(pr.body?.error || t('Self-guided adventure created, but its ticket details were not saved'));
     nav('#events/' + eventID);
     return;
   }
@@ -7392,7 +7447,7 @@ async function newQuest() {
       body: fd,
     });
     if (!cv.ok) {
-      toastErr(t('Quest created but cover upload failed'));
+      toastErr(t('Self-guided adventure created, but the cover upload failed'));
       // Continue to start — cover isn't required.
     }
   }
@@ -7402,12 +7457,12 @@ async function newQuest() {
   // teams starts cleanly.
   const sr = await api('/api/admin/events/' + eventID + '/start', { method: 'POST' });
   if (sr.status !== 204 && sr.status !== 200) {
-    toastErr(sr.body?.error || t('Quest created but could not start'));
+    toastErr(sr.body?.error || t('Self-guided adventure created, but it could not start'));
     nav('#events/' + eventID);
     return;
   }
 
-  toastOk(t('Quest created and listed at /store'));
+  toastOk(t('Self-guided adventure created and listed in your store'));
   nav('#quests');
 }
 
@@ -7863,8 +7918,8 @@ function renderConnectBanner(event, status) {
       '⚠ ' + t('Stripe Connect required')),
     h('p', { class: 'muted', style: 'font-size:.9rem; margin:0' },
       isOwnerAdmin
-        ? t('Your org hasn\'t completed Stripe Connect onboarding yet, so this quest is hidden from /store and can\'t take payments. Set it up under Settings → Billing.')
-        : t('The seller org hasn\'t completed Stripe Connect onboarding yet, so this quest is hidden from /store and can\'t take payments. Their org admin needs to set it up under Settings → Billing.')),
+        ? t('Your org hasn\'t completed Stripe Connect onboarding yet, so this self-guided adventure is hidden from your store and can\'t take payments. Set it up under Settings → Billing.')
+        : t('The seller org hasn\'t completed Stripe Connect onboarding yet, so this self-guided adventure is hidden from their store and can\'t take payments. Their org admin needs to set it up under Settings → Billing.')),
     isOwnerAdmin
       ? h('div', { class: 'row', style: 'margin-top:.5rem' },
           h('a', { class: 'btn small primary', href: '#settings/billing',
@@ -7988,7 +8043,7 @@ function renderStoreBar(event) {
   // primary editing surface on the quest detail page rather than
   // an aside.
   const header = h('div', { class: 'row between', style: 'align-items:center; gap:.6rem; flex-wrap:wrap' },
-    h('h2', { style: 'margin:0' }, t('Quest details')),
+    h('h2', { style: 'margin:0' }, t('Self-guided adventure details')),
     h('span', { class: 'muted', style: 'font-size:.85rem' },
       priceMajor
         ? t('{{price}} {{cur}} per ticket', { price: priceMajor, cur: currency.toUpperCase() })
@@ -8068,7 +8123,7 @@ function renderEventQuickStats(event, teams) {
   }
   const tiles = [
     statBlock(`${done}/${total || 1}`, total === 1 ? t('team done') : t('teams done')),
-    statBlock(`${claimed}/${slots || 0}`, t('slots claimed')),
+    statBlock(`${claimed}/${slots || 0}`, t('players joined')),
   ];
   // Time tile: elapsed for running/paused/completed, "starts in" for
   // scheduled, blank for cancelled. fmtElapsed prints "1h 12m".
@@ -8238,7 +8293,7 @@ async function viewRunDetail(view, runID) {
       class: 'btn lifecycle-btn' + (live ? ' primary' : ''),
       on: { click: () => nav('#events/' + event.id + '/control') },
       title: t('Live leaderboard, map, and activity'),
-    }, icon(ICONS.eye), t('Race control')));
+    }, icon(ICONS.eye), t('Live control')));
   }
   if (event.state === 'scheduled') {
     const start = h('button', { class: 'btn primary lifecycle-btn', on: { click: () => confirmStart(event) } },
@@ -8266,25 +8321,24 @@ async function viewRunDetail(view, runID) {
     actions.append(h('button', {
       class: 'btn lifecycle-btn',
       on: { click: () => confirmPause(event) },
-      title: t('Pause the quest — delists from /store until resumed'),
+      title: t('Pause — hides it from your store until resumed'),
     }, icon(ICONS.moon), t('Pause')));
   }
   if (isQuest && event.state === 'paused') {
     actions.append(h('button', {
       class: 'btn primary lifecycle-btn',
       on: { click: () => transition(event.id, 'resume') },
-      title: t('Resume the quest — re-lists on /store'),
+      title: t('Resume — lists it in your store again'),
     }, icon(ICONS.play), t('Resume')));
   }
   // Cancel is the escape hatch for an event that needs to end before
   // it has finished — equipment broke, weather, the venue dropped out.
   // Allowed from scheduled / running / paused; the server gates with
   // a password confirm because cancellation discards in-flight state.
-  if (event.state === 'scheduled' || event.state === 'running' || event.state === 'paused') {
-    const cancel = h('button', { class: 'btn danger lifecycle-btn', on: { click: () => confirmCancel(event) } },
-      icon(ICONS.trash), t('Cancel event'));
-    actions.append(cancel);
-  }
+  // It sits at the end of the More menu, apart from the everyday
+  // buttons — beside Live control it was one slip away.
+  const more = [];
+  const cancellable = event.state === 'scheduled' || event.state === 'running' || event.state === 'paused';
   // Top-up: buy more player slots for the assignment behind this
   // event. Hidden on terminal-state events (no point growing a
   // finished/cancelled event), when the event is admin-seeded
@@ -8331,20 +8385,26 @@ async function viewRunDetail(view, runID) {
   if (teams.length > 0 && !isQuest) {
     const finishedN = teams.filter((tm) => tm.completed_at).length;
     const allDone   = finishedN === teams.length;
-    const pdf = h('a', {
-      class: 'btn lifecycle-btn' + (allDone ? ' primary' : ''),
+    const pdf = {
+      label: t('Download report (PDF)'), icon: ICONS.download,
       href: '/api/admin/events/' + event.id + '/recap.pdf',
       download: `event-${event.id}-recap.pdf`,
       title: t('Download a branded PDF report you can share with stakeholders'),
-    }, icon(ICONS.copy), allDone ? t('Download report (PDF)') : t('Download report (PDF)'));
-    actions.append(pdf);
-    const csv = h('a', {
-      class: 'btn lifecycle-btn',
+    };
+    // Once every team is done the report is what the arranger came
+    // for, so it is a button of its own; before that it waits in More.
+    if (allDone) {
+      actions.append(h('a', { class: 'btn lifecycle-btn primary', href: pdf.href, download: pdf.download, title: pdf.title },
+        icon(ICONS.download), pdf.label));
+    } else {
+      more.push(pdf);
+    }
+    more.push({
+      label: t('Download CSV'), icon: ICONS.download,
       href: '/api/admin/events/' + event.id + '/results.csv',
-      download: `run-${event.id}-results.csv`,
+      download: `event-${event.id}-results.csv`,
       title: t('Download CSV of the current standings'),
-    }, icon(ICONS.copy), t('Download CSV'));
-    actions.append(csv);
+    });
   }
   // Calendar invite — useful before AND during scheduling, so we
   // surface it whenever the event has a scheduled / started time.
@@ -8352,14 +8412,15 @@ async function viewRunDetail(view, runID) {
   // Google / Outlook calendar like any other meeting. Hidden on
   // quests because they have no scheduled time players need to
   // diary in advance — they're played whenever the buyer wants.
-  if ((event.scheduled_at || event.started_at) && !isQuest) {
-    const ics = h('a', {
-      class: 'btn lifecycle-btn',
+  // Only before the start: once the event is under way, a calendar
+  // invite has nothing left to announce.
+  if (event.scheduled_at && event.state === 'scheduled' && !isQuest) {
+    more.push({
+      label: t('Download calendar invite'), icon: ICONS.schedule,
       href: '/api/admin/events/' + event.id + '/invite.ics',
       download: `event-${event.id}-invite.ics`,
       title: t('Download a calendar invite (.ics) you can forward to participants'),
-    }, icon(ICONS.copy), t('Download calendar invite'));
-    actions.append(ics);
+    });
   }
   // Proactive bulk-send: iterate the event's teams and mail each
   // their slot links + the .ics. Surfaced once at least one team
@@ -8377,6 +8438,11 @@ async function viewRunDetail(view, runID) {
       on: { click: () => sendEventInvitations(event, teamsWithEmail) },
     }, icon(ICONS.mail), t('Email invitations ({{n}})', { n: teamsWithEmail })));
   }
+  if (cancellable) {
+    if (more.length) more.push({ separator: true });
+    more.push({ label: t('Cancel event'), icon: ICONS.trash, danger: true, onClick: () => confirmCancel(event) });
+  }
+  if (more.length) actions.append(moreMenu(more));
 
   // Last-activity-per-team: the newest event timestamp the team was
   // involved in. Used to highlight teams that look stuck.
@@ -8405,11 +8471,11 @@ async function viewRunDetail(view, runID) {
   const lifecycleBar = h('div', { class: 'lifecycle-bar' },
     h('div', { class: 'lifecycle-left' },
       h('button', { class: 'btn ghost small', on: { click: () => nav(isQuest ? '#quests' : '#events') } },
-        icon(ICONS.back), isQuest ? t('Quests') : t('Events')),
+        icon(ICONS.back), isQuest ? t('Self-guided adventures') : t('Events')),
       titleEl, renameBtn,
       isQuest
-        ? h('span', { class: 'pill accent', title: t('Listed at /store; tickets sold to the public.') },
-            icon(ICONS.compass), t('Quest'))
+        ? h('span', { class: 'pill accent', title: t('Listed in your store; tickets sold to the public.') },
+            icon(ICONS.compass), t('Self-guided adventure'))
         : null,
       h('span', { class: 'pill ' + pillClassForState(event.state) },
         stateGlyph(eventStateLabel(event)) + tEventState(eventStateLabel(event))),
@@ -8497,7 +8563,7 @@ async function viewRunDetail(view, runID) {
             stuck ? h('span', { class: 'pill warning', style: 'margin-left:.5rem' }, '⚠ ' + t('stuck?')) : null,
             showClaimed
               ? h('span', { class: 'pill', style: 'margin-left:.5rem; font-size:.7rem' },
-                  t('{{n}}/{{m}} claimed', { n: slotsClaimed, m: slotsTotal }))
+                  t('{{n}} of {{m}} joined', { n: slotsClaimed, m: slotsTotal }))
               : null,
             tm.email
               ? h('div', { class: 'muted', style: 'font-size:.78rem; margin-top:.15rem; padding-left:2.1rem' },
@@ -8824,7 +8890,7 @@ async function viewEventControl(view, runID) {
     }
     statsHost.replaceChildren(
       statBlock(`${done}/${total || 0}`, total === 1 ? t('team done') : t('teams done')),
-      statBlock(`${claimed}/${slots || 0}`, t('slots claimed')),
+      statBlock(`${claimed}/${slots || 0}`, t('players joined')),
       statBlock(fmtElapsedShort(elapsedSeconds()), t('elapsed')),
     );
   };
@@ -10331,7 +10397,7 @@ async function viewOrganizations(view) {
       h('h1', { style: 'margin:0' }, t('Organizations')),
       newBtn),
     h('p', { class: 'muted', style: 'font-size:.9rem; margin:0 0 .75rem' },
-      t('Each organization is a tenant. Click a row to manage its users, assignments, and purchases.')),
+      t('Each organization is a customer. Click a row to manage its users, event passes, and purchases.')),
     h('div', { class: 'row', style: 'gap:.5rem; margin-bottom:.75rem; align-items:center; flex-wrap:wrap' },
       search,
       h('span', { class: 'muted', style: 'font-size:.85rem' },
@@ -10544,7 +10610,7 @@ async function viewOrganizationDetail(view, orgID) {
           title: t('{{role}} · click ⓧ to remove', { role: m.role }),
         }, m.role === 'org_admin'
             ? t('{{username}} (admin)', { username: m.username })
-            : t('{{username}} (race director)', { username: m.username }),
+            : t('{{username}} (event host)', { username: m.username }),
         m.email_verified === false ? h('button', {
           title: t('Manually verify email (use only after confirming the user out-of-band)'),
           class: 'chip-verify',
@@ -10564,7 +10630,7 @@ async function viewOrganizationDetail(view, orgID) {
   const used = assignments.filter((x) => x.event_id);
   const assignmentsCard = h('div', { class: 'card' },
     h('div', { class: 'row between', style: 'margin-bottom:.5rem; gap:.5rem; flex-wrap:wrap' },
-      h('h2', { style: 'margin:0' }, t('Assignments')),
+      h('h2', { style: 'margin:0' }, t('Event passes')),
       h('button', { class: 'btn primary small', type: 'button',
         on: { click: () => openAssignAdventure(org, adventures) } },
         icon(ICONS.plus), t('Assign adventure'))),
@@ -10636,7 +10702,7 @@ async function viewOrganizationDetail(view, orgID) {
     h('h2', { style: 'margin:0 0 .25rem; color: var(--danger, #b03a3a); font-size:1rem' },
       t('Danger zone')),
     h('p', { class: 'muted', style: 'font-size:.85rem; margin:0 0 .75rem' },
-      t('Deleting cascades through every user, assignment, and event in this organization. The action is not reversible.')),
+      t('Deleting removes every user, event pass, and event in this organization. The action is not reversible.')),
     h('button', { class: 'btn danger', type: 'button',
       on: { click: () => confirmDeleteOrg(org) } },
       icon(ICONS.trash), t('Delete organization')));
@@ -10721,7 +10787,7 @@ async function confirmDeleteOrg(org) {
     toastErr(t('Cannot delete: {{n}} event(s) currently running. Stop them first.', { n: running }));
     return;
   }
-  const summary = t('You are about to delete: {{members}} user(s), {{assignments}} assignment(s), {{players}} player(s), {{events}} event(s). Cascades immediately and cannot be undone.',
+  const summary = t('You are about to delete: {{members}} user(s), {{assignments}} event pass(es), {{players}} player(s), {{events}} event(s). This happens immediately and cannot be undone.',
     { members, assignments, players, events });
   const pw = await promptPassword(t('Delete organization “{{name}}”?', { name: org.name }),
     summary + ' ' + t('Enter your password to confirm.'));
@@ -10782,7 +10848,7 @@ async function openAddOrgMember(org) {
     // rather than generic SaaS workshop-host language. The wire
     // value stays org_member so the API + DB are unchanged.
     const roleEl = h('select', { name: 'r' },
-      h('option', { value: 'org_member' }, t('Race director')),
+      h('option', { value: 'org_member' }, t('Event host')),
       h('option', { value: 'org_admin' }, t('Admin')));
     const status = h('p', {
       class: 'muted',
@@ -11062,7 +11128,7 @@ async function confirmVerifyMemberEmail(org, member) {
 
 async function openEditAssignment(org, assignment, adventures) {
   const used = !!assignment.event_id;
-  await modal(t('Edit assignment · {{name}}', { name: org.name }), ({ body, close }) => {
+  await modal(t('Edit event pass · {{name}}', { name: org.name }), ({ body, close }) => {
     const advSel = h('select', { disabled: used ? '' : null },
       adventures.map((a) => h('option', {
         value: a.slug, selected: a.slug === assignment.adventure_slug ? '' : null,
@@ -11078,7 +11144,7 @@ async function openEditAssignment(org, assignment, adventures) {
       h('p', { class: 'muted', style: 'font-size:.8rem' },
         used
           ? t('Linked to event #{{id}}. You may raise the cap; lowering below the current player-slot count is rejected.', { id: assignment.event_id })
-          : t('This assignment has not yet been used.')),
+          : t('This event pass has not been used yet.')),
       h('div', { class: 'row between', style: 'margin-top:.5rem' },
         used
           ? h('span', {})
@@ -11100,7 +11166,7 @@ async function openEditAssignment(org, assignment, adventures) {
       const r = await api(`/api/admin/organizations/${org.id}/assignments/${assignment.id}`, {
         method: 'PATCH', body: JSON.stringify(payload),
       });
-      if (r.status === 200) { toastOk(t('Assignment updated')); close(true); renderRoute(); }
+      if (r.status === 200) { toastOk(t('Event pass updated')); close(true); renderRoute(); }
       else toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
     });
     body.append(form);
@@ -11117,7 +11183,7 @@ async function openAssignAdventure(org, adventures) {
       h('label', { class: 'field' }, h('span', {}, t('Adventure')), sel),
       h('label', { class: 'field' }, h('span', {}, t('Maximum players')), count),
       h('p', { class: 'muted', style: 'font-size:.8rem' },
-        t('Each assignment may be used for exactly one event. For more, assign again.')),
+        t('Each event pass is used for exactly one event. For more, grant another.')),
       h('div', { class: 'row end' },
         h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, t('Cancel')),
         h('button', { class: 'btn primary', type: 'submit' }, t('Assign'))));
@@ -11129,7 +11195,7 @@ async function openAssignAdventure(org, adventures) {
         method: 'POST',
         body: JSON.stringify({ adventure_slug: sel.value, max_players: maxPlayers }),
       });
-      if (r.status === 201) { toastOk(t('Assignment granted')); close(true); renderRoute(); }
+      if (r.status === 201) { toastOk(t('Event pass granted')); close(true); renderRoute(); }
       else toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
     });
     body.append(form);
@@ -11138,7 +11204,7 @@ async function openAssignAdventure(org, adventures) {
 
 async function revokeAssignment(orgID, assignmentID) {
   const r = await api(`/api/admin/organizations/${orgID}/assignments/${assignmentID}`, { method: 'DELETE' });
-  if (r.status === 204) { toastOk(t('Assignment revoked')); renderRoute(); }
+  if (r.status === 204) { toastOk(t('Event pass revoked')); renderRoute(); }
   else toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
 }
 
@@ -11411,58 +11477,54 @@ async function openCreateAdventure() {
     const orgName = (orgID == null
       ? ''
       : ((state.me?.memberships || []).find((m) => m.org_id === orgID)?.org_name || ''));
-    const slug  = h('input', { required: true, placeholder: 'my-adventure', pattern: '[a-z0-9-]+' });
-    const slugHint = h('small', { class: 'muted', style: 'display:block; margin-top:.2rem' }, '');
+    // Title first: it is what the author has in mind. The slug — the
+    // name in links — follows it until the author edits it themselves.
     const title = h('input', { required: true, placeholder: t('e.g. “The Lost Vault”') });
-    const desc  = h('textarea', { rows: 2,
+    const slug  = h('input', { required: true, placeholder: 'the-lost-vault', pattern: '[a-z0-9-]+' });
+    const slugHint = h('small', { class: 'muted', style: 'display:block; margin-top:.2rem' },
+      t('Used in links. Lowercase a–z, digits and hyphens.'));
+    // The console styles textareas for markdown, in monospace; a pitch
+    // is prose.
+    const desc  = h('textarea', { rows: 2, style: 'font-family:inherit',
       placeholder: t('A short pitch — what players encounter and roughly how long it takes.') });
     const author = h('input', orgName ? { value: orgName } : {});
-    const cAccent    = colorRow(t('Accent — buttons, progress'),      '');
-    const cSecondary = colorRow(t('Secondary — titles, status pill'), '');
-    const cBackground = colorRow(t('Background'),                     '');
-    const cText      = colorRow(t('Text'),                            '');
-    const cSubmitBg  = colorRow(t('Submit dock — answer bar at the bottom'), '');
+    let slugEdited = false;
+    const slugFrom = (s) => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60);
+    title.addEventListener('input', () => {
+      if (!slugEdited) { slug.value = slugFrom(title.value); validateSlug(); }
+    });
     // Live slug validator: keeps the author from discovering at submit
-    // time that "My-Adventure" isn't a legal slug. Echoes a small hint
-    // beside the field as they type.
+    // time that "My-Adventure" isn't a legal slug.
     const validateSlug = () => {
       const v = slug.value;
-      if (!v) { slugHint.textContent = ''; slugHint.className = 'muted'; return; }
-      if (/^[a-z0-9-]+$/.test(v)) {
-        slugHint.textContent = '✓ ' + t('Looks good.');
-        slugHint.className = 'ok';
+      if (!v || /^[a-z0-9-]+$/.test(v)) {
+        slugHint.textContent = t('Used in links. Lowercase a–z, digits and hyphens.');
+        slugHint.className = 'muted';
       } else {
         slugHint.textContent = t('Lowercase a–z, digits, and hyphens only.');
         slugHint.className = 'err';
       }
     };
-    slug.addEventListener('input', validateSlug);
+    slug.addEventListener('input', () => { slugEdited = slug.value !== ''; validateSlug(); });
     const form = h('form', {},
-      h('label', { class: 'field' },
-        h('span', {}, t('Slug — lowercase letters, digits, hyphens')), slug, slugHint),
       h('label', { class: 'field' }, h('span', {}, t('Title')), title),
-      h('label', { class: 'field' }, h('span', {}, t('Description')), desc),
+      h('label', { class: 'field' }, h('span', {}, t('Short name')), slug, slugHint),
+      h('label', { class: 'field' }, h('span', {}, t('Description (optional)')), desc),
       h('label', { class: 'field' }, h('span', {}, t('Author')), author),
-      h('details', { class: 'card', style: 'padding:.6rem .85rem; margin:.75rem 0' },
-        h('summary', { style: 'cursor:pointer; font-weight:600' },
-          t('Brand colours (optional)')),
-        h('p', { class: 'muted', style: 'font-size:.85rem; margin:.5rem 0' },
-          t('Override the default colours for white-labelled events. You can change these later.')),
-        cAccent.el, cSecondary.el, cBackground.el, cText.el, cSubmitBg.el),
+      h('p', { class: 'muted', style: 'font-size:.85rem; margin:.25rem 0 .75rem' },
+        t('Next you design its steps. Colours, pictures and the rest can be set any time.')),
       h('div', { class: 'row end' },
         h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, t('Cancel')),
-        h('button', { class: 'btn primary', type: 'submit' }, t('Create'))));
+        h('button', { class: 'btn primary', type: 'submit' }, t('Create and design'))));
     // Dirty-check guard: backdrop click / Escape would otherwise lose
-    // a half-typed adventure spec. We treat any non-empty input field
-    // as dirty since blank-on-create is the common abandoned state.
+    // a half-typed adventure spec.
     if (typeof setBeforeClose === 'function') {
       setBeforeClose(() => {
         // Compare author against the pre-fill rather than the empty
         // string so a pristine prepopulated org name doesn't read as
         // dirty on a backdrop click.
-        const dirty = !!(slug.value || title.value || desc.value
-          || author.value !== orgName
-          || cAccent.get() || cSecondary.get() || cBackground.get() || cText.get() || cSubmitBg.get());
+        const dirty = !!(slug.value || title.value || desc.value || author.value !== orgName);
         return !dirty || inAppConfirm(t('Discard this adventure?'), { danger: true });
       });
     }
@@ -11472,14 +11534,11 @@ async function openCreateAdventure() {
         method: 'POST', body: JSON.stringify({
           slug: slug.value.trim(), title: title.value.trim(),
           description: desc.value, author: author.value.trim(),
-          accent_color:           cAccent.get(),
-          accent_secondary_color: cSecondary.get(),
-          background_color:       cBackground.get(),
-          text_color:             cText.get(),
-          submit_bg_color:        cSubmitBg.get(),
         }),
       });
-      if (r.status === 201) { toastOk(t('Adventure created')); close(true); nav('#library/' + r.body.slug); }
+      // Straight on to designing it: a new adventure has nothing to
+      // schedule or look at yet.
+      if (r.status === 201) { close(true); location.href = designerURL(r.body.slug); }
       else toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
     });
     body.append(form);
@@ -14384,6 +14443,51 @@ function buildPuzzleLocationMap(args) {
   };
 }
 
+// moreMenu renders a "More" button opening a menu of the actions a page
+// needs now and then — downloads, and destructive ones kept apart from
+// the everyday buttons. Items: { label, icon, onClick } or { label,
+// icon, href, download } for a link, danger: true to mark one red, or
+// { separator: true }. Listeners live only while the menu is open.
+function moreMenu(items) {
+  const wrap = h('div', { class: 'split-btn' });
+  const toggle = h('button', {
+    class: 'btn lifecycle-btn', type: 'button', 'aria-haspopup': 'menu', 'aria-expanded': 'false',
+  }, t('More'), ' ▾');
+  const menu = h('div', { class: 'split-btn-menu', role: 'menu' });
+  const onDocClick = (e) => { if (!wrap.contains(e.target)) close(); };
+  const onKey = (e) => { if (e.key === 'Escape') { close(); toggle.focus(); } };
+  const close = () => {
+    menu.classList.remove('open');
+    toggle.setAttribute('aria-expanded', 'false');
+    document.removeEventListener('click', onDocClick);
+    document.removeEventListener('keydown', onKey);
+  };
+  const open = () => {
+    menu.classList.add('open');
+    toggle.setAttribute('aria-expanded', 'true');
+    document.addEventListener('click', onDocClick);
+    document.addEventListener('keydown', onKey);
+    menu.querySelector('.split-btn-item')?.focus();
+  };
+  for (const it of items) {
+    if (it.separator) { menu.append(h('div', { class: 'split-btn-sep', role: 'separator' })); continue; }
+    const cls = 'split-btn-item' + (it.danger ? ' danger' : '');
+    const el = it.href
+      ? h('a', { class: cls, role: 'menuitem', href: it.href, ...(it.download ? { download: it.download } : {}), ...(it.title ? { title: it.title } : {}) },
+          it.icon ? icon(it.icon) : null, it.label)
+      : h('button', { class: cls, role: 'menuitem', type: 'button', ...(it.title ? { title: it.title } : {}) },
+          it.icon ? icon(it.icon) : null, it.label);
+    el.addEventListener('click', () => { close(); it.onClick?.(); });
+    menu.append(el);
+  }
+  toggle.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (menu.classList.contains('open')) close(); else open();
+  });
+  wrap.append(toggle, menu);
+  return wrap;
+}
+
 // addPuzzleButton renders a primary "Add puzzle" button with a small
 // chevron that opens a popover with the "Copy from library…" option.
 // The bulk of the authoring flow is blank-puzzle create, so the
@@ -15599,7 +15703,7 @@ function viewManual(view, anchor) {
       tocEntry('adventure',   t('Authoring an adventure')),
       tocEntry('puzzles',     t('Adding puzzles')),
       tocEntry('event-flow',    t('How the event flow fits together')),
-      tocEntry('assignments', t('Buying player-slot assignments')),
+      tocEntry('assignments', t('Buying event passes')),
       tocEntry('create-event',  t('Creating an event')),
       tocEntry('teams',       t('Adding teams and sharing magic links')),
       tocEntry('running',     t('Running the event')),
@@ -15622,27 +15726,27 @@ function viewManual(view, anchor) {
         h('span', {}, h('strong', {}, t('Adventure')),
           ' — ',
           t('a reusable script. Pages of puzzles in order. Like a book.')),
-        h('span', {}, h('strong', {}, t('Assignment')),
+        h('span', {}, h('strong', {}, t('Event pass')),
           ' — ',
           t('a paid licence to use an adventure for an event once for up to N teams. You buy these from the Catalog.')),
         h('span', {}, h('strong', {}, t('Event')),
           ' — ',
-          t('one specific playthrough at a specific time. Created from an assignment.')),
+          t('one specific playthrough at a specific time. Created with an event pass.')),
         h('span', {}, h('strong', {}, t('Team')),
           ' — ',
           t('a group of players in an event, identified by a team name. Each player gets their own magic-link to log in as part of the team.')),
       ),
-      callout(t('Mental model: an Adventure is a recipe; an Assignment is the right to cook it once; a Event is one specific dinner; a Team is the people sitting at a table.')),
+      callout(t('Mental model: an Adventure is a recipe; an Event pass is the right to cook it once; an Event is one specific dinner; a Team is the people sitting at a table.')),
     ),
 
     /* ---- 2. First steps ---- */
     sec('first-steps', t('First steps'),
-      p(t('When you sign up, you create an organization. Everyone in your organization shares the same adventures, assignments, and events.')),
+      p(t('When you sign up, you create an organization. Everyone in your organization shares the same adventures, event passes, and events.')),
       h('h3', {}, t('Verify your email')),
-      p(t('After signup we email a verification link. You can log in before clicking it, but money-touching actions (buying assignments, scheduling events) are blocked until you verify. The dashboard shows a banner with a "Resend" button if it didn\'t arrive.')),
+      p(t('After signup we email a verification link. You can log in before clicking it, but money-touching actions (buying event passes, scheduling events) are blocked until you verify. The dashboard shows a banner with a "Resend" button if it didn\'t arrive.')),
       shot(t('[Screenshot: dashboard with the unverified-email banner]')),
       h('h3', {}, t('The dashboard')),
-      p(t('The dashboard is your home: at-a-glance view of upcoming events, ready-to-schedule assignments, and shortcuts to the things you most often do.')),
+      p(t('The dashboard is your home: at-a-glance view of upcoming events, event passes ready to schedule, and shortcuts to the things you most often do.')),
       shot(t('[Screenshot: a populated arranger dashboard]')),
     ),
 
@@ -15706,36 +15810,36 @@ function viewManual(view, anchor) {
     /* ---- 5. Event flow ---- */
     sec('event-flow', t('How the event flow fits together'),
       p(t('Before scheduling your first event, take a moment to understand the chain:')),
-      pre(t('Adventure  →  Assignment  →  Event  →  Teams  →  Players')),
+      pre(t('Adventure  →  Event pass  →  Event  →  Teams  →  Players')),
       ul(
         t('You author or pick an Adventure (free).'),
-        t('You buy an Assignment for that adventure: pays for up to N teams.'),
-        t('You create a Event from the Assignment: ties it to a specific date/time.'),
+        t('You buy an Event pass for that adventure: it pays for up to N teams.'),
+        t('You create an Event with the Event pass: it ties it to a specific date and time.'),
         t('You add Teams to the Event: each team is a group of players.'),
         t('You share each Player a magic link: they tap, the event starts, they play.'),
       ),
-      callout(t('One assignment = one event. If you want to run the same adventure twice, buy two assignments.')),
+      callout(t('One event pass = one event. To run the same adventure twice, buy two event passes.')),
     ),
 
     /* ---- 6. Assignments ---- */
-    sec('assignments', t('Buying player-slot assignments'),
-      p(t('An assignment licences one event for up to N player slots — across however many teams you want to form. Pricing is per-player: the first 15 in any event are free, and each additional player is €5.')),
+    sec('assignments', t('Buying event passes'),
+      p(t('An event pass covers one event for up to N players — across however many teams you want to form. Pricing is per player: the first 15 in any event are free, and each additional player is €5.')),
       ol(
         t('Click "Catalog" in the sidebar.'),
         t('Pick the adventure you want to run.'),
         t('Choose how many players will join (1–500). Buys at or below 15 are free and skip the checkout step entirely.'),
-        t('Click "Continue". Paid buys go to Stripe Checkout; free buys land you straight on the new assignment.'),
-        t('After payment, you\'re sent back to the dashboard with a "Schedule now" prompt on the new assignment.'),
+        t('Click "Continue". Paid buys go to Stripe Checkout; free buys land you straight on the new event pass.'),
+        t('After payment, you\'re sent back to the dashboard with a "Schedule now" prompt on the new event pass.'),
       ),
       shot(t('[Screenshot: the Catalog with adventure cards]')),
-      callout(t('Refunds: if you bought the wrong assignment, contact support. Refunds are admin-only — they touch real money.'), 'warn'),
+      callout(t('Refunds: if you bought the wrong event pass, contact support. Refunds are admin-only — they touch real money.'), 'warn'),
     ),
 
     /* ---- 7. Create run ---- */
     sec('create-event', t('Creating an event'),
       ol(
         t('Click "Events" in the sidebar, then "Schedule event".'),
-        t('Pick the assignment you want to use (only unused assignments are listed).'),
+        t('Pick the event pass you want to use (only unused ones are listed).'),
         t('Give the event a name (eg. "Office team-build, Friday afternoon"). This is for your benefit; players don\'t see it.'),
         t('Pick a date and time. You can also leave it blank and start the event manually later.'),
         t('Confirm the no-minors attestation, or pick the COPPA path if you\'re running for under-13s.'),
@@ -15827,7 +15931,7 @@ function viewManual(view, anchor) {
         h('span', {}, code('event.completed'), ' — ', t('all teams finished.')),
         h('span', {}, code('team.created'), ' — ',  t('a new team was added to an event.')),
         h('span', {}, code('team.completed'), ' — ', t('a team finished. Includes their name and event id.')),
-        h('span', {}, code('purchase.paid'), ' — ', t('an assignment was purchased.')),
+        h('span', {}, code('purchase.paid'), ' — ', t('an event pass was bought.')),
         h('span', {}, code('purchase.refunded'), ' — ', t('a purchase was refunded.')),
       ),
       h('h3', {}, t('Configure an endpoint')),
@@ -15879,10 +15983,10 @@ process(parse_json(body))`),
           t('We send a confirmation link to the new address. The change only takes effect when you click it.')),
         h('span', {}, h('strong', {}, t('Download my data')),
           ' — ',
-          t('A single JSON file with your account info plus your organization\'s runs, teams, adventures, assignments and purchases. The GDPR-friendly export.')),
+          t('A single JSON file with your account info plus your organization\'s events, teams, adventures, event passes and purchases. The GDPR-friendly export.')),
         h('span', {}, h('strong', {}, t('Delete account')),
           ' — ',
-          t('If you\'re the last member, your organization is deleted with you. All runs, teams, adventures, assignments. Cannot be undone.')),
+          t('If you\'re the last member, your organization is deleted with you. All events, teams, adventures, event passes. Cannot be undone.')),
       ),
     ),
 
@@ -15942,7 +16046,7 @@ async function viewWebhooks(view) {
       endpoints.length ? addBtn : null,
     ),
     h('p', { class: 'muted' },
-      t('Outbound HTTP callbacks for run / team / purchase lifecycle. Each delivery is signed with HMAC-SHA256; verify the X-Zv-Signature header against your endpoint\'s secret.')),
+      t('Outbound HTTP callbacks for event / team / purchase lifecycle. Each delivery is signed with HMAC-SHA256; verify the X-Zv-Signature header against your endpoint\'s secret.')),
     ...cards,
   );
 }
@@ -16504,10 +16608,15 @@ async function viewSettings(view, tab) {
   const isAdmin = me.role === 'admin';
 
   const tabs = [
-    { id: 'general',      label: t('General'),      visible: true },
-    // Account is the identity / security / data hub: who you are,
-    // your password / 2FA, the sessions you've opened, an export of
-    // your data, and the delete-my-account button. Always visible.
+    // Organization is the org's public face — store address, logo,
+    // colours, tagline — which only its admins change. Personal
+    // preferences used to share a "General" tab with it; they now
+    // open the Account tab, where everything about "me" lives.
+    { id: 'organization', label: t('Organization'), visible: isOrgAdmin },
+    // Account is everything about you: preferences (theme, language),
+    // who you are, your password / 2FA, the sessions you've opened,
+    // an export of your data, and the delete-my-account button, with
+    // where to get help at the end. Always visible.
     { id: 'account',      label: t('Account'),      visible: true },
     { id: 'members',      label: t('Members'),      visible: isOrgAdmin },
     // Admins is the platform-admin equivalent of Members — same UI
@@ -16543,10 +16652,11 @@ async function viewSettings(view, tab) {
     { id: 'integrations', label: t('Integrations'), visible: isOrgUser },
   ].filter((tb) => tb.visible);
 
-  // Fall through to General if the URL asks for a tab the current
+  // Fall through to the first tab if the URL asks for one the current
   // user can't see — direct-link followers shouldn't get a wedged
-  // empty page just because their role doesn't match.
-  if (!tab || !tabs.find((tb) => tb.id === tab)) tab = 'general';
+  // empty page just because their role doesn't match. That covers the
+  // old #settings/general links too.
+  if (!tab || !tabs.find((tb) => tb.id === tab)) tab = tabs[0].id;
 
   const tabStrip = h('div', { class: 'lib-tabs', style: 'margin-bottom:1rem' },
     tabs.map((tb) => h('a', {
@@ -16562,7 +16672,7 @@ async function viewSettings(view, tab) {
   view.replaceChildren(tabStrip, body);
 
   switch (tab) {
-    case 'general':      return renderSettingsGeneral(body);
+    case 'organization': return renderSettingsOrganization(body);
     case 'account':      return renderSettingsAccount(body);
     case 'members':      return await viewMembers(body);
     case 'admins':       return await viewAdmins(body);
@@ -16576,33 +16686,16 @@ async function viewSettings(view, tab) {
   }
 }
 
-// renderSettingsGeneral collects the personal-account cards (password,
-// email, TOTP, sessions, audit, export, help, account deletion) — the
-// surfaces every authenticated user sees regardless of role.
-function renderSettingsGeneral(view) {
-  // General is now scoped to UI preferences + where to get help.
-  // Account-management cards (password, email, 2FA, sessions, audit,
-  // export, delete) moved to the dedicated Account tab so a user
-  // looking for "change my password" goes to the obviously-named
-  // place, not a kitchen-sink "General" page.
-  const me = state.me || {};
-  const isOrgAdmin = me.role === 'org_admin';
-  const cards = [
-    h('h1', {}, t('General')),
+// renderSettingsOrganization is the org admin's tab for the org's
+// public face: the store address, logo, cover, colours and tagline
+// shown on /o/{slug} and its store.
+function renderSettingsOrganization(view) {
+  view.replaceChildren(
+    h('h1', {}, t('Organization')),
     h('p', { class: 'muted' },
-      t('Appearance and quick links to help. For password, email, sessions, and account deletion, see the Account tab.')),
-    renderSettingsAppearanceCard(),
-  ];
-  // Public profile: org_admin-only. The card bundles the store
-  // URL (with Copy + rename), the org's tagline / website / cover
-  // image — every knob that shows up on /o/{slug}. Lives in
-  // General because that's where org_admins look for "what does
-  // my public-facing surface look like".
-  if (isOrgAdmin) {
-    cards.push(renderSettingsPublicProfileCard());
-  }
-  cards.push(renderSettingsHelpCard());
-  view.replaceChildren(...cards);
+      t('How your organization appears to customers: its public page, its store and their address. Everyone in the organization shares these.')),
+    renderSettingsPublicProfileCard(),
+  );
 }
 
 // renderSettingsPublicProfileCard owns every editable field that
@@ -17152,7 +17245,8 @@ function renderSettingsAccount(view) {
   view.replaceChildren(...[
     h('h1', {}, t('Account')),
     h('p', { class: 'muted' },
-      t('Your identity on this instance, the sign-in security on top of it, and the data export / deletion controls.')),
+      t('Your preferences, your sign-in and security, and your data.')),
+    renderSettingsAppearanceCard(),
     renderSettingsRoleCard(),
     renderSettingsPasswordCard(),
     renderSettingsEmailCard(me),
@@ -17173,6 +17267,7 @@ function renderSettingsAccount(view) {
     // buyer emails, and slot magic-link tokens.
     isOrgAdmin ? renderSettingsOrgBundleCard() : null,
     renderSettingsDeleteCard(),
+    renderSettingsHelpCard(),
   ].filter(Boolean));
 }
 
@@ -17195,7 +17290,7 @@ function renderSettingsRoleCard() {
     label = t('Organisation admin');
     blurb = t('You can manage members, purchases, branding, and settings for your organisation. Run events too.');
   } else if (role === 'org_member') {
-    label = t('Race director');
+    label = t('Event host');
     blurb = t('You can author adventures and run events in your organisation. Member management is reserved for admins.');
   } else if (role === 'lobby') {
     label = t('No organisation yet');
@@ -17268,7 +17363,7 @@ async function viewSettingsBilling(view) {
   view.replaceChildren(
     h('h1', {}, t('Billing')),
     h('p', { class: 'muted' },
-      t('Stripe Connect lets your org receive payouts from /store ticket sales. The platform takes a per-charge fee; the rest lands in your Stripe account.')),
+      t('Stripe Connect lets your org receive payouts from ticket sales in your store. The platform takes a per-charge fee; the rest lands in your Stripe account.')),
     card);
 
   const refresh = async (afterReturn) => {
@@ -17298,7 +17393,7 @@ async function viewSettingsBilling(view) {
       card.replaceChildren(
         h('h2', {}, t('Stripe Connect')),
         h('p', { class: 'muted' },
-          t('Connect a Stripe account to start selling quest tickets at /store. Stripe-hosted KYC takes a few minutes; you keep full control of your account afterwards.')),
+          t('Connect a Stripe account to start selling tickets to your self-guided adventures in your store. Stripe-hosted KYC takes a few minutes; you keep full control of your account afterwards.')),
         h('div', { class: 'row', style: 'margin-top:.75rem; gap:.5rem' },
           h('button', { class: 'btn primary', type: 'button',
             on: { click: () => startConnect(orgID) } },
@@ -18085,7 +18180,10 @@ function renderSettingsHelpCard() {
     h('h2', {}, t('Help')),
     h('p', { class: 'muted', style: 'font-size:.9rem' },
       t('Step-by-step walk-through of authoring adventures, scheduling events, adding teams, and integrating.')),
-    h('div', { class: 'row end' },
+    h('div', { class: 'row end', style: 'gap:.5rem; flex-wrap:wrap' },
+      h('button', { class: 'btn', type: 'button',
+        on: { click: () => (state.me?.role === 'admin' ? showAdminOnboardingModal() : showOnboardingModal()) } },
+        t('Show the welcome again')),
       h('button', { class: 'btn', type: 'button',
         on: { click: () => nav('#manual') } },
         icon(ICONS.book), t('Open the manual'))));
@@ -18211,7 +18309,7 @@ function renderSettingsExportCard() {
   return h('div', { class: 'card settings-card', id: 'settings-export' },
     h('h2', {}, t('Download my data')),
     h('p', { class: 'muted', style: 'font-size:.9rem' },
-      t('A single JSON file with your account data plus your organization\'s runs, teams, adventures, assignments and purchases.')),
+      t('A single JSON file with your account data plus your organization\'s events, teams, adventures, event passes and purchases.')),
     h('div', { class: 'row end' }, dl),
     status,
   );
@@ -18707,14 +18805,14 @@ async function viewMembers(view) {
         h('button', { class: 'btn primary', on: { click: () => openAddOrgMember(org) } },
           icon(ICONS.plus), t('Add user')))),
     h('p', { class: 'muted' },
-      t('Users in {{name}}. Admins can invite more users; race directors run the games.', { name: org.name })),
+      t('Users in {{name}}. Admins can invite more users; event hosts run the events.', { name: org.name })),
     h('div', { class: 'card', style: 'background: var(--surface-2); padding: .85rem 1rem; margin-bottom: .9rem; font-size: var(--ts-sm)' },
       h('div', { style: 'margin-bottom:.35rem' },
         h('span', { class: 'pill' }, t('admin')), ' ',
         h('span', { class: 'muted' },
           t('Run events, manage teams, plus invite/remove users and change billing.'))),
       h('div', {},
-        h('span', { class: 'pill' }, t('race director')), ' ',
+        h('span', { class: 'pill' }, t('event host')), ' ',
         h('span', { class: 'muted' },
           t('Run events and manage teams. Cannot invite users or touch billing.')))),
     (org.members || []).length === 0
@@ -18724,7 +18822,7 @@ async function viewMembers(view) {
           h('thead', {}, h('tr', {}, h('th', {}, t('Username')), h('th', {}, t('Role')), h('th', {}, ''))),
           h('tbody', {}, (org.members || []).map((m) => h('tr', {},
             h('td', {}, m.username, state.me.id === m.id ? h('span', { class: 'muted', style: 'margin-left:.35rem' }, t('(you)')) : null),
-            h('td', {}, h('span', { class: 'pill' }, m.role === 'org_admin' ? t('admin') : t('race director'))),
+            h('td', {}, h('span', { class: 'pill' }, m.role === 'org_admin' ? t('admin') : t('event host'))),
             h('td', {}, h('div', { class: 'row end' },
               state.me.id === m.id
                 ? null

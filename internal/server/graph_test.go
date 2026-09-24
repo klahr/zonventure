@@ -10,6 +10,7 @@ import (
 	"github.com/klahr/zonventure/internal/auth"
 
 	"github.com/klahr/zonventure/internal/graph"
+	"github.com/klahr/zonventure/internal/graph/match"
 	"github.com/klahr/zonventure/internal/graph/valid"
 )
 
@@ -238,5 +239,71 @@ func TestGraphRequiresEditRights(t *testing.T) {
 	root.do("POST", "/api/auth/login", map[string]string{"username": "root", "password": "rootpw"}, nil)
 	if s := root.do("GET", "/api/admin/adventures/no-such-adventure/graph", nil, nil); s != 404 {
 		t.Errorf("unknown adventure = %d, want 404", s)
+	}
+}
+
+// A new adventure is listed with nothing to play, so the console offers
+// to design it rather than schedule it; its puzzle count follows its
+// designer draft, and publishing makes it playable.
+func TestAdventureListFollowsTheDesigner(t *testing.T) {
+	ts, _, cleanup := newTestServer(t)
+	defer cleanup()
+
+	arr := newClient(t, ts)
+	if s := arr.do("POST", "/api/auth/login", map[string]string{"username": "boss", "password": "s3cret"}, nil); s != 200 {
+		t.Fatalf("login = %d", s)
+	}
+	if s := arr.do("POST", "/api/admin/adventures", map[string]string{"slug": "fresh", "title": "Fresh"}, nil); s != 201 {
+		t.Fatalf("create = %d", s)
+	}
+	type row struct {
+		Slug      string `json:"slug"`
+		PageCount int    `json:"page_count"`
+		Playable  bool   `json:"playable"`
+	}
+	listed := func(slug string) row {
+		t.Helper()
+		var list struct {
+			Adventures []row `json:"adventures"`
+		}
+		if s := arr.do("GET", "/api/admin/adventures", nil, &list); s != 200 {
+			t.Fatalf("list = %d", s)
+		}
+		for _, a := range list.Adventures {
+			if a.Slug == slug {
+				return a
+			}
+		}
+		t.Fatalf("%s is not listed", slug)
+		return row{}
+	}
+	if a := listed("fresh"); a.Playable || a.PageCount != 0 {
+		t.Errorf("a new adventure has nothing to play: %+v", a)
+	}
+	if a := listed("demo"); !a.Playable || a.PageCount != 3 {
+		t.Errorf("the lane demo plays its three pages: %+v", a)
+	}
+
+	g := graph.Graph{
+		Nodes: []graph.Node{
+			{Slug: "start", Type: graph.Start},
+			{Slug: "q", Type: graph.Puzzle, PuzzleCfg: &graph.PuzzleConfig{Prompt: "?", Outputs: []graph.Output{
+				{Port: "solved", Trigger: graph.OnAnswer, Matchers: []match.Matcher{{Kind: match.Exact, Value: "x"}}},
+			}}},
+			{Slug: "end", Type: graph.End},
+		},
+		Edges: []graph.Edge{{From: "start", FromPort: graph.PortOut, To: "q"}, {From: "q", FromPort: "solved", To: "end"}},
+	}
+	if s := arr.do("PUT", "/api/admin/adventures/fresh/graph", graph.Envelope{Format: graph.FormatV2, Graph: g}, nil); s != 200 {
+		t.Fatalf("save draft = %d", s)
+	}
+	if a := listed("fresh"); a.Playable || a.PageCount != 1 {
+		t.Errorf("a draft counts its puzzles but is not playable until published: %+v", a)
+	}
+	if s := arr.do("POST", "/api/admin/adventures/fresh/graph/publish", nil, nil); s != 200 {
+		t.Fatalf("publish = %d", s)
+	}
+	if a := listed("fresh"); !a.Playable || a.PageCount != 1 {
+		t.Errorf("published, it plays: %+v", a)
 	}
 }

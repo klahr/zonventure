@@ -108,6 +108,7 @@ interface AdventureEdit {
   intro_text: string;
   outro_text: string;
   language: string;
+  pages?: unknown[];
   accent_color: string;
   accent_secondary_color: string;
   background_color: string;
@@ -130,7 +131,7 @@ export async function getLook(slug: string, signal?: AbortSignal): Promise<Look>
   if (a.text_color) b.text = a.text_color;
   if (a.submit_bg_color) b.submit_bg = a.submit_bg_color;
   if (a.font) b.font = a.font;
-  return { title: a.title, intro: a.intro_text, outro: a.outro_text, language: a.language, brand: b };
+  return { title: a.title, intro: a.intro_text, outro: a.outro_text, language: a.language, lanePuzzles: a.pages?.length ?? 0, brand: b };
 }
 
 /** The adventure's own settings the designer shows beside its graph. */
@@ -140,6 +141,8 @@ export interface Look {
   outro: string;
   /** The language the adventure is written in — its graph's main language. */
   language: string;
+  /** Puzzles made in the classic list editor, which a new flow can start from. */
+  lanePuzzles: number;
   brand: Brand;
 }
 

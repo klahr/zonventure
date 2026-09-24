@@ -103,10 +103,10 @@
 "StoreHandoffEmailFallback": "Betalning mottagen. Din laglänk är på väg till din inkorg.",
 "StoreHandoffFailed": "Något gick fel med det här köpet. Kolla din e-post för detaljer eller kontakta säljaren.",
 "Title": "Zonventure",
-"LandingTaglineFallback": "Verklighetsbaserade äventyr och uppdrag.",
-"LandingBrowseCTA": "Bläddra bland våra uppdrag",
-"LandingFeaturedHeading": "Utvalda uppdrag",
-"LandingFeaturedEmpty": "Inga uppdrag till salu just nu — titta in igen snart.",
-"LandingSeeAll": "Se alla uppdrag",
+"LandingTaglineFallback": "Äventyr i verkligheten, att spela när ni vill.",
+"LandingBrowseCTA": "Bläddra bland våra äventyr",
+"LandingFeaturedHeading": "Utvalda äventyr",
+"LandingFeaturedEmpty": "Inga äventyr till salu just nu — titta in igen snart.",
+"LandingSeeAll": "Se alla äventyr",
 "LandingVisitWebsite": "Besök vår webbplats"
 }

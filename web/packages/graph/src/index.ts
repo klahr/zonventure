@@ -6,3 +6,4 @@ export { reconcileByID, samePosition, sameData } from "./reconcile.ts";
 export * from "./presets.ts";
 export * from "./diff.ts";
 export * from "./i18n.ts";
+export * from "./outline.ts";

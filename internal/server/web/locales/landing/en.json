@@ -103,10 +103,10 @@
 "StoreHandoffEmailFallback": "Payment received. Your team link is on its way to your inbox.",
 "StoreHandoffFailed": "Something went wrong with this purchase. Check your email for details, or contact the seller.",
 "Title": "Zonventure",
-"LandingTaglineFallback": "Real-world adventures and quests.",
-"LandingBrowseCTA": "Browse our quests",
-"LandingFeaturedHeading": "Featured quests",
-"LandingFeaturedEmpty": "No quests on sale right now — check back soon.",
-"LandingSeeAll": "See all quests",
+"LandingTaglineFallback": "Real-world adventures to play whenever you like.",
+"LandingBrowseCTA": "Browse our adventures",
+"LandingFeaturedHeading": "Featured adventures",
+"LandingFeaturedEmpty": "No adventures on sale right now — check back soon.",
+"LandingSeeAll": "See all adventures",
 "LandingVisitWebsite": "Visit our website"
 }

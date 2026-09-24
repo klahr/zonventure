@@ -254,7 +254,7 @@
     <li><a href="#adventure">Authoring an adventure</a></li>
     <li><a href="#puzzles">Adding puzzles</a></li>
     <li><a href="#event-flow">How the event flow fits together</a></li>
-    <li><a href="#assignments">Buying player-slot assignments</a></li>
+    <li><a href="#assignments">Buying event passes</a></li>
     <li><a href="#create-event">Creating an event</a></li>
     <li><a href="#teams">Adding teams and sharing magic links</a></li>
     <li><a href="#running">Running the event</a></li>
@@ -281,24 +281,24 @@
   <h3>Four words to know</h3>
   <ul>
     <li><strong>Adventure</strong> — a reusable script. Pages of puzzles in order. Like a book.</li>
-    <li><strong>Assignment</strong> — a paid licence to run an adventure once for up to N teams. You buy these from the Catalog.</li>
-    <li><strong>Event</strong> — one specific playthrough at a specific time. Created from an assignment.</li>
+    <li><strong>Event pass</strong> — the right to run an adventure once, for up to N players. You buy these from the Catalog.</li>
+    <li><strong>Event</strong> — one specific playthrough at a specific time. Created with an event pass.</li>
     <li><strong>Team</strong> — a group of players in an event, identified by a team name. Each player gets their own magic-link to log in as part of the team.</li>
   </ul>
 
-  <div class="callout">Mental model: an Adventure is a recipe; an Assignment is the right to cook it once; an Event is one specific dinner; a Team is the people sitting at a table.</div>
+  <div class="callout">Mental model: an Adventure is a recipe; an Event pass is the right to cook it once; an Event is one specific dinner; a Team is the people sitting at a table.</div>
 </section>
 
 <section id="first-steps">
   <h2>First steps</h2>
-  <p>When you sign up, you create an organization. Everyone in your organization shares the same adventures, assignments, and events.</p>
+  <p>When you sign up, you create an organization. Everyone in your organization shares the same adventures, event passes, and events.</p>
 
   <h3>Verify your email</h3>
-  <p>After signup we email a verification link. You can log in before clicking it, but money-touching actions (buying assignments, scheduling events) are blocked until you verify. The dashboard shows a banner with a "Resend" button if it didn't arrive.</p>
+  <p>After signup we email a verification link. You can log in before clicking it, but money-touching actions (buying event passes, scheduling events) are blocked until you verify. The dashboard shows a banner with a "Resend" button if it didn't arrive.</p>
   <div class="shot">[Screenshot: dashboard with the unverified-email banner]</div>
 
   <h3>The dashboard</h3>
-  <p>The dashboard is your home: at-a-glance view of upcoming events, ready-to-schedule assignments, and shortcuts to the things you most often do.</p>
+  <p>The dashboard is your home: at-a-glance view of upcoming events, event passes ready to schedule, and shortcuts to the things you most often do.</p>
   <div class="shot">[Screenshot: a populated arranger dashboard]</div>
 </section>
 
@@ -361,36 +361,36 @@
 <section id="event-flow">
   <h2>How the event flow fits together</h2>
   <p>Before scheduling your first event, take a moment to understand the chain:</p>
-  <pre>Adventure  →  Assignment  →  Event  →  Teams  →  Players</pre>
+  <pre>Adventure  →  Event pass  →  Event  →  Teams  →  Players</pre>
   <ul>
     <li>You author or pick an Adventure (free).</li>
-    <li>You buy an Assignment for that adventure: pays for up to N teams.</li>
-    <li>You create an Event from the Assignment: ties it to a specific date/time.</li>
+    <li>You buy an Event pass for that adventure: it pays for up to N teams.</li>
+    <li>You create an Event with the Event pass: it ties it to a specific date and time.</li>
     <li>You add Teams to the Event: each team is a group of players.</li>
     <li>You share each Player a magic link: they tap, the event starts, they play.</li>
   </ul>
-  <div class="callout">One assignment = one event. If you want to run the same adventure twice, buy two assignments.</div>
+  <div class="callout">One event pass = one event. To run the same adventure twice, buy two event passes.</div>
 </section>
 
 <section id="assignments">
-  <h2>Buying player-slot assignments</h2>
-  <p>An assignment licences one event for up to N player slots — across however many teams you want to form. Pricing is per-player: the first {{FREE_PLAYERS_PER_EVENT}} in any event are free, and each additional player has a fixed cost configured by your operator (currently {{PRICE_PER_EXTRA_PLAYER}}).</p>
+  <h2>Buying event passes</h2>
+  <p>An event pass covers one event for up to N players — across however many teams you want to form. Pricing is per player: the first {{FREE_PLAYERS_PER_EVENT}} in any event are free, and each additional player has a fixed cost configured by your operator (currently {{PRICE_PER_EXTRA_PLAYER}}).</p>
   <ol>
     <li>Click "Catalog" in the sidebar.</li>
     <li>Pick the adventure you want to run.</li>
     <li>Choose how many players will join (1–500). Buys at or below 15 are free and skip the checkout step entirely.</li>
-    <li>Click "Continue". Paid buys go to Stripe Checkout; free buys land you straight on the new assignment.</li>
-    <li>After payment, you're sent back to the dashboard with a "Schedule now" prompt on the new assignment.</li>
+    <li>Click "Continue". Paid buys go to Stripe Checkout; free buys land you straight on the new event pass.</li>
+    <li>After payment, you're sent back to the dashboard with a "Schedule now" prompt on the new event pass.</li>
   </ol>
   <div class="shot">[Screenshot: the Catalog with adventure cards]</div>
-  <div class="callout warn">Refunds: if you bought the wrong assignment, contact support. Refunds are admin-only — they touch real money.</div>
+  <div class="callout warn">Refunds: if you bought the wrong event pass, contact support. Refunds are admin-only — they touch real money.</div>
 </section>
 
 <section id="create-event">
   <h2>Creating an event</h2>
   <ol>
     <li>Click "Events" in the sidebar, then "Schedule event".</li>
-    <li>Pick the assignment you want to use (only unused assignments are listed).</li>
+    <li>Pick the event pass you want to use (only unused ones are listed).</li>
     <li>Give the event a name (eg. "Office team-build, Friday afternoon"). This is for your benefit; players don't see it.</li>
     <li>Pick a date and time. You can also leave it blank and start the event manually later.</li>
     <li>Confirm the no-minors attestation, or pick the COPPA path if you're running for under-13s.</li>
@@ -473,7 +473,7 @@
     <li><code>event.completed</code> — all teams finished.</li>
     <li><code>team.created</code> — a new team was added to an event.</li>
     <li><code>team.completed</code> — a team finished. Includes their name and event id.</li>
-    <li><code>purchase.paid</code> — an assignment was purchased.</li>
+    <li><code>purchase.paid</code> — an event pass was bought.</li>
     <li><code>purchase.refunded</code> — a purchase was refunded.</li>
   </ul>
 
@@ -519,8 +519,8 @@ process(parse_json(body))</pre>
   <ul>
     <li><strong>Change password</strong> — Requires the current password. Other sessions are signed out on success.</li>
     <li><strong>Change email</strong> — We send a confirmation link to the new address. The change only takes effect when you click it.</li>
-    <li><strong>Download my data</strong> — A single JSON file with your account info plus your organization's runs, teams, adventures, assignments and purchases. The GDPR-friendly export.</li>
-    <li><strong>Delete account</strong> — If you're the last member, your organization is deleted with you. All runs, teams, adventures, assignments. Cannot be undone.</li>
+    <li><strong>Download my data</strong> — A single JSON file with your account info plus your organization's events, teams, adventures, event passes and purchases. The GDPR-friendly export.</li>
+    <li><strong>Delete account</strong> — If you're the last member, your organization is deleted with you. All events, teams, adventures, event passes. Cannot be undone.</li>
   </ul>
 </section>
 
@@ -539,14 +539,14 @@ docker compose up -d</code></pre>
   <h3>What's the same as the hosted product</h3>
   <ul>
     <li>The arranger surface, the play surface, the live audience display — same code, same shapes, same UX.</li>
-    <li>Adventures, assignments, events, teams, magic links, recap PDF.</li>
+    <li>Adventures, event passes, events, teams, magic links, recap PDF.</li>
     <li>Webhooks for outbound integration.</li>
     <li>Email verification + password reset (if SMTP is configured).</li>
   </ul>
 
   <h3>What's different on self-host</h3>
   <ul>
-    <li><strong>No Stripe by default.</strong> Without <code>ZV_STRIPE_SECRET_KEY</code> set, the Catalog's checkout flow creates assignments directly — you get the licence without paying, because the operator is you. Wire Stripe in if you want to resell to other organisations on your instance.</li>
+    <li><strong>No Stripe by default.</strong> Without <code>ZV_STRIPE_SECRET_KEY</code> set, the Catalog's checkout flow creates event passes directly — you get the licence without paying, because the operator is you. Wire Stripe in if you want to resell to other organisations on your instance.</li>
     <li><strong>No SSO by default.</strong> Username + password is the front door. Set <code>ZV_OIDC_*</code> to enable Google Workspace (or any OIDC provider) sign-in for your domain. The login page picks up the SSO button automatically.</li>
     <li><strong>You're the global admin.</strong> The seeded admin account sees every org, every adventure, every event on the instance. Treat it like a root password — store it in the same place you keep <code>POSTGRES_PASSWORD</code>.</li>
     <li><strong>Backups are your job.</strong> All durable state lives in the <code>zv_pg_data</code> volume — adventures, events, uploaded images and audio, recap tokens. <code>docker compose down -v</code> wipes everything. SELFHOSTING.md has a tested <code>pg_dump</code>-based backup recipe.</li>

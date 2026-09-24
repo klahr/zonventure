@@ -42,7 +42,7 @@ function consoleNav(user: Whoami): { label: string; icon: LucideIcon; href: stri
       item("Dashboard", Gauge, "dashboard"),
       item("Organizations", Building2, "organizations"),
       item("Events", CalendarDays, "events"),
-      item("Quests", Compass, "quests"),
+      item("Self-guided", Compass, "quests"),
       item("Library", MapIcon, "library", true),
       item("Logs", Terminal, "logs"),
       item("Settings", Settings, "settings"),
@@ -53,7 +53,7 @@ function consoleNav(user: Whoami): { label: string; icon: LucideIcon; href: stri
     item("Dashboard", Gauge, "dashboard"),
     item("Adventures", MapIcon, "adventures", true),
     item("Events", CalendarDays, "events"),
-    item("Quests", Compass, "quests"),
+    item("Self-guided", Compass, "quests"),
     item("Settings", Settings, "settings"),
   ];
 }
@@ -81,7 +81,7 @@ export function Shell({ user }: { user: Whoami }) {
   const org = user.memberships.find((m) => m.org_id === user.org_id);
 
   return (
-    <div className="shell" data-nav-collapsed={collapsed}>
+    <div className={"shell" + (route.name === "designer" ? " shell--designer" : "")} data-nav-collapsed={collapsed}>
       <a className="zv-skip-link" href="#main">
         {t.t("Skip to main content")}
       </a>

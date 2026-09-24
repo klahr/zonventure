@@ -28,7 +28,6 @@ import {
   diffGraphs,
   differs,
   emptyGraph,
-  linearSteps,
   nodeBySlug,
   portLabel,
   rebase,
@@ -39,6 +38,9 @@ import {
   undo,
   updateNode,
   emptyHistory,
+  insertAfter,
+  insertionPoint,
+  newNode,
   type AdventureMeta,
   type Envelope,
   type Graph,
@@ -63,6 +65,12 @@ import { DiffDialog, HelpModal, PanelModal, PublishCelebration, PublishLabelModa
 import { Button, ICON, IssueRow, IssuesButton, Notice, PromptModal } from "./dz/ui.tsx";
 import "./dz.css";
 import "./designer.css";
+
+/** A phone-sized screen, where the designer opens on the outline. */
+const NARROW = "(max-width: 720px)";
+function narrowScreen(): boolean {
+  return typeof window !== "undefined" && !!window.matchMedia?.(NARROW).matches;
+}
 
 const loadError = (e: unknown): Loaded => ({
   state: "error",
@@ -141,7 +149,9 @@ export function Designer({ slug }: { slug: string }) {
   // The preview floats beside the inspector, so a step can be edited and
   // watched at once.
   const [previewing, setPreviewing] = useState(false);
-  const [listView, setListView] = useState(false);
+  // On a phone the outline is the way in: a canvas cannot be worked with
+  // a thumb. Elsewhere the canvas is, and the outline is a toggle away.
+  const [listView, setListView] = useState(() => narrowScreen());
   const [paletteRequest, setPaletteRequest] = useState(0);
   const [focusRequest, setFocusRequest] = useState(0);
 
@@ -155,6 +165,9 @@ export function Designer({ slug }: { slug: string }) {
   // too; they live on the adventure, not in the graph.
   const [adventureLang, setAdventureLang] = useState("");
   const [meta, setMeta] = useState<AdventureMeta>({});
+  // Puzzles from the classic editor: null until known, "unknown" when
+  // they could not be read.
+  const [lanePuzzles, setLanePuzzles] = useState<number | "unknown" | null>(null);
   const brandDirty = JSON.stringify(brand) !== JSON.stringify(brandSaved);
 
   const draft = history.present;
@@ -195,18 +208,27 @@ export function Designer({ slug }: { slug: string }) {
       });
     adventures
       .getLook(slug, ac.signal)
-      .then(({ title, intro, outro, language, brand: b }) => {
+      .then(({ title, intro, outro, language, lanePuzzles: n, brand: b }) => {
         if (title) setAdventureTitle(title);
+        setLanePuzzles(n);
         setAdventureLang(language);
         setMeta({ title, intro, outro });
         setBrandSaved(b);
         setBrand(b);
       })
       .catch(() => {
-        /* no palette is the default look */
+        // No palette is the default look; not knowing the puzzles means
+        // offering both ways to start.
+        setLanePuzzles("unknown");
       });
     return () => ac.abort();
   }, [slug, adopt]);
+
+  // A new adventure has nothing to start from but a blank flow, so it
+  // opens on one instead of asking.
+  useEffect(() => {
+    if (loaded.state === "none" && lanePuzzles === 0) adopt(null, emptyGraph(), null);
+  }, [loaded.state, lanePuzzles, adopt]);
 
   const startFromLanes = async () => {
     setLoaded({ state: "loading" });
@@ -432,8 +454,7 @@ export function Designer({ slug }: { slug: string }) {
 
   // --- derived ----------------------------------------------------------------------
 
-  const steps = useMemo(() => (graph ? linearSteps(graph) : null), [graph]);
-  const showList = listView && !!steps;
+  const showList = listView;
   const node = graph && selected ? nodeBySlug(graph, selected) : undefined;
   const simEnvelope = useMemo(() => (draft ? envelope(draft) : null), [draft]);
   const slotOpen = slot !== "inspect" || !!node;
@@ -443,7 +464,6 @@ export function Designer({ slug }: { slug: string }) {
     setIssuePanel(null);
     setSelected(i.node);
     setSlot("inspect");
-    setListView(false);
     setFocusRequest((n) => n + 1);
   };
 
@@ -469,6 +489,7 @@ export function Designer({ slug }: { slug: string }) {
       </div>
     );
   }
+  if (loaded.state === "none" && (lanePuzzles === null || lanePuzzles === 0)) return <p className="lede">{t.t("Loading…")}</p>;
   if (loaded.state === "none")
     return (
       <div className="designer-empty">
@@ -476,10 +497,10 @@ export function Designer({ slug }: { slug: string }) {
           ← {t.t("Adventures")}
         </a>
         <h1>{t.t("Design this adventure")}</h1>
-        <p className="lede">{t.t("This adventure has no flow yet. Start from its existing puzzles, or from a blank canvas.")}</p>
+        <p className="lede">{t.t("This adventure has puzzles from the classic editor. Turn them into a flow to go on with, or start from a blank canvas.")}</p>
         <div className="designer-empty__actions">
           <button type="button" className="btn btn--primary" onClick={() => void startFromLanes()}>
-            {t.t("Start from existing puzzles")}
+            {typeof lanePuzzles === "number" ? t.t("Start from its {{n}} puzzles", { n: lanePuzzles }) : t.t("Start from existing puzzles")}
           </button>
           <button type="button" className="btn btn--ghost" onClick={() => adopt(null, emptyGraph(), null)}>
             {t.t("Start blank")}
@@ -497,7 +518,7 @@ export function Designer({ slug }: { slug: string }) {
 
   return (
     <div className="dz dz-designer">
-      <div className="editor" data-has-selection={slotOpen ? "true" : "false"}>
+      <div className="editor" data-has-selection={slotOpen ? "true" : "false"} data-inspector-expanded={slotOpen ? "true" : "false"}>
         <div className="canvas">
           <div className="editor-toolbar">
             <a className="dz-back" href={consoleHref("adventures/" + encodeURIComponent(slug))} title={t.t("Back to the adventure")} aria-label={t.t("Back to the adventure")}>
@@ -519,27 +540,26 @@ export function Designer({ slug }: { slug: string }) {
               </div>
               <span className="toolbar-divider" aria-hidden="true" />
               <div className="toolbar-group">
+                {/* The outline has its own add buttons, beneath its steps. */}
+                {!showList && (
                 <Button
                   variant="ghost"
                   className="editor-add-drop"
                   disabled={readOnly}
-                  onClick={() => {
-                    setListView(false);
-                    setPaletteRequest((n) => n + 1);
-                  }}
+                  onClick={() => setPaletteRequest((n) => n + 1)}
                   title={t.t("Search and insert a step (Ctrl/Cmd+K)")}
                   aria-label={t.t("Add step")}
                 >
                   <Plus size={ICON.sm} />
                   <span className="toolbar-label">{t.t("Add step")}</span>
                 </Button>
+                )}
                 <Button
                   variant="ghost"
                   className={"editor-dataview" + (showList ? " on" : "")}
                   aria-pressed={showList}
-                  disabled={!steps}
                   onClick={() => setListView((v) => !v)}
-                  title={steps ? t.t("Show the adventure as a list of steps") : t.t("The list shows a straight line of puzzles and stories. This adventure needs the canvas.")}
+                  title={showList ? t.t("Back to the canvas") : t.t("Show the adventure as an outline of its steps")}
                   aria-label={t.t("List view")}
                 >
                   <ListOrdered size={ICON.sm} />
@@ -568,10 +588,12 @@ export function Designer({ slug }: { slug: string }) {
 
             {graph && <LanguageSwitch graph={graph} main={mainLang} meta={meta} value={editLang} onChange={setEditLang} />}
 
-            <Button variant="ghost" data-tidy="toolbar" disabled={readOnly} onClick={() => change(tidy(graph, cardSizes()))} title={t.t("Auto-arrange the adventure into clean columns")}>
-              <LayoutGrid size={ICON.sm} aria-hidden="true" />
-              <span className="toolbar-label">{t.t("Tidy")}</span>
-            </Button>
+            {!showList && (
+              <Button variant="ghost" data-tidy="toolbar" disabled={readOnly} onClick={() => change(tidy(graph, cardSizes()))} title={t.t("Auto-arrange the adventure into clean columns")}>
+                <LayoutGrid size={ICON.sm} aria-hidden="true" />
+                <span className="toolbar-label">{t.t("Tidy")}</span>
+              </Button>
+            )}
 
             <IssuesButton
               kind="error"
@@ -607,6 +629,7 @@ export function Designer({ slug }: { slug: string }) {
                   className={"editor-publish" + (celebrate ? " celebrate" : "")}
                   onClick={() => setPublishAsk({ kind: "first" })}
                   disabled={publishing || readOnly}
+                  aria-label={t.t("Publish")}
                   title={readOnly ? t.t("Exit version preview before publishing.") : t.t("Publish this adventure so events can play it.")}
                 >
                   <Rocket size={ICON.sm} />
@@ -616,6 +639,8 @@ export function Designer({ slug }: { slug: string }) {
               {isLive && !dirty && (
                 <span
                   className={"editor-live-chip" + (celebrate ? " celebrate" : "")}
+                  role="status"
+                  aria-label={t.t("Live")}
                   title={t.t("Published: events that start now play version {{n}}.", { n: published.version })}
                 >
                   <span className="editor-live-dot" aria-hidden="true" />
@@ -647,6 +672,7 @@ export function Designer({ slug }: { slug: string }) {
                   setPreviewing(true);
                 }}
                 title={t.t("Play the draft from the start, as a team")}
+                aria-label={t.t("Test play")}
               >
                 <Play size={ICON.sm} />
                 <span className="toolbar-label">{t.t("Test play")}</span>
@@ -702,13 +728,18 @@ export function Designer({ slug }: { slug: string }) {
             <div className="dz-list">
               <ListView
                 graph={graph}
-                steps={steps!}
                 issues={shownIssues}
                 selected={selected}
                 playing={previewing ? playing : null}
                 onChange={change}
                 onSelect={setSelected}
-                onOpenCanvas={() => setListView(false)}
+                onOpenCanvas={(slug) => {
+                  setListView(false);
+                  if (slug) {
+                    setSelected(slug);
+                    setFocusRequest((n) => n + 1);
+                  }
+                }}
               />
             </div>
           ) : (
@@ -766,6 +797,14 @@ export function Designer({ slug }: { slug: string }) {
                 onDelete={() => {
                   change(removeNode(graph, node.slug));
                   setSelected(null);
+                }}
+                onAddAfter={(type) => {
+                  const at = insertionPoint(graph, node.slug);
+                  if (!at) return;
+                  const added = newNode(graph, type, { x: 0, y: 0 });
+                  change(insertAfter(graph, at, added));
+                  setSelected(added.slug);
+                  setFocusRequest((n) => n + 1);
                 }}
               />
             </AdventureSlug.Provider>

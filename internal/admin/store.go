@@ -130,7 +130,7 @@ func (h *Handlers) BuyTicket(w http.ResponseWriter, r *http.Request) {
 				// the API directly can race past it. Return a clear
 				// 409 the buyer's UI can translate into "this quest
 				// isn't selling tickets right now."
-				httpx.Error(w, http.StatusConflict, "this quest is not currently selling tickets")
+				httpx.Error(w, http.StatusConflict, "this adventure is not selling tickets right now")
 				return
 			}
 			httpx.ServerErr(w, http.StatusInternalServerError, "connect account lookup failed", err)
@@ -270,7 +270,7 @@ func (h *Handlers) BuyTicketByOrg(w http.ResponseWriter, r *http.Request) {
 		acct, err := h.stripeConnectAccountForEvent(r.Context(), req.EventID)
 		if err != nil {
 			if errors.Is(err, ErrConnectNotReady) {
-				httpx.Error(w, http.StatusConflict, "this quest is not currently selling tickets")
+				httpx.Error(w, http.StatusConflict, "this adventure is not selling tickets right now")
 				return
 			}
 			httpx.ServerErr(w, http.StatusInternalServerError, "connect account lookup failed", err)
@@ -589,7 +589,7 @@ func (h *Handlers) sendTicketTeamLink(ctx context.Context, buyerEmail, teamToken
 	var b strings.Builder
 	b.WriteString("Thanks for your purchase! Open the link below to set up your team — claim your own player slot, share the rest with your teammates, and start playing whenever you're ready.\r\n\r\n")
 	fmt.Fprintf(&b, "Team page: %s\r\n", teamURL)
-	b.WriteString("\r\nThe link stays valid for the duration of the quest. Lose it? Use the \"I lost my link\" recovery on the play page with this same email address.\r\n")
+	b.WriteString("\r\nThe link stays valid while you play. Lose it? Use the \"I lost my link\" recovery on the play page with this same email address.\r\n")
 	msg := mailerpkg.Message{
 		To:      []string{buyerEmail},
 		Subject: "Your Zonventure ticket — team link inside",

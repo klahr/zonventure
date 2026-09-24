@@ -607,13 +607,13 @@ body { font-family:'Open Sans',system-ui,sans-serif; color:var(--ink); backgroun
   if (cd) {
     if (eventState === 'completed') {
       cd.hidden = false;
-      cdLabel.textContent = 'Race';
+      cdLabel.textContent = 'Event';
       cdValue.textContent = 'Completed';
       cdWhen.textContent = '';
     } else if (eventState === 'running' || eventState === 'paused') {
       cd.hidden = false;
       cd.classList.add('live');
-      cdLabel.textContent = eventState === 'paused' ? 'Race' : 'Race';
+      cdLabel.textContent = 'Event';
       cdValue.textContent = eventState === 'paused' ? 'Paused' : 'Live now';
       var startD = parseUTC(startedAt);
       cdWhen.textContent = startD ? 'Started ' + fmtClock(startD) : '';
@@ -627,7 +627,7 @@ body { font-family:'Open Sans',system-ui,sans-serif; color:var(--ink); backgroun
           var sec = Math.round((when.getTime() - Date.now()) / 1000);
           if (sec <= 0) {
             cd.classList.add('live');
-            cdLabel.textContent = 'Race';
+            cdLabel.textContent = 'Event';
             cdValue.textContent = 'Starting…';
             cdWhen.textContent = '';
             return false;
@@ -644,7 +644,7 @@ body { font-family:'Open Sans',system-ui,sans-serif; color:var(--ink); backgroun
         // No scheduled_at and not yet running — arranger will start it
         // manually. Show a status line rather than a misleading clock.
         cd.hidden = false;
-        cdLabel.textContent = 'Race';
+        cdLabel.textContent = 'Event';
         cdValue.textContent = 'Awaiting start';
         cdWhen.textContent = '';
       }

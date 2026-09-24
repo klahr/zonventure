@@ -429,3 +429,11 @@
     border-bottom: 1px solid var(--border-soft);
   }
 }
+
+/* The designer needs the whole of a phone's screen; its own back arrow
+ * leads to the console, so the sidebar steps aside there. */
+@media (max-width: 45rem) {
+  .shell--designer .shell__sidebar {
+    display: none;
+  }
+}

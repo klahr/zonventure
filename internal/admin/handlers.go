@@ -185,6 +185,9 @@ type adventureDTO struct {
 	// Catalog so a buyer can filter / spot adventures matching the
 	// language they intend to run in. Independent of the UI locale.
 	Language string `json:"language"`
+	// Playable says an event could run it now: it has a published graph,
+	// or pages for the lane runtime. A new adventure has neither.
+	Playable bool `json:"playable"`
 }
 
 // ListAdventures returns adventures visible to the caller. Admins see
@@ -202,7 +205,17 @@ func (h *Handlers) ListAdventures(w http.ResponseWriter, r *http.Request) {
 	// For admins we return 0 uniformly (they only see their own catalog).
 	query := `
 		SELECT a.slug, a.title, a.description, a.author, a.org_id,
-		       (SELECT COUNT(*) FROM adventure_pages p WHERE p.adventure_id = a.id) AS page_count,
+		       -- Puzzles in the adventure's graph (the published version,
+		       -- else the draft) when it has one, else its lane pages.
+		       (SELECT CASE WHEN x.graph IS NULL
+		                    THEN (SELECT COUNT(*) FROM adventure_pages p WHERE p.adventure_id = a.id)
+		                    ELSE (SELECT COUNT(*) FROM jsonb_array_elements(x.graph -> 'nodes') n WHERE n ->> 'type' = 'puzzle')
+		               END
+		        FROM (SELECT COALESCE(
+		                (SELECT g.graph FROM adventure_graphs g WHERE g.id = a.published_graph_id),
+		                (SELECT d.graph FROM adventure_graph_drafts d WHERE d.adventure_id = a.id)) AS graph) x) AS page_count,
+		       (a.published_graph_id IS NOT NULL
+		        OR EXISTS (SELECT 1 FROM adventure_pages p WHERE p.adventure_id = a.id))::int AS playable,
 		       (a.avatar_mime_type IS NOT NULL)::int AS has_avatar,
 		       a.published, a.language,
 	`
@@ -247,8 +260,9 @@ func (h *Handlers) ListAdventures(w http.ResponseWriter, r *http.Request) {
 			hasAvatar int
 			published int
 			shared    int
+			playable  int
 		)
-		if err := rows.Scan(&d.Slug, &d.Title, &d.Description, &d.Author, &orgID, &d.PageCount, &hasAvatar, &published, &d.Language, &shared); err != nil {
+		if err := rows.Scan(&d.Slug, &d.Title, &d.Description, &d.Author, &orgID, &d.PageCount, &playable, &hasAvatar, &published, &d.Language, &shared); err != nil {
 			httpx.Error(w, http.StatusInternalServerError, "scan failed")
 			return
 		}
@@ -258,6 +272,7 @@ func (h *Handlers) ListAdventures(w http.ResponseWriter, r *http.Request) {
 		}
 		d.MineToEdit = canAuthor(me, orgID)
 		d.Published = published != 0
+		d.Playable = playable != 0
 		d.Shared = shared != 0
 		if hasAvatar != 0 {
 			d.AvatarURL = adventureAvatarURL(d.Slug)

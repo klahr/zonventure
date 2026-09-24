@@ -80,7 +80,7 @@ func renderOrgLandingPage(w http.ResponseWriter, r *http.Request, db *sql.DB, pu
 	if taglineDisplay == "" {
 		taglineDisplay = s.LandingTaglineFallback
 		if taglineDisplay == "" {
-			taglineDisplay = orgName + " — adventures and quests"
+			taglineDisplay = orgName + " — adventures to play whenever you like"
 		}
 	}
 
