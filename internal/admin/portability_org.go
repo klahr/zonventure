@@ -863,7 +863,7 @@ func ImportOrgBundle(ctx context.Context, db *sql.DB, data []byte) (OrgImportSum
 			subAssets[strings.TrimPrefix(k, dir)] = v
 		}
 		authorID := resolveAuthor(advRef.CreatedByUsername)
-		pseudoUser := auth.User{ID: authorID, Role: auth.RoleAdmin, OrgID: &orgID}
+		pseudoUser := auth.User{ID: authorID, Role: auth.RoleOrgAdmin, OrgID: &orgID}
 		if _, _, _, err := importAdventureForOrg(ctx, db, manifestBytes, subAssets, pseudoUser); err != nil {
 			cleanupOrg()
 			return summary, fmt.Errorf("import adventure %s: %w", advRef.Slug, err)
@@ -1149,7 +1149,7 @@ func ImportOrgBundle(ctx context.Context, db *sql.DB, data []byte) (OrgImportSum
 
 // importAdventureForOrg wraps the per-adventure importer with an
 // org-context user. The single-adventure importer derives org from
-// the user's OrgID, so we synthesise a RoleAdmin user pinned to the
+// the user's OrgID, so we synthesise an org_admin pinned to the
 // destination org.
 func importAdventureForOrg(ctx context.Context, db *sql.DB, manifest []byte, assets map[string][]byte, user auth.User) (int64, string, string, error) {
 	return importEnvelopeJSON(ctx, db, manifest, "", user, assets, false)

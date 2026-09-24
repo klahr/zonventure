@@ -3475,8 +3475,8 @@ async function showAdminOnboardingModal() {
           t('one tenant per customer. They run their own events.')),
         h('li', {}, h('strong', {}, t('Add a user to it')), ' — ',
           t('an org_admin can invite team members and run events.')),
-        h('li', {}, h('strong', {}, t('Stock the library')), ' — ',
-          t('author adventures or commission existing ones to an org.'))),
+        h('li', {}, h('strong', {}, t('Choose a catalog publisher')), ' — ',
+          t('the organization that authors the catalog; you list and commission its adventures.'))),
       h('p', { class: 'muted', style: 'font-size:.85rem; margin-top:1rem' },
         t('The dashboard checklist tracks these steps until the first event runs.')),
       h('div', { class: 'row end', style: 'margin-top:1rem; gap:.5rem' },
@@ -4018,20 +4018,11 @@ function renderShell() {
   } else if (isAdmin) {
     items = [
       ['#dashboard',     t('Dashboard'),     ICONS.dashboard],
+      // The operator manages orgs and watches the system; authoring
+      // and running events is the orgs' side. An org's events (grant
+      // slots, cancel) and the catalog it publishes are reached from
+      // its Organizations page.
       ['#organizations', t('Organizations'), ICONS.building],
-      // Events surfaced for the operator so admin-side affordances
-      // (Grant slots, Cancel, etc.) on the event-detail page have a
-      // navigation path. The list endpoint returns all events for
-      // admins, so it's a cross-org overview by default.
-      ['#events',        t('Events'),        ICONS.schedule],
-      // Quests are public-store always-on events. Admin sees them
-      // cross-org for the same triage reason Events is admin-visible
-      // (grant slots, cancel-mid-flight, etc.).
-      ['#quests',        t('Self-guided'),        ICONS.compass],
-      // "Library" is the single entry point for authored content — a
-      // tab strip inside the view splits Adventures and Puzzles. Two
-      // sidebar entries for what's essentially one catalog was noise.
-      ['#library',       t('Library'),       ICONS.map],
       ['#logs',          t('Logs'),          ICONS.terminal],
       ['#settings',      t('Settings'),      ICONS.gear],
     ];
@@ -4258,9 +4249,9 @@ function currentCrumb() {
     events:         t('Events'),
     members:       t('Members'),
     organizations: t('Organizations'),
-    // Only an admin's sidebar says Library; everyone else reaches the
-    // same editor from Adventures.
-    library:       state.me?.role === 'admin' ? t('Library') : t('Adventures'),
+    // The adventure editor lives under #library; users reach it from
+    // Adventures.
+    library:       t('Adventures'),
     puzzles:       t('Puzzles'),
     purchases:     t('Purchases'),
     admins:        t('Admins'),
@@ -4300,11 +4291,11 @@ async function renderRoute() {
   const isOrgAdmin = role === 'org_admin';
 
   // Role-based route guards: admins can't visit org-user pages and vice versa.
-  // Events is shared — admins use it as a cross-org overview that
-  // links into the per-event detail page (where Grant slots and the
-  // other operator affordances live).
+  // Authoring and running events are org-user pages — the operator
+  // reaches an org's events and the catalog from Organizations.
   const adminOnly = ['organizations', 'admins', 'logs'];
-  const orgUserOnly = ['adventures', 'store', 'webhooks'];
+  const orgUserOnly = ['adventures', 'store', 'catalog', 'webhooks', 'events', 'quests',
+    'library', 'puzzles', 'simulator'];
   // Lobby users (no memberships) only have Dashboard + Settings to
   // navigate. Anything else gets redirected back to the empty-state
   // dashboard rather than 4xx-ing on the API call inside the view.
@@ -4390,7 +4381,7 @@ async function renderRoute() {
       case 'organizations':return arg
         ? await viewOrganizationDetail(view, parseInt(arg, 10))
         : await viewOrganizations(view);
-      case 'library':      return arg ? await viewLibraryEdit(view, arg) : await viewLibrary(view);
+      case 'library':      if (!arg) { nav('#adventures'); return; } return await viewLibraryEdit(view, arg);
       case 'puzzles':      return arg ? await viewPuzzleEditRoute(view, arg) : await viewPuzzles(view);
       case 'logs':         return await viewLogs(view);
       case 'manual':       return viewManual(view, arg);
@@ -4825,12 +4816,12 @@ function buildDashboardSetup({ mineAdvs, unusedAssigns }) {
 }
 
 async function viewAdminDashboard(view) {
-  const [orgsR, advsR] = await Promise.all([
+  const [orgsR, catalogR] = await Promise.all([
     api('/api/admin/organizations'),
-    api('/api/admin/adventures'),
+    api('/api/admin/catalog'),
   ]);
   const orgs = orgsR.body?.organizations || [];
-  const advs = advsR.body?.adventures || [];
+  const catalog = catalogR.body || {};
 
   const totals = orgs.reduce((acc, o) => {
     acc.eventsTotal   += o.events_total   || 0;
@@ -4845,7 +4836,7 @@ async function viewAdminDashboard(view) {
   // events_total is zero we keep showing it (with checks ticked off
   // as the operator works through the steps).
   const setup = totals.eventsTotal === 0
-    ? buildAdminDashboardSetup({ orgs, advs })
+    ? buildAdminDashboardSetup({ orgs, catalog })
     : null;
 
   const sections = [
@@ -4894,17 +4885,14 @@ async function viewAdminDashboard(view) {
 
 // buildAdminDashboardSetup mirrors buildDashboardSetup for the admin
 // role: it lists the bootstrap steps a fresh deployment needs (an org,
-// a user inside it, and at least one adventure to run). The card hides
-// itself once any org holds an event — at that point the operator is
-// past first-day setup.
-function buildAdminDashboardSetup({ orgs, advs }) {
+// a user inside it, and a publisher org with an adventure in the
+// catalog). The card hides itself once any org holds an event — at
+// that point the operator is past first-day setup.
+function buildAdminDashboardSetup({ orgs, catalog }) {
   const haveOrg = orgs.length > 0;
   const haveOrgUser = orgs.some((o) => (o.members || []).length > 0);
-  // Global-catalog adventures (org_id IS NULL) are the ones an admin
-  // can publish or commission to any org. Org-owned adventures don't
-  // count for this step — they're authored by org users for their own
-  // events, not stocked by the admin.
-  const haveCatalog = advs.some((a) => !a.org_id);
+  const publisher = orgs.find((o) => o.is_publisher);
+  const haveCatalog = !!publisher && (catalog.adventures || []).some((a) => a.published);
   return h('div', { class: 'card', style: 'border:1px dashed var(--accent); background:color-mix(in srgb, var(--accent) 5%, var(--surface))' },
     h('h2', { style: 'margin:0 0 .25rem' }, t('Getting started')),
     h('p', { class: 'muted', style: 'margin:0 0 .5rem' },
@@ -4921,8 +4909,9 @@ function buildAdminDashboardSetup({ orgs, advs }) {
         haveOrg ? (() => nav('#organizations')) : null),
       renderSetupStep(haveCatalog,
         t('Add an adventure to the catalog'),
-        t('Author your own or import the samples — orgs pick from here.'),
-        t('New adventure'), () => openCreateAdventure()),
+        t('Make one organization the catalog publisher; list the adventures it authors so orgs can pick from them.'),
+        haveOrg ? t('Manage') : null,
+        haveOrg ? (() => nav(publisher ? '#organizations/' + publisher.id : '#organizations')) : null),
     ),
   );
 }
@@ -5008,14 +4997,14 @@ async function viewAdventures(view) {
         class: 'btn primary',
         on: { click: () => scheduleRun({ slug: adv.slug }) },
       }, icon(ICONS.schedule), t('Schedule event')));
-    } else if (adv.mine_to_edit && adv.org_id && !adv.playable) {
+    } else if (adv.mine_to_edit && !adv.playable) {
       // Nothing to play yet — a new adventure. Scheduling an event for
       // it would only fail later; designing it is the next step.
       actions.append(h('a', { class: 'btn primary', href: designerURL(adv.slug) },
         icon(ICONS.flow), t('Open designer')));
       actions.append(h('span', { class: 'muted', style: 'font-size:.85rem; align-self:center' },
         t('Publish it from the designer to schedule events.')));
-    } else if (adv.mine_to_edit && adv.org_id) {
+    } else if (adv.mine_to_edit) {
       // Own org content — the unified schedule modal embeds the
       // capacity / purchase step so the operator stays inside one
       // flow instead of being bounced through a separate buy modal.
@@ -5023,32 +5012,12 @@ async function viewAdventures(view) {
         class: 'btn primary',
         on: { click: () => scheduleRun({ slug: adv.slug, ownsIt: true, adv }) },
       }, icon(ICONS.schedule), t('Schedule event')));
-    } else if (adv.mine_to_edit) {
-      // Admin-authored global catalog row from this admin's seat —
-      // the buy flow stays for the legacy assignment surface.
-      actions.append(h('button', {
-        class: 'btn',
-        on: { click: () => openPurchaseModal(adv) },
-      }, icon(ICONS.coins), t('Buy player slots')));
     }
 
     const tags = [
       h('span', { class: 'pill' }, adv.page_count === 1
         ? t('{{n}} puzzle', { n: adv.page_count })
         : t('{{n}} puzzles', { n: adv.page_count })),
-      // "Yours" is only meaningful on the global-catalog (admin-owned)
-      // rows where it distinguishes the caller's authored adventures
-      // from other admins'. Org users see only their own org's
-      // adventures here, so the pill would just be noise.
-      adv.mine_to_edit && !adv.org_id ? h('span', { class: 'pill accent' }, t('Yours')) : null,
-      // Only the global catalog (org_id IS NULL) actually consults the
-      // published flag for cross-org visibility; on org-owned rows it
-      // doesn't change anything, so don't display a misleading pill.
-      adv.mine_to_edit && !adv.org_id
-        ? (adv.published
-            ? h('span', { class: 'pill success' }, '✓ ' + t('Published'))
-            : h('span', { class: 'pill warning' }, '✎ ' + t('Draft')))
-        : null,
       !adv.mine_to_edit && adv.shared ? h('span', { class: 'pill accent' }, t('Shared')) : null,
       bucket.unused.length > 0
         ? h('span', { class: 'pill accent' }, bucket.unused.length === 1
@@ -5109,10 +5078,10 @@ async function viewAdventures(view) {
   );
 }
 
-// renderAdventureTabs is the shared two-tab strip that sits under the
-// h1 on both viewAdventures (Yours) and viewCatalog (Catalog) so the
-// arranger can flip between "what I can run now" and "what's on offer"
-// without going back to the sidebar. Reuses the existing .lib-tabs
+// renderAdventureTabs is the shared tab strip that sits under the h1
+// on viewAdventures (Yours), viewCatalog (Catalog) and viewPuzzles so
+// the arranger can flip between "what I can run now", "what's on
+// offer" and the puzzle pool without going back to the sidebar. Reuses the existing .lib-tabs
 // styles from the Library section for visual consistency.
 function renderAdventureTabs(active) {
   const tab = (id, label, route) => h('a', {
@@ -5123,6 +5092,7 @@ function renderAdventureTabs(active) {
   return h('div', { class: 'lib-tabs', style: 'margin-bottom:1rem' },
     tab('yours',   t('Yours'),   '#adventures'),
     tab('catalog', t('Catalog'), '#catalog'),
+    tab('puzzles', t('Puzzles'), '#puzzles'),
   );
 }
 
@@ -5966,23 +5936,13 @@ async function openTopUpModal(event, adventure) {
 // Either way the assignment is bumped server-side; the resulting
 // purchase row is "free" or "invoice". Voiding the invoice row later
 // drops it from billing without touching the slot grant.
-async function openAdminGrantModal(event, adventure) {
-  // Admin context — fetch the org row so we can mirror the
-  // server-side trusted check in the UI rather than letting the
-  // user pick a price that quietly gets forced to zero.
-  const orgsR = await api('/api/admin/organizations');
-  if (!orgsR.ok) {
-    toastErr(orgsR.body?.error || t('Could not load organisation'));
-    return;
-  }
-  const org = (orgsR.body?.organizations || []).find((o) => o.id === event.org_id);
-  if (!org) {
-    toastErr(t('Organisation not found for this event'));
-    return;
-  }
+async function openAdminGrantModal(org, event) {
+  // The org row mirrors the server-side trusted check in the UI
+  // rather than letting the user pick a price that quietly gets
+  // forced to zero.
   const trusted = !!org.trusted;
   const { PRICE_CENTS, fmtMoney } = pricingHelpers();
-  const eventLabel = adventure?.title || event.adventure_slug || t('this event');
+  const eventLabel = event.adventure_title || event.adventure_slug || t('this event');
   await modal(t('Grant slots'), ({ body, close }) => {
     const players = h('input', { type: 'number', min: '1', max: '500', value: '5', required: true });
     // Default suggested price = linear top-up cost (count × per-player).
@@ -6058,13 +6018,6 @@ async function viewAdventureDetail(view, slug) {
   const pills = [];
   if (a.mine_to_edit) {
     pills.push(h('span', { class: 'pill' }, t('Yours to edit')));
-  }
-  // Catalog visibility is an admin's concern, and says nothing about
-  // whether the adventure can be played — "Draft" beside "1 event
-  // running now" read as a contradiction.
-  if (a.org_id == null && state.me?.role === 'admin') {
-    pills.push(h('span', { class: 'pill' + (a.published ? ' success' : ' warning') },
-      a.published ? t('In the catalog') : t('Not in the catalog')));
   }
   if (a.language) {
     pills.push(h('span', {
@@ -7054,34 +7007,18 @@ async function openRenameEvent(event) {
 
 /* ========== Events ========== */
 async function viewRuns(view) {
-  // The schedule button is hidden for global admins because the
-  // create-event endpoint refuses admin callers ("admins don't
-  // schedule events; do it from within an organization"). Admins
-  // see this surface as a cross-org overview to drill into events.
-  const isAdmin = state.me?.role === 'admin';
-  // Admins also need an org filter to triage at a per-org level
-  // without scanning the full table; org users see only their own
-  // org so the picker would be redundant.
   // public_for_sale=false partitions out Quests so the Events page
   // shows only regular (operator-scheduled) events. Quests live on
   // their own #quests page; including them here would dilute the
   // operational-events overview an arranger reaches for during a
   // live race.
-  const calls = [api('/api/admin/events?public_for_sale=false')];
-  if (isAdmin) calls.push(api('/api/admin/organizations'));
-  const [eventsR, orgsR] = await Promise.all(calls);
+  const eventsR = await api('/api/admin/events?public_for_sale=false');
   const rs = eventsR.body?.events || [];
-  const orgs = orgsR ? (orgsR.body?.organizations || []) : [];
-  const orgName = (id) => {
-    const o = orgs.find((x) => x.id === id);
-    return o ? o.name : '#' + id;
-  };
 
-  // Filter state — kept in a closure so the chip / dropdown handlers
-  // can re-render only the table without rebuilding the whole page.
-  // 'all' chips out the state filter; orgFilter='' means cross-org.
+  // Filter state — kept in a closure so the chip handlers can
+  // re-render only the table without rebuilding the whole page.
+  // 'all' chips out the state filter.
   let stateFilter = 'all';
-  let orgFilter = '';
   const STATE_FILTERS = [
     { key: 'all',       label: t('All') },
     { key: 'running',   label: t('Live') },
@@ -7096,11 +7033,7 @@ async function viewRuns(view) {
     if (stateFilter !== 'all') {
       filtered = filtered.filter((r) => r.state === stateFilter);
     }
-    if (orgFilter) {
-      const id = parseInt(orgFilter, 10);
-      filtered = filtered.filter((r) => r.org_id === id);
-    }
-    tableHost.replaceChildren(runsTable(filtered, { showOrg: isAdmin, orgName }));
+    tableHost.replaceChildren(runsTable(filtered));
   };
   applyFilters();
 
@@ -7121,39 +7054,16 @@ async function viewRuns(view) {
     chipBar.append(btn);
   });
 
-  // Admin-only org dropdown. Sits next to the chip bar so the two
-  // filter axes share the same row and the table reflows below.
-  let orgPickerRow = null;
-  if (isAdmin && orgs.length > 0) {
-    const sel = h('select', { style: 'min-width:14rem' },
-      h('option', { value: '' }, t('All organizations')),
-      orgs.map((o) => h('option', { value: String(o.id) }, o.name)));
-    sel.addEventListener('change', () => {
-      orgFilter = sel.value;
-      applyFilters();
-    });
-    orgPickerRow = h('label', { class: 'field', style: 'margin:.5rem 0; max-width:18rem' },
-      h('span', {}, t('Organization')),
-      sel);
-  }
-
-  view.replaceChildren(...[
+  view.replaceChildren(
     h('div', { class: 'row between', style: 'margin-bottom:1rem' },
       h('h1', { style: 'margin:0' }, t('Events')),
-      isAdmin
-        ? null
-        : h('button', { class: 'btn primary', on: { click: () => scheduleRun() } },
-            icon(ICONS.plus), t('Schedule event'))),
-    orgPickerRow,
+      h('button', { class: 'btn primary', on: { click: () => scheduleRun() } },
+        icon(ICONS.plus), t('Schedule event'))),
     chipBar,
-    tableHost,
-  ].filter(Boolean));
+    tableHost);
 }
 
-function runsTable(rs, opts) {
-  opts = opts || {};
-  const showOrg = !!opts.showOrg;
-  const orgName = opts.orgName || ((id) => '#' + id);
+function runsTable(rs) {
   if (rs.length === 0) return h('div', { class: 'empty' },
     h('p', {}, t('No events yet.')),
     h('p', { class: 'muted', style: 'margin-top:.5rem' },
@@ -7169,7 +7079,6 @@ function runsTable(rs, opts) {
       h('th', { style: 'width:48px' }, ''),
       h('th', {}, t('Event')),
       h('th', { class: 'hide-narrow' }, t('Adventure')),
-      showOrg ? h('th', { class: 'hide-narrow' }, t('Organization')) : null,
       h('th', {}, t('State')),
       h('th', { class: 'hide-narrow' }, t('Scheduled')),
       h('th', { class: 'hide-narrow' }, t('Started')))),
@@ -7189,7 +7098,6 @@ function runsTable(rs, opts) {
                 r.adventure_title,
                 h('div', { class: 'muted mono', style: 'font-size:.75rem' }, r.adventure_slug))
             : h('span', { class: 'muted mono' }, r.adventure_slug)),
-        showOrg ? h('td', { class: 'hide-narrow' }, orgName(r.org_id)) : null,
         h('td', {}, h('span', { class: 'pill ' + pillClassForState(r.state) }, stateGlyph(r.state) + tEventState(r.state))),
         h('td', { class: 'hide-narrow' }, fmtLocal(r.scheduled_at)),
         h('td', { class: 'hide-narrow' }, fmtLocal(r.started_at)),
@@ -7206,41 +7114,25 @@ function runsTable(rs, opts) {
  * own focused list.
  *
  * The list page is intentionally simpler than #events: no state
- * chip-bar, no org filter (admin still sees cross-org rows because
- * the API returns them), just the few facts an operator wants when
- * triaging "what's published, what's selling, what's paused".
+ * chip-bar, just the few facts an arranger wants when triaging
+ * "what's published, what's selling, what's paused".
  * ================================================================ */
 
 async function viewQuests(view) {
-  const isAdmin = state.me?.role === 'admin';
-  const calls = [api('/api/admin/events?public_for_sale=true')];
-  if (isAdmin) calls.push(api('/api/admin/organizations'));
-  const [eventsR, orgsR] = await Promise.all(calls);
+  const eventsR = await api('/api/admin/events?public_for_sale=true');
   const rs = eventsR.body?.events || [];
-  const orgs = orgsR ? (orgsR.body?.organizations || []) : [];
-  const orgName = (id) => {
-    const o = orgs.find((x) => x.id === id);
-    return o ? o.name : '#' + id;
-  };
-
-  const newBtn = isAdmin
-    ? null
-    : h('button', { class: 'btn primary', on: { click: () => newQuest() } },
-        icon(ICONS.plus), t('New self-guided adventure'));
 
   view.replaceChildren(
     h('div', { class: 'row between', style: 'margin-bottom:1rem' },
       h('h1', { style: 'margin:0' }, t('Self-guided adventures')),
-      newBtn),
+      h('button', { class: 'btn primary', on: { click: () => newQuest() } },
+        icon(ICONS.plus), t('New self-guided adventure'))),
     h('p', { class: 'muted', style: 'font-size:.9rem; margin:0 0 1rem' },
       t('Sold in your store: each ticket bought creates a team, and teams play whenever they like.')),
-    questsTable(rs, { showOrg: isAdmin, orgName }));
+    questsTable(rs));
 }
 
-function questsTable(rs, opts) {
-  opts = opts || {};
-  const showOrg = !!opts.showOrg;
-  const orgName = opts.orgName || ((id) => '#' + id);
+function questsTable(rs) {
   if (rs.length === 0) {
     return h('div', { class: 'empty' },
       h('p', {}, t('No self-guided adventures yet.')),
@@ -7255,7 +7147,6 @@ function questsTable(rs, opts) {
       h('th', { style: 'width:48px' }, ''),
       h('th', {}, t('Self-guided adventure')),
       h('th', { class: 'hide-narrow' }, t('Adventure')),
-      showOrg ? h('th', { class: 'hide-narrow' }, t('Organization')) : null,
       h('th', {}, t('State')),
       // "Tickets" — current sold count over the assignment cap.
       h('th', { class: 'hide-narrow' }, t('Tickets')),
@@ -7273,7 +7164,6 @@ function questsTable(rs, opts) {
                 r.adventure_title,
                 h('div', { class: 'muted mono', style: 'font-size:.75rem' }, r.adventure_slug))
             : h('span', { class: 'muted mono' }, r.adventure_slug)),
-        showOrg ? h('td', { class: 'hide-narrow' }, orgName(r.org_id)) : null,
         h('td', {}, h('span', { class: 'pill ' + pillClassForState(r.state) }, stateGlyph(r.state) + tEventState(r.state))),
         // teams_count and max_players already populate from
         // /api/admin/events; no extra round-trip per row.
@@ -8342,13 +8232,10 @@ async function viewRunDetail(view, runID) {
   // Top-up: buy more player slots for the assignment behind this
   // event. Hidden on terminal-state events (no point growing a
   // finished/cancelled event), when the event is admin-seeded
-  // without an assignment row to grow, for global admins (the
-  // /api/admin/purchases endpoint refuses admin callers — admins
-  // use the Grant slots affordance below instead), and on quests
-  // (each ticket purchase mints its own team; the assignment cap
-  // is the seller's roster limit, not a pool the buyer grows).
-  if (state.me?.role !== 'admin'
-      && (event.state === 'scheduled' || event.state === 'running' || event.state === 'paused')
+  // without an assignment row to grow, and on quests (each ticket
+  // purchase mints its own team; the assignment cap is the seller's
+  // roster limit, not a pool the buyer grows).
+  if ((event.state === 'scheduled' || event.state === 'running' || event.state === 'paused')
       && event.assignment_id
       && !isQuest) {
     const topUp = h('button', {
@@ -8357,22 +8244,6 @@ async function viewRunDetail(view, runID) {
       title: t('Add more player slots to this event'),
     }, icon(ICONS.coins), t('Buy more slots'));
     actions.append(topUp);
-  }
-  // Admin-only "Grant slots" — operator-side gift / invoice. Same
-  // event-state gate as Buy more slots; trusted-vs-not handling is
-  // resolved server-side, but the modal also checks so the UI shows
-  // the right options up front. Hidden on quests for the same reason
-  // as the buyer-side top-up.
-  if (state.me?.role === 'admin'
-      && (event.state === 'scheduled' || event.state === 'running' || event.state === 'paused')
-      && event.assignment_id
-      && !isQuest) {
-    const grant = h('button', {
-      class: 'btn lifecycle-btn',
-      on: { click: () => openAdminGrantModal(event, adventure) },
-      title: t('Grant player slots to this event on the org\'s behalf'),
-    }, icon(ICONS.coins), t('Grant slots'));
-    actions.append(grant);
   }
   // Results export is always available once there are teams — arrangers
   // often want to grab mid-event standings too, not just post-mortem.
@@ -9400,14 +9271,16 @@ async function resendTeamInvitation(team, btn) {
   toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
 }
 
-async function confirmCancel(event) {
+// cancelURL defaults to the arranger's endpoint; the operator cancels
+// through the org's (see viewOrganizationDetail).
+async function confirmCancel(event, cancelURL = `/api/admin/events/${event.id}/cancel`) {
   const pw = await promptPassword(
     t('Cancel event?'),
     event.state === 'scheduled'
       ? t('The event will be marked cancelled and never start. Teams already invited keep their links but get a "cancelled" screen if they open the app. Enter your password to confirm.')
       : t('The event ends now. Live pings stop, the leaderboard freezes, and teams get a "cancelled" screen on their next refresh. Enter your password to confirm.'));
   if (!pw) return;
-  const r = await api(`/api/admin/events/${event.id}/cancel`, {
+  const r = await api(cancelURL, {
     method: 'POST',
     headers: { 'X-Confirm-Password': pw },
   });
@@ -10470,10 +10343,11 @@ async function viewOrganizationDetail(view, orgID) {
   view.replaceChildren(h('div', { class: 'card' },
     h('p', { class: 'muted' }, t('Loading…'))));
 
-  const [orgR, advR, purR] = await Promise.all([
+  const [orgR, catR, purR, evR] = await Promise.all([
     api('/api/admin/organizations/' + orgID),
-    api('/api/admin/adventures'),
+    api('/api/admin/catalog'),
     api('/api/admin/purchases'),
+    api('/api/admin/organizations/' + orgID + '/events'),
   ]);
   if (!orgR.ok) {
     view.replaceChildren(h('div', { class: 'card' },
@@ -10484,7 +10358,10 @@ async function viewOrganizationDetail(view, orgID) {
     return;
   }
   const org = orgR.body || {};
-  const adventures = advR.body?.adventures || [];
+  // Event passes and commissions are for catalog adventures only; an
+  // org's own adventures are theirs to run.
+  const adventures = catR.body?.adventures || [];
+  const orgEvents = evR.body?.events || [];
   const orgPurchases = (purR.body?.purchases || []).filter((p) => p.org_id === orgID);
 
   // ============================================================
@@ -10568,6 +10445,14 @@ async function viewOrganizationDetail(view, orgID) {
     on: { click: () => toggleOrgTrusted(org) },
   }, org.trusted ? t('Invoice billing on') : t('Invoice billing off'));
 
+  const publisherPill = h('button', {
+    type: 'button',
+    class: 'pill ' + (org.is_publisher ? 'success' : ''),
+    style: 'cursor:pointer; border:0',
+    title: t('The catalog publisher authors the adventures you list in the catalog and commission to other organizations.'),
+    on: { click: () => toggleOrgPublisher(org) },
+  }, org.is_publisher ? t('Catalog publisher') : t('Not the catalog publisher'));
+
   const slug = org.slug || '';
   const storeLink = slug ? h('a', {
     href: '/o/' + slug,
@@ -10584,7 +10469,7 @@ async function viewOrganizationDetail(view, orgID) {
           h('h1', { style: 'margin:0' }, org.name),
           renamePencil),
         h('div', { class: 'row', style: 'gap:.4rem; flex-wrap:wrap; margin-top:.4rem' },
-          trustedPill, storeLink),
+          trustedPill, publisherPill, storeLink),
         h('div', { class: 'grid stats', style: 'margin-top:.75rem' },
           stat(t('Users'), (org.members || []).length),
           stat(t('Players'), org.players_total || 0),
@@ -10662,6 +10547,107 @@ async function viewOrganizationDetail(view, orgID) {
             }))))));
 
   // ============================================================
+  // Events card — read-only list with the operator's two actions:
+  // grant slots (gift / invoice) and cancel. Running the event is
+  // the org's job.
+  // ============================================================
+  const live = (e) => e.state === 'scheduled' || e.state === 'running' || e.state === 'paused';
+  const eventsCard = h('div', { class: 'card' },
+    h('h2', { style: 'margin:0 0 .5rem' }, t('Events')),
+    orgEvents.length === 0
+      ? h('p', { class: 'muted', style: 'margin:0' }, t('No events yet.'))
+      : h('table', { class: 'table' },
+          h('thead', {}, h('tr', {},
+            h('th', {}, t('Event')),
+            h('th', {}, t('State')),
+            h('th', { class: 'hide-narrow' }, t('Players')),
+            h('th', { class: 'hide-narrow' }, t('Scheduled')),
+            h('th', {}, ''))),
+          h('tbody', {}, orgEvents.map((e) => h('tr', {},
+            h('td', {},
+              h('strong', {}, runLabel(e)),
+              e.public_for_sale ? h('span', { class: 'pill', style: 'margin-left:.4rem' }, t('Self-guided')) : null,
+              h('div', { class: 'muted', style: 'font-size:.8rem' }, e.adventure_title || e.adventure_slug)),
+            h('td', {}, h('span', { class: 'pill ' + pillClassForState(e.state) }, stateGlyph(e.state) + tEventState(e.state))),
+            h('td', { class: 'mono hide-narrow' },
+              e.max_players ? `${e.player_slots_count || 0} / ${e.max_players}` : (e.player_slots_count || 0)),
+            h('td', { class: 'hide-narrow' }, fmtLocal(e.scheduled_at)),
+            h('td', { class: 'row', style: 'gap:.5rem; flex-wrap:wrap; justify-content:flex-end' },
+              // Quests grow per ticket, not from a pool — same rule as
+              // the org-side Buy more slots.
+              live(e) && e.assignment_id && !e.public_for_sale
+                ? h('button', { class: 'btn small', type: 'button',
+                    title: t('Grant player slots to this event on the org\'s behalf'),
+                    on: { click: () => openAdminGrantModal(org, e) } },
+                    icon(ICONS.coins), t('Grant slots'))
+                : null,
+              live(e)
+                ? h('button', { class: 'btn small danger', type: 'button',
+                    on: { click: () => confirmCancel(e, `/api/admin/organizations/${org.id}/events/${e.id}/cancel`) } },
+                    t('Cancel event'))
+                : null))))));
+
+  // ============================================================
+  // Catalog card (publisher org) — its adventures, listed or not,
+  // and which orgs each is commissioned for. Commissioned card
+  // (every other org) — the catalog adventures shared with it.
+  // ============================================================
+  const catalogCard = org.is_publisher ? h('div', { class: 'card' },
+    h('h2', { style: 'margin:0 0 .25rem' }, t('Catalog')),
+    h('p', { class: 'muted', style: 'margin:0 0 .5rem' },
+      t('This organization authors the catalog. Listed adventures are open to every organization; commission one to give a specific organization free access without listing it.')),
+    adventures.length === 0
+      ? h('p', { class: 'muted', style: 'margin:0' }, t('No adventures yet — this organization’s authors create them.'))
+      : h('table', { class: 'table' },
+          h('thead', {}, h('tr', {},
+            h('th', {}, t('Adventure')),
+            h('th', {}, t('Catalog')),
+            h('th', { class: 'hide-narrow' }, t('Commissioned for')),
+            h('th', {}, ''))),
+          h('tbody', {}, adventures.map((a) => h('tr', {},
+            h('td', {}, a.title, h('div', { class: 'muted mono', style: 'font-size:.75rem' }, a.slug)),
+            h('td', {}, h('span', { class: 'pill ' + (a.published ? 'success' : 'warning') },
+              a.published ? t('Listed') : t('Not listed'))),
+            h('td', { class: 'hide-narrow' },
+              (a.shares || []).length === 0
+                ? h('span', { class: 'muted' }, '—')
+                : h('div', { class: 'row', style: 'gap:.35rem; flex-wrap:wrap' },
+                    a.shares.map((sh) => h('span', { class: 'chip',
+                      style: 'display:inline-flex; align-items:center; gap:.35rem' },
+                      sh.org_name,
+                      h('button', { class: 'btn icon ghost small', type: 'button',
+                        title: t('Revoke share'),
+                        on: { click: () => revokeShare(a, sh) } }, icon(ICONS.trash)))))),
+            h('td', { class: 'row', style: 'gap:.5rem; flex-wrap:wrap; justify-content:flex-end' },
+              h('button', { class: 'btn small', type: 'button',
+                on: { click: () => togglePublished(a, !a.published) } },
+                a.published ? t('Unlist') : t('List in catalog')),
+              h('button', { class: 'btn small', type: 'button',
+                on: { click: () => openShareAdventureModal(a) } },
+                icon(ICONS.plus), t('Commission')))))))) : null;
+  const commissioned = adventures.filter((a) => (a.shares || []).some((sh) => sh.org_id === org.id));
+  const commissionCandidates = adventures.filter((a) => !commissioned.includes(a));
+  const commissionedCard = org.is_publisher ? null : h('div', { class: 'card' },
+    h('div', { class: 'row between', style: 'margin-bottom:.5rem; gap:.5rem; flex-wrap:wrap' },
+      h('h2', { style: 'margin:0' }, t('Commissioned adventures')),
+      commissionCandidates.length > 0
+        ? h('button', { class: 'btn primary small', type: 'button',
+            on: { click: () => openCommissionForOrg(org, commissionCandidates) } },
+            icon(ICONS.plus), t('Commission adventure'))
+        : null),
+    commissioned.length === 0
+      ? h('p', { class: 'muted', style: 'margin:0' },
+          t('None — commission a catalog adventure to let them run it without buying player slots.'))
+      : h('div', { class: 'row', style: 'gap:.35rem; flex-wrap:wrap' },
+          commissioned.map((a) => h('span', { class: 'chip',
+            style: 'display:inline-flex; align-items:center; gap:.35rem' },
+            a.title,
+            h('button', { class: 'btn icon ghost small', type: 'button',
+              title: t('Revoke share'),
+              on: { click: () => revokeShare(a, { org_id: org.id, org_name: org.name }) } },
+              icon(ICONS.trash))))));
+
+  // ============================================================
   // Purchases card — historical billing for this org.
   // ============================================================
   const purchasesCard = h('div', { class: 'card' },
@@ -10711,6 +10697,9 @@ async function viewOrganizationDetail(view, orgID) {
     headerCard,
     h('div', { style: 'display:flex; flex-direction:column; gap:1rem; margin-top:1rem' },
       usersCard,
+      eventsCard,
+      catalogCard,
+      commissionedCard,
       assignmentsCard,
       purchasesCard,
       dangerCard));
@@ -10766,6 +10755,59 @@ async function toggleOrgTrusted(org) {
   });
   if (r.status === 200) {
     toastOk(next ? t('Invoice billing enabled') : t('Invoice billing disabled'));
+    renderRoute();
+  } else {
+    toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+  }
+}
+
+// toggleOrgPublisher makes the org the catalog publisher, or stops it
+// being one — which hides the whole catalog from every other org, so
+// that direction asks for the password.
+async function toggleOrgPublisher(org) {
+  const next = !org.is_publisher;
+  const headers = {};
+  if (!next) {
+    const pw = await promptPassword(t('Stop publishing the catalog?'),
+      t('Every other organization loses access to this organization’s catalog adventures until you make it the publisher again. Enter your password to confirm.'));
+    if (!pw) return;
+    headers['X-Confirm-Password'] = pw;
+  }
+  const r = await api(`/api/admin/organizations/${org.id}/publisher`, {
+    method: 'PUT', headers, body: JSON.stringify({ is_publisher: next }),
+  });
+  if (r.status === 204) {
+    toastOk(next ? t('Now the catalog publisher') : t('No longer the catalog publisher'));
+    renderRoute();
+  } else {
+    toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
+  }
+}
+
+// openCommissionForOrg picks a catalog adventure to share with org —
+// the org-side twin of openShareAdventureModal.
+async function openCommissionForOrg(org, candidates) {
+  const picked = await modal(t('Commission adventure'), ({ body, close }) => {
+    body.append(h('p', { class: 'muted' },
+      t('Pick one. The organisation can schedule events of this adventure without buying player slots.')));
+    const list = h('div', { class: 'grid', style: 'gap:.35rem' });
+    for (const a of candidates) {
+      list.append(h('button', {
+        class: 'btn',
+        style: 'justify-content:flex-start; text-align:left',
+        on: { click: () => close(a.slug) },
+      }, a.title));
+    }
+    body.append(list);
+    body.append(h('div', { class: 'row end', style: 'margin-top:1rem' },
+      h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, t('Cancel'))));
+  });
+  if (!picked) return;
+  const r = await api(`/api/admin/catalog/${encodeURIComponent(picked)}/shares`, {
+    method: 'POST', body: JSON.stringify({ org_id: org.id }),
+  });
+  if (r.status === 204) {
+    toastOk(t('Shared'));
     renderRoute();
   } else {
     toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
@@ -11214,41 +11256,30 @@ async function revokeAssignment(orgID, assignmentID) {
    Quick Puzzle FAB + GPS) to be fleshed out or copied into an
    adventure later. */
 
-// libraryTabs renders the Adventures|Puzzles strip shown at the top of
-// both library sub-views. Clicking a tab navigates; the active tab
-// reflects the current #section so the strip looks identical no
-// matter which deep-link you landed on.
-function libraryTabs(active) {
-  const mk = (href, label, isActive) => {
-    const a = h('a', {
-      href,
-      class: 'lib-tab' + (isActive ? ' active' : ''),
-    }, label);
-    return a;
-  };
-  return h('div', { class: 'lib-tabs' },
-    mk('#library',  t('Adventures'), active === 'library'),
-    mk('#puzzles',  t('Puzzles'),    active === 'puzzles'));
-}
-
 async function viewPuzzles(view) {
   const r = await api('/api/admin/puzzles');
   const puzzles = r.body?.puzzles || [];
   const list = puzzles.length === 0
     ? h('div', { class: 'empty' },
         h('p', {}, t('No puzzles yet.')),
-        h('button', { class: 'btn primary', on: { click: quickPuzzle } },
-          icon(ICONS.puzzle), t('Capture one at your location')))
+        state.me?.role === 'org_admin'
+          ? h('button', { class: 'btn primary', on: { click: quickPuzzle } },
+              icon(ICONS.puzzle), t('Capture one at your location'))
+          : null)
     : h('div', { class: 'grid cols-2' }, puzzles.map(renderPuzzleLibraryCard));
+  // Creating puzzles is authoring — org admins only.
+  const canAuthor = state.me?.role === 'org_admin';
   view.replaceChildren(
     h('div', { class: 'row between' },
-      h('h1', {}, t('Library')),
-      h('button', { class: 'btn primary', title: t('Capture a puzzle at your current location'),
-        on: { click: quickPuzzle } },
-        icon(ICONS.plus), t('New puzzle'))),
-    libraryTabs('puzzles'),
+      h('h1', {}, t('Adventures')),
+      canAuthor
+        ? h('button', { class: 'btn primary', title: t('Capture a puzzle at your current location'),
+            on: { click: quickPuzzle } },
+            icon(ICONS.plus), t('New puzzle'))
+        : null),
+    renderAdventureTabs('puzzles'),
     h('p', { class: 'muted' },
-      t('The pool of every puzzle in the system. Unassigned ones sit in the Library; the rest list the adventure they belong to. Copy a puzzle into a new adventure from the adventure editor.')),
+      t('Your organization’s puzzles and the catalog’s. Unassigned ones sit in the library; the rest list the adventure they belong to. Copy a puzzle into a new adventure from the adventure editor.')),
     list,
   );
 }
@@ -11346,50 +11377,6 @@ async function viewPuzzleEditRoute(view, pageID) {
     }
   }
   openEditPuzzle(adv, page);
-}
-
-/* ========== Library (admin only) ==========
-   Admins author adventures here: title/body/images/answer/location per
-   puzzle. Content lives in the database, not on disk. */
-
-async function viewLibrary(view) {
-  const r = await api('/api/admin/adventures');
-  const advs = r.body?.adventures || [];
-  view.replaceChildren(
-    h('div', { class: 'row between' },
-      h('h1', {}, t('Library')),
-      h('div', { class: 'row', style: 'gap:.5rem; flex-wrap:wrap' },
-        h('button', { class: 'btn', on: { click: () => importAdventureFlow(view) } },
-          icon(ICONS.upload), t('Import')),
-        h('button', { class: 'btn primary', on: { click: () => openCreateAdventure() } },
-          icon(ICONS.plus), t('New adventure')))),
-    libraryTabs('library'),
-    h('p', { class: 'muted' },
-      t('Adventures you have authored live in the database. Assign them to organizations from the Organizations page.')),
-    advs.length === 0
-      ? h('div', { class: 'empty' },
-          h('p', {}, t('No adventures yet.')),
-          h('button', { class: 'btn primary', on: { click: () => openCreateAdventure() } },
-            icon(ICONS.plus), t('Create your first adventure')))
-      : h('div', { class: 'grid cols-2' }, advs.map((a) =>
-        h('div', {
-          class: 'card clickable',
-          on: { click: () => nav('#library/' + a.slug) },
-        },
-          h('div', { class: 'row between', style: 'gap:.75rem; align-items:flex-start' },
-            h('div', { class: 'row', style: 'gap:.75rem; align-items:center; min-width:0' },
-              adventureCover(a, 56),
-              h('h2', { style: 'margin:0' }, a.title)),
-            h('div', { class: 'row', style: 'gap:.35rem; flex-wrap:wrap' },
-              !a.org_id
-                ? (a.published
-                    ? h('span', { class: 'pill success' }, '✓ ' + t('Published'))
-                    : h('span', { class: 'pill warning' }, '✎ ' + t('Draft')))
-                : null,
-              h('span', { class: 'pill accent' }, t('{{n}} puzzles', { n: a.page_count })))),
-          a.description ? h('p', { class: 'muted' }, a.description) : null,
-          h('p', { class: 'muted mono' }, a.slug)))),
-  );
 }
 
 // colorRow builds a labelled row with a type=color picker, a "use default"
@@ -11975,10 +11962,9 @@ function renderLibraryEdit(view, adv) {
   const hasEnabled = enabledIdx > 0;
   // .filter(Boolean) drops null/undefined ternary branches. Native
   // `replaceChildren` coerces non-Node args to strings — without the
-  // filter the literal text "null" leaked in above the puzzle list
-  // for non-admin viewers (the renderAdventureShares branch).
+  // filter the literal text "null" leaks into the page.
   view.replaceChildren(...[
-    h('button', { class: 'btn ghost small', on: { click: () => nav(state.me.role === 'admin' ? '#library' : '#adventures') } },
+    h('button', { class: 'btn ghost small', on: { click: () => nav('#adventures') } },
       icon(ICONS.back), t('Back')),
     // Identity block: cover + title + status pill. Actions used to ride
     // alongside in a flex row, which on narrow viewports squeezed the
@@ -11988,14 +11974,7 @@ function renderLibraryEdit(view, adv) {
     h('div', { class: 'row', style: 'gap:1rem; align-items:center' },
       adventureCover(adv, 80),
       h('div', { style: 'min-width:0' },
-        h('h1', { style: 'margin:0' }, adv.title),
-        // Draft / Published only signals something on admin-owned (global
-        // catalog) adventures. For org-owned ones the flag has no
-        // visibility effect, so don't surface a misleading status pill.
-        adv.org_id ? null
-          : (adv.published === false
-              ? h('span', { class: 'pill warning', style: 'margin-top:.35rem' }, '✎ ' + t('Draft'))
-              : h('span', { class: 'pill success', style: 'margin-top:.35rem' }, '✓ ' + t('Published'))))),
+        h('h1', { style: 'margin:0' }, adv.title))),
     h('p', { class: 'muted mono' }, adv.slug, adv.author ? ` · ${adv.author}` : ''),
     adv.description ? h('p', { class: 'muted' }, adv.description) : null,
     h('div', { class: 'row', style: 'flex-wrap:wrap; gap:.5rem' },
@@ -12005,20 +11984,6 @@ function renderLibraryEdit(view, adv) {
             on: { click: () => previewAdventure(adv.slug, 0, false) } },
             icon(ICONS.eye), t('Preview'))
         : null,
-      // Publish/Unpublish toggles cross-org catalog visibility — but
-      // the visibility query only consults `published` for admin-owned
-      // (org_id IS NULL) rows. For org-owned adventures the flag is a
-      // no-op, so hide the affordance instead of advertising an
-      // action that does nothing.
-      !adv.org_id && (adv.published
-        ? h('button', { class: 'btn small',
-            title: t('Hide from the Catalog'),
-            on: { click: () => togglePublished(adv, false) } },
-            icon(ICONS.globe), t('Unpublish'))
-        : h('button', { class: 'btn small primary',
-            title: t('Make available in the Catalog'),
-            on: { click: () => togglePublished(adv, true) } },
-            icon(ICONS.globe), t('Publish'))),
       h('a', { class: 'btn small',
         title: t('Design the adventure as a flow of steps'),
         href: designerURL(adv.slug),
@@ -12037,7 +12002,6 @@ function renderLibraryEdit(view, adv) {
         'aria-label': t('Delete adventure'),
         on: { click: () => confirmDeleteAdventure(adv) } },
         icon(ICONS.trash))),
-    state.me.role === 'admin' ? renderAdventureShares(adv) : null,
     h('div', { class: 'row between', style: 'margin-top:1rem' },
       h('h2', {}, t('Puzzles ({{n}})', { n: adv.pages.length })),
       // One "Add puzzle" entry point with a menu for the "copy from
@@ -12289,60 +12253,33 @@ async function addLane(view, adv) {
   if (created) viewLibraryEdit(view, adv.slug);
 }
 
-// togglePublished flips the adventure's published flag and re-renders
-// the library edit view so the pill and CTA label swap. Only Catalog
-// visibility is affected — owned adventures stay in Adventures either
-// way, so arrangers can iterate on drafts without losing access.
+// togglePublished lists or unlists a catalog adventure (operator
+// only) and re-renders the org page so the pill and label swap. Only
+// Catalog visibility is affected — the publisher keeps its drafts
+// either way.
 async function togglePublished(adv, next) {
-  const r = await api(`/api/admin/adventures/${encodeURIComponent(adv.slug)}`, {
-    method: 'PATCH', body: JSON.stringify({ published: next }),
+  const r = await api(`/api/admin/catalog/${encodeURIComponent(adv.slug)}/published`, {
+    method: 'PUT', body: JSON.stringify({ published: next }),
   });
   if (r.status === 204) {
     adv.published = next;
-    toastOk(next ? t('Published') : t('Unpublished'));
+    toastOk(next ? t('Listed in the catalog') : t('Removed from the catalog'));
     renderRoute();
   } else {
     toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
   }
 }
 
-// renderAdventureShares is the admin-only "commissioned for" section on
-// the library edit page. Each share row is a chip with a remove button;
-// the + button opens an org picker. A share gives the target org a
-// free, uncapped right to run this adventure (no assignment, no cost).
-function renderAdventureShares(adv) {
-  const shares = adv.shares || [];
-  return h('div', { class: 'card', style: 'margin-top:1rem' },
-    h('div', { class: 'row between', style: 'align-items:center' },
-      h('h2', { style: 'margin:0' }, t('Shared with organisations')),
-      h('button', { class: 'btn small primary',
-        on: { click: () => openShareAdventureModal(adv) } },
-        icon(ICONS.plus), t('Share with org'))),
-    h('p', { class: 'muted', style: 'margin:.35rem 0' },
-      t('Give specific organisations free access to this adventure without publishing it to the Catalog.')),
-    shares.length === 0
-      ? h('p', { class: 'muted' }, t('Not shared with any organisation yet.'))
-      : h('div', { class: 'row', style: 'gap:.4rem; flex-wrap:wrap' },
-          shares.map((s) => h('span', { class: 'chip',
-            style: 'display:inline-flex; align-items:center; gap:.35rem' },
-            s.org_name,
-            h('button', {
-              class: 'btn icon ghost small', type: 'button',
-              title: t('Revoke share'),
-              on: { click: () => revokeShare(adv, s) },
-            }, icon(ICONS.trash))))));
-}
-
 // openShareAdventureModal pops a picker over all orgs that don't
-// already hold a share for this adventure. Uses ListOrganizations
-// (admin-only), which is fine because share management is admin-only
-// anyway.
+// already hold a share for this catalog adventure (the publisher owns
+// it already). Uses ListOrganizations (admin-only), which is fine
+// because share management is admin-only anyway.
 async function openShareAdventureModal(adv) {
   const r = await api('/api/admin/organizations');
   if (!r.ok) { toastErr(r.body?.error || t('error {{status}}', { status: r.status })); return; }
   const all = r.body?.organizations || [];
   const already = new Set((adv.shares || []).map((s) => s.org_id));
-  const candidates = all.filter((o) => !already.has(o.id));
+  const candidates = all.filter((o) => !already.has(o.id) && !o.is_publisher);
   if (candidates.length === 0) {
     toastErr(t('Every organisation already has access.'));
     return;
@@ -12363,7 +12300,7 @@ async function openShareAdventureModal(adv) {
       h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, t('Cancel'))));
   });
   if (!picked) return;
-  const gr = await api(`/api/admin/adventures/${encodeURIComponent(adv.slug)}/shares`, {
+  const gr = await api(`/api/admin/catalog/${encodeURIComponent(adv.slug)}/shares`, {
     method: 'POST', body: JSON.stringify({ org_id: picked }),
   });
   if (gr.status === 204) {
@@ -12381,7 +12318,7 @@ async function revokeShare(adv, share) {
   // heavier promptPassword gate would be noise here.
   if (!await inAppConfirm(t('Revoke share with {{org}}? Existing events keep working; new events will be blocked.',
     { org: share.org_name }), { danger: true })) return;
-  const r = await api(`/api/admin/adventures/${encodeURIComponent(adv.slug)}/shares/${share.org_id}`, {
+  const r = await api(`/api/admin/catalog/${encodeURIComponent(adv.slug)}/shares/${share.org_id}`, {
     method: 'DELETE',
   });
   if (r.status === 204) {
@@ -12742,7 +12679,7 @@ async function confirmDeleteAdventure(adv) {
   const r = await api(`/api/admin/adventures/${encodeURIComponent(adv.slug)}`, {
     method: 'DELETE', headers: { 'X-Confirm-Password': pw },
   });
-  if (r.status === 204) { toastOk(t('Deleted')); nav(state.me.role === 'admin' ? '#library' : '#adventures'); }
+  if (r.status === 204) { toastOk(t('Deleted')); nav('#adventures'); }
   else toastErr(r.body?.error || t('error {{status}}', { status: r.status }));
 }
 
@@ -17285,13 +17222,13 @@ function renderSettingsRoleCard() {
   let label, blurb;
   if (role === 'admin') {
     label = t('Global admin');
-    blurb = t('You can manage every organisation, adventure, and event on this instance. Treat this like a root password.');
+    blurb = t('You manage the organisations on this instance, curate the catalog, and keep an eye on the system. Authoring and running events is up to the organisations. Treat this like a root password.');
   } else if (role === 'org_admin') {
     label = t('Organisation admin');
     blurb = t('You can manage members, purchases, branding, and settings for your organisation. Run events too.');
   } else if (role === 'org_member') {
     label = t('Event host');
-    blurb = t('You can author adventures and run events in your organisation. Member management is reserved for admins.');
+    blurb = t('You can run events in your organisation. Authoring adventures and managing members is reserved for admins.');
   } else if (role === 'lobby') {
     label = t('No organisation yet');
     blurb = t('You\'re signed in but not part of any organisation. Create one (you\'ll be its admin) or wait for an invitation.');

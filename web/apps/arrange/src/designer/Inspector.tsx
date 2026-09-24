@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import type {
   EffectConfig,
   Graph,
@@ -21,11 +21,11 @@ import type {
   Trigger,
   Zone,
 } from "@zonventure/graph";
-import { answerOptions, isGraded, isPolygon, nodeBySlug, portsOf, portLabel, puzzlesInto, referAnswer, resolveAnswer, updateNode } from "@zonventure/graph";
+import { answerOptions, isGraded, isPolygon, matcherLabel, nodeBySlug, portLabel, puzzlesInto, referAnswer, resolveAnswer, updateNode } from "@zonventure/graph";
 import { useT } from "../i18n.tsx";
 import { ConditionEditor } from "./ConditionEditor.tsx";
 import { MediaEditor } from "./MediaEditor.tsx";
-import { Eye, Plus, Trash2, X } from "lucide-react";
+import { AlertTriangle, ChevronLeft, Eye, Pencil, Trash2, X } from "lucide-react";
 import { Button, HelpPopover, ICON } from "./dz/ui.tsx";
 import { STEP } from "./dz/types.tsx";
 import { ZoneMap } from "./ZoneMap.tsx";
@@ -38,8 +38,6 @@ interface Props {
   /** For edits that reach beyond this node, such as naming an answer a crossroads refers to. */
   onGraphChange: (g: Graph) => void;
   onDelete: () => void;
-  /** Insert a new step after this one, wired in; see insertAfter. */
-  onAddAfter: (type: "puzzle" | "story") => void;
   /** Close the inspector (deselect). */
   onClose: () => void;
   /** Open this step in the phone preview. */
@@ -54,11 +52,21 @@ interface Props {
  * Every field writes straight through to the document; the undo history
  * coalesces consecutive edits to one node, so typing a prompt is one undo
  * step rather than one per keystroke.
+ *
+ * The settings come in parts (see partsOf). The overview shows each part
+ * as a card: what the team reads, and a step's only setting, are edited
+ * in the card; everything else shows a read-only digest with Edit, which
+ * opens the part alone on a page of its own.
  */
-export function Inspector({ node, graph, issues, onChange, onGraphChange, onDelete, onAddAfter, onClose, onPreview, readOnly }: Props) {
+export function Inspector({ node, graph, issues, onChange, onGraphChange, onDelete, onClose, onPreview, readOnly }: Props) {
   const t = useT();
   const kind = STEP[node.type];
   const Icon = kind.icon;
+  const [open, setOpen] = useState<string | null>(null);
+  const parts = partsOf(node, graph, onChange, onGraphChange, t);
+  const page = parts.find((p) => p.id === open);
+  // Issues about a route, branch or path belong to the part listing them.
+  const portIssues = issues.filter((i) => i.port).length;
 
   return (
     <>
@@ -94,10 +102,19 @@ export function Inspector({ node, graph, issues, onChange, onGraphChange, onDele
           </Button>
         </span>
       </div>
-    <div className="inspector-body">
+      {page && (
+        <div className="ipage__bar">
+          <Button variant="ghost" size="sm" onClick={() => setOpen(null)} aria-label={t.t("Back to all settings")}>
+            <ChevronLeft size={ICON.sm} />
+            {t.t("All settings")}
+          </Button>
+          <span className="ipage__title">{page.title}</span>
+        </div>
+      )}
+    <div className="inspector-body" key={page?.id ?? ""}>
     <div className="insp inspector-edits" {...(readOnly ? { inert: true } : {})}>
 
-      {issues.length > 0 && (
+      {issues.length > 0 && !page && (
         <ul className="insp__issues">
           {issues.map((i, k) => (
             <li key={k} className={`issue issue--${i.severity}`}>
@@ -108,114 +125,17 @@ export function Inspector({ node, graph, issues, onChange, onGraphChange, onDele
         </ul>
       )}
 
-
-      {node.type === "start" && <StartForm node={node} graph={graph} onGraphChange={onGraphChange} />}
-
-      {node.type === "puzzle" && node.puzzle && (
-        <PuzzleForm cfg={node.puzzle} graph={graph} onChange={(puzzle) => onChange({ ...node, puzzle })} />
-      )}
-
-      {node.type === "story" && (
+      {page ? (
         <>
-          <Field label={t.t("Text")} hint={t.t("Markdown.")}>
-            <textarea
-              className="field__input"
-              rows={6}
-              value={node.story?.text ?? ""}
-              onChange={(e) => onChange({ ...node, story: { ...node.story, text: e.target.value } })}
-            />
-          </Field>
-          <Field label={t.t("Pictures and sounds")}>
-            <MediaEditor media={node.story?.media} onChange={(media) => onChange({ ...node, story: withOptional({ ...node.story }, "media", media) })} />
-          </Field>
-          <ZoneSelect
-            graph={graph}
-            label={t.t("Only continue inside a zone")}
-            value={node.story?.zone}
-            onChange={(zone) => onChange({ ...node, story: withOptional({ ...node.story }, "zone", zone) })}
-          />
-          <label className="check">
-            <input type="checkbox" checked={!!node.story?.once} onChange={(e) => onChange({ ...node, story: withOptional({ ...node.story }, "once", e.target.checked || undefined) })} />
-            <span>
-              {t.t("Show only the first time")}
-              <span className="field__hint check__hint">{t.t("A team that comes this way again passes straight through — for an arrival or introduction on a branch it returns to.")}</span>
-            </span>
-          </label>
+          {page.hint && <p className="field__hint ipage__hint">{page.hint}</p>}
+          {page.editor}
         </>
+      ) : (
+        parts.map((p) => <PartCard key={p.id} part={p} issues={p.ports ? portIssues : 0} readOnly={!!readOnly} onOpen={() => setOpen(p.id)} />)
       )}
 
-      {(node.type === "puzzle" || node.type === "story" || node.type === "hub" || node.type === "end") && (
-        <UnlocksField graph={graph} value={node.unlocks} onChange={(unlocks) => onChange(withOptional({ ...node }, "unlocks", unlocks.length ? unlocks : undefined))} />
-      )}
-
-      {node.type === "hub" && node.hub && (
-        <HubForm
-          cfg={node.hub}
-          graph={graph}
-          onChange={(hub) => onChange({ ...node, hub })}
-          onHome={(home) => {
-            // A home screen has no done output; drop a wire from it with it.
-            const g = updateNode(graph, node.slug, (n) => ({ ...n, hub: withOptional(withOptional({ ...n.hub! }, "required", home ? undefined : n.hub!.required), "home", home || undefined) }));
-            onGraphChange(home ? { ...g, edges: g.edges.filter((e) => !(e.from === node.slug && e.from_port === "done")) } : g);
-          }}
-        />
-      )}
-
-      {node.type === "gate" && node.gate && (
-        <Field label={t.t("Pass when")} hint={t.t("Otherwise the team takes the fail route.")}>
-          <ConditionEditor graph={graph} value={node.gate.condition} onChange={(condition) => onChange({ ...node, gate: { condition } })} />
-        </Field>
-      )}
-
-      {node.type === "switch" && <SwitchForm node={node} graph={graph} onGraphChange={onGraphChange} />}
-
-      {node.type === "effect" && node.effect && (
-        <EffectForm cfg={node.effect} graph={graph} onChange={(effect) => onChange({ ...node, effect })} />
-      )}
-
-      {node.type === "end" && (
-        <>
-          <Field label={t.t("Outcome")}>
-            <select
-              className="field__input"
-              value={node.end?.outcome ?? "complete"}
-              onChange={(e) => onChange({ ...node, end: { ...node.end, outcome: e.target.value as "complete" | "fail" } })}
-            >
-              <option value="complete">{t.t("Success")}</option>
-              <option value="fail">{t.t("Failure")}</option>
-            </select>
-          </Field>
-          <Field label={t.t("Closing text")}>
-            <textarea
-              className="field__input"
-              rows={4}
-              value={node.end?.text ?? ""}
-              onChange={(e) => onChange({ ...node, end: { ...node.end, text: e.target.value } })}
-            />
-          </Field>
-          <Field label={t.t("Pictures and sounds")}>
-            <MediaEditor media={node.end?.media} onChange={(media) => onChange({ ...node, end: withOptional({ ...node.end }, "media", media) })} />
-          </Field>
-        </>
-      )}
-
-      {!readOnly && (
+      {!readOnly && !page && (
         <div className="inspector-actions">
-          {/* Adding after this step from its own editor: on a phone the
-              editor covers the outline, so selecting a step and adding
-              after it from there is not possible. */}
-          {portsOf(node).length > 0 && (
-            <div className="box__row box__row--wrap">
-              <Button variant="ghost" onClick={() => onAddAfter("puzzle")}>
-                <Plus size={ICON.sm} />
-                {t.t("Puzzle after this")}
-              </Button>
-              <Button variant="ghost" onClick={() => onAddAfter("story")}>
-                <Plus size={ICON.sm} />
-                {t.t("Story after this")}
-              </Button>
-            </div>
-          )}
           {(node.type !== "start" || graph.nodes.filter((n) => n.type === "start").length > 1) && (
             <Button variant="danger" onClick={onDelete}>
               <Trash2 size={ICON.sm} />
@@ -228,6 +148,213 @@ export function Inspector({ node, graph, issues, onChange, onGraphChange, onDele
     </div>
     </>
   );
+}
+
+type T = ReturnType<typeof useT>;
+
+/**
+ * One part of a step's settings. With a summary it is a card showing that
+ * digest and opening `editor` on a page of its own; without, the editor
+ * sits in the card itself.
+ */
+interface Part {
+  id: string;
+  title: string;
+  hint?: string | undefined;
+  /** How many items the part holds, shown beside its title. */
+  count?: number | undefined;
+  summary?: ReactNode;
+  editor: ReactNode;
+  /** It lists the step's routes, branches or paths — where port issues go. */
+  ports?: boolean;
+}
+
+function PartCard({ part, issues, readOnly, onOpen }: { part: Part; issues: number; readOnly: boolean; onOpen: () => void }) {
+  const t = useT();
+  const drill = part.summary !== undefined;
+  return (
+    <section className="ipart">
+      <header className="ipart__head">
+        <h3 className="ipart__title">
+          {part.title}
+          {part.count !== undefined && <span className="ipart__count">{part.count}</span>}
+        </h3>
+        {issues > 0 && (
+          <span className="ipart__issues" title={t.t("{{n}} problems here", { n: issues })}>
+            <AlertTriangle size={ICON.xs} aria-hidden="true" />
+            {issues}
+          </span>
+        )}
+        {drill && (
+          <Button variant="ghost" size="sm" onClick={onOpen} aria-label={t.t("Edit {{part}}", { part: part.title })}>
+            {readOnly ? <Eye size={ICON.sm} /> : <Pencil size={ICON.sm} />}
+            {readOnly ? t.t("View") : t.t("Edit")}
+          </Button>
+        )}
+      </header>
+      {drill ? (
+        // The digest opens the part too: it is the bigger target.
+        <button type="button" className="ipart__summary" onClick={onOpen} tabIndex={-1}>
+          {part.summary}
+        </button>
+      ) : (
+        <div className="ipart__body">{part.editor}</div>
+      )}
+    </section>
+  );
+}
+
+/** A digest line: a label, and what it is set to. Empty values say so. */
+function SumRow({ label, children }: { label?: ReactNode; children: ReactNode }) {
+  return (
+    <span className="isum__row">
+      {label !== undefined && <span className="isum__label">{label}</span>}
+      <span className="isum__value">{children}</span>
+    </span>
+  );
+}
+
+function SumNone({ children }: { children: ReactNode }) {
+  return <span className="isum__none">{children}</span>;
+}
+
+/** 45 → "45 s", 120 → "2 min", 150 → "2 min 30 s". */
+function fmtSecs(t: T, s: number): string {
+  if (s < 60) return t.t("{{n}} s", { n: s });
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return r ? t.t("{{m}} min {{s}} s", { m, s: r }) : t.t("{{m}} min", { m });
+}
+
+function clip(s: string | undefined, n = 60): string {
+  const one = (s ?? "").replace(/\s+/g, " ").trim();
+  return one.length > n ? one.slice(0, n - 1) + "…" : one;
+}
+
+function zoneName(graph: Graph, slug: string): string {
+  return (graph.zones ?? []).find((x) => x.slug === slug)?.name || slug;
+}
+
+/** The parts of a node's settings, in the order the inspector shows them. */
+function partsOf(node: Node, graph: Graph, onChange: (n: Node) => void, onGraphChange: (g: Graph) => void, t: T): Part[] {
+  const parts: Part[] = [];
+  switch (node.type) {
+    case "start":
+      parts.push({ id: "place", title: t.t("Where teams start"), editor: <StartForm node={node} graph={graph} onGraphChange={onGraphChange} /> });
+      break;
+    case "puzzle":
+      if (node.puzzle) parts.push(...puzzleParts(node.puzzle, graph, (puzzle) => onChange({ ...node, puzzle }), t));
+      break;
+    case "story": {
+      const story = node.story ?? {};
+      parts.push({
+        id: "content",
+        title: t.t("What the team sees"),
+        editor: (
+          <>
+            <Field label={t.t("Text")} hint={t.t("Markdown.")}>
+              <textarea
+                className="field__input"
+                rows={6}
+                value={story.text ?? ""}
+                onChange={(e) => onChange({ ...node, story: { ...story, text: e.target.value } })}
+              />
+            </Field>
+            <Field label={t.t("Pictures and sounds")}>
+              <MediaEditor media={story.media} onChange={(media) => onChange({ ...node, story: withOptional({ ...story }, "media", media) })} />
+            </Field>
+          </>
+        ),
+      });
+      parts.push({
+        id: "rules",
+        title: t.t("Rules"),
+        summary: (
+          <>
+            <SumRow label={t.t("Continue")}>{story.zone ? t.t("inside {{zone}}", { zone: zoneName(graph, story.zone) }) : t.t("anywhere")}</SumRow>
+            <SumRow label={t.t("Shown")}>{story.once ? t.t("only the first time") : t.t("every time")}</SumRow>
+          </>
+        ),
+        editor: (
+          <>
+            <ZoneSelect graph={graph} label={t.t("Only continue inside a zone")} value={story.zone} onChange={(zone) => onChange({ ...node, story: withOptional({ ...story }, "zone", zone) })} />
+            <label className="check">
+              <input type="checkbox" checked={!!story.once} onChange={(e) => onChange({ ...node, story: withOptional({ ...story }, "once", e.target.checked || undefined) })} />
+              <span>
+                {t.t("Show only the first time")}
+                <span className="field__hint check__hint">{t.t("A team that comes this way again passes straight through — for an arrival or introduction on a branch it returns to.")}</span>
+              </span>
+            </label>
+          </>
+        ),
+      });
+      break;
+    }
+    case "hub":
+      if (node.hub)
+        parts.push(
+          ...hubParts(node.hub, graph, (hub) => onChange({ ...node, hub }), (home) => {
+            // A home screen has no done output; drop a wire from it with it.
+            const g = updateNode(graph, node.slug, (n) => ({ ...n, hub: withOptional(withOptional({ ...n.hub! }, "required", home ? undefined : n.hub!.required), "home", home || undefined) }));
+            onGraphChange(home ? { ...g, edges: g.edges.filter((e) => !(e.from === node.slug && e.from_port === "done")) } : g);
+          }, t),
+        );
+      break;
+    case "gate":
+      if (node.gate)
+        parts.push({
+          id: "condition",
+          title: t.t("Pass when"),
+          editor: (
+            <>
+              <p className="field__hint">{t.t("Otherwise the team takes the fail route.")}</p>
+              <ConditionEditor graph={graph} value={node.gate.condition} onChange={(condition) => onChange({ ...node, gate: { condition } })} />
+            </>
+          ),
+        });
+      break;
+    case "switch":
+      parts.push(...switchParts(node, graph, onGraphChange, t));
+      break;
+    case "effect":
+      if (node.effect) parts.push({ id: "effect", title: t.t("Does"), editor: <EffectForm cfg={node.effect} graph={graph} onChange={(effect) => onChange({ ...node, effect })} /> });
+      break;
+    case "end": {
+      const end = node.end ?? {};
+      parts.push({
+        id: "content",
+        title: t.t("How it ends"),
+        editor: (
+          <>
+            <Field label={t.t("Outcome")}>
+              <select className="field__input" value={end.outcome ?? "complete"} onChange={(e) => onChange({ ...node, end: { ...end, outcome: e.target.value as "complete" | "fail" } })}>
+                <option value="complete">{t.t("Success")}</option>
+                <option value="fail">{t.t("Failure")}</option>
+              </select>
+            </Field>
+            <Field label={t.t("Closing text")}>
+              <textarea className="field__input" rows={4} value={end.text ?? ""} onChange={(e) => onChange({ ...node, end: { ...end, text: e.target.value } })} />
+            </Field>
+            <Field label={t.t("Pictures and sounds")}>
+              <MediaEditor media={end.media} onChange={(media) => onChange({ ...node, end: withOptional({ ...end }, "media", media) })} />
+            </Field>
+          </>
+        ),
+      });
+      break;
+    }
+  }
+  if (node.type === "puzzle" || node.type === "story" || node.type === "hub" || node.type === "end") {
+    const titles = (node.unlocks ?? []).map((s) => (graph.journal ?? []).find((e) => e.slug === s)?.title || s);
+    parts.push({
+      id: "journal",
+      title: t.t("Notes for the journal"),
+      count: titles.length || undefined,
+      summary: titles.length ? <span className="isum__chips">{titles.map((x) => <span key={x} className="chip">{x}</span>)}</span> : <SumNone>{t.t("None")}</SumNone>,
+      editor: <UnlocksField graph={graph} value={node.unlocks} onChange={(unlocks) => onChange(withOptional({ ...node }, "unlocks", unlocks.length ? unlocks : undefined))} />,
+    });
+  }
+  return parts;
 }
 
 // --- start -----------------------------------------------------------------
@@ -304,8 +431,7 @@ const TRIGGERS: { t: Trigger; label: string }[] = [
   { t: "skipped", label: "Team skips" },
 ];
 
-function PuzzleForm({ cfg, graph, onChange }: { cfg: PuzzleConfig; graph: Graph; onChange: (c: PuzzleConfig) => void }) {
-  const t = useT();
+function puzzleParts(cfg: PuzzleConfig, graph: Graph, onChange: (c: PuzzleConfig) => void, t: T): Part[] {
   const outputs = cfg.outputs ?? [];
   const answer = cfg.answer;
   const setOutput = (i: number, o: Output) => onChange({ ...cfg, outputs: outputs.map((x, j) => (j === i ? o : x)) });
@@ -328,22 +454,117 @@ function PuzzleForm({ cfg, graph, onChange }: { cfg: PuzzleConfig; graph: Graph;
     onChange(next);
   };
 
-  return (
-    <>
-      <Field label={t.t("Prompt")} hint={t.t("Markdown. This is what the team reads.")}>
-        <textarea className="field__input" rows={5} value={cfg.prompt ?? ""} onChange={(e) => onChange({ ...cfg, prompt: e.target.value })} />
-      </Field>
+  const parts: Part[] = [
+    {
+      id: "content",
+      title: t.t("What the team sees"),
+      editor: (
+        <>
+          <Field label={t.t("Prompt")} hint={t.t("Markdown. This is what the team reads.")}>
+            <textarea className="field__input" rows={5} value={cfg.prompt ?? ""} onChange={(e) => onChange({ ...cfg, prompt: e.target.value })} />
+          </Field>
+          <Field label={t.t("Pictures and sounds")} hint={t.t("Shown above the prompt. A team only receives them once it reaches this step.")}>
+            <MediaEditor media={cfg.media} onChange={(media) => onChange(withOptional({ ...cfg }, "media", media))} />
+          </Field>
+        </>
+      ),
+    },
+  ];
 
-      <Field label={t.t("Pictures and sounds")} hint={t.t("Shown above the prompt. A team only receives them once it reaches this step.")}>
-        <MediaEditor media={cfg.media} onChange={(media) => onChange(withOptional({ ...cfg }, "media", media))} />
-      </Field>
+  if (answer?.kind === "tiles")
+    parts.push({
+      id: "answer",
+      title: t.t("Tile puzzle"),
+      hint: t.t("The picture is cut into a grid and shuffled. Teams swap pieces until it is whole."),
+      summary: (
+        <>
+          <SumRow label={t.t("Grid")}>{t.t("{{rows}} × {{cols}}", { rows: answer.rows, cols: answer.cols })}</SumRow>
+          <SumRow label={t.t("Picture")}>{answer.image ? t.t("set") : <SumNone>{t.t("none yet")}</SumNone>}</SumRow>
+        </>
+      ),
+      editor: <TilesForm tiles={answer} onChange={(tiles) => onChange({ ...cfg, answer: tiles })} />,
+    });
+  if (answer?.kind === "search")
+    parts.push({
+      id: "answer",
+      title: t.t("Search by place"),
+      hint: t.t("No typing: the team presses Search here, and the route below whose zone it stands in is taken. Anywhere else, the wrong-answer replies say what it found."),
+      summary: (
+        <>
+          <SumRow label={t.t("Names")}>{answer.group ?? t.t("the zones of the routes")}</SumRow>
+          <SumRow label={t.t("Again later")}>{cfg.repeatable ? t.t("yes") : t.t("no")}</SumRow>
+        </>
+      ),
+      editor: <SearchForm cfg={cfg} search={answer} graph={graph} onChange={onChange} />,
+    });
+  if (answer?.kind === "choice") {
+    const graded = isGraded(answer);
+    parts.push({
+      id: "answer",
+      title: graded ? t.t("Marked form") : t.t("Multiple choice"),
+      hint: graded ? t.t("Every question has a right answer. The team sends all of them in at once.") : t.t("The option tapped is the answer the routes below match."),
+      count: answer.fields.length,
+      summary: (
+        <>
+          {answer.fields.map((f, i) => (
+            <SumRow key={i} label={f.label || t.t("Question {{n}}", { n: i + 1 })}>
+              {f.options.map((o) => (o.value === f.answer ? `✓ ${o.label || o.value}` : o.label || o.value)).join(" · ")}
+            </SumRow>
+          ))}
+        </>
+      ),
+      editor: <ChoicesForm cfg={cfg} choice={answer} onChange={onChange} />,
+    });
+  }
+  if (answer?.kind === "lock") {
+    const first = outputs.find((o) => o.trigger === "answer");
+    const combo = (first?.matchers?.[0]?.value ?? "").split("|").map((v) => answer.symbols.find((x) => x.value === v)?.label || v);
+    parts.push({
+      id: "answer",
+      title: t.t("Combination lock"),
+      hint: t.t("The team turns each wheel through the same symbols and tries the combination. A wrong one gets the wrong-answer replies."),
+      summary: (
+        <>
+          <SumRow label={t.t("Wheels")}>{answer.wheels}</SumRow>
+          <SumRow label={t.t("Opens at")}>{combo.join(" · ")}</SumRow>
+        </>
+      ),
+      editor: <LockForm cfg={cfg} lock={answer} onChange={onChange} />,
+    });
+  }
 
-      {answer?.kind === "tiles" && <TilesForm tiles={answer} onChange={(tiles) => onChange({ ...cfg, answer: tiles })} />}
-      {answer?.kind === "search" && <SearchForm cfg={cfg} search={answer} graph={graph} onChange={onChange} />}
-      {answer?.kind === "choice" && <ChoicesForm cfg={cfg} choice={answer} onChange={onChange} />}
-      {answer?.kind === "lock" && <LockForm cfg={cfg} lock={answer} onChange={onChange} />}
-
-      <Section title={t.t("Routes")} hint={t.t("Where the team goes next. Each route gets its own dot on the card, to connect to a different step.")}>
+  const triggerLabel = (o: Output) => t.t(TRIGGERS.find((x) => x.t === o.trigger)?.label ?? o.trigger);
+  parts.push({
+    id: "routes",
+    title: t.t("Routes"),
+    hint: t.t("Where the team goes next. Each route gets its own dot on the card, to connect to a different step."),
+    count: outputs.length,
+    ports: true,
+    summary: (
+      <>
+        {outputs.map((o, i) => {
+          const accepts =
+            o.trigger !== "answer"
+              ? o.trigger === "attempts"
+                ? t.t("after {{n}} wrong guesses", { n: o.after_attempts ?? 0 })
+                : triggerLabel(o)
+              : answer?.kind === "tiles" || answer?.kind === "lock" || isGraded(answer) || answer?.kind === "search"
+                ? triggerLabel(o)
+                : (o.matchers ?? []).map(matcherLabel).join(" / ") || t.t("no answer yet");
+          const extra = [o.points ? t.t("{{n}} p", { n: o.points }) : "", o.zone ? (o.inverted ? t.t("outside {{zone}}", { zone: zoneName(graph, o.zone) }) : t.t("in {{zone}}", { zone: zoneName(graph, o.zone) })) : ""]
+            .filter(Boolean)
+            .join(" · ");
+          return (
+            <SumRow key={i} label={o.label || o.port}>
+              {accepts}
+              {extra && <span className="isum__extra"> · {extra}</span>}
+            </SumRow>
+          );
+        })}
+      </>
+    ),
+    editor: (
+      <>
         {outputs.map((o, i) => (
           <div key={i} className="box">
             <div className="box__row box__row--wrap box__row--route">
@@ -422,55 +643,107 @@ function PuzzleForm({ cfg, graph, onChange }: { cfg: PuzzleConfig; graph: Graph;
           <button type="button" className="link-btn" onClick={() => addOutput("timeout")}>+ {t.t("When time runs out")}</button>
           <button type="button" className="link-btn" onClick={() => addOutput("skipped")}>+ {t.t("When the team skips")}</button>
         </div>
-      </Section>
+      </>
+    ),
+  });
 
-      <Section title={t.t("Wrong-answer replies")} hint={t.t("Shown after a wrong guess. Each applies from its number of wrong guesses on; the last repeats.")}>
-        <ListEditor<Response>
-          items={cfg.responses ?? []}
-          make={() => ({ after_attempts: (cfg.responses?.length ?? 0) + 1, text: "" })}
-          onChange={(responses) => onChange(withOptional({ ...cfg }, "responses", responses.length ? responses : undefined))}
-          render={(r, set) => (
+  const responses = cfg.responses ?? [];
+  parts.push({
+    id: "replies",
+    title: t.t("Wrong-answer replies"),
+    hint: t.t("Shown after a wrong guess. Each applies from its number of wrong guesses on; the last repeats."),
+    count: responses.length || undefined,
+    summary: responses.length ? (
+      <>
+        {responses.map((r, i) => (
+          <SumRow key={i} label={t.t("From guess {{n}}", { n: r.after_attempts ?? 1 })}>
+            {clip(r.text) || <SumNone>{t.t("empty")}</SumNone>}
+          </SumRow>
+        ))}
+      </>
+    ) : (
+      <SumNone>{t.t("None — the team sees the standard reply")}</SumNone>
+    ),
+    editor: (
+      <ListEditor<Response>
+        items={responses}
+        make={() => ({ after_attempts: responses.length + 1, text: "" })}
+        onChange={(next) => onChange(withOptional({ ...cfg }, "responses", next.length ? next : undefined))}
+        render={(r, set) => (
+          <div className="box__row">
+            <NumberField label={t.t("From guess")} value={r.after_attempts} onChange={(n) => set(withOptional({ ...r }, "after_attempts", n))} />
+            <input className="field__input" value={r.text} placeholder={t.t("Not quite…")} onChange={(e) => set({ ...r, text: e.target.value })} aria-label={t.t("Reply")} />
+          </div>
+        )}
+        addLabel={t.t("Add reply")}
+      />
+    ),
+  });
+
+  const hints = cfg.hints ?? [];
+  parts.push({
+    id: "hints",
+    title: t.t("Hints"),
+    count: hints.length || undefined,
+    summary: hints.length ? (
+      <>
+        {hints.map((h, i) => (
+          <SumRow key={i} label={[t.t("after {{time}}", { time: fmtSecs(t, h.delay_seconds ?? 0) }), h.cost ? t.t("−{{n}} p", { n: h.cost }) : ""].filter(Boolean).join(" · ")}>
+            {clip(h.text) || <SumNone>{t.t("empty")}</SumNone>}
+          </SumRow>
+        ))}
+      </>
+    ) : (
+      <SumNone>{t.t("None")}</SumNone>
+    ),
+    editor: (
+      <ListEditor<Hint>
+        items={hints}
+        make={() => ({ text: "", delay_seconds: 120 })}
+        onChange={(next) => onChange(withOptional({ ...cfg }, "hints", next.length ? next : undefined))}
+        render={(h, set) => (
+          <>
+            <textarea className="field__input" rows={2} value={h.text} onChange={(e) => set({ ...h, text: e.target.value })} aria-label={t.t("Hint")} />
             <div className="box__row">
-              <NumberField label={t.t("From guess")} value={r.after_attempts} onChange={(n) => set(withOptional({ ...r }, "after_attempts", n))} />
-              <input className="field__input" value={r.text} placeholder={t.t("Not quite…")} onChange={(e) => set({ ...r, text: e.target.value })} aria-label={t.t("Reply")} />
+              <NumberField label={t.t("Available after (s)")} value={h.delay_seconds} onChange={(n) => set(withOptional({ ...h }, "delay_seconds", n))} />
+              <NumberField label={t.t("Costs points")} value={h.cost} onChange={(n) => set(withOptional({ ...h }, "cost", n))} />
             </div>
-          )}
-          addLabel={t.t("Add reply")}
-        />
-      </Section>
+            <MediaEditor media={h.media} onChange={(media) => set(withOptional({ ...h }, "media", media))} />
+          </>
+        )}
+        addLabel={t.t("Add hint")}
+      />
+    ),
+  });
 
-      <Section title={t.t("Hints")}>
-        <ListEditor<Hint>
-          items={cfg.hints ?? []}
-          make={() => ({ text: "", delay_seconds: 120 })}
-          onChange={(hints) => onChange(withOptional({ ...cfg }, "hints", hints.length ? hints : undefined))}
-          render={(h, set) => (
-            <>
-              <textarea className="field__input" rows={2} value={h.text} onChange={(e) => set({ ...h, text: e.target.value })} aria-label={t.t("Hint")} />
-              <div className="box__row">
-                <NumberField label={t.t("Available after (s)")} value={h.delay_seconds} onChange={(n) => set(withOptional({ ...h }, "delay_seconds", n))} />
-                <NumberField label={t.t("Costs points")} value={h.cost} onChange={(n) => set(withOptional({ ...h }, "cost", n))} />
-              </div>
-              <MediaEditor media={h.media} onChange={(media) => set(withOptional({ ...h }, "media", media))} />
-            </>
-          )}
-          addLabel={t.t("Add hint")}
-        />
-      </Section>
-
-      {/* The settings most puzzles never need, closed until they are:
-          open by itself when any is set, so nothing set is ever hidden. */}
-      <details
-        className="insp__section insp__advanced"
-        open={!!(cfg.zone || cfg.time_limit_seconds || cfg.lockout_seconds || cfg.skip_after_guesses || cfg.skip_after_seconds || cfg.repeatable)}
-      >
-        <summary>{t.t("Advanced: place, time limits, skipping")}</summary>
-        <ZoneSelect
-          graph={graph}
-          label={t.t("Only answerable inside a zone")}
-          value={cfg.zone}
-          onChange={(zone) => onChange(withOptional({ ...cfg }, "zone", zone))}
-        />
+  // The settings most puzzles never need: the digest names only what is set.
+  const rules = [
+    cfg.zone && [t.t("Answerable"), t.t("inside {{zone}}", { zone: zoneName(graph, cfg.zone) })],
+    cfg.time_limit_seconds && [t.t("Time limit"), fmtSecs(t, cfg.time_limit_seconds)],
+    cfg.lockout_seconds && [t.t("Lockout after wrong"), fmtSecs(t, cfg.lockout_seconds)],
+    (cfg.skip_after_guesses || cfg.skip_after_seconds) && [
+      t.t("Skip"),
+      [cfg.skip_after_guesses ? t.t("after {{n}} guesses", { n: cfg.skip_after_guesses }) : "", cfg.skip_after_seconds ? t.t("after {{time}}", { time: fmtSecs(t, cfg.skip_after_seconds) }) : ""].filter(Boolean).join(t.t(" and ")),
+    ],
+    cfg.repeatable && answer?.kind !== "search" && [t.t("Coming back"), t.t("asked again")],
+  ].filter((x): x is string[] => !!x);
+  parts.push({
+    id: "rules",
+    title: t.t("Place, time limits, skipping"),
+    summary: rules.length ? (
+      <>
+        {rules.map(([label, value]) => (
+          <SumRow key={label} label={label}>
+            {value}
+          </SumRow>
+        ))}
+      </>
+    ) : (
+      <SumNone>{t.t("Anywhere, no time limit, no skipping")}</SumNone>
+    ),
+    editor: (
+      <>
+        <ZoneSelect graph={graph} label={t.t("Only answerable inside a zone")} value={cfg.zone} onChange={(zone) => onChange(withOptional({ ...cfg }, "zone", zone))} />
         <div className="box__row box__row--wrap">
           <NumberField label={t.t("Time limit (s)")} value={cfg.time_limit_seconds} onChange={(n) => onChange(withOptional({ ...cfg }, "time_limit_seconds", n))} />
           <NumberField label={t.t("Lockout after wrong (s)")} value={cfg.lockout_seconds} onChange={(n) => onChange(withOptional({ ...cfg }, "lockout_seconds", n))} />
@@ -483,9 +756,10 @@ function PuzzleForm({ cfg, graph, onChange }: { cfg: PuzzleConfig; graph: Graph;
           <input type="checkbox" checked={!!cfg.repeatable} onChange={(e) => onChange(withOptional({ ...cfg }, "repeatable", e.target.checked || undefined))} />
           {t.t("Ask again if the team comes back")}
         </label>
-      </details>
-    </>
-  );
+      </>
+    ),
+  });
+  return parts;
 }
 
 const MATCHERS: { k: MatcherKind; label: string }[] = [
@@ -563,127 +837,170 @@ const POLICIES: { p: Policy; label: string; hint: string }[] = [
   { p: "random", label: "Random", hint: "Random, but reproducible for each team." },
 ];
 
-function HubForm({ cfg, graph, onChange, onHome }: { cfg: HubConfig; graph: Graph; onChange: (c: HubConfig) => void; onHome: (home: boolean) => void }) {
-  const t = useT();
+function hubParts(cfg: HubConfig, graph: Graph, onChange: (c: HubConfig) => void, onHome: (home: boolean) => void, t: T): Part[] {
   const branches = cfg.branches ?? [];
   const policy = POLICIES.find((p) => p.p === cfg.policy);
-
-  return (
-    <>
-      {cfg.policy === "choice" && (
-        <label className="check">
-          <input type="checkbox" checked={!!cfg.home} onChange={(e) => onHome(e.target.checked)} />
-          <span>
-            {t.t("Home screen")}
-            <span className="field__hint check__hint">
-              {t.t("Teams keep coming back here. Branches stay open after a visit, teams can go back here from anywhere inside them, and it never finishes — end the adventure from one of its branches.")}
-            </span>
-          </span>
-        </label>
-      )}
-      <Field label={t.t("How branches are picked")} hint={policy ? t.t(policy.hint) : undefined}>
-        <select className="field__input" value={cfg.policy} onChange={(e) => onChange({ ...cfg, policy: e.target.value as Policy })}>
-          {POLICIES.map((p) => (
-            <option key={p.p} value={p.p}>
-              {t.t(p.label)}
-            </option>
-          ))}
-        </select>
-      </Field>
-      {!cfg.home && (
-        <Field label={t.t("Branches required before moving on")} hint={t.t("Leave empty for all of them.")}>
-          <input
-            className="field__input"
-            type="number"
-            min={0}
-            max={branches.length}
-            value={cfg.required ?? ""}
-            onChange={(e) => onChange(withOptional({ ...cfg }, "required", e.target.value === "" ? undefined : Number(e.target.value)))}
-          />
-        </Field>
-      )}
-      {cfg.policy === "choice" && (
-        <label className="check">
-          <input type="checkbox" checked={!!cfg.hide_locked} onChange={(e) => onChange(withOptional({ ...cfg }, "hide_locked", e.target.checked || undefined))} />
-          {t.t("Hide branches that are not open yet")}
-        </label>
-      )}
-
-      {cfg.policy === "choice" && (
+  const parts: Part[] = [
+    {
+      id: "setup",
+      title: t.t("How branches are picked"),
+      summary: (
+        <>
+          <SumRow label={t.t("Picked")}>{policy ? t.t(policy.label) : cfg.policy}</SumRow>
+          {cfg.home ? (
+            <SumRow label={t.t("Home screen")}>{t.t("yes — teams keep coming back")}</SumRow>
+          ) : (
+            <SumRow label={t.t("Moves on after")}>{cfg.required ? t.t("{{n}} of {{total}} branches", { n: cfg.required, total: branches.length }) : t.t("all branches")}</SumRow>
+          )}
+          {cfg.policy === "choice" && cfg.hide_locked && <SumRow label={t.t("Closed branches")}>{t.t("hidden")}</SumRow>}
+        </>
+      ),
+      editor: (
+        <>
+          <Field label={t.t("How branches are picked")} hint={policy ? t.t(policy.hint) : undefined}>
+            <select className="field__input" value={cfg.policy} onChange={(e) => onChange({ ...cfg, policy: e.target.value as Policy })}>
+              {POLICIES.map((p) => (
+                <option key={p.p} value={p.p}>
+                  {t.t(p.label)}
+                </option>
+              ))}
+            </select>
+          </Field>
+          {cfg.policy === "choice" && (
+            <label className="check">
+              <input type="checkbox" checked={!!cfg.home} onChange={(e) => onHome(e.target.checked)} />
+              <span>
+                {t.t("Home screen")}
+                <span className="field__hint check__hint">
+                  {t.t("Teams keep coming back here. Branches stay open after a visit, teams can go back here from anywhere inside them, and it never finishes — end the adventure from one of its branches.")}
+                </span>
+              </span>
+            </label>
+          )}
+          {!cfg.home && (
+            <Field label={t.t("Branches required before moving on")} hint={t.t("Leave empty for all of them.")}>
+              <input
+                className="field__input"
+                type="number"
+                min={0}
+                max={branches.length}
+                value={cfg.required ?? ""}
+                onChange={(e) => onChange(withOptional({ ...cfg }, "required", e.target.value === "" ? undefined : Number(e.target.value)))}
+              />
+            </Field>
+          )}
+          {cfg.policy === "choice" && (
+            <label className="check">
+              <input type="checkbox" checked={!!cfg.hide_locked} onChange={(e) => onChange(withOptional({ ...cfg }, "hide_locked", e.target.checked || undefined))} />
+              {t.t("Hide branches that are not open yet")}
+            </label>
+          )}
+        </>
+      ),
+    },
+  ];
+  if (cfg.policy === "choice")
+    parts.push({
+      id: "text",
+      title: t.t("What the team sees"),
+      editor: (
         <Field label={t.t("Text")} hint={t.t("Shown above the branches. Markdown. Empty says “Choose where to go next.”")}>
           <textarea className="field__input" rows={3} value={cfg.text ?? ""} onChange={(e) => onChange(withOptional({ ...cfg }, "text", e.target.value || undefined))} />
         </Field>
-      )}
-
-      <Section title={t.t("Branches")}>
-        {branches.map((b, i) => (
-          <div key={b.port} className="box">
-            <div className="box__row">
+      ),
+    });
+  parts.push({
+    id: "branches",
+    title: t.t("Branches"),
+    count: branches.length,
+    ports: true,
+    summary: (
+      <>
+        {branches.map((b) => (
+          <SumRow key={b.port} label={b.label || b.port}>
+            {[
+              b.note ? clip(b.note, 40) : "",
+              cfg.policy === "capacity" && b.capacity ? t.t("max {{n}} teams", { n: b.capacity }) : "",
+              b.condition?.op ? t.t("only when…") : "",
+            ]
+              .filter(Boolean)
+              .join(" · ") || <SumNone>{t.t("always offered")}</SumNone>}
+          </SumRow>
+        ))}
+      </>
+    ),
+    editor: (
+      <>
+      {branches.map((b, i) => (
+        <div key={b.port} className="box">
+          <div className="box__row">
+            <input
+              className="field__input"
+              value={b.label ?? ""}
+              placeholder={b.port}
+              onChange={(e) => onChange({ ...cfg, branches: branches.map((x, j) => (j === i ? { ...b, label: e.target.value } : x)) })}
+              aria-label={t.t("Branch label")}
+            />
+            {cfg.policy === "capacity" && (
+              <NumberField
+                label={t.t("Max teams")}
+                value={b.capacity}
+                onChange={(n) => onChange({ ...cfg, branches: branches.map((x, j) => (j === i ? withOptional({ ...b }, "capacity", n) : x)) })}
+              />
+            )}
+            <button
+              type="button"
+              className="link-btn"
+              disabled={branches.length <= 1}
+              onClick={() => onChange({ ...cfg, branches: branches.filter((_, j) => j !== i) })}
+            >
+              {t.t("Remove")}
+            </button>
+          </div>
+          {cfg.policy === "choice" && (
+            <details className="box__more" open={!!(b.note || b.image)}>
+              <summary>{t.t("Tile: subtitle and picture")}</summary>
               <input
                 className="field__input"
-                value={b.label ?? ""}
-                placeholder={b.port}
-                onChange={(e) => onChange({ ...cfg, branches: branches.map((x, j) => (j === i ? { ...b, label: e.target.value } : x)) })}
-                aria-label={t.t("Branch label")}
+                value={b.note ?? ""}
+                placeholder={t.t("A line under the label")}
+                aria-label={t.t("Subtitle")}
+                onChange={(e) => onChange({ ...cfg, branches: branches.map((x, j) => (j === i ? withOptional({ ...b }, "note", e.target.value || undefined) : x)) })}
               />
-              {cfg.policy === "capacity" && (
-                <NumberField
-                  label={t.t("Max teams")}
-                  value={b.capacity}
-                  onChange={(n) => onChange({ ...cfg, branches: branches.map((x, j) => (j === i ? withOptional({ ...b }, "capacity", n) : x)) })}
-                />
-              )}
-              <button
-                type="button"
-                className="link-btn"
-                disabled={branches.length <= 1}
-                onClick={() => onChange({ ...cfg, branches: branches.filter((_, j) => j !== i) })}
-              >
-                {t.t("Remove")}
-              </button>
-            </div>
-            {cfg.policy === "choice" && (
-              <details className="box__more" open={!!(b.note || b.image)}>
-                <summary>{t.t("Tile: subtitle and picture")}</summary>
-                <input
-                  className="field__input"
-                  value={b.note ?? ""}
-                  placeholder={t.t("A line under the label")}
-                  aria-label={t.t("Subtitle")}
-                  onChange={(e) => onChange({ ...cfg, branches: branches.map((x, j) => (j === i ? withOptional({ ...b }, "note", e.target.value || undefined) : x)) })}
-                />
-                <MediaEditor
-                  single
-                  media={b.image ? [b.image] : undefined}
-                  onChange={(m) => onChange({ ...cfg, branches: branches.map((x, j) => (j === i ? withOptional({ ...b }, "image", m?.[0]) : x)) })}
-                />
-              </details>
-            )}
-            <details className="box__more" open={!!b.condition?.op}>
-              <summary>{t.t("Only offer when…")}</summary>
-              <ConditionEditor
-                graph={graph}
-                value={b.condition ?? { op: "" }}
-                onChange={(c) =>
-                  onChange({ ...cfg, branches: branches.map((x, j) => (j === i ? withOptional({ ...b }, "condition", c.op ? c : undefined) : x)) })
-                }
+              <MediaEditor
+                single
+                media={b.image ? [b.image] : undefined}
+                onChange={(m) => onChange({ ...cfg, branches: branches.map((x, j) => (j === i ? withOptional({ ...b }, "image", m?.[0]) : x)) })}
               />
             </details>
-          </div>
-        ))}
-        <button
-          type="button"
-          className="link-btn"
-          onClick={() => {
-            const port = nextBranchPort(branches.map((b) => b.port));
-            onChange({ ...cfg, branches: [...branches, { port, label: port.toUpperCase() }] });
-          }}
-        >
-          + {t.t("Add branch")}
-        </button>
-      </Section>
-    </>
-  );
+          )}
+          <details className="box__more" open={!!b.condition?.op}>
+            <summary>{t.t("Only offer when…")}</summary>
+            <ConditionEditor
+              graph={graph}
+              value={b.condition ?? { op: "" }}
+              onChange={(c) =>
+                onChange({ ...cfg, branches: branches.map((x, j) => (j === i ? withOptional({ ...b }, "condition", c.op ? c : undefined) : x)) })
+              }
+            />
+          </details>
+        </div>
+      ))}
+      <button
+        type="button"
+        className="link-btn"
+        onClick={() => {
+          const port = nextBranchPort(branches.map((b) => b.port));
+          onChange({ ...cfg, branches: [...branches, { port, label: port.toUpperCase() }] });
+        }}
+      >
+        + {t.t("Add branch")}
+      </button>
+    
+      </>
+    ),
+  });
+  return parts;
 }
 
 /** a, b, … z, then branch-27, branch-28 — never a port already in use. */
@@ -694,8 +1011,7 @@ function HubForm({ cfg, graph, onChange, onHome }: { cfg: HubConfig; graph: Grap
  * working. Typed answers remain, folded away, for open questions whose
  * puzzle accepts anything. "Any other answer" is always there.
  */
-function SwitchForm({ node, graph, onGraphChange }: { node: Node; graph: Graph; onGraphChange: (g: Graph) => void }) {
-  const t = useT();
+function switchParts(node: Node, graph: Graph, onGraphChange: (g: Graph) => void, t: T): Part[] {
   const cfg: SwitchConfig = node.switch ?? {};
   const cases = cfg.cases ?? [];
   const puzzles = graph.nodes.filter((n) => n.type === "puzzle");
@@ -708,104 +1024,132 @@ function SwitchForm({ node, graph, onGraphChange }: { node: Node; graph: Graph; 
   const setCfg = (g: Graph, next: SwitchConfig) => onGraphChange(updateNode(g, node.slug, (n) => ({ ...n, switch: next })));
   const setCase = (g: Graph, i: number, c: Case) => setCfg(g, { ...cfg, cases: cases.map((x, j) => (j === i ? c : x)) });
 
-  return (
-    <>
-      <Field label={t.t("Which answer?")}>
-        <select className="field__input" value={cfg.from ?? ""} onChange={(e) => setCfg(graph, withOptional({ ...cfg }, "from", e.target.value || undefined))}>
-          <option value="">{t.t("The answer just given")}</option>
-          {puzzles.map((p) => (
-            <option key={p.slug} value={p.slug}>
-              {t.t("The answer to “{{title}}”", { title: p.title || p.slug })}
-            </option>
+  const parts: Part[] = [
+    {
+      id: "source",
+      title: t.t("Which answer?"),
+      editor: (
+        <>
+          <select className="field__input" value={cfg.from ?? ""} onChange={(e) => setCfg(graph, withOptional({ ...cfg }, "from", e.target.value || undefined))} aria-label={t.t("Which answer?")}>
+            <option value="">{t.t("The answer just given")}</option>
+            {puzzles.map((p) => (
+              <option key={p.slug} value={p.slug}>
+                {t.t("The answer to “{{title}}”", { title: p.title || p.slug })}
+              </option>
+            ))}
+          </select>
+          {sources.length === 0 && (
+            <p className="field__hint">{t.t("Connect a puzzle to this crossroads, or pick one above, to choose from its answers.")}</p>
+          )}
+        </>
+      ),
+    },
+    {
+      id: "paths",
+      title: t.t("Paths"),
+      hint: t.t("Checked from the top; the first that fits the answer is taken. Anything else takes “Any other answer”."),
+      count: cases.length,
+      ports: true,
+      summary: (
+        <>
+          {cases.map((c) => (
+            <SumRow key={c.port} label={c.label || c.port}>
+              {[...(c.answers ?? []).map((ref) => resolveAnswer(graph, ref)?.label ?? t.t("(answer removed)")), ...(c.matchers ?? []).map(matcherLabel)].join(" / ") || (
+                <SumNone>{t.t("no answers yet")}</SumNone>
+              )}
+            </SumRow>
           ))}
-        </select>
-      </Field>
-      {sources.length === 0 && (
-        <p className="field__hint">{t.t("Connect a puzzle to this crossroads, or pick one above, to choose from its answers.")}</p>
-      )}
-
-      <Section title={t.t("Paths")} hint={t.t("Checked from the top; the first that fits the answer is taken. Anything else takes “Any other answer”.")}>
-        {cases.map((c, i) => {
-          const chosen = c.answers ?? [];
-          const free = options.filter((o) => !o.ref || !chosen.includes(o.ref));
-          return (
-            <div key={c.port} className="box">
-              <div className="box__row">
-                <input
-                  className="field__input"
-                  value={c.label ?? ""}
-                  placeholder={c.port}
-                  onChange={(e) => setCase(graph, i, { ...c, label: e.target.value })}
-                  aria-label={t.t("Path name")}
-                />
-                <button type="button" className="link-btn" onClick={() => setCfg(graph, { ...cfg, cases: cases.filter((_, j) => j !== i) })}>
-                  {t.t("Remove")}
-                </button>
-              </div>
-
-              <div className="answer-chips">
-                {chosen.map((ref) => {
-                  const a = resolveAnswer(graph, ref);
-                  return (
-                    <span key={ref} className={"answer-chip" + (a ? "" : " is-gone")}>
-                      {a ? a.label : t.t("(answer removed)")}
-                      {a && sources.length > 1 && <small> · {titleOf(a.node)}</small>}
-                      <button
-                        type="button"
-                        aria-label={t.t("Remove")}
-                        onClick={() => setCase(graph, i, withOptional({ ...c }, "answers", chosen.filter((r) => r !== ref).length ? chosen.filter((r) => r !== ref) : undefined))}
-                      >
-                        ×
-                      </button>
-                    </span>
-                  );
-                })}
-                {free.length > 0 && (
-                  <select
-                    className="field__input answer-add"
-                    value=""
-                    aria-label={t.t("Add an answer")}
-                    onChange={(e) => {
-                      const opt = free[Number(e.target.value)];
-                      if (!opt) return;
-                      const { graph: g, ref } = referAnswer(graph, opt);
-                      setCase(g, i, { ...c, answers: [...chosen, ref] });
-                    }}
-                  >
-                    <option value="">{t.t("+ Add an answer…")}</option>
-                    {free.map((o, k) => (
-                      <option key={k} value={k}>
-                        {sources.length > 1 ? `${titleOf(o.node)}: ${o.label}` : o.label}
-                      </option>
-                    ))}
-                  </select>
-                )}
-              </div>
-
-              <details className="box__more" open={(c.matchers?.length ?? 0) > 0 || options.length === 0}>
-                <summary>{t.t("Or type answers")}</summary>
-                <p className="field__hint">{t.t("For open questions, where the puzzle accepts any answer. Typed answers do not follow spelling fixes in the puzzle.")}</p>
-                <MatcherList
-                  matchers={c.matchers ?? []}
-                  onChange={(matchers) => setCase(graph, i, withOptional({ ...c }, "matchers", matchers.length ? matchers : undefined))}
-                />
-              </details>
+          <SumRow label={t.t("Any other answer")}>
+            <SumNone>{t.t("everything else")}</SumNone>
+          </SumRow>
+        </>
+      ),
+      editor: (
+        <>
+      {cases.map((c, i) => {
+        const chosen = c.answers ?? [];
+        const free = options.filter((o) => !o.ref || !chosen.includes(o.ref));
+        return (
+          <div key={c.port} className="box">
+            <div className="box__row">
+              <input
+                className="field__input"
+                value={c.label ?? ""}
+                placeholder={c.port}
+                onChange={(e) => setCase(graph, i, { ...c, label: e.target.value })}
+                aria-label={t.t("Path name")}
+              />
+              <button type="button" className="link-btn" onClick={() => setCfg(graph, { ...cfg, cases: cases.filter((_, j) => j !== i) })}>
+                {t.t("Remove")}
+              </button>
             </div>
-          );
-        })}
-        <button
-          type="button"
-          className="link-btn"
-          onClick={() => {
-            const port = nextBranchPort(cases.map((c) => c.port));
-            setCfg(graph, { ...cfg, cases: [...cases, { port, label: port.toUpperCase() }] });
-          }}
-        >
-          + {t.t("Add path")}
-        </button>
-      </Section>
-    </>
-  );
+
+            <div className="answer-chips">
+              {chosen.map((ref) => {
+                const a = resolveAnswer(graph, ref);
+                return (
+                  <span key={ref} className={"answer-chip" + (a ? "" : " is-gone")}>
+                    {a ? a.label : t.t("(answer removed)")}
+                    {a && sources.length > 1 && <small> · {titleOf(a.node)}</small>}
+                    <button
+                      type="button"
+                      aria-label={t.t("Remove")}
+                      onClick={() => setCase(graph, i, withOptional({ ...c }, "answers", chosen.filter((r) => r !== ref).length ? chosen.filter((r) => r !== ref) : undefined))}
+                    >
+                      ×
+                    </button>
+                  </span>
+                );
+              })}
+              {free.length > 0 && (
+                <select
+                  className="field__input answer-add"
+                  value=""
+                  aria-label={t.t("Add an answer")}
+                  onChange={(e) => {
+                    const opt = free[Number(e.target.value)];
+                    if (!opt) return;
+                    const { graph: g, ref } = referAnswer(graph, opt);
+                    setCase(g, i, { ...c, answers: [...chosen, ref] });
+                  }}
+                >
+                  <option value="">{t.t("+ Add an answer…")}</option>
+                  {free.map((o, k) => (
+                    <option key={k} value={k}>
+                      {sources.length > 1 ? `${titleOf(o.node)}: ${o.label}` : o.label}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+
+            <details className="box__more" open={(c.matchers?.length ?? 0) > 0 || options.length === 0}>
+              <summary>{t.t("Or type answers")}</summary>
+              <p className="field__hint">{t.t("For open questions, where the puzzle accepts any answer. Typed answers do not follow spelling fixes in the puzzle.")}</p>
+              <MatcherList
+                matchers={c.matchers ?? []}
+                onChange={(matchers) => setCase(graph, i, withOptional({ ...c }, "matchers", matchers.length ? matchers : undefined))}
+              />
+            </details>
+          </div>
+        );
+      })}
+      <button
+        type="button"
+        className="link-btn"
+        onClick={() => {
+          const port = nextBranchPort(cases.map((c) => c.port));
+          setCfg(graph, { ...cfg, cases: [...cases, { port, label: port.toUpperCase() }] });
+        }}
+      >
+        + {t.t("Add path")}
+      </button>
+    
+        </>
+      ),
+    },
+  ];
+  return parts;
 }
 
 function nextBranchPort(taken: string[]): string {
@@ -885,16 +1229,6 @@ function Field({ label, hint, children }: { label: string; hint?: string | undef
   );
 }
 
-function Section({ title, hint, children }: { title: string; hint?: string; children: ReactNode }) {
-  return (
-    <section className="insp__section">
-      <h3>{title}</h3>
-      {hint && <p className="field__hint">{hint}</p>}
-      {children}
-    </section>
-  );
-}
-
 /**
  * A combination lock: how many wheels, the symbols they turn through, and
  * the right combination — written as the first route's answer, which is
@@ -919,7 +1253,7 @@ function LockForm({ cfg, lock, onChange }: { cfg: PuzzleConfig; lock: AnswerOf<"
   };
 
   return (
-    <Section title={t.t("Combination lock")} hint={t.t("The team turns each wheel through the same symbols and tries the combination. A wrong one gets the wrong-answer replies.")}>
+    <>
       <div className="box__row">
         <NumberField label={t.t("Wheels")} value={lock.wheels} onChange={(n) => setLock({ ...lock, wheels: Math.min(6, Math.max(1, Math.round(n ?? 1))) })} />
       </div>
@@ -969,7 +1303,7 @@ function LockForm({ cfg, lock, onChange }: { cfg: PuzzleConfig; lock: AnswerOf<"
           ))}
         </div>
       </Field>
-    </Section>
+    </>
   );
 }
 
@@ -992,10 +1326,7 @@ function ChoicesForm({ cfg, choice: choices, onChange }: { cfg: PuzzleConfig; ch
   };
 
   return (
-    <Section
-      title={graded ? t.t("Marked form") : t.t("Multiple choice")}
-      hint={graded ? t.t("Every question has a right answer. The team sends all of them in at once.") : t.t("The option tapped is the answer the routes below match.")}
-    >
+    <>
       {choices.fields.map((f, i) => (
         <div key={i} className="box">
           <div className="box__row">
@@ -1047,7 +1378,7 @@ function ChoicesForm({ cfg, choice: choices, onChange }: { cfg: PuzzleConfig; ch
           </button>
         )}
       </div>
-    </Section>
+    </>
   );
 }
 
@@ -1060,7 +1391,7 @@ function SearchForm({ cfg, search, graph, onChange }: { cfg: PuzzleConfig; searc
   const t = useT();
   const groups = [...new Set((graph.zones ?? []).map((z) => z.group).filter((g): g is string => !!g))];
   return (
-    <Section title={t.t("Search by place")} hint={t.t("No typing: the team presses Search here, and the route below whose zone it stands in is taken. Anywhere else, the wrong-answer replies say what it found.")}>
+    <>
       <Field label={t.t("Tell the team which of these it is in")} hint={groups.length ? undefined : t.t("Give zones a group under Adventure settings → Zones, such as the cells of a grid.")}>
         <select
           className="field__input"
@@ -1079,7 +1410,7 @@ function SearchForm({ cfg, search, graph, onChange }: { cfg: PuzzleConfig; searc
         <input type="checkbox" checked={!!cfg.repeatable} onChange={(e) => onChange(withOptional({ ...cfg }, "repeatable", e.target.checked || undefined))} />
         {t.t("Can be searched again on a later visit")}
       </label>
-    </Section>
+    </>
   );
 }
 
@@ -1091,7 +1422,7 @@ function TilesForm({ tiles, onChange }: { tiles: AnswerOf<"tiles">; onChange: (t
   const t = useT();
   const clamp = (n: number | undefined) => Math.min(8, Math.max(2, Math.round(n ?? 3)));
   return (
-    <Section title={t.t("Tile puzzle")} hint={t.t("The picture is cut into a grid and shuffled. Teams swap pieces until it is whole.")}>
+    <>
       <MediaEditor
         single
         media={tiles.image ? [tiles.image] : undefined}
@@ -1102,7 +1433,7 @@ function TilesForm({ tiles, onChange }: { tiles: AnswerOf<"tiles">; onChange: (t
         <NumberField label={t.t("Columns")} value={tiles.cols} onChange={(n) => onChange({ ...tiles, cols: clamp(n) })} />
       </div>
       <p className="field__hint">{t.t("{{n}} pieces. 3 × 3 is quick; 4 × 5 takes a few minutes.", { n: tiles.rows * tiles.cols })}</p>
-    </Section>
+    </>
   );
 }
 

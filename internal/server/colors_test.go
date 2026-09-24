@@ -26,7 +26,7 @@ func TestColors_PatchRoundTripsThroughEdit(t *testing.T) {
 	defer cleanup()
 	admin := newClient(t, ts)
 	if s := admin.do("POST", "/api/auth/login",
-		map[string]string{"username": "root", "password": "rootpw"}, nil); s != 200 {
+		map[string]string{"username": "pub", "password": "pubpw"}, nil); s != 200 {
 		t.Fatalf("admin login = %d", s)
 	}
 
@@ -77,7 +77,7 @@ func TestColors_HexValidation(t *testing.T) {
 	defer cleanup()
 	admin := newClient(t, ts)
 	if s := admin.do("POST", "/api/auth/login",
-		map[string]string{"username": "root", "password": "rootpw"}, nil); s != 200 {
+		map[string]string{"username": "pub", "password": "pubpw"}, nil); s != 200 {
 		t.Fatalf("admin login = %d", s)
 	}
 
@@ -129,7 +129,7 @@ func TestColors_SurfaceInPlayerState(t *testing.T) {
 
 	admin := newClient(t, ts)
 	if s := admin.do("POST", "/api/auth/login",
-		map[string]string{"username": "root", "password": "rootpw"}, nil); s != 200 {
+		map[string]string{"username": "pub", "password": "pubpw"}, nil); s != 200 {
 		t.Fatalf("admin login = %d", s)
 	}
 	if s := admin.do("PATCH", "/api/admin/adventures/demo",
@@ -185,7 +185,7 @@ func TestColors_SurfaceInLiveSnapshot(t *testing.T) {
 	defer cleanup()
 	admin := newClient(t, ts)
 	if s := admin.do("POST", "/api/auth/login",
-		map[string]string{"username": "root", "password": "rootpw"}, nil); s != 200 {
+		map[string]string{"username": "pub", "password": "pubpw"}, nil); s != 200 {
 		t.Fatalf("admin login = %d", s)
 	}
 	if s := admin.do("PATCH", "/api/admin/adventures/demo",

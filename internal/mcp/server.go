@@ -147,7 +147,7 @@ func (s *Server) dispatch(ctx context.Context, req Request) (Response, bool) {
 	case "ping":
 		out.Result = map[string]any{}
 	case "tools/list":
-		out.Result = map[string]any{"tools": s.tools.list()}
+		out.Result = map[string]any{"tools": s.tools.list(ctx)}
 	case "tools/call":
 		var p ToolCallParams
 		if err := json.Unmarshal(req.Params, &p); err != nil {

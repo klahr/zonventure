@@ -21,83 +21,24 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 	// Arranger subscription stream: mutations still use the /api/admin
 	// HTTP endpoints above; this socket exists only to push event-detail
 	// updates (positions, tracks, events, run+teams) on change. Lobby
-	// users have no org scope to subscribe to and are excluded.
+	// users and the platform admin have no org scope to subscribe to
+	// and are excluded.
 	r.Group(func(r chi.Router) {
-		r.Use(auth.RequireAnyRole(auth.RoleAdmin, auth.RoleOrgAdmin, auth.RoleOrgMember))
+		r.Use(auth.RequireAnyRole(auth.RoleOrgAdmin, auth.RoleOrgMember))
 		r.Get("/ws/arrange", adminH.WSArrange)
 	})
 
 	// Admin / org-user surface (staff-authenticated). RequireCSRF runs
 	// after RequireAnyRole so the 401 for "no session" still wins
 	// (pre-auth callers don't care about the CSRF distinction).
+	//
+	// Three audiences: routes every staff user reaches (accounts,
+	// members, purchases read-side), org-user routes (authoring and
+	// running events — the platform admin gets 403, they neither author
+	// nor run events), and the platform admin's operator routes.
 	r.Route("/api/admin", func(r chi.Router) {
 		r.Use(auth.RequireAnyRole(auth.RoleAdmin, auth.RoleOrgAdmin, auth.RoleOrgMember, auth.RoleLobby))
 		r.Use(auth.RequireCSRF())
-
-		r.Get("/adventures", adminH.ListAdventures)
-		r.Get("/adventures/{slug}", adminH.AdventureDetail)
-		// Preview: render any puzzle in the shape /play expects so an
-		// arranger can QA the adventure without a real run.
-		r.Get("/adventures/{slug}/preview", adminH.PreviewAdventure)
-		// Live markdown → HTML for the arrange editor's preview panes.
-		// Pure function; no DB access, no org scoping needed.
-		r.Post("/markdown/preview", adminH.PreviewMarkdown)
-
-		r.Get("/events", adminH.ListEvents)
-		r.Post("/events", adminH.CreateEvent)
-		r.Get("/events/{eventID}", adminH.EventDetail)
-		r.Patch("/events/{eventID}", adminH.UpdateEvent)
-		r.Post("/events/{eventID}/cover", adminH.SetEventCover)
-		r.Delete("/events/{eventID}/cover", adminH.DeleteEventCover)
-		r.Post("/events/{eventID}/start", adminH.StartEvent)
-		r.Post("/events/{eventID}/pause", adminH.PauseEvent)
-		r.Post("/events/{eventID}/resume", adminH.ResumeEvent)
-		r.Post("/events/{eventID}/cancel", adminH.CancelEvent)
-		r.Post("/events/{eventID}/teams", adminH.CreateTeam)
-		r.Post("/events/{eventID}/teams/bulk", adminH.BulkCreateTeams)
-		// Team-roster file import — multipart upload, returns a
-		// parsed preview the client then submits to /teams/bulk
-		// after the arranger inspects it.
-		r.Post("/events/{eventID}/teams/import", adminH.ImportTeams)
-		r.Get("/events/{eventID}/positions", adminH.ListPositions)
-		r.Get("/events/{eventID}/activity", adminH.ListActivity)
-		r.Get("/events/{eventID}/tracks", adminH.ListTracks)
-		r.Get("/events/{eventID}/results.csv", adminH.ExportEventResults)
-		// Branded recap PDF — same data, different shape: a polished
-		// post-event artifact arrangers can hand to their stakeholders.
-		// Mounted alongside the CSV so the same authorize-event check
-		// gates both.
-		r.Get("/events/{eventID}/recap.pdf", adminH.ExportEventRecapPDF)
-		// iCalendar invite — arrangers download once and forward to
-		// participants so the event lands on everyone's calendar.
-		r.Get("/events/{eventID}/invite.ics", adminH.ExportEventInviteICS)
-		// Send-invitations: proactive variant of the recover-link
-		// flow. Iterates teams with non-empty contact emails and
-		// mails each one their own slot links + the .ics. Same
-		// authorize-event gate as the export endpoints — Race directors
-		// (org_member) can invoke it; this is "running the game",
-		// not authoring.
-		r.Post("/events/{eventID}/invitations/send", adminH.SendEventInvitations)
-
-		r.Patch("/teams/{teamID}", adminH.UpdateTeam)
-		r.Delete("/teams/{teamID}", adminH.DeleteTeam)
-		r.Post("/teams/{teamID}/avatar", adminH.SetTeamAvatar)
-		r.Delete("/teams/{teamID}/avatar", adminH.DeleteTeamAvatar)
-		r.Post("/teams/{teamID}/slots", adminH.AddSlot)
-		r.Delete("/teams/{teamID}/slots/{slotID}", adminH.RemoveSlot)
-		r.Post("/teams/{teamID}/slots/{slotID}/rotate", adminH.RotateSlotToken)
-		r.Post("/teams/{teamID}/unlock", adminH.UnlockTeam)
-		// Withdraw / unwithdraw soft-flag a team that gave up mid-event
-		// without deleting them — they stay in the recap as
-		// "withdrew at puzzle 4" instead of vanishing from history.
-		r.Post("/teams/{teamID}/withdraw", adminH.WithdrawTeam)
-		r.Post("/teams/{teamID}/unwithdraw", adminH.UnwithdrawTeam)
-		// Per-team resend of the invitation email. Re-uses the team's
-		// existing slot tokens (no re-mint), so opening already-
-		// claimed sessions stays valid. Players who lost their session
-		// state should hit the public lost-magic-link recovery path
-		// instead — that's the explicit re-mint flow.
-		r.Post("/teams/{teamID}/invitations/send", adminH.SendTeamInvitation)
 
 		// Staff password reset (admins & org users).
 		r.Post("/users/{userID}/password", adminH.ResetPassword)
@@ -110,9 +51,6 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 		// / org_admin only. Returns up to 10 prefix matches that
 		// aren't admins and aren't already members of the target org.
 		r.Get("/users/search", adminH.SearchUsers)
-
-		// Caller's own assignments list.
-		r.Get("/assignments", adminH.ListMyAssignments)
 
 		// Org admin or global admin: manage an organization's members + a
 		// detail endpoint both admins and in-org users can read.
@@ -131,116 +69,8 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 		r.Get("/organizations/{orgID}/stripe-connect/status", adminH.GetStripeConnectStatus)
 		r.Post("/organizations/{orgID}/stripe-connect/refresh", adminH.RefreshStripeConnectStatus)
 
-		// Adventure authoring. Available to every authoring tier —
-		// handlers enforce ownership inline (admin edits the global
-		// catalog; org users edit their own org's adventures).
-		r.Get("/adventures/{slug}/edit", adminH.LoadAdventureForEdit)
-
-		// The adventure as a graph (internal/graph). Saving creates a new
-		// version; convert builds one from the lanes without saving.
-		r.Get("/adventures/{slug}/graph", adminH.GetAdventureGraph)
-		r.Put("/adventures/{slug}/graph", adminH.PutAdventureGraph)
-		r.Post("/adventures/{slug}/graph/publish", adminH.PublishAdventureGraph)
-		r.Get("/adventures/{slug}/graph/versions", adminH.ListAdventureGraphVersions)
-		r.Get("/adventures/{slug}/graph/versions/{version}", adminH.GetAdventureGraphVersion)
-		r.Post("/adventures/{slug}/graph/versions/{version}/publish", adminH.PublishAdventureGraphVersion)
-		r.Patch("/adventures/{slug}/graph/versions/{version}", adminH.LabelAdventureGraphVersion)
-		r.Post("/adventures/{slug}/graph/validate", adminH.ValidateAdventureGraph)
-		r.Post("/adventures/{slug}/graph/convert", adminH.ConvertAdventureGraph)
-		// Play the unsaved draft with the live rules: the designer's
-		// preview and simulator. Stateless — the client carries the team.
-		r.Post("/adventures/{slug}/simulate", adminH.SimulateAdventureGraph)
-		r.Post("/adventures/{slug}/media", adminH.UploadAdventureMedia)
-		r.Post("/adventures", adminH.CreateAdventure)
-		r.Patch("/adventures/{slug}", adminH.UpdateAdventure)
-		r.Delete("/adventures/{slug}", adminH.DeleteAdventure)
-		r.Post("/adventures/{slug}/avatar", adminH.SetAdventureAvatar)
-		r.Delete("/adventures/{slug}/avatar", adminH.DeleteAdventureAvatar)
-		// Clone a globally-visible adventure (catalog row or template)
-		// into the caller's org. Authoring-tier action: org_admin or
-		// admin only. See internal/admin/duplicate.go for the
-		// transactional copy logic.
-		r.Post("/adventures/{slug}/duplicate", adminH.DuplicateAdventure)
-		// Portability: zip-archive export of a single adventure
-		// (manifest + assets) and import that recreates one under
-		// the caller's org. The import endpoint sits at the
-		// adventures collection root because it has no slug yet.
-		r.Get("/adventures/{slug}/export", adminH.ExportAdventure)
-		r.Post("/adventures/import", adminH.ImportAdventure)
-		// Org-admin self-export of the whole org bundle (data-portability
-		// surface). Operator-side full export + import + redirect-mode
-		// flip live in the RoleAdmin-only block further down. The handler
-		// pins org_id to the caller's session and refuses anyone other
-		// than RoleOrgAdmin.
-		r.Get("/migrate/self-export", adminH.MigrateSelfExport)
-		// Org slug self-management: read + write the slug that powers
-		// /o/{slug}/store. Pinned to the caller's active org and
-		// gated to RoleOrgAdmin inside the handler so an org_member
-		// can't rename the URL out from under their team.
-		r.Get("/orgs/me/slug", adminH.GetMyOrgSlug)
-		r.Put("/orgs/me/slug", adminH.SetMyOrgSlug)
-		// Public-profile read/write (tagline, website, cover image)
-		// surfaced on /o/{slug}. Read is org-user, writes are
-		// gated to RoleOrgAdmin inside each handler.
-		r.Get("/orgs/me/profile", adminH.GetMyOrgProfile)
-		r.Put("/orgs/me/profile", adminH.SetMyOrgProfile)
-		r.Post("/orgs/me/cover", adminH.SetMyOrgCover)
-		r.Delete("/orgs/me/cover", adminH.DeleteMyOrgCover)
-		// Org-admin self-serve logo (mirror of admin-side
-		// /organizations/{id}/logo, but pinned to the caller's
-		// session). Lets an org_admin upload + replace the brand
-		// logo without involving platform support.
-		r.Post("/orgs/me/logo", adminH.SetMyOrgLogo)
-		r.Delete("/orgs/me/logo", adminH.DeleteMyOrgLogo)
-		r.Get("/adventures/{slug}/shares", adminH.ListAdventureShares)
-		r.Post("/adventures/{slug}/shares", adminH.GrantAdventureShare)
-		r.Delete("/adventures/{slug}/shares/{orgID}", adminH.RevokeAdventureShare)
-		r.Post("/adventures/{slug}/pages", adminH.CreatePage)
-		r.Patch("/adventures/{slug}/pages/reorder", adminH.ReorderPages)
-		// Lane CRUD. Reorder lives at /lanes/reorder rather than as
-		// a method-keyed verb so the router pattern stays decisive
-		// (no overlap with /lanes/{laneID}).
-		r.Post("/adventures/{slug}/lanes", adminH.CreateLane)
-		r.Post("/adventures/{slug}/lanes/reorder", adminH.ReorderLanes)
-		r.Patch("/adventures/{slug}/lanes/{laneID}", adminH.UpdateLane)
-		r.Delete("/adventures/{slug}/lanes/{laneID}", adminH.DeleteLane)
-		r.Post("/adventures/{slug}/pages/copy-from/{pageID}", adminH.CopyPuzzleToAdventure)
-		r.Patch("/pages/{pageID}", adminH.UpdatePage)
-		r.Delete("/pages/{pageID}", adminH.DeletePage)
-		// Duplicate one puzzle in place — Google Slides shape. The
-		// new row lands at sourceIdx + 1 with the rest of the
-		// adventure shifted down. Auth via requireEditPage so the
-		// org_member tightening carries through.
-		r.Post("/pages/{pageID}/duplicate", adminH.DuplicatePage)
-		r.Post("/pages/{pageID}/images", adminH.AddPageImage)
-		r.Patch("/images/{imageID}", adminH.UpdatePageImage)
-		r.Delete("/images/{imageID}", adminH.DeletePageImage)
-		// Per-hint image attachments. Hint images are addressed by
-		// their own image id under /hint-images/ so the puzzle-image
-		// patch/delete routes don't have to disambiguate which kind
-		// they're acting on.
-		r.Post("/hints/{hintID}/images", adminH.AddHintImage)
-		r.Patch("/hint-images/{imageID}", adminH.UpdateHintImage)
-		r.Delete("/hint-images/{imageID}", adminH.DeleteHintImage)
-		// Audio attachments — same shape as the image routes. PATCH
-		// only carries `description` (the WCAG transcript fallback);
-		// the blob itself is replaced by delete + re-upload.
-		r.Post("/pages/{pageID}/audio", adminH.AddPageAudio)
-		r.Patch("/audio/{audioID}", adminH.UpdatePageAudio)
-		r.Delete("/audio/{audioID}", adminH.DeletePageAudio)
-		r.Post("/hints/{hintID}/audio", adminH.AddHintAudio)
-		r.Patch("/hint-audio/{audioID}", adminH.UpdateHintAudio)
-		r.Delete("/hint-audio/{audioID}", adminH.DeleteHintAudio)
-
-		// Puzzle library (cross-adventure pool).
-		r.Get("/puzzles", adminH.ListPuzzles)
-		r.Post("/puzzles", adminH.CreateLibraryPuzzle)
-		r.Get("/puzzles/{pageID}", adminH.GetPuzzle)
-
-		// Purchases: arrangers buy player-slot assignments here. The
-		// simulated flow just needs the confirm endpoint; a future
-		// Stripe integration will also hit /confirm from a webhook.
-		r.Post("/purchases", adminH.CreatePurchase)
+		// Purchases read-side + confirm: arrangers see their own org's,
+		// the platform admin reconciles across orgs. Buying is org-only.
 		r.Get("/purchases", adminH.ListPurchases)
 		r.Get("/purchases/{purchaseID}", adminH.GetPurchase)
 		r.Post("/purchases/{purchaseID}/confirm", adminH.ConfirmPurchase)
@@ -301,20 +131,207 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 		r.Post("/me/totp/disable", adminH.DisableTOTP)
 		r.Post("/me/totp/recovery-codes/regenerate", adminH.RegenerateTOTPRecoveryCodes)
 
-		// Outbound webhooks: per-org subscription CRUD. Org-scoped
-		// (handlers reject admins without an org). The kinds catalog
-		// is read-only for clients to drive their UI.
-		r.Get("/webhooks", adminH.ListWebhooks)
-		r.Post("/webhooks", adminH.CreateWebhook)
-		r.Patch("/webhooks/{endpointID}", adminH.UpdateWebhook)
-		r.Delete("/webhooks/{endpointID}", adminH.DeleteWebhook)
-		r.Post("/webhooks/{endpointID}/rotate-secret", adminH.RotateWebhookSecret)
-		r.Post("/webhooks/{endpointID}/test", adminH.SendTestWebhook)
-		r.Get("/webhook-event-kinds", adminH.ListWebhookEventKinds)
-		// Delivery log: every attempt, statuses, errors, the raw
-		// payload bytes. Org-scoped via the join to webhook_endpoints
-		// inside the handler.
-		r.Get("/webhooks/deliveries", adminH.ListWebhookDeliveries)
+		// Org users only: authoring and running events.
+		r.Group(func(r chi.Router) {
+			r.Use(auth.RequireAnyRole(auth.RoleOrgAdmin, auth.RoleOrgMember))
+			r.Get("/adventures", adminH.ListAdventures)
+			r.Get("/adventures/{slug}", adminH.AdventureDetail)
+			// Preview: render any puzzle in the shape /play expects so an
+			// arranger can QA the adventure without a real run.
+			r.Get("/adventures/{slug}/preview", adminH.PreviewAdventure)
+			// Live markdown → HTML for the arrange editor's preview panes.
+			// Pure function; no DB access, no org scoping needed.
+			r.Post("/markdown/preview", adminH.PreviewMarkdown)
+
+			r.Get("/events", adminH.ListEvents)
+			r.Post("/events", adminH.CreateEvent)
+			r.Get("/events/{eventID}", adminH.EventDetail)
+			r.Patch("/events/{eventID}", adminH.UpdateEvent)
+			r.Post("/events/{eventID}/cover", adminH.SetEventCover)
+			r.Delete("/events/{eventID}/cover", adminH.DeleteEventCover)
+			r.Post("/events/{eventID}/start", adminH.StartEvent)
+			r.Post("/events/{eventID}/pause", adminH.PauseEvent)
+			r.Post("/events/{eventID}/resume", adminH.ResumeEvent)
+			r.Post("/events/{eventID}/cancel", adminH.CancelEvent)
+			r.Post("/events/{eventID}/teams", adminH.CreateTeam)
+			r.Post("/events/{eventID}/teams/bulk", adminH.BulkCreateTeams)
+			// Team-roster file import — multipart upload, returns a
+			// parsed preview the client then submits to /teams/bulk
+			// after the arranger inspects it.
+			r.Post("/events/{eventID}/teams/import", adminH.ImportTeams)
+			r.Get("/events/{eventID}/positions", adminH.ListPositions)
+			r.Get("/events/{eventID}/activity", adminH.ListActivity)
+			r.Get("/events/{eventID}/tracks", adminH.ListTracks)
+			r.Get("/events/{eventID}/results.csv", adminH.ExportEventResults)
+			// Branded recap PDF — same data, different shape: a polished
+			// post-event artifact arrangers can hand to their stakeholders.
+			// Mounted alongside the CSV so the same authorize-event check
+			// gates both.
+			r.Get("/events/{eventID}/recap.pdf", adminH.ExportEventRecapPDF)
+			// iCalendar invite — arrangers download once and forward to
+			// participants so the event lands on everyone's calendar.
+			r.Get("/events/{eventID}/invite.ics", adminH.ExportEventInviteICS)
+			// Send-invitations: proactive variant of the recover-link
+			// flow. Iterates teams with non-empty contact emails and
+			// mails each one their own slot links + the .ics. Same
+			// authorize-event gate as the export endpoints — Race directors
+			// (org_member) can invoke it; this is "running the game",
+			// not authoring.
+			r.Post("/events/{eventID}/invitations/send", adminH.SendEventInvitations)
+
+			r.Patch("/teams/{teamID}", adminH.UpdateTeam)
+			r.Delete("/teams/{teamID}", adminH.DeleteTeam)
+			r.Post("/teams/{teamID}/avatar", adminH.SetTeamAvatar)
+			r.Delete("/teams/{teamID}/avatar", adminH.DeleteTeamAvatar)
+			r.Post("/teams/{teamID}/slots", adminH.AddSlot)
+			r.Delete("/teams/{teamID}/slots/{slotID}", adminH.RemoveSlot)
+			r.Post("/teams/{teamID}/slots/{slotID}/rotate", adminH.RotateSlotToken)
+			r.Post("/teams/{teamID}/unlock", adminH.UnlockTeam)
+			// Withdraw / unwithdraw soft-flag a team that gave up mid-event
+			// without deleting them — they stay in the recap as
+			// "withdrew at puzzle 4" instead of vanishing from history.
+			r.Post("/teams/{teamID}/withdraw", adminH.WithdrawTeam)
+			r.Post("/teams/{teamID}/unwithdraw", adminH.UnwithdrawTeam)
+			// Per-team resend of the invitation email. Re-uses the team's
+			// existing slot tokens (no re-mint), so opening already-
+			// claimed sessions stays valid. Players who lost their session
+			// state should hit the public lost-magic-link recovery path
+			// instead — that's the explicit re-mint flow.
+			r.Post("/teams/{teamID}/invitations/send", adminH.SendTeamInvitation)
+
+			// Caller's own assignments list.
+			r.Get("/assignments", adminH.ListMyAssignments)
+
+			// Adventure authoring. Handlers enforce ownership inline: org
+			// admins edit their own org's adventures.
+			r.Get("/adventures/{slug}/edit", adminH.LoadAdventureForEdit)
+
+			// The adventure as a graph (internal/graph). Saving creates a new
+			// version; convert builds one from the lanes without saving.
+			r.Get("/adventures/{slug}/graph", adminH.GetAdventureGraph)
+			r.Put("/adventures/{slug}/graph", adminH.PutAdventureGraph)
+			r.Post("/adventures/{slug}/graph/publish", adminH.PublishAdventureGraph)
+			r.Get("/adventures/{slug}/graph/versions", adminH.ListAdventureGraphVersions)
+			r.Get("/adventures/{slug}/graph/versions/{version}", adminH.GetAdventureGraphVersion)
+			r.Post("/adventures/{slug}/graph/versions/{version}/publish", adminH.PublishAdventureGraphVersion)
+			r.Patch("/adventures/{slug}/graph/versions/{version}", adminH.LabelAdventureGraphVersion)
+			r.Post("/adventures/{slug}/graph/validate", adminH.ValidateAdventureGraph)
+			r.Post("/adventures/{slug}/graph/convert", adminH.ConvertAdventureGraph)
+			// Play the unsaved draft with the live rules: the designer's
+			// preview and simulator. Stateless — the client carries the team.
+			r.Post("/adventures/{slug}/simulate", adminH.SimulateAdventureGraph)
+			r.Post("/adventures/{slug}/media", adminH.UploadAdventureMedia)
+			r.Post("/adventures", adminH.CreateAdventure)
+			r.Patch("/adventures/{slug}", adminH.UpdateAdventure)
+			r.Delete("/adventures/{slug}", adminH.DeleteAdventure)
+			r.Post("/adventures/{slug}/avatar", adminH.SetAdventureAvatar)
+			r.Delete("/adventures/{slug}/avatar", adminH.DeleteAdventureAvatar)
+			// Clone a visible adventure (catalog row or template) into the
+			// caller's org. Authoring-tier action: org_admin only. See
+			// internal/admin/duplicate.go for the transactional copy logic.
+			r.Post("/adventures/{slug}/duplicate", adminH.DuplicateAdventure)
+			// Portability: zip-archive export of a single adventure
+			// (manifest + assets) and import that recreates one under
+			// the caller's org. The import endpoint sits at the
+			// adventures collection root because it has no slug yet.
+			r.Get("/adventures/{slug}/export", adminH.ExportAdventure)
+			r.Post("/adventures/import", adminH.ImportAdventure)
+			// Org-admin self-export of the whole org bundle (data-portability
+			// surface). Operator-side full export + import + redirect-mode
+			// flip live in the RoleAdmin-only block further down. The handler
+			// pins org_id to the caller's session and refuses anyone other
+			// than RoleOrgAdmin.
+			r.Get("/migrate/self-export", adminH.MigrateSelfExport)
+			// Org slug self-management: read + write the slug that powers
+			// /o/{slug}/store. Pinned to the caller's active org and
+			// gated to RoleOrgAdmin inside the handler so an org_member
+			// can't rename the URL out from under their team.
+			r.Get("/orgs/me/slug", adminH.GetMyOrgSlug)
+			r.Put("/orgs/me/slug", adminH.SetMyOrgSlug)
+			// Public-profile read/write (tagline, website, cover image)
+			// surfaced on /o/{slug}. Read is org-user, writes are
+			// gated to RoleOrgAdmin inside each handler.
+			r.Get("/orgs/me/profile", adminH.GetMyOrgProfile)
+			r.Put("/orgs/me/profile", adminH.SetMyOrgProfile)
+			r.Post("/orgs/me/cover", adminH.SetMyOrgCover)
+			r.Delete("/orgs/me/cover", adminH.DeleteMyOrgCover)
+			// Org-admin self-serve logo (mirror of admin-side
+			// /organizations/{id}/logo, but pinned to the caller's
+			// session). Lets an org_admin upload + replace the brand
+			// logo without involving platform support.
+			r.Post("/orgs/me/logo", adminH.SetMyOrgLogo)
+			r.Delete("/orgs/me/logo", adminH.DeleteMyOrgLogo)
+			r.Post("/adventures/{slug}/pages", adminH.CreatePage)
+			r.Patch("/adventures/{slug}/pages/reorder", adminH.ReorderPages)
+			// Lane CRUD. Reorder lives at /lanes/reorder rather than as
+			// a method-keyed verb so the router pattern stays decisive
+			// (no overlap with /lanes/{laneID}).
+			r.Post("/adventures/{slug}/lanes", adminH.CreateLane)
+			r.Post("/adventures/{slug}/lanes/reorder", adminH.ReorderLanes)
+			r.Patch("/adventures/{slug}/lanes/{laneID}", adminH.UpdateLane)
+			r.Delete("/adventures/{slug}/lanes/{laneID}", adminH.DeleteLane)
+			r.Post("/adventures/{slug}/pages/copy-from/{pageID}", adminH.CopyPuzzleToAdventure)
+			r.Patch("/pages/{pageID}", adminH.UpdatePage)
+			r.Delete("/pages/{pageID}", adminH.DeletePage)
+			// Duplicate one puzzle in place — Google Slides shape. The
+			// new row lands at sourceIdx + 1 with the rest of the
+			// adventure shifted down. Auth via requireEditPage so the
+			// org_member tightening carries through.
+			r.Post("/pages/{pageID}/duplicate", adminH.DuplicatePage)
+			r.Post("/pages/{pageID}/images", adminH.AddPageImage)
+			r.Patch("/images/{imageID}", adminH.UpdatePageImage)
+			r.Delete("/images/{imageID}", adminH.DeletePageImage)
+			// Per-hint image attachments. Hint images are addressed by
+			// their own image id under /hint-images/ so the puzzle-image
+			// patch/delete routes don't have to disambiguate which kind
+			// they're acting on.
+			r.Post("/hints/{hintID}/images", adminH.AddHintImage)
+			r.Patch("/hint-images/{imageID}", adminH.UpdateHintImage)
+			r.Delete("/hint-images/{imageID}", adminH.DeleteHintImage)
+			// Audio attachments — same shape as the image routes. PATCH
+			// only carries `description` (the WCAG transcript fallback);
+			// the blob itself is replaced by delete + re-upload.
+			r.Post("/pages/{pageID}/audio", adminH.AddPageAudio)
+			r.Patch("/audio/{audioID}", adminH.UpdatePageAudio)
+			r.Delete("/audio/{audioID}", adminH.DeletePageAudio)
+			r.Post("/hints/{hintID}/audio", adminH.AddHintAudio)
+			r.Patch("/hint-audio/{audioID}", adminH.UpdateHintAudio)
+			r.Delete("/hint-audio/{audioID}", adminH.DeleteHintAudio)
+
+			// Puzzle library (cross-adventure pool).
+			r.Get("/puzzles", adminH.ListPuzzles)
+			r.Post("/puzzles", adminH.CreateLibraryPuzzle)
+			r.Get("/puzzles/{pageID}", adminH.GetPuzzle)
+
+			// Purchases: arrangers buy player-slot assignments here. The
+			// simulated flow just needs the confirm endpoint; a future
+			// Stripe integration will also hit /confirm from a webhook.
+			r.Post("/purchases", adminH.CreatePurchase)
+
+			// Outbound webhooks: per-org subscription CRUD. Org-scoped
+			// (handlers reject callers without an org). The kinds catalog
+			// is read-only for clients to drive their UI.
+			r.Get("/webhooks", adminH.ListWebhooks)
+			r.Post("/webhooks", adminH.CreateWebhook)
+			r.Patch("/webhooks/{endpointID}", adminH.UpdateWebhook)
+			r.Delete("/webhooks/{endpointID}", adminH.DeleteWebhook)
+			r.Post("/webhooks/{endpointID}/rotate-secret", adminH.RotateWebhookSecret)
+			r.Post("/webhooks/{endpointID}/test", adminH.SendTestWebhook)
+			r.Get("/webhook-event-kinds", adminH.ListWebhookEventKinds)
+			// Delivery log: every attempt, statuses, errors, the raw
+			// payload bytes. Org-scoped via the join to webhook_endpoints
+			// inside the handler.
+			r.Get("/webhooks/deliveries", adminH.ListWebhookDeliveries)
+
+			// Race simulator. Each call is org-scoped via the caller's
+			// session, so two arrangers in different orgs can run sims in
+			// parallel without colliding.
+			r.Get("/simulator", adminH.SimulatorStatus)
+			r.Post("/simulator/start", adminH.SimulatorStart)
+			r.Post("/simulator/pause", adminH.SimulatorPause)
+			r.Post("/simulator/resume", adminH.SimulatorResume)
+			r.Post("/simulator/reset", adminH.SimulatorReset)
+		})
 
 		// Global admin only.
 		r.Group(func(r chi.Router) {
@@ -405,6 +422,21 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 			// amount routed via the invoice provider.
 			r.Post("/events/{eventID}/grant-slots", adminH.GrantSlotsToEvent)
 
+			// Operator view of one org's events (Organizations page):
+			// read-only list plus cancel. Grant slots is the route above.
+			r.Get("/organizations/{orgID}/events", adminH.ListOrgEvents)
+			r.Post("/organizations/{orgID}/events/{eventID}/cancel", adminH.OperatorCancelEvent)
+
+			// Catalog curation: the publisher org authors the catalog;
+			// the operator flags the publisher, lists / unlists its
+			// adventures and commissions them for other orgs.
+			r.Put("/organizations/{orgID}/publisher", adminH.SetOrgPublisher)
+			r.Get("/catalog", adminH.ListCatalog)
+			r.Put("/catalog/{slug}/published", adminH.SetCatalogPublished)
+			r.Get("/catalog/{slug}/shares", adminH.ListAdventureShares)
+			r.Post("/catalog/{slug}/shares", adminH.GrantAdventureShare)
+			r.Delete("/catalog/{slug}/shares/{orgID}", adminH.RevokeAdventureShare)
+
 			// Server logs — stream + level control. Admin-only so org
 			// users can't snoop another org's messages.
 			r.Get("/logs", adminH.ListLogs)
@@ -412,16 +444,6 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 			r.Put("/logs/level", adminH.SetLogsLevel)
 
 		})
-
-		// Race simulator. Open to arrangers (org_admin/org_member) plus
-		// global admins — each call is org-scoped via the caller's
-		// session, so two arrangers in different orgs can run sims in
-		// parallel without colliding.
-		r.Get("/simulator", adminH.SimulatorStatus)
-		r.Post("/simulator/start", adminH.SimulatorStart)
-		r.Post("/simulator/pause", adminH.SimulatorPause)
-		r.Post("/simulator/resume", adminH.SimulatorResume)
-		r.Post("/simulator/reset", adminH.SimulatorReset)
 	})
 
 	// Log stream socket. Lives outside the /api/admin route tree so it

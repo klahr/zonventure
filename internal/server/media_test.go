@@ -65,13 +65,13 @@ func TestGraphMedia(t *testing.T) {
 	ts, assignmentID, cleanup := newTestServer(t)
 	defer cleanup()
 
-	root := newClient(t, ts)
-	if s := root.do("POST", "/api/auth/login", map[string]string{"username": "root", "password": "rootpw"}, nil); s != 200 {
+	pub := newClient(t, ts)
+	if s := pub.do("POST", "/api/auth/login", map[string]string{"username": "pub", "password": "pubpw"}, nil); s != 200 {
 		t.Fatalf("login = %d", s)
 	}
-	s1, first := root.upload("/api/admin/adventures/demo/media", tinyPNG(t, 10))
-	s2, again := root.upload("/api/admin/adventures/demo/media", tinyPNG(t, 10))
-	s3, later := root.upload("/api/admin/adventures/demo/media", tinyPNG(t, 200))
+	s1, first := pub.upload("/api/admin/adventures/demo/media", tinyPNG(t, 10))
+	s2, again := pub.upload("/api/admin/adventures/demo/media", tinyPNG(t, 10))
+	s3, later := pub.upload("/api/admin/adventures/demo/media", tinyPNG(t, 200))
 	if s1 != 201 || s2 != 201 || s3 != 201 || first["kind"] != "image" {
 		t.Fatalf("uploads: %d %d %d %v", s1, s2, s3, first)
 	}
@@ -80,7 +80,7 @@ func TestGraphMedia(t *testing.T) {
 	}
 	now := int64(first["id"].(float64))
 	ahead := int64(later["id"].(float64))
-	if s, _ := root.upload("/api/admin/adventures/demo/media", []byte("#!/bin/sh\necho hi\n")); s != 400 {
+	if s, _ := pub.upload("/api/admin/adventures/demo/media", []byte("#!/bin/sh\necho hi\n")); s != 400 {
 		t.Errorf("a non-media upload should be refused, got %d", s)
 	}
 
@@ -109,16 +109,16 @@ func TestGraphMedia(t *testing.T) {
 		Outputs: g.Nodes[1].PuzzleCfg.Outputs,
 	}
 	var refused refusalDTO
-	if s := root.doAny("PUT", "/api/admin/adventures/demo/graph", graph.Envelope{Format: graph.FormatV2, Graph: foreign}, &refused); s != 422 || refused.Code != "media_foreign" {
+	if s := pub.doAny("PUT", "/api/admin/adventures/demo/graph", graph.Envelope{Format: graph.FormatV2, Graph: foreign}, &refused); s != 422 || refused.Code != "media_foreign" {
 		t.Fatalf("a graph naming unknown media should be refused: %d %+v", s, refused)
 	}
-	if s := root.doAny("PUT", "/api/admin/adventures/demo/graph", graph.Envelope{Format: graph.FormatV2, Graph: g}, nil); s != 200 {
+	if s := pub.doAny("PUT", "/api/admin/adventures/demo/graph", graph.Envelope{Format: graph.FormatV2, Graph: g}, nil); s != 200 {
 		t.Fatalf("save = %d", s)
 	}
-	if s := root.doAny("POST", "/api/admin/adventures/demo/graph/publish", nil, nil); s != 200 {
+	if s := pub.doAny("POST", "/api/admin/adventures/demo/graph/publish", nil, nil); s != 200 {
 		t.Fatalf("publish = %d", s)
 	}
-	if s := root.status("/media/" + strconv.FormatInt(ahead, 10)); s != 200 {
+	if s := pub.status("/media/" + strconv.FormatInt(ahead, 10)); s != 200 {
 		t.Errorf("staff should see any media of the adventure, got %d", s)
 	}
 
@@ -157,7 +157,7 @@ func TestGraphMedia(t *testing.T) {
 		t.Errorf("not strict: a picture ahead should be fetchable, got %d", s)
 	}
 	// Strict: only reached steps.
-	root.doAny("PATCH", "/api/admin/adventures/demo", map[string]any{"strict_assets": true}, nil)
+	pub.doAny("PATCH", "/api/admin/adventures/demo", map[string]any{"strict_assets": true}, nil)
 	if s := p.status("/media/" + strconv.FormatInt(ahead, 10)); s != 404 {
 		t.Errorf("strict: a picture on a step ahead must stay hidden, got %d", s)
 	}

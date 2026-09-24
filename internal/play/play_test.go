@@ -86,8 +86,8 @@ func setup(t *testing.T, g *graph.Graph, n int) *fixture {
 	mustScan(t, db.QueryRow(`INSERT INTO organizations(name) VALUES ($1) RETURNING id`, slug), &orgID)
 	// The adventure's language is the graph's: publishing writes it in.
 	mustScan(t, db.QueryRow(
-		`INSERT INTO adventures(slug, title, description, author, language) VALUES ($1, $1, '', '', COALESCE(NULLIF($2, ''), 'en')) RETURNING id`,
-		slug, g.Language), &advID)
+		`INSERT INTO adventures(slug, title, description, author, language, org_id) VALUES ($1, $1, '', '', COALESCE(NULLIF($2, ''), 'en'), $3) RETURNING id`,
+		slug, g.Language, orgID), &advID)
 
 	if _, _, err := graphstore.Publish(context.Background(), db, advID, 0, g, ""); err != nil {
 		t.Fatalf("saving graph: %v", err)
@@ -651,7 +651,7 @@ func TestStartEventIsIdempotentAndRequiresAGraph(t *testing.T) {
 	// An event whose adventure has no graph cannot start on this engine.
 	var orgID, eventID int64
 	mustScan(t, f.db.QueryRow(`INSERT INTO organizations(name) VALUES ('no-graph-org') RETURNING id`), &orgID)
-	if _, err := f.db.Exec(`INSERT INTO adventures(slug, title, description, author) VALUES ('no-graph', 'x', '', '')`); err != nil {
+	if _, err := f.db.Exec(`INSERT INTO adventures(slug, title, description, author, org_id) VALUES ('no-graph', 'x', '', '', $1)`, orgID); err != nil {
 		t.Fatal(err)
 	}
 	mustScan(t, f.db.QueryRow(`

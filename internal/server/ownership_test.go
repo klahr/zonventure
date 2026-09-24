@@ -56,11 +56,11 @@ func TestOwnership_OrgUserCanCreateAndEditOwnAdventure(t *testing.T) {
 	}
 }
 
-func TestOwnership_OrgUserCannotEditAdminsAdventure(t *testing.T) {
+func TestOwnership_OrgUserCannotEditCatalogAdventure(t *testing.T) {
 	ts, _, cleanup := newTestServer(t)
 	defer cleanup()
-	// Demo adventure is admin-owned (org_id NULL) since newTestServer
-	// inserts it directly into the adventures table without an org_id.
+	// Demo adventure is owned by the catalog publisher org; boss's org
+	// only holds a share for it.
 	boss := newClient(t, ts)
 	if s := boss.do("POST", "/api/auth/login",
 		map[string]string{"username": "boss", "password": "s3cret"}, nil); s != 200 {
@@ -68,17 +68,17 @@ func TestOwnership_OrgUserCannotEditAdminsAdventure(t *testing.T) {
 	}
 	if s := boss.do("PATCH", "/api/admin/adventures/demo",
 		map[string]any{"title": "hacked"}, nil); s != 403 {
-		t.Fatalf("patch admin adventure = %d, want 403", s)
+		t.Fatalf("patch catalog adventure = %d, want 403", s)
 	}
 	if s := boss.do("POST", "/api/admin/adventures/demo/pages",
 		map[string]any{"accept": acceptLits("x"), "prompt": "x", "lat": 0, "lng": 0}, nil); s != 403 {
-		t.Fatalf("create page on admin adventure = %d, want 403", s)
+		t.Fatalf("create page on catalog adventure = %d, want 403", s)
 	}
 }
 
-func TestOwnership_OrgUserSeesAdminsAsCatalog(t *testing.T) {
-	// Demo adventure is admin-owned. A non-admin must see it in their
-	// listing (it's the catalog) but with mine_to_edit=false.
+func TestOwnership_OrgUserSeesCatalogAdventure(t *testing.T) {
+	// Demo adventure is publisher-owned and shared to boss's org. Boss
+	// must see it in their listing but with mine_to_edit=false.
 	ts, _, cleanup := newTestServer(t)
 	defer cleanup()
 	boss := newClient(t, ts)
@@ -112,8 +112,8 @@ func TestOwnership_OrgUserSeesAdminsAsCatalog(t *testing.T) {
 	if demoRow.MineToEdit {
 		t.Errorf("demo shouldn't be editable by org user")
 	}
-	if demoRow.OrgID != nil {
-		t.Errorf("demo should have NULL org_id (admin-owned)")
+	if demoRow.OrgID == nil {
+		t.Errorf("demo should carry its publisher org_id")
 	}
 }
 
@@ -248,8 +248,8 @@ func TestPurchase_RejectsHugeOrZeroSlotCount(t *testing.T) {
 }
 
 func TestPurchase_AdminCannotBuy(t *testing.T) {
-	// Admins aren't org-scoped so buying wouldn't have a target — reject
-	// the call with a clear message.
+	// Admins aren't org-scoped so buying wouldn't have a target — the
+	// route is org-users only.
 	ts, _, cleanup := newTestServer(t)
 	defer cleanup()
 	root := newClient(t, ts)
@@ -258,7 +258,7 @@ func TestPurchase_AdminCannotBuy(t *testing.T) {
 		t.Fatalf("admin login = %d", s)
 	}
 	if s := root.do("POST", "/api/admin/purchases",
-		map[string]any{"adventure_slug": "demo", "max_players": 20}, nil); s != 400 {
-		t.Fatalf("admin buy status = %d, want 400", s)
+		map[string]any{"adventure_slug": "demo", "max_players": 20}, nil); s != 403 {
+		t.Fatalf("admin buy status = %d, want 403", s)
 	}
 }

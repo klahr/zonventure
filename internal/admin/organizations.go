@@ -61,6 +61,8 @@ type organizationDTO struct {
 	// only. Surfaced here so the admin org-detail panel can show
 	// the current state and a toggle button.
 	Trusted bool `json:"trusted"`
+	// IsPublisher marks the org that authors the platform catalog.
+	IsPublisher bool `json:"is_publisher"`
 }
 
 /* ---------------- Admin-only: organizations CRUD ---------------- */
@@ -74,7 +76,8 @@ func (h *Handlers) ListOrganizations(w http.ResponseWriter, r *http.Request) {
 		       (SELECT COUNT(*) FROM events ar WHERE ar.org_id = o.id),
 		       (SELECT COUNT(*) FROM events ar WHERE ar.org_id = o.id AND ar.state = 'running'),
 		       (o.logo_content IS NOT NULL AND length(o.logo_content) > 0) AS has_logo,
-		       (o.trusted <> 0) AS trusted
+		       (o.trusted <> 0) AS trusted,
+		       o.is_publisher
 		FROM organizations o
 		ORDER BY LOWER(o.name)
 	`)
@@ -86,7 +89,7 @@ func (h *Handlers) ListOrganizations(w http.ResponseWriter, r *http.Request) {
 	out := []organizationDTO{}
 	for rows.Next() {
 		o := organizationDTO{Members: []orgMemberDTO{}, Assignments: []assignmentDTO{}}
-		if err := rows.Scan(&o.ID, &o.Name, &o.Slug, &o.CreatedAt, &o.PlayersTotal, &o.EventsTotal, &o.EventsRunning, &o.HasLogo, &o.Trusted); err != nil {
+		if err := rows.Scan(&o.ID, &o.Name, &o.Slug, &o.CreatedAt, &o.PlayersTotal, &o.EventsTotal, &o.EventsRunning, &o.HasLogo, &o.Trusted, &o.IsPublisher); err != nil {
 			httpx.Error(w, http.StatusInternalServerError, "scan failed")
 			return
 		}
@@ -128,9 +131,10 @@ func (h *Handlers) GetOrganization(w http.ResponseWriter, r *http.Request) {
 		       (SELECT COUNT(*) FROM events ar WHERE ar.org_id = o.id),
 		       (SELECT COUNT(*) FROM events ar WHERE ar.org_id = o.id AND ar.state = 'running'),
 		       (o.logo_content IS NOT NULL AND length(o.logo_content) > 0) AS has_logo,
-		       (o.trusted <> 0) AS trusted
+		       (o.trusted <> 0) AS trusted,
+		       o.is_publisher
 		FROM organizations o WHERE o.id = $1
-	`, id).Scan(&o.ID, &o.Name, &o.Slug, &o.CreatedAt, &o.PlayersTotal, &o.EventsTotal, &o.EventsRunning, &o.HasLogo, &o.Trusted)
+	`, id).Scan(&o.ID, &o.Name, &o.Slug, &o.CreatedAt, &o.PlayersTotal, &o.EventsTotal, &o.EventsRunning, &o.HasLogo, &o.Trusted, &o.IsPublisher)
 	if errors.Is(err, sql.ErrNoRows) {
 		httpx.Error(w, http.StatusNotFound, "organization not found")
 		return
@@ -417,6 +421,12 @@ func (h *Handlers) DeleteOrganization(w http.ResponseWriter, r *http.Request) {
 	}
 	id, ok := orgIDFromURL(r)
 	if !ok {
+		return
+	}
+	// Deleting the publisher would cascade away the whole catalog —
+	// and every other org's events and passes naming it by slug.
+	if pid, isPub, _ := publisherOrgID(r.Context(), h.DB); isPub && pid == id {
+		httpx.Error(w, http.StatusConflict, "the catalog publisher cannot be deleted while it publishes the catalog")
 		return
 	}
 	res, err := h.DB.ExecContext(r.Context(), `DELETE FROM organizations WHERE id = $1`, id)
@@ -782,7 +792,7 @@ func (h *Handlers) CreateAssignment(w http.ResponseWriter, r *http.Request) {
 	if !httpx.DecodeJSON(w, r, &req) {
 		return
 	}
-	if h.Lib.Get(req.AdventureSlug) == nil {
+	if h.Lib.Get(req.AdventureSlug) == nil || !h.isCatalogSlug(r.Context(), req.AdventureSlug) {
 		httpx.Error(w, http.StatusBadRequest, "unknown adventure")
 		return
 	}
@@ -854,7 +864,7 @@ func (h *Handlers) UpdateAssignment(w http.ResponseWriter, r *http.Request) {
 			httpx.Error(w, http.StatusConflict, "cannot change the adventure of a used event pass")
 			return
 		}
-		if h.Lib.Get(*req.AdventureSlug) == nil {
+		if h.Lib.Get(*req.AdventureSlug) == nil || !h.isCatalogSlug(r.Context(), *req.AdventureSlug) {
 			httpx.Error(w, http.StatusBadRequest, "unknown adventure")
 			return
 		}

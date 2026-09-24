@@ -28,7 +28,8 @@ func seedPurchaseStack(t *testing.T, cfg server.Config) (*httptest.Server, *sql.
 	lib := adventure.New(sqlDB)
 
 	if _, err := sqlDB.Exec(
-		`INSERT INTO adventures(slug, title, description, author) VALUES ('demo', 'Demo', '', 'zv')`,
+		`INSERT INTO adventures(slug, title, description, author, org_id, published) VALUES ('demo', 'Demo', '', 'zv', $1, 1)`,
+		seedPublisher(t, sqlDB),
 	); err != nil {
 		dbCleanup()
 		t.Fatalf("seed adventure: %v", err)

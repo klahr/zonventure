@@ -648,6 +648,10 @@ func badRequestf(format string, a ...any) *importError {
 	return &importError{status: http.StatusBadRequest, msg: fmt.Sprintf(format, a...)}
 }
 
+func forbiddenf(format string, a ...any) *importError {
+	return &importError{status: http.StatusForbidden, msg: fmt.Sprintf(format, a...)}
+}
+
 func conflictf(format string, a ...any) *importError {
 	return &importError{status: http.StatusConflict, msg: fmt.Sprintf(format, a...)}
 }
@@ -723,6 +727,9 @@ func importEnvelopeJSON(ctx context.Context, db *sql.DB, manifestJSON []byte, ov
 		return 0, "", "", badRequestf("title %s", err.Error())
 	}
 	org := callerOrgID(user)
+	if !canAuthor(user, org) {
+		return 0, "", "", forbiddenf("forbidden")
+	}
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, "", "", fmt.Errorf("tx: %w", err)

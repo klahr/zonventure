@@ -108,6 +108,39 @@ func seedArrangerUser(d *sql.DB, creds string) error {
 	return err
 }
 
+// seedPublisherUser upserts an org_admin in the catalog publisher org
+// (creating that org on first run) — the login that authors the
+// platform catalog, which the global admin no longer can.
+func seedPublisherUser(d *sql.DB, creds string) error {
+	username, password, err := splitCreds(creds)
+	if err != nil {
+		return err
+	}
+	orgID, err := ensurePublisherOrg(d)
+	if err != nil {
+		return err
+	}
+	_, err = upsertUser(d, username, password, auth.RoleOrgAdmin, &orgID)
+	return err
+}
+
+// ensurePublisherOrg returns the catalog publisher org's id, creating
+// "Zonventure Catalog" (the name migration 0065 uses) when no org
+// publishes yet.
+func ensurePublisherOrg(d *sql.DB) (int64, error) {
+	var id int64
+	err := d.QueryRow(`SELECT id FROM organizations WHERE is_publisher`).Scan(&id)
+	if !errors.Is(err, sql.ErrNoRows) {
+		return id, err
+	}
+	err = d.QueryRow(`
+		INSERT INTO organizations(name, is_publisher) VALUES ('Zonventure Catalog', TRUE)
+		ON CONFLICT(name) DO UPDATE SET is_publisher = TRUE
+		RETURNING id
+	`).Scan(&id)
+	return id, err
+}
+
 // splitCreds parses a "username:password" flag value. Empty parts are
 // rejected so the caller doesn't end up with a blank username or an
 // unset password.
@@ -122,21 +155,27 @@ func splitCreds(creds string) (string, string, error) {
 // seedDemoAdventure upserts the "demo" adventure and its three pages
 // with the placeholder illustration. Idempotent — re-running replaces
 // the pages without touching any runs or assignments that reference the
-// adventure by slug. For the full demo dataset (org, users, run, teams,
-// tracks), use -seed-demo.
+// adventure by slug. The adventure belongs to the catalog publisher
+// org. For the full demo dataset (org, users, run, teams, tracks), use
+// -seed-demo.
 func seedDemoAdventure(d *sql.DB) error {
+	pubID, err := ensurePublisherOrg(d)
+	if err != nil {
+		return err
+	}
 	var advID int64
 	if err := d.QueryRow(`
-		INSERT INTO adventures(slug, title, description, author)
-		VALUES ($1, $2, $3, $4)
+		INSERT INTO adventures(slug, title, description, author, org_id)
+		VALUES ($1, $2, $3, $4, $5)
 		ON CONFLICT(slug) DO UPDATE SET
 			title = excluded.title,
 			description = excluded.description,
 			author = excluded.author,
+			org_id = excluded.org_id,
 			updated_at = now_text()
 		RETURNING id
 	`, "demo", "Demo: First Steps",
-		"A tiny three-page adventure used as a smoke test.", "zv").Scan(&advID); err != nil {
+		"A tiny three-page adventure used as a smoke test.", "zv", pubID).Scan(&advID); err != nil {
 		return err
 	}
 	// Pages cascade to adventure_page_images, so a clean re-insert keeps
@@ -188,14 +227,21 @@ func seedDemo(ctx context.Context, d *sql.DB) error {
 		}
 	}
 
-	// Demo adventure in DB.
+	// Demo adventure in DB, authored by the catalog publisher org.
+	pubID, err := ensurePublisherOrg(d)
+	if err != nil {
+		return err
+	}
+	if _, err := upsertUser(d, "publisher", "publisher", auth.RoleOrgAdmin, &pubID); err != nil {
+		return err
+	}
 	var advID int64
 	if err := d.QueryRow(`
-		INSERT INTO adventures(slug, title, description, author)
-		VALUES ($1, $2, $3, $4)
+		INSERT INTO adventures(slug, title, description, author, org_id)
+		VALUES ($1, $2, $3, $4, $5)
 		RETURNING id
 	`, "demo", "Demo: First Steps",
-		"A tiny three-page adventure used as a smoke test.", "zv").Scan(&advID); err != nil {
+		"A tiny three-page adventure used as a smoke test.", "zv", pubID).Scan(&advID); err != nil {
 		return err
 	}
 	pages := demoPages()
@@ -341,7 +387,7 @@ func upsertUser(d *sql.DB, username, password, role string, orgID *int64) (int64
 	// 'guest' demo user" only needs one new entry.
 	isDefault := 0
 	switch password {
-	case "admin", "rootpw", "s3cret", "jane":
+	case "admin", "rootpw", "s3cret", "jane", "publisher":
 		isDefault = 1
 	}
 	var id int64

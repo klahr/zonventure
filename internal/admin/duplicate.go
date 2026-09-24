@@ -23,15 +23,14 @@ import (
 //
 // Authorisation:
 //
-//   - Caller must be authenticated and have an active org (admin
-//     callers don't go through this endpoint; they create directly).
+//   - Caller must be authenticated and have an active org.
 //   - Caller must be org_admin in their active org — duplicating
 //     creates a new authored row, which org_member is not allowed
 //     to do (canAuthor on the *destination*).
-//   - Caller must canSeeOwned the source — i.e., either it's a
-//     global catalog row (admin-owned and published) or it's owned
-//     by the caller's own org. Cross-org cloning is deliberately
-//     rejected.
+//   - Caller must be able to see the source (staffCanSeeAdventure) —
+//     a published catalog adventure, one owned by the caller's own
+//     org, or one shared / assigned to it. Cloning another org's
+//     private work is deliberately rejected.
 //
 // The cloned slug defaults to "<source>-<random6>" so duplicating
 // is idempotent without retry probes; the arranger renames via the
@@ -47,7 +46,7 @@ func (h *Handlers) DuplicateAdventure(w http.ResponseWriter, r *http.Request) {
 	me, _ := auth.FromContext(r.Context())
 	if me.OrgID == nil {
 		httpx.Error(w, http.StatusBadRequest,
-			"duplicate requires an active organization (admins create adventures directly)")
+			"duplicate requires an active organization")
 		return
 	}
 	// canAuthor on the *destination*: the caller must be allowed to
@@ -71,7 +70,7 @@ func (h *Handlers) DuplicateAdventure(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusInternalServerError, "lookup failed")
 		return
 	}
-	if !canSeeOwned(me, sourceOrg) {
+	if !h.staffCanSeeAdventure(r.Context(), me, sourceOrg, h.adventurePublished(r.Context(), sourceSlug), sourceSlug) {
 		httpx.Error(w, http.StatusForbidden, "source adventure is not visible to this organization")
 		return
 	}

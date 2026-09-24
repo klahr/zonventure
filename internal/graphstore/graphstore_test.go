@@ -34,7 +34,7 @@ func TestGraphstoreVersionsAndRefusesInvalid(t *testing.T) {
 	ctx := context.Background()
 
 	var advID int64
-	if err := db.QueryRow(`INSERT INTO adventures(slug, title, description, author) VALUES ('gs', 'gs', '', '') RETURNING id`).Scan(&advID); err != nil {
+	if err := db.QueryRow(`INSERT INTO adventures(slug, title, description, author, org_id) VALUES ('gs', 'gs', '', '', $1) RETURNING id`, dbtest.PublisherOrg(t, db)).Scan(&advID); err != nil {
 		t.Fatal(err)
 	}
 
@@ -74,7 +74,7 @@ func TestByIDAndInvalidErrorMessage(t *testing.T) {
 	ctx := context.Background()
 
 	var advID int64
-	if err := db.QueryRow(`INSERT INTO adventures(slug, title, description, author) VALUES ('gs2', 'gs2', '', '') RETURNING id`).Scan(&advID); err != nil {
+	if err := db.QueryRow(`INSERT INTO adventures(slug, title, description, author, org_id) VALUES ('gs2', 'gs2', '', '', $1) RETURNING id`, dbtest.PublisherOrg(t, db)).Scan(&advID); err != nil {
 		t.Fatal(err)
 	}
 	saved, _, err := graphstore.Save(ctx, db, advID, 0, linear("a"))
@@ -109,7 +109,7 @@ func TestDraftsAndReleases(t *testing.T) {
 	defer cleanup()
 	ctx := context.Background()
 	var advID int64
-	if err := db.QueryRow(`INSERT INTO adventures(slug, title, description, author) VALUES ('rel', 'rel', '', '') RETURNING id`).Scan(&advID); err != nil {
+	if err := db.QueryRow(`INSERT INTO adventures(slug, title, description, author, org_id) VALUES ('rel', 'rel', '', '', $1) RETURNING id`, dbtest.PublisherOrg(t, db)).Scan(&advID); err != nil {
 		t.Fatal(err)
 	}
 
@@ -177,7 +177,7 @@ func TestGraphstoreStampsAdventureLanguage(t *testing.T) {
 	ctx := context.Background()
 
 	var advID int64
-	if err := db.QueryRow(`INSERT INTO adventures(slug, title, description, author, language) VALUES ('gl', 'gl', '', '', 'sv') RETURNING id`).Scan(&advID); err != nil {
+	if err := db.QueryRow(`INSERT INTO adventures(slug, title, description, author, language, org_id) VALUES ('gl', 'gl', '', '', 'sv', $1) RETURNING id`, dbtest.PublisherOrg(t, db)).Scan(&advID); err != nil {
 		t.Fatal(err)
 	}
 	g := linear("a")

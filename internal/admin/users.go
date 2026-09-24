@@ -162,7 +162,7 @@ func (h *Handlers) AdventureDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	published := publishedInt != 0
 
-	// canEdit covers admin + any member of the owning org (org_admin
+	// canEdit covers any member of the owning org (org_admin
 	// and org_member). Race directors are intentionally included so
 	// they can read the answer key while running events; the stricter
 	// canAuthor check still gates writes.

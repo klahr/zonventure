@@ -193,8 +193,8 @@ func (h *Handlers) CreatePurchase(w http.ResponseWriter, r *http.Request) {
 		req.AdventureSlug = assnSlug // canonical — ignore any client value
 		topUpID = req.TopUpAssignmentID
 	}
-	// Source adventure must exist + be visible to the buyer (either
-	// their own or the global catalog).
+	// Source adventure must exist + be visible to the buyer (their
+	// own, the published catalog, or shared / assigned to them).
 	advOrg, err := h.adventureOwner(r.Context(), req.AdventureSlug)
 	if errors.Is(err, sql.ErrNoRows) {
 		httpx.Error(w, http.StatusNotFound, "unknown adventure")
@@ -204,7 +204,7 @@ func (h *Handlers) CreatePurchase(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusInternalServerError, "adventure lookup failed")
 		return
 	}
-	if !canSeeOwned(me, advOrg) {
+	if !h.staffCanSeeAdventure(r.Context(), me, advOrg, h.adventurePublished(r.Context(), req.AdventureSlug), req.AdventureSlug) {
 		httpx.Error(w, http.StatusForbidden, "that adventure is not available to your org")
 		return
 	}

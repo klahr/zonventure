@@ -75,6 +75,7 @@ func main() {
 		logLevel          = flag.String("log-level", "INFO", "initial log level (DEBUG|INFO|WARN|ERROR)")
 		seedAdmin         = flag.String("seed-admin", "", "if set, create/update a global admin as username:password")
 		seedArranger      = flag.String("seed-arranger", "", "if set, create/update an org_admin arranger as username:password in the default Arrangers org")
+		seedPublisher     = flag.String("seed-publisher", "", "if set, create/update an org_admin as username:password in the catalog publisher org")
 		seedDemoAdvFlag   = flag.Bool("seed-demo-adventure", false, "install the demo adventure (puzzles + placeholder images)")
 		seedDemoFlag      = flag.Bool("seed-demo", false, "install a full demo dataset and exit")
 		revokeFlag        = flag.String("revoke-sessions", "", `if set, drop staff sessions and exit. Pass a username to scope, or "all" to nuke every session+slot session`)
@@ -153,6 +154,13 @@ func main() {
 			log.Fatalf("seed arranger: %v", err)
 		}
 		log.Printf("arranger ready in org Arrangers")
+		seeded = true
+	}
+	if *seedPublisher != "" {
+		if err := seedPublisherUser(sqlDB, *seedPublisher); err != nil {
+			log.Fatalf("seed publisher: %v", err)
+		}
+		log.Printf("publisher ready in the catalog publisher org")
 		seeded = true
 	}
 	if *seedDemoAdvFlag {

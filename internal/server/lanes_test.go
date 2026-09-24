@@ -13,7 +13,7 @@ func TestLanes_CRUD(t *testing.T) {
 	defer cleanup()
 
 	arr := newClient(t, ts)
-	if s := arr.do("POST", "/api/auth/login", map[string]string{"username": "root", "password": "rootpw"}, nil); s != 200 {
+	if s := arr.do("POST", "/api/auth/login", map[string]string{"username": "pub", "password": "pubpw"}, nil); s != 200 {
 		t.Fatalf("login = %d", s)
 	}
 
@@ -125,7 +125,7 @@ func TestLanes_ReorderMovesPageAcrossLanes(t *testing.T) {
 	defer cleanup()
 
 	arr := newClient(t, ts)
-	if s := arr.do("POST", "/api/auth/login", map[string]string{"username": "root", "password": "rootpw"}, nil); s != 200 {
+	if s := arr.do("POST", "/api/auth/login", map[string]string{"username": "pub", "password": "pubpw"}, nil); s != 200 {
 		t.Fatalf("login = %d", s)
 	}
 
@@ -203,7 +203,7 @@ func TestLanes_ReorderRejectsForeignLane(t *testing.T) {
 	defer cleanup()
 
 	arr := newClient(t, ts)
-	if s := arr.do("POST", "/api/auth/login", map[string]string{"username": "root", "password": "rootpw"}, nil); s != 200 {
+	if s := arr.do("POST", "/api/auth/login", map[string]string{"username": "pub", "password": "pubpw"}, nil); s != 200 {
 		t.Fatalf("login = %d", s)
 	}
 	var dto struct {
@@ -231,7 +231,7 @@ func TestLanes_BadInput(t *testing.T) {
 	defer cleanup()
 
 	arr := newClient(t, ts)
-	if s := arr.do("POST", "/api/auth/login", map[string]string{"username": "root", "password": "rootpw"}, nil); s != 200 {
+	if s := arr.do("POST", "/api/auth/login", map[string]string{"username": "pub", "password": "pubpw"}, nil); s != 200 {
 		t.Fatalf("login = %d", s)
 	}
 

@@ -328,5 +328,7 @@
   "When time runs out": "När tiden tar slut",
   "When the team skips": "När laget hoppar över",
   "Things the team collects and can look at, for the story. To send teams different ways, a gate checks what they have done instead.": "Saker som laget samlar på sig och kan titta på, för berättelsens skull. För att skicka lag olika vägar kontrollerar en grind i stället vad de har gjort.",
-  "Self-guided": "Självguidade"
+  "Self-guided": "Självguidade",
+  "Adventures are authored by organisations.": "Äventyr skrivs av organisationer.",
+  "Manage organizations →": "Hantera organisationer →"
 }

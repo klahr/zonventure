@@ -14,11 +14,11 @@ import (
 /* ---------------- Adventure shares (commission an adventure for a specific org) ---------------- */
 
 // ListAdventureShares returns the orgs that currently have a share for
-// this adventure. Admin-only; the UI uses it to populate the manager
-// section on the library edit page.
+// this catalog adventure. Admin-only; the UI uses it to populate the
+// commissioning controls on the Organizations pages.
 func (h *Handlers) ListAdventureShares(w http.ResponseWriter, r *http.Request) {
 	slug := chi.URLParam(r, "slug")
-	if _, ok := h.requireEditAdventure(w, r, slug); !ok {
+	if !h.requireCatalogAdventure(w, r, slug) {
 		return
 	}
 	shares, err := loadAdventureShares(r.Context(), h.DB, slug)
@@ -38,7 +38,7 @@ type grantShareRequest struct {
 // repost without checking first.
 func (h *Handlers) GrantAdventureShare(w http.ResponseWriter, r *http.Request) {
 	slug := chi.URLParam(r, "slug")
-	if _, ok := h.requireEditAdventure(w, r, slug); !ok {
+	if !h.requireCatalogAdventure(w, r, slug) {
 		return
 	}
 	var req grantShareRequest
@@ -59,6 +59,10 @@ func (h *Handlers) GrantAdventureShare(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusNotFound, "organization not found")
 		return
 	}
+	if pid, ok, _ := publisherOrgID(r.Context(), h.DB); ok && pid == req.OrgID {
+		httpx.Error(w, http.StatusBadRequest, "the publisher already owns its catalog")
+		return
+	}
 	me, _ := auth.FromContext(r.Context())
 	if _, err := h.DB.ExecContext(r.Context(), `
 		INSERT INTO adventure_shares(adventure_slug, org_id, granted_by_user_id)
@@ -75,7 +79,7 @@ func (h *Handlers) GrantAdventureShare(w http.ResponseWriter, r *http.Request) {
 // created from the share are unaffected — revoking only stops new events.
 func (h *Handlers) RevokeAdventureShare(w http.ResponseWriter, r *http.Request) {
 	slug := chi.URLParam(r, "slug")
-	if _, ok := h.requireEditAdventure(w, r, slug); !ok {
+	if !h.requireCatalogAdventure(w, r, slug) {
 		return
 	}
 	orgID, err := strconv.ParseInt(chi.URLParam(r, "orgID"), 10, 64)

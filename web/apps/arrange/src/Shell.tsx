@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Building2, CalendarDays, ChevronLeft, ChevronRight, ChevronUp, Compass, Gauge, LogOut, Map as MapIcon, Monitor, Moon, Settings, Sun, Terminal, type LucideIcon } from "lucide-react";
-import type { Whoami } from "@zonventure/api";
+import { isGlobalAdmin, type Whoami } from "@zonventure/api";
 import { readTheme, setTheme, type Theme } from "@zonventure/ui";
 import { useT } from "./i18n.tsx";
 import { useSession } from "./session.tsx";
@@ -31,9 +31,10 @@ const ROLE: Record<Whoami["role"], string> = { admin: "Administrator", org_admin
 
 /**
  * The classic console's sidebar sections for this user, mirroring the
- * list in arrange.html: an admin's cross-organisation tools, a member's
- * daily ones, or — before joining an organisation — only the way out.
- * `adventures` marks the section the designer belongs to.
+ * list in arrange.html: an admin's operator tools (organisations and
+ * the system — they author nothing), a member's daily ones, or —
+ * before joining an organisation — only the way out. `adventures`
+ * marks the section the designer belongs to.
  */
 function consoleNav(user: Whoami): { label: string; icon: LucideIcon; href: string; adventures: boolean }[] {
   const item = (label: string, icon: LucideIcon, hash: string, adventures = false) => ({ label, icon, href: consoleHref(hash), adventures });
@@ -41,9 +42,6 @@ function consoleNav(user: Whoami): { label: string; icon: LucideIcon; href: stri
     return [
       item("Dashboard", Gauge, "dashboard"),
       item("Organizations", Building2, "organizations"),
-      item("Events", CalendarDays, "events"),
-      item("Self-guided", Compass, "quests"),
-      item("Library", MapIcon, "library", true),
       item("Logs", Terminal, "logs"),
       item("Settings", Settings, "settings"),
     ];
@@ -65,6 +63,7 @@ export function Shell({ user }: { user: Whoami }) {
   const [collapsed, setCollapsed] = useState(savedCollapsed);
 
   const route = useRoute();
+  const operator = isGlobalAdmin(user);
   const nav = consoleNav(user).map((item) => ({ ...item, active: item.adventures && route.name !== "dashboard" }));
 
   function toggle() {
@@ -129,8 +128,15 @@ export function Shell({ user }: { user: Whoami }) {
           </div>
         )}
 
-        {route.name === "designer" && <Designer key={route.slug} slug={route.slug} />}
-        {route.name === "adventures" && <AdventuresPage />}
+        {/* The platform admin authors nothing; the API refuses them too. */}
+        {operator && route.name !== "dashboard" && (
+          <p className="lede">
+            {t.t("Adventures are authored by organisations.")}{" "}
+            <a href={consoleHref("organizations")}>{t.t("Manage organizations →")}</a>
+          </p>
+        )}
+        {!operator && route.name === "designer" && <Designer key={route.slug} slug={route.slug} />}
+        {!operator && route.name === "adventures" && <AdventuresPage />}
         {route.name === "dashboard" && (
           <>
             <h1>{t.t("Dashboard")}</h1>
@@ -146,9 +152,11 @@ export function Shell({ user }: { user: Whoami }) {
                 </>
               )}
             </dl>
-            <p className="lede">
-              <a href={consoleHref("adventures")}>{t.t("Design an adventure →")}</a>
-            </p>
+            {!operator && (
+              <p className="lede">
+                <a href={consoleHref("adventures")}>{t.t("Design an adventure →")}</a>
+              </p>
+            )}
           </>
         )}
       </main>

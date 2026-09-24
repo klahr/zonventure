@@ -91,12 +91,26 @@ type serverInfo struct {
 // effects (email, webhooks); writes are everything else. The
 // registry refuses to register a tool with an empty Scope so a
 // new tool can't accidentally land without classification.
+//
+// Audience is who may call the tool at all, by the token owner's role:
+// the zero value is org users (authoring and running events), which
+// the platform admin may not call; audienceAdmin is the platform
+// operator only; audienceAny is everyone. tools/list only shows a
+// caller the tools of their audience.
 type ToolDescriptor struct {
 	Name        string         `json:"name"`
 	Description string         `json:"description"`
 	InputSchema map[string]any `json:"inputSchema"`
 	Scope       string         `json:"-"`
+	Audience    string         `json:"-"`
 }
+
+// Audience identifiers for ToolDescriptor.Audience.
+const (
+	audienceOrg   = ""
+	audienceAdmin = "admin"
+	audienceAny   = "any"
+)
 
 // Scope identifiers — kept in sync with admin.MCPScope* constants.
 // Defined here too so internal code (registry, tools) doesn't need

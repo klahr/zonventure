@@ -1,7 +1,6 @@
 package admin
 
 import (
-	"database/sql"
 	"errors"
 	"net/http"
 
@@ -15,38 +14,18 @@ import (
 // Thin HTTP wrappers over internal/simulator. Each handler resolves the
 // caller's org slot and forwards. The simulator is org-scoped: each
 // tenant has its own slot so arrangers can preview their adventures in
-// parallel without colliding. Global admins (no org binding) target the
-// first org in the system — the simulator is a dev/demo tool for them.
+// parallel without colliding.
 
 // callerOrgID resolves the org slot the caller's simulator request
-// targets. Org-bound users get their own org. A global admin has no
-// org binding, so we anchor on the first org in the system to keep
-// the behavior the same one-click dev tool it always was.
-//
-// SECURITY: lobby users (signed-up, no org membership yet) must NOT
-// reach the first-org fallback — that would let any signed-up
-// account start/pause/reset a simulator inside someone else's org.
-// The route group still includes RoleLobby for lifecycle reasons
-// (lobby users will graduate to org_member once they accept an
-// invite or create their own org), so the guard lives here at the
-// org-resolution step.
+// targets: their own org. Callers outside any org (the platform admin,
+// lobby users) have no slot — a fallback to some other org would let
+// them start/pause/reset a simulator inside someone else's org.
 func (h *Handlers) callerOrgID(r *http.Request) (int64, error) {
 	me, _ := auth.FromContext(r.Context())
 	if me.OrgID != nil && *me.OrgID > 0 {
 		return *me.OrgID, nil
 	}
-	if !me.IsAdmin {
-		return 0, errors.New("simulator requires an organisation; create or join one first")
-	}
-	var orgID int64
-	if err := h.DB.QueryRowContext(r.Context(),
-		`SELECT id FROM organizations ORDER BY id ASC LIMIT 1`).Scan(&orgID); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return 0, errors.New("no organizations exist; create one before simulating")
-		}
-		return 0, err
-	}
-	return orgID, nil
+	return 0, errors.New("simulator requires an organisation; create or join one first")
 }
 
 // callerOrgIDOrFail is the boilerplate shortcut every sim handler

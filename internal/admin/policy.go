@@ -16,9 +16,8 @@ var ErrForbidden = errors.New("forbidden")
 
 // AuthorizeAdventureRead checks the caller is allowed to read the
 // named adventure under the same visibility rules ListAdventures
-// applies: globally-owned admin catalog visible to everyone in the
-// authoring tier, org-owned visible to that org's members, plus the
-// share/grant cascade. Returns the adventure id and the owning org
+// applies: the published catalog visible to every org, org-owned
+// visible to that org's members, plus the share/grant cascade. Returns the adventure id and the owning org
 // on success.
 //
 // On miss returns sql.ErrNoRows (so callers can distinguish "no such
@@ -32,12 +31,7 @@ func AuthorizeAdventureRead(ctx context.Context, db *sql.DB, slug string, user a
 	}
 	// Reuse the staff-side visibility cascade so the MCP read path
 	// honours the same grant + share table the arranger UI does.
-	// Published flag is sourced inline; cheap and avoids returning
-	// it through adventureOwner.
-	var published bool
-	_ = db.QueryRowContext(ctx,
-		`SELECT COALESCE(published, 0) <> 0 FROM adventures WHERE slug = $1`, slug).Scan(&published)
-	if !h.staffCanSeeAdventure(ctx, user, org, published, slug) {
+	if !h.staffCanSeeAdventure(ctx, user, org, h.adventurePublished(ctx, slug), slug) {
 		return 0, sql.NullInt64{}, ErrForbidden
 	}
 	advID, err := adventureIDBySlug(ctx, db, slug)
@@ -48,8 +42,8 @@ func AuthorizeAdventureRead(ctx context.Context, db *sql.DB, slug string, user a
 }
 
 // AuthorizeAdventureEdit is the canAuthor counterpart: passes only
-// for callers who can mutate authored content (admins, plus
-// org_admins of the owning org). org_member is rejected — they can
+// for callers who can mutate authored content (org_admins of the
+// owning org). org_member is rejected — they can
 // run events but not rewrite puzzle copy. Same error contract as
 // AuthorizeAdventureRead.
 func AuthorizeAdventureEdit(ctx context.Context, db *sql.DB, slug string, user auth.User) (int64, sql.NullInt64, error) {
@@ -75,79 +69,46 @@ func AuthorizeAdventureEdit(ctx context.Context, db *sql.DB, slug string, user a
  * caller modify it. The rules are uniform across adventures and
  * orphan library puzzles:
  *
- *   owner = NULL   → admin-owned (global catalog / global library).
- *                    Visible to everyone; editable only by admins.
  *   owner = org X  → org-owned. Visible to every user of org X.
- *                    Authoring (write) requires admin or org_admin in
- *                    that org — see canAuthor below. org_member sees
- *                    the row but can't edit puzzle content; they can
- *                    still run events, manage teams, and intervene
- *                    live. The split exists so a corporate customer
- *                    can hand "operate the day-of event" to an intern
- *                    without granting them rights to rewrite puzzle
- *                    copy or republish the adventure.
+ *                    Authoring (write) requires org_admin in that org
+ *                    — see canAuthor below. org_member sees the row
+ *                    but can't edit puzzle content; they can still run
+ *                    events, manage teams, and intervene live. The
+ *                    split exists so a corporate customer can hand
+ *                    "operate the day-of event" to an intern without
+ *                    granting them rights to rewrite puzzle copy or
+ *                    republish the adventure.
+ *   owner = the publisher org → also the platform catalog: published
+ *                    adventures and library puzzles are visible to
+ *                    every org (see catalog.go).
  *
- * Helpers are kept tiny and colocated with the role constants so that
- * future tweaks (eg. public-sharing flag, per-event race-director
- * grants) land in one place.
+ * The platform admin authors nothing and runs no events: they manage
+ * organisations and curate the catalog through the admin-only
+ * endpoints, so none of these helpers let them through.
  */
 
 // isAdmin reports whether the caller is a global admin.
 func isAdmin(u auth.User) bool { return u.Role == auth.RoleAdmin }
 
 // canAuthor returns true when the caller may modify authored content
-// (adventures, pages, hints, accept-lists, puzzle media). Admins
-// always pass; org-bound users pass only when they are org_admin in
-// the owning org. org_member is intentionally rejected — they can
-// see and use the adventure to run events, but not rewrite its
-// content.
-//
-// NULL ownership means "admin-owned, global catalog" so only admins
-// can mutate those rows regardless of the caller's org role.
+// (adventures, pages, hints, accept-lists, puzzle media): org_admin in
+// the owning org. org_member is intentionally rejected — they can see
+// and use the adventure to run events, but not rewrite its content.
 func canAuthor(u auth.User, ownerOrg sql.NullInt64) bool {
-	if isAdmin(u) {
-		return true
-	}
-	if !ownerOrg.Valid {
-		return false
-	}
-	if u.Role != auth.RoleOrgAdmin {
-		return false
-	}
-	return u.OrgID != nil && *u.OrgID == ownerOrg.Int64
+	return u.Role == auth.RoleOrgAdmin && canEditOwned(u, ownerOrg)
 }
 
-// canEditOwned is the legacy "any org member can edit" gate kept for
+// canEditOwned is the "any member of the owning org" gate kept for
 // flows where the read/write distinction collapses (still used by
 // some non-authoring helpers). New authoring code should call
 // canAuthor instead.
 func canEditOwned(u auth.User, ownerOrg sql.NullInt64) bool {
-	if isAdmin(u) {
-		return true
-	}
-	if !ownerOrg.Valid {
-		return false
-	}
-	return u.OrgID != nil && *u.OrgID == ownerOrg.Int64
+	return ownerOrg.Valid && u.OrgID != nil && *u.OrgID == ownerOrg.Int64
 }
 
-// canSeeOwned is more permissive: globally-owned resources are the
-// shared catalog and every authoring-tier user can read them. Org-owned
-// resources are still private to the owning org.
-func canSeeOwned(u auth.User, ownerOrg sql.NullInt64) bool {
-	if isAdmin(u) {
-		return true
-	}
-	if !ownerOrg.Valid {
-		return true
-	}
-	return u.OrgID != nil && *u.OrgID == ownerOrg.Int64
-}
-
-// callerOrgID returns the caller's owning org_id as a NullInt64.
-// Admins pass it as NULL (admin-created resources become part of the
-// global catalog), and org users get their own org stamped onto the
-// row they create.
+// callerOrgID returns the caller's active org_id as a NullInt64 — the
+// owner stamped onto a row they create. NULL for callers outside any
+// org, which canAuthor then refuses.
 func callerOrgID(u auth.User) sql.NullInt64 {
 	if u.OrgID == nil {
 		return sql.NullInt64{}
@@ -159,22 +120,22 @@ func callerOrgID(u auth.User) sql.NullInt64 {
 // uses (and AdventureDetail re-implements) so any staff-side surface
 // that exposes adventure data — JSON DTOs, image bytes, audio bytes —
 // applies the same gate. Returns true when the caller is allowed to
-// read this adventure: global admin, or member of the owning org, or
-// the row is admin-owned and published, or the caller's org holds an
+// read this adventure: member of the owning org, or the row is a
+// published catalog adventure, or the caller's org holds an
 // assignment / share grant for the slug.
 //
 // Read-only; does not gate writes (canAuthor handles those). DB-error
 // on the grant lookup is treated as "not visible" — failing closed
 // matches the rest of the asset gates.
 func (h *Handlers) staffCanSeeAdventure(ctx context.Context, me auth.User, ownerOrg sql.NullInt64, published bool, slug string) bool {
+	if me.OrgID == nil {
+		return false
+	}
 	if canEditOwned(me, ownerOrg) {
 		return true
 	}
-	if !ownerOrg.Valid && published {
+	if published && h.isCatalogOwner(ctx, ownerOrg) {
 		return true
-	}
-	if me.OrgID == nil {
-		return false
 	}
 	var n int
 	if err := h.DB.QueryRowContext(ctx, `
@@ -185,4 +146,25 @@ func (h *Handlers) staffCanSeeAdventure(ctx context.Context, me auth.User, owner
 		return false
 	}
 	return n > 0
+}
+
+// staffCanSeePuzzle: a puzzle attached to an adventure is visible
+// wherever the adventure is; a library puzzle is visible to its own
+// org, and the publisher's library to every org.
+func (h *Handlers) staffCanSeePuzzle(ctx context.Context, me auth.User, advSlug sql.NullString, advOrg, pageOrg sql.NullInt64) bool {
+	if me.OrgID == nil {
+		return false
+	}
+	if advSlug.Valid {
+		return h.staffCanSeeAdventure(ctx, me, advOrg, h.adventurePublished(ctx, advSlug.String), advSlug.String)
+	}
+	return canEditOwned(me, pageOrg) || h.isCatalogOwner(ctx, pageOrg)
+}
+
+// adventurePublished reads the catalog flag; a miss reads as false.
+func (h *Handlers) adventurePublished(ctx context.Context, slug string) bool {
+	var published bool
+	_ = h.DB.QueryRowContext(ctx,
+		`SELECT COALESCE(published, 0) <> 0 FROM adventures WHERE slug = $1`, slug).Scan(&published)
+	return published
 }

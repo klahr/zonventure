@@ -11,8 +11,11 @@ docker compose up -d
 ```
 
 That's it. The app is now serving on <http://127.0.0.1:8080>. Log in
-at `/arrange` with **`admin` / `admin`**, change the password
-immediately, and start authoring.
+at `/arrange` with **`admin` / `admin`** and change the password
+immediately. The admin is the operator: it manages organisations,
+curates the catalog and watches the system, but authors nothing and
+runs no events. See [First organisation](#first-organisation) for the
+path to authoring.
 
 Zonventure is licensed under the **GNU AGPL v3.0 or later**
 ([`LICENSE`](LICENSE)). Self-hosting and modifying are explicitly
@@ -94,6 +97,29 @@ After editing `.env`:
 ```sh
 docker compose up -d        # pick up the new env on running containers
 ```
+
+## First organisation
+
+The platform admin can't author adventures or run events — the API
+refuses them with 403. Authoring happens inside an organisation:
+
+1. As admin, create an organisation under **Organizations** and add a
+   user to it as org admin (a separate login — admins can't also be
+   org members).
+2. To offer adventures to other organisations, click **Not the
+   catalog publisher** on that organisation's page to make it the
+   **catalog publisher** (one per instance). Its org admins author the
+   catalog.
+3. On the publisher's page, **List in catalog** makes an adventure
+   visible to every organisation; **Commission** shares it with one
+   organisation without listing it. Event passes (**Assign
+   adventure**) only accept catalog adventures.
+
+Upgrading from a release where the admin authored the catalog:
+migration `0065_catalog_publisher` moves every admin-owned adventure
+and library puzzle into a new **Zonventure Catalog** org flagged as
+publisher. Add an org admin to it to keep editing them. The
+publisher's org bundle export now contains the catalog.
 
 ## Pre-flight checklist before going public
 

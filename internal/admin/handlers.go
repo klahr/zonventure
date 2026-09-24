@@ -117,15 +117,13 @@ type Handlers struct {
 /* ---------------- Shared scoping helpers ---------------- */
 
 // isOrgScoped reports whether the caller is attached to an organization
-// (org_admin, org_member or player) rather than being a global admin.
+// (org_admin, org_member or player) rather than being a global admin
+// or a lobby user.
 func isOrgScoped(u auth.User) bool { return u.OrgID != nil }
 
-// sameOrg returns true when the caller is either a global admin or is
-// attached to orgID.
+// sameOrg returns true when the caller is attached to orgID. The
+// platform admin is attached to none: they don't run events.
 func sameOrg(u auth.User, orgID int64) bool {
-	if u.Role == auth.RoleAdmin {
-		return true
-	}
 	return u.OrgID != nil && *u.OrgID == orgID
 }
 
@@ -176,7 +174,7 @@ type adventureDTO struct {
 	Description string `json:"description,omitempty"`
 	Author      string `json:"author,omitempty"`
 	PageCount   int    `json:"page_count"`
-	OrgID       *int64 `json:"org_id,omitempty"` // nil = admin-owned global catalog
+	OrgID       *int64 `json:"org_id,omitempty"` // owning org; the publisher's are the catalog
 	MineToEdit  bool   `json:"mine_to_edit"`
 	AvatarURL   string `json:"avatar_url,omitempty"`
 	Published   bool   `json:"published"`
@@ -190,19 +188,20 @@ type adventureDTO struct {
 	Playable bool `json:"playable"`
 }
 
-// ListAdventures returns adventures visible to the caller. Admins see
-// the global catalog they own (org_id IS NULL), incl. drafts; org-owned
-// arranger content stays out of the admin Library and is reached via
-// the Organizations page. Org users see their own org's adventures
-// + admin-owned entries that are either (a) published, (b) already
-// held via an assignment, or (c) commissioned to the org via a share.
-// The Catalog tab filters further to `!mine_to_edit && published`.
+// ListAdventures returns adventures visible to the caller's org: its
+// own adventures + the published catalog + anything held via an
+// assignment or commissioned to the org via a share. The Catalog tab
+// filters further to `!mine_to_edit && published`. The platform admin
+// has no org and curates the catalog through /catalog instead.
 func (h *Handlers) ListAdventures(w http.ResponseWriter, r *http.Request) {
 	me, _ := auth.FromContext(r.Context())
+	if me.OrgID == nil {
+		httpx.Error(w, http.StatusForbidden, "forbidden")
+		return
+	}
 
 	// `shared` is 1 when the caller reaches the row via an adventure_shares
 	// grant — the UI uses that to flag "commissioned by admin" on the card.
-	// For admins we return 0 uniformly (they only see their own catalog).
 	query := `
 		SELECT a.slug, a.title, a.description, a.author, a.org_id,
 		       -- Puzzles in the adventure's graph (the published version,
@@ -219,31 +218,26 @@ func (h *Handlers) ListAdventures(w http.ResponseWriter, r *http.Request) {
 		       (a.avatar_mime_type IS NOT NULL)::int AS has_avatar,
 		       a.published, a.language,
 	`
-	var args []any
-	if isAdmin(me) {
-		query += ` 0 AS shared FROM adventures a WHERE a.org_id IS NULL`
-	} else {
-		query += `
-		       (EXISTS (
-		         SELECT 1 FROM adventure_shares s
-		         WHERE s.adventure_slug = a.slug AND s.org_id = $1
-		       ))::int AS shared
-		FROM adventures a
-		WHERE (
-		  a.org_id = $2
-		  OR (a.org_id IS NULL AND a.published = 1)
-		  OR EXISTS (
-		    SELECT 1 FROM adventure_assignments aa
-		    WHERE aa.adventure_slug = a.slug AND aa.org_id = $3
-		  )
-		  OR EXISTS (
-		    SELECT 1 FROM adventure_shares s
-		    WHERE s.adventure_slug = a.slug AND s.org_id = $4
-		  )
-		)
-		`
-		args = append(args, *me.OrgID, *me.OrgID, *me.OrgID, *me.OrgID)
-	}
+	query += `
+	       (EXISTS (
+	         SELECT 1 FROM adventure_shares s
+	         WHERE s.adventure_slug = a.slug AND s.org_id = $1
+	       ))::int AS shared
+	FROM adventures a
+	WHERE (
+	  a.org_id = $1
+	  OR ` + CatalogFilter + `
+	  OR EXISTS (
+	    SELECT 1 FROM adventure_assignments aa
+	    WHERE aa.adventure_slug = a.slug AND aa.org_id = $1
+	  )
+	  OR EXISTS (
+	    SELECT 1 FROM adventure_shares s
+	    WHERE s.adventure_slug = a.slug AND s.org_id = $1
+	  )
+	)
+	`
+	args := []any{*me.OrgID}
 	query += ` ORDER BY a.slug`
 
 	rows, err := h.DB.QueryContext(r.Context(), query, args...)
@@ -584,6 +578,30 @@ func newLiveToken() (string, error) { return tokenx.New(16) }
 // `true` to render only quests. Omitted = both.
 func (h *Handlers) ListEvents(w http.ResponseWriter, r *http.Request) {
 	me, _ := auth.FromContext(r.Context())
+	if me.OrgID == nil {
+		httpx.Error(w, http.StatusForbidden, "forbidden")
+		return
+	}
+	h.writeOrgEvents(w, r, *me.OrgID, false)
+}
+
+// ListOrgEvents is the platform operator's read-only view of one org's
+// events, for the Organizations page: enough to grant slots or cancel,
+// without the live token that opens the audience board.
+//
+// GET /api/admin/organizations/{orgID}/events
+func (h *Handlers) ListOrgEvents(w http.ResponseWriter, r *http.Request) {
+	orgID, ok := orgIDFromURL(r)
+	if !ok {
+		httpx.Error(w, http.StatusBadRequest, "bad org id")
+		return
+	}
+	h.writeOrgEvents(w, r, orgID, true)
+}
+
+// writeOrgEvents lists orgID's events, optionally filtered by
+// ?public_for_sale=. operator drops the live token.
+func (h *Handlers) writeOrgEvents(w http.ResponseWriter, r *http.Request, orgID int64, operator bool) {
 	query := `
 		SELECT ar.id, ar.name, ar.adventure_slug, COALESCE(adv.title, ''), ar.state,
 		       COALESCE(ar.scheduled_at, ''), COALESCE(ar.started_at, ''),
@@ -605,14 +623,8 @@ func (h *Handlers) ListEvents(w http.ResponseWriter, r *http.Request) {
 		LEFT JOIN adventure_assignments aa ON aa.id = ar.assignment_id
 		LEFT JOIN adventures adv ON adv.slug = ar.adventure_slug
 	`
-	var (
-		args   []any
-		wheres []string
-	)
-	if me.Role != auth.RoleAdmin {
-		args = append(args, *me.OrgID)
-		wheres = append(wheres, fmt.Sprintf("ar.org_id = $%d", len(args)))
-	}
+	args := []any{orgID}
+	wheres := []string{"ar.org_id = $1"}
 	if v := strings.TrimSpace(r.URL.Query().Get("public_for_sale")); v != "" {
 		want, err := strconv.ParseBool(v)
 		if err != nil {
@@ -622,9 +634,7 @@ func (h *Handlers) ListEvents(w http.ResponseWriter, r *http.Request) {
 		args = append(args, want)
 		wheres = append(wheres, fmt.Sprintf("ar.public_for_sale = $%d", len(args)))
 	}
-	if len(wheres) > 0 {
-		query += " WHERE " + strings.Join(wheres, " AND ")
-	}
+	query += " WHERE " + strings.Join(wheres, " AND ")
 	query += ` ORDER BY ar.created_at DESC`
 	rows, err := h.DB.QueryContext(r.Context(), query, args...)
 	if err != nil {
@@ -650,6 +660,9 @@ func (h *Handlers) ListEvents(w http.ResponseWriter, r *http.Request) {
 		d.ShowMap = showMap != 0
 		if hasAvatar != 0 {
 			d.AdventureAvatarURL = adventureAvatarURL(d.AdventureSlug)
+		}
+		if operator {
+			d.LiveToken = ""
 		}
 		out = append(out, d)
 	}
@@ -802,6 +815,41 @@ func (h *Handlers) CancelEvent(w http.ResponseWriter, r *http.Request) {
 	if _, ok := h.authorizeEvent(w, r, eventID); !ok {
 		return
 	}
+	h.cancelEvent(w, r, eventID)
+}
+
+// OperatorCancelEvent is CancelEvent for the platform operator, who
+// reaches an org's events from its Organizations page rather than
+// running them. The event must belong to the org in the path so a
+// stale page can't cancel the wrong org's event.
+//
+// POST /api/admin/organizations/{orgID}/events/{eventID}/cancel
+func (h *Handlers) OperatorCancelEvent(w http.ResponseWriter, r *http.Request) {
+	orgID, ok := orgIDFromURL(r)
+	if !ok {
+		httpx.Error(w, http.StatusBadRequest, "bad org id")
+		return
+	}
+	eventID, ok := eventIDFrom(r)
+	if !ok {
+		httpx.Error(w, http.StatusBadRequest, "bad event id")
+		return
+	}
+	eventOrgID, err := h.eventOrg(r.Context(), eventID)
+	if errors.Is(err, sql.ErrNoRows) || (err == nil && eventOrgID != orgID) {
+		httpx.Error(w, http.StatusNotFound, "event not found")
+		return
+	}
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "lookup failed")
+		return
+	}
+	h.cancelEvent(w, r, eventID)
+}
+
+// cancelEvent is the password-gated cancellation both entry points
+// share once they have authorised the caller.
+func (h *Handlers) cancelEvent(w http.ResponseWriter, r *http.Request, eventID int64) {
 	if !requirePasswordConfirm(w, r, h.DB) {
 		return
 	}

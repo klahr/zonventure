@@ -19,12 +19,13 @@ import (
 //
 // grant_slots_to_event is admin-only; the HTTP route mounts inside
 // an admin-only middleware group, so the underlying handler doesn't
-// re-check. MCP bypasses that route gate, so the tool itself
-// enforces isAdmin before dispatching.
+// re-check. MCP bypasses that route gate, so the tool is tagged
+// audienceAdmin and also enforces isAdmin before dispatching.
 
 func (s *Server) registerPurchaseTools() {
 	s.tools.register(ToolDescriptor{
 		Name:        "list_purchases",
+		Audience:    audienceAny,
 		Scope:       scopeRead,
 		Description: "List purchases visible to the caller — admins see every row, org users see their own. Each entry includes id, adventure_slug, max_players, amount_cents, provider (free/simulated/stripe/invoice), state (pending/paid/voided), assignment_id when fulfilled, and timestamps. Use to find an unused assignment_id before create_event.",
 		InputSchema: map[string]any{
@@ -35,6 +36,7 @@ func (s *Server) registerPurchaseTools() {
 
 	s.tools.register(ToolDescriptor{
 		Name:        "get_purchase",
+		Audience:    audienceAny,
 		Scope:       scopeRead,
 		Description: "Read one purchase by id. Returns the full DTO including state and (when paid) assignment_id.",
 		InputSchema: map[string]any{
@@ -76,6 +78,7 @@ func (s *Server) registerPurchaseTools() {
 
 	s.tools.register(ToolDescriptor{
 		Name:        "grant_slots_to_event",
+		Audience:    audienceAdmin,
 		Scope:       scopeWrite,
 		Description: "Admin-only: grant additional player slots to an existing event's assignment without going through the org-side purchase flow. Free for non-trusted orgs (forced); for trusted orgs the caller picks the amount (0 = goodwill, >0 = invoice). Refuses when invoked by a non-admin token.",
 		InputSchema: map[string]any{

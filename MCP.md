@@ -49,6 +49,14 @@ scoping, same `canAuthor` gate that distinguishes `org_admin`
 (may rewrite content) from `org_member` (may run events but not
 edit puzzles).
 
+Each tool also has an audience. A global admin's token sees and
+calls only the operator tools (`grant_slots_to_event`,
+`list_purchases`, `get_purchase`, `describe_event_lifecycle`):
+the admin curates and monitors, it doesn't author or run events.
+Org tools refuse it in-band with `forbidden_audience`. Catalog
+listing (`published`) is the operator's call, so
+`update_adventure_meta` refuses it too.
+
 The plaintext token is shown **once** at creation and never again;
 the settings UI keeps a `zvmcp_AB…` prefix per row so the user can
 identify which token to revoke without us being able to re-reveal
@@ -134,7 +142,7 @@ single short-lived request.
   paste the token elsewhere.
 - **Per-user scope** — every tool call resolves to the minting
   user's `auth.User`, runs through the same `canAuthor` /
-  `canSeeOwned` gates `/arrange` uses. There is no global "MCP
+  `staffCanSeeAdventure` gates `/arrange` uses. There is no global "MCP
   superuser" credential.
 - **No password-confirm bypass** — the regular `DELETE /api/admin/adventures/{slug}`
   HTTP path requires a fresh password confirmation; the MCP
@@ -158,7 +166,8 @@ single short-lived request.
 |------------------------------------------------------|-----------------------------------------------------------------------------------------------|
 | `404` on `POST /mcp`                                 | `ZV_MCP_ENABLED` not set; route is unmounted.                                                 |
 | `401` on every call                                  | Token revoked, or pasted with stray whitespace / missing `Bearer ` prefix in the header.      |
-| `forbidden: you cannot edit this adventure`          | Caller is `org_member` (race director). Authoring requires `org_admin` or admin.              |
+| `forbidden: you cannot edit this adventure`          | Caller is `org_member` (race director). Authoring requires `org_admin` of the owning org.     |
+| `forbidden_audience: tool … is not available …`      | The token belongs to the global admin, who can't author or run events. Mint one as an org user. |
 | `unknown export format: …`                           | The model produced an envelope with a typo'd `format` tag. The wrapper accepts a bare adventure object — drop the wrapper or set `format` to `"zonventure-adventure-v1"`. |
 | `image asset "p0_img0.jpg" missing from archive`     | Manifest references binary assets that MCP can't carry. Strip the `images` / `audio` arrays and attach the files in `/arrange` instead. |
 | `slug may only contain a-z 0-9 and hyphens`          | The model picked a slug with whitespace, capitals, or punctuation. Patch the manifest's `slug`. |

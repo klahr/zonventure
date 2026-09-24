@@ -10,11 +10,11 @@ import (
 // TestCanAuthor walks the truth table for the authoring gate. The
 // short story:
 //
-//   - admin always passes
+//   - the platform admin never passes — they curate, not author
 //   - org_admin passes iff they are in the owning org
 //   - org_member never passes (they can run events; they cannot edit
 //     the underlying adventure content)
-//   - global / orphan rows (NULL ownership) are admin-only
+//   - ownerless rows are nobody's to author
 //
 // This is the single test that prevents a future refactor from
 // quietly re-collapsing the org_admin/org_member distinction.
@@ -32,16 +32,16 @@ func TestCanAuthor(t *testing.T) {
 	}
 	for _, c := range []tcase{
 		{
-			"global admin authors anything",
+			"global admin rejected on org content",
 			auth.User{Role: auth.RoleAdmin},
 			owned(orgA),
-			true,
+			false,
 		},
 		{
-			"global admin authors orphan rows",
+			"global admin rejected on ownerless rows",
 			auth.User{Role: auth.RoleAdmin},
 			orphan,
-			true,
+			false,
 		},
 		{
 			"org_admin in owning org",

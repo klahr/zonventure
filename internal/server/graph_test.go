@@ -78,20 +78,20 @@ func TestGraphAuthoringLoop(t *testing.T) {
 	ts, _, cleanup := newTestServer(t)
 	defer cleanup()
 
-	root := newClient(t, ts)
-	if s := root.do("POST", "/api/auth/login", map[string]string{"username": "root", "password": "rootpw"}, nil); s != 200 {
+	pub := newClient(t, ts)
+	if s := pub.do("POST", "/api/auth/login", map[string]string{"username": "pub", "password": "pubpw"}, nil); s != 200 {
 		t.Fatalf("login = %d", s)
 	}
 
 	// No graph yet.
 	var refused refusalDTO
-	if s := root.doAny("GET", "/api/admin/adventures/demo/graph", nil, &refused); s != 404 || refused.Code != "graph_not_found" {
+	if s := pub.doAny("GET", "/api/admin/adventures/demo/graph", nil, &refused); s != 404 || refused.Code != "graph_not_found" {
 		t.Fatalf("GET before any save = %d %+v; want 404 graph_not_found", s, refused)
 	}
 
 	// Convert the seeded three-page linear adventure. Not saved.
 	var converted graphDTO
-	if s := root.do("POST", "/api/admin/adventures/demo/graph/convert", nil, &converted); s != 200 {
+	if s := pub.do("POST", "/api/admin/adventures/demo/graph/convert", nil, &converted); s != 200 {
 		t.Fatalf("convert = %d", s)
 	}
 	if !converted.Report.OK() {
@@ -106,14 +106,14 @@ func TestGraphAuthoringLoop(t *testing.T) {
 	if len(g.Zones) != 1 || g.Zones[0].RadiusM != 50 {
 		t.Errorf("zones = %+v; want the landmark's 50 m gate", g.Zones)
 	}
-	if s := root.do("GET", "/api/admin/adventures/demo/graph", nil, nil); s != 404 {
+	if s := pub.do("GET", "/api/admin/adventures/demo/graph", nil, nil); s != 404 {
 		t.Errorf("convert must not save; GET after convert = %d, want 404", s)
 	}
 
 	// Autosave it as the draft. Nothing is published yet.
 	var state graphStateDTO
 	state = graphStateDTO{}
-	if s := root.do("PUT", "/api/admin/adventures/demo/graph", converted.Envelope, &state); s != 200 || state.Published != nil || !state.Dirty {
+	if s := pub.do("PUT", "/api/admin/adventures/demo/graph", converted.Envelope, &state); s != 200 || state.Published != nil || !state.Dirty {
 		t.Fatalf("draft save = %d %+v", s, state)
 	}
 
@@ -122,12 +122,12 @@ func TestGraphAuthoringLoop(t *testing.T) {
 	broken := converted.Envelope
 	broken.Graph.Edges = nil
 	state = graphStateDTO{}
-	if s := root.do("PUT", "/api/admin/adventures/demo/graph", broken, &state); s != 200 || state.Report.OK() {
+	if s := pub.do("PUT", "/api/admin/adventures/demo/graph", broken, &state); s != 200 || state.Report.OK() {
 		t.Fatalf("broken draft save = %d, report ok=%v", s, state.Report.OK())
 	}
 	// Publishing it is refused with the full report.
 	refused = refusalDTO{}
-	if s := root.doAny("POST", "/api/admin/adventures/demo/graph/publish", nil, &refused); s != 422 || refused.Code != "graph_invalid" {
+	if s := pub.doAny("POST", "/api/admin/adventures/demo/graph/publish", nil, &refused); s != 422 || refused.Code != "graph_invalid" {
 		t.Fatalf("publishing a broken draft = %d %+v; want 422 graph_invalid", s, refused)
 	}
 	if refused.Report == nil || len(refused.Report.Errors()) == 0 {
@@ -135,16 +135,16 @@ func TestGraphAuthoringLoop(t *testing.T) {
 	}
 
 	// Fix the draft and publish it, named.
-	root.do("PUT", "/api/admin/adventures/demo/graph", converted.Envelope, nil)
+	pub.do("PUT", "/api/admin/adventures/demo/graph", converted.Envelope, nil)
 	state = graphStateDTO{}
-	if s := root.do("POST", "/api/admin/adventures/demo/graph/publish", map[string]string{"label": "Launch"}, &state); s != 200 ||
+	if s := pub.do("POST", "/api/admin/adventures/demo/graph/publish", map[string]string{"label": "Launch"}, &state); s != 200 ||
 		state.Published == nil || state.Published.Version != 1 || state.Published.Label != "Launch" || state.Dirty {
 		t.Fatalf("publish = %d %+v", s, state)
 	}
 
 	// Reload: the draft, clean against what is published.
 	var loaded graphStateDTO
-	if s := root.do("GET", "/api/admin/adventures/demo/graph", nil, &loaded); s != 200 {
+	if s := pub.do("GET", "/api/admin/adventures/demo/graph", nil, &loaded); s != 200 {
 		t.Fatalf("reload = %d", s)
 	}
 	if loaded.Dirty || len(loaded.Envelope.Graph.Nodes) != 5 || loaded.Envelope.Format != graph.FormatV2 {
@@ -156,12 +156,12 @@ func TestGraphAuthoringLoop(t *testing.T) {
 	edited.Graph.Nodes = append([]graph.Node(nil), edited.Graph.Nodes...)
 	edited.Graph.Nodes[1].Title = "Hello there"
 	state = graphStateDTO{}
-	root.do("PUT", "/api/admin/adventures/demo/graph", edited, &state)
+	pub.do("PUT", "/api/admin/adventures/demo/graph", edited, &state)
 	if !state.Dirty {
 		t.Error("a changed title is an unpublished change")
 	}
 	state = graphStateDTO{}
-	root.do("POST", "/api/admin/adventures/demo/graph/publish", nil, &state)
+	pub.do("POST", "/api/admin/adventures/demo/graph/publish", nil, &state)
 
 	// History, preview and rollback.
 	var hist struct {
@@ -171,19 +171,19 @@ func TestGraphAuthoringLoop(t *testing.T) {
 			Published bool   `json:"published"`
 		} `json:"versions"`
 	}
-	root.do("GET", "/api/admin/adventures/demo/graph/versions", nil, &hist)
+	pub.do("GET", "/api/admin/adventures/demo/graph/versions", nil, &hist)
 	if len(hist.Versions) != 2 || !hist.Versions[0].Published || hist.Versions[1].Label != "Launch" {
 		t.Fatalf("history = %+v", hist.Versions)
 	}
 	var v1 graphDTO
-	if s := root.do("GET", "/api/admin/adventures/demo/graph/versions/1", nil, &v1); s != 200 || v1.Envelope.Graph.Nodes[1].Title == "Hello there" {
+	if s := pub.do("GET", "/api/admin/adventures/demo/graph/versions/1", nil, &v1); s != 200 || v1.Envelope.Graph.Nodes[1].Title == "Hello there" {
 		t.Errorf("version 1 preview = %d %+v", s, v1.Envelope.Graph.Nodes[1])
 	}
 	state = graphStateDTO{}
-	if s := root.do("POST", "/api/admin/adventures/demo/graph/versions/1/publish", nil, &state); s != 200 || state.Published.Version != 1 || !state.Dirty {
+	if s := pub.do("POST", "/api/admin/adventures/demo/graph/versions/1/publish", nil, &state); s != 200 || state.Published.Version != 1 || !state.Dirty {
 		t.Errorf("rollback = %d %+v; the draft keeps the newer edit, so it is dirty", s, state)
 	}
-	if s := root.do("PATCH", "/api/admin/adventures/demo/graph/versions/2", map[string]string{"label": "Friendlier"}, nil); s != 204 {
+	if s := pub.do("PATCH", "/api/admin/adventures/demo/graph/versions/2", map[string]string{"label": "Friendlier"}, nil); s != 204 {
 		t.Errorf("label = %d", s)
 	}
 }
@@ -191,8 +191,8 @@ func TestGraphAuthoringLoop(t *testing.T) {
 func TestGraphRejectsMalformedEnvelopes(t *testing.T) {
 	ts, _, cleanup := newTestServer(t)
 	defer cleanup()
-	root := newClient(t, ts)
-	root.do("POST", "/api/auth/login", map[string]string{"username": "root", "password": "rootpw"}, nil)
+	pub := newClient(t, ts)
+	pub.do("POST", "/api/auth/login", map[string]string{"username": "pub", "password": "pubpw"}, nil)
 
 	for name, body := range map[string]any{
 		"v1 format":     map[string]any{"format": "zonventure-adventure-v1", "graph": map[string]any{"nodes": []any{}, "edges": []any{}}},
@@ -200,7 +200,7 @@ func TestGraphRejectsMalformedEnvelopes(t *testing.T) {
 		"not an object": []int{1, 2, 3},
 	} {
 		var refused refusalDTO
-		if s := root.doAny("PUT", "/api/admin/adventures/demo/graph", body, &refused); s != 400 || refused.Code != "graph_malformed" {
+		if s := pub.doAny("PUT", "/api/admin/adventures/demo/graph", body, &refused); s != 400 || refused.Code != "graph_malformed" {
 			t.Errorf("%s: got %d %+v; want 400 graph_malformed", name, s, refused)
 		}
 	}
@@ -235,9 +235,9 @@ func TestGraphRequiresEditRights(t *testing.T) {
 		t.Errorf("anonymous GET = %d, want 401 or 403", s)
 	}
 
-	root := newClient(t, ts)
-	root.do("POST", "/api/auth/login", map[string]string{"username": "root", "password": "rootpw"}, nil)
-	if s := root.do("GET", "/api/admin/adventures/no-such-adventure/graph", nil, nil); s != 404 {
+	pub := newClient(t, ts)
+	pub.do("POST", "/api/auth/login", map[string]string{"username": "pub", "password": "pubpw"}, nil)
+	if s := pub.do("GET", "/api/admin/adventures/no-such-adventure/graph", nil, nil); s != 404 {
 		t.Errorf("unknown adventure = %d, want 404", s)
 	}
 }

@@ -7,7 +7,7 @@ func TestLibrary_CreateStubAndList(t *testing.T) {
 	defer cleanup()
 	admin := newClient(t, ts)
 	if s := admin.do("POST", "/api/auth/login",
-		map[string]string{"username": "root", "password": "rootpw"}, nil); s != 200 {
+		map[string]string{"username": "pub", "password": "pubpw"}, nil); s != 200 {
 		t.Fatalf("admin login = %d", s)
 	}
 
@@ -84,7 +84,7 @@ func TestLibrary_GetSinglePuzzle(t *testing.T) {
 	defer cleanup()
 	admin := newClient(t, ts)
 	if s := admin.do("POST", "/api/auth/login",
-		map[string]string{"username": "root", "password": "rootpw"}, nil); s != 200 {
+		map[string]string{"username": "pub", "password": "pubpw"}, nil); s != 200 {
 		t.Fatalf("admin login = %d", s)
 	}
 	var st struct {
@@ -124,7 +124,7 @@ func TestLibrary_CopyToAdventure(t *testing.T) {
 	defer cleanup()
 	admin := newClient(t, ts)
 	if s := admin.do("POST", "/api/auth/login",
-		map[string]string{"username": "root", "password": "rootpw"}, nil); s != 200 {
+		map[string]string{"username": "pub", "password": "pubpw"}, nil); s != 200 {
 		t.Fatalf("admin login = %d", s)
 	}
 	var stub struct {
@@ -210,7 +210,7 @@ func TestLibrary_StubRejectsBadCoords(t *testing.T) {
 	defer cleanup()
 	admin := newClient(t, ts)
 	if s := admin.do("POST", "/api/auth/login",
-		map[string]string{"username": "root", "password": "rootpw"}, nil); s != 200 {
+		map[string]string{"username": "pub", "password": "pubpw"}, nil); s != 200 {
 		t.Fatalf("admin login = %d", s)
 	}
 	if s := admin.do("POST", "/api/admin/puzzles",
@@ -230,7 +230,7 @@ func TestLibrary_OrgUserCanAuthorOwnPuzzles(t *testing.T) {
 	// Admin creates a global-library stub (org_id NULL).
 	root := newClient(t, ts)
 	if s := root.do("POST", "/api/auth/login",
-		map[string]string{"username": "root", "password": "rootpw"}, nil); s != 200 {
+		map[string]string{"username": "pub", "password": "pubpw"}, nil); s != 200 {
 		t.Fatalf("admin login = %d", s)
 	}
 	var adminStub struct {

@@ -115,3 +115,19 @@ func randHex(n int) string {
 	}
 	return hex.EncodeToString(b)
 }
+
+// PublisherOrg returns the id of the catalog publisher org, creating
+// one ("Catalog") on first call. Fixtures that stand in for platform
+// catalog adventures give them this org as owner.
+func PublisherOrg(t *testing.T, db *sql.DB) int64 {
+	t.Helper()
+	var id int64
+	if err := db.QueryRow(`
+		INSERT INTO organizations(name, is_publisher) VALUES ('Catalog', TRUE)
+		ON CONFLICT(name) DO UPDATE SET is_publisher = TRUE
+		RETURNING id
+	`).Scan(&id); err != nil {
+		t.Fatalf("publisher org: %v", err)
+	}
+	return id
+}

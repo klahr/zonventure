@@ -48,9 +48,9 @@ export function isGlobalAdmin(u: Pick<Whoami, "role">): boolean {
   return u.role === "admin";
 }
 
-/** May author and edit adventures. */
+/** May author and edit adventures: an organisation's admins. The global admin curates, not authors. */
 export function canAuthor(u: Pick<Whoami, "role">): boolean {
-  return u.role === "admin" || u.role === "org_admin";
+  return u.role === "org_admin";
 }
 
 export interface LoginRequest {

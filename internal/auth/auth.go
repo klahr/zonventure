@@ -30,7 +30,8 @@ const (
 	// remove members of their own organization.
 	RoleOrgAdmin = "org_admin"
 	// RoleAdmin is the global tier: creates and manages organizations, mints
-	// assignments, and administers other admins. Belongs to no organization.
+	// assignments, curates the catalog, and administers other admins.
+	// Belongs to no organization, and authors nothing / runs no events.
 	RoleAdmin = "admin"
 	// RoleLobby is an authenticated user with no organization memberships
 	// — sat in the "lobby" until they create their own org or accept an

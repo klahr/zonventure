@@ -32,12 +32,14 @@ type registry struct {
 	descriptors []ToolDescriptor
 	handlers    map[string]toolHandler
 	scopes      map[string]string
+	audiences   map[string]string
 }
 
 func newRegistry() *registry {
 	return &registry{
-		handlers: map[string]toolHandler{},
-		scopes:   map[string]string{},
+		handlers:  map[string]toolHandler{},
+		scopes:    map[string]string{},
+		audiences: map[string]string{},
 	}
 }
 
@@ -52,14 +54,44 @@ func (r *registry) register(d ToolDescriptor, h toolHandler) {
 	r.descriptors = append(r.descriptors, d)
 	r.handlers[d.Name] = h
 	r.scopes[d.Name] = d.Scope
+	r.audiences[d.Name] = d.Audience
 }
 
-func (r *registry) list() []ToolDescriptor { return r.descriptors }
+// audienceAllows reports whether u may call a tool of audience aud.
+func audienceAllows(u auth.User, aud string) bool {
+	switch aud {
+	case audienceAny:
+		return true
+	case audienceAdmin:
+		return u.Role == auth.RoleAdmin
+	default:
+		return u.Role != auth.RoleAdmin
+	}
+}
+
+// list returns the tools the caller's audience may call.
+func (r *registry) list(ctx context.Context) []ToolDescriptor {
+	me, _ := auth.FromContext(ctx)
+	out := []ToolDescriptor{}
+	for _, d := range r.descriptors {
+		if audienceAllows(me, d.Audience) {
+			out = append(out, d)
+		}
+	}
+	return out
+}
 
 func (r *registry) call(ctx context.Context, s *Server, name string, args json.RawMessage) (ToolCallResult, error) {
 	h, ok := r.handlers[name]
 	if !ok {
 		return ToolCallResult{}, fmt.Errorf("%w: %s", errUnknownTool, name)
+	}
+	if me, _ := auth.FromContext(ctx); !audienceAllows(me, r.audiences[name]) {
+		// In-band like the scope gate below. The platform admin
+		// curates and monitors; authoring and running events is the
+		// orgs' side, and operator tools are the admin's alone.
+		return errorResult(fmt.Sprintf(
+			"forbidden_audience: tool %q is not available to this account's role", name)), nil
 	}
 	need := r.scopes[name]
 	have := scopesFromContext(ctx)
@@ -190,7 +222,7 @@ func (s *Server) registerTools() {
 	s.tools.register(ToolDescriptor{
 		Name:        "update_adventure_meta",
 		Scope:       scopeWrite,
-		Description: "Patch an adventure's metadata: rename, recolor, edit intro/outro, change language, set start coords, flip published/strict_assets. Only present keys are applied — omit a field to leave it untouched. Use {field: null} on start_lat/start_lng to clear those columns.",
+		Description: "Patch an adventure's metadata: rename, recolor, edit intro/outro, change language, set start coords, flip strict_assets. Catalog listing (published) is the platform operator's and is refused here. Only present keys are applied — omit a field to leave it untouched. Use {field: null} on start_lat/start_lng to clear those columns.",
 		InputSchema: map[string]any{
 			"type":     "object",
 			"required": []string{"slug", "patch"},
@@ -198,7 +230,7 @@ func (s *Server) registerTools() {
 				"slug": map[string]any{"type": "string", "description": "Adventure to update."},
 				"patch": map[string]any{
 					"type":        "object",
-					"description": "Partial patch matching the admin updateAdventureRequest shape. Common fields: title, description, author, intro_text, outro_text, language, accent_color, accent_secondary_color, background_color, text_color, submit_bg_color, published, strict_assets, start_lat, start_lng, start_label, slug.",
+					"description": "Partial patch matching the admin updateAdventureRequest shape. Common fields: title, description, author, intro_text, outro_text, language, accent_color, accent_secondary_color, background_color, text_color, submit_bg_color, strict_assets, start_lat, start_lng, start_label, slug.",
 				},
 			},
 		},
@@ -523,11 +555,11 @@ type adventureSummary struct {
 }
 
 // listAdventures is the read-side proof of life. The visibility
-// rules mirror admin.ListAdventures: org-owned rows are visible to
-// members of that org, NULL-owned rows are admin-curated globals
-// visible to everyone. Refactoring admin.ListAdventures to share a
-// listing helper would be cleaner — for the scaffold we duplicate
-// the query and call out the seam.
+// rules mirror admin.ListAdventures: the caller's org's own rows, the
+// published catalog, and anything assigned or shared to the org.
+// Refactoring admin.ListAdventures to share a listing helper would be
+// cleaner — for the scaffold we duplicate the query and call out the
+// seam.
 //
 // TODO(refactor): extract a shared lister into internal/adventure
 // and have both admin.ListAdventures and this tool call it.
@@ -536,19 +568,21 @@ func listAdventures(ctx context.Context, s *Server, _ json.RawMessage) (ToolCall
 	if !ok {
 		return errorResult("no authenticated caller"), nil
 	}
-	const q = `
+	if me.OrgID == nil {
+		return errorResult("no active organization"), nil
+	}
+	q := `
 		SELECT a.slug, a.title, COALESCE(a.language,''), a.org_id,
 		       (SELECT COUNT(*) FROM adventure_lanes l WHERE l.adventure_id = a.id) AS lanes,
 		       (SELECT COUNT(*) FROM adventure_pages p WHERE p.adventure_id = a.id) AS puzzles
 		FROM adventures a
-		WHERE a.org_id IS NULL OR a.org_id = $1
+		WHERE a.org_id = $1
+		   OR ` + admin.CatalogFilter + `
+		   OR EXISTS (SELECT 1 FROM adventure_assignments aa WHERE aa.adventure_slug = a.slug AND aa.org_id = $1)
+		   OR EXISTS (SELECT 1 FROM adventure_shares s WHERE s.adventure_slug = a.slug AND s.org_id = $1)
 		ORDER BY a.title
 	`
-	var orgArg sql.NullInt64
-	if me.OrgID != nil {
-		orgArg = sql.NullInt64{Int64: *me.OrgID, Valid: true}
-	}
-	rows, err := s.DB.QueryContext(ctx, q, orgArg)
+	rows, err := s.DB.QueryContext(ctx, q, *me.OrgID)
 	if err != nil {
 		return errorResult("query failed: " + err.Error()), nil
 	}

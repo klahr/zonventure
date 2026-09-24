@@ -27,7 +27,7 @@ func TestAudio_PageUploadRoundTrip(t *testing.T) {
 	defer cleanup()
 	admin := newClient(t, ts)
 	if s := admin.do("POST", "/api/auth/login",
-		map[string]string{"username": "root", "password": "rootpw"}, nil); s != 200 {
+		map[string]string{"username": "pub", "password": "pubpw"}, nil); s != 200 {
 		t.Fatalf("admin login = %d", s)
 	}
 	pageID := demoPageID(t, admin)
@@ -80,7 +80,7 @@ func TestAudio_PageRejectsNonAudioBytes(t *testing.T) {
 	defer cleanup()
 	admin := newClient(t, ts)
 	if s := admin.do("POST", "/api/auth/login",
-		map[string]string{"username": "root", "password": "rootpw"}, nil); s != 200 {
+		map[string]string{"username": "pub", "password": "pubpw"}, nil); s != 200 {
 		t.Fatalf("admin login = %d", s)
 	}
 	pageID := demoPageID(t, admin)
@@ -119,7 +119,7 @@ func TestAudio_PageVisibleAcrossPagesInSameAdventure(t *testing.T) {
 	defer cleanup()
 	admin := newClient(t, ts)
 	if s := admin.do("POST", "/api/auth/login",
-		map[string]string{"username": "root", "password": "rootpw"}, nil); s != 200 {
+		map[string]string{"username": "pub", "password": "pubpw"}, nil); s != 200 {
 		t.Fatalf("admin login = %d", s)
 	}
 	// Attach audio to puzzle 2 (the LAST page in the demo adventure).
@@ -163,7 +163,7 @@ func TestAudio_HintGatedByReveal(t *testing.T) {
 	defer cleanup()
 	admin := newClient(t, ts)
 	if s := admin.do("POST", "/api/auth/login",
-		map[string]string{"username": "root", "password": "rootpw"}, nil); s != 200 {
+		map[string]string{"username": "pub", "password": "pubpw"}, nil); s != 200 {
 		t.Fatalf("admin login = %d", s)
 	}
 	pageID := demoPageID(t, admin)

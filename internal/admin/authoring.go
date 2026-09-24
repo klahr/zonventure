@@ -18,12 +18,12 @@ import (
 	"github.com/klahr/zonventure/internal/mdx"
 )
 
-/* ---------------- Adventure authoring (admin-only) ---------------- */
+/* ---------------- Adventure authoring ---------------- */
 //
-// These endpoints let the global admin create and edit adventures that
+// These endpoints let an org's admins create and edit adventures that
 // live entirely in the database. Image uploads accept multipart/form-data
-// and store the blob alongside the page. Everything is admin-only — the
-// org-side endpoints read adventures through the adventure.Library.
+// and store the blob alongside the page. The org-side read endpoints go
+// through the adventure.Library.
 
 // maxImageBytes is the per-upload size cap. Defaults to 5 MiB; an
 // operator can lower it for a small self-host box (or raise it for a
@@ -141,11 +141,9 @@ type adventureEditDTO struct {
 	// "sv"). Defaults to "en" via the schema's column default.
 	Language  string `json:"language"`
 	AvatarURL string `json:"avatar_url,omitempty"`
-	// OrgID identifies the owner — nil for admin-owned global-catalog
-	// adventures, set for org-owned ones. The publish flag is only
-	// load-bearing for the nil case (it gates cross-org catalog
-	// visibility); the UI uses this to hide the toggle for org-owned
-	// rows where flipping it has no effect.
+	// OrgID identifies the owner. The publish flag is only load-bearing
+	// for the catalog publisher's adventures (it gates cross-org
+	// catalog visibility) and is set by the operator, not here.
 	OrgID     *int64 `json:"org_id,omitempty"`
 	Published bool   `json:"published"`
 	// StrictAssets, when true, scopes player asset visibility (page
@@ -306,6 +304,10 @@ func (h *Handlers) CreateAdventure(w http.ResponseWriter, r *http.Request) {
 	// other authoring role stamps their own org onto the row.
 	me, _ := auth.FromContext(r.Context())
 	org := callerOrgID(me)
+	if !canAuthor(me, org) {
+		httpx.Error(w, http.StatusForbidden, "forbidden")
+		return
+	}
 	var orgArg any
 	if org.Valid {
 		orgArg = org.Int64
@@ -375,8 +377,10 @@ type updateAdventureRequest struct {
 	SubmitBgColor        *string `json:"submit_bg_color,omitempty"`
 	Font                 *string `json:"font,omitempty"`
 	Language             *string `json:"language,omitempty"`
-	Published            *bool   `json:"published,omitempty"`
-	StrictAssets         *bool   `json:"strict_assets,omitempty"`
+	// Published is refused: catalog listing is the operator's call
+	// (PUT /api/admin/catalog/{slug}/published).
+	Published    *bool `json:"published,omitempty"`
+	StrictAssets *bool `json:"strict_assets,omitempty"`
 	// Starting location (optional). Pass both lat and lng pointing at
 	// values to set; pass them with explicit null inside the JSON body
 	// to clear ({"start_lat": null}) — the wrapper struct distinguishes
@@ -529,11 +533,7 @@ func applyAdventureMetaUpdate(ctx context.Context, db *sql.DB, slug string, req 
 		add("language", lang)
 	}
 	if req.Published != nil {
-		if *req.Published {
-			add("published", 1)
-		} else {
-			add("published", 0)
-		}
+		return badRequestf("published is set by the platform operator when curating the catalog")
 	}
 	if req.StrictAssets != nil {
 		add("strict_assets", *req.StrictAssets)
@@ -586,8 +586,7 @@ func applyAdventureMetaUpdate(ctx context.Context, db *sql.DB, slug string, req 
 // named adventure. patchJSON shape matches updateAdventureRequest:
 // every field is optional and only present keys are applied. The
 // LLM-facing MCP tool calls this so the model can rename, recolor,
-// flip published, or tweak intro/outro without rebuilding the
-// whole envelope.
+// or tweak intro/outro without rebuilding the whole envelope.
 //
 // Caller is responsible for authorization
 // (AuthorizeAdventureEdit). Returns *importError carrying the

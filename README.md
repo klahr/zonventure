@@ -40,7 +40,11 @@ docker compose up -d
 
 That brings up Postgres + the app, runs migrations, and seeds an
 initial admin. Open <http://localhost:8080/arrange>, log in as
-`admin` / `admin`, change the password, and you're authoring.
+`admin` / `admin` and change the password. The admin manages
+organisations and watches the system; adventures are authored inside
+an organisation — create one, add yourself to it as a separate
+(non-admin) user, and author there. Make it the catalog publisher on
+its Organizations page to offer its adventures to other orgs.
 
 Prefer a native binary? `go build -o zv ./cmd/server` still works —
 see [SELFHOSTING.md](SELFHOSTING.md#building-from-source-without-docker).

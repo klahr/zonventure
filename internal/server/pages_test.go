@@ -35,7 +35,7 @@ func TestPages_DisabledRoundTripsThroughEdit(t *testing.T) {
 	defer cleanup()
 	admin := newClient(t, ts)
 	if s := admin.do("POST", "/api/auth/login",
-		map[string]string{"username": "root", "password": "rootpw"}, nil); s != 200 {
+		map[string]string{"username": "pub", "password": "pubpw"}, nil); s != 200 {
 		t.Fatalf("admin login = %d", s)
 	}
 	pageID, _ := findPage(t, admin, "demo", "Landmark")
@@ -76,7 +76,7 @@ func TestPages_DisabledIsSkippedByPlayer(t *testing.T) {
 	defer cleanup()
 	admin := newClient(t, ts)
 	if s := admin.do("POST", "/api/auth/login",
-		map[string]string{"username": "root", "password": "rootpw"}, nil); s != 200 {
+		map[string]string{"username": "pub", "password": "pubpw"}, nil); s != 200 {
 		t.Fatalf("admin login = %d", s)
 	}
 	pageID, _ := findPage(t, admin, "demo", "Landmark")
@@ -165,7 +165,7 @@ func TestPages_ReorderViaAPI(t *testing.T) {
 	defer cleanup()
 	admin := newClient(t, ts)
 	if s := admin.do("POST", "/api/auth/login",
-		map[string]string{"username": "root", "password": "rootpw"}, nil); s != 200 {
+		map[string]string{"username": "pub", "password": "pubpw"}, nil); s != 200 {
 		t.Fatalf("admin login = %d", s)
 	}
 

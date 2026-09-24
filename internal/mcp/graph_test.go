@@ -72,8 +72,12 @@ func TestGraphTools_ConvertSaveGet(t *testing.T) {
 	db, cleanup := dbtest.Open(t)
 	defer cleanup()
 
+	var orgID int64
+	if err := db.QueryRow(`INSERT INTO organizations(name) VALUES ('Acme') RETURNING id`).Scan(&orgID); err != nil {
+		t.Fatal(err)
+	}
 	var advID int64
-	if err := db.QueryRow(`INSERT INTO adventures(slug, title, description, author) VALUES ('mcp-graph', 't', '', '') RETURNING id`).Scan(&advID); err != nil {
+	if err := db.QueryRow(`INSERT INTO adventures(slug, title, description, author, org_id) VALUES ('mcp-graph', 't', '', '', $1) RETURNING id`, orgID).Scan(&advID); err != nil {
 		t.Fatal(err)
 	}
 	var laneID int64
@@ -92,12 +96,15 @@ func TestGraphTools_ConvertSaveGet(t *testing.T) {
 	// A real user row: the saved version records who made it, through a
 	// foreign key, so a made-up id would be rejected by the database.
 	var userID int64
-	if err := db.QueryRow(`INSERT INTO users(username, password_hash, email_verified, is_admin) VALUES ('root', 'x', 1, true) RETURNING id`).Scan(&userID); err != nil {
+	if err := db.QueryRow(`INSERT INTO users(username, password_hash, email_verified) VALUES ('boss', 'x', 1) RETURNING id`).Scan(&userID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO org_memberships(user_id, org_id, role) VALUES ($1, $2, 'org_admin')`, userID, orgID); err != nil {
 		t.Fatal(err)
 	}
 
 	s := &Server{DB: db, Admin: &admin.Handlers{DB: db}, tools: newRegistry()}
-	ctx := auth.WithUser(context.Background(), auth.User{ID: userID, Username: "root", IsAdmin: true, Role: "admin"})
+	ctx := auth.WithUser(context.Background(), auth.User{ID: userID, Username: "boss", Role: auth.RoleOrgAdmin, OrgID: &orgID})
 	ctx = withScopes(ctx, []string{"read", "write"})
 
 	res, _ := convertAdventureGraph(ctx, s, json.RawMessage(`{"slug":"mcp-graph"}`))

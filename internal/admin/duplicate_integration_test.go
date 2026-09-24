@@ -44,16 +44,16 @@ func TestDuplicateAdventure_HappyPath(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Admin-owned published catalog row with one page + one hint to
-	// verify the cascade is wired. Published so the org_admin caller
-	// is allowed to see it (the duplicate endpoint enforces
-	// canSeeOwned on the source).
+	// Published catalog row (publisher-owned) with one page + one hint
+	// to verify the cascade is wired. Published so the org_admin
+	// caller is allowed to see it (the duplicate endpoint enforces
+	// staffCanSeeAdventure on the source).
 	var advID int64
 	if err := db.QueryRow(`
-		INSERT INTO adventures(slug, title, author, published)
-		VALUES ('starter', 'Starter Tour', 'Zonventure', 1)
+		INSERT INTO adventures(slug, title, author, published, org_id)
+		VALUES ('starter', 'Starter Tour', 'Zonventure', 1, $1)
 		RETURNING id
-	`).Scan(&advID); err != nil {
+	`, dbtest.PublisherOrg(t, db)).Scan(&advID); err != nil {
 		t.Fatal(err)
 	}
 	var pageID int64
@@ -187,9 +187,9 @@ func TestDuplicateAdventure_OrgMemberRejected(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := db.Exec(`
-		INSERT INTO adventures(slug, title, author, published)
-		VALUES ('starter', 'Starter Tour', 'Zonventure', 1)
-	`); err != nil {
+		INSERT INTO adventures(slug, title, author, published, org_id)
+		VALUES ('starter', 'Starter Tour', 'Zonventure', 1, $1)
+	`, dbtest.PublisherOrg(t, db)); err != nil {
 		t.Fatal(err)
 	}
 

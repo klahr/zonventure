@@ -56,8 +56,8 @@ type previewStateDTO struct {
 	// OrgLogoURL + OrgName mirror the player.State fields so the
 	// preview's brand strip matches what real participants see. The
 	// preview uses the caller's active org rather than the
-	// adventure's owning org — for admin-owned global adventures the
-	// caller's org is what gets stamped on a real run anyway.
+	// adventure's owning org — for catalog adventures the caller's
+	// org is what gets stamped on a real run anyway.
 	OrgLogoURL string `json:"org_logo_url,omitempty"`
 	OrgName    string `json:"org_name,omitempty"`
 }
@@ -255,8 +255,8 @@ func (h *Handlers) PreviewAdventure(w http.ResponseWriter, r *http.Request) {
 		out.Hints = hints
 	}
 	// Mirror the play-page brand strip in preview. Pulled off the
-	// caller's active org so an arranger previewing a global-catalog
-	// (admin-owned) adventure still sees their own brand mark — same
+	// caller's active org so an arranger previewing a catalog
+	// adventure still sees their own brand mark — same
 	// thing that would happen on a real run their org schedules.
 	if me, ok := auth.FromContext(r.Context()); ok && me.OrgID != nil {
 		var (
@@ -313,7 +313,7 @@ const (
 	// Returns 403 from PreviewAdventure.
 	previewAccessNone previewAccessLevel = iota
 	// previewAccessAuthor — caller can edit the adventure (owning-org
-	// author or global admin via canAuthor). Full preview, accept
+	// author via canAuthor). Full preview, accept
 	// list included, debug panel honoured.
 	previewAccessAuthor
 	// previewAccessLicensed — caller's org holds an assignment for or
@@ -326,8 +326,7 @@ const (
 
 // previewAccess looks up which preview level the calling session is
 // entitled to for the given adventure slug. Order matters: an author
-// who *also* holds an assignment (e.g. an admin who bought slots in
-// a different org's adventure) gets author-level preview because
+// who *also* holds an assignment gets author-level preview because
 // canAuthor passes — strictly more useful than the buyer flavour.
 func (h *Handlers) previewAccess(ctx context.Context, slug string) (previewAccessLevel, error) {
 	me, _ := auth.FromContext(ctx)
@@ -344,8 +343,7 @@ func (h *Handlers) previewAccess(ctx context.Context, slug string) (previewAcces
 		return previewAccessAuthor, nil
 	}
 	// Below this line we need an org context to look up assignments
-	// and shares — admins fall through canAuthor above, so anyone
-	// without an OrgID here is a non-admin without org membership
+	// and shares — anyone without an OrgID here is outside every org
 	// (shouldn't happen via the routed surface, but bail safely).
 	if me.OrgID == nil {
 		return previewAccessNone, nil

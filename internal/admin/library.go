@@ -50,12 +50,15 @@ type libraryPuzzleDTO struct {
 	AdventureIdx   *int     `json:"adventure_idx,omitempty"`
 }
 
-// ListPuzzles returns every puzzle in the system (scoped to the
-// caller's visibility) with a light adventure assignment annotation.
-// Admins see everything; org users see admin-owned library stubs
-// plus anything owned by their org.
+// ListPuzzles returns the puzzles visible to the caller's org with a
+// light adventure assignment annotation: its own, plus the publisher's
+// library stubs and the puzzles of published catalog adventures.
 func (h *Handlers) ListPuzzles(w http.ResponseWriter, r *http.Request) {
 	me, _ := auth.FromContext(r.Context())
+	if me.OrgID == nil {
+		httpx.Error(w, http.StatusForbidden, "forbidden")
+		return
+	}
 	query := `
 		SELECT p.id, p.title, p.prompt, p.notes, p.accept,
 		       p.lat, p.lng, p.radius_m, p.disabled,
@@ -64,19 +67,16 @@ func (h *Handlers) ListPuzzles(w http.ResponseWriter, r *http.Request) {
 		FROM adventure_pages p
 		LEFT JOIN adventures a ON a.id = p.adventure_id
 	`
-	var args []any
-	if !isAdmin(me) {
-		// Visibility rule: attached pages ride the adventure's org;
-		// orphan pages ride their own org. NULL on either side means
-		// admin-owned (global).
-		query += `
-			WHERE (
-			    (p.adventure_id IS NOT NULL AND (a.org_id IS NULL OR a.org_id = $1))
-			 OR (p.adventure_id IS NULL     AND (p.org_id IS NULL OR p.org_id = $2))
-			)
-		`
-		args = append(args, *me.OrgID, *me.OrgID)
-	}
+	// Visibility rule: attached pages ride the adventure's org;
+	// orphan pages ride their own org. The publisher's are the shared
+	// catalog and library.
+	query += `
+		WHERE (
+		    (p.adventure_id IS NOT NULL AND (a.org_id = $1 OR ` + CatalogFilter + `))
+		 OR (p.adventure_id IS NULL     AND (p.org_id = $1 OR p.org_id = (SELECT id FROM organizations WHERE is_publisher)))
+		)
+	`
+	args := []any{*me.OrgID}
 	query += `
 		ORDER BY
 		    CASE WHEN p.adventure_id IS NULL THEN 0 ELSE 1 END,
@@ -182,8 +182,13 @@ func (h *Handlers) CreateLibraryPuzzle(w http.ResponseWriter, r *http.Request) {
 	// ownership: admins create into the global library (NULL), org
 	// users create into their own org's library.
 	me, _ := auth.FromContext(r.Context())
+	org := callerOrgID(me)
+	if !canAuthor(me, org) {
+		httpx.Error(w, http.StatusForbidden, "forbidden")
+		return
+	}
 	orgArg := any(nil)
-	if org := callerOrgID(me); org.Valid {
+	if org.Valid {
 		orgArg = org.Int64
 	}
 	var id int64
@@ -245,13 +250,9 @@ func (h *Handlers) GetPuzzle(w http.ResponseWriter, r *http.Request) {
 		httpx.ServerErr(w, http.StatusInternalServerError, "lookup failed", err)
 		return
 	}
-	// Visibility check: attached → adventure's org; orphan → page's own.
+	// Visibility check: attached → the adventure's; orphan → page's own.
 	me, _ := auth.FromContext(r.Context())
-	owner := pageOrg
-	if advID.Valid {
-		owner = advOrg
-	}
-	if !canSeeOwned(me, owner) {
+	if !h.staffCanSeePuzzle(r.Context(), me, advSlug, advOrg, pageOrg) {
 		httpx.Error(w, http.StatusForbidden, "forbidden")
 		return
 	}
@@ -294,8 +295,8 @@ func (h *Handlers) GetPuzzle(w http.ResponseWriter, r *http.Request) {
 // and it also works for duplicating a puzzle across adventures.
 //
 // Permissions: caller must be able to see the source and edit the
-// target. A user can read admin-owned puzzles, so they can copy
-// public-catalog puzzles into their own adventures.
+// target. A user can read the catalog's puzzles, so they can copy
+// them into their own adventures.
 func (h *Handlers) CopyPuzzleToAdventure(w http.ResponseWriter, r *http.Request) {
 	slug := chi.URLParam(r, "slug")
 	srcID, err := strconv.ParseInt(chi.URLParam(r, "pageID"), 10, 64)
@@ -309,16 +310,16 @@ func (h *Handlers) CopyPuzzleToAdventure(w http.ResponseWriter, r *http.Request)
 	// Check source visibility. Load its owning org (attached → adventure,
 	// orphan → own org_id).
 	var (
-		srcAdvID   sql.NullInt64
+		srcAdvSlug sql.NullString
 		srcAdvOrg  sql.NullInt64
 		srcPageOrg sql.NullInt64
 	)
 	if err := h.DB.QueryRowContext(r.Context(), `
-		SELECT p.adventure_id, a.org_id, p.org_id
+		SELECT a.slug, a.org_id, p.org_id
 		FROM adventure_pages p
 		LEFT JOIN adventures a ON a.id = p.adventure_id
 		WHERE p.id = $1
-	`, srcID).Scan(&srcAdvID, &srcAdvOrg, &srcPageOrg); err != nil {
+	`, srcID).Scan(&srcAdvSlug, &srcAdvOrg, &srcPageOrg); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			httpx.Error(w, http.StatusNotFound, "source puzzle not found")
 			return
@@ -327,11 +328,7 @@ func (h *Handlers) CopyPuzzleToAdventure(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	me, _ := auth.FromContext(r.Context())
-	srcOwner := srcPageOrg
-	if srcAdvID.Valid {
-		srcOwner = srcAdvOrg
-	}
-	if !canSeeOwned(me, srcOwner) {
+	if !h.staffCanSeePuzzle(r.Context(), me, srcAdvSlug, srcAdvOrg, srcPageOrg) {
 		httpx.Error(w, http.StatusForbidden, "cannot see that puzzle")
 		return
 	}

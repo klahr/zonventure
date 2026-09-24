@@ -38,9 +38,6 @@ import {
   undo,
   updateNode,
   emptyHistory,
-  insertAfter,
-  insertionPoint,
-  newNode,
   type AdventureMeta,
   type Envelope,
   type Graph,
@@ -797,14 +794,6 @@ export function Designer({ slug }: { slug: string }) {
                 onDelete={() => {
                   change(removeNode(graph, node.slug));
                   setSelected(null);
-                }}
-                onAddAfter={(type) => {
-                  const at = insertionPoint(graph, node.slug);
-                  if (!at) return;
-                  const added = newNode(graph, type, { x: 0, y: 0 });
-                  change(insertAfter(graph, at, added));
-                  setSelected(added.slug);
-                  setFocusRequest((n) => n + 1);
                 }}
               />
             </AdventureSlug.Provider>

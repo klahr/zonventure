@@ -11,6 +11,57 @@ The repository, Go module, and CLI binary are named `zv`; the product is
 
 ## [Unreleased]
 
+### Changed — platform admin no longer authors or runs events (breaking)
+
+The global admin is now purely the operator: it manages organisations
+and watches the system. Authoring and running events belong to
+organisations.
+
+- **Admin is refused on content and event routes.** `/api/admin`
+  adventure, graph, puzzle, page, media, event, team, webhook,
+  assignment-list and simulator routes, `POST /purchases` and
+  `/ws/arrange` answer the admin with 403. MCP tools carry an audience:
+  an admin token only sees and calls `grant_slots_to_event`,
+  `list_purchases`, `get_purchase` and `describe_event_lifecycle`.
+- **The catalog has a publisher org.** Catalog adventures used to be
+  the admin's ownerless (`org_id IS NULL`) rows; now they belong to the
+  one org flagged `organizations.is_publisher`, whose org admins author
+  them. Migration `0065_catalog_publisher` moves existing ownerless
+  adventures and library puzzles into a new "Zonventure Catalog"
+  publisher org; `0066_adventure_org_not_null` then makes
+  `adventures.org_id` mandatory and requires library puzzles to have
+  an owner.
+- **Curation moved to the operator's endpoints.** New
+  `GET /api/admin/catalog`, `PUT /api/admin/catalog/{slug}/published`,
+  `/api/admin/catalog/{slug}/shares` (replacing
+  `/api/admin/adventures/{slug}/shares`) and
+  `PUT /api/admin/organizations/{id}/publisher`. Authors can no longer
+  set `published` via `PATCH /api/admin/adventures/{slug}` or
+  `update_adventure_meta` (400). Event passes and commissions only
+  accept catalog adventures. The publisher org can't be deleted while
+  it publishes.
+- **Operator event actions moved to the org page.**
+  `GET /api/admin/organizations/{id}/events` (no live token) and
+  `POST /api/admin/organizations/{id}/events/{eventID}/cancel`. The
+  admin console's sidebar is Dashboard, Organizations, Logs and
+  Settings; an org's page shows its events (Grant slots, Cancel), the
+  catalog it publishes, and the adventures commissioned for it.
+- **`make seed`** also creates a `publisher` / `publisher` org admin
+  (`-seed-publisher`) in the publisher org, which owns the demo
+  adventure.
+
+### Fixed — authoring gates
+
+- Creating adventures (form, import, MCP `create_adventure`) and
+  library puzzles now requires org admin; org members and users
+  without an org were let through, the latter creating ownerless
+  catalog rows.
+- `GET /api/admin/adventures` and `/puzzles` no longer crash for a
+  signed-up user without an organisation.
+- Unpublished catalog adventures could be bought, duplicated, read
+  and copied from by any org; they are now visible only when listed,
+  shared or assigned.
+
 ### Hardening — vendor pinning, CSP, durable submits
 
 A round of polish on the player + arranger surfaces. Each item closes

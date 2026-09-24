@@ -304,16 +304,16 @@
 
 <section id="adventure">
   <h2>Authoring an adventure</h2>
-  <p>Adventures live in the Library. You can author your own, or pick one from the global catalog (the catalog is curated by the platform admin and always free to use).</p>
+  <p>Adventures live under Adventures. Organisation admins author their own, or pick one from the catalog — written by the platform's publisher organisation, listed and commissioned by the platform admin.</p>
 
   <h3>Create an adventure</h3>
   <ol>
-    <li>Click "Library" in the sidebar.</li>
+    <li>Click "Adventures" in the sidebar.</li>
     <li>Press "New adventure".</li>
     <li>Give it a title. The slug is auto-derived but editable; once players have started an event with this slug, don't change it.</li>
     <li>Save. You're taken to the puzzle editor.</li>
   </ol>
-  <div class="shot">[Screenshot: Library tab with the New adventure button highlighted]</div>
+  <div class="shot">[Screenshot: Adventures page with the New adventure button highlighted]</div>
 
   <h3>Adventure metadata</h3>
   <p>Beyond title and slug, an adventure can carry:</p>
@@ -548,7 +548,7 @@ docker compose up -d</code></pre>
   <ul>
     <li><strong>No Stripe by default.</strong> Without <code>ZV_STRIPE_SECRET_KEY</code> set, the Catalog's checkout flow creates event passes directly — you get the licence without paying, because the operator is you. Wire Stripe in if you want to resell to other organisations on your instance.</li>
     <li><strong>No SSO by default.</strong> Username + password is the front door. Set <code>ZV_OIDC_*</code> to enable Google Workspace (or any OIDC provider) sign-in for your domain. The login page picks up the SSO button automatically.</li>
-    <li><strong>You're the global admin.</strong> The seeded admin account sees every org, every adventure, every event on the instance. Treat it like a root password — store it in the same place you keep <code>POSTGRES_PASSWORD</code>.</li>
+    <li><strong>You're the global admin.</strong> The seeded admin account manages every org on the instance, curates the catalog and watches the system — it doesn't author adventures or run events. To author, make an organisation the catalog publisher (Organizations page) and add yourself to it as a separate, non-admin user. Treat the admin account like a root password — store it in the same place you keep <code>POSTGRES_PASSWORD</code>.</li>
     <li><strong>Backups are your job.</strong> All durable state lives in the <code>zv_pg_data</code> volume — adventures, events, uploaded images and audio, recap tokens. <code>docker compose down -v</code> wipes everything. SELFHOSTING.md has a tested <code>pg_dump</code>-based backup recipe.</li>
     <li><strong>The marketing landing page is off by default.</strong> An unauthenticated visitor lands directly on the login screen. Flip it on via the admin Settings page if you want a public "what is this?" page.</li>
   </ul>

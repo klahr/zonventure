@@ -28,8 +28,8 @@ func TestGraphPlayerLoop(t *testing.T) {
 	ts, assignmentID, cleanup := newTestServer(t)
 	defer cleanup()
 
-	root := newClient(t, ts)
-	if s := root.do("POST", "/api/auth/login", map[string]string{"username": "root", "password": "rootpw"}, nil); s != 200 {
+	pub := newClient(t, ts)
+	if s := pub.do("POST", "/api/auth/login", map[string]string{"username": "pub", "password": "pubpw"}, nil); s != 200 {
 		t.Fatalf("login = %d", s)
 	}
 	g := graph.Graph{
@@ -47,10 +47,10 @@ func TestGraphPlayerLoop(t *testing.T) {
 			{From: "hello", FromPort: "solved", To: "end"},
 		},
 	}
-	if s := root.doAny("PUT", "/api/admin/adventures/demo/graph", graph.Envelope{Format: graph.FormatV2, Graph: g}, nil); s != 200 {
+	if s := pub.doAny("PUT", "/api/admin/adventures/demo/graph", graph.Envelope{Format: graph.FormatV2, Graph: g}, nil); s != 200 {
 		t.Fatalf("save graph = %d", s)
 	}
-	if s := root.doAny("POST", "/api/admin/adventures/demo/graph/publish", nil, nil); s != 200 {
+	if s := pub.doAny("POST", "/api/admin/adventures/demo/graph/publish", nil, nil); s != 200 {
 		t.Fatalf("publish = %d", s)
 	}
 
@@ -58,7 +58,7 @@ func TestGraphPlayerLoop(t *testing.T) {
 	var sim struct {
 		Result session.Result `json:"result"`
 	}
-	if s := root.doAny("POST", "/api/admin/adventures/demo/simulate", map[string]any{
+	if s := pub.doAny("POST", "/api/admin/adventures/demo/simulate", map[string]any{
 		"envelope": graph.Envelope{Format: graph.FormatV2, Graph: g},
 		"action":   map[string]string{"kind": "place", "node": "hello"},
 	}, &sim); s != 200 || sim.Result.View.Text != "Say hello." {

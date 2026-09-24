@@ -77,6 +77,7 @@ The MCP surface has no streaming. To watch a live event, poll:
 
 - ` + "`cancel_event`" + ` and ` + "`delete_team`" + ` require the caller's password (passed as ` + "`password`" + `, forwarded as X-Confirm-Password). The MCP token alone cannot cancel or destroy.
 - ` + "`grant_slots_to_event`" + ` is admin-only and refused at the MCP layer when the token's user isn't a global admin.
+- A global admin's token reaches only the operator tools (` + "`grant_slots_to_event`" + `, the purchase reads, this reference): authoring and running events belong to org users.
 - ` + "`create_purchase`" + ` is hard-coded to provider="simulated" and refuses on Stripe-enabled deployments — real-money buys go through the web checkout.
 
 ## Quests vs regular events
@@ -91,6 +92,7 @@ A Quest is an event with ` + "`public_for_sale: true`" + ` — set once at creat
 func (s *Server) registerLifecycleTool() {
 	s.tools.register(ToolDescriptor{
 		Name:        "describe_event_lifecycle",
+		Audience:    audienceAny,
 		Scope:       scopeRead,
 		Description: "Return a Markdown reference covering the event state machine, which MCP tool drives each transition, what's editable in each state, observation polling cadence, and the full tool index by phase. Useful as a one-shot fetch at the start of an event-running task so the model can plan transitions without trial-and-error.",
 		InputSchema: map[string]any{

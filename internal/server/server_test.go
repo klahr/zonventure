@@ -2,6 +2,7 @@ package server_test
 
 import (
 	"bytes"
+	"database/sql"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -25,12 +26,13 @@ func newTestServer(t *testing.T) (*httptest.Server, int64, func()) {
 	lib := adventure.New(sqlDB)
 
 	// Seed the demo adventure directly (fine for tests — production uses the
-	// admin editor or the seed-demo flow).
+	// editor or the seed-demo flow). It belongs to the catalog publisher
+	// org, whose org_admin "pub" authors it.
 	var advID int64
 	if err := sqlDB.QueryRow(`
-		INSERT INTO adventures(slug, title, description, author) VALUES ($1, $2, $3, $4)
+		INSERT INTO adventures(slug, title, description, author, org_id) VALUES ($1, $2, $3, $4, $5)
 		RETURNING id
-	`, "demo", "Demo: First Steps", "", "zv").Scan(&advID); err != nil {
+	`, "demo", "Demo: First Steps", "", "zv", seedPublisher(t, sqlDB)).Scan(&advID); err != nil {
 		dbCleanup()
 		t.Fatalf("seed adventure: %v", err)
 	}
@@ -102,13 +104,10 @@ func newTestServer(t *testing.T) (*httptest.Server, int64, func()) {
 		t.Fatalf("seed admin: %v", err)
 	}
 	_ = bossID // referenced by the membership insert above
-	// Demo adventure stays admin-owned (NULL org_id) so the
-	// catalog-vs-org-owned ownership tests can rely on it. To let
-	// boss's org consume it for events / runs, drop in a share
-	// (the post-migration auth model treats a share as the
-	// equivalent of "this adventure is admin-commissioned for the
-	// org" — the original implicit "users.role=org_admin can edit
-	// anything" path no longer exists).
+	// Demo adventure is a catalog adventure (publisher-owned, not
+	// published) so the catalog-vs-org-owned ownership tests can rely
+	// on it. To let boss's org consume it for events / runs, drop in a
+	// share — the operator commissioning it for the org.
 	if _, err := sqlDB.Exec(
 		`INSERT INTO adventure_shares(adventure_slug, org_id) VALUES ('demo', $1)`,
 		orgID); err != nil {
@@ -456,4 +455,24 @@ func itoa(i int64) string {
 		buf[l], buf[r] = buf[r], buf[l]
 	}
 	return string(buf)
+}
+
+// seedPublisher creates the catalog publisher org with an org_admin
+// "pub" / "pubpw" who authors its adventures, and returns the org id.
+func seedPublisher(t *testing.T, db *sql.DB) int64 {
+	t.Helper()
+	orgID := dbtest.PublisherOrg(t, db)
+	hash, _ := auth.HashPassword("pubpw")
+	var userID int64
+	if err := db.QueryRow(
+		`INSERT INTO users(username, password_hash, email_verified) VALUES ('pub', $1, 1) RETURNING id`,
+		hash).Scan(&userID); err != nil {
+		t.Fatalf("seed publisher user: %v", err)
+	}
+	if _, err := db.Exec(
+		`INSERT INTO org_memberships(user_id, org_id, role) VALUES ($1, $2, 'org_admin')`,
+		userID, orgID); err != nil {
+		t.Fatalf("seed publisher membership: %v", err)
+	}
+	return orgID
 }

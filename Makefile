@@ -21,6 +21,7 @@ DSN      ?= postgres://zv:zv@127.0.0.1:5432/zv?sslmode=disable
 # user already exists, so re-running on an active stack is harmless.
 ADMIN    ?= admin:admin
 ARRANGER ?= boss:s3cret
+PUBLISHER ?= publisher:publisher
 
 # --- help --------------------------------------------------------------------
 
@@ -93,11 +94,14 @@ reset:
 	docker compose up -d --build
 	@echo "Fresh stack at http://localhost:8080"
 
-# Seed users + demo adventure. Idempotent: each row checks first.
+# Seed users + demo adventure. Idempotent: each row checks first. The
+# publisher login authors the catalog (the demo adventure lives in its
+# org); the admin only manages orgs.
 seed:
 	docker compose run --rm app \
 	  -seed-admin $(ADMIN) \
 	  -seed-arranger $(ARRANGER) \
+	  -seed-publisher $(PUBLISHER) \
 	  -seed-demo-adventure
 
 # --- Native Go run (no Docker for the app) -----------------------------------

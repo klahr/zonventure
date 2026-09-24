@@ -188,3 +188,32 @@ The retention sweeper prunes location pings, answer attempts, and old
 location/answer data, 90 days for audit events. Tune via
 `ZV_LOCATION_RETENTION_DAYS` / `ZV_AUDIT_RETENTION_DAYS` (or the
 matching `-retention-*` flags). Set to `0` to disable.
+
+## Platform admin vs organisations
+
+The global admin is the operator: organisations, admins, settings,
+logs, migration, billing (refunds, invoices) — and nothing that
+authors content or runs an event. `/api/admin` routes for adventures,
+puzzles, events, teams, webhooks and the simulator answer the admin
+with 403; so do the matching MCP tools.
+
+Operator actions on an organisation's events live on its
+**Organizations** page:
+
+- **Grant slots** — `POST /api/admin/events/{id}/grant-slots`. Free for
+  orgs without invoice billing; priced grants land on the next invoice.
+- **Cancel event** — `POST /api/admin/organizations/{org}/events/{id}/cancel`
+  with `X-Confirm-Password`. The event must belong to that org (404
+  otherwise).
+
+The catalog is authored by the one **catalog publisher** org
+(`organizations.is_publisher`). The operator curates it:
+
+- `PUT /api/admin/organizations/{org}/publisher` — flag / unflag
+  (unflag needs `X-Confirm-Password`; 409 while another org publishes).
+  The publisher can't be deleted while it publishes.
+- `GET /api/admin/catalog` — the publisher's adventures with their
+  shares.
+- `PUT /api/admin/catalog/{slug}/published` — list / unlist.
+- `POST|DELETE /api/admin/catalog/{slug}/shares[/{org}]` — commission
+  an adventure for one org without listing it.

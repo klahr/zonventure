@@ -180,8 +180,8 @@ func seedAdventure(t *testing.T, db *sql.DB, slug, title string) int64 {
 	t.Helper()
 	var id int64
 	if err := db.QueryRow(
-		`INSERT INTO adventures(slug, title, description, author) VALUES ($1, $2, '', '') RETURNING id`,
-		slug, title).Scan(&id); err != nil {
+		`INSERT INTO adventures(slug, title, description, author, org_id) VALUES ($1, $2, '', '', $3) RETURNING id`,
+		slug, title, dbtest.PublisherOrg(t, db)).Scan(&id); err != nil {
 		t.Fatal(err)
 	}
 	return id
