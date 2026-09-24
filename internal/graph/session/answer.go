@@ -15,6 +15,12 @@ import (
 func (t *Team) answerInput(cfg *graph.PuzzleConfig) *Input {
 	a := cfg.Answer
 	switch cfg.Kind() {
+	case graph.AnswerScan:
+		in := &Input{Kind: "scan"}
+		if b := cfg.Bar; b != nil {
+			in.Button = b.Button
+		}
+		return in
 	case graph.AnswerTiles:
 		return &Input{Kind: "tiles", Rows: a.Rows, Cols: a.Cols, Image: a.Image}
 	case graph.AnswerSearch:
@@ -28,8 +34,18 @@ func (t *Team) answerInput(cfg *graph.PuzzleConfig) *Input {
 		return in
 	case graph.AnswerLock:
 		return &Input{Kind: "lock", Wheels: a.Wheels, Symbols: a.Symbols, Start: a.Start}
+	case graph.AnswerQuestions:
+		// The questions are blocks; the phone counts their picks.
+		return &Input{Kind: "questions"}
 	}
-	return inputFor(cfg)
+	in := inputFor(cfg)
+	if b := cfg.Bar; b != nil {
+		in.Placeholder, in.Button, in.NoScan = b.Placeholder, b.Button, b.NoScan
+		if b.Keyboard != "" {
+			in.Kind = b.Keyboard
+		}
+	}
+	return in
 }
 
 // answerOrder is the order a puzzle's answer outputs are tried in: the
@@ -61,7 +77,8 @@ func (t *Team) judge(n graph.Node, o graph.Output, guess string) match.Result {
 		// One right answer, the solved order. Spaces are ignored;
 		// anything else — a short list, a repeat — is wrong.
 		return match.Result{OK: strings.ReplaceAll(guess, " ", "") == a.Solution(), Multiplier: 1}
-	case graph.AnswerSearch:
+	case graph.AnswerSearch, graph.AnswerQuestions:
+		// Answer has already refused a team with questions left.
 		return match.Result{OK: true, Multiplier: 1}
 	case graph.AnswerChoice:
 		if a.Graded() {

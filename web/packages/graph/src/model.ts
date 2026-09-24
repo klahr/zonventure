@@ -6,7 +6,7 @@
 // undo history stores whole snapshots, so a mutation in place would
 // silently rewrite history.
 
-import { withFixed } from "./blocks.ts";
+import { newBlock, withFixed } from "./blocks.ts";
 import {
   PORT_DONE,
   PORT_ELSE,
@@ -20,6 +20,9 @@ import {
   type Node,
   type NodeType,
   type Answer,
+  type AnswerKind,
+  type ChoiceOption,
+  type Output,
   type PuzzleConfig,
 } from "./types.ts";
 
@@ -32,18 +35,100 @@ export function isGraded(a: Answer | undefined): boolean {
  * Whether a puzzle's answer outputs decide by their matchers. Mirrors
  * PuzzleConfig.UsesMatchers in Go: a tile picture's answer is its solved
  * order, a search's is where the team stands, and a marked form takes its
- * first output whatever was picked.
+ * first output whatever was picked, as do the questions.
  */
 export function usesMatchers(p: PuzzleConfig): boolean {
   switch (p.answer?.kind) {
     case "tiles":
     case "search":
+    case "questions":
       return false;
     case "choice":
       return !isGraded(p.answer);
     default:
       return true;
   }
+}
+
+/** How a puzzle can take its answer: typing it (undefined), or an AnswerKind. */
+export const ANSWER_KINDS: (AnswerKind | undefined)[] = [undefined, "scan", "choice", "lock", "tiles", "search", "questions"];
+
+/**
+ * The puzzle answered another way. The routes keep their ports, so the
+ * canvas stays connected, and what they accept carries over where it
+ * can: typed answers become a choice's options, and a kind that decides
+ * without matchers drops them. A puzzle answered by its questions gets
+ * an empty one if it has none.
+ */
+export function withAnswerKind(p: PuzzleConfig, kind: AnswerKind | undefined): PuzzleConfig {
+  if (p.answer?.kind === kind) return p;
+  const outputs = p.outputs ?? [];
+  const answers = outputs.filter((o) => o.trigger === "answer");
+  const next: PuzzleConfig = { ...p };
+  // What the i-th answer route accepts, for a kind that uses matchers.
+  let matchers = (o: Output, _i: number): Matcher[] | undefined => o.matchers;
+  // The answer bar shows only for typing and scanning.
+  if (kind !== undefined && kind !== "scan") delete next.bar;
+  switch (kind) {
+    case undefined:
+    case "scan":
+      if (kind) next.answer = { kind };
+      else delete next.answer;
+      matchers = (o) => (o.matchers?.length ? o.matchers : [{ kind: "exact", value: "" }]);
+      break;
+    case "choice": {
+      // An option for each route's first exact answer, routed to it.
+      const options: ChoiceOption[] = [];
+      const values = answers.map((o) => {
+        const label = o.matchers?.find((m) => m.kind === "exact" && m.value?.trim())?.value?.trim();
+        if (!label) return undefined;
+        const value = optionValue(label, options);
+        options.push({ value, label });
+        return value;
+      });
+      for (const d of ["A", "B"]) if (options.length < 2) options.push({ value: optionValue(d, options), label: d });
+      next.answer = { kind: "choice", fields: [{ options }] };
+      matchers = (o, i) => {
+        // With no typed answers to go on, the first route takes option A.
+        const v = values[i] ?? (i === 0 && !values.some(Boolean) ? options[0]!.value : undefined);
+        return v ? [{ kind: "exact", value: v }] : o.matchers;
+      };
+      break;
+    }
+    case "lock":
+      next.answer = { kind: "lock", wheels: 3, start: [1, 2, 0], symbols: [{ value: "1", label: "1" }, { value: "2", label: "2" }, { value: "3", label: "3" }] };
+      matchers = (o, i) => (i === 0 ? [{ kind: "exact", value: "1|1|1" }] : o.matchers);
+      break;
+    case "tiles":
+      next.answer = { kind: "tiles", rows: 3, cols: 3 };
+      break;
+    case "search":
+      next.answer = { kind: "search" };
+      break;
+    case "questions": {
+      next.answer = { kind: "questions" };
+      const blocks = p.blocks ?? [];
+      if (!blocks.some((b) => b.kind === "quiz" || b.kind === "tiebreak")) next.blocks = [...blocks, newBlock(blocks, "quiz")];
+      break;
+    }
+  }
+  const keep = usesMatchers(next);
+  let i = 0;
+  next.outputs = outputs.map((o) => {
+    if (o.trigger !== "answer") return o;
+    const m = keep ? matchers(o, i++) : undefined;
+    const { matchers: _, ...rest } = o;
+    return m ? { ...rest, matchers: m } : rest;
+  });
+  return next;
+}
+
+/** A value for a new choice option labelled label, unlike those taken. */
+export function optionValue(label: string, taken: ChoiceOption[]): string {
+  const base = label.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "option";
+  let v = base;
+  for (let n = 2; taken.some((o) => o.value === v); n++) v = `${base}-${n}`;
+  return v;
 }
 
 /**

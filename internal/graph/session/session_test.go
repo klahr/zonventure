@@ -710,3 +710,96 @@ func TestQuizWalk(t *testing.T) {
 		t.Errorf("quiz = %+v", v.Quiz)
 	}
 }
+
+// A puzzle answered by its questions waits for every shown pick, then
+// takes its first answer route, paying that route's points at once and
+// the quiz's at the end.
+func TestQuestionsPuzzle(t *testing.T) {
+	g := &graph.Graph{
+		Nodes: []graph.Node{
+			{Slug: "start", Type: graph.Start},
+			{Slug: "p", Type: graph.Puzzle, PuzzleCfg: &graph.PuzzleConfig{
+				Answer: &graph.Answer{Kind: graph.AnswerQuestions},
+				Blocks: []graph.Block{
+					{ID: "a", Kind: graph.BlockQuiz, Text: "Capital?", Options: []string{"Oslo", "Stockholm", "Malmö"}, Answer: "X"},
+					// Hidden until the team carries the key: not asked yet.
+					{ID: "b", Kind: graph.BlockQuiz, Text: "Later?", Options: []string{"a", "b", "c"}, Answer: "1",
+						Show: &graph.Show{When: cond.Predicate{Op: cond.OpItem, Item: "key"}}},
+				},
+				Outputs: []graph.Output{{Port: "done", Trigger: graph.OnAnswer, Points: 5}},
+			}},
+			{Slug: "end", Type: graph.End},
+		},
+		Items: []graph.Item{{Slug: "key"}},
+		Edges: []graph.Edge{{From: "start", FromPort: "out", To: "p"}, {From: "p", FromPort: "done", To: "end"}},
+	}
+	tm, step, err := Start(g, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tm.Apply(step)
+	if in := tm.View().Input; in == nil || in.Kind != "questions" {
+		t.Fatalf("input = %+v, want questions", in)
+	}
+	if _, _, err := tm.Answer("p", ""); err != ErrUnanswered {
+		t.Fatalf("continue before answering = %v, want ErrUnanswered", err)
+	}
+	if tm.Row("p").Attempts != 0 {
+		t.Errorf("an unanswered continue counted as a wrong guess")
+	}
+	if _, _, err := tm.Pick("p", "a", "X"); err != nil {
+		t.Fatal(err)
+	}
+	res, st, err := tm.Answer("p", "")
+	act(t, tm, "end", res, st, err)
+	if tm.Points != 6 {
+		t.Errorf("points = %v, want the route's 5 and the question's 1", tm.Points)
+	}
+}
+
+// The author's answer bar reaches the phone, in the team's language; a
+// scan-only puzzle is a scan button, and what it decodes is a guess.
+func TestAnswerBar(t *testing.T) {
+	g := &graph.Graph{
+		Language: "sv",
+		Nodes: []graph.Node{
+			{Slug: "start", Type: graph.Start},
+			{Slug: "p", Type: graph.Puzzle, PuzzleCfg: &graph.PuzzleConfig{
+				Bar:     &graph.AnswerBar{Placeholder: "Årtalet", Button: "Gissa", Keyboard: "text", NoScan: true},
+				Outputs: []graph.Output{{Port: "ok", Trigger: graph.OnAnswer, Matchers: []match.Matcher{{Kind: match.Exact, Value: "1887"}}}},
+			}},
+			{Slug: "s", Type: graph.Puzzle, PuzzleCfg: &graph.PuzzleConfig{
+				Answer:  &graph.Answer{Kind: graph.AnswerScan},
+				Bar:     &graph.AnswerBar{Button: "Skanna skylten"},
+				Outputs: []graph.Output{{Port: "ok", Trigger: graph.OnAnswer, Matchers: []match.Matcher{{Kind: match.Exact, Value: "SIGN-7"}}}},
+			}},
+			{Slug: "end", Type: graph.End},
+		},
+		Edges: []graph.Edge{{From: "start", FromPort: "out", To: "p"}, {From: "p", FromPort: "ok", To: "s"}, {From: "s", FromPort: "ok", To: "end"}},
+		Translations: map[string]map[string]string{"en": {
+			graph.NodeKey("p", "bar:placeholder"): "The year",
+		}},
+	}
+	tm, step, err := Start(g, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tm.Apply(step)
+	want := Input{Kind: "text", Placeholder: "Årtalet", Button: "Gissa", NoScan: true}
+	if in := tm.View().Input; in == nil || !reflect.DeepEqual(*in, want) {
+		t.Errorf("input = %+v, want %+v: the author's keyboard wins over the numeric answer", in, want)
+	}
+	if err := tm.SetLanguage("en"); err != nil {
+		t.Fatal(err)
+	}
+	if in := tm.View().Input; in.Placeholder != "The year" || in.Button != "Gissa" {
+		t.Errorf("translated input = %+v, want the placeholder translated and the button as written", in)
+	}
+	res, st, err := tm.Answer("p", "1887")
+	act(t, tm, "s", res, st, err)
+	if in := tm.View().Input; in == nil || in.Kind != "scan" || in.Button != "Skanna skylten" {
+		t.Errorf("scan input = %+v", in)
+	}
+	res, st, err = tm.Answer("s", "SIGN-7")
+	act(t, tm, "end", res, st, err)
+}

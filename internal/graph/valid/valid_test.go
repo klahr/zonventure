@@ -646,6 +646,56 @@ func TestChoiceValidation(t *testing.T) {
 	}
 }
 
+func TestQuestionsValidation(t *testing.T) {
+	quiz := graph.Block{ID: "q", Kind: graph.BlockQuiz, Text: "?", Options: []string{"a", "b", "c"}, Answer: "1"}
+
+	// On a typed puzzle, the questions can be left behind.
+	g := valid3()
+	g.Nodes[1].PuzzleCfg.Blocks = []graph.Block{quiz}
+	r := Check(g)
+	assertCode(t, r, "block.quiz.puzzle")
+
+	// Answered by them, the puzzle needs no matchers, and takes one route.
+	g.Nodes[1].PuzzleCfg.Answer = &graph.Answer{Kind: graph.AnswerQuestions}
+	g.Nodes[1].PuzzleCfg.Outputs = []graph.Output{{Port: "solved", Trigger: graph.OnAnswer}}
+	r = Check(g)
+	for _, c := range []string{"block.quiz.puzzle", "output.matchers.none", "questions.none", "questions.outputs"} {
+		assertNoCode(t, r, c)
+	}
+	g.Nodes[1].PuzzleCfg.Outputs = append(g.Nodes[1].PuzzleCfg.Outputs, graph.Output{Port: "other", Trigger: graph.OnAnswer})
+	g.Edges = append(g.Edges, edge("p1", "other", "p2"))
+	assertCode(t, Check(g), "questions.outputs")
+
+	g.Nodes[1].PuzzleCfg.Blocks = nil
+	assertCode(t, Check(g), "questions.none")
+
+	// An end's questions are marked before they could be answered.
+	g = valid3()
+	g.Nodes[3].EndCfg = &graph.EndConfig{Blocks: []graph.Block{quiz}}
+	r = Check(g)
+	assertCode(t, r, "block.quiz.end")
+	if !r.HasErrors() {
+		t.Error("questions on an end are an error")
+	}
+}
+
+func TestAnswerBarValidation(t *testing.T) {
+	g := valid3()
+	g.Nodes[1].PuzzleCfg.Bar = &graph.AnswerBar{Placeholder: "The year", Keyboard: "number"}
+	r := Check(g)
+	assertNoCode(t, r, "bar.keyboard")
+	assertNoCode(t, r, "bar.unused")
+
+	g.Nodes[1].PuzzleCfg.Answer = &graph.Answer{Kind: graph.AnswerScan}
+	assertNoCode(t, Check(g), "bar.unused")
+
+	g.Nodes[1].PuzzleCfg.Bar.Keyboard = "emoji"
+	g.Nodes[1].PuzzleCfg.Answer = &graph.Answer{Kind: graph.AnswerSearch}
+	r = Check(g)
+	assertCode(t, r, "bar.keyboard")
+	assertCode(t, r, "bar.unused")
+}
+
 func TestStaleTranslations(t *testing.T) {
 	g := valid3()
 	g.Translations = map[string]map[string]string{"en": {
@@ -702,7 +752,8 @@ func TestBlocks(t *testing.T) {
 }
 
 // The web side's sample of every kind of block, on a puzzle, raises no
-// issue: what the editor makes, the server accepts.
+// issue: what the editor makes, the server accepts. The puzzle is
+// answered by its questions, as the sample has some.
 func TestSharedBlockVectors(t *testing.T) {
 	raw, err := os.ReadFile("../../../web/packages/graph/testdata/blocks.json")
 	if err != nil {
@@ -717,7 +768,7 @@ func TestSharedBlockVectors(t *testing.T) {
 	g := graph.Graph{
 		Nodes: []graph.Node{
 			{Slug: "start", Type: graph.Start},
-			{Slug: "s", Type: graph.Puzzle, PuzzleCfg: &graph.PuzzleConfig{Blocks: vectors.Blocks, Outputs: []graph.Output{{Port: "solved", Trigger: graph.OnAnswer, Matchers: []match.Matcher{{Kind: match.Exact, Value: "x"}}}}}},
+			{Slug: "s", Type: graph.Puzzle, PuzzleCfg: &graph.PuzzleConfig{Blocks: vectors.Blocks, Answer: &graph.Answer{Kind: graph.AnswerQuestions}, Outputs: []graph.Output{{Port: "solved", Trigger: graph.OnAnswer}}}},
 			{Slug: "end", Type: graph.End},
 		},
 		Edges:    []graph.Edge{{From: "start", FromPort: "out", To: "s"}, {From: "s", FromPort: "solved", To: "end"}},

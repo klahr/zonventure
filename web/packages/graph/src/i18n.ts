@@ -90,7 +90,8 @@ export function nodeTexts(n: Node): Translatable[] {
     for (const o of p.outputs ?? []) {
       add(`out:${o.port}:label`, `Route “${o.label || o.port}”`, o.label);
       // Only a typed answer is words a team could give in another
-      // language; a lock's or a choice's values are what the phone sends.
+      // language; a lock's, a choice's or a scanned code's values are
+      // what the phone sends.
       if (o.trigger !== "answer" || p.answer) continue;
       // Each kind of matcher keeps its own key, so a translated answer is
       // matched the way the original is.
@@ -99,6 +100,8 @@ export function nodeTexts(n: Node): Translatable[] {
         if (values.length) add(`out:${o.port}:${field}`, `${label} for “${o.label || o.port}”`, values.join("\n"), { multiline: true, answers: true });
       }
     }
+    add("bar:placeholder", "Answer bar: placeholder", p.bar?.placeholder);
+    add("bar:button", "Answer bar: button", p.bar?.button);
     (p.responses ?? []).forEach((r, i) => add(`reply:${i}`, `Wrong-answer reply ${i + 1}`, r.text, { multiline: true }));
     (p.hints ?? []).forEach((h, i) => add(`hint:${i}`, `Hint ${i + 1}`, h.text, { multiline: true }));
     if (p.answer?.kind === "choice") {

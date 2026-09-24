@@ -10,15 +10,23 @@ import type { Translate } from "./feedback.ts";
  * vendored jsQR otherwise (/assets/jsqr.js, loaded only when a scan
  * starts, so the ~40 KB never reaches a player who does not scan).
  */
-export function QrButton({ t, disabled, onScan }: { t: Translate; disabled?: boolean | undefined; onScan: (text: string) => void }) {
+export function QrButton({ t, disabled, label, onScan }: { t: Translate; disabled?: boolean | undefined; label?: string | undefined; onScan: (text: string) => void }) {
   const [open, setOpen] = useState(false);
-  if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) return null;
+  if (!canScan()) return null;
   return (
     <>
-      <button type="button" className="pv-btn pv-qr-btn" disabled={disabled} onClick={() => setOpen(true)} aria-label={t("Scan a QR code")}>
+      {/* With a label it is the whole answer bar: a scan-only puzzle's. */}
+      <button
+        type="button"
+        className={"pv-btn pv-qr-btn" + (label ? " pv-btn--primary pv-btn--wide" : "")}
+        disabled={disabled}
+        onClick={() => setOpen(true)}
+        aria-label={label ? undefined : t("Scan a QR code")}
+      >
         <svg viewBox="0 0 24 24" aria-hidden>
           <path d="M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h3v3h-3zM18 18h3v3h-3zM14 19h2M19 14h2" />
         </svg>
+        {label}
       </button>
       {open && (
         <Scanner
@@ -32,6 +40,11 @@ export function QrButton({ t, disabled, onScan }: { t: Translate; disabled?: boo
       )}
     </>
   );
+}
+
+/** Whether this browser can open the camera to scan at all. */
+export function canScan(): boolean {
+  return typeof navigator !== "undefined" && !!navigator.mediaDevices?.getUserMedia;
 }
 
 type Decode = (video: HTMLVideoElement, canvas: HTMLCanvasElement) => Promise<string | null>;

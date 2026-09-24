@@ -313,6 +313,24 @@
   place-items: center;
   padding: 0 var(--sp-3);
 }
+/* A list answer's boxes, side by side, in the answer box's column. */
+.pv-answer__parts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(4.5rem, 1fr));
+  gap: var(--sp-2);
+  min-width: 0;
+}
+@container pv (max-width: 300px) {
+  .pv-answer .pv-answer__parts {
+    grid-column: 1 / -1;
+  }
+}
+/* A scan-only puzzle's bar: the scan button, labelled, full width. */
+.pv-qr-btn.pv-btn--wide {
+  display: inline-flex;
+  justify-content: center;
+  gap: var(--sp-2);
+}
 .pv-qr-btn svg {
   width: 1.4rem;
   height: 1.4rem;
@@ -742,8 +760,13 @@
 }
 /* On a branded bar, messages take the bar's text colour: success green
  * or danger red on an arbitrary brand colour is often unreadable. */
-.pv--dock-brand .pv-result {
+.pv--dock-brand .pv-result,
+.pv--dock-brand .pv-dock .pv-link {
   color: var(--pv-dock-fg);
+}
+/* "Type the code instead", under a scan-only bar. */
+.pv-dock > .pv-link {
+  align-self: center;
 }
 .pv-btn--wide {
   width: 100%;

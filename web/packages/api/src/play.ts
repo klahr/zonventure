@@ -31,7 +31,12 @@ export interface StartOption {
 
 /** session.Input — the shape of a puzzle's answer box. */
 export interface PlayInput {
-  kind: "text" | "number" | "tiles" | "search" | "choice" | "lock";
+  /** "questions": answered by the step's quiz blocks; the dock continues once each is picked. */
+  kind: "text" | "number" | "tiles" | "search" | "choice" | "lock" | "questions" | "scan";
+  /** The author's answer bar: its placeholder, its button (a scan's too), and no QR button. */
+  placeholder?: string;
+  button?: string;
+  no_scan?: boolean;
   /** A combination lock: how many wheels, their symbols, where each starts. */
   wheels?: number;
   symbols?: { value: string; label?: string; image?: PlayMedia }[];

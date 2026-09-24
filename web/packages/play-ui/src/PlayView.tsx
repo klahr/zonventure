@@ -11,7 +11,7 @@ import { Blocks } from "./blocks/index.tsx";
 import { QuizResult } from "./blocks/Quiz.tsx";
 import type { BlockContext, Motion } from "./blocks/context.ts";
 import type { MapPoint } from "./StaticMap.tsx";
-import { QrButton } from "./Qr.tsx";
+import { QrButton, canScan } from "./Qr.tsx";
 import { brandVars, isHex, loadFont } from "./brand.ts";
 import { formatSeconds, secondsUntil, useEngineClock } from "./clock.ts";
 import { english, type Feedback, type Translate } from "./feedback.ts";
@@ -366,7 +366,8 @@ function blockContext(p: StepProps): BlockContext {
 function PuzzleStep(props: StepProps) {
   const { view, t, now, busy, onAction, feedback } = props;
   const node = view.node ?? "";
-  const [guess, setGuess] = useState("");
+  // A scan-only puzzle falls back to typing the code when the camera fails.
+  const [typing, setTyping] = useState(false);
   const live = props.live ?? true;
 
   const blockedFor = secondsUntil(view.blocked_until, now);
@@ -386,23 +387,16 @@ function PuzzleStep(props: StepProps) {
     }
   }, [live, timeUp, view.has_timeout, node, onAction]);
 
-  // A right answer moves the team on and remounts this step; a wrong one
-  // keeps the text so a typo can be fixed rather than retyped.
-  const submit = (e: { preventDefault(): void }) => {
-    e.preventDefault();
-    const g = guess.trim();
-    if (!g || busy) return;
-    answer(g);
-  };
-
   const input: play.PlayInput = view.input ?? { kind: "text" };
   const tiles = input.kind === "tiles" && input.image && input.rows && input.cols ? input : null;
   const search = input.kind === "search";
   const choices = input.kind === "choice" && input.fields?.length ? input.fields : null;
   const lock = input.kind === "lock" && input.wheels && input.symbols?.length ? input : null;
-  const placeholder = input.parts
-    ? t(input.ordered ? "{{n}} answers, in order, with commas" : "{{n}} answers, with commas", { n: input.parts })
-    : t("Your answer");
+  const questions = input.kind === "questions";
+  const scan = input.kind === "scan" && !typing && canScan();
+  const placeholder =
+    input.placeholder ||
+    (input.parts ? t(input.ordered ? "{{n}} answers, in order, with commas" : "{{n}} answers, with commas", { n: input.parts }) : t("Your answer"));
 
   return (
     <>
@@ -482,6 +476,20 @@ function PuzzleStep(props: StepProps) {
           >
             {blockedFor > 0 ? formatSeconds(blockedFor) : t("Search here")}
           </button>
+        ) : scan && !timeUp ? (
+          <>
+            <QrButton
+              t={t}
+              disabled={locked}
+              label={blockedFor > 0 ? formatSeconds(blockedFor) : needsPlace ? t("Not there yet") : input.button || t("Scan the code")}
+              onScan={answer}
+            />
+            <button type="button" className="pv-link" onClick={() => setTyping(true)}>
+              {t("Type the code instead")}
+            </button>
+          </>
+        ) : questions && !timeUp ? (
+          <ContinueButton view={view} t={t} disabled={locked} label={blockedFor > 0 ? formatSeconds(blockedFor) : needsPlace ? t("Continue when you are there") : undefined} onClick={() => answer("")} />
         ) : tiles || choices || lock ? null : timeUp ? (
           view.has_timeout && !live ? (
             <button type="button" className="pv-btn pv-btn--primary pv-btn--wide" disabled={busy} onClick={() => onAction({ kind: "timeout", node })}>
@@ -489,33 +497,91 @@ function PuzzleStep(props: StepProps) {
             </button>
           ) : null
         ) : (
-          <form className="pv-answer" onSubmit={submit}>
-            <input
-              className="pv-input"
-              aria-label={t("Your answer")}
-              placeholder={needsPlace ? t("Not there yet") : placeholder}
-              value={guess}
-              onChange={(e) => setGuess(e.target.value)}
-              inputMode={input.kind === "number" ? "decimal" : "text"}
-              autoComplete="off"
-              autoCapitalize="off"
-              spellCheck={false}
-              enterKeyHint="send"
-              disabled={needsPlace}
-            />
-            <button className="pv-btn pv-btn--primary" disabled={locked || !guess.trim()}>
-              {blockedFor > 0 ? formatSeconds(blockedFor) : t("Answer")}
-            </button>
-            {/* A scan is a guess like any typed one: the decoded text goes
-                through the same matchers, so an author prints a QR code
-                of any accepted answer. */}
-            <QrButton t={t} disabled={locked} onScan={answer} />
-          </form>
+          <AnswerForm
+            input={input}
+            t={t}
+            placeholder={needsPlace ? t("Not there yet") : placeholder}
+            disabled={needsPlace}
+            locked={locked}
+            button={blockedFor > 0 ? formatSeconds(blockedFor) : input.button || t("Answer")}
+            // Typing a code instead of scanning it has no QR button: the camera just failed.
+            qr={!input.no_scan && input.kind !== "scan"}
+            onAnswer={answer}
+          />
         )}
       </div>
     </>
   );
 }
+
+/**
+ * The typed answer: one box, or one per part of a list answer, joined
+ * with commas as the matchers split it. A right answer moves the team on
+ * and remounts this step; a wrong one keeps the text so a typo can be
+ * fixed rather than retyped.
+ */
+function AnswerForm(props: {
+  input: play.PlayInput;
+  t: Translate;
+  placeholder: string;
+  button: string;
+  disabled: boolean;
+  locked: boolean;
+  qr: boolean;
+  onAnswer: (guess: string) => void;
+}) {
+  const { input, t, locked, onAnswer } = props;
+  // A short list gets a box each; a long one stays one comma-separated line.
+  const boxes = input.parts && input.parts >= 2 && input.parts <= MAX_PART_BOXES ? input.parts : 0;
+  const [guess, setGuess] = useState("");
+  const [parts, setParts] = useState<string[]>(() => Array(boxes).fill(""));
+  const g = boxes ? parts.map((p) => p.trim()).filter(Boolean).join(", ") : guess.trim();
+  const field = (value: string, set: (v: string) => void, label: string, placeholder: string) => (
+    <input
+      key={label}
+      className="pv-input"
+      aria-label={label}
+      placeholder={placeholder}
+      value={value}
+      onChange={(e) => set(e.target.value)}
+      inputMode={input.kind === "number" ? "decimal" : "text"}
+      autoComplete="off"
+      autoCapitalize="off"
+      spellCheck={false}
+      enterKeyHint="send"
+      disabled={props.disabled}
+    />
+  );
+  return (
+    <form
+      className="pv-answer"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (g && !locked) onAnswer(g);
+      }}
+    >
+      {boxes ? (
+        <div className="pv-answer__parts" role="group" aria-label={t("Your answer")}>
+          {parts.map((p, i) =>
+            field(p, (v) => setParts(parts.map((x, j) => (j === i ? v : x))), t("Answer {{n}}", { n: i + 1 }), props.disabled ? props.placeholder : input.ordered ? t("{{n}}.", { n: i + 1 }) : ""),
+          )}
+        </div>
+      ) : (
+        field(guess, setGuess, t("Your answer"), props.placeholder)
+      )}
+      <button className="pv-btn pv-btn--primary" disabled={locked || !g}>
+        {props.button}
+      </button>
+      {/* A scan is a guess like any typed one: the decoded text goes
+          through the same matchers, so an author prints a QR code
+          of any accepted answer. */}
+      {props.qr && <QrButton t={t} disabled={locked} onScan={onAnswer} />}
+    </form>
+  );
+}
+
+/** The most parts a list answer gets separate boxes for. */
+const MAX_PART_BOXES = 6;
 
 function SkipLink({ view, t, busy, onAction }: StepProps) {
   const [confirm, setConfirm] = useState(false);
@@ -619,16 +685,30 @@ function StoryStep(props: StepProps) {
       <Blocks blocks={view.blocks} {...blockContext(props)} />
       <div className="pv-dock">
         <FeedbackLine feedback={feedback} />
-        <button
-          type="button"
-          className="pv-btn pv-btn--primary pv-btn--wide"
-          disabled={busy || needsPlace}
+        <ContinueButton
+          view={view}
+          t={t}
+          disabled={!!busy || needsPlace}
+          label={needsPlace ? t("Continue when you are there") : undefined}
           onClick={() => onAction({ kind: "continue", node: view.node ?? "" })}
-        >
-          {needsPlace ? t("Continue when you are there") : t("Continue")}
-        </button>
+        />
       </div>
     </>
+  );
+}
+
+/**
+ * Continue past a step's quiz questions: held, and counting, until the
+ * team has picked every one it can see. A teaser is not asked yet.
+ */
+function ContinueButton({ view, t, disabled, label, onClick }: { view: play.View; t: Translate; disabled: boolean; label?: string | undefined; onClick: () => void }) {
+  const asked = (view.blocks ?? []).filter((b) => (b.kind === "quiz" || b.kind === "tiebreak") && !b.locked);
+  const answered = asked.filter((b) => "picked" in b && b.picked).length;
+  const open = answered < asked.length;
+  return (
+    <button type="button" className="pv-btn pv-btn--primary pv-btn--wide" disabled={disabled || open} onClick={onClick}>
+      {label ?? (open ? t("{{answered}} of {{total}} answered", { answered, total: asked.length }) : t("Continue"))}
+    </button>
   );
 }
 

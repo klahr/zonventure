@@ -206,6 +206,22 @@ export interface PuzzleConfig {
   repeatable?: boolean;
   /** Another way of answering than typing; absent is a typed answer. */
   answer?: Answer;
+  /** The answer bar's words, keyboard and QR button, for a typed answer or a scan. */
+  bar?: AnswerBar;
+}
+
+/**
+ * graph.AnswerBar. Placeholder and button are translated under
+ * nodeKey(…, "bar:placeholder") and "bar:button"; empty is the phone's own.
+ */
+export interface AnswerBar {
+  placeholder?: string;
+  /** The answer button's label, or a scan's scan button's. */
+  button?: string;
+  /** Absent lets the answers decide: numbers when every one is a number. */
+  keyboard?: "text" | "number";
+  /** No QR button beside a typed answer. */
+  no_scan?: boolean;
 }
 
 /**
@@ -220,12 +236,17 @@ export interface PuzzleConfig {
  *   a form marked on submit, paying the first output's points in shares.
  * - lock: wheels turning through the same symbols; the phone sends the
  *   chosen values joined by "|" and the outputs' matchers decide.
+ * - questions: answered by the step's quiz blocks; once every one shown
+ *   is picked, the team continues by the first answer output.
+ * - scan: a QR scan only; the decoded text goes through the matchers.
  */
 export type Answer =
   | { kind: "tiles"; image?: Media; rows: number; cols: number }
   | { kind: "search"; group?: string }
   | { kind: "choice"; fields: ChoiceField[] }
-  | { kind: "lock"; wheels: number; symbols: LockSymbol[]; start?: number[] };
+  | { kind: "lock"; wheels: number; symbols: LockSymbol[]; start?: number[] }
+  | { kind: "questions" }
+  | { kind: "scan" };
 
 export type AnswerKind = Answer["kind"];
 /** One kind of answer, by name: AnswerOf<"lock">. */

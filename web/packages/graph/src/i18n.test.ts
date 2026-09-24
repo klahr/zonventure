@@ -65,3 +65,12 @@ test("block texts use the engine's block keys", () => {
     blockKey("s", "m") + ":marker:0",
   ]);
 });
+
+test("the answer bar's words are translated where the engine reads them", () => {
+  const p = { slug: "p", type: "puzzle" as const, puzzle: {
+    bar: { placeholder: "Årtalet", button: "Gissa", keyboard: "number" as const },
+    outputs: [{ port: "ok", trigger: "answer" as const, matchers: [{ kind: "exact" as const, value: "1887" }] }],
+  } };
+  const keys = nodeTexts(p).map((t) => t.key);
+  assert.ok(keys.includes(nodeKey("p", "bar:placeholder")) && keys.includes(nodeKey("p", "bar:button")), keys.join(" "));
+});

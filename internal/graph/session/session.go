@@ -58,8 +58,9 @@ var (
 	// ErrWrongNode means the action does not fit the node — answering a
 	// story, choosing a branch at a puzzle. Map to 400.
 	ErrWrongNode = errors.New("action does not apply to this node")
-	// ErrUnanswered means a story still has quiz questions the team has
-	// not answered, so it cannot continue. Map to 403.
+	// ErrUnanswered means a story, or a puzzle answered by its
+	// questions, still has quiz questions the team has not answered, so
+	// it cannot continue. Map to 403.
 	ErrUnanswered = errors.New("answer the questions on this step first")
 )
 
@@ -478,6 +479,9 @@ func (t *Team) Answer(node, guess string) (Result, *walk.Step, error) {
 	if cfg.TimeLimitSeconds > 0 && t.NodeElapsedSeconds() > float64(cfg.TimeLimitSeconds) {
 		return Result{}, nil, ErrTimeUp
 	}
+	if cfg.Kind() == graph.AnswerQuestions && t.unanswered(n) {
+		return Result{}, nil, ErrUnanswered
+	}
 
 	// First answer output that accepts the guess and whose zone
 	// constraint holds. Order is the author's: it is how they express
@@ -649,6 +653,18 @@ func (t *Team) backTo() (string, bool) {
 	return hub, h.HubCfg != nil && h.HubCfg.Home
 }
 
+// unanswered reports whether a step shows a quiz question or the
+// tie-breaker the team has not picked. A hidden one does not count: the
+// team cannot answer what it cannot see.
+func (t *Team) unanswered(n graph.Node) bool {
+	for _, b := range n.Blocks() {
+		if (b.Kind == graph.BlockQuiz || b.Kind == graph.BlockTiebreak) && t.blockShown(n.Slug, b) && t.Picks[PickKey(n.Slug, b.ID)] == "" {
+			return true
+		}
+	}
+	return false
+}
+
 // Continue moves the team past a story node.
 func (t *Team) Continue(node string) (Result, *walk.Step, error) {
 	n, err := t.current(node)
@@ -661,10 +677,8 @@ func (t *Team) Continue(node string) (Result, *walk.Step, error) {
 	if n.StoryCfg != nil && n.StoryCfg.Zone != "" && !t.InZone(n.StoryCfg.Zone) {
 		return Result{}, nil, ErrNotHere
 	}
-	for _, b := range n.Blocks() {
-		if (b.Kind == graph.BlockQuiz || b.Kind == graph.BlockTiebreak) && t.blockShown(n.Slug, b) && t.Picks[PickKey(n.Slug, b.ID)] == "" {
-			return Result{}, nil, ErrUnanswered
-		}
+	if t.unanswered(n) {
+		return Result{}, nil, ErrUnanswered
 	}
 	t.Row(n.Slug).Solved = true
 	step, err := t.leave(n, graph.PortOut, 0)

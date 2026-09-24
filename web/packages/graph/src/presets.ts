@@ -253,6 +253,23 @@ export const PRESETS: Preset[] = [
     }),
   },
   {
+    id: "puzzle-questions",
+    type: "puzzle",
+    category: "puzzle",
+    label: "Quiz post",
+    hint: "Quiz-walk questions answered 1, X or 2 — with a place, time limit or hints",
+    keywords: "quiz walk 1x2 questions tipspromenad trivia post tiebreak",
+    build: () => ({
+      type: "puzzle",
+      title: "Quiz post",
+      puzzle: {
+        blocks: [{ id: "b1", kind: "quiz", text: "", options: ["", "", ""] }],
+        answer: { kind: "questions" },
+        outputs: [{ port: "done", label: "Answered", trigger: "answer" }],
+      },
+    }),
+  },
+  {
     id: "puzzle-open",
     type: "puzzle",
     category: "puzzle",

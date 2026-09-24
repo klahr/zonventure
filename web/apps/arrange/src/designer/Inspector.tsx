@@ -15,14 +15,15 @@ import type {
   Case,
   Response,
   SwitchConfig,
+  AnswerBar,
+  AnswerKind,
   AnswerOf,
   ChoiceField,
-  ChoiceOption,
   LockSymbol,
   Trigger,
   Zone,
 } from "@zonventure/graph";
-import { answerOptions, isGraded, withBlocks, matcherLabel, nodeBySlug, portLabel, puzzlesInto, referAnswer, resolveAnswer, updateNode } from "@zonventure/graph";
+import { ANSWER_KINDS, answerOptions, isGraded, optionValue, withAnswerKind, withBlocks, matcherLabel, nodeBySlug, portLabel, puzzlesInto, referAnswer, resolveAnswer, updateNode } from "@zonventure/graph";
 import { useT } from "../i18n.tsx";
 import { ConditionEditor } from "./ConditionEditor.tsx";
 import { MediaEditor } from "./MediaEditor.tsx";
@@ -415,6 +416,23 @@ function StartForm({ node, graph, onGraphChange }: { node: Node; graph: Graph; o
 
 // --- puzzle ----------------------------------------------------------------
 
+/** What the answer-kind picker calls each way of answering; "" is typing. */
+const ANSWER_KIND_LABEL: Record<AnswerKind | "", string> = {
+  "": "Typed in the answer bar",
+  scan: "Scanning a QR code only",
+  choice: "Options to tap",
+  lock: "Combination lock",
+  tiles: "Tile picture",
+  search: "Search by place",
+  questions: "Quiz questions on the step",
+};
+
+const KEYBOARD_LABEL: Record<NonNullable<AnswerBar["keyboard"]> | "", string> = {
+  "": "Automatic — numbers when every answer is one",
+  text: "Letters",
+  number: "Numbers",
+};
+
 const TRIGGERS: { t: Trigger; label: string }[] = [
   { t: "answer", label: "Correct answer" },
   { t: "attempts", label: "After N wrong guesses" },
@@ -458,67 +476,139 @@ function puzzleParts(node: Node, cfg: PuzzleConfig, graph: Graph, onChange: (c: 
     },
   ];
 
-  if (answer?.kind === "tiles")
-    parts.push({
-      id: "answer",
-      title: t.t("Tile puzzle"),
-      hint: t.t("The picture is cut into a grid and shuffled. Teams swap pieces until it is whole."),
-      summary: (
-        <>
-          <SumRow label={t.t("Grid")}>{t.t("{{rows}} × {{cols}}", { rows: answer.rows, cols: answer.cols })}</SumRow>
-          <SumRow label={t.t("Picture")}>{answer.image ? t.t("set") : <SumNone>{t.t("none yet")}</SumNone>}</SumRow>
-        </>
-      ),
-      editor: <TilesForm tiles={answer} onChange={(tiles) => onChange({ ...cfg, answer: tiles })} />,
-    });
-  if (answer?.kind === "search")
-    parts.push({
-      id: "answer",
-      title: t.t("Search by place"),
-      hint: t.t("No typing: the team presses Search here, and the route below whose zone it stands in is taken. Anywhere else, the wrong-answer replies say what it found."),
-      summary: (
-        <>
-          <SumRow label={t.t("Names")}>{answer.group ?? t.t("the zones of the routes")}</SumRow>
-          <SumRow label={t.t("Again later")}>{cfg.repeatable ? t.t("yes") : t.t("no")}</SumRow>
-        </>
-      ),
-      editor: <SearchForm cfg={cfg} search={answer} graph={graph} onChange={onChange} />,
-    });
-  if (answer?.kind === "choice") {
-    const graded = isGraded(answer);
-    parts.push({
-      id: "answer",
-      title: graded ? t.t("Marked form") : t.t("Multiple choice"),
-      hint: graded ? t.t("Every question has a right answer. The team sends all of them in at once.") : t.t("The option tapped is the answer the routes below match."),
-      count: answer.fields.length,
-      summary: (
-        <>
-          {answer.fields.map((f, i) => (
-            <SumRow key={i} label={f.label || t.t("Question {{n}}", { n: i + 1 })}>
-              {f.options.map((o) => (o.value === f.answer ? `✓ ${o.label || o.value}` : o.label || o.value)).join(" · ")}
+  // How the team answers: the kind, chosen at the top of the part, and
+  // that kind's own settings below it.
+  const questions = (cfg.blocks ?? []).filter((b) => b.kind === "quiz" || b.kind === "tiebreak");
+  let how: Omit<Part, "id" | "editor"> & { form?: ReactNode };
+  switch (answer?.kind) {
+    case undefined: {
+      const bar = cfg.bar ?? {};
+      how = {
+        title: t.t("Typed answer"),
+        hint: t.t("The team types its answer in the bar at the bottom, or scans a QR code of it. The routes below say what counts."),
+        summary: (
+          <>
+            <SumRow label={t.t("Answer bar")}>
+              {[bar.placeholder ? `“${bar.placeholder}”` : "", bar.button ? `[${bar.button}]` : ""].filter(Boolean).join(" ") || t.t("standard")}
             </SumRow>
-          ))}
-        </>
-      ),
-      editor: <ChoicesForm cfg={cfg} choice={answer} onChange={onChange} />,
-    });
+            <SumRow label={t.t("Keyboard")}>{t.t(KEYBOARD_LABEL[bar.keyboard ?? ""])}</SumRow>
+            <SumRow label={t.t("QR scan")}>{bar.no_scan ? t.t("no") : t.t("yes")}</SumRow>
+          </>
+        ),
+        form: <BarForm cfg={cfg} onChange={onChange} />,
+      };
+      break;
+    }
+    case "scan":
+      how = {
+        title: t.t("QR scan"),
+        hint: t.t("The answer bar is one scan button. Print a QR code of an accepted answer and hang it at the place; the routes below say what counts. A team whose camera fails can type the code instead."),
+        summary: <SumRow label={t.t("Button")}>{cfg.bar?.button || t.t("Scan the code")}</SumRow>,
+        form: <BarForm cfg={cfg} onChange={onChange} scan />,
+      };
+      break;
+    case "tiles":
+      how = {
+        title: t.t("Tile puzzle"),
+        hint: t.t("The picture is cut into a grid and shuffled. Teams swap pieces until it is whole."),
+        summary: (
+          <>
+            <SumRow label={t.t("Grid")}>{t.t("{{rows}} × {{cols}}", { rows: answer.rows, cols: answer.cols })}</SumRow>
+            <SumRow label={t.t("Picture")}>{answer.image ? t.t("set") : <SumNone>{t.t("none yet")}</SumNone>}</SumRow>
+          </>
+        ),
+        form: <TilesForm tiles={answer} onChange={(tiles) => onChange({ ...cfg, answer: tiles })} />,
+      };
+      break;
+    case "search":
+      how = {
+        title: t.t("Search by place"),
+        hint: t.t("No typing: the team presses Search here, and the route below whose zone it stands in is taken. Anywhere else, the wrong-answer replies say what it found."),
+        summary: (
+          <>
+            <SumRow label={t.t("Names")}>{answer.group ?? t.t("the zones of the routes")}</SumRow>
+            <SumRow label={t.t("Again later")}>{cfg.repeatable ? t.t("yes") : t.t("no")}</SumRow>
+          </>
+        ),
+        form: <SearchForm cfg={cfg} search={answer} graph={graph} onChange={onChange} />,
+      };
+      break;
+    case "choice": {
+      const graded = isGraded(answer);
+      how = {
+        title: graded ? t.t("Marked form") : t.t("Multiple choice"),
+        hint: graded ? t.t("Every question has a right answer. The team sends all of them in at once.") : t.t("The option tapped is the answer the routes below match."),
+        count: answer.fields.length,
+        summary: (
+          <>
+            {answer.fields.map((f, i) => (
+              <SumRow key={i} label={f.label || t.t("Question {{n}}", { n: i + 1 })}>
+                {f.options.map((o) => (o.value === f.answer ? `✓ ${o.label || o.value}` : o.label || o.value)).join(" · ")}
+              </SumRow>
+            ))}
+          </>
+        ),
+        form: <ChoicesForm cfg={cfg} choice={answer} onChange={onChange} />,
+      };
+      break;
+    }
+    case "lock": {
+      const first = outputs.find((o) => o.trigger === "answer");
+      const combo = (first?.matchers?.[0]?.value ?? "").split("|").map((v) => answer.symbols.find((x) => x.value === v)?.label || v);
+      how = {
+        title: t.t("Combination lock"),
+        hint: t.t("The team turns each wheel through the same symbols and tries the combination. A wrong one gets the wrong-answer replies."),
+        summary: (
+          <>
+            <SumRow label={t.t("Wheels")}>{answer.wheels}</SumRow>
+            <SumRow label={t.t("Opens at")}>{combo.join(" · ")}</SumRow>
+          </>
+        ),
+        form: <LockForm cfg={cfg} lock={answer} onChange={onChange} />,
+      };
+      break;
+    }
+    case "questions":
+      how = {
+        title: t.t("Quiz questions"),
+        hint: t.t("The team answers the quiz questions in What the team sees, then continues by the first route below. The questions score when the team finishes, as on a quiz walk."),
+        count: questions.length,
+        summary: questions.length ? (
+          <>
+            {questions.map((b) => (
+              <SumRow key={b.id} label={b.kind === "tiebreak" ? t.t("Tie-breaker") : t.t("Question")}>
+                {clip(b.text) || <SumNone>{t.t("empty")}</SumNone>}
+              </SumRow>
+            ))}
+          </>
+        ) : (
+          <SumNone>{t.t("None yet — add a quiz question under What the team sees")}</SumNone>
+        ),
+      };
+      break;
   }
-  if (answer?.kind === "lock") {
-    const first = outputs.find((o) => o.trigger === "answer");
-    const combo = (first?.matchers?.[0]?.value ?? "").split("|").map((v) => answer.symbols.find((x) => x.value === v)?.label || v);
-    parts.push({
-      id: "answer",
-      title: t.t("Combination lock"),
-      hint: t.t("The team turns each wheel through the same symbols and tries the combination. A wrong one gets the wrong-answer replies."),
-      summary: (
-        <>
-          <SumRow label={t.t("Wheels")}>{answer.wheels}</SumRow>
-          <SumRow label={t.t("Opens at")}>{combo.join(" · ")}</SumRow>
-        </>
-      ),
-      editor: <LockForm cfg={cfg} lock={answer} onChange={onChange} />,
-    });
-  }
+  parts.push({
+    id: "answer",
+    ...how,
+    editor: (
+      <>
+        <Field label={t.t("How the team answers")}>
+          <select
+            className="field__input"
+            value={answer?.kind ?? ""}
+            onChange={(e) => onChange(withAnswerKind(cfg, (e.target.value || undefined) as AnswerKind | undefined))}
+          >
+            {ANSWER_KINDS.map((k) => (
+              <option key={k ?? ""} value={k ?? ""}>
+                {t.t(ANSWER_KIND_LABEL[k ?? ""])}
+              </option>
+            ))}
+          </select>
+        </Field>
+        {how.form}
+      </>
+    ),
+  });
 
   const triggerLabel = (o: Output) => t.t(TRIGGERS.find((x) => x.t === o.trigger)?.label ?? o.trigger);
   parts.push({
@@ -535,7 +625,7 @@ function puzzleParts(node: Node, cfg: PuzzleConfig, graph: Graph, onChange: (c: 
               ? o.trigger === "attempts"
                 ? t.t("after {{n}} wrong guesses", { n: o.after_attempts ?? 0 })
                 : triggerLabel(o)
-              : answer?.kind === "tiles" || answer?.kind === "lock" || isGraded(answer) || answer?.kind === "search"
+              : answer?.kind === "tiles" || answer?.kind === "lock" || isGraded(answer) || answer?.kind === "search" || answer?.kind === "questions"
                 ? triggerLabel(o)
                 : (o.matchers ?? []).map(matcherLabel).join(" / ") || t.t("no answer yet");
           const extra = [o.points ? t.t("{{n}} p", { n: o.points }) : "", o.zone ? (o.inverted ? t.t("outside {{zone}}", { zone: zoneName(graph, o.zone) }) : t.t("in {{zone}}", { zone: zoneName(graph, o.zone) })) : ""]
@@ -591,6 +681,8 @@ function puzzleParts(node: Node, cfg: PuzzleConfig, graph: Graph, onChange: (c: 
                   <p className="field__hint">{t.t("Always taken when the form is sent in; its points are shared between the questions answered right.")}</p>
                 ) : answer?.kind === "search" ? (
                   <p className="field__hint">{t.t("Taken when the team searches inside this route's zone. Without a zone, it is taken anywhere else.")}</p>
+                ) : answer?.kind === "questions" ? (
+                  <p className="field__hint">{t.t("Taken when every question is answered and the team continues. Only the first such route is ever taken.")}</p>
                 ) : (
                   <MatcherList matchers={o.matchers ?? []} onChange={(matchers) => setOutput(i, { ...o, matchers })} />
                 )}
@@ -622,7 +714,7 @@ function puzzleParts(node: Node, cfg: PuzzleConfig, graph: Graph, onChange: (c: 
           </div>
         ))}
         <div className="add-row">
-          {answer?.kind !== "tiles" && (
+          {answer?.kind !== "tiles" && answer?.kind !== "questions" && (
             <button type="button" className={`add-btn concept--${TRIGGER.answer}`} onClick={() => addOutput("answer")}>
               <Plus size={ICON.sm} aria-hidden="true" />
               {answer?.kind === "search" ? t.t("Another place") : t.t("Another answer")}
@@ -1313,12 +1405,6 @@ function ChoicesForm({ cfg, choice: choices, onChange }: { cfg: PuzzleConfig; ch
   const graded = isGraded(choices);
   const setFields = (fields: ChoiceField[]) => onChange({ ...cfg, answer: { kind: "choice", fields } });
   const setField = (i: number, f: ChoiceField) => setFields(choices.fields.map((x, j) => (j === i ? f : x)));
-  const valueFor = (label: string, taken: ChoiceOption[]) => {
-    const base = label.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "option";
-    let v = base;
-    for (let n = 2; taken.some((o) => o.value === v); n++) v = `${base}-${n}`;
-    return v;
-  };
 
   return (
     <>
@@ -1348,7 +1434,7 @@ function ChoicesForm({ cfg, choice: choices, onChange }: { cfg: PuzzleConfig; ch
           ))}
           <button type="button" className="add-btn" onClick={() => {
             const label = t.t("Option {{n}}", { n: f.options.length + 1 });
-            setField(i, { ...f, options: [...f.options, { value: valueFor(label, f.options), label }] });
+            setField(i, { ...f, options: [...f.options, { value: optionValue(label, f.options), label }] });
           }}>
             <Plus size={ICON.sm} aria-hidden="true" />
             {t.t("Add option")}
@@ -1377,6 +1463,48 @@ function ChoicesForm({ cfg, choice: choices, onChange }: { cfg: PuzzleConfig; ch
           </button>
         )}
       </div>
+    </>
+  );
+}
+
+/**
+ * The answer bar of a typed or scanned answer: its words, and for typing
+ * the keyboard and the QR button. Empty fields are the phone's own.
+ */
+function BarForm({ cfg, onChange, scan }: { cfg: PuzzleConfig; onChange: (c: PuzzleConfig) => void; scan?: boolean }) {
+  const t = useT();
+  const bar = cfg.bar ?? {};
+  const set = (field: keyof AnswerBar, value: AnswerBar[keyof AnswerBar] | undefined) => {
+    const next = withOptional({ ...bar }, field, value || undefined);
+    onChange(withOptional({ ...cfg }, "bar", Object.keys(next).length ? next : undefined));
+  };
+  return (
+    <>
+      {!scan && (
+        <Field label={t.t("Placeholder")} hint={t.t("Greyed-out text in the empty box, such as “The ship's name”.")}>
+          <input className="field__input" value={bar.placeholder ?? ""} placeholder={t.t("Your answer")} onChange={(e) => set("placeholder", e.target.value)} />
+        </Field>
+      )}
+      <Field label={t.t("Button")}>
+        <input className="field__input" value={bar.button ?? ""} placeholder={scan ? t.t("Scan the code") : t.t("Answer")} onChange={(e) => set("button", e.target.value)} />
+      </Field>
+      {!scan && (
+        <>
+          <Field label={t.t("Keyboard")}>
+            <select className="field__input" value={bar.keyboard ?? ""} onChange={(e) => set("keyboard", e.target.value as AnswerBar["keyboard"])}>
+              {(Object.keys(KEYBOARD_LABEL) as (keyof typeof KEYBOARD_LABEL)[]).map((k) => (
+                <option key={k} value={k}>
+                  {t.t(KEYBOARD_LABEL[k])}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <label className="check">
+            <input type="checkbox" checked={!bar.no_scan} onChange={(e) => set("no_scan", !e.target.checked)} />
+            {t.t("A QR button beside the box, to scan a code of the answer")}
+          </label>
+        </>
+      )}
     </>
   );
 }

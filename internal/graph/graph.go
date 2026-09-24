@@ -405,9 +405,31 @@ type PuzzleConfig struct {
 	Repeatable bool `json:"repeatable,omitempty"`
 
 	// Answer replaces the text box with another way of answering: a tile
-	// picture, a search, choices or a lock. Nil is a typed answer.
+	// picture, a search, choices, a lock, the step's quiz questions or a
+	// QR scan. Nil is a typed answer.
 	Answer *Answer `json:"answer,omitempty"`
+
+	// Bar sets the words, keyboard and QR button of the answer bar, for a
+	// typed answer or a scan. Nil is the standard bar.
+	Bar *AnswerBar `json:"bar,omitempty"`
 }
+
+// AnswerBar is how the answer bar at the bottom of a typed puzzle looks.
+// Placeholder and Button are translated under NodeKey(…, "bar:placeholder")
+// and "bar:button"; empty is the phone's own "Your answer" and "Answer".
+type AnswerBar struct {
+	Placeholder string `json:"placeholder,omitempty"`
+	// Button labels the answer button, or a scan's scan button.
+	Button string `json:"button,omitempty"`
+	// Keyboard is the one the phone offers, one of Keyboards: empty lets
+	// the answers decide — numbers when every accepted answer is one.
+	Keyboard string `json:"keyboard,omitempty"`
+	// NoScan leaves the QR button off a typed answer.
+	NoScan bool `json:"no_scan,omitempty"`
+}
+
+// Keyboards are the keyboards an answer bar may ask for.
+var Keyboards = []string{"", "text", "number"}
 
 // AnswerKind is how a puzzle takes its answer, beyond typing it.
 type AnswerKind string
@@ -448,6 +470,20 @@ const (
 	// wheel order, and the outputs' matchers decide as for any typed
 	// answer. Legacy built the one in Greta Garbos Torg as a page script.
 	AnswerLock AnswerKind = "lock"
+
+	// AnswerQuestions is answered by the step's quiz blocks and
+	// tie-breaker, not in the answer bar: the team picks each, then
+	// continues, and the first answer output is taken — once every
+	// question shown has a pick. The picks score as the quiz walk does,
+	// when the team finishes; the output's own points pay on continuing.
+	// It is a story's quiz with a puzzle's zone, time limit and hints.
+	AnswerQuestions AnswerKind = "questions"
+
+	// AnswerScan is answered by scanning a QR code only: the bar is one
+	// scan button. The decoded text is a guess like a typed one, and the
+	// outputs' matchers decide — a code printed of an accepted answer,
+	// hung at the place, is the classic "find the sign" post.
+	AnswerScan AnswerKind = "scan"
 )
 
 // Answer is a puzzle's way of answering, one of the AnswerKinds. Only the
@@ -487,10 +523,11 @@ func (p *PuzzleConfig) Kind() AnswerKind {
 // UsesMatchers reports whether the puzzle's answer outputs decide by
 // their matchers. A tile picture's answer is its solved order, a search's
 // is where the team stands, and a marked form takes its first output
-// whatever was picked; none of those has matchers to write.
+// whatever was picked, as do the questions; none of those has matchers
+// to write.
 func (p *PuzzleConfig) UsesMatchers() bool {
 	switch p.Kind() {
-	case AnswerTiles, AnswerSearch:
+	case AnswerTiles, AnswerSearch, AnswerQuestions:
 		return false
 	case AnswerChoice:
 		return !p.Answer.Graded()

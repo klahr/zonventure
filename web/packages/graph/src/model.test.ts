@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
   gridZones,
+  withAnswerKind,
   zoneContains,
   answerOptions,
   appendStep,
@@ -28,6 +29,7 @@ import {
   updateNode,
   type Graph,
   type Node,
+  type PuzzleConfig,
 } from "./index.ts";
 
 // The same vectors internal/graph's Go tests read. If portsOf and Go's
@@ -356,5 +358,54 @@ describe("adding a step without a wire", () => {
 
   test("nowhere to attach is null", () => {
     assert.equal(insertionPoint({ nodes: [{ slug: "start", type: "start" }], edges: [] }, null), null);
+  });
+});
+
+describe("withAnswerKind", () => {
+  const typed: PuzzleConfig = {
+    blocks: [{ id: "b1", kind: "text", text: "Who?" }],
+    outputs: [
+      { port: "ada", trigger: "answer", matchers: [{ kind: "exact", value: "Ada Lovelace" }] },
+      { port: "alan", trigger: "answer", matchers: [{ kind: "exact", value: "Alan" }], points: 5 },
+      { port: "late", trigger: "timeout" },
+    ],
+    time_limit_seconds: 60,
+  };
+
+  test("typed answers become a choice's options, each routed its own way", () => {
+    const c = withAnswerKind(typed, "choice");
+    assert.deepEqual(c.answer, { kind: "choice", fields: [{ options: [{ value: "ada-lovelace", label: "Ada Lovelace" }, { value: "alan", label: "Alan" }] }] });
+    assert.deepEqual(c.outputs!.map((o) => [o.port, o.matchers?.[0]?.value]), [["ada", "ada-lovelace"], ["alan", "alan"], ["late", undefined]]);
+    assert.equal(c.outputs![1]!.points, 5);
+    assert.equal(c.time_limit_seconds, 60);
+  });
+
+  test("a kind that decides without matchers drops them, and typing asks for one again", () => {
+    const q = withAnswerKind(typed, "questions");
+    assert.deepEqual(q.answer, { kind: "questions" });
+    assert.ok(q.outputs!.every((o) => !o.matchers));
+    assert.ok(q.blocks!.some((b) => b.kind === "quiz"), "a quiz question to answer");
+    assert.equal(withAnswerKind(q, "questions"), q);
+
+    const back = withAnswerKind(q, undefined);
+    assert.equal(back.answer, undefined);
+    assert.deepEqual(back.outputs![0]!.matchers, [{ kind: "exact", value: "" }]);
+    assert.equal(back.outputs![2]!.matchers, undefined, "a timeout route has no matchers");
+  });
+
+  test("the ports stay, so the canvas stays connected", () => {
+    for (const k of ["scan", "choice", "lock", "tiles", "search", "questions", undefined] as const) {
+      assert.deepEqual(withAnswerKind(typed, k).outputs!.map((o) => o.port), ["ada", "alan", "late"], String(k));
+    }
+    assert.deepEqual(withAnswerKind(typed, "lock").outputs![0]!.matchers, [{ kind: "exact", value: "1|1|1" }]);
+  });
+
+  test("a scan keeps the typed answers and the bar; other kinds show no bar", () => {
+    const withBar: PuzzleConfig = { ...typed, bar: { button: "Guess", no_scan: true } };
+    const scan = withAnswerKind(withBar, "scan");
+    assert.deepEqual(scan.answer, { kind: "scan" });
+    assert.deepEqual(scan.outputs, typed.outputs);
+    assert.deepEqual(scan.bar, withBar.bar);
+    assert.equal(withAnswerKind(withBar, "lock").bar, undefined);
   });
 });

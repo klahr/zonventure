@@ -115,7 +115,8 @@ type View struct {
 // matchers so the author never has to say it twice.
 type Input struct {
 	// Kind is "number" when every accepted answer is numeric, so a phone
-	// can offer the number pad; otherwise "text".
+	// can offer the number pad, or the author asked for it; otherwise
+	// "text". A way of answering other than typing has its own kind.
 	Kind string `json:"kind"`
 	// Parts is set when the answer is a list: how many items to give.
 	Parts int `json:"parts,omitempty"`
@@ -140,6 +141,13 @@ type Input struct {
 	Rows  int          `json:"rows,omitempty"`
 	Cols  int          `json:"cols,omitempty"`
 	Image *graph.Media `json:"image,omitempty"`
+
+	// Placeholder, Button and NoScan are the author's answer bar (see
+	// graph.AnswerBar): its words, and no QR button. Button also labels
+	// a scan's (Kind "scan") one button.
+	Placeholder string `json:"placeholder,omitempty"`
+	Button      string `json:"button,omitempty"`
+	NoScan      bool   `json:"no_scan,omitempty"`
 }
 
 // ChoiceFieldView is a question as the phone shows it.
@@ -611,6 +619,12 @@ func (t *Team) translate(v *View) {
 		}
 		if len(in.Fields) == 0 {
 			c.Fields = nil
+		}
+		if in.Placeholder != "" {
+			c.Placeholder = tr(key("bar:placeholder"), in.Placeholder)
+		}
+		if in.Button != "" {
+			c.Button = tr(key("bar:button"), in.Button)
 		}
 		if len(in.Symbols) > 0 {
 			c.Symbols = make([]graph.LockSymbol, len(in.Symbols))

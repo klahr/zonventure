@@ -64,6 +64,42 @@ instead of one text and a media list. The answer stays below them.
 - Map tiles still come from `tile.openstreetmap.org`; move to a tile
   provider before maps reach players at scale.
 
+### Added — choosing how a puzzle is answered
+
+- **Answer kind picker.** Every puzzle's inspector has an answer part —
+  typed ones too — that starts with *How the team answers*: typed, QR
+  scan, options, lock, tile picture, search, or the step's quiz
+  questions.
+  Switching keeps the routes' ports, so the canvas stays connected;
+  typed answers become a choice's options, and kinds that need no
+  matchers drop them.
+- **Puzzles answered by their quiz questions** (`answer.kind:
+  "questions"`, preset *Quiz post*). The answer bar becomes a button,
+  "2 of 3 answered" until every shown question has a pick, then
+  Continue, which takes the first answer route. A quiz walk post can now
+  have a zone, time limit, hints and a timeout route. Continuing early
+  is refused with `unanswered` and is not a wrong guess.
+- **The story's Continue** counts the same way instead of waiting for
+  the server to refuse it.
+- **The answer bar's own settings** (`puzzle.bar`), for a typed
+  answer: placeholder, button label, keyboard (automatic, letters or
+  numbers — the author's choice wins over the guess from the answers)
+  and whether the QR button shows. Placeholder and button translate
+  under `bar:placeholder` and `bar:button`.
+- **Scan-only puzzles** (`answer.kind: "scan"`). The bar is one labelled
+  scan button; the decoded text goes through the routes' answers as a
+  typed guess does. "Type the code instead" falls back to the box when
+  the camera fails.
+- **A box per part.** A list answer of two to six parts gets a box for
+  each, joined with commas as the answers split them, instead of one
+  comma-separated line.
+- **Validation.** A warning for quiz questions on a puzzle answered
+  another way (the team can leave them behind), for a questions puzzle
+  with no questions or more than one answer route; an error for quiz
+  questions on an end, which is marked before they could be answered.
+  A warning for answer-bar settings on a puzzle that shows no bar, and
+  an error for an unknown keyboard.
+
 ### Changed — platform admin no longer authors or runs events (breaking)
 
 The global admin is now purely the operator: it manages organisations

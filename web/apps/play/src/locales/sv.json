@@ -116,5 +116,10 @@
   "Wheel {{n}}: previous": "Hjul {{n}}: föregående",
   "Wheel {{n}}": "Hjul {{n}}",
   "Try it": "Prova",
-  "Language": "Språk"
+  "Language": "Språk",
+  "{{answered}} of {{total}} answered": "{{answered}} av {{total}} besvarade",
+  "Scan the code": "Skanna koden",
+  "Type the code instead": "Skriv koden i stället",
+  "Answer {{n}}": "Svar {{n}}",
+  "{{n}}.": "{{n}}."
 }

@@ -171,6 +171,9 @@ func checkNodeConfigs(r *reporter, g *graph.Graph) {
 			if len(n.PuzzleCfg.Outputs) == 0 {
 				r.err("puzzle.outputs.none", n.Slug, "", "the puzzle has no ways out, so a team that solves it has nowhere to go")
 			}
+			if n.PuzzleCfg.Bar != nil {
+				checkBar(r, n)
+			}
 			if n.PuzzleCfg.Answer != nil {
 				if owners == nil {
 					owners = g.OwnerHubs()
@@ -773,8 +776,35 @@ func checkAnswer(r *reporter, g *graph.Graph, n graph.Node, owners map[string]st
 		checkChoices(r, n.Slug, a)
 	case graph.AnswerLock:
 		checkLock(r, n.Slug, a)
+	case graph.AnswerScan:
+	case graph.AnswerQuestions:
+		if !slices.ContainsFunc(n.Blocks(), isQuestion) {
+			r.warn("questions.none", n.Slug, "",
+				"the puzzle is answered by its questions but has none, so a team continues at once; add a quiz question or the tie-breaker")
+		}
+		answers := 0
+		for _, o := range n.PuzzleCfg.Outputs {
+			if o.Trigger == graph.OnAnswer {
+				if answers++; answers == 2 {
+					r.warn("questions.outputs", n.Slug, o.Port,
+						"a puzzle answered by its questions always takes its first answer route; this one is never taken")
+				}
+			}
+		}
 	default:
 		r.err("puzzle.answer.kind", n.Slug, "", "unknown kind of answer %q", a.Kind)
+	}
+}
+
+// checkBar catches an answer bar set on a puzzle that shows none, or
+// asking for a keyboard there is none of.
+func checkBar(r *reporter, n graph.Node) {
+	b, kind := n.PuzzleCfg.Bar, n.PuzzleCfg.Kind()
+	if !slices.Contains(graph.Keyboards, b.Keyboard) {
+		r.err("bar.keyboard", n.Slug, "", "the answer bar asks for keyboard %q; it must be text or number", b.Keyboard)
+	}
+	if kind != "" && kind != graph.AnswerScan {
+		r.warn("bar.unused", n.Slug, "", "the answer bar's settings are for typed or scanned answers; this puzzle is answered by %s, so they are never shown", kind)
 	}
 }
 
@@ -1024,7 +1054,23 @@ func checkBlocks(r *reporter, g *graph.Graph) {
 				r.err("block.fixed.duplicate", n.Slug, "", "this step has %d %s blocks; it has exactly one", c, k)
 			}
 		}
+		if slices.ContainsFunc(n.Blocks(), isQuestion) {
+			switch {
+			case n.Type == graph.End:
+				// The quiz is marked as the team arrives here, before
+				// it could pick.
+				r.err("block.quiz.end", n.Slug, "", "the end has quiz questions, but a team's quiz is marked as it arrives; move them to an earlier step")
+			case n.PuzzleCfg != nil && n.PuzzleCfg.Kind() != graph.AnswerQuestions:
+				r.warn("block.quiz.puzzle", n.Slug, "",
+					"a team can solve this puzzle and move on without answering its quiz questions; let the questions be its answer, or move them to a story")
+			}
+		}
 	}
+}
+
+// isQuestion reports whether a block is one a team answers with a pick.
+func isQuestion(b graph.Block) bool {
+	return b.Kind == graph.BlockQuiz || b.Kind == graph.BlockTiebreak
 }
 
 func checkMedia(r *reporter, g *graph.Graph) {
