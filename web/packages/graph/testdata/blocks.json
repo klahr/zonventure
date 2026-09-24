@@ -1,0 +1,29 @@
+{
+  "comment": "One block of every kind, with every field set, in the shape web/packages/graph/src/types.ts declares. internal/graph/blocks_test.go parses it strictly and validates it; blocks.test.ts checks the list of kinds. A kind or field on one side only fails one of them.",
+  "blocks": [
+    { "id": "text", "kind": "text", "text": "Hello {{team}}", "show": { "when": { "op": "node_elapsed", "cmp": "gte", "n": 30 }, "tease": true } },
+    { "id": "note", "kind": "note", "text": "Meet me at noon.", "style": "telegram" },
+    { "id": "image", "kind": "image", "media": 1, "alt": "A door" },
+    { "id": "audio", "kind": "audio", "media": 2, "alt": "Bells" },
+    { "id": "video", "kind": "video", "media": 3, "alt": "A message" },
+    { "id": "divider", "kind": "divider", "style": "ornament" },
+    { "id": "compass", "kind": "compass", "zone": "park", "hide_distance": true },
+    { "id": "map", "kind": "map", "zone": "park", "zoom": 16, "hide_team": true, "markers": [{ "lat": 59.3, "lng": 18.0, "label": "Church" }] },
+    { "id": "radar", "kind": "radar", "zone": "park" },
+    { "id": "chat", "kind": "chat", "lines": [{ "who": "Anna", "text": "Where are you?" }, { "text": "On my way", "me": true }] },
+    { "id": "cipher", "kind": "cipher", "cipher": "caesar", "shift": 3, "key": "" },
+    { "id": "custom", "kind": "cipher", "cipher": "custom", "key": "☀ = A" },
+    { "id": "hotspots", "kind": "hotspots", "media": 4, "alt": "A desk", "spots": [{ "x": 0.25, "y": 0.5, "text": "A key" }] },
+    { "id": "torch", "kind": "torch", "media": 5, "alt": "A cellar" },
+    { "id": "overlay", "kind": "overlay", "media": 6, "alt": "The square in 1900" },
+    { "id": "level", "kind": "level", "pitch": 30, "text": "The tower's bell reads 1887." },
+    { "id": "noise", "kind": "noise", "threshold": 80, "text": "The ghost wakes." },
+    { "id": "countdown", "kind": "countdown", "seconds": 600, "from": "start", "text": "The train leaves in" },
+    { "id": "status", "kind": "status", "items": true, "counters": ["coins"] },
+    { "id": "standings", "kind": "standings" },
+    { "id": "title", "kind": "title" },
+    { "id": "points", "kind": "points" },
+    { "id": "quiz", "kind": "quiz", "text": "Which is the capital?", "options": ["Oslo", "Stockholm", "Malmö"], "answer": "X", "worth": 2 },
+    { "id": "tiebreak", "kind": "tiebreak", "text": "How many steps up the tower?", "target": 187 }
+  ]
+}

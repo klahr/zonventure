@@ -16,6 +16,7 @@ package admin
 // rules the engine plays by.
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"database/sql"
@@ -23,8 +24,10 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -42,13 +45,29 @@ type mediaView struct {
 	Size     int64           `json:"size_bytes"`
 }
 
-// UploadAdventureMedia stores one image or audio file for the adventure.
+// maxVideoBytes is the per-upload size cap for a video block's film.
+// Defaults to 30 MiB: a minute or two of phone video, which is all a
+// step should ask a team to watch standing in the street. Override with
+// ZV_MAX_VIDEO_BYTES; non-positive falls back.
+var maxVideoBytes int64 = func() int64 {
+	const def int64 = 30 * 1024 * 1024
+	if s := os.Getenv("ZV_MAX_VIDEO_BYTES"); s != "" {
+		if n, err := strconv.ParseInt(s, 10, 64); err == nil && n > 0 {
+			return n
+		}
+	}
+	return def
+}()
+
+// UploadAdventureMedia stores one image, audio or video file for the
+// adventure. Videos are for video blocks; the validator keeps them off
+// hints.
 func (h *Handlers) UploadAdventureMedia(w http.ResponseWriter, r *http.Request) {
 	advID, ok := h.graphTarget(w, r)
 	if !ok {
 		return
 	}
-	limit := max(maxImageBytes, maxAudioBytes)
+	limit := max(maxImageBytes, maxAudioBytes, maxVideoBytes)
 	if err := r.ParseMultipartForm(limit); err != nil {
 		httpx.Error(w, http.StatusBadRequest, "bad multipart form")
 		return
@@ -85,8 +104,14 @@ func (h *Handlers) UploadAdventureMedia(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 		kind = graph.MediaAudio
+	case strings.HasPrefix(mime, "video/"):
+		if int64(len(data)) > maxVideoBytes {
+			httpx.Error(w, http.StatusRequestEntityTooLarge, "video too large")
+			return
+		}
+		kind = graph.MediaVideo
 	default:
-		httpx.Error(w, http.StatusBadRequest, "only image and audio uploads are accepted")
+		httpx.Error(w, http.StatusBadRequest, "only image, audio and video uploads are accepted")
 		return
 	}
 
@@ -165,8 +190,9 @@ func (h *Handlers) ServeMedia(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", mime)
-	w.Header().Set("Content-Length", strconv.Itoa(len(content)))
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Cache-Control", "private, max-age=3600")
-	_, _ = w.Write(content)
+	// ServeContent answers Range requests, which a video needs to seek —
+	// and which Safari needs before it plays one at all.
+	http.ServeContent(w, r, "", time.Time{}, bytes.NewReader(content))
 }

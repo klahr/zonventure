@@ -197,6 +197,25 @@ func (s *teamState) loadRest(ctx context.Context, q Querier) error {
 		return err
 	}
 
+	prows, err := q.QueryContext(ctx, `SELECT node, block_id, choice FROM team_block_picks WHERE team_id = $1`, s.teamID)
+	if err != nil {
+		return err
+	}
+	for prows.Next() {
+		var node, block, choice string
+		if err := prows.Scan(&node, &block, &choice); err != nil {
+			prows.Close()
+			return err
+		}
+		if s.Picks == nil {
+			s.Picks = map[string]string{}
+		}
+		s.Picks[session.PickKey(node, block)] = choice
+	}
+	if err := closeRows(prows); err != nil {
+		return err
+	}
+
 	brows, err := q.QueryContext(ctx, `SELECT hub, port FROM team_hub_branches WHERE team_id = $1`, s.teamID)
 	if err != nil {
 		return err

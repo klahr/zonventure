@@ -46,7 +46,43 @@ export function nodeTexts(n: Node): Translatable[] {
   };
   add("title", "Title", n.title);
   const blocks = (list: Block[] | undefined, label: string) => {
-    for (const b of list ?? []) if (b.kind === "text") add(`block:${b.id}`, label, b.text, { multiline: true });
+    for (const b of list ?? []) {
+      const own = `block:${b.id}`;
+      switch (b.kind) {
+        case "text":
+          add(own, label, b.text, { multiline: true });
+          break;
+        case "note":
+          add(own, "Note", b.text, { multiline: true });
+          break;
+        case "countdown":
+          add(own, "Countdown", b.text);
+          break;
+        case "level":
+        case "noise":
+          add(own, "Shown when done", b.text, { multiline: true });
+          break;
+        case "chat":
+          b.lines.forEach((l, i) => {
+            add(`${own}:who:${i}`, "Chat: who", l.who);
+            add(`${own}:line:${i}`, "Chat message", l.text, { multiline: true });
+          });
+          break;
+        case "quiz":
+          add(own, "Quiz question", b.text, { multiline: true });
+          b.options.forEach((o, i) => add(`${own}:option:${i}`, `Quiz answer ${["1", "X", "2"][i]}`, o));
+          break;
+        case "tiebreak":
+          add(own, "Tie-breaker question", b.text, { multiline: true });
+          break;
+        case "hotspots":
+          (b.spots ?? []).forEach((sp, i) => add(`${own}:spot:${i}`, "Hotspot", sp.text, { multiline: true }));
+          break;
+        case "map":
+          (b.markers ?? []).forEach((m, i) => add(`${own}:marker:${i}`, "Map marker", m.label));
+          break;
+      }
+    }
   };
   const p = n.puzzle;
   if (p) {

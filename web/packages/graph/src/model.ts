@@ -6,6 +6,7 @@
 // undo history stores whole snapshots, so a mutation in place would
 // silently rewrite history.
 
+import { withFixed } from "./blocks.ts";
 import {
   PORT_DONE,
   PORT_ELSE,
@@ -192,6 +193,10 @@ export function freshSlug(g: Graph, type: NodeType): string {
 
 /** A new node of the given type with sensible, valid-shaped defaults. */
 export function newNode(g: Graph, type: NodeType, at: { x: number; y: number }): Node {
+  return withFixed(bareNode(g, type, at));
+}
+
+function bareNode(g: Graph, type: NodeType, at: { x: number; y: number }): Node {
   const slug = freshSlug(g, type);
   const base = { slug, type, x: Math.round(at.x), y: Math.round(at.y) };
   switch (type) {

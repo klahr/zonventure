@@ -1,0 +1,55 @@
+/* An old photo over the live camera. The picture sets the frame and the
+ * camera fills it behind, cropped rather than squeezed, so lining the two
+ * up is a matter of where the phone points. */
+.pv-overlay {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin: 0;
+}
+.pv-overlay__stage {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  background: var(--surface-2);
+}
+.pv-overlay__stage.is-layered {
+  background: #111;
+}
+/* A preview has no camera: a neutral street-grey stands in for it. */
+.pv-overlay__stage.is-preview {
+  background: repeating-linear-gradient(135deg, #5a5f66 0 12px, #4d5258 12px 24px);
+}
+.pv-overlay__video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.pv-overlay__img {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.pv-overlay__fade {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  color: var(--ink-soft);
+  font-size: var(--text-sm);
+}
+.pv-overlay__fade input {
+  flex: 1;
+  min-width: 0;
+  min-height: var(--pv-tap, 2.75rem);
+  accent-color: var(--accent);
+}
+.pv-overlay__pct {
+  min-width: 3ch;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}

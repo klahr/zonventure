@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { bearing, metresBetween, nearestTurn } from "./geo.ts";
+import { bearing, metresBetween, nearestTurn, project, unproject } from "./geo.ts";
 
 test("bearings point the right way", () => {
   const near = (a: number, b: number) => assert.ok(Math.abs(a - b) < 0.5, `${a} ≈ ${b}`);
@@ -20,4 +20,10 @@ test("the needle turns the short way", () => {
   assert.equal(nearestTurn(10, 350), -10);
   assert.equal(nearestTurn(720, 90), 810);
   assert.equal(Math.abs(nearestTurn(0, 180)), 180, "half a turn either way");
+});
+
+test("a map pixel turns back into the point it shows", () => {
+  const p = project(59.33, 18.07, 15);
+  const q = unproject(p.x, p.y, 15);
+  assert.ok(Math.abs(q.lat - 59.33) < 1e-9 && Math.abs(q.lng - 18.07) < 1e-9, JSON.stringify(q));
 });

@@ -58,13 +58,59 @@ export interface PlayMedia {
 
 export const mediaURL = (id: number) => `/media/${id}`;
 
-/** internal/graph: Block — one piece of a step's content, in order. */
-export type PlayBlock =
-  | { id: string; kind: "text"; text: string }
-  | { id: string; kind: "image" | "audio"; media: number; alt?: string }
-  /** place is the zone it shows; missing if the zone was deleted. */
-  | { id: string; kind: "compass"; zone: string; hide_distance?: boolean; place?: PlayZone }
-  | { id: string; kind: "map"; zone: string; zoom?: number; place?: PlayZone };
+/**
+ * session.BlockView — one piece of a step's content, in order, with
+ * what the server works out for it. `locked` is a teaser for a block
+ * whose condition does not hold yet: it carries only its id and kind,
+ * and `place` when it waits for the team to reach a zone.
+ */
+export type PlayBlock = PlayBlockBody & {
+  id: string;
+  locked?: boolean;
+  place?: PlayZone;
+};
+
+export type PlayBlockBody =
+  | { kind: "text"; text: string }
+  | { kind: "image" | "audio" | "video"; media: number; alt?: string }
+  | { kind: "compass"; zone: string; hide_distance?: boolean }
+  | { kind: "map"; zone: string; zoom?: number; hide_team?: boolean; markers?: { lat: number; lng: number; label?: string }[] }
+  | { kind: "note"; text: string; style?: string }
+  | { kind: "chat"; lines: { who?: string; text: string; me?: boolean }[] }
+  | { kind: "cipher"; cipher: string; shift?: number; key?: string }
+  | { kind: "hotspots"; media: number; alt?: string; spots?: { x: number; y: number; text: string }[] }
+  | { kind: "divider"; style?: string }
+  | { kind: "radar"; zone: string }
+  | { kind: "overlay" | "torch"; media: number; alt?: string }
+  | { kind: "level"; pitch?: number; text?: string }
+  | { kind: "noise"; threshold?: number; text?: string }
+  | { kind: "countdown"; seconds: number; from?: string; text?: string; ends_at?: string }
+  | { kind: "status"; items?: boolean; counters?: string[]; counter_values?: { slug: string; name?: string; value: number }[] }
+  | { kind: "standings"; standings?: Standings }
+  /** text is the step's title, in the team's language. */
+  | { kind: "title"; text?: string }
+  /** points is what the puzzle's best answer is worth. */
+  | { kind: "points"; points?: number }
+  /** answer is only there once the team has finished; picked is the team's own. */
+  | { kind: "quiz"; text: string; options: string[]; worth?: number; picked?: string; answer?: string }
+  | { kind: "tiebreak"; text: string; picked?: string; target?: number };
+
+/** session.QuizResult */
+export interface QuizResult {
+  right: number;
+  total: number;
+  points: number;
+  items: { node: string; block: string; question: string; options: string[]; picked?: string; answer: string }[];
+  tiebreak?: { question: string; guess?: number; answer: number };
+}
+
+/** session.Standings — the team's place among the event's teams. */
+export interface Standings {
+  rank: number;
+  of: number;
+  ahead?: { name: string; gap: number };
+  behind?: { name: string; gap: number };
+}
 
 /** session.HintView — one revealed hint. */
 export interface HintView {
@@ -121,6 +167,12 @@ export interface View {
   starts?: StartOption[];
   /** What a puzzle, story or end shows, in order. */
   blocks?: PlayBlock[];
+  /** How the team did on the quiz walk, once it has finished. */
+  quiz?: QuizResult;
+  /** When a hidden block could appear by itself: ask again then. */
+  recheck_at?: string;
+  /** A hidden block waits for the team to reach a zone: report position often. */
+  watch_position?: boolean;
   /** blocks' pictures and sounds flattened, for older bundles. */
   media?: PlayMedia[];
   input?: PlayInput;
@@ -183,7 +235,9 @@ export type PlayAction =
   | { kind: "choose"; node: string; port: string }
   | { kind: "skip"; node: string }
   | { kind: "timeout"; node: string }
-  | { kind: "hint"; node: string; index: number };
+  | { kind: "hint"; node: string; index: number }
+  /** Answer a quiz question with 1, X or 2, or the tie-breaker with a number. Final. */
+  | { kind: "pick"; node: string; block: string; choice: string };
 
 /**
  * Refusal codes (session.Code, plus the player handler's own). A client
@@ -197,6 +251,7 @@ export type RefusalCode =
   | "not_allowed"
   | "finished"
   | "wrong_node"
+  | "unanswered"
   | "paused"
   | "not_running"
   | "no_game"
@@ -242,6 +297,15 @@ export interface PlayState {
   view?: View;
   /** Media ids the team may fetch now, for downloading ahead of need. */
   prefetch?: number[];
+  /** What the organisers have told this team, newest first. Beside the game, not in it. */
+  messages: EventMessage[];
+}
+
+/** eventmsg.Message — one message from the organisers. */
+export interface EventMessage {
+  id: number;
+  text: string;
+  created_at: string;
 }
 
 export const getPlay = (opts?: RequestOptions) => get<PlayState>("/api/player/play", opts);

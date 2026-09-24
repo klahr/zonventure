@@ -1,0 +1,6 @@
+/* A chat line: who and whose side on one row, the message under them. */
+.dz .blk-chat__head { display: flex; flex-wrap: wrap; gap: var(--sp-2); align-items: center; }
+.dz .blk-chat__head .field__input { flex: 1 1 8rem; min-width: 0; }
+.dz .blk-chat__head .check { flex: none; white-space: nowrap; }
+/* The team's own lines sit indented, as they will sit right in play. */
+.dz .blk-chat__line.is-me .list-ed__body { padding-left: var(--sp-5); }

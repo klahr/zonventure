@@ -2165,5 +2165,8 @@
 "You can run events in your organisation. Authoring adventures and managing members is reserved for admins.": "You can run events in your organisation. Authoring adventures and managing members is reserved for admins.",
 "You manage the organisations on this instance, curate the catalog, and keep an eye on the system. Authoring and running events is up to the organisations. Treat this like a root password.": "You manage the organisations on this instance, curate the catalog, and keep an eye on the system. Authoring and running events is up to the organisations. Treat this like a root password.",
 "Your organization’s puzzles and the catalog’s. Unassigned ones sit in the library; the rest list the adventure they belong to. Copy a puzzle into a new adventure from the adventure editor.": "Your organization’s puzzles and the catalog’s. Unassigned ones sit in the library; the rest list the adventure they belong to. Copy a puzzle into a new adventure from the adventure editor.",
-"the organization that authors the catalog; you list and commission its adventures.": "the organization that authors the catalog; you list and commission its adventures."
+"the organization that authors the catalog; you list and commission its adventures.": "the organization that authors the catalog; you list and commission its adventures.",
+  "Points": "Points",
+  "Playing": "Playing",
+  "Tie-breaker: {{n}}": "Tie-breaker: {{n}}"
 }

@@ -4,10 +4,12 @@ import (
 	"encoding/json"
 	"errors"
 	"reflect"
+	"slices"
 	"testing"
 	"time"
 
 	"github.com/klahr/zonventure/internal/graph"
+	"github.com/klahr/zonventure/internal/graph/cond"
 	"github.com/klahr/zonventure/internal/graph/match"
 )
 
@@ -531,5 +533,180 @@ func TestBlockPlaces(t *testing.T) {
 	}
 	if g.Zones[0].Name != "Parken" {
 		t.Error("translating a view changed the graph")
+	}
+}
+
+// A block with a show condition is withheld, file and all, until the
+// condition holds; a teaser says it is there; the phone learns when to
+// ask again.
+func TestBlockShow(t *testing.T) {
+	near := cond.Predicate{Op: cond.OpInZone, Zone: "park"}
+	later := cond.Predicate{Op: cond.OpNodeElapsed, Cmp: cond.Gte, N: 60}
+	g := &graph.Graph{
+		Nodes: []graph.Node{
+			{Slug: "start", Type: graph.Start},
+			{Slug: "s", Type: graph.Story, StoryCfg: &graph.StoryConfig{Blocks: []graph.Block{
+				{ID: "t", Kind: graph.BlockText, Text: "Score {{score}}, coins {{counter:coins}}."},
+				{ID: "photo", Kind: graph.BlockImage, Media: 5, Show: &graph.Show{When: near, Tease: true}},
+				{ID: "late", Kind: graph.BlockText, Text: "A minute on.", Show: &graph.Show{When: later}},
+				{ID: "film", Kind: graph.BlockVideo, Media: 6},
+				{ID: "clock", Kind: graph.BlockCountdown, Seconds: 90},
+				{ID: "st", Kind: graph.BlockStatus, Counters: []string{"coins"}},
+			}}},
+			{Slug: "end", Type: graph.End},
+		},
+		Edges:    []graph.Edge{{From: "start", FromPort: "out", To: "s"}, {From: "s", FromPort: "out", To: "end"}},
+		Zones:    []graph.Zone{{Slug: "park", Name: "Parken", Lat: 59.3, Lng: 18.0, RadiusM: 40}},
+		Counters: []graph.Counter{{Slug: "coins", Name: "Coins", Initial: 3}},
+	}
+	tm, step, err := Start(g, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tm.Apply(step)
+	v := tm.View()
+	ids := func(v View) (out []string) {
+		for _, b := range v.Blocks {
+			id := b.ID
+			if b.Locked {
+				id += "(locked)"
+			}
+			out = append(out, id)
+		}
+		return out
+	}
+	if got := ids(v); !reflect.DeepEqual(got, []string{"t", "photo(locked)", "film", "clock", "st"}) {
+		t.Fatalf("blocks = %v", got)
+	}
+	if b := v.Blocks[1]; b.Media != 0 || b.Show != nil || b.Place == nil || b.Place.Slug != "park" {
+		t.Errorf("a teaser carries only its kind and the zone it waits for: %+v", b)
+	}
+	if v.Blocks[0].Text != "Score 0, coins 3." {
+		t.Errorf("tokens = %q", v.Blocks[0].Text)
+	}
+	if !v.WatchPosition || v.RecheckAt == nil || !v.RecheckAt.Equal(t0.Add(time.Minute)) {
+		t.Errorf("watch = %v, recheck = %v", v.WatchPosition, v.RecheckAt)
+	}
+	if e := v.Blocks[3].EndsAt; e == nil || !e.Equal(t0.Add(90*time.Second)) {
+		t.Errorf("countdown ends %v", e)
+	}
+	if c := v.Blocks[4].CounterValues; len(c) != 1 || c[0].Name != "Coins" || c[0].Value != 3 {
+		t.Errorf("status = %+v", c)
+	}
+	if tm.CanSeeMedia(5, false) {
+		t.Error("a hidden picture must not be fetchable")
+	}
+	if !tm.CanSeeMedia(6, false) || slices.Contains(tm.PrefetchMedia(false), 6) {
+		t.Error("a video is fetchable but not prefetched")
+	}
+
+	tm.Now = t0.Add(time.Minute)
+	tm.Position = &Position{Lat: 59.3, Lng: 18.0}
+	v = tm.View()
+	if got := ids(v); !reflect.DeepEqual(got, []string{"t", "photo", "late", "film", "clock", "st"}) {
+		t.Fatalf("once near and a minute on, blocks = %v", got)
+	}
+	if !tm.CanSeeMedia(5, false) || v.RecheckAt != nil || v.WatchPosition {
+		t.Errorf("revealed: media %v, recheck %v, watch %v", tm.CanSeeMedia(5, false), v.RecheckAt, v.WatchPosition)
+	}
+}
+
+// A title block shows the step's title in the team's language, and a
+// points block what the puzzle's best answer is worth.
+func TestTitleAndPointsBlocks(t *testing.T) {
+	g := &graph.Graph{
+		Language: "sv",
+		Nodes: []graph.Node{
+			{Slug: "start", Type: graph.Start},
+			{Slug: "q", Type: graph.Puzzle, Title: "Frågan", PuzzleCfg: &graph.PuzzleConfig{
+				Blocks: []graph.Block{{ID: "points", Kind: graph.BlockPoints}, {ID: "title", Kind: graph.BlockTitle}},
+				Outputs: []graph.Output{
+					{Port: "a", Trigger: graph.OnAnswer, Points: 5, Matchers: []match.Matcher{{Kind: match.Exact, Value: "a"}}},
+					{Port: "b", Trigger: graph.OnAnswer, Points: 10, Matchers: []match.Matcher{{Kind: match.Exact, Value: "b"}}},
+					{Port: "late", Trigger: graph.OnTimeout, Points: 50},
+				},
+				TimeLimitSeconds: 60,
+			}},
+			{Slug: "end", Type: graph.End},
+		},
+		Edges:        []graph.Edge{{From: "start", FromPort: "out", To: "q"}, {From: "q", FromPort: "a", To: "end"}, {From: "q", FromPort: "b", To: "end"}, {From: "q", FromPort: "late", To: "end"}},
+		Translations: map[string]map[string]string{"en": {graph.NodeKey("q", "title"): "The question"}},
+	}
+	tm, step, err := Start(g, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tm.Apply(step)
+	if v := tm.View(); v.Blocks[0].Points != 10 || v.Blocks[1].Text != "Frågan" {
+		t.Fatalf("blocks = %+v", v.Blocks)
+	}
+	if err := tm.SetLanguage("en"); err != nil {
+		t.Fatal(err)
+	}
+	if v := tm.View(); v.Blocks[1].Text != "The question" {
+		t.Errorf("title in English = %q", v.Blocks[1].Text)
+	}
+}
+
+// A quiz walk: a story waits for its questions, a pick is final, the
+// phone never sees the right answer before the end, and finishing marks
+// it and adds the points.
+func TestQuizWalk(t *testing.T) {
+	target := 1887.0
+	g := &graph.Graph{
+		Nodes: []graph.Node{
+			{Slug: "start", Type: graph.Start},
+			{Slug: "q1", Type: graph.Story, StoryCfg: &graph.StoryConfig{Blocks: []graph.Block{
+				{ID: "a", Kind: graph.BlockQuiz, Text: "Capital?", Options: []string{"Oslo", "Stockholm", "Malmö"}, Answer: "X", Worth: 2},
+				{ID: "b", Kind: graph.BlockQuiz, Text: "Colour?", Options: []string{"Red", "Blue", "Green"}, Answer: "1"},
+			}}},
+			{Slug: "q2", Type: graph.Story, StoryCfg: &graph.StoryConfig{Blocks: []graph.Block{
+				{ID: "tb", Kind: graph.BlockTiebreak, Text: "The year?", Target: &target},
+			}}},
+			{Slug: "end", Type: graph.End},
+		},
+		Edges: []graph.Edge{{From: "start", FromPort: "out", To: "q1"}, {From: "q1", FromPort: "out", To: "q2"}, {From: "q2", FromPort: "out", To: "end"}},
+	}
+	tm, step, err := Start(g, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tm.Apply(step)
+	if v := tm.View(); v.Blocks[0].Answer != "" || v.Blocks[1].Answer != "" {
+		t.Fatalf("the right answer reached the phone: %+v", v.Blocks)
+	}
+	if _, _, err := tm.Continue("q1"); err != ErrUnanswered {
+		t.Fatalf("continue before answering = %v, want ErrUnanswered", err)
+	}
+	if _, _, err := tm.Pick("q1", "a", "4"); err != ErrWrongNode {
+		t.Errorf("a choice that is not 1, X or 2 = %v", err)
+	}
+	for _, p := range [][2]string{{"a", "x"}, {"b", "2"}} {
+		if _, _, err := tm.Pick("q1", p[0], p[1]); err != nil {
+			t.Fatalf("pick %v: %v", p, err)
+		}
+	}
+	if _, _, err := tm.Pick("q1", "a", "1"); err != ErrNotAllowed {
+		t.Errorf("a second pick = %v, want ErrNotAllowed", err)
+	}
+	if v := tm.View(); v.Blocks[0].Picked != "X" || tm.Points != 0 {
+		t.Errorf("picked %q, points %v: nothing scores before the end", v.Blocks[0].Picked, tm.Points)
+	}
+	res, st, err := tm.Continue("q1")
+	act(t, tm, "q2", res, st, err)
+	if _, _, err := tm.Pick("q2", "tb", "1 890,5"); err != ErrWrongNode {
+		t.Errorf("a number with a space = %v", err)
+	}
+	if _, _, err := tm.Pick("q2", "tb", "1890,5"); err != nil {
+		t.Fatal(err)
+	}
+	res, st, err = tm.Continue("q2")
+	act(t, tm, "end", res, st, err)
+	if tm.Points != 2 || tm.TiebreakMiss() != 3.5 {
+		t.Errorf("points %v, tie-break miss %v", tm.Points, tm.TiebreakMiss())
+	}
+	v := tm.View()
+	if q := v.Quiz; q == nil || q.Right != 1 || q.Total != 2 || q.Items[1].Picked != "2" || q.Items[1].Answer != "1" || q.Tiebreak == nil || *q.Tiebreak.Guess != 1890.5 {
+		t.Errorf("quiz = %+v", v.Quiz)
 	}
 }

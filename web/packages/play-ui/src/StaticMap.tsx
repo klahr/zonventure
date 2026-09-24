@@ -1,4 +1,7 @@
 import { useMemo } from "react";
+import { project, unproject } from "./geo.ts";
+
+export { project, unproject };
 
 /** A zone's shape: graph.Zone and play.PlayZone both are one. */
 export interface MapZone {
@@ -10,10 +13,15 @@ export interface MapZone {
   polygon?: [number, number][];
 }
 
-/** A point drawn on the map, such as the team. */
+/** A point on the map, such as the team. */
 export interface MapPoint {
   lat: number;
   lng: number;
+}
+
+/** A pin an author put on the map, with its label. */
+export interface MapPin extends MapPoint {
+  label?: string;
 }
 
 /**
@@ -34,16 +42,6 @@ export interface MapPoint {
 export const TILE_URL = (z: number, x: number, y: number) => `https://tile.openstreetmap.org/${z}/${x}/${y}.png`;
 
 const TILE = 256;
-
-/** Web-Mercator world pixel of a point at zoom z. */
-export function project(lat: number, lng: number, z: number): { x: number; y: number } {
-  const scale = TILE * 2 ** z;
-  const s = Math.sin((Math.max(-85, Math.min(85, lat)) * Math.PI) / 180);
-  return {
-    x: ((lng + 180) / 360) * scale,
-    y: (0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI)) * scale,
-  };
-}
 
 /** Metres per pixel at a latitude and zoom. */
 const metresPerPixel = (lat: number, z: number) => (156543.03392 * Math.cos((lat * Math.PI) / 180)) / 2 ** z;
@@ -73,14 +71,25 @@ function fitZoom(pts: [number, number][], width: number, height: number, fill = 
 }
 
 /**
- * `zoom` fixes the zoom level, centred on the zone; markers outside the
- * frame are then cut off. Without it the frame fits the zone and every
- * marker.
+ * `zoom` fixes the zoom level, centred on the zone; the team and pins
+ * outside the frame are then cut off. Without it the frame fits the
+ * zone, the pins and the team.
  */
-export function StaticMap({ zone, width, height, className, markers = [], zoom }: { zone: MapZone; width: number; height: number; className?: string; markers?: MapPoint[]; zoom?: number | undefined }) {
+export function StaticMap({ zone, width, height, className, team, pins = [], zoom, onPick }: {
+  zone: MapZone;
+  width: number;
+  height: number;
+  className?: string;
+  team?: MapPoint | undefined;
+  pins?: MapPin[];
+  zoom?: number | undefined;
+  /** Makes the map clickable: called with the point clicked. */
+  onPick?: ((p: MapPoint) => void) | undefined;
+}) {
   const m = useMemo(() => {
     const pts = outline(zone);
-    const all: [number, number][] = zoom ? pts : [...pts, ...markers.map((p): [number, number] => [p.lat, p.lng])];
+    const points = [...pins, ...(team ? [team] : [])];
+    const all: [number, number][] = zoom ? pts : [...pts, ...points.map((p): [number, number] => [p.lat, p.lng])];
     const z = zoom ?? fitZoom(all, width, height);
     const ps = pts.map(([la, ln]) => project(la, ln, z));
     const frame = all.map(([la, ln]) => project(la, ln, z));
@@ -99,24 +108,45 @@ export function StaticMap({ zone, width, height, className, markers = [], zoom }
       }
     }
     const path = ps.map((p) => `${(p.x - left).toFixed(1)},${(p.y - top).toFixed(1)}`).join(" ");
-    const dots = markers.map((p) => {
+    const at = (p: MapPoint) => {
       const q = project(p.lat, p.lng, z);
       return { x: q.x - left, y: q.y - top };
-    });
-    return { tiles, path, dots, z, mpp: metresPerPixel(zone.lat, z) };
-    // markers is compared by value: a new array each render must not redraw.
-  }, [zone, width, height, zoom, JSON.stringify(markers)]);
+    };
+    return { tiles, path, z, left, top, mpp: metresPerPixel(zone.lat, z), team: team && at(team), pins: pins.map((p) => ({ ...at(p), label: p.label })) };
+    // team and pins are compared by value: new objects each render must not redraw.
+  }, [zone, width, height, zoom, JSON.stringify(team), JSON.stringify(pins)]);
 
   return (
-    <div className={"static-map" + (className ? ` ${className}` : "")} style={{ width, height }} aria-label={zone.name || zone.slug} role="img">
+    <div
+      className={"static-map" + (onPick ? " is-pickable" : "") + (className ? ` ${className}` : "")}
+      style={{ width, height }}
+      aria-label={zone.name || zone.slug}
+      role="img"
+      onClick={
+        onPick &&
+        ((e) => {
+          const r = e.currentTarget.getBoundingClientRect();
+          onPick(unproject(m.left + (e.clientX - r.left) * (width / r.width), m.top + (e.clientY - r.top) * (height / r.height), m.z));
+        })
+      }
+    >
       {m.tiles.map((t) => (
         <img key={t.key} src={t.src} alt="" draggable={false} loading="lazy" style={{ left: t.x, top: t.y }} />
       ))}
       <svg width={width} height={height} aria-hidden="true">
         <polygon points={m.path} />
-        {m.dots.map((d, i) => (
-          <circle key={i} className="static-map__dot" cx={d.x} cy={d.y} r={7} />
+        {m.pins.map((p, i) => (
+          <g key={i} className="static-map__pin" transform={`translate(${p.x.toFixed(1)} ${p.y.toFixed(1)})`}>
+            <path d="M0 0 C-7 -10 -9 -14 -9 -18 A9 9 0 1 1 9 -18 C9 -14 7 -10 0 0 Z" />
+            <circle cx={0} cy={-18} r={3.5} />
+            {p.label && (
+              <text x={12} y={-14}>
+                {p.label}
+              </text>
+            )}
+          </g>
         ))}
+        {m.team && <circle className="static-map__dot" cx={m.team.x} cy={m.team.y} r={7} />}
       </svg>
       <span className="static-map__credit">© OpenStreetMap</span>
     </div>

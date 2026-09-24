@@ -29,6 +29,7 @@ import (
 	"github.com/klahr/zonventure/internal/activity"
 	"github.com/klahr/zonventure/internal/adventure"
 	"github.com/klahr/zonventure/internal/auth"
+	"github.com/klahr/zonventure/internal/eventmsg"
 	"github.com/klahr/zonventure/internal/graph/session"
 	"github.com/klahr/zonventure/internal/httpx"
 	"github.com/klahr/zonventure/internal/play"
@@ -91,6 +92,9 @@ type PlayState struct {
 	// Prefetch is every media id the team may fetch now. The player app
 	// downloads them ahead of need, so pictures show in a dead spot.
 	Prefetch []int64 `json:"prefetch,omitempty"`
+	// Messages are what the organisers have told this team, newest
+	// first: information beside the game, shown in the app's inbox.
+	Messages []eventmsg.Message `json:"messages"`
 }
 
 // GetPlay returns the team's current state.
@@ -132,6 +136,10 @@ func (h *Handlers) GetPlay(w http.ResponseWriter, r *http.Request) {
 	}
 	if tc.OrgHasLogo {
 		out.Event.OrgLogoURL = fmt.Sprintf("/org-logo/%d", tc.OrgID)
+	}
+	if out.Messages, err = eventmsg.ForTeam(ctx, h.DB, tc.EventID, tc.TeamID); err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "loading messages failed", err)
+		return
 	}
 	uses, err := play.UsesGraph(ctx, h.DB, tc.EventID)
 	if err != nil {
@@ -224,7 +232,11 @@ type PlayActionRequest struct {
 	Port  string `json:"port,omitempty"`
 	Index int    `json:"index,omitempty"`
 	// Lang is the language for the "language" action.
-	Lang           string `json:"lang,omitempty"`
+	Lang string `json:"lang,omitempty"`
+	// Block and Choice are the "pick" action's: a quiz question or the
+	// tie-breaker, and the answer.
+	Block          string `json:"block,omitempty"`
+	Choice         string `json:"choice,omitempty"`
 	ClientActionID string `json:"client_action_id,omitempty"`
 }
 
@@ -250,7 +262,7 @@ func (h *Handlers) PostPlayAction(w http.ResponseWriter, r *http.Request) {
 	if !httpx.DecodeJSON(w, r, &req) {
 		return
 	}
-	if len(req.Guess) > maxGuessLen {
+	if len(req.Guess) > maxGuessLen || len(req.Choice) > maxGuessLen {
 		httpx.JSON(w, http.StatusBadRequest, playRefusal{Error: "answer is too long", Code: "too_long"})
 		return
 	}
@@ -304,6 +316,8 @@ func (h *Handlers) PostPlayAction(w http.ResponseWriter, r *http.Request) {
 		res, err = e.Timeout(ctx, tc.TeamID, req.Node)
 	case "hint":
 		res, err = e.RevealHint(ctx, tc.TeamID, req.Node, req.Index)
+	case "pick":
+		res, err = e.Pick(ctx, tc.TeamID, req.Node, req.Block, req.Choice)
 	default:
 		httpx.JSON(w, http.StatusNotFound, playRefusal{Error: "unknown action", Code: "unknown_action"})
 		return
@@ -338,6 +352,7 @@ func (h *Handlers) refusePlay(w http.ResponseWriter, res play.Result, err error)
 		"not_allowed": http.StatusForbidden,
 		"locked":      http.StatusTooManyRequests,
 		"wrong_node":  http.StatusBadRequest,
+		"unanswered":  http.StatusForbidden,
 	}[code]
 	if status == 0 {
 		httpx.ServerErr(w, http.StatusInternalServerError, "action failed", err)

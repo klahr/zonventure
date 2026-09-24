@@ -7,7 +7,9 @@ import { ChoiceForm } from "./Choices.tsx";
 import { LockBoard } from "./Lock.tsx";
 import { JournalNotes, useUnreadNotes } from "./Journal.tsx";
 import { MediaList } from "./Media.tsx";
-import { Blocks } from "./Blocks.tsx";
+import { Blocks } from "./blocks/index.tsx";
+import { QuizResult } from "./blocks/Quiz.tsx";
+import type { BlockContext, Motion } from "./blocks/context.ts";
 import type { MapPoint } from "./StaticMap.tsx";
 import { QrButton } from "./Qr.tsx";
 import { brandVars, isHex, loadFont } from "./brand.ts";
@@ -55,6 +57,12 @@ export interface PlayViewProps {
   placeNote?: (zone: play.PlayZone) => ReactNode;
   /** Where the team is, for compass and map blocks. */
   position?: MapPoint;
+  /** The team's name, for {{team}} in a text. */
+  teamName?: string;
+  /** The designer's preview: blocks use no sensors and ask no permissions. */
+  preview?: boolean;
+  /** The simulator's device, for compass and level blocks to read. */
+  motion?: Motion;
   /** The adventure's palette. */
   brand?: play.Brand | null;
   /** The adventure's farewell, shown under the end step's own text. */
@@ -308,7 +316,9 @@ function FeedbackLine({ feedback }: { feedback: Feedback | null | undefined }) {
   );
 }
 
+/** The step's title, unless one of its blocks places it (a server from before blocks sends none). */
 function Title({ view }: { view: play.View }) {
+  if (view.blocks?.some((b) => b.kind === "title")) return null;
   return view.title ? <h2 className="pv-title">{view.title}</h2> : null;
 }
 
@@ -335,6 +345,23 @@ function ZoneCard({ view, t, note }: { view: play.View; t: Translate; note?: Rea
 }
 
 // --- steps ------------------------------------------------------------------
+
+/** What a step's blocks may use besides themselves. */
+function blockContext(p: StepProps): BlockContext {
+  return {
+    position: p.position,
+    t: p.t,
+    placeNote: p.placeNote,
+    teamName: p.teamName,
+    now: p.now,
+    items: p.view.items,
+    node: p.view.node,
+    act: p.onAction,
+    busy: !!p.busy,
+    preview: !!p.preview,
+    motion: p.motion,
+  };
+}
 
 function PuzzleStep(props: StepProps) {
   const { view, t, now, busy, onAction, feedback } = props;
@@ -381,7 +408,7 @@ function PuzzleStep(props: StepProps) {
     <>
       <Title view={view} />
       <ZoneCard view={view} t={t} note={props.zoneNote} />
-      <Blocks blocks={view.blocks} position={props.position} t={t} placeNote={props.placeNote} />
+      <Blocks blocks={view.blocks} {...blockContext(props)} />
 
       {view.deadline && (
         <p className={"pv-timer" + (timeLeft < 60 ? " is-urgent" : "")}>
@@ -560,7 +587,8 @@ function HintSheet(props: StepProps & { onClose: () => void }) {
 }
 
 /** A bottom sheet over the step. Escape or a tap outside closes it. */
-function Sheet({ title, t, onClose, children }: { title: string; t: Translate; onClose: () => void; children: ReactNode }) {
+/** A panel sliding up over the step: the hints, and the app's inbox. */
+export function Sheet({ title, t, onClose, children }: { title: string; t: Translate; onClose: () => void; children: ReactNode }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", onKey);
@@ -581,13 +609,14 @@ function Sheet({ title, t, onClose, children }: { title: string; t: Translate; o
   );
 }
 
-function StoryStep({ view, t, busy, onAction, zoneNote, feedback, position, placeNote }: StepProps) {
+function StoryStep(props: StepProps) {
+  const { view, t, busy, onAction, zoneNote, feedback } = props;
   const needsPlace = !!view.zone && !view.here;
   return (
     <>
       <Title view={view} />
       <ZoneCard view={view} t={t} note={zoneNote} />
-      <Blocks blocks={view.blocks} position={position} t={t} placeNote={placeNote} />
+      <Blocks blocks={view.blocks} {...blockContext(props)} />
       <div className="pv-dock">
         <FeedbackLine feedback={feedback} />
         <button
@@ -690,7 +719,8 @@ function StartChoice({ view, t, busy, onAction, placeNote }: StepProps) {
   );
 }
 
-function EndStep({ view, t, outro, position, placeNote }: StepProps) {
+function EndStep(props: StepProps) {
+  const { view, t, outro } = props;
   const failed = view.outcome === "fail";
   return (
     <div className={"pv-summary" + (failed ? " is-fail" : "")}>
@@ -698,7 +728,8 @@ function EndStep({ view, t, outro, position, placeNote }: StepProps) {
         {failed ? "⚑" : "★"}
       </div>
       <h2 className="pv-summary__head">{failed ? t("The adventure is over.") : t("You made it!")}</h2>
-      <Blocks blocks={view.blocks} position={position} t={t} placeNote={placeNote} />
+      <Blocks blocks={view.blocks} {...blockContext(props)} />
+      {view.quiz && <QuizResult quiz={view.quiz} t={t} />}
       {outro && <Markdown className="pv-text" text={outro} />}
       <div className="pv-stats">
         <div className="pv-stat">

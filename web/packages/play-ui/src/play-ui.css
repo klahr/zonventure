@@ -470,6 +470,172 @@
   .pv-compass__needle { transition: none; }
 }
 
+.pv-points {
+  align-self: flex-start;
+  margin: 0;
+  padding: 0.15rem 0.7rem;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--accent) 14%, var(--surface));
+  color: color-mix(in srgb, var(--accent) 70%, var(--ink));
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+
+/* Notes: the same Markdown in different costumes. Fixed colours on
+ * purpose: a paper note is paper in dark mode too. */
+.pv-note {
+  padding: var(--sp-4);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  color: #2b2418;
+}
+/* The note is the card: its text is not a second card inside it. */
+.pv-note .pv-text { padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none; color: inherit; }
+.pv-note .pv-text :is(h3, h4, h5) { font-family: inherit; color: inherit; }
+/* Ruled paper: the rule spacing is the line height, and the first rule
+ * sits under the first line. */
+.pv-note--paper {
+  --rule: 1.7rem;
+  /* The rules are clipped to the text; the paper's colour is not. */
+  background:
+    linear-gradient(to bottom, transparent calc(var(--rule) - 1px), #e2d6ba calc(var(--rule) - 1px)) 0 -0.3rem / 100% var(--rule) content-box,
+    #fbf6e9;
+  font-family: "Georgia", serif;
+  rotate: -0.6deg;
+}
+.pv-note--paper .pv-text { line-height: var(--rule); }
+.pv-note--paper .pv-text p { margin-bottom: 0; }
+.pv-note--telegram {
+  background: #f3ecd2;
+  border-top: 6px solid #c9a646;
+  font-family: "Courier New", monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.pv-note--sms {
+  max-width: 85%;
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: 1.1rem 1.1rem 1.1rem 0.3rem;
+  background: #e9e9eb;
+  box-shadow: none;
+  color: #111;
+}
+/* A clipping: newsprint, a headline over a double rule, a drop cap. Two
+ * columns only where there is room for them; on a phone one reads better. */
+.pv-note--newspaper {
+  container-type: inline-size;
+  padding: var(--sp-4) var(--sp-4) var(--sp-5);
+  border-radius: 2px;
+  background: #f3efe3 radial-gradient(rgb(0 0 0 / 0.04) 1px, transparent 1px) 0 0 / 3px 3px;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.12), 0 10px 24px rgb(0 0 0 / 0.14);
+  font-family: Georgia, "Times New Roman", serif;
+  color: #1f1a14;
+  rotate: -0.7deg;
+}
+.pv-note--newspaper .pv-text {
+  font-size: 1rem;
+  line-height: 1.5;
+  text-align: justify;
+  hyphens: auto;
+}
+.pv-note--newspaper .pv-text :is(h3, h4, h5) {
+  margin: 0 0 var(--sp-3);
+  padding-bottom: var(--sp-2);
+  border-bottom: 3px double currentColor;
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+  text-align: left;
+}
+.pv-note--newspaper .pv-text :is(h3, h4, h5) ~ :is(h3, h4, h5) {
+  margin-top: var(--sp-3);
+  font-size: 1.1rem;
+  border-bottom-width: 1px;
+  border-bottom-style: solid;
+}
+.pv-note--newspaper .pv-text > :is(h3, h4, h5) + p::first-letter {
+  float: left;
+  margin: 0.06em 0.08em 0 0;
+  font-size: 3.2em;
+  font-weight: 700;
+  line-height: 0.8;
+}
+@container (min-width: 30rem) {
+  .pv-note--newspaper .pv-text { column-count: 2; column-gap: var(--sp-5); column-rule: 1px solid rgb(0 0 0 / 0.15); }
+  .pv-note--newspaper .pv-text > :is(h3, h4, h5):first-child { column-span: all; }
+}
+.pv-note--sticky {
+  background: #fff2a8;
+  box-shadow: 0 6px 14px rgb(0 0 0 / 0.15);
+  rotate: 1deg;
+  font-family: "Comic Sans MS", "Marker Felt", cursive;
+}
+
+.pv-divider { margin: var(--sp-2) 0; border: 0; }
+.pv-divider--line { border-top: 1px solid var(--border-soft); }
+.pv-divider--space { height: var(--sp-4); }
+.pv-divider--ornament { text-align: center; font-size: 1.4rem; color: var(--muted); }
+
+.pv-video { margin: 0; }
+.pv-video video { display: block; width: 100%; border-radius: var(--radius-lg); background: #000; box-shadow: var(--shadow); }
+.pv-video figcaption { margin-top: var(--sp-1); font-size: 0.875rem; color: var(--muted); }
+
+.pv-countdown {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: var(--sp-3);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+}
+.pv-countdown__label { font-weight: 700; color: var(--ink); }
+.pv-countdown__time { font-size: 2rem; font-variant-numeric: tabular-nums; font-weight: 700; color: var(--ink); }
+.pv-countdown.is-urgent .pv-countdown__time { color: var(--danger); }
+.pv-countdown.is-over .pv-countdown__time { font-size: 1.25rem; color: var(--danger); }
+
+.pv-status {
+  margin: 0;
+  padding: var(--sp-2) var(--sp-4);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+}
+.pv-status__row { display: flex; justify-content: space-between; gap: var(--sp-3); padding: var(--sp-1) 0; }
+.pv-status__row + .pv-status__row { border-top: 1px solid var(--border-soft); }
+.pv-status dt { color: var(--ink-soft); }
+.pv-status dd { margin: 0; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--ink); }
+.pv-status__row--none dt { color: var(--muted); font-style: italic; }
+
+.pv-standings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  padding: var(--sp-3) var(--sp-4);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+}
+.pv-standings__rank { font-size: 1.5rem; font-weight: 700; color: var(--ink); }
+.pv-standings__rival { color: var(--ink-soft); }
+.pv-standings--none { margin: 0; color: var(--muted); font-style: italic; background: none; padding: 0; }
+
+/* A hidden block: something is here, not what. */
+.pv-teaser {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-1) var(--sp-3);
+  padding: var(--sp-4);
+  border: 2px dashed var(--border-soft);
+  border-radius: var(--radius-lg);
+  background: repeating-linear-gradient(45deg, var(--surface-2) 0 10px, var(--surface) 10px 20px);
+}
+.pv-teaser__lock { font-size: 1.4rem; }
+.pv-teaser__text { flex: 1; min-width: 12rem; color: var(--ink-soft); }
+.pv-teaser__note { width: 100%; font-size: 0.875rem; color: var(--muted); }
+
 /* Map block: the zone, and the team when near, as wide as the step. */
 .pv-map .static-map {
   border: 1px solid var(--border-soft);
@@ -1354,3 +1520,7 @@
 .static-map polygon { fill: color-mix(in srgb, var(--c-place) 22%, transparent); stroke: var(--c-place); stroke-width: 2; stroke-linejoin: round; }
 .static-map__credit { position: absolute; right: 2px; bottom: 1px; font-size: 9px; line-height: 1.2; padding: 0 3px; color: #333; background: rgb(255 255 255 / 0.75); border-radius: 3px; }
 .static-map__dot { fill: var(--accent); stroke: #fff; stroke-width: 3; }
+.static-map.is-pickable { cursor: crosshair; }
+.static-map__pin path { fill: #d93b30; stroke: #fff; stroke-width: 1.5; }
+.static-map__pin circle { fill: #fff; }
+.static-map__pin text { font: 600 12px/1 system-ui, sans-serif; fill: #1f2a37; paint-order: stroke; stroke: #fff; stroke-width: 3px; stroke-linejoin: round; }

@@ -337,7 +337,7 @@ func New(cfg Config) http.Handler {
 	mailOutbox := &mailer.Outbox{DB: cfg.DB, Mailer: mail}
 	go mailOutbox.Run(bgCtx)
 	adminH := &admin.Handlers{
-		DB: cfg.DB, Lib: cfg.Library, Hub: hub, Sim: sim,
+		DB: cfg.DB, Lib: cfg.Library, Hub: hub, Sim: sim, Engine: playerH.Engine,
 		Mailer:     mail,
 		MailOutbox: mailOutbox,
 		PublicURL:  cfg.PublicURL,
@@ -354,7 +354,7 @@ func New(cfg Config) http.Handler {
 		Updates:       updateSvc,
 	}
 	publicH := &public.Handlers{
-		DB: cfg.DB, Lib: cfg.Library, Hub: hub, Storage: store, PublicURL: cfg.PublicURL,
+		DB: cfg.DB, Lib: cfg.Library, Hub: hub, Storage: store, PublicURL: cfg.PublicURL, Engine: playerH.Engine,
 		// Same PlatformFee as adminH so the /store listing filter
 		// agrees with the BuyTicket gate: an un-onboarded quest
 		// neither lists nor accepts purchases when the marketplace

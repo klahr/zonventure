@@ -115,6 +115,7 @@ func (s *Server) registerTools() {
 	// per-tool handlers so the descriptor and behaviour stay
 	// adjacent to each other.
 	s.registerEventTools()
+	s.registerMessageTools()
 	// Phase 2 — teams + slots. teams.go.
 	s.registerTeamTools()
 	// Phase 5 — read-only observation tools used during a live

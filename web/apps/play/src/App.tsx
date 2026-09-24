@@ -3,6 +3,7 @@ import { Markdown, PlayView, StartCeremony, brandVars, metresBetween, type Trans
 import type { play } from "@zonventure/api";
 import { useT } from "./i18n.tsx";
 import { useGame } from "./useGame.ts";
+import { Inbox } from "./Inbox.tsx";
 import { useGeo, useLiveRefresh } from "./live.ts";
 
 export function App() {
@@ -20,7 +21,12 @@ export function App() {
   }, [teamLang, i18n]);
 
   useLiveRefresh(game.status === "ready", game.refresh);
-  const geo = useGeo(game.status === "ready" && running && !view?.finished, (!!view?.zone && !view.here) || !!view?.starts?.some((o) => o.zone && !o.here) || view?.input?.kind === "search", game.refresh);
+  const geo = useGeo(
+    game.status === "ready" && running && !view?.finished,
+    (!!view?.zone && !view.here) || !!view?.starts?.some((o) => o.zone && !o.here) || view?.input?.kind === "search" || !!view?.watch_position,
+    game.refresh,
+  );
+  useRecheck(view, game.refresh);
 
   // The start moment plays when this tab watched the lobby turn into the
   // game — not on every reload of a game already under way.
@@ -87,6 +93,7 @@ export function App() {
             {game.queued > 0 ? t("{{n}} waiting to send", { n: game.queued }) : t("Offline")}
           </span>
         )}
+        <Inbox messages={s.messages ?? []} teamID={s.team.id} t={t} locale={i18n.current()} />
       </header>
 
       <main className="app-main">
@@ -105,6 +112,7 @@ export function App() {
             {...(zoneNote ? { zoneNote } : {})}
             placeNote={placeNote}
             {...(geo.pos ? { position: { lat: geo.pos.coords.latitude, lng: geo.pos.coords.longitude } } : {})}
+            teamName={s.team.name}
             storageKey={`team-${s.team.id}`}
           />
         ) : (
@@ -156,4 +164,22 @@ function Screen({ children }: { children: ReactNode }) {
       <main className="app-main app-main--center">{children}</main>
     </div>
   );
+}
+
+/**
+ * Ask again when the server says a hidden block could appear by itself —
+ * a minute after arriving, say. Timed on the engine's clock: recheck_at
+ * and now both come from the server, so a wrong phone clock is harmless.
+ */
+function useRecheck(view: play.View | undefined, refresh: () => void) {
+  const refreshRef = useRef(refresh);
+  refreshRef.current = refresh;
+  const at = view?.recheck_at;
+  const now = view?.now;
+  useEffect(() => {
+    if (!at || !now) return;
+    const wait = Math.max(1_000, Date.parse(at) - Date.parse(now) + 500);
+    const id = setTimeout(() => refreshRef.current(), wait);
+    return () => clearTimeout(id);
+  }, [at, now]);
 }

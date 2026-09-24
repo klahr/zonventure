@@ -1330,6 +1330,8 @@ function teamRowFingerprint(team, data) {
   return [
     team.rank,
     team.page_index,
+    team.score ?? '',
+    team.tiebreak_guess ?? '',
     finished ? 1 : 0,
     team.name,
     team.avatar_url || '',
@@ -1445,6 +1447,17 @@ function renderRow(team, idx, data) {
   if ((team.members || []).length) {
     main.append(h('div', { class: 'members' }, team.members.map((m) => m.username).join(' · ')));
   }
+  // A graph event ranks by points, and has no page-by-page progress to
+  // draw: the row says whether the team is still out, and after the
+  // event what it guessed for the tie-breaker.
+  if (data.engine === 'graph') {
+    main.append(h('div', { class: 'progress' },
+      h('div', { class: 'label' },
+        h('span', {}, finished ? t('Complete') : t('Playing')),
+        team.tiebreak_guess != null ? h('span', {}, t('Tie-breaker: {{n}}', { n: team.tiebreak_guess })) : null,
+      ),
+    ));
+  } else {
   const currentPuzzle = data.puzzles?.[team.page_index];
   main.append(h('div', { class: 'progress' },
     h('div', { class: 'label' },
@@ -1483,9 +1496,17 @@ function renderRow(team, idx, data) {
         return fill;
       })()),
   ));
+  }
   row.append(main);
 
-  if (finished) {
+  if (data.engine === 'graph') {
+    // Points are what a graph event ranks by, finished or not.
+    const pts = team.score ?? 0;
+    row.append(h('div', { class: 'stat' + (finished ? ' finished' : '') },
+      h('div', { class: 'value' }, Number.isInteger(pts) ? String(pts) : pts.toFixed(1)),
+      h('div', { class: 'unit' }, t('Points')),
+    ));
+  } else if (finished) {
     // Every finisher shows their own total (start → finish) as the
     // big value so runs read as comparable times. Below, rank 1 gets
     // the "Finish time" caption; everyone behind gets the gap to the

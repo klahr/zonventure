@@ -106,7 +106,8 @@ export interface Response {
 /** internal/graph: Media — a picture or sound, by adventure_media id. */
 export interface Media {
   id: number;
-  kind: "image" | "audio";
+  /** "video" only on a video block; steps and hints keep to pictures and sounds. */
+  kind: "image" | "audio" | "video";
   alt?: string;
 }
 
@@ -115,13 +116,73 @@ export interface Media {
  * in the author's order. Fields are per kind; `id` is stable within the
  * step, so translations and the editor follow a block as it moves.
  */
-export type Block =
-  | { id: string; kind: "text"; text: string }
-  | { id: string; kind: "image" | "audio"; media: number; alt?: string }
-  /** A compass pointing at a zone, or a map showing it; "" until chosen. */
-  | { id: string; kind: "compass"; zone: string; hide_distance?: boolean }
-  /** zoom fixes the map's zoom level (MAP_ZOOM); without it the map fits the zone. */
-  | { id: string; kind: "map"; zone: string; zoom?: number };
+export type Block = BlockBody & {
+  id: string;
+  /** Hidden until `when` holds; with tease, shown blurred meanwhile. The server enforces it. */
+  show?: Show;
+};
+
+export interface Show {
+  when: Predicate;
+  tease?: boolean;
+}
+
+/** One block's own fields, by kind. See internal/graph/blocks.go for each. */
+export type BlockBody =
+  | { kind: "text"; text: string }
+  | { kind: "image" | "audio" | "video"; media: number; alt?: string }
+  /** zone is "" until chosen, for every kind that has one. */
+  | { kind: "compass"; zone: string; hide_distance?: boolean }
+  /** zoom fixes the zoom level (MAP_ZOOM); without it the map fits the zone and markers. */
+  | { kind: "map"; zone: string; zoom?: number; hide_team?: boolean; markers?: Marker[] }
+  | { kind: "note"; text: string; style?: NoteStyle }
+  | { kind: "chat"; lines: ChatLine[] }
+  | { kind: "cipher"; cipher: Cipher; shift?: number; key?: string }
+  | { kind: "hotspots"; media: number; alt?: string; spots?: Spot[] }
+  | { kind: "divider"; style?: DividerStyle }
+  | { kind: "radar"; zone: string }
+  | { kind: "overlay" | "torch"; media: number; alt?: string }
+  /** pitch: degrees above flat the phone must be held at; text shows then. */
+  | { kind: "level"; pitch?: number; text?: string }
+  /** threshold: loudness 1–100; text shows once reached. */
+  | { kind: "noise"; threshold?: number; text?: string }
+  | { kind: "countdown"; seconds: number; from?: "step" | "start"; text?: string }
+  | { kind: "status"; items?: boolean; counters?: string[] }
+  | { kind: "standings" }
+  /** Where the step's title shows, and what a puzzle is worth. Always there, once: see FIXED_KINDS. */
+  | { kind: "title" }
+  | { kind: "points" }
+  /** A quiz-walk question: three options for 1, X and 2, and the right one. Worth 0 is one point. */
+  | { kind: "quiz"; text: string; options: [string, string, string]; answer?: QuizChoice; worth?: number }
+  /** A number question: among teams on the same score, the closest guess ranks first. */
+  | { kind: "tiebreak"; text: string; target?: number };
+
+export type QuizChoice = "1" | "X" | "2";
+export const QUIZ_CHOICES: QuizChoice[] = ["1", "X", "2"];
+
+export type NoteStyle = "paper" | "telegram" | "sms" | "newspaper" | "sticky";
+export type DividerStyle = "line" | "space" | "ornament";
+export type Cipher = "pigpen" | "morse" | "semaphore" | "caesar" | "custom";
+
+export interface ChatLine {
+  who?: string;
+  text: string;
+  /** On the team's side of the conversation. */
+  me?: boolean;
+}
+
+/** A hotspot: its centre as fractions of the picture, and its caption. */
+export interface Spot {
+  x: number;
+  y: number;
+  text: string;
+}
+
+export interface Marker {
+  lat: number;
+  lng: number;
+  label?: string;
+}
 
 export type BlockKind = Block["kind"];
 

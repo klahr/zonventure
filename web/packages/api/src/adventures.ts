@@ -167,7 +167,7 @@ export const saveBrand = (slug: string, b: Brand) =>
 /** internal/admin: mediaView */
 export interface MediaUpload {
   id: number;
-  kind: "image" | "audio";
+  kind: "image" | "audio" | "video";
   mime_type: string;
   size_bytes: number;
 }

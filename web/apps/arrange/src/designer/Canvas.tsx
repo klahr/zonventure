@@ -35,6 +35,7 @@ import {
   sameData,
   samePosition,
   upgradeNode,
+  withFixed,
   type DragFrom,
   type Graph,
   type Issue,
@@ -541,7 +542,7 @@ export function Canvas({ graph, issues, selected, onChange, onSelect, paletteReq
         }
         let copied: GraphNode[];
         try {
-          copied = raw ? (JSON.parse(raw) as GraphNode[]).map(upgradeNode) : [];
+          copied = raw ? (JSON.parse(raw) as GraphNode[]).map((n) => withFixed(upgradeNode(n))) : [];
         } catch {
           copied = [];
         }

@@ -1,0 +1,68 @@
+/* Quiz walk: the question, then 1, X and 2 as three wide rows, each with
+ * its mark in a circle, as a paper quiz-walk card reads. */
+.pv-quiz {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin: 0;
+  padding: var(--sp-3) var(--sp-4) var(--sp-4);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  min-width: 0;
+}
+.pv-quiz__q {
+  padding: 0;
+  font-weight: 700;
+  color: var(--ink);
+}
+.pv-quiz__q p { margin: 0; }
+.pv-quiz__options { display: flex; flex-direction: column; gap: var(--sp-2); }
+.pv-quiz__option {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  min-height: var(--pv-tap, 2.75rem);
+  padding: var(--sp-2) var(--sp-3);
+  border: 2px solid var(--border-soft);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.pv-quiz__option:hover:not(:disabled) { border-color: color-mix(in srgb, var(--accent) 50%, var(--border-soft)); }
+.pv-quiz__option:disabled { cursor: default; }
+.pv-quiz__mark {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  background: var(--surface-2);
+  font-weight: 700;
+}
+.pv-quiz__text { flex: 1; min-width: 0; }
+.pv-quiz.is-picked .pv-quiz__option:not(.is-mine) { opacity: 0.55; }
+.pv-quiz__option.is-mine { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--surface)); }
+.pv-quiz__option.is-mine .pv-quiz__mark { background: var(--accent); color: var(--pv-on-accent, #fff); }
+.pv-quiz__option.is-right { border-color: var(--success, #2e7d32); opacity: 1; }
+.pv-quiz__option.is-wrong { border-color: var(--danger); }
+.pv-quiz__note { margin: 0; font-size: 0.875rem; color: var(--muted); }
+.pv-quiz__tag { font-size: 0.75rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.pv-tiebreak__row { display: flex; gap: var(--sp-2); }
+.pv-tiebreak__row .pv-input { flex: 1; min-width: 0; }
+
+/* The end's review: how the walk went, question by question. */
+.pv-quiz-result { display: flex; flex-direction: column; gap: var(--sp-2); text-align: left; }
+.pv-quiz-result__head { margin: 0; font-size: 1.1rem; font-weight: 700; color: var(--ink); }
+.pv-quiz-result ol { display: flex; flex-direction: column; gap: var(--sp-2); margin: 0; padding: 0; list-style: none; }
+.pv-quiz-result li { display: grid; grid-template-columns: auto 1fr; gap: 0 var(--sp-2); }
+.pv-quiz-result__verdict { grid-row: span 2; font-weight: 700; }
+.pv-quiz-result li.is-right .pv-quiz-result__verdict { color: var(--success, #2e7d32); }
+.pv-quiz-result li.is-wrong .pv-quiz-result__verdict { color: var(--danger); }
+.pv-quiz-result__q { color: var(--ink); }
+.pv-quiz-result__a { font-size: 0.875rem; color: var(--muted); }

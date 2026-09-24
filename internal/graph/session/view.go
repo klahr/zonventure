@@ -3,9 +3,13 @@ package session
 import (
 	"fmt"
 	"math"
+	"regexp"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/klahr/zonventure/internal/graph"
+	"github.com/klahr/zonventure/internal/graph/cond"
 	"github.com/klahr/zonventure/internal/graph/match"
 )
 
@@ -34,6 +38,14 @@ type View struct {
 	// order: texts, and pictures and sounds the client fetches from
 	// /media/{id}.
 	Blocks []BlockView `json:"blocks,omitempty"`
+	// Quiz is how the team did on the quiz walk, once it has finished.
+	Quiz *QuizResult `json:"quiz,omitempty"`
+	// RecheckAt is when a hidden block could appear with no action from
+	// the team; the phone asks again then. WatchPosition says one waits
+	// for the team to reach a zone, so the phone reports its position
+	// often.
+	RecheckAt     *time.Time `json:"recheck_at,omitempty"`
+	WatchPosition bool       `json:"watch_position,omitempty"`
 	// Media, with Text, is Blocks for a player still running the bundle
 	// from before blocks: its pictures and sounds, and Text its texts.
 	Media []graph.Media `json:"media,omitempty"`
@@ -146,11 +158,48 @@ type StartOption struct {
 	Here bool `json:"here"`
 }
 
-// BlockView is a block as the player sees it. A compass or map carries
-// the zone it shows, so the phone needs nothing else to draw it.
+// BlockView is a block as the player sees it, with what the phone
+// cannot work out itself: the zone a compass, map or radar shows, when a
+// countdown ends, a status's counter values, and — filled by the play
+// engine, which can see other teams — a standings block's standings.
+//
+// A block whose show condition does not hold is left out, or with Tease
+// is sent Locked with only its id and kind (and Place, when it waits for
+// a zone). Show itself is never sent: the condition is the author's.
 type BlockView struct {
 	graph.Block
-	Place *graph.Zone `json:"place,omitempty"`
+	Place         *graph.Zone   `json:"place,omitempty"`
+	Locked        bool          `json:"locked,omitempty"`
+	EndsAt        *time.Time    `json:"ends_at,omitempty"`
+	CounterValues []CounterView `json:"counter_values,omitempty"`
+	Standings     *Standings    `json:"standings,omitempty"`
+	// Points is what a points block's puzzle is worth: its best answer.
+	Points float64 `json:"points,omitempty"`
+	// Picked is the team's answer to a quiz question or tie-breaker. The
+	// right Answer and Target stay out of the view until it finishes.
+	Picked string `json:"picked,omitempty"`
+}
+
+// CounterView is one counter's value, for a status block.
+type CounterView struct {
+	Slug  string  `json:"slug"`
+	Name  string  `json:"name,omitempty"`
+	Value float64 `json:"value"`
+}
+
+// Standings is the team's place in its event: Rank of Of, and the teams
+// just ahead and behind with the gap in points.
+type Standings struct {
+	Rank   int    `json:"rank"`
+	Of     int    `json:"of"`
+	Ahead  *Rival `json:"ahead,omitempty"`
+	Behind *Rival `json:"behind,omitempty"`
+}
+
+// Rival is a neighbouring team in the standings.
+type Rival struct {
+	Name string  `json:"name"`
+	Gap  float64 `json:"gap"`
 }
 
 // HintView is one revealed hint.
@@ -235,21 +284,178 @@ func (t *Team) journalView() []JournalView {
 
 // setBlocks shows a step's blocks, and the same content in the shape
 // players from before blocks read.
-func (t *Team) setBlocks(v *View, bs []graph.Block) {
-	v.Blocks = make([]BlockView, len(bs))
-	for i, b := range bs {
-		v.Blocks[i].Block = b
-		if b.Kind == graph.BlockCompass || b.Kind == graph.BlockMap {
-			for _, z := range t.G.Zones {
-				if z.Slug == b.Zone {
-					zc := z
-					v.Blocks[i].Place = &zc
+func (t *Team) setBlocks(v *View, n graph.Node) {
+	bs := n.Blocks()
+	v.Blocks = make([]BlockView, 0, len(bs))
+	var shown []graph.Block
+	for _, b := range bs {
+		if b.Show != nil && !cond.Eval(b.Show.When, t) {
+			t.watch(v, b.Show.When)
+			if b.Show.Tease {
+				bv := BlockView{Block: graph.Block{ID: b.ID, Kind: b.Kind}, Locked: true}
+				if z := waitsForZone(b.Show.When); z != "" {
+					bv.Place = t.zoneBySlug(z)
 				}
+				v.Blocks = append(v.Blocks, bv)
+			}
+			continue
+		}
+		b.Show = nil
+		b.Text = t.fill(b.Text)
+		shown = append(shown, b)
+		bv := BlockView{Block: b}
+		switch b.Kind {
+		case graph.BlockCompass, graph.BlockMap, graph.BlockRadar:
+			bv.Place = t.zoneBySlug(b.Zone)
+		case graph.BlockCountdown:
+			from := t.NodeEnteredAt
+			if b.From == "start" {
+				from = t.StartedAt
+			}
+			end := from.Add(time.Duration(b.Seconds) * time.Second)
+			bv.EndsAt = &end
+		case graph.BlockQuiz, graph.BlockTiebreak:
+			bv.Picked = t.Picks[PickKey(n.Slug, b.ID)]
+			if !t.Completed {
+				bv.Answer, bv.Target = "", nil
+			}
+		case graph.BlockTitle:
+			bv.Text = n.Title
+		case graph.BlockPoints:
+			if n.PuzzleCfg != nil {
+				for _, o := range n.PuzzleCfg.Outputs {
+					if o.Trigger == graph.OnAnswer {
+						bv.Points = max(bv.Points, float64(o.Points))
+					}
+				}
+			}
+		case graph.BlockStatus:
+			for _, c := range b.Counters {
+				cv := CounterView{Slug: c, Value: t.CounterValue(c)}
+				for _, def := range t.G.Counters {
+					if def.Slug == c {
+						cv.Name = def.Name
+					}
+				}
+				bv.CounterValues = append(bv.CounterValues, cv)
+			}
+		}
+		v.Blocks = append(v.Blocks, bv)
+	}
+	v.Text, v.Media = graph.TextOf(shown), legacyMedia(shown)
+}
+
+// legacyMedia is a step's media for a player from before blocks, which
+// shows anything that is not a picture as a sound: no videos.
+func legacyMedia(bs []graph.Block) []graph.Media {
+	var out []graph.Media
+	for _, m := range graph.MediaOf(bs) {
+		if m.Kind != graph.MediaVideo {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+func (t *Team) zoneBySlug(slug string) *graph.Zone {
+	for _, z := range t.G.Zones {
+		if z.Slug == slug {
+			zc := z
+			return &zc
+		}
+	}
+	return nil
+}
+
+// blockShown reports whether the team at its current step sees a block.
+// A block with a show condition on any other step is hidden: its file
+// comes with it, never ahead of it.
+func (t *Team) blockShown(node string, b graph.Block) bool {
+	return b.Show == nil || node == t.Current && cond.Eval(b.Show.When, t)
+}
+
+// watch tells the phone when a hidden block's condition could next come
+// true without the team doing anything: at a time (RecheckAt), or when
+// it moves (WatchPosition).
+func (t *Team) watch(v *View, p cond.Predicate) {
+	at, zone := t.wakeup(p)
+	if zone {
+		v.WatchPosition = true
+	}
+	if at != nil && at.After(t.Now) && (v.RecheckAt == nil || at.Before(*v.RecheckAt)) {
+		v.RecheckAt = at
+	}
+}
+
+// recheckEvery is how often a phone re-asks about a clock condition
+// whose moment cannot be worked out ahead, such as one inside a not.
+const recheckEvery = 15 * time.Second
+
+func (t *Team) wakeup(p cond.Predicate) (at *time.Time, zone bool) {
+	later := func(from time.Time) *time.Time {
+		d := from.Add(time.Duration(p.N * float64(time.Second)))
+		if !d.After(t.Now) {
+			d = t.Now.Add(recheckEvery)
+		}
+		return &d
+	}
+	switch p.Op {
+	case cond.OpInZone:
+		return nil, true
+	case cond.OpNodeElapsed:
+		return later(t.NodeEnteredAt), false
+	case cond.OpElapsed:
+		return later(t.StartedAt), false
+	case cond.OpTimeOfDay, cond.OpWeekday:
+		d := t.Now.Add(recheckEvery)
+		return &d, false
+	case cond.OpAll, cond.OpAny, cond.OpNot:
+		for _, q := range p.Of {
+			a, z := t.wakeup(q)
+			zone = zone || z
+			if a != nil && (at == nil || a.Before(*at)) {
+				at = a
 			}
 		}
 	}
-	v.Text, v.Media = graph.TextOf(bs), graph.MediaOf(bs)
+	return at, zone
 }
+
+// waitsForZone is the zone a condition is simply "inside", for a teaser
+// to name; "" for anything more involved.
+func waitsForZone(p cond.Predicate) string {
+	if p.Op == cond.OpInZone {
+		return p.Zone
+	}
+	if p.Op == cond.OpAll && len(p.Of) == 1 {
+		return waitsForZone(p.Of[0])
+	}
+	return ""
+}
+
+// tokens are the team's state an author may write into a text:
+// {{score}}, {{counter:<slug>}}, {{item:<slug>}}. {{team}} is left for
+// the phone, which knows the team's name.
+var tokens = regexp.MustCompile(`\{\{\s*(score|counter:[\w-]+|item:[\w-]+)\s*\}\}`)
+
+func (t *Team) fill(s string) string {
+	if !strings.Contains(s, "{{") {
+		return s
+	}
+	return tokens.ReplaceAllStringFunc(s, func(m string) string {
+		name := strings.TrimSpace(strings.Trim(m, "{}"))
+		switch {
+		case name == "score":
+			return number(t.Score())
+		case strings.HasPrefix(name, "counter:"):
+			return number(t.CounterValue(strings.TrimPrefix(name, "counter:")))
+		default:
+			return strconv.Itoa(t.ItemQty(strings.TrimPrefix(name, "item:")))
+		}
+	})
+}
+
+func number(f float64) string { return strconv.FormatFloat(f, 'f', -1, 64) }
 
 // View renders the team's state for the player.
 func (t *Team) View() View {
@@ -320,18 +526,71 @@ func (t *Team) translate(v *View) {
 		v.Text = tr(key("hub-text"), v.Text)
 	} else if v.Blocks != nil {
 		v.Blocks = append([]BlockView(nil), v.Blocks...)
-		plain := make([]graph.Block, len(v.Blocks))
+		plain := make([]graph.Block, 0, len(v.Blocks))
 		for i := range v.Blocks {
 			b := &v.Blocks[i]
-			if b.Kind == graph.BlockText {
-				b.Text = tr(graph.BlockKey(v.Node, b.ID), b.Text)
+			switch {
+			case b.Kind == graph.BlockTitle:
+				b.Text = v.Title // translated above
+			case b.Text != "":
+				b.Text = t.fill(tr(graph.BlockKey(v.Node, b.ID), b.Text))
+			}
+			if b.Lines != nil {
+				b.Lines = append([]graph.ChatLine(nil), b.Lines...)
+				for j := range b.Lines {
+					l := &b.Lines[j]
+					l.Text = t.fill(tr(graph.BlockFieldKey(v.Node, b.ID, fmt.Sprintf("line:%d", j)), l.Text))
+					if l.Who != "" {
+						l.Who = tr(graph.BlockFieldKey(v.Node, b.ID, fmt.Sprintf("who:%d", j)), l.Who)
+					}
+				}
+			}
+			if b.Options != nil {
+				b.Options = append([]string(nil), b.Options...)
+				for j := range b.Options {
+					b.Options[j] = tr(graph.BlockFieldKey(v.Node, b.ID, fmt.Sprintf("option:%d", j)), b.Options[j])
+				}
+			}
+			if b.Markers != nil {
+				b.Markers = append([]graph.Marker(nil), b.Markers...)
+				for j := range b.Markers {
+					if b.Markers[j].Label != "" {
+						b.Markers[j].Label = tr(graph.BlockFieldKey(v.Node, b.ID, fmt.Sprintf("marker:%d", j)), b.Markers[j].Label)
+					}
+				}
+			}
+			if b.Spots != nil {
+				b.Spots = append([]graph.Spot(nil), b.Spots...)
+				for j := range b.Spots {
+					b.Spots[j].Text = tr(graph.BlockFieldKey(v.Node, b.ID, fmt.Sprintf("spot:%d", j)), b.Spots[j].Text)
+				}
 			}
 			b.Place = zone(b.Place)
-			plain[i] = b.Block
+			if !b.Locked {
+				plain = append(plain, b.Block)
+			}
 		}
 		v.Text = graph.TextOf(plain)
 	}
 	v.Zone = zone(v.Zone)
+	if v.Quiz != nil {
+		q := *v.Quiz
+		q.Items = append([]QuizRow(nil), q.Items...)
+		for i := range q.Items {
+			r := &q.Items[i]
+			r.Question = tr(graph.BlockKey(r.Node, r.Block), r.Question)
+			r.Options = append([]string(nil), r.Options...)
+			for j := range r.Options {
+				r.Options[j] = tr(graph.BlockFieldKey(r.Node, r.Block, fmt.Sprintf("option:%d", j)), r.Options[j])
+			}
+		}
+		if q.Tiebreak != nil {
+			tb := *q.Tiebreak
+			tb.Question = tr(graph.BlockKey(tb.Node, tb.Block), tb.Question)
+			q.Tiebreak = &tb
+		}
+		v.Quiz = &q
+	}
 	for i := range v.Hints {
 		v.Hints[i].Text = tr(key(fmt.Sprintf("hint:%d", i)), v.Hints[i].Text)
 	}
@@ -440,7 +699,7 @@ func (t *Team) view() View {
 		if cfg == nil {
 			return v
 		}
-		t.setBlocks(&v, cfg.Blocks)
+		t.setBlocks(&v, n)
 		if cfg.Zone != "" {
 			setZone(cfg.Zone)
 		}
@@ -472,14 +731,17 @@ func (t *Team) view() View {
 		v.CanSkip = t.canSkip(n)
 	case graph.Story:
 		if n.StoryCfg != nil {
-			t.setBlocks(&v, n.StoryCfg.Blocks)
+			t.setBlocks(&v, n)
 			if n.StoryCfg.Zone != "" {
 				setZone(n.StoryCfg.Zone)
 			}
 		}
 	case graph.End:
 		if n.EndCfg != nil {
-			t.setBlocks(&v, n.EndCfg.Blocks)
+			t.setBlocks(&v, n)
+		}
+		if q := t.Quiz(); t.Completed && (q.Total > 0 || q.Tiebreak != nil) {
+			v.Quiz = &q
 		}
 	case graph.Hub:
 		// Recompute the offer: it is a function of state, not stored.
@@ -499,6 +761,42 @@ func (t *Team) view() View {
 		}
 	}
 	return v
+}
+
+// ownMedia is a step's own media the team may see: its answer's, and its
+// blocks' unless a block is still hidden.
+func (t *Team) ownMedia(n graph.Node) []graph.Media {
+	var shown []graph.Block
+	for _, b := range n.Blocks() {
+		if t.blockShown(n.Slug, b) {
+			shown = append(shown, b)
+		}
+	}
+	out := graph.MediaOf(shown)
+	if n.PuzzleCfg != nil && n.PuzzleCfg.Answer != nil {
+		out = append(out, n.PuzzleCfg.Answer.Media()...)
+	}
+	return out
+}
+
+// PrefetchMedia is VisibleMedia less videos: a phone downloads the rest
+// ahead of need, but a film only when it is played.
+func (t *Team) PrefetchMedia(strict bool) []int64 {
+	videos := map[int64]bool{}
+	for _, n := range t.G.Nodes {
+		for _, m := range graph.MediaOf(n.Blocks()) {
+			if m.Kind == graph.MediaVideo {
+				videos[m.ID] = true
+			}
+		}
+	}
+	var out []int64
+	for _, id := range t.VisibleMedia(strict) {
+		if !videos[id] {
+			out = append(out, id)
+		}
+	}
+	return out
 }
 
 // CanSeeMedia reports whether the team may fetch a media file.
@@ -546,6 +844,9 @@ func (t *Team) VisibleMedia(strict bool) []int64 {
 			// List 0 is the step's own; list i is hint i-1.
 			if i > 0 && (r == nil || i > r.HintsRevealed) {
 				break
+			}
+			if i == 0 {
+				ms = t.ownMedia(n)
 			}
 			for _, m := range ms {
 				if !seen[m.ID] {

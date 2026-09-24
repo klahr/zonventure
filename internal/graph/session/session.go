@@ -58,6 +58,9 @@ var (
 	// ErrWrongNode means the action does not fit the node — answering a
 	// story, choosing a branch at a puzzle. Map to 400.
 	ErrWrongNode = errors.New("action does not apply to this node")
+	// ErrUnanswered means a story still has quiz questions the team has
+	// not answered, so it cannot continue. Map to 403.
+	ErrUnanswered = errors.New("answer the questions on this step first")
 )
 
 // NodeState is what a team has done at one node.
@@ -118,9 +121,12 @@ type Team struct {
 	TimedOut bool `json:"timed_out,omitempty"`
 	// Lang is the language the team plays in; empty is the adventure's
 	// main language.
-	Lang     string                     `json:"lang,omitempty"`
-	Counters map[string]float64         `json:"counters,omitempty"`
-	Entered  map[string]map[string]bool `json:"entered,omitempty"` // hub -> port -> ever entered
+	Lang     string             `json:"lang,omitempty"`
+	Counters map[string]float64 `json:"counters,omitempty"`
+	// Picks are the team's quiz and tie-breaker answers, keyed by
+	// PickKey. Set once each; they score when the team finishes.
+	Picks   map[string]string          `json:"picks,omitempty"`
+	Entered map[string]map[string]bool `json:"entered,omitempty"` // hub -> port -> ever entered
 
 	// Occ is how many other teams are inside each hub branch, keyed
 	// "hub\x00port". It is a fact about the event, not the team, so it
@@ -226,6 +232,11 @@ func (t *Team) Apply(step walk.Step) {
 		t.MarkEntered(b.Hub, b.Port)
 	}
 	if step.Finished {
+		if !t.Completed {
+			// The quiz walk is marked as the team finishes, never before:
+			// a score that moved with each pick would give the answers away.
+			t.Points += t.Quiz().Points
+		}
 		t.Completed = true
 		t.Ending = step.Outcome
 	}
@@ -650,6 +661,11 @@ func (t *Team) Continue(node string) (Result, *walk.Step, error) {
 	if n.StoryCfg != nil && n.StoryCfg.Zone != "" && !t.InZone(n.StoryCfg.Zone) {
 		return Result{}, nil, ErrNotHere
 	}
+	for _, b := range n.Blocks() {
+		if (b.Kind == graph.BlockQuiz || b.Kind == graph.BlockTiebreak) && t.blockShown(n.Slug, b) && t.Picks[PickKey(n.Slug, b.ID)] == "" {
+			return Result{}, nil, ErrUnanswered
+		}
+	}
 	t.Row(n.Slug).Solved = true
 	step, err := t.leave(n, graph.PortOut, 0)
 	return Result{Port: graph.PortOut}, step, err
@@ -861,6 +877,8 @@ func Code(err error) string {
 		return "finished"
 	case errors.Is(err, ErrWrongNode):
 		return "wrong_node"
+	case errors.Is(err, ErrUnanswered):
+		return "unanswered"
 	}
 	return ""
 }

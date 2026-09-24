@@ -156,7 +156,7 @@ export function useAnchoredPop<T extends HTMLElement, P extends HTMLElement>(ope
 }
 
 /** Close an anchored panel on Escape or a press outside it and its trigger. */
-function useDismiss(open: boolean, close: () => void, trigger: React.RefObject<HTMLElement | null>, pop: React.RefObject<HTMLElement | null>) {
+export function useDismiss(open: boolean, close: () => void, trigger: React.RefObject<HTMLElement | null>, pop: React.RefObject<HTMLElement | null>) {
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {

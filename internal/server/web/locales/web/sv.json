@@ -2165,5 +2165,8 @@
 "You can run events in your organisation. Authoring adventures and managing members is reserved for admins.": "Du kan köra event i din organisation. Att skriva äventyr och hantera medlemmar är förbehållet administratörer.",
 "You manage the organisations on this instance, curate the catalog, and keep an eye on the system. Authoring and running events is up to the organisations. Treat this like a root password.": "Du hanterar organisationerna på den här instansen, kurerar katalogen och håller koll på systemet. Att skriva äventyr och köra event sköter organisationerna. Behandla detta som ett root-lösenord.",
 "Your organization’s puzzles and the catalog’s. Unassigned ones sit in the library; the rest list the adventure they belong to. Copy a puzzle into a new adventure from the adventure editor.": "Din organisations pussel och katalogens. Otilldelade ligger i biblioteket; övriga visar vilket äventyr de hör till. Kopiera ett pussel till ett nytt äventyr från äventyrsredigeraren.",
-"the organization that authors the catalog; you list and commission its adventures.": "organisationen som skriver katalogen; du listar och beställer dess äventyr."
+"the organization that authors the catalog; you list and commission its adventures.": "organisationen som skriver katalogen; du listar och beställer dess äventyr.",
+  "Points": "Poäng",
+  "Playing": "Spelar",
+  "Tie-breaker: {{n}}": "Utslagsfråga: {{n}}"
 }

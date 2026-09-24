@@ -10,6 +10,7 @@
 // release on empty canvas, pick from a searchable list, and the new node
 // is created at the drop point already wired in.
 
+import { withFixed } from "./blocks.ts";
 import { freshSlug, portsOf } from "./model.ts";
 import type { Graph, Node, NodeType } from "./types.ts";
 
@@ -380,7 +381,7 @@ export const PRESETS: Preset[] = [
 /** Build a node from a preset at a canvas position. */
 export function nodeFromPreset(g: Graph, preset: Preset, at: { x: number; y: number }): Node {
   const slug = freshSlug(g, preset.type);
-  return { ...preset.build(slug), slug, x: Math.round(at.x), y: Math.round(at.y) } as Node;
+  return withFixed({ ...preset.build(slug), slug, x: Math.round(at.x), y: Math.round(at.y) } as Node);
 }
 
 /**

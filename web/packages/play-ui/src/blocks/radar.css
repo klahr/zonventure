@@ -1,0 +1,99 @@
+/* Hot and cold: --heat (0…1) sets the colour and the pulse rate. */
+.pv-radar {
+  --pv-radar-hue: color-mix(in oklch, #e5383b calc(var(--heat) * 100%), #3a86ff);
+  --pv-radar-beat: calc(2.4s - var(--heat) * 1.9s);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-3);
+  margin: 0;
+  padding: var(--sp-4);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+}
+.pv-radar__scope {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 9rem;
+  aspect-ratio: 1;
+}
+.pv-radar__dot {
+  width: 38%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: var(--pv-radar-hue);
+  box-shadow: 0 0 calc(8px + var(--heat) * 24px) var(--pv-radar-hue);
+  animation: pv-radar-beat var(--pv-radar-beat) ease-in-out infinite;
+}
+.pv-radar__ring {
+  position: absolute;
+  inset: 31%;
+  border: 2px solid var(--pv-radar-hue);
+  border-radius: 50%;
+  opacity: 0;
+  animation: pv-radar-ring var(--pv-radar-beat) ease-out infinite;
+}
+.pv-radar__ring + .pv-radar__ring {
+  animation-delay: calc(var(--pv-radar-beat) / 2);
+}
+.pv-radar__word {
+  font: 800 var(--text-lg) / 1.2 var(--font-body);
+  color: var(--pv-radar-hue);
+  text-align: center;
+}
+.pv-radar.is-waiting .pv-radar__dot,
+.pv-radar.is-waiting .pv-radar__ring {
+  background: none;
+  border-color: var(--muted);
+  box-shadow: none;
+}
+.pv-radar.is-waiting .pv-radar__dot {
+  border: 2px dashed var(--muted);
+  animation: none;
+}
+.pv-radar.is-waiting .pv-radar__word {
+  font-weight: 600;
+  font-size: var(--text-base);
+  color: var(--muted);
+}
+.pv-radar.is-there .pv-radar__ring {
+  animation-name: pv-radar-there;
+}
+
+@keyframes pv-radar-beat {
+  0%,
+  100% {
+    transform: scale(0.85);
+  }
+  50% {
+    transform: scale(1);
+  }
+}
+@keyframes pv-radar-ring {
+  from {
+    opacity: 0.8;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(2.6);
+  }
+}
+/* There: the rings stay out, steady, like a target hit. */
+@keyframes pv-radar-there {
+  from,
+  to {
+    opacity: 0.6;
+    transform: scale(2);
+  }
+}
+
+/* Without motion the colour and the word carry it. */
+@media (prefers-reduced-motion: reduce) {
+  .pv-radar__dot,
+  .pv-radar__ring {
+    animation: none;
+  }
+}

@@ -53,3 +53,15 @@ test("coverage counts translated texts, not extra answers", () => {
   t = setTranslation(t, "en", blockKey("q", "b1"), "  ");
   assert.equal(t.translations!.en![blockKey("q", "b1")], undefined, "an emptied translation is removed");
 });
+
+test("block texts use the engine's block keys", () => {
+  const n = { slug: "s", type: "story" as const, story: { blocks: [
+    { id: "c", kind: "chat" as const, lines: [{ who: "Anna", text: "Hej" }, { text: "Hallå?", me: true }] },
+    { id: "m", kind: "map" as const, zone: "z", markers: [{ lat: 1, lng: 2, label: "Kyrkan" }] },
+    { id: "d", kind: "divider" as const },
+  ] } };
+  assert.deepEqual(nodeTexts(n).map((t) => t.key), [
+    blockKey("s", "c") + ":who:0", blockKey("s", "c") + ":line:0", blockKey("s", "c") + ":line:1",
+    blockKey("s", "m") + ":marker:0",
+  ]);
+});

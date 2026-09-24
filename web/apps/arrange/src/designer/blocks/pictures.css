@@ -1,0 +1,12 @@
+/* Pictures edited in place: hotspots placed by clicking, and the torch's
+   look with the light held in the middle. Spots are fractions of the
+   picture, so the stage is the picture's own box. */
+.pic-ed__stage { position: relative; overflow: hidden; border: 1px solid var(--border-soft); border-radius: var(--radius); background: var(--surface-2); }
+.pic-ed__stage.is-pick { cursor: crosshair; }
+.pic-ed__img { display: block; width: 100%; height: auto; user-select: none; }
+.pic-ed__spot { position: absolute; display: inline-grid; place-items: center; width: 22px; height: 22px; transform: translate(-50%, -50%); border: 2px solid #fff; border-radius: 50%; background: var(--accent); color: #fff; font-size: 11px; font-weight: 700; box-shadow: 0 1px 4px rgb(0 0 0 / 0.45); pointer-events: none; }
+.pic-ed__row { display: grid; grid-template-columns: 22px 1fr auto; align-items: start; gap: var(--sp-2); }
+.pic-ed__num { display: inline-grid; place-items: center; width: 22px; height: 22px; margin-top: var(--sp-1); border-radius: 50%; background: var(--accent); color: #fff; font-size: 11px; font-weight: 700; }
+.pic-ed__torch { container-type: inline-size; background: #000; }
+.pic-ed__dark { filter: brightness(0.06) saturate(0.4); }
+.pic-ed__lit { position: absolute; inset: 0; height: 100%; -webkit-mask-image: radial-gradient(circle 28cqi at 50% 50%, #000 35%, rgb(0 0 0 / 0.55) 65%, transparent 100%); mask-image: radial-gradient(circle 28cqi at 50% 50%, #000 35%, rgb(0 0 0 / 0.55) 65%, transparent 100%); }

@@ -15,6 +15,7 @@ package valid
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
@@ -528,6 +529,11 @@ func checkReferences(r *reporter, g *graph.Graph) {
 				r.err("ref.journal.unknown", n.Slug, "", "step unlocks journal entry %q, which is not declared", s)
 			}
 		}
+		for _, b := range n.Blocks() {
+			if b.Show != nil {
+				checkPredicate(n.Slug, b.Show.When)
+			}
+		}
 	}
 }
 
@@ -894,12 +900,16 @@ func checkTimeLimit(r *reporter, g *graph.Graph) {
 	}
 }
 
-// checkBlocks checks the shape of a step's content. A picture or sound
-// without a file is checkMedia's.
+// checkBlocks checks the shape of a step's content: every block's
+// required fields, per kind. A block's file and its show condition are
+// checkMedia's and checkReferences'.
 func checkBlocks(r *reporter, g *graph.Graph) {
 	zones := slugSet(len(g.Zones), func(i int) string { return g.Zones[i].Slug })
+	counters := slugSet(len(g.Counters), func(i int) string { return g.Counters[i].Slug })
+	tiebreaks := 0
 	for _, n := range g.Nodes {
 		seen := map[string]bool{}
+		fixed := map[graph.BlockKind]int{}
 		for _, b := range n.Blocks() {
 			switch {
 			case b.ID == "":
@@ -908,19 +918,110 @@ func checkBlocks(r *reporter, g *graph.Graph) {
 				r.err("block.id.duplicate", n.Slug, "", "two content blocks on this step share the id %q", b.ID)
 			}
 			seen[b.ID] = true
+			bad := func(code, format string, args ...any) {
+				r.err(code, n.Slug, "", "the %s on this step "+format, append([]any{b.Kind}, args...)...)
+			}
 			switch b.Kind {
-			case graph.BlockText, graph.BlockImage, graph.BlockAudio:
-			case graph.BlockCompass, graph.BlockMap:
+			case graph.BlockText, graph.BlockImage, graph.BlockAudio, graph.BlockVideo, graph.BlockOverlay, graph.BlockTorch,
+				graph.BlockStandings:
+			case graph.BlockQuiz:
+				switch {
+				case strings.TrimSpace(b.Text) == "":
+					bad("block.quiz.question", "has no question")
+				case len(b.Options) != len(graph.QuizChoices) || slices.ContainsFunc(b.Options, func(o string) bool { return strings.TrimSpace(o) == "" }):
+					bad("block.quiz.options", "needs three answers, for 1, X and 2")
+				case !slices.Contains(graph.QuizChoices, b.Answer):
+					bad("block.quiz.answer", "has no right answer: choose 1, X or 2")
+				case b.Worth < 0:
+					bad("block.quiz.worth", "is worth %d points; it must be 0 or more", b.Worth)
+				}
+			case graph.BlockTiebreak:
+				if tiebreaks++; tiebreaks == 2 {
+					r.err("block.tiebreak.duplicate", n.Slug, "", "an adventure has one tie-breaker; this is a second")
+				}
+				switch {
+				case strings.TrimSpace(b.Text) == "":
+					bad("block.tiebreak.question", "has no question")
+				case b.Target == nil:
+					bad("block.tiebreak.target", "has no right number")
+				}
+			case graph.BlockTitle, graph.BlockPoints:
+				fixed[b.Kind]++
+				if !slices.Contains(graph.FixedKinds[n.Type], b.Kind) {
+					r.err("block.fixed.misplaced", n.Slug, "", "a %s has no %s block", n.Type, b.Kind)
+				}
+			case graph.BlockCompass, graph.BlockMap, graph.BlockRadar:
 				if b.Zone == "" {
-					r.err("block.zone.missing", n.Slug, "", "the %s on this step has no zone to show", b.Kind)
+					bad("block.zone.missing", "has no zone to show")
 				} else if !zones[b.Zone] {
 					r.err("ref.zone.unknown", n.Slug, "", "the %s on this step shows zone %q, which is not declared", b.Kind, b.Zone)
 				}
 				if b.Kind == graph.BlockMap && b.Zoom != 0 && (b.Zoom < graph.MinZoom || b.Zoom > graph.MaxZoom) {
 					r.err("block.zoom", n.Slug, "", "the map on this step is at zoom %d; it must be %d to %d, or fit the zone", b.Zoom, graph.MinZoom, graph.MaxZoom)
 				}
+				for _, m := range b.Markers {
+					if m.Lat < -85 || m.Lat > 85 || m.Lng < -180 || m.Lng > 180 {
+						bad("block.marker", "has a marker at %g, %g, which is off the map", m.Lat, m.Lng)
+					}
+				}
+			case graph.BlockNote:
+				if b.Style != "" && !slices.Contains(graph.NoteStyles, b.Style) {
+					bad("block.style", "has style %q; it must be one of %s", b.Style, strings.Join(graph.NoteStyles, ", "))
+				}
+			case graph.BlockDivider:
+				if b.Style != "" && !slices.Contains(graph.DividerStyles, b.Style) {
+					bad("block.style", "has style %q; it must be one of %s", b.Style, strings.Join(graph.DividerStyles, ", "))
+				}
+			case graph.BlockChat:
+				if len(b.Lines) == 0 {
+					bad("block.chat.empty", "has no messages")
+				}
+			case graph.BlockCipher:
+				switch {
+				case !slices.Contains(graph.Ciphers, b.Cipher):
+					bad("block.cipher", "is %q; it must be one of %s", b.Cipher, strings.Join(graph.Ciphers, ", "))
+				case b.Cipher == "caesar" && (b.Shift < 1 || b.Shift > 25):
+					bad("block.cipher.shift", "shifts by %d; a Caesar shift is 1 to 25", b.Shift)
+				case b.Cipher == "custom" && strings.TrimSpace(b.Key) == "":
+					bad("block.cipher.key", "has no key to show")
+				}
+			case graph.BlockHotspots:
+				for _, sp := range b.Spots {
+					if sp.X < 0 || sp.X > 1 || sp.Y < 0 || sp.Y > 1 {
+						bad("block.spot", "has a spot outside the picture")
+					}
+				}
+			case graph.BlockLevel:
+				if b.Pitch < 0 || b.Pitch > 90 {
+					bad("block.pitch", "wants %d°; it must be 0 (flat) to 90 (straight up)", b.Pitch)
+				}
+			case graph.BlockNoise:
+				if b.Threshold < 0 || b.Threshold > 100 {
+					bad("block.threshold", "wants loudness %d; it must be 1 to 100", b.Threshold)
+				}
+			case graph.BlockCountdown:
+				if b.Seconds <= 0 {
+					bad("block.seconds", "has no time to count down")
+				}
+				if !slices.Contains(graph.CountdownFroms, b.From) {
+					bad("block.from", "counts from %q; it must be step or start", b.From)
+				}
+			case graph.BlockStatus:
+				for _, c := range b.Counters {
+					if !counters[c] {
+						r.err("ref.counter.unknown", n.Slug, "", "the status on this step shows counter %q, which is not declared", c)
+					}
+				}
+				if !b.Items && len(b.Counters) == 0 {
+					bad("block.status.empty", "shows nothing: choose items or counters")
+				}
 			default:
-				r.err("block.kind", n.Slug, "", "content block %q is %q; it must be text, image, audio, compass or map", b.ID, b.Kind)
+				r.err("block.kind", n.Slug, "", "content block %q is %q, which is not a kind of block", b.ID, b.Kind)
+			}
+		}
+		for k, c := range fixed {
+			if c > 1 {
+				r.err("block.fixed.duplicate", n.Slug, "", "this step has %d %s blocks; it has exactly one", c, k)
 			}
 		}
 	}
@@ -935,13 +1036,16 @@ func checkMedia(r *reporter, g *graph.Graph) {
 		}
 	}
 	for _, n := range g.Nodes {
-		for _, ms := range n.MediaLists() {
+		for i, ms := range n.MediaLists() {
 			for _, m := range ms {
+				if i > 0 && m.Kind == graph.MediaVideo {
+					r.err("media.kind", n.Slug, "", "a hint's media %d is a video; hints show pictures and sounds", m.ID)
+				}
 				if m.ID <= 0 {
 					r.err("media.id", n.Slug, "", "a picture or sound on this step has no file")
 				}
-				if m.Kind != graph.MediaImage && m.Kind != graph.MediaAudio {
-					r.err("media.kind", n.Slug, "", "media %d is %q; it must be an image or audio", m.ID, m.Kind)
+				if m.Kind != graph.MediaImage && m.Kind != graph.MediaAudio && m.Kind != graph.MediaVideo {
+					r.err("media.kind", n.Slug, "", "media %d is %q; it must be an image, audio or video", m.ID, m.Kind)
 				}
 			}
 		}

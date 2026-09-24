@@ -1,10 +1,13 @@
-export { PlayView, StartCeremony, type PlayViewProps } from "./PlayView.tsx";
+export { PlayView, Sheet, StartCeremony, type PlayViewProps } from "./PlayView.tsx";
 export { FONTS, brandVars, isHex, loadFont, readableOn, shade } from "./brand.ts";
 export { Markdown } from "./Markdown.tsx";
 export { parseMarkdown, parseInline, safeHref, type Block, type Inline } from "./markdown.ts";
 export { english, feedbackForRefusal, feedbackForResult, type Feedback, type Translate } from "./feedback.ts";
 export { formatSeconds, secondsUntil, useEngineClock } from "./clock.ts";
-export { Blocks, FitMap, type BlocksProps } from "./Blocks.tsx";
-export { CompassFace } from "./Compass.tsx";
-export { StaticMap, project, TILE_URL, type MapPoint, type MapZone } from "./StaticMap.tsx";
+export { Blocks, type BlocksProps } from "./blocks/index.tsx";
+export { FitMap } from "./blocks/Map.tsx";
+export { CompassFace } from "./blocks/Compass.tsx";
+export type { BlockContext, Motion } from "./blocks/context.ts";
+export { StaticMap, project, unproject, TILE_URL, type MapPin, type MapPoint, type MapZone } from "./StaticMap.tsx";
 export { bearing, metresBetween } from "./geo.ts";
+export { fractionAt } from "./pictures.ts";

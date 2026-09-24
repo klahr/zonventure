@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { blocksOf, freshBlockId, mediaOf, moveBlock, textOf, upgradeNode, withBlocks } from "./blocks.ts";
+import { blocksOf, freshBlockId, mediaOf, moveBlock, needsFile, newBlock, textOf, upgradeNode, withBlocks } from "./blocks.ts";
 import type { Block, Node } from "./types.ts";
 
 const text = (id: string, t: string): Block => ({ id, kind: "text", text: t });
@@ -33,4 +33,24 @@ test("a step's blocks are read, replaced and flattened", () => {
   assert.equal(textOf(bs), "One.\n\nTwo.");
   assert.deepEqual(mediaOf(bs), [{ id: 3, kind: "audio" }]);
   assert.deepEqual(withBlocks(m, []).puzzle, { outputs: [] }, "no blocks drops the key");
+});
+
+test("the kinds match the shared vectors the server tests", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const { BLOCK_KINDS } = await import("./blocks.ts");
+  const vectors = JSON.parse(await readFile(new URL("../testdata/blocks.json", import.meta.url), "utf8")) as { blocks: Block[] };
+  assert.deepEqual([...new Set(vectors.blocks.map((b) => b.kind))].sort(), [...BLOCK_KINDS].sort());
+  for (const b of vectors.blocks) if (!needsFile(b.kind)) assert.equal(newBlock([], b.kind).kind, b.kind);
+});
+
+test("a step gets its fixed blocks where missing, as the server adds them", async () => {
+  const { withFixed } = await import("./blocks.ts");
+  const q: Node = { slug: "q", type: "puzzle", puzzle: { blocks: [text("b1", "Look."), { id: "title", kind: "title" }, { id: "points", kind: "image", media: 1 }] } };
+  assert.deepEqual(blocksOf(withFixed(q)).map((b) => `${b.id}:${b.kind}`), ["b1:text", "title:title", "points-:points", "points:image"]);
+  const again = withFixed(q);
+  assert.equal(withFixed(again), again, "a second pass changes nothing");
+  const s: Node = { slug: "s", type: "story", story: {} };
+  assert.deepEqual(blocksOf(withFixed(s)).map((b) => b.kind), ["title"]);
+  const e: Node = { slug: "e", type: "end", end: {} };
+  assert.equal(withFixed(e), e, "an end has no fixed blocks");
 });

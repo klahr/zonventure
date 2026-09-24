@@ -1,0 +1,108 @@
+/* A picture with details to tap. The stage is the picture's own box, so
+ * spots placed as fractions land on the same detail at any width. */
+.pv-hotspots {
+  margin: 0;
+}
+.pv-hotspots__stage {
+  position: relative;
+}
+.pv-hotspots__img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  background: var(--surface-2);
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+/* The ring is small, but the button around it is a full tap target. */
+.pv-hotspots__spot {
+  position: absolute;
+  width: var(--pv-tap, 2.75rem);
+  height: var(--pv-tap, 2.75rem);
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  transform: translate(-50%, -50%);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.pv-hotspots__spot::before,
+.pv-hotspots__spot::after {
+  content: "";
+  position: absolute;
+  inset: 50% auto auto 50%;
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+}
+.pv-hotspots__spot::before {
+  border: 2px solid #fff;
+  background: color-mix(in srgb, var(--accent) 80%, transparent);
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.45);
+}
+.pv-hotspots__spot::after {
+  border: 2px solid var(--accent);
+  animation: pv-hotspot-pulse 2.4s ease-out infinite;
+  pointer-events: none;
+}
+.pv-hotspots__spot.is-open::before {
+  background: var(--accent);
+}
+.pv-hotspots__spot:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: -4px;
+}
+@keyframes pv-hotspot-pulse {
+  from {
+    opacity: 0.8;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  70%,
+  to {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(2.2);
+  }
+}
+/* Opens away from the nearest edges (bubbleSide), clear of the ring. */
+.pv-hotspots__bubble {
+  position: absolute;
+  z-index: 1;
+  width: max-content;
+  max-width: min(16rem, 75%);
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: var(--shadow);
+  font-size: var(--text-sm);
+  line-height: 1.4;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+.pv-hotspots__bubble.is-above {
+  margin-bottom: 1rem;
+}
+.pv-hotspots__bubble.is-below {
+  margin-top: 1rem;
+}
+.pv-hotspots__bubble.is-start {
+  translate: -1rem 0;
+}
+.pv-hotspots__bubble.is-middle {
+  translate: -50% 0;
+}
+.pv-hotspots__bubble.is-end {
+  translate: 1rem 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .pv-hotspots__spot::after {
+    animation: none;
+    opacity: 0;
+  }
+}

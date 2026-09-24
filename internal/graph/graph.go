@@ -334,6 +334,9 @@ type MediaKind string
 const (
 	MediaImage MediaKind = "image"
 	MediaAudio MediaKind = "audio"
+	// MediaVideo is only ever a video block's; steps and hints keep to
+	// pictures and sounds.
+	MediaVideo MediaKind = "video"
 )
 
 // Media shows a picture or plays a sound on a step or a hint. ID is an

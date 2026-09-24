@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/klahr/zonventure/internal/graph"
 	"github.com/klahr/zonventure/internal/graph/session"
@@ -166,6 +167,26 @@ func (e *Engine) Timeout(ctx context.Context, teamID int64, node string) (Result
 	return e.act(ctx, teamID, func(t *session.Team) (Result, *walk.Step, error) { return t.Timeout(node) })
 }
 
+// Pick answers a quiz question or the tie-breaker on the team's step.
+func (e *Engine) Pick(ctx context.Context, teamID int64, node, block, choice string) (Result, error) {
+	return e.act(ctx, teamID, func(t *session.Team) (Result, *walk.Step, error) { return t.Pick(node, block, choice) })
+}
+
+// savePicks writes the team's quiz answers. A pick is final, so one
+// already written is left as it is.
+func savePicks(ctx context.Context, tx *sql.Tx, s *teamState) error {
+	for key, choice := range s.Picks {
+		node, block, _ := strings.Cut(key, "\x00")
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO team_block_picks (team_id, node, block_id, choice, picked_at) VALUES ($1, $2, $3, $4, $5)
+			ON CONFLICT (team_id, node, block_id) DO NOTHING
+		`, s.teamID, node, block, choice, s.Now); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // RevealHint reveals the next hint on the current puzzle.
 func (e *Engine) RevealHint(ctx context.Context, teamID int64, node string, index int) (Result, error) {
 	return e.act(ctx, teamID, func(t *session.Team) (Result, *walk.Step, error) { return t.RevealHint(node, index) })
@@ -193,7 +214,11 @@ func (e *Engine) Snapshot(ctx context.Context, teamID int64) (View, error) {
 	if ok {
 		s.Position = &session.Position{Lat: lat, Lng: lng}
 	}
-	return s.View(), nil
+	v := s.View()
+	if err := e.decorate(ctx, tx, s.G, s.eventID, teamID, &v); err != nil {
+		return View{}, err
+	}
+	return v, nil
 }
 
 // --- the shared action skeleton ---------------------------------------
@@ -217,6 +242,9 @@ func (e *Engine) act(ctx context.Context, teamID int64, fn func(*session.Team) (
 		// Some refusals (a lockout) still carry information worth
 		// returning, but nothing is persisted.
 		res.View = s.View()
+		if derr := e.decorate(ctx, tx, s.G, s.eventID, teamID, &res.View); derr != nil {
+			return Result{}, derr
+		}
 		return res, err
 	}
 	if step != nil {
@@ -231,6 +259,9 @@ func (e *Engine) act(ctx context.Context, teamID int64, fn func(*session.Team) (
 		return Result{}, err
 	}
 	res.View = s.View()
+	if err := e.decorate(ctx, e.DB, s.G, s.eventID, teamID, &res.View); err != nil {
+		return Result{}, err
+	}
 	return res, nil
 }
 
@@ -238,6 +269,9 @@ func (e *Engine) act(ctx context.Context, teamID int64, fn func(*session.Team) (
 // guess counted, a lockout set, a hint bought.
 func (e *Engine) stay(ctx context.Context, tx *sql.Tx, s *teamState) error {
 	if err := saveNodeRow(ctx, tx, s, s.Current); err != nil {
+		return err
+	}
+	if err := savePicks(ctx, tx, s); err != nil {
 		return err
 	}
 	_, err := tx.ExecContext(ctx, `
@@ -419,10 +453,16 @@ func nullIfEmpty(s string) any {
 	return s
 }
 
-// Media returns the media ids a team may fetch now (see
-// session.Team.VisibleMedia), honouring the adventure's strict-assets
-// setting. A team with no graph state sees nothing.
+// Media returns the media ids a team's phone should download ahead (see
+// session.Team.PrefetchMedia). A team with no graph state sees nothing.
 func (e *Engine) Media(ctx context.Context, teamID int64) ([]int64, error) {
+	return e.media(ctx, teamID, true)
+}
+
+// media returns the media ids a team may fetch now (see
+// session.Team.VisibleMedia), honouring the adventure's strict-assets
+// setting, or with prefetch only those worth downloading ahead.
+func (e *Engine) media(ctx context.Context, teamID int64, prefetch bool) ([]int64, error) {
 	s, err := e.loadCore(ctx, e.DB, teamID, false)
 	if errors.Is(err, ErrNoGraph) {
 		return nil, nil
@@ -437,12 +477,15 @@ func (e *Engine) Media(ctx context.Context, teamID int64) ([]int64, error) {
 	`, s.eventID).Scan(&strict); err != nil {
 		return nil, err
 	}
+	if prefetch {
+		return s.PrefetchMedia(strict), nil
+	}
 	return s.VisibleMedia(strict), nil
 }
 
 // CanSeeMedia reports whether a team may fetch one media file.
 func (e *Engine) CanSeeMedia(ctx context.Context, teamID, mediaID int64) (bool, error) {
-	ids, err := e.Media(ctx, teamID)
+	ids, err := e.media(ctx, teamID, false)
 	if err != nil {
 		return false, err
 	}

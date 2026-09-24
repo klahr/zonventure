@@ -1,0 +1,102 @@
+/* --- Cipher: a key sheet to decode with ----------------------------- */
+
+.pv-cipher {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  color: var(--ink);
+}
+.pv-cipher__title {
+  margin: 0;
+  font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.pv-cipher__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(3.25rem, 1fr));
+  gap: var(--sp-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.pv-cipher--morse .pv-cipher__grid { grid-template-columns: repeat(auto-fill, minmax(5.5rem, 1fr)); column-gap: var(--sp-3); }
+.pv-cipher--semaphore .pv-cipher__grid { grid-template-columns: repeat(auto-fill, minmax(3.75rem, 1fr)); }
+
+.pv-cipher__morse {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  padding: 2px 0;
+  border-bottom: 1px solid var(--border-soft);
+}
+.pv-cipher__morse dt { flex: none; width: 1.1em; font-weight: 700; }
+/* Dots and dashes read best wide apart and a little heavy. */
+.pv-cipher__morse dd { margin: 0; font: 700 var(--text-base) / 1 var(--font-mono, monospace); letter-spacing: 0.12em; }
+
+.pv-cipher__cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: var(--sp-1) 0;
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  color: var(--ink-soft);
+}
+.pv-cipher__glyph {
+  width: 2.25rem;
+  height: 2.25rem;
+  fill: currentColor;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  color: var(--ink);
+}
+.pv-cipher__glyph line { fill: none; }
+.pv-cipher__figure { width: 3rem; height: 3.45rem; stroke-width: 1.8; }
+.pv-cipher__figure circle { fill: none; }
+.pv-cipher__figure polygon { stroke-width: 0.6; stroke: var(--ink); }
+.pv-cipher__flag-a { fill: #d7263d; }
+.pv-cipher__flag-b { fill: #f7c325; }
+
+/* Plain over cipher, a label column and thirteen letters a band. */
+.pv-cipher__caesar { display: flex; flex-direction: column; gap: var(--sp-3); }
+.pv-cipher__band {
+  display: grid;
+  grid-template-columns: auto repeat(13, minmax(0, 1fr));
+  row-gap: 2px;
+  text-align: center;
+  font: 700 var(--text-base) / 1.6 var(--font-mono, monospace);
+}
+.pv-cipher__row-label {
+  padding-right: var(--sp-2);
+  text-align: left;
+  font: 600 var(--text-xs) / 2.2 var(--font-body);
+  color: var(--muted);
+}
+.pv-cipher__shifted { border-radius: 4px; background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--ink); }
+
+.pv-cipher__key { display: flex; flex-direction: column; gap: 2px; }
+.pv-cipher__pair {
+  display: grid;
+  grid-template-columns: minmax(2.5rem, max-content) 1fr;
+  align-items: baseline;
+  gap: var(--sp-3);
+  margin: 0;
+  padding: var(--sp-1) 0;
+  border-bottom: 1px solid var(--border-soft);
+  overflow-wrap: anywhere;
+}
+.pv-cipher__symbol { font-size: var(--text-lg); font-weight: 700; }
+.pv-cipher__note { margin: var(--sp-2) 0 0; font-weight: 700; }
+.pv-cipher__note:first-child { margin-top: 0; }

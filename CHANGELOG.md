@@ -11,6 +11,59 @@ The repository, Go module, and CLI binary are named `zv`; the product is
 
 ## [Unreleased]
 
+### Added — content blocks on graph steps
+
+A puzzle's, story's and end's content is an ordered list of blocks the
+author arranges in the inspector (drag the handle, or arrow keys),
+instead of one text and a media list. The answer stays below them.
+
+- **Kinds.** Text, note (paper, telegram, text message, newspaper,
+  sticky), picture, sound, video, divider; compass (distance optional),
+  map (fixed or fitted zoom, the team's position optional, labelled
+  markers), hot-and-cold radar; chat, cipher sheet (Morse, pigpen,
+  semaphore, Caesar, custom), hotspots, torch; look-through camera
+  overlay, level, noise meter; countdown, status (items, counters),
+  and standings.
+- **Title and points are blocks** every puzzle has (a story, its title):
+  added where missing when a graph is read, moved but never removed.
+  Points show what the best answer is worth.
+- **Quiz walk.** A quiz block (1, X, 2) and one tie-breaker (closest
+  number) per adventure. Picks are final and stored in
+  `team_block_picks` (migration `0068`); a story waits for its
+  questions; the right answers stay off the phone until the team
+  finishes, when right answers score and the end shows the review.
+  Among finished teams on the same score, the closer tie-break guess
+  ranks first. New player action `pick`.
+- **Graph events rank by points everywhere.** One rule (`play.Ahead`) —
+  points, then the tie-breaker between finished teams, then the earlier
+  finish — ranks the standings block, the live leaderboard and the
+  results CSV. The leaderboard shows a graph team's points, and its
+  tie-break guess once the event is over; the CSV has `points`,
+  `tiebreak_guess` and `tiebreak_off_by` columns. Both used to rank
+  graph events by lane pages solved, which graph play never counts.
+- **Show only when…** Any block can wait for a condition — near a zone,
+  a while after arriving, carrying an item — optionally showing a
+  teaser meanwhile. The server withholds a hidden block and its file;
+  `recheck_at` and `watch_position` tell the phone when to ask again.
+- **Tokens.** `{{score}}`, `{{counter:<slug>}}`, `{{item:<slug>}}` and
+  `{{team}}` in texts.
+- **Old graphs keep working.** A step's `prompt`/`text` and `media` are
+  read as blocks (media first, as shown before) wherever a graph is
+  decoded, and their translations move to the text block's key. Graphs
+  are written back as blocks only. The player view still carries a
+  flattened `text` and `media` for phones on the previous bundle.
+- **Video uploads**, capped by `ZV_MAX_VIDEO_BYTES` (default 30 MiB),
+  are never prefetched. `/media/{id}` now answers Range requests.
+- **Organiser messages.** Information to an event's teams, beside the
+  game rather than in the adventure: to every team or chosen ones,
+  shown in the player app's inbox (a bell with an unread count, and a
+  banner as one arrives). `GET`/`POST /api/admin/events/{id}/messages`,
+  `DELETE …/messages/{messageID}`, and the MCP tools
+  `list_event_messages`, `send_event_message`, `delete_event_message`;
+  migration `0067_event_messages`.
+- Map tiles still come from `tile.openstreetmap.org`; move to a tile
+  provider before maps reach players at scale.
+
 ### Changed — platform admin no longer authors or runs events (breaking)
 
 The global admin is now purely the operator: it manages organisations

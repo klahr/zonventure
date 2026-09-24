@@ -1,167 +1,27 @@
-import { useRef, useState, type ReactNode } from "react";
-import { play } from "@zonventure/api";
-import { MAP_ZOOM, mediaBlock, moveBlock, placeBlock, textBlock, type Block, type BlockKind, type Graph } from "@zonventure/graph";
-import { CompassFace, FitMap } from "@zonventure/play-ui";
-import { Compass, GripVertical, Image, Map as MapIcon, Plus, Type, Volume2, X, type LucideIcon } from "lucide-react";
-import type { I18n as T } from "@zonventure/i18n";
+import { useCallback, useRef, useState } from "react";
+import { isFixed, mediaBlock, moveBlock, needsFile, newBlock, type Block, type BlockKind, type FileKind, type Graph, type Node } from "@zonventure/graph";
+import { ChevronDown, ChevronRight, Eye, EyeOff, GripVertical, Plus, X } from "lucide-react";
 import { useT } from "../i18n.tsx";
-import { ICON } from "./dz/ui.tsx";
+import { DzPortal, ICON, useAnchoredPop, useDismiss } from "./dz/ui.tsx";
 import { useMediaUpload } from "./MediaEditor.tsx";
-import { ZoneSelect } from "./fields.tsx";
+import { ACCEPT } from "./blocks/Media.tsx";
+import { GROUPS, KINDS } from "./blocks/registry.tsx";
+import { ShowEditor } from "./blocks/Show.tsx";
+import { summarize } from "./blocks/summary.ts";
+import type { Editor, T } from "./blocks/types.ts";
 
-type Of<K extends BlockKind> = Block & { kind: K };
-type Body<K extends BlockKind> = (p: { block: Of<K>; set: (b: Of<K>) => void; t: T; textLabel: string; graph: Graph }) => ReactNode;
-
-/**
- * The kinds of block, and how each is edited. A new kind (a compass, a
- * map) is a type in @zonventure/graph, an entry here, and a renderer in
- * play-ui's Blocks.
- */
-const KINDS: { [K in BlockKind]: { label: string; icon: LucideIcon; body: Body<K> } } = {
-  text: {
-    label: "Text",
-    icon: Type,
-    body: ({ block, set, t, textLabel }) => (
-      <textarea
-        className="field__input"
-        rows={4}
-        value={block.text}
-        placeholder={t.t("Markdown. This is what the team reads.")}
-        aria-label={textLabel}
-        onChange={(e) => set({ ...block, text: e.target.value })}
-      />
-    ),
-  },
-  image: {
-    label: "Picture",
-    icon: Image,
-    body: ({ block, set, t }) => (
-      <div className="media-ed__item">
-        <img className="media-ed__thumb" src={play.mediaURL(block.media)} alt="" />
-        <AltInput block={block} set={set} placeholder={t.t("Describe the picture")} t={t} />
-      </div>
-    ),
-  },
-  audio: {
-    label: "Sound",
-    icon: Volume2,
-    body: ({ block, set, t }) => (
-      <div className="media-ed__item">
-        <audio className="media-ed__audio" controls preload="none" src={play.mediaURL(block.media)} />
-        <AltInput block={block} set={set} placeholder={t.t("Describe the sound")} t={t} />
-      </div>
-    ),
-  },
-  compass: {
-    label: "Compass",
-    icon: Compass,
-    body: ({ block, set, t, graph }) => {
-      const zone = graph.zones?.find((z) => z.slug === block.zone);
-      return (
-        <>
-          <PlaceSelect block={block} set={set} t={t} graph={graph} />
-          <label className="check">
-            <input
-              type="checkbox"
-              checked={!block.hide_distance}
-              onChange={(e) => {
-                const { hide_distance: _, ...rest } = block;
-                set(e.target.checked ? rest : { ...rest, hide_distance: true });
-              }}
-            />
-            <span>{t.t("Show the distance")}</span>
-          </label>
-          {zone && (
-            <div className="blk__preview" aria-label={t.t("Preview")}>
-              <CompassFace
-                name={zone.name || zone.slug}
-                angle={45}
-                northUp={false}
-                t={(k, v) => t.t(k, v)}
-                distance={block.hide_distance ? null : t.t("About {{m}} m away", { m: 250 })}
-              />
-            </div>
-          )}
-          <p className="field__hint">{t.t("Points the phone at the zone. Without a compass on the phone, north is up.")}</p>
-        </>
-      );
-    },
-  },
-  map: {
-    label: "Map",
-    icon: MapIcon,
-    body: ({ block, set, t, graph }) => {
-      const zone = graph.zones?.find((z) => z.slug === block.zone);
-      return (
-        <>
-          <PlaceSelect block={block} set={set} t={t} graph={graph} />
-          <label className="check">
-            <input
-              type="checkbox"
-              checked={!block.zoom}
-              onChange={(e) => {
-                const { zoom: _, ...rest } = block;
-                set(e.target.checked ? rest : { ...rest, zoom: 16 });
-              }}
-            />
-            <span>{t.t("Fit the map to the zone")}</span>
-          </label>
-          {block.zoom !== undefined && (
-            <label className="field blk__zoom">
-              <span className="field__label">{t.t("Zoom: {{n}}", { n: block.zoom })}</span>
-              <input
-                type="range"
-                min={MAP_ZOOM.min}
-                max={MAP_ZOOM.max}
-                value={block.zoom}
-                onChange={(e) => set({ ...block, zoom: Number(e.target.value) })}
-              />
-              <span className="blk__zoom-ends" aria-hidden="true">
-                <span>{t.t("Wider")}</span>
-                <span>{t.t("Closer")}</span>
-              </span>
-            </label>
-          )}
-          {zone && <FitMap className="blk__preview" zone={zone} zoom={block.zoom} />}
-          <p className="field__hint">
-            {block.zoom ? t.t("The team sees itself on the map whenever it is inside the frame.") : t.t("The team sees itself on the map when it is within 3 km.")}
-          </p>
-        </>
-      );
-    },
-  },
-};
-
-function PlaceSelect<B extends Of<"compass" | "map">>({ block, set, t, graph }: { block: B; set: (b: B) => void; t: T; graph: Graph }) {
-  return <ZoneSelect graph={graph} label={t.t("Zone")} empty={t.t("Choose a zone")} value={block.zone || undefined} onChange={(zone) => set({ ...block, zone: zone ?? "" })} />;
-}
-
-function AltInput<B extends Of<"image" | "audio">>({ block, set, placeholder, t }: { block: B; set: (b: B) => void; placeholder: string; t: T }) {
-  return (
-    <input
-      className="field__input"
-      value={block.alt ?? ""}
-      placeholder={placeholder}
-      aria-label={t.t("Description")}
-      onChange={(e) => {
-        const { alt: _, ...rest } = block;
-        set((e.target.value ? { ...rest, alt: e.target.value } : rest) as B);
-      }}
-    />
-  );
-}
-
-function body(b: Block, set: (b: Block) => void, t: T, textLabel: string, graph: Graph): ReactNode {
-  const Body = KINDS[b.kind].body as Body<BlockKind>;
-  return <Body block={b as never} set={set} t={t} textLabel={textLabel} graph={graph} />;
+function body(b: Block, set: (b: Block) => void, t: T, textLabel: string, graph: Graph, node: Node) {
+  const Body = KINDS[b.kind].editor as Editor<BlockKind>;
+  return <Body block={b as never} set={set} t={t} textLabel={textLabel} graph={graph} node={node} />;
 }
 
 /**
  * What a puzzle, story or end shows, as blocks in order. Each is dragged
  * by its handle, or moved with the arrow keys while the handle has focus.
- * Pictures and sounds are stored when picked, like MediaEditor's.
+ * Any block may wait for a condition (the eye). Files are stored when
+ * picked, like MediaEditor's.
  */
-export function BlocksEditor({ blocks, graph, onChange, textLabel }: { blocks: Block[] | undefined; graph: Graph; onChange: (b: Block[]) => void; textLabel: string }) {
+export function BlocksEditor({ blocks, node, graph, onChange, textLabel }: { blocks: Block[] | undefined; node: Node; graph: Graph; onChange: (b: Block[]) => void; textLabel: string }) {
   const t = useT();
   const list = blocks ?? [];
   const root = useRef<HTMLDivElement>(null);
@@ -170,21 +30,46 @@ export function BlocksEditor({ blocks, graph, onChange, textLabel }: { blocks: B
   // An upload outlives the render that started it.
   const latest = useRef({ list, onChange });
   latest.current = { list, onChange };
+  // The kind the file being picked is for; null takes it from the file.
+  const [fileFor, setFileFor] = useState<FileKind | null>(null);
   // The block whose handle is held, so only a drag from the handle moves
   // it, and where it would land.
   const [armed, setArmed] = useState<number | null>(null);
   const [drag, setDrag] = useState<{ from: number; to: number } | null>(null);
+  // Blocks whose show rule is open for editing, and blocks folded away.
+  const [rules, setRules] = useState<Set<string>>(new Set());
+  const [folded, setFolded] = useState<Set<string>>(new Set());
+  const fold = (id: string) =>
+    setFolded((f) => {
+      const n = new Set(f);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
+  const allFolded = list.length > 0 && list.every((b) => folded.has(b.id));
 
   const set = (i: number, b: Block) => onChange(list.map((x, j) => (j === i ? b : x)));
   const move = (from: number, to: number) => onChange(moveBlock(list, from, to));
 
+  const add = (kind: BlockKind) => {
+    if (!needsFile(kind)) return onChange([...list, newBlock(list, kind)]);
+    setFileFor(kind === "image" || kind === "audio" ? null : kind);
+    if (input.current) input.current.accept = kind === "image" || kind === "audio" ? "image/*,audio/*" : (ACCEPT[kind] ?? "");
+    input.current?.click();
+  };
+
   const pick = async (files: FileList | null) => {
+    const kind = fileFor;
     const added = await upload(files);
     if (input.current) input.current.value = "";
     if (!added.length) return;
     const { list: now, onChange: change } = latest.current;
     let next = now;
-    for (const m of added) next = [...next, mediaBlock(next, m)];
+    for (const m of added) {
+      // A film is only ever a video block; a picture for a torch stays a torch.
+      const as: FileKind = m.kind === "video" ? "video" : kind && kind !== "video" && m.kind === "image" ? kind : m.kind;
+      next = [...next, mediaBlock(next, m, as)];
+    }
     change(next);
   };
 
@@ -196,15 +81,22 @@ export function BlocksEditor({ blocks, graph, onChange, textLabel }: { blocks: B
 
   return (
     <div className="blk-ed" ref={root}>
+      {list.length > 1 && (
+        <button type="button" className="link-btn blk-ed__fold-all" onClick={() => setFolded(allFolded ? new Set() : new Set(list.map((b) => b.id)))}>
+          {allFolded ? t.t("Expand all") : t.t("Collapse all")}
+        </button>
+      )}
       {list.map((b, i) => {
         const kind = KINDS[b.kind];
         const Icon = kind.icon;
         const label = b.kind === "text" ? textLabel : t.t(kind.label);
         const target = drag && drag.from !== i && drag.to === i ? (drag.to < drag.from ? " is-drop-before" : " is-drop-after") : "";
+        const ruleOpen = rules.has(b.id) || !!b.show;
+        const isFolded = folded.has(b.id);
         return (
           <div
             key={b.id}
-            className={"blk" + (drag?.from === i ? " is-dragging" : "") + target}
+            className={"blk" + (drag?.from === i ? " is-dragging" : "") + (b.show ? " has-rule" : "") + (isFolded ? " is-folded" : "") + target}
             draggable={armed === i}
             onDragStart={(e) => {
               e.dataTransfer.effectAllowed = "move";
@@ -244,36 +136,104 @@ export function BlocksEditor({ blocks, graph, onChange, textLabel }: { blocks: B
               >
                 <GripVertical size={ICON.sm} aria-hidden="true" />
               </button>
-              <Icon size={ICON.sm} aria-hidden="true" className="blk__icon" />
-              <span className="blk__label">{label}</span>
-              <button type="button" className="icon-remove" onClick={() => onChange(list.filter((_, j) => j !== i))} aria-label={t.t("Remove")}>
-                <X size={ICON.sm} />
+              <button
+                type="button"
+                className="blk__fold"
+                aria-expanded={!isFolded}
+                aria-label={isFolded ? t.t("Expand {{block}}", { block: label }) : t.t("Collapse {{block}}", { block: label })}
+                onClick={() => fold(b.id)}
+              >
+                {isFolded ? <ChevronRight size={ICON.sm} aria-hidden="true" /> : <ChevronDown size={ICON.sm} aria-hidden="true" />}
+                <Icon size={ICON.sm} aria-hidden="true" className="blk__icon" />
+                <span className="blk__label">{label}</span>
+                {isFolded && <span className="blk__summary">{summarize(b, graph, t, node)}</span>}
               </button>
+              <button
+                type="button"
+                className={"blk__rule" + (b.show ? " is-on" : "")}
+                aria-pressed={ruleOpen}
+                aria-label={b.show ? t.t("Shown only when a condition holds") : t.t("Show only when…")}
+                title={b.show ? t.t("Shown only when a condition holds") : t.t("Show only when…")}
+                onClick={() => {
+                  if (isFolded) fold(b.id);
+                  if (b.show) return;
+                  setRules((r) => {
+                    const n = new Set(r);
+                    if (n.has(b.id)) n.delete(b.id);
+                    else n.add(b.id);
+                    return n;
+                  });
+                }}
+              >
+                {b.show ? <EyeOff size={ICON.sm} /> : <Eye size={ICON.sm} />}
+              </button>
+              {/* The step's title and points are always there: moved, never removed. */}
+              {!isFixed(b.kind) && (
+                <button type="button" className="icon-remove" onClick={() => onChange(list.filter((_, j) => j !== i))} aria-label={t.t("Remove")}>
+                  <X size={ICON.sm} />
+                </button>
+              )}
             </div>
-            {body(b, (next) => set(i, next), t, label, graph)}
+            {!isFolded && body(b, (next) => set(i, next), t, label, graph, node)}
+            {!isFolded && ruleOpen && <ShowEditor block={b} set={(next) => set(i, next)} graph={graph} t={t} />}
           </div>
         );
       })}
-      <div className="blk-ed__add">
-        <button type="button" className="add-btn concept--content" onClick={() => onChange([...list, textBlock(list)])}>
-          <Plus size={ICON.sm} aria-hidden="true" />
-          {t.t("Add text")}
-        </button>
-        <input ref={input} type="file" accept="image/*,audio/*" multiple hidden onChange={(e) => void pick(e.target.files)} />
-        <button type="button" className="add-btn concept--content" disabled={busy || !ready} onClick={() => input.current?.click()}>
-          {!busy && <Plus size={ICON.sm} aria-hidden="true" />}
-          {busy ? t.t("Uploading…") : t.t("Add picture or sound")}
-        </button>
-        <button type="button" className="add-btn concept--place" onClick={() => onChange([...list, placeBlock(list, "compass")])}>
-          <Plus size={ICON.sm} aria-hidden="true" />
-          {t.t("Add compass")}
-        </button>
-        <button type="button" className="add-btn concept--place" onClick={() => onChange([...list, placeBlock(list, "map")])}>
-          <Plus size={ICON.sm} aria-hidden="true" />
-          {t.t("Add map")}
-        </button>
-      </div>
+      <input ref={input} type="file" multiple hidden onChange={(e) => void pick(e.target.files)} />
+      <AddBlock onAdd={add} busy={busy} canUpload={ready} t={t} />
       {error && <div className="alert alert--danger">{error}</div>}
     </div>
+  );
+}
+
+/** "Add block": every kind, grouped, with what each is for. */
+function AddBlock({ onAdd, busy, canUpload, t }: { onAdd: (k: BlockKind) => void; busy: boolean; canUpload: boolean; t: T }) {
+  const [open, setOpen] = useState(false);
+  const close = useCallback(() => setOpen(false), []);
+  const { trigger, pop, style } = useAnchoredPop<HTMLButtonElement, HTMLDivElement>(open, "left");
+  useDismiss(open, close, trigger, pop);
+  const kinds = Object.entries(KINDS) as [BlockKind, (typeof KINDS)[BlockKind]][];
+  return (
+    <>
+      <button ref={trigger} type="button" className="add-btn concept--content" aria-expanded={open} disabled={busy} onClick={() => setOpen((v) => !v)}>
+        {!busy && <Plus size={ICON.sm} aria-hidden="true" />}
+        {busy ? t.t("Uploading…") : t.t("Add block")}
+        {!busy && <ChevronDown size={ICON.sm} aria-hidden="true" />}
+      </button>
+      {open && (
+        <DzPortal>
+          <div className="blk-menu" role="menu" ref={pop} style={style}>
+            {GROUPS.map((g) => (
+              <div key={g} className="blk-menu__group" role="group" aria-label={t.t(g)}>
+                <span className="blk-menu__title">{t.t(g)}</span>
+                {kinds
+                  .filter(([k, d]) => d.group === g && !isFixed(k))
+                  .map(([k, d]) => {
+                    const Icon = d.icon;
+                    const disabled = needsFile(k) && !canUpload;
+                    return (
+                      <button
+                        key={k}
+                        type="button"
+                        role="menuitem"
+                        className="blk-menu__item"
+                        disabled={disabled}
+                        onClick={() => {
+                          setOpen(false);
+                          onAdd(k);
+                        }}
+                      >
+                        <Icon size={ICON.md} aria-hidden="true" />
+                        <span className="blk-menu__name">{t.t(d.label)}</span>
+                        <span className="blk-menu__about">{t.t(d.about)}</span>
+                      </button>
+                    );
+                  })}
+              </div>
+            ))}
+          </div>
+        </DzPortal>
+      )}
+    </>
   );
 }

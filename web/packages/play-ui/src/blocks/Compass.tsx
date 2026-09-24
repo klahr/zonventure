@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import type { play } from "@zonventure/api";
-import type { Translate } from "./feedback.ts";
-import { bearing, metresBetween, nearestTurn } from "./geo.ts";
-import type { MapPoint } from "./StaticMap.tsx";
+import type { Translate } from "../feedback.ts";
+import { bearing, metresBetween, nearestTurn } from "../geo.ts";
+import type { BlockContext, Of } from "./context.ts";
 
 type IOSOrientation = typeof DeviceOrientationEvent & { requestPermission?: () => Promise<"granted" | "denied"> };
 type OrientationReading = DeviceOrientationEvent & { webkitCompassHeading?: number };
@@ -16,14 +15,14 @@ type OrientationReading = DeviceOrientationEvent & { webkitCompassHeading?: numb
  * deviceorientationabsolute, counter-clockwise, and neither turns with
  * the screen, so a landscape phone adds the screen's angle.
  */
-export function useHeading(): { heading: number | null; ask: (() => void) | null } {
+export function useHeading(enabled = true): { heading: number | null; ask: (() => void) | null } {
   const [heading, setHeading] = useState<number | null>(null);
   const [granted, setGranted] = useState(false);
   const Orientation = typeof DeviceOrientationEvent === "undefined" ? undefined : (DeviceOrientationEvent as IOSOrientation);
   const needsAsk = typeof Orientation?.requestPermission === "function";
 
   useEffect(() => {
-    if (!Orientation || (needsAsk && !granted)) return;
+    if (!enabled || !Orientation || (needsAsk && !granted)) return;
     const onReading = (e: Event) => {
       const r = e as OrientationReading;
       let h: number | null = null;
@@ -38,10 +37,10 @@ export function useHeading(): { heading: number | null; ask: (() => void) | null
     const kind = "ondeviceorientationabsolute" in window ? "deviceorientationabsolute" : "deviceorientation";
     window.addEventListener(kind, onReading);
     return () => window.removeEventListener(kind, onReading);
-  }, [Orientation, needsAsk, granted]);
+  }, [enabled, Orientation, needsAsk, granted]);
 
   const ask =
-    needsAsk && !granted
+    enabled && needsAsk && !granted
       ? () => {
           void Orientation!.requestPermission!()
             .then((r) => setGranted(r === "granted"))
@@ -56,8 +55,10 @@ export function useHeading(): { heading: number | null; ask: (() => void) | null
  * that. Without a compass the dial is north-up and says so; without a
  * position it waits for one.
  */
-export function CompassBlock({ block, position, t, placeNote }: { block: play.PlayBlock & { kind: "compass" }; position: MapPoint | undefined; t: Translate; placeNote: ((z: play.PlayZone) => React.ReactNode) | undefined }) {
-  const { heading, ask } = useHeading();
+export function CompassBlock({ block, ctx }: { block: Of<"compass">; ctx: BlockContext }) {
+  const { position, t, placeNote } = ctx;
+  const device = useHeading(!ctx.preview && !ctx.motion);
+  const { heading, ask } = ctx.motion ? { heading: ctx.motion.heading, ask: null } : device;
   const turn = useRef(0);
   const place = block.place;
   if (!place) return null;

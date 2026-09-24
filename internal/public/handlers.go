@@ -20,6 +20,7 @@ import (
 	"github.com/klahr/zonventure/internal/adventure"
 	"github.com/klahr/zonventure/internal/httpx"
 	"github.com/klahr/zonventure/internal/payments"
+	"github.com/klahr/zonventure/internal/play"
 	"github.com/klahr/zonventure/internal/storage"
 	"github.com/klahr/zonventure/internal/ws"
 )
@@ -29,6 +30,9 @@ type Handlers struct {
 	DB  *sql.DB
 	Lib *adventure.Library
 	Hub *ws.Hub
+	// Engine ranks a graph event's teams. The server shares the player's,
+	// so decoded graphs are cached once; nil makes one per call.
+	Engine *play.Engine
 	// Storage backs the token-authed team-avatar upload/delete on the
 	// share page. Always non-nil: server.New defaults to dbblob when
 	// nothing else is wired.
@@ -68,24 +72,32 @@ type teamDTO struct {
 	Rank        int         `json:"rank"`
 	AvatarURL   string      `json:"avatar_url,omitempty"`
 	Members     []memberDTO `json:"members"`
+	// Score is a graph event's points; lane events rank by pages instead.
+	Score *float64 `json:"score,omitempty"`
+	// TiebreakGuess is the team's answer to the tie-breaker, shown once
+	// the event is over: before then it would help the teams still out.
+	TiebreakGuess *float64 `json:"tiebreak_guess,omitempty"`
 }
 
 // LiveDTO is the snapshot shape served both by /api/public/live/{token}
 // and pushed as a "snapshot" WS message.
 type LiveDTO struct {
-	EventID        int64             `json:"event_id"`
-	AdventureTitle string            `json:"adventure_title"`
-	AdventureSlug  string            `json:"adventure_slug"`
-	State          string            `json:"state"`
-	StartedAt      string            `json:"started_at,omitempty"`
-	ScheduledAt    string            `json:"scheduled_at,omitempty"`
-	CompletedAt    string            `json:"completed_at,omitempty"`
-	ServerNow      string            `json:"server_now"`
-	PageCount      int               `json:"page_count"`
-	ShowMap        bool              `json:"show_map"`
-	Puzzles        []puzzleDTO       `json:"puzzles"`
-	Teams          []teamDTO         `json:"teams"`
-	Colors         *adventure.Colors `json:"colors,omitempty"`
+	EventID        int64  `json:"event_id"`
+	AdventureTitle string `json:"adventure_title"`
+	AdventureSlug  string `json:"adventure_slug"`
+	State          string `json:"state"`
+	StartedAt      string `json:"started_at,omitempty"`
+	ScheduledAt    string `json:"scheduled_at,omitempty"`
+	CompletedAt    string `json:"completed_at,omitempty"`
+	ServerNow      string `json:"server_now"`
+	PageCount      int    `json:"page_count"`
+	// Engine is "graph" for an event ranked by points (see play.Ahead),
+	// "lanes" for one ranked by pages solved.
+	Engine  string            `json:"engine"`
+	ShowMap bool              `json:"show_map"`
+	Puzzles []puzzleDTO       `json:"puzzles"`
+	Teams   []teamDTO         `json:"teams"`
+	Colors  *adventure.Colors `json:"colors,omitempty"`
 }
 
 // runByToken resolves a URL token to an event id, returning sql.ErrNoRows if
@@ -207,14 +219,26 @@ func (h *Handlers) buildLive(ctx context.Context, token string) (LiveDTO, int64,
 		mrows.Close()
 		teams[i].Members = members
 	}
-	// Latest GPS ping per team drives the distance tiebreaker — teams
-	// tied on puzzles solved rank by who's physically closer to their
-	// next puzzle. Missing pings fall back to the temporal tiebreak.
-	latest, err := latestPingsByTeam(ctx, h.DB, id)
+	engine := "lanes"
+	usesGraph, err := play.UsesGraph(ctx, h.DB, id)
 	if err != nil {
-		return LiveDTO{}, id, http.StatusInternalServerError, "ping lookup failed"
+		return LiveDTO{}, id, http.StatusInternalServerError, "event lookup failed"
 	}
-	sortTeams(teams, rowMeta, latest, enabled)
+	if usesGraph {
+		engine = "graph"
+		if err := h.rankGraph(ctx, id, state, teams); err != nil {
+			return LiveDTO{}, id, http.StatusInternalServerError, "ranking failed"
+		}
+	} else {
+		// Latest GPS ping per team drives the distance tiebreaker — teams
+		// tied on puzzles solved rank by who's physically closer to their
+		// next puzzle. Missing pings fall back to the temporal tiebreak.
+		latest, err := latestPingsByTeam(ctx, h.DB, id)
+		if err != nil {
+			return LiveDTO{}, id, http.StatusInternalServerError, "ping lookup failed"
+		}
+		sortTeams(teams, rowMeta, latest, enabled)
+	}
 	for i := range teams {
 		teams[i].Rank = i + 1
 	}
@@ -228,6 +252,7 @@ func (h *Handlers) buildLive(ctx context.Context, token string) (LiveDTO, int64,
 		CompletedAt:    completedAt,
 		ServerNow:      time.Now().UTC().Format(time.RFC3339),
 		PageCount:      len(enabled),
+		Engine:         engine,
 		ShowMap:        showMap != 0,
 		Puzzles:        puzzles,
 		Teams:          teams,
@@ -473,6 +498,46 @@ func sortTeams(teams []teamDTO, rowMeta map[int64]sortRowForSort, pings map[int6
 		// 5. Creation-order final fallback for full determinism.
 		return ma.createdAt < mb.createdAt
 	})
+}
+
+// rankGraph orders a graph event's teams by the shared ranking and gives
+// each its points. Teams not yet started, or withdrawn, follow the
+// ranked ones in the order they had.
+func (h *Handlers) rankGraph(ctx context.Context, eventID int64, state string, teams []teamDTO) error {
+	e := h.Engine
+	if e == nil {
+		e = play.New(h.DB)
+	}
+	ranked, err := e.EventRanking(ctx, eventID)
+	if err != nil {
+		return err
+	}
+	pos := make(map[int64]int, len(ranked))
+	for i, r := range ranked {
+		pos[r.TeamID] = i
+	}
+	for i := range teams {
+		p, ok := pos[teams[i].ID]
+		if !ok {
+			continue
+		}
+		r := ranked[p]
+		score := r.Score
+		teams[i].Score = &score
+		if state == "completed" && r.Guess != nil {
+			g := *r.Guess
+			teams[i].TiebreakGuess = &g
+		}
+	}
+	sort.SliceStable(teams, func(i, j int) bool {
+		pi, iok := pos[teams[i].ID]
+		pj, jok := pos[teams[j].ID]
+		if iok != jok {
+			return iok
+		}
+		return iok && pi < pj
+	})
+	return nil
 }
 
 // haversineMeters returns the great-circle distance between two

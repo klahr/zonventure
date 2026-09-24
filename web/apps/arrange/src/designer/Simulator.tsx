@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError, play } from "@zonventure/api";
 import { metresBetween, nodeBySlug, portLabel, zoneContains, type Envelope, type Graph } from "@zonventure/graph";
-import { PlayView, StartCeremony, feedbackForRefusal, feedbackForResult, formatSeconds, type Feedback } from "@zonventure/play-ui";
+import { PlayView, StartCeremony, feedbackForRefusal, feedbackForResult, formatSeconds, type Feedback, type Motion } from "@zonventure/play-ui";
 import "@zonventure/play-ui/play-ui.css";
 import { useT } from "../i18n.tsx";
 import { SpoofMap, type Point } from "./SpoofMap.tsx";
+import { DevicePanel } from "./DevicePanel.tsx";
 import { VISIBLE } from "./dz/types.tsx";
 import { zoneName } from "./zones.ts";
 
@@ -114,6 +115,8 @@ export function Simulator({ slug, graph, envelope, selected, mode, onMode, resta
   const [view, setView] = useState<play.View | null>(null);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [busy, setBusy] = useState(false);
+  // The simulated phone, flat and facing north until the author turns it.
+  const [motion, setMotion] = useState<Motion>({ heading: 0, beta: 0, gamma: 0 });
   const [zone, setZone] = useState("");
   const [log, setLog] = useState<LogLine[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -388,6 +391,8 @@ export function Simulator({ slug, graph, envelope, selected, mode, onMode, resta
 
         <SpoofMap zones={graph.zones ?? []} position={pos ?? null} focus={focus} onPick={moveTo} disabled={!team || busy} />
 
+        {view?.blocks?.some((b) => !b.locked && (b.kind === "compass" || b.kind === "level")) && <DevicePanel motion={motion} onChange={setMotion} />}
+
         {current?.puzzle?.outputs?.length ? (
           <div className="sim__pass">
             <span className="field__label">{t.t("Get past it")}</span>
@@ -431,6 +436,8 @@ export function Simulator({ slug, graph, envelope, selected, mode, onMode, resta
                 brand={brand}
                 placeNote={placeNote}
                 {...(pos ? { position: pos } : {})}
+                preview
+                motion={motion}
                 storageKey={`sim-${slug}`}
                 {...(view.zone && !view.here ? { zoneNote: placeNote(view.zone) } : {})}
               />

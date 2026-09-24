@@ -34,7 +34,7 @@ const maxSimulateWait = 24 * 60 * 60
 
 type simulateAction struct {
 	// Kind is start, place, begin, answer, continue, choose, skip, timeout,
-	// hint, back, timeup, language, force, wait or move.
+	// hint, back, timeup, language, pick, force, wait or move.
 	Kind  string `json:"kind"`
 	Node  string `json:"node,omitempty"`
 	Guess string `json:"guess,omitempty"`
@@ -46,6 +46,9 @@ type simulateAction struct {
 	Zone string `json:"zone,omitempty"`
 	// Lang is the language for the language action.
 	Lang string `json:"lang,omitempty"`
+	// Block and Choice are the pick action's: a quiz question and the answer.
+	Block  string `json:"block,omitempty"`
+	Choice string `json:"choice,omitempty"`
 	// Lat and Lng put the team at a point instead, as picked on a map.
 	Lat *float64 `json:"lat,omitempty"`
 	Lng *float64 `json:"lng,omitempty"`
@@ -172,6 +175,8 @@ func simulate(g *graph.Graph, team *session.Team, a simulateAction, now time.Tim
 		act(func() (session.Result, *walk.Step, error) { return team.ForceSolve(a.Node, a.Port) })
 	case "hint":
 		act(func() (session.Result, *walk.Step, error) { return team.RevealHint(a.Node, a.Index) })
+	case "pick":
+		act(func() (session.Result, *walk.Step, error) { return team.Pick(a.Node, a.Block, a.Choice) })
 	case "wait":
 		if a.Seconds <= 0 || a.Seconds > maxSimulateWait {
 			return simulateResponse{}, http.StatusBadRequest, "seconds must be between 1 and 86400"

@@ -1,0 +1,48 @@
+/* A dark picture and a torch. The stage is a size container so the
+ * light's radius (cqi) scales with the picture, and a lit copy of the
+ * picture is masked to a soft circle at --x/--y over a darkened one. */
+.pv-torch {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin: 0;
+}
+.pv-torch__stage {
+  --x: 50%;
+  --y: 50%;
+  --r: 28cqi;
+
+  container-type: inline-size;
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  background: #000;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  cursor: crosshair;
+}
+.pv-torch__stage:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+.pv-torch__stage img {
+  display: block;
+  width: 100%;
+  height: auto;
+  pointer-events: none;
+}
+/* Barely there: enough to hint at shapes, not enough to read them. */
+.pv-torch__dark {
+  filter: brightness(0.06) saturate(0.4);
+}
+.pv-torch__lit {
+  position: absolute;
+  inset: 0;
+  height: 100%;
+  -webkit-mask-image: radial-gradient(circle var(--r) at var(--x) var(--y), #000 35%, rgb(0 0 0 / 0.55) 65%, transparent 100%);
+  mask-image: radial-gradient(circle var(--r) at var(--x) var(--y), #000 35%, rgb(0 0 0 / 0.55) 65%, transparent 100%);
+}

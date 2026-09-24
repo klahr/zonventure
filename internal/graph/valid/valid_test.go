@@ -1,6 +1,8 @@
 package valid
 
 import (
+	"encoding/json"
+	"os"
 	"strings"
 	"testing"
 
@@ -679,6 +681,9 @@ func TestBlocks(t *testing.T) {
 		{Kind: "sparkle"},
 		{ID: "c", Kind: graph.BlockCompass},
 		{ID: "m", Kind: graph.BlockMap, Zone: "nowhere", Zoom: 25},
+		{ID: "p", Kind: graph.BlockPoints},
+		{ID: "t1", Kind: graph.BlockTitle},
+		{ID: "t2", Kind: graph.BlockTitle},
 	}}}}, Translations: map[string]map[string]string{"en": {
 		graph.BlockKey("s", "a"):    "Hi, in English.",
 		graph.BlockKey("s", "gone"): "Deleted.",
@@ -689,9 +694,39 @@ func TestBlocks(t *testing.T) {
 			codes[i.Code]++
 		}
 	}
-	for _, c := range []string{"block.id.duplicate", "block.id.empty", "block.kind", "media.id", "translation.stale", "block.zone.missing", "ref.zone.unknown", "block.zoom"} {
+	for _, c := range []string{"block.id.duplicate", "block.id.empty", "block.kind", "media.id", "translation.stale", "block.zone.missing", "ref.zone.unknown", "block.zoom", "block.fixed.misplaced", "block.fixed.duplicate"} {
 		if codes[c] != 1 {
 			t.Errorf("%s reported %d times, want once: %v", c, codes[c], codes)
+		}
+	}
+}
+
+// The web side's sample of every kind of block, on a puzzle, raises no
+// issue: what the editor makes, the server accepts.
+func TestSharedBlockVectors(t *testing.T) {
+	raw, err := os.ReadFile("../../../web/packages/graph/testdata/blocks.json")
+	if err != nil {
+		t.Fatalf("reading shared vectors: %v", err)
+	}
+	var vectors struct {
+		Blocks []graph.Block `json:"blocks"`
+	}
+	if err := json.Unmarshal(raw, &vectors); err != nil {
+		t.Fatal(err)
+	}
+	g := graph.Graph{
+		Nodes: []graph.Node{
+			{Slug: "start", Type: graph.Start},
+			{Slug: "s", Type: graph.Puzzle, PuzzleCfg: &graph.PuzzleConfig{Blocks: vectors.Blocks, Outputs: []graph.Output{{Port: "solved", Trigger: graph.OnAnswer, Matchers: []match.Matcher{{Kind: match.Exact, Value: "x"}}}}}},
+			{Slug: "end", Type: graph.End},
+		},
+		Edges:    []graph.Edge{{From: "start", FromPort: "out", To: "s"}, {From: "s", FromPort: "solved", To: "end"}},
+		Zones:    []graph.Zone{{Slug: "park", Lat: 59.3, Lng: 18.0, RadiusM: 50}},
+		Counters: []graph.Counter{{Slug: "coins"}},
+	}
+	for _, i := range Check(&g).Issues {
+		if i.Node == "s" {
+			t.Errorf("%s: %s", i.Code, i.Message)
 		}
 	}
 }

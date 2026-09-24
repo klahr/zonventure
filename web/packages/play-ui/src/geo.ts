@@ -26,3 +26,25 @@ export function nearestTurn(prev: number, next: number): number {
   const d = ((((next - prev) % 360) + 540) % 360) - 180;
   return prev + d;
 }
+
+const TILE = 256;
+
+/** Web-Mercator world pixel of a point at zoom z. */
+export function project(lat: number, lng: number, z: number): { x: number; y: number } {
+  const scale = TILE * 2 ** z;
+  const s = Math.sin((Math.max(-85, Math.min(85, lat)) * Math.PI) / 180);
+  return {
+    x: ((lng + 180) / 360) * scale,
+    y: (0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI)) * scale,
+  };
+}
+
+/** The point at a Web-Mercator world pixel at zoom z: project's inverse. */
+export function unproject(x: number, y: number, z: number): { lat: number; lng: number } {
+  const scale = TILE * 2 ** z;
+  return {
+    lat: (Math.atan(Math.sinh(Math.PI * (1 - (2 * y) / scale))) * 180) / Math.PI,
+    lng: (x / scale) * 360 - 180,
+  };
+}
+

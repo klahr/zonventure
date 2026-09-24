@@ -1,7 +1,7 @@
 // Content blocks: what a puzzle, story or end shows, in order. See
 // internal/graph/blocks.go.
 
-import type { Block, BlockKind, Media, Node } from "./types.ts";
+import type { Block, BlockBody, BlockKind, Media, Node } from "./types.ts";
 
 /** The steps that show blocks. */
 export function hasBlocks(n: Node): boolean {
@@ -25,21 +25,27 @@ export function withBlocks(n: Node, blocks: Block[]): Node {
   return n;
 }
 
-/** The blocks' texts, joined as one Markdown document. */
+/** The texts of text and note blocks, joined as one Markdown document. */
 export function textOf(blocks: Block[] | undefined): string {
-  return (blocks ?? [])
-    .flatMap((b) => (b.kind === "text" && b.text ? [b.text] : []))
-    .join("\n\n");
+  const out: string[] = [];
+  for (const b of blocks ?? []) if ((b.kind === "text" || b.kind === "note") && b.text) out.push(b.text);
+  return out.join("\n\n");
 }
 
-/** The blocks' pictures and sounds, in order. */
+/** The blocks' files, in order: graph.MediaOf. */
 export function mediaOf(blocks: Block[] | undefined): Media[] {
   const out: Media[] = [];
   for (const b of blocks ?? []) {
     switch (b.kind) {
       case "image":
       case "audio":
+      case "video":
         out.push({ id: b.media, kind: b.kind, ...(b.alt ? { alt: b.alt } : {}) });
+        break;
+      case "hotspots":
+      case "overlay":
+      case "torch":
+        out.push({ id: b.media, kind: "image", ...(b.alt ? { alt: b.alt } : {}) });
     }
   }
   return out;
@@ -53,23 +59,91 @@ export function freshBlockId(blocks: Block[]): string {
   return `b${i}`;
 }
 
+/** The kinds whose block needs a file, and which. */
+export const FILE_KINDS = { image: "image", audio: "audio", video: "video", hotspots: "image", overlay: "image", torch: "image" } as const;
+export type FileKind = keyof typeof FILE_KINDS;
+
+export function needsFile(kind: BlockKind): kind is FileKind {
+  return kind in FILE_KINDS;
+}
+
+/** The fields a new block of a kind that needs no file starts with. */
+const EMPTY: { [K in Exclude<BlockKind, FileKind>]: Extract<BlockBody, { kind: K }> } = {
+  text: { kind: "text", text: "" },
+  compass: { kind: "compass", zone: "" },
+  map: { kind: "map", zone: "" },
+  note: { kind: "note", text: "", style: "paper" },
+  chat: { kind: "chat", lines: [{ who: "", text: "" }] },
+  cipher: { kind: "cipher", cipher: "morse" },
+  divider: { kind: "divider", style: "line" },
+  radar: { kind: "radar", zone: "" },
+  level: { kind: "level", pitch: 0 },
+  noise: { kind: "noise", threshold: 70 },
+  countdown: { kind: "countdown", seconds: 300 },
+  status: { kind: "status", items: true },
+  standings: { kind: "standings" },
+  title: { kind: "title" },
+  points: { kind: "points" },
+  quiz: { kind: "quiz", text: "", options: ["", "", ""] },
+  tiebreak: { kind: "tiebreak", text: "" },
+};
+
+/**
+ * The blocks a step always has, in order: every puzzle its title and
+ * points, every story its title. The author moves them, never removes
+ * them. graph.FixedKinds.
+ */
+export const FIXED_KINDS: Partial<Record<Node["type"], BlockKind[]>> = { puzzle: ["title", "points"], story: ["title"] };
+
+export function isFixed(kind: BlockKind): boolean {
+  return kind === "title" || kind === "points";
+}
+
+/** The step with any missing fixed block added after the one before it, as graph.Normalize does. */
+export function withFixed(n: Node): Node {
+  const kinds = FIXED_KINDS[n.type];
+  if (!kinds || !hasBlocks(n)) return n;
+  let list = blocksOf(n);
+  let at = 0;
+  for (const k of kinds) {
+    const i = list.findIndex((b) => b.kind === k);
+    if (i >= 0) {
+      at = i + 1;
+      continue;
+    }
+    let id: string = k;
+    while (list.some((b) => b.id === id)) id += "-";
+    list = [...list.slice(0, at), { id, kind: k } as Block, ...list.slice(at)];
+    at++;
+  }
+  return list === blocksOf(n) ? n : withBlocks(n, list);
+}
+
+/** Every kind, for the shared test vectors (graph.BlockKinds). */
+export const BLOCK_KINDS = [...Object.keys(EMPTY), ...Object.keys(FILE_KINDS)] as BlockKind[];
+
 /** A new, empty block of a kind that needs no file. */
+export function newBlock(blocks: Block[], kind: Exclude<BlockKind, FileKind>): Block {
+  return { id: freshBlockId(blocks), ...structuredClone(EMPTY[kind]) } as Block;
+}
+
+/** A new, empty text block. */
 export function textBlock(blocks: Block[], text = ""): Block {
   return { id: freshBlockId(blocks), kind: "text", text };
 }
 
-/** A block for an uploaded picture or sound. */
-export function mediaBlock(blocks: Block[], m: Media): Block {
-  return { id: freshBlockId(blocks), kind: m.kind, media: m.id, ...(m.alt ? { alt: m.alt } : {}) };
+/** A block for an uploaded file: a picture, sound or film as itself, or a picture for a kind that uses one. */
+export function mediaBlock(blocks: Block[], m: Media, kind: FileKind = m.kind): Block {
+  return { id: freshBlockId(blocks), kind, media: m.id, ...(m.alt ? { alt: m.alt } : {}) } as Block;
 }
-
-/** The zoom levels a map block may be fixed at: graph.MinZoom, MaxZoom. */
-export const MAP_ZOOM = { min: 10, max: 19 } as const;
 
 /** A new compass or map, on the zone given or none yet. */
 export function placeBlock(blocks: Block[], kind: "compass" | "map", zone = ""): Block {
   return { id: freshBlockId(blocks), kind, zone };
 }
+
+/** The zoom levels a map block may be fixed at: graph.MinZoom, MaxZoom. */
+export const MAP_ZOOM = { min: 10, max: 19 } as const;
 
 /** The list with the block at `from` moved to `to`. */
 export function moveBlock(blocks: Block[], from: number, to: number): Block[] {
@@ -78,11 +152,6 @@ export function moveBlock(blocks: Block[], from: number, to: number): Block[] {
   const [b] = out.splice(from, 1);
   out.splice(to, 0, b!);
   return out;
-}
-
-/** Whether a block of this kind carries a file. */
-export function isMediaKind(kind: BlockKind): kind is "image" | "audio" {
-  return kind === "image" || kind === "audio";
 }
 
 type LegacyContent = { prompt?: string; text?: string; media?: Media[]; blocks?: Block[] };

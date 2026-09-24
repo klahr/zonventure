@@ -50,6 +50,9 @@ type Handlers struct {
 	Lib *adventure.Library
 	Hub *ws.Hub
 	Sim *simulator.Simulator
+	// Engine ranks a graph event's teams for the results export; see
+	// public.Handlers.Engine.
+	Engine *play.Engine
 	// Mailer is used by /api/admin/send-test-email and best-effort
 	// interactive flows. Always non-nil thanks to the server
 	// constructor's LogMailer fallback. For load-bearing transactional
