@@ -8,15 +8,16 @@ import "./quiz.css";
 const CHOICES = ["1", "X", "2"] as const;
 
 /**
- * A quiz-walk question: tap 1, X or 2. The pick is final and says
- * nothing about being right; the answer only comes with the end.
+ * A quiz-walk question: tap 1, X or 2. The team may change its pick
+ * until it continues; nothing says whether it is right until the end.
  */
 export const QuizBlock: Renderer<"quiz"> = ({ block, ctx }) => {
   const { t } = ctx;
   const picked = block.picked;
+  const final = !!block.final;
   const pick = (choice: string) => ctx.node && ctx.act?.({ kind: "pick", node: ctx.node, block: block.id, choice });
   return (
-    <fieldset className={"pv-quiz" + (picked ? " is-picked" : "")}>
+    <fieldset className={"pv-quiz" + (final ? " is-final" : "")}>
       <legend className="pv-quiz__q">
         <Markdown text={fillTeam(block.text, ctx)} />
       </legend>
@@ -31,8 +32,8 @@ export const QuizBlock: Renderer<"quiz"> = ({ block, ctx }) => {
               role="radio"
               aria-checked={mine}
               className={"pv-quiz__option" + (mine ? " is-mine" : "") + (block.answer ? (right ? " is-right" : mine ? " is-wrong" : "") : "")}
-              disabled={!!picked || ctx.busy || !ctx.act}
-              onClick={() => pick(c)}
+              disabled={final || ctx.busy || !ctx.act}
+              onClick={() => mine || pick(c)}
             >
               <span className="pv-quiz__mark">{c}</span>
               <span className="pv-quiz__text">{block.options[i]}</span>
@@ -40,19 +41,25 @@ export const QuizBlock: Renderer<"quiz"> = ({ block, ctx }) => {
           );
         })}
       </div>
-      <p className="pv-quiz__note">{picked ? t("Answer locked in. You'll see how you did at the end.") : t("Pick one. You can't change it afterwards.")}</p>
+      <p className="pv-quiz__note">
+        {final
+          ? t("Answer locked in. You'll see how you did at the end.")
+          : picked
+            ? t("You can change your answer until you continue.")
+            : t("Pick one. It locks when you continue.")}
+      </p>
     </fieldset>
   );
 };
 
-/** A number question for breaking ties: one guess, locked when sent. */
+/** A number question for breaking ties: one guess, which may change until the team continues. */
 export const TiebreakBlock: Renderer<"tiebreak"> = ({ block, ctx }) => {
   const { t } = ctx;
-  const [guess, setGuess] = useState("");
-  const ok = /^-?\d+([.,]\d+)?$/.test(guess.trim());
+  const [guess, setGuess] = useState(block.picked ?? "");
+  const ok = /^-?\d+([.,]\d+)?$/.test(guess.trim()) && guess.trim() !== block.picked;
   return (
     <form
-      className={"pv-quiz pv-tiebreak" + (block.picked ? " is-picked" : "")}
+      className={"pv-quiz pv-tiebreak" + (block.final ? " is-final" : "")}
       onSubmit={(e) => {
         e.preventDefault();
         if (ok && ctx.node) ctx.act?.({ kind: "pick", node: ctx.node, block: block.id, choice: guess.trim() });
@@ -60,19 +67,24 @@ export const TiebreakBlock: Renderer<"tiebreak"> = ({ block, ctx }) => {
     >
       <span className="pv-quiz__tag">{t("Tie-breaker")}</span>
       <Markdown className="pv-quiz__q" text={fillTeam(block.text, ctx)} />
-      {block.picked ? (
+      {block.final ? (
         <p className="pv-quiz__note">
           {block.target !== undefined
-            ? t("Your guess: {{guess}}. The answer: {{answer}}.", { guess: block.picked, answer: block.target })
-            : t("Your guess: {{guess}}. Locked in.", { guess: block.picked })}
+            ? t("Your guess: {{guess}}. The answer: {{answer}}.", { guess: block.picked ?? "–", answer: block.target })
+            : t("Your guess: {{guess}}. Locked in.", { guess: block.picked ?? "–" })}
         </p>
       ) : (
-        <div className="pv-tiebreak__row">
-          <input className="pv-input" inputMode="decimal" value={guess} placeholder={t("Your guess")} aria-label={t("Your guess")} onChange={(e) => setGuess(e.target.value)} />
-          <button type="submit" className="pv-btn pv-btn--primary" disabled={!ok || ctx.busy || !ctx.act}>
-            {t("Lock in")}
-          </button>
-        </div>
+        <>
+          <div className="pv-tiebreak__row">
+            <input className="pv-input" inputMode="decimal" value={guess} placeholder={t("Your guess")} aria-label={t("Your guess")} onChange={(e) => setGuess(e.target.value)} />
+            <button type="submit" className="pv-btn pv-btn--primary" disabled={!ok || ctx.busy || !ctx.act}>
+              {block.picked ? t("Change") : t("Save")}
+            </button>
+          </div>
+          <p className="pv-quiz__note">
+            {block.picked ? t("Your guess: {{guess}}. You can change it until you continue.", { guess: block.picked }) : t("It locks when you continue.")}
+          </p>
+        </>
       )}
     </form>
   );

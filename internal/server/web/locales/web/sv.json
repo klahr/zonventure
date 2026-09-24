@@ -2168,5 +2168,21 @@
 "the organization that authors the catalog; you list and commission its adventures.": "organisationen som skriver katalogen; du listar och beställer dess äventyr.",
   "Points": "Poäng",
   "Playing": "Spelar",
-  "Tie-breaker: {{n}}": "Utslagsfråga: {{n}}"
+  "Tie-breaker: {{n}}": "Utslagsfråga: {{n}}",
+  "Message teams": "Meddela lagen",
+  "Messages to teams": "Meddelanden till lagen",
+  "This event's teams play in the classic player, which does not show messages.": "Lagen i det här eventet spelar i den klassiska spelaren, som inte visar meddelanden.",
+  "Nothing sent yet. Messages are information beside the game: teams see them in the app’s inbox.": "Inget skickat än. Meddelanden är information vid sidan av spelet: lagen ser dem i appens inkorg.",
+  "Delete message": "Ta bort meddelandet",
+  "Lunch is served at the square at 12.": "Lunch serveras på torget klockan 12.",
+  "Write the message first.": "Skriv meddelandet först.",
+  "Tick at least one team.": "Kryssa i minst ett lag.",
+  "Send": "Skicka",
+  "Message": "Meddelande",
+  "Information beside the game, such as practical news or a change of plan. It is not part of the adventure.": "Information vid sidan av spelet, som praktiska nyheter eller ändrade planer. Det är inte en del av äventyret.",
+  "Chosen teams": "Valda lag",
+  "Message sent.": "Meddelandet har skickats.",
+  "Delete this message?": "Ta bort meddelandet?",
+  "Teams stop seeing it, including those who have read it.": "Lagen slutar se det, även de som redan har läst det.",
+  "Message deleted.": "Meddelandet har tagits bort."
 }

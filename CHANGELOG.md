@@ -28,7 +28,8 @@ instead of one text and a media list. The answer stays below them.
   added where missing when a graph is read, moved but never removed.
   Points show what the best answer is worth.
 - **Quiz walk.** A quiz block (1, X, 2) and one tie-breaker (closest
-  number) per adventure. Picks are final and stored in
+  number) per adventure. A pick can change until the team leaves the
+  step, then it is final; picks are stored in
   `team_block_picks` (migration `0068`); a story waits for its
   questions; the right answers stay off the phone until the team
   finishes, when right answers score and the end shows the review.

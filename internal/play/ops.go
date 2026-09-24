@@ -172,14 +172,16 @@ func (e *Engine) Pick(ctx context.Context, teamID int64, node, block, choice str
 	return e.act(ctx, teamID, func(t *session.Team) (Result, *walk.Step, error) { return t.Pick(node, block, choice) })
 }
 
-// savePicks writes the team's quiz answers. A pick is final, so one
-// already written is left as it is.
+// savePicks writes the team's quiz answers. Session.Pick refuses a change
+// once the step is left, so an answer written here is always one the
+// team may still hold.
 func savePicks(ctx context.Context, tx *sql.Tx, s *teamState) error {
 	for key, choice := range s.Picks {
 		node, block, _ := strings.Cut(key, "\x00")
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO team_block_picks (team_id, node, block_id, choice, picked_at) VALUES ($1, $2, $3, $4, $5)
-			ON CONFLICT (team_id, node, block_id) DO NOTHING
+			ON CONFLICT (team_id, node, block_id) DO UPDATE SET choice = EXCLUDED.choice, picked_at = EXCLUDED.picked_at
+			WHERE team_block_picks.choice <> EXCLUDED.choice
 		`, s.teamID, node, block, choice, s.Now); err != nil {
 			return err
 		}

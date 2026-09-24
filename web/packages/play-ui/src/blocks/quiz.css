@@ -46,7 +46,7 @@
   font-weight: 700;
 }
 .pv-quiz__text { flex: 1; min-width: 0; }
-.pv-quiz.is-picked .pv-quiz__option:not(.is-mine) { opacity: 0.55; }
+.pv-quiz.is-final .pv-quiz__option:not(.is-mine) { opacity: 0.55; }
 .pv-quiz__option.is-mine { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--surface)); }
 .pv-quiz__option.is-mine .pv-quiz__mark { background: var(--accent); color: var(--pv-on-accent, #fff); }
 .pv-quiz__option.is-right { border-color: var(--success, #2e7d32); opacity: 1; }

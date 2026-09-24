@@ -96,9 +96,12 @@ export type PlayBlockBody =
   | { kind: "title"; text?: string }
   /** points is what the puzzle's best answer is worth. */
   | { kind: "points"; points?: number }
-  /** answer is only there once the team has finished; picked is the team's own. */
-  | { kind: "quiz"; text: string; options: string[]; worth?: number; picked?: string; answer?: string }
-  | { kind: "tiebreak"; text: string; picked?: string; target?: number };
+  /**
+   * picked is the team's answer; final once it has left the step, before
+   * which it may change. answer comes only when the team has finished.
+   */
+  | { kind: "quiz"; text: string; options: string[]; worth?: number; picked?: string; final?: boolean; answer?: string }
+  | { kind: "tiebreak"; text: string; picked?: string; final?: boolean; target?: number };
 
 /** session.QuizResult */
 export interface QuizResult {

@@ -648,9 +648,9 @@ func TestTitleAndPointsBlocks(t *testing.T) {
 	}
 }
 
-// A quiz walk: a story waits for its questions, a pick is final, the
-// phone never sees the right answer before the end, and finishing marks
-// it and adds the points.
+// A quiz walk: a story waits for its questions, a pick can change until
+// the team moves on, the phone never sees the right answer before the
+// end, and finishing marks it and adds the points.
 func TestQuizWalk(t *testing.T) {
 	target := 1887.0
 	g := &graph.Graph{
@@ -686,14 +686,24 @@ func TestQuizWalk(t *testing.T) {
 			t.Fatalf("pick %v: %v", p, err)
 		}
 	}
-	if _, _, err := tm.Pick("q1", "a", "1"); err != ErrNotAllowed {
-		t.Errorf("a second pick = %v, want ErrNotAllowed", err)
+	for _, c := range []string{"1", "X"} {
+		if _, _, err := tm.Pick("q1", "a", c); err != nil {
+			t.Errorf("changing the pick to %s while on the step: %v", c, err)
+		}
 	}
-	if v := tm.View(); v.Blocks[0].Picked != "X" || tm.Points != 0 {
-		t.Errorf("picked %q, points %v: nothing scores before the end", v.Blocks[0].Picked, tm.Points)
+	if v := tm.View(); v.Blocks[0].Picked != "X" || v.Blocks[0].Final || tm.Points != 0 {
+		t.Errorf("picked %q final %v, points %v: nothing scores before the end", v.Blocks[0].Picked, v.Blocks[0].Final, tm.Points)
 	}
 	res, st, err := tm.Continue("q1")
 	act(t, tm, "q2", res, st, err)
+	if !tm.PickFinal("q1") || tm.Picks[PickKey("q1", "a")] != "X" {
+		t.Error("moving on makes the step's answers final")
+	}
+	tm.Current = "q1" // as if a hub loop brought the team back
+	if _, _, err := tm.Pick("q1", "a", "1"); err != ErrNotAllowed {
+		t.Errorf("a pick on a step already left = %v, want ErrNotAllowed", err)
+	}
+	tm.Current = "q2"
 	if _, _, err := tm.Pick("q2", "tb", "1 890,5"); err != ErrWrongNode {
 		t.Errorf("a number with a space = %v", err)
 	}

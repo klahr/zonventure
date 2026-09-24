@@ -2168,5 +2168,21 @@
 "the organization that authors the catalog; you list and commission its adventures.": "the organization that authors the catalog; you list and commission its adventures.",
   "Points": "Points",
   "Playing": "Playing",
-  "Tie-breaker: {{n}}": "Tie-breaker: {{n}}"
+  "Tie-breaker: {{n}}": "Tie-breaker: {{n}}",
+  "Message teams": "Message teams",
+  "Messages to teams": "Messages to teams",
+  "This event's teams play in the classic player, which does not show messages.": "This event's teams play in the classic player, which does not show messages.",
+  "Nothing sent yet. Messages are information beside the game: teams see them in the app’s inbox.": "Nothing sent yet. Messages are information beside the game: teams see them in the app’s inbox.",
+  "Delete message": "Delete message",
+  "Lunch is served at the square at 12.": "Lunch is served at the square at 12.",
+  "Write the message first.": "Write the message first.",
+  "Tick at least one team.": "Tick at least one team.",
+  "Send": "Send",
+  "Message": "Message",
+  "Information beside the game, such as practical news or a change of plan. It is not part of the adventure.": "Information beside the game, such as practical news or a change of plan. It is not part of the adventure.",
+  "Chosen teams": "Chosen teams",
+  "Message sent.": "Message sent.",
+  "Delete this message?": "Delete this message?",
+  "Teams stop seeing it, including those who have read it.": "Teams stop seeing it, including those who have read it.",
+  "Message deleted.": "Message deleted."
 }

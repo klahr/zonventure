@@ -183,9 +183,11 @@ type BlockView struct {
 	Standings     *Standings    `json:"standings,omitempty"`
 	// Points is what a points block's puzzle is worth: its best answer.
 	Points float64 `json:"points,omitempty"`
-	// Picked is the team's answer to a quiz question or tie-breaker. The
+	// Picked is the team's answer to a quiz question or tie-breaker, and
+	// Final whether it can no longer change it: it has left the step. The
 	// right Answer and Target stay out of the view until it finishes.
 	Picked string `json:"picked,omitempty"`
+	Final  bool   `json:"final,omitempty"`
 }
 
 // CounterView is one counter's value, for a status block.
@@ -323,7 +325,7 @@ func (t *Team) setBlocks(v *View, n graph.Node) {
 			end := from.Add(time.Duration(b.Seconds) * time.Second)
 			bv.EndsAt = &end
 		case graph.BlockQuiz, graph.BlockTiebreak:
-			bv.Picked = t.Picks[PickKey(n.Slug, b.ID)]
+			bv.Picked, bv.Final = t.Picks[PickKey(n.Slug, b.ID)], t.PickFinal(n.Slug)
 			if !t.Completed {
 				bv.Answer, bv.Target = "", nil
 			}

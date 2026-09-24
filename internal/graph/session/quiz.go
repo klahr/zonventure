@@ -14,8 +14,9 @@ import (
 func PickKey(node, block string) string { return node + "\x00" + block }
 
 // Pick answers a quiz question with 1, X or 2, or a tie-breaker with a
-// number, on the step the team is at. An answer is final: a second is
-// refused. Nothing moves and nothing scores until the team finishes.
+// number, on the step the team is at. The team may change its mind until
+// it moves on: once it has left the step the answer is final, even if it
+// comes back. Nothing moves and nothing scores until the team finishes.
 func (t *Team) Pick(node, block, choice string) (Result, *walk.Step, error) {
 	n, err := t.current(node)
 	if err != nil {
@@ -45,15 +46,22 @@ func (t *Team) Pick(node, block, choice string) (Result, *walk.Step, error) {
 	default:
 		return Result{}, nil, ErrWrongNode
 	}
-	key := PickKey(n.Slug, b.ID)
-	if t.Picks[key] != "" {
+	if t.PickFinal(n.Slug) {
 		return Result{}, nil, ErrNotAllowed
 	}
+	key := PickKey(n.Slug, b.ID)
 	if t.Picks == nil {
 		t.Picks = map[string]string{}
 	}
 	t.Picks[key] = choice
 	return Result{}, nil, nil
+}
+
+// PickFinal reports whether the team's answers on a step are final:
+// it has left the step, by continuing or any other way out.
+func (t *Team) PickFinal(node string) bool {
+	r := t.Nodes[node]
+	return r != nil && (r.Solved || r.HasOutcome)
 }
 
 // QuizResult is how a team did on the quiz walk, shown when it finishes.

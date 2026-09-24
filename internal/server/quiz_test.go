@@ -9,8 +9,8 @@ import (
 	"github.com/klahr/zonventure/internal/graph/session"
 )
 
-// A quiz walk over HTTP: picks are stored and final, a story waits for
-// them, the right answer stays off the phone, and finishing scores the
+// A quiz walk over HTTP: picks are stored, can change until the team
+// moves on, a story waits for them, the right answer stays off the phone, and finishing scores the
 // walk — with the tie-breaker ordering teams on the same score.
 func TestQuizWalkOverHTTP(t *testing.T) {
 	ts, assignmentID, cleanup := newTestServer(t)
@@ -96,8 +96,10 @@ func TestQuizWalkOverHTTP(t *testing.T) {
 			}
 		}
 	}
-	if s := players["Alpha"].doAny("POST", "/api/player/play/pick", map[string]string{"node": "q", "block": "a", "choice": "1"}, nil); s != 403 {
-		t.Errorf("a second pick = %d, want 403", s)
+	for _, c := range []string{"1", "X"} {
+		if s := players["Alpha"].doAny("POST", "/api/player/play/pick", map[string]string{"node": "q", "block": "a", "choice": c}, nil); s != 200 {
+			t.Errorf("changing the pick to %s = %d, want 200", c, s)
+		}
 	}
 	st = playStateDTO{}
 	if s := players["Alpha"].doAny("GET", "/api/player/play", nil, &st); s != 200 || quiz(st.View).Picked != "X" || st.View.Score != 0 {
@@ -107,6 +109,9 @@ func TestQuizWalkOverHTTP(t *testing.T) {
 		if s := players[name].doAny("POST", "/api/player/play/continue", map[string]string{"node": "q"}, nil); s != 200 {
 			t.Fatalf("%s continue = %d", name, s)
 		}
+	}
+	if s := players["Alpha"].doAny("POST", "/api/player/play/pick", map[string]string{"node": "q", "block": "a", "choice": "1"}, nil); s != 409 {
+		t.Errorf("a pick after moving on = %d, want 409", s)
 	}
 	for name, rank := range map[string]int{"Alpha": 1, "Beta": 2} {
 		st = playStateDTO{}

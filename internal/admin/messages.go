@@ -10,11 +10,13 @@ import (
 	"github.com/klahr/zonventure/internal/auth"
 	"github.com/klahr/zonventure/internal/eventmsg"
 	"github.com/klahr/zonventure/internal/httpx"
+	"github.com/klahr/zonventure/internal/play"
 	"github.com/klahr/zonventure/internal/ws"
 )
 
 // ListEventMessages lists what the organisers have told the event's
-// teams, newest first.
+// teams, newest first, and whether its teams' player has the inbox that
+// shows them.
 //
 // GET /api/admin/events/{eventID}/messages
 func (h *Handlers) ListEventMessages(w http.ResponseWriter, r *http.Request) {
@@ -27,7 +29,14 @@ func (h *Handlers) ListEventMessages(w http.ResponseWriter, r *http.Request) {
 		httpx.ServerErr(w, http.StatusInternalServerError, "loading messages failed", err)
 		return
 	}
-	httpx.JSON(w, http.StatusOK, map[string]any{"messages": msgs})
+	// Only the graph player has the inbox; a lane event's teams play in
+	// the classic player, which would never show a message.
+	inbox, err := play.UsesGraph(r.Context(), h.DB, eventID)
+	if err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "loading event failed", err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, map[string]any{"messages": msgs, "inbox": inbox})
 }
 
 // SendEventMessage sends a message to every team of the event, or with
