@@ -781,3 +781,37 @@ func TestSharedBlockVectors(t *testing.T) {
 		}
 	}
 }
+
+func TestWebhookEffect(t *testing.T) {
+	effect := func(e graph.EffectConfig) []string {
+		g := graph.Graph{
+			Nodes: []graph.Node{{Slug: "start", Type: graph.Start}, {Slug: "w", Type: graph.Effect, EffectCfg: &e}, {Slug: "end", Type: graph.End}},
+			Edges: []graph.Edge{{From: "start", FromPort: "out", To: "w"}, {From: "w", FromPort: "out", To: "end"}},
+		}
+		var codes []string
+		for _, i := range Check(&g).Issues {
+			if strings.HasPrefix(i.Code, "effect.webhook") {
+				codes = append(codes, i.Code)
+			}
+		}
+		return codes
+	}
+	ok := graph.EffectConfig{Kind: graph.CallWebhook, URL: "https://hooks.example.com/zv", Method: "PUT",
+		Headers: []graph.Header{{Name: "Authorization", Value: "Bearer abc"}, {Name: "X-Custom", Value: "1"}}}
+	if got := effect(ok); len(got) != 0 {
+		t.Errorf("a well-formed webhook: %v", got)
+	}
+	for name, e := range map[string]graph.EffectConfig{
+		"no url":           {Kind: graph.CallWebhook},
+		"not http":         {Kind: graph.CallWebhook, URL: "ftp://example.com"},
+		"relative":         {Kind: graph.CallWebhook, URL: "/hook"},
+		"bad method":       {Kind: graph.CallWebhook, URL: "https://x.example", Method: "CONNECT"},
+		"bad name":         {Kind: graph.CallWebhook, URL: "https://x.example", Headers: []graph.Header{{Name: "X Bad", Value: "1"}}},
+		"reserved":         {Kind: graph.CallWebhook, URL: "https://x.example", Headers: []graph.Header{{Name: "host", Value: "evil"}}},
+		"header injection": {Kind: graph.CallWebhook, URL: "https://x.example", Headers: []graph.Header{{Name: "X-A", Value: "1\r\nX-B: 2"}}},
+	} {
+		if got := effect(e); len(got) != 1 {
+			t.Errorf("%s: codes %v, want exactly one", name, got)
+		}
+	}
+}

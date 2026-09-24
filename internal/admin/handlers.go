@@ -282,7 +282,10 @@ func (h *Handlers) ListAdventures(w http.ResponseWriter, r *http.Request) {
 /* ---------------- Runs ---------------- */
 
 type eventDTO struct {
-	ID            int64  `json:"id"`
+	ID int64 `json:"id"`
+	// Engine is "graph" or "lanes" on the detail payload: which progress
+	// the page shows. Empty on list rows.
+	Engine        string `json:"engine,omitempty"`
 	Name          string `json:"name,omitempty"`
 	AdventureSlug string `json:"adventure_slug"`
 	// AdventureTitle is the human-friendly name. Joined in via the
@@ -1449,15 +1452,19 @@ type positionDTO struct {
 	Lng       float64 `json:"lng"`
 	ServerTS  string  `json:"server_ts"`
 	PageIndex int     `json:"page_index"`
+	// Node is the graph step the team is on, for a graph event; its
+	// page_index is a lane cursor and stays 0.
+	Node string `json:"node,omitempty"`
 }
 
 // buildPositions is the query-only helper used by both the HTTP ListPositions
 // handler and the WS push path. Caller does authorisation.
 func (h *Handlers) buildPositions(ctx context.Context, eventID int64) ([]positionDTO, error) {
 	rows, err := h.DB.QueryContext(ctx, `
-		SELECT t.id, t.name, t.current_page_index,
+		SELECT t.id, t.name, t.current_page_index, COALESCE(gs.current_node, ''),
 		       COALESCE(p.lat, 0), COALESCE(p.lng, 0), COALESCE(p.server_ts, '')
 		FROM teams t
+		LEFT JOIN team_graph_state gs ON gs.team_id = t.id
 		LEFT JOIN (
 			SELECT team_id, lat, lng, server_ts
 			FROM location_pings
@@ -1475,12 +1482,12 @@ func (h *Handlers) buildPositions(ctx context.Context, eventID int64) ([]positio
 	out := []positionDTO{}
 	for rows.Next() {
 		var d positionDTO
-		if err := rows.Scan(&d.TeamID, &d.TeamName, &d.PageIndex, &d.Lat, &d.Lng, &d.ServerTS); err != nil {
+		if err := rows.Scan(&d.TeamID, &d.TeamName, &d.PageIndex, &d.Node, &d.Lat, &d.Lng, &d.ServerTS); err != nil {
 			return nil, err
 		}
 		out = append(out, d)
 	}
-	return out, nil
+	return out, rows.Err()
 }
 
 // ListPositions returns the most recent location ping per team for an event.

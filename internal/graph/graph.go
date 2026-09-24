@@ -800,7 +800,24 @@ type EffectConfig struct {
 	Template     string `json:"template,omitempty"`
 	URL          string `json:"url,omitempty"`
 	Theme        string `json:"theme,omitempty"`
+
+	// Method and Headers shape a webhook's request: Method is one of
+	// WebhookMethods, POST when empty; Headers are sent as given — an
+	// Authorization token, say. They are stored in the graph, so anyone
+	// who can open or export the adventure can read them.
+	Method  string   `json:"method,omitempty"`
+	Headers []Header `json:"headers,omitempty"`
 }
+
+// Header is one HTTP header a webhook sends.
+type Header struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
+}
+
+// WebhookMethods are the HTTP methods a webhook may use. GET and DELETE
+// send no body; the team and step go in the query instead.
+var WebhookMethods = []string{"GET", "POST", "PUT", "PATCH", "DELETE"}
 
 // Outcome is how a run ended.
 type Outcome string

@@ -20,6 +20,7 @@ import (
 	"github.com/klahr/zonventure/internal/auth"
 	"github.com/klahr/zonventure/internal/components"
 	"github.com/klahr/zonventure/internal/db"
+	"github.com/klahr/zonventure/internal/effects"
 	"github.com/klahr/zonventure/internal/logx"
 	"github.com/klahr/zonventure/internal/mailer"
 	"github.com/klahr/zonventure/internal/metrics"
@@ -355,6 +356,10 @@ func main() {
 	// backoff retry.
 	webhookDone := webhooks.Start(ctx, sqlDB)
 
+	// Graph "Call a webhook" steps, queued with the team's move in
+	// graph_effect_outbox and sent from here.
+	effectsDone := effects.Start(ctx, sqlDB)
+
 	go func() {
 		logx.Info("http.listening", "addr", *addr)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -404,6 +409,13 @@ func main() {
 	case <-webhookDone:
 	case <-time.After(35 * time.Second):
 		logx.Warn("webhooks.shutdown.timeout")
+	}
+	// Stopped by the same cancel, so this rarely waits: a call cut off
+	// mid-flight keeps its lease and is sent again after it lapses.
+	select {
+	case <-effectsDone:
+	case <-time.After(35 * time.Second):
+		logx.Warn("effects.shutdown.timeout")
 	}
 }
 

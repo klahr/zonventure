@@ -752,6 +752,9 @@ func addPuzzle(ctx context.Context, s *Server, args json.RawMessage) (ToolCallRe
 		}
 		return errorResult("lookup: " + err.Error()), nil
 	}
+	if err := admin.RefuseIfGraph(ctx, s.DB, advID); err != nil {
+		return errorResult(err.Error()), nil
+	}
 	pageID, err := admin.AddPageFromExport(ctx, s.DB, advID, p.Page)
 	if err != nil {
 		return errorResult(err.Error()), nil
@@ -796,6 +799,9 @@ func updatePuzzle(ctx context.Context, s *Server, args json.RawMessage) (ToolCal
 			return errorResult("forbidden: you cannot edit this adventure"), nil
 		}
 		return errorResult("lookup: " + err.Error()), nil
+	}
+	if err := admin.RefuseIfGraph(ctx, s.DB, advID); err != nil {
+		return errorResult(err.Error()), nil
 	}
 	if err := admin.UpdatePageFromExport(ctx, s.DB, advID, p.PageIdx, p.Page); err != nil {
 		return errorResult(err.Error()), nil
@@ -869,6 +875,9 @@ func setLaneMode(ctx context.Context, s *Server, args json.RawMessage) (ToolCall
 			return errorResult("forbidden: you cannot edit this adventure"), nil
 		}
 		return errorResult("lookup: " + err.Error()), nil
+	}
+	if err := admin.RefuseIfGraph(ctx, s.DB, advID); err != nil {
+		return errorResult(err.Error()), nil
 	}
 	if err := admin.SetLaneMode(ctx, s.DB, advID, p.LaneIdx, p.Mode); err != nil {
 		return errorResult(err.Error()), nil
@@ -983,6 +992,9 @@ func attachImage(ctx context.Context, s *Server, args json.RawMessage) (ToolCall
 		}
 		return errorResult("lookup: " + err.Error()), nil
 	}
+	if err := admin.RefuseIfGraph(ctx, s.DB, advID); err != nil {
+		return errorResult(err.Error()), nil
+	}
 
 	// target is "avatar" (string) or an integer page idx. We probe by
 	// trimming and comparing rather than two unmarshal attempts so the
@@ -1080,7 +1092,7 @@ func deletePuzzle(ctx context.Context, s *Server, args json.RawMessage) (ToolCal
 	if p.PageIdx < 0 {
 		return errorResult("page_idx must be >= 0"), nil
 	}
-	advID, _, err := authoriseEdit(ctx, s, p.Slug)
+	advID, _, err := laneEdit(ctx, s, p.Slug)
 	if err != nil {
 		return *err, nil
 	}
@@ -1106,7 +1118,7 @@ func movePuzzle(ctx context.Context, s *Server, args json.RawMessage) (ToolCallR
 	if p.Slug == "" {
 		return errorResult("slug is required"), nil
 	}
-	advID, _, err := authoriseEdit(ctx, s, p.Slug)
+	advID, _, err := laneEdit(ctx, s, p.Slug)
 	if err != nil {
 		return *err, nil
 	}
@@ -1138,7 +1150,7 @@ func createLane(ctx context.Context, s *Server, args json.RawMessage) (ToolCallR
 	if p.Slug == "" {
 		return errorResult("slug is required"), nil
 	}
-	advID, _, err := authoriseEdit(ctx, s, p.Slug)
+	advID, _, err := laneEdit(ctx, s, p.Slug)
 	if err != nil {
 		return *err, nil
 	}
@@ -1171,7 +1183,7 @@ func updateLane(ctx context.Context, s *Server, args json.RawMessage) (ToolCallR
 	if p.Slug == "" {
 		return errorResult("slug is required"), nil
 	}
-	advID, _, err := authoriseEdit(ctx, s, p.Slug)
+	advID, _, err := laneEdit(ctx, s, p.Slug)
 	if err != nil {
 		return *err, nil
 	}
@@ -1195,7 +1207,7 @@ func deleteLane(ctx context.Context, s *Server, args json.RawMessage) (ToolCallR
 	if p.Slug == "" {
 		return errorResult("slug is required"), nil
 	}
-	advID, _, err := authoriseEdit(ctx, s, p.Slug)
+	advID, _, err := laneEdit(ctx, s, p.Slug)
 	if err != nil {
 		return *err, nil
 	}
@@ -1235,7 +1247,7 @@ func attachAudio(ctx context.Context, s *Server, args json.RawMessage) (ToolCall
 	if err != nil {
 		return errorResult("data_b64 is not valid base64: " + err.Error()), nil
 	}
-	advID, _, autherr := authoriseEdit(ctx, s, p.Slug)
+	advID, _, autherr := laneEdit(ctx, s, p.Slug)
 	if autherr != nil {
 		return *autherr, nil
 	}
@@ -1292,7 +1304,7 @@ func reorderLanes(ctx context.Context, s *Server, args json.RawMessage) (ToolCal
 	if len(p.NewOrder) == 0 {
 		return errorResult("new_order must be a non-empty array of lane indices"), nil
 	}
-	advID, _, err := authoriseEdit(ctx, s, p.Slug)
+	advID, _, err := laneEdit(ctx, s, p.Slug)
 	if err != nil {
 		return *err, nil
 	}
@@ -1322,7 +1334,7 @@ func detachImage(ctx context.Context, s *Server, args json.RawMessage) (ToolCall
 	if p.PageIdx < 0 {
 		return errorResult("page_idx must be >= 0"), nil
 	}
-	advID, _, err := authoriseEdit(ctx, s, p.Slug)
+	advID, _, err := laneEdit(ctx, s, p.Slug)
 	if err != nil {
 		return *err, nil
 	}
@@ -1347,7 +1359,7 @@ func detachAudio(ctx context.Context, s *Server, args json.RawMessage) (ToolCall
 	if p.PageIdx < 0 {
 		return errorResult("page_idx must be >= 0"), nil
 	}
-	advID, _, err := authoriseEdit(ctx, s, p.Slug)
+	advID, _, err := laneEdit(ctx, s, p.Slug)
 	if err != nil {
 		return *err, nil
 	}
@@ -1375,7 +1387,7 @@ func updateImageAlt(ctx context.Context, s *Server, args json.RawMessage) (ToolC
 	if p.PageIdx < 0 {
 		return errorResult("page_idx must be >= 0"), nil
 	}
-	advID, _, err := authoriseEdit(ctx, s, p.Slug)
+	advID, _, err := laneEdit(ctx, s, p.Slug)
 	if err != nil {
 		return *err, nil
 	}
@@ -1407,7 +1419,7 @@ func addHint(ctx context.Context, s *Server, args json.RawMessage) (ToolCallResu
 	if p.Text == "" {
 		return errorResult("text is required"), nil
 	}
-	advID, _, err := authoriseEdit(ctx, s, p.Slug)
+	advID, _, err := laneEdit(ctx, s, p.Slug)
 	if err != nil {
 		return *err, nil
 	}
@@ -1442,7 +1454,7 @@ func updateHint(ctx context.Context, s *Server, args json.RawMessage) (ToolCallR
 	if p.PageIdx < 0 || p.HintIdx < 0 {
 		return errorResult("page_idx and hint_idx must be >= 0"), nil
 	}
-	advID, _, err := authoriseEdit(ctx, s, p.Slug)
+	advID, _, err := laneEdit(ctx, s, p.Slug)
 	if err != nil {
 		return *err, nil
 	}
@@ -1470,7 +1482,7 @@ func deleteHint(ctx context.Context, s *Server, args json.RawMessage) (ToolCallR
 	if p.PageIdx < 0 || p.HintIdx < 0 {
 		return errorResult("page_idx and hint_idx must be >= 0"), nil
 	}
-	advID, _, err := authoriseEdit(ctx, s, p.Slug)
+	advID, _, err := laneEdit(ctx, s, p.Slug)
 	if err != nil {
 		return *err, nil
 	}
@@ -1500,6 +1512,21 @@ func authoriseEdit(ctx context.Context, s *Server, slug string) (int64, auth.Use
 			return 0, auth.User{}, &r
 		}
 		r := errorResult("lookup: " + err.Error())
+		return 0, auth.User{}, &r
+	}
+	return advID, me, nil
+}
+
+// laneEdit is authoriseEdit for a tool that edits lane pages, lanes or
+// hints: it also refuses an adventure with a published graph, whose
+// events never show its lane pages again (admin.ErrGraphAdventure).
+func laneEdit(ctx context.Context, s *Server, slug string) (int64, auth.User, *ToolCallResult) {
+	advID, me, res := authoriseEdit(ctx, s, slug)
+	if res != nil {
+		return advID, me, res
+	}
+	if err := admin.RefuseIfGraph(ctx, s.DB, advID); err != nil {
+		r := errorResult(err.Error())
 		return 0, auth.User{}, &r
 	}
 	return advID, me, nil

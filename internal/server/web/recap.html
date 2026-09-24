@@ -101,6 +101,24 @@ body {
   font-size: .75rem; color: var(--muted); text-transform: uppercase;
   letter-spacing: .04em; margin-top: .15rem;
 }
+/* Graph recap: the puzzles and stories the team reached, in the
+   adventure's order. Same card surface as the stats above. */
+.steps {
+  list-style: none; margin: 0 0 1.25rem; padding: 0;
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+  border-radius: 12px;
+}
+.steps li {
+  display: flex; align-items: baseline; gap: .6rem;
+  padding: .55rem .85rem;
+  border-top: 1px solid var(--border-soft);
+}
+.steps li:first-child { border-top: 0; }
+.steps .mark { flex: 0 0 1.1rem; text-align: center; font-weight: 700; color: var(--accent); }
+.steps .title { flex: 1 1 auto; min-width: 0; }
+.steps .story .title, .steps .note { color: var(--muted); }
+.steps .note { flex: 0 0 auto; font-size: .8rem; }
 #map {
   width: 100%;
   height: 24rem;
@@ -293,11 +311,15 @@ function render(d) {
     root.append(el('div', { class: 'outro', html: d.outro_text }));
   }
 
-  root.append(el('div', { class: 'stats' },
-    statBox(formatDuration(d.duration_seconds), t('Time')),
-    statBox(formatDistance(d.distance_m),       t('Distance')),
-    statBox(String(d.answers_right ?? '—'),     t('Correct answers')),
-    statBox(String(d.answers_wrong ?? '—'),     t('Misses'))));
+  if (d.engine === 'graph') {
+    renderGraphStats(d);
+  } else {
+    root.append(el('div', { class: 'stats' },
+      statBox(formatDuration(d.duration_seconds), t('Time')),
+      statBox(formatDistance(d.distance_m),       t('Distance')),
+      statBox(String(d.answers_right ?? '—'),     t('Correct answers')),
+      statBox(String(d.answers_wrong ?? '—'),     t('Misses'))));
+  }
 
   const mapHost = el('div', { id: 'map' });
   root.append(mapHost);
@@ -337,6 +359,39 @@ function render(d) {
   }
 }
 
+// renderGraphStats is the graph engine's stats row and step list: the
+// team's points and place where a lane recap counts puzzles, then every
+// puzzle and story it reached.
+function renderGraphStats(d) {
+  const points = Number.isFinite(d.points)
+    ? new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(d.points)
+    : '—';
+  const rank = d.rank ? t('{{rank}} of {{n}}', { rank: d.rank, n: d.team_count }) : '—';
+  const boxes = [
+    statBox(formatDuration(d.duration_seconds), t('Time')),
+    statBox(formatDistance(d.distance_m),       t('Distance')),
+    statBox(points,                             t('Points')),
+    statBox(rank,                               t('Rank')),
+  ];
+  if (d.quiz) boxes.push(statBox(d.quiz.right + '/' + d.quiz.total, t('Quiz')));
+  root.append(el('div', { class: 'stats' }, ...boxes));
+  if (d.outcome === 'fail') {
+    root.querySelector('.head .who').append(' · ' + t('Did not finish'));
+  }
+  if (!(d.steps || []).length) return;
+  const list = el('ol', { class: 'steps' });
+  for (const s of d.steps) {
+    const puzzle = s.kind === 'puzzle';
+    const misses = s.attempts === 1 ? t('1 miss')
+      : s.attempts > 1 ? t('{{n}} misses', { n: s.attempts }) : '';
+    list.append(el('li', { class: puzzle ? 'puzzle' : 'story' },
+      el('span', { class: 'mark', 'aria-hidden': 'true' }, puzzle ? (s.solved ? '✓' : '○') : '·'),
+      el('span', { class: 'title' }, (s.title || s.node) + (puzzle && !s.solved ? ' (' + t('not solved') + ')' : '')),
+      misses ? el('span', { class: 'note' }, misses) : null));
+  }
+  root.append(list);
+}
+
 function mountMap(host, d) {
   if (typeof L === 'undefined') {
     setTimeout(() => mountMap(host, d), 100);
@@ -372,9 +427,30 @@ function mountMap(host, d) {
       .addTo(map);
   }
 
+  // Graph zone pins, the same way: filled once a step there was done.
+  const zonePoints = [];
+  for (const z of (d.zones || [])) {
+    const style = {
+      color: accent, weight: 2,
+      fillColor: z.solved ? accent : 'transparent',
+      fillOpacity: z.solved ? 0.35 : 0,
+    };
+    const label = (z.title || z.name || z.slug) + (z.solved ? '' : ' (' + t('not solved') + ')');
+    if ((z.polygon || []).length >= 3) {
+      L.polygon(z.polygon, style).bindTooltip(label).addTo(map);
+      zonePoints.push(...z.polygon);
+      continue;
+    }
+    if (!Number.isFinite(z.lat) || !Number.isFinite(z.lng)) continue;
+    if (z.lat === 0 && z.lng === 0) continue;
+    L.circleMarker([z.lat, z.lng], { ...style, radius: 7, fillOpacity: z.solved ? 1 : 0 })
+      .bindTooltip(label).addTo(map);
+    zonePoints.push([z.lat, z.lng]);
+  }
+
   // Fit bounds: prefer the track, fall back to puzzle pins, finally
   // a Stockholm-default so the map never lands on the ocean.
-  const allPoints = points.slice();
+  const allPoints = points.concat(zonePoints);
   for (const p of (d.puzzles || [])) {
     if (Number.isFinite(p.lat) && Number.isFinite(p.lng) && !(p.lat === 0 && p.lng === 0)) {
       allPoints.push([p.lat, p.lng]);

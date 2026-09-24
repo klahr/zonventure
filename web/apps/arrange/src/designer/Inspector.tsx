@@ -21,9 +21,10 @@ import type {
   ChoiceField,
   LockSymbol,
   Trigger,
+  WebhookMethod,
   Zone,
 } from "@zonventure/graph";
-import { ANSWER_KINDS, answerOptions, isGraded, optionValue, withAnswerKind, withBlocks, matcherLabel, nodeBySlug, portLabel, puzzlesInto, referAnswer, resolveAnswer, updateNode } from "@zonventure/graph";
+import { ANSWER_KINDS, WEBHOOK_METHODS, answerOptions, isGraded, optionValue, withAnswerKind, withBlocks, matcherLabel, nodeBySlug, portLabel, puzzlesInto, referAnswer, resolveAnswer, updateNode } from "@zonventure/graph";
 import { useT } from "../i18n.tsx";
 import { ConditionEditor } from "./ConditionEditor.tsx";
 import { MediaEditor } from "./MediaEditor.tsx";
@@ -1296,11 +1297,7 @@ function EffectForm({ cfg, graph, onChange }: { cfg: EffectConfig; graph: Graph;
           <input className="field__input" value={cfg.template ?? ""} onChange={(e) => onChange({ ...cfg, template: e.target.value })} />
         </Field>
       )}
-      {cfg.kind === "webhook" && (
-        <Field label={t.t("URL")}>
-          <input className="field__input" type="url" value={cfg.url ?? ""} placeholder="https://" onChange={(e) => onChange({ ...cfg, url: e.target.value })} />
-        </Field>
-      )}
+      {cfg.kind === "webhook" && <WebhookForm cfg={cfg} onChange={onChange} />}
       {cfg.kind === "theme" && (
         <Field label={t.t("Theme name")}>
           <input className="field__input" value={cfg.theme ?? ""} onChange={(e) => onChange({ ...cfg, theme: e.target.value })} />
@@ -1682,4 +1679,69 @@ function withOptional<T extends object, K extends keyof T>(obj: T, key: K, value
   if (value === undefined || (typeof value === "number" && Number.isNaN(value))) delete out[key];
   else out[key] = value;
   return out;
+}
+
+/**
+ * A webhook: where, how, and with which headers. The body is the team and
+ * step as JSON; GET and DELETE carry them in the query instead.
+ */
+function WebhookForm({ cfg, onChange }: { cfg: EffectConfig; onChange: (c: EffectConfig) => void }) {
+  const t = useT();
+  const headers = cfg.headers ?? [];
+  const setHeaders = (next: { name: string; value: string }[]) => onChange(withOptional({ ...cfg }, "headers", next.length ? next : undefined));
+  const bodyless = cfg.method === "GET" || cfg.method === "DELETE";
+  return (
+    <>
+      <div className="box__row">
+        <label className="field webhook__method">
+          <span className="field__label">{t.t("Method")}</span>
+          <select className="field__input" value={cfg.method ?? "POST"} onChange={(e) => onChange(withOptional({ ...cfg }, "method", e.target.value === "POST" ? undefined : (e.target.value as WebhookMethod)))}>
+            {WEBHOOK_METHODS.map((m) => (
+              <option key={m} value={m}>
+                {m}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="field" style={{ flex: 1, minWidth: 0 }}>
+          <span className="field__label">{t.t("URL")}</span>
+          <input className="field__input" type="url" value={cfg.url ?? ""} placeholder="https://" onChange={(e) => onChange({ ...cfg, url: e.target.value })} />
+        </label>
+      </div>
+      <span className="field__label">{t.t("Headers")}</span>
+      {headers.map((h, i) => (
+        <div key={i} className="box__row webhook__header">
+          <input
+            className="field__input"
+            value={h.name}
+            placeholder={t.t("Name, such as Authorization")}
+            aria-label={t.t("Header name")}
+            onChange={(e) => setHeaders(headers.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))}
+          />
+          <input
+            className="field__input"
+            value={h.value}
+            placeholder={t.t("Value")}
+            aria-label={t.t("Header value")}
+            onChange={(e) => setHeaders(headers.map((x, j) => (j === i ? { ...x, value: e.target.value } : x)))}
+          />
+          <button type="button" className="icon-remove" onClick={() => setHeaders(headers.filter((_, j) => j !== i))} aria-label={t.t("Remove")}>
+            <X size={ICON.sm} />
+          </button>
+        </div>
+      ))}
+      <button type="button" className="add-btn concept--effect" onClick={() => setHeaders([...headers, { name: "", value: "" }])}>
+        <Plus size={ICON.sm} aria-hidden="true" />
+        {t.t("Add header")}
+      </button>
+      <p className="field__hint">
+        {bodyless
+          ? t.t("Sent once per team as it passes, with event_id, team_id, team, node and queued_at in the query. Retried for a day if the server fails.")
+          : t.t("Sent once per team as it passes, with event_id, team_id, team, node and queued_at as JSON. Retried for a day if the server fails.")}
+      </p>
+      {headers.length > 0 && (
+        <p className="field__hint">{t.t("Header values are saved in the adventure: anyone who can open or export it can read them. Use a key meant for this, not a personal password.")}</p>
+      )}
+    </>
+  );
 }

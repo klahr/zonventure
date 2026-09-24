@@ -322,7 +322,14 @@ export interface EffectConfig {
   template?: string;
   url?: string;
   theme?: string;
+  /** A webhook's HTTP method, POST when absent: graph.WebhookMethods. */
+  method?: WebhookMethod;
+  /** Sent as given. Stored in the adventure, readable by anyone who can open or export it. */
+  headers?: { name: string; value: string }[];
 }
+
+export type WebhookMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+export const WEBHOOK_METHODS: WebhookMethod[] = ["GET", "POST", "PUT", "PATCH", "DELETE"];
 
 /**
  * internal/graph: SwitchConfig — routes on an answer. `from` names the

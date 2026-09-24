@@ -264,47 +264,44 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 			// logo without involving platform support.
 			r.Post("/orgs/me/logo", adminH.SetMyOrgLogo)
 			r.Delete("/orgs/me/logo", adminH.DeleteMyOrgLogo)
-			r.Post("/adventures/{slug}/pages", adminH.CreatePage)
-			r.Patch("/adventures/{slug}/pages/reorder", adminH.ReorderPages)
+			// Lane editing. LaneOnly refuses it for an adventure with a
+			// published graph: its events play the graph, so an edit to
+			// the lane pages would look saved and change nothing.
+			r.Post("/adventures/{slug}/pages", adminH.LaneOnly(adminH.CreatePage))
+			r.Patch("/adventures/{slug}/pages/reorder", adminH.LaneOnly(adminH.ReorderPages))
 			// Lane CRUD. Reorder lives at /lanes/reorder rather than as
 			// a method-keyed verb so the router pattern stays decisive
 			// (no overlap with /lanes/{laneID}).
-			r.Post("/adventures/{slug}/lanes", adminH.CreateLane)
-			r.Post("/adventures/{slug}/lanes/reorder", adminH.ReorderLanes)
-			r.Patch("/adventures/{slug}/lanes/{laneID}", adminH.UpdateLane)
-			r.Delete("/adventures/{slug}/lanes/{laneID}", adminH.DeleteLane)
-			r.Post("/adventures/{slug}/pages/copy-from/{pageID}", adminH.CopyPuzzleToAdventure)
-			r.Patch("/pages/{pageID}", adminH.UpdatePage)
-			r.Delete("/pages/{pageID}", adminH.DeletePage)
+			r.Post("/adventures/{slug}/lanes", adminH.LaneOnly(adminH.CreateLane))
+			r.Post("/adventures/{slug}/lanes/reorder", adminH.LaneOnly(adminH.ReorderLanes))
+			r.Patch("/adventures/{slug}/lanes/{laneID}", adminH.LaneOnly(adminH.UpdateLane))
+			r.Delete("/adventures/{slug}/lanes/{laneID}", adminH.LaneOnly(adminH.DeleteLane))
+			r.Patch("/pages/{pageID}", adminH.LaneOnly(adminH.UpdatePage))
+			r.Delete("/pages/{pageID}", adminH.LaneOnly(adminH.DeletePage))
 			// Duplicate one puzzle in place — Google Slides shape. The
 			// new row lands at sourceIdx + 1 with the rest of the
 			// adventure shifted down. Auth via requireEditPage so the
 			// org_member tightening carries through.
-			r.Post("/pages/{pageID}/duplicate", adminH.DuplicatePage)
-			r.Post("/pages/{pageID}/images", adminH.AddPageImage)
+			r.Post("/pages/{pageID}/duplicate", adminH.LaneOnly(adminH.DuplicatePage))
+			r.Post("/pages/{pageID}/images", adminH.LaneOnly(adminH.AddPageImage))
 			r.Patch("/images/{imageID}", adminH.UpdatePageImage)
 			r.Delete("/images/{imageID}", adminH.DeletePageImage)
 			// Per-hint image attachments. Hint images are addressed by
 			// their own image id under /hint-images/ so the puzzle-image
 			// patch/delete routes don't have to disambiguate which kind
 			// they're acting on.
-			r.Post("/hints/{hintID}/images", adminH.AddHintImage)
+			r.Post("/hints/{hintID}/images", adminH.LaneOnly(adminH.AddHintImage))
 			r.Patch("/hint-images/{imageID}", adminH.UpdateHintImage)
 			r.Delete("/hint-images/{imageID}", adminH.DeleteHintImage)
 			// Audio attachments — same shape as the image routes. PATCH
 			// only carries `description` (the WCAG transcript fallback);
 			// the blob itself is replaced by delete + re-upload.
-			r.Post("/pages/{pageID}/audio", adminH.AddPageAudio)
+			r.Post("/pages/{pageID}/audio", adminH.LaneOnly(adminH.AddPageAudio))
 			r.Patch("/audio/{audioID}", adminH.UpdatePageAudio)
 			r.Delete("/audio/{audioID}", adminH.DeletePageAudio)
-			r.Post("/hints/{hintID}/audio", adminH.AddHintAudio)
+			r.Post("/hints/{hintID}/audio", adminH.LaneOnly(adminH.AddHintAudio))
 			r.Patch("/hint-audio/{audioID}", adminH.UpdateHintAudio)
 			r.Delete("/hint-audio/{audioID}", adminH.DeleteHintAudio)
-
-			// Puzzle library (cross-adventure pool).
-			r.Get("/puzzles", adminH.ListPuzzles)
-			r.Post("/puzzles", adminH.CreateLibraryPuzzle)
-			r.Get("/puzzles/{pageID}", adminH.GetPuzzle)
 
 			// Purchases: arrangers buy player-slot assignments here. The
 			// simulated flow just needs the confirm endpoint; a future

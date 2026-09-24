@@ -12,7 +12,13 @@ package admin
 //	├── p<i>_img<j>.<ext>  per-page image J of page I (idx-based)
 //	├── p<i>_aud<j>.<ext>  per-page audio J of page I
 //	├── p<i>_h<k>_img<j>.<ext>
-//	└── p<i>_h<k>_aud<j>.<ext>
+//	├── p<i>_h<k>_aud<j>.<ext>
+//	└── g<id>.<ext>        graph media, by the exporting instance's id
+//
+// A graph adventure also carries its graph (the published version, or
+// the draft when none is published) as a v2 envelope under "graph",
+// with "graph_media" naming the file each of its media ids is in. The
+// field is optional: a lane-only export imports as it always has.
 //
 // The manifest never carries IDs; everything is keyed by idx so the
 // importer can mint fresh primary keys without surprises. Accept
@@ -37,6 +43,8 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/klahr/zonventure/internal/adventure"
 	"github.com/klahr/zonventure/internal/auth"
+	"github.com/klahr/zonventure/internal/graph"
+	"github.com/klahr/zonventure/internal/graphstore"
 	"github.com/klahr/zonventure/internal/httpx"
 	"github.com/klahr/zonventure/internal/logx"
 )
@@ -60,6 +68,18 @@ type exportEnvelope struct {
 	Format     string             `json:"format"`
 	ExportedAt string             `json:"exported_at"`
 	Adventure  exportAdventureDTO `json:"adventure"`
+	// Graph is the adventure's graph, when it has one. Its media ids
+	// are the exporting instance's; GraphMedia maps each to its file.
+	Graph      *graph.Envelope    `json:"graph,omitempty"`
+	GraphMedia []exportGraphMedia `json:"graph_media,omitempty"`
+}
+
+// exportGraphMedia is one adventure_media row the graph refers to.
+type exportGraphMedia struct {
+	ID       int64           `json:"id"`
+	Kind     graph.MediaKind `json:"kind"`
+	File     string          `json:"file"`
+	MimeType string          `json:"mime_type"`
 }
 
 type exportAdventureDTO struct {
@@ -390,7 +410,56 @@ func (h *Handlers) buildExport(ctx context.Context, advID int64) (exportEnvelope
 	}
 
 	env.Adventure = adv
+
+	g, err := exportableGraph(ctx, h.DB, advID)
+	if err != nil {
+		return env, nil, err
+	}
+	if g != nil {
+		env.Graph = &graph.Envelope{Format: graph.FormatV2, Graph: *g}
+		for _, id := range g.MediaIDs() {
+			if id == 0 {
+				continue
+			}
+			var (
+				kind    string
+				mime    string
+				content []byte
+			)
+			if err := h.DB.QueryRowContext(ctx, `
+				SELECT kind, mime_type, content FROM adventure_media
+				WHERE id = $1 AND adventure_id = $2
+			`, id, advID).Scan(&kind, &mime, &content); err != nil {
+				return env, nil, fmt.Errorf("load graph media %d: %w", id, err)
+			}
+			name := fmt.Sprintf("g%d%s", id, extForMime(mime))
+			files = append(files, exportFile{name: name, bytes: content})
+			env.GraphMedia = append(env.GraphMedia, exportGraphMedia{
+				ID: id, Kind: graph.MediaKind(kind), File: name, MimeType: mime,
+			})
+		}
+	}
 	return env, files, nil
+}
+
+// exportableGraph is the graph an export carries: the published one, or
+// the draft when none is published, or nil for a lane-only adventure.
+func exportableGraph(ctx context.Context, db *sql.DB, advID int64) (*graph.Graph, error) {
+	s, err := graphstore.Published(ctx, db, advID)
+	if err == nil {
+		return s.Graph, nil
+	}
+	if !errors.Is(err, graphstore.ErrNotFound) {
+		return nil, fmt.Errorf("load published graph: %w", err)
+	}
+	d, err := graphstore.LoadDraft(ctx, db, advID)
+	if errors.Is(err, graphstore.ErrNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("load draft graph: %w", err)
+	}
+	return d.Graph, nil
 }
 
 func (h *Handlers) exportPageImages(ctx context.Context, pageID int64, pageIdx int) ([]exportAsset, []exportFile, error) {
@@ -755,6 +824,11 @@ func importEnvelopeJSON(ctx context.Context, db *sql.DB, manifestJSON []byte, ov
 	if err := importPages(ctx, tx, advID, env.Adventure.Pages, laneIDByIdx, assets); err != nil {
 		return 0, "", "", badRequestf("import pages: %s", err.Error())
 	}
+	if env.Graph != nil {
+		if err := importGraph(ctx, tx, advID, user.ID, env.Graph, env.GraphMedia, assets); err != nil {
+			return 0, "", "", err
+		}
+	}
 	if dryRun {
 		// Deferred Rollback wipes the tx; ids/slug/title returned
 		// here describe what WOULD have landed and are useful to
@@ -916,6 +990,53 @@ func importPages(ctx context.Context, tx *sql.Tx, advID int64, pages []exportPag
 				}
 			}
 		}
+	}
+	return nil
+}
+
+// importGraph stores the envelope's media as the new adventure's, points
+// the graph at them, and saves it as the draft and publishes it. A graph
+// that does not validate — an exported draft may not — stays a draft.
+func importGraph(ctx context.Context, tx *sql.Tx, advID, userID int64, env *graph.Envelope, media []exportGraphMedia, assets map[string][]byte) error {
+	if env.Format != graph.FormatV2 {
+		return badRequestf("unknown graph format: %s", env.Format)
+	}
+	g := &env.Graph
+	g.Normalize()
+	ids := make(map[int64]int64, len(media))
+	for _, m := range media {
+		switch m.Kind {
+		case graph.MediaImage, graph.MediaAudio, graph.MediaVideo:
+		default:
+			return badRequestf("graph media %q has unknown kind %q", m.File, m.Kind)
+		}
+		if !strings.HasPrefix(m.MimeType, string(m.Kind)+"/") {
+			return badRequestf("graph media %q: mime type %q is not %s", m.File, m.MimeType, m.Kind)
+		}
+		b, ok := assets[m.File]
+		if !ok {
+			return badRequestf("graph media %q missing from archive", m.File)
+		}
+		id, err := insertGraphMedia(ctx, tx, advID, userID, m.Kind, m.MimeType, b)
+		if err != nil {
+			return fmt.Errorf("insert graph media %q: %w", m.File, err)
+		}
+		ids[m.ID] = id
+	}
+	// Every id must be one the archive supplied: an unmapped one could
+	// happen to name a row just inserted, and show the wrong file.
+	for _, id := range g.MediaIDs() {
+		if _, ok := ids[id]; !ok && id != 0 {
+			return badRequestf("graph refers to media %d not in graph_media", id)
+		}
+	}
+	remapGraphMedia(g, ids)
+	if _, _, err := graphstore.SaveDraft(ctx, tx, advID, userID, g); err != nil {
+		return fmt.Errorf("save graph draft: %w", err)
+	}
+	var invalid *graphstore.InvalidError
+	if _, _, err := graphstore.Publish(ctx, tx, advID, userID, g, ""); err != nil && !errors.As(err, &invalid) {
+		return fmt.Errorf("publish graph: %w", err)
 	}
 	return nil
 }

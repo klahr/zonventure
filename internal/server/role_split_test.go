@@ -28,9 +28,6 @@ func TestCreate_RequiresAuthor(t *testing.T) {
 	if s := member.do("POST", "/api/admin/adventures", map[string]any{"slug": "m-trip", "title": "M"}, nil); s != 403 {
 		t.Errorf("member create adventure = %d, want 403", s)
 	}
-	if s := member.do("POST", "/api/admin/puzzles", map[string]any{"title": "p", "prompt": "p", "lat": 0, "lng": 0}, nil); s != 403 {
-		t.Errorf("member create puzzle = %d, want 403", s)
-	}
 }
 
 // TestLobby_CannotReachContent: a user with no organisation passes the
@@ -48,7 +45,7 @@ func TestLobby_CannotReachContent(t *testing.T) {
 	if s := c.do("POST", "/api/auth/login", map[string]string{"username": "drifter", "password": "longpw01"}, nil); s != 200 {
 		t.Fatalf("login = %d", s)
 	}
-	for _, path := range []string{"/api/admin/adventures", "/api/admin/puzzles"} {
+	for _, path := range []string{"/api/admin/adventures"} {
 		if s := c.do("GET", path, nil, nil); s != 403 {
 			t.Errorf("GET %s = %d, want 403", path, s)
 		}
@@ -115,8 +112,6 @@ func TestAdmin_CannotAuthorOrRunEvents(t *testing.T) {
 		{"GET", "/api/admin/adventures/demo/graph"},
 		{"PUT", "/api/admin/adventures/demo/graph"},
 		{"POST", "/api/admin/adventures/demo/pages"},
-		{"GET", "/api/admin/puzzles"},
-		{"POST", "/api/admin/puzzles"},
 		{"GET", "/api/admin/events"},
 		{"POST", "/api/admin/events"},
 		{"GET", "/api/admin/events/" + itoa(ev.ID)},

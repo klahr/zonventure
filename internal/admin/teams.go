@@ -15,6 +15,7 @@ import (
 	"github.com/klahr/zonventure/internal/httpx"
 	"github.com/klahr/zonventure/internal/imageutil"
 	"github.com/klahr/zonventure/internal/lanes"
+	"github.com/klahr/zonventure/internal/play"
 	"github.com/klahr/zonventure/internal/storage"
 	"github.com/klahr/zonventure/internal/webhooks"
 	"github.com/klahr/zonventure/internal/ws"
@@ -345,6 +346,16 @@ func (h *Handlers) UnlockTeam(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !h.requireEventOp(w, r.Context(), eventID, OpUnlockTeam) {
+		return
+	}
+	// This moves a lane cursor, and on the last page finishes the team
+	// and maybe the event. A graph team has no lane cursor, and finishing
+	// it here would end its game behind the engine's back.
+	if uses, err := play.UsesGraph(r.Context(), h.DB, eventID); err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "lookup failed")
+		return
+	} else if uses {
+		httpx.Error(w, http.StatusConflict, "this event plays a designed adventure, where skipping a step is not available")
 		return
 	}
 	var (

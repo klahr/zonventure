@@ -1293,8 +1293,7 @@ textarea { min-height: 80px; resize: vertical; font-family: ui-monospace, monosp
 }
 
 /* Split-button pattern: a primary action with a chevron that reveals
-   a small popover of alternate options. Used for "Add puzzle" where
-   the secondary path is "Copy from library…". */
+   a small popover of alternate options. */
 .split-btn { position: relative; display: inline-flex; }
 .split-btn > .btn.primary { border-top-right-radius: 0; border-bottom-right-radius: 0; }
 .split-btn > .split-btn-toggle {
@@ -4084,7 +4083,6 @@ function currentCrumb() {
   if (section === 'store' && parts[1]) return t('{{section}} / {{slug}}', { section: sectionLabel, slug: parts[1] });
   // #library/<slug> is an adventure, not a puzzle.
   if (section === 'library' && parts[1]) return t('{{section}} / {{slug}}', { section: sectionLabel, slug: parts[1] });
-  if (section === 'puzzles' && parts[1]) return t('{{section}} / Puzzle #{{id}}', { section: sectionLabel, id: parts[1] });
   if (section === 'webhooks' && parts[1] === 'log' && parts[2]) {
     return t('{{section}} / Log #{{id}}', { section: sectionLabel, id: parts[2] });
   }
@@ -4106,7 +4104,7 @@ async function renderRoute() {
   // reaches an org's events and the catalog from Organizations.
   const adminOnly = ['organizations', 'admins', 'logs'];
   const orgUserOnly = ['adventures', 'store', 'catalog', 'webhooks', 'events', 'quests',
-    'library', 'puzzles', 'simulator'];
+    'library', 'simulator'];
   // Lobby users (no memberships) only have Dashboard + Settings to
   // navigate. Anything else gets redirected back to the empty-state
   // dashboard rather than 4xx-ing on the API call inside the view.
@@ -4193,7 +4191,6 @@ async function renderRoute() {
         ? await viewOrganizationDetail(view, parseInt(arg, 10))
         : await viewOrganizations(view);
       case 'library':      if (!arg) { nav('#adventures'); return; } return await viewLibraryEdit(view, arg);
-      case 'puzzles':      return arg ? await viewPuzzleEditRoute(view, arg) : await viewPuzzles(view);
       case 'logs':         return await viewLogs(view);
       case 'manual':       return viewManual(view, arg);
       case 'settings':     return await viewSettings(view, arg);
@@ -4903,7 +4900,6 @@ function renderAdventureTabs(active) {
   return h('div', { class: 'lib-tabs', style: 'margin-bottom:1rem' },
     tab('yours',   t('Yours'),   '#adventures'),
     tab('catalog', t('Catalog'), '#catalog'),
-    tab('puzzles', t('Puzzles'), '#puzzles'),
   );
 }
 
@@ -5017,7 +5013,20 @@ async function viewCatalogDetail(view, slug) {
   const r = await api('/api/admin/adventures/' + encodeURIComponent(slug));
   if (!r.ok) { view.replaceChildren(h('p', { class: 'err' }, r.body?.error || t('not found'))); return; }
   const a = r.body;
-  const pages = (a.pages || []).filter((p) => !p.disabled);
+  // A published graph is what plays: its puzzles stand in for pages, in
+  // the page shape computeAdventureFacts reads (a zone is a gate).
+  const g = a.graph || null;
+  const zoneOf = new Map(((g && g.zones) || []).map((z) => [z.slug, z]));
+  const pages = g
+    ? g.steps.filter((st) => st.type === 'puzzle').map((st) => {
+        const z = zoneOf.get(st.zone);
+        return {
+          title: st.title, gated: !!z,
+          location: z ? { lat: z.lat, lng: z.lng, radius_m: z.radius_m } : null,
+          images: Array(st.pictures || 0).fill(0), audio: Array(st.sounds || 0).fill(0), hints: Array(st.hints || 0).fill({}),
+        };
+      })
+    : (a.pages || []).filter((p) => !p.disabled);
   const facts = computeAdventureFacts(pages);
 
   // ── Hero card: cover, title, slug+author meta, big Buy CTA, blurb.
@@ -5034,7 +5043,8 @@ async function viewCatalogDetail(view, slug) {
         // share-holders, full-fidelity for authors. Catalog browsers
         // who haven't bought see a 403 from the preview endpoint —
         // matches the policy we just locked in on the server.
-        h('a', {
+        // The lane preview; a graph adventure has none to show.
+        g ? null : h('a', {
           class: 'btn',
           href: '/play?preview=' + encodeURIComponent(a.slug) + '&page=0',
           target: '_blank',
@@ -5808,7 +5818,11 @@ async function viewAdventureDetail(view, slug) {
   const r = await api('/api/admin/adventures/' + encodeURIComponent(slug));
   if (!r.ok) { view.replaceChildren(h('p', { class: 'err' }, r.body?.error || t('not found'))); return; }
   const a = r.body;
-  const pages = a.pages || [];
+  // An adventure with a published graph plays the graph, whatever lane
+  // pages it still has from before: those are never shown to a team
+  // again, so the page describes the graph instead.
+  const g = a.graph || null;
+  const pages = g ? [] : (a.pages || []);
 
   // ---- Hero: cover + title + status pills + CTAs ----
   const pills = [];
@@ -5839,11 +5853,18 @@ async function viewAdventureDetail(view, slug) {
       href: designerURL(a.slug),
       title: t('Design the adventure as a flow of steps'),
     }, icon(ICONS.flow), t('Open designer')));
-    ctas.append(h('button', {
+    // The classic editor edits lane pages, which a graph adventure
+    // never plays; the server refuses its edits.
+    if (!g) ctas.append(h('button', {
       class: 'btn',
       title: t('The older editor: puzzles in lanes'),
       on: { click: () => nav('#library/' + encodeURIComponent(a.slug)) },
     }, icon(ICONS.pencil), t('Classic editor')));
+    else ctas.append(h('a', {
+      class: 'btn',
+      href: designerURL(a.slug),
+      title: t('Play it through in the designer’s simulator'),
+    }, icon(ICONS.eye), t('Test play in designer')));
   } else {
     ctas.append(h('button', {
       class: 'btn primary',
@@ -5883,7 +5904,15 @@ async function viewAdventureDetail(view, slug) {
   );
 
   // ---- Quick stats: puzzle count, gated count, max extent ----
-  const enabled = pages.filter((p) => !p.disabled);
+  // For a graph, its zones stand in for gated pages: each step with a
+  // zone becomes a pin, so the stats, extent and map below work as for
+  // lanes.
+  const zoneBySlug = new Map(((g && g.zones) || []).map((z) => [z.slug, z]));
+  const graphPins = g ? g.steps.filter((st) => zoneBySlug.has(st.zone)).map((st, i) => {
+    const z = zoneBySlug.get(st.zone);
+    return { index: i, title: st.title || z.name || st.slug, gated: true, location: { lat: z.lat, lng: z.lng, radius_m: z.radius_m } };
+  }) : [];
+  const enabled = g ? graphPins : pages.filter((p) => !p.disabled);
   const gatedCount = enabled.filter((p) => p.gated).length;
   // Max distance between any two pins — the rough "how big is this
   // adventure on the ground" number. O(n^2) is fine for the adventure
@@ -5899,9 +5928,11 @@ async function viewAdventureDetail(view, slug) {
       if (d > maxKm) maxKm = d;
     }
   }
+  const puzzleCount = g ? g.puzzle_count : enabled.length;
+  const placeCount = g ? new Set(g.steps.map((st) => st.zone).filter((z) => zoneBySlug.has(z))).size : gatedCount;
   const stats = h('div', { class: 'adv-stats' },
-    statBlock(String(enabled.length), enabled.length === 1 ? t('puzzle') : t('puzzles')),
-    statBlock(String(gatedCount), gatedCount === 1 ? t('place to reach') : t('places to reach')),
+    statBlock(String(puzzleCount), puzzleCount === 1 ? t('puzzle') : t('puzzles')),
+    statBlock(String(placeCount), placeCount === 1 ? t('place to reach') : t('places to reach')),
     maxKm > 0 ? statBlock(formatKm(maxKm), t('across')) : null,
   );
 
@@ -5934,7 +5965,7 @@ async function viewAdventureDetail(view, slug) {
   const mapCard = h('div', { class: 'card' },
     h('h2', { style: 'margin:0 0 .5rem' }, t('Map')),
     h('p', { class: 'muted', style: 'font-size:.85rem; margin:0 0 .5rem' },
-      t('All puzzle locations. Click a pin to jump to that puzzle.')),
+      g ? t('Where the steps happen: the zones teams must reach.') : t('All puzzle locations. Click a pin to jump to that puzzle.')),
     mapHost);
 
   // ---- Puzzle cards ----
@@ -5958,7 +5989,9 @@ async function viewAdventureDetail(view, slug) {
       t('Puzzles ({{n}})', { n: count })),
   );
   let puzzleSection;
-  if (lanes.length <= 1) {
+  if (g) {
+    // A graph lists its steps instead (stepList below).
+  } else if (lanes.length <= 1) {
     const cards = enabled.map((p, i) => renderPuzzleCard(p, i, { mode: 'detail' }));
     puzzleSection = h('div', { class: 'adv-puzzles' }, ...cards);
   } else {
@@ -5995,7 +6028,7 @@ async function viewAdventureDetail(view, slug) {
   // so a browser of someone else's adventure doesn't see controls
   // they can't (and shouldn't) drive against an org-mate's run.
   const canSimulate = enabled.length > 0 && (a.mine_to_edit || a.shared);
-  const simHost = canSimulate ? h('div', { class: 'card' }) : null;
+  const simHost = canSimulate && !g ? h('div', { class: 'card' }) : null;
   if (simHost) mountSimulatorPanel(simHost, a.slug);
 
   // ---- Starting-location card ----
@@ -6011,7 +6044,7 @@ async function viewAdventureDetail(view, slug) {
   if (typeof a.start_lat === 'number' && typeof a.start_lng === 'number') {
     startCoords = { lat: a.start_lat, lng: a.start_lng };
     startLabel  = a.start_label || '';
-  } else {
+  } else if (!g) {
     const firstGated = enabled.find((p) => p.gated && p.location && typeof p.location.lat === 'number');
     if (firstGated) {
       startCoords = { lat: firstGated.location.lat, lng: firstGated.location.lng };
@@ -6042,10 +6075,21 @@ async function viewAdventureDetail(view, slug) {
   // An adventure made in the designer has no lane pages: the stats, map
   // and puzzle list above would all read zero. Say what the designer
   // holds instead — how much is there, and whether events can play it.
-  const designed = pages.length === 0;
+  const designed = pages.length === 0 && !g;
   const flowCard = designed ? h('section', { class: 'card' },
     h('h2', { style: 'margin:0 0 .5rem' }, t('Steps')),
     h('p', { class: 'muted' }, t('Loading…'))) : null;
+  // A published graph: its steps, in order, where a lane adventure lists
+  // its puzzles.
+  const stepKind = { puzzle: t('Puzzle'), story: t('Story'), hub: t('Choice'), end: t('End') };
+  const stepList = g ? h('div', { class: 'card', style: 'display:grid; gap:.4rem' },
+    g.steps.length === 0 ? h('p', { class: 'muted', style: 'margin:0' }, t('Nothing designed yet.')) : null,
+    ...g.steps.map((st) => h('div', { class: 'row', style: 'gap:.6rem; align-items:baseline' },
+      h('span', { class: 'pill', style: 'min-width:4.5rem; text-align:center' }, stepKind[st.type] || st.type),
+      h('strong', {}, st.title || st.slug),
+      zoneBySlug.has(st.zone) ? h('span', { class: 'muted', style: 'font-size:.85rem' }, '· ' + (zoneBySlug.get(st.zone).name || st.zone)) : null)),
+    g.has_quiz ? h('p', { class: 'muted', style: 'margin:.35rem 0 0; font-size:.85rem' }, t('Includes a quiz walk.')) : null,
+  ) : null;
   if (designed) {
     (async () => {
       const g = a.mine_to_edit ? await api('/api/admin/adventures/' + encodeURIComponent(a.slug) + '/graph') : null;
@@ -6071,15 +6115,15 @@ async function viewAdventureDetail(view, slug) {
     story,
     startCard,
     flowCard,
-    designed ? null : mapCard,
+    designed || (g && !enabled.length) ? null : mapCard,
     simHost,
-    designed ? null : h('h2', { style: 'margin-top:1.5rem' }, t('Puzzles')),
-    designed ? null : puzzleSection,
+    designed ? null : h('h2', { style: 'margin-top:1.5rem' }, g ? t('Steps') : t('Puzzles')),
+    designed ? null : (g ? stepList : puzzleSection),
   ].filter(Boolean));
 
   // Mount the map after the DOM lands so Leaflet has a sized
   // container — same trick the run-detail map uses.
-  if (!designed) setTimeout(() => mountAdventureMap(mapHost, enabled, a.colors), 0);
+  if (!designed && enabled.length) setTimeout(() => mountAdventureMap(mapHost, enabled, a.colors), 0);
 }
 
 // statBlock is a small bordered tile rendering a value + label.
@@ -7767,7 +7811,7 @@ function renderEventAdventureStrip(adventure, event) {
     h('div', { class: 'event-adv-meta' },
       h('div', { class: 'event-adv-title' }, adventure.title || event.adventure_slug),
       h('div', { class: 'muted', style: 'font-size:.8rem' },
-        t('{{n}} puzzles', { n: adventure.page_count || (adventure.pages || []).length }),
+        t('{{n}} puzzles', { n: isGraphEvent(event) ? (event.graph?.puzzle_count || 0) : (adventure.page_count || (adventure.pages || []).length) }),
         adventure.author ? ' · ' + adventure.author : '',
         adventure.language ? ' · ' : null,
         adventure.language
@@ -7853,15 +7897,38 @@ function fmtElapsedShort(sec) {
 // completed/cancelled.
 function renderEventResultsCard(event, teams) {
   if (event.state !== 'completed' && event.state !== 'cancelled') return null;
+  const recapURL = (tok) => `${location.origin}/recap/${encodeURIComponent(tok)}`;
+  const recapLink = (tm) => tm.recap_token
+    ? h('a', { class: 'results-recap', href: recapURL(tm.recap_token), target: '_blank', rel: 'noopener' }, icon(ICONS.eye), t('Recap'))
+    : null;
+  const list = h('ol', { class: 'results-list' });
+  if (isGraphEvent(event)) {
+    // Ranked by points, as the leaderboard and the CSV rank them; level
+    // teams share a place. Teams that never started or withdrew have no
+    // rank and follow.
+    const ranked = teams.filter((tm) => tm.rank).sort((a, b) => a.rank - b.rank || a.name.localeCompare(b.name));
+    const rest = teams.filter((tm) => !tm.rank);
+    for (const tm of ranked) {
+      list.append(h('li', {},
+        h('span', { class: 'results-rank' }, '#' + tm.rank),
+        h('strong', { class: 'results-name' }, tm.name),
+        h('span', { class: 'muted', style: 'font-size:.8rem' }, ' · ', t('{{n}} points', { n: fmtPoints(tm.score || 0) }), ' · ',
+          tm.completed_at ? t('finished {{when}}', { when: fmtLocal(tm.completed_at) }) : t('did not finish')),
+        ' ', recapLink(tm)));
+    }
+    for (const tm of rest) {
+      list.append(h('li', { class: 'results-dnf' },
+        h('span', { class: 'results-rank muted' }, '—'),
+        h('strong', { class: 'results-name' }, tm.name),
+        h('span', { class: 'muted', style: 'font-size:.8rem' }, ' · ', tm.withdrawn_at ? t('withdrew') : t('did not start'))));
+    }
+  } else {
   const finished = teams.filter((tm) => tm.completed_at)
     .slice()
     .sort((a, b) => (a.completed_at || '').localeCompare(b.completed_at || ''));
   const unfinished = teams.filter((tm) => !tm.completed_at)
     .slice()
     .sort((a, b) => b.page_index - a.page_index);
-  const recapURL = (tok) => `${location.origin}/recap/${encodeURIComponent(tok)}`;
-
-  const list = h('ol', { class: 'results-list' });
   finished.forEach((tm, i) => {
     const li = h('li', {},
       h('span', { class: 'results-rank' }, '#' + (i + 1)),
@@ -7882,6 +7949,7 @@ function renderEventResultsCard(event, teams) {
       h('span', { class: 'muted', style: 'font-size:.8rem' },
         ' · ', t('reached puzzle {{i}}', { i: tm.page_index + 1 }))));
   });
+  }
 
   const copyAllBtn = h('button', { class: 'btn small', type: 'button' },
     icon(ICONS.copy), t('Copy recap links'));
@@ -7925,6 +7993,9 @@ async function viewRunDetail(view, runID) {
   ]);
   if (!detail.ok) { view.replaceChildren(h('p', { class: 'err' }, detail.body?.error || t('not found'))); return; }
   const event = detail.body.event;
+  // A graph event's steps and zones travel with it, for the helpers
+  // below (teamProgress, renderEventFeed) that draw either engine.
+  event.graph = detail.body.graph || null;
   const teams = detail.body.teams || [];
   const events = eventsR.body?.events || [];
 
@@ -8189,12 +8260,12 @@ async function viewRunDetail(view, runID) {
     teamsTableHost.append(h('table', { class: 'table' },
       h('thead', {}, h('tr', {},
         h('th', {}, t('Team')),
-        h('th', {}, t('Puzzle')),
+        h('th', {}, isGraphEvent(event) ? t('Progress') : t('Puzzle')),
         h('th', { class: 'hide-narrow' }, t('Activity')),
         h('th', {}, ''))),
       h('tbody', {}, filtered.map((tm) => {
         const i = teamIndex.get(tm.id) ?? 0;
-        const page = adventure?.pages?.[tm.page_index];
+        const progress = teamProgress(event, tm, adventure);
         const lastEv = lastEventByTeam.get(tm.id);
         const lastMs = lastEv ? Date.parse(serverISO(lastEv)) : null;
         const stuck = event.state === 'running' && !tm.completed_at && lastMs != null && (Date.now() - lastMs) > STUCK_MS;
@@ -8224,15 +8295,9 @@ async function viewRunDetail(view, runID) {
                   h('a', { href: 'mailto:' + tm.email, style: 'color:inherit; text-decoration:none' }, tm.email))
               : null),
           h('td', {},
-            h('div', { class: 'mono' },
-              adventure?.pages
-                ? t('{{i}} / {{n}}', {
-                    i: Math.min(tm.page_index + 1, adventure.pages.length),
-                    n: adventure.pages.length,
-                  })
-                : tm.page_index),
-            page && !tm.completed_at
-              ? h('div', { class: 'muted', style: 'font-size:.85rem' }, page.title || t('(untitled)'))
+            h('div', { class: 'mono' }, progress.main),
+            progress.step
+              ? h('div', { class: 'muted', style: 'font-size:.85rem' }, progress.step)
               : null),
           h('td', { class: 'hide-narrow muted', style: 'font-size:.85rem' },
             lastEv ? fmtLocal(lastEv) : t('—')),
@@ -8322,7 +8387,7 @@ async function viewRunDetail(view, runID) {
   // pinned above.
   const eventLogCard = h('div', { class: 'card' },
     h('h2', { style: 'margin:0 0 .5rem' }, t('Event log')),
-    h('div', { class: 'event-log-body' }, renderEventFeed(events, teams)));
+    h('div', { class: 'event-log-body' }, renderEventFeed(events, teams, event)));
 
   // Page composition diverges by event type:
   //   • Quests — adventure strip + quick stats sit at the top so the
@@ -8382,6 +8447,9 @@ async function viewEventControl(view, runID) {
     return;
   }
   const event = detail.body.event;
+  // A graph event's steps and zones travel with it, for the helpers
+  // below (teamProgress, renderEventFeed) that draw either engine.
+  event.graph = detail.body.graph || null;
   const teams = detail.body.teams || [];
   const tracks = tracksR.body?.tracks || [];
   const events = eventsR.body?.events || [];
@@ -8575,7 +8643,11 @@ async function viewEventControl(view, runID) {
   };
   const canWithdraw = (event.allowed_ops || []).includes('withdraw_team');
   const buildLeaderboard = () => {
+    const graphEvent = isGraphEvent(event);
     const visible = teams.filter(teamMatches).slice().sort((a, b) => {
+      // A graph event ranks by points (the server's rank; level teams
+      // share it), with teams that never started or withdrew last.
+      if (graphEvent) return (a.rank || Infinity) - (b.rank || Infinity) || a.name.localeCompare(b.name);
       const ra = teamRank(a), rb = teamRank(b);
       if (ra !== rb) return ra - rb;
       if (ra === 0) return (a.completed_at || '').localeCompare(b.completed_at || '');
@@ -8590,7 +8662,7 @@ async function viewEventControl(view, runID) {
             h('thead', {}, h('tr', {},
               h('th', {}, '#'),
               h('th', {}, t('Team')),
-              h('th', {}, t('Puzzle')),
+              h('th', {}, graphEvent ? t('Progress') : t('Puzzle')),
               h('th', { class: 'hide-narrow' }, t('Last activity')),
               h('th', {}, ''))),
             h('tbody', {}, visible.map((tm, rank) => {
@@ -8598,8 +8670,9 @@ async function viewEventControl(view, runID) {
               const lastEv = lastEventByTeam.get(tm.id);
               const withdrawn = !!tm.withdrawn_at;
               const rowStyle = withdrawn ? 'opacity:.55' : '';
+              const progress = teamProgress(event, tm, adventure);
               return h('tr', { style: rowStyle },
-                h('td', { class: 'mono' }, '#' + (rank + 1)),
+                h('td', { class: 'mono' }, graphEvent ? (tm.rank ? '#' + tm.rank : '—') : '#' + (rank + 1)),
                 h('td', {},
                   h('span', { style: 'display:inline-flex; align-items:center; gap:.5rem' },
                     h('span', { class: 'sw', style: `background:${teamColor(tm.id, i)}` }),
@@ -8610,13 +8683,9 @@ async function viewEventControl(view, runID) {
                   withdrawn
                     ? h('span', { class: 'pill', style: 'margin-left:.4rem' }, t('withdrew'))
                     : null),
-                h('td', { class: 'mono' },
-                  adventure?.pages
-                    ? t('{{i}} / {{n}}', {
-                        i: Math.min(tm.page_index + 1, adventure.pages.length),
-                        n: adventure.pages.length,
-                      })
-                    : tm.page_index),
+                h('td', {},
+                  h('div', { class: 'mono' }, progress.main),
+                  progress.step ? h('div', { class: 'muted', style: 'font-size:.85rem' }, progress.step) : null),
                 h('td', { class: 'hide-narrow muted', style: 'font-size:.85rem' },
                   lastEv ? fmtLocal(lastEv) : t('—')),
                 // Withdraw / un-withdraw is the per-row action surface.
@@ -8629,7 +8698,7 @@ async function viewEventControl(view, runID) {
                         ? iconBtn('back', t('Mark returned'),
                             () => unwithdrawTeam(event.id, tm))
                         : iconBtn('moon', t('Mark withdrawn'),
-                            () => confirmWithdrawTeam(event.id, tm)))
+                            () => confirmWithdrawTeam(event.id, tm, event)))
                     : null),
               );
             }))))
@@ -8654,7 +8723,7 @@ async function viewEventControl(view, runID) {
       h('h2', { style: 'margin:0 0 .5rem' }, t('Activity')),
       visibleEvents.length === 0
         ? h('p', { class: 'muted', style: 'margin:0' }, t('No activity yet.'))
-        : h('div', { class: 'control-scroll' }, renderEventFeed(visibleEvents, teams)),
+        : h('div', { class: 'control-scroll' }, renderEventFeed(visibleEvents, teams, event)),
     );
   };
 
@@ -8683,7 +8752,7 @@ async function viewEventControl(view, runID) {
     const visibleTeams = teams.filter(teamMatches);
     const visibleIDs = new Set(visibleTeams.map((tm) => tm.id));
     const visibleTracks = tracks.filter((tr) => visibleIDs.has(tr.team_id));
-    mapInstance = initRunMap(mapHost, adventure, visibleTeams, visibleTracks);
+    mapInstance = initRunMap(mapHost, adventure, visibleTeams, visibleTracks, isGraphEvent(event) ? (event.graph?.zones || []) : null);
   };
 
   // === Compose + render ===
@@ -8713,7 +8782,9 @@ async function viewEventControl(view, runID) {
 // rejects L.map() on a host that already has a map attached, and a
 // silent failure is exactly what causes filter changes to look like
 // they don't apply.
-function initRunMap(host, adventure, teams, tracks) {
+// zones, for a graph event, are its graph's zones: drawn in place of lane
+// puzzle pins, which a graph event does not play.
+function initRunMap(host, adventure, teams, tracks, zones) {
   // Returned synchronously so the caller can `.remove()` even before
   // Leaflet loads. If a teardown lands first, we mark the handle and
   // bail out of buildMap; otherwise the real map.remove gets wired up
@@ -8728,7 +8799,7 @@ function initRunMap(host, adventure, teams, tracks) {
   };
   ensureLeaflet().then(() => {
     if (handle._tornDown) return;
-    handle._real = buildRunMap(host, adventure, teams, tracks);
+    handle._real = buildRunMap(host, adventure, teams, tracks, zones);
   }).catch(() => {
     if (handle._tornDown) return;
     host.replaceChildren(h('div', { class: 'empty' }, t('Map library failed to load — check your connection.')));
@@ -8736,14 +8807,23 @@ function initRunMap(host, adventure, teams, tracks) {
   return handle;
 }
 
-function buildRunMap(host, adventure, teams, tracks) {
+function buildRunMap(host, adventure, teams, tracks, zones) {
   const map = L.map(host, { scrollWheelZoom: false }).setView([58.1820, 13.9554], 14);
   addOSMTiles(map);
 
   const bounds = L.latLngBounds([]);
 
-  // Puzzle markers.
-  for (const p of (adventure.pages || [])) {
+  // A graph event's zones: a polygon, or a circle, named.
+  for (const z of (zones || [])) {
+    const shape = (z.polygon || []).length >= 3
+      ? L.polygon(z.polygon, { color: '#ad1357', weight: 2, fillOpacity: .12 })
+      : L.circle([z.lat, z.lng], { radius: z.radius_m || 20, color: '#ad1357', weight: 2, fillOpacity: .12 });
+    shape.addTo(map).bindPopup(`<strong>${esc(z.name || z.slug)}</strong>`);
+    bounds.extend(shape.getBounds());
+  }
+
+  // Puzzle markers — lane events only.
+  for (const p of (zones ? [] : (adventure.pages || []))) {
     const ll = [p.location.lat, p.location.lng];
     const marker = L.marker(ll, {
       icon: L.divIcon({
@@ -8812,14 +8892,41 @@ function buildRunMap(host, adventure, teams, tracks) {
 }
 
 // renderEventFeed turns the run_events JSON into a readable timeline.
-function renderEventFeed(events, teams) {
+// isGraphEvent: the event plays a designed adventure (a graph), whose
+// teams have points and a current step rather than a lane page.
+const isGraphEvent = (event) => event?.engine === 'graph';
+
+// stepTitle names one of a graph event's steps.
+const stepTitle = (event, slug) => event?.graph?.titles?.[slug] || slug || '';
+
+const fmtPoints = (n) => (Number.isInteger(n) ? String(n) : Number(n || 0).toFixed(1));
+
+// teamProgress is how far a team has got, for either engine: the main
+// figure (points, or "i / n" puzzles), the step it is on, and whether it
+// is done. Lane progress is the page cursor; a graph team's is its score
+// and current step, which the page cursor never tracks.
+function teamProgress(event, tm, adventure) {
+  if (isGraphEvent(event)) {
+    const done = !!tm.completed_at || !!tm.outcome;
+    return { main: t('{{n}} points', { n: fmtPoints(tm.score || 0) }), step: done ? '' : stepTitle(event, tm.node), done };
+  }
+  const pages = adventure?.pages || [];
+  const done = !!tm.completed_at || (pages.length > 0 && tm.page_index >= pages.length);
+  return {
+    main: pages.length ? t('{{i}} / {{n}}', { i: Math.min(tm.page_index + 1, pages.length), n: pages.length }) : String(tm.page_index),
+    step: done ? '' : (pages[tm.page_index]?.title || ''),
+    done,
+  };
+}
+
+function renderEventFeed(events, teams, event) {
   if (!events.length) return h('div', { class: 'empty' }, t('No activity yet.'));
   const ul = h('ul', { class: 'feed' });
-  for (const e of events) ul.append(renderEvent(e, teams));
+  for (const e of events) ul.append(renderEvent(e, teams, event));
   return ul;
 }
 
-function renderEvent(e, teams) {
+function renderEvent(e, teams, event) {
   const p = e.payload || {};
   let badge = 'neutral', symbol = '•', msg, meta;
   const team = h('strong', {}, e.team_name || '');
@@ -8844,10 +8951,14 @@ function renderEvent(e, teams) {
     case 'team.member.removed':
       badge = 'neutral'; symbol = '−'; msg = h('span', { class: 'msg' }, t('Removed '), h('strong', {}, p.username || ''), t(' from '), h('strong', {}, e.team_name || '')); break;
     case 'answer.wrong':
-      badge = 'bad'; symbol = '✗'; msg = h('span', { class: 'msg' }, team, t(' wrong on puzzle {{n}}', { n: (p.page_index ?? 0) + 1 }));
+      badge = 'bad'; symbol = '✗'; msg = h('span', { class: 'msg' }, team, p.node
+        ? t(' wrong on “{{step}}”', { step: stepTitle(event, p.node) })
+        : t(' wrong on puzzle {{n}}', { n: (p.page_index ?? 0) + 1 }));
       if (p.submitted) meta = t('submitted “{{answer}}”', { answer: p.submitted }); break;
     case 'answer.right':
-      badge = 'good'; symbol = '✓'; msg = h('span', { class: 'msg' }, team, t(' solved puzzle {{n}}', { n: (p.page_index ?? 0) + 1 })); break;
+      badge = 'good'; symbol = '✓'; msg = h('span', { class: 'msg' }, team, p.node
+        ? t(' solved “{{step}}”', { step: stepTitle(event, p.node) })
+        : t(' solved puzzle {{n}}', { n: (p.page_index ?? 0) + 1 })); break;
     case 'team.completed':
       badge = 'good'; symbol = '★'; msg = h('span', { class: 'msg' }, team, t(' finished the adventure!')); break;
     case 'team.unlocked':
@@ -9243,9 +9354,10 @@ async function openTeamDetail(runID, team, adventure, event) {
   // Fetch events filtered to this team.
   const evR = await api(`/api/admin/events/${runID}/activity?team_id=${team.id}`);
   const events = evR.body?.events || [];
-  const page = adventure?.pages?.[team.page_index];
+  const graphEvent = isGraphEvent(event);
+  const page = graphEvent ? null : adventure?.pages?.[team.page_index];
   const last = adventure?.pages ? adventure.pages.length : null;
-  const finished = team.completed_at || (last !== null && team.page_index >= last);
+  const finished = graphEvent ? teamProgress(event, team, adventure).done : (team.completed_at || (last !== null && team.page_index >= last));
 
   await modal(t('Team · {{name}}', { name: team.name }), ({ body, close }) => {
     const summary = h('div', { class: 'row between', style: 'margin-bottom:.75rem' },
@@ -9253,10 +9365,13 @@ async function openTeamDetail(runID, team, adventure, event) {
         h('div', { class: 'muted', style: 'font-size:.8rem; text-transform:uppercase; letter-spacing:.05em; font-weight:700' },
           finished
             ? t('Finished')
-            : (last
-                ? t('Puzzle {{i}} of {{n}}', { i: team.page_index + 1, n: last })
-                : t('Puzzle {{i}}', { i: team.page_index + 1 }))),
+            : graphEvent
+              ? t('{{n}} points', { n: fmtPoints(team.score || 0) })
+              : (last
+                  ? t('Puzzle {{i}} of {{n}}', { i: team.page_index + 1, n: last })
+                  : t('Puzzle {{i}}', { i: team.page_index + 1 }))),
         page && !finished ? h('div', {}, h('strong', {}, page.title || t('(untitled)'))) : null,
+        graphEvent && !finished && team.node ? h('div', {}, h('strong', {}, stepTitle(event, team.node))) : null,
       ),
       h('div', {},
         (team.members || []).map((m) => h('span', { class: 'chip', style: 'margin-right:.25rem' }, m.name)),
@@ -9264,7 +9379,9 @@ async function openTeamDetail(runID, team, adventure, event) {
     );
 
     const actions = h('div', { class: 'row', style: 'margin-bottom:.75rem; flex-wrap:wrap' });
-    if (!finished && canDo(event, 'unlock_team')) {
+    // Skipping moves a lane cursor; the server refuses it for a graph
+    // event, so it is not offered there.
+    if (!finished && !graphEvent && canDo(event, 'unlock_team')) {
       // Alt-click skips the confirmation modal — faster when the
       // arranger is actively unsticking a team mid-event. Normal
       // click still goes through the confirm so a mis-tap doesn't
@@ -9289,7 +9406,7 @@ async function openTeamDetail(runID, team, adventure, event) {
       summary,
       actions,
       h('h3', {}, t('Activity')),
-      renderEventFeed(events, [team]),
+      renderEventFeed(events, [team], event),
       h('div', { class: 'row end', style: 'margin-top:1rem' },
         h('button', { class: 'btn', on: { click: () => close(null) } }, t('Close'))),
     );
@@ -9338,11 +9455,13 @@ async function skipPuzzle(team, close) {
 // that keeps the team visible in the recap (as "withdrew at puzzle N")
 // without removing them like a delete would. Reversible via the
 // "Mark returned" affordance until the event reaches a terminal state.
-async function confirmWithdrawTeam(eventID, team) {
+async function confirmWithdrawTeam(eventID, team, event) {
   const ok = await modal(t('Mark “{{name}}” as withdrawn?', { name: team.name }), ({ body, close }) => {
     body.append(
-      h('p', {}, t('They\'ll show in the recap as "withdrew at puzzle {{n}}". You can undo this if they return.',
-        { n: team.page_index + 1 })),
+      h('p', {}, isGraphEvent(event)
+        ? t('They\'ll show in the results as withdrawn, with the points they had. You can undo this if they return.')
+        : t('They\'ll show in the recap as "withdrew at puzzle {{n}}". You can undo this if they return.',
+          { n: team.page_index + 1 })),
       h('div', { class: 'row end' },
         h('button', { class: 'btn', on: { click: () => close(false) } }, t('Cancel')),
         h('button', { class: 'btn primary', on: { click: () => close(true) } }, t('Mark withdrawn'))));
@@ -11098,135 +11217,6 @@ async function revokeAssignment(orgID, assignmentID) {
   else toastErr(apiError(r));
 }
 
-/* ========== Puzzles (admin only) ==========
-   Cross-adventure library of every puzzle in the system. A puzzle with
-   no adventure is a "library" stub — captured quickly (often via the
-   Quick Puzzle FAB + GPS) to be fleshed out or copied into an
-   adventure later. */
-
-async function viewPuzzles(view) {
-  const r = await api('/api/admin/puzzles');
-  const puzzles = r.body?.puzzles || [];
-  const list = puzzles.length === 0
-    ? h('div', { class: 'empty' },
-        h('p', {}, t('No puzzles yet.')),
-        state.me?.role === 'org_admin'
-          ? h('button', { class: 'btn primary', on: { click: quickPuzzle } },
-              icon(ICONS.puzzle), t('Capture one at your location'))
-          : null)
-    : h('div', { class: 'grid cols-2' }, puzzles.map(renderPuzzleLibraryCard));
-  // Creating puzzles is authoring — org admins only.
-  const canAuthor = state.me?.role === 'org_admin';
-  view.replaceChildren(
-    h('div', { class: 'row between' },
-      h('h1', {}, t('Adventures')),
-      canAuthor
-        ? h('button', { class: 'btn primary', title: t('Capture a puzzle at your current location'),
-            on: { click: quickPuzzle } },
-            icon(ICONS.plus), t('New puzzle'))
-        : null),
-    renderAdventureTabs('puzzles'),
-    h('p', { class: 'muted' },
-      t('Your organization’s puzzles and the catalog’s. Unassigned ones sit in the library; the rest list the adventure they belong to. Copy a puzzle into a new adventure from the adventure editor.')),
-    list,
-  );
-}
-
-// pendingQuickPuzzleGPS is the in-flight GPS fix kicked off by a
-// quickPuzzle tap. The puzzle itself is created without waiting, so
-// the editor opens immediately; when the fix eventually arrives, the
-// matching editor applies it to the location — unless the author has
-// set it manually in the meantime.
-let pendingQuickPuzzleGPS = null; // { puzzleID, promise } | null
-
-// quickPuzzle creates a stub via POST /api/admin/puzzles and navigates
-// to the new puzzle's editor without waiting on GPS. A location fix is
-// requested in the background and applied by the editor if one arrives
-// before the author sets a location manually. Designed for the
-// "standing somewhere, want to remember this spot" flow — one tap
-// after the page is already loaded.
-async function quickPuzzle(ev) {
-  const btn = ev?.currentTarget;
-  if (btn) btn.disabled = true;
-  const gpsPromise = navigator.geolocation
-    ? new Promise((resolve) => {
-        navigator.geolocation.getCurrentPosition(
-          (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-          () => resolve(null),
-          { enableHighAccuracy: true, maximumAge: 10000, timeout: 30000 },
-        );
-      })
-    : Promise.resolve(null);
-  const r = await api('/api/admin/puzzles', {
-    method: 'POST',
-    body: JSON.stringify({}),
-  });
-  if (btn) btn.disabled = false;
-  if (r.status !== 201) { toastErr(apiError(r)); return; }
-  toastOk(t('Puzzle captured'));
-  pendingQuickPuzzleGPS = { puzzleID: r.body.id, promise: gpsPromise };
-  nav('#puzzles/' + r.body.id);
-}
-
-function renderPuzzleLibraryCard(p) {
-  const assignment = p.adventure_slug
-    ? h('span', { class: 'pill accent', title: t('Assigned to adventure') },
-        `${p.adventure_title} · #${(p.adventure_idx ?? 0) + 1}`)
-    : h('span', { class: 'pill' }, t('library'));
-  const subtitle = p.notes
-    ? h('p', { class: 'muted', style: 'font-style:italic' }, p.notes)
-    : p.prompt_html
-      ? h('div', { class: 'md-preview compact muted', style: 'max-height:4.5em; overflow:hidden', html: p.prompt_html })
-      : h('p', { class: 'muted' }, t('(no content yet)'));
-  return h('div', {
-    class: 'card clickable' + (p.disabled ? '' : ''),
-    style: p.disabled ? 'opacity:.6' : '',
-    on: { click: () => nav('#puzzles/' + p.id) },
-  },
-    h('div', { class: 'row between' },
-      h('h3', {}, p.title || t('(untitled)')),
-      h('div', { class: 'row' },
-        p.disabled ? h('span', { class: 'pill' }, t('disabled')) : null,
-        p.gated ? h('span', { class: 'pill warning' }, t('gated')) : null,
-        assignment)),
-    subtitle,
-    h('p', { class: 'muted mono', style: 'font-size:.8rem' },
-      `${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}`,
-      p.radius_m ? t(' · gate {{r}} m', { r: p.radius_m }) : '',
-      p.has_images ? t(' · has images') : ''),
-  );
-}
-
-// viewPuzzleEditRoute supports deep-linking #puzzles/<id> straight into
-// the editor. For an attached puzzle we also fetch the parent adventure
-// so the timeline can render the siblings; for a library puzzle we pass
-// adv=null and the editor renders in standalone mode.
-//
-// The Puzzles library is painted behind the modal so that when the
-// editor closes (Cancel, backdrop click, Esc) the user lands on the
-// list instead of a blank placeholder view.
-async function viewPuzzleEditRoute(view, pageID) {
-  await viewPuzzles(view);
-  const r = await api('/api/admin/puzzles/' + encodeURIComponent(pageID));
-  if (r.status !== 200) {
-    toastErr(r.body?.error || t('puzzle not found'));
-    return;
-  }
-  const page = r.body;
-  let adv = null;
-  if (page.adventure_slug) {
-    const er = await api('/api/admin/adventures/' + encodeURIComponent(page.adventure_slug) + '/edit');
-    if (er.ok) {
-      adv = er.body;
-      // Use the authoritative copy from the adventure so the editor
-      // and timeline agree on sibling page identities.
-      const fresh = adv.pages.find((pp) => pp.id === page.id);
-      if (fresh) Object.assign(page, fresh);
-    }
-  }
-  openEditPuzzle(adv, page);
-}
-
 // colorRow builds a labelled row with a type=color picker, a "use default"
 // reset button, and a live text readout. Empty initial means "use the
 // default theme" — the picker renders greyed so admins see the field is
@@ -11811,6 +11801,13 @@ function renderLibraryEdit(view, adv) {
   view.replaceChildren(...[
     h('button', { class: 'btn ghost small', on: { click: () => nav('#adventures') } },
       icon(ICONS.back), t('Back')),
+    // A published graph is what this adventure's events play; these lane
+    // pages are what it was before. The server refuses their edits.
+    adv.graph_published
+      ? h('div', { class: 'callout warn', style: 'margin:.5rem 0 1rem' },
+          t('This adventure is designed as steps and plays its published design. These puzzles are from before and can no longer be changed.'), ' ',
+          h('a', { href: designerURL(adv.slug) }, t('Open designer')))
+      : null,
     // Identity block: cover + title + status pill. Actions used to ride
     // alongside in a flex row, which on narrow viewports squeezed the
     // title against the buttons and forced unlabeled icons to carry the
@@ -11858,7 +11855,7 @@ function renderLibraryEdit(view, adv) {
       ? h('div', { class: 'empty' },
           h('p', {}, t('No puzzles yet.')),
           h('p', { class: 'muted', style: 'margin-top:.5rem' },
-            t('Use "Add puzzle" above to author a new one or copy from the library.')))
+            t('Use "Add puzzle" above to author a new one.')))
       : pagesArea,
     // "+ Add lane" lives below the puzzle area as a low-key button.
     // Visible even in single-lane mode — that's how arrangers
@@ -14136,126 +14133,11 @@ function moreMenu(items) {
   return wrap;
 }
 
-// addPuzzleButton renders a primary "Add puzzle" button with a small
-// chevron that opens a popover with the "Copy from library…" option.
-// The bulk of the authoring flow is blank-puzzle create, so the
-// primary click does that; the library import is the secondary path.
+// addPuzzleButton adds a blank puzzle to the adventure.
 function addPuzzleButton(adv) {
-  const wrap = h('div', { class: 'split-btn' });
-  const primary = h('button', { class: 'btn primary small' },
-    icon(ICONS.plus), t('Add puzzle'));
-  primary.addEventListener('click', () => openEditPuzzle(adv, null));
-  const toggle = h('button', {
-    class: 'btn primary small split-btn-toggle',
-    'aria-label': t('More options'),
-    title: t('More options'),
-  }, '▾');
-  const menu = h('div', { class: 'split-btn-menu', role: 'menu' });
-  menu.append(
-    h('button', { class: 'split-btn-item', role: 'menuitem' }, t('Copy from library…')),
-  );
-  const [libItem] = menu.querySelectorAll('.split-btn-item');
-  // Outside-click / Escape listeners live only while the menu is open,
-  // so re-rendered views don't pile up document listeners.
-  const onDocClick = (e) => { if (!wrap.contains(e.target)) close(); };
-  const onKey = (e) => { if (e.key === 'Escape') close(); };
-  const close = () => {
-    menu.classList.remove('open');
-    document.removeEventListener('click', onDocClick);
-    document.removeEventListener('keydown', onKey);
-  };
-  libItem.addEventListener('click', () => {
-    close();
-    openLibraryPicker(adv);
-  });
-  toggle.addEventListener('click', (e) => {
-    e.stopPropagation();
-    if (menu.classList.contains('open')) { close(); return; }
-    menu.classList.add('open');
-    document.addEventListener('click', onDocClick);
-    document.addEventListener('keydown', onKey);
-  });
-  wrap.append(primary, toggle, menu);
-  return wrap;
-}
-
-// openLibraryPicker lets the author attach a puzzle to this adventure
-// by deep-copying one out of the library (which here means every
-// puzzle in the system — the server handles the copy). Library puzzles
-// are offered first; already-assigned puzzles follow so the author can
-// duplicate a puzzle across adventures if they want.
-async function openLibraryPicker(adv) {
-  await modal(t('Pick a puzzle from the library'), async ({ body, close }) => {
-    body.append(h('p', { class: 'muted' }, t('Loading puzzles…')));
-    const r = await api('/api/admin/puzzles');
-    body.replaceChildren();
-    if (!r.ok) { body.append(h('p', { class: 'err' }, r.body?.error || t('load failed'))); return; }
-    const puzzles = (r.body?.puzzles || []).slice();
-    // Put library puzzles first so the common case is discoverable at
-    // a glance; attached puzzles follow for copy-across-adventures.
-    puzzles.sort((a, b) => (!!a.adventure_slug) - (!!b.adventure_slug));
-    if (puzzles.length === 0) {
-      body.append(h('p', {}, t('No puzzles in the library yet.')));
-      body.append(h('div', { class: 'row end' },
-        h('button', { class: 'btn', on: { click: () => close(null) } }, t('Close'))));
-      return;
-    }
-    // Filter input — case-insensitive search over title, notes, prompt
-    // and the source adventure's slug. Kept simple: re-renders the
-    // entire list on keystroke, the N is small.
-    const search = h('input', {
-      placeholder: t('Filter by title, notes or adventure'),
-      autofocus: true,
-      style: 'margin-bottom:.75rem',
-    });
-    const list = h('div', { style: 'display:grid; gap:.5rem; max-height:55vh; overflow-y:auto; padding-right:.25rem' });
-
-    const renderList = () => {
-      list.replaceChildren();
-      const q = search.value.trim().toLowerCase();
-      const matches = !q ? puzzles : puzzles.filter((p) => {
-        const hay = [p.title, p.notes, p.prompt, p.adventure_slug, p.adventure_title]
-          .filter(Boolean).join(' ').toLowerCase();
-        return hay.includes(q);
-      });
-      if (matches.length === 0) {
-        list.append(h('p', { class: 'muted' }, t('No matches.')));
-        return;
-      }
-      for (const p of matches) {
-        const label = p.adventure_slug
-          ? h('span', { class: 'pill', style: 'margin-left:.5rem' },
-              t('in {{title}} · #{{n}}', { title: p.adventure_title, n: (p.adventure_idx ?? 0) + 1 }))
-          : h('span', { class: 'pill accent', style: 'margin-left:.5rem' }, t('library'));
-        const card = h('div', { class: 'card clickable', style: 'padding:.6rem .9rem; margin:0' },
-          h('div', { class: 'row between' },
-            h('strong', {}, p.title || t('(untitled)')),
-            label),
-          p.notes || p.prompt ? h('p', { class: 'muted', style: 'margin:.25rem 0 0; font-size:.85rem; white-space:pre-wrap; overflow:hidden; max-height:2.4em' },
-            p.notes || p.prompt) : null,
-          h('p', { class: 'muted mono', style: 'margin:.25rem 0 0; font-size:.75rem' },
-            `${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}`));
-        card.addEventListener('click', async () => {
-          const rr = await api(`/api/admin/adventures/${encodeURIComponent(adv.slug)}/pages/copy-from/${p.id}`,
-            { method: 'POST' });
-          if (rr.status === 201) {
-            toastOk(t('Puzzle copied into adventure'));
-            close(true);
-            renderRoute();
-          } else {
-            toastErr(apiError(rr));
-          }
-        });
-        list.append(card);
-      }
-    };
-    search.addEventListener('input', renderList);
-    renderList();
-
-    body.append(search, list);
-    body.append(h('div', { class: 'row end', style: 'margin-top:1rem' },
-      h('button', { class: 'btn', on: { click: () => close(null) } }, t('Cancel'))));
-  }, { wide: true });
+  const button = h('button', { class: 'btn primary small' }, icon(ICONS.plus), t('Add puzzle'));
+  button.addEventListener('click', () => openEditPuzzle(adv, null));
+  return button;
 }
 
 // duplicatePuzzle clones one puzzle in place and reloads the editor

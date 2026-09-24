@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 
+	effectq "github.com/klahr/zonventure/internal/effects"
 	"github.com/klahr/zonventure/internal/graph"
 	"github.com/klahr/zonventure/internal/graph/session"
 	"github.com/klahr/zonventure/internal/graph/valid"
@@ -400,9 +401,14 @@ func (e *Engine) applyEffects(ctx context.Context, tx *sql.Tx, s *teamState, eff
 				ON CONFLICT (team_id, entry) DO NOTHING
 			`, s.teamID, fx.JournalEntry, s.Now)
 		case graph.SendEmail, graph.CallWebhook:
-			kind, payload := "email", map[string]string{"template": fx.Template}
+			// The request is queued as the step says it now, so editing
+			// the adventure later does not change a call already owed.
+			var kind string
+			var payload any
 			if fx.Kind == graph.CallWebhook {
-				kind, payload = "webhook", map[string]string{"url": fx.URL}
+				kind, payload = "webhook", effectq.Webhook{URL: fx.URL, Method: fx.Method, Headers: fx.Headers}
+			} else {
+				kind, payload = "email", map[string]string{"template": fx.Template}
 			}
 			doc, _ := json.Marshal(payload)
 			_, err = tx.ExecContext(ctx, `

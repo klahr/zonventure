@@ -5,6 +5,9 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"github.com/klahr/zonventure/internal/graph"
+	"github.com/klahr/zonventure/internal/graphstore"
+	"github.com/klahr/zonventure/internal/play"
 	"net/http"
 	"sync"
 
@@ -143,12 +146,23 @@ func (h *Handlers) WSArrange(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// eventDetailDTO is the event + teams payload served on watch_event.
-// Mirrors the existing HTTP EventDetail JSON shape so the client can
-// reuse the same rendering code.
+// eventDetailDTO is the event + teams payload: GET /events/{id} and the
+// watch_event push both serve it, so the page renders one shape.
 type eventDetailDTO struct {
 	Event eventDTO             `json:"event"`
 	Teams []eventDetailTeamDTO `json:"teams"`
+	// Graph is set for an event that plays a graph: what its teams'
+	// steps are called, and where its zones are.
+	Graph *eventGraphDTO `json:"graph,omitempty"`
+}
+
+// eventGraphDTO is what the console needs of an event's graph to show it:
+// its puzzle count, each step's title for the activity feed and team
+// rows, and its zones for the map.
+type eventGraphDTO struct {
+	PuzzleCount int               `json:"puzzle_count"`
+	Titles      map[string]string `json:"titles"`
+	Zones       []graph.Zone      `json:"zones"`
 }
 
 type eventDetailTeamDTO struct {
@@ -167,6 +181,13 @@ type eventDetailTeamDTO struct {
 	RecapToken string                 `json:"recap_token,omitempty"`
 	AvatarURL  string                 `json:"avatar_url,omitempty"`
 	Members    []eventDetailMemberDTO `json:"members"`
+	// A graph event's team: points and place (play.Ahead; level teams
+	// share it), the step it is on, and how it ended. page_index is a
+	// lane cursor and means nothing there.
+	Score   *float64 `json:"score,omitempty"`
+	Rank    int      `json:"rank,omitempty"`
+	Node    string   `json:"node,omitempty"`
+	Outcome string   `json:"outcome,omitempty"`
 }
 
 type eventDetailMemberDTO struct {
@@ -177,13 +198,13 @@ type eventDetailMemberDTO struct {
 	ExpiresAt   string `json:"expires_at,omitempty"`
 }
 
-// buildEventDetail assembles the event-with-teams-and-slots payload. The HTTP
-// EventDetail handler should also call this, but keeping the two code paths
-// side by side for now avoids a larger refactor; the shapes match by design.
+// buildEventDetail assembles the event-with-teams-and-slots payload, for
+// the HTTP EventDetail handler and the watch_event push alike.
 func (h *Handlers) buildEventDetail(ctx context.Context, eventID int64) (eventDetailDTO, error) {
 	var (
-		d       eventDTO
-		showMap int
+		d          eventDTO
+		showMap    int
+		priceCents sql.NullInt64
 	)
 	if err := h.DB.QueryRowContext(ctx, `
 		SELECT ar.id, ar.name, ar.adventure_slug, ar.state,
@@ -195,15 +216,23 @@ func (h *Handlers) buildEventDetail(ctx context.Context, eventID int64) (eventDe
 		       (SELECT COUNT(*) FROM teams WHERE event_id = ar.id) AS teams_count,
 		       (SELECT COUNT(*) FROM player_slots ps
 		         JOIN teams t ON t.id = ps.team_id
-		        WHERE t.event_id = ar.id) AS player_slots_count
+		        WHERE t.event_id = ar.id) AS player_slots_count,
+		       ar.public_for_sale, ar.ticket_price_cents,
+		       ar.ticket_currency, ar.ticket_team_size, ar.public_blurb,
+		       (ar.cover_image_mime_type IS NOT NULL) AS has_cover_image
 		FROM events ar
 		LEFT JOIN adventure_assignments aa ON aa.id = ar.assignment_id
 		WHERE ar.id = $1
 	`, eventID).Scan(&d.ID, &d.Name, &d.AdventureSlug, &d.State, &d.ScheduledAt, &d.StartedAt,
 		&d.CompletedAt, &d.CancelledAt,
 		&d.OrgID, &d.CreatedByUserID, &d.AssignmentID, &d.MaxPlayers,
-		&d.LiveToken, &showMap, &d.TeamsCount, &d.PlayerSlotsCount); err != nil {
+		&d.LiveToken, &showMap, &d.TeamsCount, &d.PlayerSlotsCount,
+		&d.PublicForSale, &priceCents, &d.TicketCurrency, &d.TicketTeamSize, &d.PublicBlurb,
+		&d.HasCoverImage); err != nil {
 		return eventDetailDTO{}, err
+	}
+	if priceCents.Valid {
+		d.TicketPriceCents = int(priceCents.Int64)
 	}
 	d.ShowMap = showMap != 0
 	d.AllowedOps = allowedOpsForState(d.State)
@@ -251,5 +280,104 @@ func (h *Handlers) buildEventDetail(ctx context.Context, eventID int64) (eventDe
 		mrows.Close()
 	}
 	d.TeamsCount = len(teams)
-	return eventDetailDTO{Event: d, Teams: teams}, nil
+	out := eventDetailDTO{Event: d, Teams: teams}
+	uses, err := play.UsesGraph(ctx, h.DB, eventID)
+	if err != nil {
+		return eventDetailDTO{}, err
+	}
+	out.Event.Engine = "lanes"
+	if uses {
+		out.Event.Engine = "graph"
+		if err := h.addGraphDetail(ctx, &out); err != nil {
+			return eventDetailDTO{}, err
+		}
+	}
+	return out, nil
+}
+
+// addGraphDetail fills in what a graph event's page shows instead of lane
+// progress: each team's points, place, step and outcome, and the graph's
+// step titles and zones.
+func (h *Handlers) addGraphDetail(ctx context.Context, d *eventDetailDTO) error {
+	var graphID sql.NullInt64
+	if err := h.DB.QueryRowContext(ctx, `
+		SELECT COALESCE(e.graph_id, a.published_graph_id)
+		FROM events e JOIN adventures a ON a.slug = e.adventure_slug WHERE e.id = $1
+	`, d.Event.ID).Scan(&graphID); err != nil {
+		return err
+	}
+	gd := &eventGraphDTO{Titles: map[string]string{}, Zones: []graph.Zone{}}
+	d.Graph = gd
+	if !graphID.Valid {
+		return nil
+	}
+	st, err := graphstore.ByID(ctx, h.DB, graphID.Int64)
+	if err != nil {
+		return err
+	}
+	for _, n := range st.Graph.Nodes {
+		title := n.Title
+		if title == "" {
+			title = n.Slug
+		}
+		gd.Titles[n.Slug] = title
+		if n.Type == graph.Puzzle {
+			gd.PuzzleCount++
+		}
+	}
+	if st.Graph.Zones != nil {
+		gd.Zones = st.Graph.Zones
+	}
+
+	e := h.Engine
+	if e == nil {
+		e = play.New(h.DB)
+	}
+	ranked, err := e.EventRanking(ctx, d.Event.ID)
+	if err != nil {
+		return err
+	}
+	byTeam := map[int64]play.Ranked{}
+	for _, r := range ranked {
+		byTeam[r.TeamID] = r
+	}
+	rows, err := h.DB.QueryContext(ctx, `
+		SELECT team_id, COALESCE(current_node, ''), COALESCE(outcome, '')
+		FROM team_graph_state WHERE event_id = $1`, d.Event.ID)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	type where struct{ node, outcome string }
+	at := map[int64]where{}
+	for rows.Next() {
+		var id int64
+		var w where
+		if err := rows.Scan(&id, &w.node, &w.outcome); err != nil {
+			return err
+		}
+		at[id] = w
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for i := range d.Teams {
+		t := &d.Teams[i]
+		if w, ok := at[t.ID]; ok {
+			t.Node, t.Outcome = w.node, w.outcome
+		}
+		r, ok := byTeam[t.ID]
+		if !ok {
+			continue
+		}
+		score := r.Score
+		t.Score = &score
+		t.Rank = 1
+		for _, o := range ranked {
+			if play.Ahead(o, r) {
+				t.Rank++
+			}
+		}
+	}
+	return nil
 }

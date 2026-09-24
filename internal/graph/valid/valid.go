@@ -15,6 +15,7 @@ package valid
 
 import (
 	"fmt"
+	"net/url"
 	"slices"
 	"sort"
 	"strings"
@@ -373,9 +374,7 @@ func checkEffect(r *reporter, n graph.Node) {
 			r.err("effect.email.missing", n.Slug, "", "email effect names no template")
 		}
 	case graph.CallWebhook:
-		if e.URL == "" {
-			r.err("effect.webhook.missing", n.Slug, "", "webhook effect has no URL")
-		}
+		checkWebhook(r, n.Slug, *e)
 	case graph.SetTheme:
 		if e.Theme == "" {
 			r.err("effect.theme.missing", n.Slug, "", "theme effect names no theme")
@@ -1150,4 +1149,53 @@ func reachableFromStarts(g *graph.Graph) map[string]bool {
 		}
 	}
 	return seen
+}
+
+// Headers a webhook may not set: the request's own framing, which the
+// sender works out, and headers the delivery sets itself.
+var reservedHeaders = []string{"host", "content-length", "transfer-encoding", "connection", "upgrade", "te", "trailer", "keep-alive", "proxy-connection", "user-agent", "x-zv-delivery-id"}
+
+// maxWebhookHeaders caps a webhook's headers; a real API needs a few.
+const maxWebhookHeaders = 20
+
+// checkWebhook checks a webhook's URL, method and headers. Whether the
+// host is one the server may call is the delivery worker's to decide, at
+// send time, where DNS cannot be flipped after the check.
+func checkWebhook(r *reporter, slug string, e graph.EffectConfig) {
+	if e.URL == "" {
+		r.err("effect.webhook.missing", slug, "", "webhook effect has no URL")
+		return
+	}
+	if u, err := url.Parse(e.URL); err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
+		r.err("effect.webhook.url", slug, "", "webhook URL %q must be a full http(s) address", e.URL)
+	}
+	if e.Method != "" && !slices.Contains(graph.WebhookMethods, e.Method) {
+		r.err("effect.webhook.method", slug, "", "webhook method %q must be one of %s", e.Method, strings.Join(graph.WebhookMethods, ", "))
+	}
+	if len(e.Headers) > maxWebhookHeaders {
+		r.err("effect.webhook.headers", slug, "", "webhook has %d headers; at most %d", len(e.Headers), maxWebhookHeaders)
+	}
+	for _, h := range e.Headers {
+		switch {
+		case !validHeaderName(h.Name):
+			r.err("effect.webhook.header", slug, "", "webhook header name %q is not a valid HTTP header name", h.Name)
+		case slices.Contains(reservedHeaders, strings.ToLower(h.Name)):
+			r.err("effect.webhook.header", slug, "", "webhook header %q is set by the delivery itself", h.Name)
+		case strings.ContainsAny(h.Value, "\r\n\x00") || len(h.Value) > 4096:
+			r.err("effect.webhook.header", slug, "", "webhook header %q has a value with line breaks or over 4096 bytes", h.Name)
+		}
+	}
+}
+
+// validHeaderName reports whether s is an HTTP token (RFC 9110 §5.6.2).
+func validHeaderName(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, c := range s {
+		if c > 127 || !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || strings.ContainsRune("!#$%&'*+-.^_`|~", c)) {
+			return false
+		}
+	}
+	return true
 }

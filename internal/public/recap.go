@@ -1,14 +1,18 @@
 package public
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"net/http"
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/klahr/zonventure/internal/graph"
+	"github.com/klahr/zonventure/internal/graphstore"
 	"github.com/klahr/zonventure/internal/httpx"
 	"github.com/klahr/zonventure/internal/mdx"
+	"github.com/klahr/zonventure/internal/play"
 )
 
 /* ---------------- Post-event recap (public-by-token) ----------------
@@ -52,6 +56,49 @@ type recapResponse struct {
 	State           string        `json:"state"`
 	Track           []recapTrack  `json:"track"`
 	Puzzles         []recapPuzzle `json:"puzzles"`
+
+	// Engine is "graph" for an event played on the graph engine; the
+	// fields below are only set then. Puzzles stays empty for one:
+	// Steps and Zones replace it.
+	Engine    string      `json:"engine,omitempty"`
+	Points    *float64    `json:"points,omitempty"`
+	Rank      int         `json:"rank,omitempty"`
+	TeamCount int         `json:"team_count,omitempty"`
+	Outcome   string      `json:"outcome,omitempty"`
+	Steps     []recapStep `json:"steps,omitempty"`
+	Zones     []recapZone `json:"zones,omitempty"`
+	Quiz      *recapQuiz  `json:"quiz,omitempty"`
+}
+
+// recapStep is one puzzle or story a graph team reached, in graph order.
+type recapStep struct {
+	Node      string `json:"node"`
+	Kind      string `json:"kind"`
+	Title     string `json:"title,omitempty"`
+	ReachedAt string `json:"reached_at,omitempty"`
+	SolvedAt  string `json:"solved_at,omitempty"`
+	Solved    bool   `json:"solved,omitempty"`
+	Attempts  int    `json:"attempts,omitempty"`
+	Zone      string `json:"zone,omitempty"`
+}
+
+// recapZone is a zone one of the reached steps is gated on: the graph
+// recap's map pins. Solved is whether a step there was completed — a
+// solved puzzle, or a story the team reached.
+type recapZone struct {
+	Slug    string       `json:"slug"`
+	Name    string       `json:"name,omitempty"`
+	Title   string       `json:"title,omitempty"`
+	Lat     float64      `json:"lat"`
+	Lng     float64      `json:"lng"`
+	RadiusM float64      `json:"radius_m,omitempty"`
+	Polygon [][2]float64 `json:"polygon,omitempty"`
+	Solved  bool         `json:"solved,omitempty"`
+}
+
+type recapQuiz struct {
+	Right int `json:"right"`
+	Total int `json:"total"`
 }
 
 type recapColors struct {
@@ -85,6 +132,7 @@ func (h *Handlers) Recap(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var (
+		eventID       int64
 		teamID        int64
 		teamName      string
 		adventureSlug string
@@ -94,12 +142,12 @@ func (h *Handlers) Recap(w http.ResponseWriter, r *http.Request) {
 		state         string
 	)
 	err := h.DB.QueryRowContext(r.Context(), `
-		SELECT t.id, t.name, ar.adventure_slug, ar.started_at,
+		SELECT ar.id, t.id, t.name, ar.adventure_slug, ar.started_at,
 		       ar.completed_at, t.completed_at, ar.state
 		FROM teams t
 		JOIN events ar ON ar.id = t.event_id
 		WHERE t.recap_token = $1
-	`, token).Scan(&teamID, &teamName, &adventureSlug, &startedAt,
+	`, token).Scan(&eventID, &teamID, &teamName, &adventureSlug, &startedAt,
 		&completedAt, &teamCompleted, &state)
 	if errors.Is(err, sql.ErrNoRows) {
 		// Same shape as "not yet visible" below — never leak that
@@ -152,11 +200,23 @@ func (h *Handlers) Recap(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	graphEvent, err := play.UsesGraph(r.Context(), h.DB, eventID)
+	if err != nil {
+		http.Error(w, "lookup failed", http.StatusInternalServerError)
+		return
+	}
 	// Right / wrong counts from answer_attempts. Same shape as
 	// player.Summary; duplicating the SQL beats coupling the two
 	// packages (the second caller is a public read-only render —
 	// the formulas should stay parallel, not shared by reference).
-	if err := h.DB.QueryRowContext(r.Context(), `
+	// A graph event never writes answer_attempts: its counts, score,
+	// steps and pins come from the team's graph state instead.
+	if graphEvent {
+		if err := h.recapGraph(r.Context(), eventID, teamID, &resp); err != nil {
+			http.Error(w, "graph recap failed", http.StatusInternalServerError)
+			return
+		}
+	} else if err := h.DB.QueryRowContext(r.Context(), `
 		SELECT
 		  COALESCE(SUM(CASE WHEN accepted = 1 THEN 1 ELSE 0 END), 0),
 		  COALESCE(SUM(CASE WHEN accepted = 0 THEN 1 ELSE 0 END), 0)
@@ -203,49 +263,51 @@ func (h *Handlers) Recap(w http.ResponseWriter, r *http.Request) {
 	rows.Close()
 	resp.DistanceM = dist
 
-	// Per-puzzle solve timestamps. We pick the *first* accepted
-	// attempt per page_index so a re-submitted answer (the team
-	// re-typed after coming back from a hint) doesn't shift the
-	// completion mark to the later submission. ROW_NUMBER would
-	// be cleaner; the GROUP BY MIN works on every Postgres we
-	// support.
-	pRows, err := h.DB.QueryContext(r.Context(), `
-		SELECT page_index, MIN(submitted_at)
-		FROM answer_attempts
-		WHERE team_id = $1 AND accepted = 1
-		GROUP BY page_index
-		ORDER BY page_index
-	`, teamID)
-	if err != nil {
-		http.Error(w, "puzzles lookup failed", http.StatusInternalServerError)
-		return
-	}
-	solveAt := map[int]string{}
-	for pRows.Next() {
-		var idx int
-		var at string
-		if err := pRows.Scan(&idx, &at); err != nil {
-			pRows.Close()
-			http.Error(w, "puzzles scan failed", http.StatusInternalServerError)
+	if !graphEvent {
+		// Per-puzzle solve timestamps. We pick the *first* accepted
+		// attempt per page_index so a re-submitted answer (the team
+		// re-typed after coming back from a hint) doesn't shift the
+		// completion mark to the later submission. ROW_NUMBER would
+		// be cleaner; the GROUP BY MIN works on every Postgres we
+		// support.
+		pRows, err := h.DB.QueryContext(r.Context(), `
+			SELECT page_index, MIN(submitted_at)
+			FROM answer_attempts
+			WHERE team_id = $1 AND accepted = 1
+			GROUP BY page_index
+			ORDER BY page_index
+		`, teamID)
+		if err != nil {
+			http.Error(w, "puzzles lookup failed", http.StatusInternalServerError)
 			return
 		}
-		solveAt[idx] = at
-	}
-	pRows.Close()
-	for _, p := range adv.Pages {
-		if p.Disabled {
-			continue
+		solveAt := map[int]string{}
+		for pRows.Next() {
+			var idx int
+			var at string
+			if err := pRows.Scan(&idx, &at); err != nil {
+				pRows.Close()
+				http.Error(w, "puzzles scan failed", http.StatusInternalServerError)
+				return
+			}
+			solveAt[idx] = at
 		}
-		entry := recapPuzzle{
-			Index: p.Index,
-			Title: p.Title,
-			Lat:   p.Location.Lat,
-			Lng:   p.Location.Lng,
+		pRows.Close()
+		for _, p := range adv.Pages {
+			if p.Disabled {
+				continue
+			}
+			entry := recapPuzzle{
+				Index: p.Index,
+				Title: p.Title,
+				Lat:   p.Location.Lat,
+				Lng:   p.Location.Lng,
+			}
+			if at, ok := solveAt[p.Index]; ok {
+				entry.SolvedAt = at
+			}
+			resp.Puzzles = append(resp.Puzzles, entry)
 		}
-		if at, ok := solveAt[p.Index]; ok {
-			entry.SolvedAt = at
-		}
-		resp.Puzzles = append(resp.Puzzles, entry)
 	}
 
 	// Duration: prefer team's own completed_at — different teams in
@@ -270,6 +332,201 @@ func (h *Handlers) Recap(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "private, max-age=300")
 	w.Header().Set("X-Robots-Tag", "noindex, nofollow")
 	httpx.JSON(w, http.StatusOK, resp)
+}
+
+// recapTimeLayout is the lane recap's wire format for timestamps, which
+// the graph branch matches so recap.html reads both alike.
+const recapTimeLayout = "2006-01-02 15:04:05"
+
+// recapGraph fills a graph team's recap from its graph state: points,
+// rank and outcome, its own start and finish, the puzzles and stories
+// it reached, the zones they are gated on, and its quiz walk. A team
+// with no graph state never started, and keeps the event-level fields.
+func (h *Handlers) recapGraph(ctx context.Context, eventID, teamID int64, resp *recapResponse) error {
+	resp.Engine = "graph"
+	var graphID sql.NullInt64
+	if err := h.DB.QueryRowContext(ctx, `SELECT graph_id FROM events WHERE id = $1`, eventID).Scan(&graphID); err != nil {
+		return err
+	}
+	g := &graph.Graph{}
+	if graphID.Valid {
+		s, err := graphstore.ByID(ctx, h.DB, graphID.Int64)
+		if err != nil {
+			return err
+		}
+		g = s.Graph
+	}
+	resp.PageCount = 0
+	for _, n := range g.Nodes {
+		if n.Type == graph.Puzzle {
+			resp.PageCount++
+		}
+	}
+
+	var (
+		points    float64
+		startedAt time.Time
+		completed sql.NullTime
+		outcome   sql.NullString
+		lang      string
+	)
+	err := h.DB.QueryRowContext(ctx, `
+		SELECT score - penalty_score, started_at, completed_at, outcome, lang
+		FROM team_graph_state WHERE team_id = $1
+	`, teamID).Scan(&points, &startedAt, &completed, &outcome, &lang)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	resp.Points = &points
+	resp.Outcome = outcome.String
+	resp.StartedAt = startedAt.UTC().Format(recapTimeLayout)
+	if completed.Valid {
+		resp.CompletedAt = completed.Time.UTC().Format(recapTimeLayout)
+	}
+	if resp.Outcome == "fail" {
+		// The adventure's outro is written for a team that made it.
+		resp.OutroText = ""
+	}
+
+	e := h.Engine
+	if e == nil {
+		e = play.New(h.DB)
+	}
+	ranked, err := e.EventRanking(ctx, eventID)
+	if err != nil {
+		return err
+	}
+	for _, me := range ranked {
+		if me.TeamID != teamID {
+			continue
+		}
+		resp.Rank, resp.TeamCount = 1, len(ranked)
+		for _, o := range ranked {
+			if play.Ahead(o, me) {
+				resp.Rank++
+			}
+		}
+	}
+
+	type nodeState struct {
+		firstSeen time.Time
+		solved    sql.NullTime
+		attempts  int
+	}
+	visited := map[string]nodeState{}
+	rows, err := h.DB.QueryContext(ctx, `
+		SELECT node, first_seen_at, solved_at, attempts
+		FROM team_node_state WHERE team_id = $1
+	`, teamID)
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+		var slug string
+		var ns nodeState
+		if err := rows.Scan(&slug, &ns.firstSeen, &ns.solved, &ns.attempts); err != nil {
+			rows.Close()
+			return err
+		}
+		visited[slug] = ns
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	picks := map[[2]string]string{}
+	pRows, err := h.DB.QueryContext(ctx, `
+		SELECT node, block_id, choice FROM team_block_picks WHERE team_id = $1
+	`, teamID)
+	if err != nil {
+		return err
+	}
+	for pRows.Next() {
+		var node, block, choice string
+		if err := pRows.Scan(&node, &block, &choice); err != nil {
+			pRows.Close()
+			return err
+		}
+		picks[[2]string{node, block}] = choice
+	}
+	pRows.Close()
+	if err := pRows.Err(); err != nil {
+		return err
+	}
+
+	zones := map[string]graph.Zone{}
+	for _, z := range g.Zones {
+		zones[z.Slug] = z
+	}
+	zoneAt := map[string]int{}
+	var quiz recapQuiz
+	resp.AnswersRight, resp.AnswersWrong = 0, 0
+	for _, n := range g.Nodes {
+		ns, ok := visited[n.Slug]
+		if !ok {
+			continue
+		}
+		for _, b := range n.Blocks() {
+			if b.Kind != graph.BlockQuiz {
+				continue
+			}
+			quiz.Total++
+			if p := picks[[2]string{n.Slug, b.ID}]; p != "" && p == b.Answer {
+				quiz.Right++
+			}
+		}
+		step := recapStep{
+			Node:      n.Slug,
+			Kind:      string(n.Type),
+			Title:     g.Tr(lang, graph.NodeKey(n.Slug, "title"), n.Title),
+			ReachedAt: ns.firstSeen.UTC().Format(recapTimeLayout),
+		}
+		done := true
+		switch {
+		case n.PuzzleCfg != nil:
+			step.Zone = n.PuzzleCfg.Zone
+			step.Attempts = ns.attempts
+			step.Solved = ns.solved.Valid
+			if step.Solved {
+				step.SolvedAt = ns.solved.Time.UTC().Format(recapTimeLayout)
+				resp.AnswersRight++
+			}
+			resp.AnswersWrong += ns.attempts
+			done = step.Solved
+		case n.StoryCfg != nil:
+			step.Zone = n.StoryCfg.Zone
+		default:
+			continue
+		}
+		resp.Steps = append(resp.Steps, step)
+		z, ok := zones[step.Zone]
+		if !ok {
+			continue
+		}
+		if i, seen := zoneAt[z.Slug]; seen {
+			resp.Zones[i].Solved = resp.Zones[i].Solved || done
+			continue
+		}
+		zoneAt[z.Slug] = len(resp.Zones)
+		resp.Zones = append(resp.Zones, recapZone{
+			Slug:    z.Slug,
+			Name:    g.Tr(lang, graph.ZoneKey(z.Slug), z.Name),
+			Title:   step.Title,
+			Lat:     z.Lat,
+			Lng:     z.Lng,
+			RadiusM: z.RadiusM,
+			Polygon: z.Polygon,
+			Solved:  done,
+		})
+	}
+	if quiz.Total > 0 {
+		resp.Quiz = &quiz
+	}
+	return nil
 }
 
 // parseRecapTime accepts both wire formats the play-side stores —

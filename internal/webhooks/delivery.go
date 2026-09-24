@@ -45,6 +45,51 @@ func dialPinned(ctx context.Context, network, address string) (net.Conn, error) 
 	return pinnedDialer.DialContext(ctx, network, net.JoinHostPort(ip, port))
 }
 
+// NewClient is the HTTP client every outbound webhook goes through. Use
+// it with Pin: the pair is the SSRF defence.
+//
+// CheckRedirect refusing follows is the load-bearing piece here: without
+// it, a URL that 302s to http://169.254.169.254/ (or any other internal
+// host) would pivot the sender into the cloud metadata API even though
+// the first host validated cleanly. ErrUseLastResponse stops the chain
+// at the first 3xx and returns that response untouched — the same shape
+// as "we got a non-2xx", so retry logic records it as a failure.
+func NewClient() *http.Client {
+	return &http.Client{
+		Timeout: 30 * time.Second,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+		Transport: &http.Transport{
+			DialContext:           dialPinned,
+			ForceAttemptHTTP2:     true,
+			MaxIdleConns:          50,
+			IdleConnTimeout:       90 * time.Second,
+			TLSHandshakeTimeout:   10 * time.Second,
+			ExpectContinueTimeout: 1 * time.Second,
+		},
+	}
+}
+
+// Pin resolves host, refuses it unless every answer is public, and
+// returns ctx carrying the chosen IP so a NewClient request dials exactly
+// that address: a DNS answer flipped between the check and the connect
+// (rebinding) cannot land on an internal service. With allowLoopback a
+// localhost host is let through unpinned, for development.
+func Pin(ctx context.Context, host string, allowLoopback bool) (context.Context, error) {
+	if IsLoopbackHost(host) {
+		if allowLoopback {
+			return ctx, nil
+		}
+		return nil, errNonPublic
+	}
+	ip, err := LookupPublic(host)
+	if err != nil {
+		return nil, fmt.Errorf("ssrf gate: %w", err)
+	}
+	return context.WithValue(ctx, pinnedDialIPKey{}, ip.String()), nil
+}
+
 // MaxAttempts is the cap before a delivery is dead-lettered. With the
 // backoff schedule below, 6 attempts span ~36 hours — long enough to
 // ride out routine customer-side outages without retrying forever.
@@ -113,29 +158,7 @@ func Start(ctx context.Context, db *sql.DB) <-chan struct{} {
 // and swallowed — a transient DB failure shouldn't stop the worker.
 func (w *Worker) Run(ctx context.Context) {
 	if w.Client == nil {
-		// CheckRedirect refusing follows is the load-bearing piece
-		// here: without it, a customer-supplied URL that 302s to
-		// http://169.254.169.254/ (or any other internal host) would
-		// silently pivot the worker into the cloud metadata API
-		// even though the registered host validated cleanly. Returning
-		// ErrUseLastResponse stops the redirect chain at the first
-		// 3xx and returns that response untouched — same shape as
-		// "we got a non-2xx", so the existing retry/backoff logic
-		// just records it as a delivery failure.
-		w.Client = &http.Client{
-			Timeout: 30 * time.Second,
-			CheckRedirect: func(*http.Request, []*http.Request) error {
-				return http.ErrUseLastResponse
-			},
-			Transport: &http.Transport{
-				DialContext:           dialPinned,
-				ForceAttemptHTTP2:     true,
-				MaxIdleConns:          50,
-				IdleConnTimeout:       90 * time.Second,
-				TLSHandshakeTimeout:   10 * time.Second,
-				ExpectContinueTimeout: 1 * time.Second,
-			},
-		}
+		w.Client = NewClient()
 	}
 	if w.PollInterval == 0 {
 		w.PollInterval = 5 * time.Second
@@ -391,20 +414,10 @@ func (w *Worker) send(ctx context.Context, target, secret, kind, deliveryUUID st
 	if err != nil {
 		return 0, fmt.Errorf("invalid stored url: %w", err)
 	}
-	host := parsed.Hostname()
-	if !IsLoopbackHost(host) {
-		// Resolve once and pin the literal IP onto the request
-		// context. The Transport's DialContext (dialPinned) reads
-		// the value and connects to that exact address — without it,
-		// the default resolver would re-resolve the hostname at dial
-		// time and a TTL-flip / DNS-rebinding flip between this
-		// LookupPublic call and the connect could land on an
-		// internal IP.
-		ip, err := LookupPublic(host)
-		if err != nil {
-			return 0, fmt.Errorf("ssrf gate: %w", err)
-		}
-		ctx = context.WithValue(ctx, pinnedDialIPKey{}, ip.String())
+	// Org endpoints may be localhost: registration (validateWebhookURL)
+	// allows it for development.
+	if ctx, err = Pin(ctx, parsed.Hostname(), true); err != nil {
+		return 0, err
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, target, bytes.NewReader(body))
 	if err != nil {

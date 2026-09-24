@@ -1,8 +1,11 @@
 package admin
 
 import (
+	"context"
 	"database/sql"
 	"errors"
+	"github.com/klahr/zonventure/internal/graph"
+	"github.com/klahr/zonventure/internal/graphstore"
 	"net/http"
 	"strconv"
 	"strings"
@@ -341,7 +344,88 @@ func (h *Handlers) AdventureDetail(w http.ResponseWriter, r *http.Request) {
 	if adv.Start.Label != "" {
 		out["start_label"] = adv.Start.Label
 	}
+	// An adventure with a published graph plays the graph: its lane
+	// pages above are what it was before, never shown to a team again.
+	summary, err := publishedGraphSummary(r.Context(), h.DB, adv.ID)
+	if err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "loading graph failed", err)
+		return
+	}
+	if summary != nil {
+		out["graph"] = summary
+	}
 	httpx.JSON(w, http.StatusOK, out)
+}
+
+// graphSummary is what the console shows of a published graph: the steps
+// a team sees, in graph order, and the zones they happen in.
+type graphSummary struct {
+	Steps       []graphSummaryStep `json:"steps"`
+	PuzzleCount int                `json:"puzzle_count"`
+	StoryCount  int                `json:"story_count"`
+	Zones       []graph.Zone       `json:"zones"`
+	HasQuiz     bool               `json:"has_quiz,omitempty"`
+}
+
+type graphSummaryStep struct {
+	Slug  string     `json:"slug"`
+	Type  graph.Type `json:"type"`
+	Title string     `json:"title,omitempty"`
+	Zone  string     `json:"zone,omitempty"`
+	// What the step carries, for the catalog's "at a glance": its
+	// pictures, its sounds and films, and a puzzle's hints.
+	Pictures int `json:"pictures,omitempty"`
+	Sounds   int `json:"sounds,omitempty"`
+	Hints    int `json:"hints,omitempty"`
+}
+
+// publishedGraphSummary summarises an adventure's published graph, or
+// returns nil for an adventure without one.
+func publishedGraphSummary(ctx context.Context, db *sql.DB, advID int64) (*graphSummary, error) {
+	st, err := graphstore.Published(ctx, db, advID)
+	if errors.Is(err, graphstore.ErrNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	s := &graphSummary{Steps: []graphSummaryStep{}, Zones: []graph.Zone{}}
+	if st.Graph.Zones != nil {
+		s.Zones = st.Graph.Zones
+	}
+	for _, n := range st.Graph.Nodes {
+		step := graphSummaryStep{Slug: n.Slug, Type: n.Type, Title: n.Title}
+		switch n.Type {
+		case graph.Puzzle:
+			s.PuzzleCount++
+			if n.PuzzleCfg != nil {
+				step.Zone = n.PuzzleCfg.Zone
+				step.Hints = len(n.PuzzleCfg.Hints)
+			}
+		case graph.Story:
+			s.StoryCount++
+			if n.StoryCfg != nil {
+				step.Zone = n.StoryCfg.Zone
+			}
+		case graph.Hub, graph.End:
+		default:
+			// Starts, gates, switches and effects happen without the
+			// team seeing a step.
+			continue
+		}
+		for _, b := range n.Blocks() {
+			s.HasQuiz = s.HasQuiz || b.Kind == graph.BlockQuiz
+		}
+		for _, m := range graph.MediaOf(n.Blocks()) {
+			if m.Kind == graph.MediaImage {
+				step.Pictures++
+			} else {
+				step.Sounds++
+			}
+		}
+		s.Steps = append(s.Steps, step)
+	}
+	return s, nil
 }
 
 // EventDetail returns an event with its teams and slots (players).
@@ -354,113 +438,12 @@ func (h *Handlers) EventDetail(w http.ResponseWriter, r *http.Request) {
 	if _, ok := h.authorizeEvent(w, r, eventID); !ok {
 		return
 	}
-	var (
-		d          eventDTO
-		showMap    int
-		priceCents sql.NullInt64
-	)
-	if err := h.DB.QueryRowContext(r.Context(), `
-		SELECT ar.id, ar.name, ar.adventure_slug, ar.state,
-		       COALESCE(ar.scheduled_at,''), COALESCE(ar.started_at,''),
-		       COALESCE(ar.completed_at, ''), COALESCE(ar.cancelled_at, ''),
-		       ar.org_id, COALESCE(ar.created_by_user_id, 0),
-		       COALESCE(ar.assignment_id, 0), COALESCE(aa.max_players, 0),
-		       ar.live_token, ar.show_map,
-		       (SELECT COUNT(*) FROM teams WHERE event_id = ar.id) AS teams_count,
-		       (SELECT COUNT(*) FROM player_slots ps
-		         JOIN teams t ON t.id = ps.team_id
-		        WHERE t.event_id = ar.id) AS player_slots_count,
-		       ar.public_for_sale, ar.ticket_price_cents,
-		       ar.ticket_currency, ar.ticket_team_size, ar.public_blurb,
-		       (ar.cover_image_mime_type IS NOT NULL) AS has_cover_image
-		FROM events ar
-		LEFT JOIN adventure_assignments aa ON aa.id = ar.assignment_id
-		WHERE ar.id = $1
-	`, eventID).Scan(&d.ID, &d.Name, &d.AdventureSlug, &d.State, &d.ScheduledAt, &d.StartedAt,
-		&d.CompletedAt, &d.CancelledAt,
-		&d.OrgID, &d.CreatedByUserID, &d.AssignmentID, &d.MaxPlayers,
-		&d.LiveToken, &showMap, &d.TeamsCount, &d.PlayerSlotsCount,
-		&d.PublicForSale, &priceCents, &d.TicketCurrency, &d.TicketTeamSize, &d.PublicBlurb,
-		&d.HasCoverImage); err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "lookup failed")
-		return
-	}
-	if priceCents.Valid {
-		d.TicketPriceCents = int(priceCents.Int64)
-	}
-	d.ShowMap = showMap != 0
-	d.AllowedOps = allowedOpsForState(d.State)
-
-	type slotOut struct {
-		ID          int64  `json:"id"`
-		Name        string `json:"name"`
-		Token       string `json:"token"`
-		LastLoginAt string `json:"last_login_at,omitempty"`
-	}
-	type teamOut struct {
-		ID          int64  `json:"id"`
-		Name        string `json:"name"`
-		Email       string `json:"email,omitempty"`
-		PageIndex   int    `json:"page_index"`
-		CompletedAt string `json:"completed_at,omitempty"`
-		WithdrawnAt string `json:"withdrawn_at,omitempty"`
-		Token       string `json:"token"`
-		// RecapToken is the public /recap/{token} URL — emitted on
-		// every detail fetch so the post-completion results card can
-		// link directly without a follow-up round-trip. The /recap
-		// route gates on event state, so a leak mid-event 404s.
-		RecapToken string    `json:"recap_token,omitempty"`
-		AvatarURL  string    `json:"avatar_url,omitempty"`
-		Members    []slotOut `json:"members"`
-	}
-	teams := []teamOut{}
-	rows, err := h.DB.QueryContext(r.Context(), `
-		SELECT t.id, t.name, COALESCE(t.email, ''),
-		       t.current_page_index, COALESCE(t.completed_at, ''),
-		       COALESCE(t.withdrawn_at, ''),
-		       t.token, COALESCE(t.recap_token, ''),
-		       (t.avatar_mime_type IS NOT NULL)::int AS has_avatar
-		FROM teams t WHERE t.event_id = $1 ORDER BY t.name
-	`, eventID)
+	d, err := h.buildEventDetail(r.Context(), eventID)
 	if err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "teams failed")
+		httpx.ServerErr(w, http.StatusInternalServerError, "lookup failed", err)
 		return
 	}
-	defer rows.Close()
-	for rows.Next() {
-		t := teamOut{Members: []slotOut{}}
-		var hasAvatar int
-		if err := rows.Scan(&t.ID, &t.Name, &t.Email, &t.PageIndex, &t.CompletedAt, &t.WithdrawnAt, &t.Token, &t.RecapToken, &hasAvatar); err != nil {
-			httpx.Error(w, http.StatusInternalServerError, "team scan failed")
-			return
-		}
-		if hasAvatar != 0 {
-			t.AvatarURL = teamAvatarURL(t.ID)
-		}
-		teams = append(teams, t)
-	}
-	for i := range teams {
-		mrows, err := h.DB.QueryContext(r.Context(), `
-			SELECT id, name, token, COALESCE(last_login_at, '')
-			FROM player_slots WHERE team_id = $1 ORDER BY LOWER(name)
-		`, teams[i].ID)
-		if err != nil {
-			httpx.Error(w, http.StatusInternalServerError, "members failed")
-			return
-		}
-		for mrows.Next() {
-			var s slotOut
-			if err := mrows.Scan(&s.ID, &s.Name, &s.Token, &s.LastLoginAt); err != nil {
-				mrows.Close()
-				httpx.Error(w, http.StatusInternalServerError, "member scan failed")
-				return
-			}
-			teams[i].Members = append(teams[i].Members, s)
-		}
-		mrows.Close()
-	}
-	d.TeamsCount = len(teams)
-	httpx.JSON(w, http.StatusOK, map[string]any{"event": d, "teams": teams})
+	httpx.JSON(w, http.StatusOK, d)
 }
 
 // userIDFrom remains for admin/org user URL params (admins list, delete).

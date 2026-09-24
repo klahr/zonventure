@@ -118,13 +118,17 @@ type audioView struct {
 }
 
 type adventureEditDTO struct {
-	ID          int64  `json:"id"`
-	Slug        string `json:"slug"`
-	Title       string `json:"title"`
-	Description string `json:"description"`
-	Author      string `json:"author"`
-	IntroText   string `json:"intro_text"`
-	OutroText   string `json:"outro_text"`
+	ID int64 `json:"id"`
+	// GraphPublished says the adventure plays a published graph, so the
+	// lane pages here are no longer played and their edits are refused
+	// (LaneOnly). The editor says so.
+	GraphPublished bool   `json:"graph_published,omitempty"`
+	Slug           string `json:"slug"`
+	Title          string `json:"title"`
+	Description    string `json:"description"`
+	Author         string `json:"author"`
+	IntroText      string `json:"intro_text"`
+	OutroText      string `json:"outro_text"`
 	// IntroHTML / OutroHTML are the goldmark-rendered siblings of
 	// IntroText / OutroText — same shape pageView uses for prompt_html.
 	// The arranger UI (and any future read surface) renders the HTML
@@ -193,6 +197,13 @@ func (h *Handlers) LoadAdventureForEdit(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	if err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "load failed", err)
+		return
+	}
+	switch err := RefuseIfGraph(r.Context(), h.DB, dto.ID); {
+	case errors.Is(err, ErrGraphAdventure):
+		dto.GraphPublished = true
+	case err != nil:
 		httpx.ServerErr(w, http.StatusInternalServerError, "load failed", err)
 		return
 	}

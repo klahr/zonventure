@@ -195,6 +195,10 @@ func (h *Handlers) exportGraphResults(w http.ResponseWriter, r *http.Request, ev
 		rest = append(rest, u)
 	}
 	idle.Close()
+	if err := idle.Err(); err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "query failed")
+		return
+	}
 
 	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")

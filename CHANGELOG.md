@@ -11,6 +11,60 @@ The repository, Go module, and CLI binary are named `zv`; the product is
 
 ## [Unreleased]
 
+### Changed — the classic console understands designed adventures
+
+An adventure with a published graph plays the graph; its lane pages,
+kept from before, are never shown to a team again. The console used to
+show — and edit — those pages anyway.
+
+- **Adventure and catalog pages** describe the published graph: its
+  steps, puzzle count, zones on the map, places to reach and extent.
+  The lane preview, the lane simulator and the classic editor button
+  are gone for these adventures; authors get "Test play in designer".
+- **Event page, race control and team window** show a graph team's
+  points, place (the shared ranking, level teams sharing it) and
+  current step; the activity feed names steps instead of "puzzle 1";
+  race control's map draws the graph's zones. The event detail payload
+  gains `event.engine`, per-team `score`/`rank`/`node`/`outcome`, and
+  `graph` (step titles, puzzle count, zones); positions gain `node`.
+  The HTTP and live-push event detail are now built by one function.
+- **PDF report and team recap** rank graph events by points, like the
+  CSV; the recap shows points, rank, the steps reached, zone pins and
+  the quiz walk.
+- **Copying, exporting and importing an adventure carry its graph**
+  (published and draft) and the media it references. Exports gain the
+  optional `graph` and `graph_media` fields; older exports import as
+  before.
+- **Lane edits to a graph adventure are refused** (409 `graph_adventure`)
+  over HTTP and MCP, and the classic editor says why. "Skip this
+  puzzle", a lane move that could finish a graph team behind the
+  engine's back, is refused for graph events and no longer offered.
+
+### Removed — the puzzle library
+
+The shared puzzle library (`#puzzles`, `GET/POST /api/admin/puzzles`,
+`GET /api/admin/puzzles/{id}`, `POST …/pages/copy-from/{id}` and the
+editor's "Copy from library…") is gone. Library puzzles stay in the
+database, unreachable.
+
+### Fixed — "Call a webhook" steps are delivered, and configurable
+
+- **Webhook steps were never sent.** Passing one queued a row in
+  `graph_effect_outbox` that nothing read. A worker (`internal/effects`)
+  now sends them after the team's move commits, retries failures with
+  backoff for about a day, and gives up after six attempts (migration
+  `0069`). Email steps are queued the same way and are still not sent.
+- **Method and headers.** A webhook step has a method (GET, POST — the
+  default —, PUT, PATCH, DELETE) and custom headers, such as an
+  Authorization token. POST, PUT and PATCH send the team and step as
+  JSON; GET and DELETE send them as query parameters. Every request
+  carries `X-Zv-Delivery-Id`, the same on retries. Header values are
+  stored in the adventure and readable by anyone who can open or export
+  it.
+- **No calls to the server's own network.** The host is resolved and
+  pinned at send time and must be public; `localhost` is refused unless
+  `ZV_EFFECT_WEBHOOKS_ALLOW_LOOPBACK=1` (development only).
+
 ### Added — content blocks on graph steps
 
 A puzzle's, story's and end's content is an ordered list of blocks the

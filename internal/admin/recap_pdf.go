@@ -4,6 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"github.com/klahr/zonventure/internal/graph"
+	"github.com/klahr/zonventure/internal/graphstore"
+	"github.com/klahr/zonventure/internal/play"
 	"io"
 	"net/http"
 	"strconv"
@@ -73,8 +76,11 @@ type recapPDFData struct {
 	EventEndedAt   time.Time
 	// Accent is a hex colour like "#ad1357". Empty falls back to the
 	// Zonventure brand accent.
-	Accent      string
-	PageCount   int // enabled puzzle count
+	Accent    string
+	PageCount int // enabled puzzle count
+	// Graph is set for an event that plays a graph: teams rank by
+	// points (play.Ahead), as in the CSV, and the table shows points.
+	Graph       bool
 	Teams       []recapPDFTeam
 	GeneratedAt time.Time
 	// LogoBytes + LogoMIME, when present, are the operator's brand
@@ -91,8 +97,9 @@ type recapPDFTeam struct {
 	Name        string
 	Members     string
 	Solved      int
-	CompletedAt string // raw stamp from DB; "" when team didn't finish
-	WithdrawnAt string // raw stamp; non-empty teams render in their own group
+	Points      float64 // graph events only
+	CompletedAt string  // raw stamp from DB; "" when team didn't finish
+	WithdrawnAt string  // raw stamp; non-empty teams render in their own group
 	Elapsed     time.Duration
 }
 
@@ -139,6 +146,12 @@ func (h *Handlers) collectRecapPDFData(ctx context.Context, eventID, orgID int64
 	if !adv.Colors.Empty() {
 		d.Accent = adv.Colors.Accent
 	}
+	if uses, err := play.UsesGraph(ctx, h.DB, eventID); err != nil {
+		return d, err
+	} else if uses {
+		h.addRecapLogo(ctx, &d, orgID)
+		return d, h.collectGraphRecap(ctx, &d, eventID)
+	}
 	for _, p := range adv.Pages {
 		if !p.Disabled {
 			d.PageCount++
@@ -182,15 +195,7 @@ func (h *Handlers) collectRecapPDFData(ctx context.Context, eventID, orgID int64
 	}
 	defer rows.Close()
 
-	// Optional logo bytes. Best-effort: a missing or unreadable logo
-	// just means the cover renders with the text-only header. We
-	// don't fail the whole report over a flaky asset read.
-	if logoBytes, logoMime, err := h.Storage.GetOrgLogo(ctx, orgID); err == nil {
-		d.LogoBytes = logoBytes
-		d.LogoMIME = logoMime
-	} else if !errors.Is(err, storage.ErrNotFound) {
-		logx.Warn("admin.recap_pdf.logo", "org", orgID, "err", err.Error())
-	}
+	h.addRecapLogo(ctx, &d, orgID)
 
 	rank := 0
 	for rows.Next() {
@@ -234,6 +239,82 @@ func (h *Handlers) collectRecapPDFData(ctx context.Context, eventID, orgID int64
 		})
 	}
 	return d, rows.Err()
+}
+
+// addRecapLogo embeds the org's logo on the cover. Best-effort: a missing
+// or unreadable logo just means the text-only header; the report does
+// not fail over a flaky asset read.
+func (h *Handlers) addRecapLogo(ctx context.Context, d *recapPDFData, orgID int64) {
+	if logoBytes, logoMime, err := h.Storage.GetOrgLogo(ctx, orgID); err == nil {
+		d.LogoBytes = logoBytes
+		d.LogoMIME = logoMime
+	} else if !errors.Is(err, storage.ErrNotFound) {
+		logx.Warn("admin.recap_pdf.logo", "org", orgID, "err", err.Error())
+	}
+}
+
+// collectGraphRecap ranks a graph event's teams as the CSV does
+// (exportGraphResults): by the shared ranking, level teams sharing a
+// place; then the teams that withdrew or never started, unranked.
+func (h *Handlers) collectGraphRecap(ctx context.Context, d *recapPDFData, eventID int64) error {
+	d.Graph = true
+	var graphID sql.NullInt64
+	if err := h.DB.QueryRowContext(ctx, `SELECT graph_id FROM events WHERE id = $1`, eventID).Scan(&graphID); err != nil {
+		return err
+	}
+	if graphID.Valid {
+		st, err := graphstore.ByID(ctx, h.DB, graphID.Int64)
+		if err != nil {
+			return err
+		}
+		for _, n := range st.Graph.Nodes {
+			if n.Type == graph.Puzzle {
+				d.PageCount++
+			}
+		}
+	}
+	e := h.Engine
+	if e == nil {
+		e = play.New(h.DB)
+	}
+	ranked, err := e.EventRanking(ctx, eventID)
+	if err != nil {
+		return err
+	}
+	for _, t := range ranked {
+		rank := 1
+		for _, o := range ranked {
+			if play.Ahead(o, t) {
+				rank++
+			}
+		}
+		members, _ := h.teamMemberNames(ctx, t.TeamID)
+		row := recapPDFTeam{Rank: rank, Name: t.Name, Members: members, Points: t.Score}
+		if t.Done {
+			row.CompletedAt = t.CompletedAt.UTC().Format("2006-01-02 15:04:05")
+			if !d.EventStartedAt.IsZero() {
+				row.Elapsed = t.CompletedAt.Sub(d.EventStartedAt).Round(time.Second)
+			}
+		}
+		d.Teams = append(d.Teams, row)
+	}
+	rows, err := h.DB.QueryContext(ctx, `
+		SELECT t.name, COALESCE(t.withdrawn_at, '')
+		FROM teams t
+		WHERE t.event_id = $1 AND (t.withdrawn_at IS NOT NULL OR NOT EXISTS (SELECT 1 FROM team_graph_state s WHERE s.team_id = t.id))
+		ORDER BY LOWER(t.name)`, eventID)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var row recapPDFTeam
+		if err := rows.Scan(&row.Name, &row.WithdrawnAt); err != nil {
+			return err
+		}
+		d.Teams = append(d.Teams, row)
+	}
+	return rows.Err()
 }
 
 // parseRecapTimestamp tolerates both Postgres' "YYYY-MM-DD HH:MM:SS"
@@ -414,6 +495,9 @@ func writeRecapPDF(w io.Writer, d recapPDFData) error {
 		{20, "Solved", "L"},
 		{30, "Time", "L"},
 	}
+	if d.Graph {
+		cols[3].hdr = "Points"
+	}
 	pdf.SetFillColor(245, 245, 245)
 	pdf.SetTextColor(80, 80, 80)
 	pdf.SetFont("Helvetica", "B", 9)
@@ -458,11 +542,19 @@ func writeRecapPDF(w io.Writer, d recapPDFData) error {
 		if t.WithdrawnAt != "" {
 			elapsed = "withdrew"
 		}
+		progress := fmt.Sprintf("%d / %d", t.Solved, d.PageCount)
+		if d.Graph {
+			progress = strconv.FormatFloat(t.Points, 'f', -1, 64)
+		}
+		rank := strconv.Itoa(t.Rank)
+		if t.Rank == 0 {
+			rank = "–" // withdrew or never started: unranked
+		}
 		row := []string{
-			strconv.Itoa(t.Rank),
+			rank,
 			truncateText(t.Name, 28),
 			truncateText(t.Members, 30),
-			fmt.Sprintf("%d / %d", t.Solved, d.PageCount),
+			progress,
 			elapsed,
 		}
 		// Withdrawn rows render in muted grey so they read as a

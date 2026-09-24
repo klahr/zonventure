@@ -12,6 +12,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/klahr/zonventure/internal/auth"
+	"github.com/klahr/zonventure/internal/graph"
+	"github.com/klahr/zonventure/internal/graphstore"
 	"github.com/klahr/zonventure/internal/httpx"
 )
 
@@ -125,7 +127,8 @@ type duplicateAdventureRequest struct {
 var errSlugTaken = errors.New("duplicate: slug taken")
 
 // cloneAdventure does the transactional copy. Pages, hints,
-// accept-lists, images, and audio all carry across; the new
+// accept-lists, images, audio, and the graph (published and draft,
+// with its media) all carry across; the new
 // adventure is owned by destOrgID, starts unpublished, and is
 // explicitly NOT a template (so duplicating a template doesn't
 // create another template — only admins promote a row to template
@@ -296,7 +299,71 @@ func (h *Handlers) cloneAdventure(ctx context.Context, sourceSlug, newSlug strin
 		}
 	}
 
+	if err := cloneGraph(ctx, tx, sourceAdvID, newAdvID, byUserID); err != nil {
+		return err
+	}
+
 	return tx.Commit()
+}
+
+// cloneGraph copies the source's published graph and draft, with the
+// media they refer to, into the new adventure. The copy's draft is the
+// source's draft, or its published graph when it has none; a published
+// source is published for the copy too.
+func cloneGraph(ctx context.Context, tx *sql.Tx, sourceAdvID, newAdvID, byUserID int64) error {
+	var published, draft *graph.Graph
+	label := ""
+	pub, err := graphstore.Published(ctx, tx, sourceAdvID)
+	switch {
+	case err == nil:
+		published, label = pub.Graph, pub.Label
+	case !errors.Is(err, graphstore.ErrNotFound):
+		return fmt.Errorf("load published graph: %w", err)
+	}
+	d, err := graphstore.LoadDraft(ctx, tx, sourceAdvID)
+	switch {
+	case err == nil:
+		draft = d.Graph
+	case !errors.Is(err, graphstore.ErrNotFound):
+		return fmt.Errorf("load draft graph: %w", err)
+	}
+	if published == nil && draft == nil {
+		return nil
+	}
+
+	var ids []int64
+	for _, g := range []*graph.Graph{published, draft} {
+		if g != nil {
+			ids = append(ids, g.MediaIDs()...)
+		}
+	}
+	idMap, err := copyGraphMedia(ctx, tx, sourceAdvID, newAdvID, byUserID, ids)
+	if err != nil {
+		return err
+	}
+	if draft == nil {
+		// Decoded fresh by Published; nothing else holds it.
+		draft = published
+	}
+	if published != nil {
+		remapGraphMedia(published, idMap)
+	}
+	if draft != published {
+		remapGraphMedia(draft, idMap)
+	}
+
+	if _, _, err := graphstore.SaveDraft(ctx, tx, newAdvID, byUserID, draft); err != nil {
+		return fmt.Errorf("save draft graph: %w", err)
+	}
+	if published != nil {
+		// A release the validator has since learned to refuse stays
+		// behind: the copy keeps it as its draft for the author to fix.
+		var invalid *graphstore.InvalidError
+		if _, _, err := graphstore.Publish(ctx, tx, newAdvID, byUserID, published, label); err != nil && !errors.As(err, &invalid) {
+			return fmt.Errorf("publish graph: %w", err)
+		}
+	}
+	return nil
 }
 
 // generateDuplicateSlug returns "<source>-<random6>". The random
