@@ -232,7 +232,10 @@
 :where(.dz) button.btn-block, .dz .btn.btn-block {
   width: 100%;
 }
-:where(.dz) input, :where(.dz) textarea, :where(.dz) select {
+/* Boxes and radios keep their own size: stretched to 100% they sit
+   in the middle of a row with their label pushed to its far end. Kept
+   inside :where so this stays below every class rule. */
+:where(.dz) :where(input:not([type="checkbox"], [type="radio"])), :where(.dz) textarea, :where(.dz) select {
   font: inherit;
   background: var(--dz-surface);
   color: var(--dz-ink);

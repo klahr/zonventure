@@ -334,7 +334,7 @@ function PuzzleForm({ cfg, graph, onChange }: { cfg: PuzzleConfig; graph: Graph;
       <Section title={t.t("Ways out")} hint={t.t("Each route becomes an output you can wire somewhere different.")}>
         {outputs.map((o, i) => (
           <div key={i} className="box">
-            <div className="box__row">
+            <div className="box__row box__row--wrap box__row--route">
               <input
                 className="field__input"
                 value={o.label ?? ""}

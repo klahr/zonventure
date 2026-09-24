@@ -446,6 +446,9 @@
 "Download my data": "Ladda ner mina uppgifter",
 "Download migration bundle": "Ladda ner migreringspaket",
 "A portable zip containing your organization — adventures, events, teams, slots, ticket purchases, audit log. The same format the platform uses for self-host ↔ hosted migrations. Re-importable on any Zonventure instance.": "Ett portabelt zip-paket med din organisation — äventyr, events, lag, platser, biljettköp, granskningslogg. Samma format som plattformen använder för migreringar mellan självhostat ↔ hostat. Importerbart på vilken Zonventure-instans som helst.",
+"New team:": "Nytt lag:",
+"Team deleted:": "Lag borttaget:",
+"This account still uses a seeded password. Change it now — anyone reaching this URL can log in as you until you do.": "Det här kontot använder fortfarande ett förinställt lösenord. Byt det nu — vem som helst som når den här URL:en kan logga in som du tills du gjort det.",
 "Tokens (team / recap / live / slot) are preserved verbatim, so existing magic-link emails and printed QR codes keep working on the destination.": "Tokens (lag / recap / live / plats) bevaras ordagrant, så befintliga magic-link-e-postmeddelanden och tryckta QR-koder fortsätter fungera på målet.",
 "Preparing bundle — this can take a moment for large orgs.": "Förbereder paket — det kan ta en stund för stora organisationer.",
 "Download report (PDF)": "Ladda ner rapport (PDF)",
@@ -1544,7 +1547,7 @@
 "When to use webhooks": "När du vill använda webhooks",
 "When you sign up, you create an organization. Everyone in your organization shares the same adventures, assignments, and events.": "När du registrerar dig skapar du en organisation. Alla i din organisation delar samma äventyr, uppdrag och event.",
 "Where to play": "Var ni spelar",
-"Whoever in your team has this link installed can type answers — pick one phone and keep it handy.": "Den i laget som har den här länken kan skicka svar — välj en telefon och ha den nära till hands.",
+"Each of you has your own link, and the team shares one game — an answer typed on any phone counts for everyone.": "Ni har var sin länk, och laget delar ett spel — ett svar från vilken telefon som helst gäller för alla.",
 "Wide — about a city block.": "Brett — ungefär ett kvarter.",
 "Will create a new account — set an initial password below.": "Kommer att skapa ett nytt konto — sätt ett startlösenord nedan.",
 "Wrong answers don't cost you anything — keep trying.": "Fel svar kostar ingenting — fortsätt gissa.",
@@ -2112,5 +2115,7 @@
 "In use ({{n}})": "I bruk ({{n}})",
 "Logo uploaded": "Logotyp uppladdad",
 "Open public page": "Öppna publik sida",
-"Remove logo": "Ta bort logotyp"
+"Remove logo": "Ta bort logotyp",
+"Open designer": "Öppna designern",
+"Design the adventure as a flow of steps": "Utforma äventyret som ett flöde av steg"
 }

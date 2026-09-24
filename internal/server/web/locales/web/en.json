@@ -446,6 +446,9 @@
 "Download my data": "Download my data",
 "Download migration bundle": "Download migration bundle",
 "A portable zip containing your organization — adventures, events, teams, slots, ticket purchases, audit log. The same format the platform uses for self-host ↔ hosted migrations. Re-importable on any Zonventure instance.": "A portable zip containing your organization — adventures, events, teams, slots, ticket purchases, audit log. The same format the platform uses for self-host ↔ hosted migrations. Re-importable on any Zonventure instance.",
+"New team:": "New team:",
+"Team deleted:": "Team deleted:",
+"This account still uses a seeded password. Change it now — anyone reaching this URL can log in as you until you do.": "This account still uses a seeded password. Change it now — anyone reaching this URL can log in as you until you do.",
 "Tokens (team / recap / live / slot) are preserved verbatim, so existing magic-link emails and printed QR codes keep working on the destination.": "Tokens (team / recap / live / slot) are preserved verbatim, so existing magic-link emails and printed QR codes keep working on the destination.",
 "Preparing bundle — this can take a moment for large orgs.": "Preparing bundle — this can take a moment for large orgs.",
 "Download report (PDF)": "Download report (PDF)",
@@ -1544,7 +1547,7 @@
 "When to use webhooks": "When to use webhooks",
 "When you sign up, you create an organization. Everyone in your organization shares the same adventures, assignments, and events.": "When you sign up, you create an organization. Everyone in your organization shares the same adventures, assignments, and events.",
 "Where to play": "Where to play",
-"Whoever in your team has this link installed can type answers — pick one phone and keep it handy.": "Whoever in your team has this link installed can type answers — pick one phone and keep it handy.",
+"Each of you has your own link, and the team shares one game — an answer typed on any phone counts for everyone.": "Each of you has your own link, and the team shares one game — an answer typed on any phone counts for everyone.",
 "Wide — about a city block.": "Wide — about a city block.",
 "Will create a new account — set an initial password below.": "Will create a new account — set an initial password below.",
 "Wrong answers don't cost you anything — keep trying.": "Wrong answers don't cost you anything — keep trying.",
@@ -2112,5 +2115,7 @@
 "In use ({{n}})": "In use ({{n}})",
 "Logo uploaded": "Logo uploaded",
 "Open public page": "Open public page",
-"Remove logo": "Remove logo"
+"Remove logo": "Remove logo",
+"Open designer": "Open designer",
+"Design the adventure as a flow of steps": "Design the adventure as a flow of steps"
 }

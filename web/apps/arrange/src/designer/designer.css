@@ -207,6 +207,8 @@
 .qp__row {
   display: flex;
   align-items: center;
+  /* The shared button style centres its content; rows read from the left. */
+  justify-content: flex-start;
   gap: var(--sp-3);
   width: 100%;
   border: 0;
@@ -267,6 +269,10 @@ textarea.field__input { resize: vertical; font-family: var(--font-body); }
 .box__row { display: flex; gap: var(--sp-2); align-items: flex-end; }
 .box__row > .field__input { flex: 1; min-width: 0; }
 .box__row--wrap { flex-wrap: wrap; }
+/* A route's name and trigger: the trigger is never cut short ("Correc…");
+   in a narrow inspector it wraps onto its own line instead. */
+.box__row--route > input.field__input { flex: 1 1 7rem; min-width: 7rem; }
+.box__row--route > select.field__input { flex: 1 1 10rem; min-width: 10rem; width: auto; }
 .box__more summary { cursor: pointer; font-size: var(--text-xs); color: var(--ink-soft); }
 .check { display: flex; gap: var(--sp-2); align-items: center; font-size: var(--text-sm); }
 .chip { display: inline-flex; gap: var(--sp-1); align-items: center; font-size: var(--text-xs); margin-right: var(--sp-2); }

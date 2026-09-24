@@ -297,5 +297,15 @@
   "Lock symbol": "Låssymbol",
   "Adventure title": "Äventyrets titel",
   "Introduction": "Inledning",
-  "Closing words": "Avslutning"
+  "Closing words": "Avslutning",
+  "You can't edit this adventure": "Du kan inte redigera det här äventyret",
+  "Only the organisation that owns an adventure can change it. Adventures from the shared catalog can be scheduled, but not edited.": "Bara organisationen som äger ett äventyr kan ändra det. Äventyr från den gemensamma katalogen kan schemaläggas, men inte redigeras.",
+  "Adventure not found": "Äventyret hittades inte",
+  "It may have been deleted or renamed.": "Det kan ha tagits bort eller bytt namn.",
+  "The designer could not open": "Designern kunde inte öppnas",
+  "Organizations": "Organisationer",
+  "Quests": "Uppdrag",
+  "Library": "Bibliotek",
+  "Logs": "Loggar",
+  "Back to the adventure": "Tillbaka till äventyret"
 }

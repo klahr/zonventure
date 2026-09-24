@@ -232,9 +232,12 @@ textarea:focus-visible,
 }
 
 /* Keyboard users land here first; it is off-screen until focused. */
+/* Hidden by its own height, not a fixed offset, which a taller link
+   peeked out from under. */
 .zv-skip-link {
   position: absolute;
-  top: -2.5rem;
+  top: 0;
+  transform: translateY(-150%);
   left: var(--sp-2);
   z-index: var(--z-toast);
   padding: var(--sp-2) var(--sp-4);
@@ -242,10 +245,10 @@ textarea:focus-visible,
   background: var(--accent);
   color: #fff;
   font-weight: 700;
-  transition: top var(--dur-fast);
+  transition: transform var(--dur-fast);
 }
 .zv-skip-link:focus {
-  top: var(--sp-2);
+  transform: translateY(var(--sp-2));
   outline: 2px solid #fff;
   outline-offset: 2px;
 }

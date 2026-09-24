@@ -301,7 +301,6 @@ body { font-family:'Open Sans',system-ui,sans-serif; color:var(--ink); backgroun
   width: 96px; height: 96px; border-radius: 50%;
   background: var(--accent); color: var(--accent-fg);
   border: 3px solid var(--accent);
-  overflow: hidden;
   cursor: pointer;
   display: grid; place-items: center;
   /* Body font — matches the initials on the arranger/live team avatars
@@ -315,13 +314,16 @@ body { font-family:'Open Sans',system-ui,sans-serif; color:var(--ink); backgroun
 }
 .avatar-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 22px rgba(0,0,0,.22); }
 .avatar-btn:active { transform: translateY(1px); }
-.avatar-btn img { width: 100%; height: 100%; object-fit: cover; display: block; }
+/* The photo is clipped to the circle, not the button: the pill sits
+   over the button's edge and would be cut off with it. */
+.avatar-btn img { width: 100%; height: 100%; object-fit: cover; display: block; border-radius: 50%; }
 .avatar-btn .hint-pill {
   position: absolute; bottom: -2px; right: -2px;
   background: var(--surface); color: var(--ink);
   border: 2px solid var(--accent);
   border-radius: 999px; padding: .15rem .45rem;
   font-family: 'Open Sans', sans-serif; font-size: .7rem; font-weight: 700;
+  letter-spacing: normal; text-transform: none; white-space: nowrap;
 }
 .avatar-remove {
   display: block; margin: .35rem auto 0;
@@ -346,16 +348,19 @@ body { font-family:'Open Sans',system-ui,sans-serif; color:var(--ink); backgroun
 }
 .skip-link {
   position: fixed;
-  top: -40px; left: .5rem;
+  /* Hidden by its own height, not a fixed offset, which a taller
+     link peeked out from under. */
+  top: 0; left: .5rem;
+  transform: translateY(-150%);
   z-index: 10000;
   padding: .5rem 1rem;
   background: var(--accent); color: var(--accent-fg);
   border-radius: 8px;
   font-weight: 700; text-decoration: none;
   box-shadow: 0 2px 6px rgba(0,0,0,.15);
-  transition: top 120ms ease;
+  transition: transform 120ms ease;
 }
-.skip-link:focus, .skip-link:focus-visible { top: .5rem; }
+.skip-link:focus, .skip-link:focus-visible { transform: translateY(.5rem); }
 :focus-visible {
   outline: 3px solid color-mix(in srgb, var(--accent) 50%, transparent);
   outline-offset: 2px;

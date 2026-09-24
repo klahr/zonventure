@@ -48,7 +48,7 @@ import {
   type Report,
 } from "@zonventure/graph";
 import { useT } from "../i18n.tsx";
-import { href } from "../router.ts";
+import { consoleHref } from "../router.ts";
 import { Canvas, cardSizes } from "./Canvas.tsx";
 import { Inspector } from "./Inspector.tsx";
 import { LanguageSwitch, LanguagesSettings, TranslateStep, translationLanguages } from "./Translate.tsx";
@@ -64,9 +64,15 @@ import { Button, ICON, IssueRow, IssuesButton, Notice, PromptModal } from "./dz/
 import "./dz.css";
 import "./designer.css";
 
+const loadError = (e: unknown): Loaded => ({
+  state: "error",
+  message: e instanceof Error ? e.message : String(e),
+  ...(e instanceof ApiError ? { status: e.status } : {}),
+});
+
 type Loaded =
   | { state: "loading" }
-  | { state: "error"; message: string }
+  | { state: "error"; message: string; status?: number }
   | { state: "none" } // adventure has no graph yet
   | { state: "ready" };
 
@@ -185,7 +191,7 @@ export function Designer({ slug }: { slug: string }) {
         else adopt(r, r.envelope.graph, r.envelope.graph);
       })
       .catch((e: unknown) => {
-        if (!ac.signal.aborted) setLoaded({ state: "error", message: e instanceof Error ? e.message : String(e) });
+        if (!ac.signal.aborted) setLoaded(loadError(e));
       });
     adventures
       .getLook(slug, ac.signal)
@@ -208,7 +214,7 @@ export function Designer({ slug }: { slug: string }) {
       const r = await adventures.convertGraph<Envelope, Report>(slug);
       adopt(r, tidy(r.envelope.graph), null);
     } catch (e) {
-      setLoaded({ state: "error", message: e instanceof Error ? e.message : String(e) });
+      setLoaded(loadError(e));
     }
   };
 
@@ -424,16 +430,29 @@ export function Designer({ slug }: { slug: string }) {
   // --- render ----------------------------------------------------------------------
 
   if (loaded.state === "loading") return <p className="lede">{t.t("Loading…")}</p>;
-  if (loaded.state === "error")
+  if (loaded.state === "error") {
+    // A refusal is explained in words, with a way back; only an
+    // unexpected failure shows the server's own message.
+    const [title, body] =
+      loaded.status === 403
+        ? [t.t("You can't edit this adventure"), t.t("Only the organisation that owns an adventure can change it. Adventures from the shared catalog can be scheduled, but not edited.")]
+        : loaded.status === 404
+          ? [t.t("Adventure not found"), t.t("It may have been deleted or renamed.")]
+          : [t.t("The designer could not open"), loaded.message];
     return (
-      <div className="alert alert--danger" role="alert">
-        {loaded.message}
+      <div className="designer-empty" role="alert">
+        <a className="link-btn" href={consoleHref("adventures")}>
+          ← {t.t("Adventures")}
+        </a>
+        <h1>{title}</h1>
+        <p className="lede">{body}</p>
       </div>
     );
+  }
   if (loaded.state === "none")
     return (
       <div className="designer-empty">
-        <a className="link-btn" href={href({ name: "adventures" })}>
+        <a className="link-btn" href={consoleHref("adventures")}>
           ← {t.t("Adventures")}
         </a>
         <h1>{t.t("Design this adventure")}</h1>
@@ -461,7 +480,7 @@ export function Designer({ slug }: { slug: string }) {
       <div className="editor" data-has-selection={slotOpen ? "true" : "false"}>
         <div className="canvas">
           <div className="editor-toolbar">
-            <a className="dz-back" href={href({ name: "adventures" })} title={t.t("Adventures")} aria-label={t.t("Adventures")}>
+            <a className="dz-back" href={consoleHref("adventures/" + encodeURIComponent(slug))} title={t.t("Back to the adventure")} aria-label={t.t("Back to the adventure")}>
               <ArrowLeft size={ICON.md} />
             </a>
             <strong className="dz-title" title={adventureTitle}>

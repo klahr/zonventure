@@ -1,20 +1,21 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ChevronLeft, ChevronRight, ChevronUp, Gauge, LogOut, Map as MapIcon, Monitor, Moon, Sun, type LucideIcon } from "lucide-react";
+import { Building2, CalendarDays, ChevronLeft, ChevronRight, ChevronUp, Compass, Gauge, LogOut, Map as MapIcon, Monitor, Moon, Settings, Sun, Terminal, type LucideIcon } from "lucide-react";
 import type { Whoami } from "@zonventure/api";
 import { readTheme, setTheme, type Theme } from "@zonventure/ui";
 import { useT } from "./i18n.tsx";
 import { useSession } from "./session.tsx";
-import { href, useRoute, type Route } from "./router.ts";
+import { consoleHref, useRoute } from "./router.ts";
 import { AdventuresPage } from "./AdventuresPage.tsx";
 import { Designer } from "./designer/Designer.tsx";
 
 /**
  * Authenticated shell: sidebar, header and the content region.
  *
- * Navigation links only the screens that exist. Role-specific items
- * (organisations and logs for a global admin) return with their views —
- * a link that 403s or goes nowhere is worse than no link.
+ * The sidebar is the classic console's, section for section and role
+ * for role: this console holds the designer, and every other section
+ * still lives at /arrange, so its links go there. Moving between the two
+ * then feels like one app — the designer is simply one of its pages.
  */
 const COLLAPSE_KEY = "zonventure.sidebar.collapsed";
 
@@ -28,6 +29,35 @@ function savedCollapsed(): boolean {
 
 const ROLE: Record<Whoami["role"], string> = { admin: "Administrator", org_admin: "Organisation admin", org_member: "Member" };
 
+/**
+ * The classic console's sidebar sections for this user, mirroring the
+ * list in arrange.html: an admin's cross-organisation tools, a member's
+ * daily ones, or — before joining an organisation — only the way out.
+ * `adventures` marks the section the designer belongs to.
+ */
+function consoleNav(user: Whoami): { label: string; icon: LucideIcon; href: string; adventures: boolean }[] {
+  const item = (label: string, icon: LucideIcon, hash: string, adventures = false) => ({ label, icon, href: consoleHref(hash), adventures });
+  if (user.role === "admin") {
+    return [
+      item("Dashboard", Gauge, "dashboard"),
+      item("Organizations", Building2, "organizations"),
+      item("Events", CalendarDays, "events"),
+      item("Quests", Compass, "quests"),
+      item("Library", MapIcon, "library", true),
+      item("Logs", Terminal, "logs"),
+      item("Settings", Settings, "settings"),
+    ];
+  }
+  if (!user.memberships.length) return [item("Dashboard", Gauge, "dashboard"), item("Settings", Settings, "settings")];
+  return [
+    item("Dashboard", Gauge, "dashboard"),
+    item("Adventures", MapIcon, "adventures", true),
+    item("Events", CalendarDays, "events"),
+    item("Quests", Compass, "quests"),
+    item("Settings", Settings, "settings"),
+  ];
+}
+
 export function Shell({ user }: { user: Whoami }) {
   const t = useT();
   const { logout } = useSession();
@@ -35,12 +65,7 @@ export function Shell({ user }: { user: Whoami }) {
   const [collapsed, setCollapsed] = useState(savedCollapsed);
 
   const route = useRoute();
-  // Only screens that exist are linked. A nav item that goes nowhere is
-  // worse than a missing one; the rest arrive as the console is ported.
-  const nav: { label: string; icon: LucideIcon; to: Route; active: boolean }[] = [
-    { label: "Dashboard", icon: Gauge, to: { name: "dashboard" }, active: route.name === "dashboard" },
-    { label: "Adventures", icon: MapIcon, to: { name: "adventures" }, active: route.name === "adventures" || route.name === "designer" },
-  ];
+  const nav = consoleNav(user).map((item) => ({ ...item, active: item.adventures && route.name !== "dashboard" }));
 
   function toggle() {
     setCollapsed((c) => {
@@ -62,7 +87,7 @@ export function Shell({ user }: { user: Whoami }) {
       </a>
 
       <aside className="shell__sidebar" data-collapsed={collapsed}>
-        <a className="shell__brand" href={href({ name: "dashboard" })} title="Zonventure Studio">
+        <a className="shell__brand" href={consoleHref("dashboard")} title="Zonventure Studio">
           <span className="shell__wordmark">{collapsed ? "z" : "zonventure"}</span>
           <span className="shell__sub nav-label">STUDIO</span>
         </a>
@@ -72,7 +97,7 @@ export function Shell({ user }: { user: Whoami }) {
             <a
               key={item.label}
               className={"shell__link" + (item.active ? " is-active" : "")}
-              href={href(item.to)}
+              href={item.href}
               title={t.t(item.label)}
               {...(item.active ? { "aria-current": "page" as const } : {})}
             >
@@ -122,7 +147,7 @@ export function Shell({ user }: { user: Whoami }) {
               )}
             </dl>
             <p className="lede">
-              <a href={href({ name: "adventures" })}>{t.t("Design an adventure →")}</a>
+              <a href={consoleHref("adventures")}>{t.t("Design an adventure →")}</a>
             </p>
           </>
         )}

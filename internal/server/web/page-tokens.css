@@ -67,14 +67,17 @@ body {
 a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
 
+/* Hidden by its own height, not a fixed offset, which a taller link
+   peeked out from under. */
 .skip-link {
-  position: absolute; top: -2.5rem; left: .5rem; z-index: 50;
+  position: absolute; top: 0; left: .5rem; z-index: 50;
+  transform: translateY(-150%);
   padding: .5rem 1rem; border-radius: 8px;
   background: var(--accent); color: #fff;
   font-weight: 700; text-decoration: none;
-  transition: top .15s;
+  transition: transform .15s;
 }
-.skip-link:focus { top: .5rem; outline: 2px solid #fff; outline-offset: 2px; }
+.skip-link:focus { transform: translateY(.5rem); outline: 2px solid #fff; outline-offset: 2px; }
 
 a:focus-visible, button:focus-visible, .btn:focus-visible {
   outline: 2px solid var(--accent);

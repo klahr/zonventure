@@ -1291,18 +1291,21 @@
   }
   .skip-link {
     position: fixed;
-    top: -40px; left: var(--space-2);
+    /* Hidden by its own height, not a fixed offset: a taller link
+       than the offset peeked in at the top of the screen. */
+    top: 0; left: var(--space-2);
+    transform: translateY(-150%);
     z-index: 10000;
     padding: var(--space-2) var(--space-4);
     background: var(--accent); color: var(--accent-fg);
     border-radius: var(--radius-sm);
     font-weight: 700; text-decoration: none;
-    transition: top 120ms ease;
+    transition: transform 120ms ease;
     min-height: 0;
     width: auto;
     box-shadow: var(--shadow);
   }
-  .skip-link:focus, .skip-link:focus-visible { top: var(--space-2); }
+  .skip-link:focus, .skip-link:focus-visible { transform: translateY(var(--space-2)); }
 
   /* GPS recovery surface inside the gated submit dock: short copy on
      why GPS isn't working + a Retry button. Hidden until the
@@ -3864,7 +3867,7 @@ function showWelcomeDialog(s, opts = {}) {
         el('li', {}, t('Read each puzzle carefully — the answer is usually a short word or phrase.')),
         el('li', {}, t('Some puzzles only unlock when you reach a specific place. Your device will show a pin and prompt you to go there.')),
         el('li', {}, t('The submit button is always in the same spot at the bottom of the screen.')),
-        el('li', {}, t('Whoever in your team has this link installed can type answers — pick one phone and keep it handy.')),
+        el('li', {}, t('Each of you has your own link, and the team shares one game — an answer typed on any phone counts for everyone.')),
         el('li', {}, t('Wrong answers don\'t cost you anything — keep trying.'))));
   }
   // Starting-location card. Surfaced regardless of whether the
@@ -5327,8 +5330,13 @@ function openMenuDrawer(s) {
   privSection.append(makeToggleRow(
     t('Share location'),
     t('Off pauses your GPS pings. Gated puzzles need this on to detect arrival.'),
-    () => !prefLocationPaused(),
-    (on) => applyLocationPause(!on),
+    // "Not now" on the consent card is off too, not only the pause.
+    () => !prefLocationPaused() && geoConsentStatus() !== 'declined',
+    (on) => {
+      // Turning it on after "Not now" asks again rather than failing.
+      if (on && geoConsentStatus() === 'declined') clearGeoConsent();
+      applyLocationPause(!on);
+    },
   ));
   privSection.append(makeToggleRow(
     t('Sound & vibration'),

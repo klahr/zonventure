@@ -31,6 +31,15 @@ export function href(r: Route): string {
   }
 }
 
+/**
+ * A page of the classic console at /arrange. Events, settings and the
+ * rest have not been ported here yet; until they are, this console links
+ * to them there, and that one links back for the designer.
+ */
+export function consoleHref(hash: string): string {
+  return `/arrange#${hash}`;
+}
+
 export function navigate(r: Route): void {
   window.location.hash = href(r);
 }
