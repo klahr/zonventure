@@ -1,6 +1,8 @@
 import type { play } from "@zonventure/api";
 import { FONTS, isHex } from "@zonventure/play-ui";
 import { useT } from "../i18n.tsx";
+import { X } from "lucide-react";
+import { ICON } from "./dz/ui.tsx";
 
 /**
  * The adventure's palette, edited beside the phone preview so every
@@ -79,8 +81,8 @@ export function Look({ brand, dirty, saving, error, onChange, onSave, onRevert }
               }}
             />
             {v && (
-              <button type="button" className="link-btn" onClick={() => set(f.key, null)} aria-label={t.t("Use the default")}>
-                ×
+              <button type="button" className="icon-remove" onClick={() => set(f.key, null)} aria-label={t.t("Use the default")}>
+                <X size={ICON.sm} />
               </button>
             )}
           </div>

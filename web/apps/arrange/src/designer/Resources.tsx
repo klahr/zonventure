@@ -5,6 +5,9 @@ import { useT } from "../i18n.tsx";
 import { StaticMap } from "./StaticMap.tsx";
 import { ZoneMap } from "./ZoneMap.tsx";
 import { MediaEditor } from "./MediaEditor.tsx";
+import { ConceptIcon, RESOURCE } from "./dz/concepts.tsx";
+import { Plus, Trash2 } from "lucide-react";
+import { ICON } from "./dz/ui.tsx";
 
 /** A copy without one key, for clearing an optional field under exactOptionalPropertyTypes. */
 function withoutKey<T extends object, K extends keyof T>(obj: T, key: K): T {
@@ -48,7 +51,10 @@ export function Resources({ graph, onChange }: { graph: Graph; onChange: (g: Gra
   return (
     <div className="res">
       <section className="insp__section">
-        <h3>{t.t("Zones")}</h3>
+        <h3>
+          <ConceptIcon {...RESOURCE.zones} />
+          {t.t("Zones")}
+        </h3>
         <p className="field__hint">{t.t("Places on the map. Puzzles, stories and conditions can require the team to be inside one.")}</p>
         {[...new Set(zones.map((z) => z.group).filter((g): g is string => !!g))].map((g) => {
           const cells = zones.filter((z) => z.group === g);
@@ -76,7 +82,9 @@ export function Resources({ graph, onChange }: { graph: Graph; onChange: (g: Gra
                 onChange={(e) => setZones(zones.map((x, j) => (j === i ? { ...z, name: e.target.value } : x)))} />
               <input className="field__input res__section" value={z.group ?? ""} placeholder={t.t("Group")} aria-label={t.t("Group")} list="zone-groups"
                 onChange={(e) => setZones(zones.map((x, j) => (j === i ? (e.target.value ? { ...z, group: e.target.value } : withoutKey(z, "group")) : x)))} />
-              <button type="button" className="link-btn" onClick={() => setZones(zones.filter((_, j) => j !== i))}>{t.t("Remove")}</button>
+              <button type="button" className="icon-remove" onClick={() => setZones(zones.filter((_, j) => j !== i))} aria-label={t.t("Remove")} title={t.t("Remove")}>
+                <Trash2 size={ICON.sm} />
+              </button>
             </div>
             {open === z.slug ? (
               <ZoneMap zone={z} onChange={(nz) => setZones(zones.map((x, j) => (j === i ? nz : x)))} />
@@ -119,13 +127,14 @@ export function Resources({ graph, onChange }: { graph: Graph; onChange: (g: Gra
             </div>
           </div>
         ) : (
-          <button type="button" className="link-btn"
+          <button type="button" className="add-btn"
             onClick={() => {
               const near = zones[zones.length - 1];
               setOpen(null);
               setGrid({ group: t.t("Grid"), rows: 7, cols: 6, area: { slug: "grid-area", lat: near?.lat ?? 59.3293, lng: near?.lng ?? 18.0686, radius_m: 0, polygon: [] } });
             }}>
-            + {t.t("Add a grid of zones")}
+            <Plus size={ICON.sm} aria-hidden="true" />
+            {t.t("Add a grid of zones")}
           </button>
         )}
         <datalist id="zone-groups">
@@ -133,41 +142,53 @@ export function Resources({ graph, onChange }: { graph: Graph; onChange: (g: Gra
             <option key={g} value={g} />
           ))}
         </datalist>
-        <button type="button" className="link-btn"
+        <button type="button" className="add-btn"
           onClick={() => {
             const slug = slugFor("zone", zones);
             const near = zones[zones.length - 1];
             setZones([...zones, { slug, name: "", lat: near?.lat ?? 59.3293, lng: near?.lng ?? 18.0686, radius_m: 30 }]);
             setOpen(slug);
           }}>
-          + {t.t("Add zone")}
+          <Plus size={ICON.sm} aria-hidden="true" />
+          {t.t("Add zone")}
         </button>
       </section>
 
       <section className="insp__section">
-        <h3>{t.t("Items")}</h3>
+        <h3>
+          <ConceptIcon {...RESOURCE.items} />
+          {t.t("Items")}
+        </h3>
         <p className="field__hint">{t.t("Things the team collects and can look at, for the story. To send teams different ways, a gate checks what they have done instead.")}</p>
         {items.map((it, i) => (
           <div key={it.slug} className="box__row">
             <input className="field__input" value={it.name ?? ""} placeholder={it.slug} aria-label={t.t("Name")}
               onChange={(e) => setItems(items.map((x, j) => (j === i ? { ...it, name: e.target.value } : x)))} />
-            <button type="button" className="link-btn" onClick={() => setItems(items.filter((_, j) => j !== i))}>{t.t("Remove")}</button>
+            <button type="button" className="icon-remove" onClick={() => setItems(items.filter((_, j) => j !== i))} aria-label={t.t("Remove")} title={t.t("Remove")}>
+              <Trash2 size={ICON.sm} />
+            </button>
           </div>
         ))}
-        <button type="button" className="link-btn" onClick={() => setItems([...items, { slug: slugFor("item", items), name: "" }])}>
-          + {t.t("Add item")}
+        <button type="button" className="add-btn" onClick={() => setItems([...items, { slug: slugFor("item", items), name: "" }])}>
+          <Plus size={ICON.sm} aria-hidden="true" />
+          {t.t("Add item")}
         </button>
       </section>
 
       <section className="insp__section">
-        <h3>{t.t("Shared counters")}</h3>
+        <h3>
+          <ConceptIcon {...RESOURCE.counters} />
+          {t.t("Shared counters")}
+        </h3>
         <p className="field__hint">{t.t("One number every team in the event sees and changes.")}</p>
         {counters.map((c, i) => (
           <div key={c.slug} className="box">
             <div className="box__row">
               <input className="field__input" value={c.name ?? ""} placeholder={c.slug} aria-label={t.t("Name")}
                 onChange={(e) => setCounters(counters.map((x, j) => (j === i ? { ...c, name: e.target.value } : x)))} />
-              <button type="button" className="link-btn" onClick={() => setCounters(counters.filter((_, j) => j !== i))}>{t.t("Remove")}</button>
+              <button type="button" className="icon-remove" onClick={() => setCounters(counters.filter((_, j) => j !== i))} aria-label={t.t("Remove")} title={t.t("Remove")}>
+                <Trash2 size={ICON.sm} />
+              </button>
             </div>
             <div className="box__row">
               {(["initial", "min", "max"] as const).map((k) => (
@@ -184,13 +205,17 @@ export function Resources({ graph, onChange }: { graph: Graph; onChange: (g: Gra
             </div>
           </div>
         ))}
-        <button type="button" className="link-btn" onClick={() => setCounters([...counters, { slug: slugFor("counter", counters), name: "" }])}>
-          + {t.t("Add counter")}
+        <button type="button" className="add-btn" onClick={() => setCounters([...counters, { slug: slugFor("counter", counters), name: "" }])}>
+          <Plus size={ICON.sm} aria-hidden="true" />
+          {t.t("Add counter")}
         </button>
       </section>
 
       <section className="insp__section">
-        <h3>{t.t("Time limit")}</h3>
+        <h3>
+          <ConceptIcon {...RESOURCE.time} />
+          {t.t("Time limit")}
+        </h3>
         <p className="field__hint">
           {t.t("After this long from a team's start, wherever it is, the team is moved to a step of your choosing — such as the accusation — and shown a message. It happens once.")}
         </p>
@@ -230,7 +255,10 @@ export function Resources({ graph, onChange }: { graph: Graph; onChange: (g: Gra
       </section>
 
       <section className="insp__section">
-        <h3>{t.t("Journal")}</h3>
+        <h3>
+          <ConceptIcon {...RESOURCE.journal} />
+          {t.t("Journal")}
+        </h3>
         <p className="field__hint">
           {t.t("Notes the team collects and can read back at any time. A step adds them under “Notes for the journal”, or an effect does. Notes with the same section are listed together under it.")}
         </p>
@@ -257,7 +285,9 @@ export function Resources({ graph, onChange }: { graph: Graph; onChange: (g: Gra
                   onChange={(e) => set(e.target.value ? { ...je, section: e.target.value } : withoutKey(je, "section"))} />
                 <button type="button" className="link-btn" disabled={i === 0} onClick={() => move(-1)} aria-label={t.t("Move up")}>↑</button>
                 <button type="button" className="link-btn" disabled={i === journal.length - 1} onClick={() => move(1)} aria-label={t.t("Move down")}>↓</button>
-                <button type="button" className="link-btn" onClick={() => setJournal(journal.filter((_, j) => j !== i))}>{t.t("Remove")}</button>
+                <button type="button" className="icon-remove" onClick={() => setJournal(journal.filter((_, j) => j !== i))} aria-label={t.t("Remove")} title={t.t("Remove")}>
+                  <Trash2 size={ICON.sm} />
+                </button>
               </div>
               <textarea className="field__input" rows={3} value={je.body ?? ""} aria-label={t.t("Text")} placeholder={t.t("Markdown.")}
                 onChange={(e) => set({ ...je, body: e.target.value })} />
@@ -270,8 +300,9 @@ export function Resources({ graph, onChange }: { graph: Graph; onChange: (g: Gra
             <option key={s} value={s} />
           ))}
         </datalist>
-        <button type="button" className="link-btn" onClick={() => setJournal([...journal, { slug: slugFor("entry", journal), title: "" }])}>
-          + {t.t("Add entry")}
+        <button type="button" className="add-btn" onClick={() => setJournal([...journal, { slug: slugFor("entry", journal), title: "" }])}>
+          <Plus size={ICON.sm} aria-hidden="true" />
+          {t.t("Add entry")}
         </button>
       </section>
     </div>

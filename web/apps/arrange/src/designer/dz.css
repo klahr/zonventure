@@ -29,14 +29,14 @@
   --dz-faint: color-mix(in srgb, var(--muted) 80%, var(--surface));
   --dz-danger: var(--danger);
   --dz-success: var(--success);
-  --dz-warning: #b45309;
+  --dz-warning: var(--warning);
   --dz-info: #2563eb;
   --dz-status-awaiting: #ca8a04;
   --dz-glow-accent: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
   --dz-glow-accent-hover: 0 0 0 4px color-mix(in srgb, var(--accent) 28%, transparent);
-  --dz-shadow: 0 1px 2px rgba(16, 24, 40, 0.06);
-  --dz-shadow-lg: 0 4px 14px rgba(16, 24, 40, 0.08);
-  --dz-shadow-pop: 0 10px 30px rgba(16, 24, 40, 0.12);
+  --dz-shadow: var(--shadow-sm);
+  --dz-shadow-lg: var(--shadow);
+  --dz-shadow-pop: var(--shadow-lg);
   --dz-font-mono: var(--font-mono);
   --dz-font-sans: var(--font-body);
   --dz-accent-2: var(--accent-2);
@@ -1686,7 +1686,7 @@
 .dz .modal-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(8, 2, 30, 0.55);
+  background: rgb(20 32 46 / 0.5);
   backdrop-filter: blur(2px);
   -webkit-backdrop-filter: blur(2px);
   display: grid;
@@ -2096,6 +2096,22 @@
   padding: 0;
   justify-content: center;
 }
+/* The scrolling strip goes to icons first: beside the console sidebar a
+   laptop-width canvas cannot fit every label, and a strip scrolled to
+   "✓ S" reads as broken. Publish and test play keep their words longer. */
+@container editor-canvas (max-width: 1180px) {
+.dz .editor-toolbar .toolbar-scroll .toolbar-label {
+    display: none;
+  }
+.dz .editor-toolbar .toolbar-scroll button:not(.toolbar-nudge),
+.dz .editor-toolbar .toolbar-scroll .editor-saved,
+.dz .editor-toolbar .toolbar-scroll .editor-saving {
+    width: 36px;
+    padding: 0;
+    gap: 0;
+    justify-content: center;
+  }
+}
 @container editor-canvas (max-width: 960px) {
 .dz .editor-toolbar .toolbar-label {
     display: none;
@@ -2136,7 +2152,7 @@
   position: fixed;
   inset: 0;
   z-index: var(--dz-z-palette);
-  background: rgba(8, 2, 30, 0.45);
+  background: rgb(20 32 46 / 0.42);
   backdrop-filter: blur(3px);
   -webkit-backdrop-filter: blur(3px);
   display: flex;

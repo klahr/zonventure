@@ -8,6 +8,7 @@ import { useSession } from "./session.tsx";
 import { consoleHref, useRoute } from "./router.ts";
 import { AdventuresPage } from "./AdventuresPage.tsx";
 import { Designer } from "./designer/Designer.tsx";
+import { TopBarTitle } from "./topbar.tsx";
 
 /**
  * Authenticated shell: sidebar, header and the content region.
@@ -61,6 +62,8 @@ export function Shell({ user }: { user: Whoami }) {
   const { logout } = useSession();
   // dazyflow's rail: the choice sticks between visits.
   const [collapsed, setCollapsed] = useState(savedCollapsed);
+  // The designer names its adventure here, in place of the wordmark.
+  const [pageTitle, setPageTitle] = useState<string | null>(null);
 
   const route = useRoute();
   const operator = isGlobalAdmin(user);
@@ -85,11 +88,20 @@ export function Shell({ user }: { user: Whoami }) {
         {t.t("Skip to main content")}
       </a>
 
-      <aside className="shell__sidebar" data-collapsed={collapsed}>
-        <a className="shell__brand" href={consoleHref("dashboard")} title="Zonventure Studio">
-          <span className="shell__wordmark">{collapsed ? "z" : "zonventure"}</span>
-          <span className="shell__sub nav-label">STUDIO</span>
+      <header className="shell__top">
+        <a className="shell__brand" href={consoleHref("dashboard")} title={pageTitle ?? "Zonventure Studio"}>
+          {pageTitle ? (
+            <span className="shell__wordmark shell__wordmark--page">{pageTitle}</span>
+          ) : (
+            <>
+              <span className="shell__wordmark">zonventure</span>
+              <span className="shell__sub">STUDIO</span>
+            </>
+          )}
         </a>
+      </header>
+
+      <aside className="shell__sidebar" data-collapsed={collapsed}>
 
         <nav className="shell__nav" aria-label={t.t("Primary")}>
           {nav.map((item) => (
@@ -135,7 +147,11 @@ export function Shell({ user }: { user: Whoami }) {
             <a href={consoleHref("organizations")}>{t.t("Manage organizations →")}</a>
           </p>
         )}
-        {!operator && route.name === "designer" && <Designer key={route.slug} slug={route.slug} />}
+        {!operator && route.name === "designer" && (
+          <TopBarTitle.Provider value={setPageTitle}>
+            <Designer key={route.slug} slug={route.slug} />
+          </TopBarTitle.Provider>
+        )}
         {!operator && route.name === "adventures" && <AdventuresPage />}
         {route.name === "dashboard" && (
           <>

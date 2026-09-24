@@ -25,9 +25,10 @@ import { answerOptions, isGraded, isPolygon, matcherLabel, nodeBySlug, portLabel
 import { useT } from "../i18n.tsx";
 import { ConditionEditor } from "./ConditionEditor.tsx";
 import { MediaEditor } from "./MediaEditor.tsx";
-import { AlertTriangle, ChevronLeft, Eye, Pencil, Trash2, X } from "lucide-react";
+import { AlertTriangle, ChevronLeft, ChevronRight, Eye, Plus, Trash2, X } from "lucide-react";
 import { Button, HelpPopover, ICON } from "./dz/ui.tsx";
 import { STEP } from "./dz/types.tsx";
+import { ConceptIcon, PART, TRIGGER } from "./dz/concepts.tsx";
 import { ZoneMap } from "./ZoneMap.tsx";
 
 interface Props {
@@ -108,10 +109,13 @@ export function Inspector({ node, graph, issues, onChange, onGraphChange, onDele
             <ChevronLeft size={ICON.sm} />
             {t.t("All settings")}
           </Button>
-          <span className="ipage__title">{page.title}</span>
+          <span className="ipage__title">
+            {PART[page.id] && <ConceptIcon {...PART[page.id]!} />}
+            {page.title}
+          </span>
         </div>
       )}
-    <div className="inspector-body" key={page?.id ?? ""}>
+    <div className={"inspector-body" + (page && PART[page.id] ? ` concept--${PART[page.id]!.concept}` : "")} key={page?.id ?? ""}>
     <div className="insp inspector-edits" {...(readOnly ? { inert: true } : {})}>
 
       {issues.length > 0 && !page && (
@@ -128,7 +132,7 @@ export function Inspector({ node, graph, issues, onChange, onGraphChange, onDele
       {page ? (
         <>
           {page.hint && <p className="field__hint ipage__hint">{page.hint}</p>}
-          {page.editor}
+          <div className="ipage__body">{page.editor}</div>
         </>
       ) : (
         parts.map((p) => <PartCard key={p.id} part={p} issues={p.ports ? portIssues : 0} readOnly={!!readOnly} onOpen={() => setOpen(p.id)} />)
@@ -172,10 +176,12 @@ interface Part {
 function PartCard({ part, issues, readOnly, onOpen }: { part: Part; issues: number; readOnly: boolean; onOpen: () => void }) {
   const t = useT();
   const drill = part.summary !== undefined;
+  const concept = PART[part.id];
   return (
-    <section className="ipart">
+    <section className={"ipart" + (concept ? ` concept--${concept.concept}` : "")}>
       <header className="ipart__head">
         <h3 className="ipart__title">
+          {concept && <ConceptIcon {...concept} />}
           {part.title}
           {part.count !== undefined && <span className="ipart__count">{part.count}</span>}
         </h3>
@@ -185,16 +191,17 @@ function PartCard({ part, issues, readOnly, onOpen }: { part: Part; issues: numb
             {issues}
           </span>
         )}
-        {drill && (
-          <Button variant="ghost" size="sm" onClick={onOpen} aria-label={t.t("Edit {{part}}", { part: part.title })}>
-            {readOnly ? <Eye size={ICON.sm} /> : <Pencil size={ICON.sm} />}
-            {readOnly ? t.t("View") : t.t("Edit")}
-          </Button>
-        )}
+        {drill && <ChevronRight className="ipart__chevron" size={ICON.md} aria-hidden="true" />}
       </header>
       {drill ? (
-        // The digest opens the part too: it is the bigger target.
-        <button type="button" className="ipart__summary" onClick={onOpen} tabIndex={-1}>
+        // The whole card opens the part: the digest's button is stretched
+        // over it (see .ipart__summary::after), the chevron says so.
+        <button
+          type="button"
+          className="ipart__summary"
+          onClick={onOpen}
+          aria-label={readOnly ? t.t("View {{part}}", { part: part.title }) : t.t("Edit {{part}}", { part: part.title })}
+        >
           {part.summary}
         </button>
       ) : (
@@ -350,7 +357,7 @@ function partsOf(node: Node, graph: Graph, onChange: (n: Node) => void, onGraphC
       id: "journal",
       title: t.t("Notes for the journal"),
       count: titles.length || undefined,
-      summary: titles.length ? <span className="isum__chips">{titles.map((x) => <span key={x} className="chip">{x}</span>)}</span> : <SumNone>{t.t("None")}</SumNone>,
+      summary: titles.length ? <span className="isum__chips">{titles.map((x) => <span key={x} className="chip concept--journal">{x}</span>)}</span> : <SumNone>{t.t("None")}</SumNone>,
       editor: <UnlocksField graph={graph} value={node.unlocks} onChange={(unlocks) => onChange(withOptional({ ...node }, "unlocks", unlocks.length ? unlocks : undefined))} />,
     });
   }
@@ -406,8 +413,9 @@ function StartForm({ node, graph, onGraphChange }: { node: Node; graph: Graph; o
         </select>
       </Field>
       {!zone && (
-        <button type="button" className="link-btn" onClick={newPlace}>
-          + {t.t("Pick a place on the map")}
+        <button type="button" className="add-btn" onClick={newPlace}>
+          <Plus size={ICON.sm} aria-hidden="true" />
+          {t.t("Pick a place on the map")}
         </button>
       )}
       {zone && (
@@ -584,12 +592,13 @@ function puzzleParts(cfg: PuzzleConfig, graph: Graph, onChange: (c: PuzzleConfig
               </select>
               <button
                 type="button"
-                className="link-btn"
+                className="icon-remove"
                 disabled={outputs.length <= 1}
                 title={outputs.length <= 1 ? t.t("A puzzle needs at least one way out.") : undefined}
                 onClick={() => onChange({ ...cfg, outputs: outputs.filter((_, j) => j !== i) })}
+                aria-label={t.t("Remove")}
               >
-                {t.t("Remove")}
+                <Trash2 size={ICON.sm} />
               </button>
             </div>
 
@@ -633,15 +642,25 @@ function puzzleParts(cfg: PuzzleConfig, graph: Graph, onChange: (c: PuzzleConfig
             )}
           </div>
         ))}
-        <div className="box__row box__row--wrap">
+        <div className="add-row">
           {answer?.kind !== "tiles" && (
-            <button type="button" className="link-btn" onClick={() => addOutput("answer")}>
-              + {answer?.kind === "search" ? t.t("Another place") : t.t("Another answer")}
+            <button type="button" className={`add-btn concept--${TRIGGER.answer}`} onClick={() => addOutput("answer")}>
+              <Plus size={ICON.sm} aria-hidden="true" />
+              {answer?.kind === "search" ? t.t("Another place") : t.t("Another answer")}
             </button>
           )}
-          <button type="button" className="link-btn" onClick={() => addOutput("attempts")}>+ {t.t("After wrong guesses")}</button>
-          <button type="button" className="link-btn" onClick={() => addOutput("timeout")}>+ {t.t("When time runs out")}</button>
-          <button type="button" className="link-btn" onClick={() => addOutput("skipped")}>+ {t.t("When the team skips")}</button>
+          <button type="button" className={`add-btn concept--${TRIGGER.attempts}`} onClick={() => addOutput("attempts")}>
+            <Plus size={ICON.sm} aria-hidden="true" />
+            {t.t("After wrong guesses")}
+          </button>
+          <button type="button" className={`add-btn concept--${TRIGGER.timeout}`} onClick={() => addOutput("timeout")}>
+            <Plus size={ICON.sm} aria-hidden="true" />
+            {t.t("When time runs out")}
+          </button>
+          <button type="button" className={`add-btn concept--${TRIGGER.skipped}`} onClick={() => addOutput("skipped")}>
+            <Plus size={ICON.sm} aria-hidden="true" />
+            {t.t("When the team skips")}
+          </button>
         </div>
       </>
     ),
@@ -950,11 +969,13 @@ function hubParts(cfg: HubConfig, graph: Graph, onChange: (c: HubConfig) => void
             )}
             <button
               type="button"
-              className="link-btn"
+              className="icon-remove"
               disabled={branches.length <= 1}
               onClick={() => onChange({ ...cfg, branches: branches.filter((_, j) => j !== i) })}
+              aria-label={t.t("Remove")}
+              title={t.t("Remove")}
             >
-              {t.t("Remove")}
+              <Trash2 size={ICON.sm} />
             </button>
           </div>
           {cfg.policy === "choice" && (
@@ -988,13 +1009,14 @@ function hubParts(cfg: HubConfig, graph: Graph, onChange: (c: HubConfig) => void
       ))}
       <button
         type="button"
-        className="link-btn"
+        className="add-btn"
         onClick={() => {
           const port = nextBranchPort(branches.map((b) => b.port));
           onChange({ ...cfg, branches: [...branches, { port, label: port.toUpperCase() }] });
         }}
       >
-        + {t.t("Add branch")}
+        <Plus size={ICON.sm} aria-hidden="true" />
+        {t.t("Add branch")}
       </button>
     
       </>
@@ -1079,8 +1101,8 @@ function switchParts(node: Node, graph: Graph, onGraphChange: (g: Graph) => void
                 onChange={(e) => setCase(graph, i, { ...c, label: e.target.value })}
                 aria-label={t.t("Path name")}
               />
-              <button type="button" className="link-btn" onClick={() => setCfg(graph, { ...cfg, cases: cases.filter((_, j) => j !== i) })}>
-                {t.t("Remove")}
+              <button type="button" className="icon-remove" onClick={() => setCfg(graph, { ...cfg, cases: cases.filter((_, j) => j !== i) })} aria-label={t.t("Remove")} title={t.t("Remove")}>
+                <Trash2 size={ICON.sm} />
               </button>
             </div>
 
@@ -1136,13 +1158,14 @@ function switchParts(node: Node, graph: Graph, onGraphChange: (g: Graph) => void
       })}
       <button
         type="button"
-        className="link-btn"
+        className="add-btn"
         onClick={() => {
           const port = nextBranchPort(cases.map((c) => c.port));
           setCfg(graph, { ...cfg, cases: [...cases, { port, label: port.toUpperCase() }] });
         }}
       >
-        + {t.t("Add path")}
+        <Plus size={ICON.sm} aria-hidden="true" />
+        {t.t("Add path")}
       </button>
     
         </>
@@ -1263,20 +1286,23 @@ function LockForm({ cfg, lock, onChange }: { cfg: PuzzleConfig; lock: AnswerOf<"
             <div className="box__row">
               <input className="field__input" value={s.label ?? s.value} aria-label={t.t("Symbol")}
                 onChange={(e) => setSymbol(i, { ...s, label: e.target.value })} />
-              <button type="button" className="link-btn" disabled={lock.symbols.length <= 2}
-                onClick={() => setLock({ ...lock, symbols: lock.symbols.filter((_, j) => j !== i), start: (lock.start ?? []).map((x) => Math.min(x, lock.symbols.length - 2)) })}>
-                ×
+              <button type="button" className="icon-remove" disabled={lock.symbols.length <= 2}
+                onClick={() => setLock({ ...lock, symbols: lock.symbols.filter((_, j) => j !== i), start: (lock.start ?? []).map((x) => Math.min(x, lock.symbols.length - 2)) })}
+                aria-label={t.t("Remove")}
+              >
+                <X size={ICON.sm} />
               </button>
             </div>
             <MediaEditor single media={s.image ? [s.image] : undefined} onChange={(m) => setSymbol(i, m?.[0] ? { ...s, image: m[0] } : withOptional({ ...s }, "image", undefined))} />
           </div>
         ))}
-        <button type="button" className="link-btn" onClick={() => {
+        <button type="button" className="add-btn" onClick={() => {
           let v = String(lock.symbols.length + 1);
           for (let n = lock.symbols.length + 2; lock.symbols.some((x) => x.value === v); n++) v = String(n);
           setLock({ ...lock, symbols: [...lock.symbols, { value: v, label: v }] });
         }}>
-          + {t.t("Add symbol")}
+          <Plus size={ICON.sm} aria-hidden="true" />
+          {t.t("Add symbol")}
         </button>
       </Field>
       <Field label={t.t("The right combination")}>
@@ -1332,8 +1358,8 @@ function ChoicesForm({ cfg, choice: choices, onChange }: { cfg: PuzzleConfig; ch
           <div className="box__row">
             <input className="field__input" value={f.label ?? ""} placeholder={t.t("Question (optional for one)")} aria-label={t.t("Question")}
               onChange={(e) => setField(i, e.target.value ? { ...f, label: e.target.value } : withOptional({ ...f }, "label", undefined))} />
-            <button type="button" className="link-btn" disabled={choices.fields.length <= 1} onClick={() => setFields(choices.fields.filter((_, j) => j !== i))}>
-              {t.t("Remove")}
+            <button type="button" className="icon-remove" disabled={choices.fields.length <= 1} onClick={() => setFields(choices.fields.filter((_, j) => j !== i))} aria-label={t.t("Remove")} title={t.t("Remove")}>
+              <Trash2 size={ICON.sm} />
             </button>
           </div>
           {f.options.map((o, k) => (
@@ -1343,23 +1369,27 @@ function ChoicesForm({ cfg, choice: choices, onChange }: { cfg: PuzzleConfig; ch
               )}
               <input className="field__input" value={o.label ?? o.value} aria-label={t.t("Option")}
                 onChange={(e) => setField(i, { ...f, options: f.options.map((x, j) => (j === k ? { ...x, label: e.target.value } : x)) })} />
-              <button type="button" className="link-btn" disabled={f.options.length <= 2}
-                onClick={() => setField(i, withOptional({ ...f, options: f.options.filter((_, j) => j !== k) }, "answer", f.answer === o.value ? undefined : f.answer))}>
-                ×
+              <button type="button" className="icon-remove" disabled={f.options.length <= 2}
+                onClick={() => setField(i, withOptional({ ...f, options: f.options.filter((_, j) => j !== k) }, "answer", f.answer === o.value ? undefined : f.answer))}
+                aria-label={t.t("Remove")}
+              >
+                <X size={ICON.sm} />
               </button>
             </div>
           ))}
-          <button type="button" className="link-btn" onClick={() => {
+          <button type="button" className="add-btn" onClick={() => {
             const label = t.t("Option {{n}}", { n: f.options.length + 1 });
             setField(i, { ...f, options: [...f.options, { value: valueFor(label, f.options), label }] });
           }}>
-            + {t.t("Add option")}
+            <Plus size={ICON.sm} aria-hidden="true" />
+            {t.t("Add option")}
           </button>
         </div>
       ))}
       <div className="box__row box__row--wrap">
-        <button type="button" className="link-btn" onClick={() => setFields([...choices.fields, { label: "", options: [{ value: "a", label: "A" }, { value: "b", label: "B" }], ...(graded ? { answer: "a" } : {}) }])}>
-          + {t.t("Add question")}
+        <button type="button" className="add-btn" onClick={() => setFields([...choices.fields, { label: "", options: [{ value: "a", label: "A" }, { value: "b", label: "B" }], ...(graded ? { answer: "a" } : {}) }])}>
+          <Plus size={ICON.sm} aria-hidden="true" />
+          {t.t("Add question")}
         </button>
         <label className="check">
           <input type="checkbox" checked={graded} onChange={(e) =>
@@ -1455,7 +1485,7 @@ function UnlocksField({ graph, value, onChange }: { graph: Graph; value: string[
       {picked.length > 0 && (
         <div className="chips">
           {picked.map((s) => (
-            <span key={s} className="chip">
+            <span key={s} className="chip concept--journal">
               {titleOf(s)}
               <button type="button" className="chip__x" aria-label={t.t("Remove")} onClick={() => onChange(picked.filter((x) => x !== s))}>
                 ×
@@ -1547,13 +1577,14 @@ function ListEditor<T>({
       {items.map((item, i) => (
         <div key={i} className="list-ed__item">
           <div className="list-ed__body">{render(item, (next) => onChange(items.map((x, j) => (j === i ? next : x))))}</div>
-          <button type="button" className="link-btn" onClick={() => onChange(items.filter((_, j) => j !== i))} aria-label={t.t("Remove")}>
-            ×
+          <button type="button" className="icon-remove" onClick={() => onChange(items.filter((_, j) => j !== i))} aria-label={t.t("Remove")}>
+            <X size={ICON.sm} />
           </button>
         </div>
       ))}
-      <button type="button" className="link-btn" onClick={() => onChange([...items, make()])}>
-        + {addLabel}
+      <button type="button" className="add-btn" onClick={() => onChange([...items, make()])}>
+        <Plus size={ICON.sm} aria-hidden="true" />
+        {addLabel}
       </button>
     </div>
   );

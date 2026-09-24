@@ -1,6 +1,21 @@
 /* Designer styles. Colours come from tokens only; per-type accents are
  * derived from the brand palette with color-mix so they follow dark mode. */
 
+/* One hue per step type, shared by the canvas card, its icon, the list
+ * view and the quick palette. Fixed values rather than theme tokens: the
+ * icon tile carries a white glyph in both themes, so each hue must stay
+ * dark enough for it; text in the type's hue mixes toward --ink instead. */
+:root {
+  --type-start: #1b6b43;
+  --type-puzzle: #ad1357;
+  --type-story: #6d4bc3;
+  --type-hub: #2f6fb3;
+  --type-gate: #b87503;
+  --type-switch: #0e8a7e;
+  --type-effect: #2f7fd1;
+  --type-end: #3d5573;
+}
+
 .designer {
   display: flex;
   flex-direction: column;
@@ -70,6 +85,8 @@
   color: var(--ink-soft);
   cursor: pointer;
 }
+.seg button + button { border-left: 1px solid var(--border-soft); }
+.seg button:hover:not(:disabled, .is-on) { background: var(--surface-2); color: var(--ink); }
 .seg button.is-on { background: var(--accent); color: #fff; }
 .seg button:disabled { opacity: 0.4; cursor: not-allowed; }
 
@@ -81,7 +98,7 @@
   cursor: pointer;
 }
 .status--ok { background: var(--success-bg); color: var(--success); }
-.status--warning { background: color-mix(in srgb, #d98e04 18%, var(--surface)); color: color-mix(in srgb, #b07000 85%, var(--ink)); }
+.status--warning { background: var(--warning-bg); color: var(--warning); }
 .status--error { background: var(--danger-bg); color: var(--danger); }
 
 /* --- canvas ---------------------------------------------------------- */
@@ -89,7 +106,12 @@
 .dz-flow { position: absolute; inset: 0; }
 .dz-flow .react-flow { background: var(--bg); }
 .dz-flow .react-flow__controls button { background: var(--surface); color: var(--ink); border-color: var(--border-soft); }
-.canvas__minimap { background: var(--surface) !important; }
+.canvas__minimap {
+  background: var(--surface) !important;
+  /* React Flow's defaults are light-only grey. */
+  --xy-minimap-mask-background-color: color-mix(in srgb, var(--ink) 10%, transparent);
+  --xy-minimap-node-background-color: color-mix(in srgb, var(--ink) 22%, var(--surface));
+}
 .canvas__hint {
   position: absolute;
   left: 50%;
@@ -98,7 +120,8 @@
   background: var(--ink);
   color: var(--bg);
   padding: var(--sp-2) var(--sp-4);
-  border-radius: var(--radius);
+  border-radius: var(--radius-pill);
+  box-shadow: var(--shadow-lg);
   font-size: var(--text-sm);
   z-index: var(--z-toast);
 }
@@ -113,28 +136,33 @@
   width: 240px;
   background: var(--surface);
   border: 1px solid var(--border-soft);
-  border-top: 4px solid var(--type);
+  border-top: 3px solid var(--type);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
   font-size: var(--text-sm);
 }
-.card--start { --type: var(--success); }
-.card--puzzle { --type: var(--accent); }
-.card--story { --type: #6b5bd6; }
-.card--hub { --type: #0f8b8d; }
-.card--gate { --type: #d98e04; }
-.card--switch { --type: #0e8a7e; }
-.card--effect { --type: #3d7bd9; }
-.card--end { --type: var(--ink); }
+.react-flow__node:hover .card:not(.is-selected) { border-color: color-mix(in srgb, var(--ink) 20%, var(--border-soft)); border-top-color: var(--type); }
+.card--start { --type: var(--type-start); }
+.card--puzzle { --type: var(--type-puzzle); }
+.card--story { --type: var(--type-story); }
+.card--hub { --type: var(--type-hub); }
+.card--gate { --type: var(--type-gate); }
+.card--switch { --type: var(--type-switch); }
+.card--effect { --type: var(--type-effect); }
+.card--end { --type: var(--type-end); }
 .card.is-selected { outline: 2px solid var(--accent); outline-offset: 2px; }
-.card.has-error { border-color: var(--danger); }
-.card.has-warning { border-color: color-mix(in srgb, #d98e04 60%, var(--border-soft)); }
+/* The badge names the problem; the frame only hints at it, and keeps
+   the type stripe so the step still reads as what it is. */
+.card.has-error { border-color: color-mix(in srgb, var(--danger) 55%, var(--border-soft)); border-top-color: var(--type); }
+.card.has-warning { border-color: color-mix(in srgb, var(--warning) 45%, var(--border-soft)); border-top-color: var(--type); }
 
-.card__head { display: flex; align-items: center; justify-content: space-between; padding: var(--sp-2) var(--sp-3) 0; }
-.card__type { font-size: var(--text-xs); font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--type); }
-.card__title { padding: 0 var(--sp-3); font-weight: 700; color: var(--ink); }
+.card__head { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-2) var(--sp-3) var(--sp-1); }
+.card__type { flex: 1; min-width: 0; font-size: var(--text-xs); font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: color-mix(in srgb, var(--type) var(--concept-ink), var(--ink)); }
+.card__title { padding: 0 var(--sp-3); font-weight: 700; line-height: 1.3; color: var(--ink); overflow-wrap: anywhere; }
+/* Margin, not padding: padding inside the clamp shows a sliver of the
+   third line under the ellipsis. */
 .card__summary {
-  padding: var(--sp-1) var(--sp-3) var(--sp-2);
+  margin: var(--sp-1) var(--sp-3) var(--sp-2);
   color: var(--muted);
   font-size: var(--text-xs);
   display: -webkit-box;
@@ -154,9 +182,9 @@
   color: #fff;
 }
 .card__badge--error { background: var(--danger); }
-.card__badge--warning { background: #d98e04; }
+.card__badge--warning { background: var(--type-gate); }
 
-.card__ports { border-top: 1px solid var(--border-soft); padding: var(--sp-1) 0; }
+.card__ports { margin-top: var(--sp-2); border-top: 1px solid var(--border-soft); padding: var(--sp-1) 0; border-radius: 0 0 var(--radius) var(--radius); background: color-mix(in srgb, var(--surface-2) 45%, var(--surface)); }
 .card__port {
   position: relative;
   text-align: right;
@@ -170,6 +198,8 @@
 .card__in { background: var(--ink-soft); }
 .card__out { background: var(--type); right: -7px; }
 .card__port.is-bad .card__out { background: var(--danger); }
+.card__port[class*="concept--"]:not(.is-bad) .card__port-label { color: color-mix(in srgb, var(--concept) var(--concept-ink), var(--ink)); font-weight: 600; }
+.card__port[class*="concept--"]:not(.is-bad) .card__out { background: var(--concept); }
 
 /* --- quick palette ----------------------------------------------------- */
 
@@ -182,7 +212,7 @@
   background: var(--surface);
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-lg);
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
+  box-shadow: var(--shadow-lg);
   overflow: hidden;
 }
 .qp__search { padding: var(--sp-2); border-bottom: 1px solid var(--border-soft); }
@@ -218,20 +248,22 @@
   cursor: pointer;
   color: var(--ink);
 }
-.qp__row.is-active { background: var(--surface-2); }
+.qp__row { border-radius: var(--radius-sm); }
+.qp__list { padding: var(--sp-1); }
+.qp__row.is-active { background: color-mix(in srgb, var(--accent) 10%, var(--surface)); }
 .qp__text { display: flex; flex-direction: column; min-width: 0; }
 .qp__label { font-weight: 600; font-size: var(--text-sm); }
 .qp__hint { font-size: var(--text-xs); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .qp__empty { padding: var(--sp-4); color: var(--muted); font-size: var(--text-sm); }
 .qp__dot { flex: none; width: 0.7rem; height: 0.7rem; border-radius: 3px; background: var(--ink-soft); }
-.qp__dot--puzzle { background: var(--accent); }
-.qp__dot--story { background: #6b5bd6; }
-.qp__dot--hub { background: #0f8b8d; }
-.qp__dot--gate { background: #d98e04; }
-.qp__dot--switch { background: #0e8a7e; }
-.qp__dot--effect { background: #3d7bd9; }
-.qp__dot--end { background: var(--ink); }
-.qp__dot--start { background: var(--success); }
+.qp__dot--puzzle { background: var(--type-puzzle); }
+.qp__dot--story { background: var(--type-story); }
+.qp__dot--hub { background: var(--type-hub); }
+.qp__dot--gate { background: var(--type-gate); }
+.qp__dot--switch { background: var(--type-switch); }
+.qp__dot--effect { background: var(--type-effect); }
+.qp__dot--end { background: var(--type-end); }
+.qp__dot--start { background: var(--type-start); }
 
 /* --- side panel -------------------------------------------------------- */
 
@@ -246,6 +278,7 @@
   border-bottom: 2px solid transparent;
   cursor: pointer;
 }
+.tabs button:hover { color: var(--ink); }
 .tabs button.is-on { color: var(--ink); border-bottom-color: var(--accent); }
 .tabs__count { background: var(--surface-2); border-radius: var(--radius-pill); padding: 0 0.4rem; margin-left: 0.25rem; }
 
@@ -255,7 +288,7 @@
 .insp__type { font-size: var(--text-xs); font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--accent); }
 .insp__slug { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--muted); }
 .insp__section { display: flex; flex-direction: column; gap: var(--sp-2); }
-.insp__section h3 { margin: 0; font-size: var(--text-sm); }
+.insp__section h3 { display: flex; align-items: center; gap: var(--sp-2); margin: 0; font-size: var(--text-sm); }
 .insp__advanced > summary { cursor: pointer; font-size: var(--text-sm); font-weight: 600; color: var(--ink-soft); }
 .insp__advanced[open] > summary { margin-bottom: var(--sp-1); }
 .insp__issues { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-1); }
@@ -263,16 +296,58 @@
 
 /* Inspector overview: one card per part of a step's settings. A card
    either holds its editor or shows a digest that opens the part alone. */
-.ipart { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-3); border: 1px solid var(--border-soft); border-radius: var(--radius); background: var(--surface); }
+.ipart { display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-3) var(--sp-4) var(--sp-4); border: 1px solid var(--border-soft); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-sm); transition: border-color var(--dur-fast), box-shadow var(--dur); }
+/* A digest opens its part: the whole card answers the hover, in the
+   part's colour, rather than a grey box behind the text. */
+.ipart:has(> .ipart__summary:hover) { border-color: color-mix(in srgb, var(--concept, var(--ink)) 35%, var(--border-soft)); box-shadow: var(--shadow); }
+/* One target for the whole card: the digest's button covers it. */
+.ipart:has(> .ipart__summary) { position: relative; }
+.ipart__summary::after { content: ""; position: absolute; inset: 0; border-radius: inherit; }
+.ipart:has(> .ipart__summary:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+.ipart__chevron { flex: none; color: var(--dz-faint, var(--muted)); transition: transform var(--dur-fast) var(--ease-out), color var(--dur-fast); }
+.ipart:has(> .ipart__summary:hover) .ipart__chevron { transform: translateX(2px); color: color-mix(in srgb, var(--concept, var(--accent)) var(--concept-ink), var(--ink)); }
+/* The problem count keeps its tooltip above the card's button. */
+.ipart__issues { position: relative; z-index: 1; }
 /* .inspector-edits is display: contents, so the spacing is the cards' own. */
+:where(.dz .inspector-edits) > * + * { margin-top: var(--sp-3); }
 .insp__issues + .ipart, .ipart + .ipart { margin-top: var(--sp-3); }
 .ipart + .inspector-actions { margin-top: var(--sp-4); }
 .ipart__head { display: flex; align-items: center; gap: var(--sp-2); min-height: 28px; }
 .ipart__title { flex: 1; margin: 0; font-size: var(--text-sm); font-weight: 700; color: var(--ink); display: flex; align-items: center; gap: var(--sp-2); }
-.ipart__count { font-size: var(--text-xs); font-weight: 600; color: var(--muted); background: var(--surface-2); border-radius: var(--radius-pill); padding: 0 0.45rem; }
+
+/* Concepts (see dz/concepts.tsx): the class names the hue, and every
+   use derives its tint or text colour from it. */
+.concept--content { --concept: var(--c-content); }
+.concept--answer { --concept: var(--c-answer); }
+.concept--hint { --concept: var(--c-hint); }
+.concept--flow { --concept: var(--c-flow); }
+.concept--logic { --concept: var(--c-logic); }
+.concept--place { --concept: var(--c-place); }
+.concept--time { --concept: var(--c-time); }
+.concept--effect { --concept: var(--c-effect); }
+.concept--item { --concept: var(--c-item); }
+.concept--journal { --concept: var(--c-journal); }
+.concept-icon {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  color: color-mix(in srgb, var(--concept) var(--concept-ink), var(--ink));
+  background: color-mix(in srgb, var(--concept) var(--concept-tint), var(--surface));
+}
+.isum__chips .chip[class*="concept--"],
+.chips .chip[class*="concept--"] {
+  background: color-mix(in srgb, var(--concept) var(--concept-tint), var(--surface));
+  color: color-mix(in srgb, var(--concept) var(--concept-ink), var(--ink));
+  font-weight: 600;
+}
+.ipart__count { font-size: var(--text-xs); font-weight: 700; color: color-mix(in srgb, var(--concept, var(--muted)) var(--concept-ink), var(--ink)); background: color-mix(in srgb, var(--concept, var(--muted)) var(--concept-tint), var(--surface)); border-radius: var(--radius-pill); padding: 0 0.45rem; }
 .ipart__issues { display: inline-flex; align-items: center; gap: 2px; font-size: var(--text-xs); font-weight: 700; color: var(--danger); }
 .ipart__body { display: flex; flex-direction: column; gap: var(--sp-3); }
-.ipart__summary { all: unset; display: flex; flex-direction: column; gap: 6px; cursor: pointer; font-size: var(--text-sm); color: var(--ink-soft); }
+.ipart__summary { all: unset; display: flex; flex-direction: column; gap: var(--sp-2); cursor: pointer; font-size: var(--text-sm); color: var(--ink-soft); }
+.dz .ipart .ipart__summary:focus-visible { outline: none; }
 .ipart__summary:hover .isum__value { color: var(--ink); }
 .isum__row { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .isum__label { font-size: var(--text-xs); font-weight: 600; color: var(--muted); }
@@ -283,9 +358,23 @@
 .isum__chips .chip { margin: 0; padding: 2px 10px; border-radius: var(--radius-pill); background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--ink); }
 
 /* A part opened on its own page: the way back, and which part it is. */
-.ipage__bar { display: flex; align-items: center; gap: var(--sp-2); padding: 6px var(--sp-3); border-bottom: 1px solid var(--border-soft); background: var(--surface-2); }
-.ipage__title { font-size: var(--text-sm); font-weight: 700; color: var(--ink); }
-.ipage__hint { margin-top: calc(-1 * var(--sp-2)); }
+.ipage__bar { display: flex; align-items: center; gap: var(--sp-2); min-height: 48px; padding: var(--sp-1) var(--sp-3); border-bottom: 1px solid var(--border-soft); background: var(--surface); }
+.ipage__title { display: inline-flex; align-items: center; gap: var(--sp-2); min-width: 0; padding-left: var(--sp-3); border-left: 1px solid var(--border-soft); font-size: var(--dz-text-base, var(--text-sm)); font-weight: 700; color: var(--ink); }
+/* A part's page. Loose settings sit on a card like the overview's; a
+   page that is a list of items already shows each item as a card. */
+.ipage__body { display: flex; flex-direction: column; gap: var(--sp-3); }
+.ipage__body:not(:has(> .box, > .list-ed)) { padding: var(--sp-4); border: 1px solid var(--border-soft); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-sm); }
+/* What the part is for, as a callout in its colour. */
+.ipage__hint {
+  margin: 0;
+  padding: var(--sp-3);
+  border: 1px solid color-mix(in srgb, var(--concept, var(--accent)) 20%, var(--border-soft));
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--concept, var(--accent)) 6%, var(--surface));
+  color: var(--ink-soft);
+  font-size: var(--dz-text-sm, var(--text-xs));
+  line-height: 1.5;
+}
 .res { padding: var(--sp-4); display: flex; flex-direction: column; gap: var(--sp-5); }
 
 .field__hint { font-size: var(--text-xs); color: var(--muted); margin: 0; }
@@ -293,15 +382,31 @@
 .field--num .field__input { width: 100%; }
 textarea.field__input { resize: vertical; font-family: var(--font-body); }
 
-.box { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-3); border: 1px solid var(--border-soft); border-radius: var(--radius); background: var(--bg); }
+.box { display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-3); border: 1px solid var(--border-soft); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-sm); }
+/* An item card's first row names it (and removes it); a rule sets it
+   off from the settings under it. */
+.box > .box__row:first-child:not(:last-child) { align-items: center; padding-bottom: var(--sp-3); border-bottom: 1px solid var(--border-soft); }
 .box__row { display: flex; gap: var(--sp-2); align-items: flex-end; }
+/* A bare input beside a labelled number: the number is the short one. */
+.box__row:has(> .field__input) > .field--num { flex: 0 0 6.5rem; }
 .box__row > .field__input { flex: 1; min-width: 0; }
 .box__row--wrap { flex-wrap: wrap; }
 /* A route's name and trigger: the trigger is never cut short ("Correc…");
    in a narrow inspector it wraps onto its own line instead. */
 .box__row--route > input.field__input { flex: 1 1 7rem; min-width: 7rem; }
 .box__row--route > select.field__input { flex: 1 1 10rem; min-width: 10rem; width: auto; }
-.box__more summary { cursor: pointer; font-size: var(--text-xs); color: var(--ink-soft); }
+/* Disclosures: a turning chevron rather than the browser's triangle. */
+.box__more > summary,
+.insp__advanced > summary { display: inline-flex; align-items: center; gap: var(--sp-2); list-style: none; cursor: pointer; font-size: var(--text-xs); font-weight: 600; color: var(--muted); }
+.box__more > summary::-webkit-details-marker,
+.insp__advanced > summary::-webkit-details-marker { display: none; }
+.box__more > summary::before,
+.insp__advanced > summary::before { content: ""; width: 6px; height: 6px; margin: 0 2px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(-45deg); transition: transform var(--dur-fast); }
+.box__more[open] > summary::before,
+.insp__advanced[open] > summary::before { transform: rotate(45deg); }
+.box__more > summary:hover,
+.insp__advanced > summary:hover { color: var(--ink); }
+.box__more[open] { display: flex; flex-direction: column; gap: var(--sp-2); }
 .check { display: flex; gap: var(--sp-2); align-items: center; font-size: var(--text-sm); }
 .chip { display: inline-flex; gap: var(--sp-1); align-items: center; font-size: var(--text-xs); margin-right: var(--sp-2); }
 .check:has(.check__hint) { align-items: flex-start; }
@@ -312,7 +417,12 @@ textarea.field__input { resize: vertical; font-family: var(--font-body); }
 .chip__x:hover { color: var(--danger); }
 
 .list-ed { display: flex; flex-direction: column; gap: var(--sp-2); }
-.list-ed__item { display: flex; gap: var(--sp-2); align-items: flex-start; }
+.list-ed__item { display: flex; gap: var(--sp-2); align-items: flex-end; }
+/* A list that is the whole of a part's page: each item is a card,
+   removed from its corner. Nested lists (a route's answers) stay rows. */
+.ipage__body > .list-ed { gap: var(--sp-3); }
+.ipage__body > .list-ed > .list-ed__item { position: relative; padding: var(--sp-3) calc(var(--sp-3) + 32px) var(--sp-3) var(--sp-3); border: 1px solid var(--border-soft); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-sm); }
+.ipage__body > .list-ed > .list-ed__item > .icon-remove { position: absolute; top: var(--sp-1); right: var(--sp-1); height: 32px; }
 .list-ed__body { flex: 1; display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
 
 .cond { display: flex; flex-direction: column; gap: var(--sp-2); }
@@ -335,8 +445,9 @@ textarea.field__input { resize: vertical; font-family: var(--font-body); }
   cursor: pointer;
 }
 .issue:disabled { cursor: default; }
-.issue--error { background: var(--danger-bg); color: var(--danger); }
-.issue--warning { background: color-mix(in srgb, #d98e04 14%, var(--surface)); color: color-mix(in srgb, #9a6200 85%, var(--ink)); }
+.issue:not(:disabled):hover { filter: brightness(0.97); }
+.issue--error { background: var(--danger-bg); color: var(--danger); box-shadow: inset 3px 0 0 var(--danger); }
+.issue--warning { background: var(--warning-bg); color: var(--warning); box-shadow: inset 3px 0 0 var(--warning); }
 
 /* --- list view ------------------------------------------------------------ */
 
@@ -355,6 +466,7 @@ textarea.field__input { resize: vertical; font-family: var(--font-body); }
   text-transform: none;
 }
 .outline__via::after { content: " ›"; }
+.outline__jump button:hover { color: var(--accent); border-color: var(--accent); }
 .outline__jump button {
   display: inline-flex;
   align-items: center;
@@ -383,12 +495,17 @@ textarea.field__input { resize: vertical; font-family: var(--font-body); }
   gap: var(--sp-2);
   background: var(--surface);
   border: 1px solid var(--border-soft);
-  border-left: 4px solid var(--accent);
   border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
   padding-right: var(--sp-2);
+  transition: border-color var(--dur-fast), box-shadow var(--dur-fast);
 }
+.step:hover { border-color: color-mix(in srgb, var(--ink) 20%, var(--border-soft)); }
+/* The row is the hover target; the editor's generic button hover would
+   grey out only the text half of it. */
+.step .step__main:hover:not(:disabled) { background: none; border-color: transparent; }
 .step.is-selected { outline: 2px solid var(--accent); outline-offset: 2px; }
-.step.has-error { border-left-color: var(--danger); }
+.step.has-error { border-color: color-mix(in srgb, var(--danger) 45%, var(--border-soft)); box-shadow: inset 3px 0 0 var(--danger), var(--shadow-sm); }
 .step__main { flex: 1; font: inherit; display: flex; gap: var(--sp-3); align-items: center; justify-content: flex-start; background: none; border: 0; padding: var(--sp-3); text-align: left; cursor: pointer; color: var(--ink); min-width: 0; }
 .step__icon { flex: none; display: grid; place-items: center; width: 2rem; height: 2rem; border-radius: var(--radius-sm); }
 .step__text { display: flex; flex-direction: column; min-width: 0; }
@@ -396,15 +513,28 @@ textarea.field__input { resize: vertical; font-family: var(--font-body); }
 .step__sub { color: var(--muted); font-size: var(--text-xs); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .step__actions { display: flex; gap: var(--sp-1); }
 
-.designer-empty { max-width: 34rem; margin: var(--sp-7) auto; padding-inline: var(--sp-4); display: flex; flex-direction: column; gap: var(--sp-3); }
+.designer-empty { max-width: 34rem; margin: var(--sp-7) auto; padding: var(--sp-6); display: flex; flex-direction: column; gap: var(--sp-3); background: var(--surface); border: 1px solid var(--border-soft); border-radius: var(--radius-lg); box-shadow: var(--shadow); }
+.designer-empty > * { margin: 0; }
 .designer-empty__actions { display: flex; gap: var(--sp-2); }
 
 /* --- adventure list ---------------------------------------------------------- */
 
-.adv-list { list-style: none; padding: 0; margin: 0; display: grid; gap: var(--sp-2); grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr)); }
-.adv-card { display: flex; flex-direction: column; gap: var(--sp-1); padding: var(--sp-4); background: var(--surface); border: 1px solid var(--border-soft); border-radius: var(--radius); color: var(--ink); }
-.adv-card:hover { border-color: var(--accent); text-decoration: none; }
-.adv-card__title { font-weight: 700; }
+.adv-list { list-style: none; padding: 0; margin: 0; display: grid; gap: var(--sp-4); grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr)); }
+.adv-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  height: 100%;
+  padding: var(--sp-4) var(--sp-5);
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  color: var(--ink);
+  transition: border-color var(--dur-fast), box-shadow var(--dur), transform var(--dur-fast);
+}
+.adv-card:hover { border-color: color-mix(in srgb, var(--accent) 45%, var(--border-soft)); box-shadow: var(--shadow); transform: translateY(-1px); text-decoration: none; }
+.adv-card__title { font-weight: 700; font-size: var(--text-base); line-height: 1.3; }
 .adv-card__meta { font-size: var(--text-xs); color: var(--muted); }
 
 @media (max-width: 60rem) {
@@ -434,14 +564,14 @@ textarea.field__input { resize: vertical; font-family: var(--font-body); }
 /* The preview's floating window. */
 .float-win {
   position: fixed;
-  z-index: 30;
+  z-index: var(--z-overlay);
   display: flex;
   flex-direction: column;
   max-height: calc(100dvh - 16px);
   background: var(--dz-surface, var(--surface));
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-lg);
-  box-shadow: 0 12px 40px rgb(0 0 0 / 0.22), 0 2px 6px rgb(0 0 0 / 0.12);
+  box-shadow: var(--shadow-lg);
   overflow: hidden;
 }
 .float-win__bar {
@@ -450,6 +580,7 @@ textarea.field__input { resize: vertical; font-family: var(--font-body); }
   gap: var(--sp-2);
   padding: var(--sp-1) var(--sp-2) var(--sp-1) var(--sp-3);
   border-bottom: 1px solid var(--border-soft);
+  background: var(--surface-2);
   cursor: grab;
   user-select: none;
   touch-action: none;
@@ -523,12 +654,12 @@ textarea.field__input { resize: vertical; font-family: var(--font-body); }
 .answer-chip small { font-weight: 400; color: var(--muted); }
 .answer-chip.is-gone { background: var(--danger-bg); color: var(--danger); }
 .answer-chip button { border: 0; background: none; color: inherit; cursor: pointer; font-size: 1rem; line-height: 1; padding: 0 0.2rem; }
-.answer-add { width: auto; padding: var(--sp-1) var(--sp-2); font-size: var(--text-sm); }
+.answer-add, .dz .field__input.answer-add { width: auto; padding: var(--sp-1) var(--sp-2); font-size: var(--text-sm); }
 
 /* --- The dazyflow shell -------------------------------------------------
  * dz.css carries dazyflow's own rules; these are the few joints it leaves
  * to its FlowEditor and app shell, which are not ported. */
-.dz-designer { height: 100dvh; min-height: 0; }
+.dz-designer { height: 100%; min-height: 0; }
 .dz-designer .editor { height: 100%; }
 .dz-designer .canvas { position: relative; display: flex; flex-direction: column; height: 100%; min-width: 0; min-height: 0; }
 .dz-stage { position: relative; flex: 1; min-height: 0; }
@@ -538,21 +669,39 @@ textarea.field__input { resize: vertical; font-family: var(--font-body); }
 }
 .dz-back { display: inline-grid; place-items: center; width: 32px; height: 32px; border-radius: var(--dz-r-2); color: var(--dz-ink-soft); }
 .dz-back:hover { background: var(--dz-surface-2); text-decoration: none; }
-.dz-title { max-width: 16rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-brand); font-weight: 400; font-size: var(--dz-text-lg); color: var(--accent); }
 .dz .editor-run { margin-left: var(--dz-space-1); }
-.dz .inspector-body { overflow-y: auto; min-height: 0; flex: 1; }
+.dz .inspector-body { overflow-y: auto; min-height: 0; flex: 1; background: var(--dz-bg); }
+/* Form controls take the editor chrome's scale, not the console's:
+   16px inputs and shouted labels crowd a 320px inspector. */
+.dz .field__label { font-size: var(--dz-text-sm); font-weight: 600; letter-spacing: 0; text-transform: none; color: var(--dz-ink-soft); }
+.dz .field__input { font-size: var(--dz-text-md); padding: var(--dz-space-2) var(--dz-space-3); border-radius: var(--dz-r-2); }
+/* Spacing comes from the containers' gaps; dz.css's bottom margin on
+   every field pushes labelled fields out of line with bare inputs. */
+.dz .inspector .field { margin-bottom: 0; }
 .dz .inspector-body .insp { padding: var(--dz-space-3) var(--dz-space-4); }
 .dz .inspector-actions { padding-top: var(--dz-space-3); border-top: 1px solid var(--dz-border); }
+/* The inspector's width handle: a hairline on its left edge that lights
+   up on hover, focus and drag, with a wider hit area than it shows. */
+.dz .inspector-resize { position: absolute; top: 0; bottom: 0; left: -4px; z-index: 2; width: 8px; cursor: col-resize; touch-action: none; }
+.dz .inspector-resize::after { content: ""; position: absolute; top: 0; bottom: 0; left: 3px; width: 2px; background: transparent; transition: background var(--dz-dur-2) var(--dz-ease-out); }
+.dz .inspector-resize:hover::after,
+.dz .inspector-resize:focus-visible::after,
+.dz-designer[data-resizing] .inspector-resize::after { background: var(--dz-accent); }
+.dz .inspector-resize:focus-visible { outline: none; }
+.dz-designer[data-resizing] { cursor: col-resize; user-select: none; }
+.dz-designer[data-resizing] .inspector,
+.dz-designer[data-resizing] .canvas > .react-flow { transition: none; }
+@media (max-width: 768px) { .dz .inspector-resize { display: none; } }
 .dz .dz-history-in-slot { position: static; width: auto; height: 100%; box-shadow: none; border-left: 0; }
 .dz-step-icon { display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: var(--dz-r-2); color: #fff; background: var(--type, var(--dz-accent)); }
-.dz-step-icon--start { --type: #1b6b43; }
-.dz-step-icon--puzzle { --type: var(--accent); }
-.dz-step-icon--story { --type: #6d4bc3; }
-.dz-step-icon--hub { --type: #2f6fb3; }
-.dz-step-icon--gate { --type: #d98e04; }
-.dz-step-icon--effect { --type: #2f7fd1; }
-.dz-step-icon--switch { --type: #0e8a7e; }
-.dz-step-icon--end { --type: var(--ink); }
+.dz-step-icon--start { --type: var(--type-start); }
+.dz-step-icon--puzzle { --type: var(--type-puzzle); }
+.dz-step-icon--story { --type: var(--type-story); }
+.dz-step-icon--hub { --type: var(--type-hub); }
+.dz-step-icon--gate { --type: var(--type-gate); }
+.dz-step-icon--effect { --type: var(--type-effect); }
+.dz-step-icon--switch { --type: var(--type-switch); }
+.dz-step-icon--end { --type: var(--type-end); }
 .dz .modal.modal-wide { width: min(56rem, 94vw); max-width: none; }
 .dz-settings { display: grid; grid-template-columns: 1fr 1fr; gap: var(--dz-space-5); align-items: start; }
 @media (max-width: 800px) { .dz-settings { grid-template-columns: 1fr; } }
@@ -560,27 +709,69 @@ textarea.field__input { resize: vertical; font-family: var(--font-body); }
 .dz-shortcut { display: grid; grid-template-columns: 12rem 1fr; gap: var(--dz-space-3); align-items: baseline; }
 .dz-shortcut dd { margin: 0; color: var(--dz-ink-soft); }
 .dz-shortcuts kbd { font-family: var(--dz-font-mono); font-size: var(--dz-text-xs); padding: 2px 6px; border: 1px solid var(--dz-border-strong); border-bottom-width: 2px; border-radius: var(--dz-r-1); background: var(--dz-surface-2); }
-.card__icon { width: 20px; height: 20px; border-radius: var(--radius-sm); margin-right: var(--sp-1); }
-.card__head { display: flex; align-items: center; }
+.card__icon { flex: none; width: 20px; height: 20px; border-radius: var(--radius-sm); }
 /* The phone preview is the player's screen: nothing from the editor
  * chrome may reach inside it. The player's own classes already outrank
  * dz.css's :where()-scoped element rules; this resets the one inherited
  * property they rely on. */
 .dz .phone { font-family: var(--font-body); line-height: 1.5; }
 
+/* --- Inspector controls -----------------------------------------------------
+ * Scoped under .dz to outrank dz.css's generic button rules — their grey
+ * hover box and press-shrink suit toolbar buttons, not text links, digests
+ * or small icon controls. */
+.dz .link-btn:hover:not(:disabled),
+.dz .chip__x:hover:not(:disabled),
+.dz .answer-chip button:hover:not(:disabled),
+.dz .outline__jump button:hover:not(:disabled),
+.dz .ipart .ipart__summary:hover:not(:disabled) { background: none; }
+.dz .link-btn:hover:not(:disabled) { border-color: transparent; text-decoration: underline; text-underline-offset: 3px; }
+.dz .ipart .ipart__summary:hover:not(:disabled) { border-color: transparent; }
+.dz .link-btn:active,
+.dz .ipart__summary:active { transform: none; }
+
+/* Remove: a faint icon, danger on hover, as tall as an input so it sits
+   level in a row of them. */
+.dz .icon-remove { flex: none; display: inline-grid; place-items: center; width: 32px; height: 36px; padding: 0; border: 0; border-radius: var(--dz-r-2); background: transparent; color: var(--dz-faint); }
+.dz .icon-remove:hover:not(:disabled) { background: color-mix(in srgb, var(--dz-danger) 10%, transparent); border-color: transparent; color: var(--dz-danger); }
+.dz .icon-remove:disabled { opacity: 0.3; }
+
+/* Add: a dashed slot where the next item will go, in the colour of the
+   part it adds to (a route's, in the colour of what triggers it). */
+.dz .add-btn {
+  --tone: var(--concept, var(--accent));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--dz-space-1h);
+  width: 100%;
+  min-height: 36px;
+  padding: var(--dz-space-2) var(--dz-space-3);
+  border: 1px dashed color-mix(in srgb, var(--tone) 40%, var(--dz-border));
+  border-radius: var(--dz-r-2);
+  background: transparent;
+  color: color-mix(in srgb, var(--tone) var(--concept-ink), var(--ink));
+  font-size: var(--dz-text-sm);
+  font-weight: 600;
+}
+.dz .add-btn:disabled { opacity: 0.55; }
+.dz .add-btn:hover:not(:disabled) { background: color-mix(in srgb, var(--tone) var(--concept-tint), var(--surface)); border-style: solid; border-color: color-mix(in srgb, var(--tone) 55%, var(--dz-border)); }
+.dz .add-row { display: grid; grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr)); gap: var(--dz-space-2); }
+.dz .check input[type="checkbox"] { flex: none; width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
+
 /* --- maps ----------------------------------------------------------------- */
 
 .static-map { position: relative; overflow: hidden; border-radius: var(--radius-sm); background: #e8e4dc; flex: none; }
 .static-map img { position: absolute; width: 256px; height: 256px; max-width: none; user-select: none; pointer-events: none; }
 .static-map svg { position: absolute; inset: 0; pointer-events: none; }
-.static-map polygon { fill: color-mix(in srgb, var(--accent) 22%, transparent); stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; }
+.static-map polygon { fill: color-mix(in srgb, var(--c-place) 22%, transparent); stroke: var(--c-place); stroke-width: 2; stroke-linejoin: round; }
 .static-map__credit { position: absolute; right: 2px; bottom: 1px; font-size: 9px; line-height: 1.2; padding: 0 3px; color: #333; background: rgb(255 255 255 / 0.75); border-radius: 3px; }
 
 .card__map { margin: var(--sp-2) var(--sp-3) 0; border: 1px solid var(--border-soft); }
 
 .zone-thumb { position: relative; display: block; padding: 0; border: 0; background: none; cursor: pointer; }
 .zone-thumb__edit { position: absolute; left: 6px; top: 6px; font-size: var(--text-xs); padding: 2px 8px; border-radius: var(--radius-pill); background: rgb(255 255 255 / 0.9); color: #222; }
-.zone-thumb:hover .zone-thumb__edit, .zone-thumb:focus-visible .zone-thumb__edit { background: var(--accent); color: #fff; }
+.zone-thumb:hover .zone-thumb__edit, .zone-thumb:focus-visible .zone-thumb__edit { background: var(--c-place); color: #fff; }
 
 .zone-map { display: flex; flex-direction: column; gap: 8px; }
 .zone-map__mode { align-self: flex-start; }
@@ -590,12 +781,12 @@ textarea.field__input { resize: vertical; font-family: var(--font-body); }
 .zone-map__row { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; }
 .zone-map__row .field__hint { flex: 1 1 140px; }
 .zone-map__row .field--num { flex: 0 0 96px; }
-.zone-map__centre { width: 18px; height: 18px; border-radius: 50%; background: var(--accent); border: 3px solid #fff; box-shadow: 0 1px 4px rgb(0 0 0 / 0.4); cursor: grab; }
-.zone-map__corner { width: 12px; height: 12px; border-radius: 50%; background: #fff; border: 2px solid var(--accent); box-shadow: 0 1px 3px rgb(0 0 0 / 0.35); cursor: grab; }
+.zone-map__centre { width: 18px; height: 18px; border-radius: 50%; background: var(--c-place); border: 3px solid #fff; box-shadow: 0 1px 4px rgb(0 0 0 / 0.4); cursor: grab; }
+.zone-map__corner { width: 12px; height: 12px; border-radius: 50%; background: #fff; border: 2px solid var(--c-place); box-shadow: 0 1px 3px rgb(0 0 0 / 0.35); cursor: grab; }
 .res__section { flex: 0 0 9rem; }
 .res__cells { display: grid; grid-template-columns: repeat(auto-fill, minmax(4.5rem, 1fr)); gap: var(--sp-1); margin: var(--sp-2) 0; }
 .lang-switch { display: inline-flex; align-items: center; gap: var(--sp-1); color: var(--ink-soft); }
-.lang-switch .field__input { padding-block: 2px; min-width: 9rem; }
+.lang-switch .field__input { height: 34px; padding-block: 0; min-width: 9rem; font-size: var(--dz-text-md, var(--text-sm)); }
 .tr-rows { display: flex; flex-direction: column; gap: var(--sp-3); }
 .tr-row__main { display: block; white-space: pre-wrap; padding: var(--sp-2); border-radius: var(--radius-sm); background: var(--surface-2); color: var(--ink-soft); font-size: var(--text-sm); }
 .tr-lang { flex: 1; }
@@ -611,7 +802,6 @@ textarea.field__input { resize: vertical; font-family: var(--font-body); }
   .dz .editor-toolbar button.primary .toolbar-label { display: none; }
   .dz .editor-toolbar [data-tidy],
   .dz .editor-toolbar .lang-switch { display: none; }
-  .dz-title { max-width: 7rem; }
   .listview { padding: var(--sp-3); }
   .outline > li { margin-left: calc(var(--depth, 0) * 0.9rem); }
   .step__thumb { display: none; }

@@ -1,5 +1,7 @@
 import type { Cmp, Graph, Op, Predicate } from "@zonventure/graph";
 import { useT } from "../i18n.tsx";
+import { Plus, Trash2 } from "lucide-react";
+import { ICON } from "./dz/ui.tsx";
 
 /**
  * The condition builder for Gates and hub branches.
@@ -203,17 +205,20 @@ export function ConditionEditor({ value, onChange, graph, depth = 0 }: Props) {
               {value.op !== "not" && (
                 <button
                   type="button"
-                  className="link-btn"
+                  className="icon-remove"
                   onClick={() => set({ of: (value.of ?? []).filter((_, j) => j !== i) })}
+                  aria-label={t.t("Remove")}
+                  title={t.t("Remove")}
                 >
-                  {t.t("Remove")}
+                  <Trash2 size={ICON.sm} />
                 </button>
               )}
             </div>
           ))}
           {value.op !== "not" && (
-            <button type="button" className="link-btn" onClick={() => set({ of: [...(value.of ?? []), { op: "" }] })}>
-              + {t.t("Add condition")}
+            <button type="button" className="add-btn" onClick={() => set({ of: [...(value.of ?? []), { op: "" }] })}>
+              <Plus size={ICON.sm} aria-hidden="true" />
+              {t.t("Add condition")}
             </button>
           )}
         </div>

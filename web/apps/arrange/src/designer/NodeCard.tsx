@@ -1,6 +1,7 @@
 import { memo } from "react";
 import { play } from "@zonventure/api";
 import { STEP } from "./dz/types.tsx";
+import { TRIGGER } from "./dz/concepts.tsx";
 import { Handle, Position, type NodeProps, type Node as RFNode } from "@xyflow/react";
 import { hasInput, portLabel, portsOf, type Issue, type Node, type Zone } from "@zonventure/graph";
 import { StaticMap } from "./StaticMap.tsx";
@@ -89,6 +90,10 @@ function NodeCardImpl({ data, selected }: NodeProps<CardNode>) {
   const warnings = data.issues.filter((i) => i.severity === "warning");
   const ports = portsOf(n);
   const portIssue = (p: string) => data.issues.find((i) => i.port === p);
+  const portConcept = (p: string) => {
+    const trigger = n.type === "puzzle" ? n.puzzle?.outputs?.find((o) => o.port === p)?.trigger : undefined;
+    return trigger ? ` concept--${TRIGGER[trigger]}` : "";
+  };
 
   return (
     <div
@@ -124,7 +129,7 @@ function NodeCardImpl({ data, selected }: NodeProps<CardNode>) {
       {ports.length > 0 && (
         <div className="card__ports">
           {ports.map((p) => (
-            <div key={p} className={"card__port" + (portIssue(p) ? " is-bad" : "")}>
+            <div key={p} className={"card__port" + portConcept(p) + (portIssue(p) ? " is-bad" : "")}>
               <span className="card__port-label">{portLabel(n, p)}</span>
               <Handle type="source" position={Position.Right} id={p} className="card__out" />
             </div>

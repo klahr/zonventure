@@ -6,7 +6,10 @@
 /* --- Shared primitives --------------------------------------------- */
 
 .btn {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
   padding: var(--sp-3) var(--sp-5);
   border-radius: var(--radius-pill);
   font: 700 var(--text-sm) / 1 var(--font-body);
@@ -16,7 +19,8 @@
     transform var(--dur-fast),
     opacity var(--dur-fast),
     border-color var(--dur-fast),
-    color var(--dur-fast);
+    color var(--dur-fast),
+    box-shadow var(--dur-fast);
 }
 .btn:hover:not(:disabled) {
   transform: translateY(-1px);
@@ -29,6 +33,9 @@
 .btn--primary {
   background: linear-gradient(135deg, var(--accent), var(--accent-2));
   color: #fff;
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--accent) 32%, transparent);
+}
+.btn--primary:hover:not(:disabled) {
   box-shadow: 0 6px 20px color-mix(in srgb, var(--accent) 40%, transparent);
 }
 .btn--ghost {
@@ -36,7 +43,7 @@
   color: var(--ink);
   border-color: var(--border-soft);
 }
-.btn--ghost:hover {
+.btn--ghost:hover:not(:disabled) {
   border-color: var(--accent);
   color: var(--accent);
 }
@@ -66,6 +73,17 @@
   background: var(--surface);
   color: var(--ink);
   font: var(--text-base) / 1.4 var(--font-body);
+  transition:
+    border-color var(--dur-fast),
+    box-shadow var(--dur-fast);
+}
+.field__input:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--ink) 22%, var(--border-soft));
+}
+.field__input:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
 }
 .field--inline .field__input {
   padding: var(--sp-2);
@@ -83,11 +101,17 @@
   color: var(--danger);
   border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent);
 }
+.alert--warning {
+  background: var(--warning-bg);
+  color: var(--warning);
+  border: 1px solid color-mix(in srgb, var(--warning) 35%, transparent);
+}
 .alert p {
   margin: var(--sp-2) 0 0;
 }
 
 .lede {
+  max-width: 60ch;
   color: var(--muted);
 }
 
@@ -130,6 +154,7 @@
   font-family: var(--font-brand);
   font-size: var(--text-xl);
   font-weight: 400;
+  line-height: 1;
   color: var(--accent);
 }
 .login__sub,
@@ -139,24 +164,48 @@
   letter-spacing: 0.18em;
   color: var(--muted);
 }
+/* Sized to sit in the 52px top bar. */
+.shell__wordmark {
+  font-size: 1.35rem;
+}
+.shell__sub {
+  font-size: 0.68rem;
+  letter-spacing: 0.14em;
+}
 
 /* --- Shell ---------------------------------------------------------- */
 
+/* As in dazyflow: a top bar across the whole window, and the sidebar
+ * and the content beneath it, each scrolling on its own. */
 .shell {
   --sidebar-w: 15rem;
   --sidebar-rail-w: 3.5rem;
   display: grid;
   grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
-  min-height: 100dvh;
+  grid-template-rows: auto minmax(0, 1fr);
+  height: 100dvh;
   transition: grid-template-columns 180ms ease;
 }
 .shell[data-nav-collapsed="true"] {
   grid-template-columns: var(--sidebar-rail-w) minmax(0, 1fr);
 }
+/* The same 52px as the designer's toolbar, so the two read as one
+ * header. The brand lines up with the sidebar's icons below it. */
+.shell__top {
+  grid-column: 1 / -1;
+  position: relative;
+  z-index: var(--z-sticky);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  min-width: 0;
+  height: 52px;
+  padding: 0 var(--sp-4) 0 calc(var(--sp-2) + var(--sp-3));
+  background: var(--surface);
+  border-bottom: 1px solid var(--border-soft);
+}
 .shell__sidebar {
-  position: sticky;
-  top: 0;
-  height: 100dvh;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: var(--sp-1);
@@ -167,11 +216,18 @@
   overflow-y: auto;
 }
 .shell__brand {
-  padding: var(--sp-1) var(--sp-3) var(--sp-4);
+  min-width: 0;
   white-space: nowrap;
 }
 .shell__brand:hover {
   text-decoration: none;
+}
+/* The open adventure's name, in the wordmark's place. */
+.shell__wordmark--page {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 1.2rem;
+  line-height: 1.3;
 }
 .shell__nav {
   display: flex;
@@ -182,6 +238,7 @@
   display: flex;
   align-items: center;
   gap: var(--sp-3);
+  min-height: 2.25rem;
   padding: var(--sp-2) var(--sp-3);
   border-radius: var(--radius);
   color: var(--muted);
@@ -192,14 +249,18 @@
     background 120ms,
     color 120ms;
 }
+.shell__link svg {
+  flex: none;
+}
 .shell__link:hover {
   background: var(--surface-2);
   color: var(--ink);
   text-decoration: none;
 }
 .shell__link.is-active {
-  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
   color: var(--accent);
+  font-weight: 700;
 }
 .shell__spacer {
   flex: 1;
@@ -209,29 +270,25 @@
   align-items: center;
   gap: var(--sp-2);
   width: 100%;
+  min-height: 2.25rem;
   padding: var(--sp-2) var(--sp-3);
   background: transparent;
-  border: 1px solid var(--border-soft);
+  border: 0;
   border-radius: var(--radius);
   color: var(--muted);
   font-size: var(--text-sm);
-  font-weight: 500;
+  font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
 }
 .shell__collapse:hover {
   background: var(--surface-2);
   color: var(--ink);
-  border-color: color-mix(in srgb, var(--accent) 40%, var(--border-soft));
 }
 
 /* The rail: icons only, labels as tooltips. */
 .shell__sidebar[data-collapsed="true"] .nav-label {
   display: none;
-}
-.shell__sidebar[data-collapsed="true"] .shell__brand {
-  padding-inline: 0;
-  text-align: center;
 }
 .shell__sidebar[data-collapsed="true"] .shell__link,
 .shell__sidebar[data-collapsed="true"] .shell__collapse,
@@ -246,9 +303,10 @@
   gap: var(--sp-2);
   width: 100%;
   margin-top: var(--sp-2);
-  padding: var(--sp-2);
+  padding: var(--sp-3) var(--sp-2) var(--sp-2);
   background: transparent;
   border: none;
+  border-top: 1px solid var(--border-soft);
   border-radius: var(--radius);
   color: var(--muted);
   cursor: pointer;
@@ -266,7 +324,7 @@
   width: 2rem;
   height: 2rem;
   border-radius: 50%;
-  background: var(--accent);
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
   color: #fff;
   font-weight: 700;
   font-size: var(--text-sm);
@@ -300,8 +358,8 @@
   padding: var(--sp-1);
   background: var(--surface);
   border: 1px solid var(--border-soft);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
 }
 .account-pop__head {
   display: flex;
@@ -383,9 +441,12 @@
 .account-pop__row.is-danger:hover {
   background: color-mix(in srgb, var(--danger) 12%, transparent);
 }
+/* Content is capped at a readable measure and centred in whatever the
+ * sidebar leaves; percentages in padding resolve against that width. */
 .shell__main {
-  padding: var(--sp-6);
+  padding: var(--sp-6) max(var(--sp-6), calc((100% - 72rem) / 2));
   min-width: 0;
+  overflow-y: auto;
 }
 /* The designer owns its whole area: toolbar, canvas and side panel. */
 .shell__main--full {
@@ -397,14 +458,27 @@
   font-family: var(--font-brand);
   font-size: var(--text-2xl);
   font-weight: 400;
+  line-height: 1.2;
   color: var(--accent);
+}
+.shell__main > .alert {
+  margin-bottom: var(--sp-5);
+}
+.shell__main h1 + .lede {
+  margin: calc(-1 * var(--sp-2)) 0 var(--sp-5);
 }
 
 .meta {
   display: grid;
   grid-template-columns: max-content 1fr;
-  gap: var(--sp-1) var(--sp-4);
+  gap: var(--sp-2) var(--sp-5);
   margin: 0 0 var(--sp-5);
+  padding: var(--sp-4) var(--sp-5);
+  max-width: 40rem;
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
   font-size: var(--text-sm);
 }
 .meta dt {
@@ -421,18 +495,29 @@
   .shell,
   .shell[data-nav-collapsed="true"] {
     grid-template-columns: 1fr;
+    grid-template-rows: none;
+    height: auto;
+    min-height: 100dvh;
   }
   .shell__sidebar {
-    position: static;
-    height: auto;
     border-right: 0;
     border-bottom: 1px solid var(--border-soft);
+  }
+  .shell__main {
+    padding: var(--sp-4);
+    overflow-y: visible;
   }
 }
 
 /* The designer needs the whole of a phone's screen; its own back arrow
  * leads to the console, so the sidebar steps aside there. */
 @media (max-width: 45rem) {
+  .shell--designer,
+  .shell--designer[data-nav-collapsed="true"] {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
+    height: 100dvh;
+  }
   .shell--designer .shell__sidebar {
     display: none;
   }

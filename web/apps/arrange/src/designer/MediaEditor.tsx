@@ -2,6 +2,8 @@ import { createContext, useContext, useRef, useState } from "react";
 import { ApiError, adventures, play } from "@zonventure/api";
 import type { Media } from "@zonventure/graph";
 import { useT } from "../i18n.tsx";
+import { Plus, X } from "lucide-react";
+import { ICON } from "./dz/ui.tsx";
 
 /** The adventure being edited, for uploads deep inside the inspector. */
 export const AdventureSlug = createContext("");
@@ -65,14 +67,15 @@ export function MediaEditor({
             aria-label={t.t("Description")}
             onChange={(e) => set(list.map((x, j) => (j === i ? { ...x, alt: e.target.value } : x)))}
           />
-          <button type="button" className="link-btn" onClick={() => set(list.filter((_, j) => j !== i))} aria-label={t.t("Remove")}>
-            ×
+          <button type="button" className="icon-remove" onClick={() => set(list.filter((_, j) => j !== i))} aria-label={t.t("Remove")}>
+            <X size={ICON.sm} />
           </button>
         </div>
       ))}
       <input ref={input} type="file" accept={single ? "image/*" : "image/*,audio/*"} multiple={!single} hidden onChange={(e) => void pick(e.target.files)} />
-      <button type="button" className="link-btn" disabled={busy || !slug} onClick={() => input.current?.click()}>
-        {busy ? t.t("Uploading…") : single ? (list.length ? t.t("Replace picture") : "+ " + t.t("Add picture")) : "+ " + t.t("Add picture or sound")}
+      <button type="button" className="add-btn concept--content" disabled={busy || !slug} onClick={() => input.current?.click()}>
+        {!busy && <Plus size={ICON.sm} aria-hidden="true" />}
+        {busy ? t.t("Uploading…") : single ? (list.length ? t.t("Replace picture") : t.t("Add picture")) : t.t("Add picture or sound")}
       </button>
       {error && <div className="alert alert--danger">{error}</div>}
     </div>

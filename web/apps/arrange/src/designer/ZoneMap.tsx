@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { Zone } from "@zonventure/graph";
 import { useT } from "../i18n.tsx";
+import { conceptColor } from "./dz/concepts.tsx";
 
 /**
  * Edit a zone on a real map: drag the centre and set the radius of a
@@ -98,8 +99,8 @@ export function ZoneMap({ zone, onChange, areaOnly, maxCorners }: { zone: Zone; 
         map.addControl(new lib.NavigationControl({ showCompass: false }), "top-right");
         map.on("load", () => {
           map.addSource("zone", { type: "geojson", data: shape(zoneRef.current) });
-          map.addLayer({ id: "zone-fill", type: "fill", source: "zone", paint: { "fill-color": "#ad1357", "fill-opacity": 0.18 } });
-          map.addLayer({ id: "zone-line", type: "line", source: "zone", paint: { "line-color": "#ad1357", "line-width": 2 } });
+          map.addLayer({ id: "zone-fill", type: "fill", source: "zone", paint: { "fill-color": conceptColor("place", "#1b6b43"), "fill-opacity": 0.18 } });
+          map.addLayer({ id: "zone-line", type: "line", source: "zone", paint: { "line-color": conceptColor("place", "#1b6b43"), "line-width": 2 } });
           setReady(true);
         });
         // In polygon mode, a click adds the next corner.

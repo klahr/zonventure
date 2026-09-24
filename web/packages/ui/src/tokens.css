@@ -86,12 +86,17 @@
   --border-soft: #e2e7ef;
   --shadow:
     0 1px 2px rgba(31, 51, 73, 0.06), 0 4px 16px rgba(31, 51, 73, 0.08);
+  --shadow-sm: 0 1px 2px rgba(31, 51, 73, 0.06);
+  --shadow-lg:
+    0 2px 6px rgba(31, 51, 73, 0.06), 0 16px 40px rgba(31, 51, 73, 0.14);
 
   /* Status. Tuned against --bg for AA on body text. */
   --danger: #b3261e;
   --danger-bg: #fdecea;
   --success: #1b6b43;
   --success-bg: #e7f5ec;
+  --warning: #a15c07;
+  --warning-bg: #fdf3e2;
 
   /* Spacing — 4px base. */
   --sp-1: 0.25rem;
@@ -123,6 +128,28 @@
   --text-xl: 1.5rem;
   --text-2xl: 2rem;
 
+  /* Concepts. One hue per idea an adventure is built from, used
+   * wherever that idea appears: its icon tile, its chips, its map
+   * shapes. Fixed rather than themed — they are only ever used mixed
+   * with --surface (tints) or --ink (text), which adapts them to either
+   * theme. Where a step type is mostly one concept, the hues agree
+   * (story/content, crossroads/flow, start/place, effect/effect). */
+  --c-content: #6d4bc3;
+  --c-answer: #ad1357;
+  --c-hint: #b87503;
+  --c-flow: #0e8a7e;
+  --c-logic: #4f5bd5;
+  --c-place: #1b6b43;
+  --c-time: #c2410c;
+  --c-effect: #2f7fd1;
+  --c-item: #8a5a2b;
+  --c-journal: #5f6b7a;
+  /* How much of the hue a concept's text keeps (the rest is --ink), and
+   * how strong its tint is on --surface. Dark mode leans on --ink more,
+   * or the hues sink into the navy surface. */
+  --concept-ink: 70%;
+  --concept-tint: 13%;
+
   /* Z-index. Named so "what sits above what" is a lookup, not a guess. */
   --z-sticky: 10;
   --z-drawer: 20;
@@ -133,6 +160,7 @@
   /* Motion */
   --dur-fast: 0.12s;
   --dur: 0.2s;
+  --ease-out: cubic-bezier(0.22, 0.7, 0.3, 1);
 }
 
 [data-theme="dark"] {
@@ -147,10 +175,16 @@
   --accent-2: #ff6aa3;
   --accent-deep: #ad1357;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.3);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --shadow-lg: 0 2px 6px rgba(0, 0, 0, 0.35), 0 16px 40px rgba(0, 0, 0, 0.45);
   --danger: #f2837c;
   --danger-bg: #3a1f1d;
   --success: #6dcf92;
   --success-bg: #14301f;
+  --warning: #f0b45a;
+  --warning-bg: #3a2c14;
+  --concept-ink: 45%;
+  --concept-tint: 20%;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -166,10 +200,16 @@
     --accent-2: #ff6aa3;
     --accent-deep: #ad1357;
     --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.3);
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
+    --shadow-lg: 0 2px 6px rgba(0, 0, 0, 0.35), 0 16px 40px rgba(0, 0, 0, 0.45);
     --danger: #f2837c;
     --danger-bg: #3a1f1d;
     --success: #6dcf92;
     --success-bg: #14301f;
+    --warning: #f0b45a;
+    --warning-bg: #3a2c14;
+    --concept-ink: 45%;
+    --concept-tint: 20%;
   }
 }
 
@@ -192,10 +232,17 @@
   --border-soft: #e2e7ef;
   --shadow:
     0 1px 2px rgba(31, 51, 73, 0.06), 0 4px 16px rgba(31, 51, 73, 0.08);
+  --shadow-sm: 0 1px 2px rgba(31, 51, 73, 0.06);
+  --shadow-lg:
+    0 2px 6px rgba(31, 51, 73, 0.06), 0 16px 40px rgba(31, 51, 73, 0.14);
   --danger: #b3261e;
   --danger-bg: #fdecea;
   --success: #1b6b43;
   --success-bg: #e7f5ec;
+  --warning: #a15c07;
+  --warning-bg: #fdf3e2;
+  --concept-ink: 70%;
+  --concept-tint: 13%;
 }
 
 * {

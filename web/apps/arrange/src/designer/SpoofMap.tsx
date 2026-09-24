@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { Zone } from "@zonventure/graph";
 import { useT } from "../i18n.tsx";
 import { STYLE, loadMapLibre, shape } from "./ZoneMap.tsx";
+import { conceptColor } from "./dz/concepts.tsx";
 
 export interface Point {
   lat: number;
@@ -36,8 +37,8 @@ export function SpoofMap({ zones, position, focus, onPick, disabled }: { zones: 
         map.addControl(new lib.NavigationControl({ showCompass: false }), "top-right");
         map.on("load", () => {
           map.addSource("zones", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
-          map.addLayer({ id: "zones-fill", type: "fill", source: "zones", paint: { "fill-color": "#ad1357", "fill-opacity": 0.15 } });
-          map.addLayer({ id: "zones-line", type: "line", source: "zones", paint: { "line-color": "#ad1357", "line-width": 1.5 } });
+          map.addLayer({ id: "zones-fill", type: "fill", source: "zones", paint: { "fill-color": conceptColor("place", "#1b6b43"), "fill-opacity": 0.15 } });
+          map.addLayer({ id: "zones-line", type: "line", source: "zones", paint: { "line-color": conceptColor("place", "#1b6b43"), "line-width": 1.5 } });
           setReady(true);
         });
         map.on("click", (e) => {

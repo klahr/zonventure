@@ -55,6 +55,8 @@ import { ListView } from "./ListView.tsx";
 import { Resources } from "./Resources.tsx";
 import { Simulator, type SimMode } from "./Simulator.tsx";
 import { FloatingWindow } from "./FloatingWindow.tsx";
+import { useInspectorWidth } from "./InspectorResize.tsx";
+import { useTopBarTitle } from "../topbar.tsx";
 import { Look } from "./Look.tsx";
 import { AdventureSlug } from "./MediaEditor.tsx";
 import { CanvasContextMenu, type ContextMenuItem } from "./dz/CanvasContextMenu.tsx";
@@ -455,6 +457,9 @@ export function Designer({ slug }: { slug: string }) {
   const node = graph && selected ? nodeBySlug(graph, selected) : undefined;
   const simEnvelope = useMemo(() => (draft ? envelope(draft) : null), [draft]);
   const slotOpen = slot !== "inspect" || !!node;
+  useTopBarTitle(adventureTitle);
+  const root = useRef<HTMLDivElement>(null);
+  const inspectorWidth = useInspectorWidth(root, t.t("Resize the inspector"));
 
   const jumpTo = (i: Issue) => {
     if (!i.node) return;
@@ -514,16 +519,13 @@ export function Designer({ slug }: { slug: string }) {
   ];
 
   return (
-    <div className="dz dz-designer">
+    <div className="dz dz-designer" ref={root} style={inspectorWidth.style}>
       <div className="editor" data-has-selection={slotOpen ? "true" : "false"} data-inspector-expanded={slotOpen ? "true" : "false"}>
         <div className="canvas">
           <div className="editor-toolbar">
             <a className="dz-back" href={consoleHref("adventures/" + encodeURIComponent(slug))} title={t.t("Back to the adventure")} aria-label={t.t("Back to the adventure")}>
               <ArrowLeft size={ICON.md} />
             </a>
-            <strong className="dz-title" title={adventureTitle}>
-              {adventureTitle}
-            </strong>
             <span className="toolbar-divider" aria-hidden="true" />
 
             <div className="toolbar-scroll">
@@ -760,6 +762,7 @@ export function Designer({ slug }: { slug: string }) {
         </div>
 
         <div className="inspector">
+          {inspectorWidth.handle}
           {slot === "history" ? (
             <HistoryPanel
               versions={versions}
