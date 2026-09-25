@@ -19,15 +19,21 @@ import (
 // team passing a "Call a webhook" step does.
 func queue(t *testing.T, db *sql.DB, hook Webhook) (eventID, teamID, rowID int64) {
 	t.Helper()
+	return queueEffect(t, db, "webhook", hook, "")
+}
+
+// queueEffect is queue for any kind, with the team's contact email.
+func queueEffect(t *testing.T, db *sql.DB, kind string, payload any, teamEmail string) (eventID, teamID, rowID int64) {
+	t.Helper()
 	var orgID int64
 	must(t, db.QueryRow(`INSERT INTO organizations(name) VALUES ('fx') RETURNING id`).Scan(&orgID))
 	if _, err := db.Exec(`INSERT INTO adventures(slug, title, description, author, language, org_id) VALUES ('fx', 'fx', '', '', 'en', $1)`, orgID); err != nil {
 		t.Fatal(err)
 	}
 	must(t, db.QueryRow(`INSERT INTO events(adventure_slug, org_id, state, live_token, name, show_map) VALUES ('fx', $1, 'running', 'fx-tok', 'fx', 0) RETURNING id`, orgID).Scan(&eventID))
-	must(t, db.QueryRow(`INSERT INTO teams(event_id, name, token) VALUES ($1, 'Owls', 'fx-team') RETURNING id`, eventID).Scan(&teamID))
-	doc, _ := json.Marshal(hook)
-	must(t, db.QueryRow(`INSERT INTO graph_effect_outbox (event_id, team_id, node, kind, payload) VALUES ($1, $2, 'bell', 'webhook', $3) RETURNING id`, eventID, teamID, doc).Scan(&rowID))
+	must(t, db.QueryRow(`INSERT INTO teams(event_id, name, token, email) VALUES ($1, 'Owls', 'fx-team', $2) RETURNING id`, eventID, teamEmail).Scan(&teamID))
+	doc, _ := json.Marshal(payload)
+	must(t, db.QueryRow(`INSERT INTO graph_effect_outbox (event_id, team_id, node, kind, payload) VALUES ($1, $2, 'bell', $3, $4) RETURNING id`, eventID, teamID, kind, doc).Scan(&rowID))
 	return eventID, teamID, rowID
 }
 

@@ -797,9 +797,14 @@ type EffectConfig struct {
 	Value   float64   `json:"value,omitempty"`
 
 	JournalEntry string `json:"journal_entry,omitempty"`
-	Template     string `json:"template,omitempty"`
 	URL          string `json:"url,omitempty"`
 	Theme        string `json:"theme,omitempty"`
+
+	// Subject and Body are an email's text, sent to the team's contact
+	// address. {{team}}, {{event}} and {{step}} in either are replaced
+	// when it is sent; see EmailPlaceholders.
+	Subject string `json:"subject,omitempty"`
+	Body    string `json:"body,omitempty"`
 
 	// Method and Headers shape a webhook's request: Method is one of
 	// WebhookMethods, POST when empty; Headers are sent as given — an
@@ -818,6 +823,10 @@ type Header struct {
 // WebhookMethods are the HTTP methods a webhook may use. GET and DELETE
 // send no body; the team and step go in the query instead.
 var WebhookMethods = []string{"GET", "POST", "PUT", "PATCH", "DELETE"}
+
+// EmailPlaceholders are the names an email's subject and body may use
+// as {{name}}: the team's name, the event's name and the step's title.
+var EmailPlaceholders = []string{"team", "event", "step"}
 
 // Outcome is how a run ended.
 type Outcome string

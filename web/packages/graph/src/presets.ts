@@ -355,7 +355,7 @@ export const PRESETS: Preset[] = [
     label: "Send an email",
     hint: "Queued and sent after the move is saved",
     keywords: "email mail notify message",
-    build: () => ({ type: "effect", title: "Email", effect: { kind: "email", template: "" } }),
+    build: () => ({ type: "effect", title: "Email", effect: { kind: "email", subject: "", body: "" } }),
   },
   {
     id: "effect-webhook",

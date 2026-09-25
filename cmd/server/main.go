@@ -356,9 +356,9 @@ func main() {
 	// backoff retry.
 	webhookDone := webhooks.Start(ctx, sqlDB)
 
-	// Graph "Call a webhook" steps, queued with the team's move in
-	// graph_effect_outbox and sent from here.
-	effectsDone := effects.Start(ctx, sqlDB)
+	// Graph "Call a webhook" and "Send an email" steps, queued with
+	// the team's move in graph_effect_outbox and sent from here.
+	effectsDone := effects.Start(ctx, sqlDB, mail)
 
 	go func() {
 		logx.Info("http.listening", "addr", *addr)

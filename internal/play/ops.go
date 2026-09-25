@@ -408,7 +408,7 @@ func (e *Engine) applyEffects(ctx context.Context, tx *sql.Tx, s *teamState, eff
 			if fx.Kind == graph.CallWebhook {
 				kind, payload = "webhook", effectq.Webhook{URL: fx.URL, Method: fx.Method, Headers: fx.Headers}
 			} else {
-				kind, payload = "email", map[string]string{"template": fx.Template}
+				kind, payload = "email", effectq.Email{Subject: fx.Subject, Body: fx.Body, Step: n.Title}
 			}
 			doc, _ := json.Marshal(payload)
 			_, err = tx.ExecContext(ctx, `

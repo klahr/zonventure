@@ -319,9 +319,11 @@ export interface EffectConfig {
   op?: "set" | "add";
   value?: number;
   journal_entry?: string;
-  template?: string;
   url?: string;
   theme?: string;
+  /** An email's subject and body, sent to the team's contact address. {{team}}, {{event}} and {{step}} are filled in when sent. */
+  subject?: string;
+  body?: string;
   /** A webhook's HTTP method, POST when absent: graph.WebhookMethods. */
   method?: WebhookMethod;
   /** Sent as given. Stored in the adventure, readable by anyone who can open or export it. */

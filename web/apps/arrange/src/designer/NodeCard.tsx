@@ -61,7 +61,7 @@ function summary(n: Node, sourceTitle?: string): string {
         case "journal":
           return `Unlock ${e.journal_entry || "?"}`;
         case "email":
-          return `Email ${e.template || "?"}`;
+          return `Email ${e.subject || "?"}`;
         case "webhook":
           return e.url || "Webhook";
         case "theme":

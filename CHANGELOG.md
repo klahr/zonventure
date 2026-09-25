@@ -47,13 +47,21 @@ The shared puzzle library (`#puzzles`, `GET/POST /api/admin/puzzles`,
 editor's "Copy from library…") is gone. Library puzzles stay in the
 database, unreachable.
 
-### Fixed — "Call a webhook" steps are delivered, and configurable
+### Fixed — "Call a webhook" and "Send an email" steps are delivered
 
-- **Webhook steps were never sent.** Passing one queued a row in
-  `graph_effect_outbox` that nothing read. A worker (`internal/effects`)
-  now sends them after the team's move commits, retries failures with
-  backoff for about a day, and gives up after six attempts (migration
-  `0069`). Email steps are queued the same way and are still not sent.
+- **Webhook and email steps were never sent.** Passing one queued a row
+  in `graph_effect_outbox` that nothing read. A worker
+  (`internal/effects`) now sends them after the team's move commits,
+  retries failures with backoff for about a day, and gives up after six
+  attempts (migration `0069`).
+- **An email step has a subject and a message** in place of the
+  "Template" name, which named nothing. It goes to the team's contact
+  email through the configured mailer (`ZV_SMTP_*`); `{{team}}`,
+  `{{event}}` and `{{step}}` are filled in when it is sent. A team
+  without a usable address is given up on at once, not retried. An
+  email step missing either field fails validation
+  (`effect.email.missing`), and an unknown placeholder is a warning
+  (`effect.email.placeholder`).
 - **Method and headers.** A webhook step has a method (GET, POST — the
   default —, PUT, PATCH, DELETE) and custom headers, such as an
   Authorization token. POST, PUT and PATCH send the team and step as

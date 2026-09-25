@@ -1293,9 +1293,14 @@ function EffectForm({ cfg, graph, onChange }: { cfg: EffectConfig; graph: Graph;
         <ResourceSelect label={t.t("Entry")} value={cfg.journal_entry} options={(graph.journal ?? []).map((j) => ({ slug: j.slug, name: j.title ?? j.slug }))} onChange={(journal_entry) => onChange({ ...cfg, journal_entry })} />
       )}
       {cfg.kind === "email" && (
-        <Field label={t.t("Template")} hint={t.t("Queued with the team's move and delivered afterwards.")}>
-          <input className="field__input" value={cfg.template ?? ""} onChange={(e) => onChange({ ...cfg, template: e.target.value })} />
-        </Field>
+        <>
+          <Field label={t.t("Subject")}>
+            <input className="field__input" value={cfg.subject ?? ""} onChange={(e) => onChange({ ...cfg, subject: e.target.value })} />
+          </Field>
+          <Field label={t.t("Message")} hint={t.t("Sent to the team's contact email after its move; teams without one get nothing. {{team}}, {{event}} and {{step}} are filled in.")}>
+            <textarea className="field__input" rows={5} value={cfg.body ?? ""} onChange={(e) => onChange({ ...cfg, body: e.target.value })} />
+          </Field>
+        </>
       )}
       {cfg.kind === "webhook" && <WebhookForm cfg={cfg} onChange={onChange} />}
       {cfg.kind === "theme" && (

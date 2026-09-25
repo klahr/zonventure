@@ -589,7 +589,7 @@ func TestEffectsPersistAndAreVisibleToGates(t *testing.T) {
 			{Slug: "fx-score", Type: graph.Effect, EffectCfg: &graph.EffectConfig{Kind: graph.AdjustScore, Points: 50}},
 			{Slug: "fx-alarm", Type: graph.Effect, EffectCfg: &graph.EffectConfig{Kind: graph.SetCounter, Counter: "alarm", Value: 10}},
 			{Slug: "fx-letter", Type: graph.Effect, EffectCfg: &graph.EffectConfig{Kind: graph.UnlockJournal, JournalEntry: "letter"}},
-			{Slug: "fx-mail", Type: graph.Effect, EffectCfg: &graph.EffectConfig{Kind: graph.SendEmail, Template: "welcome"}},
+			{Slug: "fx-mail", Type: graph.Effect, EffectCfg: &graph.EffectConfig{Kind: graph.SendEmail, Subject: "Welcome", Body: "Hello {{team}}"}},
 			{Slug: "rich", Type: graph.Gate, GateCfg: &graph.GateConfig{Condition: cond.Predicate{Op: cond.OpScore, N: 50}}},
 			puzzle("vault", "x"), puzzle("poor", "x"),
 			{Slug: "end", Type: graph.End},

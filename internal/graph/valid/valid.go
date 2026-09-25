@@ -16,6 +16,7 @@ package valid
 import (
 	"fmt"
 	"net/url"
+	"regexp"
 	"slices"
 	"sort"
 	"strings"
@@ -370,8 +371,13 @@ func checkEffect(r *reporter, n graph.Node) {
 			r.err("effect.journal.missing", n.Slug, "", "journal effect names no entry")
 		}
 	case graph.SendEmail:
-		if e.Template == "" {
-			r.err("effect.email.missing", n.Slug, "", "email effect names no template")
+		if strings.TrimSpace(e.Subject) == "" || strings.TrimSpace(e.Body) == "" {
+			r.err("effect.email.missing", n.Slug, "", "email effect needs a subject and a body")
+		}
+		for _, m := range placeholderRe.FindAllStringSubmatch(e.Subject+"\n"+e.Body, -1) {
+			if !slices.Contains(graph.EmailPlaceholders, m[1]) {
+				r.warn("effect.email.placeholder", n.Slug, "", "email uses unknown placeholder {{%s}}; it is sent as written", m[1])
+			}
 		}
 	case graph.CallWebhook:
 		checkWebhook(r, n.Slug, *e)
@@ -1199,3 +1205,6 @@ func validHeaderName(s string) bool {
 	}
 	return true
 }
+
+// placeholderRe finds {{name}} in an email's text, as effects renders it.
+var placeholderRe = regexp.MustCompile(`\{\{(\w+)\}\}`)
