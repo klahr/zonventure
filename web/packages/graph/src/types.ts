@@ -101,6 +101,7 @@ export interface Output {
 export interface Response {
   after_attempts?: number;
   text: string;
+  lockout_seconds?: number;
 }
 
 /** internal/graph: Media — a picture or sound, by adventure_media id. */
@@ -136,7 +137,7 @@ export type BlockBody =
   /** zoom fixes the zoom level (MAP_ZOOM); without it the map fits the zone and markers. */
   | { kind: "map"; zone: string; zoom?: number; hide_team?: boolean; markers?: Marker[] }
   | { kind: "note"; text: string; style?: NoteStyle }
-  | { kind: "chat"; lines: ChatLine[] }
+  | { kind: "chat"; lines: ChatLine[]; media?: number; alt?: string }
   | { kind: "cipher"; cipher: Cipher; shift?: number; key?: string }
   | { kind: "hotspots"; media: number; alt?: string; spots?: Spot[] }
   | { kind: "divider"; style?: DividerStyle }

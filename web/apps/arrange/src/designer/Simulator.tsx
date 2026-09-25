@@ -437,6 +437,7 @@ export function Simulator({ slug, graph, envelope, selected, mode, onMode, resta
                 placeNote={placeNote}
                 {...(pos ? { position: pos } : {})}
                 preview
+                instant={mode === "step"}
                 motion={motion}
                 storageKey={`sim-${slug}`}
                 {...(view.zone && !view.here ? { zoneNote: placeNote(view.zone) } : {})}

@@ -81,7 +81,7 @@ export type PlayBlockBody =
   | { kind: "compass"; zone: string; hide_distance?: boolean }
   | { kind: "map"; zone: string; zoom?: number; hide_team?: boolean; markers?: { lat: number; lng: number; label?: string }[] }
   | { kind: "note"; text: string; style?: string }
-  | { kind: "chat"; lines: { who?: string; text: string; me?: boolean }[] }
+  | { kind: "chat"; lines: { who?: string; text: string; me?: boolean }[]; media?: number; alt?: string }
   | { kind: "cipher"; cipher: string; shift?: number; key?: string }
   | { kind: "hotspots"; media: number; alt?: string; spots?: { x: number; y: number; text: string }[] }
   | { kind: "divider"; style?: string }

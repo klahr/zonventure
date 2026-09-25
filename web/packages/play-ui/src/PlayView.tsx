@@ -61,6 +61,11 @@ export interface PlayViewProps {
   teamName?: string;
   /** The designer's preview: blocks use no sensors and ask no permissions. */
   preview?: boolean;
+  /**
+   * Shows what plays out over time — a chat's messages — at once: the
+   * designer's step preview, where the author edits the text.
+   */
+  instant?: boolean;
   /** The simulator's device, for compass and level blocks to read. */
   motion?: Motion;
   /** The adventure's palette. */
@@ -359,6 +364,7 @@ function blockContext(p: StepProps): BlockContext {
     act: p.onAction,
     busy: !!p.busy,
     preview: !!p.preview,
+    instant: !!p.instant,
     motion: p.motion,
   };
 }

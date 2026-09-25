@@ -32,6 +32,7 @@ test("a step's blocks are read, replaced and flattened", () => {
   assert.deepEqual(blocksOf(m), bs);
   assert.equal(textOf(bs), "One.\n\nTwo.");
   assert.deepEqual(mediaOf(bs), [{ id: 3, kind: "audio" }]);
+  assert.deepEqual(mediaOf([{ id: "c", kind: "chat", lines: [], media: 7, alt: "Erik" }, { id: "d", kind: "chat", lines: [] }]), [{ id: 7, kind: "image", alt: "Erik" }], "a chat's avatar, when it has one");
   assert.deepEqual(withBlocks(m, []).puzzle, { outputs: [] }, "no blocks drops the key");
 });
 

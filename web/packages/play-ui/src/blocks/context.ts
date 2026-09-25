@@ -23,6 +23,10 @@ export interface BlockContext {
   busy?: boolean;
   /** A designer's preview: no sensors, no camera, nothing that asks permission. */
   preview?: boolean;
+  /** Shows what plays out over time — a chat's messages — at once. */
+  instant?: boolean;
+  /** Says a block that plays out over time has finished, so what follows it shows. */
+  played?: (id: string) => void;
   /**
    * A simulated device, from the designer's simulator: the compass and
    * the level read it instead of the phone's sensors, and work fully.

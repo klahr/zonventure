@@ -103,7 +103,8 @@ type Block struct {
 	Style string `json:"style,omitempty"`
 
 	// Media is an adventure_media id (see Media): the picture of image,
-	// hotspots, overlay and torch, the sound of audio, the film of video.
+	// hotspots, overlay and torch, the sound of audio, the film of video,
+	// and the avatar of a chat's sender, which a chat may have.
 	Media int64  `json:"media,omitempty"`
 	Alt   string `json:"alt,omitempty"`
 
@@ -217,6 +218,10 @@ func (b Block) AsMedia() (Media, bool) {
 		return Media{ID: b.Media, Kind: MediaAudio, Alt: b.Alt}, true
 	case BlockVideo:
 		return Media{ID: b.Media, Kind: MediaVideo, Alt: b.Alt}, true
+	case BlockChat:
+		if b.Media != 0 {
+			return Media{ID: b.Media, Kind: MediaImage, Alt: b.Alt}, true
+		}
 	}
 	return Media{}, false
 }

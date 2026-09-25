@@ -904,10 +904,13 @@ func checkTranslations(r *reporter, g *graph.Graph) {
 		for key := range g.Translations[l] {
 			kind, rest, _ := strings.Cut(key, ":")
 			slug, _, _ := strings.Cut(rest, ":")
+			// A block's key, or one of its fields' (BlockFieldKey).
+			block, isBlock := strings.CutPrefix(rest, slug+":block:")
+			id, _, _ := strings.Cut(block, ":")
 			switch {
 			case kind == "n" && !nodes[slug], kind == "z" && !zones[slug], kind == "j" && !journal[slug],
 				kind == "js" && !sections[rest],
-				kind == "n" && strings.HasPrefix(rest, slug+":block:") && !blocks[key]:
+				kind == "n" && isBlock && !blocks[graph.BlockKey(slug, id)]:
 				stale++
 			}
 		}

@@ -747,7 +747,12 @@ function puzzleParts(node: Node, cfg: PuzzleConfig, graph: Graph, onChange: (c: 
     summary: responses.length ? (
       <>
         {responses.map((r, i) => (
-          <SumRow key={i} label={t.t("From guess {{n}}", { n: r.after_attempts ?? 1 })}>
+          <SumRow
+            key={i}
+            label={[t.t("From guess {{n}}", { n: r.after_attempts ?? 1 }), r.lockout_seconds ? t.t("locks {{time}}", { time: fmtSecs(t, r.lockout_seconds) }) : ""]
+              .filter(Boolean)
+              .join(" · ")}
+          >
             {clip(r.text) || <SumNone>{t.t("empty")}</SumNone>}
           </SumRow>
         ))}
@@ -764,6 +769,7 @@ function puzzleParts(node: Node, cfg: PuzzleConfig, graph: Graph, onChange: (c: 
           <div className="box__row">
             <NumberField label={t.t("From guess")} value={r.after_attempts} onChange={(n) => set(withOptional({ ...r }, "after_attempts", n))} />
             <input className="field__input" value={r.text} placeholder={t.t("Not quite…")} onChange={(e) => set({ ...r, text: e.target.value })} aria-label={t.t("Reply")} />
+            <NumberField label={t.t("Lockout (s)")} value={r.lockout_seconds} onChange={(n) => set(withOptional({ ...r }, "lockout_seconds", n))} />
           </div>
         )}
         addLabel={t.t("Add reply")}

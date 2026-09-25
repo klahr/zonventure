@@ -507,8 +507,13 @@ func (t *Team) Answer(node, guess string) (Result, *walk.Step, error) {
 	// the author set one and it is now due.
 	r.Attempts++
 	res := Result{}
-	if cfg.LockoutSeconds > 0 {
-		until := t.Now.Add(time.Duration(cfg.LockoutSeconds) * time.Second)
+	reply := cfg.ResponseIndex(r.Attempts)
+	lockout := cfg.LockoutSeconds
+	if reply >= 0 {
+		lockout = max(lockout, cfg.Responses[reply].LockoutSeconds)
+	}
+	if lockout > 0 {
+		until := t.Now.Add(time.Duration(lockout) * time.Second)
 		r.BlockedUntil = &until
 		res.BlockedUntil = &until
 	}
@@ -522,8 +527,8 @@ func (t *Team) Answer(node, guess string) (Result, *walk.Step, error) {
 			return res, step, nil
 		}
 	}
-	if i := cfg.ResponseIndex(r.Attempts); i >= 0 {
-		res.Response = t.G.Tr(t.Lang, graph.NodeKey(n.Slug, fmt.Sprintf("reply:%d", i)), cfg.Responses[i].Text)
+	if reply >= 0 {
+		res.Response = t.G.Tr(t.Lang, graph.NodeKey(n.Slug, fmt.Sprintf("reply:%d", reply)), cfg.Responses[reply].Text)
 	}
 	return res, nil, nil
 }

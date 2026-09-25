@@ -99,6 +99,32 @@ func TestWrongAnswerLadderAndStale(t *testing.T) {
 	}
 }
 
+// A reply may lock the team out, as legacy's answer responses could: the
+// longer of its lockout and the puzzle's applies to the guess it answers.
+func TestReplyLockout(t *testing.T) {
+	g := hunt()
+	cfg := g.Nodes[1].PuzzleCfg
+	cfg.LockoutSeconds = 10
+	cfg.Responses[1].LockoutSeconds = 300
+	tm, _, err := Start(g, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, _, _ := tm.Answer("door", "up")
+	if res.BlockedUntil == nil || !res.BlockedUntil.Equal(t0.Add(10*time.Second)) {
+		t.Fatalf("first wrong should lock for the puzzle's 10 s: %+v", res)
+	}
+	tm.Now = t0.Add(10 * time.Second)
+	res, _, _ = tm.Answer("door", "down")
+	if res.Response != "Think about your hands." || res.BlockedUntil == nil || !res.BlockedUntil.Equal(tm.Now.Add(300*time.Second)) {
+		t.Fatalf("second wrong should lock for its reply's 300 s: %+v", res)
+	}
+	tm.Now = tm.Now.Add(299 * time.Second)
+	if _, _, err := tm.Answer("door", "left"); !errors.Is(err, ErrLocked) {
+		t.Errorf("answering during the reply's lockout = %v, want ErrLocked", err)
+	}
+}
+
 func TestHintsRevealInOrderAfterDelay(t *testing.T) {
 	tm := started(t)
 	v := tm.View()

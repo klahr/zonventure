@@ -4,3 +4,5 @@
 .dz .blk-chat__head .check { flex: none; white-space: nowrap; }
 /* The team's own lines sit indented, as they will sit right in play. */
 .dz .blk-chat__line.is-me .list-ed__body { padding-left: var(--sp-5); }
+/* The avatar sits above the messages it heads. */
+.dz .blk-chat__avatar { display: grid; gap: var(--sp-1); }

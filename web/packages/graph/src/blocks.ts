@@ -46,6 +46,9 @@ export function mediaOf(blocks: Block[] | undefined): Media[] {
       case "overlay":
       case "torch":
         out.push({ id: b.media, kind: "image", ...(b.alt ? { alt: b.alt } : {}) });
+        break;
+      case "chat":
+        if (b.media) out.push({ id: b.media, kind: "image", ...(b.alt ? { alt: b.alt } : {}) });
     }
   }
   return out;

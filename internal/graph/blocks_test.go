@@ -73,6 +73,18 @@ func TestNormalizeKeepsBlocks(t *testing.T) {
 	}
 }
 
+// A chat's avatar is one of the step's files, so the team may fetch it;
+// a chat without one has none.
+func TestChatAvatarIsMedia(t *testing.T) {
+	bs := []Block{
+		{ID: "a", Kind: BlockChat, Media: 3, Alt: "Erik", Lines: []ChatLine{{Who: "Erik", Text: "Hej!"}}},
+		{ID: "b", Kind: BlockChat, Lines: []ChatLine{{Text: "Hej!"}}},
+	}
+	if got, want := MediaOf(bs), []Media{{ID: 3, Kind: MediaImage, Alt: "Erik"}}; !reflect.DeepEqual(got, want) {
+		t.Errorf("MediaOf = %+v, want %+v", got, want)
+	}
+}
+
 // Every puzzle has its title and points and every story its title: a
 // missing one is added after the one before it, the others stay where the
 // author put them, and a second pass changes nothing.

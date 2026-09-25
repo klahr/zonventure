@@ -10,7 +10,7 @@
     { "id": "compass", "kind": "compass", "zone": "park", "hide_distance": true },
     { "id": "map", "kind": "map", "zone": "park", "zoom": 16, "hide_team": true, "markers": [{ "lat": 59.3, "lng": 18.0, "label": "Church" }] },
     { "id": "radar", "kind": "radar", "zone": "park" },
-    { "id": "chat", "kind": "chat", "lines": [{ "who": "Anna", "text": "Where are you?" }, { "text": "On my way", "me": true }] },
+    { "id": "chat", "kind": "chat", "media": 6, "alt": "Anna", "lines": [{ "who": "Anna", "text": "Where are you?" }, { "text": "On my way", "me": true }] },
     { "id": "cipher", "kind": "cipher", "cipher": "caesar", "shift": 3, "key": "" },
     { "id": "custom", "kind": "cipher", "cipher": "custom", "key": "☀ = A" },
     { "id": "hotspots", "kind": "hotspots", "media": 4, "alt": "A desk", "spots": [{ "x": 0.25, "y": 0.5, "text": "A key" }] },

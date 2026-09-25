@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useCallback, useState, type ReactNode } from "react";
 import type { play } from "@zonventure/api";
 import { MediaList } from "../Media.tsx";
 import { ChatBlock } from "./Chat.tsx";
@@ -60,10 +60,14 @@ export interface BlocksProps extends BlockContext {
  * A puzzle's, story's or end's blocks, in the author's order. Pictures
  * and sounds next to each other share one media group, laid out as a
  * step's media were before blocks. A block of a kind this bundle does
- * not know, from a newer server, is skipped.
+ * not know, from a newer server, is skipped. What follows a chat waits
+ * until its last message is in, as the next thing said in a chat would.
  */
-export function Blocks({ blocks, ...ctx }: BlocksProps) {
+export function Blocks({ blocks, ...rest }: BlocksProps) {
+  const [done, setDone] = useState<ReadonlySet<string>>(() => new Set());
+  const played = useCallback((id: string) => setDone((d) => (d.has(id) ? d : new Set(d).add(id))), []);
   if (!blocks?.length) return null;
+  const ctx: BlockContext = { ...rest, played };
   const out: ReactNode[] = [];
   let run: play.PlayMedia[] = [];
   const flush = () => {
@@ -82,6 +86,7 @@ export function Blocks({ blocks, ...ctx }: BlocksProps) {
     }
     const Render = RENDER[b.kind as keyof typeof RENDER] as Renderer<Kind> | undefined;
     if (Render) out.push(<Render key={b.id} block={b} ctx={ctx} />);
+    if (b.kind === "chat" && !done.has(b.id)) break;
   }
   flush();
   return <>{out}</>;

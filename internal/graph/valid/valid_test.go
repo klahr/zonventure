@@ -714,6 +714,21 @@ func TestStaleTranslations(t *testing.T) {
 	}
 }
 
+// A chat line's, a quiz option's or a marker's translation belongs to its
+// block, and is stale only when the block is gone.
+func TestBlockFieldTranslations(t *testing.T) {
+	g := graph.Graph{Nodes: []graph.Node{{Slug: "s", Type: graph.Story, StoryCfg: &graph.StoryConfig{Blocks: []graph.Block{
+		{ID: "chat", Kind: graph.BlockChat, Lines: []graph.ChatLine{{Who: "Erik", Text: "Hej!"}}},
+	}}}}, Translations: map[string]map[string]string{"en": {
+		graph.BlockFieldKey("s", "chat", "line:0"): "Hi!",
+		graph.BlockFieldKey("s", "chat", "who:0"):  "Erik",
+	}}}
+	assertNoCode(t, Check(&g), "translation.stale")
+
+	g.Translations["en"][graph.BlockFieldKey("s", "gone", "line:0")] = "Deleted."
+	assertCode(t, Check(&g), "translation.stale")
+}
+
 func TestSectionAndMainLanguageTranslations(t *testing.T) {
 	g := valid3()
 	g.Journal = []graph.JournalEntry{{Slug: "a", Section: "Carl"}}

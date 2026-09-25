@@ -357,6 +357,10 @@ type Response struct {
 	// repeats, so the 1st wrong guess can read differently from the 5th.
 	AfterAttempts int    `json:"after_attempts,omitempty"`
 	Text          string `json:"text"`
+	// LockoutSeconds blocks answering for a while after the guess that
+	// shows this reply — "I'm charging my phone, talk in five minutes".
+	// The longer of it and the puzzle's LockoutSeconds applies.
+	LockoutSeconds int `json:"lockout_seconds,omitempty"`
 }
 
 // Hint is a time-gated nudge.
