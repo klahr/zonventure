@@ -22,7 +22,29 @@ export function summarize(b: Block, graph: Graph, t: T, node: Node): string {
     case "hotspots":
     case "overlay":
     case "torch":
+    case "spotdiff":
       return clip(b.alt ?? "") || t.t("no description");
+    case "call":
+      return b.who || clip(b.alt ?? "") || t.t("no caller");
+    case "split":
+      return t.t("{{n}} parts", { n: b.parts.length });
+    case "bearing":
+      return t.t("{{n}}°", { n: b.heading ?? 0 });
+    case "shake":
+      return t.t("shake {{n}}", { n: b.threshold ?? 60 });
+    case "suspects":
+      return b.cards.map((c) => c.name).filter(Boolean).join(", ") || t.t("no suspects yet");
+    case "photo":
+      return (clip(b.text) || t.t("no prompt yet")) + (b.worth ? ` · ${t.t("{{n}} points", { n: b.worth })}` : "");
+    case "flasher":
+    case "letters":
+      return clip(b.text) || t.t("empty");
+    case "vote":
+      return clip(b.text) || t.t("no question yet");
+    case "draw":
+      return t.t("{{n}} cards", { n: b.options.length });
+    case "bulletin":
+      return "";
     case "compass":
     case "map":
     case "radar":
@@ -30,7 +52,7 @@ export function summarize(b: Block, graph: Graph, t: T, node: Node): string {
     case "chat":
       return t.t("{{n}} messages", { n: b.lines.length });
     case "cipher":
-      return b.cipher === "caesar" ? t.t("Caesar, shift {{n}}", { n: b.shift ?? 3 }) : b.cipher;
+      return b.cipher === "caesar" ? t.t(b.wheel ? "Caesar wheel, shift {{n}}" : "Caesar, shift {{n}}", { n: b.shift ?? 3 }) : b.cipher;
     case "divider":
       return b.style ?? "line";
     case "level":

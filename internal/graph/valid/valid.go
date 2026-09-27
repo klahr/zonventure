@@ -537,7 +537,7 @@ func checkReferences(r *reporter, g *graph.Graph) {
 				r.err("ref.journal.unknown", n.Slug, "", "step unlocks journal entry %q, which is not declared", s)
 			}
 		}
-		for _, b := range n.Blocks() {
+		for _, b := range n.AllBlocks() {
 			if b.Show != nil {
 				checkPredicate(n.Slug, b.Show.When)
 			}
@@ -884,7 +884,7 @@ func checkTranslations(r *reporter, g *graph.Graph) {
 	blocks := map[string]bool{}
 	for _, n := range g.Nodes {
 		nodes[n.Slug] = true
-		for _, b := range n.Blocks() {
+		for _, b := range n.AllBlocks() {
 			blocks[graph.BlockKey(n.Slug, b.ID)] = true
 		}
 	}
@@ -948,7 +948,7 @@ func checkBlocks(r *reporter, g *graph.Graph) {
 	for _, n := range g.Nodes {
 		seen := map[string]bool{}
 		fixed := map[graph.BlockKind]int{}
-		for _, b := range n.Blocks() {
+		for _, b := range n.AllBlocks() {
 			switch {
 			case b.ID == "":
 				r.err("block.id.empty", n.Slug, "", "a content block on this step has no id")
@@ -960,8 +960,8 @@ func checkBlocks(r *reporter, g *graph.Graph) {
 				r.err(code, n.Slug, "", "the %s on this step "+format, append([]any{b.Kind}, args...)...)
 			}
 			switch b.Kind {
-			case graph.BlockText, graph.BlockImage, graph.BlockAudio, graph.BlockVideo, graph.BlockOverlay, graph.BlockTorch,
-				graph.BlockStandings:
+			case graph.BlockText, graph.BlockImage, graph.BlockAudio, graph.BlockVideo, graph.BlockOverlay,
+				graph.BlockStandings, graph.BlockCall, graph.BlockBulletin:
 			case graph.BlockQuiz:
 				switch {
 				case strings.TrimSpace(b.Text) == "":
@@ -974,7 +974,11 @@ func checkBlocks(r *reporter, g *graph.Graph) {
 					bad("block.quiz.worth", "is worth %d points; it must be 0 or more", b.Worth)
 				}
 			case graph.BlockTiebreak:
-				if tiebreaks++; tiebreaks == 2 {
+				// A switched-off one is a spare: only the one shown ranks.
+				if !b.Disabled {
+					tiebreaks++
+				}
+				if !b.Disabled && tiebreaks == 2 {
 					r.err("block.tiebreak.duplicate", n.Slug, "", "an adventure has one tie-breaker; this is a second")
 				}
 				switch {
@@ -1015,6 +1019,9 @@ func checkBlocks(r *reporter, g *graph.Graph) {
 					bad("block.chat.empty", "has no messages")
 				}
 			case graph.BlockCipher:
+				if b.Wheel && b.Cipher != "caesar" {
+					bad("block.cipher.wheel", "is a wheel, which only a Caesar cipher can be")
+				}
 				switch {
 				case !slices.Contains(graph.Ciphers, b.Cipher):
 					bad("block.cipher", "is %q; it must be one of %s", b.Cipher, strings.Join(graph.Ciphers, ", "))
@@ -1052,6 +1059,74 @@ func checkBlocks(r *reporter, g *graph.Graph) {
 				}
 				if !b.Items && len(b.Counters) == 0 {
 					bad("block.status.empty", "shows nothing: choose items or counters")
+				}
+			case graph.BlockTorch:
+				if !slices.Contains(graph.TorchStyles, b.Style) {
+					bad("block.style", "has style %q; it must be scratch, uv, red, or none for a torch", b.Style)
+				}
+			case graph.BlockSplit:
+				if filled(b.Parts) < 2 {
+					bad("block.split.parts", "has fewer than two parts to share out")
+				}
+			case graph.BlockBearing:
+				if b.Heading < 0 || b.Heading > 359 {
+					bad("block.heading", "wants heading %d°; it must be 0 to 359", b.Heading)
+				}
+				if strings.TrimSpace(b.Text) == "" {
+					bad("block.text.empty", "reveals nothing: write what the team reads when it points the right way")
+				}
+			case graph.BlockShake:
+				if b.Threshold < 0 || b.Threshold > 100 {
+					bad("block.threshold", "wants a shake of %d; it must be 1 to 100", b.Threshold)
+				}
+				if strings.TrimSpace(b.Text) == "" {
+					bad("block.text.empty", "reveals nothing: write what the team reads once it has shaken")
+				}
+			case graph.BlockSuspects:
+				if len(b.Cards) == 0 {
+					bad("block.cards.empty", "has no suspects")
+				}
+				for _, c := range b.Cards {
+					if strings.TrimSpace(c.Name) == "" {
+						bad("block.card.name", "has a suspect with no name")
+						break
+					}
+				}
+			case graph.BlockPhoto:
+				if strings.TrimSpace(b.Text) == "" {
+					bad("block.text.empty", "does not say what to take a picture of")
+				}
+				if b.Worth < 0 {
+					bad("block.worth", "is worth %d points; it must be 0 or more", b.Worth)
+				}
+			case graph.BlockSpotDiff:
+				if b.Other <= 0 {
+					bad("block.other", "has no second picture to compare")
+				}
+				if len(b.Spots) == 0 {
+					bad("block.spots.empty", "marks no differences to find")
+				}
+				for _, sp := range b.Spots {
+					if sp.X < 0 || sp.X > 1 || sp.Y < 0 || sp.Y > 1 {
+						bad("block.spot", "has a spot outside the picture")
+					}
+				}
+			case graph.BlockFlasher:
+				if strings.TrimSpace(b.Text) == "" {
+					bad("block.text.empty", "has no message to flash")
+				} else if c := unMorse(b.Text); c != "" {
+					bad("block.flasher.char", "has %q, which Morse cannot flash; use letters, digits and simple punctuation", c)
+				}
+				if b.Speed < 0 || b.Speed > 30 {
+					bad("block.speed", "flashes at %d words a minute; it must be 1 to 30", b.Speed)
+				}
+			case graph.BlockLetters:
+				if strings.TrimSpace(b.Text) == "" {
+					bad("block.text.empty", "has no letters to lay out")
+				}
+			case graph.BlockVote, graph.BlockDraw:
+				if filled(b.Options) < 2 {
+					bad("block.options", "has fewer than two options")
 				}
 			default:
 				r.err("block.kind", n.Slug, "", "content block %q is %q, which is not a kind of block", b.ID, b.Kind)
@@ -1211,3 +1286,30 @@ func validHeaderName(s string) bool {
 
 // placeholderRe finds {{name}} in an email's text, as effects renders it.
 var placeholderRe = regexp.MustCompile(`\{\{(\w+)\}\}`)
+
+// filled counts the non-blank strings.
+func filled(ss []string) int {
+	n := 0
+	for _, s := range ss {
+		if strings.TrimSpace(s) != "" {
+			n++
+		}
+	}
+	return n
+}
+
+// morseable are the characters a flasher can send.
+const morseable = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.,?'!/()&:;=+-_\"$@ "
+
+// unMorse is the first character of s a flasher cannot send, or "".
+func unMorse(s string) string {
+	for _, r := range strings.ToUpper(s) {
+		if r == '\n' || r == '\t' {
+			continue
+		}
+		if !strings.ContainsRune(morseable, r) {
+			return string(r)
+		}
+	}
+	return ""
+}

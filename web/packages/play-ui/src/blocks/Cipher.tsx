@@ -1,5 +1,6 @@
-import type { ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { ALPHABET, MORSE, SEMAPHORE, armVector, caesarAlphabet, caesarShift, parseKey, pigpen } from "../ciphers.ts";
+import { WHEEL_STEP, wheelShift } from "../gadgets.ts";
 import type { Translate } from "../feedback.ts";
 import type { Renderer } from "./context.ts";
 import "./cipher.css";
@@ -15,6 +16,8 @@ export const CipherBlock: Renderer<"cipher"> = ({ block, ctx }) => {
     case "semaphore":
       return <Sheet kind="semaphore" title={t("Flag semaphore")}><Glyphs draw={SemaphoreGlyph} /></Sheet>;
     case "caesar": {
+      // The wheel is turned by the team: the shift is theirs to find.
+      if (block.wheel) return <Sheet kind="wheel" title={t("Cipher wheel")}><Wheel t={t} /></Sheet>;
       const shift = caesarShift(block.shift);
       return <Sheet kind="caesar" title={t("Caesar cipher, shift {{n}}", { n: shift })}><Caesar shift={shift} t={t} /></Sheet>;
     }
@@ -130,6 +133,73 @@ function Caesar({ shift, t }: { shift: number; t: Translate }) {
           ))}
         </div>
       ))}
+    </div>
+  );
+}
+
+/**
+ * A Caesar wheel: the plain alphabet on the outer ring, and an inner ring
+ * the team turns, by dragging round or with the arrow keys, to try each
+ * shift. It snaps to a letter when let go.
+ */
+function Wheel({ t }: { t: Translate }) {
+  const [angle, setAngle] = useState(0);
+  const drag = useRef<{ from: number; start: number } | null>(null);
+  const svg = useRef<SVGSVGElement>(null);
+  const pointerAngle = (x: number, y: number) => {
+    const box = svg.current!.getBoundingClientRect();
+    return (Math.atan2(y - (box.top + box.height / 2), x - (box.left + box.width / 2)) * 180) / Math.PI;
+  };
+  const shift = wheelShift(-angle);
+  const letter = (c: string, i: number, r: number, cls: string) => {
+    const a = ((i * WHEEL_STEP - 90) * Math.PI) / 180;
+    return (
+      <text key={c} className={cls} x={50 + r * Math.cos(a)} y={50 + r * Math.sin(a)} textAnchor="middle" dominantBaseline="central">
+        {c}
+      </text>
+    );
+  };
+  return (
+    <div className="pv-wheel">
+      <svg
+        ref={svg}
+        className="pv-wheel__svg"
+        viewBox="0 0 100 100"
+        role="slider"
+        tabIndex={0}
+        aria-label={t("Cipher wheel: turn the inner ring")}
+        aria-valuemin={0}
+        aria-valuemax={25}
+        aria-valuenow={shift}
+        aria-valuetext={t("Shift {{n}}: A is {{letter}}", { n: shift, letter: ALPHABET[shift] ?? "A" })}
+        onKeyDown={(e) => {
+          const d = e.key === "ArrowRight" || e.key === "ArrowUp" ? 1 : e.key === "ArrowLeft" || e.key === "ArrowDown" ? -1 : 0;
+          if (!d) return;
+          e.preventDefault();
+          setAngle((a) => Math.round(a / WHEEL_STEP) * WHEEL_STEP - d * WHEEL_STEP);
+        }}
+        onPointerDown={(e) => {
+          e.currentTarget.setPointerCapture(e.pointerId);
+          drag.current = { from: pointerAngle(e.clientX, e.clientY), start: angle };
+        }}
+        onPointerMove={(e) => {
+          if (!drag.current) return;
+          setAngle(drag.current.start + pointerAngle(e.clientX, e.clientY) - drag.current.from);
+        }}
+        onPointerUp={() => {
+          drag.current = null;
+          setAngle((a) => Math.round(a / WHEEL_STEP) * WHEEL_STEP);
+        }}
+      >
+        <circle className="pv-wheel__outer" cx="50" cy="50" r="48" />
+        {[...ALPHABET].map((c, i) => letter(c, i, 42, "pv-wheel__plain"))}
+        <g transform={`rotate(${angle} 50 50)`}>
+          <circle className="pv-wheel__inner" cx="50" cy="50" r="35" />
+          {[...ALPHABET].map((c, i) => letter(c, i, 29, "pv-wheel__code"))}
+        </g>
+        <line className="pv-wheel__marker" x1="50" y1="1" x2="50" y2="22" />
+      </svg>
+      <p className="pv-cipher__row-label">{t("Shift {{n}}: A is {{letter}}", { n: shift, letter: ALPHABET[shift] ?? "A" })}</p>
     </div>
   );
 }

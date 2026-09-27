@@ -210,12 +210,8 @@ func (e *Engine) Snapshot(ctx context.Context, teamID int64) (View, error) {
 	if err != nil {
 		return View{}, err
 	}
-	lat, lng, ok, err := e.locator().Position(ctx, tx, teamID)
-	if err != nil {
-		return View{}, fmt.Errorf("reading position: %w", err)
-	}
-	if ok {
-		s.Position = &session.Position{Lat: lat, Lng: lng}
+	if err := e.locate(ctx, tx, s); err != nil {
+		return View{}, err
 	}
 	v := s.View()
 	if err := e.decorate(ctx, tx, s.G, s.eventID, teamID, &v); err != nil {

@@ -6,7 +6,7 @@
 // Routes: internal/server/routes_player.go (/api/player/play) and
 // internal/server/routes_admin.go (/simulate).
 
-import { get, post, type RequestOptions } from "./http.ts";
+import { get, post, request, type RequestOptions } from "./http.ts";
 
 export type NodeType = "start" | "puzzle" | "story" | "hub" | "gate" | "effect" | "end";
 
@@ -77,16 +77,19 @@ export type PlayBlock = PlayBlockBody & {
 
 export type PlayBlockBody =
   | { kind: "text"; text: string }
-  | { kind: "image" | "audio" | "video"; media: number; alt?: string }
+  | { kind: "image" | "video"; media: number; alt?: string }
+  | { kind: "audio"; media: number; alt?: string; reverse?: boolean; spectrogram?: boolean }
   | { kind: "compass"; zone: string; hide_distance?: boolean }
   | { kind: "map"; zone: string; zoom?: number; hide_team?: boolean; markers?: { lat: number; lng: number; label?: string }[] }
   | { kind: "note"; text: string; style?: string }
   | { kind: "chat"; lines: { who?: string; text: string; me?: boolean }[]; media?: number; alt?: string }
-  | { kind: "cipher"; cipher: string; shift?: number; key?: string }
+  | { kind: "cipher"; cipher: string; shift?: number; key?: string; wheel?: boolean }
   | { kind: "hotspots"; media: number; alt?: string; spots?: { x: number; y: number; text: string }[] }
   | { kind: "divider"; style?: string }
   | { kind: "radar"; zone: string }
-  | { kind: "overlay" | "torch"; media: number; alt?: string }
+  | { kind: "overlay"; media: number; alt?: string }
+  /** style: "" a torch in the dark, "scratch" a scratch card, "uv" a UV lens, "red" a red lens. */
+  | { kind: "torch"; media: number; alt?: string; style?: string }
   | { kind: "level"; pitch?: number; text?: string }
   | { kind: "noise"; threshold?: number; text?: string }
   | { kind: "countdown"; seconds: number; from?: string; text?: string; ends_at?: string }
@@ -101,7 +104,31 @@ export type PlayBlockBody =
    * which it may change. answer comes only when the team has finished.
    */
   | { kind: "quiz"; text: string; options: string[]; worth?: number; picked?: string; final?: boolean; answer?: string }
-  | { kind: "tiebreak"; text: string; picked?: string; final?: boolean; target?: number };
+  | { kind: "tiebreak"; text: string; picked?: string; final?: boolean; target?: number }
+  /** parts are this player's only; player is which of players this phone is, from 1. The simulator sends every part. */
+  | { kind: "split"; parts: string[]; player?: number; players?: number }
+  | { kind: "bearing"; heading?: number; text?: string }
+  | { kind: "call"; media: number; alt?: string; who?: string }
+  /** picked is the struck cards' indexes, "0,2". */
+  | { kind: "suspects"; cards: { name: string; text?: string; media?: number; alt?: string }[]; picked?: string }
+  /** photo is the team's latest picture for this challenge, and its review. */
+  | { kind: "photo"; text: string; worth?: number; photo?: PhotoView }
+  | { kind: "spotdiff"; media: number; other?: number; alt?: string; spots?: { x: number; y: number; text: string }[] }
+  /** speed in words a minute; absent is 8. */
+  | { kind: "flasher"; text: string; speed?: number }
+  | { kind: "letters"; text: string }
+  | { kind: "shake"; threshold?: number; text?: string }
+  /** tally counts votes per option; voted is this player's option index ("" none); voters is the team's players. */
+  | { kind: "vote"; text: string; options: string[]; tally?: number[]; voted?: string; voters?: number }
+  | { kind: "bulletin" }
+  /** The cards stay face down: deck is how many, and once drawn picked is its index and dealt the card. */
+  | { kind: "draw"; text?: string; deck?: number; picked?: string; dealt?: string };
+
+/** session.PhotoView */
+export interface PhotoView {
+  id: number;
+  status: "pending" | "approved" | "denied";
+}
 
 /** session.QuizResult */
 export interface QuizResult {
@@ -208,6 +235,8 @@ export interface View {
   has_timeout?: boolean;
   score: number;
   penalty_score: number;
+  /** The adventure keeps the running score off the phone. */
+  hide_score?: boolean;
   penalty_seconds: number;
   finished?: boolean;
   outcome?: "complete" | "fail";
@@ -244,8 +273,14 @@ export type PlayAction =
   | { kind: "skip"; node: string }
   | { kind: "timeout"; node: string }
   | { kind: "hint"; node: string; index: number }
-  /** Answer a quiz question with 1, X or 2, or the tie-breaker with a number. Final. */
-  | { kind: "pick"; node: string; block: string; choice: string };
+  /**
+   * Answer a quiz question with 1, X or 2, or the tie-breaker with a
+   * number (final once the team leaves); strike a suspect board's cards
+   * ("0,2"); or draw a card (choice ignored).
+   */
+  | { kind: "pick"; node: string; block: string; choice: string }
+  /** This player's vote on a vote block: the option's index. Live events only. */
+  | { kind: "vote"; node: string; block: string; choice: string };
 
 /**
  * Refusal codes (session.Code, plus the player handler's own). A client
@@ -317,6 +352,18 @@ export interface EventMessage {
 }
 
 export const getPlay = (opts?: RequestOptions) => get<PlayState>("/api/player/play", opts);
+
+/** Send the team's picture for a photo block. It waits for the organisers' review. */
+export function uploadPhoto(node: string, block: string, file: Blob) {
+  const form = new FormData();
+  form.append("node", node);
+  form.append("block", block);
+  form.append("file", file);
+  return request<{ photo: PhotoView }>("/api/player/play/photo", { method: "POST", form });
+}
+
+/** A picture the team took, for its own phones. */
+export const photoURL = (id: number) => `/api/player/play/photo/${id}`;
 
 /**
  * Send one action. The client_action_id makes a retry safe: the server

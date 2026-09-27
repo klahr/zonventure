@@ -11,6 +11,32 @@ The repository, Go module, and CLI binary are named `zv`; the product is
 
 ## [Unreleased]
 
+### Added — twelve new blocks, and more ways to hide a clue
+
+- **New blocks:** split secret (one part to each player's phone),
+  bearing lock, shake to reveal, incoming call, suspect board, photo
+  challenge, spot the difference, Morse flasher, letter tiles, team vote,
+  live bulletin (the organisers' newest message) and random draw.
+- **Photo challenges** are reviewed from the event's control page: an
+  approved photo adds its points to the team's score, a denied one can
+  be retaken, and the team moves on without waiting. Approved photos
+  show on the team's recap. Photos and votes are pruned with location
+  pings, and "Forget me" deletes a player's.
+- **Options on existing blocks:** torch styles (scratch card, UV lens,
+  red lens), a mirror-writing note, a Caesar wheel the team turns, and
+  audio that plays backwards or shows its spectrogram.
+- **Conditions:** "Metres walked on this step" and "Card drawn".
+- **Hide the score:** an adventure setting keeps the team's running
+  score off its phone. Points still count, and the end screen,
+  standings and recap still show them.
+- **Every block can be switched off** and kept for later, the title and
+  points too. Title and points are still added to new steps, but can now
+  be deleted, and deleting any block asks first.
+
+### Changed
+
+- A typed answer no longer has a QR button; only a QR scan puzzle scans.
+
 ### Changed — the classic console understands designed adventures
 
 An adventure with a published graph plays the graph; its lane pages,

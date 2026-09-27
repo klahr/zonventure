@@ -341,7 +341,7 @@
   "Tile picture": "Bildpussel",
   "Quiz questions on the step": "Tipsfrågor på steget",
   "Typed answer": "Skrivet svar",
-  "The team types its answer in the bar at the bottom, or scans a QR code of it. The routes below say what counts.": "Laget skriver sitt svar i fältet längst ner, eller skannar en QR-kod med svaret. Vägarna nedan avgör vad som räknas.",
+  "The team types its answer in the bar at the bottom. The routes below say what counts.": "Laget skriver sitt svar i fältet längst ner. Vägarna nedan avgör vad som räknas.",
   "Answer bar": "Svarsfält",
   "typed or scanned": "skrivet eller skannat",
   "Quiz questions": "Tipsfrågor",
@@ -370,7 +370,6 @@
   "Greyed-out text in the empty box, such as “The ship's name”.": "Grå text i den tomma rutan, till exempel ”Skeppets namn”.",
   "Your answer": "Ert svar",
   "Answer": "Svara",
-  "A QR button beside the box, to scan a code of the answer": "En QR-knapp bredvid rutan, för att skanna en kod med svaret",
   "Answer bar: placeholder": "Svarsfält: platshållare",
   "Answer bar: button": "Svarsfält: knapp"
 }

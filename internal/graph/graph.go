@@ -71,6 +71,10 @@ type Graph struct {
 	// sort_on_unlock_timestamp.
 	JournalByUnlock bool `json:"journal_by_unlock,omitempty"`
 
+	// HideScore keeps the team's running score off its phone. Points
+	// still count: the end, the standings and the recap show them.
+	HideScore bool `json:"hide_score,omitempty"`
+
 	// TimeLimit ends the free play of an adventure: see TimeLimit.
 	TimeLimit *TimeLimit `json:"time_limit,omitempty"`
 
@@ -377,6 +381,9 @@ type Hint struct {
 // PuzzleConfig is the workhorse node.
 type PuzzleConfig struct {
 	Blocks []Block `json:"blocks,omitempty"`
+	// Fixed is set once the step was given its title and points blocks
+	// (see Graph.Normalize); a block the author removed since stays gone.
+	Fixed bool `json:"fixed,omitempty"`
 	// LegacyPrompt and LegacyMedia are the content of a graph saved
 	// before blocks. Only Graph.Normalize reads them.
 	LegacyPrompt string  `json:"prompt,omitempty"`
@@ -637,6 +644,8 @@ const (
 // when a narrative beat does not look like a challenge.
 type StoryConfig struct {
 	Blocks []Block `json:"blocks,omitempty"`
+	// Fixed: see PuzzleConfig.Fixed.
+	Fixed bool `json:"fixed,omitempty"`
 	// LegacyText and LegacyMedia: see PuzzleConfig.LegacyPrompt.
 	LegacyText  string  `json:"text,omitempty"`
 	LegacyMedia []Media `json:"media,omitempty"`

@@ -3,6 +3,14 @@ import { Blocks } from "@zonventure/play-ui";
 import { withField, type Editor, type Of } from "./types.ts";
 import "./cipher-editor.css";
 
+/** What a flasher can send: valid.go's morseable. */
+const MORSEABLE = /^[A-Z0-9.,?'!/()&:;=+\-_"$@ \n\t]*$/;
+
+/** The characters of a message a flasher cannot send, once each. */
+export function unMorse(text: string): string[] {
+  return [...new Set([...text.toUpperCase()].filter((c) => !MORSEABLE.test(c)))];
+}
+
 const CIPHERS: { value: Cipher; label: string }[] = [
   { value: "morse", label: "Morse code" },
   { value: "pigpen", label: "Pigpen cipher" },
@@ -39,6 +47,12 @@ export const CipherEditor: Editor<"cipher"> = ({ block, set, t }) => (
         />
       </label>
     )}
+    {block.cipher === "caesar" && (
+      <label className="check">
+        <input type="checkbox" checked={!!block.wheel} onChange={(e) => set(withField(block, "wheel", e.target.checked))} />
+        <span>{t.t("Show as a wheel the team turns")}</span>
+      </label>
+    )}
     {block.cipher === "custom" && (
       <textarea
         className="field__input blk-cipher__key"
@@ -52,7 +66,7 @@ export const CipherEditor: Editor<"cipher"> = ({ block, set, t }) => (
     {block.cipher === "custom" && <p className="field__hint">{t.t("One symbol = meaning per line. A line without = is shown as a heading.")}</p>}
     <div className="blk__preview blk-cipher__preview" aria-label={t.t("Preview")}>
       <Blocks
-        blocks={[{ id: "preview", kind: "cipher", cipher: block.cipher, ...(block.shift !== undefined ? { shift: block.shift } : {}), ...(block.key !== undefined ? { key: block.key } : {}) }]}
+        blocks={[{ id: "preview", kind: "cipher", cipher: block.cipher, ...(block.shift !== undefined ? { shift: block.shift } : {}), ...(block.key !== undefined ? { key: block.key } : {}), ...(block.cipher === "caesar" && block.wheel ? { wheel: true } : {}) }]}
         t={(k, v) => t.t(k, v)}
         position={undefined}
         placeNote={undefined}
@@ -62,5 +76,34 @@ export const CipherEditor: Editor<"cipher"> = ({ block, set, t }) => (
         preview
       />
     </div>
+  </>
+);
+
+const SPEED = 8;
+
+export const FlasherEditor: Editor<"flasher"> = ({ block, set, t }) => {
+  const speed = block.speed ?? SPEED;
+  const bad = unMorse(block.text ?? "");
+  return (
+    <>
+      <input className="field__input" value={block.text ?? ""} placeholder={t.t("Such as “SOS AT THE MILL”")} aria-label={t.t("Message")} onChange={(e) => set({ ...block, text: e.target.value })} />
+      {bad.length > 0 && <p className="alert alert--danger">{t.t("Morse cannot flash {{chars}}. Use letters, digits and simple punctuation.", { chars: bad.join(" ") })}</p>}
+      <label className="field blk__zoom">
+        <span className="field__label">{t.t("Speed: {{n}} words a minute", { n: speed })}</span>
+        <input type="range" min={1} max={30} value={speed} onChange={(e) => set(withField(block, "speed", Number(e.target.value) === SPEED ? undefined : Number(e.target.value)))} />
+        <span className="blk__zoom-ends" aria-hidden="true">
+          <span>{t.t("Slow")}</span>
+          <span>{t.t("Fast")}</span>
+        </span>
+      </label>
+      <p className="field__hint">{t.t("The screen flashes the message in Morse, and Android phones vibrate it too. Add a Morse cipher sheet if the team needs the key.")}</p>
+    </>
+  );
+};
+
+export const LettersEditor: Editor<"letters"> = ({ block, set, t }) => (
+  <>
+    <input className="field__input" value={block.text ?? ""} placeholder={t.t("Such as “SILENT”")} aria-label={t.t("Letters")} onChange={(e) => set({ ...block, text: e.target.value })} />
+    <p className="field__hint">{t.t("Letters are shown as tiles in scrambled order.")}</p>
   </>
 );

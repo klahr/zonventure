@@ -1977,16 +1977,16 @@ a.split-btn-item { text-decoration: none; }
   border-bottom: 1px solid var(--border-soft);
 }
 .feed li:last-child { border-bottom: none; }
-.feed .badge {
+.feed .badge, .photo-grid .badge {
   width: 28px; height: 28px; border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
   font-size: .9rem; font-weight: 700;
   background: var(--surface-2); color: var(--ink);
 }
-.feed .badge.neutral { background: var(--surface-2); color: var(--ink); }
-.feed .badge.good { background: color-mix(in srgb, var(--success) 22%, transparent); color: var(--success); }
-.feed .badge.bad { background: color-mix(in srgb, var(--danger) 22%, transparent); color: var(--danger); }
-.feed .badge.brand { background: color-mix(in srgb, var(--accent) 22%, transparent); color: var(--accent); }
+.feed .badge.neutral, .photo-grid .badge.neutral { background: var(--surface-2); color: var(--ink); }
+.feed .badge.good, .photo-grid .badge.good { background: color-mix(in srgb, var(--success) 22%, transparent); color: var(--success); }
+.feed .badge.bad, .photo-grid .badge.bad { background: color-mix(in srgb, var(--danger) 22%, transparent); color: var(--danger); }
+.feed .badge.brand, .photo-grid .badge.brand { background: color-mix(in srgb, var(--accent) 22%, transparent); color: var(--accent); }
 .feed .msg strong { font-weight: 700; }
 .feed .meta { font-size: var(--ts-xs); color: var(--muted); margin-top: .1rem; }
 .feed time { font-size: var(--ts-xs); color: var(--muted); white-space: nowrap; }
@@ -8436,11 +8436,12 @@ async function viewRunDetail(view, runID) {
 //   - Leaderboard table (filtered) + activity feed (filtered) side-by-side
 //   - Lobby-TV share at the bottom
 async function viewEventControl(view, runID) {
-  const [detail, tracksR, eventsR, messagesR] = await Promise.all([
+  const [detail, tracksR, eventsR, messagesR, photosR] = await Promise.all([
     api('/api/admin/events/' + runID),
     api('/api/admin/events/' + runID + '/tracks'),
     api('/api/admin/events/' + runID + '/activity'),
     api('/api/admin/events/' + runID + '/messages'),
+    api('/api/admin/events/' + runID + '/photos'),
   ]);
   if (!detail.ok) {
     view.replaceChildren(h('p', { class: 'err' }, detail.body?.error || t('not found')));
@@ -8768,6 +8769,7 @@ async function viewEventControl(view, runID) {
     statsHost,
     h('div', { class: 'control-grid' }, lbHost, feedHost),
     renderMessagesCard(event, teams, messages, inbox),
+    renderPhotosCard(event, photosR.body || {}),
     mapCard,
   );
 
@@ -8967,6 +8969,18 @@ function renderEvent(e, teams, event) {
       if (p.by_arranger) meta = t('by arranger'); break;
     case 'gate.reached':
       badge = 'brand'; symbol = '⛳'; msg = h('span', { class: 'msg' }, team, t(' reached the puzzle location')); break;
+    case 'photo.taken':
+      badge = 'brand'; symbol = '📷'; msg = h('span', { class: 'msg' }, team, t(' sent a photo on “{{step}}”', { step: stepTitle(event, p.node) }));
+      meta = t('waiting for review'); break;
+    case 'photo.reviewed':
+      badge = p.status === 'approved' ? 'good' : p.status === 'denied' ? 'bad' : 'neutral';
+      symbol = p.status === 'approved' ? '✓' : p.status === 'denied' ? '✗' : '•';
+      msg = h('span', { class: 'msg' }, team, p.status === 'approved'
+        ? t(': photo on “{{step}}” approved', { step: stepTitle(event, p.node) })
+        : p.status === 'denied'
+          ? t(': photo on “{{step}}” denied', { step: stepTitle(event, p.node) })
+          : t(': photo on “{{step}}” waiting for review again', { step: stepTitle(event, p.node) }));
+      if (p.points) meta = t('{{n}} points', { n: p.points > 0 ? '+' + p.points : p.points }); break;
     default:
       msg = h('span', { class: 'msg' }, e.kind);
   }
@@ -9106,6 +9120,85 @@ function renderMessagesCard(event, teams, messages, inbox) {
   }
   card.append(list);
   return card;
+}
+
+// renderPhotosCard lists the pictures teams took for the adventure's photo
+// challenges, those waiting for review first. Approving one adds its
+// points to the team's score and denying it lets the team take another;
+// either can be changed later, and the score follows. Teams move on
+// whatever the verdict. Hidden when the adventure has no photo challenge
+// and nothing was sent.
+function renderPhotosCard(event, data) {
+  const photos = data.photos || [];
+  if (!data.challenges && photos.length === 0) return h('div', { hidden: 'hidden' });
+  const card = h('div', { class: 'card' }, h('h2', { style: 'margin:0 0 .5rem' }, t('Team photos')));
+  if (photos.length === 0) {
+    card.append(h('p', { class: 'muted', style: 'margin:0' },
+      t('No photos yet. Teams send them from the photo challenges, and you approve or deny each here.')));
+    return card;
+  }
+  const waiting = photos.filter((p) => p.status === 'pending').length;
+  if (waiting) card.append(h('p', { class: 'muted', style: 'margin:0 0 .6rem' }, t('{{n}} waiting for review', { n: waiting })));
+  const src = (p) => '/api/admin/events/' + event.id + '/photos/' + p.id + '/image';
+  const status = {
+    pending: ['neutral', t('Waiting')],
+    approved: ['good', t('Approved')],
+    denied: ['bad', t('Denied')],
+  };
+  const list = h('div', { class: 'control-scroll photo-grid', style: 'display:grid; gap:.75rem; grid-template-columns:repeat(auto-fill, minmax(12rem, 1fr))' });
+  for (const p of photos) {
+    const [badge, label] = status[p.status] || status.pending;
+    const buttons = h('div', { class: 'row', style: 'gap:.4rem; flex-wrap:wrap' });
+    if (p.status !== 'approved') {
+      buttons.append(h('button', { class: 'btn small primary', on: { click: () => reviewPhoto(event, p, 'approved') } }, t('Approve')));
+    }
+    if (p.status !== 'denied') {
+      buttons.append(h('button', { class: 'btn small danger', on: { click: () => reviewPhoto(event, p, 'denied') } }, t('Deny')));
+    }
+    if (p.status !== 'pending') {
+      buttons.append(h('button', { class: 'btn small ghost', on: { click: () => reviewPhoto(event, p, 'pending') } }, t('Undo')));
+    }
+    list.append(h('div', { style: 'display:grid; gap:.35rem; padding-bottom:.6rem; border-bottom:1px solid var(--border-soft)' },
+      h('button', {
+        class: 'btn ghost', style: 'padding:0; border:0; display:block',
+        title: t('Show larger'), 'aria-label': t('Show the photo from {{team}} larger', { team: p.team_name }),
+        on: { click: () => showPhoto(event, p, src(p)) },
+      }, h('img', { src: src(p), alt: p.prompt || t('Team photo'), loading: 'lazy',
+        style: 'display:block; width:100%; aspect-ratio:4/3; object-fit:cover; border-radius:8px' })),
+      h('div', { class: 'row', style: 'gap:.5rem; align-items:center' },
+        h('span', { class: 'badge ' + badge }, label),
+        h('strong', {}, p.team_name)),
+      h('div', { class: 'muted', style: 'font-size:.85em' },
+        (p.node_title || stepTitle(event, p.node)) + ' · ' + t('{{n}} points', { n: p.worth }) + ' · ' +
+        fmtLocal(p.created_at, { timeStyle: 'short', hour12: false })),
+      p.prompt ? h('div', { style: 'font-size:.9em; overflow-wrap:anywhere' }, p.prompt) : null,
+      buttons));
+  }
+  card.append(list);
+  return card;
+}
+
+// showPhoto opens a team's picture at full size.
+async function showPhoto(event, p, src) {
+  await modal(p.team_name, ({ body, close }) => {
+    body.append(
+      h('img', { src, alt: p.prompt || t('Team photo'), style: 'display:block; max-width:100%; max-height:70vh; margin:0 auto; border-radius:8px' }),
+      p.prompt ? h('p', { class: 'muted', style: 'margin:.75rem 0 0' }, p.prompt) : null,
+      h('div', { class: 'row end', style: 'margin-top:1rem; gap:.5rem' },
+        h('button', { class: 'btn', on: { click: () => close(false) } }, t('Close'))));
+  });
+}
+
+// reviewPhoto sets a picture's verdict. The score follows at once.
+async function reviewPhoto(event, p, status) {
+  const r = await api('/api/admin/events/' + event.id + '/photos/' + p.id + '/review', {
+    method: 'POST', body: JSON.stringify({ status }),
+  });
+  if (!r.ok) { toastErr(apiError(r)); return; }
+  toast(status === 'approved' ? t('Photo approved: {{n}} points to {{team}}.', { n: p.worth, team: p.team_name })
+    : status === 'denied' ? t('Photo denied. {{team}} can take another.', { team: p.team_name })
+      : t('Photo is waiting for review again.'));
+  renderRoute();
 }
 
 // openMessageComposer sends teams an informational message: to all of

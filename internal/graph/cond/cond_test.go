@@ -20,6 +20,8 @@ type fakeState struct {
 	nodeElapsed float64
 	teamSize    int
 	zones       map[string]bool
+	walked      float64
+	picks       map[string]string
 	now         time.Time
 }
 
@@ -48,6 +50,8 @@ func (f *fakeState) ElapsedSeconds() float64       { return f.elapsed }
 func (f *fakeState) NodeElapsedSeconds() float64   { return f.nodeElapsed }
 func (f *fakeState) TeamSize() int                 { return f.teamSize }
 func (f *fakeState) InZone(z string) bool          { return f.zones[z] }
+func (f *fakeState) Walked() float64               { return f.walked }
+func (f *fakeState) Picked(n, b string) string     { return f.picks[n+"/"+b] }
 func (f *fakeState) LocalTime() time.Time          { return f.now }
 
 // An empty predicate is the shape of a freshly-dragged Gate. It must be
@@ -218,6 +222,27 @@ func TestInZone(t *testing.T) {
 
 // The venue-closes-at-17:00 constraint, which legacy could only express
 // as a block time limit that kicked teams out.
+// Walked compares metres like any number; Drawn asks which card a draw
+// dealt, and nothing dealt yet is no card at all.
+func TestWalkedAndDrawn(t *testing.T) {
+	s := newState()
+	s.walked = 120
+	if !Eval(Predicate{Op: OpWalked, N: 100}, s) || Eval(Predicate{Op: OpWalked, N: 150}, s) {
+		t.Error("walked 120 m: want ≥ 100 true, ≥ 150 false")
+	}
+	drew := Predicate{Op: OpDrawn, Node: "tavern", Block: "deck", Is: "2"}
+	if Eval(drew, s) {
+		t.Error("nothing dealt yet, but drawn held")
+	}
+	s.picks = map[string]string{"tavern/deck": "2"}
+	if !Eval(drew, s) {
+		t.Error("dealt card 2, but drawn 2 failed")
+	}
+	if Eval(Predicate{Op: OpDrawn, Node: "tavern", Block: "deck"}, s) {
+		t.Error("a drawn condition naming no card held")
+	}
+}
+
 func TestWallClock(t *testing.T) {
 	s := newState() // 14:30 UTC, a Tuesday
 

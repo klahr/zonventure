@@ -593,12 +593,16 @@ textarea.field__input { resize: vertical; font-family: var(--font-body); }
 .dz .blk__handle:hover:not(:disabled) { color: var(--ink); background: color-mix(in srgb, var(--ink) 6%, transparent); }
 .dz .blk__handle:active { cursor: grabbing; }
 .blk__icon { flex: none; color: color-mix(in srgb, var(--c-content) var(--concept-ink), var(--ink)); }
-.blk__label { flex: none; font-size: var(--text-xs); font-weight: 700; color: var(--ink-soft); }
+/* A long label gives way, ellipsed, before the chevron and icon do. */
+.blk__label { flex: 0 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: var(--text-xs); font-weight: 700; color: var(--ink-soft); }
+.dz .blk__fold > svg { flex: none; }
 /* The head's title is the fold toggle: the whole of it, not a small chevron. */
 .dz .blk__fold { flex: 1; min-width: 0; display: flex; align-items: center; justify-content: flex-start; gap: var(--sp-2); padding: 0; border: 0; background: none; color: var(--dz-faint, var(--muted)); text-align: left; cursor: pointer; }
 .dz .blk__fold:hover:not(:disabled) { background: none; color: var(--ink); }
 .blk__summary { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: var(--text-xs); color: var(--muted); }
 .blk.is-folded { padding-bottom: var(--sp-2); }
+.blk.is-disabled { background: var(--surface); }
+.blk.is-disabled > :not(.blk__head), .blk.is-disabled .blk__fold { opacity: 0.5; }
 .blk-ed__fold-all { align-self: flex-end; font-size: var(--text-xs); }
 
 /* A quiz question's answers: the right one ticked, as on the answer sheet. */

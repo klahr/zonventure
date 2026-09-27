@@ -92,8 +92,10 @@ type View struct {
 	// that time is up.
 	HasTimeout bool `json:"has_timeout,omitempty"`
 
-	Score          float64       `json:"score"`
-	PenaltyScore   float64       `json:"penalty_score"`
+	Score        float64 `json:"score"`
+	PenaltyScore float64 `json:"penalty_score"`
+	// HideScore is graph.HideScore: the phone leaves the score out of its header.
+	HideScore      bool          `json:"hide_score,omitempty"`
 	PenaltySeconds int           `json:"penalty_seconds"`
 	Finished       bool          `json:"finished,omitempty"`
 	Outcome        graph.Outcome `json:"outcome,omitempty"`
@@ -186,8 +188,35 @@ type BlockView struct {
 	// Picked is the team's answer to a quiz question or tie-breaker, and
 	// Final whether it can no longer change it: it has left the step. The
 	// right Answer and Target stay out of the view until it finishes.
+	// Picked is also the cards a suspect board has struck ("0,2"), and
+	// the index of the card a draw dealt.
 	Picked string `json:"picked,omitempty"`
 	Final  bool   `json:"final,omitempty"`
+	// Deck is how many cards a draw holds; they stay face down, out of
+	// the view, and Dealt is the one the team drew.
+	Deck  int    `json:"deck,omitempty"`
+	Dealt string `json:"dealt,omitempty"`
+
+	// The rest is filled by the player endpoints, which know the player
+	// asking. Player is which of Players a split secret's phone is,
+	// counted from 1, and Parts are only that player's.
+	Player  int `json:"player,omitempty"`
+	Players int `json:"players,omitempty"`
+	// Tally counts a vote's votes per option, Voted is the option this
+	// player chose ("" for none yet), and Voters how many players the
+	// team has.
+	Tally  []int  `json:"tally,omitempty"`
+	Voted  string `json:"voted,omitempty"`
+	Voters int    `json:"voters,omitempty"`
+	// Photo is the team's latest picture for a photo block.
+	Photo *PhotoView `json:"photo,omitempty"`
+}
+
+// PhotoView is a picture a team took for a photo block, and where the
+// organisers' review of it stands: "pending", "approved" or "denied".
+type PhotoView struct {
+	ID     int64  `json:"id"`
+	Status string `json:"status"`
 }
 
 // CounterView is one counter's value, for a status block.
@@ -329,6 +358,15 @@ func (t *Team) setBlocks(v *View, n graph.Node) {
 			if !t.Completed {
 				bv.Answer, bv.Target = "", nil
 			}
+		case graph.BlockSuspects:
+			bv.Picked = t.Picked(n.Slug, b.ID)
+		case graph.BlockDraw:
+			bv.Deck, bv.Options = len(b.Options), nil
+			if p := t.Picked(n.Slug, b.ID); p != "" {
+				if i, err := strconv.Atoi(p); err == nil && i >= 0 && i < len(b.Options) {
+					bv.Picked, bv.Dealt = p, b.Options[i]
+				}
+			}
 		case graph.BlockTitle:
 			bv.Text = n.Title
 		case graph.BlockPoints:
@@ -410,7 +448,7 @@ func (t *Team) wakeup(p cond.Predicate) (at *time.Time, zone bool) {
 		return &d
 	}
 	switch p.Op {
-	case cond.OpInZone:
+	case cond.OpInZone, cond.OpWalked:
 		return nil, true
 	case cond.OpNodeElapsed:
 		return later(t.NodeEnteredAt), false
@@ -575,6 +613,28 @@ func (t *Team) translate(v *View) {
 					b.Spots[j].Text = tr(graph.BlockFieldKey(v.Node, b.ID, fmt.Sprintf("spot:%d", j)), b.Spots[j].Text)
 				}
 			}
+			if b.Parts != nil {
+				b.Parts = append([]string(nil), b.Parts...)
+				for j := range b.Parts {
+					b.Parts[j] = t.fill(tr(graph.BlockFieldKey(v.Node, b.ID, fmt.Sprintf("part:%d", j)), b.Parts[j]))
+				}
+			}
+			if b.Who != "" {
+				b.Who = tr(graph.BlockFieldKey(v.Node, b.ID, "who"), b.Who)
+			}
+			if b.Cards != nil {
+				b.Cards = append([]graph.Card(nil), b.Cards...)
+				for j := range b.Cards {
+					c := &b.Cards[j]
+					c.Name = tr(graph.BlockFieldKey(v.Node, b.ID, fmt.Sprintf("card:%d:name", j)), c.Name)
+					if c.Text != "" {
+						c.Text = t.fill(tr(graph.BlockFieldKey(v.Node, b.ID, fmt.Sprintf("card:%d:text", j)), c.Text))
+					}
+				}
+			}
+			if b.Dealt != "" {
+				b.Dealt = tr(graph.BlockFieldKey(v.Node, b.ID, "option:"+b.Picked), b.Dealt)
+			}
 			b.Place = zone(b.Place)
 			if !b.Locked {
 				plain = append(plain, b.Block)
@@ -644,6 +704,7 @@ func (t *Team) view() View {
 		Node:           t.Current,
 		Score:          t.Points,
 		PenaltyScore:   t.PenaltyScore,
+		HideScore:      t.G.HideScore,
 		PenaltySeconds: t.PenaltySeconds,
 		Finished:       t.Completed,
 		Outcome:        t.Ending,

@@ -211,6 +211,18 @@ export function Resources({ graph, onChange }: { graph: Graph; onChange: (g: Gra
       </section>
 
       <section className="insp__section">
+        <h3>{t.t("Score")}</h3>
+        <label className="check">
+          <input type="checkbox" checked={!!graph.hide_score}
+            onChange={(e) => onChange(e.target.checked ? { ...graph, hide_score: true } : withoutKey(graph, "hide_score"))} />
+          {t.t("Hide the team's score on the phone")}
+        </label>
+        <p className="field__hint">
+          {t.t("Points still count: the end screen, the standings and the recap show them. Useful for a story walk or a quiz walk where the score would give answers away.")}
+        </p>
+      </section>
+
+      <section className="insp__section">
         <h3>
           <ConceptIcon {...RESOURCE.time} />
           {t.t("Time limit")}

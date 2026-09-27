@@ -33,9 +33,11 @@ const OPS: { op: Op; label: string; group: string }[] = [
   { op: "elapsed", label: "Time since start (s)", group: "Progress" },
   { op: "node_elapsed", label: "Time on this step (s)", group: "Progress" },
   { op: "team_size", label: "Team size", group: "Progress" },
+  { op: "drawn", label: "Card drawn", group: "Progress" },
   { op: "item", label: "Has an item", group: "State" },
   { op: "counter", label: "Shared counter", group: "State" },
   { op: "in_zone", label: "Is inside a zone", group: "Place & time" },
+  { op: "walked", label: "Metres walked on this step", group: "Place & time" },
   { op: "time_of_day", label: "Time of day", group: "Place & time" },
   { op: "weekday", label: "Weekday", group: "Place & time" },
 ];
@@ -78,6 +80,14 @@ export function ConditionEditor({ value, onChange, graph, depth = 0 }: Props) {
     return [{ port: "out", label: "continue" }];
   };
 
+  // The steps with a random draw, and the draws and cards of one.
+  const draws = (slug?: string) => {
+    const n = graph.nodes.find((x) => x.slug === slug);
+    return (n?.puzzle?.blocks ?? n?.story?.blocks ?? []).flatMap((b) => (b.kind === "draw" ? [b] : []));
+  };
+  const drawSteps = graph.nodes.filter((n) => draws(n.slug).length > 0);
+  const drawBlock = draws(value.node).find((b) => b.id === value.block);
+
   const groups = [...new Set(OPS.map((o) => o.group))];
 
   return (
@@ -116,6 +126,46 @@ export function ConditionEditor({ value, onChange, graph, depth = 0 }: Props) {
         </select>
       )}
 
+      {value.op === "drawn" && (
+        <>
+          <select
+            className="field__input"
+            value={value.node ?? ""}
+            onChange={(e) => {
+              const first = draws(e.target.value)[0]?.id;
+              onChange({ op: "drawn", node: e.target.value, ...(first ? { block: first } : {}) });
+            }}
+            aria-label={t.t("Step")}
+          >
+            <option value="">{drawSteps.length ? t.t("— pick a step with a draw —") : t.t("— no step has a random draw yet —")}</option>
+            {drawSteps.map((n) => (
+              <option key={n.slug} value={n.slug}>
+                {n.title || n.slug}
+              </option>
+            ))}
+          </select>
+          {draws(value.node).length > 1 && (
+            <select className="field__input" value={value.block ?? ""} onChange={(e) => onChange({ op: "drawn", node: value.node ?? "", block: e.target.value })} aria-label={t.t("Draw")}>
+              {draws(value.node).map((b, i) => (
+                <option key={b.id} value={b.id}>
+                  {b.text?.trim() || t.t("Draw {{n}}", { n: i + 1 })}
+                </option>
+              ))}
+            </select>
+          )}
+          {drawBlock && (
+            <select className="field__input" value={value.is ?? ""} onChange={(e) => set({ is: e.target.value })} aria-label={t.t("Card")}>
+              <option value="">{t.t("— which card —")}</option>
+              {drawBlock.options.map((o, i) => (
+                <option key={i} value={String(i)}>
+                  {o || t.t("Card {{n}}", { n: i + 1 })}
+                </option>
+              ))}
+            </select>
+          )}
+        </>
+      )}
+
       {value.op === "item" && (
         <select className="field__input" value={value.item ?? ""} onChange={(e) => set({ item: e.target.value })} aria-label={t.t("Item")}>
           <option value="">{t.t("— pick an item —")}</option>
@@ -149,7 +199,7 @@ export function ConditionEditor({ value, onChange, graph, depth = 0 }: Props) {
         </select>
       )}
 
-      {["attempts", "item", "counter", "score", "elapsed", "node_elapsed", "team_size", "time_of_day"].includes(value.op) && (
+      {["attempts", "item", "counter", "score", "elapsed", "node_elapsed", "team_size", "walked", "time_of_day"].includes(value.op) && (
         <div className="cond__cmp">
           <select className="field__input" value={value.cmp ?? "gte"} onChange={(e) => set({ cmp: e.target.value as Cmp })} aria-label={t.t("Comparison")}>
             {CMPS.map((c) => (

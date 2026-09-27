@@ -119,6 +119,17 @@ body {
 .steps .title { flex: 1 1 auto; min-width: 0; }
 .steps .story .title, .steps .note { color: var(--muted); }
 .steps .note { flex: 0 0 auto; font-size: .8rem; }
+/* The team's approved photo challenges. */
+.photos {
+  display: grid; gap: .75rem; margin: 0 0 1.25rem;
+  grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr));
+}
+.photos figure {
+  margin: 0; background: var(--surface);
+  border: 1px solid var(--border-soft); border-radius: 12px; overflow: hidden;
+}
+.photos img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; }
+.photos figcaption { padding: .45rem .65rem; font-size: .85rem; color: var(--muted); }
 #map {
   width: 100%;
   height: 24rem;
@@ -313,6 +324,7 @@ function render(d) {
 
   if (d.engine === 'graph') {
     renderGraphStats(d);
+    renderPhotos(d);
   } else {
     root.append(el('div', { class: 'stats' },
       statBox(formatDuration(d.duration_seconds), t('Time')),
@@ -390,6 +402,17 @@ function renderGraphStats(d) {
       misses ? el('span', { class: 'note' }, misses) : null));
   }
   root.append(list);
+}
+
+// renderPhotos shows the team's approved photo challenges, each served
+// behind the same recap token as the page.
+function renderPhotos(d) {
+  if (!(d.photos || []).length) return;
+  const tok = encodeURIComponent(recapToken());
+  root.append(el('div', { class: 'photos' }, ...d.photos.map((p) =>
+    el('figure', {},
+      el('img', { src: '/api/public/recap/' + tok + '/photos/' + p.id, alt: p.prompt || t('Team photo'), loading: 'lazy' }),
+      el('figcaption', {}, p.step || p.prompt || '')))));
 }
 
 function mountMap(host, d) {

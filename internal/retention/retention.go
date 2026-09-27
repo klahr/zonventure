@@ -57,6 +57,7 @@ func sweep(ctx context.Context, db *sql.DB, cfg Config) {
 	if cfg.LocationDays > 0 {
 		pruneCompletedEventPings(ctx, db, cfg.LocationDays)
 		pruneCompletedEventAnswers(ctx, db, cfg.LocationDays)
+		pruneCompletedEventPhotos(ctx, db, cfg.LocationDays)
 	}
 	if cfg.AuditDays > 0 {
 		pruneAuthEvents(ctx, db, cfg.AuditDays)
@@ -216,6 +217,44 @@ func pruneCompletedEventAnswers(ctx context.Context, db *sql.DB, days int) {
 	`
 	runBoundedDelete(ctx, db, "retention.answer_attempts", stmt, days)
 }
+
+// pruneCompletedEventPhotos deletes the pictures teams took for photo
+// blocks, and players' votes, on the same clock as their positions:
+// both show who was where, and with whom. The points an approved photo
+// earned stay in the score.
+func pruneCompletedEventPhotos(ctx context.Context, db *sql.DB, days int) {
+	photos := `
+		DELETE FROM team_photos
+		WHERE id IN (
+		  SELECT p.id
+		  FROM team_photos p
+		  JOIN events ar ON ar.id = p.event_id
+		  WHERE ar.state IN ('completed','cancelled')
+		    AND COALESCE(ar.completed_at, ar.cancelled_at) IS NOT NULL
+		    AND COALESCE(ar.completed_at, ar.cancelled_at)::timestamptz < now() - make_interval(days => $1)
+		  LIMIT ` + strconv.Itoa(photoBatchSize) + `
+		)
+	`
+	runBoundedDelete(ctx, db, "retention.team_photos", photos, days)
+	votes := `
+		DELETE FROM team_block_votes
+		WHERE ctid IN (
+		  SELECT v.ctid
+		  FROM team_block_votes v
+		  JOIN teams t ON t.id = v.team_id
+		  JOIN events ar ON ar.id = t.event_id
+		  WHERE ar.state IN ('completed','cancelled')
+		    AND COALESCE(ar.completed_at, ar.cancelled_at) IS NOT NULL
+		    AND COALESCE(ar.completed_at, ar.cancelled_at)::timestamptz < now() - make_interval(days => $1)
+		  LIMIT ` + strconv.Itoa(batchSize) + `
+		)
+	`
+	runBoundedDelete(ctx, db, "retention.team_block_votes", votes, days)
+}
+
+// photoBatchSize is smaller than batchSize: each row is a picture, and a
+// batch is held in one statement.
+const photoBatchSize = 200
 
 // pruneScheduledDeletions hard-deletes users whose grace window has
 // passed. Each user is processed in its own transaction so a single

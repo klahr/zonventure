@@ -60,7 +60,38 @@ export function nodeTexts(n: Node): Translatable[] {
           break;
         case "level":
         case "noise":
+        case "bearing":
+        case "shake":
           add(own, "Shown when done", b.text, { multiline: true });
+          break;
+        case "split":
+          b.parts.forEach((p, i) => add(`${own}:part:${i}`, `Secret part ${i + 1}`, p, { multiline: true }));
+          break;
+        case "call":
+          add(`${own}:who`, "Caller", b.who);
+          break;
+        case "suspects":
+          b.cards.forEach((c, i) => {
+            add(`${own}:card:${i}:name`, "Suspect", c.name);
+            add(`${own}:card:${i}:text`, "Suspect: facts", c.text, { multiline: true });
+          });
+          break;
+        case "photo":
+          add(own, "Photo challenge", b.text, { multiline: true });
+          break;
+        case "flasher":
+          add(own, "Morse message", b.text);
+          break;
+        case "letters":
+          add(own, "Letters", b.text);
+          break;
+        case "vote":
+        case "draw":
+          add(own, b.kind === "vote" ? "Vote question" : "Draw", b.text, { multiline: true });
+          b.options.forEach((o, i) => add(`${own}:option:${i}`, b.kind === "vote" ? `Vote option ${i + 1}` : `Card ${i + 1}`, o));
+          break;
+        case "spotdiff":
+          (b.spots ?? []).forEach((sp, i) => add(`${own}:spot:${i}`, "Difference", sp.text, { multiline: true }));
           break;
         case "chat":
           b.lines.forEach((l, i) => {

@@ -39,6 +39,8 @@ export interface Game {
   queued: number;
   online: boolean;
   act: (a: play.PlayAction) => void;
+  /** Sends the team's picture for a photo block, then reloads. Throws when it does not arrive. */
+  photo: (node: string, block: string, file: File) => Promise<void>;
   refresh: () => void;
   /** Send anything queued, then reload. */
   retry: () => void;
@@ -234,6 +236,21 @@ export function useGame(t: Translate): Game {
     [fail, showView],
   );
 
+  // A photo is not queued: it is large, and the player sees at once
+  // whether it arrived and can simply take it again.
+  const photo = useCallback(
+    async (node: string, block: string, file: File) => {
+      try {
+        await play.uploadPhoto(node, block, file);
+      } catch (e) {
+        fail(e);
+        throw e;
+      }
+      await refresh();
+    },
+    [fail, refresh],
+  );
+
   // Boot: restore anything queued by a previous tab, load, then flush.
   useEffect(() => {
     if (!outboxLoaded) {
@@ -284,6 +301,7 @@ export function useGame(t: Translate): Game {
     queued,
     online,
     act: (a) => void act(a),
+    photo,
     refresh: () => void refresh(),
     retry: () => void flush().then(refresh),
   };

@@ -259,6 +259,8 @@ func (s *state) ElapsedSeconds() float64                { return 0 }
 func (s *state) NodeElapsedSeconds() float64            { return 0 }
 func (s *state) TeamSize() int                          { return 1 }
 func (s *state) InZone(string) bool                     { return true }
+func (s *state) Walked() float64                        { return 0 }
+func (s *state) Picked(string, string) string           { return "" }
 func (s *state) LocalTime() time.Time                   { return time.Time{} }
 func (s *state) Slot() int                              { return s.slot }
 func (s *state) Occupancy(string, string) int           { return 0 }

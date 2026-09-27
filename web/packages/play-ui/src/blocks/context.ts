@@ -32,6 +32,15 @@ export interface BlockContext {
    * the level read it instead of the phone's sensors, and work fully.
    */
   motion?: Motion | undefined;
+  /**
+   * A real event, played on the team's own phones: only then can a
+   * player vote. The simulator and the designer's preview leave it off.
+   */
+  live?: boolean;
+  /** Sends the team's picture for a photo block; absent outside a real event. */
+  photo?: ((block: string, file: File) => Promise<void>) | undefined;
+  /** The organisers' newest message to the team, for a bulletin block. */
+  bulletin?: { text: string; created_at: string } | undefined;
 }
 
 /** How a device is held: its compass heading, and its tilt as DeviceOrientationEvent reports it. */

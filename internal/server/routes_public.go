@@ -47,6 +47,7 @@ func registerPublicTokenRoutes(r chi.Router, env *routesEnv) {
 		// here, so a leaked URL doesn't expose live position data.
 		r.Get("/recap/{token}", servePublicPage("web/recap.html", http.StatusOK))
 		r.Get("/api/public/recap/{token}", publicH.Recap)
+		r.Get("/api/public/recap/{token}/photos/{photoID}", publicH.RecapPhoto)
 		// Team-token-authed avatar upload/delete so the team can change
 		// their own profile picture from the share page. The token IS the
 		// auth; no staff session required.

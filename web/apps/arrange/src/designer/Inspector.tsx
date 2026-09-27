@@ -486,14 +486,13 @@ function puzzleParts(node: Node, cfg: PuzzleConfig, graph: Graph, onChange: (c: 
       const bar = cfg.bar ?? {};
       how = {
         title: t.t("Typed answer"),
-        hint: t.t("The team types its answer in the bar at the bottom, or scans a QR code of it. The routes below say what counts."),
+        hint: t.t("The team types its answer in the bar at the bottom. The routes below say what counts."),
         summary: (
           <>
             <SumRow label={t.t("Answer bar")}>
               {[bar.placeholder ? `“${bar.placeholder}”` : "", bar.button ? `[${bar.button}]` : ""].filter(Boolean).join(" ") || t.t("standard")}
             </SumRow>
             <SumRow label={t.t("Keyboard")}>{t.t(KEYBOARD_LABEL[bar.keyboard ?? ""])}</SumRow>
-            <SumRow label={t.t("QR scan")}>{bar.no_scan ? t.t("no") : t.t("yes")}</SumRow>
           </>
         ),
         form: <BarForm cfg={cfg} onChange={onChange} />,
@@ -1477,7 +1476,7 @@ function ChoicesForm({ cfg, choice: choices, onChange }: { cfg: PuzzleConfig; ch
 
 /**
  * The answer bar of a typed or scanned answer: its words, and for typing
- * the keyboard and the QR button. Empty fields are the phone's own.
+ * the keyboard. Empty fields are the phone's own.
  */
 function BarForm({ cfg, onChange, scan }: { cfg: PuzzleConfig; onChange: (c: PuzzleConfig) => void; scan?: boolean }) {
   const t = useT();
@@ -1497,21 +1496,15 @@ function BarForm({ cfg, onChange, scan }: { cfg: PuzzleConfig; onChange: (c: Puz
         <input className="field__input" value={bar.button ?? ""} placeholder={scan ? t.t("Scan the code") : t.t("Answer")} onChange={(e) => set("button", e.target.value)} />
       </Field>
       {!scan && (
-        <>
-          <Field label={t.t("Keyboard")}>
-            <select className="field__input" value={bar.keyboard ?? ""} onChange={(e) => set("keyboard", e.target.value as AnswerBar["keyboard"])}>
-              {(Object.keys(KEYBOARD_LABEL) as (keyof typeof KEYBOARD_LABEL)[]).map((k) => (
-                <option key={k} value={k}>
-                  {t.t(KEYBOARD_LABEL[k])}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <label className="check">
-            <input type="checkbox" checked={!bar.no_scan} onChange={(e) => set("no_scan", !e.target.checked)} />
-            {t.t("A QR button beside the box, to scan a code of the answer")}
-          </label>
-        </>
+        <Field label={t.t("Keyboard")}>
+          <select className="field__input" value={bar.keyboard ?? ""} onChange={(e) => set("keyboard", e.target.value as AnswerBar["keyboard"])}>
+            {(Object.keys(KEYBOARD_LABEL) as (keyof typeof KEYBOARD_LABEL)[]).map((k) => (
+              <option key={k} value={k}>
+                {t.t(KEYBOARD_LABEL[k])}
+              </option>
+            ))}
+          </select>
+        </Field>
       )}
     </>
   );

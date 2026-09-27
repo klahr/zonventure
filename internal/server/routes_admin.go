@@ -154,6 +154,10 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 			r.Get("/events/{eventID}/messages", adminH.ListEventMessages)
 			r.Post("/events/{eventID}/messages", adminH.SendEventMessage)
 			r.Delete("/events/{eventID}/messages/{messageID}", adminH.DeleteEventMessage)
+			// Team pictures for photo blocks, and the organisers' verdicts.
+			r.Get("/events/{eventID}/photos", adminH.ListEventPhotos)
+			r.Get("/events/{eventID}/photos/{photoID}/image", adminH.EventPhotoImage)
+			r.Post("/events/{eventID}/photos/{photoID}/review", adminH.ReviewEventPhoto)
 			r.Post("/events/{eventID}/resume", adminH.ResumeEvent)
 			r.Post("/events/{eventID}/cancel", adminH.CancelEvent)
 			r.Post("/events/{eventID}/teams", adminH.CreateTeam)

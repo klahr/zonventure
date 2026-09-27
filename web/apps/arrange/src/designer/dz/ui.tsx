@@ -343,3 +343,53 @@ export function PromptModal({
     </DzPortal>
   );
 }
+
+/**
+ * Asks before an action, a delete most often. Cancel has the focus, so
+ * Enter or Escape on a dialog opened by mistake keeps things as they were.
+ */
+export function ConfirmModal({
+  title,
+  message,
+  confirmLabel,
+  danger,
+  onConfirm,
+  onCancel,
+}: {
+  title: string;
+  message?: ReactNode;
+  confirmLabel: string;
+  danger?: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  const t = useT();
+  const id = useId();
+  const cancel = useRef<HTMLButtonElement>(null);
+  useEffect(() => cancel.current?.focus(), []);
+  useEscapeToClose(onCancel);
+  return (
+    <DzPortal>
+      <div className="modal-backdrop" onClick={onCancel}>
+        <div className="modal confirm-dialog" onClick={(e) => e.stopPropagation()} role="alertdialog" aria-modal="true" aria-labelledby={id}>
+          <div className="modal-head">
+            <h2 id={id}>{title}</h2>
+          </div>
+          {message && (
+            <div className="modal-body">
+              <p className="confirm-message">{message}</p>
+            </div>
+          )}
+          <div className="modal-foot">
+            <Button ref={cancel} onClick={onCancel}>
+              {t.t("Cancel")}
+            </Button>
+            <Button variant={danger ? "danger" : "primary"} onClick={onConfirm}>
+              {confirmLabel}
+            </Button>
+          </div>
+        </div>
+      </div>
+    </DzPortal>
+  );
+}

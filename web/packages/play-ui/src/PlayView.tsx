@@ -77,6 +77,10 @@ export interface PlayViewProps {
    * one team, so two teams sharing a phone do not share "new".
    */
   storageKey?: string;
+  /** Sends the team's picture for a photo block; the player app's, absent elsewhere. */
+  photo?: (block: string, file: File) => Promise<void>;
+  /** The organisers' newest message, for a bulletin block. */
+  bulletin?: { text: string; created_at: string };
 }
 
 export function PlayView(props: PlayViewProps) {
@@ -137,10 +141,12 @@ export function PlayView(props: PlayViewProps) {
   return (
     <div className={`pv pv--${kind ?? "none"}` + (isHex(brand?.submit_bg) ? " pv--dock-brand" : "")} data-theme="light" style={style}>
       <header className="pv-head">
-        <div className="pv-score" aria-label={t("Score")}>
-          <span className="pv-score__n">{round(view.score - view.penalty_score)}</span>
-          <span className="pv-score__l">{t("pts")}</span>
-        </div>
+        {!view.hide_score && (
+          <div className="pv-score" aria-label={t("Score")}>
+            <span className="pv-score__n">{round(view.score - view.penalty_score)}</span>
+            <span className="pv-score__l">{t("pts")}</span>
+          </div>
+        )}
         {endsIn !== null && (
           <span className={"pv-clock" + (endsIn < 600 ? " is-urgent" : "")} aria-label={t("Time left: {{time}}", { time: formatSeconds(Math.max(0, endsIn)) })}>
             <span aria-hidden>⏱</span> {formatSeconds(Math.max(0, endsIn))}
@@ -321,9 +327,12 @@ function FeedbackLine({ feedback }: { feedback: Feedback | null | undefined }) {
   );
 }
 
-/** The step's title, unless one of its blocks places it (a server from before blocks sends none). */
+/**
+ * The step's title, for a step without blocks: a puzzle or story places
+ * its title with a block, and shows none while that block is switched off.
+ */
 function Title({ view }: { view: play.View }) {
-  if (view.blocks?.some((b) => b.kind === "title")) return null;
+  if (view.type === "puzzle" || view.type === "story" || view.blocks?.some((b) => b.kind === "title")) return null;
   return view.title ? <h2 className="pv-title">{view.title}</h2> : null;
 }
 
@@ -366,6 +375,10 @@ function blockContext(p: StepProps): BlockContext {
     preview: !!p.preview,
     instant: !!p.instant,
     motion: p.motion,
+    // Votes come from players' own phones: never in the simulator or a preview.
+    live: (p.live ?? true) && !p.preview,
+    photo: p.photo,
+    bulletin: p.bulletin,
   };
 }
 
@@ -510,8 +523,6 @@ function PuzzleStep(props: StepProps) {
             disabled={needsPlace}
             locked={locked}
             button={blockedFor > 0 ? formatSeconds(blockedFor) : input.button || t("Answer")}
-            // Typing a code instead of scanning it has no QR button: the camera just failed.
-            qr={!input.no_scan && input.kind !== "scan"}
             onAnswer={answer}
           />
         )}
@@ -533,7 +544,6 @@ function AnswerForm(props: {
   button: string;
   disabled: boolean;
   locked: boolean;
-  qr: boolean;
   onAnswer: (guess: string) => void;
 }) {
   const { input, t, locked, onAnswer } = props;
@@ -578,10 +588,6 @@ function AnswerForm(props: {
       <button className="pv-btn pv-btn--primary" disabled={locked || !g}>
         {props.button}
       </button>
-      {/* A scan is a guess like any typed one: the decoded text goes
-          through the same matchers, so an author prints a QR code
-          of any accepted answer. */}
-      {props.qr && <QrButton t={t} disabled={locked} onScan={onAnswer} />}
     </form>
   );
 }

@@ -114,6 +114,8 @@ export function App() {
             {...(geo.pos ? { position: { lat: geo.pos.coords.latitude, lng: geo.pos.coords.longitude } } : {})}
             teamName={s.team.name}
             storageKey={`team-${s.team.id}`}
+            photo={(block, file) => game.photo(view.node ?? "", block, file)}
+            {...(s.messages?.[0] ? { bulletin: s.messages[0] } : {})}
           />
         ) : (
           <Lobby state={s} t={t} />

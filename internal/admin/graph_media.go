@@ -32,6 +32,10 @@ func remapGraphMedia(g *graph.Graph, ids map[int64]int64) {
 	blocks := func(bs []graph.Block) {
 		for i := range bs {
 			bs[i].Media = id(bs[i].Media)
+			bs[i].Other = id(bs[i].Other)
+			for j := range bs[i].Cards {
+				bs[i].Cards[j].Media = id(bs[i].Cards[j].Media)
+			}
 		}
 	}
 	for i := range g.Nodes {

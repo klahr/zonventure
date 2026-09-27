@@ -85,8 +85,8 @@ func TestChatAvatarIsMedia(t *testing.T) {
 	}
 }
 
-// Every puzzle has its title and points and every story its title: a
-// missing one is added after the one before it, the others stay where the
+// Every puzzle is given its title and points and every story its title,
+// once: a missing one is added after the one before it, the others stay where the
 // author put them, and a second pass changes nothing.
 func TestNormalizeAddsFixedBlocks(t *testing.T) {
 	g := Graph{Nodes: []Node{
@@ -118,6 +118,17 @@ func TestNormalizeAddsFixedBlocks(t *testing.T) {
 	g.Normalize()
 	if got := ids(g.Nodes[0].PuzzleCfg.Blocks); !reflect.DeepEqual(got, before) {
 		t.Errorf("a second pass moved blocks: %v", got)
+	}
+	// Once given, a removed one stays removed.
+	bs := g.Nodes[0].PuzzleCfg.Blocks
+	g.Nodes[0].PuzzleCfg.Blocks = []Block{bs[0], bs[3]}
+	g.Nodes[1].StoryCfg.Blocks = nil
+	g.Normalize()
+	if got := ids(g.Nodes[0].PuzzleCfg.Blocks); !reflect.DeepEqual(got, []string{"b1:text", "points:image"}) {
+		t.Errorf("removed title and points came back: %v", got)
+	}
+	if g.Nodes[1].StoryCfg.Blocks != nil {
+		t.Errorf("removed story title came back: %+v", g.Nodes[1].StoryCfg.Blocks)
 	}
 }
 

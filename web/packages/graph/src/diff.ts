@@ -78,6 +78,7 @@ export function diffGraphs(baseline: Graph, draft: Graph): GraphDiff {
   }
   if (!!baseline.journal_by_unlock !== !!draft.journal_by_unlock && !d.resources.includes("journal")) d.resources.push("journal");
   if (stable(baseline.time_limit ?? null) !== stable(draft.time_limit ?? null)) d.resources.push("time_limit");
+  if (!!baseline.hide_score !== !!draft.hide_score) d.resources.push("hide_score");
   if ((baseline.language ?? "") !== (draft.language ?? "") || stable(baseline.translations ?? {}) !== stable(draft.translations ?? {})) d.resources.push("translations");
   return d;
 }

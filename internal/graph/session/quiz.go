@@ -2,6 +2,7 @@ package session
 
 import (
 	"math"
+	"math/rand/v2"
 	"slices"
 	"strconv"
 	"strings"
@@ -17,6 +18,10 @@ func PickKey(node, block string) string { return node + "\x00" + block }
 // number, on the step the team is at. The team may change its mind until
 // it moves on: once it has left the step the answer is final, even if it
 // comes back. Nothing moves and nothing scores until the team finishes.
+//
+// It also keeps what the team struck on a suspect board — the cards'
+// indexes, comma-separated, any time — and deals a draw's card: the
+// choice is ignored, and a second draw keeps the first card.
 func (t *Team) Pick(node, block, choice string) (Result, *walk.Step, error) {
 	n, err := t.current(node)
 	if err != nil {
@@ -43,18 +48,60 @@ func (t *Team) Pick(node, block, choice string) (Result, *walk.Step, error) {
 			return Result{}, nil, ErrWrongNode
 		}
 		choice = strconv.FormatFloat(f, 'f', -1, 64)
+	case graph.BlockSuspects:
+		struck, ok := cardList(choice, len(b.Cards))
+		if !ok {
+			return Result{}, nil, ErrWrongNode
+		}
+		t.setPick(n.Slug, b.ID, struck)
+		return Result{}, nil, nil
+	case graph.BlockDraw:
+		if len(b.Options) == 0 {
+			return Result{}, nil, ErrWrongNode
+		}
+		if t.Picked(n.Slug, b.ID) == "" {
+			t.setPick(n.Slug, b.ID, strconv.Itoa(rand.IntN(len(b.Options))))
+		}
+		return Result{}, nil, nil
 	default:
 		return Result{}, nil, ErrWrongNode
 	}
 	if t.PickFinal(n.Slug) {
 		return Result{}, nil, ErrNotAllowed
 	}
-	key := PickKey(n.Slug, b.ID)
+	t.setPick(n.Slug, b.ID, choice)
+	return Result{}, nil, nil
+}
+
+func (t *Team) setPick(node, block, choice string) {
 	if t.Picks == nil {
 		t.Picks = map[string]string{}
 	}
-	t.Picks[key] = choice
-	return Result{}, nil, nil
+	t.Picks[PickKey(node, block)] = choice
+}
+
+// cardList reads a suspect board's struck cards, "2,0", as the sorted
+// list of distinct indexes below n; empty strikes none.
+func cardList(s string, n int) (string, bool) {
+	var idx []int
+	for _, f := range strings.Split(s, ",") {
+		if f = strings.TrimSpace(f); f == "" {
+			continue
+		}
+		i, err := strconv.Atoi(f)
+		if err != nil || i < 0 || i >= n {
+			return "", false
+		}
+		if !slices.Contains(idx, i) {
+			idx = append(idx, i)
+		}
+	}
+	slices.Sort(idx)
+	out := make([]string, len(idx))
+	for j, i := range idx {
+		out[j] = strconv.Itoa(i)
+	}
+	return strings.Join(out, ","), true
 }
 
 // PickFinal reports whether the team's answers on a step are final:

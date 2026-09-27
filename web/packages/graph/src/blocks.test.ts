@@ -50,6 +50,8 @@ test("a step gets its fixed blocks where missing, as the server adds them", asyn
   assert.deepEqual(blocksOf(withFixed(q)).map((b) => `${b.id}:${b.kind}`), ["b1:text", "title:title", "points-:points", "points:image"]);
   const again = withFixed(q);
   assert.equal(withFixed(again), again, "a second pass changes nothing");
+  const removed = withBlocks(again, blocksOf(again).filter((b) => b.kind !== "title" && b.kind !== "points"));
+  assert.equal(withFixed(removed), removed, "once given, a removed one stays removed");
   const s: Node = { slug: "s", type: "story", story: {} };
   assert.deepEqual(blocksOf(withFixed(s)).map((b) => b.kind), ["title"]);
   const e: Node = { slug: "e", type: "end", end: {} };

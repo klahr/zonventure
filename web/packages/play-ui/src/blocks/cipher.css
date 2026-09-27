@@ -100,3 +100,28 @@
 .pv-cipher__symbol { font-size: var(--text-lg); font-weight: 700; }
 .pv-cipher__note { margin: var(--sp-2) 0 0; font-weight: 700; }
 .pv-cipher__note:first-child { margin-top: 0; }
+
+/* The Caesar wheel: plain letters outside, the turning ring inside. */
+.pv-wheel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.pv-wheel__svg {
+  width: min(100%, 18rem);
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: grab;
+}
+.pv-wheel__svg:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 4px;
+  border-radius: 50%;
+}
+.pv-wheel__outer { fill: var(--surface-2); stroke: var(--border-soft); }
+.pv-wheel__inner { fill: color-mix(in srgb, var(--accent) 12%, var(--surface)); stroke: var(--accent); }
+.pv-wheel__plain { font: 700 5px var(--font-body); fill: var(--ink); }
+.pv-wheel__code { font: 700 5px var(--font-body); fill: var(--accent); }
+.pv-wheel__marker { stroke: var(--accent); stroke-width: 0.8; stroke-linecap: round; opacity: 0.6; }

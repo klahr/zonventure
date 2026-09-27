@@ -45,6 +45,10 @@ const (
 	TeamReturned   = "team.returned"
 	TeamUnlocked   = "team.unlocked"
 	GateReached    = "gate.reached"
+	// PhotoTaken is a team's picture for a photo block, and
+	// PhotoReviewed an organiser's verdict on one.
+	PhotoTaken    = "photo.taken"
+	PhotoReviewed = "photo.reviewed"
 )
 
 // Actor picks which actor column to write. Exactly one of User/Slot should

@@ -59,6 +59,8 @@ const (
 	OpNodeElapsed Op = "node_elapsed" // seconds on the current node
 	OpTeamSize    Op = "team_size"    // number of player slots
 	OpInZone      Op = "in_zone"      // team's last position is inside Zone
+	OpWalked      Op = "walked"       // metres walked on the current node, compared Cmp N
+	OpDrawn       Op = "drawn"        // the card a draw Block on Node dealt is option Is (its index)
 
 	// Wall clock, for venue constraints like "the museum closes at 17:00".
 	OpTimeOfDay Op = "time_of_day" // local HH:MM compared Cmp Is
@@ -92,8 +94,10 @@ type Predicate struct {
 	// Of holds the operands of All, Any and Not.
 	Of []Predicate `json:"of,omitempty"`
 
-	// Node, Item, Counter and Zone name what is being asked about.
+	// Node, Item, Counter and Zone name what is being asked about, and
+	// Block the block on Node, for Drawn.
 	Node    string `json:"node,omitempty"`
+	Block   string `json:"block,omitempty"`
 	Item    string `json:"item,omitempty"`
 	Counter string `json:"counter,omitempty"`
 	Zone    string `json:"zone,omitempty"`
@@ -129,6 +133,11 @@ type State interface {
 	NodeElapsedSeconds() float64
 	TeamSize() int
 	InZone(zone string) bool
+	// Walked is how far the team has walked since it reached its current
+	// node, in metres.
+	Walked() float64
+	// Picked is what the team picked or was dealt on a block, or "".
+	Picked(node, block string) string
 	// LocalTime is the team's wall clock, used only by the wall-clock
 	// operators. Passed in rather than read from the process so a
 	// simulated or replayed event evaluates identically.
@@ -210,6 +219,12 @@ func Eval(p Predicate, s State) bool {
 
 	case OpInZone:
 		return s.InZone(p.Zone)
+
+	case OpWalked:
+		return compare(s.Walked(), p.Cmp, p.N)
+
+	case OpDrawn:
+		return p.Is != "" && s.Picked(p.Node, p.Block) == p.Is
 
 	case OpTimeOfDay:
 		mins, ok := parseHHMM(p.Is)
@@ -372,6 +387,10 @@ func Describe(p Predicate) string {
 		return fmt.Sprintf("team size %s %g", cmpWord(p.Cmp), p.N)
 	case OpInZone:
 		return fmt.Sprintf("inside zone %q", p.Zone)
+	case OpWalked:
+		return fmt.Sprintf("walked on this step %s %gm", cmpWord(p.Cmp), p.N)
+	case OpDrawn:
+		return fmt.Sprintf("drew card %s from %q on %q", p.Is, p.Block, p.Node)
 	case OpTimeOfDay:
 		return fmt.Sprintf("time of day %s %s", cmpWord(p.Cmp), p.Is)
 	case OpWeekday:

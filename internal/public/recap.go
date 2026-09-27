@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -68,6 +69,17 @@ type recapResponse struct {
 	Steps     []recapStep `json:"steps,omitempty"`
 	Zones     []recapZone `json:"zones,omitempty"`
 	Quiz      *recapQuiz  `json:"quiz,omitempty"`
+	// Photos are the team's approved pictures for photo blocks, until
+	// retention prunes them; each is served at
+	// /api/public/recap/{token}/photos/{id}.
+	Photos []recapPhoto `json:"photos,omitempty"`
+}
+
+// recapPhoto is one approved team picture: what it was of, and where.
+type recapPhoto struct {
+	ID     int64  `json:"id"`
+	Prompt string `json:"prompt,omitempty"`
+	Step   string `json:"step,omitempty"`
 }
 
 // recapStep is one puzzle or story a graph team reached, in graph order.
@@ -362,6 +374,9 @@ func (h *Handlers) recapGraph(ctx context.Context, eventID, teamID int64, resp *
 			resp.PageCount++
 		}
 	}
+	if err := recapPhotos(ctx, h.DB, g, teamID, resp); err != nil {
+		return err
+	}
 
 	var (
 		points    float64
@@ -545,3 +560,63 @@ func parseRecapTime(s string) (time.Time, error) {
 
 // haversineMeters lives in handlers.go — reuse it rather than
 // shadowing.
+
+// recapPhotos lists the team's approved pictures, in the order taken.
+func recapPhotos(ctx context.Context, db *sql.DB, g *graph.Graph, teamID int64, resp *recapResponse) error {
+	rows, err := db.QueryContext(ctx, `
+		SELECT id, node, block_id FROM team_photos WHERE team_id = $1 AND status = 'approved' ORDER BY id`, teamID)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var p recapPhoto
+		var node, block string
+		if err := rows.Scan(&p.ID, &node, &block); err != nil {
+			return err
+		}
+		if n, ok := g.Node(node); ok {
+			p.Step = n.Title
+			for _, b := range n.AllBlocks() {
+				if b.ID == block {
+					p.Prompt = b.Text
+				}
+			}
+		}
+		resp.Photos = append(resp.Photos, p)
+	}
+	return rows.Err()
+}
+
+// RecapPhoto serves one of a team's approved pictures, behind the same
+// gate as the recap: the team's recap token, once the event is over.
+//
+// GET /api/public/recap/{token}/photos/{photoID}
+func (h *Handlers) RecapPhoto(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "photoID"), 10, 64)
+	if err != nil {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	var content []byte
+	var mime string
+	err = h.DB.QueryRowContext(r.Context(), `
+		SELECT p.content, p.mime
+		FROM team_photos p
+		JOIN teams t ON t.id = p.team_id
+		JOIN events ar ON ar.id = t.event_id
+		WHERE t.recap_token = $1 AND p.id = $2 AND p.status = 'approved'
+		  AND ar.state IN ('completed', 'cancelled')`, chi.URLParam(r, "token"), id).Scan(&content, &mime)
+	if errors.Is(err, sql.ErrNoRows) {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		http.Error(w, "lookup failed", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", mime)
+	w.Header().Set("Cache-Control", "private, max-age=3600")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	_, _ = w.Write(content)
+}

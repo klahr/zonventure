@@ -6,7 +6,9 @@ package player
 // play.UsesGraph), and the React player app speaks only these.
 //
 //	GET  /api/player/play            where the team is and what it sees
-//	POST /api/player/play/{action}   begin, answer, continue, choose, skip, timeout, hint
+//	POST /api/player/play/{action}   begin, answer, continue, choose, skip, timeout, hint, pick, vote
+//	POST /api/player/play/photo      a picture for a photo block (blocks.go)
+//	GET  /api/player/play/photo/{id} a picture the team took
 //
 // Every action carries the node the player is looking at. A teammate who
 // answered first moves the team, and the second submit is refused as
@@ -170,6 +172,10 @@ func (h *Handlers) GetPlay(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err == nil {
+		if err = decorateView(ctx, h.DB, tc.TeamID, slot.ID, &view); err != nil {
+			httpx.ServerErr(w, http.StatusInternalServerError, "loading game failed", err)
+			return
+		}
 		out.View = &view
 		// The adventure's own words, in the team's language where translated.
 		if s := view.Meta["title"]; s != "" {
@@ -233,8 +239,9 @@ type PlayActionRequest struct {
 	Index int    `json:"index,omitempty"`
 	// Lang is the language for the "language" action.
 	Lang string `json:"lang,omitempty"`
-	// Block and Choice are the "pick" action's: a quiz question or the
-	// tie-breaker, and the answer.
+	// Block and Choice are the "pick" and "vote" actions': a quiz
+	// question, the tie-breaker, a suspect board, a draw or a vote, and
+	// the answer.
 	Block          string `json:"block,omitempty"`
 	Choice         string `json:"choice,omitempty"`
 	ClientActionID string `json:"client_action_id,omitempty"`
@@ -318,9 +325,23 @@ func (h *Handlers) PostPlayAction(w http.ResponseWriter, r *http.Request) {
 		res, err = e.RevealHint(ctx, tc.TeamID, req.Node, req.Index)
 	case "pick":
 		res, err = e.Pick(ctx, tc.TeamID, req.Node, req.Block, req.Choice)
+	case "vote":
+		// A vote is the player's, not the team's, so the engine has no
+		// part in it; the reply carries the team's view like any action's.
+		if err = h.vote(ctx, tc, slot.ID, req); err == nil || errors.Is(err, session.ErrStale) || errors.Is(err, session.ErrWrongNode) {
+			var verr error
+			if res.View, verr = e.Snapshot(ctx, tc.TeamID); verr != nil && err == nil {
+				err = verr
+			}
+		}
 	default:
 		httpx.JSON(w, http.StatusNotFound, playRefusal{Error: "unknown action", Code: "unknown_action"})
 		return
+	}
+	// Every view a player gets is theirs: their part of a split secret,
+	// their vote. A refusal carries one too.
+	if derr := decorateView(ctx, h.DB, tc.TeamID, slot.ID, &res.View); derr != nil && err == nil {
+		err = derr
 	}
 	if err != nil {
 		h.refusePlay(w, res, err)

@@ -3,6 +3,7 @@ package valid
 import (
 	"encoding/json"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
@@ -767,6 +768,48 @@ func TestBlocks(t *testing.T) {
 	for _, c := range []string{"block.id.duplicate", "block.id.empty", "block.kind", "media.id", "translation.stale", "block.zone.missing", "ref.zone.unknown", "block.zoom", "block.fixed.misplaced", "block.fixed.duplicate"} {
 		if codes[c] != 1 {
 			t.Errorf("%s reported %d times, want once: %v", c, codes[c], codes)
+		}
+	}
+}
+
+// Each new kind refuses the shape it cannot show.
+func TestNewBlockKinds(t *testing.T) {
+	g := graph.Graph{Nodes: []graph.Node{{Slug: "s", Type: graph.Story, StoryCfg: &graph.StoryConfig{Blocks: []graph.Block{
+		{ID: "split", Kind: graph.BlockSplit, Parts: []string{"Only one", " "}},
+		{ID: "bearing", Kind: graph.BlockBearing, Heading: 400, Text: "West."},
+		{ID: "flasher", Kind: graph.BlockFlasher, Text: "Hej då"},
+		{ID: "vote", Kind: graph.BlockVote, Text: "Which?", Options: []string{"Red"}},
+		{ID: "spotdiff", Kind: graph.BlockSpotDiff, Media: 1, Spots: []graph.Spot{{X: 0.5, Y: 0.5}}},
+		{ID: "torch", Kind: graph.BlockTorch, Media: 1, Style: "neon"},
+		{ID: "wheel", Kind: graph.BlockCipher, Cipher: "morse", Wheel: true},
+		{ID: "suspects", Kind: graph.BlockSuspects, Cards: []graph.Card{{Name: ""}}},
+		{ID: "photo", Kind: graph.BlockPhoto},
+	}}}}}
+	codes := map[string]int{}
+	for _, i := range Check(&g).Issues {
+		if i.Node == "s" {
+			codes[i.Code]++
+		}
+	}
+	for _, c := range []string{"block.split.parts", "block.heading", "block.flasher.char", "block.options", "block.other", "block.style", "block.cipher.wheel", "block.card.name", "block.text.empty"} {
+		if codes[c] != 1 {
+			t.Errorf("%s reported %d times, want once: %v", c, codes[c], codes)
+		}
+	}
+}
+
+// A switched-off tie-breaker is a spare: only the one shown ranks, so
+// keeping another beside it is no duplicate.
+func TestDisabledTiebreakIsSpare(t *testing.T) {
+	target := 1.0
+	tb := func(id string, off bool) graph.Block {
+		return graph.Block{ID: id, Kind: graph.BlockTiebreak, Text: "How many?", Target: &target, Disabled: off}
+	}
+	for _, off := range []bool{false, true} {
+		g := graph.Graph{Nodes: []graph.Node{{Slug: "s", Type: graph.Story, StoryCfg: &graph.StoryConfig{Blocks: []graph.Block{tb("a", false), tb("b", off)}}}}}
+		dup := slices.ContainsFunc(Check(&g).Issues, func(i Issue) bool { return i.Code == "block.tiebreak.duplicate" })
+		if dup == off {
+			t.Errorf("second tie-breaker disabled=%v: duplicate reported = %v", off, dup)
 		}
 	}
 }

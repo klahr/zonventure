@@ -523,6 +523,21 @@
 }
 .pv-note--paper .pv-text { line-height: var(--rule); }
 .pv-note--paper .pv-text p { margin-bottom: 0; }
+/* Mirror writing: the text flipped, to be read in a mirror or a window. */
+.pv-note--mirror {
+  background: #eef1f4;
+  border: 1px solid #cdd3da;
+  font-family: "Georgia", serif;
+}
+.pv-note--mirror .pv-text { transform: scaleX(-1); }
+.pv-note__caption {
+  display: block;
+  margin-bottom: var(--sp-2);
+  font: 700 0.75rem / 1 var(--font-body);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #5b6570;
+}
 .pv-note--telegram {
   background: #f3ecd2;
   border-top: 6px solid #c9a646;

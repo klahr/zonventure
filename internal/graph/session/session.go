@@ -140,6 +140,10 @@ type Team struct {
 
 	Now      time.Time `json:"now"`
 	Position *Position `json:"position,omitempty"`
+	// WalkedMetres is how far the team has walked on its current node:
+	// read from its phones' positions by the live engine, added up from
+	// the moves the simulator makes.
+	WalkedMetres float64 `json:"walked,omitempty"`
 }
 
 // New returns an empty team on g at time now, not yet placed anywhere.
@@ -243,6 +247,7 @@ func (t *Team) Apply(step walk.Step) {
 	}
 	t.Current = step.To
 	t.NodeEnteredAt = t.Now
+	t.WalkedMetres = 0
 }
 
 // --- walk.State ----------------------------------------------------------
@@ -352,6 +357,10 @@ func ZoneContains(z graph.Zone, lat, lng float64) bool {
 }
 
 func (t *Team) LocalTime() time.Time { return t.Now }
+
+func (t *Team) Walked() float64 { return t.WalkedMetres }
+
+func (t *Team) Picked(node, block string) string { return t.Picks[PickKey(node, block)] }
 
 func (t *Team) Slot() int { return t.SlotIndex }
 

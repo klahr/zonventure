@@ -674,6 +674,117 @@ func TestTitleAndPointsBlocks(t *testing.T) {
 	}
 }
 
+// A block switched off is as if it were not there: the phone never gets
+// it, the title and points included, and an unanswered question switched
+// off does not hold the team back.
+func TestDisabledBlocks(t *testing.T) {
+	g := &graph.Graph{
+		Nodes: []graph.Node{
+			{Slug: "start", Type: graph.Start},
+			{Slug: "s", Type: graph.Story, Title: "Hidden", StoryCfg: &graph.StoryConfig{Blocks: []graph.Block{
+				{ID: "title", Kind: graph.BlockTitle, Disabled: true},
+				{ID: "on", Kind: graph.BlockText, Text: "Shown."},
+				{ID: "off", Kind: graph.BlockText, Text: "Not shown.", Disabled: true},
+				{ID: "q", Kind: graph.BlockQuiz, Text: "Capital?", Options: []string{"Oslo", "Stockholm", "Malmö"}, Answer: "X", Disabled: true},
+			}}},
+			{Slug: "end", Type: graph.End},
+		},
+		Edges: []graph.Edge{{From: "start", FromPort: "out", To: "s"}, {From: "s", FromPort: "out", To: "end"}},
+	}
+	tm, step, err := Start(g, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tm.Apply(step)
+	if v := tm.View(); len(v.Blocks) != 1 || v.Blocks[0].ID != "on" || v.Text != "Shown." {
+		t.Fatalf("blocks = %+v, text = %q", v.Blocks, v.Text)
+	}
+	if _, _, err := tm.Continue("s"); err != nil {
+		t.Fatalf("continue past a switched-off question = %v", err)
+	}
+	if q := tm.Quiz(); q.Total != 0 {
+		t.Errorf("a switched-off question was marked: %+v", q)
+	}
+}
+
+// An adventure that hides the score says so in every view; the points
+// are still kept.
+func TestHideScore(t *testing.T) {
+	g := &graph.Graph{
+		HideScore: true,
+		Nodes:     []graph.Node{{Slug: "start", Type: graph.Start}, {Slug: "end", Type: graph.End}},
+		Edges:     []graph.Edge{{From: "start", FromPort: "out", To: "end"}},
+	}
+	tm, step, err := Start(g, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tm.Apply(step)
+	tm.Points = 7
+	if v := tm.View(); !v.HideScore || v.Score != 7 {
+		t.Errorf("view = hide %v, score %v; want hidden, 7", v.HideScore, v.Score)
+	}
+}
+
+// A suspect board keeps what the team struck, any time and never final;
+// a draw deals one card once and keeps the rest face down; a block may
+// wait for the card drawn.
+func TestSuspectsAndDraw(t *testing.T) {
+	g := &graph.Graph{
+		Nodes: []graph.Node{
+			{Slug: "start", Type: graph.Start},
+			{Slug: "s", Type: graph.Story, StoryCfg: &graph.StoryConfig{Blocks: []graph.Block{
+				{ID: "board", Kind: graph.BlockSuspects, Cards: []graph.Card{{Name: "Baker"}, {Name: "Mayor"}, {Name: "Maid"}}},
+				{ID: "deck", Kind: graph.BlockDraw, Options: []string{"Tower", "Star"}},
+				{ID: "star", Kind: graph.BlockText, Text: "The star shines.", Show: &graph.Show{When: cond.Predicate{Op: cond.OpDrawn, Node: "s", Block: "deck", Is: "1"}}},
+			}}},
+			{Slug: "end", Type: graph.End},
+		},
+		Edges: []graph.Edge{{From: "start", FromPort: "out", To: "s"}, {From: "s", FromPort: "out", To: "end"}},
+	}
+	tm, step, err := Start(g, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tm.Apply(step)
+	if _, _, err := tm.Pick("s", "board", "2, 0,2"); err != nil {
+		t.Fatal(err)
+	}
+	if got := tm.Picked("s", "board"); got != "0,2" {
+		t.Errorf("struck = %q, want 0,2", got)
+	}
+	if _, _, err := tm.Pick("s", "board", "3"); err != ErrWrongNode {
+		t.Errorf("striking a card that is not there = %v", err)
+	}
+	v := tm.View()
+	if v.Blocks[1].Deck != 2 || v.Blocks[1].Options != nil || v.Blocks[1].Dealt != "" {
+		t.Fatalf("an undrawn deck showed its cards: %+v", v.Blocks[1])
+	}
+	if _, _, err := tm.Pick("s", "deck", ""); err != nil {
+		t.Fatal(err)
+	}
+	card := tm.Picked("s", "deck")
+	if _, _, err := tm.Pick("s", "deck", ""); err != nil || tm.Picked("s", "deck") != card {
+		t.Fatalf("a second draw changed the card from %q to %q (%v)", card, tm.Picked("s", "deck"), err)
+	}
+	v = tm.View()
+	want := map[string]string{"0": "Tower", "1": "Star"}[card]
+	if v.Blocks[1].Dealt != want {
+		t.Errorf("dealt %q, want %q for card %s", v.Blocks[1].Dealt, want, card)
+	}
+	if shown := len(v.Blocks) == 3; shown != (card == "1") {
+		t.Errorf("drew card %s, but the star block shown = %v", card, shown)
+	}
+	_, next, err := tm.Continue("s")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tm.Apply(*next)
+	if _, _, err := tm.Pick("s", "board", "1"); err == nil {
+		t.Error("struck a card on a step the team has left")
+	}
+}
+
 // A quiz walk: a story waits for its questions, a pick can change until
 // the team moves on, the phone never sees the right answer before the
 // end, and finishing marks it and adds the points.

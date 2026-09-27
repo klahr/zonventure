@@ -175,6 +175,18 @@ func (h *Handlers) Forget(w http.ResponseWriter, r *http.Request) {
 		httpx.ServerErr(w, http.StatusInternalServerError, "wipe answers", err)
 		return
 	}
+	// Pictures the player took and their votes. The points an approved
+	// picture earned stay: the team keeps its game, not the player's face.
+	if _, err := tx.ExecContext(r.Context(),
+		`DELETE FROM team_photos WHERE slot_id = $1`, slot.ID); err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "wipe photos", err)
+		return
+	}
+	if _, err := tx.ExecContext(r.Context(),
+		`DELETE FROM team_block_votes WHERE slot_id = $1`, slot.ID); err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "wipe votes", err)
+		return
+	}
 	// New unguessable token + already-expired expires_at so the row
 	// can't be re-logged-into. Name swapped to a literal so the team
 	// listing doesn't keep displaying the player's chosen handle.

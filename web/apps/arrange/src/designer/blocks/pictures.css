@@ -10,3 +10,9 @@
 .pic-ed__torch { container-type: inline-size; background: #000; }
 .pic-ed__dark { filter: brightness(0.06) saturate(0.4); }
 .pic-ed__lit { position: absolute; inset: 0; height: 100%; -webkit-mask-image: radial-gradient(circle 28cqi at 50% 50%, #000 35%, rgb(0 0 0 / 0.55) 65%, transparent 100%); mask-image: radial-gradient(circle 28cqi at 50% 50%, #000 35%, rgb(0 0 0 / 0.55) 65%, transparent 100%); }
+.blk-bearing { display: grid; grid-template-columns: 5.5rem 1fr; gap: var(--sp-3); align-items: center; }
+.blk-bearing__dial { width: 100%; height: auto; }
+.blk-bearing__ring { fill: var(--surface); stroke: var(--border-soft); stroke-width: 2; }
+.blk-bearing__mark { font-size: 11px; font-weight: 700; fill: var(--muted); }
+.blk-bearing__needle { stroke: var(--c-place, var(--accent)); stroke-width: 4; stroke-linecap: round; }
+.blk-bearing__hub { fill: var(--ink); }

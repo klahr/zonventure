@@ -46,3 +46,53 @@
   -webkit-mask-image: radial-gradient(circle var(--r) at var(--x) var(--y), #000 35%, rgb(0 0 0 / 0.55) 65%, transparent 100%);
   mask-image: radial-gradient(circle var(--r) at var(--x) var(--y), #000 35%, rgb(0 0 0 / 0.55) 65%, transparent 100%);
 }
+
+/* UV: the picture a deep violet, and the lamp's circle glowing with
+ * whatever the author drew in "invisible ink". */
+.pv-torch--uv .pv-torch__stage { background: #12001f; }
+.pv-torch--uv .pv-torch__dark {
+  filter: brightness(0.18) sepia(1) hue-rotate(220deg) saturate(3);
+}
+.pv-torch--uv .pv-torch__lit {
+  filter: brightness(1.2) contrast(1.4) saturate(1.8) hue-rotate(250deg) drop-shadow(0 0 6px #c46bff);
+}
+
+/* Scratch card: the coat is a canvas laid over the picture. */
+.pv-torch--scratch .pv-torch__stage { cursor: grab; }
+.pv-torch__plain {
+  display: block;
+  width: 100%;
+  height: auto;
+  pointer-events: none;
+}
+.pv-torch__coat {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+}
+
+/* Red lens: a rosy wash over the picture while it is held. */
+.pv-torch--red .pv-torch__stage { cursor: default; }
+.pv-torch__redlens {
+  position: absolute;
+  inset: 0;
+  background: rgb(220 0 0 / 0.18);
+  mix-blend-mode: multiply;
+  pointer-events: none;
+}
+.pv-torch__controls {
+  display: flex;
+  justify-content: center;
+}
+.pv-torch__controls .pv-btn {
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+.pv-torch__defs {
+  position: absolute;
+  overflow: hidden;
+}

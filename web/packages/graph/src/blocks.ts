@@ -28,7 +28,7 @@ export function withBlocks(n: Node, blocks: Block[]): Node {
 /** The texts of text and note blocks, joined as one Markdown document. */
 export function textOf(blocks: Block[] | undefined): string {
   const out: string[] = [];
-  for (const b of blocks ?? []) if ((b.kind === "text" || b.kind === "note") && b.text) out.push(b.text);
+  for (const b of blocks ?? []) if ((b.kind === "text" || b.kind === "note") && b.text && !b.disabled) out.push(b.text);
   return out.join("\n\n");
 }
 
@@ -41,6 +41,16 @@ export function mediaOf(blocks: Block[] | undefined): Media[] {
       case "audio":
       case "video":
         out.push({ id: b.media, kind: b.kind, ...(b.alt ? { alt: b.alt } : {}) });
+        break;
+      case "call":
+        out.push({ id: b.media, kind: "audio", ...(b.alt ? { alt: b.alt } : {}) });
+        break;
+      case "spotdiff":
+        out.push({ id: b.media, kind: "image", ...(b.alt ? { alt: b.alt } : {}) });
+        if (b.other) out.push({ id: b.other, kind: "image", ...(b.alt ? { alt: b.alt } : {}) });
+        break;
+      case "suspects":
+        for (const c of b.cards) if (c.media) out.push({ id: c.media, kind: "image", ...(c.alt ? { alt: c.alt } : {}) });
         break;
       case "hotspots":
       case "overlay":
@@ -63,7 +73,7 @@ export function freshBlockId(blocks: Block[]): string {
 }
 
 /** The kinds whose block needs a file, and which. */
-export const FILE_KINDS = { image: "image", audio: "audio", video: "video", hotspots: "image", overlay: "image", torch: "image" } as const;
+export const FILE_KINDS = { image: "image", audio: "audio", video: "video", hotspots: "image", overlay: "image", torch: "image", call: "audio", spotdiff: "image" } as const;
 export type FileKind = keyof typeof FILE_KINDS;
 
 export function needsFile(kind: BlockKind): kind is FileKind {
@@ -89,12 +99,22 @@ const EMPTY: { [K in Exclude<BlockKind, FileKind>]: Extract<BlockBody, { kind: K
   points: { kind: "points" },
   quiz: { kind: "quiz", text: "", options: ["", "", ""] },
   tiebreak: { kind: "tiebreak", text: "" },
+  split: { kind: "split", parts: ["", ""] },
+  bearing: { kind: "bearing", heading: 0, text: "" },
+  suspects: { kind: "suspects", cards: [{ name: "" }] },
+  photo: { kind: "photo", text: "", worth: 5 },
+  flasher: { kind: "flasher", text: "" },
+  letters: { kind: "letters", text: "" },
+  shake: { kind: "shake", threshold: 60, text: "" },
+  vote: { kind: "vote", text: "", options: ["", ""] },
+  bulletin: { kind: "bulletin" },
+  draw: { kind: "draw", text: "", options: ["", ""] },
 };
 
 /**
- * The blocks a step always has, in order: every puzzle its title and
- * points, every story its title. The author moves them, never removes
- * them. graph.FixedKinds.
+ * The blocks a step is given by default, in order, and the only steps
+ * that may have them: every puzzle its title and points, every story its
+ * title. The author moves them, or removes them. graph.FixedKinds.
  */
 export const FIXED_KINDS: Partial<Record<Node["type"], BlockKind[]>> = { puzzle: ["title", "points"], story: ["title"] };
 
@@ -102,10 +122,14 @@ export function isFixed(kind: BlockKind): boolean {
   return kind === "title" || kind === "points";
 }
 
-/** The step with any missing fixed block added after the one before it, as graph.Normalize does. */
+/**
+ * The step with any missing fixed block added after the one before it,
+ * once, as graph.Normalize does: a step marked fixed keeps what it has.
+ */
 export function withFixed(n: Node): Node {
   const kinds = FIXED_KINDS[n.type];
-  if (!kinds || !hasBlocks(n)) return n;
+  const cfg = n.puzzle ?? n.story;
+  if (!kinds || !cfg || cfg.fixed) return n;
   let list = blocksOf(n);
   let at = 0;
   for (const k of kinds) {
@@ -119,7 +143,8 @@ export function withFixed(n: Node): Node {
     list = [...list.slice(0, at), { id, kind: k } as Block, ...list.slice(at)];
     at++;
   }
-  return list === blocksOf(n) ? n : withBlocks(n, list);
+  const out = withBlocks(n, list);
+  return out.puzzle ? { ...out, puzzle: { ...out.puzzle, fixed: true } } : { ...out, story: { ...out.story, fixed: true } };
 }
 
 /** Every kind, for the shared test vectors (graph.BlockKinds). */

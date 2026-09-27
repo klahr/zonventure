@@ -188,6 +188,7 @@ func simulate(g *graph.Graph, team *session.Team, a simulateAction, now time.Tim
 			res, step, err = team.TimeUp()
 		}
 	case "move":
+		from := team.Position
 		team.Position = nil
 		if a.Lat != nil && a.Lng != nil {
 			if *a.Lat < -90 || *a.Lat > 90 || *a.Lng < -180 || *a.Lng > 180 {
@@ -205,6 +206,10 @@ func simulate(g *graph.Graph, team *session.Team, a simulateAction, now time.Tim
 			if !found {
 				return simulateResponse{}, http.StatusBadRequest, "no zone " + a.Zone
 			}
+		}
+		// The simulated team walks straight from where it was.
+		if from != nil && team.Position != nil {
+			team.WalkedMetres += session.HaversineMeters(from.Lat, from.Lng, team.Position.Lat, team.Position.Lng)
 		}
 	default:
 		return simulateResponse{}, http.StatusBadRequest, "unknown action " + a.Kind

@@ -39,18 +39,20 @@ func (f *fakeState) Outcome(n string) (string, bool) {
 	v, ok := f.outcomes[n]
 	return v, ok
 }
-func (f *fakeState) Attempts(string) int         { return 0 }
-func (f *fakeState) ItemQty(i string) int        { return f.items[i] }
-func (f *fakeState) CounterValue(string) float64 { return 0 }
-func (f *fakeState) Score() float64              { return f.score }
-func (f *fakeState) ElapsedSeconds() float64     { return 0 }
-func (f *fakeState) NodeElapsedSeconds() float64 { return 0 }
-func (f *fakeState) TeamSize() int               { return 2 }
-func (f *fakeState) InZone(string) bool          { return false }
-func (f *fakeState) LocalTime() time.Time        { return f.now }
-func (f *fakeState) Slot() int                   { return f.slot }
-func (f *fakeState) BranchDone(h, p string) bool { return f.branches[h][p] }
-func (f *fakeState) Occupancy(h, p string) int   { return f.occupancy[h+"/"+p] }
+func (f *fakeState) Attempts(string) int          { return 0 }
+func (f *fakeState) ItemQty(i string) int         { return f.items[i] }
+func (f *fakeState) CounterValue(string) float64  { return 0 }
+func (f *fakeState) Score() float64               { return f.score }
+func (f *fakeState) ElapsedSeconds() float64      { return 0 }
+func (f *fakeState) NodeElapsedSeconds() float64  { return 0 }
+func (f *fakeState) TeamSize() int                { return 2 }
+func (f *fakeState) InZone(string) bool           { return false }
+func (f *fakeState) Walked() float64              { return 0 }
+func (f *fakeState) Picked(string, string) string { return "" }
+func (f *fakeState) LocalTime() time.Time         { return f.now }
+func (f *fakeState) Slot() int                    { return f.slot }
+func (f *fakeState) BranchDone(h, p string) bool  { return f.branches[h][p] }
+func (f *fakeState) Occupancy(h, p string) int    { return f.occupancy[h+"/"+p] }
 func (f *fakeState) CompletedBranches(h string) int {
 	n := 0
 	for _, done := range f.branches[h] {

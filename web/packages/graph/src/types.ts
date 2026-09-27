@@ -27,6 +27,8 @@ export interface Graph {
   journal?: JournalEntry[];
   /** List a team's journal in the order it found the notes. */
   journal_by_unlock?: boolean;
+  /** Keep the team's running score off its phone; points still count. */
+  hide_score?: boolean;
   /** After `seconds` from its start, the team is moved to `to` and shown `text`. */
   time_limit?: TimeLimit;
   /** Designer-only grouping boxes drawn behind steps. */
@@ -121,6 +123,8 @@ export type Block = BlockBody & {
   id: string;
   /** Hidden until `when` holds; with tease, shown blurred meanwhile. The server enforces it. */
   show?: Show;
+  /** Switched off: kept for the author, never shown. Any kind, the title and points too. */
+  disabled?: boolean;
 };
 
 export interface Show {
@@ -131,18 +135,23 @@ export interface Show {
 /** One block's own fields, by kind. See internal/graph/blocks.go for each. */
 export type BlockBody =
   | { kind: "text"; text: string }
-  | { kind: "image" | "audio" | "video"; media: number; alt?: string }
+  | { kind: "image" | "video"; media: number; alt?: string }
+  /** reverse lets the team play it backwards; spectrogram draws its spectrum as it plays. */
+  | { kind: "audio"; media: number; alt?: string; reverse?: boolean; spectrogram?: boolean }
   /** zone is "" until chosen, for every kind that has one. */
   | { kind: "compass"; zone: string; hide_distance?: boolean }
   /** zoom fixes the zoom level (MAP_ZOOM); without it the map fits the zone and markers. */
   | { kind: "map"; zone: string; zoom?: number; hide_team?: boolean; markers?: Marker[] }
   | { kind: "note"; text: string; style?: NoteStyle }
   | { kind: "chat"; lines: ChatLine[]; media?: number; alt?: string }
-  | { kind: "cipher"; cipher: Cipher; shift?: number; key?: string }
+  /** wheel: a Caesar cipher as a wheel the team turns, not a sheet. */
+  | { kind: "cipher"; cipher: Cipher; shift?: number; key?: string; wheel?: boolean }
   | { kind: "hotspots"; media: number; alt?: string; spots?: Spot[] }
   | { kind: "divider"; style?: DividerStyle }
   | { kind: "radar"; zone: string }
-  | { kind: "overlay" | "torch"; media: number; alt?: string }
+  | { kind: "overlay"; media: number; alt?: string }
+  /** style: how the picture is found — a torch in the dark (none), a scratch card, a UV lens, a red lens. */
+  | { kind: "torch"; media: number; alt?: string; style?: TorchStyle }
   /** pitch: degrees above flat the phone must be held at; text shows then. */
   | { kind: "level"; pitch?: number; text?: string }
   /** threshold: loudness 1–100; text shows once reached. */
@@ -156,12 +165,45 @@ export type BlockBody =
   /** A quiz-walk question: three options for 1, X and 2, and the right one. Worth 0 is one point. */
   | { kind: "quiz"; text: string; options: [string, string, string]; answer?: QuizChoice; worth?: number }
   /** A number question: among teams on the same score, the closest guess ranks first. */
-  | { kind: "tiebreak"; text: string; target?: number };
+  | { kind: "tiebreak"; text: string; target?: number }
+  /** A secret in parts, one to each player's phone. */
+  | { kind: "split"; parts: string[] }
+  /** heading: degrees clockwise from north the phone must point at; text shows then. */
+  | { kind: "bearing"; heading?: number; text?: string }
+  /** An incoming call from who: answering plays the sound. */
+  | { kind: "call"; media: number; alt?: string; who?: string }
+  /** Suspects the team strikes out; what it struck is kept, never scored. */
+  | { kind: "suspects"; cards: SuspectCard[] }
+  /** A picture the team takes of text; an arranger approves it for worth points, or denies it for a retake. */
+  | { kind: "photo"; text: string; worth?: number }
+  /** Two pictures, media and other, and the differences to find. */
+  | { kind: "spotdiff"; media: number; other?: number; alt?: string; spots?: Spot[] }
+  /** text flashed in Morse at speed words a minute (default 8). */
+  | { kind: "flasher"; text: string; speed?: number }
+  /** text's letters as tiles to drag about. */
+  | { kind: "letters"; text: string }
+  /** threshold: shake 1–100; text shows once reached. */
+  | { kind: "shake"; threshold?: number; text?: string }
+  /** A question each player votes on from their own phone. */
+  | { kind: "vote"; text: string; options: string[] }
+  /** The organisers' latest message to the team. */
+  | { kind: "bulletin" }
+  /** Deals the team one of options at random; a show condition may ask which (op drawn). */
+  | { kind: "draw"; text?: string; options: string[] };
+
+export interface SuspectCard {
+  name: string;
+  text?: string;
+  media?: number;
+  alt?: string;
+}
+
+export type TorchStyle = "scratch" | "uv" | "red";
 
 export type QuizChoice = "1" | "X" | "2";
 export const QUIZ_CHOICES: QuizChoice[] = ["1", "X", "2"];
 
-export type NoteStyle = "paper" | "telegram" | "sms" | "newspaper" | "sticky";
+export type NoteStyle = "paper" | "telegram" | "sms" | "newspaper" | "sticky" | "mirror";
 export type DividerStyle = "line" | "space" | "ornament";
 export type Cipher = "pigpen" | "morse" | "semaphore" | "caesar" | "custom";
 
@@ -196,6 +238,8 @@ export interface Hint {
 
 export interface PuzzleConfig {
   blocks?: Block[];
+  /** Given its title and points once (graph.PuzzleConfig.Fixed); one removed since stays gone. */
+  fixed?: boolean;
   zone?: string;
   outputs?: Output[];
   responses?: Response[];
@@ -270,6 +314,8 @@ export interface ChoiceOption {
 
 export interface StoryConfig {
   blocks?: Block[];
+  /** See PuzzleConfig.fixed. */
+  fixed?: boolean;
   zone?: string;
   /** Shown only the first time; a returning team passes straight through. */
   once?: boolean;
@@ -444,6 +490,8 @@ export type Op =
   | "node_elapsed"
   | "team_size"
   | "in_zone"
+  | "walked"
+  | "drawn"
   | "time_of_day"
   | "weekday";
 
@@ -453,6 +501,8 @@ export interface Predicate {
   op: Op;
   of?: Predicate[];
   node?: string;
+  /** The draw block on node, for drawn; is is the card's index. */
+  block?: string;
   item?: string;
   counter?: string;
   zone?: string;

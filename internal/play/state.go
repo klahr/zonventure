@@ -3,10 +3,13 @@ package play
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"hash/fnv"
 	"sort"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/klahr/zonventure/internal/graph"
@@ -66,6 +69,84 @@ func (PingLocator) Position(ctx context.Context, q Querier, teamID int64) (float
 	return pings[0].lat, pings[0].lng, true, nil
 }
 
+// walkStep is how far a phone must get from where it last counted before
+// the stretch counts as walked: GPS wanders a few metres standing still,
+// and counting every wobble would walk a team that never moved.
+const walkStep = 15.0
+
+// walkedSince is how far the team has walked since a time, in metres:
+// the furthest any one of its phones went, counted in straight stretches
+// of at least walkStep. Phones are counted apart, as two teammates a
+// street apart are not one person zig-zagging across it.
+func walkedSince(ctx context.Context, q Querier, teamID int64, since time.Time) (float64, error) {
+	rows, err := q.QueryContext(ctx, `
+		SELECT slot_id, lat, lng FROM location_pings
+		WHERE team_id = $1 AND server_ts >= $2
+		ORDER BY slot_id, server_ts, id`, teamID, since.UTC().Format("2006-01-02 15:04:05"))
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
+	type path struct {
+		lat, lng, walked float64
+	}
+	paths := map[int64]*path{}
+	best := 0.0
+	for rows.Next() {
+		var slot int64
+		var lat, lng float64
+		if err := rows.Scan(&slot, &lat, &lng); err != nil {
+			return 0, err
+		}
+		p := paths[slot]
+		if p == nil {
+			paths[slot] = &path{lat: lat, lng: lng}
+			continue
+		}
+		if d := HaversineMeters(p.lat, p.lng, lat, lng); d >= walkStep {
+			p.walked += d
+			p.lat, p.lng = lat, lng
+			best = max(best, p.walked)
+		}
+	}
+	return best, rows.Err()
+}
+
+// walkedGraphs remembers which graphs ask how far a team walked, so the
+// pings are read only for those.
+var walkedGraphs sync.Map // *graph.Graph -> bool
+
+// usesWalked reports whether any condition in g asks how far the team
+// walked. Conditions sit in many places — gates, switches, hub branches,
+// blocks — so the encoded graph is searched rather than each walked.
+func usesWalked(g *graph.Graph) bool {
+	if v, ok := walkedGraphs.Load(g); ok {
+		return v.(bool)
+	}
+	raw, err := json.Marshal(g)
+	uses := err == nil && strings.Contains(string(raw), `"op":"walked"`)
+	walkedGraphs.Store(g, uses)
+	return uses
+}
+
+// locate gives the team its position and, where the graph asks, how far
+// it has walked on its current node.
+func (e *Engine) locate(ctx context.Context, q Querier, s *teamState) error {
+	lat, lng, ok, err := e.locator().Position(ctx, q, s.teamID)
+	if err != nil {
+		return fmt.Errorf("reading position: %w", err)
+	}
+	if ok {
+		s.Position = &session.Position{Lat: lat, Lng: lng}
+	}
+	if s.G != nil && usesWalked(s.G) {
+		if s.WalkedMetres, err = walkedSince(ctx, q, s.teamID, s.NodeEnteredAt); err != nil {
+			return fmt.Errorf("reading walked distance: %w", err)
+		}
+	}
+	return nil
+}
+
 // HaversineMeters is the great-circle distance used for zones. It lives
 // in internal/graph/session with the rest of the rules; this alias keeps
 // the lane runtime's name for it.
@@ -101,12 +182,8 @@ func (e *Engine) loadTeam(ctx context.Context, tx *sql.Tx, teamID int64) (*teamS
 		return nil, err
 	}
 
-	lat, lng, ok, err := e.locator().Position(ctx, tx, teamID)
-	if err != nil {
-		return nil, fmt.Errorf("reading position: %w", err)
-	}
-	if ok {
-		s.Position = &session.Position{Lat: lat, Lng: lng}
+	if err := e.locate(ctx, tx, s); err != nil {
+		return nil, err
 	}
 	return s, nil
 }

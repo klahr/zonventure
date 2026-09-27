@@ -1,8 +1,8 @@
 import { useCallback, useRef, useState } from "react";
-import { isFixed, mediaBlock, moveBlock, needsFile, newBlock, type Block, type BlockKind, type FileKind, type Graph, type Node } from "@zonventure/graph";
-import { ChevronDown, ChevronRight, Eye, EyeOff, GripVertical, Plus, X } from "lucide-react";
+import { FIXED_KINDS, isFixed, mediaBlock, moveBlock, needsFile, newBlock, type Block, type BlockKind, type FileKind, type Graph, type Node } from "@zonventure/graph";
+import { ChevronDown, ChevronRight, Eye, EyeOff, GripVertical, Plus, Power, PowerOff, X } from "lucide-react";
 import { useT } from "../i18n.tsx";
-import { DzPortal, ICON, useAnchoredPop, useDismiss } from "./dz/ui.tsx";
+import { ConfirmModal, DzPortal, ICON, useAnchoredPop, useDismiss } from "./dz/ui.tsx";
 import { useMediaUpload } from "./MediaEditor.tsx";
 import { ACCEPT } from "./blocks/Media.tsx";
 import { GROUPS, KINDS } from "./blocks/registry.tsx";
@@ -18,7 +18,8 @@ function body(b: Block, set: (b: Block) => void, t: T, textLabel: string, graph:
 /**
  * What a puzzle, story or end shows, as blocks in order. Each is dragged
  * by its handle, or moved with the arrow keys while the handle has focus.
- * Any block may wait for a condition (the eye). Files are stored when
+ * Any block may wait for a condition (the eye), or be switched off and
+ * kept (the power button), the title and points too. Files are stored when
  * picked, like MediaEditor's.
  */
 export function BlocksEditor({ blocks, node, graph, onChange, textLabel }: { blocks: Block[] | undefined; node: Node; graph: Graph; onChange: (b: Block[]) => void; textLabel: string }) {
@@ -39,6 +40,9 @@ export function BlocksEditor({ blocks, node, graph, onChange, textLabel }: { blo
   // Blocks whose show rule is open for editing, and blocks folded away.
   const [rules, setRules] = useState<Set<string>>(new Set());
   const [folded, setFolded] = useState<Set<string>>(new Set());
+  // The block whose delete waits for a yes.
+  const [removing, setRemoving] = useState<Block | null>(null);
+  const labelOf = (b: Block) => (b.kind === "text" ? textLabel : t.t(KINDS[b.kind].label));
   const fold = (id: string) =>
     setFolded((f) => {
       const n = new Set(f);
@@ -51,7 +55,11 @@ export function BlocksEditor({ blocks, node, graph, onChange, textLabel }: { blo
   const set = (i: number, b: Block) => onChange(list.map((x, j) => (j === i ? b : x)));
   const move = (from: number, to: number) => onChange(moveBlock(list, from, to));
 
+  // The title and points the step may have but its author removed.
+  const missing = (FIXED_KINDS[node.type] ?? []).filter((k) => !list.some((b) => b.kind === k));
   const add = (kind: BlockKind) => {
+    // A title comes back where a title shows: at the top.
+    if (kind === "title") return onChange([newBlock(list, kind), ...list]);
     if (!needsFile(kind)) return onChange([...list, newBlock(list, kind)]);
     setFileFor(kind === "image" || kind === "audio" ? null : kind);
     if (input.current) input.current.accept = kind === "image" || kind === "audio" ? "image/*,audio/*" : (ACCEPT[kind] ?? "");
@@ -89,14 +97,14 @@ export function BlocksEditor({ blocks, node, graph, onChange, textLabel }: { blo
       {list.map((b, i) => {
         const kind = KINDS[b.kind];
         const Icon = kind.icon;
-        const label = b.kind === "text" ? textLabel : t.t(kind.label);
+        const label = labelOf(b);
         const target = drag && drag.from !== i && drag.to === i ? (drag.to < drag.from ? " is-drop-before" : " is-drop-after") : "";
         const ruleOpen = rules.has(b.id) || !!b.show;
         const isFolded = folded.has(b.id);
         return (
           <div
             key={b.id}
-            className={"blk" + (drag?.from === i ? " is-dragging" : "") + (b.show ? " has-rule" : "") + (isFolded ? " is-folded" : "") + target}
+            className={"blk" + (drag?.from === i ? " is-dragging" : "") + (b.show ? " has-rule" : "") + (b.disabled ? " is-disabled" : "") + (isFolded ? " is-folded" : "") + target}
             draggable={armed === i}
             onDragStart={(e) => {
               e.dataTransfer.effectAllowed = "move";
@@ -167,12 +175,22 @@ export function BlocksEditor({ blocks, node, graph, onChange, textLabel }: { blo
               >
                 {b.show ? <EyeOff size={ICON.sm} /> : <Eye size={ICON.sm} />}
               </button>
-              {/* The step's title and points are always there: moved, never removed. */}
-              {!isFixed(b.kind) && (
-                <button type="button" className="icon-remove" onClick={() => onChange(list.filter((_, j) => j !== i))} aria-label={t.t("Remove")}>
-                  <X size={ICON.sm} />
-                </button>
-              )}
+              <button
+                type="button"
+                className={"blk__rule" + (b.disabled ? " is-on" : "")}
+                aria-pressed={!!b.disabled}
+                aria-label={b.disabled ? t.t("Switched off: turn {{block}} on", { block: label }) : t.t("Turn {{block}} off", { block: label })}
+                title={b.disabled ? t.t("Switched off: the team does not see it") : t.t("Turn off, keeping it for later")}
+                onClick={() => {
+                  const { disabled: _, ...rest } = b;
+                  set(i, b.disabled ? (rest as Block) : { ...b, disabled: true });
+                }}
+              >
+                {b.disabled ? <PowerOff size={ICON.sm} /> : <Power size={ICON.sm} />}
+              </button>
+              <button type="button" className="icon-remove" onClick={() => setRemoving(b)} aria-label={t.t("Remove")}>
+                <X size={ICON.sm} />
+              </button>
             </div>
             {!isFolded && body(b, (next) => set(i, next), t, label, graph, node)}
             {!isFolded && ruleOpen && <ShowEditor block={b} set={(next) => set(i, next)} graph={graph} t={t} />}
@@ -180,14 +198,27 @@ export function BlocksEditor({ blocks, node, graph, onChange, textLabel }: { blo
         );
       })}
       <input ref={input} type="file" multiple hidden onChange={(e) => void pick(e.target.files)} />
-      <AddBlock onAdd={add} busy={busy} canUpload={ready} t={t} />
+      {removing && (
+        <ConfirmModal
+          title={t.t("Delete {{block}}?", { block: labelOf(removing) })}
+          message={t.t("The team no longer sees it. To keep it for later, turn it off instead.")}
+          confirmLabel={t.t("Delete")}
+          danger
+          onConfirm={() => {
+            onChange(list.filter((b) => b.id !== removing.id));
+            setRemoving(null);
+          }}
+          onCancel={() => setRemoving(null)}
+        />
+      )}
+      <AddBlock onAdd={add} missing={missing} busy={busy} canUpload={ready} t={t} />
       {error && <div className="alert alert--danger">{error}</div>}
     </div>
   );
 }
 
 /** "Add block": every kind, grouped, with what each is for. */
-function AddBlock({ onAdd, busy, canUpload, t }: { onAdd: (k: BlockKind) => void; busy: boolean; canUpload: boolean; t: T }) {
+function AddBlock({ onAdd, missing, busy, canUpload, t }: { onAdd: (k: BlockKind) => void; missing: BlockKind[]; busy: boolean; canUpload: boolean; t: T }) {
   const [open, setOpen] = useState(false);
   const close = useCallback(() => setOpen(false), []);
   const { trigger, pop, style } = useAnchoredPop<HTMLButtonElement, HTMLDivElement>(open, "left");
@@ -207,7 +238,7 @@ function AddBlock({ onAdd, busy, canUpload, t }: { onAdd: (k: BlockKind) => void
               <div key={g} className="blk-menu__group" role="group" aria-label={t.t(g)}>
                 <span className="blk-menu__title">{t.t(g)}</span>
                 {kinds
-                  .filter(([k, d]) => d.group === g && !isFixed(k))
+                  .filter(([k, d]) => d.group === g && (!isFixed(k) || missing.includes(k)))
                   .map(([k, d]) => {
                     const Icon = d.icon;
                     const disabled = needsFile(k) && !canUpload;
