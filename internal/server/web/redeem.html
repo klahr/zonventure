@@ -1,0 +1,321 @@
+<!doctype html>
+<!--
+  Gift box redemption (/redeem, /o/{slug}/redeem). A buyer who got a
+  Zonventure adventure in a Live it or TrueStory box enters its code;
+  the request waits until an organiser has checked it with the partner.
+
+  Substitutions: every topbar placeholder (LANG_CODE, NAV_*, FOOTER_*, …),
+  the REDEEM_* labels, REDEEM_API_BASE and REDEEM_I18N_JSON. See
+  renderRedeemPage in landing.go.
+-->
+<html lang="{{LANG_CODE}}"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; object-src 'none'; base-uri 'self'">
+<title>{{REDEEM_TITLE}} · Zonventure</title>
+<meta name="robots" content="noindex">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#14202e" media="(prefers-color-scheme: dark)">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Aclonica&family=Open+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/assets/page-tokens.css">
+<link rel="stylesheet" href="/assets/topbar.css">
+<script defer src="/assets/topbar.js"></script>
+<script>(function(){try{var v=localStorage.getItem('zv-theme');if(v==='light'||v==='dark')document.documentElement.setAttribute('data-theme',v);}catch(e){}})();</script>
+<style>
+  /* Design tokens, .btn, .skip-link and focus outlines live in
+     /assets/page-tokens.css; the card and form mirror store-event.html. */
+  body { line-height: 1.6; }
+  .wrap { max-width: 40rem; margin: 0 auto; padding: 0 1.25rem; }
+  .btn { padding: .9rem 1.9rem; font-size: 1rem; }
+  .btn.primary[disabled] { opacity: .55; cursor: not-allowed; transform: none; }
+  main { padding: 2.5rem 0 5rem; }
+  h1 { margin: 0 0 .5rem; font-size: clamp(1.7rem, 4vw, 2.3rem); line-height: 1.2; }
+  .intro { color: var(--ink-soft); margin: 0 0 1.75rem; }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border-soft);
+    border-radius: 18px;
+    padding: 1.75rem;
+    box-shadow: var(--shadow);
+  }
+  .card h2 { margin: 1rem 0 0; font-size: 1.1rem; }
+  .card .hint { color: var(--muted); font-size: .85rem; margin: -.3rem 0 0; }
+  form, #fields { display: grid; gap: .65rem; }
+  label { font-size: .85rem; color: var(--ink-soft); font-weight: 600; }
+  input[type=text], input[type=email], select {
+    width: 100%;
+    box-sizing: border-box;
+    padding: .75rem .9rem;
+    border: 1px solid var(--border-soft);
+    border-radius: 10px;
+    background: var(--bg);
+    color: var(--ink);
+    font: inherit;
+  }
+  .code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .08em; text-transform: uppercase; }
+  .pair { display: grid; grid-template-columns: 1fr 1fr; gap: .65rem; }
+  .pair > div { display: grid; gap: .35rem; }
+  @media (max-width: 30rem) { .pair { grid-template-columns: 1fr; } }
+  .terms { display: flex; gap: .6rem; align-items: flex-start; font-weight: 400; color: var(--ink-soft); }
+  .terms input { margin-top: .3rem; }
+  .err { color: #c0392b; font-size: .9rem; min-height: 1.2em; }
+  [hidden] { display: none !important; }
+  .done h2 { margin: 0 0 .5rem; font-size: 1.3rem; }
+  .done p { margin: 0; color: var(--ink-soft); }
+
+  footer {
+    padding: 1.75rem 0 2.5rem;
+    color: var(--muted);
+    font-size: .88rem;
+    text-align: center;
+    border-top: 1px solid var(--border-soft);
+  }
+  footer a { color: inherit; margin: 0 .5rem; }
+  footer a:hover { color: var(--accent); }
+  footer .copy { margin-top: .5rem; font-size: .8rem; }
+</style>
+</head>
+<body>
+
+<a class="skip-link" href="#main">Skip to content</a>
+
+<input type="checkbox" id="nav-toggle" class="nav-toggle" aria-label="{{NAV_TOGGLE_ARIA}}">
+
+<header class="topbar" role="banner">
+  <div class="wrap topbar-row">
+    <label for="nav-toggle" class="hamburger" aria-hidden="true">
+      <span></span><span></span><span></span>
+    </label>
+    <a class="brand" href="/" aria-label="{{BRAND_ARIA}}">zonventure</a>
+    <nav aria-label="{{NAV_PRIMARY_ARIA}}">
+      <div class="lang-picker" role="group" aria-label="{{LANG_ARIA}}">
+        <a href="?lang=en" class="lang-link {{EN_ACTIVE}}" {{EN_CURRENT}} hreflang="en">
+          <span class="flag" aria-hidden="true">🇬🇧</span><span class="label">EN</span>
+        </a>
+        <a href="?lang=sv" class="lang-link {{SV_ACTIVE}}" {{SV_CURRENT}} hreflang="sv">
+          <span class="flag" aria-hidden="true">🇸🇪</span><span class="label">SV</span>
+        </a>
+      </div>
+      <div class="nav-menu">
+        <a href="/manual">{{NAV_MANUAL}}</a>
+        <a href="/pricing">{{NAV_PRICING}}</a>
+        <a href="/store">{{NAV_STORE}}</a>
+        <a href="/arrange" class="btn">{{NAV_LOGIN}}</a>
+      </div>
+    </nav>
+  </div>
+</header>
+
+<aside class="nav-overlay" aria-label="{{NAV_PRIMARY_ARIA}}">
+  <a href="/manual">{{NAV_MANUAL}}</a>
+  <a href="/pricing">{{NAV_PRICING}}</a>
+  <a href="/store">{{NAV_STORE}}</a>
+  <a href="/arrange" class="btn">{{NAV_LOGIN}}</a>
+</aside>
+
+<main id="main">
+  <div class="wrap">
+    <h1>{{REDEEM_TITLE}}</h1>
+    <p class="intro">{{REDEEM_INTRO}}</p>
+
+    <div class="card" id="redeem-card">
+      <p id="none" class="intro" hidden></p>
+      <form id="redeem-form" novalidate hidden>
+        <label for="partner">{{REDEEM_PARTNER_LABEL}}</label>
+        <select id="partner" required>
+          <option value="">{{REDEEM_PARTNER_CHOOSE}}</option>
+        </select>
+
+        <div id="fields" hidden>
+          <div class="pair" id="liveit-codes">
+            <div>
+              <label for="box-number">{{REDEEM_BOX_NUMBER_LABEL}}</label>
+              <input id="box-number" type="text" inputmode="numeric" autocomplete="off" class="code">
+            </div>
+            <div>
+              <label for="security-code">{{REDEEM_SECURITY_CODE_LABEL}}</label>
+              <input id="security-code" type="text" autocomplete="off" class="code">
+            </div>
+          </div>
+          <p class="hint" id="liveit-hint">{{REDEEM_LIVEIT_HINT}}</p>
+          <div id="truestory-codes">
+            <label for="experience-code">{{REDEEM_EXPERIENCE_CODE_LABEL}}</label>
+            <input id="experience-code" type="text" maxlength="11" autocomplete="off" class="code">
+          </div>
+          <p class="hint" id="truestory-hint">{{REDEEM_TRUESTORY_HINT}}</p>
+
+          <label for="product">{{REDEEM_PRODUCT_LABEL}}</label>
+          <select id="product" required></select>
+
+          <h2>{{REDEEM_ADDRESS_HEADING}}</h2>
+          <p class="hint">{{REDEEM_ADDRESS_HINT}}</p>
+          <label for="name">{{REDEEM_NAME_LABEL}}</label>
+          <input id="name" type="text" required autocomplete="name" maxlength="200">
+          <label for="email">{{REDEEM_EMAIL_LABEL}}</label>
+          <input id="email" type="email" required autocomplete="email" maxlength="200">
+          <label for="street">{{REDEEM_STREET_LABEL}}</label>
+          <input id="street" type="text" required autocomplete="address-line1" maxlength="200">
+          <label for="address2">{{REDEEM_ADDRESS2_LABEL}}</label>
+          <input id="address2" type="text" autocomplete="address-line2" maxlength="200">
+          <div class="pair">
+            <div>
+              <label for="postal-code">{{REDEEM_POSTAL_CODE_LABEL}}</label>
+              <input id="postal-code" type="text" required autocomplete="postal-code" maxlength="20">
+            </div>
+            <div>
+              <label for="city">{{REDEEM_CITY_LABEL}}</label>
+              <input id="city" type="text" required autocomplete="address-level2" maxlength="200">
+            </div>
+          </div>
+
+          <label class="terms"><input id="terms" type="checkbox" required> <span>{{REDEEM_TERMS_HTML}}</span></label>
+          <div class="err" id="err" role="alert"></div>
+          <button type="submit" class="btn primary" id="submit">{{REDEEM_SUBMIT}}</button>
+        </div>
+      </form>
+      <div class="done" id="done" hidden>
+        <h2 id="done-heading"></h2>
+        <p id="done-body"></p>
+      </div>
+    </div>
+  </div>
+</main>
+
+<footer role="contentinfo">
+  <div class="wrap">
+    <nav aria-label="{{FOOTER_ARIA}}">
+      <a href="/manual">{{NAV_MANUAL}}</a> ·
+      <a href="/pricing">{{NAV_PRICING}}</a> ·
+      <a href="/store">{{NAV_STORE}}</a> ·
+      <a href="/privacy">{{FOOTER_PRIVACY}}</a> ·
+      <a href="/terms">{{FOOTER_TERMS}}</a> ·
+      <a href="/arrange">{{NAV_LOGIN}}</a>
+    </nav>
+    <p class="copy">{{FOOTER_COPY}}</p>
+  </div>
+</footer>
+
+<script id="redeem-i18n" type="application/json">{{REDEEM_I18N_JSON}}</script>
+<script>
+(function () {
+  var I18N = {};
+  try { I18N = JSON.parse(document.getElementById('redeem-i18n').textContent); } catch (e) {}
+  function t(key) { return I18N[key] || ''; }
+  var API = '{{REDEEM_API_BASE}}';
+  var $ = function (id) { return document.getElementById(id); };
+  var form = $('redeem-form'), partnerSel = $('partner'), productSel = $('product');
+  var partners = [];
+
+  function csrf() {
+    var m = document.cookie.match(/(?:^|; )zv_csrf=([^;]+)/);
+    return m ? decodeURIComponent(m[1]) : '';
+  }
+
+  function showPartner() {
+    var p = partners.find(function (x) { return x.kind === partnerSel.value; });
+    $('fields').hidden = !p;
+    $('err').textContent = '';
+    if (!p) return;
+    var liveit = p.kind === 'liveit';
+    $('liveit-codes').hidden = !liveit;
+    $('liveit-hint').hidden = !liveit;
+    $('truestory-codes').hidden = liveit;
+    $('truestory-hint').hidden = liveit;
+    productSel.replaceChildren();
+    p.products.forEach(function (pr) {
+      var o = document.createElement('option');
+      o.value = pr.id;
+      // Two organisations may offer a product of the same name.
+      var dupe = p.products.some(function (x) { return x !== pr && x.name === pr.name; });
+      o.textContent = dupe ? pr.name + ' — ' + pr.org_name : pr.name;
+      productSel.append(o);
+    });
+  }
+
+  fetch(API + '/options', { credentials: 'same-origin' })
+    .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+    .then(function (data) {
+      partners = (data.partners || []).filter(function (p) { return (p.products || []).length; });
+      if (!partners.length) {
+        $('none').textContent = t('none');
+        $('none').hidden = false;
+        return;
+      }
+      partners.forEach(function (p) {
+        var o = document.createElement('option');
+        o.value = p.kind;
+        o.textContent = p.name;
+        partnerSel.append(o);
+      });
+      if (partners.length === 1) partnerSel.value = partners[0].kind;
+      form.hidden = false;
+      showPartner();
+    })
+    .catch(function () {
+      $('none').textContent = t('errGeneric');
+      $('none').hidden = false;
+    });
+
+  partnerSel.addEventListener('change', showPartner);
+
+  var reasons = { missing_field: 'errMissing', invalid_email: 'errEmail', invalid_code: 'errCode',
+                  code_used: 'errUsed', unknown_product: 'errProduct', rate_limited: 'errRateLimited' };
+
+  form.addEventListener('submit', function (ev) {
+    ev.preventDefault();
+    var err = $('err');
+    err.textContent = '';
+    var liveit = partnerSel.value === 'liveit';
+    var body = {
+      product_id: parseInt(productSel.value, 10) || 0,
+      box_number: liveit ? $('box-number').value.trim() : '',
+      security_code: (liveit ? $('security-code') : $('experience-code')).value.trim(),
+      name: $('name').value.trim(),
+      email: $('email').value.trim(),
+      street_address: $('street').value.trim(),
+      address_2: $('address2').value.trim(),
+      postal_code: $('postal-code').value.trim(),
+      city: $('city').value.trim(),
+      accepted_terms: $('terms').checked,
+    };
+    if (!body.product_id || !body.security_code || (liveit && !body.box_number) || !body.name ||
+        !body.email || !body.street_address || !body.postal_code || !body.city) {
+      err.textContent = t('errMissing');
+      return;
+    }
+    if (!$('email').checkValidity()) { err.textContent = t('errEmail'); return; }
+    if (!body.accepted_terms) { err.textContent = t('errTerms'); return; }
+    var btn = $('submit'), label = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = t('sending');
+    fetch(API, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf() },
+      body: JSON.stringify(body),
+    }).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (data) { return { ok: r.ok, data: data }; });
+    }).then(function (res) {
+      if (res.ok) {
+        form.hidden = true;
+        $('done-heading').textContent = t('doneHeading');
+        $('done-body').textContent = t('doneBody').replace('{email}', body.email);
+        $('done').hidden = false;
+        return;
+      }
+      err.textContent = t(reasons[res.data.reason] || 'errGeneric');
+    }).catch(function () {
+      err.textContent = t('errGeneric');
+    }).finally(function () {
+      btn.disabled = false;
+      btn.textContent = label;
+    });
+  });
+})();
+</script>
+</body>
+</html>

@@ -11,6 +11,23 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Added — redeem Live it and TrueStory gift boxes
+
+- **Buyers redeem a gift box at `/redeem`** (or an organisation's own
+  `/o/{slug}/redeem`): they pick the partner, enter the box's code (a
+  Live it box number and security code, or a 9-character TrueStory
+  experience code), choose the adventure and give a postal address.
+  A code can be redeemed once; attempts are capped per IP.
+- **Organisers approve each code** under **Box redemptions** after
+  checking it in the partner's portal. Approval creates a team on the
+  product's self-guided adventure and emails the team link, valid for
+  a year; rejecting or cancelling emails the buyer and frees the code.
+  Organisers can also track when to post the envelope, whether it has
+  been posted, and a note, and enter phone or email orders by hand.
+- **Org admins set up partners and products**: which partners they take
+  boxes from, and which self-guided adventure (and team size) each
+  product gives access to. Migration `0072_partner_redemptions`.
+
 ### Fixed — live monitoring
 
 - **The public board's socket no longer drops every 40 seconds.** The

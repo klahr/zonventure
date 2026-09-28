@@ -110,5 +110,25 @@ func registerPublicTokenRoutes(r chi.Router, env *routesEnv) {
 		r.Get("/api/o/{slug}/store/items", publicH.StoreListByOrg)
 		r.Get("/api/o/{slug}/store/items/{event_id}", publicH.StoreEventByOrg)
 		r.Post("/api/o/{slug}/store/buy", adminH.BuyTicketByOrg)
+
+		// Gift box redemption (Live it, TrueStory). The bare /redeem
+		// offers every organisation's products; /o/{slug}/redeem only
+		// that organisation's. A redemption waits for an organiser to
+		// check the code; see admin/redemptions.go.
+		r.Get("/redeem", func(w http.ResponseWriter, req *http.Request) {
+			renderRedeemPage(w, req, "")
+		})
+		r.Get("/o/{slug}/redeem", func(w http.ResponseWriter, req *http.Request) {
+			slug := chi.URLParam(req, "slug")
+			if !orgSlugExists(req.Context(), cfg.DB, slug) {
+				servePublicPage("web/404.html", http.StatusNotFound)(w, req)
+				return
+			}
+			renderRedeemPage(w, req, slug)
+		})
+		r.Get("/api/redeem/options", adminH.RedeemOptions)
+		r.Post("/api/redeem", adminH.Redeem)
+		r.Get("/api/o/{slug}/redeem/options", adminH.RedeemOptionsByOrg)
+		r.Post("/api/o/{slug}/redeem", adminH.RedeemByOrg)
 	})
 }

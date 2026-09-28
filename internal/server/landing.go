@@ -239,6 +239,40 @@ type landingStrings struct {
 	StoreEventBadEmail   string
 	StoreEventGenericErr string
 
+	// Gift box redemption page (redeem.html).
+	RedeemTitle               string
+	RedeemIntro               string
+	RedeemPartnerLabel        string
+	RedeemPartnerChoose       string
+	RedeemBoxNumberLabel      string
+	RedeemSecurityCodeLabel   string
+	RedeemExperienceCodeLabel string
+	RedeemLiveitHint          string
+	RedeemTrueStoryHint       string
+	RedeemProductLabel        string
+	RedeemAddressHeading      string
+	RedeemAddressHint         string
+	RedeemNameLabel           string
+	RedeemEmailLabel          string
+	RedeemStreetLabel         string
+	RedeemAddress2Label       string
+	RedeemPostalCodeLabel     string
+	RedeemCityLabel           string
+	RedeemTermsHTML           string
+	RedeemSubmit              string
+	RedeemSending             string
+	RedeemDoneHeading         string
+	RedeemDoneBody            string
+	RedeemNone                string
+	RedeemErrMissing          string
+	RedeemErrTerms            string
+	RedeemErrEmail            string
+	RedeemErrCode             string
+	RedeemErrUsed             string
+	RedeemErrProduct          string
+	RedeemErrGeneric          string
+	RedeemErrRateLimited      string
+
 	// Per-org landing page (org-landing.html). Used for the hero
 	// CTA, the featured-quests strip, and the description fallback
 	// when an org hasn't set a tagline.
@@ -565,6 +599,77 @@ func renderStoreListingPageScoped(w http.ResponseWriter, r *http.Request, orgSlu
 		apiBase = "/api/o/" + orgSlug + "/store"
 	}
 	out = strings.ReplaceAll(out, "{{STORE_API_BASE}}", apiBase)
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Vary", "Cookie, Accept-Language")
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write([]byte(out))
+}
+
+// redeemSubs are redeem.html's text substitutions. Labels go in as
+// plain text; RedeemTermsHTML carries the terms and privacy links.
+func redeemSubs(s landingStrings) [][2]string {
+	return [][2]string{
+		{"{{REDEEM_TITLE}}", s.RedeemTitle},
+		{"{{REDEEM_INTRO}}", s.RedeemIntro},
+		{"{{REDEEM_PARTNER_LABEL}}", s.RedeemPartnerLabel},
+		{"{{REDEEM_PARTNER_CHOOSE}}", s.RedeemPartnerChoose},
+		{"{{REDEEM_BOX_NUMBER_LABEL}}", s.RedeemBoxNumberLabel},
+		{"{{REDEEM_SECURITY_CODE_LABEL}}", s.RedeemSecurityCodeLabel},
+		{"{{REDEEM_EXPERIENCE_CODE_LABEL}}", s.RedeemExperienceCodeLabel},
+		{"{{REDEEM_LIVEIT_HINT}}", s.RedeemLiveitHint},
+		{"{{REDEEM_TRUESTORY_HINT}}", s.RedeemTrueStoryHint},
+		{"{{REDEEM_PRODUCT_LABEL}}", s.RedeemProductLabel},
+		{"{{REDEEM_ADDRESS_HEADING}}", s.RedeemAddressHeading},
+		{"{{REDEEM_ADDRESS_HINT}}", s.RedeemAddressHint},
+		{"{{REDEEM_NAME_LABEL}}", s.RedeemNameLabel},
+		{"{{REDEEM_EMAIL_LABEL}}", s.RedeemEmailLabel},
+		{"{{REDEEM_STREET_LABEL}}", s.RedeemStreetLabel},
+		{"{{REDEEM_ADDRESS2_LABEL}}", s.RedeemAddress2Label},
+		{"{{REDEEM_POSTAL_CODE_LABEL}}", s.RedeemPostalCodeLabel},
+		{"{{REDEEM_CITY_LABEL}}", s.RedeemCityLabel},
+		{"{{REDEEM_TERMS_HTML}}", s.RedeemTermsHTML},
+		{"{{REDEEM_SUBMIT}}", s.RedeemSubmit},
+		{"{{REDEEM_I18N_JSON}}", marshalJSONForScript(map[string]string{
+			"sending":        s.RedeemSending,
+			"doneHeading":    s.RedeemDoneHeading,
+			"doneBody":       s.RedeemDoneBody,
+			"none":           s.RedeemNone,
+			"errMissing":     s.RedeemErrMissing,
+			"errTerms":       s.RedeemErrTerms,
+			"errEmail":       s.RedeemErrEmail,
+			"errCode":        s.RedeemErrCode,
+			"errUsed":        s.RedeemErrUsed,
+			"errProduct":     s.RedeemErrProduct,
+			"errGeneric":     s.RedeemErrGeneric,
+			"errRateLimited": s.RedeemErrRateLimited,
+		})},
+	}
+}
+
+// renderRedeemPage serves /redeem and /o/{slug}/redeem, where a gift box
+// bought through a partner is redeemed. The per-org page only offers
+// that organisation's products; the options and the form post go to the
+// matching API base.
+func renderRedeemPage(w http.ResponseWriter, r *http.Request, orgSlug string) {
+	body, err := readWebFile("web/redeem.html")
+	if err != nil {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	lang := resolveLang(w, r)
+	s := landingLocales[lang]
+	out := string(body)
+	for _, sub := range topbarSubs(s, lang) {
+		out = strings.ReplaceAll(out, sub[0], sub[1])
+	}
+	for _, sub := range redeemSubs(s) {
+		out = strings.ReplaceAll(out, sub[0], sub[1])
+	}
+	apiBase := "/api/redeem"
+	if orgSlug != "" {
+		apiBase = "/api/o/" + orgSlug + "/redeem"
+	}
+	out = strings.ReplaceAll(out, "{{REDEEM_API_BASE}}", apiBase)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Vary", "Cookie, Accept-Language")
 	w.Header().Set("Cache-Control", "no-store")

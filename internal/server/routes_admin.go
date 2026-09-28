@@ -72,6 +72,23 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 		// Purchases read-side + confirm: arrangers see their own org's,
 		// the platform admin reconciles across orgs. Buying is org-only.
 		r.Get("/purchases", adminH.ListPurchases)
+
+		// Gift box redemptions: org admins set up partners and their
+		// products; org admins and members work the approval queue.
+		// Each handler checks the caller's role and active org.
+		r.Get("/partners", adminH.ListPartners)
+		r.Post("/partners", adminH.CreatePartner)
+		r.Patch("/partners/{partnerID}", adminH.UpdatePartner)
+		r.Delete("/partners/{partnerID}", adminH.DeletePartner)
+		r.Post("/partners/{partnerID}/products", adminH.CreatePartnerProduct)
+		r.Patch("/partner-products/{productID}", adminH.UpdatePartnerProduct)
+		r.Delete("/partner-products/{productID}", adminH.DeletePartnerProduct)
+		r.Get("/redemptions", adminH.ListRedemptions)
+		r.Post("/redemptions", adminH.CreateRedemption)
+		r.Patch("/redemptions/{redemptionID}", adminH.UpdateRedemption)
+		r.Post("/redemptions/{redemptionID}/approve", adminH.ApproveRedemption)
+		r.Post("/redemptions/{redemptionID}/reject", adminH.RejectRedemption)
+		r.Post("/redemptions/{redemptionID}/cancel", adminH.CancelRedemption)
 		r.Get("/purchases/{purchaseID}", adminH.GetPurchase)
 		r.Post("/purchases/{purchaseID}/confirm", adminH.ConfirmPurchase)
 

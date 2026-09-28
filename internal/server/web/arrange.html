@@ -2602,6 +2602,7 @@ function designerURL(slug) {
 }
 
 const ICONS = {
+  gift: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="8" width="18" height="4" rx="1"/><path d="M12 8v13"/><path d="M19 12v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-7"/><path d="M7.5 8a2.5 2.5 0 0 1 0-5C11 3 12 8 12 8s1-5 4.5-5a2.5 2.5 0 0 1 0 5"/></svg>',
   dashboard: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>',
   map: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21 3 6"/><line x1="9" y1="3" x2="9" y2="18"/><line x1="15" y1="6" x2="15" y2="21"/></svg>',
   play: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>',
@@ -3851,6 +3852,8 @@ function renderShell() {
       // separate concept here. Filtered out of #events so the two
       // surfaces don't overlap.
       ['#quests',     t('Self-guided'),     ICONS.compass],
+      // Gift box codes (Live it, TrueStory) waiting for review.
+      ['#redemptions', t('Box redemptions'), ICONS.gift],
     ];
     items.push(['#settings', t('Settings'), ICONS.gear]);
   }
@@ -4052,6 +4055,7 @@ function currentCrumb() {
     dashboard:     t('Dashboard'),
     adventures:    t('Adventures'),
     quests:        t('Self-guided adventures'),
+    redemptions:   t('Box redemptions'),
     // Both prefixes resolve to viewCatalog (see the route table); the
     // label is the same in either case.
     catalog:       t('Catalog'),
@@ -4104,7 +4108,7 @@ async function renderRoute() {
   // reaches an org's events and the catalog from Organizations.
   const adminOnly = ['organizations', 'admins', 'logs'];
   const orgUserOnly = ['adventures', 'store', 'catalog', 'webhooks', 'events', 'quests',
-    'library', 'simulator'];
+    'redemptions', 'library', 'simulator'];
   // Lobby users (no memberships) only have Dashboard + Settings to
   // navigate. Anything else gets redirected back to the empty-state
   // dashboard rather than 4xx-ing on the API call inside the view.
@@ -4164,6 +4168,7 @@ async function renderRoute() {
         nav('#events/' + arg);
         return;
       }
+      case 'redemptions':  return await viewRedemptions(view, arg);
       // Members / Admins / Audit / Purchases / Webhooks were lifted
       // into the Settings hub as tabs; old links / bookmarks /
       // inline calls keep working by redirecting to the new tabbed
@@ -7088,6 +7093,514 @@ function fmtTicketPrice(cents, currency) {
   const c = (currency || 'EUR').toUpperCase();
   const n = (cents / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   return `${n} ${c}`;
+}
+
+/* ========== Box redemptions ========== */
+// Codes from gift boxes that partners (Live it, TrueStory) sell come in
+// through the public /redeem page and wait here. An operator checks
+// each code in the partner's own portal, then approves it (the server
+// creates a team on the product's self-guided adventure and emails the
+// team link) or rejects it. The postal fields cover boxes that also get
+// something in the post.
+const PARTNER_KINDS = [
+  { kind: 'liveit',    label: 'Live it' },
+  { kind: 'truestory', label: 'TrueStory' },
+];
+const partnerLabel = (kind, name) =>
+  name || PARTNER_KINDS.find((p) => p.kind === kind)?.label || kind;
+const REDEMPTION_STATES = ['pending', 'approved', 'rejected', 'cancelled', 'all'];
+const REDEMPTION_PILL = { pending: 'warning', approved: 'success', rejected: 'danger', cancelled: '' };
+
+function redemptionStateLabel(st) {
+  return {
+    pending:   t('Pending'),
+    approved:  t('Approved'),
+    rejected:  t('Rejected'),
+    cancelled: t('Cancelled'),
+    all:       t('All'),
+  }[st] || st;
+}
+
+// redemptionError turns the API's reason codes into operator-facing text.
+function redemptionError(r) {
+  switch (r.body?.reason) {
+    case 'not_pending':     return t('This redemption has already been decided.');
+    case 'not_cancellable': return t('This redemption can no longer be cancelled.');
+    case 'event_closed':    return t('The self-guided adventure isn\'t open, so no team can be created. Open it again, or point the product at another one.');
+    case 'code_used':       return t('That code has already been redeemed.');
+    case 'invalid_code':    return t('That code doesn\'t look right for this partner.');
+    case 'invalid_email':   return t('Enter a valid email address.');
+    case 'missing_field':   return t('Fill in every required field.');
+    case 'unknown_product': return t('Pick a product.');
+    case 'exists':          return t('That partner is already added.');
+    case 'in_use':          return t('It has redemptions, so it can\'t be deleted. Disable it instead.');
+    default:                return apiError(r);
+  }
+}
+
+async function viewRedemptions(view, stateArg) {
+  const st = REDEMPTION_STATES.includes(stateArg) ? stateArg : 'pending';
+  const isOrgAdmin = state.me.role === 'org_admin';
+  const [rr, pr] = await Promise.all([
+    api('/api/admin/redemptions?state=' + st),
+    api('/api/admin/partners'),
+  ]);
+  if (!rr.ok) {
+    view.replaceChildren(h('p', { class: 'err' }, apiError(rr)));
+    return;
+  }
+  const list = rr.body?.redemptions || [];
+  const counts = rr.body?.counts || {};
+  const partners = pr.body?.partners || [];
+
+  const tabStrip = h('div', { class: 'lib-tabs', style: 'margin-bottom:1rem' },
+    REDEMPTION_STATES.map((s) => h('a', {
+      class: 'lib-tab' + (s === st ? ' active' : ''),
+      href: '#redemptions/' + s,
+      on: { click: (e) => { e.preventDefault(); nav('#redemptions/' + s); } },
+    }, redemptionStateLabel(s), s !== 'all' && counts[s] ? ` (${counts[s]})` : '')));
+
+  const canAdd = partners.some((p) => p.enabled && (p.products || []).some((x) => x.enabled));
+  view.replaceChildren(
+    h('div', { class: 'row between', style: 'margin-bottom:1rem; gap:.5rem; flex-wrap:wrap' },
+      h('h1', { style: 'margin:0' }, t('Box redemptions')),
+      canAdd
+        ? h('button', { class: 'btn primary', on: { click: () => openAddRedemption(partners) } },
+            icon(ICONS.plus), t('Add redemption'))
+        : null),
+    h('p', { class: 'muted', style: 'font-size:.9rem; margin:0 0 1rem' },
+      t('Gift box codes redeemed on your public redeem page. Check each code in the partner\'s portal, then approve it to create a team and email its link, or reject it.')),
+    tabStrip,
+    h('div', { class: 'card' }, redemptionsTable(list, st)),
+    renderPartnersCard(partners, isOrgAdmin));
+}
+
+function redemptionsTable(list, st) {
+  if (list.length === 0) {
+    return h('div', { class: 'empty' },
+      h('p', {}, st === 'pending' ? t('No redemptions waiting for review.') : t('No redemptions here.')));
+  }
+  // copyChip shows a code in mono and copies it on click: the operator
+  // pastes these into the partner's portal to check them.
+  const copyChip = (label, value) => h('button', {
+    type: 'button',
+    class: 'btn ghost small mono',
+    style: 'padding:.1rem .4rem; white-space:nowrap',
+    title: t('Copy'),
+    on: { click: async (e) => {
+      e.stopPropagation();
+      try { await navigator.clipboard.writeText(value); toastOk(t('Copied')); }
+      catch { toastErr(t('Copy failed')); }
+    } },
+  }, label ? label + ' ' : '', value);
+
+  return h('table', { class: 'table' },
+    h('thead', {}, h('tr', {},
+      h('th', {}, t('Received')),
+      h('th', {}, t('Code')),
+      h('th', {}, t('Product')),
+      h('th', {}, t('Customer')),
+      h('th', {}, t('Post')),
+      h('th', {}, t('State')),
+      h('th', {}, ''))),
+    h('tbody', {}, list.map((rd) => {
+      const addr = [rd.street_address, rd.address_2, [rd.postal_code, rd.city].filter(Boolean).join(' ')]
+        .filter(Boolean);
+      const actions = h('div', { class: 'row', style: 'gap:.35rem; justify-content:flex-end; flex-wrap:wrap' });
+      if (rd.state === 'pending') {
+        actions.append(
+          h('button', { class: 'btn small primary', on: { click: () => decideRedemption(rd, 'approve') } }, t('Approve')),
+          h('button', { class: 'btn small danger', on: { click: () => decideRedemption(rd, 'reject') } }, t('Reject')));
+      }
+      if (rd.state === 'pending' || rd.state === 'approved') {
+        actions.append(h('button', { class: 'btn small ghost', on: { click: () => decideRedemption(rd, 'cancel') } },
+          t('Cancel redemption')));
+      }
+      if (rd.state !== 'rejected' && rd.state !== 'cancelled') {
+        actions.append(
+          iconBtn('mail', rd.posted_at ? t('Mark as not posted') : t('Mark as posted'),
+            () => patchRedemption(rd, { posted: !rd.posted_at })));
+      }
+      actions.append(iconBtn('pencil', t('Post date and note'), () => editRedemptionPost(rd)));
+
+      return h('tr', {},
+        h('td', { title: fmtLocal(rd.created_at), style: 'white-space:nowrap' }, formatEventTime(rd.created_at)),
+        h('td', {},
+          h('div', { style: 'font-weight:600' }, partnerLabel(rd.partner_kind, rd.partner_name)),
+          h('div', { style: 'display:flex; flex-direction:column; align-items:flex-start; gap:.15rem; margin-top:.2rem' },
+            rd.box_number ? copyChip(t('Box'), rd.box_number) : null,
+            copyChip('', rd.security_code))),
+        h('td', {},
+          h('div', {}, rd.product_name || t('—')),
+          rd.event_id
+            ? h('a', { href: '#events/' + rd.event_id, class: 'muted', style: 'font-size:.85rem' }, rd.event_name || ('#' + rd.event_id))
+            : null),
+        h('td', {},
+          h('div', { style: 'font-weight:600' }, rd.name),
+          rd.email ? h('a', { href: 'mailto:' + rd.email, style: 'font-size:.85rem' }, rd.email) : null,
+          addr.length
+            ? h('div', { class: 'muted', style: 'font-size:.85rem; margin-top:.2rem' }, addr.flatMap((l, i) => (i ? [h('br'), l] : [l])))
+            : null),
+        h('td', { style: 'font-size:.85rem' },
+          rd.post_at ? h('div', { style: 'white-space:nowrap' }, t('Post on {{date}}', { date: rd.post_at })) : null,
+          rd.posted_at
+            ? h('span', { class: 'pill success', style: 'white-space:nowrap', title: fmtLocal(rd.posted_at) }, t('Posted'))
+            : h('span', { class: 'pill', style: 'white-space:nowrap' }, t('Not posted')),
+          rd.note ? h('div', { class: 'muted', style: 'margin-top:.3rem; white-space:pre-wrap; max-width:18rem' }, rd.note) : null),
+        h('td', {},
+          h('span', { class: 'pill ' + (REDEMPTION_PILL[rd.state] || '') }, redemptionStateLabel(rd.state)),
+          rd.decided_at
+            ? h('div', { class: 'muted', style: 'font-size:.8rem; margin-top:.2rem', title: fmtLocal(rd.decided_at) },
+                rd.decided_by
+                  ? t('{{when}} by {{who}}', { when: formatEventTime(rd.decided_at), who: rd.decided_by })
+                  : formatEventTime(rd.decided_at))
+            : null,
+          rd.state === 'approved' && rd.team_id
+            ? h('div', { style: 'font-size:.85rem; margin-top:.2rem' },
+                h('a', { href: '#events/' + rd.event_id }, t('Team: {{name}}', { name: rd.team_name || ('#' + rd.team_id) })))
+            : null),
+        h('td', {}, actions));
+    })));
+}
+
+// decideRedemption confirms and sends approve / reject / cancel.
+async function decideRedemption(rd, action) {
+  const email = rd.email || t('the customer');
+  const copy = {
+    approve: {
+      title: t('Approve this redemption?'),
+      body: t('A team is created on “{{event}}” and its link is emailed to {{email}}. Only approve once you have checked the code in the partner\'s portal.',
+        { event: rd.event_name || rd.product_name || '', email }),
+      btn: t('Approve'), cls: 'btn primary', done: t('Approved — the team link is on its way'),
+    },
+    reject: {
+      title: t('Reject this redemption?'),
+      body: t('{{email}} is told by email that the code couldn\'t be verified.', { email }),
+      btn: t('Reject'), cls: 'btn danger', done: t('Redemption rejected'),
+    },
+    cancel: rd.state === 'approved'
+      ? {
+          title: t('Cancel this approved redemption?'),
+          body: t('The team\'s links stop working straight away and {{email}} is told by email. This can\'t be undone.', { email }),
+          btn: t('Cancel redemption'), cls: 'btn danger', done: t('Redemption cancelled'),
+        }
+      : {
+          title: t('Cancel this redemption?'),
+          body: t('{{email}} is told by email that the redemption was cancelled.', { email }),
+          btn: t('Cancel redemption'), cls: 'btn danger', done: t('Redemption cancelled'),
+        },
+  }[action];
+  const ok = await modal(copy.title, ({ body, close }) => {
+    body.append(
+      h('p', {}, copy.body),
+      h('div', { class: 'row end' },
+        h('button', { class: 'btn', on: { click: () => close(false) } }, t('Back')),
+        h('button', { class: copy.cls, on: { click: () => close(true) } }, copy.btn)));
+  });
+  if (!ok) return;
+  const r = await api(`/api/admin/redemptions/${rd.id}/${action}`, { method: 'POST' });
+  if (r.ok) { toastOk(copy.done); renderRoute(); }
+  else toastErr(redemptionError(r));
+}
+
+async function patchRedemption(rd, patch) {
+  const r = await api('/api/admin/redemptions/' + rd.id, { method: 'PATCH', body: JSON.stringify(patch) });
+  if (r.ok) { toastOk(t('Saved')); renderRoute(); }
+  else toastErr(redemptionError(r));
+  return r.ok;
+}
+
+async function editRedemptionPost(rd) {
+  const res = await modal(t('Post date and note'), ({ body, close }) => {
+    const postAt = h('input', { type: 'date', value: rd.post_at || '' });
+    const posted = h('input', { type: 'checkbox', checked: !!rd.posted_at });
+    const note = h('textarea', { rows: '4', maxlength: '2000' }, rd.note || '');
+    const form = h('form', {},
+      h('label', { class: 'field' }, h('span', {}, t('Post on')), postAt),
+      h('label', { class: 'row', style: 'gap:.5rem; align-items:center; margin:.25rem 0 .75rem' },
+        posted, h('span', {}, t('Posted'))),
+      h('label', { class: 'field' }, h('span', {}, t('Note')), note),
+      h('div', { class: 'row end' },
+        h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, t('Cancel')),
+        h('button', { class: 'btn primary', type: 'submit' }, t('Save'))));
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      close({ post_at: postAt.value, posted: posted.checked, note: note.value.trim() });
+    });
+    body.append(form);
+  });
+  if (!res) return;
+  await patchRedemption(rd, res);
+}
+
+// openAddRedemption is manual entry for a box redeemed by phone or
+// email. It lands as pending, like one from the public page.
+async function openAddRedemption(partners) {
+  const products = [];
+  for (const p of partners) {
+    if (!p.enabled) continue;
+    for (const x of (p.products || [])) if (x.enabled) products.push({ ...x, partner: p });
+  }
+  if (products.length === 0) return;
+  await modal(t('Add redemption'), ({ body, close }) => {
+    const product = h('select', { required: true },
+      partners.filter((p) => p.enabled).map((p) =>
+        h('optgroup', { label: partnerLabel(p.kind, p.name) },
+          (p.products || []).filter((x) => x.enabled).map((x) =>
+            h('option', { value: String(x.id) }, x.name || x.adventure_title || x.event_name)))));
+    const box = h('input', { type: 'text', inputmode: 'numeric', pattern: '[0-9]*', autocomplete: 'off' });
+    const code = h('input', { type: 'text', required: true, autocomplete: 'off', class: 'mono' });
+    const boxField = h('label', { class: 'field', style: 'flex:1; min-width:8rem' }, h('span', {}, t('Box number')), box);
+    const codeLabel = h('span', {}, t('Security code'));
+    const syncKind = () => {
+      const picked = products.find((x) => String(x.id) === product.value);
+      const liveit = picked?.partner.kind === 'liveit';
+      boxField.style.display = liveit ? '' : 'none';
+      box.required = liveit;
+      codeLabel.textContent = liveit ? t('Security code') : t('Experience code');
+      if (liveit) { code.removeAttribute('maxlength'); code.removeAttribute('minlength'); }
+      else { code.maxLength = 9; code.minLength = 9; }
+    };
+    product.addEventListener('change', syncKind);
+    const name = h('input', { type: 'text', required: true, maxlength: '200' });
+    const email = h('input', { type: 'email', required: true, maxlength: '254' });
+    const street = h('input', { type: 'text', required: true, maxlength: '200' });
+    const address2 = h('input', { type: 'text', maxlength: '200' });
+    const postal = h('input', { type: 'text', required: true, maxlength: '20' });
+    const city = h('input', { type: 'text', required: true, maxlength: '100' });
+    const postAt = h('input', { type: 'date' });
+    const note = h('textarea', { rows: '3', maxlength: '2000' });
+    const submit = h('button', { class: 'btn primary', type: 'submit' }, t('Add redemption'));
+    const form = h('form', {},
+      h('label', { class: 'field' }, h('span', {}, t('Product')), product),
+      h('div', { class: 'row', style: 'gap:.75rem; flex-wrap:wrap' },
+        boxField,
+        h('label', { class: 'field', style: 'flex:1; min-width:8rem' }, codeLabel, code)),
+      h('label', { class: 'field' }, h('span', {}, t('Name')), name),
+      h('label', { class: 'field' }, h('span', {}, t('Email')), email),
+      h('label', { class: 'field' }, h('span', {}, t('Street address')), street),
+      h('label', { class: 'field' }, h('span', {}, t('Address line 2 (optional)')), address2),
+      h('div', { class: 'row', style: 'gap:.75rem; flex-wrap:wrap' },
+        h('label', { class: 'field', style: 'flex:0 0 8rem' }, h('span', {}, t('Postal code')), postal),
+        h('label', { class: 'field', style: 'flex:1; min-width:8rem' }, h('span', {}, t('City')), city)),
+      h('label', { class: 'field' }, h('span', {}, t('Post on (optional)')), postAt),
+      h('label', { class: 'field' }, h('span', {}, t('Note (optional)')), note),
+      h('div', { class: 'row end' },
+        h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, t('Cancel')),
+        submit));
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      submit.disabled = true;
+      const picked = products.find((x) => String(x.id) === product.value);
+      const r = await api('/api/admin/redemptions', {
+        method: 'POST',
+        body: JSON.stringify({
+          product_id: picked ? picked.id : 0,
+          box_number: picked?.partner.kind === 'liveit' ? box.value.trim() : '',
+          security_code: code.value.trim(),
+          name: name.value.trim(),
+          email: email.value.trim(),
+          street_address: street.value.trim(),
+          address_2: address2.value.trim(),
+          postal_code: postal.value.trim(),
+          city: city.value.trim(),
+          post_at: postAt.value,
+          note: note.value.trim(),
+        }),
+      });
+      submit.disabled = false;
+      if (r.status === 201) {
+        close(true);
+        toastOk(t('Redemption added'));
+        // It lands as pending; show that list (a same-hash nav fires no
+        // hashchange, so re-render directly then).
+        if (state.route === '#redemptions/pending') renderRoute();
+        else nav('#redemptions/pending');
+      } else {
+        toastErr(redemptionError(r));
+      }
+    });
+    body.append(form);
+    syncKind();
+  }, { wide: true });
+}
+
+// renderPartnersCard is the setup side: which partners' codes the org
+// takes, and which self-guided adventure each partner product unlocks.
+// Org admins edit it; members see it read-only.
+function renderPartnersCard(partners, isOrgAdmin) {
+  const card = h('div', { class: 'card' },
+    h('h2', {}, t('Partners')),
+    h('p', { class: 'muted', style: 'font-size:.9rem; margin:0 0 .75rem' },
+      t('Gift box partners whose codes customers can redeem, and which of your self-guided adventures each of their products gives access to.')));
+
+  const urlInput = h('input', { type: 'text', readonly: true, value: location.origin + '/redeem', style: 'flex:1; min-width:0' });
+  api('/api/admin/orgs/me/profile').then((r) => {
+    if (r.ok && r.body?.slug) urlInput.value = location.origin + '/o/' + r.body.slug + '/redeem';
+  });
+  card.append(h('label', { class: 'field' },
+    h('span', {}, t('Public redeem page')),
+    h('div', { class: 'row', style: 'gap:.5rem' },
+      urlInput,
+      iconBtn('copy', t('Copy link'), () => copyFromInput(urlInput.value, urlInput, t('Link copied'))))));
+
+  if (partners.length === 0) {
+    card.append(h('p', { class: 'muted' }, isOrgAdmin
+      ? t('No partners yet. Add one to start taking its codes.')
+      : t('No partners yet. An organisation admin can add them.')));
+  }
+
+  for (const p of partners) {
+    const products = p.products || [];
+    const head = h('div', { class: 'row between', style: 'gap:.5rem; flex-wrap:wrap; margin-top:1rem' },
+      h('div', { class: 'row', style: 'gap:.5rem; align-items:center' },
+        h('h3', { style: 'margin:0' }, partnerLabel(p.kind, p.name)),
+        h('span', { class: 'pill ' + (p.enabled ? 'success' : '') }, p.enabled ? t('Enabled') : t('Disabled'))),
+      isOrgAdmin
+        ? h('div', { class: 'row', style: 'gap:.35rem' },
+            h('button', { class: 'btn small', on: { click: () => openPartnerProduct(p, null) } }, icon(ICONS.plus), t('Add product')),
+            h('button', { class: 'btn small ghost', on: { click: () => setPartnerEnabled(p, !p.enabled) } },
+              p.enabled ? t('Disable') : t('Enable')),
+            iconBtn('trash', t('Delete partner'), () => deletePartner(p), { danger: true }))
+        : null);
+    card.append(head);
+    if (products.length === 0) {
+      card.append(h('p', { class: 'muted', style: 'margin:.35rem 0 0' },
+        t('No products yet: customers can\'t redeem this partner\'s codes until one points at a self-guided adventure.')));
+      continue;
+    }
+    card.append(h('table', { class: 'table', style: 'margin-top:.5rem' },
+      h('thead', {}, h('tr', {},
+        h('th', {}, t('Product')),
+        h('th', {}, t('Self-guided adventure')),
+        h('th', {}, t('Players per team')),
+        h('th', {}, t('State')),
+        isOrgAdmin ? h('th', {}, '') : null)),
+      h('tbody', {}, products.map((x) => h('tr', {},
+        h('td', {}, x.name || t('—')),
+        h('td', {},
+          h('a', { href: '#events/' + x.event_id }, x.event_name || ('#' + x.event_id)),
+          x.adventure_title ? h('div', { class: 'muted', style: 'font-size:.8rem' }, x.adventure_title) : null),
+        h('td', {}, String(x.team_size)),
+        h('td', {}, h('span', { class: 'pill ' + (x.enabled ? 'success' : '') }, x.enabled ? t('Enabled') : t('Disabled'))),
+        isOrgAdmin
+          ? h('td', { style: 'text-align:right; white-space:nowrap' },
+              iconBtn('pencil', t('Edit product'), () => openPartnerProduct(p, x)),
+              iconBtn('eye', x.enabled ? t('Disable') : t('Enable'), () => patchPartnerProduct(x, { enabled: !x.enabled })),
+              iconBtn('trash', t('Delete product'), () => deletePartnerProduct(x), { danger: true }))
+          : null)))));
+  }
+
+  if (isOrgAdmin) {
+    const missing = PARTNER_KINDS.filter((k) => !partners.some((p) => p.kind === k.kind));
+    if (missing.length) {
+      card.append(h('div', { class: 'row', style: 'gap:.5rem; margin-top:1rem; flex-wrap:wrap' },
+        missing.map((k) => h('button', { class: 'btn', on: { click: () => addPartner(k.kind) } },
+          icon(ICONS.plus), t('Add {{partner}}', { partner: k.label })))));
+    }
+  }
+  return card;
+}
+
+async function addPartner(kind) {
+  const r = await api('/api/admin/partners', { method: 'POST', body: JSON.stringify({ kind }) });
+  if (r.status === 201) { toastOk(t('Partner added')); renderRoute(); }
+  else toastErr(redemptionError(r));
+}
+
+async function setPartnerEnabled(p, enabled) {
+  const r = await api('/api/admin/partners/' + p.id, { method: 'PATCH', body: JSON.stringify({ enabled }) });
+  if (r.ok) { toastOk(enabled ? t('Partner enabled') : t('Partner disabled')); renderRoute(); }
+  else toastErr(redemptionError(r));
+}
+
+async function deletePartner(p) {
+  const ok = await modal(t('Delete {{partner}}?', { partner: partnerLabel(p.kind, p.name) }), ({ body, close }) => {
+    body.append(
+      h('p', {}, t('Its products go too, and customers can no longer redeem its codes.')),
+      h('div', { class: 'row end' },
+        h('button', { class: 'btn', on: { click: () => close(false) } }, t('Cancel')),
+        h('button', { class: 'btn danger', on: { click: () => close(true) } }, t('Delete'))));
+  });
+  if (!ok) return;
+  const r = await api('/api/admin/partners/' + p.id, { method: 'DELETE' });
+  if (r.status === 204) { toastOk(t('Partner deleted')); renderRoute(); }
+  else toastErr(redemptionError(r));
+}
+
+async function patchPartnerProduct(x, patch) {
+  const r = await api('/api/admin/partner-products/' + x.id, { method: 'PATCH', body: JSON.stringify(patch) });
+  if (r.ok) { toastOk(t('Saved')); renderRoute(); }
+  else toastErr(redemptionError(r));
+  return r.ok;
+}
+
+async function deletePartnerProduct(x) {
+  const ok = await modal(t('Delete product “{{name}}”?', { name: x.name || x.event_name || '' }), ({ body, close }) => {
+    body.append(
+      h('p', {}, t('Customers can no longer pick it on the redeem page.')),
+      h('div', { class: 'row end' },
+        h('button', { class: 'btn', on: { click: () => close(false) } }, t('Cancel')),
+        h('button', { class: 'btn danger', on: { click: () => close(true) } }, t('Delete'))));
+  });
+  if (!ok) return;
+  const r = await api('/api/admin/partner-products/' + x.id, { method: 'DELETE' });
+  if (r.status === 204) { toastOk(t('Product deleted')); renderRoute(); }
+  else toastErr(redemptionError(r));
+}
+
+// openPartnerProduct adds (existing null) or edits a partner product:
+// the name customers pick on the redeem page, the self-guided adventure
+// it unlocks and how many players the team gets.
+async function openPartnerProduct(p, existing) {
+  const evR = await api('/api/admin/events?public_for_sale=true');
+  const events = (evR.body?.events || []).filter((e) => e.state !== 'cancelled' && e.state !== 'completed');
+  if (events.length === 0 && !existing) {
+    toastErr(t('Create a self-guided adventure first'));
+    return;
+  }
+  const title = existing ? t('Edit product') : t('Add product to {{partner}}', { partner: partnerLabel(p.kind, p.name) });
+  await modal(title, ({ body, close }) => {
+    const name = h('input', { type: 'text', required: true, maxlength: '200', value: existing?.name || '',
+      placeholder: t('As printed on the box') });
+    const eventSel = h('select', { required: true },
+      events.map((e) => h('option', { value: String(e.id), selected: existing?.event_id === e.id ? '' : null },
+        runLabel(e) + (e.adventure_title ? ' — ' + e.adventure_title : ''))));
+    if (existing && !events.some((e) => e.id === existing.event_id)) {
+      eventSel.prepend(h('option', { value: String(existing.event_id), selected: '' }, existing.event_name || ('#' + existing.event_id)));
+    }
+    const teamSize = h('input', { type: 'number', min: '1', max: '50', required: true });
+    const defaultSize = () => events.find((e) => String(e.id) === eventSel.value)?.ticket_team_size || 4;
+    teamSize.value = String(existing?.team_size || defaultSize());
+    eventSel.addEventListener('change', () => { if (!existing) teamSize.value = String(defaultSize()); });
+    const submit = h('button', { class: 'btn primary', type: 'submit' }, existing ? t('Save') : t('Add product'));
+    const form = h('form', {},
+      h('label', { class: 'field' }, h('span', {}, t('Product name')), name),
+      h('label', { class: 'field' }, h('span', {}, t('Self-guided adventure')), eventSel),
+      h('label', { class: 'field' }, h('span', {}, t('Players per team')), teamSize),
+      h('div', { class: 'row end' },
+        h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, t('Cancel')),
+        submit));
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const size = parseInt(teamSize.value, 10);
+      if (!size || size < 1 || size > 50) { toastErr(t('Players per team must be between 1 and 50')); return; }
+      const payload = { name: name.value.trim(), event_id: parseInt(eventSel.value, 10), team_size: size };
+      submit.disabled = true;
+      const r = existing
+        ? await api('/api/admin/partner-products/' + existing.id, { method: 'PATCH', body: JSON.stringify(payload) })
+        : await api(`/api/admin/partners/${p.id}/products`, { method: 'POST', body: JSON.stringify(payload) });
+      submit.disabled = false;
+      if (r.ok) {
+        close(true);
+        toastOk(existing ? t('Saved') : t('Product added'));
+        renderRoute();
+      } else {
+        toastErr(redemptionError(r));
+      }
+    });
+    body.append(form);
+  });
 }
 
 // newQuest opens the quest-creation modal. Picks an adventure the
