@@ -53,6 +53,13 @@ fresh DB, create it first:
 createdb zv && zv -dsn "postgres://zv@/zv" -restore < dump.sql
 ```
 
+Restoring on top only works when the dump and the database are on the
+same schema. A dump from an older release must go into an empty
+database: `--clean` only drops the tables the dump knows about, and
+tables added by newer migrations still reference them, so the replay
+aborts. Restore first, then start the new release to migrate it. Keep
+the same `ZV_TOTP_KEY` (see [Two-factor authentication](#two-factor-authentication-totp)).
+
 ## Health probe
 
 `GET /api/health` pings the database; returns `200` with `{"status":"ok"}`

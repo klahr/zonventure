@@ -5,11 +5,31 @@ All notable changes to Zonventure will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-The repository, Go module, and CLI binary are named `zv`; the product is
-**Zonventure**. Versions tagged here correspond to git tags `v<version>` on
-[github.com/klahr/zonventure](https://github.com/klahr/zonventure).
+The repository, Go module, and CLI binary are named `zonventure`; the
+product is **Zonventure**. Versions tagged here correspond to git tags
+`<version>` on [github.com/klahr/zonventure](https://github.com/klahr/zonventure).
 
 ## [Unreleased]
+
+## [0.2.0] - 2026-09-28
+
+### Upgrading from 0.1.x
+
+- **Back up first.** Migrations 0056–0070 run on first start;
+  `0065_catalog_publisher` and `0066_adventure_org_not_null` rewrite
+  existing rows (see the breaking change below).
+- **The platform admin no longer authors or runs events.** After the
+  upgrade, add an org admin to the new **Zonventure Catalog** org to
+  keep editing the catalog.
+- **Moving to a new install** (e.g. running it alongside the old one):
+  restore the 0.1.x dump into an *empty* database before 0.2.0 has
+  started against it, and keep the same `ZV_TOTP_KEY`. A dump can't be
+  restored on top of a database already migrated to 0.2.0.
+- **Compose volumes are named after the checkout directory.** A clone
+  into a directory other than the old one starts on an empty database.
+- The repository moved from `git.sr.ht/~klahr/zv` to
+  `github.com/klahr/zonventure`; update the checkout's remote before
+  `make upgrade`.
 
 ### Added — twelve new blocks, and more ways to hide a clue
 
@@ -1143,7 +1163,8 @@ First tagged release.
   Postgres. Configurable retention, optional Prometheus metrics, and
   pg_dump-portable backup / restore.
 
-[Unreleased]: https://github.com/klahr/zonventure/commits/main
+[Unreleased]: https://github.com/klahr/zonventure/compare/0.2.0...main
+[0.2.0]: https://github.com/klahr/zonventure/releases/tag/0.2.0
 [0.1.5]: https://github.com/klahr/zonventure/releases/tag/0.1.5
 [0.1.4]: https://github.com/klahr/zonventure/releases/tag/0.1.4
 [0.1.3]: https://github.com/klahr/zonventure/releases/tag/0.1.3
