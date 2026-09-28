@@ -23,6 +23,7 @@ import {
   insertionPoint,
   connect,
   connectionError,
+  fillStep,
   firstPort,
   moveNode,
   nodeBySlug,
@@ -78,6 +79,8 @@ interface Props {
   paletteRequest: number;
   /** Bumped by the parent to centre the canvas on the selected node. */
   focusRequest: number;
+  /** Bumped when the keyboard moved the selection: pan to it if it is off screen. */
+  revealRequest?: number;
   /** Where the simulated team is, so the canvas can show it. */
   playing?: string | null;
 }
@@ -117,7 +120,7 @@ export function cardSizes(): Map<string, Size> {
  * The pick is created at that spot and wired in. Releasing on a handle
  * that refuses the wire shows why instead.
  */
-export function Canvas({ graph, issues, selected, onChange, onSelect, paletteRequest, focusRequest, playing = null }: Props) {
+export function Canvas({ graph, issues, selected, onChange, onSelect, paletteRequest, focusRequest, revealRequest = 0, playing = null }: Props) {
   const rf = useReactFlow();
   const t = useT();
   const [menu, setMenu] = useState<{ x: number; y: number; items: ContextMenuItem[] } | null>(null);
@@ -399,18 +402,19 @@ export function Canvas({ graph, issues, selected, onChange, onSelect, paletteReq
       const { from, screen, insert } = palette;
       setPalette(null);
 
+      const port = choice.port ?? (from?.side === "output" ? from.port : undefined);
       if (choice.kind === "existing") {
-        if (from?.side === "output") onChange(connect(graph, from.node.slug, from.port, choice.node.slug));
+        if (from?.side === "output" && port) onChange(connect(graph, from.node.slug, port, choice.node.slug));
         onSelect(choice.node.slug);
         return;
       }
+      const build = (at: { x: number; y: number }) => fillStep(nodeFromPreset(graph, choice.preset, at), choice.preset, choice.fill);
 
-      // From the toolbar: after the selected step, or before the End,
-      // wired in and with room made for it — not dropped loose on top
-      // of whatever is under the middle of the screen.
-      const point = insert ? insertionPoint(graph, selected) : null;
-      if (point) {
-        const next = insertAfter(graph, point, nodeFromPreset(graph, choice.preset, { x: 0, y: 0 }));
+      // From the toolbar, "a" or Ctrl+K: after the selected step, or
+      // before the End, wired in and with room made for it — not dropped
+      // loose on top of whatever is under the middle of the screen.
+      if (insert && from?.side === "output" && port) {
+        const next = insertAfter(graph, { from: from.node.slug, port }, build({ x: 0, y: 0 }));
         const added = next.nodes[next.nodes.length - 1]!;
         onChange(next);
         onSelect(added.slug);
@@ -422,7 +426,7 @@ export function Canvas({ graph, issues, selected, onChange, onSelect, paletteReq
       // the wire had been dropped straight onto it.
       const flow = rf.screenToFlowPosition(screen);
       const at = from?.side === "input" ? { x: flow.x - 240, y: flow.y - 40 } : { x: flow.x, y: flow.y - 40 };
-      const node = nodeFromPreset(graph, choice.preset, at);
+      const node = build(at);
       let next = addNode(graph, node);
       if (from?.side === "output") next = connect(next, from.node.slug, from.port, node.slug);
       if (from?.side === "input") {
@@ -432,7 +436,7 @@ export function Canvas({ graph, issues, selected, onChange, onSelect, paletteReq
       onChange(next);
       onSelect(node.slug);
     },
-    [palette, graph, selected, onChange, onSelect, rf],
+    [palette, graph, onChange, onSelect, rf],
   );
 
   // --- dazyflow's context menus ------------------------------------------------
@@ -575,7 +579,15 @@ export function Canvas({ graph, issues, selected, onChange, onSelect, paletteReq
   useEffect(() => {
     if (!paletteRequest || !wrapper.current) return;
     const r = wrapper.current.getBoundingClientRect();
-    setPalette({ from: null, screen: { x: r.left + r.width / 2 - 170, y: r.top + r.height / 3 }, insert: true });
+    const point = insertionPoint(graph, selected);
+    const node = point ? nodeBySlug(graph, point.from) : undefined;
+    setPalette({
+      from: node && point ? { side: "output", node, port: point.port } : null,
+      screen: { x: r.left + r.width / 2 - 170, y: r.top + r.height / 3 },
+      insert: true,
+    });
+    // Only on an explicit request, from the graph and selection of that moment.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [paletteRequest]);
 
   useEffect(() => {
@@ -585,6 +597,19 @@ export function Canvas({ graph, issues, selected, onChange, onSelect, paletteReq
     // Only on an explicit request, not on every selection change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusRequest]);
+
+  useEffect(() => {
+    if (!revealRequest || !selected || !wrapper.current) return;
+    const n = nodeBySlug(graph, selected);
+    if (!n) return;
+    const r = wrapper.current.getBoundingClientRect();
+    const tl = rf.flowToScreenPosition({ x: n.x ?? 0, y: n.y ?? 0 });
+    const br = rf.flowToScreenPosition({ x: (n.x ?? 0) + 240, y: (n.y ?? 0) + 120 });
+    const inside = tl.x >= r.left && tl.y >= r.top && br.x <= r.right && br.y <= r.bottom;
+    if (!inside) void rf.setCenter((n.x ?? 0) + 120, (n.y ?? 0) + 60, { zoom: rf.getZoom(), duration: 200 });
+    // Only on an explicit request, not on every selection change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [revealRequest]);
 
   useEffect(() => {
     if (!hint) return;
@@ -640,6 +665,7 @@ export function Canvas({ graph, issues, selected, onChange, onSelect, paletteReq
         <QuickPalette
           graph={graph}
           from={palette.from}
+          choosePort={!!palette.insert}
           at={palette.screen}
           {...(wrapper.current ? { bounds: wrapper.current.getBoundingClientRect() } : {})}
           onPick={pick}

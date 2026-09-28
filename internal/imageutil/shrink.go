@@ -105,6 +105,29 @@ func ShrinkPNG(data []byte, maxDim int) ([]byte, string, error) {
 	return buf.Bytes(), "image/png", nil
 }
 
+// ShrinkKeepAlpha is Shrink for an image that may be transparent: a
+// picture with any transparent pixel is re-encoded as PNG, as ShrinkPNG
+// does, and an opaque one as JPEG, as Shrink does. Used for adventure
+// media, where a photo should stay a small JPEG but a letter tile or a
+// cut-out on a transparent background must not turn black.
+func ShrinkKeepAlpha(data []byte, maxDim int) ([]byte, string, error) {
+	dst, err := decodeAndResize(data, maxDim)
+	if err != nil {
+		return nil, "", err
+	}
+	var buf bytes.Buffer
+	if !dst.Opaque() {
+		if err := png.Encode(&buf, dst); err != nil {
+			return nil, "", err
+		}
+		return buf.Bytes(), "image/png", nil
+	}
+	if err := jpeg.Encode(&buf, dst, &jpeg.Options{Quality: 85}); err != nil {
+		return nil, "", err
+	}
+	return buf.Bytes(), "image/jpeg", nil
+}
+
 // decodeAndResize is the shared front half of Shrink / ShrinkPNG.
 // Returns an *image.RGBA capped at maxDim on the longer side with
 // aspect ratio preserved.

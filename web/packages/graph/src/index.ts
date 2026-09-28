@@ -8,3 +8,4 @@ export * from "./presets.ts";
 export * from "./diff.ts";
 export * from "./i18n.ts";
 export * from "./outline.ts";
+export * from "./navigate.ts";

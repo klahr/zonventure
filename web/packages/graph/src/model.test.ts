@@ -343,6 +343,23 @@ describe("adding a step without a wire", () => {
     assert.deepEqual(insertionPoint(g, "end"), { from: a.slug, port: "solved" }, "an end: just before it");
   });
 
+  test("a step with several outputs is followed on the first one still free", () => {
+    const g: Graph = {
+      nodes: [
+        { slug: "start", type: "start" },
+        { slug: "gate", type: "gate", gate: { condition: { op: "" } } },
+        { slug: "end", type: "end" },
+      ],
+      edges: [
+        { from: "start", from_port: "out", to: "gate" },
+        { from: "gate", from_port: "pass", to: "end" },
+      ],
+    };
+    assert.deepEqual(insertionPoint(g, "gate"), { from: "gate", port: "fail" });
+    const both = { ...g, edges: [...g.edges, { from: "gate", from_port: "fail", to: "end" }] };
+    assert.deepEqual(insertionPoint(both, "gate"), { from: "gate", port: "pass" });
+  });
+
   test("frames around the insertion widen, frames further right move", () => {
     const g: Graph = {
       ...emptyGraph(),

@@ -10,7 +10,7 @@
 // release on empty canvas, pick from a searchable list, and the new node
 // is created at the drop point already wired in.
 
-import { withFixed } from "./blocks.ts";
+import { blocksOf, withBlocks, withFixed } from "./blocks.ts";
 import { freshSlug, portsOf } from "./model.ts";
 import type { Graph, Node, NodeType } from "./types.ts";
 
@@ -399,6 +399,49 @@ export const PRESETS: Preset[] = [
 export function nodeFromPreset(g: Graph, preset: Preset, at: { x: number; y: number }): Node {
   const slug = freshSlug(g, preset.type);
   return withFixed({ ...preset.build(slug), slug, x: Math.round(at.x), y: Math.round(at.y) } as Node);
+}
+
+/** What an author may fill in when adding a step, beyond its preset. */
+export interface StepFill {
+  title?: string;
+  text?: string;
+  answer?: string;
+}
+
+/** The fields a preset asks for after it is picked; empty for none. */
+export type FillField = keyof StepFill;
+export function fillFields(p: Preset): FillField[] {
+  if (p.type === "puzzle") return typedAnswer(p) ? ["title", "text", "answer"] : ["title", "text"];
+  if (p.type === "story" || p.type === "end") return ["title", "text"];
+  if (p.type === "start") return [];
+  return ["title"];
+}
+
+/** The preset whose puzzle takes one typed answer, which `answer` fills. */
+const typedAnswer = (p: Preset) => p.id === "puzzle-text";
+
+/**
+ * A node built from a preset with what the author filled in: the title,
+ * the first text block's text (a text block is added when there is none),
+ * and a typed puzzle's accepted answer. Blank fields keep the preset's.
+ */
+export function fillStep(n: Node, p: Preset, fill: StepFill): Node {
+  const title = fill.title?.trim();
+  const text = fill.text?.trim();
+  const answer = fill.answer?.trim();
+  let out: Node = title ? { ...n, title } : n;
+  if (text && (out.puzzle || out.story || out.end)) {
+    const bs = blocksOf(out);
+    const i = bs.findIndex((b) => b.kind === "text");
+    let id = "b1";
+    while (bs.some((b) => b.id === id)) id += "-";
+    out = withBlocks(out, i >= 0 ? bs.map((b, j) => (j === i ? { ...b, text } : b)) : [...bs, { id, kind: "text", text }]);
+  }
+  if (answer && typedAnswer(p) && out.puzzle?.outputs?.[0]) {
+    const outputs = out.puzzle.outputs.map((o, j) => (j === 0 ? { ...o, matchers: [{ kind: "exact" as const, value: answer }] } : o));
+    out = { ...out, puzzle: { ...out.puzzle, outputs } };
+  }
+  return out;
 }
 
 /**

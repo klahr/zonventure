@@ -92,7 +92,7 @@ func (h *Handlers) UploadAdventureMedia(w http.ResponseWriter, r *http.Request) 
 			httpx.Error(w, http.StatusRequestEntityTooLarge, "image too large")
 			return
 		}
-		shrunk, newMIME, err := imageutil.Shrink(data, imageutil.DefaultMaxDim)
+		shrunk, newMIME, err := imageutil.ShrinkKeepAlpha(data, imageutil.DefaultMaxDim)
 		if err != nil {
 			httpx.Error(w, http.StatusBadRequest, "unreadable image: "+err.Error())
 			return

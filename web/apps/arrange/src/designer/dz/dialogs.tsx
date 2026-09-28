@@ -211,6 +211,8 @@ export function HelpModal({ onClose }: { onClose: () => void }) {
   const t = useT();
   const rows: [string, string][] = [
     ["Ctrl/Cmd+K", t.t("Add a step")],
+    ["/", t.t("Find a step and open it")],
+    ["A", t.t("Add the next step, one field at a time")],
     [t.t("Right-click the canvas"), t.t("Add a step at that spot")],
     [t.t("Drag from an output"), t.t("Add what comes next, already connected")],
     ["Ctrl/Cmd+Z", t.t("Undo")],
@@ -218,7 +220,8 @@ export function HelpModal({ onClose }: { onClose: () => void }) {
     ["Ctrl/Cmd+C / V", t.t("Copy and paste steps")],
     ["Ctrl/Cmd+D", t.t("Duplicate the selected step")],
     ["Del", t.t("Delete the selection")],
-    [t.t("Arrow keys"), t.t("Move the selected step")],
+    ["H J K L / " + t.t("Arrow keys"), t.t("Go to the previous step, the branch below, the branch above, the next step")],
+    [t.t("Shift+arrows"), t.t("Move the selected step")],
     ["?", t.t("Show this list")],
   ];
   return (

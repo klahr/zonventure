@@ -335,14 +335,16 @@ export interface InsertionPoint {
 
 /**
  * Where "Add step" attaches a new step when no wire was dragged: after
- * the selected step's first output, or — with nothing selected, or a
+ * the selected step's first output that leads nowhere yet (its first
+ * output when all do), or — with nothing selected, or a
  * step with no outputs — just before an End, on the lowest branch that
  * reaches one. That is where an author building a flow step by step
  * wants the next one. Null when there is nowhere sensible.
  */
 export function insertionPoint(g: Graph, selected: string | null): InsertionPoint | null {
   const sel = selected ? nodeBySlug(g, selected) : undefined;
-  const port = sel ? portsOf(sel)[0] : undefined;
+  const ports = sel ? portsOf(sel) : [];
+  const port = ports.find((p) => !targetOf(g, sel!.slug, p)) ?? ports[0];
   if (sel && port) return { from: sel.slug, port };
   const ends = new Set(g.nodes.filter((n) => n.type === "end").map((n) => n.slug));
   const into = g.edges.filter((e) => ends.has(e.to) && (!sel || e.to === sel.slug));

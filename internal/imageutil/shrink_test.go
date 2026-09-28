@@ -92,6 +92,34 @@ func TestShrinkPNG_PreservesAlpha(t *testing.T) {
 	}
 }
 
+func TestShrinkKeepAlpha_PNGOnlyWhenTransparent(t *testing.T) {
+	out, mime, err := imageutil.ShrinkKeepAlpha(makeTransparentPNG(t, 200, 200), 512)
+	if err != nil {
+		t.Fatalf("ShrinkKeepAlpha: %v", err)
+	}
+	if mime != "image/png" {
+		t.Fatalf("transparent: mime = %q, want image/png", mime)
+	}
+	img, err := png.Decode(bytes.NewReader(out))
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if _, _, _, a := img.At(0, 0).RGBA(); a != 0 {
+		t.Fatalf("top-left alpha = %d, want 0 — transparency was flattened", a>>8)
+	}
+
+	out, mime, err = imageutil.ShrinkKeepAlpha(makeImage(t, 200, 200, "png"), 512)
+	if err != nil {
+		t.Fatalf("ShrinkKeepAlpha: %v", err)
+	}
+	if mime != "image/jpeg" {
+		t.Fatalf("opaque: mime = %q, want image/jpeg", mime)
+	}
+	if _, err := jpeg.Decode(bytes.NewReader(out)); err != nil {
+		t.Fatalf("opaque output is not a JPEG: %v", err)
+	}
+}
+
 func TestShrink_LargerThanCap_ResizesAndReencodes(t *testing.T) {
 	src := makeImage(t, 2000, 1500, "png")
 	out, mime, err := imageutil.Shrink(src, 512)

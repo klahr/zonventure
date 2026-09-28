@@ -4,6 +4,8 @@ import {
   PRESETS,
   emptyGraph,
   existingTargets,
+  fillFields,
+  fillStep,
   nodeFromPreset,
   portsOf,
   presetsFor,
@@ -78,4 +80,29 @@ test("existing targets exclude the start and the source itself", () => {
   const t = existingTargets(g, from);
   assert.deepEqual(t.map((n) => n.slug), ["end"]);
   assert.deepEqual(existingTargets(g, null), []);
+});
+
+test("fillStep sets the title, the text and a typed puzzle's answer; blanks keep the preset's", () => {
+  const g = emptyGraph();
+  const typed = PRESETS.find((p) => p.id === "puzzle-text")!;
+  const n = fillStep(nodeFromPreset(g, typed, { x: 0, y: 0 }), typed, { title: " Hej ", text: "Hur många?", answer: "10" });
+  assert.equal(n.title, "Hej");
+  assert.equal(n.puzzle!.blocks!.find((b) => b.kind === "text")!.text, "Hur många?");
+  assert.deepEqual(n.puzzle!.outputs![0]!.matchers, [{ kind: "exact", value: "10" }]);
+
+  const blank = fillStep(nodeFromPreset(g, typed, { x: 0, y: 0 }), typed, { title: "  " });
+  assert.equal(blank.title, "Puzzle");
+
+  const end = PRESETS.find((p) => p.id === "end")!;
+  const e = fillStep(nodeFromPreset(g, end, { x: 0, y: 0 }), end, { text: "Tack!" });
+  assert.deepEqual(e.end!.blocks!.map((b) => [b.kind, "text" in b ? b.text : undefined]), [["text", "Tack!"]]);
+});
+
+test("fillFields asks a typed puzzle for its answer, and a gate only for its title", () => {
+  const by = (id: string) => PRESETS.find((p) => p.id === id)!;
+  assert.deepEqual(fillFields(by("puzzle-text")), ["title", "text", "answer"]);
+  assert.deepEqual(fillFields(by("puzzle-choice")), ["title", "text"]);
+  assert.deepEqual(fillFields(by("story")), ["title", "text"]);
+  assert.deepEqual(fillFields(by("gate")), ["title"]);
+  assert.deepEqual(fillFields(by("start")), []);
 });

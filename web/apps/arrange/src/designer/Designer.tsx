@@ -25,20 +25,26 @@ import {
   canRedo,
   canUndo,
   cleanGraph,
+  addNode,
   diffGraphs,
   differs,
   emptyGraph,
+  moveNode,
+  neighbour,
+  newNode,
   nodeBySlug,
   portLabel,
   rebase,
   record,
   redo,
   removeNode,
+  STEP_PITCH,
   tidy,
   undo,
   updateNode,
   emptyHistory,
   type AdventureMeta,
+  type Direction,
   type Envelope,
   type Graph,
   type GraphDiff,
@@ -58,6 +64,7 @@ import { FloatingWindow } from "./FloatingWindow.tsx";
 import { useInspectorWidth } from "./InspectorResize.tsx";
 import { useTopBarTitle } from "../topbar.tsx";
 import { Look } from "./Look.tsx";
+import { StepSearch } from "./StepSearch.tsx";
 import { AdventureSlug } from "./MediaEditor.tsx";
 import { CanvasContextMenu, type ContextMenuItem } from "./dz/CanvasContextMenu.tsx";
 import { DiffDialog, HelpModal, PanelModal, PublishCelebration, PublishLabelModal } from "./dz/dialogs.tsx";
@@ -142,6 +149,7 @@ export function Designer({ slug }: { slug: string }) {
   const [diff, setDiff] = useState<{ loading: boolean; diff: GraphDiff | null } | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
   const [kebab, setKebab] = useState<{ x: number; y: number } | null>(null);
 
   const [simMode, setSimMode] = useState<SimMode>("step");
@@ -155,6 +163,7 @@ export function Designer({ slug }: { slug: string }) {
   const [listView, setListView] = useState(() => narrowScreen());
   const [paletteRequest, setPaletteRequest] = useState(0);
   const [focusRequest, setFocusRequest] = useState(0);
+  const [revealRequest, setRevealRequest] = useState(0);
 
   // The adventure's palette, edited in Adventure settings.
   const [brandSaved, setBrandSaved] = useState<play.Brand>({});
@@ -250,6 +259,21 @@ export function Designer({ slug }: { slug: string }) {
     },
     [readOnly],
   );
+  // "a": the next step, from the keyboard — the quick-add palette after the
+  // selected step, as Ctrl+K opens it — or the Start first, when the
+  // graph has none.
+  const addNext = useCallback(() => {
+    if (readOnly || !graph) return;
+    if (graph.nodes.some((n) => n.type === "start")) {
+      setListView(false);
+      setPaletteRequest((n) => n + 1);
+      return;
+    }
+    const x = Math.min(0, ...graph.nodes.map((n) => n.x ?? 0)) - (graph.nodes.length ? STEP_PITCH : 0);
+    const start = newNode(graph, "start", { x, y: 0 });
+    change(addNode(graph, start));
+    setSelected(start.slug);
+  }, [readOnly, graph, change]);
   const doUndo = useCallback(() => setHistory((h) => undo(h)?.state ?? h), []);
   const doRedo = useCallback(() => setHistory((h) => redo(h)?.state ?? h), []);
 
@@ -432,6 +456,16 @@ export function Designer({ slug }: { slug: string }) {
         setHelpOpen(true);
         return;
       }
+      if (!mod && !inField && e.key === "/") {
+        e.preventDefault();
+        setSearchOpen(true);
+        return;
+      }
+      if (!mod && !inField && !e.altKey && e.key === "a") {
+        e.preventDefault();
+        addNext();
+        return;
+      }
       if (!mod) return;
       if (k === "s") {
         // Saving is automatic; Ctrl+S saves now rather than doing nothing.
@@ -451,7 +485,37 @@ export function Designer({ slug }: { slug: string }) {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [doUndo, doRedo, saveNow]);
+  }, [doUndo, doRedo, saveNow, addNext]);
+
+  // h/j/k/l and the arrows move the selection along the flow; Shift+arrow
+  // moves the selected step. Captured on the way down, so React Flow's own
+  // arrow handling on a focused step never moves it as well.
+  useEffect(() => {
+    const dirs: Record<string, Direction> = {
+      h: "prev", ArrowLeft: "prev", l: "next", ArrowRight: "next", j: "down", ArrowDown: "down", k: "up", ArrowUp: "up",
+    };
+    const steps: Record<string, [number, number]> = { ArrowLeft: [-20, 0], ArrowRight: [20, 0], ArrowUp: [0, -20], ArrowDown: [0, 20] };
+    const onKey = (e: KeyboardEvent) => {
+      const dir = dirs[e.key];
+      if (!dir || !graph || e.ctrlKey || e.metaKey || e.altKey) return;
+      if ((e.target as HTMLElement)?.closest?.("input, textarea, select, [contenteditable]")) return;
+      if (document.querySelector('[aria-modal="true"]')) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.shiftKey) {
+        const n = selected ? nodeBySlug(graph, selected) : undefined;
+        const d = steps[e.key];
+        if (n && d && !readOnly) change(moveNode(graph, n.slug, (n.x ?? 0) + d[0], (n.y ?? 0) + d[1]));
+        return;
+      }
+      const to = neighbour(graph, selected, dir);
+      if (!to) return;
+      setSelected(to);
+      setRevealRequest((n) => n + 1);
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [graph, selected, readOnly, change]);
 
   // --- derived ----------------------------------------------------------------------
 
@@ -461,6 +525,14 @@ export function Designer({ slug }: { slug: string }) {
   useTopBarTitle(adventureTitle);
   const root = useRef<HTMLDivElement>(null);
   const inspectorWidth = useInspectorWidth(root, t.t("Resize the inspector"));
+
+  const stage = useRef<HTMLDivElement>(null);
+  const openStep = (slug: string) => {
+    setSearchOpen(false);
+    setSelected(slug);
+    setSlot("inspect");
+    setFocusRequest((n) => n + 1);
+  };
 
   const jumpTo = (i: Issue) => {
     if (!i.node) return;
@@ -705,7 +777,7 @@ export function Designer({ slug }: { slug: string }) {
             )}
           </div>
 
-          <div className="dz-stage">
+          <div className="dz-stage" ref={stage}>
           {preview && (
             <div className={"history-preview-banner" + (slot === "history" ? " with-panel" : "")}>
               <span className="history-preview-msg">
@@ -756,6 +828,7 @@ export function Designer({ slug }: { slug: string }) {
                 }}
                 paletteRequest={paletteRequest}
                 focusRequest={focusRequest}
+                revealRequest={revealRequest}
               />
             </ReactFlowProvider>
           )}
@@ -913,6 +986,14 @@ export function Designer({ slug }: { slug: string }) {
         </PanelModal>
       )}
       {helpOpen && <HelpModal onClose={() => setHelpOpen(false)} />}
+      {searchOpen && graph && (
+        <StepSearch
+          graph={graph}
+          {...(stage.current ? { bounds: stage.current.getBoundingClientRect() } : {})}
+          onPick={(n) => openStep(n.slug)}
+          onClose={() => setSearchOpen(false)}
+        />
+      )}
       {celebrate && <PublishCelebration />}
     </div>
   );
