@@ -172,7 +172,7 @@ web-clean:
 # Cut a new annotated tag. CHANGELOG.md is the human's job — move
 # [Unreleased] entries under a new [X.Y.Z] - YYYY-MM-DD heading and
 # commit BEFORE running this so the tag points at the commit where
-# master's CHANGELOG.md announces the version (the in-app update
+# main's CHANGELOG.md announces the version (the in-app update
 # checker fetches it from there).
 #
 #   make tag BUMP=major   0.1.0 -> 1.0.0
@@ -200,14 +200,14 @@ tag:
 	NEW="$$MAJOR.$$MINOR.$$PATCH" && \
 	git tag -a "$$NEW" -m "Release $$NEW" && \
 	echo "$$VERSION -> $$NEW" && \
-	echo "Push with: git push origin master $$NEW"
+	echo "Push with: git push origin main $$NEW"
 
 # Upgrade an existing Docker Compose deployment to the latest released
 # tag. Take a Postgres backup first — see SELFHOSTING.md.
 #
 # Checks out the tag (detached HEAD) just long enough for the build
 # to stamp `main.version` from `git describe`, then switches back to
-# master so the working tree is in a familiar state for the next
+# main so the working tree is in a familiar state for the next
 # session. The running container keeps the version it was built with.
 upgrade:
 	git fetch --tags
@@ -218,4 +218,4 @@ upgrade:
 	echo "Upgrading to $$LATEST" && \
 	git checkout "$$LATEST"
 	docker compose up -d --build
-	git checkout master
+	git checkout main

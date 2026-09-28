@@ -53,6 +53,10 @@ services:
       ZV_SEED_ADMIN:    ${ZV_SEED_ADMIN:-admin:admin}
       ZV_PUBLIC_URL:    ${ZV_PUBLIC_URL:-http://localhost:8080}
       ZV_LOG_FORMAT:    ${ZV_LOG_FORMAT:-text}
+      # Proxies whose X-Forwarded-* headers are honoured. A host-side
+      # proxy reaches the container from the compose network gateway,
+      # not 127.0.0.1 — see .env.example.
+      ZV_TRUSTED_PROXIES: ${ZV_TRUSTED_PROXIES:-}
       # Optional pin for the marketing landing/pricing surfaces. When
       # blank, the admin Settings toggle (DB-backed) is in charge.
       ZV_LANDING_ENABLED: ${ZV_LANDING_ENABLED:-}
