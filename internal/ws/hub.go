@@ -8,9 +8,11 @@
 package ws
 
 import (
+	"context"
 	"encoding/json"
 	"strconv"
 	"sync"
+	"time"
 )
 
 // Msg is what gets sent over the wire after JSON-encoding. Kind lets clients
@@ -165,4 +167,44 @@ func (h *Hub) PublishAll(kind string, data any) {
 // The "event:" prefix matches the rename (was "run:" pre-rebrand).
 func EventTopic(eventID int64) string {
 	return "event:" + strconv.FormatInt(eventID, 10)
+}
+
+// Coalesce calls push for wake-ups on events, at most once per interval,
+// until ctx is done or events is closed. The first wake-up after a quiet
+// spell pushes at once; wake-ups during the following interval collapse
+// into a single trailing push. Subscribers that rebuild a full snapshot
+// per wake-up use this so a burst of publishes (every team's location
+// pings, say) costs one rebuild per interval instead of one per publish.
+func Coalesce(ctx context.Context, events <-chan []byte, interval time.Duration, push func()) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case _, ok := <-events:
+			if !ok {
+				return
+			}
+		}
+		for dirty := true; dirty; {
+			push()
+			dirty = false
+			t := time.NewTimer(interval)
+		cooldown:
+			for {
+				select {
+				case <-ctx.Done():
+					t.Stop()
+					return
+				case _, ok := <-events:
+					if !ok {
+						t.Stop()
+						return
+					}
+					dirty = true
+				case <-t.C:
+					break cooldown
+				}
+			}
+		}
+	}
 }

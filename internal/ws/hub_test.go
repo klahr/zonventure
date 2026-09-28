@@ -1,8 +1,10 @@
 package ws_test
 
 import (
+	"context"
 	"encoding/json"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -248,5 +250,58 @@ func TestHub_EventTopicFormat(t *testing.T) {
 		if got := ws.EventTopic(id); got != want {
 			t.Errorf("EventTopic(%d) = %q, want %q", id, got, want)
 		}
+	}
+}
+
+func TestCoalesce_BurstCollapses(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	events := make(chan []byte, 16)
+	var pushes atomic.Int32
+	done := make(chan struct{})
+	go func() {
+		ws.Coalesce(ctx, events, 100*time.Millisecond, func() { pushes.Add(1) })
+		close(done)
+	}()
+
+	for i := 0; i < 10; i++ {
+		events <- nil
+	}
+	time.Sleep(50 * time.Millisecond)
+	if got := pushes.Load(); got != 1 {
+		t.Fatalf("pushes after burst = %d, want 1 (leading edge)", got)
+	}
+	time.Sleep(250 * time.Millisecond)
+	if got := pushes.Load(); got != 2 {
+		t.Fatalf("pushes after cooldown = %d, want 2 (one trailing)", got)
+	}
+
+	// A lone wake-up after a quiet spell pushes straight away.
+	events <- nil
+	time.Sleep(50 * time.Millisecond)
+	if got := pushes.Load(); got != 3 {
+		t.Fatalf("pushes after lone wake-up = %d, want 3", got)
+	}
+
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("Coalesce did not return after cancel")
+	}
+}
+
+func TestCoalesce_ReturnsWhenChannelCloses(t *testing.T) {
+	events := make(chan []byte)
+	done := make(chan struct{})
+	go func() {
+		ws.Coalesce(context.Background(), events, time.Second, func() {})
+		close(done)
+	}()
+	close(events)
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("Coalesce did not return after close")
 	}
 }

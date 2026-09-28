@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -19,6 +20,12 @@ import (
 // Generous cap (120/min) since a legitimate viewer's WebSocket
 // reconnect storm or a captain's repeated /qr/team fetch shouldn't
 // trip it. A real attacker mining tokens hits the wall fast.
+//
+// The live board (`/live`, `/ws/live`, `/api/public/live`) counts
+// against its own bucket per IP. A venue puts the TV and every
+// player's phone behind one NAT address, and the board's reconnects
+// and poll fallback must not use up what the players' share pages
+// need, or the other way round.
 //
 // In-memory only; resets on restart. Move to a shared store when we
 // run more than one replica.
@@ -94,8 +101,7 @@ func (l *publicLimiter) allow(ip string) bool {
 func publicRLMiddleware(l *publicLimiter) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			ip := auth.ClientIP(r)
-			if !l.allow(ip) {
+			if !l.allow(publicRLBucket(r.URL.Path) + auth.ClientIP(r)) {
 				w.Header().Set("Retry-After", "60")
 				http.Error(w, "rate limit — try again in a minute", http.StatusTooManyRequests)
 				return
@@ -103,4 +109,14 @@ func publicRLMiddleware(l *publicLimiter) func(http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// publicRLBucket names the bucket a public path counts against, as a
+// prefix for the client IP.
+func publicRLBucket(path string) string {
+	if strings.HasPrefix(path, "/live/") || strings.HasPrefix(path, "/ws/live/") ||
+		strings.HasPrefix(path, "/api/public/live/") {
+		return "live|"
+	}
+	return "public|"
 }

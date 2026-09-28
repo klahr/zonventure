@@ -42,6 +42,8 @@ type Handlers struct {
 	// QR code, principally). Forwarded-host headers are NOT
 	// consulted — see buildResetLink for the security rationale.
 	PublicURL string
+	// tracks caches each event's tracks for tracksTTL; see buildTracks.
+	tracks tracksCache
 	// PlatformFee gates the marketplace-aware /store filter: when
 	// the operator has configured a platform fee, only quests whose
 	// org has completed Stripe Connect onboarding are listed
@@ -52,11 +54,13 @@ type Handlers struct {
 }
 
 type puzzleDTO struct {
-	Index int     `json:"index"`
-	Title string  `json:"title"`
-	Gated bool    `json:"gated"`
-	Lat   float64 `json:"lat"`
-	Lng   float64 `json:"lng"`
+	Index int    `json:"index"`
+	Title string `json:"title"`
+	Gated bool   `json:"gated"`
+	// Lat/Lng stay empty until the event is over: the board is public
+	// and a pin per puzzle would hand every player the route.
+	Lat float64 `json:"lat,omitempty"`
+	Lng float64 `json:"lng,omitempty"`
 }
 
 type memberDTO struct {
@@ -77,6 +81,9 @@ type teamDTO struct {
 	// TiebreakGuess is the team's answer to the tie-breaker, shown once
 	// the event is over: before then it would help the teams still out.
 	TiebreakGuess *float64 `json:"tiebreak_guess,omitempty"`
+	// Withdrawn teams stay on the board, ranked after everyone still
+	// playing.
+	Withdrawn bool `json:"withdrawn,omitempty"`
 }
 
 // LiveDTO is the snapshot shape served both by /api/public/live/{token}
@@ -89,15 +96,25 @@ type LiveDTO struct {
 	StartedAt      string `json:"started_at,omitempty"`
 	ScheduledAt    string `json:"scheduled_at,omitempty"`
 	CompletedAt    string `json:"completed_at,omitempty"`
-	ServerNow      string `json:"server_now"`
-	PageCount      int    `json:"page_count"`
+	// PausedSeconds totals the event's closed pauses; PausedAt is when
+	// the open one began, set only while paused. Elapsed time is the
+	// span from started_at to PausedAt, completed_at or now, less
+	// PausedSeconds.
+	PausedSeconds int    `json:"paused_seconds"`
+	PausedAt      string `json:"paused_at,omitempty"`
+	ServerNow     string `json:"server_now"`
+	PageCount     int    `json:"page_count"`
 	// Engine is "graph" for an event ranked by points (see play.Ahead),
 	// "lanes" for one ranked by pages solved.
-	Engine  string            `json:"engine"`
-	ShowMap bool              `json:"show_map"`
-	Puzzles []puzzleDTO       `json:"puzzles"`
-	Teams   []teamDTO         `json:"teams"`
-	Colors  *adventure.Colors `json:"colors,omitempty"`
+	Engine  string      `json:"engine"`
+	ShowMap bool        `json:"show_map"`
+	Puzzles []puzzleDTO `json:"puzzles"`
+	// Bounds frames the map before any team has pinged, as
+	// [south, west, north, east] around every puzzle. It shows the play
+	// area without pointing at any one puzzle.
+	Bounds *[4]float64       `json:"bounds,omitempty"`
+	Teams  []teamDTO         `json:"teams"`
+	Colors *adventure.Colors `json:"colors,omitempty"`
 }
 
 // runByToken resolves a URL token to an event id, returning sql.ErrNoRows if
@@ -143,12 +160,23 @@ func (h *Handlers) buildLive(ctx context.Context, token string) (LiveDTO, int64,
 			enabled = append(enabled, p)
 		}
 	}
+	over := state == "completed" || state == "cancelled"
 	puzzles := make([]puzzleDTO, len(enabled))
+	var bounds *[4]float64
 	for i, p := range enabled {
-		puzzles[i] = puzzleDTO{
-			Index: i, Title: p.Title, Gated: p.Location.Gated(),
-			Lat: p.Location.Lat, Lng: p.Location.Lng,
+		puzzles[i] = puzzleDTO{Index: i, Title: p.Title, Gated: p.Location.Gated()}
+		lat, lng := p.Location.Lat, p.Location.Lng
+		if lat == 0 && lng == 0 {
+			continue
 		}
+		if over {
+			puzzles[i].Lat, puzzles[i].Lng = lat, lng
+		}
+		if bounds == nil {
+			bounds = &[4]float64{lat, lng, lat, lng}
+		}
+		bounds[0], bounds[1] = min(bounds[0], lat), min(bounds[1], lng)
+		bounds[2], bounds[3] = max(bounds[2], lat), max(bounds[3], lng)
 	}
 	// Fetch teams without sorting here — the tiebreaker logic (distance
 	// to next puzzle) is cleaner in Go than in SQL. The ordering that
@@ -156,6 +184,7 @@ func (h *Handlers) buildLive(ctx context.Context, token string) (LiveDTO, int64,
 	rows, err := h.DB.QueryContext(ctx, `
 		SELECT t.id, t.name, t.current_page_index, COALESCE(t.completed_at, ''),
 		       (t.avatar_mime_type IS NOT NULL)::int AS has_avatar,
+		       (t.withdrawn_at IS NOT NULL)::int AS withdrawn,
 		       t.created_at,
 		       COALESCE(
 		         (SELECT MAX(created_at) FROM event_activity
@@ -176,10 +205,11 @@ func (h *Handlers) buildLive(ctx context.Context, token string) (LiveDTO, int64,
 			t              teamDTO
 			rawCurr        int
 			hasAvatar      int
+			withdrawn      int
 			createdAt      string
 			lastProgressAt string
 		)
-		if err := rows.Scan(&t.ID, &t.Name, &rawCurr, &t.CompletedAt, &hasAvatar, &createdAt, &lastProgressAt); err != nil {
+		if err := rows.Scan(&t.ID, &t.Name, &rawCurr, &t.CompletedAt, &hasAvatar, &withdrawn, &createdAt, &lastProgressAt); err != nil {
 			return LiveDTO{}, id, http.StatusInternalServerError, "scan failed"
 		}
 		if hasAvatar != 0 {
@@ -196,29 +226,38 @@ func (h *Handlers) buildLive(ctx context.Context, token string) (LiveDTO, int64,
 			t.PageIndex = len(enabled)
 		}
 		t.PageCount = len(enabled)
+		t.Withdrawn = withdrawn != 0
 		rowMeta[t.ID] = sortRowForSort{raw: rawCurr, createdAt: createdAt, lastProgressAt: lastProgressAt}
 		teams = append(teams, t)
 	}
+	// Every team's members in one query: this runs for each viewer on
+	// every push.
+	teamIdx := make(map[int64]int, len(teams))
 	for i := range teams {
-		mrows, err := h.DB.QueryContext(ctx, `
-			SELECT name FROM player_slots
-			WHERE team_id = $1 ORDER BY LOWER(name)
-		`, teams[i].ID)
-		if err != nil {
-			return LiveDTO{}, id, http.StatusInternalServerError, "members failed"
-		}
-		members := []memberDTO{}
-		for mrows.Next() {
-			var m memberDTO
-			if err := mrows.Scan(&m.Username); err != nil {
-				mrows.Close()
-				return LiveDTO{}, id, http.StatusInternalServerError, "member scan failed"
-			}
-			members = append(members, m)
-		}
-		mrows.Close()
-		teams[i].Members = members
+		teams[i].Members = []memberDTO{}
+		teamIdx[teams[i].ID] = i
 	}
+	mrows, err := h.DB.QueryContext(ctx, `
+		SELECT ps.team_id, ps.name FROM player_slots ps JOIN teams t ON t.id = ps.team_id
+		WHERE t.event_id = $1 ORDER BY ps.team_id, LOWER(ps.name)
+	`, id)
+	if err != nil {
+		return LiveDTO{}, id, http.StatusInternalServerError, "members failed"
+	}
+	for mrows.Next() {
+		var (
+			teamID int64
+			m      memberDTO
+		)
+		if err := mrows.Scan(&teamID, &m.Username); err != nil {
+			mrows.Close()
+			return LiveDTO{}, id, http.StatusInternalServerError, "member scan failed"
+		}
+		if i, ok := teamIdx[teamID]; ok {
+			teams[i].Members = append(teams[i].Members, m)
+		}
+	}
+	mrows.Close()
 	engine := "lanes"
 	usesGraph, err := play.UsesGraph(ctx, h.DB, id)
 	if err != nil {
@@ -238,9 +277,22 @@ func (h *Handlers) buildLive(ctx context.Context, token string) (LiveDTO, int64,
 			return LiveDTO{}, id, http.StatusInternalServerError, "ping lookup failed"
 		}
 		sortTeams(teams, rowMeta, latest, enabled)
+		// As on a graph board, withdrawn teams follow everyone still
+		// playing, keeping their order among themselves.
+		sort.SliceStable(teams, func(i, j int) bool {
+			return !teams[i].Withdrawn && teams[j].Withdrawn
+		})
 	}
 	for i := range teams {
 		teams[i].Rank = i + 1
+	}
+	var (
+		pausedSeconds int
+		pausedAt      sql.NullString
+	)
+	if err := h.DB.QueryRowContext(ctx,
+		`SELECT paused_seconds, paused_at FROM events WHERE id = $1`, id).Scan(&pausedSeconds, &pausedAt); err != nil {
+		return LiveDTO{}, id, http.StatusInternalServerError, "event lookup failed"
 	}
 	dto := LiveDTO{
 		EventID:        id,
@@ -250,11 +302,14 @@ func (h *Handlers) buildLive(ctx context.Context, token string) (LiveDTO, int64,
 		StartedAt:      startedAt,
 		ScheduledAt:    scheduledAt,
 		CompletedAt:    completedAt,
+		PausedSeconds:  pausedSeconds,
+		PausedAt:       pausedAt.String,
 		ServerNow:      time.Now().UTC().Format(time.RFC3339),
 		PageCount:      len(enabled),
 		Engine:         engine,
 		ShowMap:        showMap != 0,
 		Puzzles:        puzzles,
+		Bounds:         bounds,
 		Teams:          teams,
 	}
 	if !adv.Colors.Empty() {
@@ -299,27 +354,37 @@ type TracksResponse struct {
 	Tracks []trackDTO `json:"tracks"`
 }
 
-// buildTracks fetches per-team ping history for an event. Returns
+// queryTracks fetches per-team ping history for an event. Returns
 // (resp, status, errMsg). Caller is responsible for authorising by token.
-func (h *Handlers) buildTracks(ctx context.Context, eventID int64) (TracksResponse, int, string) {
-	// Smooth the per-team line by collapsing pings into 10s buckets and
-	// emitting one centroid per bucket. Bucketing is done by truncating
-	// server_ts at the tens-of-seconds digit (server_ts is a fixed-width
-	// 'YYYY-MM-DD HH24:MI:SS' string from now_text()). The centroid is an
+// Callers go through buildTracks, which caches the result.
+func (h *Handlers) queryTracks(ctx context.Context, eventID int64) (TracksResponse, int, string) {
+	// Smooth the per-team line by collapsing pings into time buckets and
+	// emitting one centroid per bucket. Buckets are 10s wide, widened in
+	// 10s steps once the event's ping history spans more than 20 minutes
+	// so a track never exceeds ~120 points: this is resent on every push,
+	// and full 10s resolution over a multi-hour event made it megabytes.
+	// server_ts is a UTC 'YYYY-MM-DD HH24:MI:SS' string from now_text(),
+	// and the bucket start goes back out in that format. The centroid is an
 	// inverse-variance weighted mean: pings with smaller `accuracy` (in
 	// metres) dominate, with a 1m floor to bound the weight and a 50m
 	// fallback when accuracy is null.
 	rows, err := h.DB.QueryContext(ctx, `
+		WITH span AS (
+		  SELECT GREATEST(10, CEIL(EXTRACT(EPOCH FROM
+		           MAX(server_ts::timestamp) - MIN(server_ts::timestamp)) / 1200) * 10) AS w
+		  FROM location_pings WHERE event_id = $1
+		)
 		SELECT p.team_id, t.name, (t.avatar_mime_type IS NOT NULL)::int AS has_avatar,
 		       SUM(p.lat / power(GREATEST(COALESCE(p.accuracy, 50), 1), 2)) /
 		         SUM(1.0 / power(GREATEST(COALESCE(p.accuracy, 50), 1), 2)) AS lat,
 		       SUM(p.lng / power(GREATEST(COALESCE(p.accuracy, 50), 1), 2)) /
 		         SUM(1.0 / power(GREATEST(COALESCE(p.accuracy, 50), 1), 2)) AS lng,
-		       substring(p.server_ts, 1, 18) || '0' AS server_ts
-		FROM location_pings p JOIN teams t ON t.id = p.team_id
+		       to_char(to_timestamp(FLOOR(EXTRACT(EPOCH FROM p.server_ts::timestamp) / s.w) * s.w)
+		         AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS') AS server_ts
+		FROM location_pings p JOIN teams t ON t.id = p.team_id CROSS JOIN span s
 		WHERE p.event_id = $1
 		GROUP BY p.team_id, t.name, (t.avatar_mime_type IS NOT NULL),
-		         substring(p.server_ts, 1, 18)
+		         FLOOR(EXTRACT(EPOCH FROM p.server_ts::timestamp) / s.w), s.w
 		ORDER BY p.team_id, server_ts
 	`, eventID)
 	if err != nil {

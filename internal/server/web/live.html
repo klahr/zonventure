@@ -147,7 +147,7 @@ html, body {
 .state-pill.paused  { color: var(--gold);    background: rgba(245,196,82,.14); border-color: rgba(245,196,82,.3); }
 .state-pill.completed, .state-pill.scheduled { color: var(--muted); }
 .state-pill.cancelled { color: var(--danger, #f47171); background: rgba(244,113,113,.12); border-color: rgba(244,113,113,.3); }
-.cancelled-banner { padding: 1rem 1.4rem; text-align: center; font-size: 1.4rem; }
+.cancelled-banner, .paused-banner { padding: 1rem 1.4rem; text-align: center; font-size: 1.4rem; }
 .state-pill .dot { width: .6rem; height: .6rem; border-radius: 50%; background: currentColor; }
 .state-pill.running .dot { animation: pulse 1.4s ease-in-out infinite; }
 @keyframes pulse { 0%,100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.5); opacity: .4; } }
@@ -178,6 +178,16 @@ html, body {
   -webkit-mask-image: linear-gradient(to bottom, black 58%, transparent 100%);
   mask-image: linear-gradient(to bottom, black 58%, transparent 100%);
 }
+/* Paged board: the top three stay put and the rest cycle a page at a
+   time (see applyBoardPaging). The page counter sits bottom-right. */
+.board .row[hidden] { display: none; }
+.board.paged { position: relative; }
+.board.paged::after {
+  content: attr(data-page);
+  position: absolute; right: .4rem; bottom: .1rem;
+  color: var(--muted); font-size: clamp(.7rem, .95vw, .9rem); font-weight: 700;
+}
+.row.page-in { animation: slideIn .4s ease; }
 /* Rank 4+ rows are less emphasised — the podium keeps the spotlight.
    The team-colour left stripe is swapped for a muted gray so only
    the top three carry the team tint. */
@@ -287,6 +297,7 @@ html, body {
   background: linear-gradient(180deg, rgba(212,138,74,.10) 0%, rgba(212,138,74,.02) 100%);
 }
 .row.finished { outline: 2px solid rgba(52,211,153,.4); }
+.row.withdrawn { opacity: .5; }
 .row.new { animation: slideIn .4s ease; }
 @keyframes slideIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 
@@ -531,6 +542,16 @@ html, body {
   text-transform: uppercase; letter-spacing: .18em;
 }
 
+.team-name .withdrawn-pill {
+  margin-left: .7em;
+  padding: .05em .55em;
+  border-radius: 999px;
+  background: rgba(255,255,255,.1);
+  color: var(--muted);
+  font-size: .55em; font-weight: 800;
+  text-transform: uppercase; letter-spacing: .18em;
+}
+
 /* Connection status: a thin stripe across the top of the live view so
    anyone glancing at the TV knows the leaderboard might be stale.
    Hidden by default; toggled by setLiveStatus() based on WS state. */
@@ -572,6 +593,17 @@ const TEAM_COLORS = ['#e24080', '#7fd17b', '#60a5fa', '#f5c452', '#a78bfa', '#22
 // long-running TV doesn't accumulate stale ids across events.
 const lastPct = new Map();
 function teamColor(i) { return TEAM_COLORS[i % TEAM_COLORS.length]; }
+
+// A team's colour follows the team, not its rank, so it doesn't change
+// colour on the board and map every time it overtakes someone. Colours
+// are handed out in team-id order the first time a team is seen.
+const teamColourIdx = new Map();
+function assignTeamColours(teams) {
+  for (const id of teams.map((tm) => tm.id).sort((a, b) => a - b)) {
+    if (!teamColourIdx.has(id)) teamColourIdx.set(id, teamColourIdx.size);
+  }
+}
+function teamColorFor(id) { return teamColor(teamColourIdx.get(id) ?? 0); }
 
 function teamInitials(name) {
   const parts = (name || '').trim().split(/\s+/).filter(Boolean);
@@ -660,9 +692,31 @@ function formatSpan(from, to) {
   return h ? `${h}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
 }
 
-function formatElapsed(startISO, nowISO) {
-  if (!startISO) return '—';
-  return formatSpan(parseServerTime(startISO), nowISO ? parseServerTime(nowISO) : new Date());
+// clockOffset is the server's clock minus this device's, refreshed from
+// server_now on every snapshot. The ticker, countdowns and dwell check
+// read serverNow() so a TV whose clock is off still shows the right time.
+let clockOffset = 0;
+function serverNow() { return new Date(Date.now() + clockOffset); }
+
+// elapsedText is the event's running time less its pauses: it stops at
+// paused_at while paused and at completed_at once complete.
+function elapsedText(data) {
+  if (!data?.started_at) return '—';
+  const end = data.paused_at ? parseServerTime(data.paused_at)
+    : data.state === 'completed' && data.completed_at ? parseServerTime(data.completed_at)
+    : serverNow();
+  return formatSpan(parseServerTime(data.started_at),
+    new Date(end.getTime() - (data.paused_seconds || 0) * 1000));
+}
+
+// footerTime labels when the snapshot on screen was taken, as a local
+// clock time rather than the raw ISO stamp.
+function footerTime(data) {
+  const d = parseServerTime(data.server_now);
+  const time = d && !Number.isNaN(d.getTime())
+    ? d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
+    : '';
+  return t('server time {{time}}', { time });
 }
 
 function formatFinishTime(startISO, completedAt) {
@@ -702,6 +756,7 @@ function render() {
   const data = latestSnapshot;
   if (!data) return;
   applyColors(data.colors);
+  assignTeamColours(data.teams || []);
 
   // Detect scheduled → running so the start animation fires exactly
   // once. prevState starts null so a fresh tab that lands on an
@@ -733,7 +788,7 @@ function render() {
     root.append(buildPreStart(data));
     root.append(h('div', { class: 'footer' },
       t('Live · push updates · '),
-      t('server time {{time}}', { time: data.server_now || '' })));
+      footerTime(data)));
     return;
   }
   // A cancelled event freezes the leaderboard in place — useful so an
@@ -746,7 +801,7 @@ function render() {
     root.append(buildBoard(data, existingBoard));
     root.append(h('div', { class: 'footer' },
       t('Event cancelled by the arranger · '),
-      t('server time {{time}}', { time: data.server_now || '' })));
+      footerTime(data)));
     return;
   }
   // After the run has been complete for COMPLETION_DWELL_MS, swap the
@@ -756,14 +811,18 @@ function render() {
   // see the final standings; press 'b' to bring it back.
   if (data.state === 'completed' && data.completed_at && !showBoardOverride) {
     const completedAt = parseServerTime(data.completed_at).getTime();
-    const dwell = Date.now() - completedAt;
+    const dwell = serverNow().getTime() - completedAt;
     if (Number.isFinite(completedAt) && dwell > COMPLETION_DWELL_MS) {
       root.append(buildCompletionFrame(data));
       root.append(h('div', { class: 'footer' },
         t('Event complete · press B to show the leaderboard again · '),
-        t('server time {{time}}', { time: data.server_now || '' })));
+        footerTime(data)));
       return;
     }
+  }
+  if (data.state === 'paused') {
+    root.append(h('div', { class: 'paused-banner' },
+      h('span', { class: 'state-pill paused' }, '⏸ ' + tEventState('paused'))));
   }
   if (showMapEffective(data)) {
     const split = h('div', { class: 'split' });
@@ -783,13 +842,13 @@ function render() {
           ? t('{{n}} puzzle · ', { n: data.puzzles.length })
           : t('{{n}} puzzles · ', { n: data.puzzles.length }))
       : '',
-    t('server time {{time}}', { time: data.server_now || '' })));
+    footerTime(data)));
 
   // After the DOM mounts, see if the leaderboard overflows the
   // viewport. If it does, apply the soft bottom fade. Runs in an rAF
   // so the flex/grid tracks have resolved before we measure.
   requestAnimationFrame(() => {
-    updateBoardOverflow();
+    applyBoardPaging(false);
     playBoardFlip(root, priorRowRects);
   });
 }
@@ -801,6 +860,7 @@ function captureBoardPositions(root) {
   const out = new Map();
   const rows = root.querySelectorAll('.row[data-team-id]');
   for (const r of rows) {
+    if (r.hidden) continue; // paged out: no position to animate from
     out.set(r.getAttribute('data-team-id'), r.getBoundingClientRect());
   }
   return out;
@@ -846,7 +906,68 @@ function updateBoardOverflow() {
     board.classList.remove('overflow');
   }
 }
-window.addEventListener('resize', () => requestAnimationFrame(updateBoardOverflow));
+window.addEventListener('resize', () => requestAnimationFrame(() => applyBoardPaging(false)));
+
+// applyBoardPaging fits a board with more teams than the screen holds:
+// the podium stays pinned and the rest show a page at a time, turned
+// every BOARD_PAGE_MS with no one at the controls. When the podium
+// would leave room for fewer than three rows a page (a split screen
+// with the map), fewer places are pinned, down to just the leader.
+// advanced marks a timer-driven turn, whose incoming rows slide in.
+const BOARD_PAGE_MS = 10000;
+let boardPage = 0;
+function applyBoardPaging(advanced) {
+  const board = document.querySelector('.board');
+  if (!board) return;
+  const rows = [...board.querySelectorAll('.row[data-team-id]')];
+  const wasHidden = new Set(rows.filter((r) => r.hidden));
+  for (const r of rows) { r.hidden = false; r.classList.remove('page-in'); }
+  board.classList.remove('paged');
+  delete board.dataset.page;
+  if (rows.length < 2 || board.scrollHeight <= board.clientHeight + 1) {
+    boardPage = 0;
+    updateBoardOverflow();
+    return;
+  }
+  const gap = parseFloat(getComputedStyle(board).rowGap) || 0;
+  const heights = rows.map((r) => r.offsetHeight + gap);
+  // paginate fills pages greedily with the rows after the first `pin`,
+  // since podium and tail rows differ in height.
+  const paginate = (pin) => {
+    const room = board.clientHeight + gap - heights.slice(0, pin).reduce((a, b) => a + b, 0);
+    const pages = [[]];
+    let used = 0;
+    for (let i = pin; i < rows.length; i++) {
+      if (used + heights[i] > room && pages[pages.length - 1].length) {
+        pages.push([]);
+        used = 0;
+      }
+      pages[pages.length - 1].push(rows[i]);
+      used += heights[i];
+    }
+    return pages;
+  };
+  let pin = 3;
+  let pages = paginate(pin);
+  while (pin > 1 && pages[0].length < 3) pages = paginate(--pin);
+  boardPage %= pages.length;
+  pages.forEach((page, n) => {
+    for (const r of page) {
+      r.hidden = n !== boardPage;
+      if (advanced && !r.hidden && wasHidden.has(r)) r.classList.add('page-in');
+    }
+  });
+  if (pages.length > 1) {
+    board.classList.add('paged');
+    board.dataset.page = `${boardPage + 1} / ${pages.length}`;
+  }
+  updateBoardOverflow();
+}
+setInterval(() => {
+  if (document.hidden) return;
+  boardPage++;
+  applyBoardPaging(true);
+}, BOARD_PAGE_MS);
 
 // buildMapSlot returns a stable <div> for the Leaflet map so the outer
 // render can reparent it on every poll without destroying Leaflet's
@@ -988,7 +1109,7 @@ async function renderLiveMap(inner, hint, data) {
   const tracks = latestTracks || [];
 
   const teamColourByID = new Map();
-  (data.teams || []).forEach((t, i) => teamColourByID.set(t.id, teamColor(i)));
+  (data.teams || []).forEach((tm) => teamColourByID.set(tm.id, teamColorFor(tm.id)));
 
   const seenTeamIDs = new Set();
   for (const track of tracks) {
@@ -1091,6 +1212,11 @@ async function renderLiveMap(inner, hint, data) {
     }
   } else if (puzzleBounds.isValid()) {
     fitTarget = puzzleBounds;
+  } else if (data.bounds) {
+    // Puzzle pins only arrive once the event is over; until then the
+    // server sends the play area's box instead.
+    const [s, w, n, e] = data.bounds;
+    fitTarget = L.latLngBounds([s, w], [n, e]);
   }
 
   if (fitTarget && fitTarget.isValid()) {
@@ -1145,9 +1271,10 @@ function buildHeader(data) {
         // server_now, and the label flips from "Elapsed" to "Finished"
         // so the TV viewer knows it's the final number rather than
         // a stalled stream.
-        formatElapsed(data.started_at, data.state === 'completed' ? data.completed_at : data.server_now),
+        elapsedText(data),
         h('small', {},
           data.state === 'completed' ? t('Finished')
+          : data.state === 'paused' ? tEventState('paused')
           : data.started_at ? t('Elapsed')
           : t('Not started'))),
       h('button', {
@@ -1181,21 +1308,24 @@ const COMPLETION_DWELL_MS = 5 * 60 * 1000;
 let showBoardOverride = false;
 
 function buildCompletionFrame(data) {
-  // Sort teams by completion time so the audience sees the final
-  // ranking front and centre, not the live-tick rank carried over
-  // from the running state.
-  const teams = (data.teams || []).slice().sort((a, b) => {
-    const aDone = a.completed_at ? parseServerTime(a.completed_at).getTime() : Infinity;
-    const bDone = b.completed_at ? parseServerTime(b.completed_at).getTime() : Infinity;
-    return aDone - bDone;
-  });
+  // The server's rank is the result: points for a graph event, then
+  // pages solved and finish time for a lane event. Sorting by finish
+  // time here crowned the first finisher even when others outscored it.
+  const teams = (data.teams || []).slice()
+    .sort((a, b) => (a.rank || Infinity) - (b.rank || Infinity));
   const winner = teams[0];
   const card = h('div', { class: 'prestart' });
   card.append(h('div', { class: 'banner' }, t('Event complete')));
   if (data.adventure_title) {
     card.append(h('div', { class: 'whenline' }, data.adventure_title));
   }
-  if (winner && winner.completed_at) {
+  if (winner && data.engine === 'graph') {
+    const pts = winner.score ?? 0;
+    card.append(
+      h('div', { class: 'countdown' },
+        h('div', { class: 'digits' }, winner.name || t('—')),
+        h('small', {}, (Number.isInteger(pts) ? String(pts) : pts.toFixed(1)) + ' ' + t('Points'))));
+  } else if (winner && winner.completed_at) {
     const total = formatFinishTime(data.started_at, winner.completed_at);
     card.append(
       h('div', { class: 'countdown' },
@@ -1203,6 +1333,12 @@ function buildCompletionFrame(data) {
         h('small', {}, total
           ? t('crossed the line in {{time}}', { time: total })
           : t('finished first'))));
+  } else if (winner && winner.page_index > 0) {
+    // Time ran out before anyone finished: the leader still won.
+    card.append(
+      h('div', { class: 'countdown' },
+        h('div', { class: 'digits' }, winner.name || t('—')),
+        h('small', {}, t('most puzzles solved'))));
   } else {
     card.append(h('div', { class: 'countdown' },
       h('div', { class: 'digits' }, t('—')),
@@ -1238,7 +1374,7 @@ function buildPreStart(data) {
                       : t('{{n}} teams ready', { n: teamCount })));
   }
   if (data.scheduled_at) {
-    const digits = h('div', { class: 'digits' }, countdownText(data.scheduled_at, data.server_now));
+    const digits = h('div', { class: 'digits' }, countdownText(data.scheduled_at, serverNow().toISOString()));
     card.append(h('div', { class: 'countdown' }, digits,
       h('small', {}, t('until the flag drops'))));
     card.append(h('div', { class: 'whenline' },
@@ -1329,6 +1465,7 @@ function teamRowFingerprint(team, data) {
   const members = (team.members || []).map((m) => m.username).join('|');
   return [
     team.rank,
+    team.withdrawn ? 1 : 0,
     team.page_index,
     team.score ?? '',
     team.tiebreak_guess ?? '',
@@ -1407,12 +1544,12 @@ function buildBoard(data, existing) {
 }
 
 function renderRow(team, idx, data) {
-  const colour = teamColor(idx);
+  const colour = teamColorFor(team.id);
   const pct = data.page_count > 0 ? Math.min(100, Math.round((team.page_index / data.page_count) * 100)) : 0;
   const finished = !!team.completed_at || (data.page_count > 0 && team.page_index >= data.page_count);
   const rankCls = team.rank <= 3 ? ` rank-${team.rank}` : ' rank-tail';
   const row = h('div', {
-    class: `row rank-${team.rank}${rankCls}${finished ? ' finished' : ''}`,
+    class: `row rank-${team.rank}${rankCls}${finished ? ' finished' : ''}${team.withdrawn ? ' withdrawn' : ''}`,
     style: `--team-color:${colour}`,
     'data-team-id': String(team.id),
   });
@@ -1443,6 +1580,7 @@ function renderRow(team, idx, data) {
     // across a venue. Color alone is WCAG-failing for color-blind
     // viewers; the checkmark + word together give a redundant cue.
     finished ? h('span', { class: 'finished-pill' }, '✓', t('Finished')) : null,
+    team.withdrawn ? h('span', { class: 'withdrawn-pill' }, t('withdrew')) : null,
   ));
   if ((team.members || []).length) {
     main.append(h('div', { class: 'members' }, team.members.map((m) => m.username).join(' · ')));
@@ -1531,10 +1669,20 @@ function renderRow(team, idx, data) {
   return row;
 }
 
-// WebSocket: the server pushes {kind:"snapshot"} on every run change and
-// {kind:"tracks"} alongside it when show_map is enabled. No polling.
+// WebSocket: the server pushes {kind:"snapshot"} on every run change,
+// {kind:"tracks"} alongside it when show_map is enabled, and a
+// {kind:"heartbeat"} every 25 s. While the socket is down the board
+// polls the same snapshot over HTTP instead.
 let ws = null;
 let wsBackoff = 500;
+
+// applySnapshot takes a snapshot from either source and resyncs the
+// clock offset to the server's.
+function applySnapshot(snap) {
+  latestSnapshot = snap;
+  const at = Date.parse(snap?.server_now || '');
+  if (Number.isFinite(at)) clockOffset = at - Date.now();
+}
 
 // Connection-status banner. Mounted lazily; the live view often runs
 // for hours on a TV, so a long network blip needs to be visible at a
@@ -1575,14 +1723,17 @@ function connectWS() {
   ws = new WebSocket(`${proto}//${location.host}/ws/live/${encodeURIComponent(LIVE_TOKEN)}`);
   ws.onopen = () => {
     wsBackoff = 500;
+    lastFrameAt = Date.now();
+    stopPolling();
     if (liveStatusTimer) { clearTimeout(liveStatusTimer); liveStatusTimer = null; }
     setLiveStatus('', '');
   };
   ws.onmessage = (ev) => {
+    lastFrameAt = Date.now();
     let msg; try { msg = JSON.parse(ev.data); } catch { return; }
     if (!msg || !msg.kind) return;
     if (msg.kind === 'snapshot') {
-      latestSnapshot = msg.data;
+      applySnapshot(msg.data);
       scheduleRender();
     } else if (msg.kind === 'tracks') {
       latestTracks = msg.data?.tracks || [];
@@ -1591,20 +1742,66 @@ function connectWS() {
       if (latestSnapshot?.show_map) scheduleRender();
     }
   };
-  ws.onclose = () => {
-    const delay = Math.min(wsBackoff, 10000);
-    wsBackoff = Math.min(wsBackoff * 2, 10000);
-    setTimeout(connectWS, delay);
-    // Tier the feedback: short blips (pings, restarts) shouldn't yank
-    // attention onto a TV banner, but a real outage absolutely should.
-    if (liveStatusTimer) clearTimeout(liveStatusTimer);
+  ws.onclose = onWSClosed;
+}
+
+function onWSClosed() {
+  startPolling();
+  const delay = Math.min(wsBackoff, 10000);
+  wsBackoff = Math.min(wsBackoff * 2, 10000);
+  setTimeout(connectWS, delay);
+  // Tier the feedback: short blips (pings, restarts) shouldn't yank
+  // attention onto a TV banner, but a real outage absolutely should.
+  if (liveStatusTimer) clearTimeout(liveStatusTimer);
+  liveStatusTimer = setTimeout(() => {
+    setLiveStatus('warn', t('Reconnecting…'));
     liveStatusTimer = setTimeout(() => {
-      setLiveStatus('warn', t('Reconnecting…'));
-      liveStatusTimer = setTimeout(() => {
-        setLiveStatus('err', t('Disconnected — leaderboard may be stale.'));
-      }, 13000);
-    }, 2000);
-  };
+      setLiveStatus('err', t('Disconnected — leaderboard may be stale.'));
+    }, 13000);
+  }, 2000);
+}
+
+// Watchdog. The server sends a frame at least every 25 s, so a minute
+// of silence means the socket is dead even if it still reads as open:
+// a TV waking from sleep can sit on a half-open one for many minutes.
+// Drop it without waiting for the close handshake and reconnect.
+const WS_STALE_MS = 60000;
+let lastFrameAt = Date.now();
+setInterval(() => {
+  if (!ws || ws.readyState !== WebSocket.OPEN || Date.now() - lastFrameAt <= WS_STALE_MS) return;
+  const dead = ws;
+  dead.onclose = null;
+  dead.onmessage = null;
+  try { dead.close(); } catch { /* already gone */ }
+  onWSClosed();
+}, 5000);
+
+// Poll fallback while the socket is down, so a flaky venue connection
+// still shows fresh standings. Stopped as soon as the socket reopens.
+const POLL_MS = 15000;
+let pollTimer = null;
+function startPolling() {
+  if (pollTimer) return;
+  pollTimer = setInterval(pollOnce, POLL_MS);
+  pollOnce();
+}
+function stopPolling() {
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+}
+async function pollOnce() {
+  if (document.hidden) return;
+  const base = `/api/public/live/${encodeURIComponent(LIVE_TOKEN)}`;
+  try {
+    const r = await fetch(base, { cache: 'no-store' });
+    if (!r.ok) return;
+    applySnapshot(await r.json());
+    // The server refuses tracks unless the arranger turned the map on.
+    if (latestSnapshot?.show_map) {
+      const tr = await fetch(base + '/tracks', { cache: 'no-store' });
+      if (tr.ok) latestTracks = (await tr.json()).tracks || [];
+    }
+    scheduleRender();
+  } catch { /* still offline — the next tick tries again */ }
 }
 
 // Keep the elapsed clock ticking between pushes so long-running races
@@ -1620,7 +1817,7 @@ setInterval(() => {
   if (latestSnapshot.state !== 'completed') {
     const clockEl = document.querySelector('.clock');
     if (clockEl) {
-      const firstLine = formatElapsed(latestSnapshot.started_at);
+      const firstLine = elapsedText(latestSnapshot);
       const firstChild = clockEl.firstChild;
       if (firstChild && firstChild.nodeType === 3) firstChild.nodeValue = firstLine;
     }
@@ -1635,7 +1832,7 @@ setInterval(() => {
   if (isPreStart(latestSnapshot)) {
     const digitsEl = document.querySelector('.prestart .countdown .digits');
     if (digitsEl && latestSnapshot.scheduled_at) {
-      digitsEl.textContent = countdownText(latestSnapshot.scheduled_at, new Date().toISOString());
+      digitsEl.textContent = countdownText(latestSnapshot.scheduled_at, serverNow().toISOString());
     }
   }
   // After completion, the dwell window expires without a new WS push
@@ -1647,7 +1844,7 @@ setInterval(() => {
       && !showBoardOverride
       && !document.querySelector('.prestart')) {
     const completedAt = parseServerTime(latestSnapshot.completed_at).getTime();
-    if (Number.isFinite(completedAt) && Date.now() - completedAt > COMPLETION_DWELL_MS) {
+    if (Number.isFinite(completedAt) && serverNow().getTime() - completedAt > COMPLETION_DWELL_MS) {
       render();
     }
   }

@@ -11,6 +11,53 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Fixed — live monitoring
+
+- **The public board's socket no longer drops every 40 seconds.** The
+  server never read from it, so its keep-alive ping always timed out
+  and the TV reconnected about 90 times an hour.
+- **The public board no longer shows where the puzzles are** while the
+  event can still be played. It frames the map on the play area
+  instead and shows the puzzle pins once the event is over.
+- **The completion screen crowns the top-ranked team**, by points for a
+  designed adventure, rather than whoever finished first. When time
+  runs out with no finisher, the leader is still named.
+- **Race control keeps up during a busy event.** Pushes are coalesced
+  to at most one rebuild a second per viewer, the page re-renders at
+  most every 1.5 s and never stalls under a steady stream of updates,
+  a slow render can no longer overwrite a page you have left, and the
+  map keeps your pan and zoom.
+- **Tracks stay small.** A team's trail is capped at about 120 points,
+  widening the time buckets on long events, instead of resending
+  every 10-second point on each push.
+- **Elapsed time leaves pauses out**, on the public board and in race
+  control, and both run on the server's clock, so a device whose clock
+  is off no longer shows a wrong time. The board shows a pause banner.
+  Migration `0071_event_paused_seconds` starts tracking pause time;
+  pauses before the upgrade count as zero.
+- **The public board shows every team.** With more teams than fit, it
+  keeps the leaders pinned and pages through the rest every 10 s. A
+  team keeps its colour when it changes place, and withdrawn teams
+  rank last with a "withdrew" label.
+- **The public board recovers on its own.** A heartbeat and a watchdog
+  replace a socket left half-open (a TV waking from sleep, say), and
+  the board polls until the socket is back. It also has its own rate
+  limit bucket, so at a venue where everyone shares one address the TV
+  and the players' phones no longer use up each other's allowance.
+- **Race control shows how long since each team last did anything**,
+  as "5m ago", from the server rather than a capped feed, so the
+  quietest teams no longer show "—". The feed's filter for setup noise
+  works again.
+- **Race control draws from what the server pushes** instead of
+  fetching it again, keeps one map whose markers and trails update in
+  place (the view and an open popup stay put), and keeps the scroll
+  position of its lists.
+- **A watch stops when access ends.** Race control re-checks every 30 s
+  that its user may still see the event; logging out or leaving the
+  organisation stops the updates, and the page says so.
+- The live board's footer shows a readable time instead of an ISO
+  timestamp.
+
 ## [0.2.0] - 2026-09-28
 
 ### Upgrading from 0.1.x

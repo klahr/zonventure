@@ -22,6 +22,7 @@ import (
 	"net/mail"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -115,6 +116,9 @@ type Handlers struct {
 	// constructor wires a real one based on cfg.Version +
 	// cfg.ChangelogURL.
 	Updates *updates.Service
+
+	// tracks caches buildTracks per event; see tracksTTL.
+	tracks tracksCache
 }
 
 /* ---------------- Shared scoping helpers ---------------- */
@@ -305,8 +309,13 @@ type eventDTO struct {
 	// the event-detail page once the event reaches a terminal
 	// state. Without these the UI uses Date.now() and shows an
 	// ever-increasing duration on a finished event.
-	CompletedAt     string `json:"completed_at,omitempty"`
-	CancelledAt     string `json:"cancelled_at,omitempty"`
+	CompletedAt string `json:"completed_at,omitempty"`
+	CancelledAt string `json:"cancelled_at,omitempty"`
+	// PausedSeconds totals the event's ended pauses; PausedAt is set only
+	// while it is paused. The detail payload fills them in so elapsed
+	// time can leave pauses out, the same as the live board's.
+	PausedSeconds   int    `json:"paused_seconds,omitempty"`
+	PausedAt        string `json:"paused_at,omitempty"`
 	OrgID           int64  `json:"org_id"`
 	CreatedByUserID int64  `json:"created_by_user_id,omitempty"`
 	AssignmentID    int64  `json:"assignment_id"`
@@ -702,7 +711,7 @@ func (h *Handlers) transitionEvent(w http.ResponseWriter, r *http.Request, actio
 	case "pause":
 		want, update = "running", `UPDATE events SET state='paused', paused_at=now_text() WHERE id=$1`
 	case "resume":
-		want, update = "paused", `UPDATE events SET state='running' WHERE id=$1`
+		want, update = "paused", `UPDATE events SET state='running', `+activity.ClosePause+` WHERE id=$1`
 	default:
 		httpx.Error(w, http.StatusBadRequest, "unknown action")
 		return
@@ -887,7 +896,7 @@ func (h *Handlers) cancelEvent(w http.ResponseWriter, r *http.Request, eventID i
 		return
 	}
 	if _, err := h.DB.ExecContext(r.Context(),
-		`UPDATE events SET state='cancelled', cancelled_at=now_text() WHERE id=$1`,
+		`UPDATE events SET state='cancelled', cancelled_at=now_text(), `+activity.ClosePause+` WHERE id=$1`,
 		eventID); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "update failed")
 		return
@@ -1521,27 +1530,80 @@ type trackDTO struct {
 	Points    []trackPoint `json:"points"`
 }
 
-// buildTracks is the query-only helper used by ListTracks and the WS push
-// path.
+// tracksTTL is how long buildTracks reuses a result. Every watcher's
+// push and every race-control refresh asks for the same aggregate over
+// the event's whole ping history, and a trail only moves in buckets of
+// 10 s or more, so a few seconds' reuse costs nothing visible.
+const tracksTTL = 5 * time.Second
+
+type tracksCache struct {
+	mu sync.Mutex
+	m  map[int64]tracksEntry
+}
+
+type tracksEntry struct {
+	at     time.Time
+	tracks []trackDTO
+}
+
+// buildTracks is the cached helper used by ListTracks and the WS push
+// path. Callers must not modify the returned slice: it is shared.
 func (h *Handlers) buildTracks(ctx context.Context, eventID int64) ([]trackDTO, error) {
-	// Smooth the per-team line by collapsing pings into 10s buckets and
-	// emitting one centroid per bucket. Bucketing is done by truncating
-	// server_ts at the tens-of-seconds digit (server_ts is a fixed-width
-	// 'YYYY-MM-DD HH24:MI:SS' string from now_text()). The centroid is an
+	c := &h.tracks
+	now := time.Now()
+	c.mu.Lock()
+	if e, ok := c.m[eventID]; ok && now.Sub(e.at) < tracksTTL {
+		c.mu.Unlock()
+		return e.tracks, nil
+	}
+	c.mu.Unlock()
+	tracks, err := h.queryTracks(ctx, eventID)
+	if err != nil {
+		return nil, err
+	}
+	c.mu.Lock()
+	if c.m == nil {
+		c.m = map[int64]tracksEntry{}
+	}
+	for id, e := range c.m {
+		if now.Sub(e.at) >= tracksTTL {
+			delete(c.m, id)
+		}
+	}
+	c.m[eventID] = tracksEntry{at: now, tracks: tracks}
+	c.mu.Unlock()
+	return tracks, nil
+}
+
+// queryTracks aggregates an event's ping history into per-team tracks.
+func (h *Handlers) queryTracks(ctx context.Context, eventID int64) ([]trackDTO, error) {
+	// Smooth the per-team line by collapsing pings into time buckets and
+	// emitting one centroid per bucket. Buckets are 10s wide, widened in
+	// 10s steps once the event's ping history spans more than 20 minutes
+	// so a track never exceeds ~120 points: this is resent on every push,
+	// and full 10s resolution over a multi-hour event made it megabytes.
+	// server_ts is a UTC 'YYYY-MM-DD HH24:MI:SS' string from now_text(),
+	// and the bucket start goes back out in that format. The centroid is an
 	// inverse-variance weighted mean: pings with smaller `accuracy` (in
 	// metres) dominate, with a 1m floor to bound the weight and a 50m
 	// fallback when accuracy is null.
 	rows, err := h.DB.QueryContext(ctx, `
+		WITH span AS (
+		  SELECT GREATEST(10, CEIL(EXTRACT(EPOCH FROM
+		           MAX(server_ts::timestamp) - MIN(server_ts::timestamp)) / 1200) * 10) AS w
+		  FROM location_pings WHERE event_id = $1
+		)
 		SELECT p.team_id, t.name, (t.avatar_mime_type IS NOT NULL)::int AS has_avatar,
 		       SUM(p.lat / power(GREATEST(COALESCE(p.accuracy, 50), 1), 2)) /
 		         SUM(1.0 / power(GREATEST(COALESCE(p.accuracy, 50), 1), 2)) AS lat,
 		       SUM(p.lng / power(GREATEST(COALESCE(p.accuracy, 50), 1), 2)) /
 		         SUM(1.0 / power(GREATEST(COALESCE(p.accuracy, 50), 1), 2)) AS lng,
-		       substring(p.server_ts, 1, 18) || '0' AS server_ts
-		FROM location_pings p JOIN teams t ON t.id = p.team_id
+		       to_char(to_timestamp(FLOOR(EXTRACT(EPOCH FROM p.server_ts::timestamp) / s.w) * s.w)
+		         AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS') AS server_ts
+		FROM location_pings p JOIN teams t ON t.id = p.team_id CROSS JOIN span s
 		WHERE p.event_id = $1
 		GROUP BY p.team_id, t.name, (t.avatar_mime_type IS NOT NULL),
-		         substring(p.server_ts, 1, 18)
+		         FLOOR(EXTRACT(EPOCH FROM p.server_ts::timestamp) / s.w), s.w
 		ORDER BY p.team_id, server_ts
 	`, eventID)
 	if err != nil {

@@ -89,6 +89,14 @@ func Record(ctx context.Context, db Execer, eventID int64, teamID *int64, actor 
 	`, eventID, tid, uid, sid, kind, string(b))
 }
 
+// ClosePause is the SET clause that ends an event's open pause, if any:
+// it adds the pause to paused_seconds and clears paused_at. Every
+// transition out of a pause (resume, cancel, completion) includes it so
+// elapsed time can leave paused time out. See migration 0071.
+const ClosePause = `paused_seconds = paused_seconds + COALESCE(
+	GREATEST(0, EXTRACT(EPOCH FROM (now() AT TIME ZONE 'UTC') - paused_at::timestamp))::int, 0),
+	paused_at = NULL`
+
 // MaybeCompleteEvent flips events.state to 'completed' (stamping
 // completed_at) when every team in the event has its own completed_at
 // set. Returns (true, nil) when the transition happened — callers
@@ -124,7 +132,7 @@ func MaybeCompleteEvent(ctx context.Context, db Execer, eventID int64) (bool, er
 	}
 	res, err := db.ExecContext(ctx, `
 		UPDATE events
-		SET state = 'completed', completed_at = now_text()
+		SET state = 'completed', completed_at = now_text(), `+ClosePause+`
 		WHERE id = $1 AND state IN ('running','paused')
 	`, eventID)
 	if err != nil {

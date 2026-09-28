@@ -4214,6 +4214,57 @@ let arrangeWS = null;
 let arrangeWSBackoff = 500;
 let watchedEventID = 0;
 let arrangePushTimer = null;
+// arrangePushed keeps the newest payloads the watch pushed, so a
+// push-driven render of race control draws from them rather than
+// fetching the same data again over REST. Only valid while the watch
+// is live: cleared when it stops or the socket drops.
+let arrangePushed = { eventID: 0, detail: null, detailAt: 0, tracks: null, events: null };
+function clearArrangePushed(eventID) {
+  arrangePushed = { eventID: eventID || 0, detail: null, detailAt: 0, tracks: null, events: null };
+}
+let arrangeRenderBusy = false;
+let arrangeRenderDirty = false;
+let arrangeLastRender = 0;
+// A throttle, not a debounce: pushes land every second while players
+// are moving, and a debounce that restarts on each one never fired.
+const ARRANGE_RENDER_MS = 1500;
+
+// scheduleArrangeRender re-renders the watched event page at most once
+// per ARRANGE_RENDER_MS, one render at a time, so a slow render can't
+// be overtaken by a newer one and finish last with older data.
+function scheduleArrangeRender() {
+  arrangeRenderDirty = true;
+  if (arrangeRenderBusy || arrangePushTimer) return;
+  // The 100 ms floor lets the four frames of one server push
+  // (positions, tracks, activity, event_detail) land as one render.
+  const wait = Math.max(100, arrangeLastRender + ARRANGE_RENDER_MS - Date.now());
+  arrangePushTimer = setTimeout(runArrangeRender, wait);
+}
+
+async function runArrangeRender() {
+  arrangePushTimer = null;
+  if (!arrangeRenderDirty) return;
+  arrangeRenderDirty = false;
+  arrangeRenderBusy = true;
+  arrangeLastRender = Date.now();
+  try {
+    const parts = state.route.replace(/^#/, '').split('/');
+    const [section, arg] = parts;
+    const view = document.getElementById('view');
+    if (section === 'events' && arg && view) {
+      // Race control gets the same WS pushes as the setup
+      // detail page; both views are live, only the layout
+      // and density differ.
+      if (parts[2] === 'control') await viewEventControl(view, parseInt(arg, 10));
+      else await viewRunDetail(view, parseInt(arg, 10));
+    }
+  } catch (e) {
+    console.error('arrange push render', e);
+  } finally {
+    arrangeRenderBusy = false;
+    if (arrangeRenderDirty) scheduleArrangeRender();
+  }
+}
 
 // arrangeUIState preserves transient view state for the event-detail
 // page across WS-triggered re-renders. viewRunDetail rebuilds the DOM
@@ -4230,6 +4281,10 @@ const arrangeUIState = {
   // race director who's narrowed focus to two teams doesn't see the
   // selection wiped every time a position update lands.
   controlFilter: new Map(),      // event_id -> Set<team_id>
+  // Race-control map viewport, kept once the operator pans or zooms so
+  // a push doesn't snap the map back to the full view. Cleared when the
+  // team filter changes, which re-fits to the selection.
+  controlMapView: new Map(),     // event_id -> { center, zoom }
 };
 
 // Arrange-side connection banner. Only shown while watchedEventID !=
@@ -4265,34 +4320,38 @@ function ensureArrangeWS() {
     // every watch_run frame was silently dropped by the server's
     // unknown-kind default arm and the event-detail page never
     // got live updates. Send the right kind name now.
-    if (watchedEventID) arrangeWS.send(JSON.stringify({ kind: 'watch_event', data: { event_id: watchedEventID } }));
+    if (watchedEventID) {
+      clearArrangePushed(watchedEventID);
+      arrangeWS.send(JSON.stringify({ kind: 'watch_event', data: { event_id: watchedEventID } }));
+    }
   };
   arrangeWS.onmessage = (ev) => {
     let msg; try { msg = JSON.parse(ev.data); } catch { return; }
     if (!msg || !msg.kind) return;
-    // Any server push re-renders the current event-detail view. Debounced so
-    // a burst of changes (eg. multiple position updates from players
-    // pinging at once) collapses into a single re-render.
+    if (msg.kind === 'watch_error') {
+      // The server refused or ended the watch (access removed, event
+      // gone). Say so rather than leave a page that silently stops.
+      clearArrangePushed(0);
+      if (watchedEventID) setArrangeStatus('err', t('Live updates stopped — you no longer have access to this event.'));
+      return;
+    }
+    if (arrangePushed.eventID === watchedEventID) {
+      if (msg.kind === 'event_detail') {
+        arrangePushed.detail = msg.data;
+        arrangePushed.detailAt = Date.now();
+      }
+      else if (msg.kind === 'tracks') arrangePushed.tracks = msg.data?.tracks || [];
+      else if (msg.kind === 'activity') arrangePushed.events = msg.data?.activity || [];
+    }
+    // Any server push re-renders the current event-detail view,
+    // throttled so a burst of changes costs one render.
     if (msg.kind === 'positions' || msg.kind === 'tracks' ||
         msg.kind === 'activity'   || msg.kind === 'event_detail') {
-      if (arrangePushTimer) clearTimeout(arrangePushTimer);
-      arrangePushTimer = setTimeout(() => {
-        const r = state.route.replace(/^#/, '');
-        const parts = r.split('/');
-        const [section, arg] = parts;
-        if (section === 'events' && arg) {
-          const view = document.getElementById('view');
-          if (!view) return;
-          // Race control gets the same WS pushes as the setup
-          // detail page; both views are live, only the layout
-          // and density differ.
-          if (parts[2] === 'control') viewEventControl(view, parseInt(arg, 10));
-          else viewRunDetail(view, parseInt(arg, 10));
-        }
-      }, 300);
+      scheduleArrangeRender();
     }
   };
   arrangeWS.onclose = () => {
+    clearArrangePushed(watchedEventID);
     const delay = Math.min(arrangeWSBackoff, 10000);
     arrangeWSBackoff = Math.min(arrangeWSBackoff * 2, 10000);
     setTimeout(ensureArrangeWS, delay);
@@ -4315,6 +4374,7 @@ function ensureArrangeWS() {
 function watchRun(runID) {
   if (!runID || runID === watchedEventID) { watchedEventID = runID; ensureArrangeWS(); return; }
   watchedEventID = runID;
+  clearArrangePushed(runID);
   ensureArrangeWS();
   if (arrangeWS && arrangeWS.readyState === 1) {
     arrangeWS.send(JSON.stringify({ kind: 'watch_event', data: { event_id: runID } }));
@@ -4324,6 +4384,7 @@ function watchRun(runID) {
 function unwatchRun() {
   if (!watchedEventID) return;
   watchedEventID = 0;
+  clearArrangePushed(0);
   if (arrangeStatusTimer) { clearTimeout(arrangeStatusTimer); arrangeStatusTimer = null; }
   setArrangeStatus('', '');
   if (arrangeWS && arrangeWS.readyState === 1) {
@@ -7987,10 +8048,13 @@ async function viewRunDetail(view, runID) {
   // The live map + per-team tracks moved to /control — this page is
   // setup + wrap-up now, so we only fetch the structured detail and
   // the historical activity log.
+  const route = state.route;
   const [detail, eventsR] = await Promise.all([
     api('/api/admin/events/' + runID),
     api('/api/admin/events/' + runID + '/activity'),
   ]);
+  // A push-driven render can finish after the operator has left.
+  if (state.route !== route) return;
   if (!detail.ok) { view.replaceChildren(h('p', { class: 'err' }, detail.body?.error || t('not found'))); return; }
   const event = detail.body.event;
   // A graph event's steps and zones travel with it, for the helpers
@@ -8004,6 +8068,7 @@ async function viewRunDetail(view, runID) {
   // which on a 4xx is the error envelope (no title / no avatar_url),
   // explaining the "no icon" reports.
   const adventureR = await api('/api/admin/adventures/' + encodeURIComponent(event.adventure_slug));
+  if (state.route !== route) return;
   const adventure = adventureR.ok ? adventureR.body : null;
 
   // isQuest decides which affordances apply: ticket-sold always-on
@@ -8021,6 +8086,7 @@ async function viewRunDetail(view, runID) {
   let questConnectStatus = null;
   if (isQuest) {
     const cs = await api(`/api/admin/organizations/${event.org_id}/stripe-connect/status`);
+    if (state.route !== route) return;
     if (cs.ok) questConnectStatus = cs.body;
   }
 
@@ -8169,14 +8235,8 @@ async function viewRunDetail(view, runID) {
   }
   if (more.length) actions.append(moreMenu(more));
 
-  // Last-activity-per-team: the newest event timestamp the team was
-  // involved in. Used to highlight teams that look stuck.
-  const lastEventByTeam = new Map();
-  for (const ev of events) {
-    if (!ev.team_id) continue;
-    const prev = lastEventByTeam.get(ev.team_id);
-    if (!prev || (ev.created_at > prev)) lastEventByTeam.set(ev.team_id, ev.created_at);
-  }
+  // Last activity per team (tm.last_activity_at, from the server)
+  // highlights teams that look stuck.
   const STUCK_MS = 10 * 60 * 1000;
 
   // Build team → colour index up-front so the swatch next to each
@@ -8222,7 +8282,7 @@ async function viewRunDetail(view, runID) {
   let teamsQuery = '';
   const teamsRender = () => {
     const filtered = teams.filter((tm) => {
-      const lastEv = lastEventByTeam.get(tm.id);
+      const lastEv = tm.last_activity_at;
       const lastMs = lastEv ? Date.parse(serverISO(lastEv)) : null;
       // Withdrawn teams are intentionally inactive — they shouldn't
       // raise the "stuck?" flag or fall under the "unstarted" filter
@@ -8266,7 +8326,7 @@ async function viewRunDetail(view, runID) {
       h('tbody', {}, filtered.map((tm) => {
         const i = teamIndex.get(tm.id) ?? 0;
         const progress = teamProgress(event, tm, adventure);
-        const lastEv = lastEventByTeam.get(tm.id);
+        const lastEv = tm.last_activity_at;
         const lastMs = lastEv ? Date.parse(serverISO(lastEv)) : null;
         const stuck = event.state === 'running' && !tm.completed_at && lastMs != null && (Date.now() - lastMs) > STUCK_MS;
         // Per-team claimed-slot count — surfaces "3/4 claimed" when
@@ -8435,14 +8495,25 @@ async function viewRunDetail(view, runID) {
 //   - Map (filtered to selected teams)
 //   - Leaderboard table (filtered) + activity feed (filtered) side-by-side
 //   - Lobby-TV share at the bottom
+// controlAdventure caches the adventure race control draws, which a
+// push-driven render would otherwise refetch every time.
+let controlAdventure = { slug: '', at: 0, body: null };
+const CONTROL_ADVENTURE_MS = 60000;
+
 async function viewEventControl(view, runID) {
+  const route = state.route;
+  // What the watch has pushed is as fresh as a refetch; only messages
+  // and photos, which it doesn't push, always come over REST.
+  const pushed = arrangePushed.eventID === runID ? arrangePushed : null;
   const [detail, tracksR, eventsR, messagesR, photosR] = await Promise.all([
-    api('/api/admin/events/' + runID),
-    api('/api/admin/events/' + runID + '/tracks'),
-    api('/api/admin/events/' + runID + '/activity'),
+    pushed?.detail ? { ok: true, body: pushed.detail } : api('/api/admin/events/' + runID),
+    pushed?.tracks ? { ok: true, body: { tracks: pushed.tracks } } : api('/api/admin/events/' + runID + '/tracks'),
+    pushed?.events ? { ok: true, body: { events: pushed.events } } : api('/api/admin/events/' + runID + '/activity'),
     api('/api/admin/events/' + runID + '/messages'),
     api('/api/admin/events/' + runID + '/photos'),
   ]);
+  // A push-driven render can finish after the operator has left.
+  if (state.route !== route) return;
   if (!detail.ok) {
     view.replaceChildren(h('p', { class: 'err' }, detail.body?.error || t('not found')));
     return;
@@ -8455,8 +8526,13 @@ async function viewEventControl(view, runID) {
   const tracks = tracksR.body?.tracks || [];
   const events = eventsR.body?.events || [];
 
-  const advR = await api('/api/admin/adventures/' + encodeURIComponent(event.adventure_slug));
-  const adventure = advR.ok ? advR.body : null;
+  let adventure = controlAdventure.body;
+  if (controlAdventure.slug !== event.adventure_slug || Date.now() - controlAdventure.at > CONTROL_ADVENTURE_MS) {
+    const advR = await api('/api/admin/adventures/' + encodeURIComponent(event.adventure_slug));
+    if (state.route !== route) return;
+    adventure = advR.ok ? advR.body : null;
+    controlAdventure = { slug: event.adventure_slug, at: advR.ok ? Date.now() : 0, body: adventure };
+  }
 
   // Filter state, scoped per event. Mutated in place so chip clicks
   // immediately reflect on the next render() pass without re-fetching.
@@ -8489,17 +8565,26 @@ async function viewEventControl(view, runID) {
 
   // Elapsed clamps to completed_at / cancelled_at when set so the
   // counter freezes on a finished event.
+  // Elapsed also leaves out paused time (frozen while paused), and runs
+  // on the server's clock: clockOffset corrects a device clock that is
+  // off, which would otherwise shift every figure by the same error.
   const parseTS = (ts) => Date.parse(serverISO(ts));
+  // A pushed detail was stamped when it arrived, not now.
+  const receivedAt = pushed?.detail ? pushed.detailAt : Date.now();
+  const serverNowMs = Date.parse(detail.body.server_now || '');
+  const clockOffset = Number.isFinite(serverNowMs) ? serverNowMs - receivedAt : 0;
   const elapsedSeconds = () => {
     if (!event.started_at) return 0;
     const startMs = parseTS(event.started_at);
     if (!Number.isFinite(startMs)) return 0;
-    let endMs = Date.now();
-    for (const ts of [event.completed_at, event.cancelled_at].filter(Boolean)) {
+    let endMs = Date.now() + clockOffset;
+    // A paused event's clock stops where the pause began; paused_seconds
+    // is the total of its earlier pauses.
+    for (const ts of [event.completed_at, event.cancelled_at, event.paused_at].filter(Boolean)) {
       const ms = parseTS(ts);
       if (Number.isFinite(ms) && ms < endMs) endMs = ms;
     }
-    return Math.max(0, Math.floor((endMs - startMs) / 1000));
+    return Math.max(0, Math.floor((endMs - startMs) / 1000 - (event.paused_seconds || 0)));
   };
   const elapsedEl = h('span', { class: 'mono', style: 'font-weight:700' },
     fmtElapsedShort(elapsedSeconds()));
@@ -8510,6 +8595,9 @@ async function viewEventControl(view, runID) {
   window._zvControlTick = setInterval(() => {
     if (!elapsedEl.isConnected) { clearInterval(window._zvControlTick); return; }
     elapsedEl.textContent = fmtElapsedShort(elapsedSeconds());
+    for (const el of view.querySelectorAll('[data-last-activity]')) {
+      el.textContent = formatEventTime(el.dataset.lastActivity);
+    }
   }, 1000);
 
   const lifecycleActions = h('div', { class: 'row', style: 'gap:.5rem; flex-wrap:wrap' });
@@ -8575,9 +8663,14 @@ async function viewEventControl(view, runID) {
   const toggleTeam = (id) => {
     if (filterSet.has(id)) filterSet.delete(id);
     else filterSet.add(id);
+    arrangeUIState.controlMapView.delete(event.id);
     renderControlBody();
   };
-  const clearFilter = () => { filterSet.clear(); renderControlBody(); };
+  const clearFilter = () => {
+    filterSet.clear();
+    arrangeUIState.controlMapView.delete(event.id);
+    renderControlBody();
+  };
 
   const filterChip = (label, active, onClick, swatch) => {
     const chip = h('button', {
@@ -8631,12 +8724,6 @@ async function viewEventControl(view, runID) {
   // Sorted by completion (finished first by completion time, then
   // unfinished by furthest page, then by team name as tiebreaker).
   const lbHost = h('div', { class: 'card' });
-  const lastEventByTeam = new Map();
-  for (const ev of events) {
-    if (!ev.team_id) continue;
-    const prev = lastEventByTeam.get(ev.team_id);
-    if (!prev || (ev.created_at > prev)) lastEventByTeam.set(ev.team_id, ev.created_at);
-  }
   const teamRank = (tm) => {
     if (tm.completed_at) return 0;          // finished: top group
     if (tm.withdrawn_at) return 2;          // withdrew: bottom group
@@ -8668,7 +8755,7 @@ async function viewEventControl(view, runID) {
               h('th', {}, ''))),
             h('tbody', {}, visible.map((tm, rank) => {
               const i = teamIndex.get(tm.id) ?? 0;
-              const lastEv = lastEventByTeam.get(tm.id);
+              const lastEv = tm.last_activity_at;
               const withdrawn = !!tm.withdrawn_at;
               const rowStyle = withdrawn ? 'opacity:.55' : '';
               const progress = teamProgress(event, tm, adventure);
@@ -8687,8 +8774,11 @@ async function viewEventControl(view, runID) {
                 h('td', {},
                   h('div', { class: 'mono' }, progress.main),
                   progress.step ? h('div', { class: 'muted', style: 'font-size:.85rem' }, progress.step) : null),
-                h('td', { class: 'hide-narrow muted', style: 'font-size:.85rem' },
-                  lastEv ? fmtLocal(lastEv) : t('—')),
+                // Relative, so a stuck team stands out at a glance; the
+                // tick below keeps it current between pushes.
+                h('td', { class: 'hide-narrow muted', style: 'font-size:.85rem',
+                          'data-last-activity': lastEv || null, title: lastEv ? fmtLocal(lastEv) : null },
+                  lastEv ? formatEventTime(lastEv) : t('—')),
                 // Withdraw / un-withdraw is the per-row action surface.
                 // Hidden once the event hits a terminal state (server
                 // rejects too) and on already-finished teams (a finisher
@@ -8715,9 +8805,9 @@ async function viewEventControl(view, runID) {
       // the "what's happening to teams right now" stream, not setup
       // history. The setup-detail page's Event log keeps the full
       // record for after-action review.
-      if (ev.kind === 'event_created' || ev.kind === 'team_created' ||
-          ev.kind === 'event_started' || ev.kind === 'event_paused' ||
-          ev.kind === 'event_resumed') return false;
+      if (ev.kind === 'event.created' || ev.kind === 'team.created' ||
+          ev.kind === 'event.started' || ev.kind === 'event.paused' ||
+          ev.kind === 'event.resumed') return false;
       return true;
     });
     feedHost.replaceChildren(
@@ -8729,31 +8819,74 @@ async function viewEventControl(view, runID) {
   };
 
   // === Map ===
-  const mapHost = h('div', { class: 'map-host', id: 'control-map-' + event.id,
-    style: 'min-height:340px' });
+  // The map outlives this render (see controlMap): its host element is
+  // moved into each new card, and only a different event gets a new one.
+  if (controlMap && controlMap.eventID !== event.id) {
+    try { controlMap.map?.remove(); } catch { /* leaflet teardown is best-effort */ }
+    controlMap = null;
+  }
+  if (!controlMap) {
+    controlMap = {
+      eventID: event.id, map: null, static: null, teams: null,
+      touched: false, redrawing: false, openTeam: null,
+      host: h('div', { class: 'map-host', id: 'control-map-' + event.id, style: 'min-height:340px' }),
+    };
+  }
+  const cm = controlMap;
+  const mapHost = cm.host;
   const mapCard = h('div', { class: 'card' },
     h('h2', { style: 'margin:0 0 .5rem' }, t('Map')),
     mapHost);
-  // Leaflet rejects L.map() on a host that already has a map attached,
-  // so without an explicit teardown a filter-driven re-render would
-  // silently fail and the map would freeze on whatever the first call
-  // drew. We capture the instance and remove() it before each rebuild.
-  let mapInstance = null;
   const buildMap = () => {
     if (!adventure) return;
-    if (mapInstance) {
-      try { mapInstance.remove(); } catch { /* leaflet teardown is best-effort */ }
-      mapInstance = null;
-    }
-    // .remove() detaches the map but leaves Leaflet's _leaflet_id on
-    // the host element; clearing children + removing that marker
-    // gives the next L.map() a truly fresh container.
-    mapHost.replaceChildren();
-    delete mapHost._leaflet_id;
     const visibleTeams = teams.filter(teamMatches);
     const visibleIDs = new Set(visibleTeams.map((tm) => tm.id));
     const visibleTracks = tracks.filter((tr) => visibleIDs.has(tr.team_id));
-    mapInstance = initRunMap(mapHost, adventure, visibleTeams, visibleTracks, isGraphEvent(event) ? (event.graph?.zones || []) : null);
+    const zones = isGraphEvent(event) ? (event.graph?.zones || []) : null;
+    ensureLeaflet().then(() => {
+      if (controlMap !== cm) return;
+      if (!cm.map) {
+        cm.map = L.map(mapHost, { scrollWheelZoom: false }).setView([58.1820, 13.9554], 14);
+        addOSMTiles(cm.map);
+        const saved = arrangeUIState.controlMapView.get(event.id);
+        if (saved) cm.map.setView(saved.center, saved.zoom, { animate: false });
+        // Only a move the operator started is kept: fitBounds moves the
+        // map too, and saving that would stop later pushes re-fitting.
+        const touch = () => { cm.touched = true; };
+        mapHost.addEventListener('pointerdown', touch);
+        mapHost.addEventListener('wheel', touch, { passive: true });
+        mapHost.addEventListener('keydown', touch);
+        cm.map.on('moveend', () => {
+          if (cm.touched) arrangeUIState.controlMapView.set(cm.eventID, { center: cm.map.getCenter(), zoom: cm.map.getZoom() });
+        });
+        cm.map.on('popupclose', () => { if (!cm.redrawing) cm.openTeam = null; });
+      }
+      const zonesKey = JSON.stringify(zones);
+      if (!cm.static || cm.static.adventure !== adventure || cm.static.zonesKey !== zonesKey) {
+        if (cm.static) cm.map.removeLayer(cm.static.group);
+        cm.static = { ...drawRunStatic(cm.map, adventure, zones), adventure, zonesKey };
+      }
+      cm.redrawing = true;
+      if (cm.teams) cm.map.removeLayer(cm.teams.group);
+      cm.teams = drawRunTeams(cm.map, visibleTeams, visibleTracks, (id) => { cm.openTeam = id; });
+      cm.redrawing = false;
+      if (cm.openTeam != null) cm.teams.markers.get(cm.openTeam)?.openPopup();
+      // Until the operator moves the map it follows the teams, as the
+      // full view of everything drawn.
+      if (!arrangeUIState.controlMapView.has(event.id)) {
+        const bounds = L.latLngBounds([]).extend(cm.static.bounds).extend(cm.teams.bounds);
+        if (bounds.isValid()) {
+          cm.touched = false;
+          cm.map.fitBounds(bounds, { padding: [24, 24], animate: false });
+        }
+      }
+      // The host may have just moved into a new card.
+      cm.map.invalidateSize({ pan: false });
+    }).catch(() => {
+      if (controlMap === cm && !cm.map) {
+        mapHost.replaceChildren(h('div', { class: 'empty' }, t('Map library failed to load — check your connection.')));
+      }
+    });
   };
 
   // === Compose + render ===
@@ -8773,46 +8906,28 @@ async function viewEventControl(view, runID) {
     mapCard,
   );
 
+  // A push re-renders the whole view; keep where the operator had
+  // scrolled the feed, leaderboard and photo lists rather than jumping
+  // them back to the top every second.
+  const scrollSel = '.control-scroll, .feed';
+  const scrolls = [...view.querySelectorAll(scrollSel)].map((el) => el.scrollTop);
   view.replaceChildren(header, filterBar, body);
+  view.querySelectorAll(scrollSel).forEach((el, i) => { if (scrolls[i]) el.scrollTop = scrolls[i]; });
   renderControlBody();
 }
 
-// initRunMap mounts a Leaflet map inside host. Puzzle pins come from the
-// adventure (all pages always have a location now); per-team polylines and
-// latest-position dots come from the tracks payload. Returns the map
-// instance so callers can .remove() it before re-initialising — Leaflet
-// rejects L.map() on a host that already has a map attached, and a
-// silent failure is exactly what causes filter changes to look like
-// they don't apply.
-// zones, for a graph event, are its graph's zones: drawn in place of lane
-// puzzle pins, which a graph event does not play.
-function initRunMap(host, adventure, teams, tracks, zones) {
-  // Returned synchronously so the caller can `.remove()` even before
-  // Leaflet loads. If a teardown lands first, we mark the handle and
-  // bail out of buildMap; otherwise the real map.remove gets wired up
-  // once L is ready.
-  const handle = {
-    _real: null,
-    _tornDown: false,
-    remove() {
-      this._tornDown = true;
-      if (this._real) { try { this._real.remove(); } catch { /* best effort */ } this._real = null; }
-    },
-  };
-  ensureLeaflet().then(() => {
-    if (handle._tornDown) return;
-    handle._real = buildRunMap(host, adventure, teams, tracks, zones);
-  }).catch(() => {
-    if (handle._tornDown) return;
-    host.replaceChildren(h('div', { class: 'empty' }, t('Map library failed to load — check your connection.')));
-  });
-  return handle;
-}
+// controlMap is race control's Leaflet map, kept across renders of one
+// event: a push redraws the teams' trails and markers on it instead of
+// building a new map, so the tiles, the viewport and an open team popup
+// stay put. static holds the adventure's zones or puzzle pins, which
+// only change with the adventure; teams holds the trails and markers.
+let controlMap = null;
 
-function buildRunMap(host, adventure, teams, tracks, zones) {
-  const map = L.map(host, { scrollWheelZoom: false }).setView([58.1820, 13.9554], 14);
-  addOSMTiles(map);
-
+// drawRunStatic adds an event's fixed features to map: a graph event's
+// zones, or a lane event's puzzle pins (zones null). Puzzle pins come
+// from the adventure; every page has a location.
+function drawRunStatic(map, adventure, zones) {
+  const group = L.layerGroup().addTo(map);
   const bounds = L.latLngBounds([]);
 
   // A graph event's zones: a polygon, or a circle, named.
@@ -8820,7 +8935,7 @@ function buildRunMap(host, adventure, teams, tracks, zones) {
     const shape = (z.polygon || []).length >= 3
       ? L.polygon(z.polygon, { color: '#ad1357', weight: 2, fillOpacity: .12 })
       : L.circle([z.lat, z.lng], { radius: z.radius_m || 20, color: '#ad1357', weight: 2, fillOpacity: .12 });
-    shape.addTo(map).bindPopup(`<strong>${esc(z.name || z.slug)}</strong>`);
+    shape.addTo(group).bindPopup(`<strong>${esc(z.name || z.slug)}</strong>`);
     bounds.extend(shape.getBounds());
   }
 
@@ -8834,7 +8949,7 @@ function buildRunMap(host, adventure, teams, tracks, zones) {
         iconSize: [28, 28],
         iconAnchor: [14, 28],
       }),
-    }).addTo(map);
+    }).addTo(group);
     marker.bindPopup(
       `<strong>${p.index + 1}. ${esc(p.title || t('Puzzle'))}</strong>` +
       (p.gated && p.location.radius_m
@@ -8844,8 +8959,16 @@ function buildRunMap(host, adventure, teams, tracks, zones) {
     );
     bounds.extend(ll);
   }
+  return { group, bounds };
+}
 
-  // Team traces.
+// drawRunTeams adds each team's trail and latest-position marker to map.
+// onOpen is called with a team id when its marker's popup opens; markers
+// maps team id to marker so the caller can reopen it after a redraw.
+function drawRunTeams(map, teams, tracks, onOpen) {
+  const group = L.layerGroup().addTo(map);
+  const bounds = L.latLngBounds([]);
+  const markers = new Map();
   const teamByID = new Map();
   teams.forEach((t, i) => teamByID.set(t.id, { team: t, i }));
   for (const track of tracks) {
@@ -8853,7 +8976,7 @@ function buildRunMap(host, adventure, teams, tracks, zones) {
     const colour = teamColor(track.team_id, info ? info.i : 0);
     if (track.points.length > 0) {
       const latlngs = track.points.map((p) => [p.lat, p.lng]);
-      L.polyline(latlngs, { color: colour, weight: 3, opacity: .85 }).addTo(map);
+      L.polyline(latlngs, { color: colour, weight: 3, opacity: .85 }).addTo(group);
       const latest = track.points[track.points.length - 1];
       // Circular avatar marker — the uploaded picture when present,
       // initials-on-team-colour otherwise. A coloured ring keeps the
@@ -8875,22 +8998,20 @@ function buildRunMap(host, adventure, teams, tracks, zones) {
             + `</div>`
         : `<div class="team-marker no-img" style="--team-col:${colour}; width:${size}px; height:${size}px;">`
             + `<span>${esc(initials)}</span></div>`;
-      L.marker([latest.lat, latest.lng], {
+      const marker = L.marker([latest.lat, latest.lng], {
         icon: L.divIcon({
           className: '',
           html,
           iconSize: [size, size],
           iconAnchor: [size / 2, size / 2],
         }),
-      }).bindPopup(`<strong>${esc(track.team_name)}</strong><br><small>${esc(fmtLocal(latest.server_ts))}</small>`).addTo(map);
+      }).bindPopup(`<strong>${esc(track.team_name)}</strong><br><small>${esc(fmtLocal(latest.server_ts))}</small>`).addTo(group);
+      marker.on('popupopen', () => onOpen(track.team_id));
+      markers.set(track.team_id, marker);
       for (const ll of latlngs) bounds.extend(ll);
     }
   }
-
-  if (bounds.isValid()) {
-    map.fitBounds(bounds, { padding: [24, 24] });
-  }
-  return map;
+  return { group, bounds, markers };
 }
 
 // renderEventFeed turns the run_events JSON into a readable timeline.

@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/klahr/zonventure/internal/admin"
 	"github.com/klahr/zonventure/internal/server"
 	"github.com/klahr/zonventure/internal/ws"
 
@@ -217,4 +218,51 @@ func TestWSArrange_UnwatchStopsDelivery(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 	hub.Publish(ws.EventTopic(eventID), "noop", map[string]any{})
 	mustNotRecv(t, conn, 500*time.Millisecond)
+}
+
+// Access is checked when a watch starts, but a watch can run for hours:
+// once the session behind the socket ends, the next push must report
+// forbidden and stop, not keep streaming the event.
+func TestWSArrange_WatchStopsWhenSessionEnds(t *testing.T) {
+	defer admin.SetWatchAccessRecheck(admin.SetWatchAccessRecheck(0))
+	ts, assignmentID, cleanup := newTestServer(t)
+	defer cleanup()
+	arr, _, _, eventID := setupRun(t, ts, assignmentID)
+	// A second session for the same arranger keeps driving the event.
+	other := newClient(t, ts)
+	if s := other.do("POST", "/api/auth/login",
+		map[string]string{"username": "boss", "password": "s3cret"}, nil); s != 200 {
+		t.Fatalf("second login = %d", s)
+	}
+
+	c := dialWS(t, ts, "/ws/arrange", arr.c)
+	defer c.Close(websocket.StatusNormalClosure, "")
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := c.Write(ctx, websocket.MessageText,
+		[]byte(`{"kind":"watch_event","data":{"event_id":`+itoa(eventID)+`}}`)); err != nil {
+		t.Fatalf("send watch: %v", err)
+	}
+	recvKind(t, c, "event_detail", 2*time.Second)
+
+	if s := arr.do("POST", "/api/auth/logout", nil, nil); s != 204 {
+		t.Fatalf("logout = %d", s)
+	}
+	if s := other.do("POST", "/api/admin/events/"+itoa(eventID)+"/start", map[string]string{}, nil); s != 204 {
+		t.Fatalf("start event = %d", s)
+	}
+	m := recvKind(t, c, "watch_error", 3*time.Second)
+	var e struct {
+		Error string `json:"error"`
+	}
+	json.Unmarshal(m.Data, &e)
+	if e.Error != "forbidden" {
+		t.Fatalf("watch_error = %q, want forbidden", e.Error)
+	}
+
+	// The watch is gone: later changes push nothing.
+	if s := other.do("POST", "/api/admin/events/"+itoa(eventID)+"/pause", map[string]string{}, nil); s != 204 {
+		t.Fatalf("pause event = %d", s)
+	}
+	mustNotRecv(t, c, 1500*time.Millisecond)
 }
