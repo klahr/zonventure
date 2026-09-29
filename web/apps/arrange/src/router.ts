@@ -8,6 +8,14 @@ import { useSyncExternalStore } from "react";
  * emailed link from either console lands on the same page. Hash URLs
  * survive the /app/arrange/ prefix without server-side rewrite rules.
  */
+/**
+ * The shared catalog of adventures is switched off for now: no tab, no
+ * links, and its old URLs land on Adventures (a commissioned adventure's
+ * page still opens there). The server side is untouched, so flipping
+ * this back brings it all back.
+ */
+export const CATALOG_ENABLED = false;
+
 export type Route =
   | { name: "dashboard" }
   | { name: "adventures" }
@@ -59,6 +67,7 @@ export function parseRoute(hash: string): Route {
       return arg ? { name: "designer", slug: arg } : { name: "adventures" };
     case "catalog":
     case "store":
+      if (!CATALOG_ENABLED) return arg ? { name: "adventure", slug: arg } : { name: "adventures" };
       return arg ? { name: "catalog-item", slug: arg } : { name: "catalog" };
     case "events": {
       const id = num(arg);

@@ -84,7 +84,7 @@ func (s *Server) registerTeamTools() {
 	s.tools.register(ToolDescriptor{
 		Name:        "delete_team",
 		Scope:       scopeWrite,
-		Description: "Remove a team and every slot it owns. Password-gated for the same reason cancel_event is — irreversible mid-event destruction shouldn't be possible from the MCP token alone.",
+		Description: "Remove a team and every slot it owns. Password-gated for the same reason cancel_event is — irreversible mid-event destruction shouldn't be possible from the API token alone.",
 		InputSchema: map[string]any{
 			"type":     "object",
 			"required": []string{"team_id", "password"},

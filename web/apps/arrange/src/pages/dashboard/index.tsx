@@ -3,7 +3,7 @@ import { ArrowRight, Building2, CalendarClock, Plus, Radio, Ticket, Users } from
 import type { Whoami } from "@zonventure/api";
 import { useT } from "../../i18n.tsx";
 import { useSession } from "../../session.tsx";
-import { href, navigate } from "../../router.ts";
+import { CATALOG_ENABLED, href, navigate } from "../../router.ts";
 import { Avatar, Button, Card, Dialog, ErrorBox, Field, Loading, Page, PageHeader, Pill, Table, errorText, relTime, useLoad, useToast, type Column } from "../../ui/index.ts";
 import { activeMembership, listAdventures, listAssignments, listEvents } from "../events/api.ts";
 import { EventsTable } from "../events/parts.tsx";
@@ -107,8 +107,8 @@ function ArrangerDashboard({ user }: { user: Whoami }) {
       setup = {
         lead: t.t("Three steps from here to your first event."),
         steps: [
-          { done: mine.length > 0 || unused.length > 0, title: t.t("Pick an adventure"), hint: t.t("Browse the catalog or write your own."), action: { label: t.t("Create"), href: href({ name: "adventures" }) } },
-          { done: unused.length > 0, title: t.t("Get an event pass"), hint: t.t("One pass per event, sized by players. The first 15 players are free."), action: { label: t.t("Open the catalog"), href: href({ name: "catalog" }) } },
+          { done: mine.length > 0 || unused.length > 0, title: t.t("Pick an adventure"), hint: CATALOG_ENABLED ? t.t("Browse the catalog or write your own.") : t.t("Puzzles, places and story, in the designer."), action: { label: t.t("Create"), href: href({ name: "adventures" }) } },
+          { done: unused.length > 0, title: t.t("Get an event pass"), hint: t.t("One pass per event, sized by players. The first 15 players are free."), action: CATALOG_ENABLED ? { label: t.t("Open the catalog"), href: href({ name: "catalog" }) } : { label: t.t("Open your adventures"), href: href({ name: "adventures" }) } },
           { done: false, title: t.t("Schedule and start"), hint: t.t("Pick a date, add teams, share each player’s magic link."), action: unused.length > 0 ? { label: t.t("Schedule"), onClick: () => setDialog({ assignmentId: unused[0]!.id }) } : null },
         ],
       };
@@ -140,8 +140,8 @@ function ArrangerDashboard({ user }: { user: Whoami }) {
           icon={<Ticket size={20} />}
           value={unused.length}
           label={t.t("Unused event passes")}
-          hint={unused.length > 0 ? t.t("Ready to schedule") : t.t("Get one in the catalog")}
-          href={unused.length > 0 ? href({ name: "settings", tab: "purchases" }) : href({ name: "catalog" })}
+          hint={unused.length > 0 ? t.t("Ready to schedule") : CATALOG_ENABLED ? t.t("Get one in the catalog") : t.t("Buy an event pass")}
+          href={unused.length > 0 ? href({ name: "settings", tab: "purchases" }) : href({ name: CATALOG_ENABLED ? "catalog" : "adventures" })}
         />
       </div>
 

@@ -60,5 +60,11 @@
   "{{total}} from one org": "{{total}} från en organisation",
   "API tokens": "API-tokens",
   "Long-lived tokens that let scripts, agents and MCP clients act on your behalf: create adventures, run events and more. Send one as an Authorization: Bearer header to /api/admin.": "Långlivade tokens som låter skript, agenter och MCP-klienter agera åt dig: skapa äventyr, köra event och mer. Skicka en som Authorization: Bearer-header till /api/admin.",
-  "No API tokens yet.": "Inga API-tokens ännu."
+  "No API tokens yet.": "Inga API-tokens ännu.",
+  "How to connect an MCP client": "Så ansluter du en MCP-klient",
+  "Click New token, pick its scopes and copy the token.": "Klicka på Ny token, välj behörigheter och kopiera token.",
+  "In your MCP client, add a remote (HTTP) server with the endpoint above.": "Lägg till en fjärrserver (HTTP) i din MCP-klient med adressen ovan.",
+  "Set the header Authorization: Bearer followed by your token.": "Sätt headern Authorization: Bearer följt av din token.",
+  "Ask it to list your adventures to check it works.": "Be den lista dina äventyr för att se att det fungerar.",
+  "For example, with Claude Code:": "Till exempel med Claude Code:"
 }

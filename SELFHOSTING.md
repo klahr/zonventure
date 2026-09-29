@@ -666,7 +666,7 @@ Not carried over:
 - Active sessions (`sessions`, `slot_sessions`) — players re-tap
   their preserved magic link, which mints a fresh session. Their
   in-app state (current puzzle, page index) is preserved.
-- MCP tokens — the operator re-mints on hosted.
+- API tokens — the operator re-mints on hosted.
 - Stripe Connect onboarding state — the org re-onboards on the
   hosted platform's Connect (different account, different
   identifiers).

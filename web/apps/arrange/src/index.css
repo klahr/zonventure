@@ -561,6 +561,8 @@ a.account-pop__row { color: inherit; text-decoration: none; box-sizing: border-b
   }
   .shell__sidebar[data-open="true"] { transform: none; visibility: visible; transition: transform 0.22s ease, visibility 0s; }
   .shell__sidebar .nav-label { display: inline; }
+  /* ...but the account's name and role stay a clipped column. */
+  .shell__sidebar .account-menu__who { display: flex; }
   .shell__collapse { display: none; }
   .shell__backdrop { display: block; position: fixed; inset: 52px 0 0; z-index: var(--z-sticky); background: rgba(15, 23, 42, 0.4); }
   .shell__main {

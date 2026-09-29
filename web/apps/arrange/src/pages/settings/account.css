@@ -39,6 +39,10 @@
 
 .dz .acct-copy { display: flex; gap: var(--dz-space-2); align-items: center; }
 .dz .acct-copy input { flex: 1; min-width: 0; font-family: var(--dz-font-mono); font-size: var(--dz-text-sm); background: var(--dz-surface-2); }
+.dz .acct-guide { margin-top: var(--dz-space-3); font-size: var(--dz-text-sm); }
+.dz .acct-guide summary { cursor: pointer; font-weight: 600; }
+.dz .acct-guide ol { margin: var(--dz-space-2) 0; padding-left: 1.25rem; display: grid; gap: var(--dz-space-1); }
+.dz .acct-guide pre { margin: var(--dz-space-2) 0 0; padding: var(--dz-space-2) var(--dz-space-3); overflow-x: auto; border-radius: var(--dz-r-1); background: var(--dz-surface-2); font-family: var(--dz-font-mono); font-size: var(--dz-text-xs); }
 .dz .acct-mono { font-family: var(--dz-font-mono); font-size: var(--dz-text-sm); }
 .dz .acct-qr { display: block; width: 200px; height: 200px; image-rendering: pixelated; border-radius: var(--dz-r-2); background: #fff; padding: 8px; box-sizing: content-box; }
 .dz .acct-otp { width: 10ch; font-family: var(--dz-font-mono); font-size: 1.25rem; letter-spacing: 0.3em; text-align: center; }

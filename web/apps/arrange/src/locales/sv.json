@@ -418,5 +418,8 @@
   "Flat": "Platta",
   "Save look": "Spara utseendet",
   "The look belongs to the adventure, not to a saved version: it applies to running events too.": "Utseendet hör till äventyret, inte till en sparad version: det gäller även event som pågår.",
-  "Outline cards": "Kantlinje på korten"
+  "Outline cards": "Kantlinje på korten",
+  "Create your own adventure to get started.": "Skapa ditt eget äventyr för att komma igång.",
+  "An organisation admin can create one for you.": "En organisationsadministratör kan skapa ett åt dig.",
+  "Get an event pass from an adventure's page to start scheduling events.": "Skaffa ett eventpass från ett äventyrs sida för att börja schemalägga event."
 }

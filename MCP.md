@@ -41,7 +41,7 @@ authoring, where every tool finishes in milliseconds.
 ### Auth
 
 Bearer token in `Authorization`. Tokens are minted by individual
-users from **Settings → Account → MCP API tokens**, stored as
+users from **Settings → Account → API tokens**, stored as
 `sha256(plaintext)` in the `mcp_tokens` table, and resolved at
 request time into the `auth.User` that minted them. The MCP
 session inherits that user's authoring policy verbatim — same org
@@ -94,7 +94,7 @@ files later in `/arrange`.
 ## Setup — users
 
 1. Sign into `/arrange`, open **Settings → Account**, scroll to
-   **MCP API tokens**.
+   **API tokens**.
 2. Click **New token**, name it (e.g. `claude-desktop`), copy the
    shown `zvmcp_…` plaintext. **The token is shown once** — paste
    it into your password manager before dismissing the modal.

@@ -123,7 +123,7 @@ func (s *Server) registerEventTools() {
 	s.tools.register(ToolDescriptor{
 		Name:        "cancel_event",
 		Scope:       scopeWrite,
-		Description: "Terminate an event before completion. Allowed from scheduled, running or paused. Discards live state (positions, leaderboard) without rollback. Requires the caller's password — pass it as 'password' so the admin layer's confirm-gate can verify it. The MCP token alone cannot cancel.",
+		Description: "Terminate an event before completion. Allowed from scheduled, running or paused. Discards live state (positions, leaderboard) without rollback. Requires the caller's password — pass it as 'password' so the admin layer's confirm-gate can verify it. The API token alone cannot cancel.",
 		InputSchema: map[string]any{
 			"type":     "object",
 			"required": []string{"event_id", "password"},

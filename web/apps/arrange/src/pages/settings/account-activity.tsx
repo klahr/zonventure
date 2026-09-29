@@ -248,6 +248,20 @@ export function McpTokensCard({ mcpEnabled }: { mcpEnabled: boolean }) {
           </Button>
         </div>
       </Field>}
+      {mcpEnabled && (
+        <details className="acct-guide">
+          <summary>{t.t("How to connect an MCP client")}</summary>
+          <ol>
+            <li>{t.t("Click New token, pick its scopes and copy the token.")}</li>
+            <li>{t.t("In your MCP client, add a remote (HTTP) server with the endpoint above.")}</li>
+            <li>{t.t("Set the header Authorization: Bearer followed by your token.")}</li>
+            <li>{t.t("Ask it to list your adventures to check it works.")}</li>
+          </ol>
+          <p className="acct-muted">{t.t("For example, with Claude Code:")}</p>
+          <pre>{`claude mcp add --transport http zonventure ${endpoint} \
+  --header "Authorization: Bearer <token>"`}</pre>
+        </details>
+      )}
       <Loaded load={tokens}>
         {(list) =>
           list.length === 0 ? (
@@ -327,7 +341,7 @@ function CreateTokenDialog({ onClose, onCreated }: { onClose: () => void; onCrea
   };
   return (
     <Dialog
-      title={t.t("Create MCP token")}
+      title={t.t("Create API token")}
       onClose={onClose}
       onSubmit={() => void submit()}
       footer={
@@ -383,7 +397,7 @@ function NewTokenDialog({ token, onClose }: { token: string; onClose: () => void
       }
     >
       <Callout variant="warning">{t.t("Copy this token now — it will not be shown again.")}</Callout>
-      <p className="acct-muted">{t.t("Paste it into your MCP client as the bearer token. Treat it like a password.")}</p>
+      <p className="acct-muted">{t.t("Send it as the bearer token from your script, agent or MCP client. Treat it like a password.")}</p>
       <div className="acct-copy">
         <input ref={field} readOnly autoFocus value={token} aria-label={t.t("Your new token")} onFocus={(e) => e.currentTarget.select()} />
       </div>

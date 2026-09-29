@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { Whoami } from "@zonventure/api";
 import { useT } from "../../i18n.tsx";
-import { href, type Route } from "../../router.ts";
+import { CATALOG_ENABLED, href, type Route } from "../../router.ts";
 import { Button, Dialog } from "../../ui/index.ts";
 import { activeMembership, pricing } from "../events/api.ts";
 
@@ -60,7 +60,9 @@ export function OnboardingDialog({ user, onClose }: { user: Whoami; onClose: () 
             { title: t.t("Run your own events"), text: t.t("schedule one from any of your adventures, like any organization.") },
           ]
         : [
-            { title: t.t("Browse adventures"), text: t.t("the catalog has ready-made adventures, or you can author your own.") },
+            CATALOG_ENABLED
+              ? { title: t.t("Browse adventures"), text: t.t("the catalog has ready-made adventures, or you can author your own.") }
+              : { title: t.t("Author an adventure"), text: t.t("puzzles, places and story, in the designer.") },
             { title: t.t("Get an event pass"), text: t.t("one per event, covering all its players. The first {{n}} play free.", { n: pricing(user).free }) },
             { title: t.t("Schedule an event"), text: t.t("add teams, share magic links, and start when ready.") },
           ];
@@ -76,7 +78,9 @@ export function OnboardingDialog({ user, onClose }: { user: Whoami; onClose: () 
       ? { label: t.t("Manage organizations"), route: { name: "organizations" } }
       : variant === "publisher"
         ? { label: t.t("Open your adventures"), route: { name: "adventures" } }
-        : { label: t.t("Browse the catalog"), route: { name: "catalog" } };
+        : CATALOG_ENABLED
+          ? { label: t.t("Browse the catalog"), route: { name: "catalog" } }
+          : { label: t.t("Open your adventures"), route: { name: "adventures" } };
 
   return (
     <Dialog

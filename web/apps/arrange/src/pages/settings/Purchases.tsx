@@ -3,7 +3,7 @@ import { Coins } from "lucide-react";
 import { get, post } from "@zonventure/api";
 import { useSession } from "../../session.tsx";
 import { useT } from "../../i18n.tsx";
-import { href } from "../../router.ts";
+import { CATALOG_ENABLED, href } from "../../router.ts";
 import { Button, Card, Empty, ErrorBox, ICON, Loading, Pill, Row, Table, fmtDate, fmtDateTime, fmtMoney, useDialogs, useLoad, useToast, type Tone } from "../../ui/index.ts";
 
 /** purchaseDTO, internal/admin/purchases.go. */
@@ -197,9 +197,9 @@ export function PurchasesTab() {
   const empty = (
     <Empty
       title={t.t("No purchases yet.")}
-      action={<a className="btn primary" href={href({ name: "catalog" })}><Coins size={ICON.md} aria-hidden />{t.t("Open the store")}</a>}
+      action={<a className="btn primary" href={href({ name: CATALOG_ENABLED ? "catalog" : "adventures" })}><Coins size={ICON.md} aria-hidden />{CATALOG_ENABLED ? t.t("Open the store") : t.t("Open your adventures")}</a>}
     >
-      {t.t("Browse the catalog and get an event pass to start scheduling events.")}
+      {CATALOG_ENABLED ? t.t("Browse the catalog and get an event pass to start scheduling events.") : t.t("Get an event pass from an adventure's page to start scheduling events.")}
     </Empty>
   );
 
@@ -225,7 +225,7 @@ export function PurchasesTab() {
       actions={
         <>
           {hasStripePaid && <Button size="sm" loading={busy === "portal"} onClick={() => void portal()}>{t.t("Update payment method")}</Button>}
-          {purchases.length > 0 && <a className="btn sm" href={href({ name: "adventures" })}>{t.t("Browse catalog")}</a>}
+          {purchases.length > 0 && <a className="btn sm" href={href({ name: "adventures" })}>{CATALOG_ENABLED ? t.t("Browse catalog") : t.t("Open your adventures")}</a>}
         </>
       }
       flush

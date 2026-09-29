@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { ApiError } from "@zonventure/api";
+import { ApiError, canAuthor } from "@zonventure/api";
 import { useT } from "../../i18n.tsx";
 import { useSession } from "../../session.tsx";
 import { navigate } from "../../router.ts";
-import { Button, Callout, Dialog, ErrorBox, Field, Loading, Row, fmtMoney, useLoad, useToast, errorText } from "../../ui/index.ts";
+import { Button, Callout, Dialog, Empty, ErrorBox, Field, Loading, Row, fmtMoney, useLoad, useToast, errorText } from "../../ui/index.ts";
 import { activeMembership, createEvent, createPurchase, createTeam, listAdventures, listAssignments, pricing, type AdventureRow, type Assignment } from "./api.ts";
 import { AdventureCover } from "./parts.tsx";
 import "./events.css";
@@ -138,11 +138,7 @@ function NewEventForm({ slug, assignmentId, ownsIt, onClose }: NewEventProps) {
   // Picker mode starts on the first adventure, as the classic console does.
   useEffect(() => {
     if (!needsPicker || !lists.data) return;
-    if (lists.data.advs.length === 0) {
-      toast.err(t.t("Create or browse an adventure first"));
-      onClose();
-      return;
-    }
+    if (lists.data.advs.length === 0) return;
     setPicked((p) => p ?? lists.data!.advs[0]!.slug);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lists.data]);
@@ -289,6 +285,37 @@ function NewEventForm({ slug, assignmentId, ownsIt, onClose }: NewEventProps) {
     return (
       <Dialog title={t.t("New event")} onClose={onClose}>
         <Loading label={t.t("Loading…")} />
+      </Dialog>
+    );
+  }
+  // Nothing to schedule yet: say so here, with the way forward, rather
+  // than flashing an error and closing.
+  if (needsPicker && lists.data && advs.length === 0) {
+    const author = canAuthor(user);
+    return (
+      <Dialog
+        title={t.t("New event")}
+        onClose={onClose}
+        footer={
+          <>
+            <Button onClick={onClose}>{t.t("Cancel")}</Button>
+            {author && (
+              <Button
+                variant="primary"
+                onClick={() => {
+                  onClose();
+                  navigate({ name: "adventures" });
+                }}
+              >
+                {t.t("Open your adventures")}
+              </Button>
+            )}
+          </>
+        }
+      >
+        <Empty title={t.t("No adventures you can use yet.")}>
+          {author ? t.t("Create your own adventure to get started.") : t.t("An organisation admin can create one for you.")}
+        </Empty>
       </Dialog>
     );
   }

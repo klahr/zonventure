@@ -3,7 +3,7 @@ import { CalendarPlus, Coins, Plus, Upload, Workflow } from "lucide-react";
 import { canAuthor } from "@zonventure/api";
 import { useT } from "../../i18n.tsx";
 import { useSession } from "../../session.tsx";
-import { href } from "../../router.ts";
+import { CATALOG_ENABLED, href } from "../../router.ts";
 import { Button, Empty, ErrorBox, HelpPopover, ICON, Loading, Page, PageHeader, Pill, useLoad, useToast } from "../../ui/index.ts";
 import { NewEventDialog } from "../events/NewEventDialog.tsx";
 import { duplicateAdventure, isPublisher, listAdventures, listAssignments, type AdventureRow, type Assignment } from "./api.ts";
@@ -140,13 +140,17 @@ export function AdventuresPage() {
         <Empty
           title={t.t("No adventures you can use yet.")}
           action={
-            <a className="btn adv-btn" href={href({ name: "catalog" })}>
-              <Coins size={ICON.md} aria-hidden />
-              {t.t("Browse the Catalog")}
-            </a>
+            CATALOG_ENABLED && (
+              <a className="btn adv-btn" href={href({ name: "catalog" })}>
+                <Coins size={ICON.md} aria-hidden />
+                {t.t("Browse the Catalog")}
+              </a>
+            )
           }
         >
-          {author ? t.t("Create your own or browse the Catalog for published adventures.") : t.t("Browse the Catalog for published adventures.")}
+          {CATALOG_ENABLED
+            ? author ? t.t("Create your own or browse the Catalog for published adventures.") : t.t("Browse the Catalog for published adventures.")
+            : author ? t.t("Create your own adventure to get started.") : t.t("An organisation admin can create one for you.")}
         </Empty>
       ) : (
         <div className="adv-grid">

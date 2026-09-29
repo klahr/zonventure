@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { flagFor } from "@zonventure/i18n";
 import { useT } from "../../i18n.tsx";
-import { href } from "../../router.ts";
+import { CATALOG_ENABLED, href } from "../../router.ts";
 import { Pill, Tabs, initials } from "../../ui/index.ts";
 
 /**
@@ -29,6 +29,7 @@ export function Cover({ title, src, size = 48, accent }: { title: string; src?: 
 /** Yours / Catalog, under the Adventures title. */
 export function AdventureTabs({ current }: { current: "yours" | "catalog" }) {
   const t = useT();
+  if (!CATALOG_ENABLED) return null;
   return (
     <Tabs
       label={t.t("Adventures")}
