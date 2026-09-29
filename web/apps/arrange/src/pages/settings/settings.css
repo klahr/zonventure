@@ -1,0 +1,6 @@
+/* Settings' tab strip: on phones every tab stays in view, wrapped as chips, rather than scrolling off the edge. */
+@media (max-width: 40rem) {
+  .dz .st-tabs .cs-tabs { flex-wrap: wrap; gap: var(--dz-space-1); padding-bottom: var(--dz-space-2); overflow: visible; }
+  .dz .st-tabs .cs-tab { margin: 0; padding: var(--dz-space-1) var(--dz-space-3); border: 0; border-radius: var(--dz-r-pill); }
+  .dz .st-tabs .cs-tab.is-on { background: color-mix(in srgb, var(--dz-accent) 12%, transparent); }
+}

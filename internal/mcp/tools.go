@@ -231,7 +231,7 @@ func (s *Server) registerTools() {
 				"slug": map[string]any{"type": "string", "description": "Adventure to update."},
 				"patch": map[string]any{
 					"type":        "object",
-					"description": "Partial patch matching the admin updateAdventureRequest shape. Common fields: title, description, author, intro_text, outro_text, language, accent_color, accent_secondary_color, background_color, text_color, submit_bg_color, strict_assets, start_lat, start_lng, start_label, slug.",
+					"description": "Partial patch matching the admin updateAdventureRequest shape. Common fields: title, description, author, intro_text, outro_text, language, accent_color, accent_secondary_color, background_color, text_color, submit_bg_color, font, heading_font, corners (rounded|soft|sharp), cards (raised|flat), card_outline (bool), strict_assets, start_lat, start_lng, start_label, slug.",
 				},
 			},
 		},

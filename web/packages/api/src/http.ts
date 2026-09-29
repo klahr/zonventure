@@ -29,13 +29,16 @@ export class ApiError extends Error {
    * report — and the caller needs that to show every problem at once.
    */
   readonly body: unknown;
+  /** Seconds from the Retry-After header, when the server sent one (a lockout). */
+  readonly retryAfter: number | undefined;
 
-  constructor(status: number, message: string, code?: string, body?: unknown) {
+  constructor(status: number, message: string, code?: string, body?: unknown, retryAfter?: number) {
     super(message);
     this.name = "ApiError";
     this.status = status;
     this.code = code;
     this.body = body;
+    this.retryAfter = retryAfter;
   }
 
   /** 401. The session is gone — re-authenticate rather than retrying. */
@@ -159,7 +162,8 @@ async function errorFrom(res: Response): Promise<ApiError> {
     // status-derived message rather than surfacing a parse failure,
     // which would tell the user nothing useful.
   }
-  return new ApiError(res.status, message, code, body);
+  const ra = Number.parseInt(res.headers.get("Retry-After") ?? "", 10);
+  return new ApiError(res.status, message, code, body, Number.isFinite(ra) && ra > 0 ? ra : undefined);
 }
 
 export const get = <T>(path: string, opts?: RequestOptions) =>

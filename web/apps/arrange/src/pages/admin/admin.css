@@ -1,0 +1,70 @@
+/* Organizations and Logs: only what the kit lacks. */
+
+.dz .ad-muted { margin: 0; color: var(--dz-muted); font-size: var(--dz-text-md); }
+.dz .ad-sub { color: var(--dz-muted); font-size: var(--dz-text-sm); }
+.dz .ad-mono { font-family: var(--dz-font-mono); font-variant-numeric: tabular-nums; }
+.dz .ad-inline { display: inline-flex; align-items: center; flex-wrap: wrap; gap: var(--dz-space-2); }
+.dz .ad-actions { display: inline-flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--dz-space-2); }
+.dz .ad-actions--icons { flex-wrap: nowrap; gap: var(--dz-space-1); }
+.dz .ad-logo { flex: none; border-radius: var(--dz-r-2); object-fit: contain; background: var(--dz-surface); }
+
+.dz .ad-search { position: relative; display: flex; align-items: center; flex: 1; min-width: 12rem; max-width: 24rem; color: var(--dz-muted); }
+.dz .ad-search > svg { position: absolute; left: var(--dz-space-3); pointer-events: none; }
+.dz .ad-search > input { padding-left: calc(var(--dz-space-3) * 2 + 16px); }
+
+.dz .ad-setting { display: flex; align-items: center; gap: var(--dz-space-4); flex-wrap: wrap; }
+.dz .ad-setting + .ad-toggle, .dz .ad-toggle + .ad-toggle, .dz .ad-toggle + .ad-setting { border-top: 1px solid var(--dz-border); padding-top: var(--dz-space-3); }
+.dz .ad-setting__text { display: flex; flex-direction: column; gap: var(--dz-space-1); flex: 1; min-width: 12rem; }
+.dz .ad-toggle { display: flex; align-items: flex-start; gap: var(--dz-space-3); cursor: pointer; }
+.dz .ad-toggle input { width: 18px; height: 18px; margin-top: 2px; flex: none; accent-color: var(--dz-accent); cursor: pointer; }
+.dz .ad-logo-drop { display: grid; place-items: center; width: 88px; height: 88px; padding: 6px; border: 1px dashed var(--dz-border-strong); border-radius: var(--dz-r-3); background: var(--dz-surface-2); color: var(--dz-muted); font-size: var(--dz-text-xs); text-align: center; }
+
+.dz .ad-chips { display: flex; flex-wrap: wrap; align-items: center; gap: var(--dz-space-2); }
+.dz .ad-shares { margin-top: var(--dz-space-2); }
+.dz .ad-chip { display: inline-flex; align-items: center; gap: var(--dz-space-1); padding: 3px 10px; border: 1px solid var(--dz-border); border-radius: var(--dz-r-pill); background: var(--dz-surface-2); color: var(--dz-ink); font-size: var(--dz-text-sm); }
+.dz .ad-chip--button { font: inherit; font-size: var(--dz-text-sm); cursor: pointer; }
+.dz .ad-chip--button:hover { border-color: var(--dz-accent); }
+.dz .ad-chip--used { color: var(--dz-muted); font-style: italic; }
+.dz .ad-chip__x { display: inline-grid; place-items: center; padding: 2px; margin-right: -4px; border: 0; border-radius: var(--dz-r-pill); background: none; color: var(--dz-muted); cursor: pointer; }
+.dz .ad-chip__x:hover { color: var(--dz-danger); background: var(--dz-surface-3); }
+
+.dz .ad-combo { position: relative; }
+.dz .ad-combo__list { position: absolute; left: 0; right: 0; z-index: 2; list-style: none; margin: 4px 0 0; padding: 4px; max-height: 14rem; overflow-y: auto; background: var(--dz-surface); border: 1px solid var(--dz-border); border-radius: var(--dz-r-2); box-shadow: var(--dz-shadow-pop); }
+.dz .ad-combo__list li { padding: 6px 10px; border-radius: var(--dz-r-1); cursor: pointer; }
+.dz .ad-combo__list li:hover, .dz .ad-combo__list li.is-active { background: var(--dz-surface-2); }
+.dz .ad-status { margin: 0; min-height: 1.2em; font-size: var(--dz-text-sm); color: var(--dz-muted); }
+.dz .ad-status.is-ok { color: var(--dz-success); }
+.dz .ad-picklist { display: flex; flex-direction: column; gap: var(--dz-space-2); }
+.dz .ad-picklist button { justify-content: flex-start; text-align: left; }
+.dz .modal-foot .ad-foot-start { margin-right: auto; }
+
+/* Logs: the page fills the main area (under any banner the shell shows) and only the terminal scrolls. */
+.dz.shell__main:has(> .ad-logs) { display: flex; flex-direction: column; }
+.dz .ad-logs { flex: 1; min-height: 0; }
+.dz .ad-logs > .cs-page { height: 100%; min-height: 0; gap: var(--dz-space-3); }
+.dz .ad-logbar { display: flex; align-items: center; flex-wrap: wrap; gap: var(--dz-space-2) var(--dz-space-3); }
+.dz .ad-logbar__sel { display: inline-flex; align-items: center; gap: var(--dz-space-2); }
+.dz .ad-logbar__sel > span { font-size: var(--dz-text-sm); color: var(--dz-muted); white-space: nowrap; }
+.dz .ad-logbar__sel select { width: auto; }
+.dz .ad-logbar__filter { max-width: none; }
+.dz .ad-term-wrap { position: relative; flex: 1; min-height: 16rem; display: flex; }
+.dz .ad-term { flex: 1; min-width: 0; overflow: auto; padding: var(--dz-space-3); border-radius: var(--dz-r-3); background: #0e1420; color: #d7dee8; font-family: var(--dz-font-mono); font-size: 13px; line-height: 1.45; }
+.dz .ad-term:focus-visible { outline: 2px solid var(--dz-accent); outline-offset: 2px; }
+.dz .ad-term__line { white-space: pre-wrap; overflow-wrap: anywhere; }
+.dz .ad-term__ts, .dz .ad-term__k { color: #7d8898; }
+.dz .ad-term__lvl { white-space: pre; }
+.dz .ad-term__line.is-debug .ad-term__lvl { color: #8a93a3; }
+.dz .ad-term__line.is-info .ad-term__lvl { color: #4fd1e0; }
+.dz .ad-term__line.is-warn .ad-term__lvl { color: #f2c94c; }
+.dz .ad-term__line.is-error .ad-term__lvl { color: #ff6b6b; font-weight: 700; }
+.dz .ad-term__line.is-error { color: #ffd0d0; }
+.dz .ad-term__empty { color: #7d8898; }
+.dz .ad-term__jump { position: absolute; right: var(--dz-space-4); bottom: var(--dz-space-3); box-shadow: var(--dz-shadow-lg); }
+/* On a phone the page scrolls as a whole (index.css); give the terminal most of the screen. */
+@media (max-width: 40rem) {
+  .dz .ad-logs > .cs-page { height: auto; }
+  .dz .ad-term-wrap { flex: none; height: 70dvh; }
+  .dz .ad-logbar__filter { flex-basis: 100%; }
+}
+
+.dz .cs-title .cs-avatar { font-family: var(--dz-font-sans); }

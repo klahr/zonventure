@@ -55,7 +55,7 @@ import {
   type Report,
 } from "@zonventure/graph";
 import { useT } from "../i18n.tsx";
-import { consoleHref } from "../router.ts";
+import { href } from "../router.ts";
 import { Canvas, cardSizes } from "./Canvas.tsx";
 import { Inspector } from "./Inspector.tsx";
 import { LanguageSwitch, LanguagesSettings, TranslateStep, translationLanguages } from "./Translate.tsx";
@@ -558,7 +558,7 @@ export function Designer({ slug }: { slug: string }) {
           : [t.t("The designer could not open"), loaded.message];
     return (
       <div className="designer-empty" role="alert">
-        <a className="link-btn" href={consoleHref("adventures")}>
+        <a className="link-btn" href={href({ name: "adventures" })}>
           ← {t.t("Adventures")}
         </a>
         <h1>{title}</h1>
@@ -570,7 +570,7 @@ export function Designer({ slug }: { slug: string }) {
   if (loaded.state === "none")
     return (
       <div className="designer-empty">
-        <a className="link-btn" href={consoleHref("adventures")}>
+        <a className="link-btn" href={href({ name: "adventures" })}>
           ← {t.t("Adventures")}
         </a>
         <h1>{t.t("Design this adventure")}</h1>
@@ -602,7 +602,7 @@ export function Designer({ slug }: { slug: string }) {
       <div className="editor" data-has-selection={slotOpen ? "true" : "false"} data-inspector-expanded={slotOpen ? "true" : "false"}>
         <div className="canvas">
           <div className="editor-toolbar">
-            <a className="dz-back" href={consoleHref("adventures/" + encodeURIComponent(slug))} title={t.t("Back to the adventure")} aria-label={t.t("Back to the adventure")}>
+            <a className="dz-back" href={href({ name: "adventure", slug })} title={t.t("Back to the adventure")} aria-label={t.t("Back to the adventure")}>
               <ArrowLeft size={ICON.md} />
             </a>
             <span className="toolbar-divider" aria-hidden="true" />

@@ -63,8 +63,19 @@ export interface LoginRequest {
  * The discriminator is `totp_required`; when set, the caller must post
  * the code to /api/auth/login/totp to finish.
  */
+/**
+ * internal/auth/handlers.go Login. A second factor answers 200 with
+ * code "totp_required" and a challenge to send back with the code.
+ */
 export interface LoginResponse {
-  totp_required?: boolean;
+  code?: "totp_required";
+  challenge?: string;
+}
+
+/** internal/auth: signup-config. */
+export interface SignupConfig {
+  enabled: boolean;
+  sso?: { enabled: boolean; button_label?: string; hosted_domain?: string; login_url?: string; provider_name?: string };
 }
 
 export interface VersionResponse {

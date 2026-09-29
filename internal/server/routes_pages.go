@@ -130,7 +130,20 @@ func registerPageRoutes(r chi.Router, env *routesEnv) {
 		}
 		servePage("web/play.html")(w, req)
 	})
-	r.Get("/arrange", servePage("web/arrange.html"))
+	// The console lives at /app/arrange/. /arrange redirects there with its
+	// query (Stripe's ?stripe_connect=return) kept; the browser carries
+	// the #hash across the redirect, and the new console reads the old
+	// hashes, so every emailed or bookmarked link still lands.
+	r.Get("/arrange", func(w http.ResponseWriter, req *http.Request) {
+		target := "/app/arrange/"
+		if req.URL.RawQuery != "" {
+			target += "?" + req.URL.RawQuery
+		}
+		http.Redirect(w, req, target, http.StatusFound)
+	})
+	// The classic console, kept reachable while its list-based adventure
+	// editor has no replacement decided.
+	r.Get("/arrange/classic", servePage("web/arrange.html"))
 
 	// Legal pages — public, cached at the proxy by Cache-Control.
 	// Both pages are clearly-marked drafts until the operator sets

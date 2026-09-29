@@ -1,0 +1,15 @@
+.dz .mg-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--dz-space-2); }
+.dz .mg-step { display: flex; align-items: center; gap: var(--dz-space-2); color: var(--dz-muted); }
+.dz .mg-step.is-running { color: var(--dz-ink); }
+.dz .mg-step.is-done { color: var(--dz-success); }
+.dz .mg-step.is-error { color: var(--dz-danger); }
+.dz .mg-step__icon { display: inline-grid; place-items: center; width: 1.5rem; }
+.dz .mg-spin { animation: mg-spin 1s linear infinite; }
+@keyframes mg-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .dz .mg-spin { animation: none; } }
+.dz .mg-log { margin: 0; font-size: var(--dz-text-sm); color: var(--dz-muted); }
+.dz .mg-log.is-err { color: var(--dz-danger); }
+.dz .mg-box { display: flex; flex-direction: column; gap: var(--dz-space-2); padding: var(--dz-space-3) var(--dz-space-4); border: 1px dashed var(--dz-border-strong); border-radius: var(--dz-r-2); background: var(--dz-surface-2); }
+.dz .mg-box p, .dz .mg-box ol, .dz .mg-box ul { margin: 0; }
+.dz .mg-box ol, .dz .mg-box ul { padding-left: 1.25rem; }
+.dz .mg-box a { word-break: break-all; }

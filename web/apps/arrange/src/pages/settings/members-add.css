@@ -1,0 +1,10 @@
+.dz .mb-pad { padding: 0 var(--dz-space-4) var(--dz-space-4); }
+.dz .mb-muted { color: var(--dz-muted); }
+.dz .mb-mode { margin: 0; font-size: var(--dz-text-sm); color: var(--dz-muted); }
+.dz .mb-mode.is-ok { color: var(--dz-success); }
+.dz .mb-err { margin: 0; font-size: var(--dz-text-sm); color: var(--dz-danger); }
+.dz .mb-combo { position: relative; }
+.dz .mb-suggest { list-style: none; margin: var(--dz-space-1) 0 0; padding: var(--dz-space-1); border: 1px solid var(--dz-border); border-radius: var(--dz-r-2); background: var(--dz-surface); max-height: 14rem; overflow-y: auto; box-shadow: var(--dz-shadow-pop); }
+.dz .mb-suggest li { padding: var(--dz-space-2) var(--dz-space-3); border-radius: var(--dz-r-1); cursor: pointer; }
+.dz .mb-suggest li.is-active { background: var(--dz-surface-2); }
+@media (max-width: 720px) { .dz .mb-btn-text { display: none; } }

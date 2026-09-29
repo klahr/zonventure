@@ -110,6 +110,10 @@ type PlayState struct {
 	// Brand is the adventure's palette, the one the lane player paints
 	// with too, so an adventure styled for either looks the same.
 	Brand *adventure.Colors `json:"brand,omitempty"`
+	// OrgBrand is the running organisation's colours, for the app's own
+	// chrome (bar, menu, welcome) and for steps of an adventure that has
+	// no palette of its own.
+	OrgBrand *adventure.Colors `json:"org_brand,omitempty"`
 	// View is set once the event has started.
 	View *play.View `json:"view,omitempty"`
 	// Prefetch is every media id the team may fetch now. The player app
@@ -160,6 +164,12 @@ func (h *Handlers) GetPlay(w http.ResponseWriter, r *http.Request) {
 	}
 	if tc.OrgHasLogo {
 		out.Event.OrgLogoURL = fmt.Sprintf("/org-logo/%d", tc.OrgID)
+	}
+	if ob, err := orgBrand(ctx, h.DB, tc.OrgID); err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "loading organisation failed", err)
+		return
+	} else if !ob.Empty() {
+		out.OrgBrand = &ob
 	}
 	if out.Messages, err = eventmsg.ForTeam(ctx, h.DB, tc.EventID, tc.TeamID); err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "loading messages failed", err)
@@ -276,15 +286,18 @@ func adventureLook(ctx context.Context, db *sql.DB, slug string) (look, error) {
 	err := db.QueryRowContext(ctx, `
 		SELECT title, intro_text, outro_text,
 		       accent_color, accent_secondary_color, background_color, text_color, submit_bg_color, font,
+		       heading_font, corners, cards, card_outline,
 		       start_lat, start_lng, start_label
 		FROM adventures WHERE slug = $1
-	`, slug).Scan(&l.title, &l.intro, &l.outro, &accent, &second, &bg, &ink, &dock, &l.brand.Font, &lat, &lng, &label)
+	`, slug).Scan(&l.title, &l.intro, &l.outro, &accent, &second, &bg, &ink, &dock, &l.brand.Font,
+		&l.brand.HeadingFont, &l.brand.Corners, &l.brand.Cards, &l.brand.CardOutline, &lat, &lng, &label)
 	if errors.Is(err, sql.ErrNoRows) {
 		return look{}, nil
 	}
 	l.brand = adventure.Colors{
 		Accent: accent.String, AccentSecondary: second.String, Background: bg.String,
 		Text: ink.String, SubmitBackground: dock.String, Font: l.brand.Font,
+		HeadingFont: l.brand.HeadingFont, Corners: l.brand.Corners, Cards: l.brand.Cards, CardOutline: l.brand.CardOutline,
 	}
 	if lat.Valid && lng.Valid {
 		l.start = &PlayStart{Lat: lat.Float64, Lng: lng.Float64, Label: label.String}
@@ -472,4 +485,27 @@ func (h *Handlers) recordPlay(ctx context.Context, tc teamContext, slotID int64,
 	if done, err := activity.MaybeCompleteEvent(ctx, h.DB, tc.EventID); err == nil && done {
 		h.publishEventCompleted(ctx, tc)
 	}
+}
+
+// orgBrand reads the organisation's colours, the same four an adventure
+// palette has. Missing ones stay empty and fall back to the defaults.
+func orgBrand(ctx context.Context, db *sql.DB, orgID int64) (adventure.Colors, error) {
+	var accent, second, bg, ink sql.NullString
+	err := db.QueryRowContext(ctx, `
+		SELECT accent_color, accent_secondary_color, background_color, text_color
+		FROM organizations WHERE id = $1
+	`, orgID).Scan(&accent, &second, &bg, &ink)
+	if errors.Is(err, sql.ErrNoRows) {
+		return adventure.Colors{}, nil
+	}
+	return adventure.Colors{Accent: longHex(accent.String), AccentSecondary: longHex(second.String), Background: longHex(bg.String), Text: longHex(ink.String)}, err
+}
+
+// longHex spells an organisation's "#rgb" as "#rrggbb": the org settings
+// accept both, the player only the long form.
+func longHex(c string) string {
+	if len(c) == 4 && c[0] == '#' {
+		return "#" + string([]byte{c[1], c[1], c[2], c[2], c[3], c[3]})
+	}
+	return c
 }

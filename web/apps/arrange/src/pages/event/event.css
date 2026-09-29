@@ -1,0 +1,104 @@
+/* The event page: what the kit lacks. Under .dz, in the --dz-* tokens. */
+
+.dz .ev-muted { color: var(--dz-muted); }
+.dz .ev-small { font-size: var(--dz-text-sm); }
+.dz .ev-grow { flex: 1 1 10rem; min-width: 0; }
+.dz .ev-stack { display: flex; flex-direction: column; gap: var(--dz-space-1); }
+.dz .ev-row-sm { display: flex; flex-wrap: wrap; align-items: center; gap: var(--dz-space-2); }
+.dz .ev-end { justify-content: flex-end; flex-wrap: nowrap; }
+.dz .ev-eyebrow { font-size: var(--dz-text-xs); font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--dz-muted); }
+.dz .ev-h3 { margin: var(--dz-space-2) 0 0; font-size: var(--dz-text-md); font-weight: 700; color: var(--dz-ink); }
+.dz .ev-w8 { width: 8rem; }
+.dz .ev-w5 { width: 5rem; }
+.dz .ev-callout-p { margin: var(--dz-space-1) 0 var(--dz-space-2); }
+.dz .ev-foot-start { margin-right: auto; }
+
+/* The title row stays in reach while scrolling through teams, on a screen wide enough to spare it. */
+@media (min-width: 900px) {
+  .dz .ev-head { position: sticky; top: 0; z-index: 5; margin-bottom: calc(-1 * var(--dz-space-3)); padding-bottom: var(--dz-space-3); background: var(--dz-bg); }
+  /* Covers the shell's top padding, so nothing scrolls by above the stuck bar. */
+  .dz .ev-head::before { content: ""; position: absolute; left: 0; right: 0; bottom: 100%; height: var(--dz-space-6); background: var(--dz-bg); }
+}
+.dz .ev-head .cs-title .icon { color: var(--dz-muted); }
+
+.dz .ev-cols { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: var(--dz-space-5); align-items: start; }
+.dz .ev-col { display: flex; flex-direction: column; gap: var(--dz-space-5); min-width: 0; }
+@media (max-width: 1100px) { .dz .ev-cols { grid-template-columns: minmax(0, 1fr); } }
+.dz .ev-scroll { max-height: 32rem; overflow-y: auto; }
+@media (max-width: 720px) { .dz .ev-scroll { max-height: 50vh; } }
+
+.dz .ev-link { display: inline-flex; align-items: center; gap: var(--dz-space-1); flex: 1 1 14rem; min-width: 0; }
+.dz .ev-link input { flex: 1; min-width: 0; font-family: var(--dz-font-mono); font-size: var(--dz-text-sm); background: var(--dz-surface-2); }
+.dz .ev-link--sm input { font-size: var(--dz-text-xs); }
+
+.dz .ev-live-dlg { display: flex; flex-direction: column; gap: var(--dz-space-3); }
+.dz .ev-live-dlg > p { margin: 0; }
+.dz .ev-sub { display: inline-flex; flex-wrap: wrap; gap: 0 6px; }
+.dz .ev-sub a { color: inherit; font-weight: 600; text-decoration: none; }
+.dz .ev-sub a:hover { color: var(--dz-accent); text-decoration: underline; }
+.dz .ev-num { font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.dz .ev-joined { font-size: var(--dz-text-sm); color: var(--dz-muted); white-space: nowrap; }
+.dz .ev-joined.is-all { color: var(--dz-success); font-weight: 600; }
+.dz .ev-expiry { font-size: var(--dz-text-xs); font-weight: 600; color: var(--dz-warning); }
+.dz .ev-expiry.is-expired { color: var(--dz-danger); }
+.dz .ev-check { display: inline-flex; align-items: center; gap: var(--dz-space-2); font-size: var(--dz-text-md); cursor: pointer; }
+.dz .ev-check input { width: auto; }
+
+.dz .ev-cover { width: 160px; aspect-ratio: 16 / 9; flex: none; border-radius: var(--dz-r-2); border: 1px solid var(--dz-border); background: var(--dz-surface-2) center / cover no-repeat; }
+
+.dz .ev-results { display: flex; flex-direction: column; gap: var(--dz-space-2); margin: 0; padding: 0; list-style: none; }
+.dz .ev-results li { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--dz-space-2); }
+.dz .ev-results li.is-dnf { color: var(--dz-muted); }
+.dz .ev-results__rank { min-width: 2.5rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.dz .ev-results li .ev-muted { font-size: var(--dz-text-sm); }
+.dz .ev-recap { display: inline-flex; align-items: center; gap: 4px; font-size: var(--dz-text-sm); }
+
+.dz .ev-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--dz-space-2); }
+.dz .ev-chips { display: flex; flex-wrap: wrap; gap: var(--dz-space-1); }
+.dz .ev-teams tr.is-stuck td { background: color-mix(in srgb, var(--dz-warning) 8%, transparent); }
+.dz .ev-team { display: flex; align-items: flex-start; gap: var(--dz-space-2); }
+.dz .ev-team__text { min-width: 0; }
+.dz .ev-team__name { padding: 0; border: 0; background: none; box-shadow: none; min-height: 0; color: var(--dz-accent); font-weight: 600; text-align: left; cursor: pointer; }
+.dz .ev-team__name:hover { text-decoration: underline; background: none; }
+.dz .ev-team__email { display: block; font-size: var(--dz-text-xs); color: var(--dz-muted); text-decoration: none; overflow-wrap: anywhere; }
+.dz .ev-avatar { display: inline-grid; place-items: center; flex: none; overflow: hidden; border-radius: 50%; border: 2px solid; color: #fff; font-weight: 700; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08); }
+.dz .ev-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+.dz .ev-feed { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; }
+.dz .ev-feed__item { display: grid; grid-template-columns: 1.6rem minmax(0, 1fr) auto; gap: var(--dz-space-2); align-items: start; padding: var(--dz-space-2) 0; border-bottom: 1px solid var(--dz-border); font-size: var(--dz-text-md); }
+.dz .ev-feed__item:last-child { border-bottom: 0; }
+.dz .ev-feed__badge { display: inline-grid; place-items: center; width: 1.5rem; height: 1.5rem; border-radius: 50%; font-size: var(--dz-text-xs); background: var(--dz-surface-2); color: var(--dz-ink-soft); }
+.dz .ev-feed__badge.is-brand { background: color-mix(in srgb, var(--dz-accent) 14%, var(--dz-surface)); color: var(--dz-accent); }
+.dz .ev-feed__badge.is-good { background: color-mix(in srgb, var(--dz-success) 14%, var(--dz-surface)); color: var(--dz-success); }
+.dz .ev-feed__badge.is-bad { background: color-mix(in srgb, var(--dz-danger) 14%, var(--dz-surface)); color: var(--dz-danger); }
+.dz .ev-feed__text { display: flex; flex-direction: column; min-width: 0; overflow-wrap: anywhere; }
+.dz .ev-feed__meta { font-size: var(--dz-text-xs); color: var(--dz-muted); }
+.dz .ev-feed time { font-size: var(--dz-text-xs); color: var(--dz-muted); white-space: nowrap; }
+
+.dz .ev-msgs { display: flex; flex-direction: column; gap: var(--dz-space-3); margin: 0; padding: 0; list-style: none; }
+.dz .ev-msgs li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px var(--dz-space-3); padding-bottom: var(--dz-space-3); border-bottom: 1px solid var(--dz-border); }
+.dz .ev-msgs li:last-child { border-bottom: 0; }
+.dz .ev-msgs li > button { grid-row: span 2; align-self: start; }
+.dz .ev-msgs__meta { font-size: var(--dz-text-sm); }
+.dz .ev-msgs__text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.dz .ev-fieldset { display: flex; flex-wrap: wrap; gap: var(--dz-space-2) var(--dz-space-4); margin: 0; padding: 0; border: 0; }
+.dz .ev-picks { display: flex; flex-wrap: wrap; gap: var(--dz-space-2) var(--dz-space-4); }
+
+.dz .ev-photos { display: grid; grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr)); gap: var(--dz-space-3); }
+.dz .ev-photo { display: flex; flex-direction: column; gap: var(--dz-space-1); }
+.dz .ev-photo__img { display: block; padding: 0; border: 0; background: none; box-shadow: none; min-height: 0; cursor: zoom-in; }
+.dz .ev-photo__img img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: var(--dz-r-2); }
+.dz .ev-photo__big { display: block; max-width: 100%; max-height: 65vh; margin: 0 auto; border-radius: var(--dz-r-2); }
+
+.dz .ev-td__head { display: flex; align-items: center; gap: var(--dz-space-3); }
+.dz .ev-td__members { display: flex; flex-direction: column; gap: var(--dz-space-1); margin: 0; padding: 0; list-style: none; }
+.dz .ev-td__members li { display: flex; flex-wrap: wrap; justify-content: space-between; gap: var(--dz-space-2); }
+.dz .ev-slots { display: flex; flex-direction: column; gap: var(--dz-space-2); }
+.dz .ev-slot { display: flex; flex-wrap: wrap; align-items: center; gap: var(--dz-space-1) var(--dz-space-2); }
+.dz .ev-slot__name { min-width: 8ch; }
+.dz .ev-slot__seen { flex-basis: 100%; }
+.dz .ev-grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: var(--dz-space-3); }
+
+
+/* Team and message dialogs (simplify pass, control area). */
+.dz .ev-hint { margin: 0; }

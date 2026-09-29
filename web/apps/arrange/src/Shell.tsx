@@ -1,14 +1,25 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Building2, CalendarDays, ChevronLeft, ChevronRight, ChevronUp, Compass, Gauge, Gift, LogOut, Map as MapIcon, Monitor, Moon, Settings, Sun, Terminal, type LucideIcon } from "lucide-react";
-import { isGlobalAdmin, type Whoami } from "@zonventure/api";
+import { Menu as MenuIcon, X, Building2, CalendarDays, ChevronLeft, ChevronRight, ChevronUp, Compass, Gauge, Gift, LogOut, Map as MapIcon, Monitor, Moon, Settings, Sun, Terminal, type LucideIcon } from "lucide-react";
+import { auth, type Whoami } from "@zonventure/api";
 import { readTheme, setTheme, type Theme } from "@zonventure/ui";
 import { useT } from "./i18n.tsx";
 import { useSession } from "./session.tsx";
-import { consoleHref, useRoute } from "./router.ts";
-import { AdventuresPage } from "./AdventuresPage.tsx";
+import { href, useRoute, type Route } from "./router.ts";
 import { Designer } from "./designer/Designer.tsx";
 import { TopBarTitle } from "./topbar.tsx";
+import { DialogProvider, ToastProvider } from "./ui/index.ts";
+import "./designer/dz.css";
+import "./ui/console.css";
+import { DashboardPage } from "./pages/dashboard/index.tsx";
+import { EventsPage, QuestsPage } from "./pages/events/index.tsx";
+import { EventPage } from "./pages/event/index.tsx";
+import { EventControlPage } from "./pages/control/index.tsx";
+import { AdventurePage, AdventuresPage, CatalogItemPage, CatalogPage } from "./pages/adventures/index.tsx";
+import { SettingsPage } from "./pages/settings/index.tsx";
+import { AccountBanners } from "./pages/settings/Banners.tsx";
+import { LogsPage, OrganizationPage, OrganizationsPage, WebhookLogPage } from "./pages/admin/index.tsx";
+import { RedemptionsPage } from "./pages/redemptions/index.tsx";
 
 /**
  * Authenticated shell: sidebar, header and the content region.
@@ -37,25 +48,69 @@ const ROLE: Record<Whoami["role"], string> = { admin: "Administrator", org_admin
  * before joining an organisation — only the way out. `adventures`
  * marks the section the designer belongs to.
  */
-function consoleNav(user: Whoami): { label: string; icon: LucideIcon; href: string; adventures: boolean }[] {
-  const item = (label: string, icon: LucideIcon, hash: string, adventures = false) => ({ label, icon, href: consoleHref(hash), adventures });
+type Section = "dashboard" | "organizations" | "logs" | "settings" | "adventures" | "events" | "quests" | "redemptions";
+
+function consoleNav(user: Whoami): { label: string; icon: LucideIcon; href: string; section: Section }[] {
+  const item = (label: string, icon: LucideIcon, r: Route, section: Section) => ({ label, icon, href: href(r), section });
   if (user.role === "admin") {
     return [
-      item("Dashboard", Gauge, "dashboard"),
-      item("Organizations", Building2, "organizations"),
-      item("Logs", Terminal, "logs"),
-      item("Settings", Settings, "settings"),
+      item("Dashboard", Gauge, { name: "dashboard" }, "dashboard"),
+      item("Organizations", Building2, { name: "organizations" }, "organizations"),
+      item("Logs", Terminal, { name: "logs" }, "logs"),
+      item("Settings", Settings, { name: "settings" }, "settings"),
     ];
   }
-  if (!user.memberships.length) return [item("Dashboard", Gauge, "dashboard"), item("Settings", Settings, "settings")];
+  if (!user.memberships.length) return [item("Dashboard", Gauge, { name: "dashboard" }, "dashboard"), item("Settings", Settings, { name: "settings" }, "settings")];
   return [
-    item("Dashboard", Gauge, "dashboard"),
-    item("Adventures", MapIcon, "adventures", true),
-    item("Events", CalendarDays, "events"),
-    item("Self-guided", Compass, "quests"),
-    item("Box redemptions", Gift, "redemptions"),
-    item("Settings", Settings, "settings"),
+    item("Dashboard", Gauge, { name: "dashboard" }, "dashboard"),
+    item("Adventures", MapIcon, { name: "adventures" }, "adventures"),
+    item("Events", CalendarDays, { name: "events" }, "events"),
+    item("Self-guided", Compass, { name: "quests" }, "quests"),
+    item("Box redemptions", Gift, { name: "redemptions" }, "redemptions"),
+    item("Settings", Settings, { name: "settings" }, "settings"),
   ];
+}
+
+/** The sidebar section a route belongs to, and its crumb label. */
+function sectionOf(r: Route): { section: Section; label: string } {
+  switch (r.name) {
+    case "adventures":
+    case "adventure":
+    case "designer":
+    case "catalog":
+    case "catalog-item":
+      return { section: "adventures", label: "Adventures" };
+    case "events":
+    case "event":
+    case "event-control":
+      return { section: "events", label: "Events" };
+    case "quests":
+      return { section: "quests", label: "Self-guided" };
+    case "redemptions":
+      return { section: "redemptions", label: "Box redemptions" };
+    case "organizations":
+    case "organization":
+      return { section: "organizations", label: "Organizations" };
+    case "logs":
+      return { section: "logs", label: "Logs" };
+    case "settings":
+    case "webhook-log":
+      return { section: "settings", label: "Settings" };
+    default:
+      return { section: "dashboard", label: "Dashboard" };
+  }
+}
+
+/**
+ * Who may open what, as the classic console decides it: the platform
+ * admin runs organisations and the system, and authors or runs nothing;
+ * a user in no organisation yet has the dashboard and settings only.
+ */
+function allowed(r: Route, user: Whoami): boolean {
+  const s = sectionOf(r).section;
+  if (user.role === "admin") return s === "dashboard" || s === "organizations" || s === "logs" || s === "settings";
+  if (!user.memberships.length) return s === "dashboard" || s === "settings";
+  return s !== "organizations" && s !== "logs";
 }
 
 export function Shell({ user }: { user: Whoami }) {
@@ -68,8 +123,26 @@ export function Shell({ user }: { user: Whoami }) {
   const [pageTitle, setPageTitle] = useState<string | null>(null);
 
   const route = useRoute();
-  const operator = isGlobalAdmin(user);
-  const nav = consoleNav(user).map((item) => ({ ...item, active: item.adventures && route.name !== "dashboard" }));
+  const current = sectionOf(route);
+  const nav = consoleNav(user).map((item) => ({ ...item, active: item.section === current.section }));
+  // Each page names itself for the crumb; a new page starts unnamed.
+  const routeKey = href(route);
+  useEffect(() => setPageTitle(null), [routeKey]);
+  // On a phone the sidebar is a drawer from the top bar's ☰; any move
+  // to another page closes it.
+  const [drawer, setDrawer] = useState(false);
+  useEffect(() => setDrawer(false), [routeKey]);
+  // A page this role can't open goes to the dashboard, crumb and all.
+  const permitted = allowed(route, user);
+  useEffect(() => {
+    if (!permitted) location.replace("#/");
+  }, [permitted, routeKey]);
+  useEffect(() => {
+    if (!drawer) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setDrawer(false);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [drawer]);
 
   function toggle() {
     setCollapsed((c) => {
@@ -91,13 +164,22 @@ export function Shell({ user }: { user: Whoami }) {
       </a>
 
       <header className="shell__top">
-        <a className="shell__brand" href={consoleHref("dashboard")} title="Zonventure Studio">
+        <button
+          type="button"
+          className="shell__menu"
+          onClick={() => setDrawer((d) => !d)}
+          aria-expanded={drawer}
+          aria-controls="shell-sidebar"
+          aria-label={drawer ? t.t("Close menu") : t.t("Menu")}
+        >
+          {drawer ? <X size={20} aria-hidden /> : <MenuIcon size={20} aria-hidden />}
+        </button>
+        <a className="shell__brand" href={href({ name: "dashboard" })} title="Zonventure">
           <span className="shell__wordmark">zonventure</span>
-          <span className="shell__sub">STUDIO</span>
         </a>
-        {!operator && route.name !== "dashboard" && (
+        {current.section !== "dashboard" && (
           <nav className="shell__crumb" aria-label={t.t("Breadcrumb")}>
-            <a href={consoleHref("adventures")}>{t.t("Adventures")}</a>
+            <a href={nav.find((n) => n.section === current.section)?.href ?? href({ name: "dashboard" })}>{t.t(current.label)}</a>
             {pageTitle && (
               <>
                 <span aria-hidden="true">/</span>
@@ -111,7 +193,8 @@ export function Shell({ user }: { user: Whoami }) {
         {org && <span className="shell__org">{org.org_name}</span>}
       </header>
 
-      <aside className="shell__sidebar" data-collapsed={collapsed}>
+      {drawer && <div className="shell__backdrop" onClick={() => setDrawer(false)} aria-hidden="true" />}
+      <aside id="shell-sidebar" className="shell__sidebar" data-collapsed={collapsed} data-open={drawer}>
 
         <nav className="shell__nav" aria-label={t.t("Primary")}>
           {nav.map((item) => (
@@ -138,7 +221,7 @@ export function Shell({ user }: { user: Whoami }) {
         <AccountMenu user={user} orgName={org?.org_name} collapsed={collapsed} onLogout={() => void logout()} />
       </aside>
 
-      <main className={"shell__main" + (route.name === "designer" ? " shell__main--full" : "")} id="main">
+      <main className={"shell__main dz" + (route.name === "designer" ? " shell__main--full" : "")} id="main">
         {/* Leaving a seeded credential on a reachable box is a
             takeover, so this is loud and not dismissible. */}
         {user.password_is_default && route.name !== "designer" && (
@@ -146,45 +229,18 @@ export function Shell({ user }: { user: Whoami }) {
             <strong>{t.t("Default password in use.")}</strong>{" "}
             {t.t(
               "This account still uses a seeded password. Change it now — anyone reaching this URL can log in as you until you do.",
-            )}
+            )}{" "}
+            <a href={href({ name: "settings", tab: "account" })}>{t.t("Change password →")}</a>
           </div>
         )}
-
-        {/* The platform admin authors nothing; the API refuses them too. */}
-        {operator && route.name !== "dashboard" && (
-          <p className="lede">
-            {t.t("Adventures are authored by organisations.")}{" "}
-            <a href={consoleHref("organizations")}>{t.t("Manage organizations →")}</a>
-          </p>
-        )}
-        {!operator && route.name === "designer" && (
-          <TopBarTitle.Provider value={setPageTitle}>
-            <Designer key={route.slug} slug={route.slug} />
-          </TopBarTitle.Provider>
-        )}
-        {!operator && route.name === "adventures" && <AdventuresPage />}
-        {route.name === "dashboard" && (
-          <>
-            <h1>{t.t("Dashboard")}</h1>
-            <dl className="meta">
-              <dt>{t.t("Signed in as {{name}}", { name: "" }).trim()}</dt>
-              <dd>
-                {user.username} · {user.role}
-              </dd>
-              {org && (
-                <>
-                  <dt>{t.t("Organisation")}</dt>
-                  <dd>{org.org_name}</dd>
-                </>
-              )}
-            </dl>
-            {!operator && (
-              <p className="lede">
-                <a href={consoleHref("adventures")}>{t.t("Design an adventure →")}</a>
-              </p>
-            )}
-          </>
-        )}
+        <AccountBanners user={user} />
+        <TopBarTitle.Provider value={setPageTitle}>
+          <ToastProvider>
+            <DialogProvider>
+              {permitted ? <Page route={route} /> : <DashboardPage />}
+            </DialogProvider>
+          </ToastProvider>
+        </TopBarTitle.Provider>
       </main>
     </div>
   );
@@ -206,8 +262,17 @@ function AccountMenu({ user, orgName, collapsed, onLogout }: { user: Whoami; org
   const trigger = useRef<HTMLButtonElement>(null);
   const [pos, setPos] = useState<{ left: number; bottom: number } | null>(null);
 
+  // The Account tab can change these too; read them afresh on opening.
+  const { refresh } = useSession();
+  const [version, setVersion] = useState<string | null>(null);
   useEffect(() => {
     if (!open) return;
+    setThemeState(readTheme());
+    if (version === null) {
+      fetch("/api/version")
+        .then((r) => r.json() as Promise<{ version?: string }>)
+        .then((v) => setVersion(v.version ?? ""), () => setVersion(""));
+    }
     const place = () => {
       const r = trigger.current?.getBoundingClientRect();
       if (r) setPos({ left: r.left, bottom: window.innerHeight - r.top + 6 });
@@ -304,7 +369,33 @@ function AccountMenu({ user, orgName, collapsed, onLogout }: { user: Whoami; org
                 </button>
               ))}
             </div>
+            {user.memberships.length > 1 && (
+              <>
+                <div className="account-pop__sep" role="separator" />
+                <div className="account-pop__label">{t.t("Organization")}</div>
+                {user.memberships.map((m) => (
+                  <button
+                    key={m.org_id}
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={m.org_id === user.org_id}
+                    className={"account-pop__row" + (m.org_id === user.org_id ? " is-on" : "")}
+                    onClick={() => {
+                      setOpen(false);
+                      if (m.org_id !== user.org_id) void auth.switchOrg(m.org_id).then(() => { location.hash = "#/"; return refresh(); });
+                    }}
+                  >
+                    <Building2 size={14} aria-hidden />
+                    {m.org_name}
+                  </button>
+                ))}
+              </>
+            )}
             <div className="account-pop__sep" role="separator" />
+            <a role="menuitem" className="account-pop__row" href={href({ name: "settings", tab: "account" })} onClick={() => setOpen(false)}>
+              <Settings size={14} aria-hidden />
+              {t.t("Settings")}
+            </a>
             <button
               type="button"
               role="menuitem"
@@ -317,6 +408,10 @@ function AccountMenu({ user, orgName, collapsed, onLogout }: { user: Whoami; org
               <LogOut size={14} aria-hidden />
               {t.t("Log out")}
             </button>
+            <div className="account-pop__foot">
+              <a href="/privacy">{t.t("Privacy")}</a> · <a href="/terms">{t.t("Terms")}</a>
+              {version && <span className="account-pop__version">{version}</span>}
+            </div>
           </div>,
           document.body,
         )}
@@ -326,3 +421,43 @@ function AccountMenu({ user, orgName, collapsed, onLogout }: { user: Whoami; org
 
 /** Each language in its own words, so a reader can find theirs. */
 const LANGUAGE: Record<string, string> = { en: "English", sv: "Svenska" };
+
+/** The page for a route. Each area's pages live under pages/<area>/. */
+function Page({ route }: { route: Route }) {
+  switch (route.name) {
+    case "dashboard":
+      return <DashboardPage />;
+    case "adventures":
+      return <AdventuresPage />;
+    case "adventure":
+      return <AdventurePage key={route.slug} slug={route.slug} />;
+    case "designer":
+      return <Designer key={route.slug} slug={route.slug} />;
+    case "catalog":
+      return <CatalogPage />;
+    case "catalog-item":
+      return <CatalogItemPage key={route.slug} slug={route.slug} />;
+    case "events":
+      return <EventsPage />;
+    case "event":
+      return <EventPage key={route.id} id={route.id} />;
+    case "event-control":
+      return <EventControlPage key={route.id} id={route.id} />;
+    case "quests":
+      return <QuestsPage />;
+    case "redemptions":
+      return <RedemptionsPage tab={route.tab} />;
+    case "organizations":
+      return <OrganizationsPage />;
+    case "organization":
+      return <OrganizationPage key={route.id} id={route.id} />;
+    case "logs":
+      return <LogsPage />;
+    case "settings":
+      return <SettingsPage tab={route.tab} />;
+    case "webhook-log":
+      return <WebhookLogPage key={route.endpoint} endpoint={route.endpoint} />;
+    case "not-found":
+      return <DashboardPage />;
+  }
+}

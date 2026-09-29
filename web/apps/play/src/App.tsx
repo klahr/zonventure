@@ -38,6 +38,17 @@ export function App() {
     document.title = docTitle || "Zonventure";
   }, [docTitle]);
 
+  // The phone's own bar matches the app bar: the organisation's page
+  // colour when it has one.
+  const barColour = s?.org_brand?.background;
+  useEffect(() => {
+    const meta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
+    if (!meta) return;
+    const initial = meta.dataset.initial ?? meta.content;
+    meta.dataset.initial = initial;
+    meta.content = barColour && /^#[0-9a-f]{6}$/i.test(barColour) ? barColour : initial;
+  }, [barColour]);
+
   // A new step takes focus, so keyboard and screen-reader users start
   // at its top instead of on whatever button they last pressed.
   const mainRef = useRef<HTMLElement>(null);
@@ -128,7 +139,17 @@ export function App() {
 
   return (
     <div className="app">
-      <header className="app-bar">
+      <header className="app-bar" style={brandVars(s.org_brand)}>
+        <Menu
+          state={s}
+          t={t}
+          i18n={i18n}
+          usesLocation={usesLocation}
+          shareLocation={shareLocation}
+          onShareLocation={setShareLocation}
+          onRenamed={game.refresh}
+          leave={game.leave}
+        />
         {s.event.org_logo_url && <img className="app-bar__logo" src={s.event.org_logo_url} alt={s.event.org_name ?? ""} />}
         <div className="app-bar__who">
           <div className="app-bar__title">{s.event.adventure_title || "Zonventure"}</div>
@@ -140,16 +161,6 @@ export function App() {
           </span>
         )}
         <Inbox messages={s.messages ?? []} teamID={s.team.id} t={t} locale={i18n.current()} />
-        <Menu
-          state={s}
-          t={t}
-          i18n={i18n}
-          usesLocation={usesLocation}
-          shareLocation={shareLocation}
-          onShareLocation={setShareLocation}
-          onRenamed={game.refresh}
-          leave={game.leave}
-        />
       </header>
 
       <main className="app-main" ref={mainRef} tabIndex={-1}>
@@ -170,7 +181,7 @@ export function App() {
             busy={game.busy || !running}
             feedback={game.feedback}
             t={t}
-            brand={s.brand ?? null}
+            brand={s.brand ?? s.org_brand ?? null}
             {...(s.event.outro_text ? { outro: s.event.outro_text } : {})}
             {...(s.finish ? { finish: { ...s.finish, provisional: s.event.state !== "completed" && s.event.state !== "cancelled" } } : {})}
             {...(zoneNote ? { zoneNote } : {})}
@@ -199,7 +210,7 @@ function Lobby({ state, t }: { state: play.PlayState; t: Translate }) {
     return <p>{t("This event has ended. Thanks for playing!")}</p>;
   }
   return (
-    <div className="app-lobby" style={brandVars(state.brand)}>
+    <div className="app-lobby" style={brandVars(state.org_brand ?? state.brand)}>
       <h1>{t("You're on team {{team}}", { team: state.team.name })}</h1>
       <p>
         {at && !Number.isNaN(at.getTime())
@@ -228,7 +239,7 @@ function Lobby({ state, t }: { state: play.PlayState; t: Translate }) {
 function Intro({ state, t, usesLocation, onDone }: { state: play.PlayState; t: Translate; usesLocation: boolean; onDone: () => void }) {
   const name = state.me?.name;
   return (
-    <div className="app-lobby" style={brandVars(state.brand)}>
+    <div className="app-lobby" style={brandVars(state.org_brand ?? state.brand)}>
       <h1>{state.event.adventure_title || "Zonventure"}</h1>
       <p>
         {name

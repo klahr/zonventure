@@ -116,6 +116,10 @@ interface AdventureEdit {
   text_color: string;
   submit_bg_color: string;
   font?: string;
+  heading_font?: string;
+  corners?: string;
+  cards?: string;
+  card_outline?: boolean;
 }
 
 /**
@@ -132,6 +136,10 @@ export async function getLook(slug: string, signal?: AbortSignal): Promise<Look>
   if (a.text_color) b.text = a.text_color;
   if (a.submit_bg_color) b.submit_bg = a.submit_bg_color;
   if (a.font) b.font = a.font;
+  if (a.heading_font) b.heading_font = a.heading_font;
+  if (a.corners === "rounded" || a.corners === "soft" || a.corners === "sharp") b.corners = a.corners;
+  if (a.cards === "raised" || a.cards === "flat") b.cards = a.cards;
+  if (a.card_outline) b.card_outline = true;
   return { title: a.title, intro: a.intro_text, outro: a.outro_text, language: a.language, lanePuzzles: a.pages?.length ?? 0, brand: b };
 }
 
@@ -160,6 +168,10 @@ export const saveBrand = (slug: string, b: Brand) =>
     text_color: b.text ?? "",
     submit_bg_color: b.submit_bg ?? "",
     font: b.font ?? "",
+    heading_font: b.heading_font ?? "",
+    corners: b.corners ?? "",
+    cards: b.cards ?? "",
+    card_outline: !!b.card_outline,
   });
 
 // --- media -----------------------------------------------------------------

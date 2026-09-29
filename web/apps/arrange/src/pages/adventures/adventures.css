@@ -1,0 +1,95 @@
+/* Adventures and the catalog: what the kit lacks — the cover tile, the
+ * adventure cards with actions, the hero, the map and puzzle cards. */
+
+.dz .adv-cover { display: inline-grid; place-items: center; flex: none; overflow: hidden; color: #fff; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; border: 1px solid rgb(0 0 0 / 0.08); box-shadow: 0 1px 3px rgb(0 0 0 / 0.12); }
+.dz .adv-cover--img { background: transparent; border: 0; box-shadow: none; }
+.dz .adv-cover--img img { width: 100%; height: 100%; object-fit: contain; display: block; }
+
+.dz .adv-lang { text-transform: uppercase; letter-spacing: 0.05em; }
+.dz .adv-mono { font-family: var(--dz-font-mono, ui-monospace, monospace); font-size: var(--dz-text-sm); }
+.dz .adv-muted { color: var(--dz-muted); }
+.dz .adv-small { font-size: var(--dz-text-sm); font-weight: 400; }
+.dz .adv-strong { margin: 0; font-weight: 600; }
+.dz .adv-pre { margin: 0; white-space: pre-wrap; color: var(--dz-ink); }
+.dz .adv-grow { flex: 1; min-width: 12rem; }
+.dz .adv-pad { margin: 0; padding: var(--dz-space-3) var(--dz-space-4); }
+.dz .adv-block { display: block; margin-top: 2px; }
+.dz .adv-h3 { display: flex; align-items: center; flex-wrap: wrap; gap: var(--dz-space-2); margin: 0 0 var(--dz-space-2); font-size: var(--dz-text-md); font-weight: 700; color: var(--dz-ink); }
+.dz .adv-list { margin: 0; padding-left: 1.2rem; display: flex; flex-direction: column; gap: var(--dz-space-1); }
+
+/* Cards in a grid. The title's link covers the card; actions sit above it. */
+.dz .adv-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 26rem), 1fr)); gap: var(--dz-space-3); }
+.dz .adv-card { position: relative; display: flex; flex-direction: column; gap: var(--dz-space-2); padding: var(--dz-space-4); background: var(--dz-surface); border: 1px solid var(--dz-border); border-radius: var(--dz-r-3); box-shadow: var(--dz-shadow); }
+.dz .adv-card:hover { border-color: var(--dz-border-strong); }
+.dz .adv-card:focus-within { border-color: var(--dz-accent); }
+.dz .adv-card__head { display: flex; align-items: center; gap: var(--dz-space-3); flex-wrap: wrap; }
+.dz .adv-card__title { flex: 1; min-width: 8rem; margin: 0; font-size: var(--dz-text-lg); font-weight: 700; line-height: 1.3; }
+.dz .adv-card__link { color: var(--dz-ink); text-decoration: none; }
+.dz .adv-card__link::after { content: ""; position: absolute; inset: 0; border-radius: inherit; }
+.dz .adv-card__link:focus-visible { outline: none; }
+.dz .adv-card__tags { display: flex; flex-wrap: wrap; gap: var(--dz-space-1); }
+.dz .adv-card__desc { margin: 0; color: var(--dz-ink-soft); font-size: var(--dz-text-md); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.dz .adv-card__meta { margin: 0; color: var(--dz-muted); font-family: var(--dz-font-mono, ui-monospace, monospace); font-size: var(--dz-text-xs); overflow-wrap: anywhere; }
+.dz .adv-card__actions { position: relative; z-index: 1; display: flex; flex-wrap: wrap; align-items: center; gap: var(--dz-space-2); margin-top: auto; padding-top: var(--dz-space-1); }
+.dz .adv-card__hint { color: var(--dz-muted); font-size: var(--dz-text-sm); }
+
+/* The adventure's hero: cover, title, pills; actions under it. */
+.dz .adv-hero { display: flex; flex-direction: column; gap: var(--dz-space-3); }
+.dz .adv-hero__row { display: flex; align-items: center; gap: var(--dz-space-4); min-width: 0; }
+.dz .adv-hero__text { display: flex; flex-direction: column; gap: var(--dz-space-1); min-width: 0; }
+.dz .adv-hero__text .cs-title { overflow-wrap: anywhere; }
+.dz .adv-hero__meta { display: flex; flex-wrap: wrap; gap: var(--dz-space-2); margin: 0; color: var(--dz-muted); }
+.dz .adv-hero__pills { display: flex; flex-wrap: wrap; gap: var(--dz-space-1); }
+.dz .adv-hero__actions { display: flex; flex-wrap: wrap; gap: var(--dz-space-2); }
+.dz .adv-hero__cover { padding: 0; border: 0; background: none; box-shadow: none; border-radius: var(--dz-r-3); cursor: pointer; min-height: 0; }
+.dz .adv-hero__cover:hover { background: none; filter: brightness(0.95); }
+@media (max-width: 480px) {
+  .dz .adv-hero__row { align-items: flex-start; gap: var(--dz-space-3); }
+  .dz .adv-hero .adv-cover { width: 64px !important; height: 64px !important; font-size: 22px !important; }
+}
+
+.dz .adv-prose { color: var(--dz-ink); line-height: 1.55; overflow-wrap: anywhere; }
+.dz .adv-prose > :first-child { margin-top: 0; }
+.dz .adv-prose > :last-child { margin-bottom: 0; }
+.dz .adv-prose img { max-width: 100%; height: auto; }
+
+/* Maps. */
+.dz .adv-start { display: flex; align-items: flex-start; gap: var(--dz-space-2); overflow-wrap: anywhere; }
+.dz .adv-start > svg { flex: none; margin-top: 3px; color: var(--dz-muted); }
+.dz .adv-map { width: 100%; border-radius: var(--dz-r-2); overflow: hidden; border: 1px solid var(--dz-border); }
+.adv-pin { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; border: 2px solid var(--pin); background: #fff; color: var(--pin); font: 700 11px/1 system-ui, sans-serif; box-shadow: 0 1px 3px rgb(0 0 0 / 0.3); cursor: default; }
+.adv-pin.is-gated { background: var(--pin); color: #fff; border-color: #fff; }
+
+/* A published graph's steps. */
+.dz .adv-steps { list-style: none; margin: 0; padding: 0; }
+.dz .adv-step { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--dz-space-2); padding: var(--dz-space-2) var(--dz-space-4); border-top: 1px solid var(--dz-border); }
+.dz .adv-step:first-child { border-top: 0; }
+.dz .adv-step .cs-pill { min-width: 4.5rem; justify-content: center; }
+.dz .adv-step__zone { display: inline-flex; align-items: center; gap: 4px; font-size: var(--dz-text-sm); }
+
+/* A lane adventure's puzzles. */
+.dz .adv-lane + .adv-lane { margin-top: var(--dz-space-4); }
+.dz .adv-puzzles { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.dz .adv-pz { display: flex; flex-direction: column; gap: var(--dz-space-2); padding: var(--dz-space-3) 0; border-top: 1px solid var(--dz-border); }
+.dz .adv-pz:first-child { border-top: 0; padding-top: 0; }
+.dz .adv-pz__head { display: flex; align-items: center; gap: var(--dz-space-2); min-width: 0; }
+.dz .adv-pz__num { display: inline-grid; place-items: center; flex: none; width: 24px; height: 24px; border-radius: 50%; background: var(--dz-surface-2); color: var(--dz-ink-soft); font-size: var(--dz-text-xs); font-weight: 700; }
+.dz .adv-pz__title { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.dz .adv-pz__images { display: flex; flex-wrap: wrap; gap: var(--dz-space-2); }
+.dz .adv-pz__images img { width: 96px; height: 72px; object-fit: cover; border-radius: var(--dz-r-1, 4px); border: 1px solid var(--dz-border); }
+.dz .adv-pz__hints summary { cursor: pointer; font-size: var(--dz-text-sm); font-weight: 600; color: var(--dz-ink-soft); }
+.dz .adv-pz__hint { display: flex; flex-direction: column; gap: var(--dz-space-1); margin-top: var(--dz-space-2); padding-left: var(--dz-space-3); border-left: 2px solid var(--dz-border); }
+.dz .adv-answers { display: flex; flex-wrap: wrap; gap: var(--dz-space-1); margin: 0; }
+.dz .adv-chip { display: inline-flex; padding: 2px 8px; border-radius: var(--dz-r-pill); background: var(--dz-surface-2); border: 1px solid var(--dz-border); font-size: var(--dz-text-sm); color: var(--dz-ink); }
+
+/* Dialogs. */
+.dz .adv-choices { display: flex; flex-direction: column; gap: var(--dz-space-2); }
+.dz .adv-choice { justify-content: flex-start; text-align: left; }
+.dz .adv-cover-row { display: flex; align-items: center; gap: var(--dz-space-3); }
+.dz .adv-cover-row__text { display: flex; flex-direction: column; gap: var(--dz-space-1); }
+.dz .adv-form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: var(--dz-space-3); }
+.dz .adv-fieldset { display: flex; flex-direction: column; gap: var(--dz-space-2); margin: 0; padding: var(--dz-space-3); border: 1px solid var(--dz-border); border-radius: var(--dz-r-2); min-width: 0; }
+.dz .adv-fieldset legend { padding: 0 var(--dz-space-1); }
+.dz .adv-check { display: flex; align-items: flex-start; gap: var(--dz-space-2); font-size: var(--dz-text-md); }
+.dz .adv-check input { margin-top: 3px; }
+.dz .btn.adv-btn { font-weight: inherit; }

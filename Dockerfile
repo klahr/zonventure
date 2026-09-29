@@ -16,6 +16,9 @@ WORKDIR /src
 # nowhere near the actual cause. node_modules is excluded by
 # .dockerignore, so the host's install never leaks in.
 COPY web ./web
+# The console reuses the classic console's translations (see
+# web/apps/arrange/src/i18n.tsx), so the catalogs travel along.
+COPY internal/server/web/locales/web ./internal/server/web/locales/web
 RUN cd web && npm ci && npm run build --workspaces --if-present
 
 # Build stage. Pure-Go build (CGO off) so the runtime image can be the

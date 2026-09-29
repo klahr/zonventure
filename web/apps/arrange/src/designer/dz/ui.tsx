@@ -94,15 +94,25 @@ export function Notice({ children }: { children: ReactNode }) {
 
 // --- hooks -----------------------------------------------------------------
 
+// Open dialogs, newest last. Escape closes only the newest, so a confirm
+// opened over a dialog doesn't take the dialog with it.
+const escapeStack: { current: () => void }[] = [];
+
 export function useEscapeToClose(onClose: () => void) {
   const ref = useRef(onClose);
   ref.current = onClose;
   useEffect(() => {
+    const entry = ref;
+    escapeStack.push(entry);
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") ref.current();
+      if (e.key === "Escape" && escapeStack[escapeStack.length - 1] === entry) entry.current();
     };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      const i = escapeStack.lastIndexOf(entry);
+      if (i >= 0) escapeStack.splice(i, 1);
+    };
   }, []);
 }
 

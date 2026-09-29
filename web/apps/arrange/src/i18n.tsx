@@ -5,6 +5,7 @@ import {
   type ReactNode,
 } from "react";
 import { I18n } from "@zonventure/i18n";
+import classic from "../../../../internal/server/web/locales/web/sv.json";
 import sv from "./locales/sv.json";
 
 /**
@@ -15,12 +16,14 @@ import sv from "./locales/sv.json";
  * Swedish key degrades to readable English instead of a bare
  * identifier.
  *
- * Phase 1 carries only the shell strings. The full 2,116-line
- * catalogs in internal/server/web/locales/ come across as their
- * surfaces are ported, so the two never disagree about a string that
- * is live in both places.
+ * Swedish is three layers, later ones winning: the classic console's
+ * catalog (same English keys, so a ported screen keeps its
+ * translations), one file per ported area under locales/sv/ (so areas
+ * are translated without touching each other's files), and this app's
+ * own sv.json.
  */
-const catalogs = { en: {}, sv };
+const areas = import.meta.glob<Record<string, string>>("./locales/sv/*.json", { eager: true, import: "default" });
+const catalogs = { en: {}, sv: { ...(classic as Record<string, string>), ...Object.assign({}, ...Object.values(areas)), ...sv } };
 
 const instance = new I18n(catalogs);
 const I18nContext = createContext(instance);

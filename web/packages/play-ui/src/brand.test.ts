@@ -37,3 +37,20 @@ test("anything that is not a hex triplet never reaches a style", () => {
     assert.deepEqual(brandVars({ accent: bad, background: bad, text: bad, submit_bg: bad }), {}, bad);
   }
 });
+
+test("theme presets map onto radius, shadow and heading tokens", () => {
+  const sharp = brandVars({ corners: "sharp", cards: "flat", card_outline: true, font: "merriweather", heading_font: "fredoka" });
+  assert.equal(sharp["--radius-pill"], "2px");
+  assert.equal(sharp["--shadow"], "none");
+  assert.ok(sharp["--pv-card-line"]?.startsWith("color-mix("), "the outline is a real line");
+  assert.equal(sharp["--pv-card-bg"], undefined, "an outlined flat card needs no fill");
+  const tinted = brandVars({ cards: "flat" });
+  assert.ok(tinted["--pv-card-bg"]?.startsWith("color-mix("), "a flat card without a line is filled");
+  assert.equal(tinted["--pv-card-line"], "transparent");
+  const raisedLine = brandVars({ card_outline: true });
+  assert.equal(raisedLine["--shadow"], undefined, "raised keeps its shadow");
+  assert.equal(sharp["--font-body"], '"Merriweather", system-ui, sans-serif');
+  assert.equal(sharp["--font-brand"], '"Fredoka", system-ui, sans-serif');
+  assert.deepEqual(brandVars({ corners: "rounded", cards: "raised" }), {}, "the defaults override nothing");
+  assert.deepEqual(brandVars({ corners: "wobbly" as never, heading_font: "comic" }), {}, "unknown presets are ignored");
+});

@@ -1,0 +1,44 @@
+.dz .og-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--dz-space-5); }
+@media (min-width: 64rem) {
+  .dz .og-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 24rem); }
+  .dz .og-preview { position: sticky; top: var(--dz-space-4); align-self: start; }
+}
+.dz .og-controls { display: flex; flex-direction: column; gap: var(--dz-space-5); min-width: 0; }
+.dz .og-section { display: flex; flex-direction: column; gap: var(--dz-space-2); }
+.dz .og-section h3, .dz .og-preview h3 { margin: 0; font-size: var(--dz-text-md); font-weight: 700; color: var(--dz-ink); }
+.dz .og-blurb { margin: 0; color: var(--dz-muted); font-size: var(--dz-text-sm); }
+.dz .og-mono { font-family: var(--dz-font-mono); }
+.dz .og-url { display: inline-flex; align-items: center; gap: var(--dz-space-1); color: var(--dz-accent); word-break: break-all; }
+.dz .og-slug { display: flex; gap: var(--dz-space-2); align-items: flex-end; }
+.dz .og-slug > .cs-field { flex: 1; min-width: 0; }
+.dz .og-chip { font-size: var(--dz-text-xs); font-weight: 600; color: var(--dz-success); opacity: 0; transition: opacity 0.25s; }
+.dz .og-chip.is-on { opacity: 1; }
+.dz .og-label { font-size: var(--dz-text-sm); color: var(--dz-muted); margin-bottom: var(--dz-space-1); }
+.dz .og-label--strong { display: flex; align-items: center; gap: var(--dz-space-1); font-weight: 700; color: var(--dz-ink); margin: var(--dz-space-2) 0 0; }
+.dz .og-images { display: flex; gap: var(--dz-space-4); flex-wrap: wrap; align-items: flex-start; }
+.dz .og-images > div { display: flex; flex-direction: column; align-items: flex-start; gap: var(--dz-space-1); }
+.dz .og-images__cover { flex: 1; min-width: 14rem; }
+.dz button.og-thumb { display: flex; align-items: center; justify-content: center; padding: 0; border: 2px dashed var(--dz-border-strong); border-radius: var(--dz-r-3); background: var(--dz-surface-2); background-size: cover; background-position: center; color: var(--dz-muted); cursor: pointer; overflow: hidden; }
+.dz button.og-thumb:hover, .dz button.og-thumb:focus-visible { border-color: var(--dz-accent); }
+.dz button.og-thumb.has-image { border-style: solid; border-color: var(--dz-border); }
+.dz button.og-thumb.has-image:hover, .dz button.og-thumb.has-image:focus-visible { border-color: var(--dz-accent); }
+.dz .og-thumb span { font-size: var(--dz-text-xs); padding: var(--dz-space-2); text-align: center; pointer-events: none; }
+.dz .og-thumb--logo { width: 6rem; height: 6rem; }
+.dz .og-thumb--logo img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.dz .og-thumb--cover { width: 100%; max-width: 22rem; aspect-ratio: 16 / 9; }
+.dz .og-colors { display: flex; flex-direction: column; gap: var(--dz-space-2); }
+.dz .og-color { display: flex; align-items: center; gap: var(--dz-space-2); flex-wrap: wrap; }
+.dz .og-color__label { font-size: var(--dz-text-sm); color: var(--dz-muted); min-width: 9rem; }
+.dz .og-color input[type="color"] { width: 2.5rem; height: 2.5rem; padding: 0; border: 1px solid var(--dz-border); border-radius: var(--dz-r-2); cursor: pointer; background: none; }
+.dz .og-color input[type="text"] { width: 7rem; font-size: var(--dz-text-sm); }
+.dz .og-err { margin: 0; color: var(--dz-danger); font-size: var(--dz-text-sm); }
+.dz .og-preview { display: flex; flex-direction: column; gap: var(--dz-space-2); min-width: 0; }
+.dz .og-hero { min-height: 11rem; padding: var(--dz-space-4); border-radius: 14px; display: flex; flex-direction: column; justify-content: flex-end; gap: var(--dz-space-2); box-shadow: 0 4px 16px rgba(31, 51, 73, 0.12); overflow: hidden; }
+.dz .og-hero__brand { display: flex; align-items: center; gap: var(--dz-space-3); min-width: 0; }
+.dz .og-hero__logo { width: 3.2rem; height: 3.2rem; border-radius: 8px; background: #fff; display: flex; align-items: center; justify-content: center; overflow: hidden; flex-shrink: 0; font-size: 0.7rem; color: #999; }
+.dz .og-hero__logo img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.dz .og-hero__name { font-family: Georgia, serif; font-size: 1.6rem; font-weight: 700; color: #fff; line-height: 1.1; overflow-wrap: anywhere; }
+.dz .og-hero__tagline { color: rgba(255, 255, 255, 0.85); font-size: 0.95rem; }
+.dz .og-hero__btn { display: inline-block; padding: 0.65rem 1.2rem; border-radius: 999px; font-weight: 700; color: #fff; opacity: 0.92; }
+.dz .og-swatches { display: flex; gap: var(--dz-space-2); }
+.dz .og-swatches span { display: grid; place-items: center; width: 2.25rem; height: 2.25rem; border-radius: var(--dz-r-2); border: 1px solid var(--dz-border); font-weight: 700; font-size: var(--dz-text-sm); }

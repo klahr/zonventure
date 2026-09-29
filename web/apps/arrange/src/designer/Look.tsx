@@ -12,12 +12,25 @@ const FONT_LABELS: Record<string, string> = {
   fredoka: "Playful",
 };
 
-const FIELDS: { key: keyof play.Brand; label: string; hint: string }[] = [
+type ColourKey = "accent" | "accent_secondary" | "background" | "text" | "submit_bg";
+
+const FIELDS: { key: ColourKey; label: string; hint: string }[] = [
   { key: "accent", label: "Accent", hint: "Buttons, the map pin, the score." },
   { key: "accent_secondary", label: "Titles", hint: "Step titles and headings. Defaults to the accent." },
   { key: "background", label: "Page", hint: "Behind everything." },
   { key: "text", label: "Text", hint: "Prompts and story text." },
   { key: "submit_bg", label: "Answer bar", hint: "The bar at the bottom with the answer box." },
+];
+
+/** The presets beside the colours: one pick each, never a raw value. */
+const CORNERS: { value: NonNullable<play.Brand["corners"]>; label: string }[] = [
+  { value: "rounded", label: "Rounded" },
+  { value: "soft", label: "Soft" },
+  { value: "sharp", label: "Sharp" },
+];
+const CARDS: { value: NonNullable<play.Brand["cards"]>; label: string }[] = [
+  { value: "raised", label: "Raised" },
+  { value: "flat", label: "Flat" },
 ];
 
 interface Props {
@@ -43,9 +56,17 @@ interface Props {
  */
 export function Look({ brand, dirty, saving, error, onChange, onSave, onRevert }: Props) {
   const t = useT();
-  const set = (key: keyof play.Brand, v: string | null) => {
+  const set = (key: ColourKey, v: string | null) => {
     const next = { ...brand };
     if (v && isHex(v)) next[key] = v.toLowerCase();
+    else delete next[key];
+    onChange(next);
+  };
+
+  // A preset key, or its default ("" in storage) when it is the first choice.
+  const pick = <K extends "font" | "heading_font" | "corners" | "cards">(key: K, v: string, fallback = "") => {
+    const next = { ...brand };
+    if (v && v !== fallback) (next as Record<string, string>)[key] = v;
     else delete next[key];
     onChange(next);
   };
@@ -88,24 +109,54 @@ export function Look({ brand, dirty, saving, error, onChange, onSave, onRevert }
           </div>
         );
       })}
+      <h3>{t.t("Style")}</h3>
       <label className="field">
         <span className="field__label">{t.t("Typeface")}</span>
-        <select className="field__input" value={brand.font ?? ""} onChange={(e) => {
-          const next = { ...brand };
-          if (e.target.value) next.font = e.target.value;
-          else delete next.font;
-          onChange(next);
-        }}>
+        <select className="field__input" value={brand.font ?? ""} onChange={(e) => pick("font", e.target.value)}>
           <option value="">{t.t("Standard")}</option>
           {Object.entries(FONT_LABELS).map(([k, label]) => (
             <option key={k} value={k}>{t.t(label)} — {FONTS[k]}</option>
           ))}
         </select>
       </label>
+      <label className="field">
+        <span className="field__label">{t.t("Titles typeface")}</span>
+        <select className="field__input" value={brand.heading_font ?? ""} onChange={(e) => pick("heading_font", e.target.value)}>
+          <option value="">{t.t("Same as the text")}</option>
+          {Object.entries(FONT_LABELS).map(([k, label]) => (
+            <option key={k} value={k}>{t.t(label)} — {FONTS[k]}</option>
+          ))}
+        </select>
+      </label>
+      <Choice
+        label={t.t("Corners")}
+        options={CORNERS.map((c) => ({ value: c.value, label: t.t(c.label) }))}
+        value={brand.corners ?? "rounded"}
+        onPick={(v) => pick("corners", v, "rounded")}
+      />
+      <Choice
+        label={t.t("Cards")}
+        options={CARDS.map((c) => ({ value: c.value, label: t.t(c.label) }))}
+        value={brand.cards ?? "raised"}
+        onPick={(v) => pick("cards", v, "raised")}
+      />
+      <label className="look__check">
+        <input
+          type="checkbox"
+          checked={!!brand.card_outline}
+          onChange={(e) => {
+            const next = { ...brand };
+            if (e.target.checked) next.card_outline = true;
+            else delete next.card_outline;
+            onChange(next);
+          }}
+        />
+        <span>{t.t("Outline cards")}</span>
+      </label>
       {error && <div className="alert alert--danger">{error}</div>}
       <div className="look__actions">
         <button type="button" className="btn btn--primary btn--sm" disabled={!dirty || saving} onClick={onSave}>
-          {saving ? t.t("Saving…") : t.t("Save colours")}
+          {saving ? t.t("Saving…") : t.t("Save look")}
         </button>
         {dirty && (
           <button type="button" className="btn btn--ghost btn--sm" disabled={saving} onClick={onRevert}>
@@ -113,7 +164,30 @@ export function Look({ brand, dirty, saving, error, onChange, onSave, onRevert }
           </button>
         )}
       </div>
-      <p className="field__hint">{t.t("Colours belong to the adventure, not to a saved version: they apply to running events too.")}</p>
+      <p className="field__hint">{t.t("The look belongs to the adventure, not to a saved version: it applies to running events too.")}</p>
     </section>
+  );
+}
+
+/** A preset as a row of segments: every option visible, one tap to pick. */
+function Choice(props: { label: string; options: { value: string; label: string }[]; value: string; onPick: (v: string) => void }) {
+  return (
+    <div className="field" role="radiogroup" aria-label={props.label}>
+      <span className="field__label">{props.label}</span>
+      <div className="look__segments">
+        {props.options.map((o) => (
+          <button
+            key={o.value}
+            type="button"
+            role="radio"
+            aria-checked={props.value === o.value}
+            className={"look__segment" + (props.value === o.value ? " is-on" : "")}
+            onClick={() => props.onPick(o.value)}
+          >
+            {o.label}
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }

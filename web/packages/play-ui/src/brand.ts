@@ -68,6 +68,16 @@ export const FONTS: Record<string, string> = {
   fredoka: "Fredoka",
 };
 
+/**
+ * Corner presets, as the radius tokens every rounded thing reads: soft
+ * keeps a hint of round, sharp squares everything but a 2px edge that
+ * stops it looking unfinished. Rounded is the tokens' own values.
+ */
+const CORNERS: Record<string, Record<string, string>> = {
+  soft: { "--radius-sm": "3px", "--radius": "6px", "--radius-lg": "8px", "--radius-pill": "10px" },
+  sharp: { "--radius-sm": "2px", "--radius": "2px", "--radius-lg": "2px", "--radius-pill": "2px" },
+};
+
 /** Load an adventure's typeface once per page. Offline, text falls back to the system font. */
 export function loadFont(key: string | undefined) {
   const family = key ? FONTS[key] : undefined;
@@ -113,6 +123,22 @@ export function brandVars(b: play.Brand | null | undefined): Record<string, stri
     out["--font-body"] = `"${family}", system-ui, sans-serif`;
     out["--font-brand"] = `"${family}", system-ui, sans-serif`;
   }
+  const heading = b.heading_font ? FONTS[b.heading_font] : undefined;
+  if (heading) out["--font-brand"] = `"${heading}", system-ui, sans-serif`;
+  Object.assign(out, CORNERS[b.corners ?? ""] ?? {});
+  // Depth and line are separate choices. Flat drops the shadow; without
+  // a line it needs a fill, or a card on a page of its own colour would
+  // disappear. The line is one the eye can find on any page colour.
+  const ink = isHex(b.text) ? b.text : "#1f3349";
+  if (b.cards === "flat") {
+    out["--shadow"] = "none";
+    out["--shadow-sm"] = "none";
+    if (!b.card_outline) {
+      out["--pv-card-bg"] = `color-mix(in srgb, var(--surface) 93%, ${ink})`;
+      out["--pv-card-line"] = "transparent";
+    }
+  }
+  if (b.card_outline) out["--pv-card-line"] = `color-mix(in srgb, ${ink} 30%, transparent)`;
   if (isHex(b.submit_bg)) {
     out["--pv-dock-bg"] = b.submit_bg;
     out["--pv-dock-fg"] = readableOn(b.submit_bg);

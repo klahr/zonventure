@@ -405,5 +405,18 @@
   "Gate": "Spärr",
   "Effect": "Effekt",
   "Crossroads": "Vägskäl",
-  "End": "Slut"
+  "End": "Slut",
+  "Style": "Stil",
+  "Titles typeface": "Typsnitt för rubriker",
+  "Same as the text": "Samma som texten",
+  "Corners": "Hörn",
+  "Cards": "Kort",
+  "Rounded": "Rundade",
+  "Soft": "Mjuka",
+  "Sharp": "Skarpa",
+  "Raised": "Upphöjda",
+  "Flat": "Platta",
+  "Save look": "Spara utseendet",
+  "The look belongs to the adventure, not to a saved version: it applies to running events too.": "Utseendet hör till äventyret, inte till en sparad version: det gäller även event som pågår.",
+  "Outline cards": "Kantlinje på korten"
 }

@@ -313,6 +313,14 @@ export interface Brand {
   submit_bg?: string;
   /** A typeface key from adventure.Fonts; empty is the default. */
   font?: string;
+  /** Titles' typeface, from the same list; empty follows font. */
+  heading_font?: string;
+  /** Corner style; empty is "rounded". */
+  corners?: "rounded" | "soft" | "sharp";
+  /** How panels stand off the page: a shadow, or a tinted fill. Empty is "raised". */
+  cards?: "raised" | "flat";
+  /** A clear line round cards, raised or flat. */
+  card_outline?: boolean;
 }
 
 // --- player ---------------------------------------------------------------
@@ -341,6 +349,8 @@ export interface PlayState {
   finish?: Finish;
   /** The adventure's palette, when the author set one. */
   brand?: Brand;
+  /** The running organisation's colours: the app's own chrome, and steps of an adventure without a palette. */
+  org_brand?: Brand;
   view?: View;
   /** Media ids the team may fetch now, for downloading ahead of need. */
   prefetch?: number[];

@@ -122,6 +122,7 @@ export function PlayView(props: PlayViewProps) {
   });
   const style = useMemo(() => brandVars(brand) as CSSProperties, [brand]);
   useEffect(() => loadFont(brand?.font), [brand?.font]);
+  useEffect(() => loadFont(brand?.heading_font), [brand?.heading_font]);
 
   // A new step closes a sheet left open on the old one.
   useEffect(() => {
@@ -527,7 +528,8 @@ function PuzzleStep(props: StepProps) {
             placeholder={needsPlace ? t("Not there yet") : placeholder}
             disabled={needsPlace}
             locked={locked}
-            button={blockedFor > 0 ? formatSeconds(blockedFor) : input.button || t("Answer")}
+            button={input.button || t("Answer")}
+            {...(blockedFor > 0 ? { countdown: formatSeconds(blockedFor) } : {})}
             onAnswer={answer}
             feedback={feedback ?? null}
           />
@@ -547,7 +549,10 @@ function AnswerForm(props: {
   input: play.PlayInput;
   t: Translate;
   placeholder: string;
+  /** The button's accessible name; the button itself shows an arrow. */
   button: string;
+  /** A lockout's time left, shown in the button in place of the arrow. */
+  countdown?: string;
   disabled: boolean;
   locked: boolean;
   onAnswer: (guess: string) => void;
@@ -601,8 +606,17 @@ function AnswerForm(props: {
       ) : (
         field(guess, setGuess, t("Your answer"), props.placeholder)
       )}
-      <button className="pv-btn pv-btn--primary" disabled={locked || !g}>
-        {props.button}
+      <button
+        className={"pv-btn pv-btn--primary pv-answer__send" + (props.countdown ? " is-counting" : "")}
+        disabled={locked || !g}
+        aria-label={props.countdown ? `${props.button} (${props.countdown})` : props.button}
+        title={props.button}
+      >
+        {props.countdown ?? (
+          <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
+            <path d="M5 12h13M12 5l7 7-7 7" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        )}
       </button>
     </form>
   );

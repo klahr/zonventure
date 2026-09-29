@@ -1,6 +1,6 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { ApiError, play } from "@zonventure/api";
-import { Sheet, type Translate } from "@zonventure/play-ui";
+import type { Translate } from "@zonventure/play-ui";
 import type { I18n } from "@zonventure/i18n";
 
 const LANG_NAMES: Record<string, string> = { en: "English", sv: "Svenska" };
@@ -10,6 +10,10 @@ const LANG_NAMES: Record<string, string> = { en: "English", sv: "Svenska" };
  * app's language, location sharing, and their data — sign out on a
  * shared phone, or erase it all. Beside the game; nothing here moves
  * the team on.
+ *
+ * A drawer that folds in from the left edge. The ☰ at the bar's left
+ * end turns into the ✕ that closes it and stays above the drawer, so
+ * open and close are the same place under the thumb.
  */
 export function Menu(props: {
   state: play.PlayState;
@@ -23,7 +27,13 @@ export function Menu(props: {
 }) {
   const { state, t, i18n } = props;
   const [open, setOpen] = useState(false);
-  const [confirmErase, setConfirmErase] = useState(false);
+  // Each opening starts from the current names, not an old draft.
+  const [opened, setOpened] = useState(0);
+  // Which account action is waiting for a yes: both end the game on
+  // this phone, so neither happens on a single tap.
+  const [confirm, setConfirm] = useState<"signout" | "erase" | null>(null);
+  const button = useRef<HTMLButtonElement>(null);
+  const panel = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [leaving, setLeaving] = useState(false);
   const langs = i18n.available();
@@ -39,17 +49,73 @@ export function Menu(props: {
     }
   };
 
+  const close = () => {
+    setOpen(false);
+    setConfirm(null);
+    button.current?.focus();
+  };
+  const toggle = () => {
+    if (open) {
+      close();
+      return;
+    }
+    setOpened((n) => n + 1);
+    setOpen(true);
+  };
+
+  // Escape closes; focus goes into the drawer, and Tab stays within the
+  // drawer and its ✕ while it is open.
+  useEffect(() => {
+    if (!open) return;
+    // The drawer itself, not its first field: focusing an input would
+    // pop the phone's keyboard over the menu the player just opened.
+    panel.current?.focus({ preventScroll: true });
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        close();
+        return;
+      }
+      if (e.key !== "Tab" || !panel.current || !button.current) return;
+      const items = [button.current, ...panel.current.querySelectorAll<HTMLElement>("input, select, button:not(:disabled), a[href]")];
+      const i = items.indexOf(document.activeElement as HTMLElement);
+      const next = e.shiftKey ? (i <= 0 ? items.length - 1 : i - 1) : (i === items.length - 1 ? 0 : i + 1);
+      items[next]?.focus();
+      e.preventDefault();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open]);
+
   return (
     <>
-      <button type="button" className="app-inbox" onClick={() => setOpen(true)} aria-label={t("Menu")} aria-haspopup="dialog">
-        <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
-          <path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" fill="none" />
-        </svg>
+      <button
+        ref={button}
+        type="button"
+        className={"app-burger" + (open ? " is-open" : "")}
+        onClick={toggle}
+        aria-label={open ? t("Close menu") : t("Menu")}
+        aria-expanded={open}
+        aria-controls="app-menu"
+      >
+        <span className="app-burger__lines" aria-hidden="true">
+          <span />
+          <span />
+          <span />
+        </span>
       </button>
-      {open && (
-        <div className="pv app-inbox__pv">
-          <Sheet title={t("Menu")} t={t} onClose={() => { setOpen(false); setConfirmErase(false); }}>
-            <div className="pv-sheet__body app-menu">
+      <div className={"app-drawer-back" + (open ? " is-open" : "")} onClick={close} aria-hidden="true" />
+      <div
+        id="app-menu"
+        ref={panel}
+        className={"app-drawer" + (open ? " is-open" : "")}
+        role="dialog"
+        aria-modal="true"
+        aria-label={t("Menu")}
+        tabIndex={-1}
+        inert={!open}
+      >
+            <h2 className="app-drawer__title">{t("Menu")}</h2>
+            <div className="app-menu" key={opened}>
               <NameField
                 label={t("Your name")}
                 value={state.me?.name ?? ""}
@@ -93,21 +159,33 @@ export function Menu(props: {
 
               <div className="app-menu__account">
                 <span className="app-menu__label">{t("Account")}</span>
-                <button type="button" className="pv-btn pv-btn--wide" disabled={leaving} onClick={() => void leave(false)}>
-                  {t("Sign out on this phone")}
-                </button>
-                <span className="app-menu__hint">{t("Your link still works, so you can sign in again with it.")}</span>
-                {confirmErase ? (
+                {confirm === "signout" ? (
+                  <div className="app-menu__confirm app-menu__confirm--calm" role="alert">
+                    <p>{t("Sign out on this phone? You'll need your link to get back into the game.")}</p>
+                    <div className="app-menu__row">
+                      <button type="button" className="pv-btn" onClick={() => setConfirm(null)}>{t("Cancel")}</button>
+                      <button type="button" className="pv-btn pv-btn--primary" disabled={leaving} onClick={() => void leave(false)}>{t("Sign out")}</button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <button type="button" className="pv-btn pv-btn--wide" onClick={() => setConfirm("signout")}>
+                      {t("Sign out on this phone")}
+                    </button>
+                    <span className="app-menu__hint">{t("Your link still works, so you can sign in again with it.")}</span>
+                  </>
+                )}
+                {confirm === "erase" ? (
                   <div className="app-menu__confirm" role="alert">
                     <p>{t("This wipes your location history and your answers from this event. Other team members keep playing. You'll be signed out and the link won't work again. Continue?")}</p>
                     <div className="app-menu__row">
-                      <button type="button" className="pv-btn" onClick={() => setConfirmErase(false)}>{t("Cancel")}</button>
+                      <button type="button" className="pv-btn" onClick={() => setConfirm(null)}>{t("Cancel")}</button>
                       <button type="button" className="pv-btn app-menu__danger" disabled={leaving} onClick={() => void leave(true)}>{t("Erase")}</button>
                     </div>
                   </div>
                 ) : (
                   <>
-                    <button type="button" className="pv-btn pv-btn--wide app-menu__danger" onClick={() => setConfirmErase(true)}>
+                    <button type="button" className="pv-btn pv-btn--wide app-menu__danger" onClick={() => setConfirm("erase")}>
                       {t("Erase my play data")}
                     </button>
                     <span className="app-menu__hint">
@@ -124,9 +202,7 @@ export function Menu(props: {
                 <a href="/terms" target="_blank" rel="noopener">{t("Terms")}</a>
               </p>
             </div>
-          </Sheet>
-        </div>
-      )}
+      </div>
     </>
   );
 }

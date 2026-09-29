@@ -141,6 +141,10 @@ type adventureEditDTO struct {
 	TextColor            string `json:"text_color"`
 	SubmitBgColor        string `json:"submit_bg_color"`
 	Font                 string `json:"font"`
+	HeadingFont          string `json:"heading_font"`
+	Corners              string `json:"corners"`
+	Cards                string `json:"cards"`
+	CardOutline          bool   `json:"card_outline"`
 	// Language is the BCP 47 tag of the puzzle content (e.g. "en",
 	// "sv"). Defaults to "en" via the schema's column default.
 	Language  string `json:"language"`
@@ -387,6 +391,10 @@ type updateAdventureRequest struct {
 	TextColor            *string `json:"text_color,omitempty"`
 	SubmitBgColor        *string `json:"submit_bg_color,omitempty"`
 	Font                 *string `json:"font,omitempty"`
+	HeadingFont          *string `json:"heading_font,omitempty"`
+	Corners              *string `json:"corners,omitempty"`
+	Cards                *string `json:"cards,omitempty"`
+	CardOutline          *bool   `json:"card_outline,omitempty"`
 	Language             *string `json:"language,omitempty"`
 	// Published is refused: catalog listing is the operator's call
 	// (PUT /api/admin/catalog/{slug}/published).
@@ -535,6 +543,27 @@ func applyAdventureMetaUpdate(ctx context.Context, db *sql.DB, slug string, req 
 			return badRequestf("font must be empty or one of the listed fonts")
 		}
 		add("font", *req.Font)
+	}
+	if req.HeadingFont != nil {
+		if _, ok := adventure.Fonts[*req.HeadingFont]; !ok && *req.HeadingFont != "" {
+			return badRequestf("heading_font must be empty or one of the listed fonts")
+		}
+		add("heading_font", *req.HeadingFont)
+	}
+	if req.Corners != nil {
+		if !adventure.Corners[*req.Corners] && *req.Corners != "" {
+			return badRequestf(`corners must be empty, "rounded", "soft" or "sharp"`)
+		}
+		add("corners", *req.Corners)
+	}
+	if req.Cards != nil {
+		if !adventure.Cards[*req.Cards] && *req.Cards != "" {
+			return badRequestf(`cards must be empty, "raised" or "flat"`)
+		}
+		add("cards", *req.Cards)
+	}
+	if req.CardOutline != nil {
+		add("card_outline", *req.CardOutline)
 	}
 	if req.Language != nil {
 		lang := strings.TrimSpace(*req.Language)
@@ -703,6 +732,7 @@ func loadAdventureDTO(ctx context.Context, db *sql.DB, slug string) (*adventureE
 	if err := db.QueryRowContext(ctx, `
 		SELECT id, slug, title, description, author, intro_text, outro_text,
 		       accent_color, accent_secondary_color, background_color, text_color, submit_bg_color, font,
+		       heading_font, corners, cards, card_outline,
 		       language,
 		       (avatar_mime_type IS NOT NULL)::int AS has_avatar,
 		       published, org_id, strict_assets,
@@ -710,7 +740,7 @@ func loadAdventureDTO(ctx context.Context, db *sql.DB, slug string) (*adventureE
 		FROM adventures WHERE slug = $1
 	`, slug).Scan(&a.ID, &a.Slug, &a.Title, &a.Description, &a.Author,
 		&a.IntroText, &a.OutroText,
-		&accent, &accent2, &bg, &ink, &submitBG, &a.Font, &a.Language, &hasAvatar, &published, &orgID, &a.StrictAssets,
+		&accent, &accent2, &bg, &ink, &submitBG, &a.Font, &a.HeadingFont, &a.Corners, &a.Cards, &a.CardOutline, &a.Language, &hasAvatar, &published, &orgID, &a.StrictAssets,
 		&startLat, &startLng, &a.StartLabel); err != nil {
 		return nil, err
 	}

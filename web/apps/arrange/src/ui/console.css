@@ -1,0 +1,118 @@
+/* The console's page-level look, in the designer's tokens (dz.css) so a
+ * dashboard page and the designer read as one app. Everything is under
+ * .dz, which the shell puts round every page; buttons, inputs, dialogs
+ * and callouts come from dz.css itself. */
+
+.dz .cs-page { display: flex; flex-direction: column; gap: var(--dz-space-5); max-width: 72rem; margin: 0 auto; width: 100%; }
+.dz .cs-page--wide { max-width: none; }
+
+.dz .cs-head { display: flex; flex-direction: column; gap: var(--dz-space-2); }
+.dz .cs-back { display: inline-flex; align-items: center; gap: var(--dz-space-1); width: fit-content; color: var(--dz-muted); font-size: var(--dz-text-sm); text-decoration: none; }
+.dz .cs-back:hover { color: var(--dz-ink); }
+.dz .cs-head__row { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--dz-space-4); flex-wrap: wrap; }
+.dz .cs-head__text { min-width: 0; }
+.dz .cs-title { display: flex; align-items: center; flex-wrap: wrap; gap: var(--dz-space-2); margin: 0; font-size: 1.5rem; font-weight: 700; line-height: 1.25; color: var(--dz-ink); }
+.dz .cs-head__badges { display: inline-flex; gap: var(--dz-space-1); }
+.dz .cs-subtitle { margin: var(--dz-space-1) 0 0; color: var(--dz-muted); font-size: var(--dz-text-md); }
+.dz .cs-head__actions { display: flex; flex-wrap: wrap; gap: var(--dz-space-2); }
+
+.dz .cs-card { background: var(--dz-surface); border: 1px solid var(--dz-border); border-radius: var(--dz-r-3); box-shadow: var(--dz-shadow); }
+.dz .cs-card--danger { border-color: color-mix(in srgb, var(--dz-danger) 45%, var(--dz-border)); }
+.dz .cs-card__head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--dz-space-3); padding: var(--dz-space-4) var(--dz-space-4) 0; flex-wrap: wrap; }
+.dz .cs-card__title { margin: 0; font-size: var(--dz-text-lg); font-weight: 700; color: var(--dz-ink); }
+.dz .cs-card--danger .cs-card__title { color: var(--dz-danger); }
+.dz .cs-card__sub { margin: var(--dz-space-1) 0 0; color: var(--dz-muted); font-size: var(--dz-text-sm); }
+.dz .cs-card__actions { display: flex; flex-wrap: wrap; gap: var(--dz-space-2); }
+.dz .cs-card__body { padding: var(--dz-space-4); display: flex; flex-direction: column; gap: var(--dz-space-3); }
+.dz .cs-card--flush .cs-card__body { padding: var(--dz-space-2) 0 0; }
+
+.dz .cs-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: var(--dz-space-3); }
+.dz .cs-stat { display: flex; flex-direction: column; gap: var(--dz-space-1); padding: var(--dz-space-3) var(--dz-space-4); background: var(--dz-surface); border: 1px solid var(--dz-border); border-radius: var(--dz-r-3); box-shadow: var(--dz-shadow); text-decoration: none; color: inherit; }
+.dz .cs-stat--link:hover { border-color: var(--dz-border-strong); }
+.dz .cs-stat__value { font-size: 1.75rem; font-weight: 700; line-height: 1.1; color: var(--dz-ink); font-variant-numeric: tabular-nums; }
+.dz .cs-stat__value.is-good { color: var(--dz-success); }
+.dz .cs-stat__value.is-warn { color: var(--dz-warning); }
+.dz .cs-stat__label { font-size: var(--dz-text-xs); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--dz-muted); }
+/* Phones: three numbers stay on one row, compact, like the dashboard tiles. */
+@media (max-width: 40rem) {
+  .dz .cs-stats { grid-template-columns: repeat(auto-fit, minmax(6.5rem, 1fr)); gap: var(--dz-space-2); }
+  .dz .cs-stat { padding: var(--dz-space-3); }
+  .dz .cs-stat__value { font-size: 1.4rem; }
+}
+
+.dz .cs-table-wrap { overflow-x: auto; }
+.dz .cs-table { width: 100%; border-collapse: collapse; font-size: var(--dz-text-md); }
+.dz .cs-table th { padding: var(--dz-space-2) var(--dz-space-4); text-align: left; font-size: var(--dz-text-xs); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--dz-muted); border-bottom: 1px solid var(--dz-border); white-space: nowrap; }
+.dz .cs-table td { padding: var(--dz-space-2h, 10px) var(--dz-space-4); border-bottom: 1px solid var(--dz-border); color: var(--dz-ink); vertical-align: middle; }
+.dz .cs-table tr:last-child td { border-bottom: 0; }
+.dz .cs-table .cs-end { text-align: right; }
+.dz .cs-table tr.is-link { cursor: pointer; }
+.dz .cs-table tr.is-link:hover td { background: var(--dz-surface-2); }
+.dz .cs-rowlink { color: inherit; font-weight: 600; text-decoration: none; }
+@media (max-width: 720px) { .dz .cs-wide { display: none; } }
+
+.dz .cs-tabs { display: flex; gap: var(--dz-space-1); border-bottom: 1px solid var(--dz-border); overflow-x: auto; scrollbar-width: none; }
+.dz .cs-tabs::-webkit-scrollbar { display: none; }
+/* Phones: wrap rather than scroll, so no tab hides off-screen. */
+@media (max-width: 40rem) { .dz .cs-tabs { flex-wrap: wrap; overflow-x: visible; } }
+.dz .cs-tab { padding: var(--dz-space-2) var(--dz-space-3); color: var(--dz-muted); font-size: var(--dz-text-md); font-weight: 600; text-decoration: none; border-bottom: 2px solid transparent; margin-bottom: -1px; white-space: nowrap; }
+.dz .cs-tab:hover { color: var(--dz-ink); }
+.dz .cs-tab.is-on { color: var(--dz-accent); border-bottom-color: var(--dz-accent); }
+
+.dz .cs-pill { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: var(--dz-r-pill); font-size: var(--dz-text-xs); font-weight: 600; white-space: nowrap; background: var(--dz-surface-2); color: var(--dz-ink-soft); }
+.dz .cs-pill--good { background: color-mix(in srgb, var(--dz-success) 14%, var(--dz-surface)); color: color-mix(in srgb, var(--dz-success) 75%, var(--dz-ink)); }
+.dz .cs-pill--warn { background: color-mix(in srgb, var(--dz-warning) 18%, var(--dz-surface)); color: color-mix(in srgb, var(--dz-warning) 60%, var(--dz-ink)); }
+.dz .cs-pill--bad { background: color-mix(in srgb, var(--dz-danger) 14%, var(--dz-surface)); color: var(--dz-danger); }
+.dz .cs-pill--info { background: color-mix(in srgb, var(--dz-info) 12%, var(--dz-surface)); color: var(--dz-info); }
+.dz .cs-pill--accent { background: color-mix(in srgb, var(--dz-accent) 12%, var(--dz-surface)); color: var(--dz-accent); }
+
+.dz .cs-empty { display: flex; flex-direction: column; align-items: center; gap: var(--dz-space-2); padding: var(--dz-space-6) var(--dz-space-4); text-align: center; border: 1px dashed var(--dz-border-strong); border-radius: var(--dz-r-3); }
+.dz .cs-empty__title { margin: 0; font-weight: 700; color: var(--dz-ink); }
+.dz .cs-empty__text { margin: 0; max-width: 32rem; color: var(--dz-muted); font-size: var(--dz-text-md); }
+.dz .cs-empty__action { margin-top: var(--dz-space-2); }
+
+.dz .cs-field { display: flex; flex-direction: column; gap: var(--dz-space-1); min-width: 0; }
+.dz .cs-field--inline { flex-direction: row; align-items: center; gap: var(--dz-space-2); }
+.dz .cs-field__label { font-size: var(--dz-text-sm); font-weight: 600; color: var(--dz-ink); }
+.dz .cs-field__hint { font-size: var(--dz-text-xs); color: var(--dz-muted); }
+.dz .cs-field__error { font-size: var(--dz-text-xs); color: var(--dz-danger); }
+
+.dz .cs-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--dz-space-3); }
+.dz .cs-row--sm { gap: var(--dz-space-2); }
+.dz .cs-row--end { justify-content: flex-end; }
+
+.dz .cs-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: var(--dz-space-3); margin: 0; }
+.dz .cs-facts__item { display: flex; flex-direction: column; gap: 2px; }
+.dz .cs-facts dt { font-size: var(--dz-text-xs); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--dz-muted); }
+.dz .cs-facts dd { margin: 0; color: var(--dz-ink); }
+
+.dz .cs-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr)); gap: var(--dz-space-3); }
+.dz .cs-tile { display: flex; align-items: center; gap: var(--dz-space-3); padding: var(--dz-space-3) var(--dz-space-4); background: var(--dz-surface); border: 1px solid var(--dz-border); border-radius: var(--dz-r-3); box-shadow: var(--dz-shadow); color: inherit; text-decoration: none; }
+.dz .cs-tile:hover { border-color: var(--dz-border-strong); }
+.dz .cs-tile__media { flex: none; }
+.dz .cs-tile__text { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.dz .cs-tile__title { display: flex; align-items: center; gap: var(--dz-space-2); font-weight: 700; color: var(--dz-ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dz .cs-tile__meta { font-size: var(--dz-text-sm); color: var(--dz-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dz .cs-tile__body { font-size: var(--dz-text-sm); color: var(--dz-ink-soft); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.dz .cs-tile__go { flex: none; color: var(--dz-faint); }
+
+.dz .cs-avatar { display: inline-grid; place-items: center; flex: none; border-radius: var(--dz-r-2); background: var(--dz-surface-2); color: var(--dz-ink-soft); font-weight: 700; object-fit: cover; }
+
+.dz .cs-loading { color: var(--dz-muted); }
+.dz .cs-error { display: flex; align-items: center; justify-content: space-between; gap: var(--dz-space-3); padding: var(--dz-space-3) var(--dz-space-4); border: 1px solid color-mix(in srgb, var(--dz-danger) 40%, var(--dz-border)); border-radius: var(--dz-r-2); background: color-mix(in srgb, var(--dz-danger) 8%, var(--dz-surface)); color: var(--dz-danger); }
+.dz .cs-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+.dz .cs-dialog { max-width: 32rem; width: calc(100vw - 2rem); }
+.dz .cs-dialog--wide { max-width: 44rem; }
+.dz .cs-dialog .modal-body { display: flex; flex-direction: column; gap: var(--dz-space-3); max-height: 70vh; overflow-y: auto; }
+
+.cs-toasts { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 1000; display: flex; flex-direction: column; align-items: center; gap: 8px; pointer-events: none; }
+.cs-toasts .cs-toast { padding: 10px 16px; border-radius: 999px; background: var(--dz-ink, #1f3349); color: var(--dz-surface, #fff); font-size: 0.875rem; box-shadow: var(--shadow-lg); max-width: min(90vw, 36rem); }
+.cs-toasts .cs-toast--err { background: var(--danger, #b3261e); color: #fff; }
+
+/* MoreMenu (pages/event/Menu.tsx): a small popup menu of links and actions. */
+.dz .ev-menu { z-index: var(--dz-z-context-menu); min-width: 200px; padding: 4px; background: var(--dz-surface); border: 1px solid var(--dz-border); border-radius: var(--dz-r-2); box-shadow: var(--dz-shadow-pop); }
+.dz .ev-menu__item { display: flex; align-items: center; gap: var(--dz-space-2); width: 100%; padding: 6px 10px; border: 0; border-radius: calc(var(--dz-r-2) - 2px); background: transparent; box-shadow: none; color: var(--dz-ink); font-size: var(--dz-text-md); text-align: left; text-decoration: none; white-space: nowrap; cursor: pointer; min-height: 0; justify-content: flex-start; }
+.dz .ev-menu__item:hover, .dz .ev-menu__item:focus-visible { background: var(--dz-surface-3); }
+.dz .ev-menu__item.is-danger { color: var(--dz-danger); }
+.dz .ev-menu__sep { height: 1px; margin: 4px 6px; background: var(--dz-border); }

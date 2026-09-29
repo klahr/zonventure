@@ -29,6 +29,8 @@ export default defineConfig({
   // MapLibre starts its worker as a module worker.
   worker: { format: "es" },
   server: {
+    // i18n.tsx reads the classic console's catalog from internal/.
+    fs: { allow: [fileURLToPath(new URL("../../..", import.meta.url))] },
     proxy: {
       "/api": "http://localhost:8080",
       "/ws": { target: "ws://localhost:8080", ws: true },

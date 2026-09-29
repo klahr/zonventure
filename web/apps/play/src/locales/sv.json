@@ -321,5 +321,8 @@
   "{{team}} is {{n}} points ahead": "{{team}} ligger {{n}} poäng före",
   "{{team}} is {{n}} points behind": "{{team}} ligger {{n}} poäng efter",
   "1 hint revealed": "1 ledtråd visad",
-  "Your team moved on. Here's the next step.": "Ert lag har gått vidare. Här är nästa steg."
+  "Your team moved on. Here's the next step.": "Ert lag har gått vidare. Här är nästa steg.",
+  "Close menu": "Stäng menyn",
+  "Sign out on this phone? You'll need your link to get back into the game.": "Logga ut på den här telefonen? Du behöver din länk för att komma tillbaka in i spelet.",
+  "Sign out": "Logga ut"
 }

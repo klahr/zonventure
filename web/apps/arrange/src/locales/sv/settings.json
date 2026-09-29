@@ -1,0 +1,23 @@
+{
+  "Bundle": "Paket",
+  "Cancel the migration": "Avbryt migreringen",
+  "Failed": "Misslyckades",
+  "Filter": "Filter",
+  "In progress": "Pågår",
+  "Keep going": "Fortsätt",
+  "Setup incomplete": "Konfigurationen är inte klar",
+  "About admins": "Om administratörer",
+  "About importing": "Om import",
+  "About migration": "Om migrering",
+  "About roles": "Om roller",
+  "About webhooks": "Om webhooks",
+  "Pick the zip downloaded from another zv instance's migration wizard.": "Välj zip-filen som laddades ner från en annan zv-instans migreringsguide.",
+  "Showing {{n}} delivery": "Visar {{n}} leverans",
+  "Showing {{n}} deliveries": "Visar {{n}} leveranser",
+  "{{n}} endpoint": "{{n}} slutpunkt",
+  "{{n}} endpoints": "{{n}} slutpunkter",
+  "{{n}} global admin": "{{n}} global administratör",
+  "{{n}} global admins": "{{n}} globala administratörer",
+  "{{n}} user in {{name}}": "{{n}} användare i {{name}}",
+  "{{n}} users in {{name}}": "{{n}} användare i {{name}}"
+}

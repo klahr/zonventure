@@ -266,7 +266,9 @@ a:hover {
 
 /* One focus rule for everything, so a new component cannot ship
  * without a visible focus ring. :focus-visible rather than :focus so
- * mouse users do not see rings they did not ask for. */
+ * mouse users do not see rings they did not ask for. The outline
+ * follows each element's own corners; setting a radius here reshaped
+ * pill inputs and buttons the moment they took focus. */
 a:focus-visible,
 button:focus-visible,
 input:focus-visible,
@@ -275,7 +277,6 @@ textarea:focus-visible,
 [tabindex]:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 3px;
-  border-radius: var(--radius-sm);
 }
 
 /* Keyboard users land here first; it is off-screen until focused. */

@@ -151,9 +151,9 @@
 
 .pv-text {
   padding: var(--sp-4) var(--sp-4);
-  border: 1px solid var(--border-soft);
+  border: 1px solid var(--pv-card-line, var(--border-soft));
   border-radius: var(--radius-lg);
-  background: var(--surface);
+  background: var(--pv-card-bg, var(--surface));
   box-shadow: var(--shadow);
   font-size: 1.1rem;
   line-height: 1.55;
@@ -283,7 +283,8 @@
   flex-direction: column;
   gap: var(--sp-2);
   margin: auto calc(-1 * var(--pv-pad)) 0;
-  padding: var(--sp-3) var(--pv-pad) calc(var(--sp-3) + env(safe-area-inset-bottom));
+  /* Same height as the app bar at the top: a 44px row in 8px of air. */
+  padding: var(--sp-2) var(--pv-pad) calc(var(--sp-2) + env(safe-area-inset-bottom));
   border-top: 1px solid var(--border-soft);
   background: var(--pv-dock-bg);
   backdrop-filter: blur(8px);
@@ -295,7 +296,28 @@
 .pv-answer {
   display: grid;
   grid-template-columns: 1fr auto;
+  align-items: center;
   gap: var(--sp-2);
+}
+.pv-answer .pv-input {
+  box-sizing: border-box;
+  height: var(--pv-tap);
+  padding-block: 0;
+}
+/* The send button: a round arrow the height of the field, so the field
+ * keeps the width; a lockout countdown widens it to fit the digits. */
+.pv-answer .pv-answer__send {
+  display: inline-grid;
+  place-items: center;
+  box-sizing: border-box;
+  width: var(--pv-tap);
+  height: var(--pv-tap);
+  min-height: 0;
+  padding: 0;
+}
+.pv-answer .pv-answer__send.is-counting {
+  width: auto;
+  padding-inline: var(--sp-4);
 }
 .pv-answer:has(.pv-qr-btn) {
   grid-template-columns: 1fr auto auto;
@@ -420,9 +442,9 @@
   gap: var(--sp-4);
   margin: 0;
   padding: var(--sp-3) var(--sp-4);
-  border: 1px solid var(--border-soft);
+  border: 1px solid var(--pv-card-line, var(--border-soft));
   border-radius: var(--radius-lg);
-  background: var(--surface);
+  background: var(--pv-card-bg, var(--surface));
   box-shadow: var(--shadow);
 }
 .pv-compass__dial {
@@ -886,9 +908,9 @@
   align-items: center;
   gap: var(--sp-3);
   padding: var(--sp-5) var(--sp-4);
-  border: 1px solid var(--border-soft);
+  border: 1px solid var(--pv-card-line, var(--border-soft));
   border-radius: var(--radius-lg);
-  background: var(--surface);
+  background: var(--pv-card-bg, var(--surface));
   box-shadow: var(--shadow);
   text-align: center;
 }

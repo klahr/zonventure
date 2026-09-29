@@ -1,0 +1,99 @@
+/* The dashboard: only what the kit lacks. */
+
+.dz .db-muted { color: var(--dz-muted); }
+.dz .db-small { font-size: var(--dz-text-sm); }
+.dz p.db-muted { margin: 0; }
+.dz .db-ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.dz .db-stat { display: grid; }
+
+.dz .db-setup { display: flex; flex-direction: column; gap: var(--dz-space-2); padding: var(--dz-space-4); border: 1px dashed var(--dz-accent); border-radius: var(--dz-r-3); background: color-mix(in srgb, var(--dz-accent) 5%, var(--dz-surface)); }
+.dz .db-setup__head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--dz-space-3); flex-wrap: wrap; }
+.dz .db-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--dz-space-3); }
+.dz .db-step { display: flex; align-items: flex-start; gap: var(--dz-space-3); }
+.dz .db-step__dot { display: inline-grid; place-items: center; flex: none; width: 1.6rem; height: 1.6rem; border-radius: 50%; background: var(--dz-surface-2); color: var(--dz-muted); font-weight: 700; font-size: var(--dz-text-sm); }
+.dz .db-step.is-done .db-step__dot { background: var(--dz-accent); color: #fff; }
+.dz .db-step__text { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+.dz .db-step__title { font-weight: 600; color: var(--dz-ink); }
+.dz .db-step.is-done .db-step__title { color: var(--dz-muted); text-decoration: line-through; }
+.dz .db-step__cta { flex: none; }
+@media (max-width: 520px) {
+  .dz .db-step { flex-wrap: wrap; }
+  .dz .db-step__cta { flex-basis: 100%; padding-left: calc(1.6rem + var(--dz-space-3)); }
+}
+
+/* Headline numbers: an icon chip, the number, one line of context. */
+.dz .db-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: var(--dz-space-3); }
+.dz .db-tile { display: flex; align-items: flex-start; gap: var(--dz-space-3); padding: var(--dz-space-4); background: var(--dz-surface); border: 1px solid var(--dz-border); border-radius: var(--dz-r-3); box-shadow: var(--dz-shadow); color: inherit; text-decoration: none; transition: border-color var(--dz-dur-2), transform var(--dz-dur-2) var(--dz-ease-out), box-shadow var(--dz-dur-2); }
+.dz .db-tile--link:hover { border-color: var(--dz-border-strong); transform: translateY(-1px); box-shadow: var(--dz-shadow-lg); }
+.dz .db-tile__icon { display: grid; place-items: center; flex: none; width: 2.5rem; height: 2.5rem; border-radius: var(--dz-r-2); background: color-mix(in srgb, var(--dz-accent) 10%, var(--dz-surface)); color: var(--dz-accent); }
+.dz .db-tile--live .db-tile__icon { background: color-mix(in srgb, var(--dz-success) 14%, var(--dz-surface)); color: var(--dz-success); }
+.dz .db-tile__text { display: flex; flex-direction: column; min-width: 0; }
+.dz .db-tile__value { font-size: 1.75rem; font-weight: 700; line-height: 1.1; color: var(--dz-ink); font-variant-numeric: tabular-nums; }
+.dz .db-tile--live .db-tile__value { color: var(--dz-success); }
+.dz .db-tile__label { font-weight: 600; color: var(--dz-ink-soft); }
+.dz .db-tile__hint { margin-top: 2px; font-size: var(--dz-text-sm); color: var(--dz-muted); }
+/* Phones: three compact numbers in a row rather than a stack of cards. */
+@media (max-width: 40rem) {
+  .dz .db-tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--dz-space-2); }
+  .dz .db-tile { padding: var(--dz-space-3); }
+  .dz .db-tile__icon, .dz .db-tile__hint { display: none; }
+  .dz .db-tile__value { font-size: 1.5rem; }
+  .dz .db-tile__label { font-size: var(--dz-text-xs); line-height: 1.3; }
+}
+
+/* Sections sit straight on the page; the cards inside carry the chrome. */
+.dz .db-section { display: flex; flex-direction: column; gap: var(--dz-space-3); }
+.dz .db-section__head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--dz-space-3); }
+.dz .db-section__title { margin: 0; font-size: var(--dz-text-lg); font-weight: 700; color: var(--dz-ink); }
+.dz .db-section__more { display: inline-flex; align-items: center; gap: var(--dz-space-1); font-size: var(--dz-text-sm); font-weight: 600; color: var(--dz-accent); text-decoration: none; }
+.dz .db-section__more:hover { text-decoration: underline; }
+
+/* A card whose title link covers it; controls inside sit above that. */
+.dz .db-stretch::after { content: ""; position: absolute; inset: 0; border-radius: inherit; }
+.dz .db-stretch:focus-visible { outline: none; }
+.dz .db-stretch:focus-visible::after { outline: 2px solid var(--dz-accent); outline-offset: 2px; }
+
+.dz .db-live-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(19rem, 1fr)); gap: var(--dz-space-3); }
+.dz .db-live { position: relative; display: flex; flex-direction: column; gap: var(--dz-space-1); padding: var(--dz-space-4); background: var(--dz-surface); border: 1px solid var(--dz-border); border-top: 3px solid var(--dz-success); border-radius: var(--dz-r-3); box-shadow: var(--dz-shadow); transition: border-color var(--dz-dur-2), transform var(--dz-dur-2) var(--dz-ease-out), box-shadow var(--dz-dur-2); }
+.dz .db-live.is-paused { border-top-color: var(--dz-warning); }
+.dz .db-live:hover { transform: translateY(-1px); box-shadow: var(--dz-shadow-lg); }
+.dz .db-live__top { display: flex; align-items: center; justify-content: space-between; gap: var(--dz-space-2); margin-bottom: var(--dz-space-1); }
+.dz .db-live__state { display: inline-flex; align-items: center; gap: 6px; font-size: var(--dz-text-xs); font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--dz-success); }
+.dz .db-live.is-paused .db-live__state { color: var(--dz-warning); }
+.dz .db-live__dot { position: relative; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.dz .db-live__dot::after { content: ""; position: absolute; inset: 0; border-radius: 50%; background: currentColor; animation: db-pulse 1.8s ease-out infinite; }
+@keyframes db-pulse { from { transform: scale(1); opacity: 0.6; } to { transform: scale(2.6); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .dz .db-live__dot::after { animation: none; } .dz .db-live, .dz .db-tile { transition: none; } }
+.dz .db-live__since { font-size: var(--dz-text-xs); color: var(--dz-muted); white-space: nowrap; }
+.dz .db-live__name { font-size: var(--dz-text-lg); font-weight: 700; color: var(--dz-ink); text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dz .db-live__adv { display: flex; align-items: center; gap: var(--dz-space-2); font-size: var(--dz-text-sm); color: var(--dz-muted); min-width: 0; }
+.dz .db-live__adv img { width: 20px; height: 20px; border-radius: var(--dz-r-1); object-fit: cover; }
+.dz .db-live__foot { display: flex; align-items: center; justify-content: space-between; gap: var(--dz-space-2); flex-wrap: wrap; margin-top: auto; padding-top: var(--dz-space-3); }
+.dz .db-live__ctl { position: relative; z-index: 1; }
+.dz .db-meta { display: inline-flex; align-items: center; gap: 6px; font-size: var(--dz-text-sm); color: var(--dz-ink-soft); }
+
+/* The agenda: a date tile per event, like a calendar's day view. */
+.dz .db-agenda { list-style: none; margin: 0; padding: 0; background: var(--dz-surface); border: 1px solid var(--dz-border); border-radius: var(--dz-r-3); box-shadow: var(--dz-shadow); }
+.dz .db-agenda__item { position: relative; display: flex; align-items: center; gap: var(--dz-space-4); padding: var(--dz-space-3) var(--dz-space-4); }
+.dz .db-agenda__item + .db-agenda__item { border-top: 1px solid var(--dz-border); }
+.dz .db-agenda__item:hover { background: var(--dz-surface-2); }
+.dz .db-agenda__item:first-child { border-radius: var(--dz-r-3) var(--dz-r-3) 0 0; }
+.dz .db-agenda__item:last-child { border-radius: 0 0 var(--dz-r-3) var(--dz-r-3); }
+.dz .db-agenda__item:only-child { border-radius: var(--dz-r-3); }
+.dz .db-date { display: flex; flex-direction: column; align-items: center; justify-content: center; flex: none; width: 3.25rem; height: 3.25rem; border-radius: var(--dz-r-2); background: color-mix(in srgb, var(--dz-accent) 9%, var(--dz-surface)); color: var(--dz-accent); line-height: 1; }
+.dz .db-date.is-none { color: var(--dz-muted); background: var(--dz-surface-2); }
+.dz .db-date__mon { font-size: var(--dz-text-2xs); font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+.dz .db-date__day { font-size: 1.375rem; font-weight: 700; margin-top: 2px; }
+.dz .db-agenda__text { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+.dz .db-agenda__name { font-weight: 700; color: var(--dz-ink); text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dz .db-agenda__sub { display: flex; flex-wrap: wrap; gap: 0 6px; font-size: var(--dz-text-sm); color: var(--dz-muted); }
+.dz .db-agenda__rel { font-weight: 600; color: var(--dz-ink-soft); }
+.dz .db-agenda__go { position: relative; z-index: 1; flex: none; }
+@media (max-width: 520px) {
+  .dz .db-agenda__item { flex-wrap: wrap; gap: var(--dz-space-3); }
+  .dz .db-agenda__go { flex-basis: 100%; padding-left: calc(3.25rem + var(--dz-space-3)); }
+}
+
+.dz .db-org { display: inline-flex; align-items: center; gap: var(--dz-space-2); min-width: 0; max-width: 100%; }
+
+.dz .db-welcome { margin: 0; padding-left: 1.25rem; line-height: 1.7; }

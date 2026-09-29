@@ -5,7 +5,9 @@
 
 /* --- Shared primitives --------------------------------------------- */
 
-.btn {
+/* The login and loading screens' buttons. Inside the console (.dz) the
+ * designer's buttons apply; these would make every link-button bold. */
+.btn:not(.dz .btn) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -22,10 +24,10 @@
     color var(--dur-fast),
     box-shadow var(--dur-fast);
 }
-.btn:hover:not(:disabled) {
+.btn:not(.dz .btn):hover:not(:disabled) {
   transform: translateY(-1px);
 }
-.btn:disabled {
+.btn:not(.dz .btn):disabled {
   opacity: 0.6;
   cursor: not-allowed;
   transform: none;
@@ -149,6 +151,31 @@
   letter-spacing: 0.18em;
   color: var(--muted);
 }
+.alert--ok {
+  background: var(--success-bg);
+  color: var(--success);
+  border: 1px solid color-mix(in srgb, var(--success) 35%, transparent);
+}
+.login__hint { margin: 0; font-size: var(--text-sm); color: var(--muted); }
+.login__links, .login__legal { margin: 0; text-align: center; font-size: var(--text-sm); color: var(--muted); }
+.login__legal a { color: inherit; }
+/* Text-like buttons for switching between the auth screens. */
+.login__link { padding: 0; border: 0; background: none; color: var(--accent); font: inherit; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.login__check { display: flex; gap: var(--sp-2); align-items: flex-start; font-size: var(--text-sm); }
+.login__check input { margin-top: 0.2rem; }
+.login__otp { letter-spacing: 0.3em; font-variant-numeric: tabular-nums; font-size: var(--text-lg); text-align: center; }
+.login__sso { display: flex; flex-direction: column; gap: var(--sp-2); }
+.btn--sso { display: inline-flex; align-items: center; justify-content: center; gap: var(--sp-2); text-decoration: none; background: var(--surface); border: 1px solid var(--border-soft); color: var(--ink); font-weight: 600; }
+.login__divider { display: flex; align-items: center; gap: var(--sp-2); color: var(--muted); font-size: var(--text-xs); }
+.login__divider::before, .login__divider::after { content: ""; flex: 1; height: 1px; background: var(--border-soft); }
+.login__orgs { display: flex; flex-direction: column; gap: var(--sp-2); }
+.login__org { display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-3); border: 1px solid var(--border-soft); border-radius: var(--radius); background: var(--surface); color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+.login__org:hover { border-color: var(--accent); }
+.login__org img, .login__org > span { width: 1.75rem; height: 1.75rem; flex: none; border-radius: var(--radius-sm); object-fit: contain; }
+.login__org > span { display: inline-grid; place-items: center; background: var(--surface-2); color: var(--muted); font-weight: 700; }
+.login__org strong { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.login__org em { font-style: normal; font-size: var(--text-xs); color: var(--muted); }
+
 /* Sized to sit in the 52px top bar. */
 .shell__wordmark {
   font-size: 1.35rem;
@@ -441,6 +468,11 @@
 .account-pop__row:hover {
   background: var(--surface-2);
 }
+a.account-pop__row { color: inherit; text-decoration: none; box-sizing: border-box; }
+.account-pop__row.is-on { font-weight: 700; color: var(--accent); }
+.account-pop__foot { display: flex; align-items: center; gap: var(--sp-1); padding: var(--sp-2) var(--sp-3) var(--sp-1); font-size: var(--text-xs); color: var(--muted); }
+.account-pop__foot a { color: inherit; }
+.account-pop__version { margin-left: auto; font-family: var(--font-mono); }
 .shell__collapse,
 .account-menu__trigger,
 .account-pop__choice,
@@ -503,22 +535,43 @@
 /* Single breakpoint: the sidebar stacks above the content on narrow
  * viewports. The arranger console is desktop-first by nature — events
  * are run from a laptop — so this is a courtesy, not a mobile design. */
+.shell__menu, .shell__backdrop { display: none; }
 @media (max-width: 40rem) {
   .shell,
   .shell[data-nav-collapsed="true"] {
     grid-template-columns: 1fr;
-    grid-template-rows: none;
-    height: auto;
-    min-height: 100dvh;
+    grid-template-rows: 52px minmax(0, 1fr);
+    height: 100dvh;
   }
-  .shell__sidebar {
-    border-right: 0;
-    border-bottom: 1px solid var(--border-soft);
+  /* The sidebar becomes a drawer under the top bar. */
+  .shell__menu { display: inline-grid; place-items: center; flex: none; width: 2.75rem; height: 2.75rem; margin-left: calc(-1 * var(--sp-2)); border: 0; border-radius: 50%; background: transparent; color: var(--ink-soft); cursor: pointer; }
+  .shell__sidebar,
+  .shell__sidebar[data-collapsed="true"] {
+    position: fixed;
+    top: 52px;
+    bottom: 0;
+    left: 0;
+    z-index: calc(var(--z-sticky) + 1);
+    width: min(80vw, 17rem);
+    border-right: 1px solid var(--border-soft);
+    box-shadow: var(--shadow-lg);
+    transform: translateX(-100%);
+    visibility: hidden;
+    transition: transform 0.22s ease, visibility 0s linear 0.22s;
   }
+  .shell__sidebar[data-open="true"] { transform: none; visibility: visible; transition: transform 0.22s ease, visibility 0s; }
+  .shell__sidebar .nav-label { display: inline; }
+  .shell__collapse { display: none; }
+  .shell__backdrop { display: block; position: fixed; inset: 52px 0 0; z-index: var(--z-sticky); background: rgba(15, 23, 42, 0.4); }
   .shell__main {
     padding: var(--sp-4);
-    overflow-y: visible;
   }
+  /* A narrow top bar keeps the crumb, not the organisation's name. */
+  .shell__org { display: none; }
+  .shell__crumb { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+}
+@media (max-width: 40rem) and (prefers-reduced-motion: reduce) {
+  .shell__sidebar, .shell__sidebar[data-open="true"] { transition: none; }
 }
 
 /* The designer needs the whole of a phone's screen; its own back arrow

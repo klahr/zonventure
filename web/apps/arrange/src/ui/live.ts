@@ -1,0 +1,60 @@
+import { useEffect, useRef, useState } from "react";
+
+/** A frame /ws/arrange pushes for a watched event (internal/admin/ws.go). */
+export interface WatchMessage {
+  kind: "event_detail" | "tracks" | "activity" | "watch_error" | string;
+  data?: unknown;
+}
+
+/**
+ * Follow an event live. /ws/arrange pushes the event's detail, tracks and
+ * activity whenever anything in it changes; the page takes the payloads
+ * it shows, or simply re-reads. One socket per page, reconnecting with
+ * jittered backoff, released when the page goes.
+ */
+/** "live" once the watch is open; "reconnecting" after it dropped, until it is back. */
+export type WatchState = "connecting" | "live" | "reconnecting";
+
+export function useEventWatch(eventId: number | null, onMessage: (m: WatchMessage) => void): WatchState {
+  const cb = useRef(onMessage);
+  cb.current = onMessage;
+  const [state, setState] = useState<WatchState>("connecting");
+  useEffect(() => {
+    if (!eventId) return;
+    let ws: WebSocket | null = null;
+    let closed = false;
+    let retry = 1000;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const receive = (ev: MessageEvent) => {
+      try {
+        const m = JSON.parse(String(ev.data)) as WatchMessage;
+        if (m && typeof m.kind === "string") cb.current(m);
+      } catch {
+        /* not a frame of ours */
+      }
+    };
+    const connect = () => {
+      const proto = location.protocol === "https:" ? "wss:" : "ws:";
+      ws = new WebSocket(`${proto}//${location.host}/ws/arrange`);
+      ws.onopen = () => {
+        retry = 1000;
+        setState("live");
+        ws?.send(JSON.stringify({ kind: "watch_event", data: { event_id: eventId } }));
+      };
+      ws.onmessage = receive;
+      ws.onclose = () => {
+        if (closed) return;
+        setState("reconnecting");
+        timer = setTimeout(connect, retry / 2 + Math.random() * retry);
+        retry = Math.min(retry * 2, 30_000);
+      };
+    };
+    connect();
+    return () => {
+      closed = true;
+      clearTimeout(timer);
+      ws?.close();
+    };
+  }, [eventId]);
+  return state;
+}

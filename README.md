@@ -9,8 +9,8 @@ Compose stack. Self-host it for free, or use the hosted product at
 the price of a coffee per team.
 
 > The repository, Go module, and CLI binary are named `zv`. The
-> platform is **Zonventure**; the arranger tool is **Zonventure
-> Studio**. The legal entity behind both is **Zonventure AB**.
+> platform and its arranger console are both just **Zonventure**.
+> The legal entity behind it is **Zonventure AB**.
 
 ---
 

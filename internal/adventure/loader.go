@@ -194,7 +194,24 @@ type Colors struct {
 	SubmitBackground string `json:"submit_bg,omitempty"`
 	// Font is one of Fonts by key; empty is the default typeface.
 	Font string `json:"font,omitempty"`
+	// HeadingFont sets titles apart from body text, from the same list;
+	// empty follows Font.
+	HeadingFont string `json:"heading_font,omitempty"`
+	// Corners is one of Corners; empty is "rounded".
+	Corners string `json:"corners,omitempty"`
+	// Cards is one of Cards; empty is "raised".
+	Cards string `json:"cards,omitempty"`
+	// CardOutline draws a clear line round cards, raised or flat.
+	CardOutline bool `json:"card_outline,omitempty"`
 }
+
+// Corners are the corner styles a theme may pick: pills and round cards,
+// small radii, or square. Cards are how panels stand off the page: a
+// shadow, or a tinted fill.
+var (
+	Corners = map[string]bool{"rounded": true, "soft": true, "sharp": true}
+	Cards   = map[string]bool{"raised": true, "flat": true}
+)
 
 // Fonts are the typefaces an adventure may choose, by key. A short list
 // rather than any font name: the player loads them from Google Fonts,
@@ -210,7 +227,8 @@ var Fonts = map[string]string{
 // Empty reports whether no colours are set — handy for skipping the field
 // entirely in JSON responses.
 func (c Colors) Empty() bool {
-	return c.Accent == "" && c.AccentSecondary == "" && c.Background == "" && c.Text == "" && c.SubmitBackground == "" && c.Font == ""
+	return c.Accent == "" && c.AccentSecondary == "" && c.Background == "" && c.Text == "" && c.SubmitBackground == "" && c.Font == "" &&
+		c.HeadingFont == "" && c.Corners == "" && c.Cards == "" && !c.CardOutline
 }
 
 // Page is one puzzle in an adventure.
