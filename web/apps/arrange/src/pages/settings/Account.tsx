@@ -33,9 +33,7 @@ export function AccountTab() {
       <Section title={t.t("Sign-in and security")}>
         <SignInCard user={user} />
         <div className="acct-span"><SessionsCard /></div>
-        {/* Only where the operator mounted /mcp (ZV_MCP_ENABLED): a token
-            minted elsewhere would only ever meet a 404. */}
-        {user.mcp_enabled && <div className="acct-span"><McpTokensCard /></div>}
+        <div className="acct-span"><McpTokensCard mcpEnabled={!!user.mcp_enabled} /></div>
         <div className="acct-span"><AuditCard /></div>
       </Section>
 

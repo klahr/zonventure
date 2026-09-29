@@ -626,6 +626,22 @@ func FromContext(ctx context.Context) (User, bool) {
 	return u, ok
 }
 
+type apiTokenCtxKey struct{}
+
+// WithAPIToken marks ctx as authenticated by a bearer API token
+// rather than a session cookie. RequireCSRF skips such requests (no
+// ambient credential for a cross-site page to ride on) and
+// RequireSession refuses them.
+func WithAPIToken(ctx context.Context) context.Context {
+	return context.WithValue(ctx, apiTokenCtxKey{}, true)
+}
+
+// ViaAPIToken reports whether ctx was authenticated by WithAPIToken.
+func ViaAPIToken(ctx context.Context) bool {
+	v, _ := ctx.Value(apiTokenCtxKey{}).(bool)
+	return v
+}
+
 // newToken returns a 256-bit random session token. Centralised in
 // tokenx; the wrapper keeps the call sites (newSession, newSlotSession)
 // readable without leaking the byte count into auth's body.

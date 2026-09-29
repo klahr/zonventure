@@ -7,6 +7,7 @@ package server
 import (
 	"github.com/go-chi/chi/v5"
 
+	"github.com/klahr/zonventure/internal/admin"
 	"github.com/klahr/zonventure/internal/auth"
 )
 
@@ -36,17 +37,22 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 	// members, purchases read-side), org-user routes (authoring and
 	// running events — the platform admin gets 403, they neither author
 	// nor run events), and the platform admin's operator routes.
+	//
+	// Requests may also authenticate with an API token (Authorization:
+	// Bearer zvmcp_…, minted under /me/mcp-tokens); RequireSession
+	// keeps account and credential management cookie-only.
 	r.Route("/api/admin", func(r chi.Router) {
+		r.Use(admin.APITokenAuth(env.cfg.DB))
 		r.Use(auth.RequireAnyRole(auth.RoleAdmin, auth.RoleOrgAdmin, auth.RoleOrgMember, auth.RoleLobby))
 		r.Use(auth.RequireCSRF())
 
 		// Staff password reset (admins & org users).
-		r.Post("/users/{userID}/password", adminH.ResetPassword)
+		r.With(auth.RequireSession).Post("/users/{userID}/password", adminH.ResetPassword)
 		// Admin TOTP factory-reset — recovery path for users who lost
 		// both their authenticator and every recovery code. Same
 		// authorization rules as the password reset above; requires
 		// X-Confirm-Password from the acting admin.
-		r.Post("/users/{userID}/totp/disable", adminH.AdminDisableUserTOTP)
+		r.With(auth.RequireSession).Post("/users/{userID}/totp/disable", adminH.AdminDisableUserTOTP)
 		// Username typeahead for the "Add user to org" modal — admin
 		// / org_admin only. Returns up to 10 prefix matches that
 		// aren't admins and aren't already members of the target org.
@@ -107,46 +113,46 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 		// Account settings — every logged-in staff user can change
 		// their own password / email / delete themselves. No role
 		// gate beyond the surrounding RequireAnyRole.
-		r.Post("/me/password", adminH.ChangeMyPassword)
-		r.Post("/me/email", adminH.ChangeMyEmail)
+		r.With(auth.RequireSession).Post("/me/password", adminH.ChangeMyPassword)
+		r.With(auth.RequireSession).Post("/me/email", adminH.ChangeMyEmail)
 		// Revertable email change: ConfirmEmailChange stashes the old
 		// address; this endpoint reads the status and reverts within
 		// the grace window.
 		r.Get("/me/email/revert-status", adminH.MyEmailChangeStatus)
-		r.Post("/me/email/revert", adminH.RevertMyEmailChange)
-		r.Delete("/me", adminH.DeleteMyAccount)
+		r.With(auth.RequireSession).Post("/me/email/revert", adminH.RevertMyEmailChange)
+		r.With(auth.RequireSession).Delete("/me", adminH.DeleteMyAccount)
 		// Account deletion is soft — DeleteMyAccount sets a 7-day
 		// timer; this endpoint clears it before the sweeper runs.
-		r.Post("/me/cancel-deletion", adminH.CancelMyDeletion)
+		r.With(auth.RequireSession).Post("/me/cancel-deletion", adminH.CancelMyDeletion)
 		// Stripe Customer Portal: hosted UI for the org's payment
 		// method, invoices, and cancellations. Returns a one-shot
 		// session URL the client redirects to.
-		r.Post("/me/portal-session", adminH.CreatePortalSession)
+		r.With(auth.RequireSession).Post("/me/portal-session", adminH.CreatePortalSession)
 		// GDPR data export — JSON dump of personal + (when scoped)
 		// org data, served as a downloadable file.
-		r.Get("/me/export", adminH.ExportMyData)
+		r.With(auth.RequireSession).Get("/me/export", adminH.ExportMyData)
 		// Self audit feed — every logged-in user can see their own
 		// recent login / password / email events for transparency.
 		r.Get("/me/audit", adminH.ListMyAuthEvents)
 		// Active sessions: list + per-token revoke + log-out-everywhere.
-		r.Get("/me/sessions", adminH.ListMySessions)
-		r.Delete("/me/sessions/{token}", adminH.RevokeMySession)
-		r.Delete("/me/sessions", adminH.RevokeMyOtherSessions)
+		r.With(auth.RequireSession).Get("/me/sessions", adminH.ListMySessions)
+		r.With(auth.RequireSession).Delete("/me/sessions/{token}", adminH.RevokeMySession)
+		r.With(auth.RequireSession).Delete("/me/sessions", adminH.RevokeMyOtherSessions)
 		// MCP API tokens: long-lived bearer credentials a user pastes
 		// into Claude desktop / claude.ai connectors so the LLM can
 		// call /mcp on their behalf. Plaintext is returned once at
 		// creation; subsequent reads only surface name + prefix.
-		r.Post("/me/mcp-tokens", adminH.CreateMCPToken)
-		r.Get("/me/mcp-tokens", adminH.ListMCPTokens)
-		r.Delete("/me/mcp-tokens/{id}", adminH.RevokeMCPToken)
+		r.With(auth.RequireSession).Post("/me/mcp-tokens", adminH.CreateMCPToken)
+		r.With(auth.RequireSession).Get("/me/mcp-tokens", adminH.ListMCPTokens)
+		r.With(auth.RequireSession).Delete("/me/mcp-tokens/{id}", adminH.RevokeMCPToken)
 		// TOTP 2FA: status, enrol (setup → confirm), disable, and
 		// recovery-code regenerate. Disable + regenerate require
 		// X-Confirm-Password reauth.
-		r.Get("/me/totp", adminH.TOTPStatus)
-		r.Post("/me/totp/setup", adminH.SetupTOTP)
-		r.Post("/me/totp/confirm", adminH.ConfirmTOTP)
-		r.Post("/me/totp/disable", adminH.DisableTOTP)
-		r.Post("/me/totp/recovery-codes/regenerate", adminH.RegenerateTOTPRecoveryCodes)
+		r.With(auth.RequireSession).Get("/me/totp", adminH.TOTPStatus)
+		r.With(auth.RequireSession).Post("/me/totp/setup", adminH.SetupTOTP)
+		r.With(auth.RequireSession).Post("/me/totp/confirm", adminH.ConfirmTOTP)
+		r.With(auth.RequireSession).Post("/me/totp/disable", adminH.DisableTOTP)
+		r.With(auth.RequireSession).Post("/me/totp/recovery-codes/regenerate", adminH.RegenerateTOTPRecoveryCodes)
 
 		// Org users only: authoring and running events.
 		r.Group(func(r chi.Router) {

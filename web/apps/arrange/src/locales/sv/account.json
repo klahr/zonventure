@@ -57,5 +57,8 @@
   "{{n}} purchase": "{{n}} köp",
   "{{n}} purchases": "{{n}} köp",
   "{{total}} across {{orgs}} orgs": "{{total}} från {{orgs}} organisationer",
-  "{{total}} from one org": "{{total}} från en organisation"
+  "{{total}} from one org": "{{total}} från en organisation",
+  "API tokens": "API-tokens",
+  "Long-lived tokens that let scripts, agents and MCP clients act on your behalf: create adventures, run events and more. Send one as an Authorization: Bearer header to /api/admin.": "Långlivade tokens som låter skript, agenter och MCP-klienter agera åt dig: skapa äventyr, köra event och mer. Skicka en som Authorization: Bearer-header till /api/admin.",
+  "No API tokens yet.": "Inga API-tokens ännu."
 }

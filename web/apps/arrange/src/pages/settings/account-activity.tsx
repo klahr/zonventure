@@ -193,11 +193,12 @@ export function AuditCard() {
 }
 
 /**
- * Long-lived bearer tokens for Claude or another MCP client. The list
- * shows only name, prefix and use; the plaintext is shown once, when
- * the token is made.
+ * Long-lived bearer tokens for scripts, agents and MCP clients. They
+ * authenticate /api/admin always, and /mcp where the operator mounted
+ * it (mcpEnabled). The list shows only name, prefix and use; the
+ * plaintext is shown once, when the token is made.
  */
-export function McpTokensCard() {
+export function McpTokensCard({ mcpEnabled }: { mcpEnabled: boolean }) {
   const t = useT();
   const toast = useToast();
   const { confirm } = useDialogs();
@@ -227,11 +228,11 @@ export function McpTokensCard() {
 
   return (
     <Card
-      title={t.t("MCP API tokens")}
-      subtitle={t.t("Long-lived tokens for connecting Claude or another MCP client to this account so it can author adventures on your behalf.")}
+      title={t.t("API tokens")}
+      subtitle={t.t("Long-lived tokens that let scripts, agents and MCP clients act on your behalf: create adventures, run events and more. Send one as an Authorization: Bearer header to /api/admin.")}
       actions={<Button size="sm" icon={<Plus size={14} aria-hidden />} onClick={() => setCreating(true)}>{t.t("New token")}</Button>}
     >
-      <Field label={t.t("Point your MCP client at this endpoint and paste a token below as the bearer credential:")}>
+      {mcpEnabled && <Field label={t.t("Point your MCP client at this endpoint and paste a token below as the bearer credential:")}>
         <div className="acct-copy">
           <input ref={endpointRef} readOnly value={endpoint} onFocus={(e) => e.currentTarget.select()} />
           <Button
@@ -246,11 +247,11 @@ export function McpTokensCard() {
             {t.t("Copy")}
           </Button>
         </div>
-      </Field>
+      </Field>}
       <Loaded load={tokens}>
         {(list) =>
           list.length === 0 ? (
-            <Empty title={t.t("No MCP tokens yet.")} />
+            <Empty title={t.t("No API tokens yet.")} />
           ) : (
             <div className="acct-list">
               {list.map((tok) => {

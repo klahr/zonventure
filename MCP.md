@@ -57,6 +57,15 @@ Org tools refuse it in-band with `forbidden_audience`. Catalog
 listing (`published`) is the operator's call, so
 `update_adventure_meta` refuses it too.
 
+The same tokens also authenticate the REST API under
+`/api/admin`, whether or not `ZV_MCP_ENABLED` is set. Send
+`Authorization: Bearer zvmcp_…`; no session cookie or CSRF header is
+needed. A `read` token is limited to GET/HEAD; anything else needs
+`write`. Account and credential routes (token management, password,
+email, TOTP, sessions, account deletion, data export, billing portal)
+answer 403 to a token so a leaked one can't mint more or take over
+the account.
+
 The plaintext token is shown **once** at creation and never again;
 the settings UI keeps a `zvmcp_AB…` prefix per row so the user can
 identify which token to revoke without us being able to re-reveal

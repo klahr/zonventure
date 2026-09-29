@@ -11,6 +11,20 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Added — API tokens for the REST API
+
+- **The tokens under Settings → Account → API tokens now work on
+  `/api/admin`**, not just `/mcp`. Scripts and agents send
+  `Authorization: Bearer zvmcp_…` and act as the user who minted the
+  token, with no session cookie or CSRF header. A `read` token may
+  only use GET; mutations need `write`. The card is shown even when
+  `ZV_MCP_ENABLED` is off; the MCP endpoint field only appears when
+  it is on.
+- **Account and credential routes stay session-only**: tokens get
+  403 on token management, password and email changes, TOTP,
+  sessions, account deletion, data export, the billing portal and
+  admin password/TOTP resets.
+
 ### Added — redeem Live it and TrueStory gift boxes
 
 - **Buyers redeem a gift box at `/redeem`** (or an organisation's own

@@ -7,11 +7,14 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"slices"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/klahr/zonventure/internal/auth"
 	"github.com/klahr/zonventure/internal/httpx"
+	"github.com/klahr/zonventure/internal/logx"
 	"github.com/klahr/zonventure/internal/tokenx"
 )
 
@@ -327,6 +330,44 @@ func LookupMCPToken(ctx context.Context, db *sql.DB, plaintext string) (auth.Use
 		u.OrgID = &v
 	}
 	return u, scopes, nil
+}
+
+// APITokenAuth lets the /api/admin REST tree accept the same tokens
+// as /mcp. A request carrying "Authorization: Bearer <token>" runs as
+// the token's user regardless of any session cookie; an unknown token
+// is a 401, never a silent fall-back to the cookie. Scopes map onto
+// HTTP methods: safe methods need read, everything else needs write.
+// Requests without a bearer header pass through untouched.
+func APITokenAuth(db *sql.DB) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			tok, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+			if !ok {
+				next.ServeHTTP(w, r)
+				return
+			}
+			u, scopes, err := LookupMCPToken(r.Context(), db, strings.TrimSpace(tok))
+			if err != nil {
+				if !errors.Is(err, ErrUnknownMCPToken) {
+					logx.Warn("admin.api_token.lookup", "err", err.Error())
+				}
+				w.Header().Set("WWW-Authenticate", `Bearer realm="zv-api"`)
+				httpx.Error(w, http.StatusUnauthorized, "invalid API token")
+				return
+			}
+			need := MCPScopeWrite
+			switch r.Method {
+			case http.MethodGet, http.MethodHead, http.MethodOptions:
+				need = MCPScopeRead
+			}
+			if !slices.Contains(scopes, need) {
+				httpx.Error(w, http.StatusForbidden, "API token lacks "+need+" scope")
+				return
+			}
+			ctx := auth.WithAPIToken(auth.WithUser(r.Context(), u))
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
 }
 
 // ErrUnknownMCPToken is returned by LookupMCPToken when the bearer

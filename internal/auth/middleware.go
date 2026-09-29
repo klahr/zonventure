@@ -67,3 +67,16 @@ func RequireAnyRole(roles ...string) func(http.Handler) http.Handler {
 		})
 	}
 }
+
+// RequireSession rejects requests authenticated by an API token.
+// Wrap credential- and account-management routes so a leaked token
+// can't mint more tokens, change the password, or delete the account.
+func RequireSession(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if ViaAPIToken(r.Context()) {
+			httpx.Error(w, http.StatusForbidden, "not available with an API token")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
