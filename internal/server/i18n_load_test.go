@@ -30,17 +30,23 @@ func TestRenderI18nJS_PlaceholderSubstituted(t *testing.T) {
 
 // TestLoadWebDict_ENIsEmpty enforces the size optimisation: the
 // English source file is identity-shaped on disk for Crowdin's
-// benefit, but at runtime the empty `en: {}` is enough — t() falls
-// through to the key when no entry is found. Inlining 150 KB of
+// benefit, but at runtime t() falls through to the key when no entry
+// is found, so identity entries are dropped. Inlining 150 KB of
 // redundant English-source-as-translation would bloat every page
-// load for no behavioural gain.
+// load for no behavioural gain. Namespaced keys (errors.*) aren't
+// their own English text and must survive.
 func TestLoadWebDict_ENIsEmpty(t *testing.T) {
 	dict, err := loadWebDict()
 	if err != nil {
 		t.Fatalf("loadWebDict: %v", err)
 	}
-	if got := dict["en"]; len(got) != 0 {
-		t.Errorf("en dict has %d entries, want 0 (runtime drops them)", len(got))
+	for k, v := range dict["en"] {
+		if k == v {
+			t.Errorf("en dict keeps identity entry %q (runtime drops them)", k)
+		}
+	}
+	if dict["en"]["errors.verification_required"] == "" {
+		t.Error("en dict dropped errors.verification_required — English users would see the raw key")
 	}
 	if got := dict["sv"]; len(got) == 0 {
 		t.Error("sv dict is empty — sv.json failed to load?")

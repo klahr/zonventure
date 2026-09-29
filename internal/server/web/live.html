@@ -619,7 +619,7 @@ function teamInitials(name) {
 function applyColors(c) {
   const root = document.documentElement;
   if (!c) {
-    for (const v of ['--accent', '--accent-secondary', '--bg-1', '--bg-2', '--text', '--ink']) {
+    for (const v of ['--accent', '--accent-secondary', '--bg-1', '--bg-2', '--text', '--muted', '--ink']) {
       root.style.removeProperty(v);
     }
     document.body && (document.body.style.background = '');
@@ -636,7 +636,32 @@ function applyColors(c) {
   } else {
     document.body.style.background = '';
   }
-  if (c.text) root.style.setProperty('--text', c.text); else root.style.removeProperty('--text');
+  // A brand that sets a background but no text colour would otherwise
+  // keep this page's dark-theme near-white text — unreadable on a light
+  // background. Pick the text (and muted) tone from the background.
+  const fallback = !c.text && c.background ? textToneOn(c.background) : null;
+  if (c.text) root.style.setProperty('--text', c.text);
+  else if (fallback) root.style.setProperty('--text', fallback.text);
+  else root.style.removeProperty('--text');
+  if (fallback) root.style.setProperty('--muted', fallback.muted); else root.style.removeProperty('--muted');
+}
+
+// textToneOn returns dark or light text tones for a #rrggbb / #rgb
+// background by WCAG relative luminance; null for anything else.
+function textToneOn(bg) {
+  let m = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(String(bg).trim());
+  if (!m) return null;
+  let hex = m[1];
+  if (hex.length === 3) hex = hex.split('').map((x) => x + x).join('');
+  const n = parseInt(hex, 16);
+  const [r, g, b] = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => {
+    const s = v / 255;
+    return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+  });
+  const L = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  return L > 0.35
+    ? { text: '#0b1220', muted: '#475569' }
+    : { text: '#f1f5f9', muted: '#94a3b8' };
 }
 
 const LIVE_TOKEN = location.pathname.split('/').pop();
@@ -684,11 +709,14 @@ function parseServerTime(s) {
 }
 
 // formatSpan renders the whole seconds between two Dates as MM:SS,
-// or H:MM:SS once it reaches an hour. Negative spans clamp to 0.
+// H:MM:SS once it reaches an hour, or Nd HH:MM:SS past a day (the
+// countdown's shape). Negative spans clamp to 0.
 function formatSpan(from, to) {
   const sec = Math.max(0, Math.round((to.getTime() - from.getTime()) / 1000));
-  const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+  const d = Math.floor(sec / 86400), h = Math.floor((sec % 86400) / 3600);
+  const m = Math.floor((sec % 3600) / 60), s = sec % 60;
   const pad = (n) => String(n).padStart(2, '0');
+  if (d > 0) return `${d}d ${pad(h)}:${pad(m)}:${pad(s)}`;
   return h ? `${h}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
 }
 

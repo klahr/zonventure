@@ -5,6 +5,7 @@ import { STEP } from "./dz/types.tsx";
 import { TRIGGER } from "./dz/concepts.tsx";
 import { Handle, Position, type NodeProps, type Node as RFNode } from "@xyflow/react";
 import { blocksOf, hasInput, mediaOf, portLabel, portsOf, textOf, type Issue, type Node, type Zone } from "@zonventure/graph";
+import { useT } from "../i18n.tsx";
 
 export interface CardData extends Record<string, unknown> {
   node: Node;
@@ -19,7 +20,7 @@ export interface CardData extends Record<string, unknown> {
 
 export type CardNode = RFNode<CardData, "zv">;
 
-const TYPE_LABEL: Record<Node["type"], string> = {
+export const TYPE_LABEL: Record<Node["type"], string> = {
   start: "Start",
   puzzle: "Puzzle",
   story: "Story",
@@ -85,6 +86,7 @@ function summary(n: Node, sourceTitle?: string): string {
  * left to right, matching Tidy.
  */
 function NodeCardImpl({ data, selected }: NodeProps<CardNode>) {
+  const t = useT();
   const n = data.node;
   const errors = data.issues.filter((i) => i.severity === "error");
   const warnings = data.issues.filter((i) => i.severity === "warning");
@@ -109,7 +111,7 @@ function NodeCardImpl({ data, selected }: NodeProps<CardNode>) {
 
       <div className="card__head">
         <StepIcon type={n.type} />
-        <span className="card__type">{TYPE_LABEL[n.type]}</span>
+        <span className="card__type">{t.t(TYPE_LABEL[n.type])}</span>
         {errors.length > 0 && (
           <span className="card__badge card__badge--error" title={errors.map((e) => e.message).join("\n")}>
             {errors.length}

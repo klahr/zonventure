@@ -73,6 +73,11 @@ export interface PlayViewProps {
   /** The adventure's farewell, shown under the end step's own text. */
   outro?: string;
   /**
+   * The finished team's place, time and recap link, for the end step.
+   * Provisional while other teams still play.
+   */
+  finish?: play.Finish & { provisional?: boolean };
+  /**
    * Scopes what the phone remembers — which journal notes are read — to
    * one team, so two teams sharing a phone do not share "new".
    */
@@ -333,7 +338,7 @@ function FeedbackLine({ feedback }: { feedback: Feedback | null | undefined }) {
  */
 function Title({ view }: { view: play.View }) {
   if (view.type === "puzzle" || view.type === "story" || view.blocks?.some((b) => b.kind === "title")) return null;
-  return view.title ? <h2 className="pv-title">{view.title}</h2> : null;
+  return view.title ? <h1 className="pv-title">{view.title}</h1> : null;
 }
 
 const mapURL = (z: play.PlayZone) => `https://www.openstreetmap.org/?mlat=${z.lat}&mlon=${z.lng}#map=18/${z.lat}/${z.lng}`;
@@ -431,7 +436,7 @@ function PuzzleStep(props: StepProps) {
 
       {view.hints && view.hints.length > 0 && (
         <button type="button" className="pv-hints-peek" onClick={props.openHints}>
-          {t("{{n}} hints revealed", { n: view.hints.length })} →
+          {view.hints.length === 1 ? t("1 hint revealed") : t("{{n}} hints revealed", { n: view.hints.length })} →
         </button>
       )}
 
@@ -524,6 +529,7 @@ function PuzzleStep(props: StepProps) {
             locked={locked}
             button={blockedFor > 0 ? formatSeconds(blockedFor) : input.button || t("Answer")}
             onAnswer={answer}
+            feedback={feedback ?? null}
           />
         )}
       </div>
@@ -545,8 +551,17 @@ function AnswerForm(props: {
   disabled: boolean;
   locked: boolean;
   onAnswer: (guess: string) => void;
+  feedback: Feedback | null;
 }) {
   const { input, t, locked, onAnswer } = props;
+  // After a wrong answer the text is selected, so typing replaces it and
+  // a typo is still fixable — no clearing by hand on a phone keyboard.
+  const formRef = useRef<HTMLFormElement>(null);
+  useEffect(() => {
+    if (props.feedback?.tone !== "bad") return;
+    const first = formRef.current?.querySelector("input");
+    if (first && first.value) first.select();
+  }, [props.feedback]);
   // A short list gets a box each; a long one stays one comma-separated line.
   const boxes = input.parts && input.parts >= 2 && input.parts <= MAX_PART_BOXES ? input.parts : 0;
   const [guess, setGuess] = useState("");
@@ -570,6 +585,7 @@ function AnswerForm(props: {
   );
   return (
     <form
+      ref={formRef}
       className="pv-answer"
       onSubmit={(e) => {
         e.preventDefault();
@@ -811,8 +827,17 @@ function StartChoice({ view, t, busy, onAction, placeNote }: StepProps) {
   );
 }
 
+/** A span of seconds as m:ss, h:mm:ss past an hour, or "2d 5h" past a day. */
+function duration(sec: number): string {
+  if (sec >= 86400) return `${Math.floor(sec / 86400)}d ${Math.floor((sec % 86400) / 3600)}h`;
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = String(sec % 60).padStart(2, "0");
+  return h ? `${h}:${String(m).padStart(2, "0")}:${s}` : `${m}:${s}`;
+}
+
 function EndStep(props: StepProps) {
-  const { view, t, outro } = props;
+  const { view, t, outro, finish } = props;
   const failed = view.outcome === "fail";
   return (
     <div className={"pv-summary" + (failed ? " is-fail" : "")}>
@@ -837,6 +862,33 @@ function EndStep(props: StepProps) {
           <div className="pv-stat__l">{t("Total")}</div>
         </div>
       </div>
+      {finish && (finish.rank || finish.seconds) ? (
+        <div className="pv-stats">
+          {finish.rank ? (
+            <div className="pv-stat">
+              <div className="pv-stat__v">
+                {finish.rank}
+                {finish.teams ? <span className="pv-stat__of"> / {finish.teams}</span> : null}
+              </div>
+              <div className="pv-stat__l">{finish.provisional ? t("Place so far") : t("Place")}</div>
+            </div>
+          ) : null}
+          {finish.seconds ? (
+            <div className="pv-stat">
+              <div className="pv-stat__v">{duration(finish.seconds)}</div>
+              <div className="pv-stat__l">{t("Time")}</div>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+      {finish?.recap_url && (
+        <div className="pv-summary__recap">
+          <a className="pv-btn pv-btn--primary pv-btn--wide" href={finish.recap_url}>
+            {t("See your team's recap")}
+          </a>
+          {finish.provisional && <p className="pv-summary__note">{t("It opens when the event ends.")}</p>}
+        </div>
+      )}
       <Bag view={view} t={t} />
     </div>
   );

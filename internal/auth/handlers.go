@@ -96,6 +96,8 @@ type membershipDTO struct {
 	// instead of paying upfront via Stripe. Drives the "Add to
 	// invoice" affordance in the buy-player-slots modal.
 	Trusted bool `json:"trusted,omitempty"`
+	// IsPublisher: the org authors the platform catalog.
+	IsPublisher bool `json:"is_publisher,omitempty"`
 }
 
 type whoamiResponse struct {
@@ -150,7 +152,7 @@ func (h *Handlers) userResponse(ctx context.Context, u User) whoamiResponse {
 			for _, m := range mems {
 				dto := membershipDTO{
 					OrgID: m.OrgID, OrgName: m.OrgName, Role: m.Role,
-					Trusted: m.Trusted,
+					Trusted: m.Trusted, IsPublisher: m.IsPublisher,
 				}
 				if m.HasLogo {
 					dto.OrgLogoURL = "/org-logo/" + strconv.FormatInt(m.OrgID, 10)
@@ -220,10 +222,14 @@ func (h *Handlers) Login(w http.ResponseWriter, r *http.Request) {
 		locked, retry := h.Limiter.RecordFailure(ip, req.Username)
 		logx.Warn("auth.login.fail", "ip", ip, "username", req.Username, "reason", "invalid_credentials")
 		metrics.AuthLogins.WithLabelValues("fail").Inc()
-		Record(r.Context(), h.DB, AuditEvent{
+		ev := AuditEvent{
 			Event: EventLogin, OK: false, Username: req.Username, IP: ip, UserAgent: ua,
 			Reason: ReasonInvalidCreds,
-		})
+		}
+		if u.ID != 0 {
+			ev.UserID = &u.ID
+		}
+		Record(r.Context(), h.DB, ev)
 		if locked {
 			writeRateLimited(w, retry)
 			return

@@ -51,6 +51,29 @@ func TestEmailChange_RoundTrip(t *testing.T) {
 	}
 }
 
+// TestEmailChange_KeepsChosenUsername: a username that isn't the email
+// ("boss") survives an email change, so the user can still log in with it.
+func TestEmailChange_KeepsChosenUsername(t *testing.T) {
+	db, cleanup := dbtest.Open(t)
+	defer cleanup()
+	ctx := context.Background()
+	uid := mustSeedUser(t, db)
+	if _, err := db.ExecContext(ctx, `UPDATE users SET username = 'boss' WHERE id = $1`, uid); err != nil {
+		t.Fatal(err)
+	}
+	tok, err := IssueEmailChangeToken(ctx, db, uid, "boss@example.org")
+	if err != nil {
+		t.Fatalf("IssueEmailChangeToken: %v", err)
+	}
+	u, err := ConsumeEmailChangeToken(ctx, db, tok)
+	if err != nil {
+		t.Fatalf("ConsumeEmailChangeToken: %v", err)
+	}
+	if u.Username != "boss" || u.Email != "boss@example.org" {
+		t.Fatalf("after change: username %q email %q, want boss / boss@example.org", u.Username, u.Email)
+	}
+}
+
 // TestEmailChange_UnknownToken returns the typed sentinel rather than
 // a SQL error.
 func TestEmailChange_UnknownToken(t *testing.T) {

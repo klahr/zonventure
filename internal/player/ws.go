@@ -29,7 +29,7 @@ func (h *Handlers) WSPlay(w http.ResponseWriter, r *http.Request) {
 	}
 	defer conn.Close()
 
-	events, unsub := h.Hub.Subscribe(ws.EventTopic(slot.EventID))
+	events, unsub := h.Hub.Subscribe(ws.EventTopic(slot.EventID), ws.TeamTopic(slot.TeamID))
 	defer unsub()
 
 	// Push the initial state so the client has something to render while it
@@ -77,7 +77,7 @@ func (h *Handlers) WSPlay(w http.ResponseWriter, r *http.Request) {
 			if status >= 400 {
 				continue
 			}
-			h.Hub.Publish(ws.EventTopic(slot.EventID), "changed", nil)
+			h.publishPing(slot)
 		case "answer":
 			var req AnswerRequest
 			if err := json.Unmarshal(msg.Data, &req); err != nil {

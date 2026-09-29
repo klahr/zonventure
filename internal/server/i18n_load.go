@@ -188,9 +188,17 @@ func loadWebDict() (map[string]map[string]string, error) {
 		// disk format (so Crowdin has a real source file). At
 		// runtime we drop those values so the JS t() fallthrough
 		// (table[key] === undefined → return key) decides — saves
-		// 150 KB of redundant inlined bytes per page load.
+		// 150 KB of redundant inlined bytes per page load. Keys that
+		// aren't their own English text (the namespaced errors.*
+		// codes) are kept, or English users would read the raw key.
 		if lang == "en" {
-			out[lang] = map[string]string{}
+			kept := map[string]string{}
+			for k, v := range m {
+				if k != v {
+					kept[k] = v
+				}
+			}
+			out[lang] = kept
 			continue
 		}
 		out[lang] = m

@@ -79,6 +79,15 @@ export function feedbackForRefusal(code: string | undefined, t: Translate): Feed
       return { tone: "info", text: t("The game is paused. Hold on.") };
     case "not_running":
       return { tone: "info", text: t("The game is not running.") };
+    case "rate_limited":
+      return { tone: "bad", text: t("That was a lot of tries. Wait a minute, then try again.") };
+    case "too_long":
+      return { tone: "bad", text: t("That's too long. Shorten it and try again.") };
+    case "no_game":
+      return { tone: "info", text: t("The game hasn't started for your team yet.") };
+    case "wrong_node":
+    case "unknown_action":
+      return { tone: "info", text: t("That doesn't work here. Here is where you are now.") };
     default:
       return { tone: "bad", text: t("Something went wrong. Try again.") };
   }

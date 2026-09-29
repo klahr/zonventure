@@ -375,10 +375,11 @@ p { margin: 0 0 .5rem; }
     position: fixed; top: 0; left: 0; bottom: 0;
     width: 260px; z-index: 1500;
     transform: translateX(-100%);
-    transition: transform .2s ease;
-    box-shadow: var(--shadow-lg);
+    transition: transform .2s ease, box-shadow .2s ease;
+    /* No shadow while parked off-screen, or it bleeds in at the left edge. */
+    box-shadow: none;
   }
-  .sidebar.open { transform: translateX(0); }
+  .sidebar.open { transform: translateX(0); box-shadow: var(--shadow-lg); }
   .topbar .brand { display: inline-flex; align-items: baseline; gap: .4rem; font-weight: 700; }
   .btn.menu-btn { display: inline-flex; }
   .content { padding: 1rem; }
@@ -692,8 +693,10 @@ tr.row-stuck {
 
 .grid { display: grid; gap: 1rem; }
 .grid.cols-2 { grid-template-columns: repeat(2, minmax(0,1fr)); }
-/* stats are small enough to stay side-by-side even on very narrow phones */
-.grid.stats { grid-template-columns: repeat(3, minmax(0,1fr)); gap: 1rem; }
+/* stats are small enough to stay side-by-side even on very narrow phones;
+   auto-fit so two or four tiles fill the row instead of leaving a gap
+   or orphaning the last one */
+.grid.stats { grid-template-columns: repeat(auto-fit, minmax(6rem, 1fr)); gap: 1rem; }
 @media (max-width: 820px) {
   .grid.cols-2 { grid-template-columns: 1fr; }
 }
@@ -912,6 +915,13 @@ textarea { min-height: 80px; resize: vertical; font-family: ui-monospace, monosp
   position: relative;
 }
 .modal.wide { max-width: 560px; }
+/* A long form's buttons stay in reach: the closing action row sticks
+   to the bottom of the scrolling modal instead of scrolling off. */
+.modal form > .row.end:last-child {
+  position: sticky; bottom: -1.5rem; z-index: 1;
+  margin: 0 -1.5rem -1.5rem; padding: .75rem 1.5rem 1.5rem;
+  background: var(--surface);
+}
 .modal h2 { margin-top: 0; padding-right: 2rem; }
 .modal-close {
   position: absolute;
@@ -1433,6 +1443,17 @@ a.split-btn-item { text-decoration: none; }
   font-size: .8rem;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+/* Phones: the name (and player-count toggle) on one line, the link and
+   its copy button on the next, so the URL gets the full width instead
+   of collapsing to "http://". */
+@media (max-width: 640px) {
+  .tl-head, .tl-member-row { flex-wrap: wrap; }
+  .tl-head .tl-team { flex: 1 1 auto; max-width: none; }
+  .tl-head .tl-toggle { order: 1; }
+  .tl-head .tl-url, .tl-member-row .tl-url { order: 2; flex: 1 1 calc(100% - 3rem); }
+  .tl-head .btn.icon, .tl-member-row .btn.icon { order: 3; }
+  .tl-member-name { flex: 1 1 auto; }
+}
 
 .puzzle-settings { margin-top: 1rem; }
 .puzzle-settings h3 {
@@ -1651,6 +1672,14 @@ a.split-btn-item { text-decoration: none; }
 }
 .banner.err strong { color: #a02a2a; }
 .banner.err a { color: inherit; }
+.banner.warn {
+  margin: 0 0 1rem;
+  padding: .55rem .85rem;
+  border-radius: var(--radius-sm);
+  background: rgba(220, 160, 60, .14);
+  border: 1px solid rgba(220, 160, 60, .45);
+  font-size: .92rem;
+}
 
 /* Account-settings cards: stacked in one column, comfortable padding,
    tight enough that the page reads as a list of related actions
@@ -1922,6 +1951,9 @@ a.split-btn-item { text-decoration: none; }
   border-color: var(--accent); font-weight: 700;
 }
 .chip.selectable.selected:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+/* Muted sub-labels inside a selected chip follow its light text
+   instead of the page's muted grey-pink, which vanished on the accent. */
+.chip.selectable.selected .muted { color: inherit; opacity: .85; }
 .chip.selectable.taken {
   opacity: .55; cursor: not-allowed; font-style: italic;
   border-style: dashed;
@@ -2382,7 +2414,7 @@ async function api(path, opts = {}) {
   // English text — adding a code is a per-handler upgrade, not a
   // bulk migration.
   if (body && typeof body.error === 'string') {
-    body.error = tError(body.code, body.error);
+    body.error = tError(body.code, body.error, body);
   }
   // Expose Retry-After (in seconds) when the server tells us to wait.
   // Login lockouts and rate-limited paths use it for their countdown
@@ -2743,7 +2775,7 @@ function ensureLeaflet() {
 /* ========== Password-confirm prompt ==========
    Returns the typed password on success or null if cancelled. Pair this
    with requests that set X-Confirm-Password. */
-async function promptPassword(title, message) {
+async function promptPassword(title, message, labels = {}) {
   return modal(title, ({ body, close }) => {
     const input = h('input', { type: 'password', autocomplete: 'current-password', required: true });
     const err = h('p', { class: 'err', style: 'display:none' });
@@ -2752,8 +2784,8 @@ async function promptPassword(title, message) {
       h('label', { class: 'field' }, h('span', {}, t('Your password')), input),
       err,
       h('div', { class: 'row end' },
-        h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, t('Cancel')),
-        h('button', { class: 'btn danger', type: 'submit' }, t('Confirm'))),
+        h('button', { class: 'btn', type: 'button', on: { click: () => close(null) } }, labels.cancel || t('Cancel')),
+        h('button', { class: 'btn danger', type: 'submit' }, labels.confirm || t('Confirm'))),
     );
     form.addEventListener('submit', (e) => {
       e.preventDefault();
@@ -2923,7 +2955,11 @@ function modal(title, bodyFn, opts = {}) {
       if (!dialog) return;
       // Fields first, then buttons: one selector list would match in
       // document order, where the × close button comes before them all.
-      const firstInput = dialog.querySelector('input:not([type="hidden"]):not([disabled]), textarea:not([disabled]), select:not([disabled])')
+      // An explicit autofocus wins, then the first text-like field, so a
+      // mode radio or checkbox ahead of the real field doesn't take it.
+      const firstInput = dialog.querySelector('[autofocus]:not([disabled])')
+        || dialog.querySelector('input:not([type="hidden"]):not([type="radio"]):not([type="checkbox"]):not([disabled]), textarea:not([disabled]), select:not([disabled])')
+        || dialog.querySelector('input:not([type="hidden"]):not([disabled])')
         || dialog.querySelector('button:not(.modal-close):not([disabled])');
       (firstInput || dialog).focus();
     }, 30);
@@ -3137,7 +3173,7 @@ function renderOrgPicker() {
     h('div', { class: 'brand' }, 'zonventure',
       h('small', {}, t('select organization'))),
     h('p', { class: 'muted' },
-      t('You belong to {{n}} organisations. Pick which one to act as — you can switch from the menu later.', { n: memberships.length })),
+      t('You belong to {{n}} organizations. Pick which one to act as — you can switch from the menu later.', { n: memberships.length })),
     h('div', { style: 'display:flex; flex-direction:column; gap:.5rem; margin-top:1rem' },
       memberships.map((m) => {
         // Logo when available — recognising a brand mark is faster
@@ -3245,6 +3281,13 @@ function renderOrgSwitcher() {
 // /arrange render after a fresh signup. Dismissal is sticky in
 // localStorage; once it's shown for an account it never reappears
 // unless the user clears site data.
+// activeOrgIsPublisher: the org the user is working in authors the
+// platform catalog, so authoring comes first and buying passes doesn't.
+function activeOrgIsPublisher() {
+  const m = (state.me?.memberships || []).find((x) => x.org_id === state.me?.org_id);
+  return !!m?.is_publisher;
+}
+
 function maybeShowOnboarding() {
   if (!state.me) return;
   const key = 'zv_onboarded_' + state.me.id;
@@ -3253,8 +3296,9 @@ function maybeShowOnboarding() {
   setTimeout(() => {
     if (location.hash.startsWith('#reset') || location.hash.startsWith('#change-email')) return;
     localStorage.setItem(key, '1');
-    if (state.me.role === 'admin') showAdminOnboardingModal();
-    else                           showOnboardingModal();
+    if (state.me.role === 'admin')   showAdminOnboardingModal();
+    else if (activeOrgIsPublisher()) showPublisherOnboardingModal();
+    else                             showOnboardingModal();
   }, 200);
 }
 
@@ -3276,6 +3320,27 @@ async function showOnboardingModal() {
         h('button', { class: 'btn', on: { click: () => close(null) } }, t('Skip')),
         h('button', { class: 'btn primary', on: { click: () => { close(null); nav('#catalog'); } } },
           t('Browse the catalog'))));
+  });
+}
+
+async function showPublisherOnboardingModal() {
+  await modal(t('Welcome to Zonventure Studio'), ({ body, close }) => {
+    body.append(
+      h('p', { class: 'muted', style: 'margin-top:.25rem' },
+        t('Your organization publishes the catalog other organizations run. Three steps:')),
+      h('ol', { style: 'padding-left:1.25rem; line-height:1.7' },
+        h('li', {}, h('strong', {}, t('Author an adventure')), ' — ',
+          t('puzzles, places and story, in the designer.')),
+        h('li', {}, h('strong', {}, t('Test play and publish it')), ' — ',
+          t('once the platform admin lists it in the catalog, other organizations can run it.')),
+        h('li', {}, h('strong', {}, t('Run your own events')), ' — ',
+          t('schedule one from any of your adventures, like any organization.'))),
+      h('p', { class: 'muted', style: 'font-size:.85rem; margin-top:1rem' },
+        t('You can open this again from Settings → Account → Help.')),
+      h('div', { class: 'row end', style: 'margin-top:1rem; gap:.5rem' },
+        h('button', { class: 'btn', on: { click: () => close(null) } }, t('Skip')),
+        h('button', { class: 'btn primary', on: { click: () => { close(null); nav('#adventures'); } } },
+          t('Open your adventures'))));
   });
 }
 
@@ -3913,7 +3978,9 @@ function renderShell() {
     class: 'btn',
     title: t('Log out'),
     on: { click: logout },
-  }, icon(ICONS.exit), t('Log out ({{username}})', { username: state.me.username }));
+  }, icon(ICONS.exit), h('span', {
+    style: 'min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap',
+  }, t('Log out ({{username}})', { username: state.me.username })));
 
   const sidebar = h('aside', {
     class: 'sidebar', id: 'sidebar-nav',
@@ -3958,9 +4025,14 @@ function renderShell() {
   // flag of false. Money-touching actions (CreateRun, CreatePurchase)
   // 403 with a verification_required code, so this banner gives them
   // the recovery action up front before they hit the wall.
+  // Accounts with no email at all (admin-seeded, added by an org admin)
+  // hit the same wall with nothing to verify, so point them at adding one.
+  // Global admins don't schedule events, so they're spared the nag.
   const verifyBanner = (state.me && state.me.email && state.me.email_verified === false)
     ? renderVerifyBanner(state.me.email)
-    : null;
+    : (state.me && !state.me.email && state.me.role !== 'admin')
+      ? renderAddEmailBanner()
+      : null;
 
   // Deletion-pending banner: outranks the verify banner because it
   // affects the entire account. Shown whenever scheduled_deletion_at
@@ -4003,9 +4075,9 @@ function renderDefaultPasswordBanner() {
     h('span', {}, t('This account still uses a seeded password. Change it now — anyone reaching this URL can log in as you until you do.')),
     ' ',
     h('a', {
-      href: '#settings',
+      href: '#settings/account',
       style: 'text-decoration: underline; font-weight: 700',
-      on: { click: (e) => { e.preventDefault(); nav('#settings'); } },
+      on: { click: (e) => { e.preventDefault(); nav('#settings/account'); } },
     }, t('Change password →')));
 }
 
@@ -4028,6 +4100,20 @@ function renderVerifyBanner(email) {
     }, t('Resend email')),
   );
   return banner;
+}
+
+function renderAddEmailBanner() {
+  return h('div', { class: 'verify-banner' },
+    h('div', {},
+      h('strong', {}, t('Add your email')),
+      ' — ',
+      h('span', { class: 'muted' },
+        t('Events and purchases need a verified email address.'))),
+    h('a', {
+      class: 'btn small',
+      href: '#settings/account',
+      on: { click: (e) => { e.preventDefault(); nav('#settings/account'); } },
+    }, t('Add email')));
 }
 
 // renderDeletionBanner renders a persistent red banner whenever the
@@ -4059,6 +4145,17 @@ function renderDeletionBanner(scheduledISO) {
     }, t('Cancel deletion')),
   );
   return banner;
+}
+
+// crumbNames holds the display name of the detail page a crumb points
+// at ("events/5" → the event's name), filled in once the view has
+// loaded it, so the crumb reads a name rather than an id or slug.
+const crumbNames = new Map();
+function setCrumbName(key, name) {
+  if (!name) return;
+  crumbNames.set(key, name);
+  const el = document.querySelector('.topbar .crumb');
+  if (el) el.textContent = currentCrumb();
 }
 
 function currentCrumb() {
@@ -4098,6 +4195,8 @@ function currentCrumb() {
   // no signal that the user is on a detail page. The {section}
   // label still tracks the sidebar, the suffix tells them where in
   // it they are.
+  const named = parts[1] && crumbNames.get(section + '/' + parts[1]);
+  if (named) return t('{{section}} / {{slug}}', { section: sectionLabel, slug: named });
   if (section === 'events' && parts[1]) return t('{{section}} / Event #{{id}}', { section: sectionLabel, id: parts[1] });
   if (section === 'adventures' && parts[1]) return t('{{section}} / {{slug}}', { section: sectionLabel, slug: parts[1] });
   if (section === 'store' && parts[1]) return t('{{section}} / {{slug}}', { section: sectionLabel, slug: parts[1] });
@@ -4436,7 +4535,7 @@ async function viewDashboard(view) {
 async function viewLobbyDashboard(view) {
   const heading = h('h1', { style: 'margin:0 0 .5rem' }, t('Welcome to Zonventure'));
   const blurb = h('p', { class: 'muted' },
-    t('You\'re signed in but not part of any organisation yet. Either create one (you\'ll be its admin) or ask someone in an existing organisation to invite you.'));
+    t('You\'re signed in but not part of any organization yet. Either create one (you\'ll be its admin) or ask someone in an existing organization to invite you.'));
   const createBtn = h('button', { class: 'btn primary' },
     icon(ICONS.building), t('Create an organization'));
   createBtn.addEventListener('click', () => openCreateOwnOrg());
@@ -4573,7 +4672,7 @@ async function viewArrangerDashboard(view) {
   // Tooltip on the Unused stat — "Unused" by itself is cryptic for a
   // first-time arranger. The stat() helper doesn't accept opts so we
   // attach the title after construction.
-  const unusedStat = stat(t('Unused player slots'), unusedAssigns.length);
+  const unusedStat = stat(t('Unused event passes'), unusedAssigns.length);
   unusedStat.title = t('Event passes not yet used for an event.');
 
   // DOM's replaceChildren coerces null arguments to the string "null"
@@ -4682,6 +4781,7 @@ function renderSetupStep(done, title, hint, cta, onClick) {
 // who haven't run any events yet — it meets them where they are and
 // links to the next action.
 function buildDashboardSetup({ mineAdvs, unusedAssigns }) {
+  if (activeOrgIsPublisher()) return buildPublisherDashboardSetup({ mineAdvs });
   const haveAdvOrAssignment = mineAdvs.length > 0 || unusedAssigns.length > 0;
   return h('div', { class: 'card', style: 'border:1px dashed var(--accent); background:color-mix(in srgb, var(--accent) 5%, var(--surface))' },
     h('h2', { style: 'margin:0 0 .25rem' }, t('Getting started')),
@@ -4693,14 +4793,42 @@ function buildDashboardSetup({ mineAdvs, unusedAssigns }) {
         t('Browse the catalog or write your own.'),
         t('Create'), () => openCreateAdventure()),
       renderSetupStep(unusedAssigns.length > 0,
-        t('Add player slots'),
-        t('One slot per invited player. The first 15 are free.'),
+        t('Get an event pass'),
+        t('One pass per event, sized by players. The first 15 players are free.'),
         t('Open the catalog'), () => nav('#catalog')),
       renderSetupStep(false,
         t('Schedule and start'),
         t('Pick a date, add teams, share each player’s magic link.'),
         unusedAssigns.length > 0 ? t('Schedule') : null,
         unusedAssigns.length > 0 ? (() => scheduleRun(unusedAssigns[0].id)) : null),
+    ),
+  );
+}
+
+// The catalog publisher's checklist: author, publish, and see it the
+// way other organisations will.
+function buildPublisherDashboardSetup({ mineAdvs }) {
+  // playable: published from the designer; published: listed in the
+  // catalog by the platform admin.
+  const playable = mineAdvs.filter((a) => a.playable);
+  const listed = mineAdvs.filter((a) => a.published);
+  return h('div', { class: 'card', style: 'border:1px dashed var(--accent); background:color-mix(in srgb, var(--accent) 5%, var(--surface))' },
+    h('h2', { style: 'margin:0 0 .25rem' }, t('Getting started')),
+    h('p', { class: 'muted', style: 'margin:0 0 .5rem' },
+      t('Three steps to a catalog other organizations can run.')),
+    h('ol', { style: 'list-style:none; padding:0; margin:0' },
+      renderSetupStep(mineAdvs.length > 0,
+        t('Author an adventure'),
+        t('Puzzles, places and story, in the designer.'),
+        t('Create'), () => openCreateAdventure()),
+      renderSetupStep(playable.length > 0,
+        t('Test play and publish it'),
+        t('Publish from the designer’s toolbar once it plays through.'),
+        mineAdvs.length > 0 ? t('Open your adventures') : null,
+        mineAdvs.length > 0 ? (() => nav('#adventures')) : null),
+      renderSetupStep(listed.length > 0,
+        t('Get it listed in the catalog'),
+        t('The platform admin lists published adventures for other organizations to run.')),
     ),
   );
 }
@@ -4757,7 +4885,8 @@ async function viewAdminDashboard(view) {
           h('tbody', {}, orgs.map((o) => h('tr', {},
             h('td', {}, h('span', {
               style: 'display:inline-flex; align-items:center; gap:.55rem; min-width:0',
-            }, orgIcon(o, 24), h('span', {
+            }, orgIcon(o, 24), h('a', {
+              href: '#organizations/' + o.id,
               style: 'overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0',
             }, o.name))),
             h('td', { class: 'mono hide-narrow' }, (o.members || []).length),
@@ -5025,12 +5154,16 @@ async function viewCatalog(view) {
     h('h1', {}, t('Adventures')),
     renderAdventureTabs('catalog'),
     h('p', { class: 'muted' },
-      t('Published adventures from other organisations. Buy player slots to add one to your own Adventures list.')),
+      activeOrgIsPublisher()
+        ? t('Published adventures from other organizations. Your own published adventures are what other organizations find here.')
+        : t('Published adventures from other organizations. Buy an event pass to add one to your own Adventures list.')),
     catalog.length === 0
       ? h('div', { class: 'empty' },
           h('p', {}, t('No published adventures yet.')),
           h('p', { class: 'muted', style: 'margin-top:.5rem' },
-            t('Check back soon — operators publish new adventures regularly.')))
+            activeOrgIsPublisher()
+              ? t('Your organization publishes the catalog, so your adventures are listed under Yours.')
+              : t('Check back soon — operators publish new adventures regularly.')))
       : h('div', { class: 'grid cols-2' }, catalog.map((a) =>
         h('div', {
           class: 'card clickable',
@@ -5095,6 +5228,7 @@ async function viewCatalogDetail(view, slug) {
   const r = await api('/api/admin/adventures/' + encodeURIComponent(slug));
   if (!r.ok) { view.replaceChildren(h('p', { class: 'err' }, r.body?.error || t('not found'))); return; }
   const a = r.body;
+  setCrumbName('catalog/' + slug, a.title);
   // A published graph is what plays: its puzzles stand in for pages, in
   // the page shape computeAdventureFacts reads (a zone is a gate).
   const g = a.graph || null;
@@ -5402,7 +5536,7 @@ async function viewPurchases(view) {
         h('thead', {}, h('tr', {},
           h('th', {}, t('Adventure')),
           isAdmin ? h('th', {}, t('Org')) : null,
-          h('th', {}, t('Slots')),
+          h('th', {}, t('Players')),
           h('th', {}, t('Total')),
           h('th', {}, t('State')),
           h('th', {}, t('Date')),
@@ -5454,7 +5588,7 @@ async function viewPurchases(view) {
       ? h('p', { class: 'muted' },
           t('Every purchase across all orgs. Off-platform invoices show under "To bill" until you mark them billed.'))
       : h('p', { class: 'muted' },
-          t('Every player-slot purchase. Paid ones give an event pass you can schedule from the Adventures page.')),
+          t('Every event-pass purchase. Paid ones give an event pass you can schedule from the Adventures page.')),
     chipBar,
     summaryHost,
     purchases.length === 0 ? renderEmptyPurchases() : tableHost,
@@ -5507,7 +5641,7 @@ function renderPurchaseActions(p) {
       && !p.billed_at && !p.voided_at) {
     const btn = h('button', { class: 'btn small danger', type: 'button' }, t('Void'));
     btn.addEventListener('click', async () => {
-      if (!await inAppConfirm(t('Void this purchase so it won\'t appear on the next invoice? The slots stay granted; only the billable line is removed.'), { danger: true })) return;
+      if (!await inAppConfirm(t('Void this purchase so it won\'t appear on the next invoice? The players stay on the pass; only the billable line is removed.'), { danger: true })) return;
       btn.disabled = true;
       const r = await api('/api/admin/purchases/' + p.id + '/void', { method: 'POST' });
       if (r.status === 200) {
@@ -5579,7 +5713,7 @@ function renderEmptyPurchases() {
   return h('div', { class: 'empty' },
     h('p', {}, t('No purchases yet.')),
     h('p', { class: 'muted', style: 'margin-top:.5rem' },
-      t('Browse the catalog and buy player slots to start scheduling events.')),
+      t('Browse the catalog and get an event pass to start scheduling events.')),
     h('div', { style: 'margin-top:.75rem' },
       h('button', { class: 'btn primary', on: { click: () => nav('#catalog') } },
         icon(ICONS.coins), t('Open the store'))));
@@ -5665,13 +5799,13 @@ async function openPurchaseModal(adv) {
     }
     if (r.body.state === 'paid' && r.body.assignment_id) {
       try { sessionStorage.setItem('zv-just-purchased', String(r.body.assignment_id)); } catch { /* no-op */ }
-      if (r.body.provider === 'invoice') toastOk(t('Player slots added to your next invoice'));
+      if (r.body.provider === 'invoice') toastOk(t('Players added to your next invoice'));
       location.href = '/arrange#adventures';
       return;
     }
     location.href = r.body.checkout_url;
   };
-  await modal(t('Buy player slots'), ({ body, close }) => {
+  await modal(t('Buy an event pass'), ({ body, close }) => {
     // Floor of 15 mirrors the free tier — buying fewer would still
     // cost €0 and produce a smaller event for no reason. See the
     // matching guard in the schedule modal and the server.
@@ -5754,7 +5888,7 @@ async function openTopUpModal(event, adventure) {
       return;
     }
     if (r.body.state === 'paid') {
-      toastOk(t('{{n}} more slots added', { n }));
+      toastOk(t('{{n}} more players added', { n }));
       // Stay on the event — the cap bump is local to this event,
       // so re-render it instead of bouncing through #adventures.
       renderRoute();
@@ -5763,7 +5897,7 @@ async function openTopUpModal(event, adventure) {
     location.href = r.body.checkout_url;
   };
   const eventLabel = adventure?.title || event.adventure_slug || t('this event');
-  await modal(t('Buy more slots'), ({ body, close }) => {
+  await modal(t('Add players'), ({ body, close }) => {
     const players = h('input', { type: 'number', min: '1', max: '500', value: '5', required: true });
     const totalEl = h('strong', {}, '');
     const update = () => {
@@ -5785,7 +5919,7 @@ async function openTopUpModal(event, adventure) {
       : null;
     const form = h('form', {},
       h('p', {},
-        t('"{{title}}" currently has {{n}} player slots. How many more do you want?',
+        t('The event pass for "{{title}}" covers {{n}} players. How many more do you want?',
           { title: eventLabel, n: previous })),
       h('label', { class: 'field' },
         h('span', {}, t('Additional players')), players),
@@ -5831,7 +5965,7 @@ async function openAdminGrantModal(org, event) {
   const trusted = !!org.trusted;
   const { PRICE_CENTS, fmtMoney } = pricingHelpers();
   const eventLabel = event.adventure_title || event.adventure_slug || t('this event');
-  await modal(t('Grant slots'), ({ body, close }) => {
+  await modal(t('Add players'), ({ body, close }) => {
     const players = h('input', { type: 'number', min: '1', max: '500', value: '5', required: true });
     // Default suggested price = linear top-up cost (count × per-player).
     // Operator can drop to 0 for goodwill, or raise it for any reason.
@@ -5861,9 +5995,9 @@ async function openAdminGrantModal(org, event) {
     const noticeTrusted = trusted ? h('p', { class: 'muted', style: 'font-size:.85rem' },
       t('Adding to "{{org}}" — the price below appears on their next invoice. Set it to 0 for a free grant.',
         { org: org.name || ('#' + org.id) })) : null;
-    const submitBtn = h('button', { class: 'btn primary', type: 'submit' }, t('Grant'));
+    const submitBtn = h('button', { class: 'btn primary', type: 'submit' }, t('Add players'));
     const form = h('form', {},
-      h('p', {}, t('"{{title}}" currently has {{n}} player slots. How many more?',
+      h('p', {}, t('The event pass for "{{title}}" covers {{n}} players. How many more?',
         { title: eventLabel, n: event.max_players || 0 })),
       noticeNonTrusted,
       noticeTrusted,
@@ -5887,8 +6021,8 @@ async function openAdminGrantModal(org, event) {
         return;
       }
       toastOk(amount > 0
-        ? t('{{n}} slots granted — {{price}} on next invoice', { n: added, price: fmtMoney(amount) })
-        : t('{{n}} slots granted (free)', { n: added }));
+        ? t('{{n}} players added — {{price}} on next invoice', { n: added, price: fmtMoney(amount) })
+        : t('{{n}} players added to the pass (free)', { n: added }));
       close(true);
       renderRoute();
     });
@@ -5900,6 +6034,7 @@ async function viewAdventureDetail(view, slug) {
   const r = await api('/api/admin/adventures/' + encodeURIComponent(slug));
   if (!r.ok) { view.replaceChildren(h('p', { class: 'err' }, r.body?.error || t('not found'))); return; }
   const a = r.body;
+  setCrumbName('adventures/' + slug, a.title);
   // An adventure with a published graph plays the graph, whatever lane
   // pages it still has from before: those are never shown to a team
   // again, so the page describes the graph instead.
@@ -5951,7 +6086,7 @@ async function viewAdventureDetail(view, slug) {
     ctas.append(h('button', {
       class: 'btn primary',
       on: { click: () => openPurchaseModal({ slug: a.slug, title: a.title }) },
-    }, icon(ICONS.coins), t('Buy player slots')));
+    }, icon(ICONS.coins), t('Buy an event pass')));
   }
   // Preview opens the player view in a new tab — handy for both
   // catalog browsers and authors checking their own work without
@@ -6622,6 +6757,15 @@ function buildAdventureMap(host, pages, colors) {
 // minted assignment id, so the user re-enters name/time on that
 // second pass. Free / invoice / paid-pre-existing all complete inline.
 async function scheduleRun(source) {
+  // The server refuses unverified accounts; say so before the user
+  // fills in a form whose input the refusal would throw away.
+  if (state.me && state.me.email_verified === false) {
+    toastErr(state.me.email
+      ? t('Verify your email before scheduling events — check your inbox for the link.')
+      : t('Add and verify an email address before scheduling events.'));
+    if (!state.me.email) nav('#settings/account');
+    return;
+  }
   const presetAssignmentID = typeof source === 'number' ? source : null;
   const isObj = typeof source === 'object' && source !== null;
   const presetSlug = isObj ? (source.slug || null) : null;
@@ -6733,7 +6877,14 @@ async function scheduleRun(source) {
     const modeManual = h('input', { type: 'radio', name: 'sched-mode', value: 'manual', checked: true });
     const modeLater = h('input', { type: 'radio', name: 'sched-mode', value: 'later' });
     const when = h('input', { type: 'datetime-local', disabled: '' });
-    const toggleWhen = () => { when.disabled = !modeLater.checked; };
+    // The picker and its timezone line only show once "Schedule for
+    // later" is picked; whenField is built below.
+    let whenField = null;
+    const toggleWhen = () => {
+      when.disabled = !modeLater.checked;
+      if (whenField) whenField.style.display = modeLater.checked ? '' : 'none';
+      if (modeLater.checked) when.focus();
+    };
     modeManual.addEventListener('change', toggleWhen);
     modeLater.addEventListener('change', toggleWhen);
     const localTZ = (() => {
@@ -6782,7 +6933,7 @@ async function scheduleRun(source) {
         modeManual, h('span', {}, t('Start manually — I\'ll hit Start when we\'re ready'))),
       h('label', { style: 'display:flex; gap:.5rem; align-items:center; margin:.5rem 0' },
         modeLater, h('span', {}, t('Schedule for later'))),
-      h('label', { class: 'field' }, h('span', {}, t('Auto-start at')), when, tzHint),
+      whenField = h('label', { class: 'field', style: 'display:none' }, h('span', {}, t('Auto-start at')), when, tzHint),
       teamsDetails,
       h('label', { style: 'display:flex; gap:.5rem; align-items:flex-start; margin:1rem 0 .25rem; font-size:.9rem' },
         attest,
@@ -6809,6 +6960,22 @@ async function scheduleRun(source) {
       const players = Math.max(0, parseInt(buyCount.value, 10) || 0);
       if (ctx.mode === 'buy' && players < 15) {
         toastErr(t('Minimum {{n}} players per event', { n: 15 }));
+        return null;
+      }
+      // Teams made up front must fit the event pass, or the extra
+      // ones fail one by one after the event already exists.
+      const teamCountN = Math.max(0, parseInt(teamCount.value, 10) || 0);
+      const perTeamN = Math.max(1, parseInt(playersPerTeam.value, 10) || 0);
+      const cap = ctx.mode === 'buy'
+        ? players
+        : ctx.mode === 'preset'
+          ? (assignments.find((x) => x.id === ctx.assignmentID)?.max_players || 0)
+          : 0;
+      if (cap > 0 && teamCountN * perTeamN > cap) {
+        teamsDetails.open = true;
+        teamCount.focus();
+        toastErr(t('{{teams}} teams of {{per}} is {{total}} players, but the event pass covers {{cap}}.',
+          { teams: teamCountN, per: perTeamN, total: teamCountN * perTeamN, cap }));
         return null;
       }
       const out = {
@@ -7458,12 +7625,13 @@ function renderPartnersCard(partners, isOrgAdmin) {
     h('span', {}, t('Public redeem page')),
     h('div', { class: 'row', style: 'gap:.5rem' },
       urlInput,
+      iconBtn('eye', t('Open page'), () => window.open(urlInput.value, '_blank', 'noopener')),
       iconBtn('copy', t('Copy link'), () => copyFromInput(urlInput.value, urlInput, t('Link copied'))))));
 
   if (partners.length === 0) {
     card.append(h('p', { class: 'muted' }, isOrgAdmin
       ? t('No partners yet. Add one to start taking its codes.')
-      : t('No partners yet. An organisation admin can add them.')));
+      : t('No partners yet. An organization admin can add them.')));
   }
 
   for (const p of partners) {
@@ -7848,7 +8016,8 @@ function esc(s) {
 // teamInitials returns up to two letters from the team name — the
 // fallback content for the generated avatar when no upload exists.
 function teamInitials(name) {
-  const parts = (name || '').trim().split(/\s+/).filter(Boolean);
+  const parts = (name || '').trim().split(/\s+/)
+    .map((p) => p.replace(/[^\p{L}\p{N}]/gu, '')).filter(Boolean);
   if (parts.length === 0) return '?';
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
@@ -7913,7 +8082,8 @@ function orgIcon(org, size) {
 // adventureInitials pulls up to two upper-case letters from the title
 // for the default cover-art tile.
 function adventureInitials(title) {
-  const parts = (title || '').trim().split(/\s+/).filter(Boolean);
+  const parts = (title || '').trim().split(/\s+/)
+    .map((p) => p.replace(/[^\p{L}\p{N}]/gu, '')).filter(Boolean);
   if (parts.length === 0) return '?';
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
@@ -8040,7 +8210,7 @@ function renderTeamLinksPanel(run, teams) {
     h('div', { class: 'row', style: 'gap:.5rem; align-items:center; flex-wrap:wrap; margin-bottom:.5rem' },
       search, copyCaptainsBtn, copyCSVBtn),
     h('p', { class: 'muted', style: 'font-size:.78rem; margin:0 0 .55rem' },
-      t('Links expire after a fixed window — anyone with the URL can play as that player. Use the per-team rotate-token action if a link leaks; existing players keep playing until they sign out.')),
+      t('Links stop working seven days after the event\'s scheduled start (30 days after they\'re made when it has no date). Anyone with a link can play as that player — if one leaks, open the team and rotate that player\'s link.')),
     scroll);
 
   const summary = h('summary', {
@@ -8635,7 +8805,7 @@ async function viewRunDetail(view, runID) {
     }, icon(ICONS.eye), t('Live control')));
   }
   if (event.state === 'scheduled') {
-    const start = h('button', { class: 'btn primary lifecycle-btn', on: { click: () => confirmStart(event) } },
+    const start = h('button', { class: 'btn primary lifecycle-btn', on: { click: () => confirmStart(event, teams) } },
       icon(ICONS.play), t('Start now'));
     actions.append(start);
     // Quests are always-on (no scheduled_at by design) — hide the
@@ -8690,8 +8860,8 @@ async function viewRunDetail(view, runID) {
     const topUp = h('button', {
       class: 'btn lifecycle-btn',
       on: { click: () => openTopUpModal(event, adventure) },
-      title: t('Add more player slots to this event'),
-    }, icon(ICONS.coins), t('Buy more slots'));
+      title: t('Add players to this event\'s pass'),
+    }, icon(ICONS.coins), t('Add players'));
     actions.append(topUp);
   }
   // Results export is always available once there are teams — arrangers
@@ -8767,6 +8937,18 @@ async function viewRunDetail(view, runID) {
   // Last activity per team (tm.last_activity_at, from the server)
   // highlights teams that look stuck.
   const STUCK_MS = 10 * 60 * 1000;
+  // A team is only "stuck" once someone has joined, and the quiet spell
+  // counts from its latest sign of life — the event start or a player
+  // joining count too — so a team created before the start, or one
+  // nobody has opened yet, isn't flagged.
+  const teamStuck = (tm) => {
+    if (event.state !== 'running' || tm.completed_at || tm.withdrawn_at) return false;
+    const logins = (tm.members || []).map((m) => m.last_login_at).filter(Boolean);
+    if (logins.length === 0) return false;
+    const times = [tm.last_activity_at, event.started_at, ...logins]
+      .filter(Boolean).map((x) => Date.parse(serverISO(x))).filter(Number.isFinite);
+    return times.length > 0 && (Date.now() - Math.max(...times)) > STUCK_MS;
+  };
 
   // Build team → colour index up-front so the swatch next to each
   // team in the table matches the leaderboard colours on Race control.
@@ -8781,6 +8963,7 @@ async function viewRunDetail(view, runID) {
   // ticket-purchase + always-on rules apply, and a back-link that
   // returns to the Quests list instead of Events.
   const titleEl = h('h1', {}, runLabel(event));
+  setCrumbName('events/' + event.id, runLabel(event));
   const renameBtn = iconBtn('pencil', t('Rename event'), () => openRenameEvent(event));
   const lifecycleBar = h('div', { class: 'lifecycle-bar' },
     h('div', { class: 'lifecycle-left' },
@@ -8811,13 +8994,10 @@ async function viewRunDetail(view, runID) {
   let teamsQuery = '';
   const teamsRender = () => {
     const filtered = teams.filter((tm) => {
-      const lastEv = tm.last_activity_at;
-      const lastMs = lastEv ? Date.parse(serverISO(lastEv)) : null;
       // Withdrawn teams are intentionally inactive — they shouldn't
       // raise the "stuck?" flag or fall under the "unstarted" filter
       // (the race director already knows they're out).
-      const stuck = event.state === 'running' && !tm.completed_at && !tm.withdrawn_at
-        && lastMs != null && (Date.now() - lastMs) > STUCK_MS;
+      const stuck = teamStuck(tm);
       // "Unstarted" — no slot has logged in yet. Distinct from
       // "stuck", which is "logged in but inactive for 10 min+".
       const claimed = (tm.members || []).some((m) => m.last_login_at);
@@ -8857,7 +9037,7 @@ async function viewRunDetail(view, runID) {
         const progress = teamProgress(event, tm, adventure);
         const lastEv = tm.last_activity_at;
         const lastMs = lastEv ? Date.parse(serverISO(lastEv)) : null;
-        const stuck = event.state === 'running' && !tm.completed_at && lastMs != null && (Date.now() - lastMs) > STUCK_MS;
+        const stuck = teamStuck(tm);
         // Per-team claimed-slot count — surfaces "3/4 claimed" when
         // not every player has tapped their magic link yet. Hidden
         // when every slot is either claimed or the team is done
@@ -8889,7 +9069,9 @@ async function viewRunDetail(view, runID) {
               ? h('div', { class: 'muted', style: 'font-size:.85rem' }, progress.step)
               : null),
           h('td', { class: 'hide-narrow muted', style: 'font-size:.85rem' },
-            lastEv ? fmtLocal(lastEv) : t('—')),
+            slotsClaimed === 0 && !tm.completed_at
+              ? t('Not joined yet')
+              : lastEv ? fmtLocal(lastEv) : t('—')),
           h('td', {}, h('div', { class: 'row end' },
             // Email the team their join links + calendar invite.
             // Only meaningful when the team has a contact email;
@@ -9048,6 +9230,7 @@ async function viewEventControl(view, runID) {
     return;
   }
   const event = detail.body.event;
+  setCrumbName('events/' + event.id, runLabel(event));
   // A graph event's steps and zones travel with it, for the helpers
   // below (teamProgress, renderEventFeed) that draw either engine.
   event.graph = detail.body.graph || null;
@@ -9124,6 +9307,9 @@ async function viewEventControl(view, runID) {
   window._zvControlTick = setInterval(() => {
     if (!elapsedEl.isConnected) { clearInterval(window._zvControlTick); return; }
     elapsedEl.textContent = fmtElapsedShort(elapsedSeconds());
+    for (const el of view.querySelectorAll('[data-elapsed-tile] .adv-stat-v')) {
+      el.textContent = elapsedEl.textContent;
+    }
     for (const el of view.querySelectorAll('[data-last-activity]')) {
       el.textContent = formatEventTime(el.dataset.lastActivity);
     }
@@ -9140,7 +9326,7 @@ async function viewEventControl(view, runID) {
   }
   if (event.state === 'running') {
     lifecycleActions.append(h('button', {
-      class: 'btn warning small',
+      class: 'btn small',
       on: { click: () => confirmPause(event) },
     }, icon(ICONS.moon), t('Pause')));
   }
@@ -9242,10 +9428,12 @@ async function viewEventControl(view, runID) {
         if (m.last_login_at) claimed++;
       }
     }
+    const elapsedTile = statBlock(fmtElapsedShort(elapsedSeconds()), t('elapsed'));
+    elapsedTile.dataset.elapsedTile = '';
     statsHost.replaceChildren(
       statBlock(`${done}/${total || 0}`, total === 1 ? t('team done') : t('teams done')),
       statBlock(`${claimed}/${slots || 0}`, t('players joined')),
-      statBlock(fmtElapsedShort(elapsedSeconds()), t('elapsed')),
+      elapsedTile,
     );
   };
 
@@ -9284,7 +9472,8 @@ async function viewEventControl(view, runID) {
               h('th', {}, ''))),
             h('tbody', {}, visible.map((tm, rank) => {
               const i = teamIndex.get(tm.id) ?? 0;
-              const lastEv = tm.last_activity_at;
+              const joined = tm.completed_at || (tm.members || []).some((m) => m.last_login_at);
+              const lastEv = joined ? tm.last_activity_at : null;
               const withdrawn = !!tm.withdrawn_at;
               const rowStyle = withdrawn ? 'opacity:.55' : '';
               const progress = teamProgress(event, tm, adventure);
@@ -9307,7 +9496,7 @@ async function viewEventControl(view, runID) {
                 // tick below keeps it current between pushes.
                 h('td', { class: 'hide-narrow muted', style: 'font-size:.85rem',
                           'data-last-activity': lastEv || null, title: lastEv ? fmtLocal(lastEv) : null },
-                  lastEv ? formatEventTime(lastEv) : t('—')),
+                  lastEv ? formatEventTime(lastEv) : joined ? t('—') : t('Not joined yet')),
                 // Withdraw / un-withdraw is the per-row action surface.
                 // Hidden once the event hits a terminal state (server
                 // rejects too) and on already-finished teams (a finisher
@@ -9317,7 +9506,7 @@ async function viewEventControl(view, runID) {
                     ? (withdrawn
                         ? iconBtn('back', t('Mark returned'),
                             () => unwithdrawTeam(event.id, tm))
-                        : iconBtn('moon', t('Mark withdrawn'),
+                        : iconBtn('exit', t('Mark withdrawn'),
                             () => confirmWithdrawTeam(event.id, tm, event)))
                     : null),
               );
@@ -9584,7 +9773,7 @@ function renderEvent(e, teams, event) {
   const team = h('strong', {}, e.team_name || '');
   switch (e.kind) {
     case 'event.created':
-      badge = 'brand'; symbol = '+'; msg = h('span', { class: 'msg' }, t('Event created for '), h('strong', {}, p.adventure_slug || '')); break;
+      badge = 'brand'; symbol = '+'; msg = h('span', { class: 'msg' }, t('Event created for '), h('strong', {}, (event?.adventure_slug === p.adventure_slug && event?.adventure_title) || p.adventure_slug || '')); break;
     case 'event.started': badge = 'good'; symbol = '▶'; msg = h('span', { class: 'msg' }, t('Event started')); break;
     case 'event.paused':  badge = 'neutral'; symbol = '‖'; msg = h('span', { class: 'msg' }, t('Event paused')); break;
     case 'event.resumed': badge = 'good'; symbol = '▶'; msg = h('span', { class: 'msg' }, t('Event resumed')); break;
@@ -9614,9 +9803,13 @@ function renderEvent(e, teams, event) {
     case 'team.completed':
       badge = 'good'; symbol = '★'; msg = h('span', { class: 'msg' }, team, t(' finished the adventure!')); break;
     case 'team.unlocked':
+      // A graph rescue names the step; a lane skip counts pages. The
+      // actor line already says who did it.
       badge = 'brand'; symbol = '⇨'; msg = h('span', { class: 'msg' },
-        team, t(' skipped past puzzle {{n}}', { n: (p.from_page_index ?? 0) + 1 }));
-      if (p.by_arranger) meta = t('by arranger'); break;
+        team, p.node
+          ? t(' was moved past {{step}}', { step: stepTitle(event, p.node) })
+          : t(' skipped past puzzle {{n}}', { n: (p.from_page_index ?? 0) + 1 }));
+      if (p.by_arranger && !e.actor) meta = t('by arranger'); break;
     case 'gate.reached':
       badge = 'brand'; symbol = '⛳'; msg = h('span', { class: 'msg' }, team, t(' reached the puzzle location')); break;
     case 'photo.taken':
@@ -9698,7 +9891,7 @@ async function transition(runID, action) {
   }
 }
 
-async function confirmStart(event) {
+async function confirmStart(event, teams = null) {
   // Empty-event guard: starting with zero teams is always a mistake
   // (the server returns a generic 4xx that lands as a vague toast),
   // so we catch it here with concrete copy and a path to the team
@@ -9727,6 +9920,12 @@ async function confirmStart(event) {
               h('strong', {}, fmtLocal(event.scheduled_at)),
               t('. Starting now will replace that.'))
           : t('You can pause it later if needed.')),
+      // Starting before anyone has opened their link is legal, but
+      // usually means the links haven't gone out yet.
+      teams && !teams.some((tm) => (tm.members || []).some((m) => m.last_login_at))
+        ? h('p', { class: 'banner warn', style: 'margin-top:.75rem' },
+            t('No player has opened their link yet. Make sure the links have gone out before you start.'))
+        : null,
       h('div', { class: 'row end', style: 'margin-top:1rem' },
         h('button', { class: 'btn', on: { click: () => close(false) } }, t('Cancel')),
         h('button', { class: 'btn primary', on: { click: () => close(true) } }, t('Start event'))),
@@ -9759,7 +9958,9 @@ function renderMessagesCard(event, teams, messages, inbox) {
       ? t('All teams')
       : m.team_ids.map((id) => names.get(id) || '#' + id).join(', ');
     list.append(h('div', { style: 'display:grid; grid-template-columns:1fr auto; gap:.2rem .75rem; padding-bottom:.6rem; border-bottom:1px solid var(--border-soft)' },
-      h('div', { class: 'muted', style: 'font-size:.85em' }, fmtLocal(m.created_at, { timeStyle: 'short', hour12: false }) + ' · ' + to),
+      h('div', { class: 'muted', style: 'font-size:.85em' }, fmtLocal(m.created_at, new Date(serverISO(m.created_at)).toDateString() === new Date().toDateString()
+        ? { timeStyle: 'short', hour12: false }
+        : { dateStyle: 'medium', timeStyle: 'short', hour12: false }) + ' · ' + to),
       h('button', {
         class: 'btn ghost small', title: t('Delete message'), 'aria-label': t('Delete message'),
         style: 'grid-row:span 2; align-self:start',
@@ -10027,7 +10228,8 @@ async function confirmCancel(event, cancelURL = `/api/admin/events/${event.id}/c
     t('Cancel event?'),
     event.state === 'scheduled'
       ? t('The event will be marked cancelled and never start. Teams already invited keep their links but get a "cancelled" screen if they open the app. Enter your password to confirm.')
-      : t('The event ends now. Live pings stop, the leaderboard freezes, and teams get a "cancelled" screen on their next refresh. Enter your password to confirm.'));
+      : t('The event ends now. Live pings stop, the leaderboard freezes, and teams get a "cancelled" screen on their next refresh. Enter your password to confirm.'),
+    { cancel: t('Keep event'), confirm: t('Cancel event') });
   if (!pw) return;
   const r = await api(cancelURL, {
     method: 'POST',
@@ -10122,9 +10324,9 @@ async function openTeamDetail(runID, team, adventure, event) {
     );
 
     const actions = h('div', { class: 'row', style: 'margin-bottom:.75rem; flex-wrap:wrap' });
-    // Skipping moves a lane cursor; the server refuses it for a graph
-    // event, so it is not offered there.
-    if (!finished && !graphEvent && canDo(event, 'unlock_team')) {
+    // On a graph event the engine moves the team by the puzzle's skip
+    // route (or answer route), with no points; the node guards a race.
+    if (!finished && (!graphEvent || team.node) && canDo(event, 'unlock_team')) {
       // Alt-click skips the confirmation modal — faster when the
       // arranger is actively unsticking a team mid-event. Normal
       // click still goes through the confirm so a mis-tap doesn't
@@ -10132,9 +10334,9 @@ async function openTeamDetail(runID, team, adventure, event) {
       const skipBtn = h('button', {
         class: 'btn primary',
         title: t('Alt-click to skip the confirmation'),
-      }, icon(ICONS.fastForward), t('Skip this puzzle'));
+      }, icon(ICONS.fastForward), graphEvent ? t('Move team on') : t('Skip this puzzle'));
       skipBtn.addEventListener('click', (e) => {
-        if (e.altKey) skipPuzzleNow(team, close); else skipPuzzle(team, close);
+        if (e.altKey) skipPuzzleNow(team, close, graphEvent); else skipPuzzle(team, close, graphEvent);
       });
       actions.append(skipBtn);
     }
@@ -10159,8 +10361,8 @@ async function openTeamDetail(runID, team, adventure, event) {
 // skipPuzzleNow is the alt-click fast path — same server call as
 // skipPuzzle but no confirmation modal, for when the arranger is
 // actively triaging a stuck team mid-event.
-async function skipPuzzleNow(team, close) {
-  const r = await api(`/api/admin/teams/${team.id}/unlock`, { method: 'POST' });
+async function skipPuzzleNow(team, close, graphEvent = false) {
+  const r = await api(`/api/admin/teams/${team.id}/unlock`, unlockRequest(team, graphEvent));
   if (r.ok) {
     toastOk(r.body?.completed
       ? t('{{name}} finished', { name: team.name })
@@ -10172,17 +10374,28 @@ async function skipPuzzleNow(team, close) {
   }
 }
 
-async function skipPuzzle(team, close) {
-  const ok = await modal(t('Skip puzzle for {{name}}?', { name: team.name }), ({ body, close: c }) => {
+function unlockRequest(team, graphEvent) {
+  return graphEvent
+    ? { method: 'POST', body: JSON.stringify({ node: team.node }) }
+    : { method: 'POST' };
+}
+
+async function skipPuzzle(team, close, graphEvent = false) {
+  const title = graphEvent
+    ? t('Move {{name}} on?', { name: team.name })
+    : t('Skip puzzle for {{name}}?', { name: team.name });
+  const ok = await modal(title, ({ body, close: c }) => {
     body.append(
-      h('p', {}, t('This advances the team past their current puzzle without them submitting the answer. Useful when they\'re stuck. The action is recorded in the event log.')),
+      h('p', {}, graphEvent
+        ? t('This moves the team past the puzzle they\'re on, without points: by its skip route if it has one, otherwise as if they had answered. Useful when they\'re stuck or the location won\'t register. The action is recorded in the event log.')
+        : t('This advances the team past their current puzzle without them submitting the answer. Useful when they\'re stuck. The action is recorded in the event log.')),
       h('div', { class: 'row end' },
         h('button', { class: 'btn', on: { click: () => c(false) } }, t('Cancel')),
-        h('button', { class: 'btn primary', on: { click: () => c(true) } }, t('Skip puzzle'))),
+        h('button', { class: 'btn primary', on: { click: () => c(true) } }, graphEvent ? t('Move team on') : t('Skip puzzle'))),
     );
   });
   if (!ok) return;
-  const r = await api(`/api/admin/teams/${team.id}/unlock`, { method: 'POST' });
+  const r = await api(`/api/admin/teams/${team.id}/unlock`, unlockRequest(team, graphEvent));
   if (r.ok) {
     toastOk(r.body?.completed
       ? t('{{name}} finished', { name: team.name })
@@ -11005,9 +11218,9 @@ function renderOrganizationRow(org) {
     class: 'muted',
     style: 'margin:.15rem 0 0; font-size:.85rem',
   },
-    t('{{n}} users', { n: members }), ' · ',
-    t('{{n}} players', { n: players }), ' · ',
-    t('{{n}} events', { n: events }),
+    members === 1 ? t('{{n}} user', { n: members }) : t('{{n}} users', { n: members }), ' · ',
+    players === 1 ? t('{{n}} player', { n: players }) : t('{{n}} players', { n: players }), ' · ',
+    events === 1 ? t('{{n}} event', { n: events }) : t('{{n}} events', { n: events }),
     running > 0
       ? h('span', { class: 'pill success', style: 'margin-left:.5rem; font-size:.7rem' },
           t('{{n}} running', { n: running }))
@@ -11151,7 +11364,7 @@ async function viewOrganizationDetail(view, orgID) {
     type: 'button',
     class: 'pill ' + (org.trusted ? 'success' : ''),
     style: 'cursor:pointer; border:0',
-    title: t('Lets the org add player slots to an invoice instead of paying via Stripe.'),
+    title: t('Lets the org pay for event passes by invoice instead of via Stripe.'),
     on: { click: () => toggleOrgTrusted(org) },
   }, org.trusted ? t('Invoice billing on') : t('Invoice billing off'));
 
@@ -11228,7 +11441,7 @@ async function viewOrganizationDetail(view, orgID) {
       h('h2', { style: 'margin:0' }, t('Event passes')),
       h('button', { class: 'btn primary small', type: 'button',
         on: { click: () => openAssignAdventure(org, adventures) } },
-        icon(ICONS.plus), t('Assign adventure'))),
+        icon(ICONS.plus), t('Grant event pass'))),
     assignments.length === 0
       ? h('p', { class: 'muted', style: 'margin:0' },
           t('None — assign an adventure to let them schedule an event.'))
@@ -11253,7 +11466,7 @@ async function viewOrganizationDetail(view, orgID) {
               title: t('Click to edit player cap'),
               on: { click: () => openEditAssignment(org, x, adventures) },
             }, t('{{slug}} · event #{{event}} · max {{max}}', {
-              slug: x.adventure_slug, run: x.event_id, max: x.max_players,
+              slug: x.adventure_slug, event: x.event_id, max: x.max_players,
             }))))));
 
   // ============================================================
@@ -11287,9 +11500,9 @@ async function viewOrganizationDetail(view, orgID) {
               // the org-side Buy more slots.
               live(e) && e.assignment_id && !e.public_for_sale
                 ? h('button', { class: 'btn small', type: 'button',
-                    title: t('Grant player slots to this event on the org\'s behalf'),
+                    title: t('Add players to this event\'s pass on the org\'s behalf'),
                     on: { click: () => openAdminGrantModal(org, e) } },
-                    icon(ICONS.coins), t('Grant slots'))
+                    icon(ICONS.coins), t('Add players'))
                 : null,
               live(e)
                 ? h('button', { class: 'btn small danger', type: 'button',
@@ -11347,7 +11560,7 @@ async function viewOrganizationDetail(view, orgID) {
         : null),
     commissioned.length === 0
       ? h('p', { class: 'muted', style: 'margin:0' },
-          t('None — commission a catalog adventure to let them run it without buying player slots.'))
+          t('None — commission a catalog adventure to let them run it without buying event passes.'))
       : h('div', { class: 'row', style: 'gap:.35rem; flex-wrap:wrap' },
           commissioned.map((a) => h('span', { class: 'chip',
             style: 'display:inline-flex; align-items:center; gap:.35rem' },
@@ -11367,7 +11580,7 @@ async function viewOrganizationDetail(view, orgID) {
       : h('table', { class: 'table' },
           h('thead', {}, h('tr', {},
             h('th', {}, t('Adventure')),
-            h('th', {}, t('Slots')),
+            h('th', {}, t('Players')),
             h('th', {}, t('Total')),
             h('th', {}, t('State')),
             h('th', {}, t('Date')),
@@ -11499,7 +11712,7 @@ async function toggleOrgPublisher(org) {
 async function openCommissionForOrg(org, candidates) {
   const picked = await modal(t('Commission adventure'), ({ body, close }) => {
     body.append(h('p', { class: 'muted' },
-      t('Pick one. The organisation can schedule events of this adventure without buying player slots.')));
+      t('Pick one. The organization can schedule events of this adventure without buying event passes.')));
     const list = h('div', { class: 'grid', style: 'gap:.35rem' });
     for (const a of candidates) {
       list.append(h('button', {
@@ -12866,12 +13079,12 @@ async function openShareAdventureModal(adv) {
   const already = new Set((adv.shares || []).map((s) => s.org_id));
   const candidates = all.filter((o) => !already.has(o.id) && !o.is_publisher);
   if (candidates.length === 0) {
-    toastErr(t('Every organisation already has access.'));
+    toastErr(t('Every organization already has access.'));
     return;
   }
-  const picked = await modal(t('Share with organisation'), ({ body, close }) => {
+  const picked = await modal(t('Share with organization'), ({ body, close }) => {
     body.append(h('p', { class: 'muted' },
-      t('Pick one. The organisation can schedule events of this adventure without buying player slots.')));
+      t('Pick one. The organization can schedule events of this adventure without buying event passes.')));
     const list = h('div', { class: 'grid', style: 'gap:.35rem' });
     for (const o of candidates) {
       list.append(h('button', {
@@ -17041,12 +17254,18 @@ function renderSettingsPublicProfileCard() {
     text: '#1f3349',
   };
 
-  const makeChip = () => h('span', { class: 'saved-chip' }, t('Saved'));
+  // Hidden from screen readers too until it flashes, or every field
+  // would announce "Saved" before anything was edited.
+  const makeChip = () => h('span', { class: 'saved-chip', 'aria-hidden': 'true', role: 'status' }, t('Saved'));
   const flashSaved = (chip) => {
     if (!chip) return;
     chip.classList.add('visible');
+    chip.removeAttribute('aria-hidden');
     clearTimeout(chip._fade);
-    chip._fade = setTimeout(() => chip.classList.remove('visible'), 1500);
+    chip._fade = setTimeout(() => {
+      chip.classList.remove('visible');
+      chip.setAttribute('aria-hidden', 'true');
+    }, 1500);
   };
 
   function hexToRgba(hex, a) {
@@ -17084,8 +17303,11 @@ function renderSettingsPublicProfileCard() {
     type: 'text', spellcheck: 'false',
     style: 'min-width:14rem; flex:1; font-family: var(--font-mono, monospace)',
   });
-  const slugSaveBtn = h('button', { class: 'btn primary small', type: 'button',
+  const slugSaveBtn = h('button', { class: 'btn primary small', type: 'button', disabled: '',
     on: { click: saveSlug } }, t('Rename'));
+  slugInput.addEventListener('input', () => {
+    slugSaveBtn.disabled = slugInput.value.trim().toLowerCase() === currentSlug;
+  });
   async function saveSlug() {
     const next = slugInput.value.trim().toLowerCase();
     if (!next) { setErr(t('Slug cannot be empty.')); return; }
@@ -17348,7 +17570,8 @@ function renderSettingsPublicProfileCard() {
     previewBtn.style.background = `linear-gradient(135deg, ${accent}, ${accent2})`;
     previewPane.style.setProperty('--bg', bg);
     previewPane.style.setProperty('--ink', ink);
-    previewName.textContent = state.me?.org_name || t('Your organization');
+    previewName.textContent = (state.me?.memberships || []).find((m) => m.org_id === state.me?.org_id)?.org_name
+      || t('Your organization');
     const tagline = taglineInput.value.trim();
     previewTagline.textContent = tagline || t('Add a tagline below to fill this space.');
     if (currentHasLogo && currentOrgID) {
@@ -17396,6 +17619,7 @@ function renderSettingsPublicProfileCard() {
     currentSlug = body.slug || '';
     currentURL = body.store_url || ('/o/' + currentSlug + '/store');
     if (!keepInputs) slugInput.value = currentSlug;
+    slugSaveBtn.disabled = slugInput.value.trim().toLowerCase() === currentSlug;
     urlAnchor.textContent = currentURL;
     urlAnchor.href = currentURL;
     if (!keepInputs) {
@@ -17563,16 +17787,16 @@ function renderSettingsRoleCard() {
   let label, blurb;
   if (role === 'admin') {
     label = t('Global admin');
-    blurb = t('You manage the organisations on this instance, curate the catalog, and keep an eye on the system. Authoring and running events is up to the organisations. Treat this like a root password.');
+    blurb = t('You manage the organizations on this instance, curate the catalog, and keep an eye on the system. Authoring and running events is up to the organizations. Treat this like a root password.');
   } else if (role === 'org_admin') {
-    label = t('Organisation admin');
-    blurb = t('You can manage members, purchases, branding, and settings for your organisation. Run events too.');
+    label = t('Organization admin');
+    blurb = t('You can manage members, purchases, branding, and settings for your organization. Run events too.');
   } else if (role === 'org_member') {
     label = t('Event host');
-    blurb = t('You can run events in your organisation. Authoring adventures and managing members is reserved for admins.');
+    blurb = t('You can run events in your organization. Authoring adventures and managing members is reserved for admins.');
   } else if (role === 'lobby') {
-    label = t('No organisation yet');
-    blurb = t('You\'re signed in but not part of any organisation. Create one (you\'ll be its admin) or wait for an invitation.');
+    label = t('No organization yet');
+    blurb = t('You\'re signed in but not part of any organization. Create one (you\'ll be its admin) or wait for an invitation.');
   } else {
     label = t('Player');
     blurb = t('You play events as a team member. The arranger console is read-only for you.');
@@ -17586,7 +17810,7 @@ function renderSettingsRoleCard() {
   );
   const orgRow = active
     ? h('p', { style: 'margin:.4rem 0 0; display:flex; align-items:center; gap:.55rem' },
-        orgIcon(active, 22),
+        orgIcon({ id: active.org_id, name: active.org_name, has_logo: !!active.org_logo_url }, 22),
         h('span', {}, t('Acting as '),
           h('strong', {}, active.org_name)))
     : null;
@@ -17831,6 +18055,18 @@ function renderSettingsServerCard() {
   // currently isn't taking effect.
   const landingEnvHint = h('p', { class: 'muted', style: 'font-size:.85rem; margin:.25rem 0 0 1.5rem; font-style: italic' }, '');
   landing.row.append(landingEnvHint);
+  // Public signup needs email: new accounts can't verify, so can't
+  // schedule events, while the mailer only logs. Say so under the toggle.
+  const signupMailHint = h('p', { class: 'err', style: 'font-size:.85rem; margin:.25rem 0 0 1.5rem' }, '');
+  signup.row.append(signupMailHint);
+  const updateSignupMailHint = async () => {
+    const cr = await api('/api/admin/components');
+    const mailer = (cr.body?.components || []).find((c) => c.name === 'mailer');
+    signupMailHint.textContent = signup.input.checked && mailer && !mailer.enabled
+      ? t('Email isn\'t configured, so new accounts can\'t verify their address and won\'t be able to schedule events. Set up SMTP or turn signup off.')
+      : '';
+  };
+  signup.input.addEventListener('change', updateSignupMailHint);
   const toggles = [signup, landing];
 
   const setStatus = (ok, msg) => {
@@ -17859,6 +18095,7 @@ function renderSettingsServerCard() {
       landingEnvHint.textContent = '';
     }
     setStatus(true, '');
+    updateSignupMailHint();
   };
 
   card.append(

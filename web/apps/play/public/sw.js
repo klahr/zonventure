@@ -54,7 +54,15 @@ self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches
       .keys()
-      .then((keys) => Promise.all(keys.filter((k) => k.startsWith("zv-play-") && k !== CACHE).map((k) => caches.delete(k))))
+      // Old shells go; a team's offline media and the meta cache stay, or
+      // every update would empty a phone that already downloaded its files.
+      .then((keys) =>
+        Promise.all(
+          keys
+            .filter((k) => k.startsWith("zv-play-") && k !== CACHE && k !== META && !k.startsWith(MEDIA_PREFIX))
+            .map((k) => caches.delete(k)),
+        ),
+      )
       .then(() => self.clients.claim()),
   );
 });
@@ -96,10 +104,32 @@ async function cacheFirst(req) {
   return res;
 }
 
+// How long the network gets before a cached shell is shown instead: a
+// connection that looks up but carries nothing would otherwise leave the
+// player on a blank page.
+const SHELL_TIMEOUT_MS = 3_000;
+
 async function shell(req) {
   const cache = await caches.open(CACHE);
+  const net = fetch(req);
+  const hit = await cache.match(SHELL);
+  if (hit) {
+    // Let a slow network finish in the background so the next load has it.
+    const fresh = net.then((res) => {
+      if (res.ok) {
+        const forCache = res.clone();
+        const forScan = res.clone();
+        forScan.text().then((html) => keepOnly(cache, html, forCache));
+      }
+      return res;
+    });
+    fresh.catch(() => {});
+    const timeout = new Promise((resolve) => setTimeout(() => resolve(null), SHELL_TIMEOUT_MS));
+    const won = await Promise.race([fresh.catch(() => null), timeout]);
+    return won && won.ok ? won : hit;
+  }
   try {
-    const res = await fetch(req);
+    const res = await net;
     if (res.ok) {
       // Both copies are taken now: once res is handed to the page its
       // body is consumed, and cloning it later would throw.

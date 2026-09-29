@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Markdown, PlayView, StartCeremony, brandVars, metresBetween, type Translate } from "@zonventure/play-ui";
-import type { play } from "@zonventure/api";
+import { play } from "@zonventure/api";
 import { useT } from "./i18n.tsx";
 import { useGame } from "./useGame.ts";
 import { Inbox } from "./Inbox.tsx";
+import { Menu } from "./Menu.tsx";
 import { useGeo, useLiveRefresh } from "./live.ts";
 
 export function App() {
@@ -20,9 +21,50 @@ export function App() {
     if (teamLang && i18n.available().includes(teamLang) && i18n.current() !== teamLang) i18n.setLocale(teamLang);
   }, [teamLang, i18n]);
 
+  // The welcome a player reads before the first step — once per player,
+  // so a reload mid-game goes straight back to it.
+  const introKey = s ? `zv-play-intro-${s.me?.id ?? `t${s.team.id}`}` : "";
+  const [introSeen, setIntroSeen] = useState(() => new Set<string>());
+  const seen = !introKey || introSeen.has(introKey) || readFlag(introKey);
+  const dismissIntro = () => {
+    writeFlag(introKey);
+    setIntroSeen((prev) => new Set(prev).add(introKey));
+  };
+  const showIntro = game.status === "ready" && !!view && !view.finished && !seen;
+
+  // The tab and home-screen name say which game this is.
+  const docTitle = s ? [s.event.adventure_title, s.team.name].filter(Boolean).join(" · ") : "";
+  useEffect(() => {
+    document.title = docTitle || "Zonventure";
+  }, [docTitle]);
+
+  // A new step takes focus, so keyboard and screen-reader users start
+  // at its top instead of on whatever button they last pressed.
+  const mainRef = useRef<HTMLElement>(null);
+  const node = view?.node;
+  const firstNode = useRef(true);
+  useEffect(() => {
+    if (!node) return;
+    if (firstNode.current) {
+      firstNode.current = false;
+      return;
+    }
+    mainRef.current?.focus({ preventScroll: false });
+  }, [node]);
+
   useLiveRefresh(game.status === "ready", game.refresh);
+  // Location only when the adventure has places (or the organiser asked
+  // for positions): a quiz-only game shouldn't prompt for it or run GPS.
+  const usesLocation = !!(s?.event.start || view?.zone || view?.starts?.some((o) => o.zone) || view?.watch_position);
+  // The player can pause sharing from the menu; remembered on this phone.
+  const [shareLocation, setShareLocationState] = useState(() => !readFlag(SHARE_OFF_KEY));
+  const setShareLocation = (on: boolean) => {
+    setShareLocationState(on);
+    if (on) clearFlag(SHARE_OFF_KEY);
+    else writeFlag(SHARE_OFF_KEY);
+  };
   const geo = useGeo(
-    game.status === "ready" && running && !view?.finished,
+    game.status === "ready" && running && !view?.finished && !showIntro && usesLocation && shareLocation,
     (!!view?.zone && !view.here) || !!view?.starts?.some((o) => o.zone && !o.here) || view?.input?.kind === "search" || !!view?.watch_position,
     game.refresh,
   );
@@ -38,6 +80,8 @@ export function App() {
     else if (sawLobby.current) {
       sawLobby.current = false;
       setCeremony(true);
+      // The lobby already showed the welcome.
+      dismissIntro();
     }
   }, [game.status, s, view]);
 
@@ -54,6 +98,7 @@ export function App() {
       <Screen>
         <h1>{t("Open your invitation link")}</h1>
         <p>{t("Use the link you were sent to join your team. It signs you in on this phone.")}</p>
+        <RecoverLink t={t} />
       </Screen>
     );
   }
@@ -71,8 +116,9 @@ export function App() {
 
   // How far the team is from a place it has to reach.
   const placeNote = (zone: play.PlayZone): string => {
-    if (geo.error) return t("Turn on location sharing so we can tell when you're there.");
-    if (!geo.pos) return t("Finding your location…");
+    if (!shareLocation) return t("Location sharing is off. Turn it on in the menu so we can tell when you're there.");
+    if (geo.error?.code === 1) return t("Location is blocked for this page. Allow it in your browser's site settings, then reload.");
+    if (!geo.pos) return geo.error ? t("Can't find your location right now. Step into the open or wait a moment.") : t("Finding your location…");
     const m = metresBetween(geo.pos.coords.latitude, geo.pos.coords.longitude, zone.lat, zone.lng);
     return m < 1000
       ? t("About {{m}} m away", { m: Math.max(5, Math.round(m / 5) * 5) })
@@ -94,13 +140,30 @@ export function App() {
           </span>
         )}
         <Inbox messages={s.messages ?? []} teamID={s.team.id} t={t} locale={i18n.current()} />
+        <Menu
+          state={s}
+          t={t}
+          i18n={i18n}
+          usesLocation={usesLocation}
+          shareLocation={shareLocation}
+          onShareLocation={setShareLocation}
+          onRenamed={game.refresh}
+          leave={game.leave}
+        />
       </header>
 
-      <main className="app-main">
+      <main className="app-main" ref={mainRef} tabIndex={-1}>
         {s.event.state === "paused" && <p className="app-banner">{t("The game is paused. Hold on.")}</p>}
         {game.status === "ended" && <p className="app-banner">{t("This event has ended. Thanks for playing!")}</p>}
 
-        {view ? (
+        {showIntro ? (
+          <Intro
+            state={s}
+            t={t}
+            usesLocation={usesLocation}
+            onDone={dismissIntro}
+          />
+        ) : view ? (
           <PlayView
             view={view}
             onAction={game.act}
@@ -109,6 +172,7 @@ export function App() {
             t={t}
             brand={s.brand ?? null}
             {...(s.event.outro_text ? { outro: s.event.outro_text } : {})}
+            {...(s.finish ? { finish: { ...s.finish, provisional: s.event.state !== "completed" && s.event.state !== "cancelled" } } : {})}
             {...(zoneNote ? { zoneNote } : {})}
             placeNote={placeNote}
             {...(geo.pos ? { position: { lat: geo.pos.coords.latitude, lng: geo.pos.coords.longitude } } : {})}
@@ -139,7 +203,7 @@ function Lobby({ state, t }: { state: play.PlayState; t: Translate }) {
       <h1>{t("You're on team {{team}}", { team: state.team.name })}</h1>
       <p>
         {at && !Number.isNaN(at.getTime())
-          ? t("The game starts {{when}}.", { when: at.toLocaleString([], { weekday: "long", hour: "2-digit", minute: "2-digit" }) })
+          ? t("The game starts {{when}}.", { when: at.toLocaleString([], { weekday: "long", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" }) })
           : t("The game starts when your organiser says go.")}
       </p>
       {state.event.intro_text && <Markdown className="app-lobby__intro" text={state.event.intro_text} />}
@@ -157,6 +221,93 @@ function Lobby({ state, t }: { state: play.PlayState; t: Translate }) {
       )}
       <p className="app-muted">{t("Keep this page open. It will change by itself.")}</p>
     </div>
+  );
+}
+
+/** The welcome before the first step, for a player who joins a game already running. */
+function Intro({ state, t, usesLocation, onDone }: { state: play.PlayState; t: Translate; usesLocation: boolean; onDone: () => void }) {
+  const name = state.me?.name;
+  return (
+    <div className="app-lobby" style={brandVars(state.brand)}>
+      <h1>{state.event.adventure_title || "Zonventure"}</h1>
+      <p>
+        {name
+          ? t("You're playing as {{name}} on team {{team}}.", { name, team: state.team.name })
+          : t("You're on team {{team}}", { team: state.team.name })}
+      </p>
+      {state.event.intro_text && <Markdown className="app-lobby__intro" text={state.event.intro_text} />}
+      {usesLocation && (
+        <p className="app-muted">
+          {t("This adventure uses your location to know when your team reaches a place. When your phone asks, allow it.")}
+        </p>
+      )}
+      <button type="button" className="pv-btn pv-btn--primary pv-btn--wide" onClick={onDone}>
+        {t("Let's go")}
+      </button>
+    </div>
+  );
+}
+
+const SHARE_OFF_KEY = "zv-play-share-location-off";
+
+function clearFlag(key: string) {
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    /* private mode: nothing was stored */
+  }
+}
+
+function readFlag(key: string): boolean {
+  try {
+    return localStorage.getItem(key) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function writeFlag(key: string) {
+  try {
+    localStorage.setItem(key, "1");
+  } catch {
+    /* private mode / full: the intro just shows again next time */
+  }
+}
+
+/**
+ * Lost the link? A team whose organiser gave its email gets fresh links
+ * mailed there. The server answers the same whether or not the address
+ * matched, so this says so rather than promising a mail.
+ */
+function RecoverLink({ t }: { t: Translate }) {
+  const [email, setEmail] = useState("");
+  const [state, setState] = useState<"idle" | "sending" | "sent" | "error">("idle");
+  return (
+    <form
+      className="app-recover"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (!email.trim()) return;
+        setState("sending");
+        play.recoverLink(email.trim()).then(() => setState("sent"), () => setState("error"));
+      }}
+    >
+      <label className="app-menu__label" htmlFor="recover-email">{t("Lost your link? Enter your team's email and we'll send fresh links.")}</label>
+      <div className="app-menu__row">
+        <input
+          id="recover-email"
+          className="pv-input"
+          type="email"
+          inputMode="email"
+          autoComplete="email"
+          value={email}
+          onChange={(e) => { setEmail(e.target.value); setState("idle"); }}
+        />
+        <button type="submit" className="pv-btn pv-btn--primary" disabled={state === "sending" || !email.trim()}>{t("Send")}</button>
+      </div>
+      {state === "sent" && <p className="app-muted" role="status">{t("If that address belongs to a team, new links are on their way. Check your inbox.")}</p>}
+      {state === "error" && <p className="app-menu__error" role="alert">{t("Couldn't reach the server. Check your connection and try again.")}</p>}
+    </form>
   );
 }
 

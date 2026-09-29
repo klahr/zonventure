@@ -5,10 +5,12 @@ import {
   Check,
   GitCompare,
   History,
+  Info,
   LayoutGrid,
   ListOrdered,
   Loader2,
   MoreVertical,
+  Network,
   Play,
   Plus,
   Redo2,
@@ -630,16 +632,17 @@ export function Designer({ slug }: { slug: string }) {
                   <span className="toolbar-label">{t.t("Add step")}</span>
                 </Button>
                 )}
+                {/* Names where it takes you, so the label never contradicts
+                    the view on screen. */}
                 <Button
                   variant="ghost"
-                  className={"editor-dataview" + (listView ? " on" : "")}
-                  aria-pressed={listView}
+                  className="editor-dataview"
                   onClick={() => setListView((v) => !v)}
                   title={listView ? t.t("Back to the canvas") : t.t("Show the adventure as an outline of its steps")}
-                  aria-label={t.t("List view")}
+                  aria-label={listView ? t.t("Canvas view") : t.t("List view")}
                 >
-                  <ListOrdered size={ICON.sm} />
-                  <span className="toolbar-label">{t.t("List view")}</span>
+                  {listView ? <Network size={ICON.sm} /> : <ListOrdered size={ICON.sm} />}
+                  <span className="toolbar-label">{listView ? t.t("Canvas view") : t.t("List view")}</span>
                 </Button>
               </div>
               <span className="toolbar-divider" aria-hidden="true" />
@@ -771,7 +774,8 @@ export function Designer({ slug }: { slug: string }) {
               </div>
             )}
             {!isLive && !preview && (
-              <div className="editor-conn-banner" role="status">
+              <div className="editor-conn-banner editor-conn-banner--info" role="status">
+                <Info size={ICON.md} className="callout-icon" aria-hidden="true" />
                 <span className="editor-conn-banner-text">{t.t("Not published yet, so events can't play it. Publish from the toolbar when it's ready.")}</span>
               </div>
             )}
@@ -913,7 +917,7 @@ export function Designer({ slug }: { slug: string }) {
           }
           confirmLabel={publishAsk.kind === "update" ? t.t("Publish changes") : t.t("Publish")}
           {...(errors.length && publishAsk.kind !== "rollback"
-            ? { warning: t.plural(errors.length, { one: "{{n}} error must be fixed first — publishing will be refused.", other: "{{n}} errors must be fixed first — publishing will be refused." }) }
+            ? { blocked: true, warning: t.plural(errors.length, { one: "{{n}} error must be fixed first — publishing will be refused.", other: "{{n}} errors must be fixed first — publishing will be refused." }) }
             : {})}
           onPublish={(label) => void doPublish(publishAsk, label)}
           onCancel={() => setPublishAsk(null)}

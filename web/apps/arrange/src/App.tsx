@@ -29,7 +29,11 @@ function Gate() {
     case "loading":
       return (
         <main className="centered" aria-busy="true">
-          <p className="lede">{t.t("Loading…")}</p>
+          <div className="login__brand" aria-hidden="true">
+            <span className="login__wordmark">zonventure</span>
+            <span className="login__sub">STUDIO</span>
+          </div>
+          <p className="lede loading-pulse">{t.t("Loading…")}</p>
         </main>
       );
 

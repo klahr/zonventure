@@ -40,7 +40,7 @@ func (h *Handlers) WSLive(w http.ResponseWriter, r *http.Request) {
 	}
 	defer conn.Close()
 
-	events, unsub := h.Hub.Subscribe(ws.EventTopic(eventID))
+	events, unsub := h.Hub.Subscribe(ws.EventTopic(eventID), ws.PositionsTopic(eventID))
 	defer unsub()
 
 	push := func() {

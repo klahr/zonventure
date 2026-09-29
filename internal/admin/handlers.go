@@ -1195,9 +1195,12 @@ func (h *Handlers) CreateTeam(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if maxPlayers > 0 && playerSlotsCount+len(names) > maxPlayers {
-		httpx.Error(w, http.StatusConflict,
-			"this event's assignment allows up to "+strconv.Itoa(maxPlayers)+
-				" player slot(s); buy another assignment for more")
+		httpx.JSON(w, http.StatusConflict, map[string]any{
+			"error": "this event's pass covers " + strconv.Itoa(maxPlayers) +
+				" players and they're all in use; add players to the pass first",
+			"code":        "pass_full",
+			"max_players": maxPlayers,
+		})
 		return
 	}
 

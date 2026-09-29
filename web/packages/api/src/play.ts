@@ -322,6 +322,8 @@ export interface PlayState {
   /** "lanes" means this event is not played in the React app. */
   engine: "graph" | "lanes";
   team: { id: number; name: string; token: string };
+  /** The signed-in player: one slot of the team. */
+  me?: { id: number; name?: string };
   event: {
     id: number;
     state: "scheduled" | "running" | "paused" | "completed" | "cancelled";
@@ -335,6 +337,8 @@ export interface PlayState {
     /** Where the team should meet. */
     start?: { lat: number; lng: number; label?: string };
   };
+  /** Set once the team has finished. */
+  finish?: Finish;
   /** The adventure's palette, when the author set one. */
   brand?: Brand;
   view?: View;
@@ -342,6 +346,17 @@ export interface PlayState {
   prefetch?: number[];
   /** What the organisers have told this team, newest first. Beside the game, not in it. */
   messages: EventMessage[];
+}
+
+/** player.PlayFinish — what the end screen tells a finished team. */
+export interface Finish {
+  /** Place among the event's started teams, of `teams`; can still change while others play. */
+  rank?: number;
+  teams?: number;
+  /** Start to finish. */
+  seconds?: number;
+  /** The team's recap page; it opens once the event ends. */
+  recap_url?: string;
 }
 
 /** eventmsg.Message — one message from the organisers. */
@@ -424,3 +439,18 @@ export interface LocationPing {
  * for zones.
  */
 export const postLocation = (ping: LocationPing) => post<void>("/api/player/location", ping);
+
+/** Put the player's own name on the team (the organiser's is often "Player 3"). */
+export const renameMe = (name: string) => post<{ name: string }>("/api/player/me/name", { name });
+
+/** Rename the team; any member may. 409 when another team in the event has the name. */
+export const renameTeam = (name: string) => post<{ name: string }>("/api/player/team/name", { name });
+
+/** Sign this phone out. The link still works to sign in again. */
+export const logout = () => post<void>("/api/player/logout", {});
+
+/** Erase the player's pings, answers and photos, and revoke their link. */
+export const forget = () => post<void>("/api/player/forget", {});
+
+/** Mail fresh links to a team's contact address. Always 204, whether it matched or not. */
+export const recoverLink = (email: string) => post<void>("/api/player/recover-link", { email });

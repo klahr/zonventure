@@ -50,20 +50,23 @@ func NewHub() *Hub {
 // all of which defer the cancel. Audited and clean: a panic mid-handler
 // still triggers the defer and removes the entry. Any new caller MUST
 // follow the same pattern.
-func (h *Hub) Subscribe(topic string) (<-chan []byte, func()) {
+func (h *Hub) Subscribe(topic string, more ...string) (<-chan []byte, func()) {
 	if h == nil {
 		return nil, func() {}
 	}
+	topics := append([]string{topic}, more...)
 	ch := make(chan []byte, 16)
 	h.mu.Lock()
 	h.nextID++
 	id := h.nextID
-	m, ok := h.subs[topic]
-	if !ok {
-		m = map[uint64]chan []byte{}
-		h.subs[topic] = m
+	for _, topic := range topics {
+		m, ok := h.subs[topic]
+		if !ok {
+			m = map[uint64]chan []byte{}
+			h.subs[topic] = m
+		}
+		m[id] = ch
 	}
-	m[id] = ch
 	h.mu.Unlock()
 	return ch, func() {
 		// The channel is removed from the map but intentionally NOT closed:
@@ -73,11 +76,13 @@ func (h *Hub) Subscribe(topic string) (<-chan []byte, func()) {
 		// channel is orphaned and the GC collects it.
 		h.mu.Lock()
 		defer h.mu.Unlock()
-		if m, ok := h.subs[topic]; ok {
-			if _, ok := m[id]; ok {
-				delete(m, id)
-				if len(m) == 0 {
-					delete(h.subs, topic)
+		for _, topic := range topics {
+			if m, ok := h.subs[topic]; ok {
+				if _, ok := m[id]; ok {
+					delete(m, id)
+					if len(m) == 0 {
+						delete(h.subs, topic)
+					}
 				}
 			}
 		}
@@ -167,6 +172,19 @@ func (h *Hub) PublishAll(kind string, data any) {
 // The "event:" prefix matches the rename (was "run:" pre-rebrand).
 func EventTopic(eventID int64) string {
 	return "event:" + strconv.FormatInt(eventID, 10)
+}
+
+// PositionsTopic carries an event's location pings, for the views that
+// draw positions (the arranger's console, the live screen). Kept apart
+// from EventTopic so a ping doesn't make every player reload.
+func PositionsTopic(eventID int64) string {
+	return "positions:" + strconv.FormatInt(eventID, 10)
+}
+
+// TeamTopic carries what only one team's players need: a teammate's
+// location ping, which can bring the whole team into a zone.
+func TeamTopic(teamID int64) string {
+	return "team:" + strconv.FormatInt(teamID, 10)
 }
 
 // Coalesce calls push for wake-ups on events, at most once per interval,

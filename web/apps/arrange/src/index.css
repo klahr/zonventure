@@ -207,12 +207,39 @@
 .shell__brand:hover {
   text-decoration: none;
 }
-/* The open adventure's name, in the wordmark's place. */
-.shell__wordmark--page {
+/* "Adventures / <open adventure>", as the classic console's top bar. */
+.shell__crumb {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  padding-left: var(--sp-4);
+  border-left: 1px solid var(--border-soft);
+  font-weight: 600;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.shell__crumb a {
+  color: var(--muted);
+}
+.shell__crumb a:hover {
+  color: var(--ink);
+}
+.shell__crumb-page {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  font-size: 1.2rem;
-  line-height: 1.3;
+  color: var(--ink);
+}
+.shell__org {
+  margin-left: auto;
+  flex: none;
+  max-width: 16rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-sm);
+  color: var(--ink-soft);
 }
 .shell__nav {
   display: flex;
@@ -506,4 +533,19 @@
   .shell--designer .shell__sidebar {
     display: none;
   }
+}
+
+/* The first paint while whoami settles: the Studio wordmark, not a
+ * bare word on a blank page. */
+.loading-pulse {
+  animation: loading-pulse 1.2s ease-in-out infinite;
+}
+@keyframes loading-pulse {
+  50% { opacity: 0.45; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .loading-pulse { animation: none; }
+}
+.centered .login__brand {
+  justify-content: center;
 }

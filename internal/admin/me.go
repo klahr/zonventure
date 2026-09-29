@@ -425,7 +425,7 @@ func (h *Handlers) RevertMyEmailChange(w http.ResponseWriter, r *http.Request) {
 	if _, err := h.DB.ExecContext(r.Context(), `
 		UPDATE users SET
 		  email                 = previous_email,
-		  username              = previous_email,
+		  username              = CASE WHEN username = email THEN previous_email ELSE username END,
 		  previous_email        = NULL,
 		  previous_email_set_at = NULL
 		WHERE id = $1

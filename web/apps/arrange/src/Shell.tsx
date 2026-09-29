@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Building2, CalendarDays, ChevronLeft, ChevronRight, ChevronUp, Compass, Gauge, LogOut, Map as MapIcon, Monitor, Moon, Settings, Sun, Terminal, type LucideIcon } from "lucide-react";
+import { Building2, CalendarDays, ChevronLeft, ChevronRight, ChevronUp, Compass, Gauge, Gift, LogOut, Map as MapIcon, Monitor, Moon, Settings, Sun, Terminal, type LucideIcon } from "lucide-react";
 import { isGlobalAdmin, type Whoami } from "@zonventure/api";
 import { readTheme, setTheme, type Theme } from "@zonventure/ui";
 import { useT } from "./i18n.tsx";
@@ -53,6 +53,7 @@ function consoleNav(user: Whoami): { label: string; icon: LucideIcon; href: stri
     item("Adventures", MapIcon, "adventures", true),
     item("Events", CalendarDays, "events"),
     item("Self-guided", Compass, "quests"),
+    item("Box redemptions", Gift, "redemptions"),
     item("Settings", Settings, "settings"),
   ];
 }
@@ -62,7 +63,8 @@ export function Shell({ user }: { user: Whoami }) {
   const { logout } = useSession();
   // dazyflow's rail: the choice sticks between visits.
   const [collapsed, setCollapsed] = useState(savedCollapsed);
-  // The designer names its adventure here, in place of the wordmark.
+  // The designer names its adventure here, as the crumb after the
+  // wordmark — the same "Section / page" the classic console's top bar shows.
   const [pageTitle, setPageTitle] = useState<string | null>(null);
 
   const route = useRoute();
@@ -89,16 +91,24 @@ export function Shell({ user }: { user: Whoami }) {
       </a>
 
       <header className="shell__top">
-        <a className="shell__brand" href={consoleHref("dashboard")} title={pageTitle ?? "Zonventure Studio"}>
-          {pageTitle ? (
-            <span className="shell__wordmark shell__wordmark--page">{pageTitle}</span>
-          ) : (
-            <>
-              <span className="shell__wordmark">zonventure</span>
-              <span className="shell__sub">STUDIO</span>
-            </>
-          )}
+        <a className="shell__brand" href={consoleHref("dashboard")} title="Zonventure Studio">
+          <span className="shell__wordmark">zonventure</span>
+          <span className="shell__sub">STUDIO</span>
         </a>
+        {!operator && route.name !== "dashboard" && (
+          <nav className="shell__crumb" aria-label={t.t("Breadcrumb")}>
+            <a href={consoleHref("adventures")}>{t.t("Adventures")}</a>
+            {pageTitle && (
+              <>
+                <span aria-hidden="true">/</span>
+                <span className="shell__crumb-page" aria-current="page" title={pageTitle}>
+                  {pageTitle}
+                </span>
+              </>
+            )}
+          </nav>
+        )}
+        {org && <span className="shell__org">{org.org_name}</span>}
       </header>
 
       <aside className="shell__sidebar" data-collapsed={collapsed}>

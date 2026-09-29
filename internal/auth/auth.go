@@ -244,7 +244,10 @@ func VerifyPassword(ctx context.Context, db *sql.DB, identifier, password string
 		return User{}, vErr
 	}
 	if !ok {
-		return User{}, ErrInvalidCredentials
+		// Carry only the ID so the caller can attribute the failed
+		// attempt to the account in auth_events — the owner then sees
+		// it under Settings → Recent security activity.
+		return User{ID: u.ID}, ErrInvalidCredentials
 	}
 	if needsRehash {
 		// Best-effort: a write failure here doesn't block the login —
@@ -646,6 +649,9 @@ type Membership struct {
 	// invoice billing. Surfaced on /whoami so the buy modal can
 	// show "Add to invoice" alongside "Pay now".
 	Trusted bool
+	// IsPublisher marks the org that authors the platform catalog; its
+	// members get authoring-first onboarding rather than "buy a pass".
+	IsPublisher bool
 }
 
 // ListMemberships returns every (org, role) the user belongs to,
@@ -656,7 +662,7 @@ func ListMemberships(ctx context.Context, db *sql.DB, userID int64) ([]Membershi
 	rows, err := db.QueryContext(ctx, `
 		SELECT m.org_id, o.name, m.role,
 		       (o.logo_mime_type IS NOT NULL)::int AS has_logo,
-		       o.trusted
+		       o.trusted, o.is_publisher
 		FROM org_memberships m
 		JOIN organizations o ON o.id = m.org_id
 		WHERE m.user_id = $1
@@ -673,7 +679,7 @@ func ListMemberships(ctx context.Context, db *sql.DB, userID int64) ([]Membershi
 			hasLogo int
 			trusted int
 		)
-		if err := rows.Scan(&m.OrgID, &m.OrgName, &m.Role, &hasLogo, &trusted); err != nil {
+		if err := rows.Scan(&m.OrgID, &m.OrgName, &m.Role, &hasLogo, &trusted, &m.IsPublisher); err != nil {
 			return nil, err
 		}
 		m.HasLogo = hasLogo != 0

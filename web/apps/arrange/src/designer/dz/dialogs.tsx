@@ -18,6 +18,7 @@ export function PublishLabelModal({
   message,
   confirmLabel,
   warning,
+  blocked = false,
   onPublish,
   onCancel,
 }: {
@@ -25,6 +26,7 @@ export function PublishLabelModal({
   message: string;
   confirmLabel: string;
   warning?: ReactNode;
+  blocked?: boolean;
   onPublish: (label: string) => void;
   onCancel: () => void;
 }) {
@@ -51,15 +53,15 @@ export function PublishLabelModal({
                 placeholder={t.t("e.g. Summer edition")}
                 onChange={(e) => setValue(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter") onPublish(value.trim());
+                  if (e.key === "Enter" && !blocked) onPublish(value.trim());
                 }}
               />
             </label>
             <p className="confirm-message">{message}</p>
           </div>
           <div className="modal-foot">
-            <Button onClick={() => onPublish("")}>{t.t("Publish without a name")}</Button>
-            <Button variant="primary" onClick={() => onPublish(value.trim())}>
+            <Button onClick={onCancel}>{t.t("Cancel")}</Button>
+            <Button variant="primary" disabled={blocked} onClick={() => onPublish(value.trim())}>
               <Rocket size={ICON.sm} />
               {confirmLabel}
             </Button>

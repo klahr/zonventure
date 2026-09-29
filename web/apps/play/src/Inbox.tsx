@@ -27,7 +27,16 @@ export function Inbox({ messages, teamID, t, locale }: { messages: play.EventMes
   // waiting when the app opens only count on the bell.
   const known = useRef(newest);
   useEffect(() => {
-    if (newest > known.current) setBanner(messages[0] ?? null);
+    if (newest > known.current) {
+      setBanner(messages[0] ?? null);
+      // A phone in a pocket outdoors: a short buzz so "meet at 12:30"
+      // isn't missed. Silently unsupported on iOS.
+      try {
+        navigator.vibrate?.(200);
+      } catch {
+        /* not allowed without a gesture on some browsers */
+      }
+    }
     known.current = newest;
   }, [newest, messages]);
   useEffect(() => {
@@ -49,7 +58,12 @@ export function Inbox({ messages, teamID, t, locale }: { messages: play.EventMes
     setBanner(null);
     markRead();
   };
-  const when = (iso: string) => new Date(iso).toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" });
+  // 24-hour like the organisers' screens; older than today gets the date.
+  const when = (iso: string) => {
+    const d = new Date(iso);
+    const today = d.toDateString() === new Date().toDateString();
+    return d.toLocaleString(locale, { ...(today ? {} : { day: "numeric", month: "short" }), hour: "2-digit", minute: "2-digit", hour12: false });
+  };
 
   return (
     <>

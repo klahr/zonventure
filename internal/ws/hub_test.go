@@ -99,6 +99,26 @@ func TestHub_TopicIsolation(t *testing.T) {
 	mustNotRecv(t, a, 50*time.Millisecond)
 }
 
+func TestHub_SubscribeSeveralTopics(t *testing.T) {
+	h := ws.NewHub()
+	c, unsub := h.Subscribe(ws.EventTopic(1), ws.TeamTopic(9))
+	other, unsubOther := h.Subscribe(ws.EventTopic(1))
+	defer unsubOther()
+
+	h.Publish(ws.TeamTopic(9), "changed", nil)
+	recvTimeout(t, c, 500*time.Millisecond)
+	mustNotRecv(t, other, 50*time.Millisecond)
+
+	h.Publish(ws.EventTopic(1), "changed", nil)
+	recvTimeout(t, c, 500*time.Millisecond)
+	recvTimeout(t, other, 500*time.Millisecond)
+
+	unsub()
+	h.Publish(ws.TeamTopic(9), "changed", nil)
+	h.Publish(ws.EventTopic(1), "changed", nil)
+	mustNotRecv(t, c, 50*time.Millisecond)
+}
+
 func TestHub_MultipleSubscribers(t *testing.T) {
 	h := ws.NewHub()
 	const n = 4

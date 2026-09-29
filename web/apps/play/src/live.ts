@@ -40,12 +40,18 @@ export function useLiveRefresh(enabled: boolean, refresh: () => void) {
       ws.onmessage = poke;
       ws.onclose = () => {
         if (closed) return;
-        timer = setTimeout(connect, retry);
+        // Jittered, so every phone doesn't reconnect in the same second
+        // after a deploy.
+        timer = setTimeout(connect, retry / 2 + Math.random() * retry);
         retry = Math.min(retry * 2, 30_000);
       };
     };
     connect();
-    const poll = setInterval(() => refreshRef.current(), 30_000);
+    // A hidden tab catches up when it comes back (see useGame), so the
+    // poll only runs while the page is on screen.
+    const poll = setInterval(() => {
+      if (document.visibilityState === "visible") refreshRef.current();
+    }, 30_000);
 
     return () => {
       closed = true;
@@ -86,6 +92,8 @@ export function useGeo(enabled: boolean, waitingForZone: boolean, refresh: () =>
         setGeo({ pos, error: null });
         const gap = waitingRef.current ? 3_000 : 15_000;
         const now = Date.now();
+        // A fix a kilometre wide says nothing about where the team is.
+        if (pos.coords.accuracy > 1_000) return;
         if (now - last.current < gap) return;
         last.current = now;
         const c = pos.coords;

@@ -12,6 +12,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/klahr/zonventure/internal/activity"
 	"github.com/klahr/zonventure/internal/auth"
+	"github.com/klahr/zonventure/internal/graph/session"
 	"github.com/klahr/zonventure/internal/httpx"
 	"github.com/klahr/zonventure/internal/imageutil"
 	"github.com/klahr/zonventure/internal/lanes"
@@ -348,14 +349,13 @@ func (h *Handlers) UnlockTeam(w http.ResponseWriter, r *http.Request) {
 	if !h.requireEventOp(w, r.Context(), eventID, OpUnlockTeam) {
 		return
 	}
-	// This moves a lane cursor, and on the last page finishes the team
-	// and maybe the event. A graph team has no lane cursor, and finishing
-	// it here would end its game behind the engine's back.
+	// A graph team has no lane cursor; the engine moves it instead, so
+	// finishing and scoring stay the engine's.
 	if uses, err := play.UsesGraph(r.Context(), h.DB, eventID); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "lookup failed")
 		return
 	} else if uses {
-		httpx.Error(w, http.StatusConflict, "this event plays a designed adventure, where skipping a step is not available")
+		h.rescueGraphTeam(w, r, eventID, teamID)
 		return
 	}
 	var (
@@ -449,6 +449,63 @@ func (h *Handlers) UnlockTeam(w http.ResponseWriter, r *http.Request) {
 	}
 	h.Hub.Publish(ws.EventTopic(eventID), "changed", nil)
 	httpx.JSON(w, http.StatusOK, map[string]any{"page_index": nextIdx, "completed": nextPageID == 0})
+}
+
+// rescueGraphTeam moves a graph team past the puzzle it is on: its skip
+// route if it has one, else its answer route, with no points. The body
+// may name the node the arranger saw, so a team that moved meanwhile
+// is refused (409) rather than pushed past the next puzzle too.
+func (h *Handlers) rescueGraphTeam(w http.ResponseWriter, r *http.Request, eventID, teamID int64) {
+	var req struct {
+		Node string `json:"node"`
+	}
+	if r.ContentLength > 0 && !httpx.DecodeJSON(w, r, &req) {
+		return
+	}
+	var (
+		current   sql.NullString
+		completed sql.NullTime
+	)
+	err := h.DB.QueryRowContext(r.Context(),
+		`SELECT current_node, completed_at FROM team_graph_state WHERE team_id = $1`, teamID).Scan(&current, &completed)
+	if errors.Is(err, sql.ErrNoRows) {
+		httpx.Error(w, http.StatusConflict, "this team hasn't started yet")
+		return
+	}
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "lookup failed")
+		return
+	}
+	if completed.Valid {
+		httpx.Error(w, http.StatusConflict, "team already finished")
+		return
+	}
+	node := req.Node
+	if node == "" {
+		node = current.String
+	}
+	res, err := h.Engine.Rescue(r.Context(), teamID, node)
+	switch {
+	case errors.Is(err, session.ErrStale):
+		httpx.Error(w, http.StatusConflict, "the team has moved on since you looked; refresh and try again")
+		return
+	case errors.Is(err, session.ErrWrongNode), errors.Is(err, session.ErrNotAllowed):
+		httpx.Error(w, http.StatusConflict, "the team isn't on a puzzle it can be moved past")
+		return
+	case err != nil:
+		httpx.ServerErr(w, http.StatusInternalServerError, "move failed", err)
+		return
+	}
+	me, _ := auth.FromContext(r.Context())
+	activity.Record(r.Context(), h.DB, eventID, &teamID, activity.UserActor(me.ID), activity.TeamUnlocked,
+		map[string]any{"node": node, "port": res.Port, "by_arranger": true})
+	if res.View.Finished {
+		activity.Record(r.Context(), h.DB, eventID, &teamID, activity.UserActor(me.ID), activity.TeamCompleted,
+			map[string]any{"outcome": res.View.Outcome, "by_arranger": true})
+		_, _ = activity.MaybeCompleteEvent(r.Context(), h.DB, eventID)
+	}
+	h.Hub.Publish(ws.EventTopic(eventID), "changed", nil)
+	httpx.JSON(w, http.StatusOK, map[string]any{"node": res.View.Node, "completed": res.View.Finished})
 }
 
 // WithdrawTeam soft-flags a team as withdrawn (stamps withdrawn_at).

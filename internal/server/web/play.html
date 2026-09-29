@@ -1974,9 +1974,12 @@ function applyColors(c) {
     root.style.removeProperty('--surface');
     root.style.removeProperty('--surface-2');
   }
-  if (c && c.text) {
-    root.style.setProperty('--text', c.text);
-    root.style.setProperty('--ink', c.text);
+  // A background without a text colour must not leave the default ink
+  // on it — a dark brand background would swallow the page's dark text.
+  const ink = c && (c.text || (c.background && /^#?[0-9a-f]{6}$/i.test(c.background) ? readableOn(c.background) : ''));
+  if (ink) {
+    root.style.setProperty('--text', ink);
+    root.style.setProperty('--ink', ink);
   } else {
     root.style.removeProperty('--text');
     root.style.removeProperty('--ink');
@@ -2261,8 +2264,21 @@ function el(tag, attrs = {}, ...children) {
   return e;
 }
 
+// linkProblem is why the server bounced a magic link here — "expired",
+// "invalid" or "busy" (rate-limited) — read once and dropped from the
+// address bar so a reload or a shared screenshot doesn't repeat it.
+const linkProblem = (() => {
+  const q = new URLSearchParams(location.search);
+  const v = q.get('link');
+  if (!v) return '';
+  q.delete('link');
+  const rest = q.toString();
+  history.replaceState(null, '', location.pathname + (rest ? '?' + rest : '') + location.hash);
+  return v;
+})();
+
 function renderNoSession(opts) {
-  const expired = !!(opts && opts.expired);
+  const expired = !!(opts && opts.expired) || linkProblem === 'expired';
   lastRenderKey = null;
   hideSubmitDock();
   // Lightweight runbar so the language picker / privacy / terms links
@@ -2282,6 +2298,15 @@ function renderNoSession(opts) {
       el('h3', {}, t('Your link expired')),
       el('p', { class: 'muted' },
         t('Magic links expire after a while. Ask your arranger for a fresh link to get back in — your team\'s progress is safe.')),
+      buildRecoverLinkForm()));
+    return;
+  }
+  if (linkProblem === 'invalid' || linkProblem === 'busy') {
+    app.replaceChildren(bar, el('div', { class: 'card' },
+      el('h3', {}, linkProblem === 'busy' ? t('Too many attempts') : t('This link isn\'t valid')),
+      el('p', { class: 'muted' }, linkProblem === 'busy'
+        ? t('Wait a minute, then open your link again.')
+        : t('It may be mistyped or replaced by a newer one. Ask your organizer for a new link — your team\'s progress is safe.')),
       buildRecoverLinkForm()));
     return;
   }

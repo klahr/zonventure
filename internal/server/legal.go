@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/klahr/zonventure/internal/components"
 )
 
 // LegalConfig is the bag of human-facing strings we splice into the
@@ -45,6 +47,18 @@ func (c LegalConfig) missingRequired() []string {
 		missing = append(missing, "ZV_JURISDICTION")
 	}
 	return missing
+}
+
+// withLegalComponent adds the legal pages to the admin's Installed
+// components panel, so an operator sees that /privacy and /terms are
+// still off (and links to them hidden) before launch.
+func withLegalComponent(list []components.Component, c LegalConfig) []components.Component {
+	missing := c.missingRequired()
+	comp := components.Component{Name: "legal-pages", Impl: "templates", Enabled: len(missing) == 0}
+	if len(missing) > 0 {
+		comp.Notes = "set $" + strings.Join(missing, ", $") + " to publish /privacy and /terms"
+	}
+	return append(append([]components.Component{}, list...), comp)
 }
 
 func (c LegalConfig) defaulted() LegalConfig {

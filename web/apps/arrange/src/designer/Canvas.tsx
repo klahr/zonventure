@@ -8,6 +8,7 @@ import {
   ReactFlow,
   applyEdgeChanges,
   applyNodeChanges,
+  useNodesInitialized,
   useReactFlow,
   type Connection,
   type Edge as RFEdge,
@@ -47,7 +48,7 @@ import { Frame as FrameIcon } from "lucide-react";
 import { useT } from "../i18n.tsx";
 import { CanvasContextMenu, type ContextMenuItem } from "./dz/CanvasContextMenu.tsx";
 import { ICON } from "./dz/ui.tsx";
-import { NodeCard, type CardNode } from "./NodeCard.tsx";
+import { NodeCard, TYPE_LABEL, type CardNode } from "./NodeCard.tsx";
 import { FrameCard, FRAME_COLOR_DEFAULT, type FrameNode } from "./FrameCard.tsx";
 import { QuickPalette, type PaletteChoice } from "./QuickPalette.tsx";
 
@@ -105,6 +106,11 @@ export function cardSizes(): Map<string, Size> {
   return sizes;
 }
 
+/** Below this zoom a card's text is too small to read. */
+const READABLE_ZOOM = 0.6;
+/** The zoom a large adventure opens at, around its start. */
+const START_ZOOM = 0.75;
+
 /**
  * The Blueprint canvas.
  *
@@ -138,6 +144,30 @@ export function Canvas({ graph, issues, selected, onChange, onSelect, paletteReq
   const connected = useRef(false);
   const wrapper = useRef<HTMLDivElement>(null);
 
+  // The first view: the whole adventure when it fits at a zoom its text
+  // can be read at, otherwise a readable zoom with the start(s) at the
+  // left edge, the flow running off to the right. Fit View still shows
+  // everything on demand.
+  const nodesReady = useNodesInitialized();
+  const framed = useRef(false);
+  useEffect(() => {
+    if (!nodesReady || framed.current) return;
+    framed.current = true;
+    void (async () => {
+      await rf.fitView({ padding: 0.2, maxZoom: 1.1 });
+      if (rf.getZoom() >= READABLE_ZOOM) return;
+      const cards = rf.getNodes().filter((n) => !isFrameID(n.id));
+      const starts = cards.filter((n) => (n as CardNode).data.node.type === "start");
+      const anchor = starts.length ? starts : cards.slice(0, 1);
+      const r = wrapper.current?.getBoundingClientRect();
+      if (!anchor.length || !r) return;
+      const x0 = Math.min(...anchor.map((n) => n.position.x));
+      const ys = anchor.flatMap((n) => [n.position.y, n.position.y + (n.measured?.height ?? 110)]);
+      const cy = (Math.min(...ys) + Math.max(...ys)) / 2;
+      await rf.setViewport({ x: r.width * 0.06 - x0 * START_ZOOM, y: r.height / 2 - cy * START_ZOOM, zoom: START_ZOOM });
+    })();
+  }, [nodesReady, rf]);
+
   const issuesBySlug = useMemo(() => {
     const m = new Map<string, Issue[]>();
     for (const i of issues) {
@@ -170,13 +200,15 @@ export function Canvas({ graph, issues, selected, onChange, onSelect, paletteReq
           existing.data.playing === (n.slug === playing) &&
           existing.data.sourceTitle === sourceTitle(n) &&
           existing.data.zone === startZone(graph, n) &&
-          samePosition(existing.position, { x: n.x ?? 0, y: n.y ?? 0 }),
+          samePosition(existing.position, { x: n.x ?? 0, y: n.y ?? 0 }) &&
+          existing.ariaLabel === t.t("{{kind}}: {{title}}", { kind: t.t(TYPE_LABEL[n.type]), title: n.title || n.slug }),
         build: (n, previous) => ({
           id: n.slug,
           type: "zv" as const,
           position: { x: n.x ?? 0, y: n.y ?? 0 },
           data: { node: n, issues: issuesBySlug.get(n.slug) ?? [], playing: n.slug === playing, ...(sourceTitle(n) ? { sourceTitle: sourceTitle(n)! } : {}), ...(startZone(graph, n) ? { zone: startZone(graph, n)! } : {}) },
           selected: n.slug === selected,
+          ariaLabel: t.t("{{kind}}: {{title}}", { kind: t.t(TYPE_LABEL[n.type]), title: n.title || n.slug }),
           // Keep React Flow's measurement so handles do not jump.
           ...(previous?.measured ? { measured: previous.measured } : {}),
           // Any start may go while another remains.
@@ -184,7 +216,7 @@ export function Canvas({ graph, issues, selected, onChange, onSelect, paletteReq
         }),
       }).items,
     );
-  }, [graph, issuesBySlug, selected, playing]);
+  }, [graph, issuesBySlug, selected, playing, t]);
 
   // Frames: the document's boxes, behind every card.
   const graphRefForFrames = useRef(graph);
@@ -246,6 +278,7 @@ export function Canvas({ graph, issues, selected, onChange, onSelect, paletteReq
   useEffect(() => {
     setEdges((prev) => {
       const selectedIDs = new Set(prev.filter((e) => e.selected).map((e) => e.id));
+      const stepName = (slug: string) => graph.nodes.find((x) => x.slug === slug)?.title || slug;
       return graph.edges.map((e) => {
         const id = `${e.from}:${e.from_port}`;
         const bad = issues.some((i) => i.node === e.from && i.port === e.from_port);
@@ -255,12 +288,13 @@ export function Canvas({ graph, issues, selected, onChange, onSelect, paletteReq
           sourceHandle: e.from_port,
           target: e.to,
           targetHandle: "in",
+          ariaLabel: t.t("From {{from}} to {{to}}", { from: stepName(e.from), to: stepName(e.to) }),
           selected: selectedIDs.has(id),
           className: bad ? "edge--bad" : "",
         };
       });
     });
-  }, [graph.edges, issues]);
+  }, [graph.edges, graph.nodes, issues, t]);
 
   const onNodesChange = useCallback(
     (all: NodeChange<AnyNode>[]) => {
@@ -637,8 +671,6 @@ export function Canvas({ graph, issues, selected, onChange, onSelect, paletteReq
         onPaneContextMenu={onPaneContextMenu}
         zoomOnDoubleClick={false}
         deleteKeyCode={["Delete", "Backspace"]}
-        fitView
-        fitViewOptions={{ padding: 0.2, maxZoom: 1.1 }}
         minZoom={0.2}
         proOptions={{ hideAttribution: true }}
       >

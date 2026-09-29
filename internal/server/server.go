@@ -192,6 +192,9 @@ func New(cfg Config) http.Handler {
 	// CSP / X-Frame / X-Content-Type-Options. Costs nothing on a 301
 	// where the body is empty anyway; closes a real gap on the 503.
 	r.Use(securityHeaders)
+	// Hide links to /privacy, /terms and /pricing while they'd answer
+	// 503 / 404 (legal identity unset, landing off).
+	r.Use(hideUnavailableLinks(cfg.DB, cfg.Legal))
 	// Cutover redirect: when the operator has flipped redirect mode,
 	// every non-allowlisted path 301s to the hosted instance so
 	// printed QR codes / emailed magic links keep working.
@@ -347,7 +350,7 @@ func New(cfg Config) http.Handler {
 		// inert: no marketplace flow, no Connect onboarding gate.
 		PlatformFee:   payments.PlatformFeeFromEnv(),
 		SecureCookie:  cfg.SecureCookie,
-		Components:    cfg.Components,
+		Components:    withLegalComponent(cfg.Components, cfg.Legal),
 		Storage:       store,
 		TOTPKey:       cfg.TOTPKey,
 		TeamImporters: importers,

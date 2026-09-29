@@ -335,6 +335,18 @@
   color: var(--dz-ink);
   box-shadow: 0 2px 8px color-mix(in srgb, var(--dz-accent) 25%, transparent);
 }
+/* A status, not a problem: the info callout's tint, not the alert's
+ * accent frame — which read as a text field waiting for input. */
+.dz .editor-conn-banner--info {
+  justify-content: flex-start;
+  border-color: color-mix(in srgb, var(--dz-info) 45%, var(--dz-border));
+  background: color-mix(in srgb, var(--dz-info) 12%, var(--dz-surface));
+  box-shadow: none;
+}
+.dz .editor-conn-banner--info .callout-icon {
+  flex: none;
+  color: var(--dz-info);
+}
 .dz .editor-conn-banner-text {
   display: flex;
   flex-direction: column;

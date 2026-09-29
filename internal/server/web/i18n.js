@@ -158,8 +158,9 @@
   // under internal/admin or internal/auth; adding a new code there
   // requires adding a case here AND the matching `errors.<code>` key
   // to web/locales/web/<lang>.json.
-  function tError(code, fallback) {
+  function tError(code, fallback, body) {
     switch (code) {
+      case 'pass_full':                  return t('errors.pass_full', { n: body?.max_players ?? '' });
       case 'verification_required':      return t('errors.verification_required');
       case 'assignment_required':        return t('errors.assignment_required');
       case 'minor_attestation_required': return t('errors.minor_attestation_required');

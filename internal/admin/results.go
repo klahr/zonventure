@@ -87,7 +87,7 @@ func (h *Handlers) ExportEventResults(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Disposition",
-		fmt.Sprintf(`attachment; filename="run-%d-results.csv"`, eventID))
+		fmt.Sprintf(`attachment; filename="event-%d-results.csv"`, eventID))
 	cw := csv.NewWriter(w)
 	defer cw.Flush()
 	_ = cw.Write([]string{"rank", "team", "members", "puzzles_solved", "puzzles_total", "finished_at", "time"})
@@ -202,7 +202,7 @@ func (h *Handlers) exportGraphResults(w http.ResponseWriter, r *http.Request, ev
 
 	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="run-%d-results.csv"`, eventID))
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="event-%d-results.csv"`, eventID))
 	cw := csv.NewWriter(w)
 	defer cw.Flush()
 	_ = cw.Write([]string{"rank", "team", "members", "points", "tiebreak_guess", "tiebreak_off_by", "finished_at", "time"})

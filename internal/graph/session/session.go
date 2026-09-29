@@ -776,6 +776,33 @@ func (t *Team) ForceSolve(node, port string) (Result, *walk.Step, error) {
 	return Result{}, nil, ErrNotAllowed
 }
 
+// Rescue moves a stuck team past a puzzle for the arranger: the skip
+// route when the author gave one, otherwise the first answer route. It
+// ignores zone, lockout and skip thresholds — a GPS that won't settle
+// or a lost prop is what it is for — and awards no points. Auditing is
+// the caller's job.
+func (t *Team) Rescue(node string) (Result, *walk.Step, error) {
+	n, err := t.current(node)
+	if err != nil {
+		return Result{}, nil, err
+	}
+	if n.Type != graph.Puzzle || n.PuzzleCfg == nil {
+		return Result{}, nil, ErrWrongNode
+	}
+	o, ok := outputFor(n, graph.OnSkip)
+	if !ok {
+		if o, ok = outputFor(n, graph.OnAnswer); !ok {
+			return Result{}, nil, ErrNotAllowed
+		}
+		t.Row(n.Slug).Solved = true
+	}
+	step, err := t.leave(n, o.Port, 0)
+	if err != nil {
+		return Result{}, nil, err
+	}
+	return Result{Port: o.Port}, step, nil
+}
+
 // Timeout takes a puzzle's timeout output once its limit has passed.
 // The client calls it when its countdown reaches zero; this re-checks
 // the time rather than trusting the client.

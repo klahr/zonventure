@@ -104,7 +104,8 @@ func (h *Handlers) MagicLinkLogin(w http.ResponseWriter, r *http.Request) bool {
 			Event: auth.EventMagicLink, OK: false, IP: ip, UserAgent: ua,
 			Reason: auth.ReasonRateLimited,
 		})
-		return false
+		http.Redirect(w, r, "/play?link=busy", http.StatusFound)
+		return true
 	}
 	slot, session, err := auth.LoginSlotByToken(r.Context(), h.DB, token)
 	if err != nil {
@@ -116,9 +117,23 @@ func (h *Handlers) MagicLinkLogin(w http.ResponseWriter, r *http.Request) bool {
 			Event: auth.EventMagicLink, OK: false, IP: ip, UserAgent: ua,
 			Reason: reason,
 		})
-		// Best-effort: let the /play page render without a session so the UI
-		// can say "open your magic link again" rather than a blank error.
-		return false
+		// The link of a finished event has done its job: its holder
+		// wants the team's recap, not a sign-in error.
+		if errors.Is(err, auth.ErrSlotTokenExpired) {
+			if recap := h.recapForExpiredLink(r.Context(), token); recap != "" {
+				http.Redirect(w, r, "/recap/"+recap, http.StatusFound)
+				return true
+			}
+		}
+		// Drop the token from the address bar and tell the /play page why
+		// no one is signed in, so it can say so instead of asking the
+		// player to open the very link they just opened.
+		link := "invalid"
+		if errors.Is(err, auth.ErrSlotTokenExpired) {
+			link = "expired"
+		}
+		http.Redirect(w, r, "/play?link="+link, http.StatusFound)
+		return true
 	}
 	auth.Record(r.Context(), h.DB, auth.AuditEvent{
 		Event: auth.EventMagicLink, OK: true, Username: slot.Name, IP: ip, UserAgent: ua,
@@ -130,6 +145,23 @@ func (h *Handlers) MagicLinkLogin(w http.ResponseWriter, r *http.Request) bool {
 	// address bar).
 	http.Redirect(w, r, "/play", http.StatusFound)
 	return true
+}
+
+// recapForExpiredLink is the recap token of the team behind an expired
+// magic link, when its event is over; empty otherwise.
+func (h *Handlers) recapForExpiredLink(ctx context.Context, magic string) string {
+	var recap string
+	err := h.DB.QueryRowContext(ctx, `
+		SELECT COALESCE(t.recap_token, '')
+		FROM player_slots ps
+		JOIN teams t ON t.id = ps.team_id
+		JOIN events ar ON ar.id = t.event_id
+		WHERE ps.token = $1 AND ar.state IN ('completed', 'cancelled')
+	`, magic).Scan(&recap)
+	if err != nil {
+		return ""
+	}
+	return recap
 }
 
 // Logout clears the slot session.
@@ -1595,8 +1627,16 @@ func (h *Handlers) PostLocation(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, status, errMsg)
 		return
 	}
-	h.Hub.Publish(ws.EventTopic(slot.EventID), "changed", nil)
+	h.publishPing(slot)
 	httpx.JSON(w, http.StatusNoContent, nil)
+}
+
+// publishPing tells the team's other phones (a teammate may have brought
+// the team into a zone) and the position views. Not the whole event: with
+// every phone pinging, that made every player reload several times a second.
+func (h *Handlers) publishPing(slot auth.Slot) {
+	h.Hub.Publish(ws.TeamTopic(slot.TeamID), "changed", nil)
+	h.Hub.Publish(ws.PositionsTopic(slot.EventID), "changed", nil)
 }
 
 // RenameRequest is the body of POST /api/player/me/name — lets a
@@ -1628,7 +1668,7 @@ func (h *Handlers) RenameMyself(w http.ResponseWriter, r *http.Request) {
 	}
 	slot, _ := auth.SlotFromContext(r.Context())
 	if _, err := h.DB.ExecContext(r.Context(),
-		`UPDATE slots SET name = $1 WHERE id = $2`, name, slot.ID); err != nil {
+		`UPDATE player_slots SET name = $1 WHERE id = $2`, name, slot.ID); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "rename failed")
 		return
 	}
@@ -1839,5 +1879,5 @@ func writeRateLimited(w http.ResponseWriter, retry time.Duration) {
 		secs = 1
 	}
 	w.Header().Set("Retry-After", strconv.Itoa(secs))
-	httpx.Error(w, http.StatusTooManyRequests, "too many attempts, slow down")
+	httpx.JSON(w, http.StatusTooManyRequests, map[string]string{"error": "too many attempts, slow down", "code": "rate_limited"})
 }

@@ -101,7 +101,7 @@ func (h *Handlers) WSArrange(w http.ResponseWriter, r *http.Request) {
 
 		stopWatch()
 
-		events, unsub := h.Hub.Subscribe(ws.EventTopic(eventID))
+		events, unsub := h.Hub.Subscribe(ws.EventTopic(eventID), ws.PositionsTopic(eventID))
 		wctx, cancel := context.WithCancel(conn.Context())
 		mu.Lock()
 		cancelWatch = func() {

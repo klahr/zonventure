@@ -50,7 +50,9 @@
   padding: var(--sp-1) var(--sp-3);
   border-radius: var(--radius-pill);
   background: color-mix(in srgb, var(--pv-accent-2nd) 12%, var(--surface));
-  color: var(--pv-accent-2nd);
+  /* Darkened: an author's mid-tone accent on its own tint falls short
+     of 4.5:1 for the small label. */
+  color: color-mix(in srgb, var(--pv-accent-2nd) 78%, #000);
 }
 .pv-score__n {
   font-family: var(--font-brand);
@@ -953,6 +955,28 @@
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
+}
+/* "/ 12" after a place: the field it was earned in, quieter than the place. */
+.pv-stat__of {
+  font-size: 0.6em;
+  color: var(--muted);
+}
+.pv-summary__recap {
+  width: 100%;
+  margin-top: var(--sp-2);
+}
+/* A link dressed as the primary button; `.pv a` would otherwise paint it accent-on-accent. */
+.pv-summary__recap .pv-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--pv-on-accent);
+  text-decoration: none;
+}
+.pv-summary__note {
+  margin: var(--sp-2) 0 0;
+  color: var(--muted);
+  font-size: var(--text-sm);
 }
 
 .pv-bag {

@@ -206,7 +206,7 @@ body {
     <p class="empty" id="loading">Loading…</p>
   </div>
   <div class="foot">
-    <a href="/">zonventure.studio</a>
+    <a href="/">Zonventure</a>
   </div>
 </div>
 
@@ -282,7 +282,7 @@ async function load() {
       // Same shape whether the token is unknown or the event isn't
       // finished yet — server hides the distinction on purpose.
       root.replaceChildren(el('p', { class: 'empty' },
-        t('This recap isn\'t available yet. Recaps appear once the event finishes.')));
+        t('This recap isn\'t available. Check the link — recaps appear once the event finishes.')));
       return;
     }
     if (!r.ok) {

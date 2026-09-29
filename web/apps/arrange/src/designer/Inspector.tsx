@@ -490,7 +490,7 @@ function puzzleParts(node: Node, cfg: PuzzleConfig, graph: Graph, onChange: (c: 
         summary: (
           <>
             <SumRow label={t.t("Answer bar")}>
-              {[bar.placeholder ? `“${bar.placeholder}”` : "", bar.button ? `[${bar.button}]` : ""].filter(Boolean).join(" ") || t.t("standard")}
+              {[bar.placeholder ? `“${bar.placeholder}”` : "", bar.button ? `[${bar.button}]` : ""].filter(Boolean).join(" ") || t.t("Default box and Send button")}
             </SumRow>
             <SumRow label={t.t("Keyboard")}>{t.t(KEYBOARD_LABEL[bar.keyboard ?? ""])}</SumRow>
           </>
@@ -514,7 +514,7 @@ function puzzleParts(node: Node, cfg: PuzzleConfig, graph: Graph, onChange: (c: 
         summary: (
           <>
             <SumRow label={t.t("Grid")}>{t.t("{{rows}} × {{cols}}", { rows: answer.rows, cols: answer.cols })}</SumRow>
-            <SumRow label={t.t("Picture")}>{answer.image ? t.t("set") : <SumNone>{t.t("none yet")}</SumNone>}</SumRow>
+            <SumRow label={t.t("Picture")}>{answer.image ? t.t("added") : <SumNone>{t.t("none yet")}</SumNone>}</SumRow>
           </>
         ),
         form: <TilesForm tiles={answer} onChange={(tiles) => onChange({ ...cfg, answer: tiles })} />,

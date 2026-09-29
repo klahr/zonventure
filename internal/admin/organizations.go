@@ -72,7 +72,10 @@ type organizationDTO struct {
 func (h *Handlers) ListOrganizations(w http.ResponseWriter, r *http.Request) {
 	rows, err := h.DB.QueryContext(r.Context(), `
 		SELECT o.id, o.name, o.slug, o.created_at,
-		       0 AS players_total,
+		       (SELECT COUNT(*) FROM player_slots ps
+		         JOIN teams t ON t.id = ps.team_id
+		         JOIN events ar ON ar.id = t.event_id
+		        WHERE ar.org_id = o.id) AS players_total,
 		       (SELECT COUNT(*) FROM events ar WHERE ar.org_id = o.id),
 		       (SELECT COUNT(*) FROM events ar WHERE ar.org_id = o.id AND ar.state = 'running'),
 		       (o.logo_content IS NOT NULL AND length(o.logo_content) > 0) AS has_logo,
@@ -127,7 +130,10 @@ func (h *Handlers) GetOrganization(w http.ResponseWriter, r *http.Request) {
 	o.Assignments = []assignmentDTO{}
 	err := h.DB.QueryRowContext(r.Context(), `
 		SELECT o.id, o.name, o.slug, o.created_at,
-		       0 AS players_total,
+		       (SELECT COUNT(*) FROM player_slots ps
+		         JOIN teams t ON t.id = ps.team_id
+		         JOIN events ar ON ar.id = t.event_id
+		        WHERE ar.org_id = o.id) AS players_total,
 		       (SELECT COUNT(*) FROM events ar WHERE ar.org_id = o.id),
 		       (SELECT COUNT(*) FROM events ar WHERE ar.org_id = o.id AND ar.state = 'running'),
 		       (o.logo_content IS NOT NULL AND length(o.logo_content) > 0) AS has_logo,

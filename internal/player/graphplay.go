@@ -79,13 +79,34 @@ type PlayStart struct {
 	Label string  `json:"label,omitempty"`
 }
 
+// PlayMe is the signed-in player: one slot of the team.
+type PlayMe struct {
+	ID   int64  `json:"id"`
+	Name string `json:"name,omitempty"`
+}
+
+// PlayFinish is what the end screen tells a finished team.
+type PlayFinish struct {
+	// Rank is the team's place among the event's started teams, of Teams.
+	// It can still change while others play.
+	Rank  int `json:"rank,omitempty"`
+	Teams int `json:"teams,omitempty"`
+	// Seconds is how long the team took, start to finish.
+	Seconds int `json:"seconds,omitempty"`
+	// RecapURL is the team's recap page. It opens once the event ends.
+	RecapURL string `json:"recap_url,omitempty"`
+}
+
 // PlayState is the body of GET /api/player/play.
 type PlayState struct {
 	// Engine is "graph", or "lanes" for an event the React player does
 	// not run — the client sends those players to /play.
 	Engine string    `json:"engine"`
 	Team   PlayTeam  `json:"team"`
+	Me     PlayMe    `json:"me"`
 	Event  PlayEvent `json:"event"`
+	// Finish is set once the team has finished.
+	Finish *PlayFinish `json:"finish,omitempty"`
 	// Brand is the adventure's palette, the one the lane player paints
 	// with too, so an adventure styled for either looks the same.
 	Brand *adventure.Colors `json:"brand,omitempty"`
@@ -122,6 +143,7 @@ func (h *Handlers) GetPlay(w http.ResponseWriter, r *http.Request) {
 	out := PlayState{
 		Engine: "lanes",
 		Team:   PlayTeam{ID: tc.TeamID, Name: tc.TeamName, Token: tc.TeamToken},
+		Me:     PlayMe{ID: slot.ID, Name: slot.Name},
 		Event: PlayEvent{
 			ID: tc.EventID, State: tc.RunState, ScheduledAt: tc.ScheduledAt.String, OrgName: tc.OrgName,
 		},
@@ -191,8 +213,47 @@ func (h *Handlers) GetPlay(w http.ResponseWriter, r *http.Request) {
 			httpx.ServerErr(w, http.StatusInternalServerError, "loading media failed", err)
 			return
 		}
+		if view.Finished {
+			if out.Finish, err = h.finishOf(ctx, tc.EventID, tc.TeamID); err != nil {
+				httpx.ServerErr(w, http.StatusInternalServerError, "loading result failed", err)
+				return
+			}
+		}
 	}
 	httpx.JSON(w, http.StatusOK, out)
+}
+
+// finishOf reads a finished team's place, time and recap link.
+func (h *Handlers) finishOf(ctx context.Context, eventID, teamID int64) (*PlayFinish, error) {
+	var (
+		f         PlayFinish
+		recap     string
+		started   time.Time
+		completed sql.NullTime
+	)
+	err := h.DB.QueryRowContext(ctx, `
+		SELECT COALESCE(t.recap_token, ''), s.started_at, s.completed_at
+		FROM teams t JOIN team_graph_state s ON s.team_id = t.id
+		WHERE t.id = $1`, teamID).Scan(&recap, &started, &completed)
+	if err != nil {
+		return nil, err
+	}
+	if recap != "" {
+		f.RecapURL = "/recap/" + recap
+	}
+	if completed.Valid && completed.Time.After(started) {
+		f.Seconds = int(completed.Time.Sub(started).Seconds())
+	}
+	ranked, err := h.engine().EventRanking(ctx, eventID)
+	if err != nil {
+		return nil, err
+	}
+	for i, r := range ranked {
+		if r.TeamID == teamID {
+			f.Rank, f.Teams = i+1, len(ranked)
+		}
+	}
+	return &f, nil
 }
 
 // adventureLook reads what the player app shows of the adventure itself.

@@ -108,8 +108,11 @@ func TestConsoleOnGraphAdventure(t *testing.T) {
 		t.Fatalf("answer = %d", s)
 	}
 
-	if s := arr.do("POST", "/api/admin/teams/"+itoa(teamIDs["Beta"])+"/unlock", nil, nil); s != 409 {
-		t.Errorf("a lane skip on a graph event = %d, want 409", s)
+	if s := arr.do("POST", "/api/admin/teams/"+itoa(teamIDs["Beta"])+"/unlock", map[string]string{"node": "start"}, nil); s != 409 {
+		t.Errorf("a rescue naming a node the team has left = %d, want 409", s)
+	}
+	if s := arr.do("POST", "/api/admin/teams/"+itoa(teamIDs["Beta"])+"/unlock", map[string]string{"node": "q"}, nil); s != 200 {
+		t.Errorf("a rescue past the puzzle the team is on = %d, want 200", s)
 	}
 	var ed struct {
 		Event struct {
@@ -134,7 +137,7 @@ func TestConsoleOnGraphAdventure(t *testing.T) {
 			score float64
 			rank  int
 			node  string
-		}{"Alpha": {10, 1, "s"}, "Beta": {0, 2, "q"}, "Gamma": {0, 2, "q"}}[tm.Name]
+		}{"Alpha": {10, 1, "s"}, "Beta": {0, 2, "s"}, "Gamma": {0, 2, "q"}}[tm.Name]
 		if tm.Score == nil || *tm.Score != want.score || tm.Rank != want.rank || tm.Node != want.node {
 			t.Errorf("%s = score %v rank %d node %q, want %+v", tm.Name, tm.Score, tm.Rank, tm.Node, want)
 		}

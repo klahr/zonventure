@@ -54,6 +54,10 @@ body {
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--muted);
+  /* One line, so a long team name doesn't push the game down. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .app-status {
   padding: var(--sp-1) var(--sp-3);
@@ -71,8 +75,8 @@ body {
   position: relative;
   display: inline-grid;
   place-items: center;
-  width: 2.5rem;
-  height: 2.5rem;
+  width: 2.75rem;
+  height: 2.75rem;
   padding: 0;
   border: 0;
   border-radius: 50%;
@@ -127,6 +131,7 @@ body {
 
 /* The game fills the screen under the bar, so the answer dock sits at
  * the bottom even on a short step. */
+.app-main:focus { outline: none; }
 .app-main {
   flex: 1;
   display: flex;
@@ -184,3 +189,25 @@ body {
   color: var(--accent);
   font-weight: 700;
 }
+
+/* The player's menu: name fields, language, location sharing, and the
+ * account actions, as one column in the shared sheet. */
+.app-menu { gap: var(--sp-4); padding-right: var(--sp-2); }
+.app-menu__field, .app-menu__account { display: flex; flex-direction: column; gap: var(--sp-1); }
+.app-menu__label { font-size: var(--text-sm); font-weight: 700; color: var(--ink); }
+.app-menu__hint { font-size: var(--text-xs); color: var(--muted); }
+.app-menu__row { display: flex; gap: var(--sp-2); align-items: stretch; }
+.app-menu__row .pv-input { flex: 1; min-width: 0; }
+.app-menu__toggle { display: flex; gap: var(--sp-3); align-items: flex-start; cursor: pointer; }
+.app-menu__toggle input { width: 1.4rem; height: 1.4rem; margin-top: 0.1rem; flex: none; accent-color: var(--accent); }
+.app-menu__toggle > span { display: flex; flex-direction: column; gap: var(--sp-1); }
+.app-menu__account { padding-top: var(--sp-3); border-top: 1px solid var(--border-soft); }
+.app-menu__account .pv-btn--wide + .app-menu__hint { margin-bottom: var(--sp-2); }
+.app-menu__danger { color: var(--danger); border-color: currentColor; }
+.app-menu__confirm { padding: var(--sp-3); border-radius: var(--radius); background: var(--danger-bg); display: flex; flex-direction: column; gap: var(--sp-2); }
+.app-menu__confirm p { margin: 0; }
+.app-menu__confirm .app-menu__row .pv-btn { flex: 1; }
+.app-menu__error { color: var(--danger); font-size: var(--text-sm); margin: 0; }
+.app-menu__foot { margin: 0; font-size: var(--text-sm); color: var(--muted); text-align: center; }
+.app-menu__foot a { color: inherit; display: inline-block; padding: var(--sp-2); }
+.app-recover { display: flex; flex-direction: column; gap: var(--sp-2); margin-top: var(--sp-4); width: 100%; max-width: 26rem; text-align: left; }

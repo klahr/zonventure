@@ -461,7 +461,9 @@ func ConsumeEmailChangeToken(ctx context.Context, db *sql.DB, token string) (Use
 		  previous_email        = email,
 		  previous_email_set_at = $1,
 		  email                 = $2,
-		  username              = $2,
+		  -- A username that was the email follows it; a chosen one
+		  -- ("boss") stays, or the user could no longer log in with it.
+		  username              = CASE WHEN username = email THEN $2 ELSE username END,
 		  email_verified        = 1
 		WHERE id = $3
 	`, now, newEmail.String, userID); err != nil {
