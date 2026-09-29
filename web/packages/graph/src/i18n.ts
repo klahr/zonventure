@@ -144,6 +144,9 @@ export function nodeTexts(n: Node): Translatable[] {
     if (p.answer?.kind === "lock") {
       for (const s of p.answer.symbols) add(`sym:${s.value}`, "Lock symbol", s.label || (s.image ? "" : s.value));
     }
+    if (p.answer?.kind === "items") {
+      p.answer.slots.forEach((s, i) => add(`slot:${i}`, `Slot ${i + 1}`, s.label));
+    }
   }
   if (n.story) blocks(n.story.blocks, "Text");
   if (n.end) blocks(n.end.blocks, "Closing text");

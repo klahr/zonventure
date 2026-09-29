@@ -130,6 +130,18 @@ type Input struct {
 	Symbols []graph.LockSymbol `json:"symbols,omitempty"`
 	Start   []int              `json:"start,omitempty"`
 
+	// Slots are an item puzzle's slots (Kind "items"), by label; the
+	// items they want stay on the server.
+	Slots []string `json:"slots,omitempty"`
+	// Missing says the team lacks an item the slots need, and
+	// MissingItems names them when the author chose to (graph.MissingName).
+	// Leave offers the puzzle's OnMissing route meanwhile; LeaveLabel is
+	// that route's label, empty for the phone's own words.
+	Missing      bool     `json:"missing,omitempty"`
+	MissingItems []string `json:"missing_items,omitempty"`
+	Leave        bool     `json:"leave,omitempty"`
+	LeaveLabel   string   `json:"leave_label,omitempty"`
+
 	// Fields are the questions of a choice (Kind "choice"): labels and
 	// options only — the answers stay on the server.
 	Fields []ChoiceFieldView `json:"fields,omitempty"`
@@ -688,6 +700,12 @@ func (t *Team) translate(v *View) {
 		if in.Button != "" {
 			c.Button = tr(key("bar:button"), in.Button)
 		}
+		if len(in.Slots) > 0 {
+			c.Slots = make([]string, len(in.Slots))
+			for i, l := range in.Slots {
+				c.Slots[i] = tr(key(fmt.Sprintf("slot:%d", i)), l)
+			}
+		}
 		if len(in.Symbols) > 0 {
 			c.Symbols = make([]graph.LockSymbol, len(in.Symbols))
 			for i, s := range in.Symbols {
@@ -780,7 +798,7 @@ func (t *Team) view() View {
 		if cfg.Zone != "" {
 			setZone(cfg.Zone)
 		}
-		v.Input = t.answerInput(cfg)
+		v.Input = t.answerInput(n)
 		revealed := 0
 		if r := t.Nodes[n.Slug]; r != nil {
 			revealed, v.Attempts = r.HintsRevealed, r.Attempts

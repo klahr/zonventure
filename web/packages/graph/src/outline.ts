@@ -9,8 +9,14 @@ import { nodeBySlug, portLabel, portsOf, targetOf } from "./model.ts";
 export type OutlineRow =
   /** A step, at its place in the flow. `via` names the route into a branch. */
   | { kind: "step"; slug: string; depth: number; via?: string }
-  /** A route to a step listed elsewhere — a loop back, or a merge. */
-  | { kind: "jump"; slug: string; depth: number; via?: string }
+  /** A route to a step listed elsewhere — a loop back, or a merge. `from` is the step it leaves. */
+  | { kind: "jump"; slug: string; depth: number; via?: string; from?: string }
+  /**
+   * Where a branch ends without a row of its own: it returns to its hub,
+   * reaches the step where branches meet, or trails off (`to` unset).
+   * Nothing to show, but a place to put a step — see reorder.ts.
+   */
+  | { kind: "tail"; from: string; to?: string; depth: number }
   /** Heading before the steps nothing leads to. */
   | { kind: "loose" };
 
@@ -26,14 +32,17 @@ export function outline(g: Graph): OutlineRow[] {
   const rows: OutlineRow[] = [];
   const listed = new Set<string>();
 
-  const walk = (first: string | undefined, depth: number, stop: ReadonlySet<string>, via?: string) => {
+  // `from` is the step the walk arrives from, when there is just one.
+  const walk = (first: string | undefined, depth: number, stop: ReadonlySet<string>, via?: string, from?: string) => {
     let cur = first;
     let label = via;
+    let prev = from;
     while (cur !== undefined) {
       if (stop.has(cur) || listed.has(cur)) {
         // Meeting the end of a branch is silent; a route that goes
         // straight there, or anywhere already listed, is shown as a jump.
-        if (label !== undefined || !stop.has(cur)) rows.push({ kind: "jump", slug: cur, depth, ...(label ? { via: label } : {}) });
+        if (label !== undefined || !stop.has(cur)) rows.push({ kind: "jump", slug: cur, depth, ...(label ? { via: label } : {}), ...(prev ? { from: prev } : {}) });
+        else if (prev) rows.push({ kind: "tail", from: prev, to: cur, depth });
         return;
       }
       const n = nodeBySlug(g, cur);
@@ -43,7 +52,12 @@ export function outline(g: Graph): OutlineRow[] {
       label = undefined;
 
       const routes = routesOf(g, n);
-      if (routes.length === 0) return;
+      if (routes.length === 0) {
+        // A step whose one way on leads nowhere yet.
+        if (portsOf(n).length === 1) rows.push({ kind: "tail", from: n.slug, depth });
+        return;
+      }
+      prev = n.slug;
       if (routes.length === 1) {
         cur = routes[0]!.to;
         continue;
@@ -51,13 +65,15 @@ export function outline(g: Graph): OutlineRow[] {
       if (n.type === "hub") {
         const done = targetOf(g, n.slug, PORT_DONE);
         const inner = new Set([...stop, n.slug, ...(done ? [done] : [])]);
-        for (const r of routes) if (!r.ports.includes(PORT_DONE)) walk(r.to, depth + 1, inner, r.label);
+        for (const r of routes) if (!r.ports.includes(PORT_DONE)) walk(r.to, depth + 1, inner, r.label, n.slug);
         cur = done;
         continue;
       }
       const join = joinPoint(g, n.slug, routes.map((r) => r.to));
       const inner = join ? new Set([...stop, join]) : stop;
-      for (const r of routes) walk(r.to, depth + 1, inner, r.label);
+      for (const r of routes) walk(r.to, depth + 1, inner, r.label, n.slug);
+      // Several branches lead into the join: no one step to arrive from.
+      prev = undefined;
       cur = join;
     }
   };

@@ -14,7 +14,7 @@ const story = (slug: string): Node => ({ slug, type: "story", title: slug });
 
 /** Rows as short strings: indentation, a jump arrow, the route name. */
 const show = (rows: OutlineRow[]) =>
-  rows.map((r) => (r.kind === "loose" ? "-- loose" : `${"  ".repeat(r.depth)}${r.kind === "jump" ? "→ " : ""}${r.via ? `[${r.via}] ` : ""}${r.slug}`));
+  rows.filter((r) => r.kind !== "tail").map((r) => (r.kind === "loose" ? "-- loose" : `${"  ".repeat(r.depth)}${r.kind === "jump" ? "→ " : ""}${r.via ? `[${r.via}] ` : ""}${r.slug}`));
 
 test("a straight line is one column", () => {
   const g: Graph = {

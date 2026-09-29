@@ -183,7 +183,7 @@ func checkNodeConfigs(r *reporter, g *graph.Graph) {
 				checkAnswer(r, g, n, owners)
 			}
 			ports := map[string]bool{}
-			answers := 0
+			answers, missing := 0, 0
 			for _, o := range n.PuzzleCfg.Outputs {
 				if o.Port == "" {
 					r.err("output.port.empty", n.Slug, "", "an output has no port name")
@@ -215,6 +215,14 @@ func checkNodeConfigs(r *reporter, g *graph.Graph) {
 					if n.PuzzleCfg.SkipAfterGuesses <= 0 && n.PuzzleCfg.SkipAfterSeconds <= 0 {
 						r.err("output.skip.nothreshold", n.Slug, o.Port,
 							"output fires on skip but the puzzle sets no skip thresholds")
+					}
+				case graph.OnMissing:
+					if n.PuzzleCfg.Kind() != graph.AnswerItems {
+						r.err("output.missing.kind", n.Slug, o.Port,
+							"only a puzzle answered with items can be left for lack of them")
+					} else if missing++; missing == 2 {
+						r.warn("output.missing.second", n.Slug, o.Port,
+							"the puzzle already has a route for a team without the items; this one is never taken")
 					}
 				default:
 					r.err("output.trigger.unknown", n.Slug, o.Port, "unknown trigger %q", o.Trigger)
@@ -510,6 +518,13 @@ func checkReferences(r *reporter, g *graph.Graph) {
 					r.err("ref.zone.unknown", n.Slug, o.Port, "output is constrained to zone %q, which is not declared", o.Zone)
 				}
 			}
+			if a := n.PuzzleCfg.Answer; a != nil && a.Kind == graph.AnswerItems {
+				for i, s := range a.Slots {
+					if s.Item != "" && !items[s.Item] {
+						r.err("ref.item.unknown", n.Slug, "", "slot %d wants item %q, which is not declared", i+1, s.Item)
+					}
+				}
+			}
 		case graph.Story:
 			if n.StoryCfg != nil && n.StoryCfg.Zone != "" && !zones[n.StoryCfg.Zone] {
 				r.err("ref.zone.unknown", n.Slug, "", "story is gated on zone %q, which is not declared", n.StoryCfg.Zone)
@@ -781,6 +796,21 @@ func checkAnswer(r *reporter, g *graph.Graph, n graph.Node, owners map[string]st
 		checkChoices(r, n.Slug, a)
 	case graph.AnswerLock:
 		checkLock(r, n.Slug, a)
+	case graph.AnswerItems:
+		checkSlots(r, g, n.Slug, a)
+		if !slices.Contains(graph.Missings, a.Missing) {
+			r.err("slots.missing", n.Slug, "", "what to tell a team without the items is %q; it must be name, none or empty", a.Missing)
+		}
+		// A branch of an ordinary hub counts as done once entered, so a
+		// team that leaves this one for its items cannot come back.
+		if o, ok := missingOutput(n); ok {
+			if hub, in := owners[n.Slug]; in {
+				if h, _ := g.Node(hub); h.HubCfg != nil && !h.HubCfg.Home {
+					r.warn("slots.leave.oneway", n.Slug, o.Port,
+						"a team that leaves for its items cannot come back: the hub %q counts this branch done once entered. Make it a home screen so its branches stay open", hub)
+				}
+			}
+		}
 	case graph.AnswerScan:
 	case graph.AnswerQuestions:
 		if !slices.ContainsFunc(n.Blocks(), isQuestion) {
@@ -837,6 +867,40 @@ func checkLock(r *reporter, node string, l *graph.Answer) {
 	for _, i := range l.Start {
 		if i < 0 || i >= len(l.Symbols) {
 			r.err("lock.start", node, "", "a wheel starts at symbol %d, which the lock does not have", i+1)
+		}
+	}
+}
+
+func missingOutput(n graph.Node) (graph.Output, bool) {
+	for _, o := range n.PuzzleCfg.Outputs {
+		if o.Trigger == graph.OnMissing {
+			return o, true
+		}
+	}
+	return graph.Output{}, false
+}
+
+// checkSlots catches item slots a team could never fill: none, too
+// many, one wanting no item, or an item no step ever hands out. Whether
+// each item is declared is checkReferences'.
+func checkSlots(r *reporter, g *graph.Graph, node string, a *graph.Answer) {
+	if len(a.Slots) == 0 || len(a.Slots) > graph.MaxSlots {
+		r.err("slots.count", node, "", "an item puzzle has 1 to %d slots", graph.MaxSlots)
+	}
+	granted := map[string]bool{}
+	for _, n := range g.Nodes {
+		if n.Type == graph.Effect && n.EffectCfg != nil && n.EffectCfg.Kind == graph.GrantItem {
+			granted[n.EffectCfg.Item] = true
+		}
+	}
+	warned := map[string]bool{}
+	for i, s := range a.Slots {
+		switch {
+		case strings.TrimSpace(s.Item) == "":
+			r.err("slots.item.missing", node, "", "slot %d wants no item", i+1)
+		case !granted[s.Item] && !warned[s.Item]:
+			warned[s.Item] = true
+			r.warn("slots.item.never", node, "", "slot %d wants item %q, but no step gives it to the team", i+1, s.Item)
 		}
 	}
 }

@@ -234,6 +234,25 @@ export const PRESETS: Preset[] = [
     }),
   },
   {
+    id: "puzzle-items",
+    type: "puzzle",
+    category: "puzzle",
+    label: "Item slots",
+    hint: "Place items from the backpack in the right slots to get through",
+    keywords: "items inventory backpack key gem place put slots lock door pedestal use",
+    build: () => ({
+      type: "puzzle",
+      title: "Item slots",
+      puzzle: {
+        blocks: [{ id: "b1", kind: "text", text: "" }],
+        answer: { kind: "items", slots: [{ label: "", item: "" }, { label: "", item: "" }] },
+        // A way out for a team that has yet to find the items.
+        outputs: [{ port: "open", label: "Open", trigger: "answer" }, { port: "later", label: "Come back later", trigger: "missing" }],
+        responses: [{ text: "Nothing happens. Something is in the wrong place." }],
+      },
+    }),
+  },
+  {
     id: "puzzle-search",
     type: "puzzle",
     category: "puzzle",

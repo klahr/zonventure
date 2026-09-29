@@ -42,6 +42,7 @@ export function usesMatchers(p: PuzzleConfig): boolean {
     case "tiles":
     case "search":
     case "questions":
+    case "items":
       return false;
     case "choice":
       return !isGraded(p.answer);
@@ -51,7 +52,7 @@ export function usesMatchers(p: PuzzleConfig): boolean {
 }
 
 /** How a puzzle can take its answer: typing it (undefined), or an AnswerKind. */
-export const ANSWER_KINDS: (AnswerKind | undefined)[] = [undefined, "scan", "choice", "lock", "tiles", "search", "questions"];
+export const ANSWER_KINDS: (AnswerKind | undefined)[] = [undefined, "scan", "choice", "lock", "items", "tiles", "search", "questions"];
 
 /**
  * The puzzle answered another way. The routes keep their ports, so the
@@ -101,6 +102,10 @@ export function withAnswerKind(p: PuzzleConfig, kind: AnswerKind | undefined): P
       break;
     case "tiles":
       next.answer = { kind: "tiles", rows: 3, cols: 3 };
+      break;
+    case "items":
+      // One slot, its item still to choose.
+      next.answer = { kind: "items", slots: [{ item: "" }] };
       break;
     case "search":
       next.answer = { kind: "search" };
@@ -366,7 +371,20 @@ export function insertAfter(g: Graph, at: InsertionPoint, node: Node): Graph {
   if (!from) return g;
   const fx = from.x ?? 0;
   const placed = { ...node, x: fx + STEP_PITCH, y: from.y ?? 0 };
-  const shifted: Graph = {
+  const shifted = makeRoom(g, fx);
+  const next = targetOf(g, at.from, at.port);
+  let out = connect(addNode(shifted, placed), at.from, at.port, placed.slug);
+  const own = portsOf(placed)[0];
+  if (next && own) out = connect(out, placed.slug, own, next);
+  return out;
+}
+
+/**
+ * Make a column of room right of x: everything further right moves over
+ * a column, and frames around x widen with it.
+ */
+export function makeRoom(g: Graph, fx: number): Graph {
+  return {
     ...g,
     nodes: g.nodes.map((n) => ((n.x ?? 0) > fx ? { ...n, x: (n.x ?? 0) + STEP_PITCH } : n)),
     ...(g.frames
@@ -377,11 +395,6 @@ export function insertAfter(g: Graph, at: InsertionPoint, node: Node): Graph {
         }
       : {}),
   };
-  const next = targetOf(g, at.from, at.port);
-  let out = connect(addNode(shifted, placed), at.from, at.port, placed.slug);
-  const own = portsOf(placed)[0];
-  if (next && own) out = connect(out, placed.slug, own, next);
-  return out;
 }
 
 /** A new adventure: start wired straight to end. Valid, and plays as an immediate finish. */

@@ -54,6 +54,7 @@ export const TRIGGER: Record<Trigger, Concept> = {
   timeout: "time",
   skipped: "logic",
   attempts: "logic",
+  missing: "item",
 };
 
 /** The adventure-wide resources, as the settings list them. */

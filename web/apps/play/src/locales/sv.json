@@ -324,5 +324,16 @@
   "Your team moved on. Here's the next step.": "Ert lag har gått vidare. Här är nästa steg.",
   "Close menu": "Stäng menyn",
   "Sign out on this phone? You'll need your link to get back into the game.": "Logga ut på den här telefonen? Du behöver din länk för att komma tillbaka in i spelet.",
-  "Sign out": "Logga ut"
+  "Sign out": "Logga ut",
+  "Item slots": "Föremålsfack",
+  "Slot {{n}}": "Fack {{n}}",
+  "Your backpack": "Din ryggsäck",
+  "Your backpack is empty.": "Din ryggsäck är tom.",
+  "{{slot}}: empty": "{{slot}}: tomt",
+  "{{slot}}: {{item}}": "{{slot}}: {{item}}",
+  "Tap another slot to swap, or this one again to take it out.": "Tryck på ett annat fack för att byta plats, eller på det här igen för att ta ut det.",
+  "Come back later": "Kom tillbaka senare",
+  "Come back when you have what it needs.": "Kom tillbaka när ni har det som behövs.",
+  "You're missing something for this.": "Ni saknar något för det här.",
+  "You're missing: {{items}}.": "Ni saknar: {{items}}."
 }

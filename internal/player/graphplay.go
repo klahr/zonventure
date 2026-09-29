@@ -6,7 +6,7 @@ package player
 // play.UsesGraph), and the React player app speaks only these.
 //
 //	GET  /api/player/play            where the team is and what it sees
-//	POST /api/player/play/{action}   begin, answer, continue, choose, skip, timeout, hint, pick, vote
+//	POST /api/player/play/{action}   begin, answer, continue, choose, skip, leave, timeout, hint, pick, vote
 //	POST /api/player/play/photo      a picture for a photo block (blocks.go)
 //	GET  /api/player/play/photo/{id} a picture the team took
 //
@@ -393,6 +393,8 @@ func (h *Handlers) PostPlayAction(w http.ResponseWriter, r *http.Request) {
 		res, err = e.Choose(ctx, tc.TeamID, req.Node, req.Port)
 	case "skip":
 		res, err = e.Skip(ctx, tc.TeamID, req.Node)
+	case "leave":
+		res, err = e.Leave(ctx, tc.TeamID, req.Node)
 	case "timeout":
 		res, err = e.Timeout(ctx, tc.TeamID, req.Node)
 	case "hint":

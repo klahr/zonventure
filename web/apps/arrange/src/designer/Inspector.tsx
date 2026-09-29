@@ -20,11 +20,13 @@ import type {
   AnswerOf,
   ChoiceField,
   LockSymbol,
+  ItemSlot,
+  MissingHint,
   Trigger,
   WebhookMethod,
   Zone,
 } from "@zonventure/graph";
-import { ANSWER_KINDS, WEBHOOK_METHODS, answerOptions, isGraded, optionValue, withAnswerKind, withBlocks, matcherLabel, nodeBySlug, portLabel, puzzlesInto, referAnswer, resolveAnswer, updateNode } from "@zonventure/graph";
+import { ANSWER_KINDS, MAX_SLOTS, WEBHOOK_METHODS, answerOptions, isGraded, optionValue, withAnswerKind, withBlocks, matcherLabel, nodeBySlug, portLabel, puzzlesInto, referAnswer, resolveAnswer, updateNode } from "@zonventure/graph";
 import { useT } from "../i18n.tsx";
 import { ConditionEditor } from "./ConditionEditor.tsx";
 import { MediaEditor } from "./MediaEditor.tsx";
@@ -423,6 +425,7 @@ const ANSWER_KIND_LABEL: Record<AnswerKind | "", string> = {
   scan: "Scanning a QR code only",
   choice: "Options to tap",
   lock: "Combination lock",
+  items: "Items from the backpack",
   tiles: "Tile picture",
   search: "Search by place",
   questions: "Quiz questions on the step",
@@ -439,7 +442,14 @@ const TRIGGERS: { t: Trigger; label: string }[] = [
   { t: "attempts", label: "After N wrong guesses" },
   { t: "timeout", label: "Time runs out" },
   { t: "skipped", label: "Team skips" },
+  { t: "missing", label: "Not carrying the items" },
 ];
+
+const MISSING_LABEL: Record<MissingHint | "", string> = {
+  "": "That something is missing",
+  name: "Which items are missing",
+  none: "Nothing",
+};
 
 function puzzleParts(node: Node, cfg: PuzzleConfig, graph: Graph, onChange: (c: PuzzleConfig) => void, t: T): Part[] {
   const outputs = cfg.outputs ?? [];
@@ -568,6 +578,30 @@ function puzzleParts(node: Node, cfg: PuzzleConfig, graph: Graph, onChange: (c: 
       };
       break;
     }
+    case "items": {
+      const itemName = (slug: string) => graph.items?.find((x) => x.slug === slug)?.name || slug;
+      how = {
+        title: t.t("Item slots"),
+        hint: t.t("The team places items from its backpack in the slots. When every slot holds its item, the first route below is taken. A wrong fill gets the wrong-answer replies and costs nothing."),
+        count: answer.slots.length,
+        summary: (
+          <>
+            {answer.slots.map((sl, i) => (
+              <SumRow key={i} label={sl.label || t.t("Slot {{n}}", { n: i + 1 })}>
+                {sl.item ? itemName(sl.item) : <SumNone>{t.t("no item yet")}</SumNone>}
+              </SumRow>
+            ))}
+            <SumRow label={t.t("Items")}>{answer.keep ? t.t("kept") : t.t("used up")}</SumRow>
+            <SumRow label={t.t("Without them")}>
+              {t.t(MISSING_LABEL[answer.missing ?? ""])}
+              {outputs.some((o) => o.trigger === "missing") ? ` · ${t.t("can leave")}` : ""}
+            </SumRow>
+          </>
+        ),
+        form: <ItemsForm graph={graph} slots={answer} onChange={(a) => onChange({ ...cfg, answer: a })} />,
+      };
+      break;
+    }
     case "questions":
       how = {
         title: t.t("Quiz questions"),
@@ -625,7 +659,7 @@ function puzzleParts(node: Node, cfg: PuzzleConfig, graph: Graph, onChange: (c: 
               ? o.trigger === "attempts"
                 ? t.t("after {{n}} wrong guesses", { n: o.after_attempts ?? 0 })
                 : triggerLabel(o)
-              : answer?.kind === "tiles" || answer?.kind === "lock" || isGraded(answer) || answer?.kind === "search" || answer?.kind === "questions"
+              : answer?.kind === "tiles" || answer?.kind === "lock" || isGraded(answer) || answer?.kind === "search" || answer?.kind === "questions" || answer?.kind === "items"
                 ? triggerLabel(o)
                 : (o.matchers ?? []).map(matcherLabel).join(" / ") || t.t("no answer yet");
           const extra = [o.points ? t.t("{{n}} p", { n: o.points }) : "", o.zone ? (o.inverted ? t.t("outside {{zone}}", { zone: zoneName(graph, o.zone) }) : t.t("in {{zone}}", { zone: zoneName(graph, o.zone) })) : ""]
@@ -653,7 +687,7 @@ function puzzleParts(node: Node, cfg: PuzzleConfig, graph: Graph, onChange: (c: 
                 aria-label={t.t("Route label")}
               />
               <select className="field__input" value={o.trigger} onChange={(e) => setOutput(i, { ...o, trigger: e.target.value as Trigger })} aria-label={t.t("When")}>
-                {TRIGGERS.map((x) => (
+                {TRIGGERS.filter((x) => x.t !== "missing" || answer?.kind === "items" || o.trigger === "missing").map((x) => (
                   <option key={x.t} value={x.t}>
                     {t.t(x.label)}
                   </option>
@@ -671,6 +705,12 @@ function puzzleParts(node: Node, cfg: PuzzleConfig, graph: Graph, onChange: (c: 
               </button>
             </div>
 
+            {o.trigger === "missing" && (
+              <p className="field__hint">
+                {t.t("While the team lacks an item the slots need, the phone offers this route as a button with its label. The puzzle stays unanswered, so it is shown again when the team comes back.")}
+              </p>
+            )}
+
             {o.trigger === "answer" && (
               <>
                 {answer?.kind === "tiles" ? (
@@ -683,6 +723,8 @@ function puzzleParts(node: Node, cfg: PuzzleConfig, graph: Graph, onChange: (c: 
                   <p className="field__hint">{t.t("Taken when the team searches inside this route's zone. Without a zone, it is taken anywhere else.")}</p>
                 ) : answer?.kind === "questions" ? (
                   <p className="field__hint">{t.t("Taken when every question is answered and the team continues. Only the first such route is ever taken.")}</p>
+                ) : answer?.kind === "items" ? (
+                  <p className="field__hint">{t.t("Taken when every slot holds its item. Only the first such route is ever taken.")}</p>
                 ) : (
                   <MatcherList matchers={o.matchers ?? []} onChange={(matchers) => setOutput(i, { ...o, matchers })} />
                 )}
@@ -1325,6 +1367,59 @@ function EffectForm({ cfg, graph, onChange }: { cfg: EffectConfig; graph: Graph;
  * the right combination — written as the first route's answer, which is
  * all the lock is: a way of typing it.
  */
+/** Item slots: what each is called, the item it wants, and whether the team keeps them. */
+function ItemsForm({ graph, slots, onChange }: { graph: Graph; slots: AnswerOf<"items">; onChange: (a: AnswerOf<"items">) => void }) {
+  const t = useT();
+  const items = graph.items ?? [];
+  const setSlot = (i: number, sl: ItemSlot) => onChange({ ...slots, slots: slots.slots.map((x, j) => (j === i ? sl : x)) });
+  return (
+    <>
+      {items.length === 0 && <p className="field__hint">{t.t("This adventure has no items yet. Add them in Adventure settings, and give them to the team with a Give an item step.")}</p>}
+      <Field label={t.t("Slots")} hint={t.t("In order: the team must put each slot's item in that slot.")}>
+        {slots.slots.map((sl, i) => (
+          <div key={i} className="box">
+            <div className="box__row">
+              <input
+                className="field__input"
+                value={sl.label ?? ""}
+                placeholder={t.t("Slot {{n}}", { n: i + 1 })}
+                aria-label={t.t("What the slot is called")}
+                onChange={(e) => setSlot(i, withOptional({ ...sl }, "label", e.target.value || undefined))}
+              />
+              <button type="button" className="icon-remove" disabled={slots.slots.length <= 1} onClick={() => onChange({ ...slots, slots: slots.slots.filter((_, j) => j !== i) })} aria-label={t.t("Remove")}>
+                <X size={ICON.sm} />
+              </button>
+            </div>
+            <ResourceSelect label={t.t("Wants")} value={sl.item} options={items} onChange={(item) => setSlot(i, { ...sl, item })} />
+          </div>
+        ))}
+        {slots.slots.length < MAX_SLOTS && (
+          <button type="button" className="add-btn" onClick={() => onChange({ ...slots, slots: [...slots.slots, { item: "" }] })}>
+            <Plus size={ICON.sm} aria-hidden="true" />
+            {t.t("Add slot")}
+          </button>
+        )}
+      </Field>
+      <Field label={t.t("Tell a team without the items")} hint={t.t("Naming them gives part of the answer away. For a way out, add a route that fires when the team is not carrying the items.")}>
+        <select className="field__input" value={slots.missing ?? ""} onChange={(e) => onChange(withOptional({ ...slots }, "missing", (e.target.value || undefined) as MissingHint | undefined))}>
+          {(["", "name", "none"] as const).map((k) => (
+            <option key={k} value={k}>
+              {t.t(MISSING_LABEL[k])}
+            </option>
+          ))}
+        </select>
+      </Field>
+      <label className="check">
+        <input type="checkbox" checked={!slots.keep} onChange={(e) => onChange(withOptional({ ...slots }, "keep", e.target.checked ? undefined : true))} />
+        <span>
+          {t.t("Use the items up")}
+          <span className="field__hint check__hint">{t.t("They leave the backpack once the slots are filled right. Off, the team keeps them — for a badge it only has to show.")}</span>
+        </span>
+      </label>
+    </>
+  );
+}
+
 function LockForm({ cfg, lock, onChange }: { cfg: PuzzleConfig; lock: AnswerOf<"lock">; onChange: (c: PuzzleConfig) => void }) {
   const t = useT();
   const outputs = cfg.outputs ?? [];

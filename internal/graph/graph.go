@@ -100,7 +100,7 @@ type Graph struct {
 //	out:<port>:answers  out:<port>:contains (more accepted answers, one per line)
 //	reply:<i>  hint:<i>
 //	branch:<port>:label  branch:<port>:note
-//	field:<i>:label  field:<i>:opt:<value>  sym:<value>
+//	field:<i>:label  field:<i>:opt:<value>  sym:<value>  slot:<i>
 func NodeKey(slug, field string) string    { return "n:" + slug + ":" + field }
 func ZoneKey(slug string) string           { return "z:" + slug }
 func JournalKey(slug, field string) string { return "j:" + slug + ":" + field }
@@ -300,6 +300,11 @@ const (
 	// OnAttempts fires once AfterAttempts wrong guesses have been made,
 	// for a pity path that moves a stuck team along.
 	OnAttempts Trigger = "attempts"
+	// OnMissing is an item puzzle's way out for a team that does not
+	// carry what its slots need: the phone offers it as a button while
+	// that is so, and taking it leaves the puzzle unanswered, with no
+	// outcome, so it is presented again when the team comes back.
+	OnMissing Trigger = "missing"
 )
 
 // Output is one way out of a puzzle.
@@ -495,6 +500,15 @@ const (
 	// outputs' matchers decide — a code printed of an accepted answer,
 	// hung at the place, is the classic "find the sign" post.
 	AnswerScan AnswerKind = "scan"
+
+	// AnswerItems is slots the team fills from its backpack: each slot
+	// wants one item, so order matters — the red gem, then the blue.
+	// The phone sends the placed items' slugs joined by "|", in slot
+	// order, and the server decides: every slot must hold its item, and
+	// the team must carry that many of each. Then the first answer
+	// output is taken and, unless Keep, the items are used up. Anything
+	// else is a wrong guess, and costs nothing from the backpack.
+	AnswerItems AnswerKind = "items"
 )
 
 // Answer is a puzzle's way of answering, one of the AnswerKinds. Only the
@@ -521,6 +535,57 @@ type Answer struct {
 	Wheels  int          `json:"wheels,omitempty"`
 	Symbols []LockSymbol `json:"symbols,omitempty"`
 	Start   []int        `json:"start,omitempty"`
+
+	// Items: the slots, whether the team keeps what it placed, and what
+	// the phone says while the team lacks something: one of Missings.
+	Slots   []ItemSlot `json:"slots,omitempty"`
+	Keep    bool       `json:"keep,omitempty"`
+	Missing string     `json:"missing,omitempty"`
+}
+
+// What an item puzzle tells a team that lacks what its slots need:
+// that something is missing (the default), which items, or nothing.
+const (
+	MissingSay  = ""
+	MissingName = "name"
+	MissingNone = "none"
+)
+
+// Missings are the values Answer.Missing may take.
+var Missings = []string{MissingSay, MissingName, MissingNone}
+
+// ItemSlot is one place an item goes. Label is what the phone shows on
+// it — "The pedestal" — translated under NodeKey(…, "slot:<i>"); Item is
+// the item it wants, which the phone is never told.
+type ItemSlot struct {
+	Label string `json:"label,omitempty"`
+	Item  string `json:"item"`
+}
+
+// MaxSlots is the most slots an item puzzle has.
+const MaxSlots = 6
+
+// Needs counts the items a filled set of slots takes, by slug.
+func (a *Answer) Needs() map[string]int {
+	need := map[string]int{}
+	for _, s := range a.Slots {
+		need[s.Item]++
+	}
+	return need
+}
+
+// Fits reports whether a guess puts each slot's item in it, in order.
+func (a *Answer) Fits(guess string) bool {
+	parts := strings.Split(guess, "|")
+	if len(a.Slots) == 0 || len(parts) != len(a.Slots) {
+		return false
+	}
+	for i, s := range a.Slots {
+		if strings.TrimSpace(parts[i]) != s.Item {
+			return false
+		}
+	}
+	return true
 }
 
 // Kind is how the puzzle takes its answer; "" is typing it.
@@ -534,11 +599,11 @@ func (p *PuzzleConfig) Kind() AnswerKind {
 // UsesMatchers reports whether the puzzle's answer outputs decide by
 // their matchers. A tile picture's answer is its solved order, a search's
 // is where the team stands, and a marked form takes its first output
-// whatever was picked, as do the questions; none of those has matchers
-// to write.
+// whatever was picked, as do the questions and filled item slots; none
+// of those has matchers to write.
 func (p *PuzzleConfig) UsesMatchers() bool {
 	switch p.Kind() {
-	case AnswerTiles, AnswerSearch, AnswerQuestions:
+	case AnswerTiles, AnswerSearch, AnswerQuestions, AnswerItems:
 		return false
 	case AnswerChoice:
 		return !p.Answer.Graded()

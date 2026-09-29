@@ -51,6 +51,8 @@ export function feedbackForResult(kind: play.PlayAction["kind"], r: play.Result,
       }
     case "skip":
       return { tone: "info", text: t("Skipped.") };
+    case "leave":
+      return { tone: "info", text: t("Come back when you have what it needs.") };
     case "timeout":
       return { tone: "info", text: t("Time ran out.") };
     default:

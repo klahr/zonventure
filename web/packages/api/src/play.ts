@@ -32,7 +32,7 @@ export interface StartOption {
 /** session.Input — the shape of a puzzle's answer box. */
 export interface PlayInput {
   /** "questions": answered by the step's quiz blocks; the dock continues once each is picked. */
-  kind: "text" | "number" | "tiles" | "search" | "choice" | "lock" | "questions" | "scan";
+  kind: "text" | "number" | "tiles" | "search" | "choice" | "lock" | "questions" | "scan" | "items";
   /** The author's answer bar: its placeholder, its button (a scan's too), and no QR button. */
   placeholder?: string;
   button?: string;
@@ -41,6 +41,14 @@ export interface PlayInput {
   wheels?: number;
   symbols?: { value: string; label?: string; image?: PlayMedia }[];
   start?: number[];
+  /** Item slots (kind "items"): each slot's name — never the item it wants. */
+  slots?: string[];
+  /** The team lacks an item the slots need; missing_items names them if the author chose to. */
+  missing?: boolean;
+  missing_items?: string[];
+  /** Meanwhile the team may leave by the puzzle's route for it; leave_label is that route's label. */
+  leave?: boolean;
+  leave_label?: string;
   /** A choice: the questions and their options (never the answers). */
   fields?: { label?: string; options: { value: string; label?: string }[] }[];
   /** A search: the zone the team stands in, if any. */
@@ -271,6 +279,8 @@ export type PlayAction =
   | { kind: "language"; lang: string }
   | { kind: "choose"; node: string; port: string }
   | { kind: "skip"; node: string }
+  /** Leave an item puzzle to find what its slots need. */
+  | { kind: "leave"; node: string }
   | { kind: "timeout"; node: string }
   | { kind: "hint"; node: string; index: number }
   /**

@@ -11,8 +11,9 @@ import (
 // an answer output judges what the phone sends back. A puzzle with no
 // Answer is typed, and its outputs' matchers decide.
 
-// answerInput is the answer box the phone shows for a puzzle.
-func (t *Team) answerInput(cfg *graph.PuzzleConfig) *Input {
+// answerInput is the answer box the phone shows for puzzle n.
+func (t *Team) answerInput(n graph.Node) *Input {
+	cfg := n.PuzzleCfg
 	a := cfg.Answer
 	switch cfg.Kind() {
 	case graph.AnswerScan:
@@ -37,6 +38,35 @@ func (t *Team) answerInput(cfg *graph.PuzzleConfig) *Input {
 	case graph.AnswerQuestions:
 		// The questions are blocks; the phone counts their picks.
 		return &Input{Kind: "questions"}
+	case graph.AnswerItems:
+		// The slots' labels only: which item fits where stays on the server.
+		in := &Input{Kind: "items", Slots: make([]string, len(a.Slots))}
+		for i, s := range a.Slots {
+			in.Slots[i] = s.Label
+		}
+		short := t.short(a.Needs())
+		if len(short) == 0 {
+			return in
+		}
+		// Short of something: say so, as the author chose, and offer the
+		// way out if there is one.
+		switch a.Missing {
+		case graph.MissingSay:
+			in.Missing = true
+		case graph.MissingName:
+			in.Missing = true
+			for _, slug := range short {
+				in.MissingItems = append(in.MissingItems, t.itemName(slug))
+			}
+		}
+		if o, ok := outputFor(n, graph.OnMissing); ok {
+			label := o.Label
+			if label != "" {
+				label = t.G.Tr(t.Lang, graph.NodeKey(n.Slug, "out:"+o.Port+":label"), label)
+			}
+			in.Leave, in.LeaveLabel = true, label
+		}
+		return in
 	}
 	in := inputFor(cfg)
 	if b := cfg.Bar; b != nil {
@@ -80,6 +110,10 @@ func (t *Team) judge(n graph.Node, o graph.Output, guess string) match.Result {
 	case graph.AnswerSearch, graph.AnswerQuestions:
 		// Answer has already refused a team with questions left.
 		return match.Result{OK: true, Multiplier: 1}
+	case graph.AnswerItems:
+		// The right item in every slot, and in the backpack: a phone
+		// cannot place what the team does not carry.
+		return match.Result{OK: a.Fits(guess) && t.carries(a.Needs()), Multiplier: 1}
 	case graph.AnswerChoice:
 		if a.Graded() {
 			// A marked form is never wrong, only incomplete: it pays the
@@ -95,6 +129,32 @@ func (t *Team) judge(n graph.Node, o graph.Output, guess string) match.Result {
 		m = match.Any(t.G.AlternativeAnswers(n.Slug, o.Port), guess)
 	}
 	return m
+}
+
+// carries reports whether the team holds at least need of each item.
+func (t *Team) carries(need map[string]int) bool {
+	return len(t.short(need)) == 0
+}
+
+// short lists, in slug order, the items the team holds fewer of than need.
+func (t *Team) short(need map[string]int) []string {
+	var out []string
+	for _, slug := range sortedKeys(need) {
+		if t.Items[slug] < need[slug] {
+			out = append(out, slug)
+		}
+	}
+	return out
+}
+
+// itemName is an item's name as the backpack shows it.
+func (t *Team) itemName(slug string) string {
+	for _, it := range t.G.Items {
+		if it.Slug == slug && it.Name != "" {
+			return it.Name
+		}
+	}
+	return slug
 }
 
 // searchAt names the zone a searching team stands in: one of the search's

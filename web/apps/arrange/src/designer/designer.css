@@ -480,6 +480,16 @@ textarea.field__input { resize: vertical; font-family: var(--font-body); }
 .step__title { font-weight: 700; }
 .step__sub { color: var(--muted); font-size: var(--text-xs); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .step__actions { display: flex; gap: var(--sp-1); }
+/* Reordering: a grip to drag by, and a line where the step would land. */
+.step__grip { flex: none; align-self: stretch; display: grid; place-items: center; width: 1.5rem; margin-right: calc(-1 * var(--sp-2)); padding: 0; border: 0; border-radius: var(--radius) 0 0 var(--radius); background: none; color: var(--muted); cursor: grab; touch-action: none; }
+.step__grip:hover { color: var(--ink); }
+.outline.is-dragging, .outline.is-dragging .step__grip { cursor: grabbing; user-select: none; }
+.step.is-lifted { opacity: 0.45; }
+.outline > li { position: relative; }
+/* A branch's end has no row, only a gap: no height, and no extra space. */
+.outline__tail { height: 0; margin-top: calc(-1 * var(--sp-2)); }
+.outline > li.is-drop::before { content: ""; position: absolute; left: 0; right: 0; top: calc(-0.5 * var(--sp-2) - 1.5px); height: 3px; border-radius: 2px; background: var(--accent); pointer-events: none; }
+.outline > li.outline__tail.is-drop::before { top: calc(0.5 * var(--sp-2) - 1.5px); }
 
 .designer-empty { max-width: 34rem; margin: var(--sp-7) auto; padding: var(--sp-6); display: flex; flex-direction: column; gap: var(--sp-3); background: var(--surface); border: 1px solid var(--border-soft); border-radius: var(--radius-lg); box-shadow: var(--shadow); }
 .designer-empty > * { margin: 0; }

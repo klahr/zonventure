@@ -169,6 +169,8 @@ func simulate(g *graph.Graph, team *session.Team, a simulateAction, now time.Tim
 		act(func() (session.Result, *walk.Step, error) { return team.Choose(a.Node, a.Port) })
 	case "skip":
 		act(func() (session.Result, *walk.Step, error) { return team.Skip(a.Node) })
+	case "leave":
+		act(func() (session.Result, *walk.Step, error) { return team.Leave(a.Node) })
 	case "timeout":
 		act(func() (session.Result, *walk.Step, error) { return team.Timeout(a.Node) })
 	case "force":

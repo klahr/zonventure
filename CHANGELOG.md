@@ -11,6 +11,32 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Added — item slots
+
+- **A puzzle can be answered with items from the backpack** (answer
+  kind `items`, and "Item slots" in the add-step menu). Each slot
+  wants one item, in order; the phone shows the slots' names and the
+  backpack, never which item goes where. The server checks the fill
+  and that the team carries those items, then takes the first answer
+  route and — unless the author turns it off — uses the items up. A
+  wrong fill is a wrong guess and costs nothing. The validator flags
+  slots with no item or an undeclared one, and warns about an item no
+  step ever gives.
+- **A team without the items is told, and can go and find them.** The
+  phone says something is missing — or, if the author chooses, which
+  items — and a new route trigger, "Not carrying the items", shows as
+  a button while that is so. Leaving records nothing for the puzzle,
+  so it is presented again when the team comes back. The validator
+  warns when that route leaves an ordinary hub's branch, which cannot
+  be re-entered; a home screen's can.
+
+### Added — reorder steps in the designer's list view
+
+- **Steps can be dragged by a handle, or moved with ↑/↓, anywhere in
+  the list** — on the main line, into a branch or out of one — not
+  only in a straight-line adventure. A step where the flow splits
+  stays put.
+
 ### Changed — the shared catalog is switched off
 
 - **Listing an adventure in the catalog no longer opens it to every

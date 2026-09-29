@@ -87,7 +87,8 @@ export interface Edge {
   to: string;
 }
 
-export type Trigger = "answer" | "timeout" | "skipped" | "attempts";
+/** "missing": an item puzzle's way out for a team without the items. */
+export type Trigger = "answer" | "timeout" | "skipped" | "attempts" | "missing";
 
 export interface Output {
   port: string;
@@ -284,6 +285,9 @@ export interface AnswerBar {
  * - questions: answered by the step's quiz blocks; once every one shown
  *   is picked, the team continues by the first answer output.
  * - scan: a QR scan only; the decoded text goes through the matchers.
+ * - items: slots the team fills from its backpack, each wanting one
+ *   item; all right takes the first answer output and, unless keep,
+ *   uses the items up. The phone is told the slots' labels only.
  */
 export type Answer =
   | { kind: "tiles"; image?: Media; rows: number; cols: number }
@@ -291,7 +295,23 @@ export type Answer =
   | { kind: "choice"; fields: ChoiceField[] }
   | { kind: "lock"; wheels: number; symbols: LockSymbol[]; start?: number[] }
   | { kind: "questions" }
-  | { kind: "scan" };
+  | { kind: "scan" }
+  | { kind: "items"; slots: ItemSlot[]; keep?: boolean; missing?: MissingHint };
+
+/**
+ * graph.Missings: what an item puzzle tells a team short of an item —
+ * that something is missing (absent), which items ("name"), or nothing.
+ */
+export type MissingHint = "name" | "none";
+
+/** graph.ItemSlot: where an item goes, and the item it wants. */
+export interface ItemSlot {
+  label?: string;
+  item: string;
+}
+
+/** graph.MaxSlots. */
+export const MAX_SLOTS = 6;
 
 export type AnswerKind = Answer["kind"];
 /** One kind of answer, by name: AnswerOf<"lock">. */

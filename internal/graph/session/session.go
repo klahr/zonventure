@@ -501,6 +501,15 @@ func (t *Team) Answer(node, guess string) (Result, *walk.Step, error) {
 			continue
 		}
 		points := float64(o.Points) * m.Multiplier
+		if cfg.Kind() == graph.AnswerItems && !cfg.Answer.Keep {
+			// Used up before the walk, which may pass a gate asking
+			// what the team still carries.
+			for slug, q := range cfg.Answer.Needs() {
+				if t.Items[slug] -= q; t.Items[slug] <= 0 {
+					delete(t.Items, slug)
+				}
+			}
+		}
 		r.Solved = true
 		// Recorded before the walk, which may pass a switch reading it.
 		r.Answer, r.MatchID = strings.TrimSpace(guess), m.ID
@@ -733,6 +742,30 @@ func (t *Team) Skip(node string) (Result, *walk.Step, error) {
 	o, _ := outputFor(n, graph.OnSkip)
 	step, err := t.leave(n, o.Port, 0)
 	return Result{Port: o.Port}, step, err
+}
+
+// Leave takes an item puzzle's OnMissing route, for a team that does
+// not carry what the slots need — off to find it. Nothing is recorded
+// for the puzzle, so it is presented again when the team comes back,
+// rather than passed through by the way it left, as an answered
+// puzzle is (see walk). A team carrying everything has no need to go.
+func (t *Team) Leave(node string) (Result, *walk.Step, error) {
+	n, err := t.current(node)
+	if err != nil {
+		return Result{}, nil, err
+	}
+	if n.Type != graph.Puzzle || n.PuzzleCfg == nil || n.PuzzleCfg.Kind() != graph.AnswerItems {
+		return Result{}, nil, ErrWrongNode
+	}
+	o, ok := outputFor(n, graph.OnMissing)
+	if !ok || t.carries(n.PuzzleCfg.Answer.Needs()) {
+		return Result{}, nil, ErrNotAllowed
+	}
+	step, err := walk.Advance(t.G, t, n.Slug, o.Port)
+	if err != nil {
+		return Result{}, nil, fmt.Errorf("advancing from %s.%s: %w", n.Slug, o.Port, err)
+	}
+	return Result{Port: o.Port}, &step, nil
 }
 
 // ForceSolve takes a puzzle output as though the team had earned it,

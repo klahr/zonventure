@@ -161,6 +161,12 @@ func (e *Engine) Skip(ctx context.Context, teamID int64, node string) (Result, e
 	return e.act(ctx, teamID, func(t *session.Team) (Result, *walk.Step, error) { return t.Skip(node) })
 }
 
+// Leave takes an item puzzle's route for a team without the items. See
+// session.Team.Leave.
+func (e *Engine) Leave(ctx context.Context, teamID int64, node string) (Result, error) {
+	return e.act(ctx, teamID, func(t *session.Team) (Result, *walk.Step, error) { return t.Leave(node) })
+}
+
 // Timeout takes a puzzle's timeout output once its limit has passed.
 // The client calls it when its countdown reaches zero; the engine
 // re-checks the time rather than trusting the client.

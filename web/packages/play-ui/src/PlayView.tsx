@@ -5,6 +5,7 @@ import { Markdown } from "./Markdown.tsx";
 import { TileBoard } from "./Tiles.tsx";
 import { ChoiceForm } from "./Choices.tsx";
 import { LockBoard } from "./Lock.tsx";
+import { ItemSlotsBoard } from "./ItemSlots.tsx";
 import { JournalNotes, useUnreadNotes } from "./Journal.tsx";
 import { MediaList } from "./Media.tsx";
 import { Blocks } from "./blocks/index.tsx";
@@ -417,6 +418,7 @@ function PuzzleStep(props: StepProps) {
   const search = input.kind === "search";
   const choices = input.kind === "choice" && input.fields?.length ? input.fields : null;
   const lock = input.kind === "lock" && input.wheels && input.symbols?.length ? input : null;
+  const slots = input.kind === "items" && input.slots?.length ? input : null;
   const questions = input.kind === "questions";
   const scan = input.kind === "scan" && !typing && canScan();
   const placeholder =
@@ -463,6 +465,18 @@ function PuzzleStep(props: StepProps) {
           disabled={locked}
           t={t}
           onTry={answer}
+        />
+      )}
+
+      {slots && !timeUp && (
+        <ItemSlotsBoard
+          key={node}
+          input={slots}
+          items={view.items ?? []}
+          disabled={locked}
+          t={t}
+          onTry={answer}
+          onLeave={() => onAction({ kind: "leave", node })}
         />
       )}
 
@@ -515,7 +529,7 @@ function PuzzleStep(props: StepProps) {
           </>
         ) : questions && !timeUp ? (
           <ContinueButton view={view} t={t} disabled={locked} label={blockedFor > 0 ? formatSeconds(blockedFor) : needsPlace ? t("Continue when you are there") : undefined} onClick={() => answer("")} />
-        ) : tiles || choices || lock ? null : timeUp ? (
+        ) : tiles || choices || lock || slots ? null : timeUp ? (
           view.has_timeout && !live ? (
             <button type="button" className="pv-btn pv-btn--primary pv-btn--wide" disabled={busy} onClick={() => onAction({ kind: "timeout", node })}>
               {t("Continue")}
