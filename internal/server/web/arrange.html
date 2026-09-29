@@ -59,6 +59,8 @@
   --success:       #429a3f;  /* brand green */
   --danger:        #ff5252;
   --danger-fg:     #ffffff;
+  /* #ff5252 is ~3.2:1 on white — fine for fills, under AA for words. */
+  --danger-text:   #b3261e;
   --warning:       #b45309;
 
   --bg:            #fbfbfd;
@@ -150,6 +152,7 @@
   --accent-secondary: #e24080;
   --success:     #7fd17b;
   --danger:      #ff7b7b;
+  --danger-text: #ff7b7b;
   --warning:     #fbbf24;
 
   --shadow-soft: 0 1px 4px #00000066, 0 2px 12px #00000077;
@@ -163,7 +166,7 @@
     --text: #e7ecf4; --muted: #9db1cc; --ink: #e7ecf4;
     --accent: #e24080; --accent-hover: #ad1357; --accent-fg: #ffffff;
     --accent-secondary: #e24080;
-    --success: #7fd17b; --danger: #ff7b7b; --warning: #fbbf24;
+    --success: #7fd17b; --danger: #ff7b7b; --danger-text: #ff7b7b; --warning: #fbbf24;
     --shadow-soft: 0 1px 4px #00000066, 0 2px 12px #00000077;
     --shadow: 2px 2px 8px #00000073;
     --shadow-lg: 0 16px 40px #000000aa;
@@ -825,7 +828,7 @@ textarea { min-height: 80px; resize: vertical; font-family: ui-monospace, monosp
 .row > h1, .row > h2, .row > h3 { margin: 0; }
 .card > .row.between { margin-bottom: .75rem; }
 .muted { color: var(--muted); }
-.err { color: var(--danger); }
+.err { color: var(--danger-text); }
 .ok { color: var(--success); }
 .mono { font-family: ui-monospace, SFMono-Regular, monospace; font-size: .9em; }
 
@@ -2002,7 +2005,7 @@ a.split-btn-item { text-decoration: none; }
   box-shadow: var(--shadow-lg); min-width: 240px;
   animation: slideIn .2s ease;
 }
-.toast.err { border-color: var(--danger); color: var(--danger); }
+.toast.err { border-color: var(--danger); color: var(--danger-text); }
 .toast.ok { border-color: var(--success); color: var(--success); }
 @keyframes slideIn { from { transform: translateY(8px); opacity: 0; } to { transform: none; opacity: 1; } }
 
@@ -3424,7 +3427,7 @@ function renderLogin(err, mode, extra) {
   if (mode === 'forgot') return renderForgot(err);
   if (mode === 'reset')  return renderReset(err, extra);
 
-  const errEl  = err ? h('p', { class: 'err' }, err) : null;
+  let errEl    = err ? h('p', { class: 'err', role: 'alert' }, err) : null;
   // Full-width submit so it visually pairs with the Google SSO
   // button above (which is also stretched to the card width via the
   // .sso-block override below). Without the explicit width the
@@ -3552,6 +3555,7 @@ function renderLogin(err, mode, extra) {
       // after the form body — replaceChildren on the root would reset
       // any in-progress timers.
       (errEl ? errEl.replaceWith(live) : form.insertBefore(live, submit.parentElement));
+      errEl = live;
       const tick = setInterval(() => {
         secs -= 1;
         setText();
@@ -3564,7 +3568,19 @@ function renderLogin(err, mode, extra) {
       }, 1000);
       return;
     }
-    document.getElementById('root').replaceChildren(renderLogin(r.body?.error || t('login failed')));
+    // Show the error in place instead of re-rendering the form, so the
+    // username survives a mistyped password. Only the password clears.
+    const msg = r.status === 401
+      ? t('Wrong username or password.')
+      : t(r.body?.error || 'login failed');
+    if (!errEl) {
+      errEl = h('p', { class: 'err', role: 'alert' }, msg);
+      form.insertBefore(errEl, submit.parentElement);
+    } else {
+      errEl.textContent = msg;
+    }
+    passwordEl.value = '';
+    passwordEl.focus();
   });
   return h('div', { class: 'login-wrap' }, form);
 }

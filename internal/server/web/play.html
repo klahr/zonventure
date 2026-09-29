@@ -52,6 +52,10 @@
     --ink:           #1f3349;
     --success:       #429a3f;
     --danger:        #ff5252;
+    /* Text-weight variants: the bright fills above sit at ~3.2:1 on
+       white, under AA for body text. Use these for words, not fills. */
+    --success-text:  #2e7d32;
+    --danger-text:   #b3261e;
     --bg:            #fbfbfd;
     --surface:       #ffffff;
     --surface-2:     #f6f6f6;
@@ -323,12 +327,18 @@
     box-shadow: var(--shadow);
   }
   .muted { color: var(--muted); }
-  .err { color: var(--danger); font-weight: 600; }
-  .ok  { color: var(--success); font-weight: 600; }
+  .err { color: var(--danger-text); font-weight: 600; }
+  .ok  { color: var(--success-text); font-weight: 600; }
   /* .prompt holds server-rendered markdown. Goldmark emits <p>
      wrappers, <ul>, <a>, etc — style them once so every arranger's
      content picks up the same typography. */
   .prompt { font-size: 1.1rem; line-height: 1.55; color: var(--ink); }
+  .gate-hint {
+    margin: .75rem 0 0; padding: .6rem .8rem;
+    border-radius: var(--radius);
+    background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+    color: var(--ink); font-size: .95rem; font-weight: 600;
+  }
   .prompt p, .intro-custom p, .outro-custom p { margin: 0 0 .75rem; }
   .prompt p:last-child, .intro-custom p:last-child, .outro-custom p:last-child { margin-bottom: 0; }
   .prompt ul, .prompt ol, .intro-custom ul, .intro-custom ol, .outro-custom ul, .outro-custom ol {
@@ -1258,7 +1268,7 @@
   }
   .ws-status.err {
     background: color-mix(in srgb, var(--danger) 22%, var(--surface));
-    color: var(--danger);
+    color: var(--danger-text);
   }
   /* Multi-tab takeover banner: a full-screen interstitial shown when a
      second tab notices the slot is already active in another tab. */
@@ -1870,11 +1880,28 @@ function handleAnswerError(d) {
     // activity row; the winning slot's hub broadcast is en route and
     // will push a fresh `state` frame within a tick. Don't flash an
     // error in the meantime — silently let the next state render
-    // catch the player up to the new page.
+    // catch the player up to the new page. If no fresh frame shows up
+    // (dropped broadcast, stale cursor), pull the state ourselves so
+    // the player is never left staring at a dead submit.
     if (submitResultEl) {
       submitResultEl.className = 'result muted';
       submitResultEl.textContent = '';
     }
+    const stateAtError = lastState;
+    setTimeout(async () => {
+      if (lastState !== stateAtError) return;
+      if (submitResultEl) {
+        submitResultEl.className = 'result muted';
+        submitResultEl.textContent = t('Your team moved on — updating…');
+      }
+      const r = await api('/api/player/state');
+      if (r.status === 200 && r.body && lastState === stateAtError) render(r.body);
+      // render() skips rebuilding the dock when nothing changed, so
+      // clear the interim line ourselves.
+      if (submitResultEl && submitResultEl.textContent === t('Your team moved on — updating…')) {
+        submitResultEl.textContent = '';
+      }
+    }, 1500);
     return;
   }
 
@@ -2617,12 +2644,47 @@ function renderGpsFreshness() {
     { age: ageLabel, acc });
 }
 
+// currentGate / currentGateHintEl back the "📍 Go to the location"
+// line on gated puzzles. Distance is rounded coarsely so it guides
+// the team there without turning into a precise hot/cold meter.
+let currentGate = null;
+let currentGateHintEl = null;
+// Set once the local fix enters the radius, so the flip pushes one
+// fresh ping instead of waiting up to a ping interval — otherwise the
+// hint says "you're here" while the server's gate check still says no.
+let gateHintInside = false;
+
+function renderGateHint() {
+  if (!currentGateHintEl || !currentGate) return;
+  if (currentGate.reached) {
+    currentGateHintEl.textContent = '📍 ' + t("You're at the puzzle's location.");
+    return;
+  }
+  if (gpsErrorCode || !lastFix) {
+    currentGateHintEl.textContent = '📍 ' + t("This puzzle unlocks at its location — head there to answer.");
+    return;
+  }
+  const d = haversineMeters(lastFix.lat, lastFix.lng, currentGate.lat, currentGate.lng);
+  if (d <= (currentGate.radius_m || 0)) {
+    if (!gateHintInside) { gateHintInside = true; sendPing(); }
+    currentGateHintEl.textContent = '📍 ' + t("You're at the puzzle's location.");
+    return;
+  }
+  gateHintInside = false;
+  const step = d < 200 ? 10 : d < 1000 ? 50 : 100;
+  const n = Math.max(step, Math.round(d / step) * step);
+  currentGateHintEl.textContent = '📍 ' + (n < 1000
+    ? t('Head to this puzzle\'s location — about {{n}} m away.', { n })
+    : t('Head to this puzzle\'s location — about {{n}} km away.', { n: (n / 1000).toFixed(1) }));
+}
+
 // updateGateLock reflects the latest fix onto the gated advance
 // button: disabled with a "waiting for lock" label until the fix is
 // accurate enough relative to the gate's own radius, then enabled.
 // Text-answer gated puzzles don't use this — the server's 403 already
 // handles the "not there yet" case.
 function updateGateLock() {
+  renderGateHint();
   if (!currentGatedButton || !currentGatedRadius) return;
   // In preview, a spoofed fix from the debug-strip map satisfies the
   // lock with implicit zero accuracy — the arranger placed the point
@@ -2892,6 +2954,18 @@ function render(s) {
   // raw HTML escaped). Nested p/ul/ol/etc inherit typography from
   // the .prompt wrapper.
   block.append(el('div', { class: 'prompt', html: s.prompt || '' }));
+  // Gated puzzles say so up front, with a live distance once GPS has a
+  // fix — otherwise the first sign of the gate is a 403 on submit.
+  if (s.gate && !previewState) {
+    if (!currentGate || currentGate.lat !== s.gate.lat || currentGate.lng !== s.gate.lng) gateHintInside = false;
+    currentGate = s.gate;
+    currentGateHintEl = el('p', { class: 'gate-hint', role: 'status', 'aria-live': 'polite' });
+    block.append(currentGateHintEl);
+    renderGateHint();
+  } else {
+    currentGate = null;
+    currentGateHintEl = null;
+  }
   app.append(block);
   applyPuzzleEntrance(block, s);
 

@@ -213,6 +213,12 @@ func seedDemoAdventure(d *sql.DB) error {
 // seedDemo installs the full demo dataset: admin, org, users, demo adventure,
 // assignments, a running demo run, teams with slot magic-links, backfilled
 // tracks, and an event log.
+// dbTimeLayout matches now_text(). Timestamp columns are TEXT and
+// queries like the gate check ORDER BY them, so seeded rows must use
+// the same layout as live ones: an RFC3339 "…T…Z" sorts after every
+// "… …" row and would masquerade as the newest ping forever.
+const dbTimeLayout = "2006-01-02 15:04:05"
+
 func seedDemo(ctx context.Context, d *sql.DB) error {
 	// Wipe the mutable parts. adventures are re-created from demoPages().
 	for _, stmt := range []string{
@@ -304,7 +310,7 @@ func seedDemo(ctx context.Context, d *sql.DB) error {
 		return err
 	}
 
-	startedAt := time.Now().UTC().Add(-30 * time.Minute).Format(time.RFC3339)
+	startedAt := time.Now().UTC().Add(-30 * time.Minute).Format(dbTimeLayout)
 	liveToken := "demo-live-" + fmt.Sprintf("%x", time.Now().UnixNano())
 	var eventID int64
 	if err := d.QueryRow(`
@@ -337,9 +343,13 @@ func seedDemo(ctx context.Context, d *sql.DB) error {
 			return err
 		}
 		var teamID int64
+		// Plant the page cursor too: progression compares against
+		// current_page_id, so a team with only an index can't advance.
+		// The demo is a single linear lane, so page N is pageIDs[N].
 		if err := d.QueryRow(
-			`INSERT INTO teams(event_id, name, current_page_index, token) VALUES ($1, $2, $3, $4) RETURNING id`,
-			eventID, plan.Name, plan.PageIdx, teamTok).Scan(&teamID); err != nil {
+			`INSERT INTO teams(event_id, name, current_page_index, current_page_id, current_page_started_at, token)
+			 VALUES ($1, $2, $3, $4, now_text(), $5) RETURNING id`,
+			eventID, plan.Name, plan.PageIdx, pageIDs[plan.PageIdx], teamTok).Scan(&teamID); err != nil {
 			return err
 		}
 
@@ -364,9 +374,6 @@ func seedDemo(ctx context.Context, d *sql.DB) error {
 			return err
 		}
 	}
-	// Ensure the adventures table is really there (avoid unused-var warnings
-	// when future refactors drop pageIDs).
-	_ = pageIDs
 	return nil
 }
 
@@ -468,7 +475,7 @@ func seedTrackAndEvents(ctx context.Context, d *sql.DB, rng *rand.Rand,
 			if _, err := d.ExecContext(ctx, `
 				INSERT INTO location_pings(slot_id, team_id, event_id, lat, lng, accuracy, server_ts)
 				VALUES ($1, $2, $3, $4, $5, $6, $7)
-			`, sid, teamID, eventID, lat, lng, 12.0+rng.Float64()*6, ts.Format(time.RFC3339)); err != nil {
+			`, sid, teamID, eventID, lat, lng, 12.0+rng.Float64()*6, ts.Format(dbTimeLayout)); err != nil {
 				return err
 			}
 		}
@@ -478,13 +485,13 @@ func seedTrackAndEvents(ctx context.Context, d *sql.DB, rng *rand.Rand,
 				INSERT INTO event_activity(event_id, team_id, actor_slot_id, kind, payload, created_at)
 				VALUES ($1, $2, $3, $4, $5, $6)
 			`, eventID, teamID, slotIDs[0], activity.AnswerRight, string(payload),
-				legEnd.Add(-2*time.Minute).Format(time.RFC3339))
+				legEnd.Add(-2*time.Minute).Format(dbTimeLayout))
 			payload, _ = json.Marshal(map[string]any{"page_index": li, "submitted": pickWrongGuess(rng)})
 			_, _ = d.ExecContext(ctx, `
 				INSERT INTO event_activity(event_id, team_id, actor_slot_id, kind, payload, created_at)
 				VALUES ($1, $2, $3, $4, $5, $6)
 			`, eventID, teamID, slotIDs[0], activity.AnswerWrong, string(payload),
-				legEnd.Add(-3*time.Minute).Format(time.RFC3339))
+				legEnd.Add(-3*time.Minute).Format(dbTimeLayout))
 		}
 		legStart = legEnd
 	}
