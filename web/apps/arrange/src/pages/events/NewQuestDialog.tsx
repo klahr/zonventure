@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useT } from "../../i18n.tsx";
-import { navigate } from "../../router.ts";
+import { CATALOG_ENABLED, navigate } from "../../router.ts";
 import { Button, Dialog, ErrorBox, Field, Loading, errorText, useLoad, useToast } from "../../ui/index.ts";
 import { createEvent, listAdventures, startEvent, updateEvent, uploadEventCover } from "./api.ts";
 import { AdventureCover } from "./parts.tsx";
@@ -124,7 +124,7 @@ export function NewQuestDialog({ onClose, onCreated }: { onClose: () => void; on
                 <AdventureCover title={a.title} src={a.avatar_url} />
                 <span className="evs-stack">
                   <strong className="evs-ellipsis">{a.title}</strong>
-                  <span className="evs-muted evs-small">{a.mine_to_edit ? t.t("yours") : t.t("catalog")}</span>
+                  <span className="evs-muted evs-small">{a.mine_to_edit ? t.t("yours") : CATALOG_ENABLED ? t.t("catalog") : t.t("shared")}</span>
                 </span>
               </label>
             ))}

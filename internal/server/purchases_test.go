@@ -24,6 +24,8 @@ import (
 // directly), the boss user's org id, and a cleanup.
 func seedPurchaseStack(t *testing.T, cfg server.Config) (*httptest.Server, *sql.DB, int64, func()) {
 	t.Helper()
+	// Passes here are bought for the seeded demo, a catalog adventure.
+	withCatalog(t)
 	sqlDB, dbCleanup := dbtest.Open(t)
 	lib := adventure.New(sqlDB)
 

@@ -91,7 +91,7 @@ function ArrangerDashboard({ user }: { user: Whoami }) {
 
   let setup: { lead: string; steps: SetupStepProps[] } | null = null;
   if (events.length === 0) {
-    if (publisher) {
+    if (publisher && CATALOG_ENABLED) {
       // playable: published from the designer; published: listed in the catalog by the platform admin.
       const playable = mine.some((a) => a.playable);
       const listed = mine.some((a) => a.published);

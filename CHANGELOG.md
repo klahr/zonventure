@@ -11,6 +11,17 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Changed — the shared catalog is switched off
+
+- **Listing an adventure in the catalog no longer opens it to every
+  organisation**, and the publisher's puzzle library stays with the
+  publisher. Other organisations reach its adventures only through a
+  commission or an event pass the operator grants, so existing events
+  keep running. The console hides the Catalog tab and its links, and
+  old `#/catalog` URLs open Adventures. Curation still works; one
+  switch on each side (`admin.CatalogEnabled`, and `CATALOG_ENABLED`
+  in the console's router) turns the catalog back on.
+
 ### Added — API tokens for the REST API
 
 - **The tokens under Settings → Account → API tokens now work on

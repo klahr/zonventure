@@ -233,7 +233,7 @@ func (h *Handlers) ListAdventures(w http.ResponseWriter, r *http.Request) {
 	FROM adventures a
 	WHERE (
 	  a.org_id = $1
-	  OR ` + CatalogFilter + `
+	  OR ` + CatalogFilter() + `
 	  OR EXISTS (
 	    SELECT 1 FROM adventure_assignments aa
 	    WHERE aa.adventure_slug = a.slug AND aa.org_id = $1

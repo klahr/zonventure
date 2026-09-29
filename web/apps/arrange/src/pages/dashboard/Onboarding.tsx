@@ -9,7 +9,7 @@ export type OnboardingVariant = "arranger" | "publisher" | "admin";
 
 export function onboardingVariant(user: Whoami): OnboardingVariant {
   if (user.role === "admin") return "admin";
-  return activeMembership(user)?.is_publisher ? "publisher" : "arranger";
+  return CATALOG_ENABLED && activeMembership(user)?.is_publisher ? "publisher" : "arranger";
 }
 
 /**

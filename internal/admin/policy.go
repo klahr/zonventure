@@ -134,7 +134,7 @@ func (h *Handlers) staffCanSeeAdventure(ctx context.Context, me auth.User, owner
 	if canEditOwned(me, ownerOrg) {
 		return true
 	}
-	if published && h.isCatalogOwner(ctx, ownerOrg) {
+	if CatalogEnabled && published && h.isCatalogOwner(ctx, ownerOrg) {
 		return true
 	}
 	var n int
@@ -158,7 +158,7 @@ func (h *Handlers) staffCanSeePuzzle(ctx context.Context, me auth.User, advSlug 
 	if advSlug.Valid {
 		return h.staffCanSeeAdventure(ctx, me, advOrg, h.adventurePublished(ctx, advSlug.String), advSlug.String)
 	}
-	return canEditOwned(me, pageOrg) || h.isCatalogOwner(ctx, pageOrg)
+	return canEditOwned(me, pageOrg) || (CatalogEnabled && h.isCatalogOwner(ctx, pageOrg))
 }
 
 // adventurePublished reads the catalog flag; a miss reads as false.

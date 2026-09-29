@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { ApiError, canAuthor } from "@zonventure/api";
 import { useT } from "../../i18n.tsx";
 import { useSession } from "../../session.tsx";
-import { navigate } from "../../router.ts";
+import { CATALOG_ENABLED, navigate } from "../../router.ts";
 import { Button, Callout, Dialog, Empty, ErrorBox, Field, Loading, Row, fmtMoney, useLoad, useToast, errorText } from "../../ui/index.ts";
 import { activeMembership, createEvent, createPurchase, createTeam, listAdventures, listAssignments, pricing, type AdventureRow, type Assignment } from "./api.ts";
 import { AdventureCover } from "./parts.tsx";
@@ -92,8 +92,12 @@ function NewEventForm({ slug, assignmentId, ownsIt, onClose }: NewEventProps) {
   const needsPicker = assignmentId === undefined && slug === undefined;
 
   const lists = useLoad(async (signal) => {
-    const [advs, assigns] = await Promise.all([listAdventures(signal), listAssignments(signal)]);
-    return { advs, unused: assigns.filter((a) => !a.event_id) };
+    const [all, assigns] = await Promise.all([listAdventures(signal), listAssignments(signal)]);
+    const unused = assigns.filter((a) => !a.event_id);
+    // With the catalog off, only what the Adventures page shows: the
+    // org's own, the commissioned, and those it holds a pass for.
+    const advs = CATALOG_ENABLED ? all : all.filter((a) => a.mine_to_edit || a.shared || assigns.some((x) => x.adventure_slug === a.slug));
+    return { advs, unused };
   }, []);
 
   // Only the dialog reopened with the pass just paid for takes the draft.
@@ -480,7 +484,7 @@ function AdventureChoice({ adv, checked, pass, onPick }: { adv: AdventureRow; ch
       <span className="evs-stack">
         <strong className="evs-ellipsis">{adv.title}</strong>
         <span className="evs-muted evs-small">
-          {adv.mine_to_edit ? t.t("yours") : t.t("catalog")}
+          {adv.mine_to_edit ? t.t("yours") : CATALOG_ENABLED ? t.t("catalog") : t.t("shared")}
           {note && <> · {note}</>}
           {!adv.playable && <> · {t.t("not published yet")}</>}
         </span>

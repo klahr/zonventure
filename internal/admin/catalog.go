@@ -16,9 +16,23 @@ import (
 // every org; everything else it owns stays private to it like any
 // org's content.
 
+// CatalogEnabled opens the catalog to every org. It is off for now: a
+// published adventure, and the publisher's puzzle library, stay with
+// the publisher, and other orgs reach its adventures only through a
+// commission or an event pass the operator grants. Curation still
+// works, so turning this back on restores the listing as it was. The
+// console hides the catalog under the same switch (CATALOG_ENABLED in
+// web/apps/arrange/src/router.ts).
+var CatalogEnabled = false
+
 // CatalogFilter restricts a query over `adventures a` to the published
-// catalog.
-const CatalogFilter = `(a.published = 1 AND a.org_id = (SELECT id FROM organizations WHERE is_publisher))`
+// catalog, or matches nothing while the catalog is off.
+func CatalogFilter() string {
+	if !CatalogEnabled {
+		return `FALSE`
+	}
+	return `(a.published = 1 AND a.org_id = (SELECT id FROM organizations WHERE is_publisher))`
+}
 
 // publisherOrgID returns the publisher org's id; ok is false when no
 // org is flagged.

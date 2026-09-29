@@ -3,6 +3,8 @@ package server_test
 import (
 	"testing"
 
+	"github.com/klahr/zonventure/internal/admin"
+
 	"github.com/klahr/zonventure/internal/auth"
 	"github.com/klahr/zonventure/internal/server"
 )
@@ -184,7 +186,16 @@ func TestOperator_OrgEvents(t *testing.T) {
 
 // TestCatalogCuration: the publisher authors, the operator lists /
 // unlists and commissions; neither can do the other's part.
+// withCatalog opens the shared catalog for one test; it is off by
+// default (admin.CatalogEnabled).
+func withCatalog(t *testing.T) {
+	t.Helper()
+	admin.CatalogEnabled = true
+	t.Cleanup(func() { admin.CatalogEnabled = false })
+}
+
 func TestCatalogCuration(t *testing.T) {
+	withCatalog(t)
 	ts, _, cleanup := newTestServer(t)
 	defer cleanup()
 	root := newClient(t, ts)
@@ -259,6 +270,19 @@ func TestCatalogCuration(t *testing.T) {
 	if !visible(boss, "new-tour") {
 		t.Errorf("listed catalog adventure not visible to boss")
 	}
+	// With the catalog off, listing opens it to no one; the demo's
+	// commission to TestOrg still does.
+	admin.CatalogEnabled = false
+	if visible(boss, "new-tour") {
+		t.Errorf("listed adventure visible to boss with the catalog off")
+	}
+	if s := boss.do("GET", "/api/admin/adventures/new-tour", nil, nil); s != 403 && s != 404 {
+		t.Errorf("listed adventure detail with the catalog off = %d, want 403/404", s)
+	}
+	if !visible(boss, "demo") {
+		t.Errorf("commissioned adventure hidden with the catalog off")
+	}
+	admin.CatalogEnabled = true
 	if s := root.do("DELETE", "/api/admin/catalog/demo/shares/"+itoa(orgID), nil, nil); s != 204 {
 		t.Fatalf("revoke = %d", s)
 	}

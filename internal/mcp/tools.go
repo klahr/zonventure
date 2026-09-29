@@ -578,7 +578,7 @@ func listAdventures(ctx context.Context, s *Server, _ json.RawMessage) (ToolCall
 		       (SELECT COUNT(*) FROM adventure_pages p WHERE p.adventure_id = a.id) AS puzzles
 		FROM adventures a
 		WHERE a.org_id = $1
-		   OR ` + admin.CatalogFilter + `
+		   OR ` + admin.CatalogFilter() + `
 		   OR EXISTS (SELECT 1 FROM adventure_assignments aa WHERE aa.adventure_slug = a.slug AND aa.org_id = $1)
 		   OR EXISTS (SELECT 1 FROM adventure_shares s WHERE s.adventure_slug = a.slug AND s.org_id = $1)
 		ORDER BY a.title

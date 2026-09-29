@@ -23,6 +23,9 @@ import (
 // duplicate-handler behaviour and doesn't depend on the wider
 // auth/cookie/CSRF pipeline.
 func TestDuplicateAdventure_HappyPath(t *testing.T) {
+	// The source is the seeded demo, a catalog adventure.
+	admin.CatalogEnabled = true
+	t.Cleanup(func() { admin.CatalogEnabled = false })
 	db, cleanup := dbtest.Open(t)
 	defer cleanup()
 

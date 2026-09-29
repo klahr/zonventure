@@ -4,7 +4,7 @@ import { ApiError } from "@zonventure/api";
 import { useT } from "../../i18n.tsx";
 import { useSession } from "../../session.tsx";
 import { useTopBarTitle } from "../../topbar.tsx";
-import { consoleHref, href } from "../../router.ts";
+import { CATALOG_ENABLED, consoleHref, href } from "../../router.ts";
 import { Button, Card, ErrorBox, ICON, Loading, Page, PageHeader, Pill, Row, Stat, Stats, useDialogs, useLoad, useToast } from "../../ui/index.ts";
 import { NewEventDialog } from "../events/NewEventDialog.tsx";
 import { deleteAdventure, duplicateAdventure, exportURL, getAdventure, getGraphState, isPublisher, listAdventures, listAssignments, type Accept, type AdventureDetail, type Assignment, type DetailPage } from "./api.ts";
@@ -141,7 +141,7 @@ function Detail({ a, shared, passes, reload }: { a: AdventureDetail; shared: boo
   };
 
   const pills: ReactNode[] = [];
-  if (a.mine_to_edit && isPublisher(user)) {
+  if (CATALOG_ENABLED && a.mine_to_edit && isPublisher(user)) {
     pills.push(
       <Pill key="listed" tone={a.published ? "good" : "neutral"} title={a.published ? t.t("Every organization finds it in the Catalog.") : t.t("Other organizations can't find it until the operator lists it.")}>
         {a.published ? t.t("In the Catalog") : t.t("Not in the Catalog")}
