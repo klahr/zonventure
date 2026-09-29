@@ -191,8 +191,9 @@ files; matching filenames there shadow the embedded defaults at
 request time, no rebuild required.
 
 The marketing landing used on the hosted Zonventure service lives
-in a sibling repo, [`zv-landing`](../zv-landing) — clone it
-alongside this checkout and point `ZV_WEB_OVERRIDE_DIR` at it. Use
+in a sibling repo, [`zonventure-web`](https://github.com/klahr/zonventure-web)
+— clone it alongside this checkout and point `ZV_WEB_OVERRIDE_DIR` at
+its `dist/` directory. Use
 it as-is, fork it for your own deployment, or roll your own from
 scratch.
 
@@ -239,8 +240,8 @@ down).
 
 ### Wiring it up
 
-The repo ships a ready-to-use Compose extension. With `zv-landing`
-cloned next to `zv`:
+The repo ships a ready-to-use Compose extension. With `zonventure-web`
+cloned next to this checkout:
 
 ```sh
 cp compose.override.example.yaml compose.override.yaml
@@ -248,8 +249,10 @@ docker compose up -d
 ```
 
 Compose auto-merges `compose.override.yaml` on top of `compose.yaml`,
-adding `ZV_WEB_OVERRIDE_DIR` to the `app` env and mounting
-`../zv-landing` read-only at `/var/zv/web-override`. Edit
+adding `ZV_WEB_OVERRIDE_DIR` and `ZV_LANDING_ENABLED` (which turns
+the public landing on and pins the admin Settings toggle) to the `app`
+env and mounting `../zonventure-web/dist` read-only at
+`/var/zv/web-override`. Edit
 `compose.override.yaml` (not the example) if your override dir lives
 elsewhere — `git pull` leaves the example in place but won't
 overwrite the activated copy.

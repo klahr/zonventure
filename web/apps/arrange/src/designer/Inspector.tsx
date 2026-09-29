@@ -72,7 +72,7 @@ export function Inspector({ node, graph, issues, onChange, onGraphChange, onDele
   const kind = STEP[node.type];
   const Icon = kind.icon;
   const [open, setOpen] = useState<string | null>(null);
-  const parts = partsOf(node, graph, onChange, onGraphChange, t);
+  const parts = partsOf(node, graph, onChange, onGraphChange, t, setOpen);
   const page = parts.find((p) => p.id === open);
   // Issues about a route, branch or path belong to the part listing them.
   const portIssues = issues.filter((i) => i.port).length;
@@ -247,14 +247,14 @@ function clip(s: string | undefined, n = 60): string {
 }
 
 /** The parts of a node's settings, in the order the inspector shows them. */
-function partsOf(node: Node, graph: Graph, onChange: (n: Node) => void, onGraphChange: (g: Graph) => void, t: T): Part[] {
+function partsOf(node: Node, graph: Graph, onChange: (n: Node) => void, onGraphChange: (g: Graph) => void, t: T, openPart: (id: string) => void): Part[] {
   const parts: Part[] = [];
   switch (node.type) {
     case "start":
       parts.push({ id: "place", title: t.t("Where teams start"), editor: <StartForm node={node} graph={graph} onGraphChange={onGraphChange} /> });
       break;
     case "puzzle":
-      if (node.puzzle) parts.push(...puzzleParts(node, node.puzzle, graph, (puzzle) => onChange({ ...node, puzzle }), t));
+      if (node.puzzle) parts.push(...puzzleParts(node, node.puzzle, graph, (puzzle) => onChange({ ...node, puzzle }), t, openPart));
       break;
     case "story": {
       const story = node.story ?? {};
@@ -451,7 +451,7 @@ const MISSING_LABEL: Record<MissingHint | "", string> = {
   none: "Nothing",
 };
 
-function puzzleParts(node: Node, cfg: PuzzleConfig, graph: Graph, onChange: (c: PuzzleConfig) => void, t: T): Part[] {
+function puzzleParts(node: Node, cfg: PuzzleConfig, graph: Graph, onChange: (c: PuzzleConfig) => void, t: T, openPart: (id: string) => void): Part[] {
   const outputs = cfg.outputs ?? [];
   const answer = cfg.answer;
   const setOutput = (i: number, o: Output) => onChange({ ...cfg, outputs: outputs.map((x, j) => (j === i ? o : x)) });
@@ -490,13 +490,21 @@ function puzzleParts(node: Node, cfg: PuzzleConfig, graph: Graph, onChange: (c: 
   // How the team answers: the kind, chosen at the top of the part, and
   // that kind's own settings below it.
   const questions = (cfg.blocks ?? []).filter((b) => b.kind === "quiz" || b.kind === "tiebreak");
+  // Accepted answers live on each route, so a typed or scanned answer
+  // points there rather than letting designers hunt for them here.
+  const toRoutes = (
+    <Button variant="ghost" size="sm" onClick={() => openPart("routes")}>
+      {t.t("Set the accepted answers under Routes")}
+      <ChevronRight size={ICON.sm} />
+    </Button>
+  );
   let how: Omit<Part, "id" | "editor"> & { form?: ReactNode };
   switch (answer?.kind) {
     case undefined: {
       const bar = cfg.bar ?? {};
       how = {
-        title: t.t("Typed answer"),
-        hint: t.t("The team types its answer in the bar at the bottom. The routes below say what counts."),
+        title: t.t("Answer bar"),
+        hint: t.t("The team types its answer in the bar at the bottom. Which answers count is set per route, under Routes."),
         summary: (
           <>
             <SumRow label={t.t("Answer bar")}>
@@ -505,16 +513,26 @@ function puzzleParts(node: Node, cfg: PuzzleConfig, graph: Graph, onChange: (c: 
             <SumRow label={t.t("Keyboard")}>{t.t(KEYBOARD_LABEL[bar.keyboard ?? ""])}</SumRow>
           </>
         ),
-        form: <BarForm cfg={cfg} onChange={onChange} />,
+        form: (
+          <>
+            {toRoutes}
+            <BarForm cfg={cfg} onChange={onChange} />
+          </>
+        ),
       };
       break;
     }
     case "scan":
       how = {
         title: t.t("QR scan"),
-        hint: t.t("The answer bar is one scan button. Print a QR code of an accepted answer and hang it at the place; the routes below say what counts. A team whose camera fails can type the code instead."),
+        hint: t.t("The answer bar is one scan button. Print a QR code of an accepted answer and hang it at the place. Which codes count is set per route, under Routes. A team whose camera fails can type the code instead."),
         summary: <SumRow label={t.t("Button")}>{cfg.bar?.button || t.t("Scan the code")}</SumRow>,
-        form: <BarForm cfg={cfg} onChange={onChange} scan />,
+        form: (
+          <>
+            {toRoutes}
+            <BarForm cfg={cfg} onChange={onChange} scan />
+          </>
+        ),
       };
       break;
     case "tiles":
