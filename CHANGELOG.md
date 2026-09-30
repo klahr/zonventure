@@ -11,6 +11,16 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Changed — new Zonventure logo
+
+- **The favicon and the play app's install icons use the new flat
+  Zonventure mark**: one colour in the browser tab, the colour mark on a
+  navy tile on home screens.
+- **Shared links to the landing page get a real preview image**,
+  `/og-image.png` (1200 × 630), instead of the SVG favicon that most
+  link previewers ignore. Drop an `og-image.png` into
+  `ZV_WEB_OVERRIDE_DIR` to replace it.
+
 ### Added — a static site at /shop
 
 - **zv serves the `shop/` folder of `ZV_WEB_OVERRIDE_DIR` at `/shop/`**,

@@ -59,6 +59,9 @@ func registerStaticAssetRoutes(r chi.Router, env *routesEnv) {
 	// the extension don't 404. SVG is tiny, scales for any device.
 	r.Get("/favicon.svg", serveAsset("web/favicon.svg", "image/svg+xml"))
 	r.Get("/favicon.ico", serveAsset("web/favicon.svg", "image/svg+xml"))
+	// Link-preview image for og:image / twitter:image. Unfurlers want a
+	// 1200x630 raster; an override dir can shadow it with its own.
+	r.Get("/og-image.png", serveAsset("web/og-image.png", "image/png"))
 
 	// Shared topbar CSS + JS, served as long-cached static assets.
 	r.Get("/assets/topbar.css", serveAsset("web/topbar.css", "text/css; charset=utf-8"))

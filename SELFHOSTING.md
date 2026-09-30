@@ -209,6 +209,7 @@ scratch.
 ├── 404.html                  # optional
 ├── sitemap.xml               # optional, may use {{HOST}}
 ├── robots.txt                # optional
+├── og-image.png              # optional, 1200x630 link-preview image
 ├── landing-locales.json      # optional, per-field locale overrides
 └── shop/                     # optional static site, served as is at /shop/
 ```
