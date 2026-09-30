@@ -15,5 +15,7 @@
   "{{n}} teams could not be added — add them on the event page.": "{{n}} lag kunde inte läggas till — lägg till dem på eventsidan.",
   "{{total}} players in all.": "{{total}} spelare totalt.",
   "{{total}} players of the {{cap}} the event pass covers.": "{{total}} av de {{cap}} spelare eventpasset täcker.",
-  "You can grow this later from the event page.": "Du kan utöka det senare från evenemangssidan."
+  "You can grow this later from the event page.": "Du kan utöka det senare från evenemangssidan.",
+  "Go to Adventures": "Gå till Äventyr",
+  "An event runs a published adventure. Make or publish one first, then schedule it here.": "Ett event kör ett publicerat äventyr. Skapa eller publicera ett först och schemalägg det sedan här."
 }

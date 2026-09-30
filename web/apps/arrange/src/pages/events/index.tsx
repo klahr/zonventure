@@ -16,15 +16,29 @@ export { EventsTable, StatePill, eventLabel } from "./parts.tsx";
 
 type Filter = "all" | "running" | "paused" | "scheduled" | "completed" | "cancelled";
 
-/** The empty events list: the way to a first event is an adventure. */
-export function NoEvents() {
+/**
+ * The empty events list. With an adventure ready to run, its button
+ * schedules the first event, picking the adventure in the dialog; with
+ * none, it says an adventure comes first and goes to them.
+ */
+export function NoEvents({ onSchedule }: { onSchedule?: (() => void) | undefined }) {
   const t = useT();
+  if (onSchedule) {
+    return (
+      <Empty
+        title={t.t("No events yet.")}
+        action={<Button variant="primary" icon={<Plus size={16} aria-hidden />} onClick={onSchedule}>{t.t("Schedule event")}</Button>}
+      >
+        {t.t("Pick an adventure to schedule your first event — you can add teams and share player links once it's created.")}
+      </Empty>
+    );
+  }
   return (
     <Empty
       title={t.t("No events yet.")}
-      action={<a className="btn primary" href={href({ name: "adventures" })}><MapIcon size={16} aria-hidden />{t.t("Pick an adventure")}</a>}
+      action={<a className="btn primary" href={href({ name: "adventures" })}><MapIcon size={16} aria-hidden />{t.t("Go to Adventures")}</a>}
     >
-      {t.t("Pick an adventure to schedule your first event — you can add teams and share player links once it's created.")}
+      {t.t("An event runs a published adventure. Make or publish one first, then schedule it here.")}
     </Empty>
   );
 }
@@ -68,7 +82,7 @@ export function EventsPage() {
       ) : !events.data ? (
         <Loading label={t.t("Loading…")} />
       ) : rows.length === 0 ? (
-        <NoEvents />
+        <NoEvents onSchedule={ready.data ? () => setDialog({}) : undefined} />
       ) : (
         <>
           {filters.length > 1 && (
