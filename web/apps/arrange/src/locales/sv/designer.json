@@ -293,7 +293,6 @@
   "The team sees one message at a time, as if typed, and what follows the chat once it is over. The avatar heads the other side's messages. {{team}} is the team's name.": "Laget ser ett meddelande i taget, som om det skrevs, och det som följer chatten när den är slut. Avataren står vid motpartens meddelanden. {{team}} är lagets namn.",
   "The team taps a card to strike the suspect out, and again to bring them back. What it struck stays when it comes back to the step; it never scores.": "Laget trycker på ett kort för att stryka den misstänkte, och igen för att ta tillbaka. Det strukna finns kvar när laget kommer tillbaka till steget; det ger aldrig poäng.",
   "The team turns until the top of the phone points that way, and holds it there for a moment. Say what to face: “Face the church tower.”": "Laget vrider sig tills telefonens överkant pekar åt det hållet och håller den där en stund. Säg vad de ska vända sig mot: ”Vänd er mot kyrktornet.”",
-  "Theme name": "Temats namn",
   "This step": "Det här steget",
   "Tick the right answer. Teams see whether they were right, and get the points, when they finish.": "Bocka för rätt svar. Lagen ser om de hade rätt, och får poängen, när de är klara.",
   "Time limit (s)": "Tidsgräns (s)",
@@ -422,5 +421,12 @@
   "Load theirs": "Hämta deras",
   "Someone else saved this adventure while you were editing, so your latest changes are not saved yet.": "Någon annan sparade äventyret medan du redigerade, så dina senaste ändringar är inte sparade än.",
   "The designer shows their changes as they save them.": "Designern visar ändringarna när de sparas.",
-  "{{name}} is editing…": "{{name}} redigerar…"
+  "{{name}} is editing…": "{{name}} redigerar…",
+  "Theme": "Tema",
+  "Stays until another step changes it.": "Gäller tills ett annat steg byter det.",
+  "The adventure's own look": "Äventyrets eget utseende",
+  "Dark": "Mörkt",
+  "Night": "Natt",
+  "Alarm": "Larm",
+  "Parchment": "Pergament"
 }

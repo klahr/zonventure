@@ -120,14 +120,18 @@ export interface AdventureEdit {
   language: string;
   avatar_url?: string;
   strict_assets: boolean;
+  /** A cheat password is set; the password itself is never sent back. */
+  has_cheat_password?: boolean;
   start_lat?: number;
   start_lng?: number;
   start_label?: string;
 }
 
-export type AdventurePatch = Partial<Omit<AdventureEdit, "avatar_url" | "start_lat" | "start_lng">> & {
+export type AdventurePatch = Partial<Omit<AdventureEdit, "avatar_url" | "start_lat" | "start_lng" | "has_cheat_password">> & {
   start_lat?: number | null;
   start_lng?: number | null;
+  /** Sets the cheat password; empty removes it. */
+  cheat_password?: string;
 };
 
 export const listAdventures = (signal?: AbortSignal) =>

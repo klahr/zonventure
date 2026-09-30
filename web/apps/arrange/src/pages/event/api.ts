@@ -47,6 +47,8 @@ export interface Team {
   page_index: number;
   completed_at?: string;
   withdrawn_at?: string;
+  /** Used the adventure's cheat password: no rank. */
+  cheated?: boolean;
   token: string;
   recap_token?: string;
   avatar_url?: string;

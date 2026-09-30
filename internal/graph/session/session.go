@@ -120,6 +120,9 @@ type Team struct {
 	// TimedOut records that the adventure's time limit has moved the
 	// team, so it does not again.
 	TimedOut bool `json:"timed_out,omitempty"`
+	// Cheated records that the team has solved a puzzle with the
+	// adventure's cheat password, which leaves it out of the rankings.
+	Cheated bool `json:"cheated,omitempty"`
 	// Lang is the language the team plays in; empty is the adventure's
 	// main language.
 	Lang     string             `json:"lang,omitempty"`
@@ -834,6 +837,44 @@ func (t *Team) Rescue(node string) (Result, *walk.Step, error) {
 		return Result{}, nil, err
 	}
 	return Result{Port: o.Port}, step, nil
+}
+
+// Cheat solves a puzzle for a tester who has the adventure's cheat
+// password: the first answer route the team may take, as if answered
+// right, with no points. Zone, lockout and the time limit still hold,
+// as for an answer. Checking the password is the caller's job.
+func (t *Team) Cheat(node string) (Result, *walk.Step, error) {
+	n, err := t.current(node)
+	if err != nil {
+		return Result{}, nil, err
+	}
+	if n.Type != graph.Puzzle || n.PuzzleCfg == nil {
+		return Result{}, nil, ErrWrongNode
+	}
+	cfg := n.PuzzleCfg
+	r := t.Row(n.Slug)
+	if r.BlockedUntil != nil && t.Now.Before(*r.BlockedUntil) {
+		return Result{BlockedUntil: r.BlockedUntil}, nil, ErrLocked
+	}
+	if cfg.Zone != "" && !t.InZone(cfg.Zone) {
+		return Result{}, nil, ErrNotHere
+	}
+	if cfg.TimeLimitSeconds > 0 && t.NodeElapsedSeconds() > float64(cfg.TimeLimitSeconds) {
+		return Result{}, nil, ErrTimeUp
+	}
+	for _, o := range answerOrder(cfg) {
+		if !t.outputZoneOK(o) {
+			continue
+		}
+		r.Solved = true
+		t.Cheated = true
+		step, err := t.leave(n, o.Port, 0)
+		if err != nil {
+			return Result{}, nil, err
+		}
+		return Result{Accepted: true, Port: o.Port}, step, nil
+	}
+	return Result{}, nil, ErrNotAllowed
 }
 
 // Timeout takes a puzzle's timeout output once its limit has passed.

@@ -99,6 +99,8 @@ An adventure is a graph. Nodes are steps; edges run from a node's output port to
 
 Node types: start (port out), story (text to read; port out), puzzle (a question; one port per output), hub (a choice or shuffle of branches), gate and switch (conditions), effect (grant an item, add score…; port out), end.
 
+A theme effect restyles the phone from that step on: "theme" is one of dark, night, alarm or parchment, or default to go back to the adventure's own palette.
+
 ## Working with edit_adventure_graph
 
 - Send the whole node in put_node; it replaces the node with that slug. Slugs are short, lowercase, hyphenated and stable.

@@ -392,6 +392,8 @@ func checkEffect(r *reporter, n graph.Node) {
 	case graph.SetTheme:
 		if e.Theme == "" {
 			r.err("effect.theme.missing", n.Slug, "", "theme effect names no theme")
+		} else if !slices.Contains(graph.Themes, e.Theme) {
+			r.err("effect.theme.unknown", n.Slug, "", "theme %q must be one of %s", e.Theme, strings.Join(graph.Themes, ", "))
 		}
 	default:
 		r.err("effect.kind.unknown", n.Slug, "", "unknown effect kind %q", e.Kind)

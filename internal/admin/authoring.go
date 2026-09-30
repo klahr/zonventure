@@ -158,6 +158,9 @@ type adventureEditDTO struct {
 	// images + audio + manifest URLs) to the team's current page index.
 	// Default false keeps the permissive prefetch-friendly behaviour.
 	StrictAssets bool `json:"strict_assets"`
+	// HasCheatPassword says a cheat password is set. The password itself
+	// is never sent back.
+	HasCheatPassword bool `json:"has_cheat_password"`
 	// Starting location — optional. Both StartLat and StartLng are
 	// pointers because they're meaningful only as a pair; an absent
 	// start (one or both nil) means "fall back to the first gated
@@ -403,6 +406,9 @@ type updateAdventureRequest struct {
 	// (PUT /api/admin/catalog/{slug}/published).
 	Published    *bool `json:"published,omitempty"`
 	StrictAssets *bool `json:"strict_assets,omitempty"`
+	// CheatPassword sets the password that unlocks cheating on the
+	// phone; empty removes it.
+	CheatPassword *string `json:"cheat_password,omitempty"`
 	// Starting location (optional). Pass both lat and lng pointing at
 	// values to set; pass them with explicit null inside the JSON body
 	// to clear ({"start_lat": null}) — the wrapper struct distinguishes
@@ -604,6 +610,20 @@ func applyAdventureMetaUpdate(ctx context.Context, db *sql.DB, slug string, req 
 	if req.StrictAssets != nil {
 		add("strict_assets", *req.StrictAssets)
 	}
+	if req.CheatPassword != nil {
+		switch pw := *req.CheatPassword; {
+		case pw == "":
+			add("cheat_password_hash", nil)
+		case len(pw) > MaxNameLen:
+			return badRequestf("cheat_password is too long")
+		default:
+			hash, err := auth.HashPassword(pw)
+			if err != nil {
+				return err
+			}
+			add("cheat_password_hash", hash)
+		}
+	}
 	if req.StartLat != nil {
 		if req.StartLat.Valid {
 			lat := req.StartLat.Value
@@ -769,12 +789,12 @@ func loadAdventureDTO(ctx context.Context, db *sql.DB, slug string) (*adventureE
 		       heading_font, corners, cards, card_outline,
 		       language,
 		       (avatar_mime_type IS NOT NULL)::int AS has_avatar,
-		       published, org_id, strict_assets,
+		       published, org_id, strict_assets, (cheat_password_hash IS NOT NULL),
 		       start_lat, start_lng, start_label, brief
 		FROM adventures WHERE slug = $1
 	`, slug).Scan(&a.ID, &a.Slug, &a.Title, &a.Description, &a.Author,
 		&a.IntroText, &a.OutroText,
-		&accent, &accent2, &bg, &ink, &submitBG, &a.Font, &a.HeadingFont, &a.Corners, &a.Cards, &a.CardOutline, &a.Language, &hasAvatar, &published, &orgID, &a.StrictAssets,
+		&accent, &accent2, &bg, &ink, &submitBG, &a.Font, &a.HeadingFont, &a.Corners, &a.Cards, &a.CardOutline, &a.Language, &hasAvatar, &published, &orgID, &a.StrictAssets, &a.HasCheatPassword,
 		&startLat, &startLng, &a.StartLabel, &brief); err != nil {
 		return nil, err
 	}

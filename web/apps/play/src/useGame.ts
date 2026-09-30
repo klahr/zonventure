@@ -284,7 +284,9 @@ export function useGame(t: Translate): Game {
       setBusy(true);
       setFeedback(null);
       // Something already waiting goes first, so this can't overtake it.
-      if (playEntries().length > 0 && action.kind !== "timeout") {
+      // A cheat carries its password, so it is never queued (the queue
+      // is kept in the phone's storage): offline, it just fails.
+      if (playEntries().length > 0 && action.kind !== "timeout" && action.kind !== "cheat") {
         if (queue()) {
           await flush();
           if (outbox.pending.some((p) => p.data.client_action_id === id)) {
@@ -305,7 +307,9 @@ export function useGame(t: Translate): Game {
           // Moves are queued; so are hints and skips, which a player
           // chose deliberately. A timeout is not: the server decides that
           // from its own clock, and the next load will show it.
-          if (action.kind !== "timeout" && queue()) {
+          if (action.kind === "cheat") {
+            setFeedback({ tone: "bad", text: tRef.current("No connection. Try again when you're back online.") });
+          } else if (action.kind !== "timeout" && queue()) {
             setFeedback({
               tone: "info",
               text: tRef.current("No connection. We'll send it as soon as you're back online."),

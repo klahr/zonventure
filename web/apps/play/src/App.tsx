@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Markdown, PlayView, StartCeremony, brandVars, metresBetween, type Translate } from "@zonventure/play-ui";
+import { Markdown, PlayView, StartCeremony, brandVars, formatSeconds, loadFont, metresBetween, useEngineClock, withTheme, type Translate } from "@zonventure/play-ui";
 import { play } from "@zonventure/api";
 import { useT } from "./i18n.tsx";
 import { useGame } from "./useGame.ts";
 import { Inbox } from "./Inbox.tsx";
 import { Menu } from "./Menu.tsx";
+import { CheatSheet, useSevenTaps } from "./Cheat.tsx";
 import { useGeo, useLiveRefresh } from "./live.ts";
 
 export function App() {
@@ -38,9 +39,28 @@ export function App() {
     document.title = docTitle || "Zonventure";
   }, [docTitle]);
 
-  // The phone's own bar matches the app bar: the organisation's page
-  // colour when it has one.
-  const barColour = s?.org_brand?.background;
+  // Cheating, for a tester: seven quick taps on the title ask for the
+  // adventure's cheat password. It lives only in memory, for this team,
+  // until a reload or a sign-out.
+  const [cheat, setCheat] = useState<{ team: number; password: string } | null>(null);
+  const [cheatOpen, setCheatOpen] = useState(false);
+  const cheatPassword = cheat && s && cheat.team === s.team.id ? cheat.password : undefined;
+  const tapTitle = useSevenTaps(() => {
+    if (s?.event.cheat && !cheatPassword) setCheatOpen(true);
+  });
+  useEffect(() => {
+    if (game.status === "signed-out") setCheat(null);
+  }, [game.status]);
+
+  // The whole app wears the palette the play surface does: the
+  // adventure's, or the organisation's for an adventure without one,
+  // under the step's theme.
+  const look = s?.brand ?? s?.org_brand ?? null;
+  const chrome = withTheme(look, view?.theme);
+  useEffect(() => loadFont(look?.font), [look?.font]);
+  useEffect(() => loadFont(look?.heading_font), [look?.heading_font]);
+  // The phone's own bar matches the app bar.
+  const barColour = chrome?.background;
   useEffect(() => {
     const meta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
     if (!meta) return;
@@ -138,8 +158,8 @@ export function App() {
   const zoneNote = view?.zone && !view.here ? placeNote(view.zone) : undefined;
 
   return (
-    <div className="app">
-      <header className="app-bar" style={brandVars(s.org_brand)}>
+    <div className="app" style={brandVars(chrome)}>
+      <header className="app-bar">
         <Menu
           state={s}
           t={t}
@@ -152,9 +172,10 @@ export function App() {
         />
         {s.event.org_logo_url && <img className="app-bar__logo" src={s.event.org_logo_url} alt={s.event.org_name ?? ""} />}
         <div className="app-bar__who">
-          <div className="app-bar__title">{s.event.adventure_title || "Zonventure"}</div>
+          <div className="app-bar__title" onClick={tapTitle}>{s.event.adventure_title || "Zonventure"}</div>
           <div className="app-bar__team">{s.team.name}</div>
         </div>
+        {cheatPassword && <span className="app-status">{t("Cheating")}</span>}
         {(!game.online || game.queued > 0) && (
           <span className="app-status" role="status">
             {game.queued > 0 ? t("{{n}} waiting to send", { n: game.queued }) : t("Offline")}
@@ -181,7 +202,7 @@ export function App() {
             busy={game.busy || !running}
             feedback={game.feedback}
             t={t}
-            brand={s.brand ?? s.org_brand ?? null}
+            brand={look}
             {...(s.event.outro_text ? { outro: s.event.outro_text } : {})}
             {...(s.finish ? { finish: { ...s.finish, provisional: s.event.state !== "completed" && s.event.state !== "cancelled" } } : {})}
             {...(zoneNote ? { zoneNote } : {})}
@@ -191,11 +212,22 @@ export function App() {
             storageKey={`team-${s.team.id}`}
             photo={(block, file) => game.photo(view.node ?? "", block, file)}
             {...(s.messages?.[0] ? { bulletin: s.messages[0] } : {})}
+            {...(cheatPassword ? { cheat: cheatPassword } : {})}
           />
         ) : (
           <Lobby state={s} t={t} />
         )}
       </main>
+      {cheatOpen && (
+        <CheatSheet
+          t={t}
+          onClose={() => setCheatOpen(false)}
+          onUnlocked={(password) => {
+            setCheat({ team: s.team.id, password });
+            setCheatOpen(false);
+          }}
+        />
+      )}
       {ceremony && <StartCeremony title={s.event.adventure_title || "Zonventure"} brand={s.brand ?? null} onDone={() => setCeremony(false)} />}
     </div>
   );
@@ -203,6 +235,9 @@ export function App() {
 
 function Lobby({ state, t }: { state: play.PlayState; t: Translate }) {
   const at = state.event.scheduled_at ? new Date(state.event.scheduled_at) : null;
+  const counting = state.event.state === "scheduled" && !!at && !Number.isNaN(at.getTime());
+  const now = useEngineClock(state.event.server_now ?? new Date().toISOString(), counting);
+  const startsIn = counting && at ? (at.getTime() - now) / 1000 : null;
   if (state.event.state === "cancelled") {
     return <p>{t("This event has been cancelled.")}</p>;
   }
@@ -210,13 +245,19 @@ function Lobby({ state, t }: { state: play.PlayState; t: Translate }) {
     return <p>{t("This event has ended. Thanks for playing!")}</p>;
   }
   return (
-    <div className="app-lobby" style={brandVars(state.org_brand ?? state.brand)}>
+    <div className="app-lobby">
       <h1>{t("You're on team {{team}}", { team: state.team.name })}</h1>
       <p>
         {at && !Number.isNaN(at.getTime())
           ? t("The game starts {{when}}.", { when: at.toLocaleString([], { weekday: "long", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" }) })
           : t("The game starts when your organiser says go.")}
       </p>
+      {startsIn !== null && startsIn < 86400 && (
+        <div className={"pv-countdown" + (startsIn <= 0 ? " is-over" : "")} role="timer">
+          <span className="pv-countdown__label">{t("Starts in")}</span>
+          <span className="pv-countdown__time">{startsIn <= 0 ? t("Any moment now.") : formatSeconds(startsIn)}</span>
+        </div>
+      )}
       {state.event.intro_text && <Markdown className="app-lobby__intro" text={state.event.intro_text} />}
       {state.event.start && (
         <p className="app-lobby__start">
@@ -239,7 +280,7 @@ function Lobby({ state, t }: { state: play.PlayState; t: Translate }) {
 function Intro({ state, t, usesLocation, onDone }: { state: play.PlayState; t: Translate; usesLocation: boolean; onDone: () => void }) {
   const name = state.me?.name;
   return (
-    <div className="app-lobby" style={brandVars(state.org_brand ?? state.brand)}>
+    <div className="app-lobby">
       <h1>{state.event.adventure_title || "Zonventure"}</h1>
       <p>
         {name

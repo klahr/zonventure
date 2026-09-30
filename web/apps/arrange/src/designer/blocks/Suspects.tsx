@@ -4,6 +4,7 @@ import { ICON } from "../dz/ui.tsx";
 import { MediaEditor } from "../MediaEditor.tsx";
 import { withField, type Editor } from "./types.ts";
 import "./chat-editor.css";
+import { MarkdownArea } from "../MarkdownArea.tsx";
 
 /** A suspect board's cards, in order; a board keeps at least one. */
 export const SuspectsEditor: Editor<"suspects"> = ({ block, set, t }) => {
@@ -16,7 +17,7 @@ export const SuspectsEditor: Editor<"suspects"> = ({ block, set, t }) => {
         <div key={i} className="list-ed__item">
           <div className="list-ed__body">
             <input className="field__input" value={c.name} placeholder={t.t("Name, such as “The baker”")} aria-label={t.t("Suspect {{n}}", { n: i + 1 })} onChange={(e) => setCard(i, { ...c, name: e.target.value })} />
-            <textarea className="field__input" rows={2} value={c.text ?? ""} placeholder={t.t("Markdown. A few facts about them.")} aria-label={t.t("Facts")} onChange={(e) => setCard(i, withField(c, "text", e.target.value))} />
+            <MarkdownArea className="field__input" rows={2} value={c.text ?? ""} placeholder={t.t("Markdown. A few facts about them.")} aria-label={t.t("Facts")} onChange={(e) => setCard(i, withField(c, "text", e.target.value))} />
             <div className="blk-chat__avatar">
               <span className="field__label">{t.t("Picture")}</span>
               <MediaEditor

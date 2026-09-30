@@ -1,5 +1,6 @@
 import { withField, type Editor } from "./types.ts";
 import "./pictures.css";
+import { MarkdownArea } from "../MarkdownArea.tsx";
 
 const POINTS = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
 
@@ -35,7 +36,7 @@ export const BearingEditor: Editor<"bearing"> = ({ block, set, t }) => {
           </span>
         </label>
       </div>
-      <textarea
+      <MarkdownArea
         className="field__input"
         rows={3}
         value={block.text ?? ""}

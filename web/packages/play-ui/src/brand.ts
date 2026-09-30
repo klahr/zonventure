@@ -78,6 +78,25 @@ const CORNERS: Record<string, Record<string, string>> = {
   sharp: { "--radius-sm": "2px", "--radius": "2px", "--radius-lg": "2px", "--radius-pill": "2px" },
 };
 
+/**
+ * The themes a step's "Change the theme" effect may switch to. Each
+ * overrides the adventure palette's colours and keeps its typefaces and
+ * shapes; "default", a name not here, or none, is the adventure's own
+ * palette. graph.Themes in Go lists the same names.
+ */
+export const THEMES: Record<string, play.Brand> = {
+  dark: { background: "#14181f", text: "#e8edf3", accent: "#5aa9ff", accent_secondary: "#5aa9ff", submit_bg: "#1f2630" },
+  night: { background: "#0b1026", text: "#d9def5", accent: "#9d8cff", accent_secondary: "#9d8cff", submit_bg: "#161c3a" },
+  alarm: { background: "#2a0b0b", text: "#ffe9e6", accent: "#ff4d3d", accent_secondary: "#ff4d3d", submit_bg: "#3d1010" },
+  parchment: { background: "#f3e7c9", text: "#3b2a17", accent: "#8a4b1d", accent_secondary: "#8a4b1d", submit_bg: "#e4d3a8" },
+};
+
+/** A palette with a step's theme laid over it. */
+export function withTheme(b: play.Brand | null | undefined, theme: string | undefined): play.Brand | null {
+  const t = theme ? THEMES[theme] : undefined;
+  return t ? { ...b, ...t } : (b ?? null);
+}
+
 /** Load an adventure's typeface once per page. Offline, text falls back to the system font. */
 export function loadFont(key: string | undefined) {
   const family = key ? FONTS[key] : undefined;

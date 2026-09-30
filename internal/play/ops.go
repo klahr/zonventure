@@ -161,6 +161,12 @@ func (e *Engine) Skip(ctx context.Context, teamID int64, node string) (Result, e
 	return e.act(ctx, teamID, func(t *session.Team) (Result, *walk.Step, error) { return t.Skip(node) })
 }
 
+// Cheat solves a puzzle for a tester. See session.Team.Cheat; the
+// caller has checked the adventure's cheat password.
+func (e *Engine) Cheat(ctx context.Context, teamID int64, node string) (Result, error) {
+	return e.act(ctx, teamID, func(t *session.Team) (Result, *walk.Step, error) { return t.Cheat(node) })
+}
+
 // Leave takes an item puzzle's route for a team without the items. See
 // session.Team.Leave.
 func (e *Engine) Leave(ctx context.Context, teamID int64, node string) (Result, error) {
@@ -361,10 +367,10 @@ func (e *Engine) commit(ctx context.Context, tx *sql.Tx, s *teamState, step walk
 		UPDATE team_graph_state
 		SET current_node = $1, node_entered_at = $2, score = $3, penalty_score = $4,
 		    penalty_seconds = $5, theme = $6, completed_at = COALESCE(completed_at, $7),
-		    outcome = COALESCE(outcome, $8), last_answer = $11, started_at = $12, timed_out = $13, lang = $14, updated_at = $2
+		    outcome = COALESCE(outcome, $8), last_answer = $11, started_at = $12, timed_out = $13, lang = $14, cheated = $15, updated_at = $2
 		WHERE team_id = $9 AND current_node IS NOT DISTINCT FROM $10
 	`, nullIfEmpty(step.To), now, s.Points, s.PenaltyScore, s.PenaltySeconds, s.Theme,
-		completedAt, outcome, s.teamID, nullIfEmpty(old), s.LatestAnswer, s.StartedAt, s.TimedOut, s.Lang)
+		completedAt, outcome, s.teamID, nullIfEmpty(old), s.LatestAnswer, s.StartedAt, s.TimedOut, s.Lang, s.Cheated)
 	if err != nil {
 		return err
 	}

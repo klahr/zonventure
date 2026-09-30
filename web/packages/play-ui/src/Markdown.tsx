@@ -1,5 +1,5 @@
 import { Fragment, useMemo, type ReactNode } from "react";
-import { parseMarkdown, type Inline } from "./markdown.ts";
+import { parseInline, parseMarkdown, type Inline } from "./markdown.ts";
 
 /** Render author text. See markdown.ts for why this never touches HTML. */
 export function Markdown({ text, className }: { text: string; className?: string }) {
@@ -30,6 +30,12 @@ export function Markdown({ text, className }: { text: string; className?: string
       })}
     </div>
   );
+}
+
+/** Render author text as one run of inline markup, for a preview inside a button or a line. */
+export function MarkdownInline({ text, className }: { text: string; className?: string }) {
+  const nodes = useMemo(() => parseInline(text.replace(/\s*\n\s*/g, " ")), [text]);
+  return <span className={className}>{inlines(nodes)}</span>;
 }
 
 function inlines(nodes: Inline[]): ReactNode {

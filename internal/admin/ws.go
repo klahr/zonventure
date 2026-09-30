@@ -287,6 +287,9 @@ type eventDetailTeamDTO struct {
 	Rank    int      `json:"rank,omitempty"`
 	Node    string   `json:"node,omitempty"`
 	Outcome string   `json:"outcome,omitempty"`
+	// Cheated says the team used the adventure's cheat password; it has
+	// no rank.
+	Cheated bool `json:"cheated,omitempty"`
 }
 
 type eventDetailMemberDTO struct {
@@ -470,18 +473,21 @@ func (h *Handlers) addGraphDetail(ctx context.Context, d *eventDetailDTO) error 
 		byTeam[r.TeamID] = r
 	}
 	rows, err := h.DB.QueryContext(ctx, `
-		SELECT team_id, COALESCE(current_node, ''), COALESCE(outcome, '')
+		SELECT team_id, COALESCE(current_node, ''), COALESCE(outcome, ''), cheated
 		FROM team_graph_state WHERE event_id = $1`, d.Event.ID)
 	if err != nil {
 		return err
 	}
 	defer rows.Close()
-	type where struct{ node, outcome string }
+	type where struct {
+		node, outcome string
+		cheated       bool
+	}
 	at := map[int64]where{}
 	for rows.Next() {
 		var id int64
 		var w where
-		if err := rows.Scan(&id, &w.node, &w.outcome); err != nil {
+		if err := rows.Scan(&id, &w.node, &w.outcome, &w.cheated); err != nil {
 			return err
 		}
 		at[id] = w
@@ -492,7 +498,7 @@ func (h *Handlers) addGraphDetail(ctx context.Context, d *eventDetailDTO) error 
 	for i := range d.Teams {
 		t := &d.Teams[i]
 		if w, ok := at[t.ID]; ok {
-			t.Node, t.Outcome = w.node, w.outcome
+			t.Node, t.Outcome, t.Cheated = w.node, w.outcome, w.cheated
 		}
 		r, ok := byTeam[t.ID]
 		if !ok {

@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { Mail, Trash2 } from "lucide-react";
 import { useT } from "../../i18n.tsx";
-import { Button, Card, Dialog, Field, fmtDateTime, fmtWhen, ICON, Pill, useDialogs, useToast } from "../../ui/index.ts";
+import { Button, Card, Dialog, Field, fmtDateTime, fmtWhen, ICON, MarkdownArea, Pill, useDialogs, useToast } from "../../ui/index.ts";
+import { Markdown } from "@zonventure/play-ui";
 import * as api from "./api.ts";
 import type { EventGraph, EventInfo, Message, Photo, Team } from "./api.ts";
 import { stepTitle } from "./util.ts";
@@ -55,7 +56,7 @@ export function MessagesCard({ event, teams, messages, inbox, reload }: { event:
                   <time dateTime={m.created_at} title={fmtDateTime(m.created_at, t.current())}>{fmtWhen(m.created_at, t.current())}</time> · {to}
                 </div>
                 <Button variant="ghost" size="icon" aria-label={t.t("Delete message")} title={t.t("Delete message")} icon={<Trash2 size={ICON.sm} aria-hidden />} onClick={() => void remove(m)} />
-                <div className="ev-msgs__text">{m.text}</div>
+                <Markdown className="ev-msgs__text" text={m.text} />
               </li>
             );
           })}
@@ -100,7 +101,7 @@ function Composer({ event, teams, onClose, onSent }: { event: Info; teams: Named
       }
     >
       <Field label={t.t("Message")} hint={t.t("Information beside the game, such as practical news or a change of plan. It is not part of the adventure.")}>
-        <textarea rows={5} maxLength={2000} autoFocus placeholder={t.t("Lunch is served at the square at 12.")} value={text} onChange={(e) => setText(e.target.value)} />
+        <MarkdownArea rows={5} maxLength={2000} autoFocus placeholder={t.t("Lunch is served at the square at 12.")} value={text} onChange={(e) => setText(e.target.value)} />
       </Field>
       {teams.length > 1 && (
         <fieldset className="ev-fieldset">

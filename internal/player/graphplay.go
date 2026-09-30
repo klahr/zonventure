@@ -70,6 +70,12 @@ type PlayEvent struct {
 	OutroText string `json:"outro_text,omitempty"`
 	// Start is where the team should meet, when the author set it.
 	Start *PlayStart `json:"start,omitempty"`
+	// ServerNow lets the lobby count down to ScheduledAt against the
+	// server's clock rather than the phone's.
+	ServerNow string `json:"server_now,omitempty"`
+	// Cheat says the adventure has a cheat password, so the phone offers
+	// its hidden way to enter one.
+	Cheat bool `json:"cheat,omitempty"`
 }
 
 // PlayStart is the adventure's meeting point.
@@ -150,6 +156,7 @@ func (h *Handlers) GetPlay(w http.ResponseWriter, r *http.Request) {
 		Me:     PlayMe{ID: slot.ID, Name: slot.Name},
 		Event: PlayEvent{
 			ID: tc.EventID, State: tc.RunState, ScheduledAt: tc.ScheduledAt.String, OrgName: tc.OrgName,
+			ServerNow: time.Now().UTC().Format(time.RFC3339),
 		},
 	}
 	look, err := adventureLook(ctx, h.DB, tc.AdventureSlug)
@@ -159,6 +166,7 @@ func (h *Handlers) GetPlay(w http.ResponseWriter, r *http.Request) {
 	}
 	out.Event.AdventureTitle, out.Event.IntroText, out.Event.OutroText = look.title, look.intro, look.outro
 	out.Event.Start = look.start
+	out.Event.Cheat = look.cheat
 	if !look.brand.Empty() {
 		out.Brand = &look.brand
 	}
@@ -274,6 +282,7 @@ type look struct {
 	title, intro, outro string
 	brand               adventure.Colors
 	start               *PlayStart
+	cheat               bool
 }
 
 func adventureLook(ctx context.Context, db *sql.DB, slug string) (look, error) {
@@ -287,10 +296,10 @@ func adventureLook(ctx context.Context, db *sql.DB, slug string) (look, error) {
 		SELECT title, intro_text, outro_text,
 		       accent_color, accent_secondary_color, background_color, text_color, submit_bg_color, font,
 		       heading_font, corners, cards, card_outline,
-		       start_lat, start_lng, start_label
+		       start_lat, start_lng, start_label, (cheat_password_hash IS NOT NULL)
 		FROM adventures WHERE slug = $1
 	`, slug).Scan(&l.title, &l.intro, &l.outro, &accent, &second, &bg, &ink, &dock, &l.brand.Font,
-		&l.brand.HeadingFont, &l.brand.Corners, &l.brand.Cards, &l.brand.CardOutline, &lat, &lng, &label)
+		&l.brand.HeadingFont, &l.brand.Corners, &l.brand.Cards, &l.brand.CardOutline, &lat, &lng, &label, &l.cheat)
 	if errors.Is(err, sql.ErrNoRows) {
 		return look{}, nil
 	}
@@ -313,6 +322,8 @@ type PlayActionRequest struct {
 	Index int    `json:"index,omitempty"`
 	// Lang is the language for the "language" action.
 	Lang string `json:"lang,omitempty"`
+	// Password is the adventure's cheat password, for "cheat".
+	Password string `json:"password,omitempty"`
 	// Block and Choice are the "pick" and "vote" actions': a quiz
 	// question, the tie-breaker, a suspect board, a draw or a vote, and
 	// the answer.
@@ -343,7 +354,7 @@ func (h *Handlers) PostPlayAction(w http.ResponseWriter, r *http.Request) {
 	if !httpx.DecodeJSON(w, r, &req) {
 		return
 	}
-	if len(req.Guess) > maxGuessLen || len(req.Choice) > maxGuessLen {
+	if len(req.Guess) > maxGuessLen || len(req.Choice) > maxGuessLen || len(req.Password) > maxGuessLen {
 		httpx.JSON(w, http.StatusBadRequest, playRefusal{Error: "answer is too long", Code: "too_long"})
 		return
 	}
@@ -353,7 +364,9 @@ func (h *Handlers) PostPlayAction(w http.ResponseWriter, r *http.Request) {
 		writeCached(w, cached)
 		return
 	}
-	if action == "answer" {
+	// A cheat checks a password, so it shares the answers' budget: that
+	// is what stops guessing it.
+	if action == "answer" || action == "cheat" {
 		if ok, retry := h.rateLimiter().AllowAnswer(slot.ID); !ok {
 			writeRateLimited(w, retry)
 			return
@@ -393,6 +406,17 @@ func (h *Handlers) PostPlayAction(w http.ResponseWriter, r *http.Request) {
 		res, err = e.Choose(ctx, tc.TeamID, req.Node, req.Port)
 	case "skip":
 		res, err = e.Skip(ctx, tc.TeamID, req.Node)
+	case "cheat":
+		ok, cerr := h.cheatOK(ctx, tc.AdventureSlug, req.Password)
+		if cerr != nil {
+			httpx.ServerErr(w, http.StatusInternalServerError, "checking password failed", cerr)
+			return
+		}
+		if !ok {
+			httpx.JSON(w, http.StatusForbidden, playRefusal{Error: "wrong cheat password", Code: "bad_password"})
+			return
+		}
+		res, err = e.Cheat(ctx, tc.TeamID, req.Node)
 	case "leave":
 		res, err = e.Leave(ctx, tc.TeamID, req.Node)
 	case "timeout":
@@ -434,6 +458,53 @@ func (h *Handlers) PostPlayAction(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(body)
 }
 
+// PostPlayUnlock checks a cheat password before the phone turns cheating
+// on. The phone keeps the password and sends it with every cheat, which
+// checks it again; this only tells it whether the password is right.
+func (h *Handlers) PostPlayUnlock(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	var req struct {
+		Password string `json:"password"`
+	}
+	if !httpx.DecodeJSON(w, r, &req) {
+		return
+	}
+	slot, _ := auth.SlotFromContext(ctx)
+	if ok, retry := h.rateLimiter().AllowAnswer(slot.ID); !ok {
+		writeRateLimited(w, retry)
+		return
+	}
+	tc, err := loadTeam(ctx, h.DB, slot)
+	if err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "loading team failed", err)
+		return
+	}
+	ok, err := h.cheatOK(ctx, tc.AdventureSlug, req.Password)
+	if err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "checking password failed", err)
+		return
+	}
+	if !ok {
+		httpx.JSON(w, http.StatusForbidden, playRefusal{Error: "wrong cheat password", Code: "bad_password"})
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// cheatOK reports whether password is the adventure's cheat password.
+// An adventure without one accepts nothing.
+func (h *Handlers) cheatOK(ctx context.Context, slug, password string) (bool, error) {
+	if password == "" || len(password) > maxGuessLen {
+		return false, nil
+	}
+	var hash sql.NullString
+	err := h.DB.QueryRowContext(ctx, `SELECT cheat_password_hash FROM adventures WHERE slug = $1`, slug).Scan(&hash)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return false, err
+	}
+	return auth.CheckSecret(hash.String, password), nil
+}
+
 // refusePlay maps an engine refusal onto a status and a stable code.
 func (h *Handlers) refusePlay(w http.ResponseWriter, res play.Result, err error) {
 	if errors.Is(err, play.ErrNoGraph) {
@@ -469,6 +540,10 @@ func (h *Handlers) refusePlay(w http.ResponseWriter, res play.Result, err error)
 func (h *Handlers) recordPlay(ctx context.Context, tc teamContext, slotID int64, action string, req PlayActionRequest, res play.Result) {
 	teamID := tc.TeamID
 	actor := activity.SlotActor(slotID)
+	if action == "cheat" {
+		activity.Record(ctx, h.DB, tc.EventID, &teamID, actor, activity.AnswerRight,
+			map[string]any{"node": req.Node, "port": res.Port, "points": 0, "cheat": true})
+	}
 	if action == "answer" {
 		if res.Accepted {
 			activity.Record(ctx, h.DB, tc.EventID, &teamID, actor, activity.AnswerRight,

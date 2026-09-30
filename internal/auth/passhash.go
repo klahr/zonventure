@@ -123,6 +123,18 @@ func SpendVerifyTime(plain string) {
 	_, _, _ = verifySecret(decoyHashStr, plain)
 }
 
+// CheckSecret reports whether plain matches a hash from HashPassword.
+// An empty stored hash never matches, after the same work as a real
+// check, so the reply's timing doesn't tell whether one is set.
+func CheckSecret(stored, plain string) bool {
+	if stored == "" {
+		SpendVerifyTime(plain)
+		return false
+	}
+	ok, _, err := verifySecret(stored, plain)
+	return ok && err == nil
+}
+
 // hashSecret produces a fresh Argon2id PHC string for plain. Used
 // for both passwords (HashPassword) and TOTP recovery codes.
 func hashSecret(plain string) (string, error) {

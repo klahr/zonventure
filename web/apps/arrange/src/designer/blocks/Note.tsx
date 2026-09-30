@@ -1,5 +1,6 @@
 import type { DividerStyle, NoteStyle } from "@zonventure/graph";
 import type { Editor } from "./types.ts";
+import { MarkdownArea } from "../MarkdownArea.tsx";
 
 const NOTE_STYLES: { value: NoteStyle; label: string }[] = [
   { value: "paper", label: "Paper note" },
@@ -19,7 +20,7 @@ export const NoteEditor: Editor<"note"> = ({ block, set, t }) => (
         </option>
       ))}
     </select>
-    <textarea className="field__input" rows={4} value={block.text} placeholder={t.t("Markdown.")} aria-label={t.t("Note")} onChange={(e) => set({ ...block, text: e.target.value })} />
+    <MarkdownArea className="field__input" rows={4} value={block.text} placeholder={t.t("Markdown.")} aria-label={t.t("Note")} onChange={(e) => set({ ...block, text: e.target.value })} />
   </>
 );
 

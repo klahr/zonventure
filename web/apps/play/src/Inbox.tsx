@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { play } from "@zonventure/api";
-import { Markdown, Sheet, type Translate } from "@zonventure/play-ui";
+import { Markdown, MarkdownInline, Sheet, type Translate } from "@zonventure/play-ui";
 
 /**
  * The organisers' messages: a bell in the app bar with how many are
@@ -76,7 +76,7 @@ export function Inbox({ messages, teamID, t, locale }: { messages: play.EventMes
       {banner && (
         <button type="button" className="app-inbox__banner" onClick={show} role="status">
           <span className="app-inbox__from">{t("Message from the organisers")}</span>
-          <span className="app-inbox__preview">{banner.text}</span>
+          <MarkdownInline className="app-inbox__preview" text={banner.text} />
         </button>
       )}
       {open && (

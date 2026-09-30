@@ -279,6 +279,8 @@ export type PlayAction =
   | { kind: "language"; lang: string }
   | { kind: "choose"; node: string; port: string }
   | { kind: "skip"; node: string }
+  /** Solve a puzzle with the adventure's cheat password. Never queued: the password must not be stored. */
+  | { kind: "cheat"; node: string; password: string }
   /** Leave an item puzzle to find what its slots need. */
   | { kind: "leave"; node: string }
   | { kind: "timeout"; node: string }
@@ -308,6 +310,7 @@ export type RefusalCode =
   | "paused"
   | "not_running"
   | "no_game"
+  | "bad_password"
   | "graph";
 
 /**
@@ -346,6 +349,10 @@ export interface PlayState {
     id: number;
     state: "scheduled" | "running" | "paused" | "completed" | "cancelled";
     scheduled_at?: string;
+    /** The server's clock when this state was built, for the lobby's countdown to scheduled_at. */
+    server_now?: string;
+    /** The adventure has a cheat password, so the phone offers a way to enter it. */
+    cheat?: boolean;
     adventure_title?: string;
     org_name?: string;
     org_logo_url?: string;
@@ -459,6 +466,9 @@ export interface LocationPing {
  * for zones.
  */
 export const postLocation = (ping: LocationPing) => post<void>("/api/player/location", ping);
+
+/** Check a cheat password before turning cheating on. 403 bad_password when it is wrong. */
+export const unlockCheat = (password: string) => post<void>("/api/player/play/unlock", { password });
 
 /** Put the player's own name on the team (the organiser's is often "Player 3"). */
 export const renameMe = (name: string) => post<{ name: string }>("/api/player/me/name", { name });

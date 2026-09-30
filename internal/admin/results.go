@@ -175,7 +175,7 @@ func (h *Handlers) exportGraphResults(w http.ResponseWriter, r *http.Request, ev
 	}
 	idle, err := h.DB.QueryContext(ctx, `
 		SELECT t.id, t.name FROM teams t
-		WHERE t.event_id = $1 AND (t.withdrawn_at IS NOT NULL OR NOT EXISTS (SELECT 1 FROM team_graph_state s WHERE s.team_id = t.id))
+		WHERE t.event_id = $1 AND (t.withdrawn_at IS NOT NULL OR NOT EXISTS (SELECT 1 FROM team_graph_state s WHERE s.team_id = t.id AND NOT s.cheated))
 		ORDER BY LOWER(t.name)`, eventID)
 	if err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "query failed")

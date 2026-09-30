@@ -58,6 +58,8 @@
   "The game is paused. Hold on.": "Spelet är pausat. Vänta lite.",
   "The game starts when your organiser says go.": "Spelet börjar när arrangören säger till.",
   "The game starts {{when}}.": "Spelet börjar {{when}}.",
+  "Starts in": "Börjar om",
+  "Any moment now.": "När som helst nu.",
   "the marked place": "den markerade platsen",
   "the starting point": "startplatsen",
   "This event has been cancelled.": "Det här eventet är inställt.",
@@ -335,5 +337,14 @@
   "Come back later": "Kom tillbaka senare",
   "Come back when you have what it needs.": "Kom tillbaka när ni har det som behövs.",
   "You're missing something for this.": "Ni saknar något för det här.",
-  "You're missing: {{items}}.": "Ni saknar: {{items}}."
+  "You're missing: {{items}}.": "Ni saknar: {{items}}.",
+  "Cheat": "Fusk",
+  "Password": "Lösenord",
+  "Unlock": "Lås upp",
+  "Cheating": "Fuskläge",
+  "Solve (cheat)": "Lös (fusk)",
+  "Solved.": "Löst.",
+  "Wrong password.": "Fel lösenord.",
+  "No connection. Try again when you're back online.": "Ingen anslutning. Försök igen när du är uppkopplad.",
+  "For testing. Every answer counts as right, for no points, and the team is left out of the rankings.": "För test. Alla svar räknas som rätt, utan poäng, och laget räknas inte med i resultatlistan."
 }

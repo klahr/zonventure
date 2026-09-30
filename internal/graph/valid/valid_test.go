@@ -483,6 +483,8 @@ func TestEffectRules(t *testing.T) {
 	assertNoCode(t, ok, "effect.email.placeholder")
 	assertCode(t, withEffect(&graph.EffectConfig{Kind: graph.CallWebhook}), "effect.webhook.missing")
 	assertCode(t, withEffect(&graph.EffectConfig{Kind: graph.SetTheme}), "effect.theme.missing")
+	assertCode(t, withEffect(&graph.EffectConfig{Kind: graph.SetTheme, Theme: "sepia"}), "effect.theme.unknown")
+	assertNoCode(t, withEffect(&graph.EffectConfig{Kind: graph.SetTheme, Theme: "night"}), "effect.theme.unknown")
 	assertCode(t, withEffect(&graph.EffectConfig{Kind: "invented"}), "effect.kind.unknown")
 	assertCode(t, withEffect(&graph.EffectConfig{Kind: graph.AdjustScore}), "effect.score.zero")
 }

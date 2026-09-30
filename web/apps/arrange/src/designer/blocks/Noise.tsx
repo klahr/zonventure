@@ -1,4 +1,5 @@
 import { withField, type Editor } from "./types.ts";
+import { MarkdownArea } from "../MarkdownArea.tsx";
 
 const DEFAULT = 70;
 
@@ -15,7 +16,7 @@ export const NoiseEditor: Editor<"noise"> = ({ block, set, t }) => {
           <span>{t.t("Shouting")}</span>
         </span>
       </label>
-      <textarea
+      <MarkdownArea
         className="field__input"
         rows={3}
         value={block.text ?? ""}
@@ -43,7 +44,7 @@ export const ShakeEditor: Editor<"shake"> = ({ block, set, t }) => {
           <span>{t.t("Like a cocktail")}</span>
         </span>
       </label>
-      <textarea
+      <MarkdownArea
         className="field__input"
         rows={3}
         value={block.text ?? ""}

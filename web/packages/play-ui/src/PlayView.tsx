@@ -13,7 +13,7 @@ import { QuizResult } from "./blocks/Quiz.tsx";
 import type { BlockContext, Motion } from "./blocks/context.ts";
 import type { MapPoint } from "./StaticMap.tsx";
 import { QrButton, canScan } from "./Qr.tsx";
-import { brandVars, isHex, loadFont } from "./brand.ts";
+import { brandVars, isHex, loadFont, withTheme } from "./brand.ts";
 import { formatSeconds, secondsUntil, useEngineClock } from "./clock.ts";
 import { english, type Feedback, type Translate } from "./feedback.ts";
 
@@ -87,10 +87,17 @@ export interface PlayViewProps {
   photo?: (block: string, file: File) => Promise<void>;
   /** The organisers' newest message, for a bulletin block. */
   bulletin?: { text: string; created_at: string };
+  /**
+   * The adventure's cheat password, once this phone has unlocked
+   * cheating: every answer is taken as right, and puzzles get a Solve
+   * button. The server checks it on each cheat.
+   */
+  cheat?: string;
 }
 
 export function PlayView(props: PlayViewProps) {
-  const { view, brand } = props;
+  const { view } = props;
+  const brand = useMemo(() => withTheme(props.brand, view.theme), [props.brand, view.theme]);
   const t = props.t ?? english;
   const live = props.live ?? true;
   const now = useEngineClock(view.now, live);
@@ -401,7 +408,8 @@ function PuzzleStep(props: StepProps) {
   const timeUp = timeLeft <= 0;
   const needsPlace = !!view.zone && !view.here;
   const locked = !!busy || blockedFor > 0 || needsPlace;
-  const answer = (g: string) => onAction({ kind: "answer", node, guess: g });
+  const cheat = props.cheat;
+  const answer = (g: string) => onAction(cheat ? { kind: "cheat", node, password: cheat } : { kind: "answer", node, guess: g });
 
   // Live, the client calls Timeout itself when the countdown ends — the
   // engine re-checks the time, so an early or repeated call is harmless.
@@ -503,6 +511,11 @@ function PuzzleStep(props: StepProps) {
       )}
 
       {view.can_skip && <SkipLink {...props} />}
+      {cheat && (
+        <button type="button" className="pv-link" disabled={locked} onClick={() => onAction({ kind: "cheat", node, password: cheat })}>
+          {t("Solve (cheat)")}
+        </button>
+      )}
 
       <div className="pv-dock">
         <FeedbackLine feedback={feedback} />

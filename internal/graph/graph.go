@@ -902,6 +902,10 @@ type Header struct {
 // send no body; the team and step go in the query instead.
 var WebhookMethods = []string{"GET", "POST", "PUT", "PATCH", "DELETE"}
 
+// Themes are the looks a theme effect may switch to, the phone's own
+// presets (play-ui THEMES). "default" goes back to the adventure's palette.
+var Themes = []string{"default", "dark", "night", "alarm", "parchment"}
+
 // EmailPlaceholders are the names an email's subject and body may use
 // as {{name}}: the team's name, the event's name and the step's title.
 var EmailPlaceholders = []string{"team", "event", "step"}

@@ -94,7 +94,7 @@ export function ResultsCard({ event, teams }: { event: EventInfo; teams: Team[] 
         meta: t.t("{{n}} points", { n: fmtPoints(tm.score) }) + " · " + (tm.completed_at ? t.t("finished {{when}}", { when: fmtDateTime(tm.completed_at, locale) }) : t.t("did not finish")),
         link: recap(tm),
       })),
-      ...teams.filter((tm) => !tm.rank).map((tm) => ({ key: tm.id, rank: "—", name: tm.name, meta: tm.withdrawn_at ? t.t("withdrew") : t.t("did not start"), dnf: true, link: null })),
+      ...teams.filter((tm) => !tm.rank).map((tm) => ({ key: tm.id, rank: "—", name: tm.name, meta: tm.withdrawn_at ? t.t("withdrew") : tm.cheated ? t.t("cheated") : t.t("did not start"), dnf: true, link: null })),
     ];
   } else {
     const finished = teams.filter((tm) => tm.completed_at).sort((a, b) => (a.completed_at || "").localeCompare(b.completed_at || ""));

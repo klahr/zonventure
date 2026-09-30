@@ -1,4 +1,5 @@
 import { withField, type Editor } from "./types.ts";
+import { MarkdownArea } from "../MarkdownArea.tsx";
 
 export const LevelEditor: Editor<"level"> = ({ block, set, t }) => {
   const up = (block.pitch ?? 0) > 0;
@@ -25,7 +26,7 @@ export const LevelEditor: Editor<"level"> = ({ block, set, t }) => {
           />
         </label>
       )}
-      <textarea
+      <MarkdownArea
         className="field__input"
         rows={3}
         value={block.text ?? ""}

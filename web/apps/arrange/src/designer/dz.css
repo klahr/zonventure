@@ -243,6 +243,17 @@
   padding: var(--dz-space-2) var(--dz-space-3);
   width: 100%;
 }
+:where(.dz) :where(.md-area) {
+  background: var(--dz-surface);
+  color: var(--dz-ink);
+  border: 1px solid var(--dz-border);
+  border-radius: var(--dz-r-2);
+  padding: var(--dz-space-2) var(--dz-space-3);
+  width: 100%;
+}
+.md-area { cursor: text; overflow-wrap: anywhere; }
+.md-area > div > :first-child { margin-top: 0; }
+.md-area > div > :last-child { margin-bottom: 0; }
 :where(.dz) input:focus, :where(.dz) textarea:focus, :where(.dz) select:focus {
   outline: none;
   border-color: var(--dz-accent);

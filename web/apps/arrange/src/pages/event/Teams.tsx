@@ -149,6 +149,7 @@ export function TeamsCard(props: {
                             <button type="button" className="ev-team__name" onClick={() => props.onOpen(tm.id)}>{tm.name}</button>
                             {tm.completed_at && <Pill tone="good">✓ {t.t("done")}</Pill>}
                             {tm.withdrawn_at && <Pill>{t.t("withdrew")}</Pill>}
+                            {tm.cheated && <Pill tone="warn">{t.t("cheated")}</Pill>}
                             {stuck && <Pill tone="warn">⚠ {t.t("stuck?")}</Pill>}
                             {!before && total > 0 && joined < total && !tm.completed_at && <Pill>{t.t("{{n}} of {{m}} joined", { n: joined, m: total })}</Pill>}
                           </div>

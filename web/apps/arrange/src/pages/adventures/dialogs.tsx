@@ -4,7 +4,7 @@ import { ApiError } from "@zonventure/api";
 import { useT } from "../../i18n.tsx";
 import { useSession } from "../../session.tsx";
 import { href } from "../../router.ts";
-import { Button, Dialog, Field, HelpPopover, ICON, Row, fmtDateTime, useDialogs, useLoad, useToast } from "../../ui/index.ts";
+import { Button, Dialog, Field, HelpPopover, ICON, MarkdownArea, Row, fmtDateTime, useDialogs, useLoad, useToast } from "../../ui/index.ts";
 import { createAdventure, downscaleImage, firstPlaceOf, getEdit, getGraphState, importAdventure, orgName, removeCover, updateAdventure, uploadCover, type AdventurePatch, type AdventureEdit, type Assignment } from "./api.ts";
 import { PointMap } from "../../designer/PointMap.tsx";
 import { Cover } from "./parts.tsx";
@@ -204,7 +204,7 @@ export function PickPassDialog({ title, passes, onPick, onClose }: { title: stri
 
 const LANGS = ["en", "sv", "no", "da", "fi", "de", "fr", "es", "pt", "pt-BR", "it", "nl", "pl", "ja", "zh-Hant", "zh-Hans"];
 
-type Form = { slug: string; title: string; description: string; author: string; language: string; intro_text: string; outro_text: string; strict_assets: boolean; lat: string; lng: string; start_label: string };
+type Form = { slug: string; title: string; description: string; author: string; language: string; intro_text: string; outro_text: string; strict_assets: boolean; lat: string; lng: string; start_label: string; has_cheat: boolean; cheat_password: string; clear_cheat: boolean };
 
 function formOf(a: AdventureEdit): Form {
   return {
@@ -219,6 +219,9 @@ function formOf(a: AdventureEdit): Form {
     lat: a.start_lat == null ? "" : String(a.start_lat),
     lng: a.start_lng == null ? "" : String(a.start_lng),
     start_label: a.start_label || "",
+    has_cheat: !!a.has_cheat_password,
+    cheat_password: "",
+    clear_cheat: false,
   };
 }
 
@@ -286,6 +289,8 @@ export function EditDetailsDialog({ slug, accent, firstPlace, onClose, onSaved, 
     if (coord(f.lat) !== coord(initial.lat)) p.start_lat = coord(f.lat);
     if (coord(f.lng) !== coord(initial.lng)) p.start_lng = coord(f.lng);
     if (f.start_label.trim() !== initial.start_label) p.start_label = f.start_label.trim();
+    if (f.clear_cheat) p.cheat_password = "";
+    else if (f.cheat_password) p.cheat_password = f.cheat_password;
     if (Object.keys(p).length === 0) return onClose();
     setBusy(true);
     try {
@@ -373,10 +378,10 @@ export function EditDetailsDialog({ slug, accent, firstPlace, onClose, onSaved, 
             {LANGS.map((c) => <option key={c} value={c} />)}
           </datalist>
           <Field label={t.t("Intro — shown on the welcome screen")} hint={t.t("Markdown. Leave empty for the default welcome + tips.")}>
-            <textarea rows={5} value={f.intro_text} onChange={(e) => set("intro_text", e.target.value)} />
+            <MarkdownArea rows={5} value={f.intro_text} onChange={(e) => set("intro_text", e.target.value)} />
           </Field>
           <Field label={t.t("Outro — shown on the completion screen")} hint={t.t("Markdown. Leave empty for the default celebratory line.")}>
-            <textarea rows={3} value={f.outro_text} onChange={(e) => set("outro_text", e.target.value)} />
+            <MarkdownArea rows={3} value={f.outro_text} onChange={(e) => set("outro_text", e.target.value)} />
           </Field>
           <fieldset className="adv-fieldset">
             <legend className="cs-field__label">
@@ -419,6 +424,25 @@ export function EditDetailsDialog({ slug, accent, firstPlace, onClose, onSaved, 
               <HelpPopover label={t.t("About strict assets")} body={t.t("Default off lets the offline cache prefetch every page's media. Turn on for hunts where the picture is the puzzle (find-the-glyph, hidden QR, map fragments).")} />
             </span>
           </label>
+          <Field
+            label={t.t("Cheat password")}
+            hint={t.t("Optional, for testing. On the phone, tap the adventure's title 7 times and enter it: every answer then counts as right, for no points, and the team is left out of the rankings.")}
+          >
+            <input
+              type="password"
+              autoComplete="new-password"
+              value={f.cheat_password}
+              disabled={f.clear_cheat}
+              placeholder={f.has_cheat ? t.t("Set. Type a new one to change it.") : ""}
+              onChange={(e) => set("cheat_password", e.target.value)}
+            />
+          </Field>
+          {f.has_cheat && (
+            <label className="adv-check">
+              <input type="checkbox" checked={f.clear_cheat} onChange={(e) => set("clear_cheat", e.target.checked)} />
+              <span>{t.t("Remove the cheat password")}</span>
+            </label>
+          )}
           <p className="cs-field__hint">{t.t("Colours, fonts and the adventure's language for players are set in the designer's Look.")}</p>
         </>
       )}

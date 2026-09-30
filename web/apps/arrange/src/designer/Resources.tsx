@@ -9,6 +9,7 @@ import { ConceptIcon, RESOURCE } from "./dz/concepts.tsx";
 import { Plus, Trash2 } from "lucide-react";
 import { ICON } from "./dz/ui.tsx";
 import { nearLastZone, zoneGroups } from "./zones.ts";
+import { MarkdownArea } from "./MarkdownArea.tsx";
 
 /** A copy without one key, for clearing an optional field under exactOptionalPropertyTypes. */
 function withoutKey<T extends object, K extends keyof T>(obj: T, key: K): T {
@@ -261,7 +262,7 @@ export function Resources({ graph, onChange }: { graph: Graph; onChange: (g: Gra
                   </select>
                 </label>
               </div>
-              <textarea className="field__input" rows={3} value={tl.text ?? ""} placeholder={t.t("What the team reads when time is up. Markdown.")} aria-label={t.t("Message")}
+              <MarkdownArea className="field__input" rows={3} value={tl.text ?? ""} placeholder={t.t("What the team reads when time is up. Markdown.")} aria-label={t.t("Message")}
                 onChange={(e) => set(e.target.value ? { ...tl, text: e.target.value } : withoutKey(tl, "text"))} />
             </div>
           );
@@ -303,7 +304,7 @@ export function Resources({ graph, onChange }: { graph: Graph; onChange: (g: Gra
                   <Trash2 size={ICON.sm} />
                 </button>
               </div>
-              <textarea className="field__input" rows={3} value={je.body ?? ""} aria-label={t.t("Text")} placeholder={t.t("Markdown.")}
+              <MarkdownArea className="field__input" rows={3} value={je.body ?? ""} aria-label={t.t("Text")} placeholder={t.t("Markdown.")}
                 onChange={(e) => set({ ...je, body: e.target.value })} />
               <MediaEditor media={je.media} onChange={(media) => set(media ? { ...je, media } : withoutKey(je, "media"))} />
             </div>

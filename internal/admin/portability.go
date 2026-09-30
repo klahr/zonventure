@@ -24,7 +24,8 @@ package admin
 // importer can mint fresh primary keys without surprises. Accept
 // lists, lane mode, language, strict_assets, start_*, intro/outro and
 // the colour palette all round-trip; what stays behind: the org id,
-// shares, assignments, events / runs (those are deployment-local).
+// shares, assignments, events / runs (those are deployment-local), and
+// the cheat password, a secret of the instance it was set on.
 
 import (
 	"archive/zip"

@@ -27,6 +27,7 @@ import type {
   Zone,
 } from "@zonventure/graph";
 import { ANSWER_KINDS, MAX_SLOTS, WEBHOOK_METHODS, answerOptions, isGraded, optionValue, withAnswerKind, withBlocks, matcherLabel, nodeBySlug, portLabel, puzzlesInto, referAnswer, resolveAnswer, updateNode } from "@zonventure/graph";
+import { THEMES } from "@zonventure/play-ui";
 import { useT } from "../i18n.tsx";
 import { ConditionEditor } from "./ConditionEditor.tsx";
 import { MediaEditor } from "./MediaEditor.tsx";
@@ -38,6 +39,7 @@ import { STEP, VISIBLE } from "./dz/types.tsx";
 import { ConceptIcon, PART, TRIGGER } from "./dz/concepts.tsx";
 import { ZoneMap } from "./ZoneMap.tsx";
 import { nearLastZone, zoneGroups, zoneName } from "./zones.ts";
+import { MarkdownArea } from "./MarkdownArea.tsx";
 import { SimpleStep } from "./SimpleStep.tsx";
 import { isNarrow } from "./device.ts";
 
@@ -882,7 +884,7 @@ function puzzleParts(node: Node, cfg: PuzzleConfig, graph: Graph, onChange: (c: 
         onChange={(next) => onChange(withOptional({ ...cfg }, "hints", next.length ? next : undefined))}
         render={(h, set) => (
           <>
-            <textarea className="field__input" rows={2} value={h.text} onChange={(e) => set({ ...h, text: e.target.value })} aria-label={t.t("Hint")} />
+            <MarkdownArea className="field__input" rows={2} value={h.text} onChange={(e) => set({ ...h, text: e.target.value })} aria-label={t.t("Hint")} />
             <div className="box__row">
               <NumberField label={t.t("Available after (s)")} value={h.delay_seconds} onChange={(n) => set(withOptional({ ...h }, "delay_seconds", n))} />
               <NumberField label={t.t("Costs points")} value={h.cost} onChange={(n) => set(withOptional({ ...h }, "cost", n))} />
@@ -1091,7 +1093,7 @@ function hubParts(cfg: HubConfig, graph: Graph, onChange: (c: HubConfig) => void
       title: t.t("What the team sees"),
       editor: (
         <Field label={t.t("Text")} hint={t.t("Shown above the branches. Markdown. Empty says “Choose where to go next.”")}>
-          <textarea className="field__input" rows={3} value={cfg.text ?? ""} onChange={(e) => onChange(withOptional({ ...cfg }, "text", e.target.value || undefined))} />
+          <MarkdownArea className="field__input" rows={3} value={cfg.text ?? ""} onChange={(e) => onChange(withOptional({ ...cfg }, "text", e.target.value || undefined))} />
         </Field>
       ),
     });
@@ -1398,8 +1400,15 @@ function EffectForm({ cfg, graph, onChange }: { cfg: EffectConfig; graph: Graph;
       )}
       {cfg.kind === "webhook" && <WebhookForm cfg={cfg} onChange={onChange} />}
       {cfg.kind === "theme" && (
-        <Field label={t.t("Theme name")}>
-          <input className="field__input" value={cfg.theme ?? ""} onChange={(e) => onChange({ ...cfg, theme: e.target.value })} />
+        <Field label={t.t("Theme")} hint={t.t("Stays until another step changes it.")}>
+          <select className="field__input" value={cfg.theme ?? ""} onChange={(e) => onChange(withOptional({ ...cfg }, "theme", e.target.value || undefined))}>
+            <option value="" disabled>{t.t("— pick one —")}</option>
+            <option value="default">{t.t("The adventure's own look")}</option>
+            {Object.keys(THEMES).map((k) => (
+              <option key={k} value={k}>{({ dark: t.t("Dark"), night: t.t("Night"), alarm: t.t("Alarm"), parchment: t.t("Parchment") } as Record<string, string>)[k] ?? k}</option>
+            ))}
+            {cfg.theme && !THEMES[cfg.theme] && <option value={cfg.theme}>{cfg.theme}</option>}
+          </select>
         </Field>
       )}
     </>

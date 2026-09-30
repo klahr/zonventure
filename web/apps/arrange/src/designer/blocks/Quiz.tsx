@@ -1,11 +1,12 @@
 import { QUIZ_CHOICES, type QuizChoice } from "@zonventure/graph";
 import type { Editor } from "./types.ts";
 import { withField } from "./types.ts";
+import { MarkdownArea } from "../MarkdownArea.tsx";
 
 /** A quiz-walk question: the question, its three answers, which is right, and its worth. */
 export const QuizEditor: Editor<"quiz"> = ({ block, set, t }) => (
   <>
-    <textarea className="field__input" rows={2} value={block.text} placeholder={t.t("The question")} aria-label={t.t("Question")} onChange={(e) => set({ ...block, text: e.target.value })} />
+    <MarkdownArea className="field__input" rows={2} value={block.text} placeholder={t.t("The question")} aria-label={t.t("Question")} onChange={(e) => set({ ...block, text: e.target.value })} />
     <div className="quiz-ed" role="radiogroup" aria-label={t.t("Right answer")}>
       {QUIZ_CHOICES.map((c, i) => (
         <label key={c} className={"quiz-ed__row" + (block.answer === c ? " is-right" : "")}>
@@ -35,7 +36,7 @@ export const QuizEditor: Editor<"quiz"> = ({ block, set, t }) => (
 /** The tie-breaker: a question with a number for an answer. */
 export const TiebreakEditor: Editor<"tiebreak"> = ({ block, set, t }) => (
   <>
-    <textarea className="field__input" rows={2} value={block.text} placeholder={t.t("The question, such as “How many steps up the tower?”")} aria-label={t.t("Question")} onChange={(e) => set({ ...block, text: e.target.value })} />
+    <MarkdownArea className="field__input" rows={2} value={block.text} placeholder={t.t("The question, such as “How many steps up the tower?”")} aria-label={t.t("Question")} onChange={(e) => set({ ...block, text: e.target.value })} />
     <label className="field field--num">
       <span className="field__label">{t.t("Right number")}</span>
       <input

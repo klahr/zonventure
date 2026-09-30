@@ -172,6 +172,29 @@ func TestSkipNeedsBothThresholds(t *testing.T) {
 	}
 }
 
+func TestCheatTakesFirstAnswerRouteForNoPoints(t *testing.T) {
+	tm := started(t)
+	res, step, err := tm.Cheat("door")
+	if err != nil || !res.Accepted || res.Port != "left" || step == nil {
+		t.Fatalf("cheat: %+v %+v %v", res, step, err)
+	}
+	if !tm.Cheated || !tm.Row("door").Solved || tm.Points != 0 {
+		t.Errorf("after cheat: cheated=%v solved=%v points=%v", tm.Cheated, tm.Row("door").Solved, tm.Points)
+	}
+}
+
+func TestCheatHonoursLockout(t *testing.T) {
+	tm := started(t)
+	until := t0.Add(time.Minute)
+	tm.Row("door").BlockedUntil = &until
+	if _, _, err := tm.Cheat("door"); !errors.Is(err, ErrLocked) {
+		t.Errorf("cheat while locked = %v", err)
+	}
+	if tm.Cheated {
+		t.Error("a refused cheat must not mark the team")
+	}
+}
+
 func TestZoneGatedStory(t *testing.T) {
 	tm := started(t)
 	_, step, _ := tm.Answer("door", "right")

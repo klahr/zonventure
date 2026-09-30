@@ -27,6 +27,8 @@ func registerPlayerRoutes(r chi.Router, env *routesEnv) {
 		r.Post("/play/{action}", playerH.PostPlayAction)
 		// A team's picture for a photo block, and the team's own pictures.
 		r.Post("/play/photo", playerH.PostPlayPhoto)
+		// Checks a cheat password before the phone turns cheating on.
+		r.Post("/play/unlock", playerH.PostPlayUnlock)
 		r.Get("/play/photo/{photoID}", playerH.GetPlayPhoto)
 		// Asset manifest powers the player-side service-worker prefetch
 		// for offline play: the SW cache.addAll()s these URLs on team

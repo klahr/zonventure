@@ -56,5 +56,9 @@
   "Finding you…": "Letar efter dig…",
   "Your position couldn't be sent. Check the connection.": "Din position kunde inte skickas. Kontrollera anslutningen.",
   "Only your latest position is kept, and only your assistant reads it.": "Bara din senaste position sparas, och bara din assistent läser den.",
-  "Share your location with your assistant while you build on site": "Dela din position med din assistent medan du bygger på plats"
+  "Share your location with your assistant while you build on site": "Dela din position med din assistent medan du bygger på plats",
+  "Cheat password": "Fusklösenord",
+  "Optional, for testing. On the phone, tap the adventure's title 7 times and enter it: every answer then counts as right, for no points, and the team is left out of the rankings.": "Valfritt, för test. Tryck 7 gånger på äventyrets titel i telefonen och ange det: alla svar räknas då som rätt, utan poäng, och laget räknas inte med i resultatlistan.",
+  "Set. Type a new one to change it.": "Satt. Skriv ett nytt för att byta.",
+  "Remove the cheat password": "Ta bort fusklösenordet"
 }

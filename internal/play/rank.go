@@ -86,7 +86,7 @@ func ranking(ctx context.Context, q Querier, g *graph.Graph, eventID int64) ([]R
 	rows, err := q.QueryContext(ctx, `
 		SELECT t.id, t.name, s.score - s.penalty_score, s.completed_at
 		FROM team_graph_state s JOIN teams t ON t.id = s.team_id
-		WHERE s.event_id = $1 AND t.withdrawn_at IS NULL`, eventID)
+		WHERE s.event_id = $1 AND t.withdrawn_at IS NULL AND NOT s.cheated`, eventID)
 	if err != nil {
 		return nil, fmt.Errorf("reading scores: %w", err)
 	}

@@ -7,6 +7,7 @@ import { Field, ZoneSelect } from "./fields.tsx";
 import { useMediaUpload } from "./MediaEditor.tsx";
 import { isTouch } from "./device.ts";
 import { Button, ICON } from "./dz/ui.tsx";
+import { MarkdownArea } from "./MarkdownArea.tsx";
 
 type Picture = Block & { kind: "image"; media: number; alt?: string };
 
@@ -55,7 +56,7 @@ export function SimpleStep({ node, graph, onChange, onGraphChange, onMore, onDel
       </Field>
 
       <Field label={t.t("What the team reads")}>
-        <textarea className="field__input" rows={4} value={text?.text ?? ""} placeholder={t.t("A clue, a question or a bit of story.")} onChange={(e) => setText(e.target.value)} />
+        <MarkdownArea className="field__input" rows={4} value={text?.text ?? ""} placeholder={t.t("A clue, a question or a bit of story.")} onChange={(e) => setText(e.target.value)} />
       </Field>
       <Pictures node={node} pictures={pictures} setBlocks={setBlocks} />
       {others.length > 0 && <p className="field__hint">{t.t("This step shows {{n}} more blocks. Edit them under More options.", { n: others.length })}</p>}

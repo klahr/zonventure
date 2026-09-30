@@ -1,7 +1,8 @@
 import type { Editor } from "./types.ts";
+import { MarkdownArea } from "../MarkdownArea.tsx";
 
 export const TextEditor: Editor<"text"> = ({ block, set, t, textLabel }) => (
-  <textarea
+  <MarkdownArea
     className="field__input"
     rows={4}
     value={block.text}

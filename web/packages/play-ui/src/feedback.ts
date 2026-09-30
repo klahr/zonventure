@@ -28,6 +28,8 @@ export interface Feedback {
 /** Feedback for an action the engine accepted (HTTP 200). */
 export function feedbackForResult(kind: play.PlayAction["kind"], r: play.Result, t: Translate): Feedback | null {
   switch (kind) {
+    case "cheat":
+      return { tone: "good", text: t("Solved.") };
     case "answer":
       if (r.accepted) {
         const pts = Math.round((r.points ?? 0) * 10) / 10;
@@ -85,6 +87,8 @@ export function feedbackForRefusal(code: string | undefined, t: Translate): Feed
       return { tone: "bad", text: t("That was a lot of tries. Wait a minute, then try again.") };
     case "too_long":
       return { tone: "bad", text: t("That's too long. Shorten it and try again.") };
+    case "bad_password":
+      return { tone: "bad", text: t("Wrong password.") };
     case "no_game":
       return { tone: "info", text: t("The game hasn't started for your team yet.") };
     case "wrong_node":

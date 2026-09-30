@@ -201,14 +201,14 @@ func (e *Engine) loadCore(ctx context.Context, q Querier, teamID int64, forUpdat
 	)
 	query := `
 		SELECT event_id, graph_id, current_node, node_entered_at, started_at,
-		       completed_at, outcome, score, penalty_score, penalty_seconds, theme, last_answer, timed_out, lang
+		       completed_at, outcome, score, penalty_score, penalty_seconds, theme, last_answer, timed_out, lang, cheated
 		FROM team_graph_state
 		WHERE team_id = $1`
 	if forUpdate {
 		query += ` FOR UPDATE`
 	}
 	err := q.QueryRowContext(ctx, query, teamID).Scan(&s.eventID, &s.graphID, &current, &entered, &s.StartedAt,
-		&completed, &outcome, &s.Points, &s.PenaltyScore, &s.PenaltySeconds, &s.Theme, &s.LatestAnswer, &s.TimedOut, &s.Lang)
+		&completed, &outcome, &s.Points, &s.PenaltyScore, &s.PenaltySeconds, &s.Theme, &s.LatestAnswer, &s.TimedOut, &s.Lang, &s.Cheated)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNoGraph
 	}

@@ -65,6 +65,7 @@ export function TeamDetailDialog(props: {
           <div><strong>{where}</strong>{step && <span className="ev-muted"> · {step}</span>}</div>
           <div className="ev-row-sm">
             {team.withdrawn_at && <Pill>{t.t("withdrew")}</Pill>}
+            {team.cheated && <Pill tone="warn">{t.t("cheated")}</Pill>}
             {team.email && <a className="ev-small" href={"mailto:" + team.email}>{team.email}</a>}
           </div>
         </div>
