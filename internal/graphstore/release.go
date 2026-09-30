@@ -23,6 +23,18 @@ type Draft struct {
 // not the adventure's is still refused: a draft becomes a release by
 // publishing, and there is no point storing what could never publish.
 func SaveDraft(ctx context.Context, q Querier, adventureID, userID int64, g *graph.Graph) (Draft, valid.Report, error) {
+	return SaveDraftIf(ctx, q, adventureID, userID, g, nil)
+}
+
+// ErrDraftChanged is SaveDraftIf's refusal: the draft was saved by
+// someone else since the caller loaded it.
+var ErrDraftChanged = errors.New("the draft was changed since it was loaded")
+
+// SaveDraftIf is SaveDraft for a caller that loaded the draft saved at
+// base and must not overwrite a later save — the designer while an
+// assistant edits the same adventure, and the other way round. A nil
+// base saves unconditionally, as does a base when there is no draft yet.
+func SaveDraftIf(ctx context.Context, q Querier, adventureID, userID int64, g *graph.Graph, base *time.Time) (Draft, valid.Report, error) {
 	if err := stampLanguage(ctx, q, adventureID, g); err != nil {
 		return Draft{}, valid.Report{}, err
 	}
@@ -40,12 +52,16 @@ func SaveDraft(ctx context.Context, q Querier, adventureID, userID int64, g *gra
 	}
 	d := Draft{Graph: g}
 	err = q.QueryRowContext(ctx, `
-		INSERT INTO adventure_graph_drafts (adventure_id, graph, updated_at, updated_by_user_id)
+		INSERT INTO adventure_graph_drafts AS d (adventure_id, graph, updated_at, updated_by_user_id)
 		VALUES ($1, $2, now(), $3)
 		ON CONFLICT (adventure_id) DO UPDATE
 		SET graph = EXCLUDED.graph, updated_at = EXCLUDED.updated_at, updated_by_user_id = EXCLUDED.updated_by_user_id
+		WHERE $4::timestamptz IS NULL OR d.updated_at = $4
 		RETURNING updated_at
-	`, adventureID, doc, user).Scan(&d.UpdatedAt)
+	`, adventureID, doc, user, base).Scan(&d.UpdatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return d, report, ErrDraftChanged
+	}
 	return d, report, err
 }
 

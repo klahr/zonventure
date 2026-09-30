@@ -610,6 +610,17 @@ textarea.field__input { resize: vertical; font-family: var(--font-body); }
 .look__check { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--text-sm); cursor: pointer; }
 .dz .look__segment.is-on { background: var(--accent); color: #fff; font-weight: 700; }
 
+/* A step someone else — an assistant — just changed: a glow that fades. */
+.card.is-changed,
+.step.is-changed { animation: zv-changed 8s ease-out forwards; }
+@keyframes zv-changed {
+  0%, 25% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 70%, transparent), var(--shadow); }
+  100% { box-shadow: 0 0 0 0 transparent, var(--shadow); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .card.is-changed, .step.is-changed { animation: none; outline: 2px dashed var(--accent); outline-offset: 2px; }
+}
+
 /* Where the simulated team is, on the canvas and in the list. */
 .card.is-playing,
 .step.is-playing { position: relative; box-shadow: 0 0 0 3px var(--success), var(--shadow); }

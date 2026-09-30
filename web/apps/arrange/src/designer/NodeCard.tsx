@@ -12,6 +12,8 @@ export interface CardData extends Record<string, unknown> {
   issues: Issue[];
   /** The simulated team is here. */
   playing?: boolean;
+  /** Someone else just changed it. */
+  changed?: boolean;
   /** For a crossroads: the title of the puzzle whose answer it reads. */
   sourceTitle?: string;
   /** For a start with a place: its zone, drawn as a map on the card. */
@@ -104,6 +106,7 @@ function NodeCardImpl({ data, selected }: NodeProps<CardNode>) {
         `card--${n.type}`,
         selected ? "is-selected" : "",
         data.playing ? "is-playing" : "",
+        data.changed ? "is-changed" : "",
         errors.length ? "has-error" : warnings.length ? "has-warning" : "",
       ].join(" ")}
     >

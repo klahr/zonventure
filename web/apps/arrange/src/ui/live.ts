@@ -16,11 +16,24 @@ export interface WatchMessage {
 export type WatchState = "connecting" | "live" | "reconnecting";
 
 export function useEventWatch(eventId: number | null, onMessage: (m: WatchMessage) => void): WatchState {
+  return useWatch(eventId ? JSON.stringify({ kind: "watch_event", data: { event_id: eventId } }) : null, onMessage);
+}
+
+/**
+ * Follow an adventure's draft: /ws/arrange pushes graph_saved whenever
+ * it is saved — by an assistant, another tab, anyone.
+ */
+export function useAdventureWatch(slug: string | null, onMessage: (m: WatchMessage) => void): WatchState {
+  return useWatch(slug ? JSON.stringify({ kind: "watch_adventure", data: { slug } }) : null, onMessage);
+}
+
+/** One /ws/arrange socket that sends `watch` on every (re)connect. */
+function useWatch(watch: string | null, onMessage: (m: WatchMessage) => void): WatchState {
   const cb = useRef(onMessage);
   cb.current = onMessage;
   const [state, setState] = useState<WatchState>("connecting");
   useEffect(() => {
-    if (!eventId) return;
+    if (!watch) return;
     let ws: WebSocket | null = null;
     let closed = false;
     let retry = 1000;
@@ -39,7 +52,7 @@ export function useEventWatch(eventId: number | null, onMessage: (m: WatchMessag
       ws.onopen = () => {
         retry = 1000;
         setState("live");
-        ws?.send(JSON.stringify({ kind: "watch_event", data: { event_id: eventId } }));
+        ws?.send(watch);
       };
       ws.onmessage = receive;
       ws.onclose = () => {
@@ -55,6 +68,6 @@ export function useEventWatch(eventId: number | null, onMessage: (m: WatchMessag
       clearTimeout(timer);
       ws?.close();
     };
-  }, [eventId]);
+  }, [watch]);
   return state;
 }

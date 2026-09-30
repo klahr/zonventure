@@ -288,26 +288,37 @@ func LookupMCPToken(ctx context.Context, db *sql.DB, plaintext string) (auth.Use
 	_, _ = db.ExecContext(ctx,
 		`UPDATE mcp_tokens SET last_used_at = now_text() WHERE token_hash = $1`,
 		hash[:])
+	u, err := tokenUser(ctx, db, uid, pinned)
+	if err != nil {
+		return auth.User{}, nil, err
+	}
+	return u, scopes, nil
+}
+
+// tokenUser resolves the user a token acts as. Tokens have no session,
+// so the role and organisation come from the user's membership: the
+// pinned organisation's, or else their first. A pinned organisation the
+// user has left is ErrUnknownMCPToken.
+func tokenUser(ctx context.Context, db *sql.DB, uid int64, pinned sql.NullInt64) (auth.User, error) {
 
 	// users has no role / org_id columns — those live on
 	// org_memberships, joined per active session in auth.Lookup. MCP
 	// tokens have no session, so we resolve the role ourselves: admins
 	// short-circuit; everyone else gets the role + org from their
 	// lowest-id membership (deterministic pick for users in multiple
-	// orgs — bind to a specific org at mint time if/when that becomes
-	// a real ergonomics problem).
+	// orgs, unless the token is pinned to one).
 	var u auth.User
-	err = db.QueryRowContext(ctx, `
+	err := db.QueryRowContext(ctx, `
 		SELECT id, username, is_admin, COALESCE(email, ''),
 		       (email_verified <> 0)
 		FROM users WHERE id = $1
 	`, uid).Scan(&u.ID, &u.Username, &u.IsAdmin, &u.Email, &u.EmailVerified)
 	if err != nil {
-		return auth.User{}, nil, err
+		return auth.User{}, err
 	}
 	if u.IsAdmin {
 		u.Role = auth.RoleAdmin
-		return u, scopes, nil
+		return u, nil
 	}
 	var (
 		role  sql.NullString
@@ -321,10 +332,10 @@ func LookupMCPToken(ctx context.Context, db *sql.DB, plaintext string) (auth.Use
 		LIMIT 1
 	`, uid, pinned).Scan(&role, &orgID)
 	if errors.Is(err, sql.ErrNoRows) && pinned.Valid {
-		return auth.User{}, nil, ErrUnknownMCPToken
+		return auth.User{}, ErrUnknownMCPToken
 	}
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return auth.User{}, nil, err
+		return auth.User{}, err
 	}
 	if role.Valid {
 		u.Role = role.String
@@ -335,7 +346,7 @@ func LookupMCPToken(ctx context.Context, db *sql.DB, plaintext string) (auth.Use
 		v := orgID.Int64
 		u.OrgID = &v
 	}
-	return u, scopes, nil
+	return u, nil
 }
 
 // APITokenAuth lets the /api/admin REST tree accept the same tokens

@@ -105,7 +105,8 @@ one step at a time, while the author walks the area:
 | `edit_adventure_graph`      | write | Batch of `put_node` / `delete_node` / `put_zone` / `delete_zone` / `connect` / `disconnect`, all-or-nothing. `put_zone` with `here: true` centres the zone on the author. |
 | `undo_adventure_graph_edit` | write | Restore the draft from before the last `edit_adventure_graph`.         |
 | `get_creator_position`      | read  | The author's last reported position and its age.                      |
-| `upload_adventure_media`    | write | Base64 image/audio/video for blocks, hints and answers.               |
+| `get_media_upload_url`      | write | A 15-minute link for one adventure: `curl -F file=@photo.jpg <url>` uploads without the bytes passing through the model. |
+| `upload_adventure_media`    | write | Base64 image/audio/video — small files only, for clients without a shell. |
 | `simulate_adventure`        | read  | Play the saved draft through actions with the real rules.             |
 
 The author doesn't have to explain any of this. The server sends

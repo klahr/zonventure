@@ -33,6 +33,20 @@ product is **Zonventure**. Versions tagged here correspond to git tags
   mobile app — by signing in and allowing it, instead of pasting a
   token. Approved clients are listed, and disconnected, under API
   tokens.
+- **Watch it being built.** A designer open on an adventure shows an
+  assistant's edits as they are saved: the canvas updates, the steps
+  it changed glow for a moment, and the toolbar says an assistant is
+  editing. Loading them is an ordinary edit, so Undo takes it back.
+- **No more overwritten drafts.** A save based on an older draft is
+  refused; if the designer and an assistant edit at the same moment,
+  the designer asks whether to load theirs or keep yours, and the
+  assistant is told to re-read before trying again.
+- **Photos from an assistant.** `get_media_upload_url` gives an
+  assistant with a shell a short-lived upload link, so it uploads with
+  `curl -F file=@…` instead of pasting base64, which broke on anything
+  but tiny images.
+- The assistant is told that players' text is Markdown, and how to use
+  it — and `{{team}}` — to make steps livelier.
 - `simulate_adventure` plays the draft with the real rules, and
   `upload_adventure_media` adds pictures and sounds to graph adventures.
 

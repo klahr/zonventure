@@ -84,6 +84,8 @@ interface Props {
   revealRequest?: number;
   /** Where the simulated team is, so the canvas can show it. */
   playing?: string | null;
+  /** Steps someone else just changed, to light up. */
+  changed?: Set<string>;
 }
 
 interface PendingDrag {
@@ -126,7 +128,7 @@ const START_ZOOM = 0.75;
  * The pick is created at that spot and wired in. Releasing on a handle
  * that refuses the wire shows why instead.
  */
-export function Canvas({ graph, issues, selected, onChange, onSelect, paletteRequest, focusRequest, revealRequest = 0, playing = null }: Props) {
+export function Canvas({ graph, issues, selected, onChange, onSelect, paletteRequest, focusRequest, revealRequest = 0, playing = null, changed }: Props) {
   const rf = useReactFlow();
   const t = useT();
   const [menu, setMenu] = useState<{ x: number; y: number; items: ContextMenuItem[] } | null>(null);
@@ -198,6 +200,7 @@ export function Canvas({ graph, issues, selected, onChange, onSelect, paletteReq
           sameData(existing.data.issues, issuesBySlug.get(n.slug) ?? []) &&
           existing.selected === (n.slug === selected) &&
           existing.data.playing === (n.slug === playing) &&
+          !!existing.data.changed === !!changed?.has(n.slug) &&
           existing.data.sourceTitle === sourceTitle(n) &&
           existing.data.zone === startZone(graph, n) &&
           samePosition(existing.position, { x: n.x ?? 0, y: n.y ?? 0 }) &&
@@ -206,7 +209,7 @@ export function Canvas({ graph, issues, selected, onChange, onSelect, paletteReq
           id: n.slug,
           type: "zv" as const,
           position: { x: n.x ?? 0, y: n.y ?? 0 },
-          data: { node: n, issues: issuesBySlug.get(n.slug) ?? [], playing: n.slug === playing, ...(sourceTitle(n) ? { sourceTitle: sourceTitle(n)! } : {}), ...(startZone(graph, n) ? { zone: startZone(graph, n)! } : {}) },
+          data: { node: n, issues: issuesBySlug.get(n.slug) ?? [], playing: n.slug === playing, changed: !!changed?.has(n.slug), ...(sourceTitle(n) ? { sourceTitle: sourceTitle(n)! } : {}), ...(startZone(graph, n) ? { zone: startZone(graph, n)! } : {}) },
           selected: n.slug === selected,
           ariaLabel: t.t("{{kind}}: {{title}}", { kind: t.t(TYPE_LABEL[n.type]), title: n.title || n.slug }),
           // Keep React Flow's measurement so handles do not jump.
@@ -216,7 +219,7 @@ export function Canvas({ graph, issues, selected, onChange, onSelect, paletteReq
         }),
       }).items,
     );
-  }, [graph, issuesBySlug, selected, playing, t]);
+  }, [graph, issuesBySlug, selected, playing, changed, t]);
 
   // Frames: the document's boxes, behind every card.
   const graphRefForFrames = useRef(graph);

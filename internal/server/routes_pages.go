@@ -70,6 +70,8 @@ func registerMetaRoutes(r chi.Router, env *routesEnv) {
 			})
 		}
 		r.Method(http.MethodPost, "/mcp", mcpSrv.Handler())
+		// Upload links from get_media_upload_url; the link is the credential.
+		r.With(publicRLMiddleware(env.publicRL)).Post("/api/media-upload/{ticket}", env.adminH.UploadMediaByTicket)
 	}
 
 	// Build info, computed once at startup (debug.ReadBuildInfo is

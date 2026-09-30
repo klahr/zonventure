@@ -62,9 +62,14 @@ export async function getGraph<Env, Rep>(slug: string, signal?: AbortSignal) {
   }
 }
 
-/** Autosave the draft. Errors do not block; the report lists them. */
-export const saveGraph = <Env, Rep>(slug: string, envelope: Env) =>
-  put<GraphPayload<Env, Rep>>(base(slug), envelope);
+/**
+ * Autosave the draft. Errors do not block; the report lists them. With
+ * `since` — the saved_at the draft was loaded or last saved at — a save
+ * that would overwrite someone else's later one is refused (409
+ * draft_changed) instead.
+ */
+export const saveGraph = <Env, Rep>(slug: string, envelope: Env, since?: string) =>
+  put<GraphPayload<Env, Rep>>(base(slug), envelope, since ? { headers: { "X-Draft-Base": since } } : {});
 
 /** Release the saved draft. Refused (422 graph_invalid) when it has errors. */
 export const publishGraph = <Env, Rep>(slug: string, label: string) =>

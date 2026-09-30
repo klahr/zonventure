@@ -46,6 +46,10 @@ func SetWatchAccessRecheck(d time.Duration) time.Duration {
 //	server → {"kind":"events",    "data":{events:[…]}}      on change
 //	server → {"kind":"run",       "data":{…}}               on change
 //	server → {"kind":"watch_error","data":{"error":"…"}}    auth failure
+//
+//	client → {"kind":"watch_adventure","data":{"slug":"…"}}  the designer
+//	server → {"kind":"graph_saved","data":{saved_at, by, assistant}}
+//	                                                       its draft was saved
 func (h *Handlers) WSArrange(w http.ResponseWriter, r *http.Request) {
 	me, ok := auth.FromContext(r.Context())
 	if !ok {
@@ -155,12 +159,65 @@ func (h *Handlers) WSArrange(w http.ResponseWriter, r *http.Request) {
 		go ws.Coalesce(wctx, events, time.Second, push)
 	}
 
+	// The designer watches its adventure's draft: each save is forwarded
+	// as it happens, so it can load what an assistant changed.
+	startAdventureWatch := func(slug string) {
+		advID, _, err := AuthorizeAdventureEdit(conn.Context(), h.DB, slug, me)
+		if err != nil {
+			conn.SendKind("watch_error", map[string]any{"error": "forbidden"})
+			return
+		}
+		stopWatch()
+		saves, unsub := h.Hub.Subscribe(ws.AdventureTopic(advID))
+		wctx, cancel := context.WithCancel(conn.Context())
+		mu.Lock()
+		cancelWatch = func() {
+			cancel()
+			unsub()
+		}
+		mu.Unlock()
+		go func() {
+			checked := time.Now()
+			for {
+				select {
+				case <-wctx.Done():
+					return
+				case raw, ok := <-saves:
+					if !ok {
+						return
+					}
+					// As for events: stop pushing to someone who lost access.
+					if time.Since(checked) >= time.Duration(accessRecheck.Load()) {
+						checked = time.Now()
+						if u, ok, err := auth.Lookup(wctx, h.DB, sessionToken); err == nil {
+							if _, _, err := AuthorizeAdventureEdit(wctx, h.DB, slug, u); !ok || err != nil {
+								conn.SendKind("watch_error", map[string]any{"error": "forbidden"})
+								cancel()
+								unsub()
+								return
+							}
+						}
+					}
+					conn.Send(raw)
+				}
+			}
+		}()
+	}
+
 	for {
 		msg, err := conn.Read()
 		if err != nil {
 			return
 		}
 		switch msg.Kind {
+		case "watch_adventure":
+			var req struct {
+				Slug string `json:"slug"`
+			}
+			if err := json.Unmarshal(msg.Data, &req); err != nil || req.Slug == "" {
+				continue
+			}
+			startAdventureWatch(req.Slug)
 		case "watch_event":
 			var req struct {
 				EventID int64 `json:"event_id"`

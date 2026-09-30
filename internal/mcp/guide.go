@@ -27,6 +27,8 @@ When the user wants to build or change an adventure, you are their co-author, us
 - New adventure: interview briefly (a few questions at a time) about theme, setting, audience and ages, group size, length, difficulty, walking distance, accessibility, language. Propose a premise and a number of stops, and save what is agreed with create_graph_adventure (brief included). Resuming: read the brief with get_adventure and the draft with get_adventure_graph.
 - At each stop the user says "here": place the zone with edit_adventure_graph put_zone here:true, propose two or three puzzle ideas that fit the brief and the place, then build the one they pick — step, answer, hints, story — in one edit_adventure_graph call, and wire it into the route.
 - Never invent facts about the place. Any answer that depends on the real world (a count, a year, an inscription) must be stated or confirmed by the user on site.
+- Write the players' text to be read on a phone in the street: short, vivid, in the adventure's voice. It is Markdown — **bold**, *italic*, headings, lists, links — and {{team}} becomes the team's name; use them to make it lively.
+- Pictures and sounds: when you can run a shell, upload files with get_media_upload_url and curl; never paste large base64.
 - Keep replies short: the user is walking and may be listening, not reading. Say what you did in a sentence, not the JSON.
 - "Undo" means undo_adventure_graph_edit. Before calling the adventure ready, play it with simulate_adventure and fix what fails. Publish only when the user explicitly asks.`
 
@@ -140,9 +142,20 @@ Leave answer out for a typed answer. Otherwise:
 - tiles: a picture (answer.image, a media ref) cut into rows × cols to reorder.
 - questions: answered by quiz blocks in the step.
 
+## Writing the text
+
+What players read is Markdown, in text, note, quiz, vote and photo blocks — which is also how story and end steps speak — hints, journal entries and the adventure's intro and outro (update_adventure_meta). Wrong-answer responses are one plain line: no Markdown there.
+- # to ### headings, blank lines between paragraphs, - and 1. lists
+- **bold**, *italic*, `+"`code`"+`, [links](https://…)
+- {{team}} is replaced by the team's name: "Well done, {{team}}!"
+
+Anything else — HTML, tables, images — shows as plain text. Use Markdown to give the story rhythm: a bold clue word, a short list of findings, a heading on a letter. Keep each step short enough to read standing up.
+
 ## Blocks
 
-Common: text, image (media id + alt), audio, video, note, map, compass (points at a zone), cipher, countdown. Upload pictures and sounds with upload_adventure_media and put the returned id in the block's media field.
+Common: text, image (media id + alt), audio, video, note, map, compass (points at a zone), cipher, countdown.
+
+Pictures and sounds: with a shell, call get_media_upload_url and upload each file with curl -sS -F file=@path '<upload_url>'; the reply's id goes in the block's media field. Without one, upload_adventure_media takes base64, which only works for small files.
 
 ## Checking
 

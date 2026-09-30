@@ -203,3 +203,30 @@ func TestGraphstoreStampsAdventureLanguage(t *testing.T) {
 		t.Errorf("the draft follows the adventure: %q, %v", d.Graph.Language, err)
 	}
 }
+
+// A save based on an older draft is refused, so the designer and an
+// assistant editing at once cannot silently overwrite each other.
+func TestSaveDraftIfRefusesStaleBase(t *testing.T) {
+	db, cleanup := dbtest.Open(t)
+	t.Cleanup(cleanup)
+	ctx := context.Background()
+	var advID int64
+	if err := db.QueryRow(`INSERT INTO adventures(slug, title, description, author, org_id) VALUES ('base', 'b', '', '', $1) RETURNING id`, dbtest.PublisherOrg(t, db)).Scan(&advID); err != nil {
+		t.Fatal(err)
+	}
+	first, _, err := graphstore.SaveDraftIf(ctx, db, advID, 0, linear("a"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, _, err := graphstore.SaveDraftIf(ctx, db, advID, 0, linear("b"), &first.UpdatedAt)
+	if err != nil {
+		t.Fatalf("a save based on the current draft should succeed: %v", err)
+	}
+	if _, _, err := graphstore.SaveDraftIf(ctx, db, advID, 0, linear("c"), &first.UpdatedAt); !errors.Is(err, graphstore.ErrDraftChanged) {
+		t.Fatalf("a save based on an older draft should be refused, got %v", err)
+	}
+	d, err := graphstore.LoadDraft(ctx, db, advID)
+	if err != nil || !d.UpdatedAt.Equal(second.UpdatedAt) {
+		t.Fatalf("the refused save changed the draft: %v %v", d.UpdatedAt, err)
+	}
+}

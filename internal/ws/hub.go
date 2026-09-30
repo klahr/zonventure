@@ -170,6 +170,12 @@ func (h *Hub) PublishAll(kind string, data any) {
 
 // EventTopic is the topic string used for event-scoped broadcasts.
 // The "event:" prefix matches the rename (was "run:" pre-rebrand).
+// AdventureTopic carries saves of an adventure's draft graph, so a
+// designer open on it sees what an assistant (or another tab) changed.
+func AdventureTopic(adventureID int64) string {
+	return "adventure:" + strconv.FormatInt(adventureID, 10)
+}
+
 func EventTopic(eventID int64) string {
 	return "event:" + strconv.FormatInt(eventID, 10)
 }

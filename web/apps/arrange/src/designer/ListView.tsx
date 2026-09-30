@@ -29,6 +29,8 @@ interface Props {
   selected: string | null;
   /** Where the simulated team is. */
   playing?: string | null;
+  /** Steps someone else just changed, to light up. */
+  changed?: Set<string>;
   onChange: (g: Graph) => void;
   onSelect: (slug: string | null) => void;
   /** Show a step on the canvas, for what the list cannot do: wiring. */
@@ -52,7 +54,7 @@ interface Props {
  * removing a step still needs a straight line; drawing a new branch is
  * the canvas's job.
  */
-export function ListView({ graph, issues, selected, playing = null, onChange, onSelect, onOpenCanvas }: Props) {
+export function ListView({ graph, issues, selected, playing = null, changed, onChange, onSelect, onOpenCanvas }: Props) {
   const t = useT();
   const rows = useMemo(() => outline(graph), [graph]);
   const line = useMemo(() => linearSteps(graph), [graph]);
@@ -241,6 +243,7 @@ export function ListView({ graph, issues, selected, playing = null, onChange, on
                 "step" +
                 (n.slug === selected ? " is-selected" : "") +
                 (n.slug === playing ? " is-playing" : "") +
+                (changed?.has(n.slug) ? " is-changed" : "") +
                 (errs ? " has-error" : "") +
                 (drag?.slug === n.slug ? " is-lifted" : "") +
                 dropAt(i)

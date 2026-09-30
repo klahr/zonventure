@@ -416,5 +416,11 @@
   "Not carrying the items": "Bär inte på föremålen",
   "That something is missing": "Att något saknas",
   "Which items are missing": "Vilka föremål som saknas",
-  "Nothing": "Ingenting"
+  "Nothing": "Ingenting",
+  "An assistant is editing…": "En assistent redigerar…",
+  "Keep mine": "Behåll mina",
+  "Load theirs": "Hämta deras",
+  "Someone else saved this adventure while you were editing, so your latest changes are not saved yet.": "Någon annan sparade äventyret medan du redigerade, så dina senaste ändringar är inte sparade än.",
+  "The designer shows their changes as they save them.": "Designern visar ändringarna när de sparas.",
+  "{{name}} is editing…": "{{name}} redigerar…"
 }

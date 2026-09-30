@@ -143,7 +143,7 @@ func editAdventureGraph(ctx context.Context, s *Server, raw json.RawMessage) (To
 		return *r, nil
 	}
 
-	g, bad := s.loadDraftForEdit(ctx, a.Slug)
+	g, base, bad := s.loadDraft(ctx, a.Slug)
 	if bad != nil {
 		return *bad, nil
 	}
@@ -171,10 +171,17 @@ func editAdventureGraph(ctx context.Context, s *Server, raw json.RawMessage) (To
 		}
 	}
 
+	var headers map[string]string
+	if base != "" {
+		headers = map[string]string{"X-Draft-Base": base}
+	}
 	status, body, err := callAdmin(ctx, s.Admin.PutAdventureGraph, "PUT", "/api/admin/adventures/"+a.Slug+"/graph",
-		map[string]string{"slug": a.Slug}, nil, graph.Envelope{Format: graph.FormatV2, Graph: *g})
+		map[string]string{"slug": a.Slug}, headers, graph.Envelope{Format: graph.FormatV2, Graph: *g})
 	if err != nil {
 		return errorResult("call: " + err.Error()), nil
+	}
+	if status == http.StatusConflict {
+		return errorResult("someone saved this adventure in the designer while you were editing; nothing was saved. Read it again and redo the edit."), nil
 	}
 	if status != http.StatusOK {
 		return adminCallResult(status, body), nil
@@ -206,11 +213,18 @@ func editAdventureGraph(ctx context.Context, s *Server, raw json.RawMessage) (To
 // for an adventure that still has lanes: editing an empty graph there
 // would silently leave its pages behind.
 func (s *Server) loadDraftForEdit(ctx context.Context, slug string) (*graph.Graph, *ToolCallResult) {
+	g, _, bad := s.loadDraft(ctx, slug)
+	return g, bad
+}
+
+// loadDraft is loadDraftForEdit with the draft's saved_at, for a save
+// that must not overwrite a later one; empty when there is no draft.
+func (s *Server) loadDraft(ctx context.Context, slug string) (*graph.Graph, string, *ToolCallResult) {
 	status, body, err := callAdmin(ctx, s.Admin.GetAdventureGraph, "GET", "/api/admin/adventures/"+slug+"/graph",
 		map[string]string{"slug": slug}, nil, nil)
 	if err != nil {
 		r := errorResult("call: " + err.Error())
-		return nil, &r
+		return nil, "", &r
 	}
 	if status == http.StatusNotFound && bytes.Contains(body, []byte(`"graph_not_found"`)) {
 		var hasPages bool
@@ -218,26 +232,27 @@ func (s *Server) loadDraftForEdit(ctx context.Context, slug string) (*graph.Grap
 			SELECT EXISTS (SELECT 1 FROM adventure_pages p JOIN adventures a ON a.id = p.adventure_id WHERE a.slug = $1)
 		`, slug).Scan(&hasPages); err != nil {
 			r := errorResult("checking lanes: " + err.Error())
-			return nil, &r
+			return nil, "", &r
 		}
 		if hasPages {
 			r := errorResult("this adventure still has lanes; convert them with convert_adventure_graph and save the result first")
-			return nil, &r
+			return nil, "", &r
 		}
-		return &graph.Graph{Nodes: []graph.Node{}, Edges: []graph.Edge{}}, nil
+		return &graph.Graph{Nodes: []graph.Node{}, Edges: []graph.Edge{}}, "", nil
 	}
 	if status != http.StatusOK {
 		r := adminCallResult(status, body)
-		return nil, &r
+		return nil, "", &r
 	}
 	var got struct {
 		Envelope graph.Envelope `json:"envelope"`
+		SavedAt  string         `json:"saved_at"`
 	}
 	if err := json.Unmarshal(body, &got); err != nil {
 		r := errorResult("decoding draft: " + err.Error())
-		return nil, &r
+		return nil, "", &r
 	}
-	return &got.Envelope.Graph, nil
+	return &got.Envelope.Graph, got.SavedAt, nil
 }
 
 // decodeStrict decodes like graph.ParseEnvelope does: a field this

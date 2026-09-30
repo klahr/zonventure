@@ -38,6 +38,7 @@ import (
 	"github.com/klahr/zonventure/internal/graph/valid"
 	"github.com/klahr/zonventure/internal/graphstore"
 	"github.com/klahr/zonventure/internal/httpx"
+	"github.com/klahr/zonventure/internal/ws"
 )
 
 // maxGraphBodyBytes bounds a graph upload. Matches graph.ParseEnvelope's
@@ -131,7 +132,22 @@ func (h *Handlers) PutAdventureGraph(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, _, err := graphstore.SaveDraft(r.Context(), h.DB, advID, h.userID(r), &env.Graph)
+	// X-Draft-Base is the saved_at the caller loaded: with it, a save
+	// that would overwrite someone else's later one is refused.
+	var base *time.Time
+	if b := r.Header.Get("X-Draft-Base"); b != "" {
+		t, err := time.Parse(time.RFC3339Nano, b)
+		if err != nil {
+			httpx.JSON(w, http.StatusBadRequest, graphRefusal{Error: "X-Draft-Base must be a saved_at", Code: "graph_malformed"})
+			return
+		}
+		base = &t
+	}
+	d, _, err := graphstore.SaveDraftIf(r.Context(), h.DB, advID, h.userID(r), &env.Graph, base)
+	if errors.Is(err, graphstore.ErrDraftChanged) {
+		httpx.JSON(w, http.StatusConflict, graphRefusal{Error: err.Error(), Code: "draft_changed"})
+		return
+	}
 	if errors.Is(err, graphstore.ErrForeignMedia) {
 		httpx.JSON(w, http.StatusUnprocessableEntity, graphRefusal{Error: err.Error(), Code: "media_foreign"})
 		return
@@ -140,7 +156,20 @@ func (h *Handlers) PutAdventureGraph(w http.ResponseWriter, r *http.Request) {
 		httpx.ServerErr(w, http.StatusInternalServerError, "saving draft failed", err)
 		return
 	}
+	h.publishGraphSaved(r, advID, d.UpdatedAt)
 	h.writeGraphState(w, r, advID)
+}
+
+// publishGraphSaved tells designers open on the adventure that its
+// draft changed, by whom, and whether through an API token — which is
+// how an assistant edits.
+func (h *Handlers) publishGraphSaved(r *http.Request, advID int64, savedAt time.Time) {
+	me, _ := auth.FromContext(r.Context())
+	h.Hub.Publish(ws.AdventureTopic(advID), "graph_saved", map[string]any{
+		"saved_at":  savedAt,
+		"by":        me.Username,
+		"assistant": auth.ViaAPIToken(r.Context()),
+	})
 }
 
 type publishRequest struct {
@@ -170,6 +199,7 @@ func (h *Handlers) PublishAdventureGraph(w http.ResponseWriter, r *http.Request)
 	}
 	_, report, err := graphstore.Publish(r.Context(), h.DB, advID, h.userID(r), draft.Graph, strings.TrimSpace(req.Label))
 	if !h.publishRefused(w, report, err) {
+		h.publishGraphSaved(r, advID, draft.UpdatedAt)
 		h.writeGraphState(w, r, advID)
 	}
 }

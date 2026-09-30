@@ -266,3 +266,74 @@ func TestWSArrange_WatchStopsWhenSessionEnds(t *testing.T) {
 	}
 	mustNotRecv(t, c, 1500*time.Millisecond)
 }
+
+// The designer watches its adventure: a save of the draft — here through
+// the HTTP API, as an assistant's through MCP — arrives as graph_saved,
+// and someone who may not edit the adventure cannot watch it.
+func TestWSArrange_WatchAdventure(t *testing.T) {
+	hub := ws.NewHub()
+	ts, db, _, cleanup := seedPurchaseStack(t, server.Config{Hub: hub})
+	defer cleanup()
+
+	boss := newClient(t, ts)
+	if s := boss.do("POST", "/api/auth/login", map[string]string{"username": "boss", "password": "s3cret"}, nil); s != 200 {
+		t.Fatalf("login = %d", s)
+	}
+	if s := boss.do("POST", "/api/admin/adventures", map[string]string{"slug": "live-watch", "title": "Live"}, nil); s != 201 {
+		t.Fatalf("create adventure = %d", s)
+	}
+
+	conn := dialWS(t, ts, "/ws/arrange", boss.c)
+	defer conn.Close(websocket.StatusNormalClosure, "")
+	cwx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	if err := conn.Write(cwx, websocket.MessageText, []byte(`{"kind":"watch_adventure","data":{"slug":"live-watch"}}`)); err != nil {
+		cancel()
+		t.Fatalf("write watch_adventure: %v", err)
+	}
+	cancel()
+	// The watch is set up asynchronously; give it a moment before saving.
+	time.Sleep(200 * time.Millisecond)
+
+	env := map[string]any{"format": "zonventure-adventure-v2", "graph": map[string]any{
+		"nodes": []map[string]any{{"slug": "start", "type": "start"}, {"slug": "end", "type": "end"}},
+		"edges": []map[string]any{{"from": "start", "from_port": "out", "to": "end"}},
+	}}
+	var saved struct {
+		SavedAt string `json:"saved_at"`
+	}
+	if s := boss.do("PUT", "/api/admin/adventures/live-watch/graph", env, &saved); s != 200 {
+		t.Fatalf("save = %d", s)
+	}
+	m := recvMsg(t, conn)
+	if m.Kind != "graph_saved" {
+		t.Fatalf("kind = %q, want graph_saved", m.Kind)
+	}
+	var d struct {
+		SavedAt   string `json:"saved_at"`
+		By        string `json:"by"`
+		Assistant bool   `json:"assistant"`
+	}
+	if err := json.Unmarshal(m.Data, &d); err != nil {
+		t.Fatal(err)
+	}
+	if d.SavedAt != saved.SavedAt || d.By != "boss" || d.Assistant {
+		t.Errorf("graph_saved = %+v, save said saved_at %q", d, saved.SavedAt)
+	}
+
+	// Another org's adventure is refused.
+	var otherOrgID int64
+	if err := db.QueryRow(`SELECT id FROM organizations WHERE name = 'OtherOrg'`).Scan(&otherOrgID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO adventures(slug, title, description, author, org_id) VALUES ('theirs', 't', '', '', $1)`, otherOrgID); err != nil {
+		t.Fatal(err)
+	}
+	cwx, cancel = context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := conn.Write(cwx, websocket.MessageText, []byte(`{"kind":"watch_adventure","data":{"slug":"theirs"}}`)); err != nil {
+		t.Fatal(err)
+	}
+	if m := recvMsg(t, conn); m.Kind != "watch_error" {
+		t.Errorf("watching another org's adventure: kind = %q, want watch_error", m.Kind)
+	}
+}

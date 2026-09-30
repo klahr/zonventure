@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ReactFlowProvider } from "@xyflow/react";
 import {
   ArrowLeft,
+  Bot,
   Check,
   GitCompare,
   History,
@@ -56,6 +57,7 @@ import {
 } from "@zonventure/graph";
 import { useT } from "../i18n.tsx";
 import { href } from "../router.ts";
+import { useAdventureWatch } from "../ui/live.ts";
 import { Canvas, cardSizes } from "./Canvas.tsx";
 import { Inspector } from "./Inspector.tsx";
 import { LanguageSwitch, LanguagesSettings, TranslateStep, translationLanguages } from "./Translate.tsx";
@@ -77,6 +79,17 @@ import "./designer.css";
 
 
 const errorText = (e: unknown): string => (e instanceof Error ? e.message : String(e));
+
+/** How long steps someone else changed stay highlighted. */
+const CHANGED_MS = 8000;
+/** How long after someone else's last save the toolbar still says so. */
+const REMOTE_MS = 30_000;
+
+/** The steps of `next` that are new or differ from `prev`. */
+function changedSlugs(prev: Graph | null, next: Graph): Set<string> {
+  const before = new Map((prev?.nodes ?? []).map((n) => [n.slug, JSON.stringify(n)]));
+  return new Set(next.nodes.filter((n) => before.get(n.slug) !== JSON.stringify(n)).map((n) => n.slug));
+}
 
 const loadError = (e: unknown): Loaded => ({
   state: "error",
@@ -134,6 +147,16 @@ export function Designer({ slug }: { slug: string }) {
   const [published, setPublished] = useState<Published>(null);
   const [serverDirty, setServerDirty] = useState(false);
   const [issues, setIssues] = useState<Issue[]>([]);
+  // The saved_at of the draft as this page last loaded or saved it. Saves
+  // send it, so this page never overwrites a later save by someone else —
+  // an assistant building the adventure, another tab.
+  const since = useRef<string | undefined>(undefined);
+  // A save was refused because someone else saved first.
+  const [conflict, setConflict] = useState(false);
+  // Steps someone else just changed, highlighted for a moment.
+  const [changed, setChanged] = useState<Set<string>>(() => new Set());
+  // Someone else's latest save, for the toolbar.
+  const [remote, setRemote] = useState<{ by: string; assistant: boolean; at: number } | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [slot, setSlot] = useState<Slot>("inspect");
   const [issuePanel, setIssuePanel] = useState<"error" | "warning" | null>(null);
@@ -196,6 +219,7 @@ export function Designer({ slug }: { slug: string }) {
   const adopt = useCallback((r: adventures.GraphPayload<Envelope, Report> | null, g: Graph, savedGraph: Graph | null) => {
     setHistory(rebase(g, Date.now()));
     setSaved(savedGraph);
+    since.current = r?.saved_at;
     setIssues(r?.report.issues ?? []);
     setPublished(r?.published ?? null);
     setServerDirty(!!r?.dirty);
@@ -282,15 +306,17 @@ export function Designer({ slug }: { slug: string }) {
     if (!draft) return false;
     setSaving(true);
     try {
-      const r = await adventures.saveGraph<Envelope, Report>(slug, envelope(draft));
+      const r = await adventures.saveGraph<Envelope, Report>(slug, envelope(draft), since.current);
       setSaved(draft);
+      since.current = r.saved_at;
       setIssues(r.report.issues ?? []);
       setPublished(r.published ?? null);
       setServerDirty(!!r.dirty);
       setSaveError(null);
       return true;
     } catch (e) {
-      setSaveError(errorText(e));
+      if (e instanceof ApiError && e.code === "draft_changed") setConflict(true);
+      else setSaveError(errorText(e));
       return false;
     } finally {
       setSaving(false);
@@ -298,10 +324,52 @@ export function Designer({ slug }: { slug: string }) {
   }, [draft, slug]);
 
   useEffect(() => {
-    if (!unsaved || readOnly || loaded.state !== "ready") return;
+    if (!unsaved || readOnly || conflict || loaded.state !== "ready") return;
     const id = setTimeout(() => void saveNow(), AUTOSAVE_MS);
     return () => clearTimeout(id);
-  }, [unsaved, readOnly, loaded.state, saveNow]);
+  }, [unsaved, readOnly, conflict, loaded.state, saveNow]);
+
+  // --- someone else's saves ---------------------------------------------------------
+
+  // Load the draft someone else saved, as an ordinary edit: it can be
+  // undone, and the steps it changed light up.
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
+  const pullRemote = useCallback(async () => {
+    const r = await adventures.getGraph<Envelope, Report>(slug).catch(() => null);
+    if (!r) return;
+    const next = r.envelope.graph;
+    setChanged(changedSlugs(draftRef.current, next));
+    setHistory((h) => record(h, next, Date.now()));
+    setSaved(next);
+    since.current = r.saved_at;
+    setIssues(r.report.issues ?? []);
+    setPublished(r.published ?? null);
+    setServerDirty(!!r.dirty);
+    setConflict(false);
+  }, [slug]);
+  const busy = useRef({ unsaved, saving, readOnly });
+  busy.current = { unsaved, saving, readOnly };
+  useAdventureWatch(loaded.state === "ready" ? slug : null, (m) => {
+    if (m.kind !== "graph_saved") return;
+    const d = m.data as { saved_at: string; by: string; assistant: boolean };
+    if (d.saved_at === since.current) return; // this page's own save
+    setRemote({ by: d.by, assistant: d.assistant, at: Date.now() });
+    // Mid-edit, the author's work comes first: the next save is refused
+    // and the conflict banner lets them choose.
+    const b = busy.current;
+    if (!b.unsaved && !b.saving && !b.readOnly) void pullRemote();
+  });
+  useEffect(() => {
+    if (!changed.size) return;
+    const id = setTimeout(() => setChanged(new Set()), CHANGED_MS);
+    return () => clearTimeout(id);
+  }, [changed]);
+  useEffect(() => {
+    if (!remote) return;
+    const id = setTimeout(() => setRemote(null), REMOTE_MS);
+    return () => clearTimeout(id);
+  }, [remote]);
 
   // Validation between autosaves, so badges follow the author quickly.
   useEffect(() => {
@@ -655,6 +723,14 @@ export function Designer({ slug }: { slug: string }) {
                     <span className="toolbar-label">{t.t("Saved")}</span>
                   </span>
                 )}
+                {remote && (
+                  <span className="editor-remote" role="status" title={t.t("The designer shows their changes as they save them.")}>
+                    <Bot size={ICON.sm} aria-hidden />
+                    <span className="toolbar-label">
+                      {remote.assistant ? t.t("An assistant is editing…") : t.t("{{name}} is editing…", { name: remote.by })}
+                    </span>
+                  </span>
+                )}
                 <Button variant="ghost" onClick={openHistory} title={t.t("Version history")} aria-label={t.t("History")}>
                   <History size={ICON.sm} />
                   <span className="toolbar-label">{t.t("History")}</span>
@@ -765,6 +841,23 @@ export function Designer({ slug }: { slug: string }) {
           </div>
 
           <div className="editor-banner-stack">
+            {conflict && (
+              <div className="editor-conn-banner" role="alert">
+                <span className="editor-conn-banner-text">
+                  {t.t("Someone else saved this adventure while you were editing, so your latest changes are not saved yet.")}
+                </span>
+                <Button size="sm" variant="primary" onClick={() => void pullRemote()}>{t.t("Load theirs")}</Button>
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    since.current = undefined;
+                    setConflict(false);
+                  }}
+                >
+                  {t.t("Keep mine")}
+                </Button>
+              </div>
+            )}
             {saveError && (
               <div className="editor-conn-banner" role="alert">
                 <span className="editor-conn-banner-text">{saveError}</span>
@@ -804,6 +897,7 @@ export function Designer({ slug }: { slug: string }) {
                 issues={shownIssues}
                 selected={selected}
                 playing={previewing ? playing : null}
+                changed={changed}
                 onChange={change}
                 onSelect={setSelected}
                 onOpenCanvas={(slug) => {
@@ -822,6 +916,7 @@ export function Designer({ slug }: { slug: string }) {
                 issues={preview ? [] : shownIssues}
                 selected={selected}
                 playing={previewing ? playing : null}
+                changed={changed}
                 onChange={change}
                 onSelect={(s) => {
                   setSelected(s);

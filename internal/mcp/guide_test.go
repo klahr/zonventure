@@ -36,7 +36,7 @@ func TestGuideNamesRealTools(t *testing.T) {
 	s := New(nil, "", nil, nil)
 	text := serverInstructions + authoringGuide()
 	for _, name := range []string{"get_authoring_guide", "create_graph_adventure", "get_adventure", "get_adventure_graph",
-		"edit_adventure_graph", "undo_adventure_graph_edit", "simulate_adventure", "upload_adventure_media"} {
+		"edit_adventure_graph", "undo_adventure_graph_edit", "simulate_adventure", "upload_adventure_media", "get_media_upload_url", "update_adventure_meta"} {
 		if !strings.Contains(text, name) {
 			t.Errorf("%s is not mentioned", name)
 		}
