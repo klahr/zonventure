@@ -266,11 +266,12 @@ func LookupMCPToken(ctx context.Context, db *sql.DB, plaintext string) (auth.Use
 	var (
 		uid        int64
 		scopesJSON []byte
+		pinned     sql.NullInt64
 	)
 	err := db.QueryRowContext(ctx, `
-		SELECT user_id, scopes FROM mcp_tokens
+		SELECT user_id, scopes, org_id FROM mcp_tokens
 		WHERE token_hash = $1 AND (expires_at IS NULL OR expires_at > now())
-	`, hash[:]).Scan(&uid, &scopesJSON)
+	`, hash[:]).Scan(&uid, &scopesJSON, &pinned)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return auth.User{}, nil, ErrUnknownMCPToken
@@ -312,12 +313,16 @@ func LookupMCPToken(ctx context.Context, db *sql.DB, plaintext string) (auth.Use
 		role  sql.NullString
 		orgID sql.NullInt64
 	)
+	// A token pinned to an organisation acts there, and only there.
 	err = db.QueryRowContext(ctx, `
 		SELECT role, org_id FROM org_memberships
-		WHERE user_id = $1
+		WHERE user_id = $1 AND ($2::bigint IS NULL OR org_id = $2)
 		ORDER BY org_id ASC
 		LIMIT 1
-	`, uid).Scan(&role, &orgID)
+	`, uid, pinned).Scan(&role, &orgID)
+	if errors.Is(err, sql.ErrNoRows) && pinned.Valid {
+		return auth.User{}, nil, ErrUnknownMCPToken
+	}
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return auth.User{}, nil, err
 	}

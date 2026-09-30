@@ -199,6 +199,58 @@ func TestFlow(t *testing.T) {
 		t.Error("after a replay the grant should be revoked")
 	}
 
+	// Someone in two organizations must choose one, and the token acts
+	// only there — until they leave it.
+	var org2 int64
+	if err := db.QueryRow(`INSERT INTO organizations(name) VALUES ('Beta') RETURNING id`).Scan(&org2); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO org_memberships(user_id, org_id, role) VALUES ($1, $2, 'org_member')`, userID, org2); err != nil {
+		t.Fatal(err)
+	}
+	if status, _ := approve(me, true); status != http.StatusBadRequest {
+		t.Errorf("approving without choosing an organization should be refused, got %d", status)
+	}
+	withOrg := func(org int64) (int, string) {
+		body := map[string]any{"approve": true, "org_id": org}
+		for k := range q {
+			body[k] = q.Get(k)
+		}
+		b, _ := json.Marshal(body)
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest("POST", "/api/admin/oauth/approve", strings.NewReader(string(b))).WithContext(me)
+		req.Header.Set("Content-Type", "application/json")
+		s.Approve(rec, req)
+		var out struct {
+			Redirect string `json:"redirect"`
+		}
+		_ = json.Unmarshal(rec.Body.Bytes(), &out)
+		return rec.Code, out.Redirect
+	}
+	if status, _ := withOrg(org2 + 1000); status != http.StatusBadRequest {
+		t.Errorf("an organization the user is not in should be refused, got %d", status)
+	}
+	_, back = withOrg(org2)
+	u, _ = url.Parse(back)
+	exchange.Set("code", u.Query().Get("code"))
+	_, tokB := token(exchange)
+	accessB, _ := tokB["access_token"].(string)
+	user, _, err := admin.LookupMCPToken(context.Background(), db, accessB)
+	if err != nil || user.OrgID == nil || *user.OrgID != org2 || user.Role != auth.RoleOrgMember {
+		t.Fatalf("the token should act in Beta as a member: %+v %v", user, err)
+	}
+	var name string
+	_ = db.QueryRow(`SELECT name FROM mcp_tokens WHERE token_prefix = $1`, accessB[:12]).Scan(&name)
+	if name != "Claude (signed in) · Beta" {
+		t.Errorf("token name %q", name)
+	}
+	if _, err := db.Exec(`DELETE FROM org_memberships WHERE user_id = $1 AND org_id = $2`, userID, org2); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := admin.LookupMCPToken(context.Background(), db, accessB); err == nil {
+		t.Error("a token pinned to an organization the user left should stop working")
+	}
+
 	// An expired access token is refused.
 	_, back = approve(me, true)
 	u, _ = url.Parse(back)

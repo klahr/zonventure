@@ -20,6 +20,7 @@ CREATE TABLE oauth_codes (
     redirect_uri   TEXT NOT NULL,
     code_challenge TEXT NOT NULL,
     scopes         JSONB NOT NULL,
+    org_id         BIGINT REFERENCES organizations(id) ON DELETE CASCADE,
     expires_at     TIMESTAMPTZ NOT NULL
 );
 
@@ -34,3 +35,9 @@ ALTER TABLE mcp_tokens
     ADD COLUMN refresh_hash           BYTEA UNIQUE,
     ADD COLUMN previous_refresh_hash  BYTEA,
     ADD COLUMN refresh_expires_at     TIMESTAMPTZ;
+
+-- The organisation a token acts in, for someone in several; NULL is
+-- their first (lowest id), as before. A token pinned to an organisation
+-- the user has since left stops working rather than moving elsewhere.
+ALTER TABLE mcp_tokens
+    ADD COLUMN org_id BIGINT REFERENCES organizations(id) ON DELETE CASCADE;

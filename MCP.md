@@ -165,7 +165,9 @@ origin, which becomes the OAuth issuer.
    http zv https://<your-host>/mcp` with no header, then `/mcp` →
    Authenticate.)
 2. The browser opens Zonventure. Sign in as usual — password, TOTP or
-   single sign-on — and **Allow** the client.
+   single sign-on — and **Allow** the client. Someone in several
+   organizations picks the one it acts in; the token works there only,
+   and stops if they leave it. Connect again for another.
 3. The connector is then available in the Claude apps signed in to the
    same account, the mobile app included.
 

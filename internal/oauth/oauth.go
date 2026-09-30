@@ -328,6 +328,8 @@ func (s *Server) Approve(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		authRequest
 		Approve bool `json:"approve"`
+		// OrgID is the organisation to act in, for someone in several.
+		OrgID int64 `json:"org_id"`
 	}
 	if !httpx.DecodeJSON(w, r, &req) {
 		return
@@ -344,6 +346,11 @@ func (s *Server) Approve(w http.ResponseWriter, r *http.Request) {
 	case !req.Approve:
 		back.Set("error", "access_denied")
 	default:
+		org, err := s.pickOrg(r.Context(), me.ID, req.OrgID)
+		if err != nil {
+			httpx.Error(w, http.StatusBadRequest, err.Error())
+			return
+		}
 		code, err := tokenx.New(secretBytes)
 		if err != nil {
 			httpx.ServerErr(w, http.StatusInternalServerError, "code", err)
@@ -351,9 +358,9 @@ func (s *Server) Approve(w http.ResponseWriter, r *http.Request) {
 		}
 		sc, _ := json.Marshal(scopes)
 		if _, err := s.DB.ExecContext(r.Context(), `
-			INSERT INTO oauth_codes (code_hash, client_id, user_id, redirect_uri, code_challenge, scopes, expires_at)
-			VALUES ($1, $2, $3, $4, $5, $6, $7)
-		`, hash(code), c.id, me.ID, req.RedirectURI, req.CodeChallenge, sc, time.Now().Add(codeTTL)); err != nil {
+			INSERT INTO oauth_codes (code_hash, client_id, user_id, redirect_uri, code_challenge, scopes, org_id, expires_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		`, hash(code), c.id, me.ID, req.RedirectURI, req.CodeChallenge, sc, org, time.Now().Add(codeTTL)); err != nil {
 			httpx.ServerErr(w, http.StatusInternalServerError, "saving code failed", err)
 			return
 		}
@@ -380,6 +387,39 @@ func (s *Server) sweep(ctx context.Context) {
 			logx.Warn("oauth.sweep", "err", err.Error())
 		}
 	}
+}
+
+// pickOrg checks the organisation the user chose to act in. Someone in
+// several must choose; someone in one acts in it; someone in none (the
+// platform admin, a user with no organisation yet) acts as before.
+func (s *Server) pickOrg(ctx context.Context, userID, orgID int64) (sql.NullInt64, error) {
+	var orgs []int64
+	rows, err := s.DB.QueryContext(ctx, `SELECT org_id FROM org_memberships WHERE user_id = $1 ORDER BY org_id`, userID)
+	if err != nil {
+		return sql.NullInt64{}, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return sql.NullInt64{}, err
+		}
+		orgs = append(orgs, id)
+	}
+	if err := rows.Err(); err != nil {
+		return sql.NullInt64{}, err
+	}
+	switch {
+	case orgID != 0 && slices.Contains(orgs, orgID):
+		return sql.NullInt64{Int64: orgID, Valid: true}, nil
+	case orgID != 0:
+		return sql.NullInt64{}, errors.New("you are not in that organization")
+	case len(orgs) == 1:
+		return sql.NullInt64{Int64: orgs[0], Valid: true}, nil
+	case len(orgs) > 1:
+		return sql.NullInt64{}, errors.New("choose the organization to connect")
+	}
+	return sql.NullInt64{}, nil
 }
 
 func hash(s string) []byte {
@@ -424,12 +464,15 @@ func (s *Server) exchangeCode(w http.ResponseWriter, r *http.Request, c client) 
 		redirectURI string
 		challenge   string
 		scopes      []byte
+		org         sql.NullInt64
+		orgName     sql.NullString
 	)
 	// DELETE … RETURNING makes the code single-use even under a race.
 	err := s.DB.QueryRowContext(r.Context(), `
 		DELETE FROM oauth_codes WHERE code_hash = $1 AND client_id = $2 AND expires_at > now()
-		RETURNING user_id, redirect_uri, code_challenge, scopes
-	`, hash(r.PostForm.Get("code")), c.id).Scan(&userID, &redirectURI, &challenge, &scopes)
+		RETURNING user_id, redirect_uri, code_challenge, scopes, org_id,
+		          (SELECT name FROM organizations WHERE id = oauth_codes.org_id)
+	`, hash(r.PostForm.Get("code")), c.id).Scan(&userID, &redirectURI, &challenge, &scopes, &org, &orgName)
 	if err != nil {
 		if !errors.Is(err, sql.ErrNoRows) {
 			logx.Warn("oauth.code", "err", err.Error())
@@ -451,10 +494,14 @@ func (s *Server) exchangeCode(w http.ResponseWriter, r *http.Request, c client) 
 		return
 	}
 	now := time.Now()
+	name := c.name + " (signed in)"
+	if orgName.Valid {
+		name += " · " + orgName.String
+	}
 	if _, err := s.DB.ExecContext(r.Context(), `
-		INSERT INTO mcp_tokens (user_id, token_hash, name, token_prefix, scopes, expires_at, oauth_client_id, refresh_hash, refresh_expires_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-	`, userID, hash(access), c.name+" (signed in)", access[:12], scopes, now.Add(accessTTL), c.id, hash(refresh), now.Add(refreshTTL)); err != nil {
+		INSERT INTO mcp_tokens (user_id, token_hash, name, token_prefix, scopes, expires_at, oauth_client_id, refresh_hash, refresh_expires_at, org_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+	`, userID, hash(access), name, access[:12], scopes, now.Add(accessTTL), c.id, hash(refresh), now.Add(refreshTTL), org); err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "saving token failed", err)
 		return
 	}
