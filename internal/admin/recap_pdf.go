@@ -351,6 +351,7 @@ const pdfPageSize = "A4"
 // in a fixture and asserting the result is a non-trivial PDF.
 func writeRecapPDF(w io.Writer, d recapPDFData) error {
 	pdf := fpdf.New("P", "mm", pdfPageSize, "")
+	text := recapText(pdf)
 	pdf.SetMargins(15, 15, 15)
 	pdf.SetAutoPageBreak(true, 18)
 	// Footer callback fires once per page, so we don't have to
@@ -364,7 +365,7 @@ func writeRecapPDF(w io.Writer, d recapPDFData) error {
 		pdf.SetTextColor(150, 150, 150)
 		footer := fmt.Sprintf("Generated %s  ·  powered by Zonventure",
 			d.GeneratedAt.Format("2006-01-02 15:04 UTC"))
-		pdf.CellFormat(0, 5, safeText(footer), "", 0, "C", false, 0, "")
+		pdf.CellFormat(0, 5, text(footer), "", 0, "C", false, 0, "")
 	})
 	pdf.AddPage()
 
@@ -423,15 +424,15 @@ func writeRecapPDF(w io.Writer, d recapPDFData) error {
 	if !logoRendered {
 		pdf.SetFont("Helvetica", "B", 10)
 		pdf.SetTextColor(120, 120, 120)
-		pdf.CellFormat(usableW, 5, strings.ToUpper(safeText(d.OrgName)), "", 1, "L", false, 0, "")
+		pdf.CellFormat(usableW, 5, text(strings.ToUpper(d.OrgName)), "", 1, "L", false, 0, "")
 		pdf.Ln(2)
 	}
 	pdf.SetFont("Helvetica", "B", 22)
 	pdf.SetTextColor(40, 40, 40)
-	pdf.MultiCell(usableW, 8.5, safeText(d.AdventureTitle), "", "L", false)
+	pdf.MultiCell(usableW, 8.5, text(d.AdventureTitle), "", "L", false)
 	pdf.SetFont("Helvetica", "", 11)
 	pdf.SetTextColor(120, 120, 120)
-	pdf.CellFormat(usableW, 6, safeText(recapDateLine(d)), "", 1, "L", false, 0, "")
+	pdf.CellFormat(usableW, 6, text(recapDateLine(d)), "", 1, "L", false, 0, "")
 	pdf.Ln(6)
 
 	// Stats grid: 4 boxes summarising the event.
@@ -460,11 +461,11 @@ func writeRecapPDF(w io.Writer, d recapPDFData) error {
 		pdf.SetXY(x, statY+3)
 		pdf.SetFont("Helvetica", "B", 16)
 		pdf.SetTextColor(accentR, accentG, accentB)
-		pdf.CellFormat(statW, 8, safeText(value), "", 0, "C", false, 0, "")
+		pdf.CellFormat(statW, 8, text(value), "", 0, "C", false, 0, "")
 		pdf.SetXY(x, statY+13)
 		pdf.SetFont("Helvetica", "", 9)
 		pdf.SetTextColor(120, 120, 120)
-		pdf.CellFormat(statW, 6, safeText(label), "", 0, "C", false, 0, "")
+		pdf.CellFormat(statW, 6, text(label), "", 0, "C", false, 0, "")
 	}
 	stat(0, "Teams", strconv.Itoa(teamsCount))
 	stat(1, "Completed", fmt.Sprintf("%d / %d", completedCount, teamsCount))
@@ -522,7 +523,7 @@ func writeRecapPDF(w io.Writer, d recapPDFData) error {
 			pdf.Ln(2)
 			pdf.SetFont("Helvetica", "I", 9)
 			pdf.SetTextColor(140, 140, 140)
-			pdf.CellFormat(usableW, 6, safeText("Withdrew"), "", 1, "L", false, 0, "")
+			pdf.CellFormat(usableW, 6, text("Withdrew"), "", 1, "L", false, 0, "")
 			pdf.SetFont("Helvetica", "", 9)
 			pdf.SetTextColor(40, 40, 40)
 		}
@@ -563,7 +564,7 @@ func writeRecapPDF(w io.Writer, d recapPDFData) error {
 			pdf.SetTextColor(140, 140, 140)
 		}
 		for j, c := range cols {
-			pdf.CellFormat(c.w, 6, safeText(row[j]), "", 0, c.align, false, 0, "")
+			pdf.CellFormat(c.w, 6, text(row[j]), "", 0, c.align, false, 0, "")
 		}
 		if t.WithdrawnAt != "" {
 			pdf.SetTextColor(40, 40, 40)
@@ -653,6 +654,16 @@ func truncateText(s string, maxRunes int) string {
 		out = append(out, r)
 	}
 	return string(out) + "…"
+}
+
+// recapText prepares text for the PDF's built-in Helvetica, which reads
+// single-byte Windows-1252, not UTF-8: without this, "Gröna" prints as
+// "GrÃ¶na". Western European letters come through; a character outside
+// the code page prints as ".". One per PDF, as the translator is not
+// safe for concurrent use.
+func recapText(pdf *fpdf.Fpdf) func(string) string {
+	tr := pdf.UnicodeTranslatorFromDescriptor("")
+	return func(s string) string { return tr(safeText(s)) }
 }
 
 // safeText replaces characters fpdf's built-in (Latin-1-ish) Helvetica

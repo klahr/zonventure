@@ -15,6 +15,14 @@ import (
 func registerPlayerRoutes(r chi.Router, env *routesEnv) {
 	playerH := env.playerH
 
+	// Signing out, and erasing the player's data (GDPR right to
+	// erasure: wipes pings + answers + photos + slot name + session for
+	// the caller's slot; the slot row stays so the team's run keeps
+	// working for everyone else). Both still work once the event has
+	// ended, when the endpoints below refuse the session.
+	r.With(auth.RequireSlotOrEnded, auth.RequireCSRF()).Post("/api/player/logout", playerH.Logout)
+	r.With(auth.RequireSlotOrEnded, auth.RequireCSRF()).Post("/api/player/forget", playerH.Forget)
+
 	// Player (slot-authenticated). Mutations under CSRF; the GET reads
 	// stay open since they're idempotent and can't damage state.
 	r.Route("/api/player", func(r chi.Router) {
@@ -49,11 +57,6 @@ func registerPlayerRoutes(r chi.Router, env *routesEnv) {
 		// collisions across teams.
 		r.Post("/team/name", playerH.RenameMyTeam)
 		r.Get("/summary", playerH.Summary)
-		r.Post("/logout", playerH.Logout)
-		// GDPR right-to-erasure: wipes pings + answers + slot name +
-		// session for the caller's slot. The slot row stays so the
-		// team's run keeps working for everyone else.
-		r.Post("/forget", playerH.Forget)
 	})
 
 	// Player WebSocket: replaces the 5s /state poll and 15s /location POST

@@ -54,3 +54,11 @@ test("theme presets map onto radius, shadow and heading tokens", () => {
   assert.deepEqual(brandVars({ corners: "rounded", cards: "raised" }), {}, "the defaults override nothing");
   assert.deepEqual(brandVars({ corners: "wobbly" as never, heading_font: "comic" }), {}, "unknown presets are ignored");
 });
+
+test("status colours follow the page", () => {
+  const dark = brandVars({ background: "#14181f" });
+  assert.equal(dark["--danger"], "#f2837c");
+  assert.equal(dark["--danger-bg"], "color-mix(in srgb, #f2837c 16%, #14181f)");
+  assert.equal(brandVars({ background: "#fbfbfd" })["--danger"], "#b3261e");
+  assert.equal(brandVars({ accent: "#e24080" })["--danger"], undefined);
+});

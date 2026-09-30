@@ -20,6 +20,9 @@ type Slot struct {
 	Name    string
 	TeamID  int64
 	EventID int64
+	// Ended says the slot's event has ended. Such a session only erases
+	// or signs out; see RequireSlotOrEnded.
+	Ended bool
 }
 
 const (
@@ -152,12 +155,12 @@ func LookupSlot(ctx context.Context, db *sql.DB, token string) (Slot, bool, erro
 		expires string
 	)
 	err := db.QueryRowContext(ctx, `
-		SELECT ps.id, ps.name, ps.team_id, t.event_id, ss.expires_at
+		SELECT ps.id, ps.name, ps.team_id, t.event_id, ss.expires_at, ss.ended
 		FROM slot_sessions ss
 		JOIN player_slots ps ON ps.id = ss.slot_id
 		JOIN teams t ON t.id = ps.team_id
 		WHERE ss.token = $1
-	`, token).Scan(&s.ID, &s.Name, &s.TeamID, &s.EventID, &expires)
+	`, token).Scan(&s.ID, &s.Name, &s.TeamID, &s.EventID, &expires, &s.Ended)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Slot{}, false, nil
 	}
@@ -197,7 +200,12 @@ func SlotMiddleware(db *sql.DB) func(http.Handler) http.Handler {
 				httpx.Error(w, http.StatusInternalServerError, "slot lookup failed")
 				return
 			}
-			if ok {
+			// An ended session is kept apart, so nothing but
+			// RequireSlotOrEnded takes it for a signed-in player.
+			switch {
+			case ok && s.Ended:
+				r = r.WithContext(context.WithValue(r.Context(), endedSlotCtxKey{}, s))
+			case ok:
 				r = r.WithContext(WithSlot(r.Context(), s))
 			}
 			next.ServeHTTP(w, r)
@@ -215,6 +223,26 @@ func RequireSlot(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r)
 	})
 }
+
+// RequireSlotOrEnded is RequireSlot that also takes a session whose
+// event has ended, for what a player may still do then: erase their
+// data and sign out.
+func RequireSlotOrEnded(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if _, ok := SlotFromContext(r.Context()); !ok {
+			s, ended := r.Context().Value(endedSlotCtxKey{}).(Slot)
+			if !ended {
+				httpx.Error(w, http.StatusUnauthorized, "open your magic link to log in")
+				return
+			}
+			r = r.WithContext(WithSlot(r.Context(), s))
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// endedSlotCtxKey holds a session whose event has ended.
+type endedSlotCtxKey struct{}
 
 // WithSlot returns a new context carrying s.
 func WithSlot(ctx context.Context, s Slot) context.Context {

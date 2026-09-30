@@ -120,6 +120,19 @@ func TestWriteRecapPDF_LongNamesAndUnicode(t *testing.T) {
 	}
 }
 
+// Helvetica in the PDF reads Windows-1252; UTF-8 bytes passed straight
+// through print "Gröna" as "GrÃ¶na".
+func TestRecapTextIsWindows1252(t *testing.T) {
+	text := recapText(fpdf.New("P", "mm", pdfPageSize, ""))
+	if got, want := text("Operation Gröna linjen – Åre"), "Operation Gr\xf6na linjen - \xc5re"; got != want {
+		t.Errorf("text = %q, want %q", got, want)
+	}
+	// The org line is upper-cased: that has to happen before, on UTF-8.
+	if got, want := text(strings.ToUpper("Företaget AB")), "F\xd6RETAGET AB"; got != want {
+		t.Errorf("upper-cased = %q, want %q", got, want)
+	}
+}
+
 func TestWriteRecapPDF_WithLogo(t *testing.T) {
 	d := recapPDFData{
 		OrgName:        "Acme Corp",

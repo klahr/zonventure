@@ -110,6 +110,10 @@ export function loadFont(key: string | undefined) {
   document.head.appendChild(link);
 }
 
+/** tokens.css's status colours, light and dark. */
+const LIGHT_STATUS = { danger: "#b3261e", success: "#1b6b43", warning: "#a15c07" };
+const DARK_STATUS = { danger: "#f2837c", success: "#6dcf92", warning: "#f0b45a" };
+
 /**
  * CSS custom properties for a palette. Empty for no palette, so the
  * default Zonventure look applies. Invalid values are dropped: a colour
@@ -131,6 +135,14 @@ export function brandVars(b: play.Brand | null | undefined): Record<string, stri
     out["--surface"] = b.background;
     out["--surface-2"] = `color-mix(in srgb, ${b.background} 92%, ${readableOn(b.background)})`;
     out["--border-soft"] = `color-mix(in srgb, ${b.background} 85%, ${readableOn(b.background)})`;
+    // Status colours and their boxes follow the page: the tokens' light
+    // pair on a light page, their dark pair on a dark one, each box a
+    // tint of the page so the author's text colour still reads on it.
+    const status = readableOn(b.background) === "#ffffff" ? DARK_STATUS : LIGHT_STATUS;
+    for (const [k, v] of Object.entries(status)) {
+      out[`--${k}`] = v;
+      out[`--${k}-bg`] = `color-mix(in srgb, ${v} 16%, ${b.background})`;
+    }
   }
   if (isHex(b.text)) {
     out["--ink"] = b.text;

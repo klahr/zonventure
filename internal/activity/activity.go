@@ -151,16 +151,18 @@ func MaybeCompleteEvent(ctx context.Context, db Execer, eventID int64) (bool, er
 	return true, nil
 }
 
-// ExpireEventSlotSessions invalidates every active player session
+// ExpireEventSlotSessions ends every active player session
 // associated with the given event and stamps the magic-link tokens
 // expired so they can't be re-used to mint new sessions. Called
 // when the event reaches a terminal state (completed or cancelled).
 //
 // Two layers, both required:
 //
-//   - DELETE FROM slot_sessions kicks any browser tab that's
-//     currently holding a zv_slot cookie — their next request
-//     dereferences to nothing and the middleware returns 401.
+//   - Marking slot_sessions ended kicks any browser tab that's
+//     currently holding a zv_slot cookie out of the game — the
+//     middleware returns 401 for everything but erasing the player's
+//     data and signing out (auth.RequireSlotOrEnded), which stay
+//     possible until the session expires.
 //
 //   - UPDATE player_slots SET expires_at = now() poisons the
 //     magic-link itself, so a player who closes the tab and
@@ -174,7 +176,7 @@ func MaybeCompleteEvent(ctx context.Context, db Execer, eventID int64) (bool, er
 // flattening it to "expired at event-end".
 func ExpireEventSlotSessions(ctx context.Context, db Execer, eventID int64) error {
 	if _, err := db.ExecContext(ctx, `
-		DELETE FROM slot_sessions
+		UPDATE slot_sessions SET ended = true
 		WHERE slot_id IN (
 			SELECT ps.id FROM player_slots ps
 			JOIN teams t ON t.id = ps.team_id

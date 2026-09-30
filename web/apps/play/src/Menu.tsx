@@ -43,8 +43,8 @@ export function Menu(props: {
     setError(null);
     try {
       await props.leave(erase);
-    } catch {
-      setError(t("Couldn't reach the server. Check your connection and try again."));
+    } catch (err) {
+      setError(err instanceof ApiError ? t("Something went wrong. Try again.") : t("Couldn't reach the server. Check your connection and try again."));
       setLeaving(false);
     }
   };
