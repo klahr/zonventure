@@ -8,8 +8,8 @@
  * palette overrides on this element (brand.ts); a few play-only tokens
  * (--pv-*) fall back to the defaults below.
  *
- * Positioning contract with the host: .pv fills its container (flex: 1)
- * and scrolls with the page. Overlays are position: fixed, so they cover
+ * Positioning contract with the host: .pv fills its container, grows
+ * with its content (flex: 1 0 auto), and scrolls with the page. Overlays are position: fixed, so they cover
  * the viewport in the player app; the designer's phone frame sets a
  * transform, which makes it their containing block instead. */
 
@@ -22,7 +22,11 @@
   --pv-tap: 2.75rem;
 
   container: pv / inline-size;
-  flex: 1;
+  /* Fills its container, and grows with a long step rather than
+     shrinking to it: flex: 1 alone lets a scrolling host (the designer's
+     phone frame) squeeze the element, and the page colour then stops
+     short of the content, leaving the host's showing underneath. */
+  flex: 1 0 auto;
   display: flex;
   flex-direction: column;
   gap: var(--sp-3);
