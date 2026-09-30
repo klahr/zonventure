@@ -240,9 +240,9 @@ func TestItemSlotsLeaveToFetchWhatIsMissing(t *testing.T) {
 
 func TestItemSlotsMissingHint(t *testing.T) {
 	for _, c := range []struct {
-		missing     string
-		say, leave  bool
-		names       int
+		missing    string
+		say, leave bool
+		names      int
 	}{
 		{graph.MissingSay, true, true, 0},
 		{graph.MissingName, true, true, 1},
