@@ -34,6 +34,24 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 ### Changed
 
 - A puzzle's **Routes** are now called **Answers and next steps**.
+- **+ Puzzle** and **+ Story** in the list view wear their step type's
+  colour and icon.
+- On a phone, the console's top bar shows the Zonventure mark instead
+  of the wordmark, leaving room for the breadcrumb.
+- **Settings is reached from the account menu** only; the side menu no
+  longer lists it twice. It opens on the first tab, as the side menu's
+  link did.
+- **An organization's logo, or its initials, sits beside its name** in
+  the top bar and in the account menu's organization switcher.
+- **An adventure's starting location has a map**: click or tap to put
+  the pin, drag it, or use **Use my location**. The coordinate fields
+  follow it.
+- **Use first gated puzzle** works for an adventure not yet
+  published, from the designer's draft, and takes the first place in
+  playing order rather than the first zone declared.
+- The publish messages talk about players, not events: "Not published
+  yet, so players can't play it", and "New events use this version;
+  ones already running keep theirs".
 - A new adventure's link name and author are filled in and tucked
   away; they open when they need attention.
 - An iPhone photo in HEIC is converted to JPEG before upload, even
@@ -45,10 +63,21 @@ product is **Zonventure**. Versions tagged here correspond to git tags
   settings, in two columns on a wide screen.
 - **Start a new event** (dashboard) and **Schedule event** (Events)
   appear only once the organization has a published adventure to run.
+- **A compass, map or hot-and-cold block can make its own place**:
+  **+ New place on the map…** in its zone list adds a zone and opens
+  its map in the block, with **Use my location**.
 
 ### Fixed
 
 - The menu button on a phone opens the side menu in the designer too.
+- **Blocks can be dragged by their handle again**, with a mouse or a
+  finger: the block follows the pointer, the others slide aside, and
+  it glides into place when let go. Steps in the list view move the
+  same way, and lean in when dropped into a branch.
+- On a phone, the side menu opens over an open step instead of behind
+  it.
+- A step dragged in the list view lands where it appears to be,
+  including just above the End.
 
 ### Changed — new Zonventure logo
 

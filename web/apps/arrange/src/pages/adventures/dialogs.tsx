@@ -5,7 +5,8 @@ import { useT } from "../../i18n.tsx";
 import { useSession } from "../../session.tsx";
 import { href } from "../../router.ts";
 import { Button, Dialog, Field, HelpPopover, ICON, Row, fmtDateTime, useDialogs, useLoad, useToast } from "../../ui/index.ts";
-import { createAdventure, downscaleImage, getEdit, importAdventure, orgName, removeCover, updateAdventure, uploadCover, type AdventurePatch, type AdventureEdit, type Assignment } from "./api.ts";
+import { createAdventure, downscaleImage, firstPlaceOf, getEdit, getGraphState, importAdventure, orgName, removeCover, updateAdventure, uploadCover, type AdventurePatch, type AdventureEdit, type Assignment } from "./api.ts";
+import { PointMap } from "../../designer/PointMap.tsx";
 import { Cover } from "./parts.tsx";
 
 const SLUG = /^[a-z0-9-]+$/;
@@ -246,6 +247,9 @@ export function EditDetailsDialog({ slug, accent, firstPlace, onClose, onSaved, 
   const t = useT();
   const toast = useToast();
   const load = useLoad((signal) => getEdit(slug, signal), [slug]);
+  // Nothing published to copy a start from: the draft's first place instead.
+  const draft = useLoad((signal) => (firstPlace ? Promise.resolve(null) : getGraphState(slug, signal).catch(() => null)), [slug, !!firstPlace]);
+  const place = firstPlace ?? firstPlaceOf(draft.data?.envelope?.graph);
   const base = load.data;
   const err = load.error;
   const [f, setF] = useState<Form | null>(null);
@@ -391,13 +395,18 @@ export function EditDetailsDialog({ slug, accent, firstPlace, onClose, onSaved, 
               <input maxLength={200} value={f.start_label} placeholder={t.t("e.g. “Monteliusvägen, vid bänken under trappan”")} onChange={(e) => set("start_label", e.target.value)} />
             </Field>
             {halfStart && <p className="cs-field__error" role="alert">{t.t("Set both coordinates, or clear both.")}</p>}
+            <PointMap
+              value={coord(f.lat) != null && coord(f.lng) != null ? { lat: coord(f.lat)!, lng: coord(f.lng)! } : null}
+              fallback={place}
+              onChange={(p) => setF((x) => (x ? { ...x, lat: String(p.lat), lng: String(p.lng) } : x))}
+            />
             <Row gap="sm">
               <Button
                 size="sm"
                 variant="ghost"
-                disabled={!firstPlace}
-                title={firstPlace ? undefined : t.t("No gated puzzle to copy from yet.")}
-                onClick={() => firstPlace && setF((x) => (x ? { ...x, lat: String(firstPlace.lat), lng: String(firstPlace.lng) } : x))}
+                disabled={!place}
+                title={place ? undefined : t.t("No gated puzzle to copy from yet.")}
+                onClick={() => place && setF((x) => (x ? { ...x, lat: String(place.lat), lng: String(place.lng) } : x))}
               >
                 {t.t("Use first gated puzzle")}
               </Button>

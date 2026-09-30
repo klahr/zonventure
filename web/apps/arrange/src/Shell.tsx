@@ -8,7 +8,7 @@ import { useSession } from "./session.tsx";
 import { href, useRoute, type Route } from "./router.ts";
 import { Designer } from "./designer/Designer.tsx";
 import { TopBarTitle } from "./topbar.tsx";
-import { DialogProvider, ToastProvider } from "./ui/index.ts";
+import { Avatar, DialogProvider, ToastProvider } from "./ui/index.ts";
 import "./designer/dz.css";
 import "./ui/console.css";
 import { DashboardPage } from "./pages/dashboard/index.tsx";
@@ -50,6 +50,8 @@ const ROLE: Record<Whoami["role"], string> = { admin: "Administrator", org_admin
  */
 type Section = "dashboard" | "organizations" | "logs" | "settings" | "adventures" | "events" | "quests" | "redemptions";
 
+// Settings is not listed here: the account menu at the foot of the
+// sidebar leads there, on every screen.
 function consoleNav(user: Whoami): { label: string; icon: LucideIcon; href: string; section: Section }[] {
   const item = (label: string, icon: LucideIcon, r: Route, section: Section) => ({ label, icon, href: href(r), section });
   if (user.role === "admin") {
@@ -57,17 +59,15 @@ function consoleNav(user: Whoami): { label: string; icon: LucideIcon; href: stri
       item("Dashboard", Gauge, { name: "dashboard" }, "dashboard"),
       item("Organizations", Building2, { name: "organizations" }, "organizations"),
       item("Logs", Terminal, { name: "logs" }, "logs"),
-      item("Settings", Settings, { name: "settings" }, "settings"),
     ];
   }
-  if (!user.memberships.length) return [item("Dashboard", Gauge, { name: "dashboard" }, "dashboard"), item("Settings", Settings, { name: "settings" }, "settings")];
+  if (!user.memberships.length) return [item("Dashboard", Gauge, { name: "dashboard" }, "dashboard")];
   return [
     item("Dashboard", Gauge, { name: "dashboard" }, "dashboard"),
     item("Adventures", MapIcon, { name: "adventures" }, "adventures"),
     item("Events", CalendarDays, { name: "events" }, "events"),
     item("Self-guided", Compass, { name: "quests" }, "quests"),
     item("Box redemptions", Gift, { name: "redemptions" }, "redemptions"),
-    item("Settings", Settings, { name: "settings" }, "settings"),
   ];
 }
 
@@ -174,8 +174,14 @@ export function Shell({ user }: { user: Whoami }) {
         >
           {drawer ? <X size={20} aria-hidden /> : <MenuIcon size={20} aria-hidden />}
         </button>
-        <a className="shell__brand" href={href({ name: "dashboard" })} title="Zonventure">
-          <span className="shell__wordmark">zonventure</span>
+        <a className="shell__brand" href={href({ name: "dashboard" })} title="Zonventure" aria-label="Zonventure">
+          <span className="shell__wordmark" aria-hidden="true">zonventure</span>
+          {/* On a phone the mark alone, to leave the bar to the breadcrumb. */}
+          <svg className="shell__mark" viewBox="0 0 314 266" aria-hidden="true">
+            <path className="shell__mark-p" d="M14.0,12.7Q9.0,4.0 19.0,4.0L59.0,4.0Q69.0,4.0 74.0,12.7L99.2,57.0L154.6,57.0L97.0,158.0Z" />
+            <path className="shell__mark-o" d="M239.8,12.7Q244.8,4.0 254.8,4.0L294.8,4.0Q304.8,4.0 299.8,12.7L217.0,158.0L157.0,158.0Z" />
+            <path className="shell__mark-d" d="M131.8,218.7Q126.9,210.0 136.9,210.0L176.1,210.0Q186.1,210.0 181.2,218.7L156.5,262.0Z" />
+          </svg>
         </a>
         {current.section !== "dashboard" && (
           <nav className="shell__crumb" aria-label={t.t("Breadcrumb")}>
@@ -190,7 +196,12 @@ export function Shell({ user }: { user: Whoami }) {
             )}
           </nav>
         )}
-        {org && <span className="shell__org">{org.org_name}</span>}
+        {org && (
+          <span className="shell__org">
+            <Avatar name={org.org_name} src={org.org_logo_url} size={22} />
+            <span className="shell__org-name">{org.org_name}</span>
+          </span>
+        )}
       </header>
 
       {drawer && <div className="shell__backdrop" onClick={() => setDrawer(false)} aria-hidden="true" />}
@@ -385,14 +396,14 @@ function AccountMenu({ user, orgName, collapsed, onLogout }: { user: Whoami; org
                       if (m.org_id !== user.org_id) void auth.switchOrg(m.org_id).then(() => { location.hash = "#/"; return refresh(); });
                     }}
                   >
-                    <Building2 size={14} aria-hidden />
+                    <Avatar name={m.org_name} src={m.org_logo_url} size={18} />
                     {m.org_name}
                   </button>
                 ))}
               </>
             )}
             <div className="account-pop__sep" role="separator" />
-            <a role="menuitem" className="account-pop__row" href={href({ name: "settings", tab: "account" })} onClick={() => setOpen(false)}>
+            <a role="menuitem" className="account-pop__row" href={href({ name: "settings" })} onClick={() => setOpen(false)}>
               <Settings size={14} aria-hidden />
               {t.t("Settings")}
             </a>

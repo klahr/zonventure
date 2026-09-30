@@ -1,5 +1,5 @@
-import { Fragment, useCallback, useRef, useState } from "react";
-import { FIXED_KINDS, isFixed, mediaBlock, moveBlock, needsFile, newBlock, type Block, type BlockKind, type FileKind, type Graph, type Node } from "@zonventure/graph";
+import { Fragment, useCallback, useLayoutEffect, useRef, useState } from "react";
+import { FIXED_KINDS, blocksOf, isFixed, mediaBlock, moveBlock, needsFile, newBlock, updateNode, withBlocks, type Block, type BlockKind, type FileKind, type Graph, type Node, type Zone } from "@zonventure/graph";
 import { Camera, ChevronDown, ChevronRight, Eye, EyeOff, GripVertical, Plus, Power, PowerOff, X } from "lucide-react";
 import { useT } from "../i18n.tsx";
 import { ConfirmModal, DzPortal, ICON, useAnchoredPop, useDismiss } from "./dz/ui.tsx";
@@ -11,9 +11,12 @@ import { ShowEditor } from "./blocks/Show.tsx";
 import { summarize } from "./blocks/summary.ts";
 import type { Editor, T } from "./blocks/types.ts";
 
-function body(b: Block, set: (b: Block) => void, t: T, textLabel: string, graph: Graph, node: Node) {
+function body(b: Block, set: (b: Block) => void, t: T, textLabel: string, graph: Graph, node: Node, onGraphChange?: (g: Graph) => void) {
   const Body = KINDS[b.kind].editor as Editor<BlockKind>;
-  return <Body block={b as never} set={set} t={t} textLabel={textLabel} graph={graph} node={node} />;
+  const withZones = onGraphChange
+    ? (zones: Zone[], next: Block) => onGraphChange(updateNode({ ...graph, zones }, node.slug, (n) => withBlocks(n, blocksOf(n).map((x) => (x.id === next.id ? next : x)))))
+    : undefined;
+  return <Body block={b as never} set={set} t={t} textLabel={textLabel} graph={graph} node={node} withZones={withZones} />;
 }
 
 /**
@@ -23,7 +26,7 @@ function body(b: Block, set: (b: Block) => void, t: T, textLabel: string, graph:
  * kept (the power button), the title and points too. Files are stored when
  * picked, like MediaEditor's.
  */
-export function BlocksEditor({ blocks, node, graph, onChange, textLabel }: { blocks: Block[] | undefined; node: Node; graph: Graph; onChange: (b: Block[]) => void; textLabel: string }) {
+export function BlocksEditor({ blocks, node, graph, onChange, onGraphChange, textLabel }: { blocks: Block[] | undefined; node: Node; graph: Graph; onChange: (b: Block[]) => void; onGraphChange?: (g: Graph) => void; textLabel: string }) {
   const t = useT();
   const list = blocks ?? [];
   const root = useRef<HTMLDivElement>(null);
@@ -34,10 +37,11 @@ export function BlocksEditor({ blocks, node, graph, onChange, textLabel }: { blo
   latest.current = { list, onChange };
   // The kind the file being picked is for; null takes it from the file.
   const [fileFor, setFileFor] = useState<FileKind | null>(null);
-  // The block whose handle is held, so only a drag from the handle moves
-  // it, and where it would land.
-  const [armed, setArmed] = useState<number | null>(null);
-  const [drag, setDrag] = useState<{ from: number; to: number } | null>(null);
+  // A block being dragged by its handle: where it came from, where it
+  // would land, and how far it has moved. The rest slide aside to show.
+  const [drag, setDrag] = useState<{ from: number; to: number; dy: number; shift: number } | null>(null);
+  // After a drop, the moved block glides from where it was let go.
+  const settle = useRef<{ id: string; dy: number; moved: boolean } | null>(null);
   // Blocks whose show rule is open for editing, and blocks folded away.
   const [rules, setRules] = useState<Set<string>>(new Set());
   const [folded, setFolded] = useState<Set<string>>(new Set());
@@ -86,11 +90,93 @@ export function BlocksEditor({ blocks, node, graph, onChange, textLabel }: { blo
     change(next);
   };
 
-  const drop = () => {
-    if (drag) move(drag.from, drag.to);
-    setDrag(null);
-    setArmed(null);
+  const startDrag = (e: React.PointerEvent<HTMLButtonElement>, from: number) => {
+    if (e.button !== 0) return;
+    const handle = e.currentTarget;
+    const rows = Array.from(root.current?.querySelectorAll<HTMLElement>(":scope > .blk") ?? []);
+    const rects = rows.map((r) => r.getBoundingClientRect());
+    if (!rects[from]) return;
+    e.preventDefault();
+    // Moves keep coming to the handle even when the pointer leaves it.
+    try {
+      handle.setPointerCapture(e.pointerId);
+    } catch {
+      // A pointer the browser no longer tracks: the drag still works while over the handle.
+    }
+    const gap = rects.length > 1 ? rects[1]!.top - rects[0]!.bottom : 0;
+    const shift = rects[from]!.height + gap;
+    const mids = rects.map((r) => r.top + r.height / 2);
+    const scroller = (root.current?.closest(".inspector-body") as HTMLElement | null) ?? document.scrollingElement;
+    const startY = e.clientY;
+    const startScroll = scroller?.scrollTop ?? 0;
+    let y = e.clientY;
+    let to = from;
+    let frame = 0;
+    const update = () => {
+      const dy = y - startY + ((scroller?.scrollTop ?? 0) - startScroll);
+      const centre = mids[from]! + dy;
+      // The slot is the one whose middle the dragged block's middle has passed.
+      to = from;
+      while (to < mids.length - 1 && centre > mids[to + 1]!) to++;
+      while (to > 0 && centre < mids[to - 1]!) to--;
+      setDrag({ from, to, dy, shift });
+    };
+    // Near the top or bottom of the panel, scroll it along.
+    const edge = () => {
+      if (scroller) {
+        const box = scroller === document.scrollingElement ? { top: 0, bottom: window.innerHeight } : scroller.getBoundingClientRect();
+        const step = y < box.top + 48 ? -8 : y > box.bottom - 48 ? 8 : 0;
+        if (step) {
+          scroller.scrollTop += step;
+          update();
+        }
+      }
+      frame = requestAnimationFrame(edge);
+    };
+    frame = requestAnimationFrame(edge);
+    const onMove = (ev: PointerEvent) => {
+      y = ev.clientY;
+      update();
+    };
+    const finish = (commit: boolean) => {
+      cancelAnimationFrame(frame);
+      handle.removeEventListener("pointermove", onMove);
+      handle.removeEventListener("pointerup", onUp);
+      handle.removeEventListener("pointercancel", onCancel);
+      const dy = y - startY + ((scroller?.scrollTop ?? 0) - startScroll);
+      if (commit && to !== from) {
+        // Where the block sits in its new slot, relative to where it started.
+        const slot = to > from ? rects[to]!.bottom - rects[from]!.bottom : rects[to]!.top - rects[from]!.top;
+        settle.current = { id: list[from]!.id, dy: dy - slot, moved: true };
+        move(from, to);
+      } else settle.current = { id: list[from]!.id, dy, moved: false };
+      setDrag(null);
+    };
+    const onUp = () => finish(true);
+    const onCancel = () => finish(false);
+    handle.addEventListener("pointermove", onMove);
+    handle.addEventListener("pointerup", onUp);
+    handle.addEventListener("pointercancel", onCancel);
+    setDrag({ from, to: from, dy: 0, shift });
   };
+
+  // Glide the dropped block from where it was let go into its place.
+  useLayoutEffect(() => {
+    const s = settle.current;
+    if (!s || drag) return;
+    settle.current = null;
+    const rows = Array.from(root.current?.querySelectorAll<HTMLElement>(":scope > .blk") ?? []);
+    const el = rows.find((r) => r.dataset.id === s.id);
+    if (!el) return;
+    // The blocks that stepped aside are already in their new places; they
+    // must not slide again from where they were.
+    const still = s.moved ? rows : [el];
+    for (const r of still) r.style.transition = "none";
+    if (s.dy && !matchMedia("(prefers-reduced-motion: reduce)").matches) el.style.transform = `translateY(${s.dy}px)`;
+    void el.offsetHeight;
+    for (const r of still) r.style.transition = "";
+    el.style.transform = "";
+  });
 
   return (
     <div className="blk-ed" ref={root}>
@@ -103,32 +189,22 @@ export function BlocksEditor({ blocks, node, graph, onChange, textLabel }: { blo
         const kind = KINDS[b.kind];
         const Icon = kind.icon;
         const label = labelOf(b);
-        const target = drag && drag.from !== i && drag.to === i ? (drag.to < drag.from ? " is-drop-before" : " is-drop-after") : "";
         const ruleOpen = rules.has(b.id) || !!b.show;
         const isFolded = folded.has(b.id);
+        // While dragging: the held block follows the pointer, and those
+        // between where it was and where it would go step aside.
+        let offset = 0;
+        if (drag) {
+          if (i === drag.from) offset = drag.dy;
+          else if (drag.from < drag.to && i > drag.from && i <= drag.to) offset = -drag.shift;
+          else if (drag.from > drag.to && i >= drag.to && i < drag.from) offset = drag.shift;
+        }
         return (
           <div
             key={b.id}
-            className={"blk" + (drag?.from === i ? " is-dragging" : "") + (b.show ? " has-rule" : "") + (b.disabled ? " is-disabled" : "") + (isFolded ? " is-folded" : "") + target}
-            draggable={armed === i}
-            onDragStart={(e) => {
-              e.dataTransfer.effectAllowed = "move";
-              e.dataTransfer.setData("text/plain", b.id);
-              setDrag({ from: i, to: i });
-            }}
-            onDragOver={(e) => {
-              if (!drag) return;
-              e.preventDefault();
-              if (drag.to !== i) setDrag({ ...drag, to: i });
-            }}
-            onDrop={(e) => {
-              e.preventDefault();
-              drop();
-            }}
-            onDragEnd={() => {
-              setDrag(null);
-              setArmed(null);
-            }}
+            data-id={b.id}
+            className={"blk" + (drag ? (drag.from === i ? " is-lifted" : " is-shifting") : "") + (b.show ? " has-rule" : "") + (b.disabled ? " is-disabled" : "") + (isFolded ? " is-folded" : "")}
+            style={offset ? { transform: `translateY(${offset}px)` } : undefined}
           >
             <div className="blk__head">
               <button
@@ -136,8 +212,7 @@ export function BlocksEditor({ blocks, node, graph, onChange, textLabel }: { blo
                 className="blk__handle"
                 aria-label={t.t("Move {{block}}: drag, or use the arrow keys", { block: label })}
                 title={t.t("Drag to reorder")}
-                onPointerDown={() => setArmed(i)}
-                onPointerUp={() => setArmed(null)}
+                onPointerDown={(e) => startDrag(e, i)}
                 onKeyDown={(e) => {
                   if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
                   e.preventDefault();
@@ -197,7 +272,7 @@ export function BlocksEditor({ blocks, node, graph, onChange, textLabel }: { blo
                 <X size={ICON.sm} />
               </button>
             </div>
-            {!isFolded && body(b, (next) => set(i, next), t, label, graph, node)}
+            {!isFolded && body(b, (next) => set(i, next), t, label, graph, node, onGraphChange)}
             {!isFolded && ruleOpen && <ShowEditor block={b} set={(next) => set(i, next)} graph={graph} t={t} />}
           </div>
         );

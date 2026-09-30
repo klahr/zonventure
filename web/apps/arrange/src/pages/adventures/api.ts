@@ -1,4 +1,5 @@
 import { get, patch, post, request, type Membership, type Whoami } from "@zonventure/api";
+import { outline, type Graph } from "@zonventure/graph";
 
 const adv = (slug: string) => `/api/admin/adventures/${encodeURIComponent(slug)}`;
 const opt = (signal?: AbortSignal) => (signal ? { signal } : {});
@@ -141,7 +142,28 @@ export const getEdit = (slug: string, signal?: AbortSignal) => get<AdventureEdit
 
 /** The draft graph's nodes and what is published, for an adventure made in the designer. */
 export const getGraphState = (slug: string, signal?: AbortSignal) =>
-  get<{ envelope?: { graph?: { nodes?: { type: string }[] } }; published?: { version: number } }>(adv(slug) + "/graph", opt(signal));
+  get<{ envelope?: { graph?: Graph }; published?: { version: number } }>(adv(slug) + "/graph", opt(signal));
+
+/**
+ * The first place a team reaches: the zone of the first step, in the
+ * order it is played, that is gated on one; else the first zone. For a
+ * start point to copy, from the published summary or the draft.
+ */
+export function firstPlaceOf(g: GraphSummary | Graph | null | undefined): { lat: number; lng: number } | null {
+  if (!g) return null;
+  const zones = g.zones ?? [];
+  const at = (slug: string | undefined) => zones.find((z) => z.slug === slug);
+  const zoneOfStep =
+    "steps" in g
+      ? g.steps.map((s) => s.zone)
+      : outline(g).flatMap((r) => {
+          if (r.kind !== "step") return [];
+          const n = g.nodes.find((x) => x.slug === r.slug);
+          return [n?.puzzle?.zone ?? n?.story?.zone ?? n?.start?.zone];
+        });
+  const z = zoneOfStep.map(at).find(Boolean) ?? zones[0];
+  return z ? { lat: z.lat, lng: z.lng } : null;
+}
 
 /** internal/admin/authoring.go: CreateAdventure */
 export const createAdventure = (body: { slug: string; title: string; description: string; author: string }) =>

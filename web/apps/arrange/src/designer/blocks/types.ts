@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { Block, BlockKind, Graph, Node } from "@zonventure/graph";
+import type { Block, BlockKind, Graph, Node, Zone } from "@zonventure/graph";
 import type { I18n } from "@zonventure/i18n";
 import type { LucideIcon } from "lucide-react";
 
@@ -15,6 +15,11 @@ export interface EditorProps<K extends BlockKind> {
   node: Node;
   /** What the step calls its text: "Text", "Closing text". */
   textLabel: string;
+  /**
+   * Writes the adventure's zones and this block in one edit, for a block
+   * that makes or moves its own place. Absent where the editor can't.
+   */
+  withZones?: ((zones: Zone[], b: Of<K>) => void) | undefined;
 }
 
 /** A block's fields, edited, and a preview where one helps. */

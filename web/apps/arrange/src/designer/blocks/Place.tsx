@@ -1,21 +1,69 @@
-import { MAP_ZOOM, type Graph, type Marker } from "@zonventure/graph";
+import { useState } from "react";
+import { MAP_ZOOM, type Graph, type Marker, type Zone } from "@zonventure/graph";
 import { CompassFace, FitMap } from "@zonventure/play-ui";
 import { X } from "lucide-react";
-import { ZoneSelect } from "../fields.tsx";
+import { Field, ZoneSelect } from "../fields.tsx";
+import { ZoneMap } from "../ZoneMap.tsx";
+import { nearLastZone, zoneAt } from "../zones.ts";
 import { ICON } from "../dz/ui.tsx";
 import { withField, type Editor, type Of, type T } from "./types.ts";
 
-function PlaceSelect<B extends Of<"compass" | "map" | "radar">>({ block, set, t, graph }: { block: B; set: (b: B) => void; t: T; graph: Graph }) {
-  return <ZoneSelect graph={graph} label={t.t("Zone")} empty={t.t("Choose a zone")} value={block.zone || undefined} onChange={(zone) => set({ ...block, zone: zone ?? "" })} />;
+function PlaceSelect<B extends Of<"compass" | "map" | "radar">>({ block, set, t, graph, withZones }: { block: B; set: (b: B) => void; t: T; graph: Graph; withZones?: ((zones: Zone[], b: B) => void) | undefined }) {
+  const [editing, setEditing] = useState(false);
+  const zones = graph.zones ?? [];
+  // A compass or map usually points on to the next place, not this
+  // step's own: a new one gets a plain name that is its own, to rename.
+  const taken = new Set(zones.map((z) => z.name));
+  let name = t.t("New place");
+  for (let i = 2; taken.has(name); i++) name = `${t.t("New place")} ${i}`;
+  const zone = zoneOf(graph, block.zone);
+  const select = (
+    <ZoneSelect
+      graph={graph}
+      label={t.t("Zone")}
+      empty={t.t("Choose a zone")}
+      value={block.zone || undefined}
+      onChange={(slug) => set({ ...block, zone: slug ?? "" })}
+      {...(withZones
+        ? {
+            // A new place starts beside the last one; its map opens so
+            // the pin can be dragged, or put where the author stands.
+            onNew: () => {
+              const z = zoneAt(zones, name, nearLastZone(zones));
+              withZones([...zones, z], { ...block, zone: z.slug });
+              setEditing(true);
+            },
+          }
+        : {})}
+    />
+  );
+  if (!withZones || !zone) return select;
+  const editZone = (z: Zone) => withZones(zones.map((x) => (x.slug === z.slug ? z : x)), block);
+  return (
+    <>
+      {select}
+      <button type="button" className="link-btn blk__zone-edit" aria-expanded={editing} onClick={() => setEditing((v) => !v)}>
+        {editing ? t.t("Done") : t.t("Edit the place on the map")}
+      </button>
+      {editing && (
+        <div className="blk__zone">
+          <Field label={t.t("Name of the place")} hint={t.t("The team sees this name.")}>
+            <input className="field__input" value={zone.name ?? ""} placeholder={zone.slug} onChange={(e) => editZone({ ...zone, name: e.target.value })} />
+          </Field>
+          <ZoneMap key={zone.slug} zone={zone} onChange={editZone} />
+        </div>
+      )}
+    </>
+  );
 }
 
 const zoneOf = (graph: Graph, slug: string) => graph.zones?.find((z) => z.slug === slug);
 
-export const CompassEditor: Editor<"compass"> = ({ block, set, t, graph }) => {
+export const CompassEditor: Editor<"compass"> = ({ block, set, t, graph, withZones }) => {
   const zone = zoneOf(graph, block.zone);
   return (
     <>
-      <PlaceSelect block={block} set={set} t={t} graph={graph} />
+      <PlaceSelect block={block} set={set} t={t} graph={graph} withZones={withZones} />
       <label className="check">
         <input type="checkbox" checked={!block.hide_distance} onChange={(e) => set(withField(block, "hide_distance", !e.target.checked))} />
         <span>{t.t("Show the distance")}</span>
@@ -30,20 +78,20 @@ export const CompassEditor: Editor<"compass"> = ({ block, set, t, graph }) => {
   );
 };
 
-export const RadarEditor: Editor<"radar"> = ({ block, set, t, graph }) => (
+export const RadarEditor: Editor<"radar"> = ({ block, set, t, graph, withZones }) => (
   <>
-    <PlaceSelect block={block} set={set} t={t} graph={graph} />
+    <PlaceSelect block={block} set={set} t={t} graph={graph} withZones={withZones} />
     <p className="field__hint">{t.t("Pulses faster and warmer as the team gets closer, without saying which way.")}</p>
   </>
 );
 
-export const MapEditor: Editor<"map"> = ({ block, set, t, graph }) => {
+export const MapEditor: Editor<"map"> = ({ block, set, t, graph, withZones }) => {
   const zone = zoneOf(graph, block.zone);
   const markers = block.markers ?? [];
   const setMarkers = (next: Marker[]) => set(withField(block, "markers", next.length ? next : undefined));
   return (
     <>
-      <PlaceSelect block={block} set={set} t={t} graph={graph} />
+      <PlaceSelect block={block} set={set} t={t} graph={graph} withZones={withZones} />
       <label className="check">
         <input type="checkbox" checked={!block.hide_team} onChange={(e) => set(withField(block, "hide_team", !e.target.checked))} />
         <span>{t.t("Show the team's own position")}</span>

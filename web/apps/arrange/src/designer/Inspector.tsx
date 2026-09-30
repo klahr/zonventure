@@ -277,7 +277,7 @@ function partsOf(node: Node, graph: Graph, onChange: (n: Node) => void, onGraphC
         title: t.t("What the team sees"),
         editor: (
           <>
-            <BlocksEditor node={node} graph={graph} blocks={story.blocks} textLabel={t.t("Text")} onChange={(blocks) => onChange(withBlocks(node, blocks))} />
+            <BlocksEditor node={node} graph={graph} blocks={story.blocks} textLabel={t.t("Text")} onChange={(blocks) => onChange(withBlocks(node, blocks))} onGraphChange={onGraphChange} />
           </>
         ),
       });
@@ -356,7 +356,7 @@ function partsOf(node: Node, graph: Graph, onChange: (n: Node) => void, onGraphC
                 <option value="fail">{t.t("Failure")}</option>
               </select>
             </Field>
-            <BlocksEditor node={node} graph={graph} blocks={end.blocks} textLabel={t.t("Closing text")} onChange={(blocks) => onChange(withBlocks({ ...node, end }, blocks))} />
+            <BlocksEditor node={node} graph={graph} blocks={end.blocks} textLabel={t.t("Closing text")} onChange={(blocks) => onChange(withBlocks({ ...node, end }, blocks))} onGraphChange={onGraphChange} />
           </>
         ),
       });
@@ -503,7 +503,7 @@ function puzzleParts(node: Node, cfg: PuzzleConfig, graph: Graph, onChange: (c: 
       title: t.t("What the team sees"),
       editor: (
         <>
-          <BlocksEditor node={{ ...node, puzzle: cfg }} graph={graph} blocks={cfg.blocks} textLabel={t.t("Text")} onChange={(blocks) => onChange(withOptional({ ...cfg }, "blocks", blocks.length ? blocks : undefined))} />
+          <BlocksEditor node={{ ...node, puzzle: cfg }} graph={graph} blocks={cfg.blocks} textLabel={t.t("Text")} onChange={(blocks) => onChange(withOptional({ ...cfg }, "blocks", blocks.length ? blocks : undefined))} onGraphChange={onGraphChange} />
           <p className="field__hint">{t.t("Shown in this order, above the answer. A team only receives pictures and sounds once it reaches this step.")}</p>
         </>
       ),

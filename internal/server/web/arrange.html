@@ -6291,7 +6291,7 @@ async function viewAdventureDetail(view, slug) {
 
   // An adventure made in the designer has no lane pages: the stats, map
   // and puzzle list above would all read zero. Say what the designer
-  // holds instead — how much is there, and whether events can play it.
+  // holds instead — how much is there, and whether players can play it yet.
   const designed = pages.length === 0 && !g;
   const flowCard = designed ? h('section', { class: 'card' },
     h('h2', { style: 'margin:0 0 .5rem' }, t('Steps')),
@@ -6320,8 +6320,8 @@ async function viewAdventureDetail(view, slug) {
           ? t('{{steps}} steps, {{puzzles}} of them puzzles.', { steps, puzzles })
           : t('Nothing designed yet.')),
         h('p', { class: 'muted', style: 'margin:0' }, pub
-          ? t('Published: events that start now play version {{n}}.', { n: pub.version })
-          : t('Not published yet, so events can\'t play it. Publish it from the designer.')));
+          ? t('Published (version {{n}}). New events use this version; ones already running keep theirs.', { n: pub.version })
+          : t('Not published yet, so players can\'t play it. Publish it from the designer.')));
     })();
   }
 

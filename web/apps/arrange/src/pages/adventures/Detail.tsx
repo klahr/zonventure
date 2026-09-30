@@ -7,7 +7,7 @@ import { useTopBarTitle } from "../../topbar.tsx";
 import { CATALOG_ENABLED, consoleHref, href } from "../../router.ts";
 import { Button, Card, ErrorBox, ICON, Loading, Page, PageHeader, Pill, Row, Stat, Stats, useDialogs, useLoad, useToast } from "../../ui/index.ts";
 import { NewEventDialog } from "../events/NewEventDialog.tsx";
-import { deleteAdventure, duplicateAdventure, exportURL, getAdventure, getGraphState, isPublisher, listAdventures, listAssignments, type Accept, type AdventureDetail, type Assignment, type DetailPage } from "./api.ts";
+import { deleteAdventure, duplicateAdventure, exportURL, firstPlaceOf, getAdventure, getGraphState, isPublisher, listAdventures, listAssignments, type Accept, type AdventureDetail, type Assignment, type DetailPage } from "./api.ts";
 import { AdventureMap } from "./AdventureMap.tsx";
 import { EditDetailsDialog, PickPassDialog } from "./dialogs.tsx";
 import { extentKm, formatKm, hintDelay, pinsOf } from "./facts.ts";
@@ -77,7 +77,7 @@ function Detail({ a, shared, passes, reload }: { a: AdventureDetail; shared: boo
         const p = g ? null : enabled.find((x) => x.gated && (x.location.lat || x.location.lng));
         return p ? { lat: p.location.lat, lng: p.location.lng, label: p.title || "", inferred: true } : null;
       })();
-  const firstPlace = g ? (g.zones[0] ?? null) : (enabled.find((x) => x.gated && (x.location.lat || x.location.lng))?.location ?? null);
+  const firstPlace = g ? firstPlaceOf(g) : (enabled.find((x) => x.gated && (x.location.lat || x.location.lng))?.location ?? null);
 
   const openSchedule = () => {
     if (passes.length === 1) setSchedule({ assignmentId: passes[0]!.id });
@@ -341,7 +341,7 @@ function Prose({ html, text }: { html?: string | undefined; text?: string | unde
   return html ? <div className="adv-prose" dangerouslySetInnerHTML={{ __html: html }} /> : <p className="adv-pre">{text}</p>;
 }
 
-/** An adventure made in the designer, not yet published: how much is there, and whether events can play it. */
+/** An adventure made in the designer, not yet published: how much is there, and whether players can play it yet. */
 function DesignedSteps({ slug, canRead }: { slug: string; canRead: boolean }) {
   const t = useT();
   const load = useLoad(
@@ -365,7 +365,7 @@ function DesignedSteps({ slug, canRead }: { slug: string; canRead: boolean }) {
     body = (
       <>
         <p>{steps ? t.plural(steps, { one: t.t("{{n}} step"), other: t.t("{{n}} steps") }) + " · " + puzzleCount(t, puzzles) : t.t("Nothing designed yet.")}</p>
-        <p className="adv-muted">{pub ? t.t("Published: events that start now play version {{n}}.", { n: pub.version }) : t.t("Not published yet, so events can't play it. Publish it from the designer.")}</p>
+        <p className="adv-muted">{pub ? t.t("Published (version {{n}}). New events use this version; ones already running keep theirs.", { n: pub.version }) : t.t("Not published yet, so players can't play it. Publish it from the designer.")}</p>
       </>
     );
   }

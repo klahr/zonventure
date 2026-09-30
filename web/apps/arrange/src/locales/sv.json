@@ -313,7 +313,7 @@
   "View {{part}}": "Visa {{part}}",
   "Advanced: place, time limits, skipping": "Avancerat: plats, tidsgränser, hoppa över",
   "Add zones under Adventure settings (⋮ menu) → Zones.": "Lägg till zoner under Äventyrsinställningar (⋮-menyn) → Zoner.",
-  "Not published yet, so events can't play it. Publish from the toolbar when it's ready.": "Inte publicerat än, så event kan inte spela det. Publicera från verktygsfältet när det är klart.",
+  "Not published yet, so players can't play it. Publish from the toolbar when it's ready.": "Inte publicerat än, så spelare kan inte spela det. Publicera från verktygsfältet när det är klart.",
   "Only counts in a zone": "Gäller bara i en zon",
   "Not connected yet — nothing leads to these": "Inte kopplade än — inget leder hit",
   "continues at {{step}}": "fortsätter vid {{step}}",
@@ -467,5 +467,11 @@
   "Team or company name (optional)": "Lag- eller företagsnamn (valfritt)",
   "Leave blank to use your name. You can change it any time in Settings.": "Lämna tomt för att använda ditt namn. Du kan ändra det när som helst under Inställningar.",
   "Link name and author": "Länknamn och upphovsperson",
-  "Zonventure home page": "Zonventures startsida"
+  "Zonventure home page": "Zonventures startsida",
+  "+ New place on the map…": "+ Ny plats på kartan…",
+  "Edit the place on the map": "Redigera platsen på kartan",
+  "The team sees this name.": "Laget ser det här namnet.",
+  "New place": "Ny plats",
+  "Click the map to move the pin, or drag it.": "Klicka på kartan för att flytta nålen, eller dra den.",
+  "Click the map to put the pin there.": "Klicka på kartan för att sätta nålen där."
 }

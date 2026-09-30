@@ -27,7 +27,18 @@ export interface ZoneHere {
 
 const SIZES = [15, 30, 60];
 
-export function ZoneSelect({ graph, label, value, onChange, empty, here }: { graph: Graph; label: string; value: string | undefined; onChange: (z: string | undefined) => void; empty?: string; here?: ZoneHere }) {
+const NEW_ZONE = "\u0000new";
+
+export function ZoneSelect({ graph, label, value, onChange, empty, here, onNew }: {
+  graph: Graph;
+  label: string;
+  value: string | undefined;
+  onChange: (z: string | undefined) => void;
+  empty?: string;
+  here?: ZoneHere;
+  /** Offers "New place on the map…" in the list. */
+  onNew?: () => void;
+}) {
   const t = useT();
   const zones = graph.zones ?? [];
   const chosen = zones.find((z) => z.slug === value);
@@ -58,17 +69,18 @@ export function ZoneSelect({ graph, label, value, onChange, empty, here }: { gra
     }
   };
 
-  const hint = here ? undefined : zones.length === 0 ? t.t("Add zones under Adventure settings (⋮ menu) → Zones.") : undefined;
+  const hint = here || onNew ? undefined : zones.length === 0 ? t.t("Add zones under Adventure settings (⋮ menu) → Zones.") : undefined;
   return (
     <>
       <Field label={label} hint={hint}>
-        <select className="field__input" value={value ?? ""} onChange={(e) => onChange(e.target.value || undefined)}>
+        <select className="field__input" value={value ?? ""} onChange={(e) => (e.target.value === NEW_ZONE ? onNew?.() : onChange(e.target.value || undefined))}>
           <option value="">{empty ?? t.t("Anywhere")}</option>
           {zones.map((z) => (
             <option key={z.slug} value={z.slug}>
               {z.name || z.slug} ({isPolygon(z) ? t.t("area") : `${z.radius_m} m`})
             </option>
           ))}
+          {onNew && <option value={NEW_ZONE}>{t.t("+ New place on the map…")}</option>}
         </select>
       </Field>
       {here && (

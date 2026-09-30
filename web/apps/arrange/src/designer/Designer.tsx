@@ -702,7 +702,7 @@ export function Designer({ slug }: { slug: string }) {
                   onClick={() => setPublishAsk({ kind: "first" })}
                   disabled={publishing || readOnly}
                   aria-label={t.t("Publish")}
-                  title={readOnly ? t.t("Exit version preview before publishing.") : t.t("Publish this adventure so events can play it.")}
+                  title={readOnly ? t.t("Exit version preview before publishing.") : t.t("Publish this adventure so you can run it with players.")}
                 >
                   <Rocket size={ICON.sm} />
                   <span className="toolbar-label">{publishing ? t.t("Publishing…") : t.t("Publish")}</span>
@@ -713,7 +713,7 @@ export function Designer({ slug }: { slug: string }) {
                   className={"editor-live-chip" + (celebrate ? " celebrate" : "")}
                   role="status"
                   aria-label={t.t("Live")}
-                  title={t.t("Published: events that start now play version {{n}}.", { n: published.version })}
+                  title={t.t("Published (version {{n}}). New events use this version; ones already running keep theirs.", { n: published.version })}
                 >
                   <span className="editor-live-dot" aria-hidden="true" />
                   <span className="toolbar-label">{t.t("Live")}</span>
@@ -773,7 +773,7 @@ export function Designer({ slug }: { slug: string }) {
             {!isLive && !preview && (
               <div className="editor-conn-banner editor-conn-banner--info" role="status">
                 <Info size={ICON.md} className="callout-icon" aria-hidden="true" />
-                <span className="editor-conn-banner-text">{t.t("Not published yet, so events can't play it. Publish from the toolbar when it's ready.")}</span>
+                <span className="editor-conn-banner-text">{t.t("Not published yet, so players can't play it. Publish from the toolbar when it's ready.")}</span>
               </div>
             )}
           </div>
