@@ -18,6 +18,7 @@ package player
 
 import (
 	"context"
+	"crypto/subtle"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -296,7 +297,7 @@ func adventureLook(ctx context.Context, db *sql.DB, slug string) (look, error) {
 		SELECT title, intro_text, outro_text,
 		       accent_color, accent_secondary_color, background_color, text_color, submit_bg_color, font,
 		       heading_font, corners, cards, card_outline,
-		       start_lat, start_lng, start_label, (cheat_password_hash IS NOT NULL)
+		       start_lat, start_lng, start_label, (cheat_password IS NOT NULL)
 		FROM adventures WHERE slug = $1
 	`, slug).Scan(&l.title, &l.intro, &l.outro, &accent, &second, &bg, &ink, &dock, &l.brand.Font,
 		&l.brand.HeadingFont, &l.brand.Corners, &l.brand.Cards, &l.brand.CardOutline, &lat, &lng, &label, &l.cheat)
@@ -497,12 +498,12 @@ func (h *Handlers) cheatOK(ctx context.Context, slug, password string) (bool, er
 	if password == "" || len(password) > maxGuessLen {
 		return false, nil
 	}
-	var hash sql.NullString
-	err := h.DB.QueryRowContext(ctx, `SELECT cheat_password_hash FROM adventures WHERE slug = $1`, slug).Scan(&hash)
+	var want sql.NullString
+	err := h.DB.QueryRowContext(ctx, `SELECT cheat_password FROM adventures WHERE slug = $1`, slug).Scan(&want)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return false, err
 	}
-	return auth.CheckSecret(hash.String, password), nil
+	return want.Valid && subtle.ConstantTimeCompare([]byte(want.String), []byte(password)) == 1, nil
 }
 
 // refusePlay maps an engine refusal onto a status and a stable code.

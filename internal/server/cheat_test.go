@@ -43,13 +43,8 @@ func TestGraphCheat(t *testing.T) {
 		t.Fatalf("set cheat password = %d", s)
 	}
 	var edit map[string]any
-	if s := pub.doAny("GET", "/api/admin/adventures/demo/edit", nil, &edit); s != 200 || edit["has_cheat_password"] != true {
-		t.Fatalf("edit after setting = %d %v", s, edit["has_cheat_password"])
-	}
-	for k := range edit {
-		if k == "cheat_password" || k == "cheat_password_hash" {
-			t.Fatalf("the editor must never get the password back, got %q", k)
-		}
+	if s := pub.doAny("GET", "/api/admin/adventures/demo/edit", nil, &edit); s != 200 || edit["cheat_password"] != "letmein" {
+		t.Fatalf("the editor should show the password: %d %v", s, edit["cheat_password"])
 	}
 
 	arr := newClient(t, ts)

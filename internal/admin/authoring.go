@@ -158,9 +158,9 @@ type adventureEditDTO struct {
 	// images + audio + manifest URLs) to the team's current page index.
 	// Default false keeps the permissive prefetch-friendly behaviour.
 	StrictAssets bool `json:"strict_assets"`
-	// HasCheatPassword says a cheat password is set. The password itself
-	// is never sent back.
-	HasCheatPassword bool `json:"has_cheat_password"`
+	// CheatPassword unlocks cheating on the phone, for testers; empty is
+	// none. Kept as typed, so the author can look it up.
+	CheatPassword string `json:"cheat_password"`
 	// Starting location — optional. Both StartLat and StartLng are
 	// pointers because they're meaningful only as a pair; an absent
 	// start (one or both nil) means "fall back to the first gated
@@ -613,15 +613,11 @@ func applyAdventureMetaUpdate(ctx context.Context, db *sql.DB, slug string, req 
 	if req.CheatPassword != nil {
 		switch pw := *req.CheatPassword; {
 		case pw == "":
-			add("cheat_password_hash", nil)
+			add("cheat_password", nil)
 		case len(pw) > MaxNameLen:
 			return badRequestf("cheat_password is too long")
 		default:
-			hash, err := auth.HashPassword(pw)
-			if err != nil {
-				return err
-			}
-			add("cheat_password_hash", hash)
+			add("cheat_password", pw)
 		}
 	}
 	if req.StartLat != nil {
@@ -789,12 +785,12 @@ func loadAdventureDTO(ctx context.Context, db *sql.DB, slug string) (*adventureE
 		       heading_font, corners, cards, card_outline,
 		       language,
 		       (avatar_mime_type IS NOT NULL)::int AS has_avatar,
-		       published, org_id, strict_assets, (cheat_password_hash IS NOT NULL),
+		       published, org_id, strict_assets, COALESCE(cheat_password, ''),
 		       start_lat, start_lng, start_label, brief
 		FROM adventures WHERE slug = $1
 	`, slug).Scan(&a.ID, &a.Slug, &a.Title, &a.Description, &a.Author,
 		&a.IntroText, &a.OutroText,
-		&accent, &accent2, &bg, &ink, &submitBG, &a.Font, &a.HeadingFont, &a.Corners, &a.Cards, &a.CardOutline, &a.Language, &hasAvatar, &published, &orgID, &a.StrictAssets, &a.HasCheatPassword,
+		&accent, &accent2, &bg, &ink, &submitBG, &a.Font, &a.HeadingFont, &a.Corners, &a.Cards, &a.CardOutline, &a.Language, &hasAvatar, &published, &orgID, &a.StrictAssets, &a.CheatPassword,
 		&startLat, &startLng, &a.StartLabel, &brief); err != nil {
 		return nil, err
 	}

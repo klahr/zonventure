@@ -342,7 +342,7 @@
   "Password": "Lösenord",
   "Unlock": "Lås upp",
   "Cheating": "Fuskläge",
-  "Solve (cheat)": "Lös (fusk)",
+  "Solve without answering (cheat)": "Lös utan att svara (fusk)",
   "Solved.": "Löst.",
   "Wrong password.": "Fel lösenord.",
   "No connection. Try again when you're back online.": "Ingen anslutning. Försök igen när du är uppkopplad.",

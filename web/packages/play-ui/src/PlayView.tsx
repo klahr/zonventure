@@ -406,9 +406,10 @@ function PuzzleStep(props: StepProps) {
   const blockedFor = secondsUntil(view.blocked_until, now);
   const timeLeft = view.deadline ? secondsUntil(view.deadline, now) : Infinity;
   const timeUp = timeLeft <= 0;
-  const needsPlace = !!view.zone && !view.here;
-  const locked = !!busy || blockedFor > 0 || needsPlace;
+  // Cheating works away from the place, so a tester can walk a route from a desk.
   const cheat = props.cheat;
+  const needsPlace = !!view.zone && !view.here && !cheat;
+  const locked = !!busy || blockedFor > 0 || needsPlace;
   const answer = (g: string) => onAction(cheat ? { kind: "cheat", node, password: cheat } : { kind: "answer", node, guess: g });
 
   // Live, the client calls Timeout itself when the countdown ends — the
@@ -513,7 +514,7 @@ function PuzzleStep(props: StepProps) {
       {view.can_skip && <SkipLink {...props} />}
       {cheat && (
         <button type="button" className="pv-link" disabled={locked} onClick={() => onAction({ kind: "cheat", node, password: cheat })}>
-          {t("Solve (cheat)")}
+          {t("Solve without answering (cheat)")}
         </button>
       )}
 
@@ -746,7 +747,10 @@ export function Sheet({ title, t, onClose, children }: { title: string; t: Trans
 
 function StoryStep(props: StepProps) {
   const { view, t, busy, onAction, zoneNote, feedback } = props;
-  const needsPlace = !!view.zone && !view.here;
+  const node = view.node ?? "";
+  // Away from the place, cheating continues anyway; there, it is a plain continue.
+  const cheatPast = !!props.cheat && !!view.zone && !view.here;
+  const needsPlace = !!view.zone && !view.here && !cheatPast;
   return (
     <>
       <Title view={view} />
@@ -759,7 +763,7 @@ function StoryStep(props: StepProps) {
           t={t}
           disabled={!!busy || needsPlace}
           label={needsPlace ? t("Continue when you are there") : undefined}
-          onClick={() => onAction({ kind: "continue", node: view.node ?? "" })}
+          onClick={() => onAction(cheatPast ? { kind: "cheat", node, password: props.cheat ?? "" } : { kind: "continue", node })}
         />
       </div>
     </>

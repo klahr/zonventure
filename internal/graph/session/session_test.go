@@ -183,6 +183,33 @@ func TestCheatTakesFirstAnswerRouteForNoPoints(t *testing.T) {
 	}
 }
 
+func TestCheatWorksAwayFromThePlace(t *testing.T) {
+	g := hunt()
+	g.Nodes[1].PuzzleCfg.Zone = "park"
+	tm, _, err := Start(g, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := tm.Answer("door", "left"); !errors.Is(err, ErrNotHere) {
+		t.Fatalf("an answer away from the park = %v", err)
+	}
+	if res, _, err := tm.Cheat("door"); err != nil || res.Port != "left" {
+		t.Errorf("cheat away from the park: %+v %v", res, err)
+	}
+}
+
+func TestCheatContinuesAStoryAwayFromThePlace(t *testing.T) {
+	tm := started(t)
+	_, step, _ := tm.Answer("door", "right")
+	tm.Apply(*step)
+	if _, _, err := tm.Continue("walk"); !errors.Is(err, ErrNotHere) {
+		t.Fatalf("continue away from the park = %v", err)
+	}
+	if res, step, err := tm.Cheat("walk"); err != nil || res.Port != graph.PortOut || step == nil || !tm.Cheated {
+		t.Errorf("cheat on the story: %+v %+v %v cheated=%v", res, step, err, tm.Cheated)
+	}
+}
+
 func TestCheatHonoursLockout(t *testing.T) {
 	tm := started(t)
 	until := t0.Add(time.Minute)

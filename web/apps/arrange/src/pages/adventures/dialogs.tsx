@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ImagePlus, Trash2 } from "lucide-react";
+import { Eye, EyeOff, ImagePlus, Trash2 } from "lucide-react";
 import { ApiError } from "@zonventure/api";
 import { useT } from "../../i18n.tsx";
 import { useSession } from "../../session.tsx";
@@ -204,7 +204,7 @@ export function PickPassDialog({ title, passes, onPick, onClose }: { title: stri
 
 const LANGS = ["en", "sv", "no", "da", "fi", "de", "fr", "es", "pt", "pt-BR", "it", "nl", "pl", "ja", "zh-Hant", "zh-Hans"];
 
-type Form = { slug: string; title: string; description: string; author: string; language: string; intro_text: string; outro_text: string; strict_assets: boolean; lat: string; lng: string; start_label: string; has_cheat: boolean; cheat_password: string; clear_cheat: boolean };
+type Form = { slug: string; title: string; description: string; author: string; language: string; intro_text: string; outro_text: string; strict_assets: boolean; lat: string; lng: string; start_label: string; cheat_password: string };
 
 function formOf(a: AdventureEdit): Form {
   return {
@@ -219,9 +219,7 @@ function formOf(a: AdventureEdit): Form {
     lat: a.start_lat == null ? "" : String(a.start_lat),
     lng: a.start_lng == null ? "" : String(a.start_lng),
     start_label: a.start_label || "",
-    has_cheat: !!a.has_cheat_password,
-    cheat_password: "",
-    clear_cheat: false,
+    cheat_password: a.cheat_password || "",
   };
 }
 
@@ -270,6 +268,8 @@ export function EditDetailsDialog({ slug, accent, firstPlace, onClose, onSaved, 
   const dirty = !!(f && initial && (Object.keys(f) as (keyof Form)[]).some((k) => (typeof f[k] === "string" ? (f[k] as string).trim() !== (initial[k] as string).trim() : f[k] !== initial[k])));
   const close = useGuardedClose(dirty, t.t("Discard unsaved changes to this adventure?"), onClose);
   const set = <K extends keyof Form>(k: K, v: Form[K]) => setF((x) => (x ? { ...x, [k]: v } : x));
+  // Hidden until asked for, so it isn't shown to whoever is looking at the screen.
+  const [showCheat, setShowCheat] = useState(false);
   const badSlug = !!f && !SLUG.test(f.slug.trim());
   const latBad = !!f && f.lat.trim() !== "" && coord(f.lat) == null;
   const lngBad = !!f && f.lng.trim() !== "" && coord(f.lng) == null;
@@ -289,8 +289,7 @@ export function EditDetailsDialog({ slug, accent, firstPlace, onClose, onSaved, 
     if (coord(f.lat) !== coord(initial.lat)) p.start_lat = coord(f.lat);
     if (coord(f.lng) !== coord(initial.lng)) p.start_lng = coord(f.lng);
     if (f.start_label.trim() !== initial.start_label) p.start_label = f.start_label.trim();
-    if (f.clear_cheat) p.cheat_password = "";
-    else if (f.cheat_password) p.cheat_password = f.cheat_password;
+    if (f.cheat_password !== initial.cheat_password) p.cheat_password = f.cheat_password;
     if (Object.keys(p).length === 0) return onClose();
     setBusy(true);
     try {
@@ -426,23 +425,26 @@ export function EditDetailsDialog({ slug, accent, firstPlace, onClose, onSaved, 
           </label>
           <Field
             label={t.t("Cheat password")}
-            hint={t.t("Optional, for testing. On the phone, tap the adventure's title 7 times and enter it: every answer then counts as right, for no points, and the team is left out of the rankings.")}
+            hint={t.t("Optional, for testing. Leave empty for none. On the phone, tap the adventure's title 7 times and enter it: every answer then counts as right, for no points, and the team is left out of the rankings.")}
           >
-            <input
-              type="password"
-              autoComplete="new-password"
-              value={f.cheat_password}
-              disabled={f.clear_cheat}
-              placeholder={f.has_cheat ? t.t("Set. Type a new one to change it.") : ""}
-              onChange={(e) => set("cheat_password", e.target.value)}
-            />
+            <Row>
+              <input
+                type={showCheat ? "text" : "password"}
+                autoComplete="off"
+                value={f.cheat_password}
+                onChange={(e) => set("cheat_password", e.target.value)}
+              />
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label={showCheat ? t.t("Hide password") : t.t("Show password")}
+                title={showCheat ? t.t("Hide password") : t.t("Show password")}
+                aria-pressed={showCheat}
+                icon={showCheat ? <EyeOff size={ICON.sm} aria-hidden /> : <Eye size={ICON.sm} aria-hidden />}
+                onClick={() => setShowCheat((v) => !v)}
+              />
+            </Row>
           </Field>
-          {f.has_cheat && (
-            <label className="adv-check">
-              <input type="checkbox" checked={f.clear_cheat} onChange={(e) => set("clear_cheat", e.target.checked)} />
-              <span>{t.t("Remove the cheat password")}</span>
-            </label>
-          )}
           <p className="cs-field__hint">{t.t("Colours, fonts and the adventure's language for players are set in the designer's Look.")}</p>
         </>
       )}

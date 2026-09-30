@@ -703,6 +703,12 @@ func (t *Team) Continue(node string) (Result, *walk.Step, error) {
 	if n.StoryCfg != nil && n.StoryCfg.Zone != "" && !t.InZone(n.StoryCfg.Zone) {
 		return Result{}, nil, ErrNotHere
 	}
+	return t.continueStory(n)
+}
+
+// continueStory moves on from a story step whose place, if any, has
+// been dealt with: by being there, or by a cheat.
+func (t *Team) continueStory(n graph.Node) (Result, *walk.Step, error) {
 	if t.unanswered(n) {
 		return Result{}, nil, ErrUnanswered
 	}
@@ -840,13 +846,22 @@ func (t *Team) Rescue(node string) (Result, *walk.Step, error) {
 }
 
 // Cheat solves a puzzle for a tester who has the adventure's cheat
-// password: the first answer route the team may take, as if answered
-// right, with no points. Zone, lockout and the time limit still hold,
-// as for an answer. Checking the password is the caller's job.
+// password: the first answer route, as if answered right, with no
+// points. It works away from the puzzle's place, so a route can be
+// tested from a desk; a lockout and the time limit still hold. On a
+// story step it continues without being at the step's place.
+// Checking the password is the caller's job.
 func (t *Team) Cheat(node string) (Result, *walk.Step, error) {
 	n, err := t.current(node)
 	if err != nil {
 		return Result{}, nil, err
+	}
+	if n.Type == graph.Story {
+		res, step, err := t.continueStory(n)
+		if err == nil {
+			t.Cheated = true
+		}
+		return res, step, err
 	}
 	if n.Type != graph.Puzzle || n.PuzzleCfg == nil {
 		return Result{}, nil, ErrWrongNode
@@ -856,16 +871,10 @@ func (t *Team) Cheat(node string) (Result, *walk.Step, error) {
 	if r.BlockedUntil != nil && t.Now.Before(*r.BlockedUntil) {
 		return Result{BlockedUntil: r.BlockedUntil}, nil, ErrLocked
 	}
-	if cfg.Zone != "" && !t.InZone(cfg.Zone) {
-		return Result{}, nil, ErrNotHere
-	}
 	if cfg.TimeLimitSeconds > 0 && t.NodeElapsedSeconds() > float64(cfg.TimeLimitSeconds) {
 		return Result{}, nil, ErrTimeUp
 	}
 	for _, o := range answerOrder(cfg) {
-		if !t.outputZoneOK(o) {
-			continue
-		}
 		r.Solved = true
 		t.Cheated = true
 		step, err := t.leave(n, o.Port, 0)
