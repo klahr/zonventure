@@ -127,6 +127,10 @@ func (s *Server) registerTools() {
 	// deployments.
 	s.registerPurchaseTools()
 	s.registerGraphTools()
+	s.registerGraphEditTools()
+	s.registerSimulateTools()
+	s.registerMediaTools()
+	s.registerGuideTool()
 	// Phase 4 — invitations + ICS export. invitations.go.
 	s.registerInvitationTools()
 	// Slice 3 polish — CSV results export and a static lifecycle
@@ -231,7 +235,7 @@ func (s *Server) registerTools() {
 				"slug": map[string]any{"type": "string", "description": "Adventure to update."},
 				"patch": map[string]any{
 					"type":        "object",
-					"description": "Partial patch matching the admin updateAdventureRequest shape. Common fields: title, description, author, intro_text, outro_text, language, accent_color, accent_secondary_color, background_color, text_color, submit_bg_color, font, heading_font, corners (rounded|soft|sharp), cards (raised|flat), card_outline (bool), strict_assets, start_lat, start_lng, start_label, slug.",
+					"description": "Partial patch matching the admin updateAdventureRequest shape. Common fields: title, description, author, intro_text, outro_text, language, accent_color, accent_secondary_color, background_color, text_color, submit_bg_color, font, heading_font, corners (rounded|soft|sharp), cards (raised|flat), card_outline (bool), strict_assets, start_lat, start_lng, start_label, slug, brief (replaces the whole brief: {theme, setting, tone, audience, age_range, group_size, minutes, difficulty, distance_m, accessibility, premise, notes} — record what was agreed with the author and design every step against it).",
 				},
 			},
 		},

@@ -1,4 +1,4 @@
-import { get, patch, post, request, type Membership, type Whoami } from "@zonventure/api";
+import { get, patch, post, put, request, type Membership, type Whoami } from "@zonventure/api";
 import { outline, type Graph } from "@zonventure/graph";
 
 const adv = (slug: string) => `/api/admin/adventures/${encodeURIComponent(slug)}`;
@@ -237,3 +237,7 @@ export async function downscaleImage(file: File, maxDim = 1600, quality = 0.85):
     bitmap.close();
   }
 }
+
+/** internal/admin/position.go: the author's phone reports where it stands. */
+export const putMyPosition = (p: { lat: number; lng: number; accuracy_m: number }) =>
+  put<void>("/api/admin/me/position", p);

@@ -163,11 +163,14 @@ type adventureEditDTO struct {
 	// start (one or both nil) means "fall back to the first gated
 	// puzzle's location". StartLabel is a short free-text hint
 	// surfaced alongside the coords ("vid bänken under trappan").
-	StartLat   *float64    `json:"start_lat,omitempty"`
-	StartLng   *float64    `json:"start_lng,omitempty"`
-	StartLabel string      `json:"start_label,omitempty"`
-	Shares     []shareView `json:"shares"`
-	Pages      []pageView  `json:"pages"`
+	StartLat   *float64 `json:"start_lat,omitempty"`
+	StartLng   *float64 `json:"start_lng,omitempty"`
+	StartLabel string   `json:"start_label,omitempty"`
+	// Brief is what the adventure is meant to be, as agreed with its
+	// author: the yardstick an assistant designs each step against.
+	Brief  Brief       `json:"brief"`
+	Shares []shareView `json:"shares"`
+	Pages  []pageView  `json:"pages"`
 	// Lanes lists the adventure's lanes in idx order. The editor
 	// uses this to render its collapsible lane sections; Pages still
 	// arrives flat (with each page tagged by lane_id) so the editor
@@ -408,7 +411,30 @@ type updateAdventureRequest struct {
 	StartLat   *Nullable[float64] `json:"start_lat,omitempty"`
 	StartLng   *Nullable[float64] `json:"start_lng,omitempty"`
 	StartLabel *string            `json:"start_label,omitempty"`
+	// Brief replaces the whole brief.
+	Brief *Brief `json:"brief,omitempty"`
 }
+
+// Brief records an adventure's intent. Every field is free text, or a
+// number where one is natural, because it is written in conversation
+// and read back by people and assistants, never by the engine.
+type Brief struct {
+	Theme         string `json:"theme,omitempty"`
+	Setting       string `json:"setting,omitempty"`
+	Tone          string `json:"tone,omitempty"`
+	Audience      string `json:"audience,omitempty"`
+	AgeRange      string `json:"age_range,omitempty"`
+	GroupSize     string `json:"group_size,omitempty"`
+	Minutes       int    `json:"minutes,omitempty"`
+	Difficulty    string `json:"difficulty,omitempty"`
+	DistanceM     int    `json:"distance_m,omitempty"`
+	Accessibility string `json:"accessibility,omitempty"`
+	Premise       string `json:"premise,omitempty"`
+	Notes         string `json:"notes,omitempty"`
+}
+
+// maxBriefBytes bounds a stored brief; a real one is a few hundred bytes.
+const maxBriefBytes = 16 << 10
 
 // Nullable distinguishes "field absent in JSON" (the outer pointer is
 // nil) from "field present with null" (the outer pointer is non-nil
@@ -607,6 +633,13 @@ func applyAdventureMetaUpdate(ctx context.Context, db *sql.DB, slug string, req 
 		}
 		add("start_label", label)
 	}
+	if req.Brief != nil {
+		b, _ := json.Marshal(req.Brief)
+		if len(b) > maxBriefBytes {
+			return badRequestf("brief is longer than %d bytes", maxBriefBytes)
+		}
+		add("brief", string(b))
+	}
 	if len(sets) == 1 {
 		return badRequestf("nothing to update")
 	}
@@ -728,6 +761,7 @@ func loadAdventureDTO(ctx context.Context, db *sql.DB, slug string) (*adventureE
 		published                          int
 		orgID                              sql.NullInt64
 		startLat, startLng                 sql.NullFloat64
+		brief                              []byte
 	)
 	if err := db.QueryRowContext(ctx, `
 		SELECT id, slug, title, description, author, intro_text, outro_text,
@@ -736,13 +770,16 @@ func loadAdventureDTO(ctx context.Context, db *sql.DB, slug string) (*adventureE
 		       language,
 		       (avatar_mime_type IS NOT NULL)::int AS has_avatar,
 		       published, org_id, strict_assets,
-		       start_lat, start_lng, start_label
+		       start_lat, start_lng, start_label, brief
 		FROM adventures WHERE slug = $1
 	`, slug).Scan(&a.ID, &a.Slug, &a.Title, &a.Description, &a.Author,
 		&a.IntroText, &a.OutroText,
 		&accent, &accent2, &bg, &ink, &submitBG, &a.Font, &a.HeadingFont, &a.Corners, &a.Cards, &a.CardOutline, &a.Language, &hasAvatar, &published, &orgID, &a.StrictAssets,
-		&startLat, &startLng, &a.StartLabel); err != nil {
+		&startLat, &startLng, &a.StartLabel, &brief); err != nil {
 		return nil, err
+	}
+	if err := json.Unmarshal(brief, &a.Brief); err != nil {
+		return nil, fmt.Errorf("decoding brief: %w", err)
 	}
 	if startLat.Valid {
 		v := startLat.Float64

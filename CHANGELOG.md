@@ -11,6 +11,26 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Added — building an adventure with an assistant, on site
+
+- **Small graph edits over MCP.** `edit_adventure_graph` applies a
+  batch of node, zone and edge changes to the draft, all or nothing,
+  instead of resending the whole graph; `undo_adventure_graph_edit`
+  steps back through them. `create_graph_adventure` starts a new graph
+  adventure in one call.
+- **"Here" zones.** **Field mode** (Adventures → Field mode) shares the
+  phone's position while the author walks; an assistant places a zone
+  where they stand with `put_zone` and `here: true`. Only the latest
+  position is kept.
+- **A brief per adventure**: theme, audience, length and the rest, set
+  with `update_adventure_meta` and read back with the adventure.
+- **No setup prompt needed.** The MCP server tells the assistant how
+  to co-author (interview, one stop at a time, never invent site facts,
+  test before publishing), offers a `field_session` prompt to start,
+  and `get_authoring_guide` gives it step recipes.
+- `simulate_adventure` plays the draft with the real rules, and
+  `upload_adventure_media` adds pictures and sounds to graph adventures.
+
 ### Added — making an adventure on a phone
 
 - **Mark where I stand.** A puzzle or story's place can be pinned to

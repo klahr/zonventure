@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { CalendarPlus, Coins, Plus, Upload, Workflow } from "lucide-react";
+import { CalendarPlus, Coins, MapPin, Plus, Upload, Workflow } from "lucide-react";
 import { canAuthor } from "@zonventure/api";
 import { useT } from "../../i18n.tsx";
 import { useSession } from "../../session.tsx";
@@ -70,6 +70,10 @@ export function AdventuresPage() {
       actions={
         author && (
           <>
+            <a className="btn" href="#/field" title={t.t("Share your location with your assistant while you build on site")}>
+              <MapPin size={ICON.md} aria-hidden />
+              {t.t("Field mode")}
+            </a>
             <Button icon={<Upload size={ICON.md} aria-hidden />} onClick={importer.pick} title={t.t("Import an adventure exported as a .zip")}>{t.t("Import")}</Button>
             <Button variant="primary" filled icon={<Plus size={ICON.md} aria-hidden />} onClick={() => setCreating(true)}>{t.t("New adventure")}</Button>
           </>

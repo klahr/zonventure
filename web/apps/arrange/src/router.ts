@@ -21,6 +21,7 @@ export type Route =
   | { name: "adventures" }
   | { name: "adventure"; slug: string }
   | { name: "designer"; slug: string }
+  | { name: "field" }
   | { name: "catalog" }
   | { name: "catalog-item"; slug: string }
   | { name: "events" }
@@ -65,6 +66,8 @@ export function parseRoute(hash: string): Route {
       return sub === "design" ? { name: "designer", slug: arg } : { name: "adventure", slug: arg };
     case "design":
       return arg ? { name: "designer", slug: arg } : { name: "adventures" };
+    case "field":
+      return { name: "field" };
     case "catalog":
     case "store":
       if (!CATALOG_ENABLED) return arg ? { name: "adventure", slug: arg } : { name: "adventures" };
@@ -117,6 +120,8 @@ export function href(r: Route): string {
       return `#/adventures/${e(r.slug)}`;
     case "designer":
       return `#/adventures/${e(r.slug)}/design`;
+    case "field":
+      return "#/field";
     case "catalog":
       return "#/catalog";
     case "catalog-item":

@@ -15,7 +15,7 @@ import { DashboardPage } from "./pages/dashboard/index.tsx";
 import { EventsPage, QuestsPage } from "./pages/events/index.tsx";
 import { EventPage } from "./pages/event/index.tsx";
 import { EventControlPage } from "./pages/control/index.tsx";
-import { AdventurePage, AdventuresPage, CatalogItemPage, CatalogPage } from "./pages/adventures/index.tsx";
+import { AdventurePage, AdventuresPage, CatalogItemPage, CatalogPage, FieldPage } from "./pages/adventures/index.tsx";
 import { SettingsPage } from "./pages/settings/index.tsx";
 import { AccountBanners } from "./pages/settings/Banners.tsx";
 import { LogsPage, OrganizationPage, OrganizationsPage, WebhookLogPage } from "./pages/admin/index.tsx";
@@ -77,6 +77,7 @@ function sectionOf(r: Route): { section: Section; label: string } {
     case "adventures":
     case "adventure":
     case "designer":
+    case "field":
     case "catalog":
     case "catalog-item":
       return { section: "adventures", label: "Adventures" };
@@ -444,6 +445,8 @@ function Page({ route }: { route: Route }) {
       return <AdventurePage key={route.slug} slug={route.slug} />;
     case "designer":
       return <Designer key={route.slug} slug={route.slug} />;
+    case "field":
+      return <FieldPage />;
     case "catalog":
       return <CatalogPage />;
     case "catalog-item":

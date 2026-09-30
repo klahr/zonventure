@@ -46,5 +46,15 @@
   "{{n}} puzzle is NOT gated and could be re-themed for any venue.": "{{n}} pussel är INTE platslåst och kan anpassas till valfri plats.",
   "{{n}} puzzles are NOT gated and could be re-themed for any venue.": "{{n}} pussel är INTE platslåsta och kan anpassas till valfri plats.",
   "{{n}} step": "{{n}} steg",
-  "{{n}} steps": "{{n}} steg"
+  "{{n}} steps": "{{n}} steg",
+  "Field mode": "Fältläge",
+  "Keep this page open while you walk. Your assistant uses it to put stops where you stand.": "Håll sidan öppen medan du går. Din assistent använder den för att placera stopp där du står.",
+  "Stop sharing my location": "Sluta dela min position",
+  "Share my location": "Dela min position",
+  "Not sharing.": "Delar inte.",
+  "Sharing, to within about {{m}} m. Last sent {{s}} s ago.": "Delar, med ungefär {{m}} m noggrannhet. Senast skickad för {{s}} s sedan.",
+  "Finding you…": "Letar efter dig…",
+  "Your position couldn't be sent. Check the connection.": "Din position kunde inte skickas. Kontrollera anslutningen.",
+  "Only your latest position is kept, and only your assistant reads it.": "Bara din senaste position sparas, och bara din assistent läser den.",
+  "Share your location with your assistant while you build on site": "Dela din position med din assistent medan du bygger på plats"
 }

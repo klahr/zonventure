@@ -3,13 +3,12 @@
 ## Status
 
 **Shipped**: HTTP MCP server at `POST /mcp`, per-user bearer tokens
-minted from settings, eight tools covering full adventure CRUD plus
-lane-mode tweaking. Off by default — operators opt in via
-`ZV_MCP_ENABLED=1`.
+minted from settings, tools for authoring (lanes and graphs), running
+events and watching them — `tools/list` is the authoritative list.
+Off by default — operators opt in via `ZV_MCP_ENABLED=1`.
 
-**Not yet shipped**: a managed-cloud "claude.ai connector" landing
-page; SSE streaming of tool output; image/audio asset upload via
-MCP (assets are still attached through the arranger UI).
+**Not yet shipped**: OAuth, which claude.ai custom connectors (and so
+the Claude mobile app) need; SSE streaming of tool output.
 
 ## What it is
 
@@ -91,6 +90,34 @@ adventure avatar — cannot travel through MCP; the model writes
 text content + `image_alt` placeholders, and the user attaches
 files later in `/arrange`.
 
+### Building an adventure on site
+
+Graph tools for an assistant building an adventure in conversation,
+one step at a time, while the author walks the area:
+
+| Tool                        | Kind  | Notes                                                                 |
+|-----------------------------|-------|-----------------------------------------------------------------------|
+| `create_graph_adventure`    | write | New adventure with a start → end draft and an optional brief.         |
+| `update_adventure_meta`     | write | `brief`: theme, audience, length… what every step is designed against. |
+| `edit_adventure_graph`      | write | Batch of `put_node` / `delete_node` / `put_zone` / `delete_zone` / `connect` / `disconnect`, all-or-nothing. `put_zone` with `here: true` centres the zone on the author. |
+| `undo_adventure_graph_edit` | write | Restore the draft from before the last `edit_adventure_graph`.         |
+| `get_creator_position`      | read  | The author's last reported position and its age.                      |
+| `upload_adventure_media`    | write | Base64 image/audio/video for blocks, hints and answers.               |
+| `simulate_adventure`        | read  | Play the saved draft through actions with the real rules.             |
+
+The author doesn't have to explain any of this. The server sends
+usage instructions in its `initialize` reply, which clients put in the
+model's context; offers a `field_session` prompt (in Claude Code:
+`/mcp__zv__field_session [slug]`) that starts a session; and
+`get_authoring_guide` returns step recipes as exact node JSON, checked
+by `guide_test.go` against the parser and validator. The text lives in
+`internal/mcp/guide.go`.
+
+The position comes from **Field mode** (`/app/arrange/#/field`), which the
+author keeps open on their phone: it reports GPS to
+`PUT /api/admin/me/position`, keeps the screen awake, and the server
+stores only the latest fix.
+
 ## Setup — users
 
 1. Sign into `/arrange`, open **Settings → Account**, scroll to
@@ -117,7 +144,7 @@ curl -s -X POST https://your-host/mcp \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
 ```
 
-Should return a JSON-RPC response listing all eight tools.
+Should return a JSON-RPC response listing the tools.
 
 To revoke a token (laptop lost, contractor offboarded, you minted
 it for a one-shot script and don't need it any more), delete the

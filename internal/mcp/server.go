@@ -138,8 +138,10 @@ func (s *Server) dispatch(ctx context.Context, req Request) (Response, bool) {
 			ProtocolVersion: protocolVersion,
 			ServerInfo:      serverInfo{Name: "Zonventure", Version: s.version},
 			Capabilities: map[string]any{
-				"tools": map[string]any{},
+				"tools":   map[string]any{},
+				"prompts": map[string]any{},
 			},
+			Instructions: serverInstructions,
 		}
 	case "notifications/initialized", "notifications/cancelled":
 		// Acknowledged silently.
@@ -148,6 +150,23 @@ func (s *Server) dispatch(ctx context.Context, req Request) (Response, bool) {
 		out.Result = map[string]any{}
 	case "tools/list":
 		out.Result = map[string]any{"tools": s.tools.list(ctx)}
+	case "prompts/list":
+		out.Result = map[string]any{"prompts": prompts}
+	case "prompts/get":
+		var p struct {
+			Name      string            `json:"name"`
+			Arguments map[string]string `json:"arguments,omitempty"`
+		}
+		if err := json.Unmarshal(req.Params, &p); err != nil {
+			out.Error = &RPCError{Code: codeInvalidParams, Message: "bad prompts/get params: " + err.Error()}
+			break
+		}
+		res, ok := getPrompt(p.Name, p.Arguments)
+		if !ok {
+			out.Error = &RPCError{Code: codeInvalidParams, Message: "unknown prompt: " + p.Name}
+			break
+		}
+		out.Result = res
 	case "tools/call":
 		var p ToolCallParams
 		if err := json.Unmarshal(req.Params, &p); err != nil {

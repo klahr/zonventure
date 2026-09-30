@@ -110,6 +110,12 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 		// Admins are blocked inside the handler.
 		r.Post("/me/organizations", adminH.CreateOwnOrg)
 
+		// The author's last position, reported by their phone while
+		// building on site and read by an assistant placing zones.
+		// No RequireSession: an MCP token reads it.
+		r.Put("/me/position", adminH.PutMyPosition)
+		r.Get("/me/position", adminH.GetMyPosition)
+
 		// Account settings — every logged-in staff user can change
 		// their own password / email / delete themselves. No role
 		// gate beyond the surrounding RequireAnyRole.

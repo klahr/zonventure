@@ -69,11 +69,14 @@ const (
 
 // initializeResult is what the server returns to the client's
 // initialize call. capabilities advertises only what we actually
-// support — tools/list and tools/call — to keep the surface honest.
+// support — tools and prompts — to keep the surface honest.
+// Instructions is how to use the server, which clients put in the
+// model's context (serverInstructions).
 type initializeResult struct {
 	ProtocolVersion string         `json:"protocolVersion"`
 	ServerInfo      serverInfo     `json:"serverInfo"`
 	Capabilities    map[string]any `json:"capabilities"`
+	Instructions    string         `json:"instructions,omitempty"`
 }
 
 type serverInfo struct {
