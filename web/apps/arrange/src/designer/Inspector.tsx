@@ -31,13 +31,15 @@ import { useT } from "../i18n.tsx";
 import { ConditionEditor } from "./ConditionEditor.tsx";
 import { MediaEditor } from "./MediaEditor.tsx";
 import { BlocksEditor } from "./BlocksEditor.tsx";
-import { Field, ZoneSelect } from "./fields.tsx";
+import { Field, ZoneSelect, type ZoneHere } from "./fields.tsx";
 import { AlertTriangle, ChevronLeft, ChevronRight, Eye, Plus, Trash2, X } from "lucide-react";
 import { Button, HelpPopover, ICON } from "./dz/ui.tsx";
 import { STEP, VISIBLE } from "./dz/types.tsx";
 import { ConceptIcon, PART, TRIGGER } from "./dz/concepts.tsx";
 import { ZoneMap } from "./ZoneMap.tsx";
 import { nearLastZone, zoneGroups, zoneName } from "./zones.ts";
+import { SimpleStep } from "./SimpleStep.tsx";
+import { isNarrow } from "./device.ts";
 
 interface Props {
   node: Node;
@@ -72,6 +74,10 @@ export function Inspector({ node, graph, issues, onChange, onGraphChange, onDele
   const kind = STEP[node.type];
   const Icon = kind.icon;
   const [open, setOpen] = useState<string | null>(null);
+  // On a phone a puzzle or story opens on its simple form; More options
+  // shows every setting, for this step until another is selected.
+  const [fullFor, setFullFor] = useState<string | null>(null);
+  const simple = !readOnly && isNarrow() && (node.type === "puzzle" || node.type === "story") && fullFor !== node.slug;
   const parts = partsOf(node, graph, onChange, onGraphChange, t, setOpen);
   const page = parts.find((p) => p.id === open);
   // Issues about a route, branch or path belong to the part listing them.
@@ -126,6 +132,12 @@ export function Inspector({ node, graph, issues, onChange, onGraphChange, onDele
     <div className={"inspector-body" + (page && PART[page.id] ? ` concept--${PART[page.id]!.concept}` : "")} key={page?.id ?? ""}>
     <div className="insp inspector-edits" {...(readOnly ? { inert: true } : {})}>
 
+      {!simple && !page && fullFor === node.slug && isNarrow() && (
+        <Button variant="ghost" size="sm" className="insp__simple" onClick={() => setFullFor(null)}>
+          <ChevronLeft size={ICON.sm} />
+          {t.t("Back to the simple view")}
+        </Button>
+      )}
       {issues.length > 0 && !page && (
         <ul className="insp__issues">
           {issues.map((i, k) => (
@@ -137,7 +149,9 @@ export function Inspector({ node, graph, issues, onChange, onGraphChange, onDele
         </ul>
       )}
 
-      {page ? (
+      {simple ? (
+        <SimpleStep node={node} graph={graph} onChange={onChange} onGraphChange={onGraphChange} onDelete={onDelete} onMore={() => setFullFor(node.slug)} />
+      ) : page ? (
         <>
           {page.hint && <p className="field__hint ipage__hint">{page.hint}</p>}
           <div className="ipage__body">{page.editor}</div>
@@ -146,7 +160,7 @@ export function Inspector({ node, graph, issues, onChange, onGraphChange, onDele
         parts.map((p) => <PartCard key={p.id} part={p} issues={p.ports ? portIssues : 0} readOnly={!!readOnly} onOpen={() => setOpen(p.id)} />)
       )}
 
-      {!readOnly && !page && (
+      {!readOnly && !page && !simple && (
         <div className="inspector-actions">
           {(node.type !== "start" || graph.nodes.filter((n) => n.type === "start").length > 1) && (
             <Button variant="danger" onClick={onDelete}>
@@ -254,7 +268,7 @@ function partsOf(node: Node, graph: Graph, onChange: (n: Node) => void, onGraphC
       parts.push({ id: "place", title: t.t("Where teams start"), editor: <StartForm node={node} graph={graph} onGraphChange={onGraphChange} /> });
       break;
     case "puzzle":
-      if (node.puzzle) parts.push(...puzzleParts(node, node.puzzle, graph, (puzzle) => onChange({ ...node, puzzle }), t, openPart));
+      if (node.puzzle) parts.push(...puzzleParts(node, node.puzzle, graph, (puzzle) => onChange({ ...node, puzzle }), onGraphChange, t, openPart));
       break;
     case "story": {
       const story = node.story ?? {};
@@ -278,7 +292,16 @@ function partsOf(node: Node, graph: Graph, onChange: (n: Node) => void, onGraphC
         ),
         editor: (
           <>
-            <ZoneSelect graph={graph} label={t.t("Only continue inside a zone")} value={story.zone} onChange={(zone) => onChange({ ...node, story: withOptional({ ...story }, "zone", zone) })} />
+            <ZoneSelect
+              graph={graph}
+              label={t.t("Only continue inside a zone")}
+              value={story.zone}
+              onChange={(zone) => onChange({ ...node, story: withOptional({ ...story }, "zone", zone) })}
+              here={{
+                name: node.title || t.t("Story"),
+                set: (zones, slug) => onGraphChange(updateNode({ ...graph, zones }, node.slug, (n) => ({ ...n, story: { ...n.story, zone: slug } }))),
+              }}
+            />
             <label className="check">
               <input type="checkbox" checked={!!story.once} onChange={(e) => onChange({ ...node, story: withOptional({ ...story }, "once", e.target.checked || undefined) })} />
               <span>
@@ -451,7 +474,7 @@ const MISSING_LABEL: Record<MissingHint | "", string> = {
   none: "Nothing",
 };
 
-function puzzleParts(node: Node, cfg: PuzzleConfig, graph: Graph, onChange: (c: PuzzleConfig) => void, t: T, openPart: (id: string) => void): Part[] {
+function puzzleParts(node: Node, cfg: PuzzleConfig, graph: Graph, onChange: (c: PuzzleConfig) => void, onGraphChange: (g: Graph) => void, t: T, openPart: (id: string) => void): Part[] {
   const outputs = cfg.outputs ?? [];
   const answer = cfg.answer;
   const setOutput = (i: number, o: Output) => onChange({ ...cfg, outputs: outputs.map((x, j) => (j === i ? o : x)) });
@@ -494,7 +517,7 @@ function puzzleParts(node: Node, cfg: PuzzleConfig, graph: Graph, onChange: (c: 
   // points there rather than letting designers hunt for them here.
   const toRoutes = (
     <Button variant="ghost" size="sm" onClick={() => openPart("routes")}>
-      {t.t("Set the accepted answers under Routes")}
+      {t.t("Set the accepted answers under Answers and next steps")}
       <ChevronRight size={ICON.sm} />
     </Button>
   );
@@ -504,7 +527,7 @@ function puzzleParts(node: Node, cfg: PuzzleConfig, graph: Graph, onChange: (c: 
       const bar = cfg.bar ?? {};
       how = {
         title: t.t("Answer bar"),
-        hint: t.t("The team types its answer in the bar at the bottom. Which answers count is set per route, under Routes."),
+        hint: t.t("The team types its answer in the bar at the bottom. Which answers count is set under Answers and next steps."),
         summary: (
           <>
             <SumRow label={t.t("Answer bar")}>
@@ -525,7 +548,7 @@ function puzzleParts(node: Node, cfg: PuzzleConfig, graph: Graph, onChange: (c: 
     case "scan":
       how = {
         title: t.t("QR scan"),
-        hint: t.t("The answer bar is one scan button. Print a QR code of an accepted answer and hang it at the place. Which codes count is set per route, under Routes. A team whose camera fails can type the code instead."),
+        hint: t.t("The answer bar is one scan button. Print a QR code of an accepted answer and hang it at the place. Which codes count is set under Answers and next steps. A team whose camera fails can type the code instead."),
         summary: <SumRow label={t.t("Button")}>{cfg.bar?.button || t.t("Scan the code")}</SumRow>,
         form: (
           <>
@@ -665,7 +688,7 @@ function puzzleParts(node: Node, cfg: PuzzleConfig, graph: Graph, onChange: (c: 
   const triggerLabel = (o: Output) => t.t(TRIGGERS.find((x) => x.t === o.trigger)?.label ?? o.trigger);
   parts.push({
     id: "routes",
-    title: t.t("Routes"),
+    title: t.t("Answers and next steps"),
     hint: t.t("Where the team goes next. Each route gets its own dot on the card, to connect to a different step."),
     count: outputs.length,
     ports: true,
@@ -899,7 +922,13 @@ function puzzleParts(node: Node, cfg: PuzzleConfig, graph: Graph, onChange: (c: 
     ),
     editor: (
       <>
-        <ZoneSelect graph={graph} label={t.t("Only answerable inside a zone")} value={cfg.zone} onChange={(zone) => onChange(withOptional({ ...cfg }, "zone", zone))} />
+        <ZoneSelect
+          graph={graph}
+          label={t.t("Only answerable inside a zone")}
+          value={cfg.zone}
+          onChange={(zone) => onChange(withOptional({ ...cfg }, "zone", zone))}
+          here={puzzleHere(node, graph, onGraphChange, t)}
+        />
         <div className="box__row box__row--wrap">
           <NumberField label={t.t("Time limit (s)")} value={cfg.time_limit_seconds} onChange={(n) => onChange(withOptional({ ...cfg }, "time_limit_seconds", n))} />
           <NumberField label={t.t("Lockout after wrong (s)")} value={cfg.lockout_seconds} onChange={(n) => onChange(withOptional({ ...cfg }, "lockout_seconds", n))} />
@@ -1791,6 +1820,14 @@ function ListEditor<T>({
  * the saved JSON clean, which matters because the server rejects nothing
  * for an absent field but a `null` would be a type error on its side.
  */
+/** "Mark where I stand" for a puzzle: the new zone and the puzzle's gate on it, in one edit. */
+function puzzleHere(node: Node, graph: Graph, onGraphChange: (g: Graph) => void, t: T): ZoneHere {
+  return {
+    name: node.title || t.t("Puzzle"),
+    set: (zones, slug) => onGraphChange(updateNode({ ...graph, zones }, node.slug, (n) => ({ ...n, puzzle: { ...n.puzzle!, zone: slug } }))),
+  };
+}
+
 function withOptional<T extends object, K extends keyof T>(obj: T, key: K, value: T[K] | undefined): T {
   const out = { ...obj };
   if (value === undefined || (typeof value === "number" && Number.isNaN(value))) delete out[key];

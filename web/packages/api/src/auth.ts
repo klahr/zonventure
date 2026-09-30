@@ -22,7 +22,7 @@ export const loginTOTP = (challenge: string, answer: { code: string } | { recove
 /** Whether sign-up is open, and the single sign-on button if configured. */
 export const signupConfig = () => get<SignupConfig>("/api/auth/signup-config");
 
-export const signup = (body: { email: string; org_name: string; password: string; terms_accepted: boolean }) =>
+export const signup = (body: { email: string; org_name: string; personal: boolean; password: string; terms_accepted: boolean }) =>
   post<void>("/api/auth/signup", body);
 
 /** Confirm an email change from the link in the mail. */

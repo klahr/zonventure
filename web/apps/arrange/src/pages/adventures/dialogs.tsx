@@ -44,7 +44,10 @@ export function CreateAdventureDialog({ onClose }: { onClose: () => void }) {
   const [description, setDescription] = useState("");
   const [author, setAuthor] = useState(org);
   const [busy, setBusy] = useState(false);
+  // The short name and author fill themselves in; they open when they need a hand.
+  const [more, setMore] = useState(false);
   const badSlug = slug !== "" && !SLUG.test(slug);
+  const moreOpen = more || badSlug || (title.trim() !== "" && slug === "");
   const close = useGuardedClose(!!(title || slug || description || author !== org), t.t("Discard this adventure?"), onClose);
 
   const submit = async () => {
@@ -56,6 +59,8 @@ export function CreateAdventureDialog({ onClose }: { onClose: () => void }) {
       onClose();
     } catch (e) {
       toast.err(e);
+      // A taken short name is the usual reason; show the field.
+      setMore(true);
       setBusy(false);
     }
   };
@@ -84,6 +89,11 @@ export function CreateAdventureDialog({ onClose }: { onClose: () => void }) {
           }}
         />
       </Field>
+      <Field label={t.t("Description (optional)")}>
+        <textarea rows={2} value={description} placeholder={t.t("A short pitch — what players encounter and roughly how long it takes.")} onChange={(e) => setDescription(e.target.value)} />
+      </Field>
+      <details className="adv-more" open={moreOpen} onToggle={(e) => setMore((e.target as HTMLDetailsElement).open)}>
+        <summary>{t.t("Link name and author")}</summary>
       <Field label={t.t("Short name")} error={badSlug ? t.t("Lowercase a–z, digits, and hyphens only.") : undefined} hint={t.t("Used in links. Lowercase a–z, digits and hyphens.")}>
         <input
           required
@@ -96,12 +106,10 @@ export function CreateAdventureDialog({ onClose }: { onClose: () => void }) {
           }}
         />
       </Field>
-      <Field label={t.t("Description (optional)")}>
-        <textarea rows={2} value={description} placeholder={t.t("A short pitch — what players encounter and roughly how long it takes.")} onChange={(e) => setDescription(e.target.value)} />
-      </Field>
       <Field label={t.t("Author")}>
         <input value={author} onChange={(e) => setAuthor(e.target.value)} />
       </Field>
+      </details>
       <p className="cs-field__hint">{t.t("Next you design its steps. Colours, pictures and the rest can be set any time.")}</p>
     </Dialog>
   );

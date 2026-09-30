@@ -7,7 +7,9 @@ import { useT } from "../i18n.tsx";
 import { SpoofMap, type Point } from "./SpoofMap.tsx";
 import { DevicePanel } from "./DevicePanel.tsx";
 import { VISIBLE } from "./dz/types.tsx";
-import { zoneName } from "./zones.ts";
+import { locationError, zoneName } from "./zones.ts";
+import { LocateFixed } from "lucide-react";
+import { ICON } from "./dz/ui.tsx";
 
 /**
  * Preview and test-play, in one.
@@ -285,6 +287,37 @@ export function Simulator({ slug, graph, envelope, selected, mode, onMode, resta
     });
   };
 
+  // Test on site: the simulated team goes where the author's phone goes.
+  const [follow, setFollow] = useState(false);
+  const [followNote, setFollowNote] = useState<{ text: string; warn?: boolean } | null>(null);
+  const moveRef = useRef(moveTo);
+  moveRef.current = moveTo;
+  useEffect(() => {
+    if (!follow) return;
+    if (typeof navigator === "undefined" || !navigator.geolocation) {
+      setFollow(false);
+      setFollowNote({ text: t.t("This browser can't tell where you are."), warn: true });
+      return;
+    }
+    let last: Point | null = null;
+    const id = navigator.geolocation.watchPosition(
+      (p) => {
+        const here = { lat: p.coords.latitude, lng: p.coords.longitude };
+        setFollowNote({ text: t.t("Following you, to within about {{m}} m.", { m: Math.max(1, Math.round(p.coords.accuracy)) }) });
+        // A phone standing still still reports small jumps; only a real step moves the team.
+        if (last && metresBetween(last.lat, last.lng, here.lat, here.lng) < 5) return;
+        last = here;
+        moveRef.current(here);
+      },
+      (e) => {
+        setFollow(false);
+        setFollowNote({ text: locationError(e, t), warn: true });
+      },
+      { enableHighAccuracy: true, maximumAge: 5000 },
+    );
+    return () => navigator.geolocation.clearWatch(id);
+  }, [follow, t]);
+
   const move = (z: string) => {
     setZone(z);
     whereRef.current = z ? { kind: "move", zone: z } : null;
@@ -389,7 +422,15 @@ export function Simulator({ slug, graph, envelope, selected, mode, onMode, resta
           </select>
         </label>
 
-        <SpoofMap zones={graph.zones ?? []} position={pos ?? null} focus={focus} onPick={moveTo} disabled={!team || busy} />
+        <div className="sim__follow">
+          <button type="button" className={"btn btn--ghost btn--sm" + (follow ? " is-on" : "")} aria-pressed={follow} disabled={!team} onClick={() => setFollow((f) => !f)}>
+            <LocateFixed size={ICON.sm} aria-hidden="true" />
+            {follow ? t.t("Stop following my location") : t.t("Test here with my location")}
+          </button>
+          {followNote && <span className={"field__hint" + (followNote.warn ? " zone-here__warn" : "")}>{followNote.text}</span>}
+        </div>
+
+        <SpoofMap zones={graph.zones ?? []} position={pos ?? null} focus={focus} onPick={moveTo} disabled={!team || busy || follow} />
 
         {view?.blocks?.some((b) => !b.locked && (b.kind === "compass" || b.kind === "level")) && <DevicePanel motion={motion} onChange={setMotion} />}
 

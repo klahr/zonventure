@@ -1,9 +1,10 @@
-import { useCallback, useRef, useState } from "react";
+import { Fragment, useCallback, useRef, useState } from "react";
 import { FIXED_KINDS, isFixed, mediaBlock, moveBlock, needsFile, newBlock, type Block, type BlockKind, type FileKind, type Graph, type Node } from "@zonventure/graph";
-import { ChevronDown, ChevronRight, Eye, EyeOff, GripVertical, Plus, Power, PowerOff, X } from "lucide-react";
+import { Camera, ChevronDown, ChevronRight, Eye, EyeOff, GripVertical, Plus, Power, PowerOff, X } from "lucide-react";
 import { useT } from "../i18n.tsx";
 import { ConfirmModal, DzPortal, ICON, useAnchoredPop, useDismiss } from "./dz/ui.tsx";
 import { useMediaUpload } from "./MediaEditor.tsx";
+import { isNarrow, isTouch } from "./device.ts";
 import { ACCEPT } from "./blocks/Media.tsx";
 import { GROUPS, KINDS } from "./blocks/registry.tsx";
 import { ShowEditor } from "./blocks/Show.tsx";
@@ -57,12 +58,16 @@ export function BlocksEditor({ blocks, node, graph, onChange, textLabel }: { blo
 
   // The title and points the step may have but its author removed.
   const missing = (FIXED_KINDS[node.type] ?? []).filter((k) => !list.some((b) => b.kind === k));
-  const add = (kind: BlockKind) => {
+  const add = (kind: BlockKind, fromCamera = false) => {
     // A title comes back where a title shows: at the top.
     if (kind === "title") return onChange([newBlock(list, kind), ...list]);
     if (!needsFile(kind)) return onChange([...list, newBlock(list, kind)]);
     setFileFor(kind === "image" || kind === "audio" ? null : kind);
-    if (input.current) input.current.accept = kind === "image" || kind === "audio" ? "image/*,audio/*" : (ACCEPT[kind] ?? "");
+    if (input.current) {
+      input.current.accept = fromCamera ? "image/*" : kind === "image" || kind === "audio" ? "image/*,audio/*" : (ACCEPT[kind] ?? "");
+      if (fromCamera) input.current.setAttribute("capture", "environment");
+      else input.current.removeAttribute("capture");
+    }
     input.current?.click();
   };
 
@@ -217,16 +222,25 @@ export function BlocksEditor({ blocks, node, graph, onChange, textLabel }: { blo
   );
 }
 
+/** The kinds a phone's Add block lists first; More blocks shows the rest. */
+const COMMON = new Set<BlockKind>(["text", "image", "audio", "quiz", "compass", "map"]);
+
 /** "Add block": every kind, grouped, with what each is for. */
-function AddBlock({ onAdd, missing, busy, canUpload, t }: { onAdd: (k: BlockKind) => void; missing: BlockKind[]; busy: boolean; canUpload: boolean; t: T }) {
+function AddBlock({ onAdd, missing, busy, canUpload, t }: { onAdd: (k: BlockKind, fromCamera?: boolean) => void; missing: BlockKind[]; busy: boolean; canUpload: boolean; t: T }) {
   const [open, setOpen] = useState(false);
+  // On a phone the menu opens on the common kinds, a screen's worth.
+  const [everything, setEverything] = useState(false);
+  const short = isNarrow() && !everything;
   const close = useCallback(() => setOpen(false), []);
   const { trigger, pop, style } = useAnchoredPop<HTMLButtonElement, HTMLDivElement>(open, "left");
   useDismiss(open, close, trigger, pop);
-  const kinds = Object.entries(KINDS) as [BlockKind, (typeof KINDS)[BlockKind]][];
+  const kinds = (Object.entries(KINDS) as [BlockKind, (typeof KINDS)[BlockKind]][]).filter(([k]) => !short || COMMON.has(k) || missing.includes(k));
   return (
     <>
-      <button ref={trigger} type="button" className="add-btn concept--content" aria-expanded={open} disabled={busy} onClick={() => setOpen((v) => !v)}>
+      <button ref={trigger} type="button" className="add-btn concept--content" aria-expanded={open} disabled={busy} onClick={() => {
+          setEverything(false);
+          setOpen((v) => !v);
+        }}>
         {!busy && <Plus size={ICON.sm} aria-hidden="true" />}
         {busy ? t.t("Uploading…") : t.t("Add block")}
         {!busy && <ChevronDown size={ICON.sm} aria-hidden="true" />}
@@ -234,7 +248,7 @@ function AddBlock({ onAdd, missing, busy, canUpload, t }: { onAdd: (k: BlockKind
       {open && (
         <DzPortal>
           <div className="blk-menu" role="menu" ref={pop} style={style}>
-            {GROUPS.map((g) => (
+            {GROUPS.filter((g) => kinds.some(([k, d]) => d.group === g && (!isFixed(k) || missing.includes(k)))).map((g) => (
               <div key={g} className="blk-menu__group" role="group" aria-label={t.t(g)}>
                 <span className="blk-menu__title">{t.t(g)}</span>
                 {kinds
@@ -243,25 +257,49 @@ function AddBlock({ onAdd, missing, busy, canUpload, t }: { onAdd: (k: BlockKind
                     const Icon = d.icon;
                     const disabled = needsFile(k) && !canUpload;
                     return (
-                      <button
-                        key={k}
-                        type="button"
-                        role="menuitem"
-                        className="blk-menu__item"
-                        disabled={disabled}
-                        onClick={() => {
-                          setOpen(false);
-                          onAdd(k);
-                        }}
-                      >
-                        <Icon size={ICON.md} aria-hidden="true" />
-                        <span className="blk-menu__name">{t.t(d.label)}</span>
-                        <span className="blk-menu__about">{t.t(d.about)}</span>
-                      </button>
+                      <Fragment key={k}>
+                        <button
+                          type="button"
+                          role="menuitem"
+                          className="blk-menu__item"
+                          disabled={disabled}
+                          onClick={() => {
+                            setOpen(false);
+                            onAdd(k);
+                          }}
+                        >
+                          <Icon size={ICON.md} aria-hidden="true" />
+                          <span className="blk-menu__name">{t.t(d.label)}</span>
+                          <span className="blk-menu__about">{t.t(d.about)}</span>
+                        </button>
+                        {k === "image" && isTouch() && (
+                          <button
+                            type="button"
+                            role="menuitem"
+                            className="blk-menu__item"
+                            disabled={disabled}
+                            onClick={() => {
+                              setOpen(false);
+                              onAdd("image", true);
+                            }}
+                          >
+                            <Camera size={ICON.md} aria-hidden="true" />
+                            <span className="blk-menu__name">{t.t("Take photo")}</span>
+                            <span className="blk-menu__about">{t.t("Opens the camera and adds the photo as a picture.")}</span>
+                          </button>
+                        )}
+                      </Fragment>
                     );
                   })}
               </div>
             ))}
+            {short && (
+              <button type="button" role="menuitem" className="blk-menu__item blk-menu__more" onClick={() => setEverything(true)}>
+                <ChevronDown size={ICON.md} aria-hidden="true" />
+                <span className="blk-menu__name">{t.t("More blocks")}</span>
+                <span className="blk-menu__about">{t.t("Notes, props, gadgets and game pieces")}</span>
+              </button>
+            )}
           </div>
         </DzPortal>
       )}

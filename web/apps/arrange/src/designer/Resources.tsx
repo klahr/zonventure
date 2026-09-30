@@ -211,7 +211,10 @@ export function Resources({ graph, onChange }: { graph: Graph; onChange: (g: Gra
       </section>
 
       <section className="insp__section">
-        <h3>{t.t("Score")}</h3>
+        <h3>
+          <ConceptIcon {...RESOURCE.score} />
+          {t.t("Score")}
+        </h3>
         <label className="check">
           <input type="checkbox" checked={!!graph.hide_score}
             onChange={(e) => onChange(e.target.checked ? { ...graph, hide_score: true } : withoutKey(graph, "hide_score"))} />

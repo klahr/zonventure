@@ -2,6 +2,7 @@ import type { play } from "@zonventure/api";
 import { FONTS, isHex } from "@zonventure/play-ui";
 import { useT } from "../i18n.tsx";
 import { X } from "lucide-react";
+import { ConceptIcon, RESOURCE } from "./dz/concepts.tsx";
 import { ICON } from "./dz/ui.tsx";
 
 /** What each typeface is for, in the author's words. */
@@ -73,7 +74,10 @@ export function Look({ brand, dirty, saving, error, onChange, onSave, onRevert }
 
   return (
     <section className="look insp__section">
-      <h3>{t.t("Colours")}</h3>
+      <h3>
+        <ConceptIcon {...RESOURCE.look} />
+        {t.t("Colours")}
+      </h3>
       <p className="field__hint">{t.t("How this adventure looks to players. The preview above changes as you pick.")}</p>
       {FIELDS.map((f) => {
         const v = brand[f.key];
@@ -109,7 +113,7 @@ export function Look({ brand, dirty, saving, error, onChange, onSave, onRevert }
           </div>
         );
       })}
-      <h3>{t.t("Style")}</h3>
+      <h4>{t.t("Style")}</h4>
       <label className="field">
         <span className="field__label">{t.t("Typeface")}</span>
         <select className="field__input" value={brand.font ?? ""} onChange={(e) => pick("font", e.target.value)}>

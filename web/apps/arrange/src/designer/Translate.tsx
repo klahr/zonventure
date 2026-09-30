@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { AdventureMeta, Graph, Node, Translatable } from "@zonventure/graph";
 import { adventureTexts, coverage, nodeTexts, setTranslation } from "@zonventure/graph";
 import { Languages, X } from "lucide-react";
+import { ConceptIcon, RESOURCE } from "./dz/concepts.tsx";
 import { useT } from "../i18n.tsx";
 import { Button, ICON } from "./dz/ui.tsx";
 import { STEP } from "./dz/types.tsx";
@@ -141,7 +142,10 @@ export function LanguagesSettings({ graph, main, meta, onChange, onMainChange, e
   const lang = others.includes(editing) ? editing : others[0];
   return (
     <section className="insp__section">
-      <h3>{t.t("Languages")}</h3>
+      <h3>
+        <ConceptIcon {...RESOURCE.languages} />
+        {t.t("Languages")}
+      </h3>
       <p className="field__hint">
         {t.t("The adventure is written in its main language. A translation adds the same texts in another language; teams choose which to play in, and anything untranslated shows the original.")}
       </p>

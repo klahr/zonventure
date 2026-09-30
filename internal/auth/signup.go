@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/klahr/zonventure/internal/orgslug"
 	"github.com/klahr/zonventure/internal/tokenx"
@@ -511,3 +512,37 @@ func issueOneShotToken(ctx context.Context, db *sql.DB, userID int64, purpose st
 }
 
 func newVerificationToken() (string, error) { return tokenx.New(24) }
+
+// personalOrgName is the organization name a personal signup starts
+// with: the address's local part as words, so anna.svensson@example.com
+// gets "Anna Svensson". Renaming it later is one field in Settings.
+func personalOrgName(email string) string {
+	local, _, _ := strings.Cut(strings.TrimSpace(email), "@")
+	words := strings.FieldsFunc(local, func(r rune) bool { return r == '.' || r == '_' || r == '-' || r == '+' || unicode.IsDigit(r) })
+	for i, w := range words {
+		rs := []rune(strings.ToLower(w))
+		rs[0] = unicode.ToUpper(rs[0])
+		words[i] = string(rs)
+	}
+	if len(words) == 0 {
+		return "My adventures"
+	}
+	return strings.Join(words, " ")
+}
+
+// freeOrgName is name, or name with the first free number after it,
+// since organization names are unique.
+func freeOrgName(ctx context.Context, db *sql.DB, name string) (string, error) {
+	candidate := name
+	for i := 2; i < 1000; i++ {
+		var taken bool
+		if err := db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM organizations WHERE lower(name) = lower($1))`, candidate).Scan(&taken); err != nil {
+			return "", err
+		}
+		if !taken {
+			return candidate, nil
+		}
+		candidate = fmt.Sprintf("%s %d", name, i)
+	}
+	return "", fmt.Errorf("no free organization name for %q", name)
+}

@@ -83,3 +83,18 @@ func TestEmailChange_UnknownToken(t *testing.T) {
 		t.Fatalf("err = %v, want ErrVerificationUnknown", err)
 	}
 }
+
+func TestPersonalOrgName(t *testing.T) {
+	cases := map[string]string{
+		"anna.svensson@example.com": "Anna Svensson",
+		"bob_jones42@example.com":   "Bob Jones",
+		"åsa-lind@example.se":       "Åsa Lind",
+		"KLAHR@example.com":         "Klahr",
+		"12345@example.com":         "My adventures",
+	}
+	for email, want := range cases {
+		if got := personalOrgName(email); got != want {
+			t.Errorf("personalOrgName(%q) = %q, want %q", email, got, want)
+		}
+	}
+}

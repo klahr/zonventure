@@ -2,8 +2,9 @@ import { createContext, useContext, useRef, useState } from "react";
 import { ApiError, adventures, play } from "@zonventure/api";
 import type { Media } from "@zonventure/graph";
 import { useT } from "../i18n.tsx";
-import { Plus, X } from "lucide-react";
+import { Camera, Plus, X } from "lucide-react";
 import { ICON } from "./dz/ui.tsx";
+import { isTouch } from "./device.ts";
 
 /** The adventure being edited, for uploads deep inside the inspector. */
 export const AdventureSlug = createContext("");
@@ -27,6 +28,7 @@ export function MediaEditor({
   const t = useT();
   const slug = useContext(AdventureSlug);
   const input = useRef<HTMLInputElement>(null);
+  const camera = useRef<HTMLInputElement>(null);
   const { busy, error, upload } = useMediaUpload();
   const list = media ?? [];
   const set = (next: Media[]) => onChange(next.length ? next : undefined);
@@ -38,6 +40,7 @@ export function MediaEditor({
   const pick = async (files: FileList | null) => {
     const added = await upload(files);
     if (input.current) input.current.value = "";
+    if (camera.current) camera.current.value = "";
     if (!added.length) return;
     const { list: now, onChange: change } = latest.current;
     change(single ? added.slice(-1) : [...now, ...added.filter((a) => !now.some((m) => m.id === a.id))]);
@@ -69,6 +72,15 @@ export function MediaEditor({
         {!busy && <Plus size={ICON.sm} aria-hidden="true" />}
         {busy ? t.t("Uploading…") : single ? (list.length ? t.t("Replace picture") : t.t("Add picture")) : t.t("Add picture or sound")}
       </button>
+      {isTouch() && (
+        <>
+          <input ref={camera} type="file" accept="image/*" capture="environment" hidden onChange={(e) => void pick(e.target.files)} />
+          <button type="button" className="add-btn concept--content" disabled={busy || !slug} onClick={() => camera.current?.click()}>
+            <Camera size={ICON.sm} aria-hidden="true" />
+            {t.t("Take photo")}
+          </button>
+        </>
+      )}
       {error && <div className="alert alert--danger">{error}</div>}
     </div>
   );
@@ -104,6 +116,10 @@ export function useMediaUpload() {
   return { busy, error, upload, ready: !!slug };
 }
 
+// What the server decodes. Anything else (an iPhone's HEIC) is re-encoded
+// as JPEG even when it is already small enough.
+const SERVER_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+
 /**
  * Shrink a photo in the browser before upload, as zv's console did: a
  * phone photo is often over the server's 5 MB cap, and the server resizes
@@ -122,8 +138,9 @@ async function downscale(file: File, maxDim = 1600, quality = 0.85): Promise<Fil
   }
   try {
     const longer = Math.max(bitmap.width, bitmap.height);
-    if (longer <= maxDim) return file;
-    const scale = maxDim / longer;
+    const decodable = SERVER_IMAGE_TYPES.has(file.type);
+    if (longer <= maxDim && decodable) return file;
+    const scale = Math.min(1, maxDim / longer);
     const canvas = document.createElement("canvas");
     canvas.width = Math.max(1, Math.round(bitmap.width * scale));
     canvas.height = Math.max(1, Math.round(bitmap.height * scale));
@@ -132,7 +149,7 @@ async function downscale(file: File, maxDim = 1600, quality = 0.85): Promise<Fil
     ctx.imageSmoothingQuality = "high";
     ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
     const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", quality));
-    if (!blob || blob.size >= file.size) return file;
+    if (!blob || (decodable && blob.size >= file.size)) return file;
     return new File([blob], file.name.replace(/\.[^.]+$/, "") + ".jpg", { type: "image/jpeg" });
   } finally {
     bitmap.close();

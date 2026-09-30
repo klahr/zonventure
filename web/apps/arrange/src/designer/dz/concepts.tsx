@@ -3,17 +3,20 @@ import {
   GitBranch,
   Hash,
   KeyRound,
+  Languages,
   Lightbulb,
   ListChecks,
   MapPin,
   MessageSquareReply,
   Package,
+  Palette,
   Route,
   Shuffle,
   SlidersHorizontal,
   Smartphone,
   Sparkles,
   Timer,
+  Trophy,
   Waypoints,
   type LucideIcon,
 } from "lucide-react";
@@ -64,6 +67,9 @@ export const RESOURCE = {
   counters: { concept: "effect", icon: Hash },
   time: { concept: "time", icon: Timer },
   journal: { concept: "journal", icon: BookMarked },
+  score: { concept: "answer", icon: Trophy },
+  languages: { concept: "content", icon: Languages },
+  look: { concept: "content", icon: Palette },
 } as const satisfies Record<string, { concept: Concept; icon: LucideIcon }>;
 
 /** A concept's icon on a tile tinted in its colour. */

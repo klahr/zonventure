@@ -1,7 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import type { Zone } from "@zonventure/graph";
 import { useT } from "../i18n.tsx";
+import { LocateFixed } from "lucide-react";
 import { conceptColor } from "./dz/concepts.tsx";
+import { ICON } from "./dz/ui.tsx";
+import { isTouch } from "./device.ts";
+import { locate } from "./zones.ts";
 
 /**
  * Edit a zone on a real map: drag the centre and set the radius of a
@@ -86,6 +90,8 @@ export function ZoneMap({ zone, onChange, areaOnly, maxCorners }: { zone: Zone; 
   changeRef.current = onChange;
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false);
+  const [finding, setFinding] = useState(false);
+  const [note, setNote] = useState<{ text: string; warn?: boolean } | null>(null);
   // Local, not derived: an area with no corners yet is still being drawn.
   const [polygonMode, setPolygonMode] = useState(areaOnly || (zone.polygon?.length ?? 0) > 0);
   const maxRef = useRef(maxCorners);
@@ -100,7 +106,9 @@ export function ZoneMap({ zone, onChange, areaOnly, maxCorners }: { zone: Zone; 
       .then((lib) => {
         if (cancelled || !box.current) return;
         libRef.current = lib;
-        const map = new lib.Map({ container: box.current, style: STYLE, center: [zone.lng, zone.lat], zoom: 17, attributionControl: { compact: true } });
+        // On a touch screen one finger scrolls the page past the map and two
+        // move the map, so the map inside a scrolling panel is not a trap.
+        const map = new lib.Map({ container: box.current, style: STYLE, center: [zone.lng, zone.lat], zoom: 17, attributionControl: { compact: true }, cooperativeGestures: isTouch() });
         map.addControl(new lib.NavigationControl({ showCompass: false }), "top-right");
         map.on("load", () => {
           map.addSource("zone", { type: "geojson", data: shape(zoneRef.current) });
@@ -172,6 +180,34 @@ export function ZoneMap({ zone, onChange, areaOnly, maxCorners }: { zone: Zone; 
 
   const corners = zone.polygon?.length ?? 0;
 
+  // Move the pin, or add the next corner, where the phone is: an author
+  // walking the ground marks it as they go.
+  const here = async () => {
+    setFinding(true);
+    setNote(null);
+    try {
+      const p = await locate(t);
+      const z = zoneRef.current;
+      if (polygonMode) {
+        const polygon = [...(z.polygon ?? []), [p.lat, p.lng] as [number, number]];
+        const [lat, lng] = centroid(polygon);
+        changeRef.current({ ...z, polygon, lat, lng });
+      } else changeRef.current({ ...z, lat: p.lat, lng: p.lng });
+      mapRef.current?.flyTo({ center: [p.lng, p.lat], zoom: Math.max(mapRef.current.getZoom(), 17) });
+      setNote(p.accuracy > 50 ? { text: t.t("GPS is rough here (about {{m}} m). Wait a moment and try again.", { m: p.accuracy }), warn: true } : { text: t.t("Placed to within about {{m}} m.", { m: p.accuracy }) });
+    } catch (e) {
+      setNote({ text: e instanceof Error ? e.message : String(e), warn: true });
+    } finally {
+      setFinding(false);
+    }
+  };
+  const hereButton = (
+    <button type="button" className="link-btn zone-map__here" disabled={finding || (polygonMode && !!maxCorners && corners >= maxCorners)} onClick={() => void here()}>
+      <LocateFixed size={ICON.sm} aria-hidden="true" />
+      {finding ? t.t("Finding you…") : polygonMode ? t.t("Add a corner where I stand") : t.t("Use my location")}
+    </button>
+  );
+
   return (
     <div className="zone-map">
       {!areaOnly && (
@@ -202,6 +238,7 @@ export function ZoneMap({ zone, onChange, areaOnly, maxCorners }: { zone: Zone; 
                 ? t.t("Click the map to place corners — at least three.")
                 : t.t("{{n}} corners. Drag a corner to move it; click to add more.", { n: corners })}
           </span>
+          {hereButton}
           <button type="button" className="link-btn" disabled={!corners} onClick={() => onChange({ ...zone, polygon: (zone.polygon ?? []).slice(0, -1) })}>
             {t.t("Undo corner")}
           </button>
@@ -212,12 +249,14 @@ export function ZoneMap({ zone, onChange, areaOnly, maxCorners }: { zone: Zone; 
       ) : (
         <div className="zone-map__row">
           <span className="field__hint">{t.t("Drag the pin to the centre.")}</span>
+          {hereButton}
           <label className="field field--num">
             <span className="field__label">{t.t("Radius m")}</span>
             <input className="field__input" type="number" min={1} value={zone.radius_m} onChange={(e) => onChange({ ...zone, radius_m: Number(e.target.value) || 0 })} />
           </label>
         </div>
       )}
+      {note && <span className={"field__hint" + (note.warn ? " zone-here__warn" : "")}>{note.text}</span>}
     </div>
   );
 }

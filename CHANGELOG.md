@@ -11,6 +11,39 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Added — making an adventure on a phone
+
+- **Mark where I stand.** A puzzle or story's place can be pinned to
+  where the phone is, in one tap, from the step itself; the zone is
+  named after the step and sized 15, 30 or 60 m. Every zone map also
+  has **Use my location**, and **Add a corner where I stand** for an
+  area walked out on foot. On a touch screen the map moves with two
+  fingers, so one finger scrolls the panel past it.
+- **A simple step form on phones**: name, what the team reads,
+  pictures (with **Take photo**, which opens the camera), the answer
+  and the place. **More options** opens every setting, as before.
+- **Add block** on a phone lists the six common blocks first, with
+  the rest under **More blocks**.
+- **Test here with my location** in the preview moves the test team
+  where the phone goes, to try a route on site.
+- **Sign-up asks whether you're making your own adventures** (the
+  default) or joining an organization that will add you. Making your
+  own creates an organization named after you, so there is no
+  organization step before the first adventure.
+
+### Changed
+
+- A puzzle's **Routes** are now called **Answers and next steps**.
+- A new adventure's link name and author are filled in and tucked
+  away; they open when they need attention.
+- An iPhone photo in HEIC is converted to JPEG before upload, even
+  when it is already small.
+- **Logging out lands on the site's front page**, and the login
+  screen's logo links there. Where the landing page is off, that is
+  the login again.
+- **Adventure settings shows each section as a card**, like a step's
+  settings, in two columns on a wide screen.
+
 ### Changed — new Zonventure logo
 
 - **The favicon and the play app's install icons use the new flat

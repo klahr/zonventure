@@ -45,11 +45,12 @@ export function Login({ onSuccess, resetToken }: { onSuccess: (note?: string) =>
 }
 
 function Card({ sub, children, onSubmit }: { sub?: string; children: ReactNode; onSubmit: (e: FormEvent) => void }) {
+  const t = useT();
   return (
     <main className="login">
       <form className="login__card" onSubmit={onSubmit}>
         <div className="login__brand">
-          <span className="login__wordmark">zonventure</span>
+          <a className="login__wordmark" href="/" aria-label={t.t("Zonventure home page")}>zonventure</a>
           {sub && <span className="login__sub">{sub}</span>}
         </div>
         {children}
@@ -320,6 +321,9 @@ function SignupForm({ onSuccess, onBack }: { onSuccess: (note?: string) => void;
   const t = useT();
   const [email, setEmail] = useState("");
   const [org, setOrg] = useState("");
+  // Most people who sign up make their own adventures; the lobby is for
+  // those an existing organization will add.
+  const [joining, setJoining] = useState(false);
   const [password, setPassword] = useState("");
   const [terms, setTerms] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -330,7 +334,7 @@ function SignupForm({ onSuccess, onBack }: { onSuccess: (note?: string) => void;
     setBusy(true);
     setError(null);
     try {
-      await auth.signup({ email: email.trim(), org_name: org.trim(), password, terms_accepted: terms });
+      await auth.signup({ email: email.trim(), org_name: joining ? "" : org.trim(), personal: !joining, password, terms_accepted: terms });
       history.replaceState(null, "", "#/");
       onSuccess(t.t("Account created — check {{email}} for a verification link.", { email: email.trim() }));
     } catch (err) {
@@ -346,11 +350,24 @@ function SignupForm({ onSuccess, onBack }: { onSuccess: (note?: string) => void;
         <span className="field__label">{t.t("Email")}</span>
         <input className="field__input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" autoFocus required />
       </label>
-      <label className="field">
-        <span className="field__label">{t.t("Organization name (optional)")}</span>
-        <input className="field__input" value={org} onChange={(e) => setOrg(e.target.value)} autoComplete="organization" />
-        <span className="login__hint">{t.t("Leave blank if you're joining an existing organization or just want to look around — you can create one later.")}</span>
-      </label>
+      <fieldset className="login__choice">
+        <legend className="field__label">{t.t("I'm")}</legend>
+        <label className="login__check">
+          <input type="radio" name="signup-kind" checked={!joining} onChange={() => setJoining(false)} />
+          <span>{t.t("making my own adventures")}</span>
+        </label>
+        <label className="login__check">
+          <input type="radio" name="signup-kind" checked={joining} onChange={() => setJoining(true)} />
+          <span>{t.t("joining an organization that will add me")}</span>
+        </label>
+      </fieldset>
+      {!joining && (
+        <label className="field">
+          <span className="field__label">{t.t("Team or company name (optional)")}</span>
+          <input className="field__input" value={org} onChange={(e) => setOrg(e.target.value)} autoComplete="organization" />
+          <span className="login__hint">{t.t("Leave blank to use your name. You can change it any time in Settings.")}</span>
+        </label>
+      )}
       <label className="field">
         <span className="field__label">{t.t("Password (min 8)")}</span>
         <input className="field__input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" minLength={8} required />

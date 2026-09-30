@@ -69,6 +69,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       // after they asked to leave is the worse outcome.
     }
     setState({ status: "anonymous" });
+    // Leave for the site's front page, as people expect after logging
+    // out. Where the landing page is off, "/" leads back to the login.
+    location.assign("/");
   }, []);
 
   return (

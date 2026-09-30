@@ -71,14 +71,10 @@ import { AdventureSlug } from "./MediaEditor.tsx";
 import { CanvasContextMenu, type ContextMenuItem } from "./dz/CanvasContextMenu.tsx";
 import { DiffDialog, HelpModal, PanelModal, PublishCelebration, PublishLabelModal } from "./dz/dialogs.tsx";
 import { Button, ICON, IssueRow, IssuesButton, Notice, PromptModal } from "./dz/ui.tsx";
+import { isNarrow as narrowScreen, isTouch } from "./device.ts";
 import "./dz.css";
 import "./designer.css";
 
-/** A phone-sized screen, where the designer opens on the outline. */
-const NARROW = "(max-width: 720px)";
-function narrowScreen(): boolean {
-  return typeof window !== "undefined" && !!window.matchMedia?.(NARROW).matches;
-}
 
 const errorText = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 
@@ -594,7 +590,8 @@ export function Designer({ slug }: { slug: string }) {
     ));
   const kebabItems: ContextMenuItem[] = [
     { label: t.t("Adventure settings"), onClick: () => setSettingsOpen(true) },
-    { label: t.t("Keyboard shortcuts"), shortcut: "?", onClick: () => setHelpOpen(true) },
+    // A phone has no keyboard to take shortcuts from.
+    ...(isTouch() ? [] : [{ label: t.t("Keyboard shortcuts"), shortcut: "?", onClick: () => setHelpOpen(true) }]),
   ];
 
   return (

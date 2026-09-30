@@ -17,6 +17,11 @@ type signupRequest struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`
 	OrgName  string `json:"org_name"`
+	// Personal, with no org_name, names the new organization after the
+	// person: someone making their own adventures lands in a working
+	// organization instead of the lobby, which is for people an
+	// organization will add.
+	Personal bool `json:"personal"`
 	// TermsAccepted is the consent gate — the signup form must check
 	// the Terms / Privacy box before submit. Server-side enforcement
 	// keeps a scripted POST honest and gives us a defensible "the user
@@ -72,6 +77,16 @@ func (h *Handlers) Signup(w http.ResponseWriter, r *http.Request) {
 		})
 		writeRateLimited(w, retry)
 		return
+	}
+
+	if req.Personal && req.OrgName == "" {
+		name, err := freeOrgName(r.Context(), h.DB, personalOrgName(req.Email))
+		if err != nil {
+			logx.Error("auth.signup.org_name", "err", err.Error())
+			httpx.Error(w, http.StatusInternalServerError, "signup failed")
+			return
+		}
+		req.OrgName = name
 	}
 
 	res, err := Signup(r.Context(), h.DB, req.Email, req.Password, req.OrgName)

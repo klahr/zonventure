@@ -5,7 +5,7 @@ export const TextEditor: Editor<"text"> = ({ block, set, t, textLabel }) => (
     className="field__input"
     rows={4}
     value={block.text}
-    placeholder={t.t("Markdown. This is what the team reads.")}
+    placeholder={t.t("What the team reads. **Bold** and *italic* work.")}
     aria-label={textLabel}
     onChange={(e) => set({ ...block, text: e.target.value })}
   />

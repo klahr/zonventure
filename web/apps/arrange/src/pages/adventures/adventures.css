@@ -88,6 +88,8 @@
 .dz .adv-cover-row { display: flex; align-items: center; gap: var(--dz-space-3); }
 .dz .adv-cover-row__text { display: flex; flex-direction: column; gap: var(--dz-space-1); }
 .dz .adv-form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: var(--dz-space-3); }
+.dz .adv-more { display: flex; flex-direction: column; gap: var(--dz-space-3); }
+.dz .adv-more > summary { cursor: pointer; color: var(--muted); font-size: var(--dz-text-sm, 0.875rem); }
 .dz .adv-fieldset { display: flex; flex-direction: column; gap: var(--dz-space-2); margin: 0; padding: var(--dz-space-3); border: 1px solid var(--dz-border); border-radius: var(--dz-r-2); min-width: 0; }
 .dz .adv-fieldset legend { padding: 0 var(--dz-space-1); }
 .dz .adv-check { display: flex; align-items: flex-start; gap: var(--dz-space-2); font-size: var(--dz-text-md); }
