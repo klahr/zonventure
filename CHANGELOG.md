@@ -11,6 +11,14 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Added — a static site at /shop
+
+- **zv serves the `shop/` folder of `ZV_WEB_OVERRIDE_DIR` at `/shop/`**,
+  file for file, so an operator can host a small static site (the
+  Zonventure book shop) next to the landing page. `/shop/book` serves
+  `shop/book.html`, and unknown paths get `shop/404.html`. Without a
+  `shop/` folder, `/shop/` is a 404 as before.
+
 ### Added — item slots
 
 - **A puzzle can be answered with items from the backpack** (answer

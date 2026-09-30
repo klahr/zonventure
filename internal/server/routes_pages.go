@@ -173,6 +173,12 @@ func registerPageRoutes(r chi.Router, env *routesEnv) {
 		renderTopbarPage(w, req, "web/pricing.html")
 	})
 
+	// Operator's static shop from ZV_WEB_OVERRIDE_DIR/shop; see shop.go.
+	r.Get("/shop", func(w http.ResponseWriter, req *http.Request) {
+		http.Redirect(w, req, "/shop/", http.StatusMovedPermanently)
+	})
+	r.Get("/shop/*", serveShop)
+
 	r.Get("/privacy", func(w http.ResponseWriter, _ *http.Request) {
 		renderLegalPage(w, "privacy.html", cfg.Legal)
 	})

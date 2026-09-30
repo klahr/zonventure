@@ -209,12 +209,18 @@ scratch.
 ├── 404.html                  # optional
 ├── sitemap.xml               # optional, may use {{HOST}}
 ├── robots.txt                # optional
-└── landing-locales.json      # optional, per-field locale overrides
+├── landing-locales.json      # optional, per-field locale overrides
+└── shop/                     # optional static site, served as is at /shop/
 ```
 
 Filenames mirror the user-facing routes — drop `landing.html` to
 shadow `/`, drop `pricing.html` to shadow `/pricing`, and so on. Any
 file you don't supply falls back to the embedded default.
+
+`shop/` is the exception to fixed filenames: zv serves everything in
+it at `/shop/`, mapping an extensionless path to its `.html` sibling
+(`/shop/book` serves `shop/book.html`) and unknown paths to
+`shop/404.html`. Without a `shop/`, `/shop/` is an ordinary 404.
 
 ### Per-field locale overrides
 
