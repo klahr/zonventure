@@ -91,6 +91,7 @@ short tour:
 | `ZV_DB_MAX_OPEN_CONNS` / `ZV_DB_MAX_IDLE_CONNS` | Postgres pool sizing; bump for managed clusters with high `max_connections` | `25` / `5` |
 | `ZV_WEB_OVERRIDE_DIR` | Path to a directory of HTML / JSON files that shadow the embedded marketing pages — see [Custom landing page](#custom-landing-page) | unset (use embedded) |
 | `ZV_MCP_ENABLED` | `1` mounts the `POST /mcp` endpoint so users can connect Claude / other MCP clients to author adventures — see [MCP.md](MCP.md) | unset (off) |
+| `ZV_OAUTH_REDIRECT_HOSTS` | Extra hosts (comma-separated) MCP clients may return to after signing in with OAuth. Claude's (`claude.ai`, `claude.com`) and loopback are always allowed. OAuth is on with `ZV_MCP_ENABLED` and a real `ZV_PUBLIC_URL` | unset |
 
 After editing `.env`:
 

@@ -22,6 +22,7 @@ export type Route =
   | { name: "adventure"; slug: string }
   | { name: "designer"; slug: string }
   | { name: "field" }
+  | { name: "authorize" }
   | { name: "catalog" }
   | { name: "catalog-item"; slug: string }
   | { name: "events" }
@@ -68,6 +69,9 @@ export function parseRoute(hash: string): Route {
       return arg ? { name: "designer", slug: arg } : { name: "adventures" };
     case "field":
       return { name: "field" };
+    // An MCP client asking to sign in; its request is in the query.
+    case "authorize":
+      return { name: "authorize" };
     case "catalog":
     case "store":
       if (!CATALOG_ENABLED) return arg ? { name: "adventure", slug: arg } : { name: "adventures" };
@@ -122,6 +126,8 @@ export function href(r: Route): string {
       return `#/adventures/${e(r.slug)}/design`;
     case "field":
       return "#/field";
+    case "authorize":
+      return "#/authorize";
     case "catalog":
       return "#/catalog";
     case "catalog-item":

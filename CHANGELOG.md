@@ -28,6 +28,11 @@ product is **Zonventure**. Versions tagged here correspond to git tags
   to co-author (interview, one stop at a time, never invent site facts,
   test before publishing), offers a `field_session` prompt to start,
   and `get_authoring_guide` gives it step recipes.
+- **Sign in from Claude.** The MCP endpoint speaks OAuth 2.1, so it can
+  be added as a claude.ai custom connector — and used from the Claude
+  mobile app — by signing in and allowing it, instead of pasting a
+  token. Approved clients are listed, and disconnected, under API
+  tokens.
 - `simulate_adventure` plays the draft with the real rules, and
   `upload_adventure_media` adds pictures and sounds to graph adventures.
 

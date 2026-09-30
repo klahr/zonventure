@@ -66,5 +66,10 @@
   "In your MCP client, add a remote (HTTP) server with the endpoint above.": "Lägg till en fjärrserver (HTTP) i din MCP-klient med adressen ovan.",
   "Set the header Authorization: Bearer followed by your token.": "Sätt headern Authorization: Bearer följt av din token.",
   "Ask it to list your adventures to check it works.": "Be den lista dina äventyr för att se att det fungerar.",
-  "For example, with Claude Code:": "Till exempel med Claude Code:"
+  "For example, with Claude Code:": "Till exempel med Claude Code:",
+  "Connect an assistant": "Anslut en assistent",
+  "Allow": "Tillåt",
+  "{{client}} wants to build and run adventures as you: read and change adventures, events and teams in your organization.": "{{client}} vill bygga och köra äventyr i ditt namn: läsa och ändra äventyr, event och lag i din organisation.",
+  "{{client}} wants to read your adventures, events and teams as you. It can't change anything.": "{{client}} vill läsa dina äventyr, event och lag i ditt namn. Den kan inte ändra något.",
+  "After you allow it, you go back to {{host}}. You can disconnect it any time under Settings → Account → API tokens.": "När du har tillåtit det kommer du tillbaka till {{host}}. Du kan koppla från den när som helst under Inställningar → Konto → API-tokens."
 }

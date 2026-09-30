@@ -9,6 +9,8 @@ import (
 
 	"github.com/klahr/zonventure/internal/admin"
 	"github.com/klahr/zonventure/internal/auth"
+	"github.com/klahr/zonventure/internal/mcp"
+	"github.com/klahr/zonventure/internal/oauth"
 )
 
 // registerAdminRoutes wires the staff-authenticated surface. The
@@ -115,6 +117,13 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 		// No RequireSession: an MCP token reads it.
 		r.Put("/me/position", adminH.PutMyPosition)
 		r.Get("/me/position", adminH.GetMyPosition)
+
+		// OAuth consent, from the console's #/authorize page. Cookie
+		// sessions only: a token must not approve more tokens.
+		if o := oauth.New(env.cfg.DB, env.cfg.PublicURL); mcp.Enabled() && o.Enabled() {
+			r.With(auth.RequireSession).Get("/oauth/request", o.Request)
+			r.With(auth.RequireSession).Post("/oauth/approve", o.Approve)
+		}
 
 		// Account settings — every logged-in staff user can change
 		// their own password / email / delete themselves. No role

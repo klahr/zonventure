@@ -268,7 +268,8 @@ func LookupMCPToken(ctx context.Context, db *sql.DB, plaintext string) (auth.Use
 		scopesJSON []byte
 	)
 	err := db.QueryRowContext(ctx, `
-		SELECT user_id, scopes FROM mcp_tokens WHERE token_hash = $1
+		SELECT user_id, scopes FROM mcp_tokens
+		WHERE token_hash = $1 AND (expires_at IS NULL OR expires_at > now())
 	`, hash[:]).Scan(&uid, &scopesJSON)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {

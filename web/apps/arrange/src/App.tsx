@@ -5,6 +5,7 @@ import { SessionProvider, useSession } from "./session.tsx";
 import { Login } from "./Login.tsx";
 import { Shell } from "./Shell.tsx";
 import { ToastProvider, useToast } from "./ui/index.ts";
+import { rememberAuthorize, resumeAuthorize } from "./pages/authorize/index.tsx";
 
 export function App() {
   return (
@@ -41,6 +42,7 @@ function oneShot(): { reset?: string; changeEmail?: string; verified?: boolean; 
   return {};
 }
 
+rememberAuthorize();
 const once = oneShot();
 if (once.changeEmail || once.verified !== undefined || once.ssoError || once.cancelled) history.replaceState(null, "", "#/");
 
@@ -104,6 +106,7 @@ function Gate() {
       return <Login onSuccess={signedIn} />;
 
     case "authenticated":
+      resumeAuthorize();
       // Someone in several organisations picks which to act as first.
       if (state.user.role !== "admin" && !state.user.org_id && state.user.memberships.length > 1) {
         return <OrgPicker user={state.user} />;

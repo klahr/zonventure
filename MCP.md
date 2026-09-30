@@ -7,8 +7,11 @@ minted from settings, tools for authoring (lanes and graphs), running
 events and watching them — `tools/list` is the authoritative list.
 Off by default — operators opt in via `ZV_MCP_ENABLED=1`.
 
-**Not yet shipped**: OAuth, which claude.ai custom connectors (and so
-the Claude mobile app) need; SSE streaming of tool output.
+**Sign-in**: a pasted `zvmcp_…` token, or OAuth 2.1 — what claude.ai
+custom connectors, and so the Claude mobile app, use. See
+[Connecting with OAuth](#connecting-with-oauth).
+
+**Not yet shipped**: SSE streaming of tool output.
 
 ## What it is
 
@@ -150,6 +153,36 @@ To revoke a token (laptop lost, contractor offboarded, you minted
 it for a one-shot script and don't need it any more), delete the
 row from the same settings card. Any client still using the token
 gets a 401 on the next call.
+
+## Connecting with OAuth
+
+With OAuth a client signs you in; nothing is pasted. It is on when
+`ZV_MCP_ENABLED=1` and `ZV_PUBLIC_URL` is the server's real https
+origin, which becomes the OAuth issuer.
+
+1. In claude.ai: **Settings → Connectors → Add custom connector**, URL
+   `https://<your-host>/mcp`. (Claude Code: `claude mcp add --transport
+   http zv https://<your-host>/mcp` with no header, then `/mcp` →
+   Authenticate.)
+2. The browser opens Zonventure. Sign in as usual — password, TOTP or
+   single sign-on — and **Allow** the client.
+3. The connector is then available in the Claude apps signed in to the
+   same account, the mobile app included.
+
+The approval is an ordinary API token, "Claude (signed in)", under
+**Settings → Account → API tokens**; deleting it disconnects the
+client. Its access token lasts an hour and is renewed with a refresh
+token that rotates on each use and lapses after 30 idle days; replaying
+a replaced refresh token revokes the approval.
+
+How it works (`internal/oauth`): the `/mcp` 401 names
+`/.well-known/oauth-protected-resource`, which points at this server's
+metadata (`/.well-known/oauth-authorization-server`). The client
+registers itself at `/oauth/register` (public clients only, redirect
+URIs on the allowlist — see `ZV_OAUTH_REDIRECT_HOSTS` in
+SELFHOSTING.md), sends the user to `/oauth/authorize` with PKCE S256,
+which forwards to the console's consent page `#/authorize`, and
+exchanges the code at `/oauth/token`.
 
 ## Setup — operators
 

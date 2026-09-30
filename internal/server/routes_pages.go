@@ -17,6 +17,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/klahr/zonventure/internal/auth"
 	"github.com/klahr/zonventure/internal/mcp"
+	"github.com/klahr/zonventure/internal/oauth"
 	"github.com/klahr/zonventure/internal/play"
 	"github.com/klahr/zonventure/internal/settings"
 )
@@ -52,6 +53,22 @@ func registerMetaRoutes(r chi.Router, env *routesEnv) {
 	// desktop, claude.ai connectors) speak Authorization headers.
 	if mcp.Enabled() {
 		mcpSrv := mcp.New(cfg.DB, cfg.Version, env.storage, env.adminH)
+		// OAuth lets a client sign its user in instead of being handed a
+		// pasted token. It needs ZV_PUBLIC_URL as its issuer.
+		if o := oauth.New(cfg.DB, cfg.PublicURL); o.Enabled() {
+			mcpSrv.ResourceMetadata = o.ResourceMetadataURL()
+			r.Group(func(r chi.Router) {
+				r.Use(publicRLMiddleware(env.publicRL))
+				// A client may ask for the resource's metadata at its path
+				// (RFC 9728 §3.1) or at the root.
+				r.Get("/.well-known/oauth-protected-resource", o.ProtectedResource)
+				r.Get("/.well-known/oauth-protected-resource/mcp", o.ProtectedResource)
+				r.Get("/.well-known/oauth-authorization-server", o.AuthorizationServer)
+				r.Get("/oauth/authorize", o.Authorize)
+				r.Post("/oauth/register", o.Register)
+				r.Post("/oauth/token", o.Token)
+			})
+		}
 		r.Method(http.MethodPost, "/mcp", mcpSrv.Handler())
 	}
 

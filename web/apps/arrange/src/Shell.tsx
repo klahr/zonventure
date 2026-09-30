@@ -16,6 +16,7 @@ import { EventsPage, QuestsPage } from "./pages/events/index.tsx";
 import { EventPage } from "./pages/event/index.tsx";
 import { EventControlPage } from "./pages/control/index.tsx";
 import { AdventurePage, AdventuresPage, CatalogItemPage, CatalogPage, FieldPage } from "./pages/adventures/index.tsx";
+import { AuthorizePage } from "./pages/authorize/index.tsx";
 import { SettingsPage } from "./pages/settings/index.tsx";
 import { AccountBanners } from "./pages/settings/Banners.tsx";
 import { LogsPage, OrganizationPage, OrganizationsPage, WebhookLogPage } from "./pages/admin/index.tsx";
@@ -447,6 +448,8 @@ function Page({ route }: { route: Route }) {
       return <Designer key={route.slug} slug={route.slug} />;
     case "field":
       return <FieldPage />;
+    case "authorize":
+      return <AuthorizePage />;
     case "catalog":
       return <CatalogPage />;
     case "catalog-item":

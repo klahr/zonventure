@@ -27,9 +27,12 @@ type Server struct {
 	// these methods via the callAdmin adapter so policy lives in
 	// exactly one place — no parallel implementation in the MCP
 	// package, no surface drift when the admin API evolves.
-	Admin   *admin.Handlers
-	version string
-	tools   *registry
+	Admin *admin.Handlers
+	// ResourceMetadata is the OAuth protected-resource metadata URL a
+	// 401 points clients at, so they can sign in; empty without OAuth.
+	ResourceMetadata string
+	version          string
+	tools            *registry
 }
 
 // New wires up the server and registers the tool set. Tools are
@@ -88,7 +91,11 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 		// Per MCP guidance, auth failure is an HTTP 401 — JSON-RPC
 		// errors are reserved for protocol / method problems on an
 		// already-authenticated channel.
-		w.Header().Set("WWW-Authenticate", `Bearer realm="zv-mcp"`)
+		if s.ResourceMetadata != "" {
+			w.Header().Set("WWW-Authenticate", `Bearer realm="zv-mcp", resource_metadata="`+s.ResourceMetadata+`"`)
+		} else {
+			w.Header().Set("WWW-Authenticate", `Bearer realm="zv-mcp"`)
+		}
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
