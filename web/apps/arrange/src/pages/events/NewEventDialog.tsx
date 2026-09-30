@@ -53,6 +53,16 @@ function peekDraft(): Partial<Draft> {
   }
 }
 
+/** The adventures the dialog offers: with the catalog off, only what the Adventures page shows (the org's own, the commissioned, and those it holds a pass for). */
+export function usableAdventures(all: AdventureRow[], assigns: Assignment[]): AdventureRow[] {
+  return CATALOG_ENABLED ? all : all.filter((a) => a.mine_to_edit || a.shared || assigns.some((x) => x.adventure_slug === a.slug));
+}
+
+/** Whether an event can be started: some usable adventure is published. Until then a "new event" button only leads to a dead end. */
+export function canStartEvent(all: AdventureRow[], assigns: Assignment[]): boolean {
+  return usableAdventures(all, assigns).some((a) => a.playable);
+}
+
 /**
  * How the dialog gets the event its pass: an existing one, a share the
  * platform commissioned for the org (no pass needed), or a purchase
@@ -96,7 +106,7 @@ function NewEventForm({ slug, assignmentId, ownsIt, onClose }: NewEventProps) {
     const unused = assigns.filter((a) => !a.event_id);
     // With the catalog off, only what the Adventures page shows: the
     // org's own, the commissioned, and those it holds a pass for.
-    const advs = CATALOG_ENABLED ? all : all.filter((a) => a.mine_to_edit || a.shared || assigns.some((x) => x.adventure_slug === a.slug));
+    const advs = usableAdventures(all, assigns);
     return { advs, unused };
   }, []);
 

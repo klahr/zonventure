@@ -43,6 +43,12 @@ product is **Zonventure**. Versions tagged here correspond to git tags
   the login again.
 - **Adventure settings shows each section as a card**, like a step's
   settings, in two columns on a wide screen.
+- **Start a new event** (dashboard) and **Schedule event** (Events)
+  appear only once the organization has a published adventure to run.
+
+### Fixed
+
+- The menu button on a phone opens the side menu in the designer too.
 
 ### Changed — new Zonventure logo
 

@@ -7,7 +7,7 @@ import { CATALOG_ENABLED, href, navigate } from "../../router.ts";
 import { Avatar, Button, Card, Dialog, ErrorBox, Field, Loading, Page, PageHeader, Pill, Table, errorText, relTime, useLoad, useToast, type Column } from "../../ui/index.ts";
 import { activeMembership, listAdventures, listAssignments, listEvents } from "../events/api.ts";
 import { EventsTable } from "../events/parts.tsx";
-import { NewEventDialog, type NewEventProps } from "../events/NewEventDialog.tsx";
+import { NewEventDialog, canStartEvent, type NewEventProps } from "../events/NewEventDialog.tsx";
 import { useJustPurchased } from "../events/justPurchased.ts";
 import { createOrganization, createOwnOrganization, getCatalog, listOrganizations, type OrgRow } from "./api.ts";
 import { SetupCard, type SetupStepProps } from "./Setup.tsx";
@@ -50,6 +50,7 @@ function ArrangerDashboard({ user }: { user: Whoami }) {
   const hour = new Date().getHours();
   const hello = hour < 5 ? t.t("Good evening, {{name}}", { name: user.username }) : hour < 12 ? t.t("Good morning, {{name}}", { name: user.username }) : hour < 18 ? t.t("Good afternoon, {{name}}", { name: user.username }) : t.t("Good evening, {{name}}", { name: user.username });
   const orgName = activeMembership(user)?.org_name;
+  const canStart = !!data.data && canStartEvent(data.data.advs, data.data.assigns);
 
   const header = (
     <PageHeader
@@ -59,7 +60,7 @@ function ArrangerDashboard({ user }: { user: Whoami }) {
         <>
           {/* Past events are one click away even while the next one is live. */}
           <a className="btn ghost" href={href({ name: "events" })}>{t.t("All events")}<ArrowRight size={14} aria-hidden /></a>
-          <Button variant="primary" icon={<Plus size={16} aria-hidden />} onClick={() => setDialog({})}>{t.t("Start a new event")}</Button>
+          {canStart && <Button variant="primary" icon={<Plus size={16} aria-hidden />} onClick={() => setDialog({})}>{t.t("Start a new event")}</Button>}
         </>
       }
     />

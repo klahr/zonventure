@@ -3,9 +3,9 @@ import { Map as MapIcon, Plus } from "lucide-react";
 import { useT } from "../../i18n.tsx";
 import { href } from "../../router.ts";
 import { Button, Card, Empty, ErrorBox, Loading, Page, PageHeader, Table, fmtMoney, useLoad, type Column } from "../../ui/index.ts";
-import { listEvents, type EventRow } from "./api.ts";
+import { listAdventures, listAssignments, listEvents, type EventRow } from "./api.ts";
 import { AdventureCover, EventsTable, StatePill, eventLabel } from "./parts.tsx";
-import { NewEventDialog, type NewEventProps } from "./NewEventDialog.tsx";
+import { NewEventDialog, canStartEvent, type NewEventProps } from "./NewEventDialog.tsx";
 import { NewQuestDialog } from "./NewQuestDialog.tsx";
 import { useJustPurchased } from "./justPurchased.ts";
 import "./events.css";
@@ -36,6 +36,10 @@ export function NoEvents() {
 export function EventsPage() {
   const t = useT();
   const events = useLoad((signal) => listEvents(false, signal), []);
+  const ready = useLoad(async (signal) => {
+    const [advs, assigns] = await Promise.all([listAdventures(signal), listAssignments(signal)]);
+    return canStartEvent(advs, assigns);
+  }, []);
   const [filter, setFilter] = useState<Filter>("all");
   const [dialog, setDialog] = useState<Omit<NewEventProps, "onClose"> | null>(null);
   useJustPurchased((assignmentId) => setDialog({ assignmentId }));
@@ -57,7 +61,7 @@ export function EventsPage() {
     <Page>
       <PageHeader
         title={t.t("Events")}
-        actions={<Button variant="primary" icon={<Plus size={16} aria-hidden />} onClick={() => setDialog({})}>{t.t("Schedule event")}</Button>}
+        actions={ready.data ? <Button variant="primary" icon={<Plus size={16} aria-hidden />} onClick={() => setDialog({})}>{t.t("Schedule event")}</Button> : undefined}
       />
       {events.error && !events.data ? (
         <ErrorBox message={events.error} retry={events.reload} retryLabel={t.t("Retry")} />
