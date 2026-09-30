@@ -139,6 +139,7 @@ function NewEventForm({ slug, assignmentId, ownsIt, onClose }: NewEventProps) {
   const [bought, setBought] = useState<number | null>(null);
   const whenRef = useRef<HTMLInputElement>(null);
   const attestRef = useRef<HTMLInputElement>(null);
+  const attestErrRef = useRef<HTMLParagraphElement>(null);
   const teamCountRef = useRef<HTMLInputElement>(null);
   const errorRef = useRef<HTMLDivElement>(null);
   // The error sits under the form; bring it into the dialog's view.
@@ -203,6 +204,9 @@ function NewEventForm({ slug, assignmentId, ownsIt, onClose }: NewEventProps) {
     if (!attest) {
       setAttestErr(true);
       attestRef.current?.focus();
+      // The statement sits at the foot of the form, under the footer on
+      // a phone: bring its message into view, on every try, once drawn.
+      requestAnimationFrame(() => attestErrRef.current?.scrollIntoView({ block: "nearest" }));
       return;
     }
     if (ctx.mode === "buy" && playersN < MIN_PLAYERS) {
@@ -477,7 +481,7 @@ function NewEventForm({ slug, assignmentId, ownsIt, onClose }: NewEventProps) {
         />
         <span>{t.t("I confirm no participants under 13 will play this adventure, or I have parental consent for any who will.")}</span>
       </label>
-      {attestErr && <p id="evs-attest-err" className="cs-field__error" role="alert">{t.t("Please confirm the player-age statement to continue.")}</p>}
+      {attestErr && <p ref={attestErrRef} id="evs-attest-err" className="cs-field__error" role="alert">{t.t("Please confirm the player-age statement to continue.")}</p>}
 
       {error && <div ref={errorRef}><ErrorBox message={error} /></div>}
     </Dialog>
