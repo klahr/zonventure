@@ -17,7 +17,7 @@ import { TeamEditDialog } from "./TeamEdit.tsx";
 import { TeamsCard } from "./Teams.tsx";
 import { EmailsCard } from "./Emails.tsx";
 import { StatisticsCard } from "./Statistics.tsx";
-import { isGraphEvent, isQuest, runLabel, stateLabel, stateText, stateTone, teamColor } from "./util.ts";
+import { isQuest, runLabel, stateLabel, stateText, stateTone, teamColor } from "./util.ts";
 import "./event.css";
 
 type Open = null | { kind: "rename" } | { kind: "new-team" } | { kind: "team"; id: number } | { kind: "edit-team"; id: number };
@@ -35,8 +35,8 @@ export function EventPage({ id }: { id: number }) {
   const activity = useLoad((s) => api.getActivity(id, undefined, s), [id]);
   const messages = useLoad((s) => api.getMessages(id, s), [id]);
   const photos = useLoad((s) => api.getPhotos(id, s), [id]);
-  // Statistics come from graph play, once it has begun.
-  const played = !!detail.data && isGraphEvent(detail.data.event) && !!detail.data.event.started_at;
+  // Statistics come from play, once it has begun.
+  const played = !!detail.data?.event.started_at;
   const stats = useLoad((s) => (played ? api.getStatistics(id, s) : Promise.resolve(null)), [id, played]);
   const slug = detail.data?.event.adventure_slug;
   const adventure = useLoad((s) => (slug ? api.getAdventure(slug, s) : Promise.resolve(null)), [slug]);
