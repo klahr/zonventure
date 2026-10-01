@@ -532,5 +532,14 @@
   "Repeatable": "Kan upprepas",
   "Shown once": "Visas en gång",
   "Fixed layout": "Fast layout",
-  "Move: drag, or use the up and down arrow keys": "Flytta: dra, eller använd piltangenterna upp och ner"
+  "Move: drag, or use the up and down arrow keys": "Flytta: dra, eller använd piltangenterna upp och ner",
+  "Preview the email": "Förhandsvisa mejlet",
+  "this step": "det här steget",
+  "Bold": "Fetstil",
+  "Italic": "Kursiv",
+  "Link": "Länk",
+  "Heading": "Rubrik",
+  "Bulleted list": "Punktlista",
+  "Numbered list": "Numrerad lista",
+  "Formatting": "Formatering"
 }

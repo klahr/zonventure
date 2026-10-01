@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useRef, useState, type ComponentType } from "react";
 import { createPortal } from "react-dom";
 import { Menu as MenuIcon, X, Building2, CalendarDays, ChevronLeft, ChevronRight, ChevronUp, Compass, Gauge, Gift, LogOut, Map as MapIcon, Monitor, Moon, Settings, Sun, Terminal, type LucideIcon } from "lucide-react";
-import { auth, type Whoami } from "@zonventure/api";
+import { auth, emails, type Whoami } from "@zonventure/api";
 import { readTheme, setTheme, type Theme } from "@zonventure/ui";
 import { useT } from "./i18n.tsx";
 import { useSession } from "./session.tsx";
@@ -198,6 +198,14 @@ export function Shell({ user }: { user: Whoami }) {
   }
 
   const org = user.memberships.find((m) => m.org_id === user.org_id);
+  // The notifications this person gets are written in the language they
+  // use the console in: tell the server whenever that changes.
+  const lang = t.current();
+  useEffect(() => {
+    void emails.setMyLanguage(lang).catch(() => {
+      /* the next change or visit tells it again */
+    });
+  }, [lang]);
   // Where a page shows who else has it open.
   const [liveSlot, setLiveSlot] = useState<HTMLElement | null>(null);
 

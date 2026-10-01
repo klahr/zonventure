@@ -3,7 +3,7 @@ package admin
 import (
 	"context"
 	"errors"
-	"fmt"
+	"github.com/klahr/zonventure/internal/emailtpl"
 	"net/http"
 	"strings"
 
@@ -119,6 +119,7 @@ func (h *Handlers) SendEventInvitations(w http.ResponseWriter, r *http.Request) 
 		failed         int
 	)
 	publicURL := strings.TrimRight(strings.TrimSpace(h.PublicURL), "/")
+	l := h.eventLook(r.Context(), eventID)
 	for _, t := range teams {
 		if t.Email == "" {
 			skippedNoEmail++
@@ -132,7 +133,7 @@ func (h *Handlers) SendEventInvitations(w http.ResponseWriter, r *http.Request) 
 			skippedNoEmail++
 			continue
 		}
-		if err := sendOneInvitation(r.Context(), h.Mailer, t.Name, t.Email, publicURL, t.Slots, icsAttach); err != nil {
+		if err := sendOneInvitation(r.Context(), h.Mailer, l, t.Name, t.Email, publicURL, t.Slots, icsAttach); err != nil {
 			logx.Warn("admin.invitations.send", "event", eventID, "team", t.ID, "err", err.Error())
 			failed++
 			continue
@@ -233,7 +234,7 @@ func (h *Handlers) SendTeamInvitation(w http.ResponseWriter, r *http.Request) {
 	}
 
 	publicURL := strings.TrimRight(strings.TrimSpace(h.PublicURL), "/")
-	if err := sendOneInvitation(r.Context(), h.Mailer, teamName, teamMail, publicURL, slots, icsAttach); err != nil {
+	if err := sendOneInvitation(r.Context(), h.Mailer, h.eventLook(r.Context(), eventID), teamName, teamMail, publicURL, slots, icsAttach); err != nil {
 		logx.Warn("admin.invitations.team.send", "event", eventID, "team", teamID, "err", err.Error())
 		httpx.ServerErr(w, http.StatusBadGateway, "send failed", err)
 		return
@@ -255,24 +256,17 @@ type invitationSlot struct {
 func sendOneInvitation(
 	ctx context.Context,
 	m mailer.Mailer,
+	l look,
 	teamName, teamEmail, publicURL string,
 	slots []invitationSlot,
 	atts []mailer.Attachment,
 ) error {
-	var b strings.Builder
-	fmt.Fprintf(&b,
-		"Your team \"%s\" is ready to play. Forward each link below to the right teammate — opening a link claims the player's slot and starts their session.\r\n\r\n",
-		teamName)
-	for _, s := range slots {
-		fmt.Fprintf(&b, "Player: %s\r\nLink: %s/play?t=%s\r\n\r\n", s.Player, publicURL, s.Token)
+	players := make([]emailtpl.PlayerLink, len(slots))
+	for i, s := range slots {
+		players[i] = emailtpl.PlayerLink{Team: teamName, Player: s.Player, URL: publicURL + "/play?t=" + s.Token}
 	}
-	if len(atts) > 0 {
-		b.WriteString("Calendar invite attached. Add it to your calendar so the event lands at the right time.\r\n")
-	}
-	return m.Send(ctx, mailer.Message{
-		To:          []string{teamEmail},
-		Subject:     "Your Zonventure team links",
-		Text:        b.String(),
-		Attachments: atts,
-	})
+	subject, c := emailtpl.TeamInvitation(l.Lang, teamName, l.Event, l.Brand.Name, players, len(atts) > 0)
+	msg := l.message([]string{teamEmail}, subject, c)
+	msg.Attachments = atts
+	return m.Send(ctx, msg)
 }

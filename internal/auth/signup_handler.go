@@ -2,6 +2,7 @@ package auth
 
 import (
 	"errors"
+	"github.com/klahr/zonventure/internal/emailtpl"
 	"net/http"
 	"net/mail"
 	"net/url"
@@ -9,7 +10,6 @@ import (
 
 	"github.com/klahr/zonventure/internal/httpx"
 	"github.com/klahr/zonventure/internal/logx"
-	mailerpkg "github.com/klahr/zonventure/internal/mailer"
 	"github.com/klahr/zonventure/internal/settings"
 )
 
@@ -228,17 +228,8 @@ func (h *Handlers) sendVerificationEmail(r *http.Request, to, token string) erro
 		return errors.New("no mailer configured")
 	}
 	link := buildVerifyLink(h.PublicURL, r, token)
-	subject := "Verify your Zonventure email"
-	text := "Welcome to Zonventure!\r\n\r\n" +
-		"Confirm your email by opening this link:\r\n" +
-		link + "\r\n\r\n" +
-		"The link expires in 1 hour. If you didn't sign up, you can " +
-		"ignore this message.\r\n"
-	return h.Mailer.Send(r.Context(), mailerpkg.Message{
-		To:      []string{to},
-		Subject: subject,
-		Text:    text,
-	})
+	subject, c := emailtpl.VerifyEmail(emailtpl.LangFromRequest(r), link)
+	return h.Mailer.Send(r.Context(), emailtpl.Message([]string{to}, subject, emailtpl.Classic, emailtpl.Zonventure(), c))
 }
 
 // buildVerifyLink builds the email-verification URL using only the

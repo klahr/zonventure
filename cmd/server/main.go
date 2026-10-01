@@ -358,7 +358,7 @@ func main() {
 
 	// Graph "Call a webhook" and "Send an email" steps, queued with
 	// the team's move in graph_effect_outbox and sent from here.
-	effectsDone := effects.Start(ctx, sqlDB, mail)
+	effectsDone := effects.Start(ctx, sqlDB, mail, *publicURL)
 
 	go func() {
 		logx.Info("http.listening", "addr", *addr)

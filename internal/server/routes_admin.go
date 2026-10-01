@@ -131,6 +131,11 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 		r.With(auth.RequireSession).Post("/me/password", adminH.ChangeMyPassword)
 		r.With(auth.RequireSession).Post("/me/email", adminH.ChangeMyEmail)
 		r.With(auth.RequireSession).Post("/me/username", adminH.ChangeMyUsername)
+		// Which notification emails the caller gets (admin/emails.go).
+		r.Get("/me/email-prefs", adminH.GetEmailPrefs)
+		r.With(auth.RequireSession).Put("/me/email-prefs", adminH.SetEmailPrefs)
+		// The console's language, for the notifications the caller gets.
+		r.With(auth.RequireSession).Put("/me/language", adminH.SetMyLanguage)
 		// Revertable email change: ConfirmEmailChange stashes the old
 		// address; this endpoint reads the status and reverts within
 		// the grace window.
@@ -225,6 +230,15 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 			// not authoring.
 			r.Post("/events/{eventID}/invitations/send", adminH.SendEventInvitations)
 
+			// Emails to an event's teams, in its look (admin/emails.go).
+			r.Get("/events/{eventID}/emails", adminH.ListEventEmails)
+			r.Post("/events/{eventID}/emails", adminH.EmailTeams)
+			r.Put("/events/{eventID}/email-theme", adminH.SetEventEmailTheme)
+			r.Get("/email-themes", adminH.EmailThemes)
+			r.Get("/email-preview", adminH.EmailPreview)
+			r.Post("/email-preview", adminH.DraftPreview)
+			r.Post("/email-test", adminH.SendMeTest)
+
 			r.Patch("/teams/{teamID}", adminH.UpdateTeam)
 			r.Delete("/teams/{teamID}", adminH.DeleteTeam)
 			r.Post("/teams/{teamID}/avatar", adminH.SetTeamAvatar)
@@ -310,6 +324,8 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 			// Public-profile read/write (tagline, website, cover image)
 			// surfaced on /o/{slug}. Read is org-user, writes are
 			// gated to RoleOrgAdmin inside each handler.
+			r.Get("/orgs/me/email-theme", adminH.GetOrgEmailTheme)
+			r.Put("/orgs/me/email-theme", adminH.SetOrgEmailTheme)
 			r.Get("/orgs/me/profile", adminH.GetMyOrgProfile)
 			r.Put("/orgs/me/profile", adminH.SetMyOrgProfile)
 			r.Post("/orgs/me/cover", adminH.SetMyOrgCover)

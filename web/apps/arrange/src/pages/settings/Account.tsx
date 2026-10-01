@@ -10,6 +10,7 @@ import { account } from "./account-api.ts";
 import { SignInCard } from "./account-security.tsx";
 import { AuditCard, McpTokensCard, SessionsCard } from "./account-activity.tsx";
 import { DeleteCard, DownloadsCard } from "./account-data.tsx";
+import { NotificationsCard } from "./account-notifications.tsx";
 import "./account.css";
 
 /**
@@ -28,6 +29,7 @@ export function AccountTab() {
         <RoleCard user={user} />
         <AppearanceCard />
         <HelpCard user={user} />
+        <NotificationsCard />
       </Section>
 
       <Section title={t.t("Sign-in and security")}>

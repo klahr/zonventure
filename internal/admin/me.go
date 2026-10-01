@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"errors"
+	"github.com/klahr/zonventure/internal/emailtpl"
 	"net/http"
 	"net/mail"
 	"net/url"
@@ -17,7 +18,6 @@ import (
 	"github.com/klahr/zonventure/internal/auth"
 	"github.com/klahr/zonventure/internal/httpx"
 	"github.com/klahr/zonventure/internal/logx"
-	"github.com/klahr/zonventure/internal/mailer"
 )
 
 // Account-settings handlers. These all live on /api/admin/me/* and
@@ -133,15 +133,14 @@ func (h *Handlers) ChangeMyEmail(w http.ResponseWriter, r *http.Request) {
 	}
 	if h.Mailer != nil {
 		link := buildChangeEmailLink(h.PublicURL, r, tok)
-		err := h.Mailer.Send(r.Context(), mailer.Message{
-			To:      []string{newEmail},
-			Subject: "Confirm your new Zonventure email",
-			Text: "You asked to change the email on your Zonventure account to this address.\r\n\r\n" +
-				"Open this link to confirm:\r\n" +
-				link + "\r\n\r\n" +
-				"The link expires in 1 hour. If you didn't request this, you can " +
-				"ignore the message — nothing changes until you click.\r\n",
-		})
+		// In the language they use the console in, else their browser's.
+		lang := emailtpl.LangFromRequest(r)
+		var own sql.NullString
+		if h.DB.QueryRowContext(r.Context(), `SELECT language FROM users WHERE id = $1`, me.ID).Scan(&own) == nil && own.Valid {
+			lang = emailtpl.Lang(own.String)
+		}
+		subject, c := emailtpl.EmailChange(lang, link)
+		err := h.Mailer.Send(r.Context(), emailtpl.Message([]string{newEmail}, subject, emailtpl.Classic, emailtpl.Zonventure(), c))
 		if err != nil {
 			logx.Warn("admin.me.email.mail_failed", "user_id", me.ID, "err", err.Error())
 		}

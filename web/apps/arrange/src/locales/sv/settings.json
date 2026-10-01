@@ -22,5 +22,21 @@
   "{{n}} users in {{name}}": "{{n}} användare i {{name}}",
   "Test event sent. It should reach your endpoint within a few seconds.": "Testhändelsen är skickad. Den bör nå din slutpunkt inom några sekunder.",
   "Endpoint disabled. No more events will be sent to it.": "Slutpunkten är inaktiverad. Inga fler händelser skickas till den.",
-  "Endpoint enabled. Events will be sent to it again.": "Slutpunkten är aktiverad. Händelser skickas till den igen."
+  "Endpoint enabled. Events will be sent to it again.": "Slutpunkten är aktiverad. Händelser skickas till den igen.",
+  "Email look": "E-postens utseende",
+  "Email theme": "E-posttema",
+  "Emails use the logo and colours from Branding above. Each event can choose its own theme.": "E-posten använder logotypen och färgerna från Varumärke ovan. Varje evenemang kan välja ett eget tema.",
+  "How the emails your organization sends to players and designers look.": "Hur e-posten som din organisation skickar till spelare och designers ser ut.",
+  "Only organization admins can change the email theme.": "Bara organisationens administratörer kan ändra e-posttemat.",
+  "To designers": "Till designers",
+  "To players": "Till spelare",
+  "Emails outside events": "Mejl utanför event",
+  "Preview in": "Förhandsvisa på",
+  "Such as box redemptions. An event's emails are in its adventure's language; designers get theirs in the language they use Zonventure in.": "Till exempel lådinlösen. Ett events mejl är på äventyrets språk; designers får sina på det språk de använder Zonventure på.",
+  "Classic": "Klassisk",
+  "Minimal": "Minimal",
+  "A clean card on a soft background, the logo on top and a coloured edge.": "Ett rent kort på en mjuk bakgrund, med logotypen överst och en färgad kant.",
+  "Parchment and a serif heading, like a page from the game's own journal.": "Pergament och en rubrik med serifer, som en sida ur spelets egen dagbok.",
+  "A full-width band in your colour with the logo, and a large heading.": "Ett band i din färg över hela bredden med logotypen, och en stor rubrik.",
+  "Plain text on white with a small logo: reads like a personal note.": "Ren text på vitt med en liten logotyp: läses som en personlig hälsning."
 }

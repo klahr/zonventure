@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"github.com/klahr/zonventure/internal/emailtpl"
 	"net/http"
 	"net/mail"
 	"strings"
@@ -13,7 +14,6 @@ import (
 	"github.com/klahr/zonventure/internal/auth"
 	"github.com/klahr/zonventure/internal/httpx"
 	"github.com/klahr/zonventure/internal/logx"
-	mailerpkg "github.com/klahr/zonventure/internal/mailer"
 	"github.com/klahr/zonventure/internal/payments"
 )
 
@@ -474,7 +474,7 @@ func (h *Handlers) handleTicketCheckoutCompleted(ctx context.Context, event paym
 	// Email the team link. Best-effort: a send failure leaves the
 	// purchase in a paid-but-not-emailed state, which the operator
 	// can re-send via the existing per-team SendTeamInvitation route.
-	if err := h.sendTicketTeamLink(ctx, buyerEmail, teamToken); err != nil {
+	if err := h.sendTicketTeamLink(ctx, eventID, buyerEmail, teamToken); err != nil {
 		logx.Warn("admin.store.ticket.mail",
 			"purchase_id", purchaseID, "team_id", teamID, "err", err.Error())
 	}
@@ -580,21 +580,14 @@ func uniqueTicketTeamName(ctx context.Context, tx *sql.Tx, eventID int64, buyerE
 // backoff. Falls back to a direct Mailer.Send when the outbox is
 // not configured (early dev setups) so a fresh checkout still
 // behaves the same way.
-func (h *Handlers) sendTicketTeamLink(ctx context.Context, buyerEmail, teamToken string) error {
+func (h *Handlers) sendTicketTeamLink(ctx context.Context, eventID int64, buyerEmail, teamToken string) error {
 	publicURL := strings.TrimRight(strings.TrimSpace(h.PublicURL), "/")
 	if publicURL == "" {
 		return errors.New("ticket email requires PublicURL")
 	}
-	teamURL := publicURL + "/team/" + teamToken
-	var b strings.Builder
-	b.WriteString("Thanks for your purchase! Open the link below to set up your team — claim your own player slot, share the rest with your teammates, and start playing whenever you're ready.\r\n\r\n")
-	fmt.Fprintf(&b, "Team page: %s\r\n", teamURL)
-	b.WriteString("\r\nThe link stays valid while you play. Lose it? Use the \"I lost my link\" recovery on the play page with this same email address.\r\n")
-	msg := mailerpkg.Message{
-		To:      []string{buyerEmail},
-		Subject: "Your Zonventure ticket — team link inside",
-		Text:    b.String(),
-	}
+	l := h.eventLook(ctx, eventID)
+	subject, c := emailtpl.TeamLink(l.Lang, publicURL+"/team/"+teamToken, l.Brand.Name)
+	msg := l.message([]string{buyerEmail}, subject, c)
 	if h.MailOutbox != nil {
 		return h.MailOutbox.Enqueue(ctx, "ticket_team_link", msg)
 	}

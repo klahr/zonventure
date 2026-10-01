@@ -5,5 +5,12 @@
   "select organization": "välj organisation",
   "event host": "eventvärd",
   "Close menu": "Stäng menyn",
-  "Checkout cancelled — nothing was charged.": "Köpet avbröts — inget har debiterats."
+  "Checkout cancelled — nothing was charged.": "Köpet avbröts — inget har debiterats.",
+  "As on a computer": "Som på en dator",
+  "As on a phone": "Som på en mobil",
+  "Email preview": "Förhandsvisning av e-post",
+  "Preview width": "Förhandsvisningens bredd",
+  "Send me a test": "Skicka ett test till mig",
+  "Send this email to your own address, to see it in your inbox": "Skicka mejlet till din egen adress, så att du ser det i din inkorg",
+  "Sent to {{to}}": "Skickat till {{to}}"
 }

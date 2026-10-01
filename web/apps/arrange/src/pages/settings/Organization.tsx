@@ -4,6 +4,7 @@ import { useSession } from "../../session.tsx";
 import { useT } from "../../i18n.tsx";
 import { Button, Card, ErrorBox, Field, HelpPopover, ICON, Loading, Row, errorText, useDialogs, useLoad } from "../../ui/index.ts";
 import { deleteImage, getProfile, putProfile, putSlug, uploadImage, type OrgProfile, type ProfileEdit } from "./organization-api.ts";
+import { EmailLookCard } from "./organization-email.tsx";
 import "./organization-branding.css";
 
 type ColorKey = "accent_color" | "accent_secondary_color" | "background_color" | "text_color";
@@ -368,6 +369,7 @@ export function OrganizationTab() {
           </div>
         </div>
       </Card>
+      <EmailLookCard orgName={orgName} canEdit={user?.role === "org_admin"} />
     </>
   );
 }

@@ -15,6 +15,7 @@ import { ConnectBanner, QuickStats, ResultsCard, StoreCard } from "./Overview.ts
 import { TeamDetailDialog } from "./TeamDetail.tsx";
 import { TeamEditDialog } from "./TeamEdit.tsx";
 import { TeamsCard } from "./Teams.tsx";
+import { EmailsCard } from "./Emails.tsx";
 import { isQuest, runLabel, stateLabel, stateText, stateTone, teamColor } from "./util.ts";
 import "./event.css";
 
@@ -37,6 +38,8 @@ export function EventPage({ id }: { id: number }) {
   const adventure = useLoad((s) => (slug ? api.getAdventure(slug, s) : Promise.resolve(null)), [slug]);
   const quest = detail.data ? isQuest(detail.data.event) : false;
   const orgId = detail.data?.event.org_id;
+  // Who the event's emails come from, for their preview.
+  const orgName = (state.status === "authenticated" && state.user.memberships.find((m) => m.org_id === orgId)?.org_name) || "Zonventure";
   // A failed status read shows no banner rather than blocking the page.
   const connect = useLoad((s) => (quest && orgId ? api.getConnectStatus(orgId, s).catch(() => null) : Promise.resolve(null)), [quest, orgId]);
   const [open, setOpen] = useState<Open>(null);
@@ -152,6 +155,7 @@ export function EventPage({ id }: { id: number }) {
           />
         </div>
         <div className="ev-col">
+          <EmailsCard event={event} teams={teams} from={orgName} />
           {messages.data && <MessagesCard event={event} teams={teams} messages={messages.data.messages ?? []} inbox={messages.data.inbox} reload={messages.reload} />}
           {photos.data && <PhotosCard event={event} graph={graph} photos={photos.data.photos ?? []} challenges={photos.data.challenges ?? 0} reload={() => { photos.reload(); reload(); }} />}
           <Card title={t.t("Event log")}>

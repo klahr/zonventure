@@ -7,7 +7,7 @@ import (
 	"net/mail"
 	"strings"
 
-	"github.com/klahr/zonventure/internal/mailer"
+	"github.com/klahr/zonventure/internal/emailtpl"
 )
 
 // Email is a queued email: the text as the step said it when the team
@@ -39,9 +39,8 @@ func (w *Worker) sendEmail(ctx context.Context, m Email, q queued) error {
 		step = q.node
 	}
 	r := strings.NewReplacer("{{team}}", q.team, "{{event}}", q.event, "{{step}}", step)
-	return w.Mailer.Send(ctx, mailer.Message{
-		To:      []string{to},
-		Subject: r.Replace(m.Subject),
-		Text:    r.Replace(m.Body),
-	})
+	// In the event's look, the organisation's unless the event has its own.
+	lk := emailtpl.Lookup(ctx, w.DB, w.PublicURL, 0, q.eventID)
+	subject, c := emailtpl.GameEmail(lk.Lang, r.Replace(m.Subject), r.Replace(m.Body), q.event, lk.Brand.Name)
+	return w.Mailer.Send(ctx, emailtpl.Message([]string{to}, subject, lk.Theme, lk.Brand, c))
 }

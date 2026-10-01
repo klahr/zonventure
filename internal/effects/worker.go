@@ -48,12 +48,15 @@ type Worker struct {
 	// machine. Set by ZV_EFFECT_WEBHOOKS_ALLOW_LOOPBACK=1.
 	AllowLoopback bool
 	PollInterval  time.Duration
+	// PublicURL makes an email's logo address absolute; without it,
+	// emails go out without the logo.
+	PublicURL string
 }
 
 // Start runs a Worker until ctx is done; the channel closes when it has.
-func Start(ctx context.Context, db *sql.DB, mail mailer.Mailer) <-chan struct{} {
+func Start(ctx context.Context, db *sql.DB, mail mailer.Mailer, publicURL string) <-chan struct{} {
 	done := make(chan struct{})
-	w := &Worker{DB: db, Mailer: mail, AllowLoopback: os.Getenv("ZV_EFFECT_WEBHOOKS_ALLOW_LOOPBACK") == "1"}
+	w := &Worker{DB: db, Mailer: mail, PublicURL: publicURL, AllowLoopback: os.Getenv("ZV_EFFECT_WEBHOOKS_ALLOW_LOOPBACK") == "1"}
 	go func() {
 		defer close(done)
 		w.Run(ctx)

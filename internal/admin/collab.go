@@ -34,9 +34,8 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/klahr/zonventure/internal/auth"
+	"github.com/klahr/zonventure/internal/emailtpl"
 	"github.com/klahr/zonventure/internal/httpx"
-	"github.com/klahr/zonventure/internal/logx"
-	mailerpkg "github.com/klahr/zonventure/internal/mailer"
 	"github.com/klahr/zonventure/internal/ws"
 )
 
@@ -468,6 +467,14 @@ func (h *Handlers) CreateThread(w http.ResponseWriter, r *http.Request) {
 	kind := "comment"
 	if suggestion != nil {
 		kind = "suggestion"
+		note := body
+		if note == "Suggested a change." {
+			note = ""
+		}
+		node := strings.TrimSpace(req.Node)
+		h.notify(r.Context(), advID, me, viaAssistant, h.stepOwner(r.Context(), advID, node), "suggestion", node, func(lang, who string, w emailtpl.Work) (string, emailtpl.Content) {
+			return emailtpl.SuggestionMade(lang, who, w, note)
+		})
 	}
 	h.afterComment(r, advID, me, viaAssistant, kind, strings.TrimSpace(req.Node), body, mentioned)
 	httpx.JSON(w, http.StatusCreated, map[string]int64{"thread_id": threadID, "comment_id": commentID})
@@ -551,7 +558,9 @@ func (h *Handlers) afterComment(r *http.Request, advID int64, me auth.User, viaA
 	h.publishCollab(advID, me, viaAssistant, kind, node)
 	for _, uid := range mentioned {
 		if uid != me.ID {
-			h.mailMention(r.Context(), advID, me, viaAssistant, uid, node, body)
+			h.notify(r.Context(), advID, me, viaAssistant, uid, "mention", node, func(lang, who string, w emailtpl.Work) (string, emailtpl.Content) {
+				return emailtpl.Mention(lang, who, w, body)
+			})
 		}
 	}
 }
@@ -560,46 +569,6 @@ func (h *Handlers) publishCollab(advID int64, me auth.User, viaAssistant bool, k
 	h.Hub.Publish(ws.AdventureTopic(advID), "collab_changed", map[string]any{
 		"kind": kind, "node": node, "by": me.Username, "user_id": me.ID, "assistant": viaAssistant,
 	})
-}
-
-// mailMention tells someone they were mentioned, with a link to the
-// adventure. Best effort: the comment is saved either way.
-func (h *Handlers) mailMention(ctx context.Context, advID int64, me auth.User, viaAssistant bool, uid int64, node, body string) {
-	var email, slug, title string
-	err := h.DB.QueryRowContext(ctx, `
-		SELECT COALESCE(u.email, ''), a.slug, a.title FROM users u, adventures a WHERE u.id = $1 AND a.id = $2
-	`, uid, advID).Scan(&email, &slug, &title)
-	if err != nil || email == "" {
-		return
-	}
-	who := me.Username
-	if viaAssistant {
-		who = me.Username + "'s assistant"
-	}
-	var b strings.Builder
-	fmt.Fprintf(&b, "%s mentioned you in %q", who, title)
-	if node != "" {
-		fmt.Fprintf(&b, ", on the step %q", node)
-	}
-	b.WriteString(":\r\n\r\n")
-	for _, line := range strings.Split(body, "\n") {
-		b.WriteString("> " + strings.TrimRight(line, "\r") + "\r\n")
-	}
-	if base := strings.TrimRight(strings.TrimSpace(h.PublicURL), "/"); base != "" {
-		fmt.Fprintf(&b, "\r\nOpen it: %s/app/arrange/#/adventures/%s/design\r\n", base, slug)
-	}
-	msg := mailerpkg.Message{To: []string{email}, Subject: fmt.Sprintf("%s mentioned you in %s", who, title), Text: b.String()}
-	switch {
-	case h.MailOutbox != nil:
-		err = h.MailOutbox.Enqueue(ctx, "adventure_mention", msg)
-	case h.Mailer != nil:
-		err = h.Mailer.Send(ctx, msg)
-	default:
-		return
-	}
-	if err != nil {
-		logx.Warn("admin.collab.mention_mail", "adventure_id", advID, "user_id", uid, "err", err.Error())
-	}
 }
 
 // threadOf reads {threadID} and checks it belongs to the adventure.
@@ -690,6 +659,11 @@ func (h *Handlers) decideSuggestion(w http.ResponseWriter, r *http.Request, advI
 		return
 	}
 	h.publishCollab(advID, me, auth.ViaAPIToken(r.Context()), state, node)
+	var suggester sql.NullInt64
+	_ = h.DB.QueryRowContext(r.Context(), `SELECT created_by FROM adventure_threads WHERE id = $1`, threadID).Scan(&suggester)
+	h.notify(r.Context(), advID, me, auth.ViaAPIToken(r.Context()), suggester.Int64, "suggestion", node, func(lang, who string, w emailtpl.Work) (string, emailtpl.Content) {
+		return emailtpl.SuggestionDecided(lang, who, state == "accepted", w)
+	})
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -911,6 +885,9 @@ func (h *Handlers) SetStepStatus(w http.ResponseWriter, r *http.Request) {
 	if req.Status != nil {
 		status = *req.Status
 	}
+	var prevStatus string
+	var prevOwner sql.NullInt64
+	_ = h.DB.QueryRowContext(r.Context(), `SELECT status, owner_id FROM adventure_step_status WHERE adventure_id = $1 AND node = $2`, advID, node).Scan(&prevStatus, &prevOwner)
 	// One upsert: a field left out keeps its stored value ($5/$6 say
 	// which were sent).
 	_, err := h.DB.ExecContext(r.Context(), `
@@ -927,6 +904,21 @@ func (h *Handlers) SetStepStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.publishCollab(advID, me, auth.ViaAPIToken(r.Context()), "status", node)
+	viaAssistant := auth.ViaAPIToken(r.Context())
+	newOwner := prevOwner.Int64
+	if req.OwnerID != nil {
+		newOwner = *req.OwnerID
+		if newOwner != prevOwner.Int64 {
+			h.notify(r.Context(), advID, me, viaAssistant, newOwner, "step_assigned", node, func(lang, who string, w emailtpl.Work) (string, emailtpl.Content) {
+				return emailtpl.StepAssigned(lang, who, w)
+			})
+		}
+	}
+	if status == "review" && req.Status != nil && prevStatus != "review" {
+		h.notify(r.Context(), advID, me, viaAssistant, newOwner, "review_requested", node, func(lang, who string, w emailtpl.Work) (string, emailtpl.Content) {
+			return emailtpl.ReviewRequested(lang, who, w)
+		})
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 

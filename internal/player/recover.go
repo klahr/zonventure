@@ -3,6 +3,7 @@ package player
 import (
 	"context"
 	"errors"
+	"github.com/klahr/zonventure/internal/emailtpl"
 	"net/http"
 	"strconv"
 	"strings"
@@ -139,21 +140,13 @@ func (h *Handlers) RecoverLink(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if len(links) > 0 && h.Mailer != nil {
-		var b strings.Builder
-		b.WriteString("Here are fresh play links for the team(s) registered to this email.\r\n\r\n")
-		b.WriteString("Each link is single-use: opening it on a device claims it for that device. ")
-		b.WriteString("Old links are now dead. If you didn't request this, you can ignore the message — your old links stayed live until you opened this email, and they remain dead now either way.\r\n\r\n")
-		for _, l := range links {
-			b.WriteString("Event: ")
-			b.WriteString(l.Event)
-			b.WriteString("\r\nTeam: ")
-			b.WriteString(l.Team)
-			b.WriteString("\r\nPlayer: ")
-			b.WriteString(l.Player)
-			b.WriteString("\r\nLink: ")
-			b.WriteString(l.URL)
-			b.WriteString("\r\n\r\n")
+		players := make([]emailtpl.PlayerLink, len(links))
+		for i, l := range links {
+			players[i] = emailtpl.PlayerLink{Team: l.Team, Player: l.Player, Event: l.Event, URL: l.URL}
 		}
+		// In the look of the organisation that runs the first game.
+		lk := emailtpl.Lookup(r.Context(), h.DB, h.PublicURL, 0, links[0].EventID)
+		subject, content := emailtpl.PlayLinks(lk.Lang, players, lk.Brand.Name)
 		// Build one .ics per unique event referenced by the
 		// recovered links so the recipient can drop each event onto
 		// their calendar in one click. Best-effort: a missing
@@ -169,12 +162,9 @@ func (h *Handlers) RecoverLink(w http.ResponseWriter, r *http.Request) {
 			uniqueEvents = append(uniqueEvents, l.EventID)
 		}
 		attachments := buildEventInviteAttachments(r.Context(), h, uniqueEvents)
-		if err := h.Mailer.Send(r.Context(), mailerpkg.Message{
-			To:          []string{email},
-			Subject:     "Your Zonventure play links",
-			Text:        b.String(),
-			Attachments: attachments,
-		}); err != nil {
+		msg := emailtpl.Message([]string{email}, subject, lk.Theme, lk.Brand, content)
+		msg.Attachments = attachments
+		if err := h.Mailer.Send(r.Context(), msg); err != nil {
 			logx.Warn("player.recover_link.send", "err", err.Error())
 		}
 	}

@@ -104,3 +104,17 @@
 
 /* Team and message dialogs (simplify pass, control area). */
 .dz .ev-hint { margin: 0; }
+
+/* Emails to teams (Emails.tsx): the event's look, what was sent, the composer. */
+.dz .ev-mailtheme { display: flex; flex-direction: column; gap: 4px; margin-bottom: var(--dz-space-3); }
+.dz .ev-mailtheme select { max-width: 22rem; }
+.dz .ev-mails { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.dz .ev-mails li { padding: 8px 10px; border: 1px solid var(--dz-border); border-radius: var(--dz-r-2); }
+.dz .ev-mails__subject { font-weight: 700; }
+.dz .ev-mail { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); gap: var(--dz-space-4); align-items: start; }
+.dz .ev-mail__form { display: flex; flex-direction: column; gap: var(--dz-space-3); }
+.dz .ev-mail__count { margin-right: auto; }
+.dz .ev-check.is-off { opacity: 0.55; cursor: not-allowed; }
+@media (max-width: 900px) { .dz .ev-mail { grid-template-columns: 1fr; } }
+/* The composer sits beside its preview: room for both. */
+.dz .cs-dialog--wide:has(.ev-mail), .dz .cs-dialog--wide:has(.mailprev) { max-width: min(76rem, calc(100vw - 2rem)); }

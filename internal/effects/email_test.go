@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/klahr/zonventure/internal/dbtest"
@@ -38,8 +39,12 @@ func TestEmailDelivered(t *testing.T) {
 		t.Fatalf("sent %d emails, want 1", len(m.sent))
 	}
 	got := m.sent[0]
-	if len(got.To) != 1 || got.To[0] != "captain@example.com" || got.Subject != "Owls rang the bell" || got.Text != "In fx, at The bell." {
+	if len(got.To) != 1 || got.To[0] != "captain@example.com" || got.Subject != "Owls rang the bell" || !strings.HasPrefix(got.Text, "In fx, at The bell.") {
 		t.Errorf("email = %+v", got)
+	}
+	// In the organisation's look: HTML beside the text.
+	if !strings.Contains(got.HTML, "In fx, at The bell.") || !strings.Contains(got.HTML, "<html") {
+		t.Errorf("no themed HTML: %q", got.HTML)
 	}
 	var delivered sql.NullTime
 	must(t, db.QueryRow(`SELECT delivered_at FROM graph_effect_outbox WHERE id = $1`, id).Scan(&delivered))

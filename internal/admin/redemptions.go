@@ -4,7 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"fmt"
+	"github.com/klahr/zonventure/internal/emailtpl"
 	"net/http"
 	"net/mail"
 	"strconv"
@@ -16,7 +16,6 @@ import (
 	"github.com/klahr/zonventure/internal/auth"
 	"github.com/klahr/zonventure/internal/httpx"
 	"github.com/klahr/zonventure/internal/logx"
-	mailerpkg "github.com/klahr/zonventure/internal/mailer"
 )
 
 // Partner box redemptions. Experience partners (Live it, TrueStory) sell
@@ -949,7 +948,7 @@ func (h *Handlers) ApproveRedemption(w http.ResponseWriter, r *http.Request) {
 		httpx.ServerErr(w, http.StatusInternalServerError, "approve failed", err)
 		return
 	}
-	if err := h.sendRedemptionApproved(ctx, email, kind, teamToken); err != nil {
+	if err := h.sendRedemptionApproved(ctx, eventID, email, kind, teamToken); err != nil {
 		logx.Warn("admin.redemption.approve.mail", "redemption_id", id, "team_id", teamID, "err", err.Error())
 	}
 	logx.Info("admin.redemption.approved", "redemption_id", id, "team_id", teamID)
@@ -982,12 +981,9 @@ func (h *Handlers) RejectRedemption(w http.ResponseWriter, r *http.Request) {
 		httpx.ServerErr(w, http.StatusInternalServerError, "reject failed", err)
 		return
 	}
-	h.sendRedemptionMail(r.Context(), "redemption_rejected", mailerpkg.Message{
-		To:      []string{email},
-		Subject: "About your " + partnerNames[kind] + " box",
-		Text: "We couldn't confirm the code from your " + partnerNames[kind] + " box with " + partnerNames[kind] + ".\r\n\r\n" +
-			"Please check the code and redeem it again, or reply to this email and we'll sort it out.\r\n",
-	}, id)
+	h.sendRedemptionMail(r.Context(), "redemption_rejected", []string{email}, func(lang string) (string, emailtpl.Content) {
+		return emailtpl.BoxRejected(lang, partnerNames[kind])
+	}, id, orgID)
 	h.writeRedemption(w, r, http.StatusOK, id)
 }
 
@@ -1045,11 +1041,9 @@ func (h *Handlers) CancelRedemption(w http.ResponseWriter, r *http.Request) {
 		httpx.ServerErr(w, http.StatusInternalServerError, "cancel failed", err)
 		return
 	}
-	h.sendRedemptionMail(ctx, "redemption_cancelled", mailerpkg.Message{
-		To:      []string{email},
-		Subject: "Your " + partnerNames[kind] + " box redemption is cancelled",
-		Text:    "Your redemption of a " + partnerNames[kind] + " box has been cancelled. Reply to this email if that's a surprise.\r\n",
-	}, id)
+	h.sendRedemptionMail(ctx, "redemption_cancelled", []string{email}, func(lang string) (string, emailtpl.Content) {
+		return emailtpl.BoxCancelled(lang, partnerNames[kind])
+	}, id, orgID)
 	h.writeRedemption(w, r, http.StatusOK, id)
 }
 
@@ -1104,7 +1098,10 @@ func (h *Handlers) UpdateRedemption(w http.ResponseWriter, r *http.Request) {
 
 // sendRedemptionMail sends through the outbox when there is one, and
 // logs rather than fails: the redemption itself has already been saved.
-func (h *Handlers) sendRedemptionMail(ctx context.Context, kind string, msg mailerpkg.Message, redemptionID int64) {
+func (h *Handlers) sendRedemptionMail(ctx context.Context, kind string, to []string, build func(lang string) (string, emailtpl.Content), redemptionID, orgID int64) {
+	l := h.orgLook(ctx, orgID)
+	subject, c := build(l.Lang)
+	msg := l.message(to, subject, c)
 	var err error
 	switch {
 	case h.MailOutbox != nil:
@@ -1119,20 +1116,14 @@ func (h *Handlers) sendRedemptionMail(ctx context.Context, kind string, msg mail
 	}
 }
 
-func (h *Handlers) sendRedemptionApproved(ctx context.Context, email, kind, teamToken string) error {
+func (h *Handlers) sendRedemptionApproved(ctx context.Context, eventID int64, email, kind, teamToken string) error {
 	publicURL := strings.TrimRight(strings.TrimSpace(h.PublicURL), "/")
 	if publicURL == "" {
 		return errors.New("redemption email requires PublicURL")
 	}
-	var b strings.Builder
-	fmt.Fprintf(&b, "Your %s box is confirmed! Open the link below to set up your team — claim your own player slot, share the rest with your teammates, and start playing whenever you're ready.\r\n\r\n", partnerNames[kind])
-	fmt.Fprintf(&b, "Team page: %s/team/%s\r\n", publicURL, teamToken)
-	b.WriteString("\r\nThe link stays valid for a year. Lose it? Use the \"I lost my link\" recovery on the play page with this same email address.\r\n")
-	msg := mailerpkg.Message{
-		To:      []string{email},
-		Subject: "Your Zonventure adventure — team link inside",
-		Text:    b.String(),
-	}
+	l := h.eventLook(ctx, eventID)
+	subject, c := emailtpl.BoxConfirmed(l.Lang, partnerNames[kind], publicURL+"/team/"+teamToken, l.Brand.Name)
+	msg := l.message([]string{email}, subject, c)
 	if h.MailOutbox != nil {
 		return h.MailOutbox.Enqueue(ctx, "redemption_team_link", msg)
 	}
@@ -1165,9 +1156,7 @@ func (h *Handlers) notifyNewRedemption(ctx context.Context, id, orgID int64) {
 		return
 	}
 	link := strings.TrimRight(strings.TrimSpace(h.PublicURL), "/") + "/arrange#redemptions"
-	h.sendRedemptionMail(ctx, "redemption_new", mailerpkg.Message{
-		To:      to,
-		Subject: "A box redemption is waiting for review",
-		Text:    "Someone has redeemed a partner box. Check the code in the partner's portal, then approve or reject it:\r\n\r\n" + link + "\r\n",
-	}, id)
+	h.sendRedemptionMail(ctx, "redemption_new", to, func(lang string) (string, emailtpl.Content) {
+		return emailtpl.BoxWaiting(lang, link)
+	}, id, orgID)
 }

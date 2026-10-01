@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import type {
   Branch,
   EffectConfig,
@@ -29,6 +29,10 @@ import type {
 import { ANSWER_KINDS, MAX_SLOTS, WEBHOOK_METHODS, answerOptions, isGraded, optionValue, withAnswerKind, withBlocks, matcherLabel, nodeBySlug, portLabel, puzzlesInto, referAnswer, resolveAnswer, updateNode } from "@zonventure/graph";
 import { THEMES } from "@zonventure/play-ui";
 import { useT } from "../i18n.tsx";
+import { emails } from "@zonventure/api";
+import { useSession } from "../session.tsx";
+import { Dialog } from "../ui/dialogs.tsx";
+import { EmailPreview } from "../ui/emailPreview.tsx";
 import { ConditionEditor } from "./ConditionEditor.tsx";
 import { MediaEditor } from "./MediaEditor.tsx";
 import { BlocksEditor } from "./BlocksEditor.tsx";
@@ -1397,8 +1401,9 @@ function EffectForm({ cfg, graph, onChange }: { cfg: EffectConfig; graph: Graph;
             <input className="field__input" value={cfg.subject ?? ""} onChange={(e) => onChange({ ...cfg, subject: e.target.value })} />
           </Field>
           <Field label={t.t("Message")} hint={t.t("Sent to the team's contact email after its move; teams without one get nothing. {{team}}, {{event}} and {{step}} are filled in.")}>
-            <textarea className="field__input" rows={5} value={cfg.body ?? ""} onChange={(e) => onChange({ ...cfg, body: e.target.value })} />
+            <MarkdownArea className="field__input" rows={5} value={cfg.body ?? ""} onChange={(e) => onChange({ ...cfg, body: e.target.value })} />
           </Field>
+          <EmailStepPreview subject={cfg.subject ?? ""} body={cfg.body ?? ""} />
         </>
       )}
       {cfg.kind === "webhook" && <WebhookForm cfg={cfg} onChange={onChange} />}
@@ -1413,6 +1418,46 @@ function EffectForm({ cfg, graph, onChange }: { cfg: EffectConfig; graph: Graph;
             {cfg.theme && !THEMES[cfg.theme] && <option value={cfg.theme}>{cfg.theme}</option>}
           </select>
         </Field>
+      )}
+    </>
+  );
+}
+
+/**
+ * How the email a step sends will reach a team: in the organisation's
+ * look, with a team's and an event's names filled in as samples. Each
+ * event can send in a theme of its own; this shows the organisation's.
+ */
+function EmailStepPreview({ subject, body }: { subject: string; body: string }) {
+  const t = useT();
+  const session = useSession();
+  const [open, setOpen] = useState(false);
+  const [preview, setPreview] = useState<emails.Preview | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    const ac = new AbortController();
+    emails
+      .previewDraft({ kind: "game_email", subject: subject || t.t("Your subject"), body: body || t.t("Your message to {{team}}."), step: t.t("this step") }, ac.signal)
+      .then(setPreview)
+      .catch(() => {});
+    return () => ac.abort();
+  }, [open, subject, body, t]);
+  const user = session.state.status === "authenticated" ? session.state.user : null;
+  const from = user?.memberships.find((m) => m.org_id === user.org_id)?.org_name ?? "Zonventure";
+  return (
+    <>
+      <Button variant="ghost" size="sm" onClick={() => setOpen(true)}>
+        <Eye size={ICON.sm} />
+        {t.t("Preview the email")}
+      </Button>
+      {open && (
+        <Dialog wide title={t.t("Preview the email")} onClose={() => setOpen(false)} footer={<Button onClick={() => setOpen(false)}>{t.t("Close")}</Button>}>
+          <EmailPreview
+            preview={preview}
+            from={from}
+            onSendTest={() => emails.sendMeTest({ kind: "game_email", subject: subject || t.t("Your subject"), body: body || t.t("Your message to {{team}}."), step: t.t("this step") })}
+          />
+        </Dialog>
       )}
     </>
   );

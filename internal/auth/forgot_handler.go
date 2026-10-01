@@ -3,6 +3,7 @@ package auth
 import (
 	"database/sql"
 	"errors"
+	"github.com/klahr/zonventure/internal/emailtpl"
 	"net/http"
 	"net/mail"
 	"net/url"
@@ -10,7 +11,6 @@ import (
 
 	"github.com/klahr/zonventure/internal/httpx"
 	"github.com/klahr/zonventure/internal/logx"
-	mailerpkg "github.com/klahr/zonventure/internal/mailer"
 )
 
 type forgotPasswordRequest struct {
@@ -165,17 +165,8 @@ func (h *Handlers) sendResetEmail(r *http.Request, to, token string) error {
 		return errors.New("no mailer configured")
 	}
 	link := buildResetLink(h.PublicURL, r, token)
-	subject := "Reset your Zonventure password"
-	text := "Someone (hopefully you) asked to reset the password for this Zonventure account.\r\n\r\n" +
-		"Open this link to choose a new password:\r\n" +
-		link + "\r\n\r\n" +
-		"The link expires in 1 hour. If you didn't request this, you can " +
-		"ignore the message — your existing password remains valid.\r\n"
-	return h.Mailer.Send(r.Context(), mailerpkg.Message{
-		To:      []string{to},
-		Subject: subject,
-		Text:    text,
-	})
+	subject, c := emailtpl.PasswordReset(emailtpl.LangFromRequest(r), link)
+	return h.Mailer.Send(r.Context(), emailtpl.Message([]string{to}, subject, emailtpl.Classic, emailtpl.Zonventure(), c))
 }
 
 // buildResetLink returns the password-reset URL the email body
