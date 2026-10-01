@@ -57,6 +57,8 @@ interface Props {
   onPreview: () => void;
   /** Viewing an old version: everything shows, nothing edits. */
   readOnly?: boolean;
+  /** Under the settings, never read-only: the step's work and discussion. */
+  after?: ReactNode;
 }
 
 /**
@@ -71,7 +73,7 @@ interface Props {
  * in the card; everything else shows a read-only digest with Edit, which
  * opens the part alone on a page of its own.
  */
-export function Inspector({ node, graph, issues, onChange, onGraphChange, onDelete, onClose, onPreview, readOnly }: Props) {
+export function Inspector({ node, graph, issues, onChange, onGraphChange, onDelete, onClose, onPreview, readOnly, after }: Props) {
   const t = useT();
   const kind = STEP[node.type];
   const Icon = kind.icon;
@@ -173,6 +175,7 @@ export function Inspector({ node, graph, issues, onChange, onGraphChange, onDele
         </div>
       )}
     </div>
+    {!page && after}
     </div>
     </>
   );

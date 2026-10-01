@@ -263,6 +263,19 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 			r.Patch("/adventures/{slug}/graph/versions/{version}", adminH.LabelAdventureGraphVersion)
 			r.Post("/adventures/{slug}/graph/validate", adminH.ValidateAdventureGraph)
 			r.Post("/adventures/{slug}/graph/convert", adminH.ConvertAdventureGraph)
+
+			// Working on it together (admin/collab.go): conversations on
+			// steps, where each step is in the work, what each author saw.
+			r.Get("/adventures/{slug}/collab", adminH.GetCollab)
+			r.Post("/adventures/{slug}/threads", adminH.CreateThread)
+			r.Post("/adventures/{slug}/threads/{threadID}/comments", adminH.ReplyToThread)
+			r.Patch("/adventures/{slug}/threads/{threadID}", adminH.UpdateThread)
+			r.Patch("/adventures/{slug}/comments/{commentID}", adminH.EditComment)
+			r.Delete("/adventures/{slug}/comments/{commentID}", adminH.DeleteComment)
+			r.Put("/adventures/{slug}/steps/{node}/status", adminH.SetStepStatus)
+			r.Post("/adventures/{slug}/reactions", adminH.ToggleReaction)
+			r.Get("/adventures/{slug}/seen", adminH.GetSeen)
+			r.Post("/adventures/{slug}/seen", adminH.MarkSeen)
 			// Play the unsaved draft with the live rules: the designer's
 			// preview and simulator. Stateless — the client carries the team.
 			r.Post("/adventures/{slug}/simulate", adminH.SimulateAdventureGraph)

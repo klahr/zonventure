@@ -89,6 +89,8 @@ export interface RequestOptions {
   headers?: Record<string, string>;
   /** A multipart body. The browser sets its Content-Type. */
   form?: FormData;
+  /** Let the request outlive the page, as when it is being left. */
+  keepalive?: boolean;
 }
 
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
@@ -130,6 +132,7 @@ export async function request<T>(
           ? { body: JSON.stringify(opts.body) }
           : {}),
       ...(opts.signal ? { signal: opts.signal } : {}),
+      ...(opts.keepalive ? { keepalive: true } : {}),
     });
   } catch (e) {
     // Re-throw aborts untouched: an abort is the caller cancelling,

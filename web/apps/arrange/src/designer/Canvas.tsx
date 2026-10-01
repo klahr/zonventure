@@ -50,6 +50,7 @@ import { CanvasContextMenu, type ContextMenuItem } from "./dz/CanvasContextMenu.
 import { ICON } from "./dz/ui.tsx";
 import { NodeCard, TYPE_LABEL, type CardNode, type Mark } from "./NodeCard.tsx";
 import { LiveLayer, type CanvasLive } from "./Live.tsx";
+import type { CardTalk } from "./Collab.tsx";
 import { FrameCard, FRAME_COLOR_DEFAULT, type FrameNode } from "./FrameCard.tsx";
 import { QuickPalette, type PaletteChoice } from "./QuickPalette.tsx";
 
@@ -93,6 +94,8 @@ interface Props {
   fx?: LiveFx;
   /** Others' cursors and views, and this page's for them. */
   live?: CanvasLive;
+  /** The work on each step: status, owner, conversations, unseen. */
+  talk?: ReadonlyMap<string, CardTalk>;
 }
 
 /** Someone else's arrivals, removals and new wires, animated for a moment. */
@@ -163,7 +166,7 @@ const START_ZOOM = 0.75;
  * The pick is created at that spot and wired in. Releasing on a handle
  * that refuses the wire shows why instead.
  */
-export function Canvas({ graph, issues, selected, onChange, onSelect, paletteRequest, focusRequest, revealRequest = 0, playing = null, changed, marks, fx, live }: Props) {
+export function Canvas({ graph, issues, selected, onChange, onSelect, paletteRequest, focusRequest, revealRequest = 0, playing = null, changed, marks, fx, live, talk }: Props) {
   const rf = useReactFlow();
   const t = useT();
   const inspectorCovers = useMedia(SHEET);
@@ -238,6 +241,7 @@ export function Canvas({ graph, issues, selected, onChange, onSelect, paletteReq
           existing.data.playing === (n.slug === playing) &&
           existing.data.changed === changed?.get(n.slug) &&
           existing.data.marks === marks?.get(n.slug) &&
+          existing.data.talk === talk?.get(n.slug) &&
           !!existing.data.arrived === !!fx?.arrived.has(n.slug) &&
           existing.data.sourceTitle === sourceTitle(n) &&
           existing.data.zone === startZone(graph, n) &&
@@ -253,6 +257,7 @@ export function Canvas({ graph, issues, selected, onChange, onSelect, paletteReq
             playing: n.slug === playing,
             ...(changed?.has(n.slug) ? { changed: changed.get(n.slug)! } : {}),
             ...(marks?.has(n.slug) ? { marks: marks.get(n.slug)! } : {}),
+            ...(talk?.has(n.slug) ? { talk: talk.get(n.slug)! } : {}),
             ...(fx?.arrived.has(n.slug) ? { arrived: true } : {}),
             ...(sourceTitle(n) ? { sourceTitle: sourceTitle(n)! } : {}), ...(startZone(graph, n) ? { zone: startZone(graph, n)! } : {}) },
           selected: n.slug === selected,
@@ -264,7 +269,7 @@ export function Canvas({ graph, issues, selected, onChange, onSelect, paletteReq
         }),
       }).items,
     );
-  }, [graph, issuesBySlug, selected, playing, changed, marks, fx, t]);
+  }, [graph, issuesBySlug, selected, playing, changed, marks, fx, talk, t]);
 
   // Steps someone else removed linger a moment, fading, where they were.
   const ghosts = useMemo<CardNode[]>(

@@ -128,6 +128,7 @@ func (s *Server) registerTools() {
 	s.registerPurchaseTools()
 	s.registerGraphTools()
 	s.registerGraphEditTools()
+	s.registerCollabTools()
 	s.registerSimulateTools()
 	s.registerMediaTools()
 	s.registerGuideTool()

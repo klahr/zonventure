@@ -20,7 +20,29 @@ import { AccountBanners } from "./pages/settings/Banners.tsx";
 // lazy() takes any component; the page keeps its own props.
 type AnyComponent = ComponentType<any>;
 function page<M, K extends keyof M>(load: () => Promise<M>, name: K) {
-  return lazy(async () => ({ default: (await load())[name] as Extract<M[K], AnyComponent> }));
+  return lazy(async () => {
+    try {
+      return { default: (await load())[name] as Extract<M[K], AnyComponent> };
+    } catch (e) {
+      // A tab opened before a deploy asks for chunks that are gone:
+      // load the new build instead — once, so a real outage still shows.
+      if (reloadOnce()) return new Promise<never>(() => {});
+      throw e;
+    }
+  });
+}
+
+const RELOADED_KEY = "zonventure.reloaded-for-build";
+function reloadOnce(): boolean {
+  try {
+    const last = Number(sessionStorage.getItem(RELOADED_KEY) ?? 0);
+    if (Date.now() - last < 60_000) return false;
+    sessionStorage.setItem(RELOADED_KEY, String(Date.now()));
+  } catch {
+    return false;
+  }
+  location.reload();
+  return true;
 }
 const Designer = page(() => import("./designer/Designer.tsx"), "Designer");
 const EventsPage = page(() => import("./pages/events/index.tsx"), "EventsPage");

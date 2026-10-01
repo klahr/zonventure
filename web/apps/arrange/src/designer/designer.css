@@ -484,10 +484,11 @@ textarea.field__input { resize: vertical; font-family: var(--font-body); }
 .step__text { display: flex; flex-direction: column; min-width: 0; }
 .step__title { font-weight: 700; }
 .step__sub { color: var(--muted); font-size: var(--text-xs); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.step__actions { display: flex; gap: var(--sp-1); }
 /* Reordering: a grip to drag by, and a line where the step would land. */
-.step__grip { flex: none; align-self: stretch; display: grid; place-items: center; width: 1.5rem; margin-right: calc(-1 * var(--sp-2)); padding: 0; border: 0; border-radius: var(--radius) 0 0 var(--radius); background: none; color: var(--muted); cursor: grab; touch-action: none; }
-.step__grip:hover { color: var(--ink); }
+.step__grip { flex: none; align-self: stretch; display: grid; place-items: center; width: 1.75rem; margin-right: calc(-1 * var(--sp-2)); padding: 0; border: 0; border-left: 1px solid var(--border-soft); border-radius: 0 var(--radius) var(--radius) 0; background: none; color: var(--muted); cursor: grab; touch-action: none; }
+.step__grip:hover, .step__grip:focus-visible { color: var(--ink); background: var(--surface-2); }
+.step__issues { display: inline-flex; flex: none; gap: 4px; }
+.step > .card__status { flex: none; }
 .outline.is-dragging, .outline.is-dragging .step__grip { cursor: grabbing; user-select: none; }
 /* Dragging a step: it rides the pointer, lifted, leaning to the gap's
    depth, while the rows it passes slide aside; see ListView. */

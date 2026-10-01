@@ -104,6 +104,13 @@ one step at a time, while the author walks the area:
 | `update_adventure_meta`     | write | `brief`: theme, audience, length… what every step is designed against. |
 | `edit_adventure_graph`      | write | Batch of `put_node` / `delete_node` / `put_zone` / `delete_zone` / `connect` / `disconnect`, all-or-nothing. `put_zone` with `here: true` centres the zone on the author. An optional `note` is shown live to people watching in the designer. |
 | `undo_adventure_graph_edit` | write | Restore the draft from before the last `edit_adventure_graph`.         |
+| `list_adventure_threads`    | read  | The authors' threads on steps, step statuses and owners. `tasks_only` lists what they asked the assistant (`@assistant`). |
+| `comment_on_adventure`      | write | Start a thread on a step, a block or the whole adventure, or reply on one. `@name` mentions an author. |
+| `suggest_step_change`       | write | Propose a change to a step as a suggestion thread; the authors accept or reject it. |
+| `resolve_adventure_thread`  | write | Resolve a thread once its ask is done, or open it again.              |
+| `set_step_status`           | write | A step's status (idea, draft, review, ready) and owner.               |
+
+Two prompts build on them: `review_adventure` leaves a playtester's notes as threads, and `pick_up_tasks` works through what the authors asked the assistant for.
 | `get_creator_position`      | read  | The author's last reported position and its age.                      |
 | `get_media_upload_url`      | write | A 15-minute link for one adventure: `curl -F file=@photo.jpg <url>` uploads without the bytes passing through the model. |
 | `upload_adventure_media`    | write | Base64 image/audio/video — small files only, for clients without a shell. |

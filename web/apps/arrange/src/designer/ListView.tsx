@@ -1,5 +1,7 @@
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Mark } from "./NodeCard.tsx";
+import { statusLabel, type CardTalk } from "./Collab.tsx";
+import { StatusIcon } from "./NodeCard.tsx";
 import {
   blocksOf,
   canMove,
@@ -19,7 +21,7 @@ import {
   type Issue,
   type Node,
 } from "@zonventure/graph";
-import { CornerDownRight, GripVertical } from "lucide-react";
+import { CornerDownRight, GripVertical, MessageSquare } from "lucide-react";
 import { useT } from "../i18n.tsx";
 import { Thumb } from "./NodeCard.tsx";
 import { STEP } from "./dz/types.tsx";
@@ -34,6 +36,8 @@ interface Props {
   changed?: ReadonlyMap<string, string>;
   /** Who else has each step open, or is working on it. */
   marks?: ReadonlyMap<string, Mark[]>;
+  /** The work on each step: status, owner, conversations, unseen. */
+  talk?: ReadonlyMap<string, CardTalk>;
   onChange: (g: Graph) => void;
   onSelect: (slug: string | null) => void;
   /** Show a step on the canvas, for what the list cannot do: wiring. */
@@ -57,7 +61,7 @@ interface Props {
  * removing a step still needs a straight line; drawing a new branch is
  * the canvas's job.
  */
-export function ListView({ graph, issues, selected, playing = null, changed, marks, onChange, onSelect, onOpenCanvas }: Props) {
+export function ListView({ graph, issues, selected, playing = null, changed, marks, talk, onChange, onSelect, onOpenCanvas }: Props) {
   const t = useT();
   const rows = useMemo(() => outline(graph), [graph]);
   const line = useMemo(() => linearSteps(graph), [graph]);
@@ -106,9 +110,12 @@ export function ListView({ graph, issues, selected, playing = null, changed, mar
       const top = el.getBoundingClientRect().top;
       landing.set(gap, (gap.row > from ? top - shift : top) + start.height / 2);
     }
+    // Its own place counts too: let go there, nothing moves — the
+    // other gaps are only where it would go somewhere new.
+    const home = start.top + start.height / 2;
     const nearest = (centre: number): Gap | null => {
       let best: Gap | null = null;
-      let dist = Infinity;
+      let dist = Math.abs(centre - home);
       for (const [gap, at] of landing) {
         const d = Math.abs(centre - at);
         if (d < dist) {
@@ -237,6 +244,8 @@ export function ListView({ graph, issues, selected, playing = null, changed, mar
           if (!n) return null;
           const kind = STEP[n.type];
           const errs = issues.filter((x) => x.node === n.slug && x.severity === "error").length;
+          const warns = issues.filter((x) => x.node === n.slug && x.severity === "warning").length;
+          const status = talk?.get(n.slug)?.status;
           const at = line ? line.findIndex((s) => s.slug === n.slug) : -1;
           const mv = moves.get(n.slug);
           return (
@@ -247,6 +256,7 @@ export function ListView({ graph, issues, selected, playing = null, changed, mar
                 (n.slug === selected ? " is-selected" : "") +
                 (n.slug === playing ? " is-playing" : "") +
                 (changed?.has(n.slug) ? " is-changed" : "") +
+                (talk?.get(n.slug)?.unseen ? " is-unseen" : "") +
                 (errs ? " has-error" : "") +
                 (drag?.slug === n.slug ? " is-lifted" : "") +
                 dropAt(i)
@@ -255,18 +265,6 @@ export function ListView({ graph, issues, selected, playing = null, changed, mar
               data-slug={n.slug}
               style={{ ...indent, ...(changed?.has(n.slug) ? { "--changed": changed.get(n.slug) } : {}) } as React.CSSProperties}
             >
-              {mv && (
-                <button
-                  type="button"
-                  className="step__grip"
-                  onPointerDown={(e) => startDrag(e, n.slug)}
-                  aria-label={t.t("Drag to move")}
-                  title={t.t("Drag to move")}
-                  tabIndex={-1}
-                >
-                  <GripVertical size={16} aria-hidden="true" />
-                </button>
-              )}
               <button type="button" className="step__main" onClick={() => onSelect(n.slug)}>
                 <span className={`step__icon dz-step-icon dz-step-icon--${n.type}`} aria-hidden="true">
                   <kind.icon size={16} />
@@ -275,6 +273,12 @@ export function ListView({ graph, issues, selected, playing = null, changed, mar
                   {r.via && <span className="outline__via">{r.via}</span>}
                   <span className="step__title">
                     {title(n)}
+                    {!!talk?.get(n.slug)?.open && (
+                      <span className={"card__talk step__talk" + (talk.get(n.slug)!.mentionsMe ? " is-mine" : "")}>
+                        <MessageSquare size={10} aria-hidden />
+                        {talk.get(n.slug)!.open}
+                      </span>
+                    )}
                     {marks?.get(n.slug)?.map((m) => (
                       <span key={m.id} className="card__peer step__peer" style={{ "--peer": m.color } as React.CSSProperties}>
                         {m.name}
@@ -288,30 +292,47 @@ export function ListView({ graph, issues, selected, playing = null, changed, mar
                   })()}
                 </span>
                 <Thumb node={n} className="step__thumb" />
-                {errs > 0 && <span className="card__badge card__badge--error">{errs}</span>}
               </button>
-              {mv && (
-                <span className="step__actions">
-                  <button type="button" className="icon-btn" disabled={!mv.up} onClick={() => mv.up && onChange(mv.up)} aria-label={t.t("Move up")}>
-                    ↑
-                  </button>
-                  <button type="button" className="icon-btn" disabled={!mv.down} onClick={() => mv.down && onChange(mv.down)} aria-label={t.t("Move down")}>
-                    ↓
-                  </button>
-                  {line && at >= 0 && (
-                  <button
-                    type="button"
-                    className="icon-btn"
-                    onClick={() => {
-                      onChange(removeStep(graph, n.slug));
-                      if (selected === n.slug) onSelect(null);
-                    }}
-                    aria-label={t.t("Remove")}
-                  >
-                    ×
-                  </button>
-                  )}
+              {mv && line && at >= 0 && (
+                <button
+                  type="button"
+                  className="icon-btn"
+                  onClick={() => {
+                    onChange(removeStep(graph, n.slug));
+                    if (selected === n.slug) onSelect(null);
+                  }}
+                  aria-label={t.t("Remove")}
+                >
+                  ×
+                </button>
+              )}
+              {/* On the right, as on a card's corner: its issues, its status,
+                  and the handle to drag it by. */}
+              {(errs > 0 || warns > 0) && (
+                <span className="step__issues">
+                  {errs > 0 && <span className="card__badge card__badge--error">{errs}</span>}
+                  {errs === 0 && warns > 0 && <span className="card__badge card__badge--warning">{warns}</span>}
                 </span>
+              )}
+              {status && <StatusIcon status={status} label={t.t(statusLabel(status))} />}
+              {mv && (
+                <button
+                  type="button"
+                  className="step__grip"
+                  data-own-arrows
+                  onPointerDown={(e) => startDrag(e, n.slug)}
+                  // The keyboard's way to move it: the arrows, on the handle.
+                  onKeyDown={(e) => {
+                    const to = e.key === "ArrowUp" ? mv.up : e.key === "ArrowDown" ? mv.down : null;
+                    if (!to) return;
+                    e.preventDefault();
+                    onChange(to);
+                  }}
+                  aria-label={t.t("Move: drag, or use the up and down arrow keys")}
+                  title={t.t("Drag to move")}
+                >
+                  <GripVertical size={16} aria-hidden="true" />
+                </button>
               )}
             </li>
           );

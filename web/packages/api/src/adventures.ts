@@ -198,3 +198,105 @@ export function uploadMedia(slug: string, file: File) {
   form.append("file", file);
   return request<MediaUpload>(`${adventure(slug)}/media`, { method: "POST", form });
 }
+
+// --- working together (internal/admin/collab.go) ---------------------------
+
+export interface UserRef {
+  id: number;
+  name: string;
+}
+
+export interface Comment {
+  id: number;
+  author?: UserRef;
+  /** Written by an assistant, on its author's behalf. */
+  assistant: boolean;
+  body: string;
+  created_at: string;
+  edited_at?: string;
+  /** Who it @mentions. */
+  mentions: number[];
+}
+
+/** A conversation on a step (node), a block of one, or with node "" the adventure. */
+export interface Thread {
+  id: number;
+  node: string;
+  block_id?: string;
+  created_by?: UserRef;
+  created_at: string;
+  resolved_at?: string;
+  resolved_by?: UserRef;
+  /** It asks the assistant (@assistant): a task until resolved. */
+  for_assistant: boolean;
+  comments: Comment[];
+  /** A proposed change to the step: as the suggester found it, and as they would have it. */
+  suggestion?: { base: unknown; proposed: unknown };
+  suggestion_state?: "open" | "accepted" | "rejected";
+}
+
+/** The fixed set of reactions. */
+export const REACTIONS = ["👍", "❤️", "🔥", "😕", "🎉", "👀"] as const;
+
+/** Everyone's emoji on a comment ("comment:<id>"). */
+export interface Reaction {
+  target: string;
+  emoji: string;
+  users: number[];
+}
+
+export type StepStatus = "" | "idea" | "draft" | "review" | "ready";
+
+export interface StepState {
+  node: string;
+  status: StepStatus;
+  owner?: UserRef;
+  updated_at: string;
+}
+
+export interface Collab {
+  threads: Thread[];
+  steps: StepState[];
+  /** Who can be mentioned and given a step: the adventure's authors. */
+  people: UserRef[];
+  reactions: Reaction[];
+}
+
+export const getCollab = (slug: string, signal?: AbortSignal) => get<Collab>(`${adventure(slug)}/collab`, signal ? { signal } : {});
+
+export const startThread = (slug: string, node: string, body: string, blockId = "") =>
+  post<{ thread_id: number; comment_id: number }>(`${adventure(slug)}/threads`, { node, block_id: blockId, body });
+
+/** Propose a change to a step, as a thread its authors accept or reject. */
+export const suggestChange = (slug: string, node: string, base: unknown, proposed: unknown, note: string) =>
+  post<{ thread_id: number; comment_id: number }>(`${adventure(slug)}/threads`, { node, body: note, suggestion: { base, proposed } });
+
+/** Record a suggestion accepted (after merging it into the draft) or rejected; it resolves the thread. */
+export const decideSuggestion = (slug: string, threadId: number, state: "accepted" | "rejected") =>
+  patch<void>(`${adventure(slug)}/threads/${threadId}`, { suggestion_state: state });
+
+/** Add the caller's emoji to a comment, or take it back. */
+export const toggleReaction = (slug: string, target: string, emoji: string) => post<{ on: boolean }>(`${adventure(slug)}/reactions`, { target, emoji });
+
+export const replyToThread = (slug: string, threadId: number, body: string) =>
+  post<{ thread_id: number; comment_id: number }>(`${adventure(slug)}/threads/${threadId}/comments`, { body });
+
+export const resolveThread = (slug: string, threadId: number, resolved: boolean) =>
+  patch<void>(`${adventure(slug)}/threads/${threadId}`, { resolved });
+
+export const editComment = (slug: string, commentId: number, body: string) =>
+  patch<void>(`${adventure(slug)}/comments/${commentId}`, { body });
+
+export const deleteComment = (slug: string, commentId: number) =>
+  request<void>(`${adventure(slug)}/comments/${commentId}`, { method: "DELETE" });
+
+/** Fields left out stay as they are; owner 0 gives the step to nobody. */
+export const setStepStatus = (slug: string, node: string, change: { status?: StepStatus; owner_id?: number }) =>
+  put<void>(`${adventure(slug)}/steps/${encodeURIComponent(node)}/status`, change);
+
+/** The draft as the caller last saw it; null before their first visit. */
+export const getSeen = <G>(slug: string, signal?: AbortSignal) =>
+  get<{ seen_at: string; graph: G } | undefined>(`${adventure(slug)}/seen`, signal ? { signal } : {}).then((r) => r ?? null);
+
+/** The caller has now seen the draft as it is stored. */
+export const markSeen = (slug: string, keepalive = false) => request<void>(`${adventure(slug)}/seen`, { method: "POST", keepalive });

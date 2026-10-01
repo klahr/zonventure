@@ -10,6 +10,7 @@ import {
   LayoutGrid,
   ListOrdered,
   Loader2,
+  MessageSquare,
   MoreVertical,
   Network,
   Play,
@@ -52,6 +53,7 @@ import {
   type Envelope,
   type Graph,
   type GraphDiff,
+  type Node as StepNode,
   type HistoryState,
   type Issue,
   type Report,
@@ -63,6 +65,8 @@ import { PresenceBar, holderOf, peerColor, usePresence, type Peer } from "../ui/
 import { Canvas, cardSizes, type LiveFx } from "./Canvas.tsx";
 import type { CanvasLive } from "./Live.tsx";
 import type { Mark } from "./NodeCard.tsx";
+import { CatchUpBanner, StepTalk, WorkPanel, cardTalk, catchUpOf, useCollab, type CatchUp } from "./Collab.tsx";
+import { useSession } from "../session.tsx";
 import { Inspector } from "./Inspector.tsx";
 import { LanguageSwitch, LanguagesSettings, TranslateStep, translationLanguages } from "./Translate.tsx";
 import { ListView } from "./ListView.tsx";
@@ -139,7 +143,7 @@ type Published = { version: number; label?: string } | null;
 type Preview = { version: number; graph: Graph };
 
 /** What the right-hand slot shows, dazyflow-style: one slot, many uses. */
-type Slot = "inspect" | "history";
+type Slot = "inspect" | "history" | "work";
 
 type PublishAsk = { kind: "first" | "update" } | { kind: "rollback"; version: number };
 
@@ -461,10 +465,47 @@ export function Designer({ slug }: { slug: string }) {
   }, [unsaved, readOnly, conflict, loaded.state, saveNow]);
 
   const presence = usePresence();
+  const session = useSession();
+  const me = session.state.status === "authenticated" ? session.state.user.id : 0;
+  const { collab, reload: reloadCollab } = useCollab(slug, loaded.state === "ready");
   const busy = useRef({ saving, readOnly });
   busy.current = { saving, readOnly };
   const live = useAdventureWatch(loaded.state === "ready" ? slug : null, (m) => {
-    if (presence.take(m) || m.kind !== "graph_saved") return;
+    if (presence.take(m)) return;
+    if (m.kind === "collab_changed") {
+      reloadCollab();
+      const d = m.data as { kind: string; node: string; by: string; user_id: number; assistant: boolean };
+      if (d.user_id === me && !d.assistant) return;
+      const name = d.assistant ? t.t("{{name}}'s assistant", { name: d.by.replace(/@.*/, "") }) : d.by.replace(/@.*/, "");
+      const step = d.node ? (draftRef.current && nodeBySlug(draftRef.current, d.node)?.title) || d.node : "";
+      const text =
+        d.kind === "comment"
+          ? step
+            ? t.t("{{name}} commented on “{{step}}”", { name, step })
+            : t.t("{{name}} commented on the adventure", { name })
+          : d.kind === "resolved"
+            ? t.t("{{name}} resolved a conversation", { name })
+            : d.kind === "status" && step
+              ? t.t("{{name}} updated the status of “{{step}}”", { name, step })
+              : d.kind === "suggestion" && step
+                ? t.t("{{name}} suggested a change to “{{step}}”", { name, step })
+                : d.kind === "accepted" && step
+                  ? t.t("{{name}} accepted a suggestion on “{{step}}”", { name, step })
+                  : d.kind === "rejected" && step
+                    ? t.t("{{name}} declined a suggestion on “{{step}}”", { name, step })
+                    : "";
+      if (text) {
+        const color = peerColor({ user_id: d.user_id, kind: d.assistant ? "assistant" : "human" });
+        // The same news again within moments — two reactions — says nothing new.
+        setTicker((ts) =>
+          ts[0]?.text === text && Date.now() - ts[0].at < 10_000
+            ? ts
+            : [{ id: Date.now() + Math.random(), at: Date.now(), color, assistant: d.assistant, text, note: "", slug: d.node || null }, ...ts].slice(0, TICKER_MAX),
+        );
+      }
+      return;
+    }
+    if (m.kind !== "graph_saved") return;
     const d = m.data as Omit<Saver, "peer">;
     if (d.saved_at === since.current) return; // this page's own save
     const who: Saver = { ...d, peer: d.assistant ? `a${d.user_id}` : (presence.others.find((p) => p.user_id === d.user_id && p.kind === "human")?.id ?? "") };
@@ -600,6 +641,54 @@ export function Designer({ slug }: { slug: string }) {
     if (fresh && selected !== fresh) setFresh(null);
   }, [selected, fresh]);
   const shownIssues = fresh ? issues.filter((i) => i.node !== fresh) : issues;
+
+  // --- working together -------------------------------------------------------------
+
+  // Conversations, statuses and owners (Collab.tsx), and what changed
+  // since this author last looked.
+  const [unseen, setUnseen] = useState<Set<string>>(() => new Set());
+  const [catchUp, setCatchUp] = useState<CatchUp | null>(null);
+  const caughtUp = useRef(false);
+  useEffect(() => {
+    if (caughtUp.current || loaded.state !== "ready" || !collab || !draft) return;
+    caughtUp.current = true;
+    const ac = new AbortController();
+    adventures
+      .getSeen<Graph>(slug, ac.signal)
+      .then((seen) => {
+        const c = catchUpOf(seen, draftRef.current ?? draft, collab, me, diffGraphs);
+        if (c) {
+          setCatchUp(c);
+          setUnseen(new Set([...c.diff.added, ...c.diff.changed].map((x) => x.slug)));
+        }
+        return adventures.markSeen(slug);
+      })
+      .catch(() => {
+        /* without it there is just no summary */
+      });
+  }, [loaded.state, collab, draft, slug, me]);
+  // What the author saw while here counts as seen when they leave.
+  useEffect(() => {
+    if (loaded.state !== "ready") return;
+    const leave = () => void adventures.markSeen(slug, true).catch(() => {});
+    window.addEventListener("pagehide", leave);
+    return () => {
+      window.removeEventListener("pagehide", leave);
+      leave();
+    };
+  }, [loaded.state, slug]);
+  useEffect(() => {
+    if (selected && unseen.has(selected)) setUnseen((u) => {
+      const next = new Set(u);
+      next.delete(selected);
+      return next;
+    });
+  }, [selected, unseen]);
+  const talk = useMemo(() => cardTalk(collab, unseen, me), [collab, unseen, me]);
+  const openThreads = collab?.threads.filter((th) => !th.resolved_at).length ?? 0;
+  // Publishing while steps are still being worked on deserves a word —
+  // once the authors use statuses at all.
+  const notReady = collab?.steps.length ? (draft?.nodes ?? []).filter((n) => n.type !== "start" && collab.steps.find((x) => x.node === n.slug)?.status !== "ready").length : 0;
 
   const errors = issues.filter((i) => i.severity === "error");
   const warnings = issues.filter((i) => i.severity === "warning");
@@ -747,7 +836,8 @@ export function Designer({ slug }: { slug: string }) {
     const onKey = (e: KeyboardEvent) => {
       const dir = dirs[e.key];
       if (!dir || !graph || e.ctrlKey || e.metaKey || e.altKey) return;
-      if ((e.target as HTMLElement)?.closest?.("input, textarea, select, [contenteditable]")) return;
+      // A control that takes the arrows itself — the outline's move handle — keeps them.
+      if ((e.target as HTMLElement)?.closest?.("input, textarea, select, [contenteditable], [data-own-arrows]")) return;
       if (document.querySelector('[aria-modal="true"]')) return;
       e.preventDefault();
       e.stopPropagation();
@@ -773,6 +863,44 @@ export function Designer({ slug }: { slug: string }) {
   // shows it read-only until the author chooses to edit anyway.
   const holder =
     node && !readOnly && !takenOver.has(node.slug) ? holderOf(node.slug, presence.me, presence.others) : null;
+  // Suggest mode: the inspector edits a copy of the step, sent as a
+  // suggestion for whoever has it to accept — instead of editing theirs.
+  const [suggesting, setSuggesting] = useState<{ slug: string; base: StepNode; draft: StepNode; note: string } | null>(null);
+  const [sendingSuggestion, setSendingSuggestion] = useState(false);
+  const proposing = suggesting && node && suggesting.slug === node.slug ? suggesting : null;
+  const proposed = !!proposing && JSON.stringify(proposing.draft) !== JSON.stringify(proposing.base);
+  useEffect(() => {
+    if (suggesting && suggesting.slug !== selected) setSuggesting(null);
+  }, [selected, suggesting]);
+  const startSuggesting = (n: StepNode) => setSuggesting({ slug: n.slug, base: n, draft: structuredClone(n), note: "" });
+  const sendSuggestion = async () => {
+    if (!proposing) return;
+    setSendingSuggestion(true);
+    try {
+      await adventures.suggestChange(slug, proposing.slug, proposing.base, proposing.draft, proposing.note.trim());
+      setSuggesting(null);
+      reloadCollab();
+    } catch (e) {
+      setSaveError(errorText(e));
+    } finally {
+      setSendingSuggestion(false);
+    }
+  };
+  // Accepting merges the proposal into the step as it is now, field by
+  // field — the proposal wins where both changed — as an ordinary edit.
+  const acceptSuggestion = useCallback(
+    async (th: adventures.Thread) => {
+      const sg = th.suggestion as { base: StepNode; proposed: StepNode };
+      const g = draftRef.current;
+      const current = g && nodeBySlug(g, th.node);
+      if (!g || !current) throw new Error(t.t("The step was removed, so this can only be declined."));
+      const one = (n: StepNode): Graph => ({ nodes: [n], edges: [] });
+      const merged = mergeGraphs(one(sg.base), one(sg.proposed), one(current)).graph.nodes[0];
+      if (merged) change(updateNode(g, th.node, () => merged));
+      await adventures.decideSuggestion(slug, th.id, "accepted");
+    },
+    [change, slug, t],
+  );
   const reveal = (x: string) => {
     choose(x);
     setSlot("inspect");
@@ -921,6 +1049,17 @@ export function Designer({ slug }: { slug: string }) {
                     <span className="toolbar-label">{t.t("Saved")}</span>
                   </span>
                 )}
+                <Button
+                  variant="ghost"
+                  className={slot === "work" ? "is-on" : ""}
+                  onClick={() => setSlot((s) => (s === "work" ? "inspect" : "work"))}
+                  title={t.t("Discussion and the board of steps")}
+                  aria-label={t.t("Work")}
+                >
+                  <MessageSquare size={ICON.sm} />
+                  <span className="toolbar-label">{t.t("Work")}</span>
+                  {openThreads > 0 && <span className="talk__count">{openThreads}</span>}
+                </Button>
                 <Button variant="ghost" onClick={openHistory} title={t.t("Version history")} aria-label={t.t("History")}>
                   <History size={ICON.sm} />
                   <span className="toolbar-label">{t.t("History")}</span>
@@ -1052,6 +1191,16 @@ export function Designer({ slug }: { slug: string }) {
                 </Button>
               </div>
             )}
+            {catchUp && !preview && (
+              <CatchUpBanner
+                catchUp={catchUp}
+                onShowTalk={() => setSlot("work")}
+                onDismiss={() => {
+                  setCatchUp(null);
+                  setUnseen(new Set());
+                }}
+              />
+            )}
             {clash && (
               <div className="editor-conn-banner editor-conn-banner--info" role="status">
                 <span className="editor-conn-banner-text">
@@ -1146,7 +1295,7 @@ export function Designer({ slug }: { slug: string }) {
                 selected={selected}
                 playing={previewing ? playing : null}
                 changed={changed}
-                {...(preview ? {} : { marks })}
+                {...(preview ? {} : { marks, talk })}
                 onChange={change}
                 onSelect={choose}
                 onOpenCanvas={(slug) => {
@@ -1166,7 +1315,7 @@ export function Designer({ slug }: { slug: string }) {
                 selected={selected}
                 playing={previewing ? playing : null}
                 changed={changed}
-                {...(preview ? {} : { marks, live: canvasLive, ...(fx ? { fx } : {}) })}
+                {...(preview ? {} : { marks, live: canvasLive, talk, ...(fx ? { fx } : {}) })}
                 onChange={change}
                 onSelect={(s) => {
                   choose(s);
@@ -1183,7 +1332,20 @@ export function Designer({ slug }: { slug: string }) {
 
         <div className="inspector">
           {inspectorWidth.handle}
-          {slot === "history" ? (
+          {slot === "work" && draft ? (
+            <WorkPanel
+              slug={slug}
+              graph={draft}
+              collab={collab}
+              me={me}
+              onChanged={reloadCollab}
+              onGo={(x) => {
+                if (draft && nodeBySlug(draft, x)) reveal(x);
+              }}
+              onClose={() => setSlot("inspect")}
+              onAccept={acceptSuggestion}
+            />
+          ) : slot === "history" ? (
             <HistoryPanel
               versions={versions}
               published={published}
@@ -1204,22 +1366,69 @@ export function Designer({ slug }: { slug: string }) {
               {changed.has(node.slug) && (
                 <div key={fxSeq} className="inspector__flash" style={{ "--changed": changed.get(node.slug) } as React.CSSProperties} aria-hidden />
               )}
-              {holder && (
-                <div className="inspector__held" role="status" style={{ "--peer": peerColor(holder) } as React.CSSProperties}>
-                  <span>{t.t("{{name}} is editing this step. Your changes would mix with theirs.", { name: holder.name.replace(/@.*/, "") })}</span>
-                  <Button size="sm" onClick={() => setTakenOver((s) => new Set(s).add(node.slug))}>
-                    {t.t("Edit anyway")}
-                  </Button>
+              {proposing ? (
+                <div className="inspector__held suggest-bar" role="status">
+                  <span>
+                    <strong>{t.t("Suggesting a change.")}</strong> {t.t("Your edits here are a proposal: the step itself is not touched until it is accepted.")}
+                  </span>
+                  <input
+                    className="field__input"
+                    value={proposing.note}
+                    placeholder={t.t("Why? (optional)")}
+                    aria-label={t.t("Why?")}
+                    onChange={(e) => setSuggesting((x) => x && { ...x, note: e.target.value })}
+                  />
+                  <span className="suggest-bar__actions">
+                    <Button size="sm" variant="primary" disabled={!proposed || sendingSuggestion} loading={sendingSuggestion} onClick={() => void sendSuggestion()}>
+                      {t.t("Send suggestion")}
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => setSuggesting(null)}>
+                      {t.t("Discard")}
+                    </Button>
+                  </span>
                 </div>
+              ) : (
+                holder && (
+                  <div className="inspector__held" role="status" style={{ "--peer": peerColor(holder) } as React.CSSProperties}>
+                    <span>{t.t("{{name}} is editing this step. Your changes would mix with theirs.", { name: holder.name.replace(/@.*/, "") })}</span>
+                    <Button size="sm" variant="primary" onClick={() => startSuggesting(node)}>
+                      {t.t("Suggest a change")}
+                    </Button>
+                    <Button size="sm" onClick={() => setTakenOver((s) => new Set(s).add(node.slug))}>
+                      {t.t("Edit anyway")}
+                    </Button>
+                  </div>
+                )
               )}
               <Inspector
-                key={node.slug}
-                node={node}
+                key={node.slug + (proposing ? ":suggesting" : "")}
+                node={proposing ? proposing.draft : node}
                 graph={graph}
-                readOnly={readOnly || !!holder}
+                readOnly={readOnly || (!!holder && !proposing)}
+                {...(preview
+                  ? {}
+                  : {
+                      after: (
+                        <StepTalk
+                          slug={slug}
+                          node={node}
+                          graph={graph}
+                          collab={collab}
+                          me={me}
+                          onChanged={reloadCollab}
+                          onSuggest={proposing ? undefined : () => startSuggesting(node)}
+                          onAccept={acceptSuggestion}
+                        />
+                      ),
+                    })}
                 issues={shownIssues.filter((i) => i.node === node.slug)}
-                onChange={(n) => change(updateNode(graph, node.slug, () => n))}
-                onGraphChange={change}
+                onChange={(n) => (proposing ? setSuggesting((x) => x && { ...x, draft: n }) : change(updateNode(graph, node.slug, () => n)))}
+                onGraphChange={(g) => {
+                  if (!proposing) return change(g);
+                  // A proposal is the step alone: what it changes elsewhere is not part of it.
+                  const n = nodeBySlug(g, node.slug);
+                  if (n) setSuggesting((x) => x && { ...x, draft: n });
+                }}
                 onClose={() => choose(null)}
                 onPreview={() => {
                   setSimMode("step");
@@ -1271,7 +1480,9 @@ export function Designer({ slug }: { slug: string }) {
           confirmLabel={publishAsk.kind === "update" ? t.t("Publish changes") : t.t("Publish")}
           {...(errors.length && publishAsk.kind !== "rollback"
             ? { blocked: true, warning: t.plural(errors.length, { one: "{{n}} error must be fixed first — publishing will be refused.", other: "{{n}} errors must be fixed first — publishing will be refused." }) }
-            : {})}
+            : notReady && publishAsk.kind !== "rollback"
+              ? { warning: t.plural(notReady, { one: "{{n}} step is not marked ready yet.", other: "{{n}} steps are not marked ready yet." }) }
+              : {})}
           onPublish={(label) => void doPublish(publishAsk, label)}
           onCancel={() => setPublishAsk(null)}
         />

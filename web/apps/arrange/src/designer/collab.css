@@ -1,0 +1,136 @@
+/* Working together (Collab.tsx): a step's status, owner and conversation
+   in the inspector; every conversation and the board in the Work panel. */
+
+.dz .talk { display: flex; flex-direction: column; gap: var(--dz-space-2); padding: var(--dz-space-3); border-top: 1px solid var(--dz-border); }
+.dz .talk__work { display: grid; grid-template-columns: 1fr 1fr; gap: var(--dz-space-2); }
+.dz .talk__field { display: grid; gap: 4px; min-width: 0; }
+.dz .talk__status--idea { box-shadow: inset 3px 0 0 var(--c-hint, var(--dz-muted)); }
+.dz .talk__status--draft { box-shadow: inset 3px 0 0 var(--dz-warning); }
+.dz .talk__status--review { box-shadow: inset 3px 0 0 var(--dz-info); }
+.dz .talk__status--ready { box-shadow: inset 3px 0 0 var(--dz-success); }
+.dz .talk__title { display: flex; align-items: center; gap: 6px; margin: var(--dz-space-2) 0 0; font-size: var(--dz-text-sm); font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--dz-muted); }
+.dz .talk__count { display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 5px; margin-left: 4px; border-radius: 999px; background: var(--dz-accent); color: #fff; font-size: 11px; font-weight: 700; letter-spacing: 0; }
+
+.dz .talk__thread { display: flex; flex-direction: column; gap: 8px; padding: 10px; border: 1px solid var(--dz-border); border-radius: var(--dz-r-2); background: var(--dz-surface); }
+.dz .talk__thread.is-task { border-color: color-mix(in srgb, var(--dz-accent) 45%, var(--dz-border)); background: color-mix(in srgb, var(--dz-accent) 4%, var(--dz-surface)); }
+.dz .talk__thread.is-resolved { opacity: 0.75; }
+.dz .talk__thread-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: var(--dz-text-sm); }
+.dz .talk__step { padding: 0; border: 0; background: none; color: var(--dz-ink); font: inherit; font-weight: 700; text-align: left; cursor: pointer; min-height: 0; box-shadow: none; }
+.dz .talk__step:hover { color: var(--dz-accent); }
+.dz .talk__step.is-adventure { cursor: default; }
+.dz .talk__about { color: var(--dz-muted); font-style: italic; }
+.dz .talk__task { display: inline-flex; align-items: center; gap: 4px; padding: 1px 7px; border-radius: 999px; background: color-mix(in srgb, var(--dz-accent) 14%, transparent); color: var(--dz-accent); font-size: 11px; font-weight: 700; }
+
+.dz .talk__comment { display: grid; grid-template-columns: 24px 1fr; gap: 8px; }
+.dz .talk__avatar { display: inline-grid; place-items: center; width: 24px; height: 24px; flex: none; border-radius: 50%; background: var(--peer, var(--dz-muted)); color: #fff; font-size: 10px; font-weight: 700; }
+.dz .talk__comment-main { min-width: 0; }
+.dz .talk__meta { display: flex; align-items: baseline; gap: 6px; font-size: var(--dz-text-sm); }
+.dz .talk__when { color: var(--dz-muted); font-size: 12px; }
+.dz .talk__own { margin-left: auto; display: inline-flex; gap: 2px; opacity: 0; transition: opacity var(--dz-dur-2, 160ms); }
+.dz .talk__comment:hover .talk__own, .dz .talk__own:focus-within { opacity: 1; }
+.dz .talk__own button { display: inline-grid; place-items: center; width: 22px; height: 22px; min-height: 0; padding: 0; border: 0; border-radius: 5px; background: none; box-shadow: none; color: var(--dz-muted); cursor: pointer; }
+.dz .talk__own button:hover { background: var(--dz-surface-2); color: var(--dz-ink); }
+.dz .talk__body { margin: 2px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--dz-text-md); line-height: 1.45; }
+.dz .talk__mention { padding: 0 3px; border-radius: 4px; background: color-mix(in srgb, var(--dz-accent) 12%, transparent); color: var(--dz-accent); font-weight: 600; }
+.dz .talk__mention.is-assistant { background: color-mix(in srgb, var(--dz-info) 14%, transparent); color: var(--dz-info); }
+.dz .talk__resolved { display: flex; align-items: center; gap: 6px; margin: 0; color: var(--dz-success); font-size: var(--dz-text-sm); }
+.dz .talk__actions { display: flex; gap: 4px; }
+.dz .talk__toggle { align-self: flex-start; padding: 0; border: 0; background: none; box-shadow: none; min-height: 0; color: var(--dz-accent); font-size: var(--dz-text-sm); cursor: pointer; }
+
+.dz .talk__composer { display: flex; flex-direction: column; gap: 6px; }
+.dz .talk__input { position: relative; }
+.dz .talk__input textarea { width: 100%; resize: vertical; min-height: 3.2em; }
+.dz .talk__composer-foot { display: flex; align-items: center; gap: 6px; }
+.dz .talk__spacer { flex: 1; }
+.dz .talk__about-pick { max-width: 60%; font-size: var(--dz-text-sm); }
+.dz .talk__suggest { position: absolute; left: 8px; top: 100%; z-index: 20; min-width: 200px; margin: 2px 0 0; padding: 4px; list-style: none; border: 1px solid var(--dz-border); border-radius: var(--dz-r-2); background: var(--dz-surface); box-shadow: var(--dz-shadow-pop); }
+.dz .talk__suggest button { display: flex; align-items: center; gap: 8px; width: 100%; padding: 5px 8px; border: 0; border-radius: 6px; background: none; box-shadow: none; min-height: 0; color: var(--dz-ink); text-align: left; cursor: pointer; justify-content: flex-start; }
+.dz .talk__suggest button.is-picked, .dz .talk__suggest button:hover { background: var(--dz-surface-2); }
+
+/* The Work panel. */
+.dz .work { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.dz .work__tabs { display: flex; gap: 2px; }
+.dz .work__tabs button { display: inline-flex; align-items: center; padding: 6px 10px; border: 0; border-radius: 6px; background: none; box-shadow: none; min-height: 0; color: var(--dz-muted); font-weight: 700; cursor: pointer; }
+.dz .work__tabs button.is-on { background: var(--dz-surface-2); color: var(--dz-ink); }
+.dz .work__body { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: var(--dz-space-2); padding: var(--dz-space-3); }
+.dz .work__filters { display: flex; flex-wrap: wrap; gap: 6px; }
+.dz .work__chip { display: inline-flex; align-items: center; padding: 3px 10px; border: 1px solid var(--dz-border); border-radius: 999px; background: var(--dz-surface); box-shadow: none; min-height: 0; color: var(--dz-ink-soft); font-size: var(--dz-text-sm); cursor: pointer; }
+.dz .work__chip.is-on { border-color: var(--dz-accent); color: var(--dz-accent); font-weight: 700; }
+.dz .work__empty { margin: var(--dz-space-3) 0; color: var(--dz-muted); font-size: var(--dz-text-sm); }
+
+.dz .board { display: flex; flex-direction: column; gap: var(--dz-space-3); }
+.dz .board__col { display: flex; flex-direction: column; gap: 6px; min-height: 48px; padding: 8px; border: 1px dashed transparent; border-radius: var(--dz-r-2); background: var(--dz-surface-2); transition: border-color var(--dz-dur-2, 160ms), background var(--dz-dur-2, 160ms); }
+.dz .board__col.is-over { border-color: var(--dz-accent); background: color-mix(in srgb, var(--dz-accent) 8%, var(--dz-surface-2)); }
+.dz .board__head { display: flex; align-items: center; gap: 6px; margin: 0 0 2px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--dz-muted); }
+.dz .board__col--idea .board__head::before, .dz .board__col--draft .board__head::before, .dz .board__col--review .board__head::before, .dz .board__col--ready .board__head::before { content: ""; width: 8px; height: 8px; border-radius: 50%; }
+.dz .board__col--idea .board__head::before { background: var(--dz-muted); }
+.dz .board__col--draft .board__head::before { background: var(--dz-warning); }
+.dz .board__col--review .board__head::before { background: var(--dz-info); }
+.dz .board__col--ready .board__head::before { background: var(--dz-success); }
+.dz .board__n { margin-left: auto; font-weight: 600; }
+.dz .board__card { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 10px; border: 1px solid var(--dz-border); border-radius: 8px; background: var(--dz-surface); box-shadow: var(--shadow-sm, none); min-height: 0; color: var(--dz-ink); text-align: left; cursor: grab; justify-content: flex-start; }
+.dz .board__card:active { cursor: grabbing; }
+.dz .board__title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.dz .board__meta { display: inline-flex; align-items: center; gap: 6px; }
+.dz .board__talk { display: inline-flex; align-items: center; gap: 3px; color: var(--dz-muted); font-size: 12px; }
+
+/* On the canvas: a card's owner, open conversations and suggestions, and a dot
+   for what changed since the author last looked. */
+.card__work { display: flex; align-items: center; justify-content: flex-end; gap: 6px; padding: 4px 10px 6px; font-size: 11px; }
+.card__talk { display: inline-flex; align-items: center; gap: 3px; padding: 1px 6px; border-radius: 999px; background: var(--surface-2); color: var(--ink-soft); font-weight: 700; }
+.card__talk.is-mine { background: var(--accent); color: #fff; }
+.card__owner { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: var(--peer); color: #fff; font-size: 9px; font-weight: 700; }
+.card.is-unseen { position: relative; }
+.card.is-unseen::before { content: ""; position: absolute; top: -4px; right: -4px; width: 10px; height: 10px; border: 2px solid var(--surface); border-radius: 50%; background: var(--accent); z-index: 1; }
+
+.catchup__hint { color: var(--dz-muted); }
+.step.is-unseen { position: relative; }
+.step.is-unseen::before { content: ""; position: absolute; top: 50%; left: -6px; width: 8px; height: 8px; margin-top: -4px; border-radius: 50%; background: var(--accent); }
+.step__talk { margin-left: 6px; vertical-align: 1px; }
+
+/* Reactions: a row of toggles, and a picker for one more. */
+.dz .react { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 4px; }
+.dz .react__pill { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border: 1px solid var(--dz-border); border-radius: 999px; background: var(--dz-surface); box-shadow: none; min-height: 0; color: var(--dz-ink-soft); font-size: 12px; font-weight: 600; cursor: pointer; transition: transform var(--dz-dur-2, 160ms); }
+.dz .react__pill span { font-size: 14px; line-height: 1.3; }
+.dz .react__pill:hover { transform: translateY(-1px); }
+.dz .react__pill.is-mine { border-color: var(--dz-accent); background: color-mix(in srgb, var(--dz-accent) 10%, var(--dz-surface)); color: var(--dz-accent); }
+.dz .react__add-wrap { position: relative; display: inline-flex; }
+.dz .react__add { display: inline-grid; place-items: center; width: 26px; height: 22px; padding: 0; border: 1px dashed var(--dz-border); border-radius: 999px; background: none; box-shadow: none; min-height: 0; color: var(--dz-muted); cursor: pointer; opacity: 0.7; }
+.dz .react__add:hover, .dz .react__add[aria-expanded="true"] { opacity: 1; color: var(--dz-ink); border-style: solid; }
+.dz .react__picker { position: absolute; left: 0; bottom: calc(100% + 4px); z-index: 30; display: flex; gap: 2px; padding: 4px; border: 1px solid var(--dz-border); border-radius: 999px; background: var(--dz-surface); box-shadow: var(--dz-shadow-pop); animation: live-tag-in 160ms var(--dz-ease-out) both; }
+.dz .react__picker button { display: grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 50%; background: none; box-shadow: none; min-height: 0; font-size: 18px; cursor: pointer; transition: transform 120ms; }
+.dz .react__picker button:hover { transform: scale(1.25); background: var(--dz-surface-2); }
+.dz .talk__suggest-start { display: flex; justify-content: flex-end; }
+
+/* A suggestion: what it changes, struck and inserted, and its decision. */
+.dz .suggest { display: flex; flex-direction: column; gap: 8px; padding: 10px; border: 1px solid color-mix(in srgb, var(--dz-info) 40%, var(--dz-border)); border-radius: 8px; background: color-mix(in srgb, var(--dz-info) 6%, var(--dz-surface)); }
+.dz .suggest--accepted { border-color: color-mix(in srgb, var(--dz-success) 40%, var(--dz-border)); background: color-mix(in srgb, var(--dz-success) 6%, var(--dz-surface)); }
+.dz .suggest--rejected { opacity: 0.7; }
+.dz .suggest__head { display: flex; align-items: center; gap: 6px; font-size: var(--dz-text-sm); color: var(--dz-info); }
+.dz .suggest--accepted .suggest__head { color: var(--dz-success); }
+.dz .suggest__changes { display: flex; flex-direction: column; gap: 6px; margin: 0; }
+.dz .suggest__change { display: grid; gap: 2px; }
+.dz .suggest__change dt { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--dz-muted); }
+.dz .suggest__change dd { display: flex; flex-direction: column; gap: 2px; margin: 0; font-size: var(--dz-text-sm); overflow-wrap: anywhere; }
+.dz .suggest__change del { padding: 1px 6px; border-radius: 4px; background: color-mix(in srgb, var(--dz-danger) 10%, transparent); color: var(--dz-ink-soft); text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--dz-danger) 60%, transparent); }
+.dz .suggest__change ins { padding: 1px 6px; border-radius: 4px; background: color-mix(in srgb, var(--dz-success) 14%, transparent); color: var(--dz-ink); text-decoration: none; }
+.dz .suggest__actions { display: flex; gap: 6px; }
+
+/* Suggest mode, over the inspector: the edits are a proposal. */
+.dz .suggest-bar { flex-wrap: wrap; border-left-color: var(--dz-info); background: color-mix(in srgb, var(--dz-info) 10%, var(--dz-surface)); }
+.dz .suggest-bar > span:first-child { flex: 1 1 100%; }
+.dz .suggest-bar .field__input { flex: 1 1 10rem; min-width: 0; }
+.dz .suggest-bar__actions { display: inline-flex; gap: 6px; }
+
+/* On cards. */
+.card__suggest { display: inline-flex; align-items: center; gap: 3px; padding: 1px 6px; border-radius: 999px; background: color-mix(in srgb, var(--accent-2, var(--accent)) 16%, transparent); color: var(--ink); font-weight: 700; }
+
+/* A step's status in its card's corner, after the issue counts: a
+   bulb for an idea, a dashed circle for a draft, a dot for review and a
+   filled green check when ready. */
+.card__status { display: inline-grid; place-items: center; flex: none; width: 20px; height: 20px; border-radius: 50%; }
+.card__status--idea { color: var(--muted); }
+.card__status--draft { color: var(--warning); }
+.card__status--review { color: var(--dz-info, var(--accent)); }
+.card__status--ready { background: var(--success); color: #fff; }
+.card__status--ready svg circle { display: none; }

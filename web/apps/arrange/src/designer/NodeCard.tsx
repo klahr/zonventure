@@ -3,7 +3,9 @@ import { play } from "@zonventure/api";
 import { StaticMap } from "@zonventure/play-ui";
 import { STEP } from "./dz/types.tsx";
 import { TRIGGER } from "./dz/concepts.tsx";
-import { Bot } from "lucide-react";
+import { Bot, CircleCheck, CircleDashed, CircleDot, GitPullRequestArrow, Lightbulb, MessageSquare } from "lucide-react";
+import { initials } from "../ui/kit.tsx";
+import { statusLabel, type CardTalk } from "./Collab.tsx";
 import { Handle, Position, type NodeProps, type Node as RFNode } from "@xyflow/react";
 import { blocksOf, hasInput, mediaOf, portLabel, portsOf, textOf, type Issue, type Node, type Zone } from "@zonventure/graph";
 import { useT } from "../i18n.tsx";
@@ -21,6 +23,8 @@ export interface CardData extends Record<string, unknown> {
   arrived?: boolean;
   /** Someone else just removed it: a fading ghost. */
   leaving?: boolean;
+  /** The work on it: status, owner, open conversations. */
+  talk?: CardTalk;
   /** For a crossroads: the title of the puzzle whose answer it reads. */
   sourceTitle?: string;
   /** For a start with a place: its zone, drawn as a map on the card. */
@@ -125,6 +129,7 @@ function NodeCardImpl({ data, selected }: NodeProps<CardNode>) {
         data.marks?.length ? "has-peer" : "",
         data.arrived ? "is-arriving" : "",
         data.leaving ? "is-leaving" : "",
+        data.talk?.unseen ? "is-unseen" : "",
         errors.length ? "has-error" : warnings.length ? "has-warning" : "",
       ].join(" ")}
       style={
@@ -159,11 +164,34 @@ function NodeCardImpl({ data, selected }: NodeProps<CardNode>) {
             {warnings.length}
           </span>
         )}
+        {data.talk?.status && <StatusIcon status={data.talk.status} label={t.t(statusLabel(data.talk.status))} />}
       </div>
       <div className="card__title">{n.title || n.slug}</div>
       {n.type !== "start" && <div className="card__summary">{summary(n, data.sourceTitle)}</div>}
       <Thumb node={n} className="card__thumb" />
       {data.zone && <StaticMap zone={data.zone} width={216} height={112} className="card__map" />}
+
+      {data.talk && (data.talk.open > 0 || data.talk.owner || data.talk.suggestions) && (
+        <div className="card__work">
+          {!!data.talk.suggestions && (
+            <span className="card__suggest" title={t.t(data.talk.suggestions === 1 ? "1 suggested change" : "{{n}} suggested changes", { n: data.talk.suggestions })}>
+              <GitPullRequestArrow size={10} aria-hidden />
+              {data.talk.suggestions}
+            </span>
+          )}
+          {data.talk.open > 0 && (
+            <span className={"card__talk" + (data.talk.mentionsMe ? " is-mine" : "")} title={t.t(data.talk.open === 1 ? "1 open conversation" : "{{n}} open conversations", { n: data.talk.open })}>
+              <MessageSquare size={10} aria-hidden />
+              {data.talk.open}
+            </span>
+          )}
+          {data.talk.owner && (
+            <span className="card__owner" style={{ "--peer": data.talk.ownerColor } as React.CSSProperties} title={t.t("Owner: {{name}}", { name: data.talk.owner })}>
+              {initials(data.talk.owner)}
+            </span>
+          )}
+        </div>
+      )}
 
       {ports.length > 0 && (
         <div className="card__ports">
@@ -180,6 +208,18 @@ function NodeCardImpl({ data, selected }: NodeProps<CardNode>) {
 }
 
 export const NodeCard = memo(NodeCardImpl);
+
+const STATUS_ICON = { idea: Lightbulb, draft: CircleDashed, review: CircleDot, ready: CircleCheck } as const;
+
+/** Where a step is in the work, as a coloured icon: a card's corner, a list row's end. */
+export function StatusIcon({ status, label }: { status: Exclude<CardTalk["status"], "">; label: string }) {
+  const Icon = STATUS_ICON[status];
+  return (
+    <span className={`card__status card__status--${status}`} title={label} role="img" aria-label={label}>
+      <Icon size={16} strokeWidth={2.25} aria-hidden />
+    </span>
+  );
+}
 
 /** The first picture on a step — or its first hint's — or nothing. */
 export function firstImage(n: Node): number | undefined {

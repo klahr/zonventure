@@ -109,6 +109,14 @@ A theme effect restyles the phone from that step on: "theme" is one of dark, nig
 - Block ids ("b1", "b2", …) must be unique within a node. Matcher ids name an accepted answer.
 - People may be watching the designer as you work: the steps you touch light up for them. Give each edit a short note ("adding hints to the riddle"); they see it beside your badge.
 
+## Working with the authors
+
+- The authors talk in threads on the steps. Read them before changing a step (list_adventure_threads with node): they say what was decided.
+- A thread with for_assistant: true asks you for something. Do it, reply on the thread with what you did (comment_on_adventure with thread_id), and resolve it. Ask on the thread instead when it is unclear.
+- Leave review notes and questions as threads on the step they are about, not as changes. @name mentions an author.
+- To change a step an author owns or is working on, propose it with suggest_step_change: they see the change field by field and accept or reject it.
+- set_step_status says where a step is: put a step you finished on review for an author to check; ready is theirs to give.
+
 ## A story step
 
 %s
@@ -205,6 +213,16 @@ var prompts = []promptDescriptor{{
 	Title:       "Build an adventure on site",
 	Description: "Start building an adventure together — a new one, or carry on with an existing one — while walking the place with Field mode open.",
 	Arguments:   []promptArgument{{Name: "slug", Description: "An existing adventure to carry on with. Leave empty to start a new one."}},
+}, {
+	Name:        "review_adventure",
+	Title:       "Review an adventure",
+	Description: "Go through an adventure as a careful playtester and leave review notes on its steps, for the authors to resolve.",
+	Arguments:   []promptArgument{{Name: "slug", Description: "The adventure to review.", Required: true}},
+}, {
+	Name:        "pick_up_tasks",
+	Title:       "Do what the authors asked",
+	Description: "Work through the threads where the authors asked the assistant (@assistant) for something, then report back on each.",
+	Arguments:   []promptArgument{{Name: "slug", Description: "The adventure.", Required: true}},
 }}
 
 type promptMessage struct {
@@ -214,17 +232,41 @@ type promptMessage struct {
 
 // getPrompt renders a prompt with its arguments, or reports it unknown.
 func getPrompt(name string, args map[string]string) (map[string]any, bool) {
-	if name != "field_session" {
+	slug := strings.TrimSpace(args["slug"])
+	var p *promptDescriptor
+	for i := range prompts {
+		if prompts[i].Name == name {
+			p = &prompts[i]
+		}
+	}
+	if p == nil {
 		return nil, false
+	}
+	message := func(text string) map[string]any {
+		return map[string]any{
+			"description": p.Description,
+			"messages":    []promptMessage{{Role: "user", Content: ToolContent{Type: "text", Text: text}}},
+		}
+	}
+	switch name {
+	case "review_adventure":
+		return message(fmt.Sprintf("Review the Zonventure adventure %q as a careful playtester would. Read the authoring guide, its brief, "+
+			"its draft and its open threads (list_adventure_threads), and simulate a run or two. Then leave one thread per real issue with "+
+			"comment_on_adventure, on the step it is about: answers too narrow to accept reasonable spellings, clues that give the answer away "+
+			"or cannot be solved from what the team has, jumps in difficulty, hints that do not help, pictures without descriptions, text not "+
+			"translated, places that are hard to reach. Say what is wrong; where the fix is clear, propose it with suggest_step_change "+
+			"rather than describing it. Do not change the draft yourself. Skip what an open thread already raises. Finish with one thread on the whole adventure summing up, and tell me how many notes you left.", slug)), true
+	case "pick_up_tasks":
+		return message(fmt.Sprintf("The authors of the Zonventure adventure %q have asked you for things in its threads. List them with "+
+			"list_adventure_threads (tasks_only), read the authoring guide if you have not, and do each in turn: make the change, reply on the "+
+			"thread saying what you did, and resolve it. If a task is unclear or you disagree, reply asking instead and leave it open. "+
+			"Tell me what you did when you are through.", slug)), true
 	}
 	text := "Let's build a new Zonventure adventure together. I'm on site with Field mode open on my phone. " +
 		"Read the authoring guide, then start by asking me about it."
-	if slug := strings.TrimSpace(args["slug"]); slug != "" {
+	if slug != "" {
 		text = fmt.Sprintf("Let's carry on building the Zonventure adventure %q. I'm on site with Field mode open on my phone. "+
 			"Read the authoring guide, its brief and its draft, tell me in two sentences where we are, and ask what's next.", slug)
 	}
-	return map[string]any{
-		"description": prompts[0].Description,
-		"messages":    []promptMessage{{Role: "user", Content: ToolContent{Type: "text", Text: text}}},
-	}, true
+	return message(text), true
 }
