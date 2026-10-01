@@ -12,10 +12,10 @@ type Named = Pick<Team, "id" | "name">;
 
 /**
  * What the organisers have sent the teams, newest first, each with who
- * it went to and a way to take it back. Only the graph player has an
- * inbox, so a lane event has no card; neither has an ended event that sent none.
+ * it went to and a way to take it back. An ended event that sent none
+ * has no card.
  */
-export function MessagesCard({ event, teams, messages, inbox, reload }: { event: Info; teams: Named[]; messages: Message[]; inbox: boolean; reload: () => void }) {
+export function MessagesCard({ event, teams, messages, reload }: { event: Info; teams: Named[]; messages: Message[]; reload: () => void }) {
   const t = useT();
   const toast = useToast();
   const dialogs = useDialogs();
@@ -37,7 +37,7 @@ export function MessagesCard({ event, teams, messages, inbox, reload }: { event:
       toast.err(e);
     }
   };
-  const canSend = inbox && event.state !== "completed" && event.state !== "cancelled";
+  const canSend = event.state !== "completed" && event.state !== "cancelled";
   if (messages.length === 0 && !canSend) return null;
   return (
     <Card

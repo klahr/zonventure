@@ -11,7 +11,6 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/klahr/zonventure/internal/adventure"
 	"github.com/klahr/zonventure/internal/auth"
 	"github.com/klahr/zonventure/internal/httpx"
 	"github.com/klahr/zonventure/internal/mdx"
@@ -165,11 +164,6 @@ func (h *Handlers) AdventureDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	published := publishedInt != 0
 
-	// canEdit covers any member of the owning org (org_admin
-	// and org_member). Race directors are intentionally included so
-	// they can read the answer key while running events; the stricter
-	// canAuthor check still gates writes.
-	canEdit := canEditOwned(me, ownerOrg)
 	if !h.staffCanSeeAdventure(r.Context(), me, ownerOrg, published, slug) {
 		httpx.Error(w, http.StatusNotFound, "unknown adventure")
 		return
@@ -180,114 +174,6 @@ func (h *Handlers) AdventureDetail(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusNotFound, "unknown adventure")
 		return
 	}
-	type locDTO struct {
-		Lat     float64  `json:"lat"`
-		Lng     float64  `json:"lng"`
-		RadiusM *float64 `json:"radius_m,omitempty"`
-	}
-	type imageDTO struct {
-		ID      int64  `json:"id"`
-		URL     string `json:"url"`
-		AltText string `json:"alt_text,omitempty"`
-	}
-	type audioDTO struct {
-		ID          int64  `json:"id"`
-		URL         string `json:"url"`
-		MimeType    string `json:"mime_type,omitempty"`
-		Description string `json:"description,omitempty"`
-	}
-	// Hint shape mirrors the player's hintDTO: TextHTML for inline
-	// rendering, DelaySeconds so the new card can show "(unlocks
-	// after 2m)" caps. Images per hint travel under the same
-	// /adventure-assets/hint-image visibility gate; staff sessions
-	// always pass, so the catalog viewer sees them straight away.
-	type hintDTO struct {
-		TextHTML     string     `json:"text_html"`
-		DelaySeconds int        `json:"delay_seconds"`
-		Images       []imageDTO `json:"images,omitempty"`
-		Audio        []audioDTO `json:"audio,omitempty"`
-	}
-	type pageDTO struct {
-		Index      int                     `json:"index"`
-		Title      string                  `json:"title"`
-		Prompt     string                  `json:"prompt"`
-		PromptHTML string                  `json:"prompt_html,omitempty"`
-		Accept     []adventure.AcceptEntry `json:"accept"`
-		Location   locDTO                  `json:"location"`
-		Gated      bool                    `json:"gated"`
-		Images     []imageDTO              `json:"images,omitempty"`
-		Audio      []audioDTO              `json:"audio,omitempty"`
-		Hints      []hintDTO               `json:"hints,omitempty"`
-		Disabled   bool                    `json:"disabled,omitempty"`
-		LaneID     int64                   `json:"lane_id,omitempty"`
-	}
-	pages := make([]pageDTO, len(adv.Pages))
-	for i, p := range adv.Pages {
-		imgs := make([]imageDTO, 0, len(p.Images))
-		for _, im := range p.Images {
-			imgs = append(imgs, imageDTO{
-				ID: im.ID, AltText: im.AltText,
-				URL: "/adventure-assets/image/" + strconv.FormatInt(im.ID, 10),
-			})
-		}
-		audio := make([]audioDTO, 0, len(p.Audio))
-		for _, a := range p.Audio {
-			audio = append(audio, audioDTO{
-				ID: a.ID, MimeType: a.MimeType, Description: a.Description,
-				URL: "/adventure-assets/audio/" + strconv.FormatInt(a.ID, 10),
-			})
-		}
-		hints := make([]hintDTO, 0, len(p.Hints))
-		for _, hint := range p.Hints {
-			himgs := make([]imageDTO, 0, len(hint.Images))
-			for _, im := range hint.Images {
-				himgs = append(himgs, imageDTO{
-					ID: im.ID, AltText: im.AltText,
-					URL: "/adventure-assets/hint-image/" + strconv.FormatInt(im.ID, 10),
-				})
-			}
-			haudio := make([]audioDTO, 0, len(hint.Audio))
-			for _, a := range hint.Audio {
-				haudio = append(haudio, audioDTO{
-					ID: a.ID, MimeType: a.MimeType, Description: a.Description,
-					URL: "/adventure-assets/hint-audio/" + strconv.FormatInt(a.ID, 10),
-				})
-			}
-			hints = append(hints, hintDTO{
-				TextHTML:     mdx.Render(hint.Text),
-				DelaySeconds: hint.DelaySeconds,
-				Images:       himgs,
-				Audio:        haudio,
-			})
-		}
-		pages[i] = pageDTO{
-			Index: p.Index, Title: p.Title,
-			Prompt:     p.Prompt,
-			PromptHTML: mdx.Render(p.Prompt),
-			Accept:     p.Accept,
-			Location:   locDTO{Lat: p.Location.Lat, Lng: p.Location.Lng, RadiusM: p.Location.RadiusM},
-			Gated:      p.Location.Gated(),
-			Images:     imgs,
-			Audio:      audio,
-			Hints:      hints,
-			Disabled:   p.Disabled,
-			LaneID:     p.LaneID,
-		}
-	}
-	// Strip puzzle solutions for non-editor callers (catalog browsers,
-	// foreign org users with an assignment/share, …). canEdit was
-	// computed up top from the same query that populated ownerOrg.
-	if !canEdit {
-		for i := range pages {
-			pages[i].Accept = nil
-			for j := range pages[i].Hints {
-				pages[i].Hints[j].TextHTML = ""
-				pages[i].Hints[j].Images = nil
-				pages[i].Hints[j].Audio = nil
-			}
-		}
-	}
-
 	out := map[string]any{
 		"slug":        adv.Slug,
 		"title":       adv.Meta.Title,
@@ -295,8 +181,6 @@ func (h *Handlers) AdventureDetail(w http.ResponseWriter, r *http.Request) {
 		"author":      adv.Meta.Author,
 		"intro_text":  adv.Meta.IntroText,
 		"outro_text":  adv.Meta.OutroText,
-		"page_count":  len(adv.Pages),
-		"pages":       pages,
 	}
 	// Pre-render markdown to HTML so the inspect page can render
 	// formatting (same goldmark pipeline puzzle prompts use). Empty
@@ -326,13 +210,6 @@ func (h *Handlers) AdventureDetail(w http.ResponseWriter, r *http.Request) {
 	// affordances — the role can still run events that use the
 	// adventure, just not modify the puzzle content.
 	out["mine_to_edit"] = canAuthor(me, ownerOrg)
-	// Lanes ride alongside pages so the catalog detail view can
-	// visualise the lane structure (header + name + mode) instead
-	// of rendering one undifferentiated puzzle list. Single-lane
-	// adventures still render flat client-side.
-	if lanes, err := loadAdventureLanes(r.Context(), h.DB, adv.ID); err == nil {
-		out["lanes"] = lanes
-	}
 	// Starting location surfaces on the catalog detail page (a "Start
 	// here" pill with the label and a map link) and on the player's
 	// intro overlay. Both coords need to be set together; callers
@@ -344,8 +221,6 @@ func (h *Handlers) AdventureDetail(w http.ResponseWriter, r *http.Request) {
 	if adv.Start.Label != "" {
 		out["start_label"] = adv.Start.Label
 	}
-	// An adventure with a published graph plays the graph: its lane
-	// pages above are what it was before, never shown to a team again.
 	summary, err := publishedGraphSummary(r.Context(), h.DB, adv.ID)
 	if err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "loading graph failed", err)

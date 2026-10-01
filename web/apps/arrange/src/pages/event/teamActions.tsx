@@ -2,8 +2,8 @@ import { useState } from "react";
 import { useT } from "../../i18n.tsx";
 import { useDialogs, useToast } from "../../ui/index.ts";
 import * as api from "./api.ts";
-import type { EventInfo, Team } from "./api.ts";
-import { isGraphEvent, members } from "./util.ts";
+import type { Team } from "./api.ts";
+import { members } from "./util.ts";
 
 /** The team's picture, or its initials on its colour; a circle, as teams are drawn everywhere. */
 export function TeamAvatar({ team, color, size = 28 }: { team: Team; color: string; size?: number }) {
@@ -29,11 +29,10 @@ function initials(name: string) {
  * invitation says who gets what, moving a team on explains itself
  * (Alt-click skips that when triaging), withdrawing says how it shows.
  */
-export function useTeamActions(event: EventInfo, reload: () => void) {
+export function useTeamActions(reload: () => void) {
   const t = useT();
   const toast = useToast();
   const dialogs = useDialogs();
-  const graph = isGraphEvent(event);
 
   const remove = async (team: Team): Promise<boolean> => {
     const password = await dialogs.password({
@@ -81,17 +80,15 @@ export function useTeamActions(event: EventInfo, reload: () => void) {
   const unlock = async (team: Team, skipConfirm: boolean): Promise<boolean> => {
     if (!skipConfirm) {
       const ok = await dialogs.confirm({
-        title: graph ? t.t("Move {{name}} on?", { name: team.name }) : t.t("Skip puzzle for {{name}}?", { name: team.name }),
-        message: graph
-          ? t.t("This moves the team past the puzzle they're on, without points: by its skip route if it has one, otherwise as if they had answered. Useful when they're stuck or the location won't register. The action is recorded in the event log.")
-          : t.t("This advances the team past their current puzzle without them submitting the answer. Useful when they're stuck. The action is recorded in the event log."),
-        confirmLabel: graph ? t.t("Move team on") : t.t("Skip puzzle"),
+        title: t.t("Move {{name}} on?", { name: team.name }),
+        message: t.t("This moves the team past the puzzle they're on, without points: by its skip route if it has one, otherwise as if they had answered. Useful when they're stuck or the location won't register. The action is recorded in the event log."),
+        confirmLabel: t.t("Move team on"),
       });
       if (!ok) return false;
     }
     try {
       // The node guards a race: the server refuses if the team has moved meanwhile.
-      const r = await api.unlockTeam(team.id, graph ? team.node : undefined);
+      const r = await api.unlockTeam(team.id, team.node);
       toast.ok(r?.completed ? t.t("{{name}} finished", { name: team.name }) : t.t("{{name}} advanced", { name: team.name }));
       reload();
       return true;
@@ -104,9 +101,7 @@ export function useTeamActions(event: EventInfo, reload: () => void) {
   const withdraw = async (team: Team) => {
     const ok = await dialogs.confirm({
       title: t.t("Mark “{{name}}” as withdrawn?", { name: team.name }),
-      message: graph
-        ? t.t("They'll show in the results as withdrawn, with the points they had. You can undo this if they return.")
-        : t.t('They\'ll show in the recap as "withdrew at puzzle {{n}}". You can undo this if they return.', { n: team.page_index + 1 }),
+      message: t.t("They'll show in the results as withdrawn, with the points they had. You can undo this if they return."),
       confirmLabel: t.t("Mark withdrawn"),
     });
     if (!ok) return;

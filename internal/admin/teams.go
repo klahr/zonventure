@@ -15,8 +15,6 @@ import (
 	"github.com/klahr/zonventure/internal/graph/session"
 	"github.com/klahr/zonventure/internal/httpx"
 	"github.com/klahr/zonventure/internal/imageutil"
-	"github.com/klahr/zonventure/internal/lanes"
-	"github.com/klahr/zonventure/internal/play"
 	"github.com/klahr/zonventure/internal/storage"
 	"github.com/klahr/zonventure/internal/webhooks"
 	"github.com/klahr/zonventure/internal/ws"
@@ -349,106 +347,7 @@ func (h *Handlers) UnlockTeam(w http.ResponseWriter, r *http.Request) {
 	if !h.requireEventOp(w, r.Context(), eventID, OpUnlockTeam) {
 		return
 	}
-	// A graph team has no lane cursor; the engine moves it instead, so
-	// finishing and scoring stay the engine's.
-	if uses, err := play.UsesGraph(r.Context(), h.DB, eventID); err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "lookup failed")
-		return
-	} else if uses {
-		h.rescueGraphTeam(w, r, eventID, teamID)
-		return
-	}
-	var (
-		slug          string
-		currentIdx    int
-		currentPageID sql.NullInt64
-		completedAt   sql.NullString
-	)
-	err := h.DB.QueryRowContext(r.Context(), `
-		SELECT ar.adventure_slug, t.current_page_index, t.current_page_id, t.completed_at
-		FROM teams t JOIN events ar ON ar.id = t.event_id
-		WHERE t.id = $1
-	`, teamID).Scan(&slug, &currentIdx, &currentPageID, &completedAt)
-	if errors.Is(err, sql.ErrNoRows) {
-		httpx.Error(w, http.StatusNotFound, "team not found")
-		return
-	}
-	if err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "lookup failed")
-		return
-	}
-	if completedAt.Valid {
-		httpx.Error(w, http.StatusConflict, "team already finished")
-		return
-	}
-	adv := h.Lib.Get(slug)
-	if adv == nil {
-		httpx.Error(w, http.StatusInternalServerError, "adventure not loaded")
-		return
-	}
-	// Resolve the team's current page id when not yet set (a team
-	// that hasn't moved since the lanes migration backfilled it).
-	curID := currentPageID.Int64
-	if !currentPageID.Valid {
-		_, firstID, ferr := lanes.FirstPageFor(r.Context(), h.DB, adv, teamID)
-		if ferr != nil {
-			httpx.Error(w, http.StatusInternalServerError, "resolve current failed")
-			return
-		}
-		curID = firstID
-	}
-	if curID == 0 {
-		httpx.Error(w, http.StatusConflict, "team already finished")
-		return
-	}
-	nextLaneID, nextPageID, err := lanes.NextPageAfter(r.Context(), h.DB, adv, teamID, curID)
-	if err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "resolve next failed")
-		return
-	}
-	nextIdx := currentIdx + 1
-	me, _ := auth.FromContext(r.Context())
-	if nextPageID == 0 {
-		if _, err := h.DB.ExecContext(r.Context(), `
-			UPDATE teams
-			SET current_page_id = NULL,
-			    current_lane_id = NULL,
-			    current_page_index = $1,
-			    current_page_started_at = now_text(),
-			    completed_at = now_text()
-			WHERE id = $2
-		`, nextIdx, teamID); err != nil {
-			httpx.Error(w, http.StatusInternalServerError, "update failed")
-			return
-		}
-		activity.Record(r.Context(), h.DB, eventID, &teamID, activity.UserActor(me.ID), activity.TeamUnlocked,
-			map[string]any{"from_page_index": currentIdx, "to_page_index": nextIdx, "by_arranger": true})
-		activity.Record(r.Context(), h.DB, eventID, &teamID, activity.UserActor(me.ID), activity.TeamCompleted,
-			map[string]any{"by_arranger": true})
-		_, _ = activity.MaybeCompleteEvent(r.Context(), h.DB, eventID)
-	} else {
-		var laneArg any
-		if nextLaneID != 0 {
-			laneArg = nextLaneID
-		} else {
-			laneArg = sql.NullInt64{}
-		}
-		if _, err := h.DB.ExecContext(r.Context(), `
-			UPDATE teams
-			SET current_page_id = $1,
-			    current_lane_id = $2,
-			    current_page_index = $3,
-			    current_page_started_at = now_text()
-			WHERE id = $4
-		`, nextPageID, laneArg, nextIdx, teamID); err != nil {
-			httpx.Error(w, http.StatusInternalServerError, "update failed")
-			return
-		}
-		activity.Record(r.Context(), h.DB, eventID, &teamID, activity.UserActor(me.ID), activity.TeamUnlocked,
-			map[string]any{"from_page_index": currentIdx, "to_page_index": nextIdx, "by_arranger": true})
-	}
-	h.Hub.Publish(ws.EventTopic(eventID), "changed", nil)
-	httpx.JSON(w, http.StatusOK, map[string]any{"page_index": nextIdx, "completed": nextPageID == 0})
+	h.rescueGraphTeam(w, r, eventID, teamID)
 }
 
 // rescueGraphTeam moves a graph team past the puzzle it is on: its skip

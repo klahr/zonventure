@@ -29,7 +29,7 @@ import { downscalePhoto } from "./downscale.ts";
  * it ends every player session when the event completes. The team keeps
  * its final screen, read-only, instead of being told to sign in again.
  */
-export type GameStatus = "loading" | "signed-out" | "ended" | "lanes" | "ready" | "error";
+export type GameStatus = "loading" | "signed-out" | "ended" | "ready" | "error";
 
 export interface Game {
   status: GameStatus;
@@ -177,10 +177,6 @@ export function useGame(t: Translate): Game {
     const mine = ++seq.current.next;
     try {
       const s = await play.getPlay();
-      if (s.engine === "lanes") {
-        setStatus("lanes");
-        return;
-      }
       currentTeam = s.team.id;
       if (seq.current.applied > mine) return;
       seq.current.applied = mine;

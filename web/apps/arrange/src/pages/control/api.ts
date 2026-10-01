@@ -5,7 +5,6 @@ import type { Message, Photo } from "../event/api.ts";
 /** internal/admin/handlers.go: eventDTO (detail fields race control reads). */
 export interface EventInfo {
   id: number;
-  engine?: "graph" | "lanes" | string;
   name?: string;
   adventure_slug: string;
   adventure_title?: string;
@@ -31,7 +30,6 @@ export interface Member {
 export interface Team {
   id: number;
   name: string;
-  page_index: number;
   completed_at?: string;
   withdrawn_at?: string;
   avatar_url?: string;
@@ -70,14 +68,6 @@ export interface Activity {
   created_at: string;
 }
 
-/** internal/admin/users.go: AdventureDetail, the lane pages the map pins. */
-export interface LanePage {
-  index: number;
-  title: string;
-  gated: boolean;
-  location: { lat: number; lng: number; radius_m?: number };
-}
-
 const ev = (id: number) => `/api/admin/events/${id}`;
 
 export const getDetail = (id: number, signal?: AbortSignal) => get<EventDetail>(ev(id), signal ? { signal } : {});
@@ -86,11 +76,9 @@ export const getTracks = (id: number, signal?: AbortSignal) =>
 export const getActivity = (id: number, signal?: AbortSignal) =>
   get<{ events: Activity[] | null }>(ev(id) + "/activity", signal ? { signal } : {}).then((r) => r.events ?? []);
 export const getMessages = (id: number, signal?: AbortSignal) =>
-  get<{ messages: Message[] | null; inbox: boolean }>(ev(id) + "/messages", signal ? { signal } : {});
+  get<{ messages: Message[] | null }>(ev(id) + "/messages", signal ? { signal } : {});
 export const getPhotos = (id: number, signal?: AbortSignal) =>
   get<{ photos: Photo[] | null; challenges?: number }>(ev(id) + "/photos", signal ? { signal } : {});
-export const getLanePages = (slug: string, signal?: AbortSignal) =>
-  get<{ pages: LanePage[] | null }>(`/api/admin/adventures/${encodeURIComponent(slug)}`, signal ? { signal } : {}).then((r) => r.pages ?? []);
 
 export const transition = (id: number, action: "pause" | "resume") => post<void>(`${ev(id)}/${action}`);
 export const cancelEvent = (id: number, password: string) => post<void>(`${ev(id)}/cancel`, undefined, { headers: { "X-Confirm-Password": password } });

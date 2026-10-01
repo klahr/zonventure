@@ -15,11 +15,9 @@ import (
 // also visible through webFS — catching the gap in CI.
 //
 // Files that exist on disk but are intentionally NOT embedded
-// (e.g. play-queue.test.js, *.bak) live in the excluded set below.
+// (e.g. *.bak) live in the excluded set below.
 func TestEmbed_AssetsPresent(t *testing.T) {
-	excluded := map[string]bool{
-		"play-queue.test.js": true, // unit-test source for the JS, not shipped
-	}
+	excluded := map[string]bool{}
 	wantDirs := []string{
 		"web",
 		"web/locales/web",

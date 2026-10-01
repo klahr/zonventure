@@ -140,7 +140,6 @@ func TestRecap_GraphTeam(t *testing.T) {
 	}
 
 	type recap struct {
-		Engine          string   `json:"engine"`
 		Points          *float64 `json:"points"`
 		Rank            int      `json:"rank"`
 		TeamCount       int      `json:"team_count"`
@@ -184,7 +183,7 @@ func TestRecap_GraphTeam(t *testing.T) {
 	}
 
 	a := get("Alpha")
-	if a.Engine != "graph" || a.Points == nil || *a.Points != 16 || a.Rank != 1 || a.TeamCount != 2 || a.Outcome != "complete" {
+	if a.Points == nil || *a.Points != 16 || a.Rank != 1 || a.TeamCount != 2 || a.Outcome != "complete" {
 		t.Errorf("alpha score = %+v points %v", a, a.Points)
 	}
 	if a.AnswersRight != 2 || a.AnswersWrong != 1 {

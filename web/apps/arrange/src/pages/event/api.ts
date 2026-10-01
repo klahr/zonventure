@@ -3,7 +3,6 @@ import { get, patch, post, request } from "@zonventure/api";
 /** internal/admin/handlers.go: eventDTO (detail payload). */
 export interface EventInfo {
   id: number;
-  engine?: "graph" | "lanes" | string;
   name?: string;
   adventure_slug: string;
   adventure_title?: string;
@@ -44,7 +43,6 @@ export interface Team {
   id: number;
   name: string;
   email?: string;
-  page_index: number;
   completed_at?: string;
   withdrawn_at?: string;
   /** Used the adventure's cheat password: no rank. */
@@ -91,8 +89,6 @@ export interface Adventure {
   title?: string;
   author?: string;
   language?: string;
-  page_count?: number;
-  pages?: { title?: string }[];
   avatar_url?: string;
 }
 
@@ -149,7 +145,7 @@ export const getAdventure = (slug: string, signal?: AbortSignal) => get<Adventur
 export const getConnectStatus = (orgId: number, signal?: AbortSignal) =>
   get<ConnectStatus>(`/api/admin/organizations/${orgId}/stripe-connect/status`, signal ? { signal } : {});
 export const getMessages = (id: number, signal?: AbortSignal) =>
-  get<{ messages: Message[] | null; inbox: boolean }>(E(id) + "/messages", signal ? { signal } : {});
+  get<{ messages: Message[] | null }>(E(id) + "/messages", signal ? { signal } : {});
 export const getPhotos = (id: number, signal?: AbortSignal) =>
   get<{ photos: Photo[] | null; challenges?: number }>(E(id) + "/photos", signal ? { signal } : {});
 

@@ -165,25 +165,15 @@ func ParseTimestamp(s string) (time.Time, bool) {
 	return time.Time{}, false
 }
 
-// pickLocation surfaces the first enabled puzzle's coordinates as
-// a "59.32931, 18.06869" string. iCalendar's LOCATION is free-form,
-// so coords work fine; a future iteration could reverse-geocode for
-// a human label. Returns an empty string when the adventure has no
-// geo-located puzzles.
+// pickLocation surfaces the adventure's starting location as a
+// "59.32931, 18.06869" string. iCalendar's LOCATION is free-form, so
+// coords work fine; a future iteration could reverse-geocode for a
+// human label. Returns an empty string when no start is set.
 func pickLocation(adv *adventure.Adventure) string {
-	if adv == nil {
+	if adv == nil || !adv.Start.HasCoords() {
 		return ""
 	}
-	for _, p := range adv.Pages {
-		if p.Disabled {
-			continue
-		}
-		if p.Location.Lat == 0 && p.Location.Lng == 0 {
-			continue
-		}
-		return fmt.Sprintf("%.5f, %.5f", p.Location.Lat, p.Location.Lng)
-	}
-	return ""
+	return fmt.Sprintf("%.5f, %.5f", *adv.Start.Lat, *adv.Start.Lng)
 }
 
 // buildDescription assembles the multi-line plain-text description.

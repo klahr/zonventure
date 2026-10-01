@@ -39,29 +39,22 @@ import (
  */
 
 // recapResponse is the JSON shape the recap page renders against.
-// Mirrors player.SummaryResponse plus the track + per-puzzle data
-// the post-event view needs.
 type recapResponse struct {
-	TeamName        string        `json:"team_name"`
-	AdventureTitle  string        `json:"adventure_title"`
-	AdventureSlug   string        `json:"adventure_slug,omitempty"`
-	OutroText       string        `json:"outro_text,omitempty"`
-	Colors          *recapColors  `json:"colors,omitempty"`
-	StartedAt       string        `json:"started_at,omitempty"`
-	CompletedAt     string        `json:"completed_at,omitempty"`
-	DurationSeconds int           `json:"duration_seconds"`
-	DistanceM       float64       `json:"distance_m"`
-	AnswersRight    int           `json:"answers_right"`
-	AnswersWrong    int           `json:"answers_wrong"`
-	PageCount       int           `json:"page_count"`
-	State           string        `json:"state"`
-	Track           []recapTrack  `json:"track"`
-	Puzzles         []recapPuzzle `json:"puzzles"`
+	TeamName        string       `json:"team_name"`
+	AdventureTitle  string       `json:"adventure_title"`
+	AdventureSlug   string       `json:"adventure_slug,omitempty"`
+	OutroText       string       `json:"outro_text,omitempty"`
+	Colors          *recapColors `json:"colors,omitempty"`
+	StartedAt       string       `json:"started_at,omitempty"`
+	CompletedAt     string       `json:"completed_at,omitempty"`
+	DurationSeconds int          `json:"duration_seconds"`
+	DistanceM       float64      `json:"distance_m"`
+	AnswersRight    int          `json:"answers_right"`
+	AnswersWrong    int          `json:"answers_wrong"`
+	PageCount       int          `json:"page_count"`
+	State           string       `json:"state"`
+	Track           []recapTrack `json:"track"`
 
-	// Engine is "graph" for an event played on the graph engine; the
-	// fields below are only set then. Puzzles stays empty for one:
-	// Steps and Zones replace it.
-	Engine    string      `json:"engine,omitempty"`
 	Points    *float64    `json:"points,omitempty"`
 	Rank      int         `json:"rank,omitempty"`
 	TeamCount int         `json:"team_count,omitempty"`
@@ -126,14 +119,6 @@ type recapTrack struct {
 	TS  string  `json:"ts"`
 }
 
-type recapPuzzle struct {
-	Index    int     `json:"index"`
-	Title    string  `json:"title,omitempty"`
-	Lat      float64 `json:"lat"`
-	Lng      float64 `json:"lng"`
-	SolvedAt string  `json:"solved_at,omitempty"`
-}
-
 // Recap serves the JSON for /api/public/recap/{token}. The HTML
 // page at /recap/{token} fetches this on load and renders it
 // client-side; both endpoints share the same visibility gate.
@@ -192,7 +177,6 @@ func (h *Handlers) Recap(w http.ResponseWriter, r *http.Request) {
 		// already use.
 		OutroText: mdx.Render(adv.Meta.OutroText),
 		StartedAt: startedAt.String,
-		PageCount: len(adv.Pages),
 		State:     state,
 	}
 	// Team's own completion stamp wins over the event's — multiple
@@ -212,29 +196,9 @@ func (h *Handlers) Recap(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	graphEvent, err := play.UsesGraph(r.Context(), h.DB, eventID)
-	if err != nil {
-		http.Error(w, "lookup failed", http.StatusInternalServerError)
-		return
-	}
-	// Right / wrong counts from answer_attempts. Same shape as
-	// player.Summary; duplicating the SQL beats coupling the two
-	// packages (the second caller is a public read-only render —
-	// the formulas should stay parallel, not shared by reference).
-	// A graph event never writes answer_attempts: its counts, score,
-	// steps and pins come from the team's graph state instead.
-	if graphEvent {
-		if err := h.recapGraph(r.Context(), eventID, teamID, &resp); err != nil {
-			http.Error(w, "graph recap failed", http.StatusInternalServerError)
-			return
-		}
-	} else if err := h.DB.QueryRowContext(r.Context(), `
-		SELECT
-		  COALESCE(SUM(CASE WHEN accepted = 1 THEN 1 ELSE 0 END), 0),
-		  COALESCE(SUM(CASE WHEN accepted = 0 THEN 1 ELSE 0 END), 0)
-		FROM answer_attempts WHERE team_id = $1
-	`, teamID).Scan(&resp.AnswersRight, &resp.AnswersWrong); err != nil {
-		http.Error(w, "stats lookup failed", http.StatusInternalServerError)
+	// Counts, score, steps and pins come from the team's graph state.
+	if err := h.recapGraph(r.Context(), eventID, teamID, &resp); err != nil {
+		http.Error(w, "graph recap failed", http.StatusInternalServerError)
 		return
 	}
 
@@ -275,53 +239,6 @@ func (h *Handlers) Recap(w http.ResponseWriter, r *http.Request) {
 	rows.Close()
 	resp.DistanceM = dist
 
-	if !graphEvent {
-		// Per-puzzle solve timestamps. We pick the *first* accepted
-		// attempt per page_index so a re-submitted answer (the team
-		// re-typed after coming back from a hint) doesn't shift the
-		// completion mark to the later submission. ROW_NUMBER would
-		// be cleaner; the GROUP BY MIN works on every Postgres we
-		// support.
-		pRows, err := h.DB.QueryContext(r.Context(), `
-			SELECT page_index, MIN(submitted_at)
-			FROM answer_attempts
-			WHERE team_id = $1 AND accepted = 1
-			GROUP BY page_index
-			ORDER BY page_index
-		`, teamID)
-		if err != nil {
-			http.Error(w, "puzzles lookup failed", http.StatusInternalServerError)
-			return
-		}
-		solveAt := map[int]string{}
-		for pRows.Next() {
-			var idx int
-			var at string
-			if err := pRows.Scan(&idx, &at); err != nil {
-				pRows.Close()
-				http.Error(w, "puzzles scan failed", http.StatusInternalServerError)
-				return
-			}
-			solveAt[idx] = at
-		}
-		pRows.Close()
-		for _, p := range adv.Pages {
-			if p.Disabled {
-				continue
-			}
-			entry := recapPuzzle{
-				Index: p.Index,
-				Title: p.Title,
-				Lat:   p.Location.Lat,
-				Lng:   p.Location.Lng,
-			}
-			if at, ok := solveAt[p.Index]; ok {
-				entry.SolvedAt = at
-			}
-			resp.Puzzles = append(resp.Puzzles, entry)
-		}
-	}
-
 	// Duration: prefer team's own completed_at — different teams in
 	// one event can finish at different times. Falls back to
 	// event.completed_at when the team row is missing the stamp
@@ -346,8 +263,8 @@ func (h *Handlers) Recap(w http.ResponseWriter, r *http.Request) {
 	httpx.JSON(w, http.StatusOK, resp)
 }
 
-// recapTimeLayout is the lane recap's wire format for timestamps, which
-// the graph branch matches so recap.html reads both alike.
+// recapTimeLayout is the recap's wire format for timestamps, the one
+// recap.html reads.
 const recapTimeLayout = "2006-01-02 15:04:05"
 
 // recapGraph fills a graph team's recap from its graph state: points,
@@ -355,7 +272,6 @@ const recapTimeLayout = "2006-01-02 15:04:05"
 // it reached, the zones they are gated on, and its quiz walk. A team
 // with no graph state never started, and keeps the event-level fields.
 func (h *Handlers) recapGraph(ctx context.Context, eventID, teamID int64, resp *recapResponse) error {
-	resp.Engine = "graph"
 	var graphID sql.NullInt64
 	if err := h.DB.QueryRowContext(ctx, `SELECT graph_id FROM events WHERE id = $1`, eventID).Scan(&graphID); err != nil {
 		return err

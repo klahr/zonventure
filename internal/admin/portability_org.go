@@ -14,8 +14,8 @@ package admin
 // (existing token-bearing URLs still resolve to the right team /
 // slot / event / live page on the new instance).
 //
-// Out of scope for v1: event_activity, team_lane_orderings,
-// location_pings, answer_attempts, audit log slice. These are
+// Out of scope for v1: event_activity, team graph state,
+// location_pings, audit log slice. These are
 // either telemetry that regenerates as players play, or live-state
 // that doesn't survive a cutover anyway. They land in subsequent
 // rounds when there's a customer signal.
@@ -151,36 +151,16 @@ type orgExportActivity struct {
 }
 
 type orgExportTeam struct {
-	Idx              int    `json:"idx"`
-	Name             string `json:"name"`
-	Token            string `json:"token"`       // preserved
-	RecapToken       string `json:"recap_token"` // preserved
-	Email            string `json:"email,omitempty"`
-	WithdrawnAt      string `json:"withdrawn_at,omitempty"`
-	CompletedAt      string `json:"completed_at,omitempty"`
-	CurrentPageIndex int    `json:"current_page_index"`
-	// CurrentPagePosition + CurrentLaneIdx anchor the lane-aware
-	// cursor (`teams.current_page_id` + `current_lane_id`) so an
-	// in-flight team resumes on the right puzzle on the destination
-	// instead of bouncing to the adventure's first page. Both nil
-	// for pre-start / completed / cancelled teams.
-	CurrentPageIdx *int                    `json:"current_page_idx,omitempty"`
-	CurrentLaneIdx *int                    `json:"current_lane_idx,omitempty"`
-	AvatarFile     string                  `json:"avatar_file,omitempty"`
-	AvatarMime     string                  `json:"avatar_mime,omitempty"`
-	Slots          []orgExportSlot         `json:"slots,omitempty"`
-	LaneOrderings  []orgExportLaneOrdering `json:"lane_orderings,omitempty"`
-}
-
-// orgExportLaneOrdering is one team_lane_orderings row, keyed by
-// adventure-relative lane idx with page indices instead of raw
-// page_id values. The importer re-resolves the indices against the
-// freshly-minted page rows so the per-team puzzle order survives
-// the ID rebase — without this an in-flight shuffled lane resets
-// to lane order 0 on the destination, which players notice.
-type orgExportLaneOrdering struct {
-	LaneIdx  int   `json:"lane_idx"`
-	PageIdxs []int `json:"page_idxs"`
+	Idx         int             `json:"idx"`
+	Name        string          `json:"name"`
+	Token       string          `json:"token"`       // preserved
+	RecapToken  string          `json:"recap_token"` // preserved
+	Email       string          `json:"email,omitempty"`
+	WithdrawnAt string          `json:"withdrawn_at,omitempty"`
+	CompletedAt string          `json:"completed_at,omitempty"`
+	AvatarFile  string          `json:"avatar_file,omitempty"`
+	AvatarMime  string          `json:"avatar_mime,omitempty"`
+	Slots       []orgExportSlot `json:"slots,omitempty"`
 }
 
 type orgExportSlot struct {
@@ -488,12 +468,8 @@ func (h *Handlers) exportOrgEventTeams(ctx context.Context, eventID int64, event
 	rows, err := h.DB.QueryContext(ctx, `
 		SELECT t.id, t.name, t.token, t.recap_token, COALESCE(t.email, ''),
 		       COALESCE(t.withdrawn_at, ''), COALESCE(t.completed_at, ''),
-		       COALESCE(t.current_page_index, 0),
-		       cur_p.idx, cur_l.idx,
 		       t.avatar_mime_type, t.avatar_content
 		FROM teams t
-		LEFT JOIN adventure_pages cur_p ON cur_p.id = t.current_page_id
-		LEFT JOIN adventure_lanes cur_l ON cur_l.id = t.current_lane_id
 		WHERE t.event_id = $1
 		ORDER BY t.id
 	`, eventID)
@@ -513,27 +489,16 @@ func (h *Handlers) exportOrgEventTeams(ctx context.Context, eventID int64, event
 	)
 	for rows.Next() {
 		var (
-			id       int64
-			tm       orgExportTeam
-			curPgIdx sql.NullInt64
-			curLnIdx sql.NullInt64
-			avMime   sql.NullString
-			avBlob   []byte
+			id     int64
+			tm     orgExportTeam
+			avMime sql.NullString
+			avBlob []byte
 		)
 		if err := rows.Scan(&id, &tm.Name, &tm.Token, &tm.RecapToken, &tm.Email,
-			&tm.WithdrawnAt, &tm.CompletedAt, &tm.CurrentPageIndex,
-			&curPgIdx, &curLnIdx,
+			&tm.WithdrawnAt, &tm.CompletedAt,
 			&avMime, &avBlob,
 		); err != nil {
 			return nil, nil, fmt.Errorf("scan team: %w", err)
-		}
-		if curPgIdx.Valid {
-			v := int(curPgIdx.Int64)
-			tm.CurrentPageIdx = &v
-		}
-		if curLnIdx.Valid {
-			v := int(curLnIdx.Int64)
-			tm.CurrentLaneIdx = &v
 		}
 		tm.Idx = len(teams)
 		idxByID[id] = tm.Idx
@@ -551,8 +516,7 @@ func (h *Handlers) exportOrgEventTeams(ctx context.Context, eventID int64, event
 		return nil, nil, fmt.Errorf("team rows: %w", err)
 	}
 
-	// Slots + lane-orderings — second loop so we don't hold two
-	// cursors at once.
+	// Slots — second loop so we don't hold two cursors at once.
 	for _, e := range teamEntries {
 		slotRows, err := h.DB.QueryContext(ctx, `
 			SELECT name, token,
@@ -580,86 +544,8 @@ func (h *Handlers) exportOrgEventTeams(ctx context.Context, eventID int64, event
 		}
 		teams[e.idx].Slots = slots
 
-		// Lane orderings: per-team frozen permutations for shuffled
-		// lanes. `team_lane_orderings.page_ids` is a JSONB array of
-		// `adventure_pages.id` values; we resolve those to per-
-		// adventure page indices so the importer can rebuild the
-		// permutation against the freshly-minted page rows.
-		loRows, err := h.DB.QueryContext(ctx, `
-			SELECT lane.idx, ord.page_ids
-			FROM team_lane_orderings ord
-			JOIN adventure_lanes lane ON lane.id = ord.lane_id
-			WHERE ord.team_id = $1
-			ORDER BY lane.idx
-		`, e.id)
-		if err != nil {
-			return nil, nil, fmt.Errorf("load orderings for team %d: %w", e.id, err)
-		}
-		for loRows.Next() {
-			var (
-				laneIdx int
-				rawIDs  []byte
-			)
-			if err := loRows.Scan(&laneIdx, &rawIDs); err != nil {
-				loRows.Close()
-				return nil, nil, fmt.Errorf("scan ordering: %w", err)
-			}
-			var pageIDs []int64
-			if jerr := json.Unmarshal(rawIDs, &pageIDs); jerr != nil {
-				loRows.Close()
-				return nil, nil, fmt.Errorf("decode page_ids: %w", jerr)
-			}
-			pageIdxs, ferr := h.pageIDsToIdxs(ctx, pageIDs)
-			if ferr != nil {
-				loRows.Close()
-				return nil, nil, fmt.Errorf("resolve page idxs: %w", ferr)
-			}
-			teams[e.idx].LaneOrderings = append(teams[e.idx].LaneOrderings, orgExportLaneOrdering{
-				LaneIdx:  laneIdx,
-				PageIdxs: pageIdxs,
-			})
-		}
-		loRows.Close()
-		if err := loRows.Err(); err != nil {
-			return nil, nil, fmt.Errorf("ordering rows: %w", err)
-		}
 	}
 	return teams, idxByID, nil
-}
-
-// pageIDsToIdxs maps a slice of `adventure_pages.id` to the
-// corresponding `adventure_pages.idx` values, preserving order.
-// Used by the lane-ordering exporter so the bundle can describe
-// per-team permutations without baking primary keys. We build a
-// per-element IN clause rather than `= ANY($1)` because the
-// pgx-stdlib driver doesn't unwrap Go slices for ANY automatically.
-func (h *Handlers) pageIDsToIdxs(ctx context.Context, ids []int64) ([]int, error) {
-	if len(ids) == 0 {
-		return nil, nil
-	}
-	idxByID := map[int64]int{}
-	for _, id := range ids {
-		var idx int
-		if err := h.DB.QueryRowContext(ctx,
-			`SELECT idx FROM adventure_pages WHERE id = $1`, id).Scan(&idx); err != nil {
-			if errors.Is(err, sql.ErrNoRows) {
-				// Page disappeared between read and write; skip
-				// silently — the runtime tolerates a permutation
-				// with gaps (falls through to the lane's natural
-				// order).
-				continue
-			}
-			return nil, err
-		}
-		idxByID[id] = idx
-	}
-	out := make([]int, 0, len(ids))
-	for _, id := range ids {
-		if idx, ok := idxByID[id]; ok {
-			out = append(out, idx)
-		}
-	}
-	return out, nil
 }
 
 func (h *Handlers) exportOrgTicketPurchases(ctx context.Context, eventID int64, teamIdxByID map[int64]int) ([]orgExportTicketPurchase, error) {
@@ -960,13 +846,13 @@ func ImportOrgBundle(ctx context.Context, db *sql.DB, data []byte) (OrgImportSum
 			var newTeamID int64
 			if err := tx.QueryRowContext(ctx, `
 				INSERT INTO teams(event_id, name, token, recap_token, email,
-					withdrawn_at, completed_at, current_page_index,
+					withdrawn_at, completed_at,
 					avatar_mime_type, avatar_content, avatar_size_bytes)
-				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 				RETURNING id
 			`,
 				newEventID, tm.Name, tm.Token, tm.RecapToken, tm.Email,
-				sqlNullStr(tm.WithdrawnAt), sqlNullStr(tm.CompletedAt), tm.CurrentPageIndex,
+				sqlNullStr(tm.WithdrawnAt), sqlNullStr(tm.CompletedAt),
 				avMime, avBytes, int64(len(avBytes)),
 			).Scan(&newTeamID); err != nil {
 				cleanupOrg()
@@ -992,78 +878,6 @@ func ImportOrgBundle(ctx context.Context, db *sql.DB, data []byte) (OrgImportSum
 				slotIDByToken[s.Token] = newSlotID
 			}
 
-			// Resolve current_page_id / current_lane_id against the
-			// freshly-imported pages and lanes for this adventure,
-			// so an in-flight team's cursor lands on the right
-			// puzzle on the destination instead of resetting to
-			// page 0.
-			if tm.CurrentPageIdx != nil || tm.CurrentLaneIdx != nil {
-				var pageID, laneID sql.NullInt64
-				if tm.CurrentPageIdx != nil {
-					if err := tx.QueryRowContext(ctx, `
-						SELECT p.id FROM adventure_pages p
-						JOIN adventures a ON a.id = p.adventure_id
-						WHERE a.org_id = $1 AND a.slug = $2 AND p.idx = $3
-					`, orgID, ev.AdventureSlug, *tm.CurrentPageIdx).Scan(&pageID.Int64); err == nil {
-						pageID.Valid = true
-					}
-				}
-				if tm.CurrentLaneIdx != nil {
-					if err := tx.QueryRowContext(ctx, `
-						SELECT l.id FROM adventure_lanes l
-						JOIN adventures a ON a.id = l.adventure_id
-						WHERE a.org_id = $1 AND a.slug = $2 AND l.idx = $3
-					`, orgID, ev.AdventureSlug, *tm.CurrentLaneIdx).Scan(&laneID.Int64); err == nil {
-						laneID.Valid = true
-					}
-				}
-				if pageID.Valid || laneID.Valid {
-					if _, err := tx.ExecContext(ctx, `
-						UPDATE teams SET current_page_id = $1, current_lane_id = $2
-						WHERE id = $3
-					`, pageID, laneID, newTeamID); err != nil {
-						cleanupOrg()
-						return summary, fmt.Errorf("set team cursor %d/%d: %w", ev.Idx, tm.Idx, err)
-					}
-				}
-			}
-
-			// Lane orderings: per-team frozen permutations for the
-			// shuffled lanes. Resolve each lane idx + page idxs to
-			// the new lane_id + array of new page_ids for the
-			// destination's freshly-minted rows.
-			for _, lo := range tm.LaneOrderings {
-				var laneID int64
-				if err := tx.QueryRowContext(ctx, `
-					SELECT l.id FROM adventure_lanes l
-					JOIN adventures a ON a.id = l.adventure_id
-					WHERE a.org_id = $1 AND a.slug = $2 AND l.idx = $3
-				`, orgID, ev.AdventureSlug, lo.LaneIdx).Scan(&laneID); err != nil {
-					cleanupOrg()
-					return summary, fmt.Errorf("resolve lane %d for team %d: %w", lo.LaneIdx, tm.Idx, err)
-				}
-				pageIDs := make([]int64, 0, len(lo.PageIdxs))
-				for _, idx := range lo.PageIdxs {
-					var pid int64
-					if err := tx.QueryRowContext(ctx, `
-						SELECT p.id FROM adventure_pages p
-						JOIN adventures a ON a.id = p.adventure_id
-						WHERE a.org_id = $1 AND a.slug = $2 AND p.idx = $3
-					`, orgID, ev.AdventureSlug, idx).Scan(&pid); err != nil {
-						cleanupOrg()
-						return summary, fmt.Errorf("resolve page %d for team %d lane %d: %w", idx, tm.Idx, lo.LaneIdx, err)
-					}
-					pageIDs = append(pageIDs, pid)
-				}
-				pageIDsJSON, _ := json.Marshal(pageIDs)
-				if _, err := tx.ExecContext(ctx, `
-					INSERT INTO team_lane_orderings(team_id, lane_id, page_ids)
-					VALUES ($1, $2, $3)
-				`, newTeamID, laneID, string(pageIDsJSON)); err != nil {
-					cleanupOrg()
-					return summary, fmt.Errorf("insert lane ordering for team %d lane %d: %w", tm.Idx, lo.LaneIdx, err)
-				}
-			}
 		}
 
 		for _, p := range ev.TicketPurchases {
@@ -1273,13 +1087,6 @@ func sqlNullStr(s string) any {
 }
 
 func nullableInt64(v int64) any {
-	if v == 0 {
-		return nil
-	}
-	return v
-}
-
-func nullableInt(v int) any {
 	if v == 0 {
 		return nil
 	}

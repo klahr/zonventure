@@ -102,24 +102,28 @@ func TestPortabilityGraphRoundTrip(t *testing.T) {
 	assertGraphMediaOwned(t, db, newID, draft.Graph, pic, pic, snd)
 }
 
-// TestImportEnvelopeWithoutGraph keeps a lane-only manifest importing as
-// before, with no graph.
-func TestImportEnvelopeWithoutGraph(t *testing.T) {
+// TestImportClassicEnvelopeRefused refuses an export from the classic
+// editor — pages and no graph — since nothing can play it, and still
+// imports an adventure with neither, as an empty one to design.
+func TestImportClassicEnvelopeRefused(t *testing.T) {
 	db, _, user, _, _ := graphFixture(t, "graphy")
 	ctx := context.Background()
 	manifest := `{"format":"zonventure-adventure-v1","exported_at":"2026-01-01T00:00:00Z",
 		"adventure":{"slug":"lanes-only","title":"Lanes","description":"",
 		"lanes":[{"idx":0,"mode":"linear"}],
 		"pages":[{"idx":0,"lane_idx":0,"title":"One","lat":0,"lng":0}]}}`
-	advID, _, _, err := admin.ImportEnvelopeJSON(ctx, db, []byte(manifest), "", user)
+	if _, _, _, err := admin.ImportEnvelopeJSON(ctx, db, []byte(manifest), "", user); err == nil || !strings.Contains(err.Error(), "classic editor") {
+		t.Fatalf("import: %v, want the classic-editor refusal", err)
+	}
+
+	empty := `{"format":"zonventure-adventure-v1","exported_at":"2026-01-01T00:00:00Z",
+		"adventure":{"slug":"empty","title":"Empty","description":""}}`
+	advID, _, _, err := admin.ImportEnvelopeJSON(ctx, db, []byte(empty), "", user)
 	if err != nil {
 		t.Fatalf("import: %v", err)
 	}
 	if _, err := graphstore.Published(ctx, db, advID); !errors.Is(err, graphstore.ErrNotFound) {
 		t.Errorf("published graph: %v, want none", err)
-	}
-	if _, err := graphstore.LoadDraft(ctx, db, advID); !errors.Is(err, graphstore.ErrNotFound) {
-		t.Errorf("draft: %v, want none", err)
 	}
 }
 

@@ -19,7 +19,7 @@ import (
 // argument like t(state.flag) escapes the lexer. Those are rare and
 // listed in the audit comment below.
 func TestI18nCompleteness(t *testing.T) {
-	pages := []string{"web/arrange.html", "web/play.html", "web/live.html", "web/recap.html"}
+	pages := []string{"web/live.html", "web/recap.html"}
 	raw, err := webFS.ReadFile("web/locales/web/sv.json")
 	if err != nil {
 		t.Fatalf("read sv.json: %v", err)

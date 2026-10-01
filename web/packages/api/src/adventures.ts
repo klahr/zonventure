@@ -91,10 +91,6 @@ export const labelVersion = (slug: string, version: number, label: string) =>
 export const validateGraph = <Env, Rep>(slug: string, envelope: Env, signal?: AbortSignal) =>
   post<GraphPayload<Env, Rep>>(base(slug) + "/validate", envelope, signal ? { signal } : {});
 
-/** Build a graph from the adventure's lanes. Nothing is saved. */
-export const convertGraph = <Env, Rep>(slug: string) =>
-  post<GraphPayload<Env, Rep>>(base(slug) + "/convert");
-
 /**
  * The report carried by a refused save (422 graph_invalid), so the
  * designer can mark every problem rather than just the first.
@@ -114,7 +110,6 @@ interface AdventureEdit {
   intro_text: string;
   outro_text: string;
   language: string;
-  pages?: unknown[];
   accent_color: string;
   accent_secondary_color: string;
   background_color: string;
@@ -145,7 +140,7 @@ export async function getLook(slug: string, signal?: AbortSignal): Promise<Look>
   if (a.corners === "rounded" || a.corners === "soft" || a.corners === "sharp") b.corners = a.corners;
   if (a.cards === "raised" || a.cards === "flat") b.cards = a.cards;
   if (a.card_outline) b.card_outline = true;
-  return { title: a.title, intro: a.intro_text, outro: a.outro_text, language: a.language, lanePuzzles: a.pages?.length ?? 0, brand: b };
+  return { title: a.title, intro: a.intro_text, outro: a.outro_text, language: a.language, brand: b };
 }
 
 /** The adventure's own settings the designer shows beside its graph. */
@@ -155,8 +150,6 @@ export interface Look {
   outro: string;
   /** The language the adventure is written in — its graph's main language. */
   language: string;
-  /** Puzzles made in the classic list editor, which a new flow can start from. */
-  lanePuzzles: number;
   brand: Brand;
 }
 

@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,77 +14,127 @@ import (
 	"time"
 
 	"github.com/klahr/zonventure/internal/activity"
-	"github.com/klahr/zonventure/internal/adventure"
 	"github.com/klahr/zonventure/internal/auth"
+	"github.com/klahr/zonventure/internal/graph"
+	"github.com/klahr/zonventure/internal/graph/match"
+	"github.com/klahr/zonventure/internal/graphstore"
+	"github.com/klahr/zonventure/internal/play"
 )
 
 // demo adventure data — previously in adventures/demo/*.toml, now seeded
-// into the database. Lat/Lng are Stockholm landmarks so the map looks
-// alive when the demo tracks run through them.
+// into the database as a graph. Lat/Lng are Stockholm landmarks so the
+// map looks alive when the demo tracks run through them.
 type demoPage struct {
+	Slug     string
 	Title    string
 	Prompt   string
 	Hints    []demoHint
-	Accept   []adventure.AcceptEntry
+	Accept   []string
 	Lat, Lng float64
-	Radius   *float64
+	// Radius > 0 gates the puzzle on a zone around Lat/Lng.
+	Radius float64
 }
 
-// demoHint matches the shape of adventure_page_hints rows: a short text
-// revealed after delay_seconds from when the team opened the puzzle.
+// demoHint is a short text revealed delay seconds after the team
+// reached the puzzle.
 type demoHint struct {
 	Text     string
 	DelaySec int
 }
 
 func demoPages() []demoPage {
-	// A nil *float64 means "not gated"; a non-nil pointer sets the radius.
-	gated := func(r float64) *float64 { return &r }
-	lit := func(words ...string) []adventure.AcceptEntry {
-		out := make([]adventure.AcceptEntry, len(words))
-		for i, w := range words {
-			out[i] = adventure.AcceptEntry{Text: w}
-		}
-		return out
-	}
 	return []demoPage{
 		{
+			Slug:   "welcome",
 			Title:  "Welcome",
 			Prompt: "What word do you say when you meet someone for the first time?",
-			Accept: lit("hello", "hi"),
+			Accept: []string{"hello", "hi"},
 			Lat:    59.3308, Lng: 18.0731, // Kungsträdgården
 		},
 		{
+			Slug:   "landmark",
 			Title:  "Landmark",
 			Prompt: "Find the fountain in the central park. What colour are its tiles?",
 			Hints: []demoHint{
 				{Text: "Look at the inside of the basin, not the rim.", DelaySec: 60},
 			},
-			Accept: lit("blue", "azure"),
+			Accept: []string{"blue", "azure"},
 			Lat:    59.3326, Lng: 18.0649, // Sergels torg
-			Radius: gated(50),
+			Radius: 50,
 		},
 		{
+			Slug:   "finish",
 			Title:  "The Finish",
 			Prompt: `Name the Swedish word for "adventure".`,
-			Accept: lit("äventyr", "aventyr"),
+			Accept: []string{"äventyr", "aventyr"},
 			Lat:    59.3252, Lng: 18.0708, // Stortorget, Gamla stan
 		},
 	}
 }
 
-// insertDemoHints writes each page's hints into adventure_page_hints so
-// the demo exercises the hint UI the same way authored content does.
-func insertDemoHints(d *sql.DB, pageID int64, hints []demoHint) error {
-	for i, h := range hints {
-		if _, err := d.Exec(`
-			INSERT INTO adventure_page_hints(page_id, idx, text, delay_seconds)
-			VALUES ($1, $2, $3, $4)
-		`, pageID, i, h.Text, h.DelaySec); err != nil {
-			return err
+// demoGraph chains the demo pages from start to end, each showing the
+// picture imageID.
+func demoGraph(pages []demoPage, imageID int64) *graph.Graph {
+	g := &graph.Graph{}
+	g.Nodes = append(g.Nodes, graph.Node{Slug: "start", Type: graph.Start, Title: "Start"})
+	prev, prevPort := "start", graph.PortOut
+	for i, p := range pages {
+		zone := ""
+		if p.Radius > 0 {
+			zone = "zone-" + p.Slug
+			g.Zones = append(g.Zones, graph.Zone{Slug: zone, Name: p.Title, Lat: p.Lat, Lng: p.Lng, RadiusM: p.Radius})
 		}
+		matchers := make([]match.Matcher, len(p.Accept))
+		for j, a := range p.Accept {
+			matchers[j] = match.Matcher{Kind: match.Exact, Value: a}
+		}
+		hints := make([]graph.Hint, len(p.Hints))
+		for j, h := range p.Hints {
+			hints[j] = graph.Hint{Text: h.Text, DelaySeconds: h.DelaySec}
+		}
+		g.Nodes = append(g.Nodes, graph.Node{
+			Slug: p.Slug, Type: graph.Puzzle, Title: p.Title, Y: float64(i+1) * 140,
+			PuzzleCfg: &graph.PuzzleConfig{
+				Blocks: graph.LegacyBlocks(p.Prompt, []graph.Media{{ID: imageID, Kind: graph.MediaImage}}),
+				Zone:   zone,
+				Hints:  hints,
+				Outputs: []graph.Output{{
+					Port: "solved", Label: "Solved", Trigger: graph.OnAnswer, Matchers: matchers,
+				}},
+			},
+		})
+		g.Edges = append(g.Edges, graph.Edge{From: prev, FromPort: prevPort, To: p.Slug})
+		prev, prevPort = p.Slug, "solved"
 	}
-	return nil
+	g.Nodes = append(g.Nodes, graph.Node{Slug: "end", Type: graph.End, Title: "End", Y: float64(len(pages)+1) * 140})
+	g.Edges = append(g.Edges, graph.Edge{From: prev, FromPort: prevPort, To: "end"})
+	return g
+}
+
+// publishDemoGraph stores the placeholder picture as the adventure's
+// media and publishes the demo graph.
+func publishDemoGraph(ctx context.Context, d *sql.DB, advID int64) error {
+	sum := sha256.Sum256([]byte(placeholderImage))
+	var imageID int64
+	if err := d.QueryRowContext(ctx, `
+		INSERT INTO adventure_media(adventure_id, kind, mime_type, size_bytes, sha256, content)
+		VALUES ($1, 'image', 'image/svg+xml', $2, $3, $4)
+		ON CONFLICT (adventure_id, sha256) DO UPDATE SET kind = excluded.kind
+		RETURNING id
+	`, advID, len(placeholderImage), hex.EncodeToString(sum[:]), []byte(placeholderImage)).Scan(&imageID); err != nil {
+		return err
+	}
+	_, _, err := graphstore.Publish(ctx, d, advID, 0, demoGraph(demoPages(), imageID), "Demo")
+	return err
+}
+
+// demoLocator places each demo team wherever the seed says it is, so
+// the engine lets it answer the gated puzzle.
+type demoLocator map[int64][2]float64
+
+func (l demoLocator) Position(_ context.Context, _ play.Querier, teamID int64) (float64, float64, bool, error) {
+	p, ok := l[teamID]
+	return p[0], p[1], ok, nil
 }
 
 // seedArrangerUser upserts an org_admin ("arranger") from a "username:password"
@@ -178,36 +230,7 @@ func seedDemoAdventure(d *sql.DB) error {
 		"A tiny three-page adventure used as a smoke test.", "zv", pubID).Scan(&advID); err != nil {
 		return err
 	}
-	// Pages cascade to adventure_page_images, so a clean re-insert keeps
-	// the page set deterministic across repeated seeds.
-	if _, err := d.Exec(`DELETE FROM adventure_pages WHERE adventure_id = $1`, advID); err != nil {
-		return err
-	}
-	for i, p := range demoPages() {
-		accept, _ := json.Marshal(p.Accept)
-		var radius any
-		if p.Radius != nil {
-			radius = *p.Radius
-		}
-		var pageID int64
-		if err := d.QueryRow(`
-			INSERT INTO adventure_pages(adventure_id, idx, title, prompt, accept, lat, lng, radius_m)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-			RETURNING id
-		`, advID, i, p.Title, p.Prompt, string(accept), p.Lat, p.Lng, radius).Scan(&pageID); err != nil {
-			return err
-		}
-		if _, err := d.Exec(`
-			INSERT INTO adventure_page_images(page_id, idx, mime_type, size_bytes, content)
-			VALUES ($1, 0, 'image/svg+xml', $2, $3)
-		`, pageID, len(placeholderImage), []byte(placeholderImage)); err != nil {
-			return err
-		}
-		if err := insertDemoHints(d, pageID, p.Hints); err != nil {
-			return err
-		}
-	}
-	return nil
+	return publishDemoGraph(context.Background(), d, advID)
 }
 
 // seedDemo installs the full demo dataset: admin, org, users, demo adventure,
@@ -251,31 +274,8 @@ func seedDemo(ctx context.Context, d *sql.DB) error {
 		return err
 	}
 	pages := demoPages()
-	pageIDs := make([]int64, len(pages))
-	for i, p := range pages {
-		accept, _ := json.Marshal(p.Accept)
-		var radius any
-		if p.Radius != nil {
-			radius = *p.Radius
-		}
-		if err := d.QueryRow(`
-			INSERT INTO adventure_pages(adventure_id, idx, title, prompt, accept, lat, lng, radius_m)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-			RETURNING id
-		`, advID, i, p.Title, p.Prompt, string(accept), p.Lat, p.Lng, radius).Scan(&pageIDs[i]); err != nil {
-			return err
-		}
-		// Attach the same placeholder illustration to every puzzle so the
-		// play UI has a visual until the uploader is fixed.
-		if _, err := d.Exec(`
-			INSERT INTO adventure_page_images(page_id, idx, mime_type, size_bytes, content)
-			VALUES ($1, 0, 'image/svg+xml', $2, $3)
-		`, pageIDs[i], len(placeholderImage), []byte(placeholderImage)); err != nil {
-			return err
-		}
-		if err := insertDemoHints(d, pageIDs[i], p.Hints); err != nil {
-			return err
-		}
+	if err := publishDemoGraph(ctx, d, advID); err != nil {
+		return err
 	}
 
 	if _, err := upsertUser(d, "admin", "admin", auth.RoleAdmin, nil); err != nil {
@@ -337,21 +337,19 @@ func seedDemo(ctx context.Context, d *sql.DB) error {
 	}
 
 	rng := rand.New(rand.NewSource(1))
-	for _, plan := range plans {
+	teamIDs := make([]int64, len(plans))
+	for i, plan := range plans {
 		teamTok, err := auth.NewSlotToken()
 		if err != nil {
 			return err
 		}
 		var teamID int64
-		// Plant the page cursor too: progression compares against
-		// current_page_id, so a team with only an index can't advance.
-		// The demo is a single linear lane, so page N is pageIDs[N].
 		if err := d.QueryRow(
-			`INSERT INTO teams(event_id, name, current_page_index, current_page_id, current_page_started_at, token)
-			 VALUES ($1, $2, $3, $4, now_text(), $5) RETURNING id`,
-			eventID, plan.Name, plan.PageIdx, pageIDs[plan.PageIdx], teamTok).Scan(&teamID); err != nil {
+			`INSERT INTO teams(event_id, name, token) VALUES ($1, $2, $3) RETURNING id`,
+			eventID, plan.Name, teamTok).Scan(&teamID); err != nil {
 			return err
 		}
+		teamIDs[i] = teamID
 
 		slotIDs := make([]int64, 0, len(plan.Slots))
 		for _, name := range plan.Slots {
@@ -372,6 +370,22 @@ func seedDemo(ctx context.Context, d *sql.DB) error {
 
 		if err := seedTrackAndEvents(ctx, d, rng, pages, eventID, teamID, slotIDs, plan.PageIdx, plan.Progress); err != nil {
 			return err
+		}
+	}
+
+	// Pin the graph, place every team, and play each up to its page.
+	if err := play.Start(ctx, d, eventID); err != nil {
+		return err
+	}
+	at := demoLocator{}
+	engine := play.New(d)
+	engine.Locator = at
+	for i, plan := range plans {
+		for _, p := range pages[:plan.PageIdx] {
+			at[teamIDs[i]] = [2]float64{p.Lat, p.Lng}
+			if _, err := engine.Answer(ctx, teamIDs[i], p.Slug, p.Accept[0]); err != nil {
+				return fmt.Errorf("playing %s past %s: %w", plan.Name, p.Slug, err)
+			}
 		}
 	}
 	return nil

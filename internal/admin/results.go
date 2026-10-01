@@ -31,125 +31,7 @@ func (h *Handlers) ExportEventResults(w http.ResponseWriter, r *http.Request) {
 	if _, ok := h.authorizeEvent(w, r, eventID); !ok {
 		return
 	}
-	if uses, err := play.UsesGraph(r.Context(), h.DB, eventID); err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "lookup failed")
-		return
-	} else if uses {
-		h.exportGraphResults(w, r, eventID)
-		return
-	}
-
-	var (
-		slug      string
-		startedAt string
-	)
-	if err := h.DB.QueryRowContext(r.Context(),
-		`SELECT adventure_slug, COALESCE(started_at,'') FROM events WHERE id = $1`, eventID).
-		Scan(&slug, &startedAt); err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "lookup failed")
-		return
-	}
-	adv := h.Lib.Get(slug)
-	if adv == nil {
-		httpx.Error(w, http.StatusInternalServerError, "adventure not loaded")
-		return
-	}
-	// Enabled-only count — disabled puzzles never count toward a team's
-	// progress, so they shouldn't pad the "x of N" total on results.
-	enabledCount := 0
-	for _, p := range adv.Pages {
-		if !p.Disabled {
-			enabledCount++
-		}
-	}
-
-	rows, err := h.DB.QueryContext(r.Context(), `
-		SELECT t.id, t.name, t.current_page_index, COALESCE(t.completed_at, '')
-		FROM teams t
-		WHERE t.event_id = $1
-		ORDER BY
-		  (CASE WHEN t.completed_at IS NULL THEN 1 ELSE 0 END),
-		  t.completed_at ASC,
-		  t.current_page_index DESC,
-		  COALESCE(
-		    (SELECT MAX(created_at) FROM event_activity
-		     WHERE event_id = t.event_id AND team_id = t.id AND kind = 'answer.right'),
-		    t.created_at
-		  ) ASC,
-		  t.created_at ASC
-	`, eventID)
-	if err != nil {
-		httpx.Error(w, http.StatusInternalServerError, "query failed")
-		return
-	}
-	defer rows.Close()
-
-	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("Content-Disposition",
-		fmt.Sprintf(`attachment; filename="event-%d-results.csv"`, eventID))
-	cw := csv.NewWriter(w)
-	defer cw.Flush()
-	_ = cw.Write([]string{"rank", "team", "members", "puzzles_solved", "puzzles_total", "finished_at", "time"})
-
-	startedTime, _ := time.Parse("2006-01-02 15:04:05", startedAt)
-	if startedTime.IsZero() {
-		startedTime, _ = time.Parse(time.RFC3339, startedAt)
-	}
-
-	rank := 0
-	for rows.Next() {
-		var (
-			teamID      int64
-			name        string
-			rawCursor   int
-			completedAt string
-		)
-		if err := rows.Scan(&teamID, &name, &rawCursor, &completedAt); err != nil {
-			return
-		}
-		rank++
-		members, _ := h.teamMemberNames(r.Context(), teamID)
-		// current_page_index is a monotonic count of advances (one per
-		// accepted answer / unlock), so it doubles as the "puzzles
-		// solved" tally. Cap at enabledCount to keep the column tidy
-		// when an arranger toggled puzzles after teams advanced.
-		solved := rawCursor
-		if solved > enabledCount {
-			solved = enabledCount
-		}
-		if solved < 0 {
-			solved = 0
-		}
-		elapsed := ""
-		if completedAt != "" && !startedTime.IsZero() {
-			finishedTime, perr := time.Parse("2006-01-02 15:04:05", completedAt)
-			if perr != nil {
-				finishedTime, _ = time.Parse(time.RFC3339, completedAt)
-			}
-			if !finishedTime.IsZero() {
-				d := finishedTime.Sub(startedTime).Round(time.Second)
-				elapsed = d.String()
-			}
-		}
-		// CSV-injection defang on the WAY OUT. Team names + member
-		// names typed via the admin UI bypass the importer's defang
-		// (which only covers file-uploaded rosters), so an
-		// arranger-typed `=PWN()` would round-trip into Excel
-		// here and execute on download. SanitizeCellValue prefixes
-		// `=` / `+` / `-` / `@` / tab / `|` cells with a single
-		// quote — Excel renders the literal text instead of
-		// evaluating. Same OWASP-shaped helper used at import.
-		_ = cw.Write([]string{
-			strconv.Itoa(rank),
-			teamimport.SanitizeCellValue(name),
-			teamimport.SanitizeCellValue(members),
-			strconv.Itoa(solved),
-			strconv.Itoa(enabledCount),
-			completedAt,
-			elapsed,
-		})
-	}
+	h.exportGraphResults(w, r, eventID)
 }
 
 // exportGraphResults is the results CSV of a graph event, ranked as the
@@ -226,7 +108,7 @@ func (h *Handlers) exportGraphResults(w http.ResponseWriter, r *http.Request, ev
 				elapsed = t.CompletedAt.Sub(started.Time).Round(time.Second).String()
 			}
 		}
-		// Names are defanged on the way out, as in the lane export below.
+		// Names are defanged on the way out.
 		_ = cw.Write([]string{strconv.Itoa(rank), teamimport.SanitizeCellValue(t.Name), teamimport.SanitizeCellValue(members), num(t.Score), guess, off, finished, elapsed})
 	}
 	for _, u := range rest {

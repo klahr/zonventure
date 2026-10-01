@@ -42,7 +42,6 @@ func TestDomainPackagesStayPure(t *testing.T) {
 		"internal/graph/match",
 		"internal/graph/walk",
 		"internal/graph/valid",
-		"internal/graph/convert",
 		"internal/graph/session",
 	}
 

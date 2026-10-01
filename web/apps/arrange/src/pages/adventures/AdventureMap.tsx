@@ -9,9 +9,8 @@ type Map = import("maplibre-gl").Map;
  * The adventure on a map: numbered pins (filled when the step is gated),
  * zones drawn as their shapes. `faint` draws unlabelled dots instead, for
  * the catalog — the shape of the adventure without its exact gates.
- * `focus` flies to one pin, for "Show on map" in a puzzle card.
  */
-export function AdventureMap({ pins, accent, faint, focus, label, height = 300 }: { pins: Pin[]; accent?: string | undefined; faint?: boolean; focus?: { lat: number; lng: number; n: number } | null; label: string; height?: number }) {
+export function AdventureMap({ pins, accent, faint, label, height = 300 }: { pins: Pin[]; accent?: string | undefined; faint?: boolean; label: string; height?: number }) {
   const t = useT();
   const box = useRef<HTMLDivElement>(null);
   const map = useRef<Map | null>(null);
@@ -73,10 +72,6 @@ export function AdventureMap({ pins, accent, faint, focus, label, height = 300 }
     // The pins are the page's data, fixed while it is shown.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  useEffect(() => {
-    if (focus) map.current?.flyTo({ center: [focus.lng, focus.lat], zoom: 17 });
-  }, [focus]);
 
   if (failed) return <p className="cs-field__hint">{t.t("Map library failed to load — check your connection.")}</p>;
   return <div ref={box} className="adv-map" style={{ height }} role="region" aria-label={label} />;

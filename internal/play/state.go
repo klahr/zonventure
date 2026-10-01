@@ -24,8 +24,7 @@ import (
 // inside a zone — they have to produce another plausible fix first.
 const maxPingGapSeconds = 120.0
 
-// PingLocator reads positions from location_pings with the same rule the
-// lane runtime's gateReached uses.
+// PingLocator reads positions from location_pings.
 type PingLocator struct{}
 
 // Position implements Locator.
@@ -148,8 +147,7 @@ func (e *Engine) locate(ctx context.Context, q Querier, s *teamState) error {
 }
 
 // HaversineMeters is the great-circle distance used for zones. It lives
-// in internal/graph/session with the rest of the rules; this alias keeps
-// the lane runtime's name for it.
+// in internal/graph/session with the rest of the rules.
 var HaversineMeters = session.HaversineMeters
 
 // teamState is a team's full state, loaded once per action and held in
@@ -309,8 +307,8 @@ func (s *teamState) loadRest(ctx context.Context, q Querier) error {
 		return err
 	}
 
-	// The slot is the team's rank by id within its event — the same key
-	// lanes.teamSlot uses, so the shuffle is identical.
+	// The slot is the team's rank by id within its event, the key the
+	// shuffle rotates by.
 	if err := q.QueryRowContext(ctx, `
 		SELECT COUNT(*) FROM teams WHERE event_id = $1 AND id < $2
 	`, s.eventID, s.teamID).Scan(&s.SlotIndex); err != nil {

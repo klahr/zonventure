@@ -146,7 +146,6 @@ export function EventPage({ id }: { id: number }) {
             event={event}
             graph={graph}
             teams={teams}
-            adventure={adv}
             now={now}
             reload={reload}
             onOpen={(tid) => setOpen({ kind: "team", id: tid })}
@@ -156,7 +155,7 @@ export function EventPage({ id }: { id: number }) {
         </div>
         <div className="ev-col">
           <EmailsCard event={event} teams={teams} from={orgName} />
-          {messages.data && <MessagesCard event={event} teams={teams} messages={messages.data.messages ?? []} inbox={messages.data.inbox} reload={messages.reload} />}
+          {messages.data && <MessagesCard event={event} teams={teams} messages={messages.data.messages ?? []} reload={messages.reload} />}
           {photos.data && <PhotosCard event={event} graph={graph} photos={photos.data.photos ?? []} challenges={photos.data.challenges ?? 0} reload={() => { photos.reload(); reload(); }} />}
           <Card title={t.t("Event log")}>
             <div className="ev-scroll">
@@ -174,7 +173,6 @@ export function EventPage({ id }: { id: number }) {
           graph={graph}
           team={openTeam}
           color={teamColor(index.get(openTeam.id) ?? 0)}
-          adventure={adv}
           activityKey={activityKey}
           reload={reload}
           onEdit={() => setOpen({ kind: "edit-team", id: openTeam.id })}

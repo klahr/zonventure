@@ -10,7 +10,7 @@ import (
 )
 
 // EventGraph is the graph an event runs on, as pinned when it started.
-// ErrNoGraph before the start, or for an event on lanes.
+// ErrNoGraph before the start.
 func (e *Engine) EventGraph(ctx context.Context, q Querier, eventID int64) (*graph.Graph, error) {
 	var id sql.NullInt64
 	err := q.QueryRowContext(ctx, `SELECT graph_id FROM events WHERE id = $1`, eventID).Scan(&id)

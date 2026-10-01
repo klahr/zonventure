@@ -899,8 +899,7 @@ func (t *Team) PrefetchMedia(strict bool) []int64 {
 // Hint media is visible only once the hint is revealed, always — a hint
 // the team has not paid for must not leak through its picture.
 //
-// Step media follows the adventure's strict-assets setting, exactly as
-// lane pages do. Strict: only steps the team has reached, for puzzles
+// Step media follows the adventure's strict-assets setting. Strict: only steps the team has reached, for puzzles
 // where the picture is the clue. Not strict (the default): any step of
 // the adventure, so the player can download pictures ahead and still
 // show them in a dead spot.
@@ -989,8 +988,7 @@ func inputFor(cfg *graph.PuzzleConfig) *Input {
 	return in
 }
 
-// HaversineMeters is the great-circle distance, R = 6371000, matching
-// the lane runtime exactly so a zone admits the same positions.
+// HaversineMeters is the great-circle distance, R = 6371000.
 func HaversineMeters(lat1, lng1, lat2, lng2 float64) float64 {
 	const r = 6371000.0
 	rad := func(d float64) float64 { return d * math.Pi / 180 }

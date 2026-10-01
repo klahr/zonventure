@@ -18,7 +18,6 @@ import (
 	"github.com/klahr/zonventure/internal/auth"
 	"github.com/klahr/zonventure/internal/mcp"
 	"github.com/klahr/zonventure/internal/oauth"
-	"github.com/klahr/zonventure/internal/play"
 	"github.com/klahr/zonventure/internal/settings"
 )
 
@@ -128,26 +127,14 @@ func registerPageRoutes(r chi.Router, env *routesEnv) {
 	// which feels broken from a marketing-site perspective.
 	r.NotFound(render404)
 
-	// /play handles three things:
-	//   - /play?t=<magic> — exchange the magic-link for a slot session and
-	//     redirect back to /play (stripping the token)
-	//   - /play (no query, no session) — renders the play page which will
-	//     say "open your magic link"
-	//   - /play (with session cookie) — the playing UI
+	// /play?t=<magic> exchanges the magic link for a slot session; then,
+	// and for every other /play, the player app at /app/play/ takes over.
+	// Every magic link ever sent says /play, so this stays.
 	r.Get("/play", func(w http.ResponseWriter, req *http.Request) {
 		if playerH.MagicLinkLogin(w, req) {
 			return
 		}
-		// A team whose event runs on the graph engine plays in the React
-		// app. Deciding here keeps every magic link ever sent working:
-		// the link still says /play, and lane events still get play.html.
-		if slot, ok := auth.SlotFromContext(req.Context()); ok {
-			if uses, err := play.UsesGraph(req.Context(), cfg.DB, slot.EventID); err == nil && uses {
-				http.Redirect(w, req, "/app/play/", http.StatusFound)
-				return
-			}
-		}
-		servePage("web/play.html")(w, req)
+		http.Redirect(w, req, "/app/play/", http.StatusFound)
 	})
 	// The console lives at /app/arrange/. /arrange redirects there with its
 	// query (Stripe's ?stripe_connect=return) kept; the browser carries
@@ -160,9 +147,6 @@ func registerPageRoutes(r chi.Router, env *routesEnv) {
 		}
 		http.Redirect(w, req, target, http.StatusFound)
 	})
-	// The classic console, kept reachable while its list-based adventure
-	// editor has no replacement decided.
-	r.Get("/arrange/classic", servePage("web/arrange.html"))
 
 	// Legal pages — public, cached at the proxy by Cache-Control.
 	// Both pages are clearly-marked drafts until the operator sets

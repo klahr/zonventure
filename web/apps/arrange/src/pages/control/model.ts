@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from "react";
 import type { I18n } from "@zonventure/i18n";
 import { toDate } from "../../ui/index.ts";
-import type { EventDetail, EventInfo, LanePage, Team } from "./api.ts";
+import type { EventDetail, EventInfo, Team } from "./api.ts";
 
 /** The classic console's team palette, so a team keeps its colour across both. */
 const TEAM_COLORS = ["#e24080", "#429a3f", "#2563eb", "#f59e0b", "#7c3aed", "#0891b2", "#be185d", "#16a34a"];
@@ -9,26 +9,16 @@ export const teamColor = (i: number) => TEAM_COLORS[((i % TEAM_COLORS.length) + 
 
 export const ZONE_COLOR = "#ad1357";
 
-export const isGraph = (e: EventInfo) => e.engine === "graph";
-
 export const runLabel = (e: EventInfo, t: I18n) => e.name || t.t("Event #{{id}}", { id: e.id });
 
 export const stepTitle = (d: EventDetail | null, slug: string | undefined) => d?.graph?.titles?.[slug ?? ""] || slug || "";
 
 const fmtPoints = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1));
 
-/** How far a team has got: points and step for a graph, "i / n" puzzles for lanes. */
-export function teamProgress(d: EventDetail, tm: Team, pages: LanePage[] | null, t: I18n): { main: string; step: string } {
-  if (isGraph(d.event)) {
-    const done = !!tm.completed_at || !!tm.outcome;
-    return { main: t.t("{{n}} points", { n: fmtPoints(tm.score ?? 0) }), step: done ? "" : stepTitle(d, tm.node) };
-  }
-  const ps = pages ?? [];
-  const done = !!tm.completed_at || (ps.length > 0 && tm.page_index >= ps.length);
-  return {
-    main: ps.length ? t.t("{{i}} / {{n}}", { i: Math.min(tm.page_index + 1, ps.length), n: ps.length }) : String(tm.page_index),
-    step: done ? "" : ps[tm.page_index]?.title || "",
-  };
+/** How far a team has got: points and the step it is on. */
+export function teamProgress(d: EventDetail, tm: Team, t: I18n): { main: string; step: string } {
+  const done = !!tm.completed_at || !!tm.outcome;
+  return { main: t.t("{{n}} points", { n: fmtPoints(tm.score ?? 0) }), step: done ? "" : stepTitle(d, tm.node) };
 }
 
 /**

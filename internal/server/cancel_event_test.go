@@ -86,10 +86,12 @@ func TestCancelEvent_FromRunning(t *testing.T) {
 		t.Fatalf("magic link = %d", s)
 	}
 	var state struct {
-		Status string `json:"status"`
+		Event struct {
+			State string `json:"state"`
+		} `json:"event"`
 	}
-	if s := alice.do("GET", "/api/player/state", nil, &state); s != 200 || state.Status != "running" {
-		t.Fatalf("pre-cancel player status = %q (HTTP %d), want running", state.Status, s)
+	if s := alice.do("GET", "/api/player/play", nil, &state); s != 200 || state.Event.State != "running" {
+		t.Fatalf("pre-cancel event state = %q (HTTP %d), want running", state.Event.State, s)
 	}
 
 	if s := arr.doWithConfirm("POST",
@@ -105,13 +107,13 @@ func TestCancelEvent_FromRunning(t *testing.T) {
 	// against. Either signal achieves the same UX outcome (the
 	// player UI bounces them off the active screen); 401 is the
 	// shape the production code now produces.
-	if s := alice.do("GET", "/api/player/state", nil, &state); s != 401 {
+	if s := alice.do("GET", "/api/player/play", nil, &state); s != 401 {
 		t.Fatalf("post-cancel player state = %d, want 401 (slot session expired on cancel)", s)
 	}
 	// Submitting an answer post-cancel hits the same expired-session
 	// 401 — the per-handler 409 "RunState != running" never fires
 	// because the auth middleware short-circuits first.
-	if s := alice.do("POST", "/api/player/answer", map[string]string{"answer": "hello"}, nil); s != 401 {
+	if s := alice.doAny("POST", "/api/player/play/answer", map[string]string{"node": "welcome", "guess": "hello"}, nil); s != 401 {
 		t.Fatalf("answer after cancel = %d, want 401 (expired session)", s)
 	}
 }

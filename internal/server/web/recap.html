@@ -318,20 +318,12 @@ function render(d) {
 
   if (d.outro_text && d.outro_text.trim()) {
     // Server pre-renders the markdown via goldmark, so drop the HTML
-    // straight into innerHTML — same approach play.html uses.
+    // straight into innerHTML.
     root.append(el('div', { class: 'outro', html: d.outro_text }));
   }
 
-  if (d.engine === 'graph') {
-    renderGraphStats(d);
-    renderPhotos(d);
-  } else {
-    root.append(el('div', { class: 'stats' },
-      statBox(formatDuration(d.duration_seconds), t('Time')),
-      statBox(formatDistance(d.distance_m),       t('Distance')),
-      statBox(String(d.answers_right ?? '—'),     t('Correct answers')),
-      statBox(String(d.answers_wrong ?? '—'),     t('Misses'))));
-  }
+  renderGraphStats(d);
+  renderPhotos(d);
 
   const mapHost = el('div', { id: 'map' });
   root.append(mapHost);
@@ -371,9 +363,8 @@ function render(d) {
   }
 }
 
-// renderGraphStats is the graph engine's stats row and step list: the
-// team's points and place where a lane recap counts puzzles, then every
-// puzzle and story it reached.
+// renderGraphStats is the stats row and step list: the team's points
+// and place, then every puzzle and story it reached.
 function renderGraphStats(d) {
   const points = Number.isFinite(d.points)
     ? new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(d.points)
@@ -433,24 +424,8 @@ function mountMap(host, d) {
   if (points.length >= 2) {
     L.polyline(points, { color: accent, weight: 4, opacity: 0.85 }).addTo(map);
   }
-  // Puzzle pins. Solved puzzles get a filled circle; unsolved
-  // (relevant for cancelled events) get a hollow ring so the team
-  // can see how far they got.
-  for (const p of (d.puzzles || [])) {
-    if (!Number.isFinite(p.lat) || !Number.isFinite(p.lng)) continue;
-    if (p.lat === 0 && p.lng === 0) continue; // un-set location
-    const solved = !!p.solved_at;
-    L.circleMarker([p.lat, p.lng], {
-      radius: 7,
-      color: accent,
-      weight: 2,
-      fillColor: solved ? accent : 'transparent',
-      fillOpacity: solved ? 1 : 0,
-    }).bindTooltip((p.title || ('#' + (p.index + 1))) + (solved ? '' : ' (' + t('not reached') + ')'))
-      .addTo(map);
-  }
-
-  // Graph zone pins, the same way: filled once a step there was done.
+  // Zone pins. Filled once a step there was done; hollow otherwise
+  // (relevant for cancelled events) so the team sees how far it got.
   const zonePoints = [];
   for (const z of (d.zones || [])) {
     const style = {
@@ -471,14 +446,9 @@ function mountMap(host, d) {
     zonePoints.push([z.lat, z.lng]);
   }
 
-  // Fit bounds: prefer the track, fall back to puzzle pins, finally
-  // a Stockholm-default so the map never lands on the ocean.
+  // Fit bounds: the track and zone pins, else a Stockholm default so
+  // the map never lands on the ocean.
   const allPoints = points.concat(zonePoints);
-  for (const p of (d.puzzles || [])) {
-    if (Number.isFinite(p.lat) && Number.isFinite(p.lng) && !(p.lat === 0 && p.lng === 0)) {
-      allPoints.push([p.lat, p.lng]);
-    }
-  }
   if (allPoints.length > 0) {
     map.fitBounds(L.latLngBounds(allPoints), { padding: [24, 24] });
   } else {

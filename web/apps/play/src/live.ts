@@ -5,10 +5,8 @@ import { play } from "@zonventure/api";
  * Refetch whenever the server says something changed.
  *
  * /ws/play pushes on every change in the event — a teammate answering,
- * the organiser pausing. The push body is the lane player's state shape,
- * so this treats any message as "look again" and re-reads the graph view
- * over HTTP; one extra request per change is cheap next to keeping two
- * push formats in step.
+ * the organiser pausing. Any message means "look again": the view is
+ * re-read over HTTP.
  *
  * Reconnects with backoff. A slow poll stays on underneath, because a
  * socket that looks open on a phone moving between cells can be dead.

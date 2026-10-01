@@ -1,8 +1,8 @@
 // Player-side offline action queue.
 //
-// A behaviour-identical TypeScript port of
-// internal/server/web/play-queue.js. Same localStorage key, same cap,
-// same FIFO-drop, same ack semantics — deliberately, because this is
+// A behaviour-identical TypeScript port of the classic player's
+// play-queue.js. Same localStorage key, same cap, same FIFO-drop, same
+// ack semantics — deliberately, because this is
 // the load-bearing piece for offline-tolerant play and a regression
 // here ships silently: a player loses an answer they typed in a dead
 // spot, the server sees nothing, and no error path fires.
@@ -32,10 +32,9 @@ export const PENDING_QUEUE_KEY = "zv-play-pending-v1";
 export const PENDING_ANSWERS_MAX = 5;
 
 /**
- * "answer" and "advance" are play.html's lane actions. "play" is a graph
- * action from the React player: data.action is the api play.PlayAction.
- * Added rather than substituted, so a queue written by either app loads
- * in either, and each flushes only the kinds it understands.
+ * "play" is an action from the player app: data.action is the api
+ * play.PlayAction. "answer" and "advance" were the classic player's;
+ * a queue it left behind still loads, and only "play" is flushed.
  */
 export type PendingKind = "answer" | "advance" | "play";
 
@@ -77,7 +76,7 @@ function isPendingAction(v: unknown): v is PendingAction {
 export class Outbox {
   /**
    * The FIFO queue. Exposed because call sites push and inspect it
-   * directly, exactly as play.html does today.
+   * directly.
    */
   readonly pending: PendingAction[] = [];
 

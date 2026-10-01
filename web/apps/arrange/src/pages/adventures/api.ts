@@ -30,40 +30,6 @@ export interface Assignment {
   event_id?: number;
 }
 
-export interface Accept {
-  text: string;
-  regex?: boolean;
-}
-
-export interface Media {
-  id: number;
-  url: string;
-  alt_text?: string;
-}
-
-/** internal/admin/users.go: AdventureDetail's pageDTO. */
-export interface DetailPage {
-  index: number;
-  title: string;
-  prompt: string;
-  prompt_html?: string;
-  accept?: Accept[] | null;
-  location: { lat: number; lng: number; radius_m?: number };
-  gated: boolean;
-  images?: Media[];
-  audio?: Media[];
-  hints?: { text_html: string; delay_seconds: number; images?: Media[] }[];
-  disabled?: boolean;
-  lane_id?: number;
-}
-
-export interface Lane {
-  id: number;
-  idx: number;
-  name?: string;
-  mode: "linear" | "shuffled" | string;
-}
-
 /** internal/graph: Zone */
 export interface Zone {
   slug: string;
@@ -93,8 +59,6 @@ export interface AdventureDetail {
   outro_text?: string;
   intro_html?: string;
   outro_html?: string;
-  page_count: number;
-  pages?: DetailPage[];
   colors?: { accent?: string };
   avatar_url?: string;
   published: boolean;
@@ -102,7 +66,6 @@ export interface AdventureDetail {
   language?: string;
   org_id?: number;
   mine_to_edit: boolean;
-  lanes?: Lane[];
   start_lat?: number;
   start_lng?: number;
   start_label?: string;

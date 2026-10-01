@@ -1,16 +1,16 @@
-import { useRef, useState, type ReactNode } from "react";
-import { CalendarPlus, ChevronLeft, Coins, Copy, Download, ExternalLink, Eye, MapPin, Pencil, Trash2, Workflow } from "lucide-react";
+import { useState, type ReactNode } from "react";
+import { CalendarPlus, ChevronLeft, Coins, Copy, Download, ExternalLink, MapPin, Pencil, Trash2, Workflow } from "lucide-react";
 import { ApiError } from "@zonventure/api";
 import { useT } from "../../i18n.tsx";
 import { useSession } from "../../session.tsx";
 import { useTopBarTitle } from "../../topbar.tsx";
-import { CATALOG_ENABLED, consoleHref, href } from "../../router.ts";
-import { Button, Card, ErrorBox, ICON, Loading, Page, PageHeader, Pill, Row, Stat, Stats, useDialogs, useLoad, useToast } from "../../ui/index.ts";
+import { CATALOG_ENABLED, href } from "../../router.ts";
+import { Button, Card, ErrorBox, ICON, Loading, Page, PageHeader, Pill, Stat, Stats, useDialogs, useLoad, useToast } from "../../ui/index.ts";
 import { NewEventDialog } from "../events/NewEventDialog.tsx";
-import { deleteAdventure, duplicateAdventure, exportURL, firstPlaceOf, getAdventure, getGraphState, isPublisher, listAdventures, listAssignments, type Accept, type AdventureDetail, type Assignment, type DetailPage } from "./api.ts";
+import { deleteAdventure, duplicateAdventure, exportURL, firstPlaceOf, getAdventure, getGraphState, isPublisher, listAdventures, listAssignments, type AdventureDetail, type Assignment } from "./api.ts";
 import { AdventureMap } from "./AdventureMap.tsx";
 import { EditDetailsDialog, PickPassDialog } from "./dialogs.tsx";
-import { extentKm, formatKm, hintDelay, pinsOf } from "./facts.ts";
+import { extentKm, formatKm, pinsOf } from "./facts.ts";
 import type { Schedule } from "./List.tsx";
 import { Cover, LanguagePill, puzzleCount } from "./parts.tsx";
 import { MoreMenu, type MenuItem } from "../event/Menu.tsx";
@@ -53,31 +53,24 @@ function Detail({ a, shared, passes, reload }: { a: AdventureDetail; shared: boo
   const [editing, setEditing] = useState(false);
   const [cover, setCover] = useState(a.avatar_url);
   const [copying, setCopying] = useState(false);
-  const [focus, setFocus] = useState<{ lat: number; lng: number; n: number } | null>(null);
-  const mapCard = useRef<HTMLDivElement>(null);
 
   const g = a.graph ?? null;
-  const pages = g ? [] : (a.pages ?? []);
-  const enabled = pages.filter((p) => !p.disabled);
-  const pins = pinsOf(a, t);
+  const pins = pinsOf(a);
   const zoneNames = new Map((g?.zones ?? []).map((z) => [z.slug, z.name || z.slug]));
-  // Made in the designer but not published: no pages and no graph to describe.
-  const designed = !g && pages.length === 0;
+  // Made in the designer but not published: no graph to describe.
+  const designed = !g;
   const accent = a.colors?.accent;
   // The org's own adventure, whoever may edit it: scheduled through the buy-then-schedule flow.
   const own = a.mine_to_edit || (a.org_id != null && a.org_id === user?.org_id);
 
-  const puzzles = g ? g.puzzle_count : enabled.length;
-  const places = g ? new Set(g.steps.map((s) => s.zone).filter((z) => z && zoneNames.has(z))).size : enabled.filter((p) => p.gated).length;
+  const puzzles = g ? g.puzzle_count : 0;
+  const places = g ? new Set(g.steps.map((s) => s.zone).filter((z) => z && zoneNames.has(z))).size : 0;
   const km = extentKm(pins);
 
   const start = a.start_lat != null && a.start_lng != null
-    ? { lat: a.start_lat, lng: a.start_lng, label: a.start_label || "", inferred: false }
-    : (() => {
-        const p = g ? null : enabled.find((x) => x.gated && (x.location.lat || x.location.lng));
-        return p ? { lat: p.location.lat, lng: p.location.lng, label: p.title || "", inferred: true } : null;
-      })();
-  const firstPlace = g ? firstPlaceOf(g) : (enabled.find((x) => x.gated && (x.location.lat || x.location.lng))?.location ?? null);
+    ? { lat: a.start_lat, lng: a.start_lng, label: a.start_label || "" }
+    : null;
+  const firstPlace = g ? firstPlaceOf(g) : null;
 
   const openSchedule = () => {
     if (passes.length === 1) setSchedule({ assignmentId: passes[0]!.id });
@@ -130,15 +123,9 @@ function Detail({ a, shared, passes, reload }: { a: AdventureDetail; shared: boo
       <span>
         <strong>{mapped ? t.t("Start: {{place}}", { place: start.label || t.t("Start here") }) : start.label || t.t("Start here")}</strong>{" "}
         <span className="adv-mono adv-muted">{start.lat.toFixed(5)}, {start.lng.toFixed(5)}</span>
-        {start.inferred && <span className="cs-field__hint adv-block">{t.t("Inferred from the first gated puzzle. Author: set an explicit starting location in the adventure editor.")}</span>}
       </span>
     </div>
   );
-
-  const showOnMap = (p: { lat: number; lng: number }) => {
-    setFocus({ ...p, n: Date.now() });
-    mapCard.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-  };
 
   const pills: ReactNode[] = [];
   if (CATALOG_ENABLED && a.mine_to_edit && isPublisher(user)) {
@@ -156,7 +143,6 @@ function Detail({ a, shared, passes, reload }: { a: AdventureDetail; shared: boo
 
   const more: MenuItem[] = [];
   if (a.mine_to_edit) {
-    if (enabled.length > 0) more.push({ label: t.t("Preview as player"), icon: <Eye size={ICON.sm} aria-hidden />, href: `/play?preview=${encodeURIComponent(a.slug)}`, target: "_blank" });
     more.push(
       { label: t.t("Edit details"), icon: <Pencil size={ICON.sm} aria-hidden />, title: t.t("Title, short name, description, intro, start and cover"), onClick: () => setEditing(true) },
       { label: t.t("Duplicate"), icon: <Copy size={ICON.sm} aria-hidden />, title: t.t("Make an independent copy in your organization"), onClick: () => void duplicate() },
@@ -184,18 +170,6 @@ function Detail({ a, shared, passes, reload }: { a: AdventureDetail; shared: boo
         <Button variant="primary" icon={<Coins size={ICON.md} aria-hidden />} onClick={openSchedule}>
           {t.t("Buy an event pass")}
         </Button>
-      )}
-      {a.mine_to_edit && !g && pages.length > 0 && (
-        <a className="btn adv-btn" href={consoleHref(`library/${encodeURIComponent(a.slug)}`)} title={t.t("The older editor: puzzles in lanes")}>
-          <Pencil size={ICON.md} aria-hidden />
-          {t.t("Classic editor")}
-        </a>
-      )}
-      {!a.mine_to_edit && enabled.length > 0 && (
-        <a className="btn adv-btn" href={`/play?preview=${encodeURIComponent(a.slug)}`} target="_blank" rel="noopener">
-          <Eye size={ICON.md} aria-hidden />
-          {t.t("Preview as player")}
-        </a>
       )}
       {more.length > 0 && <MoreMenu label={t.t("More")} items={more} />}
     </>
@@ -257,12 +231,10 @@ function Detail({ a, shared, passes, reload }: { a: AdventureDetail; shared: boo
       {designed && <DesignedSteps slug={a.slug} canRead={a.mine_to_edit} />}
 
       {mapped ? (
-        <div ref={mapCard}>
-          <Card title={t.t("Map")} subtitle={g ? t.t("Where the steps happen: the zones teams must reach.") : t.t("All puzzle locations. Show one from its card below.")} actions={start && openInMaps}>
-            {start && startLine}
-            <AdventureMap pins={pins} accent={accent} focus={focus} label={t.t("Map")} />
-          </Card>
-        </div>
+        <Card title={t.t("Map")} subtitle={t.t("Where the steps happen: the zones teams must reach.")} actions={start && openInMaps}>
+          {start && startLine}
+          <AdventureMap pins={pins} accent={accent} label={t.t("Map")} />
+        </Card>
       ) : start && (
         <Card title={t.t("Start here")} actions={openInMaps}>
           {startLine}
@@ -294,7 +266,6 @@ function Detail({ a, shared, passes, reload }: { a: AdventureDetail; shared: boo
         </Card>
       )}
 
-      {!g && !designed && <Puzzles a={a} pages={enabled} onMap={showOnMap} />}
 
       {editing && (
         <EditDetailsDialog
@@ -372,103 +343,3 @@ function DesignedSteps({ slug, canRead }: { slug: string; canRead: boolean }) {
   return <Card title={t.t("Steps")}>{body}</Card>;
 }
 
-/** A lane adventure's puzzles, grouped by lane when it has more than one. */
-function Puzzles({ a, pages, onMap }: { a: AdventureDetail; pages: DetailPage[]; onMap: (p: { lat: number; lng: number }) => void }) {
-  const t = useT();
-  const lanes = [...(a.lanes ?? [])].sort((x, y) => x.idx - y.idx);
-  if (pages.length === 0) {
-    return (
-      <Card title={t.t("Puzzles")}>
-        <p className="adv-muted">{t.t("No puzzles yet.")}</p>
-      </Card>
-    );
-  }
-  if (lanes.length <= 1) {
-    return (
-      <Card title={t.t("Puzzles")}>
-        <ol className="adv-puzzles">{pages.map((p, i) => <PuzzleCard key={p.index} p={p} n={i + 1} onMap={onMap} />)}</ol>
-      </Card>
-    );
-  }
-  const byLane = new Map<number, DetailPage[]>(lanes.map((l) => [l.id, []]));
-  const orphans: DetailPage[] = [];
-  for (const p of pages) (byLane.get(p.lane_id ?? -1) ?? orphans).push(p);
-  let n = 0;
-  return (
-    <Card title={t.t("Puzzles")}>
-      {lanes.map((l) => {
-        const lp = byLane.get(l.id) ?? [];
-        if (lp.length === 0) return null;
-        return (
-          <section key={l.id} className="adv-lane">
-            <h3 className="adv-h3">
-              {l.name || t.t("Lane {{n}}", { n: l.idx + 1 })}
-              <Pill tone={l.mode === "shuffled" ? "info" : "neutral"}>{l.mode === "shuffled" ? t.t("Shuffled") : t.t("Linear")}</Pill>
-              <span className="adv-muted adv-small">{puzzleCount(t, lp.length)}</span>
-            </h3>
-            <ol className="adv-puzzles" start={n + 1}>{lp.map((p) => <PuzzleCard key={p.index} p={p} n={++n} onMap={onMap} />)}</ol>
-          </section>
-        );
-      })}
-      {orphans.length > 0 && (
-        <section className="adv-lane">
-          <h3 className="adv-h3">{t.t("Unassigned")}</h3>
-          <ol className="adv-puzzles" start={n + 1}>{orphans.map((p) => <PuzzleCard key={p.index} p={p} n={++n} onMap={onMap} />)}</ol>
-        </section>
-      )}
-    </Card>
-  );
-}
-
-function PuzzleCard({ p, n, onMap }: { p: DetailPage; n: number; onMap: (p: { lat: number; lng: number }) => void }) {
-  const t = useT();
-  const [answers, setAnswers] = useState(false);
-  const { lat, lng, radius_m } = p.location;
-  return (
-    <li className="adv-pz">
-      <div className="adv-pz__head">
-        <span className="adv-pz__num" aria-hidden>{n}</span>
-        <strong className="adv-pz__title">{p.title || t.t("(untitled)")}</strong>
-        {p.gated && <Pill tone="warn">{t.t("gated")}</Pill>}
-      </div>
-      {!!p.images?.length && (
-        <div className="adv-pz__images">
-          {p.images.map((im) => <img key={im.id} src={im.url} alt={im.alt_text || ""} title={im.alt_text || undefined} loading="lazy" />)}
-        </div>
-      )}
-      {p.prompt_html ? <div className="adv-prose" dangerouslySetInnerHTML={{ __html: p.prompt_html }} /> : p.prompt ? <p className="adv-pre">{p.prompt}</p> : null}
-      {!!p.hints?.length && (
-        <details className="adv-pz__hints">
-          <summary>{t.plural(p.hints.length, { one: t.t("{{n}} hint"), other: t.t("{{n}} hints") })}</summary>
-          {p.hints.map((h, i) => (
-            <div key={i} className="adv-pz__hint">
-              <div className="adv-muted adv-small">{t.t("Hint {{i}}", { i: i + 1 })} · {hintDelay(t, h.delay_seconds || 0)}</div>
-              {h.text_html && <div className="adv-prose" dangerouslySetInnerHTML={{ __html: h.text_html }} />}
-              {!!h.images?.length && <div className="adv-pz__images">{h.images.map((im) => <img key={im.id} src={im.url} alt={im.alt_text || ""} loading="lazy" />)}</div>}
-            </div>
-          ))}
-        </details>
-      )}
-      <Row gap="sm">
-        {(lat || lng) ? (
-          <Button size="sm" variant="ghost" icon={<MapPin size={ICON.sm} aria-hidden />} onClick={() => onMap({ lat, lng })}>
-            {t.t("Show on map")}{radius_m ? t.t(" · gate {{r}} m", { r: radius_m }) : ""}
-          </Button>
-        ) : null}
-        {!!p.accept?.length && (
-          <Button size="sm" variant="ghost" icon={<Eye size={ICON.sm} aria-hidden />} aria-expanded={answers} onClick={() => setAnswers((v) => !v)}>
-            {answers ? t.t("Hide answers") : t.t("Show answers")}
-          </Button>
-        )}
-      </Row>
-      {answers && p.accept && <p className="adv-answers">{p.accept.map((x, i) => <AcceptChip key={i} a={x} />)}</p>}
-    </li>
-  );
-}
-
-function AcceptChip({ a }: { a: Accept | string }) {
-  const t = useT();
-  if (typeof a === "string") return <span className="adv-chip">{a}</span>;
-  if (a.regex) return <span className="adv-chip adv-mono" title={t.t("Regex pattern (anchored, case-insensitive)")}>re: {a.text}</span>;
-  return <span className="adv-chip">{a.text}</span>;
-}

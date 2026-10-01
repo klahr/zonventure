@@ -157,12 +157,11 @@ type eventExport struct {
 }
 
 type teamExport struct {
-	ID               int64        `json:"id"`
-	Name             string       `json:"name"`
-	CurrentPageIndex int          `json:"current_page_index"`
-	CompletedAt      string       `json:"completed_at,omitempty"`
-	CreatedAt        string       `json:"created_at"`
-	Members          []slotExport `json:"members,omitempty"`
+	ID          int64        `json:"id"`
+	Name        string       `json:"name"`
+	CompletedAt string       `json:"completed_at,omitempty"`
+	CreatedAt   string       `json:"created_at"`
+	Members     []slotExport `json:"members,omitempty"`
 }
 
 type slotExport struct {
@@ -327,7 +326,7 @@ func loadOrgEvents(ctx context.Context, db *sql.DB, orgID int64, out *exportPayl
 
 func loadEventTeams(ctx context.Context, db *sql.DB, eventID int64) ([]teamExport, error) {
 	rows, err := db.QueryContext(ctx, `
-		SELECT id, name, current_page_index, COALESCE(completed_at,''), created_at
+		SELECT id, name, COALESCE(completed_at,''), created_at
 		FROM teams WHERE event_id = $1 ORDER BY id
 	`, eventID)
 	if err != nil {
@@ -337,7 +336,7 @@ func loadEventTeams(ctx context.Context, db *sql.DB, eventID int64) ([]teamExpor
 	var teams []teamExport
 	for rows.Next() {
 		var tm teamExport
-		if err := rows.Scan(&tm.ID, &tm.Name, &tm.CurrentPageIndex, &tm.CompletedAt, &tm.CreatedAt); err != nil {
+		if err := rows.Scan(&tm.ID, &tm.Name, &tm.CompletedAt, &tm.CreatedAt); err != nil {
 			return nil, err
 		}
 		teams = append(teams, tm)

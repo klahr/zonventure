@@ -11,7 +11,6 @@ package admin
 //	POST  /api/admin/adventures/{slug}/graph/versions/{version}/publish   roll back to it
 //	PATCH /api/admin/adventures/{slug}/graph/versions/{version}   name it {label}
 //	POST  /api/admin/adventures/{slug}/graph/validate             check without saving
-//	POST  /api/admin/adventures/{slug}/graph/convert              build from lanes, unsaved
 //
 // All four use requireEditAdventure: only someone who can edit the
 // adventure may see its graph, because the graph carries every answer.
@@ -35,7 +34,6 @@ import (
 
 	"github.com/klahr/zonventure/internal/auth"
 	"github.com/klahr/zonventure/internal/graph"
-	"github.com/klahr/zonventure/internal/graph/convert"
 	"github.com/klahr/zonventure/internal/graph/valid"
 	"github.com/klahr/zonventure/internal/graphstore"
 	"github.com/klahr/zonventure/internal/httpx"
@@ -434,95 +432,6 @@ func (h *Handlers) ValidateAdventureGraph(w http.ResponseWriter, r *http.Request
 		return
 	}
 	httpx.JSON(w, http.StatusOK, graphResponse{Envelope: *env, Report: valid.Check(&env.Graph)})
-}
-
-// ConvertAdventureGraph builds a graph from the adventure's current lanes
-// and pages. It does not save: the author opens the result in the editor
-// and saves it themselves, so converting is never a one-way door.
-//
-// The lanes and pages are read through buildExport — the same code path
-// export uses — so conversion sees exactly what an export would contain,
-// including the legacy accept-list shapes ParseAcceptJSON tolerates.
-func (h *Handlers) ConvertAdventureGraph(w http.ResponseWriter, r *http.Request) {
-	advID, ok := h.graphTarget(w, r)
-	if !ok {
-		return
-	}
-	env, files, err := h.buildExport(r.Context(), advID)
-	if err != nil {
-		httpx.ServerErr(w, http.StatusInternalServerError, "reading lanes failed", err)
-		return
-	}
-
-	// Page and hint media are copied into adventure media so the graph
-	// can refer to them. Deduplicated by content, so converting twice
-	// does not store twice; an unsaved conversion leaves rows no graph
-	// uses, which is harmless.
-	byName := map[string][]byte{}
-	for _, f := range files {
-		byName[f.name] = f.bytes
-	}
-	var userID int64
-	if me, ok := auth.FromContext(r.Context()); ok {
-		userID = me.ID
-	}
-	copyMedia := func(images, audio []exportAsset) ([]graph.Media, error) {
-		var out []graph.Media
-		for _, list := range []struct {
-			kind   graph.MediaKind
-			assets []exportAsset
-		}{{graph.MediaImage, images}, {graph.MediaAudio, audio}} {
-			for _, a := range list.assets {
-				data, ok := byName[a.File]
-				if !ok {
-					continue
-				}
-				v, err := putMedia(r.Context(), h.DB, advID, userID, list.kind, a.MimeType, data)
-				if err != nil {
-					return nil, err
-				}
-				alt := a.AltText
-				if alt == "" {
-					alt = a.Description
-				}
-				out = append(out, graph.Media{ID: v.ID, Kind: list.kind, Alt: alt})
-			}
-		}
-		return out, nil
-	}
-
-	in := convert.Adventure{}
-	for _, l := range env.Adventure.Lanes {
-		in.Lanes = append(in.Lanes, convert.Lane{Idx: l.Idx, Mode: l.Mode, Name: l.Name})
-	}
-	for _, p := range env.Adventure.Pages {
-		cp := convert.Page{
-			Idx: p.Idx, LaneIdx: p.LaneIdx, Title: p.Title, Prompt: p.Prompt,
-			Lat: p.Lat, Lng: p.Lng, RadiusM: p.RadiusM, Disabled: p.Disabled,
-		}
-		for _, a := range p.Accept {
-			cp.Accept = append(cp.Accept, convert.Accept{Text: a.Text, Regex: a.Regex})
-		}
-		if cp.Media, err = copyMedia(p.Images, p.Audio); err != nil {
-			httpx.ServerErr(w, http.StatusInternalServerError, "copying media failed", err)
-			return
-		}
-		for _, hint := range p.Hints {
-			ch := convert.Hint{Idx: hint.Idx, Text: hint.Text, DelaySeconds: hint.DelaySeconds}
-			if ch.Media, err = copyMedia(hint.Images, hint.Audio); err != nil {
-				httpx.ServerErr(w, http.StatusInternalServerError, "copying media failed", err)
-				return
-			}
-			cp.Hints = append(cp.Hints, ch)
-		}
-		in.Pages = append(in.Pages, cp)
-	}
-
-	g := convert.ToGraph(in)
-	httpx.JSON(w, http.StatusOK, graphResponse{
-		Envelope: graph.Envelope{Format: graph.FormatV2, Graph: *g},
-		Report:   valid.Check(g),
-	})
 }
 
 // graphTarget authorises the caller against the adventure in the URL and

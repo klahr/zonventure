@@ -9,9 +9,9 @@ import (
 	"github.com/klahr/zonventure/internal/graph/match"
 )
 
-// The classic console for an adventure that plays a graph: its lane
-// pages can no longer be edited, a lane skip is refused, and the event
-// and adventure pages carry the graph's progress and steps.
+// The console for an adventure's graph: a rescue moves a team past the
+// step it is on, and the event and adventure pages carry the graph's
+// progress and steps.
 func TestConsoleOnGraphAdventure(t *testing.T) {
 	ts, assignmentID, cleanup := newTestServer(t)
 	defer cleanup()
@@ -19,10 +19,6 @@ func TestConsoleOnGraphAdventure(t *testing.T) {
 	pub := newClient(t, ts)
 	if s := pub.do("POST", "/api/auth/login", map[string]string{"username": "pub", "password": "pubpw"}, nil); s != 200 {
 		t.Fatalf("login = %d", s)
-	}
-	// Before the graph is published, the lane pages are still the game.
-	if s := pub.do("POST", "/api/admin/adventures/demo/pages", map[string]any{"title": "Lane page", "prompt": "?", "lat": 59.3, "lng": 18.0}, nil); s == 409 {
-		t.Fatalf("a lane edit before any graph was refused")
 	}
 	g := graph.Graph{
 		Nodes: []graph.Node{
@@ -42,12 +38,6 @@ func TestConsoleOnGraphAdventure(t *testing.T) {
 	}
 	if s := pub.doAny("POST", "/api/admin/adventures/demo/graph/publish", nil, nil); s != 200 {
 		t.Fatalf("publish = %d", s)
-	}
-	var refused struct {
-		Code string `json:"code"`
-	}
-	if s := pub.doAny("POST", "/api/admin/adventures/demo/pages", map[string]any{"title": "Lane page", "prompt": "?", "lat": 59.3, "lng": 18.0}, &refused); s != 409 || refused.Code != "graph_adventure" {
-		t.Errorf("a lane edit to a graph adventure = %d %q, want 409 graph_adventure", s, refused.Code)
 	}
 	var detail struct {
 		Graph *struct {
@@ -116,7 +106,6 @@ func TestConsoleOnGraphAdventure(t *testing.T) {
 	}
 	var ed struct {
 		Event struct {
-			Engine string `json:"engine"`
 		} `json:"event"`
 		Teams []struct {
 			Name  string   `json:"name"`
@@ -129,7 +118,7 @@ func TestConsoleOnGraphAdventure(t *testing.T) {
 			Titles      map[string]string `json:"titles"`
 		} `json:"graph"`
 	}
-	if s := arr.do("GET", "/api/admin/events/"+itoa(ev.ID), nil, &ed); s != 200 || ed.Event.Engine != "graph" || ed.Graph == nil || ed.Graph.Titles["q"] != "The door" {
+	if s := arr.do("GET", "/api/admin/events/"+itoa(ev.ID), nil, &ed); s != 200 || ed.Graph == nil || ed.Graph.Titles["q"] != "The door" {
 		t.Fatalf("event detail = %d %+v", s, ed)
 	}
 	for _, tm := range ed.Teams {

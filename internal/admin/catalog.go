@@ -25,6 +25,15 @@ import (
 // web/apps/arrange/src/router.ts).
 var CatalogEnabled = false
 
+// PuzzleCountSQL counts the puzzles of `adventures a` in its graph: the
+// published version, else the draft, else none.
+func PuzzleCountSQL() string {
+	return `(SELECT COUNT(*) FROM jsonb_array_elements(COALESCE(
+	           (SELECT g.graph FROM adventure_graphs g WHERE g.id = a.published_graph_id),
+	           (SELECT d.graph FROM adventure_graph_drafts d WHERE d.adventure_id = a.id)) -> 'nodes') n
+	         WHERE n ->> 'type' = 'puzzle')`
+}
+
 // CatalogFilter restricts a query over `adventures a` to the published
 // catalog, or matches nothing while the catalog is off.
 func CatalogFilter() string {
@@ -91,8 +100,7 @@ func (h *Handlers) ListCatalog(w http.ResponseWriter, r *http.Request) {
 	}
 	rows, err := h.DB.QueryContext(r.Context(), `
 		SELECT a.slug, a.title, a.language, a.published <> 0,
-		       (a.published_graph_id IS NOT NULL
-		        OR EXISTS (SELECT 1 FROM adventure_pages p WHERE p.adventure_id = a.id)),
+		       a.published_graph_id IS NOT NULL,
 		       a.avatar_mime_type IS NOT NULL
 		FROM adventures a
 		WHERE a.org_id = $1

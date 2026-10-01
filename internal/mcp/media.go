@@ -2,7 +2,7 @@ package mcp
 
 // upload_adventure_media: the graph editor's media upload, for an
 // assistant. The returned {id, kind} is what a block, hint or answer
-// references. attach_image / attach_audio remain for lane adventures.
+// references.
 
 import (
 	"bytes"

@@ -30,7 +30,6 @@ import (
 	"github.com/klahr/zonventure/internal/player"
 	"github.com/klahr/zonventure/internal/public"
 	"github.com/klahr/zonventure/internal/settings"
-	"github.com/klahr/zonventure/internal/simulator"
 	"github.com/klahr/zonventure/internal/storage"
 	"github.com/klahr/zonventure/internal/storage/dbblob"
 	"github.com/klahr/zonventure/internal/teamimport"
@@ -42,7 +41,7 @@ import (
 	"github.com/klahr/zonventure/internal/ws"
 )
 
-//go:embed web/play.html web/play-sw.js web/play-queue.js web/arrange.html web/live.html web/recap.html web/i18n.js web/favicon.svg web/og-image.png web/privacy.html web/terms.html web/manual.html web/landing.html web/pricing.html web/store.html web/store-event.html web/redeem.html web/org-landing.html web/topbar.css web/topbar.js web/page-tokens.css web/fsmap.css web/jsqr.js web/404.html web/robots.txt web/sitemap.xml web/locales/web/*.json web/locales/landing/*.json web/assets/leaflet/leaflet.js web/assets/leaflet/leaflet.css web/assets/leaflet/images/*.png
+//go:embed web/play-sw.js web/live.html web/recap.html web/i18n.js web/favicon.svg web/og-image.png web/privacy.html web/terms.html web/manual.html web/landing.html web/pricing.html web/store.html web/store-event.html web/redeem.html web/org-landing.html web/topbar.css web/topbar.js web/page-tokens.css web/fsmap.css web/jsqr.js web/404.html web/robots.txt web/sitemap.xml web/locales/web/*.json web/locales/landing/*.json web/assets/leaflet/leaflet.js web/assets/leaflet/leaflet.css web/assets/leaflet/images/*.png
 var webFS embed.FS
 
 // Config is the bag of knobs New needs.
@@ -262,7 +261,6 @@ func New(cfg Config) http.Handler {
 		// Mailer is wired below the LogMailer fallback so dev/test
 		// see the recovered link in stderr instead of failing closed.
 	}
-	sim := simulator.New(cfg.DB, cfg.Library, hub)
 	mail := cfg.Mailer
 	if mail == nil {
 		mail = mailer.LogMailer{}
@@ -341,7 +339,7 @@ func New(cfg Config) http.Handler {
 	mailOutbox := &mailer.Outbox{DB: cfg.DB, Mailer: mail}
 	go mailOutbox.Run(bgCtx)
 	adminH := &admin.Handlers{
-		DB: cfg.DB, Lib: cfg.Library, Hub: hub, Sim: sim, Engine: playerH.Engine,
+		DB: cfg.DB, Lib: cfg.Library, Hub: hub, Engine: playerH.Engine,
 		Mailer:     mail,
 		MailOutbox: mailOutbox,
 		PublicURL:  cfg.PublicURL,
@@ -491,30 +489,6 @@ const baselineCSP = "default-src 'self'; " +
 	"frame-ancestors 'none'; " +
 	"object-src 'none'; " +
 	"base-uri 'self'"
-
-// swCacheSafeVersion sanitises the build version for use as a Cache
-// Storage cache name. Cache names tolerate most strings, but ' and "
-// would terminate the surrounding JS string literal in play-sw.js.
-// Drop everything outside [A-Za-z0-9._-] so an exotic version tag
-// (annotated git describe, e.g. "v1.2.3+abcd'broken") can't break the
-// SW. Empty result falls back to "dev".
-func swCacheSafeVersion(v string) string {
-	out := make([]byte, 0, len(v))
-	for i := 0; i < len(v); i++ {
-		c := v[i]
-		switch {
-		case c >= 'A' && c <= 'Z',
-			c >= 'a' && c <= 'z',
-			c >= '0' && c <= '9',
-			c == '.' || c == '-' || c == '_':
-			out = append(out, c)
-		}
-	}
-	if len(out) == 0 {
-		return "dev"
-	}
-	return string(out)
-}
 
 // trustedProxyRealIP is a gated replacement for chi's middleware.RealIP.
 // chi's version rewrites RemoteAddr from X-Forwarded-For / X-Real-IP

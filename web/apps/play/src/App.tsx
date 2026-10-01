@@ -116,12 +116,7 @@ export function App() {
     }
   }, [game.status, s, view]);
 
-  // Lane events are played in the original player.
-  useEffect(() => {
-    if (game.status === "lanes") location.replace("/play");
-  }, [game.status]);
-
-  if (game.status === "loading" || game.status === "lanes") {
+  if (game.status === "loading") {
     return <Screen><p className="app-muted">{t("Loading…")}</p></Screen>;
   }
   if (game.status === "signed-out") {

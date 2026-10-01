@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"sort"
 	"testing"
@@ -32,16 +31,9 @@ var pngBytes = []byte{
 	0x42, 0x60, 0x82,
 }
 
-// mp3Bytes is a tiny synthetic MP3 frame (just the header byte +
-// padding). Real audio bytes don't matter for the round-trip
-// equality test, but having a non-PNG MIME proves the bundle
-// keeps PNG and MP3 distinct.
-var mp3Bytes = []byte{0xFF, 0xFB, 0x90, 0x00, 0x01, 0x02, 0x03, 0x04}
-
 // richFixture seeds two orgs (Acme + Bystander) with a wide spread
 // of data so the round-trip exercises everything the migration
-// touches: linear AND shuffled lanes; pages with images, audio,
-// hints (with their own images and audio); events in scheduled /
+// touches: adventures (metadata only); events in scheduled /
 // running / completed / cancelled / quest states; teams in mid-
 // game / completed / withdrawn states with and without avatars;
 // slots in claimed / unclaimed / expiring states; ticket purchases
@@ -60,8 +52,6 @@ type richFixtureIDs struct {
 	advLinear        string // slug
 	advShuffled      string // slug
 	advBystander     string // slug — must NOT appear in Acme's bundle
-	advLinearPages   []int64
-	advShuffledLanes []int64
 	eventScheduledID int64
 	eventRunningID   int64
 	eventCompletedID int64
@@ -106,7 +96,7 @@ func richFixture(t *testing.T) (db *sql.DB, h *admin.Handlers, ids richFixtureID
 	mustExec(t, db, `INSERT INTO org_memberships(user_id, org_id, role) VALUES ($1, $2, 'org_admin')`,
 		strangerID, ids.bystander)
 
-	// ---- Adventure A: linear, single-lane, with assets, authored by boss
+	// ---- Adventure A: full metadata + avatar, authored by boss
 	ids.advLinear = "linear-quest"
 	mustExec(t, db, `
 		INSERT INTO adventures(slug, title, author, description, intro_text, outro_text,
@@ -121,99 +111,12 @@ func richFixture(t *testing.T) (db *sql.DB, h *admin.Handlers, ids richFixtureID
 			'image/png', $4, $5)
 	`, ids.advLinear, ids.acme, ids.bossUserID, int64(len(pngBytes)), pngBytes)
 
-	var advLinearID int64
-	mustQuery(t, db, `SELECT id FROM adventures WHERE slug = $1`, &advLinearID, ids.advLinear)
-
-	// One linear lane (the post-migration default after 0043).
-	var laneALinearID int64
-	mustQuery(t, db, `
-		INSERT INTO adventure_lanes(adventure_id, idx, mode, name)
-		VALUES ($1, 0, 'linear', 'The Walk') RETURNING id
-	`, &laneALinearID, advLinearID)
-
-	// 3 pages on lane A: idx 0 with image+audio+hints, idx 1 disabled, idx 2 with notes.
-	for _, p := range []struct {
-		idx      int
-		title    string
-		prompt   string
-		accept   string
-		lat, lng float64
-		radius   sql.NullFloat64
-		disabled int
-		notes    string
-	}{
-		{0, "First clue", "What's the answer?", `[{"text":"hello"}]`, 59.32, 18.06, sql.NullFloat64{Float64: 25, Valid: true}, 0, ""},
-		{1, "Skipped", "(disabled)", `[]`, 0, 0, sql.NullFloat64{}, 1, "operator notes"},
-		{2, "Final puzzle", "Last one", `[{"text":"finish","regex":true}]`, 59.34, 18.08, sql.NullFloat64{}, 0, "marker only"},
-	} {
-		var pageID int64
-		mustQuery(t, db, `
-			INSERT INTO adventure_pages(adventure_id, lane_id, idx, title, prompt, accept,
-				lat, lng, radius_m, disabled, notes, org_id)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id
-		`, &pageID, advLinearID, laneALinearID, p.idx, p.title, p.prompt, p.accept,
-			p.lat, p.lng, p.radius, p.disabled, p.notes, ids.acme)
-		ids.advLinearPages = append(ids.advLinearPages, pageID)
-
-		if p.idx == 0 {
-			// Image, audio, two hints (one with hint-image + hint-audio).
-			mustExec(t, db, `
-				INSERT INTO adventure_page_images(page_id, idx, mime_type, size_bytes, content, alt_text)
-				VALUES ($1, 0, 'image/png', $2, $3, 'page-0-image-alt')
-			`, pageID, int64(len(pngBytes)), pngBytes)
-			mustExec(t, db, `
-				INSERT INTO adventure_page_audio(page_id, idx, mime_type, size_bytes, content, description)
-				VALUES ($1, 0, 'audio/mpeg', $2, $3, 'page-0-audio-desc')
-			`, pageID, int64(len(mp3Bytes)), mp3Bytes)
-
-			var hint0ID int64
-			mustQuery(t, db, `
-				INSERT INTO adventure_page_hints(page_id, idx, text, delay_seconds)
-				VALUES ($1, 0, 'first hint', 30) RETURNING id
-			`, &hint0ID, pageID)
-			mustExec(t, db, `
-				INSERT INTO adventure_page_hint_images(hint_id, idx, mime_type, size_bytes, content, alt_text)
-				VALUES ($1, 0, 'image/png', $2, $3, 'hint-0-image-alt')
-			`, hint0ID, int64(len(pngBytes)), pngBytes)
-			mustExec(t, db, `
-				INSERT INTO adventure_page_hint_audio(hint_id, idx, mime_type, size_bytes, content, description)
-				VALUES ($1, 0, 'audio/mpeg', $2, $3, 'hint-0-audio-desc')
-			`, hint0ID, int64(len(mp3Bytes)), mp3Bytes)
-
-			mustExec(t, db, `
-				INSERT INTO adventure_page_hints(page_id, idx, text, delay_seconds)
-				VALUES ($1, 1, 'second hint', 90)
-			`, pageID)
-		}
-	}
-
-	// ---- Adventure B: shuffled with finish lane --------------
+	// ---- Adventure B: minimal metadata, authored by minion ----
 	ids.advShuffled = "race-relay"
 	mustExec(t, db, `
 		INSERT INTO adventures(slug, title, author, description, org_id, created_by_user_id, published, language)
 		VALUES ($1, 'Race Relay', 'Acme', 'Shuffled middle, shared finish', $2, $3, 1, 'sv')
 	`, ids.advShuffled, ids.acme, ids.minionUserID)
-	var advShuffledID int64
-	mustQuery(t, db, `SELECT id FROM adventures WHERE slug = $1`, &advShuffledID, ids.advShuffled)
-
-	var laneBShuffledID, laneBFinishID int64
-	mustQuery(t, db, `
-		INSERT INTO adventure_lanes(adventure_id, idx, mode, name)
-		VALUES ($1, 0, 'shuffled', 'Spread') RETURNING id
-	`, &laneBShuffledID, advShuffledID)
-	mustQuery(t, db, `
-		INSERT INTO adventure_lanes(adventure_id, idx, mode, name)
-		VALUES ($1, 1, 'linear', 'Finish') RETURNING id
-	`, &laneBFinishID, advShuffledID)
-	ids.advShuffledLanes = []int64{laneBShuffledID, laneBFinishID}
-
-	for i, laneID := range []int64{laneBShuffledID, laneBShuffledID, laneBFinishID} {
-		mustExec(t, db, `
-			INSERT INTO adventure_pages(adventure_id, lane_id, idx, title, prompt, accept,
-				lat, lng, org_id)
-			VALUES ($1, $2, $3, $4, 'q', '[]', 59.30, 18.10, $5)
-		`, advShuffledID, laneID, i, fmt.Sprintf("page %d", i), ids.acme)
-	}
 
 	// ---- Bystander adventure (must NOT appear in Acme bundle) -
 	ids.advBystander = "bystander-adv"
@@ -221,11 +124,6 @@ func richFixture(t *testing.T) (db *sql.DB, h *admin.Handlers, ids richFixtureID
 		INSERT INTO adventures(slug, title, author, org_id, published)
 		VALUES ($1, 'Bystander Adventure', 'Stranger', $2, 1)
 	`, ids.advBystander, ids.bystander)
-	var advBystanderID int64
-	mustQuery(t, db, `SELECT id FROM adventures WHERE slug = $1`, &advBystanderID, ids.advBystander)
-	mustExec(t, db, `
-		INSERT INTO adventure_lanes(adventure_id, idx, mode) VALUES ($1, 0, 'linear')
-	`, advBystanderID)
 
 	// ---- Acme assignments ------------------------------------
 	var assn1, assn2 int64
@@ -300,9 +198,9 @@ func richFixture(t *testing.T) (db *sql.DB, h *admin.Handlers, ids richFixtureID
 
 	// ---- Teams on the running event --------------------------
 	mustQuery(t, db, `
-		INSERT INTO teams(event_id, name, token, recap_token, email, current_page_index,
+		INSERT INTO teams(event_id, name, token, recap_token, email,
 			avatar_mime_type, avatar_size_bytes, avatar_content)
-		VALUES ($1, 'Mid Team', 'team-tok-mid', 'recap-tok-mid', 'mid@acme.com', 1,
+		VALUES ($1, 'Mid Team', 'team-tok-mid', 'recap-tok-mid', 'mid@acme.com',
 			'image/png', $2, $3) RETURNING id
 	`, &ids.teamMidGameID, ids.eventRunningID, int64(len(pngBytes)), pngBytes)
 
@@ -324,19 +222,6 @@ func richFixture(t *testing.T) (db *sql.DB, h *admin.Handlers, ids richFixtureID
 		RETURNING id
 	`, &ids.teamQuestBuyerID, ids.eventQuestID)
 
-	// ---- Mid-game team cursor: page idx 1 on lane idx 0 ----
-	// Set the team to "currently on the second puzzle of the
-	// linear lane" so the round-trip can verify the cursor
-	// resolves correctly on the destination.
-	mustExec(t, db, `
-		UPDATE teams SET
-		  current_page_id = (SELECT id FROM adventure_pages WHERE adventure_id =
-		      (SELECT id FROM adventures WHERE slug = $1) AND idx = 1),
-		  current_lane_id = (SELECT id FROM adventure_lanes WHERE adventure_id =
-		      (SELECT id FROM adventures WHERE slug = $1) AND idx = 0)
-		WHERE id = $2
-	`, ids.advLinear, ids.teamMidGameID)
-
 	// ---- Slots on the mid-game team --------------------------
 	mustExec(t, db, `
 		INSERT INTO player_slots(team_id, name, token, expires_at, claimed_at, last_login_at)
@@ -345,29 +230,6 @@ func richFixture(t *testing.T) (db *sql.DB, h *admin.Handlers, ids richFixtureID
 		  ($1, 'Player 2', 'slot-mid-2', '2099-01-01', NULL,        NULL),
 		  ($1, 'Player 3', 'slot-mid-3', NULL,         now_text(), now_text())
 	`, ids.teamMidGameID)
-
-	// ---- Lane ordering for the quest-buyer team --------------
-	// The shuffled adventure's lane 0 has 2 pages (idx 0 and 1).
-	// Plant a permutation that's reversed (idx 1 then idx 0) so
-	// the round-trip can prove the order survived rather than
-	// silently re-emerging from natural lane order.
-	var pageRev0, pageRev1 int64
-	mustQuery(t, db, `SELECT id FROM adventure_pages WHERE adventure_id =
-	      (SELECT id FROM adventures WHERE slug = $1) AND lane_id =
-	      (SELECT id FROM adventure_lanes WHERE adventure_id =
-	          (SELECT id FROM adventures WHERE slug = $1) AND idx = 0)
-	      AND idx = 0`, &pageRev0, ids.advShuffled)
-	mustQuery(t, db, `SELECT id FROM adventure_pages WHERE adventure_id =
-	      (SELECT id FROM adventures WHERE slug = $1) AND lane_id =
-	      (SELECT id FROM adventure_lanes WHERE adventure_id =
-	          (SELECT id FROM adventures WHERE slug = $1) AND idx = 0)
-	      AND idx = 1`, &pageRev1, ids.advShuffled)
-	pageIDsJSON := fmt.Sprintf("[%d, %d]", pageRev1, pageRev0) // reversed
-	mustExec(t, db, `
-		INSERT INTO team_lane_orderings(team_id, lane_id, page_ids)
-		VALUES ($1, (SELECT id FROM adventure_lanes WHERE adventure_id =
-		    (SELECT id FROM adventures WHERE slug = $2) AND idx = 0), $3::jsonb)
-	`, ids.teamQuestBuyerID, ids.advShuffled, pageIDsJSON)
 
 	// ---- Event activity rows on the running event ------------
 	// Three distinct shapes: team-event with no actor (system),
@@ -453,18 +315,10 @@ type orgSnapshot struct {
 	Org             orgRow
 	Members         []memberRow
 	Adventures      []advRow
-	Lanes           []laneRow
-	Pages           []pageRow
-	PageImages      []assetRow
-	PageAudio       []assetRow
-	Hints           []hintRow
-	HintImages      []assetRow
-	HintAudio       []assetRow
 	Assignments     []assignRow
 	Events          []eventRow
 	Teams           []teamRow
 	Slots           []slotRow
-	LaneOrderings   []laneOrderRow
 	TicketPurchases []ticketRow
 	Activity        []activityRow
 }
@@ -492,37 +346,6 @@ type advRow struct {
 	AvatarBytes                                              []byte
 	CreatedByUsername                                        string
 }
-type laneRow struct {
-	AdventureSlug string
-	Idx           int
-	Mode, Name    string
-}
-type pageRow struct {
-	AdventureSlug                string
-	LaneIdx                      int
-	Idx                          int
-	Title, Prompt, Accept, Notes string
-	Lat, Lng                     float64
-	Radius                       sql.NullFloat64
-	Disabled                     int
-}
-type assetRow struct {
-	// Key: (adventure-slug, page-idx[, hint-idx], idx)
-	AdventureSlug string
-	PageIdx       int
-	HintIdx       int // -1 for page assets, >=0 for hint assets
-	Idx           int
-	Mime          string
-	Bytes         []byte
-	Label         string // alt_text or description
-}
-type hintRow struct {
-	AdventureSlug string
-	PageIdx       int
-	Idx           int
-	Text          string
-	DelaySeconds  int
-}
 type assignRow struct {
 	AdventureSlug string
 	MaxPlayers    int
@@ -548,30 +371,15 @@ type eventRow struct {
 	CreatedByUsername  string
 }
 type teamRow struct {
-	Token            string
-	RecapToken       string
-	EventLiveToken   string
-	Name             string
-	Email            string
-	CurrentPageIndex int
-	WithdrawnAt      string
-	CompletedAt      string
-	AvatarMime       string
-	AvatarBytes      []byte
-	// CurrentPageIdx / CurrentLaneIdx is the resolved cursor —
-	// the snapshot stores the adventure-relative idx (not the
-	// raw FK) so two snapshots with rebased IDs can compare.
-	CurrentPageIdx sql.NullInt64
-	CurrentLaneIdx sql.NullInt64
-}
-
-// laneOrderRow captures one team_lane_orderings row keyed by stable
-// identifiers (team token + adventure-relative lane idx) plus a list
-// of adventure-relative page idxs in the team's frozen permutation.
-type laneOrderRow struct {
-	TeamToken string
-	LaneIdx   int
-	PageIdxs  []int
+	Token          string
+	RecapToken     string
+	EventLiveToken string
+	Name           string
+	Email          string
+	WithdrawnAt    string
+	CompletedAt    string
+	AvatarMime     string
+	AvatarBytes    []byte
 }
 
 // activityRow captures one event_activity row keyed by the parent
@@ -667,129 +475,6 @@ func snapshotOrg(t *testing.T, db *sql.DB, orgID int64) orgSnapshot {
 	}
 	rows.Close()
 
-	// Lanes
-	rows = mustRows(t, db, `
-		SELECT a.slug, l.idx, l.mode, l.name
-		FROM adventure_lanes l JOIN adventures a ON a.id = l.adventure_id
-		WHERE a.org_id = $1 ORDER BY a.slug, l.idx
-	`, orgID)
-	for rows.Next() {
-		var l laneRow
-		if err := rows.Scan(&l.AdventureSlug, &l.Idx, &l.Mode, &l.Name); err != nil {
-			t.Fatalf("scan lane: %v", err)
-		}
-		s.Lanes = append(s.Lanes, l)
-	}
-	rows.Close()
-
-	// Pages
-	rows = mustRows(t, db, `
-		SELECT a.slug, COALESCE(l.idx, -1), p.idx, p.title, p.prompt, p.accept, p.notes,
-		       p.lat, p.lng, p.radius_m, p.disabled
-		FROM adventure_pages p
-		JOIN adventures a ON a.id = p.adventure_id
-		LEFT JOIN adventure_lanes l ON l.id = p.lane_id
-		WHERE a.org_id = $1 ORDER BY a.slug, p.idx
-	`, orgID)
-	for rows.Next() {
-		var p pageRow
-		if err := rows.Scan(&p.AdventureSlug, &p.LaneIdx, &p.Idx, &p.Title, &p.Prompt,
-			&p.Accept, &p.Notes, &p.Lat, &p.Lng, &p.Radius, &p.Disabled); err != nil {
-			t.Fatalf("scan page: %v", err)
-		}
-		s.Pages = append(s.Pages, p)
-	}
-	rows.Close()
-
-	// Page images
-	rows = mustRows(t, db, `
-		SELECT a.slug, p.idx, i.idx, i.mime_type, i.content, COALESCE(i.alt_text, '')
-		FROM adventure_page_images i
-		JOIN adventure_pages p ON p.id = i.page_id
-		JOIN adventures a ON a.id = p.adventure_id
-		WHERE a.org_id = $1 ORDER BY a.slug, p.idx, i.idx
-	`, orgID)
-	for rows.Next() {
-		var x assetRow
-		x.HintIdx = -1
-		if err := rows.Scan(&x.AdventureSlug, &x.PageIdx, &x.Idx, &x.Mime, &x.Bytes, &x.Label); err != nil {
-			t.Fatalf("scan page image: %v", err)
-		}
-		s.PageImages = append(s.PageImages, x)
-	}
-	rows.Close()
-
-	// Page audio
-	rows = mustRows(t, db, `
-		SELECT a.slug, p.idx, au.idx, au.mime_type, au.content, COALESCE(au.description, '')
-		FROM adventure_page_audio au
-		JOIN adventure_pages p ON p.id = au.page_id
-		JOIN adventures a ON a.id = p.adventure_id
-		WHERE a.org_id = $1 ORDER BY a.slug, p.idx, au.idx
-	`, orgID)
-	for rows.Next() {
-		var x assetRow
-		x.HintIdx = -1
-		if err := rows.Scan(&x.AdventureSlug, &x.PageIdx, &x.Idx, &x.Mime, &x.Bytes, &x.Label); err != nil {
-			t.Fatalf("scan page audio: %v", err)
-		}
-		s.PageAudio = append(s.PageAudio, x)
-	}
-	rows.Close()
-
-	// Hints
-	rows = mustRows(t, db, `
-		SELECT a.slug, p.idx, h.idx, h.text, h.delay_seconds
-		FROM adventure_page_hints h
-		JOIN adventure_pages p ON p.id = h.page_id
-		JOIN adventures a ON a.id = p.adventure_id
-		WHERE a.org_id = $1 ORDER BY a.slug, p.idx, h.idx
-	`, orgID)
-	for rows.Next() {
-		var h hintRow
-		if err := rows.Scan(&h.AdventureSlug, &h.PageIdx, &h.Idx, &h.Text, &h.DelaySeconds); err != nil {
-			t.Fatalf("scan hint: %v", err)
-		}
-		s.Hints = append(s.Hints, h)
-	}
-	rows.Close()
-
-	// Hint images
-	rows = mustRows(t, db, `
-		SELECT a.slug, p.idx, h.idx, hi.idx, hi.mime_type, hi.content, COALESCE(hi.alt_text, '')
-		FROM adventure_page_hint_images hi
-		JOIN adventure_page_hints h ON h.id = hi.hint_id
-		JOIN adventure_pages p ON p.id = h.page_id
-		JOIN adventures a ON a.id = p.adventure_id
-		WHERE a.org_id = $1 ORDER BY a.slug, p.idx, h.idx, hi.idx
-	`, orgID)
-	for rows.Next() {
-		var x assetRow
-		if err := rows.Scan(&x.AdventureSlug, &x.PageIdx, &x.HintIdx, &x.Idx, &x.Mime, &x.Bytes, &x.Label); err != nil {
-			t.Fatalf("scan hint image: %v", err)
-		}
-		s.HintImages = append(s.HintImages, x)
-	}
-	rows.Close()
-
-	// Hint audio
-	rows = mustRows(t, db, `
-		SELECT a.slug, p.idx, h.idx, ha.idx, ha.mime_type, ha.content, COALESCE(ha.description, '')
-		FROM adventure_page_hint_audio ha
-		JOIN adventure_page_hints h ON h.id = ha.hint_id
-		JOIN adventure_pages p ON p.id = h.page_id
-		JOIN adventures a ON a.id = p.adventure_id
-		WHERE a.org_id = $1 ORDER BY a.slug, p.idx, h.idx, ha.idx
-	`, orgID)
-	for rows.Next() {
-		var x assetRow
-		if err := rows.Scan(&x.AdventureSlug, &x.PageIdx, &x.HintIdx, &x.Idx, &x.Mime, &x.Bytes, &x.Label); err != nil {
-			t.Fatalf("scan hint audio: %v", err)
-		}
-		s.HintAudio = append(s.HintAudio, x)
-	}
-	rows.Close()
-
 	// Assignments
 	rows = mustRows(t, db, `
 		SELECT adventure_slug, max_players FROM adventure_assignments
@@ -835,60 +520,23 @@ func snapshotOrg(t *testing.T, db *sql.DB, orgID int64) orgSnapshot {
 	}
 	rows.Close()
 
-	// Teams (with cursor resolved to adventure-relative idx)
+	// Teams
 	rows = mustRows(t, db, `
 		SELECT t.token, t.recap_token, e.live_token, t.name, COALESCE(t.email, ''),
-		       t.current_page_index, COALESCE(t.withdrawn_at, ''),
+		       COALESCE(t.withdrawn_at, ''),
 		       COALESCE(t.completed_at, ''),
-		       COALESCE(t.avatar_mime_type, ''), COALESCE(t.avatar_content, ''::bytea),
-		       cur_p.idx, cur_l.idx
+		       COALESCE(t.avatar_mime_type, ''), COALESCE(t.avatar_content, ''::bytea)
 		FROM teams t JOIN events e ON e.id = t.event_id
-		LEFT JOIN adventure_pages cur_p ON cur_p.id = t.current_page_id
-		LEFT JOIN adventure_lanes cur_l ON cur_l.id = t.current_lane_id
 		WHERE e.org_id = $1 ORDER BY t.token
 	`, orgID)
 	for rows.Next() {
 		var tr teamRow
 		if err := rows.Scan(&tr.Token, &tr.RecapToken, &tr.EventLiveToken, &tr.Name,
-			&tr.Email, &tr.CurrentPageIndex, &tr.WithdrawnAt, &tr.CompletedAt,
-			&tr.AvatarMime, &tr.AvatarBytes,
-			&tr.CurrentPageIdx, &tr.CurrentLaneIdx); err != nil {
+			&tr.Email, &tr.WithdrawnAt, &tr.CompletedAt,
+			&tr.AvatarMime, &tr.AvatarBytes); err != nil {
 			t.Fatalf("scan team: %v", err)
 		}
 		s.Teams = append(s.Teams, tr)
-	}
-	rows.Close()
-
-	// Lane orderings (per-team frozen permutations).
-	rows = mustRows(t, db, `
-		SELECT t.token, l.idx, ord.page_ids
-		FROM team_lane_orderings ord
-		JOIN teams t ON t.id = ord.team_id
-		JOIN events e ON e.id = t.event_id
-		JOIN adventure_lanes l ON l.id = ord.lane_id
-		WHERE e.org_id = $1
-		ORDER BY t.token, l.idx
-	`, orgID)
-	for rows.Next() {
-		var lo laneOrderRow
-		var raw []byte
-		if err := rows.Scan(&lo.TeamToken, &lo.LaneIdx, &raw); err != nil {
-			t.Fatalf("scan lane ordering: %v", err)
-		}
-		var pageIDs []int64
-		if err := json.Unmarshal(raw, &pageIDs); err != nil {
-			t.Fatalf("decode page_ids: %v", err)
-		}
-		// Resolve page_ids → adventure-relative idxs so two
-		// snapshots with rebased IDs compare equal.
-		for _, id := range pageIDs {
-			var idx int
-			if err := db.QueryRow(`SELECT idx FROM adventure_pages WHERE id = $1`, id).Scan(&idx); err != nil {
-				t.Fatalf("resolve page %d idx: %v", id, err)
-			}
-			lo.PageIdxs = append(lo.PageIdxs, idx)
-		}
-		s.LaneOrderings = append(s.LaneOrderings, lo)
 	}
 	rows.Close()
 
@@ -1002,31 +650,6 @@ func diffSnapshots(orig, imported orgSnapshot) []string {
 		}
 		out = append(out, diffs...)
 	}
-	if !sameLanes(orig.Lanes, imported.Lanes) {
-		report("lanes", orig.Lanes, imported.Lanes)
-	}
-	if !samePages(orig.Pages, imported.Pages) {
-		diffs := diffPageList(orig.Pages, imported.Pages)
-		if len(diffs) == 0 {
-			diffs = []string{"pages differ (no per-field detail emitted — extend diffPageList)"}
-		}
-		out = append(out, diffs...)
-	}
-	if !sameAssetList(orig.PageImages, imported.PageImages) {
-		report("page_images", orig.PageImages, imported.PageImages)
-	}
-	if !sameAssetList(orig.PageAudio, imported.PageAudio) {
-		report("page_audio", orig.PageAudio, imported.PageAudio)
-	}
-	if !sameHints(orig.Hints, imported.Hints) {
-		report("hints", orig.Hints, imported.Hints)
-	}
-	if !sameAssetList(orig.HintImages, imported.HintImages) {
-		report("hint_images", orig.HintImages, imported.HintImages)
-	}
-	if !sameAssetList(orig.HintAudio, imported.HintAudio) {
-		report("hint_audio", orig.HintAudio, imported.HintAudio)
-	}
 	if !sameAssignments(orig.Assignments, imported.Assignments) {
 		report("assignments", orig.Assignments, imported.Assignments)
 	}
@@ -1049,9 +672,6 @@ func diffSnapshots(orig, imported orgSnapshot) []string {
 	}
 	if !sameTickets(orig.TicketPurchases, imported.TicketPurchases) {
 		report("ticket_purchases", orig.TicketPurchases, imported.TicketPurchases)
-	}
-	if !sameLaneOrderings(orig.LaneOrderings, imported.LaneOrderings) {
-		report("lane_orderings", orig.LaneOrderings, imported.LaneOrderings)
 	}
 	if !sameActivity(orig.Activity, imported.Activity) {
 		report("activity", orig.Activity, imported.Activity)
@@ -1147,109 +767,6 @@ func diffAdvList(a, b []advRow) []string {
 		}
 	}
 	return out
-}
-
-func sameLanes(a, b []laneRow) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
-}
-
-func samePages(a, b []pageRow) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i].AdventureSlug != b[i].AdventureSlug ||
-			a[i].LaneIdx != b[i].LaneIdx ||
-			a[i].Idx != b[i].Idx ||
-			a[i].Title != b[i].Title ||
-			a[i].Prompt != b[i].Prompt ||
-			a[i].Accept != b[i].Accept ||
-			a[i].Notes != b[i].Notes ||
-			a[i].Lat != b[i].Lat ||
-			a[i].Lng != b[i].Lng ||
-			!nullFloatEqual(a[i].Radius, b[i].Radius) ||
-			a[i].Disabled != b[i].Disabled {
-			return false
-		}
-	}
-	return true
-}
-
-func diffPageList(a, b []pageRow) []string {
-	var out []string
-	if len(a) != len(b) {
-		out = append(out, fmt.Sprintf("pages count: want %d, got %d", len(a), len(b)))
-	}
-	n := len(a)
-	if len(b) < n {
-		n = len(b)
-	}
-	for i := 0; i < n; i++ {
-		key := fmt.Sprintf("%s/p%d", a[i].AdventureSlug, a[i].Idx)
-		if a[i].Title != b[i].Title {
-			out = append(out, fmt.Sprintf("page[%s].title: want %q, got %q", key, a[i].Title, b[i].Title))
-		}
-		if a[i].Prompt != b[i].Prompt {
-			out = append(out, fmt.Sprintf("page[%s].prompt: want %q, got %q", key, a[i].Prompt, b[i].Prompt))
-		}
-		if a[i].Accept != b[i].Accept {
-			out = append(out, fmt.Sprintf("page[%s].accept: want %q, got %q", key, a[i].Accept, b[i].Accept))
-		}
-		if a[i].LaneIdx != b[i].LaneIdx {
-			out = append(out, fmt.Sprintf("page[%s].lane_idx: want %d, got %d", key, a[i].LaneIdx, b[i].LaneIdx))
-		}
-		if a[i].Disabled != b[i].Disabled {
-			out = append(out, fmt.Sprintf("page[%s].disabled: want %d, got %d", key, a[i].Disabled, b[i].Disabled))
-		}
-		if a[i].Lat != b[i].Lat || a[i].Lng != b[i].Lng {
-			out = append(out, fmt.Sprintf("page[%s].latlng: want (%f,%f), got (%f,%f)", key, a[i].Lat, a[i].Lng, b[i].Lat, b[i].Lng))
-		}
-		if !nullFloatEqual(a[i].Radius, b[i].Radius) {
-			out = append(out, fmt.Sprintf("page[%s].radius_m: want %+v, got %+v", key, a[i].Radius, b[i].Radius))
-		}
-		if a[i].Notes != b[i].Notes {
-			out = append(out, fmt.Sprintf("page[%s].notes: want %q, got %q", key, a[i].Notes, b[i].Notes))
-		}
-	}
-	return out
-}
-
-func sameAssetList(a, b []assetRow) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i].AdventureSlug != b[i].AdventureSlug ||
-			a[i].PageIdx != b[i].PageIdx ||
-			a[i].HintIdx != b[i].HintIdx ||
-			a[i].Idx != b[i].Idx ||
-			a[i].Mime != b[i].Mime ||
-			a[i].Label != b[i].Label ||
-			!bytes.Equal(a[i].Bytes, b[i].Bytes) {
-			return false
-		}
-	}
-	return true
-}
-
-func sameHints(a, b []hintRow) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
 }
 
 func sameAssignments(a, b []assignRow) bool {
@@ -1354,34 +871,11 @@ func sameTeams(a, b []teamRow) bool {
 			a[i].EventLiveToken != b[i].EventLiveToken ||
 			a[i].Name != b[i].Name ||
 			a[i].Email != b[i].Email ||
-			a[i].CurrentPageIndex != b[i].CurrentPageIndex ||
 			a[i].WithdrawnAt != b[i].WithdrawnAt ||
 			a[i].CompletedAt != b[i].CompletedAt ||
 			a[i].AvatarMime != b[i].AvatarMime ||
-			!bytes.Equal(a[i].AvatarBytes, b[i].AvatarBytes) ||
-			a[i].CurrentPageIdx != b[i].CurrentPageIdx ||
-			a[i].CurrentLaneIdx != b[i].CurrentLaneIdx {
+			!bytes.Equal(a[i].AvatarBytes, b[i].AvatarBytes) {
 			return false
-		}
-	}
-	return true
-}
-
-func sameLaneOrderings(a, b []laneOrderRow) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i].TeamToken != b[i].TeamToken || a[i].LaneIdx != b[i].LaneIdx {
-			return false
-		}
-		if len(a[i].PageIdxs) != len(b[i].PageIdxs) {
-			return false
-		}
-		for j := range a[i].PageIdxs {
-			if a[i].PageIdxs[j] != b[i].PageIdxs[j] {
-				return false
-			}
 		}
 	}
 	return true
@@ -1430,9 +924,6 @@ func diffTeamList(a, b []teamRow) []string {
 		}
 		if a[i].Name != b[i].Name {
 			out = append(out, fmt.Sprintf("team[%s].name: want %q, got %q", k, a[i].Name, b[i].Name))
-		}
-		if a[i].CurrentPageIndex != b[i].CurrentPageIndex {
-			out = append(out, fmt.Sprintf("team[%s].current_page_index: want %d, got %d", k, a[i].CurrentPageIndex, b[i].CurrentPageIndex))
 		}
 		if a[i].WithdrawnAt != b[i].WithdrawnAt {
 			out = append(out, fmt.Sprintf("team[%s].withdrawn_at: want %q, got %q", k, a[i].WithdrawnAt, b[i].WithdrawnAt))
@@ -1570,37 +1061,21 @@ func TestOrgBundle_RichRoundTrip(t *testing.T) {
 	expect := map[string]int{
 		"members":          2, // boss org_admin + minion org_member
 		"adventures":       2, // linear-quest + race-relay
-		"lanes":            3, // 1 linear + 2 (shuffled + finish)
-		"pages":            6, // linear has 3, race-relay has 3
-		"page_images":      1,
-		"page_audio":       1,
-		"hints":            2, // both on linear-quest p0
-		"hint_images":      1,
-		"hint_audio":       1,
 		"assignments":      2,
 		"events":           5, // scheduled + running + completed + cancelled + quest
 		"teams":            4, // mid + completed + withdrawn + quest-buyer
 		"slots":            7, // 3 mid-team + 4 quest-buyer
 		"ticket_purchases": 3, // paid + pending + failed
-		"lane_orderings":   1, // quest-buyer team has one frozen permutation
 		"activity":         3, // team_started + answer_correct + event_paused
 	}
 	got := map[string]int{
 		"members":          len(imported.Members),
 		"adventures":       len(imported.Adventures),
-		"lanes":            len(imported.Lanes),
-		"pages":            len(imported.Pages),
-		"page_images":      len(imported.PageImages),
-		"page_audio":       len(imported.PageAudio),
-		"hints":            len(imported.Hints),
-		"hint_images":      len(imported.HintImages),
-		"hint_audio":       len(imported.HintAudio),
 		"assignments":      len(imported.Assignments),
 		"events":           len(imported.Events),
 		"teams":            len(imported.Teams),
 		"slots":            len(imported.Slots),
 		"ticket_purchases": len(imported.TicketPurchases),
-		"lane_orderings":   len(imported.LaneOrderings),
 		"activity":         len(imported.Activity),
 	}
 	for k, want := range expect {

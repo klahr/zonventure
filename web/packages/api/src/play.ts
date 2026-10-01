@@ -340,8 +340,6 @@ export interface Brand {
 
 /** internal/player: PlayState */
 export interface PlayState {
-  /** "lanes" means this event is not played in the React app. */
-  engine: "graph" | "lanes";
   /**
    * avatar_url is the team's picture, if it has one. locked: the team
    * has begun, so its players can no longer change their names or the

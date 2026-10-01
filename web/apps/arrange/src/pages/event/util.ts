@@ -1,6 +1,6 @@
 import type { I18n } from "@zonventure/i18n";
 import { toDate, type Tone } from "../../ui/index.ts";
-import type { Adventure, EventGraph, EventInfo, Team } from "./api.ts";
+import type { EventGraph, EventInfo, Team } from "./api.ts";
 
 /**
  * canDo mirrors the server's eventstate matrix: the detail payload
@@ -11,7 +11,6 @@ export function canDo(event: EventInfo, op: string): boolean {
   return !Array.isArray(event.allowed_ops) || event.allowed_ops.includes(op);
 }
 
-export const isGraphEvent = (event: EventInfo) => event.engine === "graph";
 export const isQuest = (event: EventInfo) => event.public_for_sale === true;
 export const isLive = (event: EventInfo) => event.state === "running" || event.state === "paused";
 export const isTerminal = (event: EventInfo) => event.state === "completed" || event.state === "cancelled";
@@ -74,21 +73,12 @@ export const fmtPoints = (n: number | undefined) => (Number.isInteger(n ?? 0) ? 
 export const stepTitle = (graph: EventGraph | null | undefined, slug: string | undefined) => (slug ? graph?.titles?.[slug] || slug : "");
 
 /**
- * How far a team has got, for either engine: the main figure (points,
- * or "i / n" puzzles), the step it is on, and whether it is done.
+ * How far a team has got: its points, the step it is on, and whether
+ * it is done.
  */
-export function teamProgress(t: I18n, event: EventInfo, graph: EventGraph | null | undefined, tm: Team, adventure: Adventure | null) {
-  if (isGraphEvent(event)) {
-    const done = !!tm.completed_at || !!tm.outcome;
-    return { main: t.t("{{n}} points", { n: fmtPoints(tm.score) }), step: done ? "" : stepTitle(graph, tm.node), done };
-  }
-  const pages = adventure?.pages ?? [];
-  const done = !!tm.completed_at || (pages.length > 0 && tm.page_index >= pages.length);
-  return {
-    main: pages.length ? t.t("{{i}} / {{n}}", { i: Math.min(tm.page_index + 1, pages.length), n: pages.length }) : String(tm.page_index),
-    step: done ? "" : pages[tm.page_index]?.title || "",
-    done,
-  };
+export function teamProgress(t: I18n, graph: EventGraph | null | undefined, tm: Team) {
+  const done = !!tm.completed_at || !!tm.outcome;
+  return { main: t.t("{{n}} points", { n: fmtPoints(tm.score) }), step: done ? "" : stepTitle(graph, tm.node), done };
 }
 
 /** "1h 12m", "5m", "40s" — short enough for a stat tile. */

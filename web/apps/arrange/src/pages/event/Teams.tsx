@@ -2,12 +2,12 @@ import { useState } from "react";
 import { Copy, Link2, Mail, Pencil, Plus, Trash2 } from "lucide-react";
 import { useT } from "../../i18n.tsx";
 import { Button, Card, Empty, fmtAgo, fmtDateTime, HelpPopover, ICON, Pill, useToast } from "../../ui/index.ts";
-import type { Adventure, EventGraph, EventInfo, Team } from "./api.ts";
+import type { EventGraph, EventInfo, Team } from "./api.ts";
 import { TeamAvatar, useTeamActions } from "./teamActions.tsx";
 import { useInviteAll } from "./Lifecycle.tsx";
 import { useCopyLinks } from "./Links.tsx";
 import { MoreMenu, type MenuItem } from "./Menu.tsx";
-import { canDo, copyText, isGraphEvent, isLive, isQuest, isTerminal, joinedCount, members, teamColor, teamProgress, teamStuck, teamURL } from "./util.ts";
+import { canDo, copyText, isLive, isQuest, isTerminal, joinedCount, members, teamColor, teamProgress, teamStuck, teamURL } from "./util.ts";
 
 type Filter = "all" | "done" | "stuck" | "unstarted";
 
@@ -23,7 +23,6 @@ export function TeamsCard(props: {
   event: EventInfo;
   graph: EventGraph | null | undefined;
   teams: Team[];
-  adventure: Adventure | null;
   now: number;
   reload: () => void;
   onOpen: (id: number) => void;
@@ -32,7 +31,7 @@ export function TeamsCard(props: {
 }) {
   const { event, teams, now } = props;
   const t = useT();
-  const actions = useTeamActions(event, props.reload);
+  const actions = useTeamActions(props.reload);
   const [filter, setFilter] = useState<Filter>("all");
   const [q, setQ] = useState("");
   const canCreate = canDo(event, "create_team");
@@ -128,14 +127,14 @@ export function TeamsCard(props: {
             <thead>
               <tr>
                 <th>{t.t("Team")}</th>
-                <th>{before ? t.t("Players") : isGraphEvent(event) ? t.t("Progress") : t.t("Puzzle")}</th>
+                <th>{before ? t.t("Players") : t.t("Progress")}</th>
                 <th className="cs-wide">{t.t("Activity")}</th>
                 <th><span className="cs-sr">{t.t("Actions")}</span></th>
               </tr>
             </thead>
             <tbody>
               {shown.map((tm) => {
-                const progress = teamProgress(t, event, props.graph, tm, props.adventure);
+                const progress = teamProgress(t, props.graph, tm);
                 const stuck = teamStuck(event, tm, now);
                 const total = members(tm).length;
                 const joined = joinedCount(tm);

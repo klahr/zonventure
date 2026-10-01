@@ -1,5 +1,5 @@
 import type { I18n } from "@zonventure/i18n";
-import type { AdventureDetail, DetailPage, Zone } from "./api.ts";
+import type { AdventureDetail, Zone } from "./api.ts";
 
 export function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
   if (!Number.isFinite(lat1) || !Number.isFinite(lat2)) return 0;
@@ -26,7 +26,7 @@ export function hintDelay(t: I18n, sec: number): string {
   return t.t("after {{m}}m {{s}}s", { m, s });
 }
 
-/** A place on the adventure's map: a lane puzzle's location, or a graph step's zone. */
+/** A place on the adventure's map: a graph step's zone. */
 export interface Pin {
   title: string;
   lat: number;
@@ -45,10 +45,7 @@ export interface FactPage {
   hints: number[];
 }
 
-/**
- * The puzzles an adventure plays: a published graph's puzzle steps (a
- * zone is a gate), else its enabled lane pages.
- */
+/** The puzzles an adventure plays: its graph's puzzle steps (a zone is a gate). */
 export function factPages(a: AdventureDetail): FactPage[] {
   const g = a.graph;
   if (g) {
@@ -60,9 +57,7 @@ export function factPages(a: AdventureDetail): FactPage[] {
         return { gated: !!z, location: z ? { lat: z.lat, lng: z.lng } : null, images: s.pictures ?? 0, audio: s.sounds ?? 0, hints: Array<number>(s.hints ?? 0).fill(0) };
       });
   }
-  return (a.pages ?? [])
-    .filter((p) => !p.disabled)
-    .map((p) => ({ gated: p.gated, location: p.location, images: p.images?.length ?? 0, audio: p.audio?.length ?? 0, hints: (p.hints ?? []).map((h) => h.delay_seconds || 0) }));
+  return [];
 }
 
 export interface Facts {
@@ -149,8 +144,8 @@ export function computeFacts(t: I18n, pages: FactPage[]): Facts {
   return { geo, audioPages, imagePages, mediaLabel, hintsLabel, playtime };
 }
 
-/** Pins for the adventure map: each graph step that happens in a zone, or each located lane page. */
-export function pinsOf(a: AdventureDetail, t: I18n): Pin[] {
+/** Pins for the adventure map: each graph step that happens in a zone. */
+export function pinsOf(a: AdventureDetail): Pin[] {
   const g = a.graph;
   if (g) {
     const zones = new Map(g.zones.map((z) => [z.slug, z]));
@@ -159,9 +154,7 @@ export function pinsOf(a: AdventureDetail, t: I18n): Pin[] {
       return z ? [{ title: s.title || z.name || s.slug, lat: z.lat, lng: z.lng, radius_m: z.radius_m, gated: true, zone: z }] : [];
     });
   }
-  return (a.pages ?? [])
-    .filter((p: DetailPage) => !p.disabled && (p.location.lat || p.location.lng))
-    .map((p) => ({ title: p.title || t.t("(untitled)"), lat: p.location.lat, lng: p.location.lng, ...(p.location.radius_m ? { radius_m: p.location.radius_m } : {}), gated: p.gated }));
+  return [];
 }
 
 /** The widest distance between two pins: "how big is it on the ground". */

@@ -11,8 +11,7 @@ import (
 )
 
 type playStateDTO struct {
-	Engine string        `json:"engine"`
-	View   *session.View `json:"view"`
+	View *session.View `json:"view"`
 }
 
 type playRefusalDTO struct {
@@ -100,10 +99,10 @@ func TestGraphPlayerLoop(t *testing.T) {
 	}
 	resp.Body.Close()
 	if !strings.HasPrefix(resp.Request.URL.Path, "/app/play") {
-		t.Fatalf("a graph event's link should land in /app/play, got %s", resp.Request.URL.Path)
+		t.Fatalf("a magic link should land in /app/play, got %s", resp.Request.URL.Path)
 	}
 	var st playStateDTO
-	if s := alice.doAny("GET", "/api/player/play", nil, &st); s != 200 || st.Engine != "graph" || st.View != nil {
+	if s := alice.doAny("GET", "/api/player/play", nil, &st); s != 200 || st.View != nil {
 		t.Fatalf("before start: %d %+v", s, st)
 	}
 

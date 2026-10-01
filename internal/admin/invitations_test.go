@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -471,3 +472,6 @@ func min(a, b int) int {
 	}
 	return b
 }
+
+// itoa64 stringifies an id for URL composition.
+func itoa64(n int64) string { return strconv.FormatInt(n, 10) }

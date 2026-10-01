@@ -13,11 +13,11 @@ import { MessagesCard, PhotosCard } from "../event/Messages.tsx";
 import { stateText, stateTone } from "../event/util.ts";
 import "../event/event.css";
 import {
-  cancelEvent, getActivity, getDetail, getLanePages, getMessages, getPhotos, getTracks, transition, unwithdrawTeam, withdrawTeam,
-  type Activity, type EventDetail, type EventInfo, type LanePage, type Team, type Track,
+  cancelEvent, getActivity, getDetail, getMessages, getPhotos, getTracks, transition, unwithdrawTeam, withdrawTeam,
+  type Activity, type EventDetail, type EventInfo, type Team, type Track,
 } from "./api.ts";
 import { ControlMap, type MapTeam } from "./ControlMap.tsx";
-import { elapsedSeconds, filters, fmtElapsedShort, isGraph, mapViews, QUIET_KINDS, runLabel, teamColor, teamProgress, useNow } from "./model.ts";
+import { elapsedSeconds, filters, fmtElapsedShort, mapViews, QUIET_KINDS, runLabel, teamColor, teamProgress, useNow } from "./model.ts";
 import "./control.css";
 
 // Messages aren't in the pushes; a push re-reads them at most this often.
@@ -37,7 +37,7 @@ export function EventControlPage({ id }: { id: number }) {
   const tracks = useLoad((s) => getTracks(id, s), [id]);
   const activity = useLoad((s) => getActivity(id, s), [id]);
   // Either may be refused for a role that can still watch; the page goes on without it.
-  const messages = useLoad((s) => getMessages(id, s).catch(() => ({ messages: [] as Message[], inbox: false })), [id]);
+  const messages = useLoad((s) => getMessages(id, s).catch(() => ({ messages: [] as Message[] })), [id]);
   const photos = useLoad((s) => getPhotos(id, s).catch(() => ({ photos: [] as Photo[], challenges: 0 })), [id]);
   const [liveLost, setLiveLost] = useState(false);
   const [filter, setFilterState] = useState<Set<number>>(() => filters.get(id) ?? new Set());
@@ -46,8 +46,6 @@ export function EventControlPage({ id }: { id: number }) {
 
   const d = detail.data;
   const ev = d?.event;
-  const lane = ev && !isGraph(ev) ? ev.adventure_slug : null;
-  const pages = useLoad((s) => (lane ? getLanePages(lane, s).catch(() => null) : Promise.resolve(null)), [lane]);
 
   const presence = usePresence();
   const watch = useEventWatch(id, (m) => {
@@ -169,9 +167,7 @@ export function EventControlPage({ id }: { id: number }) {
   const withdraw = async (tm: Team) => {
     const ok = await dialogs.confirm({
       title: t.t("Mark “{{name}}” as withdrawn?", { name: tm.name }),
-      message: isGraph(ev)
-        ? t.t("They'll show in the results as withdrawn, with the points they had. You can undo this if they return.")
-        : t.t('They\'ll show in the recap as "withdrew at puzzle {{n}}". You can undo this if they return.', { n: tm.page_index + 1 }),
+      message: t.t("They'll show in the results as withdrawn, with the points they had. You can undo this if they return."),
       confirmLabel: t.t("Mark withdrawn"),
     });
     if (!ok) return;
@@ -194,7 +190,6 @@ export function EventControlPage({ id }: { id: number }) {
   };
 
   const ended = ev.state === "completed" || ev.state === "cancelled";
-  const inbox = !!messages.data?.inbox;
   const stateLabel = ev.state === "scheduled" && !ev.scheduled_at ? "manual" : ev.state;
   const loc = t.current();
   const since = (key: string, at: string) => <span title={fmtDateTime(at, loc)}>{t.t(key, { when: relTime(at, loc) })}</span>;
@@ -268,17 +263,17 @@ export function EventControlPage({ id }: { id: number }) {
 
       <div className="cc-grid">
         <Card title={t.t("Leaderboard")} flush>
-          <Leaderboard detail={d} teams={visibleTeams} colorOf={colorOf} pages={pages.data} canWithdraw={canWithdraw} onWithdraw={withdraw} onReturn={unwithdraw} />
+          <Leaderboard detail={d} teams={visibleTeams} colorOf={colorOf} canWithdraw={canWithdraw} onWithdraw={withdraw} onReturn={unwithdraw} />
         </Card>
         <Card title={t.t("Map")}>
-          <ControlMap eventId={id} zones={isGraph(ev) ? d.graph?.zones ?? [] : null} pages={pages.data} teams={mapTeams} tracks={tracks.data ?? []} />
+          <ControlMap eventId={id} zones={d.graph?.zones ?? []} teams={mapTeams} tracks={tracks.data ?? []} />
         </Card>
         <Card title={t.t("Activity")}>
           <div className="cc-scroll">
             <LiveFeed items={feedItems} detail={d} />
           </div>
         </Card>
-        {messages.data && <MessagesCard event={ev} teams={teams} messages={messages.data.messages ?? []} inbox={inbox} reload={messages.reload} />}
+        {messages.data && <MessagesCard event={ev} teams={teams} messages={messages.data.messages ?? []} reload={messages.reload} />}
       </div>
 
       <PhotosCard event={ev} graph={d.graph} photos={photos.data?.photos ?? []} challenges={photos.data?.challenges ?? 0} reload={() => { photos.reload(); detail.reload(); }} />
@@ -315,30 +310,19 @@ function Leaderboard(props: {
   detail: EventDetail;
   teams: Team[];
   colorOf: Map<number, string>;
-  pages: LanePage[] | null;
   canWithdraw: boolean;
   onWithdraw: (tm: Team) => void;
   onReturn: (tm: Team) => void;
 }) {
   const t = useT();
   const { detail } = props;
-  const graph = isGraph(detail.event);
-  // Graph: the server's rank by points (level teams share it). Lanes:
-  // finished first by time, then active by furthest page, withdrawn last.
-  const group = (tm: Team) => (tm.completed_at ? 0 : tm.withdrawn_at ? 2 : 1);
-  const rows = [...props.teams].sort((a, b) => {
-    if (graph) return (a.rank || Infinity) - (b.rank || Infinity) || a.name.localeCompare(b.name);
-    const ga = group(a), gb = group(b);
-    if (ga !== gb) return ga - gb;
-    if (ga === 0) return (a.completed_at || "").localeCompare(b.completed_at || "");
-    if (a.page_index !== b.page_index) return b.page_index - a.page_index;
-    return a.name.localeCompare(b.name);
-  });
+  // The server's rank by points (level teams share it).
+  const rows = [...props.teams].sort((a, b) => (a.rank || Infinity) - (b.rank || Infinity) || a.name.localeCompare(b.name));
   if (rows.length === 0) {
     return <p className="cc-muted cc-pad">{props.teams.length === 0 && (detail.teams ?? []).length === 0 ? t.t("No teams yet.") : t.t("No teams match the current filter.")}</p>;
   }
   const columns: Column<Team>[] = [
-    { key: "rank", header: "#", width: "3rem", cell: (tm) => <span className="cc-mono">{graph ? (tm.rank ? "#" + tm.rank : "—") : "#" + (rows.indexOf(tm) + 1)}</span> },
+    { key: "rank", header: "#", width: "3rem", cell: (tm) => <span className="cc-mono">{tm.rank ? "#" + tm.rank : "—"}</span> },
     {
       key: "team",
       header: t.t("Team"),
@@ -356,9 +340,9 @@ function Leaderboard(props: {
     },
     {
       key: "progress",
-      header: graph ? t.t("Progress") : t.t("Puzzle"),
+      header: t.t("Progress"),
       cell: (tm) => {
-        const p = teamProgress(detail, tm, props.pages, t);
+        const p = teamProgress(detail, tm, t);
         return (
           <div className={tm.withdrawn_at ? "cc-withdrawn" : undefined}>
             <div className="cc-mono">{p.main}</div>

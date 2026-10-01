@@ -30,7 +30,7 @@ func (s *Server) registerGraphTools() {
 				"description": `A graph envelope: {"format":"zonventure-adventure-v2","graph":{...}}. ` +
 					"The graph has nodes (start, puzzle, story, hub, gate, effect, switch, end), edges from a node's " +
 					"output port to another node, and zones/items/counters/journal referenced by slug. " +
-					"Get one to edit with get_adventure_graph, or build one from lanes with convert_adventure_graph.",
+					"Get one to edit with get_adventure_graph.",
 			},
 			"note": map[string]any{"type": "string", "description": "Saving only: " + noteDescription},
 		},
@@ -41,7 +41,7 @@ func (s *Server) registerGraphTools() {
 		Scope: scopeRead,
 		Description: "Load an adventure's draft graph (or its published one if there is no draft), with a fresh validation report, " +
 			"the published version and whether the draft has unpublished changes. " +
-			"Returns 404 with code graph_not_found if the adventure has no graph yet — use convert_adventure_graph to start one from its lanes.",
+			"Returns 404 with code graph_not_found if the adventure has no graph yet — build one and save it with save_adventure_graph.",
 		InputSchema: slugOnly,
 	}, getAdventureGraph)
 
@@ -52,14 +52,6 @@ func (s *Server) registerGraphTools() {
 			"unconnected outputs, references to missing nodes/zones/items/counters, regex that does not compile. Run this before save_adventure_graph.",
 		InputSchema: withEnvelope,
 	}, validateAdventureGraph)
-
-	s.tools.register(ToolDescriptor{
-		Name:  "convert_adventure_graph",
-		Scope: scopeRead,
-		Description: "Build a graph from the adventure's current lanes and pages. Nothing is saved: inspect or edit the result, then save it with save_adventure_graph. " +
-			"Linear lanes become chains; shuffled lanes become hubs that play in the same per-team order as today.",
-		InputSchema: slugOnly,
-	}, convertAdventureGraph)
 
 	s.tools.register(ToolDescriptor{
 		Name:  "save_adventure_graph",
@@ -153,10 +145,6 @@ func getAdventureGraph(ctx context.Context, s *Server, raw json.RawMessage) (Too
 
 func validateAdventureGraph(ctx context.Context, s *Server, raw json.RawMessage) (ToolCallResult, error) {
 	return graphCall(ctx, s, "POST", "/validate", raw, true, func(s *Server) http.HandlerFunc { return s.Admin.ValidateAdventureGraph })
-}
-
-func convertAdventureGraph(ctx context.Context, s *Server, raw json.RawMessage) (ToolCallResult, error) {
-	return graphCall(ctx, s, "POST", "/convert", raw, false, func(s *Server) http.HandlerFunc { return s.Admin.ConvertAdventureGraph })
 }
 
 func saveAdventureGraph(ctx context.Context, s *Server, raw json.RawMessage) (ToolCallResult, error) {

@@ -10,18 +10,17 @@ import (
 	"github.com/klahr/zonventure/internal/auth"
 	"github.com/klahr/zonventure/internal/dbtest"
 	"github.com/klahr/zonventure/internal/graph"
+	"github.com/klahr/zonventure/internal/graph/match"
 )
 
 func TestGraphTools_AreRegisteredWithCorrectScope(t *testing.T) {
 	s := &Server{tools: newRegistry()}
 	s.registerGraphTools()
 
-	// Only saving writes. Convert builds a graph but does not store it,
-	// so it is a read — the same split the HTTP API makes.
+	// Only saving and publishing write — the same split the HTTP API makes.
 	want := map[string]string{
 		"get_adventure_graph":      scopeRead,
 		"validate_adventure_graph": scopeRead,
-		"convert_adventure_graph":  scopeRead,
 		"save_adventure_graph":     scopeWrite,
 		"publish_adventure_graph":  scopeWrite,
 	}
@@ -51,9 +50,6 @@ func TestGraphTools_ArgValidation(t *testing.T) {
 		"validate without envelope": func() (ToolCallResult, error) {
 			return validateAdventureGraph(ctx, s, json.RawMessage(`{"slug":"x"}`))
 		},
-		"nil admin": func() (ToolCallResult, error) {
-			return convertAdventureGraph(ctx, s, json.RawMessage(`{"slug":"x"}`))
-		},
 	} {
 		res, err := call()
 		if err != nil {
@@ -66,9 +62,9 @@ func TestGraphTools_ArgValidation(t *testing.T) {
 	}
 }
 
-// End to end through the real admin handler: convert an adventure's
-// lanes, save the result, and read it back — the loop an assistant uses.
-func TestGraphTools_ConvertSaveGet(t *testing.T) {
+// End to end through the real admin handler: save a graph, publish it,
+// and have a broken one refused — the loop an assistant uses.
+func TestGraphTools_SavePublish(t *testing.T) {
 	db, cleanup := dbtest.Open(t)
 	defer cleanup()
 
@@ -79,18 +75,6 @@ func TestGraphTools_ConvertSaveGet(t *testing.T) {
 	var advID int64
 	if err := db.QueryRow(`INSERT INTO adventures(slug, title, description, author, org_id) VALUES ('mcp-graph', 't', '', '', $1) RETURNING id`, orgID).Scan(&advID); err != nil {
 		t.Fatal(err)
-	}
-	var laneID int64
-	if err := db.QueryRow(`INSERT INTO adventure_lanes(adventure_id, idx, mode) VALUES ($1, 0, 'linear') RETURNING id`, advID).Scan(&laneID); err != nil {
-		t.Fatal(err)
-	}
-	for i, ans := range []string{"red", "blue"} {
-		if _, err := db.Exec(`
-			INSERT INTO adventure_pages(adventure_id, lane_id, idx, title, prompt, accept, lat, lng)
-			VALUES ($1, $2, $3, $4, '?', $5, 0, 0)
-		`, advID, laneID, i, "P"+ans, `[{"text":"`+ans+`"}]`); err != nil {
-			t.Fatal(err)
-		}
 	}
 
 	// A real user row: the saved version records who made it, through a
@@ -107,22 +91,23 @@ func TestGraphTools_ConvertSaveGet(t *testing.T) {
 	ctx := auth.WithUser(context.Background(), auth.User{ID: userID, Username: "boss", Role: auth.RoleOrgAdmin, OrgID: &orgID})
 	ctx = withScopes(ctx, []string{"read", "write"})
 
-	res, _ := convertAdventureGraph(ctx, s, json.RawMessage(`{"slug":"mcp-graph"}`))
-	if res.IsError {
-		t.Fatalf("convert: %s", textOf(res))
-	}
-	var converted struct {
-		Envelope graph.Envelope `json:"envelope"`
-	}
-	if err := json.Unmarshal([]byte(textOf(res)), &converted); err != nil {
-		t.Fatalf("decoding convert result: %v\n%s", err, textOf(res))
-	}
-	if n := len(converted.Envelope.Graph.Nodes); n != 4 {
-		t.Fatalf("converted graph has %d nodes, want 4 (start, two pages, end)", n)
-	}
+	good := graph.Envelope{Format: graph.FormatV2, Graph: graph.Graph{
+		Nodes: []graph.Node{
+			{Slug: "start", Type: graph.Start},
+			{Slug: "red", Type: graph.Puzzle, PuzzleCfg: &graph.PuzzleConfig{
+				Blocks:  graph.LegacyBlocks("?", nil),
+				Outputs: []graph.Output{{Port: "solved", Trigger: graph.OnAnswer, Matchers: []match.Matcher{{Kind: match.Exact, Value: "red"}}}},
+			}},
+			{Slug: "end", Type: graph.End},
+		},
+		Edges: []graph.Edge{
+			{From: "start", FromPort: graph.PortOut, To: "red"},
+			{From: "red", FromPort: "solved", To: "end"},
+		},
+	}}
 
-	env, _ := json.Marshal(converted.Envelope)
-	res, _ = saveAdventureGraph(ctx, s, json.RawMessage(`{"slug":"mcp-graph","envelope":`+string(env)+`}`))
+	env, _ := json.Marshal(good)
+	res, _ := saveAdventureGraph(ctx, s, json.RawMessage(`{"slug":"mcp-graph","envelope":`+string(env)+`}`))
 	if res.IsError || !strings.Contains(textOf(res), `"dirty":true`) {
 		t.Fatalf("save draft: %s", textOf(res))
 	}
@@ -133,7 +118,7 @@ func TestGraphTools_ConvertSaveGet(t *testing.T) {
 
 	// A broken draft saves, but publishing it is refused with the
 	// machine-readable code.
-	broken := converted.Envelope
+	broken := good
 	broken.Graph.Edges = nil
 	env, _ = json.Marshal(broken)
 	if res, _ = saveAdventureGraph(ctx, s, json.RawMessage(`{"slug":"mcp-graph","envelope":`+string(env)+`}`)); res.IsError {

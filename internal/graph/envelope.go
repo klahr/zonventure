@@ -7,9 +7,7 @@ import (
 	"fmt"
 )
 
-// FormatV2 identifies a graph envelope. v1 ("zonventure-adventure-v1")
-// is the lane-and-page export; it stays importable and converts through
-// internal/graph/convert.
+// FormatV2 identifies a graph envelope.
 const FormatV2 = "zonventure-adventure-v2"
 
 // Envelope is the portable form of an adventure's structure: what the

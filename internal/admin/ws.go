@@ -390,7 +390,6 @@ type eventDetailTeamDTO struct {
 	// Email is the captain-contact address — arranger-side only,
 	// never echoed onto the public team-share page.
 	Email       string `json:"email,omitempty"`
-	PageIndex   int    `json:"page_index"`
 	CompletedAt string `json:"completed_at,omitempty"`
 	WithdrawnAt string `json:"withdrawn_at,omitempty"`
 	Token       string `json:"token"`
@@ -404,9 +403,8 @@ type eventDetailTeamDTO struct {
 	// reads it to spot a stuck team; the feed it used to derive this
 	// from is capped, so the quietest teams fell off it.
 	LastActivityAt string `json:"last_activity_at,omitempty"`
-	// A graph event's team: points and place (play.Ahead; level teams
-	// share it), the step it is on, and how it ended. page_index is a
-	// lane cursor and means nothing there.
+	// The team's points and place (play.Ahead; level teams share it),
+	// the step it is on, and how it ended.
 	Score   *float64 `json:"score,omitempty"`
 	Rank    int      `json:"rank,omitempty"`
 	Node    string   `json:"node,omitempty"`
@@ -467,7 +465,7 @@ func (h *Handlers) buildEventDetail(ctx context.Context, eventID int64) (eventDe
 	teams := []eventDetailTeamDTO{}
 	rows, err := h.DB.QueryContext(ctx, `
 		SELECT t.id, t.name, COALESCE(t.email, ''),
-		       t.current_page_index, COALESCE(t.completed_at, ''),
+		       COALESCE(t.completed_at, ''),
 		       COALESCE(t.withdrawn_at, ''),
 		       t.token, COALESCE(t.recap_token, ''),
 		       (t.avatar_mime_type IS NOT NULL)::int AS has_avatar
@@ -480,7 +478,7 @@ func (h *Handlers) buildEventDetail(ctx context.Context, eventID int64) (eventDe
 	for rows.Next() {
 		t := eventDetailTeamDTO{Members: []eventDetailMemberDTO{}}
 		var hasAvatar int
-		if err := rows.Scan(&t.ID, &t.Name, &t.Email, &t.PageIndex, &t.CompletedAt, &t.WithdrawnAt, &t.Token, &t.RecapToken, &hasAvatar); err != nil {
+		if err := rows.Scan(&t.ID, &t.Name, &t.Email, &t.CompletedAt, &t.WithdrawnAt, &t.Token, &t.RecapToken, &hasAvatar); err != nil {
 			return eventDetailDTO{}, err
 		}
 		if hasAvatar != 0 {
@@ -536,23 +534,14 @@ func (h *Handlers) buildEventDetail(ctx context.Context, eventID int64) (eventDe
 	arows.Close()
 	d.TeamsCount = len(teams)
 	out := eventDetailDTO{Event: d, Teams: teams, ServerNow: time.Now().UTC().Format(time.RFC3339)}
-	uses, err := play.UsesGraph(ctx, h.DB, eventID)
-	if err != nil {
+	if err := h.addGraphDetail(ctx, &out); err != nil {
 		return eventDetailDTO{}, err
-	}
-	out.Event.Engine = "lanes"
-	if uses {
-		out.Event.Engine = "graph"
-		if err := h.addGraphDetail(ctx, &out); err != nil {
-			return eventDetailDTO{}, err
-		}
 	}
 	return out, nil
 }
 
-// addGraphDetail fills in what a graph event's page shows instead of lane
-// progress: each team's points, place, step and outcome, and the graph's
-// step titles and zones.
+// addGraphDetail fills in each team's points, place, step and outcome,
+// and the graph's step titles and zones.
 func (h *Handlers) addGraphDetail(ctx context.Context, d *eventDetailDTO) error {
 	var graphID sql.NullInt64
 	if err := h.DB.QueryRowContext(ctx, `

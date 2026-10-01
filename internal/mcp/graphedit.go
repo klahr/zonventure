@@ -33,7 +33,7 @@ func (s *Server) registerGraphEditTools() {
 			"delete_node {slug} also removes its edges; put_zone {zone} adds or replaces a zone — with here: true it is centred where the author's phone last reported standing " +
 			"(lat/lng are taken from there, radius_m defaults from the fix's accuracy; refused if the fix is older than two minutes); delete_zone {slug}; " +
 			"connect {from, from_port, to} points an output port at a node, replacing where it pointed before; disconnect {from, from_port}. " +
-			"An adventure without a graph starts from an empty one, unless it still has lanes — convert those first with convert_adventure_graph.",
+			"An adventure without a graph starts from an empty one.",
 		InputSchema: map[string]any{
 			"type":     "object",
 			"required": []string{"slug", "ops"},
@@ -211,9 +211,7 @@ func editAdventureGraph(ctx context.Context, s *Server, raw json.RawMessage) (To
 }
 
 // loadDraftForEdit fetches the draft through the admin handler, which
-// also authorises the caller. A missing graph is an empty one, except
-// for an adventure that still has lanes: editing an empty graph there
-// would silently leave its pages behind.
+// also authorises the caller. A missing graph is an empty one.
 func (s *Server) loadDraftForEdit(ctx context.Context, slug string) (*graph.Graph, *ToolCallResult) {
 	g, _, bad := s.loadDraft(ctx, slug)
 	return g, bad
@@ -229,17 +227,6 @@ func (s *Server) loadDraft(ctx context.Context, slug string) (*graph.Graph, stri
 		return nil, "", &r
 	}
 	if status == http.StatusNotFound && bytes.Contains(body, []byte(`"graph_not_found"`)) {
-		var hasPages bool
-		if err := s.DB.QueryRowContext(ctx, `
-			SELECT EXISTS (SELECT 1 FROM adventure_pages p JOIN adventures a ON a.id = p.adventure_id WHERE a.slug = $1)
-		`, slug).Scan(&hasPages); err != nil {
-			r := errorResult("checking lanes: " + err.Error())
-			return nil, "", &r
-		}
-		if hasPages {
-			r := errorResult("this adventure still has lanes; convert them with convert_adventure_graph and save the result first")
-			return nil, "", &r
-		}
 		return &graph.Graph{Nodes: []graph.Node{}, Edges: []graph.Edge{}}, "", nil
 	}
 	if status != http.StatusOK {

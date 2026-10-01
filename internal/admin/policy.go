@@ -148,19 +148,6 @@ func (h *Handlers) staffCanSeeAdventure(ctx context.Context, me auth.User, owner
 	return n > 0
 }
 
-// staffCanSeePuzzle: a puzzle attached to an adventure is visible
-// wherever the adventure is; a library puzzle is visible to its own
-// org, and the publisher's library to every org.
-func (h *Handlers) staffCanSeePuzzle(ctx context.Context, me auth.User, advSlug sql.NullString, advOrg, pageOrg sql.NullInt64) bool {
-	if me.OrgID == nil {
-		return false
-	}
-	if advSlug.Valid {
-		return h.staffCanSeeAdventure(ctx, me, advOrg, h.adventurePublished(ctx, advSlug.String), advSlug.String)
-	}
-	return canEditOwned(me, pageOrg) || (CatalogEnabled && h.isCatalogOwner(ctx, pageOrg))
-}
-
 // adventurePublished reads the catalog flag; a miss reads as false.
 func (h *Handlers) adventurePublished(ctx context.Context, slug string) bool {
 	var published bool

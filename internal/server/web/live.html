@@ -232,17 +232,6 @@ html, body {
   padding: .6rem 1rem; color: var(--muted); font-size: var(--ts-sm);
   text-align: center; border-top: 1px solid rgba(255,255,255,.05);
 }
-.puzzle-marker {
-  width: 28px; height: 28px;
-  background: rgba(0,0,0,.8); color: #fff;
-  border-radius: 50% 50% 50% 0;
-  transform: rotate(-45deg);
-  display: flex; align-items: center; justify-content: center;
-  font-weight: 700; font-size: .8rem;
-  border: 2px solid #fff;
-}
-.puzzle-marker.gated { background: var(--accent); }
-.puzzle-marker > span { transform: rotate(45deg); }
 .team-dot {
   width: 14px; height: 14px; border-radius: 50%;
   border: 2px solid #fff;
@@ -361,21 +350,6 @@ html, body {
 }
 .progress {
   display: grid; gap: .4rem; margin-top: .3rem;
-}
-.progress .bar {
-  height: 10px; border-radius: 999px;
-  background: rgba(255,255,255,.08);
-  overflow: hidden;
-}
-.progress .fill {
-  height: 100%;
-  background: linear-gradient(90deg, var(--team-color, var(--accent)), var(--accent));
-  border-radius: 999px;
-  /* A straight CSS transition on width. The bar is re-rendered on
-     every snapshot, so to make the transition actually fire (and only
-     when the value changes) renderRow paints the previous pct first,
-     then flips to the new pct on the next frame — see lastPct below. */
-  transition: width .9s cubic-bezier(.2, .8, .2, 1);
 }
 .progress .label {
   display: flex; justify-content: space-between;
@@ -584,14 +558,6 @@ if (initialLoading) initialLoading.textContent = t('Loading…');
 
 const TEAM_COLORS = ['#e24080', '#7fd17b', '#60a5fa', '#f5c452', '#a78bfa', '#22d3ee', '#fb7185', '#34d399'];
 
-// lastPct remembers the last progress-bar percentage rendered per
-// team id, so on the next snapshot we can paint the fill at the OLD
-// value first and then animate to the NEW one via the CSS transition.
-// Without this the bar would either replay from 0 every tick (if we
-// used keyframes) or snap instantly to the new width (fresh node →
-// no transition). Entries are pruned in the board-render path so a
-// long-running TV doesn't accumulate stale ids across events.
-const lastPct = new Map();
 function teamColor(i) { return TEAM_COLORS[i % TEAM_COLORS.length]; }
 
 // A team's colour follows the team, not its rank, so it doesn't change
@@ -747,19 +713,6 @@ function footerTime(data) {
   return t('server time {{time}}', { time });
 }
 
-function formatFinishTime(startISO, completedAt) {
-  if (!startISO || !completedAt) return '';
-  return formatSpan(parseServerTime(startISO), parseServerTime(completedAt));
-}
-
-// formatFinishGap renders the delta between the winner's finish time
-// and a later finisher's finish time as "+MM:SS" (or "+H:MM:SS" when
-// the gap is an hour or more). Used on the live leaderboard for
-// positions 2+, so viewers see at a glance how close the chase was.
-function formatFinishGap(winnerCompletedAt, completedAt) {
-  if (!winnerCompletedAt || !completedAt) return '';
-  return '+' + formatSpan(parseServerTime(winnerCompletedAt), parseServerTime(completedAt));
-}
 
 // mapShown is a client-side override. null → follow the server's
 // show_map flag; true/false → override it (the `m` shortcut flips it).
@@ -865,11 +818,6 @@ function render() {
   }
   root.append(h('div', { class: 'footer' },
     t('Live · push updates · '),
-    data.puzzles?.length
-      ? (data.puzzles.length === 1
-          ? t('{{n}} puzzle · ', { n: data.puzzles.length })
-          : t('{{n}} puzzles · ', { n: data.puzzles.length }))
-      : '',
     footerTime(data)));
 
   // After the DOM mounts, see if the leaderboard overflows the
@@ -1024,9 +972,8 @@ function buildMapSlot() {
 // mapLayers caches the Leaflet overlays across renders so we can
 // update-in-place instead of wiping everything each snapshot. That
 // makes team marker positions animateable (no flicker from
-// remove→add) and stops the puzzle pins from strobing.
+// remove→add).
 const mapLayers = {
-  puzzles: new Map(),               // puzzle index -> marker
   teamMarkers: new Map(),           // team_id -> { marker, lastLL }
   teamPolylines: new Map(),         // team_id -> polyline
   teamTweens: new Map(),            // team_id -> rAF handle
@@ -1098,39 +1045,6 @@ async function renderLiveMap(inner, hint, data) {
   }
   const map = liveMapInstance;
   try { map.invalidateSize(); } catch { /* harmless */ }
-
-  // puzzleBounds is the fall-back fit when no teams have pinged yet —
-  // at that point the puzzle pins are all we've got to orient against.
-  const puzzleBounds = L.latLngBounds([]);
-
-  // Puzzle pins are set-once. Reconcile against mapLayers.puzzles so a
-  // mid-run adventure edit still surfaces added/removed puzzles, but
-  // already-placed pins don't flicker on every snapshot.
-  const seenPuzzleKeys = new Set();
-  for (const p of (data.puzzles || [])) {
-    if (!p.lat && !p.lng) continue;
-    const key = p.index;
-    seenPuzzleKeys.add(key);
-    let marker = mapLayers.puzzles.get(key);
-    if (!marker) {
-      marker = L.marker([p.lat, p.lng], {
-        icon: L.divIcon({
-          className: '',
-          html: `<div class="puzzle-marker ${p.gated ? 'gated' : ''}"><span>${p.index + 1}</span></div>`,
-          iconSize: [28, 28], iconAnchor: [14, 28],
-        }),
-      }).addTo(map);
-      marker.bindPopup(`<strong>${p.index + 1}. ${esc(p.title || t('Puzzle'))}</strong>${p.gated ? `<br><em>${esc(t('gated'))}</em>` : ''}`);
-      mapLayers.puzzles.set(key, marker);
-    }
-    puzzleBounds.extend([p.lat, p.lng]);
-  }
-  for (const [key, marker] of mapLayers.puzzles) {
-    if (!seenPuzzleKeys.has(key)) {
-      map.removeLayer(marker);
-      mapLayers.puzzles.delete(key);
-    }
-  }
 
   // Team tracks come from the most recent {kind:"tracks"} WS frame, which
   // the server pushes alongside the snapshot whenever show_map is on.
@@ -1211,9 +1125,7 @@ async function renderLiveMap(inner, hint, data) {
   // Choose what the viewport frames: all teams' latest positions when
   // the spread is tight enough to show everyone, otherwise the top
   // three so a single wayward team doesn't zoom the board uselessly
-  // far out. Puzzles stay visible on the map layer but don't drive
-  // the fit — their geographic spread can be arbitrary and is less
-  // important than the racing teams.
+  // far out.
   const MAX_SPAN_METERS = 5000;
   // Rank already baked in by the server (data.teams is sorted),
   // so we just index into it to find "top 3" team ids.
@@ -1238,13 +1150,6 @@ async function renderLiveMap(inner, hint, data) {
     } else {
       fitTarget = L.latLngBounds(teamLatLngs.slice(0, 3).map((t) => t.ll));
     }
-  } else if (puzzleBounds.isValid()) {
-    fitTarget = puzzleBounds;
-  } else if (data.bounds) {
-    // Puzzle pins only arrive once the event is over; until then the
-    // server sends the play area's box instead.
-    const [s, w, n, e] = data.bounds;
-    fitTarget = L.latLngBounds([s, w], [n, e]);
   }
 
   if (fitTarget && fitTarget.isValid()) {
@@ -1336,9 +1241,8 @@ const COMPLETION_DWELL_MS = 5 * 60 * 1000;
 let showBoardOverride = false;
 
 function buildCompletionFrame(data) {
-  // The server's rank is the result: points for a graph event, then
-  // pages solved and finish time for a lane event. Sorting by finish
-  // time here crowned the first finisher even when others outscored it.
+  // The server's rank is the result: points. Sorting by finish time
+  // here would crown the first finisher even when others outscored it.
   const teams = (data.teams || []).slice()
     .sort((a, b) => (a.rank || Infinity) - (b.rank || Infinity));
   const winner = teams[0];
@@ -1347,26 +1251,12 @@ function buildCompletionFrame(data) {
   if (data.adventure_title) {
     card.append(h('div', { class: 'whenline' }, data.adventure_title));
   }
-  if (winner && data.engine === 'graph') {
+  if (winner) {
     const pts = winner.score ?? 0;
     card.append(
       h('div', { class: 'countdown' },
         h('div', { class: 'digits' }, winner.name || t('—')),
         h('small', {}, (Number.isInteger(pts) ? String(pts) : pts.toFixed(1)) + ' ' + t('Points'))));
-  } else if (winner && winner.completed_at) {
-    const total = formatFinishTime(data.started_at, winner.completed_at);
-    card.append(
-      h('div', { class: 'countdown' },
-        h('div', { class: 'digits' }, winner.name || t('—')),
-        h('small', {}, total
-          ? t('crossed the line in {{time}}', { time: total })
-          : t('finished first'))));
-  } else if (winner && winner.page_index > 0) {
-    // Time ran out before anyone finished: the leader still won.
-    card.append(
-      h('div', { class: 'countdown' },
-        h('div', { class: 'digits' }, winner.name || t('—')),
-        h('small', {}, t('most puzzles solved'))));
   } else {
     card.append(h('div', { class: 'countdown' },
       h('div', { class: 'digits' }, t('—')),
@@ -1484,25 +1374,19 @@ function playStartAnimation() {
 // teamRowFingerprint serialises every input that affects a row's
 // rendered output. Two snapshots producing the same fingerprint mean
 // the row's DOM doesn't need to be rebuilt — we keep the existing
-// node. progress-bar `width` is intentionally NOT included: it's a
-// CSS transition the row's own renderRow tracks via lastPct, and
-// re-rendering would flicker the bar even for tiny pct changes.
-function teamRowFingerprint(team, data) {
-  const finished = !!team.completed_at || (data.page_count > 0 && team.page_index >= data.page_count);
-  const cur = data.puzzles?.[team.page_index]?.title || '';
+// node.
+function teamRowFingerprint(team) {
+  const finished = !!team.completed_at;
   const members = (team.members || []).map((m) => m.username).join('|');
   return [
     team.rank,
     team.withdrawn ? 1 : 0,
-    team.page_index,
     team.score ?? '',
     team.tiebreak_guess ?? '',
     finished ? 1 : 0,
     team.name,
     team.avatar_url || '',
     members,
-    data.page_count,
-    cur,
   ].join('§');
 }
 
@@ -1514,8 +1398,8 @@ function teamRowFingerprint(team, data) {
 //
 // On a 30-team TV running for hours, this drops the per-WS-push DOM
 // work from "rebuild 30 rows" to "rebuild only the 1-2 rows that
-// changed", with the rest carrying their state (animations, focus,
-// the lastPct progress-bar transition) across renders.
+// changed", with the rest carrying their state (animations, focus)
+// across renders.
 function buildBoard(data, existing) {
   const board = existing || h('div', { class: 'board' });
   if (!data.teams || data.teams.length === 0) {
@@ -1534,19 +1418,11 @@ function buildBoard(data, existing) {
   data.teams.forEach((team, i) => {
     seen.add(team.id);
     const id = String(team.id);
-    const fp = teamRowFingerprint(team, data);
+    const fp = teamRowFingerprint(team);
     const existingRow = existingRows.get(id);
     if (existingRow && existingRow.dataset.fp === fp) {
       // Reuse — DOM and any in-flight transitions stay intact.
       newOrder.push(existingRow);
-      // Keep lastPct in sync even on reused rows so a future render
-      // that DOES rebuild this row starts the bar transition from
-      // the correct current value.
-      const pct = data.page_count > 0
-        ? Math.min(100, Math.round((team.page_index / data.page_count) * 100))
-        : 0;
-      const finished = !!team.completed_at || (data.page_count > 0 && team.page_index >= data.page_count);
-      lastPct.set(team.id, finished ? 100 : pct);
     } else {
       const row = renderRow(team, i, data);
       row.dataset.fp = fp;
@@ -1562,19 +1438,12 @@ function buildBoard(data, existing) {
 
   knownTeams.clear();
   seen.forEach((id) => knownTeams.add(id));
-  // Prune lastPct against the current `seen` set so a TV that runs
-  // for hours across multiple back-to-back events doesn't accumulate
-  // an entry for every team_id ever observed.
-  for (const id of lastPct.keys()) {
-    if (!seen.has(id)) lastPct.delete(id);
-  }
   return board;
 }
 
 function renderRow(team, idx, data) {
   const colour = teamColorFor(team.id);
-  const pct = data.page_count > 0 ? Math.min(100, Math.round((team.page_index / data.page_count) * 100)) : 0;
-  const finished = !!team.completed_at || (data.page_count > 0 && team.page_index >= data.page_count);
+  const finished = !!team.completed_at;
   const rankCls = team.rank <= 3 ? ` rank-${team.rank}` : ' rank-tail';
   const row = h('div', {
     class: `row rank-${team.rank}${rankCls}${finished ? ' finished' : ''}${team.withdrawn ? ' withdrawn' : ''}`,
@@ -1613,87 +1482,22 @@ function renderRow(team, idx, data) {
   if ((team.members || []).length) {
     main.append(h('div', { class: 'members' }, team.members.map((m) => m.username).join(' · ')));
   }
-  // A graph event ranks by points, and has no page-by-page progress to
-  // draw: the row says whether the team is still out, and after the
-  // event what it guessed for the tie-breaker.
-  if (data.engine === 'graph') {
-    main.append(h('div', { class: 'progress' },
-      h('div', { class: 'label' },
-        h('span', {}, finished ? t('Complete') : t('Playing')),
-        team.tiebreak_guess != null ? h('span', {}, t('Tie-breaker: {{n}}', { n: team.tiebreak_guess })) : null,
-      ),
-    ));
-  } else {
-  const currentPuzzle = data.puzzles?.[team.page_index];
+  // The row says whether the team is still out, and after the event
+  // what it guessed for the tie-breaker.
   main.append(h('div', { class: 'progress' },
     h('div', { class: 'label' },
-      h('span', {},
-        finished ? t('Complete') : t('Puzzle {{i}} of {{n}}', { i: team.page_index + 1, n: data.page_count }),
-        currentPuzzle && !finished ? h('strong', { style: 'margin-left:.6rem' }, currentPuzzle.title) : null),
-      h('span', {}, `${finished ? 100 : pct}%`),
+      h('span', {}, finished ? t('Complete') : t('Playing')),
+      team.tiebreak_guess != null ? h('span', {}, t('Tie-breaker: {{n}}', { n: team.tiebreak_guess })) : null,
     ),
-    h('div', { class: 'bar' },
-      (() => {
-        const target = finished ? 100 : pct;
-        const prev = lastPct.has(team.id) ? lastPct.get(team.id) : target;
-        lastPct.set(team.id, target);
-        // Paint the fill at the PREVIOUS width first so the CSS
-        // transition has a real starting value to animate from. Once
-        // the element is in the DOM (queued via microtask so parent
-        // attachment has completed), force a layout read with
-        // offsetWidth — that commits the initial width — then flip to
-        // the new width. The transition on .progress .fill picks it up.
-        const fill = h('div', { class: 'fill', style: `width:${prev}%` });
-        if (prev !== target) {
-          queueMicrotask(() => {
-            // offsetWidth read only makes the browser commit layout
-            // once the element is actually connected.
-            if (!fill.isConnected) {
-              requestAnimationFrame(() => {
-                void fill.offsetWidth;
-                fill.style.width = target + '%';
-              });
-              return;
-            }
-            void fill.offsetWidth;
-            fill.style.width = target + '%';
-          });
-        }
-        return fill;
-      })()),
   ));
-  }
   row.append(main);
 
-  if (data.engine === 'graph') {
-    // Points are what a graph event ranks by, finished or not.
-    const pts = team.score ?? 0;
-    row.append(h('div', { class: 'stat' + (finished ? ' finished' : '') },
-      h('div', { class: 'value' }, Number.isInteger(pts) ? String(pts) : pts.toFixed(1)),
-      h('div', { class: 'unit' }, t('Points')),
-    ));
-  } else if (finished) {
-    // Every finisher shows their own total (start → finish) as the
-    // big value so runs read as comparable times. Below, rank 1 gets
-    // the "Finish time" caption; everyone behind gets the gap to the
-    // winner ("+MM:SS") in that same caption slot — no redundant "Gap"
-    // label, the + sign already says what it is.
-    const winner = (data.teams || []).find((x) => x.completed_at);
-    const isWinner = winner && winner.id === team.id;
-    const total   = formatFinishTime(data.started_at, team.completed_at);
-    const caption = isWinner
-      ? t('Finish time')
-      : formatFinishGap(winner && winner.completed_at, team.completed_at);
-    row.append(h('div', { class: 'stat finished' },
-      h('div', { class: 'value' }, total || t('Done')),
-      h('div', { class: 'unit' }, caption),
-    ));
-  } else {
-    row.append(h('div', { class: 'stat' },
-      h('div', { class: 'value' }, `${team.page_index}/${data.page_count}`),
-      h('div', { class: 'unit' }, t('Solved')),
-    ));
-  }
+  // Points are what the board ranks by, finished or not.
+  const pts = team.score ?? 0;
+  row.append(h('div', { class: 'stat' + (finished ? ' finished' : '') },
+    h('div', { class: 'value' }, Number.isInteger(pts) ? String(pts) : pts.toFixed(1)),
+    h('div', { class: 'unit' }, t('Points')),
+  ));
   return row;
 }
 

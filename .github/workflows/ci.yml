@@ -134,15 +134,6 @@ jobs:
       - name: test
         run: cd web && npm run test --workspaces --if-present
 
-      # The original vanilla outbox, still shipped and still serving
-      # the live player at /play. It keeps running until that surface
-      # is ported, so a change to one is never silently untested in the
-      # other — @zonventure/outbox is a port of this file and the two
-      # must not drift while both are in production.
-      - name: node --test (legacy player queue)
-        working-directory: internal/server/web
-        run: node --test play-queue.test.js
-
   docker:
     name: Docker
     runs-on: ubuntu-latest

@@ -28,9 +28,7 @@ func registerPlayerRoutes(r chi.Router, env *routesEnv) {
 	r.Route("/api/player", func(r chi.Router) {
 		r.Use(auth.RequireSlot)
 		r.Use(auth.RequireCSRF())
-		r.Get("/state", playerH.GetState)
-		// Graph-engine events, for the React player app. An event is on
-		// one engine or the other for its whole life; see play.UsesGraph.
+		// The React player app.
 		r.Get("/play", playerH.GetPlay)
 		r.Post("/play/{action}", playerH.PostPlayAction)
 		// A team's picture for a photo block, and the team's own pictures.
@@ -38,14 +36,7 @@ func registerPlayerRoutes(r chi.Router, env *routesEnv) {
 		// Checks a cheat password before the phone turns cheating on.
 		r.Post("/play/unlock", playerH.PostPlayUnlock)
 		r.Get("/play/photo/{photoID}", playerH.GetPlayPhoto)
-		// Asset manifest powers the player-side service-worker prefetch
-		// for offline play: the SW cache.addAll()s these URLs on team
-		// join so puzzles render even in a dead spot. Each URL is
-		// still visibility-gated at fetch time.
-		r.Get("/manifest", playerH.Manifest)
-		r.Post("/answer", playerH.SubmitAnswer)
 		r.Post("/location", playerH.PostLocation)
-		r.Post("/hint", playerH.RevealHint)
 		// Player-driven slot rename — the arranger's pre-set name is
 		// often a placeholder ("Player 3"). Letting the player put
 		// their own name on the leaderboard improves engagement.
@@ -60,7 +51,6 @@ func registerPlayerRoutes(r chi.Router, env *routesEnv) {
 		// until the team begins (play.TeamBegun).
 		r.Post("/team/avatar", playerH.SetMyTeamAvatar)
 		r.Delete("/team/avatar", playerH.DeleteMyTeamAvatar)
-		r.Get("/summary", playerH.Summary)
 	})
 
 	// Player WebSocket: replaces the 5s /state poll and 15s /location POST

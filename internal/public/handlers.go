@@ -53,16 +53,6 @@ type Handlers struct {
 	PlatformFee payments.PlatformFee
 }
 
-type puzzleDTO struct {
-	Index int    `json:"index"`
-	Title string `json:"title"`
-	Gated bool   `json:"gated"`
-	// Lat/Lng stay empty until the event is over: the board is public
-	// and a pin per puzzle would hand every player the route.
-	Lat float64 `json:"lat,omitempty"`
-	Lng float64 `json:"lng,omitempty"`
-}
-
 type memberDTO struct {
 	Username string `json:"username"`
 }
@@ -70,13 +60,11 @@ type memberDTO struct {
 type teamDTO struct {
 	ID          int64       `json:"id"`
 	Name        string      `json:"name"`
-	PageIndex   int         `json:"page_index"`
-	PageCount   int         `json:"page_count"`
 	CompletedAt string      `json:"completed_at,omitempty"`
 	Rank        int         `json:"rank"`
 	AvatarURL   string      `json:"avatar_url,omitempty"`
 	Members     []memberDTO `json:"members"`
-	// Score is a graph event's points; lane events rank by pages instead.
+	// Score is the team's points.
 	Score *float64 `json:"score,omitempty"`
 	// TiebreakGuess is the team's answer to the tie-breaker, shown once
 	// the event is over: before then it would help the teams still out.
@@ -103,16 +91,8 @@ type LiveDTO struct {
 	PausedSeconds int    `json:"paused_seconds"`
 	PausedAt      string `json:"paused_at,omitempty"`
 	ServerNow     string `json:"server_now"`
-	PageCount     int    `json:"page_count"`
-	// Engine is "graph" for an event ranked by points (see play.Ahead),
-	// "lanes" for one ranked by pages solved.
-	Engine  string      `json:"engine"`
-	ShowMap bool        `json:"show_map"`
-	Puzzles []puzzleDTO `json:"puzzles"`
-	// Bounds frames the map before any team has pinged, as
-	// [south, west, north, east] around every puzzle. It shows the play
-	// area without pointing at any one puzzle.
-	Bounds *[4]float64       `json:"bounds,omitempty"`
+	ShowMap       bool   `json:"show_map"`
+	// Teams are ranked by points (see play.Ahead).
 	Teams  []teamDTO         `json:"teams"`
 	Colors *adventure.Colors `json:"colors,omitempty"`
 }
@@ -151,46 +131,10 @@ func (h *Handlers) buildLive(ctx context.Context, token string) (LiveDTO, int64,
 	if adv == nil {
 		return LiveDTO{}, id, http.StatusInternalServerError, "adventure not loaded"
 	}
-	// The TV board only shows pages a player will actually encounter, so
-	// disabled pages are hidden entirely. enabledPages preserves the raw
-	// idx order so the index emitted here stays stable across runs.
-	enabled := make([]adventure.Page, 0, len(adv.Pages))
-	for _, p := range adv.Pages {
-		if !p.Disabled {
-			enabled = append(enabled, p)
-		}
-	}
-	over := state == "completed" || state == "cancelled"
-	puzzles := make([]puzzleDTO, len(enabled))
-	var bounds *[4]float64
-	for i, p := range enabled {
-		puzzles[i] = puzzleDTO{Index: i, Title: p.Title, Gated: p.Location.Gated()}
-		lat, lng := p.Location.Lat, p.Location.Lng
-		if lat == 0 && lng == 0 {
-			continue
-		}
-		if over {
-			puzzles[i].Lat, puzzles[i].Lng = lat, lng
-		}
-		if bounds == nil {
-			bounds = &[4]float64{lat, lng, lat, lng}
-		}
-		bounds[0], bounds[1] = min(bounds[0], lat), min(bounds[1], lng)
-		bounds[2], bounds[3] = max(bounds[2], lat), max(bounds[3], lng)
-	}
-	// Fetch teams without sorting here — the tiebreaker logic (distance
-	// to next puzzle) is cleaner in Go than in SQL. The ordering that
-	// was previously baked into ORDER BY lives in sortTeams below.
 	rows, err := h.DB.QueryContext(ctx, `
-		SELECT t.id, t.name, t.current_page_index, COALESCE(t.completed_at, ''),
+		SELECT t.id, t.name, COALESCE(t.completed_at, ''),
 		       (t.avatar_mime_type IS NOT NULL)::int AS has_avatar,
-		       (t.withdrawn_at IS NOT NULL)::int AS withdrawn,
-		       t.created_at,
-		       COALESCE(
-		         (SELECT MAX(created_at) FROM event_activity
-		          WHERE event_id = t.event_id AND team_id = t.id AND kind = 'answer.right'),
-		         t.created_at
-		       ) AS last_progress_at
+		       (t.withdrawn_at IS NOT NULL)::int AS withdrawn
 		FROM teams t
 		WHERE t.event_id = $1
 	`, id)
@@ -198,36 +142,20 @@ func (h *Handlers) buildLive(ctx context.Context, token string) (LiveDTO, int64,
 		return LiveDTO{}, id, http.StatusInternalServerError, "query failed"
 	}
 	defer rows.Close()
-	rowMeta := map[int64]sortRowForSort{}
 	teams := []teamDTO{}
 	for rows.Next() {
 		var (
-			t              teamDTO
-			rawCurr        int
-			hasAvatar      int
-			withdrawn      int
-			createdAt      string
-			lastProgressAt string
+			t         teamDTO
+			hasAvatar int
+			withdrawn int
 		)
-		if err := rows.Scan(&t.ID, &t.Name, &rawCurr, &t.CompletedAt, &hasAvatar, &withdrawn, &createdAt, &lastProgressAt); err != nil {
+		if err := rows.Scan(&t.ID, &t.Name, &t.CompletedAt, &hasAvatar, &withdrawn); err != nil {
 			return LiveDTO{}, id, http.StatusInternalServerError, "scan failed"
 		}
 		if hasAvatar != 0 {
 			t.AvatarURL = fmt.Sprintf("/adventure-assets/team-avatar/%d", t.ID)
 		}
-		// Convert the stored cursor (raw adventure_pages.idx of the next
-		// page to consider) into a count of enabled pages already solved.
-		for _, p := range enabled {
-			if p.Index < rawCurr {
-				t.PageIndex++
-			}
-		}
-		if t.PageIndex > len(enabled) {
-			t.PageIndex = len(enabled)
-		}
-		t.PageCount = len(enabled)
 		t.Withdrawn = withdrawn != 0
-		rowMeta[t.ID] = sortRowForSort{raw: rawCurr, createdAt: createdAt, lastProgressAt: lastProgressAt}
 		teams = append(teams, t)
 	}
 	// Every team's members in one query: this runs for each viewer on
@@ -258,31 +186,14 @@ func (h *Handlers) buildLive(ctx context.Context, token string) (LiveDTO, int64,
 		}
 	}
 	mrows.Close()
-	engine := "lanes"
-	usesGraph, err := play.UsesGraph(ctx, h.DB, id)
-	if err != nil {
-		return LiveDTO{}, id, http.StatusInternalServerError, "event lookup failed"
+	if err := h.rankGraph(ctx, id, state, teams); err != nil {
+		return LiveDTO{}, id, http.StatusInternalServerError, "ranking failed"
 	}
-	if usesGraph {
-		engine = "graph"
-		if err := h.rankGraph(ctx, id, state, teams); err != nil {
-			return LiveDTO{}, id, http.StatusInternalServerError, "ranking failed"
-		}
-	} else {
-		// Latest GPS ping per team drives the distance tiebreaker — teams
-		// tied on puzzles solved rank by who's physically closer to their
-		// next puzzle. Missing pings fall back to the temporal tiebreak.
-		latest, err := latestPingsByTeam(ctx, h.DB, id)
-		if err != nil {
-			return LiveDTO{}, id, http.StatusInternalServerError, "ping lookup failed"
-		}
-		sortTeams(teams, rowMeta, latest, enabled)
-		// As on a graph board, withdrawn teams follow everyone still
-		// playing, keeping their order among themselves.
-		sort.SliceStable(teams, func(i, j int) bool {
-			return !teams[i].Withdrawn && teams[j].Withdrawn
-		})
-	}
+	// Withdrawn teams follow everyone still playing, keeping their
+	// order among themselves — also before any team has a score.
+	sort.SliceStable(teams, func(i, j int) bool {
+		return !teams[i].Withdrawn && teams[j].Withdrawn
+	})
 	for i := range teams {
 		teams[i].Rank = i + 1
 	}
@@ -305,11 +216,7 @@ func (h *Handlers) buildLive(ctx context.Context, token string) (LiveDTO, int64,
 		PausedSeconds:  pausedSeconds,
 		PausedAt:       pausedAt.String,
 		ServerNow:      time.Now().UTC().Format(time.RFC3339),
-		PageCount:      len(enabled),
-		Engine:         engine,
 		ShowMap:        showMap != 0,
-		Puzzles:        puzzles,
-		Bounds:         bounds,
 		Teams:          teams,
 	}
 	if !adv.Colors.Empty() {
@@ -449,124 +356,6 @@ func (h *Handlers) Tracks(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	httpx.JSON(w, http.StatusOK, resp)
-}
-
-// latestPingsByTeam returns each team's most recent GPS ping for an event.
-// Teams without any ping are absent from the result — callers handle
-// that as "distance unknown" and fall back to the temporal tiebreaker.
-func latestPingsByTeam(ctx context.Context, db *sql.DB, eventID int64) (map[int64]trackPoint, error) {
-	rows, err := db.QueryContext(ctx, `
-		SELECT t.id, p.lat, p.lng, p.server_ts
-		FROM teams t
-		-- Each team's latest ping off idx_pings_team_ts, not a scan of
-		-- the event's whole ping history.
-		CROSS JOIN LATERAL (
-		  SELECT lat, lng, server_ts
-		  FROM location_pings
-		  WHERE team_id = t.id
-		  ORDER BY server_ts DESC, id DESC
-		  LIMIT 1
-		) p
-		WHERE t.event_id = $1
-	`, eventID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := map[int64]trackPoint{}
-	for rows.Next() {
-		var (
-			tid int64
-			p   trackPoint
-		)
-		if err := rows.Scan(&tid, &p.Lat, &p.Lng, &p.ServerTS); err != nil {
-			return nil, err
-		}
-		out[tid] = p
-	}
-	return out, nil
-}
-
-// sortRowForSort is the subset of per-team metadata the sort needs.
-// Named separately so buildLive can pass a typed map without leaking
-// the shape all over the package.
-type sortRowForSort struct {
-	raw            int
-	createdAt      string
-	lastProgressAt string
-}
-
-// sortTeams applies the leaderboard ordering rules. Extracted from
-// buildLive because the distance tiebreaker is too awkward for SQL.
-//
-// Sort keys, in order:
-//  1. Finishers first (completed_at NOT NULL), earliest completion wins.
-//  2. Among non-finishers, more puzzles solved wins.
-//  3. Tied on puzzles: closer to the next puzzle wins (Haversine metres).
-//     Teams without a GPS ping are treated as "unknown" and rank below
-//     pinged teams — being on the map is a prerequisite for the tiebreak.
-//  4. Tied on distance (or both unknown): earlier last-right-answer wins
-//     (the old temporal rule is a stable fallback).
-//  5. Final fallback: earlier created_at.
-func sortTeams(teams []teamDTO, rowMeta map[int64]sortRowForSort, pings map[int64]trackPoint, enabled []adventure.Page) {
-	// nextPuzzleIdx returns the index into `enabled` that the team is
-	// currently working on. raw is adventure_pages.idx of the stored
-	// cursor (next page to consider).
-	nextPuzzleIdx := func(raw int) int {
-		for i, p := range enabled {
-			if p.Index >= raw {
-				return i
-			}
-		}
-		return len(enabled)
-	}
-	distanceMeters := func(id int64) (float64, bool) {
-		ping, ok := pings[id]
-		if !ok {
-			return 0, false
-		}
-		meta, ok := rowMeta[id]
-		if !ok {
-			return 0, false
-		}
-		idx := nextPuzzleIdx(meta.raw)
-		if idx >= len(enabled) {
-			return 0, false
-		}
-		p := enabled[idx]
-		return haversineMeters(ping.Lat, ping.Lng, p.Location.Lat, p.Location.Lng), true
-	}
-	sort.SliceStable(teams, func(i, j int) bool {
-		a, b := teams[i], teams[j]
-		// 1. Finished before unfinished.
-		if (a.CompletedAt != "") != (b.CompletedAt != "") {
-			return a.CompletedAt != ""
-		}
-		// Both finished — earliest completion wins.
-		if a.CompletedAt != "" && b.CompletedAt != "" && a.CompletedAt != b.CompletedAt {
-			return a.CompletedAt < b.CompletedAt
-		}
-		// 2. More puzzles solved wins.
-		if a.PageIndex != b.PageIndex {
-			return a.PageIndex > b.PageIndex
-		}
-		// 3. Distance tiebreak — shorter is better; known beats unknown.
-		da, aok := distanceMeters(a.ID)
-		db, bok := distanceMeters(b.ID)
-		if aok != bok {
-			return aok
-		}
-		if aok && bok && da != db {
-			return da < db
-		}
-		// 4. Temporal tiebreak — earlier last-right-answer wins.
-		ma, mb := rowMeta[a.ID], rowMeta[b.ID]
-		if ma.lastProgressAt != mb.lastProgressAt {
-			return ma.lastProgressAt < mb.lastProgressAt
-		}
-		// 5. Creation-order final fallback for full determinism.
-		return ma.createdAt < mb.createdAt
-	})
 }
 
 // rankGraph orders a graph event's teams by the shared ranking and gives

@@ -184,9 +184,6 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 			r.Use(auth.RequireAnyRole(auth.RoleOrgAdmin, auth.RoleOrgMember))
 			r.Get("/adventures", adminH.ListAdventures)
 			r.Get("/adventures/{slug}", adminH.AdventureDetail)
-			// Preview: render any puzzle in the shape /play expects so an
-			// arranger can QA the adventure without a real run.
-			r.Get("/adventures/{slug}/preview", adminH.PreviewAdventure)
 			// Live markdown → HTML for the arrange editor's preview panes.
 			// Pure function; no DB access, no org scoping needed.
 			r.Post("/markdown/preview", adminH.PreviewMarkdown)
@@ -271,7 +268,7 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 			r.Get("/adventures/{slug}/edit", adminH.LoadAdventureForEdit)
 
 			// The adventure as a graph (internal/graph). Saving creates a new
-			// version; convert builds one from the lanes without saving.
+			// version.
 			r.Get("/adventures/{slug}/graph", adminH.GetAdventureGraph)
 			r.Put("/adventures/{slug}/graph", adminH.PutAdventureGraph)
 			r.Post("/adventures/{slug}/graph/publish", adminH.PublishAdventureGraph)
@@ -280,7 +277,6 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 			r.Post("/adventures/{slug}/graph/versions/{version}/publish", adminH.PublishAdventureGraphVersion)
 			r.Patch("/adventures/{slug}/graph/versions/{version}", adminH.LabelAdventureGraphVersion)
 			r.Post("/adventures/{slug}/graph/validate", adminH.ValidateAdventureGraph)
-			r.Post("/adventures/{slug}/graph/convert", adminH.ConvertAdventureGraph)
 
 			// Working on it together (admin/collab.go): conversations on
 			// steps, where each step is in the work, what each author saw.
@@ -340,44 +336,6 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 			// logo without involving platform support.
 			r.Post("/orgs/me/logo", adminH.SetMyOrgLogo)
 			r.Delete("/orgs/me/logo", adminH.DeleteMyOrgLogo)
-			// Lane editing. LaneOnly refuses it for an adventure with a
-			// published graph: its events play the graph, so an edit to
-			// the lane pages would look saved and change nothing.
-			r.Post("/adventures/{slug}/pages", adminH.LaneOnly(adminH.CreatePage))
-			r.Patch("/adventures/{slug}/pages/reorder", adminH.LaneOnly(adminH.ReorderPages))
-			// Lane CRUD. Reorder lives at /lanes/reorder rather than as
-			// a method-keyed verb so the router pattern stays decisive
-			// (no overlap with /lanes/{laneID}).
-			r.Post("/adventures/{slug}/lanes", adminH.LaneOnly(adminH.CreateLane))
-			r.Post("/adventures/{slug}/lanes/reorder", adminH.LaneOnly(adminH.ReorderLanes))
-			r.Patch("/adventures/{slug}/lanes/{laneID}", adminH.LaneOnly(adminH.UpdateLane))
-			r.Delete("/adventures/{slug}/lanes/{laneID}", adminH.LaneOnly(adminH.DeleteLane))
-			r.Patch("/pages/{pageID}", adminH.LaneOnly(adminH.UpdatePage))
-			r.Delete("/pages/{pageID}", adminH.LaneOnly(adminH.DeletePage))
-			// Duplicate one puzzle in place — Google Slides shape. The
-			// new row lands at sourceIdx + 1 with the rest of the
-			// adventure shifted down. Auth via requireEditPage so the
-			// org_member tightening carries through.
-			r.Post("/pages/{pageID}/duplicate", adminH.LaneOnly(adminH.DuplicatePage))
-			r.Post("/pages/{pageID}/images", adminH.LaneOnly(adminH.AddPageImage))
-			r.Patch("/images/{imageID}", adminH.UpdatePageImage)
-			r.Delete("/images/{imageID}", adminH.DeletePageImage)
-			// Per-hint image attachments. Hint images are addressed by
-			// their own image id under /hint-images/ so the puzzle-image
-			// patch/delete routes don't have to disambiguate which kind
-			// they're acting on.
-			r.Post("/hints/{hintID}/images", adminH.LaneOnly(adminH.AddHintImage))
-			r.Patch("/hint-images/{imageID}", adminH.UpdateHintImage)
-			r.Delete("/hint-images/{imageID}", adminH.DeleteHintImage)
-			// Audio attachments — same shape as the image routes. PATCH
-			// only carries `description` (the WCAG transcript fallback);
-			// the blob itself is replaced by delete + re-upload.
-			r.Post("/pages/{pageID}/audio", adminH.LaneOnly(adminH.AddPageAudio))
-			r.Patch("/audio/{audioID}", adminH.UpdatePageAudio)
-			r.Delete("/audio/{audioID}", adminH.DeletePageAudio)
-			r.Post("/hints/{hintID}/audio", adminH.LaneOnly(adminH.AddHintAudio))
-			r.Patch("/hint-audio/{audioID}", adminH.UpdateHintAudio)
-			r.Delete("/hint-audio/{audioID}", adminH.DeleteHintAudio)
 
 			// Purchases: arrangers buy player-slot assignments here. The
 			// simulated flow just needs the confirm endpoint; a future
@@ -398,15 +356,6 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 			// payload bytes. Org-scoped via the join to webhook_endpoints
 			// inside the handler.
 			r.Get("/webhooks/deliveries", adminH.ListWebhookDeliveries)
-
-			// Race simulator. Each call is org-scoped via the caller's
-			// session, so two arrangers in different orgs can run sims in
-			// parallel without colliding.
-			r.Get("/simulator", adminH.SimulatorStatus)
-			r.Post("/simulator/start", adminH.SimulatorStart)
-			r.Post("/simulator/pause", adminH.SimulatorPause)
-			r.Post("/simulator/resume", adminH.SimulatorResume)
-			r.Post("/simulator/reset", adminH.SimulatorReset)
 		})
 
 		// Global admin only.

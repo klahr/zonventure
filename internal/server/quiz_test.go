@@ -135,14 +135,13 @@ func TestQuizWalkOverHTTP(t *testing.T) {
 	// The TV leaderboard and the results export rank the same way. Gamma
 	// started with the event, so it is ranked too, on no points.
 	var live struct {
-		Engine string `json:"engine"`
-		Teams  []struct {
+		Teams []struct {
 			Name          string   `json:"name"`
 			Score         *float64 `json:"score"`
 			TiebreakGuess *float64 `json:"tiebreak_guess"`
 		} `json:"teams"`
 	}
-	if s := newClient(t, ts).do("GET", "/api/public/live/"+ev.LiveToken, nil, &live); s != 200 || live.Engine != "graph" || len(live.Teams) != 3 {
+	if s := newClient(t, ts).do("GET", "/api/public/live/"+ev.LiveToken, nil, &live); s != 200 || len(live.Teams) != 3 {
 		t.Fatalf("live = %d %+v", s, live)
 	}
 	if live.Teams[0].Name != "Alpha" || live.Teams[1].Name != "Beta" || live.Teams[2].Name != "Gamma" ||

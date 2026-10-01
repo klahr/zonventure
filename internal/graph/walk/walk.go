@@ -46,7 +46,7 @@ type State interface {
 	// the caller learns which branches to record.
 	BranchDone(hubSlug, port string) bool
 	// Slot is the team's 0-based rank within its event. It seeds the
-	// per-team shuffle, exactly as lanes.teamSlot does today.
+	// per-team shuffle.
 	Slot() int
 	// Occupancy is how many teams are currently inside a branch,
 	// for PolicyCapacity. The caller reads this under a row lock.
@@ -428,12 +428,10 @@ func resolveHub(s State, hub graph.Node) (chosen string, offer []graph.Branch, s
 		return open[0].Port, nil, false, false, nil
 
 	case graph.PolicyShuffle:
-		// Exactly the order internal/adventure/permutation.go gives a
-		// shuffled lane today: the declared branches rotated by the
-		// team's slot, taking the first one not yet done. Rotating the
-		// full declared list — not just the open ones — is what keeps
-		// the order identical to LanePermutation as branches complete,
-		// so an adventure converted from lanes plays exactly as before.
+		// The declared branches rotated by the team's slot, taking the
+		// first one not yet done. Rotating the full declared list — not
+		// just the open ones — keeps each team's order fixed as branches
+		// complete.
 		// With N teams and N branches every branch is someone's first,
 		// which is what stops eight teams walking to the same station at
 		// the same minute.

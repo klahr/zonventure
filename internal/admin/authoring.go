@@ -47,88 +47,14 @@ var maxImageBytes int64 = func() int64 {
 // re-parse ZV_MAX_IMAGE_BYTES.
 func MaxImageBytes() int64 { return maxImageBytes }
 
-type pageView struct {
-	ID     int64  `json:"id"`
-	Index  int    `json:"index"`
-	Title  string `json:"title"`
-	Prompt string `json:"prompt"`
-	// PromptHTML is the goldmark-rendered sibling of Prompt — the same
-	// HTML players see. Lets list views in arrange.html drop in the
-	// pre-rendered result instead of calling /markdown/preview per card.
-	PromptHTML string                  `json:"prompt_html,omitempty"`
-	Hints      []hintView              `json:"hints"`
-	Accept     []adventure.AcceptEntry `json:"accept"`
-	Lat        float64                 `json:"lat"`
-	Lng        float64                 `json:"lng"`
-	RadiusM    *float64                `json:"radius_m,omitempty"`
-	Gated      bool                    `json:"gated"`
-	Disabled   bool                    `json:"disabled"`
-	Notes      string                  `json:"notes"`
-	Images     []imageView             `json:"images"`
-	Audio      []audioView             `json:"audio"`
-	// LaneID is the lane this page currently belongs to. Zero means
-	// "unassigned" — fresh pages briefly between lane attachments
-	// land here, and the editor renders them in an "Unsorted" bucket
-	// or auto-files them into the default lane.
-	LaneID int64 `json:"lane_id,omitempty"`
-}
-
-// hintView is a single hint row on the editor side. DelaySeconds is
-// how many seconds after the team reaches this puzzle the hint
-// becomes revealable; 0 means available immediately.
-//
-// ID round-trips with the editor: present on read, echoed back by the
-// client on update so the upsert in pages.go can match existing rows
-// and preserve their attached images. Omitting ID on a write is the
-// signal that this row is new and the server should INSERT.
-//
-// Images is read-only — the wire shape is shared with the puzzle
-// image flow so the front-end can render the per-hint image strip
-// from the same DTO. Image uploads / edits / deletes go through the
-// dedicated /api/admin/hints/{hintID}/images endpoints; the field is
-// ignored on the way in.
-type hintView struct {
-	ID           *int64      `json:"id,omitempty"`
-	Text         string      `json:"text"`
-	DelaySeconds int         `json:"delay_seconds"`
-	Images       []imageView `json:"images,omitempty"`
-	Audio        []audioView `json:"audio,omitempty"`
-}
-
-type imageView struct {
-	ID        int64  `json:"id"`
-	Index     int    `json:"index"`
-	MimeType  string `json:"mime_type"`
-	SizeBytes int64  `json:"size_bytes"`
-	URL       string `json:"url"`
-	AltText   string `json:"alt_text"`
-}
-
-// audioView is the wire shape for one attached audio clip on a puzzle
-// or hint. Mirrors imageView but carries `description` (a transcript
-// hint / summary) instead of an alt text — the column name reflects
-// the WCAG fallback expected for audio.
-type audioView struct {
-	ID          int64  `json:"id"`
-	Index       int    `json:"index"`
-	MimeType    string `json:"mime_type"`
-	SizeBytes   int64  `json:"size_bytes"`
-	URL         string `json:"url"`
-	Description string `json:"description"`
-}
-
 type adventureEditDTO struct {
-	ID int64 `json:"id"`
-	// GraphPublished says the adventure plays a published graph, so the
-	// lane pages here are no longer played and their edits are refused
-	// (LaneOnly). The editor says so.
-	GraphPublished bool   `json:"graph_published,omitempty"`
-	Slug           string `json:"slug"`
-	Title          string `json:"title"`
-	Description    string `json:"description"`
-	Author         string `json:"author"`
-	IntroText      string `json:"intro_text"`
-	OutroText      string `json:"outro_text"`
+	ID          int64  `json:"id"`
+	Slug        string `json:"slug"`
+	Title       string `json:"title"`
+	Description string `json:"description"`
+	Author      string `json:"author"`
+	IntroText   string `json:"intro_text"`
+	OutroText   string `json:"outro_text"`
 	// IntroHTML / OutroHTML are the goldmark-rendered siblings of
 	// IntroText / OutroText — same shape pageView uses for prompt_html.
 	// The arranger UI (and any future read surface) renders the HTML
@@ -173,12 +99,6 @@ type adventureEditDTO struct {
 	// author: the yardstick an assistant designs each step against.
 	Brief  Brief       `json:"brief"`
 	Shares []shareView `json:"shares"`
-	Pages  []pageView  `json:"pages"`
-	// Lanes lists the adventure's lanes in idx order. The editor
-	// uses this to render its collapsible lane sections; Pages still
-	// arrives flat (with each page tagged by lane_id) so the editor
-	// can group them client-side without an extra round-trip.
-	Lanes []laneDTO `json:"lanes"`
 	// RunningEventCount lets the editor warn the author before saving
 	// edits that will land on teams currently mid-event. Counts both
 	// scheduled (about to start) and running events using this slug —
@@ -207,13 +127,6 @@ func (h *Handlers) LoadAdventureForEdit(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	if err != nil {
-		httpx.ServerErr(w, http.StatusInternalServerError, "load failed", err)
-		return
-	}
-	switch err := RefuseIfGraph(r.Context(), h.DB, dto.ID); {
-	case errors.Is(err, ErrGraphAdventure):
-		dto.GraphPublished = true
-	case err != nil:
 		httpx.ServerErr(w, http.StatusInternalServerError, "load failed", err)
 		return
 	}
@@ -715,8 +628,7 @@ func (h *Handlers) DeleteAdventure(w http.ResponseWriter, r *http.Request) {
 // blocks the delete if the adventure still backs runs or
 // assignments (those need to be cleaned up first), then sweeps the
 // shares table (no FK on slug — kept loose so slug renames don't
-// break) and drops the adventure row. CASCADE on adventure_pages,
-// adventure_lanes, etc. handles the rest.
+// break) and drops the adventure row. CASCADE handles the rest.
 //
 // Used by the MCP delete_adventure tool. The password-confirm gate
 // the HTTP handler enforces is intentionally NOT replicated here:
@@ -757,10 +669,6 @@ func DeleteAdventureBySlug(ctx context.Context, db *sql.DB, slug string) error {
 	return nil
 }
 
-/* page CRUD lives in pages.go — types, validation, requireEditPage,
-   CreatePage/UpdatePage/DeletePage/ReorderPages, replacePageHints. */
-/* Image upload + serve + alt-text edit lives in images.go. */
-
 /* ---------------- helpers ---------------- */
 
 func adventureIDBySlug(ctx context.Context, db *sql.DB, slug string) (int64, error) {
@@ -770,7 +678,7 @@ func adventureIDBySlug(ctx context.Context, db *sql.DB, slug string) (int64, err
 }
 
 func loadAdventureDTO(ctx context.Context, db *sql.DB, slug string) (*adventureEditDTO, error) {
-	a := adventureEditDTO{Pages: []pageView{}, Shares: []shareView{}}
+	a := adventureEditDTO{Shares: []shareView{}}
 	var (
 		accent, accent2, bg, ink, submitBG sql.NullString
 		hasAvatar                          int
@@ -824,79 +732,11 @@ func loadAdventureDTO(ctx context.Context, db *sql.DB, slug string) (*adventureE
 	if a.OutroText != "" {
 		a.OutroHTML = mdx.Render(a.OutroText)
 	}
-	rows, err := db.QueryContext(ctx, `
-		SELECT id, idx, title, prompt, accept, lat, lng, radius_m, disabled, notes, lane_id
-		FROM adventure_pages WHERE adventure_id = $1 ORDER BY idx
-	`, a.ID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var (
-			p        pageView
-			acceptJS string
-			radius   sql.NullFloat64
-			disabled int
-			laneID   sql.NullInt64
-		)
-		if err := rows.Scan(&p.ID, &p.Index, &p.Title, &p.Prompt, &acceptJS,
-			&p.Lat, &p.Lng, &radius, &disabled, &p.Notes, &laneID); err != nil {
-			return nil, err
-		}
-		if laneID.Valid {
-			p.LaneID = laneID.Int64
-		}
-		p.Disabled = disabled != 0
-		p.PromptHTML = mdx.Render(p.Prompt)
-		// Use the tolerant parser so legacy string-array rows
-		// (pre "Add regex answers" commit) don't silently load as
-		// empty — they'd otherwise reject every player answer.
-		parsed, perr := adventure.ParseAcceptJSON([]byte(acceptJS))
-		if perr == nil {
-			p.Accept = parsed
-		}
-		if p.Accept == nil {
-			p.Accept = []adventure.AcceptEntry{}
-		}
-		if radius.Valid {
-			v := radius.Float64
-			p.RadiusM = &v
-			p.Gated = v > 0
-		}
-		p.Images = []imageView{}
-		p.Audio = []audioView{}
-		a.Pages = append(a.Pages, p)
-	}
-	for i := range a.Pages {
-		imgs, err := loadPageImages(ctx, db, a.Pages[i].ID)
-		if err != nil {
-			return nil, err
-		}
-		a.Pages[i].Images = imgs
-		audio, err := loadPageAudio(ctx, db, a.Pages[i].ID)
-		if err != nil {
-			return nil, err
-		}
-		a.Pages[i].Audio = audio
-		hints, err := loadPageHints(ctx, db, a.Pages[i].ID)
-		if err != nil {
-			return nil, err
-		}
-		a.Pages[i].Hints = hints
-	}
 	shares, err := loadAdventureShares(ctx, db, a.Slug)
 	if err != nil {
 		return nil, err
 	}
 	a.Shares = shares
-	// Lanes ride alongside pages in the editor DTO so the front-end
-	// can render lane sections without a second round-trip.
-	lanes, err := loadAdventureLanes(ctx, db, a.ID)
-	if err != nil {
-		return nil, err
-	}
-	a.Lanes = lanes
 	// Count events currently running with this adventure. We treat
 	// 'running' as "any change to a puzzle ships immediately to a real
 	// team" — that's the case worth warning about. Scheduled events

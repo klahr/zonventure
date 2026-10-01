@@ -730,9 +730,8 @@ const (
 	PolicyChoice Policy = "choice"
 	// PolicySequence takes branches in declared order. Legacy SEQUENCE.
 	PolicySequence Policy = "sequence"
-	// PolicyShuffle gives each team its own order, by the deterministic
-	// cyclic shift in internal/adventure/permutation.go. Legacy had no
-	// equivalent; zv's shuffled lane mode is exactly this.
+	// PolicyShuffle gives each team its own order: the branches cyclically
+	// shifted by the team's rank in its event.
 	PolicyShuffle Policy = "shuffle"
 	// PolicySpread sends teams to the least-occupied branch, to stop
 	// everyone clustering at one station. Legacy SPREAD.

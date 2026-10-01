@@ -2,11 +2,11 @@ import { FastForward, LogOut, Mail, Pencil, Trash2, Undo2 } from "lucide-react";
 import { useT } from "../../i18n.tsx";
 import { Button, Dialog, ErrorBox, ICON, Loading, Pill, useLoad } from "../../ui/index.ts";
 import * as api from "./api.ts";
-import type { Adventure, EventGraph, EventInfo, Team } from "./api.ts";
+import type { EventGraph, EventInfo, Team } from "./api.ts";
 import { ActivityFeed, Ago } from "./Activity.tsx";
 import { MoreMenu, type MenuItem } from "./Menu.tsx";
 import { TeamAvatar, useTeamActions } from "./teamActions.tsx";
-import { canDo, fmtPoints, isGraphEvent, isTerminal, members, stepTitle, teamProgress } from "./util.ts";
+import { canDo, fmtPoints, isTerminal, members, stepTitle, teamProgress } from "./util.ts";
 
 /**
  * One team: where it is, who is in it, what it has done, and what the
@@ -18,32 +18,22 @@ export function TeamDetailDialog(props: {
   graph: EventGraph | null | undefined;
   team: Team;
   color: string;
-  adventure: Adventure | null;
   /** Changes whenever the event's activity does, to re-read this team's. */
   activityKey: number;
   reload: () => void;
   onEdit: () => void;
   onClose: () => void;
 }) {
-  const { event, team, adventure } = props;
+  const { event, team } = props;
   const t = useT();
-  const actions = useTeamActions(event, props.reload);
+  const actions = useTeamActions(props.reload);
   const log = useLoad((s) => api.getActivity(event.id, team.id, s), [event.id, team.id, props.activityKey]);
-  const graph = isGraphEvent(event);
-  const pages = adventure?.pages;
-  const finished = graph ? teamProgress(t, event, props.graph, team, adventure).done : !!team.completed_at || (pages ? team.page_index >= pages.length : false);
-  const page = graph ? null : pages?.[team.page_index];
-  const canUnlock = !finished && (!graph || !!team.node) && canDo(event, "unlock_team");
+  const finished = teamProgress(t, props.graph, team).done;
+  const canUnlock = !finished && !!team.node && canDo(event, "unlock_team");
   // A strict check: the server grants withdraw_team only while the event runs.
   const canWithdraw = (event.allowed_ops ?? []).includes("withdraw_team") && !team.completed_at;
 
-  const where = finished
-    ? t.t("Finished")
-    : graph
-      ? t.t("{{n}} points", { n: fmtPoints(team.score) })
-      : pages?.length
-        ? t.t("Puzzle {{i}} of {{n}}", { i: team.page_index + 1, n: pages.length })
-        : t.t("Puzzle {{i}}", { i: team.page_index + 1 });
+  const where = finished ? t.t("Finished") : t.t("{{n}} points", { n: fmtPoints(team.score) });
   const more: MenuItem[] = [];
   if (team.email?.trim()) more.push({ label: t.t("Email invitation"), icon: <Mail size={ICON.sm} aria-hidden />, onClick: () => void actions.invite(team) });
   if (canWithdraw && !isTerminal(event)) {
@@ -55,7 +45,7 @@ export function TeamDetailDialog(props: {
     if (more.length) more.push({ separator: true });
     more.push({ label: t.t("Delete team"), icon: <Trash2 size={ICON.sm} aria-hidden />, danger: true, onClick: async () => { if (await actions.remove(team)) props.onClose(); } });
   }
-  const step = finished ? "" : graph ? stepTitle(props.graph, team.node) : page ? page.title || t.t("(untitled)") : "";
+  const step = finished ? "" : stepTitle(props.graph, team.node);
 
   return (
     <Dialog title={t.t("Team · {{name}}", { name: team.name })} wide onClose={props.onClose} footer={<Button autoFocus onClick={props.onClose}>{t.t("Close")}</Button>}>
@@ -78,7 +68,7 @@ export function TeamDetailDialog(props: {
             title={t.t("Alt-click to skip the confirmation")}
             onClick={async (e) => { if (await actions.unlock(team, e.altKey)) props.onClose(); }}
           >
-            {graph ? t.t("Move team on") : t.t("Skip this puzzle")}
+            {t.t("Move team on")}
           </Button>
         )}
         <Button icon={<Pencil size={ICON.md} aria-hidden />} onClick={props.onEdit}>{t.t("Edit members")}</Button>

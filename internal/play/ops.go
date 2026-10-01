@@ -350,7 +350,7 @@ func (e *Engine) commit(ctx context.Context, tx *sql.Tx, s *teamState, step walk
 			return err
 		}
 		// teams.completed_at is what the leaderboard, the live view and
-		// event auto-completion read, for lanes and graphs alike. Written
+		// event auto-completion read. Written
 		// in the same transaction so a finished team is never shown as
 		// still playing.
 		if _, err := tx.ExecContext(ctx, `

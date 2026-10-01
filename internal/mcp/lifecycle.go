@@ -41,7 +41,7 @@ An event moves through five named states. Most authoring happens in **scheduled*
 | scheduled → running    | start_event   | Requires at least one team for regular events. **Quests bypass this guard** — they're started empty, with teams minted from ticket purchases at /store. |
 | running → paused       | pause_event   | Players see a "paused" banner; answers/movement aren't recorded. For Quests, pausing also delists from /store (no new ticket sales) without ending the quest. |
 | paused → running       | resume_event  | Same elapsed clock; team progress untouched.                           |
-| running → completed    | (automatic)   | When the last non-withdrawn team finishes its lane.                    |
+| running → completed    | (automatic)   | When the last non-withdrawn team finishes.                             |
 | any non-terminal → cancelled | cancel_event | Allowed from scheduled, running, paused. Requires the user's password. |
 
 ## What's editable in each state

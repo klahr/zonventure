@@ -2,6 +2,7 @@ package server_test
 
 import (
 	"bytes"
+	"context"
 	"database/sql"
 	"encoding/json"
 	"io"
@@ -14,12 +15,17 @@ import (
 	"github.com/klahr/zonventure/internal/adventure"
 	"github.com/klahr/zonventure/internal/auth"
 	"github.com/klahr/zonventure/internal/dbtest"
+	"github.com/klahr/zonventure/internal/graph"
+	"github.com/klahr/zonventure/internal/graph/match"
+	"github.com/klahr/zonventure/internal/graph/session"
+	"github.com/klahr/zonventure/internal/graphstore"
 	"github.com/klahr/zonventure/internal/server"
 )
 
 // newTestServer spins up the full HTTP stack against a per-test Postgres
-// database plus the real demo adventure shipped in the repo. Returns an
-// assignment id the seeded arranger can consume to create an event.
+// database plus a published three-puzzle demo adventure (demoGraph).
+// Returns an assignment id the seeded arranger can consume to create an
+// event.
 func newTestServer(t *testing.T) (*httptest.Server, int64, func()) {
 	t.Helper()
 	sqlDB, dbCleanup := dbtest.Open(t)
@@ -36,39 +42,9 @@ func newTestServer(t *testing.T) (*httptest.Server, int64, func()) {
 		dbCleanup()
 		t.Fatalf("seed adventure: %v", err)
 	}
-	pages := []struct {
-		title, prompt, accept string
-		lat, lng              float64
-		radius                any
-	}{
-		{"Welcome", "What word do you say when you meet someone for the first time?",
-			`[{"text":"hello"},{"text":"hi"}]`, 59.3308, 18.0731, nil},
-		{"Landmark", "Find the fountain in the central park. What colour are its tiles?",
-			`[{"text":"blue"},{"text":"azure"}]`, 59.3326, 18.0649, 50.0},
-		{"The Finish", `Name the Swedish word for "adventure".`,
-			`[{"text":"äventyr"},{"text":"aventyr"}]`, 59.3252, 18.0708, nil},
-	}
-	// Default linear lane — migration 0043 backfilled this for all
-	// existing adventures, but adventures inserted AFTER migration
-	// (i.e., this seed) don't get one automatically. The runtime
-	// tolerates lane-less pages but the lane-aware handlers that
-	// the lanes_test suite drives expect a real default lane.
-	var defaultLaneID int64
-	if err := sqlDB.QueryRow(`
-		INSERT INTO adventure_lanes(adventure_id, idx, mode) VALUES ($1, 0, 'linear')
-		RETURNING id
-	`, advID).Scan(&defaultLaneID); err != nil {
+	if _, _, err := graphstore.Publish(context.Background(), sqlDB, advID, 0, demoGraph(), ""); err != nil {
 		dbCleanup()
-		t.Fatalf("seed default lane: %v", err)
-	}
-	for i, p := range pages {
-		if _, err := sqlDB.Exec(`
-			INSERT INTO adventure_pages(adventure_id, lane_id, idx, title, prompt, accept, lat, lng, radius_m)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-		`, advID, defaultLaneID, i, p.title, p.prompt, p.accept, p.lat, p.lng, p.radius); err != nil {
-			dbCleanup()
-			t.Fatalf("seed page %d: %v", i, err)
-		}
+		t.Fatalf("publish demo graph: %v", err)
 	}
 
 	// Seed an organization + an org_admin (boss) + a global admin (root)
@@ -129,6 +105,38 @@ func newTestServer(t *testing.T) (*httptest.Server, int64, func()) {
 		dbCleanup()
 	}
 	return ts, assignmentID, cleanup
+}
+
+// demoGraph is the fixture adventure: start → welcome → landmark (gated
+// on a zone at the fountain) → finish → end.
+func demoGraph() *graph.Graph {
+	puzzle := func(slug, title, prompt, zone string, answers ...string) graph.Node {
+		ms := make([]match.Matcher, len(answers))
+		for i, a := range answers {
+			ms[i] = match.Matcher{Kind: match.Exact, Value: a}
+		}
+		return graph.Node{Slug: slug, Type: graph.Puzzle, Title: title, PuzzleCfg: &graph.PuzzleConfig{
+			Blocks:  graph.LegacyBlocks(prompt, nil),
+			Zone:    zone,
+			Outputs: []graph.Output{{Port: "solved", Trigger: graph.OnAnswer, Matchers: ms}},
+		}}
+	}
+	return &graph.Graph{
+		Zones: []graph.Zone{{Slug: "fountain", Name: "Landmark", Lat: 59.3326, Lng: 18.0649, RadiusM: 50}},
+		Nodes: []graph.Node{
+			{Slug: "start", Type: graph.Start},
+			puzzle("welcome", "Welcome", "What word do you say when you meet someone for the first time?", "", "hello", "hi"),
+			puzzle("landmark", "Landmark", "Find the fountain in the central park. What colour are its tiles?", "fountain", "blue", "azure"),
+			puzzle("finish", "The Finish", `Name the Swedish word for "adventure".`, "", "äventyr", "aventyr"),
+			{Slug: "end", Type: graph.End},
+		},
+		Edges: []graph.Edge{
+			{From: "start", FromPort: graph.PortOut, To: "welcome"},
+			{From: "welcome", FromPort: "solved", To: "landmark"},
+			{From: "landmark", FromPort: "solved", To: "finish"},
+			{From: "finish", FromPort: "solved", To: "end"},
+		},
+	}
 }
 
 // client is a tiny helper that keeps cookies across requests and does JSON
@@ -264,109 +272,54 @@ func TestFullFlow(t *testing.T) {
 	if s := alice.do("GET", "/play?t="+team.Members[0].Token, nil, nil); s != 200 {
 		t.Fatalf("magic-link login = %d", s)
 	}
-	var state struct {
-		Status    string `json:"status"`
-		PageIndex int    `json:"page_index"`
-		Prompt    string `json:"prompt"`
-		Gate      *struct {
-			Reached bool `json:"reached"`
-		} `json:"gate"`
-	}
-	if s := alice.do("GET", "/api/player/state", nil, &state); s != 200 {
-		t.Fatalf("get state = %d", s)
-	}
-	if state.Status != "waiting" {
-		t.Fatalf("expected waiting, got %q", state.Status)
+	var st playStateDTO
+	if s := alice.doAny("GET", "/api/player/play", nil, &st); s != 200 || st.View != nil {
+		t.Fatalf("before start: %d %+v", s, st.View)
 	}
 
 	// Submitting before start must be rejected.
-	var answerResp struct {
-		Accepted bool `json:"accepted"`
+	answer := func(node, guess string) (int, session.Result) {
+		var res session.Result
+		s := alice.doAny("POST", "/api/player/play/answer", map[string]string{"node": node, "guess": guess}, &res)
+		return s, res
 	}
-	if s := alice.do("POST", "/api/player/answer", map[string]string{"answer": "hello"}, &answerResp); s != 409 {
-		t.Fatalf("early answer status = %d, want 409", s)
+	if s, _ := answer("welcome", "hello"); s == 200 {
+		t.Fatalf("an answer before the start was accepted")
 	}
 
 	// --- Start the event. ---
 	if s := arr.do("POST", "/api/admin/events/"+itoa(run.ID)+"/start", map[string]string{}, nil); s != 204 {
 		t.Fatalf("start event = %d", s)
 	}
-
-	// State should now be running on page 0 with a prompt.
-	state = struct {
-		Status    string `json:"status"`
-		PageIndex int    `json:"page_index"`
-		Prompt    string `json:"prompt"`
-		Gate      *struct {
-			Reached bool `json:"reached"`
-		} `json:"gate"`
-	}{}
-	if s := alice.do("GET", "/api/player/state", nil, &state); s != 200 {
-		t.Fatalf("get state = %d", s)
-	}
-	if state.Status != "running" || state.Prompt == "" {
-		t.Fatalf("unexpected state after start: %+v", state)
+	if s := alice.doAny("GET", "/api/player/play", nil, &st); s != 200 || st.View == nil || st.View.Node != "welcome" {
+		t.Fatalf("after start: %d %+v", s, st.View)
 	}
 
-	// Wrong answer -> accepted=false, no progression.
-	if s := alice.do("POST", "/api/player/answer", map[string]string{"answer": "goodbye"}, &answerResp); s != 200 {
-		t.Fatalf("wrong answer = %d", s)
+	// Wrong answer -> not accepted, no progression.
+	if s, res := answer("welcome", "goodbye"); s != 200 || res.Accepted {
+		t.Fatalf("wrong answer = %d accepted=%v", s, res.Accepted)
 	}
-	if answerResp.Accepted {
-		t.Fatalf("wrong answer was accepted")
-	}
-
-	// Right answer (upper-case + padding to check normalisation) -> advances
-	// to page 1 which has a gate.
-	if s := alice.do("POST", "/api/player/answer", map[string]string{"answer": "  HELLO  "}, &answerResp); s != 200 {
-		t.Fatalf("right answer = %d", s)
-	}
-	if !answerResp.Accepted {
-		t.Fatalf("right answer rejected")
+	// Right answer (upper-case + padding to check normalisation) moves
+	// the team on to the gated landmark.
+	if s, res := answer("welcome", "  HELLO  "); s != 200 || !res.Accepted || res.View.Node != "landmark" {
+		t.Fatalf("right answer = %d %+v", s, res)
 	}
 
-	// Before any ping, page 1 is gated — but the prompt and gate info
-	// are both visible so the team can read the puzzle while they walk
-	// there. Arrival is the prerequisite for answering, not for seeing
-	// the content.
-	state.Prompt = ""
-	state.Gate = nil
-	if s := alice.do("GET", "/api/player/state", nil, &state); s != 200 {
-		t.Fatalf("get state gated = %d", s)
+	// Away from the fountain the puzzle is readable but its answer is
+	// refused: arrival is the prerequisite for answering, not reading.
+	if s, _ := answer("landmark", "blue"); s != 403 {
+		t.Fatalf("answer away from the zone = %d, want 403", s)
 	}
-	if state.Status != "running" || state.Prompt == "" || state.Gate == nil || state.Gate.Reached {
-		t.Fatalf("expected running with prompt and unreached gate, got %+v", state)
-	}
-
-	// Submitting the page-1 answer while still gated is refused — the
-	// content being visible doesn't mean the answer counts yet.
-	if s := alice.do("POST", "/api/player/answer", map[string]string{"answer": "blue"}, &answerResp); s != 403 {
-		t.Fatalf("gated answer = %d, want 403", s)
-	}
-
-	// Post a location ping near the gate (Sergels torg coords from demo/02).
 	if s := alice.do("POST", "/api/player/location", map[string]any{"lat": 59.3326, "lng": 18.0649}, nil); s != 204 {
 		t.Fatalf("post location = %d", s)
 	}
-
-	// Now the gate is reached and the prompt appears.
-	state.Prompt = ""
-	state.Gate = nil
-	if s := alice.do("GET", "/api/player/state", nil, &state); s != 200 {
-		t.Fatalf("get state after ping = %d", s)
-	}
-	if state.Status != "running" || state.Prompt == "" || state.Gate == nil || !state.Gate.Reached {
-		t.Fatalf("expected running with reached gate, got %+v", state)
+	if s, res := answer("landmark", "BLUE"); s != 200 || !res.Accepted {
+		t.Fatalf("answer at the zone = %d accepted=%v", s, res.Accepted)
 	}
 
-	// Correct answer, advance to final page.
-	if s := alice.do("POST", "/api/player/answer", map[string]string{"answer": "BLUE"}, &answerResp); s != 200 || !answerResp.Accepted {
-		t.Fatalf("page 2 answer = %d accepted=%v", s, answerResp.Accepted)
-	}
-
-	// Final page, correct answer completes the event.
-	if s := alice.do("POST", "/api/player/answer", map[string]string{"answer": "äventyr"}, &answerResp); s != 200 || !answerResp.Accepted {
-		t.Fatalf("final answer = %d accepted=%v", s, answerResp.Accepted)
+	// Final puzzle, correct answer completes the event.
+	if s, res := answer("finish", "äventyr"); s != 200 || !res.Accepted || !res.View.Finished {
+		t.Fatalf("final answer = %d %+v", s, res)
 	}
 
 	// Once the event completes, MaybeCompleteEvent expires every
@@ -377,8 +330,8 @@ func TestFullFlow(t *testing.T) {
 	// changed when slot-session expiration moved into the
 	// completion / cancellation flow. Recap-token surfaces remain
 	// available; that's where players land for the post-event
-	// summary, not /api/player/state.
-	if s := alice.do("GET", "/api/player/state", nil, nil); s != 401 {
+	// summary, not /api/player/play.
+	if s := alice.do("GET", "/api/player/play", nil, nil); s != 401 {
 		t.Fatalf("final state after completion = %d, want 401 (slot session expired on completion)", s)
 	}
 
@@ -406,7 +359,7 @@ func TestAuthRoleSeparation(t *testing.T) {
 	defer cleanup()
 
 	anon := newClient(t, ts)
-	if s := anon.do("GET", "/api/player/state", nil, nil); s != 401 {
+	if s := anon.do("GET", "/api/player/play", nil, nil); s != 401 {
 		t.Fatalf("anonymous state = %d, want 401", s)
 	}
 	if s := anon.do("GET", "/api/admin/adventures", nil, nil); s != 401 {
@@ -419,20 +372,9 @@ func TestAuthRoleSeparation(t *testing.T) {
 	if s := arr.do("POST", "/api/auth/login", map[string]string{"username": "boss", "password": "s3cret"}, nil); s != 200 {
 		t.Fatalf("arranger login = %d", s)
 	}
-	if s := arr.do("GET", "/api/player/state", nil, nil); s != 401 {
+	if s := arr.do("GET", "/api/player/play", nil, nil); s != 401 {
 		t.Fatalf("arranger on player = %d, want 401", s)
 	}
-}
-
-// acceptLits builds a literal accept list in the JSON shape the API
-// expects ([{text,regex},...]), so tests don't need to spell out the
-// per-entry struct every call site.
-func acceptLits(words ...string) []map[string]any {
-	out := make([]map[string]any, len(words))
-	for i, w := range words {
-		out[i] = map[string]any{"text": w}
-	}
-	return out
 }
 
 func itoa(i int64) string {

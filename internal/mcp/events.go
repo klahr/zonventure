@@ -84,7 +84,7 @@ func (s *Server) registerEventTools() {
 	s.tools.register(ToolDescriptor{
 		Name:        "start_event",
 		Scope:       scopeWrite,
-		Description: "Transition a scheduled event into running. Requires the event to be in state='scheduled' AND have at least one team. Initialises lane permutations on first start and emits the event.started webhook.",
+		Description: "Transition a scheduled event into running. Requires the event to be in state='scheduled' AND have at least one team. Pins the adventure's published graph, places every team, and emits the event.started webhook. Refused when the adventure has nothing published.",
 		InputSchema: map[string]any{
 			"type":     "object",
 			"required": []string{"event_id"},

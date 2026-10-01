@@ -5,13 +5,11 @@ package admin
 //	POST /api/admin/adventures/{slug}/media   upload one file (multipart "file")
 //	GET  /media/{mediaID}                     fetch it
 //
-// Uploads follow the page-image and page-audio rules exactly: images are
-// re-encoded by imageutil.Shrink, which caps their size and kills any
+// Images are re-encoded by imageutil.Shrink, which caps their size and kills any
 // polyglot; audio is stored verbatim, so its type is sniffed from the
 // bytes and the client's header is ignored.
 //
-// Fetching is gated. Staff see media of adventures they can see, as with
-// page images. A player sees media on a step their team has reached or in
+// Fetching is gated. Staff see media of adventures they can see. A player sees media on a step their team has reached or in
 // a hint it has revealed — the graph decides, through the same session
 // rules the engine plays by.
 
@@ -37,6 +35,21 @@ import (
 	"github.com/klahr/zonventure/internal/imageutil"
 	"github.com/klahr/zonventure/internal/tokenx"
 )
+
+// maxAudioBytes is the per-upload size cap for audio. Defaults to 15
+// MiB which fits a ~15 min voice memo at 128 kbps or a 5 min music clip
+// at MP3 320 kbps — comfortably more than any single puzzle clue should
+// need, but not so much that a runaway upload eats Postgres row pages.
+// Override with ZV_MAX_AUDIO_BYTES; non-positive falls back.
+var maxAudioBytes int64 = func() int64 {
+	const def int64 = 15 * 1024 * 1024
+	if s := os.Getenv("ZV_MAX_AUDIO_BYTES"); s != "" {
+		if n, err := strconv.ParseInt(s, 10, 64); err == nil && n > 0 {
+			return n
+		}
+	}
+	return def
+}()
 
 type mediaView struct {
 	ID       int64           `json:"id"`

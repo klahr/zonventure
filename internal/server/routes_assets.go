@@ -20,36 +20,18 @@ import (
 func registerStaticAssetRoutes(r chi.Router, env *routesEnv) {
 	cfg := env.cfg
 
-	// Player-side offline action queue. Loaded by play.html before
-	// the inline IIFE so its helpers are in scope as globals.
-	// Tested in isolation by play-queue.test.js (Node's built-in
-	// test runner). Same path-based asset-style serve as i18n.js.
-	r.Get("/play-queue.js", serveAsset("web/play-queue.js", "application/javascript; charset=utf-8"))
-
-	// Player-side service worker. Served at the site root so its
-	// scope is the whole origin — that's what lets it intercept
-	// /adventure-assets/* requests for offline asset playback. The
-	// browser refetches the SW on every page load (no-cache below),
-	// so a deploy reaches users without a hard refresh.
+	// The classic player's root service worker, retired: what is served
+	// now unregisters it from phones that still have it.
 	r.Get("/play-sw.js", func(w http.ResponseWriter, req *http.Request) {
-		w.Header().Set("Service-Worker-Allowed", "/")
-		w.Header().Set("Cache-Control", "no-cache")
-		w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
 		body, err := readWebFile("web/play-sw.js")
 		if err != nil {
 			http.Error(w, "embed", http.StatusInternalServerError)
 			return
 		}
-		// Inject the build version into the SW's cache constants so
-		// every deploy rotates the cache key without anyone bumping
-		// a literal by hand. The activate handler then purges the
-		// old cache entries automatically. "dev" is the unversioned
-		// local-build fallback.
-		ver := cfg.Version
-		if ver == "" {
-			ver = "dev"
-		}
-		_, _ = w.Write([]byte(strings.ReplaceAll(string(body), "__ZV_BUILD_VERSION__", swCacheSafeVersion(ver))))
+		w.Header().Set("Service-Worker-Allowed", "/")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
+		_, _ = w.Write(body)
 	})
 
 	// Shared i18n dictionary + helpers, loaded by all three entry points.
@@ -131,21 +113,8 @@ func registerStaticAssetRoutes(r chi.Router, env *routesEnv) {
 func registerAdventureAssetRoutes(r chi.Router, env *routesEnv) {
 	adminH := env.adminH
 
-	// Image serving: permission is decided inside the handler (staff
-	// sessions always pass; slot sessions only when they're on the page).
-	r.Get("/adventure-assets/image/{imageID}", adminH.ServeImage)
-	// Hint images: same shape, stricter visibility (player must have
-	// revealed the owning hint, not merely be on the page). The
-	// handler enforces it; this route is intentionally separate from
-	// /adventure-assets/image/ so the rules don't get conflated.
-	r.Get("/adventure-assets/hint-image/{imageID}", adminH.ServeHintImage)
-	// Audio attachments: page-level audio mirrors page-image visibility
-	// (any team on the page sees it); hint audio mirrors hint-image's
-	// reveal-gated rule. Same handlers, audio binary served verbatim.
-	r.Get("/adventure-assets/audio/{audioID}", adminH.ServeAudio)
-	r.Get("/adventure-assets/hint-audio/{audioID}", adminH.ServeHintAudio)
-	// Graph-adventure media: one route for images and audio, gated in
-	// the handler by what the team's graph has shown it.
+	// Adventure media: one route for images and audio, gated in the
+	// handler by what the team's graph has shown it.
 	r.Get("/media/{mediaID}", adminH.ServeMedia)
 	// Team avatars are intentionally open — they surface on the public
 	// live board and on player views without a staff session. The team

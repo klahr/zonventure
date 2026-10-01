@@ -6,7 +6,7 @@ import { href } from "../../router.ts";
 import { Button, Callout, Card, Field, fmtDateTime, ICON, relTime, Row, Stat, Stats, toDate, useToast } from "../../ui/index.ts";
 import * as api from "./api.ts";
 import type { ConnectStatus, EventInfo, Team } from "./api.ts";
-import { copyText, fmtElapsedShort, fmtPoints, isGraphEvent, members, recapURL, teamStuck } from "./util.ts";
+import { copyText, fmtElapsedShort, fmtPoints, members, recapURL, teamStuck } from "./util.ts";
 
 /**
  * The three numbers that matter in this phase. Before the start: teams,
@@ -83,27 +83,17 @@ export function ResultsCard({ event, teams }: { event: EventInfo; teams: Team[] 
         {t.t("Recap")}
       </a>
     ) : null;
-  let rows: { key: number; rank: string; name: string; meta: string; dnf?: boolean; link: React.ReactNode }[];
-  if (isGraphEvent(event)) {
-    const ranked = teams.filter((tm) => tm.rank).sort((a, b) => (a.rank || 0) - (b.rank || 0) || a.name.localeCompare(b.name));
-    rows = [
-      ...ranked.map((tm) => ({
-        key: tm.id,
-        rank: "#" + tm.rank,
-        name: tm.name,
-        meta: t.t("{{n}} points", { n: fmtPoints(tm.score) }) + " · " + (tm.completed_at ? t.t("finished {{when}}", { when: fmtDateTime(tm.completed_at, locale) }) : t.t("did not finish")),
-        link: recap(tm),
-      })),
-      ...teams.filter((tm) => !tm.rank).map((tm) => ({ key: tm.id, rank: "—", name: tm.name, meta: tm.withdrawn_at ? t.t("withdrew") : tm.cheated ? t.t("cheated") : t.t("did not start"), dnf: true, link: null })),
-    ];
-  } else {
-    const finished = teams.filter((tm) => tm.completed_at).sort((a, b) => (a.completed_at || "").localeCompare(b.completed_at || ""));
-    const rest = teams.filter((tm) => !tm.completed_at).sort((a, b) => b.page_index - a.page_index);
-    rows = [
-      ...finished.map((tm, i) => ({ key: tm.id, rank: "#" + (i + 1), name: tm.name, meta: t.t("finished {{when}}", { when: fmtDateTime(tm.completed_at, locale) }), link: recap(tm) })),
-      ...rest.map((tm) => ({ key: tm.id, rank: "—", name: tm.name, meta: t.t("reached puzzle {{i}}", { i: tm.page_index + 1 }), dnf: true, link: null })),
-    ];
-  }
+  const ranked = teams.filter((tm) => tm.rank).sort((a, b) => (a.rank || 0) - (b.rank || 0) || a.name.localeCompare(b.name));
+  const rows: { key: number; rank: string; name: string; meta: string; dnf?: boolean; link: React.ReactNode }[] = [
+    ...ranked.map((tm) => ({
+      key: tm.id,
+      rank: "#" + tm.rank,
+      name: tm.name,
+      meta: t.t("{{n}} points", { n: fmtPoints(tm.score) }) + " · " + (tm.completed_at ? t.t("finished {{when}}", { when: fmtDateTime(tm.completed_at, locale) }) : t.t("did not finish")),
+      link: recap(tm),
+    })),
+    ...teams.filter((tm) => !tm.rank).map((tm) => ({ key: tm.id, rank: "—", name: tm.name, meta: tm.withdrawn_at ? t.t("withdrew") : tm.cheated ? t.t("cheated") : t.t("did not start"), dnf: true, link: null })),
+  ];
   const copyAll = async () => {
     const lines = teams.filter((tm) => tm.recap_token).map((tm) => `${tm.name}\t${recapURL(tm.recap_token!)}`);
     if (lines.length === 0) return toast.err(t.t("No recap links to copy"));

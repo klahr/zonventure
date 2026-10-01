@@ -1,9 +1,7 @@
 package player
 
-// Player endpoints for events that run on the graph engine
-// (internal/play). They sit beside the lane endpoints rather than inside
-// them: an event is on one engine or the other for its whole life (see
-// play.UsesGraph), and the React player app speaks only these.
+// Player endpoints for the graph engine (internal/play), which the React
+// player app speaks.
 //
 //	GET  /api/player/play            where the team is and what it sees
 //	POST /api/player/play/{action}   begin, answer, continue, choose, skip, leave, timeout, hint, pick, vote
@@ -110,16 +108,12 @@ type PlayFinish struct {
 
 // PlayState is the body of GET /api/player/play.
 type PlayState struct {
-	// Engine is "graph", or "lanes" for an event the React player does
-	// not run — the client sends those players to /play.
-	Engine string    `json:"engine"`
-	Team   PlayTeam  `json:"team"`
-	Me     PlayMe    `json:"me"`
-	Event  PlayEvent `json:"event"`
+	Team  PlayTeam  `json:"team"`
+	Me    PlayMe    `json:"me"`
+	Event PlayEvent `json:"event"`
 	// Finish is set once the team has finished.
 	Finish *PlayFinish `json:"finish,omitempty"`
-	// Brand is the adventure's palette, the one the lane player paints
-	// with too, so an adventure styled for either looks the same.
+	// Brand is the adventure's palette.
 	Brand *adventure.Colors `json:"brand,omitempty"`
 	// OrgBrand is the running organisation's colours, for the app's own
 	// chrome (bar, menu, welcome) and for steps of an adventure that has
@@ -144,9 +138,9 @@ func (h *Handlers) GetPlay(w http.ResponseWriter, r *http.Request) {
 		httpx.ServerErr(w, http.StatusInternalServerError, "loading team failed", err)
 		return
 	}
-	// A player opening a due event starts it, as on the lane endpoints.
+	// A player opening a due event starts it.
 	if tc.RunState == "scheduled" && tc.ScheduledAt.Valid {
-		if promoted, err := maybePromoteScheduled(ctx, h.DB, h.Hub, h.Lib, tc.EventID, tc.ScheduledAt.String); err == nil && promoted {
+		if promoted, err := maybePromoteScheduled(ctx, h.DB, h.Hub, tc.EventID, tc.ScheduledAt.String); err == nil && promoted {
 			h.publishEventStartedAuto(ctx, tc)
 			if tc, err = loadTeam(ctx, h.DB, slot); err != nil {
 				httpx.ServerErr(w, http.StatusInternalServerError, "loading team failed", err)
@@ -156,9 +150,8 @@ func (h *Handlers) GetPlay(w http.ResponseWriter, r *http.Request) {
 	}
 
 	out := PlayState{
-		Engine: "lanes",
-		Team:   PlayTeam{ID: tc.TeamID, Name: tc.TeamName, Token: tc.TeamToken, AvatarURL: teamAvatarURL(tc)},
-		Me:     PlayMe{ID: slot.ID, Name: slot.Name},
+		Team: PlayTeam{ID: tc.TeamID, Name: tc.TeamName, Token: tc.TeamToken, AvatarURL: teamAvatarURL(tc)},
+		Me:   PlayMe{ID: slot.ID, Name: slot.Name},
 		Event: PlayEvent{
 			ID: tc.EventID, State: tc.RunState, ScheduledAt: tc.ScheduledAt.String, OrgName: tc.OrgName,
 			ServerNow: time.Now().UTC().Format(time.RFC3339),
@@ -188,16 +181,6 @@ func (h *Handlers) GetPlay(w http.ResponseWriter, r *http.Request) {
 		httpx.ServerErr(w, http.StatusInternalServerError, "loading messages failed", err)
 		return
 	}
-	uses, err := play.UsesGraph(ctx, h.DB, tc.EventID)
-	if err != nil {
-		httpx.ServerErr(w, http.StatusInternalServerError, "loading event failed", err)
-		return
-	}
-	if !uses {
-		httpx.JSON(w, http.StatusOK, out)
-		return
-	}
-	out.Engine = "graph"
 	if out.Team.Locked, err = play.TeamBegun(ctx, h.DB, tc.TeamID); err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "loading team failed", err)
 		return
@@ -212,7 +195,7 @@ func (h *Handlers) GetPlay(w http.ResponseWriter, r *http.Request) {
 		// A team added after the start — a ticket bought for a running
 		// quest — has no state yet. Placing it is StartEvent's job, and
 		// StartEvent leaves teams that already have state alone.
-		if _, err = play.StartIfGraph(ctx, h.DB, tc.EventID); err == nil {
+		if err = play.Start(ctx, h.DB, tc.EventID); err == nil {
 			view, err = h.engine().Snapshot(ctx, tc.TeamID)
 		}
 	}

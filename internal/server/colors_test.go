@@ -123,7 +123,7 @@ func TestColors_OrgAdminCannotPatchColours(t *testing.T) {
 	}
 }
 
-func TestColors_SurfaceInPlayerState(t *testing.T) {
+func TestColors_SurfaceInPlayState(t *testing.T) {
 	ts, assignmentID, cleanup := newTestServer(t)
 	defer cleanup()
 
@@ -145,38 +145,24 @@ func TestColors_SurfaceInPlayerState(t *testing.T) {
 	_, _, slotToken, _ := setupRun(t, ts, assignmentID)
 	alice := loginPlayer(t, ts, slotToken)
 
-	// HTTP state endpoint carries colours.
+	// The player's view carries the adventure's colours.
 	var st struct {
-		Colors *struct {
+		Brand *struct {
 			Accent          string `json:"accent"`
 			AccentSecondary string `json:"accent_secondary"`
 			Background      string `json:"background"`
 			Text            string `json:"text"`
-		} `json:"colors"`
+		} `json:"brand"`
 	}
-	if s := alice.do("GET", "/api/player/state", nil, &st); s != 200 {
-		t.Fatalf("GET state = %d", s)
+	if s := alice.do("GET", "/api/player/play", nil, &st); s != 200 {
+		t.Fatalf("GET play = %d", s)
 	}
-	if st.Colors == nil {
-		t.Fatalf("state missing colors")
+	if st.Brand == nil {
+		t.Fatalf("play state missing brand")
 	}
-	if st.Colors.Accent != mindAccent || st.Colors.AccentSecondary != mindSecondary ||
-		st.Colors.Background != mindBg || st.Colors.Text != mindText {
-		t.Fatalf("state colours = %+v", *st.Colors)
-	}
-
-	// WS push carries the same payload shape.
-	c := dialWS(t, ts, "/ws/play", alice.c)
-	defer c.Close(websocket.StatusNormalClosure, "")
-	m := recvKind(t, c, "state", 2*time.Second)
-	var wsSt struct {
-		Colors *struct {
-			Accent string `json:"accent"`
-		} `json:"colors"`
-	}
-	json.Unmarshal(m.Data, &wsSt)
-	if wsSt.Colors == nil || wsSt.Colors.Accent != mindAccent {
-		t.Fatalf("ws state colours = %+v", wsSt.Colors)
+	if st.Brand.Accent != mindAccent || st.Brand.AccentSecondary != mindSecondary ||
+		st.Brand.Background != mindBg || st.Brand.Text != mindText {
+		t.Fatalf("play brand = %+v", *st.Brand)
 	}
 }
 
@@ -229,10 +215,11 @@ func TestColors_OmittedWhenUnset(t *testing.T) {
 	}
 
 	alice := loginPlayer(t, ts, slotToken)
-	c2 := dialWS(t, ts, "/ws/play", alice.c)
-	defer c2.Close(websocket.StatusNormalClosure, "")
-	ms := recvKind(t, c2, "state", 2*time.Second)
-	if strings.Contains(string(ms.Data), `"colors"`) {
-		t.Errorf("unset player state still carries colors field: %s", ms.Data)
+	var raw json.RawMessage
+	if s := alice.do("GET", "/api/player/play", nil, &raw); s != 200 {
+		t.Fatalf("GET play = %d", s)
+	}
+	if strings.Contains(string(raw), `"brand"`) {
+		t.Errorf("unset play state still carries brand field: %s", raw)
 	}
 }

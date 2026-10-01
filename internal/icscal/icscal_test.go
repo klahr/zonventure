@@ -212,11 +212,8 @@ func TestPickStart(t *testing.T) {
 }
 
 func TestPickLocation(t *testing.T) {
-	adv := &adventure.Adventure{Pages: []adventure.Page{
-		{Disabled: true, Location: adventure.Location{Lat: 1, Lng: 2}},
-		{Location: adventure.Location{Lat: 0, Lng: 0}},
-		{Location: adventure.Location{Lat: 59.32931, Lng: 18.06869}},
-	}}
+	lat, lng := 59.32931, 18.06869
+	adv := &adventure.Adventure{Start: adventure.StartLocation{Lat: &lat, Lng: &lng}}
 	got := pickLocation(adv)
 	want := "59.32931, 18.06869"
 	if got != want {

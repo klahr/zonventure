@@ -76,37 +76,14 @@ type recapPreview struct {
 		Lng float64 `json:"lng"`
 		TS  string  `json:"ts"`
 	} `json:"track"`
-	Puzzles []struct {
-		Index    int     `json:"index"`
-		Title    string  `json:"title"`
-		Lat      float64 `json:"lat"`
-		Lng      float64 `json:"lng"`
-		SolvedAt string  `json:"solved_at"`
-	} `json:"puzzles"`
 }
 
-// recapServer is a small bootstrap that combines seedPurchaseStack
-// (which gives us a DB) with a few demo pages so the recap handler
-// has puzzles to render. seedPurchaseStack ships an empty 'demo'
-// adventure; the recap puzzles[] would be empty without these.
+// recapServer is a small bootstrap over seedPurchaseStack, which gives
+// a DB and an empty 'demo' adventure. A graph team's steps are covered
+// by recap_graph_test.go.
 func recapServer(t *testing.T) (*httptest.Server, *sql.DB, int64, func()) {
 	t.Helper()
-	ts, db, orgID, cleanup := seedPurchaseStack(t, server.Config{})
-	if _, err := db.Exec(`
-		INSERT INTO adventure_pages(adventure_id, idx, title, prompt, accept, lat, lng)
-		SELECT id, 0, 'First puzzle', 'q1', '[]', 59.33, 18.07 FROM adventures WHERE slug = 'demo'
-	`); err != nil {
-		cleanup()
-		t.Fatalf("seed page: %v", err)
-	}
-	if _, err := db.Exec(`
-		INSERT INTO adventure_pages(adventure_id, idx, title, prompt, accept, lat, lng)
-		SELECT id, 1, 'Second puzzle', 'q2', '[]', 59.34, 18.08 FROM adventures WHERE slug = 'demo'
-	`); err != nil {
-		cleanup()
-		t.Fatalf("seed page: %v", err)
-	}
-	return ts, db, orgID, cleanup
+	return seedPurchaseStack(t, server.Config{})
 }
 
 // TestRecap_PreCompletion404 confirms a recap URL is unreachable
@@ -137,8 +114,7 @@ func TestRecap_UnknownToken404(t *testing.T) {
 
 // TestRecap_HappyPath drives the full lifecycle: seed a completed
 // event + team, then fetch the public recap. Asserts the response
-// carries the shape the front-end depends on (state, team name,
-// puzzle list including titles + locations).
+// carries the shape the front-end depends on (state, team name).
 func TestRecap_HappyPath(t *testing.T) {
 	ts, db, orgID, cleanup := recapServer(t)
 	defer cleanup()
@@ -157,12 +133,6 @@ func TestRecap_HappyPath(t *testing.T) {
 	}
 	if got.State != "completed" {
 		t.Errorf("state = %q, want completed", got.State)
-	}
-	if len(got.Puzzles) != 2 {
-		t.Errorf("expected 2 puzzles, got %d", len(got.Puzzles))
-	}
-	if len(got.Puzzles) > 0 && got.Puzzles[0].Title != "First puzzle" {
-		t.Errorf("puzzle[0].title = %q", got.Puzzles[0].Title)
 	}
 }
 

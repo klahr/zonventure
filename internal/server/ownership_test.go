@@ -1,6 +1,10 @@
 package server_test
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/klahr/zonventure/internal/graph"
+)
 
 /* ---------------- Adventure ownership ---------------- */
 
@@ -70,9 +74,9 @@ func TestOwnership_OrgUserCannotEditCatalogAdventure(t *testing.T) {
 		map[string]any{"title": "hacked"}, nil); s != 403 {
 		t.Fatalf("patch catalog adventure = %d, want 403", s)
 	}
-	if s := boss.do("POST", "/api/admin/adventures/demo/pages",
-		map[string]any{"accept": acceptLits("x"), "prompt": "x", "lat": 0, "lng": 0}, nil); s != 403 {
-		t.Fatalf("create page on catalog adventure = %d, want 403", s)
+	if s := boss.doAny("PUT", "/api/admin/adventures/demo/graph",
+		graph.Envelope{Format: graph.FormatV2, Graph: *demoGraph()}, nil); s != 403 {
+		t.Fatalf("save graph on catalog adventure = %d, want 403", s)
 	}
 }
 

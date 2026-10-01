@@ -134,7 +134,6 @@ const loadError = (e: unknown): Loaded => ({
 type Loaded =
   | { state: "loading" }
   | { state: "error"; message: string; status?: number }
-  | { state: "none" } // adventure has no graph yet
   | { state: "ready" };
 
 type Published = { version: number; label?: string } | null;
@@ -237,9 +236,6 @@ export function Designer({ slug }: { slug: string }) {
   // too; they live on the adventure, not in the graph.
   const [adventureLang, setAdventureLang] = useState("");
   const [meta, setMeta] = useState<AdventureMeta>({});
-  // Puzzles from the classic editor: null until known, "unknown" when
-  // they could not be read.
-  const [lanePuzzles, setLanePuzzles] = useState<number | "unknown" | null>(null);
   const brandDirty = useMemo(() => JSON.stringify(brand) !== JSON.stringify(brandSaved), [brand, brandSaved]);
 
   const draft = history.present;
@@ -273,7 +269,8 @@ export function Designer({ slug }: { slug: string }) {
       .getGraph<Envelope, Report>(slug, ac.signal)
       .then((r) => {
         if (ac.signal.aborted) return;
-        if (!r) setLoaded({ state: "none" });
+        // A new adventure opens on a blank flow.
+        if (!r) adopt(null, emptyGraph(), null);
         else adopt(r, r.envelope.graph, r.envelope.graph);
       })
       .catch((e: unknown) => {
@@ -281,37 +278,18 @@ export function Designer({ slug }: { slug: string }) {
       });
     adventures
       .getLook(slug, ac.signal)
-      .then(({ title, intro, outro, language, lanePuzzles: n, brand: b }) => {
+      .then(({ title, intro, outro, language, brand: b }) => {
         if (title) setAdventureTitle(title);
-        setLanePuzzles(n);
         setAdventureLang(language);
         setMeta({ title, intro, outro });
         setBrandSaved(b);
         setBrand(b);
       })
       .catch(() => {
-        // No palette is the default look; not knowing the puzzles means
-        // offering both ways to start.
-        setLanePuzzles("unknown");
+        // No palette is the default look.
       });
     return () => ac.abort();
   }, [slug, adopt]);
-
-  // A new adventure has nothing to start from but a blank flow, so it
-  // opens on one instead of asking.
-  useEffect(() => {
-    if (loaded.state === "none" && lanePuzzles === 0) adopt(null, emptyGraph(), null);
-  }, [loaded.state, lanePuzzles, adopt]);
-
-  const startFromLanes = async () => {
-    setLoaded({ state: "loading" });
-    try {
-      const r = await adventures.convertGraph<Envelope, Report>(slug);
-      adopt(r, tidy(r.envelope.graph), null);
-    } catch (e) {
-      setLoaded(loadError(e));
-    }
-  };
 
   // --- editing -------------------------------------------------------------------
 
@@ -956,25 +934,6 @@ export function Designer({ slug }: { slug: string }) {
       </div>
     );
   }
-  if (loaded.state === "none" && (lanePuzzles === null || lanePuzzles === 0)) return <p className="lede">{t.t("Loading…")}</p>;
-  if (loaded.state === "none")
-    return (
-      <div className="designer-empty">
-        <a className="link-btn" href={href({ name: "adventures" })}>
-          ← {t.t("Adventures")}
-        </a>
-        <h1>{t.t("Design this adventure")}</h1>
-        <p className="lede">{t.t("This adventure has puzzles from the classic editor. Turn them into a flow to go on with, or start from a blank canvas.")}</p>
-        <div className="designer-empty__actions">
-          <button type="button" className="btn btn--primary" onClick={() => void startFromLanes()}>
-            {typeof lanePuzzles === "number" ? t.t("Start from its {{n}} puzzles", { n: lanePuzzles }) : t.t("Start from existing puzzles")}
-          </button>
-          <button type="button" className="btn btn--ghost" onClick={() => adopt(null, emptyGraph(), null)}>
-            {t.t("Start blank")}
-          </button>
-        </div>
-      </div>
-    );
   if (!graph) return null;
 
   const isLive = published !== null;

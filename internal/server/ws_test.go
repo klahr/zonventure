@@ -169,7 +169,7 @@ func TestWSPlay_Unauthorized(t *testing.T) {
 	}
 }
 
-func TestWSPlay_InitialStateBeforeStart(t *testing.T) {
+func TestWSPlay_InitialPushBeforeStart(t *testing.T) {
 	ts, assignmentID, cleanup := newTestServer(t)
 	defer cleanup()
 	_, _, slotToken, _ := setupRun(t, ts, assignmentID)
@@ -178,16 +178,9 @@ func TestWSPlay_InitialStateBeforeStart(t *testing.T) {
 	c := dialWS(t, ts, "/ws/play", alice.c)
 	defer c.Close(websocket.StatusNormalClosure, "")
 
-	m := recvMsg(t, c)
-	if m.Kind != "state" {
-		t.Fatalf("kind=%q", m.Kind)
-	}
-	var s struct {
-		Status string `json:"status"`
-	}
-	json.Unmarshal(m.Data, &s)
-	if s.Status != "waiting" {
-		t.Fatalf("status=%q, want waiting", s.Status)
+	// The socket only says "look again"; the view is read over HTTP.
+	if m := recvMsg(t, c); m.Kind != "changed" {
+		t.Fatalf("kind=%q, want changed", m.Kind)
 	}
 }
 
@@ -202,17 +195,17 @@ func TestWSPlay_LocationFrame(t *testing.T) {
 
 	c := dialWS(t, ts, "/ws/play", alice.c)
 	defer c.Close(websocket.StatusNormalClosure, "")
-	recvKind(t, c, "state", 2*time.Second) // initial push
+	recvKind(t, c, "changed", 2*time.Second) // initial push
 
 	// Push a location frame. Server should broadcast, which triggers
-	// another state push.
+	// another push.
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	if err := c.Write(ctx, websocket.MessageText,
 		[]byte(`{"kind":"location","data":{"lat":59.3308,"lng":18.0731,"accuracy":10}}`)); err != nil {
 		t.Fatalf("send location: %v", err)
 	}
-	recvKind(t, c, "state", 2*time.Second)
+	recvKind(t, c, "changed", 2*time.Second)
 
 	// Assert the ping is visible to the arranger — proves the WS write
 	// reached the DB.
@@ -227,86 +220,6 @@ func TestWSPlay_LocationFrame(t *testing.T) {
 	}
 	if len(pos.Positions) != 1 || pos.Positions[0].Lat == 0 {
 		t.Fatalf("ping not recorded: %+v", pos.Positions)
-	}
-}
-
-func TestWSPlay_AnswerRoundTrip(t *testing.T) {
-	ts, assignmentID, cleanup := newTestServer(t)
-	defer cleanup()
-	arr, _, slotToken, eventID := setupRun(t, ts, assignmentID)
-	if s := arr.do("POST", "/api/admin/events/"+itoa(eventID)+"/start", map[string]string{}, nil); s != 204 {
-		t.Fatalf("start event = %d", s)
-	}
-	alice := loginPlayer(t, ts, slotToken)
-
-	c := dialWS(t, ts, "/ws/play", alice.c)
-	defer c.Close(websocket.StatusNormalClosure, "")
-	recvKind(t, c, "state", 2*time.Second) // initial push
-
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-
-	// Wrong answer — expect answer_result with accepted=false.
-	if err := c.Write(ctx, websocket.MessageText,
-		[]byte(`{"kind":"answer","data":{"answer":"goodbye"}}`)); err != nil {
-		t.Fatalf("send: %v", err)
-	}
-	res := recvKind(t, c, "answer_result", 2*time.Second)
-	var r struct {
-		Accepted bool `json:"accepted"`
-	}
-	json.Unmarshal(res.Data, &r)
-	if r.Accepted {
-		t.Fatalf("wrong answer was accepted")
-	}
-
-	// Right answer — accepted, plus a pushed state on the next page.
-	if err := c.Write(ctx, websocket.MessageText,
-		[]byte(`{"kind":"answer","data":{"answer":"hello"}}`)); err != nil {
-		t.Fatalf("send: %v", err)
-	}
-	res = recvKind(t, c, "answer_result", 2*time.Second)
-	json.Unmarshal(res.Data, &r)
-	if !r.Accepted {
-		t.Fatalf("right answer rejected")
-	}
-	st := recvKind(t, c, "state", 2*time.Second)
-	var state struct {
-		PageIndex int `json:"page_index"`
-	}
-	json.Unmarshal(st.Data, &state)
-	if state.PageIndex != 1 {
-		t.Fatalf("expected to advance to page 1, got %d", state.PageIndex)
-	}
-}
-
-func TestWSPlay_AnswerBeforeStart(t *testing.T) {
-	// Submitting an answer while the event is still 'scheduled' must produce
-	// an answer_error frame — same semantic as the 409 HTTP response, just
-	// carried in-band over the socket.
-	ts, assignmentID, cleanup := newTestServer(t)
-	defer cleanup()
-	_, _, slotToken, _ := setupRun(t, ts, assignmentID)
-	alice := loginPlayer(t, ts, slotToken)
-
-	c := dialWS(t, ts, "/ws/play", alice.c)
-	defer c.Close(websocket.StatusNormalClosure, "")
-	recvKind(t, c, "state", 2*time.Second)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	if err := c.Write(ctx, websocket.MessageText,
-		[]byte(`{"kind":"answer","data":{"answer":"hello"}}`)); err != nil {
-		t.Fatalf("send: %v", err)
-	}
-	m := recvKind(t, c, "answer_error", 2*time.Second)
-	var e struct {
-		Error  string `json:"error"`
-		Status int    `json:"status"`
-	}
-	json.Unmarshal(m.Data, &e)
-	if e.Status != 409 {
-		t.Fatalf("status=%d, want 409", e.Status)
 	}
 }
 
@@ -613,8 +526,8 @@ func TestWSArrange_MalformedFramesIgnored(t *testing.T) {
 /* ---------- broadcast propagation (cross-client) ---------- */
 
 func TestBroadcast_PlayAnswerReachesLive(t *testing.T) {
-	// A player submitting a correct answer via WS must cause the public
-	// live subscriber to receive a fresh snapshot.
+	// A player submitting a correct answer must cause the public live
+	// subscriber to receive a fresh snapshot.
 	ts, assignmentID, cleanup := newTestServer(t)
 	defer cleanup()
 	arr, liveToken, slotToken, eventID := setupRun(t, ts, assignmentID)
@@ -627,25 +540,18 @@ func TestBroadcast_PlayAnswerReachesLive(t *testing.T) {
 	recvKind(t, live, "snapshot", 2*time.Second) // initial
 
 	alice := loginPlayer(t, ts, slotToken)
-	play := dialWS(t, ts, "/ws/play", alice.c)
-	defer play.Close(websocket.StatusNormalClosure, "")
-	recvKind(t, play, "state", 2*time.Second)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	if err := play.Write(ctx, websocket.MessageText,
-		[]byte(`{"kind":"answer","data":{"answer":"hello"}}`)); err != nil {
-		t.Fatalf("send answer: %v", err)
+	if s := alice.doAny("POST", "/api/player/play/answer", map[string]string{"node": "welcome", "guess": "hello"}, nil); s != 200 {
+		t.Fatalf("answer = %d", s)
 	}
 
 	snap := recvKind(t, live, "snapshot", 2*time.Second)
 	var s struct {
 		Teams []struct {
-			PageIndex int `json:"page_index"`
+			Score *float64 `json:"score"`
 		} `json:"teams"`
 	}
 	json.Unmarshal(snap.Data, &s)
-	if len(s.Teams) != 1 || s.Teams[0].PageIndex != 1 {
-		t.Fatalf("leaderboard did not advance: %+v", s.Teams)
+	if len(s.Teams) != 1 || s.Teams[0].Score == nil {
+		t.Fatalf("leaderboard did not update: %+v", s.Teams)
 	}
 }

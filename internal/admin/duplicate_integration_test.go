@@ -59,21 +59,6 @@ func TestDuplicateAdventure_HappyPath(t *testing.T) {
 	`, dbtest.PublisherOrg(t, db)).Scan(&advID); err != nil {
 		t.Fatal(err)
 	}
-	var pageID int64
-	if err := db.QueryRow(`
-		INSERT INTO adventure_pages(adventure_id, idx, title, prompt, accept, lat, lng)
-		VALUES ($1, 0, 'Welcome', 'Find the year', '[{"text":"1900"}]', 0, 0)
-		RETURNING id
-	`, advID).Scan(&pageID); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.Exec(`
-		INSERT INTO adventure_page_hints(page_id, idx, text, delay_seconds)
-		VALUES ($1, 0, 'It is a four-digit number', 30)
-	`, pageID); err != nil {
-		t.Fatal(err)
-	}
-
 	// Wire a Handlers + chi router with auth middleware that injects
 	// the boss user. Mirrors the production wiring but skips the
 	// signed-cookie session lookup in favour of a fake middleware.
@@ -125,33 +110,6 @@ func TestDuplicateAdventure_HappyPath(t *testing.T) {
 	}
 	if gotTitle != "Starter Tour (copy)" {
 		t.Errorf("clone title = %q, want %q", gotTitle, "Starter Tour (copy)")
-	}
-
-	// Pages cascade.
-	var pageCount int
-	if err := db.QueryRow(`
-		SELECT COUNT(*) FROM adventure_pages p
-		JOIN adventures a ON a.id = p.adventure_id
-		WHERE a.slug = $1
-	`, resp.Slug).Scan(&pageCount); err != nil {
-		t.Fatal(err)
-	}
-	if pageCount != 1 {
-		t.Errorf("clone page count = %d, want 1", pageCount)
-	}
-
-	// Hints cascade.
-	var hintCount int
-	if err := db.QueryRow(`
-		SELECT COUNT(*) FROM adventure_page_hints h
-		JOIN adventure_pages p ON p.id = h.page_id
-		JOIN adventures a ON a.id = p.adventure_id
-		WHERE a.slug = $1
-	`, resp.Slug).Scan(&hintCount); err != nil {
-		t.Fatal(err)
-	}
-	if hintCount != 1 {
-		t.Errorf("clone hint count = %d, want 1", hintCount)
 	}
 
 	// Source untouched.

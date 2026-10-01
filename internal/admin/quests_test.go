@@ -1,6 +1,7 @@
 package admin_test
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"net/http"
@@ -14,6 +15,9 @@ import (
 	"github.com/klahr/zonventure/internal/adventure"
 	"github.com/klahr/zonventure/internal/auth"
 	"github.com/klahr/zonventure/internal/dbtest"
+	"github.com/klahr/zonventure/internal/graph"
+	"github.com/klahr/zonventure/internal/graph/match"
+	"github.com/klahr/zonventure/internal/graphstore"
 	"github.com/klahr/zonventure/internal/ws"
 )
 
@@ -42,10 +46,27 @@ func questFixture(t *testing.T) (db *sql.DB, orgID, assID int64, router chi.Rout
 		userID, orgID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.Exec(`
+	var advID int64
+	if err := db.QueryRow(`
 		INSERT INTO adventures(slug, title, author, org_id, published)
 		VALUES ('treasure', 'Treasure Hunt', 'Acme', $1, 1)
-	`, orgID); err != nil {
+		RETURNING id
+	`, orgID).Scan(&advID); err != nil {
+		t.Fatal(err)
+	}
+	// Something to play: an event starts only on a published graph.
+	g := &graph.Graph{
+		Nodes: []graph.Node{
+			{Slug: "start", Type: graph.Start},
+			{Slug: "q", Type: graph.Puzzle, PuzzleCfg: &graph.PuzzleConfig{
+				Blocks:  graph.LegacyBlocks("?", nil),
+				Outputs: []graph.Output{{Port: "solved", Trigger: graph.OnAnswer, Matchers: []match.Matcher{{Kind: match.Exact, Value: "x"}}}},
+			}},
+			{Slug: "end", Type: graph.End},
+		},
+		Edges: []graph.Edge{{From: "start", FromPort: graph.PortOut, To: "q"}, {From: "q", FromPort: "solved", To: "end"}},
+	}
+	if _, _, err := graphstore.Publish(context.Background(), db, advID, userID, g, ""); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.QueryRow(`

@@ -31,12 +31,10 @@ import (
 	"github.com/klahr/zonventure/internal/auth"
 	"github.com/klahr/zonventure/internal/components"
 	"github.com/klahr/zonventure/internal/httpx"
-	"github.com/klahr/zonventure/internal/lanes"
 	"github.com/klahr/zonventure/internal/mailer"
 	"github.com/klahr/zonventure/internal/payments"
 	"github.com/klahr/zonventure/internal/play"
 	"github.com/klahr/zonventure/internal/roster"
-	"github.com/klahr/zonventure/internal/simulator"
 	"github.com/klahr/zonventure/internal/storage"
 	"github.com/klahr/zonventure/internal/teamimport"
 	"github.com/klahr/zonventure/internal/tokenx"
@@ -50,7 +48,6 @@ type Handlers struct {
 	DB  *sql.DB
 	Lib *adventure.Library
 	Hub *ws.Hub
-	Sim *simulator.Simulator
 	// Engine ranks a graph event's teams for the results export; see
 	// public.Handlers.Engine.
 	Engine *play.Engine
@@ -192,8 +189,8 @@ type adventureDTO struct {
 	// Catalog so a buyer can filter / spot adventures matching the
 	// language they intend to run in. Independent of the UI locale.
 	Language string `json:"language"`
-	// Playable says an event could run it now: it has a published graph,
-	// or pages for the lane runtime. A new adventure has neither.
+	// Playable says an event could run it now: it has a published
+	// graph. A new adventure has none.
 	Playable bool `json:"playable"`
 }
 
@@ -213,17 +210,8 @@ func (h *Handlers) ListAdventures(w http.ResponseWriter, r *http.Request) {
 	// grant — the UI uses that to flag "commissioned by admin" on the card.
 	query := `
 		SELECT a.slug, a.title, a.description, a.author, a.org_id,
-		       -- Puzzles in the adventure's graph (the published version,
-		       -- else the draft) when it has one, else its lane pages.
-		       (SELECT CASE WHEN x.graph IS NULL
-		                    THEN (SELECT COUNT(*) FROM adventure_pages p WHERE p.adventure_id = a.id)
-		                    ELSE (SELECT COUNT(*) FROM jsonb_array_elements(x.graph -> 'nodes') n WHERE n ->> 'type' = 'puzzle')
-		               END
-		        FROM (SELECT COALESCE(
-		                (SELECT g.graph FROM adventure_graphs g WHERE g.id = a.published_graph_id),
-		                (SELECT d.graph FROM adventure_graph_drafts d WHERE d.adventure_id = a.id)) AS graph) x) AS page_count,
-		       (a.published_graph_id IS NOT NULL
-		        OR EXISTS (SELECT 1 FROM adventure_pages p WHERE p.adventure_id = a.id))::int AS playable,
+		       ` + PuzzleCountSQL() + ` AS page_count,
+		       (a.published_graph_id IS NOT NULL)::int AS playable,
 		       (a.avatar_mime_type IS NOT NULL)::int AS has_avatar,
 		       a.published, a.language,
 	`
@@ -288,10 +276,7 @@ func (h *Handlers) ListAdventures(w http.ResponseWriter, r *http.Request) {
 /* ---------------- Runs ---------------- */
 
 type eventDTO struct {
-	ID int64 `json:"id"`
-	// Engine is "graph" or "lanes" on the detail payload: which progress
-	// the page shows. Empty on list rows.
-	Engine        string `json:"engine,omitempty"`
+	ID            int64  `json:"id"`
 	Name          string `json:"name,omitempty"`
 	AdventureSlug string `json:"adventure_slug"`
 	// AdventureTitle is the human-friendly name. Joined in via the
@@ -744,28 +729,29 @@ func (h *Handlers) transitionEvent(w http.ResponseWriter, r *http.Request, actio
 			return
 		}
 	}
+	if action == "start" {
+		var published bool
+		if err := h.DB.QueryRowContext(r.Context(), `
+			SELECT EXISTS (SELECT 1 FROM events e JOIN adventures a ON a.slug = e.adventure_slug
+			               WHERE e.id = $1 AND (e.graph_id IS NOT NULL OR a.published_graph_id IS NOT NULL))
+		`, eventID).Scan(&published); err != nil {
+			httpx.Error(w, http.StatusInternalServerError, "lookup failed")
+			return
+		}
+		if !published {
+			httpx.Error(w, http.StatusConflict, "publish the adventure before starting the event")
+			return
+		}
+	}
 	if _, err := h.DB.ExecContext(r.Context(), update, eventID); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "update failed")
 		return
 	}
-	// Lane initialisation runs only on first transition to running
-	// (start, not resume). Persists per-team permutations + plants
-	// initial cursors so applyAnswer can take the lane-aware code
-	// path. Best-effort: a failure here doesn't undo the state
-	// transition — runtime fallbacks derive permutations on the fly
-	// when no row exists, so the run is still playable.
+	// Starting pins the adventure's graph and places every team. A
+	// failure is audited; teams added later are placed when they first
+	// open the game, and StartEvent is idempotent.
 	if action == "start" {
-		if err := lanes.Initialize(r.Context(), h.DB, h.Lib, eventID); err != nil {
-			// Log via activity feed for the audit trail; keep going
-			// since the runtime fallback covers correctness.
-			activity.Record(r.Context(), h.DB, eventID, nil, activity.Actor{},
-				"lanes.init.failed", map[string]any{"error": err.Error()})
-		}
-		// A graph adventure pins its graph and places every team now.
-		// There is no runtime fallback for a missing pin, so a failure is
-		// audited under its own kind. Teams added later are placed when
-		// they first open the game; StartEvent is idempotent.
-		if _, err := play.StartIfGraph(r.Context(), h.DB, eventID); err != nil {
+		if err := play.Start(r.Context(), h.DB, eventID); err != nil {
 			activity.Record(r.Context(), h.DB, eventID, nil, activity.Actor{},
 				"graph.start.failed", map[string]any{"error": err.Error()})
 		}
@@ -1460,14 +1446,12 @@ func (h *Handlers) createOneTeam(ctx context.Context, eventID, orgID int64, req 
 /* ---------------- Positions & Tracks ---------------- */
 
 type positionDTO struct {
-	TeamID    int64   `json:"team_id"`
-	TeamName  string  `json:"team_name"`
-	Lat       float64 `json:"lat"`
-	Lng       float64 `json:"lng"`
-	ServerTS  string  `json:"server_ts"`
-	PageIndex int     `json:"page_index"`
-	// Node is the graph step the team is on, for a graph event; its
-	// page_index is a lane cursor and stays 0.
+	TeamID   int64   `json:"team_id"`
+	TeamName string  `json:"team_name"`
+	Lat      float64 `json:"lat"`
+	Lng      float64 `json:"lng"`
+	ServerTS string  `json:"server_ts"`
+	// Node is the graph step the team is on.
 	Node string `json:"node,omitempty"`
 }
 
@@ -1475,7 +1459,7 @@ type positionDTO struct {
 // handler and the WS push path. Caller does authorisation.
 func (h *Handlers) buildPositions(ctx context.Context, eventID int64) ([]positionDTO, error) {
 	rows, err := h.DB.QueryContext(ctx, `
-		SELECT t.id, t.name, t.current_page_index, COALESCE(gs.current_node, ''),
+		SELECT t.id, t.name, COALESCE(gs.current_node, ''),
 		       COALESCE(p.lat, 0), COALESCE(p.lng, 0), COALESCE(p.server_ts, '')
 		FROM teams t
 		LEFT JOIN team_graph_state gs ON gs.team_id = t.id
@@ -1498,7 +1482,7 @@ func (h *Handlers) buildPositions(ctx context.Context, eventID int64) ([]positio
 	out := []positionDTO{}
 	for rows.Next() {
 		var d positionDTO
-		if err := rows.Scan(&d.TeamID, &d.TeamName, &d.PageIndex, &d.Node, &d.Lat, &d.Lng, &d.ServerTS); err != nil {
+		if err := rows.Scan(&d.TeamID, &d.TeamName, &d.Node, &d.Lat, &d.Lng, &d.ServerTS); err != nil {
 			return nil, err
 		}
 		out = append(out, d)
