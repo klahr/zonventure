@@ -38,6 +38,8 @@ func registerPlayerRoutes(r chi.Router, env *routesEnv) {
 		// Checks a cheat password before the phone turns cheating on.
 		r.Post("/play/unlock", playerH.PostPlayUnlock)
 		r.Get("/play/photo/{photoID}", playerH.GetPlayPhoto)
+		// Takes or gives up one of the adventure's roles.
+		r.Post("/role", playerH.PostRole)
 		r.Post("/location", playerH.PostLocation)
 		// Player-driven slot rename — the arranger's pre-set name is
 		// often a placeholder ("Player 3"). Letting the player put

@@ -981,3 +981,65 @@ func TestLanguageLive(t *testing.T) {
 		t.Errorf("the English answer counts: %+v %v", r, err)
 	}
 }
+
+// Roles are dealt among the players who are playing, claims first, the
+// rest each to whoever holds fewest; a player alone holds them all, and
+// a claim by someone no longer playing does not count.
+func TestDealRoles(t *testing.T) {
+	f := setup(t, linear("a"), 1)
+	team := f.teams[0]
+	ctx := context.Background()
+	roles := []string{"navigator", "decoder", "scout"}
+
+	var ann int64
+	mustScan(t, f.db.QueryRow(`SELECT id FROM player_slots WHERE team_id = $1`, team), &ann)
+	slot := func(name string) int64 {
+		var id int64
+		mustScan(t, f.db.QueryRow(`INSERT INTO player_slots(team_id, name, token) VALUES ($1, $2, $3) RETURNING id`,
+			team, name, fmt.Sprintf("slot-%d-%s", team, name)), &id)
+		return id
+	}
+	bo, cy := slot("bo"), slot("cy")
+	login := func(id int64) {
+		if _, err := f.db.Exec(`UPDATE player_slots SET last_login_at = now_text() WHERE id = $1`, id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	deal := func(me int64) map[string]Holding {
+		t.Helper()
+		h, err := DealRoles(ctx, f.db, team, me, roles)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return h
+	}
+
+	if got := RolesOf(deal(ann), roles, ann); len(got) != 3 {
+		t.Errorf("alone, Ann holds %v; want every role", got)
+	}
+	login(ann)
+	login(bo)
+	h := deal(ann)
+	if a, b := RolesOf(h, roles, ann), RolesOf(h, roles, bo); len(a) != 2 || len(b) != 1 || b[0] != "decoder" {
+		t.Errorf("two players: Ann %v, Bo %v; want Ann navigator and scout, Bo decoder", a, b)
+	}
+
+	// Bo claims the navigator: it is his, and the rest are dealt round.
+	if _, err := f.db.Exec(`INSERT INTO team_roles(team_id, role, slot_id) VALUES ($1, 'navigator', $2)`, team, bo); err != nil {
+		t.Fatal(err)
+	}
+	h = deal(ann)
+	if !h["navigator"].Claimed || h["navigator"].Slot != bo || h["decoder"].Slot != ann || h["scout"].Slot != ann {
+		t.Errorf("after Bo's claim: %+v", h)
+	}
+
+	// Bo is forgotten: his claim no longer counts, and Cy, joining, takes a share.
+	if _, err := f.db.Exec(`UPDATE player_slots SET name = '(forgotten)' WHERE id = $1`, bo); err != nil {
+		t.Fatal(err)
+	}
+	login(cy)
+	h = deal(ann)
+	if h["navigator"].Claimed || len(RolesOf(h, roles, cy)) != 1 || len(RolesOf(h, roles, bo)) != 0 {
+		t.Errorf("Bo forgotten, Cy joined: %+v", h)
+	}
+}

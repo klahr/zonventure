@@ -32,7 +32,9 @@ export interface StartOption {
 /** session.Input — the shape of a puzzle's answer box. */
 export interface PlayInput {
   /** "questions": answered by the step's quiz blocks; the dock continues once each is picked. */
-  kind: "text" | "number" | "tiles" | "search" | "choice" | "lock" | "questions" | "scan" | "items";
+  kind: "text" | "number" | "tiles" | "search" | "choice" | "lock" | "questions" | "scan" | "items" | "keys";
+  /** "keys": a two-key launch's posts, by name — where keys are turned. Empty: anywhere. */
+  posts?: string[];
   /** The author's answer bar: its placeholder, its button (a scan's too), and no QR button. */
   placeholder?: string;
   button?: string;
@@ -186,6 +188,19 @@ export interface ItemView {
   qty: number;
 }
 
+/** session.RoleView: one role, and who holds it — claimed, or dealt. */
+export interface RoleView {
+  slug: string;
+  name?: string;
+  text?: string;
+  /** This phone's player holds it. */
+  mine?: boolean;
+  /** The name of the player who holds it. */
+  holder?: string;
+  /** They chose it, rather than being dealt it. */
+  claimed?: boolean;
+}
+
 export interface JournalView {
   slug: string;
   title?: string;
@@ -250,6 +265,10 @@ export interface View {
   outcome?: "complete" | "fail";
   items?: ItemView[];
   journal?: JournalView[];
+  /** A puzzle done together: keys turned, players agreed. */
+  together?: Together;
+  /** The adventure's roles, and who on the team holds each. */
+  roles?: RoleView[];
   /** The adventure keeps a journal, so its button shows even while empty. */
   has_journal?: boolean;
   theme?: string;
@@ -257,8 +276,21 @@ export interface View {
 }
 
 /** session.Result — what one action produced. */
+/** session.Together: how far the players are with a puzzle they do together. */
+export interface Together {
+  kind: "keys" | "agree";
+  done: number;
+  of: number;
+  /** This phone's player has turned their key, or given the answer. */
+  mine?: boolean;
+  /** When the first counted key stops counting. */
+  until?: string;
+}
+
 export interface Result {
   accepted: boolean;
+  /** The player's part is in; the step waits for their teammates. */
+  waiting?: Together;
   port?: string;
   points?: number;
   response?: string;
@@ -283,6 +315,8 @@ export type PlayAction =
   | { kind: "cheat"; node: string; password: string }
   /** Leave an item puzzle to find what its slots need. */
   | { kind: "leave"; node: string }
+  /** This player's key in a two-key launch. */
+  | { kind: "turn"; node: string }
   | { kind: "timeout"; node: string }
   | { kind: "hint"; node: string; index: number }
   /**
@@ -562,6 +596,8 @@ export const unlockCheat = (password: string) => post<void>("/api/player/play/un
 
 /** Put the player's own name on the team (the organiser's is often "Player 3"). */
 export const renameMe = (name: string) => post<{ name: string }>("/api/player/me/name", { name });
+/** Takes a role, or with claim false gives it back to be dealt again. 409 role_taken: a teammate claimed it. */
+export const claimRole = (role: string, claim: boolean) => post<void>("/api/player/role", { role, claim });
 
 /** Rename the team; any member may. 409 when another team in the event has the name. */
 export const renameTeam = (name: string) => post<{ name: string }>("/api/player/team/name", { name });

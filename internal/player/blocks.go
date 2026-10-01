@@ -36,29 +36,9 @@ const (
 )
 
 // teamPlayers are the ids of the team's players who count as playing:
-// those who have opened their link, and the one asking, in slot order.
-// A forgotten slot is out.
+// see play.Players.
 func teamPlayers(ctx context.Context, db *sql.DB, teamID, me int64) ([]int64, error) {
-	rows, err := db.QueryContext(ctx, `
-		SELECT id FROM player_slots
-		WHERE team_id = $1 AND (last_login_at IS NOT NULL OR id = $2) AND name <> '(forgotten)'
-		ORDER BY id`, teamID, me)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []int64
-	for rows.Next() {
-		var id int64
-		if err := rows.Scan(&id); err != nil {
-			return nil, err
-		}
-		out = append(out, id)
-	}
-	if !slices.Contains(out, me) {
-		out = append(out, me)
-	}
-	return out, rows.Err()
+	return play.Players(ctx, db, teamID, me)
 }
 
 // splitParts is what player i of n sees of a split secret: the parts
@@ -80,10 +60,13 @@ func splitParts(parts []string, i, n int) []string {
 	return out
 }
 
-// decorateView finishes a view for the player asking: their part of a
-// split secret, a vote's tally and their own vote, and the team's latest
-// photo for a photo block.
+// decorateView finishes a view for the player asking: who holds each
+// role, their part of a split secret, a vote's tally and their own vote,
+// and the team's latest photo for a photo block.
 func decorateView(ctx context.Context, db *sql.DB, teamID, slotID int64, v *play.View) error {
+	if err := decorateRoles(ctx, db, teamID, slotID, v); err != nil {
+		return err
+	}
 	var split, vote, photo bool
 	for _, b := range v.Blocks {
 		if b.Locked {

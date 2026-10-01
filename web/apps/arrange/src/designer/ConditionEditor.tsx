@@ -42,6 +42,7 @@ const OPS: { op: Op; label: string; group: string }[] = [
   { op: "players_in_zone", label: "Players inside a zone", group: "Place & time" },
   { op: "zones_held", label: "A player in each of these zones", group: "Place & time" },
   { op: "here", label: "This player is inside a zone", group: "Place & time" },
+  { op: "role", label: "This player has a role", group: "Players" },
   { op: "walked", label: "Metres walked on this step", group: "Place & time" },
   { op: "time_of_day", label: "Time of day", group: "Place & time" },
   { op: "weekday", label: "Weekday", group: "Place & time" },
@@ -95,7 +96,7 @@ export function ConditionEditor({ value, onChange, graph, depth = 0, forPlayer =
 
   // A gate or a branch decides for the whole team: "this player" means
   // nothing there, and the validator refuses it.
-  const ops = OPS.filter((o) => o.op !== "here" || forPlayer || value.op === "here");
+  const ops = OPS.filter((o) => !(o.op === "here" || o.op === "role") || forPlayer || value.op === o.op);
   const groups = [...new Set(ops.map((o) => o.group))];
 
   return (
@@ -248,6 +249,17 @@ export function ConditionEditor({ value, onChange, graph, depth = 0, forPlayer =
             );
           })}
         </div>
+      )}
+
+      {value.op === "role" && (
+        <select className="field__input" value={value.role ?? ""} onChange={(e) => set({ role: e.target.value })} aria-label={t.t("Role")}>
+          <option value="">{(graph.roles ?? []).length ? t.t("— pick a role —") : t.t("— no roles yet: add them under Resources —")}</option>
+          {(graph.roles ?? []).map((r) => (
+            <option key={r.slug} value={r.slug}>
+              {r.name || r.slug}
+            </option>
+          ))}
+        </select>
       )}
 
       {value.op === "zones_held" && (

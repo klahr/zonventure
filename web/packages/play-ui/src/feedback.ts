@@ -31,6 +31,9 @@ export function feedbackForResult(kind: play.PlayAction["kind"], r: play.Result,
     case "cheat":
       return { tone: "good", text: t("Solved.") };
     case "answer":
+      if (r.waiting) {
+        return { tone: "info", text: t("Right — but everyone must give the answer. {{done}} of {{of}} have.", { done: r.waiting.done, of: r.waiting.of }) };
+      }
       if (r.accepted) {
         const pts = Math.round((r.points ?? 0) * 10) / 10;
         const sub = pts > 0 ? t("+{{points}} points", { points: pts }) : undefined;
@@ -51,6 +54,14 @@ export function feedbackForResult(kind: play.PlayAction["kind"], r: play.Result,
           burst: { kind: "rebuff", head: t("Not quite"), ...(r.response ? { sub: r.response } : {}) },
         };
       }
+    case "turn":
+      if (r.accepted) {
+        return { tone: "good", text: t("Every key turned!"), burst: { kind: "celebrate", head: t("Every key turned!") } };
+      }
+      return {
+        tone: "info",
+        text: t("Your key is turned: {{done}} of {{of}}. The others must turn theirs at the same moment.", { done: r.waiting?.done ?? 1, of: r.waiting?.of ?? 2 }),
+      };
     case "skip":
       return { tone: "info", text: t("Skipped.") };
     case "leave":

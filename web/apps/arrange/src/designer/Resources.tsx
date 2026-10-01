@@ -1,4 +1,4 @@
-import type { Counter, Graph, Item, JournalEntry, Zone } from "@zonventure/graph";
+import type { Counter, Graph, Item, JournalEntry, Role, Zone } from "@zonventure/graph";
 import { gridZones } from "@zonventure/graph";
 import { StaticMap } from "@zonventure/play-ui";
 import { useState } from "react";
@@ -44,11 +44,13 @@ export function Resources({ graph, onChange }: { graph: Graph; onChange: (g: Gra
   const items = graph.items ?? [];
   const counters = graph.counters ?? [];
   const journal = graph.journal ?? [];
+  const roles = graph.roles ?? [];
 
   const setZones = (z: Zone[]) => onChange({ ...graph, zones: z });
   const setItems = (i: Item[]) => onChange({ ...graph, items: i });
   const setCounters = (c: Counter[]) => onChange({ ...graph, counters: c });
   const setJournal = (j: JournalEntry[]) => onChange({ ...graph, journal: j });
+  const setRoles = (r: Role[]) => (r.length ? onChange({ ...graph, roles: r }) : onChange(withoutKey(graph, "roles")));
 
   return (
     <div className="res">
@@ -208,6 +210,36 @@ export function Resources({ graph, onChange }: { graph: Graph; onChange: (g: Gra
         <button type="button" className="add-btn" onClick={() => setCounters([...counters, { slug: slugFor("counter", counters), name: "" }])}>
           <Plus size={ICON.sm} aria-hidden="true" />
           {t.t("Add counter")}
+        </button>
+      </section>
+
+      <section className="insp__section">
+        <h3>
+          <ConceptIcon {...RESOURCE.roles} />
+          {t.t("Roles")}
+        </h3>
+        <p className="field__hint">
+          {t.t("Parts the team's players take, so each knows something the others don't. A block shows only to a role's player with the condition “This player has a role”. Players pick roles on their phones; any nobody picks is dealt out, so a player alone has them all.")}
+        </p>
+        {roles.map((r, i) => {
+          const set = (next: Role) => setRoles(roles.map((x, j) => (j === i ? next : x)));
+          return (
+            <div key={r.slug} className="box">
+              <div className="box__row">
+                <input className="field__input" value={r.name ?? ""} placeholder={r.slug} aria-label={t.t("Name")}
+                  onChange={(e) => set({ ...r, name: e.target.value })} />
+                <button type="button" className="icon-remove" onClick={() => setRoles(roles.filter((_, j) => j !== i))} aria-label={t.t("Remove")} title={t.t("Remove")}>
+                  <Trash2 size={ICON.sm} />
+                </button>
+              </div>
+              <MarkdownArea className="field__input" rows={2} value={r.text ?? ""} placeholder={t.t("What the role is for, shown to the player who takes it. Markdown.")} aria-label={t.t("Description")}
+                onChange={(e) => set(e.target.value ? { ...r, text: e.target.value } : withoutKey(r, "text"))} />
+            </div>
+          );
+        })}
+        <button type="button" className="add-btn" onClick={() => setRoles([...roles, { slug: slugFor("role", roles), name: "" }])}>
+          <Plus size={ICON.sm} aria-hidden="true" />
+          {t.t("Add role")}
         </button>
       </section>
 

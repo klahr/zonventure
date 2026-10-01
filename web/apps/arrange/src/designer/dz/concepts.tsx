@@ -17,6 +17,7 @@ import {
   Sparkles,
   Timer,
   Trophy,
+  Users,
   Waypoints,
   type LucideIcon,
 } from "lucide-react";
@@ -67,6 +68,7 @@ export const RESOURCE = {
   counters: { concept: "effect", icon: Hash },
   time: { concept: "time", icon: Timer },
   journal: { concept: "journal", icon: BookMarked },
+  roles: { concept: "content", icon: Users },
   score: { concept: "answer", icon: Trophy },
   languages: { concept: "content", icon: Languages },
   look: { concept: "content", icon: Palette },

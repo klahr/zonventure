@@ -25,6 +25,8 @@ export interface Graph {
   items?: Item[];
   counters?: Counter[];
   journal?: JournalEntry[];
+  /** The parts a team's players take; a block's show condition asks for one. */
+  roles?: Role[];
   /** List a team's journal in the order it found the notes. */
   journal_by_unlock?: boolean;
   /** Keep the team's running score off its phone; points still count. */
@@ -250,6 +252,8 @@ export interface PuzzleConfig {
   skip_after_seconds?: number;
   lockout_seconds?: number;
   repeatable?: boolean;
+  /** A right answer counts once every player has given one leading the same way. Only where usesMatchers. */
+  unanimous?: boolean;
   /** Another way of answering than typing; absent is a typed answer. */
   answer?: Answer;
   /** The answer bar's words, keyboard and QR button, for a typed answer or a scan. */
@@ -288,6 +292,9 @@ export interface AnswerBar {
  * - items: slots the team fills from its backpack, each wanting one
  *   item; all right takes the first answer output and, unless keep,
  *   uses the items up. The phone is told the slots' labels only.
+ * - keys: a two-key launch. Each player turns their own key; keys of
+ *   them (every player when absent) within window seconds (10 when
+ *   absent) take the first answer output — with posts, one at each.
  */
 export type Answer =
   | { kind: "tiles"; image?: Media; rows: number; cols: number }
@@ -296,7 +303,8 @@ export type Answer =
   | { kind: "lock"; wheels: number; symbols: LockSymbol[]; start?: number[] }
   | { kind: "questions" }
   | { kind: "scan" }
-  | { kind: "items"; slots: ItemSlot[]; keep?: boolean; missing?: MissingHint };
+  | { kind: "items"; slots: ItemSlot[]; keep?: boolean; missing?: MissingHint }
+  | { kind: "keys"; keys?: number; window?: number; posts?: string[] };
 
 /**
  * graph.Missings: what an item puzzle tells a team short of an item —
@@ -447,6 +455,14 @@ export interface StartConfig {
   zone?: string;
 }
 
+/** graph.Role: a part a player takes on a team — the navigator, the decoder. */
+export interface Role {
+  slug: string;
+  name?: string;
+  /** What the role is for, shown to the player who takes it. */
+  text?: string;
+}
+
 export interface Item {
   slug: string;
   name?: string;
@@ -513,6 +529,7 @@ export type Op =
   | "players_in_zone"
   | "zones_held"
   | "here"
+  | "role"
   | "walked"
   | "drawn"
   | "time_of_day"
@@ -529,6 +546,7 @@ export interface Predicate {
   item?: string;
   counter?: string;
   zone?: string;
+  role?: string;
   cmp?: Cmp;
   n?: number;
   is?: string;

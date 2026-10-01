@@ -67,7 +67,10 @@ const (
 	// OpHere asks about the phone the view is for: a block shown only to
 	// the player standing in Zone. Only a block's show condition may use
 	// it — a gate or a branch is the team's, and has no one phone.
-	OpHere   Op = "here"   // this player is inside Zone
+	OpHere Op = "here" // this player is inside Zone
+	// OpRole, like OpHere, asks about the phone the view is for.
+	OpRole Op = "role" // this player holds Role
+
 	OpWalked Op = "walked" // metres walked on the current node, compared Cmp N
 	OpDrawn  Op = "drawn"  // the card a draw Block on Node dealt is option Is (its index)
 
@@ -110,6 +113,7 @@ type Predicate struct {
 	Item    string `json:"item,omitempty"`
 	Counter string `json:"counter,omitempty"`
 	Zone    string `json:"zone,omitempty"`
+	Role    string `json:"role,omitempty"`
 
 	// Cmp and N form a numeric comparison. Cmp defaults to Gte, so
 	// {op: item, item: crowbar} reads as "has at least one crowbar"
@@ -150,6 +154,8 @@ type State interface {
 	ZonesHeld(zones []string) bool
 	// Here reports whether the player the view is for is inside zone.
 	Here(zone string) bool
+	// HasRole reports whether the player the view is for holds role.
+	HasRole(role string) bool
 	// Walked is how far the team has walked since it reached its current
 	// node, in metres.
 	Walked() float64
@@ -253,6 +259,9 @@ func Eval(p Predicate, s State) bool {
 	case OpHere:
 		return s.Here(p.Zone)
 
+	case OpRole:
+		return p.Role != "" && s.HasRole(p.Role)
+
 	case OpWalked:
 		return compare(s.Walked(), p.Cmp, p.N)
 
@@ -282,14 +291,14 @@ func Eval(p Predicate, s State) bool {
 	return false
 }
 
-// UsesHere reports whether a condition asks where the viewing player is,
-// anywhere in its tree.
-func UsesHere(p Predicate) bool {
-	if p.Op == OpHere {
+// ForPlayer reports whether a condition asks about the viewing player —
+// where they are, or which role they hold — anywhere in its tree.
+func ForPlayer(p Predicate) bool {
+	if p.Op == OpHere || p.Op == OpRole {
 		return true
 	}
 	for _, q := range p.Of {
-		if UsesHere(q) {
+		if ForPlayer(q) {
 			return true
 		}
 	}
@@ -435,6 +444,7 @@ type Refs struct {
 	Items    []string
 	Counters []string
 	Zones    []string
+	Roles    []string
 }
 
 // Collect walks the tree and returns everything it references.
@@ -459,6 +469,7 @@ func Collect(p Predicate) Refs {
 		add(&r.Items, "i", p.Item)
 		add(&r.Counters, "c", p.Counter)
 		add(&r.Zones, "z", p.Zone)
+		add(&r.Roles, "r", p.Role)
 		if p.Op == OpZonesHeld {
 			for _, z := range p.Members {
 				add(&r.Zones, "z", z)
@@ -538,6 +549,8 @@ func Describe(p Predicate) string {
 		return fmt.Sprintf("players inside zone %q %s %g", p.Zone, cmpWord(p.Cmp), n)
 	case OpHere:
 		return fmt.Sprintf("this player inside zone %q", p.Zone)
+	case OpRole:
+		return fmt.Sprintf("this player is the %q", p.Role)
 	case OpZonesHeld:
 		quoted := make([]string, len(p.Members))
 		for i, z := range p.Members {

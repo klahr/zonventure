@@ -62,6 +62,10 @@ type View struct {
 	Offer     []OfferEntry `json:"offer,omitempty"`
 	CanFinish bool         `json:"can_finish,omitempty"`
 
+	// Together is how far the players are with a puzzle they do
+	// together: keys turned, players agreed.
+	Together *Together `json:"together,omitempty"`
+
 	// Languages the adventure can be played in, main first, and the one
 	// this view is in — for the phone's language switch.
 	Languages []string `json:"languages,omitempty"`
@@ -70,6 +74,11 @@ type View struct {
 	// language, where they are translated — they live on the adventure,
 	// not in the graph, so the caller swaps them in.
 	Meta map[string]string `json:"meta,omitempty"`
+
+	// Roles are the adventure's roles, in the team's language. Who holds
+	// each is the player endpoints' to add: the team's state does not
+	// know its players.
+	Roles []RoleView `json:"roles,omitempty"`
 
 	// EndsAt is when the adventure's time limit falls, for a countdown.
 	// TimedOut says it has moved the team, and TimeUpText is the author's
@@ -145,6 +154,10 @@ type Input struct {
 	// Fields are the questions of a choice (Kind "choice"): labels and
 	// options only — the answers stay on the server.
 	Fields []ChoiceFieldView `json:"fields,omitempty"`
+
+	// Posts are a two-key launch's posts (Kind "keys"), by name: where
+	// the keys are turned, one player at each. Empty turns them anywhere.
+	Posts []string `json:"posts,omitempty"`
 
 	// At is, for a search (Kind "search"), the zone the team stands in —
 	// "sector C3" — or empty when it is in none of them.
@@ -289,6 +302,19 @@ type ItemView struct {
 }
 
 // JournalView is one unlocked journal entry.
+// RoleView is one of the adventure's roles. Mine and Holder are filled
+// by the player endpoints: whether the phone asking holds it, and the
+// name of the player who does; Claimed says they chose it, rather than
+// being dealt it.
+type RoleView struct {
+	Slug    string `json:"slug"`
+	Name    string `json:"name,omitempty"`
+	Text    string `json:"text,omitempty"`
+	Mine    bool   `json:"mine,omitempty"`
+	Holder  string `json:"holder,omitempty"`
+	Claimed bool   `json:"claimed,omitempty"`
+}
+
 type JournalView struct {
 	Slug    string        `json:"slug"`
 	Title   string        `json:"title,omitempty"`
@@ -520,6 +546,9 @@ func number(f float64) string { return strconv.FormatFloat(f, 'f', -1, 64) }
 // View renders the team's state for the player.
 func (t *Team) View() View {
 	v := t.view()
+	for _, r := range t.G.Roles {
+		v.Roles = append(v.Roles, RoleView{Slug: r.Slug, Name: r.Name, Text: r.Text})
+	}
 	t.translate(&v)
 	return v
 }
@@ -561,6 +590,11 @@ func (t *Team) translate(v *View) {
 		s := &v.Starts[i]
 		s.Title = tr(graph.NodeKey(s.Node, "title"), s.Title)
 		s.Zone = zone(s.Zone)
+	}
+	for i := range v.Roles {
+		r := &v.Roles[i]
+		r.Name = tr(graph.RoleKey(r.Slug, "name"), r.Name)
+		r.Text = tr(graph.RoleKey(r.Slug, "text"), r.Text)
 	}
 	v.Journal = append([]JournalView(nil), v.Journal...)
 	for i := range v.Journal {
@@ -799,6 +833,12 @@ func (t *Team) view() View {
 			setZone(cfg.Zone)
 		}
 		v.Input = t.answerInput(n)
+		if v.Together = t.together(n); v.Together != nil && v.Together.Until != nil &&
+			(v.RecheckAt == nil || v.Together.Until.Before(*v.RecheckAt)) {
+			// A key stops counting then: the phone looks again to say so.
+			at := v.Together.Until.Add(time.Second)
+			v.RecheckAt = &at
+		}
 		revealed := 0
 		if r := t.Nodes[n.Slug]; r != nil {
 			revealed, v.Attempts = r.HintsRevealed, r.Attempts

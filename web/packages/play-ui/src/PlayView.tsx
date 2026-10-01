@@ -429,6 +429,7 @@ function PuzzleStep(props: StepProps) {
   const lock = input.kind === "lock" && input.wheels && input.symbols?.length ? input : null;
   const slots = input.kind === "items" && input.slots?.length ? input : null;
   const questions = input.kind === "questions";
+  const keys = input.kind === "keys";
   const scan = input.kind === "scan" && !typing && canScan();
   const placeholder =
     input.placeholder ||
@@ -518,9 +519,23 @@ function PuzzleStep(props: StepProps) {
         </button>
       )}
 
+      {view.together && view.together.of > 1 && <TogetherLine together={view.together} t={t} />}
+      {keys && input.posts && input.posts.length > 0 && (
+        <p className="pv-muted">{t("Turn your key at one of the posts: {{posts}}. One player at each.", { posts: input.posts.join(", ") })}</p>
+      )}
+
       <div className="pv-dock">
         <FeedbackLine feedback={feedback} />
-        {search && !timeUp ? (
+        {keys && !timeUp ? (
+          <button
+            type="button"
+            className="pv-btn pv-btn--primary pv-btn--wide"
+            disabled={locked || needsPlace}
+            onClick={() => onAction({ kind: "turn", node })}
+          >
+            {needsPlace ? t("Not there yet") : view.together?.mine ? t("Turn it again") : t("Turn your key")}
+          </button>
+        ) : search && !timeUp ? (
           <button
             type="button"
             className="pv-btn pv-btn--primary pv-btn--wide"
@@ -564,6 +579,29 @@ function PuzzleStep(props: StepProps) {
         )}
       </div>
     </>
+  );
+}
+
+/**
+ * How far the players are with a puzzle they do together: keys turned
+ * in a two-key launch, or players agreed on a unanimous answer. A key's
+ * count drops when its window closes, as the server says on recheck.
+ */
+function TogetherLine({ together, t }: { together: play.Together; t: Translate }) {
+  const { done, of, mine } = together;
+  const text =
+    together.kind === "keys"
+      ? t("{{done}} of {{of}} keys turned", { done, of }) + (mine ? ` · ${t("yours is")}` : "")
+      : t("{{done}} of {{of}} players have given the answer", { done, of }) + (mine ? ` · ${t("you have")}` : "");
+  return (
+    <p className="pv-together" role="status">
+      <span className="pv-together__dots" aria-hidden>
+        {Array.from({ length: of }, (_, i) => (
+          <span key={i} className={"pv-together__dot" + (i < done ? " is-on" : "")} />
+        ))}
+      </span>
+      {text}
+    </p>
   );
 }
 

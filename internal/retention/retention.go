@@ -250,6 +250,35 @@ func pruneCompletedEventPhotos(ctx context.Context, db *sql.DB, days int) {
 		)
 	`
 	runBoundedDelete(ctx, db, "retention.team_block_votes", votes, days)
+	// Who took which role is about a player too, and goes with the rest.
+	roles := `
+		DELETE FROM team_roles
+		WHERE ctid IN (
+		  SELECT r.ctid
+		  FROM team_roles r
+		  JOIN teams t ON t.id = r.team_id
+		  JOIN events ar ON ar.id = t.event_id
+		  WHERE ar.state IN ('completed','cancelled')
+		    AND COALESCE(ar.completed_at, ar.cancelled_at) IS NOT NULL
+		    AND COALESCE(ar.completed_at, ar.cancelled_at)::timestamptz < now() - make_interval(days => $1)
+		  LIMIT ` + strconv.Itoa(batchSize) + `
+		)
+	`
+	runBoundedDelete(ctx, db, "retention.team_roles", roles, days)
+	presses := `
+		DELETE FROM team_presses
+		WHERE ctid IN (
+		  SELECT p.ctid
+		  FROM team_presses p
+		  JOIN teams t ON t.id = p.team_id
+		  JOIN events ar ON ar.id = t.event_id
+		  WHERE ar.state IN ('completed','cancelled')
+		    AND COALESCE(ar.completed_at, ar.cancelled_at) IS NOT NULL
+		    AND COALESCE(ar.completed_at, ar.cancelled_at)::timestamptz < now() - make_interval(days => $1)
+		  LIMIT ` + strconv.Itoa(batchSize) + `
+		)
+	`
+	runBoundedDelete(ctx, db, "retention.team_presses", presses, days)
 }
 
 // photoBatchSize is smaller than batchSize: each row is a picture, and a

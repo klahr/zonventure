@@ -171,6 +171,9 @@ func simulate(g *graph.Graph, team *session.Team, a simulateAction, now time.Tim
 		act(func() (session.Result, *walk.Step, error) { return team.Skip(a.Node) })
 	case "leave":
 		act(func() (session.Result, *walk.Step, error) { return team.Leave(a.Node) })
+	case "turn":
+		// The simulated team is all its players: every key turns at once.
+		act(func() (session.Result, *walk.Step, error) { return team.Turn(a.Node) })
 	case "timeout":
 		act(func() (session.Result, *walk.Step, error) { return team.Timeout(a.Node) })
 	case "force":

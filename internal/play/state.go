@@ -192,8 +192,9 @@ func usesWalked(g *graph.Graph) bool {
 }
 
 // locate gives the team its position, each phone's where the locator
-// knows them — and so the asking phone's, for a request marked ForPhone —
-// and, where the graph asks, how far it has walked on its current node.
+// knows them — and so the asking phone's, and its player's roles, for a
+// request marked ForPhone — and, where the graph asks, how far it has
+// walked on its current node.
 func (e *Engine) locate(ctx context.Context, q Querier, s *teamState) error {
 	lat, lng, ok, err := e.locator().Position(ctx, q, s.teamID)
 	if err != nil {
@@ -202,14 +203,26 @@ func (e *Engine) locate(ctx context.Context, q Querier, s *teamState) error {
 	if ok {
 		s.Position = &session.Position{Lat: lat, Lng: lng}
 	}
+	me, forPhone := phoneOf(ctx)
+	var players []int64
+	if forPhone {
+		// A locator that does not tell phones apart places every one at
+		// the team's position.
+		s.Viewer = &session.Viewer{Slot: me, Position: s.Position}
+		// The players a step done together waits for.
+		var err error
+		if players, err = Players(ctx, q, s.teamID, me); err != nil {
+			return fmt.Errorf("reading players: %w", err)
+		}
+		s.Players = players
+	}
 	if pl, ok := e.locator().(PhoneLocator); ok {
 		phones, err := pl.Phones(ctx, q, s.teamID, s.Now)
 		if err != nil {
 			return fmt.Errorf("reading phone positions: %w", err)
 		}
-		me, forPhone := phoneOf(ctx)
 		if forPhone {
-			s.Viewer = &session.Viewer{}
+			s.Viewer.Position = nil
 		}
 		s.Phones = make([]session.Position, len(phones))
 		for i, p := range phones {
@@ -218,6 +231,14 @@ func (e *Engine) locate(ctx context.Context, q Querier, s *teamState) error {
 				s.Viewer.Position = &s.Phones[i]
 			}
 		}
+	}
+	if forPhone && s.G != nil && len(s.G.Roles) > 0 {
+		roles := s.G.RoleSlugs()
+		holdings, err := dealRoles(ctx, q, s.teamID, players, roles)
+		if err != nil {
+			return fmt.Errorf("dealing roles: %w", err)
+		}
+		s.Viewer.Roles = RolesOf(holdings, roles, me)
 	}
 	if s.G != nil && usesWalked(s.G) {
 		if s.WalkedMetres, err = walkedSince(ctx, q, s.teamID, s.NodeEnteredAt); err != nil {
@@ -370,6 +391,30 @@ func (s *teamState) loadRest(ctx context.Context, q Querier) error {
 	}
 	if err := closeRows(prows); err != nil {
 		return err
+	}
+
+	// What each player did on the current step, for one done together.
+	if s.Current != "" {
+		rows, err := q.QueryContext(ctx, `SELECT slot_id, value, pressed_at FROM team_presses WHERE team_id = $1 AND node = $2`,
+			s.teamID, s.Current)
+		if err != nil {
+			return err
+		}
+		for rows.Next() {
+			var slot int64
+			var p session.Press
+			if err := rows.Scan(&slot, &p.Value, &p.At); err != nil {
+				rows.Close()
+				return err
+			}
+			if s.Presses == nil {
+				s.Presses = map[int64]session.Press{}
+			}
+			s.Presses[slot] = p
+		}
+		if err := closeRows(rows); err != nil {
+			return err
+		}
 	}
 
 	brows, err := q.QueryContext(ctx, `SELECT hub, port FROM team_hub_branches WHERE team_id = $1`, s.teamID)

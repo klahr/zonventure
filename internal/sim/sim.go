@@ -937,31 +937,66 @@ func (b *bot) spreadOut(v session.View) bool {
 			}
 			return true
 		}
-		from := *b.t.Position
-		phones := make([]session.Position, max(b.t.Size, 1))
-		arrive := b.r.now
-		for i := range phones {
-			phones[i] = from
-			if i < len(posts) {
-				phones[i] = b.inside(posts[i])
-				d := session.HaversineMeters(from.Lat, from.Lng, phones[i].Lat, phones[i].Lng)
-				arrive = math.Max(arrive, b.r.now+d/(b.pace*(0.75+b.rng().Float64()*0.5)))
-			}
-		}
-		b.t.Phones = phones
-		// The map follows the first player, who keeps the team's phone.
-		b.t.Position = &phones[0]
-		b.out.Path = append(b.out.Path, Waypoint{T: round(arrive, 1), Lat: phones[0].Lat, Lng: phones[0].Lng})
-		names := make([]string, len(zones))
-		for i, slug := range zones {
-			z, _ := b.r.zone(slug)
-			names[i] = z.Name
-		}
-		b.r.emit(b.id, "split", v.Node, strings.Join(names, ", "))
-		b.wake = arrive + 5 + b.rng().Float64()*20
+		b.split(v.Node, posts)
 		return true
 	}
 	return false
+}
+
+// split sends one player to each of posts, the rest staying where the
+// team is, and wakes the team once the last has arrived.
+func (b *bot) split(node string, posts []graph.Zone) {
+	from := *b.t.Position
+	phones := make([]session.Position, max(b.t.Size, 1))
+	arrive := b.r.now
+	for i := range phones {
+		phones[i] = from
+		if i < len(posts) {
+			phones[i] = b.inside(posts[i])
+			d := session.HaversineMeters(from.Lat, from.Lng, phones[i].Lat, phones[i].Lng)
+			arrive = math.Max(arrive, b.r.now+d/(b.pace*(0.75+b.rng().Float64()*0.5)))
+		}
+	}
+	b.t.Phones = phones
+	// The map follows the first player, who keeps the team's phone.
+	b.t.Position = &phones[0]
+	b.out.Path = append(b.out.Path, Waypoint{T: round(arrive, 1), Lat: phones[0].Lat, Lng: phones[0].Lng})
+	var names []string
+	for _, z := range posts {
+		if !slices.Contains(names, z.Name) {
+			names = append(names, z.Name)
+		}
+	}
+	b.r.emit(b.id, "split", node, strings.Join(names, ", "))
+	b.wake = arrive + 5 + b.rng().Float64()*20
+}
+
+// launch turns a two-key launch's keys: at once, the team being all its
+// players — after sending one to each post first, where it has posts.
+func (b *bot) launch(v session.View, n graph.Node) {
+	a := n.PuzzleCfg.Answer
+	if len(a.Posts) > 0 && b.t.Position != nil {
+		var posts []graph.Zone
+		for _, slug := range a.Posts[:min(len(a.Posts), max(b.t.Size, 1))] {
+			if z, ok := b.r.zone(slug); ok {
+				posts = append(posts, z)
+			}
+		}
+		if len(posts) == 1 && b.t.Phones == nil {
+			if !b.goTo(&posts[0]) {
+				return
+			}
+		} else if !b.spreadAs(posts) {
+			b.split(v.Node, posts)
+			return
+		}
+	}
+	// Logged as solving it, which is what turning every key is.
+	if res, ok := b.do("right", func() (session.Result, *walk.Step, error) { return b.t.Turn(v.Node) }); ok && res.Accepted {
+		b.later(5 + b.rng().Float64()*15)
+		return
+	}
+	b.waitFor(v)
 }
 
 // spreadAs reports whether the team is split up already with a player in
@@ -1079,6 +1114,10 @@ func (b *bot) puzzle(v session.View) {
 	}
 	if cfg.Kind() == graph.AnswerSearch {
 		b.search(v, n)
+		return
+	}
+	if cfg.Kind() == graph.AnswerKeys {
+		b.launch(v, n)
 		return
 	}
 	b.attempt(v, n, spent)

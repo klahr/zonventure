@@ -2,7 +2,7 @@
 // language — the adventure's own, which the server writes into
 // graph.language — and other languages live in graph.translations, keyed
 // by field: the same keys the engine reads (graph.NodeKey, ZoneKey,
-// JournalKey, SectionKey, MetaKey in Go). A missing translation falls
+// JournalKey, RoleKey, SectionKey, MetaKey in Go). A missing translation falls
 // back to the main text.
 
 import type { Block, Graph, Node } from "./types.ts";
@@ -12,6 +12,7 @@ export const nodeKey = (slug: string, field: string) => `n:${slug}:${field}`;
 export const blockKey = (slug: string, id: string) => nodeKey(slug, `block:${id}`);
 export const zoneKey = (slug: string) => `z:${slug}`;
 export const journalKey = (slug: string, field: string) => `j:${slug}:${field}`;
+export const roleKey = (slug: string, field: "name" | "text") => `r:${slug}:${field}`;
 /** A journal section's heading: one per section, however many notes share it. */
 export const sectionKey = (section: string) => `js:${section}`;
 /** The adventure's own title, intro and outro, which live outside the graph. */
@@ -177,6 +178,10 @@ export function adventureTexts(g: Graph, meta: AdventureMeta = {}): Translatable
     out.push({ key: sectionKey(s), label: "Journal section", main: s });
   }
   for (const z of g.zones ?? []) if (z.name?.trim() && !z.group) out.push({ key: zoneKey(z.slug), label: "Place name", main: z.name });
+  for (const r of g.roles ?? []) {
+    if (r.name?.trim()) out.push({ key: roleKey(r.slug, "name"), label: "Role", main: r.name });
+    if (r.text?.trim()) out.push({ key: roleKey(r.slug, "text"), label: `Role: ${r.name || r.slug}`, main: r.text, multiline: true });
+  }
   if (g.time_limit?.text?.trim()) out.push({ key: TIME_UP_KEY, label: "Time is up: message", main: g.time_limit.text, multiline: true });
   return out;
 }

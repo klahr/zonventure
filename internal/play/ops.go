@@ -258,6 +258,11 @@ func (e *Engine) act(ctx context.Context, teamID int64, fn func(*session.Team) (
 		}
 		return res, err
 	}
+	// A player's part in a step done together, kept until the team
+	// leaves it — which commit then clears.
+	if err := savePress(ctx, tx, s); err != nil {
+		return Result{}, err
+	}
 	if step != nil {
 		err = e.commit(ctx, tx, s, *step)
 	} else {
@@ -274,6 +279,29 @@ func (e *Engine) act(ctx context.Context, teamID int64, fn func(*session.Team) (
 		return Result{}, err
 	}
 	return res, nil
+}
+
+// savePress persists the press an action recorded or withdrew.
+func savePress(ctx context.Context, tx *sql.Tx, s *teamState) error {
+	c := s.PressChanged
+	if c == nil {
+		return nil
+	}
+	if c.Press == nil {
+		_, err := tx.ExecContext(ctx, `DELETE FROM team_presses WHERE team_id = $1 AND node = $2 AND slot_id = $3`, s.teamID, s.Current, c.Slot)
+		return err
+	}
+	_, err := tx.ExecContext(ctx, `
+		INSERT INTO team_presses(team_id, node, slot_id, value, pressed_at) VALUES ($1, $2, $3, $4, $5)
+		ON CONFLICT (team_id, node, slot_id) DO UPDATE SET value = EXCLUDED.value, pressed_at = EXCLUDED.pressed_at
+	`, s.teamID, s.Current, c.Slot, c.Press.Value, c.Press.At)
+	return err
+}
+
+// Turn turns the asking player's key in a two-key launch (see
+// session.Team.Turn); the request must be ForPhone.
+func (e *Engine) Turn(ctx context.Context, teamID int64, node string) (Result, error) {
+	return e.act(ctx, teamID, func(t *session.Team) (Result, *walk.Step, error) { return t.Turn(node) })
 }
 
 // stay persists an action that left the team where it was: a wrong
@@ -297,6 +325,13 @@ func (e *Engine) commit(ctx context.Context, tx *sql.Tx, s *teamState, step walk
 	now := s.Now
 	old := s.Current
 	s.Apply(step)
+	if s.Current != old {
+		// Done together or not, the step is behind the team: what each
+		// player did there starts again on a later visit.
+		if _, err := tx.ExecContext(ctx, `DELETE FROM team_presses WHERE team_id = $1 AND node = $2`, s.teamID, old); err != nil {
+			return err
+		}
+	}
 
 	if step.From != "" && s.Nodes[step.From] != nil {
 		if err := saveNodeRow(ctx, tx, s, step.From); err != nil {

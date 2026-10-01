@@ -345,3 +345,39 @@ func TestTeamsWalkToOpenABranch(t *testing.T) {
 		}
 	}
 }
+
+// A two-key launch with a key at the church and one at the harbour: a
+// team splits up to turn them, and moves on; unanimous answers pass for
+// a simulated team, which answers as one.
+func TestTeamsTurnKeysAtPosts(t *testing.T) {
+	g := course()
+	for i, n := range g.Nodes {
+		if n.Slug == "riddle" {
+			cfg := *n.PuzzleCfg
+			cfg.Unanimous = true
+			g.Nodes[i].PuzzleCfg = &cfg
+		}
+	}
+	g.Nodes = append(g.Nodes, graph.Node{Slug: "launch", Type: graph.Puzzle, PuzzleCfg: &graph.PuzzleConfig{
+		Answer:  &graph.Answer{Kind: graph.AnswerKeys, Posts: []string{"church", "harbour"}},
+		Outputs: []graph.Output{{Port: "launched", Trigger: graph.OnAnswer, Points: 10}},
+	}})
+	for i, e := range g.Edges {
+		if e.From == "stations" && e.FromPort == "done" {
+			g.Edges[i].To = "launch"
+		}
+	}
+	g.Edges = append(g.Edges, graph.Edge{From: "launch", FromPort: "launched", To: "end"})
+
+	c := config()
+	c.Teams = 5
+	res := run(t, g, c)
+	if res.Ended != "finished" {
+		t.Fatalf("ended %q, want finished", res.Ended)
+	}
+	for _, s := range res.Steps {
+		if s.Node == "launch" && s.Left != c.Teams {
+			t.Errorf("%d teams launched, want %d", s.Left, c.Teams)
+		}
+	}
+}

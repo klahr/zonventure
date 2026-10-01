@@ -1088,3 +1088,141 @@ func TestHereIsTheViewersPhone(t *testing.T) {
 		t.Error("a zone that does not exist is nowhere")
 	}
 }
+
+// The team as a whole holds every role; a phone holds its player's.
+func TestHasRole(t *testing.T) {
+	tm := New(&graph.Graph{Roles: []graph.Role{{Slug: "navigator"}, {Slug: "decoder"}}}, t0)
+	if !tm.HasRole("navigator") || !tm.HasRole("decoder") {
+		t.Error("the team as a whole holds every role")
+	}
+	tm.Viewer = &Viewer{Roles: []string{"decoder"}}
+	if tm.HasRole("navigator") || !tm.HasRole("decoder") {
+		t.Error("the decoder's phone holds the decoder only")
+	}
+	if v := tm.View(); len(v.Roles) != 2 || v.Roles[0].Slug != "navigator" {
+		t.Errorf("the view lists the adventure's roles: %+v", v.Roles)
+	}
+}
+
+// together builds start → p → end with p's config, and a team of the
+// given players standing on p.
+func together(t *testing.T, cfg graph.PuzzleConfig, zones []graph.Zone, players ...int64) *Team {
+	t.Helper()
+	cfg.Outputs = append(cfg.Outputs, graph.Output{Port: "solved", Trigger: graph.OnAnswer, Points: 5,
+		Matchers: []match.Matcher{{Kind: match.Exact, Value: "seven"}, {Kind: match.Exact, Value: "7"}}})
+	g := &graph.Graph{
+		Zones: zones,
+		Nodes: []graph.Node{{Slug: "start", Type: graph.Start}, {Slug: "p", Type: graph.Puzzle, PuzzleCfg: &cfg}, {Slug: "end", Type: graph.End}},
+		Edges: []graph.Edge{{From: "start", FromPort: "out", To: "p"}, {From: "p", FromPort: "solved", To: "end"}},
+	}
+	tm, step, err := Start(g, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tm.Apply(step)
+	tm.Players = players
+	tm.Size = len(players)
+	return tm
+}
+
+// as makes the team's actions the given player's.
+func (t *Team) as(slot int64, pos *Position) *Team {
+	t.Viewer = &Viewer{Slot: slot, Position: pos}
+	t.PressChanged = nil
+	return t
+}
+
+// Two keys turned within the window open the launch; one alone waits,
+// and one turned too long before the other no longer counts.
+func TestTwoKeyLaunch(t *testing.T) {
+	tm := together(t, graph.PuzzleConfig{Answer: &graph.Answer{Kind: graph.AnswerKeys}}, nil, 1, 2)
+	res, step, err := tm.as(1, nil).Turn("p")
+	if err != nil || step != nil || res.Waiting == nil || res.Waiting.Done != 1 || res.Waiting.Of != 2 {
+		t.Fatalf("first key: %+v %v %v", res, step, err)
+	}
+	if tm.PressChanged == nil || tm.PressChanged.Slot != 1 {
+		t.Errorf("the first key should be recorded: %+v", tm.PressChanged)
+	}
+	if v := tm.View(); v.Together == nil || v.Together.Done != 1 || !v.Together.Mine || v.RecheckAt == nil {
+		t.Errorf("the turner's view: %+v", v.Together)
+	}
+
+	// Eleven seconds on, the first key has gone back.
+	tm.Now = t0.Add(11 * time.Second)
+	if res, _, _ := tm.as(2, nil).Turn("p"); res.Waiting == nil || res.Waiting.Done != 1 {
+		t.Fatalf("keys 11 s apart: %+v", res)
+	}
+	tm.Now = t0.Add(15 * time.Second)
+	res, step, err = tm.as(1, nil).Turn("p")
+	if err != nil || !res.Accepted || step == nil || res.Points != 5 {
+		t.Fatalf("both keys within 4 s: %+v %v %v", res, step, err)
+	}
+
+	// A player alone turns the one key the launch needs of them.
+	solo := together(t, graph.PuzzleConfig{Answer: &graph.Answer{Kind: graph.AnswerKeys, Keys: 3}}, nil, 9)
+	if res, _, _ := solo.as(9, nil).Turn("p"); !res.Accepted {
+		t.Errorf("alone: %+v", res)
+	}
+	// Answering a launch is not how it opens.
+	if _, _, err := together(t, graph.PuzzleConfig{Answer: &graph.Answer{Kind: graph.AnswerKeys}}, nil, 1, 2).as(1, nil).Answer("p", "7"); err == nil {
+		t.Error("a launch should refuse a typed answer")
+	}
+}
+
+// With posts, each key is turned at a post of its own: two at the same
+// post are one, and a player at no post is told to go to one.
+func TestTwoKeyLaunchAtPosts(t *testing.T) {
+	zones := []graph.Zone{
+		{Slug: "east", Lat: 59.30, Lng: 18.00, RadiusM: 40},
+		{Slug: "west", Lat: 59.31, Lng: 18.00, RadiusM: 40},
+	}
+	east, west, nowhere := Position{Lat: 59.30, Lng: 18.00}, Position{Lat: 59.31, Lng: 18.00}, Position{Lat: 59.40, Lng: 18.00}
+	tm := together(t, graph.PuzzleConfig{Answer: &graph.Answer{Kind: graph.AnswerKeys, Posts: []string{"east", "west"}}}, zones, 1, 2, 3)
+	if _, _, err := tm.as(1, &nowhere).Turn("p"); err != ErrNotHere {
+		t.Errorf("at no post: %v, want ErrNotHere", err)
+	}
+	tm.as(1, &east).Turn("p")
+	if res, _, _ := tm.as(2, &east).Turn("p"); res.Waiting == nil || res.Waiting.Done != 1 || res.Waiting.Of != 2 {
+		t.Fatalf("two at the east post: %+v", res.Waiting)
+	}
+	if res, _, _ := tm.as(3, &west).Turn("p"); !res.Accepted {
+		t.Errorf("east and west: %+v", res)
+	}
+}
+
+// A unanimous answer counts once every player has given a right one that
+// leads the same way; a wrong one counts as ever and withdraws theirs.
+func TestUnanimousAnswer(t *testing.T) {
+	tm := together(t, graph.PuzzleConfig{Unanimous: true}, nil, 1, 2, 3)
+	res, step, err := tm.as(1, nil).Answer("p", "seven")
+	if err != nil || step != nil || res.Accepted || res.Waiting == nil || res.Waiting.Done != 1 || res.Waiting.Of != 3 {
+		t.Fatalf("one of three: %+v %v %v", res, step, err)
+	}
+	if tm.Nodes["p"].Attempts != 0 {
+		t.Error("a right answer waiting for the others is not a wrong guess")
+	}
+	tm.as(2, nil).Answer("p", "7")
+	// Player 1 changes their mind to something wrong: counted, and withdrawn.
+	if res, _, _ := tm.as(1, nil).Answer("p", "eight"); res.Waiting != nil || tm.Nodes["p"].Attempts != 1 {
+		t.Errorf("a wrong answer: %+v, attempts %d", res, tm.Nodes["p"].Attempts)
+	}
+	if tm.PressChanged == nil || tm.PressChanged.Press != nil {
+		t.Errorf("the wrong answer should withdraw player 1's: %+v", tm.PressChanged)
+	}
+	if v := tm.View(); v.Together == nil || v.Together.Done != 1 || v.Together.Mine {
+		t.Errorf("player 1's view after withdrawing: %+v", v.Together)
+	}
+	tm.as(3, nil).Answer("p", "seven")
+	res, step, err = tm.as(1, nil).Answer("p", "7")
+	if err != nil || !res.Accepted || step == nil {
+		t.Fatalf("all three: %+v %v %v", res, step, err)
+	}
+
+	// For the team as a whole, and for a player alone, one answer is all.
+	if res, _, _ := together(t, graph.PuzzleConfig{Unanimous: true}, nil, 1, 2).Answer("p", "7"); !res.Accepted {
+		t.Errorf("the team as a whole: %+v", res)
+	}
+	if res, _, _ := together(t, graph.PuzzleConfig{Unanimous: true}, nil, 5).as(5, nil).Answer("p", "7"); !res.Accepted {
+		t.Errorf("alone: %+v", res)
+	}
+}

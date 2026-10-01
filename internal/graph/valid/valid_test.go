@@ -422,12 +422,30 @@ func TestHereOnlyInBlocks(t *testing.T) {
 	})
 	g.Edges[1] = edge("p1", "solved", "gate")
 	g.Edges = append(g.Edges, edge("gate", graph.PortPass, "p2"), edge("gate", graph.PortFail, "p2"))
-	assertCode(t, Check(g), "cond.here.team")
+	assertCode(t, Check(g), "cond.player.team")
 
 	b := valid3()
 	b.Zones = g.Zones
 	b.Nodes[1].PuzzleCfg.Blocks = append(b.Nodes[1].PuzzleCfg.Blocks, graph.Block{ID: "x", Kind: graph.BlockText, Text: "Psst.", Show: &graph.Show{When: here}})
-	assertNoCode(t, Check(b), "cond.here.team")
+	assertNoCode(t, Check(b), "cond.player.team")
+}
+
+// A role is the player's too: a block may ask for one the adventure
+// declares, a gate may not ask at all.
+func TestRoleReferences(t *testing.T) {
+	navigator := cond.Predicate{Op: cond.OpRole, Role: "navigator"}
+	b := valid3()
+	b.Nodes[1].PuzzleCfg.Blocks = append(b.Nodes[1].PuzzleCfg.Blocks, graph.Block{ID: "x", Kind: graph.BlockText, Text: "The map.", Show: &graph.Show{When: navigator}})
+	assertCode(t, Check(b), "ref.role.unknown")
+	b.Roles = []graph.Role{{Slug: "navigator", Name: "Navigator"}}
+	assertNoCode(t, Check(b), "ref.role.unknown")
+
+	g := valid3()
+	g.Roles = b.Roles
+	g.Nodes = append(g.Nodes, graph.Node{Slug: "gate", Type: graph.Gate, GateCfg: &graph.GateConfig{Condition: navigator}})
+	g.Edges[1] = edge("p1", "solved", "gate")
+	g.Edges = append(g.Edges, edge("gate", graph.PortPass, "p2"), edge("gate", graph.PortFail, "p2"))
+	assertCode(t, Check(g), "cond.player.team")
 }
 
 func TestZoneReferences(t *testing.T) {
@@ -901,4 +919,26 @@ func TestWebhookEffect(t *testing.T) {
 			t.Errorf("%s: codes %v, want exactly one", name, got)
 		}
 	}
+}
+
+// A two-key launch's posts are zones, one key at each; unanimous is for
+// answers the routes' accepted answers decide.
+func TestTogetherChecks(t *testing.T) {
+	keys := func(a graph.Answer) *graph.Graph {
+		g := valid3()
+		g.Nodes[1].PuzzleCfg.Answer = &a
+		return g
+	}
+	assertCode(t, Check(keys(graph.Answer{Kind: graph.AnswerKeys, Posts: []string{"ghost"}})), "ref.zone.unknown")
+	g := keys(graph.Answer{Kind: graph.AnswerKeys, Keys: 3, Posts: []string{"square"}})
+	g.Zones = []graph.Zone{{Slug: "square", Lat: 59.3, Lng: 18.1, RadiusM: 30}}
+	assertCode(t, Check(g), "keys.posts")
+	assertCode(t, Check(keys(graph.Answer{Kind: graph.AnswerKeys, Window: -1})), "keys.counts")
+	assertNoCode(t, Check(keys(graph.Answer{Kind: graph.AnswerKeys})), "puzzle.answer.kind")
+
+	u := valid3()
+	u.Nodes[1].PuzzleCfg.Unanimous = true
+	assertNoCode(t, Check(u), "puzzle.unanimous.kind")
+	u.Nodes[1].PuzzleCfg.Answer = &graph.Answer{Kind: graph.AnswerKeys}
+	assertCode(t, Check(u), "puzzle.unanimous.kind")
 }

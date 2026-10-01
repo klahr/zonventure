@@ -56,6 +56,7 @@ func (f *fakeState) TeamSize() int                 { return f.teamSize }
 func (f *fakeState) InZone(z string) bool          { return f.zones[z] }
 func (f *fakeState) PlayersInZone(z string) int    { return f.players[z] }
 func (f *fakeState) Here(z string) bool            { return f.here[z] }
+func (f *fakeState) HasRole(r string) bool         { return r == "navigator" }
 func (f *fakeState) ZonesHeld(zs []string) bool {
 	for _, z := range zs {
 		if f.players[z] == 0 {

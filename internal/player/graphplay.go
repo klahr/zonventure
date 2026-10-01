@@ -421,6 +421,9 @@ func (h *Handlers) PostPlayAction(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		res, err = e.Cheat(ctx, tc.TeamID, req.Node)
+	case "turn":
+		// A two-key launch: this player's key.
+		res, err = e.Turn(ctx, tc.TeamID, req.Node)
 	case "leave":
 		res, err = e.Leave(ctx, tc.TeamID, req.Node)
 	case "timeout":
@@ -548,7 +551,12 @@ func (h *Handlers) recordPlay(ctx context.Context, tc teamContext, slotID int64,
 		activity.Record(ctx, h.DB, tc.EventID, &teamID, actor, activity.AnswerRight,
 			map[string]any{"node": req.Node, "port": res.Port, "points": 0, "cheat": true})
 	}
-	if action == "answer" {
+	if action == "turn" && res.Accepted {
+		activity.Record(ctx, h.DB, tc.EventID, &teamID, actor, activity.AnswerRight,
+			map[string]any{"node": req.Node, "port": res.Port, "points": res.Points})
+	}
+	// A right answer waiting for teammates to agree is neither yet.
+	if action == "answer" && res.Waiting == nil {
 		if res.Accepted {
 			activity.Record(ctx, h.DB, tc.EventID, &teamID, actor, activity.AnswerRight,
 				map[string]any{"node": req.Node, "port": res.Port, "points": res.Points})

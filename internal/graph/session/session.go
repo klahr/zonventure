@@ -157,6 +157,14 @@ type Team struct {
 	// organisers' look at it, a simulated team — where "here" is wherever
 	// one of its players is. Never stored.
 	Viewer *Viewer `json:"-"`
+	// Players are the slots of the players who are playing, for steps
+	// done together (see together.go), and Presses what each did on the
+	// current step; PressChanged is the press an action recorded or
+	// withdrew, for the engine to persist. Players is nil for the team as
+	// a whole. None is stored with the team.
+	Players      []int64         `json:"-"`
+	Presses      map[int64]Press `json:"-"`
+	PressChanged *PressChange    `json:"-"`
 	// WalkedMetres is how far the team has walked on its current node:
 	// read from its phones' positions by the live engine, added up from
 	// the moves the simulator makes.
@@ -364,7 +372,7 @@ func (t *Team) PlayersInZone(slug string) int {
 // own inside it, at the same time. Zones may overlap, and a player
 // standing in two of them holds only one, so this is a matching of
 // players to zones rather than a count per zone. Teams are small and so
-// are the lists, so the plain augmenting-path search is plenty.
+// are the lists (see matching).
 func (t *Team) ZonesHeld(slugs []string) bool {
 	slugs = slices.Compact(slices.Sorted(slices.Values(slugs)))
 	players := t.players()
@@ -383,37 +391,18 @@ func (t *Team) ZonesHeld(slugs []string) bool {
 			in[i][j] = ZoneContains(*z, p.Lat, p.Lng)
 		}
 	}
-	holder := make([]int, len(players)) // player → zone held, -1 for none
-	for j := range holder {
-		holder[j] = -1
-	}
-	var claim func(i int, tried []bool) bool
-	claim = func(i int, tried []bool) bool {
-		for j := range players {
-			if !in[i][j] || tried[j] {
-				continue
-			}
-			tried[j] = true
-			if holder[j] < 0 || claim(holder[j], tried) {
-				holder[j] = i
-				return true
-			}
-		}
-		return false
-	}
-	for i := range slugs {
-		if !claim(i, make([]bool, len(players))) {
-			return false
-		}
-	}
-	return true
+	return matching(in, len(players)) == len(slugs)
 }
 
 // Viewer is one phone of the team.
 type Viewer struct {
+	// Slot is the player's.
+	Slot int64
 	// Position is where the phone is; nil when it has not reported
 	// lately, and then it is nowhere.
 	Position *Position
+	// Roles are the roles its player holds: claimed, or dealt to them.
+	Roles []string
 }
 
 // Here reports whether the player the view is for is inside the zone.
@@ -423,6 +412,13 @@ func (t *Team) Here(slug string) bool {
 	}
 	z := t.zoneBySlug(slug)
 	return z != nil && t.Viewer.Position != nil && ZoneContains(*z, t.Viewer.Position.Lat, t.Viewer.Position.Lng)
+}
+
+// HasRole reports whether the player the view is for holds the role. The
+// team as a whole holds every role: the organisers see what any of its
+// players may, and a simulated team is all of its players at once.
+func (t *Team) HasRole(role string) bool {
+	return t.Viewer == nil || slices.Contains(t.Viewer.Roles, role)
 }
 
 // players are where the team's players stand: see Phones.
@@ -546,6 +542,9 @@ type Result struct {
 	// TimeUp is set when the adventure's time limit moved the team
 	// instead of the action it asked for.
 	TimeUp bool `json:"time_up,omitempty"`
+	// Waiting is set when a step done together took the player's part
+	// but waits for the others: keys still to turn, players to agree.
+	Waiting *Together `json:"waiting,omitempty"`
 
 	// View is the team's state after the action.
 	View View `json:"view"`
@@ -586,15 +585,12 @@ func (t *Team) Answer(node, guess string) (Result, *walk.Step, error) {
 	}
 	cfg := n.PuzzleCfg
 	r := t.Row(n.Slug)
-
-	if r.BlockedUntil != nil && t.Now.Before(*r.BlockedUntil) {
-		return Result{BlockedUntil: r.BlockedUntil}, nil, ErrLocked
+	if res, err := t.mayAnswer(n); err != nil {
+		return res, nil, err
 	}
-	if cfg.Zone != "" && !t.InZone(cfg.Zone) {
-		return Result{}, nil, ErrNotHere
-	}
-	if cfg.TimeLimitSeconds > 0 && t.NodeElapsedSeconds() > float64(cfg.TimeLimitSeconds) {
-		return Result{}, nil, ErrTimeUp
+	if cfg.Kind() == graph.AnswerKeys {
+		// Turned, not answered: see Turn.
+		return Result{}, nil, ErrWrongNode
 	}
 	if cfg.Kind() == graph.AnswerQuestions && t.unanswered(n) {
 		return Result{}, nil, ErrUnanswered
@@ -609,6 +605,13 @@ func (t *Team) Answer(node, guess string) (Result, *walk.Step, error) {
 			continue
 		}
 		points := float64(o.Points) * m.Multiplier
+		if cfg.Unanimous {
+			// Right, but it counts only once everyone says so; until then
+			// it is neither taken nor a wrong guess.
+			if w, all := t.agree(o.Port); !all {
+				return Result{Waiting: w}, nil, nil
+			}
+		}
 		if cfg.Kind() == graph.AnswerItems && !cfg.Answer.Keep {
 			// Used up before the walk, which may pass a gate asking
 			// what the team still carries.
@@ -631,6 +634,9 @@ func (t *Team) Answer(node, guess string) (Result, *walk.Step, error) {
 
 	// Wrong. Count it, lock out if configured, and take a pity path if
 	// the author set one and it is now due.
+	if cfg.Unanimous {
+		t.disagree()
+	}
 	r.Attempts++
 	res := Result{}
 	reply := cfg.ResponseIndex(r.Attempts)
@@ -657,6 +663,23 @@ func (t *Team) Answer(node, guess string) (Result, *walk.Step, error) {
 		res.Response = t.G.Tr(t.Lang, graph.NodeKey(n.Slug, fmt.Sprintf("reply:%d", reply)), cfg.Responses[reply].Text)
 	}
 	return res, nil, nil
+}
+
+// mayAnswer refuses an answer the puzzle is not taking now: locked out
+// after a wrong guess, the team not at its zone, its time run out.
+func (t *Team) mayAnswer(n graph.Node) (Result, error) {
+	cfg := n.PuzzleCfg
+	r := t.Row(n.Slug)
+	if r.BlockedUntil != nil && t.Now.Before(*r.BlockedUntil) {
+		return Result{BlockedUntil: r.BlockedUntil}, ErrLocked
+	}
+	if cfg.Zone != "" && !t.InZone(cfg.Zone) {
+		return Result{}, ErrNotHere
+	}
+	if cfg.TimeLimitSeconds > 0 && t.NodeElapsedSeconds() > float64(cfg.TimeLimitSeconds) {
+		return Result{}, ErrTimeUp
+	}
+	return Result{}, nil
 }
 
 // outputZoneOK applies an output's zone constraint, including the

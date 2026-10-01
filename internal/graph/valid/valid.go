@@ -471,6 +471,7 @@ func checkReferences(r *reporter, g *graph.Graph) {
 	items := slugSet(len(g.Items), func(i int) string { return g.Items[i].Slug })
 	counters := slugSet(len(g.Counters), func(i int) string { return g.Counters[i].Slug })
 	journal := slugSet(len(g.Journal), func(i int) string { return g.Journal[i].Slug })
+	roles := slugSet(len(g.Roles), func(i int) string { return g.Roles[i].Slug })
 
 	checkPredicate := func(slug string, p cond.Predicate) {
 		refs := cond.Collect(p)
@@ -494,13 +495,19 @@ func checkReferences(r *reporter, g *graph.Graph) {
 				r.err("ref.zone.unknown", slug, "", "condition refers to zone %q, which is not declared", ref)
 			}
 		}
+		for _, ref := range refs.Roles {
+			if !roles[ref] {
+				r.err("ref.role.unknown", slug, "", "condition refers to role %q, which is not declared", ref)
+			}
+		}
 	}
 
 	// A gate or a branch decides for the whole team, so it cannot ask
-	// where "this player" is: which player would that be?
+	// about "this player" — where they are, or their role: which player
+	// would that be?
 	checkTeamPredicate := func(slug, port string, p cond.Predicate) {
-		if cond.UsesHere(p) {
-			r.err("cond.here.team", slug, port, "only a block's show condition can ask where this player is; use players_in_zone for the team")
+		if cond.ForPlayer(p) {
+			r.err("cond.player.team", slug, port, "only a block's show condition can ask about this player, where they are or which role they hold; use players_in_zone for the team")
 		}
 	}
 
@@ -528,6 +535,16 @@ func checkReferences(r *reporter, g *graph.Graph) {
 			for _, o := range n.PuzzleCfg.Outputs {
 				if o.Zone != "" && !zones[o.Zone] {
 					r.err("ref.zone.unknown", n.Slug, o.Port, "output is constrained to zone %q, which is not declared", o.Zone)
+				}
+			}
+			if n.PuzzleCfg.Unanimous && !n.PuzzleCfg.UsesMatchers() {
+				r.err("puzzle.unanimous.kind", n.Slug, "", "only an answer the routes' accepted answers decide can be unanimous: a typed answer, a scan, a lock or an unmarked choice")
+			}
+			if a := n.PuzzleCfg.Answer; a != nil && a.Kind == graph.AnswerKeys {
+				for _, z := range a.Posts {
+					if !zones[z] {
+						r.err("ref.zone.unknown", n.Slug, "", "a key is turned at zone %q, which is not declared", z)
+					}
 				}
 			}
 			if a := n.PuzzleCfg.Answer; a != nil && a.Kind == graph.AnswerItems {
@@ -822,6 +839,16 @@ func checkAnswer(r *reporter, g *graph.Graph, n graph.Node, owners map[string]st
 						"a team that leaves for its items cannot come back: the hub %q counts this branch done once entered. Make it a home screen so its branches stay open", hub)
 				}
 			}
+		}
+	case graph.AnswerKeys:
+		if a.Keys < 0 || a.Window < 0 {
+			r.err("keys.counts", n.Slug, "", "a two-key launch needs a key count and a window of zero or more")
+		}
+		if len(a.Posts) > 0 && a.Keys > len(a.Posts) {
+			r.err("keys.posts", n.Slug, "", "a two-key launch with posts turns one key at each, so it cannot ask for %d keys at %d posts", a.Keys, len(a.Posts))
+		}
+		if a.Keys == 1 {
+			r.warn("keys.one", n.Slug, "", "one key is a button, not a launch: ask for two or more, or leave it at every player")
 		}
 	case graph.AnswerScan:
 	case graph.AnswerQuestions:

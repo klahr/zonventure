@@ -14,6 +14,8 @@ export function App() {
   const game = useGame(t);
   const s = game.state;
   const view = s?.view;
+  // Only worth saying while there are roles to tell apart.
+  const myRoles = (view?.roles?.length ?? 0) > 1 ? (view?.roles ?? []).filter((r) => r.mine).map((r) => r.name || r.slug) : [];
   const running = s?.event.state === "running";
   // The team's language for a translated adventure also switches the
   // app's own words, where the app has them.
@@ -168,7 +170,10 @@ export function App() {
         {s.event.org_logo_url && <img className="app-bar__logo" src={s.event.org_logo_url} alt={s.event.org_name ?? ""} />}
         <div className="app-bar__who">
           <div className="app-bar__title" onClick={tapTitle}>{s.event.adventure_title || "Zonventure"}</div>
-          <div className="app-bar__team">{s.team.name}</div>
+          <div className="app-bar__team">
+            {s.team.name}
+            {myRoles.length > 0 && <span className="app-bar__role"> · {myRoles.join(", ")}</span>}
+          </div>
         </div>
         {cheatPassword && <span className="app-status">{t("Cheating")}</span>}
         {(!game.online || game.queued > 0) && (

@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { ApiError, play } from "@zonventure/api";
-import type { Translate } from "@zonventure/play-ui";
+import { Markdown, type Translate } from "@zonventure/play-ui";
 import type { I18n } from "@zonventure/i18n";
 
 const LANG_NAMES: Record<string, string> = { en: "English", sv: "Svenska" };
 
 /**
- * The player's menu: who they are on the team, the team's name, the
- * app's language, location sharing, and their data — sign out on a
+ * The player's menu: who they are on the team, the team's name, their
+ * roles, the app's language, location sharing, and their data — sign out on a
  * shared phone, or erase it all. Beside the game; nothing here moves
  * the team on.
  *
@@ -136,6 +136,7 @@ export function Menu(props: {
                 hint={t("Everyone on the team sees the change.")}
               />
               <TeamPicture team={state.team} t={t} onSaved={props.onRenamed} />
+              {(state.view?.roles?.length ?? 0) > 0 && <Roles roles={state.view?.roles ?? []} t={t} onChanged={props.onRenamed} />}
 
               {langs.length > 1 && (
                 <label className="app-menu__field">
@@ -208,6 +209,62 @@ export function Menu(props: {
             </div>
       </div>
     </>
+  );
+}
+
+/**
+ * The adventure's roles: who holds each, what the player's own are for,
+ * and a button to take one or give it back. A role nobody took is dealt,
+ * so taking one only says "this one is mine"; a teammate's chosen role
+ * is theirs until they give it back, which the team sorts out aloud.
+ */
+function Roles(props: { roles: play.RoleView[]; t: Translate; onChanged: () => void }) {
+  const { roles, t } = props;
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const change = async (role: string, claim: boolean) => {
+    setBusy(role);
+    setError(null);
+    try {
+      await play.claimRole(role, claim);
+    } catch (err) {
+      setError(err instanceof ApiError && err.code === "role_taken"
+        ? t("A teammate has chosen that role. Ask them to give it back first.")
+        : t("Something went wrong. Try again."));
+    } finally {
+      setBusy(null);
+      props.onChanged();
+    }
+  };
+  return (
+    <div className="app-menu__field">
+      <span className="app-menu__label">{t("Roles")}</span>
+      <span className="app-menu__hint">{t("Each role sees something the others don't. Roles nobody chooses are shared out.")}</span>
+      <ul className="app-roles">
+        {roles.map((r) => (
+          <li key={r.slug} className={"app-role" + (r.mine ? " is-mine" : "")}>
+            <div className="app-role__head">
+              <span className="app-role__name">{r.name || r.slug}</span>
+              <span className="app-role__holder">
+                {r.mine ? t("You") : r.holder || t("Nobody yet")}
+                {!r.claimed && r.holder ? ` · ${t("shared out")}` : ""}
+              </span>
+            </div>
+            {r.mine && r.text && <Markdown className="app-role__text" text={r.text} />}
+            {r.mine && r.claimed && (
+              <button type="button" className="pv-btn" disabled={busy !== null} onClick={() => void change(r.slug, false)}>{t("Give back")}</button>
+            )}
+            {/* A role only shared out is anyone's to choose; a teammate's choice is theirs. */}
+            {!r.claimed && (
+              <button type="button" className="pv-btn" disabled={busy !== null} onClick={() => void change(r.slug, true)}>
+                {r.mine ? t("Keep it") : t("Take it")}
+              </button>
+            )}
+          </li>
+        ))}
+      </ul>
+      {error && <p className="app-menu__error" role="alert">{error}</p>}
+    </div>
   );
 }
 

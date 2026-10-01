@@ -26,7 +26,7 @@ import type {
   WebhookMethod,
   Zone,
 } from "@zonventure/graph";
-import { ANSWER_KINDS, MAX_SLOTS, WEBHOOK_METHODS, answerOptions, isGraded, optionValue, withAnswerKind, withBlocks, matcherLabel, nodeBySlug, portLabel, puzzlesInto, referAnswer, resolveAnswer, updateNode } from "@zonventure/graph";
+import { ANSWER_KINDS, MAX_SLOTS, usesMatchers, WEBHOOK_METHODS, answerOptions, isGraded, optionValue, withAnswerKind, withBlocks, matcherLabel, nodeBySlug, portLabel, puzzlesInto, referAnswer, resolveAnswer, updateNode } from "@zonventure/graph";
 import { THEMES } from "@zonventure/play-ui";
 import { useT } from "../i18n.tsx";
 import { emails } from "@zonventure/api";
@@ -461,6 +461,7 @@ const ANSWER_KIND_LABEL: Record<AnswerKind | "", string> = {
   tiles: "Tile picture",
   search: "Search by place",
   questions: "Quiz questions on the step",
+  keys: "Two-key launch: every player turns a key",
 };
 
 const KEYBOARD_LABEL: Record<NonNullable<AnswerBar["keyboard"]> | "", string> = {
@@ -652,6 +653,20 @@ function puzzleParts(node: Node, cfg: PuzzleConfig, graph: Graph, onChange: (c: 
       };
       break;
     }
+    case "keys":
+      how = {
+        title: t.t("Two-key launch"),
+        hint: t.t("Each player turns their own key on their own phone. When enough keys are turned within the window, the first route below is taken. A team with fewer players needs only as many keys as it has, so one player alone can still finish."),
+        summary: (
+          <>
+            <SumRow label={t.t("Keys")}>{answer.keys ? answer.keys : answer.posts?.length ? t.t("one at each post") : t.t("every player")}</SumRow>
+            <SumRow label={t.t("Within")}>{fmtSecs(t, answer.window || 10)}</SumRow>
+            {answer.posts?.length ? <SumRow label={t.t("Posts")}>{answer.posts.map((z) => zoneName(graph, z)).join(", ")}</SumRow> : null}
+          </>
+        ),
+        form: <KeysForm graph={graph} keys={answer} onChange={(a) => onChange({ ...cfg, answer: a })} />,
+      };
+      break;
     case "questions":
       how = {
         title: t.t("Quiz questions"),
@@ -709,7 +724,7 @@ function puzzleParts(node: Node, cfg: PuzzleConfig, graph: Graph, onChange: (c: 
               ? o.trigger === "attempts"
                 ? t.t("after {{n}} wrong guesses", { n: o.after_attempts ?? 0 })
                 : triggerLabel(o)
-              : answer?.kind === "tiles" || answer?.kind === "lock" || isGraded(answer) || answer?.kind === "search" || answer?.kind === "questions" || answer?.kind === "items"
+              : answer?.kind === "tiles" || answer?.kind === "lock" || isGraded(answer) || answer?.kind === "search" || answer?.kind === "questions" || answer?.kind === "items" || answer?.kind === "keys"
                 ? triggerLabel(o)
                 : (o.matchers ?? []).map(matcherLabel).join(" / ") || t.t("no answer yet");
           const extra = [o.points ? t.t("{{n}} p", { n: o.points }) : "", o.zone ? (o.inverted ? t.t("outside {{zone}}", { zone: zoneName(graph, o.zone) }) : t.t("in {{zone}}", { zone: zoneName(graph, o.zone) })) : ""]
@@ -914,6 +929,7 @@ function puzzleParts(node: Node, cfg: PuzzleConfig, graph: Graph, onChange: (c: 
       [cfg.skip_after_guesses ? t.t("after {{n}} guesses", { n: cfg.skip_after_guesses }) : "", cfg.skip_after_seconds ? t.t("after {{time}}", { time: fmtSecs(t, cfg.skip_after_seconds) }) : ""].filter(Boolean).join(t.t(" and ")),
     ],
     cfg.repeatable && answer?.kind !== "search" && [t.t("Coming back"), t.t("asked again")],
+    cfg.unanimous && [t.t("Unanimous"), t.t("every player gives the answer")],
   ].filter((x): x is string[] => !!x);
   parts.push({
     id: "rules",
@@ -950,10 +966,56 @@ function puzzleParts(node: Node, cfg: PuzzleConfig, graph: Graph, onChange: (c: 
           <input type="checkbox" checked={!!cfg.repeatable} onChange={(e) => onChange(withOptional({ ...cfg }, "repeatable", e.target.checked || undefined))} />
           {t.t("Ask again if the team comes back")}
         </label>
+        {usesMatchers(cfg) && (
+          <>
+            <label className="check">
+              <input type="checkbox" checked={!!cfg.unanimous} onChange={(e) => onChange(withOptional({ ...cfg }, "unanimous", e.target.checked || undefined))} />
+              {t.t("Every player must give the answer")}
+            </label>
+            <p className="field__hint">
+              {t.t("Each player answers on their own phone, and the answer counts once all of them have given one that leads the same way. Until then the phones say how many agree. A player alone answers for the team.")}
+            </p>
+          </>
+        )}
       </>
     ),
   });
   return parts;
+}
+
+/** A two-key launch: how many keys, how close together, and where. */
+function KeysForm({ graph, keys, onChange }: { graph: Graph; keys: AnswerOf<"keys">; onChange: (a: AnswerOf<"keys">) => void }) {
+  const t = useT();
+  const posts = keys.posts ?? [];
+  return (
+    <>
+      <div className="box__row box__row--wrap">
+        <NumberField label={t.t("Keys (empty: every player)")} value={keys.keys} onChange={(n) => onChange(withOptional({ ...keys }, "keys", n && n > 0 ? n : undefined))} />
+        <NumberField label={t.t("Within (s)")} value={keys.window} onChange={(n) => onChange(withOptional({ ...keys }, "window", n && n > 0 ? n : undefined))} />
+      </div>
+      <Field label={t.t("Posts: turn each key at its own place (optional)")}>
+        <div className="cond__days">
+          {(graph.zones ?? []).length === 0 && <span className="field__hint">{t.t("— no zones yet —")}</span>}
+          {(graph.zones ?? []).filter((z) => !z.group).map((z) => {
+            const on = posts.includes(z.slug);
+            return (
+              <label key={z.slug} className="chip">
+                <input
+                  type="checkbox"
+                  checked={on}
+                  onChange={() => {
+                    const next = on ? posts.filter((x) => x !== z.slug) : [...posts, z.slug];
+                    onChange(withOptional({ ...keys }, "posts", next.length ? next : undefined));
+                  }}
+                />
+                {z.name || z.slug}
+              </label>
+            );
+          })}
+        </div>
+      </Field>
+    </>
+  );
 }
 
 const MATCHERS: { k: MatcherKind; label: string }[] = [

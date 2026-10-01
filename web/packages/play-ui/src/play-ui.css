@@ -1711,3 +1711,9 @@
 .static-map__pin path { fill: #d93b30; stroke: #fff; stroke-width: 1.5; }
 .static-map__pin circle { fill: #fff; }
 .static-map__pin text { font: 600 12px/1 system-ui, sans-serif; fill: #1f2a37; paint-order: stroke; stroke: #fff; stroke-width: 3px; stroke-linejoin: round; }
+
+/* Steps done together: a dot per key or player, lit as they come in. */
+.pv-together { display: flex; align-items: center; gap: var(--sp-2, 0.5rem); margin: 0; font-size: var(--text-sm, 0.875rem); color: var(--ink); }
+.pv-together__dots { display: inline-flex; gap: 0.25rem; }
+.pv-together__dot { width: 0.7rem; height: 0.7rem; border-radius: 50%; border: 2px solid var(--accent); }
+.pv-together__dot.is-on { background: var(--accent); }

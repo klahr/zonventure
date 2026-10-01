@@ -43,6 +43,7 @@ export function usesMatchers(p: PuzzleConfig): boolean {
     case "search":
     case "questions":
     case "items":
+    case "keys":
       return false;
     case "choice":
       return !isGraded(p.answer);
@@ -52,7 +53,7 @@ export function usesMatchers(p: PuzzleConfig): boolean {
 }
 
 /** How a puzzle can take its answer: typing it (undefined), or an AnswerKind. */
-export const ANSWER_KINDS: (AnswerKind | undefined)[] = [undefined, "scan", "choice", "lock", "items", "tiles", "search", "questions"];
+export const ANSWER_KINDS: (AnswerKind | undefined)[] = [undefined, "scan", "choice", "lock", "items", "tiles", "search", "questions", "keys"];
 
 /**
  * The puzzle answered another way. The routes keep their ports, so the
@@ -110,6 +111,9 @@ export function withAnswerKind(p: PuzzleConfig, kind: AnswerKind | undefined): P
     case "search":
       next.answer = { kind: "search" };
       break;
+    case "keys":
+      next.answer = { kind: "keys" };
+      break;
     case "questions": {
       next.answer = { kind: "questions" };
       const blocks = p.blocks ?? [];
@@ -118,6 +122,8 @@ export function withAnswerKind(p: PuzzleConfig, kind: AnswerKind | undefined): P
     }
   }
   const keep = usesMatchers(next);
+  // Everyone giving the same answer needs an answer to give.
+  if (!keep) delete next.unanimous;
   let i = 0;
   next.outputs = outputs.map((o) => {
     if (o.trigger !== "answer") return o;

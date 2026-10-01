@@ -196,6 +196,18 @@ func (h *Handlers) Forget(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback() //nolint:errcheck
 
+	// A forgotten player's roles go back to be dealt among the rest, and
+	// their keys and agreed answers no longer count.
+	if _, err := tx.ExecContext(r.Context(),
+		`DELETE FROM team_roles WHERE slot_id = $1`, slot.ID); err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "delete roles")
+		return
+	}
+	if _, err := tx.ExecContext(r.Context(),
+		`DELETE FROM team_presses WHERE slot_id = $1`, slot.ID); err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "delete presses")
+		return
+	}
 	if _, err := tx.ExecContext(r.Context(),
 		`DELETE FROM location_pings WHERE slot_id = $1`, slot.ID); err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "wipe pings", err)

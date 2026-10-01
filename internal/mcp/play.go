@@ -148,6 +148,7 @@ func (s *Server) registerPlayTools() {
 			"begin {start} picks where to begin; answer {guess} tries an answer; continue moves on from a story step; " +
 			"choose {port} takes a branch at a choice (port \"done\" moves on when allowed); back returns to the hub above; " +
 			"hint opens the next hint once it is available; skip and timeout take those routes when offered; leave goes to find missing items; " +
+			"turn turns the team's keys in a two-key launch — you are all the players, so every key at once, each at its post if it has posts; " +
 			"pick {block, choice} answers a quiz question, tie-breaker, suspect board or draw; use {block} works a gadget (shake, tilt, torch, tap the picture) to see what it shows; " +
 			"move {place} walks the team to a place by name or slug, taking walking time; wait {seconds} lets time pass, as for a hint to open; " +
 			"language {lang}; look shows the screen again with its pictures. " +
@@ -157,7 +158,7 @@ func (s *Server) registerPlayTools() {
 			"required": []string{"session", "kind"},
 			"properties": map[string]any{
 				"session": map[string]any{"type": "string"},
-				"kind":    map[string]any{"type": "string", "enum": []string{"begin", "answer", "continue", "choose", "back", "hint", "skip", "timeout", "leave", "pick", "use", "move", "wait", "language", "look"}},
+				"kind":    map[string]any{"type": "string", "enum": []string{"begin", "answer", "continue", "choose", "back", "hint", "skip", "timeout", "leave", "turn", "pick", "use", "move", "wait", "language", "look"}},
 				"start":   map[string]any{"type": "string"},
 				"guess":   map[string]any{"type": "string"},
 				"port":    map[string]any{"type": "string"},
@@ -337,7 +338,7 @@ func playAct(ctx context.Context, s *Server, raw json.RawMessage) (ToolCallResul
 			return errorResult("there is no hint to open on this screen"), nil
 		}
 		act["index"] = ps.view.NextHint.Index
-	case "continue", "back", "skip", "timeout", "leave":
+	case "continue", "back", "skip", "timeout", "leave", "turn":
 	default:
 		return errorResult("unknown action " + strconv.Quote(a.Kind)), nil
 	}
@@ -376,6 +377,13 @@ func playAct(ctx context.Context, s *Server, raw json.RawMessage) (ToolCallResul
 		}
 		if out.Port != "" {
 			note += " The step moved you on anyway."
+		}
+	case a.Kind == "turn" && out.Accepted:
+		note = "Every key turned: it opens."
+	case a.Kind == "turn":
+		note = "Not enough keys turned yet."
+		if w := out.Waiting; w != nil {
+			note = fmt.Sprintf("%d of %d keys turned: the rest are at posts where the team is not.", w.Done, w.Of)
 		}
 	case a.Kind == "hint":
 		ps.hints++
@@ -999,6 +1007,12 @@ func (ps *playSession) input(b *strings.Builder, v session.View) {
 		fmt.Fprintf(b, "→ A lock of %d wheels, each turning through: %s. Answer with the values joined by |.\n", in.Wheels, strings.Join(syms, ", "))
 	case "questions":
 		b.WriteString("→ Answer the questions above (pick), then answer with an empty guess.\n")
+	case "keys":
+		b.WriteString("→ A two-key launch: every player turns their key at once (turn)")
+		if len(in.Posts) > 0 {
+			fmt.Fprintf(b, ", one at each post: %s. Here the team moves as one, so it holds only posts where it stands; the event simulation splits teams up to turn keys apart", strings.Join(in.Posts, ", "))
+		}
+		b.WriteString(".\n")
 	case "items":
 		fmt.Fprintf(b, "→ Put an item from the backpack in each slot (%s); answer with item slugs joined by |.\n", strings.Join(in.Slots, " | "))
 		if in.Missing {

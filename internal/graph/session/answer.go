@@ -38,6 +38,18 @@ func (t *Team) answerInput(n graph.Node) *Input {
 	case graph.AnswerQuestions:
 		// The questions are blocks; the phone counts their picks.
 		return &Input{Kind: "questions"}
+	case graph.AnswerKeys:
+		in := &Input{Kind: "keys"}
+		for _, slug := range a.Posts {
+			if z := t.zoneBySlug(slug); z != nil {
+				name := z.Name
+				if name == "" {
+					name = slug
+				}
+				in.Posts = append(in.Posts, t.G.Tr(t.Lang, graph.ZoneKey(slug), name))
+			}
+		}
+		return in
 	case graph.AnswerItems:
 		// The slots' labels only: which item fits where stays on the server.
 		in := &Input{Kind: "items", Slots: make([]string, len(a.Slots))}
@@ -107,7 +119,7 @@ func (t *Team) judge(n graph.Node, o graph.Output, guess string) match.Result {
 		// One right answer, the solved order. Spaces are ignored;
 		// anything else — a short list, a repeat — is wrong.
 		return match.Result{OK: strings.ReplaceAll(guess, " ", "") == a.Solution(), Multiplier: 1}
-	case graph.AnswerSearch, graph.AnswerQuestions:
+	case graph.AnswerSearch, graph.AnswerQuestions, graph.AnswerKeys:
 		// Answer has already refused a team with questions left.
 		return match.Result{OK: true, Multiplier: 1}
 	case graph.AnswerItems:

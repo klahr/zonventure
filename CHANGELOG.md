@@ -24,7 +24,34 @@ product is **Zonventure**. Versions tagged here correspond to git tags
   the fountain is on the phone at the fountain, the code at the church
   on the one at the church, pictures included — another player's phone
   can neither see nor fetch it. Gates and hub branches decide for the
-  whole team, so the validator refuses `here` there (`cond.here.team`).
+  whole team, so the validator refuses `here` — and `role` — there
+  (`cond.player.team`).
+- **Two-key launch** — a new way of answering a puzzle: each player
+  turns their own key on their own phone, and it opens once enough keys
+  are turned within a few seconds of each other (every player, or the
+  number the author sets; 10 seconds unless set). With *posts*, each
+  key is turned at a zone of its own — one player at the east gate, one
+  at the west. A team with fewer players needs only as many keys as it
+  has, so a player alone can still finish. The phones show the keys
+  turned as dots, and the simulator splits teams up to turn keys at
+  posts.
+- **Unanimous answers** — a puzzle option: a right answer counts only
+  once every player has given one leading the same way, on their own
+  phone, so no one player can carry the team. Until then it is neither
+  taken nor a wrong guess, and the phones say how many have answered;
+  a wrong answer counts as ever and withdraws that player's. A player
+  alone answers for the team.
+- **Roles.** An adventure can declare roles — *Navigator*, *Decoder* —
+  under Resources, and a block's show condition can ask *This player
+  has a role* (`role`): the map on the navigator's phone, the key on the
+  decoder's. Players see who holds each role in the menu, and take one
+  or give it back there; a role nobody took is shared out to whoever
+  holds fewest, so every role is always someone's and a player alone
+  holds them all. A teammate's chosen role is theirs until they give it
+  back (`409 role_taken`). Organisers and the simulator see every
+  role's blocks. Roles are translated like the rest of the adventure,
+  a forgotten player's roles are shared out again, and who held which
+  is deleted with the event's other player data.
 - **Hubs wait for a team to get there.** A branch locked on where the
   players are — *inside a zone*, as well as the new conditions — no
   longer counts as permanently shut while the team has the players for

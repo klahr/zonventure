@@ -65,6 +65,9 @@ type Graph struct {
 	Items    []Item         `json:"items,omitempty"`
 	Counters []Counter      `json:"counters,omitempty"`
 	Journal  []JournalEntry `json:"journal,omitempty"`
+	// Roles are the parts a team's players take, so each knows something
+	// the others do not: see Role.
+	Roles []Role `json:"roles,omitempty"`
 
 	// JournalByUnlock lists a team's journal in the order it found the
 	// notes, rather than the order the author wrote them in — legacy's
@@ -103,6 +106,7 @@ type Graph struct {
 //	field:<i>:label  field:<i>:opt:<value>  sym:<value>  slot:<i>
 func NodeKey(slug, field string) string    { return "n:" + slug + ":" + field }
 func ZoneKey(slug string) string           { return "z:" + slug }
+func RoleKey(slug, field string) string    { return "r:" + slug + ":" + field }
 func JournalKey(slug, field string) string { return "j:" + slug + ":" + field }
 
 // SectionKey is a journal section's heading: one per section, however
@@ -420,6 +424,13 @@ type PuzzleConfig struct {
 	// that is what guarantees a Hub loop terminates.
 	Repeatable bool `json:"repeatable,omitempty"`
 
+	// Unanimous counts a right answer only once every player has given
+	// one that leads the same way, each on their own phone: no one player
+	// can carry the team. Until then the phone says how many agree. A
+	// wrong answer is wrong as ever, and withdraws that player's. Only for
+	// an answer the outputs' matchers decide (UsesMatchers).
+	Unanimous bool `json:"unanimous,omitempty"`
+
 	// Answer replaces the text box with another way of answering: a tile
 	// picture, a search, choices, a lock, the step's quiz questions or a
 	// QR scan. Nil is a typed answer.
@@ -509,6 +520,14 @@ const (
 	// output is taken and, unless Keep, the items are used up. Anything
 	// else is a wrong guess, and costs nothing from the backpack.
 	AnswerItems AnswerKind = "items"
+
+	// AnswerKeys is a two-key launch: each player turns their own key on
+	// their own phone, and the puzzle opens once Keys of them — all the
+	// players, by default — have turned within Window seconds of each
+	// other; with Posts, each at a post of their own. Then the first answer
+	// output is taken. A team with fewer players than it asks for needs
+	// only as many as it has, so a player alone opens it alone.
+	AnswerKeys AnswerKind = "keys"
 )
 
 // Answer is a puzzle's way of answering, one of the AnswerKinds. Only the
@@ -541,6 +560,25 @@ type Answer struct {
 	Slots   []ItemSlot `json:"slots,omitempty"`
 	Keep    bool       `json:"keep,omitempty"`
 	Missing string     `json:"missing,omitempty"`
+
+	// Keys: how many players must turn (0 is every player), within how
+	// many seconds of each other (0 is DefaultKeyWindow), and the zones a
+	// key must be turned at, one player at each.
+	Keys   int      `json:"keys,omitempty"`
+	Window int      `json:"window,omitempty"`
+	Posts  []string `json:"posts,omitempty"`
+}
+
+// DefaultKeyWindow is how close together, in seconds, a two-key launch's
+// keys must be turned when the author does not say.
+const DefaultKeyWindow = 10
+
+// KeyWindow is the seconds a two-key launch's keys must be turned within.
+func (a *Answer) KeyWindow() int {
+	if a.Window > 0 {
+		return a.Window
+	}
+	return DefaultKeyWindow
 }
 
 // What an item puzzle tells a team that lacks what its slots need:
@@ -603,7 +641,7 @@ func (p *PuzzleConfig) Kind() AnswerKind {
 // of those has matchers to write.
 func (p *PuzzleConfig) UsesMatchers() bool {
 	switch p.Kind() {
-	case AnswerTiles, AnswerSearch, AnswerQuestions, AnswerItems:
+	case AnswerTiles, AnswerSearch, AnswerQuestions, AnswerItems, AnswerKeys:
 		return false
 	case AnswerChoice:
 		return !p.Answer.Graded()
@@ -991,6 +1029,27 @@ type Counter struct {
 	Initial float64  `json:"initial,omitempty"`
 	Min     *float64 `json:"min,omitempty"`
 	Max     *float64 `json:"max,omitempty"`
+}
+
+// Role is a part a player takes on a team — the navigator, the decoder —
+// which a block's show condition asks about (cond.OpRole), so that what
+// one player is shown the others must be told. Players claim roles on
+// their phones; a role no one has claimed is dealt to the player with
+// fewest, so every role is someone's and a player alone holds them all.
+type Role struct {
+	Slug string `json:"slug"`
+	Name string `json:"name,omitempty"`
+	// Text tells the player what the role is for, when they take it.
+	Text string `json:"text,omitempty"`
+}
+
+// RoleSlugs are the roles' slugs, in the author's order.
+func (g *Graph) RoleSlugs() []string {
+	out := make([]string, len(g.Roles))
+	for i, r := range g.Roles {
+		out[i] = r.Slug
+	}
+	return out
 }
 
 // JournalEntry is unlockable lore.

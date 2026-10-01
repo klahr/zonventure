@@ -52,6 +52,7 @@ func (f *fakeState) InZone(string) bool           { return false }
 func (f *fakeState) PlayersInZone(string) int     { return 0 }
 func (f *fakeState) ZonesHeld([]string) bool      { return false }
 func (f *fakeState) Here(string) bool             { return false }
+func (f *fakeState) HasRole(string) bool          { return false }
 func (f *fakeState) Walked() float64              { return 0 }
 func (f *fakeState) Picked(string, string) string { return "" }
 func (f *fakeState) LocalTime() time.Time         { return f.now }
