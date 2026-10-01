@@ -130,6 +130,7 @@ func (s *Server) registerTools() {
 	s.registerGraphEditTools()
 	s.registerCollabTools()
 	s.registerSimulateTools()
+	s.registerPlayTools()
 	s.registerMediaTools()
 	s.registerGuideTool()
 	// Phase 4 — invitations + ICS export. invitations.go.

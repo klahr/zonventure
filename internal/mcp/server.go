@@ -33,6 +33,8 @@ type Server struct {
 	ResourceMetadata string
 	version          string
 	tools            *registry
+	// plays is the playtests under way (play.go).
+	plays playStore
 }
 
 // New wires up the server and registers the tool set. Tools are

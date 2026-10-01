@@ -21,6 +21,7 @@ import {
   Tag,
   Undo2,
   UploadCloud,
+  Users,
   X,
 } from "lucide-react";
 import { ApiError, adventures, type play } from "@zonventure/api";
@@ -72,6 +73,7 @@ import { LanguageSwitch, LanguagesSettings, TranslateStep, translationLanguages 
 import { ListView } from "./ListView.tsx";
 import { Resources } from "./Resources.tsx";
 import { Simulator, type SimMode } from "./Simulator.tsx";
+import { EventSim } from "./EventSim.tsx";
 import { FloatingWindow } from "./FloatingWindow.tsx";
 import { useInspectorWidth } from "./InspectorResize.tsx";
 import { TopBarPortal, useTopBarTitle } from "../topbar.tsx";
@@ -219,6 +221,7 @@ export function Designer({ slug }: { slug: string }) {
   // The preview floats beside the inspector, so a step can be edited and
   // watched at once.
   const [previewing, setPreviewing] = useState(false);
+  const [simulatingEvent, setSimulatingEvent] = useState(false);
   // On a phone the outline is the way in: a canvas cannot be worked with
   // a thumb. Elsewhere the canvas is, and the outline is a toggle away.
   const [listView, setListView] = useState(() => narrowScreen());
@@ -1115,6 +1118,16 @@ export function Designer({ slug }: { slug: string }) {
               </Button>
               <Button
                 variant="ghost"
+                disabled={readOnly}
+                onClick={() => setSimulatingEvent(true)}
+                title={t.t("Let bot teams play the draft as a whole event")}
+                aria-label={t.t("Simulate event")}
+              >
+                <Users size={ICON.sm} />
+                <span className="toolbar-label">{t.t("Simulate event")}</span>
+              </Button>
+              <Button
+                variant="ghost"
                 size="icon"
                 title={t.t("More")}
                 aria-label={t.t("More")}
@@ -1417,6 +1430,12 @@ export function Designer({ slug }: { slug: string }) {
             brand={brand}
             title={adventureTitle}
           />
+        </FloatingWindow>
+      )}
+
+      {simulatingEvent && (
+        <FloatingWindow title={t.t("Simulate event")} storageKey="zonventure.eventsim.pos" onClose={() => setSimulatingEvent(false)}>
+          <EventSim slug={slug} graph={draft!} envelope={simEnvelope!} />
         </FloatingWindow>
       )}
 

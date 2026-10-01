@@ -171,6 +171,8 @@ Pictures and sounds: with a shell, call get_media_upload_url and upload each fil
 ## Checking
 
 simulate_adventure plays the saved draft: {kind:"start"}, then {kind:"move", zone} to stand somewhere, {kind:"answer", node, guess}, {kind:"continue", node} past a story, {kind:"hint", node}, {kind:"wait", seconds}. Play the intended route, a wrong answer and a hint before saying it is ready.
+
+To playtest blind, as a team would, use play_start, then play_act once per action and play_end for the summary. The screens show what the phone shows and never the answers: solve from the text, pictures and hints, walk with move, let time pass with wait, and report where the team got stuck, what was unclear and whether the hints helped. For several teams at once, run one session per team in parallel.
 `, node("intro"), node("fish"), node("year"), node("end"), mustIndent(env.Graph.Zones[0]))
 	return b.String()
 }

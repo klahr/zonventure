@@ -461,6 +461,83 @@ export const simulate = <Env>(slug: string, envelope: Env, team: SimTeam | null,
     signal ? { signal } : {},
   );
 
+/** internal/sim: Config */
+export interface EventSimConfig {
+  teams: number;
+  members: number;
+  /** 0, all teams alike, to 1, very different. */
+  spread: number;
+  /** Seconds between the arranger's messages; 0 sends none. */
+  message_every: number;
+  max_seconds: number;
+  start_spread: number;
+  /** RFC 3339; time-of-day conditions read it. */
+  start?: string;
+  seed: number;
+}
+
+/** internal/sim: Event */
+export interface EventSimEvent {
+  t: number;
+  /** -1 for a message to every team. */
+  team: number;
+  kind: string;
+  node?: string;
+  text?: string;
+}
+
+/** internal/sim: Team */
+export interface EventSimTeam {
+  name: string;
+  members: number;
+  path: { t: number; lat: number; lng: number }[] | null;
+  pace: number;
+  skill: number;
+  patience: number;
+  finished?: number;
+  stalled?: boolean;
+  outcome?: string;
+  score: number;
+  walked: number;
+  wrong: number;
+  hints: number;
+  skips: number;
+  nudges: number;
+  steps: number;
+  progress: { t: number; score: number; steps: number }[] | null;
+}
+
+/** internal/sim: Step */
+export interface EventSimStep {
+  node: string;
+  title?: string;
+  type: NodeType;
+  reached: number;
+  left: number;
+  median: number;
+  max: number;
+  wrong: number;
+  hints: number;
+  skips: number;
+  timeouts: number;
+  nudges: number;
+  forced: number;
+  waiting: number;
+}
+
+/** internal/sim: Result */
+export interface EventSimResult {
+  start: string;
+  duration: number;
+  ended: "finished" | "time" | "stalled";
+  teams: EventSimTeam[];
+  events: EventSimEvent[] | null;
+  steps: EventSimStep[] | null;
+}
+
+export const simulateEvent = <Env>(slug: string, envelope: Env, config: EventSimConfig, signal?: AbortSignal) =>
+  post<EventSimResult>(`/api/admin/adventures/${encodeURIComponent(slug)}/simulate-event`, { envelope, config }, signal ? { signal } : {});
+
 // --- location ----------------------------------------------------------------
 
 /** internal/player: LocationRequest */

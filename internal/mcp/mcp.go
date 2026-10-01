@@ -176,12 +176,14 @@ type ToolCallResult struct {
 	IsError bool          `json:"isError,omitempty"`
 }
 
-// ToolContent is one chunk of tool output. We only emit "text" for
-// now — image/audio variants exist in the spec but tool results
-// here are JSON the model reads, not media.
+// ToolContent is one chunk of tool output: "text", mostly JSON the
+// model reads, or an "image" — base64 Data of MimeType — for a tool
+// that shows the model what a player sees (play.go).
 type ToolContent struct {
-	Type string `json:"type"`
-	Text string `json:"text,omitempty"`
+	Type     string `json:"type"`
+	Text     string `json:"text,omitempty"`
+	Data     string `json:"data,omitempty"`
+	MimeType string `json:"mimeType,omitempty"`
 }
 
 // textResult is shorthand for "wrap a string into the standard
