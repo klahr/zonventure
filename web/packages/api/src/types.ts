@@ -23,6 +23,8 @@ export interface Membership {
 export interface Whoami {
   id: number;
   username: string;
+  /** Their own picture, absent while they have none. */
+  avatar_url?: string;
   role: Role;
   org_id?: number;
   email?: string;

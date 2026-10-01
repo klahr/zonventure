@@ -128,6 +128,8 @@ type whoamiResponse struct {
 	// Instance-wide, not per-user, but bootstrapped here so the
 	// frontend doesn't need a second fetch.
 	MCPEnabled bool `json:"mcp_enabled,omitempty"`
+	// AvatarURL is the user's own picture, absent while they have none.
+	AvatarURL string `json:"avatar_url,omitempty"`
 }
 
 func (h *Handlers) userResponse(ctx context.Context, u User) whoamiResponse {
@@ -138,6 +140,7 @@ func (h *Handlers) userResponse(ctx context.Context, u User) whoamiResponse {
 		Memberships:       []membershipDTO{},
 		PasswordIsDefault: u.PasswordIsDefault,
 		MCPEnabled:        h.MCPEnabled,
+		AvatarURL:         AvatarURLs(ctx, h.DB, []int64{u.ID})[u.ID],
 	}
 	if u.ScheduledDeletionAt != nil {
 		resp.ScheduledDeletionAt = u.ScheduledDeletionAt.UTC().Format(time.RFC3339)

@@ -19,6 +19,8 @@ type Peer struct {
 	Name   string `json:"name"`
 	// Kind is "human" or "assistant".
 	Kind string `json:"kind"`
+	// Avatar is their picture's address, absent while they have none.
+	Avatar string `json:"avatar,omitempty"`
 	// Focus is what the peer has open — in the designer, a step's slug —
 	// since FocusSince: whoever opened a step first holds it.
 	Focus      string     `json:"focus,omitempty"`

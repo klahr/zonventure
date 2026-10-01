@@ -204,6 +204,8 @@ export function uploadMedia(slug: string, file: File) {
 export interface UserRef {
   id: number;
   name: string;
+  /** Their picture, absent while they have none. */
+  avatar?: string;
 }
 
 export interface Comment {

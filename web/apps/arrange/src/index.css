@@ -683,3 +683,7 @@ a.account-pop__row { color: inherit; text-decoration: none; box-sizing: border-b
 @media (prefers-reduced-motion: reduce) {
   .presence__peer, .presence__peer.is-assistant { animation: none; }
 }
+/* A picture fills the circle; the ring stays its person's colour. */
+.presence__peer { overflow: hidden; }
+.presence__peer img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.account-menu__avatar.person-avatar { width: 2rem; height: 2rem; }

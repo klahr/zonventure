@@ -61,3 +61,11 @@
 .dz .acct-banner__status.is-err { color: var(--dz-danger); }
 .dz a.acct-linkbtn { display: inline-flex; align-items: center; min-height: 32px; padding: 0 var(--dz-space-3); border: 1px solid var(--dz-border-strong); border-radius: var(--dz-r-2); background: var(--dz-surface); color: var(--dz-ink); font-weight: 600; text-decoration: none; }
 .dz a.acct-linkbtn:hover { border-color: var(--dz-ink-soft); }
+
+/* Your picture: a circle to click, and what to do with it. */
+.dz .acct-avatar { display: flex; align-items: center; gap: var(--dz-space-4); }
+.dz .acct-avatar__pick { position: relative; padding: 0; border: 0; border-radius: 50%; background: none; box-shadow: none; min-height: 0; cursor: pointer; }
+.dz .acct-avatar__overlay { position: absolute; inset: 0; display: grid; place-items: center; border-radius: 50%; background: rgb(0 0 0 / 0.45); color: #fff; opacity: 0; transition: opacity var(--dz-dur-2, 160ms); }
+.dz .acct-avatar__pick:hover .acct-avatar__overlay, .dz .acct-avatar__pick:focus-visible .acct-avatar__overlay { opacity: 1; }
+.dz .acct-avatar__actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--dz-space-2); }
+.dz .acct-avatar__hint { flex-basis: 100%; margin: 0; font-size: var(--dz-text-sm); color: var(--dz-muted); }

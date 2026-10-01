@@ -1,8 +1,15 @@
 package admin_test
 
 import (
+	"bytes"
+	"image"
+	pngenc "image/png"
+	"mime/multipart"
+	"net/textproto"
+
 	"context"
 	"encoding/json"
+	"github.com/klahr/zonventure/internal/storage/dbblob"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -323,5 +330,76 @@ func TestEmails_SendMeATest(t *testing.T) {
 	}
 	if s := do(t, r, "POST", "/api/admin/email-test", map[string]string{}, nil); s != 400 {
 		t.Errorf("empty test = %d, want 400", s)
+	}
+}
+
+// A person sets their own picture; it is served at a versioned address,
+// named beside them in the work, and can be cleared again.
+func TestUserAvatar(t *testing.T) {
+	db, cleanup := dbtest.Open(t)
+	defer cleanup()
+	var orgID, userID, advID int64
+	if err := db.QueryRow(`INSERT INTO organizations(name) VALUES ('Acme') RETURNING id`).Scan(&orgID); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(`INSERT INTO users(username, email, email_verified) VALUES ('pic', 'pic@acme.com', 1) RETURNING id`).Scan(&userID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO org_memberships(user_id, org_id, role) VALUES ($1, $2, 'org_admin')`, userID, orgID); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(`INSERT INTO adventures(slug, title, description, author, org_id) VALUES ('pics', 'P', '', '', $1) RETURNING id`, orgID).Scan(&advID); err != nil {
+		t.Fatal(err)
+	}
+	h := &admin.Handlers{DB: db, Storage: dbblob.New(db)}
+	r := chi.NewRouter()
+	r.Use(injectUser(auth.User{ID: userID, Username: "pic", Role: auth.RoleOrgAdmin, OrgID: &orgID}))
+	r.Post("/api/admin/me/avatar", h.SetMyAvatar)
+	r.Delete("/api/admin/me/avatar", h.DeleteMyAvatar)
+	r.Get("/api/admin/users/{userID}/avatar", h.ServeUserAvatar)
+	r.Get("/api/admin/adventures/{slug}/collab", h.GetCollab)
+
+	// A 600×400 PNG: it is kept at most 256 wide.
+	img := image.NewRGBA(image.Rect(0, 0, 600, 400))
+	var png bytes.Buffer
+	if err := pngenc.Encode(&png, img); err != nil {
+		t.Fatal(err)
+	}
+	var body bytes.Buffer
+	mw := multipart.NewWriter(&body)
+	part, _ := mw.CreatePart(textproto.MIMEHeader{"Content-Disposition": {`form-data; name="file"; filename="me.png"`}, "Content-Type": {"image/png"}})
+	part.Write(png.Bytes())
+	mw.Close()
+	req := httptest.NewRequest("POST", "/api/admin/me/avatar", &body)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	var set struct {
+		AvatarURL string `json:"avatar_url"`
+	}
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &set) != nil || !strings.Contains(set.AvatarURL, "/users/"+strconv.FormatInt(userID, 10)+"/avatar?v=") {
+		t.Fatalf("set = %d %s", w.Code, w.Body.String())
+	}
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest("GET", set.AvatarURL, nil))
+	if w.Code != 200 || !strings.HasPrefix(w.Header().Get("Content-Type"), "image/") {
+		t.Fatalf("serve = %d %s", w.Code, w.Header().Get("Content-Type"))
+	}
+	if got, _, err := image.Decode(bytes.NewReader(w.Body.Bytes())); err != nil || got.Bounds().Dx() > 256 {
+		t.Errorf("stored picture: %v, err %v", got.Bounds(), err)
+	}
+	var c struct {
+		People []struct{ Avatar string } `json:"people"`
+	}
+	if do(t, r, "GET", "/api/admin/adventures/pics/collab", nil, &c); len(c.People) != 1 || c.People[0].Avatar != set.AvatarURL {
+		t.Errorf("collab people = %+v", c.People)
+	}
+	if s := do(t, r, "DELETE", "/api/admin/me/avatar", nil, nil); s != 204 {
+		t.Fatalf("delete = %d", s)
+	}
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest("GET", set.AvatarURL, nil))
+	if w.Code != 404 {
+		t.Errorf("after delete = %d, want 404", w.Code)
 	}
 }

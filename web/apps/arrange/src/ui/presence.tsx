@@ -17,6 +17,8 @@ export interface Peer {
   touched?: string[];
   /** What an assistant said it is doing. */
   note?: string;
+  /** Their picture, absent while they have none. */
+  avatar?: string;
   since: string;
 }
 
@@ -161,7 +163,7 @@ export function PresenceBar({
             disabled={!onFollow}
             onClick={() => onFollow?.(on ? null : p)}
           >
-            {p.kind === "assistant" ? <Bot size={14} aria-hidden /> : initials(p.name.replace(/@.*/, ""))}
+            {p.kind === "assistant" ? <Bot size={14} aria-hidden /> : p.avatar ? <img src={p.avatar} alt="" /> : initials(p.name.replace(/@.*/, ""))}
           </button>
         );
       })}

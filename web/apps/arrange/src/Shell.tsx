@@ -7,7 +7,7 @@ import { useT } from "./i18n.tsx";
 import { useSession } from "./session.tsx";
 import { href, useRoute, type Route } from "./router.ts";
 import { TopBarSlot, TopBarTitle } from "./topbar.tsx";
-import { Avatar, DialogProvider, Loading, ToastProvider } from "./ui/index.ts";
+import { Avatar, DialogProvider, Loading, PersonAvatar, ToastProvider } from "./ui/index.ts";
 import "./designer/dz.css";
 import "./ui/console.css";
 import { DashboardPage } from "./pages/dashboard/index.tsx";
@@ -388,9 +388,13 @@ function AccountMenu({ user, orgName, collapsed, onLogout }: { user: Whoami; org
         aria-label={t.t("Account menu")}
         title={collapsed ? user.username : undefined}
       >
-        <span className="account-menu__avatar" aria-hidden>
-          {user.username.slice(0, 1).toUpperCase()}
-        </span>
+        {user.avatar_url ? (
+          <PersonAvatar name={user.username} src={user.avatar_url} size={32} className="account-menu__avatar" />
+        ) : (
+          <span className="account-menu__avatar" aria-hidden>
+            {user.username.slice(0, 1).toUpperCase()}
+          </span>
+        )}
         <span className="account-menu__who nav-label">
           <strong>{user.username}</strong>
           {sub && <span>{sub}</span>}

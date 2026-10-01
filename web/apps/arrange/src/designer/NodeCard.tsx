@@ -187,7 +187,7 @@ function NodeCardImpl({ data, selected }: NodeProps<CardNode>) {
           )}
           {data.talk.owner && (
             <span className="card__owner" style={{ "--peer": data.talk.ownerColor } as React.CSSProperties} title={t.t("Owner: {{name}}", { name: data.talk.owner })}>
-              {initials(data.talk.owner)}
+              {data.talk.ownerAvatar ? <img src={data.talk.ownerAvatar} alt="" /> : initials(data.talk.owner)}
             </span>
           )}
         </div>

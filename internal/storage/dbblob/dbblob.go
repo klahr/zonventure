@@ -116,6 +116,48 @@ func (s *Store) DeleteAdventureAvatar(ctx context.Context, slug string) error {
 	return err
 }
 
+func (s *Store) PutUserAvatar(ctx context.Context, userID int64, content []byte, mimeType string) error {
+	res, err := s.DB.ExecContext(ctx, `
+		UPDATE users
+		   SET avatar_mime_type = $1, avatar_size_bytes = $2, avatar_content = $3, avatar_updated_at = now()
+		 WHERE id = $4
+	`, mimeType, int64(len(content)), content, userID)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return storage.ErrEntityMissing
+	}
+	return nil
+}
+
+func (s *Store) GetUserAvatar(ctx context.Context, userID int64) ([]byte, string, error) {
+	var (
+		mime    sql.NullString
+		content []byte
+	)
+	err := s.DB.QueryRowContext(ctx, `SELECT avatar_mime_type, avatar_content FROM users WHERE id = $1`, userID).Scan(&mime, &content)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, "", storage.ErrEntityMissing
+	}
+	if err != nil {
+		return nil, "", err
+	}
+	if !mime.Valid || len(content) == 0 {
+		return nil, "", storage.ErrNoBlob
+	}
+	return content, mime.String, nil
+}
+
+func (s *Store) DeleteUserAvatar(ctx context.Context, userID int64) error {
+	_, err := s.DB.ExecContext(ctx, `
+		UPDATE users
+		   SET avatar_mime_type = NULL, avatar_size_bytes = NULL, avatar_content = NULL, avatar_updated_at = NULL
+		 WHERE id = $1
+	`, userID)
+	return err
+}
+
 func (s *Store) PutOrgLogo(ctx context.Context, orgID int64, content []byte, mimeType string) error {
 	res, err := s.DB.ExecContext(ctx, `
 		UPDATE organizations

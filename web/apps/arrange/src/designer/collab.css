@@ -134,3 +134,5 @@
 .card__status--review { color: var(--dz-info, var(--accent)); }
 .card__status--ready { background: var(--success); color: #fff; }
 .card__status--ready svg circle { display: none; }
+.card__owner { overflow: hidden; }
+.card__owner img { display: block; width: 100%; height: 100%; object-fit: cover; }

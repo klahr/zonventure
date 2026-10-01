@@ -3,7 +3,7 @@ import { Bot, Check, CheckCircle2, GitPullRequestArrow, MessageSquare, Pencil, R
 import { adventures } from "@zonventure/api";
 import { blocksOf, nodeBySlug, type Graph, type GraphDiff, type Node } from "@zonventure/graph";
 import { useT } from "../i18n.tsx";
-import { initials, relTime } from "../ui/index.ts";
+import { PersonAvatar, relTime } from "../ui/index.ts";
 import { peerColor } from "../ui/presence.tsx";
 import { KINDS } from "./blocks/registry.tsx";
 import { summarize } from "./blocks/summary.ts";
@@ -59,6 +59,7 @@ export interface CardTalk {
   status: StepStatus;
   owner?: string;
   ownerColor?: string;
+  ownerAvatar?: string;
   /** Changed since this author last looked. */
   unseen?: boolean;
   /** Has an open thread that mentions this author. */
@@ -87,6 +88,7 @@ export function cardTalk(collab: Collab | null, unseen: ReadonlySet<string>, me:
     if (s.owner) {
       v.owner = s.owner.name.replace(/@.*/, "");
       v.ownerColor = peerColor({ user_id: s.owner.id, kind: "human" });
+      if (s.owner.avatar) v.ownerAvatar = s.owner.avatar;
     }
   }
   for (const slug of unseen) get(slug).unseen = true;
@@ -154,7 +156,10 @@ function Composer({
   }, [text, caret]);
   const options = useMemo(() => {
     if (!typing) return [];
-    const all = [{ name: ASSISTANT, assistant: true }, ...people.map((p) => ({ name: p.name, assistant: false }))];
+    const all: { name: string; assistant: boolean; id: number; avatar?: string | undefined }[] = [
+      { name: ASSISTANT, assistant: true, id: 0 },
+      ...people.map((p) => ({ name: p.name, assistant: false, id: p.id, avatar: p.avatar })),
+    ];
     return all.filter((o) => o.name.toLowerCase().includes(typing.query)).slice(0, 6);
   }, [typing, people]);
   useEffect(() => setPick(0), [typing?.query]);
@@ -234,7 +239,7 @@ function Composer({
                     insert(o.name);
                   }}
                 >
-                  {o.assistant ? <Bot size={ICON.sm} aria-hidden /> : <span className="talk__avatar">{initials(o.name.replace(/@.*/, ""))}</span>}
+                  {o.assistant ? <Bot size={ICON.sm} aria-hidden /> : <PersonAvatar name={o.name} src={o.avatar} size={22} color={peerColor({ user_id: o.id, kind: "human" })} />}
                   {o.assistant ? t.t("The assistant") : o.name}
                 </button>
               </li>
@@ -491,13 +496,13 @@ function ThreadView({
       {thread.suggestion && <SuggestionView slug={slug} thread={thread} graph={graph} onAccept={onAccept} onChanged={onChanged} />}
       {thread.comments.map((c) => (
         <div key={c.id} className={"talk__comment" + (c.assistant ? " is-assistant" : "")}>
-          <span
-            className="talk__avatar"
-            style={{ "--peer": peerColor({ user_id: c.author?.id ?? 0, kind: c.assistant ? "assistant" : "human" }) } as React.CSSProperties}
-            aria-hidden
-          >
-            {c.assistant ? <Bot size={12} /> : initials((c.author?.name ?? "?").replace(/@.*/, ""))}
-          </span>
+          {c.assistant ? (
+            <span className="talk__avatar" style={{ "--peer": peerColor({ user_id: c.author?.id ?? 0, kind: "assistant" }) } as React.CSSProperties} aria-hidden>
+              <Bot size={12} />
+            </span>
+          ) : (
+            <PersonAvatar name={c.author?.name ?? "?"} src={c.author?.avatar} size={24} color={peerColor({ user_id: c.author?.id ?? 0, kind: "human" })} />
+          )}
           <div className="talk__comment-main">
             <div className="talk__meta">
               <strong>{who(c, t)}</strong>
@@ -891,8 +896,8 @@ function Board({ slug, graph, collab, onChanged, onGo }: { slug: string; graph: 
                       </span>
                     )}
                     {s?.owner && (
-                      <span className="talk__avatar" style={{ "--peer": peerColor({ user_id: s.owner.id, kind: "human" }) } as React.CSSProperties} title={s.owner.name}>
-                        {initials(s.owner.name.replace(/@.*/, ""))}
+                      <span title={s.owner.name}>
+                        <PersonAvatar name={s.owner.name} src={s.owner.avatar} size={22} color={peerColor({ user_id: s.owner.id, kind: "human" })} />
                       </span>
                     )}
                   </span>

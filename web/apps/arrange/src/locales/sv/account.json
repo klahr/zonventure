@@ -88,5 +88,11 @@
   "Someone @mentions you in a comment on an adventure.": "Någon @nämner dig i en kommentar på ett äventyr.",
   "Someone makes you the owner of a step.": "Någon gör dig till ägare av ett steg.",
   "Someone suggests a change to a step you own, or accepts or declines a suggestion you made.": "Någon föreslår en ändring i ett steg du äger, eller godtar eller avböjer ett förslag du gjort.",
-  "Someone moves a step you own to review.": "Någon flyttar ett steg du äger till granskning."
+  "Someone moves a step you own to review.": "Någon flyttar ett steg du äger till granskning.",
+  "Your picture": "Din bild",
+  "Others see it beside your comments, on the steps you own and when you work on the same adventure.": "Andra ser den bredvid dina kommentarer, på stegen du är ansvarig för och när ni arbetar med samma äventyr.",
+  "Choose a picture": "Välj en bild",
+  "Change picture": "Byt bild",
+  "Upload a picture": "Ladda upp en bild",
+  "A square photo works best. PNG, JPEG, WebP or SVG, up to 5 MB.": "En kvadratisk bild fungerar bäst. PNG, JPEG, WebP eller SVG, högst 5 MB."
 }

@@ -100,7 +100,7 @@ func (h *Handlers) WSArrange(w http.ResponseWriter, r *http.Request) {
 		peerID := ws.NewPeerID()
 		live, unsub := h.Hub.Subscribe(ws.LiveTopic(topic))
 		conn.SendKind("presence_self", map[string]any{"id": peerID})
-		leave := h.Hub.Join(topic, ws.Peer{ID: peerID, UserID: me.ID, Name: me.Username, Kind: ws.PeerHuman})
+		leave := h.Hub.Join(topic, ws.Peer{ID: peerID, UserID: me.ID, Name: me.Username, Kind: ws.PeerHuman, Avatar: auth.AvatarURLs(wctx, h.DB, []int64{me.ID})[me.ID]})
 		mu.Lock()
 		liveTopic, livePeer = topic, peerID
 		mu.Unlock()

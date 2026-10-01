@@ -131,6 +131,10 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 		r.With(auth.RequireSession).Post("/me/password", adminH.ChangeMyPassword)
 		r.With(auth.RequireSession).Post("/me/email", adminH.ChangeMyEmail)
 		r.With(auth.RequireSession).Post("/me/username", adminH.ChangeMyUsername)
+		// A person's own picture (admin/me_avatar.go).
+		r.With(auth.RequireSession).Post("/me/avatar", adminH.SetMyAvatar)
+		r.With(auth.RequireSession).Delete("/me/avatar", adminH.DeleteMyAvatar)
+		r.Get("/users/{userID}/avatar", adminH.ServeUserAvatar)
 		// Which notification emails the caller gets (admin/emails.go).
 		r.Get("/me/email-prefs", adminH.GetEmailPrefs)
 		r.With(auth.RequireSession).Put("/me/email-prefs", adminH.SetEmailPrefs)

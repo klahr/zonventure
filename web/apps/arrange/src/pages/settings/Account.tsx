@@ -11,6 +11,7 @@ import { SignInCard } from "./account-security.tsx";
 import { AuditCard, McpTokensCard, SessionsCard } from "./account-activity.tsx";
 import { DeleteCard, DownloadsCard } from "./account-data.tsx";
 import { NotificationsCard } from "./account-notifications.tsx";
+import { AvatarCard } from "./account-avatar.tsx";
 import "./account.css";
 
 /**
@@ -26,6 +27,7 @@ export function AccountTab() {
   return (
     <div className="acct">
       <Section title={t.t("Profile and preferences")}>
+        <AvatarCard user={user} />
         <RoleCard user={user} />
         <AppearanceCard />
         <HelpCard user={user} />

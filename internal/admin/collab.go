@@ -49,8 +49,9 @@ const AssistantMention = "assistant"
 var stepStatuses = map[string]bool{"": true, "idea": true, "draft": true, "review": true, "ready": true}
 
 type userRef struct {
-	ID   int64  `json:"id"`
-	Name string `json:"name"`
+	ID     int64  `json:"id"`
+	Name   string `json:"name"`
+	Avatar string `json:"avatar,omitempty"`
 }
 
 type commentDTO struct {
@@ -290,6 +291,34 @@ func (h *Handlers) loadCollab(ctx context.Context, advID int64) (collabDTO, erro
 		return out, err
 	}
 	out.People = people
+
+	// Everyone named gets their picture, in one read.
+	var refs []*userRef
+	for i := range out.Threads {
+		th := &out.Threads[i]
+		refs = append(refs, th.CreatedBy, th.ResolvedBy)
+		for j := range th.Comments {
+			refs = append(refs, th.Comments[j].Author)
+		}
+	}
+	for i := range out.Steps {
+		refs = append(refs, out.Steps[i].Owner)
+	}
+	for i := range out.People {
+		refs = append(refs, &out.People[i])
+	}
+	var ids []int64
+	for _, r := range refs {
+		if r != nil {
+			ids = append(ids, r.ID)
+		}
+	}
+	avatars := auth.AvatarURLs(ctx, h.DB, ids)
+	for _, r := range refs {
+		if r != nil {
+			r.Avatar = avatars[r.ID]
+		}
+	}
 	return out, nil
 }
 

@@ -84,6 +84,13 @@ export const account = {
 
   changeUsername: (username: string) => post<{ id: number; username: string }>("/api/admin/me/username", { username }),
 
+  uploadAvatar: (file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    return request<{ avatar_url: string }>("/api/admin/me/avatar", { method: "POST", form });
+  },
+  removeAvatar: () => del<void>("/api/admin/me/avatar"),
+
   changeEmail: (newEmail: string) => post<unknown>("/api/admin/me/email", { new_email: newEmail }),
   emailRevertStatus: (signal: AbortSignal) => get<EmailRevertStatus>("/api/admin/me/email/revert-status", { signal }),
   revertEmail: () => post<{ email: string }>("/api/admin/me/email/revert"),
