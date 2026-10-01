@@ -18,6 +18,8 @@ interface Props {
   onChange: (p: Predicate) => void;
   graph: Graph;
   depth?: number;
+  /** A block's show condition, built for one phone: it may ask where "this player" is. */
+  forPlayer?: boolean;
 }
 
 const OPS: { op: Op; label: string; group: string }[] = [
@@ -37,6 +39,9 @@ const OPS: { op: Op; label: string; group: string }[] = [
   { op: "item", label: "Has an item", group: "State" },
   { op: "counter", label: "Shared counter", group: "State" },
   { op: "in_zone", label: "Is inside a zone", group: "Place & time" },
+  { op: "players_in_zone", label: "Players inside a zone", group: "Place & time" },
+  { op: "zones_held", label: "A player in each of these zones", group: "Place & time" },
+  { op: "here", label: "This player is inside a zone", group: "Place & time" },
   { op: "walked", label: "Metres walked on this step", group: "Place & time" },
   { op: "time_of_day", label: "Time of day", group: "Place & time" },
   { op: "weekday", label: "Weekday", group: "Place & time" },
@@ -53,7 +58,7 @@ const CMPS: { cmp: Cmp; label: string }[] = [
 
 const DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
 
-export function ConditionEditor({ value, onChange, graph, depth = 0 }: Props) {
+export function ConditionEditor({ value, onChange, graph, depth = 0, forPlayer = false }: Props) {
   const t = useT();
   const set = (patch: Partial<Predicate>) => onChange({ ...value, ...patch });
 
@@ -88,14 +93,17 @@ export function ConditionEditor({ value, onChange, graph, depth = 0 }: Props) {
   const drawSteps = graph.nodes.filter((n) => draws(n.slug).length > 0);
   const drawBlock = draws(value.node).find((b) => b.id === value.block);
 
-  const groups = [...new Set(OPS.map((o) => o.group))];
+  // A gate or a branch decides for the whole team: "this player" means
+  // nothing there, and the validator refuses it.
+  const ops = OPS.filter((o) => o.op !== "here" || forPlayer || value.op === "here");
+  const groups = [...new Set(ops.map((o) => o.group))];
 
   return (
     <div className={"cond" + (depth > 0 ? " cond--nested" : "")}>
       <select className="field__input" value={value.op} onChange={(e) => changeOp(e.target.value as Op)} aria-label={t.t("Condition")}>
         {groups.map((g) => (
           <optgroup key={g} label={t.t(g)}>
-            {OPS.filter((o) => o.group === g).map((o) => (
+            {ops.filter((o) => o.group === g).map((o) => (
               <option key={o.op || "always"} value={o.op}>
                 {t.t(o.label)}
               </option>
@@ -188,7 +196,7 @@ export function ConditionEditor({ value, onChange, graph, depth = 0 }: Props) {
         </select>
       )}
 
-      {value.op === "in_zone" && (
+      {(value.op === "in_zone" || value.op === "players_in_zone" || value.op === "here") && (
         <select className="field__input" value={value.zone ?? ""} onChange={(e) => set({ zone: e.target.value })} aria-label={t.t("Zone")}>
           <option value="">{t.t("— pick a zone —")}</option>
           {(graph.zones ?? []).map((z) => (
@@ -199,7 +207,7 @@ export function ConditionEditor({ value, onChange, graph, depth = 0 }: Props) {
         </select>
       )}
 
-      {["attempts", "item", "counter", "score", "elapsed", "node_elapsed", "team_size", "walked", "time_of_day"].includes(value.op) && (
+      {["attempts", "item", "counter", "score", "elapsed", "node_elapsed", "team_size", "players_in_zone", "walked", "time_of_day"].includes(value.op) && (
         <div className="cond__cmp">
           <select className="field__input" value={value.cmp ?? "gte"} onChange={(e) => set({ cmp: e.target.value as Cmp })} aria-label={t.t("Comparison")}>
             {CMPS.map((c) => (
@@ -214,7 +222,7 @@ export function ConditionEditor({ value, onChange, graph, depth = 0 }: Props) {
             <input
               className="field__input"
               type="number"
-              value={value.n ?? (value.op === "item" ? 1 : 0)}
+              value={value.n ?? (value.op === "item" || value.op === "players_in_zone" ? 1 : 0)}
               onChange={(e) => set({ n: Number(e.target.value) })}
               aria-label={t.t("Value")}
             />
@@ -242,6 +250,27 @@ export function ConditionEditor({ value, onChange, graph, depth = 0 }: Props) {
         </div>
       )}
 
+      {value.op === "zones_held" && (
+        <div className="cond__days">
+          {(graph.zones ?? []).length === 0 && <span className="field__hint">{t.t("— no zones yet —")}</span>}
+          {(graph.zones ?? []).map((z) => {
+            const on = (value.members ?? []).includes(z.slug);
+            return (
+              <label key={z.slug} className="chip">
+                <input
+                  type="checkbox"
+                  checked={on}
+                  onChange={() =>
+                    set({ members: on ? (value.members ?? []).filter((x) => x !== z.slug) : [...(value.members ?? []), z.slug] })
+                  }
+                />
+                {z.name || z.slug}
+              </label>
+            );
+          })}
+        </div>
+      )}
+
       {(value.op === "all" || value.op === "any" || value.op === "not") && (
         <div className="cond__children">
           {(value.of ?? []).map((child, i) => (
@@ -250,6 +279,7 @@ export function ConditionEditor({ value, onChange, graph, depth = 0 }: Props) {
                 value={child}
                 graph={graph}
                 depth={depth + 1}
+                forPlayer={forPlayer}
                 onChange={(c) => set({ of: (value.of ?? []).map((x, j) => (j === i ? c : x)) })}
               />
               {value.op !== "not" && (

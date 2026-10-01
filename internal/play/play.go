@@ -71,6 +71,35 @@ type Locator interface {
 	Position(ctx context.Context, q Querier, teamID int64) (lat, lng float64, ok bool, err error)
 }
 
+// PhoneLocator is a Locator that also knows where each of a team's
+// phones is, once the team splits up. A Locator that is not one places
+// every player at the team's position.
+type PhoneLocator interface {
+	// Phones returns where each phone that has reported lately is, in
+	// slot order; empty, not nil, when none has.
+	Phones(ctx context.Context, q Querier, teamID int64, now time.Time) ([]Phone, error)
+}
+
+// Phone is where one player's phone is.
+type Phone struct {
+	Slot int64
+	session.Position
+}
+
+type phoneKey struct{}
+
+// ForPhone marks a request as one phone's: the views and actions run
+// under it are built for that player, which is what a block shown only
+// "here" asks about. Without it they are the team's as a whole.
+func ForPhone(ctx context.Context, slotID int64) context.Context {
+	return context.WithValue(ctx, phoneKey{}, slotID)
+}
+
+func phoneOf(ctx context.Context) (int64, bool) {
+	id, ok := ctx.Value(phoneKey{}).(int64)
+	return id, ok
+}
+
 // Querier is the subset of *sql.DB and *sql.Tx this package needs.
 type Querier interface {
 	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)

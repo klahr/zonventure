@@ -510,6 +510,9 @@ export type Op =
   | "node_elapsed"
   | "team_size"
   | "in_zone"
+  | "players_in_zone"
+  | "zones_held"
+  | "here"
   | "walked"
   | "drawn"
   | "time_of_day"
@@ -529,6 +532,7 @@ export interface Predicate {
   cmp?: Cmp;
   n?: number;
   is?: string;
+  /** Days for weekday; zones for zones_held. */
   members?: string[];
 }
 

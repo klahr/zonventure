@@ -492,6 +492,8 @@ function Feed({ result, clock, titleOf }: { result: play.EventSimResult; clock: 
         return t.t("{{team}} reached {{place}}.", { team, place: e.text ?? "" });
       case "astray":
         return t.t("{{team}} took a wrong turn.", { team });
+      case "split":
+        return t.t("{{team}} split up to cover {{places}}.", { team, places: e.text ?? "" });
       case "wrong":
         return t.t("{{team}} guessed “{{guess}}” at {{step}}.", { team, guess: e.text ?? "", step });
       case "right":

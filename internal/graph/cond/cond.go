@@ -29,6 +29,8 @@ package cond
 
 import (
 	"fmt"
+	"math"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -58,9 +60,16 @@ const (
 	OpElapsed     Op = "elapsed"      // seconds since the event started
 	OpNodeElapsed Op = "node_elapsed" // seconds on the current node
 	OpTeamSize    Op = "team_size"    // number of player slots
-	OpInZone      Op = "in_zone"      // team's last position is inside Zone
-	OpWalked      Op = "walked"       // metres walked on the current node, compared Cmp N
-	OpDrawn       Op = "drawn"        // the card a draw Block on Node dealt is option Is (its index)
+	OpInZone      Op = "in_zone"      // one of the team's players is inside Zone
+	// The team spread out: these read each phone's position, not the team's.
+	OpPlayersIn Op = "players_in_zone" // players inside Zone, compared Cmp N (default: at least 1)
+	OpZonesHeld Op = "zones_held"      // every zone in Members has a player of its own inside it
+	// OpHere asks about the phone the view is for: a block shown only to
+	// the player standing in Zone. Only a block's show condition may use
+	// it — a gate or a branch is the team's, and has no one phone.
+	OpHere   Op = "here"   // this player is inside Zone
+	OpWalked Op = "walked" // metres walked on the current node, compared Cmp N
+	OpDrawn  Op = "drawn"  // the card a draw Block on Node dealt is option Is (its index)
 
 	// Wall clock, for venue constraints like "the museum closes at 17:00".
 	OpTimeOfDay Op = "time_of_day" // local HH:MM compared Cmp Is
@@ -112,7 +121,8 @@ type Predicate struct {
 	// HH:MM for TimeOfDay.
 	Is string `json:"is,omitempty"`
 
-	// Members enumerates accepted values for Weekday.
+	// Members enumerates accepted values for Weekday, and the zones of
+	// ZonesHeld.
 	Members []string `json:"members,omitempty"`
 }
 
@@ -133,6 +143,13 @@ type State interface {
 	NodeElapsedSeconds() float64
 	TeamSize() int
 	InZone(zone string) bool
+	// PlayersInZone counts the team's players inside zone.
+	PlayersInZone(zone string) int
+	// ZonesHeld reports whether each zone has a different player inside
+	// it at once: one player standing where two zones overlap holds one.
+	ZonesHeld(zones []string) bool
+	// Here reports whether the player the view is for is inside zone.
+	Here(zone string) bool
 	// Walked is how far the team has walked since it reached its current
 	// node, in metres.
 	Walked() float64
@@ -220,6 +237,22 @@ func Eval(p Predicate, s State) bool {
 	case OpInZone:
 		return s.InZone(p.Zone)
 
+	case OpPlayersIn:
+		// A bare count reads as "at least one", as for an item.
+		n := p.N
+		if p.Cmp == "" && n == 0 {
+			n = 1
+		}
+		return compare(float64(s.PlayersInZone(p.Zone)), p.Cmp, n)
+
+	case OpZonesHeld:
+		// No zones is not a place anyone can stand: fail closed, as an
+		// unfinished condition must not open a gate.
+		return len(p.Members) > 0 && s.ZonesHeld(p.Members)
+
+	case OpHere:
+		return s.Here(p.Zone)
+
 	case OpWalked:
 		return compare(s.Walked(), p.Cmp, p.N)
 
@@ -246,6 +279,111 @@ func Eval(p Predicate, s State) bool {
 
 	// An operator this build does not know. Fail closed: a graph
 	// authored by a newer version must not silently open a gate.
+	return false
+}
+
+// UsesHere reports whether a condition asks where the viewing player is,
+// anywhere in its tree.
+func UsesHere(p Predicate) bool {
+	if p.Op == OpHere {
+		return true
+	}
+	for _, q := range p.Of {
+		if UsesHere(q) {
+			return true
+		}
+	}
+	return false
+}
+
+// Spread is how many players a condition wants in each zone, for the
+// conditions that ask where the players are: zones_held wants one in
+// each of its zones, players_in_zone as many as its count. Within all,
+// the most any part asks of a zone; within any, its first part that asks
+// something. In_zone wants one player there, which a team together
+// gives it. Not asks nobody anywhere, and nor does anything else.
+func Spread(p Predicate) map[string]int {
+	out := map[string]int{}
+	switch p.Op {
+	case OpInZone:
+		if p.Zone != "" {
+			out[p.Zone] = 1
+		}
+	case OpZonesHeld:
+		for _, z := range p.Members {
+			out[z] = 1
+		}
+	case OpPlayersIn:
+		n := int(math.Ceil(p.N))
+		switch p.Cmp {
+		case Gt:
+			n++
+		case "":
+			n = max(n, 1)
+		case Gte, Eq:
+		default:
+			// Fewer than: met by players leaving, not by sending them.
+			return out
+		}
+		if n > 0 {
+			out[p.Zone] = n
+		}
+	case OpAll:
+		for _, q := range p.Of {
+			for z, n := range Spread(q) {
+				out[z] = max(out[z], n)
+			}
+		}
+	case OpAny:
+		for _, q := range p.Of {
+			if m := Spread(q); len(m) > 0 {
+				return m
+			}
+		}
+	}
+	return out
+}
+
+// Waits reports whether a condition that does not hold could come true
+// by the team's players moving — getting to the gate, or to the gate and
+// the bridge — with nothing else changing: every part of it that does
+// not hold asks where the players are, and the team has the players it
+// asks for. A hub whose branches wait on one keeps the team, instead of
+// taking the branch for permanently shut and moving it on.
+//
+// Only where the players are waits. A branch shut on the clock, on
+// history or on what the team carries still counts as shut.
+func Waits(p Predicate, s State) bool {
+	switch p.Op {
+	case OpInZone, OpZonesHeld, OpPlayersIn:
+		total := 0
+		for _, n := range Spread(p) {
+			total += n
+		}
+		return total <= max(s.TeamSize(), 1)
+	case OpAll:
+		some := false
+		for _, q := range p.Of {
+			if Eval(q, s) {
+				continue
+			}
+			if !Waits(q, s) {
+				return false
+			}
+			some = true
+		}
+		total := 0
+		for _, n := range Spread(p) {
+			total += n
+		}
+		return some && total <= max(s.TeamSize(), 1)
+	case OpAny:
+		for _, q := range p.Of {
+			if Waits(q, s) {
+				return true
+			}
+		}
+	}
 	return false
 }
 
@@ -321,6 +459,11 @@ func Collect(p Predicate) Refs {
 		add(&r.Items, "i", p.Item)
 		add(&r.Counters, "c", p.Counter)
 		add(&r.Zones, "z", p.Zone)
+		if p.Op == OpZonesHeld {
+			for _, z := range p.Members {
+				add(&r.Zones, "z", z)
+			}
+		}
 		for _, sub := range p.Of {
 			walk(sub)
 		}
@@ -387,6 +530,20 @@ func Describe(p Predicate) string {
 		return fmt.Sprintf("team size %s %g", cmpWord(p.Cmp), p.N)
 	case OpInZone:
 		return fmt.Sprintf("inside zone %q", p.Zone)
+	case OpPlayersIn:
+		n := p.N
+		if p.Cmp == "" && n == 0 {
+			n = 1
+		}
+		return fmt.Sprintf("players inside zone %q %s %g", p.Zone, cmpWord(p.Cmp), n)
+	case OpHere:
+		return fmt.Sprintf("this player inside zone %q", p.Zone)
+	case OpZonesHeld:
+		quoted := make([]string, len(p.Members))
+		for i, z := range p.Members {
+			quoted[i] = strconv.Quote(z)
+		}
+		return "a player each inside " + strings.Join(quoted, ", ")
 	case OpWalked:
 		return fmt.Sprintf("walked on this step %s %gm", cmpWord(p.Cmp), p.N)
 	case OpDrawn:

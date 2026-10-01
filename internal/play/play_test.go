@@ -721,6 +721,67 @@ func TestPingLocatorRejectsTeleports(t *testing.T) {
 	}
 }
 
+// The rule is per phone: two teammates far apart, pinging in turn, are
+// both trusted, and one phone's gap does not untrust the other. Phones
+// counts only those heard from lately.
+func TestPingLocatorPerPhone(t *testing.T) {
+	f := setup(t, linear("a"), 1)
+	team := f.teams[0]
+	ctx := context.Background()
+
+	var first int64
+	mustScan(t, f.db.QueryRow(`SELECT id FROM player_slots WHERE team_id = $1`, team), &first)
+	var second int64
+	mustScan(t, f.db.QueryRow(`INSERT INTO player_slots(team_id, name, token) VALUES ($1, 'q', $2) RETURNING id`, team, fmt.Sprintf("slot-%d-b", team)), &second)
+	ping := func(slot int64, lat float64, ts string) {
+		if _, err := f.db.Exec(`
+			INSERT INTO location_pings(slot_id, team_id, event_id, lat, lng, server_ts)
+			VALUES ($1, $2, $3, $4, 18.0, $5)
+		`, slot, team, f.eventID, lat, ts); err != nil {
+			t.Fatal(err)
+		}
+	}
+	at := func(ts string) time.Time {
+		tm, err := time.Parse("2006-01-02 15:04:05", ts)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return tm
+	}
+	phones := func(now string) []Phone {
+		t.Helper()
+		ps, err := (PingLocator{}).Phones(ctx, f.db, team, at(now))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return ps
+	}
+
+	ping(first, 59.0, "2026-09-22 10:00:00")
+	ping(second, 59.1, "2026-09-22 10:00:05") // 11 km away, 5 s later
+	ping(first, 59.0, "2026-09-22 10:00:10")
+	if got := phones("2026-09-22 10:00:20"); len(got) != 2 {
+		t.Fatalf("both phones should be trusted, got %v", got)
+	}
+	if lat, _, ok, _ := (PingLocator{}).Position(ctx, f.db, team); !ok || lat != 59.0 {
+		t.Errorf("the team is where its latest ping is: got %v %v", lat, ok)
+	}
+
+	// The second phone reappears after 270 s: only it is untrusted.
+	ping(second, 59.2, "2026-09-22 10:04:35")
+	if got := phones("2026-09-22 10:00:40"); len(got) != 1 || got[0].Lat != 59.0 {
+		t.Errorf("only the first phone should count, got %v", got)
+	}
+	if lat, _, ok, _ := (PingLocator{}).Position(ctx, f.db, team); !ok || lat != 59.0 {
+		t.Errorf("an untrusted phone does not move the team: got %v %v", lat, ok)
+	}
+
+	// A phone silent for longer than phoneFreshSeconds holds no zone.
+	if got := phones("2026-09-22 10:05:00"); len(got) != 0 || got == nil {
+		t.Errorf("no phone is fresh: got %#v, want empty", got)
+	}
+}
+
 // The answer survives the database between actions: a switch several
 // steps later still reads the first puzzle's answer after a reload.
 func TestSwitchReadsAnAnswerFromEarlier(t *testing.T) {

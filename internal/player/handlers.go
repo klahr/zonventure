@@ -411,7 +411,7 @@ type LocationRequest struct {
 }
 
 // maxPlausibleSpeedMS caps the implied speed (distance / elapsed)
-// between two consecutive pings for the same team. 60 m/s is ~216
+// between two consecutive pings from the same phone. 60 m/s is ~216
 // km/h — comfortably above any realistic foot/bike/bus/train speed
 // for a city-wide adventure, low enough to catch the obvious
 // teleport cheat where a player POSTs "I'm at the gate" coordinates
@@ -438,14 +438,17 @@ const maxLookbackForSpeedSec = 120.0
 // as gospel — without a sanity gate, a player still at the start
 // could just POST "I'm at the gate" coordinates and walk through
 // every gated puzzle from a chair. We compare against the most
-// recent ping on the same team and reject anything that implies
+// recent ping from the same phone and reject anything that implies
 // a teleport above maxPlausibleSpeedMS. Rejections leave the prior
 // ping in place so the next legitimate ping has a stable anchor.
+//
+// Per phone, not per team: two teammates a few streets apart ping in
+// turn, and comparing one's fix with the other's reads as a teleport.
 func (h *Handlers) recordLocation(ctx context.Context, slot auth.Slot, req LocationRequest) (int, string) {
 	if req.Lat < -90 || req.Lat > 90 || req.Lng < -180 || req.Lng > 180 {
 		return http.StatusBadRequest, "coordinates out of range"
 	}
-	if !plausibleNextPing(ctx, h.DB, slot.TeamID, req.Lat, req.Lng) {
+	if !plausibleNextPing(ctx, h.DB, slot.ID, req.Lat, req.Lng) {
 		return http.StatusForbidden, "implausible position jump"
 	}
 	var acc, speed, heading, cts any
@@ -471,23 +474,23 @@ func (h *Handlers) recordLocation(ctx context.Context, slot auth.Slot, req Locat
 }
 
 // plausibleNextPing returns true when the proposed (lat, lng) is
-// reachable from the team's most recent ping at no more than
+// reachable from the phone's most recent ping at no more than
 // maxPlausibleSpeedMS, OR when there's no prior ping to compare
 // against / the gap is outside the lookback window. Errors and
 // missing-row cases default to "plausible" — this is a cheating
 // gate, not a hard correctness gate, so failing open is the right
 // posture if the DB read flakes.
-func plausibleNextPing(ctx context.Context, db *sql.DB, teamID int64, lat, lng float64) bool {
+func plausibleNextPing(ctx context.Context, db *sql.DB, slotID int64, lat, lng float64) bool {
 	var (
 		lastLat, lastLng float64
 		serverTS         string
 	)
 	err := db.QueryRowContext(ctx, `
 		SELECT lat, lng, server_ts FROM location_pings
-		WHERE team_id = $1
+		WHERE slot_id = $1
 		ORDER BY server_ts DESC
 		LIMIT 1
-	`, teamID).Scan(&lastLat, &lastLng, &serverTS)
+	`, slotID).Scan(&lastLat, &lastLng, &serverTS)
 	if err != nil {
 		// No prior ping (or DB hiccup) — let it through. The first
 		// ping has nothing to anchor against.

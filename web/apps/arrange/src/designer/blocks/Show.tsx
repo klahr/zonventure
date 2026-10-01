@@ -27,7 +27,7 @@ export function ShowEditor({ block, set, graph, t }: { block: Block; set: (b: Bl
       </label>
       {show && (
         <>
-          <ConditionEditor graph={graph} value={show.when} onChange={(when) => set({ ...block, show: { ...show, when } })} />
+          <ConditionEditor graph={graph} forPlayer value={show.when} onChange={(when) => set({ ...block, show: { ...show, when } })} />
           <label className="check">
             <input
               type="checkbox"

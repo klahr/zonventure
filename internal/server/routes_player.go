@@ -8,6 +8,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/klahr/zonventure/internal/auth"
+	"github.com/klahr/zonventure/internal/player"
 )
 
 // registerPlayerRoutes wires the slot-authenticated REST endpoints
@@ -28,6 +29,7 @@ func registerPlayerRoutes(r chi.Router, env *routesEnv) {
 	r.Route("/api/player", func(r chi.Router) {
 		r.Use(auth.RequireSlot)
 		r.Use(auth.RequireCSRF())
+		r.Use(player.ForPhone)
 		// The React player app.
 		r.Get("/play", playerH.GetPlay)
 		r.Post("/play/{action}", playerH.PostPlayAction)

@@ -496,16 +496,26 @@ func checkReferences(r *reporter, g *graph.Graph) {
 		}
 	}
 
+	// A gate or a branch decides for the whole team, so it cannot ask
+	// where "this player" is: which player would that be?
+	checkTeamPredicate := func(slug, port string, p cond.Predicate) {
+		if cond.UsesHere(p) {
+			r.err("cond.here.team", slug, port, "only a block's show condition can ask where this player is; use players_in_zone for the team")
+		}
+	}
+
 	for _, n := range g.Nodes {
 		switch n.Type {
 		case graph.Gate:
 			if n.GateCfg != nil {
 				checkPredicate(n.Slug, n.GateCfg.Condition)
+				checkTeamPredicate(n.Slug, "", n.GateCfg.Condition)
 			}
 		case graph.Hub:
 			if n.HubCfg != nil {
 				for _, b := range n.HubCfg.Branches {
 					checkPredicate(n.Slug, b.Condition)
+					checkTeamPredicate(n.Slug, b.Port, b.Condition)
 				}
 			}
 		case graph.Puzzle:

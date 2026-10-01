@@ -486,6 +486,12 @@ func (e *Engine) media(ctx context.Context, teamID int64, prefetch bool) ([]int6
 	if err != nil {
 		return nil, err
 	}
+	// A block shown inside a zone, or only to the player standing there,
+	// brings its picture with it: where the team is decides what it may
+	// fetch, as it decides what it sees.
+	if err := e.locate(ctx, e.DB, s); err != nil {
+		return nil, err
+	}
 	var strict bool
 	if err := e.DB.QueryRowContext(ctx, `
 		SELECT a.strict_assets FROM events ev JOIN adventures a ON a.slug = ev.adventure_slug

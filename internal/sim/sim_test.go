@@ -2,10 +2,12 @@ package sim
 
 import (
 	"encoding/json"
+	"slices"
 	"testing"
 	"time"
 
 	"github.com/klahr/zonventure/internal/graph"
+	"github.com/klahr/zonventure/internal/graph/cond"
 	"github.com/klahr/zonventure/internal/graph/match"
 )
 
@@ -243,6 +245,103 @@ func TestTeamsGoBackFromHomeHubs(t *testing.T) {
 	for _, s := range res.Steps {
 		if s.Node == "scan" && s.Reached > 10*4 {
 			t.Errorf("teams reached the search %d times: going round", s.Reached)
+		}
+	}
+}
+
+// A branch that wants a player at the church and one at the harbour at
+// once: a team big enough waits at the hub, splits up to open it and
+// gathers again after.
+func TestTeamsSplitUpToOpenABranch(t *testing.T) {
+	g := course()
+	for i, n := range g.Nodes {
+		if n.Slug == "stations" {
+			cfg := *n.HubCfg
+			cfg.Required = 3
+			cfg.Branches = append(slices.Clone(cfg.Branches), graph.Branch{
+				Port: "signal", Label: "Signal",
+				Condition: cond.Predicate{Op: cond.OpZonesHeld, Members: []string{"church", "harbour"}},
+			})
+			g.Nodes[i].HubCfg = &cfg
+		}
+	}
+	g.Nodes = append(g.Nodes, graph.Node{Slug: "signal", Type: graph.Story, StoryCfg: &graph.StoryConfig{Blocks: graph.LegacyBlocks("The lights answer.", nil)}})
+	g.Edges = append(g.Edges,
+		graph.Edge{From: "stations", FromPort: "signal", To: "signal"},
+		graph.Edge{From: "signal", FromPort: "out", To: "stations"})
+
+	c := config()
+	c.Teams = 5
+	res := run(t, g, c)
+	if res.Ended != "finished" {
+		t.Fatalf("ended %q, want finished", res.Ended)
+	}
+	splits := 0
+	for _, e := range res.Events {
+		if e.Kind == "split" {
+			splits++
+		}
+	}
+	if splits != c.Teams {
+		t.Errorf("%d splits, want one per team", splits)
+	}
+	for _, tm := range res.Teams {
+		for j := 1; j < len(tm.Path); j++ {
+			if tm.Path[j].T < tm.Path[j-1].T {
+				t.Fatalf("%s's path goes back in time at %d", tm.Name, j)
+			}
+		}
+	}
+
+	// A team of one cannot be in two places, so the branch is shut for it
+	// as any unreachable branch is, and it moves on without it.
+	c.Members = 1
+	res = run(t, g, c)
+	if res.Ended != "finished" {
+		t.Errorf("teams of one: ended %q, want finished", res.Ended)
+	}
+	for _, e := range res.Events {
+		if e.Kind == "split" {
+			t.Fatal("a team of one split up")
+		}
+	}
+}
+
+// A branch locked until the team is at the harbour keeps the team at the
+// hub; it walks there, the branch opens, and it goes on — rather than
+// being moved past it.
+func TestTeamsWalkToOpenABranch(t *testing.T) {
+	g := course()
+	for i, n := range g.Nodes {
+		if n.Slug == "stations" {
+			cfg := *n.HubCfg
+			cfg.Required = 3
+			cfg.Branches = append(slices.Clone(cfg.Branches), graph.Branch{
+				Port: "signal", Label: "Signal",
+				Condition: cond.Predicate{Op: cond.OpInZone, Zone: "square"},
+			})
+			g.Nodes[i].HubCfg = &cfg
+		}
+	}
+	g.Nodes = append(g.Nodes, graph.Node{Slug: "signal", Type: graph.Story, StoryCfg: &graph.StoryConfig{Blocks: graph.LegacyBlocks("The lights answer.", nil)}})
+	g.Edges = append(g.Edges,
+		graph.Edge{From: "stations", FromPort: "signal", To: "signal"},
+		graph.Edge{From: "signal", FromPort: "out", To: "stations"})
+
+	c := config()
+	c.Teams = 5
+	res := run(t, g, c)
+	if res.Ended != "finished" {
+		t.Fatalf("ended %q, want finished", res.Ended)
+	}
+	for _, e := range res.Events {
+		if e.Kind == "split" {
+			t.Fatal("one place is no reason to split up")
+		}
+	}
+	for _, s := range res.Steps {
+		if s.Node == "signal" && s.Reached != c.Teams {
+			t.Errorf("%d teams reached the signal, want all %d", s.Reached, c.Teams)
 		}
 	}
 }

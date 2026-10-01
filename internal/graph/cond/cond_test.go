@@ -20,6 +20,8 @@ type fakeState struct {
 	nodeElapsed float64
 	teamSize    int
 	zones       map[string]bool
+	players     map[string]int
+	here        map[string]bool
 	walked      float64
 	picks       map[string]string
 	now         time.Time
@@ -31,6 +33,8 @@ func newState() *fakeState {
 		outcomes: map[string]string{}, attempts: map[string]int{},
 		items: map[string]int{}, counters: map[string]float64{},
 		zones:    map[string]bool{},
+		players:  map[string]int{},
+		here:     map[string]bool{},
 		now:      time.Date(2026, 9, 22, 14, 30, 0, 0, time.UTC), // a Tuesday
 		teamSize: 4,
 	}
@@ -50,9 +54,19 @@ func (f *fakeState) ElapsedSeconds() float64       { return f.elapsed }
 func (f *fakeState) NodeElapsedSeconds() float64   { return f.nodeElapsed }
 func (f *fakeState) TeamSize() int                 { return f.teamSize }
 func (f *fakeState) InZone(z string) bool          { return f.zones[z] }
-func (f *fakeState) Walked() float64               { return f.walked }
-func (f *fakeState) Picked(n, b string) string     { return f.picks[n+"/"+b] }
-func (f *fakeState) LocalTime() time.Time          { return f.now }
+func (f *fakeState) PlayersInZone(z string) int    { return f.players[z] }
+func (f *fakeState) Here(z string) bool            { return f.here[z] }
+func (f *fakeState) ZonesHeld(zs []string) bool {
+	for _, z := range zs {
+		if f.players[z] == 0 {
+			return false
+		}
+	}
+	return true
+}
+func (f *fakeState) Walked() float64           { return f.walked }
+func (f *fakeState) Picked(n, b string) string { return f.picks[n+"/"+b] }
+func (f *fakeState) LocalTime() time.Time      { return f.now }
 
 // An empty predicate is the shape of a freshly-dragged Gate. It must be
 // open, or an author has to satisfy a condition they never wrote.
@@ -217,6 +231,84 @@ func TestInZone(t *testing.T) {
 	}
 	if !Eval(Predicate{Op: OpNot, Of: []Predicate{{Op: OpInZone, Zone: "attic"}}}, s) {
 		t.Error("negation of in_zone should be true while outside")
+	}
+}
+
+// players_in_zone counts like any number, a bare one reading as "at
+// least one"; zones_held with no zones is never true.
+func TestPlayersInZone(t *testing.T) {
+	s := newState()
+	s.players["gate"] = 2
+	s.players["bridge"] = 1
+	cases := []struct {
+		name string
+		p    Predicate
+		want bool
+	}{
+		{"bare reads as at least one", Predicate{Op: OpPlayersIn, Zone: "gate"}, true},
+		{"bare, nobody there", Predicate{Op: OpPlayersIn, Zone: "attic"}, false},
+		{"two at the gate", Predicate{Op: OpPlayersIn, Zone: "gate", Cmp: Gte, N: 2}, true},
+		{"three at the gate", Predicate{Op: OpPlayersIn, Zone: "gate", Cmp: Gte, N: 3}, false},
+		{"nobody in the attic", Predicate{Op: OpPlayersIn, Zone: "attic", Cmp: Eq, N: 0}, true},
+		{"gate and bridge held", Predicate{Op: OpZonesHeld, Members: []string{"gate", "bridge"}}, true},
+		{"attic not held", Predicate{Op: OpZonesHeld, Members: []string{"gate", "attic"}}, false},
+		{"no zones", Predicate{Op: OpZonesHeld}, false},
+	}
+	for _, c := range cases {
+		if got := Eval(c.p, s); got != c.want {
+			t.Errorf("%s: got %v, want %v", c.name, got, c.want)
+		}
+	}
+	refs := Collect(Predicate{Op: OpZonesHeld, Members: []string{"gate", "bridge"}})
+	if len(refs.Zones) != 2 {
+		t.Errorf("zones_held refs: got %v, want gate and bridge", refs.Zones)
+	}
+	// A weekday's members are days, not zones.
+	if refs := Collect(Predicate{Op: OpWeekday, Members: []string{"mon"}}); len(refs.Zones) != 0 {
+		t.Errorf("weekday refs: got zones %v", refs.Zones)
+	}
+}
+
+// Spread is what to send where; Waits whether a shut condition is only
+// waiting for the players to get there.
+func TestSpreadAndWaits(t *testing.T) {
+	held := Predicate{Op: OpZonesHeld, Members: []string{"gate", "bridge"}}
+	two := Predicate{Op: OpPlayersIn, Zone: "gate", Cmp: Gte, N: 2}
+	if got := Spread(Predicate{Op: OpAll, Of: []Predicate{held, two}}); got["gate"] != 2 || got["bridge"] != 1 || len(got) != 2 {
+		t.Errorf("spread of all = %v, want gate 2, bridge 1", got)
+	}
+	if got := Spread(Predicate{Op: OpPlayersIn, Zone: "gate", Cmp: Gt, N: 1}); got["gate"] != 2 {
+		t.Errorf("more than one = %v, want gate 2", got)
+	}
+	if got := Spread(Predicate{Op: OpPlayersIn, Zone: "gate", Cmp: Lt, N: 1}); len(got) != 0 {
+		t.Errorf("fewer than = %v, want nothing", got)
+	}
+
+	s := newState() // a team of four, nobody anywhere
+	if !Waits(held, s) || !Waits(Predicate{Op: OpAll, Of: []Predicate{held, two}}, s) {
+		t.Error("a team of four can hold the gate and bridge, two at the gate")
+	}
+	if Waits(Predicate{Op: OpAll, Of: []Predicate{held, {Op: OpSolved, Node: "x"}}}, s) {
+		t.Error("an unsolved step is not something walking fixes")
+	}
+	if !Waits(Predicate{Op: OpAll, Of: []Predicate{held, {Op: OpScore, N: 0}}}, s) {
+		t.Error("a part that already holds does not stop the rest waiting")
+	}
+	if !Waits(Predicate{Op: OpInZone, Zone: "gate"}, s) {
+		t.Error("any team can walk to the gate")
+	}
+	if got := Spread(Predicate{Op: OpInZone, Zone: "gate"}); got["gate"] != 1 || len(got) != 1 {
+		t.Errorf("spread of in_zone = %v, want one at the gate", got)
+	}
+	if Waits(Predicate{Op: OpNot, Of: []Predicate{{Op: OpInZone, Zone: "gate"}}}, s) {
+		t.Error("not inside is not something walking towards fixes")
+	}
+	if Waits(Predicate{Op: OpElapsed, Cmp: Gte, N: 9999}, s) {
+		t.Error("the clock still counts as shut")
+	}
+	s.teamSize = 1
+	if Waits(held, s) {
+		t.Error("a team of one cannot be in two places")
 	}
 }
 

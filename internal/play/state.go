@@ -18,54 +18,117 @@ import (
 )
 
 // maxPingGapSeconds is the anti-teleport rule, identical to
-// maxLookbackForSpeedSec in internal/player: if the two most recent
-// pings are further apart than this, the latest one is not trusted. A
+// maxLookbackForSpeedSec in internal/player: if a phone's two most recent
+// pings are further apart than this, its latest one is not trusted. A
 // player cannot pause location sharing, walk somewhere, and reappear
 // inside a zone — they have to produce another plausible fix first.
+//
+// The rule is per phone. Teammates may be streets apart, and comparing
+// one phone's ping with another's says nothing about either.
 const maxPingGapSeconds = 120.0
+
+// phoneFreshSeconds is how recently a phone must have reported to count
+// as standing where it last was, for conditions on where the players
+// are. Phones report every 15 seconds, and every 3 while a step waits on
+// a zone; a phone silent for longer has been pocketed or closed, and
+// must not hold a zone for its player while they walk away.
+const phoneFreshSeconds = 60.0
 
 // PingLocator reads positions from location_pings.
 type PingLocator struct{}
 
-// Position implements Locator.
-func (PingLocator) Position(ctx context.Context, q Querier, teamID int64) (float64, float64, bool, error) {
+// fix is a phone's latest trustworthy ping.
+type fix struct {
+	slot     int64
+	lat, lng float64
+	at       time.Time
+}
+
+// fixes is the latest trustworthy ping of each of the team's phones, in
+// slot order.
+func fixes(ctx context.Context, q Querier, teamID int64) ([]fix, error) {
 	rows, err := q.QueryContext(ctx, `
-		SELECT lat, lng, server_ts FROM location_pings
-		WHERE team_id = $1
-		ORDER BY server_ts DESC
-		LIMIT 2
+		SELECT s.id, p.lat, p.lng, p.server_ts
+		FROM player_slots s
+		CROSS JOIN LATERAL (
+			SELECT lat, lng, server_ts, id FROM location_pings
+			WHERE slot_id = s.id
+			ORDER BY server_ts DESC, id DESC
+			LIMIT 2
+		) p
+		WHERE s.team_id = $1
+		ORDER BY s.id, p.server_ts DESC, p.id DESC
 	`, teamID)
 	if err != nil {
-		return 0, 0, false, err
+		return nil, err
 	}
 	defer rows.Close()
 
 	type ping struct {
-		lat, lng float64
-		ts       time.Time
-		ok       bool
+		fix
+		ok bool
 	}
-	var pings []ping
+	bySlot := map[int64][]ping{}
+	var order []int64
 	for rows.Next() {
+		var slot int64
 		var p ping
 		var ts string
-		if err := rows.Scan(&p.lat, &p.lng, &ts); err != nil {
-			return 0, 0, false, err
+		if err := rows.Scan(&slot, &p.lat, &p.lng, &ts); err != nil {
+			return nil, err
 		}
-		p.ts, p.ok = icscal.ParseTimestamp(ts)
-		pings = append(pings, p)
+		p.slot = slot
+		p.at, p.ok = icscal.ParseTimestamp(ts)
+		if _, seen := bySlot[slot]; !seen {
+			order = append(order, slot)
+		}
+		bySlot[slot] = append(bySlot[slot], p)
 	}
 	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	var out []fix
+	for _, slot := range order {
+		pings := bySlot[slot]
+		if len(pings) == 2 && pings[0].ok && pings[1].ok &&
+			pings[0].at.Sub(pings[1].at).Seconds() > maxPingGapSeconds {
+			continue
+		}
+		out = append(out, pings[0].fix)
+	}
+	return out, nil
+}
+
+// Position implements Locator: the most recent of the phones' trusted
+// pings, however old.
+func (PingLocator) Position(ctx context.Context, q Querier, teamID int64) (float64, float64, bool, error) {
+	fs, err := fixes(ctx, q, teamID)
+	if err != nil || len(fs) == 0 {
 		return 0, 0, false, err
 	}
-	if len(pings) == 0 {
-		return 0, 0, false, nil
+	latest := fs[0]
+	for _, f := range fs[1:] {
+		if f.at.After(latest.at) {
+			latest = f
+		}
 	}
-	if len(pings) == 2 && pings[0].ok && pings[1].ok &&
-		pings[0].ts.Sub(pings[1].ts).Seconds() > maxPingGapSeconds {
-		return 0, 0, false, nil
+	return latest.lat, latest.lng, true, nil
+}
+
+// Phones implements PhoneLocator: the trusted pings of the phones that
+// have reported within phoneFreshSeconds of now.
+func (PingLocator) Phones(ctx context.Context, q Querier, teamID int64, now time.Time) ([]Phone, error) {
+	fs, err := fixes(ctx, q, teamID)
+	if err != nil {
+		return nil, err
 	}
-	return pings[0].lat, pings[0].lng, true, nil
+	out := []Phone{}
+	for _, f := range fs {
+		if now.Sub(f.at).Seconds() <= phoneFreshSeconds {
+			out = append(out, Phone{Slot: f.slot, Position: session.Position{Lat: f.lat, Lng: f.lng}})
+		}
+	}
+	return out, nil
 }
 
 // walkStep is how far a phone must get from where it last counted before
@@ -128,8 +191,9 @@ func usesWalked(g *graph.Graph) bool {
 	return uses
 }
 
-// locate gives the team its position and, where the graph asks, how far
-// it has walked on its current node.
+// locate gives the team its position, each phone's where the locator
+// knows them — and so the asking phone's, for a request marked ForPhone —
+// and, where the graph asks, how far it has walked on its current node.
 func (e *Engine) locate(ctx context.Context, q Querier, s *teamState) error {
 	lat, lng, ok, err := e.locator().Position(ctx, q, s.teamID)
 	if err != nil {
@@ -137,6 +201,23 @@ func (e *Engine) locate(ctx context.Context, q Querier, s *teamState) error {
 	}
 	if ok {
 		s.Position = &session.Position{Lat: lat, Lng: lng}
+	}
+	if pl, ok := e.locator().(PhoneLocator); ok {
+		phones, err := pl.Phones(ctx, q, s.teamID, s.Now)
+		if err != nil {
+			return fmt.Errorf("reading phone positions: %w", err)
+		}
+		me, forPhone := phoneOf(ctx)
+		if forPhone {
+			s.Viewer = &session.Viewer{}
+		}
+		s.Phones = make([]session.Position, len(phones))
+		for i, p := range phones {
+			s.Phones[i] = p.Position
+			if forPhone && p.Slot == me {
+				s.Viewer.Position = &s.Phones[i]
+			}
+		}
 	}
 	if s.G != nil && usesWalked(s.G) {
 		if s.WalkedMetres, err = walkedSince(ctx, q, s.teamID, s.NodeEnteredAt); err != nil {

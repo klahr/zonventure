@@ -20,6 +20,7 @@ type fakeState struct {
 	branches  map[string]map[string]bool // hub -> port -> done
 	occupancy map[string]int             // "hub/port" -> teams inside
 	slot      int
+	size      int
 	score     float64
 	now       time.Time
 }
@@ -29,7 +30,8 @@ func newState() *fakeState {
 		solved: map[string]bool{}, visited: map[string]bool{},
 		outcomes: map[string]string{}, items: map[string]int{},
 		branches: map[string]map[string]bool{}, occupancy: map[string]int{},
-		now: time.Date(2026, 9, 22, 12, 0, 0, 0, time.UTC),
+		now:  time.Date(2026, 9, 22, 12, 0, 0, 0, time.UTC),
+		size: 2,
 	}
 }
 
@@ -45,8 +47,11 @@ func (f *fakeState) CounterValue(string) float64  { return 0 }
 func (f *fakeState) Score() float64               { return f.score }
 func (f *fakeState) ElapsedSeconds() float64      { return 0 }
 func (f *fakeState) NodeElapsedSeconds() float64  { return 0 }
-func (f *fakeState) TeamSize() int                { return 2 }
+func (f *fakeState) TeamSize() int                { return f.size }
 func (f *fakeState) InZone(string) bool           { return false }
+func (f *fakeState) PlayersInZone(string) int     { return 0 }
+func (f *fakeState) ZonesHeld([]string) bool      { return false }
+func (f *fakeState) Here(string) bool             { return false }
 func (f *fakeState) Walked() float64              { return 0 }
 func (f *fakeState) Picked(string, string) string { return "" }
 func (f *fakeState) LocalTime() time.Time         { return f.now }
@@ -489,6 +494,54 @@ func TestHubCompletesWhenNothingRemainsReachable(t *testing.T) {
 	}
 	if !step.Finished {
 		t.Errorf("expected the run to finish; landed on %q", step.To)
+	}
+}
+
+// A branch shut only until the players get in place — one at the gate,
+// one at the bridge — keeps the team at the hub with nothing to choose
+// yet. A team too small to do it moves on, as from any shut branch.
+func TestHubWaitsForPlayersToSpreadOut(t *testing.T) {
+	g := hubGraph(graph.PolicyChoice, 2,
+		graph.Branch{Port: "a"},
+		graph.Branch{Port: "b", Condition: cond.Predicate{Op: cond.OpZonesHeld, Members: []string{"gate", "bridge"}}},
+	)
+	s := newState()
+	s.finishBranch("hub", "a")
+
+	step, err := Advance(g, s, "task-a", "solved")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if step.Finished || step.To != "hub" || step.Offer == nil || len(step.Offer) != 0 {
+		t.Fatalf("a team of two should wait at the hub: to %q, offer %v, finished %v", step.To, step.Offer, step.Finished)
+	}
+
+	s.size = 1
+	step, err = Advance(g, s, "task-a", "solved")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !step.Finished {
+		t.Errorf("a team of one cannot spread out and should move on; landed on %q", step.To)
+	}
+}
+
+// A branch locked until the team is somewhere is waiting, not shut:
+// the team stays to walk there.
+func TestHubWaitsForTheTeamToGetThere(t *testing.T) {
+	g := hubGraph(graph.PolicyChoice, 2,
+		graph.Branch{Port: "a"},
+		graph.Branch{Port: "b", Condition: cond.Predicate{Op: cond.OpInZone, Zone: "harbour"}},
+	)
+	s := newState()
+	s.finishBranch("hub", "a")
+	s.size = 1
+	step, err := Advance(g, s, "task-a", "solved")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if step.Finished || step.To != "hub" {
+		t.Errorf("the team should wait at the hub; landed on %q, finished %v", step.To, step.Finished)
 	}
 }
 

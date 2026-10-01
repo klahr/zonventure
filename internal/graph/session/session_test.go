@@ -1000,3 +1000,91 @@ func TestAnswerBar(t *testing.T) {
 	res, st, err = tm.Answer("s", "SIGN-7")
 	act(t, tm, "end", res, st, err)
 }
+
+// Where the players are: a team kept together stands as many players at
+// its position as it has; a split one is each fresh phone, or — with
+// none fresh — one player wherever it was last seen. A player standing
+// where two zones overlap holds only one of them.
+func TestPlayersInZones(t *testing.T) {
+	g := &graph.Graph{Zones: []graph.Zone{
+		{Slug: "gate", Lat: 59.30, Lng: 18.00, RadiusM: 40},
+		{Slug: "arch", Lat: 59.30, Lng: 18.0002, RadiusM: 40}, // overlaps gate
+		{Slug: "bridge", Lat: 59.31, Lng: 18.00, RadiusM: 40},
+	}}
+	gate := Position{Lat: 59.30, Lng: 18.00}
+	bridge := Position{Lat: 59.31, Lng: 18.00}
+	team := func(pos *Position, size int, phones []Position) *Team {
+		tm := New(g, t0)
+		tm.Position, tm.Size, tm.Phones = pos, size, phones
+		return tm
+	}
+
+	together := team(&gate, 3, nil)
+	if n := together.PlayersInZone("gate"); n != 3 {
+		t.Errorf("a team together: %d at the gate, want 3", n)
+	}
+	if !together.ZonesHeld([]string{"gate", "arch"}) {
+		t.Error("three players standing in both overlapping zones hold both")
+	}
+	if together.ZonesHeld([]string{"gate", "bridge"}) {
+		t.Error("a team together cannot hold zones apart")
+	}
+
+	split := team(&bridge, 3, []Position{gate, bridge})
+	if !split.InZone("gate") || !split.InZone("bridge") {
+		t.Error("a split team is in every zone one of its players is in")
+	}
+	if n := split.PlayersInZone("gate"); n != 1 {
+		t.Errorf("split: %d at the gate, want 1", n)
+	}
+	if !split.ZonesHeld([]string{"gate", "bridge"}) {
+		t.Error("one player at the gate and one at the bridge hold both")
+	}
+	if split.ZonesHeld([]string{"gate", "arch", "bridge"}) {
+		t.Error("the player at the gate holds the gate or the arch, not both")
+	}
+	if !split.ZonesHeld([]string{"arch", "bridge", "bridge"}) {
+		t.Error("a zone listed twice needs one player")
+	}
+	if split.ZonesHeld([]string{"gate", "attic"}) {
+		t.Error("a zone that does not exist is never held")
+	}
+
+	stale := team(&gate, 3, []Position{})
+	if n := stale.PlayersInZone("gate"); n != 1 {
+		t.Errorf("no phone fresh: %d at the gate, want the one last seen there", n)
+	}
+	if team(nil, 3, []Position{}).InZone("gate") {
+		t.Error("a team never seen is nowhere")
+	}
+}
+
+// "Here" is the phone a view is for. Without one — the organisers'
+// look, a simulated team — it is wherever one of the team's players is;
+// a phone that has not reported lately is nowhere.
+func TestHereIsTheViewersPhone(t *testing.T) {
+	g := &graph.Graph{Zones: []graph.Zone{
+		{Slug: "gate", Lat: 59.30, Lng: 18.00, RadiusM: 40},
+		{Slug: "bridge", Lat: 59.31, Lng: 18.00, RadiusM: 40},
+	}}
+	gate := Position{Lat: 59.30, Lng: 18.00}
+	bridge := Position{Lat: 59.31, Lng: 18.00}
+	tm := New(g, t0)
+	tm.Position, tm.Size, tm.Phones = &bridge, 2, []Position{gate, bridge}
+
+	if !tm.Here("gate") || !tm.Here("bridge") {
+		t.Error("for the team as a whole, here is wherever a player is")
+	}
+	tm.Viewer = &Viewer{Position: &tm.Phones[0]}
+	if !tm.Here("gate") || tm.Here("bridge") {
+		t.Error("the phone at the gate is at the gate only")
+	}
+	tm.Viewer = &Viewer{}
+	if tm.Here("gate") || tm.Here("bridge") {
+		t.Error("a phone that has not reported is nowhere")
+	}
+	tm.Viewer = &Viewer{Position: &gate}
+	if tm.Here("attic") {
+		t.Error("a zone that does not exist is nowhere")
+	}
+}

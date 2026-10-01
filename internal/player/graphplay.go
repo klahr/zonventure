@@ -40,6 +40,18 @@ import (
 // engine returns the graph engine. Handlers built directly in a test
 // may leave it nil; assigning a default here would race between
 // requests, so a fresh one is built instead.
+// ForPhone is middleware marking a slot's requests as its phone's, so
+// the views and actions they run are built for that player: a block
+// shown only "here" asks where this phone is (play.ForPhone).
+func ForPhone(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if slot, ok := auth.SlotFromContext(r.Context()); ok {
+			r = r.WithContext(play.ForPhone(r.Context(), slot.ID))
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 func (h *Handlers) engine() *play.Engine {
 	if h.Engine != nil {
 		return h.Engine

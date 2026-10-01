@@ -602,5 +602,10 @@
   "{{team}} took a wrong turn.": "{{team}} tog fel väg.",
   "{{team}} took hint {{n}} at {{step}}.": "{{team}} tog ledtråd {{n}} på {{step}}.",
   "{{team}} went back from {{step}}.": "{{team}} gick tillbaka från {{step}}.",
-  "{{team}}’s time is up.": "Tiden är ute för {{team}}."
+  "{{team}}’s time is up.": "Tiden är ute för {{team}}.",
+  "Players inside a zone": "Spelare inne i en zon",
+  "A player in each of these zones": "En spelare i var och en av zonerna",
+  "— no zones yet —": "— inga zoner än —",
+  "{{team}} split up to cover {{places}}.": "{{team}} delade upp sig för att täcka {{places}}.",
+  "This player is inside a zone": "Den här spelaren är inne i en zon"
 }

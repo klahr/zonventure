@@ -67,6 +67,14 @@ export interface Geo {
 }
 
 /**
+ * How often a phone that has not moved still reports while the step waits
+ * on a zone. The browser only sends a fix when the position changes, and a
+ * player standing still at their post must keep counting as there: the
+ * server stops trusting a phone it has not heard from in a minute.
+ */
+const HEARTBEAT_MS = 15_000;
+
+/**
  * Watch the device's position and report it to the server.
  *
  * Reported every 15 seconds for the organiser's live map, and every 3
@@ -85,36 +93,51 @@ export function useGeo(enabled: boolean, waitingForZone: boolean, refresh: () =>
 
   useEffect(() => {
     if (!enabled || !("geolocation" in navigator)) return;
-    const id = navigator.geolocation.watchPosition(
-      (pos) => {
-        setGeo({ pos, error: null });
-        const gap = waitingRef.current ? 3_000 : 15_000;
-        const now = Date.now();
-        // A fix a kilometre wide says nothing about where the team is.
-        if (pos.coords.accuracy > 1_000) return;
-        if (now - last.current < gap) return;
-        last.current = now;
-        const c = pos.coords;
-        void play
-          .postLocation({
-            lat: c.latitude,
-            lng: c.longitude,
-            accuracy: c.accuracy,
-            ...(c.speed != null ? { speed: c.speed } : {}),
-            ...(c.heading != null ? { heading: c.heading } : {}),
-            client_ts: new Date(pos.timestamp).toISOString(),
-          })
-          .then(() => {
-            if (waitingRef.current) refreshRef.current();
-          })
-          .catch(() => {
-            /* offline: the next fix tries again */
-          });
-      },
-      (error) => setGeo((g) => ({ ...g, error })),
-      { enableHighAccuracy: true, maximumAge: 5_000, timeout: 30_000 },
-    );
-    return () => navigator.geolocation.clearWatch(id);
+    const report = (pos: GeolocationPosition, force: boolean) => {
+      setGeo({ pos, error: null });
+      const gap = waitingRef.current ? 3_000 : 15_000;
+      const now = Date.now();
+      // A fix a kilometre wide says nothing about where the team is.
+      if (pos.coords.accuracy > 1_000) return;
+      if (!force && now - last.current < gap) return;
+      last.current = now;
+      const c = pos.coords;
+      void play
+        .postLocation({
+          lat: c.latitude,
+          lng: c.longitude,
+          accuracy: c.accuracy,
+          ...(c.speed != null ? { speed: c.speed } : {}),
+          ...(c.heading != null ? { heading: c.heading } : {}),
+          client_ts: new Date(pos.timestamp).toISOString(),
+        })
+        .then(() => {
+          if (waitingRef.current) refreshRef.current();
+        })
+        .catch(() => {
+          /* offline: the next fix tries again */
+        });
+    };
+    const onError = (error: GeolocationPositionError) => setGeo((g) => ({ ...g, error }));
+    const id = navigator.geolocation.watchPosition((pos) => report(pos, false), onError, {
+      enableHighAccuracy: true,
+      maximumAge: 5_000,
+      timeout: 30_000,
+    });
+    // Asks for a fix only when the watch has gone quiet during a wait, so
+    // a walking phone is not asked twice.
+    const heartbeat = setInterval(() => {
+      if (!waitingRef.current || Date.now() - last.current < HEARTBEAT_MS) return;
+      navigator.geolocation.getCurrentPosition((pos) => report(pos, true), onError, {
+        enableHighAccuracy: true,
+        maximumAge: 10_000,
+        timeout: 10_000,
+      });
+    }, HEARTBEAT_MS / 3);
+    return () => {
+      navigator.geolocation.clearWatch(id);
+      clearInterval(heartbeat);
+    };
   }, [enabled]);
 
   return geo;

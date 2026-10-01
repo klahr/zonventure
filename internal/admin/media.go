@@ -33,6 +33,7 @@ import (
 	"github.com/klahr/zonventure/internal/graph"
 	"github.com/klahr/zonventure/internal/httpx"
 	"github.com/klahr/zonventure/internal/imageutil"
+	"github.com/klahr/zonventure/internal/play"
 	"github.com/klahr/zonventure/internal/tokenx"
 )
 
@@ -192,7 +193,9 @@ func (h *Handlers) ServeMedia(w http.ResponseWriter, r *http.Request) {
 	if me, ok := auth.FromContext(r.Context()); ok {
 		allowed = h.staffCanSeeAdventure(r.Context(), me, ownerOrg, published != 0, slug)
 	} else if slot, ok := auth.SlotFromContext(r.Context()); ok {
-		allowed, err = h.engine().CanSeeMedia(r.Context(), slot.TeamID, id)
+		// The phone's own: a picture in a block shown only to the player
+		// standing there is not another player's to fetch.
+		allowed, err = h.engine().CanSeeMedia(play.ForPhone(r.Context(), slot.ID), slot.TeamID, id)
 		if err != nil {
 			http.Error(w, "lookup failed", http.StatusInternalServerError)
 			return

@@ -460,7 +460,7 @@ func (t *Team) wakeup(p cond.Predicate) (at *time.Time, zone bool) {
 		return &d
 	}
 	switch p.Op {
-	case cond.OpInZone, cond.OpWalked:
+	case cond.OpInZone, cond.OpPlayersIn, cond.OpZonesHeld, cond.OpHere, cond.OpWalked:
 		return nil, true
 	case cond.OpNodeElapsed:
 		return later(t.NodeEnteredAt), false
@@ -484,7 +484,7 @@ func (t *Team) wakeup(p cond.Predicate) (at *time.Time, zone bool) {
 // waitsForZone is the zone a condition is simply "inside", for a teaser
 // to name; "" for anything more involved.
 func waitsForZone(p cond.Predicate) string {
-	if p.Op == cond.OpInZone {
+	if p.Op == cond.OpInZone || p.Op == cond.OpHere {
 		return p.Zone
 	}
 	if p.Op == cond.OpAll && len(p.Of) == 1 {
@@ -846,6 +846,12 @@ func (t *Team) view() View {
 					continue
 				}
 				open := t.branchOpen(b)
+				if !open {
+					// A branch waiting on where the players are, or on the
+					// clock, opens without the team doing anything: the
+					// phone should look again as it does for a hidden block.
+					t.watch(&v, b.Condition)
+				}
 				if !open && n.HubCfg.HideLocked {
 					continue
 				}

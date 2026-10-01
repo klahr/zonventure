@@ -406,6 +406,28 @@ func TestDanglingReferences(t *testing.T) {
 	g := withGate(cond.Predicate{Op: cond.OpItem, Item: "crowbar"})
 	g.Items = []graph.Item{{Slug: "crowbar"}}
 	assertNoCode(t, Check(g), "ref.item.unknown")
+
+	// zones_held names its zones in members, and those are checked too.
+	assertCode(t, Check(withGate(cond.Predicate{Op: cond.OpZonesHeld, Members: []string{"ghost"}})), "ref.zone.unknown")
+}
+
+// "This player" means the phone a view is for. A gate decides for the
+// team, so it may not ask; a block's show condition may.
+func TestHereOnlyInBlocks(t *testing.T) {
+	here := cond.Predicate{Op: cond.OpHere, Zone: "square"}
+	g := valid3()
+	g.Zones = []graph.Zone{{Slug: "square", Lat: 59.3, Lng: 18.1, RadiusM: 30}}
+	g.Nodes = append(g.Nodes, graph.Node{
+		Slug: "gate", Type: graph.Gate, GateCfg: &graph.GateConfig{Condition: cond.Predicate{Op: cond.OpNot, Of: []cond.Predicate{here}}},
+	})
+	g.Edges[1] = edge("p1", "solved", "gate")
+	g.Edges = append(g.Edges, edge("gate", graph.PortPass, "p2"), edge("gate", graph.PortFail, "p2"))
+	assertCode(t, Check(g), "cond.here.team")
+
+	b := valid3()
+	b.Zones = g.Zones
+	b.Nodes[1].PuzzleCfg.Blocks = append(b.Nodes[1].PuzzleCfg.Blocks, graph.Block{ID: "x", Kind: graph.BlockText, Text: "Psst.", Show: &graph.Show{When: here}})
+	assertNoCode(t, Check(b), "cond.here.team")
 }
 
 func TestZoneReferences(t *testing.T) {

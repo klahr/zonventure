@@ -11,6 +11,50 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Added — conditions on where each player is, for teams that split up
+
+- **Two new conditions** for gates, hub branches and block show rules:
+  *Players inside a zone* (`players_in_zone`, compared like a number:
+  "at least 2 at the gate") and *A player in each of these zones*
+  (`zones_held`: someone at the gate *and* someone at the bridge, at
+  once). They read each phone's own position, from phones heard from
+  in the last minute.
+- **Blocks shown only to the player standing there.** A block's show
+  condition can ask *This player is inside a zone* (`here`): the clue at
+  the fountain is on the phone at the fountain, the code at the church
+  on the one at the church, pictures included — another player's phone
+  can neither see nor fetch it. Gates and hub branches decide for the
+  whole team, so the validator refuses `here` there (`cond.here.team`).
+- **Hubs wait for a team to get there.** A branch locked on where the
+  players are — *inside a zone*, as well as the new conditions — no
+  longer counts as permanently shut while the team has the players for
+  it: the team stays at the hub until they are in place, instead of
+  being moved on past the branch. A team too small for it still moves
+  on, as from any shut branch, and so does one whose branch is shut on
+  the clock, its history or what it carries. **This changes existing
+  adventures:** a hub whose last branch waited on *inside a zone* used
+  to let the team leave; now the team waits there. Locked branches now also make the
+  phone report its position quickly, as hidden blocks already did.
+- **Phones keep reporting while a step waits on a place**, every 15
+  seconds even when standing still — the browser only reports a move,
+  and a player holding a post must keep counting as there.
+- **The simulator splits teams up** to open a branch that wants players
+  in several places, and gathers them again after; the feed says so.
+- **Inside a zone now means any player is inside it**, not wherever
+  the team's most recent ping happened to come from — a team that
+  splits up no longer flickers in and out of a zone as its phones take
+  turns reporting.
+
+### Fixed — teammates far apart rejected as teleports; zone pictures refused
+
+- The anti-teleport check compared each ping with the team's last one,
+  from whichever phone, so two players a few streets apart could have
+  their pings refused as impossible jumps. It now compares each phone
+  only with itself, and so does the trusted-position rule.
+- A picture in a block shown only inside a zone was refused (404) to
+  a player standing in that zone, in an adventure with strict assets:
+  the media check never read where the team was. It does now.
+
 ### Added — teams choose their picture; names fixed once a team begins
 
 - **Players can set their team's picture** from the player app's

@@ -143,6 +143,20 @@ type Team struct {
 
 	Now      time.Time `json:"now"`
 	Position *Position `json:"position,omitempty"`
+	// Phones are where each of the team's phones that reported lately
+	// is, for conditions that ask where the players are rather than the
+	// team. Like Occ it is read fresh for every action, never stored.
+	//
+	// Nil means the team keeps together: every player stands at
+	// Position, as a simulated team does. The live engine sets it, empty
+	// when no phone has reported lately; then Position, wherever the
+	// team was last seen, stands for one player.
+	Phones []Position `json:"-"`
+	// Viewer is the phone a view or an action is for, which a block shown
+	// "here" asks about; nil builds it for the team as a whole — the
+	// organisers' look at it, a simulated team — where "here" is wherever
+	// one of its players is. Never stored.
+	Viewer *Viewer `json:"-"`
 	// WalkedMetres is how far the team has walked on its current node:
 	// read from its phones' positions by the live engine, added up from
 	// the moves the simulator makes.
@@ -325,16 +339,107 @@ func (t *Team) NodeElapsedSeconds() float64 {
 
 func (t *Team) TeamSize() int { return t.Size }
 
-func (t *Team) InZone(slug string) bool {
-	if t.Position == nil {
-		return false
+// InZone reports whether one of the team's players is inside the zone.
+// While the team is together that is where it is; once it splits up, a
+// player who reached the zone has brought the team there, however far
+// the others are.
+func (t *Team) InZone(slug string) bool { return t.PlayersInZone(slug) > 0 }
+
+// PlayersInZone counts the team's players inside the zone.
+func (t *Team) PlayersInZone(slug string) int {
+	z := t.zoneBySlug(slug)
+	if z == nil {
+		return 0
 	}
-	for _, z := range t.G.Zones {
-		if z.Slug == slug {
-			return ZoneContains(z, t.Position.Lat, t.Position.Lng)
+	n := 0
+	for _, p := range t.players() {
+		if ZoneContains(*z, p.Lat, p.Lng) {
+			n++
 		}
 	}
-	return false
+	return n
+}
+
+// ZonesHeld reports whether every one of the zones has a player of its
+// own inside it, at the same time. Zones may overlap, and a player
+// standing in two of them holds only one, so this is a matching of
+// players to zones rather than a count per zone. Teams are small and so
+// are the lists, so the plain augmenting-path search is plenty.
+func (t *Team) ZonesHeld(slugs []string) bool {
+	slugs = slices.Compact(slices.Sorted(slices.Values(slugs)))
+	players := t.players()
+	if len(slugs) > len(players) {
+		return false
+	}
+	// in[i][j]: player j stands in zone i.
+	in := make([][]bool, len(slugs))
+	for i, slug := range slugs {
+		z := t.zoneBySlug(slug)
+		if z == nil {
+			return false
+		}
+		in[i] = make([]bool, len(players))
+		for j, p := range players {
+			in[i][j] = ZoneContains(*z, p.Lat, p.Lng)
+		}
+	}
+	holder := make([]int, len(players)) // player → zone held, -1 for none
+	for j := range holder {
+		holder[j] = -1
+	}
+	var claim func(i int, tried []bool) bool
+	claim = func(i int, tried []bool) bool {
+		for j := range players {
+			if !in[i][j] || tried[j] {
+				continue
+			}
+			tried[j] = true
+			if holder[j] < 0 || claim(holder[j], tried) {
+				holder[j] = i
+				return true
+			}
+		}
+		return false
+	}
+	for i := range slugs {
+		if !claim(i, make([]bool, len(players))) {
+			return false
+		}
+	}
+	return true
+}
+
+// Viewer is one phone of the team.
+type Viewer struct {
+	// Position is where the phone is; nil when it has not reported
+	// lately, and then it is nowhere.
+	Position *Position
+}
+
+// Here reports whether the player the view is for is inside the zone.
+func (t *Team) Here(slug string) bool {
+	if t.Viewer == nil {
+		return t.InZone(slug)
+	}
+	z := t.zoneBySlug(slug)
+	return z != nil && t.Viewer.Position != nil && ZoneContains(*z, t.Viewer.Position.Lat, t.Viewer.Position.Lng)
+}
+
+// players are where the team's players stand: see Phones.
+func (t *Team) players() []Position {
+	switch {
+	case len(t.Phones) > 0:
+		return t.Phones
+	case t.Position == nil:
+		return nil
+	case t.Phones != nil:
+		return []Position{*t.Position}
+	}
+	out := make([]Position, max(t.Size, 1))
+	for i := range out {
+		out[i] = *t.Position
+	}
+	return out
 }
 
 // ZoneContains reports whether a point is inside a zone: within the

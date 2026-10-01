@@ -28,11 +28,13 @@ import (
 	"maps"
 	"math"
 	"math/rand/v2"
+	"slices"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/klahr/zonventure/internal/graph"
+	"github.com/klahr/zonventure/internal/graph/cond"
 	"github.com/klahr/zonventure/internal/graph/match"
 	"github.com/klahr/zonventure/internal/graph/session"
 	"github.com/klahr/zonventure/internal/graph/walk"
@@ -111,7 +113,7 @@ type Event struct {
 	Team int     `json:"team"`
 	// Kind is start, arrive, astray, wrong, right, locked, hint, skip,
 	// timeout, timeup, choose, back, leave, continue, pick, language,
-	// message, nudge, forced, stalled, error or finish. Team is -1 for a
+	// split, message, nudge, forced, stalled, error or finish. Team is -1 for a
 	// message to everyone.
 	Kind string `json:"kind"`
 	Node string `json:"node,omitempty"`
@@ -446,6 +448,10 @@ type bot struct {
 	// has searched at each.
 	given    map[string]map[string]bool
 	searched map[string]map[string]bool
+
+	// regroup is when a team that split up to open a branch is together
+	// again, having walked back to the player who stayed nearest.
+	regroup float64
 }
 
 // mark notes key under node in m, making the maps as needed.
@@ -466,6 +472,10 @@ func (b *bot) act() {
 	b.actions++
 	if b.actions > maxActions {
 		b.stall("too many actions — does the draft loop?")
+		return
+	}
+	if b.regroup > b.r.now {
+		b.wake = b.regroup
 		return
 	}
 	b.t.Now = b.r.at(b.r.now)
@@ -562,6 +572,7 @@ func (b *bot) applied(step walk.Step) {
 		return
 	}
 	if b.t.Current != b.node {
+		b.gather()
 		b.leftStep()
 		b.node = b.t.Current
 		b.enterT, b.working, b.chance, b.astray = b.r.now, -1, 0, false
@@ -844,6 +855,11 @@ func (b *bot) hub(v session.View) {
 			return
 		}
 	}
+	// Nothing new open, but a branch waits on the players being in
+	// different places: split up to open it, before going round again.
+	if len(open) == 0 && b.spreadOut(v) {
+		return
+	}
 	if len(open) == 0 {
 		for _, o := range v.Offer {
 			if !o.Locked {
@@ -866,6 +882,115 @@ func (b *bot) hub(v session.View) {
 	}
 	// Full, most likely: try again soon, perhaps another.
 	b.later(60 + b.rng().Float64()*120)
+}
+
+// --- splitting up ---------------------------------------------------------
+
+// spreadOut sends the team's players to the zones a locked branch of the
+// hub waits on, one zone per player: the way a real team opens a branch
+// that wants someone at the gate and someone at the bridge. A branch
+// waiting on one zone the team walks to together. It reports
+// whether the team did; a team too small for what every branch asks, or
+// already spread as asked, waits like any other.
+func (b *bot) spreadOut(v session.View) bool {
+	n, _ := b.r.g.Node(v.Node)
+	if n.HubCfg == nil || b.t.Position == nil {
+		return false
+	}
+	for _, o := range v.Offer {
+		if !o.Locked {
+			continue
+		}
+		var want map[string]int
+		for _, br := range n.HubCfg.Branches {
+			if br.Port == o.Port {
+				want = cond.Spread(br.Condition)
+			}
+		}
+		total := 0
+		for _, k := range want {
+			total += k
+		}
+		if total == 0 || total > max(b.t.Size, 1) {
+			continue
+		}
+		zones := slices.Sorted(maps.Keys(want))
+		var posts []graph.Zone
+		for _, slug := range zones {
+			z, ok := b.r.zone(slug)
+			if !ok {
+				posts = nil
+				break
+			}
+			for range want[slug] {
+				posts = append(posts, z)
+			}
+		}
+		if posts == nil || b.spreadAs(posts) {
+			continue
+		}
+		// One place is somewhere to go, not a reason to split: the team
+		// walks there together.
+		if len(zones) == 1 && b.t.Phones == nil {
+			if b.goTo(&posts[0]) {
+				continue
+			}
+			return true
+		}
+		from := *b.t.Position
+		phones := make([]session.Position, max(b.t.Size, 1))
+		arrive := b.r.now
+		for i := range phones {
+			phones[i] = from
+			if i < len(posts) {
+				phones[i] = b.inside(posts[i])
+				d := session.HaversineMeters(from.Lat, from.Lng, phones[i].Lat, phones[i].Lng)
+				arrive = math.Max(arrive, b.r.now+d/(b.pace*(0.75+b.rng().Float64()*0.5)))
+			}
+		}
+		b.t.Phones = phones
+		// The map follows the first player, who keeps the team's phone.
+		b.t.Position = &phones[0]
+		b.out.Path = append(b.out.Path, Waypoint{T: round(arrive, 1), Lat: phones[0].Lat, Lng: phones[0].Lng})
+		names := make([]string, len(zones))
+		for i, slug := range zones {
+			z, _ := b.r.zone(slug)
+			names[i] = z.Name
+		}
+		b.r.emit(b.id, "split", v.Node, strings.Join(names, ", "))
+		b.wake = arrive + 5 + b.rng().Float64()*20
+		return true
+	}
+	return false
+}
+
+// spreadAs reports whether the team is split up already with a player in
+// each of posts, so it does not set out again while it waits.
+func (b *bot) spreadAs(posts []graph.Zone) bool {
+	if b.t.Phones == nil || len(posts) > len(b.t.Phones) {
+		return false
+	}
+	for i, z := range posts {
+		if !session.ZoneContains(z, b.t.Phones[i].Lat, b.t.Phones[i].Lng) {
+			return false
+		}
+	}
+	return true
+}
+
+// gather brings a split team back together where its first player is,
+// once it moves on: the others walk there before it does anything else.
+func (b *bot) gather() {
+	if b.t.Phones == nil || b.t.Position == nil {
+		return
+	}
+	at := *b.t.Position
+	far := 0.0
+	for _, p := range b.t.Phones {
+		far = math.Max(far, session.HaversineMeters(p.Lat, p.Lng, at.Lat, at.Lng))
+	}
+	b.t.Phones = nil
+	b.regroup = b.r.now + far/b.pace
 }
 
 // branchZone is where a hub branch would first send the team, found by
@@ -1334,6 +1459,9 @@ func cloneTeam(t *session.Team) *session.Team {
 	if t.Position != nil {
 		p := *t.Position
 		c.Position = &p
+	}
+	if t.Phones != nil {
+		c.Phones = slices.Clone(t.Phones)
 	}
 	return &c
 }

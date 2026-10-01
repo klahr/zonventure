@@ -386,6 +386,9 @@ func resolveHub(s State, hub graph.Node) (chosen string, offer []graph.Branch, s
 			}
 		}
 		if len(open) == 0 {
+			if branchesWait(s, hub) {
+				return "", []graph.Branch{}, false, false, nil
+			}
 			return "", nil, false, false, fmt.Errorf("%w: hub %s", ErrStuck, hub.Slug)
 		}
 		return "", open, false, false, nil
@@ -406,8 +409,13 @@ func resolveHub(s State, hub graph.Node) (chosen string, offer []graph.Branch, s
 	// Nothing left to offer: leave, whether because the requirement is
 	// met or because every remaining branch is permanently shut. The
 	// second case matters — a team whose last open branch became
-	// unreachable must not be stranded in a park.
+	// unreachable must not be stranded in a park. A branch waiting on the
+	// players to get in place is not shut: the team stays, with nothing
+	// to choose yet, until they do.
 	if len(open) == 0 {
+		if !met && branchesWait(s, hub) {
+			return "", []graph.Branch{}, false, false, nil
+		}
 		if met || allBranchesAccountedFor(s, hub) {
 			return "", nil, met, true, nil
 		}
@@ -474,6 +482,18 @@ func resolveHub(s State, hub graph.Node) (chosen string, offer []graph.Branch, s
 // branchOpen reports whether a branch's condition currently holds.
 func branchOpen(s cond.State, _ graph.Node, b graph.Branch) bool {
 	return cond.Eval(b.Condition, s)
+}
+
+// branchesWait reports whether a branch not yet done is shut only until
+// the team's players get in place: see cond.Waits.
+func branchesWait(s State, hub graph.Node) bool {
+	home := hub.HubCfg.Home
+	for _, b := range hub.HubCfg.Branches {
+		if (home || !s.BranchDone(hub.Slug, b.Port)) && !branchOpen(s, hub, b) && cond.Waits(b.Condition, s) {
+			return true
+		}
+	}
+	return false
 }
 
 // allBranchesAccountedFor reports whether every branch is either done or
