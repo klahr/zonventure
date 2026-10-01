@@ -342,7 +342,12 @@ export interface Brand {
 export interface PlayState {
   /** "lanes" means this event is not played in the React app. */
   engine: "graph" | "lanes";
-  team: { id: number; name: string; token: string };
+  /**
+   * avatar_url is the team's picture, if it has one. locked: the team
+   * has begun, so its players can no longer change their names or the
+   * picture (the organisers still can).
+   */
+  team: { id: number; name: string; token: string; avatar_url?: string; locked?: boolean };
   /** The signed-in player: one slot of the team. */
   me?: { id: number; name?: string };
   event: {
@@ -403,6 +408,16 @@ export function uploadPhoto(node: string, block: string, file: Blob) {
   form.append("file", file);
   return request<{ photo: PhotoView }>("/api/player/play/photo", { method: "POST", form });
 }
+
+/** Set the team's picture; any member may, until the team begins (409 "team_started" after). */
+export function setTeamAvatar(file: Blob) {
+  const form = new FormData();
+  form.append("file", file);
+  return request<{ url: string }>("/api/player/team/avatar", { method: "POST", form });
+}
+
+/** Remove the team's picture, on the same terms. */
+export const clearTeamAvatar = () => request<void>("/api/player/team/avatar", { method: "DELETE" });
 
 /** A picture the team took, for its own phones. */
 export const photoURL = (id: number) => `/api/player/play/photo/${id}`;

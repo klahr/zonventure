@@ -49,11 +49,15 @@ func (h *Handlers) engine() *play.Engine {
 	return play.New(h.DB)
 }
 
-// PlayTeam is the team as the player app shows it.
+// PlayTeam is the team as the player app shows it. Locked says the team
+// has begun (play.TeamBegun), so its players can no longer change their
+// names or its picture; organisers still can.
 type PlayTeam struct {
-	ID    int64  `json:"id"`
-	Name  string `json:"name"`
-	Token string `json:"token"`
+	ID        int64  `json:"id"`
+	Name      string `json:"name"`
+	Token     string `json:"token"`
+	AvatarURL string `json:"avatar_url,omitempty"`
+	Locked    bool   `json:"locked,omitempty"`
 }
 
 // PlayEvent is the event as the player app shows it.
@@ -153,7 +157,7 @@ func (h *Handlers) GetPlay(w http.ResponseWriter, r *http.Request) {
 
 	out := PlayState{
 		Engine: "lanes",
-		Team:   PlayTeam{ID: tc.TeamID, Name: tc.TeamName, Token: tc.TeamToken},
+		Team:   PlayTeam{ID: tc.TeamID, Name: tc.TeamName, Token: tc.TeamToken, AvatarURL: teamAvatarURL(tc)},
 		Me:     PlayMe{ID: slot.ID, Name: slot.Name},
 		Event: PlayEvent{
 			ID: tc.EventID, State: tc.RunState, ScheduledAt: tc.ScheduledAt.String, OrgName: tc.OrgName,
@@ -194,6 +198,10 @@ func (h *Handlers) GetPlay(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out.Engine = "graph"
+	if out.Team.Locked, err = play.TeamBegun(ctx, h.DB, tc.TeamID); err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "loading team failed", err)
+		return
+	}
 	if tc.RunState == "scheduled" || tc.RunState == "cancelled" {
 		httpx.JSON(w, http.StatusOK, out)
 		return

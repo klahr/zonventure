@@ -27,6 +27,7 @@ import (
 	mailerpkg "github.com/klahr/zonventure/internal/mailer"
 	"github.com/klahr/zonventure/internal/mdx"
 	"github.com/klahr/zonventure/internal/play"
+	"github.com/klahr/zonventure/internal/storage"
 	"github.com/klahr/zonventure/internal/webhooks"
 	"github.com/klahr/zonventure/internal/ws"
 )
@@ -64,6 +65,8 @@ type Handlers struct {
 	// Engine runs graph adventures. The server sets one shared engine so
 	// its graph cache is shared; nil builds a throwaway one per call.
 	Engine *play.Engine
+	// Storage keeps the team's picture.
+	Storage storage.Blobs
 	// limiter throttles answer + location attempts per slot. Lazy-init
 	// on first use so tests that construct Handlers directly don't
 	// need to plumb a value through. nil-safe.
@@ -260,6 +263,7 @@ type teamContext struct {
 	OrgID         int64
 	OrgName       string
 	OrgHasLogo    bool // true when the owning org has uploaded a brand logo
+	HasAvatar     bool // true when the team has a picture
 	AdventureSlug string
 	RunState      string
 	ScheduledAt   sql.NullString
@@ -374,7 +378,7 @@ func maybePromoteScheduled(ctx context.Context, db *sql.DB, hub *ws.Hub, lib *ad
 
 func loadTeam(ctx context.Context, db *sql.DB, slot auth.Slot) (teamContext, error) {
 	var tc teamContext
-	var hasLogo int
+	var hasLogo, hasAvatar int
 	var pageID, laneID sql.NullInt64
 	err := db.QueryRowContext(ctx, `
 		SELECT t.id, t.name, t.token, ar.id, ar.org_id, ar.adventure_slug, ar.state,
@@ -382,7 +386,8 @@ func loadTeam(ctx context.Context, db *sql.DB, slot auth.Slot) (teamContext, err
 		       t.current_page_index, t.current_page_id, t.current_lane_id,
 		       t.current_page_started_at, t.completed_at,
 		       o.name,
-		       (o.logo_content IS NOT NULL AND length(o.logo_content) > 0)::int
+		       (o.logo_content IS NOT NULL AND length(o.logo_content) > 0)::int,
+		       (t.avatar_mime_type IS NOT NULL)::int
 		FROM teams t
 		JOIN events ar ON ar.id = t.event_id
 		JOIN organizations o ON o.id = ar.org_id
@@ -392,8 +397,9 @@ func loadTeam(ctx context.Context, db *sql.DB, slot auth.Slot) (teamContext, err
 		&tc.RunState, &tc.ScheduledAt, &tc.StartedAt,
 		&tc.CurrentPageIndex, &pageID, &laneID,
 		&tc.CurrentPageStartedAt, &tc.CompletedAt,
-		&tc.OrgName, &hasLogo)
+		&tc.OrgName, &hasLogo, &hasAvatar)
 	tc.OrgHasLogo = hasLogo != 0
+	tc.HasAvatar = hasAvatar != 0
 	if pageID.Valid {
 		tc.CurrentPageID = pageID.Int64
 	}
@@ -1667,6 +1673,9 @@ func (h *Handlers) RenameMyself(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	slot, _ := auth.SlotFromContext(r.Context())
+	if h.refuseOnceBegun(w, r, slot.TeamID) {
+		return
+	}
 	if _, err := h.DB.ExecContext(r.Context(),
 		`UPDATE player_slots SET name = $1 WHERE id = $2`, name, slot.ID); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "rename failed")
@@ -1701,6 +1710,9 @@ func (h *Handlers) RenameMyTeam(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	slot, _ := auth.SlotFromContext(r.Context())
+	if h.refuseOnceBegun(w, r, slot.TeamID) {
+		return
+	}
 	if _, err := h.DB.ExecContext(r.Context(),
 		`UPDATE teams SET name = $1 WHERE id = $2`, name, slot.TeamID); err != nil {
 		// UNIQUE(event_id, name) is the only constraint that can

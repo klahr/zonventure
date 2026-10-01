@@ -11,6 +11,18 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Added — teams choose their picture; names fixed once a team begins
+
+- **Players can set their team's picture** from the player app's
+  menu, beside their own name and the team name. It shows on the live
+  leaderboard and the organisers' map.
+- **Names and the picture are fixed for players once their team
+  begins** — its first move, not placement, so a self-guided team can
+  still name itself on its first screen. Changing them after is
+  refused (`409 team_started`) and the menu shows them read-only; the
+  share page's picture upload follows the same rule. Organisers can
+  still change all of it from the event page.
+
 ### Added — building an adventure with an assistant, on site
 
 - **Small graph edits over MCP.** `edit_adventure_graph` applies a

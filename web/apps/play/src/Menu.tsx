@@ -116,12 +116,14 @@ export function Menu(props: {
       >
             <h2 className="app-drawer__title">{t("Menu")}</h2>
             <div className="app-menu" key={opened}>
+              {state.team.locked && <p className="app-menu__locked">{lockedNote(t)}</p>}
               <NameField
                 label={t("Your name")}
                 value={state.me?.name ?? ""}
                 t={t}
                 save={play.renameMe}
                 onSaved={props.onRenamed}
+                locked={!!state.team.locked}
                 hint={t("Shown to your team and the organisers.")}
               />
               <NameField
@@ -130,8 +132,10 @@ export function Menu(props: {
                 t={t}
                 save={play.renameTeam}
                 onSaved={props.onRenamed}
+                locked={!!state.team.locked}
                 hint={t("Everyone on the team sees the change.")}
               />
+              <TeamPicture team={state.team} t={t} onSaved={props.onRenamed} />
 
               {langs.length > 1 && (
                 <label className="app-menu__field">
@@ -207,6 +211,12 @@ export function Menu(props: {
   );
 }
 
+/** Why the names and the picture can no longer be changed here. */
+const lockedNote = (t: Translate) => t("Fixed now that your team has begun. Ask the organisers if it needs changing.");
+
+/** A refusal because the team has begun: the state is behind, so refresh it. */
+const isLocked = (err: unknown) => err instanceof ApiError && err.code === "team_started";
+
 function NameField(props: {
   label: string;
   value: string;
@@ -214,6 +224,8 @@ function NameField(props: {
   t: Translate;
   save: (name: string) => Promise<unknown>;
   onSaved: () => void;
+  /** The team has begun: shown, not editable. */
+  locked: boolean;
 }) {
   const { t } = props;
   const [draft, setDraft] = useState(props.value);
@@ -233,6 +245,11 @@ function NameField(props: {
       props.onSaved();
     } catch (err) {
       setState("idle");
+      if (isLocked(err)) {
+        setDraft(props.value);
+        props.onSaved();
+        return;
+      }
       setError(
         err instanceof ApiError && err.status === 409
           ? t("Another team already has that name.")
@@ -250,17 +267,85 @@ function NameField(props: {
         <input
           id={props.label}
           className="pv-input"
-          value={draft}
+          value={props.locked ? props.value : draft}
           maxLength={64}
           autoComplete="off"
           enterKeyHint="done"
+          readOnly={props.locked}
           onChange={(e) => { setDraft(e.target.value); setState("idle"); }}
         />
-        <button type="submit" className="pv-btn pv-btn--primary" disabled={!changed || state === "saving"}>
-          {state === "saved" && !changed ? t("Saved") : t("Save")}
-        </button>
+        {!props.locked && (
+          <button type="submit" className="pv-btn pv-btn--primary" disabled={!changed || state === "saving"}>
+            {state === "saved" && !changed ? t("Saved") : t("Save")}
+          </button>
+        )}
       </div>
-      <span className="app-menu__hint">{error ? <span className="app-menu__error">{error}</span> : props.hint}</span>
+      {!props.locked && <span className="app-menu__hint">{error ? <span className="app-menu__error">{error}</span> : props.hint}</span>}
     </form>
+  );
+}
+
+/**
+ * The team's picture: on the leaderboard and the organisers' map. Any
+ * member may set or remove it until the team begins.
+ */
+function TeamPicture({ team, t, onSaved }: { team: play.PlayState["team"]; t: Translate; onSaved: () => void }) {
+  const input = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  // The picture keeps its address when it changes; a version defeats the cache.
+  const [version, setVersion] = useState(0);
+  const src = team.avatar_url ? `${team.avatar_url}${version ? `?v=${version}` : ""}` : null;
+
+  const run = async (fn: () => Promise<unknown>) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await fn();
+      setVersion(Date.now());
+      onSaved();
+    } catch (err) {
+      if (isLocked(err)) onSaved();
+      else setError(err instanceof ApiError && err.status === 413 ? t("That picture is too large (5 MB at most).") : err instanceof ApiError && err.status === 400 ? t("That file isn't a picture we can use.") : t("Couldn't reach the server. Check your connection and try again."));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="app-menu__field">
+      <span className="app-menu__label">{t("Team picture")}</span>
+      <div className="app-menu__row app-menu__picture">
+        <span className="app-team-pic" aria-hidden={!src}>
+          {src ? <img src={src} alt={t("Your team's picture")} /> : <span>{(team.name.trim()[0] ?? "?").toUpperCase()}</span>}
+        </span>
+        {!team.locked && (
+          <>
+            <button type="button" className="pv-btn" disabled={busy} onClick={() => input.current?.click()}>
+              {src ? t("Change") : t("Choose a picture")}
+            </button>
+            {src && (
+              <button type="button" className="pv-btn" disabled={busy} onClick={() => void run(play.clearTeamAvatar)}>
+                {t("Remove")}
+              </button>
+            )}
+            <input
+              ref={input}
+              type="file"
+              accept="image/*"
+              hidden
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                e.target.value = "";
+                if (file) void run(() => play.setTeamAvatar(file));
+              }}
+            />
+          </>
+        )}
+      </div>
+      {!team.locked && (
+        <span className="app-menu__hint">{error ? <span className="app-menu__error">{error}</span> : t("Shown on the leaderboard and to the organisers.")}</span>
+      )}
+    </div>
   );
 }

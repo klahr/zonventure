@@ -272,6 +272,7 @@ func New(cfg Config) http.Handler {
 	if store == nil {
 		store = dbblob.New(cfg.DB)
 	}
+	playerH.Storage = store
 	importers := cfg.TeamImporters
 	if importers == nil {
 		// Bundled default set. Each format is a separate subpackage

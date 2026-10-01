@@ -346,5 +346,13 @@
   "Solved.": "Löst.",
   "Wrong password.": "Fel lösenord.",
   "No connection. Try again when you're back online.": "Ingen anslutning. Försök igen när du är uppkopplad.",
-  "For testing. Every answer counts as right, for no points, and the team is left out of the rankings.": "För test. Alla svar räknas som rätt, utan poäng, och laget räknas inte med i resultatlistan."
+  "For testing. Every answer counts as right, for no points, and the team is left out of the rankings.": "För test. Alla svar räknas som rätt, utan poäng, och laget räknas inte med i resultatlistan.",
+  "Choose a picture": "Välj en bild",
+  "Fixed now that your team has begun. Ask the organisers if it needs changing.": "Låst nu när ert lag har börjat. Fråga arrangörerna om något behöver ändras.",
+  "Remove": "Ta bort",
+  "Shown on the leaderboard and to the organisers.": "Visas på topplistan och för arrangörerna.",
+  "Team picture": "Lagbild",
+  "That file isn't a picture we can use.": "Den filen är ingen bild vi kan använda.",
+  "That picture is too large (5 MB at most).": "Bilden är för stor (högst 5 MB).",
+  "Your team's picture": "Ert lags bild"
 }

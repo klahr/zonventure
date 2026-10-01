@@ -56,6 +56,10 @@ func registerPlayerRoutes(r chi.Router, env *routesEnv) {
 		// member can update; UNIQUE(event_id, name) prevents
 		// collisions across teams.
 		r.Post("/team/name", playerH.RenameMyTeam)
+		// The team's picture, set by its players — like the names, only
+		// until the team begins (play.TeamBegun).
+		r.Post("/team/avatar", playerH.SetMyTeamAvatar)
+		r.Delete("/team/avatar", playerH.DeleteMyTeamAvatar)
 		r.Get("/summary", playerH.Summary)
 	})
 

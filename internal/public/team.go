@@ -12,6 +12,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/klahr/zonventure/internal/httpx"
 	"github.com/klahr/zonventure/internal/imageutil"
+	"github.com/klahr/zonventure/internal/play"
 	"github.com/klahr/zonventure/internal/storage"
 	"github.com/klahr/zonventure/internal/ws"
 	qrcode "github.com/skip2/go-qrcode"
@@ -158,6 +159,15 @@ func (h *Handlers) SetTeamAvatarByToken(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
+	// Like the player app's own upload: the team's to change only until
+	// it begins.
+	if begun, err := play.TeamBegun(r.Context(), h.DB, teamID); err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "loading team failed")
+		return
+	} else if begun {
+		httpx.JSON(w, http.StatusConflict, map[string]string{"error": "the team picture is fixed once your team has begun", "code": "team_started"})
+		return
+	}
 	if err := r.ParseMultipartForm(maxTeamAvatarBytes); err != nil {
 		httpx.Error(w, http.StatusBadRequest, "bad multipart form")
 		return
@@ -254,6 +264,15 @@ func (h *Handlers) DeleteTeamAvatarByToken(w http.ResponseWriter, r *http.Reques
 	token := chi.URLParam(r, "token")
 	teamID, eventID, ok := h.teamByToken(w, r, token)
 	if !ok {
+		return
+	}
+	// Like the player app's own upload: the team's to change only until
+	// it begins.
+	if begun, err := play.TeamBegun(r.Context(), h.DB, teamID); err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "loading team failed")
+		return
+	} else if begun {
+		httpx.JSON(w, http.StatusConflict, map[string]string{"error": "the team picture is fixed once your team has begun", "code": "team_started"})
 		return
 	}
 	if err := h.Storage.DeleteTeamAvatar(r.Context(), teamID); err != nil {
