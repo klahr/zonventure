@@ -99,7 +99,8 @@
   width: 100%;
   aspect-ratio: 1;
   object-fit: cover;
-  border-radius: calc(var(--radius) - 2px);
+  /* A person, so a circle, like every portrait. */
+  border-radius: 50%;
   background: var(--surface-2);
 }
 .pv-suspects__img--none { display: grid; place-items: center; font-size: 2rem; font-weight: 800; color: var(--muted); }

@@ -57,3 +57,11 @@ test("a step gets its fixed blocks where missing, as the server adds them", asyn
   const e: Node = { slug: "e", type: "end", end: {} };
   assert.equal(withFixed(e), e, "an end has no fixed blocks");
 });
+
+test("blocks reach a step saved without its settings", () => {
+  const bare: Node = { slug: "s", type: "story", title: "S" };
+  const text = { id: "b1", kind: "text" as const, text: "Hello" };
+  assert.deepEqual(withBlocks(bare, [text]).story, { blocks: [text] });
+  assert.deepEqual(blocksOf(withBlocks({ slug: "e", type: "end" }, [text])), [text]);
+  assert.deepEqual(withBlocks({ slug: "g", type: "gate" }, [text]), { slug: "g", type: "gate" }, "a step without blocks is left alone");
+});

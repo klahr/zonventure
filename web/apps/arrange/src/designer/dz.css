@@ -1310,29 +1310,6 @@
 .dz .editor-saved svg {
   color: var(--dz-success);
 }
-/* Someone else — usually an assistant — is saving this adventure. */
-.dz .editor-toolbar .editor-remote {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--dz-space-1h);
-  height: 34px;
-  padding: 0 10px;
-  border-radius: var(--dz-r-2);
-  font-size: var(--dz-text-md);
-  line-height: 1;
-  white-space: nowrap;
-  color: var(--dz-accent);
-  user-select: none;
-}
-.dz .editor-remote svg {
-  animation: dz-remote-pulse 1.6s ease-in-out infinite;
-}
-@keyframes dz-remote-pulse {
-  50% { opacity: 0.35; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .dz .editor-remote svg { animation: none; }
-}
 @media (prefers-reduced-motion: reduce) {
 .dz .react-flow__handle.connectingto:not(.valid) {
     animation: none;

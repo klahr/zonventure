@@ -48,7 +48,8 @@ import { Frame as FrameIcon } from "lucide-react";
 import { useT } from "../i18n.tsx";
 import { CanvasContextMenu, type ContextMenuItem } from "./dz/CanvasContextMenu.tsx";
 import { ICON } from "./dz/ui.tsx";
-import { NodeCard, TYPE_LABEL, type CardNode } from "./NodeCard.tsx";
+import { NodeCard, TYPE_LABEL, type CardNode, type Mark } from "./NodeCard.tsx";
+import { LiveLayer, type CanvasLive } from "./Live.tsx";
 import { FrameCard, FRAME_COLOR_DEFAULT, type FrameNode } from "./FrameCard.tsx";
 import { QuickPalette, type PaletteChoice } from "./QuickPalette.tsx";
 
@@ -84,9 +85,26 @@ interface Props {
   revealRequest?: number;
   /** Where the simulated team is, so the canvas can show it. */
   playing?: string | null;
-  /** Steps someone else just changed, to light up. */
-  changed?: Set<string>;
+  /** Steps someone else just changed, to light up in their colour. */
+  changed?: ReadonlyMap<string, string>;
+  /** Who else has each step open, or is working on it. */
+  marks?: ReadonlyMap<string, Mark[]>;
+  /** What someone else just did, to animate. */
+  fx?: LiveFx;
+  /** Others' cursors and views, and this page's for them. */
+  live?: CanvasLive;
 }
+
+/** Someone else's arrivals, removals and new wires, animated for a moment. */
+export interface LiveFx {
+  arrived: ReadonlySet<string>;
+  /** Steps just removed, drawn fading out where they were. */
+  leaving: readonly GraphNode[];
+  /** Wires just drawn, by React Flow id ("from:port"). */
+  wired: ReadonlySet<string>;
+}
+
+const GHOST_PREFIX = "ghost:";
 
 interface PendingDrag {
   nodeId: string;
@@ -106,6 +124,23 @@ export function cardSizes(): Map<string, Size> {
     sizes.set(el.dataset.id!, { w: el.offsetWidth, h: el.offsetHeight });
   }
   return sizes;
+}
+
+/** Where the inspector opens as a sheet over the canvas (dz.css). */
+const SHEET = "(max-width: 768px)";
+
+/** Whether a media query matches, following it as the window changes. */
+function useMedia(query: string): boolean {
+  const [on, setOn] = useState(() => typeof window !== "undefined" && !!window.matchMedia?.(query).matches);
+  useEffect(() => {
+    const mq = window.matchMedia?.(query);
+    if (!mq) return;
+    const update = () => setOn(mq.matches);
+    update();
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
+  }, [query]);
+  return on;
 }
 
 /** Below this zoom a card's text is too small to read. */
@@ -128,9 +163,10 @@ const START_ZOOM = 0.75;
  * The pick is created at that spot and wired in. Releasing on a handle
  * that refuses the wire shows why instead.
  */
-export function Canvas({ graph, issues, selected, onChange, onSelect, paletteRequest, focusRequest, revealRequest = 0, playing = null, changed }: Props) {
+export function Canvas({ graph, issues, selected, onChange, onSelect, paletteRequest, focusRequest, revealRequest = 0, playing = null, changed, marks, fx, live }: Props) {
   const rf = useReactFlow();
   const t = useT();
+  const inspectorCovers = useMedia(SHEET);
   const [menu, setMenu] = useState<{ x: number; y: number; items: ContextMenuItem[] } | null>(null);
   const [nodes, setNodes] = useState<CardNode[]>([]);
   const [frameNodes, setFrameNodes] = useState<FrameNode[]>([]);
@@ -200,7 +236,9 @@ export function Canvas({ graph, issues, selected, onChange, onSelect, paletteReq
           sameData(existing.data.issues, issuesBySlug.get(n.slug) ?? []) &&
           existing.selected === (n.slug === selected) &&
           existing.data.playing === (n.slug === playing) &&
-          !!existing.data.changed === !!changed?.has(n.slug) &&
+          existing.data.changed === changed?.get(n.slug) &&
+          existing.data.marks === marks?.get(n.slug) &&
+          !!existing.data.arrived === !!fx?.arrived.has(n.slug) &&
           existing.data.sourceTitle === sourceTitle(n) &&
           existing.data.zone === startZone(graph, n) &&
           samePosition(existing.position, { x: n.x ?? 0, y: n.y ?? 0 }) &&
@@ -209,7 +247,14 @@ export function Canvas({ graph, issues, selected, onChange, onSelect, paletteReq
           id: n.slug,
           type: "zv" as const,
           position: { x: n.x ?? 0, y: n.y ?? 0 },
-          data: { node: n, issues: issuesBySlug.get(n.slug) ?? [], playing: n.slug === playing, changed: !!changed?.has(n.slug), ...(sourceTitle(n) ? { sourceTitle: sourceTitle(n)! } : {}), ...(startZone(graph, n) ? { zone: startZone(graph, n)! } : {}) },
+          data: {
+            node: n,
+            issues: issuesBySlug.get(n.slug) ?? [],
+            playing: n.slug === playing,
+            ...(changed?.has(n.slug) ? { changed: changed.get(n.slug)! } : {}),
+            ...(marks?.has(n.slug) ? { marks: marks.get(n.slug)! } : {}),
+            ...(fx?.arrived.has(n.slug) ? { arrived: true } : {}),
+            ...(sourceTitle(n) ? { sourceTitle: sourceTitle(n)! } : {}), ...(startZone(graph, n) ? { zone: startZone(graph, n)! } : {}) },
           selected: n.slug === selected,
           ariaLabel: t.t("{{kind}}: {{title}}", { kind: t.t(TYPE_LABEL[n.type]), title: n.title || n.slug }),
           // Keep React Flow's measurement so handles do not jump.
@@ -219,7 +264,25 @@ export function Canvas({ graph, issues, selected, onChange, onSelect, paletteReq
         }),
       }).items,
     );
-  }, [graph, issuesBySlug, selected, playing, changed, t]);
+  }, [graph, issuesBySlug, selected, playing, changed, marks, fx, t]);
+
+  // Steps someone else removed linger a moment, fading, where they were.
+  const ghosts = useMemo<CardNode[]>(
+    () =>
+      (fx?.leaving ?? []).map((n) => ({
+        id: GHOST_PREFIX + n.slug,
+        type: "zv" as const,
+        position: { x: n.x ?? 0, y: n.y ?? 0 },
+        data: { node: n, issues: [], leaving: true },
+        selectable: false,
+        draggable: false,
+        connectable: false,
+        deletable: false,
+        focusable: false,
+        ariaRole: "presentation",
+      })),
+    [fx?.leaving],
+  );
 
   // Frames: the document's boxes, behind every card.
   const graphRefForFrames = useRef(graph);
@@ -293,16 +356,16 @@ export function Canvas({ graph, issues, selected, onChange, onSelect, paletteReq
           targetHandle: "in",
           ariaLabel: t.t("From {{from}} to {{to}}", { from: stepName(e.from), to: stepName(e.to) }),
           selected: selectedIDs.has(id),
-          className: bad ? "edge--bad" : "",
+          className: (bad ? "edge--bad" : "") + (fx?.wired.has(id) ? " edge--new" : ""),
         };
       });
     });
-  }, [graph.edges, graph.nodes, issues, t]);
+  }, [graph.edges, graph.nodes, issues, fx?.wired, t]);
 
   const onNodesChange = useCallback(
     (all: NodeChange<AnyNode>[]) => {
       const frameChanges = all.filter((c) => "id" in c && isFrameID(c.id)) as NodeChange<FrameNode>[];
-      const changes = all.filter((c) => !("id" in c && isFrameID(c.id))) as NodeChange<CardNode>[];
+      const changes = all.filter((c) => !("id" in c && (isFrameID(c.id) || c.id.startsWith(GHOST_PREFIX)))) as NodeChange<CardNode>[];
       let next = graph;
       if (frameChanges.length) {
         setFrameNodes((fs) => applyNodeChanges(frameChanges, fs));
@@ -493,7 +556,7 @@ export function Canvas({ graph, issues, selected, onChange, onSelect, paletteReq
     (e: React.MouseEvent, any: AnyNode) => {
       e.preventDefault();
       // A frame has its own tools; the step menu does not apply to it.
-      if (any.type !== "zv") return;
+      if (any.type !== "zv" || any.id.startsWith(GHOST_PREFIX)) return;
       const n = any as CardNode;
       onSelect(n.id);
       const isStart = n.data.node.type === "start" && graph.nodes.filter((x) => x.type === "start").length === 1;
@@ -657,7 +720,7 @@ export function Canvas({ graph, issues, selected, onChange, onSelect, paletteReq
   return (
     <div className="dz-flow" ref={wrapper} onDoubleClick={onDoubleClick}>
       <ReactFlow
-        nodes={[...frameNodes, ...nodes] as AnyNode[]}
+        nodes={[...frameNodes, ...nodes, ...ghosts] as AnyNode[]}
         edges={edges}
         nodeTypes={nodeTypes}
         onNodesChange={onNodesChange}
@@ -676,6 +739,14 @@ export function Canvas({ graph, issues, selected, onChange, onSelect, paletteReq
         deleteKeyCode={["Delete", "Backspace"]}
         minZoom={0.2}
         proOptions={{ hideAttribution: true }}
+        // Where the inspector is a sheet over the canvas, a step opens on
+        // release — a tap — not on press, or the sheet would cover the
+        // canvas mid-drag and abort it. Dragging a step then only moves it.
+        selectNodesOnDrag={!inspectorCovers}
+        onMoveStart={(e) => {
+          // Only a pan or zoom the author made; a programmatic one has no event.
+          if (e) live?.onUserMove();
+        }}
       >
         {/* dazyflow's two-level grid: a major line every 100, fine every 20. */}
         <Background id="fine" variant={BackgroundVariant.Lines} gap={20} className="dz-grid-fine" />
@@ -686,6 +757,7 @@ export function Canvas({ graph, issues, selected, onChange, onSelect, paletteReq
           </ControlButton>
         </Controls>
         <MiniMap pannable zoomable className="dz-minimap canvas__minimap" />
+        {live && <LiveLayer live={live} wrapper={wrapper} />}
       </ReactFlow>
 
       {hint && (

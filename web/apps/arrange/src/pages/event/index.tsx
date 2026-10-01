@@ -3,8 +3,8 @@ import { Compass, Pencil } from "lucide-react";
 import { useT } from "../../i18n.tsx";
 import { useSession } from "../../session.tsx";
 import { href } from "../../router.ts";
-import { useTopBarTitle } from "../../topbar.tsx";
-import { Button, Callout, Card, ErrorBox, fmtDateTime, ICON, Loading, Page, PageHeader, Pill, relTime, useEventWatch, useLoad } from "../../ui/index.ts";
+import { TopBarPortal, useTopBarTitle } from "../../topbar.tsx";
+import { Button, Callout, Card, ErrorBox, fmtDateTime, ICON, Loading, Page, PageHeader, Pill, PresenceBar, relTime, useEventWatch, useLoad, usePresence } from "../../ui/index.ts";
 import * as api from "./api.ts";
 import type { Activity, EventDetail } from "./api.ts";
 import { ActivityFeed } from "./Activity.tsx";
@@ -49,7 +49,9 @@ export function EventPage({ id }: { id: number }) {
   const { reload: reloadMessages } = messages;
   const { reload: reloadPhotos } = photos;
   useEffect(() => () => clearTimeout(sideTimer.current), []);
+  const presence = usePresence();
   useEventWatch(id, (m) => {
+    if (presence.take(m)) return;
     if (m.kind === "watch_error") return setWatchLost(true);
     if (m.kind === "event_detail" && m.data) detail.set(m.data as EventDetail);
     if (m.kind === "activity") {
@@ -99,6 +101,9 @@ export function EventPage({ id }: { id: number }) {
 
   return (
     <Page>
+      <TopBarPortal>
+        <PresenceBar peers={presence.others} />
+      </TopBarPortal>
       <div className="ev-head">
         <PageHeader
           back={quest ? { href: href({ name: "quests" }), label: t.t("Self-guided adventures") } : { href: href({ name: "events" }), label: t.t("Events") }}

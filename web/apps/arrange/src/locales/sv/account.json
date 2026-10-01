@@ -72,5 +72,12 @@
   "{{client}} wants to build and run adventures as you: read and change adventures, events and teams in your organization.": "{{client}} vill bygga och köra äventyr i ditt namn: läsa och ändra äventyr, event och lag i din organisation.",
   "{{client}} wants to read your adventures, events and teams as you. It can't change anything.": "{{client}} vill läsa dina äventyr, event och lag i ditt namn. Den kan inte ändra något.",
   "After you allow it, you go back to {{host}}. You can disconnect it any time under Settings → Account → API tokens.": "När du har tillåtit det kommer du tillbaka till {{host}}. Du kan koppla från den när som helst under Inställningar → Konto → API-tokens.",
-  "The assistant works in this organization only. Connect again to use another.": "Assistenten arbetar bara i den här organisationen. Anslut igen för att använda en annan."
+  "The assistant works in this organization only. Connect again to use another.": "Assistenten arbetar bara i den här organisationen. Anslut igen för att använda en annan.",
+  "Change username": "Byt användarnamn",
+  "New username": "Nytt användarnamn",
+  "Username changed": "Användarnamn bytt",
+  "Username changed to {{name}}.": "Användarnamnet är nu {{name}}.",
+  "That username is already taken.": "Det användarnamnet är redan upptaget.",
+  "Use 3–32 letters, digits, dots, underscores or hyphens.": "Använd 3–32 bokstäver, siffror, punkter, understreck eller bindestreck.",
+  "3–32 letters, digits, dots, underscores or hyphens. You can sign in with it or with your email.": "3–32 bokstäver, siffror, punkter, understreck eller bindestreck. Du kan logga in med det eller med din e-post."
 }

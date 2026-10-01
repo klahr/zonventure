@@ -18,7 +18,7 @@ export const SuspectsEditor: Editor<"suspects"> = ({ block, set, t }) => {
           <div className="list-ed__body">
             <input className="field__input" value={c.name} placeholder={t.t("Name, such as “The baker”")} aria-label={t.t("Suspect {{n}}", { n: i + 1 })} onChange={(e) => setCard(i, { ...c, name: e.target.value })} />
             <MarkdownArea className="field__input" rows={2} value={c.text ?? ""} placeholder={t.t("Markdown. A few facts about them.")} aria-label={t.t("Facts")} onChange={(e) => setCard(i, withField(c, "text", e.target.value))} />
-            <div className="blk-chat__avatar">
+            <div className="blk-chat__avatar blk-portrait">
               <span className="field__label">{t.t("Picture")}</span>
               <MediaEditor
                 media={c.media ? [{ id: c.media, kind: "image", ...(c.alt ? { alt: c.alt } : {}) }] : undefined}

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Copy, Download, ShieldCheck, ShieldOff } from "lucide-react";
-import type { Whoami } from "@zonventure/api";
+import { ApiError, type Whoami } from "@zonventure/api";
 import { useSession } from "../../session.tsx";
 import { useT } from "../../i18n.tsx";
 import { Button, Callout, Card, Dialog, ErrorBox, Field, HelpPopover, ICON, Pill, errorText, fmtDateTime, relTime, useDialogs, useLoad, useToast } from "../../ui/index.ts";
@@ -44,7 +44,7 @@ export function Item({ name, meta, action, children }: { name: ReactNode; meta?:
 }
 
 /**
- * How the user signs in — password, email, two-factor — one row each,
+ * How the user signs in — username, password, email, two-factor — one row each,
  * the forms in dialogs. A seeded default password is the exception: its
  * form stays open in the card and takes focus, since the banner on
  * every page sends the user here.
@@ -55,6 +55,7 @@ export function SignInCard({ user }: { user: Whoami }) {
   return (
     <Card title={t.t("Sign-in")} id="acct-password" {...(isDefault ? { tone: "danger" as const } : {})}>
       <div className="acct-list">
+        <UsernameRow user={user} />
         <PasswordRow isDefault={isDefault} />
         <EmailRow user={user} />
         <TotpRow />
@@ -144,6 +145,63 @@ function PasswordDialog({ onClose }: { onClose: () => void }) {
   return (
     <Dialog title={t.t("Change password")} onClose={onClose} onSubmit={() => void form.submit()} footer={<><Button onClick={onClose}>{t.t("Cancel")}</Button>{form.button}</>}>
       {form.fields}
+    </Dialog>
+  );
+}
+
+/** The name shown across the console; signing in accepts it or the email. */
+function UsernameRow({ user }: { user: Whoami }) {
+  const t = useT();
+  const [open, setOpen] = useState(false);
+  return (
+    <Item
+      name={t.t("Username")}
+      meta={user.username}
+      action={<Button size="sm" id="acct-username-open" onClick={() => setOpen(true)}>{t.t("Change username")}</Button>}
+    >
+      {open && <UsernameDialog current={user.username} onClose={() => setOpen(false)} />}
+    </Item>
+  );
+}
+
+function UsernameDialog({ current, onClose }: { current: string; onClose: () => void }) {
+  const t = useT();
+  const toast = useToast();
+  const { refresh } = useSession();
+  // A signup username is the email, which the new rules refuse: start empty rather than prefilled with something invalid.
+  const [username, setUsername] = useState(current.includes("@") ? "" : current);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const submit = async () => {
+    const next = username.trim();
+    if (!/^[A-Za-z0-9._-]{3,32}$/.test(next)) return setError(t.t("Use 3–32 letters, digits, dots, underscores or hyphens."));
+    setBusy(true);
+    setError(null);
+    try {
+      await account.changeUsername(next);
+      toast.ok(t.t("Username changed to {{name}}.", { name: next }));
+      // whoami carries the username the shell shows everywhere.
+      await refresh();
+      onClose();
+    } catch (e) {
+      setError(e instanceof ApiError && e.code === "username_taken" ? t.t("That username is already taken.") : errorText(e));
+      setBusy(false);
+    }
+  };
+  return (
+    <Dialog
+      title={t.t("Change username")}
+      onClose={onClose}
+      onSubmit={() => void submit()}
+      footer={<><Button onClick={onClose}>{t.t("Cancel")}</Button><Button type="submit" variant="primary" loading={busy}>{t.t("Save")}</Button></>}
+    >
+      <Field
+        label={t.t("New username")}
+        error={error}
+        hint={t.t("3–32 letters, digits, dots, underscores or hyphens. You can sign in with it or with your email.")}
+      >
+        <input id="acct-new-username" type="text" autoComplete="username" autoFocus required maxLength={32} value={username} onChange={(e) => setUsername(e.target.value)} />
+      </Field>
     </Dialog>
   );
 }

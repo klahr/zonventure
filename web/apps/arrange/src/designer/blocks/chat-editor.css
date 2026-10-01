@@ -6,3 +6,6 @@
 .dz .blk-chat__line.is-me .list-ed__body { padding-left: var(--sp-5); }
 /* The avatar sits above the messages it heads. */
 .dz .blk-chat__avatar { display: grid; gap: var(--sp-1); }
+/* A person's picture — a chat's avatar, a suspect — is a circle, as in
+   play and as people are drawn everywhere; places and things are not. */
+.dz .blk-portrait .media-ed__thumb { border-radius: 50%; }

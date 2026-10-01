@@ -75,6 +75,8 @@ func TestAPIToken_AdminREST(t *testing.T) {
 		{"token cannot list tokens", rw, "GET", "/api/admin/me/mcp-tokens", nil, 403},
 		{"token cannot change password", rw, "POST", "/api/admin/me/password",
 			map[string]string{"current": "s3cret", "new": "0therPassw0rd!"}, 403},
+		{"token cannot change username", rw, "POST", "/api/admin/me/username",
+			map[string]string{"username": "renamed"}, 403},
 	}
 	for _, c := range cases {
 		if s := bearer(t, ts, c.tok, c.method, c.path, c.body); s != c.want {

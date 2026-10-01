@@ -42,15 +42,25 @@ func recvMsg(t *testing.T, c *websocket.Conn) wsMsg {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	_, data, err := c.Read(ctx)
-	if err != nil {
-		t.Fatalf("ws read: %v", err)
+	for {
+		_, data, err := c.Read(ctx)
+		if err != nil {
+			t.Fatalf("ws read: %v", err)
+		}
+		var m wsMsg
+		if err := json.Unmarshal(data, &m); err != nil {
+			t.Fatalf("ws decode: %v", err)
+		}
+		if !isPresence(m.Kind) {
+			return m
+		}
 	}
-	var m wsMsg
-	if err := json.Unmarshal(data, &m); err != nil {
-		t.Fatalf("ws decode: %v", err)
-	}
-	return m
+}
+
+// isPresence tells the arranger stream's presence frames — who else is
+// watching, where they point — from the data the tests are about.
+func isPresence(kind string) bool {
+	return kind == "presence" || kind == "presence_self" || kind == "pointer"
 }
 
 // recvKind reads until a frame with the given kind arrives or the test
@@ -85,8 +95,15 @@ func mustNotRecv(t *testing.T, c *websocket.Conn, d time.Duration) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), d)
 	defer cancel()
-	_, data, err := c.Read(ctx)
-	if err == nil {
+	for {
+		_, data, err := c.Read(ctx)
+		if err != nil {
+			return
+		}
+		var m wsMsg
+		if json.Unmarshal(data, &m) == nil && isPresence(m.Kind) {
+			continue
+		}
 		t.Fatalf("unexpected frame: %s", data)
 	}
 }

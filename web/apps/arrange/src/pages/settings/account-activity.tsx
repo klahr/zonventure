@@ -115,6 +115,7 @@ const EVENT: Record<string, string> = {
   login: "Sign-in",
   logout: "Sign-out",
   set_password: "Password set",
+  set_username: "Username changed",
   magic_link: "Sign-in link",
   email_verify: "Email verification",
   totp_setup: "2FA setup started",

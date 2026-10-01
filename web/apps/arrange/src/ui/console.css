@@ -106,9 +106,55 @@
 .dz .cs-dialog--wide { max-width: 44rem; }
 .dz .cs-dialog .modal-body { display: flex; flex-direction: column; gap: var(--dz-space-3); max-height: 70vh; overflow-y: auto; }
 
-.cs-toasts { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 1000; display: flex; flex-direction: column; align-items: center; gap: 8px; pointer-events: none; }
-.cs-toasts .cs-toast { padding: 10px 16px; border-radius: 999px; background: var(--dz-ink, #1f3349); color: var(--dz-surface, #fff); font-size: 0.875rem; box-shadow: var(--shadow-lg); max-width: min(90vw, 36rem); }
-.cs-toasts .cs-toast--err { background: var(--danger, #b3261e); color: #fff; }
+/* Toasts (ui/toast.tsx): cards on the surface, the tone in the icon and
+   the left edge only — a failure reads clearly without a slab of red. */
+.cs-toasts { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 1000; display: flex; flex-direction: column; align-items: center; gap: 8px; width: max-content; max-width: calc(100vw - 32px); pointer-events: none; }
+.cs-toasts .cs-toast {
+  --tone: var(--dz-success);
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  /* As wide as its message, within bounds: a short "Saved" stays compact. */
+  min-width: min(16rem, calc(100vw - 32px));
+  max-width: min(30rem, calc(100vw - 32px));
+  padding: 12px 8px 12px 14px;
+  border: 1px solid var(--dz-border);
+  border-left: 4px solid var(--tone);
+  border-radius: var(--dz-r-2);
+  background: var(--dz-surface);
+  color: var(--dz-ink);
+  font-size: var(--dz-text-md);
+  line-height: 1.4;
+  box-shadow: var(--shadow-lg);
+  pointer-events: auto;
+  animation: cs-toast-in 220ms var(--dz-ease-out) both;
+}
+.cs-toasts .cs-toast--err { --tone: var(--dz-danger); background: color-mix(in srgb, var(--dz-danger) 5%, var(--dz-surface)); }
+.cs-toasts .cs-toast.is-leaving { animation: cs-toast-out 180ms ease-in forwards; }
+.cs-toasts .cs-toast__icon { flex: none; margin-top: 1px; color: var(--tone); }
+.cs-toasts .cs-toast__text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.cs-toasts .cs-toast__close {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  min-height: 0;
+  margin: -2px 0;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--dz-muted);
+  cursor: pointer;
+}
+.cs-toasts .cs-toast__close:hover { background: var(--dz-surface-2); color: var(--dz-ink); }
+@keyframes cs-toast-in { from { opacity: 0; transform: translateY(12px) scale(0.98); } }
+@keyframes cs-toast-out { to { opacity: 0; transform: translateY(8px); } }
+@media (prefers-reduced-motion: reduce) {
+  .cs-toasts .cs-toast, .cs-toasts .cs-toast.is-leaving { animation: none; }
+}
 
 /* MoreMenu (pages/event/Menu.tsx): a small popup menu of links and actions. */
 .dz .ev-menu { z-index: var(--dz-z-context-menu); min-width: 200px; padding: 4px; background: var(--dz-surface); border: 1px solid var(--dz-border); border-radius: var(--dz-r-2); box-shadow: var(--dz-shadow-pop); }

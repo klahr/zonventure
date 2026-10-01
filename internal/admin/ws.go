@@ -48,8 +48,16 @@ func SetWatchAccessRecheck(d time.Duration) time.Duration {
 //	server → {"kind":"watch_error","data":{"error":"…"}}    auth failure
 //
 //	client → {"kind":"watch_adventure","data":{"slug":"…"}}  the designer
-//	server → {"kind":"graph_saved","data":{saved_at, by, assistant}}
+//	server → {"kind":"graph_saved","data":{saved_at, by, user_id, assistant, touched, note}}
 //	                                                       its draft was saved
+//
+// Whatever is watched, the watcher is present on it (ws.Peer):
+//
+//	server → {"kind":"presence_self","data":{"id":"c12"}}   this socket's peer
+//	server → {"kind":"presence","data":{peers:[…]}}         who is here
+//	client → {"kind":"focus","data":{"node":"…"}}           what this peer has open
+//	client → {"kind":"pointer","data":{…}}                  relayed to the others
+//	server → {"kind":"pointer","data":{"id":"c12","at":{…}}} as {id, at: what was sent}
 func (h *Handlers) WSArrange(w http.ResponseWriter, r *http.Request) {
 	me, ok := auth.FromContext(r.Context())
 	if !ok {
@@ -74,7 +82,52 @@ func (h *Handlers) WSArrange(w http.ResponseWriter, r *http.Request) {
 	var (
 		mu          sync.Mutex
 		cancelWatch context.CancelFunc
+		// liveTopic is what this socket is present on as livePeer, ""
+		// when nothing. Each watch is a peer of its own, so one winding
+		// down never takes the next one's presence with it.
+		liveTopic   string
+		livePeer    string
+		lastPointer time.Time
 	)
+
+	// joinLive makes this socket present on topic and forwards the
+	// topic's presence and pointers to it, until wctx ends.
+	joinLive := func(wctx context.Context, topic string) {
+		peerID := ws.NewPeerID()
+		live, unsub := h.Hub.Subscribe(ws.LiveTopic(topic))
+		conn.SendKind("presence_self", map[string]any{"id": peerID})
+		leave := h.Hub.Join(topic, ws.Peer{ID: peerID, UserID: me.ID, Name: me.Username, Kind: ws.PeerHuman})
+		mu.Lock()
+		liveTopic, livePeer = topic, peerID
+		mu.Unlock()
+		go func() {
+			defer func() {
+				leave()
+				unsub()
+				mu.Lock()
+				if livePeer == peerID {
+					liveTopic, livePeer = "", ""
+				}
+				mu.Unlock()
+			}()
+			for {
+				select {
+				case <-wctx.Done():
+					return
+				case raw, ok := <-live:
+					if !ok {
+						return
+					}
+					conn.Send(raw)
+				}
+			}
+		}()
+	}
+	present := func() (string, string) {
+		mu.Lock()
+		defer mu.Unlock()
+		return liveTopic, livePeer
+	}
 	stopWatch := func() {
 		mu.Lock()
 		if cancelWatch != nil {
@@ -113,6 +166,7 @@ func (h *Handlers) WSArrange(w http.ResponseWriter, r *http.Request) {
 			unsub()
 		}
 		mu.Unlock()
+		joinLive(wctx, ws.EventTopic(eventID))
 
 		// Access was checked once above, against the user as of connect.
 		// Re-check it now and then so a user who is removed from the org,
@@ -176,6 +230,7 @@ func (h *Handlers) WSArrange(w http.ResponseWriter, r *http.Request) {
 			unsub()
 		}
 		mu.Unlock()
+		joinLive(wctx, ws.AdventureTopic(advID))
 		go func() {
 			checked := time.Now()
 			for {
@@ -228,6 +283,24 @@ func (h *Handlers) WSArrange(w http.ResponseWriter, r *http.Request) {
 			startWatch(req.EventID)
 		case "unwatch_event":
 			stopWatch()
+		case "focus":
+			var req struct {
+				Node string `json:"node"`
+			}
+			if err := json.Unmarshal(msg.Data, &req); err != nil || len(req.Node) > 200 {
+				continue
+			}
+			if topic, peer := present(); topic != "" {
+				h.Hub.Focus(topic, peer, req.Node)
+			}
+		case "pointer":
+			// Relayed, never kept; at most 25 a second per socket.
+			topic, peer := present()
+			if topic == "" || len(msg.Data) > 512 || time.Since(lastPointer) < 40*time.Millisecond {
+				continue
+			}
+			lastPointer = time.Now()
+			h.Hub.Publish(ws.LiveTopic(topic), "pointer", map[string]any{"id": peer, "at": msg.Data})
 		default:
 			// Unknown frame — ignore but log at debug. No rate-
 			// limiter here because admin sessions are already

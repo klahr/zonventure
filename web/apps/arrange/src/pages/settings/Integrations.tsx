@@ -88,13 +88,12 @@ function EndpointRow({ ep, onEdit, onSecret, reload }: { ep: WebhookEndpoint; on
     }
   };
 
-  const test = () => {
-    if (!ep.active) return toast.err(t.t("Re-enable the endpoint first."));
+  // Offered only while the endpoint is enabled.
+  const test = () =>
     void run("test", async () => {
       await testWebhook(ep.id);
-      toast.ok(t.t("Test queued. Watch your endpoint logs (delivery within ~5s)."));
+      toast.ok(t.t("Test event sent. It should reach your endpoint within a few seconds."));
     });
-  };
 
   const rotate = async () => {
     const ok = await dialogs.confirm({
@@ -115,7 +114,7 @@ function EndpointRow({ ep, onEdit, onSecret, reload }: { ep: WebhookEndpoint; on
   const toggle = () =>
     void run("toggle", async () => {
       await updateWebhook(ep.id, { active: !ep.active });
-      toast.ok(ep.active ? t.t("Endpoint disabled.") : t.t("Endpoint enabled."));
+      toast.ok(ep.active ? t.t("Endpoint disabled. No more events will be sent to it.") : t.t("Endpoint enabled. Events will be sent to it again."));
       reload();
     });
 

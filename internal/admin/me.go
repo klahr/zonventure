@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/mail"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 
@@ -146,6 +147,54 @@ func (h *Handlers) ChangeMyEmail(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	httpx.JSON(w, http.StatusOK, map[string]string{"status": "sent", "to": newEmail})
+}
+
+type changeUsernameRequest struct {
+	Username string `json:"username"`
+}
+
+// usernameRe is the shape a self-chosen username must have. No "@",
+// so it can never equal anyone's email — login accepts either, and a
+// username that looked like another user's address would be ambiguous.
+var usernameRe = regexp.MustCompile(`^[A-Za-z0-9._-]{3,32}$`)
+
+// ChangeMyUsername sets the caller's username. Uniqueness is the
+// CITEXT constraint's job, so a case-only change of your own name
+// goes through and a clash with anyone else is a 409. Sessions are
+// keyed by user id and auth.Lookup reads the row per request, so
+// nothing needs re-issuing.
+func (h *Handlers) ChangeMyUsername(w http.ResponseWriter, r *http.Request) {
+	me, _ := auth.FromContext(r.Context())
+	var req changeUsernameRequest
+	if !httpx.DecodeJSON(w, r, &req) {
+		return
+	}
+	username := strings.TrimSpace(req.Username)
+	if !usernameRe.MatchString(username) {
+		httpx.JSON(w, http.StatusBadRequest, map[string]string{
+			"error": "username must be 3–32 letters, digits, '.', '_' or '-'",
+			"code":  "username_invalid",
+		})
+		return
+	}
+	if _, err := h.DB.ExecContext(r.Context(),
+		`UPDATE users SET username = $1 WHERE id = $2`, username, me.ID); err != nil {
+		if isUniqueViolation(err) {
+			httpx.JSON(w, http.StatusConflict, map[string]string{
+				"error": "that username is already taken",
+				"code":  "username_taken",
+			})
+			return
+		}
+		httpx.ServerErr(w, http.StatusInternalServerError, "update failed", err)
+		return
+	}
+	auth.Record(r.Context(), h.DB, auth.AuditEvent{
+		Event: auth.EventSetUsername, OK: true, UserID: &me.ID, Username: username,
+		IP: auth.ClientIP(r), UserAgent: auth.UserAgent(r), Reason: auth.ReasonSuccess,
+	})
+	logx.Info("admin.me.username.changed", "user_id", me.ID, "from", me.Username, "to", username)
+	httpx.JSON(w, http.StatusOK, map[string]any{"id": me.ID, "username": username})
 }
 
 // buildChangeEmailLink builds the email-change confirmation URL

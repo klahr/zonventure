@@ -32,6 +32,7 @@ func (s *Server) registerGraphTools() {
 					"output port to another node, and zones/items/counters/journal referenced by slug. " +
 					"Get one to edit with get_adventure_graph, or build one from lanes with convert_adventure_graph.",
 			},
+			"note": map[string]any{"type": "string", "description": "Saving only: " + noteDescription},
 		},
 	}
 
@@ -88,6 +89,22 @@ type graphArgs struct {
 	Slug     string          `json:"slug"`
 	Envelope json.RawMessage `json:"envelope,omitempty"`
 	Label    string          `json:"label,omitempty"`
+	Note     string          `json:"note,omitempty"`
+}
+
+// noteDescription is the note an assistant may give with an edit.
+const noteDescription = "A few words on what you are doing (\"tightening the hints on the riddle\"), shown live to the people watching the adventure in the designer."
+
+// noteHeader passes an edit's note on to the designers watching.
+func noteHeader(headers map[string]string, note string) map[string]string {
+	if note == "" {
+		return headers
+	}
+	if headers == nil {
+		headers = map[string]string{}
+	}
+	headers["X-Edit-Note"] = note
+	return headers
 }
 
 func parseGraphArgs(raw json.RawMessage, needEnvelope bool) (graphArgs, *ToolCallResult) {
@@ -123,7 +140,7 @@ func graphCall(ctx context.Context, s *Server, method, suffix string, raw json.R
 		body = map[string]string{"label": a.Label}
 	}
 	status, resp, err := callAdmin(ctx, pick(s), method, "/api/admin/adventures/"+a.Slug+"/graph"+suffix,
-		map[string]string{"slug": a.Slug}, nil, body)
+		map[string]string{"slug": a.Slug}, noteHeader(nil, a.Note), body)
 	if err != nil {
 		return errorResult("call: " + err.Error()), nil
 	}

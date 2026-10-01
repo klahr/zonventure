@@ -7,7 +7,7 @@ import { useT } from "./i18n.tsx";
 import { useSession } from "./session.tsx";
 import { href, useRoute, type Route } from "./router.ts";
 import { Designer } from "./designer/Designer.tsx";
-import { TopBarTitle } from "./topbar.tsx";
+import { TopBarSlot, TopBarTitle } from "./topbar.tsx";
 import { Avatar, DialogProvider, ToastProvider } from "./ui/index.ts";
 import "./designer/dz.css";
 import "./ui/console.css";
@@ -158,6 +158,8 @@ export function Shell({ user }: { user: Whoami }) {
   }
 
   const org = user.memberships.find((m) => m.org_id === user.org_id);
+  // Where a page shows who else has it open.
+  const [liveSlot, setLiveSlot] = useState<HTMLElement | null>(null);
 
   return (
     <div className={"shell" + (route.name === "designer" ? " shell--designer" : "")} data-nav-collapsed={collapsed}>
@@ -198,6 +200,7 @@ export function Shell({ user }: { user: Whoami }) {
             )}
           </nav>
         )}
+        <span className="shell__live" ref={setLiveSlot} />
         {org && (
           <span className="shell__org">
             <Avatar name={org.org_name} src={org.org_logo_url} size={22} />
@@ -248,11 +251,13 @@ export function Shell({ user }: { user: Whoami }) {
         )}
         <AccountBanners user={user} />
         <TopBarTitle.Provider value={setPageTitle}>
-          <ToastProvider>
-            <DialogProvider>
-              {permitted ? <Page route={route} /> : <DashboardPage />}
-            </DialogProvider>
-          </ToastProvider>
+          <TopBarSlot.Provider value={liveSlot}>
+            <ToastProvider>
+              <DialogProvider>
+                {permitted ? <Page route={route} /> : <DashboardPage />}
+              </DialogProvider>
+            </ToastProvider>
+          </TopBarSlot.Provider>
         </TopBarTitle.Provider>
       </main>
     </div>

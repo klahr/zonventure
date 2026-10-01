@@ -23,6 +23,7 @@ package admin
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -143,6 +144,14 @@ func (h *Handlers) PutAdventureGraph(w http.ResponseWriter, r *http.Request) {
 		}
 		base = &t
 	}
+	// An assistant is shown working on what it changed, so read what
+	// it is changing from. Without a draft, everything is new.
+	var before *graph.Graph
+	if auth.ViaAPIToken(r.Context()) {
+		if was, err := graphstore.LoadDraft(r.Context(), h.DB, advID); err == nil {
+			before = was.Graph
+		}
+	}
 	d, _, err := graphstore.SaveDraftIf(r.Context(), h.DB, advID, h.userID(r), &env.Graph, base)
 	if errors.Is(err, graphstore.ErrDraftChanged) {
 		httpx.JSON(w, http.StatusConflict, graphRefusal{Error: err.Error(), Code: "draft_changed"})
@@ -156,20 +165,75 @@ func (h *Handlers) PutAdventureGraph(w http.ResponseWriter, r *http.Request) {
 		httpx.ServerErr(w, http.StatusInternalServerError, "saving draft failed", err)
 		return
 	}
-	h.publishGraphSaved(r, advID, d.UpdatedAt)
+	h.publishGraphSaved(r, advID, d.UpdatedAt, before, &env.Graph)
 	h.writeGraphState(w, r, advID)
+}
+
+// assistantPresence is how long an assistant stays shown on an adventure
+// after its latest save.
+const assistantPresence = 2 * time.Minute
+
+// touchedSteps lists the steps of after that are new or differ from
+// before, or whose wires do — new ones first, as what an assistant is
+// working on is most likely what it just added.
+func touchedSteps(before, after *graph.Graph) []string {
+	was := map[string]string{}
+	wires := map[string]string{}
+	if before != nil {
+		for _, n := range before.Nodes {
+			b, _ := json.Marshal(n)
+			was[n.Slug] = string(b)
+		}
+		for _, e := range before.Edges {
+			wires[e.From] += e.FromPort + ">" + e.To + ";"
+		}
+	}
+	now := map[string]string{}
+	for _, e := range after.Edges {
+		now[e.From] += e.FromPort + ">" + e.To + ";"
+	}
+	var added, changed []string
+	for _, n := range after.Nodes {
+		b, _ := json.Marshal(n)
+		old, ok := was[n.Slug]
+		switch {
+		case !ok:
+			added = append(added, n.Slug)
+		case old != string(b) || wires[n.Slug] != now[n.Slug]:
+			changed = append(changed, n.Slug)
+		}
+	}
+	return append(added, changed...)
 }
 
 // publishGraphSaved tells designers open on the adventure that its
 // draft changed, by whom, and whether through an API token — which is
-// how an assistant edits.
-func (h *Handlers) publishGraphSaved(r *http.Request, advID int64, savedAt time.Time) {
+// how an assistant edits. An assistant's save also makes it present on
+// the adventure for a while, on the steps it touched, saying what it is
+// doing when it said so (X-Edit-Note).
+func (h *Handlers) publishGraphSaved(r *http.Request, advID int64, savedAt time.Time, before, after *graph.Graph) {
 	me, _ := auth.FromContext(r.Context())
-	h.Hub.Publish(ws.AdventureTopic(advID), "graph_saved", map[string]any{
+	assistant := auth.ViaAPIToken(r.Context())
+	msg := map[string]any{
 		"saved_at":  savedAt,
 		"by":        me.Username,
-		"assistant": auth.ViaAPIToken(r.Context()),
-	})
+		"user_id":   me.ID,
+		"assistant": assistant,
+	}
+	if assistant {
+		note := strings.TrimSpace(r.Header.Get("X-Edit-Note"))
+		if len([]rune(note)) > 200 {
+			note = string([]rune(note)[:200])
+		}
+		touched := touchedSteps(before, after)
+		msg["touched"], msg["note"] = touched, note
+		peer := ws.Peer{ID: ws.AssistantPeerID(me.ID), UserID: me.ID, Name: me.Username, Kind: ws.PeerAssistant, Touched: touched, Note: note}
+		if len(touched) > 0 {
+			peer.Focus = touched[0]
+		}
+		h.Hub.Visit(ws.AdventureTopic(advID), peer, assistantPresence)
+	}
+	h.Hub.Publish(ws.AdventureTopic(advID), "graph_saved", msg)
 }
 
 type publishRequest struct {
@@ -199,7 +263,7 @@ func (h *Handlers) PublishAdventureGraph(w http.ResponseWriter, r *http.Request)
 	}
 	_, report, err := graphstore.Publish(r.Context(), h.DB, advID, h.userID(r), draft.Graph, strings.TrimSpace(req.Label))
 	if !h.publishRefused(w, report, err) {
-		h.publishGraphSaved(r, advID, draft.UpdatedAt)
+		h.publishGraphSaved(r, advID, draft.UpdatedAt, draft.Graph, draft.Graph)
 		h.writeGraphState(w, r, advID)
 	}
 }

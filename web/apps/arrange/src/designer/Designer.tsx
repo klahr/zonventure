@@ -31,6 +31,7 @@ import {
   addNode,
   diffGraphs,
   differs,
+  mergeGraphs,
   emptyGraph,
   moveNode,
   neighbour,
@@ -58,7 +59,10 @@ import {
 import { useT } from "../i18n.tsx";
 import { href } from "../router.ts";
 import { useAdventureWatch } from "../ui/live.ts";
-import { Canvas, cardSizes } from "./Canvas.tsx";
+import { PresenceBar, holderOf, peerColor, usePresence, type Peer } from "../ui/presence.tsx";
+import { Canvas, cardSizes, type LiveFx } from "./Canvas.tsx";
+import type { CanvasLive } from "./Live.tsx";
+import type { Mark } from "./NodeCard.tsx";
 import { Inspector } from "./Inspector.tsx";
 import { LanguageSwitch, LanguagesSettings, TranslateStep, translationLanguages } from "./Translate.tsx";
 import { ListView } from "./ListView.tsx";
@@ -66,7 +70,7 @@ import { Resources } from "./Resources.tsx";
 import { Simulator, type SimMode } from "./Simulator.tsx";
 import { FloatingWindow } from "./FloatingWindow.tsx";
 import { useInspectorWidth } from "./InspectorResize.tsx";
-import { useTopBarTitle } from "../topbar.tsx";
+import { TopBarPortal, useTopBarTitle } from "../topbar.tsx";
 import { Look } from "./Look.tsx";
 import { StepSearch } from "./StepSearch.tsx";
 import { AdventureSlug } from "./MediaEditor.tsx";
@@ -82,8 +86,34 @@ const errorText = (e: unknown): string => (e instanceof Error ? e.message : Stri
 
 /** How long steps someone else changed stay highlighted. */
 const CHANGED_MS = 8000;
-/** How long after someone else's last save the toolbar still says so. */
-const REMOTE_MS = 30_000;
+/** How long arrivals, removals and new wires animate. */
+const FX_MS = 1400;
+/** How long, and how many, of others' doings the ticker shows. */
+const TICKER_MS = 20_000;
+const TICKER_MAX = 4;
+
+/** Who saved what someone else did: graph_saved, and their peer. */
+interface Saver {
+  saved_at: string;
+  by: string;
+  user_id: number;
+  assistant: boolean;
+  touched?: string[];
+  note?: string;
+  /** Their presence peer, when known: whom following follows. */
+  peer: string;
+}
+
+interface TickerEntry {
+  id: number;
+  at: number;
+  color: string;
+  assistant: boolean;
+  text: string;
+  note: string;
+  /** The step to go to. */
+  slug: string | null;
+}
 
 /** The steps of `next` that are new or differ from `prev`. */
 function changedSlugs(prev: Graph | null, next: Graph): Set<string> {
@@ -153,10 +183,17 @@ export function Designer({ slug }: { slug: string }) {
   const since = useRef<string | undefined>(undefined);
   // A save was refused because someone else saved first.
   const [conflict, setConflict] = useState(false);
-  // Steps someone else just changed, highlighted for a moment.
-  const [changed, setChanged] = useState<Set<string>>(() => new Set());
-  // Someone else's latest save, for the toolbar.
-  const [remote, setRemote] = useState<{ by: string; assistant: boolean; at: number } | null>(null);
+  // Steps someone else just changed, highlighted for a moment in their colour.
+  const [changed, setChanged] = useState<Map<string, string>>(() => new Map());
+  // Their arrivals, removals and wires, animated; fxSeq counts the saves shown.
+  const [fx, setFx] = useState<LiveFx | null>(null);
+  const [fxSeq, setFxSeq] = useState(0);
+  // What others did lately, in words.
+  const [ticker, setTicker] = useState<TickerEntry[]>([]);
+  // Steps both this page and someone else changed: this page's kept.
+  const [clash, setClash] = useState<{ steps: string[]; by: string } | null>(null);
+  // Steps someone else has open that the author chose to edit anyway.
+  const [takenOver, setTakenOver] = useState<Set<string>>(() => new Set());
   const [selected, setSelected] = useState<string | null>(null);
   const [slot, setSlot] = useState<Slot>("inspect");
   const [issuePanel, setIssuePanel] = useState<"error" | "warning" | null>(null);
@@ -302,9 +339,95 @@ export function Designer({ slug }: { slug: string }) {
   // --- autosave ------------------------------------------------------------------
 
   const unsaved = !!draft && (saved === null || differs(draft, saved));
+  // The latest draft and its saved base, for merging someone else's save
+  // into it from a socket callback.
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
+  const savedRef = useRef(saved);
+  savedRef.current = saved;
+  // Someone else saved while this page's own save was on its way.
+  const missed = useRef<Saver | null>(null);
+
+  // --- someone else's saves ---------------------------------------------------------
+
+  /**
+   * Shows what someone else just did: the steps they changed glow in
+   * their colour, new ones pop in, removed ones fade out where they were,
+   * new wires draw themselves, and the ticker says it in words.
+   */
+  const show = useCallback(
+    (prev: Graph | null, next: Graph, who: Saver) => {
+      const color = peerColor({ user_id: who.user_id, kind: who.assistant ? "assistant" : "human" });
+      const touched = changedSlugs(prev, next);
+      const before = new Set((prev?.nodes ?? []).map((n) => n.slug));
+      const after = new Set(next.nodes.map((n) => n.slug));
+      const arrived = new Set([...after].filter((x) => !before.has(x)));
+      const leaving = (prev?.nodes ?? []).filter((n) => !after.has(n.slug));
+      const wires = new Set((prev?.edges ?? []).map((e) => `${e.from}:${e.from_port}>${e.to}`));
+      const wired = new Set(next.edges.filter((e) => !wires.has(`${e.from}:${e.from_port}>${e.to}`)).map((e) => `${e.from}:${e.from_port}`));
+      setChanged(new Map([...touched].map((x) => [x, color])));
+      setFx({ arrived, leaving, wired });
+      setFxSeq((n) => n + 1);
+
+      const title = (g: Graph | null, x: string) => g?.nodes.find((n) => n.slug === x)?.title || x;
+      const name = who.assistant ? t.t("{{name}}'s assistant", { name: who.by }) : who.by;
+      const edited = [...touched].filter((x) => !arrived.has(x));
+      const text =
+        arrived.size + leaving.length + edited.length === 0
+          ? wired.size
+            ? t.t("{{name}} rewired the flow", { name })
+            : t.t("{{name}} saved", { name })
+          : arrived.size + leaving.length + edited.length > 1
+            ? t.t("{{name}} changed {{n}} steps", { name, n: arrived.size + leaving.length + edited.length })
+            : arrived.size
+              ? t.t("{{name}} added “{{step}}”", { name, step: title(next, [...arrived][0]!) })
+              : leaving.length
+                ? t.t("{{name}} removed “{{step}}”", { name, step: leaving[0]!.title || leaving[0]!.slug })
+                : t.t("{{name}} changed “{{step}}”", { name, step: title(next, edited[0]!) });
+      const go = [...arrived][0] ?? edited[0] ?? null;
+      setTicker((ts) => [{ id: Date.now() + Math.random(), at: Date.now(), color, assistant: who.assistant, text, note: who.note || "", slug: go }, ...ts].slice(0, TICKER_MAX));
+      if (go && followRef.current && followRef.current === who.peer) setFlyTo((f) => ({ slug: go, seq: (f?.seq ?? 0) + 1 }));
+    },
+    [t],
+  );
+
+  /**
+   * Loads the draft someone else saved, as an ordinary edit that can be
+   * undone. Unsaved work of this page's own is merged into it step by
+   * step — field by field within a step — so both people's edits stay;
+   * only where both changed the same thing is the author's own kept and
+   * the clash pointed out.
+   */
+  const pullRemote = useCallback(
+    async (who: Saver | null) => {
+      const r = await adventures.getGraph<Envelope, Report>(slug).catch(() => null);
+      if (!r) return false;
+      const theirs = r.envelope.graph;
+      const mine = draftRef.current;
+      const base = savedRef.current;
+      let next = theirs;
+      if (mine && base && differs(mine, base)) {
+        const m = mergeGraphs(base, mine, theirs);
+        next = m.graph;
+        if (m.conflicts.length) setClash({ steps: m.conflicts, by: who?.by ?? "" });
+      }
+      if (who) show(mine, next, who);
+      setHistory((h) => record(h, next, Date.now()));
+      setSaved(theirs);
+      since.current = r.saved_at;
+      setIssues(r.report.issues ?? []);
+      setPublished(r.published ?? null);
+      setServerDirty(!!r.dirty);
+      setConflict(false);
+      return true;
+    },
+    [slug, show],
+  );
+
   const saveNow = useCallback(async (): Promise<boolean> => {
     if (!draft) return false;
     setSaving(true);
+    missed.current = null;
     try {
       const r = await adventures.saveGraph<Envelope, Report>(slug, envelope(draft), since.current);
       setSaved(draft);
@@ -313,15 +436,21 @@ export function Designer({ slug }: { slug: string }) {
       setPublished(r.published ?? null);
       setServerDirty(!!r.dirty);
       setSaveError(null);
+      const m = missed.current as Saver | null;
+      if (m && m.saved_at !== r.saved_at) void pullRemote(m);
       return true;
     } catch (e) {
-      if (e instanceof ApiError && e.code === "draft_changed") setConflict(true);
-      else setSaveError(errorText(e));
+      // Someone saved first: take theirs in, merged with this page's
+      // work, and the next autosave stores both.
+      if (e instanceof ApiError && e.code === "draft_changed") {
+        if (!(await pullRemote(missed.current))) setConflict(true);
+      } else setSaveError(errorText(e));
       return false;
     } finally {
+      missed.current = null;
       setSaving(false);
     }
-  }, [draft, slug]);
+  }, [draft, slug, pullRemote]);
 
   useEffect(() => {
     if (!unsaved || readOnly || conflict || loaded.state !== "ready") return;
@@ -329,47 +458,97 @@ export function Designer({ slug }: { slug: string }) {
     return () => clearTimeout(id);
   }, [unsaved, readOnly, conflict, loaded.state, saveNow]);
 
-  // --- someone else's saves ---------------------------------------------------------
-
-  // Load the draft someone else saved, as an ordinary edit: it can be
-  // undone, and the steps it changed light up.
-  const draftRef = useRef(draft);
-  draftRef.current = draft;
-  const pullRemote = useCallback(async () => {
-    const r = await adventures.getGraph<Envelope, Report>(slug).catch(() => null);
-    if (!r) return;
-    const next = r.envelope.graph;
-    setChanged(changedSlugs(draftRef.current, next));
-    setHistory((h) => record(h, next, Date.now()));
-    setSaved(next);
-    since.current = r.saved_at;
-    setIssues(r.report.issues ?? []);
-    setPublished(r.published ?? null);
-    setServerDirty(!!r.dirty);
-    setConflict(false);
-  }, [slug]);
-  const busy = useRef({ unsaved, saving, readOnly });
-  busy.current = { unsaved, saving, readOnly };
-  useAdventureWatch(loaded.state === "ready" ? slug : null, (m) => {
-    if (m.kind !== "graph_saved") return;
-    const d = m.data as { saved_at: string; by: string; assistant: boolean };
+  const presence = usePresence();
+  const busy = useRef({ saving, readOnly });
+  busy.current = { saving, readOnly };
+  const live = useAdventureWatch(loaded.state === "ready" ? slug : null, (m) => {
+    if (presence.take(m) || m.kind !== "graph_saved") return;
+    const d = m.data as Omit<Saver, "peer">;
     if (d.saved_at === since.current) return; // this page's own save
-    setRemote({ by: d.by, assistant: d.assistant, at: Date.now() });
-    // Mid-edit, the author's work comes first: the next save is refused
-    // and the conflict banner lets them choose.
+    const who: Saver = { ...d, peer: d.assistant ? `a${d.user_id}` : (presence.others.find((p) => p.user_id === d.user_id && p.kind === "human")?.id ?? "") };
     const b = busy.current;
-    if (!b.unsaved && !b.saving && !b.readOnly) void pullRemote();
+    if (b.readOnly) return;
+    // While this page's own save is on its way, it answers first: if it
+    // is refused, it pulls; if not, this save came after it.
+    if (b.saving) missed.current = who;
+    else void pullRemote(who);
   });
+
+  // This page's step, for the others to see.
+  const focus = slot === "inspect" && selected ? selected : "";
+  useEffect(() => {
+    if (live.state === "live") live.send("focus", { node: focus });
+  }, [focus, live]);
+
+  // Following someone: the canvas keeps to their view, or flies to each
+  // step an assistant works on. Following ends when they leave, or when
+  // the author moves the canvas or presses Escape.
+  const [following, setFollowing] = useState<string | null>(null);
+  const [flyTo, setFlyTo] = useState<{ slug: string; seq: number } | null>(null);
+  const followRef = useRef(following);
+  followRef.current = following;
+  const followed = presence.others.find((p) => p.id === following) ?? null;
+  useEffect(() => {
+    if (following && !followed) setFollowing(null);
+  }, [following, followed]);
+  useEffect(() => {
+    if (!following) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setFollowing(null);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [following]);
+  const follow = useCallback((p: Peer | null) => {
+    setFollowing(p?.id ?? null);
+    if (p) setListView(false);
+    const at = p?.focus ?? p?.touched?.[0];
+    if (p?.kind === "assistant" && at) setFlyTo((f) => ({ slug: at, seq: (f?.seq ?? 0) + 1 }));
+  }, []);
+  const stopFollowing = useCallback(() => setFollowing(null), []);
+  // Following mirrors their inspector too: the step they have open opens
+  // here — read-only, as they hold it — and closes when they close it.
+  // An assistant's step is the one it last worked on.
+  const followedStep = followed ? (followed.focus ?? (followed.kind === "assistant" ? followed.touched?.[0] : undefined) ?? null) : null;
+  useEffect(() => {
+    if (!following) return;
+    setSelected(followedStep);
+    if (followedStep) setSlot("inspect");
+  }, [following, followedStep]);
+  // The author picking or closing a step themselves stops following.
+  const choose = useCallback((x: string | null) => {
+    if (followRef.current) setFollowing(null);
+    setSelected(x);
+  }, []);
+  const canvasLive = useMemo<CanvasLive>(
+    () => ({ peers: presence.others, pointers: presence.pointers, send: live.send, following, flyTo, onUserMove: stopFollowing }),
+    [presence.others, presence.pointers, live.send, following, flyTo, stopFollowing],
+  );
+
+  // Who has which step: open in their inspector, or an assistant's work.
+  const marks = useMemo(() => {
+    const out = new Map<string, Mark[]>();
+    for (const p of presence.others) {
+      const at = p.kind === "assistant" ? [...new Set([p.focus, ...(p.touched ?? [])])] : [p.focus];
+      const mark = { id: p.id, name: p.name.replace(/@.*/, ""), color: peerColor(p), assistant: p.kind === "assistant" };
+      for (const x of at) if (x) out.set(x, [...(out.get(x) ?? []), mark]);
+    }
+    return out;
+  }, [presence.others]);
+
   useEffect(() => {
     if (!changed.size) return;
-    const id = setTimeout(() => setChanged(new Set()), CHANGED_MS);
+    const id = setTimeout(() => setChanged(new Map()), CHANGED_MS);
     return () => clearTimeout(id);
   }, [changed]);
   useEffect(() => {
-    if (!remote) return;
-    const id = setTimeout(() => setRemote(null), REMOTE_MS);
+    if (!fx) return;
+    const id = setTimeout(() => setFx(null), FX_MS);
     return () => clearTimeout(id);
-  }, [remote]);
+  }, [fx]);
+  useEffect(() => {
+    if (!ticker.length) return;
+    const id = setTimeout(() => setTicker((ts) => ts.filter((x) => Date.now() - x.at < TICKER_MS)), 1000);
+    return () => clearTimeout(id);
+  }, [ticker]);
 
   // Validation between autosaves, so badges follow the author quickly.
   useEffect(() => {
@@ -586,6 +765,21 @@ export function Designer({ slug }: { slug: string }) {
   // --- derived ----------------------------------------------------------------------
 
   const node = graph && selected ? nodeBySlug(graph, selected) : undefined;
+  // Someone else with this step open holds it, softly: the inspector
+  // shows it read-only until the author chooses to edit anyway.
+  const holder =
+    node && !readOnly && !takenOver.has(node.slug) ? holderOf(node.slug, presence.me, presence.others) : null;
+  const reveal = (x: string) => {
+    choose(x);
+    setSlot("inspect");
+    setFocusRequest((n) => n + 1);
+  };
+  const describePeer = (p: Peer) => {
+    const at = p.focus ?? p.touched?.[0];
+    const step = at && draft ? nodeBySlug(draft, at) : undefined;
+    if (p.kind === "assistant") return p.note || (step ? t.t("Working on “{{step}}”", { step: step.title || step.slug }) : t.t("Working"));
+    return step ? t.t("Editing “{{step}}”", { step: step.title || step.slug }) : t.t("Looking around");
+  };
   const simEnvelope = useMemo(() => (draft ? envelope(draft) : null), [draft]);
   const slotOpen = slot !== "inspect" || !!node;
   useTopBarTitle(adventureTitle);
@@ -723,14 +917,6 @@ export function Designer({ slug }: { slug: string }) {
                     <span className="toolbar-label">{t.t("Saved")}</span>
                   </span>
                 )}
-                {remote && (
-                  <span className="editor-remote" role="status" title={t.t("The designer shows their changes as they save them.")}>
-                    <Bot size={ICON.sm} aria-hidden />
-                    <span className="toolbar-label">
-                      {remote.assistant ? t.t("An assistant is editing…") : t.t("{{name}} is editing…", { name: remote.by })}
-                    </span>
-                  </span>
-                )}
                 <Button variant="ghost" onClick={openHistory} title={t.t("Version history")} aria-label={t.t("History")}>
                   <History size={ICON.sm} />
                   <span className="toolbar-label">{t.t("History")}</span>
@@ -840,13 +1026,17 @@ export function Designer({ slug }: { slug: string }) {
             </div>
           </div>
 
+          <TopBarPortal>
+            <PresenceBar peers={presence.others} following={following} onFollow={follow} describe={describePeer} />
+          </TopBarPortal>
+
           <div className="editor-banner-stack">
             {conflict && (
               <div className="editor-conn-banner" role="alert">
                 <span className="editor-conn-banner-text">
                   {t.t("Someone else saved this adventure while you were editing, so your latest changes are not saved yet.")}
                 </span>
-                <Button size="sm" variant="primary" onClick={() => void pullRemote()}>{t.t("Load theirs")}</Button>
+                <Button size="sm" variant="primary" onClick={() => void pullRemote(null)}>{t.t("Load theirs")}</Button>
                 <Button
                   size="sm"
                   onClick={() => {
@@ -855,6 +1045,31 @@ export function Designer({ slug }: { slug: string }) {
                   }}
                 >
                   {t.t("Keep mine")}
+                </Button>
+              </div>
+            )}
+            {clash && (
+              <div className="editor-conn-banner editor-conn-banner--info" role="status">
+                <span className="editor-conn-banner-text">
+                  {t.t("You and {{name}} both changed the same thing, so your version was kept:", { name: clash.by || t.t("someone") })}{" "}
+                  {clash.steps.map((x, i) => {
+                    const n = draft ? nodeBySlug(draft, x) : undefined;
+                    return (
+                      <span key={x}>
+                        {i > 0 && ", "}
+                        {n ? (
+                          <button type="button" className="link-button" onClick={() => reveal(x)}>
+                            {n.title || n.slug}
+                          </button>
+                        ) : (
+                          x
+                        )}
+                      </span>
+                    );
+                  })}
+                </span>
+                <Button size="sm" variant="ghost" onClick={() => setClash(null)} aria-label={t.t("Dismiss")}>
+                  <X size={ICON.sm} />
                 </Button>
               </div>
             )}
@@ -871,7 +1086,36 @@ export function Designer({ slug }: { slug: string }) {
             )}
           </div>
 
-          <div className="dz-stage" ref={stage}>
+          <div
+            className={"dz-stage" + (followed ? " is-following" : "")}
+            ref={stage}
+            style={followed ? ({ "--peer": peerColor(followed) } as React.CSSProperties) : undefined}
+          >
+          {followed && (
+            <div className="follow-chip" role="status">
+              <span>
+                {followed.kind === "assistant"
+                  ? t.t("Following {{name}}'s assistant", { name: followed.name.replace(/@.*/, "") })
+                  : t.t("Following {{name}}", { name: followed.name.replace(/@.*/, "") })}
+              </span>
+              <button type="button" onClick={stopFollowing} aria-label={t.t("Stop following")}>
+                <X size={ICON.sm} />
+              </button>
+            </div>
+          )}
+          {ticker.length > 0 && !preview && (
+            <ol className="live-ticker" aria-live="polite">
+              {ticker.map((e) => (
+                <li key={e.id} className="live-ticker__item" style={{ "--peer": e.color } as React.CSSProperties}>
+                  <button type="button" disabled={!e.slug || !draft || !nodeBySlug(draft, e.slug)} onClick={() => e.slug && reveal(e.slug)}>
+                    {e.assistant && <Bot size={ICON.sm} aria-hidden />}
+                    <span className="live-ticker__text">{e.text}</span>
+                    {e.note && <span className="live-ticker__note">{e.note}</span>}
+                  </button>
+                </li>
+              ))}
+            </ol>
+          )}
           {preview && (
             <div className={"history-preview-banner" + (slot === "history" ? " with-panel" : "")}>
               <span className="history-preview-msg">
@@ -898,8 +1142,9 @@ export function Designer({ slug }: { slug: string }) {
                 selected={selected}
                 playing={previewing ? playing : null}
                 changed={changed}
+                {...(preview ? {} : { marks })}
                 onChange={change}
-                onSelect={setSelected}
+                onSelect={choose}
                 onOpenCanvas={(slug) => {
                   setListView(false);
                   if (slug) {
@@ -917,9 +1162,10 @@ export function Designer({ slug }: { slug: string }) {
                 selected={selected}
                 playing={previewing ? playing : null}
                 changed={changed}
+                {...(preview ? {} : { marks, live: canvasLive, ...(fx ? { fx } : {}) })}
                 onChange={change}
                 onSelect={(s) => {
-                  setSelected(s);
+                  choose(s);
                   if (s && slot === "history") setSlot("inspect");
                 }}
                 paletteRequest={paletteRequest}
@@ -948,18 +1194,29 @@ export function Designer({ slug }: { slug: string }) {
               onMakeLive={(v) => (v.label ? void doPublish({ kind: "rollback", version: v.version }, "") : setPublishAsk({ kind: "rollback", version: v.version }))}
             />
           ) : node && translating ? (
-            <TranslateStep node={node} graph={graph} lang={editLang} onGraphChange={change} onClose={() => setSelected(null)} readOnly={readOnly} />
+            <TranslateStep node={node} graph={graph} lang={editLang} onGraphChange={change} onClose={() => choose(null)} readOnly={readOnly} />
           ) : node ? (
             <AdventureSlug.Provider value={slug}>
+              {changed.has(node.slug) && (
+                <div key={fxSeq} className="inspector__flash" style={{ "--changed": changed.get(node.slug) } as React.CSSProperties} aria-hidden />
+              )}
+              {holder && (
+                <div className="inspector__held" role="status" style={{ "--peer": peerColor(holder) } as React.CSSProperties}>
+                  <span>{t.t("{{name}} is editing this step. Your changes would mix with theirs.", { name: holder.name.replace(/@.*/, "") })}</span>
+                  <Button size="sm" onClick={() => setTakenOver((s) => new Set(s).add(node.slug))}>
+                    {t.t("Edit anyway")}
+                  </Button>
+                </div>
+              )}
               <Inspector
                 key={node.slug}
                 node={node}
                 graph={graph}
-                readOnly={readOnly}
+                readOnly={readOnly || !!holder}
                 issues={shownIssues.filter((i) => i.node === node.slug)}
                 onChange={(n) => change(updateNode(graph, node.slug, () => n))}
                 onGraphChange={change}
-                onClose={() => setSelected(null)}
+                onClose={() => choose(null)}
                 onPreview={() => {
                   setSimMode("step");
                   setPreviewing(true);

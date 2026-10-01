@@ -13,7 +13,7 @@ export const ChatEditor: Editor<"chat"> = ({ block, set, t }) => {
   const avatar = block.media ? [{ id: block.media, kind: "image" as const, ...(block.alt ? { alt: block.alt } : {}) }] : undefined;
   return (
     <div className="list-ed">
-      <div className="blk-chat__avatar">
+      <div className="blk-chat__avatar blk-portrait">
         <span className="field__label">{t.t("Avatar")}</span>
         <MediaEditor
           media={avatar}

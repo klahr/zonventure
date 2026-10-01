@@ -82,6 +82,8 @@ export const account = {
 
   changePassword: (current: string, next: string) => post<void>("/api/admin/me/password", { current, new: next }),
 
+  changeUsername: (username: string) => post<{ id: number; username: string }>("/api/admin/me/username", { username }),
+
   changeEmail: (newEmail: string) => post<unknown>("/api/admin/me/email", { new_email: newEmail }),
   emailRevertStatus: (signal: AbortSignal) => get<EmailRevertStatus>("/api/admin/me/email/revert-status", { signal }),
   revertEmail: () => post<{ email: string }>("/api/admin/me/email/revert"),

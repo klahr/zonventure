@@ -260,6 +260,11 @@
   text-overflow: ellipsis;
   color: var(--ink);
 }
+/* Who else has the page open (TopBarPortal), pushed right beside the org. */
+.shell__live { margin-left: auto; display: inline-flex; align-items: center; flex: none; }
+.shell__live:empty { display: none; }
+.shell__live + .shell__org { margin-left: var(--sp-3); }
+.shell__live:empty + .shell__org { margin-left: auto; }
 .shell__org {
   margin-left: auto;
   flex: none;
@@ -635,3 +640,46 @@ a.account-pop__row { color: inherit; text-decoration: none; box-sizing: border-b
 }
 [data-theme="dark"] .shell__mark { --mk-p: #ff6aa3; --mk-d: #e24080; }
 [data-theme="light"] .shell__mark { --mk-p: #e24080; --mk-d: #ad1357; }
+
+/* --- Presence: who else is here ------------------------------------- */
+
+/* Avatars overlap a little, each ringed in its person's colour (--peer). */
+.presence { display: inline-flex; align-items: center; padding-left: 6px; }
+.presence__peer {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  margin-left: -6px;
+  padding: 0;
+  border: 2px solid var(--surface);
+  border-radius: 50%;
+  background: var(--peer);
+  color: #fff;
+  font: 700 var(--text-xs) / 1 var(--font-body);
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  box-shadow: 0 0 0 0 var(--peer);
+  animation: presence-in 420ms var(--ease-out) both;
+  transition: transform var(--dur-fast), box-shadow var(--dur-fast);
+}
+.presence__peer:disabled { cursor: default; }
+/* People are circles wherever the bar sits, whatever buttons there do. */
+.presence button.presence__peer { border-radius: 50%; min-height: 0; }
+.presence__peer:hover:not(:disabled) { transform: translateY(-2px); z-index: 1; }
+.presence__peer.is-following { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--peer); z-index: 1; }
+/* People are circles, unlike the rounded squares of orgs and adventures;
+   an assistant is its person's, so a circle too, breathing while it is about. */
+.presence__peer.is-assistant { animation: presence-in 420ms var(--ease-out) both, presence-breathe 2.4s ease-in-out 420ms infinite; }
+.presence__more { margin-left: 4px; font-size: var(--text-xs); color: var(--muted); }
+@keyframes presence-in {
+  from { transform: scale(0.3); opacity: 0; }
+  60% { transform: scale(1.12); opacity: 1; }
+  to { transform: scale(1); }
+}
+@keyframes presence-breathe {
+  50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--peer) 30%, transparent); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .presence__peer, .presence__peer.is-assistant { animation: none; }
+}

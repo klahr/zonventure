@@ -1,10 +1,10 @@
 import { useMemo, useRef, useState } from "react";
 import { Ban, Copy, LogOut, Pause, Play, Undo2 } from "lucide-react";
 import { useT } from "../../i18n.tsx";
-import { useTopBarTitle } from "../../topbar.tsx";
+import { TopBarPortal, useTopBarTitle } from "../../topbar.tsx";
 import {
   Button, Callout, Card, ErrorBox, ICON, Loading, Page, PageHeader, Pill, Stat, Stats, Table,
-  fmtDateTime, relTime, toDate, useDialogs, useEventWatch, useLoad, useToast, type Column,
+  fmtDateTime, relTime, toDate, useDialogs, useEventWatch, useLoad, usePresence, useToast, PresenceBar, type Column,
 } from "../../ui/index.ts";
 import type { Message, Photo } from "../event/api.ts";
 import { ActivityFeed, Ago } from "../event/Activity.tsx";
@@ -49,7 +49,9 @@ export function EventControlPage({ id }: { id: number }) {
   const lane = ev && !isGraph(ev) ? ev.adventure_slug : null;
   const pages = useLoad((s) => (lane ? getLanePages(lane, s).catch(() => null) : Promise.resolve(null)), [lane]);
 
+  const presence = usePresence();
   const watch = useEventWatch(id, (m) => {
+    if (presence.take(m)) return;
     if (m.kind === "event_detail") {
       detail.set(m.data as EventDetail);
       if (Date.now() - msgAt.current > MESSAGES_MS) {
@@ -219,6 +221,9 @@ export function EventControlPage({ id }: { id: number }) {
 
   return (
     <Page wide>
+      <TopBarPortal>
+        <PresenceBar peers={presence.others} />
+      </TopBarPortal>
       <PageHeader
         back={{ href: `#/events/${id}`, label: t.t("Back to event") }}
         title={runLabel(ev, t)}

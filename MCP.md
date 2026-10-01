@@ -102,7 +102,7 @@ one step at a time, while the author walks the area:
 |-----------------------------|-------|-----------------------------------------------------------------------|
 | `create_graph_adventure`    | write | New adventure with a start → end draft and an optional brief.         |
 | `update_adventure_meta`     | write | `brief`: theme, audience, length… what every step is designed against. |
-| `edit_adventure_graph`      | write | Batch of `put_node` / `delete_node` / `put_zone` / `delete_zone` / `connect` / `disconnect`, all-or-nothing. `put_zone` with `here: true` centres the zone on the author. |
+| `edit_adventure_graph`      | write | Batch of `put_node` / `delete_node` / `put_zone` / `delete_zone` / `connect` / `disconnect`, all-or-nothing. `put_zone` with `here: true` centres the zone on the author. An optional `note` is shown live to people watching in the designer. |
 | `undo_adventure_graph_edit` | write | Restore the draft from before the last `edit_adventure_graph`.         |
 | `get_creator_position`      | read  | The author's last reported position and its age.                      |
 | `get_media_upload_url`      | write | A 15-minute link for one adventure: `curl -F file=@photo.jpg <url>` uploads without the bytes passing through the model. |

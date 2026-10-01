@@ -33,6 +33,9 @@ type Hub struct {
 	mu     sync.Mutex
 	nextID uint64
 	subs   map[string]map[uint64]chan []byte // topic → id → chan
+
+	presenceOnce sync.Once
+	presence     *presence
 }
 
 // NewHub returns a fresh empty hub.

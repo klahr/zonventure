@@ -614,7 +614,7 @@ textarea.field__input { resize: vertical; font-family: var(--font-body); }
 .card.is-changed,
 .step.is-changed { animation: zv-changed 8s ease-out forwards; }
 @keyframes zv-changed {
-  0%, 25% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 70%, transparent), var(--shadow); }
+  0%, 25% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--changed, var(--accent)) 70%, transparent), var(--shadow); }
   100% { box-shadow: 0 0 0 0 transparent, var(--shadow); }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -933,3 +933,170 @@ textarea.field__input { resize: vertical; font-family: var(--font-body); }
 /* A compass or map block's own place, edited where the block is. */
 .blk__zone-edit { align-self: flex-start; }
 .blk__zone { display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-3); border: 1px solid var(--border-soft); border-radius: var(--radius-sm); background: var(--surface); }
+
+/* --- Live: others at work on the same adventure ----------------------- */
+
+/* A step someone else has open: ringed in their colour, their name on top. */
+.card.has-peer { position: relative; box-shadow: 0 0 0 2px var(--peer), var(--shadow); transition: box-shadow var(--dz-dur-2, 200ms); }
+.card__peers { position: absolute; left: 8px; bottom: 100%; display: flex; gap: 4px; margin-bottom: 4px; pointer-events: none; }
+.card__peer {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  max-width: 140px;
+  padding: 2px 7px;
+  border-radius: 6px 6px 6px 0;
+  background: var(--peer);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  animation: live-tag-in 260ms var(--dz-ease-out) both;
+}
+@keyframes live-tag-in { from { transform: translateY(6px) scale(0.8); opacity: 0; } }
+
+/* Someone else's new step pops in; a removed one shrinks away. */
+.card.is-arriving { animation: live-arrive 650ms cubic-bezier(0.34, 1.56, 0.64, 1) both, zv-changed 8s ease-out 650ms forwards; }
+@keyframes live-arrive {
+  from { transform: scale(0.4); opacity: 0; filter: blur(4px); }
+  to { transform: scale(1); opacity: 1; filter: none; }
+}
+.card.is-leaving { pointer-events: none; animation: live-leave 1.2s ease-in forwards; }
+@keyframes live-leave {
+  0% { opacity: 0.9; filter: grayscale(1); }
+  100% { transform: scale(0.7) translateY(12px); opacity: 0; filter: grayscale(1) blur(6px); }
+}
+.react-flow__node:has(> .card.is-leaving) { pointer-events: none; }
+
+/* A wire someone else just drew draws itself. */
+.react-flow__edge.edge--new .react-flow__edge-path {
+  stroke-dasharray: 2400;
+  stroke-dashoffset: 2400;
+  animation: live-wire 900ms ease-out forwards;
+}
+@keyframes live-wire { to { stroke-dashoffset: 0; } }
+
+/* Cursors: the arrow at the point, the name trailing it. Pings glide. */
+.live-cursor { position: absolute; top: 0; left: 0; pointer-events: none; z-index: 1000; transition: transform 90ms linear, opacity 600ms; }
+.live-cursor.is-still { opacity: 0.25; }
+.live-cursor__arrow { display: block; fill: var(--peer); stroke: #fff; stroke-width: 1.2; filter: drop-shadow(0 1px 2px rgb(0 0 0 / 0.3)); }
+.live-cursor__name {
+  position: absolute;
+  left: 14px;
+  top: 16px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--peer);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+/* An assistant's badge glides from step to step as it works. */
+.live-bot { position: absolute; top: 0; left: 0; pointer-events: none; z-index: 1000; transition: transform 700ms cubic-bezier(0.22, 1, 0.36, 1); }
+.live-bot__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border-radius: 12px 12px 12px 3px;
+  background: var(--peer);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  transform-origin: 0 100%;
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--peer) 45%, transparent);
+  animation: live-bob 2.4s ease-in-out infinite;
+}
+.live-bot__note { max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
+@keyframes live-bob { 50% { margin-top: -4px; } }
+
+/* Following someone: the stage is framed in their colour. */
+.dz-stage.is-following::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border: 3px solid var(--peer);
+  pointer-events: none;
+  z-index: 5;
+}
+.follow-chip {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 6;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px 4px 12px;
+  border-radius: 999px;
+  background: var(--peer);
+  color: #fff;
+  font-size: var(--dz-text-sm);
+  font-weight: 700;
+  animation: live-tag-in 260ms var(--dz-ease-out) both;
+}
+.follow-chip button { display: inline-grid; place-items: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 50%; background: rgb(255 255 255 / 0.2); color: inherit; cursor: pointer; }
+
+/* What others did lately, bottom left, newest on top, fading as it ages. */
+.live-ticker { position: absolute; left: 12px; bottom: 12px; z-index: 5; display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; list-style: none; max-width: min(360px, calc(100% - 24px)); }
+.live-ticker__item { animation: live-ticker-in 320ms var(--dz-ease-out) both, live-ticker-out 1s ease-in 19s forwards; }
+.live-ticker__item:nth-child(n + 3) { opacity: 0.7; }
+.live-ticker__item button {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  width: 100%;
+  padding: 6px 10px;
+  border: 1px solid var(--dz-border);
+  border-left: 4px solid var(--peer);
+  border-radius: var(--dz-r-2);
+  background: var(--dz-surface);
+  color: var(--dz-ink);
+  font-size: var(--dz-text-sm);
+  text-align: left;
+  box-shadow: var(--dz-shadow-pop);
+  cursor: pointer;
+}
+.live-ticker__item button:disabled { cursor: default; }
+.live-ticker__item svg { color: var(--peer); }
+.live-ticker__note { flex-basis: 100%; color: var(--dz-muted); font-style: italic; }
+@keyframes live-ticker-in { from { transform: translateX(-16px); opacity: 0; } }
+@keyframes live-ticker-out { to { opacity: 0; transform: translateY(6px); } }
+
+/* The inspector flashes when someone else changes the step it shows. */
+.inspector__flash { position: absolute; inset: 0; z-index: 2; pointer-events: none; border-radius: inherit; animation: live-flash 1.6s ease-out forwards; }
+@keyframes live-flash {
+  0% { box-shadow: inset 0 0 0 3px var(--changed); background: color-mix(in srgb, var(--changed) 10%, transparent); }
+  100% { box-shadow: inset 0 0 0 0 transparent; background: transparent; }
+}
+/* Someone else has this step open: say so, and offer to edit anyway. */
+.inspector__held {
+  display: flex;
+  align-items: center;
+  gap: var(--dz-space-2);
+  padding: var(--dz-space-2) var(--dz-space-3);
+  border-bottom: 1px solid var(--dz-border);
+  border-left: 4px solid var(--peer);
+  background: color-mix(in srgb, var(--peer) 10%, var(--dz-surface));
+  font-size: var(--dz-text-sm);
+}
+.inspector__held span { flex: 1; }
+
+/* The clash notice's step names are links into the canvas. */
+.dz .editor-conn-banner .link-button { padding: 0; border: 0; background: none; color: var(--dz-accent); font: inherit; text-decoration: underline; cursor: pointer; }
+
+@media (prefers-reduced-motion: reduce) {
+  .card.is-arriving, .card__peer, .follow-chip, .live-ticker__item, .live-bot__badge, .inspector__flash { animation: none; }
+  .card.is-leaving { animation: none; opacity: 0.3; }
+  .react-flow__edge.edge--new .react-flow__edge-path { animation: none; stroke-dasharray: none; stroke-dashoffset: 0; }
+  .live-cursor, .live-bot { transition: none; }
+}
+.step__peer { margin-left: 6px; vertical-align: 1px; }

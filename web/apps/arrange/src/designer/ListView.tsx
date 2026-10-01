@@ -1,4 +1,5 @@
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import type { Mark } from "./NodeCard.tsx";
 import {
   blocksOf,
   canMove,
@@ -30,7 +31,9 @@ interface Props {
   /** Where the simulated team is. */
   playing?: string | null;
   /** Steps someone else just changed, to light up. */
-  changed?: Set<string>;
+  changed?: ReadonlyMap<string, string>;
+  /** Who else has each step open, or is working on it. */
+  marks?: ReadonlyMap<string, Mark[]>;
   onChange: (g: Graph) => void;
   onSelect: (slug: string | null) => void;
   /** Show a step on the canvas, for what the list cannot do: wiring. */
@@ -54,7 +57,7 @@ interface Props {
  * removing a step still needs a straight line; drawing a new branch is
  * the canvas's job.
  */
-export function ListView({ graph, issues, selected, playing = null, changed, onChange, onSelect, onOpenCanvas }: Props) {
+export function ListView({ graph, issues, selected, playing = null, changed, marks, onChange, onSelect, onOpenCanvas }: Props) {
   const t = useT();
   const rows = useMemo(() => outline(graph), [graph]);
   const line = useMemo(() => linearSteps(graph), [graph]);
@@ -250,7 +253,7 @@ export function ListView({ graph, issues, selected, playing = null, changed, onC
               }
               data-row={i}
               data-slug={n.slug}
-              style={indent}
+              style={{ ...indent, ...(changed?.has(n.slug) ? { "--changed": changed.get(n.slug) } : {}) } as React.CSSProperties}
             >
               {mv && (
                 <button
@@ -270,7 +273,14 @@ export function ListView({ graph, issues, selected, playing = null, changed, onC
                 </span>
                 <span className="step__text">
                   {r.via && <span className="outline__via">{r.via}</span>}
-                  <span className="step__title">{title(n)}</span>
+                  <span className="step__title">
+                    {title(n)}
+                    {marks?.get(n.slug)?.map((m) => (
+                      <span key={m.id} className="card__peer step__peer" style={{ "--peer": m.color } as React.CSSProperties}>
+                        {m.name}
+                      </span>
+                    ))}
+                  </span>
                   {(() => {
                     // What it says, or else what it is — unless the title already says that.
                     const sub = summary(n) || (title(n) !== t.t(kind.label) ? t.t(kind.label) : "");

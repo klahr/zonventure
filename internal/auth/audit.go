@@ -13,6 +13,7 @@ import (
 const (
 	EventLogin       = "login"
 	EventSetPassword = "set_password"
+	EventSetUsername = "set_username"
 	EventLogout      = "logout"
 	EventMagicLink   = "magic_link"
 	// EventEmailVerify covers both self-serve verification (via the

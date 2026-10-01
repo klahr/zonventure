@@ -10,3 +10,4 @@ export * from "./i18n.ts";
 export * from "./outline.ts";
 export * from "./reorder.ts";
 export * from "./navigate.ts";
+export * from "./merge.ts";

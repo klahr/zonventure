@@ -126,10 +126,11 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 		}
 
 		// Account settings — every logged-in staff user can change
-		// their own password / email / delete themselves. No role
+		// their own password / email / username / delete themselves. No role
 		// gate beyond the surrounding RequireAnyRole.
 		r.With(auth.RequireSession).Post("/me/password", adminH.ChangeMyPassword)
 		r.With(auth.RequireSession).Post("/me/email", adminH.ChangeMyEmail)
+		r.With(auth.RequireSession).Post("/me/username", adminH.ChangeMyUsername)
 		// Revertable email change: ConfirmEmailChange stashes the old
 		// address; this endpoint reads the status and reverts within
 		// the grace window.

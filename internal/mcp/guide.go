@@ -107,6 +107,7 @@ A theme effect restyles the phone from that step on: "theme" is one of dark, nig
 - Wire as you go: to put a new step between A and B, put_node it, connect A's port to it, and connect its port to B.
 - The reply lists the validation report. Fix errors; warnings are advice.
 - Block ids ("b1", "b2", …) must be unique within a node. Matcher ids name an accepted answer.
+- People may be watching the designer as you work: the steps you touch light up for them. Give each edit a short note ("adding hints to the riddle"); they see it beside your badge.
 
 ## A story step
 

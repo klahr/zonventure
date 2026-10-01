@@ -39,6 +39,7 @@ func (s *Server) registerGraphEditTools() {
 			"required": []string{"slug", "ops"},
 			"properties": map[string]any{
 				"slug": map[string]any{"type": "string", "description": "Adventure slug."},
+				"note": map[string]any{"type": "string", "description": noteDescription},
 				"ops": map[string]any{
 					"type":     "array",
 					"minItems": 1,
@@ -117,6 +118,7 @@ type graphOp struct {
 type editArgs struct {
 	Slug string    `json:"slug"`
 	Ops  []graphOp `json:"ops"`
+	Note string    `json:"note,omitempty"`
 }
 
 // editResult is what the model gets back: enough to know what the
@@ -176,7 +178,7 @@ func editAdventureGraph(ctx context.Context, s *Server, raw json.RawMessage) (To
 		headers = map[string]string{"X-Draft-Base": base}
 	}
 	status, body, err := callAdmin(ctx, s.Admin.PutAdventureGraph, "PUT", "/api/admin/adventures/"+a.Slug+"/graph",
-		map[string]string{"slug": a.Slug}, headers, graph.Envelope{Format: graph.FormatV2, Graph: *g})
+		map[string]string{"slug": a.Slug}, noteHeader(headers, a.Note), graph.Envelope{Format: graph.FormatV2, Graph: *g})
 	if err != nil {
 		return errorResult("call: " + err.Error()), nil
 	}

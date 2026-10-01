@@ -19,5 +19,8 @@
   "{{n}} global admin": "{{n}} global administratör",
   "{{n}} global admins": "{{n}} globala administratörer",
   "{{n}} user in {{name}}": "{{n}} användare i {{name}}",
-  "{{n}} users in {{name}}": "{{n}} användare i {{name}}"
+  "{{n}} users in {{name}}": "{{n}} användare i {{name}}",
+  "Test event sent. It should reach your endpoint within a few seconds.": "Testhändelsen är skickad. Den bör nå din slutpunkt inom några sekunder.",
+  "Endpoint disabled. No more events will be sent to it.": "Slutpunkten är inaktiverad. Inga fler händelser skickas till den.",
+  "Endpoint enabled. Events will be sent to it again.": "Slutpunkten är aktiverad. Händelser skickas till den igen."
 }

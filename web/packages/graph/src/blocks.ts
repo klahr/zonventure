@@ -19,9 +19,11 @@ export function withBlocks(n: Node, blocks: Block[]): Node {
     const { blocks: _, ...rest } = cfg;
     return (blocks.length ? { ...rest, blocks } : rest) as T;
   };
-  if (n.puzzle) return { ...n, puzzle: set(n.puzzle) };
-  if (n.story) return { ...n, story: set(n.story) };
-  if (n.end) return { ...n, end: set(n.end) };
+  // A step saved without its settings — as an assistant may put one —
+  // gets them for its type, so the blocks are not silently dropped.
+  if (n.puzzle || n.type === "puzzle") return { ...n, puzzle: set(n.puzzle ?? {}) };
+  if (n.story || n.type === "story") return { ...n, story: set(n.story ?? {}) };
+  if (n.end || n.type === "end") return { ...n, end: set(n.end ?? {}) };
   return n;
 }
 

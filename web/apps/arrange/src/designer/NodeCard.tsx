@@ -3,6 +3,7 @@ import { play } from "@zonventure/api";
 import { StaticMap } from "@zonventure/play-ui";
 import { STEP } from "./dz/types.tsx";
 import { TRIGGER } from "./dz/concepts.tsx";
+import { Bot } from "lucide-react";
 import { Handle, Position, type NodeProps, type Node as RFNode } from "@xyflow/react";
 import { blocksOf, hasInput, mediaOf, portLabel, portsOf, textOf, type Issue, type Node, type Zone } from "@zonventure/graph";
 import { useT } from "../i18n.tsx";
@@ -12,8 +13,14 @@ export interface CardData extends Record<string, unknown> {
   issues: Issue[];
   /** The simulated team is here. */
   playing?: boolean;
-  /** Someone else just changed it. */
-  changed?: boolean;
+  /** Someone else just changed it: their colour. */
+  changed?: string;
+  /** Who else has it open or is working on it. */
+  marks?: Mark[];
+  /** Someone else just added it. */
+  arrived?: boolean;
+  /** Someone else just removed it: a fading ghost. */
+  leaving?: boolean;
   /** For a crossroads: the title of the puzzle whose answer it reads. */
   sourceTitle?: string;
   /** For a start with a place: its zone, drawn as a map on the card. */
@@ -21,6 +28,14 @@ export interface CardData extends Record<string, unknown> {
 }
 
 export type CardNode = RFNode<CardData, "zv">;
+
+/** Someone else on a step: open in their inspector, or an assistant's. */
+export interface Mark {
+  id: string;
+  name: string;
+  color: string;
+  assistant: boolean;
+}
 
 export const TYPE_LABEL: Record<Node["type"], string> = {
   start: "Start",
@@ -107,9 +122,28 @@ function NodeCardImpl({ data, selected }: NodeProps<CardNode>) {
         selected ? "is-selected" : "",
         data.playing ? "is-playing" : "",
         data.changed ? "is-changed" : "",
+        data.marks?.length ? "has-peer" : "",
+        data.arrived ? "is-arriving" : "",
+        data.leaving ? "is-leaving" : "",
         errors.length ? "has-error" : warnings.length ? "has-warning" : "",
       ].join(" ")}
+      style={
+        {
+          ...(data.changed ? { "--changed": data.changed } : {}),
+          ...(data.marks?.length ? { "--peer": data.marks[0]!.color } : {}),
+        } as React.CSSProperties
+      }
     >
+      {!!data.marks?.length && (
+        <div className="card__peers">
+          {data.marks.map((m) => (
+            <span key={m.id} className={"card__peer" + (m.assistant ? " is-assistant" : "")} style={{ "--peer": m.color } as React.CSSProperties}>
+              {m.assistant && <Bot size={11} aria-hidden />}
+              {m.name}
+            </span>
+          ))}
+        </div>
+      )}
       {hasInput(n) && <Handle type="target" position={Position.Left} id="in" className="card__in" />}
 
       <div className="card__head">
