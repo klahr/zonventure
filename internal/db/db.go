@@ -157,18 +157,23 @@ func migrate(d *sql.DB) error {
 
 	// Take the cluster-wide migration lock so concurrent boots (rolling
 	// deploy, accidental double-start, dbtest spinning up several
-	// processes) serialise here. The lock is released when the
-	// connection closes; we're holding the parent *sql.DB so it survives
-	// the scope but goes away naturally on shutdown. pg_advisory_lock
-	// blocks; the second process simply waits.
-	if _, err := d.Exec(`SELECT pg_advisory_lock($1)`, migrationLockKey); err != nil {
+	// processes) serialise here. pg_advisory_lock blocks; the second
+	// process simply waits. The lock belongs to the session that took
+	// it, so take and release it on one pinned connection: through the
+	// pool, the unlock could run on another connection, fail silently
+	// and leave the lock held on an idle one, blocking the next boot.
+	conn, err := d.Conn(context.Background())
+	if err != nil {
+		return fmt.Errorf("acquire migration lock: %w", err)
+	}
+	defer conn.Close()
+	if _, err := conn.ExecContext(context.Background(), `SELECT pg_advisory_lock($1)`, migrationLockKey); err != nil {
 		return fmt.Errorf("acquire migration lock: %w", err)
 	}
 	defer func() {
-		// Best-effort release. The connection may already be torn down
-		// if migrate() failed in the middle; in that case the lock is
-		// gone anyway because the session is gone.
-		_, _ = d.Exec(`SELECT pg_advisory_unlock($1)`, migrationLockKey)
+		// Best-effort release. If the connection is gone, so is the
+		// session and with it the lock.
+		_, _ = conn.ExecContext(context.Background(), `SELECT pg_advisory_unlock($1)`, migrationLockKey)
 	}()
 
 	// Load every applied migration in one round-trip rather than

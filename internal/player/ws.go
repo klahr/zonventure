@@ -17,6 +17,9 @@ import (
 //
 // Requires a slot session — the HTTP upgrade is gated by RequireSlot, same
 // as the REST endpoints.
+// playerPushInterval is the most often a phone's view is rebuilt.
+const playerPushInterval = time.Second
+
 func (h *Handlers) WSPlay(w http.ResponseWriter, r *http.Request) {
 	slot, ok := auth.SlotFromContext(r.Context())
 	if !ok {
@@ -37,20 +40,12 @@ func (h *Handlers) WSPlay(w http.ResponseWriter, r *http.Request) {
 	h.pushState(conn, slot)
 
 	// Push-on-change: whenever anything in this event changes, re-read and
-	// send the slot's current view. Coalescing is implicit — the hub's
-	// drop-oldest send means a burst of pokes collapses to "render once".
-	// The events channel is never closed by the hub (see hub.go), so we
-	// rely on the connection context to break the loop on disconnect.
-	go func() {
-		for {
-			select {
-			case <-conn.Context().Done():
-				return
-			case <-events:
-				h.pushState(conn, slot)
-			}
-		}
-	}()
+	// send the slot's current view. Every teammate's ping publishes on the
+	// team topic, so a team of K phones would rebuild K times per ping;
+	// Coalesce pushes the first change at once — an answer still shows
+	// straight away — and folds the rest of a burst into one rebuild a
+	// second at most.
+	go ws.Coalesce(conn.Context(), events, playerPushInterval, func() { h.pushState(conn, slot) })
 
 	// Incoming: location pings and answer submissions. Read until peer goes
 	// away or the writer cancels our context (eg. a send queue overflow).

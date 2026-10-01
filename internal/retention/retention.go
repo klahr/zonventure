@@ -235,7 +235,7 @@ func pruneCompletedEventPhotos(ctx context.Context, db *sql.DB, days int) {
 		  LIMIT ` + strconv.Itoa(photoBatchSize) + `
 		)
 	`
-	runBoundedDelete(ctx, db, "retention.team_photos", photos, days)
+	runBoundedDeleteN(ctx, db, "retention.team_photos", photos, days, photoBatchSize)
 	votes := `
 		DELETE FROM team_block_votes
 		WHERE ctid IN (
@@ -367,6 +367,13 @@ func pruneAuthEvents(ctx context.Context, db *sql.DB, days int) {
 // failure doesn't roll back the previous batch's deletes, by design:
 // privacy retention is an "always making forward progress" job.
 func runBoundedDelete(ctx context.Context, db *sql.DB, label, stmt string, days int) {
+	runBoundedDeleteN(ctx, db, label, stmt, days, batchSize)
+}
+
+// runBoundedDeleteN is runBoundedDelete for a statement whose LIMIT is
+// limit: a pass that removes fewer than that was the last. Comparing a
+// smaller LIMIT with batchSize stopped after the first pass.
+func runBoundedDeleteN(ctx context.Context, db *sql.DB, label, stmt string, days, limit int) {
 	total := int64(0)
 	for {
 		if ctx.Err() != nil {
@@ -379,7 +386,7 @@ func runBoundedDelete(ctx context.Context, db *sql.DB, label, stmt string, days 
 		}
 		n, _ := res.RowsAffected()
 		total += n
-		if n < batchSize {
+		if n < int64(limit) {
 			break
 		}
 	}

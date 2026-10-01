@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState, type ComponentType } from "react";
 import { createPortal } from "react-dom";
 import { Menu as MenuIcon, X, Building2, CalendarDays, ChevronLeft, ChevronRight, ChevronUp, Compass, Gauge, Gift, LogOut, Map as MapIcon, Monitor, Moon, Settings, Sun, Terminal, type LucideIcon } from "lucide-react";
 import { auth, type Whoami } from "@zonventure/api";
@@ -6,21 +6,39 @@ import { readTheme, setTheme, type Theme } from "@zonventure/ui";
 import { useT } from "./i18n.tsx";
 import { useSession } from "./session.tsx";
 import { href, useRoute, type Route } from "./router.ts";
-import { Designer } from "./designer/Designer.tsx";
 import { TopBarSlot, TopBarTitle } from "./topbar.tsx";
-import { Avatar, DialogProvider, ToastProvider } from "./ui/index.ts";
+import { Avatar, DialogProvider, Loading, ToastProvider } from "./ui/index.ts";
 import "./designer/dz.css";
 import "./ui/console.css";
 import { DashboardPage } from "./pages/dashboard/index.tsx";
-import { EventsPage, QuestsPage } from "./pages/events/index.tsx";
-import { EventPage } from "./pages/event/index.tsx";
-import { EventControlPage } from "./pages/control/index.tsx";
-import { AdventurePage, AdventuresPage, CatalogItemPage, CatalogPage, FieldPage } from "./pages/adventures/index.tsx";
-import { AuthorizePage } from "./pages/authorize/index.tsx";
-import { SettingsPage } from "./pages/settings/index.tsx";
 import { AccountBanners } from "./pages/settings/Banners.tsx";
-import { LogsPage, OrganizationPage, OrganizationsPage, WebhookLogPage } from "./pages/admin/index.tsx";
-import { RedemptionsPage } from "./pages/redemptions/index.tsx";
+
+// Every page but the dashboard loads when first opened: the designer
+// alone — React Flow, the inspector, the simulator — is most of the
+// console, and an organiser on a phone should not wait for it to see
+// their events.
+// lazy() takes any component; the page keeps its own props.
+type AnyComponent = ComponentType<any>;
+function page<M, K extends keyof M>(load: () => Promise<M>, name: K) {
+  return lazy(async () => ({ default: (await load())[name] as Extract<M[K], AnyComponent> }));
+}
+const Designer = page(() => import("./designer/Designer.tsx"), "Designer");
+const EventsPage = page(() => import("./pages/events/index.tsx"), "EventsPage");
+const QuestsPage = page(() => import("./pages/events/index.tsx"), "QuestsPage");
+const EventPage = page(() => import("./pages/event/index.tsx"), "EventPage");
+const EventControlPage = page(() => import("./pages/control/index.tsx"), "EventControlPage");
+const AdventuresPage = page(() => import("./pages/adventures/index.tsx"), "AdventuresPage");
+const AdventurePage = page(() => import("./pages/adventures/index.tsx"), "AdventurePage");
+const CatalogPage = page(() => import("./pages/adventures/index.tsx"), "CatalogPage");
+const CatalogItemPage = page(() => import("./pages/adventures/index.tsx"), "CatalogItemPage");
+const FieldPage = page(() => import("./pages/adventures/index.tsx"), "FieldPage");
+const AuthorizePage = page(() => import("./pages/authorize/index.tsx"), "AuthorizePage");
+const SettingsPage = page(() => import("./pages/settings/index.tsx"), "SettingsPage");
+const LogsPage = page(() => import("./pages/admin/index.tsx"), "LogsPage");
+const OrganizationsPage = page(() => import("./pages/admin/index.tsx"), "OrganizationsPage");
+const OrganizationPage = page(() => import("./pages/admin/index.tsx"), "OrganizationPage");
+const WebhookLogPage = page(() => import("./pages/admin/index.tsx"), "WebhookLogPage");
+const RedemptionsPage = page(() => import("./pages/redemptions/index.tsx"), "RedemptionsPage");
 
 /**
  * Authenticated shell: sidebar, header and the content region.
@@ -254,7 +272,9 @@ export function Shell({ user }: { user: Whoami }) {
           <TopBarSlot.Provider value={liveSlot}>
             <ToastProvider>
               <DialogProvider>
-                {permitted ? <Page route={route} /> : <DashboardPage />}
+                <Suspense fallback={<Loading label={t.t("Loading…")} />}>
+                  {permitted ? <Page route={route} /> : <DashboardPage />}
+                </Suspense>
               </DialogProvider>
             </ToastProvider>
           </TopBarSlot.Provider>

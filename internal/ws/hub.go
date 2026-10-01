@@ -36,11 +36,15 @@ type Hub struct {
 
 	presenceOnce sync.Once
 	presence     *presence
+
+	// lastPub is when each topic was last published to, so a snapshot
+	// built since can be shared rather than rebuilt (LastPublish).
+	lastPub map[string]time.Time
 }
 
 // NewHub returns a fresh empty hub.
 func NewHub() *Hub {
-	return &Hub{subs: map[string]map[uint64]chan []byte{}}
+	return &Hub{subs: map[string]map[uint64]chan []byte{}, lastPub: map[string]time.Time{}}
 }
 
 // Subscribe registers ch for messages on topic. The caller reads from ch.
@@ -85,6 +89,7 @@ func (h *Hub) Subscribe(topic string, more ...string) (<-chan []byte, func()) {
 					delete(m, id)
 					if len(m) == 0 {
 						delete(h.subs, topic)
+						delete(h.lastPub, topic)
 					}
 				}
 			}
@@ -117,6 +122,13 @@ func (h *Hub) Publish(topic, kind string, data any) {
 		return
 	}
 	h.mu.Lock()
+	// Only topics someone listens to are remembered, so the map stays
+	// as small as the subscriptions.
+	if _, ok := h.subs[topic]; ok {
+		h.lastPub[topic] = time.Now()
+	} else {
+		delete(h.lastPub, topic)
+	}
 	chans := make([]chan []byte, 0, len(h.subs[topic]))
 	for _, c := range h.subs[topic] {
 		chans = append(chans, c)
@@ -146,6 +158,27 @@ func (h *Hub) Publish(topic, kind string, data any) {
 			// message we publish will repeat the same drop-oldest.
 		}
 	}
+}
+
+// LastPublish is when topic was last published to while anyone listened,
+// or the zero time. A snapshot built after it is still current.
+func (h *Hub) LastPublish(topic string) time.Time {
+	if h == nil {
+		return time.Time{}
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.lastPub[topic]
+}
+
+// Frame encodes kind+data as one wire message, as Publish sends it: for
+// a payload built once and sent to many sockets.
+func Frame(kind string, data any) ([]byte, error) {
+	raw, err := json.Marshal(data)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(Msg{Kind: kind, Data: raw})
 }
 
 // PublishAll delivers the same kind+data to every active topic. Used

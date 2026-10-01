@@ -325,3 +325,21 @@ func TestCoalesce_ReturnsWhenChannelCloses(t *testing.T) {
 		t.Fatal("Coalesce did not return after close")
 	}
 }
+
+func TestLastPublishOnlyWhileListened(t *testing.T) {
+	h := ws.NewHub()
+	h.Publish("nobody", "changed", nil)
+	if !h.LastPublish("nobody").IsZero() {
+		t.Error("a topic nobody listens to is remembered")
+	}
+	_, unsub := h.Subscribe("event:1")
+	before := time.Now()
+	h.Publish("event:1", "changed", nil)
+	if at := h.LastPublish("event:1"); at.Before(before) {
+		t.Errorf("LastPublish = %v, want after %v", at, before)
+	}
+	unsub()
+	if !h.LastPublish("event:1").IsZero() {
+		t.Error("the topic is remembered after its last listener left")
+	}
+}

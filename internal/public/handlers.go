@@ -456,15 +456,19 @@ func (h *Handlers) Tracks(w http.ResponseWriter, r *http.Request) {
 // that as "distance unknown" and fall back to the temporal tiebreaker.
 func latestPingsByTeam(ctx context.Context, db *sql.DB, eventID int64) (map[int64]trackPoint, error) {
 	rows, err := db.QueryContext(ctx, `
-		SELECT p.team_id, p.lat, p.lng, p.server_ts
-		FROM location_pings p
-		JOIN (
-		  SELECT team_id, MAX(server_ts) AS ts
-		  FROM location_pings WHERE event_id = $1
-		  GROUP BY team_id
-		) latest ON latest.team_id = p.team_id AND latest.ts = p.server_ts
-		WHERE p.event_id = $2
-	`, eventID, eventID)
+		SELECT t.id, p.lat, p.lng, p.server_ts
+		FROM teams t
+		-- Each team's latest ping off idx_pings_team_ts, not a scan of
+		-- the event's whole ping history.
+		CROSS JOIN LATERAL (
+		  SELECT lat, lng, server_ts
+		  FROM location_pings
+		  WHERE team_id = t.id
+		  ORDER BY server_ts DESC, id DESC
+		  LIMIT 1
+		) p
+		WHERE t.event_id = $1
+	`, eventID)
 	if err != nil {
 		return nil, err
 	}

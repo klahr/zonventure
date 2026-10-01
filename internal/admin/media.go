@@ -35,7 +35,6 @@ import (
 	"github.com/klahr/zonventure/internal/graph"
 	"github.com/klahr/zonventure/internal/httpx"
 	"github.com/klahr/zonventure/internal/imageutil"
-	"github.com/klahr/zonventure/internal/play"
 	"github.com/klahr/zonventure/internal/tokenx"
 )
 
@@ -153,18 +152,20 @@ func (h *Handlers) ServeMedia(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad media id", http.StatusBadRequest)
 		return
 	}
+	// What the file is and whose, without its bytes: those are read only
+	// for a caller allowed them, and not at all when theirs is current.
 	var (
 		mime      string
-		content   []byte
+		sum       string
 		ownerOrg  sql.NullInt64
 		published int
 		slug      string
 	)
 	err = h.DB.QueryRowContext(r.Context(), `
-		SELECT m.mime_type, m.content, a.org_id, a.published, a.slug
+		SELECT m.mime_type, m.sha256, a.org_id, a.published, a.slug
 		FROM adventure_media m JOIN adventures a ON a.id = m.adventure_id
 		WHERE m.id = $1
-	`, id).Scan(&mime, &content, &ownerOrg, &published, &slug)
+	`, id).Scan(&mime, &sum, &ownerOrg, &published, &slug)
 	if errors.Is(err, sql.ErrNoRows) {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
@@ -178,7 +179,7 @@ func (h *Handlers) ServeMedia(w http.ResponseWriter, r *http.Request) {
 	if me, ok := auth.FromContext(r.Context()); ok {
 		allowed = h.staffCanSeeAdventure(r.Context(), me, ownerOrg, published != 0, slug)
 	} else if slot, ok := auth.SlotFromContext(r.Context()); ok {
-		allowed, err = play.New(h.DB).CanSeeMedia(r.Context(), slot.TeamID, id)
+		allowed, err = h.engine().CanSeeMedia(r.Context(), slot.TeamID, id)
 		if err != nil {
 			http.Error(w, "lookup failed", http.StatusInternalServerError)
 			return
@@ -193,6 +194,19 @@ func (h *Handlers) ServeMedia(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", mime)
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Cache-Control", "private, max-age=3600")
+	// The content's hash names this version of it: a phone that has it
+	// is told so without the file being read or sent again.
+	etag := `"` + sum + `"`
+	w.Header().Set("ETag", etag)
+	if inm := r.Header.Get("If-None-Match"); inm != "" && (inm == etag || inm == "W/"+etag) {
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
+	var content []byte
+	if err := h.DB.QueryRowContext(r.Context(), `SELECT content FROM adventure_media WHERE id = $1`, id).Scan(&content); err != nil {
+		http.Error(w, "lookup failed", http.StatusInternalServerError)
+		return
+	}
 	// ServeContent answers Range requests, which a video needs to seek —
 	// and which Safari needs before it plays one at all.
 	http.ServeContent(w, r, "", time.Time{}, bytes.NewReader(content))

@@ -119,6 +119,8 @@ type Handlers struct {
 
 	// tracks caches buildTracks per event; see tracksTTL.
 	tracks tracksCache
+	// live shares the console's live views between all who watch an event.
+	live snapshots
 }
 
 /* ---------------- Shared scoping helpers ---------------- */
@@ -1477,16 +1479,18 @@ func (h *Handlers) buildPositions(ctx context.Context, eventID int64) ([]positio
 		       COALESCE(p.lat, 0), COALESCE(p.lng, 0), COALESCE(p.server_ts, '')
 		FROM teams t
 		LEFT JOIN team_graph_state gs ON gs.team_id = t.id
-		LEFT JOIN (
-			SELECT team_id, lat, lng, server_ts
+		-- Each team's latest ping, read off idx_pings_team_ts rather than
+		-- by scanning the event's whole ping history on every push.
+		LEFT JOIN LATERAL (
+			SELECT lat, lng, server_ts
 			FROM location_pings
-			WHERE id IN (
-				SELECT MAX(id) FROM location_pings WHERE event_id = $1 GROUP BY team_id
-			)
-		) p ON p.team_id = t.id
-		WHERE t.event_id = $2
+			WHERE team_id = t.id
+			ORDER BY server_ts DESC, id DESC
+			LIMIT 1
+		) p ON true
+		WHERE t.event_id = $1
 		ORDER BY t.name
-	`, eventID, eventID)
+	`, eventID)
 	if err != nil {
 		return nil, err
 	}
@@ -1542,6 +1546,10 @@ const tracksTTL = 5 * time.Second
 type tracksCache struct {
 	mu sync.Mutex
 	m  map[int64]tracksEntry
+	// building holds one lock per event being rebuilt, so watchers whose
+	// cache ran out together wait for one rebuild instead of each running
+	// the aggregate over the whole ping history.
+	building map[int64]*sync.Mutex
 }
 
 type tracksEntry struct {
@@ -1559,7 +1567,25 @@ func (h *Handlers) buildTracks(ctx context.Context, eventID int64) ([]trackDTO, 
 		c.mu.Unlock()
 		return e.tracks, nil
 	}
+	if c.building == nil {
+		c.building = map[int64]*sync.Mutex{}
+	}
+	lock := c.building[eventID]
+	if lock == nil {
+		lock = &sync.Mutex{}
+		c.building[eventID] = lock
+	}
 	c.mu.Unlock()
+	lock.Lock()
+	defer lock.Unlock()
+	// Someone else may have rebuilt it while this waited.
+	c.mu.Lock()
+	if e, ok := c.m[eventID]; ok && time.Since(e.at) < tracksTTL {
+		c.mu.Unlock()
+		return e.tracks, nil
+	}
+	c.mu.Unlock()
+	now = time.Now()
 	tracks, err := h.queryTracks(ctx, eventID)
 	if err != nil {
 		return nil, err
@@ -1571,6 +1597,9 @@ func (h *Handlers) buildTracks(ctx context.Context, eventID int64) ([]trackDTO, 
 	for id, e := range c.m {
 		if now.Sub(e.at) >= tracksTTL {
 			delete(c.m, id)
+			if id != eventID {
+				delete(c.building, id)
+			}
 		}
 	}
 	c.m[eventID] = tracksEntry{at: now, tracks: tracks}

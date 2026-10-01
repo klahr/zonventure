@@ -152,7 +152,7 @@ func (h *Handlers) PutAdventureGraph(w http.ResponseWriter, r *http.Request) {
 			before = was.Graph
 		}
 	}
-	d, _, err := graphstore.SaveDraftIf(r.Context(), h.DB, advID, h.userID(r), &env.Graph, base)
+	d, report, err := graphstore.SaveDraftIf(r.Context(), h.DB, advID, h.userID(r), &env.Graph, base)
 	if errors.Is(err, graphstore.ErrDraftChanged) {
 		httpx.JSON(w, http.StatusConflict, graphRefusal{Error: err.Error(), Code: "draft_changed"})
 		return
@@ -166,7 +166,20 @@ func (h *Handlers) PutAdventureGraph(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.publishGraphSaved(r, advID, d.UpdatedAt, before, &env.Graph)
-	h.writeGraphState(w, r, advID)
+	// Answer from what was just saved and checked, rather than reading
+	// the draft back and checking it again: the designer saves every
+	// time the author pauses.
+	resp := graphResponse{Envelope: *env, SavedAt: &d.UpdatedAt, Report: report}
+	pub, err := graphstore.Published(r.Context(), h.DB, advID)
+	if err != nil && !errors.Is(err, graphstore.ErrNotFound) {
+		httpx.ServerErr(w, http.StatusInternalServerError, "loading graph failed", err)
+		return
+	}
+	if err == nil {
+		resp.Published = &publishedInfo{Version: pub.Version, Label: pub.Label}
+	}
+	resp.Dirty = resp.Published == nil || graphstore.Differs(&env.Graph, pub.Graph)
+	httpx.JSON(w, http.StatusOK, resp)
 }
 
 // assistantPresence is how long an assistant stays shown on an adventure

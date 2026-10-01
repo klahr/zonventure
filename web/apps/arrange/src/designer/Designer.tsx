@@ -236,7 +236,7 @@ export function Designer({ slug }: { slug: string }) {
   // Puzzles from the classic editor: null until known, "unknown" when
   // they could not be read.
   const [lanePuzzles, setLanePuzzles] = useState<number | "unknown" | null>(null);
-  const brandDirty = JSON.stringify(brand) !== JSON.stringify(brandSaved);
+  const brandDirty = useMemo(() => JSON.stringify(brand) !== JSON.stringify(brandSaved), [brand, brandSaved]);
 
   const draft = history.present;
   // What the canvas shows: an older version while previewing, else the draft.
@@ -338,7 +338,9 @@ export function Designer({ slug }: { slug: string }) {
 
   // --- autosave ------------------------------------------------------------------
 
-  const unsaved = !!draft && (saved === null || differs(draft, saved));
+  // Comparing serialises both graphs, so it runs when they change, not on
+  // every render — presence, the ticker and saving flags render often.
+  const unsaved = useMemo(() => !!draft && draft !== saved && (saved === null || differs(draft, saved)), [draft, saved]);
   // The latest draft and its saved base, for merging someone else's save
   // into it from a socket callback.
   const draftRef = useRef(draft);
@@ -550,9 +552,11 @@ export function Designer({ slug }: { slug: string }) {
     return () => clearTimeout(id);
   }, [ticker]);
 
-  // Validation between autosaves, so badges follow the author quickly.
+  // Validation between autosaves, so badges follow the author quickly —
+  // only for the author's own edits: a draft just loaded, saved or pulled
+  // in already came with its report.
   useEffect(() => {
-    if (!draft || readOnly) return;
+    if (!draft || readOnly || !unsaved) return;
     const ac = new AbortController();
     const id = setTimeout(() => {
       adventures
@@ -566,7 +570,7 @@ export function Designer({ slug }: { slug: string }) {
       clearTimeout(id);
       ac.abort();
     };
-  }, [draft, readOnly, slug]);
+  }, [draft, readOnly, unsaved, slug]);
 
   useEffect(() => {
     if (!unsaved) return;

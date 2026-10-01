@@ -9,6 +9,7 @@ import (
 	"github.com/klahr/zonventure/internal/graphstore"
 	"github.com/klahr/zonventure/internal/play"
 	"net/http"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -17,6 +18,9 @@ import (
 	"github.com/klahr/zonventure/internal/logx"
 	"github.com/klahr/zonventure/internal/ws"
 )
+
+// liveSnapshotAge is the oldest a shared live view may be when sent.
+const liveSnapshotAge = time.Second
 
 // accessRecheck is how often a running watch re-checks that its user
 // may still see the event, in nanoseconds. Atomic because a test may
@@ -158,7 +162,16 @@ func (h *Handlers) WSArrange(w http.ResponseWriter, r *http.Request) {
 
 		stopWatch()
 
-		events, unsub := h.Hub.Subscribe(ws.EventTopic(eventID), ws.PositionsTopic(eventID))
+		// Pings and changes to the event wake apart: a ping moves positions
+		// and tracks only, so it no longer rebuilds the event's detail and
+		// activity for every watcher once a second.
+		eventTopic, pingTopic := ws.EventTopic(eventID), ws.PositionsTopic(eventID)
+		changes, unsubChanges := h.Hub.Subscribe(eventTopic)
+		pings, unsubPings := h.Hub.Subscribe(pingTopic)
+		unsub := func() {
+			unsubChanges()
+			unsubPings()
+		}
 		wctx, cancel := context.WithCancel(conn.Context())
 		mu.Lock()
 		cancelWatch = func() {
@@ -166,15 +179,18 @@ func (h *Handlers) WSArrange(w http.ResponseWriter, r *http.Request) {
 			unsub()
 		}
 		mu.Unlock()
-		joinLive(wctx, ws.EventTopic(eventID))
+		joinLive(wctx, eventTopic)
 
 		// Access was checked once above, against the user as of connect.
 		// Re-check it now and then so a user who is removed from the org,
 		// switches org or logs out stops receiving pushes rather than
 		// streaming until the socket reconnects. A failed lookup keeps
 		// the watch; the next check retries.
+		var checkMu sync.Mutex
 		checked := time.Now()
 		allowed := func() bool {
+			checkMu.Lock()
+			defer checkMu.Unlock()
 			if time.Since(checked) < time.Duration(accessRecheck.Load()) {
 				return true
 			}
@@ -186,31 +202,66 @@ func (h *Handlers) WSArrange(w http.ResponseWriter, r *http.Request) {
 			return ok && sameOrg(u, orgID)
 		}
 
-		push := func() {
-			if !allowed() {
-				conn.SendKind("watch_error", map[string]any{"error": "forbidden"})
-				cancel()
-				unsub()
-				return
-			}
-			if pos, err := h.buildPositions(wctx, eventID); err == nil {
-				conn.SendKind("positions", map[string]any{"positions": pos})
-			}
-			if tr, err := h.buildTracks(wctx, eventID); err == nil {
-				conn.SendKind("tracks", map[string]any{"tracks": tr})
-			}
-			if ev, err := h.buildActivity(wctx, eventID, nil); err == nil {
-				conn.SendKind("activity", map[string]any{"activity": ev})
-			}
-			if rd, err := h.buildEventDetail(wctx, eventID); err == nil {
-				conn.SendKind("event_detail", rd)
+		// Each view is built once per event and shared by every watcher
+		// (h.live): a snapshot built after the topic's latest publish is
+		// current, and none is older than a second — the detail carries
+		// the server's clock.
+		send := func(view string, after time.Time, build func(ctx context.Context) (string, any, error)) {
+			frame, err := h.live.get(view+":"+strconv.FormatInt(eventID, 10), latest(after, time.Now().Add(-liveSnapshotAge)), func() ([]byte, error) {
+				// Not this socket's context: others wait on the build.
+				kind, data, err := build(context.WithoutCancel(wctx))
+				if err != nil {
+					return nil, err
+				}
+				return ws.Frame(kind, data)
+			})
+			if err == nil {
+				conn.Send(frame)
 			}
 		}
+		refuse := func() bool {
+			if allowed() {
+				return false
+			}
+			conn.SendKind("watch_error", map[string]any{"error": "forbidden"})
+			cancel()
+			unsub()
+			return true
+		}
+		pushPositions := func() {
+			if refuse() {
+				return
+			}
+			moved := latest(h.Hub.LastPublish(pingTopic), h.Hub.LastPublish(eventTopic))
+			send("positions", moved, func(ctx context.Context) (string, any, error) {
+				pos, err := h.buildPositions(ctx, eventID)
+				return "positions", map[string]any{"positions": pos}, err
+			})
+			send("tracks", moved, func(ctx context.Context) (string, any, error) {
+				tr, err := h.buildTracks(ctx, eventID)
+				return "tracks", map[string]any{"tracks": tr}, err
+			})
+		}
+		pushAll := func() {
+			pushPositions()
+			if wctx.Err() != nil {
+				return
+			}
+			changed := h.Hub.LastPublish(eventTopic)
+			send("activity", changed, func(ctx context.Context) (string, any, error) {
+				ev, err := h.buildActivity(ctx, eventID, nil)
+				return "activity", map[string]any{"activity": ev}, err
+			})
+			send("event_detail", changed, func(ctx context.Context) (string, any, error) {
+				rd, err := h.buildEventDetail(ctx, eventID)
+				return "event_detail", rd, err
+			})
+		}
 
-		push()
-		// Every location ping publishes on the event topic; rebuild at
-		// most once a second rather than once per publish.
-		go ws.Coalesce(wctx, events, time.Second, push)
+		pushAll()
+		// Rebuild at most once a second rather than once per publish.
+		go ws.Coalesce(wctx, changes, time.Second, pushAll)
+		go ws.Coalesce(wctx, pings, time.Second, pushPositions)
 	}
 
 	// The designer watches its adventure's draft: each save is forwarded
