@@ -135,6 +135,38 @@ export interface BulkResult {
   results?: { error?: string }[];
 }
 
+/** internal/admin/statistics.go: EventStats — anonymous, across every team that played. */
+export interface EventStats {
+  teams: number;
+  finished: number;
+  failed: number;
+  guesses: number;
+  wrong: number;
+  first_try: number;
+  solved: number;
+  hints: number;
+  photos: number;
+  median_seconds?: number;
+  fastest_seconds?: number;
+  slowest_seconds?: number;
+  median_score?: number;
+  top_score?: number;
+  avg_distance_m?: number;
+  puzzles: PuzzleStats[];
+}
+
+export interface PuzzleStats {
+  node: string;
+  title: string;
+  reached: number;
+  solved: number;
+  first_try: number;
+  wrong: number;
+  hints: number;
+  median_seconds?: number;
+  wrong_answers: { answer: string; count: number; teams: number }[];
+}
+
 const E = (id: number) => `/api/admin/events/${id}`;
 const pw = (password: string) => ({ headers: { "X-Confirm-Password": password } });
 
@@ -148,6 +180,7 @@ export const getMessages = (id: number, signal?: AbortSignal) =>
   get<{ messages: Message[] | null }>(E(id) + "/messages", signal ? { signal } : {});
 export const getPhotos = (id: number, signal?: AbortSignal) =>
   get<{ photos: Photo[] | null; challenges?: number }>(E(id) + "/photos", signal ? { signal } : {});
+export const getStatistics = (id: number, signal?: AbortSignal) => get<EventStats>(E(id) + "/statistics", signal ? { signal } : {});
 
 export const transition = (id: number, action: "start" | "pause" | "resume") => post<void>(`${E(id)}/${action}`);
 export const cancelEvent = (id: number, password: string) => post<void>(E(id) + "/cancel", undefined, pw(password));

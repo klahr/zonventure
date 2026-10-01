@@ -16,7 +16,8 @@ import { TeamDetailDialog } from "./TeamDetail.tsx";
 import { TeamEditDialog } from "./TeamEdit.tsx";
 import { TeamsCard } from "./Teams.tsx";
 import { EmailsCard } from "./Emails.tsx";
-import { isQuest, runLabel, stateLabel, stateText, stateTone, teamColor } from "./util.ts";
+import { StatisticsCard } from "./Statistics.tsx";
+import { isGraphEvent, isQuest, runLabel, stateLabel, stateText, stateTone, teamColor } from "./util.ts";
 import "./event.css";
 
 type Open = null | { kind: "rename" } | { kind: "new-team" } | { kind: "team"; id: number } | { kind: "edit-team"; id: number };
@@ -34,6 +35,9 @@ export function EventPage({ id }: { id: number }) {
   const activity = useLoad((s) => api.getActivity(id, undefined, s), [id]);
   const messages = useLoad((s) => api.getMessages(id, s), [id]);
   const photos = useLoad((s) => api.getPhotos(id, s), [id]);
+  // Statistics come from graph play, once it has begun.
+  const played = !!detail.data && isGraphEvent(detail.data.event) && !!detail.data.event.started_at;
+  const stats = useLoad((s) => (played ? api.getStatistics(id, s) : Promise.resolve(null)), [id, played]);
   const slug = detail.data?.event.adventure_slug;
   const adventure = useLoad((s) => (slug ? api.getAdventure(slug, s) : Promise.resolve(null)), [slug]);
   const quest = detail.data ? isQuest(detail.data.event) : false;
@@ -47,10 +51,11 @@ export function EventPage({ id }: { id: number }) {
   const [activityKey, setActivityKey] = useState(0);
   const now = useNow(30_000);
 
-  // Messages and photos aren't pushed; a burst of activity re-reads them once.
+  // Messages, photos and statistics aren't pushed; a burst of activity re-reads them once.
   const sideTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const { reload: reloadMessages } = messages;
   const { reload: reloadPhotos } = photos;
+  const { reload: reloadStats } = stats;
   useEffect(() => () => clearTimeout(sideTimer.current), []);
   const presence = usePresence();
   useEventWatch(id, (m) => {
@@ -62,7 +67,7 @@ export function EventPage({ id }: { id: number }) {
       if (list) activity.set(list);
       setActivityKey((k) => k + 1);
       clearTimeout(sideTimer.current);
-      sideTimer.current = setTimeout(() => { reloadMessages(); reloadPhotos(); }, 1500);
+      sideTimer.current = setTimeout(() => { reloadMessages(); reloadPhotos(); reloadStats(); }, 1500);
     }
   });
 
@@ -139,6 +144,7 @@ export function EventPage({ id }: { id: number }) {
       {quest && <ConnectBanner event={event} status={connect.data ?? null} user={user} />}
       {quest && <StoreCard key={event.id} event={event} onSaved={detail.reload} />}
       <ResultsCard event={event} teams={teams} />
+      {played && <StatisticsCard stats={stats.data} error={stats.error} retry={stats.reload} />}
 
       <div className="ev-cols">
         <div className="ev-col">

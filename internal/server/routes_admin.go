@@ -215,6 +215,7 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 			r.Get("/events/{eventID}/activity", adminH.ListActivity)
 			r.Get("/events/{eventID}/tracks", adminH.ListTracks)
 			r.Get("/events/{eventID}/results.csv", adminH.ExportEventResults)
+			r.Get("/events/{eventID}/statistics", adminH.EventStatistics)
 			// Branded recap PDF — same data, different shape: a polished
 			// post-event artifact arrangers can hand to their stakeholders.
 			// Mounted alongside the CSV so the same authorize-event check
