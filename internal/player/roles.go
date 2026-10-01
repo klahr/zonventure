@@ -19,12 +19,16 @@ import (
 // decorateRoles says, for the player asking, who holds each of the
 // view's roles and which are theirs.
 func decorateRoles(ctx context.Context, db *sql.DB, teamID, slotID int64, v *play.View) error {
-	if len(v.Roles) == 0 {
+	if len(v.Roles) == 0 && len(v.Reveal) == 0 {
 		return nil
 	}
-	slugs := make([]string, len(v.Roles))
-	for i, r := range v.Roles {
-		slugs[i] = r.Slug
+	// A secret role is listed only to its player, who knows already;
+	// who holds it is no one's to learn here.
+	var slugs []string
+	for _, r := range v.Roles {
+		if !r.Secret {
+			slugs = append(slugs, r.Slug)
+		}
 	}
 	holdings, err := play.DealRoles(ctx, db, teamID, slotID, slugs)
 	if err != nil {
@@ -36,8 +40,15 @@ func decorateRoles(ctx context.Context, db *sql.DB, teamID, slotID int64, v *pla
 	}
 	for i := range v.Roles {
 		r := &v.Roles[i]
+		if r.Secret {
+			continue
+		}
 		h := holdings[r.Slug]
 		r.Mine, r.Holder, r.Claimed = h.Slot == slotID, names[h.Slot], h.Claimed
+	}
+	// The end unmasks them.
+	for i := range v.Reveal {
+		v.Reveal[i].Holder = names[v.Reveal[i].Slot]
 	}
 	return nil
 }
@@ -91,9 +102,10 @@ func (h *Handlers) PostRole(w http.ResponseWriter, r *http.Request) {
 	}
 	known := false
 	for _, ro := range view.Roles {
-		known = known || ro.Slug == req.Role
+		known = known || ro.Slug == req.Role && !ro.Secret
 	}
 	if !known {
+		// A secret role is dealt, never chosen — nor given back.
 		httpx.Error(w, http.StatusNotFound, "no such role")
 		return
 	}

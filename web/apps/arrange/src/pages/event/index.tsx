@@ -11,7 +11,7 @@ import { ActivityFeed } from "./Activity.tsx";
 import { LifecycleActions, RenameDialog } from "./Lifecycle.tsx";
 import { MessagesCard, PhotosCard } from "./Messages.tsx";
 import { NewTeamsDialog } from "./NewTeams.tsx";
-import { ConnectBanner, QuickStats, ResultsCard, StoreCard } from "./Overview.tsx";
+import { ConnectBanner, QuickStats, ResultsCard, SecretRolesCard, StoreCard } from "./Overview.tsx";
 import { TeamDetailDialog } from "./TeamDetail.tsx";
 import { TeamEditDialog } from "./TeamEdit.tsx";
 import { TeamsCard } from "./Teams.tsx";
@@ -143,6 +143,7 @@ export function EventPage({ id }: { id: number }) {
       <QuickStats event={event} teams={teams} now={now} />
       {quest && <ConnectBanner event={event} status={connect.data ?? null} user={user} />}
       {quest && <StoreCard key={event.id} event={event} onSaved={detail.reload} />}
+      {event.has_secret_roles && <SecretRolesCard key={`secret-${event.id}`} event={event} onSaved={detail.reload} />}
       <ResultsCard event={event} teams={teams} />
       {played && <StatisticsCard stats={stats.data} error={stats.error} retry={stats.reload} />}
 

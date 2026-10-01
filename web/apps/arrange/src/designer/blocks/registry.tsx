@@ -2,6 +2,8 @@ import type { BlockKind } from "@zonventure/graph";
 import {
   Activity,
   AlarmClock,
+  Bomb,
+  Gavel,
   Camera,
   Compass,
   Crosshair,
@@ -49,7 +51,7 @@ import { OverlayEditor } from "./Overlay.tsx";
 import { CompassEditor, MapEditor, RadarEditor } from "./Place.tsx";
 import { PointsEditor, TextEditor, TitleEditor } from "./Text.tsx";
 import { QuizEditor, TiebreakEditor } from "./Quiz.tsx";
-import { BulletinEditor, DrawEditor, PhotoEditor, SplitEditor, VoteEditor } from "./Social.tsx";
+import { AccuseEditor, BulletinEditor, DrawEditor, PhotoEditor, SabotageEditor, SplitEditor, VoteEditor } from "./Social.tsx";
 import { SuspectsEditor } from "./Suspects.tsx";
 import { TorchEditor } from "./Torch.tsx";
 import type { Group, KindDef } from "./types.ts";
@@ -92,6 +94,8 @@ export const KINDS: { [K in BlockKind]: KindDef<K> } = {
   photo: { label: "Photo challenge", icon: Camera, group: "Game", about: "A picture for the arranger to approve", editor: PhotoEditor },
   draw: { label: "Random draw", icon: Dices, group: "Game", about: "Deal the team a card at random", editor: DrawEditor },
   bulletin: { label: "Live bulletin", icon: Megaphone, group: "Game", about: "The organisers' latest message", editor: BulletinEditor },
+  sabotage: { label: "Sabotage", icon: Bomb, group: "Game", about: "A button only the saboteur sees", editor: SabotageEditor },
+  accuse: { label: "Accusation", icon: Gavel, group: "Game", about: "The players name the saboteur", editor: AccuseEditor },
   quiz: { label: "Quiz question", icon: ListChecks, group: "Quiz", about: "1, X or 2, marked at the end", editor: QuizEditor },
   tiebreak: { label: "Tie-breaker", icon: Scale, group: "Quiz", about: "A number question that breaks ties", editor: TiebreakEditor },
   // Always on the step, never in the add menu: see FIXED_KINDS.

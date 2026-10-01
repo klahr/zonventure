@@ -423,14 +423,16 @@ function PuzzleStep(props: StepProps) {
   }, [live, timeUp, view.has_timeout, node, onAction]);
 
   const input: play.PlayInput = view.input ?? { kind: "text" };
-  const tiles = input.kind === "tiles" && input.image && input.rows && input.cols ? input : null;
-  const search = input.kind === "search";
-  const choices = input.kind === "choice" && input.fields?.length ? input.fields : null;
-  const lock = input.kind === "lock" && input.wheels && input.symbols?.length ? input : null;
-  const slots = input.kind === "items" && input.slots?.length ? input : null;
-  const questions = input.kind === "questions";
-  const keys = input.kind === "keys";
-  const scan = input.kind === "scan" && !typing && canScan();
+  // Another role's to answer: the step shows, its answer does not.
+  const mine = !input.not_yours;
+  const tiles = mine && input.kind === "tiles" && input.image && input.rows && input.cols ? input : null;
+  const search = mine && input.kind === "search";
+  const choices = mine && input.kind === "choice" && input.fields?.length ? input.fields : null;
+  const lock = mine && input.kind === "lock" && input.wheels && input.symbols?.length ? input : null;
+  const slots = mine && input.kind === "items" && input.slots?.length ? input : null;
+  const questions = mine && input.kind === "questions";
+  const keys = mine && input.kind === "keys";
+  const scan = mine && input.kind === "scan" && !typing && canScan();
   const placeholder =
     input.placeholder ||
     (input.parts ? t(input.ordered ? "{{n}} answers, in order, with commas" : "{{n}} answers, with commas", { n: input.parts }) : t("Your answer"));
@@ -526,7 +528,9 @@ function PuzzleStep(props: StepProps) {
 
       <div className="pv-dock">
         <FeedbackLine feedback={feedback} />
-        {keys && !timeUp ? (
+        {!mine ? (
+          <p className="pv-muted pv-not-yours">{t("Only the {{role}} can answer this. Find them and work it out together.", { role: input.by ?? "" })}</p>
+        ) : keys && !timeUp ? (
           <button
             type="button"
             className="pv-btn pv-btn--primary pv-btn--wide"
@@ -919,6 +923,39 @@ function duration(sec: number): string {
   return h ? `${h}:${String(m).padStart(2, "0")}:${s}` : `${m}:${s}`;
 }
 
+/**
+ * The unmasking, once the team has finished: who held each secret role,
+ * which of their goals they met, and whether the team named them.
+ */
+function Reveal({ reveal, t }: { reveal: play.RevealView[]; t: Translate }) {
+  return (
+    <section className="pv-reveal">
+      {reveal
+        .filter((r) => r.dealt)
+        .map((r) => (
+          <div key={r.role} className="pv-reveal__role">
+            <h3 className="pv-reveal__who">{t("The {{role}} was {{name}}!", { role: r.name || r.role, name: r.holder || t("someone who left") })}</h3>
+            {r.caught !== undefined && (
+              <p className={"pv-reveal__verdict" + (r.caught ? " is-caught" : "")}>
+                {r.caught ? t("Your team named them. Well spotted.") : t("They got away with it.")}
+              </p>
+            )}
+            {r.goals && r.goals.length > 0 && (
+              <ul className="pv-reveal__goals">
+                {r.goals.map((g, i) => (
+                  <li key={i} className={g.met ? "is-met" : ""}>
+                    <span aria-hidden>{g.met ? "✓" : "✗"}</span> {g.text}
+                    <span className="pv-visually-hidden">{g.met ? t("done") : t("foiled")}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        ))}
+    </section>
+  );
+}
+
 function EndStep(props: StepProps) {
   const { view, t, outro, finish } = props;
   const failed = view.outcome === "fail";
@@ -930,6 +967,7 @@ function EndStep(props: StepProps) {
       <h2 className="pv-summary__head">{failed ? t("The adventure is over.") : t("You made it!")}</h2>
       <Blocks blocks={view.blocks} {...blockContext(props)} />
       {view.quiz && <QuizResult quiz={view.quiz} t={t} />}
+      {view.reveal?.some((r) => r.dealt) && <Reveal reveal={view.reveal} t={t} />}
       {outro && <Markdown className="pv-text" text={outro} />}
       <div className="pv-stats">
         <div className="pv-stat">
@@ -991,6 +1029,7 @@ function Bag({ view, t }: { view: play.View; t: Translate }) {
                 {it.icon && <span aria-hidden>{it.icon} </span>}
                 {it.name || it.slug}
                 {it.qty > 1 && ` ×${it.qty}`}
+                {it.role && <span className="pv-bag__role"> · {t("belongs to the {{role}}", { role: it.role })}</span>}
               </li>
             ))}
           </ul>

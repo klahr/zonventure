@@ -43,6 +43,9 @@ var (
 	ErrStale = errors.New("team has already moved on")
 	// ErrNotHere means a zone gate is not satisfied. Map to 403.
 	ErrNotHere = errors.New("not inside the required zone")
+	// ErrNotYours means the action is another role's: a puzzle only the
+	// Locksmith answers, an item in the Locksmith's kit. Map to 403.
+	ErrNotYours = errors.New("that is another role's to do")
 	// ErrLocked means answering is blocked after a wrong guess. Map to
 	// 429 with Retry-After from Result.BlockedUntil.
 	ErrLocked = errors.New("answering is temporarily locked")
@@ -165,6 +168,13 @@ type Team struct {
 	Players      []int64         `json:"-"`
 	Presses      map[int64]Press `json:"-"`
 	PressChanged *PressChange    `json:"-"`
+	// Secrets are who holds each secret role, by slot (0: no one), and
+	// Accused whom most of the team named at each accusation block, by
+	// PickKey; see secret.go. NewJournal are notes an action unlocked
+	// that the engine must persist. None is stored with the team.
+	Secrets    map[string]int64 `json:"-"`
+	Accused    map[string]int64 `json:"-"`
+	NewJournal []string         `json:"-"`
 	// WalkedMetres is how far the team has walked on its current node:
 	// read from its phones' positions by the live engine, added up from
 	// the moves the simulator makes.
@@ -175,6 +185,9 @@ type Team struct {
 func New(g *graph.Graph, now time.Time) *Team {
 	t := &Team{G: g, Now: now, StartedAt: now, NodeEnteredAt: now, Size: 1}
 	t.Init()
+	for slug, q := range g.Kit() {
+		t.Items[slug] += q
+	}
 	return t
 }
 
@@ -265,7 +278,8 @@ func (t *Team) Apply(step walk.Step) {
 		if !t.Completed {
 			// The quiz walk is marked as the team finishes, never before:
 			// a score that moved with each pick would give the answers away.
-			t.Points += t.Quiz().Points
+			// So is the accusation, which would give the saboteur away.
+			t.Points += t.Quiz().Points + t.accusePoints()
 		}
 		t.Completed = true
 		t.Ending = step.Outcome
@@ -595,6 +609,9 @@ func (t *Team) Answer(node, guess string) (Result, *walk.Step, error) {
 	if cfg.Kind() == graph.AnswerQuestions && t.unanswered(n) {
 		return Result{}, nil, ErrUnanswered
 	}
+	if cfg.Kind() == graph.AnswerItems && t.usesOthersKit(guess) {
+		return Result{}, nil, ErrNotYours
+	}
 
 	// First answer output that accepts the guess and whose zone
 	// constraint holds. Order is the author's: it is how they express
@@ -679,7 +696,22 @@ func (t *Team) mayAnswer(n graph.Node) (Result, error) {
 	if cfg.TimeLimitSeconds > 0 && t.NodeElapsedSeconds() > float64(cfg.TimeLimitSeconds) {
 		return Result{}, ErrTimeUp
 	}
+	if cfg.By != "" && !t.HasRole(cfg.By) {
+		return Result{}, ErrNotYours
+	}
 	return Result{}, nil
+}
+
+// usesOthersKit reports whether an item puzzle's guess places an item
+// from the kit of a role the player asking does not hold: theirs to use,
+// not this player's. Not a wrong guess — the right items may be in it.
+func (t *Team) usesOthersKit(guess string) bool {
+	for _, slug := range strings.Split(guess, "|") {
+		if role, ok := t.G.ItemRole(strings.TrimSpace(slug)); ok && !t.HasRole(role) {
+			return true
+		}
+	}
+	return false
 }
 
 // outputZoneOK applies an output's zone constraint, including the
@@ -1133,6 +1165,8 @@ func Code(err error) string {
 		return "stale"
 	case errors.Is(err, ErrNotHere):
 		return "not_here"
+	case errors.Is(err, ErrNotYours):
+		return "not_yours"
 	case errors.Is(err, ErrLocked):
 		return "locked"
 	case errors.Is(err, ErrTimeUp):

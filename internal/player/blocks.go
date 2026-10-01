@@ -73,7 +73,7 @@ func decorateView(ctx context.Context, db *sql.DB, teamID, slotID int64, v *play
 			continue
 		}
 		split = split || b.Kind == graph.BlockSplit
-		vote = vote || b.Kind == graph.BlockVote
+		vote = vote || b.Kind == graph.BlockVote || b.Kind == graph.BlockAccuse
 		photo = photo || b.Kind == graph.BlockPhoto
 	}
 	if !split && !vote && !photo {
@@ -103,6 +103,10 @@ func decorateView(ctx context.Context, db *sql.DB, teamID, slotID int64, v *play
 				return err
 			}
 			b.Tally, b.Voted, b.Voters = tally, mine, len(players)
+		case graph.BlockAccuse:
+			if err := decorateAccuse(ctx, db, teamID, slotID, v.Node, b, players); err != nil {
+				return err
+			}
 		case graph.BlockPhoto:
 			p, err := latestPhoto(ctx, db, teamID, v.Node, b.ID)
 			if err != nil {
@@ -158,7 +162,7 @@ func latestPhoto(ctx context.Context, db *sql.DB, teamID int64, node, block stri
 // team sees it now: not on another step, not hidden, not switched off.
 // node is the step the player is looking at; one the team has left is
 // stale, as for every other action.
-func (h *Handlers) shownBlock(ctx context.Context, teamID int64, node, block string, kind graph.BlockKind) (session.BlockView, error) {
+func (h *Handlers) shownBlock(ctx context.Context, teamID int64, node, block string, kinds ...graph.BlockKind) (session.BlockView, error) {
 	v, err := h.engine().Snapshot(ctx, teamID)
 	if err != nil {
 		return session.BlockView{}, err
@@ -167,29 +171,83 @@ func (h *Handlers) shownBlock(ctx context.Context, teamID int64, node, block str
 		return session.BlockView{}, session.ErrStale
 	}
 	for _, b := range v.Blocks {
-		if b.ID == block && b.Kind == kind && !b.Locked {
+		if b.ID == block && slices.Contains(kinds, b.Kind) && !b.Locked {
 			return b, nil
 		}
 	}
 	return session.BlockView{}, session.ErrWrongNode
 }
 
-// vote records the player's vote on a vote block: an option's index,
-// which the player may change while the team is on the step.
+// vote records the player's vote on a vote block — an option's index —
+// or whom they name on an accusation — a teammate's slot, never their
+// own. They may change it while the team is on the step.
 func (h *Handlers) vote(ctx context.Context, tc teamContext, slotID int64, req PlayActionRequest) error {
-	b, err := h.shownBlock(ctx, tc.TeamID, req.Node, req.Block, graph.BlockVote)
+	b, err := h.shownBlock(ctx, tc.TeamID, req.Node, req.Block, graph.BlockVote, graph.BlockAccuse)
 	if err != nil {
 		return err
 	}
-	i, err := strconv.Atoi(strings.TrimSpace(req.Choice))
-	if err != nil || i < 0 || i >= len(b.Options) {
+	choice := strings.TrimSpace(req.Choice)
+	if b.Kind == graph.BlockAccuse {
+		named, err := strconv.ParseInt(choice, 10, 64)
+		if err != nil || named == slotID {
+			return session.ErrWrongNode
+		}
+		players, err := teamPlayers(ctx, h.DB, tc.TeamID, slotID)
+		if err != nil {
+			return err
+		}
+		if !slices.Contains(players, named) {
+			return session.ErrWrongNode
+		}
+	} else if i, err := strconv.Atoi(choice); err != nil || i < 0 || i >= len(b.Options) {
 		return session.ErrWrongNode
 	}
 	_, err = h.DB.ExecContext(ctx, `
 		INSERT INTO team_block_votes (team_id, node, block_id, slot_id, choice) VALUES ($1, $2, $3, $4, $5)
 		ON CONFLICT (team_id, node, block_id, slot_id) DO UPDATE SET choice = EXCLUDED.choice, voted_at = now()`,
-		tc.TeamID, req.Node, req.Block, slotID, strconv.Itoa(i))
+		tc.TeamID, req.Node, req.Block, slotID, choice)
 	return err
+}
+
+// decorateAccuse lists whom the player may name — their teammates who
+// are playing — with how many have named each, and whom they named.
+func decorateAccuse(ctx context.Context, db *sql.DB, teamID, slotID int64, node string, b *session.BlockView, players []int64) error {
+	names, err := slotNames(ctx, db, teamID)
+	if err != nil {
+		return err
+	}
+	counts := map[string]int{}
+	rows, err := db.QueryContext(ctx, `SELECT slot_id, choice FROM team_block_votes WHERE team_id = $1 AND node = $2 AND block_id = $3`,
+		teamID, node, b.ID)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var voter int64
+		var choice string
+		if err := rows.Scan(&voter, &choice); err != nil {
+			return err
+		}
+		if slices.Contains(players, voter) {
+			counts[choice]++
+		}
+		if voter == slotID {
+			b.Voted = choice
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, p := range players {
+		if p == slotID {
+			continue
+		}
+		b.Suspects = append(b.Suspects, session.Suspect{Slot: p, Name: names[p]})
+		b.Tally = append(b.Tally, counts[strconv.FormatInt(p, 10)])
+	}
+	b.Voters = len(players)
+	return nil
 }
 
 // photoReply is the body of POST /api/player/play/photo.

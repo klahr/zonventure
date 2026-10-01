@@ -6,6 +6,7 @@ import (
 
 	"github.com/klahr/zonventure/internal/graph"
 	"github.com/klahr/zonventure/internal/graph/cond"
+	"github.com/klahr/zonventure/internal/graph/session"
 )
 
 // Teammates in different places see different things: a block shown
@@ -266,5 +267,81 @@ func TestRolesOverHTTP(t *testing.T) {
 	}
 	if s := claim(ann, "ghost", true); s != 404 {
 		t.Errorf("claiming a role the adventure lacks = %d, want 404", s)
+	}
+}
+
+// Abilities over HTTP: the team starts with the locksmith's lockpick,
+// everyone sees whose it is, and only the locksmith's phone opens the
+// door with it.
+func TestAbilitiesOverHTTP(t *testing.T) {
+	ts, assignmentID, cleanup := newTestServer(t)
+	defer cleanup()
+
+	pub := newClient(t, ts)
+	if s := pub.do("POST", "/api/auth/login", map[string]string{"username": "pub", "password": "pubpw"}, nil); s != 200 {
+		t.Fatalf("login = %d", s)
+	}
+	g := graph.Graph{
+		Roles: []graph.Role{{Slug: "locksmith", Name: "Locksmith", Kit: []string{"lockpick"}}, {Slug: "scout", Name: "Scout"}},
+		Items: []graph.Item{{Slug: "lockpick", Name: "Lockpick"}},
+		Nodes: []graph.Node{
+			{Slug: "start", Type: graph.Start},
+			{Slug: "door", Type: graph.Puzzle, PuzzleCfg: &graph.PuzzleConfig{
+				Answer:  &graph.Answer{Kind: graph.AnswerItems, Slots: []graph.ItemSlot{{Label: "The lock", Item: "lockpick"}}, Keep: true},
+				Outputs: []graph.Output{{Port: "open", Trigger: graph.OnAnswer}},
+			}},
+			{Slug: "end", Type: graph.End},
+		},
+		Edges: []graph.Edge{{From: "start", FromPort: "out", To: "door"}, {From: "door", FromPort: "open", To: "end"}},
+	}
+	if s := pub.doAny("PUT", "/api/admin/adventures/demo/graph", graph.Envelope{Format: graph.FormatV2, Graph: g}, nil); s != 200 {
+		t.Fatalf("save graph = %d", s)
+	}
+	if s := pub.doAny("POST", "/api/admin/adventures/demo/graph/publish", nil, nil); s != 200 {
+		t.Fatalf("publish = %d", s)
+	}
+	arr := newClient(t, ts)
+	arr.do("POST", "/api/auth/login", map[string]string{"username": "boss", "password": "s3cret"}, nil)
+	var ev struct {
+		ID int64 `json:"id"`
+	}
+	arr.do("POST", "/api/admin/events", map[string]any{"assignment_id": assignmentID, "attest_no_minors": true}, &ev)
+	var team struct {
+		Members []struct {
+			Token string `json:"token"`
+		} `json:"members"`
+	}
+	if s := arr.do("POST", "/api/admin/events/"+itoa(ev.ID)+"/teams", map[string]any{"name": "Alpha", "member_names": []string{"Ann", "Bo"}}, &team); s != 201 {
+		t.Fatalf("create team = %d", s)
+	}
+	login := func(token string) *client {
+		c := newClient(t, ts)
+		resp, err := c.c.Get(ts.URL + "/play?t=" + token)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return c
+	}
+	// Ann first, so she is dealt the locksmith, Bo the scout.
+	ann, bo := login(team.Members[0].Token), login(team.Members[1].Token)
+	if s := arr.do("POST", "/api/admin/events/"+itoa(ev.ID)+"/start", nil, nil); s != 204 {
+		t.Fatalf("start = %d", s)
+	}
+
+	var st playStateDTO
+	if s := bo.doAny("GET", "/api/player/play", nil, &st); s != 200 || st.View == nil {
+		t.Fatalf("play = %d", s)
+	}
+	if items := st.View.Items; len(items) != 1 || items[0].Slug != "lockpick" || items[0].Role != "Locksmith" || !items[0].NotMine {
+		t.Fatalf("Bo's backpack: %+v", items)
+	}
+	var refused playRefusalDTO
+	if s := bo.doAny("POST", "/api/player/play/answer", map[string]string{"node": "door", "guess": "lockpick"}, &refused); s != 403 || refused.Code != "not_yours" {
+		t.Errorf("Bo using the locksmith's lockpick = %d %q, want 403 not_yours", s, refused.Code)
+	}
+	var res session.Result
+	if s := ann.doAny("POST", "/api/player/play/answer", map[string]string{"node": "door", "guess": "lockpick"}, &res); s != 200 || !res.Accepted {
+		t.Errorf("Ann, the locksmith, opening the door = %d %+v", s, res)
 	}
 }

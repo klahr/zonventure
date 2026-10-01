@@ -86,6 +86,10 @@ export function nodeTexts(n: Node): Translatable[] {
         case "letters":
           add(own, "Letters", b.text);
           break;
+        case "sabotage":
+        case "accuse":
+          add(own, b.kind === "sabotage" ? "Sabotage" : "Accusation", b.text, { multiline: true });
+          break;
         case "vote":
         case "draw":
           add(own, b.kind === "vote" ? "Vote question" : "Draw", b.text, { multiline: true });
@@ -181,6 +185,9 @@ export function adventureTexts(g: Graph, meta: AdventureMeta = {}): Translatable
   for (const r of g.roles ?? []) {
     if (r.name?.trim()) out.push({ key: roleKey(r.slug, "name"), label: "Role", main: r.name });
     if (r.text?.trim()) out.push({ key: roleKey(r.slug, "text"), label: `Role: ${r.name || r.slug}`, main: r.text, multiline: true });
+    (r.goals ?? []).forEach((g, i) => {
+      if (g.text.trim()) out.push({ key: `r:${r.slug}:goal:${i}`, label: `Goal of ${r.name || r.slug}`, main: g.text });
+    });
   }
   if (g.time_limit?.text?.trim()) out.push({ key: TIME_UP_KEY, label: "Time is up: message", main: g.time_limit.text, multiline: true });
   return out;

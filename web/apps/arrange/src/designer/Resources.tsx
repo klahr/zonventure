@@ -10,6 +10,7 @@ import { Plus, Trash2 } from "lucide-react";
 import { ICON } from "./dz/ui.tsx";
 import { nearLastZone, zoneGroups } from "./zones.ts";
 import { MarkdownArea } from "./MarkdownArea.tsx";
+import { ConditionEditor } from "./ConditionEditor.tsx";
 
 /** A copy without one key, for clearing an optional field under exactOptionalPropertyTypes. */
 function withoutKey<T extends object, K extends keyof T>(obj: T, key: K): T {
@@ -234,6 +235,71 @@ export function Resources({ graph, onChange }: { graph: Graph; onChange: (g: Gra
               </div>
               <MarkdownArea className="field__input" rows={2} value={r.text ?? ""} placeholder={t.t("What the role is for, shown to the player who takes it. Markdown.")} aria-label={t.t("Description")}
                 onChange={(e) => set(e.target.value ? { ...r, text: e.target.value } : withoutKey(r, "text"))} />
+              <label className="check">
+                <input
+                  type="checkbox"
+                  checked={!!r.secret}
+                  onChange={(e) => set(e.target.checked ? { ...withoutKey(r, "kit"), secret: true } : withoutKey(withoutKey(r, "secret"), "goals"))}
+                />
+                {t.t("Secret, like a saboteur")}
+              </label>
+              {r.secret && (
+                <>
+                  <p className="field__hint">
+                    {t.t("Dealt at random to one player when the team makes its first move, on teams of three or more, and never chosen. Only that player knows, until the end screen reveals them. Give it sabotage blocks, and an accusation for the team to unmask it.")}
+                  </p>
+                  <div className="field">
+                    <span className="field__label">{t.t("Goals, checked when the team finishes")}</span>
+                    {(r.goals ?? []).map((g, gi) => {
+                      const goals = r.goals ?? [];
+                      const setGoal = (next: typeof g) => set({ ...r, goals: goals.map((x, j) => (j === gi ? next : x)) });
+                      return (
+                        <div key={gi} className="box">
+                          <div className="box__row">
+                            <input className="field__input" value={g.text} placeholder={t.t("What the saboteur is told, such as “Keep them out of the vault.”")} aria-label={t.t("Goal")}
+                              onChange={(e) => setGoal({ ...g, text: e.target.value })} />
+                            <button type="button" className="icon-remove" onClick={() => set(goals.length > 1 ? { ...r, goals: goals.filter((_, j) => j !== gi) } : withoutKey(r, "goals"))} aria-label={t.t("Remove")} title={t.t("Remove")}>
+                              <Trash2 size={ICON.sm} />
+                            </button>
+                          </div>
+                          <ConditionEditor graph={graph} value={g.when} onChange={(when) => setGoal({ ...g, when })} />
+                        </div>
+                      );
+                    })}
+                    <button type="button" className="add-btn" onClick={() => set({ ...r, goals: [...(r.goals ?? []), { text: "", when: { op: "" } }] })}>
+                      <Plus size={ICON.sm} aria-hidden="true" />
+                      {t.t("Add goal")}
+                    </button>
+                  </div>
+                </>
+              )}
+              {items.length > 0 && !r.secret && (
+                <div className="field">
+                  <span className="field__label">{t.t("Brings (only this role can use them)")}</span>
+                  <div className="cond__days">
+                    {items.map((it) => {
+                      const kit = r.kit ?? [];
+                      const on = kit.includes(it.slug);
+                      // An item is one role's at most.
+                      const elsewhere = !on && roles.some((o) => o.slug !== r.slug && (o.kit ?? []).includes(it.slug));
+                      return (
+                        <label key={it.slug} className="chip">
+                          <input
+                            type="checkbox"
+                            checked={on}
+                            disabled={elsewhere}
+                            onChange={() => {
+                              const next = on ? kit.filter((x) => x !== it.slug) : [...kit, it.slug];
+                              set(next.length ? { ...r, kit: next } : withoutKey(r, "kit"));
+                            }}
+                          />
+                          {it.name || it.slug}
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           );
         })}

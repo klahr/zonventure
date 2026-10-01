@@ -1226,3 +1226,169 @@ func TestUnanimousAnswer(t *testing.T) {
 		t.Errorf("alone: %+v", res)
 	}
 }
+
+// Only the role's player answers a puzzle answered by it; the others
+// are told it is not theirs, and nothing counts against the team.
+func TestAnsweredByRole(t *testing.T) {
+	tm := together(t, graph.PuzzleConfig{By: "locksmith"}, nil, 1, 2)
+	tm.G.Roles = []graph.Role{{Slug: "locksmith", Name: "Locksmith"}, {Slug: "scout"}}
+	tm.Viewer = &Viewer{Slot: 2, Roles: []string{"scout"}}
+	if _, _, err := tm.Answer("p", "7"); err != ErrNotYours {
+		t.Fatalf("the scout answering: %v, want ErrNotYours", err)
+	}
+	if tm.Nodes["p"].Attempts != 0 {
+		t.Error("someone else's turn is not a wrong guess")
+	}
+	if v := tm.View(); v.Input == nil || v.Input.By != "Locksmith" || !v.Input.NotYours {
+		t.Errorf("the scout's view: %+v", v.Input)
+	}
+	tm.Viewer = &Viewer{Slot: 1, Roles: []string{"locksmith"}}
+	if v := tm.View(); v.Input.NotYours {
+		t.Error("the locksmith's own puzzle is theirs")
+	}
+	if res, _, err := tm.Answer("p", "7"); err != nil || !res.Accepted {
+		t.Errorf("the locksmith answering: %+v %v", res, err)
+	}
+}
+
+// A role's kit is in the backpack from the start, labelled whose it is;
+// only that role's player can place it in a slot.
+func TestRoleKit(t *testing.T) {
+	cfg := graph.PuzzleConfig{
+		Answer:  &graph.Answer{Kind: graph.AnswerItems, Slots: []graph.ItemSlot{{Label: "The lock", Item: "lockpick"}}, Keep: true},
+		Outputs: []graph.Output{{Port: "open", Trigger: graph.OnAnswer}},
+	}
+	g := &graph.Graph{
+		Roles: []graph.Role{{Slug: "locksmith", Name: "Locksmith", Kit: []string{"lockpick"}}, {Slug: "scout"}},
+		Items: []graph.Item{{Slug: "lockpick", Name: "Lockpick"}},
+		Nodes: []graph.Node{{Slug: "start", Type: graph.Start}, {Slug: "door", Type: graph.Puzzle, PuzzleCfg: &cfg}, {Slug: "end", Type: graph.End}},
+		Edges: []graph.Edge{{From: "start", FromPort: "out", To: "door"}, {From: "door", FromPort: "open", To: "end"}},
+	}
+	tm, step, err := Start(g, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tm.Apply(step)
+	if tm.Items["lockpick"] != 1 {
+		t.Fatalf("the team should start with the locksmith's lockpick: %v", tm.Items)
+	}
+	tm.Viewer = &Viewer{Slot: 2, Roles: []string{"scout"}}
+	if v := tm.View(); len(v.Items) != 1 || v.Items[0].Role != "Locksmith" || !v.Items[0].NotMine {
+		t.Errorf("the scout's backpack: %+v", v.Items)
+	}
+	if _, _, err := tm.Answer("door", "lockpick"); err != ErrNotYours {
+		t.Errorf("the scout using the lockpick: %v, want ErrNotYours", err)
+	}
+	tm.Viewer = &Viewer{Slot: 1, Roles: []string{"locksmith"}}
+	if res, _, err := tm.Answer("door", "lockpick"); err != nil || !res.Accepted {
+		t.Errorf("the locksmith using it: %+v %v", res, err)
+	}
+}
+
+// saboteurGraph is start → heist (a puzzle with a sabotage and an
+// accusation) → end, with a secret saboteur whose goal is a low score.
+func saboteurGraph() *graph.Graph {
+	return &graph.Graph{
+		Roles: []graph.Role{
+			{Slug: "scout", Name: "Scout"},
+			{Slug: "saboteur", Name: "Saboteur", Secret: true, Goals: []graph.RoleGoal{
+				{Text: "Keep the score under 10.", When: cond.Predicate{Op: cond.OpScore, Cmp: cond.Lt, N: 10}},
+			}},
+		},
+		Journal: []graph.JournalEntry{{Slug: "lie", Title: "The vault is in the north."}},
+		Nodes: []graph.Node{
+			{Slug: "start", Type: graph.Start},
+			{Slug: "heist", Type: graph.Puzzle, PuzzleCfg: &graph.PuzzleConfig{
+				Blocks: []graph.Block{
+					{ID: "cut", Kind: graph.BlockSabotage, Role: "saboteur", Text: "Cut the alarm wire.", Worth: 3, Seconds: 60, Journal: "lie"},
+					{ID: "who", Kind: graph.BlockAccuse, Role: "saboteur", Text: "Who is the saboteur?", Worth: 20},
+				},
+				Outputs: []graph.Output{{Port: "done", Trigger: graph.OnAnswer, Points: 5, Matchers: []match.Matcher{{Kind: match.Exact, Value: "go"}}}},
+			}},
+			{Slug: "end", Type: graph.End},
+		},
+		Edges: []graph.Edge{{From: "start", FromPort: "out", To: "heist"}, {From: "heist", FromPort: "done", To: "end"}},
+	}
+}
+
+// Only the saboteur sees the sabotage and their secret role; pressing it
+// costs the team, locks the answer and plants a note, once. The
+// accusation is asked only of a team that has a saboteur.
+func TestSabotage(t *testing.T) {
+	tm, step, err := Start(saboteurGraph(), t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tm.Apply(step)
+	blocks := func() (out []string) {
+		for _, b := range tm.View().Blocks {
+			out = append(out, b.ID)
+		}
+		return out
+	}
+	tm.Viewer = &Viewer{Slot: 1, Roles: []string{"scout"}}
+	if got := blocks(); slices.Contains(got, "cut") || slices.Contains(got, "who") {
+		t.Errorf("no saboteur dealt: the scout sees %v", got)
+	}
+	tm.Secrets = map[string]int64{"saboteur": 2}
+	if got := blocks(); slices.Contains(got, "cut") || !slices.Contains(got, "who") {
+		t.Errorf("a saboteur among them: the scout sees %v", got)
+	}
+	for _, r := range tm.View().Roles {
+		if r.Secret {
+			t.Errorf("the scout should not see the secret role: %+v", r)
+		}
+	}
+	if _, _, err := tm.Sabotage("heist", "cut"); err == nil {
+		t.Error("the scout should not be able to sabotage")
+	}
+
+	tm.Viewer = &Viewer{Slot: 2, Roles: []string{"saboteur"}}
+	if got := blocks(); !slices.Contains(got, "cut") {
+		t.Errorf("the saboteur should see the sabotage: %v", got)
+	}
+	if !slices.ContainsFunc(tm.View().Roles, func(r RoleView) bool { return r.Secret && r.Mine }) {
+		t.Error("the saboteur should see their own secret role")
+	}
+	if _, _, err := tm.Sabotage("heist", "cut"); err != nil {
+		t.Fatal(err)
+	}
+	if tm.PenaltyScore != 3 || tm.Nodes["heist"].BlockedUntil == nil || !tm.Journal["lie"] || !slices.Contains(tm.NewJournal, "lie") {
+		t.Errorf("after sabotage: penalty %v, blocked %v, journal %v", tm.PenaltyScore, tm.Nodes["heist"].BlockedUntil, tm.Journal)
+	}
+	if _, _, err := tm.Sabotage("heist", "cut"); err != ErrNotAllowed {
+		t.Errorf("a second press: %v, want ErrNotAllowed", err)
+	}
+}
+
+// Naming the saboteur pays the accusation's worth when the team
+// finishes, and the end reveals them, their goals and whether they were
+// caught.
+func TestAccusationAndReveal(t *testing.T) {
+	for _, named := range []int64{2, 3} {
+		tm, step, err := Start(saboteurGraph(), t0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		tm.Apply(step)
+		tm.Secrets = map[string]int64{"saboteur": 2}
+		tm.Accused = map[string]int64{PickKey("heist", "who"): named}
+		res, next, err := tm.Answer("heist", "go")
+		if err != nil || !res.Accepted {
+			t.Fatal(res, err)
+		}
+		tm.Apply(*next)
+		caught := named == 2
+		want := 5.0
+		if caught {
+			want += 20
+		}
+		if tm.Points != want {
+			t.Errorf("named %d: points %v, want %v", named, tm.Points, want)
+		}
+		rv := tm.View().Reveal
+		if len(rv) != 1 || !rv[0].Dealt || rv[0].Slot != 2 || rv[0].Caught == nil || *rv[0].Caught != caught || len(rv[0].Goals) != 1 || rv[0].Goals[0].Met == caught {
+			t.Errorf("named %d: reveal %+v", named, rv)
+		}
+	}
+}

@@ -233,12 +233,18 @@ func (e *Engine) locate(ctx context.Context, q Querier, s *teamState) error {
 		}
 	}
 	if forPhone && s.G != nil && len(s.G.Roles) > 0 {
-		roles := s.G.RoleSlugs()
+		roles := s.G.PublicRoles()
 		holdings, err := dealRoles(ctx, q, s.teamID, players, roles)
 		if err != nil {
 			return fmt.Errorf("dealing roles: %w", err)
 		}
 		s.Viewer.Roles = RolesOf(holdings, roles, me)
+		// A secret role is its player's alone, dealt once (dealSecrets).
+		for _, role := range s.G.SecretRoles() {
+			if slot := s.Secrets[role]; slot != 0 && slot == me {
+				s.Viewer.Roles = append(s.Viewer.Roles, role)
+			}
+		}
 	}
 	if s.G != nil && usesWalked(s.G) {
 		if s.WalkedMetres, err = walkedSince(ctx, q, s.teamID, s.NodeEnteredAt); err != nil {
@@ -390,6 +396,10 @@ func (s *teamState) loadRest(ctx context.Context, q Querier) error {
 		s.Picks[session.PickKey(node, block)] = choice
 	}
 	if err := closeRows(prows); err != nil {
+		return err
+	}
+
+	if err := s.loadSecrets(ctx, q); err != nil {
 		return err
 	}
 

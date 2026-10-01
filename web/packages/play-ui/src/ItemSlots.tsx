@@ -102,10 +102,18 @@ export function ItemSlotsBoard({
           {items.map((it) => {
             const n = left(it.slug);
             return (
-              <button key={it.slug} type="button" className="pv-slots__item" disabled={disabled || n <= 0 || target < 0} onClick={() => put(it.slug)}>
+              <button
+                key={it.slug}
+                type="button"
+                className="pv-slots__item"
+                disabled={disabled || n <= 0 || target < 0 || !!it.not_mine}
+                title={it.not_mine && it.role ? t("Only the {{role}} can use this.", { role: it.role }) : undefined}
+                onClick={() => put(it.slug)}
+              >
                 {it.icon && <span aria-hidden>{it.icon} </span>}
                 {it.name || it.slug}
                 {it.qty > 1 && <span className="pv-slots__qty"> ×{n}</span>}
+                {it.not_mine && it.role && <span className="pv-slots__qty"> · {it.role}</span>}
               </button>
             );
           })}

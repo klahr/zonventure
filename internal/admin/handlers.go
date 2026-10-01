@@ -312,6 +312,10 @@ type eventDTO struct {
 	MaxPlayers int    `json:"max_players"`
 	LiveToken  string `json:"live_token"`
 	ShowMap    bool   `json:"show_map"`
+	// HasSecretRoles says the event's adventure has a saboteur, and
+	// SecretRoles whether the event deals them. Detail payload only.
+	HasSecretRoles bool  `json:"has_secret_roles,omitempty"`
+	SecretRoles    *bool `json:"secret_roles,omitempty"`
 	// TeamsCount is the number of teams attached to the event. The
 	// arrange UI gates the "Start now" affordance on this so a
 	// scheduled event with zero teams gets a concrete error instead
@@ -913,6 +917,9 @@ type updateEventRequest struct {
 	TicketCurrency   *string `json:"ticket_currency,omitempty"`
 	TicketTeamSize   *int    `json:"ticket_team_size,omitempty"`
 	PublicBlurb      *string `json:"public_blurb,omitempty"`
+	// SecretRoles turns the adventure's saboteur on or off for this
+	// event. Teams already dealt keep what they were dealt.
+	SecretRoles *bool `json:"secret_roles,omitempty"`
 }
 
 // UpdateEvent amends mutable run settings. scheduled_at is only editable
@@ -933,7 +940,7 @@ func (h *Handlers) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.ScheduledAt == nil && req.ShowMap == nil && req.Name == nil &&
 		req.PublicForSale == nil && req.TicketPriceCents == nil &&
-		req.TicketCurrency == nil && req.TicketTeamSize == nil && req.PublicBlurb == nil {
+		req.TicketCurrency == nil && req.TicketTeamSize == nil && req.PublicBlurb == nil && req.SecretRoles == nil {
 		httpx.Error(w, http.StatusBadRequest, "nothing to update")
 		return
 	}
@@ -965,6 +972,13 @@ func (h *Handlers) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 		}
 		if _, err := h.DB.ExecContext(r.Context(),
 			`UPDATE events SET scheduled_at = $1 WHERE id = $2`, schedAt, eventID); err != nil {
+			httpx.Error(w, http.StatusInternalServerError, "update failed")
+			return
+		}
+	}
+	if req.SecretRoles != nil {
+		if _, err := h.DB.ExecContext(r.Context(),
+			`UPDATE events SET secret_roles = $1 WHERE id = $2`, *req.SecretRoles, eventID); err != nil {
 			httpx.Error(w, http.StatusInternalServerError, "update failed")
 			return
 		}

@@ -124,6 +124,8 @@ export function withAnswerKind(p: PuzzleConfig, kind: AnswerKind | undefined): P
   const keep = usesMatchers(next);
   // Everyone giving the same answer needs an answer to give.
   if (!keep) delete next.unanimous;
+  // A launch is every player's, never one role's.
+  if (kind === "keys") delete next.by;
   let i = 0;
   next.outputs = outputs.map((o) => {
     if (o.trigger !== "answer") return o;

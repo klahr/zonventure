@@ -79,6 +79,8 @@ type View struct {
 	// each is the player endpoints' to add: the team's state does not
 	// know its players.
 	Roles []RoleView `json:"roles,omitempty"`
+	// Reveal unmasks the secret roles once the team has finished.
+	Reveal []RevealView `json:"reveal,omitempty"`
 
 	// EndsAt is when the adventure's time limit falls, for a countdown.
 	// TimedOut says it has moved the team, and TimeUpText is the author's
@@ -154,6 +156,12 @@ type Input struct {
 	// Fields are the questions of a choice (Kind "choice"): labels and
 	// options only — the answers stay on the server.
 	Fields []ChoiceFieldView `json:"fields,omitempty"`
+
+	// By names the role whose player alone answers, and NotYours says
+	// the player asking does not hold it: the phone shows whose it is in
+	// place of the answer box.
+	By       string `json:"by,omitempty"`
+	NotYours bool   `json:"not_yours,omitempty"`
 
 	// Posts are a two-key launch's posts (Kind "keys"), by name: where
 	// the keys are turned, one player at each. Empty turns them anywhere.
@@ -233,8 +241,17 @@ type BlockView struct {
 	Tally  []int  `json:"tally,omitempty"`
 	Voted  string `json:"voted,omitempty"`
 	Voters int    `json:"voters,omitempty"`
+	// Suspects are whom an accusation may name: the player's teammates,
+	// in Tally's order; Voted is then the slot they named.
+	Suspects []Suspect `json:"suspects,omitempty"`
 	// Photo is the team's latest picture for a photo block.
 	Photo *PhotoView `json:"photo,omitempty"`
+}
+
+// Suspect is a teammate an accusation may name.
+type Suspect struct {
+	Slot int64  `json:"slot"`
+	Name string `json:"name"`
 }
 
 // PhotoView is a picture a team took for a photo block, and where the
@@ -299,6 +316,10 @@ type ItemView struct {
 	Name string `json:"name,omitempty"`
 	Icon string `json:"icon,omitempty"`
 	Qty  int    `json:"qty"`
+	// Role names the role whose kit the item is from, and NotMine says
+	// the player asking does not hold it, so cannot use it.
+	Role    string `json:"role,omitempty"`
+	NotMine bool   `json:"not_mine,omitempty"`
 }
 
 // JournalView is one unlocked journal entry.
@@ -307,7 +328,10 @@ type ItemView struct {
 // name of the player who does; Claimed says they chose it, rather than
 // being dealt it.
 type RoleView struct {
-	Slug    string `json:"slug"`
+	Slug string `json:"slug"`
+	// Secret is a saboteur's role, listed only to its player — and to
+	// the team as a whole.
+	Secret  bool   `json:"secret,omitempty"`
 	Name    string `json:"name,omitempty"`
 	Text    string `json:"text,omitempty"`
 	Mine    bool   `json:"mine,omitempty"`
@@ -366,6 +390,10 @@ func (t *Team) setBlocks(v *View, n graph.Node) {
 	v.Blocks = make([]BlockView, 0, len(bs))
 	var shown []graph.Block
 	for _, b := range bs {
+		if !t.roleShows(b) {
+			// Not a teaser either: that a sabotage is here is the secret.
+			continue
+		}
 		if b.Show != nil && !cond.Eval(b.Show.When, t) {
 			t.watch(v, b.Show.When)
 			if b.Show.Tease {
@@ -457,6 +485,9 @@ func (t *Team) zoneBySlug(slug string) *graph.Zone {
 // A block with a show condition on any other step is hidden: its file
 // comes with it, never ahead of it.
 func (t *Team) blockShown(node string, b graph.Block) bool {
+	if !t.roleShows(b) {
+		return false
+	}
 	return b.Show == nil || node == t.Current && cond.Eval(b.Show.When, t)
 }
 
@@ -547,8 +578,17 @@ func number(f float64) string { return strconv.FormatFloat(f, 'f', -1, 64) }
 func (t *Team) View() View {
 	v := t.view()
 	for _, r := range t.G.Roles {
-		v.Roles = append(v.Roles, RoleView{Slug: r.Slug, Name: r.Name, Text: r.Text})
+		if r.Secret && !t.HasRole(r.Slug) {
+			continue
+		}
+		rv := RoleView{Slug: r.Slug, Name: r.Name, Text: r.Text, Secret: r.Secret}
+		if r.Secret {
+			// Its player knows; who else holds what is the endpoints' to say.
+			rv.Mine = t.Viewer != nil
+		}
+		v.Roles = append(v.Roles, rv)
 	}
+	v.Reveal = t.reveal()
 	t.translate(&v)
 	return v
 }
@@ -771,6 +811,10 @@ func (t *Team) view() View {
 					iv.Name, iv.Icon = it.Name, it.Icon
 				}
 			}
+			if role, ok := t.G.ItemRole(slug); ok {
+				iv.Role = t.G.Tr(t.Lang, graph.RoleKey(role, "name"), t.G.RoleName(role))
+				iv.NotMine = !t.HasRole(role)
+			}
 			v.Items = append(v.Items, iv)
 		}
 	}
@@ -833,6 +877,10 @@ func (t *Team) view() View {
 			setZone(cfg.Zone)
 		}
 		v.Input = t.answerInput(n)
+		if cfg.By != "" && v.Input != nil {
+			v.Input.By = t.G.Tr(t.Lang, graph.RoleKey(cfg.By, "name"), t.G.RoleName(cfg.By))
+			v.Input.NotYours = !t.HasRole(cfg.By)
+		}
 		if v.Together = t.together(n); v.Together != nil && v.Together.Until != nil &&
 			(v.RecheckAt == nil || v.Together.Until.Before(*v.RecheckAt)) {
 			// A key stops counting then: the phone looks again to say so.

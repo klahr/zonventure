@@ -98,5 +98,11 @@
   "Top score {{a}}, median {{b}}": "Högsta poäng {{a}}, median {{b}}",
   "Trickiest: {{title}} — {{n}} wrong guesses": "Kluringast: {{title}} — {{n}} felgissningar",
   "Quickest: {{title}} — solved in {{time}}": "Snabbast: {{title}} — löst på {{time}}",
-  "{{n}} photos taken": "{{n}} foton tagna"
+  "{{n}} photos taken": "{{n}} foton tagna",
+  "Deal secret roles in this event": "Dela ut hemliga roller i det här evenemanget",
+  "Off plays the adventure without them. A team is dealt its secret roles as it makes its first move, so turning this off later leaves teams that already began as they are.": "Av spelar äventyret utan dem. Ett lag får sina hemliga roller när det gör sitt första drag, så att stänga av det senare lämnar lag som redan börjat som de är.",
+  "Secret roles": "Hemliga roller",
+  "Secret roles off": "Hemliga roller av",
+  "Secret roles on": "Hemliga roller på",
+  "This adventure has a secret role, such as a saboteur, dealt to one player on teams of three or more.": "Det här äventyret har en hemlig roll, till exempel en sabotör, som delas ut till en spelare i lag med tre eller fler."
 }

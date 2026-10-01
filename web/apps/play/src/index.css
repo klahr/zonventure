@@ -329,3 +329,4 @@ body {
   .app-drawer, .app-drawer.is-open, .app-drawer-back, .app-burger__lines span, .app-burger.is-open .app-burger__lines span { transition: none; }
 }
 .app-menu__confirm--calm { background: var(--surface-2); }
+.app-role.is-secret { border-style: dashed; }

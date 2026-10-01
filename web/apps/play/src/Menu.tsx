@@ -242,20 +242,20 @@ function Roles(props: { roles: play.RoleView[]; t: Translate; onChanged: () => v
       <span className="app-menu__hint">{t("Each role sees something the others don't. Roles nobody chooses are shared out.")}</span>
       <ul className="app-roles">
         {roles.map((r) => (
-          <li key={r.slug} className={"app-role" + (r.mine ? " is-mine" : "")}>
+          <li key={r.slug} className={"app-role" + (r.mine ? " is-mine" : "") + (r.secret ? " is-secret" : "")}>
             <div className="app-role__head">
               <span className="app-role__name">{r.name || r.slug}</span>
               <span className="app-role__holder">
-                {r.mine ? t("You") : r.holder || t("Nobody yet")}
-                {!r.claimed && r.holder ? ` · ${t("shared out")}` : ""}
+                {r.secret ? t("You — secret: only you know") : r.mine ? t("You") : r.holder || t("Nobody yet")}
+                {!r.secret && !r.claimed && r.holder ? ` · ${t("shared out")}` : ""}
               </span>
             </div>
             {r.mine && r.text && <Markdown className="app-role__text" text={r.text} />}
-            {r.mine && r.claimed && (
+            {r.secret ? null : r.mine && r.claimed && (
               <button type="button" className="pv-btn" disabled={busy !== null} onClick={() => void change(r.slug, false)}>{t("Give back")}</button>
             )}
             {/* A role only shared out is anyone's to choose; a teammate's choice is theirs. */}
-            {!r.claimed && (
+            {!r.secret && !r.claimed && (
               <button type="button" className="pv-btn" disabled={busy !== null} onClick={() => void change(r.slug, true)}>
                 {r.mine ? t("Keep it") : t("Take it")}
               </button>

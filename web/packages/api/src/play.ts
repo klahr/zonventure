@@ -35,6 +35,9 @@ export interface PlayInput {
   kind: "text" | "number" | "tiles" | "search" | "choice" | "lock" | "questions" | "scan" | "items" | "keys";
   /** "keys": a two-key launch's posts, by name — where keys are turned. Empty: anywhere. */
   posts?: string[];
+  /** The role whose player alone answers, by name; not_yours: not this player. */
+  by?: string;
+  not_yours?: boolean;
   /** The author's answer bar: its placeholder, its button (a scan's too), and no QR button. */
   placeholder?: string;
   button?: string;
@@ -132,7 +135,11 @@ export type PlayBlockBody =
   | { kind: "vote"; text: string; options: string[]; tally?: number[]; voted?: string; voters?: number }
   | { kind: "bulletin" }
   /** The cards stay face down: deck is how many, and once drawn picked is its index and dealt the card. */
-  | { kind: "draw"; text?: string; deck?: number; picked?: string; dealt?: string };
+  | { kind: "draw"; text?: string; deck?: number; picked?: string; dealt?: string }
+  /** Only the saboteur's phone gets it; picked "1" once pressed. */
+  | { kind: "sabotage"; text?: string; worth?: number; seconds?: number; picked?: string }
+  /** suspects are this player's teammates, tally counts each's votes in that order, voted the slot named. */
+  | { kind: "accuse"; text: string; worth?: number; suspects?: { slot: number; name: string }[]; tally?: number[]; voted?: string; voters?: number };
 
 /** session.PhotoView */
 export interface PhotoView {
@@ -186,6 +193,19 @@ export interface ItemView {
   name?: string;
   icon?: string;
   qty: number;
+  /** The role whose kit it is from, by name; not_mine: this player cannot use it. */
+  role?: string;
+  not_mine?: boolean;
+}
+
+/** session.RevealView: a secret role unmasked at the end. dealt is false when no one held it. */
+export interface RevealView {
+  role: string;
+  name?: string;
+  dealt: boolean;
+  holder?: string;
+  goals?: { text: string; met: boolean }[];
+  caught?: boolean;
 }
 
 /** session.RoleView: one role, and who holds it — claimed, or dealt. */
@@ -193,6 +213,8 @@ export interface RoleView {
   slug: string;
   name?: string;
   text?: string;
+  /** A saboteur's, listed only to its player. */
+  secret?: boolean;
   /** This phone's player holds it. */
   mine?: boolean;
   /** The name of the player who holds it. */
@@ -269,6 +291,8 @@ export interface View {
   together?: Together;
   /** The adventure's roles, and who on the team holds each. */
   roles?: RoleView[];
+  /** Once the team has finished: who held each secret role, their goals, and whether the team named them. */
+  reveal?: RevealView[];
   /** The adventure keeps a journal, so its button shows even while empty. */
   has_journal?: boolean;
   theme?: string;
@@ -326,7 +350,9 @@ export type PlayAction =
    */
   | { kind: "pick"; node: string; block: string; choice: string }
   /** This player's vote on a vote block: the option's index. Live events only. */
-  | { kind: "vote"; node: string; block: string; choice: string };
+  | { kind: "vote"; node: string; block: string; choice: string }
+  /** The saboteur presses a sabotage block. Live events only. */
+  | { kind: "sabotage"; node: string; block: string };
 
 /**
  * Refusal codes (session.Code, plus the player handler's own). A client

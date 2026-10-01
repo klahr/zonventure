@@ -930,6 +930,7 @@ function puzzleParts(node: Node, cfg: PuzzleConfig, graph: Graph, onChange: (c: 
     ],
     cfg.repeatable && answer?.kind !== "search" && [t.t("Coming back"), t.t("asked again")],
     cfg.unanimous && [t.t("Unanimous"), t.t("every player gives the answer")],
+    cfg.by && [t.t("Answered by"), graph.roles?.find((r) => r.slug === cfg.by)?.name || cfg.by],
   ].filter((x): x is string[] => !!x);
   parts.push({
     id: "rules",
@@ -966,7 +967,19 @@ function puzzleParts(node: Node, cfg: PuzzleConfig, graph: Graph, onChange: (c: 
           <input type="checkbox" checked={!!cfg.repeatable} onChange={(e) => onChange(withOptional({ ...cfg }, "repeatable", e.target.checked || undefined))} />
           {t.t("Ask again if the team comes back")}
         </label>
-        {usesMatchers(cfg) && (
+        {(graph.roles ?? []).length > 0 && !cfg.unanimous && answer?.kind !== "keys" && (
+          <Field label={t.t("Only this role can answer")}>
+            <select className="field__input" value={cfg.by ?? ""} onChange={(e) => onChange(withOptional({ ...cfg }, "by", e.target.value || undefined))}>
+              <option value="">{t.t("— anyone on the team —")}</option>
+              {(graph.roles ?? []).map((r) => (
+                <option key={r.slug} value={r.slug}>
+                  {r.name || r.slug}
+                </option>
+              ))}
+            </select>
+          </Field>
+        )}
+        {usesMatchers(cfg) && !cfg.by && (
           <>
             <label className="check">
               <input type="checkbox" checked={!!cfg.unanimous} onChange={(e) => onChange(withOptional({ ...cfg }, "unanimous", e.target.checked || undefined))} />

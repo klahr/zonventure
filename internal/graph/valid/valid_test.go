@@ -879,6 +879,8 @@ func TestSharedBlockVectors(t *testing.T) {
 		Edges:    []graph.Edge{{From: "start", FromPort: "out", To: "s"}, {From: "s", FromPort: "solved", To: "end"}},
 		Zones:    []graph.Zone{{Slug: "park", Lat: 59.3, Lng: 18.0, RadiusM: 50}},
 		Counters: []graph.Counter{{Slug: "coins"}},
+		Roles:    []graph.Role{{Slug: "saboteur", Secret: true}},
+		Journal:  []graph.JournalEntry{{Slug: "lie", Title: "A lie"}},
 	}
 	for _, i := range Check(&g).Issues {
 		if i.Node == "s" {
@@ -941,4 +943,20 @@ func TestTogetherChecks(t *testing.T) {
 	assertNoCode(t, Check(u), "puzzle.unanimous.kind")
 	u.Nodes[1].PuzzleCfg.Answer = &graph.Answer{Kind: graph.AnswerKeys}
 	assertCode(t, Check(u), "puzzle.unanimous.kind")
+}
+
+// A puzzle answered by one role names a declared role, and is not also
+// done by everyone; a role's kit holds declared items, one role's each.
+func TestAbilityChecks(t *testing.T) {
+	g := valid3()
+	g.Nodes[1].PuzzleCfg.By = "locksmith"
+	assertCode(t, Check(g), "ref.role.unknown")
+	g.Roles = []graph.Role{{Slug: "locksmith", Kit: []string{"lockpick"}}, {Slug: "thief", Kit: []string{"lockpick"}}}
+	assertNoCode(t, Check(g), "ref.role.unknown")
+	assertCode(t, Check(g), "ref.item.unknown")
+	g.Items = []graph.Item{{Slug: "lockpick"}}
+	assertNoCode(t, Check(g), "ref.item.unknown")
+	assertCode(t, Check(g), "role.kit.shared")
+	g.Nodes[1].PuzzleCfg.Unanimous = true
+	assertCode(t, Check(g), "puzzle.by.together")
 }

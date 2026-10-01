@@ -272,3 +272,9 @@
   .pv-draw__card.is-flipping { animation: none; }
   .pv-vote__bar { transition: none; }
 }
+
+/* The saboteur's button: set apart, quietly — over a shoulder it should
+ * read as one more gadget, not a siren. */
+.pv-sabotage { display: flex; flex-direction: column; gap: 0.5rem; padding: 0.75rem; border: 1px dashed var(--muted); border-radius: var(--radius, 0.5rem); }
+.pv-sabotage__tag { margin: 0; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+.pv-sabotage__go { align-self: flex-start; }

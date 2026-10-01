@@ -1717,3 +1717,15 @@
 .pv-together__dots { display: inline-flex; gap: 0.25rem; }
 .pv-together__dot { width: 0.7rem; height: 0.7rem; border-radius: 50%; border: 2px solid var(--accent); }
 .pv-together__dot.is-on { background: var(--accent); }
+.pv-bag__role { color: var(--muted); font-size: 0.9em; }
+.pv-not-yours { text-align: center; }
+
+/* The end's unmasking of a secret role. */
+.pv-reveal { display: flex; flex-direction: column; gap: 0.75rem; }
+.pv-reveal__role { padding: 0.75rem 1rem; border-radius: var(--radius, 0.5rem); background: color-mix(in srgb, var(--accent) 10%, var(--surface)); }
+.pv-reveal__who { margin: 0 0 0.25rem; font-size: 1.1rem; }
+.pv-reveal__verdict { margin: 0 0 0.5rem; color: var(--muted); }
+.pv-reveal__verdict.is-caught { color: var(--accent); font-weight: 700; }
+.pv-reveal__goals { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 0.25rem; }
+.pv-reveal__goals li { color: var(--muted); }
+.pv-reveal__goals li.is-met { color: var(--ink); }

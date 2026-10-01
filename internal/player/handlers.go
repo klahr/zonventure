@@ -208,6 +208,12 @@ func (h *Handlers) Forget(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusInternalServerError, "delete presses")
 		return
 	}
+	// A forgotten saboteur leaves the team without one, not with another.
+	if _, err := tx.ExecContext(r.Context(),
+		`UPDATE team_secrets SET slot_id = NULL WHERE slot_id = $1`, slot.ID); err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "clear secret roles")
+		return
+	}
 	if _, err := tx.ExecContext(r.Context(),
 		`DELETE FROM location_pings WHERE slot_id = $1`, slot.ID); err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "wipe pings", err)

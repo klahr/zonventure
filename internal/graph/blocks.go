@@ -101,6 +101,16 @@ const (
 	// BlockDraw deals the team one of Options at random when it taps, kept
 	// in Picks: a show condition may then ask which (cond.OpDrawn).
 	BlockDraw BlockKind = "draw"
+	// BlockSabotage is a button only the holder of Role — a secret role —
+	// sees, and presses once: it costs the team Worth points, locks the
+	// step's answer for Seconds, and adds Journal, a false note, to the
+	// team's journal — any of the three. Text says what it does. Nothing
+	// tells the others who pressed it.
+	BlockSabotage BlockKind = "sabotage"
+	// BlockAccuse asks Text — "Who is the saboteur?" — and each player
+	// names a teammate on their own phone. When the team finishes, if
+	// most name the holder of Role, the team scores Worth.
+	BlockAccuse BlockKind = "accuse"
 )
 
 // QuizChoices are a quiz question's options, as the team picks them.
@@ -112,7 +122,7 @@ var BlockKinds = []BlockKind{
 	BlockHotspots, BlockDivider, BlockRadar, BlockOverlay, BlockLevel, BlockNoise, BlockTorch, BlockCountdown,
 	BlockStatus, BlockStandings, BlockTitle, BlockPoints, BlockQuiz, BlockTiebreak, BlockSplit, BlockBearing,
 	BlockCall, BlockSuspects, BlockPhoto, BlockSpotDiff, BlockFlasher, BlockLetters, BlockShake, BlockVote,
-	BlockBulletin, BlockDraw,
+	BlockBulletin, BlockDraw, BlockSabotage, BlockAccuse,
 }
 
 // FixedKinds are the kinds a step is given by default, and the only
@@ -224,6 +234,11 @@ type Block struct {
 	Who string `json:"who,omitempty"`
 	// Cards are a suspect board's suspects.
 	Cards []Card `json:"cards,omitempty"`
+
+	// Role is the secret role a sabotage belongs to, or an accusation
+	// asks about; Journal the note a sabotage plants.
+	Role    string `json:"role,omitempty"`
+	Journal string `json:"journal,omitempty"`
 
 	// Show hides the block until its condition holds — near a zone, a
 	// while after arriving, carrying something. Any kind may have one.

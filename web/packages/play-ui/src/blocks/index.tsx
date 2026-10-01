@@ -32,6 +32,7 @@ import { QuizBlock, TiebreakBlock } from "./Quiz.tsx";
 import { TorchBlock } from "./Torch.tsx";
 import { VideoBlock } from "./Video.tsx";
 import { VoteBlock } from "./Vote.tsx";
+import { AccuseBlock, SabotageBlock } from "./Saboteur.tsx";
 
 type Kind = play.PlayBlock["kind"];
 
@@ -73,6 +74,8 @@ const RENDER: { [K in Exclude<Kind, "image" | "audio">]: Renderer<K> } = {
   letters: LettersBlock,
   shake: ShakeBlock,
   vote: VoteBlock,
+  sabotage: SabotageBlock,
+  accuse: AccuseBlock,
   bulletin: BulletinBlock,
   draw: DrawBlock,
 };

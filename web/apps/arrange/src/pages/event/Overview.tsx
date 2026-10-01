@@ -152,6 +152,41 @@ const CURRENCIES = ["eur", "usd", "sek", "gbp", "dkk", "nok"];
  * cover. Whether it is listed follows its state (running/paused →
  * listed), so there is no listing switch here.
  */
+/**
+ * The adventure's saboteur, on or off for this event: off for a school
+ * group or a team-building day where a secret betrayal would land badly.
+ * Teams already dealt one when they began keep it.
+ */
+export function SecretRolesCard({ event, onSaved }: { event: EventInfo; onSaved: () => void }) {
+  const t = useT();
+  const toast = useToast();
+  const [on, setOn] = useState(event.secret_roles !== false);
+  const [busy, setBusy] = useState(false);
+  const toggle = async (next: boolean) => {
+    setOn(next);
+    setBusy(true);
+    try {
+      await api.patchEvent(event.id, { secret_roles: next });
+      toast.ok(next ? t.t("Secret roles on") : t.t("Secret roles off"));
+      onSaved();
+    } catch (e) {
+      setOn(!next);
+      toast.err(e);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Card title={t.t("Secret roles")} subtitle={t.t("This adventure has a secret role, such as a saboteur, dealt to one player on teams of three or more.")}>
+      <label className="ev-check">
+        <input type="checkbox" checked={on} disabled={busy} onChange={(e) => void toggle(e.target.checked)} />
+        {t.t("Deal secret roles in this event")}
+      </label>
+      <span className="ev-muted">{t.t("Off plays the adventure without them. A team is dealt its secret roles as it makes its first move, so turning this off later leaves teams that already began as they are.")}</span>
+    </Card>
+  );
+}
+
 export function StoreCard({ event, onSaved }: { event: EventInfo; onSaved: () => void }) {
   const t = useT();
   const toast = useToast();

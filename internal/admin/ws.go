@@ -422,13 +422,30 @@ type eventDetailMemberDTO struct {
 	ExpiresAt   string `json:"expires_at,omitempty"`
 }
 
+// eventGraph is the graph an event plays: the one it was started on, or,
+// before it starts, its adventure's published one.
+func (h *Handlers) eventGraph(ctx context.Context, slug string, graphID int64) (*graph.Graph, error) {
+	if graphID != 0 {
+		st, err := graphstore.ByID(ctx, h.DB, graphID)
+		return st.Graph, err
+	}
+	var adventureID int64
+	if err := h.DB.QueryRowContext(ctx, `SELECT id FROM adventures WHERE slug = $1`, slug).Scan(&adventureID); err != nil {
+		return nil, err
+	}
+	st, err := graphstore.Published(ctx, h.DB, adventureID)
+	return st.Graph, err
+}
+
 // buildEventDetail assembles the event-with-teams-and-slots payload, for
 // the HTTP EventDetail handler and the watch_event push alike.
 func (h *Handlers) buildEventDetail(ctx context.Context, eventID int64) (eventDetailDTO, error) {
 	var (
-		d          eventDTO
-		showMap    int
-		priceCents sql.NullInt64
+		d           eventDTO
+		showMap     int
+		priceCents  sql.NullInt64
+		secretRoles bool
+		graphID     int64
 	)
 	if err := h.DB.QueryRowContext(ctx, `
 		SELECT ar.id, ar.name, ar.adventure_slug, ar.state,
@@ -444,7 +461,8 @@ func (h *Handlers) buildEventDetail(ctx context.Context, eventID int64) (eventDe
 		       ar.public_for_sale, ar.ticket_price_cents,
 		       ar.ticket_currency, ar.ticket_team_size, ar.public_blurb,
 		       (ar.cover_image_mime_type IS NOT NULL) AS has_cover_image,
-		       ar.paused_seconds, COALESCE(ar.paused_at, '')
+		       ar.paused_seconds, COALESCE(ar.paused_at, ''),
+		       ar.secret_roles, COALESCE(ar.graph_id, 0)
 		FROM events ar
 		LEFT JOIN adventure_assignments aa ON aa.id = ar.assignment_id
 		WHERE ar.id = $1
@@ -453,8 +471,12 @@ func (h *Handlers) buildEventDetail(ctx context.Context, eventID int64) (eventDe
 		&d.OrgID, &d.CreatedByUserID, &d.AssignmentID, &d.MaxPlayers,
 		&d.LiveToken, &showMap, &d.TeamsCount, &d.PlayerSlotsCount,
 		&d.PublicForSale, &priceCents, &d.TicketCurrency, &d.TicketTeamSize, &d.PublicBlurb,
-		&d.HasCoverImage, &d.PausedSeconds, &d.PausedAt); err != nil {
+		&d.HasCoverImage, &d.PausedSeconds, &d.PausedAt, &secretRoles, &graphID); err != nil {
 		return eventDetailDTO{}, err
+	}
+	// Only an adventure with a saboteur has the setting to show.
+	if g, err := h.eventGraph(ctx, d.AdventureSlug, graphID); err == nil && len(g.SecretRoles()) > 0 {
+		d.HasSecretRoles, d.SecretRoles = true, &secretRoles
 	}
 	if priceCents.Valid {
 		d.TicketPriceCents = int(priceCents.Int64)

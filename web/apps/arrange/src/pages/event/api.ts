@@ -18,6 +18,9 @@ export interface EventInfo {
   max_players: number;
   live_token: string;
   show_map: boolean;
+  /** The adventure has a saboteur; secret_roles: this event deals it. */
+  has_secret_roles?: boolean;
+  secret_roles?: boolean;
   teams_count: number;
   player_slots_count: number;
   allowed_ops?: string[];

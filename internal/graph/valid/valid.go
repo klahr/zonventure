@@ -511,6 +511,32 @@ func checkReferences(r *reporter, g *graph.Graph) {
 		}
 	}
 
+	kitOf := map[string]string{}
+	for _, ro := range g.Roles {
+		if ro.Secret && len(ro.Kit) > 0 {
+			r.err("role.secret.kit", "", "", "secret role %q brings items, and everyone's backpack would say whose; give it none", ro.Slug)
+		}
+		for i, goal := range ro.Goals {
+			if !ro.Secret {
+				r.err("role.goals.public", "", "", "role %q has goals, which only a secret role has", ro.Slug)
+				break
+			}
+			checkPredicate("", goal.When)
+			if cond.ForPlayer(goal.When) {
+				r.err("cond.player.team", "", "", "goal %d of %q asks about one player; a goal is checked against the whole team", i+1, ro.Slug)
+			}
+		}
+		for _, it := range ro.Kit {
+			if !items[it] {
+				r.err("ref.item.unknown", "", "", "role %q brings item %q, which is not declared", ro.Slug, it)
+			}
+			if other, ok := kitOf[it]; ok {
+				r.err("role.kit.shared", "", "", "item %q is in the kits of both %q and %q; one role's at most", it, other, ro.Slug)
+			}
+			kitOf[it] = ro.Slug
+		}
+	}
+
 	for _, n := range g.Nodes {
 		switch n.Type {
 		case graph.Gate:
@@ -535,6 +561,17 @@ func checkReferences(r *reporter, g *graph.Graph) {
 			for _, o := range n.PuzzleCfg.Outputs {
 				if o.Zone != "" && !zones[o.Zone] {
 					r.err("ref.zone.unknown", n.Slug, o.Port, "output is constrained to zone %q, which is not declared", o.Zone)
+				}
+			}
+			if by := n.PuzzleCfg.By; by != "" {
+				if !roles[by] {
+					r.err("ref.role.unknown", n.Slug, "", "puzzle is answered by role %q, which is not declared", by)
+				}
+				if ro, _ := g.Role(by); ro.Secret {
+					r.err("puzzle.by.secret", n.Slug, "", "every phone would say only the %s can answer it, giving them away; use a sabotage block instead", g.RoleName(by))
+				}
+				if n.PuzzleCfg.Unanimous || n.PuzzleCfg.Kind() == graph.AnswerKeys {
+					r.err("puzzle.by.together", n.Slug, "", "a puzzle every player answers together cannot also be one role's alone")
 				}
 			}
 			if n.PuzzleCfg.Unanimous && !n.PuzzleCfg.UsesMatchers() {
@@ -1230,6 +1267,24 @@ func checkBlocks(r *reporter, g *graph.Graph) {
 			case graph.BlockVote, graph.BlockDraw:
 				if filled(b.Options) < 2 {
 					bad("block.options", "has fewer than two options")
+				}
+			case graph.BlockSabotage, graph.BlockAccuse:
+				if ro, ok := g.Role(b.Role); !ok || !ro.Secret {
+					bad("block.role.secret", "belongs to no secret role; pick the saboteur's")
+				}
+				if b.Worth < 0 || b.Seconds < 0 {
+					bad("block.worth", "costs or is worth %d points over %d seconds; both must be 0 or more", b.Worth, b.Seconds)
+				}
+				if b.Kind == graph.BlockAccuse && strings.TrimSpace(b.Text) == "" {
+					bad("block.text.empty", "does not ask anything: write the question, as “Who is the saboteur?”")
+				}
+				if b.Kind == graph.BlockSabotage {
+					if b.Worth == 0 && b.Seconds == 0 && b.Journal == "" {
+						bad("block.sabotage.empty", "does nothing: make it cost points, lock the answer for a while, or plant a note")
+					}
+					if b.Journal != "" && !slices.ContainsFunc(g.Journal, func(j graph.JournalEntry) bool { return j.Slug == b.Journal }) {
+						r.err("ref.journal.unknown", n.Slug, "", "sabotage %q plants journal entry %q, which is not declared", b.ID, b.Journal)
+					}
 				}
 			default:
 				r.err("block.kind", n.Slug, "", "content block %q is %q, which is not a kind of block", b.ID, b.Kind)

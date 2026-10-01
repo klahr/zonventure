@@ -98,6 +98,20 @@ func (e *Engine) StartEvent(ctx context.Context, eventID int64) error {
 		`, teamID, eventID, graphID, now); err != nil {
 			return fmt.Errorf("placing team %d: %w", teamID, err)
 		}
+		g, err := e.graph(ctx, tx, graphID)
+		if err != nil {
+			return err
+		}
+		// The roles' kits, in the backpack before the first step, which
+		// may already ask what the team carries.
+		for item, q := range g.Kit() {
+			if _, err := tx.ExecContext(ctx, `
+				INSERT INTO team_items (team_id, item, qty) VALUES ($1, $2, $3)
+				ON CONFLICT (team_id, item) DO UPDATE SET qty = team_items.qty + EXCLUDED.qty
+			`, teamID, item, q); err != nil {
+				return fmt.Errorf("packing team %d's kit: %w", teamID, err)
+			}
+		}
 		s, err := e.loadTeam(ctx, tx, teamID)
 		if err != nil {
 			return err
@@ -247,6 +261,15 @@ func (e *Engine) act(ctx context.Context, teamID int64, fn func(*session.Team) (
 	if err != nil {
 		return Result{}, err
 	}
+	// The saboteur is chosen as the team first moves, among those playing.
+	if dealt, err := e.dealSecrets(ctx, tx, s); err != nil {
+		return Result{}, err
+	} else if dealt {
+		// The phone asking may be the saboteur now.
+		if err := e.locate(ctx, tx, s); err != nil {
+			return Result{}, err
+		}
+	}
 
 	res, step, err := s.Act(func() (Result, *walk.Step, error) { return fn(s.Team) })
 	if err != nil {
@@ -281,8 +304,16 @@ func (e *Engine) act(ctx context.Context, teamID int64, fn func(*session.Team) (
 	return res, nil
 }
 
-// savePress persists the press an action recorded or withdrew.
+// savePress persists the press an action recorded or withdrew, and any
+// note it unlocked by itself (a sabotage's false clue).
 func savePress(ctx context.Context, tx *sql.Tx, s *teamState) error {
+	for _, entry := range s.NewJournal {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO team_journal (team_id, entry, unlocked_at) VALUES ($1, $2, $3)
+			ON CONFLICT (team_id, entry) DO NOTHING`, s.teamID, entry, s.Now); err != nil {
+			return err
+		}
+	}
 	c := s.PressChanged
 	if c == nil {
 		return nil
@@ -296,6 +327,12 @@ func savePress(ctx context.Context, tx *sql.Tx, s *teamState) error {
 		ON CONFLICT (team_id, node, slot_id) DO UPDATE SET value = EXCLUDED.value, pressed_at = EXCLUDED.pressed_at
 	`, s.teamID, s.Current, c.Slot, c.Press.Value, c.Press.At)
 	return err
+}
+
+// Sabotage presses a sabotage block for the saboteur asking (see
+// session.Team.Sabotage); the request must be ForPhone.
+func (e *Engine) Sabotage(ctx context.Context, teamID int64, node, block string) (Result, error) {
+	return e.act(ctx, teamID, func(t *session.Team) (Result, *walk.Step, error) { return t.Sabotage(node, block) })
 }
 
 // Turn turns the asking player's key in a two-key launch (see

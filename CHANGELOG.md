@@ -26,6 +26,27 @@ product is **Zonventure**. Versions tagged here correspond to git tags
   can neither see nor fetch it. Gates and hub branches decide for the
   whole team, so the validator refuses `here` — and `role` — there
   (`cond.player.team`).
+- **A saboteur among the team.** A role can be *secret*: dealt at
+  random to one player when the team makes its first move — on teams
+  of three or more — and never chosen. Only that player knows; their
+  phone shows the role, nobody else's lists it, and the end screen
+  reveals who it was, which of their *goals* they met (conditions on the
+  team's state, checked as it finishes) and whether they were caught.
+  Two new blocks: *Sabotage*, a button only the saboteur sees and
+  presses once, costing the team points, locking the answer for a while
+  or planting a false journal note; and *Accusation*, where each player
+  names a teammate on their own phone and the team scores if most name
+  the saboteur. There is one team score: a successful saboteur costs
+  their own team. Arrangers can turn secret roles off per event, from
+  the event page, for a school group or a team-building day.
+- **Role abilities.** A puzzle can be *answered only by* one role — the
+  Locksmith opens the door: the others see the step, and that it is the
+  Locksmith's to answer (`403 not_yours`, not a wrong guess). A role can
+  *bring* items: the team starts with them, everyone's backpack shows
+  whose they are, and only that role's player can place them in an
+  item puzzle's slots. A player alone holds every role, so neither ever
+  shuts a team out. Kits are packed when a team is placed, so teams
+  already playing when a kit is added do not get it.
 - **Two-key launch** — a new way of answering a puzzle: each player
   turns their own key on their own phone, and it opens once enough keys
   are turned within a few seconds of each other (every player, or the

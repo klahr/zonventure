@@ -192,7 +192,11 @@ export type BlockBody =
   /** The organisers' latest message to the team. */
   | { kind: "bulletin" }
   /** Deals the team one of options at random; a show condition may ask which (op drawn). */
-  | { kind: "draw"; text?: string; options: string[] };
+  | { kind: "draw"; text?: string; options: string[] }
+  /** A button only the secret role's player sees and presses once: costs worth points, locks the answer for seconds, plants journal. */
+  | { kind: "sabotage"; role: string; text?: string; worth?: number; seconds?: number; journal?: string }
+  /** Each player names a teammate; if most name the secret role's holder, the team scores worth when it finishes. */
+  | { kind: "accuse"; role: string; text: string; worth?: number };
 
 export interface SuspectCard {
   name: string;
@@ -254,6 +258,8 @@ export interface PuzzleConfig {
   repeatable?: boolean;
   /** A right answer counts once every player has given one leading the same way. Only where usesMatchers. */
   unanimous?: boolean;
+  /** The role whose player alone answers. Not with unanimous or a two-key launch. */
+  by?: string;
   /** Another way of answering than typing; absent is a typed answer. */
   answer?: Answer;
   /** The answer bar's words, keyboard and QR button, for a typed answer or a scan. */
@@ -461,6 +467,18 @@ export interface Role {
   name?: string;
   /** What the role is for, shown to the player who takes it. */
   text?: string;
+  /** Items the role brings: the team starts with one each, and only the role's player can use them. */
+  kit?: string[];
+  /** A saboteur's: dealt at random to one player of a team of three or more, never claimed, revealed at the end. */
+  secret?: boolean;
+  /** A secret role's aims, each checked against the team when it finishes. */
+  goals?: RoleGoal[];
+}
+
+/** graph.RoleGoal: one of a secret role's aims. */
+export interface RoleGoal {
+  text: string;
+  when: Predicate;
 }
 
 export interface Item {

@@ -1,6 +1,6 @@
 import { Plus, X } from "lucide-react";
 import { ICON } from "../dz/ui.tsx";
-import { withField, type Editor, type T } from "./types.ts";
+import { withField, type Editor, type EditorProps, type T } from "./types.ts";
 import { MarkdownArea } from "../MarkdownArea.tsx";
 
 /** A list of texts that keeps at least `min`: a split secret's parts, a vote's options, a draw's cards. */
@@ -74,3 +74,59 @@ export const PhotoEditor: Editor<"photo"> = ({ block, set, t }) => (
 );
 
 export const BulletinEditor: Editor<"bulletin"> = ({ t }) => <p className="field__hint">{t.t("Shows the newest message the organisers sent this team from the event's control page.")}</p>;
+
+/** The secret roles a sabotage or accusation can belong to. */
+function SecretRoleSelect({ value, set, graph, t }: { value: string; set: (role: string) => void; graph: EditorProps<"accuse">["graph"]; t: T }) {
+  const secret = (graph.roles ?? []).filter((r) => r.secret);
+  return (
+    <select className="field__input" value={value} onChange={(e) => set(e.target.value)} aria-label={t.t("Secret role")}>
+      <option value="">{secret.length ? t.t("— pick the secret role —") : t.t("— no secret role yet: add one under Resources —")}</option>
+      {secret.map((r) => (
+        <option key={r.slug} value={r.slug}>
+          {r.name || r.slug}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+function NumberInput({ label, value, set }: { label: string; value: number | undefined; set: (n: number | undefined) => void }) {
+  return (
+    <label className="field field--num">
+      <span className="field__label">{label}</span>
+      <input className="field__input" type="number" min={0} value={value ?? ""} onChange={(e) => set(e.target.value === "" ? undefined : Math.max(0, Number(e.target.value)))} />
+    </label>
+  );
+}
+
+export const SabotageEditor: Editor<"sabotage"> = ({ block, set, t, graph }) => (
+  <>
+    <SecretRoleSelect value={block.role} set={(role) => set({ ...block, role })} graph={graph} t={t} />
+    <MarkdownArea className="field__input" rows={2} value={block.text ?? ""} placeholder={t.t("What the saboteur reads, such as “Cut the alarm wire: the team loses 5 points.”")} aria-label={t.t("Text")} onChange={(e) => set(withField(block, "text", e.target.value))} />
+    <div className="box__row box__row--wrap">
+      <NumberInput label={t.t("Costs the team (points)")} value={block.worth} set={(n) => set(withField(block, "worth", n || undefined))} />
+      <NumberInput label={t.t("Locks the answer (s)")} value={block.seconds} set={(n) => set(withField(block, "seconds", n || undefined))} />
+    </div>
+    <label className="field">
+      <span className="field__label">{t.t("Plants a false note")}</span>
+      <select className="field__input" value={block.journal ?? ""} onChange={(e) => set(withField(block, "journal", e.target.value || undefined))}>
+        <option value="">{t.t("— none —")}</option>
+        {(graph.journal ?? []).map((j) => (
+          <option key={j.slug} value={j.slug}>
+            {j.title || j.slug}
+          </option>
+        ))}
+      </select>
+    </label>
+    <p className="field__hint">{t.t("Only the secret role's player sees this, and presses it once. Nothing tells the others who did it, but they may notice the points go, the lock, or the note.")}</p>
+  </>
+);
+
+export const AccuseEditor: Editor<"accuse"> = ({ block, set, t, graph }) => (
+  <>
+    <SecretRoleSelect value={block.role} set={(role) => set({ ...block, role })} graph={graph} t={t} />
+    <MarkdownArea className="field__input" rows={2} value={block.text ?? ""} placeholder={t.t("The question, such as “Who is the saboteur?”")} aria-label={t.t("Question")} onChange={(e) => set({ ...block, text: e.target.value })} />
+    <NumberInput label={t.t("Points if the team names them")} value={block.worth} set={(n) => set(withField(block, "worth", n || undefined))} />
+    <p className="field__hint">{t.t("Each player names a teammate on their own phone. If most name the secret role's player, the team scores when it finishes, and the end screen tells all. Shown only to a team that was dealt the role.")}</p>
+  </>
+);

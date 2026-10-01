@@ -19,6 +19,7 @@ package graph
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -430,6 +431,12 @@ type PuzzleConfig struct {
 	// wrong answer is wrong as ever, and withdraws that player's. Only for
 	// an answer the outputs' matchers decide (UsesMatchers).
 	Unanimous bool `json:"unanimous,omitempty"`
+
+	// By is the role whose player alone may answer: the Locksmith opens
+	// the door. The others see the step, and that it is not theirs to
+	// answer. A player alone holds every role, so it never shuts a team
+	// out. Not with Unanimous or a two-key launch, which ask everyone.
+	By string `json:"by,omitempty"`
 
 	// Answer replaces the text box with another way of answering: a tile
 	// picture, a search, choices, a lock, the step's quiz questions or a
@@ -1041,6 +1048,92 @@ type Role struct {
 	Name string `json:"name,omitempty"`
 	// Text tells the player what the role is for, when they take it.
 	Text string `json:"text,omitempty"`
+	// Kit is the items the role brings: the team starts with one of each,
+	// and only the role's player can use them — place them in an item
+	// puzzle's slots. Everyone sees whose they are. An item is in one
+	// role's kit at most.
+	Kit []string `json:"kit,omitempty"`
+
+	// Secret makes the role a saboteur's: dealt at random to one player,
+	// once, when the team makes its first move — and only to a team of at
+	// least MinSecretPlayers then, in an event that allows secret roles.
+	// It is never claimed, and no one but its player knows who holds it
+	// until the team finishes, when the end screen reveals it. A secret
+	// role has no kit and answers no puzzle (By): both would show whose
+	// it is.
+	Secret bool `json:"secret,omitempty"`
+	// Goals are what a secret role's player is out to do, each a
+	// condition on the team's state checked when it finishes: the team
+	// never opened the vault, finished under 50 points. The end screen
+	// shows which were met.
+	Goals []RoleGoal `json:"goals,omitempty"`
+}
+
+// RoleGoal is one of a secret role's aims. Text is what its player is
+// told, translated under RoleKey(…, "goal:<i>").
+type RoleGoal struct {
+	Text string         `json:"text"`
+	When cond.Predicate `json:"when"`
+}
+
+// MinSecretPlayers is the fewest players a team needs for a secret role
+// to be dealt: with fewer there is no one to hide among.
+const MinSecretPlayers = 3
+
+// SecretRoles are the slugs of the secret roles, and PublicRoles of the
+// others, each in the author's order.
+func (g *Graph) SecretRoles() []string { return g.rolesWhere(true) }
+func (g *Graph) PublicRoles() []string { return g.rolesWhere(false) }
+
+func (g *Graph) rolesWhere(secret bool) []string {
+	var out []string
+	for _, r := range g.Roles {
+		if r.Secret == secret {
+			out = append(out, r.Slug)
+		}
+	}
+	return out
+}
+
+// Role is the role with the slug, if declared.
+func (g *Graph) Role(slug string) (Role, bool) {
+	for _, r := range g.Roles {
+		if r.Slug == slug {
+			return r, true
+		}
+	}
+	return Role{}, false
+}
+
+// ItemRole is the role whose kit holds the item, if any.
+func (g *Graph) ItemRole(item string) (string, bool) {
+	for _, r := range g.Roles {
+		if slices.Contains(r.Kit, item) {
+			return r.Slug, true
+		}
+	}
+	return "", false
+}
+
+// Kit is every item the roles bring, one each: what a team starts with.
+func (g *Graph) Kit() map[string]int {
+	out := map[string]int{}
+	for _, r := range g.Roles {
+		for _, it := range r.Kit {
+			out[it]++
+		}
+	}
+	return out
+}
+
+// RoleName is a role's name, or its slug when it has none.
+func (g *Graph) RoleName(slug string) string {
+	for _, r := range g.Roles {
+		if r.Slug == slug && r.Name != "" {
+			return r.Name
+		}
+	}
+	return slug
 }
 
 // RoleSlugs are the roles' slugs, in the author's order.

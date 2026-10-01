@@ -424,6 +424,9 @@ func (h *Handlers) PostPlayAction(w http.ResponseWriter, r *http.Request) {
 	case "turn":
 		// A two-key launch: this player's key.
 		res, err = e.Turn(ctx, tc.TeamID, req.Node)
+	case "sabotage":
+		// The saboteur's button. Not logged where teammates could see it.
+		res, err = e.Sabotage(ctx, tc.TeamID, req.Node, req.Block)
 	case "leave":
 		res, err = e.Leave(ctx, tc.TeamID, req.Node)
 	case "timeout":
@@ -528,6 +531,7 @@ func (h *Handlers) refusePlay(w http.ResponseWriter, res play.Result, err error)
 		"locked":      http.StatusTooManyRequests,
 		"wrong_node":  http.StatusBadRequest,
 		"unanswered":  http.StatusForbidden,
+		"not_yours":   http.StatusForbidden,
 	}[code]
 	if status == 0 {
 		httpx.ServerErr(w, http.StatusInternalServerError, "action failed", err)

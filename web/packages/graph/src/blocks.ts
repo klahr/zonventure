@@ -111,6 +111,8 @@ const EMPTY: { [K in Exclude<BlockKind, FileKind>]: Extract<BlockBody, { kind: K
   vote: { kind: "vote", text: "", options: ["", ""] },
   bulletin: { kind: "bulletin" },
   draw: { kind: "draw", text: "", options: ["", ""] },
+  sabotage: { kind: "sabotage", role: "", text: "", worth: 5 },
+  accuse: { kind: "accuse", role: "", text: "", worth: 20 },
 };
 
 /**

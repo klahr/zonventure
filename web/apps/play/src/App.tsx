@@ -15,7 +15,8 @@ export function App() {
   const s = game.state;
   const view = s?.view;
   // Only worth saying while there are roles to tell apart.
-  const myRoles = (view?.roles?.length ?? 0) > 1 ? (view?.roles ?? []).filter((r) => r.mine).map((r) => r.name || r.slug) : [];
+  // Never a secret role: the bar shows over a shoulder.
+  const myRoles = (view?.roles?.length ?? 0) > 1 ? (view?.roles ?? []).filter((r) => r.mine && !r.secret).map((r) => r.name || r.slug) : [];
   const running = s?.event.state === "running";
   // The team's language for a translated adventure also switches the
   // app's own words, where the app has them.
