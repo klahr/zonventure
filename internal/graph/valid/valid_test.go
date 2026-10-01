@@ -879,7 +879,7 @@ func TestSharedBlockVectors(t *testing.T) {
 		Edges:    []graph.Edge{{From: "start", FromPort: "out", To: "s"}, {From: "s", FromPort: "solved", To: "end"}},
 		Zones:    []graph.Zone{{Slug: "park", Lat: 59.3, Lng: 18.0, RadiusM: 50}},
 		Counters: []graph.Counter{{Slug: "coins"}},
-		Roles:    []graph.Role{{Slug: "saboteur", Secret: true}},
+		Roles:    []graph.Role{{Slug: "saboteur", Secret: true}, {Slug: "navigator"}},
 		Journal:  []graph.JournalEntry{{Slug: "lie", Title: "A lie"}},
 	}
 	for _, i := range Check(&g).Issues {
@@ -959,4 +959,15 @@ func TestAbilityChecks(t *testing.T) {
 	assertCode(t, Check(g), "role.kit.shared")
 	g.Nodes[1].PuzzleCfg.Unanimous = true
 	assertCode(t, Check(g), "puzzle.by.together")
+}
+
+// An item puzzle wanting an item no step hands out is warned about —
+// unless a role brings it, so the team starts with it.
+func TestSlotItemFromKit(t *testing.T) {
+	g := valid3()
+	g.Items = []graph.Item{{Slug: "key"}}
+	g.Nodes[1].PuzzleCfg.Answer = &graph.Answer{Kind: graph.AnswerItems, Slots: []graph.ItemSlot{{Label: "The lock", Item: "key"}}}
+	assertCode(t, Check(g), "slots.item.never")
+	g.Roles = []graph.Role{{Slug: "lockpick", Kit: []string{"key"}}}
+	assertNoCode(t, Check(g), "slots.item.never")
 }

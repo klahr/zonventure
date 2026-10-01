@@ -12,6 +12,7 @@ import {
   Film,
   Flashlight,
   Heading,
+  IdCard,
   ListChecks,
   Image,
   KeyRound,
@@ -51,7 +52,7 @@ import { OverlayEditor } from "./Overlay.tsx";
 import { CompassEditor, MapEditor, RadarEditor } from "./Place.tsx";
 import { PointsEditor, TextEditor, TitleEditor } from "./Text.tsx";
 import { QuizEditor, TiebreakEditor } from "./Quiz.tsx";
-import { AccuseEditor, BulletinEditor, DrawEditor, PhotoEditor, SabotageEditor, SplitEditor, VoteEditor } from "./Social.tsx";
+import { AccuseEditor, BulletinEditor, RolesEditor, DrawEditor, PhotoEditor, SabotageEditor, SplitEditor, VoteEditor } from "./Social.tsx";
 import { SuspectsEditor } from "./Suspects.tsx";
 import { TorchEditor } from "./Torch.tsx";
 import type { Group, KindDef } from "./types.ts";
@@ -96,6 +97,7 @@ export const KINDS: { [K in BlockKind]: KindDef<K> } = {
   bulletin: { label: "Live bulletin", icon: Megaphone, group: "Game", about: "The organisers' latest message", editor: BulletinEditor },
   sabotage: { label: "Sabotage", icon: Bomb, group: "Game", about: "A button only the saboteur sees", editor: SabotageEditor },
   accuse: { label: "Accusation", icon: Gavel, group: "Game", about: "The players name the saboteur", editor: AccuseEditor },
+  roles: { label: "Roles", icon: IdCard, group: "Game", about: "The players' roles, and a choice of them", editor: RolesEditor },
   quiz: { label: "Quiz question", icon: ListChecks, group: "Quiz", about: "1, X or 2, marked at the end", editor: QuizEditor },
   tiebreak: { label: "Tie-breaker", icon: Scale, group: "Quiz", about: "A number question that breaks ties", editor: TiebreakEditor },
   // Always on the step, never in the add menu: see FIXED_KINDS.

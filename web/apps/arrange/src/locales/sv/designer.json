@@ -646,6 +646,8 @@
   "Points if the team names them": "Poäng om laget pekar ut dem",
   "Secret role": "Hemlig roll",
   "Secret, like a saboteur": "Hemlig, som en sabotör",
+  "Picture (optional)": "Bild (valfri)",
+  "Shown as a portrait, three wide by four high: crop it so.": "Visas som ett porträtt, tre brett och fyra högt: beskär den så.",
   "The question, such as “Who is the saboteur?”": "Frågan, till exempel ”Vem är sabotören?”",
   "What the saboteur is told, such as “Keep them out of the vault.”": "Vad sabotören får veta, till exempel ”Håll dem borta från valvet.”",
   "What the saboteur reads, such as “Cut the alarm wire: the team loses 5 points.”": "Vad sabotören läser, till exempel ”Klipp larmtråden: laget förlorar 5 poäng.”",
@@ -659,5 +661,16 @@
   "Sabotage": "Sabotage",
   "A button only the saboteur sees": "En knapp som bara sabotören ser",
   "Accusation": "Anklagelse",
-  "The players name the saboteur": "Spelarna pekar ut sabotören"
+  "The players name the saboteur": "Spelarna pekar ut sabotören",
+  "The players' roles, and a choice of them": "Spelarnas roller, och ett val av dem",
+  "everyone's": "allas",
+  "the player's own": "spelarens egna",
+  "chosen here": "väljs här",
+  "final after this step": "slutgiltiga efter steget",
+  "Optional words above the roles, such as “Take your parts before you set off.”": "Valfri text ovanför rollerna, som ”Välj era roller innan ni ger er av.”",
+  "Show every player's roles, not only the player's own": "Visa allas roller, inte bara spelarens egna",
+  "Let players choose their roles here": "Låt spelarna välja sina roller här",
+  "Roles are final once the team moves on": "Rollerna blir slutgiltiga när laget går vidare",
+  "The adventure has no roles yet. Add them in Adventure settings → Roles.": "Äventyret har inga roller än. Lägg till dem under Äventyrsinställningar → Roller.",
+  "A secret role shows only on its own player's phone, never among the team's. Once roles are final, roles nobody chose stay with whoever holds them, and a player who joins later gets none.": "En hemlig roll syns bara i den egna spelarens telefon, aldrig bland lagets. När rollerna är slutgiltiga stannar roller som ingen valt hos den som har dem, och en spelare som ansluter senare får ingen."
 }

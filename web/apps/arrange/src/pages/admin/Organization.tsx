@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Ban, Coins, ExternalLink, Pencil, Plus, RefreshCw, Trash2, Upload } from "lucide-react";
+import { Ban, Coins, ExternalLink, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useT } from "../../i18n.tsx";
 import { href, navigate } from "../../router.ts";
 import { useTopBarTitle } from "../../topbar.tsx";
 import {
-  Button, Card, ErrorBox, HelpPopover, ICON, Loading, Page, PageHeader, Pill, Table, fmtDateTime, fmtMoney, relTime, useDialogs, useLoad, useToast,
+  Button, Card, ErrorBox, HelpPopover, ICON, ImageDrop, Loading, Page, PageHeader, Pill, Table, fmtDateTime, fmtMoney, relTime, useDialogs, useLoad, useToast,
   type Column, type Tone,
 } from "../../ui/index.ts";
 import {
@@ -467,7 +467,6 @@ function SetupCard({ org, connect, onTrusted, onPublisher, reload }: { org: Orga
   const t = useT();
   const toast = useToast();
   const dialogs = useDialogs();
-  const file = useRef<HTMLInputElement>(null);
   const [bust, setBust] = useState(0);
   const [busy, setBusy] = useState(false);
 
@@ -482,7 +481,6 @@ function SetupCard({ org, connect, onTrusted, onPublisher, reload }: { org: Orga
       toast.err(t.t("Logo upload failed: {{err}}", { err: e instanceof Error ? e.message : String(e) }));
     } finally {
       setBusy(false);
-      if (file.current) file.current.value = "";
     }
   };
   const remove = async () => {
@@ -499,16 +497,19 @@ function SetupCard({ org, connect, onTrusted, onPublisher, reload }: { org: Orga
   return (
     <Card title={t.t("Settings")}>
       <div className="ad-setting">
-        <div className="ad-logo-drop">
-          {org.has_logo ? <OrgLogo org={org} size={72} bust={bust} /> : <span>{t.t("No logo")}</span>}
-        </div>
-        <input ref={file} type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) void upload(f); }} />
         <div className="ad-setting__text">
           <strong>{t.t("Logo")}</strong>
-          <div className="ad-inline">
-            <Button size="sm" icon={<Upload size={ICON.sm} aria-hidden />} onClick={() => file.current?.click()} loading={busy}>{org.has_logo ? t.t("Replace logo") : t.t("Upload logo")}</Button>
-            {org.has_logo && <Button size="sm" variant="ghost" onClick={remove}>{t.t("Remove logo")}</Button>}
-          </div>
+          <ImageDrop
+            shape="logo"
+            src={org.has_logo ? `/org-logo/${org.id}${bust ? `?t=${bust}` : ""}` : undefined}
+            label={t.t("Upload logo")}
+            title={t.t("Click to upload a logo")}
+            accept="image/png,image/jpeg,image/webp,image/svg+xml"
+            busy={busy}
+            onFile={(f) => void upload(f)}
+            onRemove={() => void remove()}
+            removeLabel={t.t("Remove logo")}
+          />
         </div>
       </div>
       <Toggle checked={org.trusted} onChange={onTrusted} label={t.t("Invoice billing")} hint={t.t("Lets the org pay for event passes by invoice instead of via Stripe.")} />

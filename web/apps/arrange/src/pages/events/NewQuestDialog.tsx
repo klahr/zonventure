@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useT } from "../../i18n.tsx";
 import { CATALOG_ENABLED, navigate } from "../../router.ts";
-import { Button, Dialog, ErrorBox, Field, Loading, errorText, useLoad, useToast } from "../../ui/index.ts";
+import { Button, Dialog, ErrorBox, Field, ImageDrop, Loading, errorText, useLoad, useToast } from "../../ui/index.ts";
 import { createEvent, listAdventures, startEvent, updateEvent, uploadEventCover } from "./api.ts";
 import { AdventureCover } from "./parts.tsx";
 
@@ -24,6 +24,13 @@ export function NewQuestDialog({ onClose, onCreated }: { onClose: () => void; on
   const [currency, setCurrency] = useState("EUR");
   const [teamSize, setTeamSize] = useState("4");
   const [cover, setCover] = useState<File | null>(null);
+  const [coverSrc, setCoverSrc] = useState<string | undefined>(undefined);
+  useEffect(() => {
+    if (!cover) return setCoverSrc(undefined);
+    const url = URL.createObjectURL(cover);
+    setCoverSrc(url);
+    return () => URL.revokeObjectURL(url);
+  }, [cover]);
   const [attest, setAttest] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -150,9 +157,19 @@ export function NewQuestDialog({ onClose, onCreated }: { onClose: () => void; on
           <input type="number" min={1} max={20} value={teamSize} onChange={(e) => setTeamSize(e.target.value)} />
         </Field>
       </div>
-      <Field label={t.t("Cover image (optional)")} hint={t.t("Shown in your store. JPEG / PNG / WebP / SVG, max 5 MB.")}>
-        <input type="file" accept="image/*" onChange={(e) => setCover(e.target.files?.[0] ?? null)} />
-      </Field>
+      <div className="cs-field">
+        <span className="cs-field__label">{t.t("Cover image (optional)")}</span>
+        <ImageDrop
+          shape="cover"
+          src={coverSrc}
+          label={t.t("Upload cover")}
+          title={t.t("Click to upload a cover")}
+          accept="image/*"
+          onFile={setCover}
+          onRemove={() => setCover(null)}
+        />
+        <span className="cs-field__hint">{t.t("Shown in your store. JPEG / PNG / WebP / SVG, max 5 MB.")}</span>
+      </div>
       <label className="evs-check evs-attest">
         <input type="checkbox" checked={attest} onChange={(e) => setAttest(e.target.checked)} />
         <span>{t.t("I confirm there are no under-13 players (or that I have parental consent for any).")}</span>

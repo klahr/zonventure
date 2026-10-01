@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState, type ChangeEvent } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Copy, ExternalLink } from "lucide-react";
 import { useSession } from "../../session.tsx";
 import { useT } from "../../i18n.tsx";
-import { Button, Card, ErrorBox, Field, HelpPopover, ICON, Loading, Row, errorText, useDialogs, useLoad } from "../../ui/index.ts";
+import { Button, Card, ErrorBox, Field, HelpPopover, ICON, ImageDrop, Loading, Row, errorText, useDialogs, useLoad } from "../../ui/index.ts";
 import { deleteImage, getProfile, putProfile, putSlug, uploadImage, type OrgProfile, type ProfileEdit } from "./organization-api.ts";
 import { EmailLookCard } from "./organization-email.tsx";
 import "./organization-branding.css";
@@ -65,8 +65,6 @@ export function OrganizationTab() {
   const editRef = useRef<ProfileEdit | null>(null);
   editRef.current = edit;
   const saving = useRef<Promise<void> | null>(null);
-  const logoInput = useRef<HTMLInputElement>(null);
-  const coverInput = useRef<HTMLInputElement>(null);
 
   const profile = load.data;
   useEffect(() => {
@@ -163,10 +161,7 @@ export function OrganizationTab() {
     }
   };
 
-  const upload = async (kind: "logo" | "cover", e: ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0];
-    e.target.value = "";
-    if (!f) return;
+  const upload = async (kind: "logo" | "cover", f: File) => {
     setErr("");
     try {
       await uploadImage(kind, f);
@@ -278,32 +273,26 @@ export function OrganizationTab() {
               <div className="og-images">
                 <div>
                   <div className="og-label">{t.t("Logo")}</div>
-                  <button
-                    type="button"
-                    className={"og-thumb og-thumb--logo" + (logoSrc ? " has-image" : "")}
-                    aria-label={t.t("Upload logo")}
+                  <ImageDrop
+                    shape="logo"
+                    src={logoSrc}
+                    label={t.t("Upload logo")}
                     title={t.t("Click to upload a logo")}
-                    onClick={() => logoInput.current?.click()}
-                  >
-                    {logoSrc ? <img src={logoSrc} alt="" /> : <span>{t.t("Click to upload")}</span>}
-                  </button>
-                  <input ref={logoInput} type="file" hidden accept="image/png,image/jpeg,image/webp,image/svg+xml" onChange={(e) => void upload("logo", e)} />
-                  {logoSrc && <Button size="sm" variant="ghost" onClick={() => void remove("logo")}>{t.t("Remove")}</Button>}
+                    accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                    onFile={(f) => void upload("logo", f)}
+                    onRemove={() => void remove("logo")}
+                  />
                 </div>
                 <div className="og-images__cover">
                   <div className="og-label">{t.t("Cover")}</div>
-                  <button
-                    type="button"
-                    className={"og-thumb og-thumb--cover" + (coverSrc ? " has-image" : "")}
-                    style={coverSrc ? { backgroundImage: `url('${coverSrc}')` } : undefined}
-                    aria-label={t.t("Upload cover image")}
+                  <ImageDrop
+                    shape="cover"
+                    src={coverSrc}
+                    label={t.t("Upload cover image")}
                     title={t.t("Click to upload a cover")}
-                    onClick={() => coverInput.current?.click()}
-                  >
-                    {!coverSrc && <span>{t.t("Click to upload")}</span>}
-                  </button>
-                  <input ref={coverInput} type="file" hidden accept="image/png,image/jpeg,image/webp" onChange={(e) => void upload("cover", e)} />
-                  {coverSrc && <Button size="sm" variant="ghost" onClick={() => void remove("cover")}>{t.t("Remove")}</Button>}
+                    onFile={(f) => void upload("cover", f)}
+                    onRemove={() => void remove("cover")}
+                  />
                 </div>
               </div>
               <div className="og-label og-label--strong">

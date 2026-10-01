@@ -402,6 +402,21 @@ func (s *teamState) loadRest(ctx context.Context, q Querier) error {
 	if err := s.loadSecrets(ctx, q); err != nil {
 		return err
 	}
+	if s.G != nil && len(s.G.Kit()) > 0 {
+		s.Holders = map[string]int64{}
+		if err := scanRows(ctx, q, `SELECT item, slot_id FROM team_item_holders WHERE team_id = $1`, s.teamID,
+			func(rows *sql.Rows) error {
+				var item string
+				var slot int64
+				if err := rows.Scan(&item, &slot); err != nil {
+					return err
+				}
+				s.Holders[item] = slot
+				return nil
+			}); err != nil {
+			return err
+		}
+	}
 
 	// What each player did on the current step, for one done together.
 	if s.Current != "" {

@@ -1048,6 +1048,8 @@ type Role struct {
 	Name string `json:"name,omitempty"`
 	// Text tells the player what the role is for, when they take it.
 	Text string `json:"text,omitempty"`
+	// Image is the role's picture, shown wherever the role is listed.
+	Image *Media `json:"image,omitempty"`
 	// Kit is the items the role brings: the team starts with one of each,
 	// and only the role's player can use them — place them in an item
 	// puzzle's slots. Everyone sees whose they are. An item is in one
@@ -1313,6 +1315,11 @@ func (g *Graph) MediaIDs() []int64 {
 	}
 	for _, je := range g.Journal {
 		add(je.Media)
+	}
+	for _, ro := range g.Roles {
+		if ro.Image != nil {
+			add([]Media{*ro.Image})
+		}
 	}
 	return out
 }

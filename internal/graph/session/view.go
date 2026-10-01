@@ -79,6 +79,10 @@ type View struct {
 	// each is the player endpoints' to add: the team's state does not
 	// know its players.
 	Roles []RoleView `json:"roles,omitempty"`
+	// RolesChosen says every player playing has chosen a role, or every
+	// role is chosen: a roles block's step can be left. The endpoints fill
+	// it; it is absent where no one chooses, as in the simulator.
+	RolesChosen *bool `json:"roles_chosen,omitempty"`
 	// Reveal unmasks the secret roles once the team has finished.
 	Reveal []RevealView `json:"reveal,omitempty"`
 
@@ -320,6 +324,12 @@ type ItemView struct {
 	// the player asking does not hold it, so cannot use it.
 	Role    string `json:"role,omitempty"`
 	NotMine bool   `json:"not_mine,omitempty"`
+	// HolderSlot is the player the item was handed to, if it was, and
+	// Holder their name, which the player endpoints fill. Give says the
+	// player asking may hand it on.
+	HolderSlot int64  `json:"-"`
+	Holder     string `json:"holder,omitempty"`
+	Give       bool   `json:"give,omitempty"`
 }
 
 // JournalView is one unlocked journal entry.
@@ -331,12 +341,15 @@ type RoleView struct {
 	Slug string `json:"slug"`
 	// Secret is a saboteur's role, listed only to its player — and to
 	// the team as a whole.
-	Secret  bool   `json:"secret,omitempty"`
-	Name    string `json:"name,omitempty"`
-	Text    string `json:"text,omitempty"`
-	Mine    bool   `json:"mine,omitempty"`
-	Holder  string `json:"holder,omitempty"`
-	Claimed bool   `json:"claimed,omitempty"`
+	Secret  bool         `json:"secret,omitempty"`
+	Name    string       `json:"name,omitempty"`
+	Text    string       `json:"text,omitempty"`
+	Image   *graph.Media `json:"image,omitempty"`
+	Mine    bool         `json:"mine,omitempty"`
+	Holder  string       `json:"holder,omitempty"`
+	Claimed bool         `json:"claimed,omitempty"`
+	// Final says the team's roles are locked: no one takes or gives one back.
+	Final bool `json:"final,omitempty"`
 }
 
 type JournalView struct {
@@ -581,7 +594,7 @@ func (t *Team) View() View {
 		if r.Secret && !t.HasRole(r.Slug) {
 			continue
 		}
-		rv := RoleView{Slug: r.Slug, Name: r.Name, Text: r.Text, Secret: r.Secret}
+		rv := RoleView{Slug: r.Slug, Name: r.Name, Text: r.Text, Image: r.Image, Secret: r.Secret}
 		if r.Secret {
 			// Its player knows; who else holds what is the endpoints' to say.
 			rv.Mine = t.Viewer != nil
@@ -813,8 +826,10 @@ func (t *Team) view() View {
 			}
 			if role, ok := t.G.ItemRole(slug); ok {
 				iv.Role = t.G.Tr(t.Lang, graph.RoleKey(role, "name"), t.G.RoleName(role))
-				iv.NotMine = !t.HasRole(role)
 			}
+			iv.HolderSlot = t.Holders[slug]
+			iv.NotMine = !t.CanUse(slug)
+			iv.Give = t.Giveable(slug)
 			v.Items = append(v.Items, iv)
 		}
 	}
@@ -1021,6 +1036,16 @@ func (t *Team) VisibleMedia(strict bool) []int64 {
 				seen[m.ID] = true
 				out = append(out, m.ID)
 			}
+		}
+	}
+	// A role's picture comes with the role: a secret one only to its player.
+	for _, ro := range t.G.Roles {
+		if ro.Image == nil || ro.Secret && !t.HasRole(ro.Slug) {
+			continue
+		}
+		if !seen[ro.Image.ID] {
+			seen[ro.Image.ID] = true
+			out = append(out, ro.Image.ID)
 		}
 	}
 	for _, n := range t.G.Nodes {

@@ -1,13 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { Eye, EyeOff, ImagePlus, Trash2 } from "lucide-react";
+import { Eye, EyeOff } from "lucide-react";
 import { ApiError } from "@zonventure/api";
 import { useT } from "../../i18n.tsx";
 import { useSession } from "../../session.tsx";
 import { href } from "../../router.ts";
-import { Button, Dialog, Field, HelpPopover, ICON, MarkdownArea, Row, fmtDateTime, useDialogs, useLoad, useToast } from "../../ui/index.ts";
+import { Button, Dialog, Field, HelpPopover, ICON, ImageDrop, MarkdownArea, Row, fmtDateTime, useDialogs, useLoad, useToast } from "../../ui/index.ts";
 import { createAdventure, downscaleImage, firstPlaceOf, getEdit, getGraphState, importAdventure, orgName, removeCover, updateAdventure, uploadCover, type AdventurePatch, type AdventureEdit, type Assignment } from "./api.ts";
 import { PointMap } from "../../designer/PointMap.tsx";
-import { Cover } from "./parts.tsx";
 
 const SLUG = /^[a-z0-9-]+$/;
 
@@ -236,9 +235,8 @@ const coord = (s: string) => {
  * palette and fonts are the designer's (Look). Only changed fields are
  * sent; a cleared start coordinate is sent as null, which clears it.
  */
-export function EditDetailsDialog({ slug, accent, firstPlace, onClose, onSaved, onCover }: {
+export function EditDetailsDialog({ slug, firstPlace, onClose, onSaved, onCover }: {
   slug: string;
-  accent?: string | undefined;
   /** Where "Use first place" copies the start from: the first gated puzzle or zone. */
   firstPlace: { lat: number; lng: number } | null;
   onClose: () => void;
@@ -256,7 +254,6 @@ export function EditDetailsDialog({ slug, accent, firstPlace, onClose, onSaved, 
   const [f, setF] = useState<Form | null>(null);
   const [busy, setBusy] = useState(false);
   const [cover, setCover] = useState<string | undefined>(undefined);
-  const file = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!base) return;
@@ -302,10 +299,7 @@ export function EditDetailsDialog({ slug, accent, firstPlace, onClose, onSaved, 
     }
   };
 
-  const onFile = async () => {
-    const picked = file.current?.files?.[0];
-    if (file.current) file.current.value = "";
-    if (!picked) return;
+  const onFile = async (picked: File) => {
     try {
       const r = await uploadCover(slug, await downscaleImage(picked));
       const url = (r.url || `/adventure-assets/avatar/${encodeURIComponent(slug)}`) + "?v=" + Date.now();
@@ -345,16 +339,18 @@ export function EditDetailsDialog({ slug, accent, firstPlace, onClose, onSaved, 
       {!f && !err && <p className="cs-loading">{t.t("Loading…")}</p>}
       {f && (
         <>
-          <div className="adv-cover-row">
-            <Cover title={f.title} src={cover} size={72} accent={accent} />
-            <div className="adv-cover-row__text">
-              <span className="cs-field__label">{t.t("Cover picture")}</span>
-              <Row gap="sm">
-                <Button size="sm" icon={<ImagePlus size={ICON.sm} aria-hidden />} onClick={() => file.current?.click()}>{t.t("Upload cover")}</Button>
-                {cover && <Button size="sm" variant="danger" icon={<Trash2 size={ICON.sm} aria-hidden />} onClick={dropCover}>{t.t("Remove cover")}</Button>}
-              </Row>
-              <input ref={file} type="file" accept="image/*" hidden onChange={onFile} aria-label={t.t("Upload cover")} />
-            </div>
+          <div className="adv-cover-row__text">
+            <span className="cs-field__label">{t.t("Cover picture")}</span>
+            <ImageDrop
+              shape="photo"
+              src={cover}
+              label={t.t("Upload cover")}
+              title={t.t("Click to upload a cover")}
+              accept="image/*"
+              onFile={(f) => void onFile(f)}
+              onRemove={() => void dropCover()}
+              removeLabel={t.t("Remove cover")}
+            />
           </div>
           <Field label={t.t("Title")}>
             <input autoFocus required value={f.title} onChange={(e) => set("title", e.target.value)} />

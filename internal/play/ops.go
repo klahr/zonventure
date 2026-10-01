@@ -368,6 +368,9 @@ func (e *Engine) commit(ctx context.Context, tx *sql.Tx, s *teamState, step walk
 		if _, err := tx.ExecContext(ctx, `DELETE FROM team_presses WHERE team_id = $1 AND node = $2`, s.teamID, old); err != nil {
 			return err
 		}
+		if err := lockRolesLeaving(ctx, tx, s, old); err != nil {
+			return fmt.Errorf("locking roles: %w", err)
+		}
 	}
 
 	if step.From != "" && s.Nodes[step.From] != nil {

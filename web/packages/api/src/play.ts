@@ -139,7 +139,9 @@ export type PlayBlockBody =
   /** Only the saboteur's phone gets it; picked "1" once pressed. */
   | { kind: "sabotage"; text?: string; worth?: number; seconds?: number; picked?: string }
   /** suspects are this player's teammates, tally counts each's votes in that order, voted the slot named. */
-  | { kind: "accuse"; text: string; worth?: number; suspects?: { slot: number; name: string }[]; tally?: number[]; voted?: string; voters?: number };
+  | { kind: "accuse"; text: string; worth?: number; suspects?: { slot: number; name: string }[]; tally?: number[]; voted?: string; voters?: number }
+  /** Drawn from the view's roles: the player's own, or with team everyone's. */
+  | { kind: "roles"; text?: string; team?: boolean; choose?: boolean; lock?: boolean };
 
 /** session.PhotoView */
 export interface PhotoView {
@@ -196,6 +198,16 @@ export interface ItemView {
   /** The role whose kit it is from, by name; not_mine: this player cannot use it. */
   role?: string;
   not_mine?: boolean;
+  /** The player it was handed to, by name, if it was; give: this player may hand it on. */
+  holder?: string;
+  give?: boolean;
+}
+
+/** A code that hands an item to whichever teammate scans it, and its picture, until expires_at. */
+export interface ItemGift {
+  code: string;
+  qr: string;
+  expires_at: string;
 }
 
 /** session.RevealView: a secret role unmasked at the end. dealt is false when no one held it. */
@@ -213,6 +225,7 @@ export interface RoleView {
   slug: string;
   name?: string;
   text?: string;
+  image?: PlayMedia;
   /** A saboteur's, listed only to its player. */
   secret?: boolean;
   /** This phone's player holds it. */
@@ -221,6 +234,8 @@ export interface RoleView {
   holder?: string;
   /** They chose it, rather than being dealt it. */
   claimed?: boolean;
+  /** The team's roles are locked: no one takes or gives one back. */
+  final?: boolean;
 }
 
 export interface JournalView {
@@ -291,6 +306,8 @@ export interface View {
   together?: Together;
   /** The adventure's roles, and who on the team holds each. */
   roles?: RoleView[];
+  /** Every player has chosen a role, or every role is chosen; absent where no one chooses. */
+  roles_chosen?: boolean;
   /** Once the team has finished: who held each secret role, their goals, and whether the team named them. */
   reveal?: RevealView[];
   /** The adventure keeps a journal, so its button shows even while empty. */
@@ -624,6 +641,10 @@ export const unlockCheat = (password: string) => post<void>("/api/player/play/un
 export const renameMe = (name: string) => post<{ name: string }>("/api/player/me/name", { name });
 /** Takes a role, or with claim false gives it back to be dealt again. 409 role_taken: a teammate claimed it. */
 export const claimRole = (role: string, claim: boolean) => post<void>("/api/player/role", { role, claim });
+/** A code handing one of the player's kit items to a teammate. 409 not_yours: theirs to give, not this player's. */
+export const giveItem = (item: string) => post<ItemGift>("/api/player/items/give", { item });
+/** Takes the item a teammate's code gives. 404 gift_unknown, 410 gift_expired, 409 gift_own or gift_gone. */
+export const receiveItem = (code: string) => post<{ item: string; name?: string; icon?: string }>("/api/player/items/receive", { code });
 
 /** Rename the team; any member may. 409 when another team in the event has the name. */
 export const renameTeam = (name: string) => post<{ name: string }>("/api/player/team/name", { name });

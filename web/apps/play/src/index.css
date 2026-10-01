@@ -211,6 +211,11 @@ body {
 .app-menu__locked { margin: 0; padding: var(--sp-2) var(--sp-3); border-radius: var(--radius); background: color-mix(in srgb, var(--accent) 8%, var(--surface)); font-size: var(--text-sm); color: var(--ink); }
 .app-team-pic { flex: none; display: grid; place-items: center; width: 3.25rem; height: 3.25rem; border-radius: 50%; overflow: hidden; background: color-mix(in srgb, var(--accent) 14%, var(--surface)); color: var(--accent); font-weight: 800; font-size: 1.25rem; }
 .app-team-pic img { width: 100%; height: 100%; object-fit: cover; }
+.app-pic-drop { flex: none; display: grid; place-items: center; width: 5rem; height: 5rem; padding: 0; border: 2px dashed var(--muted); border-radius: var(--radius); background: var(--surface-2, var(--surface)); color: var(--muted); font-size: var(--text-xs); text-align: center; overflow: hidden; cursor: pointer; }
+.app-pic-drop span { padding: var(--sp-1); }
+.app-pic-drop:hover:not(:disabled), .app-pic-drop:focus-visible { border-color: var(--accent); }
+.app-pic-drop.has-image { border-style: solid; border-color: var(--border-soft); }
+.app-pic-drop img { width: 100%; height: 100%; object-fit: cover; }
 .app-menu__field .pv-input[readonly] { background: var(--surface-2, var(--surface)); color: var(--muted); }
 .app-menu__toggle { display: flex; gap: var(--sp-3); align-items: flex-start; cursor: pointer; }
 .app-menu__toggle input { width: 1.4rem; height: 1.4rem; margin-top: 0.1rem; flex: none; accent-color: var(--accent); }
@@ -226,8 +231,10 @@ body {
 .app-roles { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
 .app-role { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-2) var(--sp-3); border: 1px solid var(--border-soft); border-radius: var(--radius); }
 .app-role.is-mine { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--surface)); }
-.app-role__head { display: flex; justify-content: space-between; gap: var(--sp-2); align-items: baseline; }
+.app-role__head { display: flex; gap: var(--sp-2); align-items: center; }
+.app-role__holder { margin-left: auto; }
 .app-role__name { font-weight: 700; color: var(--ink); }
+.app-role__pic { flex: none; width: 2.5rem; height: 2.5rem; border-radius: var(--radius); object-fit: cover; align-self: center; }
 .app-role__holder { font-size: var(--text-xs); color: var(--muted); text-align: right; }
 .app-role__text { font-size: var(--text-sm); }
 .app-role .pv-btn { align-self: flex-start; }

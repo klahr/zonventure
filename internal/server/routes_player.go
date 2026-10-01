@@ -40,6 +40,9 @@ func registerPlayerRoutes(r chi.Router, env *routesEnv) {
 		r.Get("/play/photo/{photoID}", playerH.GetPlayPhoto)
 		// Takes or gives up one of the adventure's roles.
 		r.Post("/role", playerH.PostRole)
+		// Hands a role's kit item to a teammate: a code to show, and to scan.
+		r.Post("/items/give", playerH.PostGiveItem)
+		r.Post("/items/receive", playerH.PostReceiveItem)
 		r.Post("/location", playerH.PostLocation)
 		// Player-driven slot rename — the arranger's pre-set name is
 		// often a placeholder ("Player 3"). Letting the player put

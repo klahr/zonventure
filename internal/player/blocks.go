@@ -67,6 +67,9 @@ func decorateView(ctx context.Context, db *sql.DB, teamID, slotID int64, v *play
 	if err := decorateRoles(ctx, db, teamID, slotID, v); err != nil {
 		return err
 	}
+	if err := decorateItems(ctx, db, teamID, v); err != nil {
+		return err
+	}
 	var split, vote, photo bool
 	for _, b := range v.Blocks {
 		if b.Locked {

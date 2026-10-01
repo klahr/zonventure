@@ -86,6 +86,9 @@ export function nodeTexts(n: Node): Translatable[] {
         case "letters":
           add(own, "Letters", b.text);
           break;
+        case "roles":
+          add(own, "Roles", b.text, { multiline: true });
+          break;
         case "sabotage":
         case "accuse":
           add(own, b.kind === "sabotage" ? "Sabotage" : "Accusation", b.text, { multiline: true });

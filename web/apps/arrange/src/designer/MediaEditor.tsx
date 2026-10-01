@@ -4,6 +4,7 @@ import type { Media } from "@zonventure/graph";
 import { useT } from "../i18n.tsx";
 import { Camera, Plus, X } from "lucide-react";
 import { ICON } from "./dz/ui.tsx";
+import { ImageDrop } from "../ui/imageDrop.tsx";
 import { isTouch } from "./device.ts";
 
 /** The adventure being edited, for uploads deep inside the inspector. */
@@ -37,7 +38,7 @@ export function MediaEditor({
   const latest = useRef({ list, onChange });
   latest.current = { list, onChange };
 
-  const pick = async (files: FileList | null) => {
+  const pick = async (files: FileList | File[] | null) => {
     const added = await upload(files);
     if (input.current) input.current.value = "";
     if (camera.current) camera.current.value = "";
@@ -45,6 +46,34 @@ export function MediaEditor({
     const { list: now, onChange: change } = latest.current;
     change(single ? added.slice(-1) : [...now, ...added.filter((a) => !now.some((m) => m.id === a.id))]);
   };
+
+  if (single) {
+    const m = list[0];
+    return (
+      <div className="media-ed">
+        <ImageDrop
+          shape="logo"
+          src={m ? play.mediaURL(m.id) : undefined}
+          label={m ? t.t("Replace picture") : t.t("Add picture")}
+          accept="image/*"
+          busy={busy}
+          disabled={!slug}
+          onFile={(f) => void pick([f])}
+          onRemove={() => onChange(undefined)}
+        />
+        {m && (
+          <input
+            className="field__input"
+            value={m.alt ?? ""}
+            placeholder={t.t("Describe the picture")}
+            aria-label={t.t("Description")}
+            onChange={(e) => set([{ ...m, alt: e.target.value }])}
+          />
+        )}
+        {error && <div className="alert alert--danger">{error}</div>}
+      </div>
+    );
+  }
 
   return (
     <div className="media-ed">
@@ -67,10 +96,10 @@ export function MediaEditor({
           </button>
         </div>
       ))}
-      <input ref={input} type="file" accept={single ? "image/*" : "image/*,audio/*"} multiple={!single} hidden onChange={(e) => void pick(e.target.files)} />
+      <input ref={input} type="file" accept="image/*,audio/*" multiple hidden onChange={(e) => void pick(e.target.files)} />
       <button type="button" className="add-btn concept--content" disabled={busy || !slug} onClick={() => input.current?.click()}>
         {!busy && <Plus size={ICON.sm} aria-hidden="true" />}
-        {busy ? t.t("Uploading…") : single ? (list.length ? t.t("Replace picture") : t.t("Add picture")) : t.t("Add picture or sound")}
+        {busy ? t.t("Uploading…") : t.t("Add picture or sound")}
       </button>
       {isTouch() && (
         <>
@@ -96,7 +125,7 @@ export function useMediaUpload() {
   const slug = useContext(AdventureSlug);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const upload = async (files: FileList | null): Promise<Media[]> => {
+  const upload = async (files: FileList | File[] | null): Promise<Media[]> => {
     const added: Media[] = [];
     if (!files?.length) return added;
     setBusy(true);

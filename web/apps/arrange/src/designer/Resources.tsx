@@ -235,6 +235,9 @@ export function Resources({ graph, onChange }: { graph: Graph; onChange: (g: Gra
               </div>
               <MarkdownArea className="field__input" rows={2} value={r.text ?? ""} placeholder={t.t("What the role is for, shown to the player who takes it. Markdown.")} aria-label={t.t("Description")}
                 onChange={(e) => set(e.target.value ? { ...r, text: e.target.value } : withoutKey(r, "text"))} />
+              <span className="field__label">{t.t("Picture (optional)")}</span>
+              <MediaEditor single media={r.image ? [r.image] : undefined} onChange={(m) => set(m?.[0] ? { ...r, image: m[0] } : withoutKey(r, "image"))} />
+              <span className="field__hint">{t.t("Shown as a portrait, three wide by four high: crop it so.")}</span>
               <label className="check">
                 <input
                   type="checkbox"

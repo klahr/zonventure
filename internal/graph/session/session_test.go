@@ -349,6 +349,31 @@ func TestMediaVisibility(t *testing.T) {
 	}
 }
 
+// A role's picture is everyone's to see, and in the view; a secret
+// role's only its player's.
+func TestRoleImageVisibility(t *testing.T) {
+	g := hunt()
+	g.Roles = []graph.Role{
+		{Slug: "scout", Image: &graph.Media{ID: 7, Kind: graph.MediaImage}},
+		{Slug: "mole", Secret: true, Image: &graph.Media{ID: 8, Kind: graph.MediaImage}},
+	}
+	tm, _, err := Start(g, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tm.Viewer = &Viewer{Slot: 1}
+	if !tm.CanSeeMedia(7, true) || tm.CanSeeMedia(8, true) {
+		t.Error("a player should see the public role's picture, not the secret one's")
+	}
+	if v := tm.View(); len(v.Roles) != 1 || v.Roles[0].Image == nil || v.Roles[0].Image.ID != 7 {
+		t.Errorf("roles view = %+v", v.Roles)
+	}
+	tm.Viewer = &Viewer{Slot: 2, Roles: []string{"mole"}}
+	if !tm.CanSeeMedia(8, true) {
+		t.Error("the secret role's player should see its picture")
+	}
+}
+
 // A puzzle accepts any answer and carries it down its output; a switch
 // routes on what it was. Cases are tried in order, "otherwise" catches
 // the rest, and a switch naming a puzzle reads that puzzle's answer
@@ -1390,5 +1415,37 @@ func TestAccusationAndReveal(t *testing.T) {
 		if len(rv) != 1 || !rv[0].Dealt || rv[0].Slot != 2 || rv[0].Caught == nil || *rv[0].Caught != caught || len(rv[0].Goals) != 1 || rv[0].Goals[0].Met == caught {
 			t.Errorf("named %d: reveal %+v", named, rv)
 		}
+	}
+}
+
+// A kit item is its role's player's to use and give, until it is handed
+// to someone: then it is theirs, whoever holds the role.
+func TestKitItemHandedOn(t *testing.T) {
+	g := hunt()
+	g.Items = []graph.Item{{Slug: "key"}, {Slug: "map"}}
+	g.Roles = []graph.Role{{Slug: "locksmith", Kit: []string{"key"}}}
+	tm := New(g, t0)
+	tm.Items = map[string]int{"key": 1, "map": 1}
+
+	tm.Viewer = &Viewer{Slot: 1, Roles: []string{"locksmith"}}
+	if !tm.CanUse("key") || !tm.Giveable("key") || !tm.CanUse("map") || tm.Giveable("map") {
+		t.Error("the locksmith uses and gives the key; the map is everyone's, and no one's to give")
+	}
+	tm.Viewer = &Viewer{Slot: 2}
+	if tm.CanUse("key") || tm.Giveable("key") || !tm.usesOthersKit("key|map") {
+		t.Error("another player neither uses nor gives the locksmith's key")
+	}
+
+	tm.Holders = map[string]int64{"key": 2}
+	if !tm.CanUse("key") || !tm.Giveable("key") {
+		t.Error("handed the key, player 2 uses and gives it")
+	}
+	tm.Viewer = &Viewer{Slot: 1, Roles: []string{"locksmith"}}
+	if tm.CanUse("key") || tm.Giveable("key") {
+		t.Error("the locksmith no longer has the key they gave away")
+	}
+	tm.Viewer = nil
+	if !tm.CanUse("key") {
+		t.Error("the team as a whole uses every item")
 	}
 }

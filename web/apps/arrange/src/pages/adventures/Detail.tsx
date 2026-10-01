@@ -270,7 +270,6 @@ function Detail({ a, shared, passes, reload }: { a: AdventureDetail; shared: boo
       {editing && (
         <EditDetailsDialog
           slug={a.slug}
-          accent={accent}
           firstPlace={firstPlace ? { lat: firstPlace.lat, lng: firstPlace.lng } : null}
           onClose={() => setEditing(false)}
           onCover={(url) => setCover(url || undefined)}

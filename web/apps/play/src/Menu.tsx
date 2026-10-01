@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { ApiError, play } from "@zonventure/api";
-import { Markdown, type Translate } from "@zonventure/play-ui";
+import { RoleCards, type Translate } from "@zonventure/play-ui";
 import type { I18n } from "@zonventure/i18n";
 
 const LANG_NAMES: Record<string, string> = { en: "English", sv: "Svenska" };
@@ -136,7 +136,7 @@ export function Menu(props: {
                 hint={t("Everyone on the team sees the change.")}
               />
               <TeamPicture team={state.team} t={t} onSaved={props.onRenamed} />
-              {(state.view?.roles?.length ?? 0) > 0 && <Roles roles={state.view?.roles ?? []} t={t} onChanged={props.onRenamed} />}
+              {(state.view?.roles?.length ?? 0) > 0 && <Roles roles={state.view?.roles ?? []} choosing={(state.view?.blocks ?? []).some((b) => b.kind === "roles" && b.choose && !b.locked)} t={t} onChanged={props.onRenamed} />}
 
               {langs.length > 1 && (
                 <label className="app-menu__field">
@@ -213,57 +213,32 @@ export function Menu(props: {
 }
 
 /**
- * The adventure's roles: who holds each, what the player's own are for,
- * and a button to take one or give it back. A role nobody took is dealt,
- * so taking one only says "this one is mine"; a teammate's chosen role
- * is theirs until they give it back, which the team sorts out aloud.
+ * The adventure's roles as portraits: who holds each, what the player's
+ * own are for; tapping one takes it or gives it back. A role nobody took
+ * is dealt, so taking one only says "this one is mine"; a teammate's
+ * chosen role is theirs until they give it back, which the team sorts
+ * out aloud.
  */
-function Roles(props: { roles: play.RoleView[]; t: Translate; onChanged: () => void }) {
+function Roles(props: { roles: play.RoleView[]; choosing: boolean; t: Translate; onChanged: () => void }) {
   const { roles, t } = props;
-  const [busy, setBusy] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const change = async (role: string, claim: boolean) => {
-    setBusy(role);
-    setError(null);
-    try {
-      await play.claimRole(role, claim);
-    } catch (err) {
-      setError(err instanceof ApiError && err.code === "role_taken"
-        ? t("A teammate has chosen that role. Ask them to give it back first.")
-        : t("Something went wrong. Try again."));
-    } finally {
-      setBusy(null);
-      props.onChanged();
-    }
-  };
+  const final = roles.some((r) => r.final);
   return (
     <div className="app-menu__field">
       <span className="app-menu__label">{t("Roles")}</span>
-      <span className="app-menu__hint">{t("Each role sees something the others don't. Roles nobody chooses are shared out.")}</span>
-      <ul className="app-roles">
-        {roles.map((r) => (
-          <li key={r.slug} className={"app-role" + (r.mine ? " is-mine" : "") + (r.secret ? " is-secret" : "")}>
-            <div className="app-role__head">
-              <span className="app-role__name">{r.name || r.slug}</span>
-              <span className="app-role__holder">
-                {r.secret ? t("You — secret: only you know") : r.mine ? t("You") : r.holder || t("Nobody yet")}
-                {!r.secret && !r.claimed && r.holder ? ` · ${t("shared out")}` : ""}
-              </span>
-            </div>
-            {r.mine && r.text && <Markdown className="app-role__text" text={r.text} />}
-            {r.secret ? null : r.mine && r.claimed && (
-              <button type="button" className="pv-btn" disabled={busy !== null} onClick={() => void change(r.slug, false)}>{t("Give back")}</button>
-            )}
-            {/* A role only shared out is anyone's to choose; a teammate's choice is theirs. */}
-            {!r.secret && !r.claimed && (
-              <button type="button" className="pv-btn" disabled={busy !== null} onClick={() => void change(r.slug, true)}>
-                {r.mine ? t("Keep it") : t("Take it")}
-              </button>
-            )}
-          </li>
-        ))}
-      </ul>
-      {error && <p className="app-menu__error" role="alert">{error}</p>}
+      <span className="app-menu__hint">{final ? t("Your team's roles are final.") : t("Each role sees something the others don't. Roles nobody chooses are shared out.")}</span>
+      <RoleCards
+        roles={roles}
+        t={t}
+        // On a step where the players choose, a role nobody chose is Free, as the step shows it.
+        dealt={!props.choosing}
+        onChoose={async (role, claim) => {
+          try {
+            await play.claimRole(role, claim);
+          } finally {
+            props.onChanged();
+          }
+        }}
+      />
     </div>
   );
 }
@@ -373,14 +348,23 @@ function TeamPicture({ team, t, onSaved }: { team: play.PlayState["team"]; t: Tr
     <div className="app-menu__field">
       <span className="app-menu__label">{t("Team picture")}</span>
       <div className="app-menu__row app-menu__picture">
-        <span className="app-team-pic" aria-hidden={!src}>
-          {src ? <img src={src} alt={t("Your team's picture")} /> : <span>{(team.name.trim()[0] ?? "?").toUpperCase()}</span>}
-        </span>
+        {team.locked ? (
+          <span className="app-team-pic" aria-hidden={!src}>
+            {src ? <img src={src} alt={t("Your team's picture")} /> : <span>{(team.name.trim()[0] ?? "?").toUpperCase()}</span>}
+          </span>
+        ) : (
+          <button
+            type="button"
+            className={"app-pic-drop" + (src ? " has-image" : "")}
+            disabled={busy}
+            aria-label={src ? t("Change") : t("Choose a picture")}
+            onClick={() => input.current?.click()}
+          >
+            {src ? <img src={src} alt="" /> : <span>{t("Tap to choose a picture")}</span>}
+          </button>
+        )}
         {!team.locked && (
           <>
-            <button type="button" className="pv-btn" disabled={busy} onClick={() => input.current?.click()}>
-              {src ? t("Change") : t("Choose a picture")}
-            </button>
             {src && (
               <button type="button" className="pv-btn" disabled={busy} onClick={() => void run(play.clearTeamAvatar)}>
                 {t("Remove")}

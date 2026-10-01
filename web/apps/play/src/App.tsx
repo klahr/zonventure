@@ -16,7 +16,9 @@ export function App() {
   const view = s?.view;
   // Only worth saying while there are roles to tell apart.
   // Never a secret role: the bar shows over a shoulder.
-  const myRoles = (view?.roles?.length ?? 0) > 1 ? (view?.roles ?? []).filter((r) => r.mine && !r.secret).map((r) => r.name || r.slug) : [];
+  // While the players choose their roles (a roles block), a role nobody chose is no one's yet.
+  const choosing = !view?.roles?.some((r) => r.final) && (view?.blocks ?? []).some((b) => b.kind === "roles" && b.choose && !b.locked);
+  const myRoles = (view?.roles?.length ?? 0) > 1 ? (view?.roles ?? []).filter((r) => r.mine && !r.secret && (r.claimed || !choosing)).map((r) => r.name || r.slug) : [];
   const running = s?.event.state === "running";
   // The team's language for a translated adventure also switches the
   // app's own words, where the app has them.
@@ -212,6 +214,21 @@ export function App() {
             teamName={s.team.name}
             storageKey={`team-${s.team.id}`}
             photo={(block, file) => game.photo(view.node ?? "", block, file)}
+            giveItem={play.giveItem}
+            receiveItem={async (code) => {
+              try {
+                return await play.receiveItem(code);
+              } finally {
+                game.refresh();
+              }
+            }}
+            claimRole={async (role, claim) => {
+              try {
+                await play.claimRole(role, claim);
+              } finally {
+                game.refresh();
+              }
+            }}
             {...(s.messages?.[0] ? { bulletin: s.messages[0] } : {})}
             {...(cheatPassword ? { cheat: cheatPassword } : {})}
           />

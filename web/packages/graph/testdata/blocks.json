@@ -38,6 +38,7 @@
     { "id": "shake", "kind": "shake", "threshold": 60, "text": "A coin falls out: 1742." },
     { "id": "vote", "kind": "vote", "text": "Which door?", "options": ["Red", "Blue"] },
     { "id": "bulletin", "kind": "bulletin" },
+    { "id": "roles", "kind": "roles", "text": "Take your parts.", "team": true, "choose": true, "lock": true },
     { "id": "draw", "kind": "draw", "text": "Draw your fortune.", "options": ["The tower", "The star", "The moon"] },
     { "id": "sabotage", "kind": "sabotage", "role": "saboteur", "text": "Cut the alarm wire.", "worth": 5, "seconds": 60, "journal": "lie" },
     { "id": "accuse", "kind": "accuse", "role": "saboteur", "text": "Who is the saboteur?", "worth": 20 }

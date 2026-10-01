@@ -957,13 +957,18 @@ func missingOutput(n graph.Node) (graph.Output, bool) {
 }
 
 // checkSlots catches item slots a team could never fill: none, too
-// many, one wanting no item, or an item no step ever hands out. Whether
+// many, one wanting no item, or an item neither a step nor a role's kit
+// ever hands out. Whether
 // each item is declared is checkReferences'.
 func checkSlots(r *reporter, g *graph.Graph, node string, a *graph.Answer) {
 	if len(a.Slots) == 0 || len(a.Slots) > graph.MaxSlots {
 		r.err("slots.count", node, "", "an item puzzle has 1 to %d slots", graph.MaxSlots)
 	}
+	// A role's kit is in the backpack from the start.
 	granted := map[string]bool{}
+	for item := range g.Kit() {
+		granted[item] = true
+	}
 	for _, n := range g.Nodes {
 		if n.Type == graph.Effect && n.EffectCfg != nil && n.EffectCfg.Kind == graph.GrantItem {
 			granted[n.EffectCfg.Item] = true
@@ -1268,6 +1273,10 @@ func checkBlocks(r *reporter, g *graph.Graph) {
 				if filled(b.Options) < 2 {
 					bad("block.options", "has fewer than two options")
 				}
+			case graph.BlockRoles:
+				if len(g.PublicRoles()) == 0 {
+					bad("block.roles.none", "has no roles to show: add one under the adventure's roles")
+				}
 			case graph.BlockSabotage, graph.BlockAccuse:
 				if ro, ok := g.Role(b.Role); !ok || !ro.Secret {
 					bad("block.role.secret", "belongs to no secret role; pick the saboteur's")
@@ -1315,6 +1324,11 @@ func isQuestion(b graph.Block) bool {
 }
 
 func checkMedia(r *reporter, g *graph.Graph) {
+	for _, ro := range g.Roles {
+		if m := ro.Image; m != nil && (m.ID <= 0 || m.Kind != graph.MediaImage) {
+			r.err("media.role", "", "", "role %q has a picture with no file", ro.Slug)
+		}
+	}
 	for _, je := range g.Journal {
 		for _, m := range je.Media {
 			if m.ID <= 0 || m.Kind != graph.MediaImage && m.Kind != graph.MediaAudio {

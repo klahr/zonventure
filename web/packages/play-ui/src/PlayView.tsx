@@ -85,6 +85,11 @@ export interface PlayViewProps {
   storageKey?: string;
   /** Sends the team's picture for a photo block; the player app's, absent elsewhere. */
   photo?: (block: string, file: File) => Promise<void>;
+  /** Takes or gives back a role for a roles block; the player app's, absent elsewhere. */
+  claimRole?: (role: string, claim: boolean) => Promise<void>;
+  /** Hands a kit item to a teammate, and takes one a teammate hands over; the player app's, absent elsewhere. */
+  giveItem?: (item: string) => Promise<play.ItemGift>;
+  receiveItem?: (code: string) => Promise<{ name?: string; item: string }>;
   /** The organisers' newest message, for a bulletin block. */
   bulletin?: { text: string; created_at: string };
   /**
@@ -227,7 +232,7 @@ export function PlayView(props: PlayViewProps) {
       {hintsOpen && <HintSheet {...step} onClose={() => setHintsOpen(false)} />}
       {bagOpen && (
         <Sheet title={t("Items")} t={t} onClose={() => setBagOpen(false)}>
-          <Bag view={view} t={t} />
+          <Bag view={view} t={t} give={props.giveItem} receive={props.receiveItem} />
         </Sheet>
       )}
       {view.timed_out && !upSeen && (
@@ -393,6 +398,9 @@ function blockContext(p: StepProps): BlockContext {
     live: (p.live ?? true) && !p.preview,
     photo: p.photo,
     bulletin: p.bulletin,
+    roles: p.view.roles,
+    claimRole: p.claimRole,
+    rolesChosen: p.view.roles_chosen,
   };
 }
 
@@ -814,15 +822,18 @@ function StoryStep(props: StepProps) {
 
 /**
  * Continue past a step's quiz questions: held, and counting, until the
- * team has picked every one it can see. A teaser is not asked yet.
+ * team has picked every one it can see. A teaser is not asked yet. Held
+ * too while the players choose their roles.
  */
 function ContinueButton({ view, t, disabled, label, onClick }: { view: play.View; t: Translate; disabled: boolean; label?: string | undefined; onClick: () => void }) {
   const asked = (view.blocks ?? []).filter((b) => (b.kind === "quiz" || b.kind === "tiebreak") && !b.locked);
   const answered = asked.filter((b) => "picked" in b && b.picked).length;
   const open = answered < asked.length;
+  // A step where the players choose their roles waits for all of them.
+  const choosing = view.roles_chosen === false && !view.roles?.some((r) => r.final) && (view.blocks ?? []).some((b) => b.kind === "roles" && b.choose && !b.locked);
   return (
-    <button type="button" className="pv-btn pv-btn--primary pv-btn--wide" disabled={disabled || open} onClick={onClick}>
-      {label ?? (open ? t("{{answered}} of {{total}} answered", { answered, total: asked.length }) : t("Continue"))}
+    <button type="button" className="pv-btn pv-btn--primary pv-btn--wide" disabled={disabled || open || choosing} onClick={onClick}>
+      {label ?? (open ? t("{{answered}} of {{total}} answered", { answered, total: asked.length }) : choosing ? t("Waiting for everyone to choose") : t("Continue"))}
     </button>
   );
 }
@@ -1015,9 +1026,49 @@ function EndStep(props: StepProps) {
   );
 }
 
-/** What the team carries and has read. Nothing when both are empty. */
-function Bag({ view, t }: { view: play.View; t: Translate }) {
+/**
+ * What the team carries. With give, the player's own kit items can be
+ * handed on: tapping Give shows a code for a teammate to scan from their
+ * backpack, with receive. Nothing when the backpack is empty.
+ */
+function Bag({ view, t, give, receive }: { view: play.View; t: Translate; give?: ((item: string) => Promise<play.ItemGift>) | undefined; receive?: ((code: string) => Promise<{ name?: string; item: string }>) | undefined }) {
   const items = view.items ?? [];
+  const [gift, setGift] = useState<{ item: play.ItemView; gift: play.ItemGift } | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!gift) return;
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [gift]);
+  // Taken: the item is no longer this player's to give.
+  const still = gift && items.find((i) => i.slug === gift.item.slug);
+  useEffect(() => {
+    if (gift && !still?.give) {
+      setGift(null);
+      setNote(still?.holder ? t("{{name}} has the {{item}} now.", { name: still.holder, item: gift.item.name || gift.item.slug }) : null);
+    }
+  }, [gift, still, t]);
+  const refused = (err: unknown) => {
+    const code = (err as { code?: string }).code;
+    return code === "gift_expired" ? t("That code has run out. Ask for a new one.")
+      : code === "gift_own" ? t("That is your own code. A teammate scans it.")
+      : code === "gift_gone" ? t("That item is no longer theirs to give.")
+      : code === "gift_unknown" ? t("That is not a code for an item.")
+      : t("Something went wrong. Try again.");
+  };
+
+  if (gift) {
+    const left = Math.max(0, Math.round((Date.parse(gift.gift.expires_at) - now) / 1000));
+    return (
+      <section className="pv-gift">
+        <h3>{t("Give the {{item}}", { item: gift.item.name || gift.item.slug })}</h3>
+        <img className="pv-gift__qr" src={gift.gift.qr} alt={t("A code for a teammate to scan")} />
+        <p>{left > 0 ? t("A teammate scans this from their backpack. It works for {{time}}.", { time: formatSeconds(left) }) : t("The code has run out.")}</p>
+        <button type="button" className="pv-btn" onClick={() => setGift(null)}>{t("Done")}</button>
+      </section>
+    );
+  }
   return (
     <>
       {items.length > 0 && (
@@ -1025,16 +1076,43 @@ function Bag({ view, t }: { view: play.View; t: Translate }) {
           <h3>{t("Items ({{n}})", { n: items.length })}</h3>
           <ul>
             {items.map((it) => (
-              <li key={it.slug}>
-                {it.icon && <span aria-hidden>{it.icon} </span>}
-                {it.name || it.slug}
-                {it.qty > 1 && ` ×${it.qty}`}
-                {it.role && <span className="pv-bag__role"> · {t("belongs to the {{role}}", { role: it.role })}</span>}
+              <li key={it.slug} className="pv-bag__item">
+                <span>
+                  {it.icon && <span aria-hidden>{it.icon} </span>}
+                  {it.name || it.slug}
+                  {it.qty > 1 && ` ×${it.qty}`}
+                  {it.holder
+                    ? <span className="pv-bag__role"> · {it.not_mine ? t("with {{name}}", { name: it.holder }) : t("yours to use")}</span>
+                    : it.role && <span className="pv-bag__role"> · {t("belongs to the {{role}}", { role: it.role })}</span>}
+                </span>
+                {give && it.give && (
+                  <button
+                    type="button"
+                    className="pv-btn pv-bag__give"
+                    onClick={() => {
+                      setNote(null);
+                      give(it.slug).then((g) => setGift({ item: it, gift: g }), (err) => setNote(refused(err)));
+                    }}
+                  >
+                    {t("Give")}
+                  </button>
+                )}
               </li>
             ))}
           </ul>
         </section>
       )}
+      {receive && items.some((it) => it.role || it.holder) && (
+        <QrButton
+          t={t}
+          label={t("Scan to receive an item")}
+          onScan={(code) => {
+            setNote(null);
+            receive(code).then((r) => setNote(t("You have the {{item}} now.", { item: r.name || r.item })), (err) => setNote(refused(err)));
+          }}
+        />
+      )}
+      {note && <p className="pv-bag__note" role="status">{note}</p>}
     </>
   );
 }

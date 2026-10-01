@@ -1,9 +1,9 @@
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { Copy, Eye } from "lucide-react";
 import type { Whoami } from "@zonventure/api";
 import { useT } from "../../i18n.tsx";
 import { href } from "../../router.ts";
-import { Button, Callout, Card, Field, fmtDateTime, ICON, relTime, Row, Stat, Stats, toDate, useToast } from "../../ui/index.ts";
+import { Button, Callout, Card, Field, fmtDateTime, ICON, ImageDrop, relTime, Row, Stat, Stats, toDate, useToast } from "../../ui/index.ts";
 import * as api from "./api.ts";
 import type { ConnectStatus, EventInfo, Team } from "./api.ts";
 import { copyText, fmtElapsedShort, fmtPoints, members, recapURL, teamStuck } from "./util.ts";
@@ -197,7 +197,6 @@ export function StoreCard({ event, onSaved }: { event: EventInfo; onSaved: () =>
   const [blurb, setBlurb] = useState(event.public_blurb || "");
   const [busy, setBusy] = useState(false);
   const [cover, setCover] = useState<{ has: boolean; bust: number }>({ has: !!event.has_cover_image, bust: 0 });
-  const file = useRef<HTMLInputElement>(null);
 
   const save = async () => {
     const major = price.trim();
@@ -240,14 +239,17 @@ export function StoreCard({ event, onSaved }: { event: EventInfo; onSaved: () =>
       subtitle={saved ? t.t("{{price}} {{cur}} per ticket", { price: saved, cur: (event.ticket_currency || "eur").toUpperCase() }) : t.t("No ticket price set yet — players can't buy until you save one.")}
     >
       <Row>
-        <div className="ev-cover" style={cover.has ? { backgroundImage: `url(/store-cover/event/${event.id}${cover.bust ? "?v=" + cover.bust : ""})` } : undefined} role="img" aria-label={t.t("Cover image (16:9 looks best)")} />
         <div className="ev-stack">
           <span className="ev-muted">{t.t("Cover image (16:9 looks best)")}</span>
-          <Row gap="sm">
-            <Button size="sm" onClick={() => file.current?.click()}>{cover.has ? t.t("Replace cover") : t.t("Upload cover")}</Button>
-            {cover.has && <Button size="sm" variant="ghost" onClick={() => void remove()}>{t.t("Remove")}</Button>}
-            <input ref={file} type="file" accept="image/*" hidden aria-label={t.t("Upload cover")} onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) void upload(f); }} />
-          </Row>
+          <ImageDrop
+            shape="cover"
+            src={cover.has ? `/store-cover/event/${event.id}${cover.bust ? "?v=" + cover.bust : ""}` : undefined}
+            label={t.t("Upload cover")}
+            title={t.t("Click to upload a cover")}
+            accept="image/*"
+            onFile={(f) => void upload(f)}
+            onRemove={() => void remove()}
+          />
         </div>
       </Row>
       <Row>

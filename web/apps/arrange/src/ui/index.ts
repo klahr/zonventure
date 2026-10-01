@@ -11,3 +11,4 @@ export * from "./live.ts";
 export * from "./presence.tsx";
 export * from "./emailPreview.tsx";
 export * from "./personAvatar.tsx";
+export * from "./imageDrop.tsx";

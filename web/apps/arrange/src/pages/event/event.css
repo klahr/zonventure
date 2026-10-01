@@ -44,7 +44,6 @@
 .dz .ev-check { display: inline-flex; align-items: center; gap: var(--dz-space-2); font-size: var(--dz-text-md); cursor: pointer; }
 .dz .ev-check input { width: auto; }
 
-.dz .ev-cover { width: 160px; aspect-ratio: 16 / 9; flex: none; border-radius: var(--dz-r-2); border: 1px solid var(--dz-border); background: var(--dz-surface-2) center / cover no-repeat; }
 
 .dz .ev-results { display: flex; flex-direction: column; gap: var(--dz-space-2); margin: 0; padding: 0; list-style: none; }
 .dz .ev-results li { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--dz-space-2); }

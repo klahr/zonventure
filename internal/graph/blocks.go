@@ -111,6 +111,12 @@ const (
 	// names a teammate on their own phone. When the team finishes, if
 	// most name the holder of Role, the team scores Worth.
 	BlockAccuse BlockKind = "accuse"
+	// BlockRoles shows the player's own roles, or with Team every
+	// player's, under Text. With Choose its player can take a role or give
+	// one back there, as in the phone's menu. With Lock the roles are
+	// final once the team leaves the step: those only dealt are fixed to
+	// their players, and no one takes or gives back any more.
+	BlockRoles BlockKind = "roles"
 )
 
 // QuizChoices are a quiz question's options, as the team picks them.
@@ -122,7 +128,7 @@ var BlockKinds = []BlockKind{
 	BlockHotspots, BlockDivider, BlockRadar, BlockOverlay, BlockLevel, BlockNoise, BlockTorch, BlockCountdown,
 	BlockStatus, BlockStandings, BlockTitle, BlockPoints, BlockQuiz, BlockTiebreak, BlockSplit, BlockBearing,
 	BlockCall, BlockSuspects, BlockPhoto, BlockSpotDiff, BlockFlasher, BlockLetters, BlockShake, BlockVote,
-	BlockBulletin, BlockDraw, BlockSabotage, BlockAccuse,
+	BlockBulletin, BlockDraw, BlockSabotage, BlockAccuse, BlockRoles,
 }
 
 // FixedKinds are the kinds a step is given by default, and the only
@@ -239,6 +245,12 @@ type Block struct {
 	// asks about; Journal the note a sabotage plants.
 	Role    string `json:"role,omitempty"`
 	Journal string `json:"journal,omitempty"`
+
+	// Roles: every player's roles rather than the player's own, a choice
+	// of them, and an end to choosing (see BlockRoles).
+	Team   bool `json:"team,omitempty"`
+	Choose bool `json:"choose,omitempty"`
+	Lock   bool `json:"lock,omitempty"`
 
 	// Show hides the block until its condition holds — near a zone, a
 	// while after arriving, carrying something. Any kind may have one.

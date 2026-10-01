@@ -41,6 +41,11 @@ export interface BlockContext {
   photo?: ((block: string, file: File) => Promise<void>) | undefined;
   /** The organisers' newest message to the team, for a bulletin block. */
   bulletin?: { text: string; created_at: string } | undefined;
+  /** The team's roles as this phone sees them, and how its player takes or gives one back: a roles block's. */
+  roles?: play.RoleView[] | undefined;
+  claimRole?: ((role: string, claim: boolean) => Promise<void>) | undefined;
+  /** Every player has chosen a role, or every role is chosen; absent where no one chooses. */
+  rolesChosen?: boolean | undefined;
 }
 
 /** How a device is held: its compass heading, and its tilt as DeviceOrientationEvent reports it. */

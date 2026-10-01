@@ -130,3 +130,23 @@ export const AccuseEditor: Editor<"accuse"> = ({ block, set, t, graph }) => (
     <p className="field__hint">{t.t("Each player names a teammate on their own phone. If most name the secret role's player, the team scores when it finishes, and the end screen tells all. Shown only to a team that was dealt the role.")}</p>
   </>
 );
+
+export const RolesEditor: Editor<"roles"> = ({ block, set, t, graph }) => (
+  <>
+    <MarkdownArea className="field__input" rows={2} value={block.text ?? ""} placeholder={t.t("Optional words above the roles, such as “Take your parts before you set off.”")} aria-label={t.t("Text")} onChange={(e) => set(withField(block, "text", e.target.value || undefined))} />
+    <label className="check">
+      <input type="checkbox" checked={!!block.team} onChange={(e) => set(withField(block, "team", e.target.checked || undefined))} />
+      <span>{t.t("Show every player's roles, not only the player's own")}</span>
+    </label>
+    <label className="check">
+      <input type="checkbox" checked={!!block.choose} onChange={(e) => set(withField(block, "choose", e.target.checked || undefined))} />
+      <span>{t.t("Let players choose their roles here")}</span>
+    </label>
+    <label className="check">
+      <input type="checkbox" checked={!!block.lock} onChange={(e) => set(withField(block, "lock", e.target.checked || undefined))} />
+      <span>{t.t("Roles are final once the team moves on")}</span>
+    </label>
+    {!(graph.roles ?? []).some((r) => !r.secret) && <div className="alert alert--danger">{t.t("The adventure has no roles yet. Add them in Adventure settings → Roles.")}</div>}
+    <p className="field__hint">{t.t("A secret role shows only on its own player's phone, never among the team's. Once roles are final, roles nobody chose stay with whoever holds them, and a player who joins later gets none.")}</p>
+  </>
+);

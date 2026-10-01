@@ -11,6 +11,48 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Added — a picture for each role
+
+- **A role can have a picture** (`image` on the role), set under
+  Adventure settings → Roles and shown beside the role on every phone.
+  A secret role's picture reaches only its player.
+
+### Added — handing a kit item to a teammate
+
+- **Give** in the backpack, on a role's kit item the player may use:
+  the phone shows a QR code, and a teammate taps **Scan to receive an
+  item** in their own backpack. The item is then theirs to use and to
+  give on, whoever holds the role (`team_item_holders`). A code works
+  once, for five minutes, on the giver's own team only, and never on the
+  giver's own phone; a code made again for the item replaces the last.
+  The giver's phone closes the code and says who has the item now.
+  `POST /api/player/items/give` and `/api/player/items/receive`.
+
+### Added — a Roles block, and roles made final
+
+- **Roles block** (`roles`): the roles as portraits, two or three to a
+  row: the player's own, or with *team* everyone's. With *choose* the
+  players pick theirs there: tap a portrait to choose it, tap it again to
+  let it go; a teammate's pick is greyed out. Until then a role is Free,
+  never shown as dealt, and the step's Continue waits until every player
+  has chosen a role, or every role is chosen (`roles_chosen` on the
+  view). The phone's menu lists the roles the same way. A secret role
+  never shows among the team's.
+- **Roles made final** (*lock*): as the team leaves the step, every role
+  stays with whoever holds it then, chosen or dealt. After that no one
+  takes or gives back a role (`409 roles_final`), and a player who joins
+  later holds none, so roles no longer move between players mid-game.
+  The menu and the block both say so.
+
+### Changed — pictures are set by clicking the picture's box
+
+- Every place that sets one picture — logos, covers, team and account
+  pictures, and the designer's single pictures (tiles, lock symbols,
+  hub branches, hotspots, chat avatars, suspects, roles) — now uses the
+  dashed box from the organisation's branding settings: click the box
+  to upload, Remove under it. The player's team picture works the same
+  way on the phone.
+
 ### Added — conditions on where each player is, for teams that split up
 
 - **Two new conditions** for gates, hub branches and block show rules:

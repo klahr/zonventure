@@ -17,7 +17,6 @@
 .dz .ad-setting__text { display: flex; flex-direction: column; gap: var(--dz-space-1); flex: 1; min-width: 12rem; }
 .dz .ad-toggle { display: flex; align-items: flex-start; gap: var(--dz-space-3); cursor: pointer; }
 .dz .ad-toggle input { width: 18px; height: 18px; margin-top: 2px; flex: none; accent-color: var(--dz-accent); cursor: pointer; }
-.dz .ad-logo-drop { display: grid; place-items: center; width: 88px; height: 88px; padding: 6px; border: 1px dashed var(--dz-border-strong); border-radius: var(--dz-r-3); background: var(--dz-surface-2); color: var(--dz-muted); font-size: var(--dz-text-xs); text-align: center; }
 
 .dz .ad-chips { display: flex; flex-wrap: wrap; align-items: center; gap: var(--dz-space-2); }
 .dz .ad-shares { margin-top: var(--dz-space-2); }

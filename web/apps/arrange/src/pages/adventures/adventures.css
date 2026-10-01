@@ -85,7 +85,6 @@
 /* Dialogs. */
 .dz .adv-choices { display: flex; flex-direction: column; gap: var(--dz-space-2); }
 .dz .adv-choice { justify-content: flex-start; text-align: left; }
-.dz .adv-cover-row { display: flex; align-items: center; gap: var(--dz-space-3); }
 .dz .adv-cover-row__text { display: flex; flex-direction: column; gap: var(--dz-space-1); }
 .dz .adv-form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: var(--dz-space-3); }
 .dz .adv-more { display: flex; flex-direction: column; gap: var(--dz-space-3); }

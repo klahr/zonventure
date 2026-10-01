@@ -1,7 +1,7 @@
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { Copy, ExternalLink, KeyRound, Plus, Trash2 } from "lucide-react";
 import { useT } from "../../i18n.tsx";
-import { Button, Dialog, Field, ICON, Row, useDialogs, useToast } from "../../ui/index.ts";
+import { Button, Dialog, Field, ICON, ImageDrop, Row, useDialogs, useToast } from "../../ui/index.ts";
 import * as api from "./api.ts";
 import type { EventInfo, Member, Team } from "./api.ts";
 import { Ago } from "./Activity.tsx";
@@ -29,7 +29,6 @@ export function TeamEditDialog({ event, team, color, reload, onClose }: { event:
   const [newName, setNewName] = useState("");
   const [busy, setBusy] = useState(false);
   const [bust, setBust] = useState(0);
-  const file = useRef<HTMLInputElement>(null);
   const shown = { ...team, ...(team.avatar_url && bust ? { avatar_url: `${team.avatar_url}${team.avatar_url.includes("?") ? "&" : "?"}v=${bust}` } : {}) };
 
   const save = async () => {
@@ -111,15 +110,19 @@ export function TeamEditDialog({ event, team, color, reload, onClose }: { event:
         <input type="email" value={email} placeholder="captain@example.org" autoComplete="off" disabled={!canEmail} onChange={(e) => setEmail(e.target.value)} />
       </Field>
       <div className="ev-td__head">
-        <TeamAvatar team={shown} color={color} size={56} />
+        {!canAvatar && <TeamAvatar team={shown} color={color} size={56} />}
         <div className="ev-stack">
           <strong>{t.t("Team photo")}</strong>
           {canAvatar ? (
-            <Row gap="sm">
-              <Button size="sm" icon={<Plus size={ICON.sm} aria-hidden />} onClick={() => file.current?.click()}>{t.t("Upload photo")}</Button>
-              {team.avatar_url && <Button size="sm" variant="danger" icon={<Trash2 size={ICON.sm} aria-hidden />} onClick={() => void removeAvatar()}>{t.t("Remove photo")}</Button>}
-              <input ref={file} type="file" accept="image/*" hidden aria-label={t.t("Upload photo")} onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) void upload(f); }} />
-            </Row>
+            <ImageDrop
+              shape="photo"
+              src={shown.avatar_url || undefined}
+              label={t.t("Upload photo")}
+              accept="image/*"
+              onFile={(f) => void upload(f)}
+              onRemove={() => void removeAvatar()}
+              removeLabel={t.t("Remove photo")}
+            />
           ) : (
             <span className="ev-muted ev-small">{t.t("Read-only.")}</span>
           )}

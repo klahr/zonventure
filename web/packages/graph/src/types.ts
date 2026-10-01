@@ -196,7 +196,9 @@ export type BlockBody =
   /** A button only the secret role's player sees and presses once: costs worth points, locks the answer for seconds, plants journal. */
   | { kind: "sabotage"; role: string; text?: string; worth?: number; seconds?: number; journal?: string }
   /** Each player names a teammate; if most name the secret role's holder, the team scores worth when it finishes. */
-  | { kind: "accuse"; role: string; text: string; worth?: number };
+  | { kind: "accuse"; role: string; text: string; worth?: number }
+  /** The roles: the player's own, or with team every player's; choose lets them take one here, lock makes them final once the team moves on. */
+  | { kind: "roles"; text?: string; team?: boolean; choose?: boolean; lock?: boolean };
 
 export interface SuspectCard {
   name: string;
@@ -467,6 +469,8 @@ export interface Role {
   name?: string;
   /** What the role is for, shown to the player who takes it. */
   text?: string;
+  /** The role's picture, shown wherever the role is listed. */
+  image?: Media;
   /** Items the role brings: the team starts with one each, and only the role's player can use them. */
   kit?: string[];
   /** A saboteur's: dealt at random to one player of a team of three or more, never claimed, revealed at the end. */

@@ -38,13 +38,32 @@ func decorateRoles(ctx context.Context, db *sql.DB, teamID, slotID int64, v *pla
 	if err != nil {
 		return err
 	}
+	if len(slugs) > 0 {
+		players, err := play.Players(ctx, db, teamID, slotID)
+		if err != nil {
+			return err
+		}
+		chose := map[int64]bool{}
+		all := true
+		for _, s := range slugs {
+			h := holdings[s]
+			chose[h.Slot] = chose[h.Slot] || h.Claimed
+			all = all && h.Claimed
+		}
+		everyone := len(players) > 0
+		for _, p := range players {
+			everyone = everyone && chose[p]
+		}
+		ok := all || everyone
+		v.RolesChosen = &ok
+	}
 	for i := range v.Roles {
 		r := &v.Roles[i]
 		if r.Secret {
 			continue
 		}
 		h := holdings[r.Slug]
-		r.Mine, r.Holder, r.Claimed = h.Slot == slotID, names[h.Slot], h.Claimed
+		r.Mine, r.Holder, r.Claimed, r.Final = h.Slot == slotID, names[h.Slot], h.Claimed, h.Final
 	}
 	// The end unmasks them.
 	for i := range v.Reveal {
@@ -107,6 +126,15 @@ func (h *Handlers) PostRole(w http.ResponseWriter, r *http.Request) {
 	if !known {
 		// A secret role is dealt, never chosen — nor given back.
 		httpx.Error(w, http.StatusNotFound, "no such role")
+		return
+	}
+	var locked bool
+	if err := h.DB.QueryRowContext(ctx, `SELECT roles_locked FROM teams WHERE id = $1`, slot.TeamID).Scan(&locked); err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "loading team failed", err)
+		return
+	}
+	if locked {
+		httpx.JSON(w, http.StatusConflict, playRefusal{Error: "the team's roles are final", Code: "roles_final"})
 		return
 	}
 

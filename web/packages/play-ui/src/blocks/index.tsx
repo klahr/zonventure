@@ -33,6 +33,7 @@ import { TorchBlock } from "./Torch.tsx";
 import { VideoBlock } from "./Video.tsx";
 import { VoteBlock } from "./Vote.tsx";
 import { AccuseBlock, SabotageBlock } from "./Saboteur.tsx";
+import { RolesBlock } from "./Roles.tsx";
 
 type Kind = play.PlayBlock["kind"];
 
@@ -76,6 +77,7 @@ const RENDER: { [K in Exclude<Kind, "image" | "audio">]: Renderer<K> } = {
   vote: VoteBlock,
   sabotage: SabotageBlock,
   accuse: AccuseBlock,
+  roles: RolesBlock,
   bulletin: BulletinBlock,
   draw: DrawBlock,
 };

@@ -70,6 +70,9 @@ func remapGraphMedia(g *graph.Graph, ids map[int64]int64) {
 	for i := range g.Journal {
 		list(g.Journal[i].Media)
 	}
+	for i := range g.Roles {
+		one(g.Roles[i].Image)
+	}
 }
 
 // copyGraphMedia copies the source adventure's media rows named by ids

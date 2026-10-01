@@ -175,6 +175,9 @@ type Team struct {
 	Secrets    map[string]int64 `json:"-"`
 	Accused    map[string]int64 `json:"-"`
 	NewJournal []string         `json:"-"`
+	// Holders are the kit items handed to a player, by slot: theirs to
+	// use, not the role's. Not stored with the team.
+	Holders map[string]int64 `json:"-"`
 	// WalkedMetres is how far the team has walked on its current node:
 	// read from its phones' positions by the live engine, added up from
 	// the moves the simulator makes.
@@ -703,15 +706,39 @@ func (t *Team) mayAnswer(n graph.Node) (Result, error) {
 }
 
 // usesOthersKit reports whether an item puzzle's guess places an item
-// from the kit of a role the player asking does not hold: theirs to use,
-// not this player's. Not a wrong guess — the right items may be in it.
+// another player is to use (CanUse): theirs, not this player's. Not a
+// wrong guess — the right items may be in it.
 func (t *Team) usesOthersKit(guess string) bool {
 	for _, slug := range strings.Split(guess, "|") {
-		if role, ok := t.G.ItemRole(strings.TrimSpace(slug)); ok && !t.HasRole(role) {
+		if !t.CanUse(strings.TrimSpace(slug)) {
 			return true
 		}
 	}
 	return false
+}
+
+// CanUse reports whether the player asking may use the item: one handed
+// to a player is theirs alone, one from a role's kit its holder's, any
+// other everyone's. The team as a whole may use them all.
+func (t *Team) CanUse(item string) bool {
+	if slot, ok := t.Holders[item]; ok {
+		return t.Viewer == nil || t.Viewer.Slot == slot
+	}
+	if role, ok := t.G.ItemRole(item); ok {
+		return t.HasRole(role)
+	}
+	return true
+}
+
+// Giveable reports whether the player asking may hand the item to a
+// teammate: a kit item, carried, that is theirs to use.
+func (t *Team) Giveable(item string) bool {
+	if t.Viewer == nil || t.Items[item] <= 0 {
+		return false
+	}
+	_, kit := t.G.ItemRole(item)
+	_, given := t.Holders[item]
+	return (kit || given) && t.CanUse(item)
 }
 
 // outputZoneOK applies an output's zone constraint, including the

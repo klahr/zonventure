@@ -3,6 +3,8 @@ package play
 import (
 	"context"
 	"slices"
+
+	"github.com/klahr/zonventure/internal/graph"
 )
 
 // Players are the ids of a team's players who count as playing: those
@@ -31,10 +33,12 @@ func Players(ctx context.Context, q Querier, teamID, me int64) ([]int64, error) 
 	return out, rows.Err()
 }
 
-// Holding is who holds one role, and whether they claimed it.
+// Holding is who holds one role, whether they claimed it, and whether
+// it is theirs for good: the team's roles are locked (LockRoles).
 type Holding struct {
 	Slot    int64
 	Claimed bool
+	Final   bool
 }
 
 // DealRoles says who holds each of roles on a team, as seen by me (see
@@ -57,7 +61,14 @@ func DealRoles(ctx context.Context, q Querier, teamID, me int64, roles []string)
 // dealRoles is DealRoles among players already found.
 func dealRoles(ctx context.Context, q Querier, teamID int64, players []int64, roles []string) (map[string]Holding, error) {
 	out := map[string]Holding{}
-	if len(roles) == 0 || len(players) == 0 {
+	if len(roles) == 0 {
+		return out, nil
+	}
+	var locked bool
+	if err := q.QueryRowContext(ctx, `SELECT roles_locked FROM teams WHERE id = $1`, teamID).Scan(&locked); err != nil {
+		return nil, err
+	}
+	if len(players) == 0 && !locked {
 		return out, nil
 	}
 	rows, err := q.QueryContext(ctx, `SELECT role, slot_id FROM team_roles WHERE team_id = $1`, teamID)
@@ -76,6 +87,16 @@ func dealRoles(ctx context.Context, q Querier, teamID int64, players []int64, ro
 	}
 	if err := closeRows(rows); err != nil {
 		return nil, err
+	}
+	if locked {
+		// Final: who held each as the team locked them, playing or not.
+		// A player who joined since holds none.
+		for _, r := range roles {
+			if slot, ok := claims[r]; ok {
+				out[r] = Holding{Slot: slot, Claimed: true, Final: true}
+			}
+		}
+		return out, nil
 	}
 	held := make([]int, len(players))
 	for _, r := range roles {
@@ -109,4 +130,49 @@ func RolesOf(holdings map[string]Holding, roles []string, slot int64) []string {
 		}
 	}
 	return out
+}
+
+// LockRoles makes the team's roles final: each held as dealt now is
+// stored as its player's, and no one takes or gives back a role after. A
+// team whose roles are locked already is left as it is.
+func LockRoles(ctx context.Context, q Querier, teamID int64, players []int64, roles []string) error {
+	var locked bool
+	if err := q.QueryRowContext(ctx, `SELECT roles_locked FROM teams WHERE id = $1`, teamID).Scan(&locked); err != nil || locked {
+		return err
+	}
+	holdings, err := dealRoles(ctx, q, teamID, players, roles)
+	if err != nil {
+		return err
+	}
+	for _, r := range roles {
+		h, ok := holdings[r]
+		if !ok {
+			continue
+		}
+		if _, err := q.ExecContext(ctx, `
+			INSERT INTO team_roles(team_id, role, slot_id) VALUES ($1, $2, $3)
+			ON CONFLICT (team_id, role) DO UPDATE SET slot_id = EXCLUDED.slot_id`, teamID, r, h.Slot); err != nil {
+			return err
+		}
+	}
+	_, err = q.ExecContext(ctx, `UPDATE teams SET roles_locked = TRUE WHERE id = $1`, teamID)
+	return err
+}
+
+// lockRolesLeaving locks the team's roles as it leaves node, when a roles
+// block there asks for it (graph.BlockRoles, Lock), among the players
+// playing then.
+func lockRolesLeaving(ctx context.Context, q Querier, s *teamState, node string) error {
+	n, ok := s.G.Node(node)
+	if !ok || !slices.ContainsFunc(n.Blocks(), func(b graph.Block) bool { return b.Kind == graph.BlockRoles && b.Lock && !b.Disabled }) {
+		return nil
+	}
+	players := s.Players
+	if players == nil {
+		var err error
+		if players, err = Players(ctx, q, s.teamID, 0); err != nil {
+			return err
+		}
+	}
+	return LockRoles(ctx, q, s.teamID, players, s.G.PublicRoles())
 }

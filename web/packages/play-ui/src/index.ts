@@ -5,6 +5,7 @@ export { parseMarkdown, parseInline, safeHref, type Block, type Inline } from ".
 export { english, feedbackForRefusal, feedbackForResult, type Feedback, type Translate } from "./feedback.ts";
 export { formatSeconds, secondsUntil, useEngineClock } from "./clock.ts";
 export { Blocks, type BlocksProps } from "./blocks/index.tsx";
+export { RoleCards } from "./blocks/Roles.tsx";
 export { FitMap } from "./blocks/Map.tsx";
 export { CompassFace } from "./blocks/Compass.tsx";
 export type { BlockContext, Motion } from "./blocks/context.ts";

@@ -278,3 +278,26 @@
 .pv-sabotage { display: flex; flex-direction: column; gap: 0.5rem; padding: 0.75rem; border: 1px dashed var(--muted); border-radius: var(--radius, 0.5rem); }
 .pv-sabotage__tag { margin: 0; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
 .pv-sabotage__go { align-self: flex-start; }
+
+/* --- Roles ---------------------------------------------------------- */
+/* Portraits, two or three to a row: never four, never one. */
+.pv-roles-block { display: flex; flex-direction: column; gap: var(--sp-2); }
+.pv-roles { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(max(6.5rem, 30%), 1fr)); gap: var(--sp-2); }
+.pv-roles > li { display: flex; }
+.pv-roles__card { flex: 1; display: flex; flex-direction: column; align-items: center; gap: var(--sp-1); margin: 0; padding: var(--sp-2); border: 2px solid var(--border-soft); border-radius: var(--radius-lg); background: var(--surface); color: inherit; font: inherit; text-align: center; }
+button.pv-roles__card { cursor: pointer; transition: border-color 0.15s, transform 0.1s; }
+button.pv-roles__card:hover:not(:disabled), button.pv-roles__card:focus-visible { border-color: var(--accent); }
+button.pv-roles__card:active:not(:disabled) { transform: scale(0.97); }
+button.pv-roles__card:disabled { cursor: default; }
+.pv-roles__card.is-mine { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--surface)); }
+.pv-roles__card.is-chosen { background: color-mix(in srgb, var(--accent) 16%, var(--surface)); }
+.pv-roles__card.is-taken { opacity: 0.55; }
+.pv-roles__card.is-secret { border-style: dashed; }
+.pv-roles__portrait { position: relative; display: grid; place-items: center; width: 100%; aspect-ratio: 3 / 4; border-radius: var(--radius); overflow: hidden; background: color-mix(in srgb, var(--accent) 14%, var(--surface)); color: var(--accent); font-size: 2rem; font-weight: 800; }
+.pv-roles__portrait img { width: 100%; height: 100%; object-fit: cover; }
+.pv-roles__check { position: absolute; top: var(--sp-1); right: var(--sp-1); display: grid; place-items: center; width: 1.75rem; height: 1.75rem; border-radius: 50%; background: var(--accent); color: var(--on-accent, #fff); font-size: 1rem; font-weight: 800; }
+.pv-roles__name { font-weight: 700; color: var(--ink); line-height: 1.2; }
+.pv-roles__holder { font-size: 0.75rem; color: var(--muted); line-height: 1.2; }
+.pv-roles__about { display: flex; flex-direction: column; gap: var(--sp-2); font-size: 0.875rem; }
+.pv-roles__text p { margin: 0; }
+.pv-roles__error { color: var(--danger, #b42318); }
