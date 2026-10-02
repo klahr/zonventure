@@ -432,7 +432,7 @@ export function Simulator({ slug, graph, envelope, selected, mode, onMode, resta
 
         <SpoofMap zones={graph.zones ?? []} position={pos ?? null} focus={focus} onPick={moveTo} disabled={!team || busy || follow} />
 
-        {view?.blocks?.some((b) => !b.locked && (b.kind === "compass" || b.kind === "level")) && <DevicePanel motion={motion} onChange={setMotion} />}
+        {view?.blocks?.some((b) => !b.locked && (b.kind === "compass" || b.kind === "level" || b.kind === "bearing")) && <DevicePanel motion={motion} onChange={setMotion} />}
 
         {current?.puzzle?.outputs?.length ? (
           <div className="sim__pass">
