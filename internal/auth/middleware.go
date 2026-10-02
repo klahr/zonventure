@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"net/http"
 	"slices"
+	"strings"
 
 	"github.com/klahr/zonventure/internal/httpx"
 )
@@ -66,6 +67,31 @@ func RequireAnyRole(roles ...string) func(http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// RequireNonDefaultPassword blocks a logged-in user who is still on the
+// seeded default password (password_is_default) from doing anything
+// except changing that password. Without it, an operator who never
+// completes the "log in as admin/admin and change the password" step
+// ships a fully-functional, takeover-trivial admin: the UI banner is a
+// nudge, this is the enforcement. The sole exception is the password
+// change itself (POST .../me/password); /api/auth/whoami stays reachable
+// outside this subtree so the console can detect the state and render
+// the forced-change screen. Clearing the flag (any real password set)
+// lifts the block immediately.
+func RequireNonDefaultPassword(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		u, ok := FromContext(r.Context())
+		if ok && u.PasswordIsDefault &&
+			!(r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/me/password")) {
+			httpx.JSON(w, http.StatusForbidden, map[string]string{
+				"error": "change your default password before continuing",
+				"code":  "password_change_required",
+			})
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // RequireSession rejects requests authenticated by an API token.

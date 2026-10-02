@@ -174,7 +174,7 @@ func (h *Handlers) ConfirmTOTP(w http.ResponseWriter, r *http.Request) {
 // accidentally log themselves out, drop everything else.
 func (h *Handlers) DisableTOTP(w http.ResponseWriter, r *http.Request) {
 	me, _ := auth.FromContext(r.Context())
-	if !requirePasswordConfirm(w, r, h.DB) {
+	if !h.requirePasswordConfirm(w, r) {
 		return
 	}
 	if err := auth.DisableTOTP(r.Context(), h.DB, me.ID); err != nil {
@@ -193,6 +193,11 @@ func (h *Handlers) DisableTOTP(w http.ResponseWriter, r *http.Request) {
 		_, _ = h.DB.ExecContext(r.Context(),
 			`DELETE FROM sessions WHERE user_id = $1`, me.ID)
 	}
+	// Dropping the second factor is a security-posture change; revoke
+	// API/MCP tokens so none outlives the stronger auth they were
+	// created under.
+	_, _ = h.DB.ExecContext(r.Context(),
+		`DELETE FROM mcp_tokens WHERE user_id = $1`, me.ID)
 	auth.Record(r.Context(), h.DB, auth.AuditEvent{
 		Event: auth.EventTOTPDisable, OK: true, UserID: &me.ID, Username: me.Username,
 		IP: auth.ClientIP(r), UserAgent: auth.UserAgent(r), Reason: auth.ReasonSuccess,
@@ -206,7 +211,7 @@ func (h *Handlers) DisableTOTP(w http.ResponseWriter, r *http.Request) {
 // previously printed.
 func (h *Handlers) RegenerateTOTPRecoveryCodes(w http.ResponseWriter, r *http.Request) {
 	me, _ := auth.FromContext(r.Context())
-	if !requirePasswordConfirm(w, r, h.DB) {
+	if !h.requirePasswordConfirm(w, r) {
 		return
 	}
 	codes, err := auth.RegenerateRecoveryCodes(r.Context(), h.DB, me.ID)

@@ -92,20 +92,67 @@ func (h *Handlers) SearchUsers(w http.ResponseWriter, r *http.Request) {
 	httpx.JSON(w, http.StatusOK, map[string]any{"users": out})
 }
 
+// orgAdminMayManageCredentials reports whether an org_admin of orgID may
+// reset the password / clear the TOTP of user targetID. The bar is
+// deliberately higher than plain org membership: the account must have
+// been CREATED by this org (CreateOrgMember's new-user flow) AND must
+// not have since joined any other org. That keeps credential control
+// with the org that provisioned a service account, and refuses it for
+// self-signup logins or accounts shared with another org — the cases a
+// malicious org_admin would otherwise exploit to take over a login the
+// person uses elsewhere. Self-service password reset (the forgot-password
+// email) and the global admin remain the recovery paths for those.
+func orgAdminMayManageCredentials(ctx context.Context, db *sql.DB, orgID, targetID int64) (bool, error) {
+	var createdBy sql.NullInt64
+	if err := db.QueryRowContext(ctx,
+		`SELECT created_by_org_id FROM users WHERE id = $1`, targetID).Scan(&createdBy); err != nil {
+		return false, err
+	}
+	if !createdBy.Valid || createdBy.Int64 != orgID {
+		return false, nil
+	}
+	var otherOrgs int
+	if err := db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM org_memberships WHERE user_id = $1 AND org_id <> $2`,
+		targetID, orgID).Scan(&otherOrgs); err != nil {
+		return false, err
+	}
+	return otherOrgs == 0, nil
+}
+
 /* ---------------- Confirm-password gating ---------------- */
 
 const confirmHeader = "X-Confirm-Password"
 
-func requirePasswordConfirm(w http.ResponseWriter, r *http.Request, db *sql.DB) bool {
+func (h *Handlers) requirePasswordConfirm(w http.ResponseWriter, r *http.Request) bool {
 	me, _ := auth.FromContext(r.Context())
 	pw := r.Header.Get(confirmHeader)
 	if pw == "" {
 		httpx.Error(w, http.StatusUnauthorized, "password confirmation required")
 		return false
 	}
-	if err := auth.VerifyUserPassword(r.Context(), db, me.ID, pw); err != nil {
+	// Throttle per (IP, user): without this, a session that doesn't know
+	// the password can brute-force it through any sensitive-action
+	// endpoint, and each miss burns an Argon2id verification. Keyed by
+	// user ID (not username) so it tracks the account being reauthed.
+	ipKey := auth.ClientIP(r)
+	userKey := "uid:" + strconv.FormatInt(me.ID, 10)
+	if h.ConfirmLimiter != nil {
+		if ok, retry := h.ConfirmLimiter.Allow(ipKey, userKey); !ok {
+			w.Header().Set("Retry-After", strconv.Itoa(max(int(retry.Seconds()), 1)))
+			httpx.Error(w, http.StatusTooManyRequests, "too many attempts, try again later")
+			return false
+		}
+	}
+	if err := auth.VerifyUserPassword(r.Context(), h.DB, me.ID, pw); err != nil {
+		if h.ConfirmLimiter != nil {
+			h.ConfirmLimiter.RecordFailure(ipKey, userKey)
+		}
 		httpx.Error(w, http.StatusUnauthorized, "wrong password")
 		return false
+	}
+	if h.ConfirmLimiter != nil {
+		h.ConfirmLimiter.RecordSuccess(ipKey, userKey)
 	}
 	return true
 }
@@ -365,25 +412,29 @@ func (h *Handlers) ResetPassword(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	case me.ID == id:
-		// anyone can reset their own
+		// Resetting your own password through this endpoint still proves
+		// the current password: a stolen cookie must not be enough to
+		// rotate the password and lock the owner out. (/me/password is
+		// the primary self-service path; this case keeps parity.)
+		if !h.requirePasswordConfirm(w, r) {
+			return
+		}
 	default:
-		// org_admin can reset anyone in their own active org (besides
-		// admins). Caller must have an active org and be org_admin in
-		// it; target must be a member of that same org.
+		// org_admin can reset an account their own org created and that
+		// hasn't since joined another org — see
+		// orgAdminMayManageCredentials. Caller must have an active org
+		// and be org_admin in it.
 		if me.OrgID == nil || me.Role != auth.RoleOrgAdmin {
 			httpx.Error(w, http.StatusForbidden, "forbidden")
 			return
 		}
-		var found int
-		mErr := h.DB.QueryRowContext(r.Context(),
-			`SELECT 1 FROM org_memberships WHERE user_id = $1 AND org_id = $2`,
-			id, *me.OrgID).Scan(&found)
-		if errors.Is(mErr, sql.ErrNoRows) {
-			httpx.Error(w, http.StatusForbidden, "forbidden")
-			return
-		}
+		ok, mErr := orgAdminMayManageCredentials(r.Context(), h.DB, *me.OrgID, id)
 		if mErr != nil {
 			httpx.Error(w, http.StatusInternalServerError, "lookup failed")
+			return
+		}
+		if !ok {
+			httpx.Error(w, http.StatusForbidden, "forbidden")
 			return
 		}
 	}
@@ -408,6 +459,13 @@ func (h *Handlers) ResetPassword(w http.ResponseWriter, r *http.Request) {
 	}
 	if _, err := h.DB.ExecContext(r.Context(), `DELETE FROM sessions WHERE user_id = $1`, id); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "session cleanup failed")
+		return
+	}
+	// Revoke the target's API/MCP tokens: a password reset is often a
+	// recovery from compromise, and a token minted beforehand must not
+	// survive it.
+	if _, err := h.DB.ExecContext(r.Context(), `DELETE FROM mcp_tokens WHERE user_id = $1`, id); err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "token cleanup failed")
 		return
 	}
 	httpx.JSON(w, http.StatusNoContent, nil)
@@ -460,20 +518,17 @@ func (h *Handlers) AdminDisableUserTOTP(w http.ResponseWriter, r *http.Request) 
 			httpx.Error(w, http.StatusForbidden, "forbidden")
 			return
 		}
-		var found int
-		mErr := h.DB.QueryRowContext(r.Context(),
-			`SELECT 1 FROM org_memberships WHERE user_id = $1 AND org_id = $2`,
-			id, *me.OrgID).Scan(&found)
-		if errors.Is(mErr, sql.ErrNoRows) {
-			httpx.Error(w, http.StatusForbidden, "forbidden")
-			return
-		}
+		ok, mErr := orgAdminMayManageCredentials(r.Context(), h.DB, *me.OrgID, id)
 		if mErr != nil {
 			httpx.Error(w, http.StatusInternalServerError, "lookup failed")
 			return
 		}
+		if !ok {
+			httpx.Error(w, http.StatusForbidden, "forbidden")
+			return
+		}
 	}
-	if !requirePasswordConfirm(w, r, h.DB) {
+	if !h.requirePasswordConfirm(w, r) {
 		return
 	}
 	if err := auth.DisableTOTP(r.Context(), h.DB, id); err != nil {
@@ -489,6 +544,10 @@ func (h *Handlers) AdminDisableUserTOTP(w http.ResponseWriter, r *http.Request) 
 	// caller's request, so drop everything.
 	_, _ = h.DB.ExecContext(r.Context(),
 		`DELETE FROM sessions WHERE user_id = $1`, id)
+	// Also revoke the target's API/MCP tokens — this is the lost-device
+	// recovery path, so nothing minted under the old factor should live on.
+	_, _ = h.DB.ExecContext(r.Context(),
+		`DELETE FROM mcp_tokens WHERE user_id = $1`, id)
 	auth.Record(r.Context(), h.DB, auth.AuditEvent{
 		Event: auth.EventTOTPAdminReset, OK: true, UserID: &me.ID, Username: targetUsername,
 		IP: auth.ClientIP(r), UserAgent: auth.UserAgent(r), Reason: auth.ReasonTOTPAdminReset,

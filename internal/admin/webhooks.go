@@ -83,7 +83,7 @@ func validateWebhookURL(raw string) (string, error) {
 	if host == "" {
 		return "", errors.New("url must have a host")
 	}
-	loopback := webhooks.IsLoopbackHost(host)
+	loopback := webhooks.IsLoopbackHost(host) && webhooks.LoopbackAllowed()
 	switch u.Scheme {
 	case "https":
 		// fine
@@ -131,11 +131,18 @@ func validateEventKinds(kinds []string) ([]string, error) {
 
 // orgFromCaller is a small guard that returns the caller's org id and
 // 403s admins (who don't own webhooks). Used by every handler in this
-// file.
+// file. Restricted to org_admin: webhooks carry org data off-platform
+// (and the delivery log exposes raw payloads + a secret hint), so they
+// belong with the same role that manages the rest of an org's config,
+// not with org_member race directors.
 func orgFromCaller(w http.ResponseWriter, r *http.Request) (int64, bool) {
 	me, _ := auth.FromContext(r.Context())
 	if me.OrgID == nil {
 		httpx.Error(w, http.StatusForbidden, "webhooks are configured per organization")
+		return 0, false
+	}
+	if me.Role != auth.RoleOrgAdmin {
+		httpx.Error(w, http.StatusForbidden, "only an organization admin can manage webhooks")
 		return 0, false
 	}
 	return *me.OrgID, true

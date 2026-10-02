@@ -137,6 +137,12 @@ type Worker struct {
 	// event arrives at the customer within ~5s, large enough that an
 	// idle queue isn't a constant DB poll.
 	PollInterval time.Duration
+	// AllowLoopback permits delivery to loopback/localhost targets. Off
+	// by default: an org endpoint pointing at 127.0.0.1 would otherwise
+	// let an org_admin aim deliveries at services co-located with the
+	// app (SSRF). Operators flip ZV_WEBHOOKS_ALLOW_LOOPBACK=1 for local
+	// development. Mirrors the effect-webhooks loopback gate.
+	AllowLoopback bool
 }
 
 // Start launches a Worker in a goroutine and returns a done channel
@@ -145,7 +151,7 @@ type Worker struct {
 // graceful shutdown the same way.
 func Start(ctx context.Context, db *sql.DB) <-chan struct{} {
 	done := make(chan struct{})
-	w := &Worker{DB: db}
+	w := &Worker{DB: db, AllowLoopback: LoopbackAllowed()}
 	go func() {
 		defer close(done)
 		defer logx.Guard("webhooks.worker")
@@ -415,9 +421,10 @@ func (w *Worker) send(ctx context.Context, target, secret, kind, deliveryUUID st
 	if err != nil {
 		return 0, fmt.Errorf("invalid stored url: %w", err)
 	}
-	// Org endpoints may be localhost: registration (validateWebhookURL)
-	// allows it for development.
-	if ctx, err = Pin(ctx, parsed.Hostname(), true); err != nil {
+	// Loopback targets are allowed only when the operator opted in via
+	// ZV_WEBHOOKS_ALLOW_LOOPBACK (w.AllowLoopback). Re-resolve-and-check
+	// happens inside Pin regardless, defending against DNS rebinding.
+	if ctx, err = Pin(ctx, parsed.Hostname(), w.AllowLoopback); err != nil {
 		return 0, err
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, target, bytes.NewReader(body))

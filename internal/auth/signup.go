@@ -316,6 +316,12 @@ func ConsumeForgotPasswordToken(ctx context.Context, db *sql.DB, token, newPassw
 		`DELETE FROM sessions WHERE user_id = $1`, userID); err != nil {
 		return User{}, "", false, err
 	}
+	// Revoke API/MCP tokens too: setting a password is a credential
+	// change, and a token minted before it must not keep working.
+	if _, err := tx.ExecContext(ctx,
+		`DELETE FROM mcp_tokens WHERE user_id = $1`, userID); err != nil {
+		return User{}, "", false, err
+	}
 	if _, err := tx.ExecContext(ctx,
 		`DELETE FROM email_verifications WHERE token = $1`, token); err != nil {
 		return User{}, "", false, err

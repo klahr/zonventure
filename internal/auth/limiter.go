@@ -210,19 +210,17 @@ func ceilSecond(d time.Duration) time.Duration {
 	return d
 }
 
-// ClientIP returns the request's source IP. The leftmost X-Forwarded-For
-// entry is honoured ONLY when the immediate peer is in the configured
-// trusted-proxy set (see SetTrustedProxies / ParseTrustedProxies). A
-// direct-reachable deployment with no proxy will see XFF treated as an
-// untrusted client header and ignored — otherwise an attacker forges
-// XFF and dodges the per-IP bucket and the audit log.
+// ClientIP returns the request's source IP. X-Forwarded-For is honoured
+// ONLY when the immediate peer is in the configured trusted-proxy set
+// (see SetTrustedProxies / ParseTrustedProxies), and then the right-most
+// non-trusted entry is taken (RightmostUntrustedXFF) so a client that
+// forged left-side XFF entries can't dodge the per-IP bucket or spoof
+// the audit log. A direct-reachable deployment with no proxy ignores XFF
+// entirely.
 func ClientIP(r *http.Request) string {
 	if IsTrustedPeer(r) {
-		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-			if i := strings.IndexByte(xff, ','); i > 0 {
-				return strings.TrimSpace(xff[:i])
-			}
-			return strings.TrimSpace(xff)
+		if real := RightmostUntrustedXFF(r.Header.Get("X-Forwarded-For")); real != "" {
+			return real
 		}
 	}
 	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {

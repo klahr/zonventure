@@ -87,7 +87,13 @@ func IsTrustedPeer(r *http.Request) bool {
 	if err != nil {
 		host = r.RemoteAddr
 	}
-	addr, err := netip.ParseAddr(host)
+	return addrTrusted(host)
+}
+
+// addrTrusted reports whether host (a bare IP, no port) falls in the
+// configured trusted-proxy set.
+func addrTrusted(host string) bool {
+	addr, err := netip.ParseAddr(strings.TrimSpace(host))
 	if err != nil {
 		return false
 	}
@@ -101,4 +107,31 @@ func IsTrustedPeer(r *http.Request) bool {
 		}
 	}
 	return false
+}
+
+// RightmostUntrustedXFF returns the right-most X-Forwarded-For entry
+// that is not itself a trusted proxy — the real client as seen by the
+// first trusted hop. Walking from the right is the load-bearing bit: a
+// proxy that APPENDS to XFF (nginx's proxy_add_x_forwarded_for, the
+// common default) leaves any client-forged entries on the LEFT, so the
+// left-most value is attacker-controlled. The right-most non-trusted
+// entry is the earliest hop we can still vouch for. Only consult this
+// once the immediate peer is already known to be trusted. Returns ""
+// when XFF is empty; falls back to the left-most entry when every hop
+// listed is itself a trusted proxy.
+func RightmostUntrustedXFF(xff string) string {
+	if strings.TrimSpace(xff) == "" {
+		return ""
+	}
+	parts := strings.Split(xff, ",")
+	for i := len(parts) - 1; i >= 0; i-- {
+		s := strings.TrimSpace(parts[i])
+		if s == "" {
+			continue
+		}
+		if !addrTrusted(s) {
+			return s
+		}
+	}
+	return strings.TrimSpace(parts[0])
 }

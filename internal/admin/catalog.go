@@ -201,7 +201,7 @@ func (h *Handlers) SetOrgPublisher(w http.ResponseWriter, r *http.Request) {
 	if !httpx.DecodeJSON(w, r, &req) {
 		return
 	}
-	if !req.IsPublisher && !requirePasswordConfirm(w, r, h.DB) {
+	if !req.IsPublisher && !h.requirePasswordConfirm(w, r) {
 		return
 	}
 	if req.IsPublisher {

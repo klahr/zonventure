@@ -65,7 +65,11 @@ func audienceAllows(u auth.User, aud string) bool {
 	case audienceAdmin:
 		return u.Role == auth.RoleAdmin
 	default:
-		return u.Role != auth.RoleAdmin
+		// Org-side tools: org users only — never the platform admin,
+		// and never a lobby user. The handlers assume a non-nil OrgID,
+		// so this is the gate that enforces it rather than relying on
+		// each one to fail on nil.
+		return u.Role != auth.RoleAdmin && u.OrgID != nil
 	}
 }
 
@@ -404,7 +408,12 @@ func getAdventure(ctx context.Context, s *Server, args json.RawMessage) (ToolCal
 	if !ok {
 		return errorResult("no authenticated caller"), nil
 	}
-	advID, _, err := admin.AuthorizeAdventureRead(ctx, s.DB, p.Slug, me)
+	// Edit authorization, not read: the exported envelope carries the
+	// full answer key and hint bodies. The HTTP graph export is
+	// edit-gated for the same reason, and AdventureDetail strips answers
+	// for non-editors — a read-scoped token or a foreign-org viewer must
+	// not be able to dump the solutions here.
+	advID, _, err := admin.AuthorizeAdventureEdit(ctx, s.DB, p.Slug, me)
 	if err != nil {
 		if errors.Is(err, admin.ErrForbidden) {
 			return errorResult("forbidden: you cannot read this adventure"), nil

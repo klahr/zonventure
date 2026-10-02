@@ -121,6 +121,12 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := auth.WithUser(r.Context(), user)
+	// Mark the context as token-authenticated, same as the HTTP
+	// APITokenAuth path: audit records attribute the action to a token
+	// rather than a human session, and any auth.ViaAPIToken guard
+	// (e.g. the account/credential routes) stays effective when reached
+	// through MCP instead of failing open.
+	ctx = auth.WithAPIToken(ctx)
 	ctx = withScopes(ctx, scopes)
 	resp, suppress := s.dispatch(ctx, req)
 	if suppress {

@@ -3,7 +3,21 @@ package webhooks
 import (
 	"errors"
 	"net"
+	"os"
 )
+
+// LoopbackAllowed reports whether the operator has opted in to webhook
+// delivery against loopback/localhost targets, via
+// ZV_WEBHOOKS_ALLOW_LOOPBACK=1. Off by default so an org_admin can't
+// register an endpoint pointing at 127.0.0.1 and turn the delivery
+// worker into an SSRF probe of services co-located with the app.
+func LoopbackAllowed() bool {
+	switch os.Getenv("ZV_WEBHOOKS_ALLOW_LOOPBACK") {
+	case "1", "true", "on", "yes":
+		return true
+	}
+	return false
+}
 
 // errNonPublic is the public-facing reason a webhook URL fails the
 // SSRF gate. Returned identically from ValidateHost and LookupPublic

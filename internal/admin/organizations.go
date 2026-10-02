@@ -422,7 +422,7 @@ func (h *Handlers) SetOrgTrusted(w http.ResponseWriter, r *http.Request) {
 // DeleteOrganization deletes an organization (and everything it cascades to:
 // users in it, runs, teams, assignments). Admin-only and password-gated.
 func (h *Handlers) DeleteOrganization(w http.ResponseWriter, r *http.Request) {
-	if !requirePasswordConfirm(w, r, h.DB) {
+	if !h.requirePasswordConfirm(w, r) {
 		return
 	}
 	id, ok := orgIDFromURL(r)
@@ -522,6 +522,25 @@ func (h *Handlers) CreateOrgMember(w http.ResponseWriter, r *http.Request) {
 			httpx.Error(w, http.StatusBadRequest, "admins are not org members")
 			return
 		}
+		// Only accounts that belong to no other organisation can be
+		// added directly: a person who signed up and is still in the
+		// lobby. Pulling in an account that already belongs to another
+		// org without that person's say-so would hand this org's admin
+		// a foothold on a login they use elsewhere (and, combined with
+		// the credential-reset endpoints, a takeover). Adding an
+		// existing member of another org needs an invitation the person
+		// accepts — a flow that does not exist yet, so refuse for now.
+		var otherOrgs int
+		if err := h.DB.QueryRowContext(r.Context(),
+			`SELECT COUNT(*) FROM org_memberships WHERE user_id = $1 AND org_id <> $2`,
+			existingID, orgID).Scan(&otherOrgs); err != nil {
+			httpx.Error(w, http.StatusInternalServerError, "lookup failed")
+			return
+		}
+		if otherOrgs > 0 {
+			httpx.Error(w, http.StatusConflict, "that user already belongs to another organisation and must accept an invitation to join")
+			return
+		}
 		// Insert only the membership row — no password reset, no
 		// account changes. Conflict on (user_id, org_id) means
 		// already a member of this org.
@@ -573,10 +592,10 @@ func (h *Handlers) CreateOrgMember(w http.ResponseWriter, r *http.Request) {
 		emailVerified = 1
 	}
 	if err := tx.QueryRowContext(r.Context(), `
-		INSERT INTO users(username, email, email_verified, password_hash, created_by_user_id)
-		VALUES ($1, $2, $3, $4, $5)
+		INSERT INTO users(username, email, email_verified, password_hash, created_by_user_id, created_by_org_id)
+		VALUES ($1, $2, $3, $4, $5, $6)
 		RETURNING id
-	`, req.Username, emailParam, emailVerified, hash, me.ID).Scan(&id); err != nil {
+	`, req.Username, emailParam, emailVerified, hash, me.ID, orgID).Scan(&id); err != nil {
 		httpx.Error(w, http.StatusConflict, "username or email not available")
 		return
 	}
@@ -605,7 +624,7 @@ func (h *Handlers) CreateOrgMember(w http.ResponseWriter, r *http.Request) {
 //   - User is in this org only → hard-delete the user account
 //     (legacy behaviour). Cascades through FKs as before.
 func (h *Handlers) DeleteOrgMember(w http.ResponseWriter, r *http.Request) {
-	if !requirePasswordConfirm(w, r, h.DB) {
+	if !h.requirePasswordConfirm(w, r) {
 		return
 	}
 	orgID, ok := orgIDFromURL(r)
@@ -718,7 +737,7 @@ type transferOwnershipRequest struct {
 // transaction so a partial failure can never leave the org with two
 // admins or zero admins.
 func (h *Handlers) TransferOwnership(w http.ResponseWriter, r *http.Request) {
-	if !requirePasswordConfirm(w, r, h.DB) {
+	if !h.requirePasswordConfirm(w, r) {
 		return
 	}
 	orgID, ok := orgIDFromURL(r)
@@ -1001,8 +1020,14 @@ type createAdminRequest struct {
 	Password string `json:"password"`
 }
 
-// CreateAdmin adds another global admin. Admin-only.
+// CreateAdmin adds another global admin. Admin-only, cookie-only
+// (RequireSession on the route), and reauthed with X-Confirm-Password —
+// the same bar DeleteAdmin holds, so minting an admin is no weaker than
+// removing one.
 func (h *Handlers) CreateAdmin(w http.ResponseWriter, r *http.Request) {
+	if !h.requirePasswordConfirm(w, r) {
+		return
+	}
 	var req createAdminRequest
 	if !httpx.DecodeJSON(w, r, &req) {
 		return
@@ -1031,7 +1056,7 @@ func (h *Handlers) CreateAdmin(w http.ResponseWriter, r *http.Request) {
 // DeleteAdmin removes another admin. Refuses to delete the caller and
 // refuses to delete the last remaining admin.
 func (h *Handlers) DeleteAdmin(w http.ResponseWriter, r *http.Request) {
-	if !requirePasswordConfirm(w, r, h.DB) {
+	if !h.requirePasswordConfirm(w, r) {
 		return
 	}
 	id, ok := userIDFrom(r)

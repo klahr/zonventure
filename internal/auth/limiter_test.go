@@ -119,12 +119,33 @@ func TestLimiter_NilSafe(t *testing.T) {
 }
 
 func TestClientIP_TrustsXFFFromTrustedPeer(t *testing.T) {
-	withTrustedProxies(t, "127.0.0.0/8")
+	// Every hop between the client and us must be trusted for the real
+	// client to resolve: the immediate peer (127.0.0.1) and the internal
+	// hop (10.0.0.1) are both in the trusted set, so the right-most
+	// non-trusted entry is the real client 203.0.113.7.
+	withTrustedProxies(t, "127.0.0.0/8", "10.0.0.0/8")
 	r := httptest.NewRequest("POST", "/", nil)
 	r.RemoteAddr = "127.0.0.1:54321"
 	r.Header.Set("X-Forwarded-For", "203.0.113.7, 10.0.0.1")
 	if got := ClientIP(r); got != "203.0.113.7" {
 		t.Fatalf("ClientIP = %q, want 203.0.113.7", got)
+	}
+}
+
+// TestClientIP_RightmostUntrusted pins the append-attack defence: a
+// client that forges a left-side XFF entry (pretending to be some other
+// IP) must not control ClientIP. With only the immediate peer trusted,
+// the right-most non-trusted entry (the value the trusted proxy
+// appended) wins, not the forged left-most one.
+func TestClientIP_RightmostUntrusted(t *testing.T) {
+	withTrustedProxies(t, "127.0.0.0/8")
+	r := httptest.NewRequest("POST", "/", nil)
+	r.RemoteAddr = "127.0.0.1:54321"
+	// Attacker sent "X-Forwarded-For: 1.2.3.4"; the trusted proxy
+	// appended the real peer 203.0.113.7.
+	r.Header.Set("X-Forwarded-For", "1.2.3.4, 203.0.113.7")
+	if got := ClientIP(r); got != "203.0.113.7" {
+		t.Fatalf("ClientIP = %q, want 203.0.113.7 (forged left-side entry must not win)", got)
 	}
 }
 

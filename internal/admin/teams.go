@@ -180,7 +180,7 @@ func (h *Handlers) UpdateTeam(w http.ResponseWriter, r *http.Request) {
 
 // DeleteTeam removes a team and all its slots. Password-gated.
 func (h *Handlers) DeleteTeam(w http.ResponseWriter, r *http.Request) {
-	if !requirePasswordConfirm(w, r, h.DB) {
+	if !h.requirePasswordConfirm(w, r) {
 		return
 	}
 	teamID, eventID, ok := h.teamFromRequest(w, r)

@@ -308,14 +308,23 @@ func tokenUser(ctx context.Context, db *sql.DB, uid int64, pinned sql.NullInt64)
 	// short-circuit; everyone else gets the role + org from their
 	// lowest-id membership (deterministic pick for users in multiple
 	// orgs, unless the token is pinned to one).
-	var u auth.User
+	var (
+		u                 auth.User
+		scheduledDeletion sql.NullString
+	)
 	err := db.QueryRowContext(ctx, `
 		SELECT id, username, is_admin, COALESCE(email, ''),
-		       (email_verified <> 0)
+		       (email_verified <> 0), scheduled_deletion_at
 		FROM users WHERE id = $1
-	`, uid).Scan(&u.ID, &u.Username, &u.IsAdmin, &u.Email, &u.EmailVerified)
+	`, uid).Scan(&u.ID, &u.Username, &u.IsAdmin, &u.Email, &u.EmailVerified, &scheduledDeletion)
 	if err != nil {
 		return auth.User{}, err
+	}
+	// An account scheduled for deletion is being wound down; its tokens
+	// must stop working immediately, the same way its sessions are
+	// cleared when deletion is scheduled.
+	if scheduledDeletion.Valid && scheduledDeletion.String != "" {
+		return auth.User{}, ErrUnknownMCPToken
 	}
 	if u.IsAdmin {
 		u.Role = auth.RoleAdmin

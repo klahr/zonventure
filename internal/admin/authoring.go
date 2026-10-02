@@ -605,7 +605,7 @@ func UpdateAdventureMetaJSON(ctx context.Context, db *sql.DB, slug string, patch
 // DeleteAdventure removes an adventure (and all its pages + images).
 // Adventures that still back runs or assignments can't be deleted.
 func (h *Handlers) DeleteAdventure(w http.ResponseWriter, r *http.Request) {
-	if !requirePasswordConfirm(w, r, h.DB) {
+	if !h.requirePasswordConfirm(w, r) {
 		return
 	}
 	slug := chi.URLParam(r, "slug")

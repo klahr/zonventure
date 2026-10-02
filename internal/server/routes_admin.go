@@ -47,6 +47,10 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 		r.Use(admin.APITokenAuth(env.cfg.DB))
 		r.Use(auth.RequireAnyRole(auth.RoleAdmin, auth.RoleOrgAdmin, auth.RoleOrgMember, auth.RoleLobby))
 		r.Use(auth.RequireCSRF())
+		// A user still on the seeded default password can do nothing here
+		// but change it — so admin/admin isn't a working account until
+		// the operator rotates it. See auth.RequireNonDefaultPassword.
+		r.Use(auth.RequireNonDefaultPassword)
 
 		// Staff password reset (admins & org users).
 		r.With(auth.RequireSession).Post("/users/{userID}/password", adminH.ResetPassword)
@@ -63,11 +67,15 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 		// Org admin or global admin: manage an organization's members + a
 		// detail endpoint both admins and in-org users can read.
 		r.Get("/organizations/{orgID}", adminH.GetOrganization)
-		r.Post("/organizations/{orgID}/members", adminH.CreateOrgMember)
-		r.Delete("/organizations/{orgID}/members/{userID}", adminH.DeleteOrgMember)
+		// Membership + ownership are credential-adjacent: they create
+		// accounts and move who controls an org. Keep them cookie-only
+		// (RequireSession) so a leaked API token can't provision members
+		// or seize ownership, mirroring the account-management routes.
+		r.With(auth.RequireSession).Post("/organizations/{orgID}/members", adminH.CreateOrgMember)
+		r.With(auth.RequireSession).Delete("/organizations/{orgID}/members/{userID}", adminH.DeleteOrgMember)
 		// Atomic ownership transfer — promotes a member to org_admin
 		// and demotes the calling org_admin to org_member in one tx.
-		r.Post("/organizations/{orgID}/transfer-ownership", adminH.TransferOwnership)
+		r.With(auth.RequireSession).Post("/organizations/{orgID}/transfer-ownership", adminH.TransferOwnership)
 
 		// Stripe Connect onboarding for the /store marketplace flow.
 		// Each handler re-checks org_admin-of-named-org or global
@@ -378,8 +386,12 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 			r.Delete("/organizations/{orgID}/assignments/{assignmentID}", adminH.DeleteAssignment)
 
 			r.Get("/admins", adminH.ListAdmins)
-			r.Post("/admins", adminH.CreateAdmin)
-			r.Delete("/admins/{userID}", adminH.DeleteAdmin)
+			// Minting / removing global admins is the most sensitive
+			// credential op there is. Cookie-only (a leaked API token
+			// must not create a permanent admin that outlives the token)
+			// and each handler also re-checks X-Confirm-Password.
+			r.With(auth.RequireSession).Post("/admins", adminH.CreateAdmin)
+			r.With(auth.RequireSession).Delete("/admins/{userID}", adminH.DeleteAdmin)
 
 			// Operator-tunable runtime settings. Admin-only because
 			// these knobs affect everyone hitting the deployment —

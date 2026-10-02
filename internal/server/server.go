@@ -347,13 +347,14 @@ func New(cfg Config) http.Handler {
 		// Platform fee is read once at startup and held on the
 		// handler set. Zero-value (no env vars) keeps self-host
 		// inert: no marketplace flow, no Connect onboarding gate.
-		PlatformFee:   payments.PlatformFeeFromEnv(),
-		SecureCookie:  cfg.SecureCookie,
-		Components:    withLegalComponent(cfg.Components, cfg.Legal),
-		Storage:       store,
-		TOTPKey:       cfg.TOTPKey,
-		TeamImporters: importers,
-		Updates:       updateSvc,
+		PlatformFee:    payments.PlatformFeeFromEnv(),
+		SecureCookie:   cfg.SecureCookie,
+		Components:     withLegalComponent(cfg.Components, cfg.Legal),
+		Storage:        store,
+		TOTPKey:        cfg.TOTPKey,
+		TeamImporters:  importers,
+		Updates:        updateSvc,
+		ConfirmLimiter: newSweptLimiter(bgCtx),
 	}
 	publicH := &public.Handlers{
 		DB: cfg.DB, Lib: cfg.Library, Hub: hub, Storage: store, PublicURL: cfg.PublicURL, Engine: playerH.Engine,
@@ -514,11 +515,12 @@ func trustedProxyRealIP(next http.Handler) http.Handler {
 // RealIP middleware produced (RemoteAddr is "<host>" with no port —
 // callers like net.SplitHostPort handle either shape).
 func firstForwardedAddr(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		if i := strings.IndexByte(xff, ','); i > 0 {
-			return strings.TrimSpace(xff[:i])
-		}
-		return strings.TrimSpace(xff)
+	// Right-most non-trusted XFF entry — the real client past the trusted
+	// proxy chain. Walking from the right defeats client-forged left-side
+	// entries when a proxy appends rather than overwrites XFF. Only
+	// reached when the immediate peer is already trusted (see caller).
+	if real := auth.RightmostUntrustedXFF(r.Header.Get("X-Forwarded-For")); real != "" {
+		return real
 	}
 	if xri := r.Header.Get("X-Real-IP"); xri != "" {
 		return strings.TrimSpace(xri)

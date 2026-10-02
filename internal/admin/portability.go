@@ -40,6 +40,7 @@ import (
 	"github.com/klahr/zonventure/internal/graph"
 	"github.com/klahr/zonventure/internal/graphstore"
 	"github.com/klahr/zonventure/internal/httpx"
+	"github.com/klahr/zonventure/internal/imageutil"
 	"github.com/klahr/zonventure/internal/logx"
 )
 
@@ -505,9 +506,19 @@ func importEnvelopeJSON(ctx context.Context, db *sql.DB, manifestJSON []byte, ov
 	}
 	if env.Adventure.Avatar != nil && env.Adventure.Avatar.File != "" {
 		if b, ok := assets[env.Adventure.Avatar.File]; ok {
+			// Re-encode through the same normaliser the upload path uses
+			// rather than trusting the archive's bytes + MIME. The avatar
+			// is served from the app origin, so an archive that smuggled
+			// an HTML/SVG polyglot under image/* would be stored XSS
+			// otherwise; NormalizeUpload rasterises/re-encodes it to a
+			// clean image (and refuses anything that isn't one).
+			norm, normMIME, nerr := imageutil.NormalizeUpload(b, env.Adventure.Avatar.MimeType, imageutil.DefaultMaxDim)
+			if nerr != nil {
+				return 0, "", "", badRequestf("adventure avatar: %s", nerr.Error())
+			}
 			if _, err := tx.ExecContext(ctx,
 				`UPDATE adventures SET avatar_mime_type = $1, avatar_content = $2 WHERE id = $3`,
-				env.Adventure.Avatar.MimeType, b, advID); err != nil {
+				normMIME, norm, advID); err != nil {
 				return 0, "", "", fmt.Errorf("write avatar: %w", err)
 			}
 		}
@@ -593,7 +604,20 @@ func importGraph(ctx context.Context, tx *sql.Tx, advID, userID int64, env *grap
 		if !ok {
 			return badRequestf("graph media %q missing from archive", m.File)
 		}
-		id, err := insertGraphMedia(ctx, tx, advID, userID, m.Kind, m.MimeType, b)
+		mime := m.MimeType
+		if m.Kind == graph.MediaImage {
+			// Re-encode imported images the same way the upload path does,
+			// so an archive can't smuggle an HTML/SVG polyglot under an
+			// image/* MIME and have it served as stored XSS from /media/.
+			// ShrinkKeepAlpha decodes raster only, so svg+xml (and any
+			// non-image) is refused here.
+			shrunk, newMIME, serr := imageutil.ShrinkKeepAlpha(b, imageutil.DefaultMaxDim)
+			if serr != nil {
+				return badRequestf("graph media %q: %s", m.File, serr.Error())
+			}
+			b, mime = shrunk, newMIME
+		}
+		id, err := insertGraphMedia(ctx, tx, advID, userID, m.Kind, mime, b)
 		if err != nil {
 			return fmt.Errorf("insert graph media %q: %w", m.File, err)
 		}

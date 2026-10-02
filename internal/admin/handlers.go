@@ -113,6 +113,11 @@ type Handlers struct {
 	// constructor wires a real one based on cfg.Version +
 	// cfg.ChangelogURL.
 	Updates *updates.Service
+	// ConfirmLimiter throttles X-Confirm-Password reauth checks
+	// (requirePasswordConfirm) per (IP, user) so a stolen session can't
+	// brute-force the account password — or burn Argon2id CPU — through
+	// the sensitive-action endpoints. Nil disables throttling (tests).
+	ConfirmLimiter *auth.LoginLimiter
 
 	// tracks caches buildTracks per event; see tracksTTL.
 	tracks tracksCache
@@ -857,7 +862,7 @@ func (h *Handlers) OperatorCancelEvent(w http.ResponseWriter, r *http.Request) {
 // cancelEvent is the password-gated cancellation both entry points
 // share once they have authorised the caller.
 func (h *Handlers) cancelEvent(w http.ResponseWriter, r *http.Request, eventID int64) {
-	if !requirePasswordConfirm(w, r, h.DB) {
+	if !h.requirePasswordConfirm(w, r) {
 		return
 	}
 	var state string

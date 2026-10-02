@@ -28,6 +28,15 @@ import (
 // check is a thin nil-test against `h.Provider`.
 func (h *Handlers) paymentsEnabled() bool { return payments.Enabled(h.Provider) }
 
+// simulatedActive reports whether the dev-only simulated payments
+// provider is the one wired on this server. It only wires under
+// ZV_ENV=dev (see server.go), so on any real deployment this is false —
+// which is what gates the self-fulfil-for-free paths (CreatePurchase's
+// "simulated" provider and the ConfirmPurchase endpoint) to dev.
+func (h *Handlers) simulatedActive() bool {
+	return h.Provider != nil && h.Provider.Name() == "simulated"
+}
+
 // createPurchaseCheckoutSession opens a hosted checkout session for
 // an org purchase (one slot pack tied to an adventure). The price
 // is inlined via the params bag, metadata carries our purchase id
@@ -230,12 +239,15 @@ func (h *Handlers) handleCheckoutCompleted(ctx context.Context, event payments.E
 	defer tx.Rollback() //nolint:errcheck
 
 	var (
-		orgID        int64
-		advSlug      string
-		maxPlayers   int
-		state        string
-		existingAssn sql.NullInt64
-		topUpID      sql.NullInt64
+		orgID         int64
+		advSlug       string
+		maxPlayers    int
+		state         string
+		existingAssn  sql.NullInt64
+		topUpID       sql.NullInt64
+		amountCents   int64
+		currency      string
+		storedSession sql.NullString
 	)
 	// FOR UPDATE serialises against ConfirmPurchase and against a
 	// concurrent redelivery of this same webhook event. Without it the
@@ -243,9 +255,11 @@ func (h *Handlers) handleCheckoutCompleted(ctx context.Context, event payments.E
 	// two deliveries can both observe state='pending' and each insert
 	// an assignment row.
 	err = tx.QueryRowContext(ctx, `
-		SELECT org_id, adventure_slug, max_players, state, assignment_id, top_up_assignment_id
+		SELECT org_id, adventure_slug, max_players, state, assignment_id, top_up_assignment_id,
+		       amount_cents, currency, provider_session_id
 		FROM purchases WHERE id = $1 FOR UPDATE
-	`, purchaseID).Scan(&orgID, &advSlug, &maxPlayers, &state, &existingAssn, &topUpID)
+	`, purchaseID).Scan(&orgID, &advSlug, &maxPlayers, &state, &existingAssn, &topUpID,
+		&amountCents, &currency, &storedSession)
 	if errors.Is(err, sql.ErrNoRows) {
 		// Purchase row was deleted between checkout creation and
 		// payment success. Nothing to fulfil.
@@ -262,6 +276,29 @@ func (h *Handlers) handleCheckoutCompleted(ctx context.Context, event payments.E
 	}
 	if state != "pending" {
 		// refunded / failed — don't reopen.
+		return nil
+	}
+
+	// Cross-check the session against the row we're about to fulfil,
+	// rather than trusting the metadata id alone. A webhook event whose
+	// session id, amount or currency doesn't match the stored purchase
+	// (a replayed/forged event, or one routed here from another
+	// integration/connected account sharing the secret) must not grant
+	// the licence. Fail closed: log and ack without fulfilling.
+	if storedSession.Valid && storedSession.String != "" &&
+		event.Checkout.SessionID != "" && event.Checkout.SessionID != storedSession.String {
+		logx.Warn("payments.checkout.session_mismatch",
+			"purchase_id", purchaseID, "want", storedSession.String, "got", event.Checkout.SessionID)
+		return nil
+	}
+	if event.Checkout.AmountTotal != amountCents {
+		logx.Warn("payments.checkout.amount_mismatch",
+			"purchase_id", purchaseID, "want", amountCents, "got", event.Checkout.AmountTotal)
+		return nil
+	}
+	if !strings.EqualFold(strings.TrimSpace(event.Checkout.Currency), strings.TrimSpace(currency)) {
+		logx.Warn("payments.checkout.currency_mismatch",
+			"purchase_id", purchaseID, "want", currency, "got", event.Checkout.Currency)
 		return nil
 	}
 
@@ -596,6 +633,13 @@ func (h *Handlers) CreatePortalSession(w http.ResponseWriter, r *http.Request) {
 	me, _ := auth.FromContext(r.Context())
 	if me.OrgID == nil {
 		httpx.Error(w, http.StatusForbidden, "no organization")
+		return
+	}
+	// Billing (payment method, invoices, cancellation) is org_admin
+	// territory, like the rest of an org's money/config surface — not a
+	// race director's.
+	if me.Role != auth.RoleOrgAdmin {
+		httpx.Error(w, http.StatusForbidden, "only an organization admin can manage billing")
 		return
 	}
 	var customer sql.NullString

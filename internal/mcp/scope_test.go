@@ -41,6 +41,7 @@ func TestRegistryCall_ScopeGate(t *testing.T) {
 	r.register(ToolDescriptor{
 		Name:        "fake_read",
 		Scope:       scopeRead,
+		Audience:    audienceAny,
 		Description: "read fixture",
 		InputSchema: map[string]any{"type": "object"},
 	}, func(_ context.Context, _ *Server, _ json.RawMessage) (ToolCallResult, error) {
@@ -50,6 +51,7 @@ func TestRegistryCall_ScopeGate(t *testing.T) {
 	r.register(ToolDescriptor{
 		Name:        "fake_write",
 		Scope:       scopeWrite,
+		Audience:    audienceAny,
 		Description: "write fixture",
 		InputSchema: map[string]any{"type": "object"},
 	}, func(_ context.Context, _ *Server, _ json.RawMessage) (ToolCallResult, error) {

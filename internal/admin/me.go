@@ -79,6 +79,13 @@ func (h *Handlers) ChangeMyPassword(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	// A password change revokes every API/MCP token too — they were
+	// minted under the old credential and must not survive it.
+	if _, err := tx.ExecContext(r.Context(),
+		`DELETE FROM mcp_tokens WHERE user_id = $1`, me.ID); err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "token cleanup failed")
+		return
+	}
 	if err := tx.Commit(); err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "commit failed")
 		return
@@ -223,7 +230,7 @@ const AccountDeletionGracePeriod = 7 * 24 * time.Hour
 // able to pivot during the grace window.
 func (h *Handlers) DeleteMyAccount(w http.ResponseWriter, r *http.Request) {
 	me, _ := auth.FromContext(r.Context())
-	if !requirePasswordConfirm(w, r, h.DB) {
+	if !h.requirePasswordConfirm(w, r) {
 		return
 	}
 
@@ -254,6 +261,13 @@ func (h *Handlers) DeleteMyAccount(w http.ResponseWriter, r *http.Request) {
 	if _, err := h.DB.ExecContext(r.Context(),
 		`DELETE FROM sessions WHERE user_id = $1`, me.ID); err != nil {
 		logx.Warn("admin.me.delete.session_clear_failed", "user_id", me.ID, "err", err.Error())
+	}
+	// Revoke API/MCP tokens too so a scheduled-for-deletion account
+	// can't keep being reached through a long-lived bearer token during
+	// the grace window.
+	if _, err := h.DB.ExecContext(r.Context(),
+		`DELETE FROM mcp_tokens WHERE user_id = $1`, me.ID); err != nil {
+		logx.Warn("admin.me.delete.token_clear_failed", "user_id", me.ID, "err", err.Error())
 	}
 	logx.Info("admin.me.delete.scheduled",
 		"user_id", me.ID, "username", me.Username,

@@ -182,7 +182,52 @@ func getEvent(ctx context.Context, s *Server, raw json.RawMessage) (ToolCallResu
 	if err != nil {
 		return errorResult("call: " + err.Error()), nil
 	}
+	// A read-scoped token must stay read-only. The event detail carries
+	// capability tokens — each team's share + recap token and every
+	// player's magic-link token — which let the holder act as those
+	// teams/players. Strip them unless the token also holds write scope.
+	if status == http.StatusOK && !scopesAllow(scopesFromContext(ctx), scopeWrite) {
+		body = redactEventCapabilityTokens(body)
+	}
 	return adminCallResult(status, body), nil
+}
+
+// redactEventCapabilityTokens blanks the per-team and per-slot
+// capability tokens in an event-detail JSON body. Best-effort: on any
+// parse/marshal error it returns the input unchanged — a working
+// response without redaction is no worse than the pre-existing
+// behaviour, and the scope gate on mutating tools is the real control.
+func redactEventCapabilityTokens(body []byte) []byte {
+	var m map[string]any
+	if err := json.Unmarshal(body, &m); err != nil {
+		return body
+	}
+	teams, ok := m["teams"].([]any)
+	if !ok {
+		return body
+	}
+	for _, t := range teams {
+		tm, ok := t.(map[string]any)
+		if !ok {
+			continue
+		}
+		delete(tm, "token")
+		delete(tm, "recap_token")
+		members, ok := tm["members"].([]any)
+		if !ok {
+			continue
+		}
+		for _, mem := range members {
+			if md, ok := mem.(map[string]any); ok {
+				delete(md, "token")
+			}
+		}
+	}
+	out, err := json.Marshal(m)
+	if err != nil {
+		return body
+	}
+	return out
 }
 
 // createEventArgs mirrors admin.createEventRequest but uses the

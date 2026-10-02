@@ -218,16 +218,30 @@ func (h *Handlers) CreatePurchase(w http.ResponseWriter, r *http.Request) {
 	case "":
 		// Free buys skip Stripe regardless of how the operator is
 		// configured — Stripe rejects $0 Checkout Sessions. Otherwise
-		// default to stripe when wired, simulated as the dev fallback.
+		// default to stripe when wired, the dev simulated provider when
+		// that's what's running, and refuse outright when a paid buy has
+		// no provider to settle it (rather than silently minting a free
+		// licence through the simulated path).
 		if amount == 0 {
 			provider = "free"
 		} else if h.paymentsEnabled() {
 			provider = "stripe"
-		} else {
+		} else if h.simulatedActive() {
 			provider = "simulated"
+		} else {
+			httpx.Error(w, http.StatusServiceUnavailable, "payments are not configured on this server")
+			return
 		}
-	case "free", "simulated", "stripe", "invoice":
+	case "free", "stripe", "invoice":
 		// Caller-specified. Validated below.
+	case "simulated":
+		// Dev-only auto-confirm provider. Refuse unless it's actually the
+		// wired provider, so a caller on a Stripe (or unconfigured) box
+		// can't opt out of real payment and self-fulfil for free.
+		if !h.simulatedActive() {
+			httpx.Error(w, http.StatusForbidden, "simulated payments are not enabled on this server")
+			return
+		}
 	default:
 		httpx.Error(w, http.StatusBadRequest, "unsupported provider")
 		return
@@ -458,6 +472,15 @@ func (h *Handlers) ConfirmPurchase(w http.ResponseWriter, r *http.Request) {
 	if !isAdmin(me) {
 		if me.OrgID == nil || *me.OrgID != orgID {
 			httpx.Error(w, http.StatusForbidden, "not your purchase")
+			return
+		}
+		// This endpoint is the dev simulated-checkout "Pay" button. Real
+		// providers settle elsewhere: stripe via its signed webhook,
+		// free/invoice at creation. So a non-admin may only confirm when
+		// the simulated provider is actually wired — otherwise an org
+		// could flip its own pending stripe purchase to paid for free.
+		if !h.simulatedActive() {
+			httpx.Error(w, http.StatusForbidden, "this purchase is completed through the checkout flow")
 			return
 		}
 	}
