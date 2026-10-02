@@ -320,7 +320,11 @@ func TestAdmins_CRUDAndGuards(t *testing.T) {
 		ID int64 `json:"id"`
 	}
 	body := map[string]string{"username": "second", "password": "secondpw"}
-	if s := root.do("POST", "/api/admin/admins", body, &second); s != 201 {
+	// Creating an admin requires password re-confirmation, like deleting one.
+	if s := root.do("POST", "/api/admin/admins", body, nil); s != 401 {
+		t.Fatalf("no-confirm create = %d, want 401", s)
+	}
+	if s := root.doWithConfirm("POST", "/api/admin/admins", "rootpw", body, &second); s != 201 {
 		t.Fatalf("create second admin = %d, want 201", s)
 	}
 

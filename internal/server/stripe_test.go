@@ -174,7 +174,7 @@ func TestStripeWebhook_CheckoutCompleted_HappyPath(t *testing.T) {
 		map[string]any{
 			"id":             "cs_test_abc",
 			"object":         "checkout.session",
-			"amount_total":   800,
+			"amount_total":   2500,
 			"currency":       "eur",
 			"payment_status": "paid",
 			"metadata": map[string]string{

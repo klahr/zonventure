@@ -28,15 +28,6 @@ import (
 // check is a thin nil-test against `h.Provider`.
 func (h *Handlers) paymentsEnabled() bool { return payments.Enabled(h.Provider) }
 
-// simulatedActive reports whether the dev-only simulated payments
-// provider is the one wired on this server. It only wires under
-// ZV_ENV=dev (see server.go), so on any real deployment this is false —
-// which is what gates the self-fulfil-for-free paths (CreatePurchase's
-// "simulated" provider and the ConfirmPurchase endpoint) to dev.
-func (h *Handlers) simulatedActive() bool {
-	return h.Provider != nil && h.Provider.Name() == "simulated"
-}
-
 // createPurchaseCheckoutSession opens a hosted checkout session for
 // an org purchase (one slot pack tied to an adventure). The price
 // is inlined via the params bag, metadata carries our purchase id

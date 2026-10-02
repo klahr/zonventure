@@ -95,7 +95,7 @@ func TestWorker_DeliveredOnSuccess(t *testing.T) {
 		t.Fatalf("SendTest: %v", err)
 	}
 
-	w := &Worker{DB: db, Client: srv.Client()}
+	w := &Worker{DB: db, Client: srv.Client(), AllowLoopback: true}
 	if err := w.tick(context.Background()); err != nil {
 		t.Fatalf("tick: %v", err)
 	}
@@ -166,7 +166,7 @@ func TestWorker_RetryOnNon2xx(t *testing.T) {
 		t.Fatalf("SendTest: %v", err)
 	}
 
-	w := &Worker{DB: db, Client: srv.Client()}
+	w := &Worker{DB: db, Client: srv.Client(), AllowLoopback: true}
 	before := time.Now().UTC()
 	if err := w.tick(context.Background()); err != nil {
 		t.Fatalf("tick: %v", err)
@@ -236,7 +236,7 @@ func TestWorker_DeadLetterAfterMaxAttempts(t *testing.T) {
 		t.Fatalf("pre-age: %v", err)
 	}
 
-	w := &Worker{DB: db, Client: srv.Client()}
+	w := &Worker{DB: db, Client: srv.Client(), AllowLoopback: true}
 	if err := w.tick(context.Background()); err != nil {
 		t.Fatalf("tick: %v", err)
 	}
@@ -297,7 +297,7 @@ func TestWorker_DisabledEndpointDeadletters(t *testing.T) {
 		t.Fatalf("disable: %v", err)
 	}
 
-	w := &Worker{DB: db, Client: srv.Client()}
+	w := &Worker{DB: db, Client: srv.Client(), AllowLoopback: true}
 	if err := w.tick(context.Background()); err != nil {
 		t.Fatalf("tick: %v", err)
 	}

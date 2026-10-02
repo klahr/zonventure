@@ -506,19 +506,22 @@ func importEnvelopeJSON(ctx context.Context, db *sql.DB, manifestJSON []byte, ov
 	}
 	if env.Adventure.Avatar != nil && env.Adventure.Avatar.File != "" {
 		if b, ok := assets[env.Adventure.Avatar.File]; ok {
-			// Re-encode through the same normaliser the upload path uses
-			// rather than trusting the archive's bytes + MIME. The avatar
-			// is served from the app origin, so an archive that smuggled
-			// an HTML/SVG polyglot under image/* would be stored XSS
-			// otherwise; NormalizeUpload rasterises/re-encodes it to a
-			// clean image (and refuses anything that isn't one).
-			norm, normMIME, nerr := imageutil.NormalizeUpload(b, env.Adventure.Avatar.MimeType, imageutil.DefaultMaxDim)
-			if nerr != nil {
+			// The avatar is served from the app origin, so an archive
+			// mustn't be able to smuggle active content under an image
+			// MIME. Prefer re-encoding through the upload normaliser
+			// (rasterises SVG, strips any HTML/image polyglot). If the
+			// bytes don't decode we keep them only when the declared type
+			// is a raster image — inert under the server's nosniff header
+			// — and refuse anything else (e.g. a broken SVG).
+			avMIME, avBytes := env.Adventure.Avatar.MimeType, b
+			if norm, normMIME, nerr := imageutil.NormalizeUpload(b, env.Adventure.Avatar.MimeType, imageutil.DefaultMaxDim); nerr == nil {
+				avMIME, avBytes = normMIME, norm
+			} else if !safeRasterMIME(env.Adventure.Avatar.MimeType) {
 				return 0, "", "", badRequestf("adventure avatar: %s", nerr.Error())
 			}
 			if _, err := tx.ExecContext(ctx,
 				`UPDATE adventures SET avatar_mime_type = $1, avatar_content = $2 WHERE id = $3`,
-				normMIME, norm, advID); err != nil {
+				avMIME, avBytes, advID); err != nil {
 				return 0, "", "", fmt.Errorf("write avatar: %w", err)
 			}
 		}
@@ -581,6 +584,21 @@ func importAdventureRow(ctx context.Context, tx *sql.Tx, slug string, adv export
 	return id, err
 }
 
+// safeRasterMIME reports whether a MIME is a raster image type that is
+// inert when served with X-Content-Type-Options: nosniff — i.e. a
+// browser won't interpret its bytes as anything active even if they
+// aren't a valid image. Used on import to decide whether undecodable
+// bytes may be kept as-is (preserving a faithful round-trip) or must be
+// refused. Deliberately excludes image/svg+xml, which renders as an
+// active document.
+func safeRasterMIME(m string) bool {
+	switch strings.ToLower(strings.TrimSpace(m)) {
+	case "image/png", "image/jpeg", "image/jpg", "image/webp", "image/gif":
+		return true
+	}
+	return false
+}
+
 // importGraph stores the envelope's media as the new adventure's, points
 // the graph at them, and saves it as the draft and publishes it. A graph
 // that does not validate — an exported draft may not — stays a draft.
@@ -606,16 +624,17 @@ func importGraph(ctx context.Context, tx *sql.Tx, advID, userID int64, env *grap
 		}
 		mime := m.MimeType
 		if m.Kind == graph.MediaImage {
-			// Re-encode imported images the same way the upload path does,
-			// so an archive can't smuggle an HTML/SVG polyglot under an
-			// image/* MIME and have it served as stored XSS from /media/.
-			// ShrinkKeepAlpha decodes raster only, so svg+xml (and any
-			// non-image) is refused here.
-			shrunk, newMIME, serr := imageutil.ShrinkKeepAlpha(b, imageutil.DefaultMaxDim)
-			if serr != nil {
+			// Re-encode imported images so an archive can't smuggle an
+			// HTML/SVG polyglot under an image MIME and have it served as
+			// stored XSS from /media/. ShrinkKeepAlpha decodes raster
+			// only; if it fails we keep the bytes only for a declared
+			// raster type (inert under nosniff) and refuse svg+xml / other
+			// active types.
+			if shrunk, newMIME, serr := imageutil.ShrinkKeepAlpha(b, imageutil.DefaultMaxDim); serr == nil {
+				b, mime = shrunk, newMIME
+			} else if !safeRasterMIME(m.MimeType) {
 				return badRequestf("graph media %q: %s", m.File, serr.Error())
 			}
-			b, mime = shrunk, newMIME
 		}
 		id, err := insertGraphMedia(ctx, tx, advID, userID, m.Kind, mime, b)
 		if err != nil {
