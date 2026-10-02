@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { auth, type Whoami } from "@zonventure/api";
+import { auth, siteWordmark, type Whoami } from "@zonventure/api";
 import { I18nProvider, useT } from "./i18n.tsx";
 import { SessionProvider, useSession } from "./session.tsx";
 import { Login } from "./Login.tsx";
@@ -96,7 +96,7 @@ function Gate() {
       return (
         <main className="centered" aria-busy="true">
           <div className="login__brand" aria-hidden="true">
-            <span className="login__wordmark">zonventure</span>
+            <span className="login__wordmark">{siteWordmark()}</span>
           </div>
           <p className="lede loading-pulse">{t.t("Loading…")}</p>
         </main>
@@ -156,7 +156,7 @@ function OrgPicker({ user }: { user: Whoami }) {
     <main className="login">
       <div className="login__card">
         <div className="login__brand">
-          <span className="login__wordmark">zonventure</span>
+          <span className="login__wordmark">{siteWordmark()}</span>
           <span className="login__sub">{t.t("select organization")}</span>
         </div>
         <p className="login__hint">

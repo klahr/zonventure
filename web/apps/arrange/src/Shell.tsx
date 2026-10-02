@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useRef, useState, type ComponentType } from "react";
 import { createPortal } from "react-dom";
 import { Menu as MenuIcon, X, Building2, CalendarDays, ChevronLeft, ChevronRight, ChevronUp, Compass, Gauge, Gift, LogOut, Map as MapIcon, Monitor, Moon, Settings, Sun, Terminal, type LucideIcon } from "lucide-react";
-import { auth, emails, type Whoami } from "@zonventure/api";
+import { auth, emails, siteName, siteWordmark, type Whoami } from "@zonventure/api";
 import { readTheme, setTheme, type Theme } from "@zonventure/ui";
 import { useT } from "./i18n.tsx";
 import { useSession } from "./session.tsx";
@@ -226,8 +226,8 @@ export function Shell({ user }: { user: Whoami }) {
         >
           {drawer ? <X size={20} aria-hidden /> : <MenuIcon size={20} aria-hidden />}
         </button>
-        <a className="shell__brand" href={href({ name: "dashboard" })} title="Zonventure" aria-label="Zonventure">
-          <span className="shell__wordmark" aria-hidden="true">zonventure</span>
+        <a className="shell__brand" href={href({ name: "dashboard" })} title={siteName()} aria-label={siteName()}>
+          <span className="shell__wordmark" aria-hidden="true">{siteWordmark()}</span>
           {/* On a phone the mark alone, to leave the bar to the breadcrumb. */}
           <svg className="shell__mark" viewBox="0 0 314 266" aria-hidden="true">
             <path className="shell__mark-p" d="M14.0,12.7Q9.0,4.0 19.0,4.0L59.0,4.0Q69.0,4.0 74.0,12.7L99.2,57.0L154.6,57.0L97.0,158.0Z" />

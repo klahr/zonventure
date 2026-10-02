@@ -2,6 +2,8 @@ package emailtpl
 
 import (
 	"strings"
+
+	"github.com/klahr/zonventure/internal/sitename"
 )
 
 // The emails, one function each: what they say, in a language, given
@@ -29,21 +31,21 @@ func mdEscape(s string) string {
 // --- signing in (always the platform's own brand) ---------------------------
 
 func PasswordReset(lang, link string) (string, Content) {
-	return T(lang, "Reset your Zonventure password"), Content{
+	return T(lang, "Reset your %s password", sitename.Name()), Content{
 		Lang:      lang,
 		Preheader: T(lang, "Choose a new password — the link works for an hour."),
 		Heading:   T(lang, "Reset your password"),
-		Body:      T(lang, "Someone — hopefully you — asked to reset the password for this Zonventure account."),
+		Body:      T(lang, "Someone — hopefully you — asked to reset the password for this %s account.", mdEscape(sitename.Name())),
 		Buttons:   []Button{{T(lang, "Choose a new password"), link}},
 		Footer:    T(lang, "The link expires in 1 hour. If you didn't ask for this, ignore the email: your password stays as it is."),
 	}
 }
 
 func VerifyEmail(lang, link string) (string, Content) {
-	return T(lang, "Verify your Zonventure email"), Content{
+	return T(lang, "Verify your %s email", sitename.Name()), Content{
 		Lang:      lang,
 		Preheader: T(lang, "One click and you're in."),
-		Heading:   T(lang, "Welcome to Zonventure!"),
+		Heading:   T(lang, "Welcome to %s!", sitename.Name()),
 		Body:      T(lang, "Confirm your email address to finish setting up your account."),
 		Buttons:   []Button{{T(lang, "Confirm my email"), link}},
 		Footer:    T(lang, "The link expires in 1 hour. If you didn't sign up, you can ignore this email."),
@@ -51,11 +53,11 @@ func VerifyEmail(lang, link string) (string, Content) {
 }
 
 func EmailChange(lang, link string) (string, Content) {
-	return T(lang, "Confirm your new Zonventure email"), Content{
+	return T(lang, "Confirm your new %s email", sitename.Name()), Content{
 		Lang:      lang,
 		Preheader: T(lang, "Confirm the address to start using it."),
 		Heading:   T(lang, "Confirm your new email"),
-		Body:      T(lang, "You asked to use this address for your Zonventure account. Confirm it to make the change."),
+		Body:      T(lang, "You asked to use this address for your %s account. Confirm it to make the change.", mdEscape(sitename.Name())),
 		Buttons:   []Button{{T(lang, "Confirm this address"), link}},
 		Footer:    T(lang, "If you didn't ask for this, ignore the email: your account keeps its current address."),
 	}
@@ -91,7 +93,7 @@ func TeamInvitation(lang, team, event, org string, players []PlayerLink, calenda
 	if event != "" {
 		heading = T(lang, "You're in: %s", event)
 	}
-	return T(lang, "Your Zonventure team links"), Content{
+	return T(lang, "Your %s team links", sitename.Name()), Content{
 		Lang:      lang,
 		Preheader: T(lang, "The links for team %s — one per player.", team),
 		Heading:   heading,
@@ -110,7 +112,7 @@ func TeamLink(lang, teamURL, playURL, voucher, org string) (string, Content) {
 	if voucher != "" && playURL != "" {
 		body += "\n\n" + T(lang, "Prefer to type it in? Go to %[1]s and enter your voucher code: **%[2]s**", playURL, voucher)
 	}
-	return T(lang, "Your Zonventure ticket — team link inside"), Content{
+	return T(lang, "Your %s ticket — team link inside", sitename.Name()), Content{
 		Lang:      lang,
 		Preheader: T(lang, "Set up your team and start whenever you're ready."),
 		Heading:   T(lang, "Thanks — your adventure is ready"),
@@ -125,7 +127,7 @@ func BoxConfirmed(lang, partner, teamURL, playURL, voucher, org string) (string,
 	_, c := TeamLink(lang, teamURL, playURL, voucher, org)
 	c.Heading = T(lang, "Your %s box is confirmed!", partner)
 	c.Footer = T(lang, "The link stays valid for a year. Lost it? Use “I lost my link” on the play page with this email address.")
-	return T(lang, "Your Zonventure adventure — team link inside"), c
+	return T(lang, "Your %s adventure — team link inside", sitename.Name()), c
 }
 
 // BoxRejected tells a buyer their box's code did not check out.
@@ -170,7 +172,7 @@ func PlayLinks(lang string, links []PlayerLink, org string) (string, Content) {
 			b.WriteString(T(lang, "- **%[1]s**, team %[2]s: [%[3]s](%[3]s)\n", mdEscape(l.Player), mdEscape(l.Team), l.URL))
 		}
 	}
-	return T(lang, "Your Zonventure play links"), Content{
+	return T(lang, "Your %s play links", sitename.Name()), Content{
 		Lang:      lang,
 		Preheader: T(lang, "Your way back into the game."),
 		Heading:   T(lang, "Your play links"),

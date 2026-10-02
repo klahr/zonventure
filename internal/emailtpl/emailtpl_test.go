@@ -34,7 +34,7 @@ func TestEveryThemeRendersEveryKind(t *testing.T) {
 
 func TestNamesCannotInjectHTML(t *testing.T) {
 	_, c := TeamInvitation("en", `<script>x</script>`, "E", "O", []PlayerLink{{Player: "<b>p</b>", URL: "https://e.org/p"}}, false)
-	h, _ := Render(Classic, Zonventure(), "s", c)
+	h, _ := Render(Classic, Platform(), "s", c)
 	if strings.Contains(h, "<script>x") || strings.Contains(h, "<b>p</b>") {
 		t.Errorf("unescaped names in %s", h)
 	}
@@ -57,8 +57,8 @@ func TestLinesKeepsLineBreaks(t *testing.T) {
 }
 
 func TestUnknownThemeFallsBack(t *testing.T) {
-	h1, _ := Render("nope", Zonventure(), "s", Content{Heading: "H"})
-	h2, _ := Render(Classic, Zonventure(), "s", Content{Heading: "H"})
+	h1, _ := Render("nope", Platform(), "s", Content{Heading: "H"})
+	h2, _ := Render(Classic, Platform(), "s", Content{Heading: "H"})
 	if h1 != h2 {
 		t.Error("an unknown theme should render as classic")
 	}

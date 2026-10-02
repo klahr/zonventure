@@ -166,7 +166,7 @@ func (h *Handlers) sendResetEmail(r *http.Request, to, token string) error {
 	}
 	link := buildResetLink(h.PublicURL, r, token)
 	subject, c := emailtpl.PasswordReset(emailtpl.LangFromRequest(r), link)
-	return h.Mailer.Send(r.Context(), emailtpl.Message([]string{to}, subject, emailtpl.Classic, emailtpl.Zonventure(), c))
+	return h.Mailer.Send(r.Context(), emailtpl.Message([]string{to}, subject, emailtpl.Classic, emailtpl.Platform(), c))
 }
 
 // buildResetLink returns the password-reset URL the email body

@@ -4,13 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self'; connect-src 'self' wss: ws:; media-src 'self' blob:; object-src 'none'; base-uri 'self'">
-<title>Zonventure | Recap</title>
+<title>{{SITE_NAME}} | Recap</title>
+<meta name="application-name" content="{{SITE_NAME}}">
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <!-- Public-by-token. The recap is shared into chat apps and social
      networks, so the OG card stays generic — team data is rendered
      client-side and absent from the static body. -->
-<meta property="og:title" content="Zonventure | Event Recap">
-<meta property="og:description" content="A team's adventure recap on Zonventure.">
+<meta property="og:title" content="{{SITE_NAME}} | Event Recap">
+<meta property="og:description" content="A team's adventure recap on {{SITE_NAME}}.">
 <meta property="og:type" content="website">
 <meta name="twitter:card" content="summary">
 <!-- Robots noindex on the page itself too. The HTTP handler also
@@ -200,12 +201,12 @@ body {
 </head>
 <body>
 <div class="wrap" id="wrap">
-  <div class="brand">zonventure<small>recap</small></div>
+  <div class="brand">{{SITE_WORDMARK}}<small>recap</small></div>
   <div id="root">
     <p class="empty" id="loading">Loading…</p>
   </div>
   <div class="foot">
-    <a href="/">Zonventure</a>
+    <a href="/">{{SITE_NAME}}</a>
   </div>
 </div>
 
@@ -335,7 +336,7 @@ function render(d) {
   // chat-app preview makes sense.
   if (navigator.share || navigator.clipboard?.writeText) {
     const url = location.href;
-    const title = d.adventure_title || 'Zonventure';
+    const title = d.adventure_title || document.querySelector('meta[name="application-name"]').content;
     const text = (d.team_name ? d.team_name + ' — ' : '') + title;
     const shareBtn = el('button', { class: 'btn primary' }, t('Share this recap'));
     shareBtn.addEventListener('click', async () => {

@@ -35,6 +35,7 @@ import (
 	"github.com/klahr/zonventure/internal/auth"
 	"github.com/klahr/zonventure/internal/httpx"
 	"github.com/klahr/zonventure/internal/logx"
+	"github.com/klahr/zonventure/internal/sitename"
 	"github.com/klahr/zonventure/internal/tokenx"
 )
 
@@ -92,7 +93,7 @@ func (s *Server) ProtectedResource(w http.ResponseWriter, r *http.Request) {
 		"authorization_servers":    []string{s.Issuer},
 		"scopes_supported":         allScopes,
 		"bearer_methods_supported": []string{"header"},
-		"resource_name":            "Zonventure",
+		"resource_name":            sitename.Name(),
 	})
 }
 

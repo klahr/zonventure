@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/klahr/zonventure/internal/adventure"
+	"github.com/klahr/zonventure/internal/sitename"
 )
 
 // ErrNoSchedule indicates the event has neither a scheduled_at nor
@@ -102,7 +103,7 @@ func BuildForEvent(ctx context.Context, db *sql.DB, lib *adventure.Library, even
 	out.EndAt = endTime.UTC()
 	out.Title = adv.Meta.Title
 	if out.Title == "" {
-		out.Title = "Zonventure event"
+		out.Title = sitename.Name() + " event"
 	}
 	out.OrgName = orgName
 	out.OrganizerEmail = strings.TrimSpace(creator.String)

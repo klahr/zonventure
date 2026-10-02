@@ -182,8 +182,7 @@ the floor.
       taste calls: `Uppdrag` is overloaded for both Quest (consumer-
       facing /store) and Assignment (paid licence) — pick one;
       `Recap` left untranslated; `Hint` rendered as both `tips` and
-      `ledtråd`; brand split `Zonventure` vs `Zonventure Studio` vs
-      `zonventure.studio` needs a rule
+      `ledtråd`
 - [ ] **arrange.html code-split.** 18k-line monolith parses in full
       on every page load regardless of role. Logs / migration /
       simulator are admin-only and could lazy-load

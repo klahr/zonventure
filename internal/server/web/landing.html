@@ -36,7 +36,7 @@
 <meta property="og:title" content="{{TITLE}}">
 <meta property="og:description" content="{{OG_DESC}}">
 <meta property="og:type" content="website">
-<meta property="og:site_name" content="Zonventure">
+<meta property="og:site_name" content="{{SITE_NAME}}">
 <meta property="og:locale" content="{{LANG_CODE}}">
 <!-- og:url MUST be absolute per the OpenGraph spec; relative "/" is
      accepted by some unfurlers but Slack and others fall back to
@@ -50,7 +50,7 @@
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="The Zonventure logo and name">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Zonventure">
+<meta name="twitter:title" content="{{SITE_NAME}}">
 <meta name="twitter:description" content="{{OG_DESC}}">
 <meta name="twitter:image" content="{{LANDING_URL}}/og-image.png">
 
@@ -216,7 +216,7 @@
     <label for="nav-toggle" class="hamburger" aria-hidden="true">
       <span></span><span></span><span></span>
     </label>
-    <a class="brand" href="/" aria-label="{{BRAND_ARIA}}">zonventure</a>
+    <a class="brand" href="/" aria-label="{{BRAND_ARIA}}">{{SITE_WORDMARK}}</a>
     <nav aria-label="{{NAV_PRIMARY_ARIA}}">
       <div class="lang-picker" role="group" aria-label="{{LANG_ARIA}}">
         <a href="?lang=en" class="lang-link {{EN_ACTIVE}}" {{EN_CURRENT}} hreflang="en">

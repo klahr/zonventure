@@ -147,7 +147,7 @@ func (h *Handlers) ChangeMyEmail(w http.ResponseWriter, r *http.Request) {
 			lang = emailtpl.Lang(own.String)
 		}
 		subject, c := emailtpl.EmailChange(lang, link)
-		err := h.Mailer.Send(r.Context(), emailtpl.Message([]string{newEmail}, subject, emailtpl.Classic, emailtpl.Zonventure(), c))
+		err := h.Mailer.Send(r.Context(), emailtpl.Message([]string{newEmail}, subject, emailtpl.Classic, emailtpl.Platform(), c))
 		if err != nil {
 			logx.Warn("admin.me.email.mail_failed", "user_id", me.ID, "err", err.Error())
 		}

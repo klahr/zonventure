@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Compass, Pencil } from "lucide-react";
+import { siteName } from "@zonventure/api";
 import { useT } from "../../i18n.tsx";
 import { useSession } from "../../session.tsx";
 import { href } from "../../router.ts";
@@ -43,7 +44,7 @@ export function EventPage({ id }: { id: number }) {
   const quest = detail.data ? isQuest(detail.data.event) : false;
   const orgId = detail.data?.event.org_id;
   // Who the event's emails come from, for their preview.
-  const orgName = (state.status === "authenticated" && state.user.memberships.find((m) => m.org_id === orgId)?.org_name) || "Zonventure";
+  const orgName = (state.status === "authenticated" && state.user.memberships.find((m) => m.org_id === orgId)?.org_name) || siteName();
   // A failed status read shows no banner rather than blocking the page.
   const connect = useLoad((s) => (quest && orgId ? api.getConnectStatus(orgId, s).catch(() => null) : Promise.resolve(null)), [quest, orgId]);
   const [open, setOpen] = useState<Open>(null);

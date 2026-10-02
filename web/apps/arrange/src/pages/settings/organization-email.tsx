@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Check } from "lucide-react";
-import { emails } from "@zonventure/api";
+import { emails, siteName } from "@zonventure/api";
 import { useT } from "../../i18n.tsx";
 import { Card, EmailPreview, ErrorBox, Field, Loading, errorText, useLoad } from "../../ui/index.ts";
 import "./organization-email.css";
@@ -113,7 +113,7 @@ export function EmailLookCard({ orgName, canEdit }: { orgName: string; canEdit: 
         </section>
         <section className="og-section">
           <h3>{t.t("Language")}</h3>
-          <Field label={t.t("Emails outside events")} hint={t.t("Such as box redemptions. An event's emails are in its adventure's language; designers get theirs in the language they use Zonventure in.")}>
+          <Field label={t.t("Emails outside events")} hint={t.t("Such as box redemptions. An event's emails are in its adventure's language; designers get theirs in the language they use {{name}} in.", { name: siteName() })}>
             <select value={current.data.language} disabled={!canEdit} onChange={(e) => void saveLanguage(e.target.value)}>
               {current.data.languages.map((l) => (
                 <option key={l} value={l}>{LANGUAGE_NAMES[l] ?? l}</option>

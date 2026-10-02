@@ -10,7 +10,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self'; connect-src 'self' wss: ws:; media-src 'self' blob:; object-src 'none'; base-uri 'self'">
-<title>Arranger manual · Zonventure</title>
+<title>Arranger manual · {{SITE_NAME}}</title>
 <meta name="description" content="A pedagogic walk-through of the Zonventure platform for arrangers: author adventures, fill them with puzzles, schedule events, add teams, and integrate via webhooks.">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 
@@ -20,10 +20,10 @@
 
 <!-- Open Graph + Twitter so this URL previews well when arrangers
      paste it into Slack / docs while integrating. -->
-<meta property="og:title" content="Arranger manual — Zonventure">
+<meta property="og:title" content="Arranger manual — {{SITE_NAME}}">
 <meta property="og:description" content="Step-by-step guide to authoring adventures, scheduling events, adding teams, and integrating via webhooks.">
 <meta property="og:type" content="article">
-<meta property="og:site_name" content="Zonventure">
+<meta property="og:site_name" content="{{SITE_NAME}}">
 <meta name="twitter:card" content="summary">
 <meta name="twitter:title" content="Arranger manual">
 <meta name="twitter:description" content="Step-by-step guide to authoring adventures, scheduling events, adding teams, and integrating via webhooks.">
@@ -214,7 +214,7 @@
     <label for="nav-toggle" class="hamburger" aria-hidden="true">
       <span></span><span></span><span></span>
     </label>
-    <a class="brand" href="/" aria-label="{{BRAND_ARIA}}">zonventure</a>
+    <a class="brand" href="/" aria-label="{{BRAND_ARIA}}">{{SITE_WORDMARK}}</a>
     <nav aria-label="{{NAV_PRIMARY_ARIA}}">
       <div class="lang-picker" role="group" aria-label="{{LANG_ARIA}}">
         <a href="?lang=en" class="lang-link {{EN_ACTIVE}}" {{EN_CURRENT}} hreflang="en">
@@ -533,7 +533,7 @@ cp .env.example .env       # edit the marked values before going live
 docker compose up -d</code></pre>
   <p>That brings up Postgres + the app, runs migrations, seeds an initial <code>admin / admin</code> account, and listens on <code>http://localhost:8080</code>. Change the seeded password through the UI on first login. Front the app with TLS (Caddy / nginx / Traefik) before pointing real users at it.</p>
 
-  <h3>What's the same as the hosted product</h3>
+  <h3>What's the same on any instance</h3>
   <ul>
     <li>The arranger surface, the play surface, the live audience display — same code, same shapes, same UX.</li>
     <li>Adventures, event passes, events, teams, magic links, recap PDF.</li>
@@ -543,7 +543,7 @@ docker compose up -d</code></pre>
 
   <h3>What's different on self-host</h3>
   <ul>
-    <li><strong>No Stripe by default.</strong> Without <code>ZV_STRIPE_SECRET_KEY</code> set, the Catalog's checkout flow creates event passes directly — you get the licence without paying, because the operator is you. Wire Stripe in if you want to resell to other organisations on your instance.</li>
+    <li><strong>No Stripe by default.</strong> Without <code>ZV_STRIPE_SECRET_KEY</code> set, event passes within the free player allowance still work, but paid purchases are refused. Wire Stripe in if you want to sell passes or tickets to other organisations on your instance, and set your own prices with <code>ZV_PRICE_PER_PLAYER_CENTS</code> / <code>ZV_FREE_PLAYERS_PER_EVENT</code>.</li>
     <li><strong>No SSO by default.</strong> Username + password is the front door. Set <code>ZV_OIDC_*</code> to enable Google Workspace (or any OIDC provider) sign-in for your domain. The login page picks up the SSO button automatically.</li>
     <li><strong>You're the global admin.</strong> The seeded admin account manages every org on the instance, curates the catalog and watches the system — it doesn't author adventures or run events. To author, make an organisation the catalog publisher (Organizations page) and add yourself to it as a separate, non-admin user. Treat the admin account like a root password — store it in the same place you keep <code>POSTGRES_PASSWORD</code>.</li>
     <li><strong>Backups are your job.</strong> All durable state lives in the <code>zv_pg_data</code> volume — adventures, events, uploaded images and audio, recap tokens. <code>docker compose down -v</code> wipes everything. SELFHOSTING.md has a tested <code>pg_dump</code>-based backup recipe.</li>

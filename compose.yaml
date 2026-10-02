@@ -61,6 +61,8 @@ services:
       # no-op, so leaving it in place across restarts is safe.
       ZV_SEED_ADMIN:    ${ZV_SEED_ADMIN:-admin:admin}
       ZV_PUBLIC_URL:    ${ZV_PUBLIC_URL:-http://localhost:8080}
+      # Name shown to players and arrangers; empty → "Zonventure".
+      ZV_SITE_NAME:     ${ZV_SITE_NAME:-}
       ZV_LOG_FORMAT:    ${ZV_LOG_FORMAT:-text}
       # Proxies whose X-Forwarded-* headers are honoured. A host-side
       # proxy reaches the container from the compose network gateway,

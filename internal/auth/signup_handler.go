@@ -229,7 +229,7 @@ func (h *Handlers) sendVerificationEmail(r *http.Request, to, token string) erro
 	}
 	link := buildVerifyLink(h.PublicURL, r, token)
 	subject, c := emailtpl.VerifyEmail(emailtpl.LangFromRequest(r), link)
-	return h.Mailer.Send(r.Context(), emailtpl.Message([]string{to}, subject, emailtpl.Classic, emailtpl.Zonventure(), c))
+	return h.Mailer.Send(r.Context(), emailtpl.Message([]string{to}, subject, emailtpl.Classic, emailtpl.Platform(), c))
 }
 
 // buildVerifyLink builds the email-verification URL using only the

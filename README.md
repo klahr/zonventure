@@ -5,8 +5,8 @@ school field trips, city walks: you author the puzzles, schedule an
 event, and watch your players walk and solve from any phone.
 
 A single Go binary plus Postgres, packaged as a one-command Docker
-Compose stack. Self-host it for free, or use the hosted product at
-the price of a coffee per team.
+Compose stack, free to self-host. A hosted version runs at
+[zonventure.com](https://zonventure.com).
 
 > The repository, Go module, and CLI binary are named `zv`. The
 > platform and its arranger console are both just **Zonventure**.
@@ -60,8 +60,6 @@ see [SELFHOSTING.md](SELFHOSTING.md#building-from-source-without-docker).
   for connecting Claude / other LLM clients to author adventures.
 - **[`/manual`](https://zonventure.com/manual)** — in-app arranger
   manual (also available offline at `internal/server/web/manual.html`).
-- **[`/pricing`](https://zonventure.com/pricing)** — hosted-product
-  tiers and FAQ.
 
 ## Project layout
 
@@ -82,10 +80,8 @@ internal/mailer/   # SMTP + log-only mailers
 
 ## Status
 
-In private-beta shape. Hosted launch waits on legal review of the
-auto-rendered `/terms` and `/privacy` pages plus marketing screenshots;
-self-host is usable today. See [`TODO.md`](TODO.md) for the full
-production-readiness scorecard.
+Self-host is usable today. See [`TODO.md`](TODO.md) for open work
+and the roadmap.
 
 ## Licence
 
@@ -137,5 +133,5 @@ formatting sweep.
 
 ## Contact
 
-`hello@zonventure.com` for product questions; security reports to the
-same address with `[security]` in the subject.
+`hello@zonventure.com` for product questions. Report security issues
+as described in [SECURITY.md](SECURITY.md).

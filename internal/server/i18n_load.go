@@ -10,6 +10,8 @@ import (
 	"reflect"
 	"sort"
 	"strings"
+
+	"github.com/klahr/zonventure/internal/sitename"
 )
 
 // i18n.js DICT injection + landing-locale population from JSON.
@@ -118,7 +120,7 @@ func loadLandingFromJSON() error {
 				log.Printf("landing locale %s: unknown field %q (skipped)", lang, name)
 				continue
 			}
-			f.SetString(val)
+			f.SetString(sitename.Fill(val))
 		}
 		landingLocales[lang] = s
 	}

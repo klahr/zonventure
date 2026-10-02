@@ -12,6 +12,7 @@ import (
 	"github.com/klahr/zonventure/internal/admin"
 	"github.com/klahr/zonventure/internal/auth"
 	"github.com/klahr/zonventure/internal/logx"
+	"github.com/klahr/zonventure/internal/sitename"
 	"github.com/klahr/zonventure/internal/storage"
 )
 
@@ -151,7 +152,7 @@ func (s *Server) dispatch(ctx context.Context, req Request) (Response, bool) {
 	case "initialize":
 		out.Result = initializeResult{
 			ProtocolVersion: protocolVersion,
-			ServerInfo:      serverInfo{Name: "Zonventure", Version: s.version},
+			ServerInfo:      serverInfo{Name: sitename.Name(), Version: s.version},
 			Capabilities: map[string]any{
 				"tools":   map[string]any{},
 				"prompts": map[string]any{},

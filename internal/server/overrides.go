@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+
+	"github.com/klahr/zonventure/internal/sitename"
 )
 
 // webOverrideDir is set once at startup from Config.WebOverrideDir.
@@ -56,7 +58,17 @@ func loadOverrides(dir string) error {
 // the embedded FS. Override paths drop the leading "web/" prefix so
 // the dir mirrors user-facing filenames (landing.html, pricing.html,
 // …) — operators don't need to recreate the embed-relative layout.
+//
+// HTML files come back with {{SITE_NAME}} filled in (ZV_SITE_NAME).
 func readWebFile(name string) ([]byte, error) {
+	b, err := readWebFileRaw(name)
+	if err != nil || !strings.HasSuffix(name, ".html") {
+		return b, err
+	}
+	return []byte(sitename.Fill(string(b))), nil
+}
+
+func readWebFileRaw(name string) ([]byte, error) {
 	if webOverrideDir != "" {
 		rel := strings.TrimPrefix(name, "web/")
 		b, err := os.ReadFile(filepath.Join(webOverrideDir, rel))
@@ -106,7 +118,7 @@ func applyLandingLocaleOverrides(path string) error {
 				log.Printf("landing locale override: %s has no string field %q (skipped)", lang, name)
 				continue
 			}
-			f.SetString(val)
+			f.SetString(sitename.Fill(val))
 		}
 		landingLocales[lang] = base
 	}

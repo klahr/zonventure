@@ -1,5 +1,5 @@
 {
-  "Welcome to Zonventure": "Välkommen till Zonventure",
+  "Welcome to {{name}}": "Välkommen till {{name}}",
   "{{done}} of {{total}} done": "{{done}} av {{total}} klara",
   "All {{n}} scheduled": "Alla {{n}} schemalagda",
   "Get one in the catalog": "Skaffa ett i katalogen",

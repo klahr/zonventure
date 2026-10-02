@@ -23,6 +23,7 @@ import (
 
 	"github.com/klahr/zonventure/internal/mailer"
 	"github.com/klahr/zonventure/internal/mdx"
+	"github.com/klahr/zonventure/internal/sitename"
 )
 
 // Theme is how an email is laid out; the brand colours it.
@@ -70,9 +71,10 @@ type Brand struct {
 	Ink     string
 }
 
-// Zonventure is the platform's own brand, for what no organisation sends.
-func Zonventure() Brand {
-	return Brand{Name: "Zonventure", Accent: "#b0154f", Accent2: "#f59e0b", Surface: "#f7f5f2", Ink: "#1f2937"}
+// Platform is the instance's own brand (named by ZV_SITE_NAME), for
+// what no organisation sends.
+func Platform() Brand {
+	return Brand{Name: sitename.Name(), Accent: "#b0154f", Accent2: "#f59e0b", Surface: "#f7f5f2", Ink: "#1f2937"}
 }
 
 // Button is a call to action.
@@ -102,7 +104,7 @@ var hexRe = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
 
 // fill gives a brand the platform's colour for any it lacks.
 func (b Brand) fill() Brand {
-	d := Zonventure()
+	d := Platform()
 	pick := func(v, def string) string {
 		if hexRe.MatchString(strings.TrimSpace(v)) {
 			return strings.TrimSpace(v)
@@ -259,10 +261,10 @@ func Render(t Theme, b Brand, subject string, c Content) (htmlOut, text string) 
 
 // signature is the line under every email: who sent it.
 func signature(b Brand, lang string) string {
-	if b.Name == "Zonventure" {
-		return "Zonventure"
+	if b.Name == sitename.Name() {
+		return b.Name
 	}
-	return T(lang, "%s · sent with Zonventure", b.Name)
+	return T(lang, "%s · sent with %s", b.Name, sitename.Name())
 }
 
 func bandText(s style) string {
@@ -360,10 +362,10 @@ func Lookup(ctx context.Context, q Querier, publicURL string, orgID, eventID int
 			FROM organizations o WHERE o.id = $1
 		`, orgID).Scan(&org, &name, &eventTheme, &orgTheme, &accent, &accent2, &bg, &text, &hasLogo, &lang)
 	} else {
-		return Look{Theme: Classic, Brand: Zonventure(), Lang: "en"}
+		return Look{Theme: Classic, Brand: Platform(), Lang: "en"}
 	}
 	if err != nil {
-		return Look{Theme: Classic, Brand: Zonventure(), Lang: "en"}
+		return Look{Theme: Classic, Brand: Platform(), Lang: "en"}
 	}
 	b := Brand{Name: name, Accent: accent.String, Accent2: accent2.String, Surface: bg.String, Ink: text.String}
 	if base := strings.TrimRight(strings.TrimSpace(publicURL), "/"); hasLogo && base != "" {

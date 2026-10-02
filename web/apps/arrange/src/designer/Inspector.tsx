@@ -29,7 +29,7 @@ import type {
 import { ANSWER_KINDS, MAX_SLOTS, usesMatchers, WEBHOOK_METHODS, answerOptions, isGraded, optionValue, withAnswerKind, withBlocks, matcherLabel, nodeBySlug, portLabel, puzzlesInto, referAnswer, resolveAnswer, updateNode } from "@zonventure/graph";
 import { THEMES } from "@zonventure/play-ui";
 import { useT } from "../i18n.tsx";
-import { emails } from "@zonventure/api";
+import { emails, siteName } from "@zonventure/api";
 import { useSession } from "../session.tsx";
 import { Dialog } from "../ui/dialogs.tsx";
 import { EmailPreview } from "../ui/emailPreview.tsx";
@@ -1565,7 +1565,7 @@ function EmailStepPreview({ subject, body }: { subject: string; body: string }) 
     return () => ac.abort();
   }, [open, subject, body, t]);
   const user = session.state.status === "authenticated" ? session.state.user : null;
-  const from = user?.memberships.find((m) => m.org_id === user.org_id)?.org_name ?? "Zonventure";
+  const from = user?.memberships.find((m) => m.org_id === user.org_id)?.org_name ?? siteName();
   return (
     <>
       <Button variant="ghost" size="sm" onClick={() => setOpen(true)}>

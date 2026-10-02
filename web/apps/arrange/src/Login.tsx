@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
-import { ApiError, auth, type SignupConfig } from "@zonventure/api";
+import { ApiError, auth, siteName, siteWordmark, type SignupConfig } from "@zonventure/api";
 import { useT } from "./i18n.tsx";
 
 /**
@@ -50,7 +50,7 @@ function Card({ sub, children, onSubmit }: { sub?: string; children: ReactNode; 
     <main className="login">
       <form className="login__card" onSubmit={onSubmit}>
         <div className="login__brand">
-          <a className="login__wordmark" href="/" aria-label={t.t("Zonventure home page")}>zonventure</a>
+          <a className="login__wordmark" href="/" aria-label={t.t("{{name}} home page", { name: siteName() })}>{siteWordmark()}</a>
           {sub && <span className="login__sub">{sub}</span>}
         </div>
         {children}

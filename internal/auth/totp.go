@@ -15,6 +15,7 @@ import (
 
 	"github.com/klahr/zonventure/internal/tokenx"
 
+	"github.com/klahr/zonventure/internal/sitename"
 	"github.com/pquerna/otp/totp"
 )
 
@@ -35,10 +36,9 @@ import (
 const TOTPChallengeTTL = 5 * time.Minute
 
 // TOTPIssuer is the label that appears in the user's authenticator
-// app next to the account row. Matches the product name; not
-// configurable today since most authenticator apps merge entries by
-// (issuer, account) anyway.
-const TOTPIssuer = "Zonventure"
+// app next to the account row: the site name (ZV_SITE_NAME). Only new
+// enrolments pick up a change; existing entries keep their label.
+func TOTPIssuer() string { return sitename.Name() }
 
 // totpRecoveryCodeCount is how many single-use recovery codes are
 // minted per enrolment. Ten balances "enough for a few lockouts" with
@@ -163,7 +163,7 @@ func EnrolStart(ctx context.Context, db *sql.DB, key []byte, userID int64, accou
 		return TOTPSetup{}, ErrTOTPAlreadyEnrolled
 	}
 	k, err := totp.Generate(totp.GenerateOpts{
-		Issuer:      TOTPIssuer,
+		Issuer:      TOTPIssuer(),
 		AccountName: accountLabel,
 	})
 	if err != nil {

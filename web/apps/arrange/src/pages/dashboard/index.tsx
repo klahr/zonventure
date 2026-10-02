@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { ArrowRight, Building2, CalendarClock, Plus, Radio, Ticket, Users } from "lucide-react";
-import type { Whoami } from "@zonventure/api";
+import { siteName, type Whoami } from "@zonventure/api";
 import { useT } from "../../i18n.tsx";
 import { useSession } from "../../session.tsx";
 import { CATALOG_ENABLED, href, navigate } from "../../router.ts";
@@ -185,7 +185,7 @@ function LobbyDashboard() {
   const [creating, setCreating] = useState(false);
   return (
     <Page>
-      <PageHeader title={t.t("Welcome to Zonventure")} />
+      <PageHeader title={t.t("Welcome to {{name}}", { name: siteName() })} />
       <Card>
         <p>{t.t("You're signed in but not part of any organization yet. Either create one (you'll be its admin) or ask someone in an existing organization to invite you.")}</p>
         <div>

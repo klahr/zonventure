@@ -24,7 +24,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self'; connect-src 'self' wss: ws:; media-src 'self' blob:; object-src 'none'; base-uri 'self'">
-<title>{{TITLE}} · Zonventure</title>
+<title>{{TITLE}} · {{SITE_NAME}}</title>
 <meta name="description" content="{{BLURB}}">
 <link rel="canonical" href="{{CANONICAL_URL}}">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
@@ -36,7 +36,7 @@
 <meta property="og:title" content="{{TITLE}}">
 <meta property="og:description" content="{{BLURB}}">
 <meta property="og:url" content="{{CANONICAL_URL}}">
-<meta property="og:site_name" content="Zonventure">
+<meta property="og:site_name" content="{{SITE_NAME}}">
 <meta property="og:image" content="{{COVER_URL}}">
 <meta property="og:locale" content="{{LANG_CODE}}">
 <meta property="product:price:amount" content="{{PRICE_MAJOR}}">
@@ -177,7 +177,7 @@
     <label for="nav-toggle" class="hamburger" aria-hidden="true">
       <span></span><span></span><span></span>
     </label>
-    <a class="brand" href="/" aria-label="{{BRAND_ARIA}}">zonventure</a>
+    <a class="brand" href="/" aria-label="{{BRAND_ARIA}}">{{SITE_WORDMARK}}</a>
     <nav aria-label="{{NAV_PRIMARY_ARIA}}">
       <div class="lang-picker" role="group" aria-label="{{LANG_ARIA}}">
         <a href="?lang=en" class="lang-link {{EN_ACTIVE}}" {{EN_CURRENT}} hreflang="en">

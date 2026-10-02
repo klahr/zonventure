@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { Whoami } from "@zonventure/api";
+import { siteName, type Whoami } from "@zonventure/api";
 import { useT } from "../../i18n.tsx";
 import { CATALOG_ENABLED, href, type Route } from "../../router.ts";
 import { Button, Dialog } from "../../ui/index.ts";
@@ -84,7 +84,7 @@ export function OnboardingDialog({ user, onClose }: { user: Whoami; onClose: () 
 
   return (
     <Dialog
-      title={t.t("Welcome to Zonventure")}
+      title={t.t("Welcome to {{name}}", { name: siteName() })}
       onClose={onClose}
       footer={
         <>

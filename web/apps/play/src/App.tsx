@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Markdown, PlayView, StartCeremony, brandVars, formatSeconds, loadFont, metresBetween, useEngineClock, withTheme, type Translate } from "@zonventure/play-ui";
-import { play } from "@zonventure/api";
+import { play, siteName } from "@zonventure/api";
 import { useT } from "./i18n.tsx";
 import { useGame } from "./useGame.ts";
 import { Inbox } from "./Inbox.tsx";
@@ -41,7 +41,7 @@ export function App() {
   // The tab and home-screen name say which game this is.
   const docTitle = s ? [s.event.adventure_title, s.team.name].filter(Boolean).join(" · ") : "";
   useEffect(() => {
-    document.title = docTitle || "Zonventure";
+    document.title = docTitle || siteName();
   }, [docTitle]);
 
   // Cheating, for a tester: seven quick taps on the title ask for the
@@ -172,7 +172,7 @@ export function App() {
         />
         {s.event.org_logo_url && <img className="app-bar__logo" src={s.event.org_logo_url} alt={s.event.org_name ?? ""} />}
         <div className="app-bar__who">
-          <div className="app-bar__title" onClick={tapTitle}>{s.event.adventure_title || "Zonventure"}</div>
+          <div className="app-bar__title" onClick={tapTitle}>{s.event.adventure_title || siteName()}</div>
           <div className="app-bar__team">
             {s.team.name}
             {myRoles.length > 0 && <span className="app-bar__role"> · {myRoles.join(", ")}</span>}
@@ -246,7 +246,7 @@ export function App() {
           }}
         />
       )}
-      {ceremony && <StartCeremony title={s.event.adventure_title || "Zonventure"} brand={s.brand ?? null} onDone={() => setCeremony(false)} />}
+      {ceremony && <StartCeremony title={s.event.adventure_title || siteName()} brand={s.brand ?? null} onDone={() => setCeremony(false)} />}
     </div>
   );
 }
@@ -299,7 +299,7 @@ function Intro({ state, t, usesLocation, onDone }: { state: play.PlayState; t: T
   const name = state.me?.name;
   return (
     <div className="app-lobby">
-      <h1>{state.event.adventure_title || "Zonventure"}</h1>
+      <h1>{state.event.adventure_title || siteName()}</h1>
       <p>
         {name
           ? t("You're playing as {{name}} on team {{team}}.", { name, team: state.team.name })

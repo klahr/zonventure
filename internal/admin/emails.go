@@ -109,7 +109,7 @@ func (h *Handlers) previewLook(w http.ResponseWriter, r *http.Request, eventID i
 	} else if me.OrgID != nil {
 		l = h.orgLook(r.Context(), *me.OrgID)
 	} else {
-		l = look{Theme: emailtpl.Classic, Brand: emailtpl.Zonventure(), Lang: "en"}
+		l = look{Theme: emailtpl.Classic, Brand: emailtpl.Platform(), Lang: "en"}
 	}
 	if theme != "" {
 		if !emailtpl.Valid(emailtpl.Theme(theme)) {

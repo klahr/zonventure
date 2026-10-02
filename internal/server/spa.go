@@ -5,12 +5,14 @@ import (
 	"embed"
 	"encoding/hex"
 	"errors"
+	"html"
 	"io/fs"
 	"net/http"
 	"path"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/klahr/zonventure/internal/sitename"
 )
 
 // The React apps, built by Vite into web/dist/<app>/ and compiled into
@@ -67,6 +69,8 @@ func registerSPARoutes(r chi.Router) {
 			}
 		}
 
+		index = brandSPAIndex(index)
+
 		r.Handle(prefix+"/assets/*", http.StripPrefix(prefix+"/", spaAssetHandler(app)))
 
 		// Both the bare prefix and everything under it return the
@@ -87,6 +91,23 @@ func registerSPARoutes(r chi.Router) {
 			serveIndex(w, req)
 		})
 	}
+}
+
+// spaTitle and spaAppName are how each app's index.html names the
+// site; brandSPAIndex swaps in ZV_SITE_NAME. The apps read the
+// application-name meta at runtime (siteName() in @zonventure/api).
+// The source keeps the literal default so the Vite dev server shows
+// a sensible title.
+const (
+	spaTitle   = "<title>Zonventure</title>"
+	spaAppName = `<meta name="application-name" content="Zonventure" />`
+)
+
+func brandSPAIndex(index []byte) []byte {
+	n := html.EscapeString(sitename.Name())
+	s := strings.Replace(string(index), spaTitle, "<title>"+n+"</title>", 1)
+	s = strings.Replace(s, spaAppName, `<meta name="application-name" content="`+n+`" />`, 1)
+	return []byte(s)
 }
 
 // spaAssetHandler serves content-hashed build output for one app.

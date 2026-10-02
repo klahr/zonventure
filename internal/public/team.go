@@ -14,6 +14,7 @@ import (
 	"github.com/klahr/zonventure/internal/httpx"
 	"github.com/klahr/zonventure/internal/imageutil"
 	"github.com/klahr/zonventure/internal/play"
+	"github.com/klahr/zonventure/internal/sitename"
 	"github.com/klahr/zonventure/internal/storage"
 	"github.com/klahr/zonventure/internal/ws"
 	qrcode "github.com/skip2/go-qrcode"
@@ -25,6 +26,7 @@ const maxTeamAvatarBytes = 5 * 1024 * 1024
 
 // teamShareView is the data passed to the share-page template.
 type teamShareView struct {
+	SiteName       string
 	TeamName       string
 	AdventureTitle string
 	AvatarURL      string
@@ -135,6 +137,7 @@ func (h *Handlers) TeamShare(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
+	view.SiteName = sitename.Name()
 	if err := teamShareTmpl.Execute(w, view); err != nil {
 		// Already wrote some bytes most likely; nothing useful to report.
 		_ = err
@@ -351,7 +354,7 @@ func (h *Handlers) DeleteTeamAvatarByToken(w http.ResponseWriter, r *http.Reques
 var teamShareTmpl = template.Must(template.New("team").Parse(`<!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>{{.TeamName}} · Zonventure</title>
+<title>{{.TeamName}} · {{.SiteName}}</title>
 <meta name="robots" content="noindex">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <meta name="theme-color" content="#0b1020">
@@ -497,7 +500,7 @@ var teamShareTmpl = template.Must(template.New("team").Parse(`<!doctype html>
 
 <main id="main" class="wrap" tabindex="-1">
   <div class="stage">
-    <div class="mark"><span class="dot"></span> Zonventure</div>
+    <div class="mark"><span class="dot"></span> {{.SiteName}}</div>
 
     <div class="compass" aria-hidden="true">
       <svg viewBox="0 0 100 100" fill="none">

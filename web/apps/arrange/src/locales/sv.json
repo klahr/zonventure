@@ -467,7 +467,7 @@
   "Team or company name (optional)": "Lag- eller företagsnamn (valfritt)",
   "Leave blank to use your name. You can change it any time in Settings.": "Lämna tomt för att använda ditt namn. Du kan ändra det när som helst under Inställningar.",
   "Link name and author": "Länknamn och upphovsperson",
-  "Zonventure home page": "Zonventures startsida",
+  "{{name}} home page": "Startsida för {{name}}",
   "+ New place on the map…": "+ Ny plats på kartan…",
   "Edit the place on the map": "Redigera platsen på kartan",
   "The team sees this name.": "Laget ser det här namnet.",

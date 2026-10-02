@@ -13,6 +13,7 @@ import (
 	"github.com/klahr/zonventure/internal/httpx"
 	"github.com/klahr/zonventure/internal/logx"
 	mailerpkg "github.com/klahr/zonventure/internal/mailer"
+	"github.com/klahr/zonventure/internal/sitename"
 )
 
 type sendTestEmailRequest struct {
@@ -152,13 +153,13 @@ func (h *Handlers) SendTestEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	subject := "Zonventure: SMTP test"
-	body := "This is a test email from your Zonventure server.\r\n\r\n" +
+	subject := sitename.Name() + ": SMTP test"
+	body := "This is a test email from your " + sitename.Name() + " server.\r\n\r\n" +
 		"If you can read this, the SMTP configuration is working.\r\n\r\n" +
 		"Triggered by " + me.Username + " at " + time.Now().UTC().Format(time.RFC3339) + ".\r\n"
 
 	// In the platform's own look: it tests the server, not an organisation.
-	msg := look{Theme: emailtpl.Classic, Brand: emailtpl.Zonventure()}.themedText(mailerpkg.Message{To: []string{to}, Subject: subject, Text: body})
+	msg := look{Theme: emailtpl.Classic, Brand: emailtpl.Platform()}.themedText(mailerpkg.Message{To: []string{to}, Subject: subject, Text: body})
 	if err := h.Mailer.Send(r.Context(), msg); err != nil {
 		logx.Warn("admin.test_email.send_failed", "to", to, "err", err.Error())
 		httpx.ServerErr(w, http.StatusBadGateway, "send failed", err)

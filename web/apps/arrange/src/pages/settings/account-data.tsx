@@ -95,7 +95,7 @@ function BundleRow() {
           <HelpPopover
             label={t.t("About the migration bundle")}
             body={
-              t.t("A portable zip containing your organization — adventures, events, teams, slots, ticket purchases, audit log. The same format the platform uses for self-host ↔ hosted migrations. Re-importable on any Zonventure instance.") +
+              t.t("A portable zip containing your organization — adventures, events, teams, slots, ticket purchases, audit log. The same format the Migration wizard uses to move an org between instances. Re-importable on any Zonventure instance.") +
               " " +
               t.t("Tokens (team / recap / live / slot) are preserved verbatim, so existing magic-link emails and printed QR codes keep working on the destination.")
             }
