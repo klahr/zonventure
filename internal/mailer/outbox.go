@@ -196,8 +196,8 @@ func (o *Outbox) claimNext(ctx context.Context) (*claimedMail, error) {
 		SELECT id, kind, to_addr, subject, body_text, body_html, reply_to, attempts
 		  FROM mail_outbox
 		 WHERE status = 'pending'
-		   AND next_attempt_at <= (now()::text)
-		   AND (in_flight_until IS NULL OR in_flight_until::timestamptz < now())
+		   AND next_attempt_at <= now_text()
+		   AND (in_flight_until IS NULL OR in_flight_until < now_text())
 		 ORDER BY next_attempt_at
 		 LIMIT 1
 		 FOR UPDATE SKIP LOCKED

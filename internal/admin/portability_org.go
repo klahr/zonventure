@@ -689,6 +689,14 @@ func ImportOrgBundle(ctx context.Context, db *sql.DB, data []byte) (OrgImportSum
 	// leave half-imported state behind. CASCADE drops every
 	// dependency (memberships, adventures, events, teams, …).
 	cleanupOrg := func() {
+		// ticket_purchases outlive their event (SET NULL, for
+		// bookkeeping); these are only copies, and leaving them would
+		// collide on stripe_session_id when the import is retried.
+		if _, err := db.ExecContext(context.Background(),
+			`DELETE FROM ticket_purchases WHERE event_id IN (SELECT id FROM events WHERE org_id = $1)`, orgID); err != nil {
+			logx.Warn("admin.org_bundle.import.cleanup_failed",
+				"org_id", orgID, "err", err.Error())
+		}
 		if _, err := db.ExecContext(context.Background(),
 			`DELETE FROM organizations WHERE id = $1`, orgID); err != nil {
 			logx.Warn("admin.org_bundle.import.cleanup_failed",

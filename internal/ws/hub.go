@@ -225,6 +225,17 @@ func PositionsTopic(eventID int64) string {
 	return "positions:" + strconv.FormatInt(eventID, 10)
 }
 
+// KindProgress is published on EventTopic for a team's move that only
+// that team's phones need; the console and live screen still wake on it.
+const KindProgress = "progress"
+
+// Progress is KindProgress's data. Scored tells finished teams, whose
+// place on the finish screen moves with every score, to reload.
+type Progress struct {
+	Team   int64 `json:"team"`
+	Scored bool  `json:"scored,omitempty"`
+}
+
 // TeamTopic carries what only one team's players need: a teammate's
 // location ping, which can bring the whole team into a zone.
 func TeamTopic(teamID int64) string {

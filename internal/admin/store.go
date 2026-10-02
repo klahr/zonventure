@@ -432,7 +432,7 @@ func (h *Handlers) handleTicketCheckoutCompleted(ctx context.Context, event paym
 		state      string
 	)
 	if err := tx.QueryRowContext(ctx, `
-		SELECT event_id, buyer_email, team_size, state
+		SELECT COALESCE(event_id, 0), buyer_email, team_size, state
 		FROM ticket_purchases WHERE id = $1 FOR UPDATE
 	`, purchaseID).Scan(&eventID, &buyerEmail, &teamSize, &state); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -446,6 +446,12 @@ func (h *Handlers) handleTicketCheckoutCompleted(ctx context.Context, event paym
 		return updateTicketStripeMetadata(ctx, tx, purchaseID, *event.Checkout)
 	}
 	if state != "pending" {
+		return nil
+	}
+	if eventID == 0 {
+		// Event deleted while the payment was in flight; the row is
+		// kept for bookkeeping but there is no event to join.
+		logx.Warn("payments.ticket_checkout.event_gone", "ticket_purchase_id", purchaseID)
 		return nil
 	}
 
@@ -614,6 +620,11 @@ func (h *Handlers) sendTicketTeamLink(ctx context.Context, eventID int64, buyerE
 	}
 	l := h.eventLook(ctx, eventID)
 	subject, c := emailtpl.TeamLink(l.Lang, publicURL+"/team/"+teamToken, publicURL+"/play", auth.FormatVoucherCode(voucher), l.Brand.Name)
+	if h.SellerIdentity != nil {
+		if seller := h.SellerIdentity(l.Lang); seller != "" {
+			c.Footer = strings.TrimSpace(c.Footer + " " + seller)
+		}
+	}
 	msg := l.message([]string{buyerEmail}, subject, c)
 	if h.MailOutbox != nil {
 		return h.MailOutbox.Enqueue(ctx, "ticket_team_link", msg)

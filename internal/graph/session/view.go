@@ -447,9 +447,9 @@ func (t *Team) setBlocks(v *View, n graph.Node) {
 		case graph.BlockCompass, graph.BlockMap, graph.BlockRadar:
 			bv.Place = t.zoneBySlug(b.Zone)
 		case graph.BlockCountdown:
-			from := t.NodeEnteredAt
+			from := t.nodeClock()
 			if b.From == "start" {
-				from = t.StartedAt
+				from = t.startClock()
 			}
 			end := from.Add(time.Duration(b.Seconds) * time.Second)
 			bv.EndsAt = &end
@@ -554,9 +554,9 @@ func (t *Team) wakeup(p cond.Predicate) (at *time.Time, zone bool) {
 	case cond.OpInZone, cond.OpPlayersIn, cond.OpZonesHeld, cond.OpHere, cond.OpWalked:
 		return nil, true
 	case cond.OpNodeElapsed:
-		return later(t.NodeEnteredAt), false
+		return later(t.nodeClock()), false
 	case cond.OpElapsed:
-		return later(t.StartedAt), false
+		return later(t.startClock()), false
 	case cond.OpTimeOfDay, cond.OpWeekday:
 		d := t.Now.Add(recheckEvery)
 		return &d, false
@@ -949,12 +949,12 @@ func (t *Team) view() View {
 			h := cfg.Hints[revealed]
 			v.NextHint = &NextHint{
 				Index:       revealed,
-				AvailableAt: t.NodeEnteredAt.Add(time.Duration(h.DelaySeconds) * time.Second),
+				AvailableAt: t.nodeClock().Add(time.Duration(h.DelaySeconds) * time.Second),
 				Cost:        h.Cost,
 			}
 		}
 		if cfg.TimeLimitSeconds > 0 && !t.NodeEnteredAt.IsZero() {
-			d := t.NodeEnteredAt.Add(time.Duration(cfg.TimeLimitSeconds) * time.Second)
+			d := t.nodeClock().Add(time.Duration(cfg.TimeLimitSeconds) * time.Second)
 			v.Deadline = &d
 			_, v.HasTimeout = outputFor(n, graph.OnTimeout)
 		}

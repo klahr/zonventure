@@ -39,10 +39,13 @@ type SMTPMailer struct {
 	From string  // e.g. "Zonventure <noreply@example.com>"
 	TLS  TLSMode // default TLSStartTLS when zero
 	// DialTimeout caps how long we wait for the TCP/TLS handshake.
-	// Defaults to 10 seconds; total Send() time is bounded by this
-	// plus how long the server takes to accept DATA.
+	// Defaults to 10 seconds. The rest of the session is bounded by
+	// sessionTimeout (or ctx's deadline, if sooner), so a server that
+	// stalls after connecting can't hang the caller.
 	DialTimeout time.Duration
 }
+
+const sessionTimeout = 60 * time.Second
 
 // Send delivers msg via the configured SMTP server. Returns the first
 // error encountered; partial deliveries (some recipients accepted,
@@ -74,6 +77,11 @@ func (s *SMTPMailer) Send(ctx context.Context, msg Message) error {
 		timeout = 10 * time.Second
 	}
 
+	deadline := time.Now().Add(timeout + sessionTimeout)
+	if d, ok := ctx.Deadline(); ok && d.Before(deadline) {
+		deadline = d
+	}
+
 	addr := net.JoinHostPort(s.Host, port)
 	dialer := &net.Dialer{Timeout: timeout}
 	tlsCfg := &tls.Config{ServerName: s.Host}
@@ -88,6 +96,7 @@ func (s *SMTPMailer) Send(ctx context.Context, msg Message) error {
 		if terr != nil {
 			return fmt.Errorf("smtp tls dial: %w", terr)
 		}
+		_ = conn.SetDeadline(deadline)
 		c, err = smtp.NewClient(conn, s.Host)
 		if err != nil {
 			conn.Close()
@@ -98,6 +107,7 @@ func (s *SMTPMailer) Send(ctx context.Context, msg Message) error {
 		if derr != nil {
 			return fmt.Errorf("smtp dial: %w", derr)
 		}
+		_ = conn.SetDeadline(deadline)
 		c, err = smtp.NewClient(conn, s.Host)
 		if err != nil {
 			conn.Close()
@@ -149,7 +159,6 @@ func (s *SMTPMailer) Send(ctx context.Context, msg Message) error {
 	if err := w.Close(); err != nil {
 		return fmt.Errorf("smtp end body: %w", err)
 	}
-	_ = ctx // net/smtp doesn't accept a context; honour DialTimeout
 	return nil
 }
 

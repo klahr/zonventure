@@ -120,7 +120,7 @@ func pruneProcessedWebhookEvents(ctx context.Context, db *sql.DB) {
 		DELETE FROM processed_webhook_events
 		WHERE ctid IN (
 		  SELECT ctid FROM processed_webhook_events
-		  WHERE received_at::timestamptz < now() - make_interval(days => 60)
+		  WHERE received_at::timestamp AT TIME ZONE 'UTC' < now() - make_interval(days => 60)
 		  LIMIT ` + strconv.Itoa(batchSize) + `
 		)
 	`
@@ -154,7 +154,7 @@ func pruneExpiredTOTPChallenges(ctx context.Context, db *sql.DB) {
 		DELETE FROM auth_totp_challenges
 		WHERE token IN (
 		  SELECT token FROM auth_totp_challenges
-		  WHERE expires_at::timestamptz < now()
+		  WHERE expires_at::timestamp AT TIME ZONE 'UTC' < now()
 		  LIMIT ` + strconv.Itoa(batchSize) + `
 		)
 	`
@@ -194,7 +194,7 @@ func pruneCompletedEventPings(ctx context.Context, db *sql.DB, days int) {
 		  JOIN events ar ON ar.id = lp.event_id
 		  WHERE ar.state IN ('completed','cancelled')
 		    AND COALESCE(ar.completed_at, ar.cancelled_at) IS NOT NULL
-		    AND COALESCE(ar.completed_at, ar.cancelled_at)::timestamptz < now() - make_interval(days => $1)
+		    AND COALESCE(ar.completed_at, ar.cancelled_at)::timestamp AT TIME ZONE 'UTC' < now() - make_interval(days => $1)
 		  LIMIT ` + strconv.Itoa(batchSize) + `
 		)
 	`
@@ -211,7 +211,7 @@ func pruneCompletedEventAnswers(ctx context.Context, db *sql.DB, days int) {
 		  JOIN events ar ON ar.id = t.event_id
 		  WHERE ar.state IN ('completed','cancelled')
 		    AND COALESCE(ar.completed_at, ar.cancelled_at) IS NOT NULL
-		    AND COALESCE(ar.completed_at, ar.cancelled_at)::timestamptz < now() - make_interval(days => $1)
+		    AND COALESCE(ar.completed_at, ar.cancelled_at)::timestamp AT TIME ZONE 'UTC' < now() - make_interval(days => $1)
 		  LIMIT ` + strconv.Itoa(batchSize) + `
 		)
 	`
@@ -231,7 +231,7 @@ func pruneCompletedEventPhotos(ctx context.Context, db *sql.DB, days int) {
 		  JOIN events ar ON ar.id = p.event_id
 		  WHERE ar.state IN ('completed','cancelled')
 		    AND COALESCE(ar.completed_at, ar.cancelled_at) IS NOT NULL
-		    AND COALESCE(ar.completed_at, ar.cancelled_at)::timestamptz < now() - make_interval(days => $1)
+		    AND COALESCE(ar.completed_at, ar.cancelled_at)::timestamp AT TIME ZONE 'UTC' < now() - make_interval(days => $1)
 		  LIMIT ` + strconv.Itoa(photoBatchSize) + `
 		)
 	`
@@ -245,7 +245,7 @@ func pruneCompletedEventPhotos(ctx context.Context, db *sql.DB, days int) {
 		  JOIN events ar ON ar.id = t.event_id
 		  WHERE ar.state IN ('completed','cancelled')
 		    AND COALESCE(ar.completed_at, ar.cancelled_at) IS NOT NULL
-		    AND COALESCE(ar.completed_at, ar.cancelled_at)::timestamptz < now() - make_interval(days => $1)
+		    AND COALESCE(ar.completed_at, ar.cancelled_at)::timestamp AT TIME ZONE 'UTC' < now() - make_interval(days => $1)
 		  LIMIT ` + strconv.Itoa(batchSize) + `
 		)
 	`
@@ -260,7 +260,7 @@ func pruneCompletedEventPhotos(ctx context.Context, db *sql.DB, days int) {
 		  JOIN events ar ON ar.id = t.event_id
 		  WHERE ar.state IN ('completed','cancelled')
 		    AND COALESCE(ar.completed_at, ar.cancelled_at) IS NOT NULL
-		    AND COALESCE(ar.completed_at, ar.cancelled_at)::timestamptz < now() - make_interval(days => $1)
+		    AND COALESCE(ar.completed_at, ar.cancelled_at)::timestamp AT TIME ZONE 'UTC' < now() - make_interval(days => $1)
 		  LIMIT ` + strconv.Itoa(batchSize) + `
 		)
 	`
@@ -274,7 +274,7 @@ func pruneCompletedEventPhotos(ctx context.Context, db *sql.DB, days int) {
 		  JOIN events ar ON ar.id = t.event_id
 		  WHERE ar.state IN ('completed','cancelled')
 		    AND COALESCE(ar.completed_at, ar.cancelled_at) IS NOT NULL
-		    AND COALESCE(ar.completed_at, ar.cancelled_at)::timestamptz < now() - make_interval(days => $1)
+		    AND COALESCE(ar.completed_at, ar.cancelled_at)::timestamp AT TIME ZONE 'UTC' < now() - make_interval(days => $1)
 		  LIMIT ` + strconv.Itoa(batchSize) + `
 		)
 	`
@@ -288,7 +288,7 @@ func pruneCompletedEventPhotos(ctx context.Context, db *sql.DB, days int) {
 		  JOIN events ar ON ar.id = t.event_id
 		  WHERE ar.state IN ('completed','cancelled')
 		    AND COALESCE(ar.completed_at, ar.cancelled_at) IS NOT NULL
-		    AND COALESCE(ar.completed_at, ar.cancelled_at)::timestamptz < now() - make_interval(days => $1)
+		    AND COALESCE(ar.completed_at, ar.cancelled_at)::timestamp AT TIME ZONE 'UTC' < now() - make_interval(days => $1)
 		  LIMIT ` + strconv.Itoa(batchSize) + `
 		)
 	`
@@ -392,12 +392,12 @@ func hardDeleteUser(ctx context.Context, db *sql.DB, userID int64, username stri
 
 func pruneAuthEvents(ctx context.Context, db *sql.DB, days int) {
 	// auth_events.ts is also a TEXT timestamp produced by now_text();
-	// cast to timestamptz so the comparison works.
+	// read it as UTC so the comparison works under any session TimeZone.
 	stmt := `
 		DELETE FROM auth_events
 		WHERE id IN (
 		  SELECT id FROM auth_events
-		  WHERE ts::timestamptz < now() - make_interval(days => $1)
+		  WHERE ts::timestamp AT TIME ZONE 'UTC' < now() - make_interval(days => $1)
 		  LIMIT ` + strconv.Itoa(batchSize) + `
 		)
 	`

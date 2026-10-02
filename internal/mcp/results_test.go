@@ -55,7 +55,7 @@ func TestDescribeEventLifecycle_Content(t *testing.T) {
 		// states
 		"scheduled", "running", "paused", "completed", "cancelled",
 		// transition tools
-		"create_event", "start_event", "pause_event", "resume_event", "cancel_event",
+		"create_event", "start_event", "pause_event", "resume_event", "end_event", "cancel_event",
 		// observation tools (cadence section)
 		"list_positions", "list_activity", "list_tracks", "get_event_state_summary",
 		// security gates

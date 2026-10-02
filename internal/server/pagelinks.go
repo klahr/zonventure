@@ -41,7 +41,8 @@ const hideLinksScript = `<script>(()=>{const u=%s;const q=u.map(p=>'a[href="'+p+
 	`f();new MutationObserver(f).observe(document.documentElement,{childList:true,subtree:true});})()</script>`
 
 // hideUnavailableLinks injects hideLinksScript into HTML pages while
-// any public page is unavailable. Only HTML is held back, and only an
+// any public page is unavailable, and fills the seller-identity
+// markers (spliceSellerIdentity) on every HTML page. Only HTML is held back, and only an
 // HTML response pays for the settings lookup; other responses stream
 // straight through.
 func hideUnavailableLinks(db *sql.DB, legal LegalConfig) func(http.Handler) http.Handler {
@@ -56,7 +57,7 @@ func hideUnavailableLinks(db *sql.DB, legal LegalConfig) func(http.Handler) http
 			if !bw.html {
 				return
 			}
-			body := bw.buf.Bytes()
+			body := spliceSellerIdentity(bw.buf.Bytes(), legal)
 			if gone := unavailablePages(r.Context(), db, legal); len(gone) > 0 {
 				list, _ := json.Marshal(gone)
 				script := []byte(strings.Replace(hideLinksScript, "%s", string(list), 1))

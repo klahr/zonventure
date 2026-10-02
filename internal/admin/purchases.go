@@ -216,26 +216,31 @@ func (h *Handlers) CreatePurchase(w http.ResponseWriter, r *http.Request) {
 	provider := req.Provider
 	switch provider {
 	case "":
-		// Free buys skip Stripe regardless of config — Stripe rejects $0
-		// Checkout Sessions. Otherwise default to stripe when it's wired
-		// and the simulated self-fulfil path when it isn't (dev / free
-		// self-host).
+		// Free buys skip Stripe regardless of how the operator is
+		// configured — Stripe rejects $0 Checkout Sessions. Otherwise
+		// default to stripe when wired, the dev simulated provider when
+		// that's what's running, and refuse outright when a paid buy has
+		// no provider to settle it (rather than silently minting a free
+		// licence through the simulated path).
 		if amount == 0 {
 			provider = "free"
+		} else if h.simulatedActive() {
+			provider = "simulated"
 		} else if h.paymentsEnabled() {
 			provider = "stripe"
 		} else {
-			provider = "simulated"
+			httpx.Error(w, http.StatusServiceUnavailable, "payments are not configured on this server")
+			return
 		}
 	case "free", "stripe", "invoice":
 		// Caller-specified. Validated below.
 	case "simulated":
-		// The simulated provider auto-confirms without taking money. That
-		// is fine on a box with no real payment provider (dev / free
-		// self-host), but on a Stripe-configured deployment a caller must
-		// not be able to opt out of paying by naming it. Refuse there.
-		if h.paymentsEnabled() {
-			httpx.Error(w, http.StatusForbidden, "simulated payments are not available on this server")
+		// Dev-only auto-confirm provider. Refuse unless it's actually the
+		// wired provider, so a caller on a Stripe (or unconfigured) box
+		// can't opt out of real payment and self-fulfil for free. A $0
+		// buy is coerced to the free provider below either way.
+		if amount > 0 && !h.simulatedActive() {
+			httpx.Error(w, http.StatusForbidden, "simulated payments are not enabled on this server")
 			return
 		}
 	default:
@@ -451,7 +456,7 @@ func (h *Handlers) ConfirmPurchase(w http.ResponseWriter, r *http.Request) {
 	// transactions can't both observe state='pending' and each insert
 	// their own assignment row.
 	err = tx.QueryRowContext(r.Context(), `
-		SELECT org_id, adventure_slug, max_players, state, assignment_id, top_up_assignment_id
+		SELECT COALESCE(org_id, 0), adventure_slug, max_players, state, assignment_id, top_up_assignment_id
 		FROM purchases WHERE id = $1 FOR UPDATE
 	`, purchaseID).Scan(&orgID, &advSlug, &maxPlayers, &state, &existingAssn, &topUpID)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -470,12 +475,12 @@ func (h *Handlers) ConfirmPurchase(w http.ResponseWriter, r *http.Request) {
 			httpx.Error(w, http.StatusForbidden, "not your purchase")
 			return
 		}
-		// This endpoint is the simulated-checkout "Pay" button for a box
-		// with no real payment provider (dev / free self-host). When
-		// Stripe is configured, a paid purchase settles via its signed
-		// webhook, so a non-admin must not be able to flip a pending
-		// purchase to paid for free here.
-		if h.paymentsEnabled() {
+		// This endpoint is the dev simulated-checkout "Pay" button. Real
+		// providers settle elsewhere: stripe via its signed webhook,
+		// free/invoice at creation. So a non-admin may only confirm when
+		// the simulated provider is actually wired — otherwise an org
+		// could flip its own pending stripe purchase to paid for free.
+		if !h.simulatedActive() {
 			httpx.Error(w, http.StatusForbidden, "this purchase is completed through the checkout flow")
 			return
 		}
@@ -490,6 +495,10 @@ func (h *Handlers) ConfirmPurchase(w http.ResponseWriter, r *http.Request) {
 	}
 	if state != "pending" {
 		httpx.Error(w, http.StatusConflict, "purchase is "+state+"; cannot confirm")
+		return
+	}
+	if orgID == 0 {
+		httpx.Error(w, http.StatusConflict, "purchase's organization was deleted; cannot confirm")
 		return
 	}
 
@@ -748,7 +757,7 @@ func (h *Handlers) GrantSlotsToEvent(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) ListPurchases(w http.ResponseWriter, r *http.Request) {
 	me, _ := auth.FromContext(r.Context())
 	query := `
-		SELECT p.id, p.org_id, p.adventure_slug, COALESCE(a.title, ''),
+		SELECT p.id, COALESCE(p.org_id, 0), p.adventure_slug, COALESCE(a.title, ''),
 		       p.max_players, p.amount_cents, p.currency, p.provider,
 		       COALESCE(p.provider_session_id, ''), p.state, p.assignment_id,
 		       p.top_up_assignment_id,
@@ -818,7 +827,7 @@ func (h *Handlers) GetPurchase(w http.ResponseWriter, r *http.Request) {
 		topUp      sql.NullInt64
 	)
 	err = h.DB.QueryRowContext(r.Context(), `
-		SELECT p.id, p.org_id, p.adventure_slug, COALESCE(a.title, ''),
+		SELECT p.id, COALESCE(p.org_id, 0), p.adventure_slug, COALESCE(a.title, ''),
 		       p.max_players, p.amount_cents, p.currency, p.provider,
 		       COALESCE(p.provider_session_id, ''), p.state, p.assignment_id,
 		       p.top_up_assignment_id,
@@ -880,9 +889,7 @@ const simulatedCheckoutHTML = `<!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Simulated checkout · Zonventure</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Aclonica&family=Open+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/assets/fontface.css">
 <style>
 :root { color-scheme: light dark; --accent:#ad1357; --ink:#1f3349; --bg:#fbfbfd; --muted:#6b7f96; --surface:#ffffff; --border:#c6d2e166; }
 @media (prefers-color-scheme: dark) { :root { --bg:#14202e; --ink:#e7ecf4; --muted:#9db1cc; --accent:#e24080; --surface:#1f3349; --border:#3a517266; } }

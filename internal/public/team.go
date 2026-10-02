@@ -355,9 +355,7 @@ var teamShareTmpl = template.Must(template.New("team").Parse(`<!doctype html>
 <meta name="robots" content="noindex">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <meta name="theme-color" content="#0b1020">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Aclonica&family=Open+Sans:wght@400;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/assets/fontface.css">
 <style>
   :root{
     --bg:#0b1020; --ink:#eef2ff; --ink-soft:#aab3d4; --ink-dim:#7e87ab;

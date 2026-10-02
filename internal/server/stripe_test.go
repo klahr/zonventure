@@ -9,10 +9,17 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/klahr/zonventure/internal/adventure"
+	"github.com/klahr/zonventure/internal/dbtest"
 	"github.com/klahr/zonventure/internal/server"
+
+	stripego "github.com/stripe/stripe-go/v82"
 )
 
 const (
@@ -115,6 +122,7 @@ func TestStripeWebhook_RejectsBadSignature(t *testing.T) {
 	cfg := server.Config{
 		StripeSecretKey:     testStripeSecretKey,
 		StripeWebhookSecret: testStripeWebhookKey,
+		Env:                 "dev",
 	}
 	ts, _, _, cleanup := seedPurchaseStack(t, cfg)
 	defer cleanup()
@@ -143,6 +151,7 @@ func TestStripeWebhook_CheckoutCompleted_HappyPath(t *testing.T) {
 	cfg := server.Config{
 		StripeSecretKey:     testStripeSecretKey,
 		StripeWebhookSecret: testStripeWebhookKey,
+		Env:                 "dev",
 	}
 	ts, db, _, cleanup := seedPurchaseStack(t, cfg)
 	defer cleanup()
@@ -172,11 +181,12 @@ func TestStripeWebhook_CheckoutCompleted_HappyPath(t *testing.T) {
 
 	body := eventEnvelope(t, "evt_test_completed_1", "checkout.session.completed",
 		map[string]any{
-			"id":             "cs_test_abc",
-			"object":         "checkout.session",
-			"amount_total":   2500,
-			"currency":       "eur",
-			"payment_status": "paid",
+			"id":              "cs_test_abc",
+			"object":          "checkout.session",
+			"amount_total":    2500,
+			"amount_subtotal": 2500,
+			"currency":        "eur",
+			"payment_status":  "paid",
 			"metadata": map[string]string{
 				"zv_purchase_id": fmt.Sprintf("%d", purchaseID),
 			},
@@ -228,6 +238,7 @@ func TestStripeWebhook_CheckoutCompleted_UnknownPurchase(t *testing.T) {
 	cfg := server.Config{
 		StripeSecretKey:     testStripeSecretKey,
 		StripeWebhookSecret: testStripeWebhookKey,
+		Env:                 "dev",
 	}
 	ts, _, _, cleanup := seedPurchaseStack(t, cfg)
 	defer cleanup()
@@ -254,6 +265,7 @@ func TestStripeWebhook_ChargeRefunded(t *testing.T) {
 	cfg := server.Config{
 		StripeSecretKey:     testStripeSecretKey,
 		StripeWebhookSecret: testStripeWebhookKey,
+		Env:                 "dev",
 	}
 	ts, db, _, cleanup := seedPurchaseStack(t, cfg)
 	defer cleanup()
@@ -301,6 +313,7 @@ func TestStripeWebhook_UnhandledEventType(t *testing.T) {
 	cfg := server.Config{
 		StripeSecretKey:     testStripeSecretKey,
 		StripeWebhookSecret: testStripeWebhookKey,
+		Env:                 "dev",
 	}
 	ts, _, _, cleanup := seedPurchaseStack(t, cfg)
 	defer cleanup()
@@ -312,5 +325,274 @@ func TestStripeWebhook_UnhandledEventType(t *testing.T) {
 	sig := stripeSign(t, body, testStripeWebhookKey)
 	if status, _ := postWebhook(t, ts, body, sig); status != http.StatusOK {
 		t.Fatalf("status = %d, want 200", status)
+	}
+}
+
+// An async payment method completes the session "unpaid": nothing is
+// granted until async_payment_succeeded, and async_payment_failed
+// marks the purchase failed.
+func TestStripeWebhook_AsyncPayment(t *testing.T) {
+	cfg := server.Config{
+		StripeSecretKey:     testStripeSecretKey,
+		StripeWebhookSecret: testStripeWebhookKey,
+		Env:                 "dev",
+	}
+	ts, db, orgID, cleanup := seedPurchaseStack(t, cfg)
+	defer cleanup()
+
+	seed := func() int64 {
+		var id int64
+		if err := db.QueryRow(`
+			INSERT INTO purchases(org_id, adventure_slug, max_players, amount_cents, currency, provider, state)
+			VALUES ($1, 'demo', 20, 2500, 'EUR', 'stripe', 'pending') RETURNING id
+		`, orgID).Scan(&id); err != nil {
+			t.Fatalf("seed purchase: %v", err)
+		}
+		return id
+	}
+	deliver := func(evtID, typ, sessID, status string, purchaseID int64) {
+		body := eventEnvelope(t, evtID, typ, map[string]any{
+			"id": sessID, "object": "checkout.session",
+			"amount_total": 2500, "amount_subtotal": 2500, "currency": "eur", "payment_status": status,
+			"metadata": map[string]string{"zv_purchase_id": fmt.Sprintf("%d", purchaseID)},
+		})
+		if code, msg := postWebhook(t, ts, body, stripeSign(t, body, testStripeWebhookKey)); code != http.StatusOK {
+			t.Fatalf("%s = %d (%s), want 200", typ, code, msg)
+		}
+	}
+	stateOf := func(id int64) string {
+		var st string
+		if err := db.QueryRow(`SELECT state FROM purchases WHERE id = $1`, id).Scan(&st); err != nil {
+			t.Fatalf("readback: %v", err)
+		}
+		return st
+	}
+
+	ok := seed()
+	deliver("evt_async_1", "checkout.session.completed", "cs_async_ok", "unpaid", ok)
+	if st := stateOf(ok); st != "pending" {
+		t.Fatalf("after unpaid completion state = %q, want pending", st)
+	}
+	deliver("evt_async_2", "checkout.session.async_payment_succeeded", "cs_async_ok", "paid", ok)
+	if st := stateOf(ok); st != "paid" {
+		t.Fatalf("after async success state = %q, want paid", st)
+	}
+
+	bad := seed()
+	deliver("evt_async_3", "checkout.session.completed", "cs_async_bad", "unpaid", bad)
+	deliver("evt_async_4", "checkout.session.async_payment_failed", "cs_async_bad", "unpaid", bad)
+	if st := stateOf(bad); st != "failed" {
+		t.Fatalf("after async failure state = %q, want failed", st)
+	}
+	// A late failure for an already-paid purchase must not undo it.
+	deliver("evt_async_5", "checkout.session.async_payment_failed", "cs_async_ok", "unpaid", ok)
+	if st := stateOf(ok); st != "paid" {
+		t.Fatalf("late failure flipped paid purchase to %q", st)
+	}
+}
+
+// stubStripeAPI points stripe-go at a local server for the test: a
+// session read returns its payment intent and invoice expanded, a
+// session list by payment_intent names the session in sessionsByPI,
+// and a session create succeeds. Returns the last create's form.
+func stubStripeAPI(t *testing.T, sessionsByPI map[string]string) func() url.Values {
+	t.Helper()
+	var (
+		mu      sync.Mutex
+		created url.Values
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == "POST" && r.URL.Path == "/v1/checkout/sessions":
+			_ = r.ParseForm()
+			mu.Lock()
+			created = r.PostForm
+			mu.Unlock()
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"id": "cs_created", "object": "checkout.session", "url": "https://checkout.example/cs_created",
+			})
+		case r.Method == "GET" && r.URL.Path == "/v1/checkout/sessions":
+			data := []map[string]any{}
+			if id := sessionsByPI[r.URL.Query().Get("payment_intent")]; id != "" {
+				data = append(data, map[string]any{"id": id, "object": "checkout.session"})
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"object": "list", "url": "/v1/checkout/sessions", "has_more": false, "data": data,
+			})
+		case r.Method == "GET" && strings.HasPrefix(r.URL.Path, "/v1/checkout/sessions/"):
+			id := strings.TrimPrefix(r.URL.Path, "/v1/checkout/sessions/")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"id": id, "object": "checkout.session",
+				"payment_intent": map[string]any{"id": "pi_123", "object": "payment_intent", "latest_charge": "ch_123"},
+				"invoice":        map[string]any{"id": "in_123", "object": "invoice", "hosted_invoice_url": "https://invoice.example/in_123"},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	stripego.SetBackend(stripego.APIBackend, stripego.GetBackendWithConfig(stripego.APIBackend,
+		&stripego.BackendConfig{URL: stripego.String(srv.URL)}))
+	t.Cleanup(func() { stripego.SetBackend(stripego.APIBackend, nil) })
+	return func() url.Values {
+		mu.Lock()
+		defer mu.Unlock()
+		return created
+	}
+}
+
+// Automatic tax is opt-in, prices go to Stripe tax-inclusive, and a
+// repeat buyer's customer may be updated with the collected address and
+// name (Stripe refuses tax id collection / automatic tax otherwise).
+func TestCreatePurchase_StripeCheckoutTaxParams(t *testing.T) {
+	cfg := server.Config{
+		StripeSecretKey:     testStripeSecretKey,
+		StripeWebhookSecret: testStripeWebhookKey,
+		Env:                 "dev",
+		PublicURL:           "https://zv.example",
+	}
+	ts, db, orgID, cleanup := seedPurchaseStack(t, cfg)
+	defer cleanup()
+	lastCreate := stubStripeAPI(t, nil)
+	if _, err := db.Exec(`UPDATE organizations SET stripe_customer_id = 'cus_1' WHERE id = $1`, orgID); err != nil {
+		t.Fatalf("seed customer: %v", err)
+	}
+	c := newClient(t, ts)
+	if s := c.do("POST", "/api/auth/login", map[string]string{"username": "boss", "password": "s3cret"}, nil); s != 200 {
+		t.Fatalf("login = %d", s)
+	}
+	buy := func() url.Values {
+		t.Helper()
+		if s := c.do("POST", "/api/admin/purchases", map[string]any{"adventure_slug": "demo", "max_players": 20}, nil); s != 201 {
+			t.Fatalf("create purchase = %d", s)
+		}
+		return lastCreate()
+	}
+
+	form := buy()
+	if form.Get("automatic_tax[enabled]") != "" {
+		t.Fatalf("automatic tax sent without ZV_STRIPE_AUTOMATIC_TAX: %v", form)
+	}
+	if form.Get("customer") != "cus_1" || form.Get("customer_update[name]") != "auto" || form.Get("customer_update[address]") != "auto" {
+		t.Fatalf("customer/customer_update = %v", form)
+	}
+
+	t.Setenv("ZV_STRIPE_AUTOMATIC_TAX", "1")
+	form = buy()
+	if form.Get("automatic_tax[enabled]") != "true" {
+		t.Fatalf("automatic_tax[enabled] = %q, want true", form.Get("automatic_tax[enabled]"))
+	}
+	if got := form.Get("line_items[0][price_data][tax_behavior]"); got != "inclusive" {
+		t.Fatalf("tax_behavior = %q, want inclusive", got)
+	}
+	if got := form.Get("line_items[0][price_data][unit_amount]"); got != "2500" {
+		t.Fatalf("unit_amount = %q, want 2500", got)
+	}
+}
+
+// A real checkout.session.completed names its payment intent and
+// invoice by bare id. The charge id must still be recorded so a later
+// charge.refunded finds the purchase; rows fulfilled before that was
+// recorded match on their session instead.
+func TestStripeWebhook_UnexpandedSessionRecordsChargeForRefund(t *testing.T) {
+	cfg := server.Config{
+		StripeSecretKey:     testStripeSecretKey,
+		StripeWebhookSecret: testStripeWebhookKey,
+		Env:                 "dev",
+	}
+	ts, db, orgID, cleanup := seedPurchaseStack(t, cfg)
+	defer cleanup()
+	stubStripeAPI(t, map[string]string{"pi_123": "cs_unexp", "pi_legacy": "cs_legacy"})
+
+	deliver := func(evtID, typ string, object map[string]any) {
+		t.Helper()
+		body := eventEnvelope(t, evtID, typ, object)
+		if code, msg := postWebhook(t, ts, body, stripeSign(t, body, testStripeWebhookKey)); code != http.StatusOK {
+			t.Fatalf("%s = %d (%s), want 200", typ, code, msg)
+		}
+	}
+	var purchaseID int64
+	if err := db.QueryRow(`
+		INSERT INTO purchases(org_id, adventure_slug, max_players, amount_cents, currency, provider, state, provider_session_id)
+		VALUES ($1, 'demo', 20, 2500, 'EUR', 'stripe', 'pending', 'cs_unexp') RETURNING id
+	`, orgID).Scan(&purchaseID); err != nil {
+		t.Fatalf("seed purchase: %v", err)
+	}
+	deliver("evt_unexp_1", "checkout.session.completed", map[string]any{
+		"id": "cs_unexp", "object": "checkout.session",
+		// Tax added on top (an exclusive-tax session) must still match
+		// the stored price: the check is against the subtotal.
+		"amount_total": 3125, "amount_subtotal": 2500, "currency": "eur", "payment_status": "paid",
+		"payment_intent": "pi_123", "invoice": "in_123",
+		"metadata": map[string]string{"zv_purchase_id": fmt.Sprintf("%d", purchaseID)},
+	})
+	var state, chargeID, invoiceURL string
+	if err := db.QueryRow(`
+		SELECT state, COALESCE(stripe_charge_id, ''), COALESCE(stripe_invoice_url, '') FROM purchases WHERE id = $1
+	`, purchaseID).Scan(&state, &chargeID, &invoiceURL); err != nil {
+		t.Fatalf("readback: %v", err)
+	}
+	if state != "paid" || chargeID != "ch_123" || invoiceURL != "https://invoice.example/in_123" {
+		t.Fatalf("after completion: state=%q charge=%q invoice=%q", state, chargeID, invoiceURL)
+	}
+
+	deliver("evt_unexp_2", "charge.refunded", map[string]any{
+		"id": "ch_123", "object": "charge", "payment_intent": "pi_123",
+		"amount": 2500, "amount_refunded": 2500, "refunded": true,
+	})
+	if err := db.QueryRow(`SELECT state FROM purchases WHERE id = $1`, purchaseID).Scan(&state); err != nil {
+		t.Fatalf("readback: %v", err)
+	}
+	if state != "refunded" {
+		t.Fatalf("after refund state = %q, want refunded", state)
+	}
+
+	var legacyID int64
+	if err := db.QueryRow(`
+		INSERT INTO purchases(org_id, adventure_slug, max_players, amount_cents, currency, provider, state, provider_session_id, paid_at)
+		VALUES ($1, 'demo', 20, 2500, 'EUR', 'stripe', 'paid', 'cs_legacy', now_text()) RETURNING id
+	`, orgID).Scan(&legacyID); err != nil {
+		t.Fatalf("seed legacy: %v", err)
+	}
+	deliver("evt_legacy_1", "charge.refunded", map[string]any{
+		"id": "ch_legacy", "object": "charge", "payment_intent": "pi_legacy",
+		"amount": 2500, "amount_refunded": 2500, "refunded": true,
+	})
+	if err := db.QueryRow(`
+		SELECT state, COALESCE(stripe_charge_id, '') FROM purchases WHERE id = $1
+	`, legacyID).Scan(&state, &chargeID); err != nil {
+		t.Fatalf("readback legacy: %v", err)
+	}
+	if state != "refunded" || chargeID != "ch_legacy" {
+		t.Fatalf("legacy row: state=%q charge=%q, want refunded/ch_legacy", state, chargeID)
+	}
+}
+
+func TestStripe_RefusesTestKeyOutsideDev(t *testing.T) {
+	db, cleanup := dbtest.Open(t)
+	defer cleanup()
+	build := func(key, env string) (msg string) {
+		defer func() {
+			if r := recover(); r != nil {
+				msg = fmt.Sprint(r)
+			}
+		}()
+		server.New(server.Config{
+			DB: db, Library: adventure.New(db),
+			StripeSecretKey: key, StripeWebhookSecret: testStripeWebhookKey, Env: env,
+		})
+		return ""
+	}
+	for _, key := range []string{"sk_test_x", "rk_test_x"} {
+		if msg := build(key, "production"); !strings.Contains(msg, "test-mode key") {
+			t.Fatalf("%s in production: panic = %q, want test-mode refusal", key, msg)
+		}
+	}
+	if msg := build("sk_test_x", "development"); msg != "" {
+		t.Fatalf("test key in development panicked: %s", msg)
+	}
+	if msg := build("sk_live_x", "production"); msg != "" {
+		t.Fatalf("live key in production panicked: %s", msg)
 	}
 }

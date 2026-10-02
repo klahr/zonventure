@@ -66,6 +66,10 @@ type Handlers struct {
 	// be empty in dev — the admin handlers fall back to the request
 	// Host the same way auth.Handlers does.
 	PublicURL string
+	// SellerIdentity is the operator's seller line ("Sold by …", in the
+	// given language) for the footer of sale mail; empty, or nil, until
+	// ZV_COMPANY_NAME is set.
+	SellerIdentity func(lang string) string
 	// Provider is the abstracted payments seam (see internal/payments).
 	// Nil means the operator hasn't configured a real provider; in
 	// that case the simulated provider stays the only checkout
@@ -703,11 +707,11 @@ func (h *Handlers) transitionEvent(w http.ResponseWriter, r *http.Request, actio
 	var want, update string
 	switch action {
 	case "start":
-		want, update = "scheduled", `UPDATE events SET state='running', started_at=now_text() WHERE id=$1`
+		want, update = "scheduled", `UPDATE events SET state='running', started_at=now_text() WHERE id=$1 AND state=$2`
 	case "pause":
-		want, update = "running", `UPDATE events SET state='paused', paused_at=now_text() WHERE id=$1`
+		want, update = "running", `UPDATE events SET state='paused', paused_at=now_text() WHERE id=$1 AND state=$2`
 	case "resume":
-		want, update = "paused", `UPDATE events SET state='running', `+activity.ClosePause+` WHERE id=$1`
+		want, update = "paused", `UPDATE events SET state='running', `+activity.ClosePause+` WHERE id=$1 AND state=$2`
 	default:
 		httpx.Error(w, http.StatusBadRequest, "unknown action")
 		return
@@ -752,8 +756,16 @@ func (h *Handlers) transitionEvent(w http.ResponseWriter, r *http.Request, actio
 			return
 		}
 	}
-	if _, err := h.DB.ExecContext(r.Context(), update, eventID); err != nil {
+	res, err := h.DB.ExecContext(r.Context(), update, eventID, want)
+	if err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "update failed")
+		return
+	}
+	// The state moved since the read above (auto-completion, a
+	// concurrent transition): refuse rather than overwrite it.
+	if n, _ := res.RowsAffected(); n == 0 {
+		_ = h.DB.QueryRowContext(r.Context(), `SELECT state FROM events WHERE id = $1`, eventID).Scan(&state)
+		httpx.Error(w, http.StatusConflict, "cannot "+action+" an event in state "+state)
 		return
 	}
 	// Starting pins the adventure's graph and places every team. A
@@ -871,31 +883,22 @@ func (h *Handlers) cancelEvent(w http.ResponseWriter, r *http.Request, eventID i
 		httpx.Error(w, http.StatusInternalServerError, "lookup failed")
 		return
 	}
-	switch state {
-	case "scheduled", "running", "paused":
-		// allowed
-	case "completed":
-		httpx.JSON(w, http.StatusConflict, map[string]any{
-			"error":  "event already completed",
-			"reason": "event_completed",
-			"state":  state,
-		})
-		return
-	case "cancelled":
-		httpx.JSON(w, http.StatusConflict, map[string]any{
-			"error":  "event already cancelled",
-			"reason": "event_cancelled",
-			"state":  state,
-		})
-		return
-	default:
-		httpx.Error(w, http.StatusConflict, "cannot cancel an event in state "+state)
+	if cancelRejected(w, state) {
 		return
 	}
-	if _, err := h.DB.ExecContext(r.Context(),
-		`UPDATE events SET state='cancelled', cancelled_at=now_text(), `+activity.ClosePause+` WHERE id=$1`,
-		eventID); err != nil {
+	res, err := h.DB.ExecContext(r.Context(),
+		`UPDATE events SET state='cancelled', cancelled_at=now_text(), `+activity.ClosePause+`
+		 WHERE id=$1 AND state IN ('scheduled','running','paused')`,
+		eventID)
+	if err != nil {
 		httpx.Error(w, http.StatusInternalServerError, "update failed")
+		return
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		_ = h.DB.QueryRowContext(r.Context(), `SELECT state FROM events WHERE id = $1`, eventID).Scan(&state)
+		if !cancelRejected(w, state) {
+			httpx.Error(w, http.StatusConflict, "cannot cancel an event in state "+state)
+		}
 		return
 	}
 	// Symmetrical to MaybeCompleteEvent: a cancelled event should
@@ -906,6 +909,80 @@ func (h *Handlers) cancelEvent(w http.ResponseWriter, r *http.Request, eventID i
 	activity.Record(r.Context(), h.DB, eventID, nil, activity.UserActor(me.ID), activity.EventCancelled, nil)
 	h.Hub.Publish(ws.EventTopic(eventID), "changed", nil)
 	httpx.JSON(w, http.StatusNoContent, nil)
+}
+
+// EndEvent ends a running or paused event now, as if every team had
+// finished: teams still playing keep their progress and the results and
+// recaps open. It goes through activity.CompleteEvent, the same
+// completion the last team's finish triggers. Password-gated like
+// cancel: it signs every player out and cannot be undone.
+//
+// POST /api/admin/events/{eventID}/end
+func (h *Handlers) EndEvent(w http.ResponseWriter, r *http.Request) {
+	eventID, ok := eventIDFrom(r)
+	if !ok {
+		httpx.Error(w, http.StatusBadRequest, "bad event id")
+		return
+	}
+	orgID, ok := h.authorizeEvent(w, r, eventID)
+	if !ok {
+		return
+	}
+	if !h.requirePasswordConfirm(w, r) {
+		return
+	}
+	me, _ := auth.FromContext(r.Context())
+	done, err := activity.CompleteEvent(r.Context(), h.DB, eventID, activity.UserActor(me.ID),
+		map[string]any{"by_arranger": true})
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "update failed")
+		return
+	}
+	if !done {
+		var state string
+		_ = h.DB.QueryRowContext(r.Context(), `SELECT state FROM events WHERE id = $1`, eventID).Scan(&state)
+		httpx.JSON(w, http.StatusConflict, map[string]any{
+			"error":  "cannot end an event in state " + state,
+			"reason": reasonForState(state),
+			"state":  state,
+		})
+		return
+	}
+	var advSlug string
+	_ = h.DB.QueryRowContext(r.Context(),
+		`SELECT adventure_slug FROM events WHERE id = $1`, eventID).Scan(&advSlug)
+	webhooks.TryPublish(r.Context(), h.DB, orgID, webhooks.KindEventCompleted, map[string]any{
+		"event_id":        eventID,
+		"adventure_slug":  advSlug,
+		"adventure_title": h.adventureTitle(advSlug),
+		"manual":          true,
+	})
+	h.Hub.Publish(ws.EventTopic(eventID), "changed", nil)
+	httpx.JSON(w, http.StatusNoContent, nil)
+}
+
+// cancelRejected writes the 409 for a state cancellation can't leave
+// and reports whether it did.
+func cancelRejected(w http.ResponseWriter, state string) bool {
+	switch state {
+	case "scheduled", "running", "paused":
+		return false
+	case "completed":
+		httpx.JSON(w, http.StatusConflict, map[string]any{
+			"error":  "event already completed",
+			"reason": "event_completed",
+			"state":  state,
+		})
+	case "cancelled":
+		httpx.JSON(w, http.StatusConflict, map[string]any{
+			"error":  "event already cancelled",
+			"reason": "event_cancelled",
+			"state":  state,
+		})
+	default:
+		httpx.Error(w, http.StatusConflict, "cannot cancel an event in state "+state)
+	}
+	return true
 }
 
 type updateEventRequest struct {

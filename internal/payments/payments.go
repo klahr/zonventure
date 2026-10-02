@@ -97,6 +97,8 @@ type CheckoutParams struct {
 	// providers may ignore. CollectTaxID + CollectAddress are
 	// mostly for B2B-ish flows where the buyer needs a real
 	// invoice; consumer ticket sales typically leave them off.
+	// AutoTax treats AmountCents as tax-inclusive: tax is computed
+	// out of it, so the buyer is charged exactly AmountCents.
 	CollectTaxID    bool
 	CollectAddress  bool
 	AutoTax         bool
@@ -138,7 +140,11 @@ type EventType string
 
 const (
 	EventCheckoutCompleted EventType = "checkout.completed"
-	EventChargeRefunded    EventType = "charge.refunded"
+	// EventCheckoutFailed fires when an async payment method (ACH,
+	// BACS, SEPA debit, …) that left a completed session "unpaid"
+	// is finally declined. Carries the same Checkout detail.
+	EventCheckoutFailed EventType = "checkout.failed"
+	EventChargeRefunded EventType = "charge.refunded"
 	// EventConnectedAccountUpdated fires when a connected
 	// marketplace account's verification / capability state
 	// changes. The webhook handler uses it to refresh the
@@ -178,15 +184,18 @@ type Event struct {
 // where the buyer has only committed (async methods like ACH/PIX/BACS
 // land checkout.session.completed before the funds actually clear).
 // Fulfilment must gate on PaymentStatusPaid or PaymentStatusNoPayment;
-// PaymentStatusUnpaid means "wait for payment_intent.succeeded".
+// PaymentStatusUnpaid means "wait for the async-payment follow-up".
 type CheckoutDetail struct {
-	SessionID     string
-	AmountTotal   int64
-	Currency      string
-	CustomerID    string
-	ChargeID      string
-	InvoiceURL    string
-	PaymentStatus PaymentStatus
+	SessionID   string
+	AmountTotal int64
+	// AmountSubtotal is the line-item total before discounts and any
+	// tax added on top — the figure that matches our stored price.
+	AmountSubtotal int64
+	Currency       string
+	CustomerID     string
+	ChargeID       string
+	InvoiceURL     string
+	PaymentStatus  PaymentStatus
 }
 
 // PaymentStatus mirrors Stripe's `payment_status` on a Checkout
@@ -204,7 +213,8 @@ const (
 // FulfilmentReady reports whether a checkout session is in a state
 // where it's safe to grant the goods. Async-method sessions that are
 // still PaymentStatusUnpaid land on the same checkout.session.completed
-// event but must not trigger fulfilment until payment_intent.succeeded.
+// event but must not trigger fulfilment until the async-payment
+// follow-up (Stripe: checkout.session.async_payment_succeeded).
 func (s PaymentStatus) FulfilmentReady() bool {
 	return s == PaymentStatusPaid || s == PaymentStatusNoPayment
 }
@@ -226,6 +236,10 @@ type ChargeDetail struct {
 	Refunded       bool
 	Currency       string
 	CustomerID     string
+	// CheckoutSessionID names the checkout session that took the
+	// charge, when the provider can tell. It matches rows whose
+	// charge id was never recorded.
+	CheckoutSessionID string
 }
 
 // FullyRefunded reports whether the charge has been refunded to zero

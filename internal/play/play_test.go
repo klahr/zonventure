@@ -342,6 +342,82 @@ func TestCapacityIsNeverExceededUnderConcurrency(t *testing.T) {
 	}
 }
 
+// Teams adding to one event-wide counter at the same moment must each
+// count: two teams adding 1 to 0 end at 2, not 1.
+func TestConcurrentCounterAddsAreNotLost(t *testing.T) {
+	g := &graph.Graph{
+		Counters: []graph.Counter{{Slug: "found"}},
+		Nodes: []graph.Node{
+			{Slug: "start", Type: graph.Start}, puzzle("p1", "go"),
+			{Slug: "fx", Type: graph.Effect, EffectCfg: &graph.EffectConfig{Kind: graph.SetCounter, Counter: "found", Op: graph.CounterAdd, Value: 1}},
+			{Slug: "end", Type: graph.End},
+		},
+		Edges: []graph.Edge{
+			edge("start", graph.PortOut, "p1"),
+			edge("p1", "solved", "fx"),
+			edge("fx", graph.PortOut, "end"),
+		},
+	}
+	f := setup(t, g, 6)
+
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	for _, team := range f.teams {
+		wg.Add(1)
+		go func(team int64) {
+			defer wg.Done()
+			<-start
+			if _, err := f.eng.Answer(context.Background(), team, "p1", "go"); err != nil {
+				t.Errorf("team %d: %v", team, err)
+			}
+		}(team)
+	}
+	close(start)
+	wg.Wait()
+
+	var found float64
+	mustScan(t, f.db.QueryRow(`SELECT value FROM event_counters WHERE event_id = $1 AND counter = 'found'`, f.eventID), &found)
+	if found != float64(len(f.teams)) {
+		t.Errorf("counter = %v after %d concurrent adds, want %d", found, len(f.teams), len(f.teams))
+	}
+}
+
+// Only a move other teams' phones show is shared: a wrong guess or a
+// score nobody else sees stays the team's own; a counter or a finish
+// does not.
+func TestResultSharedOnlyForEventWideChanges(t *testing.T) {
+	f := setup(t, linear("a", "b"), 1)
+	team := f.teams[0]
+	if r := f.answer(team, "nope"); r.Shared || r.Scored {
+		t.Errorf("wrong guess: shared=%v scored=%v, want neither", r.Shared, r.Scored)
+	}
+	if r := f.answer(team, "a"); r.Shared || !r.Scored {
+		t.Errorf("right answer without standings: shared=%v scored=%v, want scored only", r.Shared, r.Scored)
+	}
+	if r := f.answer(team, "b"); !r.Shared {
+		t.Error("finishing should be shared")
+	}
+
+	g := &graph.Graph{
+		Counters: []graph.Counter{{Slug: "found"}},
+		Nodes: []graph.Node{
+			{Slug: "start", Type: graph.Start}, puzzle("p1", "go"), puzzle("p2", "x"),
+			{Slug: "fx", Type: graph.Effect, EffectCfg: &graph.EffectConfig{Kind: graph.SetCounter, Counter: "found", Op: graph.CounterAdd, Value: 1}},
+			{Slug: "end", Type: graph.End},
+		},
+		Edges: []graph.Edge{
+			edge("start", graph.PortOut, "p1"),
+			edge("p1", "solved", "fx"),
+			edge("fx", graph.PortOut, "p2"),
+			edge("p2", "solved", "end"),
+		},
+	}
+	f = setup(t, g, 1)
+	if r := f.answer(f.teams[0], "go"); !r.Shared {
+		t.Error("changing an event counter should be shared")
+	}
+}
+
 // The scenario from the plan, on a real database: a choice hub, a gate
 // on history with nothing granted, paths that diverge and reconverge,
 // and a revisit that goes the way the team left last time.
@@ -721,6 +797,43 @@ func TestPingLocatorRejectsTeleports(t *testing.T) {
 	}
 }
 
+// A fix wider than maxFixAccuracy is stored but not trusted for where
+// the team is; one without an accuracy is, as before.
+func TestPingLocatorIgnoresInaccurateFixes(t *testing.T) {
+	f := setup(t, linear("a"), 1)
+	team := f.teams[0]
+	ctx := context.Background()
+
+	var slotID int64
+	mustScan(t, f.db.QueryRow(`SELECT id FROM player_slots WHERE team_id = $1`, team), &slotID)
+	ping := func(lat float64, acc any, ts string) {
+		if _, err := f.db.Exec(`
+			INSERT INTO location_pings(slot_id, team_id, event_id, lat, lng, accuracy, server_ts)
+			VALUES ($1, $2, $3, $4, 18.0, $5, $6)
+		`, slotID, team, f.eventID, lat, acc, ts); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	ping(59.0, nil, "2026-09-22 10:00:00")
+	if lat, _, ok, _ := (PingLocator{}).Position(ctx, f.db, team); !ok || lat != 59.0 {
+		t.Error("a ping without an accuracy should be trusted")
+	}
+	ping(59.001, 500.0, "2026-09-22 10:00:10")
+	if lat, _, ok, _ := (PingLocator{}).Position(ctx, f.db, team); !ok || lat != 59.0 {
+		t.Errorf("a 500 m fix should be ignored; position lat = %v", lat)
+	}
+	ping(59.002, 20.0, "2026-09-22 10:00:20")
+	if lat, _, ok, _ := (PingLocator{}).Position(ctx, f.db, team); !ok || lat != 59.002 {
+		t.Errorf("a 20 m fix should be trusted; position lat = %v", lat)
+	}
+	var stored int
+	mustScan(t, f.db.QueryRow(`SELECT COUNT(*) FROM location_pings WHERE slot_id = $1`, slotID), &stored)
+	if stored != 3 {
+		t.Errorf("stored pings = %d, want all 3 kept", stored)
+	}
+}
+
 // The rule is per phone: two teammates far apart, pinging in turn, are
 // both trusted, and one phone's gap does not untrust the other. Phones
 // counts only those heard from lately.
@@ -938,6 +1051,95 @@ func TestTimeLimitLive(t *testing.T) {
 	r, err = f.eng.Answer(ctx, team, "accuse", "erika")
 	if err != nil || r.TimeUp || !r.View.Finished {
 		t.Fatalf("it fired once; the next answer counts: %+v %v", r, err)
+	}
+}
+
+// pause records a closed pause of d on the event, as resuming would,
+// with the clock moved past it.
+func (f *fixture) pause(d time.Duration) {
+	f.t.Helper()
+	if _, err := f.db.Exec(`UPDATE events SET paused_seconds = paused_seconds + $1 WHERE id = $2`,
+		int(d/time.Second), f.eventID); err != nil {
+		f.t.Fatal(err)
+	}
+	f.clock.Advance(d)
+}
+
+// A pause freezes the adventure's time limit: twenty minutes paused do
+// not count against the team.
+func TestPauseFreezesTimeLimit(t *testing.T) {
+	g := &graph.Graph{
+		TimeLimit: &graph.TimeLimit{Seconds: 600, To: "accuse", Text: "Time's up."},
+		Nodes: []graph.Node{
+			{Slug: "start", Type: graph.Start},
+			puzzle("clue", "x"),
+			puzzle("accuse", "erika"),
+			{Slug: "end", Type: graph.End},
+		},
+		Edges: []graph.Edge{
+			edge("start", "out", "clue"), edge("clue", "solved", "accuse"), edge("accuse", "solved", "end"),
+		},
+	}
+	ctx := context.Background()
+	f := setup(t, g, 1)
+	team := f.teams[0]
+	start := f.clock.Now()
+
+	f.clock.Advance(5 * time.Minute)
+	f.pause(20 * time.Minute)
+	if _, err := f.eng.TimeUp(ctx, team); !errors.Is(err, ErrNotAllowed) {
+		t.Fatalf("five minutes played of ten: time-up refused, got %v", err)
+	}
+	if v := f.view(team); v.EndsAt == nil || !v.EndsAt.Equal(start.Add(30*time.Minute)) {
+		t.Fatalf("the deadline moves by the pause: %v", v.EndsAt)
+	}
+	f.clock.Advance(6 * time.Minute)
+	if r, err := f.eng.TimeUp(ctx, team); err != nil || !r.TimeUp {
+		t.Fatalf("eleven minutes played: time-up fires: %+v %v", r, err)
+	}
+}
+
+// A node's clock leaves out only the pauses since the team entered it:
+// one before the entry does not count, an open one does.
+func TestPauseFreezesNodeClocks(t *testing.T) {
+	g := linear("a", "b")
+	g.Nodes[3].PuzzleCfg.Hints = []graph.Hint{
+		{Text: "first", DelaySeconds: 60},
+		{Text: "second", DelaySeconds: 120},
+	}
+	ctx := context.Background()
+	f := setup(t, g, 1)
+	team := f.teams[0]
+
+	f.pause(10 * time.Minute)
+	f.answer(team, "a")
+	f.clock.Advance(61 * time.Second)
+	if _, err := f.eng.RevealHint(ctx, team, "p2", 0); err != nil {
+		t.Fatalf("a pause before the team arrived must not delay its hint: %v", err)
+	}
+
+	paused := f.clock.Now()
+	if _, err := f.db.Exec(`UPDATE events SET state = 'paused', paused_at = $1 WHERE id = $2`,
+		paused.UTC().Format(time.DateTime), f.eventID); err != nil {
+		t.Fatal(err)
+	}
+	f.clock.Advance(5 * time.Minute)
+	if _, err := f.eng.RevealHint(ctx, team, "p2", 1); !errors.Is(err, ErrNotAllowed) {
+		t.Fatalf("an open pause stops the hint's delay: %v", err)
+	}
+	if _, err := f.db.Exec(`UPDATE events SET state = 'running', paused_at = NULL, paused_seconds = paused_seconds + 300 WHERE id = $1`,
+		f.eventID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.eng.RevealHint(ctx, team, "p2", 1); !errors.Is(err, ErrNotAllowed) {
+		t.Fatalf("61s played of 120: still refused after resuming: %v", err)
+	}
+	if v := f.view(team); v.NextHint == nil || !v.NextHint.AvailableAt.Equal(paused.Add(-61*time.Second+5*time.Minute+120*time.Second)) {
+		t.Fatalf("the hint opens a pause later: %+v", v.NextHint)
+	}
+	f.clock.Advance(60 * time.Second)
+	if r, err := f.eng.RevealHint(ctx, team, "p2", 1); err != nil || r.Hint != "second" {
+		t.Fatalf("121s played: the hint reveals: %+v %v", r, err)
 	}
 }
 

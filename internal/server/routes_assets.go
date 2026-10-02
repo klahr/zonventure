@@ -49,6 +49,7 @@ func registerStaticAssetRoutes(r chi.Router, env *routesEnv) {
 	r.Get("/assets/topbar.css", serveAsset("web/topbar.css", "text/css; charset=utf-8"))
 	r.Get("/assets/topbar.js", serveAsset("web/topbar.js", "application/javascript; charset=utf-8"))
 	r.Get("/assets/page-tokens.css", serveAsset("web/page-tokens.css", "text/css; charset=utf-8"))
+	registerFontRoutes(r)
 	// Self-hosted Leaflet (the maps library used by the live board,
 	// recap, and the arrange-side map editor). Vendored so the player
 	// surface never reaches out to unpkg.com mid-event, and so a
@@ -63,6 +64,15 @@ func registerStaticAssetRoutes(r chi.Router, env *routesEnv) {
 	r.Get("/assets/leaflet/images/marker-shadow.png", serveAsset("web/assets/leaflet/images/marker-shadow.png", "image/png"))
 	r.Get("/assets/leaflet/images/layers.png", serveAsset("web/assets/leaflet/images/layers.png", "image/png"))
 	r.Get("/assets/leaflet/images/layers-2x.png", serveAsset("web/assets/leaflet/images/layers-2x.png", "image/png"))
+	// Map tile source for every browser-side map (ZV_MAP_TILE_URL /
+	// ZV_MAP_TILE_ATTRIBUTION). no-cache, so a provider switch reaches
+	// open pages on their next load.
+	mapConfig := mapConfigJS(cfg.Legal)
+	r.Get("/assets/map-config.js", func(w http.ResponseWriter, req *http.Request) {
+		w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-cache")
+		_, _ = w.Write(mapConfig)
+	})
 	// Shared fullscreen-map overlay CSS — used by both the player
 	// preview-debug coord overlay and the arranger's "show on map"
 	// links. Same theme tokens, same DOM contract; the JS that

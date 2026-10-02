@@ -28,6 +28,13 @@ import (
 // event.
 func newTestServer(t *testing.T) (*httptest.Server, int64, func()) {
 	t.Helper()
+	return newTestServerWith(t, server.Config{})
+}
+
+// newTestServerWith is newTestServer with extra server config; DB and
+// Library are filled in.
+func newTestServerWith(t *testing.T, cfg server.Config) (*httptest.Server, int64, func()) {
+	t.Helper()
 	sqlDB, dbCleanup := dbtest.Open(t)
 	lib := adventure.New(sqlDB)
 
@@ -98,7 +105,8 @@ func newTestServer(t *testing.T) (*httptest.Server, int64, func()) {
 		t.Fatalf("assign: %v", err)
 	}
 
-	h := server.New(server.Config{DB: sqlDB, Library: lib})
+	cfg.DB, cfg.Library = sqlDB, lib
+	h := server.New(cfg)
 	ts := httptest.NewServer(h)
 	cleanup := func() {
 		ts.Close()

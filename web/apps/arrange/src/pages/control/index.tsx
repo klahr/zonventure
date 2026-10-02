@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from "react";
-import { Ban, Copy, LogOut, Pause, Play, Undo2 } from "lucide-react";
+import { Ban, Copy, Flag, LogOut, Pause, Play, Undo2 } from "lucide-react";
 import { useT } from "../../i18n.tsx";
 import { TopBarPortal, useTopBarTitle } from "../../topbar.tsx";
 import {
@@ -13,7 +13,7 @@ import { MessagesCard, PhotosCard } from "../event/Messages.tsx";
 import { stateText, stateTone } from "../event/util.ts";
 import "../event/event.css";
 import {
-  cancelEvent, getActivity, getDetail, getMessages, getPhotos, getTracks, transition, unwithdrawTeam, withdrawTeam,
+  cancelEvent, endEvent, getActivity, getDetail, getMessages, getPhotos, getTracks, transition, unwithdrawTeam, withdrawTeam,
   type Activity, type EventDetail, type EventInfo, type Team, type Track,
 } from "./api.ts";
 import { ControlMap, type MapTeam } from "./ControlMap.tsx";
@@ -155,6 +155,23 @@ export function EventControlPage({ id }: { id: number }) {
       toast.err(e);
     }
   };
+  const end = async () => {
+    const pw = await dialogs.password({
+      title: t.t("End event?"),
+      message: t.t("The event ends now for every team. Teams still playing keep the points they have, the results and recaps open, and players are signed out. Enter your password to confirm."),
+      confirmLabel: t.t("End event"),
+      cancelLabel: t.t("Keep playing"),
+      danger: true,
+    });
+    if (!pw) return;
+    try {
+      await endEvent(id, pw);
+      toast.ok(t.t("Event ended"));
+      refresh();
+    } catch (e) {
+      toast.err(e);
+    }
+  };
   const liveURL = ev.live_token && location.origin + "/live/" + encodeURIComponent(ev.live_token || "");
   const copyLive = async () => {
     try {
@@ -201,6 +218,7 @@ export function EventControlPage({ id }: { id: number }) {
   if (liveURL) more.push({ label: t.t("Copy live view link"), icon: <Copy size={ICON.sm} aria-hidden />, title: liveURL, onClick: () => void copyLive() });
   if (ev.state === "running" || ev.state === "paused" || ev.state === "scheduled") {
     if (more.length) more.push({ separator: true });
+    if (ev.state !== "scheduled") more.push({ label: t.t("End event"), icon: <Flag size={ICON.sm} aria-hidden />, danger: true, onClick: () => void end() });
     more.push({ label: t.t("Cancel event"), icon: <Ban size={ICON.sm} aria-hidden />, danger: true, onClick: () => void cancel() });
   }
   const canWithdraw = (ev.allowed_ops ?? []).includes("withdraw_team");

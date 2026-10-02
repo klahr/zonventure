@@ -82,5 +82,6 @@ export const getPhotos = (id: number, signal?: AbortSignal) =>
 
 export const transition = (id: number, action: "pause" | "resume") => post<void>(`${ev(id)}/${action}`);
 export const cancelEvent = (id: number, password: string) => post<void>(`${ev(id)}/cancel`, undefined, { headers: { "X-Confirm-Password": password } });
+export const endEvent = (id: number, password: string) => post<void>(`${ev(id)}/end`, undefined, { headers: { "X-Confirm-Password": password } });
 export const withdrawTeam = (teamId: number) => post<unknown>(`/api/admin/teams/${teamId}/withdraw`);
 export const unwithdrawTeam = (teamId: number) => post<unknown>(`/api/admin/teams/${teamId}/unwithdraw`);

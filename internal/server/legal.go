@@ -1,7 +1,11 @@
 package server
 
 import (
+	"bytes"
+	"encoding/json"
+	"html"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -22,6 +26,21 @@ type LegalConfig struct {
 	LastUpdated           string // YYYY-MM-DD; defaults to today on first render
 	HostingProvider       string // sub-processor name shown in privacy policy
 	EmailProvider         string // sub-processor name shown in privacy policy
+	// Seller identity for e-commerce disclosure (e-handelslagen 8 §,
+	// distansavtalslagen 2 kap. 2 §). Optional: each line renders on
+	// the legal pages, the store footers and next to the buy button
+	// only when set.
+	CompanyOrgNumber string
+	CompanyAddress   string
+	CompanyVATNumber string
+	// Map tiles the players' browsers fetch (live board, recap, the
+	// player app's maps). Empty = OpenStreetMap's public tile server,
+	// fine for development but not for production volume under its
+	// tile usage policy. MapProvider names the tile host in the privacy
+	// policy, since it receives every viewer's IP address.
+	MapTileURL         string // {z}/{x}/{y} template, https
+	MapTileAttribution string // HTML, as Leaflet expects
+	MapProvider        string
 	// Reviewed flips off the "draft template — needs lawyer review"
 	// banner. Operators set ZV_LEGAL_REVIEWED=1 once their lawyer has
 	// signed off on the wording; self-host without it keeps the
@@ -92,7 +111,150 @@ func (c LegalConfig) defaulted() LegalConfig {
 	if d.EmailProvider == "" {
 		d.EmailProvider = "[set ZV_EMAIL_PROVIDER]"
 	}
+	if d.MapTileURL == "" {
+		d.MapTileURL = defaultMapTileURL
+		if d.MapTileAttribution == "" {
+			d.MapTileAttribution = defaultMapTileAttribution
+		}
+	}
+	if d.MapProvider == "" {
+		d.MapProvider = mapProviderFor(d.MapTileURL)
+	}
 	return d
+}
+
+const (
+	defaultMapTileURL         = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+	defaultMapTileAttribution = `&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors`
+)
+
+// mapProviderFor names the tile host for the privacy policy when the
+// operator hasn't: the OpenStreetMap Foundation for the default, else
+// the configured URL's host, so the disclosure never names the wrong
+// recipient of the viewers' IP addresses.
+func mapProviderFor(tileURL string) string {
+	if tileURL == defaultMapTileURL {
+		return "OpenStreetMap Foundation (tile.openstreetmap.org)"
+	}
+	if u, err := url.Parse(tileURL); err == nil && u.Host != "" {
+		return u.Host
+	}
+	return "[set ZV_MAP_PROVIDER]"
+}
+
+// mapConfigJS is /assets/map-config.js: the tile source every map in
+// the browser reads from window.ZV_MAP, so the operator switches tile
+// providers with an env var instead of a rebuild.
+func mapConfigJS(c LegalConfig) []byte {
+	d := c.defaulted()
+	b, _ := json.Marshal(map[string]string{"tile_url": d.MapTileURL, "attribution": d.MapTileAttribution})
+	return []byte("window.ZV_MAP=" + string(b) + ";\n")
+}
+
+// identityLines is the seller's registration data, each "label value"
+// as plain text; empty fields are left out.
+func (c LegalConfig) identityLines(lang string) []string {
+	orgLabel, vatLabel := "Org. no.", "VAT no."
+	if lang == "sv" {
+		orgLabel, vatLabel = "Org.nr", "Momsreg.nr"
+	}
+	var out []string
+	if v := strings.TrimSpace(c.CompanyOrgNumber); v != "" {
+		out = append(out, orgLabel+" "+v)
+	}
+	if v := strings.TrimSpace(c.CompanyVATNumber); v != "" {
+		out = append(out, vatLabel+" "+v)
+	}
+	if v := strings.TrimSpace(c.CompanyAddress); v != "" {
+		out = append(out, v)
+	}
+	return out
+}
+
+// legalIdentityHTML is {{COMPANY_IDENTITY}} on /privacy and /terms: a
+// paragraph with org number, VAT number and address, or nothing.
+func legalIdentityHTML(c LegalConfig) string {
+	lines := c.identityLines("en")
+	if len(lines) == 0 {
+		return ""
+	}
+	for i, l := range lines {
+		lines[i] = html.EscapeString(l)
+	}
+	return "<p>" + strings.Join(lines, "<br>") + "</p>"
+}
+
+// sellerIdentityHTML is the one-line seller disclosure for the store
+// pages: name, registration data, address and contact address.
+// soldBy prefixes it for the line next to the buy button. Empty until
+// the operator names the company.
+func sellerIdentityHTML(c LegalConfig, lang string, soldBy bool) string {
+	name := strings.TrimSpace(c.CompanyName)
+	if name == "" {
+		return ""
+	}
+	parts := []string{html.EscapeString(name)}
+	for _, l := range c.identityLines(lang) {
+		parts = append(parts, html.EscapeString(l))
+	}
+	if v := strings.TrimSpace(c.ContactEmail); v != "" {
+		e := html.EscapeString(v)
+		parts = append(parts, `<a href="mailto:`+e+`">`+e+`</a>`)
+	}
+	line := strings.Join(parts, " · ")
+	if soldBy {
+		label := "Sold by"
+		if lang == "sv" {
+			label = "Säljare:"
+		}
+		line = label + " " + line
+	}
+	return line
+}
+
+// SellerIdentityText is sellerIdentityHTML as plain text, for the
+// footer of mail sent on a sale (the ticket email).
+func (c LegalConfig) SellerIdentityText(lang string) string {
+	name := strings.TrimSpace(c.CompanyName)
+	if name == "" {
+		return ""
+	}
+	parts := append([]string{name}, c.identityLines(lang)...)
+	if v := strings.TrimSpace(c.ContactEmail); v != "" {
+		parts = append(parts, v)
+	}
+	label := "Sold by"
+	if lang == "sv" {
+		label = "Säljare:"
+	}
+	return label + " " + strings.Join(parts, " · ")
+}
+
+// Markers a page puts where the seller line goes: in the footer, and
+// next to a buy button. spliceSellerIdentity fills them on the way out,
+// so every page shares one source without each renderer carrying the
+// legal config.
+var (
+	sellerMarker       = []byte("<!--ZV_SELLER-->")
+	sellerSoldByMarker = []byte("<!--ZV_SELLER_SOLD_BY-->")
+)
+
+func spliceSellerIdentity(body []byte, c LegalConfig) []byte {
+	if !bytes.Contains(body, sellerMarker) && !bytes.Contains(body, sellerSoldByMarker) {
+		return body
+	}
+	lang := "en"
+	if bytes.Contains(body, []byte(`<html lang="sv"`)) {
+		lang = "sv"
+	}
+	wrap := func(line string) []byte {
+		if line == "" {
+			return nil
+		}
+		return []byte(`<p class="seller">` + line + `</p>`)
+	}
+	body = bytes.ReplaceAll(body, sellerMarker, wrap(sellerIdentityHTML(c, lang, false)))
+	return bytes.ReplaceAll(body, sellerSoldByMarker, wrap(sellerIdentityHTML(c, lang, true)))
 }
 
 // renderLegalPage reads the embedded template, splices the config in,
@@ -132,6 +294,8 @@ func renderLegalPage(w http.ResponseWriter, name string, cfg LegalConfig) {
 		{"{{LAST_UPDATED}}", d.LastUpdated},
 		{"{{HOSTING_PROVIDER}}", d.HostingProvider},
 		{"{{EMAIL_PROVIDER}}", d.EmailProvider},
+		{"{{MAP_PROVIDER}}", html.EscapeString(d.MapProvider)},
+		{"{{COMPANY_IDENTITY}}", legalIdentityHTML(d)},
 	} {
 		out = strings.ReplaceAll(out, sub[0], sub[1])
 	}

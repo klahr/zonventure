@@ -216,6 +216,6 @@ upgrade:
 		echo "No release tags found — nothing to upgrade to."; exit 1; \
 	fi && \
 	echo "Upgrading to $$LATEST" && \
-	git checkout "$$LATEST"
-	docker compose up -d --build
+	git checkout "$$LATEST" && \
+	VERSION="$$LATEST" docker compose up -d --build
 	git checkout main

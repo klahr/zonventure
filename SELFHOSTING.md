@@ -150,13 +150,16 @@ users at the box:
 
    nginx works too — full snippet at the bottom of this doc.
 6. **Set `ZV_LOG_FORMAT=json`** if you ship logs to an aggregator.
-7. **Schedule a backup.** One line on the host:
+7. **Schedule a backup.** The app image has no `pg_dump`, so dump from
+   the `db` container, with the same flags as `zv -backup`:
 
    ```sh
-   docker compose exec -T app /server -backup | gzip > /backups/zv-$(date +%F).sql.gz
+   docker compose exec -T db pg_dump -U zv -d zv --clean --if-exists --no-owner --no-privileges \
+     | gzip > /backups/zv-$(date +%F).sql.gz
    ```
 
-   Drop that into cron or a systemd timer. Off-host the result.
+   Drop that into cron or a systemd timer. Off-host the result, and
+   restore as in [OPERATIONS.md → Restore](OPERATIONS.md#restore).
 8. **Optionally bind `ZV_METRICS_ADDR=127.0.0.1:9100`** if you scrape
    with Prometheus from a sidecar.
 
@@ -270,7 +273,7 @@ Overrides are loaded at startup and cached for the process lifetime
 
 ## Upgrades
 
-Take a backup first (see the `-backup` recipe above), then:
+Take a backup first (see the backup recipe in the pre-flight checklist), then:
 
 ```sh
 make upgrade

@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -401,7 +402,9 @@ func (h *Handlers) rescueGraphTeam(w http.ResponseWriter, r *http.Request, event
 	if res.View.Finished {
 		activity.Record(r.Context(), h.DB, eventID, &teamID, activity.UserActor(me.ID), activity.TeamCompleted,
 			map[string]any{"outcome": res.View.Outcome, "by_arranger": true})
-		_, _ = activity.MaybeCompleteEvent(r.Context(), h.DB, eventID)
+		if done, _ := activity.MaybeCompleteEvent(r.Context(), h.DB, eventID); done {
+			h.publishEventCompleted(r.Context(), eventID)
+		}
 	}
 	h.Hub.Publish(ws.EventTopic(eventID), "changed", nil)
 	httpx.JSON(w, http.StatusOK, map[string]any{"node": res.View.Node, "completed": res.View.Finished})
@@ -454,9 +457,25 @@ func (h *Handlers) WithdrawTeam(w http.ResponseWriter, r *http.Request) {
 	// Withdrawing the last unfinished team should flip the event to
 	// completed — same shape as an Unlock that takes the final team
 	// past its last puzzle.
-	_, _ = activity.MaybeCompleteEvent(r.Context(), h.DB, eventID)
+	if done, _ := activity.MaybeCompleteEvent(r.Context(), h.DB, eventID); done {
+		h.publishEventCompleted(r.Context(), eventID)
+	}
 	h.Hub.Publish(ws.EventTopic(eventID), "changed", nil)
 	httpx.JSON(w, http.StatusOK, map[string]any{"withdrawn_at": withdrawnAt})
+}
+
+// publishEventCompleted emits event.completed after an arranger's
+// unlock or withdraw let MaybeCompleteEvent finish the event — the
+// webhook a player's last answer would otherwise have sent.
+func (h *Handlers) publishEventCompleted(ctx context.Context, eventID int64) {
+	orgID, _ := h.eventOrg(ctx, eventID)
+	var advSlug string
+	_ = h.DB.QueryRowContext(ctx, `SELECT adventure_slug FROM events WHERE id = $1`, eventID).Scan(&advSlug)
+	webhooks.TryPublish(ctx, h.DB, orgID, webhooks.KindEventCompleted, map[string]any{
+		"event_id":        eventID,
+		"adventure_slug":  advSlug,
+		"adventure_title": h.adventureTitle(advSlug),
+	})
 }
 
 // UnwithdrawTeam clears the withdrawn_at flag — used to undo an

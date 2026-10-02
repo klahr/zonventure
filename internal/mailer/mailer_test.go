@@ -2,8 +2,10 @@ package mailer
 
 import (
 	"context"
+	"net"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestLogMailer_RejectsMissingTo(t *testing.T) {
@@ -248,5 +250,37 @@ func TestExtractAddr(t *testing.T) {
 		if got := extractAddr(c.in); got != c.want {
 			t.Fatalf("extractAddr(%q) = %q, want %q", c.in, got, c.want)
 		}
+	}
+}
+
+// A server that accepts the connection but never sends its greeting
+// must not hang Send: the session deadline (here ctx's) cuts it off.
+func TestSMTPMailer_StalledServerTimesOut(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	go func() {
+		c, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer c.Close()
+		time.Sleep(5 * time.Second)
+	}()
+
+	host, port, _ := net.SplitHostPort(ln.Addr().String())
+	m := &SMTPMailer{Host: host, Port: port, From: "a@example.com", TLS: TLSNone}
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+
+	start := time.Now()
+	err = m.Send(ctx, Message{To: []string{"b@example.com"}, Subject: "s", Text: "t"})
+	if err == nil {
+		t.Fatal("Send to a stalled server succeeded")
+	}
+	if d := time.Since(start); d > 2*time.Second {
+		t.Fatalf("Send took %v; the session deadline did not apply", d)
 	}
 }

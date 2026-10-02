@@ -13,6 +13,14 @@ func TestNormalize(t *testing.T) {
 		"":                 "",
 		"   ":              "",
 		"Ärlig Ölstuga":    "ärlig ölstuga",
+		"A\u030arsta":      "årsta",
+		"Don\u2019t":       "don't",
+		"\u201cHi\u201d":   `"hi"`,
+		"1990\u20132000":   "1990-2000",
+		"Paris.":           "paris",
+		"really?! ":        "really",
+		"wait ...":         "wait",
+		"?":                "?",
 	}
 	for in, want := range cases {
 		if got := Normalize(in); got != want {
@@ -32,6 +40,29 @@ func TestExact(t *testing.T) {
 		if m.Match(guess).OK {
 			t.Errorf("Exact should reject %q", guess)
 		}
+	}
+}
+
+// The author's answer and the player's guess go through the same
+// Normalize, so typography on either side does not matter.
+func TestExactForgivesTypography(t *testing.T) {
+	m := Matcher{Kind: Exact, Value: "Don\u2019t Panic"}
+	for _, guess := range []string{"don't panic", "Don\u2018t panic!", "don`t panic."} {
+		if !m.Match(guess).OK {
+			t.Errorf("Exact should accept %q", guess)
+		}
+	}
+	if !(Matcher{Kind: Exact, Value: "rock-paper"}).Match("Rock\u2014paper").OK {
+		t.Error("an em dash should match a hyphen")
+	}
+}
+
+// A regex sees the guess as before: its punctuation is the author's to
+// match.
+func TestRegexKeepsPunctuation(t *testing.T) {
+	m := Matcher{Kind: Regex, Value: `why\?`}
+	if !m.Match("Why?").OK {
+		t.Error("a regex should still see the trailing question mark")
 	}
 }
 

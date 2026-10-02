@@ -168,6 +168,9 @@ func TestHandleTicketCheckoutCompleted_HappyPath(t *testing.T) {
 		Lib:       adventure.New(db),
 		Mailer:    mailerStub,
 		PublicURL: "https://zv.example.com",
+		SellerIdentity: func(string) string {
+			return "Sold by Zonventure AB · Org. no. 559000-0000"
+		},
 	}
 	event := buildSessionCompletedEvent(t, purchaseID, "cs_test_abc")
 	if err := admin.ExportedHandleTicketCheckoutCompleted(h, context.Background(), event); err != nil {
@@ -217,6 +220,10 @@ func TestHandleTicketCheckoutCompleted_HappyPath(t *testing.T) {
 	// "Email team link instead of per-player links" (Round 7).
 	if !strings.Contains(msg.Text, "/team/") {
 		t.Errorf("body has no /team/ link: %s", msg.Text)
+	}
+	// A sale's mail names the seller (e-handelslagen).
+	if !strings.Contains(msg.Text, "Sold by Zonventure AB · Org. no. 559000-0000") {
+		t.Errorf("ticket email has no seller line: %s", msg.Text)
 	}
 
 	// Idempotency: a second invocation must not create a second team

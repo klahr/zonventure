@@ -34,7 +34,7 @@ func (s *Server) registerEventTools() {
 	s.tools.register(ToolDescriptor{
 		Name:        "get_event",
 		Scope:       scopeRead,
-		Description: "Read full detail for one event: meta, every team, every team's player slots (with magic-link tokens), allowed next operations from the current state. Use before transitioning state so you can confirm `state` matches the action's precondition (start: scheduled, pause: running, resume: paused; cancel: scheduled/running/paused).",
+		Description: "Read full detail for one event: meta, every team, every team's player slots (with magic-link tokens), allowed next operations from the current state. Use before transitioning state so you can confirm `state` matches the action's precondition (start: scheduled, pause: running, resume: paused; end: running/paused; cancel: scheduled/running/paused).",
 		InputSchema: map[string]any{
 			"type":     "object",
 			"required": []string{"event_id"},
@@ -133,6 +133,20 @@ func (s *Server) registerEventTools() {
 			},
 		},
 	}, cancelEvent)
+
+	s.tools.register(ToolDescriptor{
+		Name:        "end_event",
+		Scope:       scopeWrite,
+		Description: "End a running or paused event now, before every team has finished. Teams still playing keep the progress and points they have; the event becomes completed, so results and recaps open and players are signed out. Cannot be undone. Requires the caller's password — pass it as 'password' so the admin layer's confirm-gate can verify it.",
+		InputSchema: map[string]any{
+			"type":     "object",
+			"required": []string{"event_id", "password"},
+			"properties": map[string]any{
+				"event_id": map[string]any{"type": "integer", "description": "Event to end."},
+				"password": map[string]any{"type": "string", "description": "Caller's account password. Forwarded to the admin layer as the X-Confirm-Password header."},
+			},
+		},
+	}, endEvent)
 }
 
 /* ---------------- handlers ---------------- */
@@ -393,6 +407,31 @@ func cancelEvent(ctx context.Context, s *Server, raw json.RawMessage) (ToolCallR
 	id := strconv.FormatInt(a.EventID, 10)
 	status, body, err := callAdmin(ctx, s.Admin.CancelEvent,
 		"POST", "/api/admin/events/"+id+"/cancel",
+		map[string]string{"eventID": id},
+		map[string]string{"X-Confirm-Password": a.Password}, nil)
+	if err != nil {
+		return errorResult("call: " + err.Error()), nil
+	}
+	return adminCallResult(status, body), nil
+}
+
+func endEvent(ctx context.Context, s *Server, raw json.RawMessage) (ToolCallResult, error) {
+	var a cancelEventArgs
+	if err := json.Unmarshal(raw, &a); err != nil {
+		return errorResult("bad args: " + err.Error()), nil
+	}
+	if a.EventID <= 0 {
+		return errorResult("event_id required and must be positive"), nil
+	}
+	if a.Password == "" {
+		return errorResult("password required: ending signs every player out and the admin layer requires re-confirmation"), nil
+	}
+	if r := adminConfigured(s); r != nil {
+		return *r, nil
+	}
+	id := strconv.FormatInt(a.EventID, 10)
+	status, body, err := callAdmin(ctx, s.Admin.EndEvent,
+		"POST", "/api/admin/events/"+id+"/end",
 		map[string]string{"eventID": id},
 		map[string]string{"X-Confirm-Password": a.Password}, nil)
 	if err != nil {

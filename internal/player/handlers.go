@@ -354,6 +354,9 @@ func maybePromoteScheduled(ctx context.Context, db *sql.DB, hub *ws.Hub, eventID
 		UPDATE events
 		   SET state = 'running', started_at = now_text()
 		 WHERE id = $1 AND state = 'scheduled'
+		   AND (graph_id IS NOT NULL OR EXISTS (
+		         SELECT 1 FROM adventures a
+		          WHERE a.slug = events.adventure_slug AND a.published_graph_id IS NOT NULL))
 	`, eventID)
 	if err != nil {
 		return false, err

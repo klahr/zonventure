@@ -28,26 +28,33 @@ func Start(ctx context.Context, db *sql.DB, hub *ws.Hub, interval time.Duration)
 
 // tick finds and promotes all scheduled runs whose time has come.
 //
-// scheduled_at can be either RFC3339 (from the JS Date input) or our own
-// "YYYY-MM-DD HH:MM:SS" wire format; casting through timestamptz parses
-// both so we don't have to care what the writer chose.
+// scheduled_at is stored as UTC "YYYY-MM-DD HH:MM:SS" with no offset, so
+// it is read as UTC explicitly rather than in the session's TimeZone.
+//
+// An event whose adventure has nothing published stays scheduled, as the
+// admin start refuses it; the arranger gets one graph.start.failed row.
 func tick(ctx context.Context, db *sql.DB, hub *ws.Hub) {
 	rows, err := db.QueryContext(ctx, `
-		SELECT id, COALESCE(created_by_user_id, 0)
-		FROM events
-		WHERE state = 'scheduled'
-		  AND scheduled_at IS NOT NULL
-		  AND scheduled_at::timestamptz <= now()
+		SELECT e.id, COALESCE(e.created_by_user_id, 0),
+		       e.graph_id IS NOT NULL OR a.published_graph_id IS NOT NULL
+		FROM events e
+		LEFT JOIN adventures a ON a.slug = e.adventure_slug
+		WHERE e.state = 'scheduled'
+		  AND e.scheduled_at IS NOT NULL
+		  AND (e.scheduled_at::timestamp AT TIME ZONE 'UTC') <= now()
 	`)
 	if err != nil {
 		logx.Error("scheduler.query", "err", err)
 		return
 	}
-	type due struct{ id, actor int64 }
+	type due struct {
+		id, actor int64
+		published bool
+	}
 	var runs []due
 	for rows.Next() {
 		var d due
-		if err := rows.Scan(&d.id, &d.actor); err != nil {
+		if err := rows.Scan(&d.id, &d.actor, &d.published); err != nil {
 			rows.Close()
 			logx.Error("scheduler.scan", "err", err)
 			return
@@ -56,6 +63,10 @@ func tick(ctx context.Context, db *sql.DB, hub *ws.Hub) {
 	}
 	rows.Close()
 	for _, d := range runs {
+		if !d.published {
+			unstartable(ctx, db, d.id)
+			continue
+		}
 		res, err := db.ExecContext(ctx, `
 			UPDATE events
 			SET state = 'running', started_at = now_text()
@@ -70,6 +81,8 @@ func tick(ctx context.Context, db *sql.DB, hub *ws.Hub) {
 		}
 		if err := play.Start(ctx, db, d.id); err != nil {
 			logx.Error("scheduler.graph_start", "event_id", d.id, "err", err)
+			activity.Record(ctx, db, d.id, nil, activity.Actor{},
+				"graph.start.failed", map[string]any{"error": err.Error(), "auto": true})
 		}
 		var actor activity.Actor
 		if d.actor > 0 {
@@ -80,4 +93,19 @@ func tick(ctx context.Context, db *sql.DB, hub *ws.Hub) {
 		hub.Publish(ws.EventTopic(d.id), "changed", nil)
 		logx.Info("scheduler.auto_started", "event_id", d.id)
 	}
+}
+
+// unstartable records, once per event, that a due event could not start
+// because its adventure has no published graph. The sweep sees the event
+// again every tick until it is published or rescheduled.
+func unstartable(ctx context.Context, db *sql.DB, eventID int64) {
+	var seen bool
+	if err := db.QueryRowContext(ctx, `
+		SELECT EXISTS (SELECT 1 FROM event_activity WHERE event_id = $1 AND kind = 'graph.start.failed')
+	`, eventID).Scan(&seen); err != nil || seen {
+		return
+	}
+	activity.Record(ctx, db, eventID, nil, activity.Actor{},
+		"graph.start.failed", map[string]any{"error": play.ErrNoGraph.Error(), "auto": true})
+	logx.Error("scheduler.graph_start", "event_id", eventID, "err", play.ErrNoGraph)
 }

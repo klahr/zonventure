@@ -99,10 +99,11 @@ func runBackup(dsn string, out io.Writer) error {
 }
 
 // runRestore replays a plain-SQL dump on stdin into the database
-// referenced by dsn via psql. ON_ERROR_STOP=1 means any failed
-// statement aborts the whole restore so we don't leave the database
-// half-restored on a partially-broken dump. Same env-passed
-// credential handling as runBackup.
+// referenced by dsn via psql. ON_ERROR_STOP=1 plus a single
+// transaction means any failed statement rolls the whole restore back,
+// including the dump's --clean DROPs, so a partially-broken dump leaves
+// the database as it was. Same env-passed credential handling as
+// runBackup.
 func runRestore(dsn string, in io.Reader) error {
 	if dsn == "" {
 		return errors.New("restore: no DSN — pass -dsn or set DATABASE_URL")
@@ -114,7 +115,7 @@ func runRestore(dsn string, in io.Reader) error {
 	if err != nil {
 		return fmt.Errorf("restore: %w", err)
 	}
-	args := []string{"--quiet", "--variable=ON_ERROR_STOP=1", "--file=-"}
+	args := []string{"--quiet", "--single-transaction", "--variable=ON_ERROR_STOP=1", "--file=-"}
 	if urlArg != "" {
 		args = append(args, urlArg)
 	}

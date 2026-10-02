@@ -1,10 +1,14 @@
 package server
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path"
 	"strings"
 	"testing"
+
+	"github.com/go-chi/chi/v5"
 )
 
 // TestEmbed_AssetsPresent is the H17 regression guard. The //go:embed
@@ -46,6 +50,37 @@ func TestEmbed_AssetsPresent(t *testing.T) {
 			if _, err := webFS.ReadFile(rel); err != nil {
 				t.Errorf("on-disk asset %q is not embedded: %v", rel, err)
 			}
+		}
+	}
+}
+
+// No server-rendered page may load Google Fonts: it hands every
+// visitor's IP address to Google (LG München, 3 O 17493/20). The brand
+// fonts ship from the binary at /assets/fontface.css.
+func TestNoGoogleFonts(t *testing.T) {
+	entries, err := os.ReadDir("web")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if e.IsDir() || path.Ext(e.Name()) != ".html" {
+			continue
+		}
+		body, err := os.ReadFile(path.Join("web", e.Name()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(body), "fonts.googleapis.com") || strings.Contains(string(body), "fonts.gstatic.com") {
+			t.Errorf("web/%s references Google Fonts", e.Name())
+		}
+	}
+	h := chi.NewRouter()
+	registerFontRoutes(h)
+	for _, p := range []string{"/assets/fontface.css", "/assets/fonts/open-sans-latin.woff2", "/assets/fonts/aclonica-latin-ext.woff2", "/assets/fonts/OFL-OpenSans.txt"} {
+		rr := httptest.NewRecorder()
+		h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, p, nil))
+		if rr.Code != http.StatusOK || rr.Body.Len() == 0 {
+			t.Errorf("GET %s = %d", p, rr.Code)
 		}
 	}
 }

@@ -118,6 +118,16 @@ type Team struct {
 	StartedAt     time.Time     `json:"started_at"`
 	Completed     bool          `json:"completed,omitempty"`
 	Ending        graph.Outcome `json:"outcome,omitempty"`
+	// StartPaused and NodePaused are what the event's pause clock read
+	// when the team started and when it entered its node. Paused is
+	// what it reads at Now: the seconds the event has been paused in
+	// all, the open pause included. Every clock measured from the start
+	// or the node leaves out the pauses since, so a pause freezes the
+	// time limit, hint delays and the rest. Paused is the event's, read
+	// fresh for every action like Occ; a simulated team never pauses.
+	StartPaused int `json:"start_paused,omitempty"`
+	NodePaused  int `json:"node_paused,omitempty"`
+	Paused      int `json:"-"`
 
 	Points         float64 `json:"points"`
 	PenaltyScore   float64 `json:"penalty_score"`
@@ -312,6 +322,7 @@ func (t *Team) Apply(step walk.Step) {
 	}
 	t.Current = step.To
 	t.NodeEnteredAt = t.Now
+	t.NodePaused = t.Paused
 	t.WalkedMetres = 0
 }
 
@@ -376,13 +387,24 @@ func (t *Team) CounterValue(c string) float64 {
 // because that is the figure a "score ≥ 100" gate means.
 func (t *Team) Score() float64 { return t.Points - t.PenaltyScore }
 
-func (t *Team) ElapsedSeconds() float64 { return t.Now.Sub(t.StartedAt).Seconds() }
+func (t *Team) ElapsedSeconds() float64 { return t.Now.Sub(t.startClock()).Seconds() }
 
 func (t *Team) NodeElapsedSeconds() float64 {
 	if t.NodeEnteredAt.IsZero() {
 		return 0
 	}
-	return t.Now.Sub(t.NodeEnteredAt).Seconds()
+	return t.Now.Sub(t.nodeClock()).Seconds()
+}
+
+// startClock and nodeClock are StartedAt and NodeEnteredAt moved later
+// by the time the event has been paused since: what every deadline and
+// elapsed time counts from.
+func (t *Team) startClock() time.Time {
+	return t.StartedAt.Add(time.Duration(t.Paused-t.StartPaused) * time.Second)
+}
+
+func (t *Team) nodeClock() time.Time {
+	return t.NodeEnteredAt.Add(time.Duration(t.Paused-t.NodePaused) * time.Second)
 }
 
 func (t *Team) TeamSize() int { return t.Size }
@@ -585,6 +607,11 @@ type Result struct {
 	// Waiting is set when a step done together took the player's part
 	// but waits for the others: keys still to turn, players to agree.
 	Waiting *Together `json:"waiting,omitempty"`
+
+	// Shared is set when the action changed what other teams' phones
+	// show; Scored when it changed the team's score. Set by the engine.
+	Shared bool `json:"-"`
+	Scored bool `json:"-"`
 
 	// View is the team's state after the action.
 	View View `json:"view"`
@@ -806,7 +833,7 @@ func (t *Team) ChooseStart(start, code string) (Result, *walk.Step, error) {
 	if n.StartCfg != nil && n.StartCfg.Zone != "" && !t.InZone(n.StartCfg.Zone) {
 		return Result{}, nil, ErrNotHere
 	}
-	t.StartedAt = t.Now
+	t.StartedAt, t.StartPaused = t.Now, t.Paused
 	r := t.Row(start)
 	r.Solved, r.Outcome, r.HasOutcome = true, graph.PortOut, true
 	step, err := walk.FirstFrom(t.G, t, start)
@@ -823,7 +850,7 @@ func (t *Team) Deadline() (time.Time, bool) {
 	if tl == nil || tl.Seconds <= 0 || t.StartedAt.IsZero() || t.Current == "" {
 		return time.Time{}, false
 	}
-	return t.StartedAt.Add(time.Duration(tl.Seconds) * time.Second), true
+	return t.startClock().Add(time.Duration(tl.Seconds) * time.Second), true
 }
 
 // TimeUpDue reports whether the time limit has passed and not yet moved

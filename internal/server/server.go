@@ -9,6 +9,7 @@ import (
 	"embed"
 	"encoding/hex"
 	"net/http"
+	"net/url"
 	"runtime"
 	"runtime/debug"
 	"strings"
@@ -190,7 +191,7 @@ func New(cfg Config) http.Handler {
 	// below — without wrapping them first, those responses would lack
 	// CSP / X-Frame / X-Content-Type-Options. Costs nothing on a 301
 	// where the body is empty anyway; closes a real gap on the 503.
-	r.Use(securityHeaders)
+	r.Use(securityHeaders(cspFor(cfg.Legal.MapTileURL)))
 	// Hide links to /privacy, /terms and /pricing while they'd answer
 	// 503 / 404 (legal identity unset, landing off).
 	r.Use(hideUnavailableLinks(cfg.DB, cfg.Legal))
@@ -323,6 +324,10 @@ func New(cfg Config) http.Handler {
 		paymentProvider = simulatedProv
 	case "stripe", "":
 		if p := stripeprovider.New(cfg.StripeSecretKey, cfg.StripeWebhookSecret); p != nil {
+			env := strings.ToLower(strings.TrimSpace(cfg.Env))
+			if stripeprovider.IsTestKey(cfg.StripeSecretKey) && env != "dev" && env != "development" {
+				panic("ZV_STRIPE_SECRET_KEY is a Stripe test-mode key but ZV_ENV is not dev (refusing to take test-mode payments outside a dev environment)")
+			}
 			paymentProvider = p
 		}
 	default:
@@ -340,10 +345,11 @@ func New(cfg Config) http.Handler {
 	go mailOutbox.Run(bgCtx)
 	adminH := &admin.Handlers{
 		DB: cfg.DB, Lib: cfg.Library, Hub: hub, Engine: playerH.Engine,
-		Mailer:     mail,
-		MailOutbox: mailOutbox,
-		PublicURL:  cfg.PublicURL,
-		Provider:   paymentProvider,
+		Mailer:         mail,
+		MailOutbox:     mailOutbox,
+		PublicURL:      cfg.PublicURL,
+		SellerIdentity: cfg.Legal.SellerIdentityText,
+		Provider:       paymentProvider,
 		// Platform fee is read once at startup and held on the
 		// handler set. Zero-value (no env vars) keeps self-host
 		// inert: no marketplace flow, no Connect onboarding gate.
@@ -448,20 +454,15 @@ type routesEnv struct {
 //     form handlers, page-load theme application). The
 //     /arrange surface still pulls xterm + xterm-addon-fit from
 //     unpkg for the embedded admin terminal.
-//   - style-src 'self' 'unsafe-inline' https://fonts.googleapis.com
-//     https://unpkg.com — inline `style="..."` from the DOM
-//     helpers + Google Fonts stylesheet + xterm's CSS from
-//     unpkg.
+//   - style-src 'self' 'unsafe-inline' https://unpkg.com — inline
+//     `style="..."` from the DOM helpers + xterm's CSS from unpkg.
 //   - img-src 'self' data: blob: https: — data: for QR / canvas
 //     downscale, blob: for QR-decoder + audio clips, https: so
 //     adventure assets / map tiles (OpenStreetMap) work.
-//   - font-src 'self' https://fonts.gstatic.com — Aclonica /
-//     Open Sans woff2 served by Google. Self-hosting was
-//     attempted briefly but the bundled subsets ended up
-//     mis-named, broke the brand mark, and lacked emoji
-//     coverage; the Google CDN's emoji fallback chain is what
-//     yesterday's working build relied on, so we're back to
-//     that until self-hosting is done with the correct files.
+//   - font-src 'self' — Aclonica / Open Sans woff2 served from the
+//     binary (/assets/fonts, the same files the SPAs bundle), so no
+//     page hands a visitor's IP address to Google Fonts. Emoji come
+//     from the system font, as they did with Google's CSS.
 //   - connect-src 'self' wss: ws: https://unpkg.com — XHR /
 //     fetch / WebSocket. unpkg is whitelisted so devtools can
 //     pull xterm's sourcemaps without the browser logging a
@@ -478,19 +479,28 @@ type routesEnv struct {
 //     relative URLs.
 const baselineCSP = "default-src 'self'; " +
 	"script-src 'self' 'unsafe-inline' https://unpkg.com; " +
-	"style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://unpkg.com; " +
+	"style-src 'self' 'unsafe-inline' https://unpkg.com; " +
 	"img-src 'self' data: blob: https:; " +
-	"font-src 'self' https://fonts.gstatic.com; " +
-	// tile.openstreetmap.org: the designer's zone map (MapLibre) fetches
-	// its tiles; blob: workers are how MapLibre decodes them off the main
-	// thread. See web/apps/arrange/src/designer/StaticMap.tsx for the tile
-	// source and why it must change before maps reach players.
-	"connect-src 'self' wss: ws: https://unpkg.com https://tile.openstreetmap.org; " +
+	"font-src 'self'; " +
+	// {tiles}: the designer's zone map (MapLibre) fetches its tiles from
+	// the configured tile host (ZV_MAP_TILE_URL, see cspFor); blob:
+	// workers are how MapLibre decodes them off the main thread.
+	"connect-src 'self' wss: ws: https://unpkg.com {tiles}; " +
 	"worker-src 'self' blob:; " +
 	"media-src 'self' blob:; " +
 	"frame-ancestors 'none'; " +
 	"object-src 'none'; " +
 	"base-uri 'self'"
+
+// cspFor fills baselineCSP's tile origin from the operator's tile URL
+// template, falling back to OpenStreetMap's.
+func cspFor(tileURL string) string {
+	origin := "https://tile.openstreetmap.org"
+	if u, err := url.Parse(tileURL); err == nil && u.Scheme == "https" && u.Host != "" {
+		origin = "https://" + u.Host
+	}
+	return strings.Replace(baselineCSP, "{tiles}", origin, 1)
+}
 
 // trustedProxyRealIP is a gated replacement for chi's middleware.RealIP.
 // chi's version rewrites RemoteAddr from X-Forwarded-For / X-Real-IP
@@ -529,20 +539,22 @@ func firstForwardedAddr(r *http.Request) string {
 	return ""
 }
 
-func securityHeaders(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		h := w.Header()
-		h.Set("Content-Security-Policy", baselineCSP)
-		h.Set("X-Frame-Options", "DENY")
-		h.Set("Referrer-Policy", "strict-origin-when-cross-origin")
-		// nosniff applies to every response. We already set it
-		// individually on a few specific endpoints (/adventure-
-		// assets/audio/*) where MIME confusion is the highest
-		// risk; the baseline keeps the rest of the surface
-		// covered.
-		h.Set("X-Content-Type-Options", "nosniff")
-		next.ServeHTTP(w, r)
-	})
+func securityHeaders(csp string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			h := w.Header()
+			h.Set("Content-Security-Policy", csp)
+			h.Set("X-Frame-Options", "DENY")
+			h.Set("Referrer-Policy", "strict-origin-when-cross-origin")
+			// nosniff applies to every response. We already set it
+			// individually on a few specific endpoints (/adventure-
+			// assets/audio/*) where MIME confusion is the highest
+			// risk; the baseline keeps the rest of the surface
+			// covered.
+			h.Set("X-Content-Type-Options", "nosniff")
+			next.ServeHTTP(w, r)
+		})
+	}
 }
 
 func servePage(path string) http.HandlerFunc {

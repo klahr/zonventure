@@ -35,15 +35,19 @@ export function loadMapLibre(): Promise<MapLib> {
   return loading;
 }
 
+// The operator's tile source (ZV_MAP_TILE_URL), set on the page as
+// window.ZV_MAP by /assets/map-config.js; OpenStreetMap without it.
+const mapConfig = (globalThis as { ZV_MAP?: { tile_url?: string; attribution?: string } }).ZV_MAP;
+
 export const STYLE = {
   version: 8 as const,
   sources: {
     osm: {
       type: "raster" as const,
-      tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
+      tiles: [mapConfig?.tile_url || "https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
       tileSize: 256,
       maxzoom: 19,
-      attribution: "© OpenStreetMap contributors",
+      attribution: mapConfig?.attribution || "© OpenStreetMap contributors",
     },
   },
   layers: [{ id: "osm", type: "raster" as const, source: "osm" }],

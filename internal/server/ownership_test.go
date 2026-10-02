@@ -124,7 +124,7 @@ func TestOwnership_OrgUserSeesCatalogAdventure(t *testing.T) {
 /* ---------------- Purchase flow ---------------- */
 
 func TestPurchase_CreateConfirmProducesAssignment(t *testing.T) {
-	ts, _, cleanup := newTestServer(t)
+	ts, _, cleanup := newTestServerWith(t, simulatedPaymentsConfig)
 	defer cleanup()
 	boss := newClient(t, ts)
 	if s := boss.do("POST", "/api/auth/login",
@@ -194,7 +194,7 @@ func TestPurchase_CreateConfirmProducesAssignment(t *testing.T) {
 }
 
 func TestPurchase_ConfirmIsIdempotent(t *testing.T) {
-	ts, _, cleanup := newTestServer(t)
+	ts, _, cleanup := newTestServerWith(t, simulatedPaymentsConfig)
 	defer cleanup()
 	boss := newClient(t, ts)
 	if s := boss.do("POST", "/api/auth/login",

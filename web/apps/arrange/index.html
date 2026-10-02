@@ -26,6 +26,9 @@
   </head>
   <body>
     <div id="root"></div>
+    <!-- The operator's map tile source (window.ZV_MAP); deferred, so it
+         still runs before the app module below. -->
+    <script defer src="/assets/map-config.js"></script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

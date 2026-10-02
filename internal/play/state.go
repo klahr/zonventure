@@ -34,6 +34,13 @@ const maxPingGapSeconds = 120.0
 // must not hold a zone for its player while they walk away.
 const phoneFreshSeconds = 60.0
 
+// maxFixAccuracy is the widest fix, in metres, that counts for where a
+// team is: a phone indoors may report a fix hundreds of metres wide,
+// which could put the team in a zone it is nowhere near. Such pings are
+// kept for the map, only not trusted. A ping without an accuracy (an
+// older client, a simulated one) is trusted as before.
+const maxFixAccuracy = 100.0
+
 // PingLocator reads positions from location_pings.
 type PingLocator struct{}
 
@@ -52,13 +59,13 @@ func fixes(ctx context.Context, q Querier, teamID int64) ([]fix, error) {
 		FROM player_slots s
 		CROSS JOIN LATERAL (
 			SELECT lat, lng, server_ts, id FROM location_pings
-			WHERE slot_id = s.id
+			WHERE slot_id = s.id AND (accuracy IS NULL OR accuracy <= $2)
 			ORDER BY server_ts DESC, id DESC
 			LIMIT 2
 		) p
 		WHERE s.team_id = $1
 		ORDER BY s.id, p.server_ts DESC, p.id DESC
-	`, teamID)
+	`, teamID, maxFixAccuracy)
 	if err != nil {
 		return nil, err
 	}
@@ -143,8 +150,8 @@ const walkStep = 15.0
 func walkedSince(ctx context.Context, q Querier, teamID int64, since time.Time) (float64, error) {
 	rows, err := q.QueryContext(ctx, `
 		SELECT slot_id, lat, lng FROM location_pings
-		WHERE team_id = $1 AND server_ts >= $2
-		ORDER BY slot_id, server_ts, id`, teamID, since.UTC().Format("2006-01-02 15:04:05"))
+		WHERE team_id = $1 AND server_ts >= $2 AND (accuracy IS NULL OR accuracy <= $3)
+		ORDER BY slot_id, server_ts, id`, teamID, since.UTC().Format("2006-01-02 15:04:05"), maxFixAccuracy)
 	if err != nil {
 		return 0, err
 	}
@@ -343,6 +350,9 @@ func (e *Engine) loadTeam(ctx context.Context, tx *sql.Tx, teamID int64) (*teamS
 	if err := s.lockAndCountOccupancy(ctx, tx); err != nil {
 		return nil, err
 	}
+	if err := s.lockCounters(ctx, tx); err != nil {
+		return nil, err
+	}
 
 	if err := e.locate(ctx, tx, s); err != nil {
 		return nil, err
@@ -360,22 +370,24 @@ func (e *Engine) loadCore(ctx context.Context, q Querier, teamID int64, forUpdat
 		entered   sql.NullTime
 		completed sql.NullTime
 		outcome   sql.NullString
+		pausedAt  sql.NullString
 	)
 	query := `
 		SELECT tgs.event_id, tgs.graph_id, tgs.current_node, tgs.node_entered_at, tgs.started_at,
 		       tgs.completed_at, tgs.outcome, tgs.score, tgs.penalty_score, tgs.penalty_seconds,
 		       tgs.theme, tgs.last_answer, tgs.timed_out, tgs.lang, tgs.cheated,
-		       COALESCE(adv.start_code, '')
+		       COALESCE(adv.start_code, ''), tgs.start_paused, tgs.node_paused, ev.paused_seconds, ev.paused_at
 		FROM team_graph_state tgs
 		JOIN adventure_graphs g ON g.id = tgs.graph_id
 		JOIN adventures adv ON adv.id = g.adventure_id
+		JOIN events ev ON ev.id = tgs.event_id
 		WHERE tgs.team_id = $1`
 	if forUpdate {
 		query += ` FOR UPDATE OF tgs`
 	}
 	err := q.QueryRowContext(ctx, query, teamID).Scan(&s.eventID, &s.graphID, &current, &entered, &s.StartedAt,
 		&completed, &outcome, &s.Points, &s.PenaltyScore, &s.PenaltySeconds, &s.Theme, &s.LatestAnswer, &s.TimedOut, &s.Lang, &s.Cheated,
-		&s.StartCode)
+		&s.StartCode, &s.StartPaused, &s.NodePaused, &s.Paused, &pausedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNoGraph
 	}
@@ -388,11 +400,22 @@ func (e *Engine) loadCore(ctx context.Context, q Querier, teamID int64, forUpdat
 	}
 	s.Completed = completed.Valid
 	s.Ending = graph.Outcome(outcome.String)
+	s.Paused = pauseClock(s.Paused, pausedAt, s.Now)
 
 	if s.G, err = e.graph(ctx, q, s.graphID); err != nil {
 		return nil, err
 	}
 	return s, s.loadRest(ctx, q)
+}
+
+// pauseClock is how long an event has been paused in all at now: its
+// closed pauses and, counted up to now, the open one (see
+// activity.ClosePause).
+func pauseClock(seconds int, pausedAt sql.NullString, now time.Time) int {
+	if at, err := time.ParseInLocation(time.DateTime, pausedAt.String, time.UTC); pausedAt.Valid && err == nil && now.After(at) {
+		seconds += int(now.Sub(at).Round(time.Second) / time.Second)
+	}
+	return seconds
 }
 
 func (s *teamState) loadRest(ctx context.Context, q Querier) error {
@@ -573,6 +596,38 @@ func (s *teamState) lockAndCountOccupancy(ctx context.Context, tx *sql.Tx) error
 		s.Occ[hub+"\x00"+port] = n
 	}
 	return closeRows(rows)
+}
+
+// lockCounters serialises teams that may change the same event-wide
+// counter, then re-reads the counters. Without it, two teams adding 1
+// to 5 both compute 6 from the value loadRest read before the lock.
+// Taken after the hub locks, in a fixed order, so it cannot deadlock.
+func (s *teamState) lockCounters(ctx context.Context, tx *sql.Tx) error {
+	seen := map[string]bool{}
+	var counters []string
+	for _, n := range s.G.Nodes {
+		if n.EffectCfg != nil && n.EffectCfg.Kind == graph.SetCounter && !seen[n.EffectCfg.Counter] {
+			seen[n.EffectCfg.Counter] = true
+			counters = append(counters, n.EffectCfg.Counter)
+		}
+	}
+	if len(counters) == 0 {
+		return nil
+	}
+	sort.Strings(counters)
+	for _, c := range counters {
+		if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock($1)`, counterLockKey(s.eventID, c)); err != nil {
+			return fmt.Errorf("locking counter %s: %w", c, err)
+		}
+	}
+	return scanPairs(ctx, tx, `SELECT counter, value FROM event_counters WHERE event_id = $1`, s.eventID,
+		func(k string, v float64) { s.Counters[k] = v })
+}
+
+func counterLockKey(eventID int64, counter string) int64 {
+	h := fnv.New64a()
+	_, _ = fmt.Fprintf(h, "zv-counter:%d:%s", eventID, counter)
+	return int64(h.Sum64())
 }
 
 // lockKey maps (event, hub) onto the 64-bit advisory lock space.

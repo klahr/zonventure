@@ -160,3 +160,32 @@ func TestOutbox_Enqueue_RejectsBadInput(t *testing.T) {
 		t.Error("attachments: err = nil, want refusal")
 	}
 }
+
+// next_attempt_at and in_flight_until are UTC text; a session TimeZone
+// behind UTC must not leave a due message waiting for hours.
+func TestOutbox_DueRegardlessOfTimeZone(t *testing.T) {
+	db, cleanup := dbtest.Open(t)
+	defer cleanup()
+	var name string
+	if err := db.QueryRow(`SELECT current_database()`).Scan(&name); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`ALTER DATABASE ` + name + ` SET TimeZone = 'America/Los_Angeles'`); err != nil {
+		t.Fatal(err)
+	}
+	db.SetMaxIdleConns(0)
+	db.SetMaxIdleConns(5)
+
+	mock := &recordingMailer{mode: "ok"}
+	o := &mailer.Outbox{DB: db, Mailer: mock}
+	msg := mailer.Message{To: []string{"buyer@example.com"}, Subject: "s", Text: "t"}
+	if err := o.Enqueue(context.Background(), "ticket_team_link", msg); err != nil {
+		t.Fatalf("Enqueue: %v", err)
+	}
+	if err := mailer.ExportedTick(o, context.Background()); err != nil {
+		t.Fatalf("tick: %v", err)
+	}
+	if n := len(mock.Calls()); n != 1 {
+		t.Fatalf("Send call count = %d, want 1", n)
+	}
+}

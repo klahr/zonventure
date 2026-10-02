@@ -88,6 +88,7 @@ func questFixture(t *testing.T) (db *sql.DB, orgID, assID int64, router chi.Rout
 	r.Post("/api/admin/events", h.CreateEvent)
 	r.Patch("/api/admin/events/{eventID}", h.UpdateEvent)
 	r.Post("/api/admin/events/{eventID}/start", h.StartEvent)
+	r.Post("/api/admin/events/{eventID}/pause", h.PauseEvent)
 	return db, orgID, assID, r
 }
 

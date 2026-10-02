@@ -24,7 +24,8 @@ An event moves through five named states. Most authoring happens in **scheduled*
    scheduled ────────────────► running ◄──────────► paused
        │                          │                    │
        │                          │ (auto on last      │
-       │                          │  team finishing)   │
+       │                          │  team finishing,   │
+       │                          │  or end_event) ◄───┤
        │                          ▼                    │
        │                      completed                │
        │                                               │
@@ -42,6 +43,7 @@ An event moves through five named states. Most authoring happens in **scheduled*
 | running → paused       | pause_event   | Players see a "paused" banner; answers/movement aren't recorded. For Quests, pausing also delists from /store (no new ticket sales) without ending the quest. |
 | paused → running       | resume_event  | Same elapsed clock; team progress untouched.                           |
 | running → completed    | (automatic)   | When the last non-withdrawn team finishes.                             |
+| running / paused → completed | end_event | End now: unfinished teams keep their progress, results and recaps open, players are signed out. Requires the user's password. |
 | any non-terminal → cancelled | cancel_event | Allowed from scheduled, running, paused. Requires the user's password. |
 
 ## What's editable in each state
@@ -66,7 +68,7 @@ The MCP surface has no streaming. To watch a live event, poll:
 | Phase            | Tools                                                                                                   |
 |------------------|----------------------------------------------------------------------------------------------------------|
 | Authoring        | list_adventures · get_adventure · validate_adventure · create_adventure · update_adventure_meta · delete_adventure · {add,update,delete}_puzzle · move_puzzle · {create,update,delete,reorder}_lane · set_lane_mode · {attach,detach}_image · {attach,detach}_audio · update_image_alt · detach_avatar · {add,update,delete}_hint |
-| Lifecycle        | list_events · get_event · create_event · update_event · start_event · pause_event · resume_event · cancel_event |
+| Lifecycle        | list_events · get_event · create_event · update_event · start_event · pause_event · resume_event · end_event · cancel_event |
 | Teams + slots    | create_team · bulk_create_teams · update_team · delete_team · withdraw_team · unwithdraw_team · unlock_team · add_slot · remove_slot · rotate_slot_token |
 | Observation      | list_positions · list_activity · list_tracks · get_event_state_summary                                  |
 | Billing          | list_purchases · get_purchase · create_purchase (simulated only) · confirm_purchase · grant_slots_to_event (admin) |
@@ -75,7 +77,7 @@ The MCP surface has no streaming. To watch a live event, poll:
 
 ## Security boundaries
 
-- ` + "`cancel_event`" + ` and ` + "`delete_team`" + ` require the caller's password (passed as ` + "`password`" + `, forwarded as X-Confirm-Password). The API token alone cannot cancel or destroy.
+- ` + "`end_event`" + `, ` + "`cancel_event`" + ` and ` + "`delete_team`" + ` require the caller's password (passed as ` + "`password`" + `, forwarded as X-Confirm-Password). The API token alone cannot cancel or destroy.
 - ` + "`grant_slots_to_event`" + ` is admin-only and refused at the MCP layer when the token's user isn't a global admin.
 - A global admin's token reaches only the operator tools (` + "`grant_slots_to_event`" + `, the purchase reads, this reference): authoring and running events belong to org users.
 - ` + "`create_purchase`" + ` is hard-coded to provider="simulated" and refuses on Stripe-enabled deployments — real-money buys go through the web checkout.

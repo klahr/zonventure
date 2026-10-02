@@ -11,15 +11,13 @@
 <html lang="{{LANG_CODE}}"><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; object-src 'none'; base-uri 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'">
 <title>{{REDEEM_TITLE}} · Zonventure</title>
 <meta name="robots" content="noindex">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#14202e" media="(prefers-color-scheme: dark)">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Aclonica&family=Open+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/assets/fontface.css">
 <link rel="stylesheet" href="/assets/page-tokens.css">
 <link rel="stylesheet" href="/assets/topbar.css">
 <script defer src="/assets/topbar.js"></script>
@@ -76,7 +74,7 @@
   }
   footer a { color: inherit; margin: 0 .5rem; }
   footer a:hover { color: var(--accent); }
-  footer .copy { margin-top: .5rem; font-size: .8rem; }
+  footer .copy, footer .seller { margin-top: .5rem; font-size: .8rem; }
 </style>
 </head>
 <body>
@@ -196,6 +194,7 @@
       <a href="/arrange">{{NAV_LOGIN}}</a>
     </nav>
     <p class="copy">{{FOOTER_COPY}}</p>
+    <!--ZV_SELLER-->
   </div>
 </footer>
 

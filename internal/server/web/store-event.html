@@ -23,7 +23,7 @@
 <html lang="{{LANG_CODE}}"><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https:; font-src 'self' https://fonts.gstatic.com; connect-src 'self' wss: ws:; media-src 'self' blob:; object-src 'none'; base-uri 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self'; connect-src 'self' wss: ws:; media-src 'self' blob:; object-src 'none'; base-uri 'self'">
 <title>{{TITLE}} · Zonventure</title>
 <meta name="description" content="{{BLURB}}">
 <link rel="canonical" href="{{CANONICAL_URL}}">
@@ -46,9 +46,7 @@
 <meta name="twitter:description" content="{{BLURB}}">
 <meta name="twitter:image" content="{{COVER_URL}}">
 
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Aclonica&family=Open+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/assets/fontface.css">
 <link rel="stylesheet" href="/assets/page-tokens.css">
 <link rel="stylesheet" href="/assets/topbar.css">
 <script defer src="/assets/topbar.js"></script>
@@ -142,7 +140,7 @@
     font: inherit;
   }
   .buy-card .err { color: #c0392b; font-size: .9rem; min-height: 1.2em; }
-  .buy-card .terms-note { color: var(--muted); font-size: .8rem; margin: .5rem 0 0; }
+  .buy-card .terms-note, .buy-card .seller { color: var(--muted); font-size: .8rem; margin: .5rem 0 0; }
 
   .toast {
     background: var(--surface);
@@ -165,7 +163,7 @@
   }
   footer a { color: inherit; margin: 0 .5rem; }
   footer a:hover { color: var(--accent); }
-  footer .copy { margin-top: .5rem; font-size: .8rem; }
+  footer .copy, footer .seller { margin-top: .5rem; font-size: .8rem; }
 </style>
 </head>
 <body>
@@ -253,6 +251,7 @@
         <div class="err" id="buy-err" role="alert"></div>
         <button type="submit" class="btn primary" id="buy-submit">{{STORE_EVENT_BUY_CTA}}</button>
         <p class="terms-note">{{STORE_EVENT_TERMS_HTML}}</p>
+        <!--ZV_SELLER_SOLD_BY-->
       </form>
     </div>
   </div>
@@ -269,6 +268,7 @@
       <a href="/arrange">{{NAV_LOGIN}}</a>
     </nav>
     <p class="copy">{{FOOTER_COPY}}</p>
+    <!--ZV_SELLER-->
   </div>
 </footer>
 

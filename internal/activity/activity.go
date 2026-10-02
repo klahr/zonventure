@@ -130,6 +130,16 @@ func MaybeCompleteEvent(ctx context.Context, db Execer, eventID int64) (bool, er
 	if total == 0 || done < total {
 		return false, nil
 	}
+	return CompleteEvent(ctx, db, eventID, Actor{}, nil)
+}
+
+// CompleteEvent is the completion itself, whether every team is done
+// or the arranger ends the event early: a running or paused event
+// becomes 'completed', its open pause closes, the activity log records
+// who did it, and its players are signed out. Teams still playing keep
+// their progress as it stands. Returns (false, nil) when the event was
+// in no state to complete — a lost race, or already terminal.
+func CompleteEvent(ctx context.Context, db Execer, eventID int64, actor Actor, payload any) (bool, error) {
 	res, err := db.ExecContext(ctx, `
 		UPDATE events
 		SET state = 'completed', completed_at = now_text(), `+ClosePause+`
@@ -141,7 +151,7 @@ func MaybeCompleteEvent(ctx context.Context, db Execer, eventID int64) (bool, er
 	if n, _ := res.RowsAffected(); n == 0 {
 		return false, nil
 	}
-	Record(ctx, db, eventID, nil, Actor{}, EventCompleted, nil)
+	Record(ctx, db, eventID, nil, actor, EventCompleted, payload)
 	// Best-effort slot-session sweep — see ExpireEventSlotSessions.
 	// A failure here does not unwind the state transition: the event
 	// is genuinely complete, we just kept some now-useless cookies

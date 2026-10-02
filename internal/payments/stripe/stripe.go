@@ -58,6 +58,12 @@ func New(secretKey, webhookSecret string) *Provider {
 	}
 }
 
+// IsTestKey reports whether key is a Stripe test-mode secret or
+// restricted key.
+func IsTestKey(key string) bool {
+	return strings.HasPrefix(key, "sk_test_") || strings.HasPrefix(key, "rk_test_")
+}
+
 // Name identifies this impl in logs / metrics.
 func (p *Provider) Name() string { return "stripe" }
 
@@ -101,6 +107,19 @@ func (p *Provider) CreateCheckout(ctx context.Context, params payments.CheckoutP
 	if params.AutoTax {
 		csParams.AutomaticTax = &stripego.CheckoutSessionAutomaticTaxParams{
 			Enabled: stripego.Bool(true),
+		}
+		// Our prices are shown and stored gross, so tax comes out of
+		// the amount rather than on top: the buyer pays AmountCents.
+		csParams.LineItems[0].PriceData.TaxBehavior = stripego.String(
+			string(stripego.PriceTaxBehaviorInclusive))
+	}
+	// Stripe refuses automatic tax / tax id collection for an existing
+	// customer unless Checkout may write the collected address and
+	// name back onto it.
+	if params.CustomerID != "" && (params.AutoTax || params.CollectTaxID) {
+		csParams.CustomerUpdate = &stripego.CheckoutSessionCustomerUpdateParams{
+			Address: stripego.String("auto"),
+			Name:    stripego.String("auto"),
 		}
 	}
 	if params.CollectAddress {
@@ -172,21 +191,38 @@ func (p *Provider) VerifyAndParseWebhook(body []byte, headers http.Header) (paym
 		Type:     payments.EventOther,
 	}
 	switch ev.Type {
-	case "checkout.session.completed":
+	case "checkout.session.completed",
+		"checkout.session.async_payment_succeeded",
+		"checkout.session.async_payment_failed":
 		var sess stripego.CheckoutSession
 		if err := json.Unmarshal(ev.Data.Raw, &sess); err != nil {
 			return payments.Event{}, fmt.Errorf("decode checkout.session: %w", err)
 		}
+		// async_payment_succeeded carries payment_status="paid" and
+		// fulfils through the same path as a synchronous completion.
 		out.Type = payments.EventCheckoutCompleted
+		if ev.Type == "checkout.session.async_payment_failed" {
+			out.Type = payments.EventCheckoutFailed
+		}
 		out.Metadata = sess.Metadata
 		detail := payments.CheckoutDetail{
-			SessionID:     sess.ID,
-			AmountTotal:   sess.AmountTotal,
-			Currency:      string(sess.Currency),
-			PaymentStatus: payments.PaymentStatus(sess.PaymentStatus),
+			SessionID:      sess.ID,
+			AmountTotal:    sess.AmountTotal,
+			AmountSubtotal: sess.AmountSubtotal,
+			Currency:       string(sess.Currency),
+			PaymentStatus:  payments.PaymentStatus(sess.PaymentStatus),
 		}
 		if sess.Customer != nil {
 			detail.CustomerID = sess.Customer.ID
+		}
+		// Webhook payloads carry payment_intent and invoice as bare ids,
+		// so the charge id (what Refund and charge.refunded key on) and
+		// the hosted invoice URL need the session re-read with those
+		// expanded. Only for a paid session: that's the one we fulfil.
+		if detail.PaymentStatus == payments.PaymentStatusPaid && needsExpand(&sess) {
+			if err := p.expandSession(&sess); err != nil {
+				return payments.Event{}, fmt.Errorf("expand checkout.session %s: %w", sess.ID, err)
+			}
 		}
 		if sess.PaymentIntent != nil && sess.PaymentIntent.LatestCharge != nil {
 			detail.ChargeID = sess.PaymentIntent.LatestCharge.ID
@@ -212,6 +248,15 @@ func (p *Provider) VerifyAndParseWebhook(body []byte, headers http.Header) (paym
 		if ch.Customer != nil {
 			detail.CustomerID = ch.Customer.ID
 		}
+		// Rows fulfilled before the charge id was recorded can only be
+		// matched through their checkout session, so name it.
+		if ch.PaymentIntent != nil && ch.PaymentIntent.ID != "" {
+			sessID, err := p.sessionForPaymentIntent(ch.PaymentIntent.ID)
+			if err != nil {
+				return payments.Event{}, fmt.Errorf("checkout session for %s: %w", ch.PaymentIntent.ID, err)
+			}
+			detail.CheckoutSessionID = sessID
+		}
 		out.Charge = &detail
 
 	case "account.updated":
@@ -233,6 +278,52 @@ func (p *Provider) VerifyAndParseWebhook(body []byte, headers http.Header) (paym
 		}
 	}
 	return out, nil
+}
+
+// webhookAPITimeout bounds the Stripe reads made while parsing a
+// webhook; a timeout fails the delivery and Stripe redelivers.
+const webhookAPITimeout = 10 * time.Second
+
+// needsExpand reports whether a webhook's checkout session names a
+// payment intent or invoice without the fields we record from them.
+func needsExpand(sess *stripego.CheckoutSession) bool {
+	return (sess.PaymentIntent != nil && sess.PaymentIntent.ID != "" && sess.PaymentIntent.LatestCharge == nil) ||
+		(sess.Invoice != nil && sess.Invoice.ID != "" && sess.Invoice.HostedInvoiceURL == "")
+}
+
+// expandSession replaces sess's payment intent and invoice with the
+// expanded objects from a fresh read of the session.
+func (p *Provider) expandSession(sess *stripego.CheckoutSession) error {
+	stripego.Key = p.SecretKey
+	ctx, cancel := context.WithTimeout(context.Background(), webhookAPITimeout)
+	defer cancel()
+	params := &stripego.CheckoutSessionParams{}
+	params.Context = ctx
+	params.AddExpand("payment_intent")
+	params.AddExpand("invoice")
+	full, err := checkoutsession.Get(sess.ID, params)
+	if err != nil {
+		return err
+	}
+	sess.PaymentIntent = full.PaymentIntent
+	sess.Invoice = full.Invoice
+	return nil
+}
+
+// sessionForPaymentIntent returns the id of the checkout session that
+// created the payment intent, or "" when it wasn't one of ours.
+func (p *Provider) sessionForPaymentIntent(paymentIntentID string) (string, error) {
+	stripego.Key = p.SecretKey
+	ctx, cancel := context.WithTimeout(context.Background(), webhookAPITimeout)
+	defer cancel()
+	params := &stripego.CheckoutSessionListParams{PaymentIntent: stripego.String(paymentIntentID)}
+	params.Context = ctx
+	params.Limit = stripego.Int64(1)
+	it := checkoutsession.List(params)
+	if it.Next() {
+		return it.CheckoutSession().ID, nil
+	}
+	return "", it.Err()
 }
 
 // Refund issues a full refund against the named charge. ReasonRequestedByCustomer

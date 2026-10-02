@@ -22,9 +22,10 @@
 //     max(0, 1 - abs(guess-target)/tolerance) so a reader can see what
 //     it does.
 //
-// What deliberately did not change: normalisation, and the anchored
-// case-insensitive regex wrapper. Both match internal/adventure/loader.go
-// exactly, because live adventures depend on them.
+// What deliberately did not change: the anchored case-insensitive regex
+// wrapper, and the normalisation a regex sees, because live adventures
+// depend on them. Normalize has since grown to forgive typography (see
+// it), which only ever accepts more.
 package match
 
 import (
@@ -33,6 +34,8 @@ import (
 	"strconv"
 	"strings"
 	"unicode"
+
+	"golang.org/x/text/unicode/norm"
 )
 
 // Kind is the matcher discriminator. Stored as a string so an authored
@@ -111,14 +114,37 @@ var miss = Result{OK: false, Multiplier: 0}
 
 func hit(multiplier float64) Result { return Result{OK: true, Multiplier: multiplier} }
 
-// Normalize prepares a string for comparison: case-folded, trimmed, and
-// with internal whitespace runs collapsed to a single space.
-//
-// Identical in behaviour to normalise() in internal/adventure/loader.go.
-// Live adventures were authored against it, so a "better" normalisation
-// here would silently change which answers are accepted.
+// Normalize prepares a string for comparison: case-folded, trimmed,
+// with internal whitespace runs collapsed to a single space, in Unicode
+// NFC, with typographic quotes and dashes as their ASCII forms, and
+// without trailing sentence punctuation. A phone keyboard's curly
+// apostrophe, an author's pasted en dash or a decomposed "å" from
+// another keyboard must not turn a right answer wrong.
 func Normalize(s string) string {
+	s = strings.Map(asciiPunct, norm.NFC.String(collapse(s)))
+	if t := strings.TrimRight(s, ".!?"); t != "" {
+		s = strings.TrimRight(t, " ")
+	}
+	return s
+}
+
+// collapse case-folds, trims and collapses whitespace. Regex guesses get
+// only this: an authored pattern may rely on the punctuation Normalize
+// strips.
+func collapse(s string) string {
 	return strings.Join(strings.Fields(strings.ToLower(strings.TrimSpace(s))), " ")
+}
+
+func asciiPunct(r rune) rune {
+	switch r {
+	case '\u2018', '\u2019', '\u201a', '\u201b', '\u00b4', '`':
+		return '\''
+	case '\u201c', '\u201d', '\u201e':
+		return '"'
+	case '\u2013', '\u2014', '\u2010', '\u2212':
+		return '-'
+	}
+	return r
 }
 
 // Match evaluates one matcher against a raw guess.
@@ -143,7 +169,7 @@ func (m Matcher) Match(guess string) Result {
 		// A pattern that does not compile matches nothing. It cannot
 		// normally reach here — the validator rejects it at save time —
 		// but failing closed beats panicking mid-event.
-		if err == nil && re.MatchString(Normalize(guess)) {
+		if err == nil && re.MatchString(collapse(guess)) {
 			return hit(1)
 		}
 	case Interval:

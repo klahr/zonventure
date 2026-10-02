@@ -248,11 +248,12 @@ func (p *Provider) devConfirm(w http.ResponseWriter, r *http.Request) {
 		Created:  time.Now(),
 		Metadata: s.params.Metadata,
 		Checkout: &payments.CheckoutDetail{
-			SessionID:     sid,
-			AmountTotal:   s.params.AmountCents,
-			Currency:      strings.ToLower(s.params.Currency),
-			ChargeID:      chargeID,
-			PaymentStatus: payments.PaymentStatusPaid,
+			SessionID:      sid,
+			AmountTotal:    s.params.AmountCents,
+			AmountSubtotal: s.params.AmountCents,
+			Currency:       strings.ToLower(s.params.Currency),
+			ChargeID:       chargeID,
+			PaymentStatus:  payments.PaymentStatusPaid,
 		},
 	}
 	if err := p.deliver(r.Context(), ev); err != nil {

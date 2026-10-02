@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { CalendarClock, Coins, Download, MonitorPlay, Moon, Play, Terminal, Trash2 } from "lucide-react";
+import { CalendarClock, Coins, Download, Flag, MonitorPlay, Moon, Play, Terminal, Trash2 } from "lucide-react";
 import type { Whoami } from "@zonventure/api";
 import { useT } from "../../i18n.tsx";
 import { href } from "../../router.ts";
@@ -59,6 +59,24 @@ export function LifecycleActions({ event, teams, adventure, user, reload }: { ev
     try {
       await api.cancelEvent(event.id, password);
       toast.ok(t.t("Event cancelled"));
+      reload();
+    } catch (e) {
+      toast.err(e);
+    }
+  };
+
+  const end = async () => {
+    const password = await dialogs.password({
+      title: t.t("End event?"),
+      message: t.t("The event ends now for every team. Teams still playing keep the points they have, the results and recaps open, and players are signed out. Enter your password to confirm."),
+      cancelLabel: t.t("Keep playing"),
+      confirmLabel: t.t("End event"),
+      danger: true,
+    });
+    if (!password) return;
+    try {
+      await api.endEvent(event.id, password);
+      toast.ok(t.t("Event ended"));
       reload();
     } catch (e) {
       toast.err(e);
@@ -152,6 +170,7 @@ export function LifecycleActions({ event, teams, adventure, user, reload }: { ev
   }
   if (cancellable) {
     if (more.length) more.push({ separator: true });
+    if (live) more.push({ label: t.t("End event"), icon: <Flag size={ICON.sm} aria-hidden />, danger: true, onClick: () => void end() });
     more.push({ label: t.t("Cancel event"), icon: <Trash2 size={ICON.sm} aria-hidden />, danger: true, onClick: () => void cancel() });
   }
 

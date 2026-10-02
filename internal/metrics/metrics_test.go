@@ -2,6 +2,7 @@ package metrics
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -9,6 +10,8 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+
+	"github.com/klahr/zonventure/internal/httpx"
 )
 
 // TestHTTPMiddlewareWebSocketHijack pins the regression where the
@@ -52,4 +55,32 @@ func TestHTTPMiddlewareWebSocketHijack(t *testing.T) {
 // fails, but this assertion makes the cause obvious in test output.
 func TestStatusRecorderImplementsHijacker(t *testing.T) {
 	var _ http.Hijacker = (*statusRecorder)(nil)
+}
+
+// TestHTTPMiddlewareExtendDeadlines pins that a handler behind the
+// metrics middleware can still lift the server's write timeout: without
+// Unwrap, http.ResponseController can't reach the connection and a slow
+// response is cut off at the server-wide deadline.
+func TestHTTPMiddlewareExtendDeadlines(t *testing.T) {
+	mw := HTTPMiddleware(func(*http.Request) string { return "/slow" })
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		httpx.ExtendDeadlines(w, 5*time.Second)
+		time.Sleep(300 * time.Millisecond)
+		_, _ = w.Write([]byte("ok"))
+	}))
+
+	ts := httptest.NewUnstartedServer(handler)
+	ts.Config.WriteTimeout = 100 * time.Millisecond
+	ts.Start()
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL)
+	if err != nil {
+		t.Fatalf("slow response cut off despite ExtendDeadlines: %v", err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil || string(body) != "ok" {
+		t.Fatalf("body = %q, err = %v", body, err)
+	}
 }

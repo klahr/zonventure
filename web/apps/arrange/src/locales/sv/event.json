@@ -104,5 +104,9 @@
   "Secret roles": "Hemliga roller",
   "Secret roles off": "Hemliga roller av",
   "Secret roles on": "Hemliga roller på",
-  "This adventure has a secret role, such as a saboteur, dealt to one player on teams of three or more.": "Det här äventyret har en hemlig roll, till exempel en sabotör, som delas ut till en spelare i lag med tre eller fler."
+  "This adventure has a secret role, such as a saboteur, dealt to one player on teams of three or more.": "Det här äventyret har en hemlig roll, till exempel en sabotör, som delas ut till en spelare i lag med tre eller fler.",
+  "End event": "Avsluta eventet",
+  "End event?": "Avsluta eventet?",
+  "The event ends now for every team. Teams still playing keep the points they have, the results and recaps open, and players are signed out. Enter your password to confirm.": "Eventet avslutas nu för alla lag. Lag som fortfarande spelar behåller sina poäng, resultaten och sammanfattningarna öppnas och spelarna loggas ut. Ange ditt lösenord för att bekräfta.",
+  "Keep playing": "Fortsätt spela"
 }

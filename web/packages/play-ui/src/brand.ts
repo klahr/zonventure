@@ -59,7 +59,8 @@ export function readableOn(bg: string): "#000000" | "#ffffff" {
 
 /**
  * The typefaces an adventure may choose — the same keys as adventure.Fonts
- * in Go. Loaded from Google Fonts, the only font host the page allows.
+ * in Go. Self-hosted: @font-face rules in fonts/adventure-fonts.css,
+ * which PlayView imports; see fonts/README.md.
  */
 export const FONTS: Record<string, string> = {
   inconsolata: "Inconsolata",
@@ -97,17 +98,11 @@ export function withTheme(b: play.Brand | null | undefined, theme: string | unde
   return t ? { ...b, ...t } : (b ?? null);
 }
 
-/** Load an adventure's typeface once per page. Offline, text falls back to the system font. */
+/** Start fetching an adventure's typeface before text needs it. Offline and uncached, text falls back to the system font. */
 export function loadFont(key: string | undefined) {
   const family = key ? FONTS[key] : undefined;
-  if (!family || typeof document === "undefined") return;
-  const id = `zv-font-${key}`;
-  if (document.getElementById(id)) return;
-  const link = document.createElement("link");
-  link.id = id;
-  link.rel = "stylesheet";
-  link.href = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(family).replace(/%20/g, "+")}:wght@400;700&display=swap`;
-  document.head.appendChild(link);
+  if (!family || typeof document === "undefined" || !document.fonts) return;
+  void document.fonts.load(`1em "${family}"`).catch(() => {});
 }
 
 /** tokens.css's status colours, light and dark. */

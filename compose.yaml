@@ -22,6 +22,10 @@ services:
   db:
     image: postgres:16-alpine
     restart: unless-stopped
+    logging: &logging
+      options:
+        max-size: 10m
+        max-file: "5"
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-zv}
       POSTGRES_USER: ${POSTGRES_USER:-zv}
@@ -43,6 +47,11 @@ services:
         # it empty and the Dockerfile falls back to `git describe`.
         VERSION: ${VERSION:-}
     restart: unless-stopped
+    logging: *logging
+    # Shutdown waits for in-flight webhooks (up to 35s) and the other
+    # workers, all cancelled together;
+    # Docker's default 10s would SIGKILL mid-drain.
+    stop_grace_period: 50s
     depends_on:
       db:
         condition: service_healthy
@@ -79,8 +88,18 @@ services:
       ZV_LEGAL_LAST_UPDATED:     ${ZV_LEGAL_LAST_UPDATED:-}
       ZV_LOCATION_RETENTION_DAYS: ${ZV_LOCATION_RETENTION_DAYS:-30}
       ZV_AUDIT_RETENTION_DAYS:    ${ZV_AUDIT_RETENTION_DAYS:-90}
+      ZV_COMPANY_ORG_NUMBER:      ${ZV_COMPANY_ORG_NUMBER:-}
+      ZV_COMPANY_ADDRESS:         ${ZV_COMPANY_ADDRESS:-}
+      ZV_COMPANY_VAT_NUMBER:      ${ZV_COMPANY_VAT_NUMBER:-}
+      ZV_HOSTING_PROVIDER:        ${ZV_HOSTING_PROVIDER:-}
+      ZV_EMAIL_PROVIDER:          ${ZV_EMAIL_PROVIDER:-}
+      ZV_LEGAL_REVIEWED:          ${ZV_LEGAL_REVIEWED:-}
+      ZV_MAP_TILE_URL:            ${ZV_MAP_TILE_URL:-}
+      ZV_MAP_TILE_ATTRIBUTION:    ${ZV_MAP_TILE_ATTRIBUTION:-}
+      ZV_MAP_PROVIDER:            ${ZV_MAP_PROVIDER:-}
       ZV_STRIPE_SECRET_KEY:       ${ZV_STRIPE_SECRET_KEY:-}
       ZV_STRIPE_WEBHOOK_SECRET:   ${ZV_STRIPE_WEBHOOK_SECRET:-}
+      ZV_STRIPE_AUTOMATIC_TAX:    ${ZV_STRIPE_AUTOMATIC_TAX:-}
       # ZV_PAYMENTS_PROVIDER overrides which payments.Provider impl
       # gets wired. Empty (default) auto-picks Stripe when both
       # credentials above are set, else nil ("payments not configured").

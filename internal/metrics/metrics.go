@@ -129,6 +129,10 @@ func (r *statusRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	return h.Hijack()
 }
 
+// Unwrap lets http.ResponseController reach the connection, so a
+// handler can extend its read/write deadlines past the server's.
+func (r *statusRecorder) Unwrap() http.ResponseWriter { return r.ResponseWriter }
+
 // HTTPMiddleware records request count + duration for every handler
 // it wraps. Route comes from the chi route context — when the request
 // didn't match a route (404), the label is "unmatched" rather than

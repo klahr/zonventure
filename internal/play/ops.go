@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	effectq "github.com/klahr/zonventure/internal/effects"
@@ -35,13 +36,15 @@ func (e *Engine) StartEvent(ctx context.Context, eventID int64) error {
 	defer func() { _ = tx.Rollback() }()
 
 	var (
-		slug    string
-		pinned  sql.NullInt64
-		graphID int64
+		slug     string
+		pinned   sql.NullInt64
+		graphID  int64
+		paused   int
+		pausedAt sql.NullString
 	)
 	if err := tx.QueryRowContext(ctx,
-		`SELECT adventure_slug, graph_id FROM events WHERE id = $1 FOR UPDATE`, eventID,
-	).Scan(&slug, &pinned); err != nil {
+		`SELECT adventure_slug, graph_id, paused_seconds, paused_at FROM events WHERE id = $1 FOR UPDATE`, eventID,
+	).Scan(&slug, &pinned, &paused, &pausedAt); err != nil {
 		return fmt.Errorf("loading event %d: %w", eventID, err)
 	}
 
@@ -91,11 +94,14 @@ func (e *Engine) StartEvent(ctx context.Context, eventID int64) error {
 	}
 
 	now := e.now()
+	// A team placed after the event has been paused counts from the
+	// clock as it reads now, not the pauses before it joined.
+	clock := pauseClock(paused, pausedAt, now)
 	for _, teamID := range teams {
 		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO team_graph_state (team_id, event_id, graph_id, started_at, node_entered_at, updated_at)
-			VALUES ($1, $2, $3, $4, $4, $4)
-		`, teamID, eventID, graphID, now); err != nil {
+			INSERT INTO team_graph_state (team_id, event_id, graph_id, started_at, node_entered_at, updated_at, start_paused, node_paused)
+			VALUES ($1, $2, $3, $4, $4, $4, $5, $5)
+		`, teamID, eventID, graphID, now, clock); err != nil {
 			return fmt.Errorf("placing team %d: %w", teamID, err)
 		}
 		g, err := e.graph(ctx, tx, graphID)
@@ -276,6 +282,7 @@ func (e *Engine) act(ctx context.Context, teamID int64, fn func(*session.Team) (
 		}
 	}
 
+	score := s.Score()
 	res, step, err := s.Act(func() (Result, *walk.Step, error) { return fn(s.Team) })
 	if err != nil {
 		// Some refusals (a lockout) still carry information worth
@@ -302,11 +309,38 @@ func (e *Engine) act(ctx context.Context, teamID int64, fn func(*session.Team) (
 	if err := tx.Commit(); err != nil {
 		return Result{}, err
 	}
+	res.Scored = s.Score() != score
+	res.Shared = shared(s.G, step, res.Scored)
 	res.View = s.View()
 	if err := e.decorate(ctx, e.DB, s.G, s.eventID, teamID, &res.View); err != nil {
 		return Result{}, err
 	}
 	return res, nil
+}
+
+// shared reports whether a step changed what other teams' phones show:
+// an event counter, a finish (the event may now be over), or the score
+// where a standings block shows it. Occupancy is not shown to players.
+func shared(g *graph.Graph, step *walk.Step, scored bool) bool {
+	if step != nil {
+		if step.Finished {
+			return true
+		}
+		for _, n := range step.Effects {
+			if n.EffectCfg != nil && n.EffectCfg.Kind == graph.SetCounter {
+				return true
+			}
+		}
+	}
+	if !scored {
+		return false
+	}
+	for _, n := range g.Nodes {
+		if slices.ContainsFunc(n.Blocks(), func(b graph.Block) bool { return b.Kind == graph.BlockStandings }) {
+			return true
+		}
+	}
+	return false
 }
 
 // savePress persists the press an action recorded or withdrew, and any
@@ -447,10 +481,12 @@ func (e *Engine) commit(ctx context.Context, tx *sql.Tx, s *teamState, step walk
 		UPDATE team_graph_state
 		SET current_node = $1, node_entered_at = $2, score = $3, penalty_score = $4,
 		    penalty_seconds = $5, theme = $6, completed_at = COALESCE(completed_at, $7),
-		    outcome = COALESCE(outcome, $8), last_answer = $11, started_at = $12, timed_out = $13, lang = $14, cheated = $15, updated_at = $2
+		    outcome = COALESCE(outcome, $8), last_answer = $11, started_at = $12, timed_out = $13, lang = $14, cheated = $15, updated_at = $2,
+		    start_paused = $16, node_paused = $17
 		WHERE team_id = $9 AND current_node IS NOT DISTINCT FROM $10
 	`, nullIfEmpty(step.To), now, s.Points, s.PenaltyScore, s.PenaltySeconds, s.Theme,
-		completedAt, outcome, s.teamID, nullIfEmpty(old), s.LatestAnswer, s.StartedAt, s.TimedOut, s.Lang, s.Cheated)
+		completedAt, outcome, s.teamID, nullIfEmpty(old), s.LatestAnswer, s.StartedAt, s.TimedOut, s.Lang, s.Cheated,
+		s.StartPaused, s.Paused)
 	if err != nil {
 		return err
 	}
@@ -476,9 +512,9 @@ func (e *Engine) applyEffects(ctx context.Context, tx *sql.Tx, s *teamState, eff
 				ON CONFLICT (team_id, item) DO UPDATE SET qty = team_items.qty + EXCLUDED.qty
 			`, s.teamID, fx.Item, session.QtyOf(fx))
 		case graph.SetCounter:
-			// The value was computed in memory under this transaction's
-			// view; write it as-is. Counters are shared across teams, so
-			// the upsert is what makes concurrent writers converge.
+			// The value was computed in memory from a read taken under
+			// the counter's advisory lock (lockCounters), so it is
+			// current and can be written as-is.
 			_, err = tx.ExecContext(ctx, `
 				INSERT INTO event_counters (event_id, counter, value) VALUES ($1, $2, $3)
 				ON CONFLICT (event_id, counter) DO UPDATE SET value = EXCLUDED.value

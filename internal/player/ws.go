@@ -1,6 +1,7 @@
 package player
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"time"
@@ -42,7 +43,7 @@ func (h *Handlers) WSPlay(w http.ResponseWriter, r *http.Request) {
 	// of K phones would re-read K times per ping; Coalesce pushes the
 	// first change at once — an answer still shows straight away — and
 	// folds the rest of a burst into one push a second at most.
-	go ws.Coalesce(conn.Context(), events, playerPushInterval, func() { h.pushState(conn, slot) })
+	go ws.Coalesce(conn.Context(), h.forPhone(conn.Context(), slot, events), playerPushInterval, func() { h.pushState(conn, slot) })
 
 	// Incoming: location pings. Read until peer goes away or the writer
 	// cancels our context (eg. a send queue overflow).
@@ -86,4 +87,51 @@ func (h *Handlers) WSPlay(w http.ResponseWriter, r *http.Request) {
 // over HTTP (GET /api/player/play).
 func (h *Handlers) pushState(conn *ws.Conn, slot auth.Slot) {
 	conn.SendKind("changed", nil)
+}
+
+// forPhone passes on the wake-ups this phone needs. Another team's move
+// is published as progress so the console and live screen still see it;
+// a phone reloads for it only once its own team has finished, when the
+// move may shift the team's place.
+func (h *Handlers) forPhone(ctx context.Context, slot auth.Slot, events <-chan []byte) <-chan []byte {
+	out := make(chan []byte, 1)
+	go func() {
+		defer logx.Guard("player.ws.filter")
+		defer close(out)
+		finished := false
+		for {
+			var raw []byte
+			var ok bool
+			select {
+			case <-ctx.Done():
+				return
+			case raw, ok = <-events:
+				if !ok {
+					return
+				}
+			}
+			var m ws.Msg
+			if json.Unmarshal(raw, &m) == nil && m.Kind == ws.KindProgress {
+				var p ws.Progress
+				_ = json.Unmarshal(m.Data, &p)
+				if p.Team != slot.TeamID {
+					if !p.Scored {
+						continue
+					}
+					if !finished {
+						_ = h.DB.QueryRowContext(ctx, `SELECT completed_at IS NOT NULL FROM teams WHERE id = $1`, slot.TeamID).Scan(&finished)
+					}
+					if !finished {
+						continue
+					}
+				}
+			}
+			// A wake-up already queued covers this one.
+			select {
+			case out <- raw:
+			default:
+			}
+		}
+	}()
+	return out
 }

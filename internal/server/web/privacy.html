@@ -10,11 +10,9 @@
 -->
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https:; font-src 'self' https://fonts.gstatic.com; connect-src 'self' wss: ws:; media-src 'self' blob:; object-src 'none'; base-uri 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self'; connect-src 'self' wss: ws:; media-src 'self' blob:; object-src 'none'; base-uri 'self'">
 <title>Privacy Policy · {{COMPANY_NAME}}</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Aclonica&family=Open+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/assets/fontface.css">
 <style>
   body { font: 16px/1.55 'Open Sans', 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', system-ui, -apple-system, 'Segoe UI', sans-serif; max-width: 44rem; margin: 0 auto; padding: 2rem 1.25rem 4rem; color:#1f2937; }
   h1 { font: 700 1.7rem/1.2 'Aclonica', serif; margin: 0 0 .25rem; }
@@ -43,6 +41,7 @@
   <strong>{{COMPANY_NAME}}</strong>. Questions about this policy?
   Email <a href="mailto:{{CONTACT_EMAIL}}">{{CONTACT_EMAIL}}</a>.
 </p>
+{{COMPANY_IDENTITY}}
 
 <h2>What we collect</h2>
 <p>We collect only what's needed to run the adventure platform:</p>
@@ -104,6 +103,9 @@
   <li>Hosting, database, and storage: {{HOSTING_PROVIDER}}.</li>
   <li>Transactional email (verification, password reset, receipts):
       {{EMAIL_PROVIDER}}.</li>
+  <li>Map tiles on the live board, recaps and in-game maps:
+      {{MAP_PROVIDER}}. Your browser fetches the tiles directly from
+      this provider, which therefore sees your IP address.</li>
   <li>Payments (when enabled): Stripe Inc. and its sub-processors —
       see <a href="https://stripe.com/legal/privacy" target="_blank" rel="noopener">stripe.com/legal/privacy</a>.</li>
 </ul>

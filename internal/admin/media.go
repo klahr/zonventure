@@ -82,6 +82,7 @@ func (h *Handlers) UploadAdventureMedia(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	limit := max(maxImageBytes, maxAudioBytes, maxVideoBytes)
+	httpx.ExtendDeadlines(w, 10*time.Minute)
 	r.Body = http.MaxBytesReader(w, r.Body, limit+(1<<20))
 	if err := r.ParseMultipartForm(limit); err != nil {
 		httpx.Error(w, http.StatusBadRequest, "bad multipart form")
@@ -226,6 +227,7 @@ func (h *Handlers) ServeMedia(w http.ResponseWriter, r *http.Request) {
 	}
 	// ServeContent answers Range requests, which a video needs to seek —
 	// and which Safari needs before it plays one at all.
+	httpx.ExtendDeadlines(w, 10*time.Minute)
 	http.ServeContent(w, r, "", time.Time{}, bytes.NewReader(content))
 }
 

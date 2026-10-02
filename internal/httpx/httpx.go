@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"time"
 )
 
 // JSON writes v as JSON with the given status code.
@@ -57,4 +58,15 @@ func DecodeJSON(w http.ResponseWriter, r *http.Request, dst any) bool {
 		return false
 	}
 	return true
+}
+
+// ExtendDeadlines lifts the server-wide read/write timeouts for one
+// request whose body or response is too large for them on a slow
+// mobile link (uploads, exports, video). Best-effort: a writer that
+// can't reach the connection keeps the server defaults.
+func ExtendDeadlines(w http.ResponseWriter, d time.Duration) {
+	rc := http.NewResponseController(w)
+	deadline := time.Now().Add(d)
+	_ = rc.SetReadDeadline(deadline)
+	_ = rc.SetWriteDeadline(deadline)
 }

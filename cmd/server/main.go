@@ -209,6 +209,9 @@ func main() {
 	if err != nil {
 		log.Fatalf("mailer config: %v", err)
 	}
+	if _, isLog := mail.(mailer.LogMailer); isLog && strings.HasPrefix(os.Getenv("ZV_PUBLIC_URL"), "https://") {
+		logx.Warn("mailer.not_configured", "msg", "ZV_SMTP_HOST is unset: verification, reset and invite mail is only logged, never sent")
+	}
 	// Optional ZV_TOTP_KEY: the AES-256-GCM key wrapping
 	// users.totp_secret_encrypted. When set we surface MFA in the
 	// components panel and accept TOTP enrolments; when missing the
@@ -287,6 +290,12 @@ func main() {
 			LastUpdated:           os.Getenv("ZV_LEGAL_LAST_UPDATED"),
 			HostingProvider:       os.Getenv("ZV_HOSTING_PROVIDER"),
 			EmailProvider:         os.Getenv("ZV_EMAIL_PROVIDER"),
+			CompanyOrgNumber:      os.Getenv("ZV_COMPANY_ORG_NUMBER"),
+			CompanyAddress:        os.Getenv("ZV_COMPANY_ADDRESS"),
+			CompanyVATNumber:      os.Getenv("ZV_COMPANY_VAT_NUMBER"),
+			MapTileURL:            os.Getenv("ZV_MAP_TILE_URL"),
+			MapTileAttribution:    os.Getenv("ZV_MAP_TILE_ATTRIBUTION"),
+			MapProvider:           os.Getenv("ZV_MAP_PROVIDER"),
 			Reviewed:              envTruthy("ZV_LEGAL_REVIEWED"),
 		},
 		StripeSecretKey:     os.Getenv("ZV_STRIPE_SECRET_KEY"),

@@ -35,11 +35,23 @@ export interface MapPin extends MapPoint {
  * Editing a zone uses the real map (the designer's ZoneMap). Players see
  * the same map in a step's map block.
  *
- * Tiles come from tile.openstreetmap.org, which asks for attribution and
- * light use; a designer with a few authors is that. Swap TILE_URL for a
- * paid or self-hosted source before maps reach every player's phone.
+ * Tiles come from the operator's tile source, which the server hands the
+ * page as window.ZV_MAP (/assets/map-config.js, set by ZV_MAP_TILE_URL);
+ * a page without it falls back to tile.openstreetmap.org, whose usage
+ * policy allows light use only.
  */
-export const TILE_URL = (z: number, x: number, y: number) => `https://tile.openstreetmap.org/${z}/${x}/${y}.png`;
+const DEFAULT_TILES = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
+const mapConfig = (): { tile_url?: string; attribution?: string } | undefined =>
+  (globalThis as { ZV_MAP?: { tile_url?: string; attribution?: string } }).ZV_MAP;
+export const TILE_URL = (z: number, x: number, y: number) =>
+  (mapConfig()?.tile_url || DEFAULT_TILES).replace("{z}", String(z)).replace("{x}", String(x)).replace("{y}", String(y));
+
+/** The tile source's credit as plain text: the configured one is HTML, made for Leaflet. */
+function credit(): string {
+  const html = mapConfig()?.attribution;
+  if (!html || typeof DOMParser === "undefined") return "© OpenStreetMap";
+  return new DOMParser().parseFromString(html, "text/html").body.textContent?.trim() || "© OpenStreetMap";
+}
 
 const TILE = 256;
 
@@ -148,7 +160,7 @@ export function StaticMap({ zone, width, height, className, team, pins = [], zoo
         ))}
         {m.team && <circle className="static-map__dot" cx={m.team.x} cy={m.team.y} r={7} />}
       </svg>
-      <span className="static-map__credit">© OpenStreetMap</span>
+      <span className="static-map__credit">{credit()}</span>
     </div>
   );
 }

@@ -32,6 +32,7 @@ func TestEventTools_NilAdminGuard(t *testing.T) {
 		{"pause_event", pauseEvent, `{"event_id":1}`},
 		{"resume_event", resumeEvent, `{"event_id":1}`},
 		{"cancel_event", cancelEvent, `{"event_id":1,"password":"x"}`},
+		{"end_event", endEvent, `{"event_id":1,"password":"x"}`},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -67,6 +68,7 @@ func TestEventTools_ArgValidation(t *testing.T) {
 		{"get_event negative id", getEvent, `{"event_id":-1}`, "must be positive"},
 		{"update_event no patch fields", updateEvent, `{"event_id":1}`, "nothing to update"},
 		{"cancel_event without password", cancelEvent, `{"event_id":1}`, "password required"},
+		{"end_event without password", endEvent, `{"event_id":1}`, "password required"},
 		{"start_event without id", startEvent, `{}`, "event_id required"},
 		{"pause_event without id", pauseEvent, `{}`, "event_id required"},
 		{"resume_event without id", resumeEvent, `{}`, "event_id required"},
@@ -104,6 +106,7 @@ func TestEventTools_AreRegisteredWithCorrectScope(t *testing.T) {
 		"pause_event":  scopeWrite,
 		"resume_event": scopeWrite,
 		"cancel_event": scopeWrite,
+		"end_event":    scopeWrite,
 	}
 	for name, w := range want {
 		got, ok := s.tools.scopes[name]

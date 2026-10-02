@@ -40,8 +40,22 @@ zv -dsn "$DATABASE_URL" -restore < zv-20260426-0300.sql
 gunzip -c zv-20260426-0300.sql.gz | zv -restore
 ```
 
-`psql` is invoked with `ON_ERROR_STOP=1`, so any failed statement
-aborts the whole replay rather than leaving a half-restored DB.
+`psql` is invoked with `ON_ERROR_STOP=1` in a single transaction, so
+any failed statement rolls the whole replay back — including the
+dump's `--clean` DROPs — rather than leaving a half-restored DB.
+
+Stop the app first: its scheduler, retention and outbox workers keep
+writing while the dump replays.
+
+Under Docker Compose the app image has no `psql`; replay through the
+`db` container instead, with the same flags:
+
+```sh
+docker compose stop app
+gunzip -c zv-20260426-0300.sql.gz \
+  | docker compose exec -T db psql -U zv -d zv --single-transaction -v ON_ERROR_STOP=1
+docker compose start app
+```
 
 The target database must exist before restore. The dump's `--clean
 --if-exists` prefix drops existing zv objects on the way in, so

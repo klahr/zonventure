@@ -187,6 +187,7 @@ export const getStatistics = (id: number, signal?: AbortSignal) => get<EventStat
 
 export const transition = (id: number, action: "start" | "pause" | "resume") => post<void>(`${E(id)}/${action}`);
 export const cancelEvent = (id: number, password: string) => post<void>(E(id) + "/cancel", undefined, pw(password));
+export const endEvent = (id: number, password: string) => post<void>(E(id) + "/end", undefined, pw(password));
 export const patchEvent = (id: number, body: Record<string, unknown>) => patch<void>(E(id), body);
 export const sendInvitations = (id: number) =>
   post<{ sent?: number; skipped_no_email?: number; failed?: number }>(E(id) + "/invitations/send", {});

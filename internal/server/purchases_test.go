@@ -110,8 +110,12 @@ func seedPurchaseStack(t *testing.T, cfg server.Config) (*httptest.Server, *sql.
 	return ts, sqlDB, orgID, cleanup
 }
 
+// simulatedPaymentsConfig wires the dev-only simulated provider, the
+// only configuration under which a paid buy self-confirms via /confirm.
+var simulatedPaymentsConfig = server.Config{PaymentsProvider: "simulated", Env: "dev"}
+
 func TestCreatePurchase_Simulated(t *testing.T) {
-	ts, _, _, cleanup := seedPurchaseStack(t, server.Config{})
+	ts, _, _, cleanup := seedPurchaseStack(t, simulatedPaymentsConfig)
 	defer cleanup()
 
 	c := newClient(t, ts)
@@ -236,7 +240,7 @@ func TestCreatePurchase_RejectsBadInput(t *testing.T) {
 }
 
 func TestConfirmPurchase_SimulatedFlow(t *testing.T) {
-	ts, _, _, cleanup := seedPurchaseStack(t, server.Config{})
+	ts, _, _, cleanup := seedPurchaseStack(t, simulatedPaymentsConfig)
 	defer cleanup()
 
 	c := newClient(t, ts)
@@ -307,7 +311,7 @@ func TestConfirmPurchase_SimulatedFlow(t *testing.T) {
 }
 
 func TestConfirmPurchase_CrossOrgForbidden(t *testing.T) {
-	ts, _, _, cleanup := seedPurchaseStack(t, server.Config{})
+	ts, _, _, cleanup := seedPurchaseStack(t, simulatedPaymentsConfig)
 	defer cleanup()
 
 	// Boss creates the purchase.
@@ -363,5 +367,44 @@ func TestConfirmPurchase_UnknownPurchase(t *testing.T) {
 	}
 	if s := c.do("POST", "/api/admin/purchases/0/confirm", map[string]string{}, nil); s != 400 {
 		t.Fatalf("zero id = %d, want 400", s)
+	}
+}
+
+// Without the simulated provider wired, a paid buy must not self-fulfil:
+// the default refuses, naming "simulated" is forbidden, and /confirm on a
+// pending row is closed to the buyer.
+func TestPurchase_PaidRefusedWithoutProvider(t *testing.T) {
+	ts, db, orgID, cleanup := seedPurchaseStack(t, server.Config{})
+	defer cleanup()
+
+	c := newClient(t, ts)
+	if s := c.do("POST", "/api/auth/login", map[string]string{"username": "boss", "password": "s3cret"}, nil); s != 200 {
+		t.Fatalf("login = %d", s)
+	}
+	paid := map[string]any{"adventure_slug": "demo", "max_players": 20}
+	if s := c.do("POST", "/api/admin/purchases", paid, nil); s != 503 {
+		t.Fatalf("paid default = %d, want 503", s)
+	}
+	paid["provider"] = "simulated"
+	if s := c.do("POST", "/api/admin/purchases", paid, nil); s != 403 {
+		t.Fatalf("paid simulated = %d, want 403", s)
+	}
+	if s := c.do("POST", "/api/admin/purchases", map[string]any{"adventure_slug": "demo", "max_players": 15}, nil); s != 201 {
+		t.Fatalf("free = %d, want 201", s)
+	}
+	// MCP pins provider "simulated"; a free buy must still go through.
+	if s := c.do("POST", "/api/admin/purchases", map[string]any{"adventure_slug": "demo", "max_players": 15, "provider": "simulated"}, nil); s != 201 {
+		t.Fatalf("free via simulated = %d, want 201", s)
+	}
+
+	var id int64
+	if err := db.QueryRow(`
+		INSERT INTO purchases(org_id, adventure_slug, max_players, amount_cents, currency, provider, state)
+		VALUES ($1, 'demo', 20, 2500, 'EUR', 'stripe', 'pending') RETURNING id
+	`, orgID).Scan(&id); err != nil {
+		t.Fatalf("seed pending: %v", err)
+	}
+	if s := c.do("POST", "/api/admin/purchases/"+itoa(id)+"/confirm", map[string]string{}, nil); s != 403 {
+		t.Fatalf("buyer confirm = %d, want 403", s)
 	}
 }

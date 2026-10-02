@@ -245,7 +245,7 @@ type claimedDelivery struct {
 // returning the work to do. Eligibility:
 //
 //  1. status='pending' AND next_attempt_at <= now (regular due)
-//  2. (in_flight_until IS NULL OR in_flight_until::timestamptz < now)
+//  2. (in_flight_until IS NULL OR in_flight_until < now_text())
 //     so a stale lease from a crashed worker is reclaimable.
 //
 // FOR UPDATE SKIP LOCKED keeps multiple workers from racing on the
@@ -268,7 +268,7 @@ func (w *Worker) claimNext(ctx context.Context) (*claimedDelivery, error) {
 		  FROM webhook_deliveries
 		 WHERE status = 'pending'
 		   AND next_attempt_at <= now_text()
-		   AND (in_flight_until IS NULL OR in_flight_until::timestamptz < now())
+		   AND (in_flight_until IS NULL OR in_flight_until < now_text())
 		 ORDER BY next_attempt_at
 		 LIMIT 1
 		 FOR UPDATE SKIP LOCKED

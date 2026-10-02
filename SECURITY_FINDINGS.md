@@ -110,6 +110,9 @@ env var: `ZV_WEBHOOKS_ALLOW_LOOPBACK` (default off).
   paid buy with no real provider (was silently "simulated"). `ConfirmPurchase`
   refuses non-admin confirms unless simulated is active — on Stripe/prod,
   payment settles only via the signed webhook.
+  Regressed by e12a9fd ("Fix tests"), which removed the gate; restored with
+  the test fixtures enabling the simulated provider (`ZV_ENV=dev`) instead.
+  A paid buy with no provider now gets 503; `TestPurchase_PaidRefusedWithoutProvider`.
 
 ### High — fixed
 
@@ -119,6 +122,10 @@ env var: `ZV_WEBHOOKS_ALLOW_LOOPBACK` (default off).
 - **S5. Stored XSS via import** — FIXED. `ImportAdventure` re-encodes the
   imported avatar through `imageutil.NormalizeUpload` and graph-media images
   through `ShrinkKeepAlpha` (refuses SVG/non-raster), mirroring the upload path.
+  Since e12a9fd, bytes that fail to decode are kept when the declared type is
+  a raster image (png/jpeg/webp/gif) for round-trip fidelity; SVG and other
+  types are still refused. Safe because every response carries `nosniff`
+  (`securityHeaders`), so such bytes can't be rendered as active content.
 
 ### Medium — fixed
 

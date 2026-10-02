@@ -458,11 +458,18 @@ func (h *Handlers) PostPlayAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.recordPlay(ctx, tc, slot.ID, action, req, res)
+	// The move is committed: what follows must not die with the request
+	// when the phone drops off, or the event may never auto-complete.
+	post := context.WithoutCancel(ctx)
+	h.recordPlay(post, tc, slot.ID, action, req, res)
 
 	body, _ := json.Marshal(res)
-	recordAction(ctx, h.DB, slot.ID, actionID, http.StatusOK, body)
-	h.Hub.Publish(ws.EventTopic(tc.EventID), "changed", nil)
+	recordAction(post, h.DB, slot.ID, actionID, http.StatusOK, body)
+	if res.Shared {
+		h.Hub.Publish(ws.EventTopic(tc.EventID), "changed", nil)
+	} else {
+		h.Hub.Publish(ws.EventTopic(tc.EventID), ws.KindProgress, ws.Progress{Team: tc.TeamID, Scored: res.Scored})
+	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(body)

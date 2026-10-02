@@ -14,6 +14,7 @@ import type { BlockContext, Motion } from "./blocks/context.ts";
 import type { MapPoint } from "./StaticMap.tsx";
 import { QrButton, canScan } from "./Qr.tsx";
 import { brandVars, isHex, loadFont, withTheme } from "./brand.ts";
+import "./fonts/adventure-fonts.css";
 import { formatSeconds, secondsUntil, useEngineClock } from "./clock.ts";
 import { english, type Feedback, type Translate } from "./feedback.ts";
 

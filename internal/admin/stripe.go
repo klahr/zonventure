@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -27,6 +28,15 @@ import (
 // constructor in cmd/server to wire a non-nil provider, so this
 // check is a thin nil-test against `h.Provider`.
 func (h *Handlers) paymentsEnabled() bool { return payments.Enabled(h.Provider) }
+
+// simulatedActive reports whether the dev-only simulated payments
+// provider is the one wired on this server. It only wires under
+// ZV_ENV=dev (see server.go), so on any real deployment this is false —
+// which is what gates the self-fulfil-for-free paths (CreatePurchase's
+// "simulated" provider and the ConfirmPurchase endpoint) to dev.
+func (h *Handlers) simulatedActive() bool {
+	return h.Provider != nil && h.Provider.Name() == "simulated"
+}
 
 // createPurchaseCheckoutSession opens a hosted checkout session for
 // an org purchase (one slot pack tied to an adventure). The price
@@ -71,8 +81,9 @@ func (h *Handlers) createPurchaseCheckoutSession(ctx context.Context, purchaseID
 		// Auto-tax + tax id + billing address + invoice creation are
 		// the B2B-friendly bundle: VAT-deductible PDF invoices for
 		// company buyers, the customer's tax id printed on the bill-
-		// to block. No-ops when Stripe Tax is off in the dashboard.
-		AutoTax:         true,
+		// to block. Auto-tax is opt-in: Stripe rejects the session
+		// unless Stripe Tax is set up on the account.
+		AutoTax:         os.Getenv("ZV_STRIPE_AUTOMATIC_TAX") == "1",
 		CollectTaxID:    true,
 		CollectAddress:  true,
 		InvoiceCreation: true,
@@ -160,6 +171,12 @@ func (h *Handlers) PaymentsWebhook(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "handler failed", http.StatusInternalServerError)
 			return
 		}
+	case payments.EventCheckoutFailed:
+		if err := h.handleCheckoutFailed(r.Context(), event); err != nil {
+			logx.Error("payments.webhook.checkout_failed", "event_id", event.ID, "err", err.Error())
+			http.Error(w, "handler failed", http.StatusInternalServerError)
+			return
+		}
 	case payments.EventChargeRefunded:
 		if err := h.handleChargeRefunded(r.Context(), event); err != nil {
 			logx.Error("payments.webhook.charge_refunded", "event_id", event.ID, "err", err.Error())
@@ -210,9 +227,9 @@ func (h *Handlers) handleCheckoutCompleted(ctx context.Context, event payments.E
 	// Async payment methods (ACH, BACS, PIX, …) land
 	// checkout.session.completed before the funds actually clear. The
 	// session reports payment_status="unpaid" until the matching
-	// payment_intent.succeeded follow-up. Fulfilling here would grant
-	// the goods on a not-yet-paid order. Fail closed; an operator who
-	// turns on async methods must wire payment_intent.succeeded too.
+	// checkout.session.async_payment_succeeded follow-up, which lands
+	// here again with "paid". Fulfilling now would grant the goods on
+	// a not-yet-paid order.
 	if !event.Checkout.PaymentStatus.FulfilmentReady() {
 		logx.Warn("payments.checkout.unpaid_skipped",
 			"purchase_id", idStr, "status", string(event.Checkout.PaymentStatus))
@@ -246,7 +263,7 @@ func (h *Handlers) handleCheckoutCompleted(ctx context.Context, event payments.E
 	// two deliveries can both observe state='pending' and each insert
 	// an assignment row.
 	err = tx.QueryRowContext(ctx, `
-		SELECT org_id, adventure_slug, max_players, state, assignment_id, top_up_assignment_id,
+		SELECT COALESCE(org_id, 0), adventure_slug, max_players, state, assignment_id, top_up_assignment_id,
 		       amount_cents, currency, provider_session_id
 		FROM purchases WHERE id = $1 FOR UPDATE
 	`, purchaseID).Scan(&orgID, &advSlug, &maxPlayers, &state, &existingAssn, &topUpID,
@@ -269,6 +286,12 @@ func (h *Handlers) handleCheckoutCompleted(ctx context.Context, event payments.E
 		// refunded / failed — don't reopen.
 		return nil
 	}
+	if orgID == 0 {
+		// Org deleted while the payment was in flight; the row is kept
+		// for bookkeeping but there is no one left to grant slots to.
+		logx.Warn("payments.checkout.org_gone", "purchase_id", purchaseID)
+		return nil
+	}
 
 	// Cross-check the session against the row we're about to fulfil,
 	// rather than trusting the metadata id alone. A webhook event whose
@@ -282,9 +305,11 @@ func (h *Handlers) handleCheckoutCompleted(ctx context.Context, event payments.E
 			"purchase_id", purchaseID, "want", storedSession.String, "got", event.Checkout.SessionID)
 		return nil
 	}
-	if event.Checkout.AmountTotal != amountCents {
+	// Subtotal, not total: it's our price before any tax Stripe added
+	// on top, so automatic tax can't make a paid order look forged.
+	if event.Checkout.AmountSubtotal != amountCents {
 		logx.Warn("payments.checkout.amount_mismatch",
-			"purchase_id", purchaseID, "want", amountCents, "got", event.Checkout.AmountTotal)
+			"purchase_id", purchaseID, "want", amountCents, "got", event.Checkout.AmountSubtotal)
 		return nil
 	}
 	if !strings.EqualFold(strings.TrimSpace(event.Checkout.Currency), strings.TrimSpace(currency)) {
@@ -454,6 +479,43 @@ func (h *Handlers) RefundPurchase(w http.ResponseWriter, r *http.Request) {
 // reconciled before the cutoff.
 const stripeRefundReconcileWindow = 24 * time.Hour
 
+// handleCheckoutFailed marks the purchase named in the session metadata
+// failed when an async payment method is declined after its session
+// completed "unpaid". Only pending rows move, so a late or replayed
+// delivery can't undo a fulfilment.
+func (h *Handlers) handleCheckoutFailed(ctx context.Context, event payments.Event) error {
+	if event.Checkout == nil {
+		return nil
+	}
+	for _, t := range []struct{ key, stmt string }{
+		{"zv_purchase_id", `
+			UPDATE purchases SET state = 'failed'
+			 WHERE id = $1 AND state = 'pending'
+			   AND (provider_session_id IS NULL OR provider_session_id = $2)`},
+		{"zv_ticket_purchase_id", `
+			UPDATE ticket_purchases SET state = 'failed'
+			 WHERE id = $1 AND state = 'pending'
+			   AND (stripe_session_id IS NULL OR stripe_session_id = $2)`},
+	} {
+		idStr := event.Metadata[t.key]
+		if idStr == "" {
+			continue
+		}
+		var id int64
+		if _, err := fmt.Sscanf(idStr, "%d", &id); err != nil {
+			return fmt.Errorf("metadata parse: %w", err)
+		}
+		res, err := h.DB.ExecContext(ctx, t.stmt, id, event.Checkout.SessionID)
+		if err != nil {
+			return err
+		}
+		if n, _ := res.RowsAffected(); n > 0 {
+			logx.Info("payments.checkout.async_failed", t.key, id)
+		}
+	}
+	return nil
+}
+
 // handleChargeRefunded marks the matching purchase refunded so the UI
 // can show the chip + the org loses the assignment. Matched by
 // stripe_charge_id which we recorded at checkout completion.
@@ -492,11 +554,17 @@ func (h *Handlers) handleChargeRefunded(ctx context.Context, event payments.Even
 	// Capture the affected rows' org + purchase ids in the same
 	// statement that flips the state — a separate SELECT after the
 	// UPDATE could race with a parallel deletion.
+	//
+	// Rows fulfilled before the charge id was recorded match on their
+	// checkout session instead, and pick up the charge id on the way.
+	sessionID := event.Charge.CheckoutSessionID
 	rows, err := h.DB.QueryContext(ctx, `
-		UPDATE purchases SET state = 'refunded'
-		 WHERE stripe_charge_id = $1 AND state = 'paid'
-		 RETURNING id, org_id
-	`, chargeID)
+		UPDATE purchases SET state = 'refunded', stripe_charge_id = $1
+		 WHERE state = 'paid'
+		   AND (stripe_charge_id = $1
+		        OR (stripe_charge_id IS NULL AND $2 <> '' AND provider_session_id = $2))
+		 RETURNING id, COALESCE(org_id, 0)
+	`, chargeID, sessionID)
 	if err != nil {
 		return err
 	}
@@ -526,10 +594,12 @@ func (h *Handlers) handleChargeRefunded(ctx context.Context, event payments.Even
 	// withdrawn errors.
 	ticketRows, err := h.DB.QueryContext(ctx, `
 		UPDATE ticket_purchases
-		   SET state = 'refunded', refunded_at = now_text()
-		 WHERE stripe_charge_id = $1 AND state = 'paid'
+		   SET state = 'refunded', refunded_at = now_text(), stripe_charge_id = $1
+		 WHERE state = 'paid'
+		   AND (stripe_charge_id = $1
+		        OR (stripe_charge_id IS NULL AND $2 <> '' AND stripe_session_id = $2))
 		 RETURNING id, COALESCE(team_id, 0)
-	`, chargeID)
+	`, chargeID, sessionID)
 	if err != nil {
 		return err
 	}

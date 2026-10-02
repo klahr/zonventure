@@ -66,6 +66,7 @@ func (h *Handlers) MigrateSelfExport(w http.ResponseWriter, r *http.Request) {
 	}
 	orgID := *me.OrgID
 
+	httpx.ExtendDeadlines(w, 30*time.Minute)
 	env, files, err := h.ExportOrgEnvelope(r.Context(), orgID)
 	if err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "export failed", err)
@@ -113,6 +114,7 @@ func (h *Handlers) MigrateExport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	httpx.ExtendDeadlines(w, 30*time.Minute)
 	env, files, err := h.ExportOrgEnvelope(r.Context(), orgID)
 	if err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "export failed", err)
@@ -134,6 +136,7 @@ func (h *Handlers) MigrateExport(w http.ResponseWriter, r *http.Request) {
 // fresh org with everything replayed under new primary keys but
 // preserved tokens. RoleAdmin at the route level.
 func (h *Handlers) MigrateImport(w http.ResponseWriter, r *http.Request) {
+	httpx.ExtendDeadlines(w, 30*time.Minute)
 	r.Body = http.MaxBytesReader(w, r.Body, maxOrgImportZipBytes+(2<<20))
 	if err := r.ParseMultipartForm(maxOrgImportZipBytes + (1 << 20)); err != nil {
 		httpx.Error(w, http.StatusBadRequest, "bad multipart upload")
