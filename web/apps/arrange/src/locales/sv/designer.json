@@ -672,5 +672,10 @@
   "Let players choose their roles here": "Låt spelarna välja sina roller här",
   "Roles are final once the team moves on": "Rollerna blir slutgiltiga när laget går vidare",
   "The adventure has no roles yet. Add them in Adventure settings → Roles.": "Äventyret har inga roller än. Lägg till dem under Äventyrsinställningar → Roller.",
-  "A secret role shows only on its own player's phone, never among the team's. Once roles are final, roles nobody chose stay with whoever holds them, and a player who joins later gets none.": "En hemlig roll syns bara i den egna spelarens telefon, aldrig bland lagets. När rollerna är slutgiltiga stannar roller som ingen valt hos den som har dem, och en spelare som ansluter senare får ingen."
+  "A secret role shows only on its own player's phone, never among the team's. Once roles are final, roles nobody chose stay with whoever holds them, and a player who joins later gets none.": "En hemlig roll syns bara i den egna spelarens telefon, aldrig bland lagets. När rollerna är slutgiltiga stannar roller som ingen valt hos den som har dem, och en spelare som ansluter senare får ingen.",
+  "Who turns the key at each post (optional)": "Vem vrider nyckeln vid varje post (valfritt)",
+  "Anyone": "Vem som helst",
+  "{{role}} at {{place}}": "{{role}} vid {{place}}",
+  "Everyone else's: held by every player without another role": "Alla andras roll: innehas av varje spelare utan en annan roll",
+  "Never dealt or chosen, so any number of players can join: the Captain and their crew. A player alone holds it too.": "Delas aldrig ut och väljs aldrig, så hur många spelare som helst kan vara med: kaptenen och besättningen. En ensam spelare har den också."
 }

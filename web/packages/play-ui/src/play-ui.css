@@ -1331,6 +1331,17 @@
   color: var(--muted);
   font-size: var(--text-sm);
 }
+
+/* A two-key launch whose posts are roles': each post, the player's own marked. */
+.pv-posts ul {
+  margin: 0.25rem 0 0;
+  padding-left: 1.1rem;
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+.pv-posts li.is-mine {
+  color: var(--ink);
+}
 .pv-visually-hidden {
   position: absolute;
   width: 1px;

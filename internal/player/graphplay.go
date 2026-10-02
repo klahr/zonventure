@@ -527,6 +527,7 @@ func (h *Handlers) refusePlay(w http.ResponseWriter, res play.Result, err error)
 		"finished":    http.StatusConflict,
 		"time_up":     http.StatusConflict,
 		"not_here":    http.StatusForbidden,
+		"no_fix":      http.StatusForbidden,
 		"not_allowed": http.StatusForbidden,
 		"locked":      http.StatusTooManyRequests,
 		"wrong_node":  http.StatusBadRequest,

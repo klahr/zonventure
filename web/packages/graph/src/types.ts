@@ -302,7 +302,9 @@ export interface AnswerBar {
  *   uses the items up. The phone is told the slots' labels only.
  * - keys: a two-key launch. Each player turns their own key; keys of
  *   them (every player when absent) within window seconds (10 when
- *   absent) take the first answer output — with posts, one at each.
+ *   absent) take the first answer output — with posts, one at each;
+ *   post_roles, beside posts, is the role whose player turns each ("" for
+ *   anyone's).
  */
 export type Answer =
   | { kind: "tiles"; image?: Media; rows: number; cols: number }
@@ -312,7 +314,7 @@ export type Answer =
   | { kind: "questions" }
   | { kind: "scan" }
   | { kind: "items"; slots: ItemSlot[]; keep?: boolean; missing?: MissingHint }
-  | { kind: "keys"; keys?: number; window?: number; posts?: string[] };
+  | { kind: "keys"; keys?: number; window?: number; posts?: string[]; post_roles?: string[] };
 
 /**
  * graph.Missings: what an item puzzle tells a team short of an item —
@@ -473,6 +475,8 @@ export interface Role {
   image?: Media;
   /** Items the role brings: the team starts with one each, and only the role's player can use them. */
   kit?: string[];
+  /** Everyone else's: held by every player without another role, and by a player alone. Never dealt. */
+  default?: boolean;
   /** A saboteur's: dealt at random to one player of a team of three or more, never claimed, revealed at the end. */
   secret?: boolean;
   /** A secret role's aims, each checked against the team when it finishes. */

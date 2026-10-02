@@ -29,6 +29,12 @@ type View struct {
 	// Here reports whether the team is inside Zone. Meaningless when
 	// Zone is nil.
 	Here bool `json:"here,omitempty"`
+	// HereMe says whether the phone asking is inside Zone itself, and
+	// HereCount how many of the team's players are: one teammate at the
+	// place opens the step for all, but only they are told they are
+	// there. Nil and zero for the team as a whole.
+	HereMe    *bool `json:"here_me,omitempty"`
+	HereCount int   `json:"here_count,omitempty"`
 
 	// Starts are set while the team is choosing where to begin: Node is
 	// empty, Type is "start", and the team picks one with ChooseStart.
@@ -170,6 +176,14 @@ type Input struct {
 	// Posts are a two-key launch's posts (Kind "keys"), by name: where
 	// the keys are turned, one player at each. Empty turns them anywhere.
 	Posts []string `json:"posts,omitempty"`
+	// PostRoles, beside Posts, names the role whose player turns the key
+	// at each — "" for anyone's — and MyPosts says which the player asking
+	// may turn theirs at. Both empty when no post is a role's.
+	PostRoles []string `json:"post_roles,omitempty"`
+	MyPosts   []bool   `json:"my_posts,omitempty"`
+	// PostsHeld says, beside Posts, which have their player standing at
+	// them now — "the Mechanic is in place" — when posts are roles'.
+	PostsHeld []bool `json:"posts_held,omitempty"`
 
 	// At is, for a search (Kind "search"), the zone the team stands in —
 	// "sector C3" — or empty when it is in none of them.
@@ -341,7 +355,10 @@ type RoleView struct {
 	Slug string `json:"slug"`
 	// Secret is a saboteur's role, listed only to its player — and to
 	// the team as a whole.
-	Secret  bool         `json:"secret,omitempty"`
+	Secret bool `json:"secret,omitempty"`
+	// Default is the role everyone without another holds: never dealt
+	// or claimed, so it has no one holder.
+	Default bool         `json:"default,omitempty"`
 	Name    string       `json:"name,omitempty"`
 	Text    string       `json:"text,omitempty"`
 	Image   *graph.Media `json:"image,omitempty"`
@@ -594,7 +611,7 @@ func (t *Team) View() View {
 		if r.Secret && !t.HasRole(r.Slug) {
 			continue
 		}
-		rv := RoleView{Slug: r.Slug, Name: r.Name, Text: r.Text, Image: r.Image, Secret: r.Secret}
+		rv := RoleView{Slug: r.Slug, Name: r.Name, Text: r.Text, Image: r.Image, Secret: r.Secret, Default: r.Default && !r.Secret}
 		if r.Secret {
 			// Its player knows; who else holds what is the endpoints' to say.
 			rv.Mine = t.Viewer != nil
@@ -879,6 +896,10 @@ func (t *Team) view() View {
 			if z.Slug == slug {
 				zc := z
 				v.Zone, v.Here = &zc, t.InZone(slug)
+				if t.Viewer != nil {
+					me := t.Here(slug)
+					v.HereMe, v.HereCount = &me, t.PlayersInZone(slug)
+				}
 			}
 		}
 	}

@@ -1,6 +1,7 @@
 package session
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/klahr/zonventure/internal/graph"
@@ -40,14 +41,24 @@ func (t *Team) answerInput(n graph.Node) *Input {
 		return &Input{Kind: "questions"}
 	case graph.AnswerKeys:
 		in := &Input{Kind: "keys"}
-		for _, slug := range a.Posts {
+		for i, slug := range a.Posts {
 			if z := t.zoneBySlug(slug); z != nil {
 				name := z.Name
 				if name == "" {
 					name = slug
 				}
 				in.Posts = append(in.Posts, t.G.Tr(t.Lang, graph.ZoneKey(slug), name))
+				role := a.PostRole(i)
+				if role != "" {
+					role = t.G.Tr(t.Lang, graph.RoleKey(role, "name"), t.G.RoleName(role))
+				}
+				in.PostRoles = append(in.PostRoles, role)
+				in.MyPosts = append(in.MyPosts, t.Viewer == nil || t.mayTurnAt(a, i, t.Viewer.Slot))
+				in.PostsHeld = append(in.PostsHeld, t.postHeld(a, i))
 			}
+		}
+		if !slices.ContainsFunc(in.PostRoles, func(r string) bool { return r != "" }) {
+			in.PostRoles, in.MyPosts, in.PostsHeld = nil, nil, nil
 		}
 		return in
 	case graph.AnswerItems:

@@ -178,6 +178,47 @@ func walkedSince(ctx context.Context, q Querier, teamID int64, since time.Time) 
 // pings are read only for those.
 var walkedGraphs sync.Map // *graph.Graph -> bool
 
+// awaySeconds is how long a phone may stay silent before its player
+// counts as away: long enough to pocket it on the walk to a post, short
+// enough that a dead battery does not hold the team for long.
+const awaySeconds = 180.0
+
+// away are the team's players whose phones have not reported for
+// awaySeconds — counted, for a phone that never has, from when its
+// player opened their link, so one just joining is not away yet.
+func away(ctx context.Context, q Querier, teamID int64, now time.Time) (map[int64]bool, error) {
+	rows, err := q.QueryContext(ctx, `
+		SELECT s.id, COALESCE((SELECT max(p.server_ts) FROM location_pings p WHERE p.slot_id = s.id), s.last_login_at, '')
+		FROM player_slots s WHERE s.team_id = $1`, teamID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[int64]bool{}
+	for rows.Next() {
+		var slot int64
+		var ts string
+		if err := rows.Scan(&slot, &ts); err != nil {
+			return nil, err
+		}
+		if at, ok := icscal.ParseTimestamp(ts); !ok || now.Sub(at).Seconds() > awaySeconds {
+			out[slot] = true
+		}
+	}
+	return out, rows.Err()
+}
+
+// hasRolePosts reports whether g has a two-key launch with a role's post,
+// the one thing that asks who is away.
+func hasRolePosts(g *graph.Graph) bool {
+	for _, n := range g.Nodes {
+		if n.PuzzleCfg != nil && n.PuzzleCfg.Answer != nil && len(n.PuzzleCfg.Answer.PostRoles) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
 // usesWalked reports whether any condition in g asks how far the team
 // walked. Conditions sit in many places — gates, switches, hub branches,
 // blocks — so the encoded graph is searched rather than each walked.
@@ -225,20 +266,35 @@ func (e *Engine) locate(ctx context.Context, q Querier, s *teamState) error {
 			s.Viewer.Position = nil
 		}
 		s.Phones = make([]session.Position, len(phones))
+		s.PhoneAt = make(map[int64]session.Position, len(phones))
 		for i, p := range phones {
 			s.Phones[i] = p.Position
+			s.PhoneAt[p.Slot] = p.Position
 			if forPhone && p.Slot == me {
 				s.Viewer.Position = &s.Phones[i]
 			}
 		}
 	}
 	if forPhone && s.G != nil && len(s.G.Roles) > 0 {
-		roles := s.G.PublicRoles()
+		roles := s.G.DealtRoles()
 		holdings, err := dealRoles(ctx, q, s.teamID, players, roles)
 		if err != nil {
 			return fmt.Errorf("dealing roles: %w", err)
 		}
 		s.Viewer.Roles = RolesOf(holdings, roles, me)
+		s.RoleHolders = make(map[string]int64, len(holdings))
+		for role, h := range holdings {
+			s.RoleHolders[role] = h.Slot
+		}
+		if hasRolePosts(s.G) {
+			if s.Away, err = away(ctx, q, s.teamID, s.Now); err != nil {
+				return fmt.Errorf("reading who is away: %w", err)
+			}
+		}
+		// The default role is everyone else's — and a player alone's.
+		if d := s.G.DefaultRole(); d != "" && (len(s.Viewer.Roles) == 0 || len(players) <= 1) {
+			s.Viewer.Roles = append(s.Viewer.Roles, d)
+		}
 		// A secret role is its player's alone, dealt once (dealSecrets).
 		for _, role := range s.G.SecretRoles() {
 			if slot := s.Secrets[role]; slot != 0 && slot == me {

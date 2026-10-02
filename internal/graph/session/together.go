@@ -62,10 +62,59 @@ func (t *Team) keysNeeded(a *graph.Answer) int {
 	if k <= 0 {
 		k = t.playing()
 		if len(a.Posts) > 0 {
-			k = len(a.Posts)
+			k = t.postKeys(a)
 		}
 	}
 	return max(1, min(k, t.playing()))
+}
+
+// postKeys is one key per post, but one per player for the posts of
+// roles a single player holds: they cannot stand at two at once.
+func (t *Team) postKeys(a *graph.Answer) int {
+	k := 0
+	holders := map[int64]bool{}
+	for i := range a.Posts {
+		slot, ok := t.postHolder(a, i)
+		if !ok {
+			k++
+		} else if !holders[slot] {
+			holders[slot] = true
+			k++
+		}
+	}
+	return k
+}
+
+// mayTurnAt reports whether slot's player may turn the key at post i:
+// any player, unless the post is a role's and another player holds it.
+func (t *Team) mayTurnAt(a *graph.Answer, i int, slot int64) bool {
+	holder, ok := t.postHolder(a, i)
+	return !ok || holder == slot
+}
+
+// postHolder is the player who alone turns the key at post i: the
+// holder of its role, while they play. A role held by someone who has
+// stopped playing would shut the team out, so the post is anyone's.
+func (t *Team) postHolder(a *graph.Answer, i int) (int64, bool) {
+	holder, ok := t.RoleHolders[a.PostRole(i)]
+	if !ok || t.Away[holder] || (t.Players != nil && !slices.Contains(t.Players, holder)) {
+		return 0, false
+	}
+	return holder, true
+}
+
+// postHeld reports whether post i has its player standing at it: the
+// holder of its role, or anyone, where the post is anyone's.
+func (t *Team) postHeld(a *graph.Answer, i int) bool {
+	z := t.zoneBySlug(a.Posts[i])
+	if z == nil {
+		return false
+	}
+	if holder, ok := t.postHolder(a, i); ok && t.PhoneAt != nil {
+		p, ok := t.PhoneAt[holder]
+		return ok && ZoneContains(*z, p.Lat, p.Lng)
+	}
+	return t.InZone(z.Slug)
 }
 
 // postsAt are the launch's posts p stands at.
@@ -98,7 +147,7 @@ func (t *Team) keysTurned(a *graph.Answer) (int, *time.Time) {
 		posts := strings.Split(p.Value, "|")
 		row := make([]bool, len(a.Posts))
 		for j, post := range a.Posts {
-			row[j] = slices.Contains(posts, post)
+			row[j] = slices.Contains(posts, post) && t.mayTurnAt(a, j, slot)
 		}
 		at = append(at, row)
 		if u := p.At.Add(window); until == nil || u.Before(*until) {
@@ -145,9 +194,17 @@ func (t *Team) Turn(node string) (Result, *walk.Step, error) {
 			done = matching(at, len(a.Posts))
 		}
 	} else {
-		posts := t.postsAt(a, t.Viewer.Position)
+		if len(a.Posts) > 0 && t.Viewer.Position == nil {
+			// Not "go to your post" to a player standing at it while the
+			// phone finds itself.
+			return Result{}, nil, ErrNoFix
+		}
+		posts := slices.DeleteFunc(t.postsAt(a, t.Viewer.Position), func(post string) bool {
+			return !t.mayTurnAt(a, slices.Index(a.Posts, post), t.Viewer.Slot)
+		})
 		if len(a.Posts) > 0 && len(posts) == 0 {
-			// A key is turned at a post: the phone says to go to one.
+			// A key is turned at a post, and a role's at its own: the
+			// phone says to go to one.
 			return Result{}, nil, ErrNotHere
 		}
 		t.setPress(t.Viewer.Slot, &Press{Value: strings.Join(posts, "|"), At: t.Now})

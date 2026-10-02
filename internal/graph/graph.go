@@ -574,6 +574,19 @@ type Answer struct {
 	Keys   int      `json:"keys,omitempty"`
 	Window int      `json:"window,omitempty"`
 	Posts  []string `json:"posts,omitempty"`
+	// PostRoles, beside Posts, is the role whose player turns the key at
+	// each post: the Locksmith at the gate, the Mechanic at the well. A
+	// post with no role, or past the end, is anyone's.
+	PostRoles []string `json:"post_roles,omitempty"`
+}
+
+// PostRole is the role whose player turns the key at post i, or "" for
+// anyone's.
+func (a *Answer) PostRole(i int) string {
+	if i < len(a.PostRoles) {
+		return a.PostRoles[i]
+	}
+	return ""
 }
 
 // DefaultKeyWindow is how close together, in seconds, a two-key launch's
@@ -1056,6 +1069,14 @@ type Role struct {
 	// role's kit at most.
 	Kit []string `json:"kit,omitempty"`
 
+	// Default makes the role everyone else's: held by every player who
+	// holds no other role, however many, and by a player alone. It is
+	// never dealt or claimed, so a team of any size has a part for each
+	// player — the Captain and their crew. One role at most is the
+	// default; it has no kit and turns no post's key, which are one
+	// player's.
+	Default bool `json:"default,omitempty"`
+
 	// Secret makes the role a saboteur's: dealt at random to one player,
 	// once, when the team makes its first move — and only to a team of at
 	// least MinSecretPlayers then, in an event that allows secret roles.
@@ -1086,6 +1107,28 @@ const MinSecretPlayers = 3
 // others, each in the author's order.
 func (g *Graph) SecretRoles() []string { return g.rolesWhere(true) }
 func (g *Graph) PublicRoles() []string { return g.rolesWhere(false) }
+
+// DealtRoles are the public roles one player holds each: all but the
+// default, which is everyone else's.
+func (g *Graph) DealtRoles() []string {
+	var out []string
+	for _, r := range g.Roles {
+		if !r.Secret && !r.Default {
+			out = append(out, r.Slug)
+		}
+	}
+	return out
+}
+
+// DefaultRole is the role every player without another holds, or "".
+func (g *Graph) DefaultRole() string {
+	for _, r := range g.Roles {
+		if r.Default && !r.Secret {
+			return r.Slug
+		}
+	}
+	return ""
+}
 
 func (g *Graph) rolesWhere(secret bool) []string {
 	var out []string

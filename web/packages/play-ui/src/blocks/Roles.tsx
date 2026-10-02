@@ -43,12 +43,13 @@ export function RoleCards(props: {
     }
   };
 
-  const mine = (r: play.RoleView) => !!r.mine && (r.claimed || !!dealt || !!r.secret || final);
+  const mine = (r: play.RoleView) => !!r.mine && (r.claimed || !!dealt || !!r.secret || !!r.default || final);
   const card = (r: play.RoleView) => {
     const chosen = !!r.mine && !!r.claimed && !final;
     let under: ReactNode;
     let tap: boolean | undefined; // claim (true), give back (false), or nothing
     if (r.secret) under = t("Secret: only you know");
+    else if (r.default) under = r.mine ? t("You and everyone else") : t("Everyone else");
     else if (final || r.claimed) {
       under = r.mine ? (final ? t("You") : t("Chosen")) : r.holder;
       if (chosen) tap = false;
@@ -71,7 +72,7 @@ export function RoleCards(props: {
     const cls = "pv-roles__card" + (mine(r) ? " is-mine" : "") + (chosen ? " is-chosen" : "") + (r.secret ? " is-secret" : "") + (!r.mine && (r.claimed || final) ? " is-taken" : "");
     return (
       <li key={r.slug}>
-        {props.onChoose && !r.secret ? (
+        {props.onChoose && !r.secret && !r.default ? (
           <button
             type="button"
             className={cls}
@@ -130,7 +131,7 @@ export const RolesBlock: Renderer<"roles"> = ({ block, ctx }) => {
   } else if (block.team) {
     // Every player's. A secret role stays off this list, even on its own
     // player's phone: someone may be looking.
-    body = <RoleCards roles={roles.filter((r) => !r.secret && r.holder)} t={t} dealt />;
+    body = <RoleCards roles={roles.filter((r) => !r.secret && (r.holder || r.default))} t={t} dealt />;
   } else {
     const mine = roles.filter((r) => r.mine);
     body = mine.length ? <RoleCards roles={mine} t={t} dealt /> : <p className="pv-vote__note">{t("You have no role.")}</p>;

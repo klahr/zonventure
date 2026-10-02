@@ -938,11 +938,49 @@ func TestTogetherChecks(t *testing.T) {
 	assertCode(t, Check(keys(graph.Answer{Kind: graph.AnswerKeys, Window: -1})), "keys.counts")
 	assertNoCode(t, Check(keys(graph.Answer{Kind: graph.AnswerKeys})), "puzzle.answer.kind")
 
+	roled := func(roles ...string) *graph.Graph {
+		g := keys(graph.Answer{Kind: graph.AnswerKeys, Posts: []string{"square", "gate"}, PostRoles: roles})
+		g.Zones = []graph.Zone{{Slug: "square", Lat: 59.3, Lng: 18.1, RadiusM: 30}, {Slug: "gate", Lat: 59.31, Lng: 18.1, RadiusM: 30}}
+		g.Roles = []graph.Role{{Slug: "smith"}, {Slug: "mech"}, {Slug: "mole", Secret: true}}
+		return g
+	}
+	assertNoCode(t, Check(roled("smith", "mech")), "keys.post_roles")
+	assertNoCode(t, Check(roled("", "mech")), "keys.post_roles")
+	assertCode(t, Check(roled("smith", "mech", "smith")), "keys.post_roles")
+	assertCode(t, Check(roled("smith", "ghost")), "ref.role.unknown")
+	assertCode(t, Check(roled("smith", "mole")), "keys.post_roles.secret")
+	assertCode(t, Check(roled("smith", "smith")), "keys.post_roles.twice")
+	assertCode(t, Check(roled("smith", "mech")), "keys.post.small")
+	assertCode(t, Check(roled("smith", "mech")), "keys.post_roles.unlocked")
+	dflt := roled("smith", "mech")
+	dflt.Roles[1].Default = true
+	assertCode(t, Check(dflt), "keys.post_roles.default")
+
 	u := valid3()
 	u.Nodes[1].PuzzleCfg.Unanimous = true
 	assertNoCode(t, Check(u), "puzzle.unanimous.kind")
 	u.Nodes[1].PuzzleCfg.Answer = &graph.Answer{Kind: graph.AnswerKeys}
 	assertCode(t, Check(u), "puzzle.unanimous.kind")
+}
+
+// One role at most is the default, and it is no saboteur's and has no kit.
+func TestDefaultRole(t *testing.T) {
+	g := valid3()
+	g.Items = []graph.Item{{Slug: "map"}}
+	g.Roles = []graph.Role{{Slug: "captain"}, {Slug: "crew", Default: true}}
+	assertNoCode(t, Check(g), "role.default.many")
+	if got := g.DealtRoles(); len(got) != 1 || got[0] != "captain" {
+		t.Errorf("dealt: %v", got)
+	}
+	if g.DefaultRole() != "crew" {
+		t.Errorf("default: %q", g.DefaultRole())
+	}
+	g.Roles = append(g.Roles, graph.Role{Slug: "deck", Default: true})
+	assertCode(t, Check(g), "role.default.many")
+	g.Roles = []graph.Role{{Slug: "crew", Default: true, Kit: []string{"map"}}}
+	assertCode(t, Check(g), "role.default.kit")
+	g.Roles = []graph.Role{{Slug: "crew", Default: true, Secret: true}}
+	assertCode(t, Check(g), "role.default.secret")
 }
 
 // A puzzle answered by one role names a declared role, and is not also

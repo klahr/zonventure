@@ -35,6 +35,11 @@ export interface PlayInput {
   kind: "text" | "number" | "tiles" | "search" | "choice" | "lock" | "questions" | "scan" | "items" | "keys";
   /** "keys": a two-key launch's posts, by name — where keys are turned. Empty: anywhere. */
   posts?: string[];
+  /** "keys": beside posts, the role turning each key, by name ("" for anyone's), and which posts are this player's. */
+  post_roles?: string[];
+  my_posts?: boolean[];
+  /** "keys": beside posts, which have their player standing at them now. */
+  posts_held?: boolean[];
   /** The role whose player alone answers, by name; not_yours: not this player. */
   by?: string;
   not_yours?: boolean;
@@ -228,6 +233,8 @@ export interface RoleView {
   image?: PlayMedia;
   /** A saboteur's, listed only to its player. */
   secret?: boolean;
+  /** Everyone else's: held by every player without another role. Never chosen. */
+  default?: boolean;
   /** This phone's player holds it. */
   mine?: boolean;
   /** The name of the player who holds it. */
@@ -258,6 +265,9 @@ export interface View {
   text?: string;
   zone?: PlayZone;
   here?: boolean;
+  /** This phone is inside zone itself, and how many of the team are: one teammate there opens the step for all. Absent for the team as a whole. */
+  here_me?: boolean;
+  here_count?: number;
   /** Set while the team chooses where to begin; `node` is then empty. */
   starts?: StartOption[];
   /** What a puzzle, story or end shows, in order. */

@@ -418,5 +418,16 @@
   "yours to use": "din att använda",
   "Give": "Ge bort",
   "Scan to receive an item": "Skanna för att ta emot en sak",
-  "You have the {{item}} now.": "Du har {{item}} nu."
+  "You have the {{item}} now.": "Du har {{item}} nu.",
+  "Each key is turned at its own post:": "Varje nyckel vrids vid sin egen post:",
+  "{{role}} at {{place}}": "{{role}} vid {{place}}",
+  "Anyone at {{place}}": "Vem som helst vid {{place}}",
+  "your post": "din post",
+  "{{n}} of your team are at {{place}}.": "{{n}} i ert lag är vid {{place}}.",
+  "A teammate is at {{place}}.": "En lagkamrat är vid {{place}}.",
+  "in place": "på plats",
+  "No post is yours here: go with one of them and help.": "Ingen post är din här: följ med någon av dem och hjälp till.",
+  "Finding where you are… Hold the phone up for a moment, then try again.": "Letar efter din position … Håll upp telefonen en stund och försök igen.",
+  "You and everyone else": "Du och alla andra",
+  "Everyone else": "Alla andra"
 }

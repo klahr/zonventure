@@ -516,6 +516,8 @@ func refusalText(code, msg string) string {
 	switch code {
 	case "not_here":
 		return "you are not at the place this needs."
+	case "no_fix":
+		return "the phone does not know where it is yet; wait a moment and try again."
 	case "locked":
 		return "answering is locked for now after wrong answers; wait."
 	case "time_up":
@@ -1019,7 +1021,13 @@ func (ps *playSession) input(b *strings.Builder, v session.View) {
 	case "keys":
 		b.WriteString("→ A two-key launch: every player turns their key at once (turn)")
 		if len(in.Posts) > 0 {
-			fmt.Fprintf(b, ", one at each post: %s. Here the team moves as one, so it holds only posts where it stands; the event simulation splits teams up to turn keys apart", strings.Join(in.Posts, ", "))
+			posts := slices.Clone(in.Posts)
+			for i, role := range in.PostRoles {
+				if role != "" {
+					posts[i] += " (the " + role + ")"
+				}
+			}
+			fmt.Fprintf(b, ", one at each post: %s. Here the team moves as one, so it holds only posts where it stands; the event simulation splits teams up to turn keys apart", strings.Join(posts, ", "))
 		}
 		b.WriteString(".\n")
 	case "items":

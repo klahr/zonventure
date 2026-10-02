@@ -174,5 +174,5 @@ func lockRolesLeaving(ctx context.Context, q Querier, s *teamState, node string)
 			return err
 		}
 	}
-	return LockRoles(ctx, q, s.teamID, players, s.G.PublicRoles())
+	return LockRoles(ctx, q, s.teamID, players, s.G.DealtRoles())
 }

@@ -43,6 +43,9 @@ var (
 	ErrStale = errors.New("team has already moved on")
 	// ErrNotHere means a zone gate is not satisfied. Map to 403.
 	ErrNotHere = errors.New("not inside the required zone")
+	// ErrNoFix means the action needs to know where the phone is, and
+	// it has not said lately: a key turned at a post. Map to 403.
+	ErrNoFix = errors.New("the phone's position is not known yet")
 	// ErrNotYours means the action is another role's: a puzzle only the
 	// Locksmith answers, an item in the Locksmith's kit. Map to 403.
 	ErrNotYours = errors.New("that is another role's to do")
@@ -178,6 +181,16 @@ type Team struct {
 	// Holders are the kit items handed to a player, by slot: theirs to
 	// use, not the role's. Not stored with the team.
 	Holders map[string]int64 `json:"-"`
+	// RoleHolders is the slot holding each public role, for a two-key
+	// launch whose posts are roles' (graph.Answer.PostRoles). Nil is the
+	// team as a whole, every role its own. Not stored with the team.
+	RoleHolders map[string]int64 `json:"-"`
+	// Away are the players whose phones have been silent a while — put
+	// away, out of battery, gone home — so a post of their role is
+	// anyone's rather than a wait for them. PhoneAt is where each phone
+	// that reported lately is, by slot. Neither is stored with the team.
+	Away    map[int64]bool     `json:"-"`
+	PhoneAt map[int64]Position `json:"-"`
 	// WalkedMetres is how far the team has walked on its current node:
 	// read from its phones' positions by the live engine, added up from
 	// the moves the simulator makes.
@@ -1192,6 +1205,8 @@ func Code(err error) string {
 		return "stale"
 	case errors.Is(err, ErrNotHere):
 		return "not_here"
+	case errors.Is(err, ErrNoFix):
+		return "no_fix"
 	case errors.Is(err, ErrNotYours):
 		return "not_yours"
 	case errors.Is(err, ErrLocked):

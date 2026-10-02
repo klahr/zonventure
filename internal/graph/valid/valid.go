@@ -512,7 +512,20 @@ func checkReferences(r *reporter, g *graph.Graph) {
 	}
 
 	kitOf := map[string]string{}
+	defaults := 0
 	for _, ro := range g.Roles {
+		if ro.Default {
+			defaults++
+			switch {
+			case ro.Secret:
+				r.err("role.default.secret", "", "", "role %q cannot be both the saboteur's and everyone else's", ro.Slug)
+			case len(ro.Kit) > 0:
+				r.err("role.default.kit", "", "", "role %q is everyone else's, so its kit would have no one owner; give the items to a role one player holds", ro.Slug)
+			}
+			if defaults == 2 {
+				r.err("role.default.many", "", "", "role %q is a second default role; only one role is everyone else's", ro.Slug)
+			}
+		}
 		if ro.Secret && len(ro.Kit) > 0 {
 			r.err("role.secret.kit", "", "", "secret role %q brings items, and everyone's backpack would say whose; give it none", ro.Slug)
 		}
@@ -582,6 +595,24 @@ func checkReferences(r *reporter, g *graph.Graph) {
 					if !zones[z] {
 						r.err("ref.zone.unknown", n.Slug, "", "a key is turned at zone %q, which is not declared", z)
 					}
+				}
+				if len(a.PostRoles) > len(a.Posts) {
+					r.err("keys.post_roles", n.Slug, "", "a two-key launch names a role for %d posts but has %d", len(a.PostRoles), len(a.Posts))
+				}
+				seen := map[string]bool{}
+				for _, role := range a.PostRoles {
+					switch ro, _ := g.Role(role); {
+					case role == "":
+					case !roles[role]:
+						r.err("ref.role.unknown", n.Slug, "", "a key is turned by role %q, which is not declared", role)
+					case ro.Default:
+						r.err("keys.post_roles.default", n.Slug, "", "the %s is everyone else's, not one player to send to a post; leave the post open to anyone", g.RoleName(role))
+					case ro.Secret:
+						r.err("keys.post_roles.secret", n.Slug, "", "every phone would say where the %s turns their key, giving them away", g.RoleName(role))
+					case seen[role]:
+						r.err("keys.post_roles.twice", n.Slug, "", "the %s cannot turn keys at two posts at once", g.RoleName(role))
+					}
+					seen[role] = true
 				}
 			}
 			if a := n.PuzzleCfg.Answer; a != nil && a.Kind == graph.AnswerItems {
@@ -841,6 +872,20 @@ func checkResources(r *reporter, g *graph.Graph) {
 // and belongs to this adventure, needs the database: graphstore.Save
 // checks that.
 // checkAnswer checks a puzzle's way of answering, by its kind.
+// minPostRadius is the smallest a two-key launch's post should be, in
+// metres: what a phone's GPS in a street can be trusted to.
+const minPostRadius = 40
+
+// locksRoles reports whether some roles block locks the team's roles.
+func locksRoles(g *graph.Graph) bool {
+	for _, n := range g.Nodes {
+		if slices.ContainsFunc(n.Blocks(), func(b graph.Block) bool { return b.Kind == graph.BlockRoles && b.Lock && !b.Disabled }) {
+			return true
+		}
+	}
+	return false
+}
+
 func checkAnswer(r *reporter, g *graph.Graph, n graph.Node, owners map[string]string) {
 	a := n.PuzzleCfg.Answer
 	switch a.Kind {
@@ -886,6 +931,16 @@ func checkAnswer(r *reporter, g *graph.Graph, n graph.Node, owners map[string]st
 		}
 		if a.Keys == 1 {
 			r.warn("keys.one", n.Slug, "", "one key is a button, not a launch: ask for two or more, or leave it at every player")
+		}
+		for _, slug := range a.Posts {
+			for _, z := range g.Zones {
+				if z.Slug == slug && len(z.Polygon) == 0 && z.RadiusM < minPostRadius {
+					r.warn("keys.post.small", n.Slug, "", "post %q is %.0f m across from its centre; a phone's GPS in a street is often off by more, so a player standing there is told to go there. Make it %d m or more", z.Name, z.RadiusM, minPostRadius)
+				}
+			}
+		}
+		if slices.ContainsFunc(a.PostRoles, func(role string) bool { return role != "" }) && !locksRoles(g) {
+			r.warn("keys.post_roles.unlocked", n.Slug, "", "roles can change hands until they are locked, so a player may walk to a post and find it someone else's; lock them with a roles block (Lock) before this step")
 		}
 	case graph.AnswerScan:
 	case graph.AnswerQuestions:

@@ -661,7 +661,17 @@ function puzzleParts(node: Node, cfg: PuzzleConfig, graph: Graph, onChange: (c: 
           <>
             <SumRow label={t.t("Keys")}>{answer.keys ? answer.keys : answer.posts?.length ? t.t("one at each post") : t.t("every player")}</SumRow>
             <SumRow label={t.t("Within")}>{fmtSecs(t, answer.window || 10)}</SumRow>
-            {answer.posts?.length ? <SumRow label={t.t("Posts")}>{answer.posts.map((z) => zoneName(graph, z)).join(", ")}</SumRow> : null}
+            {answer.posts?.length ? (
+              <SumRow label={t.t("Posts")}>
+                {answer.posts
+                  .map((z, i) => {
+                    const role = answer.post_roles?.[i];
+                    const name = role ? (graph.roles ?? []).find((r) => r.slug === role)?.name || role : "";
+                    return name ? t.t("{{role}} at {{place}}", { role: name, place: zoneName(graph, z) }) : zoneName(graph, z);
+                  })
+                  .join(", ")}
+              </SumRow>
+            ) : null}
           </>
         ),
         form: <KeysForm graph={graph} keys={answer} onChange={(a) => onChange({ ...cfg, answer: a })} />,
@@ -1000,6 +1010,15 @@ function puzzleParts(node: Node, cfg: PuzzleConfig, graph: Graph, onChange: (c: 
 function KeysForm({ graph, keys, onChange }: { graph: Graph; keys: AnswerOf<"keys">; onChange: (a: AnswerOf<"keys">) => void }) {
   const t = useT();
   const posts = keys.posts ?? [];
+  const postRoles = keys.post_roles ?? [];
+  const roles = (graph.roles ?? []).filter((r) => !r.secret);
+  // Posts and their roles go together: a role stays with its post as
+  // others come and go, and no trailing empty roles are kept.
+  const setPosts = (nextPosts: string[], nextRoles: string[]) => {
+    const trimmed = nextRoles.slice(0, nextPosts.length);
+    while (trimmed.length && !trimmed[trimmed.length - 1]) trimmed.pop();
+    onChange(withOptional(withOptional({ ...keys }, "posts", nextPosts.length ? nextPosts : undefined), "post_roles", trimmed.length ? trimmed : undefined));
+  };
   return (
     <>
       <div className="box__row box__row--wrap">
@@ -1017,8 +1036,12 @@ function KeysForm({ graph, keys, onChange }: { graph: Graph; keys: AnswerOf<"key
                   type="checkbox"
                   checked={on}
                   onChange={() => {
-                    const next = on ? posts.filter((x) => x !== z.slug) : [...posts, z.slug];
-                    onChange(withOptional({ ...keys }, "posts", next.length ? next : undefined));
+                    if (on) {
+                      const i = posts.indexOf(z.slug);
+                      setPosts(posts.filter((x) => x !== z.slug), postRoles.filter((_, j) => j !== i));
+                    } else {
+                      setPosts([...posts, z.slug], postRoles);
+                    }
                   }}
                 />
                 {z.name || z.slug}
@@ -1027,6 +1050,30 @@ function KeysForm({ graph, keys, onChange }: { graph: Graph; keys: AnswerOf<"key
           })}
         </div>
       </Field>
+      {posts.length > 0 && roles.length > 0 && (
+        <Field label={t.t("Who turns the key at each post (optional)")}>
+          {posts.map((slug, i) => (
+            <label key={slug} className="box__row">
+              <span className="field__hint">{zoneName(graph, slug)}</span>
+              <select
+                className="field__input"
+                value={postRoles[i] ?? ""}
+                onChange={(e) => {
+                  const next = posts.map((_, j) => (j === i ? e.target.value : (postRoles[j] ?? "")));
+                  setPosts(posts, next);
+                }}
+              >
+                <option value="">{t.t("Anyone")}</option>
+                {roles.map((r) => (
+                  <option key={r.slug} value={r.slug}>
+                    {r.name || r.slug}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ))}
+        </Field>
+      )}
     </>
   );
 }

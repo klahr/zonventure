@@ -80,6 +80,8 @@ export function feedbackForRefusal(code: string | undefined, t: Translate): Feed
       return { tone: "info", text: t("Your team has already moved on. Here is where you are now.") };
     case "not_here":
       return { tone: "bad", text: t("You need to be at the place first.") };
+    case "no_fix":
+      return { tone: "info", text: t("Finding where you are… Hold the phone up for a moment, then try again.") };
     case "not_yours":
       return { tone: "bad", text: t("That's for another role on your team to do.") };
     case "locked":

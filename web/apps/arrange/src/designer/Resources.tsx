@@ -242,10 +242,30 @@ export function Resources({ graph, onChange }: { graph: Graph; onChange: (g: Gra
                 <input
                   type="checkbox"
                   checked={!!r.secret}
+                  disabled={!!r.default}
                   onChange={(e) => set(e.target.checked ? { ...withoutKey(r, "kit"), secret: true } : withoutKey(withoutKey(r, "secret"), "goals"))}
                 />
                 {t.t("Secret, like a saboteur")}
               </label>
+              {!r.secret && (
+                <>
+                  <label className="check">
+                    <input
+                      type="checkbox"
+                      checked={!!r.default}
+                      // One role at most is everyone else's.
+                      disabled={!r.default && roles.some((o) => o.slug !== r.slug && o.default)}
+                      onChange={(e) => set(e.target.checked ? { ...withoutKey(r, "kit"), default: true } : withoutKey(r, "default"))}
+                    />
+                    {t.t("Everyone else's: held by every player without another role")}
+                  </label>
+                  {r.default && (
+                    <p className="field__hint">
+                      {t.t("Never dealt or chosen, so any number of players can join: the Captain and their crew. A player alone holds it too.")}
+                    </p>
+                  )}
+                </>
+              )}
               {r.secret && (
                 <>
                   <p className="field__hint">
@@ -276,7 +296,7 @@ export function Resources({ graph, onChange }: { graph: Graph; onChange: (g: Gra
                   </div>
                 </>
               )}
-              {items.length > 0 && !r.secret && (
+              {items.length > 0 && !r.secret && !r.default && (
                 <div className="field">
                   <span className="field__label">{t.t("Brings (only this role can use them)")}</span>
                   <div className="cond__days">

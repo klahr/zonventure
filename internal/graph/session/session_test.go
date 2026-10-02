@@ -1215,6 +1215,110 @@ func TestTwoKeyLaunchAtPosts(t *testing.T) {
 	}
 }
 
+// With roles on the posts, each key is turned by its role's player at
+// its post: anyone else there is told to go to their own. A player
+// holding both roles turns one key, and a holder who stopped playing
+// leaves the post to anyone.
+func TestTwoKeyLaunchRolePosts(t *testing.T) {
+	zones := []graph.Zone{
+		{Slug: "east", Lat: 59.30, Lng: 18.00, RadiusM: 40},
+		{Slug: "west", Lat: 59.31, Lng: 18.00, RadiusM: 40},
+	}
+	east, west := Position{Lat: 59.30, Lng: 18.00}, Position{Lat: 59.31, Lng: 18.00}
+	cfg := graph.PuzzleConfig{Answer: &graph.Answer{Kind: graph.AnswerKeys, Posts: []string{"east", "west"}, PostRoles: []string{"smith", "mech"}}}
+	tm := together(t, cfg, zones, 1, 2, 3)
+	tm.G.Roles = []graph.Role{{Slug: "smith", Name: "Smith"}, {Slug: "mech", Name: "Mech"}}
+	tm.RoleHolders = map[string]int64{"smith": 1, "mech": 2}
+
+	if _, _, err := tm.as(2, &east).Turn("p"); err != ErrNotHere {
+		t.Errorf("the mech at the smith's post: %v, want ErrNotHere", err)
+	}
+	if res, _, _ := tm.as(1, &east).Turn("p"); res.Waiting == nil || res.Waiting.Done != 1 || res.Waiting.Of != 2 {
+		t.Fatalf("the smith at their post: %+v", res.Waiting)
+	}
+	if _, _, err := tm.as(3, &west).Turn("p"); err != ErrNotHere {
+		t.Errorf("a player with neither role at the mech's post: %v, want ErrNotHere", err)
+	}
+	in := tm.as(2, &west).View().Input
+	if in == nil || len(in.PostRoles) != 2 || in.PostRoles[1] != "Mech" || in.MyPosts[0] || !in.MyPosts[1] {
+		t.Errorf("the mech's phone: %+v", in)
+	}
+	if res, _, _ := tm.as(2, &west).Turn("p"); !res.Accepted {
+		t.Errorf("smith east and mech west: %+v", res)
+	}
+
+	both := together(t, cfg, zones, 1, 2)
+	both.RoleHolders = map[string]int64{"smith": 1, "mech": 1}
+	if res, _, _ := both.as(1, &west).Turn("p"); !res.Accepted {
+		t.Errorf("one player holding both roles turns one key: %+v", res)
+	}
+
+	gone := together(t, cfg, zones, 1, 3)
+	gone.RoleHolders = map[string]int64{"smith": 1, "mech": 2}
+	gone.as(1, &east).Turn("p")
+	if res, _, _ := gone.as(3, &west).Turn("p"); !res.Accepted {
+		t.Errorf("the mech's post with the mech not playing: %+v", res)
+	}
+
+	// The mech plays, but their phone has gone quiet: their post is anyone's.
+	quiet := together(t, cfg, zones, 1, 2, 3)
+	quiet.RoleHolders = map[string]int64{"smith": 1, "mech": 2}
+	quiet.Away = map[int64]bool{2: true}
+	quiet.as(1, &east).Turn("p")
+	if res, _, _ := quiet.as(3, &west).Turn("p"); !res.Accepted {
+		t.Errorf("the mech's post with the mech away: %+v", res)
+	}
+
+	// A phone that has not found itself is told so, not sent to its post.
+	if _, _, err := together(t, cfg, zones, 1, 2).as(1, nil).Turn("p"); err != ErrNoFix {
+		t.Errorf("no position: %v, want ErrNoFix", err)
+	}
+}
+
+// The phone shows which posts have their player in place: the role's
+// holder, not just anyone, at a role's post.
+func TestRolePostsHeld(t *testing.T) {
+	zones := []graph.Zone{
+		{Slug: "east", Lat: 59.30, Lng: 18.00, RadiusM: 40},
+		{Slug: "west", Lat: 59.31, Lng: 18.00, RadiusM: 40},
+	}
+	east, west := Position{Lat: 59.30, Lng: 18.00}, Position{Lat: 59.31, Lng: 18.00}
+	cfg := graph.PuzzleConfig{Answer: &graph.Answer{Kind: graph.AnswerKeys, Posts: []string{"east", "west"}, PostRoles: []string{"smith", "mech"}}}
+	tm := together(t, cfg, zones, 1, 2, 3)
+	tm.RoleHolders = map[string]int64{"smith": 1, "mech": 2}
+	// The smith is at their post; at the mech's stands someone else.
+	tm.PhoneAt = map[int64]Position{1: east, 3: west}
+	tm.Phones = []Position{east, west}
+	in := tm.as(1, &east).View().Input
+	if in == nil || len(in.PostsHeld) != 2 || !in.PostsHeld[0] || in.PostsHeld[1] {
+		t.Errorf("held: %+v", in)
+	}
+	tm.PhoneAt[2] = west
+	if in := tm.as(1, &east).View().Input; !in.PostsHeld[1] {
+		t.Errorf("the mech in place: %+v", in.PostsHeld)
+	}
+}
+
+// One teammate at the place opens the step for all, but only they are
+// told they are there; the others how many are.
+func TestHereMe(t *testing.T) {
+	zones := []graph.Zone{{Slug: "east", Lat: 59.30, Lng: 18.00, RadiusM: 40}}
+	east, away := Position{Lat: 59.30, Lng: 18.00}, Position{Lat: 59.40, Lng: 18.00}
+	tm := together(t, graph.PuzzleConfig{Zone: "east"}, zones, 1, 2)
+	tm.Phones = []Position{east, away}
+	v := tm.as(2, &away).View()
+	if !v.Here || v.HereMe == nil || *v.HereMe || v.HereCount != 1 {
+		t.Errorf("the player away: here %v, me %v, count %d", v.Here, v.HereMe, v.HereCount)
+	}
+	if v := tm.as(1, &east).View(); v.HereMe == nil || !*v.HereMe {
+		t.Errorf("the player there: %v", v.HereMe)
+	}
+	tm.Viewer = nil
+	if v := tm.View(); v.HereMe != nil {
+		t.Errorf("the team as a whole has no one phone: %v", v.HereMe)
+	}
+}
+
 // A unanimous answer counts once every player has given a right one that
 // leads the same way; a wrong one counts as ever and withdraws theirs.
 func TestUnanimousAnswer(t *testing.T) {

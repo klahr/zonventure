@@ -26,7 +26,7 @@ func decorateRoles(ctx context.Context, db *sql.DB, teamID, slotID int64, v *pla
 	// who holds it is no one's to learn here.
 	var slugs []string
 	for _, r := range v.Roles {
-		if !r.Secret {
+		if !r.Secret && !r.Default {
 			slugs = append(slugs, r.Slug)
 		}
 	}
@@ -38,11 +38,11 @@ func decorateRoles(ctx context.Context, db *sql.DB, teamID, slotID int64, v *pla
 	if err != nil {
 		return err
 	}
+	players, err := play.Players(ctx, db, teamID, slotID)
+	if err != nil {
+		return err
+	}
 	if len(slugs) > 0 {
-		players, err := play.Players(ctx, db, teamID, slotID)
-		if err != nil {
-			return err
-		}
 		chose := map[int64]bool{}
 		all := true
 		for _, s := range slugs {
@@ -57,9 +57,22 @@ func decorateRoles(ctx context.Context, db *sql.DB, teamID, slotID int64, v *pla
 		ok := all || everyone
 		v.RolesChosen = &ok
 	}
+	// The default role is the asking player's when they hold no other,
+	// or play alone.
+	mineDefault := len(players) <= 1
+	if !mineDefault {
+		mineDefault = true
+		for _, s := range slugs {
+			mineDefault = mineDefault && holdings[s].Slot != slotID
+		}
+	}
 	for i := range v.Roles {
 		r := &v.Roles[i]
 		if r.Secret {
+			continue
+		}
+		if r.Default {
+			r.Mine = mineDefault
 			continue
 		}
 		h := holdings[r.Slug]
@@ -121,7 +134,9 @@ func (h *Handlers) PostRole(w http.ResponseWriter, r *http.Request) {
 	}
 	known := false
 	for _, ro := range view.Roles {
-		known = known || ro.Slug == req.Role && !ro.Secret
+		// The default role is everyone else's: giving back another is how
+		// a player comes to hold it.
+		known = known || ro.Slug == req.Role && !ro.Secret && !ro.Default
 	}
 	if !known {
 		// A secret role is dealt, never chosen — nor given back.

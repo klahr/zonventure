@@ -361,14 +361,26 @@ function ZoneCard({ view, t, note }: { view: play.View; t: Translate; note?: Rea
   const z = view.zone;
   if (!z) return null;
   const name = z.name || t("the marked place");
+  // One teammate at the place opens it for all; only they are there.
+  const me = view.here_me ?? view.here;
+  const others = view.here && !me;
+  const count = view.here_count ?? 0;
   return (
     <div className={"pv-zone" + (view.here ? " is-here" : "")}>
       <span className="pv-zone__pin" aria-hidden>
         {view.here ? "✓" : "⌖"}
       </span>
       <div className="pv-zone__body">
-        <strong>{view.here ? t("You are at {{place}}.", { place: name }) : t("Go to {{place}}.", { place: name })}</strong>
-        {!view.here && note && <span className="pv-zone__note">{note}</span>}
+        <strong>
+          {me
+            ? t("You are at {{place}}.", { place: name })
+            : others
+              ? count > 1
+                ? t("{{n}} of your team are at {{place}}.", { n: count, place: name })
+                : t("A teammate is at {{place}}.", { place: name })
+              : t("Go to {{place}}.", { place: name })}
+        </strong>
+        {!me && note && <span className="pv-zone__note">{note}</span>}
       </div>
       <a href={mapURL(z)} target="_blank" rel="noopener noreferrer">
         {t("Map")}
@@ -530,8 +542,28 @@ function PuzzleStep(props: StepProps) {
       )}
 
       {view.together && view.together.of > 1 && <TogetherLine together={view.together} t={t} />}
-      {keys && input.posts && input.posts.length > 0 && (
+      {keys && input.posts && input.posts.length > 0 && !input.post_roles && (
         <p className="pv-muted">{t("Turn your key at one of the posts: {{posts}}. One player at each.", { posts: input.posts.join(", ") })}</p>
+      )}
+      {keys && input.posts && input.post_roles && (
+        <div className="pv-posts">
+          <p className="pv-muted">{t("Each key is turned at its own post:")}</p>
+          <ul>
+            {input.posts.map((place, i) => {
+              const role = input.post_roles?.[i];
+              const own = input.my_posts?.[i] && role;
+              return (
+                <li key={i} className={own ? "is-mine" : ""}>
+                  <span aria-hidden>{input.posts_held?.[i] ? "✓ " : "⌖ "}</span>
+                  {role ? t("{{role}} at {{place}}", { role, place }) : t("Anyone at {{place}}", { place })}
+                  {own && <strong> · {t("your post")}</strong>}
+                  {input.posts_held?.[i] && <span> · {t("in place")}</span>}
+                </li>
+              );
+            })}
+          </ul>
+          {!input.my_posts?.some(Boolean) && <p className="pv-muted">{t("No post is yours here: go with one of them and help.")}</p>}
+        </div>
       )}
 
       <div className="pv-dock">
