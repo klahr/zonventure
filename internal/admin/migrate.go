@@ -134,6 +134,7 @@ func (h *Handlers) MigrateExport(w http.ResponseWriter, r *http.Request) {
 // fresh org with everything replayed under new primary keys but
 // preserved tokens. RoleAdmin at the route level.
 func (h *Handlers) MigrateImport(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxOrgImportZipBytes+(2<<20))
 	if err := r.ParseMultipartForm(maxOrgImportZipBytes + (1 << 20)); err != nil {
 		httpx.Error(w, http.StatusBadRequest, "bad multipart upload")
 		return

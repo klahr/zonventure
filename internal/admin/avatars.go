@@ -29,6 +29,7 @@ func (h *Handlers) SetAdventureAvatar(w http.ResponseWriter, r *http.Request) {
 	if _, ok := h.requireEditAdventure(w, r, slug); !ok {
 		return
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxImageBytes+(1<<20))
 	if err := r.ParseMultipartForm(maxImageBytes); err != nil {
 		httpx.Error(w, http.StatusBadRequest, "bad multipart form")
 		return
@@ -136,6 +137,7 @@ func (h *Handlers) SetEventCover(w http.ResponseWriter, r *http.Request) {
 	if _, ok := h.authorizeEvent(w, r, eventID); !ok {
 		return
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxImageBytes+(1<<20))
 	if err := r.ParseMultipartForm(maxImageBytes); err != nil {
 		httpx.Error(w, http.StatusBadRequest, "bad multipart form")
 		return

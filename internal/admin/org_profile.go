@@ -230,6 +230,7 @@ func (h *Handlers) SetMyOrgLogo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	orgID := *me.OrgID
+	r.Body = http.MaxBytesReader(w, r.Body, maxImageBytes+(1<<20))
 	if err := r.ParseMultipartForm(maxImageBytes); err != nil {
 		httpx.Error(w, http.StatusBadRequest, "bad multipart form")
 		return
@@ -316,6 +317,7 @@ func (h *Handlers) SetMyOrgCover(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	orgID := *me.OrgID
+	r.Body = http.MaxBytesReader(w, r.Body, maxImageBytes+(1<<20))
 	if err := r.ParseMultipartForm(maxImageBytes); err != nil {
 		httpx.Error(w, http.StatusBadRequest, "bad multipart form")
 		return

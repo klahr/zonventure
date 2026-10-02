@@ -283,6 +283,7 @@ func exportableGraph(ctx context.Context, db *sql.DB, advID int64) (*graph.Graph
 //
 // POST /api/admin/adventures/import
 func (h *Handlers) ImportAdventure(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxImportZipBytes+(1<<20))
 	if err := r.ParseMultipartForm(maxImportZipBytes); err != nil {
 		httpx.Error(w, http.StatusBadRequest, "bad multipart form")
 		return

@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/klahr/zonventure/internal/logx"
 	"github.com/klahr/zonventure/internal/ws"
 )
 
@@ -65,6 +66,7 @@ func (h *Handlers) WSLive(w http.ResponseWriter, r *http.Request) {
 	// flight, and without one every socket timed out 40 s in. A read
 	// error means the peer has gone.
 	go func() {
+		defer logx.Guard("public.ws.read")
 		for {
 			if _, err := conn.Read(); err != nil {
 				conn.Close()
@@ -77,6 +79,7 @@ func (h *Handlers) WSLive(w http.ResponseWriter, r *http.Request) {
 	// reconnects when no frame has arrived for a while, which catches
 	// a socket left half-open by a TV waking from sleep.
 	go func() {
+		defer logx.Guard("public.ws.heartbeat")
 		t := time.NewTicker(liveHeartbeat)
 		defer t.Stop()
 		for {

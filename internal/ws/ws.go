@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+
+	"github.com/klahr/zonventure/internal/logx"
 )
 
 // Accept upgrades the request and returns a Conn plus a context that is
@@ -119,6 +121,7 @@ func (c *Conn) CloseWithReason(status websocket.StatusCode, reason string) {
 // writer drains out and writes to the underlying conn. Also emits a ping
 // every 30s so NAT timeouts can't silently eat an idle connection.
 func (c *Conn) writer() {
+	defer logx.Guard("ws.writer")
 	ping := time.NewTicker(30 * time.Second)
 	defer ping.Stop()
 	for {

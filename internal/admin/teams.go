@@ -513,6 +513,7 @@ func (h *Handlers) SetTeamAvatar(w http.ResponseWriter, r *http.Request) {
 	if !h.teamEventOp(w, r.Context(), teamID, OpSetTeamAvatar) {
 		return
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxImageBytes+(1<<20))
 	if err := r.ParseMultipartForm(maxImageBytes); err != nil {
 		httpx.Error(w, http.StatusBadRequest, "bad multipart form")
 		return

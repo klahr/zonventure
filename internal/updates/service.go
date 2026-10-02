@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/klahr/zonventure/internal/logx"
 	"github.com/klahr/zonventure/internal/mdx"
 )
 
@@ -148,6 +149,7 @@ func (s *Service) Start(ctx context.Context) {
 }
 
 func (s *Service) loop(ctx context.Context) {
+	defer logx.Guard("updates.loop")
 	// First fetch: best-effort, errors logged via the cached status,
 	// not fatal.
 	_ = s.refresh(ctx)

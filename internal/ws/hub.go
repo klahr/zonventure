@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"sync"
 	"time"
+
+	"github.com/klahr/zonventure/internal/logx"
 )
 
 // Msg is what gets sent over the wire after JSON-encoding. Kind lets clients
@@ -236,6 +238,7 @@ func TeamTopic(teamID int64) string {
 // per wake-up use this so a burst of publishes (every team's location
 // pings, say) costs one rebuild per interval instead of one per publish.
 func Coalesce(ctx context.Context, events <-chan []byte, interval time.Duration, push func()) {
+	defer logx.Guard("ws.coalesce")
 	for {
 		select {
 		case <-ctx.Done():

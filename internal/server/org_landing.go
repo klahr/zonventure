@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -27,7 +28,12 @@ import (
 // for orgs that haven't customised anything yet.
 func renderOrgLandingPage(w http.ResponseWriter, r *http.Request, db *sql.DB, publicURL string) {
 	slug := strings.TrimSpace(chi.URLParam(r, "slug"))
-	if slug == "" {
+	// A slug carrying a NUL byte or invalid UTF-8 can never match a
+	// stored org, but handed to Postgres it errors the query ("invalid
+	// byte sequence for encoding UTF8") rather than returning no rows —
+	// which would surface below as a noisy unauthenticated 500. Fail
+	// closed to 404 here, matching orgSlugExists on the /store path.
+	if slug == "" || strings.IndexByte(slug, 0) >= 0 || !utf8.ValidString(slug) {
 		servePublicPage("web/404.html", http.StatusNotFound)(w, r)
 		return
 	}

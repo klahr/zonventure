@@ -121,6 +121,7 @@ type createMCPTokenResp struct {
 func (h *Handlers) CreateMCPToken(w http.ResponseWriter, r *http.Request) {
 	me, _ := auth.FromContext(r.Context())
 	var req createMCPTokenReq
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		httpx.Error(w, http.StatusBadRequest, "bad request body")
 		return

@@ -59,6 +59,7 @@ func (h *Handlers) ImportTeams(w http.ResponseWriter, r *http.Request) {
 	// overridable via ZV_MAX_IMAGE_BYTES. Roster files in this
 	// product are tens of KB; the cap is mostly a safety net
 	// against a hostile or accidental gigabyte upload.
+	r.Body = http.MaxBytesReader(w, r.Body, maxImageBytes+(1<<20))
 	if err := r.ParseMultipartForm(maxImageBytes); err != nil {
 		httpx.Error(w, http.StatusBadRequest, "bad multipart form")
 		return

@@ -59,6 +59,7 @@ func Start(ctx context.Context, db *sql.DB, mail mailer.Mailer, publicURL string
 	w := &Worker{DB: db, Mailer: mail, PublicURL: publicURL, AllowLoopback: os.Getenv("ZV_EFFECT_WEBHOOKS_ALLOW_LOOPBACK") == "1"}
 	go func() {
 		defer close(done)
+		defer logx.Guard("effects.worker")
 		w.Run(ctx)
 	}()
 	return done

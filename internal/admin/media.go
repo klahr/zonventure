@@ -82,6 +82,7 @@ func (h *Handlers) UploadAdventureMedia(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	limit := max(maxImageBytes, maxAudioBytes, maxVideoBytes)
+	r.Body = http.MaxBytesReader(w, r.Body, limit+(1<<20))
 	if err := r.ParseMultipartForm(limit); err != nil {
 		httpx.Error(w, http.StatusBadRequest, "bad multipart form")
 		return

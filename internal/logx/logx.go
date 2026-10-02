@@ -17,6 +17,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -260,6 +261,26 @@ func Debug(msg string, attrs ...any) { Default.Log(LevelDebug, msg, attrs...) }
 func Info(msg string, attrs ...any)  { Default.Log(LevelInfo, msg, attrs...) }
 func Warn(msg string, attrs ...any)  { Default.Log(LevelWarn, msg, attrs...) }
 func Error(msg string, attrs ...any) { Default.Log(LevelError, msg, attrs...) }
+
+// Guard recovers a panic in a long-lived goroutine and logs it with a
+// stack trace instead of letting it crash the whole process. The HTTP
+// Recoverer middleware only wraps request handlers; background workers
+// and per-connection pump goroutines run outside it, so a single panic
+// there would take the server down (and, under `restart: unless-stopped`,
+// into a crash loop). Use as the first deferred call in such a goroutine:
+//
+//	go func() {
+//		defer logx.Guard("mailer.outbox")
+//		...
+//	}()
+//
+// The goroutine still exits after a recovered panic — Guard trades a
+// dead worker for a live server, not a self-healing loop.
+func Guard(name string) {
+	if r := recover(); r != nil {
+		Error(name+".panic", "err", fmt.Sprint(r), "stack", string(debug.Stack()))
+	}
+}
 
 // SetLevel / GetLevel / Snapshot / Subscribe are thin shims over
 // Default for call sites that don't hold a sink reference.

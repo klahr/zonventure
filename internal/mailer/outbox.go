@@ -143,6 +143,7 @@ func Start(ctx context.Context, db *sql.DB, m Mailer) <-chan struct{} {
 	o := &Outbox{DB: db, Mailer: m}
 	go func() {
 		defer close(done)
+		defer logx.Guard("mail.outbox")
 		o.Run(ctx)
 	}()
 	return done

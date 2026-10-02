@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/klahr/zonventure/internal/auth"
@@ -376,9 +377,16 @@ func (h *Handlers) redeem(w http.ResponseWriter, r *http.Request, orgID int64) {
 }
 
 func (h *Handlers) redeemOrg(w http.ResponseWriter, r *http.Request) (int64, bool) {
+	slug := strings.TrimSpace(chi.URLParam(r, "slug"))
+	// A NUL byte or invalid UTF-8 errors the Postgres query rather than
+	// returning no rows; fail closed to 404 instead of a 500.
+	if slug == "" || strings.IndexByte(slug, 0) >= 0 || !utf8.ValidString(slug) {
+		httpx.Error(w, http.StatusNotFound, "organisation not found")
+		return 0, false
+	}
 	var orgID int64
 	err := h.DB.QueryRowContext(r.Context(),
-		`SELECT id FROM organizations WHERE slug = $1`, strings.TrimSpace(chi.URLParam(r, "slug"))).Scan(&orgID)
+		`SELECT id FROM organizations WHERE slug = $1`, slug).Scan(&orgID)
 	if errors.Is(err, sql.ErrNoRows) {
 		httpx.Error(w, http.StatusNotFound, "organisation not found")
 		return 0, false

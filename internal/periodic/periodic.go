@@ -12,6 +12,8 @@ package periodic
 import (
 	"context"
 	"time"
+
+	"github.com/klahr/zonventure/internal/logx"
 )
 
 // Start runs fn once immediately, then every interval, until ctx is
@@ -24,6 +26,7 @@ func Start(ctx context.Context, interval time.Duration, fn func(context.Context)
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
+		defer logx.Guard("periodic")
 		if ctx.Err() != nil {
 			return
 		}

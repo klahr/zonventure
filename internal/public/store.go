@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/klahr/zonventure/internal/httpx"
@@ -221,7 +222,10 @@ func (h *Handlers) StoreEventByOrg(w http.ResponseWriter, r *http.Request) {
 // when the slug doesn't exist so the caller can branch on 404 cleanly.
 func (h *Handlers) resolveOrgSlug(ctx context.Context, slug string) (int64, string, error) {
 	slug = strings.TrimSpace(slug)
-	if slug == "" {
+	// A NUL byte or invalid UTF-8 can't match a stored slug, but handed
+	// to Postgres it errors the query rather than returning no rows —
+	// which callers would surface as a 500. Fail closed to "not found".
+	if slug == "" || strings.IndexByte(slug, 0) >= 0 || !utf8.ValidString(slug) {
 		return 0, "", sql.ErrNoRows
 	}
 	var (

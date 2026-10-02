@@ -27,6 +27,7 @@ const avatarDim = 256
 // SetMyAvatar stores the caller's picture, scaled down and re-encoded.
 func (h *Handlers) SetMyAvatar(w http.ResponseWriter, r *http.Request) {
 	me, _ := auth.FromContext(r.Context())
+	r.Body = http.MaxBytesReader(w, r.Body, maxImageBytes+(1<<20))
 	if err := r.ParseMultipartForm(maxImageBytes); err != nil {
 		httpx.Error(w, http.StatusBadRequest, "bad multipart form")
 		return

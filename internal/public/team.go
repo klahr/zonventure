@@ -168,6 +168,7 @@ func (h *Handlers) SetTeamAvatarByToken(w http.ResponseWriter, r *http.Request) 
 		httpx.JSON(w, http.StatusConflict, map[string]string{"error": "the team picture is fixed once your team has begun", "code": "team_started"})
 		return
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxTeamAvatarBytes+(1<<20))
 	if err := r.ParseMultipartForm(maxTeamAvatarBytes); err != nil {
 		httpx.Error(w, http.StatusBadRequest, "bad multipart form")
 		return

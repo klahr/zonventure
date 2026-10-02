@@ -148,6 +148,7 @@ func Start(ctx context.Context, db *sql.DB) <-chan struct{} {
 	w := &Worker{DB: db}
 	go func() {
 		defer close(done)
+		defer logx.Guard("webhooks.worker")
 		w.Run(ctx)
 	}()
 	return done

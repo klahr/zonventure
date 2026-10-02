@@ -105,6 +105,7 @@ func (h *Handlers) WSArrange(w http.ResponseWriter, r *http.Request) {
 		liveTopic, livePeer = topic, peerID
 		mu.Unlock()
 		go func() {
+			defer logx.Guard("admin.ws.live")
 			defer func() {
 				leave()
 				unsub()
@@ -283,6 +284,7 @@ func (h *Handlers) WSArrange(w http.ResponseWriter, r *http.Request) {
 		mu.Unlock()
 		joinLive(wctx, ws.AdventureTopic(advID))
 		go func() {
+			defer logx.Guard("admin.ws.saves")
 			checked := time.Now()
 			for {
 				select {
