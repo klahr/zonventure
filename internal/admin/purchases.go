@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
@@ -37,11 +38,22 @@ import (
 
 // PricePerPlayerCents is what each chargeable player slot costs. The
 // first FreePlayersPerEvent slots in any event are free, regardless of
-// how often the buyer comes back.
-const (
-	PricePerPlayerCents = 500
-	FreePlayersPerEvent = 15
+// how often the buyer comes back. Operators set their own price with
+// ZV_PRICE_PER_PLAYER_CENTS / ZV_FREE_PLAYERS_PER_EVENT; unset or
+// invalid (non-integer, negative) values fall back to the defaults.
+var (
+	PricePerPlayerCents = envNonNegInt("ZV_PRICE_PER_PLAYER_CENTS", 500)
+	FreePlayersPerEvent = envNonNegInt("ZV_FREE_PLAYERS_PER_EVENT", 15)
 )
+
+func envNonNegInt(name string, def int) int {
+	if s := os.Getenv(name); s != "" {
+		if n, err := strconv.Atoi(s); err == nil && n >= 0 {
+			return n
+		}
+	}
+	return def
+}
 
 // purchaseAmountCents computes the chargeable total for a NEW
 // assignment buy of N player slots: the first FreePlayersPerEvent are

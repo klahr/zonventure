@@ -77,12 +77,13 @@ short tour:
 | `ZV_PORT` | Host port for the app | `8080` |
 | `ZV_LOG_FORMAT` | `text` (dev) or `json` (aggregator) | `text` |
 | `ZV_SMTP_*` | SMTP relay for verification + reset mail (optional) | unset |
-| `ZV_COMPANY_NAME` / `ZV_CONTACT_EMAIL` | Surfaced on `/privacy` + `/terms` | unset |
+| `ZV_COMPANY_NAME` / `ZV_CONTACT_EMAIL` | Surfaced on `/privacy` + `/terms`; the company name also names the publisher in the landing page's schema.org data | unset |
 | `ZV_DPO_EMAIL` / `ZV_JURISDICTION` | Data-protection contact + governing law on `/privacy` + `/terms` | unset (DPO falls back to contact) |
 | `ZV_HOSTING_PROVIDER` / `ZV_EMAIL_PROVIDER` | Sub-processor names listed in `/privacy` | unset (page shows `[set ZV_…]`) |
 | `ZV_LEGAL_REVIEWED` | Set to `1` after a lawyer signs off — strips the yellow "draft template" banners | unset (banners visible) |
 | `ZV_LEGAL_LAST_UPDATED` | "Last updated" date (YYYY-MM-DD) on the legal pages | today |
 | `ZV_STRIPE_SECRET_KEY` / `ZV_STRIPE_WEBHOOK_SECRET` | Real payments + Customer Portal (optional) | unset |
+| `ZV_PRICE_PER_PLAYER_CENTS` / `ZV_FREE_PLAYERS_PER_EVENT` | Arranger pricing (EUR): slots beyond the free band cost this much each; the free band is also the minimum event size. Shown on `/pricing` and in the manual | `500` / `15` |
 | `ZV_TOTP_KEY` | 32-byte base64 key wrapping each user's TOTP secret at rest. Set to enable opt-in 2FA. **Treat like a database password** — losing it forces every enrolled user to re-enrol | unset |
 | `ZV_OIDC_ENABLED` | `1` enables single sign-on (see [Single sign-on (Google Workspace)](#single-sign-on-google-workspace)) | unset |
 | `ZV_OIDC_ISSUER` / `ZV_OIDC_CLIENT_ID` / `ZV_OIDC_CLIENT_SECRET` / `ZV_OIDC_HOSTED_DOMAIN` / `ZV_OIDC_REDIRECT_URL` | OIDC client config; required when SSO is enabled | unset |

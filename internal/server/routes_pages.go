@@ -119,7 +119,7 @@ func registerPageRoutes(r chi.Router, env *routesEnv) {
 			http.Redirect(w, req, "/arrange", http.StatusFound)
 			return
 		}
-		renderLandingPage(w, req, cfg.PublicURL)
+		renderLandingPage(w, req, cfg.PublicURL, cfg.Legal.CompanyName)
 	})
 
 	// Custom 404 with branded chrome and a "back to home / read manual"

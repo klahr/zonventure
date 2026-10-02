@@ -18,3 +18,7 @@ services:
       ZV_LANDING_ENABLED: "1"
     volumes:
       - ../zonventure-web/dist:/var/zv/web-override:ro
+    # Prometheus metrics: set ZV_METRICS_ADDR=:9100 in .env, then
+    # uncomment to publish the listener on the host's loopback only.
+    # ports:
+    #   - "127.0.0.1:9100:9100"

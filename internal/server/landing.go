@@ -718,7 +718,7 @@ func render404(w http.ResponseWriter, r *http.Request) {
 //
 // Also splices the live pricing constants so the manual's "first N
 // free, then €X per player" copy stays in sync with whatever
-// admin.PricePerPlayerCents / FreePlayersPerEvent currently are —
+// admin.PricePerPlayerCents / FreePlayersPerEvent are configured to —
 // no more risk of the documentation lying about the price.
 func renderTopbarPage(w http.ResponseWriter, r *http.Request, name string) {
 	lang := resolveLang(w, r)
@@ -748,9 +748,10 @@ func renderTopbarPage(w http.ResponseWriter, r *http.Request, name string) {
 }
 
 // pricingSubs renders {{FREE_PLAYERS_PER_EVENT}} and
-// {{PRICE_PER_EXTRA_PLAYER}} from the live admin constants. Single
-// source of truth: bumping the price in admin/purchases.go
-// automatically updates the manual + any future page that opts in.
+// {{PRICE_PER_EXTRA_PLAYER}} from the live admin pricing. Single
+// source of truth: changing ZV_PRICE_PER_PLAYER_CENTS /
+// ZV_FREE_PLAYERS_PER_EVENT updates the manual + any future page that
+// opts in.
 func pricingSubs() [][2]string {
 	free := strconv.Itoa(admin.FreePlayersPerEvent)
 	priceMajor := admin.PricePerPlayerCents / 100
@@ -779,7 +780,11 @@ func pricingSubs() [][2]string {
 // specific and stay inline below. A new chrome field — like
 // {{NAV_STORE}} — only needs adding to topbarSubs once and every
 // caller picks it up automatically.
-func renderLandingPage(w http.ResponseWriter, r *http.Request, publicURL string) {
+//
+// companyName (ZV_COMPANY_NAME) names the operator in the schema.org
+// Organization node; empty omits the node rather than claiming a
+// publisher the operator never configured.
+func renderLandingPage(w http.ResponseWriter, r *http.Request, publicURL, companyName string) {
 	lang := resolveLang(w, r)
 	// Absolute URL for og:url + og:image. Falls back to "/" when no
 	// PublicURL is configured (dev / unconfigured self-host) — that's
@@ -788,8 +793,8 @@ func renderLandingPage(w http.ResponseWriter, r *http.Request, publicURL string)
 	if landingURL == "" {
 		landingURL = "/"
 	}
-	out := cachedRender(lang, "web/landing.html", landingURL, func() []byte {
-		return buildLandingBody(lang, landingURL)
+	out := cachedRender(lang, "web/landing.html", landingURL+"\x00"+companyName, func() []byte {
+		return buildLandingBody(lang, landingURL, companyName)
 	})
 	if out == nil {
 		http.Error(w, "not found", http.StatusNotFound)
@@ -808,7 +813,7 @@ func renderLandingPage(w http.ResponseWriter, r *http.Request, publicURL string)
 // from inside the cachedRender callback. Reads the embedded template
 // fresh every call so an override-dir hit picks up edits — the
 // cachedRender wrapper short-circuits in dev anyway.
-func buildLandingBody(lang, landingURL string) []byte {
+func buildLandingBody(lang, landingURL, companyName string) []byte {
 	body, err := readWebFile("web/landing.html")
 	if err != nil {
 		return nil
@@ -822,6 +827,7 @@ func buildLandingBody(lang, landingURL string) []byte {
 		[2]string{"{{TITLE}}", s.Title},
 		[2]string{"{{META_DESC}}", s.MetaDesc},
 		[2]string{"{{OG_DESC}}", s.OGDesc},
+		[2]string{"{{SCHEMA_ORG_NODE}}", schemaOrgNode(companyName, s.SchemaOrgDesc)},
 		[2]string{"{{SCHEMA_ORG_DESC}}", s.SchemaOrgDesc},
 		[2]string{"{{SCHEMA_APP_DESC}}", s.SchemaAppDesc},
 		[2]string{"{{LANDING_URL}}", landingURL},
@@ -896,4 +902,23 @@ func activeClassIf(active bool) string {
 		return "active"
 	}
 	return ""
+}
+
+// schemaOrgNode renders the landing's JSON-LD Organization entry,
+// trailing comma included so it sits in front of the
+// SoftwareApplication node. Empty name → no node.
+func schemaOrgNode(name, desc string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return ""
+	}
+	b, err := json.Marshal(map[string]string{
+		"@type":       "Organization",
+		"name":        name,
+		"description": desc,
+	})
+	if err != nil {
+		return ""
+	}
+	return "\n    " + string(b) + ","
 }

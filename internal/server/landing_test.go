@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -17,7 +18,7 @@ func TestRenderLandingPage_NoLeftoverPlaceholders(t *testing.T) {
 		t.Run(lang, func(t *testing.T) {
 			req := httptest.NewRequest("GET", "/?lang="+lang, nil)
 			rec := httptest.NewRecorder()
-			renderLandingPage(rec, req, "https://zv.example.com")
+			renderLandingPage(rec, req, "https://zv.example.com", "")
 
 			if rec.Code != http.StatusOK {
 				t.Fatalf("status = %d, want 200", rec.Code)
@@ -145,6 +146,50 @@ func TestResolveLang_Fallbacks(t *testing.T) {
 			got := resolveLang(rec, req)
 			if got != tc.want {
 				t.Fatalf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestRenderLandingPage_SchemaOrganization pins that the JSON-LD names
+// the operator from ZV_COMPANY_NAME and omits the Organization node
+// when it's unset — the generic build must not claim a publisher.
+func TestRenderLandingPage_SchemaOrganization(t *testing.T) {
+	for _, tc := range []struct {
+		company string
+		wantOrg bool
+	}{
+		{"", false},
+		{`Acme "Quests" & Co <AB>`, true},
+	} {
+		t.Run(tc.company, func(t *testing.T) {
+			req := httptest.NewRequest("GET", "/?lang=en", nil)
+			rec := httptest.NewRecorder()
+			renderLandingPage(rec, req, "https://zv.example.com", tc.company)
+			body := rec.Body.String()
+			start := strings.Index(body, `<script type="application/ld+json">`)
+			if start < 0 {
+				t.Fatal("no JSON-LD block")
+			}
+			start += len(`<script type="application/ld+json">`)
+			end := strings.Index(body[start:], "</script>")
+			var ld struct {
+				Graph []map[string]string `json:"@graph"`
+			}
+			if err := json.Unmarshal([]byte(body[start:start+end]), &ld); err != nil {
+				t.Fatalf("JSON-LD does not parse: %v", err)
+			}
+			var org map[string]string
+			for _, n := range ld.Graph {
+				if n["@type"] == "Organization" {
+					org = n
+				}
+			}
+			if (org != nil) != tc.wantOrg {
+				t.Fatalf("Organization node present = %v, want %v", org != nil, tc.wantOrg)
+			}
+			if org != nil && org["name"] != tc.company {
+				t.Errorf("name = %q, want %q", org["name"], tc.company)
 			}
 		})
 	}
