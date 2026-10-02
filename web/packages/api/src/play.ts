@@ -270,6 +270,10 @@ export interface View {
   here_count?: number;
   /** Set while the team chooses where to begin; `node` is then empty. */
   starts?: StartOption[];
+  /** On the start screen, true when a start code is required to begin.
+   *  The client shows a code field and sends it as the begin action's
+   *  `guess`; the clock only starts once the code is accepted. */
+  start_requires_code?: boolean;
   /** What a puzzle, story or end shows, in order. */
   blocks?: PlayBlock[];
   /** How the team did on the quiz walk, once it has finished. */
@@ -354,7 +358,7 @@ export interface Result {
 
 /** One thing a player can do. `node` is the step they are looking at. */
 export type PlayAction =
-  | { kind: "begin"; node: string; port: string }
+  | { kind: "begin"; node: string; port: string; guess?: string }
   | { kind: "answer"; node: string; guess: string }
   | { kind: "continue"; node: string }
   | { kind: "back"; node: string }

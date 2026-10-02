@@ -843,17 +843,24 @@ func ImportOrgBundle(ctx context.Context, db *sql.DB, data []byte) (OrgImportSum
 					avMime = sql.NullString{String: tm.AvatarMime, Valid: true}
 				}
 			}
+			// A fresh voucher code per imported team: the bundle predates
+			// this column, and a code must be unique on this instance.
+			voucher, verr := uniqueVoucherCode(ctx, tx)
+			if verr != nil {
+				cleanupOrg()
+				return summary, fmt.Errorf("voucher code for team idx %d: %w", tm.Idx, verr)
+			}
 			var newTeamID int64
 			if err := tx.QueryRowContext(ctx, `
 				INSERT INTO teams(event_id, name, token, recap_token, email,
 					withdrawn_at, completed_at,
-					avatar_mime_type, avatar_content, avatar_size_bytes)
-				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+					avatar_mime_type, avatar_content, avatar_size_bytes, voucher_code)
+				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 				RETURNING id
 			`,
 				newEventID, tm.Name, tm.Token, tm.RecapToken, tm.Email,
 				sqlNullStr(tm.WithdrawnAt), sqlNullStr(tm.CompletedAt),
-				avMime, avBytes, int64(len(avBytes)),
+				avMime, avBytes, int64(len(avBytes)), voucher,
 			).Scan(&newTeamID); err != nil {
 				cleanupOrg()
 				return summary, fmt.Errorf("create team idx %d on event %d: %w", tm.Idx, ev.Idx, err)

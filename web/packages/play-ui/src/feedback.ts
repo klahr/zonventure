@@ -104,6 +104,8 @@ export function feedbackForRefusal(code: string | undefined, t: Translate): Feed
       return { tone: "bad", text: t("That's too long. Shorten it and try again.") };
     case "bad_password":
       return { tone: "bad", text: t("Wrong password.") };
+    case "bad_start_code":
+      return { tone: "bad", text: t("That's not the right code. Check it and try again.") };
     case "no_game":
       return { tone: "info", text: t("The game hasn't started for your team yet.") };
     case "wrong_node":

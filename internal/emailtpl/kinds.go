@@ -100,21 +100,29 @@ func TeamInvitation(lang, team, event, org string, players []PlayerLink, calenda
 	}
 }
 
-// TeamLink is the one link a buyer sets their team up from.
-func TeamLink(lang, teamURL, org string) (string, Content) {
+// TeamLink is the one link a buyer sets their team up from. voucher (an
+// already display-formatted code) and playURL are optional: when both
+// are set the body also offers the type-it-in path, so a buyer reading
+// the mail on a different device than the one they'll play on can just
+// enter the code at /play. Pass "" for either to omit that line.
+func TeamLink(lang, teamURL, playURL, voucher, org string) (string, Content) {
+	body := T(lang, "Open your team page to claim your own place, share the others with your teammates, and start playing whenever you're ready.")
+	if voucher != "" && playURL != "" {
+		body += "\n\n" + T(lang, "Prefer to type it in? Go to %[1]s and enter your voucher code: **%[2]s**", playURL, voucher)
+	}
 	return T(lang, "Your Zonventure ticket — team link inside"), Content{
 		Lang:      lang,
 		Preheader: T(lang, "Set up your team and start whenever you're ready."),
 		Heading:   T(lang, "Thanks — your adventure is ready"),
-		Body:      T(lang, "Open your team page to claim your own place, share the others with your teammates, and start playing whenever you're ready."),
+		Body:      body,
 		Buttons:   []Button{{T(lang, "Open the team page"), teamURL}},
 		Footer:    T(lang, "The link stays valid while you play. Lost it? Use “I lost my link” on the play page with this email address.") + " " + playerFooter(lang, "", org),
 	}
 }
 
 // BoxConfirmed is a box buyer's team link, once their code checks out.
-func BoxConfirmed(lang, partner, teamURL, org string) (string, Content) {
-	_, c := TeamLink(lang, teamURL, org)
+func BoxConfirmed(lang, partner, teamURL, playURL, voucher, org string) (string, Content) {
+	_, c := TeamLink(lang, teamURL, playURL, voucher, org)
 	c.Heading = T(lang, "Your %s box is confirmed!", partner)
 	c.Footer = T(lang, "The link stays valid for a year. Lost it? Use “I lost my link” on the play page with this email address.")
 	return T(lang, "Your Zonventure adventure — team link inside"), c
@@ -321,7 +329,7 @@ var Kinds = []Kind{
 		return GameEmail(lang, T(lang, "A letter has arrived"), T(lang, "Dear detectives,\n\nThe keeper's last entry mentions a tide table. Find it before the water rises.\n\n— A friend"), T(lang, "Harbour Mystery"), org)
 	}},
 	{"team_link", "Ticket: team link", "players", func(lang, org string) (string, Content) {
-		return TeamLink(lang, "https://example.org/team/x7y8z9", org)
+		return TeamLink(lang, "https://example.org/team/x7y8z9", "https://example.org/play", "X7Y8Z9", org)
 	}},
 	{"play_links", "Lost links", "players", func(lang, org string) (string, Content) {
 		return PlayLinks(lang, []PlayerLink{{Team: T(lang, "The Seagulls"), Player: "Anna", Event: T(lang, "Harbour Mystery"), URL: "https://example.org/play?t=a1b2c3"}}, org)

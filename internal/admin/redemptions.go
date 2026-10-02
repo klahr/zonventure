@@ -934,7 +934,7 @@ func (h *Handlers) ApproveRedemption(w http.ResponseWriter, r *http.Request) {
 		httpx.JSON(w, http.StatusConflict, map[string]string{"error": "the product's event isn't running", "reason": "event_closed"})
 		return
 	}
-	teamID, teamToken, err := createTicketTeam(ctx, tx, eventID, email, teamSize)
+	teamID, teamToken, voucher, err := createTicketTeam(ctx, tx, eventID, email, teamSize)
 	if err != nil {
 		httpx.ServerErr(w, http.StatusInternalServerError, "approve failed", err)
 		return
@@ -956,7 +956,7 @@ func (h *Handlers) ApproveRedemption(w http.ResponseWriter, r *http.Request) {
 		httpx.ServerErr(w, http.StatusInternalServerError, "approve failed", err)
 		return
 	}
-	if err := h.sendRedemptionApproved(ctx, eventID, email, kind, teamToken); err != nil {
+	if err := h.sendRedemptionApproved(ctx, eventID, email, kind, teamToken, voucher); err != nil {
 		logx.Warn("admin.redemption.approve.mail", "redemption_id", id, "team_id", teamID, "err", err.Error())
 	}
 	logx.Info("admin.redemption.approved", "redemption_id", id, "team_id", teamID)
@@ -1124,13 +1124,13 @@ func (h *Handlers) sendRedemptionMail(ctx context.Context, kind string, to []str
 	}
 }
 
-func (h *Handlers) sendRedemptionApproved(ctx context.Context, eventID int64, email, kind, teamToken string) error {
+func (h *Handlers) sendRedemptionApproved(ctx context.Context, eventID int64, email, kind, teamToken, voucher string) error {
 	publicURL := strings.TrimRight(strings.TrimSpace(h.PublicURL), "/")
 	if publicURL == "" {
 		return errors.New("redemption email requires PublicURL")
 	}
 	l := h.eventLook(ctx, eventID)
-	subject, c := emailtpl.BoxConfirmed(l.Lang, partnerNames[kind], publicURL+"/team/"+teamToken, l.Brand.Name)
+	subject, c := emailtpl.BoxConfirmed(l.Lang, partnerNames[kind], publicURL+"/team/"+teamToken, publicURL+"/play", auth.FormatVoucherCode(voucher), l.Brand.Name)
 	msg := l.message([]string{email}, subject, c)
 	if h.MailOutbox != nil {
 		return h.MailOutbox.Enqueue(ctx, "redemption_team_link", msg)

@@ -449,7 +449,7 @@ func (h *Handlers) handleTicketCheckoutCompleted(ctx context.Context, event paym
 		return nil
 	}
 
-	teamID, teamToken, err := createTicketTeam(ctx, tx, eventID, buyerEmail, teamSize)
+	teamID, teamToken, voucher, err := createTicketTeam(ctx, tx, eventID, buyerEmail, teamSize)
 	if err != nil {
 		return fmt.Errorf("ticket team create: %w", err)
 	}
@@ -474,7 +474,7 @@ func (h *Handlers) handleTicketCheckoutCompleted(ctx context.Context, event paym
 	// Email the team link. Best-effort: a send failure leaves the
 	// purchase in a paid-but-not-emailed state, which the operator
 	// can re-send via the existing per-team SendTeamInvitation route.
-	if err := h.sendTicketTeamLink(ctx, eventID, buyerEmail, teamToken); err != nil {
+	if err := h.sendTicketTeamLink(ctx, eventID, buyerEmail, teamToken, voucher); err != nil {
 		logx.Warn("admin.store.ticket.mail",
 			"purchase_id", purchaseID, "team_id", teamID, "err", err.Error())
 	}
@@ -488,45 +488,72 @@ func (h *Handlers) handleTicketCheckoutCompleted(ctx context.Context, event paym
 // "Player 1".."Player N" — the buyer (team captain) opens the team
 // link, claims their own slot, and shares the remaining slots from
 // inside the app via the team-share QR.
-func createTicketTeam(ctx context.Context, tx *sql.Tx, eventID int64, buyerEmail string, teamSize int) (int64, string, error) {
+func createTicketTeam(ctx context.Context, tx *sql.Tx, eventID int64, buyerEmail string, teamSize int) (teamID int64, teamToken, voucherCode string, err error) {
 	if teamSize < 1 {
 		teamSize = 1
 	}
 	teamTok, err := auth.NewSlotToken()
 	if err != nil {
-		return 0, "", fmt.Errorf("team token: %w", err)
+		return 0, "", "", fmt.Errorf("team token: %w", err)
 	}
 	recapTok, err := auth.NewSlotToken()
 	if err != nil {
-		return 0, "", fmt.Errorf("recap token: %w", err)
+		return 0, "", "", fmt.Errorf("recap token: %w", err)
 	}
 	teamName, err := uniqueTicketTeamName(ctx, tx, eventID, buyerEmail)
 	if err != nil {
-		return 0, "", fmt.Errorf("team name: %w", err)
+		return 0, "", "", fmt.Errorf("team name: %w", err)
+	}
+	voucher, err := uniqueVoucherCode(ctx, tx)
+	if err != nil {
+		return 0, "", "", fmt.Errorf("voucher code: %w", err)
 	}
 
-	var teamID int64
 	if err := tx.QueryRowContext(ctx, `
-		INSERT INTO teams(event_id, name, token, recap_token, email)
-		VALUES ($1, $2, $3, $4, $5) RETURNING id
-	`, eventID, teamName, teamTok, recapTok, buyerEmail).Scan(&teamID); err != nil {
-		return 0, "", fmt.Errorf("teams insert: %w", err)
+		INSERT INTO teams(event_id, name, token, recap_token, email, voucher_code)
+		VALUES ($1, $2, $3, $4, $5, $6) RETURNING id
+	`, eventID, teamName, teamTok, recapTok, buyerEmail, voucher).Scan(&teamID); err != nil {
+		return 0, "", "", fmt.Errorf("teams insert: %w", err)
 	}
 
 	expiresAt := auth.DefaultSlotExpiresAt(ctx, tx, eventID)
 	for i := 1; i <= teamSize; i++ {
 		tok, err := auth.NewSlotToken()
 		if err != nil {
-			return 0, "", fmt.Errorf("slot token: %w", err)
+			return 0, "", "", fmt.Errorf("slot token: %w", err)
 		}
 		name := fmt.Sprintf("Player %d", i)
 		if _, err := tx.ExecContext(ctx,
 			`INSERT INTO player_slots(team_id, name, token, expires_at) VALUES ($1, $2, $3, $4)`,
 			teamID, name, tok, expiresAt); err != nil {
-			return 0, "", fmt.Errorf("player_slots insert: %w", err)
+			return 0, "", "", fmt.Errorf("player_slots insert: %w", err)
 		}
 	}
-	return teamID, teamTok, nil
+	return teamID, teamTok, voucher, nil
+}
+
+// uniqueVoucherCode allocates a fresh team voucher code not currently in
+// use. The 50-bit space makes a collision astronomically unlikely, so a
+// handful of tries is plenty; the UNIQUE index on teams.voucher_code is
+// the ultimate backstop against a concurrent insert racing in.
+func uniqueVoucherCode(ctx context.Context, q interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}) (string, error) {
+	for range 5 {
+		code, err := auth.NewVoucherCode()
+		if err != nil {
+			return "", err
+		}
+		var exists bool
+		if err := q.QueryRowContext(ctx,
+			`SELECT EXISTS(SELECT 1 FROM teams WHERE voucher_code = $1)`, code).Scan(&exists); err != nil {
+			return "", err
+		}
+		if !exists {
+			return code, nil
+		}
+	}
+	return "", errors.New("could not allocate a unique voucher code")
 }
 
 // uniqueTicketTeamName picks a team name unique within the event.
@@ -580,13 +607,13 @@ func uniqueTicketTeamName(ctx context.Context, tx *sql.Tx, eventID int64, buyerE
 // backoff. Falls back to a direct Mailer.Send when the outbox is
 // not configured (early dev setups) so a fresh checkout still
 // behaves the same way.
-func (h *Handlers) sendTicketTeamLink(ctx context.Context, eventID int64, buyerEmail, teamToken string) error {
+func (h *Handlers) sendTicketTeamLink(ctx context.Context, eventID int64, buyerEmail, teamToken, voucher string) error {
 	publicURL := strings.TrimRight(strings.TrimSpace(h.PublicURL), "/")
 	if publicURL == "" {
 		return errors.New("ticket email requires PublicURL")
 	}
 	l := h.eventLook(ctx, eventID)
-	subject, c := emailtpl.TeamLink(l.Lang, publicURL+"/team/"+teamToken, l.Brand.Name)
+	subject, c := emailtpl.TeamLink(l.Lang, publicURL+"/team/"+teamToken, publicURL+"/play", auth.FormatVoucherCode(voucher), l.Brand.Name)
 	msg := l.message([]string{buyerEmail}, subject, c)
 	if h.MailOutbox != nil {
 		return h.MailOutbox.Enqueue(ctx, "ticket_team_link", msg)

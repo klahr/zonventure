@@ -25,6 +25,7 @@
 package session
 
 import (
+	"crypto/subtle"
 	"errors"
 	"fmt"
 	"slices"
@@ -61,6 +62,9 @@ var (
 	ErrNotAllowed = errors.New("action not available")
 	// ErrFinished means the team has already finished. Map to 409.
 	ErrFinished = errors.New("team has finished")
+	// ErrWrongStartCode means the start-code gate rejected the supplied
+	// code. Map to 403.
+	ErrWrongStartCode = errors.New("wrong start code")
 	// ErrWrongNode means the action does not fit the node — answering a
 	// story, choosing a branch at a puzzle. Map to 400.
 	ErrWrongNode = errors.New("action does not apply to this node")
@@ -102,6 +106,12 @@ type Position struct {
 // next call without the server remembering anything.
 type Team struct {
 	G *graph.Graph `json:"-"`
+
+	// StartCode gates ChooseStart: when non-empty the team must supply a
+	// matching code to begin, and a single-start adventure is held at the
+	// start screen rather than auto-advanced. Loaded per request from
+	// adventures.start_code; not part of the persisted team state.
+	StartCode string `json:"-"`
 
 	Current       string        `json:"current,omitempty"`
 	NodeEnteredAt time.Time     `json:"node_entered_at"`
@@ -771,12 +781,23 @@ func (t *Team) outputZoneOK(o graph.Output) bool {
 // waiting to begin, and inside the start's zone if it has one. The clock
 // for the whole adventure starts here, not when the event did: a team
 // that walks twenty minutes to its start is not behind for it.
-func (t *Team) ChooseStart(start string) (Result, *walk.Step, error) {
+func (t *Team) ChooseStart(start, code string) (Result, *walk.Step, error) {
 	if t.Completed {
 		return Result{}, nil, ErrFinished
 	}
 	if t.Current != "" {
 		return Result{}, nil, ErrStale
+	}
+	// Start-code gate: when the adventure sets one, the team can't begin
+	// (and the clock doesn't start) until a matching code is entered.
+	// Trimmed + case-insensitive so a code read off a card still matches;
+	// constant-time compare so it can't be probed character by character.
+	if t.StartCode != "" {
+		got := strings.ToLower(strings.TrimSpace(code))
+		want := strings.ToLower(strings.TrimSpace(t.StartCode))
+		if subtle.ConstantTimeCompare([]byte(got), []byte(want)) != 1 {
+			return Result{}, nil, ErrWrongStartCode
+		}
 	}
 	n, ok := t.G.Node(start)
 	if !ok || n.Type != graph.Start {
@@ -1217,6 +1238,8 @@ func Code(err error) string {
 		return "not_allowed"
 	case errors.Is(err, ErrFinished):
 		return "finished"
+	case errors.Is(err, ErrWrongStartCode):
+		return "bad_start_code"
 	case errors.Is(err, ErrWrongNode):
 		return "wrong_node"
 	case errors.Is(err, ErrUnanswered):

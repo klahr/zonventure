@@ -139,10 +139,10 @@ func (h *Handlers) MagicLinkLogin(w http.ResponseWriter, r *http.Request) bool {
 		Reason: auth.ReasonSuccess,
 	})
 	auth.SetSlotCookie(w, session, auth.CookieSecure(r, h.SecureCookie))
-	// Strip the query parameter on the way back so refreshing doesn't
-	// re-trigger the token exchange (and doesn't leave the token in the
-	// address bar).
-	http.Redirect(w, r, "/play", http.StatusFound)
+	// Straight into the app on a clean URL: the session is set, so there's
+	// no need to bounce through /play (and no token left in the address
+	// bar to re-trigger the exchange on refresh).
+	http.Redirect(w, r, "/app/play/", http.StatusFound)
 	return true
 }
 

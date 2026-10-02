@@ -89,6 +89,7 @@ var catalog = map[string]map[string]string{
 		"Set up your team and start whenever you're ready.": "Sätt upp ert lag och börja när ni är redo.",
 		"Thanks — your adventure is ready":                  "Tack – ert äventyr är redo",
 		"Open your team page to claim your own place, share the others with your teammates, and start playing whenever you're ready.": "Öppna lagsidan för att ta din plats, dela de andra med dina lagkamrater och börja spela när ni är redo.",
+		"Prefer to type it in? Go to %[1]s and enter your voucher code: **%[2]s**":                                                    "Vill du hellre skriva in den? Gå till %[1]s och ange din vouchers-kod: **%[2]s**",
 		"Open the team page": "Öppna lagsidan",
 		"The link stays valid while you play. Lost it? Use “I lost my link” on the play page with this email address.": "Länken fungerar så länge ni spelar. Tappat bort den? Välj ”Jag har tappat min länk” på spelsidan och ange den här e-postadressen.",
 		"Your Zonventure play links":   "Dina spellänkar till Zonventure",

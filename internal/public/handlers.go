@@ -42,6 +42,10 @@ type Handlers struct {
 	// QR code, principally). Forwarded-host headers are NOT
 	// consulted — see buildResetLink for the security rationale.
 	PublicURL string
+	// SecureCookie mirrors the operator's force-secure override so the
+	// slot cookie set by the scan-to-join flow matches the auth/player
+	// handlers' Secure attribute.
+	SecureCookie bool
 	// tracks caches each event's tracks for tracksTTL; see buildTracks.
 	tracks tracksCache
 	// PlatformFee gates the marketplace-aware /store filter: when

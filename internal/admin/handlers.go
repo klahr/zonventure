@@ -1225,11 +1225,16 @@ func (h *Handlers) CreateTeam(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusInternalServerError, "token gen failed")
 		return
 	}
+	voucher, err := uniqueVoucherCode(r.Context(), tx)
+	if err != nil {
+		httpx.Error(w, http.StatusInternalServerError, "token gen failed")
+		return
+	}
 	var teamID int64
 	if err := tx.QueryRowContext(r.Context(),
-		`INSERT INTO teams(event_id, name, token, recap_token, email)
-		 VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-		eventID, req.Name, teamTok, recapTok, email).Scan(&teamID); err != nil {
+		`INSERT INTO teams(event_id, name, token, recap_token, email, voucher_code)
+		 VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+		eventID, req.Name, teamTok, recapTok, email, voucher).Scan(&teamID); err != nil {
 		httpx.Error(w, http.StatusConflict, "team name already used for this event")
 		return
 	}
@@ -1422,10 +1427,14 @@ func (h *Handlers) createOneTeam(ctx context.Context, eventID, orgID int64, req 
 	if err != nil {
 		return nil, errors.New("token gen failed")
 	}
+	voucher, err := uniqueVoucherCode(ctx, tx)
+	if err != nil {
+		return nil, errors.New("token gen failed")
+	}
 	var teamID int64
 	if err := tx.QueryRowContext(ctx,
-		`INSERT INTO teams(event_id, name, token, recap_token) VALUES ($1, $2, $3, $4) RETURNING id`,
-		eventID, req.Name, teamTok, recapTok).Scan(&teamID); err != nil {
+		`INSERT INTO teams(event_id, name, token, recap_token, voucher_code) VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+		eventID, req.Name, teamTok, recapTok, voucher).Scan(&teamID); err != nil {
 		return nil, errors.New("team name already used for this event")
 	}
 	members := make([]teamSlotDTO, 0, len(names))

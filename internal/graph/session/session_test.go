@@ -530,15 +530,15 @@ func TestChoosingAStart(t *testing.T) {
 	if v.Type != graph.Start || len(v.Starts) != 2 || v.Starts[0].Here || !v.Starts[1].Here {
 		t.Fatalf("start choice view = %+v", v)
 	}
-	if _, _, err := tm.ChooseStart("s-north"); !errors.Is(err, ErrNotHere) {
+	if _, _, err := tm.ChooseStart("s-north", ""); !errors.Is(err, ErrNotHere) {
 		t.Errorf("a zoned start away from its zone = %v, want ErrNotHere", err)
 	}
-	if _, _, err := tm.ChooseStart("a"); !errors.Is(err, ErrWrongNode) {
+	if _, _, err := tm.ChooseStart("a", ""); !errors.Is(err, ErrWrongNode) {
 		t.Errorf("choosing a non-start = %v", err)
 	}
 	tm.Position = &Position{Lat: 59.34, Lng: 18.06}
 	tm.Now = t0.Add(20 * time.Minute)
-	_, step2, err := tm.ChooseStart("s-north")
+	_, step2, err := tm.ChooseStart("s-north", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -546,7 +546,7 @@ func TestChoosingAStart(t *testing.T) {
 	if tm.Current != "a" || !tm.StartedAt.Equal(tm.Now) {
 		t.Errorf("after choosing north: on %q, started %v", tm.Current, tm.StartedAt)
 	}
-	if _, _, err := tm.ChooseStart("s-south"); !errors.Is(err, ErrStale) {
+	if _, _, err := tm.ChooseStart("s-south", ""); !errors.Is(err, ErrStale) {
 		t.Errorf("choosing again = %v, want ErrStale", err)
 	}
 }

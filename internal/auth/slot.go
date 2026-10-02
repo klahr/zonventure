@@ -287,6 +287,60 @@ func ClearSlotCookie(w http.ResponseWriter, secure bool) {
 // scannable, long enough that brute-forcing one is hopeless.
 func NewSlotToken() (string, error) { return tokenx.New(18) }
 
+// ErrTeamFull is returned by ClaimFreeSlot when every seat on the team
+// has already been claimed.
+var ErrTeamFull = errors.New("team full")
+
+// ClaimFreeSlot takes the next unclaimed seat on a team and signs the
+// caller into it: it stamps claimed_at, mints a slot session, and
+// returns the slot plus the session token. This backs the "scan to
+// join" flow on the self-guided team page, where a player should just
+// get a seat rather than pick one. Atomic — FOR UPDATE SKIP LOCKED means
+// two people tapping Start at the same moment never land on the same
+// seat. ErrTeamFull when none are free.
+func ClaimFreeSlot(ctx context.Context, db *sql.DB, teamID int64) (Slot, string, error) {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return Slot{}, "", err
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	var s Slot
+	err = tx.QueryRowContext(ctx, `
+		SELECT ps.id, ps.name, ps.team_id, t.event_id
+		FROM player_slots ps
+		JOIN teams t ON t.id = ps.team_id
+		WHERE ps.team_id = $1 AND ps.claimed_at IS NULL
+		ORDER BY ps.id
+		FOR UPDATE OF ps SKIP LOCKED
+		LIMIT 1
+	`, teamID).Scan(&s.ID, &s.Name, &s.TeamID, &s.EventID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Slot{}, "", ErrTeamFull
+	}
+	if err != nil {
+		return Slot{}, "", err
+	}
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE player_slots SET last_login_at = now_text(), claimed_at = now_text() WHERE id = $1`, s.ID); err != nil {
+		return Slot{}, "", err
+	}
+	token, err := newToken()
+	if err != nil {
+		return Slot{}, "", err
+	}
+	expires := time.Now().Add(SlotSessionTTL).UTC().Format(time.RFC3339)
+	if _, err := tx.ExecContext(ctx,
+		`INSERT INTO slot_sessions(token, slot_id, expires_at) VALUES ($1, $2, $3)`,
+		token, s.ID, expires); err != nil {
+		return Slot{}, "", err
+	}
+	if err := tx.Commit(); err != nil {
+		return Slot{}, "", err
+	}
+	return s, token, nil
+}
+
 func newSlotSession(ctx context.Context, db *sql.DB, slotID int64) (string, error) {
 	token, err := newToken()
 	if err != nil {

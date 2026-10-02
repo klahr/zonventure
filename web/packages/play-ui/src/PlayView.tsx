@@ -919,12 +919,52 @@ function HubStep({ view, t, busy, onAction, feedback }: StepProps) {
 /** Several starts, or one with a place: the team picks where to begin and walks there. */
 function StartChoice({ view, t, busy, onAction, placeNote }: StepProps) {
   const starts = view.starts ?? [];
+  const needsCode = !!view.start_requires_code;
+  const [code, setCode] = useState("");
+  const codeOk = !needsCode || code.trim().length > 0;
+  // begin() carries the code only when one is required.
+  const begin = (port: string) => onAction(needsCode ? { kind: "begin", node: "", port, guess: code.trim() } : { kind: "begin", node: "", port });
+
+  // Pure code gate — a single start with no place. Keep it dead simple
+  // for first-time players: a code box and one Start button.
+  const only = starts.length === 1 ? starts[0] : undefined;
+  const simpleGate = needsCode && !!only && !only.zone;
+
+  const codeField = needsCode ? (
+    <input
+      className="pv-code-input"
+      type="text"
+      inputMode="text"
+      autoCapitalize="characters"
+      autoComplete="off"
+      spellCheck={false}
+      value={code}
+      onChange={(e) => setCode(e.target.value)}
+      placeholder={t("Start code")}
+      aria-label={t("Start code")}
+    />
+  ) : null;
+
+  if (simpleGate) {
+    return (
+      <>
+        <h2 className="pv-title">{t("Enter the code to begin")}</h2>
+        <p className="pv-text">{t("Your host has the code. Type it in to start — the clock starts when you do.")}</p>
+        {codeField}
+        <button type="button" className="pv-btn pv-btn--primary pv-btn--wide" disabled={busy || !codeOk} onClick={() => only && begin(only.node)}>
+          {t("Start the adventure")}
+        </button>
+      </>
+    );
+  }
+
   return (
     <>
-      <h2 className="pv-title">{starts.length > 1 ? t("Where do you start?") : t("Head to the start")}</h2>
+      <h2 className="pv-title">{needsCode ? t("Enter the code to begin") : starts.length > 1 ? t("Where do you start?") : t("Head to the start")}</h2>
       <p className="pv-text">
-        {starts.length > 1 ? t("Pick a start and go there. The adventure begins when you arrive.") : t("The adventure begins when you arrive.")}
+        {needsCode ? t("Your host has the code. Type it in, then start — the clock starts when you do.") : starts.length > 1 ? t("Pick a start and go there. The adventure begins when you arrive.") : t("The adventure begins when you arrive.")}
       </p>
+      {codeField}
       <ul className="pv-offer">
         {starts.map((o, i) => {
           const z = o.zone;
@@ -946,7 +986,7 @@ function StartChoice({ view, t, busy, onAction, placeNote }: StepProps) {
                   </a>
                 )}
               </div>
-              <button type="button" className="pv-btn pv-btn--primary pv-btn--wide" disabled={busy || !o.here} onClick={() => onAction({ kind: "begin", node: "", port: o.node })}>
+              <button type="button" className="pv-btn pv-btn--primary pv-btn--wide" disabled={busy || !o.here || !codeOk} onClick={() => begin(o.node)}>
                 {o.here ? t("Start here") : t("Get there to start")}
               </button>
             </li>

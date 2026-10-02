@@ -362,15 +362,20 @@ func (e *Engine) loadCore(ctx context.Context, q Querier, teamID int64, forUpdat
 		outcome   sql.NullString
 	)
 	query := `
-		SELECT event_id, graph_id, current_node, node_entered_at, started_at,
-		       completed_at, outcome, score, penalty_score, penalty_seconds, theme, last_answer, timed_out, lang, cheated
-		FROM team_graph_state
-		WHERE team_id = $1`
+		SELECT tgs.event_id, tgs.graph_id, tgs.current_node, tgs.node_entered_at, tgs.started_at,
+		       tgs.completed_at, tgs.outcome, tgs.score, tgs.penalty_score, tgs.penalty_seconds,
+		       tgs.theme, tgs.last_answer, tgs.timed_out, tgs.lang, tgs.cheated,
+		       COALESCE(adv.start_code, '')
+		FROM team_graph_state tgs
+		JOIN adventure_graphs g ON g.id = tgs.graph_id
+		JOIN adventures adv ON adv.id = g.adventure_id
+		WHERE tgs.team_id = $1`
 	if forUpdate {
-		query += ` FOR UPDATE`
+		query += ` FOR UPDATE OF tgs`
 	}
 	err := q.QueryRowContext(ctx, query, teamID).Scan(&s.eventID, &s.graphID, &current, &entered, &s.StartedAt,
-		&completed, &outcome, &s.Points, &s.PenaltyScore, &s.PenaltySeconds, &s.Theme, &s.LatestAnswer, &s.TimedOut, &s.Lang, &s.Cheated)
+		&completed, &outcome, &s.Points, &s.PenaltyScore, &s.PenaltySeconds, &s.Theme, &s.LatestAnswer, &s.TimedOut, &s.Lang, &s.Cheated,
+		&s.StartCode)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNoGraph
 	}

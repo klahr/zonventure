@@ -1748,3 +1748,24 @@
 .pv-reveal__goals { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 0.25rem; }
 .pv-reveal__goals li { color: var(--muted); }
 .pv-reveal__goals li.is-met { color: var(--ink); }
+
+/* Start-code field on the begin screen (adventures with a start code). */
+.pv-code-input {
+  box-sizing: border-box;
+  display: block;
+  width: 100%;
+  margin: 0 0 var(--sp-4);
+  padding: var(--sp-3) var(--sp-4);
+  font: inherit;
+  font-size: 1.25rem;
+  font-weight: 700;
+  letter-spacing: .14em;
+  text-align: center;
+  text-transform: uppercase;
+  border: 2px solid var(--pv-border, rgba(127,127,127,.4));
+  border-radius: var(--pv-radius, 12px);
+  background: var(--pv-surface, rgba(127,127,127,.08));
+  color: inherit;
+}
+.pv-code-input::placeholder { opacity: .5; letter-spacing: .1em; font-weight: 600; }
+.pv-code-input:focus { outline: none; border-color: var(--pv-accent, #ad1357); }

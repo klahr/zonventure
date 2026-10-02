@@ -154,7 +154,7 @@ func simulate(g *graph.Graph, team *session.Team, a simulateAction, now time.Tim
 	}
 	switch a.Kind {
 	case "begin":
-		act(func() (session.Result, *walk.Step, error) { return team.ChooseStart(a.Port) })
+		act(func() (session.Result, *walk.Step, error) { return team.ChooseStart(a.Port, "") })
 	case "answer":
 		act(func() (session.Result, *walk.Step, error) { return team.Answer(a.Node, a.Guess) })
 	case "continue":

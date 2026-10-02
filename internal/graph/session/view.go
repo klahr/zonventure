@@ -39,6 +39,10 @@ type View struct {
 	// Starts are set while the team is choosing where to begin: Node is
 	// empty, Type is "start", and the team picks one with ChooseStart.
 	Starts []StartOption `json:"starts,omitempty"`
+	// StartRequiresCode is true on the start screen when the adventure
+	// has a start code: the client shows a code field and sends it with
+	// the begin action. The clock only starts once the code is accepted.
+	StartRequiresCode bool `json:"start_requires_code,omitempty"`
 
 	// Blocks are what a puzzle, story or end shows, in the author's
 	// order: texts, and pictures and sounds the client fetches from
@@ -855,8 +859,13 @@ func (t *Team) view() View {
 	v.HasJournal = len(t.G.Journal) > 0
 	v.Journal = t.journalView()
 
-	if t.Current == "" && !t.Completed && t.G.ChoosesStart() {
+	// Show the start screen while the team waits to begin — when the
+	// adventure lets them choose a start, or when a start code gates the
+	// begin (which holds even a single-start adventure here instead of
+	// auto-advancing). StartRequiresCode tells the client to ask for it.
+	if t.Current == "" && !t.Completed && (t.G.ChoosesStart() || t.StartCode != "") {
 		v.Type = graph.Start
+		v.StartRequiresCode = t.StartCode != ""
 		for _, st := range t.G.Starts() {
 			o := StartOption{Node: st.Slug, Title: st.Title, Here: true}
 			if st.StartCfg != nil && st.StartCfg.Zone != "" {

@@ -732,7 +732,7 @@ func (b *bot) chooseStart(v session.View) {
 	if !b.goTo(pick.Zone) {
 		return
 	}
-	if _, ok := b.do("start", func() (session.Result, *walk.Step, error) { return b.t.ChooseStart(pick.Node) }); ok {
+	if _, ok := b.do("start", func() (session.Result, *walk.Step, error) { return b.t.ChooseStart(pick.Node, "") }); ok {
 		b.later(10 + b.rng().Float64()*30)
 	}
 }

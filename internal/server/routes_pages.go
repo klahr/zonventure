@@ -131,10 +131,24 @@ func registerPageRoutes(r chi.Router, env *routesEnv) {
 	// and for every other /play, the player app at /app/play/ takes over.
 	// Every magic link ever sent says /play, so this stays.
 	r.Get("/play", func(w http.ResponseWriter, req *http.Request) {
+		// ?t=<magic> exchanges a per-slot magic link for a session;
+		// ?c=<code> resolves an emailed voucher code to its team. Both
+		// redirect on success, so fall through only for a plain /play.
 		if playerH.MagicLinkLogin(w, req) {
 			return
 		}
-		http.Redirect(w, req, "/app/play/", http.StatusFound)
+		if playerH.VoucherLink(w, req) {
+			return
+		}
+		// Already signed in as a player? Straight into the app.
+		if _, ok := auth.SlotFromContext(req.Context()); ok {
+			http.Redirect(w, req, "/app/play/", http.StatusFound)
+			return
+		}
+		// Otherwise the branded front door: a visitor who lands here by
+		// accident should want to play, and a voucher holder can type
+		// their code in.
+		servePublicPage("web/play.html", http.StatusOK)(w, req)
 	})
 	// The console lives at /app/arrange/. /arrange redirects there with its
 	// query (Stripe's ?stripe_connect=return) kept; the browser carries

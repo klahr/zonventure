@@ -116,8 +116,11 @@ func (e *Engine) StartEvent(ctx context.Context, eventID int64) error {
 		if err != nil {
 			return err
 		}
-		// A team that chooses its start waits, unplaced, until it does.
-		if s.G.ChoosesStart() {
+		// A team that chooses its start — or must enter a start code —
+		// waits at the start screen until it does, so the clock only
+		// starts when it actually begins. Everyone else is placed at the
+		// first step now.
+		if s.G.ChoosesStart() || s.StartCode != "" {
 			continue
 		}
 		step, err := walk.First(s.G, s)
@@ -137,9 +140,11 @@ func (e *Engine) Answer(ctx context.Context, teamID int64, node, guess string) (
 	return e.act(ctx, teamID, func(t *session.Team) (Result, *walk.Step, error) { return t.Answer(node, guess) })
 }
 
-// ChooseStart begins the team's adventure at one of its starts.
-func (e *Engine) ChooseStart(ctx context.Context, teamID int64, start string) (Result, error) {
-	return e.act(ctx, teamID, func(t *session.Team) (Result, *walk.Step, error) { return t.ChooseStart(start) })
+// ChooseStart begins the team's adventure at one of its starts. code is
+// the start-code the player typed (empty when the adventure has no gate);
+// session.ChooseStart validates it before the clock starts.
+func (e *Engine) ChooseStart(ctx context.Context, teamID int64, start, code string) (Result, error) {
+	return e.act(ctx, teamID, func(t *session.Team) (Result, *walk.Step, error) { return t.ChooseStart(start, code) })
 }
 
 // Continue moves the team past a story node.

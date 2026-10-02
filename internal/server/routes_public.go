@@ -53,6 +53,10 @@ func registerPublicTokenRoutes(r chi.Router, env *routesEnv) {
 		// auth; no staff session required.
 		r.Post("/api/public/team/{token}/avatar", publicH.SetTeamAvatarByToken)
 		r.Delete("/api/public/team/{token}/avatar", publicH.DeleteTeamAvatarByToken)
+		// Scan-to-join: a player takes the next free seat on the team and
+		// is signed in, so the self-guided page needs only one "Start"
+		// button rather than a seat picker.
+		r.Post("/api/public/team/{token}/join", publicH.JoinTeamByToken)
 
 		// Public store. Listing + per-event detail are read-only and
 		// served by publicH; the buy endpoint initiates a Stripe
@@ -126,6 +130,12 @@ func registerPublicTokenRoutes(r chi.Router, env *routesEnv) {
 			}
 			renderRedeemPage(w, req, slug)
 		})
+		// Voucher redemption: the /play code box posts a code here and
+		// gets back the team page to go to. Public + rate-limited (the
+		// handler also shares the magic-link per-IP limiter), like the
+		// other capability endpoints in this group.
+		r.Post("/api/play/voucher", env.playerH.VoucherRedeem)
+
 		r.Get("/api/redeem/options", adminH.RedeemOptions)
 		r.Post("/api/redeem", adminH.Redeem)
 		r.Get("/api/o/{slug}/redeem/options", adminH.RedeemOptionsByOrg)

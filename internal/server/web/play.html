@@ -1,0 +1,283 @@
+<!doctype html>
+<!--
+  /play — the player front door. Served to anyone who lands on /play
+  without a slot session (a player with one is redirected straight to
+  /app/play/, a magic link ?t= or voucher ?c= is handled before this
+  page ever renders). Its job: a voucher holder types their code; an
+  accidental visitor gets curious enough to want one.
+
+  Self-contained and static (servePublicPage, no substitutions). The
+  code box posts to POST /api/play/voucher and, on a hit, navigates to
+  the team page. ?voucher=invalid|busy on the URL pre-seeds the message
+  (set by the ?c= deep-link handler when a code in a link didn't match).
+-->
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; object-src 'none'; base-uri 'self'">
+<title>Play · Zonventure</title>
+<meta name="robots" content="noindex">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<meta name="theme-color" content="#0b1020">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Aclonica&family=Open+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0b1020; --bg2:#121a35; --ink:#eef2ff; --ink-soft:#aab3d4;
+    --accent:#ff5c8a; --accent2:#7c5cff; --gold:#ffd36b;
+    --card:rgba(20,28,55,.62); --border:rgba(255,255,255,.14);
+    --ok:#39d98a; --bad:#ff6b7a;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0; color:var(--ink); background:var(--bg);
+    font-family:"Open Sans",system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+    line-height:1.6; overflow:hidden;
+    -webkit-font-smoothing:antialiased;
+  }
+
+  /* ---------- animated backdrop ---------- */
+  .sky{position:fixed; inset:0; z-index:-3; overflow:hidden; background:
+    radial-gradient(130% 100% at 50% -10%, #1a2550 0%, var(--bg) 60%, #070a16 100%);}
+  /* two slow-drifting aurora blobs */
+  .aurora{position:absolute; width:70vmax; height:70vmax; border-radius:50%;
+    filter:blur(70px); opacity:.42; mix-blend-mode:screen; will-change:transform;}
+  .a1{background:radial-gradient(circle,var(--accent2),transparent 62%); top:-22vmax; left:-18vmax; animation:drift1 26s ease-in-out infinite;}
+  .a2{background:radial-gradient(circle,var(--accent),transparent 62%); bottom:-26vmax; right:-20vmax; animation:drift2 32s ease-in-out infinite;}
+  .a3{background:radial-gradient(circle,#2bd4ff,transparent 62%); top:30%; right:-24vmax; opacity:.26; animation:drift1 38s ease-in-out infinite reverse;}
+  @keyframes drift1{0%,100%{transform:translate3d(0,0,0) scale(1)}50%{transform:translate3d(6vmax,4vmax,0) scale(1.12)}}
+  @keyframes drift2{0%,100%{transform:translate3d(0,0,0) scale(1.05)}50%{transform:translate3d(-7vmax,-3vmax,0) scale(.92)}}
+
+  /* drifting stars */
+  .stars{position:fixed; inset:0; z-index:-2; pointer-events:none;}
+  .star{position:absolute; width:2px; height:2px; border-radius:50%; background:#fff;
+    opacity:.0; animation:twinkle linear infinite;}
+  @keyframes twinkle{0%{opacity:0; transform:translateY(0)}10%{opacity:.9}50%{opacity:.3}90%{opacity:.8}100%{opacity:0; transform:translateY(-16px)}}
+
+  /* ---------- layout ---------- */
+  .wrap{position:relative; min-height:100dvh; display:grid; place-items:center;
+    padding:max(1.25rem,env(safe-area-inset-top)) 1.25rem max(1.5rem,env(safe-area-inset-bottom));}
+  .stage{width:100%; max-width:30rem; text-align:center;
+    animation:rise .9s cubic-bezier(.2,.8,.2,1) both;}
+  @keyframes rise{from{opacity:0; transform:translateY(22px)}to{opacity:1; transform:none}}
+
+  .mark{display:inline-flex; align-items:center; gap:.55rem; margin-bottom:1.4rem;
+    color:var(--ink-soft); font-weight:600; letter-spacing:.14em; text-transform:uppercase; font-size:.72rem;}
+  .mark .dot{width:.5rem; height:.5rem; border-radius:50%; background:var(--gold);
+    box-shadow:0 0 12px 2px var(--gold); animation:beat 2.4s ease-in-out infinite;}
+  @keyframes beat{0%,100%{transform:scale(1); opacity:.85}50%{transform:scale(1.4); opacity:1}}
+
+  /* compass glyph */
+  .compass{width:88px; height:88px; margin:0 auto 1.1rem; position:relative;
+    animation:float 6s ease-in-out infinite;}
+  @keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
+  .compass svg{width:100%; height:100%; display:block; filter:drop-shadow(0 6px 18px rgba(124,92,255,.5));}
+  .compass .ring{transform-origin:50% 50%; animation:spin 24s linear infinite;}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .compass .needle{transform-origin:50% 50%; animation:wobble 5s ease-in-out infinite;}
+  @keyframes wobble{0%,100%{transform:rotate(-12deg)}50%{transform:rotate(16deg)}}
+
+  h1{font-family:"Aclonica",system-ui,sans-serif; font-weight:400;
+    font-size:clamp(2rem,8vw,3rem); line-height:1.05; margin:.2rem 0 .5rem;
+    background:linear-gradient(100deg,#fff 10%,var(--gold) 50%,#fff 90%);
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+    background-size:200% auto; animation:sheen 6s linear infinite;}
+  @keyframes sheen{to{background-position:200% center}}
+  .sub{color:var(--ink-soft); margin:0 auto 1.8rem; max-width:24rem; font-size:1.02rem;}
+
+  /* ---------- code card ---------- */
+  .card{background:var(--card); border:1px solid var(--border); border-radius:20px;
+    padding:1.4rem 1.25rem 1.3rem; backdrop-filter:blur(14px) saturate(140%);
+    -webkit-backdrop-filter:blur(14px) saturate(140%);
+    box-shadow:0 24px 60px -24px rgba(0,0,0,.7), inset 0 1px 0 rgba(255,255,255,.08);}
+  .card.shake{animation:shake .45s cubic-bezier(.36,.07,.19,.97);}
+  @keyframes shake{10%,90%{transform:translateX(-2px)}20%,80%{transform:translateX(4px)}30%,50%,70%{transform:translateX(-8px)}40%,60%{transform:translateX(8px)}}
+  label{display:block; text-align:left; font-weight:600; font-size:.86rem; margin:0 0 .5rem; color:var(--ink-soft);}
+  .field{position:relative;}
+  input[type=text]{width:100%; padding:1rem 1.05rem; font-size:1.25rem;
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace; letter-spacing:.18em;
+    text-align:center; text-transform:uppercase; color:var(--ink);
+    background:rgba(8,12,28,.6); border:1.5px solid var(--border); border-radius:13px;
+    outline:none; transition:border-color .2s,box-shadow .2s,background .2s;}
+  input[type=text]::placeholder{color:#5e6789; letter-spacing:.14em;}
+  input[type=text]:focus{border-color:var(--accent); background:rgba(8,12,28,.85);
+    box-shadow:0 0 0 4px rgba(255,92,138,.18), 0 0 26px -4px rgba(255,92,138,.5);}
+  input[type=text].ok{border-color:var(--ok); box-shadow:0 0 0 4px rgba(57,217,138,.18);}
+
+  button.go{margin-top:.95rem; width:100%; padding:1rem 1.2rem; font-size:1.05rem; font-weight:700;
+    color:#1a0f1e; border:0; border-radius:13px; cursor:pointer; position:relative; overflow:hidden;
+    background:linear-gradient(100deg,var(--gold),var(--accent)); background-size:180% auto;
+    transition:transform .12s ease,box-shadow .2s,background-position .4s;
+    box-shadow:0 12px 30px -10px rgba(255,92,138,.6);}
+  button.go:hover{background-position:100% center; transform:translateY(-1px);}
+  button.go:active{transform:translateY(1px) scale(.99);}
+  button.go:disabled{opacity:.7; cursor:progress;}
+  button.go .spin{display:none; width:1.05em; height:1.05em; border:2.5px solid rgba(26,15,30,.35);
+    border-top-color:#1a0f1e; border-radius:50%; vertical-align:-.2em; margin-right:.5em; animation:spin .7s linear infinite;}
+  button.go.loading .spin{display:inline-block;}
+  button.go.loading .lbl{opacity:.8;}
+
+  .msg{min-height:1.3rem; margin:.85rem 0 0; font-size:.92rem; font-weight:600;}
+  .msg.bad{color:var(--bad);} .msg.ok{color:var(--ok);}
+
+  .hint{margin:1.15rem 0 0; color:var(--ink-soft); font-size:.86rem;}
+  .hint a{color:var(--gold); text-decoration:none; border-bottom:1px solid rgba(255,211,107,.35);}
+  .hint a:hover{border-bottom-color:var(--gold);}
+
+  .curio{margin-top:1.9rem; font-size:.82rem; color:#7e87ab;}
+  .curio a{color:#aab3d4; text-decoration:underline; text-underline-offset:2px;}
+
+  /* Fade-to-black handoff: a curtain drops over everything on success,
+     just before we send the player into their adventure. */
+  .blackout{position:fixed; inset:0; z-index:999; background:#000; opacity:0;
+    pointer-events:none; transition:opacity .72s ease;}
+  .blackout.on{opacity:1; pointer-events:auto;}
+  /* The stage lifts and dims a touch as the curtain falls, so the
+     transition reads as "going somewhere" rather than a flat cut. */
+  .stage.leaving{animation:leave .72s ease forwards;}
+  @keyframes leave{to{opacity:0; transform:translateY(-14px) scale(.985);}}
+
+  @media (prefers-reduced-motion:reduce){
+    .aurora,.star,.compass,.compass .ring,.compass .needle,h1,.mark .dot{animation:none !important;}
+    .stage{animation:none;}
+    .stage.leaving{animation:none; opacity:0;}
+    .blackout{transition-duration:.001s;}
+    h1{background-position:0 center;}
+  }
+</style>
+</head>
+<body>
+  <div class="sky" aria-hidden="true">
+    <div class="aurora a1"></div><div class="aurora a2"></div><div class="aurora a3"></div>
+  </div>
+  <div class="stars" id="stars" aria-hidden="true"></div>
+  <div class="blackout" id="blackout" aria-hidden="true"></div>
+
+  <main class="wrap">
+    <section class="stage">
+      <div class="mark"><span class="dot"></span> Zonventure</div>
+
+      <div class="compass" aria-hidden="true">
+        <svg viewBox="0 0 100 100" fill="none">
+          <circle class="ring" cx="50" cy="50" r="42" stroke="url(#g1)" stroke-width="3" stroke-dasharray="4 10" stroke-linecap="round"/>
+          <circle cx="50" cy="50" r="34" stroke="rgba(255,255,255,.18)" stroke-width="1.5"/>
+          <g class="needle">
+            <path d="M50 20 L58 52 L50 46 L42 52 Z" fill="url(#g2)"/>
+            <path d="M50 80 L42 48 L50 54 L58 48 Z" fill="rgba(255,255,255,.35)"/>
+          </g>
+          <circle cx="50" cy="50" r="4" fill="#fff"/>
+          <defs>
+            <linearGradient id="g1" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stop-color="#7c5cff"/><stop offset="1" stop-color="#ff5c8a"/>
+            </linearGradient>
+            <linearGradient id="g2" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#ffd36b"/><stop offset="1" stop-color="#ff5c8a"/>
+            </linearGradient>
+          </defs>
+        </svg>
+      </div>
+
+      <h1>Your adventure<br>awaits</h1>
+      <p class="sub">Someone set a real-world quest in motion. Enter your voucher code to pick it up and start playing — on foot, on your phone, at your own pace.</p>
+
+      <form class="card" id="form" autocomplete="off" novalidate>
+        <label for="code">Voucher code</label>
+        <div class="field">
+          <input id="code" name="code" type="text" inputmode="latin" autocapitalize="characters"
+                 spellcheck="false" placeholder="XXXXXX" maxlength="6" aria-describedby="msg">
+        </div>
+        <button class="go" id="go" type="submit"><span class="spin" aria-hidden="true"></span><span class="lbl">Start the adventure</span></button>
+        <p class="msg" id="msg" role="status" aria-live="polite"></p>
+      </form>
+
+      <p class="hint">Got a magic link in your email instead? Just open it — it takes you straight in.</p>
+      <p class="curio">New here? <a href="/">See what Zonventure is</a> · <a href="/manual">How it works</a></p>
+    </section>
+  </main>
+
+<script>
+(function(){
+  "use strict";
+  // Sprinkle a handful of drifting stars (skipped under reduced motion).
+  try{
+    if(!matchMedia("(prefers-reduced-motion: reduce)").matches){
+      var box=document.getElementById("stars"), n=34, f=document.createDocumentFragment();
+      for(var i=0;i<n;i++){
+        var s=document.createElement("div"); s.className="star";
+        s.style.left=(Math.random()*100)+"%"; s.style.top=(Math.random()*100)+"%";
+        s.style.animationDuration=(3+Math.random()*5)+"s";
+        s.style.animationDelay=(Math.random()*6)+"s";
+        s.style.opacity=String(.3+Math.random()*.6);
+        f.appendChild(s);
+      }
+      box.appendChild(f);
+    }
+  }catch(e){}
+
+  var form=document.getElementById("form"), input=document.getElementById("code"),
+      go=document.getElementById("go"), msg=document.getElementById("msg");
+
+  function say(text, kind){ msg.textContent=text||""; msg.className="msg"+(kind?" "+kind:""); }
+  function fail(text){
+    say(text,"bad");
+    form.classList.remove("shake"); void form.offsetWidth; form.classList.add("shake");
+    input.focus(); input.select();
+  }
+
+  // Six upper-case alphanumeric characters; strip anything else as it's
+  // typed. The server normalises whatever arrives regardless.
+  input.addEventListener("input",function(){
+    input.value = input.value.toUpperCase().replace(/[^0-9A-Z]/g,"").slice(0,6);
+    if(msg.textContent) say("");
+    input.classList.remove("ok");
+  });
+
+  // Pre-seed a message when a code in an emailed link didn't match.
+  try{
+    var p=new URLSearchParams(location.search);
+    if(p.get("voucher")==="invalid") fail("That code didn't match. Check it and try again.");
+    else if(p.get("voucher")==="busy") say("One moment — too many tries just now. Try again shortly.","bad");
+  }catch(e){}
+
+  var busy=false;
+  form.addEventListener("submit",function(ev){
+    ev.preventDefault();
+    if(busy) return;
+    var code=input.value.replace(/[^0-9A-Za-z]/g,"");
+    if(code.length<6){ fail("Enter the 6-character code from your card or email."); return; }
+    busy=true; go.classList.add("loading"); go.disabled=true; say("");
+    fetch("/api/play/voucher",{
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({code:code})
+    }).then(function(r){ return r.json().then(function(b){ return {s:r.status,b:b}; }); })
+      .then(function(res){
+        if(res.s===200 && res.b && res.b.team_url){
+          input.classList.add("ok"); say("Unlocking…","ok");
+          var url=res.b.team_url;
+          var reduce=false;
+          try{ reduce=matchMedia("(prefers-reduced-motion: reduce)").matches; }catch(e){}
+          // Let the green "ok" state register, then drop the curtain and
+          // hand off to the adventure once it's black.
+          setTimeout(function(){
+            document.querySelector(".stage").classList.add("leaving");
+            document.getElementById("blackout").classList.add("on");
+            setTimeout(function(){ location.href=url; }, reduce?40:720);
+          }, 280);
+          return;
+        }
+        busy=false; go.classList.remove("loading"); go.disabled=false;
+        if(res.s===429) fail("Too many tries. Give it a minute, then try again.");
+        else fail((res.b && res.b.error) || "That code isn't valid. Check it and try again.");
+      })
+      .catch(function(){
+        busy=false; go.classList.remove("loading"); go.disabled=false;
+        fail("Couldn't reach the server. Check your connection and try again.");
+      });
+  });
+
+  input.focus();
+})();
+</script>
+</body></html>

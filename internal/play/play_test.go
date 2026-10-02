@@ -840,11 +840,11 @@ func TestTeamChoosesItsStart(t *testing.T) {
 		t.Fatalf("before choosing: %+v", v)
 	}
 	f.clock.Advance(10 * time.Minute)
-	r, err := f.eng.ChooseStart(context.Background(), team, "s2")
+	r, err := f.eng.ChooseStart(context.Background(), team, "s2", "")
 	if err != nil || r.View.Node != "west" {
 		t.Fatalf("choose west: %+v %v", r.View, err)
 	}
-	if _, err := f.eng.ChooseStart(context.Background(), team, "s1"); !errors.Is(err, ErrStale) {
+	if _, err := f.eng.ChooseStart(context.Background(), team, "s1", ""); !errors.Is(err, ErrStale) {
 		t.Errorf("choosing twice = %v", err)
 	}
 	if v := f.view(team); v.Node != "west" {

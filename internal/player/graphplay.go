@@ -397,7 +397,7 @@ func (h *Handlers) PostPlayAction(w http.ResponseWriter, r *http.Request) {
 	case "answer":
 		res, err = e.Answer(ctx, tc.TeamID, req.Node, req.Guess)
 	case "begin":
-		res, err = e.ChooseStart(ctx, tc.TeamID, req.Port)
+		res, err = e.ChooseStart(ctx, tc.TeamID, req.Port, req.Guess)
 	case "continue":
 		res, err = e.Continue(ctx, tc.TeamID, req.Node)
 	case "back":
@@ -523,16 +523,17 @@ func (h *Handlers) refusePlay(w http.ResponseWriter, res play.Result, err error)
 	}
 	code := session.Code(err)
 	status := map[string]int{
-		"stale":       http.StatusConflict,
-		"finished":    http.StatusConflict,
-		"time_up":     http.StatusConflict,
-		"not_here":    http.StatusForbidden,
-		"no_fix":      http.StatusForbidden,
-		"not_allowed": http.StatusForbidden,
-		"locked":      http.StatusTooManyRequests,
-		"wrong_node":  http.StatusBadRequest,
-		"unanswered":  http.StatusForbidden,
-		"not_yours":   http.StatusForbidden,
+		"stale":          http.StatusConflict,
+		"finished":       http.StatusConflict,
+		"time_up":        http.StatusConflict,
+		"bad_start_code": http.StatusForbidden,
+		"not_here":       http.StatusForbidden,
+		"no_fix":         http.StatusForbidden,
+		"not_allowed":    http.StatusForbidden,
+		"locked":         http.StatusTooManyRequests,
+		"wrong_node":     http.StatusBadRequest,
+		"unanswered":     http.StatusForbidden,
+		"not_yours":      http.StatusForbidden,
 	}[code]
 	if status == 0 {
 		httpx.ServerErr(w, http.StatusInternalServerError, "action failed", err)
