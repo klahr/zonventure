@@ -611,12 +611,14 @@ func (t *Team) View() View {
 // translations are read, and anything without one stays as it was.
 func (t *Team) translate(v *View) {
 	// Only a translated adventure has languages to choose between; any
-	// other leaves the phone in the player's own.
+	// other still names its own, so the phone speaks the adventure's.
 	if v.Languages = t.G.Languages(); v.Languages != nil {
 		v.Lang = t.Lang
 		if v.Lang == "" {
 			v.Lang = v.Languages[0]
 		}
+	} else {
+		v.Lang = t.G.Language
 	}
 	if t.Lang == "" || t.Lang == t.G.Language {
 		return

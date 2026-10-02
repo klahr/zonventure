@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ApiError, play } from "@zonventure/api";
 import { metresBetween, nodeBySlug, portLabel, zoneContains, type Envelope, type Graph } from "@zonventure/graph";
 import { PlayView, StartCeremony, feedbackForRefusal, feedbackForResult, formatSeconds, type Feedback, type Motion } from "@zonventure/play-ui";
 import "@zonventure/play-ui/play-ui.css";
+import { I18n } from "@zonventure/i18n";
+import playSv from "../../../play/src/locales/sv.json";
 import { useT } from "../i18n.tsx";
 import { SpoofMap, type Point } from "./SpoofMap.tsx";
 import { DevicePanel } from "./DevicePanel.tsx";
@@ -109,12 +111,18 @@ function useWindowHeight(): number {
   return h;
 }
 
+/** The player app's own catalogs, so the phone reads as a team's would. */
+const PHONE_CATALOGS = { en: {}, sv: playSv as Record<string, string> };
+
 export function Simulator({ slug, graph, envelope, selected, mode, onMode, restart, onPosition, brand, title }: Props) {
   const t = useT();
-  const tr = useCallback((key: string, vars?: Record<string, string | number>) => t.t(key, vars), [t]);
 
   const [team, setTeam] = useState<play.SimTeam | null>(null);
   const [view, setView] = useState<play.View | null>(null);
+  // The phone speaks the adventure's language, as the player app does,
+  // not the author's: falling back to theirs where the app has no words.
+  const phoneLang = [view?.lang, graph.language, t.current()].find((l) => !!l && l in PHONE_CATALOGS) ?? "en";
+  const tr = useMemo(() => new I18n(PHONE_CATALOGS, phoneLang).t, [phoneLang]);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [busy, setBusy] = useState(false);
   // The simulated phone, flat and facing north until the author turns it.
@@ -339,7 +347,7 @@ export function Simulator({ slug, graph, envelope, selected, mode, onMode, resta
   const placeNote = (z: play.PlayZone) => {
     if (!pos) return t.t("Put the team on the map to see how far it is.");
     const m = metresBetween(pos.lat, pos.lng, z.lat, z.lng);
-    return m < 1000 ? t.t("About {{m}} m away", { m: Math.max(1, Math.round(m)) }) : t.t("About {{km}} km away", { km: Math.round(m / 100) / 10 });
+    return m < 1000 ? tr("About {{m}} m away", { m: Math.max(1, Math.round(m)) }) : tr("About {{km}} km away", { km: Math.round(m / 100) / 10 });
   };
   const focus = view?.zone && !view.here ? view.zone : view?.starts?.find((o) => o.zone && !o.here)?.zone;
   // The puzzle the team is on, for passing it without the answer.

@@ -570,8 +570,8 @@ func TestTranslations(t *testing.T) {
 	}
 }
 
-// An adventure with no translations offers no language switch, so the
-// phone stays in the player's own language.
+// An adventure with no translations offers no language switch, but names
+// its own language, so the phone speaks it.
 func TestUntranslatedHasNoLanguages(t *testing.T) {
 	g := mystery()
 	g.Language = "en"
@@ -580,7 +580,7 @@ func TestUntranslatedHasNoLanguages(t *testing.T) {
 		t.Fatal(err)
 	}
 	tm.Apply(step)
-	if v := tm.View(); v.Languages != nil || v.Lang != "" {
+	if v := tm.View(); v.Languages != nil || v.Lang != "en" {
 		t.Errorf("nothing to choose: %+v %q", v.Languages, v.Lang)
 	}
 	if err := tm.SetLanguage("en"); err != nil {
