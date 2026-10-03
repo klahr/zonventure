@@ -1,0 +1,19 @@
+# Production overlay: run the image CI publishes to ghcr.io for each
+# release tag instead of building on this host. Nothing is compiled
+# here, so a small droplet is enough.
+#
+# Enable it once in .env (list compose.override.yaml too if you use it;
+# COMPOSE_FILE replaces the automatic override merge):
+#
+#   COMPOSE_FILE=compose.yaml:compose.override.yaml:compose.prod.yaml
+#
+# The package is private, so log the host in once with a classic token
+# that has only read:packages:
+#
+#   docker login ghcr.io -u <github-user> --password-stdin
+#
+# `make upgrade` then pulls the newest tag. A bare `docker compose up -d`
+# runs :latest, which CI moves only on a release tag.
+services:
+  app:
+    image: ghcr.io/klahr/zonventure:${VERSION:-latest}

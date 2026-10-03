@@ -3,6 +3,9 @@ name: CI
 on:
   push:
     branches: [main]
+    # A pushed release tag also publishes the image to ghcr.io (see
+    # the publish job), which production pulls.
+    tags: ["[0-9]+.[0-9]+.[0-9]+"]
   pull_request:
 
 permissions:
@@ -149,3 +152,32 @@ jobs:
         run: |
           VERSION=$(git describe --tags --always 2>/dev/null || echo dev)
           docker build --build-arg "VERSION=$VERSION" -t zonventure:ci .
+
+  # Release tags only, and only once every other job is green. Pushes
+  # :X.Y.Z (what `make upgrade` pins) and :latest (what a bare
+  # `docker compose up -d` with compose.prod.yaml runs).
+  publish:
+    name: Publish image
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [go, js, docker]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: log in to ghcr.io
+        run: echo "${{ github.token }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: build and push
+        run: |
+          VERSION="${GITHUB_REF_NAME}"
+          IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}"
+          # The source label links the package to this repo, so it inherits
+          # the repo's (private) visibility and access.
+          docker build --build-arg "VERSION=$VERSION" \
+            --label "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" \
+            -t "$IMAGE:$VERSION" -t "$IMAGE:latest" .
+          docker push "$IMAGE:$VERSION"
+          docker push "$IMAGE:latest"

@@ -304,6 +304,22 @@ git checkout "$(git tag --sort=-v:refname | head -1)"
 docker compose up -d --build
 ```
 
+### Prebuilt images (no build on the host)
+
+CI publishes `ghcr.io/klahr/zonventure:X.Y.Z` and `:latest` for every
+release tag. To run those instead of building, enable `compose.prod.yaml`
+in `.env` and log the host in to ghcr.io once (the package is private:
+use a classic GitHub token with only `read:packages`):
+
+```sh
+echo "COMPOSE_FILE=compose.yaml:compose.override.yaml:compose.prod.yaml" >> .env
+docker login ghcr.io -u <github-user> --password-stdin
+```
+
+Leave `compose.override.yaml` out of that list if you don't use one.
+`make upgrade` then pulls the tag's image instead of building it, so a
+1 vCPU / 2 GB host is enough.
+
 ## Reverse proxy (TLS termination)
 
 The app speaks plain HTTP and reads `X-Forwarded-Proto: https` to

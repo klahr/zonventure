@@ -11,6 +11,13 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Added — prebuilt images on ghcr.io
+
+- **Release tags publish the app image.** CI pushes
+  `ghcr.io/klahr/zonventure:X.Y.Z` and `:latest` once every job is green.
+  `compose.prod.yaml` runs that image, and `make upgrade` pulls it instead
+  of building when the overlay is enabled. See SELFHOSTING.md → Upgrades.
+
 ### Added — extra pages from the override dir
 
 - **`ZV_WEB_OVERRIDE_DIR` can add pages.** Any `<name>.html` in it is

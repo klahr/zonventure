@@ -209,6 +209,9 @@ tag:
 # to stamp `main.version` from `git describe`, then switches back to
 # main so the working tree is in a familiar state for the next
 # session. The running container keeps the version it was built with.
+#
+# With compose.prod.yaml enabled (the app image is on ghcr.io) it pulls
+# the image CI published for the tag instead of building here.
 upgrade:
 	git fetch --tags
 	@LATEST=$$(git tag --sort=-v:refname | head -1) && \
@@ -217,5 +220,11 @@ upgrade:
 	fi && \
 	echo "Upgrading to $$LATEST" && \
 	git checkout "$$LATEST" && \
-	VERSION="$$LATEST" docker compose up -d --build
+	if docker compose config --images 2>/dev/null | grep -q '^ghcr\.io/'; then \
+		echo "Pulling $$LATEST from ghcr.io; nothing is built on this host." && \
+		VERSION="$$LATEST" docker compose pull app && \
+		VERSION="$$LATEST" docker compose up -d --no-build; \
+	else \
+		VERSION="$$LATEST" docker compose up -d --build; \
+	fi
 	git checkout main
