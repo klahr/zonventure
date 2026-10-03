@@ -2,27 +2,23 @@ package server
 
 import (
 	"bytes"
-	"context"
-	"database/sql"
 	"encoding/json"
 	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
-
-	"github.com/klahr/zonventure/internal/settings"
 )
 
 // unavailablePages lists the public pages that would answer with an
 // error right now: /privacy and /terms until the operator sets the
-// legal identity, /pricing while the marketing landing is off. Links to
+// legal identity, /pricing while the override dir ships no pricing.html. Links to
 // them are hidden rather than left to dead-end on a 503 or 404.
-func unavailablePages(ctx context.Context, db *sql.DB, legal LegalConfig) []string {
+func unavailablePages(legal LegalConfig) []string {
 	var out []string
 	if len(legal.missingRequired()) > 0 {
 		out = append(out, "/privacy", "/terms")
 	}
-	if !settings.LandingEnabled(ctx, db) {
+	if !hasOverride("pricing.html") {
 		out = append(out, "/pricing")
 	}
 	return out
@@ -43,9 +39,9 @@ const hideLinksScript = `<script>(()=>{const u=%s;const q=u.map(p=>'a[href="'+p+
 // hideUnavailableLinks injects hideLinksScript into HTML pages while
 // any public page is unavailable, and fills the seller-identity
 // markers (spliceSellerIdentity) on every HTML page. Only HTML is held back, and only an
-// HTML response pays for the settings lookup; other responses stream
+// HTML response pays for the availability check; other responses stream
 // straight through.
-func hideUnavailableLinks(db *sql.DB, legal LegalConfig) func(http.Handler) http.Handler {
+func hideUnavailableLinks(legal LegalConfig) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.Method != http.MethodGet || strings.HasPrefix(r.URL.Path, "/api/") || strings.HasPrefix(r.URL.Path, "/ws/") {
@@ -58,7 +54,7 @@ func hideUnavailableLinks(db *sql.DB, legal LegalConfig) func(http.Handler) http
 				return
 			}
 			body := spliceSellerIdentity(bw.buf.Bytes(), legal)
-			if gone := unavailablePages(r.Context(), db, legal); len(gone) > 0 {
+			if gone := unavailablePages(legal); len(gone) > 0 {
 				list, _ := json.Marshal(gone)
 				script := []byte(strings.Replace(hideLinksScript, "%s", string(list), 1))
 				// Early in <head> — the first "<head" is the real tag, whereas

@@ -18,7 +18,6 @@ import (
 	"github.com/klahr/zonventure/internal/auth"
 	"github.com/klahr/zonventure/internal/mcp"
 	"github.com/klahr/zonventure/internal/oauth"
-	"github.com/klahr/zonventure/internal/settings"
 )
 
 // registerMetaRoutes wires /api/health, /api/version, and the
@@ -111,21 +110,22 @@ func registerPageRoutes(r chi.Router, env *routesEnv) {
 			http.Redirect(w, req, "/arrange", http.StatusFound)
 			return
 		}
-		// Self-host operators can hide the marketing landing via the
-		// admin Settings page. With the landing off, an unauthenticated
-		// visitor lands directly on /arrange — the login screen is the
-		// front door for a closed deployment.
-		if !settings.LandingEnabled(req.Context(), cfg.DB) {
+		// The marketing landing is served only when the operator ships
+		// landing.html in ZV_WEB_OVERRIDE_DIR. Without it, an
+		// unauthenticated visitor lands directly on /arrange — the
+		// login screen is the front door for a closed deployment.
+		if !hasOverride("landing.html") {
 			http.Redirect(w, req, "/arrange", http.StatusFound)
 			return
 		}
 		renderLandingPage(w, req, cfg.PublicURL, cfg.Legal.CompanyName)
 	})
 
-	// Custom 404 with branded chrome and a "back to home / read manual"
-	// fallback. chi serves a plain "404 page not found" otherwise,
-	// which feels broken from a marketing-site perspective.
-	r.NotFound(render404)
+	// Extra pages from ZV_WEB_OVERRIDE_DIR (/create → create.html),
+	// else a custom 404 with branded chrome and a "back to home / read
+	// manual" fallback. chi serves a plain "404 page not found"
+	// otherwise, which feels broken from a marketing-site perspective.
+	r.NotFound(serveOverridePageOr404)
 
 	// /play?t=<magic> exchanges the magic link for a slot session; then,
 	// and for every other /play, the player app at /app/play/ takes over.
@@ -179,11 +179,11 @@ func registerPageRoutes(r chi.Router, env *routesEnv) {
 	})
 	r.Get("/pricing", func(w http.ResponseWriter, req *http.Request) {
 		// The pricing page is part of the public marketing surface.
-		// Self-hosters with the landing off don't sell anything to
-		// random visitors — fall through to the 404 handler so a
-		// crawler hitting an old link gets the same shape as any
-		// other unknown URL.
-		if !settings.LandingEnabled(req.Context(), cfg.DB) {
+		// Served only when the operator ships pricing.html in
+		// ZV_WEB_OVERRIDE_DIR. Otherwise fall through to the 404
+		// handler so a crawler hitting an old link gets the same
+		// shape as any other unknown URL.
+		if !hasOverride("pricing.html") {
 			servePublicPage("web/404.html", http.StatusNotFound)(w, req)
 			return
 		}

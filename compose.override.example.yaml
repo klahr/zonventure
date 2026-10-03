@@ -1,7 +1,6 @@
 # Drop-in extension for compose.yaml that mounts the dist/ of a sibling
-# zonventure-web checkout as the marketing override surface — replaces
-# the embedded brand-neutral landing/pricing with whatever
-# zonventure-web ships.
+# zonventure-web checkout as the marketing override surface — its
+# landing.html and pricing.html turn on the public / and /pricing.
 #
 # To enable:
 #   1. Clone zonventure-web alongside this repo.
@@ -15,7 +14,6 @@ services:
   app:
     environment:
       ZV_WEB_OVERRIDE_DIR: /var/zv/web-override
-      ZV_LANDING_ENABLED: "1"
     volumes:
       - ../zonventure-web/dist:/var/zv/web-override:ro
     # Prometheus metrics: set ZV_METRICS_ADDR=:9100 in .env, then

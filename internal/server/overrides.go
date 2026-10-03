@@ -6,10 +6,14 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
+	"net/http"
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"strings"
+
+	"github.com/go-chi/chi/v5"
 
 	"github.com/klahr/zonventure/internal/sitename"
 )
@@ -81,6 +85,80 @@ func readWebFileRaw(name string) ([]byte, error) {
 		// Fall through to embedded.
 	}
 	return webFS.ReadFile(name)
+}
+
+// hasOverride reports whether the override dir ships name (e.g.
+// "landing.html"). The public marketing pages (`/`, `/pricing`) are
+// served only when the operator supplies them; the embedded copies are
+// reference templates, not a default front door.
+func hasOverride(name string) bool {
+	if webOverrideDir == "" {
+		return false
+	}
+	info, err := os.Stat(filepath.Join(webOverrideDir, name))
+	return err == nil && info.Mode().IsRegular()
+}
+
+// overridePageName matches the single-segment paths an override-dir
+// extra page can answer: /create serves create.html.
+var overridePageName = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
+
+// overridePage returns the override file an unmatched GET path maps
+// to, or "" when there is none. Names the embedded bundle uses as
+// templates for specific routes (landing, store, 404, …) are reserved:
+// served under their own name they'd render with unfilled placeholders.
+func overridePage(path string) string {
+	name := strings.TrimPrefix(path, "/")
+	if !overridePageName.MatchString(name) {
+		return ""
+	}
+	file := name + ".html"
+	if _, err := fs.Stat(webFS, "web/"+file); err == nil {
+		return ""
+	}
+	if !hasOverride(file) {
+		return ""
+	}
+	return file
+}
+
+// serveOverridePageOr404 is the router's NotFound handler. Every app
+// route has already failed to match, so an operator's extra page can
+// never shadow one; it gets the shared topbar/footer substitution like
+// /manual. Anything else is the branded 404.
+func serveOverridePageOr404(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet || r.Method == http.MethodHead {
+		if file := overridePage(r.URL.Path); file != "" {
+			renderTopbarPage(w, r, "web/"+file)
+			return
+		}
+	}
+	render404(w, r)
+}
+
+// warnShadowedOverridePages logs override-dir extra pages that an app
+// route answers first, so a release that adds e.g. /create doesn't
+// silently hide the operator's create.html.
+func warnShadowedOverridePages(routes chi.Routes) {
+	if webOverrideDir == "" {
+		return
+	}
+	entries, err := os.ReadDir(webOverrideDir)
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		name, ok := strings.CutSuffix(e.Name(), ".html")
+		if !ok || !e.Type().IsRegular() || !overridePageName.MatchString(name) {
+			continue
+		}
+		if _, err := fs.Stat(webFS, "web/"+e.Name()); err == nil {
+			continue
+		}
+		if routes.Match(chi.NewRouteContext(), http.MethodGet, "/"+name) {
+			log.Printf("web override %s is unreachable: /%s is an app route", e.Name(), name)
+		}
+	}
 }
 
 // applyLandingLocaleOverrides merges per-locale string overrides on

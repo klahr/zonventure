@@ -117,3 +117,48 @@ func snapshotLandingState() func() {
 		maps.Copy(landingLocales, prev)
 	}
 }
+
+// TestServeOverridePageOr404 pins the extra-page fallback: an unmatched
+// /name serves name.html from the override dir with the topbar chrome
+// filled in, while reserved template names, nested paths and missing
+// files fall through to the 404.
+func TestServeOverridePageOr404(t *testing.T) {
+	dir := t.TempDir()
+	for name, body := range map[string]string{
+		"create.html": `<html lang="{{LANG_CODE}}">CREATE</html>`,
+		"store.html":  `STORE TEMPLATE`,
+		"Upper.html":  `UPPER`,
+		"notes.txt":   `TXT`,
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	prev := webOverrideDir
+	webOverrideDir = dir
+	t.Cleanup(func() { webOverrideDir = prev })
+
+	for _, tc := range []struct {
+		method, path string
+		want         int
+		body         string
+	}{
+		{"GET", "/create?lang=sv", http.StatusOK, `<html lang="sv">CREATE</html>`},
+		{"HEAD", "/create", http.StatusOK, ""},
+		{"POST", "/create", http.StatusNotFound, ""},
+		{"GET", "/store", http.StatusNotFound, ""},
+		{"GET", "/Upper", http.StatusNotFound, ""},
+		{"GET", "/notes", http.StatusNotFound, ""},
+		{"GET", "/a/create", http.StatusNotFound, ""},
+		{"GET", "/missing", http.StatusNotFound, ""},
+	} {
+		rec := httptest.NewRecorder()
+		serveOverridePageOr404(rec, httptest.NewRequest(tc.method, tc.path, nil))
+		if rec.Code != tc.want {
+			t.Errorf("%s %s = %d, want %d", tc.method, tc.path, rec.Code, tc.want)
+		}
+		if tc.body != "" && rec.Body.String() != tc.body {
+			t.Errorf("%s %s body = %q, want %q", tc.method, tc.path, rec.Body.String(), tc.body)
+		}
+	}
+}

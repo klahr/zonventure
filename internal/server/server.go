@@ -194,7 +194,7 @@ func New(cfg Config) http.Handler {
 	r.Use(securityHeaders(cspFor(cfg.Legal.MapTileURL)))
 	// Hide links to /privacy, /terms and /pricing while they'd answer
 	// 503 / 404 (legal identity unset, landing off).
-	r.Use(hideUnavailableLinks(cfg.DB, cfg.Legal))
+	r.Use(hideUnavailableLinks(cfg.Legal))
 	// Cutover redirect: when the operator has flipped redirect mode,
 	// every non-allowlisted path 301s to the hosted instance so
 	// printed QR codes / emailed magic links keep working.
@@ -414,6 +414,7 @@ func New(cfg Config) http.Handler {
 	registerPaymentWebhookRoutes(r, env)
 	registerPlayerRoutes(r, env)
 	registerAdminRoutes(r, env)
+	warnShadowedOverridePages(r)
 
 	return r
 }

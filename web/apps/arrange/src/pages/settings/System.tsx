@@ -8,8 +8,6 @@ import { Button, Callout, Card, ErrorBox, Field, HelpPopover, ICON, Loading, Pil
 /** settingsResponse, internal/admin/settings.go. */
 interface ServerSettings {
   signup_enabled: boolean;
-  landing_enabled: boolean;
-  landing_pinned_by_env: boolean;
 }
 
 /** components.Component, internal/components/components.go. */
@@ -62,9 +60,9 @@ function ServerCard({ mailerOff }: { mailerOff: boolean }) {
   const [saving, setSaving] = useState<string | null>(null);
   const [status, setStatus] = useState<{ ok: boolean; text: string } | null>(null);
 
-  const flip = async (key: "signup" | "landing", enabled: boolean) => {
+  const flip = async (key: "signup", enabled: boolean) => {
     if (!load.data) return;
-    const field = key === "signup" ? "signup_enabled" : "landing_enabled";
+    const field = "signup_enabled";
     const before = load.data;
     load.set({ ...before, [field]: enabled });
     setSaving(key);
@@ -100,15 +98,6 @@ function ServerCard({ mailerOff }: { mailerOff: boolean }) {
             {s.signup_enabled && mailerOff && (
               <Callout variant="warning">{t.t("Email isn't configured, so new accounts can't verify their address and won't be able to schedule events. Set up SMTP or turn signup off.")}</Callout>
             )}
-          </Toggle>
-          <Toggle
-            label={t.t("Show public landing page")}
-            help={t.t("When off, unauthenticated visitors to / are sent straight to the login screen and /pricing returns 404. Useful for self-host deployments that don't want a marketing front door.")}
-            checked={s.landing_enabled}
-            disabled={saving === "landing" || s.landing_pinned_by_env}
-            onChange={(v) => void flip("landing", v)}
-          >
-            {s.landing_pinned_by_env && <p style={{ ...muted, fontStyle: "italic" }}>{t.t("Pinned by ZV_LANDING_ENABLED — unset the env var to use this toggle.")}</p>}
           </Toggle>
           {status?.text && <p style={{ ...muted, color: status.ok ? "var(--dz-muted)" : "var(--dz-danger)" }} role="status">{status.text}</p>}
         </>

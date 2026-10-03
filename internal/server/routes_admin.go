@@ -396,10 +396,9 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 
 			// Operator-tunable runtime settings. Admin-only because
 			// these knobs affect everyone hitting the deployment —
-			// public signup, the marketing landing, etc.
+			// public signup, etc.
 			r.Get("/settings", adminH.GetSettings)
 			r.Put("/settings/signup", adminH.SetSignupEnabled)
-			r.Put("/settings/landing", adminH.SetLandingEnabled)
 
 			// Self-host → hosted migration. Admin-only operator
 			// surface — never an org-self-service flow. Export

@@ -22,7 +22,6 @@ import (
 // same strings.
 const (
 	KeySignupEnabled   = "signup_enabled"
-	KeyLandingEnabled  = "landing_enabled"
 	KeyRedirectTarget  = "redirect_target"
 	KeyMaintenanceMode = "maintenance_mode"
 )
@@ -44,48 +43,6 @@ func SignupEnabled(ctx context.Context, db *sql.DB) bool {
 // caller doesn't have to know whether the key already exists.
 func SetSignupEnabled(ctx context.Context, db *sql.DB, on bool) error {
 	return setBool(ctx, db, KeySignupEnabled, on)
-}
-
-// LandingEnabled reports whether the public marketing surfaces
-// (`/` landing page, `/pricing`) are exposed. When off, an
-// unauthenticated visitor lands directly on /arrange and /pricing
-// 404s. Logged-in arrangers and players are unaffected (they're
-// redirected away from `/` either way).
-//
-// Precedence:
-//  1. ZV_LANDING_ENABLED env var (when set, wins) — lets self-host
-//     operators pin the value via .env without touching the DB.
-//  2. The `landing_enabled` row in the settings table (admin UI).
-//
-// Defaults to false on lookup error: the canonical deployment is
-// self-host, where there is no marketing site to expose, so a
-// transient DB hiccup mustn't accidentally surface one. Hosted ops
-// who flipped it on via the admin Settings page see the row hit
-// during a normal request and so don't trip the fallback path.
-func LandingEnabled(ctx context.Context, db *sql.DB) bool {
-	if v, ok := envBool("ZV_LANDING_ENABLED"); ok {
-		return v
-	}
-	v, err := getString(ctx, db, KeyLandingEnabled)
-	if err != nil {
-		return false
-	}
-	return parseBool(v, false)
-}
-
-// LandingPinnedByEnv reports whether the env var is currently
-// overriding the DB. The admin Settings UI uses this to disable the
-// toggle and explain why flipping it has no effect, so a self-host
-// operator who pinned it in .env doesn't waste time wondering why the
-// UI is lying to them.
-func LandingPinnedByEnv() bool {
-	_, ok := envBool("ZV_LANDING_ENABLED")
-	return ok
-}
-
-// SetLandingEnabled persists the marketing-surface toggle.
-func SetLandingEnabled(ctx context.Context, db *sql.DB, on bool) error {
-	return setBool(ctx, db, KeyLandingEnabled, on)
 }
 
 // redirectTarget is the in-process cache the redirect middleware reads

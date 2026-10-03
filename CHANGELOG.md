@@ -11,6 +11,22 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Added — extra pages from the override dir
+
+- **`ZV_WEB_OVERRIDE_DIR` can add pages.** Any `<name>.html` in it is
+  served at `/<name>` with the shared topbar and footer, unless an app
+  route or an embedded template already uses that name. zv logs a
+  warning at startup for override pages an app route hides.
+
+### Removed — the landing page toggle
+
+- **The public landing page is on when you ship one.** `/` and
+  `/pricing` are served only when `ZV_WEB_OVERRIDE_DIR` contains
+  `landing.html` / `pricing.html`; otherwise `/` goes to the login
+  screen and `/pricing` is a 404. `ZV_LANDING_ENABLED` and the
+  "Show public landing page" admin setting are gone, and the embedded
+  landing and pricing pages are now reference templates only.
+
 ### Added — a picture for each role
 
 - **A role can have a picture** (`image` on the role), set under

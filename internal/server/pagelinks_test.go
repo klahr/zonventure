@@ -3,6 +3,9 @@ package server
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -17,10 +20,9 @@ func TestHideUnavailableLinks(t *testing.T) {
 		w.Header().Set("Content-Type", "application/javascript")
 		_, _ = w.Write([]byte(`console.log(1)`))
 	})
-	// No legal identity: /privacy and /terms are unavailable; the
-	// landing pinned off by env makes /pricing unavailable too.
-	t.Setenv("ZV_LANDING_ENABLED", "0")
-	mw := hideUnavailableLinks(nil, LegalConfig{})
+	// No legal identity: /privacy and /terms are unavailable; no
+	// override pricing.html makes /pricing unavailable too.
+	mw := hideUnavailableLinks(LegalConfig{})
 
 	rec := httptest.NewRecorder()
 	mw(page).ServeHTTP(rec, httptest.NewRequest("GET", "/arrange", nil))
@@ -44,5 +46,22 @@ func TestDropSitemapPages(t *testing.T) {
 	got := dropSitemapPages(xml, "https://h", []string{"/privacy"})
 	if strings.Contains(got, "/privacy") || !strings.Contains(got, "<loc>https://h/</loc>") {
 		t.Errorf("sitemap = %q", got)
+	}
+}
+
+func TestUnavailablePages_PricingFollowsOverride(t *testing.T) {
+	prev := webOverrideDir
+	t.Cleanup(func() { webOverrideDir = prev })
+	legal := LegalConfig{}
+
+	webOverrideDir = t.TempDir()
+	if got := unavailablePages(legal); !slices.Contains(got, "/pricing") {
+		t.Errorf("no override pricing.html: unavailable = %v, want /pricing", got)
+	}
+	if err := os.WriteFile(filepath.Join(webOverrideDir, "pricing.html"), []byte("<html></html>"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := unavailablePages(legal); slices.Contains(got, "/pricing") {
+		t.Errorf("override pricing.html: unavailable = %v, want /pricing served", got)
 	}
 }

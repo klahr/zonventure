@@ -91,7 +91,7 @@ short tour:
 | `ZV_OIDC_ORG_NAME` | Organisation that JIT-provisioned SSO users join. Defaults to `ZV_OIDC_HOSTED_DOMAIN` | unset |
 | `ZV_LOCATION_RETENTION_DAYS` / `ZV_AUDIT_RETENTION_DAYS` | Privacy sweepers; `0` to disable | `30` / `90` |
 | `ZV_DB_MAX_OPEN_CONNS` / `ZV_DB_MAX_IDLE_CONNS` | Postgres pool sizing; bump for managed clusters with high `max_connections` | `25` / `5` |
-| `ZV_WEB_OVERRIDE_DIR` | Path to a directory of HTML / JSON files that shadow the embedded marketing pages — see [Custom landing page](#custom-landing-page) | unset (use embedded) |
+| `ZV_WEB_OVERRIDE_DIR` | Path to a directory of HTML / JSON files that shadow the embedded pages; its `landing.html` and `pricing.html` turn on the public `/` and `/pricing` — see [Custom landing page](#custom-landing-page) | unset (use embedded) |
 | `ZV_MCP_ENABLED` | `1` mounts the `POST /mcp` endpoint so users can connect Claude / other MCP clients to author adventures — see [MCP.md](MCP.md) | unset (off) |
 | `ZV_OAUTH_REDIRECT_HOSTS` | Extra hosts (comma-separated) MCP clients may return to after signing in with OAuth. Claude's (`claude.ai`, `claude.com`) and loopback are always allowed. OAuth is on with `ZV_MCP_ENABLED` and a real `ZV_PUBLIC_URL` | unset |
 
@@ -189,12 +189,16 @@ build).
 
 ## Custom landing page
 
-The bundled `/` is brand-neutral by design — a slim hero, three
-feature blurbs, a closing CTA. Operators who want a richer marketing
-surface (use-case cards, testimonials, custom photos, multi-segment
-positioning) point `ZV_WEB_OVERRIDE_DIR` at a directory of override
-files; matching filenames there shadow the embedded defaults at
+By default `/` sends visitors who aren't logged in straight to the
+login screen, and `/pricing` is a 404. To put a public marketing page
+in front, point `ZV_WEB_OVERRIDE_DIR` at a directory of override files
+that includes `landing.html` (and `pricing.html` for `/pricing`).
+Other matching filenames there shadow the embedded defaults at
 request time, no rebuild required.
+
+The embedded `internal/server/web/landing.html` and `pricing.html`
+are never served; they are reference templates to copy, showing every
+`{{KEY}}` placeholder the server fills in.
 
 The marketing landing used on the hosted Zonventure service lives
 in a sibling repo, [`zonventure-web`](https://github.com/klahr/zonventure-web)
@@ -207,8 +211,8 @@ scratch.
 
 ```
 /etc/zonventure/web-override/
-├── landing.html              # full template — placeholders intact
-├── pricing.html              # optional, same {{KEY}} grammar
+├── landing.html              # optional, enables / — placeholders intact
+├── pricing.html              # optional, enables /pricing, same {{KEY}} grammar
 ├── privacy.html              # optional
 ├── terms.html                # optional
 ├── manual.html               # optional
@@ -217,12 +221,20 @@ scratch.
 ├── robots.txt                # optional
 ├── og-image.png              # optional, 1200x630 link-preview image
 ├── landing-locales.json      # optional, per-field locale overrides
+├── <name>.html               # optional extra page, served at /<name>
 └── shop/                     # optional static site, served as is at /shop/
 ```
 
 Filenames mirror the user-facing routes — drop `landing.html` to
-shadow `/`, drop `pricing.html` to shadow `/pricing`, and so on. Any
-file you don't supply falls back to the embedded default.
+serve `/`, drop `pricing.html` to serve `/pricing`, and so on. Any
+other file you don't supply falls back to the embedded default.
+
+Any other `<name>.html` (lowercase letters, digits and dashes) is an
+extra page served at `/<name>`, with the same topbar and footer
+placeholders as `/manual` (`{{LANG_CODE}}`, `{{NAV_*}}`, …). App routes
+always win: a file named after one (`play.html`, `arrange.html`) is
+never served, and zv logs a warning at startup. The embedded template
+names above are reserved for their own routes.
 
 `shop/` is the exception to fixed filenames: zv serves everything in
 it at `/shop/`, mapping an extensionless path to its `.html` sibling
@@ -262,9 +274,7 @@ docker compose up -d
 ```
 
 Compose auto-merges `compose.override.yaml` on top of `compose.yaml`,
-adding `ZV_WEB_OVERRIDE_DIR` and `ZV_LANDING_ENABLED` (which turns
-the public landing on and pins the admin Settings toggle) to the `app`
-env and mounting `../zonventure-web/dist` read-only at
+adding `ZV_WEB_OVERRIDE_DIR` to the `app` env and mounting `../zonventure-web/dist` read-only at
 `/var/zv/web-override`. Edit
 `compose.override.yaml` (not the example) if your override dir lives
 elsewhere — `git pull` leaves the example in place but won't
