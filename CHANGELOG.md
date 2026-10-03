@@ -11,6 +11,15 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Fixed — Secure cookies behind a reverse proxy
+
+- **Cookies are marked `Secure` behind a trusted proxy again.** The
+  real-IP middleware rewrote the request's peer to the client address
+  before the cookie code checked whether the peer was a trusted proxy,
+  so `X-Forwarded-Proto: https` was ignored and session, CSRF and
+  language cookies went out without `Secure` on every proxied
+  deployment.
+
 ### Added — prebuilt images on ghcr.io
 
 - **Release tags publish the app image.** CI pushes

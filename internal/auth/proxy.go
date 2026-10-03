@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/http"
@@ -72,9 +73,23 @@ func ParseTrustedProxies(spec string) ([]netip.Prefix, error) {
 	return out, nil
 }
 
-// IsTrustedPeer reports whether the immediate peer (r.RemoteAddr) is
-// in the configured trusted-proxy set. Used as the predicate for
-// "should this request's X-Forwarded-* be honoured?".
+// trustedPeerKey marks a request whose immediate peer was a trusted
+// proxy before its RemoteAddr was rewritten to the client address.
+type trustedPeerKey struct{}
+
+// MarkTrustedPeer records that r arrived from a trusted proxy. The
+// real-IP middleware calls it before rewriting RemoteAddr to the
+// client, so IsTrustedPeer keeps answering for the original peer
+// (otherwise X-Forwarded-Proto is ignored downstream and cookies lose
+// their Secure flag behind the proxy).
+func MarkTrustedPeer(r *http.Request) *http.Request {
+	return r.WithContext(context.WithValue(r.Context(), trustedPeerKey{}, true))
+}
+
+// IsTrustedPeer reports whether the immediate peer (r.RemoteAddr, or
+// the peer recorded by MarkTrustedPeer) is in the configured
+// trusted-proxy set. Used as the predicate for "should this request's
+// X-Forwarded-* be honoured?".
 //
 // A nil request and an unparseable RemoteAddr both return false (fail
 // closed). The trusted-proxy list is read atomically, so callers
@@ -82,6 +97,9 @@ func ParseTrustedProxies(spec string) ([]netip.Prefix, error) {
 func IsTrustedPeer(r *http.Request) bool {
 	if r == nil {
 		return false
+	}
+	if marked, _ := r.Context().Value(trustedPeerKey{}).(bool); marked {
+		return true
 	}
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {

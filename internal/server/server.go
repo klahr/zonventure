@@ -514,6 +514,7 @@ func cspFor(tileURL string) string {
 func trustedProxyRealIP(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if auth.IsTrustedPeer(r) {
+			r = auth.MarkTrustedPeer(r)
 			if real := firstForwardedAddr(r); real != "" {
 				r.RemoteAddr = real
 			}
