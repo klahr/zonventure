@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"fmt"
+	"html"
 	"net/http"
 	"strconv"
 	"strings"
@@ -570,16 +571,17 @@ func storeSubs(s landingStrings) [][2]string {
 // chrome and the JSON locale block emitted at the bottom of the
 // template stay server-rendered.
 func renderStoreListingPage(w http.ResponseWriter, r *http.Request) {
-	renderStoreListingPageScoped(w, r, "")
+	renderStoreListingPageScoped(w, r, nil)
 }
 
 // renderStoreListingPageScoped renders the store landing for either
-// the global /store (orgSlug == "") or a per-org /o/{slug}/store. The
-// only difference is the API base the client-side fetch hits — the
-// global page reads every org's listings via /api/store/items, while
-// the per-org page narrows to one org via /api/o/{slug}/store/items.
-// Body copy + chrome localisation is identical.
-func renderStoreListingPageScoped(w http.ResponseWriter, r *http.Request, orgSlug string) {
+// the global /store (org == nil) or a per-org /o/{slug}/store. The
+// global page reads every org's listings via /api/store/items; the
+// per-org page narrows to one org via /api/o/{slug}/store/items and
+// fills the org placeholders (name, tagline, logo, cover, colours) so
+// the template can show the org's own hero. {{STORE_SCOPE}} is "org"
+// or "all" for templates that style the two differently.
+func renderStoreListingPageScoped(w http.ResponseWriter, r *http.Request, org *orgProfile) {
 	body, err := readWebFile("web/store.html")
 	if err != nil {
 		http.Error(w, "not found", http.StatusNotFound)
@@ -595,8 +597,29 @@ func renderStoreListingPageScoped(w http.ResponseWriter, r *http.Request, orgSlu
 		out = strings.ReplaceAll(out, sub[0], sub[1])
 	}
 	apiBase := "/api/store"
-	if orgSlug != "" {
-		apiBase = "/api/o/" + orgSlug + "/store"
+	orgSubs := [][2]string{
+		{"{{STORE_SCOPE}}", "all"},
+		{"{{ORG_NAME}}", ""},
+		{"{{ORG_TAGLINE}}", ""},
+		{"{{ORG_PATH}}", ""},
+		{"{{LOGO_BLOCK}}", ""},
+		{"{{HERO_BG_STYLE}}", ""},
+		{"{{ORG_BRAND_OVERRIDES}}", ""},
+	}
+	if org != nil {
+		apiBase = "/api/o/" + org.Slug + "/store"
+		orgSubs = [][2]string{
+			{"{{STORE_SCOPE}}", "org"},
+			{"{{ORG_NAME}}", html.EscapeString(org.Name)},
+			{"{{ORG_TAGLINE}}", html.EscapeString(strings.TrimSpace(org.Tagline.String))},
+			{"{{ORG_PATH}}", "/o/" + org.Slug},
+			{"{{LOGO_BLOCK}}", org.logoBlock()},
+			{"{{HERO_BG_STYLE}}", org.heroBgStyle()},
+			{"{{ORG_BRAND_OVERRIDES}}", org.brandStyle()},
+		}
+	}
+	for _, sub := range orgSubs {
+		out = strings.ReplaceAll(out, sub[0], sub[1])
 	}
 	out = strings.ReplaceAll(out, "{{STORE_API_BASE}}", apiBase)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

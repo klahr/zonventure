@@ -162,3 +162,45 @@ func TestServeOverridePageOr404(t *testing.T) {
 		}
 	}
 }
+
+// TestStoreListingOrgPlaceholders pins the org data /o/{slug}/store
+// hands its template, and that the global /store fills the same
+// placeholders with nothing.
+func TestStoreListingOrgPlaceholders(t *testing.T) {
+	dir := t.TempDir()
+	tpl := `SCOPE={{STORE_SCOPE}};NAME={{ORG_NAME}};TAG={{ORG_TAGLINE}};PATH={{ORG_PATH}};LOGO={{LOGO_BLOCK}};BG={{HERO_BG_STYLE}};BRAND={{ORG_BRAND_OVERRIDES}};API={{STORE_API_BASE}}`
+	if err := os.WriteFile(filepath.Join(dir, "store.html"), []byte(tpl), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	prev := webOverrideDir
+	webOverrideDir = dir
+	t.Cleanup(func() { webOverrideDir = prev })
+
+	org := &orgProfile{ID: 7, Slug: "acme", Name: `Acme & "Co"`, HasLogo: true}
+	org.Tagline.String, org.Tagline.Valid = "Hunts by the sea", true
+	org.Accent.String, org.Accent.Valid = "#123456", true
+
+	rec := httptest.NewRecorder()
+	renderStoreListingPageScoped(rec, httptest.NewRequest("GET", "/o/acme/store?lang=en", nil), org)
+	body := rec.Body.String()
+	for _, want := range []string{
+		"SCOPE=org;",
+		"NAME=Acme &amp; &#34;Co&#34;;",
+		"TAG=Hunts by the sea;",
+		"PATH=/o/acme;",
+		`<img src="/org-logo/7"`,
+		"BG=;",
+		"--accent:#123456;",
+		"API=/api/o/acme/store",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("org store body missing %q: %s", want, body)
+		}
+	}
+
+	rec = httptest.NewRecorder()
+	renderStoreListingPage(rec, httptest.NewRequest("GET", "/store?lang=en", nil))
+	if got, want := rec.Body.String(), "SCOPE=all;NAME=;TAG=;PATH=;LOGO=;BG=;BRAND=;API=/api/store"; got != want {
+		t.Errorf("global store body = %q, want %q", got, want)
+	}
+}

@@ -37,27 +37,7 @@ func renderOrgLandingPage(w http.ResponseWriter, r *http.Request, db *sql.DB, pu
 		servePublicPage("web/404.html", http.StatusNotFound)(w, r)
 		return
 	}
-	var (
-		orgID                int64
-		orgName              string
-		tagline              sql.NullString
-		website              sql.NullString
-		hasLogo              bool
-		hasCover             bool
-		accentColor          sql.NullString
-		accentSecondaryColor sql.NullString
-		backgroundColor      sql.NullString
-		textColor            sql.NullString
-	)
-	err := db.QueryRowContext(r.Context(), `
-		SELECT id, name, tagline, public_website,
-		       (logo_content IS NOT NULL AND length(logo_content) > 0),
-		       (cover_image_content IS NOT NULL AND length(cover_image_content) > 0),
-		       accent_color, accent_secondary_color, background_color, text_color
-		FROM organizations
-		WHERE slug = $1
-	`, slug).Scan(&orgID, &orgName, &tagline, &website, &hasLogo, &hasCover,
-		&accentColor, &accentSecondaryColor, &backgroundColor, &textColor)
+	org, err := loadOrgProfile(r.Context(), db, slug)
 	if errors.Is(err, sql.ErrNoRows) {
 		servePublicPage("web/404.html", http.StatusNotFound)(w, r)
 		return
@@ -82,42 +62,18 @@ func renderOrgLandingPage(w http.ResponseWriter, r *http.Request, db *sql.DB, pu
 	// a localised default so OG description + meta description
 	// stay non-empty (search engines and social previewers treat
 	// empty descriptions as a quality signal).
-	taglineDisplay := strings.TrimSpace(tagline.String)
+	taglineDisplay := strings.TrimSpace(org.Tagline.String)
 	if taglineDisplay == "" {
 		taglineDisplay = s.LandingTaglineFallback
 		if taglineDisplay == "" {
-			taglineDisplay = orgName + " — adventures to play whenever you like"
+			taglineDisplay = org.Name + " — adventures to play whenever you like"
 		}
 	}
 
-	// Hero background: when a cover is set, layer it under the
-	// existing accent gradient so dark / light covers both stay
-	// readable through the gradient overlay defined in CSS.
-	heroBgStyle := ""
-	if hasCover {
-		// Same nested-context concern as store_event.go's COVER_URL:
-		// the URL lands inside a `style=` attribute, then a CSS
-		// url('…') literal. cssURLQuote percent-encodes the
-		// CSS-meaningful chars so a future cover-URL shape can't
-		// escape the quotes.
-		heroBgStyle = fmt.Sprintf(
-			"background-image: linear-gradient(135deg, rgba(173,19,87,.6), rgba(226,64,128,.5)), url('%s'); background-size: cover; background-position: center;",
-			html.EscapeString(cssURLQuote("/org-cover/"+strconv.FormatInt(orgID, 10))),
-		)
-	}
-
-	// Logo + website + OG image rendered server-side rather than via
-	// JS so a no-JS reader (and the OpenGraph previewer) sees them.
-	logoBlock := ""
-	if hasLogo {
-		logoBlock = fmt.Sprintf(
-			`<div class="logo-wrap"><span class="logo"><img src="%s" alt="%s logo"></span></div>`,
-			html.EscapeString("/org-logo/"+strconv.FormatInt(orgID, 10)),
-			html.EscapeString(orgName),
-		)
-	}
+	// Website + OG image rendered server-side rather than via JS so a
+	// no-JS reader (and the OpenGraph previewer) sees them.
 	websiteBlock := ""
-	if siteURL := strings.TrimSpace(website.String); siteURL != "" {
+	if siteURL := strings.TrimSpace(org.Website.String); siteURL != "" {
 		websiteBlock = fmt.Sprintf(
 			`<a class="btn ghost" href="%s" target="_blank" rel="noopener noreferrer">%s</a>`,
 			html.EscapeString(siteURL),
@@ -125,35 +81,31 @@ func renderOrgLandingPage(w http.ResponseWriter, r *http.Request, db *sql.DB, pu
 		)
 	}
 	ogCoverTag := ""
-	if hasCover {
+	if org.HasCover {
 		ogCoverTag = fmt.Sprintf(
 			`<meta property="og:image" content="%s">`,
-			html.EscapeString(buildAbsoluteURL(publicURL, "/org-cover/"+strconv.FormatInt(orgID, 10))),
+			html.EscapeString(buildAbsoluteURL(publicURL, "/org-cover/"+strconv.FormatInt(org.ID, 10))),
 		)
 	}
 
 	storePath := "/o/" + slug + "/store"
 	apiBase := "/api/o/" + slug + "/store"
 	canonical := buildAbsoluteURL(publicURL, "/o/"+slug)
-	brandOverrides := orgBrandStyleBlock(
-		accentColor.String, accentSecondaryColor.String,
-		backgroundColor.String, textColor.String)
-
 	subs = append(subs,
-		[2]string{"{{ORG_NAME}}", html.EscapeString(orgName)},
+		[2]string{"{{ORG_NAME}}", html.EscapeString(org.Name)},
 		[2]string{"{{TAGLINE_OR_DEFAULT}}", html.EscapeString(taglineDisplay)},
 		[2]string{"{{CANONICAL_URL}}", html.EscapeString(canonical)},
 		[2]string{"{{STORE_PATH}}", storePath},
 		[2]string{"{{STORE_API_BASE}}", apiBase},
-		[2]string{"{{HERO_BG_STYLE}}", heroBgStyle},
-		[2]string{"{{LOGO_BLOCK}}", logoBlock},
+		[2]string{"{{HERO_BG_STYLE}}", org.heroBgStyle()},
+		[2]string{"{{LOGO_BLOCK}}", org.logoBlock()},
 		[2]string{"{{WEBSITE_LINK_BLOCK}}", websiteBlock},
 		[2]string{"{{OG_COVER_TAG}}", ogCoverTag},
 		[2]string{"{{LANDING_BROWSE_CTA}}", html.EscapeString(s.LandingBrowseCTA)},
 		[2]string{"{{LANDING_FEATURED_HEADING}}", html.EscapeString(s.LandingFeaturedHeading)},
 		[2]string{"{{LANDING_FEATURED_EMPTY}}", html.EscapeString(s.LandingFeaturedEmpty)},
 		[2]string{"{{LANDING_SEE_ALL}}", html.EscapeString(s.LandingSeeAll)},
-		[2]string{"{{ORG_BRAND_OVERRIDES}}", brandOverrides},
+		[2]string{"{{ORG_BRAND_OVERRIDES}}", org.brandStyle()},
 	)
 
 	out := string(body)
@@ -164,6 +116,72 @@ func renderOrgLandingPage(w http.ResponseWriter, r *http.Request, db *sql.DB, pu
 	w.Header().Set("Vary", "Cookie, Accept-Language")
 	w.Header().Set("Cache-Control", "public, max-age=60")
 	_, _ = w.Write([]byte(out))
+}
+
+// orgProfile is the public face of an organisation: what /o/{slug}
+// and /o/{slug}/store show about it.
+type orgProfile struct {
+	ID       int64
+	Slug     string
+	Name     string
+	Tagline  sql.NullString
+	Website  sql.NullString
+	HasLogo  bool
+	HasCover bool
+	Accent   sql.NullString
+	Accent2  sql.NullString
+	Bg       sql.NullString
+	Ink      sql.NullString
+}
+
+// loadOrgProfile looks an organisation up by slug. sql.ErrNoRows means
+// no such organisation.
+func loadOrgProfile(ctx context.Context, db *sql.DB, slug string) (orgProfile, error) {
+	p := orgProfile{Slug: slug}
+	err := db.QueryRowContext(ctx, `
+		SELECT id, name, tagline, public_website,
+		       (logo_content IS NOT NULL AND length(logo_content) > 0),
+		       (cover_image_content IS NOT NULL AND length(cover_image_content) > 0),
+		       accent_color, accent_secondary_color, background_color, text_color
+		FROM organizations
+		WHERE slug = $1
+	`, slug).Scan(&p.ID, &p.Name, &p.Tagline, &p.Website, &p.HasLogo, &p.HasCover,
+		&p.Accent, &p.Accent2, &p.Bg, &p.Ink)
+	return p, err
+}
+
+// heroBgStyle layers the org's cover under the accent gradient so dark
+// and light covers both stay readable. Empty without a cover.
+func (p orgProfile) heroBgStyle() string {
+	if !p.HasCover {
+		return ""
+	}
+	// Same nested-context concern as store_event.go's COVER_URL: the URL
+	// lands inside a `style=` attribute, then a CSS url('…') literal.
+	// cssURLQuote percent-encodes the CSS-meaningful chars so a future
+	// cover-URL shape can't escape the quotes.
+	return fmt.Sprintf(
+		"background-image: linear-gradient(135deg, rgba(173,19,87,.6), rgba(226,64,128,.5)), url('%s'); background-size: cover; background-position: center;",
+		html.EscapeString(cssURLQuote("/org-cover/"+strconv.FormatInt(p.ID, 10))),
+	)
+}
+
+// logoBlock renders the org's logo server-side so a no-JS reader sees
+// it. Empty without a logo.
+func (p orgProfile) logoBlock() string {
+	if !p.HasLogo {
+		return ""
+	}
+	return fmt.Sprintf(
+		`<div class="logo-wrap"><span class="logo"><img src="%s" alt="%s logo"></span></div>`,
+		html.EscapeString("/org-logo/"+strconv.FormatInt(p.ID, 10)),
+		html.EscapeString(p.Name),
+	)
+}
+
+// brandStyle is the org's colour override block; see orgBrandStyleBlock.
+func (p orgProfile) brandStyle() string {
+	return orgBrandStyleBlock(p.Accent.String, p.Accent2.String, p.Bg.String, p.Ink.String)
 }
 
 // orgBrandStyleBlock emits a `<style>:root { --foo: #bar; }</style>`

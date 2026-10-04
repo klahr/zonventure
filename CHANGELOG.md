@@ -11,6 +11,14 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Added — organisation identity on /o/{slug}/store
+
+- **The per-organisation store knows its organisation.** `store.html`
+  now receives `{{ORG_NAME}}`, `{{ORG_TAGLINE}}`, `{{ORG_PATH}}`,
+  `{{LOGO_BLOCK}}`, `{{HERO_BG_STYLE}}`, `{{ORG_BRAND_OVERRIDES}}` and
+  `{{STORE_SCOPE}}` (`org` or `all`), the same data `/o/{slug}` gets.
+  The global `/store` fills them with nothing.
+
 ### Fixed — Secure cookies behind a reverse proxy
 
 - **Cookies are marked `Secure` behind a trusted proxy again.** The

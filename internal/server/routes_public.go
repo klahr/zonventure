@@ -6,6 +6,7 @@ package server
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -106,7 +107,12 @@ func registerPublicTokenRoutes(r chi.Router, env *routesEnv) {
 				servePublicPage("web/404.html", http.StatusNotFound)(w, req)
 				return
 			}
-			renderStoreListingPageScoped(w, req, slug)
+			org, err := loadOrgProfile(req.Context(), cfg.DB, strings.TrimSpace(slug))
+			if err != nil {
+				http.Error(w, "lookup failed", http.StatusInternalServerError)
+				return
+			}
+			renderStoreListingPageScoped(w, req, &org)
 		})
 		r.Get("/o/{slug}/store/event/{event_id}", func(w http.ResponseWriter, req *http.Request) {
 			renderStoreEventPage(w, req, cfg.DB, cfg.PublicURL)
