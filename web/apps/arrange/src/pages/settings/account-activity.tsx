@@ -259,7 +259,7 @@ export function McpTokensCard({ mcpEnabled }: { mcpEnabled: boolean }) {
             <li>{t.t("Ask it to list your adventures to check it works.")}</li>
           </ol>
           <p className="acct-muted">{t.t("For example, with Claude Code:")}</p>
-          <pre>{`claude mcp add --transport http zonventure ${endpoint} \
+          <pre>{`claude mcp add --scope user --transport http zonventure ${endpoint} \
   --header "Authorization: Bearer <token>"`}</pre>
         </details>
       )}
@@ -312,7 +312,7 @@ export function McpTokensCard({ mcpEnabled }: { mcpEnabled: boolean }) {
           }}
         />
       )}
-      {created && <NewTokenDialog token={created.token} onClose={() => setCreated(null)} />}
+      {created && <NewTokenDialog token={created.token} mcpEnabled={mcpEnabled} onClose={() => setCreated(null)} />}
     </Card>
   );
 }
@@ -372,8 +372,58 @@ function CreateTokenDialog({ onClose, onCreated }: { onClose: () => void; onCrea
   );
 }
 
+const CLAUDE_CODE_OS = [
+  { id: "linux", label: "Linux" },
+  { id: "macos", label: "macOS" },
+  { id: "windows", label: "Windows" },
+] as const;
+type ClaudeCodeOS = (typeof CLAUDE_CODE_OS)[number]["id"];
+
+/**
+ * The `claude mcp add` line for one OS: bash/zsh continues lines with \, PowerShell with a backtick.
+ * --scope user registers it for every directory, not just the one the command runs in.
+ */
+function claudeCodeCommand(os: ClaudeCodeOS, endpoint: string, token: string): string {
+  const cont = os === "windows" ? "`" : "\\";
+  return `claude mcp add --scope user --transport http zonventure ${cont}\n  ${endpoint} ${cont}\n  --header "Authorization: Bearer ${token}"`;
+}
+
+/** Ready-to-paste Claude Code commands for the new token, one per OS. */
+function ClaudeCodeSetup({ token }: { token: string }) {
+  const t = useT();
+  const toast = useToast();
+  const [os, setOs] = useState<ClaudeCodeOS>(() => (/Win/i.test(navigator.platform) ? "windows" : /Mac/i.test(navigator.platform) ? "macos" : "linux"));
+  const command = claudeCodeCommand(os, `${location.origin}/mcp`, token);
+  return (
+    <div className="acct-setup">
+      <p className="acct-muted">{t.t("Add it to Claude Code with this command:")}</p>
+      <div className="acct-ostabs" role="tablist" aria-label={t.t("Operating system")}>
+        {CLAUDE_CODE_OS.map((o) => (
+          <button key={o.id} type="button" role="tab" aria-selected={os === o.id} className={os === o.id ? "is-on" : undefined} onClick={() => setOs(o.id)}>
+            {o.label}
+          </button>
+        ))}
+      </div>
+      <div className="acct-setup__cmd" role="tabpanel">
+        <pre>{command}</pre>
+        <Button
+          size="sm"
+          icon={<Copy size={14} aria-hidden />}
+          onClick={async () => {
+            if (await copyText(command, null)) toast.ok(t.t("Command copied"));
+            else toast.err(t.t("Copy failed — select the field and copy manually."));
+          }}
+        >
+          {t.t("Copy command")}
+        </Button>
+      </div>
+      <p className="acct-muted">{os === "windows" ? t.t("Run it in PowerShell.") : t.t("Run it in a terminal (bash or zsh).")}</p>
+    </div>
+  );
+}
+
 /** The plaintext, once. Closing takes an explicit Done: it cannot be shown again. */
-function NewTokenDialog({ token, onClose }: { token: string; onClose: () => void }) {
+function NewTokenDialog({ token, mcpEnabled, onClose }: { token: string; mcpEnabled: boolean; onClose: () => void }) {
   const t = useT();
   const toast = useToast();
   const field = useRef<HTMLInputElement>(null);
@@ -402,6 +452,7 @@ function NewTokenDialog({ token, onClose }: { token: string; onClose: () => void
       <div className="acct-copy">
         <input ref={field} readOnly autoFocus value={token} aria-label={t.t("Your new token")} onFocus={(e) => e.currentTarget.select()} />
       </div>
+      {mcpEnabled && <ClaudeCodeSetup token={token} />}
     </Dialog>
   );
 }

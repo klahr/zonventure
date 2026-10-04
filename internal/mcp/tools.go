@@ -326,7 +326,7 @@ func listAdventures(ctx context.Context, s *Server, _ json.RawMessage) (ToolCall
 		return errorResult("query failed: " + err.Error()), nil
 	}
 	defer rows.Close()
-	var out []adventureSummary
+	out := []adventureSummary{} // "[]", not "null", when nothing is visible
 	for rows.Next() {
 		var a adventureSummary
 		var orgID sql.NullInt64
