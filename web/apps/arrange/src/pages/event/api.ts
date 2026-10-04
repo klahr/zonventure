@@ -220,6 +220,16 @@ export const unlockTeam = (id: number, node?: string) => post<{ completed?: bool
 export const withdrawTeam = (id: number) => post<unknown>(T(id) + "/withdraw");
 export const unwithdrawTeam = (id: number) => post<unknown>(T(id) + "/unwithdraw");
 export const sendTeamInvitation = (id: number) => post<unknown>(T(id) + "/invitations/send", {});
+/** internal/admin/free_ticket.go: freeTicketResponse. */
+export interface FreeTicket {
+  team_id: number;
+  team_url: string;
+  play_url: string;
+  voucher_code: string;
+  /** False when the team was made but the email could not be queued. */
+  emailed: boolean;
+}
+export const giveFreeTicket = (eventId: number, email: string) => post<FreeTicket>(E(eventId) + "/free-ticket", { email });
 export const addSlot = (teamId: number, name: string) => post<{ name: string }>(T(teamId) + "/slots", { name });
 export const rotateSlot = (teamId: number, slotId: number) => post<unknown>(`${T(teamId)}/slots/${slotId}/rotate`);
 export const removeSlot = (teamId: number, slotId: number) => request<void>(`${T(teamId)}/slots/${slotId}`, { method: "DELETE" });

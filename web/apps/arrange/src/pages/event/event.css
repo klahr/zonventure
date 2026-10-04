@@ -53,6 +53,9 @@
 .dz .ev-recap { display: inline-flex; align-items: center; gap: 4px; font-size: var(--dz-text-sm); }
 
 .dz .ev-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--dz-space-2); }
+.dz .ev-free { margin-bottom: var(--dz-space-3); }
+.dz .ev-free__given { display: flex; flex-wrap: wrap; align-items: center; gap: var(--dz-space-2); margin: var(--dz-space-2) 0 0; font-size: var(--dz-text-sm); color: var(--dz-ink-soft); }
+.dz .ev-free__code { font-family: var(--dz-font-mono); font-size: var(--dz-text-md, 1rem); letter-spacing: 0.15em; color: var(--dz-ink); }
 .dz .ev-chips { display: flex; flex-wrap: wrap; gap: var(--dz-space-1); }
 .dz .ev-teams tr.is-stuck td { background: color-mix(in srgb, var(--dz-warning) 8%, transparent); }
 .dz .ev-team { display: flex; align-items: flex-start; gap: var(--dz-space-2); }

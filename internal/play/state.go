@@ -41,11 +41,6 @@ const phoneFreshSeconds = 60.0
 // older client, a simulated one) is trusted as before.
 const maxFixAccuracy = 100.0
 
-// StartPlaceSlug names the zone an adventure's required starting point
-// shows as on the start screen. Only a label: the gate checks the point
-// itself (session.Team.AtStartPlace), never a zone looked up by slug.
-const StartPlaceSlug = "_start"
-
 // PingLocator reads positions from location_pings.
 type PingLocator struct{}
 
@@ -412,9 +407,7 @@ func (e *Engine) loadCore(ctx context.Context, q Querier, teamID int64, forUpdat
 	s.Completed = completed.Valid
 	s.Ending = graph.Outcome(outcome.String)
 	s.Paused = pauseClock(s.Paused, pausedAt, s.Now)
-	if startLat.Valid && startLng.Valid && startRad.Valid && startRad.Float64 > 0 {
-		s.StartPlace = &graph.Zone{Slug: StartPlaceSlug, Name: startName, Lat: startLat.Float64, Lng: startLng.Float64, RadiusM: startRad.Float64}
-	}
+	s.StartPlace = session.NewStartPlace(nullFloat(startLat), nullFloat(startLng), nullFloat(startRad), startName)
 
 	if s.G, err = e.graph(ctx, q, s.graphID); err != nil {
 		return nil, err
@@ -676,4 +669,12 @@ func closeRows(rows *sql.Rows) error {
 		err = cerr
 	}
 	return err
+}
+
+// nullFloat is a nullable column's value, or nil.
+func nullFloat(v sql.NullFloat64) *float64 {
+	if !v.Valid {
+		return nil
+	}
+	return &v.Float64
 }

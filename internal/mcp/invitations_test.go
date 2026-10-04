@@ -18,6 +18,7 @@ func TestInvitationTools_NilAdminGuard(t *testing.T) {
 	}{
 		{"send_event_invitations", sendEventInvitations, `{"event_id":1}`},
 		{"send_team_invitation", sendTeamInvitation, `{"team_id":1}`},
+		{"give_free_ticket", giveFreeTicket, `{"event_id":1,"email":"a@example.com"}`},
 		{"get_event_invite_ics", getEventInviteICS, `{"event_id":1}`},
 	}
 	for _, c := range cases {
@@ -48,6 +49,7 @@ func TestInvitationTools_ArgValidation(t *testing.T) {
 	}{
 		{"send_event_invitations no id", sendEventInvitations, `{}`, "event_id required"},
 		{"send_team_invitation no id", sendTeamInvitation, `{}`, "team_id required"},
+		{"give_free_ticket no id", giveFreeTicket, `{"email":"a@example.com"}`, "event_id required"},
 		{"get_event_invite_ics no id", getEventInviteICS, `{}`, "event_id required"},
 	}
 	for _, c := range cases {
@@ -73,6 +75,7 @@ func TestInvitationTools_AreRegisteredWithCorrectScope(t *testing.T) {
 	want := map[string]string{
 		"send_event_invitations": scopeWrite,
 		"send_team_invitation":   scopeWrite,
+		"give_free_ticket":       scopeWrite,
 		"get_event_invite_ics":   scopeRead,
 	}
 	for name, w := range want {

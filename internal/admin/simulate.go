@@ -17,6 +17,8 @@ package admin
 // walking there.
 
 import (
+	"context"
+	"database/sql"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -78,7 +80,8 @@ type simulateResponse struct {
 
 // SimulateAdventureGraph runs one simulated action.
 func (h *Handlers) SimulateAdventureGraph(w http.ResponseWriter, r *http.Request) {
-	if _, ok := h.graphTarget(w, r); !ok {
+	advID, ok := h.graphTarget(w, r)
+	if !ok {
 		return
 	}
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxGraphBodyBytes))
@@ -97,7 +100,12 @@ func (h *Handlers) SimulateAdventureGraph(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	resp, status, msg := simulate(&env.Graph, req.Team, req.Action, time.Now().UTC())
+	place, err := startPlaceOf(r.Context(), h.DB, advID)
+	if err != nil {
+		httpx.ServerErr(w, http.StatusInternalServerError, "loading the starting point failed", err)
+		return
+	}
+	resp, status, msg := simulate(&env.Graph, place, req.Team, req.Action, time.Now().UTC())
 	if status != http.StatusOK {
 		httpx.JSON(w, status, graphRefusal{Error: msg, Code: "simulate_malformed"})
 		return
@@ -107,7 +115,9 @@ func (h *Handlers) SimulateAdventureGraph(w http.ResponseWriter, r *http.Request
 
 // simulate applies one action. It is separate from the handler so the
 // rules of the simulation — not the HTTP around it — can be tested.
-func simulate(g *graph.Graph, team *session.Team, a simulateAction, now time.Time) (simulateResponse, int, string) {
+// place is the adventure's required starting point, if any: like a live
+// event, the simulated team waits at the start screen until it is there.
+func simulate(g *graph.Graph, place *graph.Zone, team *session.Team, a simulateAction, now time.Time) (simulateResponse, int, string) {
 	var (
 		res  session.Result
 		step *walk.Step
@@ -117,7 +127,7 @@ func simulate(g *graph.Graph, team *session.Team, a simulateAction, now time.Tim
 	switch a.Kind {
 	case "start":
 		var st walk.Step
-		team, st, err = session.Start(g, now)
+		team, st, err = session.StartAt(g, now, place)
 		if err != nil {
 			return refused(nil, err), http.StatusOK, ""
 		}
@@ -136,6 +146,9 @@ func simulate(g *graph.Graph, team *session.Team, a simulateAction, now time.Tim
 		return simulateResponse{}, http.StatusBadRequest, "this action needs the team from a previous start or place"
 	}
 	team.G = g
+	// The starting point is the adventure's, not the team's: it is not in
+	// the state the client sends back, so it is set again on every action.
+	team.StartPlace = place
 	team.Init()
 
 	// An action that fails part-way may already have changed the team —
@@ -257,4 +270,23 @@ func refused(team *session.Team, err error) simulateResponse {
 		code = "graph"
 	}
 	return simulateResponse{Team: team, Refuse: &simulateRefusal{Code: code, Message: err.Error()}}
+}
+
+// startPlaceOf is the adventure's required starting point, or nil.
+func startPlaceOf(ctx context.Context, db *sql.DB, advID int64) (*graph.Zone, error) {
+	var (
+		lat, lng, radius sql.NullFloat64
+		label            string
+	)
+	if err := db.QueryRowContext(ctx, `SELECT start_lat, start_lng, start_radius_m, start_label FROM adventures WHERE id = $1`, advID).
+		Scan(&lat, &lng, &radius, &label); err != nil {
+		return nil, err
+	}
+	f := func(v sql.NullFloat64) *float64 {
+		if !v.Valid {
+			return nil
+		}
+		return &v.Float64
+	}
+	return session.NewStartPlace(f(lat), f(lng), f(radius), label), nil
 }

@@ -58,7 +58,7 @@ func sim(t *testing.T, tm *session.Team, a simulateAction) simulateResponse {
 	if tm != nil {
 		in = roundTrip(t, tm)
 	}
-	resp, status, msg := simulate(simGraph(), in, a, simT0)
+	resp, status, msg := simulate(simGraph(), nil, in, a, simT0)
 	if status != http.StatusOK {
 		t.Fatalf("%s: status %d: %s", a.Kind, status, msg)
 	}
@@ -118,10 +118,10 @@ func TestSimulateMoveAndPlace(t *testing.T) {
 		t.Error("move with no zone should put the team nowhere")
 	}
 
-	if _, status, _ := simulate(simGraph(), nil, simulateAction{Kind: "answer", Node: "riddle"}, simT0); status != http.StatusBadRequest {
+	if _, status, _ := simulate(simGraph(), nil, nil, simulateAction{Kind: "answer", Node: "riddle"}, simT0); status != http.StatusBadRequest {
 		t.Errorf("an action without a team should be a 400, got %d", status)
 	}
-	if _, status, _ := simulate(simGraph(), nil, simulateAction{Kind: "place", Node: "nope"}, simT0); status != http.StatusBadRequest {
+	if _, status, _ := simulate(simGraph(), nil, nil, simulateAction{Kind: "place", Node: "nope"}, simT0); status != http.StatusBadRequest {
 		t.Errorf("placing on a missing node should be a 400, got %d", status)
 	}
 }
@@ -152,7 +152,39 @@ func TestSimulateForceAndPoint(t *testing.T) {
 		t.Error("a point a kilometre off should be placed, but outside the square")
 	}
 	bad := 91.0
-	if _, status, _ := simulate(simGraph(), roundTrip(t, r.Team), simulateAction{Kind: "move", Lat: &bad, Lng: &lng}, simT0); status != http.StatusBadRequest {
+	if _, status, _ := simulate(simGraph(), nil, roundTrip(t, r.Team), simulateAction{Kind: "move", Lat: &bad, Lng: &lng}, simT0); status != http.StatusBadRequest {
 		t.Errorf("a latitude off the globe should be a 400, got %d", status)
+	}
+}
+
+// An adventure that requires its starting point holds the simulated team
+// at the start screen, as a live event does, until it moves there — and
+// the requirement survives the round trip, which does not carry it.
+func TestSimulateHoldsAtStartPlace(t *testing.T) {
+	r1, r2, r3 := 59.31, 18.01, 30.0
+	place := session.NewStartPlace(&r1, &r2, &r3, "The gate")
+	step := func(tm *session.Team, a simulateAction) simulateResponse {
+		t.Helper()
+		var in *session.Team
+		if tm != nil {
+			in = roundTrip(t, tm)
+		}
+		resp, status, msg := simulate(simGraph(), place, in, a, simT0)
+		if status != http.StatusOK {
+			t.Fatalf("%s: status %d: %s", a.Kind, status, msg)
+		}
+		return resp
+	}
+	r := step(nil, simulateAction{Kind: "start"})
+	if r.Result.View.Node != "" || len(r.Result.View.Starts) != 1 || r.Result.View.Starts[0].Here {
+		t.Fatalf("away from the starting point the team must wait at the start: %+v", r.Result.View)
+	}
+	if r = step(r.Team, simulateAction{Kind: "begin", Port: "start"}); r.Refuse == nil || r.Refuse.Code != "not_here" {
+		t.Fatalf("beginning away from the starting point: %+v", r.Refuse)
+	}
+	lat, lng := 59.3101, 18.0101
+	r = step(r.Team, simulateAction{Kind: "move", Lat: &lat, Lng: &lng})
+	if r = step(r.Team, simulateAction{Kind: "begin", Port: "start"}); r.Refuse != nil || r.Result.View.Node != "riddle" {
+		t.Fatalf("beginning at the starting point: refusal %+v, on %q", r.Refuse, r.Result.View.Node)
 	}
 }

@@ -24,9 +24,10 @@ func (s *Server) registerSimulateTools() {
 		Name:  "simulate_adventure",
 		Scope: scopeRead,
 		Description: "Play the adventure's saved draft through a list of actions with the same rules a real event runs, and return what happened at each. " +
-			"Nothing is stored. Start with {kind: start}. Then: answer {node, guess}; continue {node}; choose {node, port} at a hub; skip {node}; hint {node}; " +
+			"Nothing is stored. Start with {kind: start}. A team that must choose a start, or begin at the adventure's starting point, then waits at the start: " +
+			"move there and begin {port: <start node slug>}. Then: answer {node, guess}; continue {node}; choose {node, port} at a hub; skip {node}; hint {node}; " +
 			"pick {node, block, choice} for quiz blocks; wait {seconds} jumps the clock; move {zone} puts the team in a zone (or nowhere when empty), " +
-			"move {lat, lng} at a point. Stops at the first refused action. Each step reports the node the team is now at, " +
+			"move {lat, lng} at a point; language {lang} switches to a translation. Stops at the first refused action. Each step reports the node the team is now at, " +
 			"whether an answer was accepted, the port it left by, points, wrong-answer response and hint text.",
 		InputSchema: map[string]any{
 			"type":     "object",

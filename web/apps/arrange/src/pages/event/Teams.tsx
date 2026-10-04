@@ -1,8 +1,8 @@
-import { useState } from "react";
-import { Copy, Link2, Mail, Pencil, Plus, Trash2 } from "lucide-react";
+import { useState, type FormEvent } from "react";
+import { Copy, Gift, Link2, Mail, Pencil, Plus, Trash2 } from "lucide-react";
 import { useT } from "../../i18n.tsx";
 import { Button, Card, Empty, fmtAgo, fmtDateTime, HelpPopover, ICON, Pill, useToast } from "../../ui/index.ts";
-import type { EventGraph, EventInfo, Team } from "./api.ts";
+import { giveFreeTicket, type EventGraph, type EventInfo, type FreeTicket, type Team } from "./api.ts";
 import { TeamAvatar, useTeamActions } from "./teamActions.tsx";
 import { useInviteAll } from "./Lifecycle.tsx";
 import { useCopyLinks } from "./Links.tsx";
@@ -103,6 +103,7 @@ export function TeamsCard(props: {
         </>
       }
     >
+      {canCreate && !full && <FreeTicketForm event={event} reload={props.reload} />}
       {(teams.length > 6 || live) && (
         <div className="ev-toolbar">
           {teams.length > 6 && <input type="search" className="ev-grow" placeholder={t.t("Search by name or email")} aria-label={t.t("Search by name or email")} value={q} onChange={(e) => setQ(e.target.value)} />}
@@ -191,5 +192,74 @@ export function TeamsCard(props: {
         </div>
       )}
     </Card>
+  );
+}
+
+/**
+ * A ticket for someone who plays without paying — a tester, a guest: a
+ * team of the event's ticket size, and the email a buyer gets, with the
+ * team link and the voucher code. Both show here too, to hand over by
+ * hand when the mail is slow.
+ */
+function FreeTicketForm({ event, reload }: { event: EventInfo; reload: () => void }) {
+  const t = useT();
+  const toast = useToast();
+  const [email, setEmail] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [given, setGiven] = useState<(FreeTicket & { email: string }) | null>(null);
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    const to = email.trim();
+    if (!to) return;
+    setBusy(true);
+    try {
+      const r = await giveFreeTicket(event.id, to);
+      setGiven({ ...r, email: to });
+      setEmail("");
+      if (r.emailed) toast.ok(t.t("Free ticket sent to {{email}}", { email: to }));
+      else toast.err(t.t("The team was made, but the email could not be sent. Copy the link or code below."));
+      reload();
+    } catch (err) {
+      toast.err(err);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const copy = async (text: string, done: string) => {
+    if (await copyText(text)) toast.ok(done);
+    else toast.err(t.t("Clipboard blocked — select and copy by hand"));
+  };
+  return (
+    <div className="ev-free">
+      <form className="ev-toolbar" onSubmit={(e) => void submit(e)}>
+        <input
+          type="email"
+          className="ev-grow"
+          required
+          placeholder={t.t("Email address")}
+          aria-label={t.t("Email address for a free ticket")}
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+        />
+        <Button type="submit" size="sm" icon={<Gift size={ICON.sm} aria-hidden />} loading={busy} disabled={!email.trim()}>
+          {t.t("Give free ticket")}
+        </Button>
+        <HelpPopover
+          label={t.t("About free tickets")}
+          body={t.t("For testers and guests who play without paying. Makes a team the size of a bought ticket and emails them the same message a buyer gets: their team link and a voucher code to type at /play.")}
+        />
+      </form>
+      {given && (
+        <p className="ev-free__given">
+          {t.t("Ticket for {{email}}:", { email: given.email })} <strong className="ev-free__code">{given.voucher_code}</strong>{" "}
+          <Button size="sm" variant="ghost" icon={<Copy size={ICON.sm} aria-hidden />} onClick={() => void copy(given.voucher_code, t.t("Code copied"))}>
+            {t.t("Copy code")}
+          </Button>
+          <Button size="sm" variant="ghost" icon={<Link2 size={ICON.sm} aria-hidden />} onClick={() => void copy(given.team_url, t.t("Link copied"))}>
+            {t.t("Copy link")}
+          </Button>
+        </p>
+      )}
+    </div>
   );
 }

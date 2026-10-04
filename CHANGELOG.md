@@ -11,6 +11,16 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Added — free tickets for testers and guests
+
+- **Give someone a ticket without payment.** On an event's Teams tab,
+  type an email address and press "Give free ticket": it makes a team
+  the size of a bought ticket and emails them what a buyer gets — the
+  team link and the voucher code to type at `/play`. The code and link
+  also show on the spot, to copy by hand. API:
+  `POST /api/admin/events/{id}/free-ticket` with `{"email": …}`; MCP tool
+  `give_free_ticket`.
+
 ### Added — teams must start at the starting point
 
 - **An adventure can require teams to begin where it starts.** Tick
@@ -20,6 +30,9 @@ product is **Zonventure**. Versions tagged here correspond to git tags
   the distance and a map link, until a player is inside the radius; only
   then can they start, and the clock starts then. The lobby tells them
   in advance. Works with start codes, and carries over in exports.
+  The designer's simulator and the MCP's `simulate_adventure` and
+  `play_start` hold the team at the starting point the same way; the
+  simulator lists the starting point as a place to move the team to.
 
 ### Fixed — clearing the starting point
 

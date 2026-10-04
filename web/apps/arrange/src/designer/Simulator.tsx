@@ -13,6 +13,9 @@ import { locationError, zoneName } from "./zones.ts";
 import { LocateFixed } from "lucide-react";
 import { ICON } from "./dz/ui.tsx";
 
+/** internal/graph/session.StartPlaceSlug: the start screen's zone for a required starting point. */
+const START_PLACE = "_start";
+
 /**
  * Preview and test-play, in one.
  *
@@ -275,8 +278,15 @@ export function Simulator({ slug, graph, envelope, selected, mode, onMode, resta
     });
   };
 
+  // The adventure's required starting point, while the team waits at it:
+  // a place the team can be put, like the draft's own zones.
+  const startPlace = view?.starts?.find((o) => o.zone?.slug === START_PLACE)?.zone;
+  const places = startPlace ? [...(graph.zones ?? []), startPlace] : (graph.zones ?? []);
+  const placeName = (z: { slug: string; name?: string }) =>
+    z.slug === START_PLACE ? (z.name ? t.t("Starting point: {{name}}", { name: z.name }) : t.t("Starting point")) : z.name || z.slug;
+
   const moveTo = (p: Point) => {
-    const zones = graph.zones ?? [];
+    const zones = places;
     const inside = zones.find((z) => zoneContains(z, p.lat, p.lng));
     setZone(inside?.slug ?? "");
     const where: play.SimAction = { kind: "move", lat: p.lat, lng: p.lng };
@@ -287,8 +297,8 @@ export function Simulator({ slug, graph, envelope, selected, mode, onMode, resta
     // "outside", not as the simulator ignoring it.
     const need = view?.zone ?? view?.starts?.find((o) => o.zone)?.zone;
     let text: string;
-    if (inside) text = t.t("Moved the team into {{zone}}.", { zone: inside.name || inside.slug });
-    else if (need) text = t.t("Moved the team to {{m}} m from {{zone}} — outside it.", { m: Math.round(metresBetween(p.lat, p.lng, need.lat, need.lng)), zone: need.name || need.slug });
+    if (inside) text = t.t("Moved the team into {{zone}}.", { zone: placeName(inside) });
+    else if (need) text = t.t("Moved the team to {{m}} m from {{zone}} — outside it.", { m: Math.round(metresBetween(p.lat, p.lng, need.lat, need.lng)), zone: placeName(need) });
     else text = t.t("Moved the team outside every zone.");
     void run(where, team).then((r) => {
       if (r) say(text);
@@ -327,6 +337,8 @@ export function Simulator({ slug, graph, envelope, selected, mode, onMode, resta
   }, [follow, t]);
 
   const move = (z: string) => {
+    // The starting point is not one of the draft's zones: stand at its centre.
+    if (z === START_PLACE && startPlace) return moveTo({ lat: startPlace.lat, lng: startPlace.lng });
     setZone(z);
     whereRef.current = z ? { kind: "move", zone: z } : null;
     if (!team) return;
@@ -422,9 +434,9 @@ export function Simulator({ slug, graph, envelope, selected, mode, onMode, resta
           <span className="field__label">{t.t("Team is at")}</span>
           <select className="field__input" value={zone} disabled={!team || busy} onChange={(e) => move(e.target.value)}>
             <option value="">{t.t("Nowhere in particular")}</option>
-            {(graph.zones ?? []).map((z) => (
+            {places.map((z) => (
               <option key={z.slug} value={z.slug}>
-                {z.name || z.slug}
+                {placeName(z)}
               </option>
             ))}
           </select>
@@ -438,7 +450,7 @@ export function Simulator({ slug, graph, envelope, selected, mode, onMode, resta
           {followNote && <span className={"field__hint" + (followNote.warn ? " zone-here__warn" : "")}>{followNote.text}</span>}
         </div>
 
-        <SpoofMap zones={graph.zones ?? []} position={pos ?? null} focus={focus} onPick={moveTo} disabled={!team || busy || follow} />
+        <SpoofMap zones={places} position={pos ?? null} focus={focus} onPick={moveTo} disabled={!team || busy || follow} />
 
         {view?.blocks?.some((b) => !b.locked && (b.kind === "compass" || b.kind === "level" || b.kind === "bearing")) && <DevicePanel motion={motion} onChange={setMotion} />}
 

@@ -259,8 +259,16 @@ func (t *Team) Init() {
 // it waiting at the starts with no current node until it calls
 // ChooseStart.
 func Start(g *graph.Graph, now time.Time) (*Team, walk.Step, error) {
+	return StartAt(g, now, nil)
+}
+
+// StartAt is Start for an adventure that may require its starting point
+// (NewStartPlace): with one, the team waits at the start screen until it
+// begins there, as it does in a live event.
+func StartAt(g *graph.Graph, now time.Time, place *graph.Zone) (*Team, walk.Step, error) {
 	t := New(g, now)
-	if g.ChoosesStart() {
+	t.StartPlace = place
+	if t.HoldsAtStart() {
 		return t, walk.Step{}, nil
 	}
 	step, err := walk.First(g, t)
@@ -503,6 +511,21 @@ func (t *Team) players() []Position {
 		out[i] = *t.Position
 	}
 	return out
+}
+
+// StartPlaceSlug names the zone an adventure's required starting point
+// shows as on the start screen. Only a label: the gate checks the point
+// itself (AtStartPlace), never a zone looked up by slug.
+const StartPlaceSlug = "_start"
+
+// NewStartPlace is the zone teams must stand in to begin an adventure
+// whose starting point is at lat, lng with a start radius, or nil when
+// the adventure requires none (any of the three missing, or no radius).
+func NewStartPlace(lat, lng, radiusM *float64, label string) *graph.Zone {
+	if lat == nil || lng == nil || radiusM == nil || *radiusM <= 0 {
+		return nil
+	}
+	return &graph.Zone{Slug: StartPlaceSlug, Name: label, Lat: *lat, Lng: *lng, RadiusM: *radiusM}
 }
 
 // HoldsAtStart reports whether the team waits at the start screen to

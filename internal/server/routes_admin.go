@@ -216,6 +216,7 @@ func registerAdminRoutes(r chi.Router, env *routesEnv) {
 			r.Post("/events/{eventID}/end", adminH.EndEvent)
 			r.Post("/events/{eventID}/teams", adminH.CreateTeam)
 			r.Post("/events/{eventID}/teams/bulk", adminH.BulkCreateTeams)
+			r.Post("/events/{eventID}/free-ticket", adminH.GiveFreeTicket)
 			// Team-roster file import — multipart upload, returns a
 			// parsed preview the client then submits to /teams/bulk
 			// after the arranger inspects it.

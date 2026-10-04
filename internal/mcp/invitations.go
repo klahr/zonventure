@@ -46,6 +46,23 @@ func (s *Server) registerInvitationTools() {
 	}, sendTeamInvitation)
 
 	s.tools.register(ToolDescriptor{
+		Name:  "give_free_ticket",
+		Scope: scopeWrite,
+		Description: "Give someone a ticket to an event without payment — a tester, a guest. Makes a team the size of the event's bought ticket and emails them " +
+			"what a buyer gets: the team link and a voucher code to type at /play. Returns team_id, team_url, play_url, voucher_code and emailed " +
+			"(false when the mail could not be queued; hand over the link or code instead). Use for self-guided events; for a scheduled event " +
+			"with a roster, create_team and send_team_invitation fit better.",
+		InputSchema: map[string]any{
+			"type":     "object",
+			"required": []string{"event_id", "email"},
+			"properties": map[string]any{
+				"event_id": map[string]any{"type": "integer", "description": "Event to give the ticket to."},
+				"email":    map[string]any{"type": "string", "description": "Where the ticket is emailed; it is also the team's contact."},
+			},
+		},
+	}, giveFreeTicket)
+
+	s.tools.register(ToolDescriptor{
 		Name:        "get_event_invite_ics",
 		Scope:       scopeRead,
 		Description: "Return the event's .ics (RFC 5545 iCalendar) bytes as a text result — same calendar attachment send_event_invitations carries. Use to populate the arranger's own calendar, or to forward to a single recipient out-of-band. Errors when the event has no scheduled time.",
@@ -97,6 +114,30 @@ func sendTeamInvitation(ctx context.Context, s *Server, raw json.RawMessage) (To
 	status, body, err := callAdmin(ctx, s.Admin.SendTeamInvitation,
 		"POST", "/api/admin/teams/"+id+"/invitations/send",
 		map[string]string{"teamID": id}, nil, nil)
+	if err != nil {
+		return errorResult("call: " + err.Error()), nil
+	}
+	return adminCallResult(status, body), nil
+}
+
+func giveFreeTicket(ctx context.Context, s *Server, raw json.RawMessage) (ToolCallResult, error) {
+	var a struct {
+		EventID int64  `json:"event_id"`
+		Email   string `json:"email"`
+	}
+	if err := json.Unmarshal(raw, &a); err != nil {
+		return errorResult("bad args: " + err.Error()), nil
+	}
+	if a.EventID <= 0 {
+		return errorResult("event_id required and must be positive"), nil
+	}
+	if r := adminConfigured(s); r != nil {
+		return *r, nil
+	}
+	id := strconv.FormatInt(a.EventID, 10)
+	status, body, err := callAdmin(ctx, s.Admin.GiveFreeTicket,
+		"POST", "/api/admin/events/"+id+"/free-ticket",
+		map[string]string{"eventID": id}, nil, map[string]string{"email": a.Email})
 	if err != nil {
 		return errorResult("call: " + err.Error()), nil
 	}
