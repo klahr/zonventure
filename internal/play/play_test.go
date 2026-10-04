@@ -76,6 +76,13 @@ var seq atomic.Int64
 // and starts it.
 func setup(t *testing.T, g *graph.Graph, n int) *fixture {
 	t.Helper()
+	return setupWith(t, g, n, nil)
+}
+
+// setupWith is setup with a hook that may change the adventure before
+// the event starts and places its teams.
+func setupWith(t *testing.T, g *graph.Graph, n int, before func(db *sql.DB, advID int64)) *fixture {
+	t.Helper()
 	db, cleanup := dbtest.Open(t)
 	t.Cleanup(cleanup)
 
@@ -112,6 +119,9 @@ func setup(t *testing.T, g *graph.Graph, n int) *fixture {
 		f.teams = append(f.teams, team)
 	}
 
+	if before != nil {
+		before(db, advID)
+	}
 	if err := f.eng.StartEvent(context.Background(), f.eventID); err != nil {
 		t.Fatalf("StartEvent: %v", err)
 	}
@@ -962,6 +972,44 @@ func TestTeamChoosesItsStart(t *testing.T) {
 	}
 	if v := f.view(team); v.Node != "west" {
 		t.Errorf("after reload the team is on %q", v.Node)
+	}
+}
+
+// An adventure that requires its starting point holds its team at the
+// start screen when the event starts, and lets it begin only once a phone
+// reports a position there; the clock starts then, not with the event.
+func TestStartPlaceHoldsTeamUntilThere(t *testing.T) {
+	f := setupWith(t, linear("x"), 1, func(db *sql.DB, advID int64) {
+		if _, err := db.Exec(`UPDATE adventures SET start_lat = 59.3293, start_lng = 18.0686, start_radius_m = 30, start_label = 'The fountain' WHERE id = $1`, advID); err != nil {
+			t.Fatal(err)
+		}
+	})
+	team := f.teams[0]
+	ctx := context.Background()
+	v := f.view(team)
+	if v.Node != "" || len(v.Starts) != 1 || v.Starts[0].Here || v.Starts[0].Zone == nil || v.Starts[0].Zone.Name != "The fountain" {
+		t.Fatalf("before reaching the starting point: %+v", v)
+	}
+	if _, err := f.eng.ChooseStart(ctx, team, v.Starts[0].Node, ""); !errors.Is(err, ErrNotHere) {
+		t.Errorf("with no position: got %v, want ErrNotHere", err)
+	}
+	f.loc.put(team, 59.3303, 18.0686) // ~110 m north
+	if _, err := f.eng.ChooseStart(ctx, team, v.Starts[0].Node, ""); !errors.Is(err, ErrNotHere) {
+		t.Errorf("away from the starting point: got %v, want ErrNotHere", err)
+	}
+	f.clock.Advance(20 * time.Minute)
+	f.loc.put(team, 59.3294, 18.0686)
+	if v := f.view(team); !v.Starts[0].Here {
+		t.Errorf("at the starting point the start should be open: %+v", v.Starts[0])
+	}
+	r, err := f.eng.ChooseStart(ctx, team, v.Starts[0].Node, "")
+	if err != nil || r.View.Node == "" {
+		t.Fatalf("beginning at the starting point: %+v %v", r.View, err)
+	}
+	var started time.Time
+	mustScan(t, f.db.QueryRow(`SELECT started_at FROM team_graph_state WHERE team_id = $1`, team), &started)
+	if !started.Equal(f.clock.Now()) {
+		t.Errorf("clock started %v, want %v (when the team began, not the event)", started, f.clock.Now())
 	}
 }
 

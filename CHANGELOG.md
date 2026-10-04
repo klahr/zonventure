@@ -11,6 +11,22 @@ product is **Zonventure**. Versions tagged here correspond to git tags
 
 ## [Unreleased]
 
+### Added — teams must start at the starting point
+
+- **An adventure can require teams to begin where it starts.** Tick
+  "Teams must be at the starting point to begin" under the adventure's
+  starting location and set a radius (5–5000 m; also `start_radius_m`
+  in the API and MCP). Teams are held on the start screen, which shows
+  the distance and a map link, until a player is inside the radius; only
+  then can they start, and the clock starts then. The lobby tells them
+  in advance. Works with start codes, and carries over in exports.
+
+### Fixed — clearing the starting point
+
+- **Clearing the starting location in the adventure details now clears
+  it.** `{"start_lat": null}` was indistinguishable from an absent field,
+  so the update silently kept the old coordinates.
+
 ### Added — organisation identity on /o/{slug}/store
 
 - **The per-organisation store knows its organisation.** `store.html`

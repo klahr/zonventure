@@ -88,11 +88,14 @@ export interface AdventureEdit {
   start_lat?: number;
   start_lng?: number;
   start_label?: string;
+  /** Set when teams can only begin within this many metres of the start. */
+  start_radius_m?: number;
 }
 
-export type AdventurePatch = Partial<Omit<AdventureEdit, "avatar_url" | "start_lat" | "start_lng">> & {
+export type AdventurePatch = Partial<Omit<AdventureEdit, "avatar_url" | "start_lat" | "start_lng" | "start_radius_m">> & {
   start_lat?: number | null;
   start_lng?: number | null;
+  start_radius_m?: number | null;
 };
 
 export const listAdventures = (signal?: AbortSignal) =>

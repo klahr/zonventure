@@ -31,6 +31,7 @@ func renderEnvelopeMarkdown(envelopeJSON []byte) string {
 			StartLat    *float64 `json:"start_lat"`
 			StartLng    *float64 `json:"start_lng"`
 			StartLabel  string   `json:"start_label"`
+			StartRadius *float64 `json:"start_radius_m"`
 		} `json:"adventure"`
 		Graph *struct {
 			Graph struct {
@@ -69,6 +70,9 @@ func renderEnvelopeMarkdown(envelopeJSON []byte) string {
 		fmt.Fprintf(&b, "**Start:** %.5f, %.5f", *a.StartLat, *a.StartLng)
 		if a.StartLabel != "" {
 			fmt.Fprintf(&b, " (%s)", a.StartLabel)
+		}
+		if a.StartRadius != nil {
+			fmt.Fprintf(&b, " · teams must be within %.0f m to begin", *a.StartRadius)
 		}
 		b.WriteString("\n\n")
 	}

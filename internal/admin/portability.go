@@ -89,6 +89,7 @@ type exportAdventureDTO struct {
 	StartLat             *float64        `json:"start_lat,omitempty"`
 	StartLng             *float64        `json:"start_lng,omitempty"`
 	StartLabel           string          `json:"start_label,omitempty"`
+	StartRadiusM         *float64        `json:"start_radius_m,omitempty"`
 	AccentColor          string          `json:"accent_color,omitempty"`
 	AccentSecondaryColor string          `json:"accent_secondary_color,omitempty"`
 	BackgroundColor      string          `json:"background_color,omitempty"`
@@ -179,7 +180,7 @@ func (h *Handlers) buildExport(ctx context.Context, advID int64) (exportEnvelope
 
 	var (
 		accent, accent2, bg, ink, submitBG sql.NullString
-		startLat, startLng                 sql.NullFloat64
+		startLat, startLng, startRadius    sql.NullFloat64
 		avatarMime                         sql.NullString
 		avatarContent                      []byte
 	)
@@ -187,14 +188,14 @@ func (h *Handlers) buildExport(ctx context.Context, advID int64) (exportEnvelope
 		SELECT slug, title, description, author, intro_text, outro_text,
 		       accent_color, accent_secondary_color, background_color, text_color, submit_bg_color,
 		       language, strict_assets,
-		       start_lat, start_lng, start_label,
+		       start_lat, start_lng, start_label, start_radius_m,
 		       avatar_mime_type, avatar_content
 		FROM adventures WHERE id = $1
 	`, advID).Scan(&adv.Slug, &adv.Title, &adv.Description, &adv.Author,
 		&adv.IntroText, &adv.OutroText,
 		&accent, &accent2, &bg, &ink, &submitBG,
 		&adv.Language, &adv.StrictAssets,
-		&startLat, &startLng, &adv.StartLabel,
+		&startLat, &startLng, &adv.StartLabel, &startRadius,
 		&avatarMime, &avatarContent)
 	if err != nil {
 		return env, nil, fmt.Errorf("load adventure: %w", err)
@@ -211,6 +212,10 @@ func (h *Handlers) buildExport(ctx context.Context, advID int64) (exportEnvelope
 	if startLng.Valid {
 		v := startLng.Float64
 		adv.StartLng = &v
+	}
+	if startRadius.Valid {
+		v := startRadius.Float64
+		adv.StartRadiusM = &v
 	}
 
 	files := []exportFile{}
@@ -559,27 +564,30 @@ func importAdventureRow(ctx context.Context, tx *sql.Tx, slug string, adv export
 	if !validLanguageTag(lang) {
 		return 0, errors.New("invalid language tag")
 	}
-	var startLat, startLng any
+	var startLat, startLng, startRadius any
 	if adv.StartLat != nil {
 		startLat = *adv.StartLat
 	}
 	if adv.StartLng != nil {
 		startLng = *adv.StartLng
 	}
+	if r := adv.StartRadiusM; r != nil && *r >= MinStartRadiusM && *r <= MaxStartRadiusM {
+		startRadius = *r
+	}
 	var id int64
 	err := tx.QueryRowContext(ctx, `
 		INSERT INTO adventures(slug, title, description, author, intro_text, outro_text,
 		                       accent_color, accent_secondary_color, background_color, text_color, submit_bg_color,
 		                       language, strict_assets,
-		                       start_lat, start_lng, start_label,
+		                       start_lat, start_lng, start_label, start_radius_m,
 		                       org_id, created_by_user_id)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
 		RETURNING id
 	`, slug, adv.Title, adv.Description, adv.Author, adv.IntroText, adv.OutroText,
 		nullIfEmpty(adv.AccentColor), nullIfEmpty(adv.AccentSecondaryColor),
 		nullIfEmpty(adv.BackgroundColor), nullIfEmpty(adv.TextColor), nullIfEmpty(adv.SubmitBgColor),
 		lang, adv.StrictAssets,
-		startLat, startLng, adv.StartLabel,
+		startLat, startLng, adv.StartLabel, startRadius,
 		orgArg, userID).Scan(&id)
 	return id, err
 }

@@ -551,6 +551,48 @@ func TestChoosingAStart(t *testing.T) {
 	}
 }
 
+// An adventure that requires its starting point holds even a single-start
+// team at the start screen, shows the point as the start's place, and
+// lets it begin only once a player stands there.
+func TestStartPlaceGate(t *testing.T) {
+	g := &graph.Graph{
+		Nodes: []graph.Node{
+			{Slug: "start", Type: graph.Start},
+			{Slug: "a", Type: graph.Story, StoryCfg: &graph.StoryConfig{Blocks: graph.LegacyBlocks("hello", nil)}},
+			{Slug: "end", Type: graph.End},
+		},
+		Edges: []graph.Edge{
+			{From: "start", FromPort: "out", To: "a"},
+			{From: "a", FromPort: "out", To: "end"},
+		},
+	}
+	tm := New(g, t0)
+	tm.StartPlace = &graph.Zone{Slug: "_start", Name: "The fountain", Lat: 59.34, Lng: 18.06, RadiusM: 30}
+	if !tm.HoldsAtStart() {
+		t.Fatal("a required starting point must hold the team at the start screen")
+	}
+	v := tm.View()
+	if v.Type != graph.Start || len(v.Starts) != 1 || v.Starts[0].Here || v.Starts[0].Zone == nil || v.Starts[0].Zone.Name != "The fountain" {
+		t.Fatalf("start view away from the starting point = %+v", v)
+	}
+	if _, _, err := tm.ChooseStart("start", ""); !errors.Is(err, ErrNotHere) {
+		t.Errorf("beginning away from the starting point = %v, want ErrNotHere", err)
+	}
+	tm.Position = &Position{Lat: 59.3401, Lng: 18.0601}
+	if v := tm.View(); !v.Starts[0].Here {
+		t.Errorf("start view at the starting point = %+v", v.Starts[0])
+	}
+	tm.Now = t0.Add(15 * time.Minute)
+	_, step, err := tm.ChooseStart("start", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tm.Apply(*step)
+	if tm.Current != "a" || !tm.StartedAt.Equal(tm.Now) {
+		t.Errorf("after beginning at the starting point: on %q, started %v", tm.Current, tm.StartedAt)
+	}
+}
+
 // A tile puzzle is solved by the tile order alone: the solved order
 // takes the answer output, anything else is a wrong guess.
 func TestTilePuzzle(t *testing.T) {

@@ -155,7 +155,7 @@ Leave answer out for a typed answer. Otherwise:
 
 ## Writing the text
 
-What players read is Markdown, in text, note, quiz, vote and photo blocks — which is also how story and end steps speak — hints, journal entries and the adventure's intro and outro (update_adventure_meta). Wrong-answer responses are one plain line: no Markdown there.
+What players read is Markdown, in text, note, chat (each line), quiz, vote and photo blocks — which is also how story and end steps speak — hints, journal entries and the adventure's intro and outro (update_adventure_meta). Wrong-answer responses are one plain line: no Markdown there.
 - # to ### headings, blank lines between paragraphs, - and 1. lists
 - **bold**, *italic*, `+"`code`"+`, [links](https://…)
 - {{team}} is replaced by the team's name: "Well done, {{team}}!"

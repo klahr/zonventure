@@ -27,6 +27,10 @@
   overflow-wrap: anywhere;
   animation: pv-chat-in 0.22s ease-out;
 }
+/* A message is Markdown: paragraphs, lists and headings sit inside the bubble. */
+.pv-chat__bubble > * { margin: 0; }
+.pv-chat__bubble > * + * { margin-top: var(--sp-2); }
+.is-me > .pv-chat__bubble a { color: inherit; }
 .is-me > .pv-chat__bubble {
   border-radius: 1.1rem 1.1rem 0.3rem 1.1rem;
   background: var(--accent);

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { play } from "@zonventure/api";
 import { typingTime } from "../chat.ts";
+import { Markdown } from "../Markdown.tsx";
 import { fillTeam, type Renderer } from "./context.ts";
 import "./chat.css";
 
@@ -47,7 +48,7 @@ export const ChatBlock: Renderer<"chat"> = ({ block, ctx }) => {
         {lines.slice(0, count).map((l, i) => (
           <div key={i} className={"pv-chat__msg" + (l.me ? " is-me" : "")}>
             {head(i)}
-            <p className="pv-chat__bubble">{fillTeam(l.text, ctx)}</p>
+            <Markdown className="pv-chat__bubble" text={fillTeam(l.text, ctx)} />
           </div>
         ))}
         {next && (

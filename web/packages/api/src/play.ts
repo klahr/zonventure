@@ -453,8 +453,8 @@ export interface PlayState {
     /** The author's welcome and farewell, Markdown. */
     intro_text?: string;
     outro_text?: string;
-    /** Where the team should meet. */
-    start?: { lat: number; lng: number; label?: string };
+    /** Where the team should meet. radius_m is set when the team can only begin within it. */
+    start?: { lat: number; lng: number; label?: string; radius_m?: number };
   };
   /** Set once the team has finished. */
   finish?: Finish;

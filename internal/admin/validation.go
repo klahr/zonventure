@@ -24,6 +24,13 @@ const (
 	MaxHintTextLen = 4_000  // single hint body markdown
 )
 
+// The radius a required starting point may have, in metres: no tighter
+// than a phone's GPS can tell, no wider than a neighbourhood.
+const (
+	MinStartRadiusM = 5
+	MaxStartRadiusM = 5_000
+)
+
 // errNameRequired and errNameTooLong are the canonical empty / over-
 // limit results from validateName. Wrapped at the handler boundary
 // to bad-request 400 with the message text directly.

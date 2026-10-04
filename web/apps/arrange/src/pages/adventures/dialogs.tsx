@@ -203,7 +203,7 @@ export function PickPassDialog({ title, passes, onPick, onClose }: { title: stri
 
 const LANGS = ["en", "sv", "no", "da", "fi", "de", "fr", "es", "pt", "pt-BR", "it", "nl", "pl", "ja", "zh-Hant", "zh-Hans"];
 
-type Form = { slug: string; title: string; description: string; author: string; language: string; intro_text: string; outro_text: string; strict_assets: boolean; lat: string; lng: string; start_label: string; cheat_password: string };
+type Form = { slug: string; title: string; description: string; author: string; language: string; intro_text: string; outro_text: string; strict_assets: boolean; lat: string; lng: string; start_label: string; require_start: boolean; radius: string; cheat_password: string };
 
 function formOf(a: AdventureEdit): Form {
   return {
@@ -218,6 +218,8 @@ function formOf(a: AdventureEdit): Form {
     lat: a.start_lat == null ? "" : String(a.start_lat),
     lng: a.start_lng == null ? "" : String(a.start_lng),
     start_label: a.start_label || "",
+    require_start: a.start_radius_m != null,
+    radius: a.start_radius_m == null ? "50" : String(a.start_radius_m),
     cheat_password: a.cheat_password || "",
   };
 }
@@ -271,9 +273,13 @@ export function EditDetailsDialog({ slug, firstPlace, onClose, onSaved, onCover 
   const latBad = !!f && f.lat.trim() !== "" && coord(f.lat) == null;
   const lngBad = !!f && f.lng.trim() !== "" && coord(f.lng) == null;
   const halfStart = !!f && (coord(f.lat) == null) !== (coord(f.lng) == null);
+  // A required start needs a point and a radius within what the server accepts.
+  const radiusOf = (x: Form) => (x.require_start ? coord(x.radius) : null);
+  const radiusBad = !!f && f.require_start && (radiusOf(f) == null || radiusOf(f)! < 5 || radiusOf(f)! > 5000);
+  const requireWithoutPoint = !!f && f.require_start && (coord(f.lat) == null || coord(f.lng) == null);
 
   const save = async () => {
-    if (!f || !initial || badSlug || !f.title.trim() || latBad || lngBad || halfStart) return;
+    if (!f || !initial || badSlug || !f.title.trim() || latBad || lngBad || halfStart || radiusBad || requireWithoutPoint) return;
     const p: AdventurePatch = {};
     if (f.slug.trim() !== initial.slug) p.slug = f.slug.trim();
     if (f.title.trim() !== initial.title) p.title = f.title.trim();
@@ -286,6 +292,7 @@ export function EditDetailsDialog({ slug, firstPlace, onClose, onSaved, onCover 
     if (coord(f.lat) !== coord(initial.lat)) p.start_lat = coord(f.lat);
     if (coord(f.lng) !== coord(initial.lng)) p.start_lng = coord(f.lng);
     if (f.start_label.trim() !== initial.start_label) p.start_label = f.start_label.trim();
+    if (radiusOf(f) !== radiusOf(initial)) p.start_radius_m = radiusOf(f);
     if (f.cheat_password !== initial.cheat_password) p.cheat_password = f.cheat_password;
     if (Object.keys(p).length === 0) return onClose();
     setBusy(true);
@@ -331,7 +338,7 @@ export function EditDetailsDialog({ slug, firstPlace, onClose, onSaved, onCover 
       footer={
         <>
           <Button onClick={close}>{t.t("Cancel")}</Button>
-          <Button type="submit" variant="primary" filled loading={busy} disabled={!f || badSlug || !f.title.trim() || latBad || lngBad || halfStart}>{t.t("Save")}</Button>
+          <Button type="submit" variant="primary" filled loading={busy} disabled={!f || badSlug || !f.title.trim() || latBad || lngBad || halfStart || radiusBad || requireWithoutPoint}>{t.t("Save")}</Button>
         </>
       }
     >
@@ -394,6 +401,17 @@ export function EditDetailsDialog({ slug, firstPlace, onClose, onSaved, onCover 
             <Field label={t.t("Label")}>
               <input maxLength={200} value={f.start_label} placeholder={t.t("e.g. “Monteliusvägen, vid bänken under trappan”")} onChange={(e) => set("start_label", e.target.value)} />
             </Field>
+            <label className="adv-check">
+              <input type="checkbox" checked={f.require_start} onChange={(e) => set("require_start", e.target.checked)} />
+              <span>{t.t("Teams must be at the starting point to begin")}</span>
+              <HelpPopover label={t.t("Teams must be at the starting point to begin")} body={t.t("The start stays locked on the phones until a player on the team is within this distance of the starting point. The clock starts when the team begins, not when the event does.")} />
+            </label>
+            {f.require_start && (
+              <Field label={t.t("Radius (metres)")} error={radiusBad ? t.t("Between 5 and 5000 metres.") : undefined}>
+                <input type="number" min={5} max={5000} step={5} inputMode="numeric" value={f.radius} onChange={(e) => set("radius", e.target.value)} />
+              </Field>
+            )}
+            {requireWithoutPoint && <p className="cs-field__error" role="alert">{t.t("Set the starting point first.")}</p>}
             {halfStart && <p className="cs-field__error" role="alert">{t.t("Set both coordinates, or clear both.")}</p>}
             <PointMap
               value={coord(f.lat) != null && coord(f.lng) != null ? { lat: coord(f.lat)!, lng: coord(f.lng)! } : null}

@@ -122,11 +122,11 @@ func (e *Engine) StartEvent(ctx context.Context, eventID int64) error {
 		if err != nil {
 			return err
 		}
-		// A team that chooses its start — or must enter a start code —
-		// waits at the start screen until it does, so the clock only
-		// starts when it actually begins. Everyone else is placed at the
-		// first step now.
-		if s.G.ChoosesStart() || s.StartCode != "" {
+		// A team that chooses its start — or must enter a start code, or
+		// stand at the starting point — waits at the start screen until it
+		// does, so the clock only starts when it actually begins. Everyone
+		// else is placed at the first step now.
+		if s.HoldsAtStart() {
 			continue
 		}
 		step, err := walk.First(s.G, s)

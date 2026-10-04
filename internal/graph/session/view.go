@@ -860,10 +860,11 @@ func (t *Team) view() View {
 	v.Journal = t.journalView()
 
 	// Show the start screen while the team waits to begin — when the
-	// adventure lets them choose a start, or when a start code gates the
-	// begin (which holds even a single-start adventure here instead of
-	// auto-advancing). StartRequiresCode tells the client to ask for it.
-	if t.Current == "" && !t.Completed && (t.G.ChoosesStart() || t.StartCode != "") {
+	// adventure lets them choose a start, or when a start code or the
+	// starting point gates the begin (which holds even a single-start
+	// adventure here instead of auto-advancing). StartRequiresCode tells
+	// the client to ask for the code.
+	if t.Current == "" && !t.Completed && t.HoldsAtStart() {
 		v.Type = graph.Start
 		v.StartRequiresCode = t.StartCode != ""
 		for _, st := range t.G.Starts() {
@@ -875,6 +876,15 @@ func (t *Team) view() View {
 						o.Zone, o.Here = &zc, t.InZone(z.Slug)
 					}
 				}
+			}
+			// The adventure's starting point is where a start without a
+			// zone of its own is, and is required of every start.
+			if t.StartPlace != nil {
+				if o.Zone == nil {
+					zc := *t.StartPlace
+					o.Zone = &zc
+				}
+				o.Here = o.Here && t.AtStartPlace()
 			}
 			v.Starts = append(v.Starts, o)
 		}

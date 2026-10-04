@@ -93,11 +93,13 @@ type PlayEvent struct {
 	Cheat bool `json:"cheat,omitempty"`
 }
 
-// PlayStart is the adventure's meeting point.
+// PlayStart is the adventure's meeting point. RadiusM is set when teams
+// can only begin within that many metres of it.
 type PlayStart struct {
-	Lat   float64 `json:"lat"`
-	Lng   float64 `json:"lng"`
-	Label string  `json:"label,omitempty"`
+	Lat     float64 `json:"lat"`
+	Lng     float64 `json:"lng"`
+	Label   string  `json:"label,omitempty"`
+	RadiusM float64 `json:"radius_m,omitempty"`
 }
 
 // PlayMe is the signed-in player: one slot of the team.
@@ -293,17 +295,17 @@ func adventureLook(ctx context.Context, db *sql.DB, slug string) (look, error) {
 	var (
 		l                             look
 		accent, second, bg, ink, dock sql.NullString
-		lat, lng                      sql.NullFloat64
+		lat, lng, radius              sql.NullFloat64
 		label                         sql.NullString
 	)
 	err := db.QueryRowContext(ctx, `
 		SELECT title, intro_text, outro_text,
 		       accent_color, accent_secondary_color, background_color, text_color, submit_bg_color, font,
 		       heading_font, corners, cards, card_outline,
-		       start_lat, start_lng, start_label, (cheat_password IS NOT NULL)
+		       start_lat, start_lng, start_label, start_radius_m, (cheat_password IS NOT NULL)
 		FROM adventures WHERE slug = $1
 	`, slug).Scan(&l.title, &l.intro, &l.outro, &accent, &second, &bg, &ink, &dock, &l.brand.Font,
-		&l.brand.HeadingFont, &l.brand.Corners, &l.brand.Cards, &l.brand.CardOutline, &lat, &lng, &label, &l.cheat)
+		&l.brand.HeadingFont, &l.brand.Corners, &l.brand.Cards, &l.brand.CardOutline, &lat, &lng, &label, &radius, &l.cheat)
 	if errors.Is(err, sql.ErrNoRows) {
 		return look{}, nil
 	}
@@ -313,7 +315,7 @@ func adventureLook(ctx context.Context, db *sql.DB, slug string) (look, error) {
 		HeadingFont: l.brand.HeadingFont, Corners: l.brand.Corners, Cards: l.brand.Cards, CardOutline: l.brand.CardOutline,
 	}
 	if lat.Valid && lng.Valid {
-		l.start = &PlayStart{Lat: lat.Float64, Lng: lng.Float64, Label: label.String}
+		l.start = &PlayStart{Lat: lat.Float64, Lng: lng.Float64, Label: label.String, RadiusM: radius.Float64}
 	}
 	return l, err
 }

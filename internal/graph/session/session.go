@@ -112,6 +112,11 @@ type Team struct {
 	// start screen rather than auto-advanced. Loaded per request from
 	// adventures.start_code; not part of the persisted team state.
 	StartCode string `json:"-"`
+	// StartPlace gates ChooseStart on where the team stands: when set, a
+	// player must be inside it to begin, and the team is held at the start
+	// screen until then. Loaded per request from the adventure's starting
+	// point and start radius; not part of the persisted team state.
+	StartPlace *graph.Zone `json:"-"`
 
 	Current       string        `json:"current,omitempty"`
 	NodeEnteredAt time.Time     `json:"node_entered_at"`
@@ -500,6 +505,27 @@ func (t *Team) players() []Position {
 	return out
 }
 
+// HoldsAtStart reports whether the team waits at the start screen to
+// begin rather than being placed on the first step: it chooses among
+// starts, must enter a start code, or must stand at the starting point.
+func (t *Team) HoldsAtStart() bool {
+	return t.G.ChoosesStart() || t.StartCode != "" || t.StartPlace != nil
+}
+
+// AtStartPlace reports whether one of the team's players is at the
+// adventure's starting point. Always true when it requires none.
+func (t *Team) AtStartPlace() bool {
+	if t.StartPlace == nil {
+		return true
+	}
+	for _, p := range t.players() {
+		if ZoneContains(*t.StartPlace, p.Lat, p.Lng) {
+			return true
+		}
+	}
+	return false
+}
+
 // ZoneContains reports whether a point is inside a zone: within the
 // circle, or inside the polygon.
 //
@@ -831,6 +857,9 @@ func (t *Team) ChooseStart(start, code string) (Result, *walk.Step, error) {
 		return Result{}, nil, ErrWrongNode
 	}
 	if n.StartCfg != nil && n.StartCfg.Zone != "" && !t.InZone(n.StartCfg.Zone) {
+		return Result{}, nil, ErrNotHere
+	}
+	if !t.AtStartPlace() {
 		return Result{}, nil, ErrNotHere
 	}
 	t.StartedAt, t.StartPaused = t.Now, t.Paused

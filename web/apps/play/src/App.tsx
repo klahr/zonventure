@@ -289,6 +289,7 @@ function Lobby({ state, t }: { state: play.PlayState; t: Translate }) {
           </a>
         </p>
       )}
+      {state.event.start?.radius_m ? <p className="app-muted">{t("You can only begin once you're there.")}</p> : null}
       <p className="app-muted">{t("Keep this page open. It will change by itself.")}</p>
     </div>
   );

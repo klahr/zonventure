@@ -95,6 +95,9 @@ type adventureEditDTO struct {
 	StartLat   *float64 `json:"start_lat,omitempty"`
 	StartLng   *float64 `json:"start_lng,omitempty"`
 	StartLabel string   `json:"start_label,omitempty"`
+	// StartRadiusM, when set with the coords, requires a team to be
+	// within that many metres of the starting point to begin.
+	StartRadiusM *float64 `json:"start_radius_m,omitempty"`
 	// Brief is what the adventure is meant to be, as agreed with its
 	// author: the yardstick an assistant designs each step against.
 	Brief  Brief       `json:"brief"`
@@ -327,9 +330,12 @@ type updateAdventureRequest struct {
 	// to clear ({"start_lat": null}) — the wrapper struct distinguishes
 	// "not present" (no patch) from "present and null" (clear). The
 	// label is independent and passes through verbatim.
-	StartLat   *Nullable[float64] `json:"start_lat,omitempty"`
-	StartLng   *Nullable[float64] `json:"start_lng,omitempty"`
-	StartLabel *string            `json:"start_label,omitempty"`
+	StartLat   Nullable[float64] `json:"start_lat"`
+	StartLng   Nullable[float64] `json:"start_lng"`
+	StartLabel *string           `json:"start_label,omitempty"`
+	// StartRadiusM requires teams to begin within this many metres of
+	// the starting point; null clears the requirement.
+	StartRadiusM Nullable[float64] `json:"start_radius_m"`
 	// Brief replaces the whole brief.
 	Brief *Brief `json:"brief,omitempty"`
 }
@@ -355,23 +361,27 @@ type Brief struct {
 // maxBriefBytes bounds a stored brief; a real one is a few hundred bytes.
 const maxBriefBytes = 16 << 10
 
-// Nullable distinguishes "field absent in JSON" (the outer pointer is
-// nil) from "field present with null" (the outer pointer is non-nil
-// and Set is true with Value zero) and "field present with value".
-// Used by patch-style endpoints where clearing a column is a real
-// state transition the caller may want to express. UnmarshalJSON
-// flips Set to true on any decoded input, so a caller writing
-// `{"start_lat": null}` clears the column while an absent field is
-// left unchanged.
+// Nullable distinguishes "field absent in JSON" (Set false) from
+// "field present with null" (Set true, Valid false) and "field present
+// with a value" (Set and Valid). Used by patch-style endpoints where
+// clearing a column is a real state transition the caller may want to
+// express: `{"start_lat": null}` clears the column while an absent
+// field is left unchanged.
+//
+// Use it as a value field, not a pointer: encoding/json sets a pointer
+// field to nil on null without calling UnmarshalJSON, so a *Nullable
+// cannot tell null from absent.
 type Nullable[T any] struct {
 	Value T
+	Set   bool // true when the field was present in the JSON
 	Valid bool // true when the JSON value was non-null
 }
 
-// UnmarshalJSON tracks whether the field was present at all (the
-// containing struct has *Nullable; nil means absent) and whether the
-// value was null vs a real T.
+// UnmarshalJSON runs only for a field present in the JSON, null
+// included, so it marks the field set and records whether the value
+// was null or a real T.
 func (n *Nullable[T]) UnmarshalJSON(b []byte) error {
+	n.Set = true
 	if string(b) == "null" {
 		n.Valid = false
 		var zero T
@@ -533,7 +543,7 @@ func applyAdventureMetaUpdate(ctx context.Context, db *sql.DB, slug string, req 
 			add("cheat_password", pw)
 		}
 	}
-	if req.StartLat != nil {
+	if req.StartLat.Set {
 		if req.StartLat.Valid {
 			lat := req.StartLat.Value
 			if lat < -90 || lat > 90 {
@@ -544,7 +554,7 @@ func applyAdventureMetaUpdate(ctx context.Context, db *sql.DB, slug string, req 
 			add("start_lat", nil)
 		}
 	}
-	if req.StartLng != nil {
+	if req.StartLng.Set {
 		if req.StartLng.Valid {
 			lng := req.StartLng.Value
 			if lng < -180 || lng > 180 {
@@ -561,6 +571,17 @@ func applyAdventureMetaUpdate(ctx context.Context, db *sql.DB, slug string, req 
 			return badRequestf("start_label %s", err.Error())
 		}
 		add("start_label", label)
+	}
+	if req.StartRadiusM.Set {
+		if req.StartRadiusM.Valid {
+			r := req.StartRadiusM.Value
+			if r < MinStartRadiusM || r > MaxStartRadiusM {
+				return badRequestf("start_radius_m must be between %d and %d metres", MinStartRadiusM, MaxStartRadiusM)
+			}
+			add("start_radius_m", r)
+		} else {
+			add("start_radius_m", nil)
+		}
 	}
 	if req.Brief != nil {
 		b, _ := json.Marshal(req.Brief)
@@ -684,7 +705,7 @@ func loadAdventureDTO(ctx context.Context, db *sql.DB, slug string) (*adventureE
 		hasAvatar                          int
 		published                          int
 		orgID                              sql.NullInt64
-		startLat, startLng                 sql.NullFloat64
+		startLat, startLng, startRadius    sql.NullFloat64
 		brief                              []byte
 	)
 	if err := db.QueryRowContext(ctx, `
@@ -694,12 +715,12 @@ func loadAdventureDTO(ctx context.Context, db *sql.DB, slug string) (*adventureE
 		       language,
 		       (avatar_mime_type IS NOT NULL)::int AS has_avatar,
 		       published, org_id, strict_assets, COALESCE(cheat_password, ''),
-		       start_lat, start_lng, start_label, brief
+		       start_lat, start_lng, start_label, start_radius_m, brief
 		FROM adventures WHERE slug = $1
 	`, slug).Scan(&a.ID, &a.Slug, &a.Title, &a.Description, &a.Author,
 		&a.IntroText, &a.OutroText,
 		&accent, &accent2, &bg, &ink, &submitBG, &a.Font, &a.HeadingFont, &a.Corners, &a.Cards, &a.CardOutline, &a.Language, &hasAvatar, &published, &orgID, &a.StrictAssets, &a.CheatPassword,
-		&startLat, &startLng, &a.StartLabel, &brief); err != nil {
+		&startLat, &startLng, &a.StartLabel, &startRadius, &brief); err != nil {
 		return nil, err
 	}
 	if err := json.Unmarshal(brief, &a.Brief); err != nil {
@@ -712,6 +733,10 @@ func loadAdventureDTO(ctx context.Context, db *sql.DB, slug string) (*adventureE
 	if startLng.Valid {
 		v := startLng.Float64
 		a.StartLng = &v
+	}
+	if startRadius.Valid {
+		v := startRadius.Float64
+		a.StartRadiusM = &v
 	}
 	a.AccentColor = accent.String
 	a.AccentSecondaryColor = accent2.String
